@@ -768,7 +768,8 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 		chksIter := s.Iterator()
 		chks = chks[:0]
 		for chksIter.Next() {
-			// We are not iterating in streaming way over chunk as it's more efficient to do bulk write for index and
+			// We are not iterating in streaming way over chunk as
+			// it's more efficient to do bulk write for index and
 			// chunk file purposes.
 			chks = append(chks, chksIter.At())
 		}

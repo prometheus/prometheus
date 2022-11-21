@@ -44,6 +44,7 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -116,22 +117,12 @@ func TestDiscoveredLabelsUpdate(t *testing.T) {
 	}
 	sp.activeTargets = make(map[uint64]*Target)
 	t1 := &Target{
-		discoveredLabels: labels.Labels{
-			labels.Label{
-				Name:  "label",
-				Value: "name",
-			},
-		},
+		discoveredLabels: labels.FromStrings("label", "name"),
 	}
 	sp.activeTargets[t1.hash()] = t1
 
 	t2 := &Target{
-		discoveredLabels: labels.Labels{
-			labels.Label{
-				Name:  "labelNew",
-				Value: "nameNew",
-			},
-		},
+		discoveredLabels: labels.FromStrings("labelNew", "nameNew"),
 	}
 	sp.sync([]*Target{t2})
 
@@ -624,7 +615,7 @@ func TestScrapeLoopStopBeforeRun(t *testing.T) {
 		1,
 		0,
 		false,
-		nil,
+		false,
 		nil,
 		false,
 	)
@@ -696,7 +687,7 @@ func TestScrapeLoopStop(t *testing.T) {
 		10*time.Millisecond,
 		time.Hour,
 		false,
-		nil,
+		false,
 		nil,
 		false,
 	)
@@ -771,7 +762,7 @@ func TestScrapeLoopRun(t *testing.T) {
 		time.Second,
 		time.Hour,
 		false,
-		nil,
+		false,
 		nil,
 		false,
 	)
@@ -826,7 +817,7 @@ func TestScrapeLoopRun(t *testing.T) {
 		time.Second,
 		100*time.Millisecond,
 		false,
-		nil,
+		false,
 		nil,
 		false,
 	)
@@ -885,7 +876,7 @@ func TestScrapeLoopForcedErr(t *testing.T) {
 		time.Second,
 		time.Hour,
 		false,
-		nil,
+		false,
 		nil,
 		false,
 	)
@@ -943,7 +934,7 @@ func TestScrapeLoopMetadata(t *testing.T) {
 		0,
 		0,
 		false,
-		nil,
+		false,
 		nil,
 		false,
 	)
@@ -1000,7 +991,7 @@ func simpleTestScrapeLoop(t testing.TB) (context.Context, *scrapeLoop) {
 		0,
 		0,
 		false,
-		nil,
+		false,
 		nil,
 		false,
 	)
@@ -1093,7 +1084,7 @@ func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrape(t *testing.T) {
 		10*time.Millisecond,
 		time.Hour,
 		false,
-		nil,
+		false,
 		nil,
 		false,
 	)
@@ -1155,7 +1146,7 @@ func TestScrapeLoopRunCreatesStaleMarkersOnParseFailure(t *testing.T) {
 		10*time.Millisecond,
 		time.Hour,
 		false,
-		nil,
+		false,
 		nil,
 		false,
 	)
@@ -1221,7 +1212,7 @@ func TestScrapeLoopCache(t *testing.T) {
 		10*time.Millisecond,
 		time.Hour,
 		false,
-		nil,
+		false,
 		nil,
 		false,
 	)
@@ -1303,7 +1294,7 @@ func TestScrapeLoopCacheMemoryExhaustionProtection(t *testing.T) {
 		10*time.Millisecond,
 		time.Hour,
 		false,
-		nil,
+		false,
 		nil,
 		false,
 	)
@@ -1417,7 +1408,7 @@ func TestScrapeLoopAppend(t *testing.T) {
 			0,
 			0,
 			false,
-			nil,
+			false,
 			nil,
 			false,
 		)
@@ -1507,7 +1498,7 @@ func TestScrapeLoopAppendForConflictingPrefixedLabels(t *testing.T) {
 					return mutateSampleLabels(l, &Target{labels: labels.FromStrings(tc.targetLabels...)}, false, nil)
 				},
 				nil,
-				func(ctx context.Context) storage.Appender { return app }, nil, 0, true, 0, nil, 0, 0, false, nil, nil, false,
+				func(ctx context.Context) storage.Appender { return app }, nil, 0, true, 0, nil, 0, 0, false, false, nil, false,
 			)
 			slApp := sl.appender(context.Background())
 			_, _, _, err := sl.append(slApp, []byte(tc.exposedLabels), "", time.Date(2000, 1, 1, 1, 0, 0, 0, time.UTC))
@@ -1543,7 +1534,7 @@ func TestScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T) {
 		0,
 		0,
 		false,
-		nil,
+		false,
 		nil,
 		false,
 	)
@@ -1601,7 +1592,7 @@ func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 		0,
 		0,
 		false,
-		nil,
+		false,
 		nil,
 		false,
 	)
@@ -1678,7 +1669,7 @@ func TestScrapeLoop_ChangingMetricString(t *testing.T) {
 		0,
 		0,
 		false,
-		nil,
+		false,
 		nil,
 		false,
 	)
@@ -1726,7 +1717,7 @@ func TestScrapeLoopAppendStaleness(t *testing.T) {
 		0,
 		0,
 		false,
-		nil,
+		false,
 		nil,
 		false,
 	)
@@ -1777,7 +1768,7 @@ func TestScrapeLoopAppendNoStalenessIfTimestamp(t *testing.T) {
 		0,
 		0,
 		false,
-		nil,
+		false,
 		nil,
 		false,
 	)
@@ -1888,7 +1879,7 @@ metric_total{n="2"} 2 # {t="2"} 2.0 20000
 				0,
 				0,
 				false,
-				nil,
+				false,
 				nil,
 				false,
 			)
@@ -1953,7 +1944,7 @@ func TestScrapeLoopAppendExemplarSeries(t *testing.T) {
 		0,
 		0,
 		false,
-		nil,
+		false,
 		nil,
 		false,
 	)
@@ -2005,7 +1996,7 @@ func TestScrapeLoopRunReportsTargetDownOnScrapeError(t *testing.T) {
 		10*time.Millisecond,
 		time.Hour,
 		false,
-		nil,
+		false,
 		nil,
 		false,
 	)
@@ -2041,7 +2032,7 @@ func TestScrapeLoopRunReportsTargetDownOnInvalidUTF8(t *testing.T) {
 		10*time.Millisecond,
 		time.Hour,
 		false,
-		nil,
+		false,
 		nil,
 		false,
 	)
@@ -2090,7 +2081,7 @@ func TestScrapeLoopAppendGracefullyIfAmendOrOutOfOrderOrOutOfBounds(t *testing.T
 		0,
 		0,
 		false,
-		nil,
+		false,
 		nil,
 		false,
 	)
@@ -2135,7 +2126,7 @@ func TestScrapeLoopOutOfBoundsTimeError(t *testing.T) {
 		0,
 		0,
 		false,
-		nil,
+		false,
 		nil,
 		false,
 	)
@@ -2156,11 +2147,15 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 		expectedTimeout = "1.5"
 	)
 
+	var protobufParsing bool
+
 	server := httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			accept := r.Header.Get("Accept")
-			if !strings.HasPrefix(accept, "application/openmetrics-text;") {
-				t.Errorf("Expected Accept header to prefer application/openmetrics-text, got %q", accept)
+			if protobufParsing {
+				accept := r.Header.Get("Accept")
+				if !strings.HasPrefix(accept, "application/vnd.google.protobuf;") {
+					t.Errorf("Expected Accept header to prefer application/vnd.google.protobuf, got %q", accept)
+				}
 			}
 
 			timeout := r.Header.Get("X-Prometheus-Scrape-Timeout-Seconds")
@@ -2179,22 +2174,29 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 		panic(err)
 	}
 
-	ts := &targetScraper{
-		Target: &Target{
-			labels: labels.FromStrings(
-				model.SchemeLabel, serverURL.Scheme,
-				model.AddressLabel, serverURL.Host,
-			),
-		},
-		client:  http.DefaultClient,
-		timeout: configTimeout,
-	}
-	var buf bytes.Buffer
+	runTest := func(acceptHeader string) {
+		ts := &targetScraper{
+			Target: &Target{
+				labels: labels.FromStrings(
+					model.SchemeLabel, serverURL.Scheme,
+					model.AddressLabel, serverURL.Host,
+				),
+			},
+			client:       http.DefaultClient,
+			timeout:      configTimeout,
+			acceptHeader: acceptHeader,
+		}
+		var buf bytes.Buffer
 
-	contentType, err := ts.scrape(context.Background(), &buf)
-	require.NoError(t, err)
-	require.Equal(t, "text/plain; version=0.0.4", contentType)
-	require.Equal(t, "metric_a 1\nmetric_b 2\n", buf.String())
+		contentType, err := ts.scrape(context.Background(), &buf)
+		require.NoError(t, err)
+		require.Equal(t, "text/plain; version=0.0.4", contentType)
+		require.Equal(t, "metric_a 1\nmetric_b 2\n", buf.String())
+	}
+
+	runTest(scrapeAcceptHeader)
+	protobufParsing = true
+	runTest(scrapeAcceptHeaderWithProtobuf)
 }
 
 func TestTargetScrapeScrapeCancel(t *testing.T) {
@@ -2219,7 +2221,8 @@ func TestTargetScrapeScrapeCancel(t *testing.T) {
 				model.AddressLabel, serverURL.Host,
 			),
 		},
-		client: http.DefaultClient,
+		client:       http.DefaultClient,
+		acceptHeader: scrapeAcceptHeader,
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -2272,7 +2275,8 @@ func TestTargetScrapeScrapeNotFound(t *testing.T) {
 				model.AddressLabel, serverURL.Host,
 			),
 		},
-		client: http.DefaultClient,
+		client:       http.DefaultClient,
+		acceptHeader: scrapeAcceptHeader,
 	}
 
 	_, err = ts.scrape(context.Background(), io.Discard)
@@ -2314,6 +2318,7 @@ func TestTargetScraperBodySizeLimit(t *testing.T) {
 		},
 		client:        http.DefaultClient,
 		bodySizeLimit: bodySizeLimit,
+		acceptHeader:  scrapeAcceptHeader,
 	}
 	var buf bytes.Buffer
 
@@ -2392,7 +2397,7 @@ func TestScrapeLoop_RespectTimestamps(t *testing.T) {
 		0,
 		0,
 		false,
-		nil,
+		false,
 		nil,
 		false,
 	)
@@ -2433,7 +2438,7 @@ func TestScrapeLoop_DiscardTimestamps(t *testing.T) {
 		0,
 		0,
 		false,
-		nil,
+		false,
 		nil,
 		false,
 	)
@@ -2473,7 +2478,7 @@ func TestScrapeLoopDiscardDuplicateLabels(t *testing.T) {
 		0,
 		0,
 		false,
-		nil,
+		false,
 		nil,
 		false,
 	)
@@ -2517,7 +2522,7 @@ func TestScrapeLoopDiscardUnnamedMetrics(t *testing.T) {
 		nil, nil,
 		func(l labels.Labels) labels.Labels {
 			if l.Has("drop") {
-				return labels.Labels{}
+				return labels.FromStrings("no", "name") // This label set will trigger an error.
 			}
 			return l
 		},
@@ -2531,7 +2536,7 @@ func TestScrapeLoopDiscardUnnamedMetrics(t *testing.T) {
 		0,
 		0,
 		false,
-		nil,
+		false,
 		nil,
 		false,
 	)
@@ -2628,20 +2633,7 @@ func TestReuseScrapeCache(t *testing.T) {
 		}
 		sp, _ = newScrapePool(cfg, app, 0, nil, &Options{})
 		t1    = &Target{
-			discoveredLabels: labels.Labels{
-				labels.Label{
-					Name:  "labelNew",
-					Value: "nameNew",
-				},
-				labels.Label{
-					Name:  "labelNew1",
-					Value: "nameNew1",
-				},
-				labels.Label{
-					Name:  "labelNew2",
-					Value: "nameNew2",
-				},
-			},
+			discoveredLabels: labels.FromStrings("labelNew", "nameNew", "labelNew1", "nameNew1", "labelNew2", "nameNew2"),
 		}
 		proxyURL, _ = url.Parse("http://localhost:2128")
 	)
@@ -2807,7 +2799,7 @@ func TestScrapeAddFast(t *testing.T) {
 		0,
 		0,
 		false,
-		nil,
+		false,
 		nil,
 		false,
 	)
@@ -2841,12 +2833,7 @@ func TestReuseCacheRace(t *testing.T) {
 		}
 		sp, _ = newScrapePool(cfg, app, 0, nil, &Options{})
 		t1    = &Target{
-			discoveredLabels: labels.Labels{
-				labels.Label{
-					Name:  "labelNew",
-					Value: "nameNew",
-				},
-			},
+			discoveredLabels: labels.FromStrings("labelNew", "nameNew"),
 		}
 	)
 	defer sp.stop()
@@ -2898,7 +2885,7 @@ func TestScrapeReportSingleAppender(t *testing.T) {
 		10*time.Millisecond,
 		time.Hour,
 		false,
-		nil,
+		false,
 		nil,
 		false,
 	)
@@ -2928,7 +2915,7 @@ func TestScrapeReportSingleAppender(t *testing.T) {
 		c := 0
 		for series.Next() {
 			i := series.At().Iterator()
-			for i.Next() {
+			for i.Next() != chunkenc.ValNone {
 				c++
 			}
 		}
@@ -3001,7 +2988,7 @@ func TestScrapeReportLimit(t *testing.T) {
 	var found bool
 	for series.Next() {
 		i := series.At().Iterator()
-		for i.Next() {
+		for i.Next() == chunkenc.ValFloat {
 			_, v := i.At()
 			require.Equal(t, 1.0, v)
 			found = true
@@ -3100,7 +3087,7 @@ func TestScrapeLoopLabelLimit(t *testing.T) {
 			0,
 			0,
 			false,
-			nil,
+			false,
 			nil,
 			false,
 		)

@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/index"
 
 	"github.com/alecthomas/units"
@@ -597,7 +598,7 @@ func analyzeCompaction(block tsdb.BlockReader, indexr tsdb.IndexReader) (err err
 
 		for _, chk := range chks {
 			// Load the actual data of the chunk.
-			chk, err := chunkr.Chunk(chk.Ref)
+			chk, err := chunkr.Chunk(chk)
 			if err != nil {
 				return err
 			}
@@ -644,7 +645,7 @@ func dumpSamples(path string, mint, maxt int64) (err error) {
 		series := ss.At()
 		lbs := series.Labels()
 		it := series.Iterator()
-		for it.Next() {
+		for it.Next() == chunkenc.ValFloat {
 			ts, val := it.At()
 			fmt.Printf("%s %g %d\n", lbs, val, ts)
 		}

@@ -30,6 +30,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/util/stats"
 
 	"github.com/go-kit/log"
@@ -46,7 +48,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/model/timestamp"
-	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/rules"
@@ -452,7 +453,13 @@ func TestEndpoints(t *testing.T) {
 	})
 }
 
-func TestLabelNames(t *testing.T) {
+type byLabels []labels.Labels
+
+func (b byLabels) Len() int           { return len(b) }
+func (b byLabels) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
+func (b byLabels) Less(i, j int) bool { return labels.Compare(b[i], b[j]) < 0 }
+
+func TestGetSeries(t *testing.T) {
 	// TestEndpoints doesn't have enough label names to test api.labelNames
 	// endpoint properly. Hence we test it separately.
 	suite, err := promql.NewTest(t, `
@@ -466,7 +473,6 @@ func TestLabelNames(t *testing.T) {
 	require.NoError(t, err)
 	defer suite.Close()
 	require.NoError(t, suite.Run())
-
 	api := &API{
 		Queryable: suite.Storage(),
 	}
@@ -487,28 +493,286 @@ func TestLabelNames(t *testing.T) {
 	}
 
 	for _, tc := range []struct {
-		name     string
-		matchers []string
-		expected []string
+		name              string
+		api               *API
+		matchers          []string
+		expected          []labels.Labels
+		expectedErrorType errorType
+	}{
+		{
+			name:              "no matchers",
+			expectedErrorType: errorBadData,
+			api:               api,
+		},
+		{
+			name:     "non empty label matcher",
+			matchers: []string{`{foo=~".+"}`},
+			expected: []labels.Labels{
+				{labels.Label{Name: "__name__", Value: "test_metric2"}, labels.Label{Name: "abc", Value: "qwerty"}, labels.Label{Name: "foo", Value: "baz"}},
+				{labels.Label{Name: "__name__", Value: "test_metric2"}, labels.Label{Name: "foo", Value: "boo"}},
+				{labels.Label{Name: "__name__", Value: "test_metric2"}, labels.Label{Name: "foo", Value: "boo"}, labels.Label{Name: "xyz", Value: "qwerty"}},
+			},
+			api: api,
+		},
+		{
+			name:     "exact label matcher",
+			matchers: []string{`{foo="boo"}`},
+			expected: []labels.Labels{
+				{labels.Label{Name: "__name__", Value: "test_metric2"}, labels.Label{Name: "foo", Value: "boo"}},
+				{labels.Label{Name: "__name__", Value: "test_metric2"}, labels.Label{Name: "foo", Value: "boo"}, labels.Label{Name: "xyz", Value: "qwerty"}},
+			},
+			api: api,
+		},
+		{
+			name:     "two matchers",
+			matchers: []string{`{foo="boo"}`, `{foo="baz"}`},
+			expected: []labels.Labels{
+				{labels.Label{Name: "__name__", Value: "test_metric2"}, labels.Label{Name: "abc", Value: "qwerty"}, labels.Label{Name: "foo", Value: "baz"}},
+				{labels.Label{Name: "__name__", Value: "test_metric2"}, labels.Label{Name: "foo", Value: "boo"}},
+				{labels.Label{Name: "__name__", Value: "test_metric2"}, labels.Label{Name: "foo", Value: "boo"}, labels.Label{Name: "xyz", Value: "qwerty"}},
+			},
+			api: api,
+		},
+		{
+			name:              "exec error type",
+			matchers:          []string{`{foo="boo"}`, `{foo="baz"}`},
+			expectedErrorType: errorExec,
+			api: &API{
+				Queryable: errorTestQueryable{err: fmt.Errorf("generic")},
+			},
+		},
+		{
+			name:              "storage error type",
+			matchers:          []string{`{foo="boo"}`, `{foo="baz"}`},
+			expectedErrorType: errorInternal,
+			api: &API{
+				Queryable: errorTestQueryable{err: promql.ErrStorage{Err: fmt.Errorf("generic")}},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			req, err := request(http.MethodGet, tc.matchers...)
+			require.NoError(t, err)
+			res := tc.api.series(req.WithContext(ctx))
+			assertAPIError(t, res.err, tc.expectedErrorType)
+			if tc.expectedErrorType == errorNone {
+				r := res.data.([]labels.Labels)
+				for _, l := range tc.expected {
+					sort.Sort(l)
+				}
+				for _, l := range r {
+					sort.Sort(l)
+				}
+				sort.Sort(byLabels(tc.expected))
+				sort.Sort(byLabels(r))
+				require.Equal(t, tc.expected, r)
+			}
+		})
+	}
+}
+
+func TestQueryExemplars(t *testing.T) {
+	start := time.Unix(0, 0)
+	suite, err := promql.NewTest(t, `
+		load 1m
+			test_metric1{foo="bar"} 0+100x100
+			test_metric1{foo="boo"} 1+0x100
+			test_metric2{foo="boo"} 1+0x100
+			test_metric3{foo="bar", dup="1"} 1+0x100
+			test_metric3{foo="boo", dup="1"} 1+0x100
+			test_metric4{foo="bar", dup="1"} 1+0x100
+			test_metric4{foo="boo", dup="1"} 1+0x100
+			test_metric4{foo="boo"} 1+0x100
+	`)
+
+	require.NoError(t, err)
+	defer suite.Close()
+	require.NoError(t, suite.Run())
+
+	api := &API{
+		Queryable:         suite.Storage(),
+		QueryEngine:       suite.QueryEngine(),
+		ExemplarQueryable: suite.ExemplarQueryable(),
+	}
+
+	request := func(method string, qs url.Values) (*http.Request, error) {
+		u, err := url.Parse("http://example.com")
+		require.NoError(t, err)
+		u.RawQuery = qs.Encode()
+		r, err := http.NewRequest(method, u.String(), nil)
+		if method == http.MethodPost {
+			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		}
+		return r, err
+	}
+
+	for _, tc := range []struct {
+		name              string
+		query             url.Values
+		exemplars         []exemplar.QueryResult
+		api               *API
+		expectedErrorType errorType
+	}{
+		{
+			name: "no error",
+			api:  api,
+			query: url.Values{
+				"query": []string{`test_metric3{foo="boo"} - test_metric4{foo="bar"}`},
+				"start": []string{"0"},
+				"end":   []string{"4"},
+			},
+			exemplars: []exemplar.QueryResult{
+				{
+					SeriesLabels: labels.FromStrings("__name__", "test_metric3", "foo", "boo", "dup", "1"),
+					Exemplars: []exemplar.Exemplar{
+						{
+							Labels: labels.FromStrings("id", "abc"),
+							Value:  10,
+							Ts:     timestamp.FromTime(start.Add(0 * time.Second)),
+						},
+					},
+				},
+				{
+					SeriesLabels: labels.FromStrings("__name__", "test_metric4", "foo", "bar", "dup", "1"),
+					Exemplars: []exemplar.Exemplar{
+						{
+							Labels: labels.FromStrings("id", "lul"),
+							Value:  10,
+							Ts:     timestamp.FromTime(start.Add(3 * time.Second)),
+						},
+					},
+				},
+			},
+		},
+		{
+			name:              "should return errorExec upon genetic error",
+			expectedErrorType: errorExec,
+			api: &API{
+				ExemplarQueryable: errorTestQueryable{err: fmt.Errorf("generic")},
+			},
+			query: url.Values{
+				"query": []string{`test_metric3{foo="boo"} - test_metric4{foo="bar"}`},
+				"start": []string{"0"},
+				"end":   []string{"4"},
+			},
+		},
+		{
+			name:              "should return errorInternal err type is ErrStorage",
+			expectedErrorType: errorInternal,
+			api: &API{
+				ExemplarQueryable: errorTestQueryable{err: promql.ErrStorage{Err: fmt.Errorf("generic")}},
+			},
+			query: url.Values{
+				"query": []string{`test_metric3{foo="boo"} - test_metric4{foo="bar"}`},
+				"start": []string{"0"},
+				"end":   []string{"4"},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			es := suite.ExemplarStorage()
+			ctx := context.Background()
+
+			for _, te := range tc.exemplars {
+				for _, e := range te.Exemplars {
+					_, err := es.AppendExemplar(0, te.SeriesLabels, e)
+					if err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+
+			req, err := request(http.MethodGet, tc.query)
+			require.NoError(t, err)
+			res := tc.api.queryExemplars(req.WithContext(ctx))
+			assertAPIError(t, res.err, tc.expectedErrorType)
+
+			if tc.expectedErrorType == errorNone {
+				assertAPIResponse(t, res.data, tc.exemplars)
+			}
+		})
+	}
+}
+
+func TestLabelNames(t *testing.T) {
+	// TestEndpoints doesn't have enough label names to test api.labelNames
+	// endpoint properly. Hence we test it separately.
+	suite, err := promql.NewTest(t, `
+		load 1m
+			test_metric1{foo1="bar", baz="abc"} 0+100x100
+			test_metric1{foo2="boo"} 1+0x100
+			test_metric2{foo="boo"} 1+0x100
+			test_metric2{foo="boo", xyz="qwerty"} 1+0x100
+			test_metric2{foo="baz", abc="qwerty"} 1+0x100
+	`)
+	require.NoError(t, err)
+	defer suite.Close()
+	require.NoError(t, suite.Run())
+	api := &API{
+		Queryable: suite.Storage(),
+	}
+	request := func(method string, matchers ...string) (*http.Request, error) {
+		u, err := url.Parse("http://example.com")
+		require.NoError(t, err)
+		q := u.Query()
+		for _, matcher := range matchers {
+			q.Add("match[]", matcher)
+		}
+		u.RawQuery = q.Encode()
+
+		r, err := http.NewRequest(method, u.String(), nil)
+		if method == http.MethodPost {
+			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		}
+		return r, err
+	}
+
+	for _, tc := range []struct {
+		name              string
+		api               *API
+		matchers          []string
+		expected          []string
+		expectedErrorType errorType
 	}{
 		{
 			name:     "no matchers",
 			expected: []string{"__name__", "abc", "baz", "foo", "foo1", "foo2", "xyz"},
+			api:      api,
 		},
 		{
 			name:     "non empty label matcher",
 			matchers: []string{`{foo=~".+"}`},
 			expected: []string{"__name__", "abc", "foo", "xyz"},
+			api:      api,
 		},
 		{
 			name:     "exact label matcher",
 			matchers: []string{`{foo="boo"}`},
 			expected: []string{"__name__", "foo", "xyz"},
+			api:      api,
 		},
 		{
 			name:     "two matchers",
 			matchers: []string{`{foo="boo"}`, `{foo="baz"}`},
 			expected: []string{"__name__", "abc", "foo", "xyz"},
+			api:      api,
+		},
+		{
+			name:              "exec error type",
+			matchers:          []string{`{foo="boo"}`, `{foo="baz"}`},
+			expectedErrorType: errorExec,
+			api: &API{
+				Queryable: errorTestQueryable{err: fmt.Errorf("generic")},
+			},
+		},
+		{
+			name:              "storage error type",
+			matchers:          []string{`{foo="boo"}`, `{foo="baz"}`},
+			expectedErrorType: errorInternal,
+			api: &API{
+				Queryable: errorTestQueryable{err: promql.ErrStorage{Err: fmt.Errorf("generic")}},
+			},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -516,9 +780,11 @@ func TestLabelNames(t *testing.T) {
 				ctx := context.Background()
 				req, err := request(method, tc.matchers...)
 				require.NoError(t, err)
-				res := api.labelNames(req.WithContext(ctx))
-				assertAPIError(t, res.err, "")
-				assertAPIResponse(t, res.data, tc.expected)
+				res := tc.api.labelNames(req.WithContext(ctx))
+				assertAPIError(t, res.err, tc.expectedErrorType)
+				if tc.expectedErrorType == errorNone {
+					assertAPIResponse(t, res.data, tc.expected)
+				}
 			}
 		})
 	}
@@ -2314,7 +2580,7 @@ func (f *fakeDB) Stats(statsByLabelName string) (_ *tsdb.Stats, retErr error) {
 	}()
 	opts := tsdb.DefaultHeadOptions()
 	opts.ChunkRange = 1000
-	h, _ := tsdb.NewHead(nil, nil, nil, opts, nil)
+	h, _ := tsdb.NewHead(nil, nil, nil, nil, opts, nil)
 	return h.Stats(statsByLabelName), nil
 }
 
@@ -2803,6 +3069,33 @@ func TestRespond(t *testing.T) {
 				},
 			},
 			expected: `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"__name__":"foo"},"values":[[1,"1"]]}]}}`,
+		},
+		{
+			response: &queryData{
+				ResultType: parser.ValueTypeMatrix,
+				Result: promql.Matrix{
+					promql.Series{
+						Points: []promql.Point{{H: &histogram.FloatHistogram{
+							Schema:        2,
+							ZeroThreshold: 0.001,
+							ZeroCount:     12,
+							Count:         10,
+							Sum:           20,
+							PositiveSpans: []histogram.Span{
+								{Offset: 3, Length: 2},
+								{Offset: 1, Length: 3},
+							},
+							NegativeSpans: []histogram.Span{
+								{Offset: 2, Length: 2},
+							},
+							PositiveBuckets: []float64{1, 2, 2, 1, 1},
+							NegativeBuckets: []float64{2, 1},
+						}, T: 1000}},
+						Metric: labels.FromStrings("__name__", "foo"),
+					},
+				},
+			},
+			expected: `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"__name__":"foo"},"histograms":[[1,{"count":"10","sum":"20","buckets":[[1,"-1.6817928305074288","-1.414213562373095","1"],[1,"-1.414213562373095","-1.189207115002721","2"],[3,"-0.001","0.001","12"],[0,"1.414213562373095","1.6817928305074288","1"],[0,"1.6817928305074288","2","2"],[0,"2.378414230005442","2.82842712474619","2"],[0,"2.82842712474619","3.3635856610148576","1"],[0,"3.3635856610148576","4","1"]]}]]}]}}`,
 		},
 		{
 			response: promql.Point{V: 0, T: 0},

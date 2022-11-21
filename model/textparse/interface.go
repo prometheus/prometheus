@@ -17,15 +17,22 @@ import (
 	"mime"
 
 	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 )
 
 // Parser parses samples from a byte slice of samples in the official
 // Prometheus and OpenMetrics text exposition formats.
 type Parser interface {
-	// Series returns the bytes of the series, the timestamp if set, and the value
-	// of the current sample.
+	// Series returns the bytes of a series with a simple float64 as a
+	// value, the timestamp if set, and the value of the current sample.
 	Series() ([]byte, *int64, float64)
+
+	// Histogram returns the bytes of a series with a sparse histogram as a
+	// value, the timestamp if set, and the histogram in the current sample.
+	// Depending on the parsed input, the function returns an (integer) Histogram
+	// or a FloatHistogram, with the respective other return value being nil.
+	Histogram() ([]byte, *int64, *histogram.Histogram, *histogram.FloatHistogram)
 
 	// Help returns the metric name and help text in the current entry.
 	// Must only be called after Next returned a help entry.
@@ -70,22 +77,30 @@ func New(b []byte, contentType string) (Parser, error) {
 	}
 
 	mediaType, _, err := mime.ParseMediaType(contentType)
-	if err == nil && mediaType == "application/openmetrics-text" {
-		return NewOpenMetricsParser(b), nil
+	if err != nil {
+		return NewPromParser(b), err
 	}
-	return NewPromParser(b), err
+	switch mediaType {
+	case "application/openmetrics-text":
+		return NewOpenMetricsParser(b), nil
+	case "application/vnd.google.protobuf":
+		return NewProtobufParser(b), nil
+	default:
+		return NewPromParser(b), nil
+	}
 }
 
 // Entry represents the type of a parsed entry.
 type Entry int
 
 const (
-	EntryInvalid Entry = -1
-	EntryType    Entry = 0
-	EntryHelp    Entry = 1
-	EntrySeries  Entry = 2
-	EntryComment Entry = 3
-	EntryUnit    Entry = 4
+	EntryInvalid   Entry = -1
+	EntryType      Entry = 0
+	EntryHelp      Entry = 1
+	EntrySeries    Entry = 2 // A series with a simple float64 as value.
+	EntryComment   Entry = 3
+	EntryUnit      Entry = 4
+	EntryHistogram Entry = 5 // A series with a sparse histogram as a value.
 )
 
 // MetricType represents metric type values.

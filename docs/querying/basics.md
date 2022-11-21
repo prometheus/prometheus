@@ -32,6 +32,16 @@ expression), only some of these types are legal as the result from a
 user-specified expression. For example, an expression that returns an instant
 vector is the only type that can be directly graphed.
 
+_Notes about the experimental native histograms:_
+
+* Ingesting native histograms has to be enabled via a [feature
+  flag](../feature_flags/#native-histograms).
+* Once native histograms have been ingested into the TSDB (and even after
+  disabling the feature flag again), both instant vectors and range vectors may
+  now contain samples that aren't simple floating point numbers (float samples)
+  but complete histograms (histogram samples). A vector may contain a mix of
+  float samples and histogram samples.
+
 ## Literals
 
 ### String literals

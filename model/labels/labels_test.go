@@ -20,7 +20,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	yaml "gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v2"
 )
 
 func TestLabels_String(t *testing.T) {
@@ -29,16 +29,7 @@ func TestLabels_String(t *testing.T) {
 		expected string
 	}{
 		{
-			lables: Labels{
-				{
-					Name:  "t1",
-					Value: "t1",
-				},
-				{
-					Name:  "t2",
-					Value: "t2",
-				},
-			},
+			lables:   FromStrings("t1", "t1", "t2", "t2"),
 			expected: "{t1=\"t1\", t2=\"t2\"}",
 		},
 		{
@@ -57,32 +48,13 @@ func TestLabels_String(t *testing.T) {
 }
 
 func TestLabels_MatchLabels(t *testing.T) {
-	labels := Labels{
-		{
-			Name:  "__name__",
-			Value: "ALERTS",
-		},
-		{
-			Name:  "alertname",
-			Value: "HTTPRequestRateLow",
-		},
-		{
-			Name:  "alertstate",
-			Value: "pending",
-		},
-		{
-			Name:  "instance",
-			Value: "0",
-		},
-		{
-			Name:  "job",
-			Value: "app-server",
-		},
-		{
-			Name:  "severity",
-			Value: "critical",
-		},
-	}
+	labels := FromStrings(
+		"__name__", "ALERTS",
+		"alertname", "HTTPRequestRateLow",
+		"alertstate", "pending",
+		"instance", "0",
+		"job", "app-server",
+		"severity", "critical")
 
 	tests := []struct {
 		providedNames []string
@@ -98,24 +70,11 @@ func TestLabels_MatchLabels(t *testing.T) {
 				"instance",
 			},
 			on: true,
-			expected: Labels{
-				{
-					Name:  "__name__",
-					Value: "ALERTS",
-				},
-				{
-					Name:  "alertname",
-					Value: "HTTPRequestRateLow",
-				},
-				{
-					Name:  "alertstate",
-					Value: "pending",
-				},
-				{
-					Name:  "instance",
-					Value: "0",
-				},
-			},
+			expected: FromStrings(
+				"__name__", "ALERTS",
+				"alertname", "HTTPRequestRateLow",
+				"alertstate", "pending",
+				"instance", "0"),
 		},
 		// on = false, explicitly excluding metric name from matching.
 		{
@@ -126,16 +85,9 @@ func TestLabels_MatchLabels(t *testing.T) {
 				"instance",
 			},
 			on: false,
-			expected: Labels{
-				{
-					Name:  "job",
-					Value: "app-server",
-				},
-				{
-					Name:  "severity",
-					Value: "critical",
-				},
-			},
+			expected: FromStrings(
+				"job", "app-server",
+				"severity", "critical"),
 		},
 		// on = true, explicitly excluding metric name from matching.
 		{
@@ -145,20 +97,10 @@ func TestLabels_MatchLabels(t *testing.T) {
 				"instance",
 			},
 			on: true,
-			expected: Labels{
-				{
-					Name:  "alertname",
-					Value: "HTTPRequestRateLow",
-				},
-				{
-					Name:  "alertstate",
-					Value: "pending",
-				},
-				{
-					Name:  "instance",
-					Value: "0",
-				},
-			},
+			expected: FromStrings(
+				"alertname", "HTTPRequestRateLow",
+				"alertstate", "pending",
+				"instance", "0"),
 		},
 		// on = false, implicitly excluding metric name from matching.
 		{
@@ -168,16 +110,9 @@ func TestLabels_MatchLabels(t *testing.T) {
 				"instance",
 			},
 			on: false,
-			expected: Labels{
-				{
-					Name:  "job",
-					Value: "app-server",
-				},
-				{
-					Name:  "severity",
-					Value: "critical",
-				},
-			},
+			expected: FromStrings(
+				"job", "app-server",
+				"severity", "critical"),
 		},
 	}
 
@@ -197,10 +132,7 @@ func TestLabels_HasDuplicateLabelNames(t *testing.T) {
 			Input:     FromMap(map[string]string{"__name__": "up", "hostname": "localhost"}),
 			Duplicate: false,
 		}, {
-			Input: append(
-				FromMap(map[string]string{"__name__": "up", "hostname": "localhost"}),
-				FromMap(map[string]string{"hostname": "127.0.0.1"})...,
-			),
+			Input:     FromStrings("__name__", "up", "hostname", "localhost", "hostname", "127.0.0.1"),
 			Duplicate: true,
 			LabelName: "hostname",
 		},
@@ -219,73 +151,63 @@ func TestLabels_WithoutEmpty(t *testing.T) {
 		expected Labels
 	}{
 		{
-			input: Labels{
-				{Name: "foo"},
-				{Name: "bar"},
-			},
-			expected: Labels{},
+			input: FromStrings(
+				"foo", "",
+				"bar", ""),
+			expected: EmptyLabels(),
 		},
 		{
-			input: Labels{
-				{Name: "foo"},
-				{Name: "bar"},
-				{Name: "baz"},
-			},
-			expected: Labels{},
+			input: FromStrings(
+				"foo", "",
+				"bar", "",
+				"baz", ""),
+			expected: EmptyLabels(),
 		},
 		{
-			input: Labels{
-				{Name: "__name__", Value: "test"},
-				{Name: "hostname", Value: "localhost"},
-				{Name: "job", Value: "check"},
-			},
-			expected: Labels{
-				{Name: "__name__", Value: "test"},
-				{Name: "hostname", Value: "localhost"},
-				{Name: "job", Value: "check"},
-			},
+			input: FromStrings(
+				"__name__", "test",
+				"hostname", "localhost",
+				"job", "check"),
+			expected: FromStrings(
+				"__name__", "test",
+				"hostname", "localhost",
+				"job", "check"),
 		},
 		{
-			input: Labels{
-				{Name: "__name__", Value: "test"},
-				{Name: "hostname", Value: "localhost"},
-				{Name: "bar"},
-				{Name: "job", Value: "check"},
-			},
-			expected: Labels{
-				{Name: "__name__", Value: "test"},
-				{Name: "hostname", Value: "localhost"},
-				{Name: "job", Value: "check"},
-			},
+			input: FromStrings(
+				"__name__", "test",
+				"hostname", "localhost",
+				"bar", "",
+				"job", "check"),
+			expected: FromStrings(
+				"__name__", "test",
+				"hostname", "localhost",
+				"job", "check"),
 		},
 		{
-			input: Labels{
-				{Name: "__name__", Value: "test"},
-				{Name: "foo"},
-				{Name: "hostname", Value: "localhost"},
-				{Name: "bar"},
-				{Name: "job", Value: "check"},
-			},
-			expected: Labels{
-				{Name: "__name__", Value: "test"},
-				{Name: "hostname", Value: "localhost"},
-				{Name: "job", Value: "check"},
-			},
+			input: FromStrings(
+				"__name__", "test",
+				"foo", "",
+				"hostname", "localhost",
+				"bar", "",
+				"job", "check"),
+			expected: FromStrings(
+				"__name__", "test",
+				"hostname", "localhost",
+				"job", "check"),
 		},
 		{
-			input: Labels{
-				{Name: "__name__", Value: "test"},
-				{Name: "foo"},
-				{Name: "baz"},
-				{Name: "hostname", Value: "localhost"},
-				{Name: "bar"},
-				{Name: "job", Value: "check"},
-			},
-			expected: Labels{
-				{Name: "__name__", Value: "test"},
-				{Name: "hostname", Value: "localhost"},
-				{Name: "job", Value: "check"},
-			},
+			input: FromStrings(
+				"__name__", "test",
+				"foo", "",
+				"baz", "",
+				"hostname", "localhost",
+				"bar", "",
+				"job", "check"),
+			expected: FromStrings(
+				"__name__", "test",
+				"hostname", "localhost",
+				"job", "check"),
 		},
 	} {
 		t.Run("", func(t *testing.T) {
@@ -295,75 +217,37 @@ func TestLabels_WithoutEmpty(t *testing.T) {
 }
 
 func TestLabels_Equal(t *testing.T) {
-	labels := Labels{
-		{
-			Name:  "aaa",
-			Value: "111",
-		},
-		{
-			Name:  "bbb",
-			Value: "222",
-		},
-	}
+	labels := FromStrings(
+		"aaa", "111",
+		"bbb", "222")
 
 	tests := []struct {
 		compared Labels
 		expected bool
 	}{
 		{
-			compared: Labels{
-				{
-					Name:  "aaa",
-					Value: "111",
-				},
-				{
-					Name:  "bbb",
-					Value: "222",
-				},
-				{
-					Name:  "ccc",
-					Value: "333",
-				},
-			},
+			compared: FromStrings(
+				"aaa", "111",
+				"bbb", "222",
+				"ccc", "333"),
 			expected: false,
 		},
 		{
-			compared: Labels{
-				{
-					Name:  "aaa",
-					Value: "111",
-				},
-				{
-					Name:  "bar",
-					Value: "222",
-				},
-			},
+			compared: FromStrings(
+				"aaa", "111",
+				"bar", "222"),
 			expected: false,
 		},
 		{
-			compared: Labels{
-				{
-					Name:  "aaa",
-					Value: "111",
-				},
-				{
-					Name:  "bbb",
-					Value: "233",
-				},
-			},
+			compared: FromStrings(
+				"aaa", "111",
+				"bbb", "233"),
 			expected: false,
 		},
 		{
-			compared: Labels{
-				{
-					Name:  "aaa",
-					Value: "111",
-				},
-				{
-					Name:  "bbb",
-					Value: "222",
-				},
-			},
+			compared: FromStrings(
+				"aaa", "111",
+				"bbb", "222"),
 			expected: true,
 		},
 	}
@@ -393,114 +277,55 @@ func TestLabels_FromStrings(t *testing.T) {
 }
 
 func TestLabels_Compare(t *testing.T) {
-	labels := Labels{
-		{
-			Name:  "aaa",
-			Value: "111",
-		},
-		{
-			Name:  "bbb",
-			Value: "222",
-		},
-	}
+	labels := FromStrings(
+		"aaa", "111",
+		"bbb", "222")
 
 	tests := []struct {
 		compared Labels
 		expected int
 	}{
 		{
-			compared: Labels{
-				{
-					Name:  "aaa",
-					Value: "110",
-				},
-				{
-					Name:  "bbb",
-					Value: "222",
-				},
-			},
+			compared: FromStrings(
+				"aaa", "110",
+				"bbb", "222"),
 			expected: 1,
 		},
 		{
-			compared: Labels{
-				{
-					Name:  "aaa",
-					Value: "111",
-				},
-				{
-					Name:  "bbb",
-					Value: "233",
-				},
-			},
+			compared: FromStrings(
+				"aaa", "111",
+				"bbb", "233"),
 			expected: -1,
 		},
 		{
-			compared: Labels{
-				{
-					Name:  "aaa",
-					Value: "111",
-				},
-				{
-					Name:  "bar",
-					Value: "222",
-				},
-			},
+			compared: FromStrings(
+				"aaa", "111",
+				"bar", "222"),
 			expected: 1,
 		},
 		{
-			compared: Labels{
-				{
-					Name:  "aaa",
-					Value: "111",
-				},
-				{
-					Name:  "bbc",
-					Value: "222",
-				},
-			},
+			compared: FromStrings(
+				"aaa", "111",
+				"bbc", "222"),
 			expected: -1,
 		},
 		{
-			compared: Labels{
-				{
-					Name:  "aaa",
-					Value: "111",
-				},
-			},
+			compared: FromStrings(
+				"aaa", "111"),
 			expected: 1,
 		},
 		{
-			compared: Labels{
-				{
-					Name:  "aaa",
-					Value: "111",
-				},
-				{
-					Name:  "bbb",
-					Value: "222",
-				},
-				{
-					Name:  "ccc",
-					Value: "333",
-				},
-				{
-					Name:  "ddd",
-					Value: "444",
-				},
-			},
+			compared: FromStrings(
+				"aaa", "111",
+				"bbb", "222",
+				"ccc", "333",
+				"ddd", "444"),
 			expected: -2,
 		},
 		{
-			compared: Labels{
-				{
-					Name:  "aaa",
-					Value: "111",
-				},
-				{
-					Name:  "bbb",
-					Value: "222",
-				},
-			},
+			compared: FromStrings(
+				"aaa", "111",
+				"bbb", "222"),
 			expected: 0,
 		},
 	}
@@ -536,16 +361,9 @@ func TestLabels_Has(t *testing.T) {
 		},
 	}
 
-	labelsSet := Labels{
-		{
-			Name:  "aaa",
-			Value: "111",
-		},
-		{
-			Name:  "bbb",
-			Value: "222",
-		},
-	}
+	labelsSet := FromStrings(
+		"aaa", "111",
+		"bbb", "222")
 
 	for i, test := range tests {
 		got := labelsSet.Has(test.input)
@@ -554,8 +372,8 @@ func TestLabels_Has(t *testing.T) {
 }
 
 func TestLabels_Get(t *testing.T) {
-	require.Equal(t, "", Labels{{"aaa", "111"}, {"bbb", "222"}}.Get("foo"))
-	require.Equal(t, "111", Labels{{"aaa", "111"}, {"bbb", "222"}}.Get("aaa"))
+	require.Equal(t, "", FromStrings("aaa", "111", "bbb", "222").Get("foo"))
+	require.Equal(t, "111", FromStrings("aaa", "111", "bbb", "222").Get("aaa"))
 }
 
 // BenchmarkLabels_Get was written to check whether a binary search can improve the performance vs the linear search implementation
@@ -605,18 +423,18 @@ func BenchmarkLabels_Equals(b *testing.B) {
 	}{
 		{
 			"equal",
-			Labels{{"a_label_name", "a_label_value"}, {"another_label_name", "another_label_value"}},
-			Labels{{"a_label_name", "a_label_value"}, {"another_label_name", "another_label_value"}},
+			FromStrings("a_label_name", "a_label_value", "another_label_name", "another_label_value"),
+			FromStrings("a_label_name", "a_label_value", "another_label_name", "another_label_value"),
 		},
 		{
 			"not equal",
-			Labels{{"a_label_name", "a_label_value"}, {"another_label_name", "another_label_value"}},
-			Labels{{"a_label_name", "a_label_value"}, {"another_label_name", "a_different_label_value"}},
+			FromStrings("a_label_name", "a_label_value", "another_label_name", "another_label_value"),
+			FromStrings("a_label_name", "a_label_value", "another_label_name", "a_different_label_value"),
 		},
 		{
 			"different sizes",
-			Labels{{"a_label_name", "a_label_value"}, {"another_label_name", "another_label_value"}},
-			Labels{{"a_label_name", "a_label_value"}},
+			FromStrings("a_label_name", "a_label_value", "another_label_name", "another_label_value"),
+			FromStrings("a_label_name", "a_label_value"),
 		},
 	} {
 		b.Run(scenario.desc, func(b *testing.B) {
@@ -629,22 +447,22 @@ func BenchmarkLabels_Equals(b *testing.B) {
 }
 
 func TestLabels_Copy(t *testing.T) {
-	require.Equal(t, Labels{{"aaa", "111"}, {"bbb", "222"}}, Labels{{"aaa", "111"}, {"bbb", "222"}}.Copy())
+	require.Equal(t, FromStrings("aaa", "111", "bbb", "222"), FromStrings("aaa", "111", "bbb", "222").Copy())
 }
 
 func TestLabels_Map(t *testing.T) {
-	require.Equal(t, map[string]string{"aaa": "111", "bbb": "222"}, Labels{{"aaa", "111"}, {"bbb", "222"}}.Map())
+	require.Equal(t, map[string]string{"aaa": "111", "bbb": "222"}, FromStrings("aaa", "111", "bbb", "222").Map())
 }
 
 func TestLabels_BytesWithLabels(t *testing.T) {
-	require.Equal(t, Labels{{"aaa", "111"}, {"bbb", "222"}}.Bytes(nil), Labels{{"aaa", "111"}, {"bbb", "222"}, {"ccc", "333"}}.BytesWithLabels(nil, "aaa", "bbb"))
-	require.Equal(t, Labels{}.Bytes(nil), Labels{{"aaa", "111"}, {"bbb", "222"}, {"ccc", "333"}}.BytesWithLabels(nil))
+	require.Equal(t, FromStrings("aaa", "111", "bbb", "222").Bytes(nil), FromStrings("aaa", "111", "bbb", "222", "ccc", "333").BytesWithLabels(nil, "aaa", "bbb"))
+	require.Equal(t, FromStrings().Bytes(nil), FromStrings("aaa", "111", "bbb", "222", "ccc", "333").BytesWithLabels(nil))
 }
 
 func TestLabels_BytesWithoutLabels(t *testing.T) {
-	require.Equal(t, Labels{{"aaa", "111"}}.Bytes(nil), Labels{{"aaa", "111"}, {"bbb", "222"}, {"ccc", "333"}}.BytesWithoutLabels(nil, "bbb", "ccc"))
-	require.Equal(t, Labels{{MetricName, "333"}, {"aaa", "111"}}.Bytes(nil), Labels{{MetricName, "333"}, {"aaa", "111"}, {"bbb", "222"}}.BytesWithoutLabels(nil, "bbb"))
-	require.Equal(t, Labels{{"aaa", "111"}}.Bytes(nil), Labels{{MetricName, "333"}, {"aaa", "111"}, {"bbb", "222"}}.BytesWithoutLabels(nil, MetricName, "bbb"))
+	require.Equal(t, FromStrings("aaa", "111").Bytes(nil), FromStrings("aaa", "111", "bbb", "222", "ccc", "333").BytesWithoutLabels(nil, "bbb", "ccc"))
+	require.Equal(t, FromStrings(MetricName, "333", "aaa", "111").Bytes(nil), FromStrings(MetricName, "333", "aaa", "111", "bbb", "222").BytesWithoutLabels(nil, "bbb"))
+	require.Equal(t, FromStrings("aaa", "111").Bytes(nil), FromStrings(MetricName, "333", "aaa", "111", "bbb", "222").BytesWithoutLabels(nil, MetricName, "bbb"))
 }
 
 func TestBuilder(t *testing.T) {
@@ -722,17 +540,15 @@ func TestBuilder(t *testing.T) {
 				b.Keep(tcase.keep...)
 			}
 			b.Del(tcase.del...)
-			require.Equal(t, tcase.want, b.Labels())
+			require.Equal(t, tcase.want, b.Labels(tcase.base))
 		})
 	}
 }
 
 func TestLabels_Hash(t *testing.T) {
-	lbls := Labels{
-		{Name: "foo", Value: "bar"},
-		{Name: "baz", Value: "qux"},
-	}
+	lbls := FromStrings("foo", "bar", "baz", "qux")
 	require.Equal(t, lbls.Hash(), lbls.Hash())
+	require.NotEqual(t, lbls.Hash(), Labels{lbls[1], lbls[0]}.Hash(), "unordered labels match.")
 	require.NotEqual(t, lbls.Hash(), Labels{lbls[0]}.Hash(), "different labels match.")
 }
 
@@ -746,23 +562,23 @@ func BenchmarkLabels_Hash(b *testing.B) {
 		{
 			name: "typical labels under 1KB",
 			lbls: func() Labels {
-				lbls := make(Labels, 10)
-				for i := 0; i < len(lbls); i++ {
+				b := NewBuilder(EmptyLabels())
+				for i := 0; i < 10; i++ {
 					// Label ~20B name, 50B value.
-					lbls[i] = Label{Name: fmt.Sprintf("abcdefghijabcdefghijabcdefghij%d", i), Value: fmt.Sprintf("abcdefghijabcdefghijabcdefghijabcdefghijabcdefghij%d", i)}
+					b.Set(fmt.Sprintf("abcdefghijabcdefghijabcdefghij%d", i), fmt.Sprintf("abcdefghijabcdefghijabcdefghijabcdefghijabcdefghij%d", i))
 				}
-				return lbls
+				return b.Labels(nil)
 			}(),
 		},
 		{
 			name: "bigger labels over 1KB",
 			lbls: func() Labels {
-				lbls := make(Labels, 10)
-				for i := 0; i < len(lbls); i++ {
+				b := NewBuilder(EmptyLabels())
+				for i := 0; i < 10; i++ {
 					// Label ~50B name, 50B value.
-					lbls[i] = Label{Name: fmt.Sprintf("abcdefghijabcdefghijabcdefghijabcdefghijabcdefghij%d", i), Value: fmt.Sprintf("abcdefghijabcdefghijabcdefghijabcdefghijabcdefghij%d", i)}
+					b.Set(fmt.Sprintf("abcdefghijabcdefghijabcdefghijabcdefghijabcdefghij%d", i), fmt.Sprintf("abcdefghijabcdefghijabcdefghijabcdefghijabcdefghij%d", i))
 				}
-				return lbls
+				return b.Labels(nil)
 			}(),
 		},
 		{
@@ -774,7 +590,7 @@ func BenchmarkLabels_Hash(b *testing.B) {
 				for i := 0; i < lbl.Cap()/len(word); i++ {
 					_, _ = lbl.WriteString(word)
 				}
-				return Labels{{Name: "__name__", Value: lbl.String()}}
+				return FromStrings("__name__", lbl.String())
 			}(),
 		},
 	} {

@@ -38,7 +38,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/regexp"
-	conntrack "github.com/mwitkow/go-conntrack"
+	"github.com/mwitkow/go-conntrack"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -471,9 +471,15 @@ func New(logger log.Logger, o *Options) *Handler {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintf(w, o.AppName+" is Healthy.\n")
 	})
+	router.Head("/-/healthy", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
 	router.Get("/-/ready", readyf(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintf(w, o.AppName+" is Ready.\n")
+	}))
+	router.Head("/-/ready", readyf(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
 	}))
 
 	return h
@@ -605,7 +611,7 @@ func (h *Handler) Run(ctx context.Context, listener net.Listener, webConfig stri
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- toolkit_web.Serve(listener, httpSrv, webConfig, h.logger)
+		errCh <- toolkit_web.Serve(listener, httpSrv, &toolkit_web.FlagConfig{WebConfigFile: &webConfig}, h.logger)
 	}()
 
 	select {

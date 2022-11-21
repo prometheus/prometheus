@@ -66,7 +66,6 @@ as tombstone file in blocks.
 └───────────────────────────────────┴─────────────────────────────┘
 ```
 
-
 ### Exemplar record
 
 A single exemplar record contains one or more exemplars, encoded in the same way as we do in WAL but with changed record type.

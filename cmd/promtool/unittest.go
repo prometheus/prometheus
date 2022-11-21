@@ -27,7 +27,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
-	yaml "gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
@@ -447,7 +447,7 @@ func query(ctx context.Context, qs string, t time.Time, engine *promql.Engine, q
 		return v, nil
 	case promql.Scalar:
 		return promql.Vector{promql.Sample{
-			Point:  promql.Point(v),
+			Point:  promql.Point{T: v.T, V: v.V},
 			Metric: labels.Labels{},
 		}}, nil
 	default:

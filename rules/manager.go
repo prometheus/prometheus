@@ -35,9 +35,12 @@ import (
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
+	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/util/strutil"
 )
 
 // RuleHealth describes the health state of a rule.
@@ -199,7 +202,7 @@ func EngineQueryFunc(engine *promql.Engine, q storage.Queryable) QueryFunc {
 			return v, nil
 		case promql.Scalar:
 			return promql.Vector{promql.Sample{
-				Point:  promql.Point(v),
+				Point:  promql.Point{T: v.T, V: v.V},
 				Metric: labels.Labels{},
 			}}, nil
 		default:
@@ -796,7 +799,7 @@ func (g *Group) RestoreForState(ts time.Time) {
 			var t int64
 			var v float64
 			it := s.Iterator()
-			for it.Next() {
+			for it.Next() == chunkenc.ValFloat {
 				t, v = it.At()
 			}
 			if it.Err() != nil {
@@ -1167,4 +1170,34 @@ func (m *Manager) AlertingRules() []*AlertingRule {
 	}
 
 	return alerts
+}
+
+type Sender interface {
+	Send(alerts ...*notifier.Alert)
+}
+
+// SendAlerts implements the rules.NotifyFunc for a Notifier.
+func SendAlerts(s Sender, externalURL string) NotifyFunc {
+	return func(ctx context.Context, expr string, alerts ...*Alert) {
+		var res []*notifier.Alert
+
+		for _, alert := range alerts {
+			a := &notifier.Alert{
+				StartsAt:     alert.FiredAt,
+				Labels:       alert.Labels,
+				Annotations:  alert.Annotations,
+				GeneratorURL: externalURL + strutil.TableLinkForExpression(expr),
+			}
+			if !alert.ResolvedAt.IsZero() {
+				a.EndsAt = alert.ResolvedAt
+			} else {
+				a.EndsAt = alert.ValidUntil
+			}
+			res = append(res, a)
+		}
+
+		if len(alerts) > 0 {
+			s.Send(res...)
+		}
+	}
 }

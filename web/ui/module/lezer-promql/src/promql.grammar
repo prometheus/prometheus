@@ -11,10 +11,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-@top PromQL { Expr }
-@top MetricName { MetricIdentifier }
+@top PromQL { expr }
+@top MetricName { Identifier }
 
 @precedence {
+  group,
   pow @right,
   mul @left
   add @left,
@@ -23,7 +24,7 @@
   or @left
 }
 
-Expr {
+expr[@isGroup=Expr] {
   AggregateExpr |
   BinaryExpr |
   FunctionCall |
@@ -65,53 +66,38 @@ AggregateModifier {
 }
 
 BinaryExpr {
-  Expr !pow Pow    BinModifiers Expr |
-  Expr !mul Mul    BinModifiers Expr |
-  Expr !mul Div    BinModifiers Expr |
-  Expr !mul Mod    BinModifiers Expr |
-  Expr !mul Atan2  BinModifiers Expr |
-  Expr !add Add    BinModifiers Expr |
-  Expr !add Sub    BinModifiers Expr |
-  Expr !eql Eql    BinModifiers Expr |
-  Expr !eql Gte    BinModifiers Expr |
-  Expr !eql Gtr    BinModifiers Expr |
-  Expr !eql Lte    BinModifiers Expr |
-  Expr !eql Lss    BinModifiers Expr |
-  Expr !eql Neq    BinModifiers Expr |
-  Expr !and And    BinModifiers Expr |
-  Expr !and Unless BinModifiers Expr |
-  Expr !or  Or     BinModifiers Expr
+  expr !pow Pow    binModifiers expr |
+  expr !mul Mul    binModifiers expr |
+  expr !mul Div    binModifiers expr |
+  expr !mul Mod    binModifiers expr |
+  expr !mul Atan2  binModifiers expr |
+  expr !add Add    binModifiers expr |
+  expr !add Sub    binModifiers expr |
+  expr !eql Eql    binModifiers expr |
+  expr !eql Gte    binModifiers expr |
+  expr !eql Gtr    binModifiers expr |
+  expr !eql Lte    binModifiers expr |
+  expr !eql Lss    binModifiers expr |
+  expr !eql Neq    binModifiers expr |
+  expr !and And    binModifiers expr |
+  expr !and Unless binModifiers expr |
+  expr !or  Or     binModifiers expr
 }
 
-OnOrIgnoring {
-  Ignoring GroupingLabels |
-  On GroupingLabels
+MatchingModifierClause {
+  (Ignoring | On) GroupingLabels
+  ((GroupLeft | GroupRight) (!group GroupingLabels)?)?
 }
 
-BinModifiers {
-  Bool?
-  (
-    OnOrIgnoring
-    (
-      (GroupLeft | GroupRight)
-      (!mul GroupingLabels)? // TODO: Is the "!mul" here correct? Inserted it to resolve a shift/reduce conflict because we always want to count opening parenthesis after this to be counted toward this modifier, not toward a next sub-expression.
-    )?
-  )?
+BoolModifier { Bool }
+
+binModifiers {
+  BoolModifier?
+  MatchingModifierClause?
 }
 
 GroupingLabels {
-  "(" GroupingLabelList ")" |
-  "(" GroupingLabelList "," ")" |
-  "(" ")"
-}
-
-GroupingLabelList {
-  GroupingLabelList "," GroupingLabel |
-  GroupingLabel
-}
-
-GroupingLabel {
-  LabelName
+  "(" (LabelName ("," LabelName)* ","?)? ")"
 }
 
 FunctionCall {
@@ -146,7 +132,10 @@ FunctionIdentifier {
   Deriv |
   Exp |
   Floor |
+  HistogramCount |
+  HistogramFraction |
   HistogramQuantile |
+  HistogramSum |
   HoltWinters |
   Hour |
   Idelta |
@@ -189,34 +178,28 @@ FunctionIdentifier {
 }
 
 FunctionCallBody {
-  "(" FunctionCallArgs ")" |
-  "(" ")"
-}
-
-FunctionCallArgs {
-  FunctionCallArgs "," Expr |
-  Expr
+  "(" (expr ("," expr)*)? ")"
 }
 
 ParenExpr {
-  "(" Expr ")"
+  "(" expr ")"
 }
 
 OffsetExpr {
-  Expr Offset Sub? Duration
+  expr Offset Sub? Duration
 }
 
 MatrixSelector {
-  // TODO: Can this not be more specific than "Expr"?
-  Expr "[" Duration "]"
+  // TODO: Can this not be more specific than "expr"?
+  expr "[" Duration "]"
 }
 
 SubqueryExpr {
-  Expr "[" Duration ":" ("" | Duration) "]"
+  expr "[" Duration ":" ("" | Duration) "]"
 }
 
 UnaryExpr {
-  !mul UnaryOp~signed Expr
+  !mul UnaryOp~signed expr
 }
 
 UnaryOp {
@@ -225,20 +208,13 @@ UnaryOp {
 }
 
 VectorSelector {
-  MetricIdentifier LabelMatchers |
-  MetricIdentifier |
+  Identifier LabelMatchers |
+  Identifier |
   LabelMatchers
 }
 
 LabelMatchers {
-  "{" LabelMatchList "}" |
-  "{" LabelMatchList "," "}" |
-  "{" "}"
-}
-
-LabelMatchList {
-  LabelMatchList "," LabelMatcher |
-  LabelMatcher
+  "{" (LabelMatcher ("," LabelMatcher)* ","?)? "}"
 }
 
 MatchOp {
@@ -252,12 +228,8 @@ LabelMatcher {
   LabelName MatchOp StringLiteral
 }
 
-MetricIdentifier {
-  Identifier
-}
-
 StepInvariantExpr {
-  Expr At ( NumberLiteral | AtModifierPreprocessors "(" ")" )
+  expr At ( NumberLiteral | AtModifierPreprocessors "(" ")" )
 }
 
 AtModifierPreprocessors {
@@ -387,7 +359,10 @@ NumberLiteral  {
   Deriv { condFn<"deriv"> }
   Exp { condFn<"exp"> }
   Floor { condFn<"floor"> }
+  HistogramCount { condFn<"histogram_count"> }
+  HistogramFraction { condFn<"histogram_fraction"> }
   HistogramQuantile { condFn<"histogram_quantile"> }
+  HistogramSum { condFn<"histogram_sum"> }
   HoltWinters { condFn<"holt_winters"> }
   Hour { condFn<"hour"> }
   Idelta { condFn<"idelta"> }

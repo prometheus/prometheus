@@ -37,7 +37,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
-	"github.com/prometheus/prometheus/tsdb/wal"
+	"github.com/prometheus/prometheus/tsdb/wlog"
 )
 
 // WALEntryType indicates what data a WAL entry contains.
@@ -89,7 +89,7 @@ func newWalMetrics(r prometheus.Registerer) *walMetrics {
 // WAL is a write ahead log that can log new series labels and samples.
 // It must be completely read before new entries are logged.
 //
-// DEPRECATED: use wal pkg combined with the record codex instead.
+// DEPRECATED: use wlog pkg combined with the record codex instead.
 type WAL interface {
 	Reader() WALReader
 	LogSeries([]record.RefSeries) error
@@ -146,7 +146,7 @@ func newCRC32() hash.Hash32 {
 
 // SegmentWAL is a write ahead log for series data.
 //
-// DEPRECATED: use wal pkg combined with the record coders instead.
+// DEPRECATED: use wlog pkg combined with the record coders instead.
 type SegmentWAL struct {
 	mtx     sync.Mutex
 	metrics *walMetrics
@@ -1229,7 +1229,7 @@ func MigrateWAL(logger log.Logger, dir string) (err error) {
 	if err := os.RemoveAll(tmpdir); err != nil {
 		return errors.Wrap(err, "cleanup replacement dir")
 	}
-	repl, err := wal.New(logger, nil, tmpdir, false)
+	repl, err := wlog.New(logger, nil, tmpdir, false)
 	if err != nil {
 		return errors.Wrap(err, "open new WAL")
 	}

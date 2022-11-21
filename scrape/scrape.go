@@ -40,7 +40,9 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -241,6 +243,8 @@ type scrapePool struct {
 	newLoop func(scrapeLoopOptions) loop
 
 	noDefaultPort bool
+
+	enableProtobufNegotiation bool
 }
 
 type labelLimits struct {
@@ -282,15 +286,16 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 
 	ctx, cancel := context.WithCancel(context.Background())
 	sp := &scrapePool{
-		cancel:        cancel,
-		appendable:    app,
-		config:        cfg,
-		client:        client,
-		activeTargets: map[uint64]*Target{},
-		loops:         map[uint64]loop{},
-		logger:        logger,
-		httpOpts:      options.HTTPClientOptions,
-		noDefaultPort: options.NoDefaultPort,
+		cancel:                    cancel,
+		appendable:                app,
+		config:                    cfg,
+		client:                    client,
+		activeTargets:             map[uint64]*Target{},
+		loops:                     map[uint64]loop{},
+		logger:                    logger,
+		httpOpts:                  options.HTTPClientOptions,
+		noDefaultPort:             options.NoDefaultPort,
+		enableProtobufNegotiation: options.EnableProtobufNegotiation,
 	}
 	sp.newLoop = func(opts scrapeLoopOptions) loop {
 		// Update the targets retrieval function for metadata to a new scrape cache.
@@ -323,8 +328,8 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 			opts.interval,
 			opts.timeout,
 			options.ExtraMetrics,
+			options.EnableMetadataStorage,
 			opts.target,
-			cache,
 			options.PassMetadataInContext,
 		)
 	}
@@ -436,8 +441,12 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 
 		t := sp.activeTargets[fp]
 		interval, timeout, err := t.intervalAndTimeout(interval, timeout)
+		acceptHeader := scrapeAcceptHeader
+		if sp.enableProtobufNegotiation {
+			acceptHeader = scrapeAcceptHeaderWithProtobuf
+		}
 		var (
-			s       = &targetScraper{Target: t, client: sp.client, timeout: timeout, bodySizeLimit: bodySizeLimit}
+			s       = &targetScraper{Target: t, client: sp.client, timeout: timeout, bodySizeLimit: bodySizeLimit, acceptHeader: acceptHeader}
 			newLoop = sp.newLoop(scrapeLoopOptions{
 				target:          t,
 				scraper:         s,
@@ -540,8 +549,11 @@ func (sp *scrapePool) sync(targets []*Target) {
 			// for every target.
 			var err error
 			interval, timeout, err = t.intervalAndTimeout(interval, timeout)
-
-			s := &targetScraper{Target: t, client: sp.client, timeout: timeout, bodySizeLimit: bodySizeLimit}
+			acceptHeader := scrapeAcceptHeader
+			if sp.enableProtobufNegotiation {
+				acceptHeader = scrapeAcceptHeaderWithProtobuf
+			}
+			s := &targetScraper{Target: t, client: sp.client, timeout: timeout, bodySizeLimit: bodySizeLimit, acceptHeader: acceptHeader}
 			l := sp.newLoop(scrapeLoopOptions{
 				target:          t,
 				scraper:         s,
@@ -681,7 +693,7 @@ func mutateSampleLabels(lset labels.Labels, target *Target, honor bool, rc []*re
 		}
 	}
 
-	res := lb.Labels()
+	res := lb.Labels(nil)
 
 	if len(rc) > 0 {
 		res = relabel.Process(res, rc...)
@@ -721,7 +733,7 @@ func mutateReportSampleLabels(lset labels.Labels, target *Target) labels.Labels 
 		lb.Set(l.Name, l.Value)
 	}
 
-	return lb.Labels()
+	return lb.Labels(nil)
 }
 
 // appender returns an appender for ingested samples from the target.
@@ -760,11 +772,15 @@ type targetScraper struct {
 	buf   *bufio.Reader
 
 	bodySizeLimit int64
+	acceptHeader  string
 }
 
 var errBodySizeLimit = errors.New("body size limit exceeded")
 
-const acceptHeader = `application/openmetrics-text;version=1.0.0,application/openmetrics-text;version=0.0.1;q=0.75,text/plain;version=0.0.4;q=0.5,*/*;q=0.1`
+const (
+	scrapeAcceptHeader             = `application/openmetrics-text;version=1.0.0,application/openmetrics-text;version=0.0.1;q=0.75,text/plain;version=0.0.4;q=0.5,*/*;q=0.1`
+	scrapeAcceptHeaderWithProtobuf = `application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited,application/openmetrics-text;version=1.0.0;q=0.8,application/openmetrics-text;version=0.0.1;q=0.75,text/plain;version=0.0.4;q=0.5,*/*;q=0.1`
+)
 
 var UserAgent = fmt.Sprintf("Prometheus/%s", version.Version)
 
@@ -774,7 +790,7 @@ func (s *targetScraper) scrape(ctx context.Context, w io.Writer) (string, error)
 		if err != nil {
 			return "", err
 		}
-		req.Header.Add("Accept", acceptHeader)
+		req.Header.Add("Accept", s.acceptHeader)
 		req.Header.Add("Accept-Encoding", "gzip")
 		req.Header.Set("User-Agent", UserAgent)
 		req.Header.Set("X-Prometheus-Scrape-Timeout-Seconds", strconv.FormatFloat(s.timeout.Seconds(), 'f', -1, 64))
@@ -878,7 +894,8 @@ type scrapeLoop struct {
 
 	disabledEndOfRunStalenessMarkers bool
 
-	reportExtraMetrics bool
+	reportExtraMetrics  bool
+	appendMetadataToWAL bool
 }
 
 // scrapeCache tracks mappings of exposed metric strings to label sets and
@@ -911,15 +928,15 @@ type scrapeCache struct {
 
 // metaEntry holds meta information about a metric.
 type metaEntry struct {
-	lastIter uint64 // Last scrape iteration the entry was observed at.
-	typ      textparse.MetricType
-	help     string
-	unit     string
+	metadata.Metadata
+
+	lastIter       uint64 // Last scrape iteration the entry was observed at.
+	lastIterChange uint64 // Last scrape iteration the entry was changed at.
 }
 
 func (m *metaEntry) size() int {
 	// The attribute lastIter although part of the struct it is not metadata.
-	return len(m.help) + len(m.unit) + len(m.typ)
+	return len(m.Help) + len(m.Unit) + len(m.Type)
 }
 
 func newScrapeCache() *scrapeCache {
@@ -1032,10 +1049,13 @@ func (c *scrapeCache) setType(metric []byte, t textparse.MetricType) {
 
 	e, ok := c.metadata[yoloString(metric)]
 	if !ok {
-		e = &metaEntry{typ: textparse.MetricTypeUnknown}
+		e = &metaEntry{Metadata: metadata.Metadata{Type: textparse.MetricTypeUnknown}}
 		c.metadata[string(metric)] = e
 	}
-	e.typ = t
+	if e.Type != t {
+		e.Type = t
+		e.lastIterChange = c.iter
+	}
 	e.lastIter = c.iter
 
 	c.metaMtx.Unlock()
@@ -1046,11 +1066,12 @@ func (c *scrapeCache) setHelp(metric, help []byte) {
 
 	e, ok := c.metadata[yoloString(metric)]
 	if !ok {
-		e = &metaEntry{typ: textparse.MetricTypeUnknown}
+		e = &metaEntry{Metadata: metadata.Metadata{Type: textparse.MetricTypeUnknown}}
 		c.metadata[string(metric)] = e
 	}
-	if e.help != yoloString(help) {
-		e.help = string(help)
+	if e.Help != yoloString(help) {
+		e.Help = string(help)
+		e.lastIterChange = c.iter
 	}
 	e.lastIter = c.iter
 
@@ -1062,11 +1083,12 @@ func (c *scrapeCache) setUnit(metric, unit []byte) {
 
 	e, ok := c.metadata[yoloString(metric)]
 	if !ok {
-		e = &metaEntry{typ: textparse.MetricTypeUnknown}
+		e = &metaEntry{Metadata: metadata.Metadata{Type: textparse.MetricTypeUnknown}}
 		c.metadata[string(metric)] = e
 	}
-	if e.unit != yoloString(unit) {
-		e.unit = string(unit)
+	if e.Unit != yoloString(unit) {
+		e.Unit = string(unit)
+		e.lastIterChange = c.iter
 	}
 	e.lastIter = c.iter
 
@@ -1083,9 +1105,9 @@ func (c *scrapeCache) GetMetadata(metric string) (MetricMetadata, bool) {
 	}
 	return MetricMetadata{
 		Metric: metric,
-		Type:   m.typ,
-		Help:   m.help,
-		Unit:   m.unit,
+		Type:   m.Type,
+		Help:   m.Help,
+		Unit:   m.Unit,
 	}, true
 }
 
@@ -1098,9 +1120,9 @@ func (c *scrapeCache) ListMetadata() []MetricMetadata {
 	for m, e := range c.metadata {
 		res = append(res, MetricMetadata{
 			Metric: m,
-			Type:   e.typ,
-			Help:   e.help,
-			Unit:   e.unit,
+			Type:   e.Type,
+			Help:   e.Help,
+			Unit:   e.Unit,
 		})
 	}
 	return res
@@ -1140,8 +1162,8 @@ func newScrapeLoop(ctx context.Context,
 	interval time.Duration,
 	timeout time.Duration,
 	reportExtraMetrics bool,
+	appendMetadataToWAL bool,
 	target *Target,
-	metricMetadataStore MetricMetadataStore,
 	passMetadataInContext bool,
 ) *scrapeLoop {
 	if l == nil {
@@ -1183,6 +1205,7 @@ func newScrapeLoop(ctx context.Context,
 		interval:            interval,
 		timeout:             timeout,
 		reportExtraMetrics:  reportExtraMetrics,
+		appendMetadataToWAL: appendMetadataToWAL,
 	}
 	sl.ctx, sl.cancel = context.WithCancel(ctx)
 
@@ -1462,11 +1485,35 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 	}
 
 	var (
-		defTime        = timestamp.FromTime(ts)
-		appErrs        = appendErrors{}
-		sampleLimitErr error
-		e              exemplar.Exemplar // escapes to heap so hoisted out of loop
+		defTime         = timestamp.FromTime(ts)
+		appErrs         = appendErrors{}
+		sampleLimitErr  error
+		e               exemplar.Exemplar // escapes to heap so hoisted out of loop
+		meta            metadata.Metadata
+		metadataChanged bool
 	)
+
+	// updateMetadata updates the current iteration's metadata object and the
+	// metadataChanged value if we have metadata in the scrape cache AND the
+	// labelset is for a new series or the metadata for this series has just
+	// changed. It returns a boolean based on whether the metadata was updated.
+	updateMetadata := func(lset labels.Labels, isNewSeries bool) bool {
+		if !sl.appendMetadataToWAL {
+			return false
+		}
+
+		sl.cache.metaMtx.Lock()
+		defer sl.cache.metaMtx.Unlock()
+		metaEntry, metaOk := sl.cache.metadata[yoloString([]byte(lset.Get(labels.MetricName)))]
+		if metaOk && (isNewSeries || metaEntry.lastIterChange == sl.cache.iter) {
+			metadataChanged = true
+			meta.Type = metaEntry.Type
+			meta.Unit = metaEntry.Unit
+			meta.Help = metaEntry.Help
+			return true
+		}
+		return false
+	}
 
 	// Take an appender with limits.
 	app = appender(app, sl.sampleLimit)
@@ -1483,8 +1530,12 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 loop:
 	for {
 		var (
-			et          textparse.Entry
-			sampleAdded bool
+			et                       textparse.Entry
+			sampleAdded, isHistogram bool
+			met                      []byte
+			parsedTimestamp          *int64
+			val                      float64
+			h                        *histogram.Histogram
 		)
 		if et, err = p.Next(); err != nil {
 			if err == io.EOF {
@@ -1504,18 +1555,29 @@ loop:
 			continue
 		case textparse.EntryComment:
 			continue
+		case textparse.EntryHistogram:
+			isHistogram = true
 		default:
 		}
 		total++
 
 		t := defTime
-		met, tp, v := p.Series()
+		if isHistogram {
+			met, parsedTimestamp, h, _ = p.Histogram()
+			// TODO: ingest float histograms in tsdb.
+		} else {
+			met, parsedTimestamp, val = p.Series()
+		}
 		if !sl.honorTimestamps {
-			tp = nil
+			parsedTimestamp = nil
 		}
-		if tp != nil {
-			t = *tp
+		if parsedTimestamp != nil {
+			t = *parsedTimestamp
 		}
+
+		// Zero metadata out for current iteration until it's resolved.
+		meta = metadata.Metadata{}
+		metadataChanged = false
 
 		if sl.cache.getDropped(yoloString(met)) {
 			continue
@@ -1531,6 +1593,9 @@ loop:
 		if ok {
 			ref = ce.ref
 			lset = ce.lset
+
+			// Update metadata only if it changed in the current iteration.
+			updateMetadata(lset, false)
 		} else {
 			mets = p.Metric(&lset)
 			hash = lset.Hash()
@@ -1555,10 +1620,19 @@ loop:
 				targetScrapePoolExceededLabelLimits.Inc()
 				break loop
 			}
+
+			// Append metadata for new series if they were present.
+			updateMetadata(lset, true)
 		}
 
-		ref, err = app.Append(ref, lset, t, v)
-		sampleAdded, err = sl.checkAddError(ce, met, tp, err, &sampleLimitErr, &appErrs)
+		if isHistogram {
+			if h != nil {
+				ref, err = app.AppendHistogram(ref, lset, t, h)
+			}
+		} else {
+			ref, err = app.Append(ref, lset, t, val)
+		}
+		sampleAdded, err = sl.checkAddError(ce, met, parsedTimestamp, err, &sampleLimitErr, &appErrs)
 		if err != nil {
 			if err != storage.ErrNotFound {
 				level.Debug(sl.l).Log("msg", "Unexpected error", "series", string(met), "err", err)
@@ -1567,7 +1641,7 @@ loop:
 		}
 
 		if !ok {
-			if tp == nil {
+			if parsedTimestamp == nil {
 				// Bypass staleness logic if there is an explicit timestamp.
 				sl.cache.trackStaleness(hash, lset)
 			}
@@ -1594,6 +1668,12 @@ loop:
 			e = exemplar.Exemplar{} // reset for next time round loop
 		}
 
+		if sl.appendMetadataToWAL && metadataChanged {
+			if _, merr := app.UpdateMetadata(ref, lset, meta); merr != nil {
+				// No need to fail the scrape on errors appending metadata.
+				level.Debug(sl.l).Log("msg", "Error when appending metadata in scrape loop", "ref", fmt.Sprintf("%d", ref), "metadata", fmt.Sprintf("%+v", meta), "err", merr)
+			}
+		}
 	}
 	if sampleLimitErr != nil {
 		if err == nil {

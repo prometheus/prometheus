@@ -322,7 +322,7 @@ func TestPromNullByteHandling(t *testing.T) {
 		},
 		{
 			input: "a{b\x00=\"hiih\"}	1",
-			err: "expected equal, got \"INVALID\"",
+			err:   "expected equal, got \"INVALID\"",
 		},
 		{
 			input: "a\x00{b=\"ddd\"} 1",
@@ -367,7 +367,7 @@ func BenchmarkParse(b *testing.B) {
 			b.Run(parserName+"/no-decode-metric/"+fn, func(b *testing.B) {
 				total := 0
 
-				b.SetBytes(int64(len(buf) * (b.N / promtestdataSampleCount)))
+				b.SetBytes(int64(len(buf) / promtestdataSampleCount))
 				b.ReportAllocs()
 				b.ResetTimer()
 
@@ -395,7 +395,7 @@ func BenchmarkParse(b *testing.B) {
 			b.Run(parserName+"/decode-metric/"+fn, func(b *testing.B) {
 				total := 0
 
-				b.SetBytes(int64(len(buf) * (b.N / promtestdataSampleCount)))
+				b.SetBytes(int64(len(buf) / promtestdataSampleCount))
 				b.ReportAllocs()
 				b.ResetTimer()
 
@@ -428,7 +428,7 @@ func BenchmarkParse(b *testing.B) {
 				total := 0
 				res := make(labels.Labels, 0, 5)
 
-				b.SetBytes(int64(len(buf) * (b.N / promtestdataSampleCount)))
+				b.SetBytes(int64(len(buf) / promtestdataSampleCount))
 				b.ReportAllocs()
 				b.ResetTimer()
 
@@ -458,7 +458,10 @@ func BenchmarkParse(b *testing.B) {
 				_ = total
 			})
 			b.Run("expfmt-text/"+fn, func(b *testing.B) {
-				b.SetBytes(int64(len(buf) * (b.N / promtestdataSampleCount)))
+				if parserName != "prometheus" {
+					b.Skip()
+				}
+				b.SetBytes(int64(len(buf) / promtestdataSampleCount))
 				b.ReportAllocs()
 				b.ResetTimer()
 
@@ -507,7 +510,7 @@ func BenchmarkGzip(b *testing.B) {
 			k := b.N / promtestdataSampleCount
 
 			b.ReportAllocs()
-			b.SetBytes(int64(k) * int64(n))
+			b.SetBytes(int64(n) / promtestdataSampleCount)
 			b.ResetTimer()
 
 			total := 0

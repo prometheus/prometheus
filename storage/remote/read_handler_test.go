@@ -46,12 +46,8 @@ func TestSampledReadEndpoint(t *testing.T) {
 	h := NewReadHandler(nil, nil, suite.Storage(), func() config.Config {
 		return config.Config{
 			GlobalConfig: config.GlobalConfig{
-				ExternalLabels: labels.Labels{
-					// We expect external labels to be added, with the source labels honored.
-					{Name: "b", Value: "c"},
-					{Name: "baz", Value: "a"},
-					{Name: "d", Value: "e"},
-				},
+				// We expect external labels to be added, with the source labels honored.
+				ExternalLabels: labels.FromStrings("b", "c", "baz", "a", "d", "e"),
 			},
 		}
 	}, 1e6, 1, 0)
@@ -111,6 +107,73 @@ func TestSampledReadEndpoint(t *testing.T) {
 	}, resp.Results[0])
 }
 
+func BenchmarkStreamReadEndpoint(b *testing.B) {
+	suite, err := promql.NewTest(b, `
+	load 1m
+		test_metric1{foo="bar1",baz="qux"} 0+100x119
+		test_metric1{foo="bar2",baz="qux"} 0+100x120
+		test_metric1{foo="bar3",baz="qux"} 0+100x240
+`)
+	require.NoError(b, err)
+
+	defer suite.Close()
+
+	require.NoError(b, suite.Run())
+
+	api := NewReadHandler(nil, nil, suite.Storage(), func() config.Config {
+		return config.Config{}
+	},
+		0, 1, 0,
+	)
+
+	matcher, err := labels.NewMatcher(labels.MatchEqual, "__name__", "test_metric1")
+	require.NoError(b, err)
+
+	query, err := ToQuery(0, 14400001, []*labels.Matcher{matcher}, &storage.SelectHints{
+		Step:  1,
+		Func:  "sum",
+		Start: 0,
+		End:   14400001,
+	})
+	require.NoError(b, err)
+
+	req := &prompb.ReadRequest{
+		Queries:               []*prompb.Query{query},
+		AcceptedResponseTypes: []prompb.ReadRequest_ResponseType{prompb.ReadRequest_STREAMED_XOR_CHUNKS},
+	}
+	data, err := proto.Marshal(req)
+	require.NoError(b, err)
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		compressed := snappy.Encode(nil, data)
+		request, err := http.NewRequest("POST", "", bytes.NewBuffer(compressed))
+		require.NoError(b, err)
+
+		recorder := httptest.NewRecorder()
+		api.ServeHTTP(recorder, request)
+
+		require.Equal(b, 2, recorder.Code/100)
+
+		var results []*prompb.ChunkedReadResponse
+		stream := NewChunkedReader(recorder.Result().Body, DefaultChunkedReadLimit, nil)
+
+		for {
+			res := &prompb.ChunkedReadResponse{}
+			err := stream.NextProto(res)
+			if err == io.EOF {
+				break
+			}
+			require.NoError(b, err)
+			results = append(results, res)
+		}
+
+		require.Equal(b, 6, len(results), "Expected 6 results.")
+	}
+}
+
 func TestStreamReadEndpoint(t *testing.T) {
 	// First with 120 samples. We expect 1 frame with 1 chunk.
 	// Second with 121 samples, We expect 1 frame with 2 chunks.
@@ -130,12 +193,8 @@ func TestStreamReadEndpoint(t *testing.T) {
 	api := NewReadHandler(nil, nil, suite.Storage(), func() config.Config {
 		return config.Config{
 			GlobalConfig: config.GlobalConfig{
-				ExternalLabels: labels.Labels{
-					// We expect external labels to be added, with the source labels honored.
-					{Name: "baz", Value: "a"},
-					{Name: "b", Value: "c"},
-					{Name: "d", Value: "e"},
-				},
+				// We expect external labels to be added, with the source labels honored.
+				ExternalLabels: labels.FromStrings("baz", "a", "b", "c", "d", "e"),
 			},
 		}
 	},

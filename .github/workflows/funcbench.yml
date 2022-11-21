@@ -1,4 +1,4 @@
-on:
+on:  # yamllint disable-line rule:truthy
   repository_dispatch:
     types: [funcbench_start]
 name: Funcbench Workflow
@@ -12,7 +12,7 @@ jobs:
       BRANCH: ${{ github.event.client_payload.BRANCH }}
       BENCH_FUNC_REGEX: ${{ github.event.client_payload.BENCH_FUNC_REGEX }}
       PACKAGE_PATH: ${{ github.event.client_payload.PACKAGE_PATH }}
-      GITHUB_TOKEN: ${{ secrets.PROMBOT_TOKEN }}
+      GITHUB_TOKEN: ${{ secrets.PROMBOT_GITHUB_TOKEN }}
       GITHUB_ORG: prometheus
       GITHUB_REPO: prometheus
       GITHUB_STATUS_TARGET_URL: https://github.com/${{github.repository}}/actions/runs/${{github.run_id}}

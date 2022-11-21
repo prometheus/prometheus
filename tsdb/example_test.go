@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
 func Example() {
@@ -67,7 +68,7 @@ func Example() {
 		fmt.Println("series:", series.Labels().String())
 
 		it := series.Iterator()
-		for it.Next() {
+		for it.Next() == chunkenc.ValFloat {
 			_, v := it.At() // We ignore the timestamp here, only to have a predictable output we can test against (below)
 			fmt.Println("sample", v)
 		}

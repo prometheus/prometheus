@@ -35,7 +35,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
-	"github.com/prometheus/prometheus/tsdb/wal"
+	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -141,7 +141,7 @@ func TestCommit(t *testing.T) {
 	require.NoError(t, app.Commit())
 	require.NoError(t, s.Close())
 
-	sr, err := wal.NewSegmentsReader(s.wal.Dir())
+	sr, err := wlog.NewSegmentsReader(s.wal.Dir())
 	require.NoError(t, err)
 	defer func() {
 		require.NoError(t, sr.Close())
@@ -149,7 +149,7 @@ func TestCommit(t *testing.T) {
 
 	// Read records from WAL and check for expected count of series, samples, and exemplars.
 	var (
-		r   = wal.NewReader(sr)
+		r   = wlog.NewReader(sr)
 		dec record.Decoder
 
 		walSeriesCount, walSamplesCount, walExemplarsCount int
@@ -211,7 +211,7 @@ func TestRollback(t *testing.T) {
 	require.NoError(t, app.Commit())
 	require.NoError(t, s.Close())
 
-	sr, err := wal.NewSegmentsReader(s.wal.Dir())
+	sr, err := wlog.NewSegmentsReader(s.wal.Dir())
 	require.NoError(t, err)
 	defer func() {
 		require.NoError(t, sr.Close())
@@ -219,7 +219,7 @@ func TestRollback(t *testing.T) {
 
 	// Read records from WAL and check for expected count of series and samples.
 	var (
-		r   = wal.NewReader(sr)
+		r   = wlog.NewReader(sr)
 		dec record.Decoder
 
 		walSeriesCount, walSamplesCount, walExemplarsCount int
@@ -446,6 +446,25 @@ func Test_ExistingWAL_NextRef(t *testing.T) {
 	require.Equal(t, uint64(seriesCount), db.nextRef.Load(), "nextRef should be equal to the number of series written across the entire WAL")
 }
 
+func Test_validateOptions(t *testing.T) {
+	t.Run("Apply defaults to zero values", func(t *testing.T) {
+		opts := validateOptions(&Options{})
+		require.Equal(t, DefaultOptions(), opts)
+	})
+
+	t.Run("Defaults are already valid", func(t *testing.T) {
+		require.Equal(t, DefaultOptions(), validateOptions(nil))
+	})
+
+	t.Run("MaxWALTime should not be lower than TruncateFrequency", func(t *testing.T) {
+		opts := validateOptions(&Options{
+			MaxWALTime:        int64(time.Hour / time.Millisecond),
+			TruncateFrequency: 2 * time.Hour,
+		})
+		require.Equal(t, int64(2*time.Hour/time.Millisecond), opts.MaxWALTime)
+	})
+}
+
 func startTime() (int64, error) {
 	return time.Now().Unix() * 1000, nil
 }
@@ -515,10 +534,10 @@ func TestStorage_DuplicateExemplarsIgnored(t *testing.T) {
 
 	// Read back what was written to the WAL.
 	var walExemplarsCount int
-	sr, err := wal.NewSegmentsReader(s.wal.Dir())
+	sr, err := wlog.NewSegmentsReader(s.wal.Dir())
 	require.NoError(t, err)
 	defer sr.Close()
-	r := wal.NewReader(sr)
+	r := wlog.NewReader(sr)
 
 	var dec record.Decoder
 	for r.Next() {

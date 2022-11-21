@@ -1,0 +1,53 @@
+name: Publish release image
+inputs:
+  registry:
+    type: string
+    description: Docker registry
+  organization:
+    type: string
+    description: Organization
+  login:
+    type: string
+    description: Username
+  password:
+    type: string
+    description: Password
+  dockerfile_path:
+    description: Path to Dockerfile
+    type: string
+    default: ""
+  dockerbuild_context:
+    description: Path to Dockerbuild context
+    type: string
+    default: ""
+  container_image_name:
+    description: Name of the container image
+    type: string
+    default: ""
+runs:
+  using: composite
+  steps:
+    - if: inputs.dockerfile_path != ''
+      run: echo "export DOCKERFILE_PATH=${{ inputs.dockerfile_path }}" >> /tmp/tmp-profile
+      shell: bash
+    - if: inputs.container_image_name != ''
+      run: echo "export DOCKER_IMAGE_NAME=${{ inputs.container_image_name }}" >> /tmp/tmp-profile
+      shell: bash
+    - if: inputs.dockerbuild_context != ''
+      run: echo "export DOCKERBUILD_CONTEXT=${{ inputs.dockerbuild_context }}" >> /tmp/tmp-profile
+      shell: bash
+    - run: |
+        current_tag=${GITHUB_REF#refs/*/}
+        touch /tmp/tmp-profile
+        . /tmp/tmp-profile
+        make docker DOCKER_IMAGE_TAG="$current_tag" DOCKER_REPO=${{ inputs.registry }}/${{ inputs.organization }}
+        docker images
+        echo ${{ inputs.password }} | docker login -u ${{ inputs.login }} --password-stdin ${{ inputs.registry }}
+        make docker-publish DOCKER_IMAGE_TAG="$current_tag" DOCKER_REPO=${{ inputs.registry }}/${{ inputs.organization }}
+        make docker-manifest DOCKER_IMAGE_TAG="$current_tag" DOCKER_REPO=${{ inputs.registry }}/${{ inputs.organization }}
+        if [[ "$current_tag" =~ ^v[0-9]+(\.[0-9]+){2}$ ]]; then
+          make docker-tag-latest DOCKER_IMAGE_TAG="$current_tag" DOCKER_REPO=${{ inputs.registry }}/${{ inputs.organization }}
+          make docker-publish DOCKER_IMAGE_TAG="latest" DOCKER_REPO=${{ inputs.registry }}/${{ inputs.organization }}
+          make docker-manifest DOCKER_IMAGE_TAG="latest" DOCKER_REPO=${{ inputs.registry }}/${{ inputs.organization }}
+        fi
+      shell: bash

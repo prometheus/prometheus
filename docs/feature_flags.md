@@ -103,3 +103,26 @@ When enabled, the default ports for HTTP (`:80`) or HTTPS (`:443`) will _not_ be
 the address used to scrape a target (the value of the `__address_` label), contrary to the default behavior.
 In addition, if a default HTTP or HTTPS port has already been added either in a static configuration or
 by a service discovery mechanism and the respective scheme is specified (`http` or `https`), that port will be removed.
+
+## Native Histograms
+
+`--enable-feature=native-histograms`
+
+When enabled, Prometheus will ingest native histograms (formerly also known as
+sparse histograms or high-res histograms). Native histograms are still highly
+experimental. Expect breaking changes to happen (including those rendering the
+TSDB unreadable).
+
+Native histograms are currently only supported in the traditional Prometheus
+protobuf exposition format. This feature flag therefore also enables a new (and
+also experimental) protobuf parser, through which _all_ metrics are ingested
+(i.e. not only native histograms). Prometheus will try to negotiate the
+protobuf format first. The instrumented target needs to support the protobuf
+format, too, _and_ it needs to expose native histograms. The protobuf format
+allows to expose conventional and native histograms side by side. With this
+feature flag disabled, Prometheus will continue to parse the conventional
+histogram (albeit via the text format). With this flag enabled, Prometheus will
+still ingest those conventional histograms that do not come with a
+corresponding native histogram. However, if a native histogram is present,
+Prometheus will ignore the corresponding conventional histogram, with the
+notable exception of exemplars, which are always ingested.

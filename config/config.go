@@ -29,7 +29,7 @@ import (
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/sigv4"
-	yaml "gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/model/labels"
@@ -501,7 +501,35 @@ func (c *ScrapeConfig) MarshalYAML() (interface{}, error) {
 
 // StorageConfig configures runtime reloadable configuration options.
 type StorageConfig struct {
+	TSDBConfig      *TSDBConfig      `yaml:"tsdb,omitempty"`
 	ExemplarsConfig *ExemplarsConfig `yaml:"exemplars,omitempty"`
+}
+
+// TSDBConfig configures runtime reloadable configuration options.
+type TSDBConfig struct {
+	// OutOfOrderTimeWindow sets how long back in time an out-of-order sample can be inserted
+	// into the TSDB. This flag is typically set while unmarshaling the configuration file and translating
+	// OutOfOrderTimeWindowFlag's duration. The unit of this flag is expected to be the same as any
+	// other timestamp in the TSDB.
+	OutOfOrderTimeWindow int64
+
+	// OutOfOrderTimeWindowFlag holds the parsed duration from the config file.
+	// During unmarshall, this is converted into milliseconds and stored in OutOfOrderTimeWindow.
+	// This should not be used directly and must be converted into OutOfOrderTimeWindow.
+	OutOfOrderTimeWindowFlag model.Duration `yaml:"out_of_order_time_window,omitempty"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (t *TSDBConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*t = TSDBConfig{}
+	type plain TSDBConfig
+	if err := unmarshal((*plain)(t)); err != nil {
+		return err
+	}
+
+	t.OutOfOrderTimeWindow = time.Duration(t.OutOfOrderTimeWindowFlag).Milliseconds()
+
+	return nil
 }
 
 type TracingClientType string
@@ -748,12 +776,13 @@ func CheckTargetAddress(address model.LabelValue) error {
 
 // RemoteWriteConfig is the configuration for writing to remote storage.
 type RemoteWriteConfig struct {
-	URL                 *config.URL       `yaml:"url"`
-	RemoteTimeout       model.Duration    `yaml:"remote_timeout,omitempty"`
-	Headers             map[string]string `yaml:"headers,omitempty"`
-	WriteRelabelConfigs []*relabel.Config `yaml:"write_relabel_configs,omitempty"`
-	Name                string            `yaml:"name,omitempty"`
-	SendExemplars       bool              `yaml:"send_exemplars,omitempty"`
+	URL                  *config.URL       `yaml:"url"`
+	RemoteTimeout        model.Duration    `yaml:"remote_timeout,omitempty"`
+	Headers              map[string]string `yaml:"headers,omitempty"`
+	WriteRelabelConfigs  []*relabel.Config `yaml:"write_relabel_configs,omitempty"`
+	Name                 string            `yaml:"name,omitempty"`
+	SendExemplars        bool              `yaml:"send_exemplars,omitempty"`
+	SendNativeHistograms bool              `yaml:"send_native_histograms,omitempty"`
 
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.

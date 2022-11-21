@@ -29,6 +29,7 @@ import (
 	"unsafe"
 
 	"github.com/pkg/errors"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -819,7 +820,7 @@ func (w *Writer) writePostingsToTmpFiles() error {
 	for n := range w.labelNames {
 		names = append(names, n)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 
 	if err := w.f.Flush(); err != nil {
 		return err
@@ -1163,44 +1164,37 @@ func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 		// Earlier V1 formats don't have a sorted postings offset table, so
 		// load the whole offset table into memory.
 		r.postingsV1 = map[string]map[string]uint64{}
-		if err := ReadOffsetTable(r.b, r.toc.PostingsTable, func(key []string, off uint64, _ int) error {
-			if len(key) != 2 {
-				return errors.Errorf("unexpected key length for posting table %d", len(key))
+		if err := ReadPostingsOffsetTable(r.b, r.toc.PostingsTable, func(name, value []byte, off uint64, _ int) error {
+			if _, ok := r.postingsV1[string(name)]; !ok {
+				r.postingsV1[string(name)] = map[string]uint64{}
+				r.postings[string(name)] = nil // Used to get a list of labelnames in places.
 			}
-			if _, ok := r.postingsV1[key[0]]; !ok {
-				r.postingsV1[key[0]] = map[string]uint64{}
-				r.postings[key[0]] = nil // Used to get a list of labelnames in places.
-			}
-			r.postingsV1[key[0]][key[1]] = off
+			r.postingsV1[string(name)][string(value)] = off
 			return nil
 		}); err != nil {
 			return nil, errors.Wrap(err, "read postings table")
 		}
 	} else {
-		var lastKey []string
+		var lastName, lastValue []byte
 		lastOff := 0
 		valueCount := 0
 		// For the postings offset table we keep every label name but only every nth
 		// label value (plus the first and last one), to save memory.
-		if err := ReadOffsetTable(r.b, r.toc.PostingsTable, func(key []string, _ uint64, off int) error {
-			if len(key) != 2 {
-				return errors.Errorf("unexpected key length for posting table %d", len(key))
-			}
-			if _, ok := r.postings[key[0]]; !ok {
+		if err := ReadPostingsOffsetTable(r.b, r.toc.PostingsTable, func(name, value []byte, _ uint64, off int) error {
+			if _, ok := r.postings[string(name)]; !ok {
 				// Next label name.
-				r.postings[key[0]] = []postingOffset{}
-				if lastKey != nil {
+				r.postings[string(name)] = []postingOffset{}
+				if lastName != nil {
 					// Always include last value for each label name.
-					r.postings[lastKey[0]] = append(r.postings[lastKey[0]], postingOffset{value: lastKey[1], off: lastOff})
+					r.postings[string(lastName)] = append(r.postings[string(lastName)], postingOffset{value: string(lastValue), off: lastOff})
 				}
-				lastKey = nil
 				valueCount = 0
 			}
 			if valueCount%symbolFactor == 0 {
-				r.postings[key[0]] = append(r.postings[key[0]], postingOffset{value: key[1], off: off})
-				lastKey = nil
+				r.postings[string(name)] = append(r.postings[string(name)], postingOffset{value: string(value), off: off})
+				lastName, lastValue = nil, nil
 			} else {
-				lastKey = key
+				lastName, lastValue = name, value
 				lastOff = off
 			}
 			valueCount++
@@ -1208,8 +1202,8 @@ func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 		}); err != nil {
 			return nil, errors.Wrap(err, "read postings table")
 		}
-		if lastKey != nil {
-			r.postings[lastKey[0]] = append(r.postings[lastKey[0]], postingOffset{value: lastKey[1], off: lastOff})
+		if lastName != nil {
+			r.postings[string(lastName)] = append(r.postings[string(lastName)], postingOffset{value: string(lastValue), off: lastOff})
 		}
 		// Trim any extra space in the slices.
 		for k, v := range r.postings {
@@ -1250,15 +1244,12 @@ type Range struct {
 // for all postings lists.
 func (r *Reader) PostingsRanges() (map[labels.Label]Range, error) {
 	m := map[labels.Label]Range{}
-	if err := ReadOffsetTable(r.b, r.toc.PostingsTable, func(key []string, off uint64, _ int) error {
-		if len(key) != 2 {
-			return errors.Errorf("unexpected key length for posting table %d", len(key))
-		}
+	if err := ReadPostingsOffsetTable(r.b, r.toc.PostingsTable, func(name, value []byte, off uint64, _ int) error {
 		d := encoding.NewDecbufAt(r.b, int(off), castagnoliTable)
 		if d.Err() != nil {
 			return d.Err()
 		}
-		m[labels.Label{Name: key[0], Value: key[1]}] = Range{
+		m[labels.Label{Name: string(name), Value: string(value)}] = Range{
 			Start: int64(off) + 4,
 			End:   int64(off) + 4 + int64(d.Len()),
 		}
@@ -1411,29 +1402,29 @@ func (s *symbolsIter) Next() bool {
 func (s symbolsIter) At() string { return s.cur }
 func (s symbolsIter) Err() error { return s.err }
 
-// ReadOffsetTable reads an offset table and at the given position calls f for each
-// found entry. If f returns an error it stops decoding and returns the received error.
-func ReadOffsetTable(bs ByteSlice, off uint64, f func([]string, uint64, int) error) error {
+// ReadPostingsOffsetTable reads the postings offset table and at the given position calls f for each
+// found entry.
+// The name and value parameters passed to f reuse the backing memory of the underlying byte slice,
+// so they shouldn't be persisted without previously copying them.
+// If f returns an error it stops decoding and returns the received error.
+func ReadPostingsOffsetTable(bs ByteSlice, off uint64, f func(name, value []byte, postingsOffset uint64, labelOffset int) error) error {
 	d := encoding.NewDecbufAt(bs, int(off), castagnoliTable)
 	startLen := d.Len()
 	cnt := d.Be32()
 
 	for d.Err() == nil && d.Len() > 0 && cnt > 0 {
 		offsetPos := startLen - d.Len()
-		keyCount := d.Uvarint()
-		// The Postings offset table takes only 2 keys per entry (name and value of label),
-		// and the LabelIndices offset table takes only 1 key per entry (a label name).
-		// Hence setting the size to max of both, i.e. 2.
-		keys := make([]string, 0, 2)
 
-		for i := 0; i < keyCount; i++ {
-			keys = append(keys, d.UvarintStr())
+		if keyCount := d.Uvarint(); keyCount != 2 {
+			return errors.Errorf("unexpected number of keys for postings offset table %d", keyCount)
 		}
+		name := d.UvarintBytes()
+		value := d.UvarintBytes()
 		o := d.Uvarint64()
 		if d.Err() != nil {
 			break
 		}
-		if err := f(keys, o, offsetPos); err != nil {
+		if err := f(name, value, o, offsetPos); err != nil {
 			return err
 		}
 		cnt--
@@ -1469,7 +1460,7 @@ func (r *Reader) SymbolTableSize() uint64 {
 func (r *Reader) SortedLabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
 	values, err := r.LabelValues(name, matchers...)
 	if err == nil && r.version == FormatV1 {
-		sort.Strings(values)
+		slices.Sort(values)
 	}
 	return values, err
 }
@@ -1571,7 +1562,7 @@ func (r *Reader) LabelNamesFor(ids ...storage.SeriesRef) ([]string, error) {
 		names = append(names, name)
 	}
 
-	sort.Strings(names)
+	slices.Sort(names)
 
 	return names, nil
 }
@@ -1743,7 +1734,7 @@ func (r *Reader) LabelNames(matchers ...*labels.Matcher) ([]string, error) {
 		}
 		labelNames = append(labelNames, name)
 	}
-	sort.Strings(labelNames)
+	slices.Sort(labelNames)
 	return labelNames, nil
 }
 

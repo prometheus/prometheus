@@ -306,3 +306,31 @@ highest to lowest.
 Operators on the same precedence level are left-associative. For example,
 `2 * 3 % 2` is equivalent to `(2 * 3) % 2`. However `^` is right associative,
 so `2 ^ 3 ^ 2` is equivalent to `2 ^ (3 ^ 2)`.
+
+## Operators for native histograms
+
+Native histograms are an experimental feature. Ingesting native histograms has
+to be enabled via a [feature flag](../feature_flags/#native-histograms). Once
+native histograms have been ingested, they can be queried (even after the
+feature flag has been disabled again). However, the operator support for native
+histograms is still very limited.
+
+Logical/set binary operators work as expected even if histogram samples are
+involved. They only check for the existence of a vector element and don't
+change their behavior depending on the sample type of an element (float or
+histogram).
+
+The binary `+` operator between two native histograms and the `sum` aggregation
+operator to aggregate native histograms are fully supported. Even if the
+histograms involved have different bucket layouts, the buckets are
+automatically converted appropriately so that the operation can be
+performed. (With the currently supported bucket schemas, that's always
+possible.) If either operator has to sum up a mix of histogram samples and
+float samples, the corresponding vector element is removed from the output
+vector entirely.
+
+All other operators do not behave in a meaningful way. They either treat the
+histogram sample as if it were a float sample of value 0, or (in case of
+arithmetic operations between a scalar and a vector) they leave the histogram
+sample unchanged. This behavior will change to a meaningful one before native
+histograms are a stable feature.

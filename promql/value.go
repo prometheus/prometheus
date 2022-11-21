@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
@@ -63,8 +64,8 @@ func (s Scalar) MarshalJSON() ([]byte, error) {
 
 // Series is a stream of data points belonging to a metric.
 type Series struct {
-	Metric labels.Labels `json:"metric"`
-	Points []Point       `json:"values"`
+	Metric labels.Labels
+	Points []Point
 }
 
 func (s Series) String() string {
@@ -75,15 +76,48 @@ func (s Series) String() string {
 	return fmt.Sprintf("%s =>\n%s", s.Metric, strings.Join(vals, "\n"))
 }
 
+// MarshalJSON is mirrored in web/api/v1/api.go for efficiency reasons.
+// This implementation is still provided for debug purposes and usage
+// without jsoniter.
+func (s Series) MarshalJSON() ([]byte, error) {
+	// Note that this is rather inefficient because it re-creates the whole
+	// series, just separated by Histogram Points and Value Points. For API
+	// purposes, there is a more efficcient jsoniter implementation in
+	// web/api/v1/api.go.
+	series := struct {
+		M labels.Labels `json:"metric"`
+		V []Point       `json:"values,omitempty"`
+		H []Point       `json:"histograms,omitempty"`
+	}{
+		M: s.Metric,
+	}
+	for _, p := range s.Points {
+		if p.H == nil {
+			series.V = append(series.V, p)
+			continue
+		}
+		series.H = append(series.H, p)
+	}
+	return json.Marshal(series)
+}
+
 // Point represents a single data point for a given timestamp.
+// If H is not nil, then this is a histogram point and only (T, H) is valid.
+// If H is nil, then only (T, V) is valid.
 type Point struct {
 	T int64
 	V float64
+	H *histogram.FloatHistogram
 }
 
 func (p Point) String() string {
-	v := strconv.FormatFloat(p.V, 'f', -1, 64)
-	return fmt.Sprintf("%v @[%v]", v, p.T)
+	var s string
+	if p.H != nil {
+		s = p.H.String()
+	} else {
+		s = strconv.FormatFloat(p.V, 'f', -1, 64)
+	}
+	return fmt.Sprintf("%s @[%v]", s, p.T)
 }
 
 // MarshalJSON implements json.Marshaler.
@@ -96,8 +130,45 @@ func (p Point) String() string {
 // slightly different results in terms of formatting and rounding of the
 // timestamp.
 func (p Point) MarshalJSON() ([]byte, error) {
-	v := strconv.FormatFloat(p.V, 'f', -1, 64)
-	return json.Marshal([...]interface{}{float64(p.T) / 1000, v})
+	if p.H == nil {
+		v := strconv.FormatFloat(p.V, 'f', -1, 64)
+		return json.Marshal([...]interface{}{float64(p.T) / 1000, v})
+	}
+	h := struct {
+		Count   string          `json:"count"`
+		Sum     string          `json:"sum"`
+		Buckets [][]interface{} `json:"buckets,omitempty"`
+	}{
+		Count: strconv.FormatFloat(p.H.Count, 'f', -1, 64),
+		Sum:   strconv.FormatFloat(p.H.Sum, 'f', -1, 64),
+	}
+	it := p.H.AllBucketIterator()
+	for it.Next() {
+		bucket := it.At()
+		if bucket.Count == 0 {
+			continue // No need to expose empty buckets in JSON.
+		}
+		boundaries := 2 // Exclusive on both sides AKA open interval.
+		if bucket.LowerInclusive {
+			if bucket.UpperInclusive {
+				boundaries = 3 // Inclusive on both sides AKA closed interval.
+			} else {
+				boundaries = 1 // Inclusive only on lower end AKA right open.
+			}
+		} else {
+			if bucket.UpperInclusive {
+				boundaries = 0 // Inclusive only on upper end AKA left open.
+			}
+		}
+		bucketToMarshal := []interface{}{
+			boundaries,
+			strconv.FormatFloat(bucket.Lower, 'f', -1, 64),
+			strconv.FormatFloat(bucket.Upper, 'f', -1, 64),
+			strconv.FormatFloat(bucket.Count, 'f', -1, 64),
+		}
+		h.Buckets = append(h.Buckets, bucketToMarshal)
+	}
+	return json.Marshal([...]interface{}{float64(p.T) / 1000, h})
 }
 
 // Sample is a single sample belonging to a metric.
@@ -111,15 +182,27 @@ func (s Sample) String() string {
 	return fmt.Sprintf("%s => %s", s.Metric, s.Point)
 }
 
+// MarshalJSON is mirrored in web/api/v1/api.go with jsoniter because Point
+// wouldn't be marshaled with jsoniter in all cases otherwise.
 func (s Sample) MarshalJSON() ([]byte, error) {
-	v := struct {
+	if s.Point.H == nil {
+		v := struct {
+			M labels.Labels `json:"metric"`
+			V Point         `json:"value"`
+		}{
+			M: s.Metric,
+			V: s.Point,
+		}
+		return json.Marshal(v)
+	}
+	h := struct {
 		M labels.Labels `json:"metric"`
-		V Point         `json:"value"`
+		H Point         `json:"histogram"`
 	}{
 		M: s.Metric,
-		V: s.Point,
+		H: s.Point,
 	}
-	return json.Marshal(v)
+	return json.Marshal(h)
 }
 
 // Vector is basically only an alias for model.Samples, but the
@@ -296,19 +379,23 @@ func newStorageSeriesIterator(series Series) *storageSeriesIterator {
 	}
 }
 
-func (ssi *storageSeriesIterator) Seek(t int64) bool {
+func (ssi *storageSeriesIterator) Seek(t int64) chunkenc.ValueType {
 	i := ssi.curr
 	if i < 0 {
 		i = 0
 	}
 	for ; i < len(ssi.points); i++ {
-		if ssi.points[i].T >= t {
+		p := ssi.points[i]
+		if p.T >= t {
 			ssi.curr = i
-			return true
+			if p.H != nil {
+				return chunkenc.ValFloatHistogram
+			}
+			return chunkenc.ValFloat
 		}
 	}
 	ssi.curr = len(ssi.points) - 1
-	return false
+	return chunkenc.ValNone
 }
 
 func (ssi *storageSeriesIterator) At() (t int64, v float64) {
@@ -316,9 +403,30 @@ func (ssi *storageSeriesIterator) At() (t int64, v float64) {
 	return p.T, p.V
 }
 
-func (ssi *storageSeriesIterator) Next() bool {
+func (ssi *storageSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
+	panic(errors.New("storageSeriesIterator: AtHistogram not supported"))
+}
+
+func (ssi *storageSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+	p := ssi.points[ssi.curr]
+	return p.T, p.H
+}
+
+func (ssi *storageSeriesIterator) AtT() int64 {
+	p := ssi.points[ssi.curr]
+	return p.T
+}
+
+func (ssi *storageSeriesIterator) Next() chunkenc.ValueType {
 	ssi.curr++
-	return ssi.curr < len(ssi.points)
+	if ssi.curr >= len(ssi.points) {
+		return chunkenc.ValNone
+	}
+	p := ssi.points[ssi.curr]
+	if p.H != nil {
+		return chunkenc.ValFloatHistogram
+	}
+	return chunkenc.ValFloat
 }
 
 func (ssi *storageSeriesIterator) Err() error {

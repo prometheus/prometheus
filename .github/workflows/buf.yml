@@ -1,5 +1,5 @@
 name: buf.build
-on:
+on:  # yamllint disable-line rule:truthy
   push:
     branches:
       - main
@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - uses: bufbuild/buf-setup-action@v1.7.0
+      - uses: bufbuild/buf-setup-action@v1.9.0
       - uses: bufbuild/buf-lint-action@v1
         with:
           input: 'prompb'
