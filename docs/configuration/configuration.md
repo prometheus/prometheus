@@ -1064,6 +1064,45 @@ See below for the configuration options for EC2 discovery:
 filters:
   [ - name: <string>
       values: <string>, [...] ]
+
+# Authentication information used to authenticate to the EC2 API.
+# Note that `basic_auth`, `authorization` and `oauth2` options are
+# mutually exclusive.
+# `password` and `password_file` are mutually exclusive.
+
+# Optional HTTP basic authentication information, currently not supported by AWS.
+basic_auth:
+  [ username: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
+
+# Optional `Authorization` header configuration, currently not supported by AWS.
+authorization:
+  # Sets the authentication type.
+  [ type: <string> | default: Bearer ]
+  # Sets the credentials. It is mutually exclusive with
+  # `credentials_file`.
+  [ credentials: <secret> ]
+  # Sets the credentials to the credentials read from the configured file.
+  # It is mutuall exclusive with `credentials`.
+  [ credentials_file: <filename> ]
+
+# Optional OAuth 2.0 configuration, currently not supported by AWS.
+oauth2:
+  [ <oauth2> ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <bool> | default: true ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
 ```
 
 The [relabeling phase](#relabel_config) is the preferred and more powerful
@@ -2066,6 +2105,45 @@ See below for the configuration options for Lightsail discovery:
 # The port to scrape metrics from. If using the public IP address, this must
 # instead be specified in the relabeling rule.
 [ port: <int> | default = 80 ]
+
+# Authentication information used to authenticate to the Lightsail API.
+# Note that `basic_auth`, `authorization` and `oauth2` options are
+# mutually exclusive.
+# `password` and `password_file` are mutually exclusive.
+
+# Optional HTTP basic authentication information, currently not supported by AWS.
+basic_auth:
+  [ username: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
+
+# Optional `Authorization` header configuration, currently not supported by AWS.
+authorization:
+  # Sets the authentication type.
+  [ type: <string> | default: Bearer ]
+  # Sets the credentials. It is mutually exclusive with
+  # `credentials_file`.
+  [ credentials: <secret> ]
+  # Sets the credentials to the credentials read from the configured file.
+  # It is mutuall exclusive with `credentials`.
+  [ credentials_file: <filename> ]
+
+# Optional OAuth 2.0 configuration, currently not supported by AWS.
+oauth2:
+  [ <oauth2> ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <bool> | default: true ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
 ```
 
 ### `<linode_sd_config>`
