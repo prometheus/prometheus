@@ -586,6 +586,7 @@ var expectedConf = &Config{
 							Values: []string{"web", "db"},
 						},
 					},
+					HTTPClientConfig: config.DefaultHTTPClientConfig,
 				},
 			},
 		},
@@ -602,12 +603,13 @@ var expectedConf = &Config{
 
 			ServiceDiscoveryConfigs: discovery.Configs{
 				&aws.LightsailSDConfig{
-					Region:          "us-east-1",
-					AccessKey:       "access",
-					SecretKey:       "mysecret",
-					Profile:         "profile",
-					RefreshInterval: model.Duration(60 * time.Second),
-					Port:            80,
+					Region:           "us-east-1",
+					AccessKey:        "access",
+					SecretKey:        "mysecret",
+					Profile:          "profile",
+					RefreshInterval:  model.Duration(60 * time.Second),
+					Port:             80,
+					HTTPClientConfig: config.DefaultHTTPClientConfig,
 				},
 			},
 		},

@@ -56,8 +56,9 @@ const (
 
 // DefaultLightsailSDConfig is the default Lightsail SD configuration.
 var DefaultLightsailSDConfig = LightsailSDConfig{
-	Port:            80,
-	RefreshInterval: model.Duration(60 * time.Second),
+	Port:             80,
+	RefreshInterval:  model.Duration(60 * time.Second),
+	HTTPClientConfig: config.DefaultHTTPClientConfig,
 }
 
 func init() {
@@ -74,6 +75,8 @@ type LightsailSDConfig struct {
 	RoleARN         string         `yaml:"role_arn,omitempty"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 	Port            int            `yaml:"port"`
+
+	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 }
 
 // Name returns the name of the Lightsail Config.
@@ -144,11 +147,17 @@ func (d *LightsailDiscovery) lightsailClient() (*lightsail.Lightsail, error) {
 		creds = nil
 	}
 
+	client, err := config.NewClientFromConfig(d.cfg.HTTPClientConfig, "lightsail_sd")
+	if err != nil {
+		return nil, err
+	}
+
 	sess, err := session.NewSessionWithOptions(session.Options{
 		Config: aws.Config{
 			Endpoint:    &d.cfg.Endpoint,
 			Region:      &d.cfg.Region,
 			Credentials: creds,
+			HTTPClient:  client,
 		},
 		Profile: d.cfg.Profile,
 	})
