@@ -1070,13 +1070,13 @@ filters:
 # mutually exclusive.
 # `password` and `password_file` are mutually exclusive.
 
-# Optional HTTP basic authentication information, currently not support by Azure.
+# Optional HTTP basic authentication information, currently not supported by AWS.
 basic_auth:
   [ username: <string> ]
   [ password: <secret> ]
   [ password_file: <string> ]
 
-# Optional `Authorization` header configuration, currently not supported by Azure.
+# Optional `Authorization` header configuration, currently not supported by AWS.
 authorization:
   # Sets the authentication type.
   [ type: <string> | default: Bearer ]
@@ -1087,7 +1087,7 @@ authorization:
   # It is mutuall exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
-# Optional OAuth 2.0 configuration, currently not supported by Azure.
+# Optional OAuth 2.0 configuration, currently not supported by AWS.
 oauth2:
   [ <oauth2> ]
 
@@ -2111,13 +2111,13 @@ See below for the configuration options for Lightsail discovery:
 # mutually exclusive.
 # `password` and `password_file` are mutually exclusive.
 
-# Optional HTTP basic authentication information, currently not support by Azure.
+# Optional HTTP basic authentication information, currently not supported by AWS.
 basic_auth:
   [ username: <string> ]
   [ password: <secret> ]
   [ password_file: <string> ]
 
-# Optional `Authorization` header configuration, currently not supported by Azure.
+# Optional `Authorization` header configuration, currently not supported by AWS.
 authorization:
   # Sets the authentication type.
   [ type: <string> | default: Bearer ]
@@ -2128,7 +2128,7 @@ authorization:
   # It is mutuall exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
-# Optional OAuth 2.0 configuration, currently not supported by Azure.
+# Optional OAuth 2.0 configuration, currently not supported by AWS.
 oauth2:
   [ <oauth2> ]
 
