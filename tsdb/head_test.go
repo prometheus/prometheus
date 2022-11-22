@@ -1329,7 +1329,8 @@ func TestMemSeries_appendHistogram(t *testing.T) {
 	}()
 	chunkRange := int64(1000)
 
-	s := newMemSeries(labels.Labels{}, 1, defaultIsolationDisabled)
+	lbls := labels.Labels{}
+	s := newMemSeries(lbls, 1, lbls.Hash(), 0, defaultIsolationDisabled)
 
 	histograms := GenerateTestHistograms(4)
 	histogramWithOneMoreBucket := histograms[3].Copy()

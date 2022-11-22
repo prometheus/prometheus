@@ -15,9 +15,10 @@ package tsdb
 
 import (
 	"context"
-	"crypto/rand"
+	crand "crypto/rand"
 	"fmt"
 	"math"
+	"math/rand"
 	"os"
 	"path"
 	"path/filepath"
@@ -443,9 +444,9 @@ func TestCompactionFailWillCleanUpTempDir(t *testing.T) {
 	tmpdir := t.TempDir()
 
 	shardedBlocks := []shardedBlock{
-		{meta: &BlockMeta{ULID: ulid.MustNew(ulid.Now(), rand.Reader)}},
-		{meta: &BlockMeta{ULID: ulid.MustNew(ulid.Now(), rand.Reader)}},
-		{meta: &BlockMeta{ULID: ulid.MustNew(ulid.Now(), rand.Reader)}},
+		{meta: &BlockMeta{ULID: ulid.MustNew(ulid.Now(), crand.Reader)}},
+		{meta: &BlockMeta{ULID: ulid.MustNew(ulid.Now(), crand.Reader)}},
+		{meta: &BlockMeta{ULID: ulid.MustNew(ulid.Now(), crand.Reader)}},
 	}
 
 	require.Error(t, compactor.write(tmpdir, shardedBlocks, erringBReader{}))
@@ -639,7 +640,7 @@ func TestCompaction_CompactEmptyBlocks(t *testing.T) {
 
 	for _, r := range ranges {
 		// Generate blocks using index and chunk writer. CreateBlock would not return valid block for 0 series.
-		id := ulid.MustNew(ulid.Now(), rand.Reader)
+		id := ulid.MustNew(ulid.Now(), crand.Reader)
 		m := &BlockMeta{
 			ULID:       id,
 			MinTime:    r[0],
@@ -1689,7 +1690,7 @@ func TestHeadCompactionWithHistograms(t *testing.T) {
 	// Compaction.
 	mint := head.MinTime()
 	maxt := head.MaxTime() + 1 // Block intervals are half-open: [b.MinTime, b.MaxTime).
-	compactor, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{DefaultBlockDuration}, chunkenc.NewPool(), nil)
+	compactor, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{DefaultBlockDuration}, chunkenc.NewPool(), nil, true)
 	require.NoError(t, err)
 	id, err := compactor.Write(head.opts.ChunkDirRoot, head, mint, maxt, nil)
 	require.NoError(t, err)
@@ -1835,7 +1836,7 @@ func TestSparseHistogramSpaceSavings(t *testing.T) {
 					// Sparse head compaction.
 					mint := sparseHead.MinTime()
 					maxt := sparseHead.MaxTime() + 1 // Block intervals are half-open: [b.MinTime, b.MaxTime).
-					compactor, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{DefaultBlockDuration}, chunkenc.NewPool(), nil)
+					compactor, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{DefaultBlockDuration}, chunkenc.NewPool(), nil, true)
 					require.NoError(t, err)
 					sparseULID, err = compactor.Write(sparseHead.opts.ChunkDirRoot, sparseHead, mint, maxt, nil)
 					require.NoError(t, err)
@@ -1887,7 +1888,7 @@ func TestSparseHistogramSpaceSavings(t *testing.T) {
 					// Old head compaction.
 					mint := oldHead.MinTime()
 					maxt := oldHead.MaxTime() + 1 // Block intervals are half-open: [b.MinTime, b.MaxTime).
-					compactor, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{DefaultBlockDuration}, chunkenc.NewPool(), nil)
+					compactor, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{DefaultBlockDuration}, chunkenc.NewPool(), nil, true)
 					require.NoError(t, err)
 					oldULID, err = compactor.Write(oldHead.opts.ChunkDirRoot, oldHead, mint, maxt, nil)
 					require.NoError(t, err)
