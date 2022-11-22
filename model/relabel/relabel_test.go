@@ -451,6 +451,74 @@ func TestRelabel(t *testing.T) {
 				"foo_uppercase": "BAR123FOO",
 			}),
 		},
+		{
+			input: labels.FromMap(map[string]string{
+				"__tmp_port": "1234",
+				"__port1":    "1234",
+				"__port2":    "5678",
+			}),
+			relabel: []*Config{
+				{
+					SourceLabels: model.LabelNames{"__tmp_port"},
+					Action:       KeepEqual,
+					TargetLabel:  "__port1",
+				},
+			},
+			output: labels.FromMap(map[string]string{
+				"__tmp_port": "1234",
+				"__port1":    "1234",
+				"__port2":    "5678",
+			}),
+		},
+		{
+			input: labels.FromMap(map[string]string{
+				"__tmp_port": "1234",
+				"__port1":    "1234",
+				"__port2":    "5678",
+			}),
+			relabel: []*Config{
+				{
+					SourceLabels: model.LabelNames{"__tmp_port"},
+					Action:       DropEqual,
+					TargetLabel:  "__port1",
+				},
+			},
+			output: nil,
+		},
+		{
+			input: labels.FromMap(map[string]string{
+				"__tmp_port": "1234",
+				"__port1":    "1234",
+				"__port2":    "5678",
+			}),
+			relabel: []*Config{
+				{
+					SourceLabels: model.LabelNames{"__tmp_port"},
+					Action:       DropEqual,
+					TargetLabel:  "__port2",
+				},
+			},
+			output: labels.FromMap(map[string]string{
+				"__tmp_port": "1234",
+				"__port1":    "1234",
+				"__port2":    "5678",
+			}),
+		},
+		{
+			input: labels.FromMap(map[string]string{
+				"__tmp_port": "1234",
+				"__port1":    "1234",
+				"__port2":    "5678",
+			}),
+			relabel: []*Config{
+				{
+					SourceLabels: model.LabelNames{"__tmp_port"},
+					Action:       KeepEqual,
+					TargetLabel:  "__port2",
+				},
+			},
+			output: nil,
+		},
 	}
 
 	for _, test := range tests {

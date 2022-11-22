@@ -3,7 +3,7 @@ import React, { FC, ReactNode } from 'react';
 import { Alert, Table } from 'reactstrap';
 
 import SeriesName from './SeriesName';
-import { Metric } from '../../types/types';
+import { Metric, Histogram } from '../../types/types';
 
 import moment from 'moment';
 
@@ -31,15 +31,18 @@ export interface DataTableProps {
 
 interface InstantSample {
   metric: Metric;
-  value: SampleValue;
+  value?: SampleValue;
+  histogram?: SampleHistogram;
 }
 
 interface RangeSamples {
   metric: Metric;
-  values: SampleValue[];
+  values?: SampleValue[];
+  histograms?: SampleHistogram[];
 }
 
 type SampleValue = [number, string];
+type SampleHistogram = [number, Histogram];
 
 const limitSeries = <S extends InstantSample | RangeSamples>(series: S[]): S[] => {
   const maxSeries = 10000;
@@ -71,7 +74,9 @@ const DataTable: FC<DataTableProps> = ({ data, useLocalTime }) => {
             <td>
               <SeriesName labels={s.metric} format={doFormat} />
             </td>
-            <td>{s.value[1]}</td>
+            <td>
+              {s.value && s.value[1]} <HistogramString h={s.histogram && s.histogram[1]} />
+            </td>
           </tr>
         );
       });
@@ -79,21 +84,36 @@ const DataTable: FC<DataTableProps> = ({ data, useLocalTime }) => {
       break;
     case 'matrix':
       rows = (limitSeries(data.result) as RangeSamples[]).map((s, seriesIdx) => {
-        const valuesAndTimes = s.values.map((v, valIdx) => {
-          const printedDatetime = moment.unix(v[0]).toISOString(useLocalTime);
-          return (
-            <React.Fragment key={valIdx}>
-              {v[1]} @{<span title={printedDatetime}>{v[0]}</span>}
-              <br />
-            </React.Fragment>
-          );
-        });
+        const valuesAndTimes = s.values
+          ? s.values.map((v, valIdx) => {
+              const printedDatetime = moment.unix(v[0]).toISOString(useLocalTime);
+              return (
+                <React.Fragment key={valIdx}>
+                  {v[1]} @{<span title={printedDatetime}>{v[0]}</span>}
+                  <br />
+                </React.Fragment>
+              );
+            })
+          : [];
+        const histogramsAndTimes = s.histograms
+          ? s.histograms.map((h, hisIdx) => {
+              const printedDatetime = moment.unix(h[0]).toISOString(useLocalTime);
+              return (
+                <React.Fragment key={-hisIdx}>
+                  <HistogramString h={h[1]} /> @{<span title={printedDatetime}>{h[0]}</span>}
+                  <br />
+                </React.Fragment>
+              );
+            })
+          : [];
         return (
           <tr style={{ whiteSpace: 'pre' }} key={seriesIdx}>
             <td>
               <SeriesName labels={s.metric} format={doFormat} />
             </td>
-            <td>{valuesAndTimes}</td>
+            <td>
+              {valuesAndTimes} {histogramsAndTimes}
+            </td>
           </tr>
         );
       });
@@ -135,6 +155,31 @@ const DataTable: FC<DataTableProps> = ({ data, useLocalTime }) => {
       <Table hover size="sm" className="data-table">
         <tbody>{rows}</tbody>
       </Table>
+    </>
+  );
+};
+
+export interface HistogramStringProps {
+  h?: Histogram;
+}
+
+export const HistogramString: FC<HistogramStringProps> = ({ h }) => {
+  if (!h) {
+    return <></>;
+  }
+  const buckets: string[] = [];
+
+  if (h.buckets) {
+    for (const bucket of h.buckets) {
+      const left = bucket[0] === 3 || bucket[0] === 1 ? '[' : '(';
+      const right = bucket[0] === 3 || bucket[0] === 0 ? ']' : ')';
+      buckets.push(left + bucket[1] + ',' + bucket[2] + right + ':' + bucket[3] + ' ');
+    }
+  }
+
+  return (
+    <>
+      {'{'} count:{h.count} sum:{h.sum} {buckets} {'}'}
     </>
   );
 };

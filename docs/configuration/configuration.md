@@ -294,6 +294,10 @@ nomad_sd_configs:
 openstack_sd_configs:
   [ - <openstack_sd_config> ... ]
 
+# List of OVHcloud service discovery configurations.
+ovhcloud_sd_configs:
+  [ - <ovhcloud_sd_config> ... ]
+
 # List of PuppetDB service discovery configurations.
 puppetdb_sd_configs:
   [ - <puppetdb_sd_config> ... ]
@@ -518,6 +522,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_consul_address`: the address of the target
 * `__meta_consul_dc`: the datacenter name for the target
 * `__meta_consul_health`: the health status of the service
+* `__meta_consul_partition`: the admin partition name where the service is registered 
 * `__meta_consul_metadata_<key>`: each node metadata key value of the target
 * `__meta_consul_node`: the node name defined for the target
 * `__meta_consul_service_address`: the service address of the target
@@ -536,6 +541,8 @@ The following meta labels are available on targets during [relabeling](#relabel_
 [ datacenter: <string> ]
 # Namespaces are only supported in Consul Enterprise.
 [ namespace: <string> ]
+# Admin Partitions are only supported in Consul Enterprise.
+[ partition: <string> ]
 [ scheme: <string> | default = "http" ]
 # The username and password fields are deprecated in favor of the basic_auth configuration.
 [ username: <string> ]
@@ -1173,6 +1180,66 @@ tls_config:
   [ <tls_config> ]
 ```
 
+### `<ovhcloud_sd_config>`
+
+OVHcloud SD configurations allow retrieving scrape targets from OVHcloud's [dedicated servers](https://www.ovhcloud.com/en/bare-metal/) and [VPS](https://www.ovhcloud.com/en/vps/) using
+their [API](https://api.ovh.com/).
+Prometheus will periodically check the REST endpoint and create a target for every discovered server.
+The role will try to use the public IPv4 address as default address, if there's none it will try to use the IPv6 one. This may be changed with relabeling.
+For OVHcloud's [public cloud instances](https://www.ovhcloud.com/en/public-cloud/) you can use the [openstack_sd_config](#openstack_sd_config).
+
+#### VPS
+
+* `__meta_ovhcloud_vps_cluster`: the cluster of the server
+* `__meta_ovhcloud_vps_datacenter`: the datacenter of the server
+* `__meta_ovhcloud_vps_disk`: the disk of the server
+* `__meta_ovhcloud_vps_display_name`: the display name of the server
+* `__meta_ovhcloud_vps_ipv4`: the IPv4 of the server
+* `__meta_ovhcloud_vps_ipv6`: the IPv6 of the server
+* `__meta_ovhcloud_vps_keymap`: the KVM keyboard layout of the server
+* `__meta_ovhcloud_vps_maximum_additional_ip`: the maximum additional IPs of the server
+* `__meta_ovhcloud_vps_memory_limit`: the memory limit of the server
+* `__meta_ovhcloud_vps_memory`: the memory of the server
+* `__meta_ovhcloud_vps_monitoring_ip_blocks`: the monitoring IP blocks of the server
+* `__meta_ovhcloud_vps_name`: the name of the server
+* `__meta_ovhcloud_vps_netboot_mode`: the netboot mode of the server
+* `__meta_ovhcloud_vps_offer_type`: the offer type of the server
+* `__meta_ovhcloud_vps_offer`: the offer of the server
+* `__meta_ovhcloud_vps_state`: the state of the server
+* `__meta_ovhcloud_vps_vcore`: the number of virtual cores of the server
+* `__meta_ovhcloud_vps_version`: the version of the server
+* `__meta_ovhcloud_vps_zone`: the zone of the server
+
+#### Dedicated servers
+
+* `__meta_ovhcloud_dedicated_server_commercial_range`: the commercial range of the server
+* `__meta_ovhcloud_dedicated_server_datacenter`: the datacenter of the server
+* `__meta_ovhcloud_dedicated_server_ipv4`: the IPv4 of the server
+* `__meta_ovhcloud_dedicated_server_ipv6`: the IPv6 of the server
+* `__meta_ovhcloud_dedicated_server_link_speed`: the link speed of the server
+* `__meta_ovhcloud_dedicated_server_name`: the name of the server
+* `__meta_ovhcloud_dedicated_server_os`: the operating system of the server
+* `__meta_ovhcloud_dedicated_server_rack`: the rack of the server
+* `__meta_ovhcloud_dedicated_server_reverse`: the reverse DNS name of the server
+* `__meta_ovhcloud_dedicated_server_server_id`: the ID of the server
+* `__meta_ovhcloud_dedicated_server_state`: the state of the server
+* `__meta_ovhcloud_dedicated_server_support_level`: the support level of the server
+
+See below for the configuration options for OVHcloud discovery:
+
+```yaml
+# Access key to use. https://api.ovh.com
+application_key: <string>
+application_secret: <secret>
+consumer_key: <secret>
+# Service of the targets to retrieve. Must be `vps` or `dedicated_server`.
+service: <string>
+# API endpoint. https://github.com/ovh/go-ovh#supported-apis
+[ endpoint: <string> | default = "ovh-eu" ]
+# Refresh interval to re-read the resources list.
+[ refresh_interval: <duration> | default = 60s ]
+```
+
 ### `<puppetdb_sd_config>`
 
 PuppetDB SD configurations allow retrieving scrape targets from
@@ -1409,7 +1476,6 @@ The labels below are only available for targets with `role` set to `hcloud`:
 * `__meta_hetzner_hcloud_image_description`: the description of the server image
 * `__meta_hetzner_hcloud_image_os_flavor`: the OS flavor of the server image
 * `__meta_hetzner_hcloud_image_os_version`: the OS version of the server image
-* `__meta_hetzner_hcloud_image_description`: the description of the server image
 * `__meta_hetzner_hcloud_datacenter_location`: the location of the server
 * `__meta_hetzner_hcloud_datacenter_location_network_zone`: the network zone of the server
 * `__meta_hetzner_hcloud_server_type`: the type of the server
@@ -2266,7 +2332,7 @@ tls_config:
 ### `<serverset_sd_config>`
 
 Serverset SD configurations allow retrieving scrape targets from [Serversets]
-(https://github.com/twitter/finagle/tree/master/finagle-serversets) which are
+(https://github.com/twitter/finagle/tree/develop/finagle-serversets) which are
 stored in [Zookeeper](https://zookeeper.apache.org/). Serversets are commonly
 used by [Finagle](https://twitter.github.io/finagle/) and
 [Aurora](https://aurora.apache.org/).
@@ -2790,6 +2856,8 @@ anchored on both ends. To un-anchor the regex, use `.*<regex>.*`.
 * `uppercase`: Maps the concatenated `source_labels` to their upper case.
 * `keep`: Drop targets for which `regex` does not match the concatenated `source_labels`.
 * `drop`: Drop targets for which `regex` matches the concatenated `source_labels`.
+* `keepequal`: Drop targets for which the concatenated `source_labels` do not match `target_label`.
+* `dropequal`: Drop targets for which the concatenated `source_labels` do match `target_label`.
 * `hashmod`: Set `target_label` to the `modulus` of a hash of the concatenated `source_labels`.
 * `labelmap`: Match `regex` against all source label names, not just those specified in `source_labels`. Then
    copy the values of the matching labels  to label names given by `replacement` with match
@@ -2962,6 +3030,10 @@ nomad_sd_configs:
 openstack_sd_configs:
   [ - <openstack_sd_config> ... ]
 
+# List of OVHcloud service discovery configurations.
+ovhcloud_sd_configs:
+  [ - <ovhcloud_sd_config> ... ]
+
 # List of PuppetDB service discovery configurations.
 puppetdb_sd_configs:
   [ - <puppetdb_sd_config> ... ]
@@ -3027,6 +3099,9 @@ write_relabel_configs:
 
 # Enables sending of exemplars over remote write. Note that exemplar storage itself must be enabled for exemplars to be scraped in the first place.
 [ send_exemplars: <boolean> | default = false ]
+
+# Enables sending of native histograms, also known as sparse histograms, over remote write.
+[ send_native_histograms: <boolean> | default = false ]
 
 # Sets the `Authorization` header on every remote write request with the
 # configured username and password.

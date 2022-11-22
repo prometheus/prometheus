@@ -4,6 +4,12 @@ export interface Metric {
   [key: string]: string;
 }
 
+export interface Histogram {
+  count: string;
+  sum: string;
+  buckets?: [number, string, string, string][];
+}
+
 export interface Exemplar {
   labels: { [key: string]: string };
   value: string;

@@ -33,6 +33,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
 var (
@@ -110,12 +111,14 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 
 		var t int64
 		var v float64
+		var ok bool
 
-		ok := it.Seek(maxt)
-		if ok {
+		valueType := it.Seek(maxt)
+		if valueType == chunkenc.ValFloat {
 			t, v = it.At()
 		} else {
-			t, v, ok = it.PeekBack(1)
+			// TODO(beorn7): Handle histograms.
+			t, v, _, ok = it.PeekBack(1)
 			if !ok {
 				continue
 			}
@@ -220,6 +223,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 
 		protMetric.TimestampMs = proto.Int64(s.T)
 		protMetric.Untyped.Value = proto.Float64(s.V)
+		// TODO(beorn7): Handle histograms.
 
 		protMetricFam.Metric = append(protMetricFam.Metric, protMetric)
 	}

@@ -41,7 +41,7 @@ func (o *OOOChunk) Insert(t int64, v float64) bool {
 
 	if i >= len(o.samples) {
 		// none found. append it at the end
-		o.samples = append(o.samples, sample{t, v})
+		o.samples = append(o.samples, sample{t, v, nil, nil})
 		return true
 	}
 
@@ -52,7 +52,7 @@ func (o *OOOChunk) Insert(t int64, v float64) bool {
 	// Expand length by 1 to make room. use a zero sample, we will overwrite it anyway.
 	o.samples = append(o.samples, sample{})
 	copy(o.samples[i+1:], o.samples[i:])
-	o.samples[i] = sample{t, v}
+	o.samples[i] = sample{t, v, nil, nil}
 
 	return true
 }

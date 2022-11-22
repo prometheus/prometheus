@@ -8,6 +8,9 @@ sort_rank: 6
 Federation allows a Prometheus server to scrape selected time series from
 another Prometheus server.
 
+_Note about native histograms (experimental feature): Federation does not
+support native histograms yet._
+
 ## Use cases
 
 There are different use cases for federation. Commonly, it is used to either

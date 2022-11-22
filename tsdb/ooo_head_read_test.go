@@ -860,7 +860,7 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 
 				var resultSamples tsdbutil.SampleSlice
 				it := c.Iterator(nil)
-				for it.Next() {
+				for it.Next() == chunkenc.ValFloat {
 					t, v := it.At()
 					resultSamples = append(resultSamples, sample{t: t, v: v})
 				}
@@ -1031,7 +1031,7 @@ func TestOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 
 				var resultSamples tsdbutil.SampleSlice
 				it := c.Iterator(nil)
-				for it.Next() {
+				for it.Next() == chunkenc.ValFloat {
 					ts, v := it.At()
 					resultSamples = append(resultSamples, sample{t: ts, v: v})
 				}

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package wal
+package wlog
 
 import (
 	"bytes"
@@ -137,7 +137,7 @@ func TestWALRepair_ReadingError(t *testing.T) {
 			}
 			first, last, err := Segments(w.Dir())
 			require.NoError(t, err)
-			require.Equal(t, 3, 1+last-first, "wal creation didn't result in expected number of segments")
+			require.Equal(t, 3, 1+last-first, "wlog creation didn't result in expected number of segments")
 
 			require.NoError(t, w.Close())
 

@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
 type backfillSample struct {
@@ -50,7 +51,7 @@ func queryAllSeries(t testing.TB, q storage.Querier, expectedMinTime, expectedMa
 		series := ss.At()
 		it := series.Iterator()
 		require.NoError(t, it.Err())
-		for it.Next() {
+		for it.Next() == chunkenc.ValFloat {
 			ts, v := it.At()
 			samples = append(samples, backfillSample{Timestamp: ts, Value: v, Labels: series.Labels()})
 		}
