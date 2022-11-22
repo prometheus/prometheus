@@ -1,0 +1,4 @@
+scrape_configs:
+  - job_name: oci_test_job
+    oci_compute_sd_configs:
+      - tenancy_ocid: ocid1.tenancy.oc1..xxx

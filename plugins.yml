@@ -12,6 +12,7 @@
 - github.com/prometheus/prometheus/discovery/marathon
 - github.com/prometheus/prometheus/discovery/moby
 - github.com/prometheus/prometheus/discovery/nomad
+- github.com/prometheus/prometheus/discovery/oci
 - github.com/prometheus/prometheus/discovery/openstack
 - github.com/prometheus/prometheus/discovery/ovhcloud
 - github.com/prometheus/prometheus/discovery/puppetdb

@@ -46,6 +46,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/marathon"
 	"github.com/prometheus/prometheus/discovery/moby"
 	"github.com/prometheus/prometheus/discovery/nomad"
+	"github.com/prometheus/prometheus/discovery/oci"
 	"github.com/prometheus/prometheus/discovery/openstack"
 	"github.com/prometheus/prometheus/discovery/ovhcloud"
 	"github.com/prometheus/prometheus/discovery/puppetdb"
@@ -1123,6 +1124,61 @@ var expectedConf = &Config{
 				},
 			},
 		},
+		{
+			JobName:          "service-oci-compute-user-principal",
+			HonorTimestamps:  true,
+			ScrapeInterval:   model.Duration(15 * time.Second),
+			ScrapeTimeout:    DefaultGlobalConfig.ScrapeTimeout,
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
+			ServiceDiscoveryConfigs: discovery.Configs{
+				&oci.SDConfig{
+					Tenancy:     "ocid1.tenancy.oc1..xxx",
+					Region:      "us-ashburn-1",
+					Compartment: "ocid1.compartment.oc1..yyy",
+					TagFilters: []*oci.FilterByTags{
+						{
+							TagKey:   "tag_key_0",
+							TagValue: "tag_value_0",
+						},
+						{
+							TagKey:   "tag_key_1",
+							TagValue: "tag_value_1",
+						},
+					},
+					OciCreds:        oci.Authentication{Type: "UserPrincipal"},
+					RefreshInterval: model.Duration(5 * time.Minute),
+					Port:            9100,
+				},
+			},
+		},
+		{
+			JobName:          "service-oci-compute-instance-principal",
+			HonorTimestamps:  true,
+			ScrapeInterval:   model.Duration(15 * time.Second),
+			ScrapeTimeout:    DefaultGlobalConfig.ScrapeTimeout,
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
+			ServiceDiscoveryConfigs: discovery.Configs{
+				&oci.SDConfig{
+					Tenancy:     "ocid1.tenancy.oc1..xxx",
+					Region:      "us-ashburn-1",
+					Compartment: "ocid1.compartment.oc1..yyy",
+					TagFilters: []*oci.FilterByTags{
+						{
+							TagNameSpace: "tag_namespace_0",
+							TagKey:       "tag_key_0",
+							TagValue:     "tag_value_0",
+						},
+					},
+					OciCreds:        oci.Authentication{Type: "InstancePrincipal"},
+					RefreshInterval: model.Duration(5 * time.Minute),
+					Port:            9100,
+				},
+			},
+		},
 	},
 	AlertingConfig: AlertingConfig{
 		AlertmanagerConfigs: []*AlertmanagerConfig{
@@ -1692,6 +1748,22 @@ var expectedErrors = []struct {
 	{
 		filename: "ovhcloud_bad_service.bad.yml",
 		errMsg:   "unknown service: fakeservice",
+	},
+	{
+		filename: "oci_compute_auth_type.bad.yml",
+		errMsg:   "oci_compute sd configuration: invalid type for authentication, valid types are InstancePrincipal or UserPrincipal",
+	},
+	{
+		filename: "oci_compute_missing_region.bad.yml",
+		errMsg:   "oci_compute sd configuration: region is required field",
+	},
+	{
+		filename: "oci_compute_missing_tenancy.bad.yml",
+		errMsg:   "oci_compute sd configuration: tenancy_ocid is required field",
+	},
+	{
+		filename: "oci_compute_tags.bad.yml",
+		errMsg:   "oci_compute sd configuration: missing tag key or value, both tagKey and tagValue must be present for filtering",
 	},
 }
 

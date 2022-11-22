@@ -2846,6 +2846,99 @@ tls_config:
 [ refresh_interval: <duration> | default = 60s ]
 ```
 
+### `<oci_compute_sd_config>`
+
+OCI Compute SD configurations allow retrieving scrape targets from [Compute Instances](https://docs.oracle.com/en-us/iaas/Content/Compute/Concepts/computeoverview.htm) from your OCI(Oracle Cloud Infrastructure) tenancy.
+
+The private IP address is used for scraping by default, but may be changed to the public IP address with relabeling.
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_oci_compute_instance_id`: The unique ID for the OCI Compute Instance, its OCID.
+* `__meta_oci_compute_instance_name`: The display name for the instance.
+* `__meta_oci_compute_instance_state`: The lifecycle state of the instance.
+* `__meta_oci_compute_compartment`: The fully qualified compartment name for the instance.
+* `__meta_oci_compute_compartment_id`: The unique ID for the compartment for the instance.
+* `__meta_oci_compute_region`: OCI [region](https://docs.oracle.com/en-us/iaas/Content/General/Concepts/regions.htm) code for this instance.
+* `__meta_oci_compute_availability_domain`: OCI [availability domain](https://docs.oracle.com/en-us/iaas/Content/General/Concepts/regions.htm#top) code for this instance, within the region it resides in.
+* `__meta_oci_compute_fault_domain`: The OCI [fault domain](https://docs.oracle.com/en-us/iaas/Content/General/Concepts/regions.htm#fault) code for this instance.
+* `__meta_oci_compute_vcn`: The VCN(virtual cloud network) display name for the instance, if available.
+* `__meta_oci_compute_vcn_id`: The OCID for the VCN for the instance, if available.
+* `__meta_oci_compute_subnet_id`: The OCID for the subnet for the instance.
+* `__meta_oci_compute_networking_bandwidth_in_gbps`: The alloted networking bandwidth in GBPS for the instance.
+* `__meta_oci_private_ip`: The private ip address of primary vnic for the instance.
+* `__meta_oci_public_ip`: The public ip address of primary vnic for the instance, if present.
+* `__meta_oci_compute_ocpus`: The OCPU count for the instance.
+* `__meta_oci_compute_processor_description`:The processor description for the instance.
+* `__meta_oci_compute_memory_bytes`: The amount of RAM in bytess.
+* `__meta_oci_compute_instance_shape`: The OCI compute [shape](https://docs.oracle.com/en-us/iaas/Content/Compute/References/computeshapes.htm) for the instance.
+* `__meta_oci_compute_defined_tag_<tagkey>`: Each [defined tag](https://docs.oracle.com/en-us/iaas/Content/Tagging/Concepts/taggingoverview.htm#concepts) value of the instance.
+* `__meta_oci_compute_freeform_tag_<tagkey>`: Each [freeform tag](https://docs.oracle.com/en-us/iaas/Content/Tagging/Concepts/understandingfreeformtags.htm) value of the instance.
+
+See below for the configuration options for *OCI Compute* discovery:
+
+```yaml
+# The OCID, the unique ID about your OCI tenancy/account. Always required.
+tenancy_ocid: <string> 
+# The OCI region code, 
+# as per https://docs.oracle.com/en-us/iaas/Content/General/Concepts/regions.htm. This determines the OCI API endpoint used by OCI Compute SD. Always required.
+region: <string> 
+# The OCID for the compartment for your compute instances to be scraped.
+compartment_ocid: <string>
+# The port to scrape metrics from. 
+[ port: <int> | default = 80 ]
+# Refresh interval to re-read the instance list.
+[ refresh_interval: <duration> | default = 300s ]
+
+# Optional `authencation` mechanism to be used by OCI Compute SD.
+authencation:
+  # Sets the authentication type. Permissible enum values: InstancePrincipal or UserPrincipal
+  [ type: <enum> | default: InstancePrincipal ]
+
+  # In case UserPrincipal is used, path to your local OCI Config file.
+  [ oci_config_file_path: <string> | default: ~/.oci/config]
+  # In case UserPrincipal is used, User profile from OCI Config file.
+  [ oci_config_file_profile: <string> | DEFAULT ]
+  # In case UserPrincipal is used, password for your OCI Config file.
+  [ oci_config_file_pvt_key_password: <secret> | default: "" ]
+
+# Tag Filters can be used optionally to filter the instance list, as per the tags applied to them 
+# Only instances with 'all' the tags will pass the filter criteria. If instance has more than the following tags, it will pass the filter criteria.
+tag_filters:
+  [ - tag_namespace: <string> # only needed for defined tags, else can be skipped
+      tag_key: <string>
+      tag_value: <string>, [...] ]
+```
+
+#### OCI IAM policies for authorization
+
+When using *InstancePrincipal*, for authentication with OCI APIs, the Prometheus needs to be running on OCI Compute Instance. Additionally compute instance must belong to a dynamic group say *dg_prometheus* with following OCI IAM policies, assigned to the dynamic group.
+
+```
+Allow dynamic-group dg_prometheus to read instances in tenancy where target.compartment.id='ocid for the compartment of instances'
+Allow dynamic-group dg_prometheus to read vcns in tenancy where target.compartment.id='ocid for the compartment of instances' 
+Allow dynamic-group dg_prometheus to read subnets in tenancy where target.compartment.id='ocid for the compartment of instances' 
+Allow dynamic-group dg_prometheus to read vnics in tenancy where target.compartment.id='ocid for the compartment of instances' 
+Allow dynamic-group dg_prometheus to read vnic-attachments in tenancy where target.compartment.id='ocid for the compartment of instances' 
+Allow dynamic-group dg_prometheus to read compartments in tenancy
+```
+
+For details on *InstancePrincipal*, please refer [documentation for Dynamic groups for OCI Compute Instances](https://docs.oracle.com/en-us/iaas/Content/Identity/Tasks/callingservicesfrominstances.htm).
+
+Similaraly, When using *UserPrincipal* for authentication with OCI APIs, the OCI user say *PrometheusUser*(from the OCI profile), needs to have following OCI IAM policies in place.
+
+```
+Allow user PrometheusUser to read instances in tenancy where target.compartment.id='ocid for the compartment of instances'
+Allow user PrometheusUser to read vcns in tenancy where target.compartment.id='ocid for the compartment of instances' 
+Allow user PrometheusUser to read subnets in tenancy where target.compartment.id='ocid for the compartment of instances' 
+Allow user PrometheusUser to read vnics in tenancy where target.compartment.id='ocid for the compartment of instances' 
+Allow user PrometheusUser to read vnic-attachments in tenancy where target.compartment.id='ocid for the compartment of instances' 
+Allow user PrometheusUser to read compartments in tenancy
+```
+
+For details on setting OCI configuration for *UserPrincipal*, please refer [documentation for OCI-SDK Config setup for users](https://docs.oracle.com/en-us/iaas/Content/API/Concepts/sdkconfig.htm).
+
+Please note these IAM policies need to be created in the root comapartment, that is they are at tenancy level.
 
 ### `<static_config>`
 

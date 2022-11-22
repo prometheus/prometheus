@@ -58,6 +58,9 @@ import (
 	// Register nomad plugin.
 	_ "github.com/prometheus/prometheus/discovery/nomad"
 
+	// Register oci plugin.
+	_ "github.com/prometheus/prometheus/discovery/oci"
+
 	// Register openstack plugin.
 	_ "github.com/prometheus/prometheus/discovery/openstack"
 

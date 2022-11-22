@@ -1,0 +1,42 @@
+# A example scrape configuration for running Prometheus with OCI Compute SD.
+
+scrape_configs:
+  # Make Prometheus scrape itself for metrics.
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: job_1
+    scrape_interval: 15s
+    oci_compute_sd_configs:
+      - tenancy_ocid: ocid1.tenancy.oc1..ocid
+        region: us-sanjose-1
+        refresh_interval: 300s
+        compartment_ocid: ocid1.compartment.oc1..ocid
+        port: 9100
+        authencation:
+          type: UserPrincipal
+          oci_config_file_path: /path/to/oci/config/file
+          oci_config_file_profile: name_of_oci_config_profile
+        tag_filters:
+          - tag_key: valueOfTagKey1
+            tag_value: valueOfTagValue1
+          - tag_namespace: tagNamespace2
+            tag_key: valueOfTagKey2
+            tag_value: valueOfTagValue2
+    relabel_configs:
+      - source_labels: [__meta_oci_compute_availability_domain]
+        target_label: availability_domain
+        action: replace
+      - source_labels: [__meta_oci_compute_fault_domain]
+        target_label: fault_domain
+        action: replace
+      - source_labels: [__meta_oci_compute_region]
+        target_label: region
+        action: replace
+      - source_labels: [__meta_oci_compute_instance_id]
+        target_label: instance_ocid
+        action: replace
+      - source_labels: [__meta_oci_compute_compartment]
+        target_label: compartment
+        action: replace

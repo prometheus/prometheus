@@ -1,0 +1,5 @@
+scrape_configs:
+  - job_name: oci_test_job
+    oci_compute_sd_configs:
+      - region: us-ashburn-1
+        compartment_ocid: ocid1.compartment.oc1..xxx

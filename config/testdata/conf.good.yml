@@ -403,6 +403,35 @@ scrape_configs:
       - authorization:
           credentials: abcdef
 
+  - job_name: service-oci-compute-user-principal
+    oci_compute_sd_configs:
+      - tenancy_ocid: ocid1.tenancy.oc1..xxx
+        compartment_ocid: ocid1.compartment.oc1..yyy
+        region: us-ashburn-1
+        port: 9100
+        refresh_interval: 300s
+        authencation:
+          type: UserPrincipal
+        tag_filters:
+          - tag_key: tag_key_0
+            tag_value: tag_value_0
+          - tag_key: tag_key_1
+            tag_value: tag_value_1
+
+  - job_name: service-oci-compute-instance-principal
+    oci_compute_sd_configs:
+      - tenancy_ocid: ocid1.tenancy.oc1..xxx
+        compartment_ocid: ocid1.compartment.oc1..yyy
+        region: us-ashburn-1
+        port: 9100
+        refresh_interval: 300s
+        authencation:
+          type: InstancePrincipal
+        tag_filters:
+          - tag_namespace: tag_namespace_0
+            tag_key: tag_key_0
+            tag_value: tag_value_0
+
 alerting:
   alertmanagers:
     - scheme: https
