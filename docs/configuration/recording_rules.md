@@ -17,6 +17,10 @@ Rule files use YAML.
 The rule files can be reloaded at runtime by sending `SIGHUP` to the Prometheus
 process. The changes are only applied if all rule files are well-formatted.
 
+_Note about native histograms (experimental feature): Rules evaluating to
+native histograms do not yet work as expected. Instead of a native histogram,
+the sample stored is just a floating point value of zero._
+
 ## Syntax-checking rules
 
 To quickly check whether a rule file is syntactically correct without starting

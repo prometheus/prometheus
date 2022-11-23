@@ -87,6 +87,12 @@ scrape_configs:
       - regex:
         replacement: static
         target_label: abc
+      - source_labels: [foo]
+        target_label: abc
+        action: keepequal
+      - source_labels: [foo]
+        target_label: abc
+        action: dropequal
 
     authorization:
       credentials_file: valid_token_file
@@ -348,6 +354,21 @@ scrape_configs:
   - job_name: service-eureka
     eureka_sd_configs:
       - server: "http://eureka.example.com:8761/eureka"
+
+  - job_name: ovhcloud
+    ovhcloud_sd_configs:
+      - service: vps
+        endpoint: ovh-eu
+        application_key: testAppKey
+        application_secret: testAppSecret
+        consumer_key: testConsumerKey
+        refresh_interval: 1m
+      - service: dedicated_server
+        endpoint: ovh-eu
+        application_key: testAppKey
+        application_secret: testAppSecret
+        consumer_key: testConsumerKey
+        refresh_interval: 1m
 
   - job_name: scaleway
     scaleway_sd_configs:

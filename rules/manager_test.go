@@ -39,6 +39,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
@@ -69,7 +70,7 @@ func TestAlertingRule(t *testing.T) {
 		labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
 	)
 	result := promql.Vector{
-		{
+		promql.Sample{
 			Metric: labels.FromStrings(
 				"__name__", "ALERTS",
 				"alertname", "HTTPRequestRateLow",
@@ -81,7 +82,7 @@ func TestAlertingRule(t *testing.T) {
 			),
 			Point: promql.Point{V: 1},
 		},
-		{
+		promql.Sample{
 			Metric: labels.FromStrings(
 				"__name__", "ALERTS",
 				"alertname", "HTTPRequestRateLow",
@@ -93,7 +94,7 @@ func TestAlertingRule(t *testing.T) {
 			),
 			Point: promql.Point{V: 1},
 		},
-		{
+		promql.Sample{
 			Metric: labels.FromStrings(
 				"__name__", "ALERTS",
 				"alertname", "HTTPRequestRateLow",
@@ -105,7 +106,7 @@ func TestAlertingRule(t *testing.T) {
 			),
 			Point: promql.Point{V: 1},
 		},
-		{
+		promql.Sample{
 			Metric: labels.FromStrings(
 				"__name__", "ALERTS",
 				"alertname", "HTTPRequestRateLow",
@@ -214,7 +215,7 @@ func TestForStateAddSamples(t *testing.T) {
 				labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
 			)
 			result := promql.Vector{
-				{
+				promql.Sample{
 					Metric: labels.FromStrings(
 						"__name__", "ALERTS_FOR_STATE",
 						"alertname", "HTTPRequestRateLow",
@@ -225,7 +226,7 @@ func TestForStateAddSamples(t *testing.T) {
 					),
 					Point: promql.Point{V: 1},
 				},
-				{
+				promql.Sample{
 					Metric: labels.FromStrings(
 						"__name__", "ALERTS_FOR_STATE",
 						"alertname", "HTTPRequestRateLow",
@@ -236,7 +237,7 @@ func TestForStateAddSamples(t *testing.T) {
 					),
 					Point: promql.Point{V: 1},
 				},
-				{
+				promql.Sample{
 					Metric: labels.FromStrings(
 						"__name__", "ALERTS_FOR_STATE",
 						"alertname", "HTTPRequestRateLow",
@@ -247,7 +248,7 @@ func TestForStateAddSamples(t *testing.T) {
 					),
 					Point: promql.Point{V: 1},
 				},
-				{
+				promql.Sample{
 					Metric: labels.FromStrings(
 						"__name__", "ALERTS_FOR_STATE",
 						"alertname", "HTTPRequestRateLow",
@@ -612,7 +613,7 @@ func readSeriesSet(ss storage.SeriesSet) (map[string][]promql.Point, error) {
 
 		points := []promql.Point{}
 		it := series.Iterator()
-		for it.Next() {
+		for it.Next() == chunkenc.ValFloat {
 			t, v := it.At()
 			points = append(points, promql.Point{T: t, V: v})
 		}

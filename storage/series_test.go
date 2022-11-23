@@ -17,43 +17,51 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
 func TestListSeriesIterator(t *testing.T) {
-	it := NewListSeriesIterator(samples{sample{0, 0}, sample{1, 1}, sample{1, 1.5}, sample{2, 2}, sample{3, 3}})
+	it := NewListSeriesIterator(samples{
+		sample{0, 0, nil, nil},
+		sample{1, 1, nil, nil},
+		sample{1, 1.5, nil, nil},
+		sample{2, 2, nil, nil},
+		sample{3, 3, nil, nil},
+	})
 
 	// Seek to the first sample with ts=1.
-	require.True(t, it.Seek(1))
+	require.Equal(t, chunkenc.ValFloat, it.Seek(1))
 	ts, v := it.At()
 	require.Equal(t, int64(1), ts)
 	require.Equal(t, 1., v)
 
 	// Seek one further, next sample still has ts=1.
-	require.True(t, it.Next())
+	require.Equal(t, chunkenc.ValFloat, it.Next())
 	ts, v = it.At()
 	require.Equal(t, int64(1), ts)
 	require.Equal(t, 1.5, v)
 
 	// Seek again to 1 and make sure we stay where we are.
-	require.True(t, it.Seek(1))
+	require.Equal(t, chunkenc.ValFloat, it.Seek(1))
 	ts, v = it.At()
 	require.Equal(t, int64(1), ts)
 	require.Equal(t, 1.5, v)
 
 	// Another seek.
-	require.True(t, it.Seek(3))
+	require.Equal(t, chunkenc.ValFloat, it.Seek(3))
 	ts, v = it.At()
 	require.Equal(t, int64(3), ts)
 	require.Equal(t, 3., v)
 
 	// And we don't go back.
-	require.True(t, it.Seek(2))
+	require.Equal(t, chunkenc.ValFloat, it.Seek(2))
 	ts, v = it.At()
 	require.Equal(t, int64(3), ts)
 	require.Equal(t, 3., v)
 
 	// Seek beyond the end.
-	require.False(t, it.Seek(5))
+	require.Equal(t, chunkenc.ValNone, it.Seek(5))
 	// And we don't go back. (This exposes issue #10027.)
-	require.False(t, it.Seek(2))
+	require.Equal(t, chunkenc.ValNone, it.Seek(2))
 }

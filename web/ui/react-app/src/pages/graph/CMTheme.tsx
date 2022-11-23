@@ -1,5 +1,5 @@
-import { EditorView } from '@codemirror/view';
 import { HighlightStyle } from '@codemirror/language';
+import { EditorView } from '@codemirror/view';
 import { tags } from '@lezer/highlight';
 
 export const baseTheme = EditorView.theme({
@@ -263,7 +263,6 @@ export const darkTheme = EditorView.theme(
 );
 
 export const promqlHighlighter = HighlightStyle.define([
-  { tag: tags.name, color: '#000' },
   { tag: tags.number, color: '#09885a' },
   { tag: tags.string, color: '#a31515' },
   { tag: tags.keyword, color: '#008080' },
@@ -279,7 +278,6 @@ export const promqlHighlighter = HighlightStyle.define([
 ]);
 
 export const darkPromqlHighlighter = HighlightStyle.define([
-  { tag: tags.name, color: '#000' },
   { tag: tags.number, color: '#22c55e' },
   { tag: tags.string, color: '#fca5a5' },
   { tag: tags.keyword, color: '#14bfad' },

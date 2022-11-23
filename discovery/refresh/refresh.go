@@ -114,7 +114,10 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 
 func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	now := time.Now()
-	defer d.duration.Observe(time.Since(now).Seconds())
+	defer func() {
+		d.duration.Observe(time.Since(now).Seconds())
+	}()
+
 	tgs, err := d.refreshf(ctx)
 	if err != nil {
 		d.failures.Inc()

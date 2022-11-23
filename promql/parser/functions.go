@@ -163,6 +163,21 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeVector},
 		ReturnType: ValueTypeVector,
 	},
+	"histogram_count": {
+		Name:       "histogram_count",
+		ArgTypes:   []ValueType{ValueTypeVector},
+		ReturnType: ValueTypeVector,
+	},
+	"histogram_sum": {
+		Name:       "histogram_sum",
+		ArgTypes:   []ValueType{ValueTypeVector},
+		ReturnType: ValueTypeVector,
+	},
+	"histogram_fraction": {
+		Name:       "histogram_fraction",
+		ArgTypes:   []ValueType{ValueTypeScalar, ValueTypeScalar, ValueTypeVector},
+		ReturnType: ValueTypeVector,
+	},
 	"histogram_quantile": {
 		Name:       "histogram_quantile",
 		ArgTypes:   []ValueType{ValueTypeScalar, ValueTypeVector},

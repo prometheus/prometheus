@@ -28,6 +28,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
 type mockQueryRangeAPI struct {
@@ -139,7 +140,7 @@ func TestBackfillRuleIntegration(t *testing.T) {
 						require.Equal(t, 3, len(series.Labels()))
 					}
 					it := series.Iterator()
-					for it.Next() {
+					for it.Next() == chunkenc.ValFloat {
 						samplesCount++
 						ts, v := it.At()
 						if v == testValue {

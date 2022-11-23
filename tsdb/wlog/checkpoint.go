@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package wal
+package wlog
 
 import (
 	"fmt"
@@ -38,12 +38,12 @@ import (
 // CheckpointStats returns stats about a created checkpoint.
 type CheckpointStats struct {
 	DroppedSeries     int
-	DroppedSamples    int
+	DroppedSamples    int // Includes histograms.
 	DroppedTombstones int
 	DroppedExemplars  int
 	DroppedMetadata   int
 	TotalSeries       int // Processed series including dropped ones.
-	TotalSamples      int // Processed samples including dropped ones.
+	TotalSamples      int // Processed float and histogram samples including dropped ones.
 	TotalTombstones   int // Processed tombstones including dropped ones.
 	TotalExemplars    int // Processed exemplars including dropped ones.
 	TotalMetadata     int // Processed metadata including dropped ones.
@@ -93,7 +93,7 @@ const checkpointPrefix = "checkpoint."
 // segmented format as the original WAL itself.
 // This makes it easy to read it through the WAL package and concatenate
 // it with the original WAL.
-func Checkpoint(logger log.Logger, w *WAL, from, to int, keep func(id chunks.HeadSeriesRef) bool, mint int64) (*CheckpointStats, error) {
+func Checkpoint(logger log.Logger, w *WL, from, to int, keep func(id chunks.HeadSeriesRef) bool, mint int64) (*CheckpointStats, error) {
 	stats := &CheckpointStats{}
 	var sgmReader io.ReadCloser
 
@@ -148,20 +148,21 @@ func Checkpoint(logger log.Logger, w *WAL, from, to int, keep func(id chunks.Hea
 	r := NewReader(sgmReader)
 
 	var (
-		series    []record.RefSeries
-		samples   []record.RefSample
-		tstones   []tombstones.Stone
-		exemplars []record.RefExemplar
-		metadata  []record.RefMetadata
-		dec       record.Decoder
-		enc       record.Encoder
-		buf       []byte
-		recs      [][]byte
+		series           []record.RefSeries
+		samples          []record.RefSample
+		histogramSamples []record.RefHistogramSample
+		tstones          []tombstones.Stone
+		exemplars        []record.RefExemplar
+		metadata         []record.RefMetadata
+		dec              record.Decoder
+		enc              record.Encoder
+		buf              []byte
+		recs             [][]byte
 
 		latestMetadataMap = make(map[chunks.HeadSeriesRef]record.RefMetadata)
 	)
 	for r.Next() {
-		series, samples, tstones, exemplars, metadata = series[:0], samples[:0], tstones[:0], exemplars[:0], metadata[:0]
+		series, samples, histogramSamples, tstones, exemplars, metadata = series[:0], samples[:0], histogramSamples[:0], tstones[:0], exemplars[:0], metadata[:0]
 
 		// We don't reset the buffer since we batch up multiple records
 		// before writing them to the checkpoint.
@@ -202,6 +203,24 @@ func Checkpoint(logger log.Logger, w *WAL, from, to int, keep func(id chunks.Hea
 			}
 			if len(repl) > 0 {
 				buf = enc.Samples(repl, buf)
+			}
+			stats.TotalSamples += len(samples)
+			stats.DroppedSamples += len(samples) - len(repl)
+
+		case record.HistogramSamples:
+			histogramSamples, err = dec.HistogramSamples(rec, histogramSamples)
+			if err != nil {
+				return nil, errors.Wrap(err, "decode histogram samples")
+			}
+			// Drop irrelevant histogramSamples in place.
+			repl := histogramSamples[:0]
+			for _, h := range histogramSamples {
+				if h.T >= mint {
+					repl = append(repl, h)
+				}
+			}
+			if len(repl) > 0 {
+				buf = enc.HistogramSamples(repl, buf)
 			}
 			stats.TotalSamples += len(samples)
 			stats.DroppedSamples += len(samples) - len(repl)
