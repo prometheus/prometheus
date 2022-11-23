@@ -111,6 +111,7 @@ func (m *Matcher) Inverse() (*Matcher, error) {
 	panic("labels.Matcher.Matches: invalid match type")
 }
 
+// GetRegexString returns the regex string.
 func (m *Matcher) GetRegexString() string {
 	if m.re == nil {
 		return ""

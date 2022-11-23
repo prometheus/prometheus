@@ -1168,7 +1168,7 @@ func addJitterToChunkEndTime(seriesHash uint64, chunkMinTime, nextAt, maxNextAt 
 	}
 
 	// Compute the variance to apply to the chunk end time. The variance is based on the series hash so that
-	// different TSDBs ingesting the same exact samples (e.g. in a distributed system like Cortex) will have
+	// different TSDBs ingesting the same exact samples (e.g. in a distributed system like Mimir) will have
 	// the same chunks for a given period.
 	chunkDuration := nextAt - chunkMinTime
 	chunkDurationMaxVariance := int64(float64(chunkDuration) * variance)
