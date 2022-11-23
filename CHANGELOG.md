@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.37.3 / 2022-11-23
+
+* [BUGFIX] Update our regexp library to fix upstream CVE-2022-41715. #11619
+* [BUGFIX] TSDB: Turn off isolation for Head compaction to fix a memory leak. #11317
+
 ## 2.37.2 / 2022-11-04
 
 * [BUGFIX] TSDB: Fix 'invalid magic number 0' error on Prometheus startup. #11338
