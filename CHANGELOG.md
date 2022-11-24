@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.40.3 / 2022-11-23
+
+* [BUGFIX] TSDB: Fix compaction after a deletion is called. #11623
+
 ## 2.40.2 / 2022-11-16
 
 * [BUGFIX] UI: Fix black-on-black metric name color in dark mode. #11572
