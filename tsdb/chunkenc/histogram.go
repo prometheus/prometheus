@@ -704,7 +704,7 @@ func (it *histogramIterator) Next() ValueType {
 				for i := 0; i < numNBuckets; i++ {
 					it.nBuckets = append(it.nBuckets, 0)
 					it.nBucketsDelta = append(it.nBucketsDelta, 0)
-					it.pFloatBuckets = append(it.pFloatBuckets, 0)
+					it.nFloatBuckets = append(it.nFloatBuckets, 0)
 				}
 			}
 		}
