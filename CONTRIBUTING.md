@@ -64,10 +64,10 @@ To add or update a new dependency, use the `go get` command:
 
 ```bash
 # Pick the latest tagged release.
-go install example.com/some/module/pkg@latest
+go get example.com/some/module/pkg@latest
 
 # Pick a specific version.
-go install example.com/some/module/pkg@vX.Y.Z
+go get example.com/some/module/pkg@vX.Y.Z
 ```
 
 Tidy up the `go.mod` and `go.sum` files:
