@@ -240,11 +240,11 @@ func relabel(lset labels.Labels, cfg *Config, lb *labels.Builder) (ret labels.La
 		}
 	case DropEqual:
 		if lset.Get(cfg.TargetLabel) == val {
-			return nil
+			return labels.EmptyLabels(), false
 		}
 	case KeepEqual:
 		if lset.Get(cfg.TargetLabel) != val {
-			return nil
+			return labels.EmptyLabels(), false
 		}
 	case Replace:
 		indexes := cfg.Regex.FindStringSubmatchIndex(val)

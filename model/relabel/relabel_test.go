@@ -484,7 +484,7 @@ func TestRelabel(t *testing.T) {
 					TargetLabel:  "__port1",
 				},
 			},
-			output: nil,
+			drop: true,
 		},
 		{
 			input: labels.FromMap(map[string]string{
@@ -518,7 +518,7 @@ func TestRelabel(t *testing.T) {
 					TargetLabel:  "__port2",
 				},
 			},
-			output: nil,
+			drop: true,
 		},
 	}
 
