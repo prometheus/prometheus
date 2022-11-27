@@ -4009,7 +4009,7 @@ func TestSparseHistogram_Sum_Count_AddOperator(t *testing.T) {
 			// sum().
 			queryString := fmt.Sprintf("sum(%s)", seriesName)
 			queryAndCheck(queryString, []Sample{
-				{Point{T: ts, H: &c.expected}, labels.Labels{}},
+				{Point{T: ts, H: &c.expected}, labels.EmptyLabels()},
 			})
 
 			// + operator.
@@ -4018,13 +4018,13 @@ func TestSparseHistogram_Sum_Count_AddOperator(t *testing.T) {
 				queryString += fmt.Sprintf(` + ignoring(idx) %s{idx="%d"}`, seriesName, idx)
 			}
 			queryAndCheck(queryString, []Sample{
-				{Point{T: ts, H: &c.expected}, labels.Labels{}},
+				{Point{T: ts, H: &c.expected}, labels.EmptyLabels()},
 			})
 
 			// count().
 			queryString = fmt.Sprintf("count(%s)", seriesName)
 			queryAndCheck(queryString, []Sample{
-				{Point{T: ts, V: 3}, labels.Labels{}},
+				{Point{T: ts, V: 3}, labels.EmptyLabels()},
 			})
 		})
 	}
