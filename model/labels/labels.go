@@ -625,6 +625,11 @@ type ScratchBuilder struct {
 	add Labels
 }
 
+// NewScratchBuilder creates a ScratchBuilder initialized for Labels with n entries.
+func NewScratchBuilder(n int) ScratchBuilder {
+	return ScratchBuilder{add: Labels{lbls: make([]Label, 0, n)}}
+}
+
 func (b *ScratchBuilder) Reset() {
 	b.add.lbls = b.add.lbls[:0]
 }
