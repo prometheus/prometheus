@@ -429,18 +429,17 @@ func (ls Labels) IsEmpty() bool {
 	return len(ls.lbls) == 0
 }
 
-// Call f on each label.
+// Range calls f on each label.
 func (ls Labels) Range(f func(l Label)) {
 	for _, l := range ls.lbls {
 		f(l)
 	}
 }
 
-// Call f on each label; if f returns non-nil then return that error.
+// RangeToError calls f on each label. If f returns a non-nil error, then it returns that error cancelling the range.
 func (ls Labels) RangeToError(f func(l Label) error) error {
 	for _, l := range ls.lbls {
-		err := f(l)
-		if err != nil {
+		if err := f(l); err != nil {
 			return err
 		}
 	}
@@ -455,7 +454,7 @@ func (ls *Labels) InternStrings(intern func(string) string) {
 	}
 }
 
-// InternStrings calls release on every string value inside ls.
+// ReleaseStrings calls release on every string value inside ls.
 func (ls Labels) ReleaseStrings(release func(string)) {
 	for _, l := range ls.lbls {
 		release(l.Name)
