@@ -2814,7 +2814,7 @@ func TestWaitForPendingReadersInTimeRange(t *testing.T) {
 }
 
 func TestAppendHistogram(t *testing.T) {
-	l := labels.Labels{{Name: "a", Value: "b"}}
+	l := labels.FromStrings("a", "b")
 	for _, numHistograms := range []int{1, 10, 150, 200, 250, 300} {
 		t.Run(fmt.Sprintf("%d", numHistograms), func(t *testing.T) {
 			head, _ := newTestHead(t, 1000, false, false)
@@ -2869,7 +2869,7 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 	require.NoError(t, head.Init(0))
 
 	// Series with only histograms.
-	s1 := labels.Labels{{Name: "a", Value: "b1"}}
+	s1 := labels.FromStrings("a", "b1")
 	k1 := s1.String()
 	numHistograms := 450
 	exp := map[string][]tsdbutil.Sample{}
@@ -2901,7 +2901,7 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 	require.Greater(t, expHeadChunkSamples, 0)
 
 	// Series with mix of histograms and float.
-	s2 := labels.Labels{{Name: "a", Value: "b2"}}
+	s2 := labels.FromStrings("a", "b2")
 	k2 := s2.String()
 	app = head.Appender(context.Background())
 	ts := 0
@@ -3262,7 +3262,7 @@ func TestHistogramMetrics(t *testing.T) {
 
 	for x := 0; x < 5; x++ {
 		expHSeries++
-		l := labels.Labels{{Name: "a", Value: fmt.Sprintf("b%d", x)}}
+		l := labels.FromStrings("a", fmt.Sprintf("b%d", x))
 		for i, h := range GenerateTestHistograms(10) {
 			app := head.Appender(context.Background())
 			_, err := app.AppendHistogram(0, l, int64(i), h)
@@ -3285,7 +3285,7 @@ func TestHistogramMetrics(t *testing.T) {
 }
 
 func TestHistogramStaleSample(t *testing.T) {
-	l := labels.Labels{{Name: "a", Value: "b"}}
+	l := labels.FromStrings("a", "b")
 	numHistograms := 20
 	head, _ := newTestHead(t, 100000, false, false)
 	t.Cleanup(func() {
@@ -3380,7 +3380,7 @@ func TestHistogramStaleSample(t *testing.T) {
 }
 
 func TestHistogramCounterResetHeader(t *testing.T) {
-	l := labels.Labels{{Name: "a", Value: "b"}}
+	l := labels.FromStrings("a", "b")
 	head, _ := newTestHead(t, 1000, false, false)
 	t.Cleanup(func() {
 		require.NoError(t, head.Close())
@@ -3492,7 +3492,7 @@ func TestAppendingDifferentEncodingToSameSeries(t *testing.T) {
 	db.DisableCompactions()
 
 	hists := GenerateTestHistograms(10)
-	lbls := labels.Labels{{Name: "a", Value: "b"}}
+	lbls := labels.FromStrings("a", "b")
 
 	type result struct {
 		t  int64

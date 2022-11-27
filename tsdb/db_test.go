@@ -478,9 +478,9 @@ func TestAmendDatapointCausesError(t *testing.T) {
 	require.NoError(t, app.Commit())
 
 	app = db.Appender(ctx)
-	_, err = app.Append(0, labels.Labels{{Name: "a", Value: "b"}}, 0, 0)
+	_, err = app.Append(0, labels.FromStrings("a", "b"), 0, 0)
 	require.NoError(t, err)
-	_, err = app.Append(0, labels.Labels{{Name: "a", Value: "b"}}, 0, 1)
+	_, err = app.Append(0, labels.FromStrings("a", "b"), 0, 1)
 	require.Equal(t, storage.ErrDuplicateSampleForTimestamp, err)
 	require.NoError(t, app.Rollback())
 
@@ -498,15 +498,15 @@ func TestAmendDatapointCausesError(t *testing.T) {
 	}
 
 	app = db.Appender(ctx)
-	_, err = app.AppendHistogram(0, labels.Labels{{Name: "a", Value: "c"}}, 0, h.Copy())
+	_, err = app.AppendHistogram(0, labels.FromStrings("a", "c"), 0, h.Copy())
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
 	app = db.Appender(ctx)
-	_, err = app.AppendHistogram(0, labels.Labels{{Name: "a", Value: "c"}}, 0, h.Copy())
+	_, err = app.AppendHistogram(0, labels.FromStrings("a", "c"), 0, h.Copy())
 	require.NoError(t, err)
 	h.Schema = 2
-	_, err = app.AppendHistogram(0, labels.Labels{{Name: "a", Value: "c"}}, 0, h.Copy())
+	_, err = app.AppendHistogram(0, labels.FromStrings("a", "c"), 0, h.Copy())
 	require.Equal(t, storage.ErrDuplicateSampleForTimestamp, err)
 	require.NoError(t, app.Rollback())
 }

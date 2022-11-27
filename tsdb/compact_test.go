@@ -1478,11 +1478,11 @@ func TestSparseHistogramSpaceSavings(t *testing.T) {
 
 				for sid, schema := range allSchemas {
 					for i := 0; i < c.numSeriesPerSchema; i++ {
-						lbls := labels.Labels{
-							{Name: "__name__", Value: fmt.Sprintf("rpc_durations_%d_histogram_seconds", i)},
-							{Name: "instance", Value: "localhost:8080"},
-							{Name: "job", Value: fmt.Sprintf("sparse_histogram_schema_%s", schemaDescription[sid])},
-						}
+						lbls := labels.FromStrings(
+							"__name__", fmt.Sprintf("rpc_durations_%d_histogram_seconds", i),
+							"instance", "localhost:8080",
+							"job", fmt.Sprintf("sparse_histogram_schema_%s", schemaDescription[sid]),
+						)
 						allSparseSeries = append(allSparseSeries, struct {
 							baseLabels labels.Labels
 							hists      []*histogram.Histogram
