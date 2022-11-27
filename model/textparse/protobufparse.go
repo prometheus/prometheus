@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"sort"
 	"strings"
 	"unicode/utf8"
 
@@ -58,6 +57,8 @@ type ProtobufParser struct {
 	// state is marked by the entry we are processing. EntryInvalid implies
 	// that we have to decode the next MetricFamily.
 	state Entry
+
+	builder labels.SimpleBuilder // held here to reduce allocations when building Labels
 
 	mf *dto.MetricFamily
 
@@ -245,23 +246,19 @@ func (p *ProtobufParser) Comment() []byte {
 // Metric writes the labels of the current sample into the passed labels.
 // It returns the string from which the metric was parsed.
 func (p *ProtobufParser) Metric(l *labels.Labels) string {
-	*l = append(*l, labels.Label{
-		Name:  labels.MetricName,
-		Value: p.getMagicName(),
-	})
+	p.builder.Reset()
+	p.builder.Add(labels.MetricName, p.getMagicName())
 
 	for _, lp := range p.mf.GetMetric()[p.metricPos].GetLabel() {
-		*l = append(*l, labels.Label{
-			Name:  lp.GetName(),
-			Value: lp.GetValue(),
-		})
+		p.builder.Add(lp.GetName(), lp.GetValue())
 	}
 	if needed, name, value := p.getMagicLabel(); needed {
-		*l = append(*l, labels.Label{Name: name, Value: value})
+		p.builder.Add(name, value)
 	}
 
 	// Sort labels to maintain the sorted labels invariant.
-	sort.Sort(*l)
+	p.builder.Sort()
+	*l = p.builder.Labels()
 
 	return p.metricBytes.String()
 }
@@ -305,12 +302,12 @@ func (p *ProtobufParser) Exemplar(ex *exemplar.Exemplar) bool {
 		ex.HasTs = true
 		ex.Ts = ts.GetSeconds()*1000 + int64(ts.GetNanos()/1_000_000)
 	}
+	p.builder.Reset()
 	for _, lp := range exProto.GetLabel() {
-		ex.Labels = append(ex.Labels, labels.Label{
-			Name:  lp.GetName(),
-			Value: lp.GetValue(),
-		})
+		p.builder.Add(lp.GetName(), lp.GetValue())
 	}
+	p.builder.Sort()
+	ex.Labels = p.builder.Labels()
 	return true
 }
 
