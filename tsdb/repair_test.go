@@ -80,7 +80,7 @@ func TestRepairBadIndexVersion(t *testing.T) {
 	require.NoError(t, err)
 	p, err := r.Postings("b", "1")
 	require.NoError(t, err)
-	var builder labels.SimpleBuilder
+	var builder labels.ScratchBuilder
 	for p.Next() {
 		t.Logf("next ID %d", p.At())
 

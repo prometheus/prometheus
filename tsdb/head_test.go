@@ -1454,7 +1454,7 @@ func TestGCChunkAccess(t *testing.T) {
 	var (
 		lset    labels.Labels
 		chunks  []chunks.Meta
-		builder labels.SimpleBuilder
+		builder labels.ScratchBuilder
 	)
 	require.NoError(t, idx.Series(1, &builder, &lset, &chunks))
 
@@ -1508,7 +1508,7 @@ func TestGCSeriesAccess(t *testing.T) {
 	var (
 		lset    labels.Labels
 		chunks  []chunks.Meta
-		builder labels.SimpleBuilder
+		builder labels.ScratchBuilder
 	)
 	require.NoError(t, idx.Series(1, &builder, &lset, &chunks))
 

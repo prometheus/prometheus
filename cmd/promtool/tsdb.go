@@ -471,7 +471,7 @@ func analyzeBlock(path, blockID string, limit int, runExtended bool) error {
 	}
 	lbls := labels.Labels{}
 	chks := []chunks.Meta{}
-	builder := labels.SimpleBuilder{}
+	builder := labels.ScratchBuilder{}
 	for p.Next() {
 		if err = ir.Series(p.At(), &builder, &lbls, &chks); err != nil {
 			return err
@@ -589,7 +589,7 @@ func analyzeCompaction(block tsdb.BlockReader, indexr tsdb.IndexReader) (err err
 	nBuckets := 10
 	histogram := make([]int, nBuckets)
 	totalChunks := 0
-	var builder labels.SimpleBuilder
+	var builder labels.ScratchBuilder
 	for postingsr.Next() {
 		lbsl := labels.Labels{}
 		var chks []chunks.Meta

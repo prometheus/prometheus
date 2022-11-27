@@ -624,7 +624,7 @@ func TestSimpleBuilder(t *testing.T) {
 	} {
 		overwriteTarget := EmptyLabels()
 		t.Run(fmt.Sprint(i), func(t *testing.T) {
-			b := SimpleBuilder{}
+			b := ScratchBuilder{}
 			for _, lbl := range tcase.add {
 				b.Add(lbl.Name, lbl.Value)
 			}

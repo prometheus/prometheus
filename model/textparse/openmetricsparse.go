@@ -81,7 +81,7 @@ func (l *openMetricsLexer) Error(es string) {
 // This is based on the working draft https://docs.google.com/document/u/1/d/1KwV0mAXwwbvvifBvDKH_LU1YjyXE_wxCkHNoCGq1GX0/edit
 type OpenMetricsParser struct {
 	l       *openMetricsLexer
-	builder labels.SimpleBuilder
+	builder labels.ScratchBuilder
 	series  []byte
 	text    []byte
 	mtype   MetricType

@@ -182,7 +182,7 @@ type RefMmapMarker struct {
 // Decoder decodes series, sample, metadata and tombstone records.
 // The zero value is ready to use.
 type Decoder struct {
-	builder labels.SimpleBuilder
+	builder labels.ScratchBuilder
 }
 
 // Type returns the type of the record.

@@ -58,7 +58,7 @@ type ProtobufParser struct {
 	// that we have to decode the next MetricFamily.
 	state Entry
 
-	builder labels.SimpleBuilder // held here to reduce allocations when building Labels
+	builder labels.ScratchBuilder // held here to reduce allocations when building Labels
 
 	mf *dto.MetricFamily
 

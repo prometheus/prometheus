@@ -143,7 +143,7 @@ func (l *promlexer) Error(es string) {
 // Prometheus text exposition format.
 type PromParser struct {
 	l       *promlexer
-	builder labels.SimpleBuilder
+	builder labels.ScratchBuilder
 	series  []byte
 	text    []byte
 	mtype   MetricType

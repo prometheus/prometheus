@@ -581,7 +581,7 @@ func LabelProtosToMetric(labelPairs []*prompb.Label) model.Metric {
 }
 
 func labelProtosToLabels(labelPairs []prompb.Label) labels.Labels {
-	b := labels.SimpleBuilder{}
+	b := labels.ScratchBuilder{}
 	for _, l := range labelPairs {
 		b.Add(l.Name, l.Value)
 	}

@@ -124,7 +124,7 @@ func (m mockIndex) SortedPostings(p Postings) Postings {
 	return NewListPostings(ep)
 }
 
-func (m mockIndex) Series(ref storage.SeriesRef, builder *labels.SimpleBuilder, lset *labels.Labels, chks *[]chunks.Meta) error {
+func (m mockIndex) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, lset *labels.Labels, chks *[]chunks.Meta) error {
 	s, ok := m.series[ref]
 	if !ok {
 		return errors.New("not found")
@@ -199,7 +199,7 @@ func TestIndexRW_Postings(t *testing.T) {
 
 	var l labels.Labels
 	var c []chunks.Meta
-	var builder labels.SimpleBuilder
+	var builder labels.ScratchBuilder
 
 	for i := 0; p.Next(); i++ {
 		err := ir.Series(p.At(), &builder, &l, &c)
@@ -312,7 +312,7 @@ func TestPostingsMany(t *testing.T) {
 		{in: []string{"126a", "126b", "127", "127a", "127b", "128", "128a", "128b", "129", "129a", "129b"}},
 	}
 
-	var builder labels.SimpleBuilder
+	var builder labels.ScratchBuilder
 	for _, c := range cases {
 		it, err := ir.Postings("i", c.in...)
 		require.NoError(t, err)
@@ -423,7 +423,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 
 		var lset, explset labels.Labels
 		var chks, expchks []chunks.Meta
-		var builder labels.SimpleBuilder
+		var builder labels.ScratchBuilder
 
 		for gotp.Next() {
 			require.True(t, expp.Next())

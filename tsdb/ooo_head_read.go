@@ -47,7 +47,7 @@ func NewOOOHeadIndexReader(head *Head, mint, maxt int64) *OOOHeadIndexReader {
 	return &OOOHeadIndexReader{hr}
 }
 
-func (oh *OOOHeadIndexReader) Series(ref storage.SeriesRef, builder *labels.SimpleBuilder, lbls *labels.Labels, chks *[]chunks.Meta) error {
+func (oh *OOOHeadIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, lbls *labels.Labels, chks *[]chunks.Meta) error {
 	return oh.series(ref, lbls, chks, 0)
 }
 
@@ -400,7 +400,7 @@ func (ir *OOOCompactionHeadIndexReader) SortedPostings(p index.Postings) index.P
 	return p
 }
 
-func (ir *OOOCompactionHeadIndexReader) Series(ref storage.SeriesRef, builder *labels.SimpleBuilder, lset *labels.Labels, chks *[]chunks.Meta) error {
+func (ir *OOOCompactionHeadIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, lset *labels.Labels, chks *[]chunks.Meta) error {
 	return ir.ch.oooIR.series(ref, lset, chks, ir.ch.lastMmapRef)
 }
 

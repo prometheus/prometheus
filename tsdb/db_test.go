@@ -1830,7 +1830,7 @@ func TestChunkAtBlockBoundary(t *testing.T) {
 	err = db.Compact()
 	require.NoError(t, err)
 
-	var builder labels.SimpleBuilder
+	var builder labels.ScratchBuilder
 
 	for _, block := range db.Blocks() {
 		r, err := block.Index()

@@ -362,7 +362,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 		})
 		lb.Set(labels.AlertName, r.Name())
 
-		sb := labels.SimpleBuilder{}
+		sb := labels.ScratchBuilder{}
 		r.annotations.Range(func(a labels.Label) {
 			sb.Add(a.Name, expand(a.Value))
 		})
