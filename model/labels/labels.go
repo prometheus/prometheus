@@ -463,19 +463,6 @@ func (ls Labels) ReleaseStrings(release func(string)) {
 	}
 }
 
-// Call f on each label; return a new Labels of those where f returns true.
-func (ls Labels) Filter(f func(l Label) bool) Labels {
-	var ret Labels
-	ret.lbls = make([]Label, 0, len(ls.lbls))
-	for _, l := range ls.lbls {
-		ok := f(l)
-		if ok {
-			ret.lbls = append(ret.lbls, l)
-		}
-	}
-	return ret
-}
-
 // Merge externalLabels into ls. If ls contains
 // a label in externalLabels, the value in ls wins.
 func (ls Labels) Merge(externalLabels Labels) Labels {

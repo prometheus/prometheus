@@ -172,9 +172,13 @@ func (t *Target) offset(interval time.Duration, jitterSeed uint64) time.Duration
 
 // Labels returns a copy of the set of all public labels of the target.
 func (t *Target) Labels() labels.Labels {
-	return t.labels.Filter(func(l labels.Label) bool {
-		return !strings.HasPrefix(l.Name, model.ReservedLabelPrefix)
+	b := labels.NewScratchBuilder(t.labels.Len())
+	t.labels.Range(func(l labels.Label) {
+		if !strings.HasPrefix(l.Name, model.ReservedLabelPrefix) {
+			b.Add(l.Name, l.Value)
+		}
 	})
+	return b.Labels()
 }
 
 // DiscoveredLabels returns a copy of the target's labels before any processing.

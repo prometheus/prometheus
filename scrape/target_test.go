@@ -39,10 +39,33 @@ const (
 )
 
 func TestTargetLabels(t *testing.T) {
-	target := newTestTarget("example.com:80", 0, labels.FromStrings("job", "some_job", "foo", "bar"))
-	want := labels.FromStrings(model.JobLabel, "some_job", "foo", "bar")
-	got := target.Labels()
-	require.Equal(t, want, got)
+	for i, tc := range []struct {
+		input labels.Labels
+		want  labels.Labels
+	}{
+		{ // 0: no-op
+			input: labels.FromStrings("job", "some_job", "foo", "bar"),
+			want:  labels.FromStrings(model.JobLabel, "some_job", "foo", "bar"),
+		},
+		{ // 1: Remove everything.
+			input: labels.FromStrings("__tmp", "some_job", "__foo", "bar"),
+			want:  labels.EmptyLabels(),
+		},
+		{ // 2: Remove first label.
+			input: labels.FromStrings("__tmp", "some_job", "foo", "bar"),
+			want:  labels.FromStrings("foo", "bar"),
+		},
+		{ // 3: Remove last label.
+			input: labels.FromStrings("job", "some_job", "__foo", "bar"),
+			want:  labels.FromStrings("job", "some_job"),
+		},
+	} {
+		t.Run(fmt.Sprint(i), func(t *testing.T) {
+			target := newTestTarget("example.com:80", 0, tc.input)
+			got := target.Labels()
+			require.Equal(t, tc.want, got)
+		})
+	}
 }
 
 func TestTargetOffset(t *testing.T) {
