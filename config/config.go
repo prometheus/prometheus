@@ -80,7 +80,7 @@ func Load(s string, expandExternalLabels bool, logger log.Logger) (*Config, erro
 		return cfg, nil
 	}
 
-	b := labels.NewBuilder(cfg.GlobalConfig.ExternalLabels)
+	b := labels.ScratchBuilder{}
 	cfg.GlobalConfig.ExternalLabels.Range(func(v labels.Label) {
 		newV := os.Expand(v.Value, func(s string) string {
 			if s == "$" {
@@ -94,10 +94,10 @@ func Load(s string, expandExternalLabels bool, logger log.Logger) (*Config, erro
 		})
 		if newV != v.Value {
 			level.Debug(logger).Log("msg", "External label replaced", "label", v.Name, "input", v.Value, "output", newV)
-			b.SetAnyValue(v.Name, newV)
 		}
+		b.Add(v.Name, newV)
 	})
-	cfg.GlobalConfig.ExternalLabels = b.Labels(labels.EmptyLabels())
+	cfg.GlobalConfig.ExternalLabels = b.Labels()
 	return cfg, nil
 }
 
