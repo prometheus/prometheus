@@ -355,9 +355,9 @@ func (ls Labels) Map() map[string]string {
 	return m
 }
 
-// EmptyLabels returns n empty Labels value, for convenience.
+// EmptyLabels returns an empty Labels value, for convenience.
 func EmptyLabels() Labels {
-	return Labels{}
+	return Labels{lbls: []Label{}}
 }
 
 // New returns a sorted Labels from the given labels.
