@@ -558,12 +558,6 @@ func TestGetSeries(t *testing.T) {
 			assertAPIError(t, res.err, tc.expectedErrorType)
 			if tc.expectedErrorType == errorNone {
 				r := res.data.([]labels.Labels)
-				for _, l := range tc.expected {
-					sort.Sort(l)
-				}
-				for _, l := range r {
-					sort.Sort(l)
-				}
 				sort.Sort(byLabels(tc.expected))
 				sort.Sort(byLabels(r))
 				require.Equal(t, tc.expected, r)
