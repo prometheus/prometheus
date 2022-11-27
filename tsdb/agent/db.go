@@ -77,7 +77,7 @@ type Options struct {
 	NoLockfile bool
 }
 
-// DefaultOptions used for the WAL storage. They are sane for setups using
+// DefaultOptions used for the WAL storage. They are reasonable for setups using
 // millisecond-precision timestamps.
 func DefaultOptions() *Options {
 	return &Options{
