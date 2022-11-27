@@ -463,33 +463,6 @@ func (ls Labels) ReleaseStrings(release func(string)) {
 	}
 }
 
-// Merge externalLabels into ls. If ls contains
-// a label in externalLabels, the value in ls wins.
-func (ls Labels) Merge(externalLabels Labels) Labels {
-	i, j, result := 0, 0, make([]Label, 0, ls.Len()+externalLabels.Len())
-	for i < len(ls.lbls) && j < len(externalLabels.lbls) {
-		if ls.lbls[i].Name < externalLabels.lbls[j].Name {
-			result = append(result, Label{
-				Name:  ls.lbls[i].Name,
-				Value: ls.lbls[i].Value,
-			})
-			i++
-		} else if ls.lbls[i].Name > externalLabels.lbls[j].Name {
-			result = append(result, externalLabels.lbls[j])
-			j++
-		} else {
-			result = append(result, Label{
-				Name:  ls.lbls[i].Name,
-				Value: ls.lbls[i].Value,
-			})
-			i++
-			j++
-		}
-	}
-
-	return Labels{lbls: append(append(result, ls.lbls[i:]...), externalLabels.lbls[j:]...)}
-}
-
 // Builder allows modifying Labels.
 type Builder struct {
 	base Labels

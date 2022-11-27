@@ -396,7 +396,7 @@ type QueueManager struct {
 	flushDeadline        time.Duration
 	cfg                  config.QueueConfig
 	mcfg                 config.MetadataConfig
-	externalLabels       labels.Labels
+	externalLabels       []labels.Label
 	relabelConfigs       []*relabel.Config
 	sendExemplars        bool
 	sendNativeHistograms bool
@@ -454,13 +454,19 @@ func NewQueueManager(
 		logger = log.NewNopLogger()
 	}
 
+	// Copy externalLabels into slice which we need for processExternalLabels.
+	extLabelsSlice := make([]labels.Label, 0, externalLabels.Len())
+	externalLabels.Range(func(l labels.Label) {
+		extLabelsSlice = append(extLabelsSlice, l)
+	})
+
 	logger = log.With(logger, remoteName, client.Name(), endpoint, client.Endpoint())
 	t := &QueueManager{
 		logger:               logger,
 		flushDeadline:        flushDeadline,
 		cfg:                  cfg,
 		mcfg:                 mCfg,
-		externalLabels:       externalLabels,
+		externalLabels:       extLabelsSlice,
 		relabelConfigs:       relabelConfigs,
 		storeClient:          client,
 		sendExemplars:        enableExemplarRemoteWrite,
@@ -768,7 +774,7 @@ func (t *QueueManager) StoreSeries(series []record.RefSeries, index int) {
 		// Just make sure all the Refs of Series will insert into seriesSegmentIndexes map for tracking.
 		t.seriesSegmentIndexes[s.Ref] = index
 
-		ls := s.Labels.Merge(t.externalLabels)
+		ls := processExternalLabels(s.Labels, t.externalLabels)
 		lbls, keep := relabel.Process(ls, t.relabelConfigs...)
 		if !keep || lbls.IsEmpty() {
 			t.droppedSeries[s.Ref] = struct{}{}
@@ -836,6 +842,28 @@ func (t *QueueManager) internLabels(lbls labels.Labels) {
 
 func (t *QueueManager) releaseLabels(ls labels.Labels) {
 	ls.ReleaseStrings(t.interner.release)
+}
+
+// processExternalLabels merges externalLabels into ls. If ls contains
+// a label in externalLabels, the value in ls wins.
+func processExternalLabels(ls labels.Labels, externalLabels []labels.Label) labels.Labels {
+	b := labels.NewScratchBuilder(ls.Len() + len(externalLabels))
+	j := 0
+	ls.Range(func(l labels.Label) {
+		for j < len(externalLabels) && l.Name > externalLabels[j].Name {
+			b.Add(externalLabels[j].Name, externalLabels[j].Value)
+			j++
+		}
+		if j < len(externalLabels) && l.Name == externalLabels[j].Name {
+			j++
+		}
+		b.Add(l.Name, l.Value)
+	})
+	for ; j < len(externalLabels); j++ {
+		b.Add(externalLabels[j].Name, externalLabels[j].Value)
+	}
+
+	return b.Labels()
 }
 
 func (t *QueueManager) updateShardsLoop() {

@@ -907,6 +907,72 @@ func BenchmarkStartup(b *testing.B) {
 	}
 }
 
+func TestProcessExternalLabels(t *testing.T) {
+	for _, tc := range []struct {
+		labels         labels.Labels
+		externalLabels []labels.Label
+		expected       labels.Labels
+	}{
+		// Test adding labels at the end.
+		{
+			labels:         labels.FromStrings("a", "b"),
+			externalLabels: []labels.Label{{Name: "c", Value: "d"}},
+			expected:       labels.FromStrings("a", "b", "c", "d"),
+		},
+
+		// Test adding labels at the beginning.
+		{
+			labels:         labels.FromStrings("c", "d"),
+			externalLabels: []labels.Label{{Name: "a", Value: "b"}},
+			expected:       labels.FromStrings("a", "b", "c", "d"),
+		},
+
+		// Test we don't override existing labels.
+		{
+			labels:         labels.FromStrings("a", "b"),
+			externalLabels: []labels.Label{{Name: "a", Value: "c"}},
+			expected:       labels.FromStrings("a", "b"),
+		},
+
+		// Test empty externalLabels.
+		{
+			labels:         labels.FromStrings("a", "b"),
+			externalLabels: []labels.Label{},
+			expected:       labels.FromStrings("a", "b"),
+		},
+
+		// Test empty labels.
+		{
+			labels:         labels.EmptyLabels(),
+			externalLabels: []labels.Label{{Name: "a", Value: "b"}},
+			expected:       labels.FromStrings("a", "b"),
+		},
+
+		// Test labels is longer than externalLabels.
+		{
+			labels:         labels.FromStrings("a", "b", "c", "d"),
+			externalLabels: []labels.Label{{Name: "e", Value: "f"}},
+			expected:       labels.FromStrings("a", "b", "c", "d", "e", "f"),
+		},
+
+		// Test externalLabels is longer than labels.
+		{
+			labels:         labels.FromStrings("c", "d"),
+			externalLabels: []labels.Label{{Name: "a", Value: "b"}, {Name: "e", Value: "f"}},
+			expected:       labels.FromStrings("a", "b", "c", "d", "e", "f"),
+		},
+
+		// Adding with and without clashing labels.
+		{
+			labels:         labels.FromStrings("a", "b", "c", "d"),
+			externalLabels: []labels.Label{{Name: "a", Value: "xxx"}, {Name: "c", Value: "yyy"}, {Name: "e", Value: "f"}},
+			expected:       labels.FromStrings("a", "b", "c", "d", "e", "f"),
+		},
+	} {
+		require.Equal(t, tc.expected, processExternalLabels(tc.labels, tc.externalLabels))
+	}
+}
+
 func TestCalculateDesiredShards(t *testing.T) {
 	c := NewTestWriteClient()
 	cfg := config.DefaultQueueConfig
