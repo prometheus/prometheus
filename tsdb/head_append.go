@@ -494,7 +494,7 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 	if s == nil {
 		// Ensure no empty labels have gotten through.
 		lset = lset.WithoutEmpty()
-		if len(lset) == 0 {
+		if lset.IsEmpty() {
 			return 0, errors.Wrap(ErrInvalidSample, "empty labelset")
 		}
 
