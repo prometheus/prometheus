@@ -1090,6 +1090,8 @@ type Reader struct {
 
 	// Provides a cache mapping series labels hash by series ID.
 	cacheProvider ReaderCacheProvider
+
+	shardFunc func(l labels.Labels) uint64 // Computes a hash of Labels; must be consistent over time.
 }
 
 type postingOffset struct {
@@ -1130,11 +1132,11 @@ func NewReaderWithCache(b ByteSlice, cacheProvider ReaderCacheProvider) (*Reader
 
 // NewFileReader returns a new index reader against the given index file.
 func NewFileReader(path string) (*Reader, error) {
-	return NewFileReaderWithCache(path, nil)
+	return NewFileReaderWithCache(path, nil, nil)
 }
 
 // NewFileReaderWithCache is like NewFileReader but allows to pass a cache provider.
-func NewFileReaderWithCache(path string, cacheProvider ReaderCacheProvider) (*Reader, error) {
+func NewFileReaderWithCache(path string, cacheProvider ReaderCacheProvider, shardFunc func(l labels.Labels) uint64) (*Reader, error) {
 	f, err := fileutil.OpenMmapFile(path)
 	if err != nil {
 		return nil, err
@@ -1146,6 +1148,7 @@ func NewFileReaderWithCache(path string, cacheProvider ReaderCacheProvider) (*Re
 			f.Close(),
 		).Err()
 	}
+	r.shardFunc = shardFunc
 
 	return r, nil
 }
@@ -1770,7 +1773,7 @@ func (r *Reader) ShardedPostings(p Postings, shardIndex, shardCount uint64) Post
 				return ErrPostings(errors.Errorf("series %d not found", id))
 			}
 
-			hash = bufLbls.Labels().Hash()
+			hash = r.shardFunc(bufLbls.Labels())
 			if seriesHashCache != nil {
 				seriesHashCache.Store(id, hash)
 			}

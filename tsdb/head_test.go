@@ -2428,6 +2428,7 @@ func TestHeadShardedPostings(t *testing.T) {
 	defer func() {
 		require.NoError(t, head.Close())
 	}()
+	head.opts.ShardFunc = func(l labels.Labels) uint64 { return l.Hash() }
 
 	// Append some series.
 	app := head.Appender(context.Background())

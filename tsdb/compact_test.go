@@ -433,13 +433,13 @@ func TestRangeWithFailedCompactionWontGetSelected(t *testing.T) {
 }
 
 func TestCompactionFailWillCleanUpTempDir(t *testing.T) {
-	compactor, err := NewLeveledCompactor(context.Background(), nil, log.NewNopLogger(), []int64{
+	compactor, err := NewLeveledCompactorWithChunkSize(context.Background(), nil, log.NewNopLogger(), []int64{
 		20,
 		60,
 		240,
 		720,
 		2160,
-	}, nil, nil, true)
+	}, nil, chunks.DefaultChunkSegmentSize, nil, true, shardFunc)
 	require.NoError(t, err)
 
 	tmpdir := t.TempDir()
@@ -503,6 +503,10 @@ func samplesForRange(minTime, maxTime int64, maxSamplesPerChunk int) (ret [][]sa
 	return ret
 }
 
+func shardFunc(l labels.Labels) uint64 {
+	return l.Hash()
+}
+
 func TestCompaction_CompactWithSplitting(t *testing.T) {
 	seriesCounts := []int{10, 1234}
 	shardCounts := []uint64{1, 13}
@@ -533,7 +537,7 @@ func TestCompaction_CompactWithSplitting(t *testing.T) {
 
 		for _, shardCount := range shardCounts {
 			t.Run(fmt.Sprintf("series=%d, shards=%d", series, shardCount), func(t *testing.T) {
-				c, err := NewLeveledCompactor(context.Background(), nil, log.NewNopLogger(), []int64{0}, nil, nil, true)
+				c, err := NewLeveledCompactorWithChunkSize(context.Background(), nil, log.NewNopLogger(), []int64{0}, nil, chunks.DefaultChunkSegmentSize, nil, true, shardFunc)
 				require.NoError(t, err)
 
 				blockIDs, err := c.CompactWithSplitting(dir, blockDirs, openBlocks, shardCount)
@@ -667,7 +671,7 @@ func TestCompaction_CompactEmptyBlocks(t *testing.T) {
 		blockDirs = append(blockDirs, bdir)
 	}
 
-	c, err := NewLeveledCompactor(context.Background(), nil, log.NewNopLogger(), []int64{0}, nil, nil, true)
+	c, err := NewLeveledCompactorWithChunkSize(context.Background(), nil, log.NewNopLogger(), []int64{0}, nil, chunks.DefaultChunkSegmentSize, nil, true, shardFunc)
 	require.NoError(t, err)
 
 	blockIDs, err := c.CompactWithSplitting(dir, blockDirs, nil, 5)
@@ -1142,7 +1146,7 @@ func TestCompaction_populateBlock(t *testing.T) {
 				blocks = append(blocks, &mockBReader{ir: ir, cr: cr, mint: mint, maxt: maxt})
 			}
 
-			c, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{0}, nil, nil, true)
+			c, err := NewLeveledCompactorWithChunkSize(context.Background(), nil, nil, []int64{0}, nil, chunks.DefaultChunkSegmentSize, nil, true, shardFunc)
 			require.NoError(t, err)
 
 			meta := &BlockMeta{
