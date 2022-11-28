@@ -56,6 +56,7 @@ type writeToMock struct {
 	exemplarsAppended       int
 	histogramsAppended      int
 	floatHistogramsAppended int
+	metadataAppended        int
 	seriesLock              sync.Mutex
 	seriesSegmentIndexes    map[chunks.HeadSeriesRef]int
 }
@@ -77,6 +78,11 @@ func (wtm *writeToMock) AppendHistograms(h []record.RefHistogramSample) bool {
 
 func (wtm *writeToMock) AppendFloatHistograms(fh []record.RefFloatHistogramSample) bool {
 	wtm.floatHistogramsAppended += len(fh)
+	return true
+}
+
+func (wtm *writeToMock) AppendWALMetadata(m []record.RefMetadata) bool {
+	wtm.metadataAppended += len(m)
 	return true
 }
 

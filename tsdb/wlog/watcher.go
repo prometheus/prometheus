@@ -51,6 +51,7 @@ type WriteTo interface {
 	AppendExemplars([]record.RefExemplar) bool
 	AppendHistograms([]record.RefHistogramSample) bool
 	AppendFloatHistograms([]record.RefFloatHistogramSample) bool
+	AppendWALMetadata([]record.RefMetadata) bool
 	StoreSeries([]record.RefSeries, int)
 
 	// Next two methods are intended for garbage-collection: first we call
@@ -488,6 +489,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 		histogramsToSend      []record.RefHistogramSample
 		floatHistograms       []record.RefFloatHistogramSample
 		floatHistogramsToSend []record.RefFloatHistogramSample
+		metadata              []record.RefMetadata
 	)
 	for r.Next() && !isClosed(w.quit) {
 		rec := r.Record()
@@ -599,6 +601,14 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 				w.writer.AppendFloatHistograms(floatHistogramsToSend)
 				floatHistogramsToSend = floatHistogramsToSend[:0]
 			}
+
+		case record.Metadata:
+			meta, err := dec.Metadata(rec, metadata[:0])
+			if err != nil {
+				w.recordDecodeFailsMetric.Inc()
+				return err
+			}
+			w.writer.AppendWALMetadata(meta)
 		case record.Tombstones:
 
 		default:

@@ -965,6 +965,10 @@ type MetadataConfig struct {
 	SendInterval model.Duration `yaml:"send_interval"`
 	// Maximum number of samples per send.
 	MaxSamplesPerSend int `yaml:"max_samples_per_send,omitempty"`
+	// SendFromWAL controls whether we send metadata from the WAL
+	// TODO (@tpaschalis) Maybe this should also be the feature flag that
+	// disables the current MetadataWatcher?
+	SendFromWAL bool `yaml:"send_from_wal,omitempty"`
 }
 
 // RemoteReadConfig is the configuration for reading from remote storage.
