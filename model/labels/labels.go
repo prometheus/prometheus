@@ -134,6 +134,7 @@ func (ls Labels) MatchLabels(on bool, names ...string) Labels {
 }
 
 // Hash returns a hash value for the label set.
+// Note: the result is not guaranteed to be consistent across different runs of Prometheus.
 func (ls Labels) Hash() uint64 {
 	// Use xxhash.Sum64(b) for fast path as it's faster.
 	b := make([]byte, 0, 1024)
