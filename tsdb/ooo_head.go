@@ -40,12 +40,9 @@ func (o *OOOChunk) Insert(t int64, v float64) bool {
 	// are opinionated and expect them to be usually in-order meaning we could
 	// try to append at the end first if the new timestamp is higher than the
 	// last known timestamp.
-	if len(o.samples) > 0 {
-		if t > o.samples[len(o.samples)-1].t {
-			// append it at the end
-			o.samples = append(o.samples, sample{t, v, nil, nil})
-			return true
-		}
+	if len(o.samples) == 0 || t > o.samples[len(o.samples)-1].t {
+		o.samples = append(o.samples, sample{t, v, nil, nil})
+		return true
 	}
 
 	// Find index of sample we should replace.
