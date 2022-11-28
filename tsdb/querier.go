@@ -471,7 +471,14 @@ func (b *blockBaseSeriesSet) Next() bool {
 		var trimFront, trimBack bool
 
 		// Copy chunks as iterables are reusable.
-		chks := make([]chunks.Meta, 0, len(b.bufChks))
+		// Count those in range to size allocation (roughly - ignoring tombstones).
+		nChks := 0
+		for _, chk := range b.bufChks {
+			if !(chk.MaxTime < b.mint || chk.MinTime > b.maxt) {
+				nChks++
+			}
+		}
+		chks := make([]chunks.Meta, 0, nChks)
 
 		// Prefilter chunks and pick those which are not entirely deleted or totally outside of the requested range.
 		for _, chk := range b.bufChks {
