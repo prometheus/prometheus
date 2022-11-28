@@ -38,6 +38,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
@@ -852,7 +853,16 @@ func spansToMinSpansProto(s []histogram.Span) []writev2.BucketSpan {
 	return spans
 }
 
-// LabelProtosToMetric unpack a []*prompb.Label to a model.Metric.
+func MetadataToMetadataProto(metricName string, m record.RefMetadata) prompb.MetricMetadata {
+	return prompb.MetricMetadata{
+		MetricFamilyName: metricName,
+		Type:             metricTypeToMetricTypeProto(record.ToTextparseMetricType(m.Type)),
+		Help:             m.Help,
+		Unit:             m.Unit,
+	}
+}
+
+// LabelProtosToMetric unpack a []*prompb.Label to a model.Metric
 func LabelProtosToMetric(labelPairs []*prompb.Label) model.Metric {
 	metric := make(model.Metric, len(labelPairs))
 	for _, l := range labelPairs {

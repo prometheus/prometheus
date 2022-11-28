@@ -250,6 +250,13 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		Help:        "The number of histograms pending in the queues shards to be sent to the remote storage.",
 		ConstLabels: constLabels,
 	})
+	m.pendingMetadata = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace:   namespace,
+		Subsystem:   subsystem,
+		Name:        "metadata_pending",
+		Help:        "The number of metadata pending in the queues shards to be sent to the remote storage.",
+		ConstLabels: constLabels,
+	})
 	m.shardCapacity = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace:   namespace,
 		Subsystem:   subsystem,
