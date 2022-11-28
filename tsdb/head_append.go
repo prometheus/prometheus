@@ -440,7 +440,7 @@ func (s *memSeries) appendableHistogram(t int64, h *histogram.Histogram) error {
 }
 
 // AppendExemplar for headAppender assumes the series ref already exists, and so it doesn't
-// use getOrCreate or make any of the lset sanity checks that Append does.
+// use getOrCreate or make any of the lset validity checks that Append does.
 func (a *headAppender) AppendExemplar(ref storage.SeriesRef, lset labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
 	// Check if exemplar storage is enabled.
 	if !a.head.opts.EnableExemplarStorage || a.head.opts.MaxExemplars.Load() <= 0 {

@@ -190,7 +190,7 @@ describe('Utils', () => {
       it('renders never for pre-beginning-of-time strings', () => {
         expect(formatRelative('0001-01-01T00:00:00Z', now())).toEqual('Never');
       });
-      it('renders a humanized duration for sane durations', () => {
+      it('renders a humanized duration for durations', () => {
         expect(formatRelative('2019-11-04T09:15:29.578701-07:00', parseTime('2019-11-04T09:15:35.8701-07:00'))).toEqual(
           '6.292s ago'
         );

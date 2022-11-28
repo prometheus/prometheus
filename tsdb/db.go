@@ -66,7 +66,7 @@ const (
 // ErrNotReady is returned if the underlying storage is not ready yet.
 var ErrNotReady = errors.New("TSDB not ready")
 
-// DefaultOptions used for the DB. They are sane for setups using
+// DefaultOptions used for the DB. They are reasonable for setups using
 // millisecond precision timestamps.
 func DefaultOptions() *Options {
 	return &Options{
