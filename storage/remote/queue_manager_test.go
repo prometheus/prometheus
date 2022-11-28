@@ -196,6 +196,46 @@ func TestMetadataDelivery(t *testing.T) {
 	require.Equal(t, c.receivedMetadata[metadata[len(metadata)-1].Metric][0].MetricFamilyName, metadata[len(metadata)-1].Metric)
 }
 
+func TestWALMetadataDelivery(t *testing.T) {
+	dir := t.TempDir()
+	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil)
+	defer s.Close()
+
+	cfg := config.DefaultQueueConfig
+	cfg.BatchSendDeadline = model.Duration(100 * time.Millisecond)
+	cfg.MaxShards = 1
+	mcfg := config.DefaultMetadataConfig
+	mcfg.SendFromWAL = true
+
+	writeConfig := baseRemoteWriteConfig("http://test-storage.com")
+	writeConfig.QueueConfig = cfg
+
+	conf := &config.Config{
+		GlobalConfig: config.DefaultGlobalConfig,
+		RemoteWriteConfigs: []*config.RemoteWriteConfig{
+			writeConfig,
+		},
+	}
+
+	metadata, series := createMetadata(3)
+
+	require.NoError(t, s.ApplyConfig(conf))
+	hash, err := toHash(writeConfig)
+	require.NoError(t, err)
+	qm := s.rws.queues[hash]
+	qm.mcfg.SendFromWAL = true
+	qm.mcfg.MaxSamplesPerSend = 10
+
+	c := NewTestWriteClient()
+	qm.SetClient(c)
+
+	qm.StoreSeries(series, 0)
+	c.expectMetadata(metadata, series)
+
+	qm.AppendWALMetadata(metadata)
+	c.waitForExpectedData(t)
+}
+
 func TestSampleDeliveryTimeout(t *testing.T) {
 	// Let's send one less sample than batch size, and wait the timeout duration
 	n := 9
@@ -642,6 +682,28 @@ func createHistograms(numSamples, numSeries int, floatHistogram bool) ([]record.
 	return histograms, nil, series
 }
 
+func createMetadata(numMetadata int) ([]record.RefMetadata, []record.RefSeries) {
+	series := make([]record.RefSeries, 0, numMetadata)
+	metas := make([]record.RefMetadata, 0, numMetadata)
+
+	for i := 0; i < numMetadata; i++ {
+		name := fmt.Sprintf("test_metric_%d", i)
+
+		metas = append(metas, record.RefMetadata{
+			Ref:  chunks.HeadSeriesRef(i),
+			Type: uint8(record.Counter),
+			Unit: "unit text",
+			Help: "help text",
+		})
+		series = append(series, record.RefSeries{
+			Ref:    chunks.HeadSeriesRef(i),
+			Labels: labels.Labels{{Name: "__name__", Value: name}},
+		})
+
+	}
+	return metas, series
+}
+
 func getSeriesNameFromRef(r record.RefSeries) string {
 	return r.Labels.Get("__name__")
 }
@@ -656,6 +718,7 @@ type TestWriteClient struct {
 	expectedHistograms      map[string][]prompb.Histogram
 	expectedFloatHistograms map[string][]prompb.Histogram
 	receivedMetadata        map[string][]prompb.MetricMetadata
+	expectedMetadata        map[string][]prompb.MetricMetadata
 	writesReceived          int
 	withWaitGroup           bool
 	wg                      sync.WaitGroup
@@ -748,6 +811,23 @@ func (c *TestWriteClient) expectFloatHistograms(fhs []record.RefFloatHistogramSa
 	c.wg.Add(len(fhs))
 }
 
+func (c *TestWriteClient) expectMetadata(ms []record.RefMetadata, series []record.RefSeries) {
+	if !c.withWaitGroup {
+		return
+	}
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+
+	c.expectedMetadata = map[string][]prompb.MetricMetadata{}
+	c.receivedMetadata = map[string][]prompb.MetricMetadata{}
+
+	for _, m := range ms {
+		seriesName := getSeriesNameFromRef(series[m.Ref])
+		c.expectedMetadata[seriesName] = append(c.expectedMetadata[seriesName], MetadataToMetadataProto(seriesName, m))
+	}
+	c.wg.Add(len(ms))
+}
+
 func (c *TestWriteClient) waitForExpectedData(tb testing.TB) {
 	if !c.withWaitGroup {
 		return
@@ -766,6 +846,9 @@ func (c *TestWriteClient) waitForExpectedData(tb testing.TB) {
 	}
 	for ts, expectedFloatHistogram := range c.expectedFloatHistograms {
 		require.Equal(tb, expectedFloatHistogram, c.receivedFloatHistograms[ts], ts)
+	}
+	for ts, expectedMetadata := range c.expectedMetadata {
+		require.Equal(tb, expectedMetadata, c.receivedMetadata[ts], ts)
 	}
 }
 
@@ -810,14 +893,15 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte) error {
 
 		}
 	}
-	if c.withWaitGroup {
-		c.wg.Add(-count)
-	}
 
 	for _, m := range reqProto.Metadata {
+		count++
 		c.receivedMetadata[m.MetricFamilyName] = append(c.receivedMetadata[m.MetricFamilyName], m)
 	}
 
+	if c.withWaitGroup {
+		c.wg.Add(-count)
+	}
 	c.writesReceived++
 
 	return nil
