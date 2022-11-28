@@ -24,6 +24,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 
@@ -858,7 +859,7 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Run("sample", func(t *testing.T) {
 				f, chkMetas := createFakeReaderAndNotPopulatedChunks(tc.chks...)
-				it := newPopulateWithDelGenericSeriesIterator(f, chkMetas, tc.intervals).toSeriesIterator()
+				it := newPopulateWithDelGenericSeriesIterator(ulid.ULID{}, f, chkMetas, tc.intervals).toSeriesIterator()
 
 				var r []tsdbutil.Sample
 				if tc.seek != 0 {
@@ -878,7 +879,7 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 			})
 			t.Run("chunk", func(t *testing.T) {
 				f, chkMetas := createFakeReaderAndNotPopulatedChunks(tc.chks...)
-				it := newPopulateWithDelGenericSeriesIterator(f, chkMetas, tc.intervals).toChunkSeriesIterator()
+				it := newPopulateWithDelGenericSeriesIterator(ulid.ULID{}, f, chkMetas, tc.intervals).toChunkSeriesIterator()
 
 				if tc.seek != 0 {
 					// Chunk iterator does not have Seek method.
@@ -910,7 +911,7 @@ func TestPopulateWithDelSeriesIterator_DoubleSeek(t *testing.T) {
 		[]tsdbutil.Sample{sample{4, 4, nil, nil}, sample{5, 5, nil, nil}},
 	)
 
-	it := newPopulateWithDelGenericSeriesIterator(f, chkMetas, nil).toSeriesIterator()
+	it := newPopulateWithDelGenericSeriesIterator(ulid.ULID{}, f, chkMetas, nil).toSeriesIterator()
 	require.Equal(t, chunkenc.ValFloat, it.Seek(1))
 	require.Equal(t, chunkenc.ValFloat, it.Seek(2))
 	require.Equal(t, chunkenc.ValFloat, it.Seek(2))
@@ -928,7 +929,7 @@ func TestPopulateWithDelSeriesIterator_SeekInCurrentChunk(t *testing.T) {
 		[]tsdbutil.Sample{},
 	)
 
-	it := newPopulateWithDelGenericSeriesIterator(f, chkMetas, nil).toSeriesIterator()
+	it := newPopulateWithDelGenericSeriesIterator(ulid.ULID{}, f, chkMetas, nil).toSeriesIterator()
 	require.Equal(t, chunkenc.ValFloat, it.Next())
 	ts, v := it.At()
 	require.Equal(t, int64(1), ts)
@@ -945,7 +946,7 @@ func TestPopulateWithDelSeriesIterator_SeekWithMinTime(t *testing.T) {
 		[]tsdbutil.Sample{sample{1, 6, nil, nil}, sample{5, 6, nil, nil}, sample{6, 8, nil, nil}},
 	)
 
-	it := newPopulateWithDelGenericSeriesIterator(f, chkMetas, nil).toSeriesIterator()
+	it := newPopulateWithDelGenericSeriesIterator(ulid.ULID{}, f, chkMetas, nil).toSeriesIterator()
 	require.Equal(t, chunkenc.ValNone, it.Seek(7))
 	require.Equal(t, chunkenc.ValFloat, it.Seek(3))
 }
@@ -958,7 +959,7 @@ func TestPopulateWithDelSeriesIterator_NextWithMinTime(t *testing.T) {
 	)
 
 	it := newPopulateWithDelGenericSeriesIterator(
-		f, chkMetas, tombstones.Intervals{{Mint: math.MinInt64, Maxt: 2}}.Add(tombstones.Interval{Mint: 4, Maxt: math.MaxInt64}),
+		ulid.ULID{}, f, chkMetas, tombstones.Intervals{{Mint: math.MinInt64, Maxt: 2}}.Add(tombstones.Interval{Mint: 4, Maxt: math.MaxInt64}),
 	).toSeriesIterator()
 	require.Equal(t, chunkenc.ValNone, it.Next())
 }
