@@ -112,10 +112,6 @@ func LoadFile(filename string, agentMode, expandExternalLabels bool, logger log.
 	}
 
 	if agentMode {
-		if len(cfg.RemoteWriteConfigs) == 0 {
-			return nil, errors.New("at least one remote_write target must be specified in agent mode")
-		}
-
 		if len(cfg.AlertingConfig.AlertmanagerConfigs) > 0 || len(cfg.AlertingConfig.AlertRelabelConfigs) > 0 {
 			return nil, errors.New("field alerting is not allowed in agent mode")
 		}
