@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"math"
 	"sync"
+	"unsafe"
 
 	"github.com/go-kit/log/level"
 	"golang.org/x/exp/slices"
@@ -29,6 +30,219 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
 )
+
+var _lazySeriesRefsPool = sync.Pool{}
+
+// lazySeriesRefs is not thread-safe.
+type lazySeriesRefs struct {
+	// Maybe we can track the index of visitors to avoid large buffer allocation.
+	expanded []storage.SeriesRef
+
+	unexpanded index.Postings
+}
+
+func getLazySeriesRefsFromPool(p index.Postings) *lazySeriesRefs {
+	l, ok := _lazySeriesRefsPool.Get().(*lazySeriesRefs)
+	if !ok {
+		l = &lazySeriesRefs{}
+	}
+	l.unexpanded = p
+	return l
+}
+
+func putLazySeriesRefsIntoPool(l *lazySeriesRefs) {
+	l.expanded = l.expanded[:0]
+	l.unexpanded = nil
+}
+
+func (l *lazySeriesRefs) index(idx int) (storage.SeriesRef, bool) {
+	nExpanded := len(l.expanded)
+	if idx < nExpanded {
+		return l.expanded[idx], true
+	}
+	for nExpanded <= idx {
+		if !l.unexpanded.Next() {
+			return 0, false
+		}
+		ref := l.unexpanded.At()
+		l.expanded = append(l.expanded, ref)
+		nExpanded++
+		if idx < nExpanded {
+			return ref, true
+		}
+	}
+	return l.expanded[idx], true
+}
+
+func (l *lazySeriesRefs) err() error {
+	return l.unexpanded.Err()
+}
+
+func (l *lazySeriesRefs) Postings() index.Postings {
+	return &lazySeriesRefsPostings{refs: l}
+}
+
+type lazySeriesRefsPostings struct {
+	refs *lazySeriesRefs
+	idx  int
+	cur  storage.SeriesRef
+}
+
+// Next advances the iterator and returns true if another value was found.
+func (p *lazySeriesRefsPostings) Next() bool {
+	ref, ok := p.refs.index(p.idx)
+	if !ok {
+		return false
+	}
+	p.idx++
+	p.cur = ref
+	return true
+}
+
+// Seek advances the iterator to value v or greater and returns
+// true if a value was found.
+func (p *lazySeriesRefsPostings) Seek(v storage.SeriesRef) bool {
+	panic("not implemented")
+}
+
+// At returns the value at the current iterator position.
+func (p *lazySeriesRefsPostings) At() storage.SeriesRef {
+	return p.cur
+}
+
+// Err returns the last error of the iterator.
+func (p *lazySeriesRefsPostings) Err() error {
+	return p.refs.err()
+}
+
+type headQueryContext struct {
+	postingsCache map[string]*lazySeriesRefs
+}
+
+func (c *headQueryContext) releaseResources() {
+	if !c.postingsCacheEnabled() {
+		return
+	}
+
+	for k, v := range c.postingsCache {
+		putLazySeriesRefsIntoPool(v)
+		delete(c.postingsCache, k) // It is safe.
+	}
+}
+
+func (c *headQueryContext) enablePostingsCache() {
+	if c != nil {
+		c.postingsCache = map[string]*lazySeriesRefs{}
+	}
+}
+
+func (c *headQueryContext) postingsCacheEnabled() bool {
+	return c != nil && c.postingsCache != nil
+}
+
+func (c *headQueryContext) cachedPostings(matchers string) (index.Postings, bool) {
+	if !c.postingsCacheEnabled() {
+		return nil, false
+	}
+
+	refs, ok := c.postingsCache[matchers]
+	if !ok {
+		return nil, false
+	}
+	return refs.Postings(), true
+}
+
+func (c *headQueryContext) cachePostings(matchers string, p index.Postings) index.Postings {
+	if !c.postingsCacheEnabled() {
+		return p
+	}
+
+	refs := getLazySeriesRefsFromPool(p)
+	c.postingsCache[matchers] = refs
+	return refs.Postings()
+}
+
+func encodeMatchers(ms []*labels.Matcher) string {
+	var size int
+	for _, m := range ms {
+		size += len(m.Name) + len(m.Type.String()) + len(m.Value) + 1
+	}
+	buf := make([]byte, 0, size)
+	for _, m := range ms {
+		buf = append(buf, m.Name...)
+		buf = append(buf, m.Type.String()...)
+		buf = append(buf, m.Value...)
+		buf = append(buf, ' ')
+	}
+	return *(*string)(unsafe.Pointer(&buf))
+}
+
+type querierWithContext struct {
+	storage.Querier
+
+	headCtx *headQueryContext
+}
+
+// Close releases the resources of the Querier.
+func (q querierWithContext) Close() error {
+	q.headCtx.releaseResources()
+	return q.Querier.Close()
+}
+
+type chunkQuerierWithContext struct {
+	storage.ChunkQuerier
+
+	headCtx *headQueryContext
+}
+
+// Close releases the resources of the Querier.
+func (q chunkQuerierWithContext) Close() error {
+	q.headCtx.releaseResources()
+	return q.ChunkQuerier.Close()
+}
+
+type blockReaderWithContext struct {
+	BlockReader
+
+	ctx *headQueryContext
+}
+
+func (br blockReaderWithContext) Index() (IndexReader, error) {
+	ir, err := br.BlockReader.Index()
+	if err == nil {
+		ir = indexReaderWithContext{ir, br.ctx}
+	}
+	return ir, err
+}
+
+type indexReaderWithContext struct {
+	IndexReader
+
+	ctx *headQueryContext
+}
+
+func maybeCachedPostingsForMatchers(ix IndexReader, ms []*labels.Matcher) (index.Postings, error) {
+	var p index.Postings
+
+	indexWithContext, withCtx := ix.(indexReaderWithContext)
+	cacheEnabled := withCtx && indexWithContext.ctx.postingsCacheEnabled()
+	cached := false
+	matchersKey := ""
+	if cacheEnabled {
+		matchersKey = encodeMatchers(ms)
+		p, cached = indexWithContext.ctx.cachedPostings(matchersKey)
+	}
+	if !cached {
+		var err error
+		if p, err = PostingsForMatchers(ix, ms...); err != nil {
+			return nil, err
+		}
+	}
+	if !cached && cacheEnabled {
+		p = indexWithContext.ctx.cachePostings(matchersKey, p)
+	}
+	return p, nil
+}
 
 func (h *Head) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, error) {
 	return h.exemplars.ExemplarQuerier(ctx)

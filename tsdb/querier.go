@@ -132,7 +132,8 @@ func (q *blockQuerier) Select(ctx context.Context, sortSeries bool, hints *stora
 	maxt := q.maxt
 	disableTrimming := false
 
-	p, err := PostingsForMatchers(ctx, q.index, ms...)
+	p, err := maybeCachedPostingsForMatchers(q.index, ms)
+	// p, err := PostingsForMatchers(ctx, q.index, ms...)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
@@ -176,7 +177,8 @@ func (q *blockChunkQuerier) Select(ctx context.Context, sortSeries bool, hints *
 		maxt = hints.End
 		disableTrimming = hints.DisableTrimming
 	}
-	p, err := PostingsForMatchers(ctx, q.index, ms...)
+	p, err := maybeCachedPostingsForMatchers(q.index, ms)
+	// p, err := PostingsForMatchers(ctx, q.index, ms...)
 	if err != nil {
 		return storage.ErrChunkSeriesSet(err)
 	}
