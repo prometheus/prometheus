@@ -712,12 +712,7 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 	if valueType == chunkenc.ValNone {
 		if err := p.currDelIter.Err(); err != nil {
 			p.err = errors.Wrap(err, "iterate chunk while re-encoding")
-			return false
 		}
-
-		// Empty chunk, this should not happen, as we assume full
-		// deletions being filtered before this iterator.
-		p.err = errors.New("populateWithDelChunkSeriesIterator: unexpected empty chunk found while rewriting chunk")
 		return false
 	}
 

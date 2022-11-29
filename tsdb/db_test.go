@@ -2960,6 +2960,24 @@ func TestCompactHead(t *testing.T) {
 	require.NoError(t, seriesSet.Err())
 }
 
+// TestCompactHeadWithDeletion tests https://github.com/prometheus/prometheus/issues/11585.
+func TestCompactHeadWithDeletion(t *testing.T) {
+	db, err := Open(t.TempDir(), log.NewNopLogger(), prometheus.NewRegistry(), nil, nil)
+	require.NoError(t, err)
+
+	app := db.Appender(context.Background())
+	_, err = app.Append(0, labels.FromStrings("a", "b"), 10, rand.Float64())
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	err = db.Delete(0, 100, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+	require.NoError(t, err)
+
+	// This recreates the bug.
+	require.NoError(t, db.CompactHead(NewRangeHead(db.Head(), 0, 100)))
+	require.NoError(t, db.Close())
+}
+
 func deleteNonBlocks(dbDir string) error {
 	dirs, err := os.ReadDir(dbDir)
 	if err != nil {
