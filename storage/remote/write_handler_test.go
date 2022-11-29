@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/stretchr/testify/require"
@@ -31,6 +32,7 @@ import (
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
 )
 
 func TestRemoteWriteHandler(t *testing.T) {
@@ -163,6 +165,62 @@ func TestCommitErr(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, http.StatusInternalServerError, resp.StatusCode)
 	require.Equal(t, "commit error\n", string(body))
+}
+
+func BenchmarkRemoteWriteOOOSamples(b *testing.B) {
+	dir := b.TempDir()
+	opts := tsdb.DefaultHeadOptions()
+	opts.ChunkDirRoot = dir
+	opts.OutOfOrderCapMax.Store(30)
+	opts.OutOfOrderTimeWindow.Store(120 * time.Minute.Milliseconds())
+
+	h, err := tsdb.NewHead(nil, nil, nil, nil, opts, nil)
+	require.NoError(b, err)
+	b.Cleanup(func() {
+		require.NoError(b, h.Close())
+	})
+	require.NoError(b, h.Init(0))
+
+	handler := NewWriteHandler(log.NewNopLogger(), h)
+
+	buf, _, err := buildWriteRequest(genSeriesWithSample(1000, 200*time.Minute.Milliseconds()), nil, nil, nil)
+	require.NoError(b, err)
+
+	req, err := http.NewRequest("", "", bytes.NewReader(buf))
+	require.NoError(b, err)
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+	require.Equal(b, http.StatusNoContent, recorder.Code)
+	require.Equal(b, h.NumSeries(), uint64(1000))
+
+	b.ResetTimer()
+
+	for i := 0; i < 100; i++ {
+		buf, _, err = buildWriteRequest(genSeriesWithSample(1000, int64(80+i)*time.Minute.Milliseconds()), nil, nil, nil)
+		require.NoError(b, err)
+
+		req, err = http.NewRequest("", "", bytes.NewReader(buf))
+		require.NoError(b, err)
+
+		recorder = httptest.NewRecorder()
+		handler.ServeHTTP(recorder, req)
+		require.Equal(b, http.StatusNoContent, recorder.Code)
+		require.Equal(b, h.NumSeries(), uint64(1000))
+	}
+}
+
+func genSeriesWithSample(numSeries int, ts int64) []prompb.TimeSeries {
+	var series []prompb.TimeSeries
+	for i := 0; i < numSeries; i++ {
+		s := prompb.TimeSeries{
+			Labels:  []prompb.Label{{Name: "__name__", Value: fmt.Sprintf("test_metric_%d", i)}},
+			Samples: []prompb.Sample{{Value: float64(i), Timestamp: ts}},
+		}
+		series = append(series, s)
+	}
+
+	return series
 }
 
 type mockAppendable struct {
