@@ -194,13 +194,16 @@ func BenchmarkRemoteWriteOOOSamples(b *testing.B) {
 	require.Equal(b, http.StatusNoContent, recorder.Code)
 	require.Equal(b, h.NumSeries(), uint64(1000))
 
-	b.ResetTimer()
-
+	var bufRequests [][]byte
 	for i := 0; i < 100; i++ {
 		buf, _, err = buildWriteRequest(genSeriesWithSample(1000, int64(80+i)*time.Minute.Milliseconds()), nil, nil, nil)
 		require.NoError(b, err)
+		bufRequests = append(bufRequests, buf)
+	}
 
-		req, err = http.NewRequest("", "", bytes.NewReader(buf))
+	b.ResetTimer()
+	for i := 0; i < 100; i++ {
+		req, err = http.NewRequest("", "", bytes.NewReader(bufRequests[i]))
 		require.NoError(b, err)
 
 		recorder = httptest.NewRecorder()
