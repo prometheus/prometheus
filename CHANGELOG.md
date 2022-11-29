@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.37.4 / 2022-11-29
+
+* [SECURITY] Fix basic authentication bypass vulnerability (CVE-2022-46146). GHSA-4v48-4q5m-8vx4
+
 ## 2.37.3 / 2022-11-23
 
 * [BUGFIX] Update our regexp library to fix upstream CVE-2022-41715. #11619
