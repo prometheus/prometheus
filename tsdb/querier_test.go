@@ -368,6 +368,46 @@ func TestBlockQuerier(t *testing.T) {
 				),
 			}),
 		},
+		{
+			// This tests query sharding. The label sets involved both hash into this test's result set. The test
+			// following this is companion to this test (same test but with a different ShardIndex) and should find that
+			// the label sets involved do not hash to that test's result set.
+			mint:  math.MinInt64,
+			maxt:  math.MaxInt64,
+			hints: &storage.SelectHints{Start: math.MinInt64, End: math.MaxInt64, ShardIndex: 0, ShardCount: 2},
+			ms:    []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "a", ".*")},
+			exp: newMockSeriesSet([]storage.Series{
+				storage.NewListSeries(labels.FromStrings("a", "a"),
+					[]tsdbutil.Sample{sample{1, 2, nil, nil}, sample{2, 3, nil, nil}, sample{3, 4, nil, nil}, sample{5, 2, nil, nil}, sample{6, 3, nil, nil}, sample{7, 4, nil, nil}},
+				),
+				storage.NewListSeries(labels.FromStrings("a", "a", "b", "b"),
+					[]tsdbutil.Sample{sample{1, 1, nil, nil}, sample{2, 2, nil, nil}, sample{3, 3, nil, nil}, sample{5, 3, nil, nil}, sample{6, 6, nil, nil}},
+				),
+				storage.NewListSeries(labels.FromStrings("b", "b"),
+					[]tsdbutil.Sample{sample{1, 3, nil, nil}, sample{2, 2, nil, nil}, sample{3, 6, nil, nil}, sample{5, 1, nil, nil}, sample{6, 7, nil, nil}, sample{7, 2, nil, nil}},
+				),
+			}),
+			expChks: newMockChunkSeriesSet([]storage.ChunkSeries{
+				storage.NewListChunkSeriesFromSamples(labels.FromStrings("a", "a"),
+					[]tsdbutil.Sample{sample{1, 2, nil, nil}, sample{2, 3, nil, nil}, sample{3, 4, nil, nil}}, []tsdbutil.Sample{sample{5, 2, nil, nil}, sample{6, 3, nil, nil}, sample{7, 4, nil, nil}},
+				),
+				storage.NewListChunkSeriesFromSamples(labels.FromStrings("a", "a", "b", "b"),
+					[]tsdbutil.Sample{sample{1, 1, nil, nil}, sample{2, 2, nil, nil}, sample{3, 3, nil, nil}}, []tsdbutil.Sample{sample{5, 3, nil, nil}, sample{6, 6, nil, nil}},
+				),
+				storage.NewListChunkSeriesFromSamples(labels.FromStrings("b", "b"),
+					[]tsdbutil.Sample{sample{1, 3, nil, nil}, sample{2, 2, nil, nil}, sample{3, 6, nil, nil}}, []tsdbutil.Sample{sample{5, 1, nil, nil}, sample{6, 7, nil, nil}, sample{7, 2, nil, nil}},
+				),
+			}),
+		},
+		{
+			// This is a companion to the test above.
+			mint:    math.MinInt64,
+			maxt:    math.MaxInt64,
+			hints:   &storage.SelectHints{Start: math.MinInt64, End: math.MaxInt64, ShardIndex: 1, ShardCount: 2},
+			ms:      []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "a", ".*")},
+			exp:     newMockSeriesSet([]storage.Series{}),
+			expChks: newMockChunkSeriesSet([]storage.ChunkSeries{}),
+		},
 	} {
 		t.Run("", func(t *testing.T) {
 			ir, cr, _, _ := createIdxChkReaders(t, testData)
