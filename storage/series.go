@@ -205,7 +205,7 @@ func (c *chunkSetToSeriesSet) Next() bool {
 	}
 
 	c.iter = c.ChunkSeriesSet.At().Iterator(c.iter)
-	c.sameSeriesChunks = c.sameSeriesChunks[:0]
+	c.sameSeriesChunks = nil
 
 	for c.iter.Next() {
 		c.sameSeriesChunks = append(
