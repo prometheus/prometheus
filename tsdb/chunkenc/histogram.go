@@ -624,9 +624,9 @@ func (it *histogramIterator) Err() error {
 }
 
 func (it *histogramIterator) Reset(b []byte) {
-	// The first 2 bytes contain chunk headers.
+	// The first 3 bytes contain chunk headers.
 	// We skip that for actual samples.
-	it.br = newBReader(b[2:])
+	it.br = newBReader(b[3:])
 	it.numTotal = binary.BigEndian.Uint16(b)
 	it.numRead = 0
 
