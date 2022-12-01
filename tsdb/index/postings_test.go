@@ -231,10 +231,13 @@ func TestIntersect(t *testing.T) {
 			if i == EmptyPostings() {
 				t.Fatal("intersect unexpected result: EmptyPostings sentinel")
 			}
+			cloned := i.Clone()
 
-			res, err := ExpandPostings(i)
-			require.NoError(t, err)
-			require.Equal(t, expected, res)
+			for _, p := range []Postings{i, cloned} {
+				res, err := ExpandPostings(p)
+				require.NoError(t, err)
+				require.Equal(t, expected, res)
+			}
 		})
 	}
 }
@@ -272,11 +275,14 @@ func TestMultiIntersect(t *testing.T) {
 		for _, postings := range c.p {
 			ps = append(ps, newListPostings(postings...))
 		}
+		i := Intersect(ps...)
+		cloned := i.Clone()
 
-		res, err := ExpandPostings(Intersect(ps...))
-
-		require.NoError(t, err)
-		require.Equal(t, c.res, res)
+		for _, p := range []Postings{i, cloned} {
+			res, err := ExpandPostings(p)
+			require.NoError(t, err)
+			require.Equal(t, c.res, res)
+		}
 	}
 }
 
@@ -416,10 +422,16 @@ func TestMultiMerge(t *testing.T) {
 	i1 := newListPostings(1, 2, 3, 4, 5, 6, 1000, 1001)
 	i2 := newListPostings(2, 4, 5, 6, 7, 8, 999, 1001)
 	i3 := newListPostings(1, 2, 5, 6, 7, 8, 1001, 1200)
+	expected := []storage.SeriesRef{1, 2, 3, 4, 5, 6, 7, 8, 999, 1000, 1001, 1200}
 
-	res, err := ExpandPostings(Merge(context.Background(), i1, i2, i3))
-	require.NoError(t, err)
-	require.Equal(t, []storage.SeriesRef{1, 2, 3, 4, 5, 6, 7, 8, 999, 1000, 1001, 1200}, res)
+	m := Merge(context.Background(), i1, i2, i3)
+	cloned := m.Clone()
+
+	for _, p := range []Postings{m, cloned} {
+		res, err := ExpandPostings(p)
+		require.NoError(t, err)
+		require.Equal(t, expected, res)
+	}
 }
 
 func TestMergedPostings(t *testing.T) {
@@ -521,9 +533,13 @@ func TestMergedPostings(t *testing.T) {
 				t.Fatal("merge unexpected result: EmptyPostings sentinel")
 			}
 
-			res, err := ExpandPostings(m)
-			require.NoError(t, err)
-			require.Equal(t, expected, res)
+			cloned := m.Clone()
+
+			for _, p := range []Postings{m, cloned} {
+				res, err := ExpandPostings(p)
+				require.NoError(t, err)
+				require.Equal(t, expected, res)
+			}
 		})
 	}
 }
@@ -576,18 +592,21 @@ func TestMergedPostingsSeek(t *testing.T) {
 		a := newListPostings(c.a...)
 		b := newListPostings(c.b...)
 
-		p := Merge(ctx, a, b)
+		m := Merge(ctx, a, b)
+		cloned := m.Clone()
 
-		require.Equal(t, c.success, p.Seek(c.seek))
+		for _, p := range []Postings{m, cloned} {
+			require.Equal(t, c.success, p.Seek(c.seek))
 
-		// After Seek(), At() should be called.
-		if c.success {
-			start := p.At()
-			lst, err := ExpandPostings(p)
-			require.NoError(t, err)
+			// After Seek(), At() should be called.
+			if c.success {
+				start := p.At()
+				lst, err := ExpandPostings(p)
+				require.NoError(t, err)
 
-			lst = append([]storage.SeriesRef{start}, lst...)
-			require.Equal(t, c.res, lst)
+				lst = append([]storage.SeriesRef{start}, lst...)
+				require.Equal(t, c.res, lst)
+			}
 		}
 	}
 }
@@ -736,18 +755,21 @@ func TestRemovedPostingsSeek(t *testing.T) {
 		a := newListPostings(c.a...)
 		b := newListPostings(c.b...)
 
-		p := newRemovedPostings(a, b)
+		r := newRemovedPostings(a, b)
+		cloned := r.Clone()
 
-		require.Equal(t, c.success, p.Seek(c.seek))
+		for _, p := range []Postings{r, cloned} {
+			require.Equal(t, c.success, p.Seek(c.seek))
 
-		// After Seek(), At() should be called.
-		if c.success {
-			start := p.At()
-			lst, err := ExpandPostings(p)
-			require.NoError(t, err)
+			// After Seek(), At() should be called.
+			if c.success {
+				start := p.At()
+				lst, err := ExpandPostings(p)
+				require.NoError(t, err)
 
-			lst = append([]storage.SeriesRef{start}, lst...)
-			require.Equal(t, c.res, lst)
+				lst = append([]storage.SeriesRef{start}, lst...)
+				require.Equal(t, c.res, lst)
+			}
 		}
 	}
 }
@@ -768,14 +790,17 @@ func TestBigEndian(t *testing.T) {
 	}
 
 	t.Run("Iteration", func(t *testing.T) {
-		bep := newBigEndianPostings(beLst)
-		for i := 0; i < num; i++ {
-			require.True(t, bep.Next())
-			require.Equal(t, storage.SeriesRef(ls[i]), bep.At())
-		}
+		p := newBigEndianPostings(beLst)
+		cloned := p.Clone()
+		for _, bep := range []Postings{p, cloned} {
+			for i := 0; i < num; i++ {
+				require.True(t, bep.Next())
+				require.Equal(t, storage.SeriesRef(ls[i]), bep.At())
+			}
 
-		require.False(t, bep.Next())
-		require.NoError(t, bep.Err())
+			require.False(t, bep.Next())
+			require.NoError(t, bep.Err())
+		}
 	})
 
 	t.Run("Seek", func(t *testing.T) {
@@ -816,12 +841,14 @@ func TestBigEndian(t *testing.T) {
 			},
 		}
 
-		bep := newBigEndianPostings(beLst)
-
-		for _, v := range table {
-			require.Equal(t, v.found, bep.Seek(storage.SeriesRef(v.seek)))
-			require.Equal(t, storage.SeriesRef(v.val), bep.At())
-			require.NoError(t, bep.Err())
+		p := newBigEndianPostings(beLst)
+		cloned := p.Clone()
+		for _, bep := range []Postings{p, cloned} {
+			for _, v := range table {
+				require.Equal(t, v.found, bep.Seek(storage.SeriesRef(v.seek)))
+				require.Equal(t, storage.SeriesRef(v.val), bep.At())
+				require.NoError(t, bep.Err())
+			}
 		}
 	})
 }
@@ -837,11 +864,14 @@ func TestIntersectWithMerge(t *testing.T) {
 		newListPostings(15, 26, 30),
 	)
 
-	p := Intersect(a, b)
-	res, err := ExpandPostings(p)
+	i := Intersect(a, b)
+	cloned := i.Clone()
+	for _, p := range []Postings{i, cloned} {
+		res, err := ExpandPostings(p)
 
-	require.NoError(t, err)
-	require.Equal(t, []storage.SeriesRef{30}, res)
+		require.NoError(t, err)
+		require.Equal(t, []storage.SeriesRef{30}, res)
+	}
 }
 
 func TestWithoutPostings(t *testing.T) {
@@ -915,9 +945,13 @@ func TestWithoutPostings(t *testing.T) {
 				t.Fatal("without unexpected result: EmptyPostings sentinel")
 			}
 
-			res, err := ExpandPostings(w)
-			require.NoError(t, err)
-			require.Equal(t, expected, res)
+			cloned := w.Clone()
+
+			for _, p := range []Postings{w, cloned} {
+				res, err := ExpandPostings(p)
+				require.NoError(t, err)
+				require.Equal(t, expected, res)
+			}
 		})
 	}
 }
@@ -1086,6 +1120,8 @@ type postingsFailingAfterNthCall struct {
 	ttl int
 	Postings
 }
+
+func (p *postingsFailingAfterNthCall) Clone() Postings { panic("not implemented") }
 
 func (p *postingsFailingAfterNthCall) Seek(v storage.SeriesRef) bool {
 	p.ttl--

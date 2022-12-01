@@ -1965,12 +1965,12 @@ func (db *DB) Querier(mint, maxt int64) (_ storage.Querier, err error) {
 		blockQueriers = append(blockQueriers, q)
 	}
 
-	return querierWithContext{storage.NewMergeQuerier(blockQueriers, nil, storage.ChainedSeriesMerge), headQueryCtx}, nil
+	return storage.NewMergeQuerier(blockQueriers, nil, storage.ChainedSeriesMerge), nil
 }
 
 // blockChunkQuerierForRange returns individual block chunk queriers from the persistent blocks, in-order head block, and the
 // out-of-order head block, overlapping with the given time range.
-func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuerier, _ *headQueryContext, err error) {
+func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuerier, err error) {
 	var blocks []BlockReader
 
 	db.mtx.RLock()
@@ -2001,7 +2001,7 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuer
 		rh := NewRangeHead(db.head, mint, maxt)
 		inOrderHeadQuerier, err = NewBlockChunkQuerier(blockReaderWithContext{rh, headQueryCtx}, mint, maxt)
 		if err != nil {
-			return nil, nil, fmt.Errorf("open querier for head %s: %w", rh, err)
+			return nil, fmt.Errorf("open querier for head %s: %w", rh, err)
 		}
 
 		// Getting the querier above registers itself in the queue that the truncation waits on.
@@ -2010,7 +2010,7 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuer
 		shouldClose, getNew, newMint := db.head.IsQuerierCollidingWithTruncation(mint, maxt)
 		if shouldClose {
 			if err := inOrderHeadQuerier.Close(); err != nil {
-				return nil, nil, fmt.Errorf("closing head querier %s: %w", rh, err)
+				return nil, fmt.Errorf("closing head querier %s: %w", rh, err)
 			}
 			inOrderHeadQuerier = nil
 		}
@@ -2018,7 +2018,7 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuer
 			rh := NewRangeHead(db.head, newMint, maxt)
 			inOrderHeadQuerier, err = NewBlockChunkQuerier(blockReaderWithContext{rh, headQueryCtx}, newMint, maxt)
 			if err != nil {
-				return nil, nil, fmt.Errorf("open querier for head while getting new querier %s: %w", rh, err)
+				return nil, fmt.Errorf("open querier for head while getting new querier %s: %w", rh, err)
 			}
 		}
 
@@ -2032,7 +2032,7 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuer
 		rh := NewOOORangeHead(db.head, mint, maxt, db.lastGarbageCollectedMmapRef)
 		outOfOrderHeadQuerier, err := NewBlockChunkQuerier(blockReaderWithContext{rh, headQueryCtx}, mint, maxt)
 		if err != nil {
-			return nil, nil, fmt.Errorf("open block chunk querier for ooo head %s: %w", rh, err)
+			return nil, fmt.Errorf("open block chunk querier for ooo head %s: %w", rh, err)
 		}
 
 		blockQueriers = append(blockQueriers, outOfOrderHeadQuerier)
@@ -2041,21 +2041,21 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuer
 	for _, b := range blocks {
 		q, err := NewBlockChunkQuerier(b, mint, maxt)
 		if err != nil {
-			return nil, nil, fmt.Errorf("open querier for block %s: %w", b, err)
+			return nil, fmt.Errorf("open querier for block %s: %w", b, err)
 		}
 		blockQueriers = append(blockQueriers, q)
 	}
 
-	return blockQueriers, headQueryCtx, nil
+	return blockQueriers, nil
 }
 
 // ChunkQuerier returns a new chunk querier over the data partition for the given time range.
 func (db *DB) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
-	blockQueriers, headQueryCtx, err := db.blockChunkQuerierForRange(mint, maxt)
+	blockQueriers, err := db.blockChunkQuerierForRange(mint, maxt)
 	if err != nil {
 		return nil, err
 	}
-	return chunkQuerierWithContext{storage.NewMergeChunkQuerier(blockQueriers, nil, storage.NewCompactingChunkSeriesMerger(storage.ChainedSeriesMerge)), headQueryCtx}, nil
+	return storage.NewMergeChunkQuerier(blockQueriers, nil, storage.NewCompactingChunkSeriesMerger(storage.ChainedSeriesMerge)), nil
 }
 
 func (db *DB) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, error) {

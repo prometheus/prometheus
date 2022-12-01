@@ -40,9 +40,13 @@ func BenchmarkDBQuerier(b *testing.B) {
 	app := h.Appender(context.Background())
 	addSeries := func(l labels.Labels) {
 		app.Append(0, l, 10, 4)
-		app.Append(0, l, 11, 3)
-		app.Append(0, l, 9, 1) // Out of order sample
-		app.Append(0, l, 8, 2) // Out of order sample
+		app.Append(0, l, 12, 3)
+		app.Append(0, l, 14, 3)
+		app.Append(0, l, 16, 3)
+		app.Append(0, l, 11, 1) // Out of order sample
+		app.Append(0, l, 15, 2) // Out of order sample
+		app.Append(0, l, 9, 2)  // Out of order sample
+		app.Append(0, l, 13, 2) // Out of order sample
 	}
 
 	for n := 0; n < 10; n++ {
