@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.40.5 / 2022-12-01
+
+* [BUGFIX] TSDB: Fix queries involving native histograms due to improper reset of iterators. #11643
+
 ## 2.40.4 / 2022-11-29
 
 * [SECURITY] Fix basic authentication bypass vulnerability (CVE-2022-46146). GHSA-4v48-4q5m-8vx4
