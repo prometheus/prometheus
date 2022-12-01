@@ -529,10 +529,13 @@ func mapFromVM(vm compute.VirtualMachine) virtualMachine {
 		}
 	}
 
-	if vm.VirtualMachineProperties != nil &&
-		vm.VirtualMachineProperties.OsProfile != nil &&
-		vm.VirtualMachineProperties.OsProfile.ComputerName != nil {
-		computerName = *(vm.VirtualMachineProperties.OsProfile.ComputerName)
+	if vm.VirtualMachineProperties != nil {
+		if vm.VirtualMachineProperties.OsProfile != nil && vm.VirtualMachineProperties.OsProfile.ComputerName != nil {
+			computerName = *(vm.VirtualMachineProperties.OsProfile.ComputerName)
+		}
+		if vm.VirtualMachineProperties.HardwareProfile != nil {
+			size = string(vm.VirtualMachineProperties.HardwareProfile.VMSize)
+		}
 	}
 
 	if vm.VirtualMachineProperties != nil && vm.VirtualMachineProperties.HardwareProfile != nil {
@@ -570,8 +573,13 @@ func mapFromVMScaleSetVM(vm compute.VirtualMachineScaleSetVM, scaleSetName strin
 		}
 	}
 
-	if vm.VirtualMachineScaleSetVMProperties != nil && vm.VirtualMachineScaleSetVMProperties.OsProfile != nil {
-		computerName = *(vm.VirtualMachineScaleSetVMProperties.OsProfile.ComputerName)
+	if vm.VirtualMachineScaleSetVMProperties != nil {
+		if vm.VirtualMachineScaleSetVMProperties.OsProfile != nil && vm.VirtualMachineScaleSetVMProperties.OsProfile.ComputerName != nil {
+			computerName = *(vm.VirtualMachineScaleSetVMProperties.OsProfile.ComputerName)
+		}
+		if vm.VirtualMachineScaleSetVMProperties.HardwareProfile != nil {
+			size = string(vm.VirtualMachineScaleSetVMProperties.HardwareProfile.VMSize)
+		}
 	}
 
 	if vm.VirtualMachineScaleSetVMProperties != nil && vm.VirtualMachineScaleSetVMProperties.HardwareProfile != nil {
