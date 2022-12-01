@@ -134,7 +134,7 @@ func Checkpoint(logger log.Logger, w *WL, from, to int, keep func(id chunks.Head
 	if err := os.MkdirAll(cpdirtmp, 0o777); err != nil {
 		return nil, errors.Wrap(err, "create checkpoint dir")
 	}
-	cp, err := New(nil, nil, cpdirtmp, w.CompressionEnabled())
+	cp, err := New(nil, nil, cpdirtmp, w.CompressionType())
 	if err != nil {
 		return nil, errors.Wrap(err, "open checkpoint")
 	}

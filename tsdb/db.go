@@ -77,8 +77,8 @@ func DefaultOptions() *Options {
 		MaxBlockDuration:           DefaultBlockDuration,
 		NoLockfile:                 false,
 		AllowOverlappingCompaction: true,
-		WALCompression:             false,
 		SamplesPerChunk:            DefaultSamplesPerChunk,
+		WALCompression:             wlog.CompressionNone,
 		StripeSize:                 DefaultStripeSize,
 		HeadChunksWriteBufferSize:  chunks.DefaultWriteBufferSize,
 		IsolationDisabled:          defaultIsolationDisabled,
@@ -123,8 +123,8 @@ type Options struct {
 	// For Prometheus, this will always be true.
 	AllowOverlappingCompaction bool
 
-	// WALCompression will turn on Snappy compression for records on the WAL.
-	WALCompression bool
+	// WALCompression configures the compression type to use on records in the WAL.
+	WALCompression wlog.CompressionType
 
 	// Maximum number of CPUs that can simultaneously processes WAL replay.
 	// If it is <=0, then GOMAXPROCS is used.

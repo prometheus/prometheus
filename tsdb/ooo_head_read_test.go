@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
+	"github.com/prometheus/prometheus/tsdb/wlog"
 )
 
 type chunkInterval struct {
@@ -294,7 +295,7 @@ func TestOOOHeadIndexReader_Series(t *testing.T) {
 		for perm, intervals := range permutations {
 			for _, headChunk := range []bool{false, true} {
 				t.Run(fmt.Sprintf("name=%s, permutation=%d, headChunk=%t", tc.name, perm, headChunk), func(t *testing.T) {
-					h, _ := newTestHead(t, 1000, false, true)
+					h, _ := newTestHead(t, 1000, wlog.CompressionNone, true)
 					defer func() {
 						require.NoError(t, h.Close())
 					}()
@@ -374,7 +375,7 @@ func TestOOOHeadIndexReader_Series(t *testing.T) {
 
 func TestOOOHeadChunkReader_LabelValues(t *testing.T) {
 	chunkRange := int64(2000)
-	head, _ := newTestHead(t, chunkRange, false, true)
+	head, _ := newTestHead(t, chunkRange, wlog.CompressionNone, true)
 	t.Cleanup(func() { require.NoError(t, head.Close()) })
 
 	app := head.Appender(context.Background())
