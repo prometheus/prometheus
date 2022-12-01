@@ -538,10 +538,6 @@ func mapFromVM(vm compute.VirtualMachine) virtualMachine {
 		}
 	}
 
-	if vm.VirtualMachineProperties != nil && vm.VirtualMachineProperties.HardwareProfile != nil {
-		size = string(vm.VirtualMachineProperties.HardwareProfile.VMSize)
-	}
-
 	return virtualMachine{
 		ID:                *(vm.ID),
 		Name:              *(vm.Name),
@@ -580,10 +576,6 @@ func mapFromVMScaleSetVM(vm compute.VirtualMachineScaleSetVM, scaleSetName strin
 		if vm.VirtualMachineScaleSetVMProperties.HardwareProfile != nil {
 			size = string(vm.VirtualMachineScaleSetVMProperties.HardwareProfile.VMSize)
 		}
-	}
-
-	if vm.VirtualMachineScaleSetVMProperties != nil && vm.VirtualMachineScaleSetVMProperties.HardwareProfile != nil {
-		size = string(vm.VirtualMachineScaleSetVMProperties.HardwareProfile.VMSize)
 	}
 
 	return virtualMachine{
