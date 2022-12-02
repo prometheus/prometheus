@@ -40,6 +40,7 @@ import (
 	"github.com/mwitkow/go-conntrack"
 	"github.com/oklog/run"
 	"github.com/prometheus/client_golang/prometheus"
+	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promlog"
 	promlogflag "github.com/prometheus/common/promlog/flag"
@@ -405,6 +406,9 @@ func main() {
 	serverOnlyFlag(a, "query.max-samples", "Maximum number of samples a single query can load into memory. Note that queries will fail if they try to load more samples than this into memory, so this also limits the number of samples a query can return.").
 		Default("50000000").IntVar(&cfg.queryMaxSamples)
 
+	a.Flag("scrape.network", "Default network for scraping. Possible values: tcp (use ipv6 or ipv4), tcp4 (only ipv4), tcp6 (only ipv6).").
+		Default("tcp").EnumVar(&cfg.scrape.Network, "tcp", "tcp4", "tcp6")
+
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
@@ -537,6 +541,11 @@ func main() {
 		}
 	}
 
+	var dialer net.Dialer
+	cfg.scrape.HTTPClientOptions = append(cfg.scrape.HTTPClientOptions,
+		config_util.WithDialContextFunc(func(ctx context.Context, _, addr string) (net.Conn, error) {
+			return dialer.DialContext(ctx, cfg.scrape.Network, addr)
+		}))
 	noStepSubqueryInterval := &safePromQLNoStepSubqueryInterval{}
 	noStepSubqueryInterval.Set(config.DefaultGlobalConfig.EvaluationInterval)
 

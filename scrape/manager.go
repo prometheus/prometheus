@@ -137,6 +137,8 @@ type Options struct {
 	EnableProtobufNegotiation bool
 	// Option to increase the interval used by scrape manager to throttle target groups updates.
 	DiscoveryReloadInterval model.Duration
+	// Option to control which network to use for scraping: tcp,tcp4,tcp6
+	Network string
 
 	// Optional HTTP client options to use when scraping.
 	HTTPClientOptions []config_util.HTTPClientOption
