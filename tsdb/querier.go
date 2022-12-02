@@ -19,6 +19,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"golang.org/x/exp/slices"
 
@@ -47,6 +48,7 @@ func init() {
 }
 
 type blockBaseQuerier struct {
+	blockID    ulid.ULID
 	index      IndexReader
 	chunks     ChunkReader
 	tombstones tombstones.Reader
@@ -77,6 +79,7 @@ func newBlockBaseQuerier(b BlockReader, mint, maxt int64) (*blockBaseQuerier, er
 		tombsr = tombstones.NewMemTombstones()
 	}
 	return &blockBaseQuerier{
+		blockID:    b.Meta().ULID,
 		mint:       mint,
 		maxt:       maxt,
 		index:      indexr,
@@ -178,7 +181,7 @@ func (q *blockChunkQuerier) Select(sortSeries bool, hints *storage.SelectHints, 
 	if sortSeries {
 		p = q.index.SortedPostings(p)
 	}
-	return newBlockChunkSeriesSet(q.index, q.chunks, q.tombstones, p, mint, maxt, disableTrimming)
+	return newBlockChunkSeriesSet(q.blockID, q.index, q.chunks, q.tombstones, p, mint, maxt, disableTrimming)
 }
 
 func findSetMatches(pattern string) []string {
@@ -427,6 +430,7 @@ func labelNamesWithMatchers(r IndexReader, matchers ...*labels.Matcher) ([]strin
 // Iterated series are trimmed with given min and max time as well as tombstones.
 // See newBlockSeriesSet and newBlockChunkSeriesSet to use it for either sample or chunk iterating.
 type blockBaseSeriesSet struct {
+	blockID         ulid.ULID
 	p               index.Postings
 	index           IndexReader
 	chunks          ChunkReader
@@ -519,7 +523,7 @@ func (b *blockBaseSeriesSet) Next() bool {
 		copy(b.currLabels, b.bufLbls)
 
 		b.currIterFn = func() *populateWithDelGenericSeriesIterator {
-			return newPopulateWithDelGenericSeriesIterator(b.chunks, chks, intervals)
+			return newPopulateWithDelGenericSeriesIterator(b.blockID, b.chunks, chks, intervals)
 		}
 		return true
 	}
@@ -546,7 +550,8 @@ func (b *blockBaseSeriesSet) Warnings() storage.Warnings { return nil }
 // means that the chunk iterator in currChkMeta is invalid and a chunk rewrite
 // is needed, for which currDelIter should be used.
 type populateWithDelGenericSeriesIterator struct {
-	chunks ChunkReader
+	blockID ulid.ULID
+	chunks  ChunkReader
 	// chks are expected to be sorted by minTime and should be related to
 	// the same, single series.
 	chks []chunks.Meta
@@ -561,11 +566,13 @@ type populateWithDelGenericSeriesIterator struct {
 }
 
 func newPopulateWithDelGenericSeriesIterator(
+	blockID ulid.ULID,
 	chunks ChunkReader,
 	chks []chunks.Meta,
 	intervals tombstones.Intervals,
 ) *populateWithDelGenericSeriesIterator {
 	return &populateWithDelGenericSeriesIterator{
+		blockID:   blockID,
 		chunks:    chunks,
 		chks:      chks,
 		i:         -1,
@@ -584,7 +591,7 @@ func (p *populateWithDelGenericSeriesIterator) next() bool {
 
 	p.currChkMeta.Chunk, p.err = p.chunks.Chunk(p.currChkMeta)
 	if p.err != nil {
-		p.err = errors.Wrapf(p.err, "cannot populate chunk %d", p.currChkMeta.Ref)
+		p.err = errors.Wrapf(p.err, "cannot populate chunk %d from block %s", p.currChkMeta.Ref, p.blockID.String())
 		return false
 	}
 
@@ -844,9 +851,10 @@ type blockChunkSeriesSet struct {
 	blockBaseSeriesSet
 }
 
-func newBlockChunkSeriesSet(i IndexReader, c ChunkReader, t tombstones.Reader, p index.Postings, mint, maxt int64, disableTrimming bool) storage.ChunkSeriesSet {
+func newBlockChunkSeriesSet(id ulid.ULID, i IndexReader, c ChunkReader, t tombstones.Reader, p index.Postings, mint, maxt int64, disableTrimming bool) storage.ChunkSeriesSet {
 	return &blockChunkSeriesSet{
 		blockBaseSeriesSet{
+			blockID:         id,
 			index:           i,
 			chunks:          c,
 			tombstones:      t,

@@ -142,7 +142,7 @@ func TestCorruptedChunk(t *testing.T) {
 				// Truncate one byte after the segment header.
 				require.NoError(t, f.Truncate(chunks.SegmentHeaderSize+1))
 			},
-			iterErr: errors.New("cannot populate chunk 8: segment doesn't include enough bytes to read the chunk size data field - required:13, available:9"),
+			iterErr: errors.New("cannot populate chunk 8 from block 00000000000000000000000000: segment doesn't include enough bytes to read the chunk size data field - required:13, available:9"),
 		},
 		{
 			name: "chunk not enough bytes to read the data",
@@ -151,7 +151,7 @@ func TestCorruptedChunk(t *testing.T) {
 				require.NoError(t, err)
 				require.NoError(t, f.Truncate(fi.Size()-1))
 			},
-			iterErr: errors.New("cannot populate chunk 8: segment doesn't include enough bytes to read the chunk - required:26, available:25"),
+			iterErr: errors.New("cannot populate chunk 8 from block 00000000000000000000000000: segment doesn't include enough bytes to read the chunk - required:26, available:25"),
 		},
 		{
 			name: "checksum mismatch",
@@ -169,7 +169,7 @@ func TestCorruptedChunk(t *testing.T) {
 				require.NoError(t, err)
 				require.Equal(t, n, 1)
 			},
-			iterErr: errors.New("cannot populate chunk 8: checksum mismatch expected:cfc0526c, actual:34815eae"),
+			iterErr: errors.New("cannot populate chunk 8 from block 00000000000000000000000000: checksum mismatch expected:cfc0526c, actual:34815eae"),
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
