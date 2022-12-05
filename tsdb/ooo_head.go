@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"context"
 	"fmt"
 	"sort"
 
@@ -116,21 +117,27 @@ type OOORangeHead struct {
 	mint, maxt int64
 
 	isoState *oooIsolationState
+
+	ctx context.Context
 }
 
 func NewOOORangeHead(head *Head, mint, maxt int64, minRef chunks.ChunkDiskMapperRef) *OOORangeHead {
-	isoState := head.oooIso.TrackReadAfter(minRef)
+	return NewOOORangeHeadWithContext(context.Background(), head, mint, maxt, minRef)
+}
 
+func NewOOORangeHeadWithContext(ctx context.Context, head *Head, mint, maxt int64, minRef chunks.ChunkDiskMapperRef) *OOORangeHead {
+	isoState := head.oooIso.TrackReadAfter(minRef)
 	return &OOORangeHead{
-		head:     head,
-		mint:     mint,
-		maxt:     maxt,
+		head: head,
+		mint: mint,
+		maxt: maxt,
 		isoState: isoState,
+		ctx:  ctx,
 	}
 }
 
 func (oh *OOORangeHead) Index() (IndexReader, error) {
-	return NewOOOHeadIndexReader(oh.head, oh.mint, oh.maxt, oh.isoState.minRef), nil
+	return NewOOOHeadIndexReaderWithContext(oh.ctx, oh.head, oh.mint, oh.maxt, oh.isoState.minRef), nil
 }
 
 func (oh *OOORangeHead) Chunks() (ChunkReader, error) {

@@ -36,21 +36,23 @@ type postingsCacheEntry struct {
 	sorted bool
 }
 
-type headQueryContext struct {
+type headQueryContextKey struct{}
+
+type headQueryContextValue struct {
 	postingsCache map[string]postingsCacheEntry
 }
 
-func (c *headQueryContext) enablePostingsCache() {
+func (c *headQueryContextValue) enablePostingsCache() {
 	if c != nil {
 		c.postingsCache = map[string]postingsCacheEntry{}
 	}
 }
 
-func (c *headQueryContext) postingsCacheEnabled() bool {
+func (c *headQueryContextValue) postingsCacheEnabled() bool {
 	return c != nil && c.postingsCache != nil
 }
 
-func (c *headQueryContext) popCachedPostings(matchers string, sort bool) (index.Postings, bool) {
+func (c *headQueryContextValue) popCachedPostings(matchers string, sort bool) (index.Postings, bool) {
 	if !c.postingsCacheEnabled() {
 		return nil, false
 	}
@@ -66,7 +68,7 @@ func (c *headQueryContext) popCachedPostings(matchers string, sort bool) (index.
 	return e.p, true
 }
 
-func (c *headQueryContext) cachePostings(matchers string, p index.Postings, sorted bool) index.Postings {
+func (c *headQueryContextValue) cachePostings(matchers string, p index.Postings, sorted bool) index.Postings {
 	if !c.postingsCacheEnabled() {
 		return p
 	}
@@ -90,36 +92,22 @@ func encodeMatchers(ms []*labels.Matcher) string {
 	return *(*string)(unsafe.Pointer(&buf))
 }
 
-type blockReaderWithContext struct {
-	BlockReader
-
-	ctx *headQueryContext
-}
-
-func (br blockReaderWithContext) Index() (IndexReader, error) {
-	ir, err := br.BlockReader.Index()
-	if err == nil {
-		ir = indexReaderWithContext{ir, br.ctx}
-	}
-	return ir, err
-}
-
-type indexReaderWithContext struct {
-	IndexReader
-
-	ctx *headQueryContext
-}
-
-func maybeCachedPostingsForMatchers(ix IndexReader, ms []*labels.Matcher, sortSeries bool) (index.Postings, error) {
+func maybeCachedPostingsForMatchersFromHeadIndexContext(ix IndexReader, ms []*labels.Matcher, sortSeries bool) (index.Postings, error) {
 	var p index.Postings
 
-	indexWithContext, withCtx := ix.(indexReaderWithContext)
-	cacheEnabled := withCtx && indexWithContext.ctx.postingsCacheEnabled()
+	var headQueryCtx *headQueryContextValue
+	if indexWithCtx, ok := ix.(interface {
+		Context() context.Context
+	}); ok {
+		ctx := indexWithCtx.Context()
+		headQueryCtx, _ = ctx.Value(headQueryContextKey{}).(*headQueryContextValue)
+	}
+	cacheEnabled := headQueryCtx != nil && headQueryCtx.postingsCacheEnabled()
 	cached := false
 	matchersKey := ""
 	if cacheEnabled {
 		matchersKey = encodeMatchers(ms)
-		p, cached = indexWithContext.ctx.popCachedPostings(matchersKey, sortSeries)
+		p, cached = headQueryCtx.popCachedPostings(matchersKey, sortSeries)
 	}
 	if !cached {
 		var err error
@@ -131,7 +119,7 @@ func maybeCachedPostingsForMatchers(ix IndexReader, ms []*labels.Matcher, sortSe
 		}
 	}
 	if !cached && cacheEnabled {
-		p = indexWithContext.ctx.cachePostings(matchersKey, p, sortSeries)
+		p = headQueryCtx.cachePostings(matchersKey, p, sortSeries)
 	}
 	return p, nil
 }
@@ -145,16 +133,37 @@ func (h *Head) Index() (IndexReader, error) {
 	return h.indexRange(math.MinInt64, math.MaxInt64), nil
 }
 
-func (h *Head) indexRange(mint, maxt int64) *headIndexReader {
+// Index returns an IndexReader with context.Context.
+func (h *Head) IndexWithContext(ctx context.Context) (IndexReader, error) {
+	return h.indexRangeWithContext(ctx, math.MinInt64, math.MaxInt64), nil
+}
+
+func (h *Head) indexRangeWithContext(ctx context.Context, mint, maxt int64) *headIndexReader {
 	if hmin := h.MinTime(); hmin > mint {
 		mint = hmin
 	}
-	return &headIndexReader{head: h, mint: mint, maxt: maxt}
+	return &headIndexReader{head: h, mint: mint, maxt: maxt, ctx: ctx}
+}
+
+func (h *Head) indexRange(mint, maxt int64) *headIndexReader {
+	return h.indexRangeWithContext(context.Background(), mint, maxt)
 }
 
 type headIndexReader struct {
 	head       *Head
 	mint, maxt int64
+
+	ctx context.Context
+}
+
+// Context returns the context.
+// The returned context is always non-nil; it defaults to the
+// background context.
+func (h *headIndexReader) Context() context.Context {
+	if h.ctx != nil {
+		return h.ctx
+	}
+	return context.Background()
 }
 
 func (h *headIndexReader) Close() error {
