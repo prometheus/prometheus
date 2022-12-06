@@ -84,14 +84,14 @@ func TestHistogramChunkSameBuckets(t *testing.T) {
 	require.Equal(t, exp, act)
 
 	// 2. Expand second iterator while reusing first one.
-	// it2 := c.Iterator(it1)
-	// var res2 []pair
-	// for it2.Next() {
-	//	ts, v := it2.At()
-	//	res2 = append(res2, pair{t: ts, v: v})
-	//	}
-	//	require.NoError(t, it2.Err())
-	//	require.Equal(t, exp, res2)
+	it2 := c.Iterator(it)
+	var res2 []res
+	for it2.Next() == ValHistogram {
+		ts, h := it2.AtHistogram()
+		res2 = append(res2, res{t: ts, h: h})
+	}
+	require.NoError(t, it2.Err())
+	require.Equal(t, exp, res2)
 
 	// 3. Test iterator Seek.
 	//	mid := len(exp) / 2
