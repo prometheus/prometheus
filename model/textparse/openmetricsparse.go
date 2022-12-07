@@ -223,6 +223,10 @@ func (p *OpenMetricsParser) nextToken() token {
 	return tok
 }
 
+func parseError(exp string, got token) error {
+	return fmt.Errorf("%s, got %q", exp, got)
+}
+
 // Next advances the parser to the next sample. It returns false if no
 // more samples were read or an error occurred.
 func (p *OpenMetricsParser) Next() (Entry, error) {
