@@ -141,3 +141,88 @@ func TestCompressionHandler_Deflate(t *testing.T) {
 	expected := "Hello World!"
 	require.Equal(t, expected, actual, "expected response with content")
 }
+
+func TestCompressionHandler_ChosesBestCompression(t *testing.T) {
+	const plainContentEncoding = ""
+
+	tearDown := setup()
+	defer tearDown()
+
+	ch := getCompressionHandlerFunc()
+	mux.Handle("/foo_endpoint", ch)
+
+	client := &http.Client{
+		Transport: &http.Transport{
+			DisableCompression: true,
+		},
+	}
+
+	for _, tc := range []struct {
+		name                  string
+		acceptEncodingHeader  string
+		expectedContentCoding string
+	}{
+		{
+			name:                  "wildcard accepts first accepted encoding",
+			acceptEncodingHeader:  "*",
+			expectedContentCoding: "gzip",
+		},
+		{
+			name:                  "plain encoding string is accepted",
+			acceptEncodingHeader:  "gzip",
+			expectedContentCoding: "gzip",
+		},
+		{
+			name:                  "coding with zero weight is not chosen",
+			acceptEncodingHeader:  "gzip;q=0",
+			expectedContentCoding: plainContentEncoding,
+		},
+		{
+			name:                  "spaces around coding name and qvalue",
+			acceptEncodingHeader:  "gzip; q=0.25, deflate; q=0.5",
+			expectedContentCoding: "deflate",
+		},
+		{
+			name:                  "list of weight is parsed",
+			acceptEncodingHeader:  "gzip;q=1, deflate;q=0.5, snappy;q=0.1",
+			expectedContentCoding: "gzip",
+		},
+		{
+			name:                  "the best option is chosen",
+			acceptEncodingHeader:  "gzip;q=0.5, deflate;q=1.0",
+			expectedContentCoding: "deflate",
+		},
+		{
+			name:                  "the best option from the available ones is chosen",
+			acceptEncodingHeader:  "gzip;q=0.25, deflate;q=0.5, snappy;q=1",
+			expectedContentCoding: "deflate",
+		},
+		{
+			name:                  "identity is the best option",
+			acceptEncodingHeader:  "gzip;q=0.5, deflate;q=0.5, identity;q=1",
+			expectedContentCoding: plainContentEncoding,
+		},
+		{
+			name:                  "wildcard is the best option",
+			acceptEncodingHeader:  "gzip;q=0.5, identity;q=0.5, *;q=1",
+			expectedContentCoding: "deflate",
+		},
+		{
+			name:                  "wildcard is the best but all available options have explicit weights",
+			acceptEncodingHeader:  "gzip;q=0.5, deflate;q=0.25, identity;q=0.5, *;q=1",
+			expectedContentCoding: "gzip",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req, _ := http.NewRequest("GET", server.URL+"/foo_endpoint", nil)
+			req.Header.Set(acceptEncodingHeader, tc.acceptEncodingHeader)
+
+			resp, err := client.Do(req)
+			require.NoError(t, err, "client get failed with unexpected error")
+			defer resp.Body.Close()
+
+			actualHeader := resp.Header.Get(contentEncodingHeader)
+			require.Equal(t, tc.expectedContentCoding, actualHeader, "expected response with encoding header")
+		})
+	}
+}
