@@ -56,7 +56,7 @@ func TestSampleRing(t *testing.T) {
 		},
 	}
 	for _, c := range cases {
-		r := newSampleRing(c.delta, c.size)
+		r := newSampleRing(c.delta, c.size, chunkenc.ValFloat)
 
 		input := []fSample{}
 		for _, t := range c.input {
