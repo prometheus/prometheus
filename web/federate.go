@@ -115,38 +115,44 @@ Loop:
 
 		var (
 			t  int64
-			v  float64
-			h  *histogram.Histogram
+			f  float64
 			fh *histogram.FloatHistogram
-			ok bool
 		)
 		valueType := it.Seek(maxt)
 		switch valueType {
 		case chunkenc.ValFloat:
-			t, v = it.At()
+			t, f = it.At()
 		case chunkenc.ValFloatHistogram, chunkenc.ValHistogram:
 			t, fh = it.AtFloatHistogram()
 		default:
-			t, v, h, fh, ok = it.PeekBack(1)
+			sample, ok := it.PeekBack(1)
 			if !ok {
 				continue Loop
 			}
-			if h != nil {
-				fh = h.ToFloat()
+			t = sample.T()
+			switch sample.Type() {
+			case chunkenc.ValFloat:
+				f = sample.V()
+			case chunkenc.ValHistogram:
+				fh = sample.H().ToFloat()
+			case chunkenc.ValFloatHistogram:
+				fh = sample.FH()
+			default:
+				continue Loop
 			}
 		}
 		// The exposition formats do not support stale markers, so drop them. This
 		// is good enough for staleness handling of federated data, as the
 		// interval-based limits on staleness will do the right thing for supported
 		// use cases (which is to say federating aggregated time series).
-		if value.IsStaleNaN(v) {
+		if value.IsStaleNaN(f) || (fh != nil && value.IsStaleNaN(fh.Sum)) {
 			continue
 		}
 
 		vec = append(vec, promql.Sample{
 			Metric: s.Labels(),
 			T:      t,
-			F:      v,
+			F:      f,
 			H:      fh,
 		})
 	}

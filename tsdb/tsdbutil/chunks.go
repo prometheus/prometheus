@@ -28,7 +28,7 @@ type Samples interface {
 
 type Sample interface {
 	T() int64
-	V() float64
+	V() float64 // TODO(beorn7): Rename to F().
 	H() *histogram.Histogram
 	FH() *histogram.FloatHistogram
 	Type() chunkenc.ValueType

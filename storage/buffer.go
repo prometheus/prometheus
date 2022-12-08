@@ -19,6 +19,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 )
 
 // BufferedSeriesIterator wraps an iterator with a look-back buffer.
@@ -68,11 +69,8 @@ func (b *BufferedSeriesIterator) ReduceDelta(delta int64) bool {
 
 // PeekBack returns the nth previous element of the iterator. If there is none buffered,
 // ok is false.
-func (b *BufferedSeriesIterator) PeekBack(n int) (
-	t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, ok bool,
-) {
-	s, ok := b.buf.nthLast(n)
-	return s.t, s.v, s.h, s.fh, ok
+func (b *BufferedSeriesIterator) PeekBack(n int) (sample tsdbutil.Sample, ok bool) {
+	return b.buf.nthLast(n)
 }
 
 // Buffer returns an iterator over the buffered data. Invalidates previously
@@ -122,14 +120,14 @@ func (b *BufferedSeriesIterator) Next() chunkenc.ValueType {
 	case chunkenc.ValNone:
 		return chunkenc.ValNone
 	case chunkenc.ValFloat:
-		t, v := b.it.At()
-		b.buf.add(sample{t: t, v: v})
+		t, f := b.it.At()
+		b.buf.add(fSample{t: t, f: f})
 	case chunkenc.ValHistogram:
 		t, h := b.it.AtHistogram()
-		b.buf.add(sample{t: t, h: h})
+		b.buf.add(hSample{t: t, h: h})
 	case chunkenc.ValFloatHistogram:
 		t, fh := b.it.AtFloatHistogram()
-		b.buf.add(sample{t: t, fh: fh})
+		b.buf.add(fhSample{t: t, fh: fh})
 	default:
 		panic(fmt.Errorf("BufferedSeriesIterator: unknown value type %v", b.valueType))
 	}
@@ -166,54 +164,94 @@ func (b *BufferedSeriesIterator) Err() error {
 	return b.it.Err()
 }
 
-// TODO(beorn7): Consider having different sample types for different value types.
-type sample struct {
-	t  int64
-	v  float64
-	h  *histogram.Histogram
-	fh *histogram.FloatHistogram
+type fSample struct {
+	t int64
+	f float64
 }
 
-func (s sample) T() int64 {
+func (s fSample) T() int64 {
 	return s.t
 }
 
-func (s sample) V() float64 {
-	return s.v
+func (s fSample) V() float64 {
+	return s.f
 }
 
-func (s sample) H() *histogram.Histogram {
+func (s fSample) H() *histogram.Histogram {
+	panic("H() called for fSample")
+}
+
+func (s fSample) FH() *histogram.FloatHistogram {
+	panic("FH() called for fSample")
+}
+
+func (s fSample) Type() chunkenc.ValueType {
+	return chunkenc.ValFloat
+}
+
+type hSample struct {
+	t int64
+	h *histogram.Histogram
+}
+
+func (s hSample) T() int64 {
+	return s.t
+}
+
+func (s hSample) V() float64 {
+	panic("F() called for hSample")
+}
+
+func (s hSample) H() *histogram.Histogram {
 	return s.h
 }
 
-func (s sample) FH() *histogram.FloatHistogram {
+func (s hSample) FH() *histogram.FloatHistogram {
+	return s.h.ToFloat()
+}
+
+func (s hSample) Type() chunkenc.ValueType {
+	return chunkenc.ValHistogram
+}
+
+type fhSample struct {
+	t  int64
+	fh *histogram.FloatHistogram
+}
+
+func (s fhSample) T() int64 {
+	return s.t
+}
+
+func (s fhSample) V() float64 {
+	panic("F() called for fhSample")
+}
+
+func (s fhSample) H() *histogram.Histogram {
+	panic("H() called for fhSample")
+}
+
+func (s fhSample) FH() *histogram.FloatHistogram {
 	return s.fh
 }
 
-func (s sample) Type() chunkenc.ValueType {
-	switch {
-	case s.h != nil:
-		return chunkenc.ValHistogram
-	case s.fh != nil:
-		return chunkenc.ValFloatHistogram
-	default:
-		return chunkenc.ValFloat
-	}
+func (s fhSample) Type() chunkenc.ValueType {
+	return chunkenc.ValFloatHistogram
 }
 
 type sampleRing struct {
 	delta int64
 
-	buf []sample // lookback buffer
-	i   int      // position of most recent element in ring buffer
-	f   int      // position of first element in ring buffer
-	l   int      // number of elements in buffer
+	buf []tsdbutil.Sample // lookback buffer
+	i   int               // position of most recent element in ring buffer
+	f   int               // position of first element in ring buffer
+	l   int               // number of elements in buffer
 
 	it sampleRingIterator
 }
 
 func newSampleRing(delta int64, sz int) *sampleRing {
-	r := &sampleRing{delta: delta, buf: make([]sample, sz)}
+	r := &sampleRing{delta: delta, buf: make([]tsdbutil.Sample, sz)}
 	r.reset()
 
 	return r
@@ -247,16 +285,16 @@ func (it *sampleRingIterator) Next() chunkenc.ValueType {
 		return chunkenc.ValNone
 	}
 	s := it.r.at(it.i)
-	it.t = s.t
-	switch {
-	case s.h != nil:
-		it.h = s.h
+	it.t = s.T()
+	switch s.Type() {
+	case chunkenc.ValHistogram:
+		it.h = s.H()
 		return chunkenc.ValHistogram
-	case s.fh != nil:
-		it.fh = s.fh
+	case chunkenc.ValFloatHistogram:
+		it.fh = s.FH()
 		return chunkenc.ValFloatHistogram
 	default:
-		it.v = s.v
+		it.v = s.V()
 		return chunkenc.ValFloat
 	}
 }
@@ -288,18 +326,18 @@ func (it *sampleRingIterator) AtT() int64 {
 	return it.t
 }
 
-func (r *sampleRing) at(i int) sample {
+func (r *sampleRing) at(i int) tsdbutil.Sample {
 	j := (r.f + i) % len(r.buf)
 	return r.buf[j]
 }
 
 // add adds a sample to the ring buffer and frees all samples that fall
 // out of the delta range.
-func (r *sampleRing) add(s sample) {
+func (r *sampleRing) add(s tsdbutil.Sample) {
 	l := len(r.buf)
 	// Grow the ring buffer if it fits no more elements.
 	if l == r.l {
-		buf := make([]sample, 2*l)
+		buf := make([]tsdbutil.Sample, 2*l)
 		copy(buf[l+r.f:], r.buf[r.f:])
 		copy(buf, r.buf[:r.f])
 
@@ -318,8 +356,8 @@ func (r *sampleRing) add(s sample) {
 	r.l++
 
 	// Free head of the buffer of samples that just fell out of the range.
-	tmin := s.t - r.delta
-	for r.buf[r.f].t < tmin {
+	tmin := s.T() - r.delta
+	for r.buf[r.f].T() < tmin {
 		r.f++
 		if r.f >= l {
 			r.f -= l
@@ -342,8 +380,8 @@ func (r *sampleRing) reduceDelta(delta int64) bool {
 
 	// Free head of the buffer of samples that just fell out of the range.
 	l := len(r.buf)
-	tmin := r.buf[r.i].t - delta
-	for r.buf[r.f].t < tmin {
+	tmin := r.buf[r.i].T() - delta
+	for r.buf[r.f].T() < tmin {
 		r.f++
 		if r.f >= l {
 			r.f -= l
@@ -354,15 +392,15 @@ func (r *sampleRing) reduceDelta(delta int64) bool {
 }
 
 // nthLast returns the nth most recent element added to the ring.
-func (r *sampleRing) nthLast(n int) (sample, bool) {
+func (r *sampleRing) nthLast(n int) (tsdbutil.Sample, bool) {
 	if n > r.l {
-		return sample{}, false
+		return fSample{}, false
 	}
 	return r.at(r.l - n), true
 }
 
-func (r *sampleRing) samples() []sample {
-	res := make([]sample, r.l)
+func (r *sampleRing) samples() []tsdbutil.Sample {
+	res := make([]tsdbutil.Sample, r.l)
 
 	k := r.f + r.l
 	var j int

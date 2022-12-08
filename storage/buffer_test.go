@@ -58,11 +58,11 @@ func TestSampleRing(t *testing.T) {
 	for _, c := range cases {
 		r := newSampleRing(c.delta, c.size)
 
-		input := []sample{}
+		input := []fSample{}
 		for _, t := range c.input {
-			input = append(input, sample{
+			input = append(input, fSample{
 				t: t,
-				v: float64(rand.Intn(100)),
+				f: float64(rand.Intn(100)),
 			})
 		}
 
@@ -73,7 +73,7 @@ func TestSampleRing(t *testing.T) {
 			for _, sold := range input[:i] {
 				found := false
 				for _, bs := range buffered {
-					if bs.t == sold.t && bs.v == sold.v {
+					if bs.T() == sold.t && bs.V() == sold.f {
 						found = true
 						break
 					}
@@ -92,12 +92,12 @@ func TestSampleRing(t *testing.T) {
 func TestBufferedSeriesIterator(t *testing.T) {
 	var it *BufferedSeriesIterator
 
-	bufferEq := func(exp []sample) {
-		var b []sample
+	bufferEq := func(exp []fSample) {
+		var b []fSample
 		bit := it.Buffer()
 		for bit.Next() == chunkenc.ValFloat {
-			t, v := bit.At()
-			b = append(b, sample{t: t, v: v})
+			t, f := bit.At()
+			b = append(b, fSample{t: t, f: f})
 		}
 		require.Equal(t, exp, b, "buffer mismatch")
 	}
@@ -107,21 +107,21 @@ func TestBufferedSeriesIterator(t *testing.T) {
 		require.Equal(t, ev, v, "value mismatch")
 	}
 	prevSampleEq := func(ets int64, ev float64, eok bool) {
-		ts, v, _, _, ok := it.PeekBack(1)
+		s, ok := it.PeekBack(1)
 		require.Equal(t, eok, ok, "exist mismatch")
-		require.Equal(t, ets, ts, "timestamp mismatch")
-		require.Equal(t, ev, v, "value mismatch")
+		require.Equal(t, ets, s.T(), "timestamp mismatch")
+		require.Equal(t, ev, s.V(), "value mismatch")
 	}
 
 	it = NewBufferIterator(NewListSeriesIterator(samples{
-		sample{t: 1, v: 2},
-		sample{t: 2, v: 3},
-		sample{t: 3, v: 4},
-		sample{t: 4, v: 5},
-		sample{t: 5, v: 6},
-		sample{t: 99, v: 8},
-		sample{t: 100, v: 9},
-		sample{t: 101, v: 10},
+		fSample{t: 1, f: 2},
+		fSample{t: 2, f: 3},
+		fSample{t: 3, f: 4},
+		fSample{t: 4, f: 5},
+		fSample{t: 5, f: 6},
+		fSample{t: 99, f: 8},
+		fSample{t: 100, f: 9},
+		fSample{t: 101, f: 10},
 	}), 2)
 
 	require.Equal(t, chunkenc.ValFloat, it.Seek(-123), "seek failed")
@@ -132,24 +132,24 @@ func TestBufferedSeriesIterator(t *testing.T) {
 	require.Equal(t, chunkenc.ValFloat, it.Next(), "next failed")
 	sampleEq(2, 3)
 	prevSampleEq(1, 2, true)
-	bufferEq([]sample{{t: 1, v: 2}})
+	bufferEq([]fSample{{t: 1, f: 2}})
 
 	require.Equal(t, chunkenc.ValFloat, it.Next(), "next failed")
 	require.Equal(t, chunkenc.ValFloat, it.Next(), "next failed")
 	require.Equal(t, chunkenc.ValFloat, it.Next(), "next failed")
 	sampleEq(5, 6)
 	prevSampleEq(4, 5, true)
-	bufferEq([]sample{{t: 2, v: 3}, {t: 3, v: 4}, {t: 4, v: 5}})
+	bufferEq([]fSample{{t: 2, f: 3}, {t: 3, f: 4}, {t: 4, f: 5}})
 
 	require.Equal(t, chunkenc.ValFloat, it.Seek(5), "seek failed")
 	sampleEq(5, 6)
 	prevSampleEq(4, 5, true)
-	bufferEq([]sample{{t: 2, v: 3}, {t: 3, v: 4}, {t: 4, v: 5}})
+	bufferEq([]fSample{{t: 2, f: 3}, {t: 3, f: 4}, {t: 4, f: 5}})
 
 	require.Equal(t, chunkenc.ValFloat, it.Seek(101), "seek failed")
 	sampleEq(101, 10)
 	prevSampleEq(100, 9, true)
-	bufferEq([]sample{{t: 99, v: 8}, {t: 100, v: 9}})
+	bufferEq([]fSample{{t: 99, f: 8}, {t: 100, f: 9}})
 
 	require.Equal(t, chunkenc.ValNone, it.Next(), "next succeeded unexpectedly")
 	require.Equal(t, chunkenc.ValNone, it.Seek(1024), "seek succeeded unexpectedly")
