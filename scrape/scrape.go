@@ -1609,6 +1609,10 @@ loop:
 				err = errNameLabelMandatory
 				break loop
 			}
+			if !lset.IsValid() {
+				err = fmt.Errorf("invalid metric name or label names: %s", lset.String())
+				break loop
+			}
 
 			// If any label limits is exceeded the scrape should fail.
 			if err = verifyLabelLimits(lset, sl.labelLimits); err != nil {

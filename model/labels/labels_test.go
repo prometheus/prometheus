@@ -216,6 +216,62 @@ func TestLabels_WithoutEmpty(t *testing.T) {
 	}
 }
 
+func TestLabels_IsValid(t *testing.T) {
+	for _, test := range []struct {
+		input    Labels
+		expected bool
+	}{
+		{
+			input: FromStrings(
+				"__name__", "test",
+				"hostname", "localhost",
+				"job", "check",
+			),
+			expected: true,
+		},
+		{
+			input: FromStrings(
+				"__name__", "test:ms",
+				"hostname_123", "localhost",
+				"_job", "check",
+			),
+			expected: true,
+		},
+		{
+			input:    FromStrings("__name__", "test-ms"),
+			expected: false,
+		},
+		{
+			input:    FromStrings("__name__", "0zz"),
+			expected: false,
+		},
+		{
+			input:    FromStrings("abc:xyz", "invalid"),
+			expected: false,
+		},
+		{
+			input:    FromStrings("123abc", "invalid"),
+			expected: false,
+		},
+		{
+			input:    FromStrings("中文abc", "invalid"),
+			expected: false,
+		},
+		{
+			input:    FromStrings("invalid", "aa\xe2"),
+			expected: false,
+		},
+		{
+			input:    FromStrings("invalid", "\xF7\xBF\xBF\xBF"),
+			expected: false,
+		},
+	} {
+		t.Run("", func(t *testing.T) {
+			require.Equal(t, test.expected, test.input.IsValid())
+		})
+	}
+}
+
 func TestLabels_Equal(t *testing.T) {
 	labels := FromStrings(
 		"aaa", "111",

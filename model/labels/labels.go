@@ -20,6 +20,7 @@ import (
 	"strconv"
 
 	"github.com/cespare/xxhash/v2"
+	"github.com/prometheus/common/model"
 )
 
 // Well-known label names used by Prometheus components.
@@ -310,6 +311,19 @@ func (ls Labels) WithoutEmpty() Labels {
 		return els
 	}
 	return ls
+}
+
+// IsValid checks if the metric name or label names are valid.
+func (ls Labels) IsValid() bool {
+	for _, l := range ls {
+		if l.Name == model.MetricNameLabel && !model.IsValidMetricName(model.LabelValue(l.Value)) {
+			return false
+		}
+		if !model.LabelName(l.Name).IsValid() || !model.LabelValue(l.Value).IsValid() {
+			return false
+		}
+	}
+	return true
 }
 
 // Equal returns whether the two label sets are equal.
