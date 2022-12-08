@@ -15,6 +15,7 @@ package relabel
 
 import (
 	"crypto/md5"
+	"encoding/binary"
 	"fmt"
 	"strings"
 
@@ -247,7 +248,9 @@ func relabel(lset labels.Labels, cfg *Config, lb *labels.Builder) labels.Labels 
 	case Uppercase:
 		lb.Set(cfg.TargetLabel, strings.ToUpper(val))
 	case HashMod:
-		mod := sum64(md5.Sum([]byte(val))) % cfg.Modulus
+		hash := md5.Sum([]byte(val))
+		// use only the last 8 bytes of the hash, to give the same result as earlier versions of this code
+		mod := binary.BigEndian.Uint64(hash[8:]) % cfg.Modulus
 		lb.Set(cfg.TargetLabel, fmt.Sprintf("%d", mod))
 	case LabelMap:
 		for _, l := range lset {
@@ -273,16 +276,4 @@ func relabel(lset labels.Labels, cfg *Config, lb *labels.Builder) labels.Labels 
 	}
 
 	return lb.Labels(lset)
-}
-
-// sum64 sums the md5 hash to an uint64.
-func sum64(hash [md5.Size]byte) uint64 {
-	var s uint64
-
-	for i, b := range hash {
-		shift := uint64((md5.Size - i - 1) * 8)
-
-		s |= uint64(b) << shift
-	}
-	return s
 }
