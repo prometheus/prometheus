@@ -284,7 +284,7 @@ func NewAPI(
 	}
 
 	if ap != nil {
-		a.remoteWriteHandler = remote.NewWriteHandler(logger, ap)
+		a.remoteWriteHandler = remote.NewWriteHandler(logger, registerer, ap)
 	}
 
 	return a
