@@ -1455,7 +1455,7 @@ func openBlocks(l log.Logger, dir string, loaded []*Block, chunkPool chunkenc.Po
 				cacheProvider = cache.GetBlockCacheProvider(meta.ULID.String())
 			}
 
-			block, err = OpenBlockWithCache(l, bDir, chunkPool, cacheProvider, shardFunc)
+			block, err = OpenBlockWithOptions(l, bDir, chunkPool, cacheProvider, shardFunc)
 			if err != nil {
 				corrupted[meta.ULID] = err
 				continue
