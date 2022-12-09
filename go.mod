@@ -41,7 +41,7 @@ require (
 	github.com/ovh/go-ovh v1.3.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/alertmanager v0.24.0
-	github.com/prometheus/client_golang v1.13.1
+	github.com/prometheus/client_golang v1.14.0
 	github.com/prometheus/client_model v0.3.0
 	github.com/prometheus/common v0.38.0
 	github.com/prometheus/common/assets v0.2.0
