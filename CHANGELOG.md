@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.40.6 / 2022-12-09
+
+* [SECURITY] Security upgrade from go and upstream dependencies that include
+  security fixes to the net/http and os packages. #11691
+
 ## 2.40.5 / 2022-12-01
 
 * [BUGFIX] TSDB: Fix queries involving native histograms due to improper reset of iterators. #11643
