@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.37.5 / 2022-12-09
+
+* [SECURITY] Security upgrade from go and upstream dependencies that include
+  security fixes to the net/http and os packages. #11690
+
 ## 2.37.4 / 2022-11-29
 
 * [SECURITY] Fix basic authentication bypass vulnerability (CVE-2022-46146). GHSA-4v48-4q5m-8vx4
