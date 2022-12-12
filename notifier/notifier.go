@@ -19,11 +19,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"path"
-	"strings"
 	"sync"
 	"time"
 
@@ -727,45 +725,9 @@ func AlertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig
 			continue
 		}
 
-		lb := labels.NewBuilder(lset)
-
-		// addPort checks whether we should add a default port to the address.
-		// If the address is not valid, we don't append a port either.
-		addPort := func(s string) bool {
-			// If we can split, a port exists and we don't have to add one.
-			if _, _, err := net.SplitHostPort(s); err == nil {
-				return false
-			}
-			// If adding a port makes it valid, the previous error
-			// was not due to an invalid address and we can append a port.
-			_, _, err := net.SplitHostPort(s + ":1234")
-			return err == nil
-		}
 		addr := lset.Get(model.AddressLabel)
-		// If it's an address with no trailing port, infer it based on the used scheme.
-		if addPort(addr) {
-			// Addresses reaching this point are already wrapped in [] if necessary.
-			switch lset.Get(model.SchemeLabel) {
-			case "http", "":
-				addr = addr + ":80"
-			case "https":
-				addr = addr + ":443"
-			default:
-				return nil, nil, fmt.Errorf("invalid scheme: %q", cfg.Scheme)
-			}
-			lb.Set(model.AddressLabel, addr)
-		}
-
 		if err := config.CheckTargetAddress(model.LabelValue(addr)); err != nil {
 			return nil, nil, err
-		}
-
-		// Meta labels are deleted after relabelling. Other internal labels propagate to
-		// the target which decides whether they will be part of their label set.
-		for _, l := range lset {
-			if strings.HasPrefix(l.Name, model.MetaLabelPrefix) {
-				lb.Del(l.Name)
-			}
 		}
 
 		res = append(res, alertmanagerLabels{lset})
