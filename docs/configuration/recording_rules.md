@@ -133,7 +133,7 @@ annotations:
 ```
 
 See also the
-[best practices for naming recording rules](https://prometheus.io/docs/practices/rules/#recording-rules).
+[best practices for naming metrics created by recording rules](https://prometheus.io/docs/practices/rules/#recording-rules).
 
 # Limiting alerts and series
 
