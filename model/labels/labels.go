@@ -468,7 +468,7 @@ Outer:
 	return b
 }
 
-// Set the name/value pair as a label.
+// Set the name/value pair as a label. A value of "" means delete that label.
 func (b *Builder) Set(n, v string) *Builder {
 	if v == "" {
 		// Empty labels are the same as missing labels.
