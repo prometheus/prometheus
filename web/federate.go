@@ -171,7 +171,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 			Untyped: &dto.Untyped{},
 		}
 
-		err := s.Metric.RangeToError(func(l labels.Label) error {
+		err := s.Metric.Validate(func(l labels.Label) error {
 			if l.Value == "" {
 				// No value means unset. Never consider those labels.
 				// This is also important to protect against nameless metrics.

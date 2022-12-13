@@ -645,7 +645,7 @@ func verifyLabelLimits(lset labels.Labels, limits *labelLimits) error {
 		return nil
 	}
 
-	return lset.RangeToError(func(l labels.Label) error {
+	return lset.Validate(func(l labels.Label) error {
 		if limits.labelNameLengthLimit > 0 {
 			nameLength := len(l.Name)
 			if nameLength > int(limits.labelNameLengthLimit) {

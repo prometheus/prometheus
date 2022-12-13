@@ -471,7 +471,7 @@ func PopulateLabels(lset labels.Labels, cfg *config.ScrapeConfig, noDefaultPort 
 	}
 
 	res = lb.Labels(labels.EmptyLabels())
-	err = res.RangeToError(func(l labels.Label) error {
+	err = res.Validate(func(l labels.Label) error {
 		// Check label values are valid, drop the target if not.
 		if !model.LabelValue(l.Value).IsValid() {
 			return errors.Errorf("invalid label value for %q: %q", l.Name, l.Value)

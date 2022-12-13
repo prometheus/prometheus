@@ -786,7 +786,7 @@ func (a *appender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exem
 	// Exemplar label length does not include chars involved in text rendering such as quotes
 	// equals sign, or commas. See definition of const ExemplarMaxLabelLength.
 	labelSetLen := 0
-	err := e.Labels.RangeToError(func(l labels.Label) error {
+	err := e.Labels.Validate(func(l labels.Label) error {
 		labelSetLen += utf8.RuneCountInString(l.Name)
 		labelSetLen += utf8.RuneCountInString(l.Value)
 

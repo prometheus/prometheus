@@ -439,7 +439,7 @@ func (w *Writer) AddSeries(ref storage.SeriesRef, lset labels.Labels, chunks ...
 	w.buf2.Reset()
 	w.buf2.PutUvarint(lset.Len())
 
-	if err := lset.RangeToError(func(l labels.Label) error {
+	if err := lset.Validate(func(l labels.Label) error {
 		var err error
 		cacheEntry, ok := w.symbolCache[l.Name]
 		nameIndex := cacheEntry.index
