@@ -322,7 +322,7 @@ func (ls Labels) WithoutEmpty() Labels {
 
 // IsValid checks if the metric name or label names are valid.
 func (ls Labels) IsValid() bool {
-	for _, l := range ls {
+	for _, l := range ls.lbls {
 		if l.Name == model.MetricNameLabel && !model.IsValidMetricName(model.LabelValue(l.Value)) {
 			return false
 		}
