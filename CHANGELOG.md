@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.40.7 / 2022-12-14
+
+* [BUGFIX] Use Windows native DNS resolver. #11704
+* [BUGFIX] TSDB: Fix queries involving negative buckets of native histograms. #11699
+
 ## 2.40.6 / 2022-12-09
 
 * [SECURITY] Security upgrade from go and upstream dependencies that include
