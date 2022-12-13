@@ -77,13 +77,15 @@ series: <string>
 # This uses expanding notation.
 # Expanding notation:
 #     'a+bxc' becomes 'a a+b a+(2*b) a+(3*b) … a+(c*b)'
+#     Read this as series starts at a, then c further samples incrementing by b.
 #     'a-bxc' becomes 'a a-b a-(2*b) a-(3*b) … a-(c*b)'
+#     Read this as series starts at a, then c further samples decrementing by b (or incrementing by negative b).
 # There are special values to indicate missing and stale samples:
 #    '_' represents a missing sample from scrape
 #    'stale' indicates a stale sample
 # Examples:
-#     1. '-2+4x3' becomes '-2 2 6 10'
-#     2. ' 1-2x4' becomes '1 -1 -3 -5 -7'
+#     1. '-2+4x3' becomes '-2 2 6 10' - series starts at -2, then 3 further samples incrementing by 4.
+#     2. ' 1-2x4' becomes '1 -1 -3 -5 -7' - series starts at 1, then 4 further samples decrementing by 2.
 #     3. ' 1 _x3 stale' becomes '1 _ _ _ stale'
 values: <string>
 ```
