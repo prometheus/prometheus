@@ -65,7 +65,7 @@ func NewPod(l log.Logger, pods cache.SharedIndexInformer, nodes cache.SharedInfo
 		logger:           l,
 		queue:            workqueue.NewNamed("pod"),
 	}
-	p.podInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
+	_, err := p.podInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
 			podAddCount.Inc()
 			p.enqueue(o)
@@ -79,9 +79,12 @@ func NewPod(l log.Logger, pods cache.SharedIndexInformer, nodes cache.SharedInfo
 			p.enqueue(o)
 		},
 	})
+	if err != nil {
+		level.Error(l).Log("msg", "Error adding pods event handler.", "err", err)
+	}
 
 	if p.withNodeMetadata {
-		p.nodeInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		_, err = p.nodeInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 			AddFunc: func(o interface{}) {
 				node := o.(*apiv1.Node)
 				p.enqueuePodsForNode(node.Name)
@@ -95,6 +98,9 @@ func NewPod(l log.Logger, pods cache.SharedIndexInformer, nodes cache.SharedInfo
 				p.enqueuePodsForNode(node.Name)
 			},
 		})
+		if err != nil {
+			level.Error(l).Log("msg", "Error adding pods event handler.", "err", err)
+		}
 	}
 
 	return p
