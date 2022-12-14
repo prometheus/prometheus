@@ -678,7 +678,7 @@ func genSeriesFromSampleGenerator(totalSeries, labelCount int, mint, maxt, step 
 		for j := 1; len(lbls) < labelCount; j++ {
 			lbls[defaultLabelName+strconv.Itoa(j)] = defaultLabelValue + strconv.Itoa(j)
 		}
-		samples := make([]tsdbutil.Sample, 0, maxt-mint+1)
+		samples := make([]tsdbutil.Sample, 0, (maxt-mint)/step+1)
 		for t := mint; t < maxt; t += step {
 			samples = append(samples, generator(t))
 		}
