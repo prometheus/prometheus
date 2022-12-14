@@ -492,10 +492,10 @@ func (b *blockBaseSeriesSet) Next() bool {
 			if chk.MinTime > b.maxt {
 				continue
 			}
-
-			if !(tombstones.Interval{Mint: chk.MinTime, Maxt: chk.MaxTime}.IsSubrange(intervals)) {
-				chks = append(chks, chk)
+			if (tombstones.Interval{Mint: chk.MinTime, Maxt: chk.MaxTime}.IsSubrange(intervals)) {
+				continue
 			}
+			chks = append(chks, chk)
 
 			// If still not entirely deleted, check if trim is needed based on requested time range.
 			if !b.disableTrimming {
