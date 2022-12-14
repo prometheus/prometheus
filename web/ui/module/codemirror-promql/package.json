@@ -33,7 +33,7 @@
     "lru-cache": "^6.0.0"
   },
   "devDependencies": {
-    "@codemirror/autocomplete": "^6.2.0",
+    "@codemirror/autocomplete": "^6.3.4",
     "@codemirror/language": "^6.3.0",
     "@codemirror/lint": "^6.0.0",
     "@codemirror/state": "^6.1.1",
@@ -46,7 +46,7 @@
     "nock": "^13.2.9"
   },
   "peerDependencies": {
-    "@codemirror/autocomplete": "^6.2.0",
+    "@codemirror/autocomplete": "^6.3.4",
     "@codemirror/language": "^6.3.0",
     "@codemirror/lint": "^6.0.0",
     "@codemirror/state": "^6.1.1",
