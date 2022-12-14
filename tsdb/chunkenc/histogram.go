@@ -176,7 +176,7 @@ func newHistogramIterator(b []byte) *histogramIterator {
 }
 
 func (c *HistogramChunk) iterator(it Iterator) *histogramIterator {
-	// This commet is copied from XORChunk.iterator:
+	// This comment is copied from XORChunk.iterator:
 	//   Should iterators guarantee to act on a copy of the data so it doesn't lock append?
 	//   When using striped locks to guard access to chunks, probably yes.
 	//   Could only copy data if the chunk is not completed yet.
@@ -651,7 +651,7 @@ func (it *histogramIterator) Reset(b []byte) {
 	}
 
 	it.pBucketsDelta = it.pBucketsDelta[:0]
-	it.pBucketsDelta = it.pBucketsDelta[:0]
+	it.nBucketsDelta = it.nBucketsDelta[:0]
 
 	it.sum = 0
 	it.leading = 0
@@ -677,36 +677,17 @@ func (it *histogramIterator) Next() ValueType {
 		it.zThreshold = zeroThreshold
 		it.pSpans, it.nSpans = posSpans, negSpans
 		numPBuckets, numNBuckets := countSpans(posSpans), countSpans(negSpans)
-		// Allocate bucket slices as needed, recycling existing slices
-		// in case this iterator was reset and already has slices of a
-		// sufficient capacity.
+		// The code below recycles existing slices in case this iterator
+		// was reset and already has slices of a sufficient capacity.
 		if numPBuckets > 0 {
-			if cap(it.pBuckets) < numPBuckets {
-				it.pBuckets = make([]int64, numPBuckets)
-				// If cap(it.pBuckets) isn't sufficient, neither is the cap of the others.
-				it.pBucketsDelta = make([]int64, numPBuckets)
-				it.pFloatBuckets = make([]float64, numPBuckets)
-			} else {
-				for i := 0; i < numPBuckets; i++ {
-					it.pBuckets = append(it.pBuckets, 0)
-					it.pBucketsDelta = append(it.pBucketsDelta, 0)
-					it.pFloatBuckets = append(it.pFloatBuckets, 0)
-				}
-			}
+			it.pBuckets = append(it.pBuckets, make([]int64, numPBuckets)...)
+			it.pBucketsDelta = append(it.pBucketsDelta, make([]int64, numPBuckets)...)
+			it.pFloatBuckets = append(it.pFloatBuckets, make([]float64, numPBuckets)...)
 		}
 		if numNBuckets > 0 {
-			if cap(it.nBuckets) < numNBuckets {
-				it.nBuckets = make([]int64, numNBuckets)
-				// If cap(it.nBuckets) isn't sufficient, neither is the cap of the others.
-				it.nBucketsDelta = make([]int64, numNBuckets)
-				it.nFloatBuckets = make([]float64, numNBuckets)
-			} else {
-				for i := 0; i < numNBuckets; i++ {
-					it.nBuckets = append(it.nBuckets, 0)
-					it.nBucketsDelta = append(it.nBucketsDelta, 0)
-					it.pFloatBuckets = append(it.pFloatBuckets, 0)
-				}
-			}
+			it.nBuckets = append(it.nBuckets, make([]int64, numNBuckets)...)
+			it.nBucketsDelta = append(it.nBucketsDelta, make([]int64, numNBuckets)...)
+			it.nFloatBuckets = append(it.nFloatBuckets, make([]float64, numNBuckets)...)
 		}
 
 		// Now read the actual data.
