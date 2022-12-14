@@ -208,6 +208,10 @@ tls_config:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_headers:
+  [ <string>: [<secret>, ...] ] ]
+
 
 # List of Azure service discovery configurations.
 azure_sd_configs:
@@ -427,6 +431,9 @@ tls_config:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_headers:
+  [ <string>: [<secret>, ...] ] ]
 ```
 
 ### `<azure_sd_config>`
@@ -505,6 +512,9 @@ oauth2:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_headers:
+  [ <string>: [<secret>, ...] ] ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
@@ -607,6 +617,9 @@ oauth2:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_headers:
+  [ <string>: [<secret>, ...] ] ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
@@ -685,6 +698,9 @@ oauth2:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_headers:
+  [ <string>: [<secret>, ...] ] ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
@@ -734,6 +750,9 @@ host: <string>
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_headers:
+  [ <string>: [<secret>, ...] ] ]
 
 # TLS configuration.
 tls_config:
@@ -900,6 +919,9 @@ host: <string>
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_headers:
+  [ <string>: [<secret>, ...] ] ]
 
 # TLS configuration.
 tls_config:
@@ -1098,6 +1120,9 @@ oauth2:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_headers:
+  [ <string>: [<secret>, ...] ] ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
@@ -1364,6 +1389,9 @@ oauth2:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_headers:
+  [ <string>: [<secret>, ...] ] ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
@@ -1572,6 +1600,9 @@ oauth2:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_headers:
+  [ <string>: [<secret>, ...] ] ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
@@ -1657,6 +1688,9 @@ oauth2:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_headers:
+  [ <string>: [<secret>, ...] ] ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
@@ -1731,6 +1765,9 @@ oauth2:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_headers:
+  [ <string>: [<secret>, ...] ] ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
@@ -1944,6 +1981,9 @@ oauth2:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_headers:
+  [ <string>: [<secret>, ...] ] ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
@@ -2021,6 +2061,9 @@ server: <string>
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_headers:
+  [ <string>: [<secret>, ...] ] ]
 
 # TLS configuration.
 tls_config:
@@ -2139,6 +2182,9 @@ oauth2:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_headers:
+  [ <string>: [<secret>, ...] ] ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
@@ -2211,6 +2257,9 @@ oauth2:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_headers:
+  [ <string>: [<secret>, ...] ] ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
@@ -2310,6 +2359,9 @@ tls_config:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_headers:
+  [ <string>: [<secret>, ...] ] ]
 ```
 
 By default every app listed in Marathon will be scraped by Prometheus. If not all
@@ -2400,6 +2452,9 @@ oauth2:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_headers:
+  [ <string>: [<secret>, ...] ] ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
@@ -2577,6 +2632,9 @@ tls_config:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_headers:
+  [ <string>: [<secret>, ...] ] ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
@@ -2693,6 +2751,9 @@ tags_filter:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_headers:
+  [ <string>: [<secret>, ...] ] ]
 
 # TLS configuration.
 tls_config:
@@ -2760,6 +2821,9 @@ oauth2:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_headers:
+  [ <string>: [<secret>, ...] ] ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
@@ -2833,6 +2897,9 @@ oauth2:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_headers:
+  [ <string>: [<secret>, ...] ] ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
@@ -3026,6 +3093,9 @@ tls_config:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_headers:
+  [ <string>: [<secret>, ...] ] ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
@@ -3235,6 +3305,9 @@ tls_config:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_headers:
+  [ <string>: [<secret>, ...] ] ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
@@ -3339,6 +3412,9 @@ tls_config:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_headers:
+  [ <string>: [<secret>, ...] ] ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
