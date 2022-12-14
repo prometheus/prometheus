@@ -54,7 +54,7 @@ func (o *OOOChunk) Insert(t int64, v float64) bool {
 		return true
 	}
 
-	// duplicate sample for timestamp is not allowed
+	// Duplicate sample for timestamp is not allowed.
 	if o.samples[i].t == t {
 		return false
 	}
