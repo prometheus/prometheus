@@ -25,6 +25,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
 )
 
 var allPostingsKey = labels.Label{}
@@ -407,6 +408,10 @@ type Postings interface {
 
 	// Err returns the last error of the iterator.
 	Err() error
+}
+
+type AdditionalPostingsProvider interface {
+	GetPostings(originalPostings Postings, indexReader tsdb.IndexReader) Postings
 }
 
 // errPostings is an empty iterator that always errors.
