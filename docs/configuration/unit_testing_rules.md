@@ -86,7 +86,7 @@ series: <string>
 # Examples:
 #     1. '-2+4x3' becomes '-2 2 6 10' - series starts at -2, then 3 further samples incrementing by 4.
 #     2. ' 1-2x4' becomes '1 -1 -3 -5 -7' - series starts at 1, then 4 further samples decrementing by 2.
-#     3. ' 1x4' becomes '1 1 1 1' - shorthand for '1+0x4', series starts at 1, then 3 further samples incrementing by 0.
+#     3. ' 1x4' becomes '1 1 1 1 1' - shorthand for '1+0x4', series starts at 1, then 4 further samples incrementing by 0.
 #     4. ' 1 _x3 stale' becomes '1 _ _ _ stale' - the missing sample cannot increment, so only 3 samples are produced by the '_x3' expression.
 values: <string>
 ```
