@@ -67,7 +67,7 @@ func (c *HistogramChunk) Layout() (
 	err error,
 ) {
 	if c.NumSamples() == 0 {
-		panic("HistoChunk.Layout() called on an empty chunk")
+		panic("HistogramChunk.Layout() called on an empty chunk")
 	}
 	b := newBReader(c.Bytes()[2:])
 	return readHistogramChunkLayout(&b)
@@ -223,6 +223,12 @@ func (a *HistogramAppender) Append(int64, float64) {
 	panic("appended a float sample to a histogram chunk")
 }
 
+// AppendFloatHistogram implements Appender. This implementation panics because float
+// histogram samples must never be appended to a histogram chunk.
+func (a *HistogramAppender) AppendFloatHistogram(int64, *histogram.FloatHistogram) {
+	panic("appended a float histogram to a histogram chunk")
+}
+
 // Appendable returns whether the chunk can be appended to, and if so
 // whether any recoding needs to happen using the provided interjections
 // (in case of any new buckets, positive or negative range, respectively).
@@ -294,6 +300,10 @@ func (a *HistogramAppender) Appendable(h *histogram.Histogram) (
 
 	okToAppend = true
 	return
+}
+
+type bucketValue interface {
+	int64 | float64
 }
 
 // counterResetInAnyBucket returns true if there was a counter reset for any
@@ -515,10 +525,10 @@ func (a *HistogramAppender) Recode(
 		// Save the modified histogram to the new chunk.
 		hOld.PositiveSpans, hOld.NegativeSpans = positiveSpans, negativeSpans
 		if len(positiveInterjections) > 0 {
-			hOld.PositiveBuckets = interject(hOld.PositiveBuckets, positiveBuckets, positiveInterjections)
+			hOld.PositiveBuckets = interject(hOld.PositiveBuckets, positiveBuckets, positiveInterjections, true)
 		}
 		if len(negativeInterjections) > 0 {
-			hOld.NegativeBuckets = interject(hOld.NegativeBuckets, negativeBuckets, negativeInterjections)
+			hOld.NegativeBuckets = interject(hOld.NegativeBuckets, negativeBuckets, negativeInterjections, true)
 		}
 		app.AppendHistogram(tOld, hOld)
 	}
