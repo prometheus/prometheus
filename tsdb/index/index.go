@@ -1596,8 +1596,8 @@ func (r *Reader) LabelValueFor(id storage.SeriesRef, label string) (string, erro
 	return value, nil
 }
 
-// Series reads the series with the given ID and writes its labels and chunks into lbls and chks.
-func (r *Reader) Series(id storage.SeriesRef, builder *labels.ScratchBuilder, lbls *labels.Labels, chks *[]chunks.Meta) error {
+// Series reads the series with the given ID and writes its labels and chunks into builder and chks.
+func (r *Reader) Series(id storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
 	offset := id
 	// In version 2 series IDs are no longer exact references but series are 16-byte padded
 	// and the ID is the multiple of 16 of the actual position.
@@ -1608,7 +1608,7 @@ func (r *Reader) Series(id storage.SeriesRef, builder *labels.ScratchBuilder, lb
 	if d.Err() != nil {
 		return d.Err()
 	}
-	return errors.Wrap(r.dec.Series(d.Get(), builder, lbls, chks), "read series")
+	return errors.Wrap(r.dec.Series(d.Get(), builder, chks), "read series")
 }
 
 func (r *Reader) Postings(name string, values ...string) (Postings, error) {
@@ -1835,9 +1835,9 @@ func (dec *Decoder) LabelValueFor(b []byte, label string) (string, error) {
 	return "", d.Err()
 }
 
-// Series decodes a series entry from the given byte slice into lset and chks.
+// Series decodes a series entry from the given byte slice into builder and chks.
 // Previous contents of lbls can be overwritten - make sure you copy before retaining.
-func (dec *Decoder) Series(b []byte, builder *labels.ScratchBuilder, lbls *labels.Labels, chks *[]chunks.Meta) error {
+func (dec *Decoder) Series(b []byte, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
 	builder.Reset()
 	*chks = (*chks)[:0]
 
@@ -1864,7 +1864,6 @@ func (dec *Decoder) Series(b []byte, builder *labels.ScratchBuilder, lbls *label
 
 		builder.Add(ln, lv)
 	}
-	builder.Overwrite(lbls)
 
 	// Read the chunks meta data.
 	k = d.Uvarint()

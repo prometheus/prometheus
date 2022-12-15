@@ -124,12 +124,12 @@ func (m mockIndex) SortedPostings(p Postings) Postings {
 	return NewListPostings(ep)
 }
 
-func (m mockIndex) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, lset *labels.Labels, chks *[]chunks.Meta) error {
+func (m mockIndex) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
 	s, ok := m.series[ref]
 	if !ok {
 		return errors.New("not found")
 	}
-	lset.CopyFrom(s.l)
+	builder.Assign(s.l)
 	*chks = append((*chks)[:0], s.chunks...)
 
 	return nil
@@ -197,16 +197,15 @@ func TestIndexRW_Postings(t *testing.T) {
 	p, err := ir.Postings("a", "1")
 	require.NoError(t, err)
 
-	var l labels.Labels
 	var c []chunks.Meta
 	var builder labels.ScratchBuilder
 
 	for i := 0; p.Next(); i++ {
-		err := ir.Series(p.At(), &builder, &l, &c)
+		err := ir.Series(p.At(), &builder, &c)
 
 		require.NoError(t, err)
 		require.Equal(t, 0, len(c))
-		require.Equal(t, series[i], l)
+		require.Equal(t, series[i], builder.Labels())
 	}
 	require.NoError(t, p.Err())
 
@@ -318,11 +317,10 @@ func TestPostingsMany(t *testing.T) {
 		require.NoError(t, err)
 
 		got := []string{}
-		var lbls labels.Labels
 		var metas []chunks.Meta
 		for it.Next() {
-			require.NoError(t, ir.Series(it.At(), &builder, &lbls, &metas))
-			got = append(got, lbls.Copy().Get("i"))
+			require.NoError(t, ir.Series(it.At(), &builder, &metas))
+			got = append(got, builder.Labels().Get("i"))
 		}
 		require.NoError(t, it.Err())
 		exp := []string{}
@@ -421,21 +419,20 @@ func TestPersistence_index_e2e(t *testing.T) {
 		expp, err := mi.Postings(p.Name, p.Value)
 		require.NoError(t, err)
 
-		var lset, explset labels.Labels
 		var chks, expchks []chunks.Meta
-		var builder labels.ScratchBuilder
+		var builder, eBuilder labels.ScratchBuilder
 
 		for gotp.Next() {
 			require.True(t, expp.Next())
 
 			ref := gotp.At()
 
-			err := ir.Series(ref, &builder, &lset, &chks)
+			err := ir.Series(ref, &builder, &chks)
 			require.NoError(t, err)
 
-			err = mi.Series(expp.At(), &builder, &explset, &expchks)
+			err = mi.Series(expp.At(), &eBuilder, &expchks)
 			require.NoError(t, err)
-			require.Equal(t, explset, lset)
+			require.Equal(t, eBuilder.Labels(), builder.Labels())
 			require.Equal(t, expchks, chks)
 		}
 		require.False(t, expp.Next(), "Expected no more postings for %q=%q", p.Name, p.Value)

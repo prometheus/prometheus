@@ -592,15 +592,14 @@ func (b *ScratchBuilder) Sort() {
 	sort.Sort(b.add)
 }
 
+// Asssign is for when you already have a Labels which you want this ScratchBuilder to return.
+func (b *ScratchBuilder) Assign(ls Labels) {
+	b.add = append(b.add[:0], ls...) // Copy on top of our slice, so we don't retain the input slice.
+}
+
 // Return the name/value pairs added so far as a Labels object.
 // Note: if you want them sorted, call Sort() first.
 func (b *ScratchBuilder) Labels() Labels {
 	// Copy the slice, so the next use of ScratchBuilder doesn't overwrite.
 	return append([]Label{}, b.add...)
-}
-
-// Write the newly-built Labels out to ls, reusing its buffer if long enough.
-// Callers must ensure that there are no other references to ls.
-func (b *ScratchBuilder) Overwrite(ls *Labels) {
-	(*ls) = append((*ls)[:0], b.add...)
 }

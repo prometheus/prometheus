@@ -47,21 +47,21 @@ func NewOOOHeadIndexReader(head *Head, mint, maxt int64) *OOOHeadIndexReader {
 	return &OOOHeadIndexReader{hr}
 }
 
-func (oh *OOOHeadIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, lbls *labels.Labels, chks *[]chunks.Meta) error {
-	return oh.series(ref, lbls, chks, 0)
+func (oh *OOOHeadIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
+	return oh.series(ref, builder, chks, 0)
 }
 
 // The passed lastMmapRef tells upto what max m-map chunk that we can consider.
 // If it is 0, it means all chunks need to be considered.
 // If it is non-0, then the oooHeadChunk must not be considered.
-func (oh *OOOHeadIndexReader) series(ref storage.SeriesRef, lbls *labels.Labels, chks *[]chunks.Meta, lastMmapRef chunks.ChunkDiskMapperRef) error {
+func (oh *OOOHeadIndexReader) series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta, lastMmapRef chunks.ChunkDiskMapperRef) error {
 	s := oh.head.series.getByID(chunks.HeadSeriesRef(ref))
 
 	if s == nil {
 		oh.head.metrics.seriesNotFound.Inc()
 		return storage.ErrNotFound
 	}
-	lbls.CopyFrom(s.lset)
+	builder.Assign(s.lset)
 
 	if chks == nil {
 		return nil
@@ -400,8 +400,8 @@ func (ir *OOOCompactionHeadIndexReader) SortedPostings(p index.Postings) index.P
 	return p
 }
 
-func (ir *OOOCompactionHeadIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, lset *labels.Labels, chks *[]chunks.Meta) error {
-	return ir.ch.oooIR.series(ref, lset, chks, ir.ch.lastMmapRef)
+func (ir *OOOCompactionHeadIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
+	return ir.ch.oooIR.series(ref, builder, chks, ir.ch.lastMmapRef)
 }
 
 func (ir *OOOCompactionHeadIndexReader) SortedLabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {

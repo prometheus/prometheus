@@ -357,14 +357,13 @@ func TestOOOHeadIndexReader_Series(t *testing.T) {
 					ir := NewOOOHeadIndexReader(h, tc.queryMinT, tc.queryMaxT)
 
 					var chks []chunks.Meta
-					var respLset labels.Labels
 					var b labels.ScratchBuilder
-					err := ir.Series(storage.SeriesRef(s1ID), &b, &respLset, &chks)
+					err := ir.Series(storage.SeriesRef(s1ID), &b, &chks)
 					require.NoError(t, err)
-					require.Equal(t, s1Lset, respLset)
+					require.Equal(t, s1Lset, b.Labels())
 					require.Equal(t, expChunks, chks)
 
-					err = ir.Series(storage.SeriesRef(s1ID+1), &b, &respLset, &chks)
+					err = ir.Series(storage.SeriesRef(s1ID+1), &b, &chks)
 					require.Equal(t, storage.ErrNotFound, err)
 				})
 			}
@@ -841,9 +840,8 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 			// markers like OOOLastRef. These are then used by the ChunkReader.
 			ir := NewOOOHeadIndexReader(db.head, tc.queryMinT, tc.queryMaxT)
 			var chks []chunks.Meta
-			var respLset labels.Labels
 			var b labels.ScratchBuilder
-			err := ir.Series(s1Ref, &b, &respLset, &chks)
+			err := ir.Series(s1Ref, &b, &chks)
 			require.NoError(t, err)
 			require.Equal(t, len(tc.expChunksSamples), len(chks))
 
@@ -1005,9 +1003,8 @@ func TestOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 			// markers like OOOLastRef. These are then used by the ChunkReader.
 			ir := NewOOOHeadIndexReader(db.head, tc.queryMinT, tc.queryMaxT)
 			var chks []chunks.Meta
-			var respLset labels.Labels
 			var b labels.ScratchBuilder
-			err := ir.Series(s1Ref, &b, &respLset, &chks)
+			err := ir.Series(s1Ref, &b, &chks)
 			require.NoError(t, err)
 			require.Equal(t, len(tc.expChunksSamples), len(chks))
 

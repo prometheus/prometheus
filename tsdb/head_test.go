@@ -1452,13 +1452,12 @@ func TestGCChunkAccess(t *testing.T) {
 
 	idx := h.indexRange(0, 1500)
 	var (
-		lset    labels.Labels
 		chunks  []chunks.Meta
 		builder labels.ScratchBuilder
 	)
-	require.NoError(t, idx.Series(1, &builder, &lset, &chunks))
+	require.NoError(t, idx.Series(1, &builder, &chunks))
 
-	require.Equal(t, labels.FromStrings("a", "1"), lset)
+	require.Equal(t, labels.FromStrings("a", "1"), builder.Labels())
 	require.Equal(t, 2, len(chunks))
 
 	cr, err := h.chunksRange(0, 1500, nil)
@@ -1506,13 +1505,12 @@ func TestGCSeriesAccess(t *testing.T) {
 
 	idx := h.indexRange(0, 2000)
 	var (
-		lset    labels.Labels
 		chunks  []chunks.Meta
 		builder labels.ScratchBuilder
 	)
-	require.NoError(t, idx.Series(1, &builder, &lset, &chunks))
+	require.NoError(t, idx.Series(1, &builder, &chunks))
 
-	require.Equal(t, labels.FromStrings("a", "1"), lset)
+	require.Equal(t, labels.FromStrings("a", "1"), builder.Labels())
 	require.Equal(t, 2, len(chunks))
 
 	cr, err := h.chunksRange(0, 2000, nil)

@@ -469,16 +469,15 @@ func analyzeBlock(path, blockID string, limit int, runExtended bool) error {
 	if err != nil {
 		return err
 	}
-	lbls := labels.Labels{}
 	chks := []chunks.Meta{}
 	builder := labels.ScratchBuilder{}
 	for p.Next() {
-		if err = ir.Series(p.At(), &builder, &lbls, &chks); err != nil {
+		if err = ir.Series(p.At(), &builder, &chks); err != nil {
 			return err
 		}
 		// Amount of the block time range not covered by this series.
 		uncovered := uint64(meta.MaxTime-meta.MinTime) - uint64(chks[len(chks)-1].MaxTime-chks[0].MinTime)
-		lbls.Range(func(lbl labels.Label) {
+		builder.Labels().Range(func(lbl labels.Label) {
 			key := lbl.Name + "=" + lbl.Value
 			labelsUncovered[lbl.Name] += uncovered
 			labelpairsUncovered[key] += uncovered
@@ -591,9 +590,8 @@ func analyzeCompaction(block tsdb.BlockReader, indexr tsdb.IndexReader) (err err
 	totalChunks := 0
 	var builder labels.ScratchBuilder
 	for postingsr.Next() {
-		lbsl := labels.Labels{}
 		var chks []chunks.Meta
-		if err := indexr.Series(postingsr.At(), &builder, &lbsl, &chks); err != nil {
+		if err := indexr.Series(postingsr.At(), &builder, &chks); err != nil {
 			return err
 		}
 

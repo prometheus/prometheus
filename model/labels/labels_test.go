@@ -622,7 +622,6 @@ func TestScratchBuilder(t *testing.T) {
 			want: FromStrings("ddd", "444"),
 		},
 	} {
-		overwriteTarget := EmptyLabels()
 		t.Run(fmt.Sprint(i), func(t *testing.T) {
 			b := ScratchBuilder{}
 			for _, lbl := range tcase.add {
@@ -630,8 +629,8 @@ func TestScratchBuilder(t *testing.T) {
 			}
 			b.Sort()
 			require.Equal(t, tcase.want, b.Labels())
-			b.Overwrite(&overwriteTarget)
-			require.Equal(t, tcase.want, overwriteTarget)
+			b.Assign(tcase.want)
+			require.Equal(t, tcase.want, b.Labels())
 		})
 	}
 }

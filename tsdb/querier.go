@@ -451,14 +451,13 @@ type blockBaseSeriesSet struct {
 	curr seriesData
 
 	bufChks []chunks.Meta
-	bufLbls labels.Labels
 	builder labels.ScratchBuilder
 	err     error
 }
 
 func (b *blockBaseSeriesSet) Next() bool {
 	for b.p.Next() {
-		if err := b.index.Series(b.p.At(), &b.builder, &b.bufLbls, &b.bufChks); err != nil {
+		if err := b.index.Series(b.p.At(), &b.builder, &b.bufChks); err != nil {
 			// Postings may be stale. Skip if no underlying series exists.
 			if errors.Cause(err) == storage.ErrNotFound {
 				continue
@@ -529,7 +528,7 @@ func (b *blockBaseSeriesSet) Next() bool {
 			intervals = intervals.Add(tombstones.Interval{Mint: b.maxt + 1, Maxt: math.MaxInt64})
 		}
 
-		b.curr.labels = b.bufLbls.Copy()
+		b.curr.labels = b.builder.Labels()
 		b.curr.chks = chks
 		b.curr.intervals = intervals
 

@@ -1270,12 +1270,12 @@ func (m mockIndex) SortedPostings(p index.Postings) index.Postings {
 	return index.NewListPostings(ep)
 }
 
-func (m mockIndex) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, lset *labels.Labels, chks *[]chunks.Meta) error {
+func (m mockIndex) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
 	s, ok := m.series[ref]
 	if !ok {
 		return storage.ErrNotFound
 	}
-	lset.CopyFrom(s.l)
+	builder.Assign(s.l)
 	*chks = append((*chks)[:0], s.chunks...)
 
 	return nil
@@ -1886,8 +1886,8 @@ func TestPostingsForMatchers(t *testing.T) {
 
 		var builder labels.ScratchBuilder
 		for p.Next() {
-			lbls := labels.Labels{}
-			require.NoError(t, ir.Series(p.At(), &builder, &lbls, &[]chunks.Meta{}))
+			require.NoError(t, ir.Series(p.At(), &builder, &[]chunks.Meta{}))
+			lbls := builder.Labels()
 			if _, ok := exp[lbls.String()]; !ok {
 				t.Errorf("Evaluating %v, unexpected result %s", c.matchers, lbls.String())
 			} else {
@@ -2101,7 +2101,7 @@ func (m mockMatcherIndex) SortedPostings(p index.Postings) index.Postings {
 	return index.EmptyPostings()
 }
 
-func (m mockMatcherIndex) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, lset *labels.Labels, chks *[]chunks.Meta) error {
+func (m mockMatcherIndex) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
 	return nil
 }
 
