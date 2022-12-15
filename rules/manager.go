@@ -673,6 +673,9 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 					rule.SetLastError(err)
 					sp.SetStatus(codes.Error, err.Error())
 					unwrappedErr := errors.Unwrap(err)
+					if unwrappedErr == nil {
+						unwrappedErr = err
+					}
 					switch {
 					case errors.Is(unwrappedErr, storage.ErrOutOfOrderSample):
 						numOutOfOrder++
@@ -700,6 +703,9 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 					// Series no longer exposed, mark it stale.
 					_, err = app.Append(0, lset, timestamp.FromTime(ts), math.Float64frombits(value.StaleNaN))
 					unwrappedErr := errors.Unwrap(err)
+					if unwrappedErr == nil {
+						unwrappedErr = err
+					}
 					switch {
 					case unwrappedErr == nil:
 					case errors.Is(unwrappedErr, storage.ErrOutOfOrderSample), errors.Is(unwrappedErr, storage.ErrDuplicateSampleForTimestamp):
@@ -727,6 +733,9 @@ func (g *Group) cleanupStaleSeries(ctx context.Context, ts time.Time) {
 		// Rule that produced series no longer configured, mark it stale.
 		_, err := app.Append(0, s, timestamp.FromTime(ts), math.Float64frombits(value.StaleNaN))
 		unwrappedErr := errors.Unwrap(err)
+		if unwrappedErr == nil {
+			unwrappedErr = err
+		}
 		switch {
 		case unwrappedErr == nil:
 		case errors.Is(unwrappedErr, storage.ErrOutOfOrderSample), errors.Is(unwrappedErr, storage.ErrDuplicateSampleForTimestamp):
