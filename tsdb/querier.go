@@ -426,7 +426,7 @@ func labelNamesWithMatchers(r IndexReader, matchers ...*labels.Matcher) ([]strin
 	return r.LabelNamesFor(postings...)
 }
 
-// These are the things fetched when we move from one series to another.
+// seriesData, used inside other iterators, are updated when we move from one series to another.
 type seriesData struct {
 	chks      []chunks.Meta
 	intervals tombstones.Intervals

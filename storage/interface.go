@@ -422,7 +422,7 @@ type Labels interface {
 
 type SampleIterable interface {
 	// Iterator returns an iterator of the data of the series.
-	// The iterator passed as argument is for re-use.
+	// The iterator passed as argument is for re-use, if not nil.
 	// Depending on implementation, the iterator can
 	// be re-used or a new iterator can be allocated.
 	Iterator(chunkenc.Iterator) chunkenc.Iterator

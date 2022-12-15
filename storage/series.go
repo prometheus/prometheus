@@ -287,7 +287,7 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 	mint := int64(math.MaxInt64)
 	maxt := int64(math.MinInt64)
 
-	chks := []chunks.Meta{}
+	var chks []chunks.Meta
 	lcsi, existing := it.(*listChunkSeriesIterator)
 	if existing {
 		chks = lcsi.chks[:0]
