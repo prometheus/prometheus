@@ -21,9 +21,14 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 )
 
+type floatResult struct {
+	t int64
+	h *histogram.FloatHistogram
+}
+
 func TestFloatHistogramChunkSameBuckets(t *testing.T) {
 	c := NewFloatHistogramChunk()
-	var exp []fres
+	var exp []floatResult
 
 	// Create fresh appender and add the first histogram.
 	app, err := c.Appender()
@@ -32,7 +37,7 @@ func TestFloatHistogramChunkSameBuckets(t *testing.T) {
 
 	ts := int64(1234567890)
 	h := &histogram.Histogram{
-		Count:         5,
+		Count:         15,
 		ZeroCount:     2,
 		Sum:           18.4,
 		ZeroThreshold: 1e-100,
@@ -42,20 +47,26 @@ func TestFloatHistogramChunkSameBuckets(t *testing.T) {
 			{Offset: 1, Length: 2},
 		},
 		PositiveBuckets: []int64{1, 1, -1, 0}, // counts: 1, 2, 1, 1 (total 5)
+		NegativeSpans: []histogram.Span{
+			{Offset: 1, Length: 1},
+			{Offset: 2, Length: 3},
+		},
+		NegativeBuckets: []int64{2, 1, -1, -1}, // counts: 2, 3, 2, 1 (total 8)
 	}
 	app.AppendFloatHistogram(ts, h.ToFloat())
-	exp = append(exp, fres{t: ts, h: h.ToFloat()})
+	exp = append(exp, floatResult{t: ts, h: h.ToFloat()})
 	require.Equal(t, 1, c.NumSamples())
 
 	// Add an updated histogram.
 	ts += 16
 	h = h.Copy()
-	h.Count += 9
+	h.Count = 32
 	h.ZeroCount++
 	h.Sum = 24.4
 	h.PositiveBuckets = []int64{5, -2, 1, -2} // counts: 5, 3, 4, 2 (total 14)
+	h.NegativeBuckets = []int64{4, -1, 1, -1} // counts: 4, 3, 4, 4 (total 15)
 	app.AppendFloatHistogram(ts, h.ToFloat())
-	exp = append(exp, fres{t: ts, h: h.ToFloat()})
+	exp = append(exp, floatResult{t: ts, h: h.ToFloat()})
 	require.Equal(t, 2, c.NumSamples())
 
 	// Add update with new appender.
@@ -64,39 +75,67 @@ func TestFloatHistogramChunkSameBuckets(t *testing.T) {
 
 	ts += 14
 	h = h.Copy()
-	h.Count += 13
+	h.Count = 54
 	h.ZeroCount += 2
 	h.Sum = 24.4
 	h.PositiveBuckets = []int64{6, 1, -3, 6} // counts: 6, 7, 4, 10 (total 27)
+	h.NegativeBuckets = []int64{5, 1, -2, 3} // counts: 5, 6, 4, 7 (total 22)
 	app.AppendFloatHistogram(ts, h.ToFloat())
-	exp = append(exp, fres{t: ts, h: h.ToFloat()})
+	exp = append(exp, floatResult{t: ts, h: h.ToFloat()})
 	require.Equal(t, 3, c.NumSamples())
 
 	// 1. Expand iterator in simple case.
-	it := c.iterator(nil)
+	it := c.Iterator(nil)
 	require.NoError(t, it.Err())
-	var act []fres
+	var act []floatResult
 	for it.Next() == ValFloatHistogram {
-		ts, h := it.AtFloatHistogram()
-		act = append(act, fres{t: ts, h: h})
+		fts, fh := it.AtFloatHistogram()
+		act = append(act, floatResult{t: fts, h: fh})
 	}
 	require.NoError(t, it.Err())
 	require.Equal(t, exp, act)
 
 	// 2. Expand second iterator while reusing first one.
 	it2 := c.Iterator(it)
-	var res2 []fres
+	var act2 []floatResult
 	for it2.Next() == ValFloatHistogram {
-		ts, h := it2.AtFloatHistogram()
-		res2 = append(res2, fres{t: ts, h: h})
+		fts, fh := it2.AtFloatHistogram()
+		act2 = append(act2, floatResult{t: fts, h: fh})
 	}
 	require.NoError(t, it2.Err())
-	require.Equal(t, exp, res2)
-}
+	require.Equal(t, exp, act2)
 
-type fres struct {
-	t int64
-	h *histogram.FloatHistogram
+	// 3. Now recycle an iterator that was never used to access anything.
+	itX := c.Iterator(nil)
+	for itX.Next() == ValFloatHistogram {
+		// Just iterate through without accessing anything.
+	}
+	it3 := c.iterator(itX)
+	var act3 []floatResult
+	for it3.Next() == ValFloatHistogram {
+		fts, fh := it3.AtFloatHistogram()
+		act3 = append(act3, floatResult{t: fts, h: fh})
+	}
+	require.NoError(t, it3.Err())
+	require.Equal(t, exp, act3)
+
+	// 4. Test iterator Seek.
+	mid := len(exp) / 2
+	it4 := c.Iterator(nil)
+	var act4 []floatResult
+	require.Equal(t, ValFloatHistogram, it4.Seek(exp[mid].t))
+	// Below ones should not matter.
+	require.Equal(t, ValFloatHistogram, it4.Seek(exp[mid].t))
+	require.Equal(t, ValFloatHistogram, it4.Seek(exp[mid].t))
+	fts, fh := it4.AtFloatHistogram()
+	act4 = append(act4, floatResult{t: fts, h: fh})
+	for it4.Next() == ValFloatHistogram {
+		fts, fh := it4.AtFloatHistogram()
+		act4 = append(act4, floatResult{t: fts, h: fh})
+	}
+	require.NoError(t, it4.Err())
+	require.Equal(t, exp[mid:], act4)
+	require.Equal(t, ValNone, it4.Seek(exp[len(exp)-1].t+1))
 }
 
 // Mimics the scenario described for compareSpans().
@@ -110,7 +149,7 @@ func TestFloatHistogramChunkBucketChanges(t *testing.T) {
 
 	ts1 := int64(1234567890)
 	h1 := &histogram.Histogram{
-		Count:         5,
+		Count:         27,
 		ZeroCount:     2,
 		Sum:           18.4,
 		ZeroThreshold: 1e-125,
@@ -123,6 +162,8 @@ func TestFloatHistogramChunkBucketChanges(t *testing.T) {
 			{Offset: 1, Length: 1},
 		},
 		PositiveBuckets: []int64{6, -3, 0, -1, 2, 1, -4}, // counts: 6, 3, 3, 2, 4, 5, 1 (total 24)
+		NegativeSpans:   []histogram.Span{{Offset: 1, Length: 1}},
+		NegativeBuckets: []int64{1},
 	}
 
 	app.AppendFloatHistogram(ts1, h1.ToFloat())
@@ -137,19 +178,23 @@ func TestFloatHistogramChunkBucketChanges(t *testing.T) {
 		{Offset: 1, Length: 4},
 		{Offset: 3, Length: 3},
 	}
-	h2.Count += 9
+	h2.NegativeSpans = []histogram.Span{{Offset: 0, Length: 2}}
+	h2.Count = 35
 	h2.ZeroCount++
 	h2.Sum = 30
 	// Existing histogram should get values converted from the above to:
 	//   6 3 0 3 0 0 2 4 5 0 1 (previous values with some new empty buckets in between)
 	// so the new histogram should have new counts >= these per-bucket counts, e.g.:
 	h2.PositiveBuckets = []int64{7, -2, -4, 2, -2, -1, 2, 3, 0, -5, 1} // 7 5 1 3 1 0 2 5 5 0 1 (total 30)
-
+	// Existing histogram should get values converted from the above to:
+	//   0 1 (previous values with some new empty buckets in between)
+	// so the new histogram should have new counts >= these per-bucket counts, e.g.:
+	h2.NegativeBuckets = []int64{2, -1} // 2 1 (total 3)
 	// This is how span changes will be handled.
 	hApp, _ := app.(*FloatHistogramAppender)
 	posInterjections, negInterjections, ok, cr := hApp.Appendable(h2.ToFloat())
 	require.Greater(t, len(posInterjections), 0)
-	require.Equal(t, 0, len(negInterjections))
+	require.Greater(t, len(negInterjections), 0)
 	require.True(t, ok) // Only new buckets came in.
 	require.False(t, cr)
 	c, app = hApp.Recode(posInterjections, negInterjections, h2.PositiveSpans, h2.NegativeSpans)
@@ -162,15 +207,17 @@ func TestFloatHistogramChunkBucketChanges(t *testing.T) {
 	// metadata as well as the expanded buckets.
 	h1.PositiveSpans = h2.PositiveSpans
 	h1.PositiveBuckets = []int64{6, -3, -3, 3, -3, 0, 2, 2, 1, -5, 1}
-	exp := []fres{
+	h1.NegativeSpans = h2.NegativeSpans
+	h1.NegativeBuckets = []int64{0, 1}
+	exp := []floatResult{
 		{t: ts1, h: h1.ToFloat()},
 		{t: ts2, h: h2.ToFloat()},
 	}
 	it := c.Iterator(nil)
-	var act []fres
+	var act []floatResult
 	for it.Next() == ValFloatHistogram {
-		ts, h := it.AtFloatHistogram()
-		act = append(act, fres{t: ts, h: h})
+		fts, fh := it.AtFloatHistogram()
+		act = append(act, floatResult{t: fts, h: fh})
 	}
 	require.NoError(t, it.Err())
 	require.Equal(t, exp, act)
@@ -260,9 +307,7 @@ func TestFloatHistogramChunkAppendable(t *testing.T) {
 		require.True(t, cr)
 	}
 
-	{
-		// New histogram that has a counter reset while new buckets were added.
-		// The counter reset in the bucket does not matter for float histogram.
+	{ // New histogram that has a counter reset while new buckets were added.
 		h2 := h1
 		h2.PositiveSpans = []histogram.Span{
 			{Offset: 0, Length: 3},
@@ -278,10 +323,10 @@ func TestFloatHistogramChunkAppendable(t *testing.T) {
 
 		hApp, _ := app.(*FloatHistogramAppender)
 		posInterjections, negInterjections, ok, cr := hApp.Appendable(h2.ToFloat())
-		require.Greater(t, len(posInterjections), 0)
+		require.Equal(t, 0, len(posInterjections))
 		require.Equal(t, 0, len(negInterjections))
-		require.True(t, ok)
-		require.False(t, cr)
+		require.False(t, ok) // Need to cut a new chunk.
+		require.True(t, cr)
 	}
 
 	{
@@ -289,7 +334,6 @@ func TestFloatHistogramChunkAppendable(t *testing.T) {
 		// added before the first bucket and reset on first bucket.  (to
 		// catch the edge case where the new bucket should be forwarded
 		// ahead until first old bucket at start)
-		// The counter reset in the bucket does not matter for float histogram.
 		h2 := h1
 		h2.PositiveSpans = []histogram.Span{
 			{Offset: -3, Length: 2},
@@ -307,9 +351,9 @@ func TestFloatHistogramChunkAppendable(t *testing.T) {
 
 		hApp, _ := app.(*FloatHistogramAppender)
 		posInterjections, negInterjections, ok, cr := hApp.Appendable(h2.ToFloat())
-		require.Greater(t, len(posInterjections), 0)
+		require.Equal(t, 0, len(posInterjections))
 		require.Equal(t, 0, len(negInterjections))
-		require.True(t, ok)
-		require.False(t, cr)
+		require.False(t, ok) // Need to cut a new chunk.
+		require.True(t, cr)
 	}
 }

@@ -290,8 +290,8 @@ func interject[BV bucketValue](in, out []BV, interjections []Interjection, delta
 		if interj < len(interjections) && i == interjections[interj].pos {
 
 			// We have an interjection!
-			// Add interjection.num new delta values such that their
-			// bucket values equate 0.
+			// Add interjection.num new delta values such that their bucket values equate 0.
+			// When deltas==false, it means that it is an absolute value. So we set it to 0 directly.
 			if deltas {
 				out[j] = -v
 			} else {
@@ -308,6 +308,8 @@ func interject[BV bucketValue](in, out []BV, interjections []Interjection, delta
 			// should save is the original delta value + the last
 			// value of the point before the interjection (to undo
 			// the delta that was introduced by the interjection).
+			// When deltas==false, it means that it is an absolute value,
+			// so we set it directly to the value in the 'in' slice.
 			if deltas {
 				out[j] = d + v
 			} else {

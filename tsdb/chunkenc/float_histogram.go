@@ -43,6 +43,14 @@ func NewFloatHistogramChunk() *FloatHistogramChunk {
 	return &FloatHistogramChunk{b: bstream{stream: b, count: 0}}
 }
 
+// xorValue holds all the necessary information to encode
+// and decode XOR encoded float64 values.
+type xorValue struct {
+	value    float64
+	leading  uint8
+	trailing uint8
+}
+
 // Encoding returns the encoding type.
 func (c *FloatHistogramChunk) Encoding() Encoding {
 	return EncFloatHistogram
@@ -74,13 +82,7 @@ func (c *FloatHistogramChunk) Layout() (
 
 // SetCounterResetHeader sets the counter reset header.
 func (c *FloatHistogramChunk) SetCounterResetHeader(h CounterResetHeader) {
-	switch h {
-	case CounterReset, NotCounterReset, GaugeType, UnknownCounterReset:
-		bytes := c.Bytes()
-		bytes[2] = (bytes[2] & 0b00111111) | byte(h)
-	default:
-		panic("invalid CounterResetHeader type")
-	}
+	setCounterResetHeader(h, c.Bytes())
 }
 
 // GetCounterResetHeader returns the info about the first 2 bits of the chunk
@@ -119,7 +121,7 @@ func (c *FloatHistogramChunk) Appender() (Appender, error) {
 			trailing: it.pBucketsTrailing[i],
 		}
 	}
-	nBuckets := make([]xorValue, 0, len(it.nBuckets))
+	nBuckets := make([]xorValue, len(it.nBuckets))
 	for i := 0; i < len(it.nBuckets); i++ {
 		nBuckets[i] = xorValue{
 			value:    it.nBuckets[i],
@@ -152,7 +154,7 @@ func (c *FloatHistogramChunk) Appender() (Appender, error) {
 }
 
 func (c *FloatHistogramChunk) iterator(it Iterator) *floatHistogramIterator {
-	// This commet is copied from XORChunk.iterator:
+	// This comment is copied from XORChunk.iterator:
 	//   Should iterators guarantee to act on a copy of the data so it doesn't lock append?
 	//   When using striped locks to guard access to chunks, probably yes.
 	//   Could only copy data if the chunk is not completed yet.
@@ -178,12 +180,6 @@ func newFloatHistogramIterator(b []byte) *floatHistogramIterator {
 // Iterator implements the Chunk interface.
 func (c *FloatHistogramChunk) Iterator(it Iterator) Iterator {
 	return c.iterator(it)
-}
-
-type xorValue struct {
-	value    float64
-	leading  uint8
-	trailing uint8
 }
 
 // FloatHistogramAppender is an Appender implementation for float histograms.
@@ -224,14 +220,17 @@ func (a *FloatHistogramAppender) AppendHistogram(int64, *histogram.Histogram) {
 //
 // • Any buckets have disappeared.
 //
+// • There was a counter reset in the count of observations or in any bucket,
+// including the zero bucket.
+//
 // • The last sample in the chunk was stale while the current sample is not stale.
 //
 // The method returns an additional boolean set to true if it is not appendable
-// because of buckets missing. If the given sample is stale, it is always ok to
-// append. If bucketsMissing is true, okToAppend is always false.
+// because of a counter reset. If the given sample is stale, it is always ok to
+// append. If counterReset is true, okToAppend is always false.
 func (a *FloatHistogramAppender) Appendable(h *histogram.FloatHistogram) (
 	positiveInterjections, negativeInterjections []Interjection,
-	okToAppend, bucketsMissing bool,
+	okToAppend, counterReset bool,
 ) {
 	if value.IsStaleNaN(h.Sum) {
 		// This is a stale sample whose buckets and spans don't matter.
@@ -244,24 +243,109 @@ func (a *FloatHistogramAppender) Appendable(h *histogram.FloatHistogram) (
 		return
 	}
 
+	if h.Count < a.cnt.value {
+		// There has been a counter reset.
+		counterReset = true
+		return
+	}
+
 	if h.Schema != a.schema || h.ZeroThreshold != a.zThreshold {
+		return
+	}
+
+	if h.ZeroCount < a.zCnt.value {
+		// There has been a counter reset since ZeroThreshold didn't change.
+		counterReset = true
 		return
 	}
 
 	var ok bool
 	positiveInterjections, ok = compareSpans(a.pSpans, h.PositiveSpans)
 	if !ok {
-		bucketsMissing = true
+		counterReset = true
 		return
 	}
 	negativeInterjections, ok = compareSpans(a.nSpans, h.NegativeSpans)
 	if !ok {
-		bucketsMissing = true
+		counterReset = true
+		return
+	}
+
+	if counterResetInAnyFloatBucket(a.pBuckets, h.PositiveBuckets, a.pSpans, h.PositiveSpans) ||
+		counterResetInAnyFloatBucket(a.nBuckets, h.NegativeBuckets, a.nSpans, h.NegativeSpans) {
+		counterReset, positiveInterjections, negativeInterjections = true, nil, nil
 		return
 	}
 
 	okToAppend = true
 	return
+}
+
+// counterResetInAnyFloatBucket returns true if there was a counter reset for any
+// bucket. This should be called only when the bucket layout is the same or new
+// buckets were added. It does not handle the case of buckets missing.
+func counterResetInAnyFloatBucket(oldBuckets []xorValue, newBuckets []float64, oldSpans, newSpans []histogram.Span) bool {
+	if len(oldSpans) == 0 || len(oldBuckets) == 0 {
+		return false
+	}
+
+	oldSpanSliceIdx, newSpanSliceIdx := 0, 0                   // Index for the span slices.
+	oldInsideSpanIdx, newInsideSpanIdx := uint32(0), uint32(0) // Index inside a span.
+	oldIdx, newIdx := oldSpans[0].Offset, newSpans[0].Offset
+
+	oldBucketSliceIdx, newBucketSliceIdx := 0, 0 // Index inside bucket slice.
+	oldVal, newVal := oldBuckets[0].value, newBuckets[0]
+
+	// Since we assume that new spans won't have missing buckets, there will never be a case
+	// where the old index will not find a matching new index.
+	for {
+		if oldIdx == newIdx {
+			if newVal < oldVal {
+				return true
+			}
+		}
+
+		if oldIdx <= newIdx {
+			// Moving ahead old bucket and span by 1 index.
+			if oldInsideSpanIdx == oldSpans[oldSpanSliceIdx].Length-1 {
+				// Current span is over.
+				oldSpanSliceIdx++
+				oldInsideSpanIdx = 0
+				if oldSpanSliceIdx >= len(oldSpans) {
+					// All old spans are over.
+					break
+				}
+				oldIdx += 1 + oldSpans[oldSpanSliceIdx].Offset
+			} else {
+				oldInsideSpanIdx++
+				oldIdx++
+			}
+			oldBucketSliceIdx++
+			oldVal = oldBuckets[oldBucketSliceIdx].value
+		}
+
+		if oldIdx > newIdx {
+			// Moving ahead new bucket and span by 1 index.
+			if newInsideSpanIdx == newSpans[newSpanSliceIdx].Length-1 {
+				// Current span is over.
+				newSpanSliceIdx++
+				newInsideSpanIdx = 0
+				if newSpanSliceIdx >= len(newSpans) {
+					// All new spans are over.
+					// This should not happen, old spans above should catch this first.
+					panic("new spans over before old spans in counterReset")
+				}
+				newIdx += 1 + newSpans[newSpanSliceIdx].Offset
+			} else {
+				newInsideSpanIdx++
+				newIdx++
+			}
+			newBucketSliceIdx++
+			newVal = newBuckets[newBucketSliceIdx]
+		}
+	}
+
+	return false
 }
 
 // AppendFloatHistogram appends a float histogram to the chunk. The caller must ensure that
@@ -303,9 +387,8 @@ func (a *FloatHistogramAppender) AppendFloatHistogram(t int64, h *histogram.Floa
 			a.pBuckets = make([]xorValue, numPBuckets)
 			for i := 0; i < numPBuckets; i++ {
 				a.pBuckets[i] = xorValue{
-					value:    h.PositiveBuckets[i],
-					leading:  0xff,
-					trailing: 0xff,
+					value:   h.PositiveBuckets[i],
+					leading: 0xff,
 				}
 			}
 		} else {
@@ -315,9 +398,8 @@ func (a *FloatHistogramAppender) AppendFloatHistogram(t int64, h *histogram.Floa
 			a.nBuckets = make([]xorValue, numNBuckets)
 			for i := 0; i < numNBuckets; i++ {
 				a.nBuckets[i] = xorValue{
-					value:    h.NegativeBuckets[i],
-					leading:  0xff,
-					trailing: 0xff,
+					value:   h.NegativeBuckets[i],
+					leading: 0xff,
 				}
 			}
 		} else {
@@ -341,11 +423,8 @@ func (a *FloatHistogramAppender) AppendFloatHistogram(t int64, h *histogram.Floa
 	} else {
 		// The case for the 2nd sample with single deltas is implicitly handled correctly with the double delta code,
 		// so we don't need a separate single delta logic for the 2nd sample.
-
 		tDelta = t - a.t
-
 		tDod := tDelta - a.tDelta
-
 		putVarbitInt(a.b, tDod)
 
 		a.writeXorValue(&a.cnt, h.Count)
@@ -448,6 +527,9 @@ type floatHistogramIterator struct {
 
 	err error
 
+	// Track calls to retrieve methods. Once they have been called, we
+	// cannot recycle the bucket slices anymore because we have returned
+	// them in the histogram.
 	atFloatHistogramCalled bool
 }
 
@@ -508,9 +590,14 @@ func (it *floatHistogramIterator) Reset(b []byte) {
 	it.t, it.tDelta = 0, 0
 	it.cnt, it.zCnt, it.sum = xorValue{}, xorValue{}, xorValue{}
 
-	it.atFloatHistogramCalled = false
-	it.pBuckets, it.nBuckets = nil, nil
-	it.pBucketsLeading, it.pBucketsTrailing, it.nBucketsLeading, it.nBucketsTrailing = nil, nil, nil, nil
+	if it.atFloatHistogramCalled {
+		it.atFloatHistogramCalled = false
+		it.pBuckets, it.nBuckets = nil, nil
+	} else {
+		it.pBuckets, it.nBuckets = it.pBuckets[:0], it.nBuckets[:0]
+	}
+	it.pBucketsLeading, it.pBucketsTrailing = it.pBucketsLeading[:0], it.pBucketsTrailing[:0]
+	it.nBucketsLeading, it.nBucketsTrailing = it.nBucketsLeading[:0], it.nBucketsTrailing[:0]
 
 	it.err = nil
 }
@@ -537,22 +624,14 @@ func (it *floatHistogramIterator) Next() ValueType {
 		// in case this iterator was reset and already has slices of a
 		// sufficient capacity.
 		if numPBuckets > 0 {
-			it.pBuckets = make([]float64, numPBuckets)
-			it.pBucketsLeading = make([]uint8, numPBuckets)
-			it.pBucketsTrailing = make([]uint8, numPBuckets)
-			for i := 0; i < numPBuckets; i++ {
-				it.pBucketsLeading[i] = 0xff
-				it.pBucketsTrailing[i] = 0xff
-			}
+			it.pBuckets = append(it.pBuckets, make([]float64, numPBuckets)...)
+			it.pBucketsLeading = append(it.pBucketsLeading, make([]uint8, numPBuckets)...)
+			it.pBucketsTrailing = append(it.pBucketsTrailing, make([]uint8, numPBuckets)...)
 		}
 		if numNBuckets > 0 {
-			it.nBuckets = make([]float64, numNBuckets)
-			it.nBucketsLeading = make([]uint8, numNBuckets)
-			it.nBucketsTrailing = make([]uint8, numNBuckets)
-			for i := 0; i < numNBuckets; i++ {
-				it.nBucketsLeading[i] = 0xff
-				it.nBucketsTrailing[i] = 0xff
-			}
+			it.nBuckets = append(it.nBuckets, make([]float64, numNBuckets)...)
+			it.nBucketsLeading = append(it.nBucketsLeading, make([]uint8, numNBuckets)...)
+			it.nBucketsTrailing = append(it.nBucketsTrailing, make([]uint8, numNBuckets)...)
 		}
 
 		// Now read the actual data.
@@ -608,8 +687,9 @@ func (it *floatHistogramIterator) Next() ValueType {
 	// The case for the 2nd sample with single deltas is implicitly handled correctly with the double delta code,
 	// so we don't need a separate single delta logic for the 2nd sample.
 
-	// Recycle bucket slices that have not been returned yet. Otherwise,
-	// copy them.
+	// Recycle bucket slices that have not been returned yet. Otherwise, copy them.
+	// We can always recycle the slices for leading and trailing bits as they are
+	// never returned to the caller.
 	if it.atFloatHistogramCalled {
 		it.atFloatHistogramCalled = false
 		if len(it.pBuckets) > 0 {

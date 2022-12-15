@@ -88,15 +88,20 @@ const (
 	UnknownCounterReset CounterResetHeader = 0b00000000
 )
 
-// SetCounterResetHeader sets the counter reset header.
-func (c *HistogramChunk) SetCounterResetHeader(h CounterResetHeader) {
+// setCounterResetHeader sets the counter reset header of the chunk
+// The third byte of the chunk is the counter reset header.
+func setCounterResetHeader(h CounterResetHeader, bytes []byte) {
 	switch h {
 	case CounterReset, NotCounterReset, GaugeType, UnknownCounterReset:
-		bytes := c.Bytes()
 		bytes[2] = (bytes[2] & 0b00111111) | byte(h)
 	default:
 		panic("invalid CounterResetHeader type")
 	}
+}
+
+// SetCounterResetHeader sets the counter reset header.
+func (c *HistogramChunk) SetCounterResetHeader(h CounterResetHeader) {
+	setCounterResetHeader(h, c.Bytes())
 }
 
 // GetCounterResetHeader returns the info about the first 2 bits of the chunk
