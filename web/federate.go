@@ -102,12 +102,14 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 
 	set := storage.NewMergeSeriesSet(sets, storage.ChainedSeriesMerge)
 	it := storage.NewBuffer(int64(h.lookbackDelta / 1e6))
+	var chkIter chunkenc.Iterator
 	for set.Next() {
 		s := set.At()
 
 		// TODO(fabxc): allow fast path for most recent sample either
 		// in the storage itself or caching layer in Prometheus.
-		it.Reset(s.Iterator())
+		chkIter = s.Iterator(chkIter)
+		it.Reset(chkIter)
 
 		var t int64
 		var v float64

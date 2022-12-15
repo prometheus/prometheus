@@ -93,12 +93,13 @@ func query(t testing.TB, q storage.Querier, matchers ...*labels.Matcher) map[str
 		require.NoError(t, q.Close())
 	}()
 
+	var it chunkenc.Iterator
 	result := map[string][]tsdbutil.Sample{}
 	for ss.Next() {
 		series := ss.At()
 
 		samples := []tsdbutil.Sample{}
-		it := series.Iterator()
+		it = series.Iterator(it)
 		for typ := it.Next(); typ != chunkenc.ValNone; typ = it.Next() {
 			switch typ {
 			case chunkenc.ValFloat:
@@ -133,12 +134,13 @@ func queryChunks(t testing.TB, q storage.ChunkQuerier, matchers ...*labels.Match
 		require.NoError(t, q.Close())
 	}()
 
+	var it chunks.Iterator
 	result := map[string][]chunks.Meta{}
 	for ss.Next() {
 		series := ss.At()
 
 		chks := []chunks.Meta{}
-		it := series.Iterator()
+		it = series.Iterator(it)
 		for it.Next() {
 			chks = append(chks, it.At())
 		}
@@ -454,8 +456,8 @@ Outer:
 
 			require.Equal(t, sexp.Labels(), sres.Labels())
 
-			smplExp, errExp := storage.ExpandSamples(sexp.Iterator(), nil)
-			smplRes, errRes := storage.ExpandSamples(sres.Iterator(), nil)
+			smplExp, errExp := storage.ExpandSamples(sexp.Iterator(nil), nil)
+			smplRes, errRes := storage.ExpandSamples(sres.Iterator(nil), nil)
 
 			require.Equal(t, errExp, errRes)
 			require.Equal(t, smplExp, smplRes)
@@ -628,9 +630,10 @@ func TestDB_Snapshot(t *testing.T) {
 
 	// sum values
 	seriesSet := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+	var series chunkenc.Iterator
 	sum := 0.0
 	for seriesSet.Next() {
-		series := seriesSet.At().Iterator()
+		series = seriesSet.At().Iterator(series)
 		for series.Next() == chunkenc.ValFloat {
 			_, v := series.At()
 			sum += v
@@ -676,9 +679,10 @@ func TestDB_Snapshot_ChunksOutsideOfCompactedRange(t *testing.T) {
 
 	// Sum values.
 	seriesSet := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+	var series chunkenc.Iterator
 	sum := 0.0
 	for seriesSet.Next() {
-		series := seriesSet.At().Iterator()
+		series = seriesSet.At().Iterator(series)
 		for series.Next() == chunkenc.ValFloat {
 			_, v := series.At()
 			sum += v
@@ -770,8 +774,8 @@ Outer:
 
 			require.Equal(t, sexp.Labels(), sres.Labels())
 
-			smplExp, errExp := storage.ExpandSamples(sexp.Iterator(), nil)
-			smplRes, errRes := storage.ExpandSamples(sres.Iterator(), nil)
+			smplExp, errExp := storage.ExpandSamples(sexp.Iterator(nil), nil)
+			smplRes, errRes := storage.ExpandSamples(sres.Iterator(nil), nil)
 
 			require.Equal(t, errExp, errRes)
 			require.Equal(t, smplExp, smplRes)
@@ -921,7 +925,7 @@ func TestDB_e2e(t *testing.T) {
 			for ss.Next() {
 				x := ss.At()
 
-				smpls, err := storage.ExpandSamples(x.Iterator(), newSample)
+				smpls, err := storage.ExpandSamples(x.Iterator(nil), newSample)
 				require.NoError(t, err)
 
 				if len(smpls) > 0 {
@@ -1108,12 +1112,13 @@ func testWALReplayRaceOnSamplesLoggedBeforeSeries(t *testing.T, numSamplesBefore
 
 	set := q.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "series_id", ".+"))
 	actualSeries := 0
+	var chunksIt chunks.Iterator
 
 	for set.Next() {
 		actualSeries++
 		actualChunks := 0
 
-		chunksIt := set.At().Iterator()
+		chunksIt = set.At().Iterator(chunksIt)
 		for chunksIt.Next() {
 			actualChunks++
 		}
@@ -1205,8 +1210,8 @@ func TestTombstoneClean(t *testing.T) {
 
 			require.Equal(t, sexp.Labels(), sres.Labels())
 
-			smplExp, errExp := storage.ExpandSamples(sexp.Iterator(), nil)
-			smplRes, errRes := storage.ExpandSamples(sres.Iterator(), nil)
+			smplExp, errExp := storage.ExpandSamples(sexp.Iterator(nil), nil)
+			smplRes, errRes := storage.ExpandSamples(sres.Iterator(nil), nil)
 
 			require.Equal(t, errExp, errRes)
 			require.Equal(t, smplExp, smplRes)
@@ -1479,11 +1484,12 @@ func TestSizeRetention(t *testing.T) {
 	// Add some data to the WAL.
 	headApp := db.Head().Appender(context.Background())
 	var aSeries labels.Labels
+	var it chunkenc.Iterator
 	for _, m := range headBlocks {
 		series := genSeries(100, 10, m.MinTime, m.MaxTime+1)
 		for _, s := range series {
 			aSeries = s.Labels()
-			it := s.Iterator()
+			it = s.Iterator(it)
 			for it.Next() == chunkenc.ValFloat {
 				tim, v := it.At()
 				_, err := headApp.Append(0, s.Labels(), tim, v)
@@ -1691,10 +1697,11 @@ func TestNotMatcherSelectsLabelsUnsetSeries(t *testing.T) {
 func expandSeriesSet(ss storage.SeriesSet) ([]labels.Labels, map[string][]sample, storage.Warnings, error) {
 	resultLabels := []labels.Labels{}
 	resultSamples := map[string][]sample{}
+	var it chunkenc.Iterator
 	for ss.Next() {
 		series := ss.At()
 		samples := []sample{}
-		it := series.Iterator()
+		it = series.Iterator(it)
 		for it.Next() == chunkenc.ValFloat {
 			t, v := it.At()
 			samples = append(samples, sample{t: t, v: v})
@@ -2500,10 +2507,11 @@ func TestDBReadOnly_FlushWAL(t *testing.T) {
 
 	// Sum the values.
 	seriesSet := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, defaultLabelName, "flush"))
+	var series chunkenc.Iterator
 
 	sum := 0.0
 	for seriesSet.Next() {
-		series := seriesSet.At().Iterator()
+		series = seriesSet.At().Iterator(series)
 		for series.Next() == chunkenc.ValFloat {
 			_, v := series.At()
 			sum += v
@@ -2946,10 +2954,11 @@ func TestCompactHead(t *testing.T) {
 	defer func() { require.NoError(t, querier.Close()) }()
 
 	seriesSet := querier.Select(false, nil, &labels.Matcher{Type: labels.MatchEqual, Name: "a", Value: "b"})
+	var series chunkenc.Iterator
 	var actSamples []sample
 
 	for seriesSet.Next() {
-		series := seriesSet.At().Iterator()
+		series = seriesSet.At().Iterator(series)
 		for series.Next() == chunkenc.ValFloat {
 			time, val := series.At()
 			actSamples = append(actSamples, sample{int64(time), val, nil, nil})
@@ -3347,7 +3356,7 @@ func testQuerierShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks(t 
 		actualSeries++
 
 		// Get the iterator and call Next() so that we're sure the chunk is loaded.
-		it := seriesSet.At().Iterator()
+		it := seriesSet.At().Iterator(nil)
 		it.Next()
 		it.At()
 
@@ -3477,11 +3486,13 @@ func testChunkQuerierShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChun
 	seriesSet := querier.Select(true, hints, labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, ".+"))
 
 	// Iterate all series and get their chunks.
+	var it chunks.Iterator
 	var chunks []chunkenc.Chunk
 	actualSeries := 0
 	for seriesSet.Next() {
 		actualSeries++
-		for it := seriesSet.At().Iterator(); it.Next(); {
+		it = seriesSet.At().Iterator(it)
+		for it.Next() {
 			chunks = append(chunks, it.At().Chunk)
 		}
 	}
@@ -6025,13 +6036,14 @@ func TestQueryHistogramFromBlocksWithCompaction(t *testing.T) {
 
 		ctx := context.Background()
 
+		var it chunkenc.Iterator
 		exp := make(map[string][]tsdbutil.Sample)
 		for _, series := range blockSeries {
 			createBlock(t, db.Dir(), series)
 
 			for _, s := range series {
 				key := s.Labels().String()
-				it := s.Iterator()
+				it = s.Iterator(it)
 				slice := exp[key]
 				for typ := it.Next(); typ != chunkenc.ValNone; typ = it.Next() {
 					switch typ {

@@ -2959,7 +2959,7 @@ func TestScrapeReportSingleAppender(t *testing.T) {
 
 		c := 0
 		for series.Next() {
-			i := series.At().Iterator()
+			i := series.At().Iterator(nil)
 			for i.Next() != chunkenc.ValNone {
 				c++
 			}
@@ -3032,7 +3032,7 @@ func TestScrapeReportLimit(t *testing.T) {
 
 	var found bool
 	for series.Next() {
-		i := series.At().Iterator()
+		i := series.At().Iterator(nil)
 		for i.Next() == chunkenc.ValFloat {
 			_, v := i.At()
 			require.Equal(t, 1.0, v)

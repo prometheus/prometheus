@@ -215,7 +215,7 @@ func TestConcreteSeriesIterator(t *testing.T) {
 			{Value: 4, Timestamp: 4},
 		},
 	}
-	it := series.Iterator()
+	it := series.Iterator(nil)
 
 	// Seek to the first sample with ts=1.
 	require.Equal(t, chunkenc.ValFloat, it.Seek(1))

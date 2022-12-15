@@ -33,6 +33,7 @@ import (
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 )
 
 // decodeReadLimit is the maximum size of a read request body in bytes.
@@ -115,9 +116,10 @@ func ToQuery(from, to int64, matchers []*labels.Matcher, hints *storage.SelectHi
 func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, storage.Warnings, error) {
 	numSamples := 0
 	resp := &prompb.QueryResult{}
+	var iter chunkenc.Iterator
 	for ss.Next() {
 		series := ss.At()
-		iter := series.Iterator()
+		iter = series.Iterator(iter)
 		samples := []prompb.Sample{}
 
 		for iter.Next() == chunkenc.ValFloat {
@@ -199,11 +201,12 @@ func StreamChunkedReadResponses(
 	var (
 		chks []prompb.Chunk
 		lbls []prompb.Label
+		iter chunks.Iterator
 	)
 
 	for ss.Next() {
 		series := ss.At()
-		iter := series.Iterator()
+		iter = series.Iterator(iter)
 		lbls = MergeLabels(labelsToLabelsProto(series.Labels(), lbls), sortedExternalLabels)
 
 		frameBytesLeft := maxBytesInFrame
@@ -346,7 +349,11 @@ func (c *concreteSeries) Labels() labels.Labels {
 	return labels.New(c.labels...)
 }
 
-func (c *concreteSeries) Iterator() chunkenc.Iterator {
+func (c *concreteSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
+	if csi, ok := it.(*concreteSeriesIterator); ok {
+		csi.reset(c)
+		return csi
+	}
 	return newConcreteSeriersIterator(c)
 }
 
@@ -361,6 +368,11 @@ func newConcreteSeriersIterator(series *concreteSeries) chunkenc.Iterator {
 		cur:    -1,
 		series: series,
 	}
+}
+
+func (c *concreteSeriesIterator) reset(series *concreteSeries) {
+	c.cur = -1
+	c.series = series
 }
 
 // Seek implements storage.SeriesIterator.

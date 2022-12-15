@@ -644,7 +644,7 @@ func dumpSamples(path string, mint, maxt int64) (err error) {
 	for ss.Next() {
 		series := ss.At()
 		lbs := series.Labels()
-		it := series.Iterator()
+		it := series.Iterator(nil)
 		for it.Next() == chunkenc.ValFloat {
 			ts, val := it.At()
 			fmt.Printf("%s %g %d\n", lbs, val, ts)

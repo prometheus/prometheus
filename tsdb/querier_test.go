@@ -194,8 +194,8 @@ func testBlockQuerier(t *testing.T, c blockQuerierTestCase, ir IndexReader, cr C
 			sres := res.At()
 			require.Equal(t, sexp.Labels(), sres.Labels())
 
-			smplExp, errExp := storage.ExpandSamples(sexp.Iterator(), nil)
-			smplRes, errRes := storage.ExpandSamples(sres.Iterator(), nil)
+			smplExp, errExp := storage.ExpandSamples(sexp.Iterator(nil), nil)
+			smplRes, errRes := storage.ExpandSamples(sres.Iterator(nil), nil)
 
 			require.Equal(t, errExp, errRes)
 			require.Equal(t, smplExp, smplRes)
@@ -230,9 +230,9 @@ func testBlockQuerier(t *testing.T, c blockQuerierTestCase, ir IndexReader, cr C
 
 			require.Equal(t, sexpChks.Labels(), sres.Labels())
 
-			chksExp, errExp := storage.ExpandChunks(sexpChks.Iterator())
+			chksExp, errExp := storage.ExpandChunks(sexpChks.Iterator(nil))
 			rmChunkRefs(chksExp)
-			chksRes, errRes := storage.ExpandChunks(sres.Iterator())
+			chksRes, errRes := storage.ExpandChunks(sres.Iterator(nil))
 			rmChunkRefs(chksRes)
 			require.Equal(t, errExp, errRes)
 			require.Equal(t, chksExp, chksRes)
@@ -859,7 +859,8 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Run("sample", func(t *testing.T) {
 				f, chkMetas := createFakeReaderAndNotPopulatedChunks(tc.chks...)
-				it := newPopulateWithDelGenericSeriesIterator(ulid.ULID{}, f, chkMetas, tc.intervals).toSeriesIterator()
+				it := &populateWithDelSeriesIterator{}
+				it.reset(ulid.ULID{}, f, chkMetas, tc.intervals)
 
 				var r []tsdbutil.Sample
 				if tc.seek != 0 {
@@ -879,7 +880,8 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 			})
 			t.Run("chunk", func(t *testing.T) {
 				f, chkMetas := createFakeReaderAndNotPopulatedChunks(tc.chks...)
-				it := newPopulateWithDelGenericSeriesIterator(ulid.ULID{}, f, chkMetas, tc.intervals).toChunkSeriesIterator()
+				it := &populateWithDelChunkSeriesIterator{}
+				it.reset(ulid.ULID{}, f, chkMetas, tc.intervals)
 
 				if tc.seek != 0 {
 					// Chunk iterator does not have Seek method.
@@ -911,7 +913,8 @@ func TestPopulateWithDelSeriesIterator_DoubleSeek(t *testing.T) {
 		[]tsdbutil.Sample{sample{4, 4, nil, nil}, sample{5, 5, nil, nil}},
 	)
 
-	it := newPopulateWithDelGenericSeriesIterator(ulid.ULID{}, f, chkMetas, nil).toSeriesIterator()
+	it := &populateWithDelSeriesIterator{}
+	it.reset(ulid.ULID{}, f, chkMetas, nil)
 	require.Equal(t, chunkenc.ValFloat, it.Seek(1))
 	require.Equal(t, chunkenc.ValFloat, it.Seek(2))
 	require.Equal(t, chunkenc.ValFloat, it.Seek(2))
@@ -929,7 +932,8 @@ func TestPopulateWithDelSeriesIterator_SeekInCurrentChunk(t *testing.T) {
 		[]tsdbutil.Sample{},
 	)
 
-	it := newPopulateWithDelGenericSeriesIterator(ulid.ULID{}, f, chkMetas, nil).toSeriesIterator()
+	it := &populateWithDelSeriesIterator{}
+	it.reset(ulid.ULID{}, f, chkMetas, nil)
 	require.Equal(t, chunkenc.ValFloat, it.Next())
 	ts, v := it.At()
 	require.Equal(t, int64(1), ts)
@@ -946,7 +950,8 @@ func TestPopulateWithDelSeriesIterator_SeekWithMinTime(t *testing.T) {
 		[]tsdbutil.Sample{sample{1, 6, nil, nil}, sample{5, 6, nil, nil}, sample{6, 8, nil, nil}},
 	)
 
-	it := newPopulateWithDelGenericSeriesIterator(ulid.ULID{}, f, chkMetas, nil).toSeriesIterator()
+	it := &populateWithDelSeriesIterator{}
+	it.reset(ulid.ULID{}, f, chkMetas, nil)
 	require.Equal(t, chunkenc.ValNone, it.Seek(7))
 	require.Equal(t, chunkenc.ValFloat, it.Seek(3))
 }
@@ -958,9 +963,8 @@ func TestPopulateWithDelSeriesIterator_NextWithMinTime(t *testing.T) {
 		[]tsdbutil.Sample{sample{1, 6, nil, nil}, sample{5, 6, nil, nil}, sample{7, 8, nil, nil}},
 	)
 
-	it := newPopulateWithDelGenericSeriesIterator(
-		ulid.ULID{}, f, chkMetas, tombstones.Intervals{{Mint: math.MinInt64, Maxt: 2}}.Add(tombstones.Interval{Mint: 4, Maxt: math.MaxInt64}),
-	).toSeriesIterator()
+	it := &populateWithDelSeriesIterator{}
+	it.reset(ulid.ULID{}, f, chkMetas, tombstones.Intervals{{Mint: math.MinInt64, Maxt: 2}}.Add(tombstones.Interval{Mint: 4, Maxt: math.MaxInt64}))
 	require.Equal(t, chunkenc.ValNone, it.Next())
 }
 
@@ -1433,9 +1437,10 @@ func BenchmarkQuerySeek(b *testing.B) {
 				b.ResetTimer()
 				b.ReportAllocs()
 
+				var it chunkenc.Iterator
 				ss := sq.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
 				for ss.Next() {
-					it := ss.At().Iterator()
+					it = ss.At().Iterator(it)
 					for t := mint; t <= maxt; t++ {
 						it.Seek(t)
 					}
@@ -2042,11 +2047,13 @@ func benchQuery(b *testing.B, expExpansions int, q storage.Querier, selectors la
 	for i := 0; i < b.N; i++ {
 		ss := q.Select(false, nil, selectors...)
 		var actualExpansions int
+		var it chunkenc.Iterator
 		for ss.Next() {
 			s := ss.At()
 			s.Labels()
-			it := s.Iterator()
+			it = s.Iterator(it)
 			for it.Next() != chunkenc.ValNone {
+				_, _ = it.At()
 			}
 			actualExpansions++
 		}
@@ -2222,11 +2229,12 @@ func TestBlockBaseSeriesSet(t *testing.T) {
 
 		i := 0
 		for bcs.Next() {
-			chks := bcs.currIterFn().chks
+			si := populateWithDelGenericSeriesIterator{}
+			si.reset(bcs.blockID, bcs.chunks, bcs.curr.chks, bcs.curr.intervals)
 			idx := tc.expIdxs[i]
 
-			require.Equal(t, tc.series[idx].lset, bcs.currLabels)
-			require.Equal(t, tc.series[idx].chunks, chks)
+			require.Equal(t, tc.series[idx].lset, bcs.curr.labels)
+			require.Equal(t, tc.series[idx].chunks, si.chks)
 
 			i++
 		}

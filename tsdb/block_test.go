@@ -203,7 +203,7 @@ func TestCorruptedChunk(t *testing.T) {
 
 			// Check chunk errors during iter time.
 			require.True(t, set.Next())
-			it := set.At().Iterator()
+			it := set.At().Iterator(nil)
 			require.Equal(t, chunkenc.ValNone, it.Next())
 			require.Equal(t, tc.iterErr.Error(), it.Err().Error())
 		})
@@ -505,11 +505,12 @@ func createHead(tb testing.TB, w *wlog.WL, series []storage.Series, chunkDir str
 	head, err := NewHead(nil, nil, w, nil, opts, nil)
 	require.NoError(tb, err)
 
+	var it chunkenc.Iterator
 	ctx := context.Background()
 	app := head.Appender(ctx)
 	for _, s := range series {
 		ref := storage.SeriesRef(0)
-		it := s.Iterator()
+		it = s.Iterator(it)
 		lset := s.Labels()
 		typ := it.Next()
 		lastTyp := typ
@@ -550,11 +551,12 @@ func createHeadWithOOOSamples(tb testing.TB, w *wlog.WL, series []storage.Series
 	oooSampleLabels := make([]labels.Labels, 0, len(series))
 	oooSamples := make([]tsdbutil.SampleSlice, 0, len(series))
 
+	var it chunkenc.Iterator
 	totalSamples := 0
 	app := head.Appender(context.Background())
 	for _, s := range series {
 		ref := storage.SeriesRef(0)
-		it := s.Iterator()
+		it = s.Iterator(it)
 		lset := s.Labels()
 		os := tsdbutil.SampleSlice{}
 		count := 0

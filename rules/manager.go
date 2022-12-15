@@ -807,7 +807,7 @@ func (g *Group) RestoreForState(ts time.Time) {
 			// Series found for the 'for' state.
 			var t int64
 			var v float64
-			it := s.Iterator()
+			it := s.Iterator(nil)
 			for it.Next() == chunkenc.ValFloat {
 				t, v = it.At()
 			}

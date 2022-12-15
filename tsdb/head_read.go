@@ -503,11 +503,7 @@ func (o mergedOOOChunks) Appender() (chunkenc.Appender, error) {
 }
 
 func (o mergedOOOChunks) Iterator(iterator chunkenc.Iterator) chunkenc.Iterator {
-	iterators := make([]chunkenc.Iterator, 0, len(o.chunks))
-	for _, c := range o.chunks {
-		iterators = append(iterators, c.Chunk.Iterator(nil))
-	}
-	return storage.NewChainSampleIterator(iterators)
+	return storage.ChainSampleIteratorFromMetas(iterator, o.chunks)
 }
 
 func (o mergedOOOChunks) NumSamples() int {

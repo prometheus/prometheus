@@ -746,8 +746,9 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 	}
 
 	var (
-		ref  = storage.SeriesRef(0)
-		chks []chunks.Meta
+		ref      = storage.SeriesRef(0)
+		chks     []chunks.Meta
+		chksIter chunks.Iterator
 	)
 
 	set := sets[0]
@@ -765,7 +766,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 		default:
 		}
 		s := set.At()
-		chksIter := s.Iterator()
+		chksIter = s.Iterator(chksIter)
 		chks = chks[:0]
 		for chksIter.Next() {
 			// We are not iterating in streaming way over chunk as
