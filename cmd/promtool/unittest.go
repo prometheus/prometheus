@@ -20,12 +20,14 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/nsf/jsondiff"
 	"github.com/prometheus/common/model"
 	"gopkg.in/yaml.v2"
 
@@ -317,14 +319,25 @@ func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]i
 				sort.Sort(expAlerts)
 
 				if !reflect.DeepEqual(expAlerts, gotAlerts) {
-					var testName string
-					if tg.TestGroupName != "" {
-						testName = fmt.Sprintf("    name: %s,\n", tg.TestGroupName)
+					s1 := strings.Replace(expAlerts[0].Labels.String(), "=", ":", -1)
+					s2 := strings.Replace(gotAlerts[0].Labels.String(), "=", ":", -1)
+
+					var re, err = regexp.Compile(`([\w-]+):`)
+					if err != nil {
+						fmt.Errorf("error", err.Error())
 					}
-					expString := indentLines(expAlerts.String(), "            ")
-					gotString := indentLines(gotAlerts.String(), "            ")
-					errs = append(errs, fmt.Errorf("%s    alertname: %s, time: %s, \n        exp:%v, \n        got:%v",
-						testName, testcase.Alertname, testcase.EvalTime.String(), expString, gotString))
+
+					// Add quotes to the labels
+					news1 := re.ReplaceAll([]byte(s1), []byte("\"$1\":"))
+					news2 := re.ReplaceAll([]byte(s2), []byte("\"$1\":"))
+
+					diffOpts := jsondiff.DefaultConsoleOptions()
+					res, diff := jsondiff.Compare(news1, news2, &diffOpts)
+					// fmt.Println(expAlerts[0].Labels.String())
+
+					if res != jsondiff.FullMatch {
+						fmt.Printf(">>> the expected result is not equal to what we have: %s\n", diff)
+					}
 				}
 			}
 
