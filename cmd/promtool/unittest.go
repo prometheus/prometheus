@@ -291,7 +291,7 @@ func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]i
 							})
 						}
 					}
-
+					// fmt.Println("arname = ", ar.Name())
 					got[ar.Name()] = append(got[ar.Name()], alerts...)
 				}
 			}
@@ -318,26 +318,72 @@ func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]i
 				sort.Sort(gotAlerts)
 				sort.Sort(expAlerts)
 
-				if !reflect.DeepEqual(expAlerts, gotAlerts) {
-					s1 := strings.Replace(expAlerts[0].Labels.String(), "=", ":", -1)
-					s2 := strings.Replace(gotAlerts[0].Labels.String(), "=", ":", -1)
+				// fmt.Println("gotlen = ", gotAlerts.Len())
+				// fmt.Println("explen = ", expAlerts.Len())
 
-					var re, err = regexp.Compile(`([\w-]+):`)
+				if !reflect.DeepEqual(expAlerts, gotAlerts) {
+
+					// fmt.Println("xxalertname = ", gotAlerts[0].Labels)
+					// if gotAlerts.Len() != 0 && expAlerts.Len() != 0 {
+					// }
+
+					if gotAlerts.Len() == 0 {
+						gotAlerts = append(gotAlerts, labelAndAnnotation{
+							Labels:      labels.Labels{},
+							Annotations: labels.Labels{},
+						})
+					}
+
+					if expAlerts.Len() == 0 {
+						expAlerts = append(expAlerts, labelAndAnnotation{
+							Labels:      labels.Labels{},
+							Annotations: labels.Labels{},
+						})
+					}
+
+					expAlertsLabels := strings.Replace(expAlerts[0].Labels.String(), "=", ":", -1)
+					gotAlertsLabels := strings.Replace(gotAlerts[0].Labels.String(), "=", ":", -1)
+					// alertName :=
+
+					re, err := regexp.Compile(`([\w-]+):`)
 					if err != nil {
 						fmt.Errorf("error", err.Error())
 					}
 
 					// Add quotes to the labels
-					news1 := re.ReplaceAll([]byte(s1), []byte("\"$1\":"))
-					news2 := re.ReplaceAll([]byte(s2), []byte("\"$1\":"))
+					expAlertsLabelsByte := re.ReplaceAll([]byte(expAlertsLabels), []byte("\"$1\":"))
+					gotAlertsLabelsByte := re.ReplaceAll([]byte(gotAlertsLabels), []byte("\"$1\":"))
+
+					alertNameRe, err := regexp.Compile(`"alertname":"([^"]+)"`)
+					if err != nil {
+						fmt.Errorf("error", err.Error())
+					}
+					fmt.Println("alertname = ", string(alertNameRe.Find(expAlertsLabelsByte)))
 
 					diffOpts := jsondiff.DefaultConsoleOptions()
-					res, diff := jsondiff.Compare(news1, news2, &diffOpts)
-					// fmt.Println(expAlerts[0].Labels.String())
-
+					res, diff := jsondiff.Compare(expAlertsLabelsByte, gotAlertsLabelsByte, &diffOpts)
 					if res != jsondiff.FullMatch {
-						fmt.Printf(">>> the expected result is not equal to what we have: %s\n", diff)
+						fmt.Printf("Labels: \n%s\n", diff)
 					}
+
+					expAlertsAnnotations := strings.Replace(expAlerts[0].Annotations.String(), "=", ":", -1)
+					gotAlertsAnnotations := strings.Replace(gotAlerts[0].Annotations.String(), "=", ":", -1)
+
+					// var re, err = regexp.Compile(`([\w-]+):`)
+					// if err != nil {
+					// 	fmt.Errorf("error", err.Error())
+					// }
+
+					// Add quotes to the labels
+					expAlertsAnnotationsByte := re.ReplaceAll([]byte(expAlertsAnnotations), []byte("\"$1\":"))
+					gotAlertsAnnotationsByte := re.ReplaceAll([]byte(gotAlertsAnnotations), []byte("\"$1\":"))
+
+					diffOpts = jsondiff.DefaultConsoleOptions()
+					res, diff = jsondiff.Compare(expAlertsAnnotationsByte, gotAlertsAnnotationsByte, &diffOpts)
+					if res != jsondiff.FullMatch {
+						fmt.Printf("Annotations: \n%s\n", diff)
+					}
+
 				}
 			}
 
