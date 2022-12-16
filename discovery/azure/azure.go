@@ -55,6 +55,7 @@ const (
 	azureLabelMachinePublicIP      = azureLabel + "machine_public_ip"
 	azureLabelMachineTag           = azureLabel + "machine_tag_"
 	azureLabelMachineScaleSet      = azureLabel + "machine_scale_set"
+	azureLabelMachineSize          = azureLabel + "machine_size"
 
 	authMethodOAuth           = "OAuth"
 	authMethodManagedIdentity = "ManagedIdentity"
@@ -261,6 +262,7 @@ type virtualMachine struct {
 	ScaleSet          string
 	Tags              map[string]*string
 	NetworkInterfaces []string
+	Size              string
 }
 
 // Create a new azureResource object from an ID string.
@@ -343,6 +345,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 				azureLabelMachineOSType:        model.LabelValue(vm.OsType),
 				azureLabelMachineLocation:      model.LabelValue(vm.Location),
 				azureLabelMachineResourceGroup: model.LabelValue(r.ResourceGroup),
+				azureLabelMachineSize:          model.LabelValue(vm.Size),
 			}
 
 			if vm.ScaleSet != "" {
@@ -514,6 +517,7 @@ func mapFromVM(vm compute.VirtualMachine) virtualMachine {
 	tags := map[string]*string{}
 	networkInterfaces := []string{}
 	var computerName string
+	var size string
 
 	if vm.Tags != nil {
 		tags = vm.Tags
@@ -525,10 +529,13 @@ func mapFromVM(vm compute.VirtualMachine) virtualMachine {
 		}
 	}
 
-	if vm.VirtualMachineProperties != nil &&
-		vm.VirtualMachineProperties.OsProfile != nil &&
-		vm.VirtualMachineProperties.OsProfile.ComputerName != nil {
-		computerName = *(vm.VirtualMachineProperties.OsProfile.ComputerName)
+	if vm.VirtualMachineProperties != nil {
+		if vm.VirtualMachineProperties.OsProfile != nil && vm.VirtualMachineProperties.OsProfile.ComputerName != nil {
+			computerName = *(vm.VirtualMachineProperties.OsProfile.ComputerName)
+		}
+		if vm.VirtualMachineProperties.HardwareProfile != nil {
+			size = string(vm.VirtualMachineProperties.HardwareProfile.VMSize)
+		}
 	}
 
 	return virtualMachine{
@@ -541,6 +548,7 @@ func mapFromVM(vm compute.VirtualMachine) virtualMachine {
 		ScaleSet:          "",
 		Tags:              tags,
 		NetworkInterfaces: networkInterfaces,
+		Size:              size,
 	}
 }
 
@@ -549,6 +557,7 @@ func mapFromVMScaleSetVM(vm compute.VirtualMachineScaleSetVM, scaleSetName strin
 	tags := map[string]*string{}
 	networkInterfaces := []string{}
 	var computerName string
+	var size string
 
 	if vm.Tags != nil {
 		tags = vm.Tags
@@ -560,8 +569,13 @@ func mapFromVMScaleSetVM(vm compute.VirtualMachineScaleSetVM, scaleSetName strin
 		}
 	}
 
-	if vm.VirtualMachineScaleSetVMProperties != nil && vm.VirtualMachineScaleSetVMProperties.OsProfile != nil {
-		computerName = *(vm.VirtualMachineScaleSetVMProperties.OsProfile.ComputerName)
+	if vm.VirtualMachineScaleSetVMProperties != nil {
+		if vm.VirtualMachineScaleSetVMProperties.OsProfile != nil && vm.VirtualMachineScaleSetVMProperties.OsProfile.ComputerName != nil {
+			computerName = *(vm.VirtualMachineScaleSetVMProperties.OsProfile.ComputerName)
+		}
+		if vm.VirtualMachineScaleSetVMProperties.HardwareProfile != nil {
+			size = string(vm.VirtualMachineScaleSetVMProperties.HardwareProfile.VMSize)
+		}
 	}
 
 	return virtualMachine{
@@ -574,6 +588,7 @@ func mapFromVMScaleSetVM(vm compute.VirtualMachineScaleSetVM, scaleSetName strin
 		ScaleSet:          scaleSetName,
 		Tags:              tags,
 		NetworkInterfaces: networkInterfaces,
+		Size:              size,
 	}
 }
 
