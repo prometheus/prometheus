@@ -166,7 +166,7 @@ func main() {
 		"test-rule-file",
 		"The unit test file.",
 	).Required().ExistingFiles()
-	testRulesDiff := testRulesCmd.Flag("diff", "Print colored differential output between expected & received output").Bool()
+	testRulesDiff := testRulesCmd.Flag("diff", "Print colored differential output between expected & received output").Default("false").Bool()
 
 	defaultDBPath := "data/"
 	tsdbCmd := app.Command("tsdb", "Run tsdb commands.")
@@ -286,7 +286,6 @@ func main() {
 				EnableAtModifier:     true,
 				EnableNegativeOffset: true,
 			},
-			testRulesDiff,
 			*testRulesFiles...),
 		)
 

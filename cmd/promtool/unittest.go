@@ -40,7 +40,7 @@ import (
 
 // RulesUnitTest does unit testing of rules based on the unit testing files provided.
 // More info about the file format can be found in the docs.
-func RulesUnitTest(queryOpts promql.LazyLoaderOpts, showDiff *bool, files ...string) int {
+func RulesUnitTest(queryOpts promql.LazyLoaderOpts, files ...string) int {
 	failed := false
 
 	for _, f := range files {
