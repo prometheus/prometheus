@@ -21,12 +21,14 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/mattn/go-colorable"
 	"github.com/nsf/jsondiff"
 	"github.com/prometheus/common/model"
 	"gopkg.in/yaml.v2"
@@ -353,8 +355,19 @@ func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]i
 
 					res, diff := jsondiff.Compare(expAlertsJSON, gotAlertsJSON, &diffOpts)
 					if res != jsondiff.FullMatch {
-						errs = append(errs, fmt.Errorf("%s    alertname: %s, time: %s, \n        diff:%v",
-							testName, testcase.Alertname, testcase.EvalTime.String(), diff))
+						if runtime.GOOS == "windows" {
+							colorDiff, err := colorable.NewColorableStdout().Write([]byte(diff))
+							if err != nil {
+								errs = append(errs, fmt.Errorf("alertName: %s\nError coloring windows gotAlert to JSON: %v", tg.TestGroupName, diff))
+								continue
+							}
+							errs = append(errs, fmt.Errorf("%s    alertname: %s, time: %s, \n        diff:%v",
+								testName, testcase.Alertname, testcase.EvalTime.String(), colorDiff))
+
+						} else {
+							errs = append(errs, fmt.Errorf("%s    alertname: %s, time: %s, \n        diff:%v",
+								testName, testcase.Alertname, testcase.EvalTime.String(), diff))
+						}
 					}
 				}
 			}
