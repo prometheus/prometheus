@@ -291,7 +291,6 @@ func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]i
 							})
 						}
 					}
-					// fmt.Println("arname = ", ar.Name())
 					got[ar.Name()] = append(got[ar.Name()], alerts...)
 				}
 			}
@@ -324,13 +323,14 @@ func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]i
 						testName = fmt.Sprintf("    name: %s,\n", tg.TestGroupName)
 					}
 
+					// If empty, populates an empty value
 					if gotAlerts.Len() == 0 {
 						gotAlerts = append(gotAlerts, labelAndAnnotation{
 							Labels:      labels.Labels{},
 							Annotations: labels.Labels{},
 						})
 					}
-
+					// If empty, populates an empty value
 					if expAlerts.Len() == 0 {
 						expAlerts = append(expAlerts, labelAndAnnotation{
 							Labels:      labels.Labels{},
