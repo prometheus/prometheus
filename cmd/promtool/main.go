@@ -72,6 +72,7 @@ const (
 )
 
 var lintOptions = []string{lintOptionAll, lintOptionDuplicateRules, lintOptionNone}
+var diffFlag bool
 
 func main() {
 	app := kingpin.New(filepath.Base(os.Args[0]), "Tooling for the Prometheus monitoring system.").UsageWriter(os.Stdout)
@@ -279,6 +280,7 @@ func main() {
 		os.Exit(QueryLabels(*queryLabelsServer, *queryLabelsMatch, *queryLabelsName, *queryLabelsBegin, *queryLabelsEnd, p))
 
 	case testRulesCmd.FullCommand():
+		diffFlag = *testRulesDiff
 		os.Exit(RulesUnitTest(
 			promql.LazyLoaderOpts{
 				EnableAtModifier:     true,

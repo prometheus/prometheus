@@ -44,7 +44,7 @@ func RulesUnitTest(queryOpts promql.LazyLoaderOpts, showDiff *bool, files ...str
 	failed := false
 
 	for _, f := range files {
-		if errs := ruleUnitTest(f, *showDiff, queryOpts); errs != nil {
+		if errs := ruleUnitTest(f, queryOpts); errs != nil {
 			fmt.Fprintln(os.Stderr, "  FAILED:")
 			for _, e := range errs {
 				fmt.Fprintln(os.Stderr, e.Error())
@@ -62,7 +62,7 @@ func RulesUnitTest(queryOpts promql.LazyLoaderOpts, showDiff *bool, files ...str
 	return successExitCode
 }
 
-func ruleUnitTest(filename string, showDiff bool, queryOpts promql.LazyLoaderOpts) []error {
+func ruleUnitTest(filename string, queryOpts promql.LazyLoaderOpts) []error {
 	fmt.Println("Unit Testing: ", filename)
 
 	b, err := os.ReadFile(filename)
@@ -97,7 +97,7 @@ func ruleUnitTest(filename string, showDiff bool, queryOpts promql.LazyLoaderOpt
 	// Testing.
 	var errs []error
 	for _, t := range unitTestInp.Tests {
-		ers := t.test(evalInterval, groupOrderMap, showDiff, queryOpts, unitTestInp.RuleFiles...)
+		ers := t.test(evalInterval, groupOrderMap, queryOpts, unitTestInp.RuleFiles...)
 		if ers != nil {
 			errs = append(errs, ers...)
 		}
@@ -153,7 +153,7 @@ type testGroup struct {
 }
 
 // test performs the unit tests.
-func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]int, showDiff bool, queryOpts promql.LazyLoaderOpts, ruleFiles ...string) []error {
+func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]int, queryOpts promql.LazyLoaderOpts, ruleFiles ...string) []error {
 	// Setup testing suite.
 	suite, err := promql.NewLazyLoader(nil, tg.seriesLoadingString(), queryOpts)
 	if err != nil {
@@ -325,7 +325,7 @@ func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]i
 					expString := indentLines(expAlerts.String(), "            ")
 					gotString := indentLines(gotAlerts.String(), "            ")
 
-					if showDiff {
+					if diffFlag {
 						// If empty, populates an empty value
 						if gotAlerts.Len() == 0 {
 							gotAlerts = append(gotAlerts, labelAndAnnotation{
