@@ -21,7 +21,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -41,11 +40,11 @@ import (
 
 // RulesUnitTest does unit testing of rules based on the unit testing files provided.
 // More info about the file format can be found in the docs.
-func RulesUnitTest(queryOpts promql.LazyLoaderOpts, files ...string) int {
+func RulesUnitTest(queryOpts promql.LazyLoaderOpts, showDiff *bool, files ...string) int {
 	failed := false
 
 	for _, f := range files {
-		if errs := ruleUnitTest(f, queryOpts); errs != nil {
+		if errs := ruleUnitTest(f, *showDiff, queryOpts); errs != nil {
 			fmt.Fprintln(os.Stderr, "  FAILED:")
 			for _, e := range errs {
 				fmt.Fprintln(os.Stderr, e.Error())
@@ -63,7 +62,7 @@ func RulesUnitTest(queryOpts promql.LazyLoaderOpts, files ...string) int {
 	return successExitCode
 }
 
-func ruleUnitTest(filename string, queryOpts promql.LazyLoaderOpts) []error {
+func ruleUnitTest(filename string, showDiff bool, queryOpts promql.LazyLoaderOpts) []error {
 	fmt.Println("Unit Testing: ", filename)
 
 	b, err := os.ReadFile(filename)
@@ -98,7 +97,7 @@ func ruleUnitTest(filename string, queryOpts promql.LazyLoaderOpts) []error {
 	// Testing.
 	var errs []error
 	for _, t := range unitTestInp.Tests {
-		ers := t.test(evalInterval, groupOrderMap, queryOpts, unitTestInp.RuleFiles...)
+		ers := t.test(evalInterval, groupOrderMap, showDiff, queryOpts, unitTestInp.RuleFiles...)
 		if ers != nil {
 			errs = append(errs, ers...)
 		}
@@ -154,7 +153,7 @@ type testGroup struct {
 }
 
 // test performs the unit tests.
-func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]int, queryOpts promql.LazyLoaderOpts, ruleFiles ...string) []error {
+func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]int, showDiff bool, queryOpts promql.LazyLoaderOpts, ruleFiles ...string) []error {
 	// Setup testing suite.
 	suite, err := promql.NewLazyLoader(nil, tg.seriesLoadingString(), queryOpts)
 	if err != nil {
@@ -326,43 +325,43 @@ func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]i
 					expString := indentLines(expAlerts.String(), "            ")
 					gotString := indentLines(gotAlerts.String(), "            ")
 
-					// If empty, populates an empty value
-					if gotAlerts.Len() == 0 {
-						gotAlerts = append(gotAlerts, labelAndAnnotation{
-							Labels:      labels.Labels{},
-							Annotations: labels.Labels{},
-						})
-					}
-					// If empty, populates an empty value
-					if expAlerts.Len() == 0 {
-						expAlerts = append(expAlerts, labelAndAnnotation{
-							Labels:      labels.Labels{},
-							Annotations: labels.Labels{},
-						})
-					}
-
-					diffOpts := jsondiff.DefaultConsoleOptions()
-					expAlertsJSON, err := json.Marshal(expAlerts)
-					if err != nil {
-						errs = append(errs, fmt.Errorf("alertName: %s\nError converting expAlert to JSON: %v", tg.TestGroupName, expAlerts.String()))
-						continue
-					}
-
-					gotAlertsJSON, err := json.Marshal(gotAlerts)
-					if err != nil {
-						errs = append(errs, fmt.Errorf("alertName: %s\nError converting gotAlert to JSON: %v", tg.TestGroupName, gotAlerts.String()))
-						continue
-					}
-
-					res, diff := jsondiff.Compare(expAlertsJSON, gotAlertsJSON, &diffOpts)
-					if res != jsondiff.FullMatch {
-						if runtime.GOOS == "windows" {
-							errs = append(errs, fmt.Errorf("%s    alertname: %s, time: %s, \n        exp:%v, \n        got:%v",
-								testName, testcase.Alertname, testcase.EvalTime.String(), expString, gotString))
-						} else {
-							errs = append(errs, fmt.Errorf("%s    alertname: %s, time: %s, \n        diff:%v",
-								testName, testcase.Alertname, testcase.EvalTime.String(), diff))
+					if showDiff {
+						// If empty, populates an empty value
+						if gotAlerts.Len() == 0 {
+							gotAlerts = append(gotAlerts, labelAndAnnotation{
+								Labels:      labels.Labels{},
+								Annotations: labels.Labels{},
+							})
 						}
+						// If empty, populates an empty value
+						if expAlerts.Len() == 0 {
+							expAlerts = append(expAlerts, labelAndAnnotation{
+								Labels:      labels.Labels{},
+								Annotations: labels.Labels{},
+							})
+						}
+
+						diffOpts := jsondiff.DefaultConsoleOptions()
+						expAlertsJSON, err := json.Marshal(expAlerts)
+						if err != nil {
+							errs = append(errs, fmt.Errorf("alertName: %s\nError converting expAlert to JSON: %v", tg.TestGroupName, expAlerts.String()))
+							continue
+						}
+
+						gotAlertsJSON, err := json.Marshal(gotAlerts)
+						if err != nil {
+							errs = append(errs, fmt.Errorf("alertName: %s\nError converting gotAlert to JSON: %v", tg.TestGroupName, gotAlerts.String()))
+							continue
+						}
+
+						res, diff := jsondiff.Compare(expAlertsJSON, gotAlertsJSON, &diffOpts)
+						if res != jsondiff.FullMatch {
+							errs = append(errs, fmt.Errorf("%s    alertname: %s, time: %s, \n        exp:%v, \n        got:%v, \n diff: %v",
+								testName, testcase.Alertname, testcase.EvalTime.String(), expString, gotString, diff))
+						}
+					} else {
+						errs = append(errs, fmt.Errorf("%s    alertname: %s, time: %s, \n        exp:%v, \n        got:%v",
+							testName, testcase.Alertname, testcase.EvalTime.String(), expString, gotString))
 					}
 				}
 			}
