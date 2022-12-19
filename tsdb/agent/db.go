@@ -65,7 +65,7 @@ type Options struct {
 	// WALSegmentSize > 0, segment size is WALSegmentSize.
 	WALSegmentSize int
 
-	// WALCompression will turn on Snappy compression for records on the WAL.
+	// WALCompression configures the compression type to use on records in the WAL.
 	WALCompression wlog.CompressionType
 
 	// StripeSize is the size (power of 2) in entries of the series hash map. Reducing the size will save memory but impact performance.

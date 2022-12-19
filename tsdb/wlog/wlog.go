@@ -173,14 +173,16 @@ const (
 	CompressionZstd   CompressionType = "zstd"
 )
 
-func ParseCompressionType(v string) CompressionType {
-	if v == "snappy" {
+// ParseCompressionType parses the two compression-related configuration values and returns the CompressionType. If
+// compression is enabled but the compressType is unrecognized, we default to Snappy compression.
+func ParseCompressionType(compress bool, compressType string) CompressionType {
+	if compress {
+		if compressType == "zstd" {
+			return CompressionZstd
+		}
 		return CompressionSnappy
-	} else if v == "zstd" {
-		return CompressionZstd
-	} else {
-		return CompressionNone
 	}
+	return CompressionNone
 }
 
 // WL is a write log that stores records in segment files.
