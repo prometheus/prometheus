@@ -1920,20 +1920,22 @@ func (s *memSeries) maxTime() int64 {
 // have no timestamp at or after mint.
 // Chunk IDs remain unchanged.
 func (s *memSeries) truncateChunksBefore(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) int {
+	var newHeadChunks []*memChunk
 	var removedInOrder int
-	for i, c := range s.headChunks {
+	for _, c := range s.headChunks {
 		if c.maxTime >= mint {
-			break
+			newHeadChunks = append(newHeadChunks, c)
+		} else {
+			removedInOrder++
 		}
-		removedInOrder = i + 1
 	}
 	if removedInOrder > 0 {
 		s.firstChunkID += chunks.HeadChunkID(removedInOrder + len(s.mmappedChunks))
-		s.headChunks = append(s.headChunks[:0], s.headChunks[removedInOrder:]...)
+		s.headChunks = newHeadChunks
 		// If head chunk is truncated, we can truncate all mmapped chunks.
-		removedInOrder += len(s.mmappedChunks)
 		s.mmappedChunks = nil
 	}
+
 	if len(s.mmappedChunks) > 0 {
 		for i, c := range s.mmappedChunks {
 			if c.maxTime >= mint {
