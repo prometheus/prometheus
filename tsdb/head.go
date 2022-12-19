@@ -1490,7 +1490,7 @@ func (h *Head) compactable() bool {
 // Close flushes the WAL and closes the head.
 // It also takes a snapshot of in-memory chunks if enabled.
 func (h *Head) Close() error {
-	h.series.mmapHeadChunks(h.chunkDiskMapper)
+	h.mmapHeadChunks()
 	h.closedMtx.Lock()
 	defer h.closedMtx.Unlock()
 	h.closed = true
@@ -1552,8 +1552,19 @@ func (h *Head) getOrCreateWithID(id chunks.HeadSeriesRef, hash uint64, lset labe
 }
 
 func (h *Head) mmapHeadChunks() {
+	var mmapped int
 	start := time.Now()
-	mmapped := h.series.mmapHeadChunks(h.chunkDiskMapper)
+	for i := 0; i < h.series.size; i++ {
+		h.series.locks[i].RLock()
+		for _, all := range h.series.hashes[i] {
+			for _, series := range all {
+				series.Lock()
+				mmapped += series.mmapHeadChunks(h.chunkDiskMapper)
+				series.Unlock()
+			}
+		}
+		h.series.locks[i].RUnlock()
+	}
 	if mmapped > 0 {
 		level.Info(h.logger).Log("msg", "Finished mmapping head chunks", "chunks", mmapped, "duration", time.Since(start).String())
 	}
@@ -1734,21 +1745,6 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 	}
 
 	return deleted, rmChunks, actualMint, minOOOTime, minMmapFile
-}
-
-func (s *stripeSeries) mmapHeadChunks(chunkDiskMapper *chunks.ChunkDiskMapper) (mmapped int) {
-	for i := 0; i < s.size; i++ {
-		s.locks[i].RLock()
-		for _, all := range s.hashes[i] {
-			for _, series := range all {
-				series.Lock()
-				mmapped += series.mmapHeadChunks(chunkDiskMapper)
-				series.Unlock()
-			}
-		}
-		s.locks[i].RUnlock()
-	}
-	return
 }
 
 func (s *stripeSeries) getByID(id chunks.HeadSeriesRef) *memSeries {

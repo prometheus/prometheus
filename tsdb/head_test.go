@@ -2947,7 +2947,7 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 	}
 	require.NoError(t, app.Commit())
 
-	head.series.mmapHeadChunks(head.chunkDiskMapper)
+	head.mmapHeadChunks()
 	// There should be 3 mmap chunks in s1.
 	ms := head.series.getByHash(s1.Hash(), s1)
 	require.Len(t, ms.mmappedChunks, 3)
@@ -3432,7 +3432,7 @@ func TestHistogramStaleSample(t *testing.T) {
 	expHistograms = append(expHistograms, timedHistogram{100*int64(len(expHistograms)) + 1, &histogram.Histogram{Sum: math.Float64frombits(value.StaleNaN)}})
 	require.NoError(t, app.Commit())
 
-	head.series.mmapHeadChunks(head.chunkDiskMapper)
+	head.mmapHeadChunks()
 	// Total 2 chunks, 1 m-mapped.
 	s = head.series.getByHash(l.Hash(), l)
 	require.NotNil(t, s)
@@ -3463,7 +3463,7 @@ func TestHistogramCounterResetHeader(t *testing.T) {
 
 		ms, _, err := head.getOrCreate(l.Hash(), l)
 		require.NoError(t, err)
-		head.series.mmapHeadChunks(head.chunkDiskMapper)
+		head.mmapHeadChunks()
 		require.Len(t, ms.mmappedChunks, len(expHeaders)-1) // One is the head chunk.
 
 		for i, mmapChunk := range ms.mmappedChunks {
@@ -3587,7 +3587,7 @@ func TestAppendingDifferentEncodingToSameSeries(t *testing.T) {
 		require.NoError(t, err)
 		require.False(t, created)
 		require.NotNil(t, ms)
-		db.Head().series.mmapHeadChunks(db.Head().chunkDiskMapper)
+		db.Head().mmapHeadChunks()
 		require.Len(t, ms.mmappedChunks, count-1) // One will be the head chunk.
 	}
 
@@ -4151,7 +4151,7 @@ func TestReplayAfterMmapReplayError(t *testing.T) {
 	require.NoError(t, f.Close())
 
 	openHead()
-	h.series.mmapHeadChunks(h.chunkDiskMapper)
+	h.mmapHeadChunks()
 
 	// There should be less m-map files due to corruption.
 	files, err = os.ReadDir(filepath.Join(dir, "chunks_head"))

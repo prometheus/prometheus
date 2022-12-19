@@ -1499,7 +1499,7 @@ func TestSizeRetention(t *testing.T) {
 		}
 	}
 	require.NoError(t, headApp.Commit())
-	db.Head().series.mmapHeadChunks(db.Head().chunkDiskMapper)
+	db.Head().mmapHeadChunks()
 
 	require.Eventually(t, func() bool {
 		return db.Head().chunkDiskMapper.IsQueueEmpty()
