@@ -26,6 +26,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/alertmanager/api/v2/models"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -211,6 +212,21 @@ func TestHandlerSendAll(t *testing.T) {
 	status2.Store(int32(http.StatusInternalServerError))
 	require.False(t, h.sendAll(h.queue...), "all sends succeeded unexpectedly")
 	checkNoErr()
+}
+
+func TestHandlerSendAll_NoConfiguredAlertmanagers(t *testing.T) {
+	logger := &testLogger{}
+
+	h := NewManager(&Options{}, logger)
+	h.alertmanagers = map[string]*alertmanagerSet{}
+
+	h.queue = append(h.queue, &Alert{
+		Labels: labels.FromStrings("alertname", "test-alert"),
+	})
+
+	require.False(t, h.sendAll(h.queue...))
+	require.Len(t, logger.logged, 1)
+	require.Equal(t, logger.logged[0], []interface{}{"level", level.WarnValue(), "msg", "Attempted to send one or more alerts to Alertmanager, but no Alertmanagers are configured."})
 }
 
 func TestCustomDo(t *testing.T) {
@@ -686,4 +702,13 @@ func TestHangingNotifier(t *testing.T) {
 			}
 		})
 	}
+}
+
+type testLogger struct {
+	logged [][]interface{}
+}
+
+func (t *testLogger) Log(keyvals ...interface{}) error {
+	t.logged = append(t.logged, keyvals)
+	return nil
 }

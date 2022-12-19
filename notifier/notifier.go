@@ -469,6 +469,11 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 	amSets := n.alertmanagers
 	n.mtx.RUnlock()
 
+	if len(amSets) == 0 {
+		level.Warn(n.logger).Log("msg", "Attempted to send one or more alerts to Alertmanager, but no Alertmanagers are configured.")
+		return false
+	}
+
 	var (
 		wg         sync.WaitGroup
 		numSuccess atomic.Uint64
