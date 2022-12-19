@@ -1551,6 +1551,14 @@ func (h *Head) getOrCreateWithID(id chunks.HeadSeriesRef, hash uint64, lset labe
 	return s, true, nil
 }
 
+func (h *Head) mmapHeadChunks() {
+	start := time.Now()
+	mmapped := h.series.mmapHeadChunks(h.chunkDiskMapper)
+	if mmapped > 0 {
+		level.Info(h.logger).Log("msg", "Finished mmapping head chunks", "chunks", mmapped, "duration", time.Since(start).String())
+	}
+}
+
 // seriesHashmap is a simple hashmap for memSeries by their label set. It is built
 // on top of a regular hashmap and holds a slice of series to resolve hash collisions.
 // Its methods require the hash to be submitted with it to avoid re-computations throughout
