@@ -209,10 +209,11 @@ func StreamChunkedReadResponses(
 		iter = series.Iterator(iter)
 		lbls = MergeLabels(labelsToLabelsProto(series.Labels(), lbls), sortedExternalLabels)
 
-		frameBytesLeft := maxBytesInFrame
+		maxDataLength := maxBytesInFrame
 		for _, lbl := range lbls {
-			frameBytesLeft -= lbl.Size()
+			maxDataLength -= lbl.Size()
 		}
+		frameBytesLeft := maxDataLength
 
 		isNext := iter.Next()
 
@@ -258,6 +259,7 @@ func StreamChunkedReadResponses(
 			// We immediately flush the Write() so it is safe to return to the pool.
 			marshalPool.Put(&b)
 			chks = chks[:0]
+			frameBytesLeft = maxDataLength
 		}
 		if err := iter.Err(); err != nil {
 			return ss.Warnings(), err
