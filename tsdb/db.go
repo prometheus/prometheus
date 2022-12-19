@@ -899,6 +899,12 @@ func (db *DB) run() {
 			case db.compactc <- struct{}{}:
 			default:
 			}
+
+			// Save memory by mmapping all but last chunk for all time series with multiple chunks'
+			// stored in series.headChunks.
+			// We need to keep last chunk around so it can receive appends, but every other chunk
+			// holds older samples and so is only used for reads and so can be safely mmapped.
+			db.head.mmapHeadChunks()
 		case <-db.compactc:
 			db.metrics.compactionsTriggered.Inc()
 
@@ -1105,9 +1111,6 @@ func (db *DB) Compact() (returnErr error) {
 		return err
 	}
 
-	// At the very end mmap all but last head chunk to save memory
-	db.head.mmapHeadChunks()
-
 	return nil
 }
 
@@ -1225,7 +1228,6 @@ func (db *DB) compactOOO(dest string, oooHead *OOOCompactionHead) (_ []ulid.ULID
 // compactHead compacts the given RangeHead.
 // The compaction mutex should be held before calling this method.
 func (db *DB) compactHead(head *RangeHead) error {
-	db.head.mmapHeadChunks()
 	uid, err := db.compactor.Write(db.dir, head, head.MinTime(), head.BlockMaxTime(), nil)
 	if err != nil {
 		return errors.Wrap(err, "persist head block")
@@ -1276,8 +1278,6 @@ func (db *DB) compactBlocks() (err error) {
 			}
 			return errors.Wrap(err, "reloadBlocks blocks")
 		}
-
-		db.head.mmapHeadChunks()
 	}
 
 	return nil

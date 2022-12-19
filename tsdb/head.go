@@ -1490,10 +1490,13 @@ func (h *Head) compactable() bool {
 // Close flushes the WAL and closes the head.
 // It also takes a snapshot of in-memory chunks if enabled.
 func (h *Head) Close() error {
-	h.mmapHeadChunks()
 	h.closedMtx.Lock()
 	defer h.closedMtx.Unlock()
 	h.closed = true
+
+	// mmap all but last chunk in case we're performing snapshot since that only
+	// takes samples from head chunk
+	h.mmapHeadChunks()
 
 	errs := tsdb_errors.NewMulti(h.chunkDiskMapper.Close())
 	if errs.Err() == nil && h.opts.EnableMemorySnapshotOnShutdown {

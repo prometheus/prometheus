@@ -235,6 +235,7 @@ func TestNoPanicAfterWALCorruption(t *testing.T) {
 			require.NoError(t, app.Commit())
 			maxt++
 		}
+		db.head.mmapHeadChunks()
 		require.NoError(t, db.Close())
 	}
 
@@ -5787,12 +5788,14 @@ func TestDiskFillingUpAfterDisablingOOO(t *testing.T) {
 
 	// Check that m-map files gets deleted properly after compactions.
 
+	db.head.mmapHeadChunks()
 	checkMmapFileContents([]string{"000001", "000002"}, nil)
 	require.NoError(t, db.Compact())
 	checkMmapFileContents([]string{"000002"}, []string{"000001"})
 	require.Equal(t, 0, len(ms.oooMmappedChunks), "OOO mmap chunk was not compacted")
 
 	addSamples(501, 650)
+	db.head.mmapHeadChunks()
 	checkMmapFileContents([]string{"000002", "000003"}, []string{"000001"})
 	require.NoError(t, db.Compact())
 	checkMmapFileContents(nil, []string{"000001", "000002", "000003"})
