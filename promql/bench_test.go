@@ -27,17 +27,7 @@ import (
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
-func BenchmarkRangeQuery(b *testing.B) {
-	stor := teststorage.New(b)
-	defer stor.Close()
-	opts := EngineOpts{
-		Logger:     nil,
-		Reg:        nil,
-		MaxSamples: 50000000,
-		Timeout:    100 * time.Second,
-	}
-	engine := NewEngine(opts)
-
+func setupRangeQueryTestData(stor *teststorage.TestStorage, engine *Engine, interval, numIntervals int) error {
 	metrics := []labels.Labels{}
 	metrics = append(metrics, labels.FromStrings("__name__", "a_one"))
 	metrics = append(metrics, labels.FromStrings("__name__", "b_one"))
@@ -65,25 +55,26 @@ func BenchmarkRangeQuery(b *testing.B) {
 	}
 	refs := make([]storage.SeriesRef, len(metrics))
 
-	// A day of data plus 10k steps.
-	numIntervals := 8640 + 10000
-
 	for s := 0; s < numIntervals; s++ {
 		a := stor.Appender(context.Background())
-		ts := int64(s * 10000) // 10s interval.
+		ts := int64(s * interval)
 		for i, metric := range metrics {
 			ref, _ := a.Append(refs[i], metric, ts, float64(s)+float64(i)/float64(len(metrics)))
 			refs[i] = ref
 		}
 		if err := a.Commit(); err != nil {
-			b.Fatal(err)
+			return err
 		}
 	}
+	return nil
+}
 
-	type benchCase struct {
-		expr  string
-		steps int
-	}
+type benchCase struct {
+	expr  string
+	steps int
+}
+
+func rangeQueryCases() []benchCase {
 	cases := []benchCase{
 		// Plain retrieval.
 		{
@@ -210,7 +201,30 @@ func BenchmarkRangeQuery(b *testing.B) {
 			tmp = append(tmp, benchCase{expr: c.expr, steps: 1000})
 		}
 	}
-	cases = tmp
+	return tmp
+}
+
+func BenchmarkRangeQuery(b *testing.B) {
+	stor := teststorage.New(b)
+	defer stor.Close()
+	opts := EngineOpts{
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 50000000,
+		Timeout:    100 * time.Second,
+	}
+	engine := NewEngine(opts)
+
+	const interval = 10000 // 10s interval.
+	// A day of data plus 10k steps.
+	numIntervals := 8640 + 10000
+
+	err := setupRangeQueryTestData(stor, engine, interval, numIntervals)
+	if err != nil {
+		b.Fatal(err)
+	}
+	cases := rangeQueryCases()
+
 	for _, c := range cases {
 		name := fmt.Sprintf("expr=%s,steps=%d", c.expr, c.steps)
 		b.Run(name, func(b *testing.B) {
