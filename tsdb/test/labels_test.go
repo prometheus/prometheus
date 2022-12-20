@@ -58,9 +58,7 @@ func BenchmarkLabelsClone(b *testing.B) {
 	l := labels.FromMap(m)
 
 	for i := 0; i < b.N; i++ {
-		res := make(labels.Labels, len(l))
-		copy(res, l)
-		l = res
+		l = l.Copy()
 	}
 }
 
@@ -106,13 +104,13 @@ func BenchmarkLabelSetAccess(b *testing.B) {
 
 	var v string
 
-	for _, l := range ls {
+	ls.Range(func(l labels.Label) {
 		b.Run(l.Name, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				v = ls.Get(l.Name)
 			}
 		})
-	}
+	})
 
 	_ = v
 }

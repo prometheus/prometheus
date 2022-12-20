@@ -68,14 +68,14 @@ func (m mockIndex) AddSeries(ref storage.SeriesRef, l labels.Labels, chunks ...c
 	if _, ok := m.series[ref]; ok {
 		return errors.Errorf("series with reference %d already added", ref)
 	}
-	for _, lbl := range l {
+	l.Range(func(lbl labels.Label) {
 		m.symbols[lbl.Name] = struct{}{}
 		m.symbols[lbl.Value] = struct{}{}
 		if _, ok := m.postings[lbl]; !ok {
 			m.postings[lbl] = []storage.SeriesRef{}
 		}
 		m.postings[lbl] = append(m.postings[lbl], ref)
-	}
+	})
 	m.postings[allPostingsKey] = append(m.postings[allPostingsKey], ref)
 
 	s := series{l: l}
@@ -124,12 +124,12 @@ func (m mockIndex) SortedPostings(p Postings) Postings {
 	return NewListPostings(ep)
 }
 
-func (m mockIndex) Series(ref storage.SeriesRef, lset *labels.Labels, chks *[]chunks.Meta) error {
+func (m mockIndex) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
 	s, ok := m.series[ref]
 	if !ok {
 		return errors.New("not found")
 	}
-	*lset = append((*lset)[:0], s.l...)
+	builder.Assign(s.l)
 	*chks = append((*chks)[:0], s.chunks...)
 
 	return nil
@@ -197,15 +197,15 @@ func TestIndexRW_Postings(t *testing.T) {
 	p, err := ir.Postings("a", "1")
 	require.NoError(t, err)
 
-	var l labels.Labels
 	var c []chunks.Meta
+	var builder labels.ScratchBuilder
 
 	for i := 0; p.Next(); i++ {
-		err := ir.Series(p.At(), &l, &c)
+		err := ir.Series(p.At(), &builder, &c)
 
 		require.NoError(t, err)
 		require.Equal(t, 0, len(c))
-		require.Equal(t, series[i], l)
+		require.Equal(t, series[i], builder.Labels())
 	}
 	require.NoError(t, p.Err())
 
@@ -311,16 +311,16 @@ func TestPostingsMany(t *testing.T) {
 		{in: []string{"126a", "126b", "127", "127a", "127b", "128", "128a", "128b", "129", "129a", "129b"}},
 	}
 
+	var builder labels.ScratchBuilder
 	for _, c := range cases {
 		it, err := ir.Postings("i", c.in...)
 		require.NoError(t, err)
 
 		got := []string{}
-		var lbls labels.Labels
 		var metas []chunks.Meta
 		for it.Next() {
-			require.NoError(t, ir.Series(it.At(), &lbls, &metas))
-			got = append(got, lbls.Get("i"))
+			require.NoError(t, ir.Series(it.At(), &builder, &metas))
+			got = append(got, builder.Labels().Get("i"))
 		}
 		require.NoError(t, it.Err())
 		exp := []string{}
@@ -344,10 +344,10 @@ func TestPersistence_index_e2e(t *testing.T) {
 
 	symbols := map[string]struct{}{}
 	for _, lset := range lbls {
-		for _, l := range lset {
+		lset.Range(func(l labels.Label) {
 			symbols[l.Name] = struct{}{}
 			symbols[l.Value] = struct{}{}
-		}
+		})
 	}
 
 	var input indexWriterSeriesSlice
@@ -395,14 +395,14 @@ func TestPersistence_index_e2e(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, mi.AddSeries(storage.SeriesRef(i), s.labels, s.chunks...))
 
-		for _, l := range s.labels {
+		s.labels.Range(func(l labels.Label) {
 			valset, ok := values[l.Name]
 			if !ok {
 				valset = map[string]struct{}{}
 				values[l.Name] = valset
 			}
 			valset[l.Value] = struct{}{}
-		}
+		})
 		postings.Add(storage.SeriesRef(i), s.labels)
 	}
 
@@ -419,20 +419,20 @@ func TestPersistence_index_e2e(t *testing.T) {
 		expp, err := mi.Postings(p.Name, p.Value)
 		require.NoError(t, err)
 
-		var lset, explset labels.Labels
 		var chks, expchks []chunks.Meta
+		var builder, eBuilder labels.ScratchBuilder
 
 		for gotp.Next() {
 			require.True(t, expp.Next())
 
 			ref := gotp.At()
 
-			err := ir.Series(ref, &lset, &chks)
+			err := ir.Series(ref, &builder, &chks)
 			require.NoError(t, err)
 
-			err = mi.Series(expp.At(), &explset, &expchks)
+			err = mi.Series(expp.At(), &eBuilder, &expchks)
 			require.NoError(t, err)
-			require.Equal(t, explset, lset)
+			require.Equal(t, eBuilder.Labels(), builder.Labels())
 			require.Equal(t, expchks, chks)
 		}
 		require.False(t, expp.Next(), "Expected no more postings for %q=%q", p.Name, p.Value)

@@ -28,6 +28,7 @@ func TestRelabel(t *testing.T) {
 		input   labels.Labels
 		relabel []*Config
 		output  labels.Labels
+		drop    bool
 	}{
 		{
 			input: labels.FromMap(map[string]string{
@@ -101,7 +102,7 @@ func TestRelabel(t *testing.T) {
 					Action:       Replace,
 				},
 			},
-			output: nil,
+			drop: true,
 		},
 		{
 			input: labels.FromMap(map[string]string{
@@ -115,7 +116,7 @@ func TestRelabel(t *testing.T) {
 					Action:       Drop,
 				},
 			},
-			output: nil,
+			drop: true,
 		},
 		{
 			input: labels.FromMap(map[string]string{
@@ -177,7 +178,7 @@ func TestRelabel(t *testing.T) {
 					Action:       Keep,
 				},
 			},
-			output: nil,
+			drop: true,
 		},
 		{
 			input: labels.FromMap(map[string]string{
@@ -483,7 +484,7 @@ func TestRelabel(t *testing.T) {
 					TargetLabel:  "__port1",
 				},
 			},
-			output: nil,
+			drop: true,
 		},
 		{
 			input: labels.FromMap(map[string]string{
@@ -517,7 +518,7 @@ func TestRelabel(t *testing.T) {
 					TargetLabel:  "__port2",
 				},
 			},
-			output: nil,
+			drop: true,
 		},
 	}
 
@@ -538,8 +539,11 @@ func TestRelabel(t *testing.T) {
 			}
 		}
 
-		res := Process(test.input, test.relabel...)
-		require.Equal(t, test.output, res)
+		res, keep := Process(test.input, test.relabel...)
+		require.Equal(t, !test.drop, keep)
+		if keep {
+			require.Equal(t, test.output, res)
+		}
 	}
 }
 
@@ -721,7 +725,7 @@ func BenchmarkRelabel(b *testing.B) {
 	for _, tt := range tests {
 		b.Run(tt.name, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
-				_ = Process(tt.lbls, tt.cfgs...)
+				_, _ = Process(tt.lbls, tt.cfgs...)
 			}
 		})
 	}

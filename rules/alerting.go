@@ -146,10 +146,7 @@ func NewAlertingRule(
 	labels, annotations, externalLabels labels.Labels, externalURL string,
 	restored bool, logger log.Logger,
 ) *AlertingRule {
-	el := make(map[string]string, len(externalLabels))
-	for _, lbl := range externalLabels {
-		el[lbl.Name] = lbl.Value
-	}
+	el := externalLabels.Map()
 
 	return &AlertingRule{
 		name:                name,
@@ -217,16 +214,16 @@ func (r *AlertingRule) Annotations() labels.Labels {
 func (r *AlertingRule) sample(alert *Alert, ts time.Time) promql.Sample {
 	lb := labels.NewBuilder(r.labels)
 
-	for _, l := range alert.Labels {
+	alert.Labels.Range(func(l labels.Label) {
 		lb.Set(l.Name, l.Value)
-	}
+	})
 
 	lb.Set(labels.MetricName, alertMetricName)
 	lb.Set(labels.AlertName, r.name)
 	lb.Set(alertStateLabel, alert.State.String())
 
 	s := promql.Sample{
-		Metric: lb.Labels(nil),
+		Metric: lb.Labels(labels.EmptyLabels()),
 		Point:  promql.Point{T: timestamp.FromTime(ts), V: 1},
 	}
 	return s
@@ -236,15 +233,15 @@ func (r *AlertingRule) sample(alert *Alert, ts time.Time) promql.Sample {
 func (r *AlertingRule) forStateSample(alert *Alert, ts time.Time, v float64) promql.Sample {
 	lb := labels.NewBuilder(r.labels)
 
-	for _, l := range alert.Labels {
+	alert.Labels.Range(func(l labels.Label) {
 		lb.Set(l.Name, l.Value)
-	}
+	})
 
 	lb.Set(labels.MetricName, alertForStateMetricName)
 	lb.Set(labels.AlertName, r.name)
 
 	s := promql.Sample{
-		Metric: lb.Labels(nil),
+		Metric: lb.Labels(labels.EmptyLabels()),
 		Point:  promql.Point{T: timestamp.FromTime(ts), V: v},
 	}
 	return s
@@ -254,13 +251,13 @@ func (r *AlertingRule) forStateSample(alert *Alert, ts time.Time, v float64) pro
 func (r *AlertingRule) QueryforStateSeries(alert *Alert, q storage.Querier) (storage.Series, error) {
 	smpl := r.forStateSample(alert, time.Now(), 0)
 	var matchers []*labels.Matcher
-	for _, l := range smpl.Metric {
+	smpl.Metric.Range(func(l labels.Label) {
 		mt, err := labels.NewMatcher(labels.MatchEqual, l.Name, l.Value)
 		if err != nil {
 			panic(err)
 		}
 		matchers = append(matchers, mt)
-	}
+	})
 	sset := q.Select(false, nil, matchers...)
 
 	var s storage.Series
@@ -268,7 +265,7 @@ func (r *AlertingRule) QueryforStateSeries(alert *Alert, q storage.Querier) (sto
 		// Query assures that smpl.Metric is included in sset.At().Labels(),
 		// hence just checking the length would act like equality.
 		// (This is faster than calling labels.Compare again as we already have some info).
-		if len(sset.At().Labels()) == len(matchers) {
+		if sset.At().Labels().Len() == len(matchers) {
 			s = sset.At()
 			break
 		}
@@ -327,10 +324,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 	alerts := make(map[uint64]*Alert, len(res))
 	for _, smpl := range res {
 		// Provide the alert information to the template.
-		l := make(map[string]string, len(smpl.Metric))
-		for _, lbl := range smpl.Metric {
-			l[lbl.Name] = lbl.Value
-		}
+		l := smpl.Metric.Map()
 
 		tmplData := template.AlertTemplateData(l, r.externalLabels, r.externalURL, smpl.V)
 		// Inject some convenience variables that are easier to remember for users
@@ -363,17 +357,18 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 
 		lb := labels.NewBuilder(smpl.Metric).Del(labels.MetricName)
 
-		for _, l := range r.labels {
+		r.labels.Range(func(l labels.Label) {
 			lb.Set(l.Name, expand(l.Value))
-		}
+		})
 		lb.Set(labels.AlertName, r.Name())
 
-		annotations := make(labels.Labels, 0, len(r.annotations))
-		for _, a := range r.annotations {
-			annotations = append(annotations, labels.Label{Name: a.Name, Value: expand(a.Value)})
-		}
+		sb := labels.ScratchBuilder{}
+		r.annotations.Range(func(a labels.Label) {
+			sb.Add(a.Name, expand(a.Value))
+		})
+		annotations := sb.Labels()
 
-		lbs := lb.Labels(nil)
+		lbs := lb.Labels(labels.EmptyLabels())
 		h := lbs.Hash()
 		resultFPs[h] = struct{}{}
 

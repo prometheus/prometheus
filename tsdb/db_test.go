@@ -478,9 +478,9 @@ func TestAmendDatapointCausesError(t *testing.T) {
 	require.NoError(t, app.Commit())
 
 	app = db.Appender(ctx)
-	_, err = app.Append(0, labels.Labels{{Name: "a", Value: "b"}}, 0, 0)
+	_, err = app.Append(0, labels.FromStrings("a", "b"), 0, 0)
 	require.NoError(t, err)
-	_, err = app.Append(0, labels.Labels{{Name: "a", Value: "b"}}, 0, 1)
+	_, err = app.Append(0, labels.FromStrings("a", "b"), 0, 1)
 	require.Equal(t, storage.ErrDuplicateSampleForTimestamp, err)
 	require.NoError(t, app.Rollback())
 
@@ -498,15 +498,15 @@ func TestAmendDatapointCausesError(t *testing.T) {
 	}
 
 	app = db.Appender(ctx)
-	_, err = app.AppendHistogram(0, labels.Labels{{Name: "a", Value: "c"}}, 0, h.Copy())
+	_, err = app.AppendHistogram(0, labels.FromStrings("a", "c"), 0, h.Copy())
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
 	app = db.Appender(ctx)
-	_, err = app.AppendHistogram(0, labels.Labels{{Name: "a", Value: "c"}}, 0, h.Copy())
+	_, err = app.AppendHistogram(0, labels.FromStrings("a", "c"), 0, h.Copy())
 	require.NoError(t, err)
 	h.Schema = 2
-	_, err = app.AppendHistogram(0, labels.Labels{{Name: "a", Value: "c"}}, 0, h.Copy())
+	_, err = app.AppendHistogram(0, labels.FromStrings("a", "c"), 0, h.Copy())
 	require.Equal(t, storage.ErrDuplicateSampleForTimestamp, err)
 	require.NoError(t, app.Rollback())
 }
@@ -1830,6 +1830,8 @@ func TestChunkAtBlockBoundary(t *testing.T) {
 	err = db.Compact()
 	require.NoError(t, err)
 
+	var builder labels.ScratchBuilder
+
 	for _, block := range db.Blocks() {
 		r, err := block.Index()
 		require.NoError(t, err)
@@ -1841,15 +1843,12 @@ func TestChunkAtBlockBoundary(t *testing.T) {
 		p, err := r.Postings(k, v)
 		require.NoError(t, err)
 
-		var (
-			lset labels.Labels
-			chks []chunks.Meta
-		)
+		var chks []chunks.Meta
 
 		chunkCount := 0
 
 		for p.Next() {
-			err = r.Series(p.At(), &lset, &chks)
+			err = r.Series(p.At(), &builder, &chks)
 			require.NoError(t, err)
 			for _, c := range chks {
 				require.True(t, meta.MinTime <= c.MinTime && c.MaxTime <= meta.MaxTime,

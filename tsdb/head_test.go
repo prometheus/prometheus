@@ -388,7 +388,12 @@ func TestHead_HighConcurrencyReadAndWrite(t *testing.T) {
 
 				querySeriesRef = (querySeriesRef + 1) % seriesCnt
 				lbls := labelSets[querySeriesRef]
-				samples, err := queryHead(ts-qryRange, ts, lbls[0])
+				// lbls has a single entry; extract it so we can run a query.
+				var lbl labels.Label
+				lbls.Range(func(l labels.Label) {
+					lbl = l
+				})
+				samples, err := queryHead(ts-qryRange, ts, lbl)
 				if err != nil {
 					return false, err
 				}
@@ -1133,8 +1138,9 @@ func TestDelete_e2e(t *testing.T) {
 			require.NoError(t, hb.Delete(r.Mint, r.Maxt, del.ms...))
 		}
 		matched := labels.Slice{}
-		for _, ls := range lbls {
+		for _, l := range lbls {
 			s := labels.Selector(del.ms)
+			ls := labels.New(l...)
 			if s.Matches(ls) {
 				matched = append(matched, ls)
 			}
@@ -1446,12 +1452,12 @@ func TestGCChunkAccess(t *testing.T) {
 
 	idx := h.indexRange(0, 1500)
 	var (
-		lset   labels.Labels
-		chunks []chunks.Meta
+		chunks  []chunks.Meta
+		builder labels.ScratchBuilder
 	)
-	require.NoError(t, idx.Series(1, &lset, &chunks))
+	require.NoError(t, idx.Series(1, &builder, &chunks))
 
-	require.Equal(t, labels.FromStrings("a", "1"), lset)
+	require.Equal(t, labels.FromStrings("a", "1"), builder.Labels())
 	require.Equal(t, 2, len(chunks))
 
 	cr, err := h.chunksRange(0, 1500, nil)
@@ -1499,12 +1505,12 @@ func TestGCSeriesAccess(t *testing.T) {
 
 	idx := h.indexRange(0, 2000)
 	var (
-		lset   labels.Labels
-		chunks []chunks.Meta
+		chunks  []chunks.Meta
+		builder labels.ScratchBuilder
 	)
-	require.NoError(t, idx.Series(1, &lset, &chunks))
+	require.NoError(t, idx.Series(1, &builder, &chunks))
 
-	require.Equal(t, labels.FromStrings("a", "1"), lset)
+	require.Equal(t, labels.FromStrings("a", "1"), builder.Labels())
 	require.Equal(t, 2, len(chunks))
 
 	cr, err := h.chunksRange(0, 2000, nil)
@@ -2806,7 +2812,7 @@ func TestWaitForPendingReadersInTimeRange(t *testing.T) {
 }
 
 func TestAppendHistogram(t *testing.T) {
-	l := labels.Labels{{Name: "a", Value: "b"}}
+	l := labels.FromStrings("a", "b")
 	for _, numHistograms := range []int{1, 10, 150, 200, 250, 300} {
 		t.Run(fmt.Sprintf("%d", numHistograms), func(t *testing.T) {
 			head, _ := newTestHead(t, 1000, false, false)
@@ -2861,7 +2867,7 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 	require.NoError(t, head.Init(0))
 
 	// Series with only histograms.
-	s1 := labels.Labels{{Name: "a", Value: "b1"}}
+	s1 := labels.FromStrings("a", "b1")
 	k1 := s1.String()
 	numHistograms := 450
 	exp := map[string][]tsdbutil.Sample{}
@@ -2893,7 +2899,7 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 	require.Greater(t, expHeadChunkSamples, 0)
 
 	// Series with mix of histograms and float.
-	s2 := labels.Labels{{Name: "a", Value: "b2"}}
+	s2 := labels.FromStrings("a", "b2")
 	k2 := s2.String()
 	app = head.Appender(context.Background())
 	ts := 0
@@ -3254,7 +3260,7 @@ func TestHistogramMetrics(t *testing.T) {
 
 	for x := 0; x < 5; x++ {
 		expHSeries++
-		l := labels.Labels{{Name: "a", Value: fmt.Sprintf("b%d", x)}}
+		l := labels.FromStrings("a", fmt.Sprintf("b%d", x))
 		for i, h := range GenerateTestHistograms(10) {
 			app := head.Appender(context.Background())
 			_, err := app.AppendHistogram(0, l, int64(i), h)
@@ -3277,7 +3283,7 @@ func TestHistogramMetrics(t *testing.T) {
 }
 
 func TestHistogramStaleSample(t *testing.T) {
-	l := labels.Labels{{Name: "a", Value: "b"}}
+	l := labels.FromStrings("a", "b")
 	numHistograms := 20
 	head, _ := newTestHead(t, 100000, false, false)
 	t.Cleanup(func() {
@@ -3372,7 +3378,7 @@ func TestHistogramStaleSample(t *testing.T) {
 }
 
 func TestHistogramCounterResetHeader(t *testing.T) {
-	l := labels.Labels{{Name: "a", Value: "b"}}
+	l := labels.FromStrings("a", "b")
 	head, _ := newTestHead(t, 1000, false, false)
 	t.Cleanup(func() {
 		require.NoError(t, head.Close())
@@ -3484,7 +3490,7 @@ func TestAppendingDifferentEncodingToSameSeries(t *testing.T) {
 	db.DisableCompactions()
 
 	hists := GenerateTestHistograms(10)
-	lbls := labels.Labels{{Name: "a", Value: "b"}}
+	lbls := labels.FromStrings("a", "b")
 
 	type result struct {
 		t  int64

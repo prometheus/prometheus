@@ -36,10 +36,6 @@ func TestLabels_String(t *testing.T) {
 			lables:   Labels{},
 			expected: "{}",
 		},
-		{
-			lables:   nil,
-			expected: "{}",
-		},
 	}
 	for _, c := range cases {
 		str := c.lables.String()
@@ -316,18 +312,18 @@ func TestLabels_Equal(t *testing.T) {
 
 func TestLabels_FromStrings(t *testing.T) {
 	labels := FromStrings("aaa", "111", "bbb", "222")
-	expected := Labels{
-		{
-			Name:  "aaa",
-			Value: "111",
-		},
-		{
-			Name:  "bbb",
-			Value: "222",
-		},
-	}
-
-	require.Equal(t, expected, labels, "unexpected labelset")
+	x := 0
+	labels.Range(func(l Label) {
+		switch x {
+		case 0:
+			require.Equal(t, Label{Name: "aaa", Value: "111"}, l, "unexpected value")
+		case 1:
+			require.Equal(t, Label{Name: "bbb", Value: "222"}, l, "unexpected value")
+		default:
+			t.Fatalf("unexpected labelset value %d: %v", x, l)
+		}
+		x++
+	})
 
 	require.Panics(t, func() { FromStrings("aaa", "111", "bbb") }) //nolint:staticcheck // Ignore SA5012, error is intentional test.
 }
@@ -539,7 +535,6 @@ func TestBuilder(t *testing.T) {
 			want: FromStrings("aaa", "111", "ccc", "333"),
 		},
 		{
-			base: nil,
 			set:  []Label{{"aaa", "111"}, {"bbb", "222"}, {"ccc", "333"}},
 			del:  []string{"bbb"},
 			want: FromStrings("aaa", "111", "ccc", "333"),
@@ -601,11 +596,49 @@ func TestBuilder(t *testing.T) {
 	}
 }
 
+func TestScratchBuilder(t *testing.T) {
+	for i, tcase := range []struct {
+		add  []Label
+		want Labels
+	}{
+		{
+			add:  []Label{},
+			want: EmptyLabels(),
+		},
+		{
+			add:  []Label{{"aaa", "111"}},
+			want: FromStrings("aaa", "111"),
+		},
+		{
+			add:  []Label{{"aaa", "111"}, {"bbb", "222"}, {"ccc", "333"}},
+			want: FromStrings("aaa", "111", "bbb", "222", "ccc", "333"),
+		},
+		{
+			add:  []Label{{"bbb", "222"}, {"aaa", "111"}, {"ccc", "333"}},
+			want: FromStrings("aaa", "111", "bbb", "222", "ccc", "333"),
+		},
+		{
+			add:  []Label{{"ddd", "444"}},
+			want: FromStrings("ddd", "444"),
+		},
+	} {
+		t.Run(fmt.Sprint(i), func(t *testing.T) {
+			b := ScratchBuilder{}
+			for _, lbl := range tcase.add {
+				b.Add(lbl.Name, lbl.Value)
+			}
+			b.Sort()
+			require.Equal(t, tcase.want, b.Labels())
+			b.Assign(tcase.want)
+			require.Equal(t, tcase.want, b.Labels())
+		})
+	}
+}
+
 func TestLabels_Hash(t *testing.T) {
 	lbls := FromStrings("foo", "bar", "baz", "qux")
 	require.Equal(t, lbls.Hash(), lbls.Hash())
-	require.NotEqual(t, lbls.Hash(), Labels{lbls[1], lbls[0]}.Hash(), "unordered labels match.")
-	require.NotEqual(t, lbls.Hash(), Labels{lbls[0]}.Hash(), "different labels match.")
+	require.NotEqual(t, lbls.Hash(), FromStrings("foo", "bar").Hash(), "different labels match.")
 }
 
 var benchmarkLabelsResult uint64
@@ -623,7 +656,7 @@ func BenchmarkLabels_Hash(b *testing.B) {
 					// Label ~20B name, 50B value.
 					b.Set(fmt.Sprintf("abcdefghijabcdefghijabcdefghij%d", i), fmt.Sprintf("abcdefghijabcdefghijabcdefghijabcdefghijabcdefghij%d", i))
 				}
-				return b.Labels(nil)
+				return b.Labels(EmptyLabels())
 			}(),
 		},
 		{
@@ -634,7 +667,7 @@ func BenchmarkLabels_Hash(b *testing.B) {
 					// Label ~50B name, 50B value.
 					b.Set(fmt.Sprintf("abcdefghijabcdefghijabcdefghijabcdefghijabcdefghij%d", i), fmt.Sprintf("abcdefghijabcdefghijabcdefghijabcdefghijabcdefghij%d", i))
 				}
-				return b.Labels(nil)
+				return b.Labels(EmptyLabels())
 			}(),
 		},
 		{

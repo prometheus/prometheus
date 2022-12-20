@@ -268,6 +268,7 @@ type scrapeLoopOptions struct {
 
 const maxAheadTime = 10 * time.Minute
 
+// returning an empty label set is interpreted as "drop"
 type labelsMutator func(labels.Labels) labels.Labels
 
 func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed uint64, logger log.Logger, options *Options) (*scrapePool, error) {
@@ -498,9 +499,9 @@ func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 		}
 		targetSyncFailed.WithLabelValues(sp.config.JobName).Add(float64(len(failures)))
 		for _, t := range targets {
-			if t.Labels().Len() > 0 {
+			if !t.Labels().IsEmpty() {
 				all = append(all, t)
-			} else if t.DiscoveredLabels().Len() > 0 {
+			} else if !t.DiscoveredLabels().IsEmpty() {
 				sp.droppedTargets = append(sp.droppedTargets, t)
 			}
 		}
@@ -634,7 +635,7 @@ func verifyLabelLimits(lset labels.Labels, limits *labelLimits) error {
 
 	met := lset.Get(labels.MetricName)
 	if limits.labelLimit > 0 {
-		nbLabels := len(lset)
+		nbLabels := lset.Len()
 		if nbLabels > int(limits.labelLimit) {
 			return fmt.Errorf("label_limit exceeded (metric: %.50s, number of labels: %d, limit: %d)", met, nbLabels, limits.labelLimit)
 		}
@@ -644,7 +645,7 @@ func verifyLabelLimits(lset labels.Labels, limits *labelLimits) error {
 		return nil
 	}
 
-	for _, l := range lset {
+	return lset.Validate(func(l labels.Label) error {
 		if limits.labelNameLengthLimit > 0 {
 			nameLength := len(l.Name)
 			if nameLength > int(limits.labelNameLengthLimit) {
@@ -658,8 +659,8 @@ func verifyLabelLimits(lset labels.Labels, limits *labelLimits) error {
 				return fmt.Errorf("label_value_length_limit exceeded (metric: %.50s, label name: %.50s, value: %.50q, length: %d, limit: %d)", met, l.Name, l.Value, valueLength, limits.labelValueLengthLimit)
 			}
 		}
-	}
-	return nil
+		return nil
+	})
 }
 
 func mutateSampleLabels(lset labels.Labels, target *Target, honor bool, rc []*relabel.Config) labels.Labels {
@@ -667,37 +668,37 @@ func mutateSampleLabels(lset labels.Labels, target *Target, honor bool, rc []*re
 	targetLabels := target.Labels()
 
 	if honor {
-		for _, l := range targetLabels {
+		targetLabels.Range(func(l labels.Label) {
 			if !lset.Has(l.Name) {
 				lb.Set(l.Name, l.Value)
 			}
-		}
+		})
 	} else {
-		var conflictingExposedLabels labels.Labels
-		for _, l := range targetLabels {
+		var conflictingExposedLabels []labels.Label
+		targetLabels.Range(func(l labels.Label) {
 			existingValue := lset.Get(l.Name)
 			if existingValue != "" {
 				conflictingExposedLabels = append(conflictingExposedLabels, labels.Label{Name: l.Name, Value: existingValue})
 			}
 			// It is now safe to set the target label.
 			lb.Set(l.Name, l.Value)
-		}
+		})
 
 		if len(conflictingExposedLabels) > 0 {
 			resolveConflictingExposedLabels(lb, lset, targetLabels, conflictingExposedLabels)
 		}
 	}
 
-	res := lb.Labels(nil)
+	res := lb.Labels(labels.EmptyLabels())
 
 	if len(rc) > 0 {
-		res = relabel.Process(res, rc...)
+		res, _ = relabel.Process(res, rc...)
 	}
 
 	return res
 }
 
-func resolveConflictingExposedLabels(lb *labels.Builder, exposedLabels, targetLabels, conflictingExposedLabels labels.Labels) {
+func resolveConflictingExposedLabels(lb *labels.Builder, exposedLabels, targetLabels labels.Labels, conflictingExposedLabels []labels.Label) {
 	sort.SliceStable(conflictingExposedLabels, func(i, j int) bool {
 		return len(conflictingExposedLabels[i].Name) < len(conflictingExposedLabels[j].Name)
 	})
@@ -708,7 +709,7 @@ func resolveConflictingExposedLabels(lb *labels.Builder, exposedLabels, targetLa
 			newName = model.ExportedLabelPrefix + newName
 			if !exposedLabels.Has(newName) &&
 				!targetLabels.Has(newName) &&
-				!conflictingExposedLabels[:i].Has(newName) {
+				!labelSliceHas(conflictingExposedLabels[:i], newName) {
 				conflictingExposedLabels[i].Name = newName
 				break
 			}
@@ -720,15 +721,24 @@ func resolveConflictingExposedLabels(lb *labels.Builder, exposedLabels, targetLa
 	}
 }
 
+func labelSliceHas(lbls []labels.Label, name string) bool {
+	for _, l := range lbls {
+		if l.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
 func mutateReportSampleLabels(lset labels.Labels, target *Target) labels.Labels {
 	lb := labels.NewBuilder(lset)
 
-	for _, l := range target.Labels() {
+	target.Labels().Range(func(l labels.Label) {
 		lb.Set(model.ExportedLabelPrefix+l.Name, lset.Get(l.Name))
 		lb.Set(l.Name, l.Value)
-	}
+	})
 
-	return lb.Labels(nil)
+	return lb.Labels(labels.EmptyLabels())
 }
 
 // appender returns an appender for ingested samples from the target.
@@ -1599,8 +1609,8 @@ loop:
 			// and relabeling and store the final label set.
 			lset = sl.sampleMutator(lset)
 
-			// The label set may be set to nil to indicate dropping.
-			if lset == nil {
+			// The label set may be set to empty to indicate dropping.
+			if lset.IsEmpty() {
 				sl.cache.addDropped(mets)
 				continue
 			}
@@ -1857,12 +1867,10 @@ func (sl *scrapeLoop) addReportSample(app storage.Appender, s string, t int64, v
 		ref = ce.ref
 		lset = ce.lset
 	} else {
-		lset = labels.Labels{
-			// The constants are suffixed with the invalid \xff unicode rune to avoid collisions
-			// with scraped metrics in the cache.
-			// We have to drop it when building the actual metric.
-			labels.Label{Name: labels.MetricName, Value: s[:len(s)-1]},
-		}
+		// The constants are suffixed with the invalid \xff unicode rune to avoid collisions
+		// with scraped metrics in the cache.
+		// We have to drop it when building the actual metric.
+		lset = labels.FromStrings(labels.MetricName, s[:len(s)-1])
 		lset = sl.reportSampleMutator(lset)
 	}
 

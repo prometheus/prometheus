@@ -353,11 +353,11 @@ func (n *Manager) Send(alerts ...*Alert) {
 	for _, a := range alerts {
 		lb := labels.NewBuilder(a.Labels)
 
-		for _, l := range n.opts.ExternalLabels {
+		n.opts.ExternalLabels.Range(func(l labels.Label) {
 			if a.Labels.Get(l.Name) == "" {
 				lb.Set(l.Name, l.Value)
 			}
-		}
+		})
 
 		a.Labels = lb.Labels(a.Labels)
 	}
@@ -394,8 +394,8 @@ func (n *Manager) relabelAlerts(alerts []*Alert) []*Alert {
 	var relabeledAlerts []*Alert
 
 	for _, alert := range alerts {
-		labels := relabel.Process(alert.Labels, n.opts.RelabelConfigs...)
-		if labels != nil {
+		labels, keep := relabel.Process(alert.Labels, n.opts.RelabelConfigs...)
+		if keep {
 			alert.Labels = labels
 			relabeledAlerts = append(relabeledAlerts, alert)
 		}
@@ -570,9 +570,9 @@ func alertsToOpenAPIAlerts(alerts []*Alert) models.PostableAlerts {
 
 func labelsToOpenAPILabelSet(modelLabelSet labels.Labels) models.LabelSet {
 	apiLabelSet := models.LabelSet{}
-	for _, label := range modelLabelSet {
+	modelLabelSet.Range(func(label labels.Label) {
 		apiLabelSet[label.Name] = label.Value
-	}
+	})
 
 	return apiLabelSet
 }
@@ -719,9 +719,9 @@ func AlertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig
 			}
 		}
 
-		lset := relabel.Process(labels.New(lbls...), cfg.RelabelConfigs...)
-		if lset == nil {
-			droppedAlertManagers = append(droppedAlertManagers, alertmanagerLabels{lbls})
+		lset, keep := relabel.Process(labels.New(lbls...), cfg.RelabelConfigs...)
+		if !keep {
+			droppedAlertManagers = append(droppedAlertManagers, alertmanagerLabels{labels.New(lbls...)})
 			continue
 		}
 
