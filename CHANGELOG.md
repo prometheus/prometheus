@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.41.0-rc.0 / 2022-12-14
+## 2.41.0 / 2022-12-20
 
 * [FEATURE] Relabeling: Add `keepequal` and `dropequal` relabel actions. #11564
 * [FEATURE] Add support for HTTP proxy headers. #11712
