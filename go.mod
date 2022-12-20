@@ -10,7 +10,6 @@ require (
 	github.com/aws/aws-sdk-go v1.44.187
 	github.com/cespare/xxhash/v2 v2.2.0
 	github.com/dennwc/varint v1.0.0
-	github.com/dgryski/go-sip13 v0.0.0-20200911182023-62edffca9245
 	github.com/digitalocean/godo v1.95.0
 	github.com/docker/docker v20.10.23+incompatible
 	github.com/edsrzf/mmap-go v1.1.0
