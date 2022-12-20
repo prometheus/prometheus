@@ -73,8 +73,8 @@ func TestConcurrentRangeQueries(t *testing.T) {
 		if strings.Contains(c.expr, "count_values") && c.steps > 10 {
 			continue // This test is too big to run with -race.
 		}
+		<-sem
 		g.Go(func() error {
-			<-sem
 			defer func() {
 				sem <- struct{}{}
 			}()
