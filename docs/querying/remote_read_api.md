@@ -5,7 +5,7 @@ sort_rank: 7
 
 # Remote Read API
 
-This is not currently considered par of the stable API and is subject to change
+This is not currently considered part of the stable API and is subject to change
 even between non-major version releases of Prometheus.
 
 ## Format overview
