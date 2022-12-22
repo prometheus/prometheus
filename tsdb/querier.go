@@ -682,7 +682,7 @@ func (p *populateWithDelSeriesIterator) Next() chunkenc.ValueType {
 		if p.currDelIter != nil {
 			p.curr = p.currDelIter
 		} else {
-			p.curr = p.currChkMeta.Chunk.Iterator(nil)
+			p.curr = p.currChkMeta.Chunk.Iterator(p.curr)
 		}
 		if valueType := p.curr.Next(); valueType != chunkenc.ValNone {
 			return valueType
