@@ -25,7 +25,6 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
-	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -147,10 +146,8 @@ func (h *Head) appender() *headAppender {
 
 	return &headAppender{
 		head:                  h,
-		minValidTime:          minValidTime,
 		mint:                  math.MaxInt64,
 		maxt:                  math.MinInt64,
-		headMaxt:              h.MaxTime(),
 		oooTimeWindow:         h.opts.OutOfOrderTimeWindow.Load(),
 		samples:               h.getAppendBuffer(),
 		sampleSeries:          h.getSeriesBuffer(),
@@ -281,10 +278,10 @@ type exemplarWithSeriesRef struct {
 }
 
 type headAppender struct {
-	head          *Head
-	minValidTime  int64 // No samples below this timestamp are allowed.
-	mint, maxt    int64
-	headMaxt      int64 // We track it here to not take the lock for every sample appended.
+	head *Head
+	//minValidTime  int64 // No samples below this timestamp are allowed.
+	mint, maxt int64
+	//headMaxt      int64 // We track it here to not take the lock for every sample appended.
 	oooTimeWindow int64 // Use the same for the entire append, and don't load the atomic for each sample.
 
 	series          []record.RefSeries          // New series held by this appender.
@@ -303,10 +300,10 @@ type headAppender struct {
 func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
 	// For OOO inserts, this restriction is irrelevant and will be checked later once we confirm the sample is an in-order append.
 	// If OOO inserts are disabled, we may as well as check this as early as we can and avoid more work.
-	if a.oooTimeWindow == 0 && t < a.minValidTime {
-		a.head.metrics.outOfBoundSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
-		return 0, storage.ErrOutOfBounds
-	}
+	//if a.oooTimeWindow == 0 && t < a.minValidTime {
+	//	a.head.metrics.outOfBoundSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
+	//	return 0, storage.ErrOutOfBounds
+	//}
 
 	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
 	if s == nil {
@@ -334,37 +331,37 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 		}
 	}
 
-	if value.IsStaleNaN(v) && s.isHistogramSeries {
-		return a.AppendHistogram(ref, lset, t, &histogram.Histogram{Sum: v})
-	}
-
-	s.Lock()
-	// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
-	// to skip that sample from the WAL and write only in the WBL.
-	_, delta, err := s.appendable(t, v, a.headMaxt, a.minValidTime, a.oooTimeWindow)
-	if err == nil {
-		s.pendingCommit = true
-	}
-	s.Unlock()
-	if delta > 0 {
-		a.head.metrics.oooHistogram.Observe(float64(delta))
-	}
-	if err != nil {
-		switch err {
-		case storage.ErrOutOfOrderSample:
-			a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
-		case storage.ErrTooOldSample:
-			a.head.metrics.tooOldSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
-		}
-		return 0, err
-	}
-
-	if t < a.mint {
-		a.mint = t
-	}
-	if t > a.maxt {
-		a.maxt = t
-	}
+	//if value.IsStaleNaN(v) && s.isHistogramSeries {
+	//	return a.AppendHistogram(ref, lset, t, &histogram.Histogram{Sum: v})
+	//}
+	//
+	//s.Lock()
+	//// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
+	//// to skip that sample from the WAL and write only in the WBL.
+	//_, delta, err := s.appendable(t, v, a.headMaxt, a.minValidTime, a.oooTimeWindow)
+	//if err == nil {
+	//	s.pendingCommit = true
+	//}
+	//s.Unlock()
+	//if delta > 0 {
+	//	a.head.metrics.oooHistogram.Observe(float64(delta))
+	//}
+	//if err != nil {
+	//	switch err {
+	//	case storage.ErrOutOfOrderSample:
+	//		a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
+	//	case storage.ErrTooOldSample:
+	//		a.head.metrics.tooOldSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
+	//	}
+	//	return 0, err
+	//}
+	//
+	//if t < a.mint {
+	//	a.mint = t
+	//}
+	//if t > a.maxt {
+	//	a.maxt = t
+	//}
 
 	a.samples = append(a.samples, record.RefSample{
 		Ref: s.ref,
@@ -394,9 +391,9 @@ func (s *memSeries) appendable(t int64, v float64, headMaxt, minValidTime, oooTi
 			// like federation and erroring out at that time would be extremely noisy.
 			// This only checks against the latest in-order sample.
 			// The OOO headchunk has its own method to detect these duplicates.
-			if math.Float64bits(s.lastValue) != math.Float64bits(v) {
-				return false, 0, storage.ErrDuplicateSampleForTimestamp
-			}
+			//if math.Float64bits(s.lastValue) != math.Float64bits(v) {
+			//	return false, 0, storage.ErrDuplicateSampleForTimestamp
+			//}
 			// Sample is identical (ts + value) with most current (highest ts) sample in sampleBuf.
 			return false, 0, nil
 		}
@@ -433,9 +430,9 @@ func (s *memSeries) appendableHistogram(t int64, h *histogram.Histogram) error {
 
 	// We are allowing exact duplicates as we can encounter them in valid cases
 	// like federation and erroring out at that time would be extremely noisy.
-	if !h.Equals(s.lastHistogramValue) {
-		return storage.ErrDuplicateSampleForTimestamp
-	}
+	//if !h.Equals(s.lastHistogramValue) {
+	//	return storage.ErrDuplicateSampleForTimestamp
+	//}
 	return nil
 }
 
@@ -481,10 +478,10 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		return 0, storage.ErrNativeHistogramsDisabled
 	}
 
-	if t < a.minValidTime {
-		a.head.metrics.outOfBoundSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()
-		return 0, storage.ErrOutOfBounds
-	}
+	//if t < a.minValidTime {
+	//	a.head.metrics.outOfBoundSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()
+	//	return 0, storage.ErrOutOfBounds
+	//}
 
 	if err := ValidateHistogram(h); err != nil {
 		return 0, err
@@ -525,7 +522,7 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		}
 		return 0, err
 	}
-	s.pendingCommit = true
+	//s.pendingCommit = true
 	s.Unlock()
 
 	if t < a.mint {
@@ -684,14 +681,14 @@ func (a *headAppender) log() error {
 			return errors.Wrap(err, "log metadata")
 		}
 	}
-	if len(a.samples) > 0 {
-		rec = enc.Samples(a.samples, buf)
-		buf = rec[:0]
-
-		if err := a.head.wal.Log(rec); err != nil {
-			return errors.Wrap(err, "log samples")
-		}
-	}
+	//if len(a.samples) > 0 {
+	//	rec = enc.Samples(a.samples, buf)
+	//	buf = rec[:0]
+	//
+	//	if err := a.head.wal.Log(rec); err != nil {
+	//		return errors.Wrap(err, "log samples")
+	//	}
+	//}
 	if len(a.exemplars) > 0 {
 		rec = enc.Exemplars(exemplarsForEncoding(a.exemplars), buf)
 		buf = rec[:0]
@@ -770,9 +767,9 @@ func (a *headAppender) Commit() (err error) {
 		oooMmapMarkers  map[chunks.HeadSeriesRef]chunks.ChunkDiskMapperRef
 		oooRecords      [][]byte
 		oooCapMax       = a.head.opts.OutOfOrderCapMax.Load()
-		chunkRange      = a.head.chunkRange.Load()
-		series          *memSeries
-		enc             record.Encoder
+		//chunkRange      = a.head.chunkRange.Load()
+		series *memSeries
+		enc    record.Encoder
 	)
 	defer func() {
 		for i := range oooRecords {
@@ -815,114 +812,82 @@ func (a *headAppender) Commit() (err error) {
 		series = a.sampleSeries[i]
 		series.Lock()
 
-		oooSample, _, err := series.appendable(s.T, s.V, a.headMaxt, a.minValidTime, a.oooTimeWindow)
-		switch err {
-		case storage.ErrOutOfOrderSample:
-			samplesAppended--
-			oooRejected++
-		case storage.ErrOutOfBounds:
-			samplesAppended--
-			oobRejected++
-		case storage.ErrTooOldSample:
-			samplesAppended--
-			tooOldRejected++
-		case nil:
-			// Do nothing.
-		default:
-			samplesAppended--
-		}
-
 		var ok, chunkCreated bool
 
-		if err == nil && oooSample {
-			// Sample is OOO and OOO handling is enabled
-			// and the delta is within the OOO tolerance.
-			var mmapRef chunks.ChunkDiskMapperRef
-			ok, chunkCreated, mmapRef = series.insert(s.T, s.V, a.head.chunkDiskMapper, oooCapMax)
-			if chunkCreated {
-				r, ok := oooMmapMarkers[series.ref]
-				if !ok || r != 0 {
-					// !ok means there are no markers collected for these samples yet. So we first flush the samples
-					// before setting this m-map marker.
-
-					// r != 0 means we have already m-mapped a chunk for this series in the same Commit().
-					// Hence, before we m-map again, we should add the samples and m-map markers
-					// seen till now to the WBL records.
-					collectOOORecords()
-				}
-
-				if oooMmapMarkers == nil {
-					oooMmapMarkers = make(map[chunks.HeadSeriesRef]chunks.ChunkDiskMapperRef)
-				}
-				oooMmapMarkers[series.ref] = mmapRef
-			}
-			if ok {
-				wblSamples = append(wblSamples, s)
-				if s.T < ooomint {
-					ooomint = s.T
-				}
-				if s.T > ooomaxt {
-					ooomaxt = s.T
-				}
-				oooAccepted++
-			} else {
-				// Sample is an exact duplicate of the last sample.
-				// NOTE: We can only detect updates if they clash with a sample in the OOOHeadChunk,
-				// not with samples in already flushed OOO chunks.
-				// TODO(codesome): Add error reporting? It depends on addressing https://github.com/prometheus/prometheus/discussions/10305.
-				samplesAppended--
-			}
-		} else if err == nil {
-			ok, chunkCreated = series.append(s.T, s.V, a.appendID, a.head.chunkDiskMapper, chunkRange)
-			if ok {
-				if s.T < inOrderMint {
-					inOrderMint = s.T
-				}
-				if s.T > inOrderMaxt {
-					inOrderMaxt = s.T
-				}
-			} else {
-				// The sample is an exact duplicate, and should be silently dropped.
-				samplesAppended--
-			}
-		}
-
+		// Sample is OOO and OOO handling is enabled
+		// and the delta is within the OOO tolerance.
+		var mmapRef chunks.ChunkDiskMapperRef
+		ok, chunkCreated, mmapRef = series.insert(s.T, s.V, a.head.chunkDiskMapper, oooCapMax)
 		if chunkCreated {
-			a.head.metrics.chunks.Inc()
-			a.head.metrics.chunksCreated.Inc()
+			r, ok := oooMmapMarkers[series.ref]
+			if !ok || r != 0 {
+				// !ok means there are no markers collected for these samples yet. So we first flush the samples
+				// before setting this m-map marker.
+
+				// r != 0 means we have already m-mapped a chunk for this series in the same Commit().
+				// Hence, before we m-map again, we should add the samples and m-map markers
+				// seen till now to the WBL records.
+				collectOOORecords()
+			}
+
+			if oooMmapMarkers == nil {
+				oooMmapMarkers = make(map[chunks.HeadSeriesRef]chunks.ChunkDiskMapperRef)
+			}
+			oooMmapMarkers[series.ref] = mmapRef
 		}
-
-		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
-		series.pendingCommit = false
-		series.Unlock()
-	}
-
-	histogramsTotal := len(a.histograms)
-	histoOOORejected := 0
-	for i, s := range a.histograms {
-		series = a.histogramSeries[i]
-		series.Lock()
-		ok, chunkCreated := series.appendHistogram(s.T, s.H, a.appendID, a.head.chunkDiskMapper, chunkRange)
-		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
-		series.pendingCommit = false
-		series.Unlock()
-
 		if ok {
-			if s.T < inOrderMint {
-				inOrderMint = s.T
+			wblSamples = append(wblSamples, s)
+			if s.T < ooomint {
+				ooomint = s.T
 			}
-			if s.T > inOrderMaxt {
-				inOrderMaxt = s.T
+			if s.T > ooomaxt {
+				ooomaxt = s.T
 			}
+			oooAccepted++
 		} else {
-			histogramsTotal--
-			histoOOORejected++
+			// Sample is an exact duplicate of the last sample.
+			// NOTE: We can only detect updates if they clash with a sample in the OOOHeadChunk,
+			// not with samples in already flushed OOO chunks.
+			// TODO(codesome): Add error reporting? It depends on addressing https://github.com/prometheus/prometheus/discussions/10305.
+			samplesAppended--
 		}
+
 		if chunkCreated {
 			a.head.metrics.chunks.Inc()
 			a.head.metrics.chunksCreated.Inc()
 		}
+
+		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
+		//series.pendingCommit = false
+		series.Unlock()
 	}
+
+	//histogramsTotal := len(a.histograms)
+	//histoOOORejected := 0
+	//for i, s := range a.histograms {
+	//	series = a.histogramSeries[i]
+	//	series.Lock()
+	//	ok, chunkCreated := series.appendHistogram(s.T, s.H, a.appendID, a.head.chunkDiskMapper, chunkRange)
+	//	series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
+	//	series.pendingCommit = false
+	//	series.Unlock()
+	//
+	//	if ok {
+	//		if s.T < inOrderMint {
+	//			inOrderMint = s.T
+	//		}
+	//		if s.T > inOrderMaxt {
+	//			inOrderMaxt = s.T
+	//		}
+	//	} else {
+	//		histogramsTotal--
+	//		histoOOORejected++
+	//	}
+	//	if chunkCreated {
+	//		a.head.metrics.chunks.Inc()
+	//		a.head.metrics.chunksCreated.Inc()
+	//	}
+	//}
 
 	for i, m := range a.metadata {
 		series = a.metadataSeries[i]
@@ -932,11 +897,11 @@ func (a *headAppender) Commit() (err error) {
 	}
 
 	a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat).Add(float64(oooRejected))
-	a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeHistogram).Add(float64(histoOOORejected))
+	//a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeHistogram).Add(float64(histoOOORejected))
 	a.head.metrics.outOfBoundSamples.WithLabelValues(sampleMetricTypeFloat).Add(float64(oobRejected))
 	a.head.metrics.tooOldSamples.WithLabelValues(sampleMetricTypeFloat).Add(float64(tooOldRejected))
 	a.head.metrics.samplesAppended.WithLabelValues(sampleMetricTypeFloat).Add(float64(samplesAppended))
-	a.head.metrics.samplesAppended.WithLabelValues(sampleMetricTypeHistogram).Add(float64(histogramsTotal))
+	//a.head.metrics.samplesAppended.WithLabelValues(sampleMetricTypeHistogram).Add(float64(histogramsTotal))
 	a.head.metrics.outOfOrderSamplesAppended.Add(float64(oooAccepted))
 	a.head.updateMinMaxTime(inOrderMint, inOrderMaxt)
 	a.head.updateMinOOOMaxOOOTime(ooomint, ooomaxt)
@@ -979,156 +944,156 @@ func (s *memSeries) insert(t int64, v float64, chunkDiskMapper *chunks.ChunkDisk
 // the appendID for isolation. (The appendID can be zero, which results in no
 // isolation for this append.)
 // It is unsafe to call this concurrently with s.iterator(...) without holding the series lock.
-func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper *chunks.ChunkDiskMapper, chunkRange int64) (sampleInOrder, chunkCreated bool) {
-	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.EncXOR, chunkDiskMapper, chunkRange)
-	if !sampleInOrder {
-		return sampleInOrder, chunkCreated
-	}
-	s.app.Append(t, v)
-	s.isHistogramSeries = false
-
-	c.maxTime = t
-
-	s.lastValue = v
-
-	if appendID > 0 {
-		s.txs.add(appendID)
-	}
-
-	return true, chunkCreated
-}
+//func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper *chunks.ChunkDiskMapper, chunkRange int64) (sampleInOrder, chunkCreated bool) {
+//	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.EncXOR, chunkDiskMapper, chunkRange)
+//	if !sampleInOrder {
+//		return sampleInOrder, chunkCreated
+//	}
+//	s.app.Append(t, v)
+//	s.isHistogramSeries = false
+//
+//	c.maxTime = t
+//
+//	s.lastValue = v
+//
+//	if appendID > 0 {
+//		s.txs.add(appendID)
+//	}
+//
+//	return true, chunkCreated
+//}
 
 // appendHistogram adds the histogram.
 // It is unsafe to call this concurrently with s.iterator(...) without holding the series lock.
-func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID uint64, chunkDiskMapper *chunks.ChunkDiskMapper, chunkRange int64) (sampleInOrder, chunkCreated bool) {
-	// Head controls the execution of recoding, so that we own the proper
-	// chunk reference afterwards.  We check for Appendable before
-	// appendPreprocessor because in case it ends up creating a new chunk,
-	// we need to know if there was also a counter reset or not to set the
-	// meta properly.
-	app, _ := s.app.(*chunkenc.HistogramAppender)
-	var (
-		positiveInterjections, negativeInterjections []chunkenc.Interjection
-		okToAppend, counterReset                     bool
-	)
-	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.EncHistogram, chunkDiskMapper, chunkRange)
-	if !sampleInOrder {
-		return sampleInOrder, chunkCreated
-	}
-
-	if app != nil {
-		positiveInterjections, negativeInterjections, okToAppend, counterReset = app.Appendable(h)
-	}
-
-	if !chunkCreated {
-		// We have 3 cases here
-		// - !okToAppend -> We need to cut a new chunk.
-		// - okToAppend but we have interjections → Existing chunk needs
-		//   recoding before we can append our histogram.
-		// - okToAppend and no interjections → Chunk is ready to support our histogram.
-		if !okToAppend || counterReset {
-			c = s.cutNewHeadChunk(t, chunkenc.EncHistogram, chunkDiskMapper, chunkRange)
-			chunkCreated = true
-		} else if len(positiveInterjections) > 0 || len(negativeInterjections) > 0 {
-			// New buckets have appeared. We need to recode all
-			// prior histogram samples within the chunk before we
-			// can process this one.
-			chunk, app := app.Recode(
-				positiveInterjections, negativeInterjections,
-				h.PositiveSpans, h.NegativeSpans,
-			)
-			c.chunk = chunk
-			s.app = app
-		}
-	}
-
-	if chunkCreated {
-		hc := s.headChunk.chunk.(*chunkenc.HistogramChunk)
-		header := chunkenc.UnknownCounterReset
-		if counterReset {
-			header = chunkenc.CounterReset
-		} else if okToAppend {
-			header = chunkenc.NotCounterReset
-		}
-		hc.SetCounterResetHeader(header)
-	}
-
-	s.app.AppendHistogram(t, h)
-	s.isHistogramSeries = true
-
-	c.maxTime = t
-
-	s.lastHistogramValue = h
-
-	if appendID > 0 {
-		s.txs.add(appendID)
-	}
-
-	return true, chunkCreated
-}
+//func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID uint64, chunkDiskMapper *chunks.ChunkDiskMapper, chunkRange int64) (sampleInOrder, chunkCreated bool) {
+//	// Head controls the execution of recoding, so that we own the proper
+//	// chunk reference afterwards.  We check for Appendable before
+//	// appendPreprocessor because in case it ends up creating a new chunk,
+//	// we need to know if there was also a counter reset or not to set the
+//	// meta properly.
+//	app, _ := s.app.(*chunkenc.HistogramAppender)
+//	var (
+//		positiveInterjections, negativeInterjections []chunkenc.Interjection
+//		okToAppend, counterReset                     bool
+//	)
+//	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.EncHistogram, chunkDiskMapper, chunkRange)
+//	if !sampleInOrder {
+//		return sampleInOrder, chunkCreated
+//	}
+//
+//	if app != nil {
+//		positiveInterjections, negativeInterjections, okToAppend, counterReset = app.Appendable(h)
+//	}
+//
+//	if !chunkCreated {
+//		// We have 3 cases here
+//		// - !okToAppend -> We need to cut a new chunk.
+//		// - okToAppend but we have interjections → Existing chunk needs
+//		//   recoding before we can append our histogram.
+//		// - okToAppend and no interjections → Chunk is ready to support our histogram.
+//		if !okToAppend || counterReset {
+//			c = s.cutNewHeadChunk(t, chunkenc.EncHistogram, chunkDiskMapper, chunkRange)
+//			chunkCreated = true
+//		} else if len(positiveInterjections) > 0 || len(negativeInterjections) > 0 {
+//			// New buckets have appeared. We need to recode all
+//			// prior histogram samples within the chunk before we
+//			// can process this one.
+//			chunk, app := app.Recode(
+//				positiveInterjections, negativeInterjections,
+//				h.PositiveSpans, h.NegativeSpans,
+//			)
+//			c.chunk = chunk
+//			s.app = app
+//		}
+//	}
+//
+//	if chunkCreated {
+//		hc := s.headChunk.chunk.(*chunkenc.HistogramChunk)
+//		header := chunkenc.UnknownCounterReset
+//		if counterReset {
+//			header = chunkenc.CounterReset
+//		} else if okToAppend {
+//			header = chunkenc.NotCounterReset
+//		}
+//		hc.SetCounterResetHeader(header)
+//	}
+//
+//	s.app.AppendHistogram(t, h)
+//	s.isHistogramSeries = true
+//
+//	c.maxTime = t
+//
+//	s.lastHistogramValue = h
+//
+//	if appendID > 0 {
+//		s.txs.add(appendID)
+//	}
+//
+//	return true, chunkCreated
+//}
 
 // appendPreprocessor takes care of cutting new chunks and m-mapping old chunks.
 // It is unsafe to call this concurrently with s.iterator(...) without holding the series lock.
 // This should be called only when appending data.
-func (s *memSeries) appendPreprocessor(
-	t int64, e chunkenc.Encoding, chunkDiskMapper *chunks.ChunkDiskMapper, chunkRange int64,
-) (c *memChunk, sampleInOrder, chunkCreated bool) {
-	// Based on Gorilla white papers this offers near-optimal compression ratio
-	// so anything bigger that this has diminishing returns and increases
-	// the time range within which we have to decompress all samples.
-	const samplesPerChunk = 120
-
-	c = s.head()
-
-	if c == nil {
-		if len(s.mmappedChunks) > 0 && s.mmappedChunks[len(s.mmappedChunks)-1].maxTime >= t {
-			// Out of order sample. Sample timestamp is already in the mmapped chunks, so ignore it.
-			return c, false, false
-		}
-		// There is no head chunk in this series yet, create the first chunk for the sample.
-		c = s.cutNewHeadChunk(t, e, chunkDiskMapper, chunkRange)
-		chunkCreated = true
-	}
-
-	// Out of order sample.
-	if c.maxTime >= t {
-		return c, false, chunkCreated
-	}
-
-	if c.chunk.Encoding() != e {
-		// The chunk encoding expected by this append is different than the head chunk's
-		// encoding. So we cut a new chunk with the expected encoding.
-		c = s.cutNewHeadChunk(t, e, chunkDiskMapper, chunkRange)
-		chunkCreated = true
-	}
-
-	numSamples := c.chunk.NumSamples()
-	if numSamples == 0 {
-		// It could be the new chunk created after reading the chunk snapshot,
-		// hence we fix the minTime of the chunk here.
-		c.minTime = t
-		s.nextAt = rangeForTimestamp(c.minTime, chunkRange)
-	}
-
-	// If we reach 25% of a chunk's desired sample count, predict an end time
-	// for this chunk that will try to make samples equally distributed within
-	// the remaining chunks in the current chunk range.
-	// At latest it must happen at the timestamp set when the chunk was cut.
-	if numSamples == samplesPerChunk/4 {
-		s.nextAt = computeChunkEndTime(c.minTime, c.maxTime, s.nextAt)
-	}
-	// If numSamples > samplesPerChunk*2 then our previous prediction was invalid,
-	// most likely because samples rate has changed and now they are arriving more frequently.
-	// Since we assume that the rate is higher, we're being conservative and cutting at 2*samplesPerChunk
-	// as we expect more chunks to come.
-	// Note that next chunk will have its nextAt recalculated for the new rate.
-	if t >= s.nextAt || numSamples >= samplesPerChunk*2 {
-		c = s.cutNewHeadChunk(t, e, chunkDiskMapper, chunkRange)
-		chunkCreated = true
-	}
-
-	return c, true, chunkCreated
-}
+//func (s *memSeries) appendPreprocessor(
+//	t int64, e chunkenc.Encoding, chunkDiskMapper *chunks.ChunkDiskMapper, chunkRange int64,
+//) (c *memChunk, sampleInOrder, chunkCreated bool) {
+//	// Based on Gorilla white papers this offers near-optimal compression ratio
+//	// so anything bigger that this has diminishing returns and increases
+//	// the time range within which we have to decompress all samples.
+//	const samplesPerChunk = 120
+//
+//	c = s.head()
+//
+//	if c == nil {
+//		if len(s.mmappedChunks) > 0 && s.mmappedChunks[len(s.mmappedChunks)-1].maxTime >= t {
+//			// Out of order sample. Sample timestamp is already in the mmapped chunks, so ignore it.
+//			return c, false, false
+//		}
+//		// There is no head chunk in this series yet, create the first chunk for the sample.
+//		c = s.cutNewHeadChunk(t, e, chunkDiskMapper, chunkRange)
+//		chunkCreated = true
+//	}
+//
+//	// Out of order sample.
+//	if c.maxTime >= t {
+//		return c, false, chunkCreated
+//	}
+//
+//	if c.chunk.Encoding() != e {
+//		// The chunk encoding expected by this append is different than the head chunk's
+//		// encoding. So we cut a new chunk with the expected encoding.
+//		c = s.cutNewHeadChunk(t, e, chunkDiskMapper, chunkRange)
+//		chunkCreated = true
+//	}
+//
+//	numSamples := c.chunk.NumSamples()
+//	if numSamples == 0 {
+//		// It could be the new chunk created after reading the chunk snapshot,
+//		// hence we fix the minTime of the chunk here.
+//		c.minTime = t
+//		s.nextAt = rangeForTimestamp(c.minTime, chunkRange)
+//	}
+//
+//	// If we reach 25% of a chunk's desired sample count, predict an end time
+//	// for this chunk that will try to make samples equally distributed within
+//	// the remaining chunks in the current chunk range.
+//	// At latest it must happen at the timestamp set when the chunk was cut.
+//	if numSamples == samplesPerChunk/4 {
+//		s.nextAt = computeChunkEndTime(c.minTime, c.maxTime, s.nextAt)
+//	}
+//	// If numSamples > samplesPerChunk*2 then our previous prediction was invalid,
+//	// most likely because samples rate has changed and now they are arriving more frequently.
+//	// Since we assume that the rate is higher, we're being conservative and cutting at 2*samplesPerChunk
+//	// as we expect more chunks to come.
+//	// Note that next chunk will have its nextAt recalculated for the new rate.
+//	if t >= s.nextAt || numSamples >= samplesPerChunk*2 {
+//		c = s.cutNewHeadChunk(t, e, chunkDiskMapper, chunkRange)
+//		chunkCreated = true
+//	}
+//
+//	return c, true, chunkCreated
+//}
 
 // computeChunkEndTime estimates the end timestamp based the beginning of a
 // chunk, its current timestamp and the upper bound up to which we insert data.
@@ -1143,37 +1108,37 @@ func computeChunkEndTime(start, cur, max int64) int64 {
 	return start + (max-start)/n
 }
 
-func (s *memSeries) cutNewHeadChunk(
-	mint int64, e chunkenc.Encoding, chunkDiskMapper *chunks.ChunkDiskMapper, chunkRange int64,
-) *memChunk {
-	s.mmapCurrentHeadChunk(chunkDiskMapper)
-
-	s.headChunk = &memChunk{
-		minTime: mint,
-		maxTime: math.MinInt64,
-	}
-
-	if chunkenc.IsValidEncoding(e) {
-		var err error
-		s.headChunk.chunk, err = chunkenc.NewEmptyChunk(e)
-		if err != nil {
-			panic(err) // This should never happen.
-		}
-	} else {
-		s.headChunk.chunk = chunkenc.NewXORChunk()
-	}
-
-	// Set upper bound on when the next chunk must be started. An earlier timestamp
-	// may be chosen dynamically at a later point.
-	s.nextAt = rangeForTimestamp(mint, chunkRange)
-
-	app, err := s.headChunk.chunk.Appender()
-	if err != nil {
-		panic(err)
-	}
-	s.app = app
-	return s.headChunk
-}
+//func (s *memSeries) cutNewHeadChunk(
+//	mint int64, e chunkenc.Encoding, chunkDiskMapper *chunks.ChunkDiskMapper, chunkRange int64,
+//) *memChunk {
+//	s.mmapCurrentHeadChunk(chunkDiskMapper)
+//
+//	s.headChunk = &memChunk{
+//		minTime: mint,
+//		maxTime: math.MinInt64,
+//	}
+//
+//	if chunkenc.IsValidEncoding(e) {
+//		var err error
+//		s.headChunk.chunk, err = chunkenc.NewEmptyChunk(e)
+//		if err != nil {
+//			panic(err) // This should never happen.
+//		}
+//	} else {
+//		s.headChunk.chunk = chunkenc.NewXORChunk()
+//	}
+//
+//	// Set upper bound on when the next chunk must be started. An earlier timestamp
+//	// may be chosen dynamically at a later point.
+//	s.nextAt = rangeForTimestamp(mint, chunkRange)
+//
+//	app, err := s.headChunk.chunk.Appender()
+//	if err != nil {
+//		panic(err)
+//	}
+//	s.app = app
+//	return s.headChunk
+//}
 
 func (s *memSeries) cutNewOOOHeadChunk(mint int64, chunkDiskMapper *chunks.ChunkDiskMapper) (*oooHeadChunk, chunks.ChunkDiskMapperRef) {
 	ref := s.mmapCurrentOOOHeadChunk(chunkDiskMapper)
@@ -1205,20 +1170,20 @@ func (s *memSeries) mmapCurrentOOOHeadChunk(chunkDiskMapper *chunks.ChunkDiskMap
 	return chunkRef
 }
 
-func (s *memSeries) mmapCurrentHeadChunk(chunkDiskMapper *chunks.ChunkDiskMapper) {
-	if s.headChunk == nil || s.headChunk.chunk.NumSamples() == 0 {
-		// There is no head chunk, so nothing to m-map here.
-		return
-	}
-
-	chunkRef := chunkDiskMapper.WriteChunk(s.ref, s.headChunk.minTime, s.headChunk.maxTime, s.headChunk.chunk, handleChunkWriteError)
-	s.mmappedChunks = append(s.mmappedChunks, &mmappedChunk{
-		ref:        chunkRef,
-		numSamples: uint16(s.headChunk.chunk.NumSamples()),
-		minTime:    s.headChunk.minTime,
-		maxTime:    s.headChunk.maxTime,
-	})
-}
+//func (s *memSeries) mmapCurrentHeadChunk(chunkDiskMapper *chunks.ChunkDiskMapper) {
+//	if s.headChunk == nil || s.headChunk.chunk.NumSamples() == 0 {
+//		// There is no head chunk, so nothing to m-map here.
+//		return
+//	}
+//
+//	chunkRef := chunkDiskMapper.WriteChunk(s.ref, s.headChunk.minTime, s.headChunk.maxTime, s.headChunk.chunk, handleChunkWriteError)
+//	s.mmappedChunks = append(s.mmappedChunks, &mmappedChunk{
+//		ref:        chunkRef,
+//		numSamples: uint16(s.headChunk.chunk.NumSamples()),
+//		minTime:    s.headChunk.minTime,
+//		maxTime:    s.headChunk.maxTime,
+//	})
+//}
 
 func handleChunkWriteError(err error) {
 	if err != nil && err != chunks.ErrChunkDiskMapperClosed {
@@ -1241,14 +1206,14 @@ func (a *headAppender) Rollback() (err error) {
 		series = a.sampleSeries[i]
 		series.Lock()
 		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
-		series.pendingCommit = false
+		//series.pendingCommit = false
 		series.Unlock()
 	}
 	for i := range a.histograms {
 		series = a.histogramSeries[i]
 		series.Lock()
 		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
-		series.pendingCommit = false
+		//series.pendingCommit = false
 		series.Unlock()
 	}
 	a.head.putAppendBuffer(a.samples)

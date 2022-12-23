@@ -407,42 +407,42 @@ Outer:
 
 // resetSeriesWithMMappedChunks is only used during the WAL replay.
 func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc, oooMmc []*mmappedChunk, walSeriesRef chunks.HeadSeriesRef) (overlapped bool) {
-	if mSeries.ref != walSeriesRef {
-		// Checking if the new m-mapped chunks overlap with the already existing ones.
-		if len(mSeries.mmappedChunks) > 0 && len(mmc) > 0 {
-			if overlapsClosedInterval(
-				mSeries.mmappedChunks[0].minTime,
-				mSeries.mmappedChunks[len(mSeries.mmappedChunks)-1].maxTime,
-				mmc[0].minTime,
-				mmc[len(mmc)-1].maxTime,
-			) {
-				level.Debug(h.logger).Log(
-					"msg", "M-mapped chunks overlap on a duplicate series record",
-					"series", mSeries.lset.String(),
-					"oldref", mSeries.ref,
-					"oldmint", mSeries.mmappedChunks[0].minTime,
-					"oldmaxt", mSeries.mmappedChunks[len(mSeries.mmappedChunks)-1].maxTime,
-					"newref", walSeriesRef,
-					"newmint", mmc[0].minTime,
-					"newmaxt", mmc[len(mmc)-1].maxTime,
-				)
-				overlapped = true
-			}
-		}
-	}
+	//if mSeries.ref != walSeriesRef {
+	//	// Checking if the new m-mapped chunks overlap with the already existing ones.
+	//	if len(mSeries.mmappedChunks) > 0 && len(mmc) > 0 {
+	//		if overlapsClosedInterval(
+	//			mSeries.mmappedChunks[0].minTime,
+	//			mSeries.mmappedChunks[len(mSeries.mmappedChunks)-1].maxTime,
+	//			mmc[0].minTime,
+	//			mmc[len(mmc)-1].maxTime,
+	//		) {
+	//			level.Debug(h.logger).Log(
+	//				"msg", "M-mapped chunks overlap on a duplicate series record",
+	//				"series", mSeries.lset.String(),
+	//				"oldref", mSeries.ref,
+	//				"oldmint", mSeries.mmappedChunks[0].minTime,
+	//				"oldmaxt", mSeries.mmappedChunks[len(mSeries.mmappedChunks)-1].maxTime,
+	//				"newref", walSeriesRef,
+	//				"newmint", mmc[0].minTime,
+	//				"newmaxt", mmc[len(mmc)-1].maxTime,
+	//			)
+	//			overlapped = true
+	//		}
+	//	}
+	//}
 
 	h.metrics.chunksCreated.Add(float64(len(mmc) + len(oooMmc)))
-	h.metrics.chunksRemoved.Add(float64(len(mSeries.mmappedChunks)))
-	h.metrics.chunks.Add(float64(len(mmc) + len(oooMmc) - len(mSeries.mmappedChunks)))
-	mSeries.mmappedChunks = mmc
+	//h.metrics.chunksRemoved.Add(float64(len(mSeries.mmappedChunks)))
+	h.metrics.chunks.Add(float64(len(mmc) + len(oooMmc)))
+	//mSeries.mmappedChunks = mmc
 	mSeries.oooMmappedChunks = oooMmc
 	// Cache the last mmapped chunk time, so we can skip calling append() for samples it will reject.
-	if len(mmc) == 0 {
-		mSeries.mmMaxTime = math.MinInt64
-	} else {
-		mSeries.mmMaxTime = mmc[len(mmc)-1].maxTime
-		h.updateMinMaxTime(mmc[0].minTime, mSeries.mmMaxTime)
-	}
+	//if len(mmc) == 0 {
+	//	mSeries.mmMaxTime = math.MinInt64
+	//} else {
+	//	mSeries.mmMaxTime = mmc[len(mmc)-1].maxTime
+	//	h.updateMinMaxTime(mmc[0].minTime, mSeries.mmMaxTime)
+	//}
 	if len(oooMmc) != 0 {
 		// Mint and maxt can be in any chunk, they are not sorted.
 		mint, maxt := int64(math.MaxInt64), int64(math.MinInt64)
@@ -458,9 +458,9 @@ func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc, oooMmc []*m
 	}
 
 	// Any samples replayed till now would already be compacted. Resetting the head chunk.
-	mSeries.nextAt = 0
-	mSeries.headChunk = nil
-	mSeries.app = nil
+	//mSeries.nextAt = 0
+	//mSeries.headChunk = nil
+	//mSeries.app = nil
 	return
 }
 
@@ -518,9 +518,9 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 	defer close(wp.output)
 	defer close(wp.histogramsOutput)
 
-	minValidTime := h.minValidTime.Load()
+	//minValidTime := h.minValidTime.Load()
 	mint, maxt := int64(math.MaxInt64), int64(math.MinInt64)
-	chunkRange := h.chunkRange.Load()
+	//chunkRange := h.chunkRange.Load()
 
 	for in := range wp.input {
 		if in.existingSeries != nil {
@@ -532,59 +532,59 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 			continue
 		}
 
-		for _, s := range in.samples {
-			ms := h.series.getByID(s.Ref)
-			if ms == nil {
-				unknownRefs++
-				continue
-			}
-			if s.T <= ms.mmMaxTime {
-				continue
-			}
-			ms.isHistogramSeries = false
-			if s.T <= ms.mmMaxTime {
-				continue
-			}
-			if _, chunkCreated := ms.append(s.T, s.V, 0, h.chunkDiskMapper, chunkRange); chunkCreated {
-				h.metrics.chunksCreated.Inc()
-				h.metrics.chunks.Inc()
-			}
-			if s.T > maxt {
-				maxt = s.T
-			}
-			if s.T < mint {
-				mint = s.T
-			}
-		}
+		//for _, s := range in.samples {
+		//	ms := h.series.getByID(s.Ref)
+		//	if ms == nil {
+		//		unknownRefs++
+		//		continue
+		//	}
+		//	if s.T <= ms.mmMaxTime {
+		//		continue
+		//	}
+		//	ms.isHistogramSeries = false
+		//	if s.T <= ms.mmMaxTime {
+		//		continue
+		//	}
+		//	if _, chunkCreated := ms.append(s.T, s.V, 0, h.chunkDiskMapper, chunkRange); chunkCreated {
+		//		h.metrics.chunksCreated.Inc()
+		//		h.metrics.chunks.Inc()
+		//	}
+		//	if s.T > maxt {
+		//		maxt = s.T
+		//	}
+		//	if s.T < mint {
+		//		mint = s.T
+		//	}
+		//}
 		select {
 		case wp.output <- in.samples:
 		default:
 		}
 
-		for _, s := range in.histogramSamples {
-			if s.T < minValidTime {
-				continue
-			}
-			ms := h.series.getByID(s.Ref)
-			if ms == nil {
-				unknownHistogramRefs++
-				continue
-			}
-			ms.isHistogramSeries = true
-			if s.T <= ms.mmMaxTime {
-				continue
-			}
-			if _, chunkCreated := ms.appendHistogram(s.T, s.H, 0, h.chunkDiskMapper, chunkRange); chunkCreated {
-				h.metrics.chunksCreated.Inc()
-				h.metrics.chunks.Inc()
-			}
-			if s.T > maxt {
-				maxt = s.T
-			}
-			if s.T < mint {
-				mint = s.T
-			}
-		}
+		//for _, s := range in.histogramSamples {
+		//	if s.T < minValidTime {
+		//		continue
+		//	}
+		//	ms := h.series.getByID(s.Ref)
+		//	if ms == nil {
+		//		unknownHistogramRefs++
+		//		continue
+		//	}
+		//	ms.isHistogramSeries = true
+		//	if s.T <= ms.mmMaxTime {
+		//		continue
+		//	}
+		//	if _, chunkCreated := ms.appendHistogram(s.T, s.H, 0, h.chunkDiskMapper, chunkRange); chunkCreated {
+		//		h.metrics.chunksCreated.Inc()
+		//		h.metrics.chunks.Inc()
+		//	}
+		//	if s.T > maxt {
+		//		maxt = s.T
+		//	}
+		//	if s.T < mint {
+		//		mint = s.T
+		//	}
+		//}
 
 		select {
 		case wp.histogramsOutput <- in.histogramSamples:
@@ -905,22 +905,22 @@ func (s *memSeries) encodeToSnapshotRecord(b []byte) []byte {
 	buf.PutBE64int64(0) // Backwards-compatibility; was chunkRange but now unused.
 
 	s.Lock()
-	if s.headChunk == nil {
-		buf.PutUvarint(0)
-	} else {
-		buf.PutUvarint(1)
-		buf.PutBE64int64(s.headChunk.minTime)
-		buf.PutBE64int64(s.headChunk.maxTime)
-		buf.PutByte(byte(s.headChunk.chunk.Encoding()))
-		buf.PutUvarintBytes(s.headChunk.chunk.Bytes())
-		// Backwards compatibility for old sampleBuf which had last 4 samples.
-		for i := 0; i < 3; i++ {
-			buf.PutBE64int64(0)
-			buf.PutBEFloat64(0)
-		}
-		buf.PutBE64int64(0)
-		buf.PutBEFloat64(s.lastValue)
-	}
+	//if s.headChunk == nil {
+	buf.PutUvarint(0)
+	//} else {
+	//	buf.PutUvarint(1)
+	//	buf.PutBE64int64(s.headChunk.minTime)
+	//	buf.PutBE64int64(s.headChunk.maxTime)
+	//	buf.PutByte(byte(s.headChunk.chunk.Encoding()))
+	//	buf.PutUvarintBytes(s.headChunk.chunk.Bytes())
+	//	// Backwards compatibility for old sampleBuf which had last 4 samples.
+	//	for i := 0; i < 3; i++ {
+	//		buf.PutBE64int64(0)
+	//		buf.PutBEFloat64(0)
+	//	}
+	//	buf.PutBE64int64(0)
+	//	buf.PutBEFloat64(s.lastValue)
+	//}
 	s.Unlock()
 
 	return buf.Get()
@@ -1340,16 +1340,16 @@ func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSerie
 				if csr.mc == nil {
 					continue
 				}
-				series.nextAt = csr.mc.maxTime // This will create a new chunk on append.
-				series.headChunk = csr.mc
-				series.lastValue = csr.lastValue
+				//series.nextAt = csr.mc.maxTime // This will create a new chunk on append.
+				//series.headChunk = csr.mc
+				//series.lastValue = csr.lastValue
 
-				app, err := series.headChunk.chunk.Appender()
-				if err != nil {
-					errChan <- err
-					return
-				}
-				series.app = app
+				//app, err := series.headChunk.chunk.Appender()
+				//if err != nil {
+				//	errChan <- err
+				//	return
+				//}
+				//series.app = app
 
 				h.updateMinMaxTime(csr.mc.minTime, csr.mc.maxTime)
 			}

@@ -162,24 +162,24 @@ func (h *headIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchB
 
 	*chks = (*chks)[:0]
 
-	for i, c := range s.mmappedChunks {
-		// Do not expose chunks that are outside of the specified range.
-		if !c.OverlapsClosedInterval(h.mint, h.maxt) {
-			continue
-		}
-		*chks = append(*chks, chunks.Meta{
-			MinTime: c.minTime,
-			MaxTime: c.maxTime,
-			Ref:     chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.headChunkID(i))),
-		})
-	}
-	if s.headChunk != nil && s.headChunk.OverlapsClosedInterval(h.mint, h.maxt) {
-		*chks = append(*chks, chunks.Meta{
-			MinTime: s.headChunk.minTime,
-			MaxTime: math.MaxInt64, // Set the head chunks as open (being appended to).
-			Ref:     chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.headChunkID(len(s.mmappedChunks)))),
-		})
-	}
+	//for i, c := range s.mmappedChunks {
+	//	// Do not expose chunks that are outside of the specified range.
+	//	if !c.OverlapsClosedInterval(h.mint, h.maxt) {
+	//		continue
+	//	}
+	//	*chks = append(*chks, chunks.Meta{
+	//		MinTime: c.minTime,
+	//		MaxTime: c.maxTime,
+	//		Ref:     chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.headChunkID(i))),
+	//	})
+	//}
+	//if s.headChunk != nil && s.headChunk.OverlapsClosedInterval(h.mint, h.maxt) {
+	//	*chks = append(*chks, chunks.Meta{
+	//		MinTime: s.headChunk.minTime,
+	//		MaxTime: math.MaxInt64, // Set the head chunks as open (being appended to).
+	//		Ref:     chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.headChunkID(len(s.mmappedChunks)))),
+	//	})
+	//}
 
 	return nil
 }
@@ -188,7 +188,8 @@ func (h *headIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchB
 // * 0 <= pos < len(s.mmappedChunks) refer to s.mmappedChunks[pos]
 // * pos == len(s.mmappedChunks) refers to s.headChunk
 func (s *memSeries) headChunkID(pos int) chunks.HeadChunkID {
-	return chunks.HeadChunkID(pos) + s.firstChunkID
+	//return chunks.HeadChunkID(pos) + s.firstChunkID
+	return 0
 }
 
 // oooHeadChunkID returns the HeadChunkID referred to by the given position.
@@ -318,28 +319,29 @@ func (s *memSeries) chunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDi
 	// incremented by 1 when new chunk is created, hence (id - firstChunkID) gives the slice index.
 	// The max index for the s.mmappedChunks slice can be len(s.mmappedChunks)-1, hence if the ix
 	// is len(s.mmappedChunks), it represents the next chunk, which is the head chunk.
-	ix := int(id) - int(s.firstChunkID)
-	if ix < 0 || ix > len(s.mmappedChunks) {
-		return nil, false, storage.ErrNotFound
-	}
-	if ix == len(s.mmappedChunks) {
-		if s.headChunk == nil {
-			return nil, false, errors.New("invalid head chunk")
-		}
-		return s.headChunk, false, nil
-	}
-	chk, err := chunkDiskMapper.Chunk(s.mmappedChunks[ix].ref)
-	if err != nil {
-		if _, ok := err.(*chunks.CorruptionErr); ok {
-			panic(err)
-		}
-		return nil, false, err
-	}
-	mc := memChunkPool.Get().(*memChunk)
-	mc.chunk = chk
-	mc.minTime = s.mmappedChunks[ix].minTime
-	mc.maxTime = s.mmappedChunks[ix].maxTime
-	return mc, true, nil
+	//ix := int(id) - int(s.firstChunkID)
+	//if ix < 0 || ix > len(s.mmappedChunks) {
+	//	return nil, false, storage.ErrNotFound
+	//}
+	//if ix == len(s.mmappedChunks) {
+	//	if s.headChunk == nil {
+	//		return nil, false, errors.New("invalid head chunk")
+	//	}
+	//	return s.headChunk, false, nil
+	//}
+	//chk, err := chunkDiskMapper.Chunk(s.mmappedChunks[ix].ref)
+	//if err != nil {
+	//	if _, ok := err.(*chunks.CorruptionErr); ok {
+	//		panic(err)
+	//	}
+	//	return nil, false, err
+	//}
+	//mc := memChunkPool.Get().(*memChunk)
+	//mc.chunk = chk
+	//mc.minTime = s.mmappedChunks[ix].minTime
+	//mc.maxTime = s.mmappedChunks[ix].maxTime
+	//return nil, true, nil
+	return nil, false, storage.ErrNotFound
 }
 
 // oooMergedChunk returns the requested chunk based on the given chunks.Meta
@@ -613,73 +615,74 @@ func (c *safeChunk) Iterator(reuseIter chunkenc.Iterator) chunkenc.Iterator {
 // iterator returns a chunk iterator for the requested chunkID, or a NopIterator if the requested ID is out of range.
 // It is unsafe to call this concurrently with s.append(...) without holding the series lock.
 func (s *memSeries) iterator(id chunks.HeadChunkID, isoState *isolationState, chunkDiskMapper *chunks.ChunkDiskMapper, memChunkPool *sync.Pool, it chunkenc.Iterator) chunkenc.Iterator {
-	c, garbageCollect, err := s.chunk(id, chunkDiskMapper, memChunkPool)
-	// TODO(fabxc): Work around! An error will be returns when a querier have retrieved a pointer to a
-	// series's chunk, which got then garbage collected before it got
-	// accessed.  We must ensure to not garbage collect as long as any
-	// readers still hold a reference.
-	if err != nil {
-		return chunkenc.NewNopIterator()
-	}
-	defer func() {
-		if garbageCollect {
-			// Set this to nil so that Go GC can collect it after it has been used.
-			// This should be done always at the end.
-			c.chunk = nil
-			memChunkPool.Put(c)
-		}
-	}()
-
-	ix := int(id) - int(s.firstChunkID)
-
-	numSamples := c.chunk.NumSamples()
-	stopAfter := numSamples
-
-	if isoState != nil && !isoState.IsolationDisabled() {
-		totalSamples := 0    // Total samples in this series.
-		previousSamples := 0 // Samples before this chunk.
-
-		for j, d := range s.mmappedChunks {
-			totalSamples += int(d.numSamples)
-			if j < ix {
-				previousSamples += int(d.numSamples)
-			}
-		}
-
-		if s.headChunk != nil {
-			totalSamples += s.headChunk.chunk.NumSamples()
-		}
-
-		// Removing the extra transactionIDs that are relevant for samples that
-		// come after this chunk, from the total transactionIDs.
-		appendIDsToConsider := s.txs.txIDCount - (totalSamples - (previousSamples + numSamples))
-
-		// Iterate over the appendIDs, find the first one that the isolation state says not
-		// to return.
-		it := s.txs.iterator()
-		for index := 0; index < appendIDsToConsider; index++ {
-			appendID := it.At()
-			if appendID <= isoState.maxAppendID { // Easy check first.
-				if _, ok := isoState.incompleteAppends[appendID]; !ok {
-					it.Next()
-					continue
-				}
-			}
-			stopAfter = numSamples - (appendIDsToConsider - index)
-			if stopAfter < 0 {
-				stopAfter = 0 // Stopped in a previous chunk.
-			}
-			break
-		}
-	}
-
-	if stopAfter == 0 {
-		return chunkenc.NewNopIterator()
-	}
-	if stopAfter == numSamples {
-		return c.chunk.Iterator(it)
-	}
-	return makeStopIterator(c.chunk, it, stopAfter)
+	return chunkenc.NewNopIterator()
+	//c, garbageCollect, err := s.chunk(id, chunkDiskMapper, memChunkPool)
+	//// TODO(fabxc): Work around! An error will be returns when a querier have retrieved a pointer to a
+	//// series's chunk, which got then garbage collected before it got
+	//// accessed.  We must ensure to not garbage collect as long as any
+	//// readers still hold a reference.
+	//if err != nil {
+	//	return chunkenc.NewNopIterator()
+	//}
+	//defer func() {
+	//	if garbageCollect {
+	//		// Set this to nil so that Go GC can collect it after it has been used.
+	//		// This should be done always at the end.
+	//		c.chunk = nil
+	//		memChunkPool.Put(c)
+	//	}
+	//}()
+	//
+	//ix := int(id) - int(s.firstChunkID)
+	//
+	//numSamples := c.chunk.NumSamples()
+	//stopAfter := numSamples
+	//
+	//if isoState != nil && !isoState.IsolationDisabled() {
+	//	totalSamples := 0    // Total samples in this series.
+	//	previousSamples := 0 // Samples before this chunk.
+	//
+	//	for j, d := range s.mmappedChunks {
+	//		totalSamples += int(d.numSamples)
+	//		if j < ix {
+	//			previousSamples += int(d.numSamples)
+	//		}
+	//	}
+	//
+	//	if s.headChunk != nil {
+	//		totalSamples += s.headChunk.chunk.NumSamples()
+	//	}
+	//
+	//	// Removing the extra transactionIDs that are relevant for samples that
+	//	// come after this chunk, from the total transactionIDs.
+	//	appendIDsToConsider := s.txs.txIDCount - (totalSamples - (previousSamples + numSamples))
+	//
+	//	// Iterate over the appendIDs, find the first one that the isolation state says not
+	//	// to return.
+	//	it := s.txs.iterator()
+	//	for index := 0; index < appendIDsToConsider; index++ {
+	//		appendID := it.At()
+	//		if appendID <= isoState.maxAppendID { // Easy check first.
+	//			if _, ok := isoState.incompleteAppends[appendID]; !ok {
+	//				it.Next()
+	//				continue
+	//			}
+	//		}
+	//		stopAfter = numSamples - (appendIDsToConsider - index)
+	//		if stopAfter < 0 {
+	//			stopAfter = 0 // Stopped in a previous chunk.
+	//		}
+	//		break
+	//	}
+	//}
+	//
+	//if stopAfter == 0 {
+	//	return chunkenc.NewNopIterator()
+	//}
+	//if stopAfter == numSamples {
+	//	return c.chunk.Iterator(it)
+	//}
+	//return makeStopIterator(c.chunk, it, stopAfter)
 }
 
 // stopIterator wraps an Iterator, but only returns the first

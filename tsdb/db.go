@@ -1054,29 +1054,33 @@ func (db *DB) Compact() (returnErr error) {
 		if !db.head.compactable() {
 			break
 		}
-		mint := db.head.MinTime()
-		maxt := rangeForTimestamp(mint, db.head.chunkRange.Load())
+		//mint := db.head.MinTime()
+		//maxt := rangeForTimestamp(mint, db.head.chunkRange.Load())
+		//
+		//// Wrap head into a range that bounds all reads to it.
+		//// We remove 1 millisecond from maxt because block
+		//// intervals are half-open: [b.MinTime, b.MaxTime). But
+		//// chunk intervals are closed: [c.MinTime, c.MaxTime];
+		//// so in order to make sure that overlaps are evaluated
+		//// consistently, we explicitly remove the last value
+		//// from the block interval here.
+		//rh := NewRangeHeadWithIsolationDisabled(db.head, mint, maxt-1)
+		//
+		//// Compaction runs with isolation disabled, because head.compactable()
+		//// ensures that maxt is more than chunkRange/2 back from now, and
+		//// head.appendableMinValidTime() ensures that no new appends can start within the compaction range.
+		//// We do need to wait for any overlapping appenders that started previously to finish.
+		//db.head.WaitForAppendersOverlapping(rh.MaxTime())
+		//
+		//if err := db.compactHead(rh); err != nil {
+		//	return errors.Wrap(err, "compact head")
+		//}
+		//// Consider only successful compactions for WAL truncation.
+		//lastBlockMaxt = maxt
 
-		// Wrap head into a range that bounds all reads to it.
-		// We remove 1 millisecond from maxt because block
-		// intervals are half-open: [b.MinTime, b.MaxTime). But
-		// chunk intervals are closed: [c.MinTime, c.MaxTime];
-		// so in order to make sure that overlaps are evaluated
-		// consistently, we explicitly remove the last value
-		// from the block interval here.
-		rh := NewRangeHeadWithIsolationDisabled(db.head, mint, maxt-1)
-
-		// Compaction runs with isolation disabled, because head.compactable()
-		// ensures that maxt is more than chunkRange/2 back from now, and
-		// head.appendableMinValidTime() ensures that no new appends can start within the compaction range.
-		// We do need to wait for any overlapping appenders that started previously to finish.
-		db.head.WaitForAppendersOverlapping(rh.MaxTime())
-
-		if err := db.compactHead(rh); err != nil {
-			return errors.Wrap(err, "compact head")
+		if err := db.compactOOOHead(); err != nil {
+			return errors.Wrap(err, "compact ooo head")
 		}
-		// Consider only successful compactions for WAL truncation.
-		lastBlockMaxt = maxt
 	}
 
 	// Clear some disk space before compacting blocks, especially important
@@ -1094,12 +1098,12 @@ func (db *DB) Compact() (returnErr error) {
 		)
 	}
 
-	if lastBlockMaxt != math.MinInt64 {
-		// The head was compacted, so we compact OOO head as well.
-		if err := db.compactOOOHead(); err != nil {
-			return errors.Wrap(err, "compact ooo head")
-		}
-	}
+	//if lastBlockMaxt != math.MinInt64 {
+	//	// The head was compacted, so we compact OOO head as well.
+	//	if err := db.compactOOOHead(); err != nil {
+	//		return errors.Wrap(err, "compact ooo head")
+	//	}
+	//}
 
 	return db.compactBlocks()
 }
@@ -1157,7 +1161,7 @@ func (db *DB) compactOOOHead() error {
 		}
 	}
 
-	return nil
+	return db.head.Truncate(math.MaxInt64)
 }
 
 // compactOOO creates a new block per possible block range in the compactor's directory from the OOO Head given.
@@ -1770,32 +1774,32 @@ func (db *DB) Querier(_ context.Context, mint, maxt int64) (storage.Querier, err
 		}
 	}
 	var inOrderHeadQuerier storage.Querier
-	if maxt >= db.head.MinTime() {
-		rh := NewRangeHead(db.head, mint, maxt)
-		var err error
-		inOrderHeadQuerier, err = NewBlockQuerier(rh, mint, maxt)
-		if err != nil {
-			return nil, errors.Wrapf(err, "open block querier for head %s", rh)
-		}
-
-		// Getting the querier above registers itself in the queue that the truncation waits on.
-		// So if the querier is currently not colliding with any truncation, we can continue to use it and still
-		// won't run into a race later since any truncation that comes after will wait on this querier if it overlaps.
-		shouldClose, getNew, newMint := db.head.IsQuerierCollidingWithTruncation(mint, maxt)
-		if shouldClose {
-			if err := inOrderHeadQuerier.Close(); err != nil {
-				return nil, errors.Wrapf(err, "closing head block querier %s", rh)
-			}
-			inOrderHeadQuerier = nil
-		}
-		if getNew {
-			rh := NewRangeHead(db.head, newMint, maxt)
-			inOrderHeadQuerier, err = NewBlockQuerier(rh, newMint, maxt)
-			if err != nil {
-				return nil, errors.Wrapf(err, "open block querier for head while getting new querier %s", rh)
-			}
-		}
-	}
+	//if maxt >= db.head.MinTime() {
+	//	rh := NewRangeHead(db.head, mint, maxt)
+	//	var err error
+	//	inOrderHeadQuerier, err = NewBlockQuerier(rh, mint, maxt)
+	//	if err != nil {
+	//		return nil, errors.Wrapf(err, "open block querier for head %s", rh)
+	//	}
+	//
+	//	// Getting the querier above registers itself in the queue that the truncation waits on.
+	//	// So if the querier is currently not colliding with any truncation, we can continue to use it and still
+	//	// won't run into a race later since any truncation that comes after will wait on this querier if it overlaps.
+	//	shouldClose, getNew, newMint := db.head.IsQuerierCollidingWithTruncation(mint, maxt)
+	//	if shouldClose {
+	//		if err := inOrderHeadQuerier.Close(); err != nil {
+	//			return nil, errors.Wrapf(err, "closing head block querier %s", rh)
+	//		}
+	//		inOrderHeadQuerier = nil
+	//	}
+	//	if getNew {
+	//		rh := NewRangeHead(db.head, newMint, maxt)
+	//		inOrderHeadQuerier, err = NewBlockQuerier(rh, newMint, maxt)
+	//		if err != nil {
+	//			return nil, errors.Wrapf(err, "open block querier for head while getting new querier %s", rh)
+	//		}
+	//	}
+	//}
 
 	var outOfOrderHeadQuerier storage.Querier
 	if overlapsClosedInterval(mint, maxt, db.head.MinOOOTime(), db.head.MaxOOOTime()) {

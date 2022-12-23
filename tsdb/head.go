@@ -117,6 +117,8 @@ type Head struct {
 	reg   prometheus.Registerer
 
 	memTruncationInProcess atomic.Bool
+
+	lastCompactionTime time.Time
 }
 
 type ExemplarStorage interface {
@@ -234,8 +236,9 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal, wbl *wlog.WL, opts *Hea
 				return &memChunk{}
 			},
 		},
-		stats: stats,
-		reg:   r,
+		stats:              stats,
+		reg:                r,
+		lastCompactionTime: time.Now(),
 	}
 	if err := h.resetInMemoryState(); err != nil {
 		return nil, err
@@ -747,71 +750,71 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 
 		ms, ok := refSeries[seriesRef]
 
-		if isOOO {
-			if !ok {
-				oooMmappedChunks[seriesRef] = append(oooMmappedChunks[seriesRef], &mmappedChunk{
-					ref:        chunkRef,
-					minTime:    mint,
-					maxTime:    maxt,
-					numSamples: numSamples,
-				})
-				return nil
-			}
-
-			h.metrics.chunks.Inc()
-			h.metrics.chunksCreated.Inc()
-
-			ms.oooMmappedChunks = append(ms.oooMmappedChunks, &mmappedChunk{
-				ref:        chunkRef,
-				minTime:    mint,
-				maxTime:    maxt,
-				numSamples: numSamples,
-			})
-
-			return nil
-		}
-
+		h.metrics.chunks.Inc()
+		h.metrics.chunksCreated.Inc()
+		//if isOOO {
 		if !ok {
-			slice := mmappedChunks[seriesRef]
-			if len(slice) > 0 && slice[len(slice)-1].maxTime >= mint {
-				h.metrics.mmapChunkCorruptionTotal.Inc()
-				return errors.Errorf("out of sequence m-mapped chunk for series ref %d, last chunk: [%d, %d], new: [%d, %d]",
-					seriesRef, slice[len(slice)-1].minTime, slice[len(slice)-1].maxTime, mint, maxt)
-			}
-			slice = append(slice, &mmappedChunk{
+			oooMmappedChunks[seriesRef] = append(oooMmappedChunks[seriesRef], &mmappedChunk{
 				ref:        chunkRef,
 				minTime:    mint,
 				maxTime:    maxt,
 				numSamples: numSamples,
 			})
-			mmappedChunks[seriesRef] = slice
 			return nil
-		}
-
-		if len(ms.mmappedChunks) > 0 && ms.mmappedChunks[len(ms.mmappedChunks)-1].maxTime >= mint {
-			h.metrics.mmapChunkCorruptionTotal.Inc()
-			return errors.Errorf("out of sequence m-mapped chunk for series ref %d, last chunk: [%d, %d], new: [%d, %d]",
-				seriesRef, ms.mmappedChunks[len(ms.mmappedChunks)-1].minTime, ms.mmappedChunks[len(ms.mmappedChunks)-1].maxTime,
-				mint, maxt)
 		}
 
 		h.metrics.chunks.Inc()
 		h.metrics.chunksCreated.Inc()
-		ms.mmappedChunks = append(ms.mmappedChunks, &mmappedChunk{
+
+		ms.oooMmappedChunks = append(ms.oooMmappedChunks, &mmappedChunk{
 			ref:        chunkRef,
 			minTime:    mint,
 			maxTime:    maxt,
 			numSamples: numSamples,
 		})
-		h.updateMinMaxTime(mint, maxt)
-		if ms.headChunk != nil && maxt >= ms.headChunk.minTime {
-			// The head chunk was completed and was m-mapped after taking the snapshot.
-			// Hence remove this chunk.
-			ms.nextAt = 0
-			ms.headChunk = nil
-			ms.app = nil
-		}
+
 		return nil
+		//}
+
+		//if !ok {
+		//	slice := mmappedChunks[seriesRef]
+		//	if len(slice) > 0 && slice[len(slice)-1].maxTime >= mint {
+		//		h.metrics.mmapChunkCorruptionTotal.Inc()
+		//		return errors.Errorf("out of sequence m-mapped chunk for series ref %d, last chunk: [%d, %d], new: [%d, %d]",
+		//			seriesRef, slice[len(slice)-1].minTime, slice[len(slice)-1].maxTime, mint, maxt)
+		//	}
+		//	slice = append(slice, &mmappedChunk{
+		//		ref:        chunkRef,
+		//		minTime:    mint,
+		//		maxTime:    maxt,
+		//		numSamples: numSamples,
+		//	})
+		//	mmappedChunks[seriesRef] = slice
+		//	return nil
+		//}
+
+		//if len(ms.mmappedChunks) > 0 && ms.mmappedChunks[len(ms.mmappedChunks)-1].maxTime >= mint {
+		//	h.metrics.mmapChunkCorruptionTotal.Inc()
+		//	return errors.Errorf("out of sequence m-mapped chunk for series ref %d, last chunk: [%d, %d], new: [%d, %d]",
+		//		seriesRef, ms.mmappedChunks[len(ms.mmappedChunks)-1].minTime, ms.mmappedChunks[len(ms.mmappedChunks)-1].maxTime,
+		//		mint, maxt)
+		//}
+		//
+		//ms.mmappedChunks = append(ms.mmappedChunks, &mmappedChunk{
+		//	ref:        chunkRef,
+		//	minTime:    mint,
+		//	maxTime:    maxt,
+		//	numSamples: numSamples,
+		//})
+		//h.updateMinMaxTime(mint, maxt)
+		//if ms.headChunk != nil && maxt >= ms.headChunk.minTime {
+		//	// The head chunk was completed and was m-mapped after taking the snapshot.
+		//	// Hence remove this chunk.
+		//	ms.nextAt = 0
+		//	ms.headChunk = nil
+		//	ms.app = nil
+		//}
+		//return nil
 	}); err != nil {
 		// secondLastRef because the lastRef caused an error.
 		return nil, nil, secondLastRef, errors.Wrap(err, "iterate on on-disk chunks")
@@ -1484,7 +1487,7 @@ func (h *Head) MaxOOOTime() int64 {
 // The head has a compactable range when the head time range is 1.5 times the chunk range.
 // The 0.5 acts as a buffer of the appendable window.
 func (h *Head) compactable() bool {
-	return h.MaxTime()-h.MinTime() > h.chunkRange.Load()/2*3
+	return time.Now().Sub(h.lastCompactionTime) > (2 * time.Hour)
 }
 
 // Close flushes the WAL and closes the head.
@@ -1658,12 +1661,12 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 				series.Lock()
 				rmChunks += series.truncateChunksBefore(mint, minOOOMmapRef)
 
-				if len(series.mmappedChunks) > 0 {
-					seq, _ := series.mmappedChunks[0].ref.Unpack()
-					if seq < minMmapFile {
-						minMmapFile = seq
-					}
-				}
+				//if len(series.mmappedChunks) > 0 {
+				//	seq, _ := series.mmappedChunks[0].ref.Unpack()
+				//	if seq < minMmapFile {
+				//		minMmapFile = seq
+				//	}
+				//}
 				if len(series.oooMmappedChunks) > 0 {
 					seq, _ := series.oooMmappedChunks[0].ref.Unpack()
 					if seq < minMmapFile {
@@ -1680,8 +1683,8 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 						minOOOTime = series.oooHeadChunk.minTime
 					}
 				}
-				if len(series.mmappedChunks) > 0 || len(series.oooMmappedChunks) > 0 ||
-					series.headChunk != nil || series.oooHeadChunk != nil || series.pendingCommit {
+				if len(series.oooMmappedChunks) > 0 ||
+					series.oooHeadChunk != nil {
 					seriesMint := series.minTime()
 					if seriesMint < actualMint {
 						actualMint = seriesMint
@@ -1834,28 +1837,25 @@ type memSeries struct {
 	//  after compaction: mmappedChunks=[p7,p8,p9]       firstChunkID=7
 	//
 	// pN is the pointer to the mmappedChunk referered to by HeadChunkID=N
-	mmappedChunks []*mmappedChunk
-	headChunk     *memChunk          // Most recent chunk in memory that's still being built.
-	firstChunkID  chunks.HeadChunkID // HeadChunkID for mmappedChunks[0]
 
 	oooMmappedChunks []*mmappedChunk    // Immutable chunks on disk containing OOO samples.
 	oooHeadChunk     *oooHeadChunk      // Most recent chunk for ooo samples in memory that's still being built.
 	firstOOOChunkID  chunks.HeadChunkID // HeadOOOChunkID for oooMmappedChunks[0]
 
-	mmMaxTime int64 // Max time of any mmapped chunk, only used during WAL replay.
+	//mmMaxTime int64 // Max time of any mmapped chunk, only used during WAL replay.
 
-	nextAt int64 // Timestamp at which to cut the next chunk.
+	//nextAt int64 // Timestamp at which to cut the next chunk.
 
 	// We keep the last value here (in addition to appending it to the chunk) so we can check for duplicates.
-	lastValue float64
+	//lastValue float64
 
 	// We keep the last histogram value here (in addition to appending it to the chunk) so we can check for duplicates.
-	lastHistogramValue *histogram.Histogram
+	//lastHistogramValue *histogram.Histogram
 
 	// Current appender for the head chunk. Set when a new head chunk is cut.
 	// It is nil only if headChunk is nil. E.g. if there was an appender that created a new series, but rolled back the commit
 	// (the first sample would create a headChunk, hence appender, but rollback skipped it while the Append() call would create a series).
-	app chunkenc.Appender
+	//app chunkenc.Appender
 
 	// txs is nil if isolation is disabled.
 	txs *txRing
@@ -1864,14 +1864,14 @@ type memSeries struct {
 	// marker as either histogram or float sample. Perhaps there is a better way.
 	isHistogramSeries bool
 
-	pendingCommit bool // Whether there are samples waiting to be committed to this series.
+	//pendingCommit bool // Whether there are samples waiting to be committed to this series.
 }
 
 func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, isolationDisabled bool) *memSeries {
 	s := &memSeries{
-		lset:   lset,
-		ref:    id,
-		nextAt: math.MinInt64,
+		lset: lset,
+		ref:  id,
+		//nextAt: math.MinInt64,
 	}
 	if !isolationDisabled {
 		s.txs = newTxRing(4)
@@ -1880,12 +1880,12 @@ func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, isolationDisabled
 }
 
 func (s *memSeries) minTime() int64 {
-	if len(s.mmappedChunks) > 0 {
-		return s.mmappedChunks[0].minTime
-	}
-	if s.headChunk != nil {
-		return s.headChunk.minTime
-	}
+	//if len(s.mmappedChunks) > 0 {
+	//	return s.mmappedChunks[0].minTime
+	//}
+	//if s.headChunk != nil {
+	//	return s.headChunk.minTime
+	//}
 	return math.MinInt64
 }
 
@@ -1895,9 +1895,9 @@ func (s *memSeries) maxTime() int64 {
 	if c != nil {
 		return c.maxTime
 	}
-	if len(s.mmappedChunks) > 0 {
-		return s.mmappedChunks[len(s.mmappedChunks)-1].maxTime
-	}
+	//if len(s.mmappedChunks) > 0 {
+	//	return s.mmappedChunks[len(s.mmappedChunks)-1].maxTime
+	//}
 	return math.MinInt64
 }
 
@@ -1906,23 +1906,23 @@ func (s *memSeries) maxTime() int64 {
 // Chunk IDs remain unchanged.
 func (s *memSeries) truncateChunksBefore(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) int {
 	var removedInOrder int
-	if s.headChunk != nil && s.headChunk.maxTime < mint {
-		// If head chunk is truncated, we can truncate all mmapped chunks.
-		removedInOrder = 1 + len(s.mmappedChunks)
-		s.firstChunkID += chunks.HeadChunkID(removedInOrder)
-		s.headChunk = nil
-		s.mmappedChunks = nil
-	}
-	if len(s.mmappedChunks) > 0 {
-		for i, c := range s.mmappedChunks {
-			if c.maxTime >= mint {
-				break
-			}
-			removedInOrder = i + 1
-		}
-		s.mmappedChunks = append(s.mmappedChunks[:0], s.mmappedChunks[removedInOrder:]...)
-		s.firstChunkID += chunks.HeadChunkID(removedInOrder)
-	}
+	//if s.headChunk != nil && s.headChunk.maxTime < mint {
+	//	// If head chunk is truncated, we can truncate all mmapped chunks.
+	//	removedInOrder = 1 + len(s.mmappedChunks)
+	//	s.firstChunkID += chunks.HeadChunkID(removedInOrder)
+	//	s.headChunk = nil
+	//	s.mmappedChunks = nil
+	//}
+	//if len(s.mmappedChunks) > 0 {
+	//	for i, c := range s.mmappedChunks {
+	//		if c.maxTime >= mint {
+	//			break
+	//		}
+	//		removedInOrder = i + 1
+	//	}
+	//	s.mmappedChunks = append(s.mmappedChunks[:0], s.mmappedChunks[removedInOrder:]...)
+	//	s.firstChunkID += chunks.HeadChunkID(removedInOrder)
+	//}
 
 	var removedOOO int
 	if len(s.oooMmappedChunks) > 0 {
@@ -1948,7 +1948,7 @@ func (s *memSeries) cleanupAppendIDsBelow(bound uint64) {
 }
 
 func (s *memSeries) head() *memChunk {
-	return s.headChunk
+	return nil
 }
 
 type memChunk struct {
