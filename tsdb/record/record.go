@@ -673,3 +673,54 @@ func (e *Encoder) HistogramSamples(histograms []RefHistogramSample, b []byte) []
 
 	return buf.Get()
 }
+
+func (e *Encoder) FloatHistogramSamples(histograms []RefFloatHistogramSample, b []byte) []byte {
+	buf := encoding.Encbuf{B: b}
+	buf.PutByte(byte(HistogramSamples))
+
+	if len(histograms) == 0 {
+		return buf.Get()
+	}
+
+	// Store base timestamp and base reference number of first histogram.
+	// All histograms encode their timestamp and ref as delta to those.
+	first := histograms[0]
+	buf.PutBE64(uint64(first.Ref))
+	buf.PutBE64int64(first.T)
+
+	for _, h := range histograms {
+		buf.PutVarint64(int64(h.Ref) - int64(first.Ref))
+		buf.PutVarint64(h.T - first.T)
+
+		buf.PutVarint64(int64(h.FH.Schema))
+		buf.PutBE64(math.Float64bits(h.FH.ZeroThreshold))
+
+		buf.PutBEFloat64(h.FH.ZeroCount)
+		buf.PutBEFloat64(h.FH.Count)
+		buf.PutBE64(math.Float64bits(h.FH.Sum))
+
+		buf.PutUvarint(len(h.FH.PositiveSpans))
+		for _, s := range h.FH.PositiveSpans {
+			buf.PutVarint64(int64(s.Offset))
+			buf.PutUvarint32(s.Length)
+		}
+
+		buf.PutUvarint(len(h.FH.NegativeSpans))
+		for _, s := range h.FH.NegativeSpans {
+			buf.PutVarint64(int64(s.Offset))
+			buf.PutUvarint32(s.Length)
+		}
+
+		buf.PutUvarint(len(h.FH.PositiveBuckets))
+		for _, b := range h.FH.PositiveBuckets {
+			buf.PutBEFloat64(b)
+		}
+
+		buf.PutUvarint(len(h.FH.NegativeBuckets))
+		for _, b := range h.FH.NegativeBuckets {
+			buf.PutBEFloat64(b)
+		}
+	}
+
+	return buf.Get()
+}

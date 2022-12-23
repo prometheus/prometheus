@@ -564,27 +564,31 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		}
 	}
 
-	s.Lock()
-	if err := s.appendableHistogram(t, h); err != nil {
-		s.Unlock()
-		if err == storage.ErrOutOfOrderSample {
-			a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()
+	if h != nil {
+		s.Lock()
+		if err := s.appendableHistogram(t, h); err != nil {
+			s.Unlock()
+			if err == storage.ErrOutOfOrderSample {
+				a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()
+			}
+			return 0, err
 		}
-		return 0, err
+		s.pendingCommit = true
+		s.Unlock()
 	}
-	s.pendingCommit = true
-	s.Unlock()
 
-	s.Lock()
-	if err := s.appendableFloatHistogram(t, fh); err != nil {
-		s.Unlock()
-		if err == storage.ErrOutOfOrderSample {
-			a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()
+	if fh != nil {
+		s.Lock()
+		if err := s.appendableFloatHistogram(t, fh); err != nil {
+			s.Unlock()
+			if err == storage.ErrOutOfOrderSample {
+				a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()
+			}
+			return 0, err
 		}
-		return 0, err
+		s.pendingCommit = true
+		s.Unlock()
 	}
-	s.pendingCommit = true
-	s.Unlock()
 
 	if t < a.mint {
 		a.mint = t
@@ -592,19 +596,24 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 	if t > a.maxt {
 		a.maxt = t
 	}
-	a.histograms = append(a.histograms, record.RefHistogramSample{
-		Ref: s.ref,
-		T:   t,
-		H:   h,
-	})
-	a.histogramSeries = append(a.histogramSeries, s)
 
-	a.floatHistograms = append(a.floatHistograms, record.RefFloatHistogramSample{
-		Ref: s.ref,
-		T:   t,
-		FH:  fh,
-	})
-	a.floatHistogramSeries = append(a.floatHistogramSeries, s)
+	if h != nil {
+		a.histograms = append(a.histograms, record.RefHistogramSample{
+			Ref: s.ref,
+			T:   t,
+			H:   h,
+		})
+		a.histogramSeries = append(a.histogramSeries, s)
+	}
+
+	if fh != nil {
+		a.floatHistograms = append(a.floatHistograms, record.RefFloatHistogramSample{
+			Ref: s.ref,
+			T:   t,
+			FH:  fh,
+		})
+		a.floatHistogramSeries = append(a.floatHistogramSeries, s)
+	}
 	return storage.SeriesRef(s.ref), nil
 }
 
@@ -821,6 +830,13 @@ func (a *headAppender) log() error {
 		buf = rec[:0]
 		if err := a.head.wal.Log(rec); err != nil {
 			return errors.Wrap(err, "log histograms")
+		}
+	}
+	if len(a.floatHistograms) > 0 {
+		rec = enc.FloatHistogramSamples(a.floatHistograms, buf)
+		buf = rec[:0]
+		if err := a.head.wal.Log(rec); err != nil {
+			return errors.Wrap(err, "log float histograms")
 		}
 	}
 	return nil
@@ -1044,7 +1060,7 @@ func (a *headAppender) Commit() (err error) {
 	floatHistogramsTotal := len(a.floatHistograms)
 	floatHistoOOORejected := 0
 	for i, s := range a.floatHistograms {
-		series = a.histogramSeries[i]
+		series = a.floatHistogramSeries[i]
 		series.Lock()
 		ok, chunkCreated := series.appendFloatHistogram(s.T, s.FH, a.appendID, a.head.chunkDiskMapper, chunkRange)
 		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
@@ -1075,7 +1091,7 @@ func (a *headAppender) Commit() (err error) {
 		series.Unlock()
 	}
 
-	// TODO(marctc): duplicate this metrics for float histograms?
+	// TODO(marctc): duplicate this metrics for float histogram or use different values?
 	a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat).Add(float64(oooRejected))
 	a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeHistogram).Add(float64(histoOOORejected))
 	a.head.metrics.outOfBoundSamples.WithLabelValues(sampleMetricTypeFloat).Add(float64(oobRejected))
@@ -1219,24 +1235,20 @@ func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, 
 	// appendPreprocessor because in case it ends up creating a new chunk,
 	// we need to know if there was also a counter reset or not to set the
 	// meta properly.
-	app, _ := s.app.(*chunkenc.HistogramAppender)
+	app, _ := s.app.(*chunkenc.FloatHistogramAppender)
 	var (
 		positiveInterjections, negativeInterjections []chunkenc.Interjection
 		okToAppend, counterReset                     bool
 	)
-	// TODO(marctc): remove this comment later. Cut new chunks if it has hit some boundaries.
-	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.EncHistogram, chunkDiskMapper, chunkRange)
+	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.EncFloatHistogram, chunkDiskMapper, chunkRange)
 	if !sampleInOrder {
 		return sampleInOrder, chunkCreated
 	}
-	// TODO(marctc): implement up to this point for appendFloatHistogram, including appendPreprocessor call.
-	// After this point, sync with Ganesh's work on float histogram chunk.
 	if app != nil {
-		positiveInterjections, negativeInterjections, okToAppend, counterReset = app.Appendable(s.lastHistogramValue) // TODO(marctc): change this to FloatHistogram
+		positiveInterjections, negativeInterjections, okToAppend, counterReset = app.Appendable(fh)
 	}
 
 	if !chunkCreated {
-		// TODO(marctc): remove this comment later. Cut new chunk or reencode existing chunk based on different conditions.
 		// We have 3 cases here
 		// - !okToAppend -> We need to cut a new chunk.
 		// - okToAppend but we have interjections → Existing chunk needs
@@ -1259,7 +1271,7 @@ func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, 
 	}
 
 	if chunkCreated {
-		hc := s.headChunk.chunk.(*chunkenc.HistogramChunk)
+		hc := s.headChunk.chunk.(*chunkenc.FloatHistogramChunk)
 		header := chunkenc.UnknownCounterReset
 		if counterReset {
 			header = chunkenc.CounterReset
@@ -1269,7 +1281,7 @@ func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, 
 		hc.SetCounterResetHeader(header)
 	}
 
-	s.app.AppendHistogram(t, s.lastHistogramValue) // TODO(marctc): change this to AppendFloatHistogram
+	s.app.AppendFloatHistogram(t, fh)
 	s.isHistogramSeries = true
 
 	c.maxTime = t

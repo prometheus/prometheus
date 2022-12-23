@@ -499,7 +499,6 @@ func createBlockFromHead(tb testing.TB, dir string, head *Head) string {
 	return filepath.Join(dir, ulid.String())
 }
 
-// TODO(marctc): Use this function also with float histograms
 func createHead(tb testing.TB, w *wlog.WL, series []storage.Series, chunkDir string) *Head {
 	opts := DefaultHeadOptions()
 	opts.ChunkDirRoot = chunkDir
@@ -530,6 +529,9 @@ func createHead(tb testing.TB, w *wlog.WL, series []storage.Series, chunkDir str
 			case chunkenc.ValHistogram:
 				t, h := it.AtHistogram()
 				ref, err = app.AppendHistogram(ref, lset, t, h, nil)
+			case chunkenc.ValFloatHistogram:
+				t, fh := it.AtFloatHistogram()
+				ref, err = app.AppendHistogram(ref, lset, t, nil, fh)
 			default:
 				err = fmt.Errorf("unknown sample type %s", typ.String())
 			}
