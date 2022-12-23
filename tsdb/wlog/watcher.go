@@ -81,6 +81,7 @@ type WatcherOptimizer struct {
 	foundReadsForFaster       int
 	maxMultiplier             int64
 	missedReads               int
+	foundRecord               bool
 	foundRecordHistory        []bool
 	currentSlowDownMultiplier int64
 }
@@ -425,7 +426,6 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 
 	gcSem := make(chan struct{}, 1)
 	w.optimizer = NewWatcherOptimizer()
-	foundRecord := false
 	for {
 		select {
 		case <-w.quit:
@@ -462,7 +462,7 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 				continue
 			}
 
-			err, _ = w.readSegment(reader, segmentNum, tail)
+			err = w.readSegment(reader, segmentNum, tail)
 
 			// Ignore errors reading to end of segment whilst replaying the WAL.
 			if !tail {
@@ -483,8 +483,8 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 
 		case <-readTicker.C:
 
-			err, foundRecord = w.readSegment(reader, segmentNum, tail)
-			w.runOptimizer(foundRecord, segmentTicker, readTicker)
+			err = w.readSegment(reader, segmentNum, tail)
+			w.runOptimizer(segmentTicker, readTicker)
 
 			// Ignore all errors reading to end of segment whilst replaying the WAL.
 			if !tail {
@@ -510,11 +510,11 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 // NOTE: The checkpointTicker is left alone because
 // it is already relatively slow and we don't want to
 // slow it down any further
-func (w *Watcher) runOptimizer(foundRecord bool, segmentTicker *time.Ticker, readTicker *time.Ticker) {
+func (w *Watcher) runOptimizer(segmentTicker *time.Ticker, readTicker *time.Ticker) {
 	// We need to analyze the number of optimizer records tracked before making any decisions
 	if len(w.optimizer.foundRecordHistory) < optimizerSampleTotal {
-		w.optimizer.foundRecordHistory = append([]bool{foundRecord}, w.optimizer.foundRecordHistory...)
-		if !foundRecord {
+		w.optimizer.foundRecordHistory = append([]bool{w.optimizer.foundRecord}, w.optimizer.foundRecordHistory...)
+		if !w.optimizer.foundRecord {
 			w.optimizer.missedReads++
 		}
 
@@ -530,13 +530,13 @@ func (w *Watcher) runOptimizer(foundRecord bool, segmentTicker *time.Ticker, rea
 	// If the oldest read doesn't match the newest read then update the running
 	// counter. This is tracked as we go so we don't have to traverse the whole
 	// foundRecordHistory slice to count it every read.
-	if foundRecord && !w.optimizer.foundRecordHistory[0] {
+	if w.optimizer.foundRecord && !w.optimizer.foundRecordHistory[0] {
 		w.optimizer.missedReads--
-	} else if !foundRecord && w.optimizer.foundRecordHistory[0] {
+	} else if !w.optimizer.foundRecord && w.optimizer.foundRecordHistory[0] {
 		w.optimizer.missedReads++
 	}
 	w.optimizer.foundRecordHistory = w.optimizer.foundRecordHistory[1:]
-	w.optimizer.foundRecordHistory = append(w.optimizer.foundRecordHistory, foundRecord)
+	w.optimizer.foundRecordHistory = append(w.optimizer.foundRecordHistory, w.optimizer.foundRecord)
 
 	// See if we need to speed up or slow down and set the currentSlowDownMultiplier if we do
 	var changeSpeeds = false
@@ -594,7 +594,7 @@ func (w *Watcher) garbageCollectSeries(segmentNum int) error {
 
 // Read from a segment and pass the details to w.writer.
 // Also used with readCheckpoint - implements segmentReadFn.
-func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) (error, bool) {
+func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 	var (
 		dec              record.Decoder
 		series           []record.RefSeries
@@ -605,9 +605,9 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) (error, 
 		histogramsToSend []record.RefHistogramSample
 	)
 
-	var foundRecord = false
+	w.optimizer.foundRecord = false
 	for r.Next() && !isClosed(w.quit) {
-		foundRecord = true
+		w.optimizer.foundRecord = true
 		rec := r.Record()
 		w.recordsReadMetric.WithLabelValues(dec.Type(rec).String()).Inc()
 
@@ -616,7 +616,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) (error, 
 			series, err := dec.Series(rec, series[:0])
 			if err != nil {
 				w.recordDecodeFailsMetric.Inc()
-				return err, foundRecord
+				return err
 			}
 			w.writer.StoreSeries(series, segmentNum)
 
@@ -629,7 +629,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) (error, 
 			samples, err := dec.Samples(rec, samples[:0])
 			if err != nil {
 				w.recordDecodeFailsMetric.Inc()
-				return err, foundRecord
+				return err
 			}
 			for _, s := range samples {
 				if s.T > w.startTimestamp {
@@ -659,7 +659,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) (error, 
 			exemplars, err := dec.Exemplars(rec, exemplars[:0])
 			if err != nil {
 				w.recordDecodeFailsMetric.Inc()
-				return err, foundRecord
+				return err
 			}
 			w.writer.AppendExemplars(exemplars)
 
@@ -674,7 +674,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) (error, 
 			histograms, err := dec.HistogramSamples(rec, histograms[:0])
 			if err != nil {
 				w.recordDecodeFailsMetric.Inc()
-				return err, foundRecord
+				return err
 			}
 			for _, h := range histograms {
 				if h.T > w.startTimestamp {
@@ -698,20 +698,18 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) (error, 
 			w.recordDecodeFailsMetric.Inc()
 		}
 	}
-	return errors.Wrapf(r.Err(), "segment %d: %v", segmentNum, r.Err()), foundRecord
+	return errors.Wrapf(r.Err(), "segment %d: %v", segmentNum, r.Err())
 }
 
 // Go through all series in a segment updating the segmentNum, so we can delete older series.
 // Used with readCheckpoint - implements segmentReadFn.
-func (w *Watcher) readSegmentForGC(r *LiveReader, segmentNum int, _ bool) (error, bool) {
+func (w *Watcher) readSegmentForGC(r *LiveReader, segmentNum int, _ bool) error {
 	var (
 		dec    record.Decoder
 		series []record.RefSeries
 	)
 
-	var foundRecord = false
 	for r.Next() && !isClosed(w.quit) {
-		foundRecord = true
 		rec := r.Record()
 		w.recordsReadMetric.WithLabelValues(dec.Type(rec).String()).Inc()
 
@@ -720,7 +718,7 @@ func (w *Watcher) readSegmentForGC(r *LiveReader, segmentNum int, _ bool) (error
 			series, err := dec.Series(rec, series[:0])
 			if err != nil {
 				w.recordDecodeFailsMetric.Inc()
-				return err, foundRecord
+				return err
 			}
 			w.writer.UpdateSeriesSegment(series, segmentNum)
 
@@ -734,7 +732,7 @@ func (w *Watcher) readSegmentForGC(r *LiveReader, segmentNum int, _ bool) (error
 			w.recordDecodeFailsMetric.Inc()
 		}
 	}
-	return errors.Wrapf(r.Err(), "segment %d: %v", segmentNum, r.Err()), foundRecord
+	return errors.Wrapf(r.Err(), "segment %d: %v", segmentNum, r.Err())
 }
 
 func (w *Watcher) SetStartTime(t time.Time) {
@@ -742,7 +740,7 @@ func (w *Watcher) SetStartTime(t time.Time) {
 	w.startTimestamp = timestamp.FromTime(t)
 }
 
-type segmentReadFn func(w *Watcher, r *LiveReader, segmentNum int, tail bool) (error, bool)
+type segmentReadFn func(w *Watcher, r *LiveReader, segmentNum int, tail bool) error
 
 // Read all the series records from a Checkpoint directory.
 func (w *Watcher) readCheckpoint(checkpointDir string, readFn segmentReadFn) error {
@@ -770,7 +768,7 @@ func (w *Watcher) readCheckpoint(checkpointDir string, readFn segmentReadFn) err
 		defer sr.Close()
 
 		r := NewLiveReader(w.logger, w.readerMetrics, sr)
-		if err, _ := readFn(w, r, index, false); errors.Cause(err) != io.EOF && err != nil {
+		if err := readFn(w, r, index, false); errors.Cause(err) != io.EOF && err != nil {
 			return errors.Wrap(err, "readSegment")
 		}
 
