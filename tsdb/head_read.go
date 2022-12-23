@@ -105,18 +105,7 @@ func (h *headIndexReader) LabelNames(matchers ...*labels.Matcher) ([]string, err
 
 // Postings returns the postings list iterator for the label pairs.
 func (h *headIndexReader) Postings(name string, values ...string) (index.Postings, error) {
-	switch len(values) {
-	case 0:
-		return index.EmptyPostings(), nil
-	case 1:
-		return h.head.postings.Get(name, values[0]), nil
-	default:
-		res := make([]index.Postings, 0, len(values))
-		for _, value := range values {
-			res = append(res, h.head.postings.Get(name, value))
-		}
-		return index.Merge(res...), nil
-	}
+	return h.head.postings.Get(name, values...), nil
 }
 
 func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {

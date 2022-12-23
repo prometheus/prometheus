@@ -194,19 +194,8 @@ func (b metaByMinTimeAndMinRef) Less(i, j int) bool {
 func (b metaByMinTimeAndMinRef) Swap(i, j int) { b[i], b[j] = b[j], b[i] }
 
 func (oh *OOOHeadIndexReader) Postings(name string, values ...string) (index.Postings, error) {
-	switch len(values) {
-	case 0:
-		return index.EmptyPostings(), nil
-	case 1:
-		return oh.head.postings.Get(name, values[0]), nil // TODO(ganesh) Also call GetOOOPostings
-	default:
-		// TODO(ganesh) We want to only return postings for out of order series.
-		res := make([]index.Postings, 0, len(values))
-		for _, value := range values {
-			res = append(res, oh.head.postings.Get(name, value)) // TODO(ganesh) Also call GetOOOPostings
-		}
-		return index.Merge(res...), nil
-	}
+	// TODO(ganesh) We want to only return postings for out of order series.
+	return oh.head.postings.Get(name, values...), nil // TODO(ganesh) Also call GetOOOPostings
 }
 
 type OOOHeadChunkReader struct {

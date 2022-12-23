@@ -201,18 +201,30 @@ func (p *MemPostings) Stats(label string) *PostingsStats {
 	}
 }
 
-// Get returns a postings list for the given label pair.
-func (p *MemPostings) Get(name, value string) Postings {
+// Get returns a postings list for the given label name and values.
+func (p *MemPostings) Get(name string, values ...string) Postings {
 	var lp []storage.SeriesRef
 	p.mtx.RLock()
 	l := p.m[name]
-	if l != nil {
-		lp = l[value]
+	if len(values) == 1 {
+		lp = l[values[0]]
+	} else if l != nil {
+		count := 0 // Count the series so we can allocate the right slice size.
+		for _, value := range values {
+			count += len(l[value])
+		}
+		lp = make([]storage.SeriesRef, 0, count)
+		for _, value := range values {
+			lp = append(lp, l[value]...)
+		}
 	}
 	p.mtx.RUnlock()
 
 	if lp == nil {
 		return EmptyPostings()
+	}
+	if len(values) > 1 { // Postings start off sorted, but if we appended any we need to sort.
+		slices.Sort(lp)
 	}
 	return newListPostings(lp...)
 }
