@@ -225,8 +225,8 @@ func NewWatcher(metrics *WatcherMetrics, readerMetrics *LiveReaderMetrics, logge
 		logger:         logger,
 		writer:         writer,
 		metrics:        metrics,
-		optimizer:      NewWatcherOptimizer(),
 		readerMetrics:  readerMetrics,
+		optimizer:      NewWatcherOptimizer(),
 		walDir:         path.Join(dir, "wal"),
 		name:           name,
 		sendExemplars:  sendExemplars,
@@ -528,7 +528,7 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 // NOTE: The checkpointTicker is left alone because
 // it is already relatively slow and we don't want to
 // slow it down any further
-func (w *Watcher) runOptimizer(checkpointTicker *time.Ticker, segmentTicker *time.Ticker, readTicker *time.Ticker) {
+func (w *Watcher) runOptimizer(checkpointTicker, segmentTicker, readTicker *time.Ticker) {
 	// We need to analyze the number of optimizer records tracked before making any decisions
 	if len(w.optimizer.foundRecordHistory) < optimizerSampleTotal {
 		w.optimizer.foundRecordHistory = append([]bool{w.optimizer.foundRecord}, w.optimizer.foundRecordHistory...)
@@ -551,7 +551,7 @@ func (w *Watcher) runOptimizer(checkpointTicker *time.Ticker, segmentTicker *tim
 	w.optimizer.foundRecordHistory = append(w.optimizer.foundRecordHistory, w.optimizer.foundRecord)
 
 	// See if we need to speed up or slow down and set the currentSlowDownMultiplier if we do
-	var changeSpeeds = false
+	changeSpeeds := false
 	if optimizerSampleTotal-w.optimizer.missedReads >= w.optimizer.foundReadsForFaster && w.optimizer.currentSlowDownMultiplier > 1 {
 		changeSpeeds = true
 		w.optimizer.currentSlowDownMultiplier /= optimizerFactor
@@ -565,12 +565,12 @@ func (w *Watcher) runOptimizer(checkpointTicker *time.Ticker, segmentTicker *tim
 	// Do the actual speed change by modifying the tickers
 	if changeSpeeds {
 		// Update the segment period
-		var newSegmentCheckPeriod = w.optimizer.currentSlowDownMultiplier * segmentCheckPeriod.Milliseconds()
+		newSegmentCheckPeriod := w.optimizer.currentSlowDownMultiplier * segmentCheckPeriod.Milliseconds()
 		w.currentSegmentCheckPeriodMetric.Set(float64(newSegmentCheckPeriod))
 		segmentTicker.Reset(time.Duration(newSegmentCheckPeriod) * time.Millisecond)
 
 		// Update the read period
-		var newReadPeriod = w.optimizer.currentSlowDownMultiplier * readPeriod.Milliseconds()
+		newReadPeriod := w.optimizer.currentSlowDownMultiplier * readPeriod.Milliseconds()
 		w.currentReadPeriodMetric.Set(float64(newReadPeriod))
 		readTicker.Reset(time.Duration(newReadPeriod) * time.Millisecond)
 
