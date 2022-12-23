@@ -1032,6 +1032,14 @@ type EvalNodeHelper struct {
 	resultMetric map[string]labels.Labels
 }
 
+func (enh *EvalNodeHelper) resetBuilder(lbls labels.Labels) {
+	if enh.lb == nil {
+		enh.lb = labels.NewBuilder(lbls)
+	} else {
+		enh.lb.Reset(lbls)
+	}
+}
+
 // DropMetricName is a cached version of DropMetricName.
 func (enh *EvalNodeHelper) DropMetricName(l labels.Labels) labels.Labels {
 	if enh.Dmn == nil {
@@ -2152,12 +2160,7 @@ func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.V
 		enh.resultMetric = make(map[string]labels.Labels, len(enh.Out))
 	}
 
-	if enh.lb == nil {
-		enh.lb = labels.NewBuilder(lhs)
-	} else {
-		enh.lb.Reset(lhs)
-	}
-
+	enh.resetBuilder(lhs)
 	buf := bytes.NewBuffer(enh.lblResultBuf[:0])
 	enh.lblBuf = lhs.Bytes(enh.lblBuf)
 	buf.Write(enh.lblBuf)
