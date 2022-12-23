@@ -241,3 +241,84 @@ export const sampleApiResponse = Object.freeze({
     ] as Target[],
   },
 });
+
+export const scrapePoolTargetsSampleAPI = Object.freeze({
+  status: 'success',
+  data: {
+    targets: [
+      {
+        discoveredLabels: {
+          __address__: 'http://prometheus.io',
+          __metrics_path__: '/probe',
+          __param_module: 'http_2xx',
+          __scheme__: 'http',
+          job: 'blackbox',
+        },
+        labels: {
+          instance: 'http://prometheus.io',
+          job: 'blackbox',
+        },
+        scrapePool: 'blackbox',
+        scrapeUrl: 'http://127.0.0.1:9115/probe?module=http_2xx&target=http%3A%2F%2Fprometheus.io',
+        lastError: '',
+        lastScrape: '2019-11-04T11:52:14.759299-07:00',
+        lastScrapeDuration: 36560147,
+        health: 'up',
+        globalUrl: 'http://localhost.localdomain:9000/metrics',
+        scrapeInterval: '15s',
+        scrapeTimeout: '500ms',
+      },
+      {
+        discoveredLabels: {
+          __address__: 'https://prometheus.io',
+          __metrics_path__: '/probe',
+          __param_module: 'http_2xx',
+          __scheme__: 'http',
+          job: 'blackbox',
+        },
+        labels: {
+          instance: 'https://prometheus.io',
+          job: 'blackbox',
+        },
+        scrapePool: 'blackbox',
+        scrapeUrl: 'http://127.0.0.1:9115/probe?module=http_2xx&target=https%3A%2F%2Fprometheus.io',
+        lastError: '',
+        lastScrape: '2019-11-04T11:52:24.731096-07:00',
+        lastScrapeDuration: 49448763,
+        health: 'up',
+        globalUrl: 'http://localhost.localdomain:9000/metrics',
+        scrapeInterval: '15s',
+        scrapeTimeout: '500ms',
+      },
+      {
+        discoveredLabels: {
+          __address__: 'http://example.com:8080',
+          __metrics_path__: '/probe',
+          __param_module: 'http_2xx',
+          __scheme__: 'http',
+          job: 'blackbox',
+        },
+        labels: {
+          instance: 'http://example.com:8080',
+          job: 'blackbox',
+        },
+        scrapePool: 'blackbox',
+        scrapeUrl: 'http://127.0.0.1:9115/probe?module=http_2xx&target=http%3A%2F%2Fexample.com%3A8080',
+        lastError: '',
+        lastScrape: '2019-11-04T11:52:13.516654-07:00',
+        lastScrapeDuration: 120916592,
+        health: 'up',
+        globalUrl: 'http://localhost.localdomain:9000/metrics',
+        scrapeInterval: '15s',
+        scrapeTimeout: '500ms',
+      },
+    ] as Target[],
+  },
+});
+
+export const scrapePoolsSampleAPI = Object.freeze({
+  status: 'success',
+  data: {
+    scrapePools: ['blackbox'],
+  },
+});
