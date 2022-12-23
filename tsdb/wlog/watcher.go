@@ -194,6 +194,7 @@ func NewWatcherOptimizer() *WatcherOptimizer {
 		maxMultiplier:        int64(math.Pow(optimizerFactor, optimizerMaxFactors)),
 		// These properties are variable as the optimizer runs
 		missedReads:               0,
+		foundRecord:               false,
 		foundRecordHistory:        make([]bool, 0, optimizerSampleTotal),
 		currentSlowDownMultiplier: 1,
 	}
@@ -210,6 +211,7 @@ func NewWatcher(metrics *WatcherMetrics, readerMetrics *LiveReaderMetrics, logge
 		logger:         logger,
 		writer:         writer,
 		metrics:        metrics,
+		optimizer:      NewWatcherOptimizer(),
 		readerMetrics:  readerMetrics,
 		walDir:         path.Join(dir, "wal"),
 		name:           name,
@@ -424,7 +426,6 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 	}
 
 	gcSem := make(chan struct{}, 1)
-	w.optimizer = NewWatcherOptimizer()
 	for {
 		select {
 		case <-w.quit:
