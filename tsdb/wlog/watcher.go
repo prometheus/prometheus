@@ -38,6 +38,12 @@ const (
 	checkpointPeriod   = 5 * time.Second
 	segmentCheckPeriod = 100 * time.Millisecond
 	consumer           = "consumer"
+
+	optimizerFactor           = 2  // the factor each time we speed up or slow down
+	optimizerMaxFactors       = 8  // the max factor of slowing down allowed
+	optimizerSampleTotal      = 20 // the number of most recent read results to track for the optimizer
+	optimizerPercentForSlower = 90 // if this percent of reads are misses, slow us down
+	optimizerPercentForFaster = 90 // if this percent of reads are hits, speed us up
 )
 
 // WriteTo is an interface used by the Watcher to send the samples it's read
@@ -61,10 +67,24 @@ type WriteTo interface {
 }
 
 type WatcherMetrics struct {
-	recordsRead           *prometheus.CounterVec
-	recordDecodeFails     *prometheus.CounterVec
-	samplesSentPreTailing *prometheus.CounterVec
-	currentSegment        *prometheus.GaugeVec
+	recordsRead               *prometheus.CounterVec
+	recordDecodeFails         *prometheus.CounterVec
+	samplesSentPreTailing     *prometheus.CounterVec
+	currentSegment            *prometheus.GaugeVec
+	currentCheckpointPeriod   *prometheus.GaugeVec
+	currentSegmentCheckPeriod *prometheus.GaugeVec
+	currentReadPeriod         *prometheus.GaugeVec
+}
+
+type WatcherOptimizer struct {
+	missedReadsForSlower      int
+	foundReadsForFaster       int
+	maxMultiplier             int64
+	missedReads               int
+	foundRecord               bool
+	foundRecordHistory        []bool
+	currentSlowDownMultiplier int64
+	currentCheckpointPeriod   int64
 }
 
 // Watcher watches the TSDB WAL for a given WriteTo.
@@ -78,15 +98,19 @@ type Watcher struct {
 	sendHistograms bool
 	metrics        *WatcherMetrics
 	readerMetrics  *LiveReaderMetrics
+	optimizer      *WatcherOptimizer
 
 	startTime      time.Time
 	startTimestamp int64 // the start time as a Prometheus timestamp
 	sendSamples    bool
 
-	recordsReadMetric       *prometheus.CounterVec
-	recordDecodeFailsMetric prometheus.Counter
-	samplesSentPreTailing   prometheus.Counter
-	currentSegmentMetric    prometheus.Gauge
+	recordsReadMetric               *prometheus.CounterVec
+	recordDecodeFailsMetric         prometheus.Counter
+	samplesSentPreTailing           prometheus.Counter
+	currentSegmentMetric            prometheus.Gauge
+	currentCheckpointPeriodMetric   prometheus.Gauge
+	currentSegmentCheckPeriodMetric prometheus.Gauge
+	currentReadPeriodMetric         prometheus.Gauge
 
 	quit chan struct{}
 	done chan struct{}
@@ -133,6 +157,33 @@ func NewWatcherMetrics(reg prometheus.Registerer) *WatcherMetrics {
 			},
 			[]string{consumer},
 		),
+		currentCheckpointPeriod: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Namespace: "prometheus",
+				Subsystem: "wal_watcher",
+				Name:      "current_checkpoint_period",
+				Help:      "Current checkpoint period (in milliseconds) the WAL watcher is using.",
+			},
+			[]string{consumer},
+		),
+		currentSegmentCheckPeriod: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Namespace: "prometheus",
+				Subsystem: "wal_watcher",
+				Name:      "current_segment_check_period",
+				Help:      "Current segment check period (in milliseconds) the WAL watcher is using.",
+			},
+			[]string{consumer},
+		),
+		currentReadPeriod: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Namespace: "prometheus",
+				Subsystem: "wal_watcher",
+				Name:      "current_read_period",
+				Help:      "Current read period (in milliseconds) the WAL watcher is using.",
+			},
+			[]string{consumer},
+		),
 	}
 
 	if reg != nil {
@@ -140,9 +191,29 @@ func NewWatcherMetrics(reg prometheus.Registerer) *WatcherMetrics {
 		reg.MustRegister(m.recordDecodeFails)
 		reg.MustRegister(m.samplesSentPreTailing)
 		reg.MustRegister(m.currentSegment)
+		reg.MustRegister(m.currentCheckpointPeriod)
+		reg.MustRegister(m.currentSegmentCheckPeriod)
+		reg.MustRegister(m.currentReadPeriod)
 	}
 
 	return m
+}
+
+func NewWatcherOptimizer() *WatcherOptimizer {
+	o := &WatcherOptimizer{
+		// These properties can be calculated only once on optimizer creation
+		missedReadsForSlower: optimizerSampleTotal * optimizerPercentForSlower / 100,
+		foundReadsForFaster:  optimizerSampleTotal * optimizerPercentForFaster / 100,
+		maxMultiplier:        int64(math.Pow(optimizerFactor, optimizerMaxFactors)),
+		// These properties are variable as the optimizer runs
+		missedReads:               0,
+		foundRecord:               false,
+		foundRecordHistory:        make([]bool, 0, optimizerSampleTotal),
+		currentSlowDownMultiplier: 1,
+		currentCheckpointPeriod:   checkpointPeriod.Milliseconds(),
+	}
+
+	return o
 }
 
 // NewWatcher creates a new WAL watcher for a given WriteTo.
@@ -154,6 +225,7 @@ func NewWatcher(metrics *WatcherMetrics, readerMetrics *LiveReaderMetrics, logge
 		logger:         logger,
 		writer:         writer,
 		metrics:        metrics,
+		optimizer:      NewWatcherOptimizer(),
 		readerMetrics:  readerMetrics,
 		walDir:         path.Join(dir, "wal"),
 		name:           name,
@@ -176,6 +248,9 @@ func (w *Watcher) setMetrics() {
 		w.recordDecodeFailsMetric = w.metrics.recordDecodeFails.WithLabelValues(w.name)
 		w.samplesSentPreTailing = w.metrics.samplesSentPreTailing.WithLabelValues(w.name)
 		w.currentSegmentMetric = w.metrics.currentSegment.WithLabelValues(w.name)
+		w.currentCheckpointPeriodMetric = w.metrics.currentCheckpointPeriod.WithLabelValues(w.name)
+		w.currentSegmentCheckPeriodMetric = w.metrics.currentSegmentCheckPeriod.WithLabelValues(w.name)
+		w.currentReadPeriodMetric = w.metrics.currentReadPeriod.WithLabelValues(w.name)
 	}
 }
 
@@ -199,6 +274,9 @@ func (w *Watcher) Stop() {
 		w.metrics.recordDecodeFails.DeleteLabelValues(w.name)
 		w.metrics.samplesSentPreTailing.DeleteLabelValues(w.name)
 		w.metrics.currentSegment.DeleteLabelValues(w.name)
+		w.metrics.currentCheckpointPeriod.DeleteLabelValues(w.name)
+		w.metrics.currentSegmentCheckPeriod.DeleteLabelValues(w.name)
+		w.metrics.currentReadPeriod.DeleteLabelValues(w.name)
 	}
 
 	level.Info(w.logger).Log("msg", "WAL watcher stopped", "queue", w.name)
@@ -342,12 +420,15 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 	reader := NewLiveReader(w.logger, w.readerMetrics, segment)
 
 	readTicker := time.NewTicker(readPeriod)
+	w.currentReadPeriodMetric.Set(float64(readPeriod.Milliseconds()))
 	defer readTicker.Stop()
 
 	checkpointTicker := time.NewTicker(checkpointPeriod)
+	w.currentCheckpointPeriodMetric.Set(float64(checkpointPeriod.Milliseconds()))
 	defer checkpointTicker.Stop()
 
 	segmentTicker := time.NewTicker(segmentCheckPeriod)
+	w.currentSegmentCheckPeriodMetric.Set(float64(segmentCheckPeriod.Milliseconds()))
 	defer segmentTicker.Stop()
 
 	// If we're replaying the segment we need to know the size of the file to know
@@ -421,6 +502,7 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 
 		case <-readTicker.C:
 			err = w.readSegment(reader, segmentNum, tail)
+			w.runOptimizer(checkpointTicker, segmentTicker, readTicker)
 
 			// Ignore all errors reading to end of segment whilst replaying the WAL.
 			if !tail {
@@ -437,6 +519,75 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 				return err
 			}
 		}
+	}
+}
+
+// Run the optimizer to speed up or slow down reads and segment
+// checkers based on how many reads are finding records
+//
+// NOTE: The checkpointTicker is left alone because
+// it is already relatively slow and we don't want to
+// slow it down any further
+func (w *Watcher) runOptimizer(checkpointTicker *time.Ticker, segmentTicker *time.Ticker, readTicker *time.Ticker) {
+	// We need to analyze the number of optimizer records tracked before making any decisions
+	if len(w.optimizer.foundRecordHistory) < optimizerSampleTotal {
+		w.optimizer.foundRecordHistory = append([]bool{w.optimizer.foundRecord}, w.optimizer.foundRecordHistory...)
+		if !w.optimizer.foundRecord {
+			w.optimizer.missedReads++
+		}
+
+		return
+	}
+
+	// If the oldest read doesn't match the newest read then update the running
+	// counter. This is tracked as we go so we don't have to traverse the whole
+	// foundRecordHistory slice to count it every read.
+	if w.optimizer.foundRecord && !w.optimizer.foundRecordHistory[0] {
+		w.optimizer.missedReads--
+	} else if !w.optimizer.foundRecord && w.optimizer.foundRecordHistory[0] {
+		w.optimizer.missedReads++
+	}
+	w.optimizer.foundRecordHistory = w.optimizer.foundRecordHistory[1:]
+	w.optimizer.foundRecordHistory = append(w.optimizer.foundRecordHistory, w.optimizer.foundRecord)
+
+	// See if we need to speed up or slow down and set the currentSlowDownMultiplier if we do
+	var changeSpeeds = false
+	if optimizerSampleTotal-w.optimizer.missedReads >= w.optimizer.foundReadsForFaster && w.optimizer.currentSlowDownMultiplier > 1 {
+		changeSpeeds = true
+		w.optimizer.currentSlowDownMultiplier /= optimizerFactor
+		level.Info(w.logger).Log("msg", "Speeding up WAL Watcher", "slowdownMultiplier", w.optimizer.currentSlowDownMultiplier)
+	} else if w.optimizer.missedReads >= w.optimizer.missedReadsForSlower && w.optimizer.currentSlowDownMultiplier < w.optimizer.maxMultiplier {
+		changeSpeeds = true
+		w.optimizer.currentSlowDownMultiplier *= optimizerFactor
+		level.Info(w.logger).Log("msg", "Slowing down WAL Watcher", "slowdownMultiplier", w.optimizer.currentSlowDownMultiplier)
+	}
+
+	// Do the actual speed change by modifying the tickers
+	if changeSpeeds {
+		// Update the segment period
+		var newSegmentCheckPeriod = w.optimizer.currentSlowDownMultiplier * segmentCheckPeriod.Milliseconds()
+		w.currentSegmentCheckPeriodMetric.Set(float64(newSegmentCheckPeriod))
+		segmentTicker.Reset(time.Duration(newSegmentCheckPeriod) * time.Millisecond)
+
+		// Update the read period
+		var newReadPeriod = w.optimizer.currentSlowDownMultiplier * readPeriod.Milliseconds()
+		w.currentReadPeriodMetric.Set(float64(newReadPeriod))
+		readTicker.Reset(time.Duration(newReadPeriod) * time.Millisecond)
+
+		// Update the checkpoint period
+		// Use the newSegmentCheckPeriod for newCheckpointPeriod but still consider the original checkpointPeriod as a floor
+		if newSegmentCheckPeriod > checkpointPeriod.Milliseconds() {
+			w.optimizer.currentCheckpointPeriod = newSegmentCheckPeriod
+			w.currentCheckpointPeriodMetric.Set(float64(w.optimizer.currentCheckpointPeriod))
+			checkpointTicker.Reset(time.Duration(w.optimizer.currentCheckpointPeriod) * time.Millisecond)
+		} else if newSegmentCheckPeriod <= checkpointPeriod.Milliseconds() && w.optimizer.currentCheckpointPeriod != checkpointPeriod.Milliseconds() {
+			w.optimizer.currentCheckpointPeriod = checkpointPeriod.Milliseconds()
+			w.currentCheckpointPeriodMetric.Set(float64(w.optimizer.currentCheckpointPeriod))
+			checkpointTicker.Reset(time.Duration(w.optimizer.currentCheckpointPeriod) * time.Millisecond)
+		}
+
+		w.optimizer.missedReads = 0
+		w.optimizer.foundRecordHistory = make([]bool, 0, optimizerSampleTotal)
 	}
 }
 
@@ -484,7 +635,10 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 		histograms       []record.RefHistogramSample
 		histogramsToSend []record.RefHistogramSample
 	)
+
+	w.optimizer.foundRecord = false
 	for r.Next() && !isClosed(w.quit) {
+		w.optimizer.foundRecord = true
 		rec := r.Record()
 		w.recordsReadMetric.WithLabelValues(dec.Type(rec).String()).Inc()
 
