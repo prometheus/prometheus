@@ -1298,7 +1298,6 @@ func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 }
 
 func TestHeadCompactionWithHistograms(t *testing.T) {
-	// TODO(marctc): Add similar test for float histograms
 	head, _ := newTestHead(t, DefaultBlockDuration, false, false)
 	require.NoError(t, head.Init(0))
 	t.Cleanup(func() {
@@ -1400,11 +1399,112 @@ func TestHeadCompactionWithHistograms(t *testing.T) {
 	}, actHists)
 }
 
+func TestHeadCompactionWithFloatHistograms(t *testing.T) {
+	head, _ := newTestHead(t, DefaultBlockDuration, false, false)
+	require.NoError(t, head.Init(0))
+	t.Cleanup(func() {
+		require.NoError(t, head.Close())
+	})
+
+	minute := func(m int) int64 { return int64(m) * time.Minute.Milliseconds() }
+	ctx := context.Background()
+	appendHistogram := func(lbls labels.Labels, from, to int, fh *histogram.FloatHistogram, exp *[]tsdbutil.Sample) {
+		t.Helper()
+		app := head.Appender(ctx)
+		for tsMinute := from; tsMinute <= to; tsMinute++ {
+			_, err := app.AppendHistogram(0, lbls, minute(tsMinute), nil, fh)
+			require.NoError(t, err)
+			*exp = append(*exp, sample{t: minute(tsMinute), fh: fh.Copy()})
+		}
+
+		require.NoError(t, app.Commit())
+	}
+	appendFloat := func(lbls labels.Labels, from, to int, exp *[]tsdbutil.Sample) {
+		t.Helper()
+		app := head.Appender(ctx)
+		for tsMinute := from; tsMinute <= to; tsMinute++ {
+			_, err := app.Append(0, lbls, minute(tsMinute), float64(tsMinute))
+			require.NoError(t, err)
+			*exp = append(*exp, sample{t: minute(tsMinute), v: float64(tsMinute)})
+		}
+		require.NoError(t, app.Commit())
+	}
+
+	var (
+		series1                = labels.FromStrings("foo", "bar1")
+		series2                = labels.FromStrings("foo", "bar2")
+		series3                = labels.FromStrings("foo", "bar3")
+		series4                = labels.FromStrings("foo", "bar4")
+		exp1, exp2, exp3, exp4 []tsdbutil.Sample
+	)
+	h := &histogram.FloatHistogram{
+		Count:         11,
+		ZeroCount:     4,
+		ZeroThreshold: 0.001,
+		Sum:           35.5,
+		Schema:        1,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 2, Length: 2},
+		},
+		PositiveBuckets: []float64{1, 1, -1, 0},
+		NegativeSpans: []histogram.Span{
+			{Offset: 0, Length: 1},
+			{Offset: 1, Length: 2},
+		},
+		NegativeBuckets: []float64{1, 2, -1},
+	}
+
+	// Series with only histograms.
+	appendHistogram(series1, 100, 105, h, &exp1)
+
+	// Series starting with float and then getting histograms.
+	appendFloat(series2, 100, 102, &exp2)
+	appendHistogram(series2, 103, 105, h.Copy(), &exp2)
+	appendFloat(series2, 106, 107, &exp2)
+	appendHistogram(series2, 108, 109, h.Copy(), &exp2)
+
+	// Series starting with histogram and then getting float.
+	appendHistogram(series3, 101, 103, h.Copy(), &exp3)
+	appendFloat(series3, 104, 106, &exp3)
+	appendHistogram(series3, 107, 108, h.Copy(), &exp3)
+	appendFloat(series3, 109, 110, &exp3)
+
+	// A float only series.
+	appendFloat(series4, 100, 102, &exp4)
+
+	// Compaction.
+	mint := head.MinTime()
+	maxt := head.MaxTime() + 1 // Block intervals are half-open: [b.MinTime, b.MaxTime).
+	compactor, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{DefaultBlockDuration}, chunkenc.NewPool(), nil)
+	require.NoError(t, err)
+	id, err := compactor.Write(head.opts.ChunkDirRoot, head, mint, maxt, nil)
+	require.NoError(t, err)
+	require.NotEqual(t, ulid.ULID{}, id)
+
+	// Open the block and query it and check the histograms.
+	block, err := OpenBlock(nil, path.Join(head.opts.ChunkDirRoot, id.String()), nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, block.Close())
+	})
+
+	q, err := NewBlockQuerier(block, block.MinTime(), block.MaxTime())
+	require.NoError(t, err)
+
+	actHists := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
+	require.Equal(t, map[string][]tsdbutil.Sample{
+		series1.String(): exp1,
+		series2.String(): exp2,
+		series3.String(): exp3,
+		series4.String(): exp4,
+	}, actHists)
+}
+
 // Depending on numSeriesPerSchema, it can take few gigs of memory;
 // the test adds all samples to appender before committing instead of
 // buffering the writes to make it run faster.
 func TestSparseHistogramSpaceSavings(t *testing.T) {
-	// TODO(marctc): Add similar test for float histograms
 	t.Skip()
 
 	cases := []struct {
@@ -1632,6 +1732,234 @@ Savings: Index=%.2f%%, Chunks=%.2f%%, Total=%.2f%%
 	}
 }
 
+func TestSparseFloatHistogramSpaceSavings(t *testing.T) {
+	t.Skip()
+
+	cases := []struct {
+		numSeriesPerSchema int
+		numBuckets         int
+		numSpans           int
+		gapBetweenSpans    int
+	}{
+		{1, 15, 1, 0},
+		{1, 50, 1, 0},
+		{1, 100, 1, 0},
+		{1, 15, 3, 5},
+		{1, 50, 3, 3},
+		{1, 100, 3, 2},
+		{100, 15, 1, 0},
+		{100, 50, 1, 0},
+		{100, 100, 1, 0},
+		{100, 15, 3, 5},
+		{100, 50, 3, 3},
+		{100, 100, 3, 2},
+		//{1000, 15, 1, 0},
+		//{1000, 50, 1, 0},
+		//{1000, 100, 1, 0},
+		//{1000, 15, 3, 5},
+		//{1000, 50, 3, 3},
+		//{1000, 100, 3, 2},
+	}
+
+	type testSummary struct {
+		oldBlockTotalSeries int
+		oldBlockIndexSize   int64
+		oldBlockChunksSize  int64
+		oldBlockTotalSize   int64
+
+		sparseBlockTotalSeries int
+		sparseBlockIndexSize   int64
+		sparseBlockChunksSize  int64
+		sparseBlockTotalSize   int64
+
+		numBuckets      int
+		numSpans        int
+		gapBetweenSpans int
+	}
+
+	var summaries []testSummary
+
+	allSchemas := []int{-4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8}
+	schemaDescription := []string{"minus_4", "minus_3", "minus_2", "minus_1", "0", "1", "2", "3", "4", "5", "6", "7", "8"}
+	numHistograms := 120 * 4 // 15s scrape interval.
+	timeStep := DefaultBlockDuration / int64(numHistograms)
+	for _, c := range cases {
+		t.Run(
+			fmt.Sprintf("series=%d,span=%d,gap=%d,buckets=%d",
+				len(allSchemas)*c.numSeriesPerSchema,
+				c.numSpans,
+				c.gapBetweenSpans,
+				c.numBuckets,
+			),
+			func(t *testing.T) {
+				oldHead, _ := newTestHead(t, DefaultBlockDuration, false, false)
+				t.Cleanup(func() {
+					require.NoError(t, oldHead.Close())
+				})
+				sparseHead, _ := newTestHead(t, DefaultBlockDuration, false, false)
+				t.Cleanup(func() {
+					require.NoError(t, sparseHead.Close())
+				})
+
+				var allSparseSeries []struct {
+					baseLabels labels.Labels
+					hists      []*histogram.FloatHistogram
+				}
+
+				for sid, schema := range allSchemas {
+					for i := 0; i < c.numSeriesPerSchema; i++ {
+						lbls := labels.FromStrings(
+							"__name__", fmt.Sprintf("rpc_durations_%d_histogram_seconds", i),
+							"instance", "localhost:8080",
+							"job", fmt.Sprintf("sparse_histogram_schema_%s", schemaDescription[sid]),
+						)
+						allSparseSeries = append(allSparseSeries, struct {
+							baseLabels labels.Labels
+							hists      []*histogram.FloatHistogram
+						}{baseLabels: lbls, hists: generateCustomFloatHistograms(numHistograms, c.numBuckets, c.numSpans, c.gapBetweenSpans, schema)})
+					}
+				}
+
+				oldApp := oldHead.Appender(context.Background())
+				sparseApp := sparseHead.Appender(context.Background())
+				numOldSeriesPerHistogram := 0
+
+				var oldULID ulid.ULID
+				var sparseULID ulid.ULID
+
+				var wg sync.WaitGroup
+
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+
+					// Ingest sparse histograms.
+					for _, ah := range allSparseSeries {
+						var (
+							ref storage.SeriesRef
+							err error
+						)
+						for i := 0; i < numHistograms; i++ {
+							ts := int64(i) * timeStep
+							ref, err = sparseApp.AppendHistogram(ref, ah.baseLabels, ts, ah.hists[i], nil)
+							require.NoError(t, err)
+						}
+					}
+					require.NoError(t, sparseApp.Commit())
+
+					// Sparse head compaction.
+					mint := sparseHead.MinTime()
+					maxt := sparseHead.MaxTime() + 1 // Block intervals are half-open: [b.MinTime, b.MaxTime).
+					compactor, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{DefaultBlockDuration}, chunkenc.NewPool(), nil)
+					require.NoError(t, err)
+					sparseULID, err = compactor.Write(sparseHead.opts.ChunkDirRoot, sparseHead, mint, maxt, nil)
+					require.NoError(t, err)
+					require.NotEqual(t, ulid.ULID{}, sparseULID)
+				}()
+
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+
+					// Ingest histograms the old way.
+					for _, ah := range allSparseSeries {
+						refs := make([]storage.SeriesRef, c.numBuckets+((c.numSpans-1)*c.gapBetweenSpans))
+						for i := 0; i < numHistograms; i++ {
+							ts := int64(i) * timeStep
+
+							h := ah.hists[i]
+
+							numOldSeriesPerHistogram = 0
+							it := h.CumulativeBucketIterator()
+							itIdx := 0
+							var err error
+							for it.Next() {
+								numOldSeriesPerHistogram++
+								b := it.At()
+								lbls := labels.NewBuilder(ah.baseLabels).Set("le", fmt.Sprintf("%.16f", b.Upper)).Labels(labels.EmptyLabels())
+								refs[itIdx], err = oldApp.Append(refs[itIdx], lbls, ts, float64(b.Count))
+								require.NoError(t, err)
+								itIdx++
+							}
+							baseName := ah.baseLabels.Get(labels.MetricName)
+							// _count metric.
+							countLbls := labels.NewBuilder(ah.baseLabels).Set(labels.MetricName, baseName+"_count").Labels(labels.EmptyLabels())
+							_, err = oldApp.Append(0, countLbls, ts, float64(h.Count))
+							require.NoError(t, err)
+							numOldSeriesPerHistogram++
+
+							// _sum metric.
+							sumLbls := labels.NewBuilder(ah.baseLabels).Set(labels.MetricName, baseName+"_sum").Labels(labels.EmptyLabels())
+							_, err = oldApp.Append(0, sumLbls, ts, h.Sum)
+							require.NoError(t, err)
+							numOldSeriesPerHistogram++
+						}
+					}
+
+					require.NoError(t, oldApp.Commit())
+
+					// Old head compaction.
+					mint := oldHead.MinTime()
+					maxt := oldHead.MaxTime() + 1 // Block intervals are half-open: [b.MinTime, b.MaxTime).
+					compactor, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{DefaultBlockDuration}, chunkenc.NewPool(), nil)
+					require.NoError(t, err)
+					oldULID, err = compactor.Write(oldHead.opts.ChunkDirRoot, oldHead, mint, maxt, nil)
+					require.NoError(t, err)
+					require.NotEqual(t, ulid.ULID{}, oldULID)
+				}()
+
+				wg.Wait()
+
+				oldBlockDir := filepath.Join(oldHead.opts.ChunkDirRoot, oldULID.String())
+				sparseBlockDir := filepath.Join(sparseHead.opts.ChunkDirRoot, sparseULID.String())
+
+				oldSize, err := fileutil.DirSize(oldBlockDir)
+				require.NoError(t, err)
+				oldIndexSize, err := fileutil.DirSize(filepath.Join(oldBlockDir, "index"))
+				require.NoError(t, err)
+				oldChunksSize, err := fileutil.DirSize(filepath.Join(oldBlockDir, "chunks"))
+				require.NoError(t, err)
+
+				sparseSize, err := fileutil.DirSize(sparseBlockDir)
+				require.NoError(t, err)
+				sparseIndexSize, err := fileutil.DirSize(filepath.Join(sparseBlockDir, "index"))
+				require.NoError(t, err)
+				sparseChunksSize, err := fileutil.DirSize(filepath.Join(sparseBlockDir, "chunks"))
+				require.NoError(t, err)
+
+				summaries = append(summaries, testSummary{
+					oldBlockTotalSeries:    len(allSchemas) * c.numSeriesPerSchema * numOldSeriesPerHistogram,
+					oldBlockIndexSize:      oldIndexSize,
+					oldBlockChunksSize:     oldChunksSize,
+					oldBlockTotalSize:      oldSize,
+					sparseBlockTotalSeries: len(allSchemas) * c.numSeriesPerSchema,
+					sparseBlockIndexSize:   sparseIndexSize,
+					sparseBlockChunksSize:  sparseChunksSize,
+					sparseBlockTotalSize:   sparseSize,
+					numBuckets:             c.numBuckets,
+					numSpans:               c.numSpans,
+					gapBetweenSpans:        c.gapBetweenSpans,
+				})
+			})
+	}
+
+	for _, s := range summaries {
+		fmt.Printf(`
+Meta: NumBuckets=%d, NumSpans=%d, GapBetweenSpans=%d
+Old Block: NumSeries=%d, IndexSize=%d, ChunksSize=%d, TotalSize=%d
+Sparse Block: NumSeries=%d, IndexSize=%d, ChunksSize=%d, TotalSize=%d
+Savings: Index=%.2f%%, Chunks=%.2f%%, Total=%.2f%%
+`,
+			s.numBuckets, s.numSpans, s.gapBetweenSpans,
+			s.oldBlockTotalSeries, s.oldBlockIndexSize, s.oldBlockChunksSize, s.oldBlockTotalSize,
+			s.sparseBlockTotalSeries, s.sparseBlockIndexSize, s.sparseBlockChunksSize, s.sparseBlockTotalSize,
+			100*(1-float64(s.sparseBlockIndexSize)/float64(s.oldBlockIndexSize)),
+			100*(1-float64(s.sparseBlockChunksSize)/float64(s.oldBlockChunksSize)),
+			100*(1-float64(s.sparseBlockTotalSize)/float64(s.oldBlockTotalSize)),
+		)
+	}
+}
+
 func generateCustomHistograms(numHists, numBuckets, numSpans, gapBetweenSpans, schema int) (r []*histogram.Histogram) {
 	// First histogram with all the settings.
 	h := &histogram.Histogram{
@@ -1702,6 +2030,84 @@ func generateCustomHistograms(numHists, numBuckets, numSpans, gapBetweenSpans, s
 		}
 
 		newH.Count = uint64(count)
+
+		r = append(r, newH)
+		h = newH
+	}
+
+	return r
+}
+
+func generateCustomFloatHistograms(numHists, numBuckets, numSpans, gapBetweenSpans, schema int) (r []*histogram.FloatHistogram) {
+	// First histogram with all the settings.
+	h := &histogram.FloatHistogram{
+		Sum:    1000 * rand.Float64(),
+		Schema: int32(schema),
+	}
+
+	// Generate spans.
+	h.PositiveSpans = []histogram.Span{
+		{Offset: int32(rand.Intn(10)), Length: uint32(numBuckets)},
+	}
+	if numSpans > 1 {
+		spanWidth := numBuckets / numSpans
+		// First span gets those additional buckets.
+		h.PositiveSpans[0].Length = uint32(spanWidth + (numBuckets - spanWidth*numSpans))
+		for i := 0; i < numSpans-1; i++ {
+			h.PositiveSpans = append(h.PositiveSpans, histogram.Span{Offset: int32(rand.Intn(gapBetweenSpans) + 1), Length: uint32(spanWidth)})
+		}
+	}
+
+	// Generate buckets.
+	v := float64(rand.Intn(30) + 1)
+	h.PositiveBuckets = []float64{v}
+	count := v
+	firstHistValues := []float64{v}
+	for i := 0; i < numBuckets-1; i++ {
+		delta := float64(rand.Intn(20))
+		if rand.Int()%2 == 0 && firstHistValues[len(firstHistValues)-1] > delta {
+			// Randomly making delta negative such that curr value will be >0.
+			delta = -delta
+		}
+
+		currVal := firstHistValues[len(firstHistValues)-1] + delta
+		count += currVal
+		firstHistValues = append(firstHistValues, currVal)
+
+		h.PositiveBuckets = append(h.PositiveBuckets, delta)
+	}
+
+	h.Count = float64(count)
+
+	r = append(r, h)
+
+	// Remaining histograms with same spans but changed bucket values.
+	for j := 0; j < numHists-1; j++ {
+		newH := h.Copy()
+		newH.Sum = float64(j+1) * 1000 * rand.Float64()
+
+		// Generate buckets.
+		count := float64(0)
+		currVal := float64(0)
+		for i := range newH.PositiveBuckets {
+			delta := float64(rand.Intn(10))
+			if i == 0 {
+				newH.PositiveBuckets[i] += delta
+				currVal = newH.PositiveBuckets[i]
+				continue
+			}
+			currVal += newH.PositiveBuckets[i]
+			if rand.Int()%2 == 0 && (currVal-delta) > firstHistValues[i] {
+				// Randomly making delta negative such that curr value will be >0
+				// and above the previous count since we are not doing resets here.
+				delta = -delta
+			}
+			newH.PositiveBuckets[i] += delta
+			currVal += delta
+			count += currVal
+		}
+
+		newH.Count = float64(count)
 
 		r = append(r, newH)
 		h = newH
