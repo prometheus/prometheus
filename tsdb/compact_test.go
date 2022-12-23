@@ -1870,7 +1870,7 @@ func TestSparseFloatHistogramSpaceSavings(t *testing.T) {
 							h := ah.hists[i]
 
 							numOldSeriesPerHistogram = 0
-							it := h.CumulativeBucketIterator()
+							it := h.CumulativeBucketIterator() // TODO(marctc): what's the equivalent here for float histograms?
 							itIdx := 0
 							var err error
 							for it.Next() {
