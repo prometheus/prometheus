@@ -3128,7 +3128,6 @@ func TestRangeQuery(t *testing.T) {
 func TestSparseHistogramRate(t *testing.T) {
 	// TODO(beorn7): Integrate histograms into the PromQL testing framework
 	// and write more tests there.
-	// TODO(marctc): Add similar test for float histograms
 	test, err := NewTest(t, "")
 	require.NoError(t, err)
 	defer test.Close()
@@ -3167,10 +3166,50 @@ func TestSparseHistogramRate(t *testing.T) {
 	require.Equal(t, expectedHistogram, actualHistogram)
 }
 
+func TestSparseFloatHistogramRate(t *testing.T) {
+	// TODO(beorn7): Integrate histograms into the PromQL testing framework
+	// and write more tests there.
+	test, err := NewTest(t, "")
+	require.NoError(t, err)
+	defer test.Close()
+
+	seriesName := "sparse_histogram_series"
+	lbls := labels.FromStrings("__name__", seriesName)
+
+	app := test.Storage().Appender(context.TODO())
+	for i, fh := range tsdb.GenerateTestFloatHistograms(100) {
+		_, err := app.AppendHistogram(0, lbls, int64(i)*int64(15*time.Second/time.Millisecond), nil, fh)
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	require.NoError(t, test.Run())
+	engine := test.QueryEngine()
+
+	queryString := fmt.Sprintf("rate(%s[1m])", seriesName)
+	qry, err := engine.NewInstantQuery(test.Queryable(), nil, queryString, timestamp.Time(int64(5*time.Minute/time.Millisecond)))
+	require.NoError(t, err)
+	res := qry.Exec(test.Context())
+	require.NoError(t, res.Err)
+	vector, err := res.Vector()
+	require.NoError(t, err)
+	require.Len(t, vector, 1)
+	actualHistogram := vector[0].H
+	expectedHistogram := &histogram.FloatHistogram{
+		Schema:          1,
+		ZeroThreshold:   0.001,
+		ZeroCount:       1. / 15.,
+		Count:           4. / 15.,
+		Sum:             1.226666666666667,
+		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+		PositiveBuckets: []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
+	}
+	require.Equal(t, expectedHistogram, actualHistogram)
+}
+
 func TestSparseHistogram_HistogramCountAndSum(t *testing.T) {
 	// TODO(codesome): Integrate histograms into the PromQL testing framework
 	// and write more tests there.
-	// TODO(marctc): Add similar test for float histograms
 	h := &histogram.Histogram{
 		Count:         24,
 		ZeroCount:     4,
@@ -3232,10 +3271,73 @@ func TestSparseHistogram_HistogramCountAndSum(t *testing.T) {
 	require.Equal(t, h.Sum, vector[0].V)
 }
 
+func TestSparseFloatHistogram_HistogramCountAndSum(t *testing.T) {
+	// TODO(codesome): Integrate histograms into the PromQL testing framework
+	// and write more tests there.
+	fh := &histogram.FloatHistogram{
+		Count:         24,
+		ZeroCount:     4,
+		ZeroThreshold: 0.001,
+		Sum:           100,
+		Schema:        0,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 1, Length: 2},
+		},
+		PositiveBuckets: []float64{2, 1, -2, 3},
+		NegativeSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 1, Length: 2},
+		},
+		NegativeBuckets: []float64{2, 1, -2, 3},
+	}
+
+	test, err := NewTest(t, "")
+	require.NoError(t, err)
+	t.Cleanup(test.Close)
+
+	seriesName := "sparse_histogram_series"
+	lbls := labels.FromStrings("__name__", seriesName)
+	engine := test.QueryEngine()
+
+	ts := int64(10 * time.Minute / time.Millisecond)
+	app := test.Storage().Appender(context.TODO())
+	_, err = app.AppendHistogram(0, lbls, ts, nil, fh)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	queryString := fmt.Sprintf("histogram_count(%s)", seriesName)
+	qry, err := engine.NewInstantQuery(test.Queryable(), nil, queryString, timestamp.Time(ts))
+	require.NoError(t, err)
+
+	res := qry.Exec(test.Context())
+	require.NoError(t, res.Err)
+
+	vector, err := res.Vector()
+	require.NoError(t, err)
+
+	require.Len(t, vector, 1)
+	require.Nil(t, vector[0].H)
+	require.Equal(t, float64(fh.Count), vector[0].V)
+
+	queryString = fmt.Sprintf("histogram_sum(%s)", seriesName)
+	qry, err = engine.NewInstantQuery(test.Queryable(), nil, queryString, timestamp.Time(ts))
+	require.NoError(t, err)
+
+	res = qry.Exec(test.Context())
+	require.NoError(t, res.Err)
+
+	vector, err = res.Vector()
+	require.NoError(t, err)
+
+	require.Len(t, vector, 1)
+	require.Nil(t, vector[0].H)
+	require.Equal(t, fh.Sum, vector[0].V)
+}
+
 func TestSparseHistogram_HistogramQuantile(t *testing.T) {
 	// TODO(codesome): Integrate histograms into the PromQL testing framework
 	// and write more tests there.
-	// TODO(marctc): Add similar test for float histograms
 	type subCase struct {
 		quantile string
 		value    float64
@@ -3462,10 +3564,238 @@ func TestSparseHistogram_HistogramQuantile(t *testing.T) {
 	}
 }
 
+func TestSparseFloatHistogram_HistogramQuantile(t *testing.T) {
+	// TODO(codesome): Integrate histograms into the PromQL testing framework
+	// and write more tests there.
+	type subCase struct {
+		quantile string
+		value    float64
+	}
+
+	cases := []struct {
+		text string
+		// Histogram to test.
+		fh *histogram.FloatHistogram
+		// Different quantiles to test for this histogram.
+		subCases []subCase
+	}{
+		{
+			text: "all positive buckets with zero bucket",
+			fh: &histogram.FloatHistogram{
+				Count:         12,
+				ZeroCount:     2,
+				ZeroThreshold: 0.001,
+				Sum:           100, // Does not matter.
+				Schema:        0,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []float64{2, 1, -2, 3},
+			},
+			subCases: []subCase{
+				{
+					quantile: "1.0001",
+					value:    math.Inf(1),
+				},
+				{
+					quantile: "1",
+					value:    16,
+				},
+				{
+					quantile: "0.99",
+					value:    15.759999999999998,
+				},
+				{
+					quantile: "0.9",
+					value:    13.600000000000001,
+				},
+				{
+					quantile: "0.6",
+					value:    4.799999999999997,
+				},
+				{
+					quantile: "0.5",
+					value:    1.6666666666666665,
+				},
+				{ // Zero bucket.
+					quantile: "0.1",
+					value:    0.0006000000000000001,
+				},
+				{
+					quantile: "0",
+					value:    0,
+				},
+				{
+					quantile: "-1",
+					value:    math.Inf(-1),
+				},
+			},
+		},
+		{
+			text: "all negative buckets with zero bucket",
+			fh: &histogram.FloatHistogram{
+				Count:         12,
+				ZeroCount:     2,
+				ZeroThreshold: 0.001,
+				Sum:           100, // Does not matter.
+				Schema:        0,
+				NegativeSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				NegativeBuckets: []float64{2, 1, -2, 3},
+			},
+			subCases: []subCase{
+				{
+					quantile: "1.0001",
+					value:    math.Inf(1),
+				},
+				{ // Zero bucket.
+					quantile: "1",
+					value:    0,
+				},
+				{ // Zero bucket.
+					quantile: "0.99",
+					value:    -6.000000000000048e-05,
+				},
+				{ // Zero bucket.
+					quantile: "0.9",
+					value:    -0.0005999999999999996,
+				},
+				{
+					quantile: "0.5",
+					value:    -1.6666666666666667,
+				},
+				{
+					quantile: "0.1",
+					value:    -13.6,
+				},
+				{
+					quantile: "0",
+					value:    -16,
+				},
+				{
+					quantile: "-1",
+					value:    math.Inf(-1),
+				},
+			},
+		},
+		{
+			text: "both positive and negative buckets with zero bucket",
+			fh: &histogram.FloatHistogram{
+				Count:         24,
+				ZeroCount:     4,
+				ZeroThreshold: 0.001,
+				Sum:           100, // Does not matter.
+				Schema:        0,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []float64{2, 1, -2, 3},
+				NegativeSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				NegativeBuckets: []float64{2, 1, -2, 3},
+			},
+			subCases: []subCase{
+				{
+					quantile: "1.0001",
+					value:    math.Inf(1),
+				},
+				{
+					quantile: "1",
+					value:    16,
+				},
+				{
+					quantile: "0.99",
+					value:    15.519999999999996,
+				},
+				{
+					quantile: "0.9",
+					value:    11.200000000000003,
+				},
+				{
+					quantile: "0.7",
+					value:    1.2666666666666657,
+				},
+				{ // Zero bucket.
+					quantile: "0.55",
+					value:    0.0006000000000000005,
+				},
+				{ // Zero bucket.
+					quantile: "0.5",
+					value:    0,
+				},
+				{ // Zero bucket.
+					quantile: "0.45",
+					value:    -0.0005999999999999996,
+				},
+				{
+					quantile: "0.3",
+					value:    -1.266666666666667,
+				},
+				{
+					quantile: "0.1",
+					value:    -11.2,
+				},
+				{
+					quantile: "0.01",
+					value:    -15.52,
+				},
+				{
+					quantile: "0",
+					value:    -16,
+				},
+				{
+					quantile: "-1",
+					value:    math.Inf(-1),
+				},
+			},
+		},
+	}
+
+	test, err := NewTest(t, "")
+	require.NoError(t, err)
+	t.Cleanup(test.Close)
+	for i, c := range cases {
+		t.Run(c.text, func(t *testing.T) {
+			seriesName := "sparse_histogram_series"
+			lbls := labels.FromStrings("__name__", seriesName)
+			engine := test.QueryEngine()
+
+			ts := int64(i+1) * int64(10*time.Minute/time.Millisecond)
+			app := test.Storage().Appender(context.TODO())
+			_, err = app.AppendHistogram(0, lbls, ts, nil, c.fh)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			for j, sc := range c.subCases {
+				t.Run(fmt.Sprintf("%d %s", j, sc.quantile), func(t *testing.T) {
+					queryString := fmt.Sprintf("histogram_quantile(%s, %s)", sc.quantile, seriesName)
+					qry, err := engine.NewInstantQuery(test.Queryable(), nil, queryString, timestamp.Time(ts))
+					require.NoError(t, err)
+
+					res := qry.Exec(test.Context())
+					require.NoError(t, res.Err)
+
+					vector, err := res.Vector()
+					require.NoError(t, err)
+
+					require.Len(t, vector, 1)
+					require.Nil(t, vector[0].H)
+					require.True(t, almostEqual(sc.value, vector[0].V))
+				})
+			}
+		})
+	}
+}
+
 func TestSparseHistogram_HistogramFraction(t *testing.T) {
 	// TODO(codesome): Integrate histograms into the PromQL testing framework
 	// and write more tests there.
-	// TODO(marctc): Add similar test for float histograms
 	type subCase struct {
 		lower, upper string
 		value        float64
@@ -3891,10 +4221,437 @@ func TestSparseHistogram_HistogramFraction(t *testing.T) {
 	}
 }
 
+func TestSparseFloatHistogram_HistogramFraction(t *testing.T) {
+	// TODO(codesome): Integrate histograms into the PromQL testing framework
+	// and write more tests there.
+	type subCase struct {
+		lower, upper string
+		value        float64
+	}
+
+	invariantCases := []subCase{
+		{
+			lower: "42",
+			upper: "3.1415",
+			value: 0,
+		},
+		{
+			lower: "0",
+			upper: "0",
+			value: 0,
+		},
+		{
+			lower: "0.000001",
+			upper: "0.000001",
+			value: 0,
+		},
+		{
+			lower: "42",
+			upper: "42",
+			value: 0,
+		},
+		{
+			lower: "-3.1",
+			upper: "-3.1",
+			value: 0,
+		},
+		{
+			lower: "3.1415",
+			upper: "NaN",
+			value: math.NaN(),
+		},
+		{
+			lower: "NaN",
+			upper: "42",
+			value: math.NaN(),
+		},
+		{
+			lower: "NaN",
+			upper: "NaN",
+			value: math.NaN(),
+		},
+		{
+			lower: "-Inf",
+			upper: "+Inf",
+			value: 1,
+		},
+	}
+
+	cases := []struct {
+		text string
+		// Histogram to test.
+		fh *histogram.FloatHistogram
+		// Different ranges to test for this histogram.
+		subCases []subCase
+	}{
+		{
+			text: "empty histogram",
+			fh:   &histogram.FloatHistogram{},
+			subCases: []subCase{
+				{
+					lower: "3.1415",
+					upper: "42",
+					value: math.NaN(),
+				},
+			},
+		},
+		{
+			text: "all positive buckets with zero bucket",
+			fh: &histogram.FloatHistogram{
+				Count:         12,
+				ZeroCount:     2,
+				ZeroThreshold: 0.001,
+				Sum:           100, // Does not matter.
+				Schema:        0,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []float64{2, 1, -2, 3}, // Abs: 2, 3, 1, 4
+			},
+			subCases: append([]subCase{
+				{
+					lower: "0",
+					upper: "+Inf",
+					value: 1,
+				},
+				{
+					lower: "-Inf",
+					upper: "0",
+					value: 0,
+				},
+				{
+					lower: "-0.001",
+					upper: "0",
+					value: 0,
+				},
+				{
+					lower: "0",
+					upper: "0.001",
+					value: 2. / 12.,
+				},
+				{
+					lower: "0",
+					upper: "0.0005",
+					value: 1. / 12.,
+				},
+				{
+					lower: "0.001",
+					upper: "inf",
+					value: 10. / 12.,
+				},
+				{
+					lower: "-inf",
+					upper: "-0.001",
+					value: 0,
+				},
+				{
+					lower: "1",
+					upper: "2",
+					value: 3. / 12.,
+				},
+				{
+					lower: "1.5",
+					upper: "2",
+					value: 1.5 / 12.,
+				},
+				{
+					lower: "1",
+					upper: "8",
+					value: 4. / 12.,
+				},
+				{
+					lower: "1",
+					upper: "6",
+					value: 3.5 / 12.,
+				},
+				{
+					lower: "1.5",
+					upper: "6",
+					value: 2. / 12.,
+				},
+				{
+					lower: "-2",
+					upper: "-1",
+					value: 0,
+				},
+				{
+					lower: "-2",
+					upper: "-1.5",
+					value: 0,
+				},
+				{
+					lower: "-8",
+					upper: "-1",
+					value: 0,
+				},
+				{
+					lower: "-6",
+					upper: "-1",
+					value: 0,
+				},
+				{
+					lower: "-6",
+					upper: "-1.5",
+					value: 0,
+				},
+			}, invariantCases...),
+		},
+		{
+			text: "all negative buckets with zero bucket",
+			fh: &histogram.FloatHistogram{
+				Count:         12,
+				ZeroCount:     2,
+				ZeroThreshold: 0.001,
+				Sum:           100, // Does not matter.
+				Schema:        0,
+				NegativeSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				NegativeBuckets: []float64{2, 1, -2, 3},
+			},
+			subCases: append([]subCase{
+				{
+					lower: "0",
+					upper: "+Inf",
+					value: 0,
+				},
+				{
+					lower: "-Inf",
+					upper: "0",
+					value: 1,
+				},
+				{
+					lower: "-0.001",
+					upper: "0",
+					value: 2. / 12.,
+				},
+				{
+					lower: "0",
+					upper: "0.001",
+					value: 0,
+				},
+				{
+					lower: "-0.0005",
+					upper: "0",
+					value: 1. / 12.,
+				},
+				{
+					lower: "0.001",
+					upper: "inf",
+					value: 0,
+				},
+				{
+					lower: "-inf",
+					upper: "-0.001",
+					value: 10. / 12.,
+				},
+				{
+					lower: "1",
+					upper: "2",
+					value: 0,
+				},
+				{
+					lower: "1.5",
+					upper: "2",
+					value: 0,
+				},
+				{
+					lower: "1",
+					upper: "8",
+					value: 0,
+				},
+				{
+					lower: "1",
+					upper: "6",
+					value: 0,
+				},
+				{
+					lower: "1.5",
+					upper: "6",
+					value: 0,
+				},
+				{
+					lower: "-2",
+					upper: "-1",
+					value: 3. / 12.,
+				},
+				{
+					lower: "-2",
+					upper: "-1.5",
+					value: 1.5 / 12.,
+				},
+				{
+					lower: "-8",
+					upper: "-1",
+					value: 4. / 12.,
+				},
+				{
+					lower: "-6",
+					upper: "-1",
+					value: 3.5 / 12.,
+				},
+				{
+					lower: "-6",
+					upper: "-1.5",
+					value: 2. / 12.,
+				},
+			}, invariantCases...),
+		},
+		{
+			text: "both positive and negative buckets with zero bucket",
+			fh: &histogram.FloatHistogram{
+				Count:         24,
+				ZeroCount:     4,
+				ZeroThreshold: 0.001,
+				Sum:           100, // Does not matter.
+				Schema:        0,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []float64{2, 1, -2, 3},
+				NegativeSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				NegativeBuckets: []float64{2, 1, -2, 3},
+			},
+			subCases: append([]subCase{
+				{
+					lower: "0",
+					upper: "+Inf",
+					value: 0.5,
+				},
+				{
+					lower: "-Inf",
+					upper: "0",
+					value: 0.5,
+				},
+				{
+					lower: "-0.001",
+					upper: "0",
+					value: 2. / 24,
+				},
+				{
+					lower: "0",
+					upper: "0.001",
+					value: 2. / 24.,
+				},
+				{
+					lower: "-0.0005",
+					upper: "0.0005",
+					value: 2. / 24.,
+				},
+				{
+					lower: "0.001",
+					upper: "inf",
+					value: 10. / 24.,
+				},
+				{
+					lower: "-inf",
+					upper: "-0.001",
+					value: 10. / 24.,
+				},
+				{
+					lower: "1",
+					upper: "2",
+					value: 3. / 24.,
+				},
+				{
+					lower: "1.5",
+					upper: "2",
+					value: 1.5 / 24.,
+				},
+				{
+					lower: "1",
+					upper: "8",
+					value: 4. / 24.,
+				},
+				{
+					lower: "1",
+					upper: "6",
+					value: 3.5 / 24.,
+				},
+				{
+					lower: "1.5",
+					upper: "6",
+					value: 2. / 24.,
+				},
+				{
+					lower: "-2",
+					upper: "-1",
+					value: 3. / 24.,
+				},
+				{
+					lower: "-2",
+					upper: "-1.5",
+					value: 1.5 / 24.,
+				},
+				{
+					lower: "-8",
+					upper: "-1",
+					value: 4. / 24.,
+				},
+				{
+					lower: "-6",
+					upper: "-1",
+					value: 3.5 / 24.,
+				},
+				{
+					lower: "-6",
+					upper: "-1.5",
+					value: 2. / 24.,
+				},
+			}, invariantCases...),
+		},
+	}
+
+	for i, c := range cases {
+		t.Run(c.text, func(t *testing.T) {
+			test, err := NewTest(t, "")
+			require.NoError(t, err)
+			t.Cleanup(test.Close)
+
+			seriesName := "sparse_histogram_series"
+			lbls := labels.FromStrings("__name__", seriesName)
+			engine := test.QueryEngine()
+
+			ts := int64(i+1) * int64(10*time.Minute/time.Millisecond)
+			app := test.Storage().Appender(context.TODO())
+			_, err = app.AppendHistogram(0, lbls, ts, nil, c.fh)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			for j, sc := range c.subCases {
+				t.Run(fmt.Sprintf("%d %s %s", j, sc.lower, sc.upper), func(t *testing.T) {
+					queryString := fmt.Sprintf("histogram_fraction(%s, %s, %s)", sc.lower, sc.upper, seriesName)
+					qry, err := engine.NewInstantQuery(test.Queryable(), nil, queryString, timestamp.Time(ts))
+					require.NoError(t, err)
+
+					res := qry.Exec(test.Context())
+					require.NoError(t, res.Err)
+
+					vector, err := res.Vector()
+					require.NoError(t, err)
+
+					require.Len(t, vector, 1)
+					require.Nil(t, vector[0].H)
+					if math.IsNaN(sc.value) {
+						require.True(t, math.IsNaN(vector[0].V))
+						return
+					}
+					require.Equal(t, sc.value, vector[0].V)
+				})
+			}
+		})
+	}
+}
+
 func TestSparseHistogram_Sum_Count_AddOperator(t *testing.T) {
 	// TODO(codesome): Integrate histograms into the PromQL testing framework
 	// and write more tests there.
-	// TODO(marctc): Add similar test for float histograms
 	cases := []struct {
 		histograms []histogram.Histogram
 		expected   histogram.FloatHistogram
@@ -3994,6 +4751,149 @@ func TestSparseHistogram_Sum_Count_AddOperator(t *testing.T) {
 				lbls := labels.FromStrings("__name__", seriesName, "idx", fmt.Sprintf("%d", idx))
 				// Since we mutate h later, we need to create a copy here.
 				_, err = app.AppendHistogram(0, lbls, ts, h.Copy(), nil)
+				require.NoError(t, err)
+			}
+			require.NoError(t, app.Commit())
+
+			queryAndCheck := func(queryString string, exp Vector) {
+				qry, err := engine.NewInstantQuery(test.Queryable(), nil, queryString, timestamp.Time(ts))
+				require.NoError(t, err)
+
+				res := qry.Exec(test.Context())
+				require.NoError(t, res.Err)
+
+				vector, err := res.Vector()
+				require.NoError(t, err)
+
+				require.Equal(t, exp, vector)
+			}
+
+			// sum().
+			queryString := fmt.Sprintf("sum(%s)", seriesName)
+			queryAndCheck(queryString, []Sample{
+				{Point{T: ts, H: &c.expected}, labels.EmptyLabels()},
+			})
+
+			// + operator.
+			queryString = fmt.Sprintf(`%s{idx="0"}`, seriesName)
+			for idx := 1; idx < len(c.histograms); idx++ {
+				queryString += fmt.Sprintf(` + ignoring(idx) %s{idx="%d"}`, seriesName, idx)
+			}
+			queryAndCheck(queryString, []Sample{
+				{Point{T: ts, H: &c.expected}, labels.EmptyLabels()},
+			})
+
+			// count().
+			queryString = fmt.Sprintf("count(%s)", seriesName)
+			queryAndCheck(queryString, []Sample{
+				{Point{T: ts, V: 3}, labels.EmptyLabels()},
+			})
+		})
+	}
+}
+
+func TestSparseFloatHistogram_Sum_Count_AddOperator(t *testing.T) {
+	// TODO(codesome): Integrate histograms into the PromQL testing framework
+	// and write more tests there.
+	cases := []struct {
+		histograms []histogram.FloatHistogram
+		expected   histogram.FloatHistogram
+	}{
+		{
+			histograms: []histogram.FloatHistogram{
+				{
+					Schema:        0,
+					Count:         21,
+					Sum:           1234.5,
+					ZeroThreshold: 0.001,
+					ZeroCount:     4,
+					PositiveSpans: []histogram.Span{
+						{Offset: 0, Length: 2},
+						{Offset: 1, Length: 2},
+					},
+					PositiveBuckets: []float64{1, 1, -1, 0},
+					NegativeSpans: []histogram.Span{
+						{Offset: 0, Length: 2},
+						{Offset: 2, Length: 2},
+					},
+					NegativeBuckets: []float64{2, 2, -3, 8},
+				},
+				{
+					Schema:        0,
+					Count:         36,
+					Sum:           2345.6,
+					ZeroThreshold: 0.001,
+					ZeroCount:     5,
+					PositiveSpans: []histogram.Span{
+						{Offset: 0, Length: 4},
+						{Offset: 0, Length: 0},
+						{Offset: 0, Length: 3},
+					},
+					PositiveBuckets: []float64{1, 2, -2, 1, -1, 0, 0},
+					NegativeSpans: []histogram.Span{
+						{Offset: 1, Length: 4},
+						{Offset: 2, Length: 0},
+						{Offset: 2, Length: 3},
+					},
+					NegativeBuckets: []float64{1, 3, -2, 5, -2, 0, -3},
+				},
+				{
+					Schema:        0,
+					Count:         36,
+					Sum:           1111.1,
+					ZeroThreshold: 0.001,
+					ZeroCount:     5,
+					PositiveSpans: []histogram.Span{
+						{Offset: 0, Length: 4},
+						{Offset: 0, Length: 0},
+						{Offset: 0, Length: 3},
+					},
+					PositiveBuckets: []float64{1, 2, -2, 1, -1, 0, 0},
+					NegativeSpans: []histogram.Span{
+						{Offset: 1, Length: 4},
+						{Offset: 2, Length: 0},
+						{Offset: 2, Length: 3},
+					},
+					NegativeBuckets: []float64{1, 3, -2, 5, -2, 0, -3},
+				},
+			},
+			expected: histogram.FloatHistogram{
+				Schema:        0,
+				ZeroThreshold: 0.001,
+				ZeroCount:     14,
+				Count:         93,
+				Sum:           4691.2,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 3},
+					{Offset: 0, Length: 4},
+				},
+				PositiveBuckets: []float64{3, 8, 2, 5, 3, 2, 2},
+				NegativeSpans: []histogram.Span{
+					{Offset: 0, Length: 4},
+					{Offset: 0, Length: 2},
+					{Offset: 3, Length: 3},
+				},
+				NegativeBuckets: []float64{2, 6, 8, 4, 15, 9, 10, 10, 4},
+			},
+		},
+	}
+
+	for i, c := range cases {
+		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+			test, err := NewTest(t, "")
+			require.NoError(t, err)
+			t.Cleanup(test.Close)
+
+			seriesName := "sparse_histogram_series"
+
+			engine := test.QueryEngine()
+
+			ts := int64(i+1) * int64(10*time.Minute/time.Millisecond)
+			app := test.Storage().Appender(context.TODO())
+			for idx, h := range c.histograms {
+				lbls := labels.FromStrings("__name__", seriesName, "idx", fmt.Sprintf("%d", idx))
+				// Since we mutate h later, we need to create a copy here.
+				_, err = app.AppendHistogram(0, lbls, ts, nil, h.Copy())
 				require.NoError(t, err)
 			}
 			require.NoError(t, app.Commit())
