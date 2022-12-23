@@ -37,14 +37,13 @@ const (
 	readPeriod         = 10 * time.Millisecond
 	checkpointPeriod   = 5 * time.Second
 	segmentCheckPeriod = 100 * time.Millisecond
+	consumer           = "consumer"
 
 	optimizerFactor           = 2  // the factor each time we speed up or slow down
 	optimizerMaxFactors       = 8  // the max factor of slowing down allowed
 	optimizerSampleTotal      = 20 // the number of most recent read results to track for the optimizer
 	optimizerPercentForSlower = 90 // if this percent of reads are misses, slow us down
 	optimizerPercentForFaster = 90 // if this percent of reads are hits, speed us up
-
-	consumer = "consumer"
 )
 
 // WriteTo is an interface used by the Watcher to send the samples it's read
@@ -482,7 +481,6 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 			return nil
 
 		case <-readTicker.C:
-
 			err = w.readSegment(reader, segmentNum, tail)
 			w.runOptimizer(segmentTicker, readTicker)
 
@@ -708,7 +706,6 @@ func (w *Watcher) readSegmentForGC(r *LiveReader, segmentNum int, _ bool) error 
 		dec    record.Decoder
 		series []record.RefSeries
 	)
-
 	for r.Next() && !isClosed(w.quit) {
 		rec := r.Record()
 		w.recordsReadMetric.WithLabelValues(dec.Type(rec).String()).Inc()
