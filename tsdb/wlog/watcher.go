@@ -39,7 +39,7 @@ const (
 	segmentCheckPeriod = 100 * time.Millisecond
 
 	optimizerFactor           = 2  // the factor each time we speed up or slow down
-	optimizerMaxFactors       = 10 // the max factor of slowing down allowed
+	optimizerMaxFactors       = 8  // the max factor of slowing down allowed
 	optimizerSampleTotal      = 20 // the number of most recent read results to track for the optimizer
 	optimizerPercentForSlower = 90 // if this percent of reads are misses, slow us down
 	optimizerPercentForFaster = 90 // if this percent of reads are hits, speed us up
@@ -68,11 +68,12 @@ type WriteTo interface {
 }
 
 type WatcherMetrics struct {
-	recordsRead           *prometheus.CounterVec
-	recordDecodeFails     *prometheus.CounterVec
-	samplesSentPreTailing *prometheus.CounterVec
-	currentSegment        *prometheus.GaugeVec
-	currentReadPeriod     *prometheus.GaugeVec
+	recordsRead               *prometheus.CounterVec
+	recordDecodeFails         *prometheus.CounterVec
+	samplesSentPreTailing     *prometheus.CounterVec
+	currentSegment            *prometheus.GaugeVec
+	currentReadPeriod         *prometheus.GaugeVec
+	currentSegmentCheckPeriod *prometheus.GaugeVec
 }
 
 type WatcherOptimizer struct {
@@ -101,11 +102,12 @@ type Watcher struct {
 	startTimestamp int64 // the start time as a Prometheus timestamp
 	sendSamples    bool
 
-	recordsReadMetric       *prometheus.CounterVec
-	recordDecodeFailsMetric prometheus.Counter
-	samplesSentPreTailing   prometheus.Counter
-	currentSegmentMetric    prometheus.Gauge
-	currentReadPeriodMetric prometheus.Gauge
+	recordsReadMetric               *prometheus.CounterVec
+	recordDecodeFailsMetric         prometheus.Counter
+	samplesSentPreTailing           prometheus.Counter
+	currentSegmentMetric            prometheus.Gauge
+	currentReadPeriodMetric         prometheus.Gauge
+	currentSegmentCheckPeriodMetric prometheus.Gauge
 
 	quit chan struct{}
 	done chan struct{}
@@ -161,6 +163,15 @@ func NewWatcherMetrics(reg prometheus.Registerer) *WatcherMetrics {
 			},
 			[]string{consumer},
 		),
+		currentSegmentCheckPeriod: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Namespace: "prometheus",
+				Subsystem: "wal_watcher",
+				Name:      "current_segment_check_period",
+				Help:      "Current segment check period (in milliseconds) the WAL watcher is reading the WAL with.",
+			},
+			[]string{consumer},
+		),
 	}
 
 	if reg != nil {
@@ -169,6 +180,7 @@ func NewWatcherMetrics(reg prometheus.Registerer) *WatcherMetrics {
 		reg.MustRegister(m.samplesSentPreTailing)
 		reg.MustRegister(m.currentSegment)
 		reg.MustRegister(m.currentReadPeriod)
+		reg.MustRegister(m.currentSegmentCheckPeriod)
 	}
 
 	return m
@@ -221,6 +233,7 @@ func (w *Watcher) setMetrics() {
 		w.samplesSentPreTailing = w.metrics.samplesSentPreTailing.WithLabelValues(w.name)
 		w.currentSegmentMetric = w.metrics.currentSegment.WithLabelValues(w.name)
 		w.currentReadPeriodMetric = w.metrics.currentReadPeriod.WithLabelValues(w.name)
+		w.currentSegmentCheckPeriodMetric = w.metrics.currentSegmentCheckPeriod.WithLabelValues(w.name)
 	}
 }
 
@@ -245,6 +258,7 @@ func (w *Watcher) Stop() {
 		w.metrics.samplesSentPreTailing.DeleteLabelValues(w.name)
 		w.metrics.currentSegment.DeleteLabelValues(w.name)
 		w.metrics.currentReadPeriod.DeleteLabelValues(w.name)
+		w.metrics.currentSegmentCheckPeriod.DeleteLabelValues(w.name)
 	}
 
 	level.Info(w.logger).Log("msg", "WAL watcher stopped", "queue", w.name)
@@ -504,8 +518,10 @@ func (w *Watcher) runOptimizer(foundRecord bool, segmentTicker *time.Ticker, rea
 			w.optimizer.missedReads++
 		}
 
+		// Every time we start a new set of history records, update the relevant metrics
 		if len(w.optimizer.foundRecordHistory) == 1 {
 			w.currentReadPeriodMetric.Set(float64(w.optimizer.currentSlowDownMultiplier * readPeriod.Milliseconds()))
+			w.currentSegmentCheckPeriodMetric.Set(float64(w.optimizer.currentSlowDownMultiplier * segmentCheckPeriod.Milliseconds()))
 		}
 
 		return
