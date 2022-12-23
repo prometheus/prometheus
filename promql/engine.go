@@ -2384,14 +2384,18 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 		group, ok := result[groupingKey]
 		// Add a new group if it doesn't exist.
 		if !ok {
+			var m labels.Labels
 			enh.resetBuilder(metric)
 			if without {
 				enh.lb.Del(grouping...)
 				enh.lb.Del(labels.MetricName)
-			} else {
+				m = enh.lb.Labels(labels.EmptyLabels())
+			} else if len(grouping) > 0 {
 				enh.lb.Keep(grouping...)
+				m = enh.lb.Labels(labels.EmptyLabels())
+			} else {
+				m = labels.EmptyLabels()
 			}
-			m := enh.lb.Labels(labels.EmptyLabels())
 			newAgg := &groupedAggregation{
 				labels:     m,
 				value:      s.V,
