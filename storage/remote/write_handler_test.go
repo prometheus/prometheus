@@ -67,7 +67,7 @@ func TestRemoteWriteHandler(t *testing.T) {
 
 		for _, hp := range ts.Histograms {
 			h := HistogramProtoToHistogram(hp)
-			require.Equal(t, mockHistogram{labels, hp.Timestamp, h}, appendable.histograms[k])
+			require.Equal(t, mockHistogram{labels, hp.Timestamp, h, nil}, appendable.histograms[k])
 			k++
 		}
 	}
@@ -189,9 +189,10 @@ type mockExemplar struct {
 }
 
 type mockHistogram struct {
-	l labels.Labels
-	t int64
-	h *histogram.Histogram
+	l  labels.Labels
+	t  int64
+	h  *histogram.Histogram
+	fh *histogram.FloatHistogram
 }
 
 func (m *mockAppendable) Appender(_ context.Context) storage.Appender {
@@ -226,13 +227,13 @@ func (m *mockAppendable) AppendExemplar(_ storage.SeriesRef, l labels.Labels, e 
 	return 0, nil
 }
 
-func (m *mockAppendable) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram) (storage.SeriesRef, error) {
+func (m *mockAppendable) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	if t < m.latestHistogram {
 		return 0, storage.ErrOutOfOrderSample
 	}
 
 	m.latestHistogram = t
-	m.histograms = append(m.histograms, mockHistogram{l, t, h})
+	m.histograms = append(m.histograms, mockHistogram{l, t, h, fh})
 	return 0, nil
 }
 
