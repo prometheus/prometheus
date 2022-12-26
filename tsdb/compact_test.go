@@ -1300,7 +1300,6 @@ func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 func TestHeadCompactionWithHistograms(t *testing.T) {
 	for _, floatTest := range []bool{true, false} {
 		t.Run(fmt.Sprintf("float=%t", floatTest), func(t *testing.T) {
-
 			head, _ := newTestHead(t, DefaultBlockDuration, false, false)
 			require.NoError(t, head.Init(0))
 			t.Cleanup(func() {
@@ -1323,7 +1322,6 @@ func TestHeadCompactionWithHistograms(t *testing.T) {
 					}
 					require.NoError(t, err)
 				}
-
 				require.NoError(t, app.Commit())
 			}
 			appendFloat := func(lbls labels.Labels, from, to int, exp *[]tsdbutil.Sample) {

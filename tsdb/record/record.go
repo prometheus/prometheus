@@ -65,6 +65,8 @@ func (rt Type) String() string {
 		return "exemplars"
 	case HistogramSamples:
 		return "histogram_samples"
+	case FloatHistogramSamples:
+		return "float_histogram_samples"
 	case MmapMarkers:
 		return "mmapmarkers"
 	case Metadata:
@@ -201,7 +203,7 @@ func (d *Decoder) Type(rec []byte) Type {
 		return Unknown
 	}
 	switch t := Type(rec[0]); t {
-	case Series, Samples, Tombstones, Exemplars, MmapMarkers, Metadata, HistogramSamples:
+	case Series, Samples, Tombstones, Exemplars, MmapMarkers, Metadata, HistogramSamples, FloatHistogramSamples:
 		return t
 	}
 	return Unknown

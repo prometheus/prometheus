@@ -575,9 +575,13 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		}
 		s.pendingCommit = true
 		s.Unlock()
-	}
-
-	if fh != nil {
+		a.histograms = append(a.histograms, record.RefHistogramSample{
+			Ref: s.ref,
+			T:   t,
+			H:   h,
+		})
+		a.histogramSeries = append(a.histogramSeries, s)
+	} else if fh != nil {
 		s.Lock()
 		if err := s.appendableFloatHistogram(t, fh); err != nil {
 			s.Unlock()
@@ -588,6 +592,12 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		}
 		s.pendingCommit = true
 		s.Unlock()
+		a.floatHistograms = append(a.floatHistograms, record.RefFloatHistogramSample{
+			Ref: s.ref,
+			T:   t,
+			FH:  fh,
+		})
+		a.floatHistogramSeries = append(a.floatHistogramSeries, s)
 	}
 
 	if t < a.mint {
@@ -597,23 +607,6 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		a.maxt = t
 	}
 
-	if h != nil {
-		a.histograms = append(a.histograms, record.RefHistogramSample{
-			Ref: s.ref,
-			T:   t,
-			H:   h,
-		})
-		a.histogramSeries = append(a.histogramSeries, s)
-	}
-
-	if fh != nil {
-		a.floatHistograms = append(a.floatHistograms, record.RefFloatHistogramSample{
-			Ref: s.ref,
-			T:   t,
-			FH:  fh,
-		})
-		a.floatHistogramSeries = append(a.floatHistogramSeries, s)
-	}
 	return storage.SeriesRef(s.ref), nil
 }
 

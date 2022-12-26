@@ -531,7 +531,6 @@ func (b *blockBaseSeriesSet) Next() bool {
 		b.curr.labels = b.builder.Labels()
 		b.curr.chks = chks
 		b.curr.intervals = intervals
-
 		return true
 	}
 	return false
@@ -750,7 +749,6 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 	if p.currDelIter == nil {
 		return true
 	}
-
 	valueType := p.currDelIter.Next()
 	if valueType == chunkenc.ValNone {
 		if err := p.currDelIter.Err(); err != nil {
@@ -863,10 +861,9 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 				break
 			}
 
+			app.AppendFloatHistogram(t, h)
 		}
-		app.AppendFloatHistogram(t, h)
 	default:
-		// TODO(beorn7): Need FloatHistogram eventually.
 		err = fmt.Errorf("populateWithDelChunkSeriesIterator: value type %v unsupported", valueType)
 	}
 
