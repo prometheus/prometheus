@@ -2058,7 +2058,7 @@ func GenerateTestFloatHistograms(n int) (r []*histogram.FloatHistogram) {
 				{Offset: 0, Length: 2},
 				{Offset: 1, Length: 2},
 			},
-			PositiveBuckets: []float64{float64(i + 1), 1, -1, 0},
+			PositiveBuckets: []float64{float64(i + 1), float64(i + 2), float64(i + 1), float64(i + 1)},
 		})
 	}
 

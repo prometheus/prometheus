@@ -68,13 +68,12 @@ type histogramSample struct {
 // collectResultAppender records all samples that were added through the appender.
 // It can be used as its zero value or be backed by another appender it writes samples through.
 type collectResultAppender struct {
-	next             storage.Appender
-	result           []sample
-	pendingResult    []sample
-	rolledbackResult []sample
-	pendingExemplars []exemplar.Exemplar
-	resultExemplars  []exemplar.Exemplar
-	// TODO(codesome): add float histogram.
+	next                 storage.Appender
+	result               []sample
+	pendingResult        []sample
+	rolledbackResult     []sample
+	pendingExemplars     []exemplar.Exemplar
+	resultExemplars      []exemplar.Exemplar
 	resultHistograms     []histogramSample
 	pendingHistograms    []histogramSample
 	rolledbackHistograms []histogramSample

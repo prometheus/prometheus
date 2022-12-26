@@ -693,11 +693,11 @@ func (e *Encoder) FloatHistogramSamples(histograms []RefFloatHistogramSample, b 
 		buf.PutVarint64(h.T - first.T)
 
 		buf.PutVarint64(int64(h.FH.Schema))
-		buf.PutBE64(math.Float64bits(h.FH.ZeroThreshold))
+		buf.PutBEFloat64(h.FH.ZeroThreshold)
 
 		buf.PutBEFloat64(h.FH.ZeroCount)
 		buf.PutBEFloat64(h.FH.Count)
-		buf.PutBE64(math.Float64bits(h.FH.Sum))
+		buf.PutBEFloat64(h.FH.Sum)
 
 		buf.PutUvarint(len(h.FH.PositiveSpans))
 		for _, s := range h.FH.PositiveSpans {

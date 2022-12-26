@@ -655,17 +655,17 @@ func ValidateHistogram(h *histogram.Histogram) error {
 	if err := checkHistogramSpans(h.PositiveSpans, len(h.PositiveBuckets)); err != nil {
 		return errors.Wrap(err, "positive side")
 	}
-
-	negativeCount, err := checkHistogramBuckets(h.NegativeBuckets)
+	var nCount, pCount uint64
+	err := checkHistogramBuckets(h.NegativeBuckets, &nCount, true)
 	if err != nil {
 		return errors.Wrap(err, "negative side")
 	}
-	positiveCount, err := checkHistogramBuckets(h.PositiveBuckets)
+	err = checkHistogramBuckets(h.PositiveBuckets, &pCount, true)
 	if err != nil {
 		return errors.Wrap(err, "positive side")
 	}
 
-	if c := negativeCount + positiveCount; c > h.Count {
+	if c := nCount + pCount; c > h.Count {
 		return errors.Wrap(
 			storage.ErrHistogramCountNotBigEnough,
 			fmt.Sprintf("%d observations found in buckets, but the Count field is %d", c, h.Count),
@@ -675,7 +675,6 @@ func ValidateHistogram(h *histogram.Histogram) error {
 	return nil
 }
 
-// TODO(marctc): refactor to use generics?
 func ValidateFloatHistogram(h *histogram.FloatHistogram) error {
 	if err := checkHistogramSpans(h.NegativeSpans, len(h.NegativeBuckets)); err != nil {
 		return errors.Wrap(err, "negative side")
@@ -683,17 +682,17 @@ func ValidateFloatHistogram(h *histogram.FloatHistogram) error {
 	if err := checkHistogramSpans(h.PositiveSpans, len(h.PositiveBuckets)); err != nil {
 		return errors.Wrap(err, "positive side")
 	}
-
-	negativeCount, err := checkFloatHistogramBuckets(h.NegativeBuckets)
+	var nCount, pCount float64
+	err := checkHistogramBuckets(h.NegativeBuckets, &nCount, false)
 	if err != nil {
 		return errors.Wrap(err, "negative side")
 	}
-	positiveCount, err := checkFloatHistogramBuckets(h.PositiveBuckets)
+	err = checkHistogramBuckets(h.PositiveBuckets, &pCount, false)
 	if err != nil {
 		return errors.Wrap(err, "positive side")
 	}
 
-	if c := negativeCount + positiveCount; c > h.Count {
+	if c := nCount + pCount; c > h.Count {
 		return errors.Wrap(
 			storage.ErrHistogramCountNotBigEnough,
 			fmt.Sprintf("%f observations found in buckets, but the Count field is %f", c, h.Count),
@@ -723,51 +722,30 @@ func checkHistogramSpans(spans []histogram.Span, numBuckets int) error {
 	return nil
 }
 
-func checkHistogramBuckets(buckets []int64) (uint64, error) {
+func checkHistogramBuckets[BC histogram.BucketCount, IBC histogram.InternalBucketCount](buckets []IBC, count *BC, deltas bool) error {
 	if len(buckets) == 0 {
-		return 0, nil
+		return nil
 	}
 
-	var count uint64
-	var last int64
-
+	var last IBC
 	for i := 0; i < len(buckets); i++ {
-		c := last + buckets[i]
+		var c IBC
+		if deltas {
+			c = last + buckets[i]
+		} else {
+			c = buckets[i]
+		}
 		if c < 0 {
-			return 0, errors.Wrap(
+			return errors.Wrap(
 				storage.ErrHistogramNegativeBucketCount,
-				fmt.Sprintf("bucket number %d has observation count of %d", i+1, c),
+				fmt.Sprintf("bucket number %d has observation count of %v", i+1, c),
 			)
 		}
 		last = c
-		count += uint64(c)
+		*count += BC(c)
 	}
 
-	return count, nil
-}
-
-// TODO(marctc): refactor to use generics?
-func checkFloatHistogramBuckets(buckets []float64) (float64, error) {
-	if len(buckets) == 0 {
-		return 0, nil
-	}
-
-	var count float64
-	var last float64
-
-	for i := 0; i < len(buckets); i++ {
-		c := last + buckets[i]
-		if c < 0 {
-			return 0, errors.Wrap(
-				storage.ErrHistogramNegativeBucketCount,
-				fmt.Sprintf("bucket number %d has observation count of %f", i+1, c),
-			)
-		}
-		last = c
-		count += c
-	}
-
-	return count, nil
+	return nil
 }
 
 var _ storage.GetRef = &headAppender{}
@@ -1057,8 +1035,7 @@ func (a *headAppender) Commit() (err error) {
 		}
 	}
 
-	floatHistogramsTotal := len(a.floatHistograms)
-	floatHistoOOORejected := 0
+	histogramsTotal += len(a.floatHistograms)
 	for i, s := range a.floatHistograms {
 		series = a.floatHistogramSeries[i]
 		series.Lock()
@@ -1075,8 +1052,8 @@ func (a *headAppender) Commit() (err error) {
 				inOrderMaxt = s.T
 			}
 		} else {
-			floatHistogramsTotal--
-			floatHistoOOORejected++
+			histogramsTotal--
+			histoOOORejected++
 		}
 		if chunkCreated {
 			a.head.metrics.chunks.Inc()
@@ -1091,7 +1068,6 @@ func (a *headAppender) Commit() (err error) {
 		series.Unlock()
 	}
 
-	// TODO(marctc): duplicate this metrics for float histogram or use different values?
 	a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat).Add(float64(oooRejected))
 	a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeHistogram).Add(float64(histoOOORejected))
 	a.head.metrics.outOfBoundSamples.WithLabelValues(sampleMetricTypeFloat).Add(float64(oobRejected))
@@ -1176,6 +1152,7 @@ func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID ui
 	if !sampleInOrder {
 		return sampleInOrder, chunkCreated
 	}
+
 	if app != nil {
 		positiveInterjections, negativeInterjections, okToAppend, counterReset = app.Appendable(h)
 	}
@@ -1255,7 +1232,7 @@ func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, 
 		//   recoding before we can append our histogram.
 		// - okToAppend and no interjections → Chunk is ready to support our histogram.
 		if !okToAppend || counterReset {
-			c = s.cutNewHeadChunk(t, chunkenc.EncHistogram, chunkDiskMapper, chunkRange)
+			c = s.cutNewHeadChunk(t, chunkenc.EncFloatHistogram, chunkDiskMapper, chunkRange)
 			chunkCreated = true
 		} else if len(positiveInterjections) > 0 || len(negativeInterjections) > 0 {
 			// New buckets have appeared. We need to recode all

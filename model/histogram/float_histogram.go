@@ -265,25 +265,13 @@ func (h *FloatHistogram) Equals(h2 *FloatHistogram) bool {
 		return false
 	}
 
-	if !bucketsFloatMatch(h.PositiveBuckets, h2.PositiveBuckets) {
+	if !bucketsMatch(h.PositiveBuckets, h2.PositiveBuckets) {
 		return false
 	}
-	if !bucketsFloatMatch(h.NegativeBuckets, h2.NegativeBuckets) {
+	if !bucketsMatch(h.NegativeBuckets, h2.NegativeBuckets) {
 		return false
 	}
 
-	return true
-}
-
-func bucketsFloatMatch(b1, b2 []float64) bool {
-	if len(b1) != len(b2) {
-		return false
-	}
-	for i, b := range b1 {
-		if b != b2[i] {
-			return false
-		}
-	}
 	return true
 }
 
