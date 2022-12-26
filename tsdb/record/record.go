@@ -49,6 +49,8 @@ const (
 	Metadata Type = 6
 	// HistogramSamples is used to match WAL records of type Histograms.
 	HistogramSamples Type = 7
+	// FloatHistogramSamples is used to match WAL records of type Float Histograms.
+	FloatHistogramSamples Type = 8
 )
 
 func (rt Type) String() string {
@@ -496,6 +498,88 @@ func (d *Decoder) HistogramSamples(rec []byte, histograms []RefHistogramSample) 
 	return histograms, nil
 }
 
+func (d *Decoder) FloatHistogramSamples(rec []byte, histograms []RefFloatHistogramSample) ([]RefFloatHistogramSample, error) {
+	dec := encoding.Decbuf{B: rec}
+	t := Type(dec.Byte())
+	if t != FloatHistogramSamples {
+		return nil, errors.New("invalid record type")
+	}
+	if dec.Len() == 0 {
+		return histograms, nil
+	}
+	var (
+		baseRef  = dec.Be64()
+		baseTime = dec.Be64int64()
+	)
+	for len(dec.B) > 0 && dec.Err() == nil {
+		dref := dec.Varint64()
+		dtime := dec.Varint64()
+
+		rh := RefFloatHistogramSample{
+			Ref: chunks.HeadSeriesRef(baseRef + uint64(dref)),
+			T:   baseTime + dtime,
+			FH: &histogram.FloatHistogram{
+				Schema:        0,
+				ZeroThreshold: 0,
+				ZeroCount:     0,
+				Count:         0,
+				Sum:           0,
+			},
+		}
+
+		rh.FH.Schema = int32(dec.Varint64())
+		rh.FH.ZeroThreshold = dec.Be64Float64()
+
+		rh.FH.ZeroCount = dec.Be64Float64()
+		rh.FH.Count = dec.Be64Float64()
+		rh.FH.Sum = dec.Be64Float64()
+
+		l := dec.Uvarint()
+		if l > 0 {
+			rh.FH.PositiveSpans = make([]histogram.Span, l)
+		}
+		for i := range rh.FH.PositiveSpans {
+			rh.FH.PositiveSpans[i].Offset = int32(dec.Varint64())
+			rh.FH.PositiveSpans[i].Length = dec.Uvarint32()
+		}
+
+		l = dec.Uvarint()
+		if l > 0 {
+			rh.FH.NegativeSpans = make([]histogram.Span, l)
+		}
+		for i := range rh.FH.NegativeSpans {
+			rh.FH.NegativeSpans[i].Offset = int32(dec.Varint64())
+			rh.FH.NegativeSpans[i].Length = dec.Uvarint32()
+		}
+
+		l = dec.Uvarint()
+		if l > 0 {
+			rh.FH.PositiveBuckets = make([]float64, l)
+		}
+		for i := range rh.FH.PositiveBuckets {
+			rh.FH.PositiveBuckets[i] = dec.Be64Float64()
+		}
+
+		l = dec.Uvarint()
+		if l > 0 {
+			rh.FH.NegativeBuckets = make([]float64, l)
+		}
+		for i := range rh.FH.NegativeBuckets {
+			rh.FH.NegativeBuckets[i] = dec.Be64Float64()
+		}
+
+		histograms = append(histograms, rh)
+	}
+
+	if dec.Err() != nil {
+		return nil, errors.Wrapf(dec.Err(), "decode error after %d histograms", len(histograms))
+	}
+	if len(dec.B) > 0 {
+		return nil, errors.Errorf("unexpected %d bytes left in entry", len(dec.B))
+	}
+	return histograms, nil
+}
+
 // Encoder encodes series, sample, and tombstones records.
 // The zero value is ready to use.
 type Encoder struct{}
@@ -676,7 +760,7 @@ func (e *Encoder) HistogramSamples(histograms []RefHistogramSample, b []byte) []
 
 func (e *Encoder) FloatHistogramSamples(histograms []RefFloatHistogramSample, b []byte) []byte {
 	buf := encoding.Encbuf{B: b}
-	buf.PutByte(byte(HistogramSamples))
+	buf.PutByte(byte(FloatHistogramSamples))
 
 	if len(histograms) == 0 {
 		return buf.Get()
