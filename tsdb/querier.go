@@ -215,12 +215,18 @@ func PostingsForMatchers(ix IndexPostingsReader, ms ...*labels.Matcher) (index.P
 				if err != nil {
 					return nil, err
 				}
+				if index.IsEmptyPostings(it) {
+					return index.EmptyPostings(), nil
+				}
 				its = append(its, it)
 			} else { // l="a"
 				// Non-Not matcher, use normal postingsForMatcher.
 				it, err := postingsForMatcher(ix, m)
 				if err != nil {
 					return nil, err
+				}
+				if index.IsEmptyPostings(it) {
+					return index.EmptyPostings(), nil
 				}
 				its = append(its, it)
 			}
