@@ -1032,6 +1032,14 @@ type EvalNodeHelper struct {
 	resultMetric map[string]labels.Labels
 }
 
+func (enh *EvalNodeHelper) resetBuilder(lbls labels.Labels) {
+	if enh.lb == nil {
+		enh.lb = labels.NewBuilder(lbls)
+	} else {
+		enh.lb.Reset(lbls)
+	}
+}
+
 // DropMetricName is a cached version of DropMetricName.
 func (enh *EvalNodeHelper) DropMetricName(l labels.Labels) labels.Labels {
 	if enh.Dmn == nil {
@@ -2152,12 +2160,7 @@ func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.V
 		enh.resultMetric = make(map[string]labels.Labels, len(enh.Out))
 	}
 
-	if enh.lb == nil {
-		enh.lb = labels.NewBuilder(lhs)
-	} else {
-		enh.lb.Reset(lhs)
-	}
-
+	enh.resetBuilder(lhs)
 	buf := bytes.NewBuffer(enh.lblResultBuf[:0])
 	enh.lblBuf = lhs.Bytes(enh.lblBuf)
 	buf.Write(enh.lblBuf)
@@ -2357,15 +2360,14 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 		}
 	}
 
-	lb := labels.NewBuilder(labels.EmptyLabels())
 	var buf []byte
 	for si, s := range vec {
 		metric := s.Metric
 
 		if op == parser.COUNT_VALUES {
-			lb.Reset(metric)
-			lb.Set(valueLabel, strconv.FormatFloat(s.V, 'f', -1, 64))
-			metric = lb.Labels(labels.EmptyLabels())
+			enh.resetBuilder(metric)
+			enh.lb.Set(valueLabel, strconv.FormatFloat(s.V, 'f', -1, 64))
+			metric = enh.lb.Labels(labels.EmptyLabels())
 
 			// We've changed the metric so we have to recompute the grouping key.
 			recomputeGroupingKey = true
@@ -2382,14 +2384,18 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 		group, ok := result[groupingKey]
 		// Add a new group if it doesn't exist.
 		if !ok {
-			lb.Reset(metric)
+			var m labels.Labels
+			enh.resetBuilder(metric)
 			if without {
-				lb.Del(grouping...)
-				lb.Del(labels.MetricName)
+				enh.lb.Del(grouping...)
+				enh.lb.Del(labels.MetricName)
+				m = enh.lb.Labels(labels.EmptyLabels())
+			} else if len(grouping) > 0 {
+				enh.lb.Keep(grouping...)
+				m = enh.lb.Labels(labels.EmptyLabels())
 			} else {
-				lb.Keep(grouping...)
+				m = labels.EmptyLabels()
 			}
-			m := lb.Labels(labels.EmptyLabels())
 			newAgg := &groupedAggregation{
 				labels:     m,
 				value:      s.V,
