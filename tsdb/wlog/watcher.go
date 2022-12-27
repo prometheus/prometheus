@@ -34,16 +34,7 @@ import (
 )
 
 const (
-	readPeriod         = 10 * time.Millisecond
-	checkpointPeriod   = 5 * time.Second
-	segmentCheckPeriod = 100 * time.Millisecond
-	consumer           = "consumer"
-
-	optimizerFactor           = 2  // the factor each time we speed up or slow down
-	optimizerMaxFactors       = 8  // the max factor of slowing down allowed
-	optimizerSampleTotal      = 20 // the number of most recent read results to track for the optimizer
-	optimizerPercentForSlower = 90 // if this percent of reads are misses, slow us down
-	optimizerPercentForFaster = 90 // if this percent of reads are hits, speed us up
+	consumer = "consumer"
 )
 
 // WriteTo is an interface used by the Watcher to send the samples it's read
@@ -76,13 +67,22 @@ type WatcherMetrics struct {
 	currentReadPeriod         *prometheus.GaugeVec
 }
 
+type WatcherOptimizerConfig struct {
+	baseCheckpointPeriod   time.Duration
+	baseSegmentCheckPeriod time.Duration
+	baseReadPeriod         time.Duration
+	optimizerSampleTotal   int
+	missedReadsForSlower   int
+	foundReadsForFaster    int
+	factor                 int64
+	maxMultiplier          int64
+}
+
 type WatcherOptimizer struct {
-	missedReadsForSlower      int
-	foundReadsForFaster       int
-	maxMultiplier             int64
+	conf                      *WatcherOptimizerConfig
 	missedReads               int
 	foundRecord               bool
-	foundRecordHistory        []bool
+	sampleHistory             []bool
 	currentSlowDownMultiplier int64
 	currentCheckpointPeriod   int64
 }
@@ -98,7 +98,7 @@ type Watcher struct {
 	sendHistograms bool
 	metrics        *WatcherMetrics
 	readerMetrics  *LiveReaderMetrics
-	optimizer      *WatcherOptimizer
+	opt            *WatcherOptimizer
 
 	startTime      time.Time
 	startTimestamp int64 // the start time as a Prometheus timestamp
@@ -199,18 +199,29 @@ func NewWatcherMetrics(reg prometheus.Registerer) *WatcherMetrics {
 	return m
 }
 
+func NewWatcherOptimizerConfig() *WatcherOptimizerConfig {
+	oc := &WatcherOptimizerConfig{
+		baseCheckpointPeriod:   5000 * time.Millisecond, // The starting checkpoint period and also a floor for the checkpoint period
+		baseSegmentCheckPeriod: 100 * time.Millisecond,  // The starting segment check period and used as the base for multiplying to slow down
+		baseReadPeriod:         10 * time.Millisecond,   // The starting read period and used as the base for multiplying to slow down
+		optimizerSampleTotal:   20,                      // The total number of samples to track when running the optimization
+		missedReadsForSlower:   18,                      // The number of reads in the samples that need to be misses to slow down by a factor
+		foundReadsForFaster:    18,                      // The number of reads in the samples that need to be hits to speed up by a factor
+		factor:                 2,                       // The factor for slowing down or speeding up
+		maxMultiplier:          256,                     // The maximum multiplier when slowing down the watcher (should be y where factor^x = y)
+	}
+
+	return oc
+}
+
 func NewWatcherOptimizer() *WatcherOptimizer {
 	o := &WatcherOptimizer{
-		// These properties can be calculated only once on optimizer creation
-		missedReadsForSlower: optimizerSampleTotal * optimizerPercentForSlower / 100,
-		foundReadsForFaster:  optimizerSampleTotal * optimizerPercentForFaster / 100,
-		maxMultiplier:        int64(math.Pow(optimizerFactor, optimizerMaxFactors)),
-		// These properties are variable as the optimizer runs
-		missedReads:               0,
-		foundRecord:               false,
-		foundRecordHistory:        make([]bool, 0, optimizerSampleTotal),
-		currentSlowDownMultiplier: 1,
-		currentCheckpointPeriod:   checkpointPeriod.Milliseconds(),
+		conf:                      NewWatcherOptimizerConfig(), // The optimizer config which can be overwritten for testing or otherwise
+		missedReads:               0,                           // How many of the current samples were misses
+		foundRecord:               false,                       // whether or not the last read found anything
+		sampleHistory:             make([]bool, 0),             // the history of sample results which gets reset to empty after a speed change
+		currentSlowDownMultiplier: 1,                           // how much we are slowing down the base periods (higher number means slower)
+		currentCheckpointPeriod:   0,                           // The current checkpoint period used to prevent resetting it to the same number since it has additional floor logic
 	}
 
 	return o
@@ -221,12 +232,13 @@ func NewWatcher(metrics *WatcherMetrics, readerMetrics *LiveReaderMetrics, logge
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
+
 	return &Watcher{
 		logger:         logger,
 		writer:         writer,
 		metrics:        metrics,
-		optimizer:      NewWatcherOptimizer(),
 		readerMetrics:  readerMetrics,
+		opt:            NewWatcherOptimizer(),
 		walDir:         path.Join(dir, "wal"),
 		name:           name,
 		sendExemplars:  sendExemplars,
@@ -419,17 +431,17 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 
 	reader := NewLiveReader(w.logger, w.readerMetrics, segment)
 
-	readTicker := time.NewTicker(readPeriod)
-	w.currentReadPeriodMetric.Set(float64(readPeriod.Milliseconds()))
+	newReadPeriod := w.getNewReadPeriod()
+	readTicker := time.NewTicker(time.Duration(newReadPeriod) * time.Millisecond)
 	defer readTicker.Stop()
 
-	checkpointTicker := time.NewTicker(checkpointPeriod)
-	w.currentCheckpointPeriodMetric.Set(float64(checkpointPeriod.Milliseconds()))
-	defer checkpointTicker.Stop()
-
-	segmentTicker := time.NewTicker(segmentCheckPeriod)
-	w.currentSegmentCheckPeriodMetric.Set(float64(segmentCheckPeriod.Milliseconds()))
+	newSegmentCheckPeriod := w.getNewSegmentCheckPeriod()
+	segmentTicker := time.NewTicker(time.Duration(newSegmentCheckPeriod) * time.Millisecond)
 	defer segmentTicker.Stop()
+
+	w.opt.currentCheckpointPeriod = w.getNewCheckpointPeriod()
+	checkpointTicker := time.NewTicker(time.Duration(w.opt.currentCheckpointPeriod) * time.Millisecond)
+	defer checkpointTicker.Stop()
 
 	// If we're replaying the segment we need to know the size of the file to know
 	// when to return from watch and move on to the next segment.
@@ -530,10 +542,10 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 // slow it down any further
 func (w *Watcher) runOptimizer(checkpointTicker, segmentTicker, readTicker *time.Ticker) {
 	// We need to analyze the number of optimizer records tracked before making any decisions
-	if len(w.optimizer.foundRecordHistory) < optimizerSampleTotal {
-		w.optimizer.foundRecordHistory = append([]bool{w.optimizer.foundRecord}, w.optimizer.foundRecordHistory...)
-		if !w.optimizer.foundRecord {
-			w.optimizer.missedReads++
+	if len(w.opt.sampleHistory) < w.opt.conf.optimizerSampleTotal {
+		w.opt.sampleHistory = append([]bool{w.opt.foundRecord}, w.opt.sampleHistory...)
+		if !w.opt.foundRecord {
+			w.opt.missedReads++
 		}
 
 		return
@@ -542,53 +554,75 @@ func (w *Watcher) runOptimizer(checkpointTicker, segmentTicker, readTicker *time
 	// If the oldest read doesn't match the newest read then update the running
 	// counter. This is tracked as we go so we don't have to traverse the whole
 	// foundRecordHistory slice to count it every read.
-	if w.optimizer.foundRecord && !w.optimizer.foundRecordHistory[0] {
-		w.optimizer.missedReads--
-	} else if !w.optimizer.foundRecord && w.optimizer.foundRecordHistory[0] {
-		w.optimizer.missedReads++
+	if w.opt.foundRecord && !w.opt.sampleHistory[0] {
+		w.opt.missedReads--
+	} else if !w.opt.foundRecord && w.opt.sampleHistory[0] {
+		w.opt.missedReads++
 	}
-	w.optimizer.foundRecordHistory = w.optimizer.foundRecordHistory[1:]
-	w.optimizer.foundRecordHistory = append(w.optimizer.foundRecordHistory, w.optimizer.foundRecord)
+	w.opt.sampleHistory = w.opt.sampleHistory[1:]
+	w.opt.sampleHistory = append(w.opt.sampleHistory, w.opt.foundRecord)
 
 	// See if we need to speed up or slow down and set the currentSlowDownMultiplier if we do
 	changeSpeeds := false
-	if optimizerSampleTotal-w.optimizer.missedReads >= w.optimizer.foundReadsForFaster && w.optimizer.currentSlowDownMultiplier > 1 {
+	if w.opt.conf.optimizerSampleTotal-w.opt.missedReads >= w.opt.conf.foundReadsForFaster && w.opt.currentSlowDownMultiplier > 1 {
 		changeSpeeds = true
-		w.optimizer.currentSlowDownMultiplier /= optimizerFactor
-		level.Info(w.logger).Log("msg", "Speeding up WAL Watcher", "slowdownMultiplier", w.optimizer.currentSlowDownMultiplier)
-	} else if w.optimizer.missedReads >= w.optimizer.missedReadsForSlower && w.optimizer.currentSlowDownMultiplier < w.optimizer.maxMultiplier {
+		w.opt.currentSlowDownMultiplier /= w.opt.conf.factor
+		level.Info(w.logger).Log("msg", "Speeding up WAL Watcher due to volume of data", "slowdownMultiplier", w.opt.currentSlowDownMultiplier)
+	} else if w.opt.missedReads >= w.opt.conf.missedReadsForSlower && w.opt.currentSlowDownMultiplier < w.opt.conf.maxMultiplier {
 		changeSpeeds = true
-		w.optimizer.currentSlowDownMultiplier *= optimizerFactor
-		level.Info(w.logger).Log("msg", "Slowing down WAL Watcher", "slowdownMultiplier", w.optimizer.currentSlowDownMultiplier)
+		w.opt.currentSlowDownMultiplier *= w.opt.conf.factor
+		level.Info(w.logger).Log("msg", "Slowing down WAL Watcher for resource efficiency", "slowdownMultiplier", w.opt.currentSlowDownMultiplier)
 	}
 
 	// Do the actual speed change by modifying the tickers
 	if changeSpeeds {
 		// Update the segment period
-		newSegmentCheckPeriod := w.optimizer.currentSlowDownMultiplier * segmentCheckPeriod.Milliseconds()
-		w.currentSegmentCheckPeriodMetric.Set(float64(newSegmentCheckPeriod))
+		newSegmentCheckPeriod := w.getNewSegmentCheckPeriod()
 		segmentTicker.Reset(time.Duration(newSegmentCheckPeriod) * time.Millisecond)
 
 		// Update the read period
-		newReadPeriod := w.optimizer.currentSlowDownMultiplier * readPeriod.Milliseconds()
-		w.currentReadPeriodMetric.Set(float64(newReadPeriod))
+		newReadPeriod := w.getNewReadPeriod()
 		readTicker.Reset(time.Duration(newReadPeriod) * time.Millisecond)
 
-		// Update the checkpoint period
-		// Use the newSegmentCheckPeriod for newCheckpointPeriod but still consider the original checkpointPeriod as a floor
-		if newSegmentCheckPeriod > checkpointPeriod.Milliseconds() {
-			w.optimizer.currentCheckpointPeriod = newSegmentCheckPeriod
-			w.currentCheckpointPeriodMetric.Set(float64(w.optimizer.currentCheckpointPeriod))
-			checkpointTicker.Reset(time.Duration(w.optimizer.currentCheckpointPeriod) * time.Millisecond)
-		} else if newSegmentCheckPeriod <= checkpointPeriod.Milliseconds() && w.optimizer.currentCheckpointPeriod != checkpointPeriod.Milliseconds() {
-			w.optimizer.currentCheckpointPeriod = checkpointPeriod.Milliseconds()
-			w.currentCheckpointPeriodMetric.Set(float64(w.optimizer.currentCheckpointPeriod))
-			checkpointTicker.Reset(time.Duration(w.optimizer.currentCheckpointPeriod) * time.Millisecond)
+		// Update the checkpoint period if it is changing
+		newCheckpointPeriod := w.getNewCheckpointPeriod()
+		if newCheckpointPeriod != w.opt.currentCheckpointPeriod {
+			w.opt.currentCheckpointPeriod = newCheckpointPeriod
+			checkpointTicker.Reset(time.Duration(w.opt.currentCheckpointPeriod) * time.Millisecond)
 		}
 
-		w.optimizer.missedReads = 0
-		w.optimizer.foundRecordHistory = make([]bool, 0, optimizerSampleTotal)
+		w.opt.missedReads = 0
+		w.opt.sampleHistory = make([]bool, 0)
 	}
+}
+
+func (w *Watcher) getNewReadPeriod() int64 {
+	newReadPeriod := w.opt.currentSlowDownMultiplier * w.opt.conf.baseReadPeriod.Milliseconds()
+	w.currentReadPeriodMetric.Set(float64(newReadPeriod))
+
+	return newReadPeriod
+}
+
+func (w *Watcher) getNewSegmentCheckPeriod() int64 {
+	newSegmentCheckPeriod := w.opt.currentSlowDownMultiplier * w.opt.conf.baseSegmentCheckPeriod.Milliseconds()
+	w.currentSegmentCheckPeriodMetric.Set(float64(newSegmentCheckPeriod))
+
+	return newSegmentCheckPeriod
+}
+
+func (w *Watcher) getNewCheckpointPeriod() int64 {
+	newSegmentCheckPeriod := w.getNewSegmentCheckPeriod()
+
+	// Use the newSegmentCheckPeriod for newCheckpointPeriod if it is greater than the baseCheckpointPeriod
+	if newSegmentCheckPeriod > w.opt.conf.baseCheckpointPeriod.Milliseconds() {
+		w.currentCheckpointPeriodMetric.Set(float64(newSegmentCheckPeriod))
+		return newSegmentCheckPeriod
+	}
+
+	newCheckpointPeriod := w.opt.conf.baseCheckpointPeriod.Milliseconds()
+	w.currentCheckpointPeriodMetric.Set(float64(newCheckpointPeriod))
+
+	return newCheckpointPeriod
 }
 
 func (w *Watcher) garbageCollectSeries(segmentNum int) error {
@@ -636,9 +670,9 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 		histogramsToSend []record.RefHistogramSample
 	)
 
-	w.optimizer.foundRecord = false
+	w.opt.foundRecord = false
 	for r.Next() && !isClosed(w.quit) {
-		w.optimizer.foundRecord = true
+		w.opt.foundRecord = true
 		rec := r.Record()
 		w.recordsReadMetric.WithLabelValues(dec.Type(rec).String()).Inc()
 
