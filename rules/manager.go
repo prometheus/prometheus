@@ -649,6 +649,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			}
 			var (
 				numOutOfOrder = 0
+				numTooOld     = 0
 				numDuplicates = 0
 			)
 
@@ -680,6 +681,9 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 					case errors.Is(unwrappedErr, storage.ErrOutOfOrderSample):
 						numOutOfOrder++
 						level.Debug(g.logger).Log("name", rule.Name(), "index", i, "msg", "Rule evaluation result discarded", "err", err, "sample", s)
+					case errors.Is(unwrappedErr, storage.ErrTooOldSample):
+						numTooOld++
+						level.Debug(g.logger).Log("name", rule.Name(), "index", i, "msg", "Rule evaluation result discarded", "err", err, "sample", s)
 					case errors.Is(unwrappedErr, storage.ErrDuplicateSampleForTimestamp):
 						numDuplicates++
 						level.Debug(g.logger).Log("name", rule.Name(), "index", i, "msg", "Rule evaluation result discarded", "err", err, "sample", s)
@@ -693,6 +697,9 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			}
 			if numOutOfOrder > 0 {
 				level.Warn(g.logger).Log("name", rule.Name(), "index", i, "msg", "Error on ingesting out-of-order result from rule evaluation", "numDropped", numOutOfOrder)
+			}
+			if numTooOld > 0 {
+				level.Warn(g.logger).Log("name", rule.Name(), "index", i, "msg", "Error on ingesting too old result from rule evaluation", "numDropped", numTooOld)
 			}
 			if numDuplicates > 0 {
 				level.Warn(g.logger).Log("name", rule.Name(), "index", i, "msg", "Error on ingesting results from rule evaluation with different value but same timestamp", "numDropped", numDuplicates)
@@ -708,7 +715,9 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 					}
 					switch {
 					case unwrappedErr == nil:
-					case errors.Is(unwrappedErr, storage.ErrOutOfOrderSample), errors.Is(unwrappedErr, storage.ErrDuplicateSampleForTimestamp):
+					case errors.Is(unwrappedErr, storage.ErrOutOfOrderSample),
+						errors.Is(unwrappedErr, storage.ErrTooOldSample),
+						errors.Is(unwrappedErr, storage.ErrDuplicateSampleForTimestamp):
 						// Do not count these in logging, as this is expected if series
 						// is exposed from a different rule.
 					default:
@@ -738,7 +747,9 @@ func (g *Group) cleanupStaleSeries(ctx context.Context, ts time.Time) {
 		}
 		switch {
 		case unwrappedErr == nil:
-		case errors.Is(unwrappedErr, storage.ErrOutOfOrderSample), errors.Is(unwrappedErr, storage.ErrDuplicateSampleForTimestamp):
+		case errors.Is(unwrappedErr, storage.ErrOutOfOrderSample),
+			errors.Is(unwrappedErr, storage.ErrTooOldSample),
+			errors.Is(unwrappedErr, storage.ErrDuplicateSampleForTimestamp):
 			// Do not count these in logging, as this is expected if series
 			// is exposed from a different rule.
 		default:
