@@ -3128,7 +3128,6 @@ func TestRangeQuery(t *testing.T) {
 func TestSparseHistogramRate(t *testing.T) {
 	// TODO(beorn7): Integrate histograms into the PromQL testing framework
 	// and write more tests there.
-	// TODO(marctc): Add similar test for float histograms
 	test, err := NewTest(t, "")
 	require.NoError(t, err)
 	defer test.Close()
@@ -3139,6 +3138,47 @@ func TestSparseHistogramRate(t *testing.T) {
 	app := test.Storage().Appender(context.TODO())
 	for i, h := range tsdb.GenerateTestHistograms(100) {
 		_, err := app.AppendHistogram(0, lbls, int64(i)*int64(15*time.Second/time.Millisecond), h, nil)
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	require.NoError(t, test.Run())
+	engine := test.QueryEngine()
+
+	queryString := fmt.Sprintf("rate(%s[1m])", seriesName)
+	qry, err := engine.NewInstantQuery(test.Queryable(), nil, queryString, timestamp.Time(int64(5*time.Minute/time.Millisecond)))
+	require.NoError(t, err)
+	res := qry.Exec(test.Context())
+	require.NoError(t, res.Err)
+	vector, err := res.Vector()
+	require.NoError(t, err)
+	require.Len(t, vector, 1)
+	actualHistogram := vector[0].H
+	expectedHistogram := &histogram.FloatHistogram{
+		Schema:          1,
+		ZeroThreshold:   0.001,
+		ZeroCount:       1. / 15.,
+		Count:           4. / 15.,
+		Sum:             1.226666666666667,
+		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+		PositiveBuckets: []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
+	}
+	require.Equal(t, expectedHistogram, actualHistogram)
+}
+
+func TestSparseFloatHistogramRate(t *testing.T) {
+	// TODO(beorn7): Integrate histograms into the PromQL testing framework
+	// and write more tests there.
+	test, err := NewTest(t, "")
+	require.NoError(t, err)
+	defer test.Close()
+
+	seriesName := "sparse_histogram_series"
+	lbls := labels.FromStrings("__name__", seriesName)
+
+	app := test.Storage().Appender(context.TODO())
+	for i, fh := range tsdb.GenerateTestFloatHistograms(100) {
+		_, err := app.AppendHistogram(0, lbls, int64(i)*int64(15*time.Second/time.Millisecond), nil, fh)
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
