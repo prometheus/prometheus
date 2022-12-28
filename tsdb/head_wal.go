@@ -499,7 +499,15 @@ func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc, oooMmc []*m
 	h.metrics.chunksRemoved.Add(float64(len(mSeries.mmappedChunks)))
 	h.metrics.chunks.Add(float64(len(mmc) + len(oooMmc) - len(mSeries.mmappedChunks)))
 	mSeries.mmappedChunks = mmc
-	mSeries.oooMmappedChunks = oooMmc
+	mSeries.ooo = nil
+	if len(oooMmc) == 0 {
+		mSeries.ooo = nil
+	} else {
+		if mSeries.ooo == nil {
+			mSeries.ooo = &memSeriesOOOFields{}
+		}
+		*mSeries.ooo = memSeriesOOOFields{oooMmappedChunks: oooMmc}
+	}
 	// Cache the last mmapped chunk time, so we can skip calling append() for samples it will reject.
 	if len(mmc) == 0 {
 		mSeries.mmMaxTime = math.MinInt64
@@ -818,7 +826,9 @@ func (h *Head) loadWBL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.
 				// chunk size parameters, we are not taking care of that here.
 				// TODO(codesome): see if there is a way to avoid duplicate m-map chunks if
 				// the size of ooo chunk was reduced between restart.
-				ms.oooHeadChunk = nil
+				if ms.ooo != nil {
+					ms.ooo.oooHeadChunk = nil
+				}
 
 				processors[idx].mx.Unlock()
 			}
