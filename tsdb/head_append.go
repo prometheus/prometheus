@@ -350,9 +350,12 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 		}
 	}
 
-	if value.IsStaleNaN(v) && s.lastHistogramValue != nil {
-		// TODO(marctc): do we have do to the same for float histograms?
-		return a.AppendHistogram(ref, lset, t, &histogram.Histogram{Sum: v}, nil)
+	if value.IsStaleNaN(v) {
+		if s.lastHistogramValue != nil {
+			return a.AppendHistogram(ref, lset, t, &histogram.Histogram{Sum: v}, nil)
+		} else if s.lastFloatHistogramValue != nil {
+			return a.AppendHistogram(ref, lset, t, nil, &histogram.FloatHistogram{Sum: v})
+		}
 	}
 
 	s.Lock()
