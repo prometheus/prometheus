@@ -3898,7 +3898,7 @@ func TestSparseHistogram_HistogramFraction(t *testing.T) {
 	idx := int64(0)
 	for _, floatHisto := range []bool{true, false} {
 		for _, c := range cases {
-			t.Run(c.text, func(t *testing.T) {
+			t.Run(fmt.Sprintf("%s floatHistogram=%t", c.text, floatHisto), func(t *testing.T) {
 				test, err := NewTest(t, "")
 				require.NoError(t, err)
 				t.Cleanup(test.Close)
