@@ -350,7 +350,7 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 		}
 	}
 
-	if value.IsStaleNaN(v) && s.isHistogramSeries {
+	if value.IsStaleNaN(v) && s.lastHistogramValue != nil {
 		// TODO(marctc): do we have do to the same for float histograms?
 		return a.AppendHistogram(ref, lset, t, &histogram.Histogram{Sum: v}, nil)
 	}
@@ -555,8 +555,12 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		if err != nil {
 			return 0, err
 		}
-		s.isHistogramSeries = true
 		if created {
+			if h != nil {
+				s.lastHistogramValue = &histogram.Histogram{}
+			} else if fh != nil {
+				s.lastFloatHistogramValue = &histogram.FloatHistogram{}
+			}
 			a.series = append(a.series, record.RefSeries{
 				Ref:    s.ref,
 				Labels: lset,
@@ -1115,11 +1119,12 @@ func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper 
 		return sampleInOrder, chunkCreated
 	}
 	s.app.Append(t, v)
-	s.isHistogramSeries = false
 
 	c.maxTime = t
 
 	s.lastValue = v
+	s.lastHistogramValue = nil
+	s.lastFloatHistogramValue = nil
 
 	if appendID > 0 {
 		s.txs.add(appendID)
@@ -1184,11 +1189,11 @@ func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID ui
 	}
 
 	s.app.AppendHistogram(t, h)
-	s.isHistogramSeries = true
 
 	c.maxTime = t
 
 	s.lastHistogramValue = h
+	s.lastFloatHistogramValue = nil
 
 	if appendID > 0 {
 		s.txs.add(appendID)
@@ -1252,11 +1257,11 @@ func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, 
 	}
 
 	s.app.AppendFloatHistogram(t, fh)
-	s.isHistogramSeries = true
 
 	c.maxTime = t
 
 	s.lastFloatHistogramValue = fh
+	s.lastHistogramValue = nil
 
 	if appendID > 0 {
 		s.txs.add(appendID)
