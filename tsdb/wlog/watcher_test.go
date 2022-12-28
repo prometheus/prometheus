@@ -609,3 +609,112 @@ func TestCheckpointSeriesReset(t *testing.T) {
 		})
 	}
 }
+
+func TestOptimizer(t *testing.T) {
+	pageSize := 32 * 1024
+	const seriesCount = 10
+	const samplesCount = 250
+
+	// Test where the optimizer:
+	// - fast: speeds up the watcher to the maximum speed starting at slowest speed
+	// - normal: starts at neither fast or slowest speed and keeps it there
+	// - slow: slows down the watcher to minimum speed starting at max speed
+	for _, speed := range []string{"fast", "normal", "slow"} {
+		for _, compress := range []bool{false, true} {
+			t.Run(fmt.Sprintf("compress=%t,speedUp=%s", compress, speed), func(t *testing.T) {
+				dir := t.TempDir()
+				wdir := path.Join(dir, "wal")
+				err := os.Mkdir(wdir, 0o777)
+				require.NoError(t, err)
+
+				w, err := NewSize(nil, nil, wdir, 128*pageSize, compress)
+				require.NoError(t, err)
+				defer func() {
+					require.NoError(t, w.Close())
+				}()
+
+				var recs [][]byte
+
+				enc := record.Encoder{}
+
+				for i := 0; i < seriesCount; i++ {
+					series := enc.Series([]record.RefSeries{
+						{
+							Ref:    chunks.HeadSeriesRef(i),
+							Labels: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i)),
+						},
+					}, nil)
+					recs = append(recs, series)
+					for j := 0; j < samplesCount; j++ {
+						sample := enc.Samples([]record.RefSample{
+							{
+								Ref: chunks.HeadSeriesRef(j),
+								T:   int64(i),
+								V:   float64(i),
+							},
+						}, nil)
+
+						recs = append(recs, sample)
+
+						// Randomly batch up records.
+						if rand.Intn(4) < 3 {
+							require.NoError(t, w.Log(recs...))
+							recs = recs[:0]
+						}
+					}
+				}
+				require.NoError(t, w.Log(recs...))
+
+				_, _, err = Segments(w.Dir())
+				require.NoError(t, err)
+
+				wt := newWriteToMock()
+				watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false)
+
+				watcher.opt.conf.baseReadPeriod = 5 * time.Millisecond         // Speed up the test as much as reasonable
+				watcher.opt.conf.optimizerSampleTotal = 2                      // Lower sample total for unit test speed
+				watcher.opt.conf.maxMultiplier = 4                             // Lower max multiplier for unit test speed
+				watcher.opt.conf.baseCheckpointPeriod = 150 * time.Millisecond // use this value so segment check period goes above and blow the base checkpoint period
+
+				if speed == "fast" {
+					watcher.opt.currentSlowDownMultiplier = watcher.opt.conf.maxMultiplier // Start with the max multiplier so we can speed up
+					watcher.opt.conf.missedReadsForSlower = 999                            // Prevent slow down
+					watcher.opt.conf.foundReadsForFaster = 0                               // Force speed up until minimum multiplier
+				} else if speed == "normal" {
+					watcher.opt.currentSlowDownMultiplier = watcher.opt.conf.maxMultiplier / 2 // Start with the max multiplier so we can speed up
+					watcher.opt.conf.missedReadsForSlower = 999                                // Prevent slow down
+					watcher.opt.conf.foundReadsForFaster = 999                                 // Prevent speed up
+				} else if speed == "slow" {
+					watcher.opt.conf.missedReadsForSlower = 0  // Force slow down until max multiplier
+					watcher.opt.conf.foundReadsForFaster = 999 // Prevent speed up
+				}
+
+				go watcher.Start()
+
+				expected := seriesCount
+				retry(t, defaultRetryInterval, defaultRetries, func() bool {
+					if speed == "fast" {
+						return wt.checkNumLabels() >= expected && watcher.opt.currentSlowDownMultiplier <= 1
+					} else if speed == "normal" {
+						return wt.checkNumLabels() >= expected && len(watcher.opt.sampleHistory) == watcher.opt.conf.optimizerSampleTotal
+					}
+
+					return wt.checkNumLabels() >= expected && watcher.opt.currentSlowDownMultiplier >= watcher.opt.conf.maxMultiplier
+				})
+				watcher.Stop()
+
+				require.Equal(t, expected, wt.checkNumLabels())
+				if speed == "fast" {
+					require.Equal(t, watcher.opt.conf.baseCheckpointPeriod.Milliseconds(), watcher.opt.currentCheckpointPeriod)
+					require.Equal(t, int64(1), watcher.opt.currentSlowDownMultiplier)
+				} else if speed == "normal" {
+					require.Equal(t, watcher.opt.conf.baseSegmentCheckPeriod.Milliseconds()*watcher.opt.currentSlowDownMultiplier, watcher.opt.currentCheckpointPeriod)
+					require.Equal(t, int64(watcher.opt.conf.maxMultiplier/2), watcher.opt.currentSlowDownMultiplier)
+				} else if speed == "slow" {
+					require.Equal(t, watcher.opt.conf.baseSegmentCheckPeriod.Milliseconds()*watcher.opt.conf.maxMultiplier, watcher.opt.currentCheckpointPeriod)
+					require.Equal(t, watcher.opt.conf.maxMultiplier, watcher.opt.currentSlowDownMultiplier)
+				}
+			})
+		}
+	}
+}
