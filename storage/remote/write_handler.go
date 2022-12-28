@@ -124,6 +124,7 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 			}
 		}
 
+		// TODO(codesome): support float histograms.
 		for _, hp := range ts.Histograms {
 			hs := HistogramProtoToHistogram(hp)
 			_, err = app.AppendHistogram(0, labels, hp.Timestamp, hs, nil)

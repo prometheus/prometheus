@@ -303,14 +303,14 @@ type headAppender struct {
 
 	series               []record.RefSeries               // New series held by this appender.
 	samples              []record.RefSample               // New float samples held by this appender.
-	exemplars            []exemplarWithSeriesRef          // New exemplars held by this appender.
 	sampleSeries         []*memSeries                     // Float series corresponding to the samples held by this appender (using corresponding slice indices - same series may appear more than once).
 	histograms           []record.RefHistogramSample      // New histogram samples held by this appender.
-	floatHistograms      []record.RefFloatHistogramSample // New float histogram samples held by this appender.
 	histogramSeries      []*memSeries                     // HistogramSamples series corresponding to the samples held by this appender (using corresponding slice indices - same series may appear more than once).
-	floatHistogramSeries []*memSeries                     // FloatHistogramSamples series.
+	floatHistograms      []record.RefFloatHistogramSample // New float histogram samples held by this appender.
+	floatHistogramSeries []*memSeries                     // FloatHistogramSamples series corresponding to the samples held by this appender (using corresponding slice indices - same series may appear more than once).
 	metadata             []record.RefMetadata             // New metadata held by this appender.
 	metadataSeries       []*memSeries                     // Series corresponding to the metadata held by this appender.
+	exemplars            []exemplarWithSeriesRef          // New exemplars held by this appender.
 
 	appendID, cleanupAppendIDsBelow uint64
 	closed                          bool

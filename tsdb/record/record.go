@@ -438,13 +438,7 @@ func (d *Decoder) HistogramSamples(rec []byte, histograms []RefHistogramSample) 
 		rh := RefHistogramSample{
 			Ref: chunks.HeadSeriesRef(baseRef + uint64(dref)),
 			T:   baseTime + dtime,
-			H: &histogram.Histogram{
-				Schema:        0,
-				ZeroThreshold: 0,
-				ZeroCount:     0,
-				Count:         0,
-				Sum:           0,
-			},
+			H:   &histogram.Histogram{},
 		}
 
 		rh.H.Schema = int32(dec.Varint64())
@@ -520,13 +514,7 @@ func (d *Decoder) FloatHistogramSamples(rec []byte, histograms []RefFloatHistogr
 		rh := RefFloatHistogramSample{
 			Ref: chunks.HeadSeriesRef(baseRef + uint64(dref)),
 			T:   baseTime + dtime,
-			FH: &histogram.FloatHistogram{
-				Schema:        0,
-				ZeroThreshold: 0,
-				ZeroCount:     0,
-				Count:         0,
-				Sum:           0,
-			},
+			FH:  &histogram.FloatHistogram{},
 		}
 
 		rh.FH.Schema = int32(dec.Varint64())
