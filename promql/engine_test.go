@@ -3227,83 +3227,62 @@ func TestSparseHistogram_HistogramCountAndSum(t *testing.T) {
 		},
 		NegativeBuckets: []int64{2, 1, -2, 3},
 	}
-	fh := h.ToFloat()
+	for _, floatHisto := range []bool{true, false} {
 
-	test, err := NewTest(t, "")
-	require.NoError(t, err)
-	t.Cleanup(test.Close)
+		test, err := NewTest(t, "")
+		require.NoError(t, err)
+		t.Cleanup(test.Close)
 
-	seriesName := "sparse_histogram_series"
-	lbls := labels.FromStrings("__name__", seriesName)
-	engine := test.QueryEngine()
+		seriesName := "sparse_histogram_series"
+		lbls := labels.FromStrings("__name__", seriesName)
+		engine := test.QueryEngine()
 
-	ts := int64(10 * time.Minute / time.Millisecond)
-	app := test.Storage().Appender(context.TODO())
-	_, err = app.AppendHistogram(0, lbls, ts, h, nil)
-	require.NoError(t, err)
-	require.NoError(t, app.Commit())
+		ts := int64(10 * time.Minute / time.Millisecond)
+		app := test.Storage().Appender(context.TODO())
+		if floatHisto {
+			_, err = app.AppendHistogram(0, lbls, ts, nil, h.ToFloat())
+		} else {
+			_, err = app.AppendHistogram(0, lbls, ts, h, nil)
+		}
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
 
-	queryString := fmt.Sprintf("histogram_count(%s)", seriesName)
-	qry, err := engine.NewInstantQuery(test.Queryable(), nil, queryString, timestamp.Time(ts))
-	require.NoError(t, err)
+		queryString := fmt.Sprintf("histogram_count(%s)", seriesName)
+		qry, err := engine.NewInstantQuery(test.Queryable(), nil, queryString, timestamp.Time(ts))
+		require.NoError(t, err)
 
-	res := qry.Exec(test.Context())
-	require.NoError(t, res.Err)
+		res := qry.Exec(test.Context())
+		require.NoError(t, res.Err)
 
-	vector, err := res.Vector()
-	require.NoError(t, err)
+		vector, err := res.Vector()
+		require.NoError(t, err)
 
-	require.Len(t, vector, 1)
-	require.Nil(t, vector[0].H)
-	require.Equal(t, float64(h.Count), vector[0].V)
+		require.Len(t, vector, 1)
+		require.Nil(t, vector[0].H)
+		if floatHisto {
+			require.Equal(t, float64(h.ToFloat().Count), vector[0].V)
+		} else {
+			require.Equal(t, float64(h.Count), vector[0].V)
+		}
 
-	queryString = fmt.Sprintf("histogram_sum(%s)", seriesName)
-	qry, err = engine.NewInstantQuery(test.Queryable(), nil, queryString, timestamp.Time(ts))
-	require.NoError(t, err)
+		queryString = fmt.Sprintf("histogram_sum(%s)", seriesName)
+		qry, err = engine.NewInstantQuery(test.Queryable(), nil, queryString, timestamp.Time(ts))
+		require.NoError(t, err)
 
-	res = qry.Exec(test.Context())
-	require.NoError(t, res.Err)
+		res = qry.Exec(test.Context())
+		require.NoError(t, res.Err)
 
-	vector, err = res.Vector()
-	require.NoError(t, err)
+		vector, err = res.Vector()
+		require.NoError(t, err)
 
-	require.Len(t, vector, 1)
-	require.Nil(t, vector[0].H)
-	require.Equal(t, h.Sum, vector[0].V)
-
-	// float histogram
-	ts = int64(11 * time.Minute / time.Millisecond)
-	app = test.Storage().Appender(context.TODO())
-	_, err = app.AppendHistogram(0, lbls, ts, nil, fh)
-	require.NoError(t, err)
-	require.NoError(t, app.Commit())
-	queryString = fmt.Sprintf("histogram_count(%s)", seriesName)
-	qry, err = engine.NewInstantQuery(test.Queryable(), nil, queryString, timestamp.Time(ts))
-	require.NoError(t, err)
-
-	res = qry.Exec(test.Context())
-	require.NoError(t, res.Err)
-
-	vector, err = res.Vector()
-	require.NoError(t, err)
-
-	require.Len(t, vector, 1)
-	require.Nil(t, vector[0].H)
-	require.Equal(t, float64(fh.Count), vector[0].V)
-
-	queryString = fmt.Sprintf("histogram_sum(%s)", seriesName)
-	qry, err = engine.NewInstantQuery(test.Queryable(), nil, queryString, timestamp.Time(ts))
-	require.NoError(t, err)
-
-	res = qry.Exec(test.Context())
-	require.NoError(t, res.Err)
-
-	vector, err = res.Vector()
-	require.NoError(t, err)
-
-	require.Len(t, vector, 1)
-	require.Nil(t, vector[0].H)
-	require.Equal(t, fh.Sum, vector[0].V)
+		require.Len(t, vector, 1)
+		require.Nil(t, vector[0].H)
+		if floatHisto {
+			require.Equal(t, h.ToFloat().Sum, vector[0].V)
+		} else {
+			require.Equal(t, h.Sum, vector[0].V)
+		}
+	}
 }
 
 func TestSparseHistogram_HistogramQuantile(t *testing.T) {
