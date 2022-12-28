@@ -21,6 +21,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -79,6 +80,7 @@ type WatcherOptimizerConfig struct {
 }
 
 type WatcherOptimizer struct {
+	mtx                       sync.Mutex // protects all following variables
 	conf                      *WatcherOptimizerConfig
 	missedReads               int
 	foundRecord               bool
@@ -431,6 +433,8 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 
 	reader := NewLiveReader(w.logger, w.readerMetrics, segment)
 
+	w.opt.mtx.Lock()
+
 	newReadPeriod := w.getNewReadPeriod()
 	readTicker := time.NewTicker(time.Duration(newReadPeriod) * time.Millisecond)
 	defer readTicker.Stop()
@@ -442,6 +446,8 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 	w.opt.currentCheckpointPeriod = w.getNewCheckpointPeriod()
 	checkpointTicker := time.NewTicker(time.Duration(w.opt.currentCheckpointPeriod) * time.Millisecond)
 	defer checkpointTicker.Stop()
+
+	w.opt.mtx.Unlock()
 
 	// If we're replaying the segment we need to know the size of the file to know
 	// when to return from watch and move on to the next segment.
@@ -541,6 +547,9 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 // it is already relatively slow and we don't want to
 // slow it down any further
 func (w *Watcher) runOptimizer(checkpointTicker, segmentTicker, readTicker *time.Ticker) {
+	w.opt.mtx.Lock()
+	defer w.opt.mtx.Unlock()
+
 	// We need to analyze the number of optimizer records tracked before making any decisions
 	if len(w.opt.sampleHistory) < w.opt.conf.optimizerSampleTotal {
 		w.opt.sampleHistory = append([]bool{w.opt.foundRecord}, w.opt.sampleHistory...)
@@ -669,6 +678,9 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 		histograms       []record.RefHistogramSample
 		histogramsToSend []record.RefHistogramSample
 	)
+
+	w.opt.mtx.Lock()
+	defer w.opt.mtx.Unlock()
 
 	w.opt.foundRecord = false
 	for r.Next() && !isClosed(w.quit) {

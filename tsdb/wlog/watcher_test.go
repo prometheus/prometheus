@@ -693,6 +693,9 @@ func TestOptimizer(t *testing.T) {
 
 				expected := seriesCount
 				retry(t, defaultRetryInterval, defaultRetries, func() bool {
+					watcher.opt.mtx.Lock()
+					defer watcher.opt.mtx.Unlock()
+
 					if speed == "fast" {
 						return wt.checkNumLabels() >= expected && watcher.opt.currentSlowDownMultiplier <= 1
 					} else if speed == "normal" {
