@@ -108,6 +108,9 @@ func query(t testing.TB, q storage.Querier, matchers ...*labels.Matcher) map[str
 			case chunkenc.ValHistogram:
 				ts, h := it.AtHistogram()
 				samples = append(samples, sample{t: ts, h: h})
+			case chunkenc.ValFloatHistogram:
+				ts, fh := it.AtFloatHistogram()
+				samples = append(samples, sample{t: ts, fh: fh})
 			default:
 				t.Fatalf("unknown sample type in query %s", typ.String())
 			}
@@ -465,7 +468,7 @@ Outer:
 	}
 }
 
-func TestAmendDatapointCausesError(t *testing.T) {
+func TestAmendHistogramDatapointCausesError(t *testing.T) {
 	db := openTestDB(t, nil, nil)
 	defer func() {
 		require.NoError(t, db.Close())
@@ -496,17 +499,32 @@ func TestAmendDatapointCausesError(t *testing.T) {
 		},
 		PositiveBuckets: []int64{1, 2, -2, 1, -1, 0, 0},
 	}
+	fh := h.ToFloat()
 
 	app = db.Appender(ctx)
-	_, err = app.AppendHistogram(0, labels.FromStrings("a", "c"), 0, h.Copy())
+	_, err = app.AppendHistogram(0, labels.FromStrings("a", "c"), 0, h.Copy(), nil)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
 	app = db.Appender(ctx)
-	_, err = app.AppendHistogram(0, labels.FromStrings("a", "c"), 0, h.Copy())
+	_, err = app.AppendHistogram(0, labels.FromStrings("a", "c"), 0, h.Copy(), nil)
 	require.NoError(t, err)
 	h.Schema = 2
-	_, err = app.AppendHistogram(0, labels.FromStrings("a", "c"), 0, h.Copy())
+	_, err = app.AppendHistogram(0, labels.FromStrings("a", "c"), 0, h.Copy(), nil)
+	require.Equal(t, storage.ErrDuplicateSampleForTimestamp, err)
+	require.NoError(t, app.Rollback())
+
+	// Float histogram.
+	app = db.Appender(ctx)
+	_, err = app.AppendHistogram(0, labels.FromStrings("a", "d"), 0, nil, fh.Copy())
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	app = db.Appender(ctx)
+	_, err = app.AppendHistogram(0, labels.FromStrings("a", "d"), 0, nil, fh.Copy())
+	require.NoError(t, err)
+	fh.Schema = 2
+	_, err = app.AppendHistogram(0, labels.FromStrings("a", "d"), 0, nil, fh.Copy())
 	require.Equal(t, storage.ErrDuplicateSampleForTimestamp, err)
 	require.NoError(t, app.Rollback())
 }
@@ -5805,6 +5823,16 @@ func TestDiskFillingUpAfterDisablingOOO(t *testing.T) {
 }
 
 func TestHistogramAppendAndQuery(t *testing.T) {
+	t.Run("integer histograms", func(t *testing.T) {
+		testHistogramAppendAndQueryHelper(t, false)
+	})
+	t.Run("float histograms", func(t *testing.T) {
+		testHistogramAppendAndQueryHelper(t, true)
+	})
+}
+
+func testHistogramAppendAndQueryHelper(t *testing.T, floatHistogram bool) {
+	t.Helper()
 	db := openTestDB(t, nil, nil)
 	minute := func(m int) int64 { return int64(m) * time.Minute.Milliseconds() }
 	t.Cleanup(func() {
@@ -5814,11 +5842,17 @@ func TestHistogramAppendAndQuery(t *testing.T) {
 	ctx := context.Background()
 	appendHistogram := func(lbls labels.Labels, tsMinute int, h *histogram.Histogram, exp *[]tsdbutil.Sample) {
 		t.Helper()
+		var err error
 		app := db.Appender(ctx)
-		_, err := app.AppendHistogram(0, lbls, minute(tsMinute), h)
+		if floatHistogram {
+			_, err = app.AppendHistogram(0, lbls, minute(tsMinute), nil, h.ToFloat())
+			*exp = append(*exp, sample{t: minute(tsMinute), fh: h.ToFloat()})
+		} else {
+			_, err = app.AppendHistogram(0, lbls, minute(tsMinute), h.Copy(), nil)
+			*exp = append(*exp, sample{t: minute(tsMinute), h: h.Copy()})
+		}
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
-		*exp = append(*exp, sample{t: minute(tsMinute), h: h.Copy()})
 	}
 	appendFloat := func(lbls labels.Labels, tsMinute int, val float64, exp *[]tsdbutil.Sample) {
 		t.Helper()
@@ -5867,23 +5901,23 @@ func TestHistogramAppendAndQuery(t *testing.T) {
 	t.Run("series with only histograms", func(t *testing.T) {
 		h := baseH.Copy() // This is shared across all sub tests.
 
-		appendHistogram(series1, 100, h.Copy(), &exp1)
+		appendHistogram(series1, 100, h, &exp1)
 		testQuery("foo", "bar1", map[string][]tsdbutil.Sample{series1.String(): exp1})
 
 		h.PositiveBuckets[0]++
 		h.NegativeBuckets[0] += 2
 		h.Count += 10
-		appendHistogram(series1, 101, h.Copy(), &exp1)
+		appendHistogram(series1, 101, h, &exp1)
 		testQuery("foo", "bar1", map[string][]tsdbutil.Sample{series1.String(): exp1})
 
 		t.Run("changing schema", func(t *testing.T) {
 			h.Schema = 2
-			appendHistogram(series1, 102, h.Copy(), &exp1)
+			appendHistogram(series1, 102, h, &exp1)
 			testQuery("foo", "bar1", map[string][]tsdbutil.Sample{series1.String(): exp1})
 
 			// Schema back to old.
 			h.Schema = 1
-			appendHistogram(series1, 103, h.Copy(), &exp1)
+			appendHistogram(series1, 103, h, &exp1)
 			testQuery("foo", "bar1", map[string][]tsdbutil.Sample{series1.String(): exp1})
 		})
 
@@ -5894,10 +5928,17 @@ func TestHistogramAppendAndQuery(t *testing.T) {
 			// because the chunk will be re-encoded. So this forces us to modify
 			// the last histogram in exp1 so when we query we get the expected
 			// results.
-			lh := exp1[len(exp1)-1].H().Copy()
-			lh.PositiveSpans[1].Length++
-			lh.PositiveBuckets = append(lh.PositiveBuckets, -2) // -2 makes the last bucket 0.
-			exp1[len(exp1)-1] = sample{t: exp1[len(exp1)-1].T(), h: lh}
+			if floatHistogram {
+				lh := exp1[len(exp1)-1].FH().Copy()
+				lh.PositiveSpans[1].Length++
+				lh.PositiveBuckets = append(lh.PositiveBuckets, 0)
+				exp1[len(exp1)-1] = sample{t: exp1[len(exp1)-1].T(), fh: lh}
+			} else {
+				lh := exp1[len(exp1)-1].H().Copy()
+				lh.PositiveSpans[1].Length++
+				lh.PositiveBuckets = append(lh.PositiveBuckets, -2) // -2 makes the last bucket 0.
+				exp1[len(exp1)-1] = sample{t: exp1[len(exp1)-1].T(), h: lh}
+			}
 
 			// This histogram with new bucket at the end causes the re-encoding of the previous histogram.
 			// Hence the previous histogram is recoded into this new layout.
@@ -5905,23 +5946,37 @@ func TestHistogramAppendAndQuery(t *testing.T) {
 			h.PositiveSpans[1].Length++
 			h.PositiveBuckets = append(h.PositiveBuckets, 1)
 			h.Count += 3
-			appendHistogram(series1, 104, h.Copy(), &exp1)
+			appendHistogram(series1, 104, h, &exp1)
 			testQuery("foo", "bar1", map[string][]tsdbutil.Sample{series1.String(): exp1})
 
 			// Because of the previous two histograms being on the active chunk,
 			// and the next append is only adding a new bucket, the active chunk
 			// will be re-encoded to the new layout.
-			lh = exp1[len(exp1)-2].H().Copy()
-			lh.PositiveSpans[0].Length++
-			lh.PositiveSpans[1].Offset--
-			lh.PositiveBuckets = []int64{2, 1, -3, 2, 0, -2}
-			exp1[len(exp1)-2] = sample{t: exp1[len(exp1)-2].T(), h: lh}
+			if floatHistogram {
+				lh := exp1[len(exp1)-2].FH().Copy()
+				lh.PositiveSpans[0].Length++
+				lh.PositiveSpans[1].Offset--
+				lh.PositiveBuckets = []float64{2, 3, 0, 2, 2, 0}
+				exp1[len(exp1)-2] = sample{t: exp1[len(exp1)-2].T(), fh: lh}
 
-			lh = exp1[len(exp1)-1].H().Copy()
-			lh.PositiveSpans[0].Length++
-			lh.PositiveSpans[1].Offset--
-			lh.PositiveBuckets = []int64{2, 1, -3, 2, 0, 1}
-			exp1[len(exp1)-1] = sample{t: exp1[len(exp1)-1].T(), h: lh}
+				lh = exp1[len(exp1)-1].FH().Copy()
+				lh.PositiveSpans[0].Length++
+				lh.PositiveSpans[1].Offset--
+				lh.PositiveBuckets = []float64{2, 3, 0, 2, 2, 3}
+				exp1[len(exp1)-1] = sample{t: exp1[len(exp1)-1].T(), fh: lh}
+			} else {
+				lh := exp1[len(exp1)-2].H().Copy()
+				lh.PositiveSpans[0].Length++
+				lh.PositiveSpans[1].Offset--
+				lh.PositiveBuckets = []int64{2, 1, -3, 2, 0, -2}
+				exp1[len(exp1)-2] = sample{t: exp1[len(exp1)-2].T(), h: lh}
+
+				lh = exp1[len(exp1)-1].H().Copy()
+				lh.PositiveSpans[0].Length++
+				lh.PositiveSpans[1].Offset--
+				lh.PositiveBuckets = []int64{2, 1, -3, 2, 0, 1}
+				exp1[len(exp1)-1] = sample{t: exp1[len(exp1)-1].T(), h: lh}
+			}
 
 			// Now we add the new buckets in between. Empty bucket is again not present for the old histogram.
 			h.PositiveSpans[0].Length++
@@ -5929,26 +5984,39 @@ func TestHistogramAppendAndQuery(t *testing.T) {
 			h.Count += 3
 			// {2, 1, -1, 0, 1} -> {2, 1, 0, -1, 0, 1}
 			h.PositiveBuckets = append(h.PositiveBuckets[:2], append([]int64{0}, h.PositiveBuckets[2:]...)...)
-			appendHistogram(series1, 105, h.Copy(), &exp1)
+			appendHistogram(series1, 105, h, &exp1)
 			testQuery("foo", "bar1", map[string][]tsdbutil.Sample{series1.String(): exp1})
 
 			// We add 4 more histograms to clear out the buffer and see the re-encoded histograms.
-			appendHistogram(series1, 106, h.Copy(), &exp1)
-			appendHistogram(series1, 107, h.Copy(), &exp1)
-			appendHistogram(series1, 108, h.Copy(), &exp1)
-			appendHistogram(series1, 109, h.Copy(), &exp1)
+			appendHistogram(series1, 106, h, &exp1)
+			appendHistogram(series1, 107, h, &exp1)
+			appendHistogram(series1, 108, h, &exp1)
+			appendHistogram(series1, 109, h, &exp1)
 
 			// Update the expected histograms to reflect the re-encoding.
-			l := len(exp1)
-			h7 := exp1[l-7].H()
-			h7.PositiveSpans = exp1[l-1].H().PositiveSpans
-			h7.PositiveBuckets = []int64{2, 1, -3, 2, 0, -2} // -3 and -2 are the empty buckets.
-			exp1[l-7] = sample{t: exp1[l-7].T(), h: h7}
+			if floatHistogram {
+				l := len(exp1)
+				h7 := exp1[l-7].FH()
+				h7.PositiveSpans = exp1[l-1].FH().PositiveSpans
+				h7.PositiveBuckets = []float64{2, 3, 0, 2, 2, 0}
+				exp1[l-7] = sample{t: exp1[l-7].T(), fh: h7}
 
-			h6 := exp1[l-6].H()
-			h6.PositiveSpans = exp1[l-1].H().PositiveSpans
-			h6.PositiveBuckets = []int64{2, 1, -3, 2, 0, 1} // -3 is the empty bucket.
-			exp1[l-6] = sample{t: exp1[l-6].T(), h: h6}
+				h6 := exp1[l-6].FH()
+				h6.PositiveSpans = exp1[l-1].FH().PositiveSpans
+				h6.PositiveBuckets = []float64{2, 3, 0, 2, 2, 3}
+				exp1[l-6] = sample{t: exp1[l-6].T(), fh: h6}
+			} else {
+				l := len(exp1)
+				h7 := exp1[l-7].H()
+				h7.PositiveSpans = exp1[l-1].H().PositiveSpans
+				h7.PositiveBuckets = []int64{2, 1, -3, 2, 0, -2} // -3 and -2 are the empty buckets.
+				exp1[l-7] = sample{t: exp1[l-7].T(), h: h7}
+
+				h6 := exp1[l-6].H()
+				h6.PositiveSpans = exp1[l-1].H().PositiveSpans
+				h6.PositiveBuckets = []int64{2, 1, -3, 2, 0, 1} // -3 is the empty bucket.
+				exp1[l-6] = sample{t: exp1[l-6].T(), h: h6}
+			}
 
 			testQuery("foo", "bar1", map[string][]tsdbutil.Sample{series1.String(): exp1})
 		})
@@ -5956,7 +6024,7 @@ func TestHistogramAppendAndQuery(t *testing.T) {
 		t.Run("buckets disappearing", func(t *testing.T) {
 			h.PositiveSpans[1].Length--
 			h.PositiveBuckets = h.PositiveBuckets[:len(h.PositiveBuckets)-1]
-			appendHistogram(series1, 110, h.Copy(), &exp1)
+			appendHistogram(series1, 110, h, &exp1)
 			testQuery("foo", "bar1", map[string][]tsdbutil.Sample{series1.String(): exp1})
 		})
 	})
@@ -5968,9 +6036,9 @@ func TestHistogramAppendAndQuery(t *testing.T) {
 		testQuery("foo", "bar2", map[string][]tsdbutil.Sample{series2.String(): exp2})
 
 		h := baseH.Copy()
-		appendHistogram(series2, 103, h.Copy(), &exp2)
-		appendHistogram(series2, 104, h.Copy(), &exp2)
-		appendHistogram(series2, 105, h.Copy(), &exp2)
+		appendHistogram(series2, 103, h, &exp2)
+		appendHistogram(series2, 104, h, &exp2)
+		appendHistogram(series2, 105, h, &exp2)
 		testQuery("foo", "bar2", map[string][]tsdbutil.Sample{series2.String(): exp2})
 
 		// Switching between float and histograms again.
@@ -5978,16 +6046,16 @@ func TestHistogramAppendAndQuery(t *testing.T) {
 		appendFloat(series2, 107, 107, &exp2)
 		testQuery("foo", "bar2", map[string][]tsdbutil.Sample{series2.String(): exp2})
 
-		appendHistogram(series2, 108, h.Copy(), &exp2)
-		appendHistogram(series2, 109, h.Copy(), &exp2)
+		appendHistogram(series2, 108, h, &exp2)
+		appendHistogram(series2, 109, h, &exp2)
 		testQuery("foo", "bar2", map[string][]tsdbutil.Sample{series2.String(): exp2})
 	})
 
 	t.Run("series starting with histogram and then getting float", func(t *testing.T) {
 		h := baseH.Copy()
-		appendHistogram(series3, 101, h.Copy(), &exp3)
-		appendHistogram(series3, 102, h.Copy(), &exp3)
-		appendHistogram(series3, 103, h.Copy(), &exp3)
+		appendHistogram(series3, 101, h, &exp3)
+		appendHistogram(series3, 102, h, &exp3)
+		appendHistogram(series3, 103, h, &exp3)
 		testQuery("foo", "bar3", map[string][]tsdbutil.Sample{series3.String(): exp3})
 
 		appendFloat(series3, 104, 100, &exp3)
@@ -5996,8 +6064,8 @@ func TestHistogramAppendAndQuery(t *testing.T) {
 		testQuery("foo", "bar3", map[string][]tsdbutil.Sample{series3.String(): exp3})
 
 		// Switching between histogram and float again.
-		appendHistogram(series3, 107, h.Copy(), &exp3)
-		appendHistogram(series3, 108, h.Copy(), &exp3)
+		appendHistogram(series3, 107, h, &exp3)
+		appendHistogram(series3, 108, h, &exp3)
 		testQuery("foo", "bar3", map[string][]tsdbutil.Sample{series3.String(): exp3})
 
 		appendFloat(series3, 109, 106, &exp3)
@@ -6052,6 +6120,11 @@ func TestQueryHistogramFromBlocksWithCompaction(t *testing.T) {
 					case chunkenc.ValHistogram:
 						ts, h := it.AtHistogram()
 						slice = append(slice, sample{t: ts, h: h})
+					case chunkenc.ValFloatHistogram:
+						ts, h := it.AtFloatHistogram()
+						slice = append(slice, sample{t: ts, fh: h})
+					default:
+						t.Fatalf("unexpected sample value type %d", typ)
 					}
 				}
 				sort.Slice(slice, func(i, j int) bool {
@@ -6088,63 +6161,67 @@ func TestQueryHistogramFromBlocksWithCompaction(t *testing.T) {
 		require.Equal(t, exp, res)
 	}
 
-	t.Run("serial blocks with only histograms", func(t *testing.T) {
-		testBlockQuerying(t,
-			genHistogramSeries(10, 5, minute(0), minute(119), minute(1)),
-			genHistogramSeries(10, 5, minute(120), minute(239), minute(1)),
-			genHistogramSeries(10, 5, minute(240), minute(359), minute(1)),
-		)
-	})
+	for _, floatHistogram := range []bool{true} {
+		t.Run(fmt.Sprintf("floatHistogram=%t", floatHistogram), func(t *testing.T) {
+			t.Run("serial blocks with only histograms", func(t *testing.T) {
+				testBlockQuerying(t,
+					genHistogramSeries(10, 5, minute(0), minute(119), minute(1), floatHistogram),
+					genHistogramSeries(10, 5, minute(120), minute(239), minute(1), floatHistogram),
+					genHistogramSeries(10, 5, minute(240), minute(359), minute(1), floatHistogram),
+				)
+			})
 
-	t.Run("serial blocks with either histograms or floats in a block and not both", func(t *testing.T) {
-		testBlockQuerying(t,
-			genHistogramSeries(10, 5, minute(0), minute(119), minute(1)),
-			genSeriesFromSampleGenerator(10, 5, minute(120), minute(239), minute(1), func(ts int64) tsdbutil.Sample {
-				return sample{t: ts, v: rand.Float64()}
-			}),
-			genHistogramSeries(10, 5, minute(240), minute(359), minute(1)),
-		)
-	})
+			t.Run("serial blocks with either histograms or floats in a block and not both", func(t *testing.T) {
+				testBlockQuerying(t,
+					genHistogramSeries(10, 5, minute(0), minute(119), minute(1), floatHistogram),
+					genSeriesFromSampleGenerator(10, 5, minute(120), minute(239), minute(1), func(ts int64) tsdbutil.Sample {
+						return sample{t: ts, v: rand.Float64()}
+					}),
+					genHistogramSeries(10, 5, minute(240), minute(359), minute(1), floatHistogram),
+				)
+			})
 
-	t.Run("serial blocks with mix of histograms and float64", func(t *testing.T) {
-		testBlockQuerying(t,
-			genHistogramAndFloatSeries(10, 5, minute(0), minute(60), minute(1)),
-			genHistogramSeries(10, 5, minute(61), minute(120), minute(1)),
-			genHistogramAndFloatSeries(10, 5, minute(121), minute(180), minute(1)),
-			genSeriesFromSampleGenerator(10, 5, minute(181), minute(240), minute(1), func(ts int64) tsdbutil.Sample {
-				return sample{t: ts, v: rand.Float64()}
-			}),
-		)
-	})
+			t.Run("serial blocks with mix of histograms and float64", func(t *testing.T) {
+				testBlockQuerying(t,
+					genHistogramAndFloatSeries(10, 5, minute(0), minute(60), minute(1), floatHistogram),
+					genHistogramSeries(10, 5, minute(61), minute(120), minute(1), floatHistogram),
+					genHistogramAndFloatSeries(10, 5, minute(121), minute(180), minute(1), floatHistogram),
+					genSeriesFromSampleGenerator(10, 5, minute(181), minute(240), minute(1), func(ts int64) tsdbutil.Sample {
+						return sample{t: ts, v: rand.Float64()}
+					}),
+				)
+			})
 
-	t.Run("overlapping blocks with only histograms", func(t *testing.T) {
-		testBlockQuerying(t,
-			genHistogramSeries(10, 5, minute(0), minute(120), minute(3)),
-			genHistogramSeries(10, 5, minute(1), minute(120), minute(3)),
-			genHistogramSeries(10, 5, minute(2), minute(120), minute(3)),
-		)
-	})
+			t.Run("overlapping blocks with only histograms", func(t *testing.T) {
+				testBlockQuerying(t,
+					genHistogramSeries(10, 5, minute(0), minute(120), minute(3), floatHistogram),
+					genHistogramSeries(10, 5, minute(1), minute(120), minute(3), floatHistogram),
+					genHistogramSeries(10, 5, minute(2), minute(120), minute(3), floatHistogram),
+				)
+			})
 
-	t.Run("overlapping blocks with only histograms and only float in a series", func(t *testing.T) {
-		testBlockQuerying(t,
-			genHistogramSeries(10, 5, minute(0), minute(120), minute(3)),
-			genSeriesFromSampleGenerator(10, 5, minute(1), minute(120), minute(3), func(ts int64) tsdbutil.Sample {
-				return sample{t: ts, v: rand.Float64()}
-			}),
-			genHistogramSeries(10, 5, minute(2), minute(120), minute(3)),
-		)
-	})
+			t.Run("overlapping blocks with only histograms and only float in a series", func(t *testing.T) {
+				testBlockQuerying(t,
+					genHistogramSeries(10, 5, minute(0), minute(120), minute(3), floatHistogram),
+					genSeriesFromSampleGenerator(10, 5, minute(1), minute(120), minute(3), func(ts int64) tsdbutil.Sample {
+						return sample{t: ts, v: rand.Float64()}
+					}),
+					genHistogramSeries(10, 5, minute(2), minute(120), minute(3), floatHistogram),
+				)
+			})
 
-	t.Run("overlapping blocks with mix of histograms and float64", func(t *testing.T) {
-		testBlockQuerying(t,
-			genHistogramAndFloatSeries(10, 5, minute(0), minute(60), minute(3)),
-			genHistogramSeries(10, 5, minute(46), minute(100), minute(3)),
-			genHistogramAndFloatSeries(10, 5, minute(89), minute(140), minute(3)),
-			genSeriesFromSampleGenerator(10, 5, minute(126), minute(200), minute(3), func(ts int64) tsdbutil.Sample {
-				return sample{t: ts, v: rand.Float64()}
-			}),
-		)
-	})
+			t.Run("overlapping blocks with mix of histograms and float64", func(t *testing.T) {
+				testBlockQuerying(t,
+					genHistogramAndFloatSeries(10, 5, minute(0), minute(60), minute(3), floatHistogram),
+					genHistogramSeries(10, 5, minute(46), minute(100), minute(3), floatHistogram),
+					genHistogramAndFloatSeries(10, 5, minute(89), minute(140), minute(3), floatHistogram),
+					genSeriesFromSampleGenerator(10, 5, minute(126), minute(200), minute(3), func(ts int64) tsdbutil.Sample {
+						return sample{t: ts, v: rand.Float64()}
+					}),
+				)
+			})
+		})
+	}
 }
 
 func TestNativeHistogramFlag(t *testing.T) {
@@ -6172,16 +6249,22 @@ func TestNativeHistogramFlag(t *testing.T) {
 	app := db.Appender(context.Background())
 
 	// Disabled by default.
-	_, err = app.AppendHistogram(0, l, 100, h)
+	_, err = app.AppendHistogram(0, l, 100, h, nil)
+	require.Equal(t, storage.ErrNativeHistogramsDisabled, err)
+	_, err = app.AppendHistogram(0, l, 105, nil, h.ToFloat())
 	require.Equal(t, storage.ErrNativeHistogramsDisabled, err)
 
 	// Enable and append.
 	db.EnableNativeHistograms()
-	_, err = app.AppendHistogram(0, l, 200, h)
+	_, err = app.AppendHistogram(0, l, 200, h, nil)
+	require.NoError(t, err)
+	_, err = app.AppendHistogram(0, l, 205, nil, h.ToFloat())
 	require.NoError(t, err)
 
 	db.DisableNativeHistograms()
-	_, err = app.AppendHistogram(0, l, 300, h)
+	_, err = app.AppendHistogram(0, l, 300, h, nil)
+	require.Equal(t, storage.ErrNativeHistogramsDisabled, err)
+	_, err = app.AppendHistogram(0, l, 305, nil, h.ToFloat())
 	require.Equal(t, storage.ErrNativeHistogramsDisabled, err)
 
 	require.NoError(t, app.Commit())
@@ -6189,5 +6272,7 @@ func TestNativeHistogramFlag(t *testing.T) {
 	q, err := db.Querier(context.Background(), math.MinInt, math.MaxInt64)
 	require.NoError(t, err)
 	act := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
-	require.Equal(t, map[string][]tsdbutil.Sample{l.String(): {sample{t: 200, h: h}}}, act)
+	require.Equal(t, map[string][]tsdbutil.Sample{
+		l.String(): {sample{t: 200, h: h}, sample{t: 205, fh: h.ToFloat()}},
+	}, act)
 }

@@ -528,7 +528,10 @@ func createHead(tb testing.TB, w *wlog.WL, series []storage.Series, chunkDir str
 				ref, err = app.Append(ref, lset, t, v)
 			case chunkenc.ValHistogram:
 				t, h := it.AtHistogram()
-				ref, err = app.AppendHistogram(ref, lset, t, h)
+				ref, err = app.AppendHistogram(ref, lset, t, h, nil)
+			case chunkenc.ValFloatHistogram:
+				t, fh := it.AtFloatHistogram()
+				ref, err = app.AppendHistogram(ref, lset, t, nil, fh)
 			default:
 				err = fmt.Errorf("unknown sample type %s", typ.String())
 			}
@@ -615,7 +618,7 @@ func genSeries(totalSeries, labelCount int, mint, maxt int64) []storage.Series {
 }
 
 // genHistogramSeries generates series of histogram samples with a given number of labels and values.
-func genHistogramSeries(totalSeries, labelCount int, mint, maxt, step int64) []storage.Series {
+func genHistogramSeries(totalSeries, labelCount int, mint, maxt, step int64, floatHistogram bool) []storage.Series {
 	return genSeriesFromSampleGenerator(totalSeries, labelCount, mint, maxt, step, func(ts int64) tsdbutil.Sample {
 		h := &histogram.Histogram{
 			Count:         5 + uint64(ts*4),
@@ -629,12 +632,15 @@ func genHistogramSeries(totalSeries, labelCount int, mint, maxt, step int64) []s
 			},
 			PositiveBuckets: []int64{int64(ts + 1), 1, -1, 0},
 		}
+		if floatHistogram {
+			return sample{t: ts, fh: h.ToFloat()}
+		}
 		return sample{t: ts, h: h}
 	})
 }
 
 // genHistogramAndFloatSeries generates series of mixed histogram and float64 samples with a given number of labels and values.
-func genHistogramAndFloatSeries(totalSeries, labelCount int, mint, maxt, step int64) []storage.Series {
+func genHistogramAndFloatSeries(totalSeries, labelCount int, mint, maxt, step int64, floatHistogram bool) []storage.Series {
 	floatSample := false
 	count := 0
 	return genSeriesFromSampleGenerator(totalSeries, labelCount, mint, maxt, step, func(ts int64) tsdbutil.Sample {
@@ -655,7 +661,11 @@ func genHistogramAndFloatSeries(totalSeries, labelCount int, mint, maxt, step in
 				},
 				PositiveBuckets: []int64{int64(ts + 1), 1, -1, 0},
 			}
-			s = sample{t: ts, h: h}
+			if floatHistogram {
+				s = sample{t: ts, fh: h.ToFloat()}
+			} else {
+				s = sample{t: ts, h: h}
+			}
 		}
 
 		if count%5 == 0 {

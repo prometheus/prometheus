@@ -250,18 +250,6 @@ func allEmptySpans(s []Span) bool {
 	return true
 }
 
-func bucketsMatch(b1, b2 []int64) bool {
-	if len(b1) != len(b2) {
-		return false
-	}
-	for i, b := range b1 {
-		if b != b2[i] {
-			return false
-		}
-	}
-	return true
-}
-
 // Compact works like FloatHistogram.Compact. See there for detailed
 // explanations.
 func (h *Histogram) Compact(maxEmptyBuckets int) *Histogram {

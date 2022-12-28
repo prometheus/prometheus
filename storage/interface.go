@@ -282,7 +282,7 @@ type HistogramAppender interface {
 	// For efficiency reasons, the histogram is passed as a
 	// pointer. AppendHistogram won't mutate the histogram, but in turn
 	// depends on the caller to not mutate it either.
-	AppendHistogram(ref SeriesRef, l labels.Labels, t int64, h *histogram.Histogram) (SeriesRef, error)
+	AppendHistogram(ref SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (SeriesRef, error)
 }
 
 // MetadataUpdater provides an interface for associating metadata to stored series.

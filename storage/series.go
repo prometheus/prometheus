@@ -321,9 +321,10 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 		lastType = typ
 
 		var (
-			t int64
-			v float64
-			h *histogram.Histogram
+			t  int64
+			v  float64
+			h  *histogram.Histogram
+			fh *histogram.FloatHistogram
 		)
 		switch typ {
 		case chunkenc.ValFloat:
@@ -332,6 +333,9 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 		case chunkenc.ValHistogram:
 			t, h = seriesIter.AtHistogram()
 			app.AppendHistogram(t, h)
+		case chunkenc.ValFloatHistogram:
+			t, fh = seriesIter.AtFloatHistogram()
+			app.AppendFloatHistogram(t, fh)
 		default:
 			return errChunksIterator{err: fmt.Errorf("unknown sample type %s", typ.String())}
 		}
@@ -397,7 +401,6 @@ func ExpandSamples(iter chunkenc.Iterator, newSampleFn func(t int64, v float64, 
 		case chunkenc.ValFloatHistogram:
 			t, fh := iter.AtFloatHistogram()
 			result = append(result, newSampleFn(t, 0, nil, fh))
-
 		}
 	}
 }
