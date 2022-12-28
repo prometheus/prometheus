@@ -3515,7 +3515,6 @@ func TestSparseHistogram_HistogramQuantile(t *testing.T) {
 					_, err = app.AppendHistogram(0, lbls, ts, nil, c.h.ToFloat())
 				} else {
 					_, err = app.AppendHistogram(0, lbls, ts, c.h, nil)
-
 				}
 				require.NoError(t, err)
 				require.NoError(t, app.Commit())
@@ -3947,7 +3946,6 @@ func TestSparseHistogram_HistogramFraction(t *testing.T) {
 					_, err = app.AppendHistogram(0, lbls, ts, nil, c.h.ToFloat())
 				} else {
 					_, err = app.AppendHistogram(0, lbls, ts, c.h, nil)
-
 				}
 				require.NoError(t, err)
 				require.NoError(t, app.Commit())
