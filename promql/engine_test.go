@@ -3948,7 +3948,6 @@ func TestSparseHistogram_HistogramFraction(t *testing.T) {
 func TestSparseHistogram_Sum_Count_AddOperator(t *testing.T) {
 	// TODO(codesome): Integrate histograms into the PromQL testing framework
 	// and write more tests there.
-	// TODO(marctc): Add similar test for float histograms
 	cases := []struct {
 		histograms []histogram.Histogram
 		expected   histogram.FloatHistogram
@@ -4032,60 +4031,68 @@ func TestSparseHistogram_Sum_Count_AddOperator(t *testing.T) {
 		},
 	}
 
-	for i, c := range cases {
-		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
-			test, err := NewTest(t, "")
-			require.NoError(t, err)
-			t.Cleanup(test.Close)
-
-			seriesName := "sparse_histogram_series"
-
-			engine := test.QueryEngine()
-
-			ts := int64(i+1) * int64(10*time.Minute/time.Millisecond)
-			app := test.Storage().Appender(context.TODO())
-			for idx, h := range c.histograms {
-				lbls := labels.FromStrings("__name__", seriesName, "idx", fmt.Sprintf("%d", idx))
-				// Since we mutate h later, we need to create a copy here.
-				_, err = app.AppendHistogram(0, lbls, ts, h.Copy(), nil)
+	idx0 := int64(0)
+	for _, c := range cases {
+		for _, floatHisto := range []bool{true, false} {
+			t.Run(fmt.Sprintf("floatHistogram=%t %d", floatHisto, idx0), func(t *testing.T) {
+				test, err := NewTest(t, "")
 				require.NoError(t, err)
-			}
-			require.NoError(t, app.Commit())
+				t.Cleanup(test.Close)
 
-			queryAndCheck := func(queryString string, exp Vector) {
-				qry, err := engine.NewInstantQuery(test.Queryable(), nil, queryString, timestamp.Time(ts))
-				require.NoError(t, err)
+				seriesName := "sparse_histogram_series"
 
-				res := qry.Exec(test.Context())
-				require.NoError(t, res.Err)
+				engine := test.QueryEngine()
 
-				vector, err := res.Vector()
-				require.NoError(t, err)
+				ts := idx0 * int64(10*time.Minute/time.Millisecond)
+				app := test.Storage().Appender(context.TODO())
+				for idx1, h := range c.histograms {
+					lbls := labels.FromStrings("__name__", seriesName, "idx", fmt.Sprintf("%d", idx1))
+					// Since we mutate h later, we need to create a copy here.
+					if floatHisto {
+						_, err = app.AppendHistogram(0, lbls, ts, nil, h.Copy().ToFloat())
+					} else {
+						_, err = app.AppendHistogram(0, lbls, ts, h.Copy(), nil)
+					}
+					require.NoError(t, err)
+				}
+				require.NoError(t, app.Commit())
 
-				require.Equal(t, exp, vector)
-			}
+				queryAndCheck := func(queryString string, exp Vector) {
+					qry, err := engine.NewInstantQuery(test.Queryable(), nil, queryString, timestamp.Time(ts))
+					require.NoError(t, err)
 
-			// sum().
-			queryString := fmt.Sprintf("sum(%s)", seriesName)
-			queryAndCheck(queryString, []Sample{
-				{Point{T: ts, H: &c.expected}, labels.EmptyLabels()},
+					res := qry.Exec(test.Context())
+					require.NoError(t, res.Err)
+
+					vector, err := res.Vector()
+					require.NoError(t, err)
+
+					require.Equal(t, exp, vector)
+				}
+
+				// sum().
+				queryString := fmt.Sprintf("sum(%s)", seriesName)
+				queryAndCheck(queryString, []Sample{
+					{Point{T: ts, H: &c.expected}, labels.EmptyLabels()},
+				})
+
+				// + operator.
+				queryString = fmt.Sprintf(`%s{idx="0"}`, seriesName)
+				for idx := 1; idx < len(c.histograms); idx++ {
+					queryString += fmt.Sprintf(` + ignoring(idx) %s{idx="%d"}`, seriesName, idx)
+				}
+				queryAndCheck(queryString, []Sample{
+					{Point{T: ts, H: &c.expected}, labels.EmptyLabels()},
+				})
+
+				// count().
+				queryString = fmt.Sprintf("count(%s)", seriesName)
+				queryAndCheck(queryString, []Sample{
+					{Point{T: ts, V: 3}, labels.EmptyLabels()},
+				})
 			})
-
-			// + operator.
-			queryString = fmt.Sprintf(`%s{idx="0"}`, seriesName)
-			for idx := 1; idx < len(c.histograms); idx++ {
-				queryString += fmt.Sprintf(` + ignoring(idx) %s{idx="%d"}`, seriesName, idx)
-			}
-			queryAndCheck(queryString, []Sample{
-				{Point{T: ts, H: &c.expected}, labels.EmptyLabels()},
-			})
-
-			// count().
-			queryString = fmt.Sprintf("count(%s)", seriesName)
-			queryAndCheck(queryString, []Sample{
-				{Point{T: ts, V: 3}, labels.EmptyLabels()},
-			})
-		})
+			idx0++
+		}
 	}
 }
 
