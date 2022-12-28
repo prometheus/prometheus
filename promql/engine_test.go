@@ -3512,7 +3512,6 @@ func TestSparseHistogram_HistogramQuantile(t *testing.T) {
 func TestSparseHistogram_HistogramFraction(t *testing.T) {
 	// TODO(codesome): Integrate histograms into the PromQL testing framework
 	// and write more tests there.
-	// TODO(marctc): Add similar test for float histograms
 	type subCase struct {
 		lower, upper string
 		value        float64
@@ -3896,45 +3895,53 @@ func TestSparseHistogram_HistogramFraction(t *testing.T) {
 			}, invariantCases...),
 		},
 	}
+	idx := int64(0)
+	for _, floatHisto := range []bool{true, false} {
+		for _, c := range cases {
+			t.Run(c.text, func(t *testing.T) {
+				test, err := NewTest(t, "")
+				require.NoError(t, err)
+				t.Cleanup(test.Close)
 
-	for i, c := range cases {
-		t.Run(c.text, func(t *testing.T) {
-			test, err := NewTest(t, "")
-			require.NoError(t, err)
-			t.Cleanup(test.Close)
+				seriesName := "sparse_histogram_series"
+				lbls := labels.FromStrings("__name__", seriesName)
+				engine := test.QueryEngine()
 
-			seriesName := "sparse_histogram_series"
-			lbls := labels.FromStrings("__name__", seriesName)
-			engine := test.QueryEngine()
+				ts := idx * int64(10*time.Minute/time.Millisecond)
+				app := test.Storage().Appender(context.TODO())
+				if floatHisto {
+					_, err = app.AppendHistogram(0, lbls, ts, nil, c.h.ToFloat())
+				} else {
+					_, err = app.AppendHistogram(0, lbls, ts, c.h, nil)
 
-			ts := int64(i+1) * int64(10*time.Minute/time.Millisecond)
-			app := test.Storage().Appender(context.TODO())
-			_, err = app.AppendHistogram(0, lbls, ts, c.h, nil)
-			require.NoError(t, err)
-			require.NoError(t, app.Commit())
+				}
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
 
-			for j, sc := range c.subCases {
-				t.Run(fmt.Sprintf("%d %s %s", j, sc.lower, sc.upper), func(t *testing.T) {
-					queryString := fmt.Sprintf("histogram_fraction(%s, %s, %s)", sc.lower, sc.upper, seriesName)
-					qry, err := engine.NewInstantQuery(test.Queryable(), nil, queryString, timestamp.Time(ts))
-					require.NoError(t, err)
+				for j, sc := range c.subCases {
+					t.Run(fmt.Sprintf("%d %s %s", j, sc.lower, sc.upper), func(t *testing.T) {
+						queryString := fmt.Sprintf("histogram_fraction(%s, %s, %s)", sc.lower, sc.upper, seriesName)
+						qry, err := engine.NewInstantQuery(test.Queryable(), nil, queryString, timestamp.Time(ts))
+						require.NoError(t, err)
 
-					res := qry.Exec(test.Context())
-					require.NoError(t, res.Err)
+						res := qry.Exec(test.Context())
+						require.NoError(t, res.Err)
 
-					vector, err := res.Vector()
-					require.NoError(t, err)
+						vector, err := res.Vector()
+						require.NoError(t, err)
 
-					require.Len(t, vector, 1)
-					require.Nil(t, vector[0].H)
-					if math.IsNaN(sc.value) {
-						require.True(t, math.IsNaN(vector[0].V))
-						return
-					}
-					require.Equal(t, sc.value, vector[0].V)
-				})
-			}
-		})
+						require.Len(t, vector, 1)
+						require.Nil(t, vector[0].H)
+						if math.IsNaN(sc.value) {
+							require.True(t, math.IsNaN(vector[0].V))
+							return
+						}
+						require.Equal(t, sc.value, vector[0].V)
+					})
+				}
+				idx++
+			})
+		}
 	}
 }
 
