@@ -16,8 +16,8 @@ import (
 func TestPostingsForMatchersCache(t *testing.T) {
 	const testCacheSize = 5
 	// newPostingsForMatchersCache tests the NewPostingsForMatcherCache constructor, but overrides the postingsForMatchers func
-	newPostingsForMatchersCache := func(ttl time.Duration, pfm func(ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error), timeMock *timeNowMock) *PostingsForMatchersCache {
-		c := NewPostingsForMatchersCache(ttl, testCacheSize)
+	newPostingsForMatchersCache := func(ttl time.Duration, pfm func(ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error), timeMock *timeNowMock, force bool) *PostingsForMatchersCache {
+		c := NewPostingsForMatchersCache(ttl, testCacheSize, force)
 		if c.postingsForMatchers == nil {
 			t.Fatalf("NewPostingsForMatchersCache() didn't assign postingsForMatchers func")
 		}
@@ -36,7 +36,7 @@ func TestPostingsForMatchersCache(t *testing.T) {
 					require.IsType(t, indexForPostingsMock{}, ix, "Incorrect IndexPostingsReader was provided to PostingsForMatchers, expected the mock, was given %v (%T)", ix, ix)
 					require.Equal(t, expectedMatchers, ms, "Wrong label matchers provided, expected %v, got %v", expectedMatchers, ms)
 					return index.ErrPostings(expectedPostingsErr), nil
-				}, &timeNowMock{})
+				}, &timeNowMock{}, false)
 
 				p, err := c.PostingsForMatchers(indexForPostingsMock{}, concurrent, expectedMatchers...)
 				require.NoError(t, err)
@@ -52,7 +52,7 @@ func TestPostingsForMatchersCache(t *testing.T) {
 
 		c := newPostingsForMatchersCache(defaultPostingsForMatchersCacheTTL, func(ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
 			return nil, expectedErr
-		}, &timeNowMock{})
+		}, &timeNowMock{}, false)
 
 		_, err := c.PostingsForMatchers(indexForPostingsMock{}, true, expectedMatchers...)
 		require.Equal(t, expectedErr, err)
@@ -61,76 +61,81 @@ func TestPostingsForMatchersCache(t *testing.T) {
 	t.Run("happy case multiple concurrent calls: two same one different", func(t *testing.T) {
 		for _, cacheEnabled := range []bool{true, false} {
 			t.Run(fmt.Sprintf("cacheEnabled=%t", cacheEnabled), func(t *testing.T) {
-				calls := [][]*labels.Matcher{
-					{labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")},                                                         // 1
-					{labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")},                                                         // 1 same
-					{labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar")},                                                        // 2: different match type
-					{labels.MustNewMatcher(labels.MatchEqual, "diff", "bar")},                                                        // 3: different name
-					{labels.MustNewMatcher(labels.MatchEqual, "foo", "diff")},                                                        // 4: different value
-					{labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"), labels.MustNewMatcher(labels.MatchEqual, "boo", "bam")}, // 5
-					{labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"), labels.MustNewMatcher(labels.MatchEqual, "boo", "bam")}, // 5 same
-				}
-
-				// we'll identify results by each call's error, and the error will be the string value of the first matcher
-				matchersString := func(ms []*labels.Matcher) string {
-					s := strings.Builder{}
-					for i, m := range ms {
-						if i > 0 {
-							s.WriteByte(',')
+				for _, forced := range []bool{true, false} {
+					concurrent := !forced
+					t.Run(fmt.Sprintf("forced=%t", forced), func(t *testing.T) {
+						calls := [][]*labels.Matcher{
+							{labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")},                                                         // 1
+							{labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")},                                                         // 1 same
+							{labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar")},                                                        // 2: different match type
+							{labels.MustNewMatcher(labels.MatchEqual, "diff", "bar")},                                                        // 3: different name
+							{labels.MustNewMatcher(labels.MatchEqual, "foo", "diff")},                                                        // 4: different value
+							{labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"), labels.MustNewMatcher(labels.MatchEqual, "boo", "bam")}, // 5
+							{labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"), labels.MustNewMatcher(labels.MatchEqual, "boo", "bam")}, // 5 same
 						}
-						s.WriteString(m.String())
-					}
-					return s.String()
-				}
-				expectedResults := make([]string, len(calls))
-				for i, c := range calls {
-					expectedResults[i] = c[0].String()
-				}
 
-				expectedPostingsForMatchersCalls := 5
-				// we'll block all the calls until we receive the exact amount. if we receive more, WaitGroup will panic
-				called := make(chan struct{}, expectedPostingsForMatchersCalls)
-				release := make(chan struct{})
-				var ttl time.Duration
-				if cacheEnabled {
-					ttl = defaultPostingsForMatchersCacheTTL
-				}
-				c := newPostingsForMatchersCache(ttl, func(ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
-					select {
-					case called <- struct{}{}:
-					default:
-					}
-					<-release
-					return nil, fmt.Errorf(matchersString(ms))
-				}, &timeNowMock{})
+						// we'll identify results by each call's error, and the error will be the string value of the first matcher
+						matchersString := func(ms []*labels.Matcher) string {
+							s := strings.Builder{}
+							for i, m := range ms {
+								if i > 0 {
+									s.WriteByte(',')
+								}
+								s.WriteString(m.String())
+							}
+							return s.String()
+						}
+						expectedResults := make([]string, len(calls))
+						for i, c := range calls {
+							expectedResults[i] = c[0].String()
+						}
 
-				results := make([]string, len(calls))
-				resultsWg := sync.WaitGroup{}
-				resultsWg.Add(len(calls))
+						expectedPostingsForMatchersCalls := 5
+						// we'll block all the calls until we receive the exact amount. if we receive more, WaitGroup will panic
+						called := make(chan struct{}, expectedPostingsForMatchersCalls)
+						release := make(chan struct{})
+						var ttl time.Duration
+						if cacheEnabled {
+							ttl = defaultPostingsForMatchersCacheTTL
+						}
+						c := newPostingsForMatchersCache(ttl, func(ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
+							select {
+							case called <- struct{}{}:
+							default:
+							}
+							<-release
+							return nil, fmt.Errorf(matchersString(ms))
+						}, &timeNowMock{}, forced)
 
-				// perform all calls
-				for i := 0; i < len(calls); i++ {
-					go func(i int) {
-						_, err := c.PostingsForMatchers(indexForPostingsMock{}, true, calls[i]...)
-						results[i] = err.Error()
-						resultsWg.Done()
-					}(i)
-				}
+						results := make([]string, len(calls))
+						resultsWg := sync.WaitGroup{}
+						resultsWg.Add(len(calls))
 
-				// wait until all calls arrive to the mocked function
-				for i := 0; i < expectedPostingsForMatchersCalls; i++ {
-					<-called
-				}
+						// perform all calls
+						for i := 0; i < len(calls); i++ {
+							go func(i int) {
+								_, err := c.PostingsForMatchers(indexForPostingsMock{}, concurrent, calls[i]...)
+								results[i] = err.Error()
+								resultsWg.Done()
+							}(i)
+						}
 
-				// let them all return
-				close(release)
+						// wait until all calls arrive to the mocked function
+						for i := 0; i < expectedPostingsForMatchersCalls; i++ {
+							<-called
+						}
 
-				// wait for the results
-				resultsWg.Wait()
+						// let them all return
+						close(release)
 
-				// check that we got correct results
-				for i, c := range calls {
-					require.Equal(t, matchersString(c), results[i], "Call %d should have returned error %q, but got %q instead", i, matchersString(c), results[i])
+						// wait for the results
+						resultsWg.Wait()
+
+						// check that we got correct results
+						for i, c := range calls {
+							require.Equal(t, matchersString(c), results[i], "Call %d should have returned error %q, but got %q instead", i, matchersString(c), results[i])
+						}
+					})
 				}
 			})
 		}
@@ -143,7 +148,7 @@ func TestPostingsForMatchersCache(t *testing.T) {
 		c := newPostingsForMatchersCache(defaultPostingsForMatchersCacheTTL, func(ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
 			call++
 			return index.ErrPostings(fmt.Errorf("result from call %d", call)), nil
-		}, &timeNowMock{})
+		}, &timeNowMock{}, false)
 
 		// first call, fills the cache
 		p, err := c.PostingsForMatchers(indexForPostingsMock{}, false, expectedMatchers...)
@@ -163,7 +168,7 @@ func TestPostingsForMatchersCache(t *testing.T) {
 		c := newPostingsForMatchersCache(0, func(ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
 			call++
 			return index.ErrPostings(fmt.Errorf("result from call %d", call)), nil
-		}, &timeNowMock{})
+		}, &timeNowMock{}, false)
 
 		// first call, fills the cache
 		p, err := c.PostingsForMatchers(indexForPostingsMock{}, true, expectedMatchers...)
@@ -186,7 +191,7 @@ func TestPostingsForMatchersCache(t *testing.T) {
 		c := newPostingsForMatchersCache(defaultPostingsForMatchersCacheTTL, func(ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
 			call++
 			return index.ErrPostings(fmt.Errorf("result from call %d", call)), nil
-		}, timeNow)
+		}, timeNow, false)
 
 		// first call, fills the cache
 		p, err := c.PostingsForMatchers(indexForPostingsMock{}, true, expectedMatchers...)
@@ -220,7 +225,7 @@ func TestPostingsForMatchersCache(t *testing.T) {
 			k := matchersKey(ms)
 			callsPerMatchers[k]++
 			return index.ErrPostings(fmt.Errorf("result from call %d", callsPerMatchers[k])), nil
-		}, timeNow)
+		}, timeNow, false)
 
 		// each one of the first testCacheSize calls is cached properly
 		for _, matchers := range calls {

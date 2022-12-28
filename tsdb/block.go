@@ -351,7 +351,7 @@ func OpenBlockWithCache(logger log.Logger, dir string, pool chunkenc.Pool, cache
 	if err != nil {
 		return nil, err
 	}
-	pfmc := NewPostingsForMatchersCache(defaultPostingsForMatchersCacheTTL, defaultPostingsForMatchersCacheSize)
+	pfmc := NewPostingsForMatchersCache(defaultPostingsForMatchersCacheTTL, defaultPostingsForMatchersCacheSize, false)
 	ir := indexReaderWithPostingsForMatchers{indexReader, pfmc}
 	closers = append(closers, ir)
 

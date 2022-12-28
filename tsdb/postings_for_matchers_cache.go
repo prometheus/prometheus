@@ -27,14 +27,17 @@ type IndexPostingsReader interface {
 	Postings(name string, values ...string) (index.Postings, error)
 }
 
-// NewPostingsForMatchersCache creates a new  PostingsForMatchersCache.
-func NewPostingsForMatchersCache(ttl time.Duration, cacheSize int) *PostingsForMatchersCache {
+// NewPostingsForMatchersCache creates a new PostingsForMatchersCache.
+// If `ttl` is 0, then it only deduplicates in-flight requests.
+// If `force` is true, then all requests go through cache, regardless of the `concurrent` param provided.
+func NewPostingsForMatchersCache(ttl time.Duration, cacheSize int, force bool) *PostingsForMatchersCache {
 	b := &PostingsForMatchersCache{
 		calls:  &sync.Map{},
 		cached: list.New(),
 
 		ttl:       ttl,
 		cacheSize: cacheSize,
+		force:     force,
 
 		timeNow:             time.Now,
 		postingsForMatchers: PostingsForMatchers,
@@ -43,7 +46,7 @@ func NewPostingsForMatchersCache(ttl time.Duration, cacheSize int) *PostingsForM
 	return b
 }
 
-// PostingsForMatchersCache caches PostingsForMatchers call results when the concurrent hint is passed in.
+// PostingsForMatchersCache caches PostingsForMatchers call results when the concurrent hint is passed in or force is true.
 type PostingsForMatchersCache struct {
 	calls *sync.Map
 
@@ -52,6 +55,7 @@ type PostingsForMatchersCache struct {
 
 	ttl       time.Duration
 	cacheSize int
+	force     bool
 
 	// timeNow is the time.Now that can be replaced for testing purposes
 	timeNow func() time.Time
@@ -60,7 +64,7 @@ type PostingsForMatchersCache struct {
 }
 
 func (c *PostingsForMatchersCache) PostingsForMatchers(ix IndexPostingsReader, concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
-	if !concurrent {
+	if !concurrent && !c.force {
 		return c.postingsForMatchers(ix, ms...)
 	}
 	c.expire()

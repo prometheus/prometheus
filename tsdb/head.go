@@ -170,6 +170,10 @@ type HeadOptions struct {
 	EnableMemorySnapshotOnShutdown bool
 
 	IsolationDisabled bool
+
+	PostingsForMatchersCacheTTL   time.Duration
+	PostingsForMatchersCacheSize  int
+	PostingsForMatchersCacheForce bool
 }
 
 const (
@@ -179,15 +183,18 @@ const (
 
 func DefaultHeadOptions() *HeadOptions {
 	ho := &HeadOptions{
-		ChunkRange:           DefaultBlockDuration,
-		ChunkDirRoot:         "",
-		ChunkPool:            chunkenc.NewPool(),
-		ChunkWriteBufferSize: chunks.DefaultWriteBufferSize,
-		ChunkEndTimeVariance: 0,
-		ChunkWriteQueueSize:  chunks.DefaultWriteQueueSize,
-		StripeSize:           DefaultStripeSize,
-		SeriesCallback:       &noopSeriesLifecycleCallback{},
-		IsolationDisabled:    defaultIsolationDisabled,
+		ChunkRange:                    DefaultBlockDuration,
+		ChunkDirRoot:                  "",
+		ChunkPool:                     chunkenc.NewPool(),
+		ChunkWriteBufferSize:          chunks.DefaultWriteBufferSize,
+		ChunkEndTimeVariance:          0,
+		ChunkWriteQueueSize:           chunks.DefaultWriteQueueSize,
+		StripeSize:                    DefaultStripeSize,
+		SeriesCallback:                &noopSeriesLifecycleCallback{},
+		IsolationDisabled:             defaultIsolationDisabled,
+		PostingsForMatchersCacheTTL:   defaultPostingsForMatchersCacheTTL,
+		PostingsForMatchersCacheSize:  defaultPostingsForMatchersCacheSize,
+		PostingsForMatchersCacheForce: false,
 	}
 	ho.OutOfOrderCapMax.Store(DefaultOutOfOrderCapMax)
 	return ho
@@ -254,7 +261,7 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal, wbl *wlog.WL, opts *Hea
 		stats: stats,
 		reg:   r,
 
-		pfmc: NewPostingsForMatchersCache(defaultPostingsForMatchersCacheTTL, defaultPostingsForMatchersCacheSize),
+		pfmc: NewPostingsForMatchersCache(opts.PostingsForMatchersCacheTTL, opts.PostingsForMatchersCacheSize, opts.PostingsForMatchersCacheForce),
 	}
 	if err := h.resetInMemoryState(); err != nil {
 		return nil, err
