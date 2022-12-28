@@ -3277,7 +3277,7 @@ func TestSparseHistogram_HistogramCountAndSum(t *testing.T) {
 	_, err = app.AppendHistogram(0, lbls, ts, nil, fh)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
-
+	queryString = fmt.Sprintf("histogram_count(%s)", seriesName)
 	qry, err = engine.NewInstantQuery(test.Queryable(), nil, queryString, timestamp.Time(ts))
 	require.NoError(t, err)
 
@@ -3289,7 +3289,7 @@ func TestSparseHistogram_HistogramCountAndSum(t *testing.T) {
 
 	require.Len(t, vector, 1)
 	require.Nil(t, vector[0].H)
-	require.Equal(t, float64(h.Count), vector[0].V)
+	require.Equal(t, float64(fh.Count), vector[0].V)
 
 	queryString = fmt.Sprintf("histogram_sum(%s)", seriesName)
 	qry, err = engine.NewInstantQuery(test.Queryable(), nil, queryString, timestamp.Time(ts))
