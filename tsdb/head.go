@@ -1843,8 +1843,6 @@ type memSeries struct {
 	oooHeadChunk     *oooHeadChunk      // Most recent chunk for ooo samples in memory that's still being built.
 	firstOOOChunkID  chunks.HeadChunkID // HeadOOOChunkID for oooMmappedChunks[0]
 
-	mmMaxTime int64 // Max time of any mmapped chunk, only used during WAL replay.
-
 	nextAt int64 // Timestamp at which to cut the next chunk.
 
 	// We keep the last value here (in addition to appending it to the chunk) so we can check for duplicates.
