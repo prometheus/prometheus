@@ -3361,8 +3361,16 @@ func TestHistogramMetrics(t *testing.T) {
 }
 
 func TestHistogramStaleSample(t *testing.T) {
-	// TODO(marctc): Add similar test for float histograms
+	t.Run("integer histogram", func(t *testing.T) {
+		testHistogramStaleSampleHelper(t, false)
+	})
+	t.Run("float histogram", func(t *testing.T) {
+		testHistogramStaleSampleHelper(t, true)
+	})
+}
 
+func testHistogramStaleSampleHelper(t *testing.T, floatHistogram bool) {
+	t.Helper()
 	l := labels.FromStrings("a", "b")
 	numHistograms := 20
 	head, _ := newTestHead(t, 100000, false, false)
@@ -3372,8 +3380,9 @@ func TestHistogramStaleSample(t *testing.T) {
 	require.NoError(t, head.Init(0))
 
 	type timedHistogram struct {
-		t int64
-		h *histogram.Histogram
+		t  int64
+		h  *histogram.Histogram
+		fh *histogram.FloatHistogram
 	}
 	expHistograms := make([]timedHistogram, 0, numHistograms)
 
@@ -3392,9 +3401,15 @@ func TestHistogramStaleSample(t *testing.T) {
 
 		it := s.Iterator(nil)
 		actHistograms := make([]timedHistogram, 0, len(expHistograms))
-		for it.Next() == chunkenc.ValHistogram {
-			t, h := it.AtHistogram()
-			actHistograms = append(actHistograms, timedHistogram{t, h})
+		for typ := it.Next(); typ != chunkenc.ValNone; typ = it.Next() {
+			switch typ {
+			case chunkenc.ValHistogram:
+				t, h := it.AtHistogram()
+				actHistograms = append(actHistograms, timedHistogram{t: t, h: h})
+			case chunkenc.ValFloatHistogram:
+				t, h := it.AtFloatHistogram()
+				actHistograms = append(actHistograms, timedHistogram{t: t, fh: h})
+			}
 		}
 
 		// We cannot compare StaleNAN with require.Equal, hence checking each histogram manually.
@@ -3402,15 +3417,27 @@ func TestHistogramStaleSample(t *testing.T) {
 		actNumStale := 0
 		for i, eh := range expHistograms {
 			ah := actHistograms[i]
-			if value.IsStaleNaN(eh.h.Sum) {
-				actNumStale++
-				require.True(t, value.IsStaleNaN(ah.h.Sum))
-				// To make require.Equal work.
-				ah.h.Sum = 0
-				eh.h = eh.h.Copy()
-				eh.h.Sum = 0
+			if floatHistogram {
+				if value.IsStaleNaN(eh.fh.Sum) {
+					actNumStale++
+					require.True(t, value.IsStaleNaN(ah.fh.Sum))
+					// To make require.Equal work.
+					ah.fh.Sum = 0
+					eh.fh = eh.fh.Copy()
+					eh.fh.Sum = 0
+				}
+				require.Equal(t, eh, ah)
+			} else {
+				if value.IsStaleNaN(eh.h.Sum) {
+					actNumStale++
+					require.True(t, value.IsStaleNaN(ah.h.Sum))
+					// To make require.Equal work.
+					ah.h.Sum = 0
+					eh.h = eh.h.Copy()
+					eh.h.Sum = 0
+				}
+				require.Equal(t, eh, ah)
 			}
-			require.Equal(t, eh, ah)
 		}
 		require.Equal(t, numStale, actNumStale)
 	}
@@ -3418,14 +3445,24 @@ func TestHistogramStaleSample(t *testing.T) {
 	// Adding stale in the same appender.
 	app := head.Appender(context.Background())
 	for _, h := range GenerateTestHistograms(numHistograms) {
-		_, err := app.AppendHistogram(0, l, 100*int64(len(expHistograms)), h, nil)
+		var err error
+		if floatHistogram {
+			_, err = app.AppendHistogram(0, l, 100*int64(len(expHistograms)), nil, h.ToFloat())
+			expHistograms = append(expHistograms, timedHistogram{t: 100 * int64(len(expHistograms)), fh: h.ToFloat()})
+		} else {
+			_, err = app.AppendHistogram(0, l, 100*int64(len(expHistograms)), h, nil)
+			expHistograms = append(expHistograms, timedHistogram{t: 100 * int64(len(expHistograms)), h: h})
+		}
 		require.NoError(t, err)
-		expHistograms = append(expHistograms, timedHistogram{100 * int64(len(expHistograms)), h})
 	}
 	// +1 so that delta-of-delta is not 0.
 	_, err := app.Append(0, l, 100*int64(len(expHistograms))+1, math.Float64frombits(value.StaleNaN))
 	require.NoError(t, err)
-	expHistograms = append(expHistograms, timedHistogram{100*int64(len(expHistograms)) + 1, &histogram.Histogram{Sum: math.Float64frombits(value.StaleNaN)}})
+	if floatHistogram {
+		expHistograms = append(expHistograms, timedHistogram{t: 100*int64(len(expHistograms)) + 1, fh: &histogram.FloatHistogram{Sum: math.Float64frombits(value.StaleNaN)}})
+	} else {
+		expHistograms = append(expHistograms, timedHistogram{t: 100*int64(len(expHistograms)) + 1, h: &histogram.Histogram{Sum: math.Float64frombits(value.StaleNaN)}})
+	}
 	require.NoError(t, app.Commit())
 
 	// Only 1 chunk in the memory, no m-mapped chunk.
@@ -3437,9 +3474,15 @@ func TestHistogramStaleSample(t *testing.T) {
 	// Adding stale in different appender and continuing series after a stale sample.
 	app = head.Appender(context.Background())
 	for _, h := range GenerateTestHistograms(2 * numHistograms)[numHistograms:] {
-		_, err := app.AppendHistogram(0, l, 100*int64(len(expHistograms)), h, nil)
+		var err error
+		if floatHistogram {
+			_, err = app.AppendHistogram(0, l, 100*int64(len(expHistograms)), nil, h.ToFloat())
+			expHistograms = append(expHistograms, timedHistogram{t: 100 * int64(len(expHistograms)), fh: h.ToFloat()})
+		} else {
+			_, err = app.AppendHistogram(0, l, 100*int64(len(expHistograms)), h, nil)
+			expHistograms = append(expHistograms, timedHistogram{t: 100 * int64(len(expHistograms)), h: h})
+		}
 		require.NoError(t, err)
-		expHistograms = append(expHistograms, timedHistogram{100 * int64(len(expHistograms)), h})
 	}
 	require.NoError(t, app.Commit())
 
@@ -3447,7 +3490,11 @@ func TestHistogramStaleSample(t *testing.T) {
 	// +1 so that delta-of-delta is not 0.
 	_, err = app.Append(0, l, 100*int64(len(expHistograms))+1, math.Float64frombits(value.StaleNaN))
 	require.NoError(t, err)
-	expHistograms = append(expHistograms, timedHistogram{100*int64(len(expHistograms)) + 1, &histogram.Histogram{Sum: math.Float64frombits(value.StaleNaN)}})
+	if floatHistogram {
+		expHistograms = append(expHistograms, timedHistogram{t: 100*int64(len(expHistograms)) + 1, fh: &histogram.FloatHistogram{Sum: math.Float64frombits(value.StaleNaN)}})
+	} else {
+		expHistograms = append(expHistograms, timedHistogram{t: 100*int64(len(expHistograms)) + 1, h: &histogram.Histogram{Sum: math.Float64frombits(value.StaleNaN)}})
+	}
 	require.NoError(t, app.Commit())
 
 	// Total 2 chunks, 1 m-mapped.
