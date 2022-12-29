@@ -16,6 +16,7 @@ package textparse
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"io"
 	"testing"
 
@@ -604,7 +605,7 @@ metric: <
 
 	for {
 		et, err := p.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		require.NoError(t, err)

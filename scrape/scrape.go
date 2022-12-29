@@ -1544,7 +1544,7 @@ loop:
 			fh                       *histogram.FloatHistogram
 		)
 		if et, err = p.Next(); err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				err = nil
 			}
 			break

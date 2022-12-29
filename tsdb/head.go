@@ -667,7 +667,7 @@ func (h *Head) Init(minValidTime int64) error {
 			offset = snapOffset
 		}
 		sr, err := wlog.NewSegmentBufReaderWithOffset(offset, s)
-		if errors.Cause(err) == io.EOF {
+		if errors.Is(err, io.EOF) {
 			// File does not exist.
 			continue
 		}
