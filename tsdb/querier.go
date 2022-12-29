@@ -215,7 +215,7 @@ func PostingsForMatchers(ix IndexPostingsReader, ms ...*labels.Matcher) (index.P
 				if err != nil {
 					return nil, err
 				}
-				if index.IsEmptyPostings(it) {
+				if index.IsEmptyPostingsType(it) {
 					return index.EmptyPostings(), nil
 				}
 				its = append(its, it)
@@ -225,7 +225,7 @@ func PostingsForMatchers(ix IndexPostingsReader, ms ...*labels.Matcher) (index.P
 				if err != nil {
 					return nil, err
 				}
-				if index.IsEmptyPostings(it) {
+				if index.IsEmptyPostingsType(it) {
 					return index.EmptyPostings(), nil
 				}
 				its = append(its, it)
