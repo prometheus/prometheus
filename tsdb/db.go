@@ -72,20 +72,23 @@ var ErrNotReady = errors.New("TSDB not ready")
 // millisecond precision timestamps.
 func DefaultOptions() *Options {
 	return &Options{
-		WALSegmentSize:             wlog.DefaultSegmentSize,
-		MaxBlockChunkSegmentSize:   chunks.DefaultChunkSegmentSize,
-		RetentionDuration:          int64(15 * 24 * time.Hour / time.Millisecond),
-		MinBlockDuration:           DefaultBlockDuration,
-		MaxBlockDuration:           DefaultBlockDuration,
-		NoLockfile:                 false,
-		AllowOverlappingCompaction: true,
-		WALCompression:             false,
-		StripeSize:                 DefaultStripeSize,
-		HeadChunksWriteBufferSize:  chunks.DefaultWriteBufferSize,
-		IsolationDisabled:          defaultIsolationDisabled,
-		HeadChunksEndTimeVariance:  0,
-		HeadChunksWriteQueueSize:   chunks.DefaultWriteQueueSize,
-		OutOfOrderCapMax:           DefaultOutOfOrderCapMax,
+		WALSegmentSize:                    wlog.DefaultSegmentSize,
+		MaxBlockChunkSegmentSize:          chunks.DefaultChunkSegmentSize,
+		RetentionDuration:                 int64(15 * 24 * time.Hour / time.Millisecond),
+		MinBlockDuration:                  DefaultBlockDuration,
+		MaxBlockDuration:                  DefaultBlockDuration,
+		NoLockfile:                        false,
+		AllowOverlappingCompaction:        true,
+		WALCompression:                    false,
+		StripeSize:                        DefaultStripeSize,
+		HeadChunksWriteBufferSize:         chunks.DefaultWriteBufferSize,
+		IsolationDisabled:                 defaultIsolationDisabled,
+		HeadChunksEndTimeVariance:         0,
+		HeadChunksWriteQueueSize:          chunks.DefaultWriteQueueSize,
+		OutOfOrderCapMax:                  DefaultOutOfOrderCapMax,
+		HeadPostingsForMatchersCacheTTL:   defaultPostingsForMatchersCacheTTL,
+		HeadPostingsForMatchersCacheSize:  defaultPostingsForMatchersCacheSize,
+		HeadPostingsForMatchersCacheForce: false,
 	}
 }
 
@@ -189,6 +192,15 @@ type Options struct {
 	// OutOfOrderCapMax is maximum capacity for OOO chunks (in samples).
 	// If it is <=0, the default value is assumed.
 	OutOfOrderCapMax int64
+
+	// HeadPostingsForMatchersCacheTTL is the TTL of the postings for matchers cache in the Head.
+	// If it's 0, the cache will only deduplicate in-flight requests, deleting the results once the first request has finished.
+	HeadPostingsForMatchersCacheTTL time.Duration
+	// HeadPostingsForMatchersCacheSize is the maximum size of cached postings for matchers elements in the Head.
+	// It's ignored used when HeadPostingsForMatchersCacheTTL is 0.
+	HeadPostingsForMatchersCacheSize int
+	// HeadPostingsForMatchersCacheForce forces the usage of postings for matchers cache for all calls on Head and OOOHead regardless of the `concurrent` param.
+	HeadPostingsForMatchersCacheForce bool
 }
 
 type BlocksToDeleteFunc func(blocks []*Block) map[ulid.ULID]struct{}
@@ -798,6 +810,9 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	headOpts.EnableNativeHistograms.Store(opts.EnableNativeHistograms)
 	headOpts.OutOfOrderTimeWindow.Store(opts.OutOfOrderTimeWindow)
 	headOpts.OutOfOrderCapMax.Store(opts.OutOfOrderCapMax)
+	headOpts.PostingsForMatchersCacheTTL = opts.HeadPostingsForMatchersCacheTTL
+	headOpts.PostingsForMatchersCacheSize = opts.HeadPostingsForMatchersCacheSize
+	headOpts.PostingsForMatchersCacheForce = opts.HeadPostingsForMatchersCacheForce
 	if opts.IsolationDisabled {
 		// We only override this flag if isolation is disabled at DB level. We use the default otherwise.
 		headOpts.IsolationDisabled = opts.IsolationDisabled
