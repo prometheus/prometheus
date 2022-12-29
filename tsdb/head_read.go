@@ -113,7 +113,7 @@ func (h *headIndexReader) Postings(name string, values ...string) (index.Posting
 	default:
 		res := make([]index.Postings, 0, len(values))
 		for _, value := range values {
-			if p := h.head.postings.Get(name, value); !index.IsEmptyPostings(p) {
+			if p := h.head.postings.Get(name, value); !index.IsEmptyPostingsType(p) {
 				res = append(res, p)
 			}
 		}

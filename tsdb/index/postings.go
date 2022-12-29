@@ -428,10 +428,10 @@ func EmptyPostings() Postings {
 	return emptyPostings
 }
 
-// IsEmptyPostings returns true if the postings are an empty postings list.
+// IsEmptyPostingsType returns true if the postings are an empty postings list.
 // When this function returns false, it doesn't mean that the postings isn't empty
 // (it could be an empty intersection of two non-empty postings, for example).
-func IsEmptyPostings(p Postings) bool {
+func IsEmptyPostingsType(p Postings) bool {
 	return p == emptyPostings
 }
 

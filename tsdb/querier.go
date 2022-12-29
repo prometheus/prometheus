@@ -269,7 +269,7 @@ func PostingsForMatchers(ix IndexReader, ms ...*labels.Matcher) (index.Postings,
 				if err != nil {
 					return nil, err
 				}
-				if index.IsEmptyPostings(it) {
+				if index.IsEmptyPostingsType(it) {
 					return index.EmptyPostings(), nil
 				}
 				its = append(its, it)
@@ -279,7 +279,7 @@ func PostingsForMatchers(ix IndexReader, ms ...*labels.Matcher) (index.Postings,
 				if err != nil {
 					return nil, err
 				}
-				if index.IsEmptyPostings(it) {
+				if index.IsEmptyPostingsType(it) {
 					return index.EmptyPostings(), nil
 				}
 				its = append(its, it)
