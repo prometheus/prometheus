@@ -2418,7 +2418,6 @@ The following meta labels are available on targets during [relabeling](#relabel_
 # The information to access the Nomad API. It is to be defined
 # as the Nomad documentation requires.
 [ allow_stale: <boolean> | default = true ]
-[ datacenter: <string> ]
 [ namespace: <string> | default = default ]
 [ refresh_interval: <duration> | default = 60s ]
 [ region: <string> | default = global ]
