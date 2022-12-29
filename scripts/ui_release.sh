@@ -84,8 +84,8 @@ function bumpVersion() {
       sed -E -i "s|(\"@prometheus-io/.+\": )\".+\"|\1\"${version}\"|" "${workspace}"/package.json
     fi
   done
-   # increase the version on all packages
-    npm version "${version}" --workspaces
+  # increase the version on all packages
+  npm version "${version}" --workspaces
 }
 
 if [[ "$1" == "--copy" ]]; then
