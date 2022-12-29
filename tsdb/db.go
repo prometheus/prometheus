@@ -197,7 +197,7 @@ type Options struct {
 	// If it's 0, the cache will only deduplicate in-flight requests, deleting the results once the first request has finished.
 	HeadPostingsForMatchersCacheTTL time.Duration
 	// HeadPostingsForMatchersCacheSize is the maximum size of cached postings for matchers elements in the Head.
-	// It's ignored used when HeadPostingsForMatchersCacheTTL is 0.
+	// It's ignored when HeadPostingsForMatchersCacheTTL is 0.
 	HeadPostingsForMatchersCacheSize int
 	// HeadPostingsForMatchersCacheForce forces the usage of postings for matchers cache for all calls on Head and OOOHead regardless of the `concurrent` param.
 	HeadPostingsForMatchersCacheForce bool
