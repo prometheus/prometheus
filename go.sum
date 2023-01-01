@@ -465,8 +465,8 @@ github.com/hashicorp/nomad/api v0.0.0-20221214074818-7dbbf6bc584d/go.mod h1:8FB4
 github.com/hashicorp/serf v0.8.2/go.mod h1:6hOLApaqBFA1NXqRQAsxw9QxuDEvNxSQRwA/JwenrHc=
 github.com/hashicorp/serf v0.10.1 h1:Z1H2J60yRKvfDYAOZLd2MU0ND4AH/WDz7xYHDWQsIPY=
 github.com/hashicorp/serf v0.10.1/go.mod h1:yL2t6BqATOLGc5HF7qbFkTfXoPIY0WZdWHfEvMqbG+4=
-github.com/hetznercloud/hcloud-go v1.38.0 h1:K6Pd/mMdcLfBhvwG39qyAaacp4pCS3dKa8gChmLKxLg=
-github.com/hetznercloud/hcloud-go v1.38.0/go.mod h1:mepQwR6va27S3UQthaEPGS86jtzSY9xWL1e9dyxXpgA=
+github.com/hetznercloud/hcloud-go v1.39.0 h1:RUlzI458nGnPR6dlcZlrsGXYC1hQlFbKdm8tVtEQQB0=
+github.com/hetznercloud/hcloud-go v1.39.0/go.mod h1:mepQwR6va27S3UQthaEPGS86jtzSY9xWL1e9dyxXpgA=
 github.com/hpcloud/tail v1.0.0/go.mod h1:ab1qPbhIpdTxEkNHXyeSf5vhxWSCs/tWer42PpOxQnU=
 github.com/hudl/fargo v1.3.0/go.mod h1:y3CKSmjA+wD2gak7sUSXTAoopbhU08POFhmITJgmKTg=
 github.com/iancoleman/strcase v0.2.0/go.mod h1:iwCmte+B7n89clKwxIoIXy/HfoL7AsD47ZCWhYzw7ho=
