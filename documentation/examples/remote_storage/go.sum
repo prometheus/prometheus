@@ -119,8 +119,8 @@ github.com/hashicorp/nomad/api v0.0.0-20220629141207-c2428e1673ec h1:jAF71e0KoaY
 github.com/hashicorp/serf v0.9.6 h1:uuEX1kLR6aoda1TBttmJQKDLZE1Ob7KN0NPdE7EtCDc=
 github.com/hetznercloud/hcloud-go v1.35.2 h1:eEDtmDiI2plZ2UQmj4YpiYse5XbtpXOUBpAdIOLxzgE=
 github.com/imdario/mergo v0.3.12 h1:b6R2BslTbIEToALKP7LxUvijTsNI9TAe80pLWN2g/HU=
-github.com/influxdata/influxdb v1.10.0 h1:8xDpt8KO3lzrzf/ss+l8r42AGUZvoITu5824berK7SE=
-github.com/influxdata/influxdb v1.10.0/go.mod h1:IVPuoA2pOOxau/NguX7ipW0Jp9Bn+dMWlo0+VOscevU=
+github.com/influxdata/influxdb v1.11.0 h1:0X+ZsbcOWc6AEi5MHee9BYqXCKmz8IZsljrRYjmV8Qg=
+github.com/influxdata/influxdb v1.11.0/go.mod h1:V93tJcidY0Zh0LtSONZWnXXGDyt20dtVf+Ddp4EnhaA=
 github.com/ionos-cloud/sdk-go/v6 v6.1.2 h1:es5R5sVmjHFrYNBbJfAeHF+16GheaJMyc63xWxIAec4=
 github.com/jmespath/go-jmespath v0.4.0 h1:BEgLn5cpjn8UN1mAw4NjwDrS35OdebyEtFe+9YPoQUg=
 github.com/jmespath/go-jmespath v0.4.0/go.mod h1:T8mJZnbsbmF+m6zOOFylbeCJqk5+pHWvzYPziyZiYoo=
