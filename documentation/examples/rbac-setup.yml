@@ -32,6 +32,17 @@ kind: ServiceAccount
 metadata:
   name: prometheus
   namespace: default
+secrets:
+  - name: prometheus-sa-token
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: prometheus-sa-token
+  namespace: default
+  annotations:
+    kubernetes.io/service-account.name: prometheus
+type: kubernetes.io/service-account-token
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
