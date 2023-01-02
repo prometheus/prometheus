@@ -340,7 +340,7 @@ func (p *PromParser) Next() (Entry, error) {
 			t2 = p.nextToken()
 		}
 		if t2 != tValue {
-			return EntryInvalid, parseError("expected value after metric", t)
+			return EntryInvalid, parseError("expected value after metric", t2)
 		}
 		if p.val, err = parseFloat(yoloString(p.l.buf())); err != nil {
 			return EntryInvalid, err
@@ -350,7 +350,7 @@ func (p *PromParser) Next() (Entry, error) {
 			p.val = math.Float64frombits(value.NormalNaN)
 		}
 		p.hasTS = false
-		switch p.nextToken() {
+		switch t := p.nextToken(); t {
 		case tLinebreak:
 			break
 		case tTimestamp:
@@ -359,7 +359,7 @@ func (p *PromParser) Next() (Entry, error) {
 				return EntryInvalid, err
 			}
 			if t2 := p.nextToken(); t2 != tLinebreak {
-				return EntryInvalid, parseError("expected next entry after timestamp", t)
+				return EntryInvalid, parseError("expected next entry after timestamp", t2)
 			}
 		default:
 			return EntryInvalid, parseError("expected timestamp or new record", t)

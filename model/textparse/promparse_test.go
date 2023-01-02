@@ -219,7 +219,7 @@ func TestPromParseErrors(t *testing.T) {
 	}{
 		{
 			input: "a",
-			err:   "expected value after metric, got \"MNAME\"",
+			err:   "expected value after metric, got \"INVALID\"",
 		},
 		{
 			input: "a{b='c'} 1\n",
@@ -263,7 +263,7 @@ func TestPromParseErrors(t *testing.T) {
 		},
 		{
 			input: "foo 0 1_2\n",
-			err:   "expected next entry after timestamp, got \"MNAME\"",
+			err:   "expected next entry after timestamp, got \"INVALID\"",
 		},
 		{
 			input: `{a="ok"} 1`,
@@ -325,7 +325,11 @@ func TestPromNullByteHandling(t *testing.T) {
 		},
 		{
 			input: "a\x00{b=\"ddd\"} 1",
-			err:   "expected value after metric, got \"MNAME\"",
+			err:   "expected value after metric, got \"INVALID\"",
+		},
+		{
+			input: "a 0 1\x00",
+			err:   "expected next entry after timestamp, got \"INVALID\"",
 		},
 	}
 
