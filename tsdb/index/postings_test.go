@@ -280,6 +280,13 @@ func TestMultiIntersect(t *testing.T) {
 	}
 }
 
+func consumePostings(p Postings) error {
+	for p.Next() {
+		p.At()
+	}
+	return p.Err()
+}
+
 func BenchmarkIntersect(t *testing.B) {
 	t.Run("LongPostings1", func(bench *testing.B) {
 		var a, b, c, d []storage.SeriesRef
@@ -307,7 +314,7 @@ func BenchmarkIntersect(t *testing.B) {
 			i2 := newListPostings(b...)
 			i3 := newListPostings(c...)
 			i4 := newListPostings(d...)
-			if _, err := ExpandPostings(Intersect(i1, i2, i3, i4)); err != nil {
+			if err := consumePostings(Intersect(i1, i2, i3, i4)); err != nil {
 				bench.Fatal(err)
 			}
 		}
@@ -336,7 +343,7 @@ func BenchmarkIntersect(t *testing.B) {
 			i2 := newListPostings(b...)
 			i3 := newListPostings(c...)
 			i4 := newListPostings(d...)
-			if _, err := ExpandPostings(Intersect(i1, i2, i3, i4)); err != nil {
+			if err := consumePostings(Intersect(i1, i2, i3, i4)); err != nil {
 				bench.Fatal(err)
 			}
 		}
@@ -366,7 +373,7 @@ func BenchmarkIntersect(t *testing.B) {
 				lps[j].list = refs[j]
 				its[j] = lps[j]
 			}
-			if _, err := ExpandPostings(Intersect(its...)); err != nil {
+			if err := consumePostings(Intersect(its...)); err != nil {
 				bench.Fatal(err)
 			}
 		}
