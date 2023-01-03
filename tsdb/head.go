@@ -1862,10 +1862,6 @@ type memSeries struct {
 	// txs is nil if isolation is disabled.
 	txs *txRing
 
-	// TODO(beorn7): The only reason we track this is to create a staleness
-	// marker as either histogram or float sample. Perhaps there is a better way.
-	isHistogramSeries bool
-
 	pendingCommit bool // Whether there are samples waiting to be committed to this series.
 }
 

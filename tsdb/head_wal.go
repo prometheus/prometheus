@@ -605,7 +605,6 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 			if s.T <= ms.mmMaxTime {
 				continue
 			}
-			ms.isHistogramSeries = false
 			if s.T <= ms.mmMaxTime {
 				continue
 			}
@@ -634,7 +633,6 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 				unknownHistogramRefs++
 				continue
 			}
-			ms.isHistogramSeries = true
 			if s.t <= ms.mmMaxTime {
 				continue
 			}
