@@ -395,10 +395,9 @@ func CompactBlockMetas(uid ulid.ULID, blocks ...*BlockMeta) *BlockMeta {
 // provided directories.
 func (c *LeveledCompactor) Compact(dest string, dirs []string, open []*Block) (uid ulid.ULID, err error) {
 	return c.CompactWithAdditionalPostings(dest, dirs, open, nil)
-
 }
 
-func (c *LeveledCompactor) CompactWithAdditionalPostings(dest string, dirs []string, open []*Block, additionalPostingsProvider index.AdditionalPostingsProvider) (uid ulid.ULID, err error) {
+func (c *LeveledCompactor) CompactWithAdditionalPostings(dest string, dirs []string, open []*Block, additionalPostingsFunc AdditionalPostingsFunc) (uid ulid.ULID, err error) {
 	var (
 		blocks []BlockReader
 		bs     []*Block
@@ -442,7 +441,7 @@ func (c *LeveledCompactor) CompactWithAdditionalPostings(dest string, dirs []str
 	uid = ulid.MustNew(ulid.Now(), rand.Reader)
 
 	meta := CompactBlockMetas(uid, metas...)
-	err = c.write(dest, meta, additionalPostingsProvider, blocks...)
+	err = c.write(dest, meta, additionalPostingsFunc, blocks...)
 	if err == nil {
 		if meta.Stats.NumSamples == 0 {
 			for _, b := range bs {
@@ -553,7 +552,7 @@ func (w *instrumentedChunkWriter) WriteChunks(chunks ...chunks.Meta) error {
 }
 
 // write creates a new block that is the union of the provided blocks into dir.
-func (c *LeveledCompactor) write(dest string, meta *BlockMeta, additionalPostingsProvider index.AdditionalPostingsProvider, blocks ...BlockReader) (err error) {
+func (c *LeveledCompactor) write(dest string, meta *BlockMeta, additionalPostingsFunc AdditionalPostingsFunc, blocks ...BlockReader) (err error) {
 	dir := filepath.Join(dest, meta.ULID.String())
 	tmp := dir + tmpForCreationBlockDirSuffix
 	var closers []io.Closer
@@ -601,7 +600,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, additionalPosting
 	}
 	closers = append(closers, indexw)
 
-	if err := c.populateBlock(blocks, meta, indexw, chunkw, additionalPostingsProvider); err != nil {
+	if err := c.populateBlock(blocks, meta, indexw, chunkw, additionalPostingsFunc); err != nil {
 		return errors.Wrap(err, "populate block")
 	}
 
@@ -669,7 +668,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, additionalPosting
 // populateBlock fills the index and chunk writers with new data gathered as the union
 // of the provided blocks. It returns meta information for the new block.
 // It expects sorted blocks input by mint.
-func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, indexw IndexWriter, chunkw ChunkWriter, additionalPostingsProvider index.AdditionalPostingsProvider) (err error) {
+func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, indexw IndexWriter, chunkw ChunkWriter, additionalPostingsFunc AdditionalPostingsFunc) (err error) {
 	if len(blocks) == 0 {
 		return errors.New("cannot populate block from no readers")
 	}
@@ -737,8 +736,8 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 		}
 		all = indexr.SortedPostings(all)
 		g.Go(func() error {
-			if additionalPostingsProvider != nil {
-				all = additionalPostingsProvider.GetPostings(all, indexr)
+			if additionalPostingsFunc != nil {
+				all = additionalPostingsFunc.GetPostings(all, indexr)
 			}
 			// Blocks meta is half open: [min, max), so subtract 1 to ensure we don't hold samples with exact meta.MaxTime timestamp.
 			setsMtx.Lock()
@@ -828,4 +827,8 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 	}
 
 	return nil
+}
+
+type AdditionalPostingsFunc interface {
+	GetPostings(originalPostings index.Postings, indexReader IndexReader) index.Postings
 }
