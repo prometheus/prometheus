@@ -300,14 +300,13 @@ func BenchmarkIntersect(t *testing.B) {
 			d = append(d, storage.SeriesRef(i))
 		}
 
-		i1 := newListPostings(a...)
-		i2 := newListPostings(b...)
-		i3 := newListPostings(c...)
-		i4 := newListPostings(d...)
-
 		bench.ResetTimer()
 		bench.ReportAllocs()
 		for i := 0; i < bench.N; i++ {
+			i1 := newListPostings(a...)
+			i2 := newListPostings(b...)
+			i3 := newListPostings(c...)
+			i4 := newListPostings(d...)
 			if _, err := ExpandPostings(Intersect(i1, i2, i3, i4)); err != nil {
 				bench.Fatal(err)
 			}
@@ -330,14 +329,13 @@ func BenchmarkIntersect(t *testing.B) {
 			d = append(d, storage.SeriesRef(i))
 		}
 
-		i1 := newListPostings(a...)
-		i2 := newListPostings(b...)
-		i3 := newListPostings(c...)
-		i4 := newListPostings(d...)
-
 		bench.ResetTimer()
 		bench.ReportAllocs()
 		for i := 0; i < bench.N; i++ {
+			i1 := newListPostings(a...)
+			i2 := newListPostings(b...)
+			i3 := newListPostings(c...)
+			i4 := newListPostings(d...)
 			if _, err := ExpandPostings(Intersect(i1, i2, i3, i4)); err != nil {
 				bench.Fatal(err)
 			}
@@ -346,20 +344,28 @@ func BenchmarkIntersect(t *testing.B) {
 
 	// Many matchers(k >> n).
 	t.Run("ManyPostings", func(bench *testing.B) {
-		var its []Postings
+		var lps []*ListPostings
+		var refs [][]storage.SeriesRef
 
-		// 100000 matchers(k=100000).
+		// Create 100000 matchers(k=100000), making sure all memory allocation is done before starting the loop.
 		for i := 0; i < 100000; i++ {
 			var temp []storage.SeriesRef
 			for j := storage.SeriesRef(1); j < 100; j++ {
 				temp = append(temp, j)
 			}
-			its = append(its, newListPostings(temp...))
+			lps = append(lps, newListPostings(temp...))
+			refs = append(refs, temp)
 		}
 
+		its := make([]Postings, len(refs))
 		bench.ResetTimer()
 		bench.ReportAllocs()
 		for i := 0; i < bench.N; i++ {
+			// Reset the ListPostings to their original values each time round the loop.
+			for j := range refs {
+				lps[j].list = refs[j]
+				its[j] = lps[j]
+			}
 			if _, err := ExpandPostings(Intersect(its...)); err != nil {
 				bench.Fatal(err)
 			}
