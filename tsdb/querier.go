@@ -21,7 +21,6 @@ import (
 
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
-	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -322,7 +321,6 @@ func postingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Postings, erro
 	if m.Type == labels.MatchRegexp {
 		setMatches := findSetMatches(m.GetRegexString())
 		if len(setMatches) > 0 {
-			slices.Sort(setMatches)
 			return ix.Postings(m.Name, setMatches...)
 		}
 	}
@@ -333,14 +331,9 @@ func postingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Postings, erro
 	}
 
 	var res []string
-	lastVal, isSorted := "", true
 	for _, val := range vals {
 		if m.Matches(val) {
 			res = append(res, val)
-			if isSorted && val < lastVal {
-				isSorted = false
-			}
-			lastVal = val
 		}
 	}
 
@@ -348,9 +341,6 @@ func postingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Postings, erro
 		return index.EmptyPostings(), nil
 	}
 
-	if !isSorted {
-		slices.Sort(res)
-	}
 	return ix.Postings(m.Name, res...)
 }
 
@@ -362,20 +352,12 @@ func inversePostingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Posting
 	}
 
 	var res []string
-	lastVal, isSorted := "", true
 	for _, val := range vals {
 		if !m.Matches(val) {
 			res = append(res, val)
-			if isSorted && val < lastVal {
-				isSorted = false
-			}
-			lastVal = val
 		}
 	}
 
-	if !isSorted {
-		slices.Sort(res)
-	}
 	return ix.Postings(m.Name, res...)
 }
 
