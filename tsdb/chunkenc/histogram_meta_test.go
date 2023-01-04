@@ -330,7 +330,7 @@ func TestCompareSpansAndInterject(t *testing.T) {
 	for _, s := range scenarios {
 		t.Run(s.description, func(t *testing.T) {
 			if len(s.backwardInterjections) > 0 {
-				interjections, bInterjections := bidirectionalCompareSpans(s.spansA, s.spansB)
+				interjections, bInterjections, _ := bidirectionalCompareSpans(s.spansA, s.spansB)
 				require.Equal(t, s.interjections, interjections)
 				require.Equal(t, s.backwardInterjections, bInterjections)
 			}
@@ -439,5 +439,137 @@ func TestWriteReadHistogramChunkLayout(t *testing.T) {
 		require.Equal(t, want.zeroThreshold, gotZeroThreshold)
 		require.Equal(t, want.positiveSpans, gotPositiveSpans)
 		require.Equal(t, want.negativeSpans, gotNegativeSpans)
+	}
+}
+
+func TestSpansFromBidirectionalCompareSpans(t *testing.T) {
+	cases := []struct {
+		s1, s2, exp []histogram.Span
+	}{
+		{ // All empty.
+			s1: []histogram.Span{},
+			s2: []histogram.Span{},
+		},
+		{ // Same spans.
+			s1: []histogram.Span{},
+			s2: []histogram.Span{},
+		},
+		{
+			// Has the cases of
+			// 1.  |----|        (partial overlap)
+			//        |----|
+			//
+			// 2.       |-----|  (no gap but no overlap as well)
+			//     |---|
+			//
+			// 3.  |----|        (complete overlap)
+			//     |----|
+			s1: []histogram.Span{
+				{Offset: 0, Length: 3},
+				{Offset: 3, Length: 3},
+				{Offset: 5, Length: 3},
+			},
+			s2: []histogram.Span{
+				{Offset: 0, Length: 2},
+				{Offset: 2, Length: 2},
+				{Offset: 2, Length: 3},
+				{Offset: 3, Length: 3},
+			},
+			exp: []histogram.Span{
+				{Offset: 0, Length: 3},
+				{Offset: 1, Length: 7},
+				{Offset: 3, Length: 3},
+			},
+		},
+		{
+			// s1 is superset of s2.
+			s1: []histogram.Span{
+				{Offset: 0, Length: 3},
+				{Offset: 3, Length: 5},
+				{Offset: 3, Length: 3},
+			},
+			s2: []histogram.Span{
+				{Offset: 0, Length: 2},
+				{Offset: 5, Length: 3},
+				{Offset: 4, Length: 3},
+			},
+			exp: []histogram.Span{
+				{Offset: 0, Length: 3},
+				{Offset: 3, Length: 5},
+				{Offset: 3, Length: 3},
+			},
+		},
+		{
+			// No overlaps but one span is side by side.
+			s1: []histogram.Span{
+				{Offset: 0, Length: 3},
+				{Offset: 3, Length: 3},
+				{Offset: 5, Length: 3},
+			},
+			s2: []histogram.Span{
+				{Offset: 3, Length: 3},
+				{Offset: 4, Length: 2},
+			},
+			exp: []histogram.Span{
+				{Offset: 0, Length: 9},
+				{Offset: 1, Length: 2},
+				{Offset: 2, Length: 3},
+			},
+		},
+		{
+			// No buckets in one of them.
+			s1: []histogram.Span{
+				{Offset: 0, Length: 3},
+				{Offset: 3, Length: 3},
+				{Offset: 5, Length: 3},
+			},
+			s2: []histogram.Span{},
+			exp: []histogram.Span{
+				{Offset: 0, Length: 3},
+				{Offset: 3, Length: 3},
+				{Offset: 5, Length: 3},
+			},
+		},
+		{ // Zero length spans.
+			s1: []histogram.Span{
+				{Offset: -5, Length: 0},
+				{Offset: 2, Length: 0},
+				{Offset: 3, Length: 3},
+				{Offset: 1, Length: 0},
+				{Offset: 2, Length: 3},
+				{Offset: 2, Length: 0},
+				{Offset: 2, Length: 0},
+				{Offset: 1, Length: 3},
+				{Offset: 4, Length: 0},
+				{Offset: 5, Length: 0},
+			},
+			s2: []histogram.Span{
+				{Offset: 0, Length: 2},
+				{Offset: 2, Length: 2},
+				{Offset: 1, Length: 0},
+				{Offset: 1, Length: 3},
+				{Offset: 3, Length: 3},
+			},
+			exp: []histogram.Span{
+				{Offset: 0, Length: 3},
+				{Offset: 1, Length: 7},
+				{Offset: 3, Length: 3},
+			},
+		},
+	}
+
+	for _, c := range cases {
+		s1c := make([]histogram.Span, len(c.s1))
+		s2c := make([]histogram.Span, len(c.s2))
+		copy(s1c, c.s1)
+		copy(s2c, c.s2)
+
+		_, _, act := bidirectionalCompareSpans(c.s1, c.s2)
+		require.Equal(t, c.exp, act)
+		// Check that s1 and s2 are not modified.
+		require.Equal(t, s1c, c.s1)
+		require.Equal(t, s2c, c.s2)
+		_, _, act = bidirectionalCompareSpans(c.s2, c.s1)
+		require.Equal(t, c.exp, act)
 	}
 }

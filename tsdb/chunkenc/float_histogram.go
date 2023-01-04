@@ -292,6 +292,7 @@ func (a *FloatHistogramAppender) Appendable(h *histogram.FloatHistogram) (
 func (a *FloatHistogramAppender) AppendableGauge(h *histogram.FloatHistogram) (
 	positiveInterjections, negativeInterjections []Interjection,
 	backwardPositiveInterjections, backwardNegativeInterjections []Interjection,
+	positiveSpans, negativeSpans []histogram.Span,
 	okToAppend bool,
 ) {
 	if value.IsStaleNaN(h.Sum) {
@@ -309,8 +310,8 @@ func (a *FloatHistogramAppender) AppendableGauge(h *histogram.FloatHistogram) (
 		return
 	}
 
-	positiveInterjections, backwardPositiveInterjections = bidirectionalCompareSpans(a.pSpans, h.PositiveSpans)
-	negativeInterjections, backwardNegativeInterjections = bidirectionalCompareSpans(a.nSpans, h.NegativeSpans)
+	positiveInterjections, backwardPositiveInterjections, positiveSpans = bidirectionalCompareSpans(a.pSpans, h.PositiveSpans)
+	negativeInterjections, backwardNegativeInterjections, negativeSpans = bidirectionalCompareSpans(a.nSpans, h.NegativeSpans)
 	okToAppend = true
 	return
 }

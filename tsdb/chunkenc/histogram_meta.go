@@ -165,21 +165,23 @@ func (b *bucketIterator) Next() (int, bool) {
 	if b.span >= len(b.spans) {
 		return 0, false
 	}
-try:
-	if b.bucket < int(b.spans[b.span].Length-1) { // Try to move within same span.
+	if b.bucket < int(b.spans[b.span].Length)-1 { // Try to move within same span.
 		b.bucket++
 		b.idx++
 		return b.idx, true
-	} else if b.span < len(b.spans)-1 { // Try to move from one span to the next.
+	}
+
+	for b.span < len(b.spans)-1 { // Try to move from one span to the next.
 		b.span++
 		b.idx += int(b.spans[b.span].Offset + 1)
 		b.bucket = 0
 		if b.spans[b.span].Length == 0 {
-			// Pathological case that should never happen. We can't use this span, let's try again.
-			goto try
+			b.idx--
+			continue
 		}
 		return b.idx, true
 	}
+
 	// We're out of options.
 	return 0, false
 }
@@ -280,11 +282,28 @@ loop:
 
 // bidirectionalCompareSpans does everything that forwardCompareSpans does and
 // also returns interjections in the other direction (i.e. buckets missing in b that are missing in a).
-func bidirectionalCompareSpans(a, b []histogram.Span) (forward, backward []Interjection) {
+func bidirectionalCompareSpans(a, b []histogram.Span) (forward, backward []Interjection, mergedSpans []histogram.Span) {
 	ai := newBucketIterator(a)
 	bi := newBucketIterator(b)
 
 	var interjections, bInterjections []Interjection
+	var lastBucket int
+	addBucket := func(b int) {
+		offset := b - lastBucket - 1
+		if offset == 0 && len(mergedSpans) > 0 {
+			mergedSpans[len(mergedSpans)-1].Length++
+		} else {
+			if len(mergedSpans) == 0 {
+				offset++
+			}
+			mergedSpans = append(mergedSpans, histogram.Span{
+				Offset: int32(offset),
+				Length: 1,
+			})
+		}
+
+		lastBucket = b
+	}
 
 	// When inter.num becomes > 0, this becomes a valid interjection that
 	// should be yielded when we finish a streak of new buckets.
@@ -307,6 +326,7 @@ loop:
 					bInterjections = append(bInterjections, bInter)
 					bInter.num = 0
 				}
+				addBucket(av)
 				av, aOK = ai.Next()
 				bv, bOK = bi.Next()
 				inter.pos++
@@ -319,6 +339,7 @@ loop:
 					interjections = append(interjections, inter)
 					inter.num = 0
 				}
+				addBucket(av)
 				inter.pos++
 				av, aOK = ai.Next()
 			case av > bv: // a misses a value that is in b. Forward b and recompare.
@@ -329,14 +350,17 @@ loop:
 					bInterjections = append(bInterjections, bInter)
 					bInter.num = 0
 				}
+				addBucket(bv)
 				bInter.pos++
 				bv, bOK = bi.Next()
 			}
 		case aOK && !bOK: // b misses a value that is in a.
 			bInter.num++
+			addBucket(av)
 			av, aOK = ai.Next()
 		case !aOK && bOK: // a misses a value that is in b. Forward b and recompare.
 			inter.num++
+			addBucket(bv)
 			bv, bOK = bi.Next()
 		default: // Both iterators ran out. We're done.
 			if inter.num > 0 {
@@ -349,7 +373,7 @@ loop:
 		}
 	}
 
-	return interjections, bInterjections
+	return interjections, bInterjections, mergedSpans
 }
 
 // interject merges 'in' with the provided interjections and writes them into

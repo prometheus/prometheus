@@ -390,7 +390,7 @@ func TestFloatHistogramChunkAppendableGauge(t *testing.T) {
 		h2 := h1.Copy()
 		h2.Schema++
 		hApp, _ := app.(*FloatHistogramAppender)
-		_, _, _, _, ok := hApp.AppendableGauge(h2)
+		_, _, _, _, _, _, ok := hApp.AppendableGauge(h2)
 		require.False(t, ok)
 	}
 
@@ -398,7 +398,7 @@ func TestFloatHistogramChunkAppendableGauge(t *testing.T) {
 		h2 := h1.Copy()
 		h2.ZeroThreshold += 0.1
 		hApp, _ := app.(*FloatHistogramAppender)
-		_, _, _, _, ok := hApp.AppendableGauge(h2)
+		_, _, _, _, _, _, ok := hApp.AppendableGauge(h2)
 		require.False(t, ok)
 	}
 
@@ -416,7 +416,7 @@ func TestFloatHistogramChunkAppendableGauge(t *testing.T) {
 		h2.PositiveBuckets = []float64{7, 5, 1, 3, 1, 0, 2, 5, 5, 0, 1}
 
 		hApp, _ := app.(*FloatHistogramAppender)
-		pI, nI, pBackwardI, nBackwardI, ok := hApp.AppendableGauge(h2)
+		pI, nI, pBackwardI, nBackwardI, _, _, ok := hApp.AppendableGauge(h2)
 		require.Greater(t, len(pI), 0)
 		require.Len(t, nI, 0)
 		require.Len(t, pBackwardI, 0)
@@ -438,7 +438,7 @@ func TestFloatHistogramChunkAppendableGauge(t *testing.T) {
 		h2.PositiveBuckets = []float64{6, 3, 3, 2, 5, 1}
 
 		hApp, _ := app.(*FloatHistogramAppender)
-		pI, nI, pBackwardI, nBackwardI, ok := hApp.AppendableGauge(h2)
+		pI, nI, pBackwardI, nBackwardI, _, _, ok := hApp.AppendableGauge(h2)
 		require.Len(t, pI, 0)
 		require.Len(t, nI, 0)
 		require.Greater(t, len(pBackwardI), 0)
@@ -458,7 +458,7 @@ func TestFloatHistogramChunkAppendableGauge(t *testing.T) {
 		h2.PositiveBuckets = []float64{6, 3, 2, 4, 5, 1}
 
 		hApp, _ := app.(*FloatHistogramAppender)
-		pI, nI, pBackwardI, nBackwardI, ok := hApp.AppendableGauge(h2)
+		pI, nI, pBackwardI, nBackwardI, _, _, ok := hApp.AppendableGauge(h2)
 		require.Greater(t, len(pI), 0)
 		require.Greater(t, len(pBackwardI), 0)
 		require.Len(t, nI, 0)
@@ -472,7 +472,7 @@ func TestFloatHistogramChunkAppendableGauge(t *testing.T) {
 		h2.PositiveBuckets = []float64{6, 2, 3, 2, 4, 5, 1}
 
 		hApp, _ := app.(*FloatHistogramAppender)
-		pI, nI, pBackwardI, nBackwardI, ok := hApp.AppendableGauge(h2)
+		pI, nI, pBackwardI, nBackwardI, _, _, ok := hApp.AppendableGauge(h2)
 		require.Len(t, pI, 0)
 		require.Len(t, nI, 0)
 		require.Len(t, pBackwardI, 0)
@@ -492,7 +492,7 @@ func TestFloatHistogramChunkAppendableGauge(t *testing.T) {
 		h2.PositiveBuckets = []float64{7, 5, 1, 3, 1, 0, 2, 5, 5, 0, 0}
 
 		hApp, _ := app.(*FloatHistogramAppender)
-		pI, nI, pBackwardI, nBackwardI, ok := hApp.AppendableGauge(h2)
+		pI, nI, pBackwardI, nBackwardI, _, _, ok := hApp.AppendableGauge(h2)
 		require.Greater(t, len(pI), 0)
 		require.Len(t, nI, 0)
 		require.Len(t, pBackwardI, 0)
@@ -516,7 +516,7 @@ func TestFloatHistogramChunkAppendableGauge(t *testing.T) {
 		h2.PositiveBuckets = []float64{1, 2, 5, 3, 3, 2, 4, 5, 1}
 
 		hApp, _ := app.(*FloatHistogramAppender)
-		pI, nI, pBackwardI, nBackwardI, ok := hApp.AppendableGauge(h2)
+		pI, nI, pBackwardI, nBackwardI, _, _, ok := hApp.AppendableGauge(h2)
 		require.Greater(t, len(pI), 0)
 		require.Len(t, nI, 0)
 		require.Len(t, pBackwardI, 0)
