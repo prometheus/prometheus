@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
@@ -698,7 +699,7 @@ func TestSendAlertsDontAffectActiveAlerts(t *testing.T) {
 	}
 	nm := notifier.NewManager(&opts, log.NewNopLogger())
 
-	f := SendAlerts(nm, "")
+	f := util.SendAlerts(nm, "")
 	notifyFunc := func(ctx context.Context, expr string, alerts ...*Alert) {
 		require.Len(t, alerts, 1)
 		require.Equal(t, al, alerts[0])

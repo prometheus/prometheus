@@ -70,6 +70,7 @@ import (
 	"github.com/prometheus/prometheus/tracing"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/agent"
+	"github.com/prometheus/prometheus/util"
 	"github.com/prometheus/prometheus/util/logging"
 	prom_runtime "github.com/prometheus/prometheus/util/runtime"
 	"github.com/prometheus/prometheus/web"
@@ -631,7 +632,7 @@ func main() {
 			Appendable:      fanoutStorage,
 			Queryable:       localStorage,
 			QueryFunc:       rules.EngineQueryFunc(queryEngine, fanoutStorage),
-			NotifyFunc:      rules.SendAlerts(notifierManager, cfg.web.ExternalURL.String()),
+			NotifyFunc:      util.SendAlerts(notifierManager, cfg.web.ExternalURL.String()),
 			Context:         ctxRule,
 			ExternalURL:     cfg.web.ExternalURL,
 			Registerer:      prometheus.DefaultRegisterer,
