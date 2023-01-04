@@ -223,13 +223,11 @@ func (a *FloatHistogramAppender) AppendHistogram(int64, *histogram.Histogram) {
 // If the sample is a gauge histogram, AppendableGauge must be used instead.
 //
 // The chunk is not appendable in the following cases:
-//
-// • The schema has changed.
-// • The threshold for the zero bucket has changed.
-// • Any buckets have disappeared.
-// • There was a counter reset in the count of observations or in any bucket,
-// including the zero bucket.
-// • The last sample in the chunk was stale while the current sample is not stale.
+//   - The schema has changed.
+//   - The threshold for the zero bucket has changed.
+//   - Any buckets have disappeared.
+//   - There was a counter reset in the count of observations or in any bucket, including the zero bucket.
+//   - The last sample in the chunk was stale while the current sample is not stale.
 //
 // The method returns an additional boolean set to true if it is not appendable
 // because of a counter reset. If the given sample is stale, it is always ok to
@@ -300,9 +298,9 @@ func (a *FloatHistogramAppender) Appendable(h *histogram.FloatHistogram) (
 // This method must be only used for gauge histograms.
 //
 // The chunk is not appendable in the following cases:
-//  - The schema has changed.
-//  - The threshold for the zero bucket has changed.
-//  - The last sample in the chunk was stale while the current sample is not stale.
+//   - The schema has changed.
+//   - The threshold for the zero bucket has changed.
+//   - The last sample in the chunk was stale while the current sample is not stale.
 func (a *FloatHistogramAppender) AppendableGauge(h *histogram.FloatHistogram) (
 	positiveInterjections, negativeInterjections []Interjection,
 	backwardPositiveInterjections, backwardNegativeInterjections []Interjection,

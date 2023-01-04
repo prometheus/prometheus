@@ -385,6 +385,7 @@ func TestFloatHistogramChunkAppendableGauge(t *testing.T) {
 
 	app.AppendFloatHistogram(ts, h1.Copy())
 	require.Equal(t, 1, c.NumSamples())
+	c.(*FloatHistogramChunk).SetCounterResetHeader(GaugeType)
 
 	{ // Schema change.
 		h2 := h1.Copy()
