@@ -916,8 +916,7 @@ type scrapeCache struct {
 	series map[string]*cacheEntry
 
 	// Cache of dropped metric strings and their iteration. The iteration must
-	// be a pointer so we can update it without setting a new entry with an unsafe
-	// string in addDropped().
+	// be a pointer so we can update it.
 	droppedSeries map[string]*uint64
 
 	// seriesCur and seriesPrev store the labels of series that were seen
@@ -1021,9 +1020,9 @@ func (c *scrapeCache) addRef(met []byte, ref storage.SeriesRef, lset labels.Labe
 	c.series[string(met)] = &cacheEntry{ref: ref, lastIter: c.iter, lset: lset, hash: hash}
 }
 
-func (c *scrapeCache) addDropped(met string) {
+func (c *scrapeCache) addDropped(met []byte) {
 	iter := c.iter
-	c.droppedSeries[met] = &iter
+	c.droppedSeries[string(met)] = &iter
 }
 
 func (c *scrapeCache) getDropped(met []byte) bool {
@@ -1590,7 +1589,6 @@ loop:
 		var (
 			ref  storage.SeriesRef
 			lset labels.Labels
-			mets string
 			hash uint64
 		)
 
@@ -1601,7 +1599,7 @@ loop:
 			// Update metadata only if it changed in the current iteration.
 			updateMetadata(lset, false)
 		} else {
-			mets = p.Metric(&lset)
+			p.Metric(&lset)
 			hash = lset.Hash()
 
 			// Hash label set as it is seen local to the target. Then add target labels
@@ -1610,7 +1608,7 @@ loop:
 
 			// The label set may be set to empty to indicate dropping.
 			if lset.IsEmpty() {
-				sl.cache.addDropped(mets)
+				sl.cache.addDropped(met)
 				continue
 			}
 
