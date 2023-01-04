@@ -111,13 +111,12 @@ func TestBucketIterator(t *testing.T) {
 	}
 }
 
-func TestInterjection(t *testing.T) {
+func TestCompareSpansAndInterject(t *testing.T) {
 	scenarios := []struct {
-		description           string
-		spansA, spansB        []histogram.Span
-		valid                 bool
-		interjections         []Interjection
-		bucketsIn, bucketsOut []int64
+		description                          string
+		spansA, spansB                       []histogram.Span
+		interjections, backwardInterjections []Interjection
+		bucketsIn, bucketsOut                []int64
 	}{
 		{
 			description: "single prepend at the beginning",
@@ -127,7 +126,6 @@ func TestInterjection(t *testing.T) {
 			spansB: []histogram.Span{
 				{Offset: -11, Length: 4},
 			},
-			valid: true,
 			interjections: []Interjection{
 				{
 					pos: 0,
@@ -145,7 +143,6 @@ func TestInterjection(t *testing.T) {
 			spansB: []histogram.Span{
 				{Offset: -10, Length: 4},
 			},
-			valid: true,
 			interjections: []Interjection{
 				{
 					pos: 3,
@@ -163,7 +160,6 @@ func TestInterjection(t *testing.T) {
 			spansB: []histogram.Span{
 				{Offset: -12, Length: 5},
 			},
-			valid: true,
 			interjections: []Interjection{
 				{
 					pos: 0,
@@ -181,7 +177,6 @@ func TestInterjection(t *testing.T) {
 			spansB: []histogram.Span{
 				{Offset: -10, Length: 5},
 			},
-			valid: true,
 			interjections: []Interjection{
 				{
 					pos: 3,
@@ -199,7 +194,6 @@ func TestInterjection(t *testing.T) {
 			spansB: []histogram.Span{
 				{Offset: -12, Length: 7},
 			},
-			valid: true,
 			interjections: []Interjection{
 				{
 					pos: 0,
@@ -221,7 +215,9 @@ func TestInterjection(t *testing.T) {
 			spansB: []histogram.Span{
 				{Offset: -9, Length: 3},
 			},
-			valid: false,
+			backwardInterjections: []Interjection{
+				{pos: 0, num: 1},
+			},
 		},
 		{
 			description: "single removal of bucket in the middle",
@@ -232,7 +228,9 @@ func TestInterjection(t *testing.T) {
 				{Offset: -10, Length: 2},
 				{Offset: 1, Length: 1},
 			},
-			valid: false,
+			backwardInterjections: []Interjection{
+				{pos: 2, num: 1},
+			},
 		},
 		{
 			description: "single removal of bucket at the end",
@@ -242,7 +240,9 @@ func TestInterjection(t *testing.T) {
 			spansB: []histogram.Span{
 				{Offset: -10, Length: 3},
 			},
-			valid: false,
+			backwardInterjections: []Interjection{
+				{pos: 3, num: 1},
+			},
 		},
 		{
 			description: "as described in doc comment",
@@ -259,7 +259,6 @@ func TestInterjection(t *testing.T) {
 				{Offset: 1, Length: 4},
 				{Offset: 3, Length: 3},
 			},
-			valid: true,
 			interjections: []Interjection{
 				{
 					pos: 2,
@@ -277,12 +276,67 @@ func TestInterjection(t *testing.T) {
 			bucketsIn:  []int64{6, -3, 0, -1, 2, 1, -4},
 			bucketsOut: []int64{6, -3, -3, 3, -3, 0, 2, 2, 1, -5, 1},
 		},
+		{
+			description: "both forward and backward interjections, complex case",
+			spansA: []histogram.Span{
+				{Offset: 0, Length: 2},
+				{Offset: 2, Length: 1},
+				{Offset: 3, Length: 2},
+				{Offset: 3, Length: 1},
+				{Offset: 1, Length: 1},
+			},
+			spansB: []histogram.Span{
+				{Offset: 1, Length: 2},
+				{Offset: 1, Length: 1},
+				{Offset: 1, Length: 2},
+				{Offset: 1, Length: 1},
+				{Offset: 4, Length: 1},
+			},
+			interjections: []Interjection{
+				{
+					pos: 2,
+					num: 1,
+				},
+				{
+					pos: 3,
+					num: 2,
+				},
+				{
+					pos: 6,
+					num: 1,
+				},
+			},
+			backwardInterjections: []Interjection{
+				{
+					pos: 0,
+					num: 1,
+				},
+				{
+					pos: 5,
+					num: 1,
+				},
+				{
+					pos: 6,
+					num: 1,
+				},
+				{
+					pos: 7,
+					num: 1,
+				},
+			},
+		},
 	}
 
 	for _, s := range scenarios {
 		t.Run(s.description, func(t *testing.T) {
-			interjections, valid := compareSpans(s.spansA, s.spansB)
-			if !s.valid {
+			if len(s.backwardInterjections) > 0 {
+				interjections, bInterjections := bidirectionalCompareSpans(s.spansA, s.spansB)
+				require.Equal(t, s.interjections, interjections)
+				require.Equal(t, s.backwardInterjections, bInterjections)
+			}
+
+			interjections, valid := forwardCompareSpans(s.spansA, s.spansB)
+			if len(s.backwardInterjections) > 0 {
 				require.False(t, valid, "compareScan unexpectedly returned true")
 				return
 			}
@@ -292,6 +346,24 @@ func TestInterjection(t *testing.T) {
 			gotBuckets := make([]int64, len(s.bucketsOut))
 			interject(s.bucketsIn, gotBuckets, interjections, true)
 			require.Equal(t, s.bucketsOut, gotBuckets)
+
+			floatBucketsIn := make([]float64, len(s.bucketsIn))
+			last := s.bucketsIn[0]
+			floatBucketsIn[0] = float64(last)
+			for i := 1; i < len(floatBucketsIn); i++ {
+				last += s.bucketsIn[i]
+				floatBucketsIn[i] = float64(last)
+			}
+			floatBucketsOut := make([]float64, len(s.bucketsOut))
+			last = s.bucketsOut[0]
+			floatBucketsOut[0] = float64(last)
+			for i := 1; i < len(floatBucketsOut); i++ {
+				last += s.bucketsOut[i]
+				floatBucketsOut[i] = float64(last)
+			}
+			gotFloatBuckets := make([]float64, len(floatBucketsOut))
+			interject(floatBucketsIn, gotFloatBuckets, interjections, false)
+			require.Equal(t, floatBucketsOut, gotFloatBuckets)
 		})
 	}
 }

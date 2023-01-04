@@ -286,12 +286,12 @@ func (a *HistogramAppender) Appendable(h *histogram.Histogram) (
 	}
 
 	var ok bool
-	positiveInterjections, ok = compareSpans(a.pSpans, h.PositiveSpans)
+	positiveInterjections, ok = forwardCompareSpans(a.pSpans, h.PositiveSpans)
 	if !ok {
 		counterReset = true
 		return
 	}
-	negativeInterjections, ok = compareSpans(a.nSpans, h.NegativeSpans)
+	negativeInterjections, ok = forwardCompareSpans(a.nSpans, h.NegativeSpans)
 	if !ok {
 		counterReset = true
 		return

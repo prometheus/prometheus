@@ -215,14 +215,10 @@ func (a *FloatHistogramAppender) AppendHistogram(int64, *histogram.Histogram) {
 // The chunk is not appendable in the following cases:
 //
 // • The schema has changed.
-//
 // • The threshold for the zero bucket has changed.
-//
 // • Any buckets have disappeared.
-//
 // • There was a counter reset in the count of observations or in any bucket,
 // including the zero bucket.
-//
 // • The last sample in the chunk was stale while the current sample is not stale.
 //
 // The method returns an additional boolean set to true if it is not appendable
@@ -260,12 +256,12 @@ func (a *FloatHistogramAppender) Appendable(h *histogram.FloatHistogram) (
 	}
 
 	var ok bool
-	positiveInterjections, ok = compareSpans(a.pSpans, h.PositiveSpans)
+	positiveInterjections, ok = forwardCompareSpans(a.pSpans, h.PositiveSpans)
 	if !ok {
 		counterReset = true
 		return
 	}
-	negativeInterjections, ok = compareSpans(a.nSpans, h.NegativeSpans)
+	negativeInterjections, ok = forwardCompareSpans(a.nSpans, h.NegativeSpans)
 	if !ok {
 		counterReset = true
 		return
@@ -277,6 +273,44 @@ func (a *FloatHistogramAppender) Appendable(h *histogram.FloatHistogram) (
 		return
 	}
 
+	okToAppend = true
+	return
+}
+
+// AppendableGauge returns whether the chunk can be appended to, and if so
+// whether:
+//  1. Any recoding needs to happen to the chunk using the provided interjections
+//     (in case of any new buckets, positive or negative range, respectively).
+//  2. Any recoding needs to happen for the histogram being appended, using the backward interjections
+//     (in case of any missing buckets, positive or negative range, respectively).
+//
+// The chunk is not appendable in the following cases:
+//
+// • The schema has changed.
+// • The threshold for the zero bucket has changed.
+// • The last sample in the chunk was stale while the current sample is not stale.
+func (a *FloatHistogramAppender) AppendableGauge(h *histogram.FloatHistogram) (
+	positiveInterjections, negativeInterjections []Interjection,
+	backwardPositiveInterjections, backwardNegativeInterjections []Interjection,
+	okToAppend bool,
+) {
+	if value.IsStaleNaN(h.Sum) {
+		// This is a stale sample whose buckets and spans don't matter.
+		okToAppend = true
+		return
+	}
+	if value.IsStaleNaN(a.sum.value) {
+		// If the last sample was stale, then we can only accept stale
+		// samples in this chunk.
+		return
+	}
+
+	if h.Schema != a.schema || h.ZeroThreshold != a.zThreshold {
+		return
+	}
+
+	positiveInterjections, backwardPositiveInterjections = bidirectionalCompareSpans(a.pSpans, h.PositiveSpans)
+	negativeInterjections, backwardNegativeInterjections = bidirectionalCompareSpans(a.nSpans, h.NegativeSpans)
 	okToAppend = true
 	return
 }

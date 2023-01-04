@@ -191,7 +191,7 @@ type Interjection struct {
 	num int
 }
 
-// compareSpans returns the interjections to convert a slice of deltas to a new
+// forwardCompareSpans returns the interjections to convert a slice of deltas to a new
 // slice representing an expanded set of buckets, or false if incompatible
 // (e.g. if buckets were removed).
 //
@@ -226,11 +226,11 @@ type Interjection struct {
 // match a new span layout that adds buckets, we simply need to generate a list
 // of interjections.
 //
-// Note: Within compareSpans we don't have to worry about the changes to the
+// Note: Within forwardCompareSpans we don't have to worry about the changes to the
 // spans themselves, thanks to the iterators we get to work with the more useful
 // bucket indices (which of course directly correspond to the buckets we have to
 // adjust).
-func compareSpans(a, b []histogram.Span) ([]Interjection, bool) {
+func forwardCompareSpans(a, b []histogram.Span) (forward []Interjection, ok bool) {
 	ai := newBucketIterator(a)
 	bi := newBucketIterator(b)
 
@@ -276,6 +276,80 @@ loop:
 	}
 
 	return interjections, true
+}
+
+// bidirectionalCompareSpans does everything that forwardCompareSpans does and
+// also returns interjections in the other direction (i.e. buckets missing in b that are missing in a).
+func bidirectionalCompareSpans(a, b []histogram.Span) (forward, backward []Interjection) {
+	ai := newBucketIterator(a)
+	bi := newBucketIterator(b)
+
+	var interjections, bInterjections []Interjection
+
+	// When inter.num becomes > 0, this becomes a valid interjection that
+	// should be yielded when we finish a streak of new buckets.
+	var inter, bInter Interjection
+
+	av, aOK := ai.Next()
+	bv, bOK := bi.Next()
+loop:
+	for {
+		switch {
+		case aOK && bOK:
+			switch {
+			case av == bv: // Both have an identical value. move on!
+				// Finish WIP interjection and reset.
+				if inter.num > 0 {
+					interjections = append(interjections, inter)
+					inter.num = 0
+				}
+				if bInter.num > 0 {
+					bInterjections = append(bInterjections, bInter)
+					bInter.num = 0
+				}
+				av, aOK = ai.Next()
+				bv, bOK = bi.Next()
+				inter.pos++
+				bInter.pos++
+			case av < bv: // b misses a value that is in a.
+				bInter.num++
+				// Collect the forward interjection before advancing the
+				// position of 'a'.
+				if inter.num > 0 {
+					interjections = append(interjections, inter)
+					inter.num = 0
+				}
+				inter.pos++
+				av, aOK = ai.Next()
+			case av > bv: // a misses a value that is in b. Forward b and recompare.
+				inter.num++
+				// Collect the backward interjection before advancing the
+				// position of 'b'.
+				if bInter.num > 0 {
+					bInterjections = append(bInterjections, bInter)
+					bInter.num = 0
+				}
+				bInter.pos++
+				bv, bOK = bi.Next()
+			}
+		case aOK && !bOK: // b misses a value that is in a.
+			bInter.num++
+			av, aOK = ai.Next()
+		case !aOK && bOK: // a misses a value that is in b. Forward b and recompare.
+			inter.num++
+			bv, bOK = bi.Next()
+		default: // Both iterators ran out. We're done.
+			if inter.num > 0 {
+				interjections = append(interjections, inter)
+			}
+			if bInter.num > 0 {
+				bInterjections = append(bInterjections, bInter)
+			}
+			break loop
+		}
+	}
+
+	return interjections, bInterjections
 }
 
 // interject merges 'in' with the provided interjections and writes them into
