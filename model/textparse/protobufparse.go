@@ -331,13 +331,23 @@ func (p *ProtobufParser) Next() (Entry, error) {
 		}
 
 		// We are at the beginning of a metric family. Put only the name
-		// into metricBytes and validate only name and help for now.
+		// into metricBytes and validate only name, help, and type for now.
 		name := p.mf.GetName()
 		if !model.IsValidMetricName(model.LabelValue(name)) {
 			return EntryInvalid, errors.Errorf("invalid metric name: %s", name)
 		}
 		if help := p.mf.GetHelp(); !utf8.ValidString(help) {
 			return EntryInvalid, errors.Errorf("invalid help for metric %q: %s", name, help)
+		}
+		switch p.mf.GetType() {
+		case dto.MetricType_COUNTER,
+			dto.MetricType_GAUGE,
+			dto.MetricType_HISTOGRAM,
+			dto.MetricType_SUMMARY,
+			dto.MetricType_UNTYPED:
+			// All good.
+		default:
+			return EntryInvalid, errors.Errorf("unknown metric type for metric %q: %s", name, p.mf.GetType())
 		}
 		p.metricBytes.Reset()
 		p.metricBytes.WriteString(name)
