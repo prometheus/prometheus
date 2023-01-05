@@ -83,6 +83,104 @@ func TestRuleEval(t *testing.T) {
 	}
 }
 
+func BenchmarkRuleEval(b *testing.B) {
+	suite, err := promql.NewTest(b, `
+		load 1m
+			metric{label_a="1",label_b="3"} 1
+			metric{label_a="2",label_b="4"} 1
+	`)
+	require.NoError(b, err)
+	defer suite.Close()
+
+	require.NoError(b, suite.Run())
+	ts := time.Unix(0, 0).UTC()
+	exprWithMetricName, _ := parser.ParseExpr(`metric`)
+	exprWithoutMetricName, _ := parser.ParseExpr(`metric + metric`)
+
+	scenarios := []struct {
+		name       string
+		ruleLabels labels.Labels
+		expr       parser.Expr
+		expected   promql.Vector
+	}{
+		{
+			name:       "no labels in recording rule, metric name in query result",
+			ruleLabels: labels.EmptyLabels(),
+			expr:       exprWithMetricName,
+			expected: promql.Vector{
+				promql.Sample{
+					Metric: labels.FromStrings("__name__", "test_rule", "label_a", "1", "label_b", "3"),
+					Point:  promql.Point{V: 1, T: timestamp.FromTime(ts)},
+				},
+				promql.Sample{
+					Metric: labels.FromStrings("__name__", "test_rule", "label_a", "2", "label_b", "4"),
+					Point:  promql.Point{V: 1, T: timestamp.FromTime(ts)},
+				},
+			},
+		},
+		{
+			name:       "only new labels in recording rule, metric name in query result",
+			ruleLabels: labels.FromStrings("extra_from_rule", "foo"),
+			expr:       exprWithMetricName,
+			expected: promql.Vector{
+				promql.Sample{
+					Metric: labels.FromStrings("__name__", "test_rule", "label_a", "1", "label_b", "3", "extra_from_rule", "foo"),
+					Point:  promql.Point{V: 1, T: timestamp.FromTime(ts)},
+				},
+				promql.Sample{
+					Metric: labels.FromStrings("__name__", "test_rule", "label_a", "2", "label_b", "4", "extra_from_rule", "foo"),
+					Point:  promql.Point{V: 1, T: timestamp.FromTime(ts)},
+				},
+			},
+		},
+		{
+			name:       "some replacement labels in recording rule, metric name in query result",
+			ruleLabels: labels.FromStrings("label_a", "from_rule"),
+			expr:       exprWithMetricName,
+			expected: promql.Vector{
+				promql.Sample{
+					Metric: labels.FromStrings("__name__", "test_rule", "label_a", "from_rule", "label_b", "3"),
+					Point:  promql.Point{V: 1, T: timestamp.FromTime(ts)},
+				},
+				promql.Sample{
+					Metric: labels.FromStrings("__name__", "test_rule", "label_a", "from_rule", "label_b", "4"),
+					Point:  promql.Point{V: 1, T: timestamp.FromTime(ts)},
+				},
+			},
+		},
+		{
+			name:       "no labels in recording rule, no metric name in query result",
+			ruleLabels: labels.EmptyLabels(),
+			expr:       exprWithoutMetricName,
+			expected: promql.Vector{
+				promql.Sample{
+					Metric: labels.FromStrings("__name__", "test_rule", "label_a", "1", "label_b", "3"),
+					Point:  promql.Point{V: 2, T: timestamp.FromTime(ts)},
+				},
+				promql.Sample{
+					Metric: labels.FromStrings("__name__", "test_rule", "label_a", "2", "label_b", "4"),
+					Point:  promql.Point{V: 2, T: timestamp.FromTime(ts)},
+				},
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		b.Run(scenario.name, func(b *testing.B) {
+			rule := NewRecordingRule("test_rule", scenario.expr, scenario.ruleLabels)
+
+			b.ResetTimer()
+
+			for i := 0; i < b.N; i++ {
+				result, err := rule.Eval(suite.Context(), ts, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil, 0)
+
+				require.NoError(b, err)
+				require.ElementsMatch(b, scenario.expected, result)
+			}
+		})
+	}
+}
+
 // TestRuleEvalDuplicate tests for duplicate labels in recorded metrics, see #5529.
 func TestRuleEvalDuplicate(t *testing.T) {
 	storage := teststorage.New(t)
