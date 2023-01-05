@@ -1535,6 +1535,7 @@ func TestSizeRetention(t *testing.T) {
 		}
 	}
 	require.NoError(t, headApp.Commit())
+	db.Head().mmapHeadChunks()
 
 	require.Eventually(t, func() bool {
 		return db.Head().chunkDiskMapper.IsQueueEmpty()
@@ -6049,12 +6050,14 @@ func TestDiskFillingUpAfterDisablingOOO(t *testing.T) {
 
 	// Check that m-map files gets deleted properly after compactions.
 
+	db.head.mmapHeadChunks()
 	checkMmapFileContents([]string{"000001", "000002"}, nil)
 	require.NoError(t, db.Compact())
 	checkMmapFileContents([]string{"000002"}, []string{"000001"})
 	require.Nil(t, ms.ooo, "OOO mmap chunk was not compacted")
 
 	addSamples(501, 650)
+	db.head.mmapHeadChunks()
 	checkMmapFileContents([]string{"000002", "000003"}, []string{"000001"})
 	require.NoError(t, db.Compact())
 	checkMmapFileContents(nil, []string{"000001", "000002", "000003"})
