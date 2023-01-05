@@ -32,8 +32,6 @@ kind: ServiceAccount
 metadata:
   name: prometheus
   namespace: default
-secrets:
-  - name: prometheus-sa-token
 ---
 apiVersion: v1
 kind: Secret
