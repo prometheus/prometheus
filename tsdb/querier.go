@@ -239,7 +239,14 @@ func PostingsForMatchers(ix IndexReader, ms ...*labels.Matcher) (index.Postings,
 	}
 
 	for _, m := range ms {
-		if labelMustBeSet[m.Name] {
+		if m.Name == "" && m.Value == "" { // Special-case for AllPostings, used in tests at least.
+			k, v := index.AllPostingsKey()
+			allPostings, err := ix.Postings(k, v)
+			if err != nil {
+				return nil, err
+			}
+			its = append(its, allPostings)
+		} else if labelMustBeSet[m.Name] {
 			// If this matcher must be non-empty, we can be smarter.
 			matchesEmpty := m.Matches("")
 			isNot := m.Type == labels.MatchNotEqual || m.Type == labels.MatchNotRegexp
@@ -352,9 +359,14 @@ func inversePostingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Posting
 	}
 
 	var res []string
-	for _, val := range vals {
-		if !m.Matches(val) {
-			res = append(res, val)
+	// If the inverse match is ="", we just want all the values.
+	if m.Type == labels.MatchEqual && m.Value == "" {
+		res = vals
+	} else {
+		for _, val := range vals {
+			if !m.Matches(val) {
+				res = append(res, val)
+			}
 		}
 	}
 
