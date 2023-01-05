@@ -105,7 +105,7 @@ func (p *ProtobufParser) Series() ([]byte, *int64, float64) {
 		default:
 			v = s.GetQuantile()[p.fieldPos].GetValue()
 		}
-	case dto.MetricType_HISTOGRAM:
+	case dto.MetricType_HISTOGRAM, dto.MetricType_GAUGE_HISTOGRAM:
 		// This should only happen for a legacy histogram.
 		h := m.GetHistogram()
 		switch p.fieldPos {
@@ -225,6 +225,8 @@ func (p *ProtobufParser) Type() ([]byte, MetricType) {
 		return n, MetricTypeGauge
 	case dto.MetricType_HISTOGRAM:
 		return n, MetricTypeHistogram
+	case dto.MetricType_GAUGE_HISTOGRAM:
+		return n, MetricTypeGaugeHistogram
 	case dto.MetricType_SUMMARY:
 		return n, MetricTypeSummary
 	}
@@ -273,7 +275,7 @@ func (p *ProtobufParser) Exemplar(ex *exemplar.Exemplar) bool {
 	switch p.mf.GetType() {
 	case dto.MetricType_COUNTER:
 		exProto = m.GetCounter().GetExemplar()
-	case dto.MetricType_HISTOGRAM:
+	case dto.MetricType_HISTOGRAM, dto.MetricType_GAUGE_HISTOGRAM:
 		bb := m.GetHistogram().GetBucket()
 		if p.fieldPos < 0 {
 			if p.state == EntrySeries {
@@ -343,6 +345,7 @@ func (p *ProtobufParser) Next() (Entry, error) {
 		case dto.MetricType_COUNTER,
 			dto.MetricType_GAUGE,
 			dto.MetricType_HISTOGRAM,
+			dto.MetricType_GAUGE_HISTOGRAM,
 			dto.MetricType_SUMMARY,
 			dto.MetricType_UNTYPED:
 			// All good.
@@ -356,7 +359,8 @@ func (p *ProtobufParser) Next() (Entry, error) {
 	case EntryHelp:
 		p.state = EntryType
 	case EntryType:
-		if p.mf.GetType() == dto.MetricType_HISTOGRAM &&
+		t := p.mf.GetType()
+		if (t == dto.MetricType_HISTOGRAM || t == dto.MetricType_GAUGE_HISTOGRAM) &&
 			isNativeHistogram(p.mf.GetMetric()[0].GetHistogram()) {
 			p.state = EntryHistogram
 		} else {
@@ -366,8 +370,11 @@ func (p *ProtobufParser) Next() (Entry, error) {
 			return EntryInvalid, err
 		}
 	case EntryHistogram, EntrySeries:
+		t := p.mf.GetType()
 		if p.state == EntrySeries && !p.fieldsDone &&
-			(p.mf.GetType() == dto.MetricType_SUMMARY || p.mf.GetType() == dto.MetricType_HISTOGRAM) {
+			(t == dto.MetricType_SUMMARY ||
+				t == dto.MetricType_HISTOGRAM ||
+				t == dto.MetricType_GAUGE_HISTOGRAM) {
 			p.fieldPos++
 		} else {
 			p.metricPos++
@@ -428,7 +435,7 @@ func (p *ProtobufParser) getMagicName() string {
 	if p.fieldPos == -1 {
 		return p.mf.GetName() + "_sum"
 	}
-	if t == dto.MetricType_HISTOGRAM {
+	if t == dto.MetricType_HISTOGRAM || t == dto.MetricType_GAUGE_HISTOGRAM {
 		return p.mf.GetName() + "_bucket"
 	}
 	return p.mf.GetName()
@@ -446,7 +453,7 @@ func (p *ProtobufParser) getMagicLabel() (bool, string, string) {
 		q := qq[p.fieldPos]
 		p.fieldsDone = p.fieldPos == len(qq)-1
 		return true, model.QuantileLabel, formatOpenMetricsFloat(q.GetQuantile())
-	case dto.MetricType_HISTOGRAM:
+	case dto.MetricType_HISTOGRAM, dto.MetricType_GAUGE_HISTOGRAM:
 		bb := p.mf.GetMetric()[p.metricPos].GetHistogram().GetBucket()
 		if p.fieldPos >= len(bb) {
 			p.fieldsDone = true
