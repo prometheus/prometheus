@@ -5,6 +5,7 @@ import Navigation from './Navbar';
 import { BrowserRouter as Router, Redirect, Route, Switch } from 'react-router-dom';
 import { PathPrefixContext } from './contexts/PathPrefixContext';
 import { ThemeContext, themeName, themeSetting } from './contexts/ThemeContext';
+import { ReadyContext } from './contexts/ReadyContext';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import useMedia from './hooks/useMedia';
 import {
@@ -24,9 +25,10 @@ import { Theme, themeLocalStorageKey } from './Theme';
 interface AppProps {
   consolesLink: string | null;
   agentMode: boolean;
+  ready: boolean;
 }
 
-const App: FC<AppProps> = ({ consolesLink, agentMode }) => {
+const App: FC<AppProps> = ({ consolesLink, agentMode, ready }) => {
   // This dynamically/generically determines the pathPrefix by stripping the first known
   // endpoint suffix from the window location path. It works out of the box for both direct
   // hosting and reverse proxy deployments with no additional configurations required.
@@ -72,48 +74,50 @@ const App: FC<AppProps> = ({ consolesLink, agentMode }) => {
     >
       <Theme />
       <PathPrefixContext.Provider value={basePath}>
-        <Router basename={basePath}>
-          <Navigation consolesLink={consolesLink} agentMode={agentMode} />
-          <Container fluid style={{ paddingTop: 70 }}>
-            <Switch>
-              <Redirect exact from="/" to={agentMode ? '/agent' : '/graph'} />
-              {/*
+        <ReadyContext.Provider value={ready}>
+          <Router basename={basePath}>
+            <Navigation consolesLink={consolesLink} agentMode={agentMode} />
+            <Container fluid style={{ paddingTop: 70 }}>
+              <Switch>
+                <Redirect exact from="/" to={agentMode ? '/agent' : '/graph'} />
+                {/*
               NOTE: Any route added here needs to also be added to the list of
               React-handled router paths ("reactRouterPaths") in /web/web.go.
             */}
-              <Route path="/agent">
-                <AgentPage />
-              </Route>
-              <Route path="/graph">
-                <PanelListPage />
-              </Route>
-              <Route path="/alerts">
-                <AlertsPage />
-              </Route>
-              <Route path="/config">
-                <ConfigPage />
-              </Route>
-              <Route path="/flags">
-                <FlagsPage />
-              </Route>
-              <Route path="/rules">
-                <RulesPage />
-              </Route>
-              <Route path="/service-discovery">
-                <ServiceDiscoveryPage />
-              </Route>
-              <Route path="/status">
-                <StatusPage agentMode={agentMode} />
-              </Route>
-              <Route path="/tsdb-status">
-                <TSDBStatusPage />
-              </Route>
-              <Route path="/targets">
-                <TargetsPage />
-              </Route>
-            </Switch>
-          </Container>
-        </Router>
+                <Route path="/agent">
+                  <AgentPage />
+                </Route>
+                <Route path="/graph">
+                  <PanelListPage />
+                </Route>
+                <Route path="/alerts">
+                  <AlertsPage />
+                </Route>
+                <Route path="/config">
+                  <ConfigPage />
+                </Route>
+                <Route path="/flags">
+                  <FlagsPage />
+                </Route>
+                <Route path="/rules">
+                  <RulesPage />
+                </Route>
+                <Route path="/service-discovery">
+                  <ServiceDiscoveryPage />
+                </Route>
+                <Route path="/status">
+                  <StatusPage agentMode={agentMode} />
+                </Route>
+                <Route path="/tsdb-status">
+                  <TSDBStatusPage />
+                </Route>
+                <Route path="/targets">
+                  <TargetsPage />
+                </Route>
+              </Switch>
+            </Container>
+          </Router>
+        </ReadyContext.Provider>
       </PathPrefixContext.Provider>
     </ThemeContext.Provider>
   );

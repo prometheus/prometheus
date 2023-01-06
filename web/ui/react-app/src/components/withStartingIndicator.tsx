@@ -4,6 +4,7 @@ import { Progress, Alert } from 'reactstrap';
 import { useFetchReadyInterval } from '../hooks/useFetch';
 import { WALReplayData } from '../types/types';
 import { usePathPrefix } from '../contexts/PathPrefixContext';
+import { useReady } from '../contexts/ReadyContext';
 
 interface StartingContentProps {
   isUnexpected: boolean;
@@ -48,8 +49,9 @@ export const withStartingIndicator =
   ({ ...rest }) => {
     const pathPrefix = usePathPrefix();
     const { ready, walReplayStatus, isUnexpected } = useFetchReadyInterval(pathPrefix);
+    const staticReady = useReady();
 
-    if (ready || isUnexpected) {
+    if (staticReady || ready || isUnexpected) {
       return <Page {...(rest as T)} />;
     }
 
