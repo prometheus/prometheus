@@ -66,8 +66,14 @@ func TestRemoteWriteHandler(t *testing.T) {
 		}
 
 		for _, hp := range ts.Histograms {
-			h := HistogramProtoToHistogram(hp)
-			require.Equal(t, mockHistogram{labels, hp.Timestamp, h, nil}, appendable.histograms[k])
+			if hp.GetCountFloat() > 0 || hp.GetZeroCountFloat() > 0 { // It is a float histogram.
+				fh := HistogramProtoToFloatHistogram(hp)
+				require.Equal(t, mockHistogram{labels, hp.Timestamp, nil, fh}, appendable.histograms[k])
+			} else {
+				h := HistogramProtoToHistogram(hp)
+				require.Equal(t, mockHistogram{labels, hp.Timestamp, h, nil}, appendable.histograms[k])
+			}
+
 			k++
 		}
 	}
@@ -124,7 +130,7 @@ func TestOutOfOrderExemplar(t *testing.T) {
 func TestOutOfOrderHistogram(t *testing.T) {
 	buf, _, err := buildWriteRequest([]prompb.TimeSeries{{
 		Labels:     []prompb.Label{{Name: "__name__", Value: "test_metric"}},
-		Histograms: []prompb.Histogram{HistogramToHistogramProto(0, &testHistogram)},
+		Histograms: []prompb.Histogram{HistogramToHistogramProto(0, &testHistogram), FloatHistogramToHistogramProto(1, testHistogram.ToFloat())},
 	}}, nil, nil, nil)
 	require.NoError(t, err)
 

@@ -525,7 +525,7 @@ func exemplarProtoToExemplar(ep prompb.Exemplar) exemplar.Exemplar {
 
 // HistogramProtoToHistogram extracts a (normal integer) Histogram from the
 // provided proto message. The caller has to make sure that the proto message
-// represents an interger histogram and not a float histogram.
+// represents an integer histogram and not a float histogram.
 func HistogramProtoToHistogram(hp prompb.Histogram) *histogram.Histogram {
 	return &histogram.Histogram{
 		Schema:          hp.Schema,
@@ -537,6 +537,23 @@ func HistogramProtoToHistogram(hp prompb.Histogram) *histogram.Histogram {
 		PositiveBuckets: hp.GetPositiveDeltas(),
 		NegativeSpans:   spansProtoToSpans(hp.GetNegativeSpans()),
 		NegativeBuckets: hp.GetNegativeDeltas(),
+	}
+}
+
+// HistogramProtoToFloatHistogram extracts a (normal integer) Histogram from the
+// provided proto message to a Float Histogram. The caller has to make sure that
+// the proto message represents an float histogram and not a integer histogram.
+func HistogramProtoToFloatHistogram(hp prompb.Histogram) *histogram.FloatHistogram {
+	return &histogram.FloatHistogram{
+		Schema:          hp.Schema,
+		ZeroThreshold:   hp.ZeroThreshold,
+		ZeroCount:       hp.GetZeroCountFloat(),
+		Count:           hp.GetCountFloat(),
+		Sum:             hp.Sum,
+		PositiveSpans:   spansProtoToSpans(hp.GetPositiveSpans()),
+		PositiveBuckets: hp.GetPositiveCounts(),
+		NegativeSpans:   spansProtoToSpans(hp.GetNegativeSpans()),
+		NegativeBuckets: hp.GetNegativeCounts(),
 	}
 }
 
@@ -560,6 +577,21 @@ func HistogramToHistogramProto(timestamp int64, h *histogram.Histogram) prompb.H
 		NegativeDeltas: h.NegativeBuckets,
 		PositiveSpans:  spansToSpansProto(h.PositiveSpans),
 		PositiveDeltas: h.PositiveBuckets,
+		Timestamp:      timestamp,
+	}
+}
+
+func FloatHistogramToHistogramProto(timestamp int64, fh *histogram.FloatHistogram) prompb.Histogram {
+	return prompb.Histogram{
+		Count:          &prompb.Histogram_CountFloat{CountFloat: fh.Count},
+		Sum:            fh.Sum,
+		Schema:         fh.Schema,
+		ZeroThreshold:  fh.ZeroThreshold,
+		ZeroCount:      &prompb.Histogram_ZeroCountFloat{ZeroCountFloat: fh.ZeroCount},
+		NegativeSpans:  spansToSpansProto(fh.NegativeSpans),
+		NegativeCounts: fh.NegativeBuckets,
+		PositiveSpans:  spansToSpansProto(fh.PositiveSpans),
+		PositiveCounts: fh.PositiveBuckets,
 		Timestamp:      timestamp,
 	}
 }
