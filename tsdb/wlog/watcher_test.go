@@ -52,11 +52,12 @@ func retry(t *testing.T, interval time.Duration, n int, f func() bool) {
 }
 
 type writeToMock struct {
-	samplesAppended      int
-	exemplarsAppended    int
-	histogramsAppended   int
-	seriesLock           sync.Mutex
-	seriesSegmentIndexes map[chunks.HeadSeriesRef]int
+	samplesAppended         int
+	exemplarsAppended       int
+	histogramsAppended      int
+	floatHistogramsAppended int
+	seriesLock              sync.Mutex
+	seriesSegmentIndexes    map[chunks.HeadSeriesRef]int
 }
 
 func (wtm *writeToMock) Append(s []record.RefSample) bool {
@@ -71,6 +72,11 @@ func (wtm *writeToMock) AppendExemplars(e []record.RefExemplar) bool {
 
 func (wtm *writeToMock) AppendHistograms(h []record.RefHistogramSample) bool {
 	wtm.histogramsAppended += len(h)
+	return true
+}
+
+func (wtm *writeToMock) AppendFloatHistograms(fh []record.RefFloatHistogramSample) bool {
+	wtm.floatHistogramsAppended += len(fh)
 	return true
 }
 
@@ -116,6 +122,7 @@ func TestTailSamples(t *testing.T) {
 	const samplesCount = 250
 	const exemplarsCount = 25
 	const histogramsCount = 50
+	const floatHistogramsCount = 50
 	for _, compress := range []bool{false, true} {
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
 			now := time.Now()
@@ -187,6 +194,25 @@ func TestTailSamples(t *testing.T) {
 						},
 					}}, nil)
 					require.NoError(t, w.Log(histogram))
+				}
+				for j := 0; j < floatHistogramsCount; j++ {
+					inner := rand.Intn(ref + 1)
+					floatHistogram := enc.FloatHistogramSamples([]record.RefFloatHistogramSample{{
+						Ref: chunks.HeadSeriesRef(inner),
+						T:   now.UnixNano() + 1,
+						FH: &histogram.FloatHistogram{
+							Schema:          2,
+							ZeroThreshold:   1e-128,
+							ZeroCount:       0,
+							Count:           2,
+							Sum:             0,
+							PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+							PositiveBuckets: []float64{float64(i) + 1},
+							NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+							NegativeBuckets: []float64{float64(-i) - 1},
+						},
+					}}, nil)
+					require.NoError(t, w.Log(floatHistogram))
 				}
 			}
 
