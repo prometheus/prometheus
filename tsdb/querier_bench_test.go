@@ -91,7 +91,7 @@ func BenchmarkQuerier(b *testing.B) {
 
 func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 	n1 := labels.MustNewMatcher(labels.MatchEqual, "n", "1"+postingsBenchSuffix)
-	nX := labels.MustNewMatcher(labels.MatchNotEqual, "n", "X"+postingsBenchSuffix)
+	nX := labels.MustNewMatcher(labels.MatchEqual, "n", "X"+postingsBenchSuffix)
 
 	jFoo := labels.MustNewMatcher(labels.MatchEqual, "j", "foo")
 	jNotFoo := labels.MustNewMatcher(labels.MatchNotEqual, "j", "foo")
