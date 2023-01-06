@@ -61,15 +61,17 @@ func newHighestTimestampMetric() *maxTimestamp {
 
 func TestSampleDelivery(t *testing.T) {
 	testcases := []struct {
-		name       string
-		samples    bool
-		exemplars  bool
-		histograms bool
+		name            string
+		samples         bool
+		exemplars       bool
+		histograms      bool
+		floatHistograms bool
 	}{
-		{samples: true, exemplars: false, histograms: false, name: "samples only"},
+		{samples: true, exemplars: false, histograms: false, floatHistograms: false, name: "samples only"},
 		{samples: true, exemplars: true, histograms: true, name: "samples, exemplars, and histograms"},
-		{samples: false, exemplars: true, histograms: false, name: "exemplars only"},
-		{samples: false, exemplars: false, histograms: true, name: "histograms only"},
+		{samples: false, exemplars: true, histograms: false, floatHistograms: false, name: "exemplars only"},
+		{samples: false, exemplars: false, histograms: true, floatHistograms: false, name: "histograms only"},
+		{samples: false, exemplars: false, histograms: true, floatHistograms: true, name: "float histograms only"},
 	}
 
 	// Let's create an even number of send batches so we don't run into the
@@ -101,10 +103,11 @@ func TestSampleDelivery(t *testing.T) {
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
 			var (
-				series     []record.RefSeries
-				samples    []record.RefSample
-				exemplars  []record.RefExemplar
-				histograms []record.RefHistogramSample
+				series          []record.RefSeries
+				samples         []record.RefSample
+				exemplars       []record.RefExemplar
+				histograms      []record.RefHistogramSample
+				floatHistograms []record.RefFloatHistogramSample
 			)
 
 			// Generates same series in both cases.
@@ -116,6 +119,10 @@ func TestSampleDelivery(t *testing.T) {
 			}
 			if tc.histograms {
 				histograms, series = createHistograms(n, n)
+			}
+			if tc.floatHistograms {
+				floatHistograms, series = createFloatHistograms(n, n)
+
 			}
 
 			// Apply new config.
@@ -135,18 +142,22 @@ func TestSampleDelivery(t *testing.T) {
 			c.expectSamples(samples[:len(samples)/2], series)
 			c.expectExemplars(exemplars[:len(exemplars)/2], series)
 			c.expectHistograms(histograms[:len(histograms)/2], series)
+			c.expectFloatHistograms(floatHistograms[:len(floatHistograms)/2], series)
 			qm.Append(samples[:len(samples)/2])
 			qm.AppendExemplars(exemplars[:len(exemplars)/2])
 			qm.AppendHistograms(histograms[:len(histograms)/2])
+			qm.AppendFloatHistograms(floatHistograms[:len(floatHistograms)/2])
 			c.waitForExpectedData(t)
 
 			// Send second half of data.
 			c.expectSamples(samples[len(samples)/2:], series)
 			c.expectExemplars(exemplars[len(exemplars)/2:], series)
 			c.expectHistograms(histograms[len(histograms)/2:], series)
+			c.expectFloatHistograms(floatHistograms[len(floatHistograms)/2:], series)
 			qm.Append(samples[len(samples)/2:])
 			qm.AppendExemplars(exemplars[len(exemplars)/2:])
 			qm.AppendHistograms(histograms[len(histograms)/2:])
+			qm.AppendFloatHistograms(floatHistograms[len(floatHistograms)/2:])
 			c.waitForExpectedData(t)
 		})
 	}
@@ -617,23 +628,56 @@ func createHistograms(numSamples, numSeries int) ([]record.RefHistogramSample, [
 	return histograms, series
 }
 
+func createFloatHistograms(numSamples, numSeries int) ([]record.RefFloatHistogramSample, []record.RefSeries) {
+	floatHistograms := make([]record.RefFloatHistogramSample, 0, numSamples)
+	series := make([]record.RefSeries, 0, numSeries)
+	for i := 0; i < numSeries; i++ {
+		name := fmt.Sprintf("test_metric_%d", i)
+		for j := 0; j < numSamples; j++ {
+			fh := record.RefFloatHistogramSample{
+				Ref: chunks.HeadSeriesRef(i),
+				T:   int64(j),
+				FH: &histogram.FloatHistogram{
+					Schema:          2,
+					ZeroThreshold:   1e-128,
+					ZeroCount:       0,
+					Count:           2,
+					Sum:             0,
+					PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+					PositiveBuckets: []float64{float64(i) + 1},
+					NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+					NegativeBuckets: []float64{float64(-i) - 1},
+				},
+			}
+			floatHistograms = append(floatHistograms, fh)
+		}
+		series = append(series, record.RefSeries{
+			Ref:    chunks.HeadSeriesRef(i),
+			Labels: labels.FromStrings("__name__", name),
+		})
+	}
+	return floatHistograms, series
+}
+
 func getSeriesNameFromRef(r record.RefSeries) string {
 	return r.Labels.Get("__name__")
 }
 
 type TestWriteClient struct {
-	receivedSamples    map[string][]prompb.Sample
-	expectedSamples    map[string][]prompb.Sample
-	receivedExemplars  map[string][]prompb.Exemplar
-	expectedExemplars  map[string][]prompb.Exemplar
-	receivedHistograms map[string][]prompb.Histogram
-	expectedHistograms map[string][]prompb.Histogram
-	receivedMetadata   map[string][]prompb.MetricMetadata
-	writesReceived     int
-	withWaitGroup      bool
-	wg                 sync.WaitGroup
-	mtx                sync.Mutex
-	buf                []byte
+	receivedSamples         map[string][]prompb.Sample
+	expectedSamples         map[string][]prompb.Sample
+	receivedExemplars       map[string][]prompb.Exemplar
+	expectedExemplars       map[string][]prompb.Exemplar
+	receivedHistograms      map[string][]prompb.Histogram
+	receivedFloatHistograms map[string][]prompb.Histogram
+	expectedHistograms      map[string][]prompb.Histogram
+	expectedFloatHistograms map[string][]prompb.Histogram
+	receivedMetadata        map[string][]prompb.MetricMetadata
+	writesReceived          int
+	withWaitGroup           bool
+	wg                      sync.WaitGroup
+	mtx                     sync.Mutex
+	buf                     []byte
 }
 
 func NewTestWriteClient() *TestWriteClient {
@@ -704,6 +748,23 @@ func (c *TestWriteClient) expectHistograms(hh []record.RefHistogramSample, serie
 	c.wg.Add(len(hh))
 }
 
+func (c *TestWriteClient) expectFloatHistograms(fhs []record.RefFloatHistogramSample, series []record.RefSeries) {
+	if !c.withWaitGroup {
+		return
+	}
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+
+	c.expectedFloatHistograms = map[string][]prompb.Histogram{}
+	c.receivedFloatHistograms = map[string][]prompb.Histogram{}
+
+	for _, fh := range fhs {
+		seriesName := getSeriesNameFromRef(series[fh.Ref])
+		c.expectedFloatHistograms[seriesName] = append(c.expectedFloatHistograms[seriesName], FloatHistogramToHistogramProto(fh.T, fh.FH))
+	}
+	c.wg.Add(len(fhs))
+}
+
 func (c *TestWriteClient) waitForExpectedData(tb testing.TB) {
 	if !c.withWaitGroup {
 		return
@@ -719,6 +780,9 @@ func (c *TestWriteClient) waitForExpectedData(tb testing.TB) {
 	}
 	for ts, expectedHistogram := range c.expectedHistograms {
 		require.Equal(tb, expectedHistogram, c.receivedHistograms[ts], ts)
+	}
+	for ts, expectedFloatHistogram := range c.expectedFloatHistograms {
+		require.Equal(tb, expectedFloatHistogram, c.receivedFloatHistograms[ts], ts)
 	}
 }
 
@@ -755,7 +819,12 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte) error {
 
 		for _, histogram := range ts.Histograms {
 			count++
-			c.receivedHistograms[seriesName] = append(c.receivedHistograms[seriesName], histogram)
+			if histogram.GetCountFloat() > 0 || histogram.GetZeroCountFloat() > 0 {
+				c.receivedFloatHistograms[seriesName] = append(c.receivedFloatHistograms[seriesName], histogram)
+			} else {
+				c.receivedHistograms[seriesName] = append(c.receivedHistograms[seriesName], histogram)
+			}
+
 		}
 	}
 	if c.withWaitGroup {

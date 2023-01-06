@@ -716,6 +716,53 @@ outer:
 	return true
 }
 
+func (t *QueueManager) AppendFloatHistograms(floatHistograms []record.RefFloatHistogramSample) bool {
+	if !t.sendNativeHistograms {
+		return true
+	}
+
+outer:
+	for _, h := range floatHistograms {
+		t.seriesMtx.Lock()
+		lbls, ok := t.seriesLabels[h.Ref]
+		if !ok {
+			t.metrics.droppedHistogramsTotal.Inc()
+			t.dataDropped.incr(1)
+			if _, ok := t.droppedSeries[h.Ref]; !ok {
+				level.Info(t.logger).Log("msg", "Dropped histogram for series that was not explicitly dropped via relabelling", "ref", h.Ref)
+			}
+			t.seriesMtx.Unlock()
+			continue
+		}
+		t.seriesMtx.Unlock()
+
+		backoff := model.Duration(5 * time.Millisecond)
+		for {
+			select {
+			case <-t.quit:
+				return false
+			default:
+			}
+			if t.shards.enqueue(h.Ref, timeSeries{
+				seriesLabels:   lbls,
+				timestamp:      h.T,
+				floatHistogram: h.FH,
+				sType:          tFloatHistogram,
+			}) {
+				continue outer
+			}
+
+			t.metrics.enqueueRetriesTotal.Inc()
+			time.Sleep(time.Duration(backoff))
+			backoff = backoff * 2
+			if backoff > t.cfg.MaxBackoff {
+				backoff = t.cfg.MaxBackoff
+			}
+		}
+	}
+	return true
+}
+
 // Start the queue manager sending samples to the remote storage.
 // Does not block.
 func (t *QueueManager) Start() {
@@ -1018,9 +1065,10 @@ type shards struct {
 	qm     *QueueManager
 	queues []*queue
 	// So we can accurately track how many of each are lost during shard shutdowns.
-	enqueuedSamples    atomic.Int64
-	enqueuedExemplars  atomic.Int64
-	enqueuedHistograms atomic.Int64
+	enqueuedSamples         atomic.Int64
+	enqueuedExemplars       atomic.Int64
+	enqueuedHistograms      atomic.Int64
+	enqueuedFloatHistograms atomic.Int64
 
 	// Emulate a wait group with a channel and an atomic int, as you
 	// cannot select on a wait group.
@@ -1032,10 +1080,11 @@ type shards struct {
 
 	// Hard shutdown context is used to terminate outgoing HTTP connections
 	// after giving them a chance to terminate.
-	hardShutdown                    context.CancelFunc
-	samplesDroppedOnHardShutdown    atomic.Uint32
-	exemplarsDroppedOnHardShutdown  atomic.Uint32
-	histogramsDroppedOnHardShutdown atomic.Uint32
+	hardShutdown                         context.CancelFunc
+	samplesDroppedOnHardShutdown         atomic.Uint32
+	exemplarsDroppedOnHardShutdown       atomic.Uint32
+	histogramsDroppedOnHardShutdown      atomic.Uint32
+	floatHistogramsDroppedOnHardShutdown atomic.Uint32
 }
 
 // start the shards; must be called before any call to enqueue.
@@ -1064,6 +1113,7 @@ func (s *shards) start(n int) {
 	s.samplesDroppedOnHardShutdown.Store(0)
 	s.exemplarsDroppedOnHardShutdown.Store(0)
 	s.histogramsDroppedOnHardShutdown.Store(0)
+	s.floatHistogramsDroppedOnHardShutdown.Store(0)
 	for i := 0; i < n; i++ {
 		go s.runShard(hardShutdownCtx, i, newQueues[i])
 	}
@@ -1132,6 +1182,9 @@ func (s *shards) enqueue(ref chunks.HeadSeriesRef, data timeSeries) bool {
 		case tHistogram:
 			s.qm.metrics.pendingHistograms.Inc()
 			s.enqueuedHistograms.Inc()
+		case tFloatHistogram:
+			s.qm.metrics.pendingHistograms.Inc()
+			s.enqueuedFloatHistograms.Inc()
 		}
 		return true
 	}
@@ -1154,6 +1207,7 @@ type timeSeries struct {
 	seriesLabels   labels.Labels
 	value          float64
 	histogram      *histogram.Histogram
+	floatHistogram *histogram.FloatHistogram
 	timestamp      int64
 	exemplarLabels labels.Labels
 	// The type of series: sample, exemplar, or histogram.
@@ -1166,6 +1220,7 @@ const (
 	tSample seriesType = iota
 	tExemplar
 	tHistogram
+	tFloatHistogram
 )
 
 func newQueue(batchSize, capacity int) *queue {
@@ -1325,6 +1380,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 			droppedSamples := int(s.enqueuedSamples.Load())
 			droppedExemplars := int(s.enqueuedExemplars.Load())
 			droppedHistograms := int(s.enqueuedHistograms.Load())
+			droppedFloatHistograms := int(s.enqueuedFloatHistograms.Load())
 			s.qm.metrics.pendingSamples.Sub(float64(droppedSamples))
 			s.qm.metrics.pendingExemplars.Sub(float64(droppedExemplars))
 			s.qm.metrics.pendingHistograms.Sub(float64(droppedHistograms))
@@ -1334,16 +1390,17 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 			s.samplesDroppedOnHardShutdown.Add(uint32(droppedSamples))
 			s.exemplarsDroppedOnHardShutdown.Add(uint32(droppedExemplars))
 			s.histogramsDroppedOnHardShutdown.Add(uint32(droppedHistograms))
+			s.floatHistogramsDroppedOnHardShutdown.Add(uint32(droppedFloatHistograms))
 			return
 
 		case batch, ok := <-batchQueue:
 			if !ok {
 				return
 			}
-			nPendingSamples, nPendingExemplars, nPendingHistograms := s.populateTimeSeries(batch, pendingData)
+			nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingFloatHistograms := s.populateTimeSeries(batch, pendingData)
 			queue.ReturnForReuse(batch)
-			n := nPendingSamples + nPendingExemplars + nPendingHistograms
-			s.sendSamples(ctx, pendingData[:n], nPendingSamples, nPendingExemplars, nPendingHistograms, pBuf, &buf)
+			n := nPendingSamples + nPendingExemplars + nPendingHistograms + nPendingFloatHistograms
+			s.sendSamples(ctx, pendingData[:n], nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingFloatHistograms, pBuf, &buf)
 
 			stop()
 			timer.Reset(time.Duration(s.qm.cfg.BatchSendDeadline))
@@ -1351,10 +1408,10 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 		case <-timer.C:
 			batch := queue.Batch()
 			if len(batch) > 0 {
-				nPendingSamples, nPendingExemplars, nPendingHistograms := s.populateTimeSeries(batch, pendingData)
+				nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingFloatHistograms := s.populateTimeSeries(batch, pendingData)
 				n := nPendingSamples + nPendingExemplars + nPendingHistograms
 				level.Debug(s.qm.logger).Log("msg", "runShard timer ticked, sending buffered data", "samples", nPendingSamples, "exemplars", nPendingExemplars, "shard", shardNum)
-				s.sendSamples(ctx, pendingData[:n], nPendingSamples, nPendingExemplars, nPendingHistograms, pBuf, &buf)
+				s.sendSamples(ctx, pendingData[:n], nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingFloatHistograms, pBuf, &buf)
 			}
 			queue.ReturnForReuse(batch)
 			timer.Reset(time.Duration(s.qm.cfg.BatchSendDeadline))
@@ -1362,8 +1419,8 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 	}
 }
 
-func (s *shards) populateTimeSeries(batch []timeSeries, pendingData []prompb.TimeSeries) (int, int, int) {
-	var nPendingSamples, nPendingExemplars, nPendingHistograms int
+func (s *shards) populateTimeSeries(batch []timeSeries, pendingData []prompb.TimeSeries) (int, int, int, int) {
+	var nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingFloatHistograms int
 	for nPending, d := range batch {
 		pendingData[nPending].Samples = pendingData[nPending].Samples[:0]
 		if s.qm.sendExemplars {
@@ -1394,12 +1451,15 @@ func (s *shards) populateTimeSeries(batch []timeSeries, pendingData []prompb.Tim
 		case tHistogram:
 			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, HistogramToHistogramProto(d.timestamp, d.histogram))
 			nPendingHistograms++
+		case tFloatHistogram:
+			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, FloatHistogramToHistogramProto(d.timestamp, d.floatHistogram))
+			nPendingFloatHistograms++
 		}
 	}
-	return nPendingSamples, nPendingExemplars, nPendingHistograms
+	return nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingFloatHistograms
 }
 
-func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, sampleCount, exemplarCount, histogramCount int, pBuf *proto.Buffer, buf *[]byte) {
+func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, sampleCount, exemplarCount, histogramCount, floatHistogramCount int, pBuf *proto.Buffer, buf *[]byte) {
 	begin := time.Now()
 	err := s.sendSamplesWithBackoff(ctx, samples, sampleCount, exemplarCount, histogramCount, pBuf, buf)
 	if err != nil {
@@ -1407,6 +1467,7 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, s
 		s.qm.metrics.failedSamplesTotal.Add(float64(sampleCount))
 		s.qm.metrics.failedExemplarsTotal.Add(float64(exemplarCount))
 		s.qm.metrics.failedHistogramsTotal.Add(float64(histogramCount))
+		// TODO(marctc): is this right? s.qm.metrics.failedHistogramsTotal.Add(float64(floatHistogramCount))
 	}
 
 	// These counters are used to calculate the dynamic sharding, and as such
@@ -1419,9 +1480,11 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, s
 	s.qm.metrics.pendingSamples.Sub(float64(sampleCount))
 	s.qm.metrics.pendingExemplars.Sub(float64(exemplarCount))
 	s.qm.metrics.pendingHistograms.Sub(float64(histogramCount))
+	// TODO(marctc): is this right? s.qm.metrics.pendingHistograms.Sub(float64(floatHistogramCount))
 	s.enqueuedSamples.Sub(int64(sampleCount))
 	s.enqueuedExemplars.Sub(int64(exemplarCount))
 	s.enqueuedHistograms.Sub(int64(histogramCount))
+	s.enqueuedFloatHistograms.Sub(int64(floatHistogramCount))
 }
 
 // sendSamples to the remote storage with backoff for recoverable errors.
@@ -1458,6 +1521,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 		if histogramCount > 0 {
 			span.SetAttributes(attribute.Int("histograms", histogramCount))
 		}
+		// TODO (marctc): do we need same here for floatHistogramCount?
 
 		begin := time.Now()
 		s.qm.metrics.samplesTotal.Add(float64(sampleCount))
