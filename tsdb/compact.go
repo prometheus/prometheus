@@ -1056,9 +1056,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, minT, maxT int64,
 		defer blockWriters[ix].closeAsync() // Make sure to close writer to stop goroutine.
 	}
 
-	var (
-		chksIter chunks.Iterator
-	)
+	var chksIter chunks.Iterator
 
 	set := sets[0]
 	if len(sets) > 1 {
