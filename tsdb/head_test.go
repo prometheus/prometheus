@@ -2479,10 +2479,10 @@ func TestHeadShardedPostings(t *testing.T) {
 	// We expect the series in each shard are the expected ones.
 	for shardIndex, ids := range actualShards {
 		for _, id := range ids {
-			var lbls labels.Labels
+			var lbls labels.ScratchBuilder
 
 			require.NoError(t, ir.Series(id, &lbls, nil))
-			require.Equal(t, shardIndex, lbls.Hash()%shardCount)
+			require.Equal(t, shardIndex, lbls.Labels().Hash()%shardCount)
 		}
 	}
 }

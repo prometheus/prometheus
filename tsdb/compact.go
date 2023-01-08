@@ -1009,7 +1009,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, minT, maxT int64,
 		}
 		all = indexr.SortedPostings(all)
 		// Blocks meta is half open: [min, max), so subtract 1 to ensure we don't hold samples with exact meta.MaxTime timestamp.
-		sets = append(sets, newBlockChunkSeriesSet(indexr, chunkr, tombsr, all, minT, maxT-1, false))
+		sets = append(sets, newBlockChunkSeriesSet(b.Meta().ULID, indexr, chunkr, tombsr, all, minT, maxT-1, false))
 
 		if len(outBlocks) > 1 {
 			// To iterate series when populating symbols, we cannot reuse postings we just got, but need to get a new copy.
@@ -1057,8 +1057,6 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, minT, maxT int64,
 	}
 
 	var (
-		ref      = storage.SeriesRef(0)
-		chks     []chunks.Meta
 		chksIter chunks.Iterator
 	)
 

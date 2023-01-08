@@ -1909,7 +1909,9 @@ func (dec *Decoder) LabelValueFor(b []byte, label string) (string, error) {
 // Previous contents of lbls can be overwritten - make sure you copy before retaining.
 func (dec *Decoder) Series(b []byte, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
 	builder.Reset()
-	*chks = (*chks)[:0]
+	if chks != nil {
+		*chks = (*chks)[:0]
+	}
 
 	d := encoding.Decbuf{B: b}
 

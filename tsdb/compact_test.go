@@ -587,15 +587,15 @@ func TestCompaction_CompactWithSplitting(t *testing.T) {
 					p, err := idxr.Postings(k, v)
 					require.NoError(t, err)
 
-					var lbls labels.Labels
+					var lbls labels.ScratchBuilder
 					for p.Next() {
 						ref := p.At()
 						require.NoError(t, idxr.Series(ref, &lbls, nil))
 
-						require.Equal(t, uint64(shardIndex), lbls.Hash()%shardCount)
+						require.Equal(t, uint64(shardIndex), lbls.Labels().Hash()%shardCount)
 
 						// Collect all symbols used by series.
-						for _, l := range lbls {
+						for _, l := range lbls.Labels() {
 							seriesSymbols[l.Name] = struct{}{}
 							seriesSymbols[l.Value] = struct{}{}
 						}
