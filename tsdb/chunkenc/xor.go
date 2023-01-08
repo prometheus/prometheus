@@ -156,6 +156,10 @@ func (a *xorAppender) AppendHistogram(t int64, h *histogram.Histogram) {
 	panic("appended a histogram to an xor chunk")
 }
 
+func (a *xorAppender) AppendFloatHistogram(t int64, h *histogram.FloatHistogram) {
+	panic("appended a float histogram to an xor chunk")
+}
+
 func (a *xorAppender) Append(t int64, v float64) {
 	var tDelta uint64
 	num := binary.BigEndian.Uint16(a.b.bytes())

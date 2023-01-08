@@ -411,6 +411,7 @@ func TestHistogramToFloat(t *testing.T) {
 	require.Equal(t, h.String(), fh.String())
 }
 
+// TestHistogramMatches tests both Histogram and FloatHistogram.
 func TestHistogramMatches(t *testing.T) {
 	h1 := Histogram{
 		Schema:        3,
@@ -430,14 +431,28 @@ func TestHistogramMatches(t *testing.T) {
 		NegativeBuckets: []int64{1, 2, -2, 1, -1, 0, 0},
 	}
 
+	equals := func(h1, h2 Histogram) {
+		require.True(t, h1.Equals(&h2))
+		require.True(t, h2.Equals(&h1))
+		h1f, h2f := h1.ToFloat(), h2.ToFloat()
+		require.True(t, h1f.Equals(h2f))
+		require.True(t, h2f.Equals(h1f))
+	}
+	notEquals := func(h1, h2 Histogram) {
+		require.False(t, h1.Equals(&h2))
+		require.False(t, h2.Equals(&h1))
+		h1f, h2f := h1.ToFloat(), h2.ToFloat()
+		require.False(t, h1f.Equals(h2f))
+		require.False(t, h2f.Equals(h1f))
+	}
+
 	h2 := h1.Copy()
-	require.True(t, h1.Equals(h2))
+	equals(h1, *h2)
 
 	// Changed spans but same layout.
 	h2.PositiveSpans = append(h2.PositiveSpans, Span{Offset: 5})
 	h2.NegativeSpans = append(h2.NegativeSpans, Span{Offset: 2})
-	require.True(t, h1.Equals(h2))
-	require.True(t, h2.Equals(&h1))
+	equals(h1, *h2)
 	// Adding empty spans in between.
 	h2.PositiveSpans[1].Offset = 6
 	h2.PositiveSpans = []Span{
@@ -455,58 +470,57 @@ func TestHistogramMatches(t *testing.T) {
 		h2.NegativeSpans[1],
 		h2.NegativeSpans[2],
 	}
-	require.True(t, h1.Equals(h2))
-	require.True(t, h2.Equals(&h1))
+	equals(h1, *h2)
 
 	// All mismatches.
-	require.False(t, h1.Equals(nil))
+	notEquals(h1, Histogram{})
 
 	h2.Schema = 1
-	require.False(t, h1.Equals(h2))
+	notEquals(h1, *h2)
 
 	h2 = h1.Copy()
 	h2.Count++
-	require.False(t, h1.Equals(h2))
+	notEquals(h1, *h2)
 
 	h2 = h1.Copy()
 	h2.Sum++
-	require.False(t, h1.Equals(h2))
+	notEquals(h1, *h2)
 
 	h2 = h1.Copy()
 	h2.ZeroThreshold++
-	require.False(t, h1.Equals(h2))
+	notEquals(h1, *h2)
 
 	h2 = h1.Copy()
 	h2.ZeroCount++
-	require.False(t, h1.Equals(h2))
+	notEquals(h1, *h2)
 
 	// Changing value of buckets.
 	h2 = h1.Copy()
 	h2.PositiveBuckets[len(h2.PositiveBuckets)-1]++
-	require.False(t, h1.Equals(h2))
+	notEquals(h1, *h2)
 	h2 = h1.Copy()
 	h2.NegativeBuckets[len(h2.NegativeBuckets)-1]++
-	require.False(t, h1.Equals(h2))
+	notEquals(h1, *h2)
 
 	// Changing bucket layout.
 	h2 = h1.Copy()
 	h2.PositiveSpans[1].Offset++
-	require.False(t, h1.Equals(h2))
+	notEquals(h1, *h2)
 	h2 = h1.Copy()
 	h2.NegativeSpans[1].Offset++
-	require.False(t, h1.Equals(h2))
+	notEquals(h1, *h2)
 
 	// Adding an empty bucket.
 	h2 = h1.Copy()
 	h2.PositiveSpans[0].Offset--
 	h2.PositiveSpans[0].Length++
 	h2.PositiveBuckets = append([]int64{0}, h2.PositiveBuckets...)
-	require.False(t, h1.Equals(h2))
+	notEquals(h1, *h2)
 	h2 = h1.Copy()
 	h2.NegativeSpans[0].Offset--
 	h2.NegativeSpans[0].Length++
 	h2.NegativeBuckets = append([]int64{0}, h2.NegativeBuckets...)
-	require.False(t, h1.Equals(h2))
+	notEquals(h1, *h2)
 
 	// Adding new bucket.
 	h2 = h1.Copy()
@@ -515,14 +529,14 @@ func TestHistogramMatches(t *testing.T) {
 		Length: 1,
 	})
 	h2.PositiveBuckets = append(h2.PositiveBuckets, 1)
-	require.False(t, h1.Equals(h2))
+	notEquals(h1, *h2)
 	h2 = h1.Copy()
 	h2.NegativeSpans = append(h2.NegativeSpans, Span{
 		Offset: 1,
 		Length: 1,
 	})
 	h2.NegativeBuckets = append(h2.NegativeBuckets, 1)
-	require.False(t, h1.Equals(h2))
+	notEquals(h1, *h2)
 }
 
 func TestHistogramCompact(t *testing.T) {

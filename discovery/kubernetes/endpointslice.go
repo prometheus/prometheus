@@ -73,7 +73,7 @@ func NewEndpointSlice(l log.Logger, eps cache.SharedIndexInformer, svc, pod, nod
 		queue:              workqueue.NewNamed("endpointSlice"),
 	}
 
-	e.endpointSliceInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
+	_, err := e.endpointSliceInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
 			epslAddCount.Inc()
 			e.enqueue(o)
@@ -87,6 +87,9 @@ func NewEndpointSlice(l log.Logger, eps cache.SharedIndexInformer, svc, pod, nod
 			e.enqueue(o)
 		},
 	})
+	if err != nil {
+		level.Error(l).Log("msg", "Error adding endpoint slices event handler.", "err", err)
+	}
 
 	serviceUpdate := func(o interface{}) {
 		svc, err := convertToService(o)
@@ -109,7 +112,7 @@ func NewEndpointSlice(l log.Logger, eps cache.SharedIndexInformer, svc, pod, nod
 			}
 		}
 	}
-	e.serviceInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
+	_, err = e.serviceInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
 			svcAddCount.Inc()
 			serviceUpdate(o)
@@ -123,9 +126,12 @@ func NewEndpointSlice(l log.Logger, eps cache.SharedIndexInformer, svc, pod, nod
 			serviceUpdate(o)
 		},
 	})
+	if err != nil {
+		level.Error(l).Log("msg", "Error adding services event handler.", "err", err)
+	}
 
 	if e.withNodeMetadata {
-		e.nodeInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		_, err = e.nodeInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 			AddFunc: func(o interface{}) {
 				node := o.(*apiv1.Node)
 				e.enqueueNode(node.Name)
@@ -139,6 +145,9 @@ func NewEndpointSlice(l log.Logger, eps cache.SharedIndexInformer, svc, pod, nod
 				e.enqueueNode(node.Name)
 			},
 		})
+		if err != nil {
+			level.Error(l).Log("msg", "Error adding nodes event handler.", "err", err)
+		}
 	}
 
 	return e

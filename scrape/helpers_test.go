@@ -42,7 +42,7 @@ func (a nopAppender) AppendExemplar(storage.SeriesRef, labels.Labels, exemplar.E
 	return 0, nil
 }
 
-func (a nopAppender) AppendHistogram(storage.SeriesRef, labels.Labels, int64, *histogram.Histogram) (storage.SeriesRef, error) {
+func (a nopAppender) AppendHistogram(storage.SeriesRef, labels.Labels, int64, *histogram.Histogram, *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	return 0, nil
 }
 
@@ -60,8 +60,9 @@ type sample struct {
 }
 
 type histogramSample struct {
-	t int64
-	h *histogram.Histogram
+	t  int64
+	h  *histogram.Histogram
+	fh *histogram.FloatHistogram
 }
 
 // collectResultAppender records all samples that were added through the appender.
@@ -110,13 +111,13 @@ func (a *collectResultAppender) AppendExemplar(ref storage.SeriesRef, l labels.L
 	return a.next.AppendExemplar(ref, l, e)
 }
 
-func (a *collectResultAppender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram) (storage.SeriesRef, error) {
-	a.pendingHistograms = append(a.pendingHistograms, histogramSample{h: h, t: t})
+func (a *collectResultAppender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	a.pendingHistograms = append(a.pendingHistograms, histogramSample{h: h, fh: fh, t: t})
 	if a.next == nil {
 		return 0, nil
 	}
 
-	return a.next.AppendHistogram(ref, l, t, h)
+	return a.next.AppendHistogram(ref, l, t, h, fh)
 }
 
 func (a *collectResultAppender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m metadata.Metadata) (storage.SeriesRef, error) {

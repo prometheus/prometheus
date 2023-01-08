@@ -72,7 +72,7 @@ func NewEndpoints(l log.Logger, eps cache.SharedIndexInformer, svc, pod, node ca
 		queue:            workqueue.NewNamed("endpoints"),
 	}
 
-	e.endpointsInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
+	_, err := e.endpointsInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
 			epAddCount.Inc()
 			e.enqueue(o)
@@ -86,6 +86,9 @@ func NewEndpoints(l log.Logger, eps cache.SharedIndexInformer, svc, pod, node ca
 			e.enqueue(o)
 		},
 	})
+	if err != nil {
+		level.Error(l).Log("msg", "Error adding endpoints event handler.", "err", err)
+	}
 
 	serviceUpdate := func(o interface{}) {
 		svc, err := convertToService(o)
@@ -106,7 +109,7 @@ func NewEndpoints(l log.Logger, eps cache.SharedIndexInformer, svc, pod, node ca
 			level.Error(e.logger).Log("msg", "retrieving endpoints failed", "err", err)
 		}
 	}
-	e.serviceInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
+	_, err = e.serviceInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		// TODO(fabxc): potentially remove add and delete event handlers. Those should
 		// be triggered via the endpoint handlers already.
 		AddFunc: func(o interface{}) {
@@ -122,8 +125,11 @@ func NewEndpoints(l log.Logger, eps cache.SharedIndexInformer, svc, pod, node ca
 			serviceUpdate(o)
 		},
 	})
+	if err != nil {
+		level.Error(l).Log("msg", "Error adding services event handler.", "err", err)
+	}
 	if e.withNodeMetadata {
-		e.nodeInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		_, err = e.nodeInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 			AddFunc: func(o interface{}) {
 				node := o.(*apiv1.Node)
 				e.enqueueNode(node.Name)
@@ -137,6 +143,9 @@ func NewEndpoints(l log.Logger, eps cache.SharedIndexInformer, svc, pod, node ca
 				e.enqueueNode(node.Name)
 			},
 		})
+		if err != nil {
+			level.Error(l).Log("msg", "Error adding nodes event handler.", "err", err)
+		}
 	}
 
 	return e

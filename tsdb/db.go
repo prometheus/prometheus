@@ -68,7 +68,7 @@ const (
 // ErrNotReady is returned if the underlying storage is not ready yet.
 var ErrNotReady = errors.New("TSDB not ready")
 
-// DefaultOptions used for the DB. They are sane for setups using
+// DefaultOptions used for the DB. They are reasonable for setups using
 // millisecond precision timestamps.
 func DefaultOptions() *Options {
 	return &Options{
@@ -1033,7 +1033,7 @@ func (a dbAppender) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRef, 
 	if g, ok := a.Appender.(storage.GetRef); ok {
 		return g.GetRef(lset, hash)
 	}
-	return 0, nil
+	return 0, labels.EmptyLabels()
 }
 
 func (a dbAppender) Commit() error {

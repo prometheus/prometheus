@@ -586,6 +586,7 @@ var expectedConf = &Config{
 							Values: []string{"web", "db"},
 						},
 					},
+					HTTPClientConfig: config.DefaultHTTPClientConfig,
 				},
 			},
 		},
@@ -602,12 +603,13 @@ var expectedConf = &Config{
 
 			ServiceDiscoveryConfigs: discovery.Configs{
 				&aws.LightsailSDConfig{
-					Region:          "us-east-1",
-					AccessKey:       "access",
-					SecretKey:       "mysecret",
-					Profile:         "profile",
-					RefreshInterval: model.Duration(60 * time.Second),
-					Port:            80,
+					Region:           "us-east-1",
+					AccessKey:        "access",
+					SecretKey:        "mysecret",
+					Profile:          "profile",
+					RefreshInterval:  model.Duration(60 * time.Second),
+					Port:             80,
+					HTTPClientConfig: config.DefaultHTTPClientConfig,
 				},
 			},
 		},
@@ -1741,6 +1743,33 @@ func TestExpandExternalLabels(t *testing.T) {
 	c, err = LoadFile("testdata/external_labels.good.yml", false, true, log.NewNopLogger())
 	require.NoError(t, err)
 	require.Equal(t, labels.FromStrings("bar", "foo", "baz", "fooTestValuebar", "foo", "TestValue", "qux", "foo${TEST}", "xyz", "foo$bar"), c.GlobalConfig.ExternalLabels)
+}
+
+func TestAgentMode(t *testing.T) {
+	_, err := LoadFile("testdata/agent_mode.with_alert_manager.yml", true, false, log.NewNopLogger())
+	require.ErrorContains(t, err, "field alerting is not allowed in agent mode")
+
+	_, err = LoadFile("testdata/agent_mode.with_alert_relabels.yml", true, false, log.NewNopLogger())
+	require.ErrorContains(t, err, "field alerting is not allowed in agent mode")
+
+	_, err = LoadFile("testdata/agent_mode.with_rule_files.yml", true, false, log.NewNopLogger())
+	require.ErrorContains(t, err, "field rule_files is not allowed in agent mode")
+
+	_, err = LoadFile("testdata/agent_mode.with_remote_reads.yml", true, false, log.NewNopLogger())
+	require.ErrorContains(t, err, "field remote_read is not allowed in agent mode")
+
+	c, err := LoadFile("testdata/agent_mode.without_remote_writes.yml", true, false, log.NewNopLogger())
+	require.NoError(t, err)
+	require.Len(t, c.RemoteWriteConfigs, 0)
+
+	c, err = LoadFile("testdata/agent_mode.good.yml", true, false, log.NewNopLogger())
+	require.NoError(t, err)
+	require.Len(t, c.RemoteWriteConfigs, 1)
+	require.Equal(
+		t,
+		"http://remote1/push",
+		c.RemoteWriteConfigs[0].URL.String(),
+	)
 }
 
 func TestEmptyGlobalBlock(t *testing.T) {

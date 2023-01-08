@@ -162,7 +162,7 @@ test_metric_without_labels{instance=""} 1001 6000000
 	},
 	"external labels are added if not already present": {
 		params:         "match[]={__name__=~'.%2b'}", // '%2b' is an URL-encoded '+'.
-		externalLabels: labels.Labels{{Name: "foo", Value: "baz"}, {Name: "zone", Value: "ie"}},
+		externalLabels: labels.FromStrings("foo", "baz", "zone", "ie"),
 		code:           200,
 		body: `# TYPE test_metric1 untyped
 test_metric1{foo="bar",instance="i",zone="ie"} 10000 6000000
@@ -179,7 +179,7 @@ test_metric_without_labels{foo="baz",instance="",zone="ie"} 1001 6000000
 		// This makes no sense as a configuration, but we should
 		// know what it does anyway.
 		params:         "match[]={__name__=~'.%2b'}", // '%2b' is an URL-encoded '+'.
-		externalLabels: labels.Labels{{Name: "instance", Value: "baz"}},
+		externalLabels: labels.FromStrings("instance", "baz"),
 		code:           200,
 		body: `# TYPE test_metric1 untyped
 test_metric1{foo="bar",instance="i"} 10000 6000000

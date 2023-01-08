@@ -158,14 +158,15 @@ func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName
 
 				// Setting the rule labels after the output of the query,
 				// so they can override query output.
-				for _, l := range ruleLabels {
+				ruleLabels.Range(func(l labels.Label) {
 					lb.Set(l.Name, l.Value)
-				}
+				})
 
 				lb.Set(labels.MetricName, ruleName)
+				lbls := lb.Labels(labels.EmptyLabels())
 
 				for _, value := range sample.Values {
-					if err := app.add(ctx, lb.Labels(nil), timestamp.FromTime(value.Timestamp.Time()), float64(value.Value)); err != nil {
+					if err := app.add(ctx, lbls, timestamp.FromTime(value.Timestamp.Time()), float64(value.Value)); err != nil {
 						return fmt.Errorf("add: %w", err)
 					}
 				}

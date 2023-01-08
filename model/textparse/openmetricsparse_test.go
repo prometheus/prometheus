@@ -246,7 +246,6 @@ foo_total 17.0 1520879607.789 # {xx="yy"} 5`
 				require.Equal(t, true, found)
 				require.Equal(t, *exp[i].e, e)
 			}
-			res = res[:0]
 
 		case EntryType:
 			m, typ := p.Type()

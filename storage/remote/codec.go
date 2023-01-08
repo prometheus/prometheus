@@ -33,6 +33,7 @@ import (
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 )
 
 // decodeReadLimit is the maximum size of a read request body in bytes.
@@ -115,9 +116,10 @@ func ToQuery(from, to int64, matchers []*labels.Matcher, hints *storage.SelectHi
 func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, storage.Warnings, error) {
 	numSamples := 0
 	resp := &prompb.QueryResult{}
+	var iter chunkenc.Iterator
 	for ss.Next() {
 		series := ss.At()
-		iter := series.Iterator()
+		iter = series.Iterator(iter)
 		samples := []prompb.Sample{}
 
 		for iter.Next() == chunkenc.ValFloat {
@@ -151,10 +153,10 @@ func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, 
 func FromQueryResult(sortSeries bool, res *prompb.QueryResult) storage.SeriesSet {
 	series := make([]storage.Series, 0, len(res.Timeseries))
 	for _, ts := range res.Timeseries {
-		lbls := labelProtosToLabels(ts.Labels)
-		if err := validateLabelsAndMetricName(lbls); err != nil {
+		if err := validateLabelsAndMetricName(ts.Labels); err != nil {
 			return errSeriesSet{err: err}
 		}
+		lbls := labelProtosToLabels(ts.Labels)
 		series = append(series, &concreteSeries{labels: lbls, samples: ts.Samples})
 	}
 
@@ -199,17 +201,19 @@ func StreamChunkedReadResponses(
 	var (
 		chks []prompb.Chunk
 		lbls []prompb.Label
+		iter chunks.Iterator
 	)
 
 	for ss.Next() {
 		series := ss.At()
-		iter := series.Iterator()
+		iter = series.Iterator(iter)
 		lbls = MergeLabels(labelsToLabelsProto(series.Labels(), lbls), sortedExternalLabels)
 
-		frameBytesLeft := maxBytesInFrame
+		maxDataLength := maxBytesInFrame
 		for _, lbl := range lbls {
-			frameBytesLeft -= lbl.Size()
+			maxDataLength -= lbl.Size()
 		}
+		frameBytesLeft := maxDataLength
 
 		isNext := iter.Next()
 
@@ -255,6 +259,7 @@ func StreamChunkedReadResponses(
 			// We immediately flush the Write() so it is safe to return to the pool.
 			marshalPool.Put(&b)
 			chks = chks[:0]
+			frameBytesLeft = maxDataLength
 		}
 		if err := iter.Err(); err != nil {
 			return ss.Warnings(), err
@@ -343,10 +348,14 @@ type concreteSeries struct {
 }
 
 func (c *concreteSeries) Labels() labels.Labels {
-	return labels.New(c.labels...)
+	return c.labels.Copy()
 }
 
-func (c *concreteSeries) Iterator() chunkenc.Iterator {
+func (c *concreteSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
+	if csi, ok := it.(*concreteSeriesIterator); ok {
+		csi.reset(c)
+		return csi
+	}
 	return newConcreteSeriersIterator(c)
 }
 
@@ -361,6 +370,11 @@ func newConcreteSeriersIterator(series *concreteSeries) chunkenc.Iterator {
 		cur:    -1,
 		series: series,
 	}
+}
+
+func (c *concreteSeriesIterator) reset(series *concreteSeries) {
+	c.cur = -1
+	c.series = series
 }
 
 // Seek implements storage.SeriesIterator.
@@ -429,7 +443,7 @@ func (c *concreteSeriesIterator) Err() error {
 
 // validateLabelsAndMetricName validates the label names/values and metric names returned from remote read,
 // also making sure that there are no labels with duplicate names
-func validateLabelsAndMetricName(ls labels.Labels) error {
+func validateLabelsAndMetricName(ls []prompb.Label) error {
 	for i, l := range ls {
 		if l.Name == labels.MetricName && !model.IsValidMetricName(model.LabelValue(l.Value)) {
 			return fmt.Errorf("invalid metric name: %v", l.Value)
@@ -569,30 +583,24 @@ func LabelProtosToMetric(labelPairs []*prompb.Label) model.Metric {
 }
 
 func labelProtosToLabels(labelPairs []prompb.Label) labels.Labels {
-	result := make(labels.Labels, 0, len(labelPairs))
+	b := labels.ScratchBuilder{}
 	for _, l := range labelPairs {
-		result = append(result, labels.Label{
-			Name:  l.Name,
-			Value: l.Value,
-		})
+		b.Add(l.Name, l.Value)
 	}
-	sort.Sort(result)
-	return result
+	b.Sort()
+	return b.Labels()
 }
 
 // labelsToLabelsProto transforms labels into prompb labels. The buffer slice
 // will be used to avoid allocations if it is big enough to store the labels.
-func labelsToLabelsProto(labels labels.Labels, buf []prompb.Label) []prompb.Label {
+func labelsToLabelsProto(lbls labels.Labels, buf []prompb.Label) []prompb.Label {
 	result := buf[:0]
-	if cap(buf) < len(labels) {
-		result = make([]prompb.Label, 0, len(labels))
-	}
-	for _, l := range labels {
+	lbls.Range(func(l labels.Label) {
 		result = append(result, prompb.Label{
 			Name:  l.Name,
 			Value: l.Value,
 		})
-	}
+	})
 	return result
 }
 

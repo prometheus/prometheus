@@ -353,9 +353,9 @@ func (p *MemPostings) Iter(f func(labels.Label, Postings) error) error {
 func (p *MemPostings) Add(id storage.SeriesRef, lset labels.Labels) {
 	p.mtx.Lock()
 
-	for _, l := range lset {
+	lset.Range(func(l labels.Label) {
 		p.addFor(id, l)
-	}
+	})
 	p.addFor(id, allPostingsKey)
 
 	p.mtx.Unlock()
