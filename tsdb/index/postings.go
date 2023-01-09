@@ -353,9 +353,9 @@ func (p *MemPostings) Iter(f func(labels.Label, Postings) error) error {
 func (p *MemPostings) Add(id storage.SeriesRef, lset labels.Labels) {
 	p.mtx.Lock()
 
-	for _, l := range lset {
+	lset.Range(func(l labels.Label) {
 		p.addFor(id, l)
-	}
+	})
 	p.addFor(id, allPostingsKey)
 
 	p.mtx.Unlock()
@@ -857,13 +857,6 @@ func (c *PostingsCloner) Clone() Postings {
 	}
 	return newListPostings(c.ids...)
 }
-
-// seriesRefSlice attaches the methods of sort.Interface to []storage.SeriesRef, sorting in increasing order.
-type seriesRefSlice []storage.SeriesRef
-
-func (x seriesRefSlice) Len() int           { return len(x) }
-func (x seriesRefSlice) Less(i, j int) bool { return x[i] < x[j] }
-func (x seriesRefSlice) Swap(i, j int)      { x[i], x[j] = x[j], x[i] }
 
 // FindIntersectingPostings checks the intersection of p and candidates[i] for each i in candidates,
 // if intersection is non empty, then i is added to the indexes returned.

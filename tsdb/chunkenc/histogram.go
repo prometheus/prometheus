@@ -67,7 +67,7 @@ func (c *HistogramChunk) Layout() (
 	err error,
 ) {
 	if c.NumSamples() == 0 {
-		panic("HistoChunk.Layout() called on an empty chunk")
+		panic("HistogramChunk.Layout() called on an empty chunk")
 	}
 	b := newBReader(c.Bytes()[2:])
 	return readHistogramChunkLayout(&b)
@@ -88,15 +88,20 @@ const (
 	UnknownCounterReset CounterResetHeader = 0b00000000
 )
 
-// SetCounterResetHeader sets the counter reset header.
-func (c *HistogramChunk) SetCounterResetHeader(h CounterResetHeader) {
+// setCounterResetHeader sets the counter reset header of the chunk
+// The third byte of the chunk is the counter reset header.
+func setCounterResetHeader(h CounterResetHeader, bytes []byte) {
 	switch h {
 	case CounterReset, NotCounterReset, GaugeType, UnknownCounterReset:
-		bytes := c.Bytes()
 		bytes[2] = (bytes[2] & 0b00111111) | byte(h)
 	default:
 		panic("invalid CounterResetHeader type")
 	}
+}
+
+// SetCounterResetHeader sets the counter reset header.
+func (c *HistogramChunk) SetCounterResetHeader(h CounterResetHeader) {
+	setCounterResetHeader(h, c.Bytes())
 }
 
 // GetCounterResetHeader returns the info about the first 2 bits of the chunk
@@ -176,7 +181,7 @@ func newHistogramIterator(b []byte) *histogramIterator {
 }
 
 func (c *HistogramChunk) iterator(it Iterator) *histogramIterator {
-	// This commet is copied from XORChunk.iterator:
+	// This comment is copied from XORChunk.iterator:
 	//   Should iterators guarantee to act on a copy of the data so it doesn't lock append?
 	//   When using striped locks to guard access to chunks, probably yes.
 	//   Could only copy data if the chunk is not completed yet.
@@ -221,6 +226,12 @@ type HistogramAppender struct {
 // samples must never be appended to a histogram chunk.
 func (a *HistogramAppender) Append(int64, float64) {
 	panic("appended a float sample to a histogram chunk")
+}
+
+// AppendFloatHistogram implements Appender. This implementation panics because float
+// histogram samples must never be appended to a histogram chunk.
+func (a *HistogramAppender) AppendFloatHistogram(int64, *histogram.FloatHistogram) {
+	panic("appended a float histogram to a histogram chunk")
 }
 
 // Appendable returns whether the chunk can be appended to, and if so
@@ -294,6 +305,10 @@ func (a *HistogramAppender) Appendable(h *histogram.Histogram) (
 
 	okToAppend = true
 	return
+}
+
+type bucketValue interface {
+	int64 | float64
 }
 
 // counterResetInAnyBucket returns true if there was a counter reset for any
@@ -515,10 +530,10 @@ func (a *HistogramAppender) Recode(
 		// Save the modified histogram to the new chunk.
 		hOld.PositiveSpans, hOld.NegativeSpans = positiveSpans, negativeSpans
 		if len(positiveInterjections) > 0 {
-			hOld.PositiveBuckets = interject(hOld.PositiveBuckets, positiveBuckets, positiveInterjections)
+			hOld.PositiveBuckets = interject(hOld.PositiveBuckets, positiveBuckets, positiveInterjections, true)
 		}
 		if len(negativeInterjections) > 0 {
-			hOld.NegativeBuckets = interject(hOld.NegativeBuckets, negativeBuckets, negativeInterjections)
+			hOld.NegativeBuckets = interject(hOld.NegativeBuckets, negativeBuckets, negativeInterjections, true)
 		}
 		app.AppendHistogram(tOld, hOld)
 	}
@@ -624,9 +639,9 @@ func (it *histogramIterator) Err() error {
 }
 
 func (it *histogramIterator) Reset(b []byte) {
-	// The first 2 bytes contain chunk headers.
+	// The first 3 bytes contain chunk headers.
 	// We skip that for actual samples.
-	it.br = newBReader(b[2:])
+	it.br = newBReader(b[3:])
 	it.numTotal = binary.BigEndian.Uint16(b)
 	it.numRead = 0
 
@@ -651,7 +666,7 @@ func (it *histogramIterator) Reset(b []byte) {
 	}
 
 	it.pBucketsDelta = it.pBucketsDelta[:0]
-	it.pBucketsDelta = it.pBucketsDelta[:0]
+	it.nBucketsDelta = it.nBucketsDelta[:0]
 
 	it.sum = 0
 	it.leading = 0
@@ -677,36 +692,17 @@ func (it *histogramIterator) Next() ValueType {
 		it.zThreshold = zeroThreshold
 		it.pSpans, it.nSpans = posSpans, negSpans
 		numPBuckets, numNBuckets := countSpans(posSpans), countSpans(negSpans)
-		// Allocate bucket slices as needed, recycling existing slices
-		// in case this iterator was reset and already has slices of a
-		// sufficient capacity.
+		// The code below recycles existing slices in case this iterator
+		// was reset and already has slices of a sufficient capacity.
 		if numPBuckets > 0 {
-			if cap(it.pBuckets) < numPBuckets {
-				it.pBuckets = make([]int64, numPBuckets)
-				// If cap(it.pBuckets) isn't sufficient, neither is the cap of the others.
-				it.pBucketsDelta = make([]int64, numPBuckets)
-				it.pFloatBuckets = make([]float64, numPBuckets)
-			} else {
-				for i := 0; i < numPBuckets; i++ {
-					it.pBuckets = append(it.pBuckets, 0)
-					it.pBucketsDelta = append(it.pBucketsDelta, 0)
-					it.pFloatBuckets = append(it.pFloatBuckets, 0)
-				}
-			}
+			it.pBuckets = append(it.pBuckets, make([]int64, numPBuckets)...)
+			it.pBucketsDelta = append(it.pBucketsDelta, make([]int64, numPBuckets)...)
+			it.pFloatBuckets = append(it.pFloatBuckets, make([]float64, numPBuckets)...)
 		}
 		if numNBuckets > 0 {
-			if cap(it.nBuckets) < numNBuckets {
-				it.nBuckets = make([]int64, numNBuckets)
-				// If cap(it.nBuckets) isn't sufficient, neither is the cap of the others.
-				it.nBucketsDelta = make([]int64, numNBuckets)
-				it.nFloatBuckets = make([]float64, numNBuckets)
-			} else {
-				for i := 0; i < numNBuckets; i++ {
-					it.nBuckets = append(it.nBuckets, 0)
-					it.nBucketsDelta = append(it.nBucketsDelta, 0)
-					it.pFloatBuckets = append(it.pFloatBuckets, 0)
-				}
-			}
+			it.nBuckets = append(it.nBuckets, make([]int64, numNBuckets)...)
+			it.nBucketsDelta = append(it.nBucketsDelta, make([]int64, numNBuckets)...)
+			it.nFloatBuckets = append(it.nFloatBuckets, make([]float64, numNBuckets)...)
 		}
 
 		// Now read the actual data.

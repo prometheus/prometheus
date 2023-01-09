@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"sort"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -144,6 +143,7 @@ func (l *promlexer) Error(es string) {
 // Prometheus text exposition format.
 type PromParser struct {
 	l       *promlexer
+	builder labels.ScratchBuilder
 	series  []byte
 	text    []byte
 	mtype   MetricType
@@ -212,14 +212,11 @@ func (p *PromParser) Comment() []byte {
 // Metric writes the labels of the current sample into the passed labels.
 // It returns the string from which the metric was parsed.
 func (p *PromParser) Metric(l *labels.Labels) string {
-	// Allocate the full immutable string immediately, so we just
-	// have to create references on it below.
+	// Copy the buffer to a string: this is only necessary for the return value.
 	s := string(p.series)
 
-	*l = append(*l, labels.Label{
-		Name:  labels.MetricName,
-		Value: s[:p.offsets[0]-p.start],
-	})
+	p.builder.Reset()
+	p.builder.Add(labels.MetricName, s[:p.offsets[0]-p.start])
 
 	for i := 1; i < len(p.offsets); i += 4 {
 		a := p.offsets[i] - p.start
@@ -227,16 +224,16 @@ func (p *PromParser) Metric(l *labels.Labels) string {
 		c := p.offsets[i+2] - p.start
 		d := p.offsets[i+3] - p.start
 
+		value := s[c:d]
 		// Replacer causes allocations. Replace only when necessary.
 		if strings.IndexByte(s[c:d], byte('\\')) >= 0 {
-			*l = append(*l, labels.Label{Name: s[a:b], Value: lvalReplacer.Replace(s[c:d])})
-			continue
+			value = lvalReplacer.Replace(value)
 		}
-		*l = append(*l, labels.Label{Name: s[a:b], Value: s[c:d]})
+		p.builder.Add(s[a:b], value)
 	}
 
-	// Sort labels to maintain the sorted labels invariant.
-	sort.Sort(*l)
+	p.builder.Sort()
+	*l = p.builder.Labels()
 
 	return s
 }
@@ -343,7 +340,7 @@ func (p *PromParser) Next() (Entry, error) {
 			t2 = p.nextToken()
 		}
 		if t2 != tValue {
-			return EntryInvalid, parseError("expected value after metric", t)
+			return EntryInvalid, parseError("expected value after metric", t2)
 		}
 		if p.val, err = parseFloat(yoloString(p.l.buf())); err != nil {
 			return EntryInvalid, err
@@ -353,7 +350,7 @@ func (p *PromParser) Next() (Entry, error) {
 			p.val = math.Float64frombits(value.NormalNaN)
 		}
 		p.hasTS = false
-		switch p.nextToken() {
+		switch t := p.nextToken(); t {
 		case tLinebreak:
 			break
 		case tTimestamp:
@@ -362,7 +359,7 @@ func (p *PromParser) Next() (Entry, error) {
 				return EntryInvalid, err
 			}
 			if t2 := p.nextToken(); t2 != tLinebreak {
-				return EntryInvalid, parseError("expected next entry after timestamp", t)
+				return EntryInvalid, parseError("expected next entry after timestamp", t2)
 			}
 		default:
 			return EntryInvalid, parseError("expected timestamp or new record", t)

@@ -290,7 +290,7 @@ func TestInterjection(t *testing.T) {
 			require.Equal(t, s.interjections, interjections)
 
 			gotBuckets := make([]int64, len(s.bucketsOut))
-			interject(s.bucketsIn, gotBuckets, interjections)
+			interject(s.bucketsIn, gotBuckets, interjections, true)
 			require.Equal(t, s.bucketsOut, gotBuckets)
 		})
 	}

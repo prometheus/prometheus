@@ -127,11 +127,11 @@ func TestLazyLoader_WithSamplesTill(t *testing.T) {
 				require.NoError(t, err)
 				for _, s := range tc.series {
 					var matchers []*labels.Matcher
-					for _, label := range s.Metric {
+					s.Metric.Range(func(label labels.Label) {
 						m, err := labels.NewMatcher(labels.MatchEqual, label.Name, label.Value)
 						require.NoError(t, err)
 						matchers = append(matchers, m)
-					}
+					})
 
 					// Get the series for the matcher.
 					ss := querier.Select(false, nil, matchers...)
@@ -143,7 +143,7 @@ func TestLazyLoader_WithSamplesTill(t *testing.T) {
 					got := Series{
 						Metric: storageSeries.Labels(),
 					}
-					it := storageSeries.Iterator()
+					it := storageSeries.Iterator(nil)
 					for it.Next() == chunkenc.ValFloat {
 						t, v := it.At()
 						got.Points = append(got.Points, Point{T: t, V: v})

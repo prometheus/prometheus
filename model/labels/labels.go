@@ -20,6 +20,7 @@ import (
 	"strconv"
 
 	"github.com/cespare/xxhash/v2"
+	"github.com/prometheus/common/model"
 )
 
 // Well-known label names used by Prometheus components.
@@ -134,6 +135,7 @@ func (ls Labels) MatchLabels(on bool, names ...string) Labels {
 }
 
 // Hash returns a hash value for the label set.
+// Note: the result is not guaranteed to be consistent across different runs of Prometheus.
 func (ls Labels) Hash() uint64 {
 	// Use xxhash.Sum64(b) for fast path as it's faster.
 	b := make([]byte, 0, 1024)
@@ -311,6 +313,19 @@ func (ls Labels) WithoutEmpty() Labels {
 	return ls
 }
 
+// IsValid checks if the metric name or label names are valid.
+func (ls Labels) IsValid() bool {
+	for _, l := range ls {
+		if l.Name == model.MetricNameLabel && !model.IsValidMetricName(model.LabelValue(l.Value)) {
+			return false
+		}
+		if !model.LabelName(l.Name).IsValid() || !model.LabelValue(l.Value).IsValid() {
+			return false
+		}
+	}
+	return true
+}
+
 // Equal returns whether the two label sets are equal.
 func Equal(ls, o Labels) bool {
 	if len(ls) != len(o) {
@@ -342,9 +357,7 @@ func EmptyLabels() Labels {
 // The caller has to guarantee that all label names are unique.
 func New(ls ...Label) Labels {
 	set := make(Labels, 0, len(ls))
-	for _, l := range ls {
-		set = append(set, l)
-	}
+	set = append(set, ls...)
 	sort.Sort(set)
 
 	return set
@@ -397,6 +410,49 @@ func Compare(a, b Labels) int {
 	}
 	// If all labels so far were in common, the set with fewer labels comes first.
 	return len(a) - len(b)
+}
+
+// Copy labels from b on top of whatever was in ls previously, reusing memory or expanding if needed.
+func (ls *Labels) CopyFrom(b Labels) {
+	(*ls) = append((*ls)[:0], b...)
+}
+
+// IsEmpty returns true if ls represents an empty set of labels.
+func (ls Labels) IsEmpty() bool {
+	return len(ls) == 0
+}
+
+// Range calls f on each label.
+func (ls Labels) Range(f func(l Label)) {
+	for _, l := range ls {
+		f(l)
+	}
+}
+
+// Validate calls f on each label. If f returns a non-nil error, then it returns that error cancelling the iteration.
+func (ls Labels) Validate(f func(l Label) error) error {
+	for _, l := range ls {
+		if err := f(l); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// InternStrings calls intern on every string value inside ls, replacing them with what it returns.
+func (ls *Labels) InternStrings(intern func(string) string) {
+	for i, l := range *ls {
+		(*ls)[i].Name = intern(l.Name)
+		(*ls)[i].Value = intern(l.Value)
+	}
+}
+
+// ReleaseStrings calls release on every string value inside ls.
+func (ls Labels) ReleaseStrings(release func(string)) {
+	for _, l := range ls {
+		release(l.Name)
+		release(l.Value)
+	}
 }
 
 // Builder allows modifying Labels.
@@ -455,7 +511,7 @@ Outer:
 	return b
 }
 
-// Set the name/value pair as a label.
+// Set the name/value pair as a label. A value of "" means delete that label.
 func (b *Builder) Set(n, v string) *Builder {
 	if v == "" {
 		// Empty labels are the same as missing labels.
@@ -509,4 +565,41 @@ Outer:
 		sort.Sort(res)
 	}
 	return res
+}
+
+// ScratchBuilder allows efficient construction of a Labels from scratch.
+type ScratchBuilder struct {
+	add Labels
+}
+
+// NewScratchBuilder creates a ScratchBuilder initialized for Labels with n entries.
+func NewScratchBuilder(n int) ScratchBuilder {
+	return ScratchBuilder{add: make([]Label, 0, n)}
+}
+
+func (b *ScratchBuilder) Reset() {
+	b.add = b.add[:0]
+}
+
+// Add a name/value pair.
+// Note if you Add the same name twice you will get a duplicate label, which is invalid.
+func (b *ScratchBuilder) Add(name, value string) {
+	b.add = append(b.add, Label{Name: name, Value: value})
+}
+
+// Sort the labels added so far by name.
+func (b *ScratchBuilder) Sort() {
+	sort.Sort(b.add)
+}
+
+// Asssign is for when you already have a Labels which you want this ScratchBuilder to return.
+func (b *ScratchBuilder) Assign(ls Labels) {
+	b.add = append(b.add[:0], ls...) // Copy on top of our slice, so we don't retain the input slice.
+}
+
+// Return the name/value pairs added so far as a Labels object.
+// Note: if you want them sorted, call Sort() first.
+func (b *ScratchBuilder) Labels() Labels {
+	// Copy the slice, so the next use of ScratchBuilder doesn't overwrite.
+	return append([]Label{}, b.add...)
 }

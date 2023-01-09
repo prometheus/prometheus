@@ -132,6 +132,9 @@ annotations:
   [ <labelname>: <tmpl_string> ]
 ```
 
+See also the
+[best practices for naming metrics created by recording rules](https://prometheus.io/docs/practices/rules/#recording-rules).
+
 # Limiting alerts and series
 
 A limit for alerts produced by alerting rules and series produced recording rules

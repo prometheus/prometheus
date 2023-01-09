@@ -630,7 +630,6 @@ metric: <
 				require.Equal(t, true, found)
 				require.Equal(t, exp[i].e[0], e)
 			}
-			res = res[:0]
 
 		case EntryHistogram:
 			m, ts, shs, fhs := p.Histogram()
@@ -642,7 +641,6 @@ metric: <
 				require.Equal(t, exp[i].t, int64(0))
 			}
 			require.Equal(t, exp[i].lset, res)
-			res = res[:0]
 			require.Equal(t, exp[i].m, string(m))
 			if shs != nil {
 				require.Equal(t, exp[i].shs, shs)

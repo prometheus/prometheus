@@ -203,20 +203,20 @@ func (re Regexp) String() string {
 
 // Process returns a relabeled copy of the given label set. The relabel configurations
 // are applied in order of input.
-// If a label set is dropped, nil is returned.
+// If a label set is dropped, EmptyLabels and false is returned.
 // May return the input labelSet modified.
-func Process(lbls labels.Labels, cfgs ...*Config) labels.Labels {
-	lb := labels.NewBuilder(nil)
+func Process(lbls labels.Labels, cfgs ...*Config) (ret labels.Labels, keep bool) {
+	lb := labels.NewBuilder(labels.EmptyLabels())
 	for _, cfg := range cfgs {
-		lbls = relabel(lbls, cfg, lb)
-		if lbls == nil {
-			return nil
+		lbls, keep = relabel(lbls, cfg, lb)
+		if !keep {
+			return labels.EmptyLabels(), false
 		}
 	}
-	return lbls
+	return lbls, true
 }
 
-func relabel(lset labels.Labels, cfg *Config, lb *labels.Builder) labels.Labels {
+func relabel(lset labels.Labels, cfg *Config, lb *labels.Builder) (ret labels.Labels, keep bool) {
 	var va [16]string
 	values := va[:0]
 	if len(cfg.SourceLabels) > cap(values) {
@@ -232,19 +232,19 @@ func relabel(lset labels.Labels, cfg *Config, lb *labels.Builder) labels.Labels 
 	switch cfg.Action {
 	case Drop:
 		if cfg.Regex.MatchString(val) {
-			return nil
+			return labels.EmptyLabels(), false
 		}
 	case Keep:
 		if !cfg.Regex.MatchString(val) {
-			return nil
+			return labels.EmptyLabels(), false
 		}
 	case DropEqual:
 		if lset.Get(cfg.TargetLabel) == val {
-			return nil
+			return labels.EmptyLabels(), false
 		}
 	case KeepEqual:
 		if lset.Get(cfg.TargetLabel) != val {
-			return nil
+			return labels.EmptyLabels(), false
 		}
 	case Replace:
 		indexes := cfg.Regex.FindStringSubmatchIndex(val)
@@ -271,29 +271,29 @@ func relabel(lset labels.Labels, cfg *Config, lb *labels.Builder) labels.Labels 
 		mod := sum64(md5.Sum([]byte(val))) % cfg.Modulus
 		lb.Set(cfg.TargetLabel, fmt.Sprintf("%d", mod))
 	case LabelMap:
-		for _, l := range lset {
+		lset.Range(func(l labels.Label) {
 			if cfg.Regex.MatchString(l.Name) {
 				res := cfg.Regex.ReplaceAllString(l.Name, cfg.Replacement)
 				lb.Set(res, l.Value)
 			}
-		}
+		})
 	case LabelDrop:
-		for _, l := range lset {
+		lset.Range(func(l labels.Label) {
 			if cfg.Regex.MatchString(l.Name) {
 				lb.Del(l.Name)
 			}
-		}
+		})
 	case LabelKeep:
-		for _, l := range lset {
+		lset.Range(func(l labels.Label) {
 			if !cfg.Regex.MatchString(l.Name) {
 				lb.Del(l.Name)
 			}
-		}
+		})
 	default:
 		panic(fmt.Errorf("relabel: unknown relabel action type %q", cfg.Action))
 	}
 
-	return lb.Labels(lset)
+	return lb.Labels(lset), true
 }
 
 // sum64 sums the md5 hash to an uint64.

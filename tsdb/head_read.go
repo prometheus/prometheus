@@ -175,15 +175,14 @@ func (h *headIndexReader) ShardedPostings(p index.Postings, shardIndex, shardCou
 }
 
 // Series returns the series for the given reference.
-// Chunks are skipped if chks is nil.
-func (h *headIndexReader) Series(ref storage.SeriesRef, lbls *labels.Labels, chks *[]chunks.Meta) error {
+func (h *headIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
 	s := h.head.series.getByID(chunks.HeadSeriesRef(ref))
 
 	if s == nil {
 		h.head.metrics.seriesNotFound.Inc()
 		return storage.ErrNotFound
 	}
-	*lbls = append((*lbls)[:0], s.lset...)
+	builder.Assign(s.lset)
 
 	if chks == nil {
 		return nil
@@ -254,9 +253,9 @@ func (h *headIndexReader) LabelNamesFor(ids ...storage.SeriesRef) ([]string, err
 		if memSeries == nil {
 			return nil, storage.ErrNotFound
 		}
-		for _, lbl := range memSeries.lset {
+		memSeries.lset.Range(func(lbl labels.Label) {
 			namesMap[lbl.Name] = struct{}{}
-		}
+		})
 	}
 	names := make([]string, 0, len(namesMap))
 	for name := range namesMap {
@@ -535,11 +534,7 @@ func (o mergedOOOChunks) Appender() (chunkenc.Appender, error) {
 }
 
 func (o mergedOOOChunks) Iterator(iterator chunkenc.Iterator) chunkenc.Iterator {
-	iterators := make([]chunkenc.Iterator, 0, len(o.chunks))
-	for _, c := range o.chunks {
-		iterators = append(iterators, c.Chunk.Iterator(nil))
-	}
-	return storage.NewChainSampleIterator(iterators)
+	return storage.ChainSampleIteratorFromMetas(iterator, o.chunks)
 }
 
 func (o mergedOOOChunks) NumSamples() int {

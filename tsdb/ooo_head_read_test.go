@@ -357,13 +357,13 @@ func TestOOOHeadIndexReader_Series(t *testing.T) {
 					ir := NewOOOHeadIndexReader(h, tc.queryMinT, tc.queryMaxT)
 
 					var chks []chunks.Meta
-					var respLset labels.Labels
-					err := ir.Series(storage.SeriesRef(s1ID), &respLset, &chks)
+					var b labels.ScratchBuilder
+					err := ir.Series(storage.SeriesRef(s1ID), &b, &chks)
 					require.NoError(t, err)
-					require.Equal(t, s1Lset, respLset)
+					require.Equal(t, s1Lset, b.Labels())
 					require.Equal(t, expChunks, chks)
 
-					err = ir.Series(storage.SeriesRef(s1ID+1), &respLset, &chks)
+					err = ir.Series(storage.SeriesRef(s1ID+1), &b, &chks)
 					require.Equal(t, storage.ErrNotFound, err)
 				})
 			}
@@ -379,23 +379,15 @@ func TestOOOHeadChunkReader_LabelValues(t *testing.T) {
 	app := head.Appender(context.Background())
 
 	// Add in-order samples
-	_, err := app.Append(0, labels.Labels{
-		{Name: "foo", Value: "bar1"},
-	}, 100, 1)
+	_, err := app.Append(0, labels.FromStrings("foo", "bar1"), 100, 1)
 	require.NoError(t, err)
-	_, err = app.Append(0, labels.Labels{
-		{Name: "foo", Value: "bar2"},
-	}, 100, 2)
+	_, err = app.Append(0, labels.FromStrings("foo", "bar2"), 100, 2)
 	require.NoError(t, err)
 
 	// Add ooo samples for those series
-	_, err = app.Append(0, labels.Labels{
-		{Name: "foo", Value: "bar1"},
-	}, 90, 1)
+	_, err = app.Append(0, labels.FromStrings("foo", "bar1"), 90, 1)
 	require.NoError(t, err)
-	_, err = app.Append(0, labels.Labels{
-		{Name: "foo", Value: "bar2"},
-	}, 90, 2)
+	_, err = app.Append(0, labels.FromStrings("foo", "bar2"), 90, 2)
 	require.NoError(t, err)
 
 	require.NoError(t, app.Commit())
@@ -848,8 +840,8 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 			// markers like OOOLastRef. These are then used by the ChunkReader.
 			ir := NewOOOHeadIndexReader(db.head, tc.queryMinT, tc.queryMaxT)
 			var chks []chunks.Meta
-			var respLset labels.Labels
-			err := ir.Series(s1Ref, &respLset, &chks)
+			var b labels.ScratchBuilder
+			err := ir.Series(s1Ref, &b, &chks)
 			require.NoError(t, err)
 			require.Equal(t, len(tc.expChunksSamples), len(chks))
 
@@ -1011,8 +1003,8 @@ func TestOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 			// markers like OOOLastRef. These are then used by the ChunkReader.
 			ir := NewOOOHeadIndexReader(db.head, tc.queryMinT, tc.queryMaxT)
 			var chks []chunks.Meta
-			var respLset labels.Labels
-			err := ir.Series(s1Ref, &respLset, &chks)
+			var b labels.ScratchBuilder
+			err := ir.Series(s1Ref, &b, &chks)
 			require.NoError(t, err)
 			require.Equal(t, len(tc.expChunksSamples), len(chks))
 

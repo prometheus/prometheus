@@ -623,6 +623,38 @@ $ curl 'http://localhost:9090/api/v1/targets?state=active'
 }
 ```
 
+The `scrapePool` query parameter allows the caller to filter by scrape pool name.
+
+```json
+$ curl 'http://localhost:9090/api/v1/targets?scrapePool=node_exporter'
+{
+  "status": "success",
+  "data": {
+    "activeTargets": [
+      {
+        "discoveredLabels": {
+          "__address__": "127.0.0.1:9091",
+          "__metrics_path__": "/metrics",
+          "__scheme__": "http",
+          "job": "node_exporter"
+        },
+        "labels": {
+          "instance": "127.0.0.1:9091",
+          "job": "node_exporter"
+        },
+        "scrapePool": "node_exporter",
+        "scrapeUrl": "http://127.0.0.1:9091/metrics",
+        "globalUrl": "http://example-prometheus:9091/metrics",
+        "lastError": "",
+        "lastScrape": "2017-01-17T15:07:44.723715405+01:00",
+        "lastScrapeDuration": 50688943,
+        "health": "up"
+      }
+    ],
+    "droppedTargets": []
+  }
+}
+```
 
 ## Rules
 

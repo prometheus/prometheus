@@ -246,7 +246,6 @@ foo_total 17.0 1520879607.789 # {xx="yy"} 5`
 				require.Equal(t, true, found)
 				require.Equal(t, *exp[i].e, e)
 			}
-			res = res[:0]
 
 		case EntryType:
 			m, typ := p.Type()
@@ -595,7 +594,7 @@ func TestOMNullByteHandling(t *testing.T) {
 		},
 		{
 			input: "a{b\x00=\"hiih\"}	1",
-			err: "expected equal, got \"INVALID\"",
+			err:   "expected equal, got \"INVALID\"",
 		},
 		{
 			input: "a\x00{b=\"ddd\"} 1",

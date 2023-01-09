@@ -88,19 +88,20 @@ type Head struct {
 	// This should be typecasted to chunks.ChunkDiskMapperRef after loading.
 	minOOOMmapRef atomic.Uint64
 
-	metrics         *headMetrics
-	opts            *HeadOptions
-	wal, wbl        *wlog.WL
-	exemplarMetrics *ExemplarMetrics
-	exemplars       ExemplarStorage
-	logger          log.Logger
-	appendPool      sync.Pool
-	exemplarsPool   sync.Pool
-	histogramsPool  sync.Pool
-	metadataPool    sync.Pool
-	seriesPool      sync.Pool
-	bytesPool       sync.Pool
-	memChunkPool    sync.Pool
+	metrics             *headMetrics
+	opts                *HeadOptions
+	wal, wbl            *wlog.WL
+	exemplarMetrics     *ExemplarMetrics
+	exemplars           ExemplarStorage
+	logger              log.Logger
+	appendPool          sync.Pool
+	exemplarsPool       sync.Pool
+	histogramsPool      sync.Pool
+	floatHistogramsPool sync.Pool
+	metadataPool        sync.Pool
+	seriesPool          sync.Pool
+	bytesPool           sync.Pool
+	memChunkPool        sync.Pool
 
 	// All series addressable by their ID or hash.
 	series *stripeSeries
@@ -1882,7 +1883,8 @@ type memSeries struct {
 	lastValue float64
 
 	// We keep the last histogram value here (in addition to appending it to the chunk) so we can check for duplicates.
-	lastHistogramValue *histogram.Histogram
+	lastHistogramValue      *histogram.Histogram
+	lastFloatHistogramValue *histogram.FloatHistogram
 
 	// Current appender for the head chunk. Set when a new head chunk is cut.
 	// It is nil only if headChunk is nil. E.g. if there was an appender that created a new series, but rolled back the commit
@@ -1891,10 +1893,6 @@ type memSeries struct {
 
 	// txs is nil if isolation is disabled.
 	txs *txRing
-
-	// TODO(beorn7): The only reason we track this is to create a staleness
-	// marker as either histogram or float sample. Perhaps there is a better way.
-	isHistogramSeries bool
 
 	pendingCommit bool // Whether there are samples waiting to be committed to this series.
 }
@@ -2072,6 +2070,25 @@ func GenerateTestHistograms(n int) (r []*histogram.Histogram) {
 				{Offset: 1, Length: 2},
 			},
 			PositiveBuckets: []int64{int64(i + 1), 1, -1, 0},
+		})
+	}
+
+	return r
+}
+
+func GenerateTestFloatHistograms(n int) (r []*histogram.FloatHistogram) {
+	for i := 0; i < n; i++ {
+		r = append(r, &histogram.FloatHistogram{
+			Count:         5 + float64(i*4),
+			ZeroCount:     2 + float64(i),
+			ZeroThreshold: 0.001,
+			Sum:           18.4 * float64(i+1),
+			Schema:        1,
+			PositiveSpans: []histogram.Span{
+				{Offset: 0, Length: 2},
+				{Offset: 1, Length: 2},
+			},
+			PositiveBuckets: []float64{float64(i + 1), float64(i + 2), float64(i + 1), float64(i + 1)},
 		})
 	}
 

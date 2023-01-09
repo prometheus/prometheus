@@ -16,8 +16,10 @@ package remote
 import (
 	"bytes"
 	"fmt"
+	"sync"
 	"testing"
 
+	"github.com/gogo/protobuf/proto"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -26,6 +28,7 @@ import (
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 )
 
 var testHistogram = histogram.Histogram{
@@ -71,86 +74,86 @@ var writeRequestFixture = &prompb.WriteRequest{
 
 func TestValidateLabelsAndMetricName(t *testing.T) {
 	tests := []struct {
-		input       labels.Labels
+		input       []prompb.Label
 		expectedErr string
 		description string
 	}{
 		{
-			input: labels.FromStrings(
-				"__name__", "name",
-				"labelName", "labelValue",
-			),
+			input: []prompb.Label{
+				{Name: "__name__", Value: "name"},
+				{Name: "labelName", Value: "labelValue"},
+			},
 			expectedErr: "",
 			description: "regular labels",
 		},
 		{
-			input: labels.FromStrings(
-				"__name__", "name",
-				"_labelName", "labelValue",
-			),
+			input: []prompb.Label{
+				{Name: "__name__", Value: "name"},
+				{Name: "_labelName", Value: "labelValue"},
+			},
 			expectedErr: "",
 			description: "label name with _",
 		},
 		{
-			input: labels.FromStrings(
-				"__name__", "name",
-				"@labelName", "labelValue",
-			),
+			input: []prompb.Label{
+				{Name: "__name__", Value: "name"},
+				{Name: "@labelName", Value: "labelValue"},
+			},
 			expectedErr: "invalid label name: @labelName",
 			description: "label name with @",
 		},
 		{
-			input: labels.FromStrings(
-				"__name__", "name",
-				"123labelName", "labelValue",
-			),
+			input: []prompb.Label{
+				{Name: "__name__", Value: "name"},
+				{Name: "123labelName", Value: "labelValue"},
+			},
 			expectedErr: "invalid label name: 123labelName",
 			description: "label name starts with numbers",
 		},
 		{
-			input: labels.FromStrings(
-				"__name__", "name",
-				"", "labelValue",
-			),
+			input: []prompb.Label{
+				{Name: "__name__", Value: "name"},
+				{Name: "", Value: "labelValue"},
+			},
 			expectedErr: "invalid label name: ",
 			description: "label name is empty string",
 		},
 		{
-			input: labels.FromStrings(
-				"__name__", "name",
-				"labelName", string([]byte{0xff}),
-			),
+			input: []prompb.Label{
+				{Name: "__name__", Value: "name"},
+				{Name: "labelName", Value: string([]byte{0xff})},
+			},
 			expectedErr: "invalid label value: " + string([]byte{0xff}),
 			description: "label value is an invalid UTF-8 value",
 		},
 		{
-			input: labels.FromStrings(
-				"__name__", "@invalid_name",
-			),
+			input: []prompb.Label{
+				{Name: "__name__", Value: "@invalid_name"},
+			},
 			expectedErr: "invalid metric name: @invalid_name",
 			description: "metric name starts with @",
 		},
 		{
-			input: labels.FromStrings(
-				"__name__", "name1",
-				"__name__", "name2",
-			),
+			input: []prompb.Label{
+				{Name: "__name__", Value: "name1"},
+				{Name: "__name__", Value: "name2"},
+			},
 			expectedErr: "duplicate label with name: __name__",
 			description: "duplicate label names",
 		},
 		{
-			input: labels.FromStrings(
-				"label1", "name",
-				"label2", "name",
-			),
+			input: []prompb.Label{
+				{Name: "label1", Value: "name"},
+				{Name: "label2", Value: "name"},
+			},
 			expectedErr: "",
 			description: "duplicate label values",
 		},
 		{
-			input: labels.FromStrings(
-				"", "name",
-				"label2", "name",
-			),
+			input: []prompb.Label{
+				{Name: "", Value: "name"},
+				{Name: "label2", Value: "name"},
+			},
 			expectedErr: "invalid label name: ",
 			description: "don't report as duplicate label name",
 		},
@@ -197,8 +200,7 @@ func TestConcreteSeriesClonesLabels(t *testing.T) {
 	gotLabels := cs.Labels()
 	require.Equal(t, lbls, gotLabels)
 
-	gotLabels[0].Value = "foo"
-	gotLabels[1].Value = "bar"
+	gotLabels.CopyFrom(labels.FromStrings("a", "foo", "c", "foo"))
 
 	gotLabels = cs.Labels()
 	require.Equal(t, lbls, gotLabels)
@@ -215,7 +217,7 @@ func TestConcreteSeriesIterator(t *testing.T) {
 			{Value: 4, Timestamp: 4},
 		},
 	}
-	it := series.Iterator()
+	it := series.Iterator(nil)
 
 	// Seek to the first sample with ts=1.
 	require.Equal(t, chunkenc.ValFloat, it.Seek(1))
@@ -366,4 +368,120 @@ func TestNilHistogramProto(t *testing.T) {
 	// This function will panic if it impromperly handles nil
 	// values, causing the test to fail.
 	HistogramProtoToHistogram(prompb.Histogram{})
+}
+
+func TestStreamResponse(t *testing.T) {
+	lbs1 := labelsToLabelsProto(labels.FromStrings("instance", "localhost1", "job", "demo1"), nil)
+	lbs2 := labelsToLabelsProto(labels.FromStrings("instance", "localhost2", "job", "demo2"), nil)
+	chunk := prompb.Chunk{
+		Type: prompb.Chunk_XOR,
+		Data: make([]byte, 100),
+	}
+	lbSize, chunkSize := 0, chunk.Size()
+	for _, lb := range lbs1 {
+		lbSize += lb.Size()
+	}
+	maxBytesInFrame := lbSize + chunkSize*2
+	testData := []*prompb.ChunkedSeries{{
+		Labels: lbs1,
+		Chunks: []prompb.Chunk{chunk, chunk, chunk, chunk},
+	}, {
+		Labels: lbs2,
+		Chunks: []prompb.Chunk{chunk, chunk, chunk, chunk},
+	}}
+	css := newMockChunkSeriesSet(testData)
+	writer := mockWriter{}
+	warning, err := StreamChunkedReadResponses(&writer, 0,
+		css,
+		nil,
+		maxBytesInFrame,
+		&sync.Pool{})
+	require.Nil(t, warning)
+	require.Nil(t, err)
+	expectData := []*prompb.ChunkedSeries{{
+		Labels: lbs1,
+		Chunks: []prompb.Chunk{chunk, chunk},
+	}, {
+		Labels: lbs1,
+		Chunks: []prompb.Chunk{chunk, chunk},
+	}, {
+		Labels: lbs2,
+		Chunks: []prompb.Chunk{chunk, chunk},
+	}, {
+		Labels: lbs2,
+		Chunks: []prompb.Chunk{chunk, chunk},
+	}}
+	require.Equal(t, expectData, writer.actual)
+}
+
+type mockWriter struct {
+	actual []*prompb.ChunkedSeries
+}
+
+func (m *mockWriter) Write(p []byte) (n int, err error) {
+	cr := &prompb.ChunkedReadResponse{}
+	if err := proto.Unmarshal(p, cr); err != nil {
+		return 0, fmt.Errorf("unmarshaling: %w", err)
+	}
+	m.actual = append(m.actual, cr.ChunkedSeries...)
+	return len(p), nil
+}
+
+type mockChunkSeriesSet struct {
+	chunkedSeries []*prompb.ChunkedSeries
+	index         int
+}
+
+func newMockChunkSeriesSet(ss []*prompb.ChunkedSeries) storage.ChunkSeriesSet {
+	return &mockChunkSeriesSet{chunkedSeries: ss, index: -1}
+}
+
+func (c *mockChunkSeriesSet) Next() bool {
+	c.index++
+	return c.index < len(c.chunkedSeries)
+}
+
+func (c *mockChunkSeriesSet) At() storage.ChunkSeries {
+	return &storage.ChunkSeriesEntry{
+		Lset: labelProtosToLabels(c.chunkedSeries[c.index].Labels),
+		ChunkIteratorFn: func(chunks.Iterator) chunks.Iterator {
+			return &mockChunkIterator{
+				chunks: c.chunkedSeries[c.index].Chunks,
+				index:  -1,
+			}
+		},
+	}
+}
+
+func (c *mockChunkSeriesSet) Warnings() storage.Warnings { return nil }
+
+func (c *mockChunkSeriesSet) Err() error {
+	return nil
+}
+
+type mockChunkIterator struct {
+	chunks []prompb.Chunk
+	index  int
+}
+
+func (c *mockChunkIterator) At() chunks.Meta {
+	one := c.chunks[c.index]
+	chunk, err := chunkenc.FromData(chunkenc.Encoding(one.Type), one.Data)
+	if err != nil {
+		panic(err)
+	}
+	return chunks.Meta{
+		Chunk:   chunk,
+		MinTime: one.MinTimeMs,
+		MaxTime: one.MaxTimeMs,
+	}
+}
+
+func (c *mockChunkIterator) Next() bool {
+	c.index++
+	return c.index < len(c.chunks)
+}
+
+func (c *mockChunkIterator) Err() error {
+	return nil
 }

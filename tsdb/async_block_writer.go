@@ -151,7 +151,7 @@ func newPreventDoubleCloseIndexWriter(iw IndexWriter) *preventDoubleCloseIndexWr
 }
 
 func (p *preventDoubleCloseIndexWriter) Close() error {
-	if p.closed.CAS(false, true) {
+	if p.closed.CompareAndSwap(false, true) {
 		return p.IndexWriter.Close()
 	}
 	return nil
@@ -167,7 +167,7 @@ func newPreventDoubleCloseChunkWriter(cw ChunkWriter) *preventDoubleCloseChunkWr
 }
 
 func (p *preventDoubleCloseChunkWriter) Close() error {
-	if p.closed.CAS(false, true) {
+	if p.closed.CompareAndSwap(false, true) {
 		return p.ChunkWriter.Close()
 	}
 	return nil

@@ -280,19 +280,23 @@ loop:
 
 // interject merges 'in' with the provided interjections and writes them into
 // 'out', which must already have the appropriate length.
-func interject(in, out []int64, interjections []Interjection) []int64 {
+func interject[BV bucketValue](in, out []BV, interjections []Interjection, deltas bool) []BV {
 	var (
-		j      int   // Position in out.
-		v      int64 // The last value seen.
-		interj int   // The next interjection to process.
+		j      int // Position in out.
+		v      BV  // The last value seen.
+		interj int // The next interjection to process.
 	)
 	for i, d := range in {
 		if interj < len(interjections) && i == interjections[interj].pos {
 
 			// We have an interjection!
-			// Add interjection.num new delta values such that their
-			// bucket values equate 0.
-			out[j] = int64(-v)
+			// Add interjection.num new delta values such that their bucket values equate 0.
+			// When deltas==false, it means that it is an absolute value. So we set it to 0 directly.
+			if deltas {
+				out[j] = -v
+			} else {
+				out[j] = 0
+			}
 			j++
 			for x := 1; x < interjections[interj].num; x++ {
 				out[j] = 0
@@ -304,7 +308,13 @@ func interject(in, out []int64, interjections []Interjection) []int64 {
 			// should save is the original delta value + the last
 			// value of the point before the interjection (to undo
 			// the delta that was introduced by the interjection).
-			out[j] = d + v
+			// When deltas==false, it means that it is an absolute value,
+			// so we set it directly to the value in the 'in' slice.
+			if deltas {
+				out[j] = d + v
+			} else {
+				out[j] = d
+			}
 			j++
 			v = d + v
 			continue
@@ -321,7 +331,11 @@ func interject(in, out []int64, interjections []Interjection) []int64 {
 		// All interjections processed. Nothing more to do.
 	case len(interjections) - 1:
 		// One more interjection to process at the end.
-		out[j] = int64(-v)
+		if deltas {
+			out[j] = -v
+		} else {
+			out[j] = 0
+		}
 		j++
 		for x := 1; x < interjections[interj].num; x++ {
 			out[j] = 0

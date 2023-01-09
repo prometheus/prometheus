@@ -25,14 +25,14 @@ type BucketCount interface {
 	float64 | uint64
 }
 
-// internalBucketCount is used internally by Histogram and FloatHistogram. The
+// InternalBucketCount is used internally by Histogram and FloatHistogram. The
 // difference to the BucketCount above is that Histogram internally uses deltas
 // between buckets rather than absolute counts (while FloatHistogram uses
 // absolute counts directly). Go type parameters don't allow type
 // specialization. Therefore, where special treatment of deltas between buckets
 // vs. absolute counts is important, this information has to be provided as a
 // separate boolean parameter "deltaBuckets"
-type internalBucketCount interface {
+type InternalBucketCount interface {
 	float64 | int64
 }
 
@@ -86,7 +86,7 @@ type BucketIterator[BC BucketCount] interface {
 // implementations, together with an implementation of the At method. This
 // iterator can be embedded in full implementations of BucketIterator to save on
 // code replication.
-type baseBucketIterator[BC BucketCount, IBC internalBucketCount] struct {
+type baseBucketIterator[BC BucketCount, IBC InternalBucketCount] struct {
 	schema  int32
 	spans   []Span
 	buckets []IBC
@@ -121,7 +121,7 @@ func (b baseBucketIterator[BC, IBC]) At() Bucket[BC] {
 // compactBuckets is a generic function used by both Histogram.Compact and
 // FloatHistogram.Compact. Set deltaBuckets to true if the provided buckets are
 // deltas. Set it to false if the buckets contain absolute counts.
-func compactBuckets[IBC internalBucketCount](buckets []IBC, spans []Span, maxEmptyBuckets int, deltaBuckets bool) ([]IBC, []Span) {
+func compactBuckets[IBC InternalBucketCount](buckets []IBC, spans []Span, maxEmptyBuckets int, deltaBuckets bool) ([]IBC, []Span) {
 	// Fast path: If there are no empty buckets AND no offset in any span is
 	// <= maxEmptyBuckets AND no span has length 0, there is nothing to do and we can return
 	// immediately. We check that first because it's cheap and presumably
@@ -325,6 +325,18 @@ func compactBuckets[IBC internalBucketCount](buckets []IBC, spans []Span, maxEmp
 	}
 
 	return buckets, spans
+}
+
+func bucketsMatch[IBC InternalBucketCount](b1, b2 []IBC) bool {
+	if len(b1) != len(b2) {
+		return false
+	}
+	for i, b := range b1 {
+		if b != b2[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func getBound(idx, schema int32) float64 {

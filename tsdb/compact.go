@@ -1009,7 +1009,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, minT, maxT int64,
 		}
 		all = indexr.SortedPostings(all)
 		// Blocks meta is half open: [min, max), so subtract 1 to ensure we don't hold samples with exact meta.MaxTime timestamp.
-		sets = append(sets, newBlockChunkSeriesSet(indexr, chunkr, tombsr, all, minT, maxT-1, false))
+		sets = append(sets, newBlockChunkSeriesSet(b.Meta().ULID, indexr, chunkr, tombsr, all, minT, maxT-1, false))
 
 		if len(outBlocks) > 1 {
 			// To iterate series when populating symbols, we cannot reuse postings we just got, but need to get a new copy.
@@ -1021,7 +1021,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, minT, maxT int64,
 			}
 			all = indexr.SortedPostings(all)
 			// Blocks meta is half open: [min, max), so subtract 1 to ensure we don't hold samples with exact meta.MaxTime timestamp.
-			symbolsSets = append(symbolsSets, newBlockChunkSeriesSet(indexr, chunkr, tombsr, all, minT, maxT-1, false))
+			symbolsSets = append(symbolsSets, newBlockChunkSeriesSet(b.Meta().ULID, indexr, chunkr, tombsr, all, minT, maxT-1, false))
 		} else {
 			syms := indexr.Symbols()
 			if i == 0 {
@@ -1056,6 +1056,8 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, minT, maxT int64,
 		defer blockWriters[ix].closeAsync() // Make sure to close writer to stop goroutine.
 	}
 
+	var chksIter chunks.Iterator
+
 	set := sets[0]
 	if len(sets) > 1 {
 		// Merge series using specified chunk series merger.
@@ -1072,7 +1074,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, minT, maxT int64,
 		}
 		s := set.At()
 
-		chksIter := s.Iterator()
+		chksIter := s.Iterator(chksIter)
 		var chks []chunks.Meta
 		for chksIter.Next() {
 			// We are not iterating in streaming way over chunk as

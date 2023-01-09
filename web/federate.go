@@ -102,12 +102,14 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 
 	set := storage.NewMergeSeriesSet(sets, storage.ChainedSeriesMerge)
 	it := storage.NewBuffer(int64(h.lookbackDelta / 1e6))
+	var chkIter chunkenc.Iterator
 	for set.Next() {
 		s := set.At()
 
 		// TODO(fabxc): allow fast path for most recent sample either
 		// in the storage itself or caching layer in Prometheus.
-		it.Reset(s.Iterator())
+		chkIter = s.Iterator(chkIter)
+		it.Reset(chkIter)
 
 		var t int64
 		var v float64
@@ -169,26 +171,24 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 			Untyped: &dto.Untyped{},
 		}
 
-		for _, l := range s.Metric {
+		err := s.Metric.Validate(func(l labels.Label) error {
 			if l.Value == "" {
 				// No value means unset. Never consider those labels.
 				// This is also important to protect against nameless metrics.
-				continue
+				return nil
 			}
 			if l.Name == labels.MetricName {
 				nameSeen = true
 				if l.Value == lastMetricName {
 					// We already have the name in the current MetricFamily,
 					// and we ignore nameless metrics.
-					continue
+					return nil
 				}
 				// Need to start a new MetricFamily. Ship off the old one (if any) before
 				// creating the new one.
 				if protMetricFam != nil {
 					if err := enc.Encode(protMetricFam); err != nil {
-						federationErrors.Inc()
-						level.Error(h.logger).Log("msg", "federation failed", "err", err)
-						return
+						return err
 					}
 				}
 				protMetricFam = &dto.MetricFamily{
@@ -196,7 +196,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 					Name: proto.String(l.Value),
 				}
 				lastMetricName = l.Value
-				continue
+				return nil
 			}
 			protMetric.Label = append(protMetric.Label, &dto.LabelPair{
 				Name:  proto.String(l.Name),
@@ -205,6 +205,12 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 			if _, ok := externalLabels[l.Name]; ok {
 				globalUsed[l.Name] = struct{}{}
 			}
+			return nil
+		})
+		if err != nil {
+			federationErrors.Inc()
+			level.Error(h.logger).Log("msg", "federation failed", "err", err)
+			return
 		}
 		if !nameSeen {
 			level.Warn(h.logger).Log("msg", "Ignoring nameless metric during federation", "metric", s.Metric)
