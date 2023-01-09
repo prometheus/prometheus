@@ -126,3 +126,10 @@ still ingest those conventional histograms that do not come with a
 corresponding native histogram. However, if a native histogram is present,
 Prometheus will ignore the corresponding conventional histogram, with the
 notable exception of exemplars, which are always ingested.
+
+## TSDB String Interning
+
+`--enable-feature=tsdb-string-interning`
+
+When enabled, the TSDB Head would start interning strings to make sure that we save on memory allocations for the same string
+being seen on label keys/values.

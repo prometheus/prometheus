@@ -198,6 +198,9 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 				c.tsdb.EnableNativeHistograms = true
 				c.scrape.EnableProtobufNegotiation = true
 				level.Info(logger).Log("msg", "Experimental native histogram support enabled.")
+			case "tsdb-string-interning":
+				c.tsdb.EnableStringInterning = true
+				level.Info(logger).Log("msg", "Experimental tsdb string interning support enabled.")
 			case "":
 				continue
 			case "promql-at-modifier", "promql-negative-offset":
@@ -1528,6 +1531,7 @@ type tsdbOptions struct {
 	MaxExemplars                   int64
 	EnableMemorySnapshotOnShutdown bool
 	EnableNativeHistograms         bool
+	EnableStringInterning          bool
 }
 
 func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
@@ -1548,6 +1552,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		EnableMemorySnapshotOnShutdown: opts.EnableMemorySnapshotOnShutdown,
 		EnableNativeHistograms:         opts.EnableNativeHistograms,
 		OutOfOrderTimeWindow:           opts.OutOfOrderTimeWindow,
+		EnableStringInterning:          opts.EnableStringInterning,
 	}
 }
 

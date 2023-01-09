@@ -118,6 +118,8 @@ type Head struct {
 	reg   prometheus.Registerer
 
 	memTruncationInProcess atomic.Bool
+
+	interner *interner
 }
 
 type ExemplarStorage interface {
@@ -155,6 +157,8 @@ type HeadOptions struct {
 	EnableMemorySnapshotOnShutdown bool
 
 	IsolationDisabled bool
+
+	EnableStringInterning bool
 }
 
 const (
@@ -238,6 +242,10 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal, wbl *wlog.WL, opts *Hea
 		stats: stats,
 		reg:   r,
 	}
+
+	if opts.EnableStringInterning {
+		h.interner = &interner{}
+	}
 	if err := h.resetInMemoryState(); err != nil {
 		return nil, err
 	}
@@ -282,7 +290,7 @@ func (h *Head) resetInMemoryState() error {
 
 	h.exemplarMetrics = em
 	h.exemplars = es
-	h.series = newStripeSeries(h.opts.StripeSize, h.opts.SeriesCallback)
+	h.series = newStripeSeries(h.opts.StripeSize, h.opts.SeriesCallback, h.interner)
 	h.postings = index.NewUnorderedMemPostings()
 	h.tombstones = tombstones.NewMemTombstones()
 	h.deleted = map[chunks.HeadSeriesRef]int{}
@@ -1608,6 +1616,7 @@ type stripeSeries struct {
 	hashes                  []seriesHashmap                       // Sharded by label hash.
 	locks                   []stripeLock                          // Sharded by ref for series access, by label hash for hashes access.
 	seriesLifecycleCallback SeriesLifecycleCallback
+	interner                *interner
 }
 
 type stripeLock struct {
@@ -1616,13 +1625,14 @@ type stripeLock struct {
 	_ [40]byte
 }
 
-func newStripeSeries(stripeSize int, seriesCallback SeriesLifecycleCallback) *stripeSeries {
+func newStripeSeries(stripeSize int, seriesCallback SeriesLifecycleCallback, interner *interner) *stripeSeries {
 	s := &stripeSeries{
 		size:                    stripeSize,
 		series:                  make([]map[chunks.HeadSeriesRef]*memSeries, stripeSize),
 		hashes:                  make([]seriesHashmap, stripeSize),
 		locks:                   make([]stripeLock, stripeSize),
 		seriesLifecycleCallback: seriesCallback,
+		interner:                interner,
 	}
 
 	for i := range s.series {
@@ -1718,6 +1728,11 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 		s.locks[i].Unlock()
 
 		s.seriesLifecycleCallback.PostDeletion(deletedForCallback...)
+
+		// Release strings for all labels involved
+		if s.interner != nil {
+			s.interner.Release(deletedForCallback...)
+		}
 		deletedForCallback = deletedForCallback[:0]
 	}
 
@@ -1749,6 +1764,11 @@ func (s *stripeSeries) getByHash(hash uint64, lset labels.Labels) *memSeries {
 }
 
 func (s *stripeSeries) getOrSet(hash uint64, lset labels.Labels, createSeries func() *memSeries) (*memSeries, bool, error) {
+	// Intern all labels
+	if s.interner != nil {
+		s.interner.Intern(lset)
+	}
+
 	// PreCreation is called here to avoid calling it inside the lock.
 	// It is not necessary to call it just before creating a series,
 	// rather it gives a 'hint' whether to create a series or not.

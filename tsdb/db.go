@@ -178,6 +178,10 @@ type Options struct {
 	// OutOfOrderCapMax is maximum capacity for OOO chunks (in samples).
 	// If it is <=0, the default value is assumed.
 	OutOfOrderCapMax int64
+
+	// EnableStringInterning enables string interning on the TSDB Head to ensure that
+	// we save on memory usage for repeating label keys/values.
+	EnableStringInterning bool
 }
 
 type BlocksToDeleteFunc func(blocks []*Block) map[ulid.ULID]struct{}
@@ -645,7 +649,6 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64) {
 	if opts.OutOfOrderTimeWindow < 0 {
 		opts.OutOfOrderTimeWindow = 0
 	}
-
 	if len(rngs) == 0 {
 		// Start with smallest block duration and create exponential buckets until the exceed the
 		// configured maximum block duration.
@@ -786,6 +789,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 		// We only override this flag if isolation is disabled at DB level. We use the default otherwise.
 		headOpts.IsolationDisabled = opts.IsolationDisabled
 	}
+	headOpts.EnableStringInterning = opts.EnableStringInterning
 	db.head, err = NewHead(r, l, wal, wbl, headOpts, stats.Head)
 	if err != nil {
 		return nil, err
