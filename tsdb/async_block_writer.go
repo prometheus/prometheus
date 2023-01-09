@@ -16,6 +16,7 @@ import (
 var errAsyncBlockWriterNotRunning = errors.New("asyncBlockWriter doesn't run anymore")
 
 // asyncBlockWriter runs a background goroutine that writes series and chunks to the block asynchronously.
+// All calls on asyncBlockWriter must be done from single goroutine, it is not safe for concurrent usage from multiple goroutines.
 type asyncBlockWriter struct {
 	chunkPool chunkenc.Pool // Where to return chunks after writing.
 
