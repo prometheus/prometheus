@@ -66,7 +66,7 @@ func TestAlertingRuleState(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		rule := NewAlertingRule(test.name, nil, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil)
+		rule := NewAlertingRule(test.name, nil, 0, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil)
 		rule.active = test.active
 		got := rule.State()
 		require.Equal(t, test.want, got, "test case %d unexpected AlertState, want:%d got:%d", i, test.want, got)
@@ -90,6 +90,7 @@ func TestAlertingRuleLabelsUpdate(t *testing.T) {
 		"HTTPRequestRateLow",
 		expr,
 		time.Minute,
+		0,
 		// Basing alerting rule labels off of a value that can change is a very bad idea.
 		// If an alert is going back and forth between two label values it will never fire.
 		// Instead, you should write two alerts with constant labels.
@@ -192,6 +193,7 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 		"ExternalLabelDoesNotExist",
 		expr,
 		time.Minute,
+		0,
 		labels.FromStrings("templated_label", "There are {{ len $externalLabels }} external Labels, of which foo is {{ $externalLabels.foo }}."),
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
@@ -202,6 +204,7 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 		"ExternalLabelExists",
 		expr,
 		time.Minute,
+		0,
 		labels.FromStrings("templated_label", "There are {{ len $externalLabels }} external Labels, of which foo is {{ $externalLabels.foo }}."),
 		labels.EmptyLabels(),
 		labels.FromStrings("foo", "bar", "dings", "bums"),
@@ -286,6 +289,7 @@ func TestAlertingRuleExternalURLInTemplate(t *testing.T) {
 		"ExternalURLDoesNotExist",
 		expr,
 		time.Minute,
+		0,
 		labels.FromStrings("templated_label", "The external URL is {{ $externalURL }}."),
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
@@ -296,6 +300,7 @@ func TestAlertingRuleExternalURLInTemplate(t *testing.T) {
 		"ExternalURLExists",
 		expr,
 		time.Minute,
+		0,
 		labels.FromStrings("templated_label", "The external URL is {{ $externalURL }}."),
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
@@ -380,6 +385,7 @@ func TestAlertingRuleEmptyLabelFromTemplate(t *testing.T) {
 		"EmptyLabel",
 		expr,
 		time.Minute,
+		0,
 		labels.FromStrings("empty_label", ""),
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
@@ -436,6 +442,7 @@ func TestAlertingRuleQueryInTemplate(t *testing.T) {
 		"ruleWithQueryInTemplate",
 		expr,
 		time.Minute,
+		0,
 		labels.FromStrings("label", "value"),
 		labels.FromStrings("templated_label", `{{- with "sort(sum(http_requests) by (instance))" | query -}}
 {{- range $i,$v := . -}}
@@ -480,7 +487,7 @@ instance: {{ $v.Labels.instance }}, value: {{ printf "%.0f" $v.Value }};
 
 func BenchmarkAlertingRuleAtomicField(b *testing.B) {
 	b.ReportAllocs()
-	rule := NewAlertingRule("bench", nil, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil)
+	rule := NewAlertingRule("bench", nil, 0, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil)
 	done := make(chan struct{})
 	go func() {
 		for i := 0; i < b.N; i++ {
@@ -518,6 +525,7 @@ func TestAlertingRuleDuplicate(t *testing.T) {
 		"foo",
 		expr,
 		time.Minute,
+		0,
 		labels.FromStrings("test", "test"),
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
@@ -564,6 +572,7 @@ func TestAlertingRuleLimit(t *testing.T) {
 		"foo",
 		expr,
 		time.Minute,
+		0,
 		labels.FromStrings("test", "test"),
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
@@ -636,6 +645,7 @@ func TestQueryForStateSeries(t *testing.T) {
 			"TestRule",
 			nil,
 			time.Minute,
+			0,
 			labels.FromStrings("severity", "critical"),
 			labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
 		)
@@ -669,6 +679,7 @@ func TestSendAlertsDontAffectActiveAlerts(t *testing.T) {
 		"TestRule",
 		nil,
 		time.Minute,
+		0,
 		labels.FromStrings("severity", "critical"),
 		labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
 	)

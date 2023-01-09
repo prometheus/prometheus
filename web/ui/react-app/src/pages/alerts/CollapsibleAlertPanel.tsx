@@ -43,6 +43,11 @@ const CollapsibleAlertPanel: FC<CollapsibleAlertPanelProps> = ({ rule, showAnnot
                     <div>for: {formatDuration(rule.duration * 1000)}</div>
                   </div>
                 )}
+                {rule.keepFiringFor > 0 && (
+                  <div>
+                    <div>keep_firing_for: {formatDuration(rule.keepFiringFor * 1000)}</div>
+                  </div>
+                )}
                 {rule.labels && Object.keys(rule.labels).length > 0 && (
                   <div>
                     <div>labels:</div>
