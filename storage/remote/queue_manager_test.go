@@ -68,10 +68,10 @@ func TestSampleDelivery(t *testing.T) {
 		floatHistograms bool
 	}{
 		{samples: true, exemplars: false, histograms: false, floatHistograms: false, name: "samples only"},
-		{samples: true, exemplars: true, histograms: true, name: "samples, exemplars, and histograms"},
+		{samples: true, exemplars: true, histograms: true, floatHistograms: true, name: "samples, exemplars, and histograms"},
 		{samples: false, exemplars: true, histograms: false, floatHistograms: false, name: "exemplars only"},
 		{samples: false, exemplars: false, histograms: true, floatHistograms: false, name: "histograms only"},
-		{samples: false, exemplars: false, histograms: true, floatHistograms: true, name: "float histograms only"},
+		{samples: false, exemplars: false, histograms: false, floatHistograms: true, name: "float histograms only"},
 	}
 
 	// Let's create an even number of send batches so we don't run into the
