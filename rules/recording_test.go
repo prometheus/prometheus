@@ -156,3 +156,25 @@ func TestRecordingRuleLimit(t *testing.T) {
 		}
 	}
 }
+
+func TestRecordingEvalWithOrigin(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now()
+
+	const name = "my-recording-rule"
+	const query = `count(metric{foo="bar"})`
+
+	var detail RuleDetail
+
+	expr, err := parser.ParseExpr(query)
+	require.NoError(t, err)
+
+	rule := NewRecordingRule(name, expr, []labels.Label{})
+	_, err = rule.Eval(ctx, now, func(ctx context.Context, qs string, _ time.Time) (promql.Vector, error) {
+		detail = FromOriginContext(ctx)
+		return nil, nil
+	}, nil, 0)
+
+	require.NoError(t, err)
+	require.Equal(t, detail, NewRuleDetail(name, query, KindRecording))
+}

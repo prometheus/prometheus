@@ -712,3 +712,35 @@ func TestSendAlertsDontAffectActiveAlerts(t *testing.T) {
 	// But the labels with the AlertingRule should not be changed.
 	require.Equal(t, labels.FromStrings("a1", "1"), rule.active[h].Labels)
 }
+
+func TestAlertingEvalWithOrigin(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now()
+
+	const name = "my-recording-rule"
+	const query = `count(metric{foo="bar"}) > 0`
+
+	var detail RuleDetail
+
+	expr, err := parser.ParseExpr(query)
+	require.NoError(t, err)
+
+	rule := NewAlertingRule(
+		name,
+		expr,
+		time.Minute,
+		labels.FromStrings("test", "test"),
+		nil,
+		nil,
+		"",
+		true, log.NewNopLogger(),
+	)
+
+	_, err = rule.Eval(ctx, now, func(ctx context.Context, qs string, _ time.Time) (promql.Vector, error) {
+		detail = FromOriginContext(ctx)
+		return nil, nil
+	}, nil, 0)
+
+	require.NoError(t, err)
+	require.Equal(t, detail, NewRuleDetail(name, query, KindAlerting))
+}
