@@ -10,8 +10,10 @@ type RuleDetail struct {
 	Query string
 }
 
-const KindAlerting = "alerting"
-const KindRecording = "recording"
+const (
+	KindAlerting  = "alerting"
+	KindRecording = "recording"
+)
 
 func NewRuleDetail(name, query, kind string) RuleDetail {
 	return RuleDetail{
