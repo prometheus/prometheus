@@ -186,7 +186,9 @@ type SelectHints struct {
 	Start int64 // Start time in milliseconds for this select.
 	End   int64 // End time in milliseconds for this select.
 
-	Step int64  // Query step size in milliseconds.
+	Step         int64 // Query step size in milliseconds.
+	SubQueryStep int64 // SubQuery step size in milliseconds.
+
 	Func string // String representation of surrounding function or aggregation.
 
 	Grouping []string // List of label names used in aggregation.

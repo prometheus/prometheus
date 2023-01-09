@@ -333,56 +333,56 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 		}, {
 			query: "foo[2m:1s]", start: 300000,
 			expected: []*storage.SelectHints{
-				{Start: 175000, End: 300000, Step: 1000},
+				{Start: 175000, End: 300000, Step: 1000, SubQueryStep: 1000},
 			},
 		}, {
 			query: "count_over_time(foo[2m:1s])", start: 300000,
 			expected: []*storage.SelectHints{
-				{Start: 175000, End: 300000, Func: "count_over_time", Step: 1000},
+				{Start: 175000, End: 300000, Func: "count_over_time", Step: 1000, SubQueryStep: 1000},
 			},
 		}, {
 			query: "count_over_time(foo[2m:1s] @ 300)", start: 200000,
 			expected: []*storage.SelectHints{
-				{Start: 175000, End: 300000, Func: "count_over_time", Step: 1000},
+				{Start: 175000, End: 300000, Func: "count_over_time", Step: 1000, SubQueryStep: 1000},
 			},
 		}, {
 			query: "count_over_time(foo[2m:1s] @ 200)", start: 200000,
 			expected: []*storage.SelectHints{
-				{Start: 75000, End: 200000, Func: "count_over_time", Step: 1000},
+				{Start: 75000, End: 200000, Func: "count_over_time", Step: 1000, SubQueryStep: 1000},
 			},
 		}, {
 			query: "count_over_time(foo[2m:1s] @ 100)", start: 200000,
 			expected: []*storage.SelectHints{
-				{Start: -25000, End: 100000, Func: "count_over_time", Step: 1000},
+				{Start: -25000, End: 100000, Func: "count_over_time", Step: 1000, SubQueryStep: 1000},
 			},
 		}, {
 			query: "count_over_time(foo[2m:1s] offset 10s)", start: 300000,
 			expected: []*storage.SelectHints{
-				{Start: 165000, End: 290000, Func: "count_over_time", Step: 1000},
+				{Start: 165000, End: 290000, Func: "count_over_time", Step: 1000, SubQueryStep: 1000},
 			},
 		}, {
 			query: "count_over_time((foo offset 10s)[2m:1s] offset 10s)", start: 300000,
 			expected: []*storage.SelectHints{
-				{Start: 155000, End: 280000, Func: "count_over_time", Step: 1000},
+				{Start: 155000, End: 280000, Func: "count_over_time", Step: 1000, SubQueryStep: 1000},
 			},
 		}, {
 			// When the @ is on the vector selector, the enclosing subquery parameters
 			// don't affect the hint ranges.
 			query: "count_over_time((foo @ 200 offset 10s)[2m:1s] offset 10s)", start: 300000,
 			expected: []*storage.SelectHints{
-				{Start: 185000, End: 190000, Func: "count_over_time", Step: 1000},
+				{Start: 185000, End: 190000, Func: "count_over_time", Step: 1000, SubQueryStep: 1000},
 			},
 		}, {
 			// When the @ is on the vector selector, the enclosing subquery parameters
 			// don't affect the hint ranges.
 			query: "count_over_time((foo @ 200 offset 10s)[2m:1s] @ 100 offset 10s)", start: 300000,
 			expected: []*storage.SelectHints{
-				{Start: 185000, End: 190000, Func: "count_over_time", Step: 1000},
+				{Start: 185000, End: 190000, Func: "count_over_time", Step: 1000, SubQueryStep: 1000},
 			},
 		}, {
 			query: "count_over_time((foo offset 10s)[2m:1s] @ 100 offset 10s)", start: 300000,
 			expected: []*storage.SelectHints{
-				{Start: -45000, End: 80000, Func: "count_over_time", Step: 1000},
+				{Start: -45000, End: 80000, Func: "count_over_time", Step: 1000, SubQueryStep: 1000},
 			},
 		}, {
 			query: "foo", start: 10000, end: 20000,
@@ -427,56 +427,61 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 		}, {
 			query: "rate(foo[2m:1s])", start: 300000, end: 500000,
 			expected: []*storage.SelectHints{
-				{Start: 175000, End: 500000, Func: "rate", Step: 1000},
+				{Start: 175000, End: 500000, Func: "rate", Step: 1000, SubQueryStep: 1000},
+			},
+		}, {
+			query: "rate(foo[2m:1m])", start: 300000, end: 500000,
+			expected: []*storage.SelectHints{
+				{Start: 175000, End: 500000, Func: "rate", Step: 60000, SubQueryStep: 60000},
 			},
 		}, {
 			query: "count_over_time(foo[2m:1s])", start: 300000, end: 500000,
 			expected: []*storage.SelectHints{
-				{Start: 175000, End: 500000, Func: "count_over_time", Step: 1000},
+				{Start: 175000, End: 500000, Func: "count_over_time", Step: 1000, SubQueryStep: 1000},
 			},
 		}, {
 			query: "count_over_time(foo[2m:1s] offset 10s)", start: 300000, end: 500000,
 			expected: []*storage.SelectHints{
-				{Start: 165000, End: 490000, Func: "count_over_time", Step: 1000},
+				{Start: 165000, End: 490000, Func: "count_over_time", Step: 1000, SubQueryStep: 1000},
 			},
 		}, {
 			query: "count_over_time(foo[2m:1s] @ 300)", start: 200000, end: 500000,
 			expected: []*storage.SelectHints{
-				{Start: 175000, End: 300000, Func: "count_over_time", Step: 1000},
+				{Start: 175000, End: 300000, Func: "count_over_time", Step: 1000, SubQueryStep: 1000},
 			},
 		}, {
 			query: "count_over_time(foo[2m:1s] @ 200)", start: 200000, end: 500000,
 			expected: []*storage.SelectHints{
-				{Start: 75000, End: 200000, Func: "count_over_time", Step: 1000},
+				{Start: 75000, End: 200000, Func: "count_over_time", Step: 1000, SubQueryStep: 1000},
 			},
 		}, {
 			query: "count_over_time(foo[2m:1s] @ 100)", start: 200000, end: 500000,
 			expected: []*storage.SelectHints{
-				{Start: -25000, End: 100000, Func: "count_over_time", Step: 1000},
+				{Start: -25000, End: 100000, Func: "count_over_time", Step: 1000, SubQueryStep: 1000},
 			},
 		}, {
 			query: "count_over_time((foo offset 10s)[2m:1s] offset 10s)", start: 300000, end: 500000,
 			expected: []*storage.SelectHints{
-				{Start: 155000, End: 480000, Func: "count_over_time", Step: 1000},
+				{Start: 155000, End: 480000, Func: "count_over_time", Step: 1000, SubQueryStep: 1000},
 			},
 		}, {
 			// When the @ is on the vector selector, the enclosing subquery parameters
 			// don't affect the hint ranges.
 			query: "count_over_time((foo @ 200 offset 10s)[2m:1s] offset 10s)", start: 300000, end: 500000,
 			expected: []*storage.SelectHints{
-				{Start: 185000, End: 190000, Func: "count_over_time", Step: 1000},
+				{Start: 185000, End: 190000, Func: "count_over_time", Step: 1000, SubQueryStep: 1000},
 			},
 		}, {
 			// When the @ is on the vector selector, the enclosing subquery parameters
 			// don't affect the hint ranges.
 			query: "count_over_time((foo @ 200 offset 10s)[2m:1s] @ 100 offset 10s)", start: 300000, end: 500000,
 			expected: []*storage.SelectHints{
-				{Start: 185000, End: 190000, Func: "count_over_time", Step: 1000},
+				{Start: 185000, End: 190000, Func: "count_over_time", Step: 1000, SubQueryStep: 1000},
 			},
 		}, {
 			query: "count_over_time((foo offset 10s)[2m:1s] @ 100 offset 10s)", start: 300000, end: 500000,
 			expected: []*storage.SelectHints{
-				{Start: -45000, End: 80000, Func: "count_over_time", Step: 1000},
+				{Start: -45000, End: 80000, Func: "count_over_time", Step: 1000, SubQueryStep: 1000},
 			},
 		}, {
 			query: "sum by (dim1) (foo)", start: 10000,
@@ -501,13 +506,13 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 		}, {
 			query: "(max by (dim1) (foo))[5s:1s]", start: 10000,
 			expected: []*storage.SelectHints{
-				{Start: 0, End: 10000, Func: "max", By: true, Grouping: []string{"dim1"}, Step: 1000},
+				{Start: 0, End: 10000, Func: "max", By: true, Grouping: []string{"dim1"}, Step: 1000, SubQueryStep: 1000},
 			},
 		}, {
 			query: "(sum(http_requests{group=~\"p.*\"})+max(http_requests{group=~\"c.*\"}))[20s:5s]", start: 120000,
 			expected: []*storage.SelectHints{
-				{Start: 95000, End: 120000, Func: "sum", By: true, Step: 5000},
-				{Start: 95000, End: 120000, Func: "max", By: true, Step: 5000},
+				{Start: 95000, End: 120000, Func: "sum", By: true, Step: 5000, SubQueryStep: 5000},
+				{Start: 95000, End: 120000, Func: "max", By: true, Step: 5000, SubQueryStep: 5000},
 			},
 		}, {
 			query: "foo @ 50 + bar @ 250 + baz @ 900", start: 100000, end: 500000,
@@ -533,26 +538,26 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 		}, {
 			query: "rate(foo[2s:1s] @ 50) + bar + baz", start: 100000, end: 500000,
 			expected: []*storage.SelectHints{
-				{Start: 43000, End: 50000, Step: 1000, Func: "rate"},
+				{Start: 43000, End: 50000, Step: 1000, Func: "rate", SubQueryStep: 1000},
 				{Start: 95000, End: 500000, Step: 1000},
 				{Start: 95000, End: 500000, Step: 1000},
 			},
 		}, {
 			query: "rate(foo[2s:1s] @ 50) + bar + rate(baz[2m:1s] @ 900 offset 2m) ", start: 100000, end: 500000,
 			expected: []*storage.SelectHints{
-				{Start: 43000, End: 50000, Step: 1000, Func: "rate"},
+				{Start: 43000, End: 50000, Step: 1000, Func: "rate", SubQueryStep: 1000},
 				{Start: 95000, End: 500000, Step: 1000},
-				{Start: 655000, End: 780000, Step: 1000, Func: "rate"},
+				{Start: 655000, End: 780000, Step: 1000, Func: "rate", SubQueryStep: 1000},
 			},
 		}, { // Hints are based on the inner most subquery timestamp.
 			query: `sum_over_time(sum_over_time(metric{job="1"}[100s])[100s:25s] @ 50)[3s:1s] @ 3000`, start: 100000,
 			expected: []*storage.SelectHints{
-				{Start: -150000, End: 50000, Range: 100000, Func: "sum_over_time", Step: 25000},
+				{Start: -150000, End: 50000, Range: 100000, Func: "sum_over_time", Step: 25000, SubQueryStep: 25000},
 			},
 		}, { // Hints are based on the inner most subquery timestamp.
 			query: `sum_over_time(sum_over_time(metric{job="1"}[100s])[100s:25s] @ 3000)[3s:1s] @ 50`,
 			expected: []*storage.SelectHints{
-				{Start: 2800000, End: 3000000, Range: 100000, Func: "sum_over_time", Step: 25000},
+				{Start: 2800000, End: 3000000, Range: 100000, Func: "sum_over_time", Step: 25000, SubQueryStep: 25000},
 			},
 		},
 	} {
