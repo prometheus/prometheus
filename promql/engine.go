@@ -853,14 +853,10 @@ func (ng *Engine) populateSeries(querier storage.Querier, s *parser.EvalStmt) {
 		case *parser.VectorSelector:
 			start, end := ng.getTimeRangesForSelector(s, n, path, evalRange)
 			subqInterval := ng.getLastSubqueryInterval(path)
-			interval := subqInterval
-			if subqInterval == 0 {
-				interval = s.Interval
-			}
 			hints := &storage.SelectHints{
 				Start:        start,
 				End:          end,
-				Step:         durationMilliseconds(interval),
+				Step:         durationMilliseconds(s.Interval),
 				SubQueryStep: durationMilliseconds(subqInterval),
 				Range:        durationMilliseconds(evalRange),
 				Func:         extractFuncFromPath(path),
