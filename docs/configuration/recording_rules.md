@@ -71,7 +71,7 @@ groups:
   - name: example
     rules:
     - record: code:prometheus_http_requests_total:sum
-      expr: sum by(code) (prometheus_http_requests_total)
+      expr: sum by (code) (prometheus_http_requests_total)
 ```
 
 ### `<rule_group>`
