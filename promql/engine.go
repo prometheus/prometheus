@@ -858,8 +858,9 @@ func (ng *Engine) populateSeries(querier storage.Querier, s *parser.EvalStmt) {
 				End:          end,
 				Step:         durationMilliseconds(s.Interval),
 				SubQueryStep: durationMilliseconds(subqInterval),
-				Range:        durationMilliseconds(evalRange),
-				Func:         extractFuncFromPath(path),
+
+				Range: durationMilliseconds(evalRange),
+				Func:  extractFuncFromPath(path),
 			}
 			evalRange = 0
 			hints.By, hints.Grouping = extractGroupsFromPath(path)
