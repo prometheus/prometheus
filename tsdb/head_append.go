@@ -1399,7 +1399,7 @@ func (s *memSeries) mmapCurrentOOOHeadChunk(chunkDiskMapper *chunks.ChunkDiskMap
 	return chunkRef
 }
 
-func (s *memSeries) mmapHeadChunks(chunkDiskMapper *chunks.ChunkDiskMapper) {
+func (s *memSeries) mmapHeadChunks(chunkDiskMapper *chunks.ChunkDiskMapper) (count int) {
 	if s.headChunks == nil || s.headChunks.next == nil {
 		// There is none or only one head chunk, so nothing to m-map here.
 		return
@@ -1419,10 +1419,13 @@ func (s *memSeries) mmapHeadChunks(chunkDiskMapper *chunks.ChunkDiskMapper) {
 			minTime:    chk.minTime,
 			maxTime:    chk.maxTime,
 		})
+		count++
 	}
 
 	// Once we've written out all chunks except s.headChunks we need to unlink these from s.headChunk.
 	s.headChunks.next = nil
+
+	return count
 }
 
 func handleChunkWriteError(err error) {

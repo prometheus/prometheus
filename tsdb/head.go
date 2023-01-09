@@ -344,6 +344,7 @@ type headMetrics struct {
 	mmapChunkCorruptionTotal  prometheus.Counter
 	snapshotReplayErrorTotal  prometheus.Counter // Will be either 0 or 1.
 	oooHistogram              prometheus.Histogram
+	mmapChunksTotal           prometheus.Counter
 }
 
 const (
@@ -468,6 +469,10 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 				60 * 60 * 12, // 12h
 			},
 		}),
+		mmapChunksTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_mmap_chunks_total",
+			Help: "Total number of chunks that were memory-mapped.",
+		}),
 	}
 
 	if r != nil {
@@ -534,6 +539,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 				}
 				return float64(val)
 			}),
+			m.mmapChunksTotal,
 		)
 	}
 	return m
@@ -1635,13 +1641,15 @@ func (h *Head) getOrCreateWithID(id chunks.HeadSeriesRef, hash uint64, lset labe
 }
 
 func (h *Head) mmapHeadChunks() {
+	var count int
 	for i := 0; i < h.series.size; i++ {
 		h.series.locks[i].RLock()
 		for _, all := range h.series.hashes[i] {
 			for _, series := range all {
 				series.Lock()
-				series.mmapHeadChunks(h.chunkDiskMapper)
+				count = series.mmapHeadChunks(h.chunkDiskMapper)
 				series.Unlock()
+				h.metrics.mmapChunksTotal.Add(float64(count))
 			}
 		}
 		h.series.locks[i].RUnlock()
