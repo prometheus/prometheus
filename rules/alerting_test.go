@@ -713,14 +713,19 @@ func TestSendAlertsDontAffectActiveAlerts(t *testing.T) {
 	require.Equal(t, labels.FromStrings("a1", "1"), rule.active[h].Labels)
 }
 
+// TestAlertingEvalWithOrigin checks that the alerting rule details are passed through the context.
 func TestAlertingEvalWithOrigin(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now()
 
-	const name = "my-recording-rule"
-	const query = `count(metric{foo="bar"}) > 0`
-
-	var detail RuleDetail
+	const (
+		name  = "my-recording-rule"
+		query = `count(metric{foo="bar"}) > 0`
+	)
+	var (
+		detail RuleDetail
+		lbs    = labels.FromStrings("test", "test")
+	)
 
 	expr, err := parser.ParseExpr(query)
 	require.NoError(t, err)
@@ -729,7 +734,7 @@ func TestAlertingEvalWithOrigin(t *testing.T) {
 		name,
 		expr,
 		time.Minute,
-		labels.FromStrings("test", "test"),
+		lbs,
 		nil,
 		nil,
 		"",
@@ -742,5 +747,5 @@ func TestAlertingEvalWithOrigin(t *testing.T) {
 	}, nil, 0)
 
 	require.NoError(t, err)
-	require.Equal(t, detail, NewRuleDetail(name, query, KindAlerting))
+	require.Equal(t, detail, NewRuleDetail(rule))
 }
