@@ -70,8 +70,8 @@ A simple example rules file would be:
 groups:
   - name: example
     rules:
-    - record: job:http_inprogress_requests:sum
-      expr: sum by (job) (http_inprogress_requests)
+    - record: code:prometheus_http_requests_total:sum
+      expr: sum by (code) (prometheus_http_requests_total)
 ```
 
 ### `<rule_group>`
