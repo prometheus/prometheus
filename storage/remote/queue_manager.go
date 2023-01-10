@@ -1065,10 +1065,9 @@ type shards struct {
 	qm     *QueueManager
 	queues []*queue
 	// So we can accurately track how many of each are lost during shard shutdowns.
-	enqueuedSamples         atomic.Int64
-	enqueuedExemplars       atomic.Int64
-	enqueuedHistograms      atomic.Int64
-	enqueuedFloatHistograms atomic.Int64
+	enqueuedSamples    atomic.Int64
+	enqueuedExemplars  atomic.Int64
+	enqueuedHistograms atomic.Int64
 
 	// Emulate a wait group with a channel and an atomic int, as you
 	// cannot select on a wait group.
@@ -1184,7 +1183,7 @@ func (s *shards) enqueue(ref chunks.HeadSeriesRef, data timeSeries) bool {
 			s.enqueuedHistograms.Inc()
 		case tFloatHistogram:
 			s.qm.metrics.pendingHistograms.Inc()
-			s.enqueuedFloatHistograms.Inc()
+			s.enqueuedHistograms.Inc()
 		}
 		return true
 	}
@@ -1380,29 +1379,25 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 			droppedSamples := int(s.enqueuedSamples.Load())
 			droppedExemplars := int(s.enqueuedExemplars.Load())
 			droppedHistograms := int(s.enqueuedHistograms.Load())
-			droppedFloatHistograms := int(s.enqueuedFloatHistograms.Load())
 			s.qm.metrics.pendingSamples.Sub(float64(droppedSamples))
 			s.qm.metrics.pendingExemplars.Sub(float64(droppedExemplars))
 			s.qm.metrics.pendingHistograms.Sub(float64(droppedHistograms))
-			s.qm.metrics.pendingHistograms.Sub(float64(droppedFloatHistograms))
 			s.qm.metrics.failedSamplesTotal.Add(float64(droppedSamples))
 			s.qm.metrics.failedExemplarsTotal.Add(float64(droppedExemplars))
 			s.qm.metrics.failedHistogramsTotal.Add(float64(droppedHistograms))
-			s.qm.metrics.failedHistogramsTotal.Add(float64(droppedFloatHistograms))
 			s.samplesDroppedOnHardShutdown.Add(uint32(droppedSamples))
 			s.exemplarsDroppedOnHardShutdown.Add(uint32(droppedExemplars))
 			s.histogramsDroppedOnHardShutdown.Add(uint32(droppedHistograms))
-			s.floatHistogramsDroppedOnHardShutdown.Add(uint32(droppedFloatHistograms))
 			return
 
 		case batch, ok := <-batchQueue:
 			if !ok {
 				return
 			}
-			nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingFloatHistograms := s.populateTimeSeries(batch, pendingData)
+			nPendingSamples, nPendingExemplars, nPendingHistograms := s.populateTimeSeries(batch, pendingData)
 			queue.ReturnForReuse(batch)
-			n := nPendingSamples + nPendingExemplars + nPendingHistograms + nPendingFloatHistograms
-			s.sendSamples(ctx, pendingData[:n], nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingFloatHistograms, pBuf, &buf)
+			n := nPendingSamples + nPendingExemplars + nPendingHistograms
+			s.sendSamples(ctx, pendingData[:n], nPendingSamples, nPendingExemplars, nPendingHistograms, pBuf, &buf)
 
 			stop()
 			timer.Reset(time.Duration(s.qm.cfg.BatchSendDeadline))
@@ -1410,11 +1405,11 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 		case <-timer.C:
 			batch := queue.Batch()
 			if len(batch) > 0 {
-				nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingFloatHistograms := s.populateTimeSeries(batch, pendingData)
+				nPendingSamples, nPendingExemplars, nPendingHistograms := s.populateTimeSeries(batch, pendingData)
 				n := nPendingSamples + nPendingExemplars + nPendingHistograms
 				level.Debug(s.qm.logger).Log("msg", "runShard timer ticked, sending buffered data", "samples", nPendingSamples,
-					"exemplars", nPendingExemplars, "shard", shardNum, "histograms", nPendingHistograms+nPendingFloatHistograms)
-				s.sendSamples(ctx, pendingData[:n], nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingFloatHistograms, pBuf, &buf)
+					"exemplars", nPendingExemplars, "shard", shardNum, "histograms", nPendingHistograms)
+				s.sendSamples(ctx, pendingData[:n], nPendingSamples, nPendingExemplars, nPendingHistograms, pBuf, &buf)
 			}
 			queue.ReturnForReuse(batch)
 			timer.Reset(time.Duration(s.qm.cfg.BatchSendDeadline))
@@ -1422,8 +1417,8 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 	}
 }
 
-func (s *shards) populateTimeSeries(batch []timeSeries, pendingData []prompb.TimeSeries) (int, int, int, int) {
-	var nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingFloatHistograms int
+func (s *shards) populateTimeSeries(batch []timeSeries, pendingData []prompb.TimeSeries) (int, int, int) {
+	var nPendingSamples, nPendingExemplars, nPendingHistograms int
 	for nPending, d := range batch {
 		pendingData[nPending].Samples = pendingData[nPending].Samples[:0]
 		if s.qm.sendExemplars {
@@ -1456,21 +1451,20 @@ func (s *shards) populateTimeSeries(batch []timeSeries, pendingData []prompb.Tim
 			nPendingHistograms++
 		case tFloatHistogram:
 			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, FloatHistogramToHistogramProto(d.timestamp, d.floatHistogram))
-			nPendingFloatHistograms++
+			nPendingHistograms++
 		}
 	}
-	return nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingFloatHistograms
+	return nPendingSamples, nPendingExemplars, nPendingHistograms
 }
 
-func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, sampleCount, exemplarCount, histogramCount, floatHistogramCount int, pBuf *proto.Buffer, buf *[]byte) {
+func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, sampleCount, exemplarCount, histogramCount int, pBuf *proto.Buffer, buf *[]byte) {
 	begin := time.Now()
-	err := s.sendSamplesWithBackoff(ctx, samples, sampleCount, exemplarCount, histogramCount, floatHistogramCount, pBuf, buf)
+	err := s.sendSamplesWithBackoff(ctx, samples, sampleCount, exemplarCount, histogramCount, pBuf, buf)
 	if err != nil {
 		level.Error(s.qm.logger).Log("msg", "non-recoverable error", "count", sampleCount, "exemplarCount", exemplarCount, "err", err)
 		s.qm.metrics.failedSamplesTotal.Add(float64(sampleCount))
 		s.qm.metrics.failedExemplarsTotal.Add(float64(exemplarCount))
 		s.qm.metrics.failedHistogramsTotal.Add(float64(histogramCount))
-		s.qm.metrics.failedHistogramsTotal.Add(float64(floatHistogramCount))
 	}
 
 	// These counters are used to calculate the dynamic sharding, and as such
@@ -1483,15 +1477,13 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, s
 	s.qm.metrics.pendingSamples.Sub(float64(sampleCount))
 	s.qm.metrics.pendingExemplars.Sub(float64(exemplarCount))
 	s.qm.metrics.pendingHistograms.Sub(float64(histogramCount))
-	s.qm.metrics.pendingHistograms.Sub(float64(floatHistogramCount))
 	s.enqueuedSamples.Sub(int64(sampleCount))
 	s.enqueuedExemplars.Sub(int64(exemplarCount))
 	s.enqueuedHistograms.Sub(int64(histogramCount))
-	s.enqueuedFloatHistograms.Sub(int64(floatHistogramCount))
 }
 
 // sendSamples to the remote storage with backoff for recoverable errors.
-func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.TimeSeries, sampleCount, exemplarCount, histogramCount int, floatHistogramCount int, pBuf *proto.Buffer, buf *[]byte) error {
+func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.TimeSeries, sampleCount, exemplarCount, histogramCount int, pBuf *proto.Buffer, buf *[]byte) error {
 	// Build the WriteRequest with no metadata.
 	req, highest, err := buildWriteRequest(samples, nil, pBuf, *buf)
 	if err != nil {
@@ -1521,15 +1513,14 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 		if exemplarCount > 0 {
 			span.SetAttributes(attribute.Int("exemplars", exemplarCount))
 		}
-		if histogramCount > 0 || floatHistogramCount > 0 {
-			span.SetAttributes(attribute.Int("histograms", histogramCount+floatHistogramCount))
+		if histogramCount > 0 {
+			span.SetAttributes(attribute.Int("histograms", histogramCount))
 		}
 
 		begin := time.Now()
 		s.qm.metrics.samplesTotal.Add(float64(sampleCount))
 		s.qm.metrics.exemplarsTotal.Add(float64(exemplarCount))
 		s.qm.metrics.histogramsTotal.Add(float64(histogramCount))
-		s.qm.metrics.histogramsTotal.Add(float64(floatHistogramCount))
 		err := s.qm.client().Store(ctx, *buf)
 		s.qm.metrics.sentBatchDuration.Observe(time.Since(begin).Seconds())
 
@@ -1545,7 +1536,6 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 		s.qm.metrics.retriedSamplesTotal.Add(float64(sampleCount))
 		s.qm.metrics.retriedExemplarsTotal.Add(float64(exemplarCount))
 		s.qm.metrics.retriedHistogramsTotal.Add(float64(histogramCount))
-		s.qm.metrics.retriedHistogramsTotal.Add(float64(floatHistogramCount))
 	}
 
 	err = sendWriteRequestWithBackoff(ctx, s.qm.cfg, s.qm.logger, attemptStore, onRetry)
