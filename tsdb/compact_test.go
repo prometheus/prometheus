@@ -31,6 +31,7 @@ import (
 	"github.com/pkg/errors"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/semaphore"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -2275,4 +2276,98 @@ func TestLeveledCompactor_plan_overlapping_disabled(t *testing.T) {
 			return
 		}
 	}
+}
+
+func TestAsyncBlockWriterSuccess(t *testing.T) {
+	cw, err := chunks.NewWriter(t.TempDir())
+	require.NoError(t, err)
+
+	const series = 100
+	// prepare index, add all symbols
+	iw, err := index.NewWriter(context.Background(), filepath.Join(t.TempDir(), indexFilename))
+	require.NoError(t, err)
+
+	require.NoError(t, iw.AddSymbol("__name__"))
+	for ix := 0; ix < series; ix++ {
+		s := fmt.Sprintf("s_%3d", ix)
+		require.NoError(t, iw.AddSymbol(s))
+	}
+
+	// async block writer expects index writer ready to receive series.
+	abw := newAsyncBlockWriter(chunkenc.NewPool(), cw, iw, semaphore.NewWeighted(int64(1)))
+
+	for ix := 0; ix < series; ix++ {
+		s := fmt.Sprintf("s_%3d", ix)
+		require.NoError(t, abw.addSeries(labels.FromStrings("__name__", s), []chunks.Meta{{Chunk: randomChunk(t), MinTime: 0, MaxTime: math.MaxInt64}}))
+	}
+
+	// signal that no more series are coming
+	abw.closeAsync()
+
+	// We can do this repeatedly.
+	abw.closeAsync()
+	abw.closeAsync()
+
+	// wait for result
+	stats, err := abw.waitFinished()
+	require.NoError(t, err)
+	require.Equal(t, uint64(series), stats.NumSeries)
+	require.Equal(t, uint64(series), stats.NumChunks)
+
+	// We get the same result on subsequent calls to waitFinished.
+	for i := 0; i < 5; i++ {
+		newstats, err := abw.waitFinished()
+		require.NoError(t, err)
+		require.Equal(t, stats, newstats)
+
+		// We can call close async again, as long as it's on the same goroutine.
+		abw.closeAsync()
+	}
+}
+
+func TestAsyncBlockWriterFailure(t *testing.T) {
+	cw, err := chunks.NewWriter(t.TempDir())
+	require.NoError(t, err)
+
+	// We don't write symbols to this index writer, so adding series next will fail.
+	iw, err := index.NewWriter(context.Background(), filepath.Join(t.TempDir(), indexFilename))
+	require.NoError(t, err)
+
+	// async block writer expects index writer ready to receive series.
+	abw := newAsyncBlockWriter(chunkenc.NewPool(), cw, iw, semaphore.NewWeighted(int64(1)))
+
+	// Adding single series doesn't fail, as it just puts it onto the queue.
+	require.NoError(t, abw.addSeries(labels.FromStrings("__name__", "test"), []chunks.Meta{{Chunk: randomChunk(t), MinTime: 0, MaxTime: math.MaxInt64}}))
+
+	// Signal that no more series are coming.
+	abw.closeAsync()
+
+	// We can do this repeatedly.
+	abw.closeAsync()
+	abw.closeAsync()
+
+	// Wait for result, this time we get error due to missing symbols.
+	_, err = abw.waitFinished()
+	require.Error(t, err)
+	require.ErrorContains(t, err, "unknown symbol")
+
+	// We get the same error on each repeated call to waitFinished.
+	for i := 0; i < 5; i++ {
+		_, nerr := abw.waitFinished()
+		require.Equal(t, err, nerr)
+
+		// We can call close async again, as long as it's on the same goroutine.
+		abw.closeAsync()
+	}
+}
+
+func randomChunk(t *testing.T) chunkenc.Chunk {
+	chunk := chunkenc.NewXORChunk()
+	l := rand.Int() % 120
+	app, err := chunk.Appender()
+	require.NoError(t, err)
+	for i := 0; i < l; i++ {
+		app.Append(rand.Int63(), rand.Float64())
+	}
+	return chunk
 }

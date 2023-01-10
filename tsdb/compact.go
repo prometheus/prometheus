@@ -1053,8 +1053,18 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, minT, maxT int64,
 	blockWriters := make([]*asyncBlockWriter, len(outBlocks))
 	for ix := range outBlocks {
 		blockWriters[ix] = newAsyncBlockWriter(c.chunkPool, outBlocks[ix].chunkw, outBlocks[ix].indexw, sema)
-		defer blockWriters[ix].closeAsync() // Make sure to close writer to stop goroutine.
 	}
+	defer func() {
+		// Stop all async writers.
+		for ix := range outBlocks {
+			blockWriters[ix].closeAsync()
+		}
+
+		// And wait until they have finished, to make sure that they no longer update chunk or index writers.
+		for ix := range outBlocks {
+			_, _ = blockWriters[ix].waitFinished()
+		}
+	}()
 
 	var chksIter chunks.Iterator
 
