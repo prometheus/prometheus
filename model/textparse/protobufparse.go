@@ -170,6 +170,9 @@ func (p *ProtobufParser) Histogram() ([]byte, *int64, *histogram.Histogram, *his
 			fh.NegativeSpans[i].Offset = span.GetOffset()
 			fh.NegativeSpans[i].Length = span.GetLength()
 		}
+		if p.mf.GetType() == dto.MetricType_GAUGE_HISTOGRAM {
+			fh.CounterResetHint = histogram.GaugeType
+		}
 		fh.Compact(0)
 		if ts != 0 {
 			return p.metricBytes.Bytes(), &ts, nil, &fh
@@ -198,6 +201,9 @@ func (p *ProtobufParser) Histogram() ([]byte, *int64, *histogram.Histogram, *his
 	for i, span := range h.GetNegativeSpan() {
 		sh.NegativeSpans[i].Offset = span.GetOffset()
 		sh.NegativeSpans[i].Length = span.GetLength()
+	}
+	if p.mf.GetType() == dto.MetricType_GAUGE_HISTOGRAM {
+		sh.CounterResetHint = histogram.GaugeType
 	}
 	sh.Compact(0)
 	if ts != 0 {
