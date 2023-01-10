@@ -81,9 +81,7 @@ func (p *ReferenceCountedStringPool) intern(s string) string {
 
 // Release decreases the reference count for a pooled instance of s and removes it if the count reaches zero.
 func (p *ReferenceCountedStringPool) Release(s string) {
-	var (
-		cnt uint64
-	)
+	var cnt uint64
 
 	p.mu.RLock()
 	ref, ok := p.refs[s]
@@ -105,14 +103,13 @@ type interner struct {
 	strings ReferenceCountedStringPool
 }
 
-func (in *interner) Intern(lset labels.Labels) error {
+func (in *interner) Intern(lset labels.Labels) {
 	for i, l := range lset {
 		lset[i] = labels.Label{
 			Name:  in.strings.Intern(l.Name),
 			Value: in.strings.Intern(l.Value),
 		}
 	}
-	return nil
 }
 
 func (in *interner) Release(lsets ...labels.Labels) {
