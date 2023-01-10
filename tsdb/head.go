@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/rand"
 	"path/filepath"
 	"sync"
 	"time"
@@ -2026,7 +2027,7 @@ func (h *Head) updateWALReplayStatusRead(current int) {
 func GenerateTestHistograms(n int) (r []*histogram.Histogram) {
 	for i := 0; i < n; i++ {
 		r = append(r, &histogram.Histogram{
-			Count:         5 + uint64(i*4),
+			Count:         10 + uint64(i*8),
 			ZeroCount:     2 + uint64(i),
 			ZeroThreshold: 0.001,
 			Sum:           18.4 * float64(i+1),
@@ -2036,6 +2037,11 @@ func GenerateTestHistograms(n int) (r []*histogram.Histogram) {
 				{Offset: 1, Length: 2},
 			},
 			PositiveBuckets: []int64{int64(i + 1), 1, -1, 0},
+			NegativeSpans: []histogram.Span{
+				{Offset: 0, Length: 2},
+				{Offset: 1, Length: 2},
+			},
+			NegativeBuckets: []int64{int64(i + 1), 1, -1, 0},
 		})
 	}
 
@@ -2045,7 +2051,7 @@ func GenerateTestHistograms(n int) (r []*histogram.Histogram) {
 func GenerateTestFloatHistograms(n int) (r []*histogram.FloatHistogram) {
 	for i := 0; i < n; i++ {
 		r = append(r, &histogram.FloatHistogram{
-			Count:         5 + float64(i*4),
+			Count:         10 + float64(i*8),
 			ZeroCount:     2 + float64(i),
 			ZeroThreshold: 0.001,
 			Sum:           18.4 * float64(i+1),
@@ -2055,6 +2061,37 @@ func GenerateTestFloatHistograms(n int) (r []*histogram.FloatHistogram) {
 				{Offset: 1, Length: 2},
 			},
 			PositiveBuckets: []float64{float64(i + 1), float64(i + 2), float64(i + 1), float64(i + 1)},
+			NegativeSpans: []histogram.Span{
+				{Offset: 0, Length: 2},
+				{Offset: 1, Length: 2},
+			},
+			NegativeBuckets: []float64{float64(i + 1), float64(i + 2), float64(i + 1), float64(i + 1)},
+		})
+	}
+
+	return r
+}
+
+func GenerateTestGaugeHistograms(n int) (r []*histogram.FloatHistogram) {
+	for x := 0; x < n; x++ {
+		i := rand.Intn(n)
+		r = append(r, &histogram.FloatHistogram{
+			CounterResetHint: histogram.GaugeType,
+			Count:            10 + float64(i*8),
+			ZeroCount:        2 + float64(i),
+			ZeroThreshold:    0.001,
+			Sum:              18.4 * float64(i+1),
+			Schema:           1,
+			PositiveSpans: []histogram.Span{
+				{Offset: 0, Length: 2},
+				{Offset: 1, Length: 2},
+			},
+			PositiveBuckets: []float64{float64(i + 1), float64(i + 2), float64(i + 1), float64(i + 1)},
+			NegativeSpans: []histogram.Span{
+				{Offset: 0, Length: 2},
+				{Offset: 1, Length: 2},
+			},
+			NegativeBuckets: []float64{float64(i + 1), float64(i + 2), float64(i + 1), float64(i + 1)},
 		})
 	}
 
