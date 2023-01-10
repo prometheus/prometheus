@@ -695,9 +695,10 @@ func (db *DB) Close() error {
 type appender struct {
 	*DB
 
-	pendingSeries    []record.RefSeries
-	pendingSamples   []record.RefSample
-	pendingExamplars []record.RefExemplar
+	pendingSeries     []record.RefSeries
+	pendingSamples    []record.RefSample
+	pendingHistograms []record.RefHistogramSample
+	pendingExamplars  []record.RefExemplar
 
 	// Pointers to the series referenced by each element of pendingSamples.
 	// Series lock is not held on elements.
@@ -821,8 +822,52 @@ func (a *appender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exem
 }
 
 func (a *appender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	// TODO: Add histogram support.
-	return 0, nil
+	// series references and chunk references are identical for agent mode.
+	headRef := chunks.HeadSeriesRef(ref)
+
+	series := a.series.GetByID(headRef)
+	if series == nil {
+		// Ensure no empty or duplicate labels have gotten through. This mirrors the
+		// equivalent validation code in the TSDB's headAppender.
+		l = l.WithoutEmpty()
+		if l.IsEmpty() {
+			return 0, errors.Wrap(tsdb.ErrInvalidSample, "empty labelset")
+		}
+
+		if lbl, dup := l.HasDuplicateLabelNames(); dup {
+			return 0, errors.Wrap(tsdb.ErrInvalidSample, fmt.Sprintf(`label name "%s" is not unique`, lbl))
+		}
+
+		var created bool
+		series, created = a.getOrCreate(l)
+		if created {
+			a.pendingSeries = append(a.pendingSeries, record.RefSeries{
+				Ref:    series.ref,
+				Labels: l,
+			})
+
+			a.metrics.numActiveSeries.Inc()
+		}
+	}
+
+	series.Lock()
+	defer series.Unlock()
+
+	if t < series.lastTs {
+		a.metrics.totalOutOfOrderSamples.Inc()
+		return 0, storage.ErrOutOfOrderSample
+	}
+
+	// NOTE: always modify pendingSamples and sampleSeries together
+	a.pendingHistograms = append(a.pendingHistograms, record.RefHistogramSample{
+		Ref: series.ref,
+		T:   t,
+		H:   h,
+	})
+	a.sampleSeries = append(a.sampleSeries, series)
+
+	a.metrics.totalAppendedSamples.Inc()
+	return storage.SeriesRef(series.ref), nil
 }
 
 func (a *appender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m metadata.Metadata) (storage.SeriesRef, error) {
@@ -846,6 +891,14 @@ func (a *appender) Commit() error {
 		buf = buf[:0]
 	}
 
+	if len(a.pendingHistograms) > 0 {
+		buf = encoder.HistogramSamples(a.pendingHistograms, buf)
+		if err := a.wal.Log(buf); err != nil {
+			return err
+		}
+		buf = buf[:0]
+	}
+
 	if len(a.pendingSamples) > 0 {
 		buf = encoder.Samples(a.pendingSamples, buf)
 		if err := a.wal.Log(buf); err != nil {
@@ -862,6 +915,7 @@ func (a *appender) Commit() error {
 		buf = buf[:0]
 	}
 
+	//TODO(rabenhorst): Do this for histograms.
 	var series *memSeries
 	for i, s := range a.pendingSamples {
 		series = a.sampleSeries[i]

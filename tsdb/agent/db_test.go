@@ -16,6 +16,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"github.com/prometheus/prometheus/model/histogram"
 	"path/filepath"
 	"strconv"
 	"testing"
@@ -183,6 +184,84 @@ func TestCommit(t *testing.T) {
 	require.Equal(t, numSeries, walSeriesCount, "unexpected number of series")
 	require.Equal(t, numSeries*numDatapoints, walSamplesCount, "unexpected number of samples")
 	require.Equal(t, numSeries*numDatapoints, walExemplarsCount, "unexpected number of exemplars")
+}
+
+func TestCommitNativeHistogram(t *testing.T) {
+	const (
+		numDatapoints = 10
+		numSeries     = 8
+	)
+
+	s := createTestAgentDB(t, nil, DefaultOptions())
+	app := s.Appender(context.TODO())
+
+	lbls := labelsForTest(t.Name(), numSeries)
+	for _, l := range lbls {
+		lset := labels.New(l...)
+
+		ts := int64(0)
+
+		for i := 0; i < numDatapoints; i++ {
+			h := testHistogram()
+			_, err := app.AppendHistogram(0, lset, ts, h, nil)
+			require.NoError(t, err)
+			ts++
+		}
+	}
+
+	require.NoError(t, app.Commit())
+	require.NoError(t, s.Close())
+
+	sr, err := wlog.NewSegmentsReader(s.wal.Dir())
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, sr.Close())
+	}()
+
+	// Read records from WAL and check for expected count of series, samples, and exemplars.
+	var (
+		r   = wlog.NewReader(sr)
+		dec record.Decoder
+
+		walSeriesCount, walHistogramsCount int
+	)
+	for r.Next() {
+		rec := r.Record()
+		switch dec.Type(rec) {
+		case record.Series:
+			var series []record.RefSeries
+			series, err = dec.Series(rec, series)
+			require.NoError(t, err)
+			walSeriesCount += len(series)
+
+		case record.HistogramSamples:
+			var histograms []record.RefHistogramSample
+			histograms, err = dec.HistogramSamples(rec, histograms)
+			require.NoError(t, err)
+			walHistogramsCount += len(histograms)
+
+		default:
+		}
+	}
+
+	// Check that the WAL contained the same number of committed series/samples/exemplars.
+	require.Equal(t, numSeries, walSeriesCount, "unexpected number of series")
+	require.Equal(t, numSeries*numDatapoints, walHistogramsCount, "unexpected number of histograms")
+}
+
+func testHistogram() *histogram.Histogram {
+	return &histogram.Histogram{
+		Count:         5,
+		ZeroCount:     2,
+		Sum:           18.4,
+		ZeroThreshold: 0.1,
+		Schema:        1,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 1, Length: 2},
+		},
+		PositiveBuckets: []int64{1, 1, -1, 0}, // counts: 1, 2, 1, 1 (total 5)
+	}
 }
 
 func TestRollback(t *testing.T) {
