@@ -1643,6 +1643,7 @@ func (r *Reader) Postings(name string, values ...string) (Postings, error) {
 		return EmptyPostings(), nil
 	}
 
+	slices.Sort(values) // Values must be in order so we can step through the table on disk.
 	res := make([]Postings, 0, len(values))
 	skip := 0
 	valueIndex := 0
