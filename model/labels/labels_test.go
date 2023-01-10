@@ -696,6 +696,25 @@ func BenchmarkLabels_Hash(b *testing.B) {
 	}
 }
 
+func BenchmarkLabels_Copy(b *testing.B) {
+	m := map[string]string{
+		"job":        "node",
+		"instance":   "123.123.1.211:9090",
+		"path":       "/api/v1/namespaces/<namespace>/deployments/<name>",
+		"method":     "GET",
+		"namespace":  "system",
+		"status":     "500",
+		"prometheus": "prometheus-core-1",
+		"datacenter": "eu-west-1",
+		"pod_name":   "abcdef-99999-defee",
+	}
+	l := FromMap(m)
+
+	for i := 0; i < b.N; i++ {
+		l = l.Copy()
+	}
+}
+
 func TestMarshaling(t *testing.T) {
 	lbls := FromStrings("aaa", "111", "bbb", "2222", "ccc", "33333")
 	expectedJSON := "{\"aaa\":\"111\",\"bbb\":\"2222\",\"ccc\":\"33333\"}"
