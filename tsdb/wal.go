@@ -1018,7 +1018,7 @@ func (r *walReader) next() bool {
 	// If we reached the end of the reader, advance to the next one
 	// and close.
 	// Do not close on the last one as it will still be appended to.
-	if err == io.EOF {
+	if errors.Is(err, io.EOF) {
 		if r.cur == len(r.files)-1 {
 			return false
 		}
