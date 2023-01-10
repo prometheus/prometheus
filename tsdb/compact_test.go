@@ -2285,6 +2285,7 @@ func TestAsyncBlockWriterSuccess(t *testing.T) {
 	const series = 100
 	// prepare index, add all symbols
 	iw, err := index.NewWriter(context.Background(), filepath.Join(t.TempDir(), indexFilename))
+	require.NoError(t, err)
 
 	require.NoError(t, iw.AddSymbol("__name__"))
 	for ix := 0; ix < series; ix++ {
@@ -2330,6 +2331,7 @@ func TestAsyncBlockWriterFailure(t *testing.T) {
 
 	// We don't write symbols to this index writer, so adding series next will fail.
 	iw, err := index.NewWriter(context.Background(), filepath.Join(t.TempDir(), indexFilename))
+	require.NoError(t, err)
 
 	// async block writer expects index writer ready to receive series.
 	abw := newAsyncBlockWriter(chunkenc.NewPool(), cw, iw, semaphore.NewWeighted(int64(1)))
