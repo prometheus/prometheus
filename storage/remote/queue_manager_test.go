@@ -118,11 +118,10 @@ func TestSampleDelivery(t *testing.T) {
 				exemplars, series = createExemplars(n, n)
 			}
 			if tc.histograms {
-				histograms, series = createHistograms(n, n)
+				histograms, _, series = createHistograms(n, n, false)
 			}
 			if tc.floatHistograms {
-				floatHistograms, series = createFloatHistograms(n, n)
-
+				_, floatHistograms, series = createHistograms(n, n, true)
 			}
 
 			// Apply new config.
@@ -597,66 +596,50 @@ func createExemplars(numExemplars, numSeries int) ([]record.RefExemplar, []recor
 	return exemplars, series
 }
 
-func createHistograms(numSamples, numSeries int) ([]record.RefHistogramSample, []record.RefSeries) {
+func createHistograms(numSamples, numSeries int, floatHistogram bool) ([]record.RefHistogramSample, []record.RefFloatHistogramSample, []record.RefSeries) {
 	histograms := make([]record.RefHistogramSample, 0, numSamples)
-	series := make([]record.RefSeries, 0, numSeries)
-	for i := 0; i < numSeries; i++ {
-		name := fmt.Sprintf("test_metric_%d", i)
-		for j := 0; j < numSamples; j++ {
-			h := record.RefHistogramSample{
-				Ref: chunks.HeadSeriesRef(i),
-				T:   int64(j),
-				H: &histogram.Histogram{
-					Schema:          2,
-					ZeroThreshold:   1e-128,
-					ZeroCount:       0,
-					Count:           2,
-					Sum:             0,
-					PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
-					PositiveBuckets: []int64{int64(i) + 1},
-					NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
-					NegativeBuckets: []int64{int64(-i) - 1},
-				},
-			}
-			histograms = append(histograms, h)
-		}
-		series = append(series, record.RefSeries{
-			Ref:    chunks.HeadSeriesRef(i),
-			Labels: labels.FromStrings("__name__", name),
-		})
-	}
-	return histograms, series
-}
-
-func createFloatHistograms(numSamples, numSeries int) ([]record.RefFloatHistogramSample, []record.RefSeries) {
 	floatHistograms := make([]record.RefFloatHistogramSample, 0, numSamples)
 	series := make([]record.RefSeries, 0, numSeries)
 	for i := 0; i < numSeries; i++ {
 		name := fmt.Sprintf("test_metric_%d", i)
 		for j := 0; j < numSamples; j++ {
-			fh := record.RefFloatHistogramSample{
-				Ref: chunks.HeadSeriesRef(i),
-				T:   int64(j),
-				FH: &histogram.FloatHistogram{
-					Schema:          2,
-					ZeroThreshold:   1e-128,
-					ZeroCount:       0,
-					Count:           2,
-					Sum:             0,
-					PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
-					PositiveBuckets: []float64{float64(i) + 1},
-					NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
-					NegativeBuckets: []float64{float64(-i) - 1},
-				},
+			hist := &histogram.Histogram{
+				Schema:          2,
+				ZeroThreshold:   1e-128,
+				ZeroCount:       0,
+				Count:           2,
+				Sum:             0,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []int64{int64(i) + 1},
+				NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				NegativeBuckets: []int64{int64(-i) - 1},
 			}
-			floatHistograms = append(floatHistograms, fh)
+
+			if floatHistogram {
+				fh := record.RefFloatHistogramSample{
+					Ref: chunks.HeadSeriesRef(i),
+					T:   int64(j),
+					FH:  hist.ToFloat(),
+				}
+				floatHistograms = append(floatHistograms, fh)
+			} else {
+				h := record.RefHistogramSample{
+					Ref: chunks.HeadSeriesRef(i),
+					T:   int64(j),
+					H:   hist,
+				}
+				histograms = append(histograms, h)
+			}
 		}
 		series = append(series, record.RefSeries{
 			Ref:    chunks.HeadSeriesRef(i),
 			Labels: labels.FromStrings("__name__", name),
 		})
 	}
-	return floatHistograms, series
+	if floatHistogram {
+		return nil, floatHistograms, series
+	}
+	return histograms, nil, series
 }
 
 func getSeriesNameFromRef(r record.RefSeries) string {
