@@ -1148,18 +1148,29 @@ func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID ui
 	app, _ := s.app.(*chunkenc.HistogramAppender)
 	var (
 		positiveInterjections, negativeInterjections []chunkenc.Interjection
+		pBackwardInter, nBackwardInter               []chunkenc.Interjection
+		pMergedSpans, nMergedSpans                   []histogram.Span
 		okToAppend, counterReset                     bool
 	)
 	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.EncHistogram, chunkDiskMapper, chunkRange)
 	if !sampleInOrder {
 		return sampleInOrder, chunkCreated
 	}
-
+	gauge := h.CounterResetHint == histogram.GaugeType
 	if app != nil {
-		positiveInterjections, negativeInterjections, okToAppend, counterReset = app.Appendable(h)
+		if gauge {
+			positiveInterjections, negativeInterjections, pBackwardInter, nBackwardInter, pMergedSpans, nMergedSpans, okToAppend = app.AppendableGauge(h)
+		} else {
+			positiveInterjections, negativeInterjections, okToAppend, counterReset = app.Appendable(h)
+		}
 	}
 
 	if !chunkCreated {
+		if len(pBackwardInter)+len(nBackwardInter) > 0 {
+			h.PositiveSpans = pMergedSpans
+			h.NegativeSpans = nMergedSpans
+			app.RecodeHistogramm(h, pBackwardInter, nBackwardInter)
+		}
 		// We have 3 cases here
 		// - !okToAppend -> We need to cut a new chunk.
 		// - okToAppend but we have interjections → Existing chunk needs
@@ -1184,9 +1195,12 @@ func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID ui
 	if chunkCreated {
 		hc := s.headChunk.chunk.(*chunkenc.HistogramChunk)
 		header := chunkenc.UnknownCounterReset
-		if counterReset {
+		switch {
+		case gauge:
+			header = chunkenc.GaugeType
+		case counterReset:
 			header = chunkenc.CounterReset
-		} else if okToAppend {
+		case okToAppend:
 			header = chunkenc.NotCounterReset
 		}
 		hc.SetCounterResetHeader(header)
@@ -1265,11 +1279,12 @@ func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, 
 	if chunkCreated {
 		hc := s.headChunk.chunk.(*chunkenc.FloatHistogramChunk)
 		header := chunkenc.UnknownCounterReset
-		if gauge {
+		switch {
+		case gauge:
 			header = chunkenc.GaugeType
-		} else if counterReset {
+		case counterReset:
 			header = chunkenc.CounterReset
-		} else if okToAppend {
+		case okToAppend:
 			header = chunkenc.NotCounterReset
 		}
 		hc.SetCounterResetHeader(header)
