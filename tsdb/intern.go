@@ -15,7 +15,8 @@ package tsdb
 
 import (
 	"sync"
-	"sync/atomic"
+
+	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/model/labels"
 )
@@ -27,7 +28,7 @@ type ReferenceCountedStringPool struct {
 }
 
 type stringRef struct {
-	cnt uint64
+	cnt *atomic.Uint64
 	str string
 }
 
@@ -36,7 +37,7 @@ func (p *ReferenceCountedStringPool) Intern(s string) string {
 	p.mu.RLock()
 	ref, ok := p.refs[s]
 	if ok {
-		atomic.AddUint64(&ref.cnt, 1)
+		ref.cnt.Add(1)
 	}
 	p.mu.RUnlock()
 	if ok {
@@ -50,7 +51,7 @@ func (p *ReferenceCountedStringPool) InternBytes(b []byte) string {
 	p.mu.RLock()
 	ref, ok := p.refs[string(b)] // compiler is smart enough to not allocate on map key lookup
 	if ok {
-		atomic.AddUint64(&ref.cnt, 1)
+		ref.cnt.Add(1)
 	}
 	p.mu.RUnlock()
 	if ok {
@@ -64,7 +65,7 @@ func (p *ReferenceCountedStringPool) intern(s string) string {
 	defer p.mu.Unlock()
 
 	if ref, ok := p.refs[s]; ok {
-		atomic.AddUint64(&ref.cnt, 1)
+		ref.cnt.Add(1)
 		return ref.str
 	}
 
@@ -72,7 +73,7 @@ func (p *ReferenceCountedStringPool) intern(s string) string {
 		p.refs = map[string]*stringRef{}
 	}
 	p.refs[s] = &stringRef{
-		cnt: 1,
+		cnt: atomic.NewUint64(1),
 		str: s,
 	}
 	return s
@@ -87,13 +88,13 @@ func (p *ReferenceCountedStringPool) Release(s string) {
 	p.mu.RLock()
 	ref, ok := p.refs[s]
 	if ok {
-		cnt = atomic.AddUint64(&ref.cnt, ^uint64(0))
+		cnt = ref.cnt.Add(1)
 	}
 	p.mu.RUnlock()
 
 	if cnt == 0 && ok {
 		p.mu.Lock()
-		if atomic.LoadUint64(&ref.cnt) == 0 {
+		if ref.cnt.Load() == 0 {
 			delete(p.refs, s)
 		}
 		p.mu.Unlock()
