@@ -79,20 +79,21 @@ func (rule *RecordingRule) Eval(ctx context.Context, ts time.Time, query QueryFu
 	if err != nil {
 		return nil, err
 	}
+
 	// Override the metric name and labels.
+	lb := labels.NewBuilder(nil)
+
 	for i := range vector {
 		sample := &vector[i]
 
-		lb := labels.NewBuilder(sample.Metric)
-
+		lb.Reset(sample.Metric)
 		lb.Set(labels.MetricName, rule.name)
 
 		rule.labels.Range(func(l labels.Label) {
 			lb.Set(l.Name, l.Value)
 		})
 
-		labelSetSize := len(sample.Metric) + len(rule.labels) + 1 // additional 1 for rule name
-		sample.Metric = lb.Labels(make(labels.Labels, 0, labelSetSize))
+		sample.Metric = lb.Labels(sample.Metric)
 	}
 
 	// Check that the rule does not produce identical metrics after applying
