@@ -376,6 +376,10 @@ loop:
 	return interjections, bInterjections, mergedSpans
 }
 
+type bucketValue interface {
+	int64 | float64
+}
+
 // interject merges 'in' with the provided interjections and writes them into
 // 'out', which must already have the appropriate length.
 func interject[BV bucketValue](in, out []BV, interjections []Interjection, deltas bool) []BV {
