@@ -54,6 +54,14 @@ func TestDB_InvalidSeries(t *testing.T) {
 		require.ErrorIs(t, err, tsdb.ErrInvalidSample, "should reject duplicate labels")
 	})
 
+	t.Run("Histograms", func(t *testing.T) {
+		_, err := app.AppendHistogram(0, labels.Labels{}, 0, testHistogram(), nil)
+		require.ErrorIs(t, err, tsdb.ErrInvalidSample, "should reject empty labels")
+
+		_, err = app.AppendHistogram(0, labels.FromStrings("a", "1", "a", "2"), 0, testHistogram(), nil)
+		require.ErrorIs(t, err, tsdb.ErrInvalidSample, "should reject duplicate labels")
+	})
+
 	t.Run("Exemplars", func(t *testing.T) {
 		sRef, err := app.Append(0, labels.FromStrings("a", "1"), 0, 0)
 		require.NoError(t, err, "should not reject valid series")
@@ -113,6 +121,7 @@ func TestUnsupportedFunctions(t *testing.T) {
 func TestCommit(t *testing.T) {
 	const (
 		numDatapoints = 1000
+		numHistograms = 100
 		numSeries     = 8
 	)
 
@@ -139,6 +148,26 @@ func TestCommit(t *testing.T) {
 		}
 	}
 
+	lbls = labelsForTest(t.Name()+"_histogram", numSeries)
+	for _, l := range lbls {
+		lset := labels.New(l...)
+
+		for i := 0; i < numHistograms; i++ {
+			_, err := app.AppendHistogram(0, lset, int64(i), testHistogram(), nil)
+			require.NoError(t, err)
+		}
+	}
+
+	lbls = labelsForTest(t.Name()+"_float_histogram", numSeries)
+	for _, l := range lbls {
+		lset := labels.New(l...)
+
+		for i := 0; i < numHistograms; i++ {
+			_, err := app.AppendHistogram(0, lset, int64(i), nil, testFloatHistogram())
+			require.NoError(t, err)
+		}
+	}
+
 	require.NoError(t, app.Commit())
 	require.NoError(t, s.Close())
 
@@ -153,7 +182,7 @@ func TestCommit(t *testing.T) {
 		r   = wlog.NewReader(sr)
 		dec record.Decoder
 
-		walSeriesCount, walSamplesCount, walExemplarsCount int
+		walSeriesCount, walSamplesCount, walExemplarsCount, walHistogramCount, walFloatHistogramCount int
 	)
 	for r.Next() {
 		rec := r.Record()
@@ -170,6 +199,18 @@ func TestCommit(t *testing.T) {
 			require.NoError(t, err)
 			walSamplesCount += len(samples)
 
+		case record.HistogramSamples:
+			var histograms []record.RefHistogramSample
+			histograms, err = dec.HistogramSamples(rec, histograms)
+			require.NoError(t, err)
+			walHistogramCount += len(histograms)
+
+		case record.FloatHistogramSamples:
+			var floatHistograms []record.RefFloatHistogramSample
+			floatHistograms, err = dec.FloatHistogramSamples(rec, floatHistograms)
+			require.NoError(t, err)
+			walFloatHistogramCount += len(floatHistograms)
+
 		case record.Exemplars:
 			var exemplars []record.RefExemplar
 			exemplars, err = dec.Exemplars(rec, exemplars)
@@ -181,72 +222,11 @@ func TestCommit(t *testing.T) {
 	}
 
 	// Check that the WAL contained the same number of committed series/samples/exemplars.
-	require.Equal(t, numSeries, walSeriesCount, "unexpected number of series")
+	require.Equal(t, numSeries*3, walSeriesCount, "unexpected number of series")
 	require.Equal(t, numSeries*numDatapoints, walSamplesCount, "unexpected number of samples")
 	require.Equal(t, numSeries*numDatapoints, walExemplarsCount, "unexpected number of exemplars")
-}
-
-func TestCommitNativeHistogram(t *testing.T) {
-	const (
-		numDatapoints = 10
-		numSeries     = 8
-	)
-
-	s := createTestAgentDB(t, nil, DefaultOptions())
-	app := s.Appender(context.TODO())
-
-	lbls := labelsForTest(t.Name(), numSeries)
-	for _, l := range lbls {
-		lset := labels.New(l...)
-
-		ts := int64(0)
-
-		for i := 0; i < numDatapoints; i++ {
-			h := testHistogram()
-			_, err := app.AppendHistogram(0, lset, ts, h, nil)
-			require.NoError(t, err)
-			ts++
-		}
-	}
-
-	require.NoError(t, app.Commit())
-	require.NoError(t, s.Close())
-
-	sr, err := wlog.NewSegmentsReader(s.wal.Dir())
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, sr.Close())
-	}()
-
-	// Read records from WAL and check for expected count of series, samples, and exemplars.
-	var (
-		r   = wlog.NewReader(sr)
-		dec record.Decoder
-
-		walSeriesCount, walHistogramsCount int
-	)
-	for r.Next() {
-		rec := r.Record()
-		switch dec.Type(rec) {
-		case record.Series:
-			var series []record.RefSeries
-			series, err = dec.Series(rec, series)
-			require.NoError(t, err)
-			walSeriesCount += len(series)
-
-		case record.HistogramSamples:
-			var histograms []record.RefHistogramSample
-			histograms, err = dec.HistogramSamples(rec, histograms)
-			require.NoError(t, err)
-			walHistogramsCount += len(histograms)
-
-		default:
-		}
-	}
-
-	// Check that the WAL contained the same number of committed series/samples/exemplars.
-	require.Equal(t, numSeries, walSeriesCount, "unexpected number of series")
-	require.Equal(t, numSeries*numDatapoints, walHistogramsCount, "unexpected number of histograms")
+	require.Equal(t, numSeries*numHistograms, walHistogramCount, "unexpected number of histograms")
+	require.Equal(t, numSeries*numHistograms, walFloatHistogramCount, "unexpected number of float histograms")
 }
 
 func testHistogram() *histogram.Histogram {
@@ -264,9 +244,30 @@ func testHistogram() *histogram.Histogram {
 	}
 }
 
+func testFloatHistogram() *histogram.FloatHistogram {
+	return &histogram.FloatHistogram{
+		Count:         175.0,
+		ZeroCount:     2.0,
+		Sum:           0.0008280461746287094,
+		ZeroThreshold: 2.938735877055719e-39,
+		Schema:        3,
+		PositiveSpans: []histogram.Span{
+			{Offset: -161, Length: 1},
+			{Offset: 8, Length: 3},
+		},
+		NegativeSpans: []histogram.Span{
+			{Offset: -162, Length: 1},
+			{Offset: 23, Length: 4},
+		},
+		PositiveBuckets: []float64{1.0, 2.0, -1.0, -1.0},
+		NegativeBuckets: []float64{1.0, 3.0, -2.0, -1.0, 1.0},
+	}
+}
+
 func TestRollback(t *testing.T) {
 	const (
 		numDatapoints = 1000
+		numHistograms = 100
 		numSeries     = 8
 	)
 
@@ -280,6 +281,26 @@ func TestRollback(t *testing.T) {
 		for i := 0; i < numDatapoints; i++ {
 			sample := tsdbutil.GenerateSamples(0, 1)
 			_, err := app.Append(0, lset, sample[0].T(), sample[0].V())
+			require.NoError(t, err)
+		}
+	}
+
+	lbls = labelsForTest(t.Name()+"_histogram", numSeries)
+	for _, l := range lbls {
+		lset := labels.New(l...)
+
+		for i := 0; i < numHistograms; i++ {
+			_, err := app.AppendHistogram(0, lset, int64(i), testHistogram(), nil)
+			require.NoError(t, err)
+		}
+	}
+
+	lbls = labelsForTest(t.Name()+"_float_histogram", numSeries)
+	for _, l := range lbls {
+		lset := labels.New(l...)
+
+		for i := 0; i < numHistograms; i++ {
+			_, err := app.AppendHistogram(0, lset, int64(i), nil, testFloatHistogram())
 			require.NoError(t, err)
 		}
 	}
@@ -301,7 +322,7 @@ func TestRollback(t *testing.T) {
 		r   = wlog.NewReader(sr)
 		dec record.Decoder
 
-		walSeriesCount, walSamplesCount, walExemplarsCount int
+		walSeriesCount, walSamplesCount, walHistogramCount, walFloatHistogramCount, walExemplarsCount int
 	)
 	for r.Next() {
 		rec := r.Record()
@@ -324,6 +345,18 @@ func TestRollback(t *testing.T) {
 			require.NoError(t, err)
 			walExemplarsCount += len(exemplars)
 
+		case record.HistogramSamples:
+			var histograms []record.RefHistogramSample
+			histograms, err = dec.HistogramSamples(rec, histograms)
+			require.NoError(t, err)
+			walHistogramCount += len(histograms)
+
+		case record.FloatHistogramSamples:
+			var floatHistograms []record.RefFloatHistogramSample
+			floatHistograms, err = dec.FloatHistogramSamples(rec, floatHistograms)
+			require.NoError(t, err)
+			walFloatHistogramCount += len(floatHistograms)
+
 		default:
 		}
 	}
@@ -332,11 +365,14 @@ func TestRollback(t *testing.T) {
 	require.Equal(t, 0, walSeriesCount, "series should not have been written to WAL")
 	require.Equal(t, 0, walSamplesCount, "samples should not have been written to WAL")
 	require.Equal(t, 0, walExemplarsCount, "exemplars should not have been written to WAL")
+	require.Equal(t, 0, walHistogramCount, "histograms should not have been written to WAL")
+	require.Equal(t, 0, walFloatHistogramCount, "float histograms should not have been written to WAL")
 }
 
 func TestFullTruncateWAL(t *testing.T) {
 	const (
 		numDatapoints = 1000
+		numHistograms = 100
 		numSeries     = 800
 		lastTs        = 500
 	)
@@ -362,11 +398,33 @@ func TestFullTruncateWAL(t *testing.T) {
 		require.NoError(t, app.Commit())
 	}
 
+	lbls = labelsForTest(t.Name()+"_histogram", numSeries)
+	for _, l := range lbls {
+		lset := labels.New(l...)
+
+		for i := 0; i < numHistograms; i++ {
+			_, err := app.AppendHistogram(0, lset, int64(lastTs), testHistogram(), nil)
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+	}
+
+	lbls = labelsForTest(t.Name()+"_float_histogram", numSeries)
+	for _, l := range lbls {
+		lset := labels.New(l...)
+
+		for i := 0; i < numHistograms; i++ {
+			_, err := app.AppendHistogram(0, lset, int64(lastTs), nil, testFloatHistogram())
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+	}
+
 	// Truncate WAL with mint to GC all the samples.
 	s.truncate(lastTs + 1)
 
 	m := gatherFamily(t, reg, "prometheus_agent_deleted_series")
-	require.Equal(t, float64(numSeries), m.Metric[0].Gauge.GetValue(), "agent wal truncate mismatch of deleted series count")
+	require.Equal(t, float64(numSeries*3), m.Metric[0].Gauge.GetValue(), "agent wal truncate mismatch of deleted series count")
 }
 
 func TestPartialTruncateWAL(t *testing.T) {
@@ -398,6 +456,28 @@ func TestPartialTruncateWAL(t *testing.T) {
 		require.NoError(t, app.Commit())
 	}
 
+	lbls = labelsForTest(t.Name()+"_histogram_batch-1", numSeries)
+	for _, l := range lbls {
+		lset := labels.New(l...)
+
+		for i := 0; i < numDatapoints; i++ {
+			_, err := app.AppendHistogram(0, lset, lastTs, testHistogram(), nil)
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+	}
+
+	lbls = labelsForTest(t.Name()+"_float_histogram_batch-1", numSeries)
+	for _, l := range lbls {
+		lset := labels.New(l...)
+
+		for i := 0; i < numDatapoints; i++ {
+			_, err := app.AppendHistogram(0, lset, lastTs, nil, testFloatHistogram())
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+	}
+
 	// Create second batch of 800 series with 1000 data-points with a fixed lastTs as 600.
 	lastTs = 600
 	lbls = labelsForTest(t.Name()+"batch-2", numSeries)
@@ -411,16 +491,39 @@ func TestPartialTruncateWAL(t *testing.T) {
 		require.NoError(t, app.Commit())
 	}
 
+	lbls = labelsForTest(t.Name()+"_histogram_batch-2", numSeries)
+	for _, l := range lbls {
+		lset := labels.New(l...)
+
+		for i := 0; i < numDatapoints; i++ {
+			_, err := app.AppendHistogram(0, lset, lastTs, testHistogram(), nil)
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+	}
+
+	lbls = labelsForTest(t.Name()+"_float_histogram_batch-2", numSeries)
+	for _, l := range lbls {
+		lset := labels.New(l...)
+
+		for i := 0; i < numDatapoints; i++ {
+			_, err := app.AppendHistogram(0, lset, lastTs, nil, testFloatHistogram())
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+	}
+
 	// Truncate WAL with mint to GC only the first batch of 800 series and retaining 2nd batch of 800 series.
 	s.truncate(lastTs - 1)
 
 	m := gatherFamily(t, reg, "prometheus_agent_deleted_series")
-	require.Equal(t, m.Metric[0].Gauge.GetValue(), float64(numSeries), "agent wal truncate mismatch of deleted series count")
+	require.Equal(t, float64(numSeries*3), m.Metric[0].Gauge.GetValue(), "agent wal truncate mismatch of deleted series count")
 }
 
 func TestWALReplay(t *testing.T) {
 	const (
 		numDatapoints = 1000
+		numHistograms = 100
 		numSeries     = 8
 		lastTs        = 500
 	)
@@ -434,6 +537,26 @@ func TestWALReplay(t *testing.T) {
 
 		for i := 0; i < numDatapoints; i++ {
 			_, err := app.Append(0, lset, lastTs, 0)
+			require.NoError(t, err)
+		}
+	}
+
+	lbls = labelsForTest(t.Name()+"_histogram", numSeries)
+	for _, l := range lbls {
+		lset := labels.New(l...)
+
+		for i := 0; i < numHistograms; i++ {
+			_, err := app.AppendHistogram(0, lset, lastTs, testHistogram(), nil)
+			require.NoError(t, err)
+		}
+	}
+
+	lbls = labelsForTest(t.Name()+"_float_histogram", numSeries)
+	for _, l := range lbls {
+		lset := labels.New(l...)
+
+		for i := 0; i < numHistograms; i++ {
+			_, err := app.AppendHistogram(0, lset, lastTs, nil, testFloatHistogram())
 			require.NoError(t, err)
 		}
 	}
@@ -456,7 +579,7 @@ func TestWALReplay(t *testing.T) {
 
 	// Check if all the series are retrieved back from the WAL.
 	m := gatherFamily(t, reg, "prometheus_agent_active_series")
-	require.Equal(t, float64(numSeries), m.Metric[0].Gauge.GetValue(), "agent wal replay mismatch of active series count")
+	require.Equal(t, float64(numSeries*3), m.Metric[0].Gauge.GetValue(), "agent wal replay mismatch of active series count")
 
 	// Check if lastTs of the samples retrieved from the WAL is retained.
 	metrics := replayStorage.series.series
@@ -509,6 +632,14 @@ func Test_ExistingWAL_NextRef(t *testing.T) {
 		_, err := app.Append(0, lset, 0, 100)
 		require.NoError(t, err)
 	}
+
+	histogramCount := 10
+	// Append <histogramCount> series
+	for i := 0; i < histogramCount; i++ {
+		lset := labels.FromStrings(model.MetricNameLabel, fmt.Sprintf("histogram_%d", i))
+		_, err := app.AppendHistogram(0, lset, 0, testHistogram(), nil)
+		require.NoError(t, err)
+	}
 	require.NoError(t, app.Commit())
 
 	// Truncate the WAL to force creation of a new segment.
@@ -520,7 +651,7 @@ func Test_ExistingWAL_NextRef(t *testing.T) {
 	require.NoError(t, err)
 	defer require.NoError(t, db.Close())
 
-	require.Equal(t, uint64(seriesCount), db.nextRef.Load(), "nextRef should be equal to the number of series written across the entire WAL")
+	require.Equal(t, uint64(seriesCount+histogramCount), db.nextRef.Load(), "nextRef should be equal to the number of series written across the entire WAL")
 }
 
 func Test_validateOptions(t *testing.T) {
