@@ -30,6 +30,7 @@ import (
 	"go.uber.org/goleak"
 	"gopkg.in/yaml.v2"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -37,6 +38,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
@@ -1330,4 +1332,69 @@ func TestUpdateMissedEvalMetrics(t *testing.T) {
 	for _, tst := range tests {
 		testFunc(tst)
 	}
+}
+
+func TestNativeHistogramsInRecordingRules(t *testing.T) {
+	suite, err := promql.NewTest(t, "")
+	require.NoError(t, err)
+	t.Cleanup(suite.Close)
+
+	err = suite.Run()
+	require.NoError(t, err)
+
+	// Add some histograms.
+	db := suite.TSDB()
+	hists := tsdb.GenerateTestHistograms(5)
+	ts := time.Now()
+	app := db.Appender(context.Background())
+	for i, h := range hists {
+		l := labels.FromStrings("__name__", "histogram_metric", "idx", fmt.Sprintf("%d", i))
+		_, err := app.AppendHistogram(0, l, ts.UnixMilli(), h.Copy(), nil)
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	opts := &ManagerOptions{
+		QueryFunc:  EngineQueryFunc(suite.QueryEngine(), suite.Storage()),
+		Appendable: suite.Storage(),
+		Queryable:  suite.Storage(),
+		Context:    context.Background(),
+		Logger:     log.NewNopLogger(),
+	}
+
+	expr, err := parser.ParseExpr("sum(histogram_metric)")
+	require.NoError(t, err)
+	rule := NewRecordingRule("sum:histogram_metric", expr, labels.Labels{})
+
+	group := NewGroup(GroupOptions{
+		Name:          "default",
+		Interval:      time.Hour,
+		Rules:         []Rule{rule},
+		ShouldRestore: true,
+		Opts:          opts,
+	})
+
+	group.Eval(context.Background(), ts.Add(10*time.Second))
+
+	q, err := db.Querier(context.Background(), ts.UnixMilli(), ts.Add(20*time.Second).UnixMilli())
+	require.NoError(t, err)
+	ss := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "__name__", "sum:histogram_metric"))
+	require.True(t, ss.Next())
+	s := ss.At()
+	require.False(t, ss.Next())
+
+	require.Equal(t, labels.FromStrings("__name__", "sum:histogram_metric"), s.Labels())
+
+	expHist := hists[0].ToFloat()
+	for _, h := range hists[1:] {
+		expHist = expHist.Add(h.ToFloat())
+	}
+	expHist.CounterResetHint = histogram.GaugeType
+
+	it := s.Iterator(nil)
+	require.Equal(t, chunkenc.ValFloatHistogram, it.Next())
+	tsp, fh := it.AtFloatHistogram()
+	require.Equal(t, ts.Add(10*time.Second).UnixMilli(), tsp)
+	require.Equal(t, expHist, fh)
+	require.Equal(t, chunkenc.ValNone, it.Next())
 }
