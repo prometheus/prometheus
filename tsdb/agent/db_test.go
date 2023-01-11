@@ -16,7 +16,6 @@ package agent
 import (
 	"context"
 	"fmt"
-	"github.com/prometheus/prometheus/model/histogram"
 	"path/filepath"
 	"strconv"
 	"testing"
@@ -30,6 +29,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
