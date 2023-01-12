@@ -116,7 +116,8 @@ Loop:
 		var (
 			t  int64
 			v  float64
-			h  *histogram.FloatHistogram
+			h  *histogram.Histogram
+			fh *histogram.FloatHistogram
 			ok bool
 		)
 		valueType := it.Seek(maxt)
@@ -124,11 +125,14 @@ Loop:
 		case chunkenc.ValFloat:
 			t, v = it.At()
 		case chunkenc.ValFloatHistogram, chunkenc.ValHistogram:
-			t, h = it.AtFloatHistogram()
+			t, fh = it.AtFloatHistogram()
 		default:
-			t, v, _, ok = it.PeekBack(1)
+			t, v, h, fh, ok = it.PeekBack(1)
 			if !ok {
 				continue Loop
+			}
+			if h != nil {
+				fh = h.ToFloat()
 			}
 		}
 		// The exposition formats do not support stale markers, so drop them. This
@@ -141,7 +145,7 @@ Loop:
 
 		vec = append(vec, promql.Sample{
 			Metric: s.Labels(),
-			Point:  promql.Point{T: t, V: v, H: h},
+			Point:  promql.Point{T: t, V: v, H: fh},
 		})
 	}
 	if ws := set.Warnings(); len(ws) > 0 {

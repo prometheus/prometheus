@@ -340,16 +340,16 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 		l := labels.FromStrings("__name__", "test_metric", "foo", fmt.Sprintf("%d", i))
 		expL := labels.FromStrings("__name__", "test_metric", "instance", "", "foo", fmt.Sprintf("%d", i))
 		if i%3 == 0 {
-			_, err = app.Append(0, l, 101*60*1000, float64(i*100))
+			_, err = app.Append(0, l, 100*60*1000, float64(i*100))
 			expVec = append(expVec, promql.Sample{
-				Point:  promql.Point{T: 101 * 60 * 1000, V: float64(i * 100)},
+				Point:  promql.Point{T: 100 * 60 * 1000, V: float64(i * 100)},
 				Metric: expL,
 			})
 		} else {
 			hist.ZeroCount++
-			_, err = app.AppendHistogram(0, l, 101*60*1000, hist.Copy(), nil)
+			_, err = app.AppendHistogram(0, l, 100*60*1000, hist.Copy(), nil)
 			expVec = append(expVec, promql.Sample{
-				Point:  promql.Point{T: 101 * 60 * 1000, H: hist.ToFloat()},
+				Point:  promql.Point{T: 100 * 60 * 1000, H: hist.ToFloat()},
 				Metric: expL,
 			})
 		}
