@@ -169,19 +169,19 @@ func TestCommitErr(t *testing.T) {
 
 func BenchmarkRemoteWriteOOOSamples(b *testing.B) {
 	dir := b.TempDir()
-	opts := tsdb.DefaultHeadOptions()
-	opts.ChunkDirRoot = dir
-	opts.OutOfOrderCapMax.Store(30)
-	opts.OutOfOrderTimeWindow.Store(120 * time.Minute.Milliseconds())
 
-	h, err := tsdb.NewHead(nil, nil, nil, nil, opts, nil)
+	opts := tsdb.DefaultOptions()
+	opts.OutOfOrderCapMax = 30
+	opts.OutOfOrderTimeWindow = 120 * time.Minute.Milliseconds()
+
+	db, err := tsdb.Open(dir, nil, nil, opts, nil)
 	require.NoError(b, err)
-	b.Cleanup(func() {
-		require.NoError(b, h.Close())
-	})
-	require.NoError(b, h.Init(0))
 
-	handler := NewWriteHandler(log.NewNopLogger(), h)
+	b.Cleanup(func() {
+		require.NoError(b, db.Close())
+	})
+
+	handler := NewWriteHandler(log.NewNopLogger(), db.Head())
 
 	buf, _, err := buildWriteRequest(genSeriesWithSample(1000, 200*time.Minute.Milliseconds()), nil, nil, nil)
 	require.NoError(b, err)
@@ -192,7 +192,7 @@ func BenchmarkRemoteWriteOOOSamples(b *testing.B) {
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
 	require.Equal(b, http.StatusNoContent, recorder.Code)
-	require.Equal(b, h.NumSeries(), uint64(1000))
+	require.Equal(b, db.Head().NumSeries(), uint64(1000))
 
 	var bufRequests [][]byte
 	for i := 0; i < 100; i++ {
@@ -209,7 +209,7 @@ func BenchmarkRemoteWriteOOOSamples(b *testing.B) {
 		recorder = httptest.NewRecorder()
 		handler.ServeHTTP(recorder, req)
 		require.Equal(b, http.StatusNoContent, recorder.Code)
-		require.Equal(b, h.NumSeries(), uint64(1000))
+		require.Equal(b, db.Head().NumSeries(), uint64(1000))
 	}
 }
 
