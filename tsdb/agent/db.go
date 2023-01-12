@@ -44,6 +44,11 @@ import (
 	"github.com/prometheus/prometheus/tsdb/wlog"
 )
 
+const (
+	sampleMetricTypeFloat     = "float"
+	sampleMetricTypeHistogram = "histogram"
+)
+
 var ErrUnsupported = errors.New("unsupported operation with WAL-only storage")
 
 // Default values for options.
@@ -96,9 +101,8 @@ type dbMetrics struct {
 
 	numActiveSeries             prometheus.Gauge
 	numWALSeriesPendingDeletion prometheus.Gauge
-	totalAppendedSamples        prometheus.Counter
+	totalAppendedSamples        *prometheus.CounterVec
 	totalAppendedExemplars      prometheus.Counter
-	totalAppendedHistograms     prometheus.Counter
 	totalOutOfOrderSamples      prometheus.Counter
 	walTruncateDuration         prometheus.Summary
 	walCorruptionsTotal         prometheus.Counter
@@ -121,15 +125,10 @@ func newDBMetrics(r prometheus.Registerer) *dbMetrics {
 		Help: "Number of series pending deletion from the WAL",
 	})
 
-	m.totalAppendedSamples = prometheus.NewCounter(prometheus.CounterOpts{
+	m.totalAppendedSamples = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "prometheus_agent_samples_appended_total",
 		Help: "Total number of samples appended to the storage",
-	})
-
-	m.totalAppendedHistograms = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_agent_histograms_appended_total",
-		Help: "Total number of histograms appended to the storage",
-	})
+	}, []string{"type"})
 
 	m.totalAppendedExemplars = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_agent_exemplars_appended_total",
@@ -181,7 +180,6 @@ func newDBMetrics(r prometheus.Registerer) *dbMetrics {
 			m.numActiveSeries,
 			m.numWALSeriesPendingDeletion,
 			m.totalAppendedSamples,
-			m.totalAppendedHistograms,
 			m.totalAppendedExemplars,
 			m.totalOutOfOrderSamples,
 			m.walTruncateDuration,
@@ -205,7 +203,6 @@ func (m *dbMetrics) Unregister() {
 		m.numActiveSeries,
 		m.numWALSeriesPendingDeletion,
 		m.totalAppendedSamples,
-		m.totalAppendedHistograms,
 		m.totalAppendedExemplars,
 		m.totalOutOfOrderSamples,
 		m.walTruncateDuration,
@@ -779,7 +776,12 @@ type appender struct {
 	// Series lock is not held on elements.
 	sampleSeries []*memSeries
 
-	histogramSeries      []*memSeries
+	// Pointers to the series referenced by each element of pendingHistograms.
+	// Series lock is not held on elements.
+	histogramSeries []*memSeries
+
+	// Pointers to the series referenced by each element of pendingFloatHistograms.
+	// Series lock is not held on elements.
 	floatHistogramSeries []*memSeries
 }
 
@@ -828,7 +830,7 @@ func (a *appender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v flo
 	})
 	a.sampleSeries = append(a.sampleSeries, series)
 
-	a.metrics.totalAppendedSamples.Inc()
+	a.metrics.totalAppendedSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
 	return storage.SeriesRef(series.ref), nil
 }
 
@@ -900,6 +902,18 @@ func (a *appender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exem
 }
 
 func (a *appender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	if h != nil {
+		if err := tsdb.ValidateHistogram(h); err != nil {
+			return 0, err
+		}
+	}
+
+	if fh != nil {
+		if err := tsdb.ValidateFloatHistogram(fh); err != nil {
+			return 0, err
+		}
+	}
+
 	// series references and chunk references are identical for agent mode.
 	headRef := chunks.HeadSeriesRef(ref)
 
@@ -954,7 +968,7 @@ func (a *appender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int
 		a.floatHistogramSeries = append(a.floatHistogramSeries, series)
 	}
 
-	a.metrics.totalAppendedHistograms.Inc()
+	a.metrics.totalAppendedSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()
 	return storage.SeriesRef(series.ref), nil
 }
 
