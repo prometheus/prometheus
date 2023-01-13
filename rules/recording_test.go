@@ -34,9 +34,11 @@ type testScenario struct {
 	expected   promql.Vector
 }
 
-var ruleEvaluationTime = time.Unix(0, 0).UTC()
-var exprWithMetricName, _ = parser.ParseExpr(`metric`)
-var exprWithoutMetricName, _ = parser.ParseExpr(`metric + metric`)
+var (
+	ruleEvaluationTime       = time.Unix(0, 0).UTC()
+	exprWithMetricName, _    = parser.ParseExpr(`metric`)
+	exprWithoutMetricName, _ = parser.ParseExpr(`metric + metric`)
+)
 
 var scenarios = []testScenario{
 	{
@@ -142,7 +144,6 @@ func BenchmarkRuleEval(b *testing.B) {
 
 			for i := 0; i < b.N; i++ {
 				_, err := rule.Eval(suite.Context(), ruleEvaluationTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil, 0)
-
 				if err != nil {
 					require.NoError(b, err)
 				}
