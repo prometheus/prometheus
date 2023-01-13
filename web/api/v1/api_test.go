@@ -3244,15 +3244,7 @@ func arrowToJSONResponse(reader io.Reader) ([]byte, error) {
 			if series.Metric == nil {
 				series.Metric = labelsFromArrowMetadata(schema.Metadata())
 			}
-			rec := r.Record()
-			for i := 0; i < int(rec.NumRows()); i++ {
-				t := rec.Column(0).(*array.Timestamp).Value(i)
-				v := rec.Column(1).(*array.Float64).Value(i)
-				series.Points = append(series.Points, promql.Point{
-					T: int64(t),
-					V: v,
-				})
-			}
+			series.Points = pointsFromRecord(r.Record())
 		}
 		data = append(data, series)
 	}
@@ -3275,6 +3267,58 @@ func labelsFromArrowMetadata(metadata arrow.Metadata) labels.Labels {
 		strs = append(strs, key, metadata.Values()[i])
 	}
 	return labels.FromStrings(strs...)
+}
+
+func pointsFromRecord(rec array.Record) []promql.Point {
+	points := make([]promql.Point, 0, rec.NumRows())
+	isHistogram := !rec.Schema().HasField("v")
+	for i := 0; i < int(rec.NumRows()); i++ {
+		t := rec.Column(0).(*array.Timestamp).Value(i)
+
+		if isHistogram {
+			h := &histogram.FloatHistogram{
+				CounterResetHint: histogram.CounterResetHint(rec.Column(1).(*array.Uint8).Value(i)),
+				Schema:           rec.Column(2).(*array.Int32).Value(i),
+				ZeroThreshold:    rec.Column(3).(*array.Float64).Value(i),
+				ZeroCount:        rec.Column(4).(*array.Float64).Value(i),
+				Count:            rec.Column(5).(*array.Float64).Value(i),
+				Sum:              rec.Column(6).(*array.Float64).Value(i),
+				PositiveSpans:    spans(rec.Column(7).(*array.List), i),
+				NegativeSpans:    spans(rec.Column(8).(*array.List), i),
+				PositiveBuckets:  buckets(rec.Column(9).(*array.List), i),
+				NegativeBuckets:  buckets(rec.Column(10).(*array.List), i),
+			}
+
+			points = append(points, promql.Point{
+				T: int64(t),
+				H: h,
+			})
+		} else {
+			v := rec.Column(1).(*array.Float64).Value(i)
+			points = append(points, promql.Point{
+				T: int64(t),
+				V: v,
+			})
+		}
+	}
+
+	return points
+}
+
+func spans(encoded *array.List, i int) []histogram.Span {
+	spans := make([]histogram.Span, 0, encoded.ListValues().Len())
+	for i := 0; i < encoded.ListValues().Len(); i++ {
+		spans = append(spans, histogram.Span{
+			Offset: encoded.ListValues().(*array.Struct).Field(0).(*array.Int32).Value(i),
+			Length: encoded.ListValues().(*array.Struct).Field(1).(*array.Uint32).Value(i),
+		})
+	}
+	return spans
+}
+
+func buckets(encoded *array.List, i int) []float64 {
+	offsets := encoded.Offsets()
+	return encoded.ListValues().(*array.Float64).Float64Values()[offsets[i]:offsets[i+1]]
 }
 
 func TestTSDBStatus(t *testing.T) {
