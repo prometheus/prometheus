@@ -305,7 +305,10 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 			cache = newScrapeCache()
 		}
 		opts.target.SetMetadataStore(cache)
-
+		infoMutator := func(l labels.Labels) labels.Labels { return mutateReportSampleLabels(l, opts.target.InfoLabels()) }
+		if opts.target.infoLabels.Len() == 0 {
+			infoMutator = nil
+		}
 		return newScrapeLoop(
 			ctx,
 			opts.scraper,
@@ -314,7 +317,8 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 			func(l labels.Labels) labels.Labels {
 				return mutateSampleLabels(l, opts.target, opts.honorLabels, opts.mrc)
 			},
-			func(l labels.Labels) labels.Labels { return mutateReportSampleLabels(l, opts.target) },
+			func(l labels.Labels) labels.Labels { return mutateReportSampleLabels(l, opts.target.Labels()) },
+			infoMutator,
 			func(ctx context.Context) storage.Appender { return app.Appender(ctx) },
 			cache,
 			jitterSeed,
@@ -730,10 +734,10 @@ func labelSliceHas(lbls []labels.Label, name string) bool {
 	return false
 }
 
-func mutateReportSampleLabels(lset labels.Labels, target *Target) labels.Labels {
+func mutateReportSampleLabels(lset labels.Labels, l labels.Labels) labels.Labels {
 	lb := labels.NewBuilder(lset)
 
-	target.Labels().Range(func(l labels.Label) {
+	l.Range(func(l labels.Label) {
 		lb.Set(model.ExportedLabelPrefix+l.Name, lset.Get(l.Name))
 		lb.Set(l.Name, l.Value)
 	})
@@ -890,6 +894,7 @@ type scrapeLoop struct {
 	appender            func(ctx context.Context) storage.Appender
 	sampleMutator       labelsMutator
 	reportSampleMutator labelsMutator
+	infoSampleMutator   labelsMutator
 
 	parentCtx   context.Context
 	appenderCtx context.Context
@@ -1158,6 +1163,7 @@ func newScrapeLoop(ctx context.Context,
 	buffers *pool.Pool,
 	sampleMutator labelsMutator,
 	reportSampleMutator labelsMutator,
+	infoSampleMutator labelsMutator,
 	appender func(ctx context.Context) storage.Appender,
 	cache *scrapeCache,
 	jitterSeed uint64,
@@ -1199,6 +1205,7 @@ func newScrapeLoop(ctx context.Context,
 		appender:            appender,
 		sampleMutator:       sampleMutator,
 		reportSampleMutator: reportSampleMutator,
+		infoSampleMutator:   infoSampleMutator,
 		stopped:             make(chan struct{}),
 		jitterSeed:          jitterSeed,
 		l:                   l,
@@ -1779,6 +1786,7 @@ func (sl *scrapeLoop) checkAddExemplarError(err error, e exemplar.Exemplar, appE
 // with scraped metrics in the cache.
 const (
 	scrapeHealthMetricName        = "up" + "\xff"
+	targetInfoMetricName          = "target_sd_info" + "\xff"
 	scrapeDurationMetricName      = "scrape_duration_seconds" + "\xff"
 	scrapeSamplesMetricName       = "scrape_samples_scraped" + "\xff"
 	samplesPostRelabelMetricName  = "scrape_samples_post_metric_relabeling" + "\xff"
@@ -1813,6 +1821,11 @@ func (sl *scrapeLoop) report(app storage.Appender, start time.Time, duration tim
 	if err = sl.addReportSample(app, scrapeSeriesAddedMetricName, ts, float64(seriesAdded)); err != nil {
 		return
 	}
+	if sl.infoSampleMutator != nil {
+		if err = sl.addReportSample(app, targetInfoMetricName, ts, health); err != nil {
+			return
+		}
+	}
 	if sl.reportExtraMetrics {
 		if err = sl.addReportSample(app, scrapeTimeoutMetricName, ts, sl.timeout.Seconds()); err != nil {
 			return
@@ -1835,6 +1848,12 @@ func (sl *scrapeLoop) reportStale(app storage.Appender, start time.Time) (err er
 	if err = sl.addReportSample(app, scrapeHealthMetricName, ts, stale); err != nil {
 		return
 	}
+	if sl.infoSampleMutator != nil {
+		if err = sl.addReportSample(app, targetInfoMetricName, ts, stale); err != nil {
+			return
+		}
+	}
+
 	if err = sl.addReportSample(app, scrapeDurationMetricName, ts, stale); err != nil {
 		return
 	}
@@ -1872,8 +1891,15 @@ func (sl *scrapeLoop) addReportSample(app storage.Appender, s string, t int64, v
 		// The constants are suffixed with the invalid \xff unicode rune to avoid collisions
 		// with scraped metrics in the cache.
 		// We have to drop it when building the actual metric.
+		mutator := sl.reportSampleMutator
+		if s == targetInfoMetricName {
+			if sl.infoSampleMutator == nil {
+				return errors.Errorf("infoSampleMutator not set")
+			}
+			mutator = sl.infoSampleMutator
+		}
 		lset = labels.FromStrings(labels.MetricName, s[:len(s)-1])
-		lset = sl.reportSampleMutator(lset)
+		lset = mutator(lset)
 	}
 
 	ref, err := app.Append(ref, lset, t, v)
