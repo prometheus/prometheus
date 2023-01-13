@@ -1079,11 +1079,10 @@ type shards struct {
 
 	// Hard shutdown context is used to terminate outgoing HTTP connections
 	// after giving them a chance to terminate.
-	hardShutdown                         context.CancelFunc
-	samplesDroppedOnHardShutdown         atomic.Uint32
-	exemplarsDroppedOnHardShutdown       atomic.Uint32
-	histogramsDroppedOnHardShutdown      atomic.Uint32
-	floatHistogramsDroppedOnHardShutdown atomic.Uint32
+	hardShutdown                    context.CancelFunc
+	samplesDroppedOnHardShutdown    atomic.Uint32
+	exemplarsDroppedOnHardShutdown  atomic.Uint32
+	histogramsDroppedOnHardShutdown atomic.Uint32
 }
 
 // start the shards; must be called before any call to enqueue.
@@ -1112,7 +1111,6 @@ func (s *shards) start(n int) {
 	s.samplesDroppedOnHardShutdown.Store(0)
 	s.exemplarsDroppedOnHardShutdown.Store(0)
 	s.histogramsDroppedOnHardShutdown.Store(0)
-	s.floatHistogramsDroppedOnHardShutdown.Store(0)
 	for i := 0; i < n; i++ {
 		go s.runShard(hardShutdownCtx, i, newQueues[i])
 	}
@@ -1178,10 +1176,7 @@ func (s *shards) enqueue(ref chunks.HeadSeriesRef, data timeSeries) bool {
 		case tExemplar:
 			s.qm.metrics.pendingExemplars.Inc()
 			s.enqueuedExemplars.Inc()
-		case tHistogram:
-			s.qm.metrics.pendingHistograms.Inc()
-			s.enqueuedHistograms.Inc()
-		case tFloatHistogram:
+		case tHistogram, tFloatHistogram:
 			s.qm.metrics.pendingHistograms.Inc()
 			s.enqueuedHistograms.Inc()
 		}

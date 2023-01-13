@@ -194,8 +194,8 @@ func TestTailSamples(t *testing.T) {
 						T:   now.UnixNano() + 1,
 						H:   hist,
 					}}, nil)
-
 					require.NoError(t, w.Log(histogram))
+
 					floatHistogram := enc.FloatHistogramSamples([]record.RefFloatHistogramSample{{
 						Ref: chunks.HeadSeriesRef(inner),
 						T:   now.UnixNano() + 1,
@@ -236,6 +236,7 @@ func TestTailSamples(t *testing.T) {
 			require.Equal(t, expectedSamples, wt.samplesAppended, "did not receive the expected number of samples")
 			require.Equal(t, expectedExemplars, wt.exemplarsAppended, "did not receive the expected number of exemplars")
 			require.Equal(t, expectedHistograms, wt.histogramsAppended, "did not receive the expected number of histograms")
+			require.Equal(t, expectedHistograms, wt.floatHistogramsAppended, "did not receive the expected number of float histograms")
 		})
 	}
 }
