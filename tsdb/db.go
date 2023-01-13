@@ -52,6 +52,9 @@ const (
 	// Default duration of a block in milliseconds.
 	DefaultBlockDuration = int64(2 * time.Hour / time.Millisecond)
 
+	// Interval for scheduled compaction for OOO head
+	OOOCompactInterval = 2 * time.Hour
+
 	// Block dir suffixes to make deletion and creation operations atomic.
 	// We decided to do suffixes instead of creating meta.json as last (or delete as first) one,
 	// because in error case you still can recover meta.json from the block content within local TSDB dir.
@@ -953,6 +956,7 @@ func (db *DB) run() {
 	defer close(db.donec)
 
 	backoff := time.Duration(0)
+	scheduledCompact := time.NewTimer(OOOCompactInterval)
 
 	for {
 		select {
@@ -973,7 +977,10 @@ func (db *DB) run() {
 			case db.compactc <- struct{}{}:
 			default:
 			}
+		case <-scheduledCompact.C:
 		case <-db.compactc:
+			scheduledCompact.Reset(OOOCompactInterval)
+
 			db.metrics.compactionsTriggered.Inc()
 
 			db.autoCompactMtx.Lock()
@@ -1169,11 +1176,8 @@ func (db *DB) Compact() (returnErr error) {
 		)
 	}
 
-	if lastBlockMaxt != math.MinInt64 {
-		// The head was compacted, so we compact OOO head as well.
-		if err := db.compactOOOHead(); err != nil {
-			return errors.Wrap(err, "compact ooo head")
-		}
+	if err := db.compactOOOHead(); err != nil {
+		return errors.Wrap(err, "compact ooo head")
 	}
 
 	return db.compactBlocks()
