@@ -709,7 +709,6 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 	evalSpanTimer.Finish()
 
 	if err != nil {
-		fmt.Println("Failing Query: ", query.q)
 		return nil, warnings, err
 	}
 
