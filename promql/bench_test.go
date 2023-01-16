@@ -174,6 +174,15 @@ func rangeQueryCases() []benchCase {
 		{
 			expr: "a_X + on(l) group_right a_one",
 		},
+		// Label compared to blank string.
+		{
+			expr:  "count({__name__!=\"\"})",
+			steps: 1,
+		},
+		{
+			expr:  "count({__name__!=\"\",l=\"\"})",
+			steps: 1,
+		},
 	}
 
 	// X in an expr will be replaced by different metric sizes.

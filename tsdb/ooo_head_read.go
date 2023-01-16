@@ -71,7 +71,11 @@ func (oh *OOOHeadIndexReader) series(ref storage.SeriesRef, builder *labels.Scra
 	defer s.Unlock()
 	*chks = (*chks)[:0]
 
-	tmpChks := make([]chunks.Meta, 0, len(s.oooMmappedChunks))
+	if s.ooo == nil {
+		return nil
+	}
+
+	tmpChks := make([]chunks.Meta, 0, len(s.ooo.oooMmappedChunks))
 
 	// We define these markers to track the last chunk reference while we
 	// fill the chunk meta.
@@ -103,15 +107,15 @@ func (oh *OOOHeadIndexReader) series(ref storage.SeriesRef, builder *labels.Scra
 
 	// Collect all chunks that overlap the query range, in order from most recent to most old,
 	// so we can set the correct markers.
-	if s.oooHeadChunk != nil {
-		c := s.oooHeadChunk
+	if s.ooo.oooHeadChunk != nil {
+		c := s.ooo.oooHeadChunk
 		if c.OverlapsClosedInterval(oh.mint, oh.maxt) && lastMmapRef == 0 {
-			ref := chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.oooHeadChunkID(len(s.oooMmappedChunks))))
+			ref := chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.oooHeadChunkID(len(s.ooo.oooMmappedChunks))))
 			addChunk(c.minTime, c.maxTime, ref)
 		}
 	}
-	for i := len(s.oooMmappedChunks) - 1; i >= 0; i-- {
-		c := s.oooMmappedChunks[i]
+	for i := len(s.ooo.oooMmappedChunks) - 1; i >= 0; i-- {
+		c := s.ooo.oooMmappedChunks[i]
 		if c.OverlapsClosedInterval(oh.mint, oh.maxt) && (lastMmapRef == 0 || lastMmapRef.GreaterThanOrEqualTo(c.ref)) {
 			ref := chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.oooHeadChunkID(i)))
 			addChunk(c.minTime, c.maxTime, ref)
@@ -238,6 +242,11 @@ func (cr OOOHeadChunkReader) Chunk(meta chunks.Meta) (chunkenc.Chunk, error) {
 	}
 
 	s.Lock()
+	if s.ooo == nil {
+		// There is no OOO data for this series.
+		s.Unlock()
+		return nil, storage.ErrNotFound
+	}
 	c, err := s.oooMergedChunk(meta, cr.head.chunkDiskMapper, cr.mint, cr.maxt)
 	s.Unlock()
 	if err != nil {
@@ -308,18 +317,23 @@ func NewOOOCompactionHead(head *Head) (*OOOCompactionHead, error) {
 		// TODO: consider having a lock specifically for ooo data.
 		ms.Lock()
 
+		if ms.ooo == nil {
+			ms.Unlock()
+			continue
+		}
+
 		mmapRef := ms.mmapCurrentOOOHeadChunk(head.chunkDiskMapper)
-		if mmapRef == 0 && len(ms.oooMmappedChunks) > 0 {
+		if mmapRef == 0 && len(ms.ooo.oooMmappedChunks) > 0 {
 			// Nothing was m-mapped. So take the mmapRef from the existing slice if it exists.
-			mmapRef = ms.oooMmappedChunks[len(ms.oooMmappedChunks)-1].ref
+			mmapRef = ms.ooo.oooMmappedChunks[len(ms.ooo.oooMmappedChunks)-1].ref
 		}
 		seq, off := mmapRef.Unpack()
 		if seq > lastSeq || (seq == lastSeq && off > lastOff) {
 			ch.lastMmapRef, lastSeq, lastOff = mmapRef, seq, off
 		}
-		if len(ms.oooMmappedChunks) > 0 {
+		if len(ms.ooo.oooMmappedChunks) > 0 {
 			ch.postings = append(ch.postings, seriesRef)
-			for _, c := range ms.oooMmappedChunks {
+			for _, c := range ms.ooo.oooMmappedChunks {
 				if c.minTime < ch.mint {
 					ch.mint = c.minTime
 				}

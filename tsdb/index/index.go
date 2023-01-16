@@ -1662,6 +1662,7 @@ func (r *Reader) Postings(name string, values ...string) (Postings, error) {
 		return EmptyPostings(), nil
 	}
 
+	slices.Sort(values) // Values must be in order so we can step through the table on disk.
 	res := make([]Postings, 0, len(values))
 	skip := 0
 	valueIndex := 0
@@ -1906,7 +1907,7 @@ func (dec *Decoder) LabelValueFor(b []byte, label string) (string, error) {
 }
 
 // Series decodes a series entry from the given byte slice into builder and chks.
-// Previous contents of lbls can be overwritten - make sure you copy before retaining.
+// Previous contents of builder can be overwritten - make sure you copy before retaining.
 func (dec *Decoder) Series(b []byte, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
 	builder.Reset()
 	if chks != nil {

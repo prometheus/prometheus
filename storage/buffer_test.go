@@ -107,7 +107,7 @@ func TestBufferedSeriesIterator(t *testing.T) {
 		require.Equal(t, ev, v, "value mismatch")
 	}
 	prevSampleEq := func(ets int64, ev float64, eok bool) {
-		ts, v, _, ok := it.PeekBack(1)
+		ts, v, _, _, ok := it.PeekBack(1)
 		require.Equal(t, eok, ok, "exist mismatch")
 		require.Equal(t, ets, ts, "timestamp mismatch")
 		require.Equal(t, ev, v, "value mismatch")

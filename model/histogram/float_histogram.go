@@ -27,6 +27,8 @@ import (
 // used to represent a histogram with integer counts and thus serves as a more
 // generalized representation.
 type FloatHistogram struct {
+	// Counter reset information.
+	CounterResetHint CounterResetHint
 	// Currently valid schema numbers are -4 <= n <= 8.  They are all for
 	// base-2 bucket schemas, where 1 is a bucket boundary in each case, and
 	// then each power of two is divided into 2^n logarithmic buckets.  Or

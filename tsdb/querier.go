@@ -19,7 +19,6 @@ import (
 
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
-	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -189,7 +188,14 @@ func PostingsForMatchers(ix IndexPostingsReader, ms ...*labels.Matcher) (index.P
 	}
 
 	for _, m := range ms {
-		if labelMustBeSet[m.Name] {
+		if m.Name == "" && m.Value == "" { // Special-case for AllPostings, used in tests at least.
+			k, v := index.AllPostingsKey()
+			allPostings, err := ix.Postings(k, v)
+			if err != nil {
+				return nil, err
+			}
+			its = append(its, allPostings)
+		} else if labelMustBeSet[m.Name] {
 			// If this matcher must be non-empty, we can be smarter.
 			matchesEmpty := m.Matches("")
 			isNot := m.Type == labels.MatchNotEqual || m.Type == labels.MatchNotRegexp
@@ -277,7 +283,6 @@ func postingsForMatcher(ix IndexPostingsReader, m *labels.Matcher) (index.Postin
 	if m.Type == labels.MatchRegexp {
 		setMatches := m.SetMatches()
 		if len(setMatches) > 0 {
-			slices.Sort(setMatches)
 			return ix.Postings(m.Name, setMatches...)
 		}
 	}
@@ -288,14 +293,9 @@ func postingsForMatcher(ix IndexPostingsReader, m *labels.Matcher) (index.Postin
 	}
 
 	var res []string
-	lastVal, isSorted := "", true
 	for _, val := range vals {
 		if m.Matches(val) {
 			res = append(res, val)
-			if isSorted && val < lastVal {
-				isSorted = false
-			}
-			lastVal = val
 		}
 	}
 
@@ -303,9 +303,6 @@ func postingsForMatcher(ix IndexPostingsReader, m *labels.Matcher) (index.Postin
 		return index.EmptyPostings(), nil
 	}
 
-	if !isSorted {
-		slices.Sort(res)
-	}
 	return ix.Postings(m.Name, res...)
 }
 
@@ -317,20 +314,17 @@ func inversePostingsForMatcher(ix IndexPostingsReader, m *labels.Matcher) (index
 	}
 
 	var res []string
-	lastVal, isSorted := "", true
-	for _, val := range vals {
-		if !m.Matches(val) {
-			res = append(res, val)
-			if isSorted && val < lastVal {
-				isSorted = false
+	// If the inverse match is ="", we just want all the values.
+	if m.Type == labels.MatchEqual && m.Value == "" {
+		res = vals
+	} else {
+		for _, val := range vals {
+			if !m.Matches(val) {
+				res = append(res, val)
 			}
-			lastVal = val
 		}
 	}
 
-	if !isSorted {
-		slices.Sort(res)
-	}
 	return ix.Postings(m.Name, res...)
 }
 
