@@ -301,6 +301,7 @@ func TestOOOHeadIndexReader_Series(t *testing.T) {
 					require.NoError(t, h.Init(0))
 
 					s1, _, _ := h.getOrCreate(s1ID, s1Lset)
+					s1.ooo = &memSeriesOOOFields{}
 
 					var lastChunk chunkInterval
 					var lastChunkPos int
@@ -340,7 +341,7 @@ func TestOOOHeadIndexReader_Series(t *testing.T) {
 
 					if headChunk && len(intervals) > 0 {
 						// Put the last interval in the head chunk
-						s1.oooHeadChunk = &oooHeadChunk{
+						s1.ooo.oooHeadChunk = &oooHeadChunk{
 							minTime: intervals[len(intervals)-1].mint,
 							maxTime: intervals[len(intervals)-1].maxt,
 						}
@@ -348,7 +349,7 @@ func TestOOOHeadIndexReader_Series(t *testing.T) {
 					}
 
 					for _, ic := range intervals {
-						s1.oooMmappedChunks = append(s1.oooMmappedChunks, &mmappedChunk{
+						s1.ooo.oooMmappedChunks = append(s1.ooo.oooMmappedChunks, &mmappedChunk{
 							minTime: ic.mint,
 							maxTime: ic.maxt,
 						})

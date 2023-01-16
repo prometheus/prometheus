@@ -763,7 +763,11 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 			h.metrics.chunks.Inc()
 			h.metrics.chunksCreated.Inc()
 
-			ms.oooMmappedChunks = append(ms.oooMmappedChunks, &mmappedChunk{
+			if ms.ooo == nil {
+				ms.ooo = &memSeriesOOOFields{}
+			}
+
+			ms.ooo.oooMmappedChunks = append(ms.ooo.oooMmappedChunks, &mmappedChunk{
 				ref:        chunkRef,
 				minTime:    mint,
 				maxTime:    maxt,
@@ -1666,24 +1670,24 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 						minMmapFile = seq
 					}
 				}
-				if len(series.oooMmappedChunks) > 0 {
-					seq, _ := series.oooMmappedChunks[0].ref.Unpack()
+				if series.ooo != nil && len(series.ooo.oooMmappedChunks) > 0 {
+					seq, _ := series.ooo.oooMmappedChunks[0].ref.Unpack()
 					if seq < minMmapFile {
 						minMmapFile = seq
 					}
-					for _, ch := range series.oooMmappedChunks {
+					for _, ch := range series.ooo.oooMmappedChunks {
 						if ch.minTime < minOOOTime {
 							minOOOTime = ch.minTime
 						}
 					}
 				}
-				if series.oooHeadChunk != nil {
-					if series.oooHeadChunk.minTime < minOOOTime {
-						minOOOTime = series.oooHeadChunk.minTime
+				if series.ooo != nil && series.ooo.oooHeadChunk != nil {
+					if series.ooo.oooHeadChunk.minTime < minOOOTime {
+						minOOOTime = series.ooo.oooHeadChunk.minTime
 					}
 				}
-				if len(series.mmappedChunks) > 0 || len(series.oooMmappedChunks) > 0 ||
-					series.headChunk != nil || series.oooHeadChunk != nil || series.pendingCommit {
+				if len(series.mmappedChunks) > 0 || series.headChunk != nil || series.pendingCommit ||
+					(series.ooo != nil && (len(series.ooo.oooMmappedChunks) > 0 || series.ooo.oooHeadChunk != nil)) {
 					seriesMint := series.minTime()
 					if seriesMint < actualMint {
 						actualMint = seriesMint
@@ -1840,9 +1844,7 @@ type memSeries struct {
 	headChunk     *memChunk          // Most recent chunk in memory that's still being built.
 	firstChunkID  chunks.HeadChunkID // HeadChunkID for mmappedChunks[0]
 
-	oooMmappedChunks []*mmappedChunk    // Immutable chunks on disk containing OOO samples.
-	oooHeadChunk     *oooHeadChunk      // Most recent chunk for ooo samples in memory that's still being built.
-	firstOOOChunkID  chunks.HeadChunkID // HeadOOOChunkID for oooMmappedChunks[0]
+	ooo *memSeriesOOOFields
 
 	mmMaxTime int64 // Max time of any mmapped chunk, only used during WAL replay.
 
@@ -1864,6 +1866,14 @@ type memSeries struct {
 	txs *txRing
 
 	pendingCommit bool // Whether there are samples waiting to be committed to this series.
+}
+
+// memSeriesOOOFields contains the fields required by memSeries
+// to handle out-of-order data.
+type memSeriesOOOFields struct {
+	oooMmappedChunks []*mmappedChunk    // Immutable chunks on disk containing OOO samples.
+	oooHeadChunk     *oooHeadChunk      // Most recent chunk for ooo samples in memory that's still being built.
+	firstOOOChunkID  chunks.HeadChunkID // HeadOOOChunkID for oooMmappedChunks[0].
 }
 
 func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, isolationDisabled bool) *memSeries {
@@ -1924,15 +1934,19 @@ func (s *memSeries) truncateChunksBefore(mint int64, minOOOMmapRef chunks.ChunkD
 	}
 
 	var removedOOO int
-	if len(s.oooMmappedChunks) > 0 {
-		for i, c := range s.oooMmappedChunks {
+	if s.ooo != nil && len(s.ooo.oooMmappedChunks) > 0 {
+		for i, c := range s.ooo.oooMmappedChunks {
 			if c.ref.GreaterThan(minOOOMmapRef) {
 				break
 			}
 			removedOOO = i + 1
 		}
-		s.oooMmappedChunks = append(s.oooMmappedChunks[:0], s.oooMmappedChunks[removedOOO:]...)
-		s.firstOOOChunkID += chunks.HeadChunkID(removedOOO)
+		s.ooo.oooMmappedChunks = append(s.ooo.oooMmappedChunks[:0], s.ooo.oooMmappedChunks[removedOOO:]...)
+		s.ooo.firstOOOChunkID += chunks.HeadChunkID(removedOOO)
+
+		if len(s.ooo.oooMmappedChunks) == 0 && s.ooo.oooHeadChunk == nil {
+			s.ooo = nil
+		}
 	}
 
 	return removedInOrder + removedOOO

@@ -4008,7 +4008,7 @@ func TestOOOWalReplay(t *testing.T) {
 	require.False(t, ok)
 	require.NotNil(t, ms)
 
-	xor, err := ms.oooHeadChunk.chunk.ToXOR()
+	xor, err := ms.ooo.oooHeadChunk.chunk.ToXOR()
 	require.NoError(t, err)
 
 	it := xor.Iterator(nil)
@@ -4068,16 +4068,16 @@ func TestOOOMmapReplay(t *testing.T) {
 	require.False(t, ok)
 	require.NotNil(t, ms)
 
-	require.Len(t, ms.oooMmappedChunks, 3)
+	require.Len(t, ms.ooo.oooMmappedChunks, 3)
 	// Verify that we can access the chunks without error.
-	for _, m := range ms.oooMmappedChunks {
+	for _, m := range ms.ooo.oooMmappedChunks {
 		chk, err := h.chunkDiskMapper.Chunk(m.ref)
 		require.NoError(t, err)
 		require.Equal(t, int(m.numSamples), chk.NumSamples())
 	}
 
 	expMmapChunks := make([]*mmappedChunk, 3)
-	copy(expMmapChunks, ms.oooMmappedChunks)
+	copy(expMmapChunks, ms.ooo.oooMmappedChunks)
 
 	// Restart head.
 	require.NoError(t, h.Close())
@@ -4096,16 +4096,16 @@ func TestOOOMmapReplay(t *testing.T) {
 	require.False(t, ok)
 	require.NotNil(t, ms)
 
-	require.Len(t, ms.oooMmappedChunks, len(expMmapChunks))
+	require.Len(t, ms.ooo.oooMmappedChunks, len(expMmapChunks))
 	// Verify that we can access the chunks without error.
-	for _, m := range ms.oooMmappedChunks {
+	for _, m := range ms.ooo.oooMmappedChunks {
 		chk, err := h.chunkDiskMapper.Chunk(m.ref)
 		require.NoError(t, err)
 		require.Equal(t, int(m.numSamples), chk.NumSamples())
 	}
 
 	actMmapChunks := make([]*mmappedChunk, len(expMmapChunks))
-	copy(actMmapChunks, ms.oooMmappedChunks)
+	copy(actMmapChunks, ms.ooo.oooMmappedChunks)
 
 	require.Equal(t, expMmapChunks, actMmapChunks)
 
@@ -4500,8 +4500,8 @@ func TestOOOAppendWithNoSeries(t *testing.T) {
 		require.NotNil(t, ms)
 
 		require.Nil(t, ms.headChunk)
-		require.NotNil(t, ms.oooHeadChunk)
-		require.Equal(t, expSamples, ms.oooHeadChunk.chunk.NumSamples())
+		require.NotNil(t, ms.ooo.oooHeadChunk)
+		require.Equal(t, expSamples, ms.ooo.oooHeadChunk.chunk.NumSamples())
 	}
 
 	verifyInOrderSamples := func(lbls labels.Labels, expSamples int) {
@@ -4510,7 +4510,7 @@ func TestOOOAppendWithNoSeries(t *testing.T) {
 		require.False(t, created)
 		require.NotNil(t, ms)
 
-		require.Nil(t, ms.oooHeadChunk)
+		require.Nil(t, ms.ooo)
 		require.NotNil(t, ms.headChunk)
 		require.Equal(t, expSamples, ms.headChunk.chunk.NumSamples())
 	}

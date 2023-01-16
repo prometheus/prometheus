@@ -1093,7 +1093,10 @@ func (a *headAppender) Commit() (err error) {
 
 // insert is like append, except it inserts. Used for OOO samples.
 func (s *memSeries) insert(t int64, v float64, chunkDiskMapper *chunks.ChunkDiskMapper, oooCapMax int64) (inserted, chunkCreated bool, mmapRef chunks.ChunkDiskMapperRef) {
-	c := s.oooHeadChunk
+	if s.ooo == nil {
+		s.ooo = &memSeriesOOOFields{}
+	}
+	c := s.ooo.oooHeadChunk
 	if c == nil || c.chunk.NumSamples() == int(oooCapMax) {
 		// Note: If no new samples come in then we rely on compaction to clean up stale in-memory OOO chunks.
 		c, mmapRef = s.cutNewOOOHeadChunk(t, chunkDiskMapper)
@@ -1412,33 +1415,35 @@ func (s *memSeries) cutNewHeadChunk(
 	return s.headChunk
 }
 
+// cutNewOOOHeadChunk cuts a new OOO chunk and m-maps the old chunk.
+// The caller must ensure that s.ooo is not nil.
 func (s *memSeries) cutNewOOOHeadChunk(mint int64, chunkDiskMapper *chunks.ChunkDiskMapper) (*oooHeadChunk, chunks.ChunkDiskMapperRef) {
 	ref := s.mmapCurrentOOOHeadChunk(chunkDiskMapper)
 
-	s.oooHeadChunk = &oooHeadChunk{
+	s.ooo.oooHeadChunk = &oooHeadChunk{
 		chunk:   NewOOOChunk(),
 		minTime: mint,
 		maxTime: math.MinInt64,
 	}
 
-	return s.oooHeadChunk, ref
+	return s.ooo.oooHeadChunk, ref
 }
 
 func (s *memSeries) mmapCurrentOOOHeadChunk(chunkDiskMapper *chunks.ChunkDiskMapper) chunks.ChunkDiskMapperRef {
-	if s.oooHeadChunk == nil {
+	if s.ooo == nil || s.ooo.oooHeadChunk == nil {
 		// There is no head chunk, so nothing to m-map here.
 		return 0
 	}
-	xor, _ := s.oooHeadChunk.chunk.ToXOR() // Encode to XorChunk which is more compact and implements all of the needed functionality.
+	xor, _ := s.ooo.oooHeadChunk.chunk.ToXOR() // Encode to XorChunk which is more compact and implements all of the needed functionality.
 	oooXor := &chunkenc.OOOXORChunk{XORChunk: xor}
-	chunkRef := chunkDiskMapper.WriteChunk(s.ref, s.oooHeadChunk.minTime, s.oooHeadChunk.maxTime, oooXor, handleChunkWriteError)
-	s.oooMmappedChunks = append(s.oooMmappedChunks, &mmappedChunk{
+	chunkRef := chunkDiskMapper.WriteChunk(s.ref, s.ooo.oooHeadChunk.minTime, s.ooo.oooHeadChunk.maxTime, oooXor, handleChunkWriteError)
+	s.ooo.oooMmappedChunks = append(s.ooo.oooMmappedChunks, &mmappedChunk{
 		ref:        chunkRef,
 		numSamples: uint16(xor.NumSamples()),
-		minTime:    s.oooHeadChunk.minTime,
-		maxTime:    s.oooHeadChunk.maxTime,
+		minTime:    s.ooo.oooHeadChunk.minTime,
+		maxTime:    s.ooo.oooHeadChunk.maxTime,
 	})
-	s.oooHeadChunk = nil
+	s.ooo.oooHeadChunk = nil
 	return chunkRef
 }
 
