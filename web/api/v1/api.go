@@ -29,9 +29,6 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/apache/arrow/go/v11/arrow"
-	"github.com/apache/arrow/go/v11/arrow/array"
-	"github.com/apache/arrow/go/v11/arrow/ipc"
 	"github.com/apache/arrow/go/v11/arrow/memory"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -214,6 +211,8 @@ type API struct {
 
 	remoteWriteHandler http.Handler
 	remoteReadHandler  http.Handler
+
+	arrowAllocator memory.Allocator
 }
 
 func init() {
@@ -1577,37 +1576,11 @@ func (api *API) tryArrowResponse(w http.ResponseWriter, r *http.Request, data in
 	w.Header().Set("Content-Type", mimeTypeArrowStream)
 	w.WriteHeader(http.StatusOK)
 
-	pool := memory.NewGoAllocator()
-	fields := []arrow.Field{
-		{Name: "t", Type: &arrow.TimestampType{Unit: arrow.Millisecond}},
-		{Name: "v", Type: arrow.PrimitiveTypes.Float64},
+	if api.arrowAllocator == nil {
+		api.arrowAllocator = newArrowAllocator()
 	}
-
-	for _, series := range matrix {
-		metadata := arrow.MetadataFrom(series.Metric.Map())
-		seriesSchema := arrow.NewSchema(fields, &metadata)
-		b := array.NewRecordBuilder(pool, seriesSchema)
-		b.Reserve(len(series.Points))
-
-		writer := ipc.NewWriter(w, ipc.WithAllocator(pool), ipc.WithSchema(seriesSchema))
-
-		for _, point := range series.Points {
-			// Since we reserve enough data for all points above we can use UnsafeAppend.
-			b.Field(0).(*array.TimestampBuilder).UnsafeAppend(arrow.Timestamp(point.T))
-			b.Field(1).(*array.Float64Builder).UnsafeAppend(point.V)
-		}
-		rec := b.NewRecord()
-		if err := writer.Write(rec); err != nil {
-			level.Error(api.logger).Log("msg", "error writing arrow response", "err", err)
-			return nil
-		}
-
-		writer.Close()
-		rec.Release()
-		b.Release()
-	}
-
-	return nil
+	enc := newArrowEncoder(api.logger, w, api.arrowAllocator)
+	return enc.EncodeMatrix(matrix)
 }
 
 func (api *API) respond(w http.ResponseWriter, r *http.Request, data interface{}, warnings storage.Warnings) {
