@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
@@ -186,22 +185,6 @@ type azureClient struct {
 	logger log.Logger
 }
 
-// userAgentPolicy is a policy to define user-agent http header
-type userAgentPolicy struct {
-	userAgent string
-}
-
-// Do adds User-Agent http header to the current request
-func (userAgentPolicy userAgentPolicy) Do(req *policy.Request) (resp *http.Response, err error) {
-	req.Raw().Header.Set("User-Agent", userAgentPolicy.userAgent)
-	return req.Next()
-}
-
-// NewUserAgentPolicy defines a new userAgentPolicy
-func NewUserAgentPolicy(userAgent string) policy.Policy {
-	return &userAgentPolicy{userAgent: userAgent}
-}
-
 // createAzureClient is a helper function for creating an Azure compute client to ARM.
 func createAzureClient(cfg SDConfig) (azureClient, error) {
 	env, err := azure.EnvironmentFromName(cfg.Environment)
@@ -209,21 +192,27 @@ func createAzureClient(cfg SDConfig) (azureClient, error) {
 		return azureClient{}, err
 	}
 
-	activeDirectoryEndpoint := env.ActiveDirectoryEndpoint
-	resourceManagerEndpoint := env.ResourceManagerEndpoint
-
 	var c azureClient
 	var credential azcore.TokenCredential
 
-	perCallPolicies := []policy.Policy{NewUserAgentPolicy(userAgent)}
+	cloudConfig := cloud.Configuration{
+		ActiveDirectoryAuthorityHost: env.ActiveDirectoryEndpoint, Services: map[cloud.ServiceName]cloud.ServiceConfiguration{
+			cloud.ResourceManager: {
+				Audience: env.ServiceManagementEndpoint,
+				Endpoint: env.ResourceManagerEndpoint,
+			},
+		},
+	}
+
+	telemetry := policy.TelemetryOptions{
+		ApplicationID: userAgent,
+	}
 
 	switch cfg.AuthenticationMethod {
 	case authMethodManagedIdentity:
 		managedIdentityCredential, err := azidentity.NewManagedIdentityCredential(&azidentity.ManagedIdentityCredentialOptions{ClientOptions: policy.ClientOptions{
-			Cloud: cloud.Configuration{
-				ActiveDirectoryAuthorityHost: resourceManagerEndpoint, Services: map[cloud.ServiceName]cloud.ServiceConfiguration{},
-			},
-			PerCallPolicies: perCallPolicies,
+			Cloud:     cloudConfig,
+			Telemetry: telemetry,
 		}, ID: azidentity.ClientID(cfg.ClientID)})
 		if err != nil {
 			return azureClient{}, err
@@ -232,10 +221,8 @@ func createAzureClient(cfg SDConfig) (azureClient, error) {
 	case authMethodOAuth:
 		secretCredential, err := azidentity.NewClientSecretCredential(cfg.TenantID, cfg.ClientID, string(cfg.ClientSecret), &azidentity.ClientSecretCredentialOptions{
 			ClientOptions: policy.ClientOptions{
-				Cloud: cloud.Configuration{
-					ActiveDirectoryAuthorityHost: activeDirectoryEndpoint, Services: map[cloud.ServiceName]cloud.ServiceConfiguration{},
-				},
-				PerCallPolicies: perCallPolicies,
+				Cloud:     cloudConfig,
+				Telemetry: telemetry,
 			},
 		})
 		if err != nil {
@@ -251,10 +238,8 @@ func createAzureClient(cfg SDConfig) (azureClient, error) {
 	options := &arm.ClientOptions{
 		ClientOptions: policy.ClientOptions{
 			Transport: client,
-			Cloud: cloud.Configuration{
-				ActiveDirectoryAuthorityHost: resourceManagerEndpoint, Services: map[cloud.ServiceName]cloud.ServiceConfiguration{},
-			},
-			PerCallPolicies: perCallPolicies,
+			Cloud:     cloudConfig,
+			Telemetry: telemetry,
 		},
 	}
 
@@ -302,22 +287,15 @@ type virtualMachine struct {
 }
 
 // Create a new azureResource object from an ID string.
-func newAzureResourceFromID(id string, logger log.Logger) (azureResource, error) {
-	// Resource IDs have the following format.
-	// /subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/providers/PROVIDER/TYPE/NAME
-	// or if embedded resource then
-	// /subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/providers/PROVIDER/TYPE/NAME/TYPE/NAME
-	s := strings.Split(id, "/")
-	if len(s) != 9 && len(s) != 11 {
-		err := fmt.Errorf("invalid ID '%s'. Refusing to create azureResource", id)
+func newAzureResourceFromID(id string, logger log.Logger) (arm.ResourceID, error) {
+	resourceID, err := arm.ParseResourceID(id)
+	if err != nil {
+		err := fmt.Errorf("invalid ID '%s'. Refusing to create azureResource, %w", id, err)
 		level.Error(logger).Log("err", err)
-		return azureResource{}, err
+		return arm.ResourceID{}, err
 	}
 
-	return azureResource{
-		Name:          strings.ToLower(s[8]),
-		ResourceGroup: strings.ToLower(s[4]),
-	}, nil
+	return *resourceID, nil
 }
 
 func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
@@ -381,7 +359,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 				azureLabelMachineComputerName:  model.LabelValue(vm.ComputerName),
 				azureLabelMachineOSType:        model.LabelValue(vm.OsType),
 				azureLabelMachineLocation:      model.LabelValue(vm.Location),
-				azureLabelMachineResourceGroup: model.LabelValue(r.ResourceGroup),
+				azureLabelMachineResourceGroup: model.LabelValue(r.ResourceGroupName),
 				azureLabelMachineSize:          model.LabelValue(vm.Size),
 			}
 
@@ -526,7 +504,7 @@ func (client *azureClient) getScaleSetVMs(ctx context.Context, scaleSet armcompu
 		return nil, fmt.Errorf("could not parse scale set ID: %w", err)
 	}
 
-	pager := client.vmssvm.NewListPager(r.ResourceGroup, *(scaleSet.Name), nil)
+	pager := client.vmssvm.NewListPager(r.ResourceGroupName, *(scaleSet.Name), nil)
 	for pager.More() {
 		nextResult, err := pager.NextPage(ctx)
 		if err != nil {
@@ -630,7 +608,7 @@ func (client *azureClient) getNetworkInterfaceByID(ctx context.Context, networkI
 		return nil, fmt.Errorf("could not parse network interface ID: %w", err)
 	}
 
-	resp, err := client.nic.Get(ctx, r.ResourceGroup, r.Name, nil)
+	resp, err := client.nic.Get(ctx, r.ResourceGroupName, r.Name, nil)
 	if err != nil {
 		var responseError *azcore.ResponseError
 		if errors.As(err, &responseError) && responseError.StatusCode == http.StatusNotFound {
