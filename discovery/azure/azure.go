@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -29,8 +30,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v4"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v2"
-	"github.com/Azure/go-autorest/autorest"
-	"github.com/Azure/go-autorest/autorest/azure"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
@@ -71,7 +70,7 @@ var (
 	DefaultSDConfig = SDConfig{
 		Port:                 80,
 		RefreshInterval:      model.Duration(5 * time.Minute),
-		Environment:          azure.PublicCloud.Name,
+		Environment:          "AZUREPUBLICCLOUD",
 		AuthenticationMethod: authMethodOAuth,
 		HTTPClientConfig:     config_util.DefaultHTTPClientConfig,
 	}
@@ -82,6 +81,29 @@ var (
 			Help: "Number of Azure service discovery refresh failures.",
 		})
 )
+
+var environments = map[string]cloud.Configuration{
+	"AZURECHINA":             cloud.AzureChina,
+	"AZURECHINACLOUD":        cloud.AzureChina,
+	"AZURECLOUD":             cloud.AzurePublic,
+	"AZUREGERMANCLOUD":       cloud.AzurePublic,
+	"AZUREGOVERNMENT":        cloud.AzureGovernment,
+	"AZUREPUBLIC":            cloud.AzurePublic,
+	"AZUREPUBLICCLOUD":       cloud.AzurePublic,
+	"AZUREUSGOVERNMENT":      cloud.AzureGovernment,
+	"AZUREUSGOVERNMENTCLOUD": cloud.AzureGovernment,
+}
+
+// CloudConfigurationFromName returns cloud configuration based on the common name specified.
+func CloudConfigurationFromName(name string) (cloud.Configuration, error) {
+	name = strings.ToUpper(name)
+	env, ok := environments[name]
+	if !ok {
+		return env, fmt.Errorf("There is no cloud configuration matching the name %q", name)
+	}
+
+	return env, nil
+}
 
 func init() {
 	discovery.RegisterConfig(&SDConfig{})
@@ -187,22 +209,13 @@ type azureClient struct {
 
 // createAzureClient is a helper function for creating an Azure compute client to ARM.
 func createAzureClient(cfg SDConfig) (azureClient, error) {
-	env, err := azure.EnvironmentFromName(cfg.Environment)
+	cloudConfiguration, err := CloudConfigurationFromName(cfg.Environment)
 	if err != nil {
 		return azureClient{}, err
 	}
 
 	var c azureClient
 	var credential azcore.TokenCredential
-
-	cloudConfig := cloud.Configuration{
-		ActiveDirectoryAuthorityHost: env.ActiveDirectoryEndpoint, Services: map[cloud.ServiceName]cloud.ServiceConfiguration{
-			cloud.ResourceManager: {
-				Audience: env.ServiceManagementEndpoint,
-				Endpoint: env.ResourceManagerEndpoint,
-			},
-		},
-	}
 
 	telemetry := policy.TelemetryOptions{
 		ApplicationID: userAgent,
@@ -211,7 +224,7 @@ func createAzureClient(cfg SDConfig) (azureClient, error) {
 	switch cfg.AuthenticationMethod {
 	case authMethodManagedIdentity:
 		managedIdentityCredential, err := azidentity.NewManagedIdentityCredential(&azidentity.ManagedIdentityCredentialOptions{ClientOptions: policy.ClientOptions{
-			Cloud:     cloudConfig,
+			Cloud:     cloudConfiguration,
 			Telemetry: telemetry,
 		}, ID: azidentity.ClientID(cfg.ClientID)})
 		if err != nil {
@@ -221,7 +234,7 @@ func createAzureClient(cfg SDConfig) (azureClient, error) {
 	case authMethodOAuth:
 		secretCredential, err := azidentity.NewClientSecretCredential(cfg.TenantID, cfg.ClientID, string(cfg.ClientSecret), &azidentity.ClientSecretCredentialOptions{
 			ClientOptions: policy.ClientOptions{
-				Cloud:     cloudConfig,
+				Cloud:     cloudConfiguration,
 				Telemetry: telemetry,
 			},
 		})
@@ -238,7 +251,7 @@ func createAzureClient(cfg SDConfig) (azureClient, error) {
 	options := &arm.ClientOptions{
 		ClientOptions: policy.ClientOptions{
 			Transport: client,
-			Cloud:     cloudConfig,
+			Cloud:     cloudConfiguration,
 			Telemetry: telemetry,
 		},
 	}
@@ -266,12 +279,6 @@ func createAzureClient(cfg SDConfig) (azureClient, error) {
 	return c, nil
 }
 
-// azureResource represents a resource identifier in Azure.
-type azureResource struct {
-	Name          string
-	ResourceGroup string
-}
-
 // virtualMachine represents an Azure virtual machine (which can also be created by a VMSS)
 type virtualMachine struct {
 	ID                string
@@ -287,15 +294,14 @@ type virtualMachine struct {
 }
 
 // Create a new azureResource object from an ID string.
-func newAzureResourceFromID(id string, logger log.Logger) (arm.ResourceID, error) {
+func newAzureResourceFromID(id string, logger log.Logger) (*arm.ResourceID, error) {
 	resourceID, err := arm.ParseResourceID(id)
 	if err != nil {
 		err := fmt.Errorf("invalid ID '%s'. Refusing to create azureResource, %w", id, err)
 		level.Error(logger).Log("err", err)
-		return arm.ResourceID{}, err
+		return &arm.ResourceID{}, err
 	}
-
-	return *resourceID, nil
+	return resourceID, nil
 }
 
 func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
@@ -602,7 +608,6 @@ var errorNotFound = errors.New("network interface does not exist")
 // If a 404 is returned from the Azure API, `errorNotFound` is returned.
 // On all other errors, an autorest.DetailedError is returned.
 func (client *azureClient) getNetworkInterfaceByID(ctx context.Context, networkInterfaceID string) (*armnetwork.Interface, error) {
-	// TODO do we really need to fetch the resourcegroup this way?
 	r, err := newAzureResourceFromID(networkInterfaceID, client.logger)
 	if err != nil {
 		return nil, fmt.Errorf("could not parse network interface ID: %w", err)
@@ -614,7 +619,7 @@ func (client *azureClient) getNetworkInterfaceByID(ctx context.Context, networkI
 		if errors.As(err, &responseError) && responseError.StatusCode == http.StatusNotFound {
 			return nil, errorNotFound
 		}
-		return nil, autorest.NewErrorWithError(err, "armnetwork.InterfacesClient", "Get", nil, "Failure responding to request")
+		return nil, fmt.Errorf("Failed to retrieve Interface %v with error: %w", networkInterfaceID, err)
 	}
 
 	return &resp.Interface, nil

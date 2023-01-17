@@ -16,7 +16,9 @@ package azure
 import (
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v4"
+	"github.com/go-kit/log"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 )
@@ -250,18 +252,26 @@ func TestMapFromVMScaleSetVMWithTags(t *testing.T) {
 func TestNewAzureResourceFromID(t *testing.T) {
 	for _, tc := range []struct {
 		id       string
-		expected azureResource
+		expected *arm.ResourceID
 	}{
 		{
-			id:       "/a/b/c/group/d/e/f/name",
-			expected: azureResource{"name", "group"},
+			id: "/subscriptions/SUBSCRIPTION_ID/resourceGroups/group/providers/PROVIDER/TYPE/name",
+			expected: &arm.ResourceID{
+				Name:              "name",
+				ResourceGroupName: "group",
+			},
 		},
 		{
-			id:       "/a/b/c/group/d/e/f/name/g/h",
-			expected: azureResource{"name", "group"},
+			id: "/subscriptions/SUBSCRIPTION_ID/resourceGroups/group/providers/PROVIDER/TYPE/name/TYPE/h",
+			expected: &arm.ResourceID{
+				Name:              "h",
+				ResourceGroupName: "group",
+			},
 		},
 	} {
-		actual, _ := newAzureResourceFromID(tc.id, nil)
-		require.Equal(t, tc.expected, actual)
+		actual, err := newAzureResourceFromID(tc.id, log.NewNopLogger())
+		require.Nil(t, err)
+		require.Equal(t, tc.expected.Name, actual.Name)
+		require.Equal(t, tc.expected.ResourceGroupName, actual.ResourceGroupName)
 	}
 }
