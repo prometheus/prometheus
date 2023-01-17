@@ -499,7 +499,6 @@ func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc, oooMmc []*m
 	h.metrics.chunksRemoved.Add(float64(len(mSeries.mmappedChunks)))
 	h.metrics.chunks.Add(float64(len(mmc) + len(oooMmc) - len(mSeries.mmappedChunks)))
 	mSeries.mmappedChunks = mmc
-	mSeries.ooo = nil
 	if len(oooMmc) == 0 {
 		mSeries.ooo = nil
 	} else {

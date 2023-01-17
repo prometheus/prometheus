@@ -76,10 +76,7 @@ func TestChunkSeriesSetToSeriesSet(t *testing.T) {
 		samples []tsdbutil.Sample
 	}{
 		{
-			lbs: labels.Labels{
-				{Name: "__name__", Value: "up"},
-				{Name: "instance", Value: "localhost:8080"},
-			},
+			lbs: labels.FromStrings("__name__", "up", "instance", "localhost:8080"),
 			samples: []tsdbutil.Sample{
 				sample{t: 1, v: 1},
 				sample{t: 2, v: 2},
@@ -87,10 +84,7 @@ func TestChunkSeriesSetToSeriesSet(t *testing.T) {
 				sample{t: 4, v: 4},
 			},
 		}, {
-			lbs: labels.Labels{
-				{Name: "__name__", Value: "up"},
-				{Name: "instance", Value: "localhost:8081"},
-			},
+			lbs: labels.FromStrings("__name__", "up", "instance", "localhost:8081"),
 			samples: []tsdbutil.Sample{
 				sample{t: 1, v: 2},
 				sample{t: 2, v: 3},
