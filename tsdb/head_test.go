@@ -4744,3 +4744,60 @@ func TestGaugeFloatHistogramWALAndChunkHeader(t *testing.T) {
 
 	checkHeaders()
 }
+
+func TestSnapshotAheadOfWALError(t *testing.T) {
+	head, _ := newTestHead(t, 120*4, false, false)
+	entries := []interface{}{
+		[]record.RefSeries{
+			{Ref: 10, Labels: labels.FromStrings("a", "1")},
+			{Ref: 11, Labels: labels.FromStrings("a", "2")},
+			{Ref: 100, Labels: labels.FromStrings("a", "3")},
+		},
+		[]record.RefSample{
+			{Ref: 0, T: 99, V: 1},
+			{Ref: 10, T: 100, V: 2},
+			{Ref: 100, T: 100, V: 3},
+		},
+		[]record.RefSeries{
+			{Ref: 50, Labels: labels.FromStrings("a", "4")},
+			// This series has two refs pointing to it.
+			{Ref: 101, Labels: labels.FromStrings("a", "3")},
+		},
+		[]record.RefSample{
+			{Ref: 10, T: 101, V: 5},
+			{Ref: 50, T: 101, V: 6},
+			{Ref: 101, T: 101, V: 7},
+		},
+		[]tombstones.Stone{
+			{Ref: 0, Intervals: []tombstones.Interval{{Mint: 99, Maxt: 101}}},
+		},
+		[]record.RefExemplar{
+			{Ref: 10, T: 100, V: 1, Labels: labels.FromStrings("traceID", "asdf")},
+		},
+	}
+
+	w, _ := wlog.NewSize(nil, nil, head.wal.Dir(), 32768, false)
+	populateTestWAL(t, w, entries)
+
+	head.opts.EnableMemorySnapshotOnShutdown = true
+	require.NoError(t, head.Close()) // This will create a snapshot.
+	require.NoError(t, w.Close())
+
+	snapDir, _, _, err := LastChunkSnapshot(head.opts.ChunkDirRoot)
+	require.NoError(t, err)
+
+	// Corrupt the filename by increasing the snapshot index beyond the WAL index
+	baseDir := path.Dir(snapDir)
+	newFilename := "chunk_snapshot.000003.000000000"
+
+	require.NoError(t, os.Rename(snapDir, path.Join(baseDir, newFilename)))
+
+	// Create new Head which should detect the incorrect index and delete the snapshot
+	w, err = wlog.NewSize(nil, nil, head.wal.Dir(), 32768, false)
+	require.NoError(t, head.Init(math.MinInt64))
+	snapDir, _, _, err = LastChunkSnapshot(head.opts.ChunkDirRoot)
+	require.NoError(t, w.Close())
+	// Verify that renamed directory does not exist anymore
+	_, err = os.Stat(filepath.Join(baseDir, newFilename))
+	require.True(t, os.IsNotExist(err))
+}
