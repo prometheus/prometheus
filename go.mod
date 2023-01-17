@@ -7,7 +7,7 @@ require (
 	github.com/Azure/go-autorest/autorest v0.11.28
 	github.com/Azure/go-autorest/autorest/adal v0.9.21
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
-	github.com/apache/arrow/go/arrow v0.0.0-20211112161151-bc219186db40
+	github.com/apache/arrow/go/v11 v11.0.0-20230117185500-444dcb677975
 	github.com/aws/aws-sdk-go v1.44.159
 	github.com/cespare/xxhash/v2 v2.2.0
 	github.com/dennwc/varint v1.0.0
@@ -84,10 +84,18 @@ require (
 
 require (
 	cloud.google.com/go/compute/metadata v0.2.2 // indirect
+	github.com/andybalholm/brotli v1.0.4 // indirect
+	github.com/apache/thrift v0.16.0 // indirect
 	github.com/coreos/go-systemd/v22 v22.4.0 // indirect
-	github.com/google/flatbuffers v2.0.0+incompatible // indirect
-	github.com/klauspost/compress v1.13.6 // indirect
-	github.com/pierrec/lz4/v4 v4.1.8 // indirect
+	github.com/goccy/go-json v0.9.11 // indirect
+	github.com/google/flatbuffers v2.0.8+incompatible // indirect
+	github.com/klauspost/asmfmt v1.3.2 // indirect
+	github.com/klauspost/compress v1.15.9 // indirect
+	github.com/klauspost/cpuid/v2 v2.0.9 // indirect
+	github.com/minio/asm2plan9s v0.0.0-20200509001527-cdd76441f9d8 // indirect
+	github.com/minio/c2goasm v0.0.0-20190812172519-36a3d3bbc4f3 // indirect
+	github.com/pierrec/lz4/v4 v4.1.15 // indirect
+	github.com/zeebo/xxh3 v1.0.2 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
 )
 
@@ -155,7 +163,7 @@ require (
 	github.com/julienschmidt/httprouter v1.3.0 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mattn/go-colorable v0.1.12 // indirect
-	github.com/mattn/go-isatty v0.0.14 // indirect
+	github.com/mattn/go-isatty v0.0.16 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
