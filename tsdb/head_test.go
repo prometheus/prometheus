@@ -4793,9 +4793,10 @@ func TestSnapshotAheadOfWALError(t *testing.T) {
 	require.NoError(t, os.Rename(snapDir, path.Join(baseDir, newFilename)))
 
 	// Create new Head which should detect the incorrect index and delete the snapshot
-	w, err = wlog.NewSize(nil, nil, head.wal.Dir(), 32768, false)
+	w, _ = wlog.NewSize(nil, nil, head.wal.Dir(), 32768, false)
 	require.NoError(t, head.Init(math.MinInt64))
-	snapDir, _, _, err = LastChunkSnapshot(head.opts.ChunkDirRoot)
+	_, _, _, err = LastChunkSnapshot(head.opts.ChunkDirRoot)
+	require.Error(t, err)
 	require.NoError(t, w.Close())
 	// Verify that renamed directory does not exist anymore
 	_, err = os.Stat(filepath.Join(baseDir, newFilename))
