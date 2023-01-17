@@ -1172,7 +1172,7 @@ func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID ui
 		if len(pBackwardInter)+len(nBackwardInter) > 0 {
 			h.PositiveSpans = pMergedSpans
 			h.NegativeSpans = nMergedSpans
-			app.RecodeHistogramm(h, pBackwardInter, nBackwardInter)
+			app.RecodeHistogram(h, pBackwardInter, nBackwardInter)
 		}
 		// We have 3 cases here
 		// - !okToAppend -> We need to cut a new chunk.

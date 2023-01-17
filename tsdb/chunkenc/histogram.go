@@ -590,9 +590,9 @@ func (a *HistogramAppender) Recode(
 	return hc, app
 }
 
-// RecodeHistogramm converts the current histogram (in-place) to accommodate an expansion of the set of
+// RecodeHistogram converts the current histogram (in-place) to accommodate an expansion of the set of
 // (positive and/or negative) buckets used.
-func (a *HistogramAppender) RecodeHistogramm(
+func (a *HistogramAppender) RecodeHistogram(
 	h *histogram.Histogram,
 	pBackwardInter, nBackwardInter []Interjection,
 ) {
