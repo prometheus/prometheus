@@ -4787,10 +4787,10 @@ func TestSnapshotAheadOfWALError(t *testing.T) {
 	require.NoError(t, err)
 
 	// Corrupt the filename by increasing the snapshot index beyond the WAL index
-	baseDir := path.Dir(snapDir)
+	baseDir := filepath.Dir(snapDir)
 	newFilename := "chunk_snapshot.000003.000000000"
 
-	require.NoError(t, os.Rename(snapDir, path.Join(baseDir, newFilename)))
+	require.NoError(t, os.Rename(snapDir, filepath.Join(baseDir, newFilename)))
 
 	// Create new Head which should detect the incorrect index and delete the snapshot
 	w, _ = wlog.NewSize(nil, nil, head.wal.Dir(), 32768, false)
