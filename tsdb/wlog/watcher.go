@@ -50,6 +50,7 @@ type WriteTo interface {
 	Append([]record.RefSample) bool
 	AppendExemplars([]record.RefExemplar) bool
 	AppendHistograms([]record.RefHistogramSample) bool
+	AppendFloatHistograms([]record.RefFloatHistogramSample) bool
 	StoreSeries([]record.RefSeries, int)
 
 	// Next two methods are intended for garbage-collection: first we call
@@ -476,13 +477,15 @@ func (w *Watcher) garbageCollectSeries(segmentNum int) error {
 // Also used with readCheckpoint - implements segmentReadFn.
 func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 	var (
-		dec              record.Decoder
-		series           []record.RefSeries
-		samples          []record.RefSample
-		samplesToSend    []record.RefSample
-		exemplars        []record.RefExemplar
-		histograms       []record.RefHistogramSample
-		histogramsToSend []record.RefHistogramSample
+		dec                   record.Decoder
+		series                []record.RefSeries
+		samples               []record.RefSample
+		samplesToSend         []record.RefSample
+		exemplars             []record.RefExemplar
+		histograms            []record.RefHistogramSample
+		histogramsToSend      []record.RefHistogramSample
+		floatHistograms       []record.RefFloatHistogramSample
+		floatHistogramsToSend []record.RefFloatHistogramSample
 	)
 	for r.Next() && !isClosed(w.quit) {
 		rec := r.Record()
@@ -567,7 +570,33 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 				w.writer.AppendHistograms(histogramsToSend)
 				histogramsToSend = histogramsToSend[:0]
 			}
-
+		case record.FloatHistogramSamples:
+			// Skip if experimental "histograms over remote write" is not enabled.
+			if !w.sendHistograms {
+				break
+			}
+			if !tail {
+				break
+			}
+			floatHistograms, err := dec.FloatHistogramSamples(rec, floatHistograms[:0])
+			if err != nil {
+				w.recordDecodeFailsMetric.Inc()
+				return err
+			}
+			for _, fh := range floatHistograms {
+				if fh.T > w.startTimestamp {
+					if !w.sendSamples {
+						w.sendSamples = true
+						duration := time.Since(w.startTime)
+						level.Info(w.logger).Log("msg", "Done replaying WAL", "duration", duration)
+					}
+					floatHistogramsToSend = append(floatHistogramsToSend, fh)
+				}
+			}
+			if len(floatHistogramsToSend) > 0 {
+				w.writer.AppendFloatHistograms(floatHistogramsToSend)
+				floatHistogramsToSend = floatHistogramsToSend[:0]
+			}
 		case record.Tombstones:
 
 		default:

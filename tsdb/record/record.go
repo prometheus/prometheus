@@ -441,6 +441,8 @@ func (d *Decoder) HistogramSamples(rec []byte, histograms []RefHistogramSample) 
 			H:   &histogram.Histogram{},
 		}
 
+		rh.H.CounterResetHint = histogram.CounterResetHint(dec.Byte())
+
 		rh.H.Schema = int32(dec.Varint64())
 		rh.H.ZeroThreshold = math.Float64frombits(dec.Be64())
 
@@ -516,6 +518,8 @@ func (d *Decoder) FloatHistogramSamples(rec []byte, histograms []RefFloatHistogr
 			T:   baseTime + dtime,
 			FH:  &histogram.FloatHistogram{},
 		}
+
+		rh.FH.CounterResetHint = histogram.CounterResetHint(dec.Byte())
 
 		rh.FH.Schema = int32(dec.Varint64())
 		rh.FH.ZeroThreshold = dec.Be64Float64()
@@ -715,6 +719,8 @@ func (e *Encoder) HistogramSamples(histograms []RefHistogramSample, b []byte) []
 		buf.PutVarint64(int64(h.Ref) - int64(first.Ref))
 		buf.PutVarint64(h.T - first.T)
 
+		buf.PutByte(byte(h.H.CounterResetHint))
+
 		buf.PutVarint64(int64(h.H.Schema))
 		buf.PutBE64(math.Float64bits(h.H.ZeroThreshold))
 
@@ -765,6 +771,8 @@ func (e *Encoder) FloatHistogramSamples(histograms []RefFloatHistogramSample, b 
 	for _, h := range histograms {
 		buf.PutVarint64(int64(h.Ref) - int64(first.Ref))
 		buf.PutVarint64(h.T - first.T)
+
+		buf.PutByte(byte(h.FH.CounterResetHint))
 
 		buf.PutVarint64(int64(h.FH.Schema))
 		buf.PutBEFloat64(h.FH.ZeroThreshold)

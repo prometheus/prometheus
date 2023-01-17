@@ -4095,8 +4095,7 @@ func TestOOOCompaction(t *testing.T) {
 		ms, created, err := db.head.getOrCreate(lbls.Hash(), lbls)
 		require.NoError(t, err)
 		require.False(t, created)
-		require.Nil(t, ms.oooHeadChunk)
-		require.Equal(t, 0, len(ms.oooMmappedChunks))
+		require.Nil(t, ms.ooo)
 	}
 	checkEmptyOOOChunk(series1)
 	checkEmptyOOOChunk(series2)
@@ -4138,8 +4137,8 @@ func TestOOOCompaction(t *testing.T) {
 		ms, created, err := db.head.getOrCreate(lbls.Hash(), lbls)
 		require.NoError(t, err)
 		require.False(t, created)
-		require.Greater(t, ms.oooHeadChunk.chunk.NumSamples(), 0)
-		require.Equal(t, 14, len(ms.oooMmappedChunks)) // 7 original, 7 duplicate.
+		require.Greater(t, ms.ooo.oooHeadChunk.chunk.NumSamples(), 0)
+		require.Equal(t, 14, len(ms.ooo.oooMmappedChunks)) // 7 original, 7 duplicate.
 	}
 	checkNonEmptyOOOChunk(series1)
 	checkNonEmptyOOOChunk(series2)
@@ -4289,7 +4288,7 @@ func TestOOOCompactionWithNormalCompaction(t *testing.T) {
 		ms, created, err := db.head.getOrCreate(lbls.Hash(), lbls)
 		require.NoError(t, err)
 		require.False(t, created)
-		require.Greater(t, ms.oooHeadChunk.chunk.NumSamples(), 0)
+		require.Greater(t, ms.ooo.oooHeadChunk.chunk.NumSamples(), 0)
 	}
 
 	// If the normal Head is not compacted, the OOO head compaction does not take place.
@@ -4317,8 +4316,7 @@ func TestOOOCompactionWithNormalCompaction(t *testing.T) {
 		ms, created, err := db.head.getOrCreate(lbls.Hash(), lbls)
 		require.NoError(t, err)
 		require.False(t, created)
-		require.Nil(t, ms.oooHeadChunk)
-		require.Equal(t, 0, len(ms.oooMmappedChunks))
+		require.Nil(t, ms.ooo)
 	}
 
 	verifySamples := func(block *Block, fromMins, toMins int64) {
@@ -4711,8 +4709,7 @@ func TestOOODisabled(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, created)
 	require.NotNil(t, ms)
-	require.Nil(t, ms.oooHeadChunk)
-	require.Len(t, ms.oooMmappedChunks, 0)
+	require.Nil(t, ms.ooo)
 }
 
 func TestWBLAndMmapReplay(t *testing.T) {
@@ -4776,7 +4773,7 @@ func TestWBLAndMmapReplay(t *testing.T) {
 	require.False(t, created)
 	require.NoError(t, err)
 	var s1MmapSamples []tsdbutil.Sample
-	for _, mc := range ms.oooMmappedChunks {
+	for _, mc := range ms.ooo.oooMmappedChunks {
 		chk, err := db.head.chunkDiskMapper.Chunk(mc.ref)
 		require.NoError(t, err)
 		it := chk.Iterator(nil)
@@ -4983,8 +4980,7 @@ func TestOOOCompactionFailure(t *testing.T) {
 	ms, created, err := db.head.getOrCreate(series1.Hash(), series1)
 	require.NoError(t, err)
 	require.False(t, created)
-	require.Nil(t, ms.oooHeadChunk)
-	require.Len(t, ms.oooMmappedChunks, 0)
+	require.Nil(t, ms.ooo)
 
 	// The failed compaction should not have left the ooo Head corrupted.
 	// Hence, expect no new blocks with another OOO compaction call.
@@ -5798,7 +5794,7 @@ func TestDiskFillingUpAfterDisablingOOO(t *testing.T) {
 	db.DisableCompactions()
 
 	ms := db.head.series.getByHash(series1.Hash(), series1)
-	require.Greater(t, len(ms.oooMmappedChunks), 0, "OOO mmap chunk was not replayed")
+	require.Greater(t, len(ms.ooo.oooMmappedChunks), 0, "OOO mmap chunk was not replayed")
 
 	checkMmapFileContents := func(contains, notContains []string) {
 		mmapDir := mmappedChunksDir(db.head.opts.ChunkDirRoot)
@@ -5826,7 +5822,7 @@ func TestDiskFillingUpAfterDisablingOOO(t *testing.T) {
 	checkMmapFileContents([]string{"000001", "000002"}, nil)
 	require.NoError(t, db.Compact())
 	checkMmapFileContents([]string{"000002"}, []string{"000001"})
-	require.Equal(t, 0, len(ms.oooMmappedChunks), "OOO mmap chunk was not compacted")
+	require.Nil(t, ms.ooo, "OOO mmap chunk was not compacted")
 
 	addSamples(501, 650)
 	checkMmapFileContents([]string{"000002", "000003"}, []string{"000001"})

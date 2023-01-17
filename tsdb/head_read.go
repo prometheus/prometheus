@@ -225,8 +225,9 @@ func (s *memSeries) headChunkID(pos int) chunks.HeadChunkID {
 // oooHeadChunkID returns the HeadChunkID referred to by the given position.
 // * 0 <= pos < len(s.oooMmappedChunks) refer to s.oooMmappedChunks[pos]
 // * pos == len(s.oooMmappedChunks) refers to s.oooHeadChunk
+// The caller must ensure that s.ooo is not nil.
 func (s *memSeries) oooHeadChunkID(pos int) chunks.HeadChunkID {
-	return chunks.HeadChunkID(pos) + s.firstOOOChunkID
+	return chunks.HeadChunkID(pos) + s.ooo.firstOOOChunkID
 }
 
 // LabelValueFor returns label value for the given label name in the series referred to by ID.
@@ -378,6 +379,7 @@ func (s *memSeries) chunk(id chunks.HeadChunkID, cdm chunkDiskMapper, memChunkPo
 // might be a merge of all the overlapping chunks, if any, amongst all the
 // chunks in the OOOHead.
 // This function is not thread safe unless the caller holds a lock.
+// The caller must ensure that s.ooo is not nil.
 func (s *memSeries) oooMergedChunk(meta chunks.Meta, cdm chunkDiskMapper, mint, maxt int64) (chunk *mergedOOOChunks, err error) {
 	_, cid := chunks.HeadChunkRef(meta.Ref).Unpack()
 
@@ -385,23 +387,23 @@ func (s *memSeries) oooMergedChunk(meta chunks.Meta, cdm chunkDiskMapper, mint, 
 	// incremented by 1 when new chunk is created, hence (meta - firstChunkID) gives the slice index.
 	// The max index for the s.mmappedChunks slice can be len(s.mmappedChunks)-1, hence if the ix
 	// is len(s.mmappedChunks), it represents the next chunk, which is the head chunk.
-	ix := int(cid) - int(s.firstOOOChunkID)
-	if ix < 0 || ix > len(s.oooMmappedChunks) {
+	ix := int(cid) - int(s.ooo.firstOOOChunkID)
+	if ix < 0 || ix > len(s.ooo.oooMmappedChunks) {
 		return nil, storage.ErrNotFound
 	}
 
-	if ix == len(s.oooMmappedChunks) {
-		if s.oooHeadChunk == nil {
+	if ix == len(s.ooo.oooMmappedChunks) {
+		if s.ooo.oooHeadChunk == nil {
 			return nil, errors.New("invalid ooo head chunk")
 		}
 	}
 
 	// We create a temporary slice of chunk metas to hold the information of all
 	// possible chunks that may overlap with the requested chunk.
-	tmpChks := make([]chunkMetaAndChunkDiskMapperRef, 0, len(s.oooMmappedChunks))
+	tmpChks := make([]chunkMetaAndChunkDiskMapperRef, 0, len(s.ooo.oooMmappedChunks))
 
-	oooHeadRef := chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.oooHeadChunkID(len(s.oooMmappedChunks))))
-	if s.oooHeadChunk != nil && s.oooHeadChunk.OverlapsClosedInterval(mint, maxt) {
+	oooHeadRef := chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.oooHeadChunkID(len(s.ooo.oooMmappedChunks))))
+	if s.ooo.oooHeadChunk != nil && s.ooo.oooHeadChunk.OverlapsClosedInterval(mint, maxt) {
 		// We only want to append the head chunk if this chunk existed when
 		// Series() was called. This brings consistency in case new data
 		// is added in between Series() and Chunk() calls.
@@ -417,7 +419,7 @@ func (s *memSeries) oooMergedChunk(meta chunks.Meta, cdm chunkDiskMapper, mint, 
 		}
 	}
 
-	for i, c := range s.oooMmappedChunks {
+	for i, c := range s.ooo.oooMmappedChunks {
 		chunkRef := chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.oooHeadChunkID(i)))
 		// We can skip chunks that came in later than the last known OOOLastRef.
 		if chunkRef > meta.OOOLastRef {
@@ -462,11 +464,11 @@ func (s *memSeries) oooMergedChunk(meta chunks.Meta, cdm chunkDiskMapper, mint, 
 			// If head chunk min and max time match the meta OOO markers
 			// that means that the chunk has not expanded so we can append
 			// it as it is.
-			if s.oooHeadChunk.minTime == meta.OOOLastMinTime && s.oooHeadChunk.maxTime == meta.OOOLastMaxTime {
-				xor, err = s.oooHeadChunk.chunk.ToXOR() // TODO(jesus.vazquez) (This is an optimization idea that has no priority and might not be that useful) See if we could use a copy of the underlying slice. That would leave the more expensive ToXOR() function only for the usecase where Bytes() is called.
+			if s.ooo.oooHeadChunk.minTime == meta.OOOLastMinTime && s.ooo.oooHeadChunk.maxTime == meta.OOOLastMaxTime {
+				xor, err = s.ooo.oooHeadChunk.chunk.ToXOR() // TODO(jesus.vazquez) (This is an optimization idea that has no priority and might not be that useful) See if we could use a copy of the underlying slice. That would leave the more expensive ToXOR() function only for the usecase where Bytes() is called.
 			} else {
 				// We need to remove samples that are outside of the markers
-				xor, err = s.oooHeadChunk.chunk.ToXORBetweenTimestamps(meta.OOOLastMinTime, meta.OOOLastMaxTime)
+				xor, err = s.ooo.oooHeadChunk.chunk.ToXORBetweenTimestamps(meta.OOOLastMinTime, meta.OOOLastMaxTime)
 			}
 			if err != nil {
 				return nil, errors.Wrap(err, "failed to convert ooo head chunk to xor chunk")
