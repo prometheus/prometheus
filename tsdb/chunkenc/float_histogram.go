@@ -628,12 +628,8 @@ func (it *floatHistogramIterator) AtFloatHistogram() (int64, *histogram.FloatHis
 		return it.t, &histogram.FloatHistogram{Sum: it.sum.value}
 	}
 	it.atFloatHistogramCalled = true
-	crHint := histogram.UnknownCounterReset
-	if it.counterResetHeader == GaugeType {
-		crHint = histogram.GaugeType
-	}
 	return it.t, &histogram.FloatHistogram{
-		CounterResetHint: crHint,
+		CounterResetHint: counterResetHint(it.counterResetHeader, it.numRead),
 		Count:            it.cnt.value,
 		ZeroCount:        it.zCnt.value,
 		Sum:              it.sum.value,
