@@ -667,12 +667,8 @@ func (it *histogramIterator) AtHistogram() (int64, *histogram.Histogram) {
 		return it.t, &histogram.Histogram{Sum: it.sum}
 	}
 	it.atHistogramCalled = true
-	crHint := histogram.UnknownCounterReset
-	if it.counterResetHeader == GaugeType {
-		crHint = histogram.GaugeType
-	}
 	return it.t, &histogram.Histogram{
-		CounterResetHint: crHint,
+		CounterResetHint: counterResetHint(it.counterResetHeader, it.numRead),
 		Count:            it.cnt,
 		ZeroCount:        it.zCnt,
 		Sum:              it.sum,
@@ -690,12 +686,8 @@ func (it *histogramIterator) AtFloatHistogram() (int64, *histogram.FloatHistogra
 		return it.t, &histogram.FloatHistogram{Sum: it.sum}
 	}
 	it.atFloatHistogramCalled = true
-	crHint := histogram.UnknownCounterReset
-	if it.counterResetHeader == GaugeType {
-		crHint = histogram.GaugeType
-	}
 	return it.t, &histogram.FloatHistogram{
-		CounterResetHint: crHint,
+		CounterResetHint: counterResetHint(it.counterResetHeader, it.numRead),
 		Count:            float64(it.cnt),
 		ZeroCount:        float64(it.zCnt),
 		Sum:              it.sum,

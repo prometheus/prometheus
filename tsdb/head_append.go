@@ -1152,17 +1152,27 @@ func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID ui
 		pForwardInserts, nForwardInserts   []chunkenc.Insert
 		pBackwardInserts, nBackwardInserts []chunkenc.Insert
 		pMergedSpans, nMergedSpans         []histogram.Span
-		okToAppend, counterReset           bool
+		okToAppend, counterReset, gauge    bool
 	)
 	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.EncHistogram, chunkDiskMapper, chunkRange)
 	if !sampleInOrder {
 		return sampleInOrder, chunkCreated
 	}
-	gauge := h.CounterResetHint == histogram.GaugeType
-	if app != nil {
-		if gauge {
-			pForwardInserts, nForwardInserts, pBackwardInserts, nBackwardInserts, pMergedSpans, nMergedSpans, okToAppend = app.AppendableGauge(h)
-		} else {
+	switch h.CounterResetHint {
+	case histogram.GaugeType:
+		gauge = true
+		if app != nil {
+			pForwardInserts, nForwardInserts,
+				pBackwardInserts, nBackwardInserts,
+				pMergedSpans, nMergedSpans,
+				okToAppend = app.AppendableGauge(h)
+		}
+	case histogram.CounterReset:
+		// The caller tells us this is a counter reset, even if it
+		// doesn't look like one.
+		counterReset = true
+	default:
+		if app != nil {
 			pForwardInserts, nForwardInserts, okToAppend, counterReset = app.Appendable(h)
 		}
 	}
@@ -1235,18 +1245,27 @@ func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, 
 		pForwardInserts, nForwardInserts   []chunkenc.Insert
 		pBackwardInserts, nBackwardInserts []chunkenc.Insert
 		pMergedSpans, nMergedSpans         []histogram.Span
-		okToAppend, counterReset           bool
+		okToAppend, counterReset, gauge    bool
 	)
 	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.EncFloatHistogram, chunkDiskMapper, chunkRange)
 	if !sampleInOrder {
 		return sampleInOrder, chunkCreated
 	}
-	gauge := fh.CounterResetHint == histogram.GaugeType
-	if app != nil {
-		if gauge {
-			pForwardInserts, nForwardInserts, pBackwardInserts, nBackwardInserts,
-				pMergedSpans, nMergedSpans, okToAppend = app.AppendableGauge(fh)
-		} else {
+	switch fh.CounterResetHint {
+	case histogram.GaugeType:
+		gauge = true
+		if app != nil {
+			pForwardInserts, nForwardInserts,
+				pBackwardInserts, nBackwardInserts,
+				pMergedSpans, nMergedSpans,
+				okToAppend = app.AppendableGauge(fh)
+		}
+	case histogram.CounterReset:
+		// The caller tells us this is a counter reset, even if it
+		// doesn't look like one.
+		counterReset = true
+	default:
+		if app != nil {
 			pForwardInserts, nForwardInserts, okToAppend, counterReset = app.Appendable(fh)
 		}
 	}
