@@ -78,7 +78,7 @@ func TestBucketIterator(t *testing.T) {
 			},
 			idxs: []int{100, 101, 102, 103, 112, 113, 114, 115, 116, 117, 118, 119},
 		},
-		// The below 2 sets ore the ones described in compareSpans's comments.
+		// The below 2 sets ore the ones described in expandSpansForward's comments.
 		{
 			spans: []histogram.Span{
 				{Offset: 0, Length: 2},
@@ -111,12 +111,12 @@ func TestBucketIterator(t *testing.T) {
 	}
 }
 
-func TestCompareSpansAndInterject(t *testing.T) {
+func TestCompareSpansAndInsert(t *testing.T) {
 	scenarios := []struct {
-		description                          string
-		spansA, spansB                       []histogram.Span
-		interjections, backwardInterjections []Interjection
-		bucketsIn, bucketsOut                []int64
+		description           string
+		spansA, spansB        []histogram.Span
+		fInserts, bInserts    []Insert
+		bucketsIn, bucketsOut []int64
 	}{
 		{
 			description: "single prepend at the beginning",
@@ -126,7 +126,7 @@ func TestCompareSpansAndInterject(t *testing.T) {
 			spansB: []histogram.Span{
 				{Offset: -11, Length: 4},
 			},
-			interjections: []Interjection{
+			fInserts: []Insert{
 				{
 					pos: 0,
 					num: 1,
@@ -143,7 +143,7 @@ func TestCompareSpansAndInterject(t *testing.T) {
 			spansB: []histogram.Span{
 				{Offset: -10, Length: 4},
 			},
-			interjections: []Interjection{
+			fInserts: []Insert{
 				{
 					pos: 3,
 					num: 1,
@@ -160,7 +160,7 @@ func TestCompareSpansAndInterject(t *testing.T) {
 			spansB: []histogram.Span{
 				{Offset: -12, Length: 5},
 			},
-			interjections: []Interjection{
+			fInserts: []Insert{
 				{
 					pos: 0,
 					num: 2,
@@ -177,7 +177,7 @@ func TestCompareSpansAndInterject(t *testing.T) {
 			spansB: []histogram.Span{
 				{Offset: -10, Length: 5},
 			},
-			interjections: []Interjection{
+			fInserts: []Insert{
 				{
 					pos: 3,
 					num: 2,
@@ -194,7 +194,7 @@ func TestCompareSpansAndInterject(t *testing.T) {
 			spansB: []histogram.Span{
 				{Offset: -12, Length: 7},
 			},
-			interjections: []Interjection{
+			fInserts: []Insert{
 				{
 					pos: 0,
 					num: 2,
@@ -215,7 +215,7 @@ func TestCompareSpansAndInterject(t *testing.T) {
 			spansB: []histogram.Span{
 				{Offset: -9, Length: 3},
 			},
-			backwardInterjections: []Interjection{
+			bInserts: []Insert{
 				{pos: 0, num: 1},
 			},
 		},
@@ -228,7 +228,7 @@ func TestCompareSpansAndInterject(t *testing.T) {
 				{Offset: -10, Length: 2},
 				{Offset: 1, Length: 1},
 			},
-			backwardInterjections: []Interjection{
+			bInserts: []Insert{
 				{pos: 2, num: 1},
 			},
 		},
@@ -240,7 +240,7 @@ func TestCompareSpansAndInterject(t *testing.T) {
 			spansB: []histogram.Span{
 				{Offset: -10, Length: 3},
 			},
-			backwardInterjections: []Interjection{
+			bInserts: []Insert{
 				{pos: 3, num: 1},
 			},
 		},
@@ -259,7 +259,7 @@ func TestCompareSpansAndInterject(t *testing.T) {
 				{Offset: 1, Length: 4},
 				{Offset: 3, Length: 3},
 			},
-			interjections: []Interjection{
+			fInserts: []Insert{
 				{
 					pos: 2,
 					num: 1,
@@ -277,7 +277,7 @@ func TestCompareSpansAndInterject(t *testing.T) {
 			bucketsOut: []int64{6, -3, -3, 3, -3, 0, 2, 2, 1, -5, 1},
 		},
 		{
-			description: "both forward and backward interjections, complex case",
+			description: "both forward and backward inserts, complex case",
 			spansA: []histogram.Span{
 				{Offset: 0, Length: 2},
 				{Offset: 2, Length: 1},
@@ -292,7 +292,7 @@ func TestCompareSpansAndInterject(t *testing.T) {
 				{Offset: 1, Length: 1},
 				{Offset: 4, Length: 1},
 			},
-			interjections: []Interjection{
+			fInserts: []Insert{
 				{
 					pos: 2,
 					num: 1,
@@ -306,7 +306,7 @@ func TestCompareSpansAndInterject(t *testing.T) {
 					num: 1,
 				},
 			},
-			backwardInterjections: []Interjection{
+			bInserts: []Insert{
 				{
 					pos: 0,
 					num: 1,
@@ -329,22 +329,22 @@ func TestCompareSpansAndInterject(t *testing.T) {
 
 	for _, s := range scenarios {
 		t.Run(s.description, func(t *testing.T) {
-			if len(s.backwardInterjections) > 0 {
-				interjections, bInterjections, _ := bidirectionalCompareSpans(s.spansA, s.spansB)
-				require.Equal(t, s.interjections, interjections)
-				require.Equal(t, s.backwardInterjections, bInterjections)
+			if len(s.bInserts) > 0 {
+				fInserts, bInserts, _ := expandSpansBothWays(s.spansA, s.spansB)
+				require.Equal(t, s.fInserts, fInserts)
+				require.Equal(t, s.bInserts, bInserts)
 			}
 
-			interjections, valid := forwardCompareSpans(s.spansA, s.spansB)
-			if len(s.backwardInterjections) > 0 {
+			inserts, valid := expandSpansForward(s.spansA, s.spansB)
+			if len(s.bInserts) > 0 {
 				require.False(t, valid, "compareScan unexpectedly returned true")
 				return
 			}
 			require.True(t, valid, "compareScan unexpectedly returned false")
-			require.Equal(t, s.interjections, interjections)
+			require.Equal(t, s.fInserts, inserts)
 
 			gotBuckets := make([]int64, len(s.bucketsOut))
-			interject(s.bucketsIn, gotBuckets, interjections, true)
+			insert(s.bucketsIn, gotBuckets, inserts, true)
 			require.Equal(t, s.bucketsOut, gotBuckets)
 
 			floatBucketsIn := make([]float64, len(s.bucketsIn))
@@ -362,7 +362,7 @@ func TestCompareSpansAndInterject(t *testing.T) {
 				floatBucketsOut[i] = float64(last)
 			}
 			gotFloatBuckets := make([]float64, len(floatBucketsOut))
-			interject(floatBucketsIn, gotFloatBuckets, interjections, false)
+			insert(floatBucketsIn, gotFloatBuckets, inserts, false)
 			require.Equal(t, floatBucketsOut, gotFloatBuckets)
 		})
 	}
@@ -564,12 +564,12 @@ func TestSpansFromBidirectionalCompareSpans(t *testing.T) {
 		copy(s1c, c.s1)
 		copy(s2c, c.s2)
 
-		_, _, act := bidirectionalCompareSpans(c.s1, c.s2)
+		_, _, act := expandSpansBothWays(c.s1, c.s2)
 		require.Equal(t, c.exp, act)
 		// Check that s1 and s2 are not modified.
 		require.Equal(t, s1c, c.s1)
 		require.Equal(t, s2c, c.s2)
-		_, _, act = bidirectionalCompareSpans(c.s2, c.s1)
+		_, _, act = expandSpansBothWays(c.s2, c.s1)
 		require.Equal(t, c.exp, act)
 	}
 }

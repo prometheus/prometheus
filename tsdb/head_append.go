@@ -1141,7 +1141,6 @@ func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper 
 
 // appendHistogram adds the histogram.
 // It is unsafe to call this concurrently with s.iterator(...) without holding the series lock.
-// TODO(codesome): Support gauge histograms here.
 func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID uint64, chunkDiskMapper *chunks.ChunkDiskMapper, chunkRange int64) (sampleInOrder, chunkCreated bool) {
 	// Head controls the execution of recoding, so that we own the proper
 	// chunk reference afterwards. We check for Appendable from appender before
@@ -1150,10 +1149,10 @@ func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID ui
 	// meta properly.
 	app, _ := s.app.(*chunkenc.HistogramAppender)
 	var (
-		positiveInterjections, negativeInterjections []chunkenc.Interjection
-		pBackwardInter, nBackwardInter               []chunkenc.Interjection
-		pMergedSpans, nMergedSpans                   []histogram.Span
-		okToAppend, counterReset                     bool
+		pForwardInserts, nForwardInserts   []chunkenc.Insert
+		pBackwardInserts, nBackwardInserts []chunkenc.Insert
+		pMergedSpans, nMergedSpans         []histogram.Span
+		okToAppend, counterReset           bool
 	)
 	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.EncHistogram, chunkDiskMapper, chunkRange)
 	if !sampleInOrder {
@@ -1162,32 +1161,32 @@ func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID ui
 	gauge := h.CounterResetHint == histogram.GaugeType
 	if app != nil {
 		if gauge {
-			positiveInterjections, negativeInterjections, pBackwardInter, nBackwardInter, pMergedSpans, nMergedSpans, okToAppend = app.AppendableGauge(h)
+			pForwardInserts, nForwardInserts, pBackwardInserts, nBackwardInserts, pMergedSpans, nMergedSpans, okToAppend = app.AppendableGauge(h)
 		} else {
-			positiveInterjections, negativeInterjections, okToAppend, counterReset = app.Appendable(h)
+			pForwardInserts, nForwardInserts, okToAppend, counterReset = app.Appendable(h)
 		}
 	}
 
 	if !chunkCreated {
-		if len(pBackwardInter)+len(nBackwardInter) > 0 {
+		if len(pBackwardInserts)+len(nBackwardInserts) > 0 {
 			h.PositiveSpans = pMergedSpans
 			h.NegativeSpans = nMergedSpans
-			app.RecodeHistogram(h, pBackwardInter, nBackwardInter)
+			app.RecodeHistogram(h, pBackwardInserts, nBackwardInserts)
 		}
 		// We have 3 cases here
 		// - !okToAppend -> We need to cut a new chunk.
-		// - okToAppend but we have interjections → Existing chunk needs
+		// - okToAppend but we have inserts → Existing chunk needs
 		//   recoding before we can append our histogram.
-		// - okToAppend and no interjections → Chunk is ready to support our histogram.
+		// - okToAppend and no inserts → Chunk is ready to support our histogram.
 		if !okToAppend || counterReset {
 			c = s.cutNewHeadChunk(t, chunkenc.EncHistogram, chunkDiskMapper, chunkRange)
 			chunkCreated = true
-		} else if len(positiveInterjections) > 0 || len(negativeInterjections) > 0 {
+		} else if len(pForwardInserts) > 0 || len(nForwardInserts) > 0 {
 			// New buckets have appeared. We need to recode all
 			// prior histogram samples within the chunk before we
 			// can process this one.
 			chunk, app := app.Recode(
-				positiveInterjections, negativeInterjections,
+				pForwardInserts, nForwardInserts,
 				h.PositiveSpans, h.NegativeSpans,
 			)
 			c.chunk = chunk
@@ -1233,10 +1232,10 @@ func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, 
 	// meta properly.
 	app, _ := s.app.(*chunkenc.FloatHistogramAppender)
 	var (
-		positiveInterjections, negativeInterjections []chunkenc.Interjection
-		pBackwardInter, nBackwardInter               []chunkenc.Interjection
-		pMergedSpans, nMergedSpans                   []histogram.Span
-		okToAppend, counterReset                     bool
+		pForwardInserts, nForwardInserts   []chunkenc.Insert
+		pBackwardInserts, nBackwardInserts []chunkenc.Insert
+		pMergedSpans, nMergedSpans         []histogram.Span
+		okToAppend, counterReset           bool
 	)
 	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.EncFloatHistogram, chunkDiskMapper, chunkRange)
 	if !sampleInOrder {
@@ -1245,33 +1244,33 @@ func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, 
 	gauge := fh.CounterResetHint == histogram.GaugeType
 	if app != nil {
 		if gauge {
-			positiveInterjections, negativeInterjections, pBackwardInter, nBackwardInter,
+			pForwardInserts, nForwardInserts, pBackwardInserts, nBackwardInserts,
 				pMergedSpans, nMergedSpans, okToAppend = app.AppendableGauge(fh)
 		} else {
-			positiveInterjections, negativeInterjections, okToAppend, counterReset = app.Appendable(fh)
+			pForwardInserts, nForwardInserts, okToAppend, counterReset = app.Appendable(fh)
 		}
 	}
 
 	if !chunkCreated {
-		if len(pBackwardInter)+len(nBackwardInter) > 0 {
+		if len(pBackwardInserts)+len(nBackwardInserts) > 0 {
 			fh.PositiveSpans = pMergedSpans
 			fh.NegativeSpans = nMergedSpans
-			app.RecodeHistogramm(fh, pBackwardInter, nBackwardInter)
+			app.RecodeHistogramm(fh, pBackwardInserts, nBackwardInserts)
 		}
 		// We have 3 cases here
 		// - !okToAppend -> We need to cut a new chunk.
-		// - okToAppend but we have interjections → Existing chunk needs
+		// - okToAppend but we have inserts → Existing chunk needs
 		//   recoding before we can append our histogram.
-		// - okToAppend and no interjections → Chunk is ready to support our histogram.
+		// - okToAppend and no inserts → Chunk is ready to support our histogram.
 		if !okToAppend || counterReset {
 			c = s.cutNewHeadChunk(t, chunkenc.EncFloatHistogram, chunkDiskMapper, chunkRange)
 			chunkCreated = true
-		} else if len(positiveInterjections) > 0 || len(negativeInterjections) > 0 {
+		} else if len(pForwardInserts) > 0 || len(nForwardInserts) > 0 {
 			// New buckets have appeared. We need to recode all
 			// prior histogram samples within the chunk before we
 			// can process this one.
 			chunk, app := app.Recode(
-				positiveInterjections, negativeInterjections,
+				pForwardInserts, nForwardInserts,
 				fh.PositiveSpans, fh.NegativeSpans,
 			)
 			c.chunk = chunk

@@ -138,7 +138,7 @@ func TestFloatHistogramChunkSameBuckets(t *testing.T) {
 	require.Equal(t, ValNone, it4.Seek(exp[len(exp)-1].t+1))
 }
 
-// Mimics the scenario described for compareSpans().
+// Mimics the scenario described for expandSpansForward.
 func TestFloatHistogramChunkBucketChanges(t *testing.T) {
 	c := Chunk(NewFloatHistogramChunk())
 
