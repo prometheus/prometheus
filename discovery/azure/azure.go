@@ -70,7 +70,7 @@ var (
 	DefaultSDConfig = SDConfig{
 		Port:                 80,
 		RefreshInterval:      model.Duration(5 * time.Minute),
-		Environment:          "AZUREPUBLICCLOUD",
+		Environment:          "AzurePublicCloud",
 		AuthenticationMethod: authMethodOAuth,
 		HTTPClientConfig:     config_util.DefaultHTTPClientConfig,
 	}
@@ -83,12 +83,9 @@ var (
 )
 
 var environments = map[string]cloud.Configuration{
-	"AZURECHINA":             cloud.AzureChina,
 	"AZURECHINACLOUD":        cloud.AzureChina,
 	"AZURECLOUD":             cloud.AzurePublic,
 	"AZUREGERMANCLOUD":       cloud.AzurePublic,
-	"AZUREGOVERNMENT":        cloud.AzureGovernment,
-	"AZUREPUBLIC":            cloud.AzurePublic,
 	"AZUREPUBLICCLOUD":       cloud.AzurePublic,
 	"AZUREUSGOVERNMENT":      cloud.AzureGovernment,
 	"AZUREUSGOVERNMENTCLOUD": cloud.AzureGovernment,
