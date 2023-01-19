@@ -36,6 +36,9 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/prometheus/prometheus/prompb"
+
+	"github.com/prometheus/prometheus/storage/base"
+	"github.com/prometheus/prometheus/storage/clickhouse"
 )
 
 const maxErrMsgLen = 1024
@@ -83,6 +86,7 @@ type Client struct {
 	url        *config_util.URL
 	Client     *http.Client
 	timeout    time.Duration
+	ch         base.Storage
 
 	retryOnRateLimit bool
 
@@ -105,6 +109,7 @@ type ClientConfig struct {
 // TODO(bwplotka): Add streamed chunked remote read method as well (https://github.com/prometheus/prometheus/issues/5926).
 type ReadClient interface {
 	Read(ctx context.Context, query *prompb.Query) (*prompb.QueryResult, error)
+	CH() base.Storage
 }
 
 // NewReadClient creates a new client for remote read.
@@ -120,11 +125,25 @@ func NewReadClient(name string, conf *ClientConfig) (ReadClient, error) {
 	}
 	httpClient.Transport = otelhttp.NewTransport(t)
 
+	params := &clickhouse.ClickHouseParams{
+		DSN:                  conf.URL.String(),
+		DropDatabase:         false,
+		MaxOpenConns:         75,
+		MaxTimeSeriesInQuery: 50,
+	}
+
+	ch, err := clickhouse.NewClickHouse(params)
+
+	if err != nil {
+		return nil, err
+	}
+
 	return &Client{
 		remoteName:          name,
 		url:                 conf.URL,
 		Client:              httpClient,
 		timeout:             time.Duration(conf.Timeout),
+		ch:                  ch,
 		readQueries:         remoteReadQueries.WithLabelValues(name, conf.URL.String()),
 		readQueriesTotal:    remoteReadQueriesTotal.MustCurryWith(prometheus.Labels{remoteName: name, endpoint: conf.URL.String()}),
 		readQueriesDuration: remoteReadQueryDuration.WithLabelValues(name, conf.URL.String()),
@@ -256,6 +275,10 @@ func (c Client) Name() string {
 // Endpoint is the remote read or write endpoint.
 func (c Client) Endpoint() string {
 	return c.url.String()
+}
+
+func (c Client) CH() base.Storage {
+	return c.ch
 }
 
 // Read reads from a remote endpoint.

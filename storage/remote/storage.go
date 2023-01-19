@@ -107,6 +107,7 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 		if rrConf.Name != "" {
 			name = rrConf.Name
 		}
+		rrConf.ReadRecent = true
 
 		c, err := NewReadClient(name, &ClientConfig{
 			URL:              rrConf.URL,

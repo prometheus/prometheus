@@ -91,16 +91,17 @@ type Alert struct {
 }
 
 func (a *Alert) needsSending(ts time.Time, resendDelay time.Duration) bool {
-	if a.State == StatePending {
-		return false
-	}
+	// if a.State == StatePending {
+	// 	return false
+	// }
 
-	// if an alert has been resolved since the last send, resend it
-	if a.ResolvedAt.After(a.LastSentAt) {
-		return true
-	}
+	// // if an alert has been resolved since the last send, resend it
+	// if a.ResolvedAt.After(a.LastSentAt) {
+	// 	return true
+	// }
 
-	return a.LastSentAt.Add(resendDelay).Before(ts)
+	// return a.LastSentAt.Add(resendDelay).Before(ts)
+	return true
 }
 
 // An AlertingRule generates alerts from its vector expression.

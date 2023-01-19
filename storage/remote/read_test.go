@@ -234,7 +234,7 @@ func (c *mockedRemoteClient) reset() {
 
 // NOTE: We don't need to test ChunkQuerier as it's uses querier for all operations anyway.
 func TestSampleAndChunkQueryableClient(t *testing.T) {
-	m := &mockedRemoteClient{
+	m := &mockStorage{
 		// Samples does not matter for below tests.
 		store: []*prompb.TimeSeries{
 			{Labels: []prompb.Label{{Name: "a", Value: "b"}}},

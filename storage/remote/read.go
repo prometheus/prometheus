@@ -167,7 +167,7 @@ func (q *querier) Select(sortSeries bool, hints *storage.SelectHints, matchers .
 		return storage.ErrSeriesSet(fmt.Errorf("toQuery: %w", err))
 	}
 
-	res, err := q.client.Read(q.ctx, query)
+	res, err := q.client.CH().Read(q.ctx, query)
 	if err != nil {
 		return storage.ErrSeriesSet(fmt.Errorf("remote_read: %w", err))
 	}
