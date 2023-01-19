@@ -919,6 +919,71 @@ func TestUpdateSetsSourceTenants(t *testing.T) {
 	}
 }
 
+func TestAlignEvaluationTimeOnInterval(t *testing.T) {
+	st := teststorage.New(t)
+	defer st.Close()
+
+	opts := promql.EngineOpts{
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 10,
+		Timeout:    10 * time.Second,
+	}
+	engine := promql.NewEngine(opts)
+	ruleManager := NewManager(&ManagerOptions{
+		Appendable: st,
+		Queryable:  st,
+		QueryFunc:  EngineQueryFunc(engine, st),
+		Context:    context.Background(),
+		Logger:     log.NewNopLogger(),
+	})
+	ruleManager.start()
+	defer ruleManager.Stop()
+
+	rgs, errs := rulefmt.ParseFile("fixtures/rules_with_alignment.yaml")
+	require.Empty(t, errs, "file parsing failures")
+
+	tmpFile, err := os.CreateTemp("", "rules.test.*.yaml")
+	require.NoError(t, err)
+	defer os.Remove(tmpFile.Name())
+	defer tmpFile.Close()
+
+	reloadRules(rgs, t, tmpFile, ruleManager, 0)
+
+	// Verify that all groups are loaded, and let's check their evaluation times.
+	loadedGroups := ruleManager.RuleGroups()
+	require.Len(t, loadedGroups, len(rgs.Groups))
+
+	assertGroupEvalTimeAlignedOnIntervalIsHonored := func(groupName string, expectedAligned bool) {
+		g := (*Group)(nil)
+		for _, lg := range loadedGroups {
+			if lg.name == groupName {
+				g = lg
+				break
+			}
+		}
+		require.NotNil(t, g, "group not found: %s", groupName)
+
+		// When "g.hash() % g.interval == 0" alignment cannot be checked, because aligned and unaligned eval timestamps
+		// would be the same. This can happen because g.hash() depends on path passed to ruleManager.Update function,
+		// and this test uses temporary directory for storing rule group files.
+		if g.hash()%uint64(g.interval) == 0 {
+			t.Skip("skipping test, because rule group hash is divisible by interval, which makes eval timestamp always aligned to the interval")
+		}
+
+		now := time.Now()
+		ts := g.EvalTimestamp(now.UnixNano())
+
+		aligned := ts.UnixNano()%g.interval.Nanoseconds() == 0
+		require.Equal(t, expectedAligned, aligned, "group: %s, hash: %d, now: %d", groupName, g.hash(), now.UnixNano())
+	}
+
+	assertGroupEvalTimeAlignedOnIntervalIsHonored("aligned", true)
+	assertGroupEvalTimeAlignedOnIntervalIsHonored("aligned_with_crazy_interval", true)
+	assertGroupEvalTimeAlignedOnIntervalIsHonored("unaligned_default", false)
+	assertGroupEvalTimeAlignedOnIntervalIsHonored("unaligned_explicit", false)
+}
+
 func TestGroupEvaluationContextFuncIsCalledWhenSupplied(t *testing.T) {
 	type testContextKeyType string
 	var testContextKey testContextKeyType = "TestGroupEvaluationContextFuncIsCalledWhenSupplied"
@@ -975,11 +1040,12 @@ type ruleGroupsTest struct {
 
 // ruleGroupTest forms a testing struct for running tests over rules.
 type ruleGroupTest struct {
-	Name          string         `yaml:"name"`
-	Interval      model.Duration `yaml:"interval,omitempty"`
-	Limit         int            `yaml:"limit,omitempty"`
-	Rules         []rulefmt.Rule `yaml:"rules"`
-	SourceTenants []string       `yaml:"source_tenants,omitempty"`
+	Name                         string         `yaml:"name"`
+	Interval                     model.Duration `yaml:"interval,omitempty"`
+	Limit                        int            `yaml:"limit,omitempty"`
+	Rules                        []rulefmt.Rule `yaml:"rules"`
+	SourceTenants                []string       `yaml:"source_tenants,omitempty"`
+	AlignExecutionTimeOnInterval bool           `yaml:"align_execution_time_on_interval,omitempty"`
 }
 
 func formatRules(r *rulefmt.RuleGroups) ruleGroupsTest {
@@ -998,11 +1064,12 @@ func formatRules(r *rulefmt.RuleGroups) ruleGroupsTest {
 			})
 		}
 		tmp = append(tmp, ruleGroupTest{
-			Name:          g.Name,
-			Interval:      g.Interval,
-			Limit:         g.Limit,
-			Rules:         rtmp,
-			SourceTenants: g.SourceTenants,
+			Name:                         g.Name,
+			Interval:                     g.Interval,
+			Limit:                        g.Limit,
+			Rules:                        rtmp,
+			SourceTenants:                g.SourceTenants,
+			AlignExecutionTimeOnInterval: g.AlignExecutionTimeOnInterval,
 		})
 	}
 	return ruleGroupsTest{
