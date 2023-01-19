@@ -1115,7 +1115,7 @@ type Alert struct {
 	Annotations     labels.Labels `json:"annotations"`
 	State           string        `json:"state"`
 	ActiveAt        *time.Time    `json:"activeAt,omitempty"`
-	KeepFiringSince *time.Time    `json:"keep_firing_since,omitempty"`
+	KeepFiringSince *time.Time    `json:"keepFiringSince,omitempty"`
 	Value           string        `json:"value"`
 }
 
@@ -1139,12 +1139,14 @@ func rulesAlertsToAPIAlerts(rulesAlerts []*rules.Alert) []*Alert {
 	apiAlerts := make([]*Alert, len(rulesAlerts))
 	for i, ruleAlert := range rulesAlerts {
 		apiAlerts[i] = &Alert{
-			Labels:          ruleAlert.Labels,
-			Annotations:     ruleAlert.Annotations,
-			State:           ruleAlert.State.String(),
-			ActiveAt:        &ruleAlert.ActiveAt,
-			KeepFiringSince: &ruleAlert.KeepFiringSince,
-			Value:           strconv.FormatFloat(ruleAlert.Value, 'e', -1, 64),
+			Labels:      ruleAlert.Labels,
+			Annotations: ruleAlert.Annotations,
+			State:       ruleAlert.State.String(),
+			ActiveAt:    &ruleAlert.ActiveAt,
+			Value:       strconv.FormatFloat(ruleAlert.Value, 'e', -1, 64),
+		}
+		if !ruleAlert.KeepFiringSince.IsZero() {
+			apiAlerts[i].KeepFiringSince = &ruleAlert.KeepFiringSince
 		}
 	}
 

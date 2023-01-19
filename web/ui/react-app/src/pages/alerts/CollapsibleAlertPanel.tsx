@@ -96,9 +96,14 @@ const CollapsibleAlertPanel: FC<CollapsibleAlertPanelProps> = ({ rule, showAnnot
                           </td>
                           <td>
                             <h5 className="m-0">
-                              <Badge color={alertColors[alert.state] + ' text-uppercase'} className="px-3">
+                              <Badge color={alertColors[alert.state] + ' text-uppercase'} className="px-3 mr-1">
                                 {alert.state}
                               </Badge>
+                              {alert.keepFiringSince && (
+                                <Badge color="secondary" className="px-3">
+                                  Stabilizing
+                                </Badge>
+                              )}
                             </h5>
                           </td>
                           <td>{alert.activeAt}</td>

@@ -536,11 +536,12 @@ func (r *AlertingRule) sendAlerts(ctx context.Context, ts time.Time, resendDelay
 
 func (r *AlertingRule) String() string {
 	ar := rulefmt.Rule{
-		Alert:       r.name,
-		Expr:        r.vector.String(),
-		For:         model.Duration(r.holdDuration),
-		Labels:      r.labels.Map(),
-		Annotations: r.annotations.Map(),
+		Alert:         r.name,
+		Expr:          r.vector.String(),
+		For:           model.Duration(r.holdDuration),
+		KeepFiringFor: model.Duration(r.keepFiringFor),
+		Labels:        r.labels.Map(),
+		Annotations:   r.annotations.Map(),
 	}
 
 	byt, err := yaml.Marshal(ar)
