@@ -25,7 +25,7 @@ require (
 	github.com/golang/snappy v0.0.4
 	github.com/google/pprof v0.0.0-20220608213341-c488b8fa1db3
 	github.com/gophercloud/gophercloud v0.25.0
-	github.com/grafana/regexp v0.0.0-20221122204925-dca3afd5583d
+	github.com/grafana/regexp v0.0.0-20221122212121-6b5c0a4cb7fd
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0
 	github.com/hashicorp/consul/api v1.13.0
 	github.com/hashicorp/nomad/api v0.0.0-20220629141207-c2428e1673ec

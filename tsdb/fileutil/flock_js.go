@@ -18,8 +18,7 @@ package fileutil
 
 import "errors"
 
-type unixLock struct {
-}
+type unixLock struct{}
 
 func (l *unixLock) Release() error {
 	return errors.New("unsupported")

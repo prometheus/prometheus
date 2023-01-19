@@ -240,22 +240,22 @@ func (d *Discovery) refreshOne(ctx context.Context, name string, ch chan<- *targ
 //
 // There are three possible outcomes:
 //
-// 1. One of the permutations of the given name is recognized as
-//    "valid" by the DNS, in which case we consider ourselves "done"
-//    and that answer is returned.  Note that, due to the way the DNS
-//    handles "name has resource records, but none of the specified type",
-//    the answer received may have an empty set of results.
+//  1. One of the permutations of the given name is recognized as
+//     "valid" by the DNS, in which case we consider ourselves "done"
+//     and that answer is returned.  Note that, due to the way the DNS
+//     handles "name has resource records, but none of the specified type",
+//     the answer received may have an empty set of results.
 //
-// 2.  All of the permutations of the given name are responded to by one of
-//    the servers in the "nameservers" list with the answer "that name does
-//    not exist" (NXDOMAIN).  In that case, it can be considered
-//    pseudo-authoritative that there are no records for that name.
+//  2. All of the permutations of the given name are responded to by one of
+//     the servers in the "nameservers" list with the answer "that name does
+//     not exist" (NXDOMAIN).  In that case, it can be considered
+//     pseudo-authoritative that there are no records for that name.
 //
-// 3.  One or more of the names was responded to by all servers with some
-//    sort of error indication.  In that case, we can't know if, in fact,
-//    there are records for the name or not, so whatever state the
-//    configuration is in, we should keep it that way until we know for
-//    sure (by, presumably, all the names getting answers in the future).
+//  3. One or more of the names was responded to by all servers with some
+//     sort of error indication.  In that case, we can't know if, in fact,
+//     there are records for the name or not, so whatever state the
+//     configuration is in, we should keep it that way until we know for
+//     sure (by, presumably, all the names getting answers in the future).
 //
 // Outcomes 1 and 2 are indicated by a valid response message (possibly an
 // empty one) and no error.  Outcome 3 is indicated by an error return.  The
@@ -301,11 +301,11 @@ func lookupWithSearchPath(name string, qtype uint16, logger log.Logger) (*dns.Ms
 //
 // A "viable answer" is one which indicates either:
 //
-// 1. "yes, I know that name, and here are its records of the requested type"
-//    (RCODE==SUCCESS, ANCOUNT > 0);
-// 2. "yes, I know that name, but it has no records of the requested type"
-//    (RCODE==SUCCESS, ANCOUNT==0); or
-// 3. "I know that name doesn't exist" (RCODE==NXDOMAIN).
+//  1. "yes, I know that name, and here are its records of the requested type"
+//     (RCODE==SUCCESS, ANCOUNT > 0);
+//  2. "yes, I know that name, but it has no records of the requested type"
+//     (RCODE==SUCCESS, ANCOUNT==0); or
+//  3. "I know that name doesn't exist" (RCODE==NXDOMAIN).
 //
 // A non-viable answer is "anything else", which encompasses both various
 // system-level problems (like network timeouts) and also
