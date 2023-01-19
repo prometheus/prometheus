@@ -1040,12 +1040,12 @@ type ruleGroupsTest struct {
 
 // ruleGroupTest forms a testing struct for running tests over rules.
 type ruleGroupTest struct {
-	Name                         string         `yaml:"name"`
-	Interval                     model.Duration `yaml:"interval,omitempty"`
-	Limit                        int            `yaml:"limit,omitempty"`
-	Rules                        []rulefmt.Rule `yaml:"rules"`
-	SourceTenants                []string       `yaml:"source_tenants,omitempty"`
-	AlignExecutionTimeOnInterval bool           `yaml:"align_execution_time_on_interval,omitempty"`
+	Name                          string         `yaml:"name"`
+	Interval                      model.Duration `yaml:"interval,omitempty"`
+	Limit                         int            `yaml:"limit,omitempty"`
+	Rules                         []rulefmt.Rule `yaml:"rules"`
+	SourceTenants                 []string       `yaml:"source_tenants,omitempty"`
+	AlignEvaluationTimeOnInterval bool           `yaml:"align_evaluation_time_on_interval,omitempty"`
 }
 
 func formatRules(r *rulefmt.RuleGroups) ruleGroupsTest {
@@ -1064,12 +1064,12 @@ func formatRules(r *rulefmt.RuleGroups) ruleGroupsTest {
 			})
 		}
 		tmp = append(tmp, ruleGroupTest{
-			Name:                         g.Name,
-			Interval:                     g.Interval,
-			Limit:                        g.Limit,
-			Rules:                        rtmp,
-			SourceTenants:                g.SourceTenants,
-			AlignExecutionTimeOnInterval: g.AlignExecutionTimeOnInterval,
+			Name:                          g.Name,
+			Interval:                      g.Interval,
+			Limit:                         g.Limit,
+			Rules:                         rtmp,
+			SourceTenants:                 g.SourceTenants,
+			AlignEvaluationTimeOnInterval: g.AlignEvaluationTimeOnInterval,
 		})
 	}
 	return ruleGroupsTest{

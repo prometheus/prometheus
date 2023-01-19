@@ -1,13 +1,13 @@
 groups:
   - name: aligned
-    align_execution_time_on_interval: true
+    align_evaluation_time_on_interval: true
     interval: 5m
     rules:
       - record: job:http_requests:rate5m
         expr: sum by (job)(rate(http_requests_total[5m]))
 
   - name: aligned_with_crazy_interval
-    align_execution_time_on_interval: true
+    align_evaluation_time_on_interval: true
     interval: 1m27s
     rules:
       - record: job:http_requests:rate5m
@@ -21,7 +21,7 @@ groups:
 
   - name: unaligned_explicit
     interval: 5m
-    align_execution_time_on_interval: false
+    align_evaluation_time_on_interval: false
     rules:
       - record: job:http_requests:rate5m
         expr: sum by (job)(rate(http_requests_total[5m]))

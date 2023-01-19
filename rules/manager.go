@@ -270,8 +270,8 @@ type Group struct {
 
 	metrics *Metrics
 
-	ruleGroupPostProcessFunc     RuleGroupPostProcessFunc
-	alignExecutionTimeOnInterval bool
+	ruleGroupPostProcessFunc      RuleGroupPostProcessFunc
+	alignEvaluationTimeOnInterval bool
 }
 
 // This function will be used before each rule group evaluation if not nil.
@@ -279,17 +279,17 @@ type Group struct {
 type RuleGroupPostProcessFunc func(g *Group, lastEvalTimestamp time.Time, log log.Logger) error
 
 type GroupOptions struct {
-	Name, File                   string
-	Interval                     time.Duration
-	Limit                        int
-	Rules                        []Rule
-	SourceTenants                []string
-	ShouldRestore                bool
-	Opts                         *ManagerOptions
-	EvaluationDelay              *time.Duration
-	done                         chan struct{}
-	RuleGroupPostProcessFunc     RuleGroupPostProcessFunc
-	AlignExecutionTimeOnInterval bool
+	Name, File                    string
+	Interval                      time.Duration
+	Limit                         int
+	Rules                         []Rule
+	SourceTenants                 []string
+	ShouldRestore                 bool
+	Opts                          *ManagerOptions
+	EvaluationDelay               *time.Duration
+	done                          chan struct{}
+	RuleGroupPostProcessFunc      RuleGroupPostProcessFunc
+	AlignEvaluationTimeOnInterval bool
 }
 
 // NewGroup makes a new Group with the given name, options, and rules.
@@ -311,23 +311,23 @@ func NewGroup(o GroupOptions) *Group {
 	metrics.GroupInterval.WithLabelValues(key).Set(o.Interval.Seconds())
 
 	return &Group{
-		name:                         o.Name,
-		file:                         o.File,
-		interval:                     o.Interval,
-		evaluationDelay:              o.EvaluationDelay,
-		limit:                        o.Limit,
-		rules:                        o.Rules,
-		shouldRestore:                o.ShouldRestore,
-		opts:                         o.Opts,
-		sourceTenants:                o.SourceTenants,
-		seriesInPreviousEval:         make([]map[string]labels.Labels, len(o.Rules)),
-		done:                         make(chan struct{}),
-		managerDone:                  o.done,
-		terminated:                   make(chan struct{}),
-		logger:                       log.With(o.Opts.Logger, "file", o.File, "group", o.Name),
-		metrics:                      metrics,
-		ruleGroupPostProcessFunc:     o.RuleGroupPostProcessFunc,
-		alignExecutionTimeOnInterval: o.AlignExecutionTimeOnInterval,
+		name:                          o.Name,
+		file:                          o.File,
+		interval:                      o.Interval,
+		evaluationDelay:               o.EvaluationDelay,
+		limit:                         o.Limit,
+		rules:                         o.Rules,
+		shouldRestore:                 o.ShouldRestore,
+		opts:                          o.Opts,
+		sourceTenants:                 o.SourceTenants,
+		seriesInPreviousEval:          make([]map[string]labels.Labels, len(o.Rules)),
+		done:                          make(chan struct{}),
+		managerDone:                   o.done,
+		terminated:                    make(chan struct{}),
+		logger:                        log.With(o.Opts.Logger, "file", o.File, "group", o.Name),
+		metrics:                       metrics,
+		ruleGroupPostProcessFunc:      o.RuleGroupPostProcessFunc,
+		alignEvaluationTimeOnInterval: o.AlignEvaluationTimeOnInterval,
 	}
 }
 
@@ -551,7 +551,7 @@ func (g *Group) setLastEvaluation(ts time.Time) {
 // EvalTimestamp returns the immediately preceding consistently slotted evaluation time.
 func (g *Group) EvalTimestamp(startTime int64) time.Time {
 	var offset int64
-	if !g.alignExecutionTimeOnInterval {
+	if !g.alignEvaluationTimeOnInterval {
 		offset = int64(g.hash() % uint64(g.interval))
 	}
 
@@ -933,7 +933,7 @@ func (g *Group) Equals(ng *Group) bool {
 		return false
 	}
 
-	if g.alignExecutionTimeOnInterval != ng.alignExecutionTimeOnInterval {
+	if g.alignEvaluationTimeOnInterval != ng.alignEvaluationTimeOnInterval {
 		return false
 	}
 
@@ -1205,18 +1205,18 @@ func (m *Manager) LoadGroups(
 			}
 
 			groups[GroupKey(fn, rg.Name)] = NewGroup(GroupOptions{
-				Name:                         rg.Name,
-				File:                         fn,
-				Interval:                     itv,
-				Limit:                        rg.Limit,
-				Rules:                        rules,
-				SourceTenants:                rg.SourceTenants,
-				ShouldRestore:                shouldRestore,
-				Opts:                         m.opts,
-				EvaluationDelay:              (*time.Duration)(rg.EvaluationDelay),
-				done:                         m.done,
-				RuleGroupPostProcessFunc:     ruleGroupPostProcessFunc,
-				AlignExecutionTimeOnInterval: rg.AlignExecutionTimeOnInterval,
+				Name:                          rg.Name,
+				File:                          fn,
+				Interval:                      itv,
+				Limit:                         rg.Limit,
+				Rules:                         rules,
+				SourceTenants:                 rg.SourceTenants,
+				ShouldRestore:                 shouldRestore,
+				Opts:                          m.opts,
+				EvaluationDelay:               (*time.Duration)(rg.EvaluationDelay),
+				done:                          m.done,
+				RuleGroupPostProcessFunc:      ruleGroupPostProcessFunc,
+				AlignEvaluationTimeOnInterval: rg.AlignEvaluationTimeOnInterval,
 			})
 		}
 	}
