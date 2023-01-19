@@ -840,3 +840,58 @@ func TestKeepFiringFor(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0, len(res))
 }
+
+func TestPendingAndKeepFiringFor(t *testing.T) {
+	suite, err := promql.NewTest(t, `
+		load 1m
+			http_requests{job="app-server", instance="0"}	75 10x10
+	`)
+	require.NoError(t, err)
+	defer suite.Close()
+
+	require.NoError(t, suite.Run())
+
+	expr, err := parser.ParseExpr(`http_requests > 50`)
+	require.NoError(t, err)
+
+	rule := NewAlertingRule(
+		"HTTPRequestRateHigh",
+		expr,
+		time.Minute,
+		time.Minute,
+		labels.EmptyLabels(),
+		labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
+	)
+
+	result := promql.Sample{
+		Metric: labels.FromStrings(
+			"__name__", "ALERTS",
+			"alertname", "HTTPRequestRateHigh",
+			"alertstate", "pending",
+			"instance", "0",
+			"job", "app-server",
+		),
+		Point: promql.Point{V: 1},
+	}
+
+	baseTime := time.Unix(0, 0)
+	result.Point.T = timestamp.FromTime(baseTime)
+	res, err := rule.Eval(suite.Context(), baseTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil, 0)
+	require.NoError(t, err)
+
+	require.Len(t, res, 2)
+	for _, smpl := range res {
+		smplName := smpl.Metric.Get("__name__")
+		if smplName == "ALERTS" {
+			require.Equal(t, result, smpl)
+		} else {
+			// If not 'ALERTS', it has to be 'ALERTS_FOR_STATE'.
+			require.Equal(t, "ALERTS_FOR_STATE", smplName)
+		}
+	}
+
+	evalTime := baseTime.Add(time.Minute)
+	res, err = rule.Eval(suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil, 0)
+	require.NoError(t, err)
+	require.Equal(t, 0, len(res))
+}
