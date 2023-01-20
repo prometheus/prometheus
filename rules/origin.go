@@ -15,6 +15,7 @@ package rules
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/prometheus/prometheus/model/labels"
 )
@@ -43,7 +44,7 @@ func NewRuleDetail(r Rule) RuleDetail {
 	case *RecordingRule:
 		kind = KindRecording
 	default:
-		kind = "unknown"
+		panic(fmt.Sprintf(`unknown rule type "%T"`, r))
 	}
 
 	return RuleDetail{
