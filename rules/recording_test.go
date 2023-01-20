@@ -27,20 +27,18 @@ import (
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
-type testScenario struct {
-	name       string
-	ruleLabels labels.Labels
-	expr       parser.Expr
-	expected   promql.Vector
-}
-
 var (
 	ruleEvaluationTime       = time.Unix(0, 0).UTC()
 	exprWithMetricName, _    = parser.ParseExpr(`metric`)
 	exprWithoutMetricName, _ = parser.ParseExpr(`metric + metric`)
 )
 
-var scenarios = []testScenario{
+var ruleEvalTestScenarios = []struct {
+	name       string
+	ruleLabels labels.Labels
+	expr       parser.Expr
+	expected   promql.Vector
+}{
 	{
 		name:       "no labels in recording rule, metric name in query result",
 		ruleLabels: labels.EmptyLabels(),
@@ -120,7 +118,7 @@ func TestRuleEval(t *testing.T) {
 
 	require.NoError(t, suite.Run())
 
-	for _, scenario := range scenarios {
+	for _, scenario := range ruleEvalTestScenarios {
 		t.Run(scenario.name, func(t *testing.T) {
 			rule := NewRecordingRule("test_rule", scenario.expr, scenario.ruleLabels)
 			result, err := rule.Eval(suite.Context(), ruleEvaluationTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil, 0)
@@ -136,7 +134,7 @@ func BenchmarkRuleEval(b *testing.B) {
 
 	require.NoError(b, suite.Run())
 
-	for _, scenario := range scenarios {
+	for _, scenario := range ruleEvalTestScenarios {
 		b.Run(scenario.name, func(b *testing.B) {
 			rule := NewRecordingRule("test_rule", scenario.expr, scenario.ruleLabels)
 
