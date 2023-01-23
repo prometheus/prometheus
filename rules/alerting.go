@@ -415,6 +415,11 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 	// Check if any pending alerts should be removed or fire now. Write out alert timeseries.
 	for fp, a := range r.active {
 		if _, ok := resultFPs[fp]; !ok {
+			// There is no firing alerts for this fingerprint. The alert is no
+			// longer firing.
+
+			// Use keepFiringFor value to determine if the alert should keep
+			// firing.
 			var keepFiring bool
 			if a.State == StateFiring && r.keepFiringFor > 0 {
 				if a.KeepFiringSince.IsZero() {
@@ -424,6 +429,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 					keepFiring = true
 				}
 			}
+
 			// If the alert was previously firing, keep it around for a given
 			// retention time so it is reported as resolved to the AlertManager.
 			if a.State == StatePending || (!a.ResolvedAt.IsZero() && ts.Sub(a.ResolvedAt) > resolvedRetention) {
@@ -437,6 +443,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 				continue
 			}
 		} else {
+			// The alert is firing, reset keepFiringSince.
 			a.KeepFiringSince = time.Time{}
 		}
 		numActivePending++
