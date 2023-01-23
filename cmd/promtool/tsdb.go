@@ -30,6 +30,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -624,7 +625,7 @@ func analyzeCompaction(block tsdb.BlockReader, indexr tsdb.IndexReader) (err err
 	return nil
 }
 
-func dumpSamples(path string, mint, maxt int64) (err error) {
+func dumpSamples(path string, mint, maxt int64, match string) (err error) {
 	db, err := tsdb.OpenDBReadOnly(path, nil)
 	if err != nil {
 		return err
@@ -638,7 +639,11 @@ func dumpSamples(path string, mint, maxt int64) (err error) {
 	}
 	defer q.Close()
 
-	ss := q.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
+	matchers, err := parser.ParseMetricSelector(match)
+	if err != nil {
+		return err
+	}
+	ss := q.Select(false, nil, matchers...)
 
 	for ss.Next() {
 		series := ss.At()
