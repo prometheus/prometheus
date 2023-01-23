@@ -449,8 +449,8 @@ raw numbers.
 
 The keys `"histogram"` and `"histograms"` only show up if the experimental
 native histograms are present in the response. Their placeholder `<histogram>`
-is explained in detail in its own section below. Any one object will only have
-the `"value"`/`"values"` key or the `"histogram"`/`"histograms"` key, but not
+is explained in detail in its own section below. Any one object could have
+the `"value"`/`"values"` key, the `"histogram"`/`"histograms"` key, or 
 both.
 
 ### Range vectors
