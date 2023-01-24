@@ -731,7 +731,7 @@ func TestUpdate(t *testing.T) {
 	ruleManager.start()
 	defer ruleManager.Stop()
 
-	err := ruleManager.Update(10*time.Second, files, labels.EmptyLabels(), "", nil)
+	err := ruleManager.Update(10*time.Second, files, labels.EmptyLabels(), "", nil, nil)
 	require.NoError(t, err)
 	require.Greater(t, len(ruleManager.groups), 0, "expected non-empty rule groups")
 	ogs := map[string]*Group{}
@@ -742,7 +742,7 @@ func TestUpdate(t *testing.T) {
 		ogs[h] = g
 	}
 
-	err = ruleManager.Update(10*time.Second, files, labels.EmptyLabels(), "", nil)
+	err = ruleManager.Update(10*time.Second, files, labels.EmptyLabels(), "", nil, nil)
 	require.NoError(t, err)
 	for h, g := range ruleManager.groups {
 		for _, actual := range g.seriesInPreviousEval {
@@ -761,7 +761,7 @@ func TestUpdate(t *testing.T) {
 	defer os.Remove(tmpFile.Name())
 	defer tmpFile.Close()
 
-	err = ruleManager.Update(10*time.Second, []string{tmpFile.Name()}, labels.EmptyLabels(), "", nil)
+	err = ruleManager.Update(10*time.Second, []string{tmpFile.Name()}, labels.EmptyLabels(), "", nil, nil)
 	require.NoError(t, err)
 
 	for h, g := range ruleManager.groups {
@@ -839,7 +839,7 @@ func reloadAndValidate(rgs *rulefmt.RuleGroups, t *testing.T, tmpFile *os.File, 
 	tmpFile.Seek(0, 0)
 	_, err = tmpFile.Write(bs)
 	require.NoError(t, err)
-	err = ruleManager.Update(10*time.Second, []string{tmpFile.Name()}, labels.EmptyLabels(), "", nil)
+	err = ruleManager.Update(10*time.Second, []string{tmpFile.Name()}, labels.EmptyLabels(), "", nil, nil)
 	require.NoError(t, err)
 	for h, g := range ruleManager.groups {
 		if ogs[h] == g {
@@ -984,7 +984,7 @@ func TestMetricsUpdate(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		err := ruleManager.Update(time.Second, c.files, labels.EmptyLabels(), "", nil)
+		err := ruleManager.Update(time.Second, c.files, labels.EmptyLabels(), "", nil, nil)
 		require.NoError(t, err)
 		time.Sleep(2 * time.Second)
 		require.Equal(t, c.metrics, countMetrics(), "test %d: invalid count of metrics", i)
@@ -1058,7 +1058,7 @@ func TestGroupStalenessOnRemoval(t *testing.T) {
 
 	var totalStaleNaN int
 	for i, c := range cases {
-		err := ruleManager.Update(time.Second, c.files, labels.EmptyLabels(), "", nil)
+		err := ruleManager.Update(time.Second, c.files, labels.EmptyLabels(), "", nil, nil)
 		require.NoError(t, err)
 		time.Sleep(3 * time.Second)
 		totalStaleNaN += c.staleNaN
@@ -1100,11 +1100,11 @@ func TestMetricsStalenessOnManagerShutdown(t *testing.T) {
 		}
 	}()
 
-	err := ruleManager.Update(2*time.Second, files, labels.EmptyLabels(), "", nil)
+	err := ruleManager.Update(2*time.Second, files, labels.EmptyLabels(), "", nil, nil)
 	time.Sleep(4 * time.Second)
 	require.NoError(t, err)
 	start := time.Now()
-	err = ruleManager.Update(3*time.Second, files[:0], labels.EmptyLabels(), "", nil)
+	err = ruleManager.Update(3*time.Second, files[:0], labels.EmptyLabels(), "", nil, nil)
 	require.NoError(t, err)
 	ruleManager.Stop()
 	stopped = true
@@ -1234,7 +1234,7 @@ func TestRuleHealthUpdates(t *testing.T) {
 	require.Equal(t, HealthBad, rules.Health())
 }
 
-func TestUpdateMissedEvalMetrics(t *testing.T) {
+func TestRuleGroupPostProcessFunc(t *testing.T) {
 	suite, err := promql.NewTest(t, `
 		load 5m
 		http_requests{instance="0"}	75  85 50 0 0 25 0 0 40 0 120
@@ -1251,26 +1251,26 @@ func TestUpdateMissedEvalMetrics(t *testing.T) {
 
 	testValue := 1
 
-	overrideFunc := func(g *Group, lastEvalTimestamp time.Time, log log.Logger) error {
+	postProcessFunc := func(g *Group, lastEvalTimestamp time.Time, log log.Logger) error {
 		testValue = 2
 		return nil
 	}
 
 	type testInput struct {
-		overrideFunc  func(g *Group, lastEvalTimestamp time.Time, logger log.Logger) error
-		expectedValue int
+		postProcessFunc RuleGroupPostProcessFunc
+		expectedValue   int
 	}
 
 	tests := []testInput{
-		// testValue should still have value of 1 since overrideFunc is nil.
+		// testValue should still have value of 1 since postProcessFunc is nil.
 		{
-			overrideFunc:  nil,
-			expectedValue: 1,
+			postProcessFunc: nil,
+			expectedValue:   1,
 		},
-		// testValue should be incremented to 2 since overrideFunc is called.
+		// testValue should be incremented to 2 since postProcessFunc is called.
 		{
-			overrideFunc:  overrideFunc,
-			expectedValue: 2,
+			postProcessFunc: postProcessFunc,
+			expectedValue:   2,
 		},
 	}
 
@@ -1317,7 +1317,7 @@ func TestUpdateMissedEvalMetrics(t *testing.T) {
 			Rules:                    []Rule{rule},
 			ShouldRestore:            true,
 			Opts:                     opts,
-			RuleGroupPostProcessFunc: tst.overrideFunc,
+			RuleGroupPostProcessFunc: tst.postProcessFunc,
 		})
 
 		go func() {
@@ -1330,6 +1330,128 @@ func TestUpdateMissedEvalMetrics(t *testing.T) {
 	}
 
 	for _, tst := range tests {
+		testFunc(tst)
+	}
+}
+
+func TestRuleGroupEvalIterationFunc(t *testing.T) {
+	suite, err := promql.NewTest(t, `
+		load 5m
+		http_requests{instance="0"}	75  85 50 0 0 25 0 0 40 0 120
+	`)
+
+	require.NoError(t, err)
+	defer suite.Close()
+
+	err = suite.Run()
+	require.NoError(t, err)
+
+	expr, err := parser.ParseExpr(`http_requests{group="canary", job="app-server"} < 100`)
+	require.NoError(t, err)
+
+	testValue := 1
+
+	evalIterationFunc := func(ctx context.Context, g *Group, evalTimestamp time.Time) {
+		testValue = 2
+		DefaultEvalIterationFunc(ctx, g, evalTimestamp)
+		testValue = 3
+	}
+
+	skipEvalIterationFunc := func(ctx context.Context, g *Group, evalTimestamp time.Time) {
+		testValue = 4
+	}
+
+	type testInput struct {
+		evalIterationFunc       GroupEvalIterationFunc
+		expectedValue           int
+		lastEvalTimestampIsZero bool
+	}
+
+	tests := []testInput{
+		// testValue should still have value of 1 since the default iteration function will be called.
+		{
+			evalIterationFunc:       nil,
+			expectedValue:           1,
+			lastEvalTimestampIsZero: false,
+		},
+		// testValue should be incremented to 3 since evalIterationFunc is called.
+		{
+			evalIterationFunc:       evalIterationFunc,
+			expectedValue:           3,
+			lastEvalTimestampIsZero: false,
+		},
+		// testValue should be incremented to 4 since skipEvalIterationFunc is called.
+		{
+			evalIterationFunc:       skipEvalIterationFunc,
+			expectedValue:           4,
+			lastEvalTimestampIsZero: true,
+		},
+	}
+
+	testFunc := func(tst testInput) {
+		opts := &ManagerOptions{
+			QueryFunc:       EngineQueryFunc(suite.QueryEngine(), suite.Storage()),
+			Appendable:      suite.Storage(),
+			Queryable:       suite.Storage(),
+			Context:         context.Background(),
+			Logger:          log.NewNopLogger(),
+			NotifyFunc:      func(ctx context.Context, expr string, alerts ...*Alert) {},
+			OutageTolerance: 30 * time.Minute,
+			ForGracePeriod:  10 * time.Minute,
+		}
+
+		activeAlert := &Alert{
+			State:    StateFiring,
+			ActiveAt: time.Now(),
+		}
+
+		m := map[uint64]*Alert{}
+		m[1] = activeAlert
+
+		rule := &AlertingRule{
+			name:                "HTTPRequestRateLow",
+			vector:              expr,
+			holdDuration:        5 * time.Minute,
+			labels:              labels.FromStrings("severity", "critical"),
+			annotations:         labels.EmptyLabels(),
+			externalLabels:      nil,
+			externalURL:         "",
+			active:              m,
+			logger:              nil,
+			restored:            atomic.NewBool(true),
+			health:              atomic.NewString(string(HealthUnknown)),
+			evaluationTimestamp: atomic.NewTime(time.Time{}),
+			evaluationDuration:  atomic.NewDuration(0),
+			lastError:           atomic.NewError(nil),
+		}
+
+		group := NewGroup(GroupOptions{
+			Name:              "default",
+			Interval:          time.Second,
+			Rules:             []Rule{rule},
+			ShouldRestore:     true,
+			Opts:              opts,
+			EvalIterationFunc: tst.evalIterationFunc,
+		})
+
+		go func() {
+			group.run(opts.Context)
+		}()
+
+		time.Sleep(3 * time.Second)
+		group.stop()
+
+		require.Equal(t, tst.expectedValue, testValue)
+		if tst.lastEvalTimestampIsZero {
+			require.Zero(t, group.GetLastEvalTimestamp())
+		} else {
+			oneMinute, _ := time.ParseDuration("1m")
+			require.WithinDuration(t, time.Now(), group.GetLastEvalTimestamp(), oneMinute)
+		}
+	}
+
+	for i, tst := range tests {
+		t.Logf("case %d", i)
 		testFunc(tst)
 	}
 }
