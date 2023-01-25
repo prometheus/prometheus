@@ -66,7 +66,7 @@ func TestAlertingRuleState(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		rule := NewAlertingRule(test.name, nil, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil)
+		rule := NewAlertingRule(test.name, nil, 0, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil)
 		rule.active = test.active
 		got := rule.State()
 		require.Equal(t, test.want, got, "test case %d unexpected AlertState, want:%d got:%d", i, test.want, got)
@@ -76,7 +76,7 @@ func TestAlertingRuleState(t *testing.T) {
 func TestAlertingRuleLabelsUpdate(t *testing.T) {
 	suite, err := promql.NewTest(t, `
 		load 1m
-			http_requests{job="app-server", instance="0"}	75 85 70 70
+			http_requests{job="app-server", instance="0"}	75 85 70 70 stale
 	`)
 	require.NoError(t, err)
 	defer suite.Close()
@@ -90,6 +90,7 @@ func TestAlertingRuleLabelsUpdate(t *testing.T) {
 		"HTTPRequestRateLow",
 		expr,
 		time.Minute,
+		0,
 		// Basing alerting rule labels off of a value that can change is a very bad idea.
 		// If an alert is going back and forth between two label values it will never fire.
 		// Instead, you should write two alerts with constant labels.
@@ -173,6 +174,10 @@ func TestAlertingRuleLabelsUpdate(t *testing.T) {
 
 		require.Equal(t, result, filteredRes)
 	}
+	evalTime := baseTime.Add(time.Duration(len(results)) * time.Minute)
+	res, err := rule.Eval(suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil, 0)
+	require.NoError(t, err)
+	require.Equal(t, 0, len(res))
 }
 
 func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
@@ -192,6 +197,7 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 		"ExternalLabelDoesNotExist",
 		expr,
 		time.Minute,
+		0,
 		labels.FromStrings("templated_label", "There are {{ len $externalLabels }} external Labels, of which foo is {{ $externalLabels.foo }}."),
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
@@ -202,6 +208,7 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 		"ExternalLabelExists",
 		expr,
 		time.Minute,
+		0,
 		labels.FromStrings("templated_label", "There are {{ len $externalLabels }} external Labels, of which foo is {{ $externalLabels.foo }}."),
 		labels.EmptyLabels(),
 		labels.FromStrings("foo", "bar", "dings", "bums"),
@@ -286,6 +293,7 @@ func TestAlertingRuleExternalURLInTemplate(t *testing.T) {
 		"ExternalURLDoesNotExist",
 		expr,
 		time.Minute,
+		0,
 		labels.FromStrings("templated_label", "The external URL is {{ $externalURL }}."),
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
@@ -296,6 +304,7 @@ func TestAlertingRuleExternalURLInTemplate(t *testing.T) {
 		"ExternalURLExists",
 		expr,
 		time.Minute,
+		0,
 		labels.FromStrings("templated_label", "The external URL is {{ $externalURL }}."),
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
@@ -380,6 +389,7 @@ func TestAlertingRuleEmptyLabelFromTemplate(t *testing.T) {
 		"EmptyLabel",
 		expr,
 		time.Minute,
+		0,
 		labels.FromStrings("empty_label", ""),
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
@@ -436,6 +446,7 @@ func TestAlertingRuleQueryInTemplate(t *testing.T) {
 		"ruleWithQueryInTemplate",
 		expr,
 		time.Minute,
+		0,
 		labels.FromStrings("label", "value"),
 		labels.FromStrings("templated_label", `{{- with "sort(sum(http_requests) by (instance))" | query -}}
 {{- range $i,$v := . -}}
@@ -480,7 +491,7 @@ instance: {{ $v.Labels.instance }}, value: {{ printf "%.0f" $v.Value }};
 
 func BenchmarkAlertingRuleAtomicField(b *testing.B) {
 	b.ReportAllocs()
-	rule := NewAlertingRule("bench", nil, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil)
+	rule := NewAlertingRule("bench", nil, 0, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil)
 	done := make(chan struct{})
 	go func() {
 		for i := 0; i < b.N; i++ {
@@ -518,6 +529,7 @@ func TestAlertingRuleDuplicate(t *testing.T) {
 		"foo",
 		expr,
 		time.Minute,
+		0,
 		labels.FromStrings("test", "test"),
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
@@ -564,6 +576,7 @@ func TestAlertingRuleLimit(t *testing.T) {
 		"foo",
 		expr,
 		time.Minute,
+		0,
 		labels.FromStrings("test", "test"),
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
@@ -636,6 +649,7 @@ func TestQueryForStateSeries(t *testing.T) {
 			"TestRule",
 			nil,
 			time.Minute,
+			0,
 			labels.FromStrings("severity", "critical"),
 			labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
 		)
@@ -669,6 +683,7 @@ func TestSendAlertsDontAffectActiveAlerts(t *testing.T) {
 		"TestRule",
 		nil,
 		time.Minute,
+		0,
 		labels.FromStrings("severity", "critical"),
 		labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
 	)
@@ -711,4 +726,172 @@ func TestSendAlertsDontAffectActiveAlerts(t *testing.T) {
 	// The relabel rule changes a1=1 to a1=bug.
 	// But the labels with the AlertingRule should not be changed.
 	require.Equal(t, labels.FromStrings("a1", "1"), rule.active[h].Labels)
+}
+
+func TestKeepFiringFor(t *testing.T) {
+	suite, err := promql.NewTest(t, `
+		load 1m
+			http_requests{job="app-server", instance="0"}	75 85 70 70 10x5
+	`)
+	require.NoError(t, err)
+	defer suite.Close()
+
+	require.NoError(t, suite.Run())
+
+	expr, err := parser.ParseExpr(`http_requests > 50`)
+	require.NoError(t, err)
+
+	rule := NewAlertingRule(
+		"HTTPRequestRateHigh",
+		expr,
+		time.Minute,
+		time.Minute,
+		labels.EmptyLabels(),
+		labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
+	)
+
+	results := []promql.Vector{
+		{
+			promql.Sample{
+				Metric: labels.FromStrings(
+					"__name__", "ALERTS",
+					"alertname", "HTTPRequestRateHigh",
+					"alertstate", "pending",
+					"instance", "0",
+					"job", "app-server",
+				),
+				Point: promql.Point{V: 1},
+			},
+		},
+		{
+			promql.Sample{
+				Metric: labels.FromStrings(
+					"__name__", "ALERTS",
+					"alertname", "HTTPRequestRateHigh",
+					"alertstate", "firing",
+					"instance", "0",
+					"job", "app-server",
+				),
+				Point: promql.Point{V: 1},
+			},
+		},
+		{
+			promql.Sample{
+				Metric: labels.FromStrings(
+					"__name__", "ALERTS",
+					"alertname", "HTTPRequestRateHigh",
+					"alertstate", "firing",
+					"instance", "0",
+					"job", "app-server",
+				),
+				Point: promql.Point{V: 1},
+			},
+		},
+		{
+			promql.Sample{
+				Metric: labels.FromStrings(
+					"__name__", "ALERTS",
+					"alertname", "HTTPRequestRateHigh",
+					"alertstate", "firing",
+					"instance", "0",
+					"job", "app-server",
+				),
+				Point: promql.Point{V: 1},
+			},
+		},
+		// From now on the alert should keep firing.
+		{
+			promql.Sample{
+				Metric: labels.FromStrings(
+					"__name__", "ALERTS",
+					"alertname", "HTTPRequestRateHigh",
+					"alertstate", "firing",
+					"instance", "0",
+					"job", "app-server",
+				),
+				Point: promql.Point{V: 1},
+			},
+		},
+	}
+
+	baseTime := time.Unix(0, 0)
+	for i, result := range results {
+		t.Logf("case %d", i)
+		evalTime := baseTime.Add(time.Duration(i) * time.Minute)
+		result[0].Point.T = timestamp.FromTime(evalTime)
+		res, err := rule.Eval(suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil, 0)
+		require.NoError(t, err)
+
+		var filteredRes promql.Vector // After removing 'ALERTS_FOR_STATE' samples.
+		for _, smpl := range res {
+			smplName := smpl.Metric.Get("__name__")
+			if smplName == "ALERTS" {
+				filteredRes = append(filteredRes, smpl)
+			} else {
+				// If not 'ALERTS', it has to be 'ALERTS_FOR_STATE'.
+				require.Equal(t, "ALERTS_FOR_STATE", smplName)
+			}
+		}
+
+		require.Equal(t, result, filteredRes)
+	}
+	evalTime := baseTime.Add(time.Duration(len(results)) * time.Minute)
+	res, err := rule.Eval(suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil, 0)
+	require.NoError(t, err)
+	require.Equal(t, 0, len(res))
+}
+
+func TestPendingAndKeepFiringFor(t *testing.T) {
+	suite, err := promql.NewTest(t, `
+		load 1m
+			http_requests{job="app-server", instance="0"}	75 10x10
+	`)
+	require.NoError(t, err)
+	defer suite.Close()
+
+	require.NoError(t, suite.Run())
+
+	expr, err := parser.ParseExpr(`http_requests > 50`)
+	require.NoError(t, err)
+
+	rule := NewAlertingRule(
+		"HTTPRequestRateHigh",
+		expr,
+		time.Minute,
+		time.Minute,
+		labels.EmptyLabels(),
+		labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
+	)
+
+	result := promql.Sample{
+		Metric: labels.FromStrings(
+			"__name__", "ALERTS",
+			"alertname", "HTTPRequestRateHigh",
+			"alertstate", "pending",
+			"instance", "0",
+			"job", "app-server",
+		),
+		Point: promql.Point{V: 1},
+	}
+
+	baseTime := time.Unix(0, 0)
+	result.Point.T = timestamp.FromTime(baseTime)
+	res, err := rule.Eval(suite.Context(), baseTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil, 0)
+	require.NoError(t, err)
+
+	require.Len(t, res, 2)
+	for _, smpl := range res {
+		smplName := smpl.Metric.Get("__name__")
+		if smplName == "ALERTS" {
+			require.Equal(t, result, smpl)
+		} else {
+			// If not 'ALERTS', it has to be 'ALERTS_FOR_STATE'.
+			require.Equal(t, "ALERTS_FOR_STATE", smplName)
+		}
+	}
+
+	evalTime := baseTime.Add(time.Minute)
+	res, err = rule.Eval(suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil, 0)
+	require.NoError(t, err)
+	require.Equal(t, 0, len(res))
 }
