@@ -1856,6 +1856,7 @@ Available meta labels:
 * `__meta_kubernetes_pod_annotationpresent_<annotationname>`: `true` for each annotation from the pod object.
 * `__meta_kubernetes_pod_container_init`: `true` if the container is an [InitContainer](https://kubernetes.io/docs/concepts/workloads/pods/init-containers/)
 * `__meta_kubernetes_pod_container_name`: Name of the container the target address points to.
+* `__meta_kubernetes_pod_container_id`: ID of the container the target address points to. The ID is in the form `<type>://<container_id>`.
 * `__meta_kubernetes_pod_container_image`: The image the container is using.
 * `__meta_kubernetes_pod_container_port_name`: Name of the container port.
 * `__meta_kubernetes_pod_container_port_number`: Number of the container port.
@@ -1909,6 +1910,8 @@ Available meta labels:
   * `__meta_kubernetes_endpointslice_address_target_name`: Name of referenced object.
   * `__meta_kubernetes_endpointslice_address_type`: The ip protocol family of the address of the target.
   * `__meta_kubernetes_endpointslice_endpoint_conditions_ready`:  Set to `true` or `false` for the referenced endpoint's ready state.
+  * `__meta_kubernetes_endpointslice_endpoint_conditions_serving`:  Set to `true` or `false` for the referenced endpoint's serving state.
+  * `__meta_kubernetes_endpointslice_endpoint_conditions_terminating`:  Set to `true` or `false` for the referenced endpoint's terminating state.
   * `__meta_kubernetes_endpointslice_endpoint_topology_kubernetes_io_hostname`:  Name of the node hosting the referenced endpoint.
   * `__meta_kubernetes_endpointslice_endpoint_topology_present_kubernetes_io_hostname`: Flag that shows if the referenced object has a kubernetes.io/hostname annotation.
   * `__meta_kubernetes_endpointslice_port`: Port of the referenced endpoint.
