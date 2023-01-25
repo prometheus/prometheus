@@ -1,5 +1,8 @@
 version: v1
 name: buf.build/prometheus/prometheus
+breaking:
+  ignore:
+    - buf.build/prometheus/prometheus
 lint:
   ignore_only:
     ENUM_VALUE_PREFIX:
