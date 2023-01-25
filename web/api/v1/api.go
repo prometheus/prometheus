@@ -80,6 +80,8 @@ const (
 
 var LocalhostRepresentations = []string{"127.0.0.1", "localhost", "::1"}
 
+var defaultCodec = JSONCodec{}
+
 type apiError struct {
 	typ errorType
 	err error
@@ -145,7 +147,8 @@ type RuntimeInfo struct {
 	StorageRetention    string    `json:"storageRetention"`
 }
 
-type response struct {
+// Response contains a response to a HTTP API request.
+type Response struct {
 	Status    status      `json:"status"`
 	Data      interface{} `json:"data,omitempty"`
 	ErrorType errorType   `json:"errorType,omitempty"`
@@ -208,6 +211,8 @@ type API struct {
 
 	remoteWriteHandler http.Handler
 	remoteReadHandler  http.Handler
+
+	codecs map[string]Codec
 }
 
 func init() {
@@ -273,7 +278,11 @@ func NewAPI(
 		statsRenderer:    defaultStatsRenderer,
 
 		remoteReadHandler: remote.NewReadHandler(logger, registerer, q, configFunc, remoteReadSampleLimit, remoteReadConcurrencyLimit, remoteReadMaxBytesInFrame),
+
+		codecs: map[string]Codec{},
 	}
+
+	a.InstallCodec(defaultCodec)
 
 	if statsRenderer != nil {
 		a.statsRenderer = statsRenderer
@@ -284,6 +293,16 @@ func NewAPI(
 	}
 
 	return a
+}
+
+// InstallCodec adds codec to this API's available codecs.
+// If codec handles a content type handled by a codec already installed in this API, codec replaces the previous codec.
+func (api *API) InstallCodec(codec Codec) {
+	if api.codecs == nil {
+		api.codecs = map[string]Codec{}
+	}
+
+	api.codecs[codec.ContentType()] = codec
 }
 
 func setUnavailStatusOnTSDBNotReady(r apiFuncResult) apiFuncResult {
@@ -308,7 +327,7 @@ func (api *API) Register(r *route.Router) {
 			}
 
 			if result.data != nil {
-				api.respond(w, result.data, result.warnings)
+				api.respond(w, r, result.data, result.warnings)
 				return
 			}
 			w.WriteHeader(http.StatusNoContent)
@@ -1446,7 +1465,7 @@ func (api *API) serveWALReplayStatus(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		api.respondError(w, &apiError{errorInternal, err}, nil)
 	}
-	api.respond(w, walReplayStatus{
+	api.respond(w, r, walReplayStatus{
 		Min:     status.Min,
 		Max:     status.Max,
 		Current: status.Current,
@@ -1548,34 +1567,59 @@ func (api *API) cleanTombstones(r *http.Request) apiFuncResult {
 	return apiFuncResult{nil, nil, nil, nil}
 }
 
-func (api *API) respond(w http.ResponseWriter, data interface{}, warnings storage.Warnings) {
+func (api *API) respond(w http.ResponseWriter, req *http.Request, data interface{}, warnings storage.Warnings) {
 	statusMessage := statusSuccess
 	var warningStrings []string
 	for _, warning := range warnings {
 		warningStrings = append(warningStrings, warning.Error())
 	}
-	json := jsoniter.ConfigCompatibleWithStandardLibrary
-	b, err := json.Marshal(&response{
+
+	resp := &Response{
 		Status:   statusMessage,
 		Data:     data,
 		Warnings: warningStrings,
-	})
+	}
+
+	codec := api.negotiateCodec(req, resp)
+	b, err := codec.Encode(resp)
 	if err != nil {
-		level.Error(api.logger).Log("msg", "error marshaling json response", "err", err)
+		level.Error(api.logger).Log("msg", "error marshaling response", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", codec.ContentType())
 	w.WriteHeader(http.StatusOK)
 	if n, err := w.Write(b); err != nil {
 		level.Error(api.logger).Log("msg", "error writing response", "bytesWritten", n, "err", err)
 	}
 }
 
+// HTTP content negotiation is hard (see https://developer.mozilla.org/en-US/docs/Web/HTTP/Content_negotiation).
+// Ideally, we shouldn't be implementing this ourselves - https://github.com/golang/go/issues/19307 is an open proposal to add
+// this to the Go stdlib and has links to a number of other implementations.
+//
+// This is an MVP, and doesn't support features like wildcards or weighting.
+func (api *API) negotiateCodec(req *http.Request, resp *Response) Codec {
+	acceptHeader := req.Header.Get("Accept")
+	if acceptHeader == "" {
+		return defaultCodec
+	}
+
+	for _, contentType := range strings.Split(acceptHeader, ",") {
+		codec, ok := api.codecs[strings.TrimSpace(contentType)]
+		if ok && codec.CanEncode(resp) {
+			return codec
+		}
+	}
+
+	level.Warn(api.logger).Log("msg", "could not find suitable codec for response, falling back to default codec", "accept_header", acceptHeader)
+	return defaultCodec
+}
+
 func (api *API) respondError(w http.ResponseWriter, apiErr *apiError, data interface{}) {
 	json := jsoniter.ConfigCompatibleWithStandardLibrary
-	b, err := json.Marshal(&response{
+	b, err := json.Marshal(&Response{
 		Status:    statusError,
 		ErrorType: apiErr.typ,
 		Error:     apiErr.err.Error(),

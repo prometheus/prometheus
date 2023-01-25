@@ -18,7 +18,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -30,7 +29,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/util/stats"
 
@@ -2765,39 +2763,93 @@ func TestAdminEndpoints(t *testing.T) {
 }
 
 func TestRespondSuccess(t *testing.T) {
+	api := API{
+		logger: log.NewNopLogger(),
+	}
+
+	api.InstallCodec(&testCodec{contentType: "test/cannot-encode", canEncode: false})
+	api.InstallCodec(&testCodec{contentType: "test/can-encode", canEncode: true})
+	api.InstallCodec(&testCodec{contentType: "test/can-encode-2", canEncode: true})
+
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		api := API{}
-		api.respond(w, "test", nil)
+		api.respond(w, r, "test", nil)
 	}))
 	defer s.Close()
 
-	resp, err := http.Get(s.URL)
-	if err != nil {
-		t.Fatalf("Error on test request: %s", err)
-	}
-	body, err := io.ReadAll(resp.Body)
-	defer resp.Body.Close()
-	if err != nil {
-		t.Fatalf("Error reading response body: %s", err)
-	}
+	for _, tc := range []struct {
+		name                string
+		acceptHeader        string
+		expectedContentType string
+		expectedBody        string
+	}{
+		{
+			name:                "no Accept header",
+			expectedContentType: "application/json",
+			expectedBody:        `{"status":"success","data":"test"}`,
+		},
+		{
+			name:                "Accept header with single content type which is suitable",
+			acceptHeader:        "test/can-encode",
+			expectedContentType: "test/can-encode",
+			expectedBody:        `response from test/can-encode codec`,
+		},
+		{
+			name:                "Accept header with single content type which is not available",
+			acceptHeader:        "test/not-registered",
+			expectedContentType: "application/json",
+			expectedBody:        `{"status":"success","data":"test"}`,
+		},
+		{
+			name:                "Accept header with single content type which cannot encode the response payload",
+			acceptHeader:        "test/cannot-encode",
+			expectedContentType: "application/json",
+			expectedBody:        `{"status":"success","data":"test"}`,
+		},
+		{
+			name:                "Accept header with multiple content types, all of which are suitable",
+			acceptHeader:        "test/can-encode, test/can-encode-2",
+			expectedContentType: "test/can-encode",
+			expectedBody:        `response from test/can-encode codec`,
+		},
+		{
+			name:                "Accept header with multiple content types, only one of which is available",
+			acceptHeader:        "test/not-registered, test/can-encode",
+			expectedContentType: "test/can-encode",
+			expectedBody:        `response from test/can-encode codec`,
+		},
+		{
+			name:                "Accept header with multiple content types, only one of which can encode the response payload",
+			acceptHeader:        "test/cannot-encode, test/can-encode",
+			expectedContentType: "test/can-encode",
+			expectedBody:        `response from test/can-encode codec`,
+		},
+		{
+			name:                "Accept header with multiple content types, none of which are available",
+			acceptHeader:        "test/not-registered, test/also-not-registered",
+			expectedContentType: "application/json",
+			expectedBody:        `{"status":"success","data":"test"}`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req, err := http.NewRequest(http.MethodGet, s.URL, nil)
+			require.NoError(t, err)
 
-	if resp.StatusCode != 200 {
-		t.Fatalf("Return code %d expected in success response but got %d", 200, resp.StatusCode)
-	}
-	if h := resp.Header.Get("Content-Type"); h != "application/json" {
-		t.Fatalf("Expected Content-Type %q but got %q", "application/json", h)
-	}
+			if tc.acceptHeader != "" {
+				req.Header.Set("Accept", tc.acceptHeader)
+			}
 
-	var res response
-	if err = json.Unmarshal([]byte(body), &res); err != nil {
-		t.Fatalf("Error unmarshaling JSON body: %s", err)
-	}
+			resp, err := http.DefaultClient.Do(req)
+			require.NoError(t, err)
 
-	exp := &response{
-		Status: statusSuccess,
-		Data:   "test",
+			body, err := io.ReadAll(resp.Body)
+			defer resp.Body.Close()
+			require.NoError(t, err)
+
+			require.Equal(t, http.StatusOK, resp.StatusCode)
+			require.Equal(t, tc.expectedContentType, resp.Header.Get("Content-Type"))
+			require.Equal(t, tc.expectedBody, string(body))
+		})
 	}
-	require.Equal(t, exp, &res)
 }
 
 func TestRespondError(t *testing.T) {
@@ -2824,12 +2876,12 @@ func TestRespondError(t *testing.T) {
 		t.Fatalf("Expected Content-Type %q but got %q", "application/json", h)
 	}
 
-	var res response
+	var res Response
 	if err = json.Unmarshal([]byte(body), &res); err != nil {
 		t.Fatalf("Error unmarshaling JSON body: %s", err)
 	}
 
-	exp := &response{
+	exp := &Response{
 		Status:    statusError,
 		Data:      "test",
 		ErrorType: errorTimeout,
@@ -3047,165 +3099,6 @@ func TestOptionsMethod(t *testing.T) {
 	}
 }
 
-func TestRespond(t *testing.T) {
-	cases := []struct {
-		response interface{}
-		expected string
-	}{
-		{
-			response: &queryData{
-				ResultType: parser.ValueTypeMatrix,
-				Result: promql.Matrix{
-					promql.Series{
-						Points: []promql.Point{{V: 1, T: 1000}},
-						Metric: labels.FromStrings("__name__", "foo"),
-					},
-				},
-			},
-			expected: `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"__name__":"foo"},"values":[[1,"1"]]}]}}`,
-		},
-		{
-			response: &queryData{
-				ResultType: parser.ValueTypeMatrix,
-				Result: promql.Matrix{
-					promql.Series{
-						Points: []promql.Point{{H: &histogram.FloatHistogram{
-							Schema:        2,
-							ZeroThreshold: 0.001,
-							ZeroCount:     12,
-							Count:         10,
-							Sum:           20,
-							PositiveSpans: []histogram.Span{
-								{Offset: 3, Length: 2},
-								{Offset: 1, Length: 3},
-							},
-							NegativeSpans: []histogram.Span{
-								{Offset: 2, Length: 2},
-							},
-							PositiveBuckets: []float64{1, 2, 2, 1, 1},
-							NegativeBuckets: []float64{2, 1},
-						}, T: 1000}},
-						Metric: labels.FromStrings("__name__", "foo"),
-					},
-				},
-			},
-			expected: `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"__name__":"foo"},"histograms":[[1,{"count":"10","sum":"20","buckets":[[1,"-1.6817928305074288","-1.414213562373095","1"],[1,"-1.414213562373095","-1.189207115002721","2"],[3,"-0.001","0.001","12"],[0,"1.414213562373095","1.6817928305074288","1"],[0,"1.6817928305074288","2","2"],[0,"2.378414230005442","2.82842712474619","2"],[0,"2.82842712474619","3.3635856610148576","1"],[0,"3.3635856610148576","4","1"]]}]]}]}}`,
-		},
-		{
-			response: promql.Point{V: 0, T: 0},
-			expected: `{"status":"success","data":[0,"0"]}`,
-		},
-		{
-			response: promql.Point{V: 20, T: 1},
-			expected: `{"status":"success","data":[0.001,"20"]}`,
-		},
-		{
-			response: promql.Point{V: 20, T: 10},
-			expected: `{"status":"success","data":[0.010,"20"]}`,
-		},
-		{
-			response: promql.Point{V: 20, T: 100},
-			expected: `{"status":"success","data":[0.100,"20"]}`,
-		},
-		{
-			response: promql.Point{V: 20, T: 1001},
-			expected: `{"status":"success","data":[1.001,"20"]}`,
-		},
-		{
-			response: promql.Point{V: 20, T: 1010},
-			expected: `{"status":"success","data":[1.010,"20"]}`,
-		},
-		{
-			response: promql.Point{V: 20, T: 1100},
-			expected: `{"status":"success","data":[1.100,"20"]}`,
-		},
-		{
-			response: promql.Point{V: 20, T: 12345678123456555},
-			expected: `{"status":"success","data":[12345678123456.555,"20"]}`,
-		},
-		{
-			response: promql.Point{V: 20, T: -1},
-			expected: `{"status":"success","data":[-0.001,"20"]}`,
-		},
-		{
-			response: promql.Point{V: math.NaN(), T: 0},
-			expected: `{"status":"success","data":[0,"NaN"]}`,
-		},
-		{
-			response: promql.Point{V: math.Inf(1), T: 0},
-			expected: `{"status":"success","data":[0,"+Inf"]}`,
-		},
-		{
-			response: promql.Point{V: math.Inf(-1), T: 0},
-			expected: `{"status":"success","data":[0,"-Inf"]}`,
-		},
-		{
-			response: promql.Point{V: 1.2345678e6, T: 0},
-			expected: `{"status":"success","data":[0,"1234567.8"]}`,
-		},
-		{
-			response: promql.Point{V: 1.2345678e-6, T: 0},
-			expected: `{"status":"success","data":[0,"0.0000012345678"]}`,
-		},
-		{
-			response: promql.Point{V: 1.2345678e-67, T: 0},
-			expected: `{"status":"success","data":[0,"1.2345678e-67"]}`,
-		},
-		{
-			response: []exemplar.QueryResult{
-				{
-					SeriesLabels: labels.FromStrings("foo", "bar"),
-					Exemplars: []exemplar.Exemplar{
-						{
-							Labels: labels.FromStrings("traceID", "abc"),
-							Value:  100.123,
-							Ts:     1234,
-						},
-					},
-				},
-			},
-			expected: `{"status":"success","data":[{"seriesLabels":{"foo":"bar"},"exemplars":[{"labels":{"traceID":"abc"},"value":"100.123","timestamp":1.234}]}]}`,
-		},
-		{
-			response: []exemplar.QueryResult{
-				{
-					SeriesLabels: labels.FromStrings("foo", "bar"),
-					Exemplars: []exemplar.Exemplar{
-						{
-							Labels: labels.FromStrings("traceID", "abc"),
-							Value:  math.Inf(1),
-							Ts:     1234,
-						},
-					},
-				},
-			},
-			expected: `{"status":"success","data":[{"seriesLabels":{"foo":"bar"},"exemplars":[{"labels":{"traceID":"abc"},"value":"+Inf","timestamp":1.234}]}]}`,
-		},
-	}
-
-	for _, c := range cases {
-		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			api := API{}
-			api.respond(w, c.response, nil)
-		}))
-		defer s.Close()
-
-		resp, err := http.Get(s.URL)
-		if err != nil {
-			t.Fatalf("Error on test request: %s", err)
-		}
-		body, err := io.ReadAll(resp.Body)
-		defer resp.Body.Close()
-		if err != nil {
-			t.Fatalf("Error reading response body: %s", err)
-		}
-
-		if string(body) != c.expected {
-			t.Fatalf("Expected response \n%v\n but got \n%v\n", c.expected, string(body))
-		}
-	}
-}
-
 func TestTSDBStatus(t *testing.T) {
 	tsdb := &fakeDB{}
 	tsdbStatusAPI := func(api *API) apiFunc { return api.serveTSDBStatus }
@@ -3281,6 +3174,8 @@ var testResponseWriter = httptest.ResponseRecorder{}
 
 func BenchmarkRespond(b *testing.B) {
 	b.ReportAllocs()
+	request, err := http.NewRequest(http.MethodGet, "/does-not-matter", nil)
+	require.NoError(b, err)
 	points := []promql.Point{}
 	for i := 0; i < 10000; i++ {
 		points = append(points, promql.Point{V: float64(i * 1000000), T: int64(i)})
@@ -3297,7 +3192,7 @@ func BenchmarkRespond(b *testing.B) {
 	b.ResetTimer()
 	api := API{}
 	for n := 0; n < b.N; n++ {
-		api.respond(&testResponseWriter, response, nil)
+		api.respond(&testResponseWriter, request, response, nil)
 	}
 }
 
@@ -3407,4 +3302,21 @@ func TestGetGlobalURL(t *testing.T) {
 			require.Equal(t, tc.expected, output)
 		})
 	}
+}
+
+type testCodec struct {
+	contentType string
+	canEncode   bool
+}
+
+func (t *testCodec) ContentType() string {
+	return t.contentType
+}
+
+func (t *testCodec) CanEncode(_ *Response) bool {
+	return t.canEncode
+}
+
+func (t *testCodec) Encode(_ *Response) ([]byte, error) {
+	return []byte(fmt.Sprintf("response from %v codec", t.contentType)), nil
 }
