@@ -58,7 +58,7 @@ func TestApiStatusCodes(t *testing.T) {
 		"promql.ErrQueryCanceled": {
 			err:            promql.ErrQueryCanceled("some error"),
 			expectedString: "query was canceled",
-			expectedCode:   http.StatusServiceUnavailable,
+			expectedCode:   statusClientClosedConnection,
 		},
 
 		"promql.ErrQueryTimeout": {
@@ -76,7 +76,7 @@ func TestApiStatusCodes(t *testing.T) {
 		"context.Canceled": {
 			err:            context.Canceled,
 			expectedString: "context canceled",
-			expectedCode:   http.StatusUnprocessableEntity,
+			expectedCode:   statusClientClosedConnection,
 		},
 	} {
 		for k, q := range map[string]storage.SampleAndChunkQueryable{
