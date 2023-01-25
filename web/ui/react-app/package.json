@@ -3,7 +3,7 @@
   "version": "0.41.0",
   "private": true,
   "dependencies": {
-    "@codemirror/autocomplete": "^6.2.0",
+    "@codemirror/autocomplete": "^6.4.0",
     "@codemirror/commands": "^6.1.2",
     "@codemirror/language": "^6.3.0",
     "@codemirror/lint": "^6.0.0",
@@ -11,7 +11,7 @@
     "@codemirror/state": "^6.1.1",
     "@codemirror/view": "^6.4.0",
     "@forevolve/bootstrap-dark": "^2.1.1",
-    "@fortawesome/fontawesome-svg-core": "6.2.0",
+    "@fortawesome/fontawesome-svg-core": "6.2.1",
     "@fortawesome/free-solid-svg-icons": "6.2.0",
     "@fortawesome/react-fontawesome": "0.2.0",
     "@lezer/lr": "^1.2.3",
