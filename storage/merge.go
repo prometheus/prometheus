@@ -533,8 +533,12 @@ func (c *chainSampleIterator) AtFloatHistogram() (int64, *histogram.FloatHistogr
 	}
 	t, fh := c.curr.AtFloatHistogram()
 	// If the current sample is not consecutive with the previous one, we
-	// cannot be sure anymore that there was no counter reset.
-	if !c.consecutive && fh.CounterResetHint == histogram.NotCounterReset {
+	// cannot be sure anymore about counter resets for counter histograms.
+	// TODO(beorn7): If a `NotCounterReset` sample is followed by a
+	// non-consecutive `CounterReset` sample, we could keep the hint as
+	// `CounterReset`. But then we needed to track the previous sample
+	// in more detail, which might not be worth it.
+	if !c.consecutive && fh.CounterResetHint != histogram.GaugeType {
 		fh.CounterResetHint = histogram.UnknownCounterReset
 	}
 	return t, fh
