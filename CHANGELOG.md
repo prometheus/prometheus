@@ -2,14 +2,16 @@
 
 ## 2.42.0-rc.0 / 2023-01-26
 
-* [FEATURE] Add 'keep_firing_for' field to alerting rules #11827
+* [FEATURE] Add 'keep_firing_for' field to alerting rules. #11827
+* [FEATURE] Promtool: Add support of selecting timeseries for TSDB dump. #11872
+* [ENHANCEMENT] Agent: Native histogram support. #11842
+* [ENHANCEMENT] Histograms: Return actually useful counter reset hints. #11864
+* [ENHANCEMENT] SD: Add container ID as a meta label for pod targets for Kubernetes. #11844
 * [ENHANCEMENT] SD: Add VM size label to azure service discovery. #11650
-* [ENHANCEMENT] SD: Add container ID as a meta label for pod targets for Kubernetes #11844
-* [ENHANCEMENT] UI: Show individual scrape pools on /targets page #11142
-* [ENHANCEMENT] TSDB: Support FloatHistogram #11522 #11817
-* [ENHANCEMENT] TSDB: Add gauge histogram support #11783 #11840
-* [ENHANCEMENT] Support native histograms in federation #11830
-* [ENHANCEMENT] Agent: Native histogram support #11842
+* [ENHANCEMENT] Support native histograms in federation. #11830
+* [ENHANCEMENT] TSDB: Add gauge histogram support. #11783 #11840
+* [ENHANCEMENT] TSDB: Support FloatHistogram. #11522 #11817
+* [ENHANCEMENT] UI: Show individual scrape pools on /targets page. #11142
 
 ## 2.41.0 / 2022-12-20
 
