@@ -249,7 +249,7 @@ func TestIndexRW_Postings(t *testing.T) {
 				cache = hashcache.NewSeriesHashCache(1024 * 1024 * 1024).GetBlockCacheProvider("test")
 			}
 
-			ir, err := NewFileReaderWithCache(fn, cache)
+			ir, err := NewFileReaderWithOptions(fn, cache, func(l labels.Labels) uint64 { return l.Hash() })
 			require.NoError(t, err)
 
 			// List all postings for a given label value. This is what we expect to get
@@ -646,7 +646,7 @@ func BenchmarkReader_ShardedPostings(b *testing.B) {
 			}
 
 			// Create a reader to read back all postings from the index.
-			ir, err := NewFileReaderWithCache(fn, cache)
+			ir, err := NewFileReaderWithOptions(fn, cache, func(l labels.Labels) uint64 { return l.Hash() })
 			require.NoError(b, err)
 
 			b.ResetTimer()

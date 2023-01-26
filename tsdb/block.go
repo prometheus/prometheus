@@ -87,7 +87,7 @@ type IndexReader interface {
 
 	// ShardedPostings returns a postings list filtered by the provided shardIndex
 	// out of shardCount. For a given posting, its shard MUST be computed hashing
-	// the series labels mod shardCount (eg. `labels.Hash() % shardCount == shardIndex`).
+	// the series labels mod shardCount, using a hash function which is consistent over time.
 	ShardedPostings(p index.Postings, shardIndex, shardCount uint64) index.Postings
 
 	// Series populates the given builder and chunk metas for the series identified
@@ -322,11 +322,11 @@ type Block struct {
 // OpenBlock opens the block in the directory. It can be passed a chunk pool, which is used
 // to instantiate chunk structs.
 func OpenBlock(logger log.Logger, dir string, pool chunkenc.Pool) (pb *Block, err error) {
-	return OpenBlockWithCache(logger, dir, pool, nil)
+	return OpenBlockWithOptions(logger, dir, pool, nil, nil)
 }
 
-// OpenBlockWithCache is like OpenBlock but allows to pass a cache provider.
-func OpenBlockWithCache(logger log.Logger, dir string, pool chunkenc.Pool, cache index.ReaderCacheProvider) (pb *Block, err error) {
+// OpenBlockWithOptions is like OpenBlock but allows to pass a cache provider and sharding function.
+func OpenBlockWithOptions(logger log.Logger, dir string, pool chunkenc.Pool, cache index.ReaderCacheProvider, shardFunc func(l labels.Labels) uint64) (pb *Block, err error) {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -347,7 +347,7 @@ func OpenBlockWithCache(logger log.Logger, dir string, pool chunkenc.Pool, cache
 	}
 	closers = append(closers, cr)
 
-	indexReader, err := index.NewFileReaderWithCache(filepath.Join(dir, indexFilename), cache)
+	indexReader, err := index.NewFileReaderWithOptions(filepath.Join(dir, indexFilename), cache, shardFunc)
 	if err != nil {
 		return nil, err
 	}
