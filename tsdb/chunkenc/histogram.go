@@ -243,10 +243,10 @@ func (a *HistogramAppender) AppendFloatHistogram(int64, *histogram.FloatHistogra
 	panic("appended a float histogram to a histogram chunk")
 }
 
-// Appendable returns whether the chunk can be appended to, and if so
-// whether any recoding needs to happen using the provided interjections
-// (in case of any new buckets, positive or negative range, respectively).
-// If the sample is a gauge histogram, AppendableGauge must be used instead.
+// Appendable returns whether the chunk can be appended to, and if so whether
+// any recoding needs to happen using the provided inserts (in case of any new
+// buckets, positive or negative range, respectively).  If the sample is a gauge
+// histogram, AppendableGauge must be used instead.
 //
 // The chunk is not appendable in the following cases:
 //
@@ -261,7 +261,7 @@ func (a *HistogramAppender) AppendFloatHistogram(int64, *histogram.FloatHistogra
 // because of a counter reset. If the given sample is stale, it is always ok to
 // append. If counterReset is true, okToAppend is always false.
 func (a *HistogramAppender) Appendable(h *histogram.Histogram) (
-	positiveInterjections, negativeInterjections []Interjection,
+	positiveInserts, negativeInserts []Insert,
 	okToAppend, counterReset bool,
 ) {
 	if a.NumSamples() > 0 && a.GetCounterResetHeader() == GaugeType {
@@ -295,12 +295,12 @@ func (a *HistogramAppender) Appendable(h *histogram.Histogram) (
 	}
 
 	var ok bool
-	positiveInterjections, ok = forwardCompareSpans(a.pSpans, h.PositiveSpans)
+	positiveInserts, ok = expandSpansForward(a.pSpans, h.PositiveSpans)
 	if !ok {
 		counterReset = true
 		return
 	}
-	negativeInterjections, ok = forwardCompareSpans(a.nSpans, h.NegativeSpans)
+	negativeInserts, ok = expandSpansForward(a.nSpans, h.NegativeSpans)
 	if !ok {
 		counterReset = true
 		return
@@ -308,7 +308,7 @@ func (a *HistogramAppender) Appendable(h *histogram.Histogram) (
 
 	if counterResetInAnyBucket(a.pBuckets, h.PositiveBuckets, a.pSpans, h.PositiveSpans) ||
 		counterResetInAnyBucket(a.nBuckets, h.NegativeBuckets, a.nSpans, h.NegativeSpans) {
-		counterReset, positiveInterjections, negativeInterjections = true, nil, nil
+		counterReset, positiveInserts, negativeInserts = true, nil, nil
 		return
 	}
 
@@ -318,10 +318,11 @@ func (a *HistogramAppender) Appendable(h *histogram.Histogram) (
 
 // AppendableGauge returns whether the chunk can be appended to, and if so
 // whether:
-//  1. Any recoding needs to happen to the chunk using the provided interjections
+//  1. Any recoding needs to happen to the chunk using the provided inserts
 //     (in case of any new buckets, positive or negative range, respectively).
-//  2. Any recoding needs to happen for the histogram being appended, using the backward interjections
-//     (in case of any missing buckets, positive or negative range, respectively).
+//  2. Any recoding needs to happen for the histogram being appended, using the
+//     backward inserts (in case of any missing buckets, positive or negative
+//     range, respectively).
 //
 // This method must be only used for gauge histograms.
 //
@@ -330,8 +331,8 @@ func (a *HistogramAppender) Appendable(h *histogram.Histogram) (
 //   - The threshold for the zero bucket has changed.
 //   - The last sample in the chunk was stale while the current sample is not stale.
 func (a *HistogramAppender) AppendableGauge(h *histogram.Histogram) (
-	positiveInterjections, negativeInterjections []Interjection,
-	backwardPositiveInterjections, backwardNegativeInterjections []Interjection,
+	positiveInserts, negativeInserts []Insert,
+	backwardPositiveInserts, backwardNegativeInserts []Insert,
 	positiveSpans, negativeSpans []histogram.Span,
 	okToAppend bool,
 ) {
@@ -353,8 +354,8 @@ func (a *HistogramAppender) AppendableGauge(h *histogram.Histogram) (
 		return
 	}
 
-	positiveInterjections, backwardPositiveInterjections, positiveSpans = bidirectionalCompareSpans(a.pSpans, h.PositiveSpans)
-	negativeInterjections, backwardNegativeInterjections, negativeSpans = bidirectionalCompareSpans(a.nSpans, h.NegativeSpans)
+	positiveInserts, backwardPositiveInserts, positiveSpans = expandSpansBothWays(a.pSpans, h.PositiveSpans)
+	negativeInserts, backwardNegativeInserts, negativeSpans = expandSpansBothWays(a.nSpans, h.NegativeSpans)
 	okToAppend = true
 	return
 }
@@ -488,8 +489,9 @@ func (a *HistogramAppender) AppendHistogram(t int64, h *histogram.Histogram) {
 			putVarbitInt(a.b, b)
 		}
 	} else {
-		// The case for the 2nd sample with single deltas is implicitly handled correctly with the double delta code,
-		// so we don't need a separate single delta logic for the 2nd sample.
+		// The case for the 2nd sample with single deltas is implicitly
+		// handled correctly with the double delta code, so we don't
+		// need a separate single delta logic for the 2nd sample.
 
 		tDelta = t - a.t
 		cntDelta = int64(h.Count) - int64(a.cnt)
@@ -539,12 +541,12 @@ func (a *HistogramAppender) AppendHistogram(t int64, h *histogram.Histogram) {
 }
 
 // Recode converts the current chunk to accommodate an expansion of the set of
-// (positive and/or negative) buckets used, according to the provided
-// interjections, resulting in the honoring of the provided new positive and
-// negative spans. To continue appending, use the returned Appender rather than
-// the receiver of this method.
+// (positive and/or negative) buckets used, according to the provided inserts,
+// resulting in the honoring of the provided new positive and negative spans. To
+// continue appending, use the returned Appender rather than the receiver of
+// this method.
 func (a *HistogramAppender) Recode(
-	positiveInterjections, negativeInterjections []Interjection,
+	positiveInserts, negativeInserts []Insert,
 	positiveSpans, negativeSpans []histogram.Span,
 ) (Chunk, Appender) {
 	// TODO(beorn7): This currently just decodes everything and then encodes
@@ -577,11 +579,11 @@ func (a *HistogramAppender) Recode(
 
 		// Save the modified histogram to the new chunk.
 		hOld.PositiveSpans, hOld.NegativeSpans = positiveSpans, negativeSpans
-		if len(positiveInterjections) > 0 {
-			hOld.PositiveBuckets = interject(hOld.PositiveBuckets, positiveBuckets, positiveInterjections, true)
+		if len(positiveInserts) > 0 {
+			hOld.PositiveBuckets = insert(hOld.PositiveBuckets, positiveBuckets, positiveInserts, true)
 		}
-		if len(negativeInterjections) > 0 {
-			hOld.NegativeBuckets = interject(hOld.NegativeBuckets, negativeBuckets, negativeInterjections, true)
+		if len(negativeInserts) > 0 {
+			hOld.NegativeBuckets = insert(hOld.NegativeBuckets, negativeBuckets, negativeInserts, true)
 		}
 		app.AppendHistogram(tOld, hOld)
 	}
@@ -590,19 +592,19 @@ func (a *HistogramAppender) Recode(
 	return hc, app
 }
 
-// RecodeHistogram converts the current histogram (in-place) to accommodate an expansion of the set of
-// (positive and/or negative) buckets used.
+// RecodeHistogram converts the current histogram (in-place) to accommodate an
+// expansion of the set of (positive and/or negative) buckets used.
 func (a *HistogramAppender) RecodeHistogram(
 	h *histogram.Histogram,
-	pBackwardInter, nBackwardInter []Interjection,
+	pBackwardInserts, nBackwardInserts []Insert,
 ) {
-	if len(pBackwardInter) > 0 {
+	if len(pBackwardInserts) > 0 {
 		numPositiveBuckets := countSpans(h.PositiveSpans)
-		h.PositiveBuckets = interject(h.PositiveBuckets, make([]int64, numPositiveBuckets), pBackwardInter, true)
+		h.PositiveBuckets = insert(h.PositiveBuckets, make([]int64, numPositiveBuckets), pBackwardInserts, true)
 	}
-	if len(nBackwardInter) > 0 {
+	if len(nBackwardInserts) > 0 {
 		numNegativeBuckets := countSpans(h.NegativeSpans)
-		h.NegativeBuckets = interject(h.NegativeBuckets, make([]int64, numNegativeBuckets), nBackwardInter, true)
+		h.NegativeBuckets = insert(h.NegativeBuckets, make([]int64, numNegativeBuckets), nBackwardInserts, true)
 	}
 }
 
@@ -665,12 +667,8 @@ func (it *histogramIterator) AtHistogram() (int64, *histogram.Histogram) {
 		return it.t, &histogram.Histogram{Sum: it.sum}
 	}
 	it.atHistogramCalled = true
-	crHint := histogram.UnknownCounterReset
-	if it.counterResetHeader == GaugeType {
-		crHint = histogram.GaugeType
-	}
 	return it.t, &histogram.Histogram{
-		CounterResetHint: crHint,
+		CounterResetHint: counterResetHint(it.counterResetHeader, it.numRead),
 		Count:            it.cnt,
 		ZeroCount:        it.zCnt,
 		Sum:              it.sum,
@@ -688,12 +686,8 @@ func (it *histogramIterator) AtFloatHistogram() (int64, *histogram.FloatHistogra
 		return it.t, &histogram.FloatHistogram{Sum: it.sum}
 	}
 	it.atFloatHistogramCalled = true
-	crHint := histogram.UnknownCounterReset
-	if it.counterResetHeader == GaugeType {
-		crHint = histogram.GaugeType
-	}
 	return it.t, &histogram.FloatHistogram{
-		CounterResetHint: crHint,
+		CounterResetHint: counterResetHint(it.counterResetHeader, it.numRead),
 		Count:            float64(it.cnt),
 		ZeroCount:        float64(it.zCnt),
 		Sum:              it.sum,
