@@ -63,6 +63,10 @@ type status string
 const (
 	statusSuccess status = "success"
 	statusError   status = "error"
+
+	// Non-standard status code (originally introduced by nginx) for the case when a client closes
+	// the connection while the server is still processing the request.
+	statusClientClosedConnection = 499
 )
 
 type errorType string
@@ -591,6 +595,10 @@ func returnAPIError(err error) *apiError {
 		return &apiError{errorTimeout, err}
 	case promql.ErrStorage:
 		return &apiError{errorInternal, err}
+	}
+
+	if errors.Is(err, context.Canceled) {
+		return &apiError{errorCanceled, err}
 	}
 
 	return &apiError{errorExec, err}
@@ -1599,7 +1607,9 @@ func (api *API) respondError(w http.ResponseWriter, apiErr *apiError, data inter
 		code = http.StatusBadRequest
 	case errorExec:
 		code = http.StatusUnprocessableEntity
-	case errorCanceled, errorTimeout:
+	case errorCanceled:
+		code = statusClientClosedConnection
+	case errorTimeout:
 		code = http.StatusServiceUnavailable
 	case errorInternal:
 		code = http.StatusInternalServerError
