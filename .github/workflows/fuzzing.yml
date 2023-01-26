@@ -1,5 +1,5 @@
 name: CIFuzz
-on:  # yamllint disable-line rule:truthy
+on:
   workflow_call:
 jobs:
   Fuzzing:
