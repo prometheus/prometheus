@@ -1,4 +1,4 @@
-on:  # yamllint disable-line rule:truthy
+on:
   repository_dispatch:
     types: [prombench_start, prombench_restart, prombench_stop]
 name: Prombench Workflow

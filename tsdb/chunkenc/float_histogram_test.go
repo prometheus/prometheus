@@ -66,7 +66,9 @@ func TestFloatHistogramChunkSameBuckets(t *testing.T) {
 	h.PositiveBuckets = []int64{5, -2, 1, -2} // counts: 5, 3, 4, 2 (total 14)
 	h.NegativeBuckets = []int64{4, -1, 1, -1} // counts: 4, 3, 4, 4 (total 15)
 	app.AppendFloatHistogram(ts, h.ToFloat())
-	exp = append(exp, floatResult{t: ts, h: h.ToFloat()})
+	expH := h.ToFloat()
+	expH.CounterResetHint = histogram.NotCounterReset
+	exp = append(exp, floatResult{t: ts, h: expH})
 	require.Equal(t, 2, c.NumSamples())
 
 	// Add update with new appender.
@@ -81,7 +83,9 @@ func TestFloatHistogramChunkSameBuckets(t *testing.T) {
 	h.PositiveBuckets = []int64{6, 1, -3, 6} // counts: 6, 7, 4, 10 (total 27)
 	h.NegativeBuckets = []int64{5, 1, -2, 3} // counts: 5, 6, 4, 7 (total 22)
 	app.AppendFloatHistogram(ts, h.ToFloat())
-	exp = append(exp, floatResult{t: ts, h: h.ToFloat()})
+	expH = h.ToFloat()
+	expH.CounterResetHint = histogram.NotCounterReset
+	exp = append(exp, floatResult{t: ts, h: expH})
 	require.Equal(t, 3, c.NumSamples())
 
 	// 1. Expand iterator in simple case.
@@ -138,7 +142,7 @@ func TestFloatHistogramChunkSameBuckets(t *testing.T) {
 	require.Equal(t, ValNone, it4.Seek(exp[len(exp)-1].t+1))
 }
 
-// Mimics the scenario described for compareSpans().
+// Mimics the scenario described for expandSpansForward.
 func TestFloatHistogramChunkBucketChanges(t *testing.T) {
 	c := Chunk(NewFloatHistogramChunk())
 
@@ -209,9 +213,11 @@ func TestFloatHistogramChunkBucketChanges(t *testing.T) {
 	h1.PositiveBuckets = []int64{6, -3, -3, 3, -3, 0, 2, 2, 1, -5, 1}
 	h1.NegativeSpans = h2.NegativeSpans
 	h1.NegativeBuckets = []int64{0, 1}
+	expH2 := h2.ToFloat()
+	expH2.CounterResetHint = histogram.NotCounterReset
 	exp := []floatResult{
 		{t: ts1, h: h1.ToFloat()},
-		{t: ts2, h: h2.ToFloat()},
+		{t: ts2, h: expH2},
 	}
 	it := c.Iterator(nil)
 	var act []floatResult
@@ -356,5 +362,173 @@ func TestFloatHistogramChunkAppendable(t *testing.T) {
 		require.Equal(t, 0, len(negInterjections))
 		require.False(t, ok) // Need to cut a new chunk.
 		require.True(t, cr)
+	}
+}
+
+func TestFloatHistogramChunkAppendableGauge(t *testing.T) {
+	c := Chunk(NewFloatHistogramChunk())
+
+	// Create fresh appender and add the first histogram.
+	app, err := c.Appender()
+	require.NoError(t, err)
+	require.Equal(t, 0, c.NumSamples())
+
+	ts := int64(1234567890)
+	h1 := &histogram.FloatHistogram{
+		Count:         5,
+		ZeroCount:     2,
+		Sum:           18.4,
+		ZeroThreshold: 1e-125,
+		Schema:        1,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 2, Length: 1},
+			{Offset: 3, Length: 2},
+			{Offset: 3, Length: 1},
+			{Offset: 1, Length: 1},
+		},
+		PositiveBuckets: []float64{6, 3, 3, 2, 4, 5, 1},
+	}
+
+	app.AppendFloatHistogram(ts, h1.Copy())
+	require.Equal(t, 1, c.NumSamples())
+	c.(*FloatHistogramChunk).SetCounterResetHeader(GaugeType)
+
+	{ // Schema change.
+		h2 := h1.Copy()
+		h2.Schema++
+		hApp, _ := app.(*FloatHistogramAppender)
+		_, _, _, _, _, _, ok := hApp.AppendableGauge(h2)
+		require.False(t, ok)
+	}
+
+	{ // Zero threshold change.
+		h2 := h1.Copy()
+		h2.ZeroThreshold += 0.1
+		hApp, _ := app.(*FloatHistogramAppender)
+		_, _, _, _, _, _, ok := hApp.AppendableGauge(h2)
+		require.False(t, ok)
+	}
+
+	{ // New histogram that has more buckets.
+		h2 := h1.Copy()
+		h2.PositiveSpans = []histogram.Span{
+			{Offset: 0, Length: 3},
+			{Offset: 1, Length: 1},
+			{Offset: 1, Length: 4},
+			{Offset: 3, Length: 3},
+		}
+		h2.Count += 9
+		h2.ZeroCount++
+		h2.Sum = 30
+		h2.PositiveBuckets = []float64{7, 5, 1, 3, 1, 0, 2, 5, 5, 0, 1}
+
+		hApp, _ := app.(*FloatHistogramAppender)
+		pI, nI, pBackwardI, nBackwardI, _, _, ok := hApp.AppendableGauge(h2)
+		require.Greater(t, len(pI), 0)
+		require.Len(t, nI, 0)
+		require.Len(t, pBackwardI, 0)
+		require.Len(t, nBackwardI, 0)
+		require.True(t, ok)
+	}
+
+	{ // New histogram that has buckets missing.
+		h2 := h1.Copy()
+		h2.PositiveSpans = []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 2, Length: 1},
+			{Offset: 3, Length: 1},
+			{Offset: 4, Length: 1},
+			{Offset: 1, Length: 1},
+		}
+		h2.Count -= 4
+		h2.Sum--
+		h2.PositiveBuckets = []float64{6, 3, 3, 2, 5, 1}
+
+		hApp, _ := app.(*FloatHistogramAppender)
+		pI, nI, pBackwardI, nBackwardI, _, _, ok := hApp.AppendableGauge(h2)
+		require.Len(t, pI, 0)
+		require.Len(t, nI, 0)
+		require.Greater(t, len(pBackwardI), 0)
+		require.Len(t, nBackwardI, 0)
+		require.True(t, ok)
+	}
+
+	{ // New histogram that has a bucket missing and new buckets.
+		h2 := h1.Copy()
+		h2.PositiveSpans = []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 5, Length: 2},
+			{Offset: 3, Length: 1},
+			{Offset: 1, Length: 1},
+		}
+		h2.Sum = 21
+		h2.PositiveBuckets = []float64{6, 3, 2, 4, 5, 1}
+
+		hApp, _ := app.(*FloatHistogramAppender)
+		pI, nI, pBackwardI, nBackwardI, _, _, ok := hApp.AppendableGauge(h2)
+		require.Greater(t, len(pI), 0)
+		require.Greater(t, len(pBackwardI), 0)
+		require.Len(t, nI, 0)
+		require.Len(t, nBackwardI, 0)
+		require.True(t, ok)
+	}
+
+	{ // New histogram that has a counter reset while buckets are same.
+		h2 := h1.Copy()
+		h2.Sum = 23
+		h2.PositiveBuckets = []float64{6, 2, 3, 2, 4, 5, 1}
+
+		hApp, _ := app.(*FloatHistogramAppender)
+		pI, nI, pBackwardI, nBackwardI, _, _, ok := hApp.AppendableGauge(h2)
+		require.Len(t, pI, 0)
+		require.Len(t, nI, 0)
+		require.Len(t, pBackwardI, 0)
+		require.Len(t, nBackwardI, 0)
+		require.True(t, ok)
+	}
+
+	{ // New histogram that has a counter reset while new buckets were added.
+		h2 := h1.Copy()
+		h2.PositiveSpans = []histogram.Span{
+			{Offset: 0, Length: 3},
+			{Offset: 1, Length: 1},
+			{Offset: 1, Length: 4},
+			{Offset: 3, Length: 3},
+		}
+		h2.Sum = 29
+		h2.PositiveBuckets = []float64{7, 5, 1, 3, 1, 0, 2, 5, 5, 0, 0}
+
+		hApp, _ := app.(*FloatHistogramAppender)
+		pI, nI, pBackwardI, nBackwardI, _, _, ok := hApp.AppendableGauge(h2)
+		require.Greater(t, len(pI), 0)
+		require.Len(t, nI, 0)
+		require.Len(t, pBackwardI, 0)
+		require.Len(t, nBackwardI, 0)
+		require.True(t, ok)
+	}
+
+	{
+		// New histogram that has a counter reset while new buckets were
+		// added before the first bucket and reset on first bucket.
+		h2 := h1.Copy()
+		h2.PositiveSpans = []histogram.Span{
+			{Offset: -3, Length: 2},
+			{Offset: 1, Length: 2},
+			{Offset: 2, Length: 1},
+			{Offset: 3, Length: 2},
+			{Offset: 3, Length: 1},
+			{Offset: 1, Length: 1},
+		}
+		h2.Sum = 26
+		h2.PositiveBuckets = []float64{1, 2, 5, 3, 3, 2, 4, 5, 1}
+
+		hApp, _ := app.(*FloatHistogramAppender)
+		pI, nI, pBackwardI, nBackwardI, _, _, ok := hApp.AppendableGauge(h2)
+		require.Greater(t, len(pI), 0)
+		require.Len(t, nI, 0)
+		require.Len(t, pBackwardI, 0)
+		require.Len(t, nBackwardI, 0)
+		require.True(t, ok)
 	}
 }

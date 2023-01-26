@@ -72,7 +72,7 @@ type IndexReader interface {
 	// Postings returns the postings list iterator for the label pairs.
 	// The Postings here contain the offsets to the series inside the index.
 	// Found IDs are not strictly required to point to a valid Series, e.g.
-	// during background garbage collections. Input values must be sorted.
+	// during background garbage collections.
 	Postings(name string, values ...string) (index.Postings, error)
 
 	// SortedPostings returns a postings list that is reordered to be sorted

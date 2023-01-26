@@ -52,11 +52,12 @@ func retry(t *testing.T, interval time.Duration, n int, f func() bool) {
 }
 
 type writeToMock struct {
-	samplesAppended      int
-	exemplarsAppended    int
-	histogramsAppended   int
-	seriesLock           sync.Mutex
-	seriesSegmentIndexes map[chunks.HeadSeriesRef]int
+	samplesAppended         int
+	exemplarsAppended       int
+	histogramsAppended      int
+	floatHistogramsAppended int
+	seriesLock              sync.Mutex
+	seriesSegmentIndexes    map[chunks.HeadSeriesRef]int
 }
 
 func (wtm *writeToMock) Append(s []record.RefSample) bool {
@@ -71,6 +72,11 @@ func (wtm *writeToMock) AppendExemplars(e []record.RefExemplar) bool {
 
 func (wtm *writeToMock) AppendHistograms(h []record.RefHistogramSample) bool {
 	wtm.histogramsAppended += len(h)
+	return true
+}
+
+func (wtm *writeToMock) AppendFloatHistograms(fh []record.RefFloatHistogramSample) bool {
+	wtm.floatHistogramsAppended += len(fh)
 	return true
 }
 
@@ -171,22 +177,31 @@ func TestTailSamples(t *testing.T) {
 
 				for j := 0; j < histogramsCount; j++ {
 					inner := rand.Intn(ref + 1)
+					hist := &histogram.Histogram{
+						Schema:          2,
+						ZeroThreshold:   1e-128,
+						ZeroCount:       0,
+						Count:           2,
+						Sum:             0,
+						PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+						PositiveBuckets: []int64{int64(i) + 1},
+						NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+						NegativeBuckets: []int64{int64(-i) - 1},
+					}
+
 					histogram := enc.HistogramSamples([]record.RefHistogramSample{{
 						Ref: chunks.HeadSeriesRef(inner),
 						T:   now.UnixNano() + 1,
-						H: &histogram.Histogram{
-							Schema:          2,
-							ZeroThreshold:   1e-128,
-							ZeroCount:       0,
-							Count:           2,
-							Sum:             0,
-							PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
-							PositiveBuckets: []int64{int64(i) + 1},
-							NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
-							NegativeBuckets: []int64{int64(-i) - 1},
-						},
+						H:   hist,
 					}}, nil)
 					require.NoError(t, w.Log(histogram))
+
+					floatHistogram := enc.FloatHistogramSamples([]record.RefFloatHistogramSample{{
+						Ref: chunks.HeadSeriesRef(inner),
+						T:   now.UnixNano() + 1,
+						FH:  hist.ToFloat(),
+					}}, nil)
+					require.NoError(t, w.Log(floatHistogram))
 				}
 			}
 
@@ -221,6 +236,7 @@ func TestTailSamples(t *testing.T) {
 			require.Equal(t, expectedSamples, wt.samplesAppended, "did not receive the expected number of samples")
 			require.Equal(t, expectedExemplars, wt.exemplarsAppended, "did not receive the expected number of exemplars")
 			require.Equal(t, expectedHistograms, wt.histogramsAppended, "did not receive the expected number of histograms")
+			require.Equal(t, expectedHistograms, wt.floatHistogramsAppended, "did not receive the expected number of float histograms")
 		})
 	}
 }

@@ -124,16 +124,20 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 			}
 		}
 
-		// TODO(codesome): support float histograms.
 		for _, hp := range ts.Histograms {
-			hs := HistogramProtoToHistogram(hp)
-			_, err = app.AppendHistogram(0, labels, hp.Timestamp, hs, nil)
+			if hp.GetCountFloat() > 0 || hp.GetZeroCountFloat() > 0 { // It is a float histogram.
+				fhs := HistogramProtoToFloatHistogram(hp)
+				_, err = app.AppendHistogram(0, labels, hp.Timestamp, nil, fhs)
+			} else {
+				hs := HistogramProtoToHistogram(hp)
+				_, err = app.AppendHistogram(0, labels, hp.Timestamp, hs, nil)
+			}
 			if err != nil {
 				unwrappedErr := errors.Unwrap(err)
 				if unwrappedErr == nil {
 					unwrappedErr = err
 				}
-				// Althogh AppendHistogram does not currently return ErrDuplicateSampleForTimestamp there is
+				// Although AppendHistogram does not currently return ErrDuplicateSampleForTimestamp there is
 				// a note indicating its inclusion in the future.
 				if errors.Is(unwrappedErr, storage.ErrOutOfOrderSample) || errors.Is(unwrappedErr, storage.ErrOutOfBounds) || errors.Is(unwrappedErr, storage.ErrDuplicateSampleForTimestamp) {
 					level.Error(h.logger).Log("msg", "Out of order histogram from remote write", "err", err.Error(), "series", labels.String(), "timestamp", hp.Timestamp)

@@ -91,6 +91,7 @@ func BenchmarkQuerier(b *testing.B) {
 
 func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 	n1 := labels.MustNewMatcher(labels.MatchEqual, "n", "1"+postingsBenchSuffix)
+	nX := labels.MustNewMatcher(labels.MatchEqual, "n", "X"+postingsBenchSuffix)
 
 	jFoo := labels.MustNewMatcher(labels.MatchEqual, "j", "foo")
 	jNotFoo := labels.MustNewMatcher(labels.MatchNotEqual, "j", "foo")
@@ -106,31 +107,51 @@ func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 	iNot2 := labels.MustNewMatcher(labels.MatchNotEqual, "i", "2"+postingsBenchSuffix)
 	iNot2Star := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "^2.*$")
 	iNotStar2Star := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "^.*2.*$")
-
+	jFooBar := labels.MustNewMatcher(labels.MatchRegexp, "j", "foo|bar")
+	jXXXYYY := labels.MustNewMatcher(labels.MatchRegexp, "j", "XXX|YYY")
+	jXplus := labels.MustNewMatcher(labels.MatchRegexp, "j", "X.+")
+	iCharSet := labels.MustNewMatcher(labels.MatchRegexp, "i", "1[0-9]")
+	iAlternate := labels.MustNewMatcher(labels.MatchRegexp, "i", "(1|2|3|4|5|6|20|55)")
+	iXYZ := labels.MustNewMatcher(labels.MatchRegexp, "i", "X|Y|Z")
 	cases := []struct {
 		name     string
 		matchers []*labels.Matcher
 	}{
 		{`n="1"`, []*labels.Matcher{n1}},
+		{`n="X"`, []*labels.Matcher{nX}},
 		{`n="1",j="foo"`, []*labels.Matcher{n1, jFoo}},
+		{`n="X",j="foo"`, []*labels.Matcher{nX, jFoo}},
 		{`j="foo",n="1"`, []*labels.Matcher{jFoo, n1}},
 		{`n="1",j!="foo"`, []*labels.Matcher{n1, jNotFoo}},
+		{`n="X",j!="foo"`, []*labels.Matcher{nX, jNotFoo}},
+		{`i=~"1[0-9]",j=~"foo|bar"`, []*labels.Matcher{iCharSet, jFooBar}},
+		{`j=~"foo|bar"`, []*labels.Matcher{jFooBar}},
+		{`j=~"XXX|YYY"`, []*labels.Matcher{jXXXYYY}},
+		{`j=~"X.+"`, []*labels.Matcher{jXplus}},
+		{`i=~"(1|2|3|4|5|6|20|55)"`, []*labels.Matcher{iAlternate}},
+		{`i=~"X|Y|Z"`, []*labels.Matcher{iXYZ}},
 		{`i=~".*"`, []*labels.Matcher{iStar}},
 		{`i=~"1.*"`, []*labels.Matcher{i1Star}},
 		{`i=~".*1"`, []*labels.Matcher{iStar1}},
 		{`i=~".+"`, []*labels.Matcher{iPlus}},
+		{`i=~".+",j=~"X.+"`, []*labels.Matcher{iPlus, jXplus}},
 		{`i=~""`, []*labels.Matcher{iEmptyRe}},
 		{`i!=""`, []*labels.Matcher{iNotEmpty}},
 		{`n="1",i=~".*",j="foo"`, []*labels.Matcher{n1, iStar, jFoo}},
+		{`n="X",i=~".*",j="foo"`, []*labels.Matcher{nX, iStar, jFoo}},
 		{`n="1",i=~".*",i!="2",j="foo"`, []*labels.Matcher{n1, iStar, iNot2, jFoo}},
 		{`n="1",i!=""`, []*labels.Matcher{n1, iNotEmpty}},
 		{`n="1",i!="",j="foo"`, []*labels.Matcher{n1, iNotEmpty, jFoo}},
+		{`n="1",i!="",j=~"X.+"`, []*labels.Matcher{n1, iNotEmpty, jXplus}},
+		{`n="1",i!="",j=~"XXX|YYY"`, []*labels.Matcher{n1, iNotEmpty, jXXXYYY}},
+		{`n="1",i=~"X|Y|Z",j="foo"`, []*labels.Matcher{n1, iXYZ, jFoo}},
 		{`n="1",i=~".+",j="foo"`, []*labels.Matcher{n1, iPlus, jFoo}},
 		{`n="1",i=~"1.+",j="foo"`, []*labels.Matcher{n1, i1Plus, jFoo}},
 		{`n="1",i=~".*1.*",j="foo"`, []*labels.Matcher{n1, iStar1Star, jFoo}},
 		{`n="1",i=~".+",i!="2",j="foo"`, []*labels.Matcher{n1, iPlus, iNot2, jFoo}},
 		{`n="1",i=~".+",i!~"2.*",j="foo"`, []*labels.Matcher{n1, iPlus, iNot2Star, jFoo}},
 		{`n="1",i=~".+",i!~".*2.*",j="foo"`, []*labels.Matcher{n1, iPlus, iNotStar2Star, jFoo}},
+		{`n="X",i=~".+",i!~".*2.*",j="foo"`, []*labels.Matcher{nX, iPlus, iNotStar2Star, jFoo}},
 	}
 
 	for _, c := range cases {
@@ -147,7 +168,10 @@ func benchmarkLabelValuesWithMatchers(b *testing.B, ir IndexReader) {
 	i1 := labels.MustNewMatcher(labels.MatchEqual, "i", "1")
 	iStar := labels.MustNewMatcher(labels.MatchRegexp, "i", "^.*$")
 	jNotFoo := labels.MustNewMatcher(labels.MatchNotEqual, "j", "foo")
+	jXXXYYY := labels.MustNewMatcher(labels.MatchRegexp, "j", "XXX|YYY")
+	jXplus := labels.MustNewMatcher(labels.MatchRegexp, "j", "X.+")
 	n1 := labels.MustNewMatcher(labels.MatchEqual, "n", "1"+postingsBenchSuffix)
+	nX := labels.MustNewMatcher(labels.MatchNotEqual, "n", "X"+postingsBenchSuffix)
 	nPlus := labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")
 
 	cases := []struct {
@@ -159,6 +183,9 @@ func benchmarkLabelValuesWithMatchers(b *testing.B, ir IndexReader) {
 		{`i with n="1"`, "i", []*labels.Matcher{n1}},
 		{`i with n="^.+$"`, "i", []*labels.Matcher{nPlus}},
 		{`i with n="1",j!="foo"`, "i", []*labels.Matcher{n1, jNotFoo}},
+		{`i with n="1",j=~"X.+"`, "i", []*labels.Matcher{n1, jXplus}},
+		{`i with n="1",j=~"XXX|YYY"`, "i", []*labels.Matcher{n1, jXXXYYY}},
+		{`i with n="X",j!="foo"`, "i", []*labels.Matcher{nX, jNotFoo}},
 		{`i with n="1",i=~"^.*$",j!="foo"`, "i", []*labels.Matcher{n1, iStar, jNotFoo}},
 		// n has 10 values.
 		{`n with j!="foo"`, "n", []*labels.Matcher{jNotFoo}},

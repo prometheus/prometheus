@@ -1586,21 +1586,21 @@ func TestScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T) {
 
 	fakeRef := storage.SeriesRef(1)
 	expValue := float64(1)
-	metric := `metric{n="1"} 1`
-	p, warning := textparse.New([]byte(metric), "")
+	metric := []byte(`metric{n="1"} 1`)
+	p, warning := textparse.New(metric, "")
 	require.NoError(t, warning)
 
 	var lset labels.Labels
 	p.Next()
-	mets := p.Metric(&lset)
+	p.Metric(&lset)
 	hash := lset.Hash()
 
 	// Create a fake entry in the cache
-	sl.cache.addRef(mets, fakeRef, lset, hash)
+	sl.cache.addRef(metric, fakeRef, lset, hash)
 	now := time.Now()
 
 	slApp := sl.appender(context.Background())
-	_, _, _, err := sl.append(slApp, []byte(metric), "", now)
+	_, _, _, err := sl.append(slApp, metric, "", now)
 	require.NoError(t, err)
 	require.NoError(t, slApp.Commit())
 

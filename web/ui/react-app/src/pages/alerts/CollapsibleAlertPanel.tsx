@@ -43,6 +43,11 @@ const CollapsibleAlertPanel: FC<CollapsibleAlertPanelProps> = ({ rule, showAnnot
                     <div>for: {formatDuration(rule.duration * 1000)}</div>
                   </div>
                 )}
+                {rule.keepFiringFor > 0 && (
+                  <div>
+                    <div>keep_firing_for: {formatDuration(rule.keepFiringFor * 1000)}</div>
+                  </div>
+                )}
                 {rule.labels && Object.keys(rule.labels).length > 0 && (
                   <div>
                     <div>labels:</div>
@@ -91,9 +96,14 @@ const CollapsibleAlertPanel: FC<CollapsibleAlertPanelProps> = ({ rule, showAnnot
                           </td>
                           <td>
                             <h5 className="m-0">
-                              <Badge color={alertColors[alert.state] + ' text-uppercase'} className="px-3">
+                              <Badge color={alertColors[alert.state] + ' text-uppercase'} className="px-3 mr-1">
                                 {alert.state}
                               </Badge>
+                              {alert.keepFiringSince && (
+                                <Badge color="secondary" className="px-3">
+                                  Stabilizing
+                                </Badge>
+                              )}
                             </h5>
                           </td>
                           <td>{alert.activeAt}</td>

@@ -55,7 +55,7 @@ var writeRequestFixture = &prompb.WriteRequest{
 			},
 			Samples:    []prompb.Sample{{Value: 1, Timestamp: 0}},
 			Exemplars:  []prompb.Exemplar{{Labels: []prompb.Label{{Name: "f", Value: "g"}}, Value: 1, Timestamp: 0}},
-			Histograms: []prompb.Histogram{HistogramToHistogramProto(0, &testHistogram)},
+			Histograms: []prompb.Histogram{HistogramToHistogramProto(0, &testHistogram), FloatHistogramToHistogramProto(1, testHistogram.ToFloat())},
 		},
 		{
 			Labels: []prompb.Label{
@@ -67,7 +67,7 @@ var writeRequestFixture = &prompb.WriteRequest{
 			},
 			Samples:    []prompb.Sample{{Value: 2, Timestamp: 1}},
 			Exemplars:  []prompb.Exemplar{{Labels: []prompb.Label{{Name: "h", Value: "i"}}, Value: 2, Timestamp: 1}},
-			Histograms: []prompb.Histogram{HistogramToHistogramProto(1, &testHistogram)},
+			Histograms: []prompb.Histogram{HistogramToHistogramProto(2, &testHistogram), FloatHistogramToHistogramProto(3, testHistogram.ToFloat())},
 		},
 	},
 }
@@ -368,6 +368,203 @@ func TestNilHistogramProto(t *testing.T) {
 	// This function will panic if it impromperly handles nil
 	// values, causing the test to fail.
 	HistogramProtoToHistogram(prompb.Histogram{})
+	HistogramProtoToFloatHistogram(prompb.Histogram{})
+}
+
+func exampleHistogram() histogram.Histogram {
+	return histogram.Histogram{
+		CounterResetHint: histogram.GaugeType,
+		Schema:           0,
+		Count:            19,
+		Sum:              2.7,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 4},
+			{Offset: 0, Length: 0},
+			{Offset: 0, Length: 3},
+		},
+		PositiveBuckets: []int64{1, 2, -2, 1, -1, 0, 0},
+		NegativeSpans: []histogram.Span{
+			{Offset: 0, Length: 5},
+			{Offset: 1, Length: 0},
+			{Offset: 0, Length: 1},
+		},
+		NegativeBuckets: []int64{1, 2, -2, 1, -1, 0},
+	}
+}
+
+func exampleHistogramProto() prompb.Histogram {
+	return prompb.Histogram{
+		Count:         &prompb.Histogram_CountInt{CountInt: 19},
+		Sum:           2.7,
+		Schema:        0,
+		ZeroThreshold: 0,
+		ZeroCount:     &prompb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+		NegativeSpans: []*prompb.BucketSpan{
+			{
+				Offset: 0,
+				Length: 5,
+			},
+			{
+				Offset: 1,
+				Length: 0,
+			},
+			{
+				Offset: 0,
+				Length: 1,
+			},
+		},
+		NegativeDeltas: []int64{1, 2, -2, 1, -1, 0},
+		PositiveSpans: []*prompb.BucketSpan{
+			{
+				Offset: 0,
+				Length: 4,
+			},
+			{
+				Offset: 0,
+				Length: 0,
+			},
+			{
+				Offset: 0,
+				Length: 3,
+			},
+		},
+		PositiveDeltas: []int64{1, 2, -2, 1, -1, 0, 0},
+		ResetHint:      prompb.Histogram_GAUGE,
+		Timestamp:      1337,
+	}
+}
+
+func TestHistogramToProtoConvert(t *testing.T) {
+	tests := []struct {
+		input    histogram.CounterResetHint
+		expected prompb.Histogram_ResetHint
+	}{
+		{
+			input:    histogram.UnknownCounterReset,
+			expected: prompb.Histogram_UNKNOWN,
+		},
+		{
+			input:    histogram.CounterReset,
+			expected: prompb.Histogram_YES,
+		},
+		{
+			input:    histogram.NotCounterReset,
+			expected: prompb.Histogram_NO,
+		},
+		{
+			input:    histogram.GaugeType,
+			expected: prompb.Histogram_GAUGE,
+		},
+	}
+
+	for _, test := range tests {
+		h := exampleHistogram()
+		h.CounterResetHint = test.input
+		p := exampleHistogramProto()
+		p.ResetHint = test.expected
+
+		require.Equal(t, p, HistogramToHistogramProto(1337, &h))
+
+		require.Equal(t, h, *HistogramProtoToHistogram(p))
+	}
+}
+
+func exampleFloatHistogram() histogram.FloatHistogram {
+	return histogram.FloatHistogram{
+		CounterResetHint: histogram.GaugeType,
+		Schema:           0,
+		Count:            19,
+		Sum:              2.7,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 4},
+			{Offset: 0, Length: 0},
+			{Offset: 0, Length: 3},
+		},
+		PositiveBuckets: []float64{1, 2, -2, 1, -1, 0, 0},
+		NegativeSpans: []histogram.Span{
+			{Offset: 0, Length: 5},
+			{Offset: 1, Length: 0},
+			{Offset: 0, Length: 1},
+		},
+		NegativeBuckets: []float64{1, 2, -2, 1, -1, 0},
+	}
+}
+
+func exampleFloatHistogramProto() prompb.Histogram {
+	return prompb.Histogram{
+		Count:         &prompb.Histogram_CountFloat{CountFloat: 19},
+		Sum:           2.7,
+		Schema:        0,
+		ZeroThreshold: 0,
+		ZeroCount:     &prompb.Histogram_ZeroCountFloat{ZeroCountFloat: 0},
+		NegativeSpans: []*prompb.BucketSpan{
+			{
+				Offset: 0,
+				Length: 5,
+			},
+			{
+				Offset: 1,
+				Length: 0,
+			},
+			{
+				Offset: 0,
+				Length: 1,
+			},
+		},
+		NegativeCounts: []float64{1, 2, -2, 1, -1, 0},
+		PositiveSpans: []*prompb.BucketSpan{
+			{
+				Offset: 0,
+				Length: 4,
+			},
+			{
+				Offset: 0,
+				Length: 0,
+			},
+			{
+				Offset: 0,
+				Length: 3,
+			},
+		},
+		PositiveCounts: []float64{1, 2, -2, 1, -1, 0, 0},
+		ResetHint:      prompb.Histogram_GAUGE,
+		Timestamp:      1337,
+	}
+}
+
+func TestFloatHistogramToProtoConvert(t *testing.T) {
+	tests := []struct {
+		input    histogram.CounterResetHint
+		expected prompb.Histogram_ResetHint
+	}{
+		{
+			input:    histogram.UnknownCounterReset,
+			expected: prompb.Histogram_UNKNOWN,
+		},
+		{
+			input:    histogram.CounterReset,
+			expected: prompb.Histogram_YES,
+		},
+		{
+			input:    histogram.NotCounterReset,
+			expected: prompb.Histogram_NO,
+		},
+		{
+			input:    histogram.GaugeType,
+			expected: prompb.Histogram_GAUGE,
+		},
+	}
+
+	for _, test := range tests {
+		h := exampleFloatHistogram()
+		h.CounterResetHint = test.input
+		p := exampleFloatHistogramProto()
+		p.ResetHint = test.expected
+
+		require.Equal(t, p, FloatHistogramToHistogramProto(1337, &h))
+
+		require.Equal(t, h, *HistogramProtoToFloatHistogram(p))
+	}
 }
 
 func TestStreamResponse(t *testing.T) {
