@@ -3151,7 +3151,7 @@ func TestRangeQuery(t *testing.T) {
 	}
 }
 
-func TestSparseHistogramRate(t *testing.T) {
+func TestNativeHistogramRate(t *testing.T) {
 	// TODO(beorn7): Integrate histograms into the PromQL testing framework
 	// and write more tests there.
 	test, err := NewTest(t, "")
@@ -3181,20 +3181,22 @@ func TestSparseHistogramRate(t *testing.T) {
 	require.Len(t, vector, 1)
 	actualHistogram := vector[0].H
 	expectedHistogram := &histogram.FloatHistogram{
-		Schema:          1,
-		ZeroThreshold:   0.001,
-		ZeroCount:       1. / 15.,
-		Count:           8. / 15.,
-		Sum:             1.226666666666667,
-		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
-		PositiveBuckets: []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
-		NegativeSpans:   []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
-		NegativeBuckets: []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
+		// TODO(beorn7): This should be GaugeType. Change it once supported by PromQL.
+		CounterResetHint: histogram.NotCounterReset,
+		Schema:           1,
+		ZeroThreshold:    0.001,
+		ZeroCount:        1. / 15.,
+		Count:            8. / 15.,
+		Sum:              1.226666666666667,
+		PositiveSpans:    []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+		PositiveBuckets:  []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
+		NegativeSpans:    []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+		NegativeBuckets:  []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
 	}
 	require.Equal(t, expectedHistogram, actualHistogram)
 }
 
-func TestSparseFloatHistogramRate(t *testing.T) {
+func TestNativeFloatHistogramRate(t *testing.T) {
 	// TODO(beorn7): Integrate histograms into the PromQL testing framework
 	// and write more tests there.
 	test, err := NewTest(t, "")
@@ -3224,20 +3226,22 @@ func TestSparseFloatHistogramRate(t *testing.T) {
 	require.Len(t, vector, 1)
 	actualHistogram := vector[0].H
 	expectedHistogram := &histogram.FloatHistogram{
-		Schema:          1,
-		ZeroThreshold:   0.001,
-		ZeroCount:       1. / 15.,
-		Count:           8. / 15.,
-		Sum:             1.226666666666667,
-		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
-		PositiveBuckets: []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
-		NegativeSpans:   []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
-		NegativeBuckets: []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
+		// TODO(beorn7): This should be GaugeType. Change it once supported by PromQL.
+		CounterResetHint: histogram.NotCounterReset,
+		Schema:           1,
+		ZeroThreshold:    0.001,
+		ZeroCount:        1. / 15.,
+		Count:            8. / 15.,
+		Sum:              1.226666666666667,
+		PositiveSpans:    []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+		PositiveBuckets:  []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
+		NegativeSpans:    []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+		NegativeBuckets:  []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
 	}
 	require.Equal(t, expectedHistogram, actualHistogram)
 }
 
-func TestSparseHistogram_HistogramCountAndSum(t *testing.T) {
+func TestNativeHistogram_HistogramCountAndSum(t *testing.T) {
 	// TODO(codesome): Integrate histograms into the PromQL testing framework
 	// and write more tests there.
 	h := &histogram.Histogram{
@@ -3316,7 +3320,7 @@ func TestSparseHistogram_HistogramCountAndSum(t *testing.T) {
 	}
 }
 
-func TestSparseHistogram_HistogramQuantile(t *testing.T) {
+func TestNativeHistogram_HistogramQuantile(t *testing.T) {
 	// TODO(codesome): Integrate histograms into the PromQL testing framework
 	// and write more tests there.
 	type subCase struct {
@@ -3552,7 +3556,7 @@ func TestSparseHistogram_HistogramQuantile(t *testing.T) {
 	}
 }
 
-func TestSparseHistogram_HistogramFraction(t *testing.T) {
+func TestNativeHistogram_HistogramFraction(t *testing.T) {
 	// TODO(codesome): Integrate histograms into the PromQL testing framework
 	// and write more tests there.
 	type subCase struct {
@@ -3987,7 +3991,7 @@ func TestSparseHistogram_HistogramFraction(t *testing.T) {
 	}
 }
 
-func TestSparseHistogram_Sum_Count_AddOperator(t *testing.T) {
+func TestNativeHistogram_Sum_Count_AddOperator(t *testing.T) {
 	// TODO(codesome): Integrate histograms into the PromQL testing framework
 	// and write more tests there.
 	cases := []struct {

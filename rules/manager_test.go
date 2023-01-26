@@ -68,6 +68,7 @@ func TestAlertingRule(t *testing.T) {
 		"HTTPRequestRateLow",
 		expr,
 		time.Minute,
+		0,
 		labels.FromStrings("severity", "{{\"c\"}}ritical"),
 		labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
 	)
@@ -213,6 +214,7 @@ func TestForStateAddSamples(t *testing.T) {
 				"HTTPRequestRateLow",
 				expr,
 				time.Minute,
+				0,
 				labels.FromStrings("severity", "{{\"c\"}}ritical"),
 				labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
 			)
@@ -389,6 +391,7 @@ func TestForStateRestore(t *testing.T) {
 		"HTTPRequestRateLow",
 		expr,
 		alertForDuration,
+		0,
 		labels.FromStrings("severity", "critical"),
 		labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
 	)
@@ -455,6 +458,7 @@ func TestForStateRestore(t *testing.T) {
 			"HTTPRequestRateLow",
 			expr,
 			alertForDuration,
+			0,
 			labels.FromStrings("severity", "critical"),
 			labels.EmptyLabels(), labels.EmptyLabels(), "", false, nil,
 		)
@@ -630,13 +634,13 @@ func readSeriesSet(ss storage.SeriesSet) (map[string][]promql.Point, error) {
 func TestCopyState(t *testing.T) {
 	oldGroup := &Group{
 		rules: []Rule{
-			NewAlertingRule("alert", nil, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
+			NewAlertingRule("alert", nil, 0, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
 			NewRecordingRule("rule1", nil, labels.EmptyLabels()),
 			NewRecordingRule("rule2", nil, labels.EmptyLabels()),
 			NewRecordingRule("rule3", nil, labels.FromStrings("l1", "v1")),
 			NewRecordingRule("rule3", nil, labels.FromStrings("l1", "v2")),
 			NewRecordingRule("rule3", nil, labels.FromStrings("l1", "v3")),
-			NewAlertingRule("alert2", nil, 0, labels.FromStrings("l2", "v1"), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
+			NewAlertingRule("alert2", nil, 0, 0, labels.FromStrings("l2", "v1"), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
 		},
 		seriesInPreviousEval: []map[string]labels.Labels{
 			{},
@@ -655,10 +659,10 @@ func TestCopyState(t *testing.T) {
 			NewRecordingRule("rule3", nil, labels.FromStrings("l1", "v0")),
 			NewRecordingRule("rule3", nil, labels.FromStrings("l1", "v1")),
 			NewRecordingRule("rule3", nil, labels.FromStrings("l1", "v2")),
-			NewAlertingRule("alert", nil, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
+			NewAlertingRule("alert", nil, 0, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
 			NewRecordingRule("rule1", nil, labels.EmptyLabels()),
-			NewAlertingRule("alert2", nil, 0, labels.FromStrings("l2", "v0"), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
-			NewAlertingRule("alert2", nil, 0, labels.FromStrings("l2", "v1"), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
+			NewAlertingRule("alert2", nil, 0, 0, labels.FromStrings("l2", "v0"), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
+			NewAlertingRule("alert2", nil, 0, 0, labels.FromStrings("l2", "v1"), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
 			NewRecordingRule("rule4", nil, labels.EmptyLabels()),
 		},
 		seriesInPreviousEval: make([]map[string]labels.Labels, 8),
@@ -1127,7 +1131,7 @@ func TestNotify(t *testing.T) {
 
 	expr, err := parser.ParseExpr("a > 1")
 	require.NoError(t, err)
-	rule := NewAlertingRule("aTooHigh", expr, 0, labels.Labels{}, labels.Labels{}, labels.EmptyLabels(), "", true, log.NewNopLogger())
+	rule := NewAlertingRule("aTooHigh", expr, 0, 0, labels.Labels{}, labels.Labels{}, labels.EmptyLabels(), "", true, log.NewNopLogger())
 	group := NewGroup(GroupOptions{
 		Name:          "alert",
 		Interval:      time.Second,
@@ -1399,7 +1403,7 @@ func TestGroupHasAlertingRules(t *testing.T) {
 			group: &Group{
 				name: "HasAlertingRule",
 				rules: []Rule{
-					NewAlertingRule("alert", nil, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
+					NewAlertingRule("alert", nil, 0, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
 					NewRecordingRule("record", nil, labels.EmptyLabels()),
 				},
 			},

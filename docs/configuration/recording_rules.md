@@ -123,6 +123,10 @@ expr: <string>
 # Alerts which have not yet fired for long enough are considered pending.
 [ for: <duration> | default = 0s ]
 
+# How long an alert will continue firing after the condition that triggered it
+# has cleared.
+[ keep_firing_for: <duration> | default = 0s ]
+
 # Labels to add or overwrite for each alert.
 labels:
   [ <labelname>: <tmpl_string> ]

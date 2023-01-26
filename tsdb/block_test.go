@@ -635,6 +635,16 @@ func genHistogramSeries(totalSeries, labelCount int, mint, maxt, step int64, flo
 			},
 			PositiveBuckets: []int64{int64(ts + 1), 1, -1, 0},
 		}
+		if ts != mint {
+			// By setting the counter reset hint to "no counter
+			// reset" for all histograms but the first, we cover the
+			// most common cases. If the series is manipulated later
+			// or spans more than one block when ingested into the
+			// storage, the hint has to be adjusted. Note that the
+			// storage itself treats this particular hint the same
+			// as "unknown".
+			h.CounterResetHint = histogram.NotCounterReset
+		}
 		if floatHistogram {
 			return sample{t: ts, fh: h.ToFloat()}
 		}
@@ -663,6 +673,13 @@ func genHistogramAndFloatSeries(totalSeries, labelCount int, mint, maxt, step in
 					{Offset: 1, Length: 2},
 				},
 				PositiveBuckets: []int64{int64(ts + 1), 1, -1, 0},
+			}
+			if count > 1 && count%5 != 1 {
+				// Same rationale for this as above in
+				// genHistogramSeries, just that we have to be
+				// smarter to find out if the previous sample
+				// was a histogram, too.
+				h.CounterResetHint = histogram.NotCounterReset
 			}
 			if floatHistogram {
 				s = sample{t: ts, fh: h.ToFloat()}

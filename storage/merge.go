@@ -440,6 +440,10 @@ type chainSampleIterator struct {
 
 	curr  chunkenc.Iterator
 	lastT int64
+
+	// Whether the previous and the current sample are direct neighbors
+	// within the same base iterator.
+	consecutive bool
 }
 
 // Return a chainSampleIterator initialized for length entries, re-using the memory from it if possible.
@@ -485,6 +489,9 @@ func (c *chainSampleIterator) Seek(t int64) chunkenc.ValueType {
 	if c.curr != nil && c.lastT >= t {
 		return c.curr.Seek(c.lastT)
 	}
+	// Don't bother to find out if the next sample is consecutive. Callers
+	// of Seek usually aren't interested anyway.
+	c.consecutive = false
 	c.h = samplesIteratorHeap{}
 	for _, iter := range c.iterators {
 		if iter.Seek(t) != chunkenc.ValNone {
@@ -511,14 +518,30 @@ func (c *chainSampleIterator) AtHistogram() (int64, *histogram.Histogram) {
 	if c.curr == nil {
 		panic("chainSampleIterator.AtHistogram called before first .Next or after .Next returned false.")
 	}
-	return c.curr.AtHistogram()
+	t, h := c.curr.AtHistogram()
+	// If the current sample is not consecutive with the previous one, we
+	// cannot be sure anymore that there was no counter reset.
+	if !c.consecutive && h.CounterResetHint == histogram.NotCounterReset {
+		h.CounterResetHint = histogram.UnknownCounterReset
+	}
+	return t, h
 }
 
 func (c *chainSampleIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
 	if c.curr == nil {
 		panic("chainSampleIterator.AtFloatHistogram called before first .Next or after .Next returned false.")
 	}
-	return c.curr.AtFloatHistogram()
+	t, fh := c.curr.AtFloatHistogram()
+	// If the current sample is not consecutive with the previous one, we
+	// cannot be sure anymore about counter resets for counter histograms.
+	// TODO(beorn7): If a `NotCounterReset` sample is followed by a
+	// non-consecutive `CounterReset` sample, we could keep the hint as
+	// `CounterReset`. But then we needed to track the previous sample
+	// in more detail, which might not be worth it.
+	if !c.consecutive && fh.CounterResetHint != histogram.GaugeType {
+		fh.CounterResetHint = histogram.UnknownCounterReset
+	}
+	return t, fh
 }
 
 func (c *chainSampleIterator) AtT() int64 {
@@ -529,7 +552,13 @@ func (c *chainSampleIterator) AtT() int64 {
 }
 
 func (c *chainSampleIterator) Next() chunkenc.ValueType {
+	var (
+		currT           int64
+		currValueType   chunkenc.ValueType
+		iteratorChanged bool
+	)
 	if c.h == nil {
+		iteratorChanged = true
 		c.h = samplesIteratorHeap{}
 		// We call c.curr.Next() as the first thing below.
 		// So, we don't call Next() on it here.
@@ -545,8 +574,6 @@ func (c *chainSampleIterator) Next() chunkenc.ValueType {
 		return chunkenc.ValNone
 	}
 
-	var currT int64
-	var currValueType chunkenc.ValueType
 	for {
 		currValueType = c.curr.Next()
 		if currValueType != chunkenc.ValNone {
@@ -576,6 +603,7 @@ func (c *chainSampleIterator) Next() chunkenc.ValueType {
 		}
 
 		c.curr = heap.Pop(&c.h).(chunkenc.Iterator)
+		iteratorChanged = true
 		currT = c.curr.AtT()
 		currValueType = c.curr.Seek(currT)
 		if currT != c.lastT {
@@ -583,6 +611,7 @@ func (c *chainSampleIterator) Next() chunkenc.ValueType {
 		}
 	}
 
+	c.consecutive = !iteratorChanged
 	c.lastT = currT
 	return currValueType
 }
