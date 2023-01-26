@@ -916,6 +916,7 @@ func TestAlertingEvalWithOrigin(t *testing.T) {
 	rule := NewAlertingRule(
 		name,
 		expr,
+		time.Second,
 		time.Minute,
 		lbs,
 		nil,
