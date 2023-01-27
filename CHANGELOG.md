@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.42.0-rc.0 / 2023-01-26
+
+* [FEATURE] Add 'keep_firing_for' field to alerting rules. #11827
+* [FEATURE] Promtool: Add support of selecting timeseries for TSDB dump. #11872
+* [ENHANCEMENT] Agent: Native histogram support. #11842
+* [ENHANCEMENT] Histograms: Return actually useful counter reset hints. #11864
+* [ENHANCEMENT] SD: Add container ID as a meta label for pod targets for Kubernetes. #11844
+* [ENHANCEMENT] SD: Add VM size label to azure service discovery. #11650
+* [ENHANCEMENT] Support native histograms in federation. #11830
+* [ENHANCEMENT] TSDB: Add gauge histogram support. #11783 #11840
+* [ENHANCEMENT] TSDB: Support FloatHistogram. #11522 #11817
+* [ENHANCEMENT] UI: Show individual scrape pools on /targets page. #11142
+
 ## 2.41.0 / 2022-12-20
 
 * [FEATURE] Relabeling: Add `keepequal` and `dropequal` relabel actions. #11564
@@ -61,7 +74,7 @@ Your existing histograms won't switch to native histograms until `NativeHistogra
 * [ENHANCEMENT] Kubernetes SD: Use protobuf encoding. #11353
 * [ENHANCEMENT] TSDB: Use golang.org/x/exp/slices for improved sorting speed. #11054 #11318 #11380
 * [ENHANCEMENT] Consul SD: Add enterprise admin partitions. Adds `__meta_consul_partition` label. Adds `partition` config in `consul_sd_config`. #11482
-* [BUGFIX] API: Fix API error codes for `/api/v1/labels` and `/api/v1/series`. #11356 
+* [BUGFIX] API: Fix API error codes for `/api/v1/labels` and `/api/v1/series`. #11356
 
 ## 2.39.2 / 2022-11-09
 
