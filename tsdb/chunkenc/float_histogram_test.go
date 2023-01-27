@@ -66,7 +66,9 @@ func TestFloatHistogramChunkSameBuckets(t *testing.T) {
 	h.PositiveBuckets = []int64{5, -2, 1, -2} // counts: 5, 3, 4, 2 (total 14)
 	h.NegativeBuckets = []int64{4, -1, 1, -1} // counts: 4, 3, 4, 4 (total 15)
 	app.AppendFloatHistogram(ts, h.ToFloat())
-	exp = append(exp, floatResult{t: ts, h: h.ToFloat()})
+	expH := h.ToFloat()
+	expH.CounterResetHint = histogram.NotCounterReset
+	exp = append(exp, floatResult{t: ts, h: expH})
 	require.Equal(t, 2, c.NumSamples())
 
 	// Add update with new appender.
@@ -81,7 +83,9 @@ func TestFloatHistogramChunkSameBuckets(t *testing.T) {
 	h.PositiveBuckets = []int64{6, 1, -3, 6} // counts: 6, 7, 4, 10 (total 27)
 	h.NegativeBuckets = []int64{5, 1, -2, 3} // counts: 5, 6, 4, 7 (total 22)
 	app.AppendFloatHistogram(ts, h.ToFloat())
-	exp = append(exp, floatResult{t: ts, h: h.ToFloat()})
+	expH = h.ToFloat()
+	expH.CounterResetHint = histogram.NotCounterReset
+	exp = append(exp, floatResult{t: ts, h: expH})
 	require.Equal(t, 3, c.NumSamples())
 
 	// 1. Expand iterator in simple case.
@@ -138,7 +142,7 @@ func TestFloatHistogramChunkSameBuckets(t *testing.T) {
 	require.Equal(t, ValNone, it4.Seek(exp[len(exp)-1].t+1))
 }
 
-// Mimics the scenario described for compareSpans().
+// Mimics the scenario described for expandSpansForward.
 func TestFloatHistogramChunkBucketChanges(t *testing.T) {
 	c := Chunk(NewFloatHistogramChunk())
 
@@ -209,9 +213,11 @@ func TestFloatHistogramChunkBucketChanges(t *testing.T) {
 	h1.PositiveBuckets = []int64{6, -3, -3, 3, -3, 0, 2, 2, 1, -5, 1}
 	h1.NegativeSpans = h2.NegativeSpans
 	h1.NegativeBuckets = []int64{0, 1}
+	expH2 := h2.ToFloat()
+	expH2.CounterResetHint = histogram.NotCounterReset
 	exp := []floatResult{
 		{t: ts1, h: h1.ToFloat()},
-		{t: ts2, h: h2.ToFloat()},
+		{t: ts2, h: expH2},
 	}
 	it := c.Iterator(nil)
 	var act []floatResult

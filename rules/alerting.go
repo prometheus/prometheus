@@ -83,11 +83,12 @@ type Alert struct {
 	Value float64
 	// The interval during which the condition of this alert held true.
 	// ResolvedAt will be 0 to indicate a still active alert.
-	ActiveAt   time.Time
-	FiredAt    time.Time
-	ResolvedAt time.Time
-	LastSentAt time.Time
-	ValidUntil time.Time
+	ActiveAt        time.Time
+	FiredAt         time.Time
+	ResolvedAt      time.Time
+	LastSentAt      time.Time
+	ValidUntil      time.Time
+	KeepFiringSince time.Time
 }
 
 func (a *Alert) needsSending(ts time.Time, resendDelay time.Duration) bool {
@@ -112,6 +113,9 @@ type AlertingRule struct {
 	// The duration for which a labelset needs to persist in the expression
 	// output vector before an alert transitions from Pending to Firing state.
 	holdDuration time.Duration
+	// The amount of time that the alert should remain firing after the
+	// resolution.
+	keepFiringFor time.Duration
 	// Extra labels to attach to the resulting alert sample vectors.
 	labels labels.Labels
 	// Non-identifying key/value pairs.
@@ -142,7 +146,7 @@ type AlertingRule struct {
 
 // NewAlertingRule constructs a new AlertingRule.
 func NewAlertingRule(
-	name string, vec parser.Expr, hold time.Duration,
+	name string, vec parser.Expr, hold, keepFiringFor time.Duration,
 	labels, annotations, externalLabels labels.Labels, externalURL string,
 	restored bool, logger log.Logger,
 ) *AlertingRule {
@@ -152,6 +156,7 @@ func NewAlertingRule(
 		name:                name,
 		vector:              vec,
 		holdDuration:        hold,
+		keepFiringFor:       keepFiringFor,
 		labels:              labels,
 		annotations:         annotations,
 		externalLabels:      el,
@@ -199,6 +204,12 @@ func (r *AlertingRule) Query() parser.Expr {
 // HoldDuration returns the hold duration of the alerting rule.
 func (r *AlertingRule) HoldDuration() time.Duration {
 	return r.holdDuration
+}
+
+// KeepFiringFor returns the duration an alerting rule should keep firing for
+// after resolution.
+func (r *AlertingRule) KeepFiringFor() time.Duration {
+	return r.keepFiringFor
 }
 
 // Labels returns the labels of the alerting rule.
@@ -404,16 +415,36 @@ func (r *AlertingRule) Eval(ctx context.Context, evalDelay time.Duration, ts tim
 	// Check if any pending alerts should be removed or fire now. Write out alert timeseries.
 	for fp, a := range r.active {
 		if _, ok := resultFPs[fp]; !ok {
+			// There is no firing alerts for this fingerprint. The alert is no
+			// longer firing.
+
+			// Use keepFiringFor value to determine if the alert should keep
+			// firing.
+			var keepFiring bool
+			if a.State == StateFiring && r.keepFiringFor > 0 {
+				if a.KeepFiringSince.IsZero() {
+					a.KeepFiringSince = ts
+				}
+				if ts.Sub(a.KeepFiringSince) < r.keepFiringFor {
+					keepFiring = true
+				}
+			}
+
 			// If the alert was previously firing, keep it around for a given
 			// retention time so it is reported as resolved to the AlertManager.
 			if a.State == StatePending || (!a.ResolvedAt.IsZero() && ts.Sub(a.ResolvedAt) > resolvedRetention) {
 				delete(r.active, fp)
 			}
-			if a.State != StateInactive {
+			if a.State != StateInactive && !keepFiring {
 				a.State = StateInactive
 				a.ResolvedAt = ts
 			}
-			continue
+			if !keepFiring {
+				continue
+			}
+		} else {
+			// The alert is firing, reset keepFiringSince.
+			a.KeepFiringSince = time.Time{}
 		}
 		numActivePending++
 
@@ -512,11 +543,12 @@ func (r *AlertingRule) sendAlerts(ctx context.Context, ts time.Time, resendDelay
 
 func (r *AlertingRule) String() string {
 	ar := rulefmt.Rule{
-		Alert:       r.name,
-		Expr:        r.vector.String(),
-		For:         model.Duration(r.holdDuration),
-		Labels:      r.labels.Map(),
-		Annotations: r.annotations.Map(),
+		Alert:         r.name,
+		Expr:          r.vector.String(),
+		For:           model.Duration(r.holdDuration),
+		KeepFiringFor: model.Duration(r.keepFiringFor),
+		Labels:        r.labels.Map(),
+		Annotations:   r.annotations.Map(),
 	}
 
 	byt, err := yaml.Marshal(ar)

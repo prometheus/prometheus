@@ -197,7 +197,6 @@ func BenchmarkLoadWAL(b *testing.B) {
 				continue
 			}
 			lastExemplarsPerSeries = exemplarsPerSeries
-			// fmt.Println("exemplars per series: ", exemplarsPerSeries)
 			b.Run(fmt.Sprintf("batches=%d,seriesPerBatch=%d,samplesPerSeries=%d,exemplarsPerSeries=%d,mmappedChunkT=%d", c.batches, c.seriesPerBatch, c.samplesPerSeries, exemplarsPerSeries, c.mmappedChunkT),
 				func(b *testing.B) {
 					dir := b.TempDir()
@@ -2905,17 +2904,13 @@ func TestAppendHistogram(t *testing.T) {
 			ingestTs := int64(0)
 			app := head.Appender(context.Background())
 
-			type timedHistogram struct {
-				t int64
-				h *histogram.Histogram
-			}
-			expHistograms := make([]timedHistogram, 0, 2*numHistograms)
+			expHistograms := make([]tsdbutil.Sample, 0, 2*numHistograms)
 
 			// Counter integer histograms.
 			for _, h := range GenerateTestHistograms(numHistograms) {
 				_, err := app.AppendHistogram(0, l, ingestTs, h, nil)
 				require.NoError(t, err)
-				expHistograms = append(expHistograms, timedHistogram{ingestTs, h})
+				expHistograms = append(expHistograms, sample{t: ingestTs, h: h})
 				ingestTs++
 				if ingestTs%50 == 0 {
 					require.NoError(t, app.Commit())
@@ -2927,7 +2922,7 @@ func TestAppendHistogram(t *testing.T) {
 			for _, h := range GenerateTestGaugeHistograms(numHistograms) {
 				_, err := app.AppendHistogram(0, l, ingestTs, h, nil)
 				require.NoError(t, err)
-				expHistograms = append(expHistograms, timedHistogram{ingestTs, h})
+				expHistograms = append(expHistograms, sample{t: ingestTs, h: h})
 				ingestTs++
 				if ingestTs%50 == 0 {
 					require.NoError(t, app.Commit())
@@ -2935,17 +2930,13 @@ func TestAppendHistogram(t *testing.T) {
 				}
 			}
 
-			type timedFloatHistogram struct {
-				t int64
-				h *histogram.FloatHistogram
-			}
-			expFloatHistograms := make([]timedFloatHistogram, 0, 2*numHistograms)
+			expFloatHistograms := make([]tsdbutil.Sample, 0, 2*numHistograms)
 
 			// Counter float histograms.
 			for _, fh := range GenerateTestFloatHistograms(numHistograms) {
 				_, err := app.AppendHistogram(0, l, ingestTs, nil, fh)
 				require.NoError(t, err)
-				expFloatHistograms = append(expFloatHistograms, timedFloatHistogram{ingestTs, fh})
+				expFloatHistograms = append(expFloatHistograms, sample{t: ingestTs, fh: fh})
 				ingestTs++
 				if ingestTs%50 == 0 {
 					require.NoError(t, app.Commit())
@@ -2957,7 +2948,7 @@ func TestAppendHistogram(t *testing.T) {
 			for _, fh := range GenerateTestGaugeFloatHistograms(numHistograms) {
 				_, err := app.AppendHistogram(0, l, ingestTs, nil, fh)
 				require.NoError(t, err)
-				expFloatHistograms = append(expFloatHistograms, timedFloatHistogram{ingestTs, fh})
+				expFloatHistograms = append(expFloatHistograms, sample{t: ingestTs, fh: fh})
 				ingestTs++
 				if ingestTs%50 == 0 {
 					require.NoError(t, app.Commit())
@@ -2980,20 +2971,28 @@ func TestAppendHistogram(t *testing.T) {
 			require.False(t, ss.Next())
 
 			it := s.Iterator(nil)
-			actHistograms := make([]timedHistogram, 0, len(expHistograms))
-			actFloatHistograms := make([]timedFloatHistogram, 0, len(expFloatHistograms))
+			actHistograms := make([]tsdbutil.Sample, 0, len(expHistograms))
+			actFloatHistograms := make([]tsdbutil.Sample, 0, len(expFloatHistograms))
 			for typ := it.Next(); typ != chunkenc.ValNone; typ = it.Next() {
 				if typ == chunkenc.ValHistogram {
 					ts, h := it.AtHistogram()
-					actHistograms = append(actHistograms, timedHistogram{ts, h})
+					actHistograms = append(actHistograms, sample{t: ts, h: h})
 				} else if typ == chunkenc.ValFloatHistogram {
 					ts, fh := it.AtFloatHistogram()
-					actFloatHistograms = append(actFloatHistograms, timedFloatHistogram{ts, fh})
+					actFloatHistograms = append(actFloatHistograms, sample{t: ts, fh: fh})
 				}
 			}
 
-			require.Equal(t, expHistograms, actHistograms)
-			require.Equal(t, expFloatHistograms, actFloatHistograms)
+			compareSeries(
+				t,
+				map[string][]tsdbutil.Sample{"dummy": expHistograms},
+				map[string][]tsdbutil.Sample{"dummy": actHistograms},
+			)
+			compareSeries(
+				t,
+				map[string][]tsdbutil.Sample{"dummy": expFloatHistograms},
+				map[string][]tsdbutil.Sample{"dummy": actFloatHistograms},
+			)
 		})
 	}
 }
@@ -3090,7 +3089,12 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 			h.NegativeBuckets = h.PositiveBuckets
 			_, err := app.AppendHistogram(0, s2, int64(ts), h, nil)
 			require.NoError(t, err)
-			exp[k2] = append(exp[k2], sample{t: int64(ts), h: h.Copy()})
+			eh := h.Copy()
+			if !gauge && ts > 30 && (ts-10)%20 == 1 {
+				// Need "unknown" hint after float sample.
+				eh.CounterResetHint = histogram.UnknownCounterReset
+			}
+			exp[k2] = append(exp[k2], sample{t: int64(ts), h: eh})
 			if ts%20 == 0 {
 				require.NoError(t, app.Commit())
 				app = head.Appender(context.Background())
@@ -3122,7 +3126,12 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 			h.NegativeBuckets = h.PositiveBuckets
 			_, err := app.AppendHistogram(0, s2, int64(ts), nil, h)
 			require.NoError(t, err)
-			exp[k2] = append(exp[k2], sample{t: int64(ts), fh: h.Copy()})
+			eh := h.Copy()
+			if !gauge && ts > 30 && (ts-10)%20 == 1 {
+				// Need "unknown" hint after float sample.
+				eh.CounterResetHint = histogram.UnknownCounterReset
+			}
+			exp[k2] = append(exp[k2], sample{t: int64(ts), fh: eh})
 			if ts%20 == 0 {
 				require.NoError(t, app.Commit())
 				app = head.Appender(context.Background())
@@ -3160,7 +3169,7 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 		q, err := NewBlockQuerier(head, head.MinTime(), head.MaxTime())
 		require.NoError(t, err)
 		act := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "a", "b.*"))
-		require.Equal(t, exp, act)
+		compareSeries(t, exp, act)
 	}
 	testQuery()
 
@@ -3577,6 +3586,11 @@ func testHistogramStaleSampleHelper(t *testing.T, floatHistogram bool) {
 					ah.fh.Sum = 0
 					eh.fh = eh.fh.Copy()
 					eh.fh.Sum = 0
+				} else if i > 0 {
+					prev := expHistograms[i-1]
+					if prev.fh == nil || value.IsStaleNaN(prev.fh.Sum) {
+						eh.fh.CounterResetHint = histogram.UnknownCounterReset
+					}
 				}
 				require.Equal(t, eh, ah)
 			} else {
@@ -3587,6 +3601,11 @@ func testHistogramStaleSampleHelper(t *testing.T, floatHistogram bool) {
 					ah.h.Sum = 0
 					eh.h = eh.h.Copy()
 					eh.h.Sum = 0
+				} else if i > 0 {
+					prev := expHistograms[i-1]
+					if prev.h == nil || value.IsStaleNaN(prev.h.Sum) {
+						eh.h.CounterResetHint = histogram.UnknownCounterReset
+					}
 				}
 				require.Equal(t, eh, ah)
 			}
@@ -3801,8 +3820,10 @@ func TestAppendingDifferentEncodingToSameSeries(t *testing.T) {
 		// If this is empty, samples above will be taken instead of this.
 		addToExp []tsdbutil.Sample
 	}{
+		// Histograms that end up in the expected samples are copied here so that we
+		// can independently set the CounterResetHint later.
 		{
-			samples:   []tsdbutil.Sample{sample{t: 100, h: hists[1]}},
+			samples:   []tsdbutil.Sample{sample{t: 100, h: hists[0].Copy()}},
 			expChunks: 1,
 		},
 		{
@@ -3810,23 +3831,23 @@ func TestAppendingDifferentEncodingToSameSeries(t *testing.T) {
 			expChunks: 2,
 		},
 		{
-			samples:   []tsdbutil.Sample{sample{t: 210, fh: floatHists[1]}},
+			samples:   []tsdbutil.Sample{sample{t: 210, fh: floatHists[0].Copy()}},
 			expChunks: 3,
 		},
 		{
-			samples:   []tsdbutil.Sample{sample{t: 220, h: hists[1]}},
+			samples:   []tsdbutil.Sample{sample{t: 220, h: hists[1].Copy()}},
 			expChunks: 4,
 		},
 		{
-			samples:   []tsdbutil.Sample{sample{t: 230, fh: floatHists[3]}},
+			samples:   []tsdbutil.Sample{sample{t: 230, fh: floatHists[3].Copy()}},
 			expChunks: 5,
 		},
 		{
-			samples: []tsdbutil.Sample{sample{t: 100, h: hists[2]}},
+			samples: []tsdbutil.Sample{sample{t: 100, h: hists[2].Copy()}},
 			err:     storage.ErrOutOfOrderSample,
 		},
 		{
-			samples:   []tsdbutil.Sample{sample{t: 300, h: hists[3]}},
+			samples:   []tsdbutil.Sample{sample{t: 300, h: hists[3].Copy()}},
 			expChunks: 6,
 		},
 		{
@@ -3834,7 +3855,7 @@ func TestAppendingDifferentEncodingToSameSeries(t *testing.T) {
 			err:     storage.ErrOutOfOrderSample,
 		},
 		{
-			samples: []tsdbutil.Sample{sample{t: 100, fh: floatHists[4]}},
+			samples: []tsdbutil.Sample{sample{t: 100, fh: floatHists[4].Copy()}},
 			err:     storage.ErrOutOfOrderSample,
 		},
 		{
@@ -3860,7 +3881,7 @@ func TestAppendingDifferentEncodingToSameSeries(t *testing.T) {
 			},
 			addToExp: []tsdbutil.Sample{
 				sample{t: 800, v: 8},
-				sample{t: 900, h: hists[9]},
+				sample{t: 900, h: hists[9].Copy()},
 			},
 			expChunks: 8, // float64 added to old chunk, only 1 new for histograms.
 		},
@@ -3871,7 +3892,7 @@ func TestAppendingDifferentEncodingToSameSeries(t *testing.T) {
 				sample{t: 1100, h: hists[9]},
 			},
 			addToExp: []tsdbutil.Sample{
-				sample{t: 1100, h: hists[9]},
+				sample{t: 1100, h: hists[9].Copy()},
 			},
 			expChunks: 8,
 		},
@@ -3899,6 +3920,14 @@ func TestAppendingDifferentEncodingToSameSeries(t *testing.T) {
 			checkExpChunks(a.expChunks)
 		} else {
 			require.NoError(t, app.Rollback())
+		}
+	}
+	for i, s := range expResult[1:] {
+		switch {
+		case s.H() != nil && expResult[i].H() == nil:
+			s.(sample).h.CounterResetHint = histogram.UnknownCounterReset
+		case s.FH() != nil && expResult[i].FH() == nil:
+			s.(sample).fh.CounterResetHint = histogram.UnknownCounterReset
 		}
 	}
 

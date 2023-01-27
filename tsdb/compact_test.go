@@ -1629,17 +1629,31 @@ func TestHeadCompactionWithHistograms(t *testing.T) {
 
 			minute := func(m int) int64 { return int64(m) * time.Minute.Milliseconds() }
 			ctx := context.Background()
-			appendHistogram := func(lbls labels.Labels, from, to int, h *histogram.Histogram, exp *[]tsdbutil.Sample) {
+			appendHistogram := func(
+				lbls labels.Labels, from, to int, h *histogram.Histogram, exp *[]tsdbutil.Sample,
+			) {
 				t.Helper()
 				app := head.Appender(ctx)
 				for tsMinute := from; tsMinute <= to; tsMinute++ {
 					var err error
 					if floatTest {
 						_, err = app.AppendHistogram(0, lbls, minute(tsMinute), nil, h.ToFloat())
-						*exp = append(*exp, sample{t: minute(tsMinute), fh: h.ToFloat()})
+						efh := h.ToFloat()
+						if tsMinute == from {
+							efh.CounterResetHint = histogram.UnknownCounterReset
+						} else {
+							efh.CounterResetHint = histogram.NotCounterReset
+						}
+						*exp = append(*exp, sample{t: minute(tsMinute), fh: efh})
 					} else {
 						_, err = app.AppendHistogram(0, lbls, minute(tsMinute), h, nil)
-						*exp = append(*exp, sample{t: minute(tsMinute), h: h.Copy()})
+						eh := h.Copy()
+						if tsMinute == from {
+							eh.CounterResetHint = histogram.UnknownCounterReset
+						} else {
+							eh.CounterResetHint = histogram.NotCounterReset
+						}
+						*exp = append(*exp, sample{t: minute(tsMinute), h: eh})
 					}
 					require.NoError(t, err)
 				}
