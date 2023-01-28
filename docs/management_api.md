@@ -35,7 +35,7 @@ PUT  /-/reload
 POST /-/reload
 ```
 
-This endpoint triggers a reload of the Prometheus configuration and rule files. It's disabled by default and can be enabled via the `--web.enable-lifecycle` flag.
+This endpoint triggers a reloaded of the Prometheus configuration and rule files. It's disabled by default and can be enabled via the `--web.enable-lifecycle` flag.
 
 Alternatively, a configuration reload can be triggered by sending a `SIGHUP` to the Prometheus process.
 

@@ -17,7 +17,7 @@ To view all available command-line flags, run `./prometheus -h`.
 Prometheus can reload its configuration at runtime. If the new configuration
 is not well-formed, the changes will not be applied.
 A configuration reload is triggered by sending a `SIGHUP` to the Prometheus process or
-sending a HTTP POST request to the `/-/reload` endpoint (when the `--web.enable-lifecycle` flag is enabled).
+sending an HTTP POST request to the `/-/reload` endpoint (when the `--web.enable-lifecycle` flag is enabled).
 This will also reload any configured rule files.
 
 ## Configuration file

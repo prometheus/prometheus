@@ -79,13 +79,13 @@ The usual flow is to merge new features and changes into the main branch and to 
 
 If a bug fix got accidentally merged into main after non-bug-fix changes in main, the bug-fix commits have to be cherry-picked into the release branch, which then have to be merged back into main. Try to avoid that situation.
 
-Maintaining the release branches for older minor releases happens on a best effort basis.
+Maintaining the release branches for older minor releases happens on best effort basis.
 
 ### 0. Updating dependencies and promoting/demoting experimental features
 
 A few days before a major or minor release, consider updating the dependencies.
 
-Note that we use [Dependabot](.github/dependabot.yml) to continuously update most things automatically. Therefore, most dependencies should be up to date.
+Note that we use [Dependabot](.github/dependabot.yml) to continuously update most things automatically. Therefore, most dependencies should be up-to-date.
 Check the [dependencies GitHub label](https://github.com/prometheus/prometheus/labels/dependencies) to see if there are any pending updates.
 
 This bot currently does not manage `+incompatible` and `v0.0.0` in the version specifier for Go modules.

@@ -25,8 +25,8 @@ Other non-`2xx` codes may be returned for errors occurring before the API
 endpoint is reached.
 
 An array of warnings may be returned if there are errors that do
-not inhibit the request execution. All of the data that was successfully
-collected will be returned in the data field.
+not inhibit the request execution. All the data that was successfully
+collected will be returned to the data field.
 
 The JSON response envelope format is as follows:
 
@@ -659,7 +659,7 @@ $ curl 'http://localhost:9090/api/v1/targets?scrapePool=node_exporter'
 ## Rules
 
 The `/rules` API endpoint returns a list of alerting and recording rules that
-are currently loaded. In addition it returns the currently active alerts fired
+are currently loaded. In addition, it returns the currently active alerts fired
 by the Prometheus instance of each alerting rule.
 
 As the `/rules` endpoint is fairly new, it does not have the same stability

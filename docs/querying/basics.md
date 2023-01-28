@@ -319,7 +319,7 @@ effectively means that time series "disappear" from graphs at times where their
 latest collected sample is older than 5 minutes or after they are marked stale.
 
 Staleness will not be marked for time series that have timestamps included in
-their scrapes. Only the 5 minute threshold will be applied in that case.
+their scrapes. Only the 5-minute threshold will be applied in that case.
 
 ### Avoiding slow queries and overloads
 

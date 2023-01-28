@@ -8,7 +8,7 @@ sort_rank: 3
 
 Some functions have default arguments, e.g. `year(v=vector(time())
 instant-vector)`. This means that there is one argument `v` which is an instant
-vector, which if not provided it will default to the value of the expression
+vector, which is not provided it will default to the value of the expression
 `vector(time())`.
 
 _Notes about the experimental native histograms:_
@@ -312,7 +312,7 @@ returned. For φ > 1, `+Inf` is returned. For φ = `NaN`, `NaN` is returned.
 The following is only relevant for conventional histograms: If `b` contains
 fewer than two buckets, `NaN` is returned. The highest bucket must have an
 upper bound of `+Inf`. (Otherwise, `NaN` is returned.) If a quantile is located
-in the highest bucket, the upper bound of the second highest bucket is
+in the highest bucket, the upper bound of the second-highest bucket is
 returned. A lower limit of the lowest bucket is assumed to be 0 if the upper
 bound of that bucket is greater than
 0. In that case, the usual linear interpolation is applied within that

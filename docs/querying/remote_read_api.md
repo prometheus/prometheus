@@ -25,8 +25,8 @@ Other non-`2xx` codes may be returned for errors occurring before the API
 endpoint is reached.
 
 An array of warnings may be returned if there are errors that do
-not inhibit the request execution. All of the data that was successfully
-collected will be returned in the data field.
+not inhibit the request execution. All the data that was successfully
+collected will be returned to the data field.
 
 The JSON response envelope format is as follows:
 

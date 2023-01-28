@@ -113,7 +113,7 @@ groups:
       summary: High frontend request latency
 ```
 
-To help with the change, the `promtool` tool has a mode to automate the rules conversion.  Given a `.rules` file, it will output a `.rules.yml` file in the
+To help with the change, the `promtool` tool has a mode to automate the rules' conversion.  Given a `.rules` file, it will output a `.rules.yml` file in the
 new format. For example:
 
 ```
@@ -130,7 +130,7 @@ recommend you run a non-scraping Prometheus instance running at least version
 1.8.1 in parallel with your Prometheus 2.0 instance, and have the new server
 read existing data from the old one via the remote read protocol.
 
-Your Prometheus 1.8 instance should be started with the following flags and an
+Your Prometheus 1.8 instance should be started with the following flags and a
 config file containing only the `external_labels` setting (if any):
 
 ```

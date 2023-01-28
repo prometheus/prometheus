@@ -258,7 +258,7 @@ parameter, and the label value is the unique sample value. The value of each
 time series is the number of times that sample value was present.
 
 `topk` and `bottomk` are different from other aggregators in that a subset of
-the input samples, including the original labels, are returned in the result
+the input samples, including the original labels, are returned to the result
 vector. `by` and `without` are only used to bucket the input vector.
 
 `quantile` calculates the φ-quantile, the value that ranks at number φ*N among
@@ -317,7 +317,7 @@ histograms is still very limited.
 
 Logical/set binary operators work as expected even if histogram samples are
 involved. They only check for the existence of a vector element and don't
-change their behavior depending on the sample type of an element (float or
+change their behavior depending on the sample type of element (float or
 histogram).
 
 The binary `+` operator between two native histograms and the `sum` aggregation

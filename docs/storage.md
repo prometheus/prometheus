@@ -16,7 +16,7 @@ Prometheus's local time series database stores data in a custom, highly efficien
 Ingested samples are grouped into blocks of two hours. Each two-hour block consists
 of a directory containing a chunks subdirectory containing all the time series samples
 for that window of time, a metadata file, and an index file (which indexes metric names
-and labels to time series in the chunks directory). The samples in the chunks directory
+and labels to time series in the chunks' directory). The samples in the chunks directory
 are grouped together into one or more segment files of up to 512MB each by default. When series are
 deleted via the API, deletion records are stored in separate tombstone files (instead
 of deleting the data immediately from the chunk segments).
@@ -143,7 +143,7 @@ To learn more about existing integrations with remote storage systems, see the [
 
 ### Overview
 
-If a user wants to create blocks into the TSDB from data that is in [OpenMetrics](https://openmetrics.io/) format, they can do so using backfilling. However, they should be careful and note that it is not safe to backfill data from the last 3 hours (the current head block) as this time range may overlap with the current head block Prometheus is still mutating. Backfilling will create new TSDB blocks, each containing two hours of metrics data. This limits the memory requirements of block creation. Compacting the two hour blocks into larger blocks is later done by the Prometheus server itself.
+If a user wants to create blocks into the TSDB from data that is in [OpenMetrics](https://openmetrics.io/) format, they can do so using backfilling. However, they should be careful and note that it is not safe to backfill data from the last 3 hours (the current head block) as this time range may overlap with the current head block Prometheus is still mutating. Backfilling will create new TSDB blocks, each containing two hours of metrics data. This limits the memory requirements of block creation. Compacting the 2-hour blocks into larger blocks is later done by the Prometheus server itself.
 
 A typical use case is to migrate metrics data from a different monitoring system or time-series database to Prometheus. To do so, the user must first convert the source data into [OpenMetrics](https://openmetrics.io/)  format, which is the input format for the backfilling as described below.
 
