@@ -52,8 +52,8 @@ const (
 	// Default duration of a block in milliseconds.
 	DefaultBlockDuration = int64(2 * time.Hour / time.Millisecond)
 
-	// Interval for scheduled compaction for OOO head
-	OOOCompactInterval = 2 * time.Hour
+	// Default interval duration for out-of-order head compaction
+	DefaultOutOfOrderCompactInterval = 2 * time.Hour
 
 	// Block dir suffixes to make deletion and creation operations atomic.
 	// We decided to do suffixes instead of creating meta.json as last (or delete as first) one,
@@ -87,6 +87,7 @@ func DefaultOptions() *Options {
 		IsolationDisabled:          defaultIsolationDisabled,
 		HeadChunksWriteQueueSize:   chunks.DefaultWriteQueueSize,
 		OutOfOrderCapMax:           DefaultOutOfOrderCapMax,
+		OutOfOrderCompactInterval:  DefaultOutOfOrderCompactInterval,
 	}
 }
 
@@ -185,6 +186,10 @@ type Options struct {
 	// This can change during run-time, so this value from here should only be used
 	// while initialising.
 	OutOfOrderTimeWindow int64
+
+	// OutOfOrderCompactInterval specifies the interval for automatic compaction of
+	// out-of-order head block.
+	OutOfOrderCompactInterval time.Duration
 
 	// OutOfOrderCapMax is maximum capacity for OOO chunks (in samples).
 	// If it is <=0, the default value is assumed.
@@ -956,7 +961,10 @@ func (db *DB) run() {
 	defer close(db.donec)
 
 	backoff := time.Duration(0)
-	scheduledCompact := time.NewTimer(OOOCompactInterval)
+
+	// interval * 3 / 2 so that OOO compaction will happen around the same time as
+	// in-order compaction with default options
+	OOOScheduledCompact := time.NewTimer(db.opts.OutOfOrderCompactInterval * 3 / 2)
 
 	for {
 		select {
@@ -977,25 +985,36 @@ func (db *DB) run() {
 			case db.compactc <- struct{}{}:
 			default:
 			}
-		case <-scheduledCompact.C:
+		case <-OOOScheduledCompact.C:
+      OOOScheduledCompact.Reset(db.opts.OutOfOrderCompactInterval)
+
+      db.metrics.compactionsTriggered.Inc()
+
+      db.autoCompactMtx.Lock()
+      if db.autoCompact {
+        if err := db.CompactOOOHead(); err != nil {
+          level.Error(db.logger).Log("msg", "compaction failed", "err", "compact ooo head")
+        }
+      } else {
+        db.metrics.compactionsSkipped.Inc()
+      }
+      db.autoCompactMtx.Unlock()
 		case <-db.compactc:
-			scheduledCompact.Reset(OOOCompactInterval)
+      db.metrics.compactionsTriggered.Inc()
 
-			db.metrics.compactionsTriggered.Inc()
-
-			db.autoCompactMtx.Lock()
-			if db.autoCompact {
-				if err := db.Compact(); err != nil {
-					level.Error(db.logger).Log("msg", "compaction failed", "err", err)
-					backoff = exponential(backoff, 1*time.Second, 1*time.Minute)
-				} else {
-					backoff = 0
-				}
-			} else {
-				db.metrics.compactionsSkipped.Inc()
-			}
-			db.autoCompactMtx.Unlock()
-		case <-db.stopc:
+      db.autoCompactMtx.Lock()
+      if db.autoCompact {
+        if err := db.Compact(); err != nil {
+          level.Error(db.logger).Log("msg", "compaction failed", "err", err)
+          backoff = exponential(backoff, 1*time.Second, 1*time.Minute)
+        } else {
+          backoff = 0
+        }
+      } else {
+        db.metrics.compactionsSkipped.Inc()
+      }
+      db.autoCompactMtx.Unlock()
+      case <-db.stopc:
 			return
 		}
 	}
@@ -1174,10 +1193,6 @@ func (db *DB) Compact() (returnErr error) {
 			"duration", compactionDuration.String(),
 			"block_range", db.head.chunkRange.Load(),
 		)
-	}
-
-	if err := db.compactOOOHead(); err != nil {
-		return errors.Wrap(err, "compact ooo head")
 	}
 
 	return db.compactBlocks()

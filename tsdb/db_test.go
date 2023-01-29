@@ -4638,6 +4638,38 @@ func TestOOODisabled(t *testing.T) {
 	require.Nil(t, ms.ooo)
 }
 
+func TestOOOScheduledCompact(t *testing.T) {
+	opts := DefaultOptions()
+  opts.OutOfOrderTimeWindow = 30 * time.Minute.Milliseconds()
+	opts.OutOfOrderCompactInterval = 2 * time.Second
+	db := openTestDB(t, opts, nil)
+	t.Cleanup(func() {
+		require.NoError(t, db.Close())
+	})
+
+	s1 := labels.FromStrings("foo", "bar1")
+	addSamples := func(t *testing.T, db *DB, fromMins, toMins int64) {
+		app := db.Appender(context.Background())
+		for min := fromMins; min <= toMins; min++ {
+			ts := min * time.Minute.Milliseconds()
+			_, err := app.Append(0, s1, ts, float64(ts))
+      require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+	}
+
+  // add in-order samples
+  addSamples(t, db, 300, 490)
+  require.Equal(t, 0, len(db.Blocks()))
+
+  // add out-of-order samples
+  addSamples(t, db, 480, 480)
+  require.Equal(t, 0, len(db.Blocks()))
+
+  time.Sleep(3 * time.Second)
+  require.Equal(t, 1, len(db.Blocks()))
+}
+
 func TestWBLAndMmapReplay(t *testing.T) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 30
@@ -5538,6 +5570,7 @@ func TestNoGapAfterRestartWithOOO(t *testing.T) {
 
 			// We get 2 blocks. 1 from OOO, 1 from in-order.
 			require.NoError(t, db.Compact())
+      require.NoError(t, db.CompactOOOHead())
 			verifyBlockRanges := func() {
 				blocks := db.Blocks()
 				require.Equal(t, len(c.blockRanges), len(blocks))
@@ -5738,12 +5771,14 @@ func TestDiskFillingUpAfterDisablingOOO(t *testing.T) {
 
 	checkMmapFileContents([]string{"000001", "000002"}, nil)
 	require.NoError(t, db.Compact())
+	require.NoError(t, db.CompactOOOHead())
 	checkMmapFileContents([]string{"000002"}, []string{"000001"})
 	require.Nil(t, ms.ooo, "OOO mmap chunk was not compacted")
 
 	addSamples(501, 650)
 	checkMmapFileContents([]string{"000002", "000003"}, []string{"000001"})
 	require.NoError(t, db.Compact())
+	require.NoError(t, db.CompactOOOHead())
 	checkMmapFileContents(nil, []string{"000001", "000002", "000003"})
 
 	// Verify that WBL is empty.
