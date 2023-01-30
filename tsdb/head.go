@@ -176,8 +176,6 @@ type HeadOptions struct {
 	PostingsForMatchersCacheTTL   time.Duration
 	PostingsForMatchersCacheSize  int
 	PostingsForMatchersCacheForce bool
-
-	ShardFunc func(l labels.Labels) uint64 // Compute hash of labels to divide series into shards.
 }
 
 const (
@@ -1568,12 +1566,8 @@ func (h *Head) getOrCreate(hash uint64, lset labels.Labels) (*memSeries, bool, e
 }
 
 func (h *Head) getOrCreateWithID(id chunks.HeadSeriesRef, hash uint64, lset labels.Labels) (*memSeries, bool, error) {
-	shardHash := hash
-	if h.opts.ShardFunc != nil {
-		shardHash = h.opts.ShardFunc(lset)
-	}
 	s, created, err := h.series.getOrSet(hash, lset, func() *memSeries {
-		return newMemSeries(lset, id, shardHash, h.opts.ChunkEndTimeVariance, h.opts.IsolationDisabled)
+		return newMemSeries(lset, id, labels.StableHash(lset), h.opts.ChunkEndTimeVariance, h.opts.IsolationDisabled)
 	})
 	if err != nil {
 		return nil, false, err
@@ -1862,8 +1856,10 @@ type memSeries struct {
 
 	ref  chunks.HeadSeriesRef
 	lset labels.Labels
-	hash uint64
 	meta *metadata.Metadata
+
+	// Series labels hash to use for sharding purposes.
+	shardHash uint64
 
 	// Immutable chunks on disk that have not yet gone into a block, in order of ascending time stamps.
 	// When compaction runs, chunks get moved into a block and all pointers are shifted like so:
@@ -1914,13 +1910,13 @@ type memSeriesOOOFields struct {
 	firstOOOChunkID  chunks.HeadChunkID // HeadOOOChunkID for oooMmappedChunks[0].
 }
 
-func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, hash uint64, chunkEndTimeVariance float64, isolationDisabled bool) *memSeries {
+func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, shardHash uint64, chunkEndTimeVariance float64, isolationDisabled bool) *memSeries {
 	s := &memSeries{
 		lset:                 lset,
 		ref:                  id,
 		nextAt:               math.MinInt64,
 		chunkEndTimeVariance: chunkEndTimeVariance,
-		hash:                 hash,
+		shardHash:            shardHash,
 	}
 	if !isolationDisabled {
 		s.txs = newTxRing(4)

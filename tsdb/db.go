@@ -201,9 +201,6 @@ type Options struct {
 	HeadPostingsForMatchersCacheSize int
 	// HeadPostingsForMatchersCacheForce forces the usage of postings for matchers cache for all calls on Head and OOOHead regardless of the `concurrent` param.
 	HeadPostingsForMatchersCacheForce bool
-
-	// Compute hash of labels to divide series into shards.
-	ShardFunc func(l labels.Labels) uint64
 }
 
 type BlocksToDeleteFunc func(blocks []*Block) map[ulid.ULID]struct{}
@@ -568,7 +565,7 @@ func (db *DBReadOnly) Blocks() ([]BlockReader, error) {
 		return nil, ErrClosed
 	default:
 	}
-	loadable, corrupted, err := openBlocks(db.logger, db.dir, nil, nil, nil, nil)
+	loadable, corrupted, err := openBlocks(db.logger, db.dir, nil, nil, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -766,7 +763,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	db.compactor, err = NewLeveledCompactorWithChunkSize(ctx, r, l, rngs, db.chunkPool, opts.MaxBlockChunkSegmentSize, nil, opts.AllowOverlappingCompaction, opts.ShardFunc)
+	db.compactor, err = NewLeveledCompactorWithChunkSize(ctx, r, l, rngs, db.chunkPool, opts.MaxBlockChunkSegmentSize, nil, opts.AllowOverlappingCompaction)
 	if err != nil {
 		cancel()
 		return nil, errors.Wrap(err, "create leveled compactor")
@@ -820,7 +817,6 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 		// We only override this flag if isolation is disabled at DB level. We use the default otherwise.
 		headOpts.IsolationDisabled = opts.IsolationDisabled
 	}
-	headOpts.ShardFunc = opts.ShardFunc
 	db.head, err = NewHead(r, l, wal, wbl, headOpts, stats.Head)
 	if err != nil {
 		return nil, err
@@ -1350,7 +1346,7 @@ func (db *DB) reloadBlocks() (err error) {
 	db.mtx.Lock()
 	defer db.mtx.Unlock()
 
-	loadable, corrupted, err := openBlocks(db.logger, db.dir, db.blocks, db.chunkPool, db.opts.SeriesHashCache, db.opts.ShardFunc)
+	loadable, corrupted, err := openBlocks(db.logger, db.dir, db.blocks, db.chunkPool, db.opts.SeriesHashCache)
 	if err != nil {
 		return err
 	}
@@ -1433,7 +1429,7 @@ func (db *DB) reloadBlocks() (err error) {
 	return nil
 }
 
-func openBlocks(l log.Logger, dir string, loaded []*Block, chunkPool chunkenc.Pool, cache *hashcache.SeriesHashCache, shardFunc func(l labels.Labels) uint64) (blocks []*Block, corrupted map[ulid.ULID]error, err error) {
+func openBlocks(l log.Logger, dir string, loaded []*Block, chunkPool chunkenc.Pool, cache *hashcache.SeriesHashCache) (blocks []*Block, corrupted map[ulid.ULID]error, err error) {
 	bDirs, err := blockDirs(dir)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "find blocks")
@@ -1455,7 +1451,7 @@ func openBlocks(l log.Logger, dir string, loaded []*Block, chunkPool chunkenc.Po
 				cacheProvider = cache.GetBlockCacheProvider(meta.ULID.String())
 			}
 
-			block, err = OpenBlockWithOptions(l, bDir, chunkPool, cacheProvider, shardFunc)
+			block, err = OpenBlockWithOptions(l, bDir, chunkPool, cacheProvider)
 			if err != nil {
 				corrupted[meta.ULID] = err
 				continue

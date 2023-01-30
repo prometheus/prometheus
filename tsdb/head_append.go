@@ -1383,7 +1383,7 @@ func (s *memSeries) appendPreprocessor(
 		maxNextAt := s.nextAt
 
 		s.nextAt = computeChunkEndTime(c.minTime, c.maxTime, maxNextAt)
-		s.nextAt = addJitterToChunkEndTime(s.hash, c.minTime, s.nextAt, maxNextAt, s.chunkEndTimeVariance)
+		s.nextAt = addJitterToChunkEndTime(s.shardHash, c.minTime, s.nextAt, maxNextAt, s.chunkEndTimeVariance)
 	}
 	// If numSamples > samplesPerChunk*2 then our previous prediction was invalid,
 	// most likely because samples rate has changed and now they are arriving more frequently.
