@@ -268,33 +268,21 @@ type Group struct {
 
 	metrics *Metrics
 
-	// This function will be used before each rule group evaluation if not nil.
-	// Deprecated: Superceded by evalIterationFunc which enables arbitrary instrumentation around the default rule group evaluation iteration
-	ruleGroupPostProcessFunc RuleGroupPostProcessFunc
-
 	// rule group evaluation iteration function, which by default invokes DefaultEvalIterationFunc
 	evalIterationFunc GroupEvalIterationFunc
 }
-
-// Use this function type if rule group pre-processing is needed.
-// Deprecated:  Succeeded by GroupEvalIterationFunc
-type RuleGroupPostProcessFunc func(g *Group, lastEvalTimestamp time.Time, log log.Logger) error
 
 // Function type for extending rule group evaluation iteration logic
 type GroupEvalIterationFunc func(ctx context.Context, g *Group, evalTimestamp time.Time)
 
 type GroupOptions struct {
-	Name, File    string
-	Interval      time.Duration
-	Limit         int
-	Rules         []Rule
-	ShouldRestore bool
-	Opts          *ManagerOptions
-	done          chan struct{}
-
-	// Deprecated:  Succeeded by EvalIterationFunc
-	RuleGroupPostProcessFunc RuleGroupPostProcessFunc
-
+	Name, File        string
+	Interval          time.Duration
+	Limit             int
+	Rules             []Rule
+	ShouldRestore     bool
+	Opts              *ManagerOptions
+	done              chan struct{}
 	EvalIterationFunc GroupEvalIterationFunc
 }
 
@@ -322,21 +310,20 @@ func NewGroup(o GroupOptions) *Group {
 	}
 
 	return &Group{
-		name:                     o.Name,
-		file:                     o.File,
-		interval:                 o.Interval,
-		limit:                    o.Limit,
-		rules:                    o.Rules,
-		shouldRestore:            o.ShouldRestore,
-		opts:                     o.Opts,
-		seriesInPreviousEval:     make([]map[string]labels.Labels, len(o.Rules)),
-		done:                     make(chan struct{}),
-		managerDone:              o.done,
-		terminated:               make(chan struct{}),
-		logger:                   log.With(o.Opts.Logger, "file", o.File, "group", o.Name),
-		metrics:                  metrics,
-		ruleGroupPostProcessFunc: o.RuleGroupPostProcessFunc,
-		evalIterationFunc:        evalIterationFunc,
+		name:                 o.Name,
+		file:                 o.File,
+		interval:             o.Interval,
+		limit:                o.Limit,
+		rules:                o.Rules,
+		shouldRestore:        o.ShouldRestore,
+		opts:                 o.Opts,
+		seriesInPreviousEval: make([]map[string]labels.Labels, len(o.Rules)),
+		done:                 make(chan struct{}),
+		managerDone:          o.done,
+		terminated:           make(chan struct{}),
+		logger:               log.With(o.Opts.Logger, "file", o.File, "group", o.Name),
+		metrics:              metrics,
+		evalIterationFunc:    evalIterationFunc,
 	}
 }
 
@@ -449,19 +436,8 @@ func (g *Group) run(ctx context.Context) {
 				}
 				evalTimestamp = evalTimestamp.Add((missed + 1) * g.interval)
 
-				useRuleGroupPostProcessFunc(g, evalTimestamp.Add(-(missed+1)*g.interval))
-
 				g.evalIterationFunc(ctx, g, evalTimestamp)
 			}
-		}
-	}
-}
-
-func useRuleGroupPostProcessFunc(g *Group, lastEvalTimestamp time.Time) {
-	if g.ruleGroupPostProcessFunc != nil {
-		err := g.ruleGroupPostProcessFunc(g, lastEvalTimestamp, g.logger)
-		if err != nil {
-			level.Warn(g.logger).Log("msg", "ruleGroupPostProcessFunc failed", "err", err)
 		}
 	}
 }
@@ -1036,11 +1012,11 @@ func (m *Manager) Stop() {
 
 // Update the rule manager's state as the config requires. If
 // loading the new rules failed the old rule set is restored.
-func (m *Manager) Update(interval time.Duration, files []string, externalLabels labels.Labels, externalURL string, ruleGroupPostProcessFunc RuleGroupPostProcessFunc, groupEvalIterationFunc GroupEvalIterationFunc) error {
+func (m *Manager) Update(interval time.Duration, files []string, externalLabels labels.Labels, externalURL string, groupEvalIterationFunc GroupEvalIterationFunc) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
-	groups, errs := m.LoadGroups(interval, externalLabels, externalURL, ruleGroupPostProcessFunc, groupEvalIterationFunc, files...)
+	groups, errs := m.LoadGroups(interval, externalLabels, externalURL, groupEvalIterationFunc, files...)
 
 	if errs != nil {
 		for _, e := range errs {
@@ -1125,7 +1101,7 @@ func (FileLoader) Parse(query string) (parser.Expr, error) { return parser.Parse
 
 // LoadGroups reads groups from a list of files.
 func (m *Manager) LoadGroups(
-	interval time.Duration, externalLabels labels.Labels, externalURL string, ruleGroupPostProcessFunc RuleGroupPostProcessFunc, groupEvalIterationFunc GroupEvalIterationFunc, filenames ...string,
+	interval time.Duration, externalLabels labels.Labels, externalURL string, groupEvalIterationFunc GroupEvalIterationFunc, filenames ...string,
 ) (map[string]*Group, []error) {
 	groups := make(map[string]*Group)
 
@@ -1172,16 +1148,15 @@ func (m *Manager) LoadGroups(
 			}
 
 			groups[GroupKey(fn, rg.Name)] = NewGroup(GroupOptions{
-				Name:                     rg.Name,
-				File:                     fn,
-				Interval:                 itv,
-				Limit:                    rg.Limit,
-				Rules:                    rules,
-				ShouldRestore:            shouldRestore,
-				Opts:                     m.opts,
-				done:                     m.done,
-				RuleGroupPostProcessFunc: ruleGroupPostProcessFunc,
-				EvalIterationFunc:        groupEvalIterationFunc,
+				Name:              rg.Name,
+				File:              fn,
+				Interval:          itv,
+				Limit:             rg.Limit,
+				Rules:             rules,
+				ShouldRestore:     shouldRestore,
+				Opts:              m.opts,
+				done:              m.done,
+				EvalIterationFunc: groupEvalIterationFunc,
 			})
 		}
 	}
