@@ -91,7 +91,6 @@ type LeveledCompactor struct {
 	maxBlockChunkSegmentSize    int64
 	mergeFunc                   storage.VerticalChunkSeriesMergeFunc
 	enableOverlappingCompaction bool
-	shardFunc                   func(labels.Labels) uint64
 
 	concurrencyOpts LeveledCompactorConcurrencyOptions
 }
@@ -158,10 +157,10 @@ func newCompactorMetrics(r prometheus.Registerer) *compactorMetrics {
 
 // NewLeveledCompactor returns a LeveledCompactor.
 func NewLeveledCompactor(ctx context.Context, r prometheus.Registerer, l log.Logger, ranges []int64, pool chunkenc.Pool, mergeFunc storage.VerticalChunkSeriesMergeFunc, enableOverlappingCompaction bool) (*LeveledCompactor, error) {
-	return NewLeveledCompactorWithChunkSize(ctx, r, l, ranges, pool, chunks.DefaultChunkSegmentSize, mergeFunc, enableOverlappingCompaction, nil)
+	return NewLeveledCompactorWithChunkSize(ctx, r, l, ranges, pool, chunks.DefaultChunkSegmentSize, mergeFunc, enableOverlappingCompaction)
 }
 
-func NewLeveledCompactorWithChunkSize(ctx context.Context, r prometheus.Registerer, l log.Logger, ranges []int64, pool chunkenc.Pool, maxBlockChunkSegmentSize int64, mergeFunc storage.VerticalChunkSeriesMergeFunc, enableOverlappingCompaction bool, shardFunc func(labels.Labels) uint64) (*LeveledCompactor, error) {
+func NewLeveledCompactorWithChunkSize(ctx context.Context, r prometheus.Registerer, l log.Logger, ranges []int64, pool chunkenc.Pool, maxBlockChunkSegmentSize int64, mergeFunc storage.VerticalChunkSeriesMergeFunc, enableOverlappingCompaction bool) (*LeveledCompactor, error) {
 	if len(ranges) == 0 {
 		return nil, errors.Errorf("at least one range must be provided")
 	}
@@ -184,7 +183,6 @@ func NewLeveledCompactorWithChunkSize(ctx context.Context, r prometheus.Register
 		mergeFunc:                   mergeFunc,
 		concurrencyOpts:             DefaultLeveledCompactorConcurrencyOptions(),
 		enableOverlappingCompaction: enableOverlappingCompaction,
-		shardFunc:                   shardFunc,
 	}, nil
 }
 
@@ -1107,7 +1105,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, minT, maxT int64,
 
 		obIx := uint64(0)
 		if len(outBlocks) > 1 {
-			obIx = c.shardFunc(s.Labels()) % uint64(len(outBlocks))
+			obIx = labels.StableHash(s.Labels()) % uint64(len(outBlocks))
 		}
 
 		err := blockWriters[obIx].addSeries(s.Labels(), chks)
@@ -1175,7 +1173,7 @@ func (c *LeveledCompactor) populateSymbols(sets []storage.ChunkSeriesSet, outBlo
 
 		var obIx uint64
 		if len(outBlocks) > 1 {
-			obIx = c.shardFunc(s.Labels()) % uint64(len(outBlocks))
+			obIx = labels.StableHash(s.Labels()) % uint64(len(outBlocks))
 		}
 
 		for _, l := range s.Labels() {
