@@ -1361,32 +1361,6 @@ func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSerie
 		return snapIdx, snapOffset, nil, errors.Wrap(err, "find last chunk snapshot")
 	}
 
-	// If there are any WAL files, there should be at least one WAL file with an index that is current or newer
-	// than the snapshot index. If the WAL index is behind the snapshot index somehow, the snapshot is assumed
-	// to be incorrect.
-	walFiles, err := os.ReadDir(h.wal.Dir())
-	if err != nil {
-		return snapIdx, snapOffset, nil, errors.Wrap(err, "read WAL directory")
-	}
-
-	walIsCurrent := false
-
-	for _, file := range walFiles {
-		idx, err := strconv.Atoi(file.Name())
-		if err == nil && idx >= snapIdx {
-			walIsCurrent = true
-			break
-		}
-	}
-
-	if len(walFiles) > 0 && !walIsCurrent {
-		err := os.RemoveAll(dir)
-		if err != nil {
-			return snapIdx, snapOffset, nil, errors.Wrap(err, "delete chunk snapshot")
-		}
-		return snapIdx, snapOffset, nil, errors.New("WAL index is behind snapshot, removing snapshot")
-	}
-
 	start := time.Now()
 	sr, err := wlog.NewSegmentsReader(dir)
 	if err != nil {
