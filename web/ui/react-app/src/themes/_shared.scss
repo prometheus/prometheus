@@ -50,14 +50,17 @@
   max-width: 750px;
   overflow-wrap: break-word;
 }
+
 .metrics-explorer .metric {
   cursor: pointer;
   margin: 0;
   padding: 5px;
 }
+
 .metrics-explorer .metric:hover {
   background: $metrics-explorer-bg;
 }
+
 button.expression-input-action-btn {
   color: $input-group-addon-color;
   background-color: $input-group-addon-bg;
@@ -113,7 +116,7 @@ button.execute-btn {
   margin-top: 4px;
 }
 
-input[type='checkbox']:checked + label {
+input[type='checkbox']:checked+label {
   color: $checked-checkbox-color;
 }
 
@@ -161,10 +164,119 @@ input[type='checkbox']:checked + label {
   margin: 10px 0 2px 0;
 }
 
-.data-table > tbody > tr > td {
+.data-table>tbody>tr>td {
   padding: 5px 0 5px 8px;
   font-size: 0.8em;
   overflow: hidden;
+}
+
+.histogram-y-wrapper {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  box-sizing: border-box;
+  margin: 15px 0;
+  width: 100%;
+}
+
+.histogram-y-labels {
+  height: 200px;
+  display: flex;
+  flex-direction: column;
+}
+
+.histogram-y-label {
+  margin-right: 8px;
+  height: 25%;
+  text-align: right;
+}
+
+.histogram-x-wrapper {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  margin-right: 8px;
+}
+
+.histogram-x-labels {
+  display: flex;
+}
+
+.histogram-x-label {
+  position: relative;
+  margin-top: 5px;
+  width: 25%;
+  text-align: right;
+}
+
+.histogram-container {
+  margin-top: 9px;
+  position: relative;
+  height: 200px;
+}
+
+.histogram-axes {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-bottom: 1px solid $histogram-chart-axis-color;
+  border-left: 1px solid $histogram-chart-axis-color;
+  pointer-events: none;
+}
+
+.histogram-y-grid {
+  position: absolute;
+  border-bottom: 1px dashed $histogram-chart-grid-color;
+  width: 100%;
+}
+
+.histogram-y-tick {
+  position: absolute;
+  border-bottom: 1px solid $histogram-chart-axis-color;
+  left: -5px;
+  height: 0px;
+  width: 5px;
+}
+
+.histogram-x-grid {
+  position: absolute;
+  border-left: 1px dashed $histogram-chart-grid-color;
+  height: 100%;
+  width: 0;
+}
+
+.histogram-x-tick {
+  position: absolute;
+  border-left: 1px solid $histogram-chart-axis-color;
+  height: 5px;
+  width: 0;
+  bottom: -5px;
+}
+
+.histogram-bucket-slot {
+  position: absolute;
+  bottom: 0;
+  top: 0;
+}
+
+.histogram-bucket {
+  position: absolute;
+  width: 100%;
+  bottom: 0;
+  // background-color: #9090ff;
+  // border: 1px solid #aaaaff;
+  background-color: #2db453;
+  border: 1px solid #77de94;
+  pointer-events: none;
+}
+
+.histogram-bucket-slot:hover {
+  background-color: $histogram-chart-hover-color;
+}
+
+.histogram-bucket-slot:hover .histogram-bucket {
+  background-color: #88e1a1;
+  border: 1px solid #77de94;
 }
 
 .autosuggest-dropdown {
@@ -228,7 +340,7 @@ input[type='checkbox']:checked + label {
   width: 90px;
 }
 
-.graph-controls > :not(:first-child) {
+.graph-controls> :not(:first-child) {
   margin-left: 20px;
 }
 
@@ -254,6 +366,7 @@ input[type='checkbox']:checked + label {
   border-radius: 3px;
   line-height: 1.7;
 }
+
 .legend-item div {
   flex-wrap: wrap;
 }
@@ -304,6 +417,7 @@ input[type='checkbox']:checked + label {
   cursor: crosshair;
 }
 
+.histogram-tooltip,
 .graph-tooltip {
   background: rgba(0, 0, 0, 0.8);
   color: #fff;
@@ -342,7 +456,7 @@ input[type='checkbox']:checked + label {
   padding: 10px;
 }
 
-.badges-wrapper > span {
+.badges-wrapper>span {
   margin-right: 5px;
   max-height: 20px;
 }

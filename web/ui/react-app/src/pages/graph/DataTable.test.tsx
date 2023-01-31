@@ -1,7 +1,6 @@
 import * as React from 'react';
 import { shallow } from 'enzyme';
 import DataTable, { DataTableProps } from './DataTable';
-import HistogramString, { HistogramStringProps } from './DataTable';
 import { Alert, Table } from 'reactstrap';
 import SeriesName from './SeriesName';
 
