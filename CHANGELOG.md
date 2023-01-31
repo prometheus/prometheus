@@ -11,6 +11,8 @@ Additionally, if you scrape "float histograms" or use recording rules on native 
 it is a one-way street since older versions do not support float histograms.
 
 * [CHANGE] **breaking** TSDB: Changed WAL record format for the experimental native histograms. #11783
+* [FEATURE] Add 'keep_firing_for' field to alerting rules. #11827
+* [FEATURE] Promtool: Add support of selecting timeseries for TSDB dump. #11872
 * [ENHANCEMENT] Agent: Native histogram support. #11842
 * [ENHANCEMENT] Rules: Support native histograms in recording rules. #11838
 * [ENHANCEMENT] SD: Add container ID as a meta label for pod targets for Kubernetes. #11844
@@ -19,8 +21,6 @@ it is a one-way street since older versions do not support float histograms.
 * [ENHANCEMENT] TSDB: Add gauge histogram support. #11783 #11840 #11814
 * [ENHANCEMENT] TSDB/Scrape: Support FloatHistogram that represents buckets as float64 values. #11522 #11817 #11716
 * [ENHANCEMENT] UI: Show individual scrape pools on /targets page. #11142
-* [FEATURE] Add 'keep_firing_for' field to alerting rules. #11827
-* [FEATURE] Promtool: Add support of selecting timeseries for TSDB dump. #11872
 
 ## 2.41.0 / 2022-12-20
 
