@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.42.0-rc.0 / 2023-01-26
+## 2.42.0 / 2023-01-31
 
 This release comes with a bunch of feature coverage for native histograms and breaking changes.
 
