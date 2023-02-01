@@ -27,7 +27,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unsafe"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -40,8 +39,6 @@ import (
 	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/model/exemplar"
-	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -54,7 +51,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/util/httputil"
-	"github.com/prometheus/prometheus/util/jsonutil"
 	"github.com/prometheus/prometheus/util/stats"
 )
 
@@ -83,6 +79,8 @@ const (
 )
 
 var LocalhostRepresentations = []string{"127.0.0.1", "localhost", "::1"}
+
+var defaultCodec = JSONCodec{}
 
 type apiError struct {
 	typ errorType
@@ -149,7 +147,8 @@ type RuntimeInfo struct {
 	StorageRetention    string    `json:"storageRetention"`
 }
 
-type response struct {
+// Response contains a response to a HTTP API request.
+type Response struct {
 	Status    status      `json:"status"`
 	Data      interface{} `json:"data,omitempty"`
 	ErrorType errorType   `json:"errorType,omitempty"`
@@ -212,13 +211,8 @@ type API struct {
 
 	remoteWriteHandler http.Handler
 	remoteReadHandler  http.Handler
-}
 
-func init() {
-	jsoniter.RegisterTypeEncoderFunc("promql.Series", marshalSeriesJSON, marshalSeriesJSONIsEmpty)
-	jsoniter.RegisterTypeEncoderFunc("promql.Sample", marshalSampleJSON, marshalSampleJSONIsEmpty)
-	jsoniter.RegisterTypeEncoderFunc("promql.Point", marshalPointJSON, marshalPointJSONIsEmpty)
-	jsoniter.RegisterTypeEncoderFunc("exemplar.Exemplar", marshalExemplarJSON, marshalExemplarJSONEmpty)
+	codecs map[string]Codec
 }
 
 // NewAPI returns an initialized API type.
@@ -277,7 +271,11 @@ func NewAPI(
 		statsRenderer:    defaultStatsRenderer,
 
 		remoteReadHandler: remote.NewReadHandler(logger, registerer, q, configFunc, remoteReadSampleLimit, remoteReadConcurrencyLimit, remoteReadMaxBytesInFrame),
+
+		codecs: map[string]Codec{},
 	}
+
+	a.InstallCodec(defaultCodec)
 
 	if statsRenderer != nil {
 		a.statsRenderer = statsRenderer
@@ -288,6 +286,16 @@ func NewAPI(
 	}
 
 	return a
+}
+
+// InstallCodec adds codec to this API's available codecs.
+// If codec handles a content type handled by a codec already installed in this API, codec replaces the previous codec.
+func (api *API) InstallCodec(codec Codec) {
+	if api.codecs == nil {
+		api.codecs = map[string]Codec{}
+	}
+
+	api.codecs[codec.ContentType()] = codec
 }
 
 func setUnavailStatusOnTSDBNotReady(r apiFuncResult) apiFuncResult {
@@ -312,7 +320,7 @@ func (api *API) Register(r *route.Router) {
 			}
 
 			if result.data != nil {
-				api.respond(w, result.data, result.warnings)
+				api.respond(w, r, result.data, result.warnings)
 				return
 			}
 			w.WriteHeader(http.StatusNoContent)
@@ -1460,7 +1468,7 @@ func (api *API) serveWALReplayStatus(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		api.respondError(w, &apiError{errorInternal, err}, nil)
 	}
-	api.respond(w, walReplayStatus{
+	api.respond(w, r, walReplayStatus{
 		Min:     status.Min,
 		Max:     status.Max,
 		Current: status.Current,
@@ -1562,34 +1570,59 @@ func (api *API) cleanTombstones(r *http.Request) apiFuncResult {
 	return apiFuncResult{nil, nil, nil, nil}
 }
 
-func (api *API) respond(w http.ResponseWriter, data interface{}, warnings storage.Warnings) {
+func (api *API) respond(w http.ResponseWriter, req *http.Request, data interface{}, warnings storage.Warnings) {
 	statusMessage := statusSuccess
 	var warningStrings []string
 	for _, warning := range warnings {
 		warningStrings = append(warningStrings, warning.Error())
 	}
-	json := jsoniter.ConfigCompatibleWithStandardLibrary
-	b, err := json.Marshal(&response{
+
+	resp := &Response{
 		Status:   statusMessage,
 		Data:     data,
 		Warnings: warningStrings,
-	})
+	}
+
+	codec := api.negotiateCodec(req, resp)
+	b, err := codec.Encode(resp)
 	if err != nil {
-		level.Error(api.logger).Log("msg", "error marshaling json response", "err", err)
+		level.Error(api.logger).Log("msg", "error marshaling response", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", codec.ContentType())
 	w.WriteHeader(http.StatusOK)
 	if n, err := w.Write(b); err != nil {
 		level.Error(api.logger).Log("msg", "error writing response", "bytesWritten", n, "err", err)
 	}
 }
 
+// FIXME: HTTP content negotiation is hard (see https://developer.mozilla.org/en-US/docs/Web/HTTP/Content_negotiation).
+// Ideally, we shouldn't be implementing this ourselves - https://github.com/golang/go/issues/19307 is an open proposal to add
+// this to the Go stdlib and has links to a number of other implementations.
+//
+// This is an initial MVP, and doesn't support features like wildcards or weighting.
+func (api *API) negotiateCodec(req *http.Request, resp *Response) Codec {
+	acceptHeader := req.Header.Get("Accept")
+	if acceptHeader == "" {
+		return defaultCodec
+	}
+
+	for _, contentType := range strings.Split(acceptHeader, ",") {
+		codec, ok := api.codecs[strings.TrimSpace(contentType)]
+		if ok && codec.CanEncode(resp) {
+			return codec
+		}
+	}
+
+	level.Warn(api.logger).Log("msg", "could not find suitable codec for response, falling back to default codec", "accept_header", acceptHeader)
+	return defaultCodec
+}
+
 func (api *API) respondError(w http.ResponseWriter, apiErr *apiError, data interface{}) {
 	json := jsoniter.ConfigCompatibleWithStandardLibrary
-	b, err := json.Marshal(&response{
+	b, err := json.Marshal(&Response{
 		Status:    statusError,
 		ErrorType: apiErr.typ,
 		Error:     apiErr.err.Error(),
@@ -1695,248 +1728,4 @@ OUTER:
 		return nil, errors.New("match[] must contain at least one non-empty matcher")
 	}
 	return matcherSets, nil
-}
-
-// marshalSeriesJSON writes something like the following:
-//
-//	{
-//	   "metric" : {
-//	      "__name__" : "up",
-//	      "job" : "prometheus",
-//	      "instance" : "localhost:9090"
-//	   },
-//	   "values": [
-//	      [ 1435781451.781, "1" ],
-//	      < more values>
-//	   ],
-//	   "histograms": [
-//	      [ 1435781451.781, { < histogram, see below > } ],
-//	      < more histograms >
-//	   ],
-//	},
-func marshalSeriesJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
-	s := *((*promql.Series)(ptr))
-	stream.WriteObjectStart()
-	stream.WriteObjectField(`metric`)
-	m, err := s.Metric.MarshalJSON()
-	if err != nil {
-		stream.Error = err
-		return
-	}
-	stream.SetBuffer(append(stream.Buffer(), m...))
-
-	// We make two passes through the series here: In the first marshaling
-	// all value points, in the second marshaling all histogram
-	// points. That's probably cheaper than just one pass in which we copy
-	// out histogram Points into a newly allocated slice for separate
-	// marshaling. (Could be benchmarked, though.)
-	var foundValue, foundHistogram bool
-	for _, p := range s.Points {
-		if p.H == nil {
-			stream.WriteMore()
-			if !foundValue {
-				stream.WriteObjectField(`values`)
-				stream.WriteArrayStart()
-			}
-			foundValue = true
-			marshalPointJSON(unsafe.Pointer(&p), stream)
-		} else {
-			foundHistogram = true
-		}
-	}
-	if foundValue {
-		stream.WriteArrayEnd()
-	}
-	if foundHistogram {
-		firstHistogram := true
-		for _, p := range s.Points {
-			if p.H != nil {
-				stream.WriteMore()
-				if firstHistogram {
-					stream.WriteObjectField(`histograms`)
-					stream.WriteArrayStart()
-				}
-				firstHistogram = false
-				marshalPointJSON(unsafe.Pointer(&p), stream)
-			}
-		}
-		stream.WriteArrayEnd()
-	}
-	stream.WriteObjectEnd()
-}
-
-func marshalSeriesJSONIsEmpty(ptr unsafe.Pointer) bool {
-	return false
-}
-
-// marshalSampleJSON writes something like the following for normal value samples:
-//
-//	{
-//	   "metric" : {
-//	      "__name__" : "up",
-//	      "job" : "prometheus",
-//	      "instance" : "localhost:9090"
-//	   },
-//	   "value": [ 1435781451.781, "1" ]
-//	},
-//
-// For histogram samples, it writes something like this:
-//
-//	{
-//	   "metric" : {
-//	      "__name__" : "up",
-//	      "job" : "prometheus",
-//	      "instance" : "localhost:9090"
-//	   },
-//	   "histogram": [ 1435781451.781, { < histogram, see below > } ]
-//	},
-func marshalSampleJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
-	s := *((*promql.Sample)(ptr))
-	stream.WriteObjectStart()
-	stream.WriteObjectField(`metric`)
-	m, err := s.Metric.MarshalJSON()
-	if err != nil {
-		stream.Error = err
-		return
-	}
-	stream.SetBuffer(append(stream.Buffer(), m...))
-	stream.WriteMore()
-	if s.Point.H == nil {
-		stream.WriteObjectField(`value`)
-	} else {
-		stream.WriteObjectField(`histogram`)
-	}
-	marshalPointJSON(unsafe.Pointer(&s.Point), stream)
-	stream.WriteObjectEnd()
-}
-
-func marshalSampleJSONIsEmpty(ptr unsafe.Pointer) bool {
-	return false
-}
-
-// marshalPointJSON writes `[ts, "val"]`.
-func marshalPointJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
-	p := *((*promql.Point)(ptr))
-	stream.WriteArrayStart()
-	jsonutil.MarshalTimestamp(p.T, stream)
-	stream.WriteMore()
-	if p.H == nil {
-		jsonutil.MarshalValue(p.V, stream)
-	} else {
-		marshalHistogram(p.H, stream)
-	}
-	stream.WriteArrayEnd()
-}
-
-func marshalPointJSONIsEmpty(ptr unsafe.Pointer) bool {
-	return false
-}
-
-// marshalHistogramJSON writes something like:
-//
-//	{
-//	    "count": "42",
-//	    "sum": "34593.34",
-//	    "buckets": [
-//	      [ 3, "-0.25", "0.25", "3"],
-//	      [ 0, "0.25", "0.5", "12"],
-//	      [ 0, "0.5", "1", "21"],
-//	      [ 0, "2", "4", "6"]
-//	    ]
-//	}
-//
-// The 1st element in each bucket array determines if the boundaries are
-// inclusive (AKA closed) or exclusive (AKA open):
-//
-//	0: lower exclusive, upper inclusive
-//	1: lower inclusive, upper exclusive
-//	2: both exclusive
-//	3: both inclusive
-//
-// The 2nd and 3rd elements are the lower and upper boundary. The 4th element is
-// the bucket count.
-func marshalHistogram(h *histogram.FloatHistogram, stream *jsoniter.Stream) {
-	stream.WriteObjectStart()
-	stream.WriteObjectField(`count`)
-	jsonutil.MarshalValue(h.Count, stream)
-	stream.WriteMore()
-	stream.WriteObjectField(`sum`)
-	jsonutil.MarshalValue(h.Sum, stream)
-
-	bucketFound := false
-	it := h.AllBucketIterator()
-	for it.Next() {
-		bucket := it.At()
-		if bucket.Count == 0 {
-			continue // No need to expose empty buckets in JSON.
-		}
-		stream.WriteMore()
-		if !bucketFound {
-			stream.WriteObjectField(`buckets`)
-			stream.WriteArrayStart()
-		}
-		bucketFound = true
-		boundaries := 2 // Exclusive on both sides AKA open interval.
-		if bucket.LowerInclusive {
-			if bucket.UpperInclusive {
-				boundaries = 3 // Inclusive on both sides AKA closed interval.
-			} else {
-				boundaries = 1 // Inclusive only on lower end AKA right open.
-			}
-		} else {
-			if bucket.UpperInclusive {
-				boundaries = 0 // Inclusive only on upper end AKA left open.
-			}
-		}
-		stream.WriteArrayStart()
-		stream.WriteInt(boundaries)
-		stream.WriteMore()
-		jsonutil.MarshalValue(bucket.Lower, stream)
-		stream.WriteMore()
-		jsonutil.MarshalValue(bucket.Upper, stream)
-		stream.WriteMore()
-		jsonutil.MarshalValue(bucket.Count, stream)
-		stream.WriteArrayEnd()
-	}
-	if bucketFound {
-		stream.WriteArrayEnd()
-	}
-	stream.WriteObjectEnd()
-}
-
-// marshalExemplarJSON writes.
-//
-//	{
-//	   labels: <labels>,
-//	   value: "<string>",
-//	   timestamp: <float>
-//	}
-func marshalExemplarJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
-	p := *((*exemplar.Exemplar)(ptr))
-	stream.WriteObjectStart()
-
-	// "labels" key.
-	stream.WriteObjectField(`labels`)
-	lbls, err := p.Labels.MarshalJSON()
-	if err != nil {
-		stream.Error = err
-		return
-	}
-	stream.SetBuffer(append(stream.Buffer(), lbls...))
-
-	// "value" key.
-	stream.WriteMore()
-	stream.WriteObjectField(`value`)
-	jsonutil.MarshalValue(p.Value, stream)
-
-	// "timestamp" key.
-	stream.WriteMore()
-	stream.WriteObjectField(`timestamp`)
-	jsonutil.MarshalTimestamp(p.Ts, stream)
-
-	stream.WriteObjectEnd()
-}
-
-func marshalExemplarJSONEmpty(ptr unsafe.Pointer) bool {
-	return false
 }
