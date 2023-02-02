@@ -1,5 +1,27 @@
 # Changelog
 
+## 2.42.0 / 2023-01-31
+
+This release comes with a bunch of feature coverage for native histograms and breaking changes.
+
+If you are trying native histograms already, we recommend you remove the `wal` directory when upgrading.
+Because the old WAL record for native histograms is not backward compatible in v2.42.0, this will lead to some data loss for the latest data.
+
+Additionally, if you scrape "float histograms" or use recording rules on native histograms in v2.42.0 (which writes float histograms),
+it is a one-way street since older versions do not support float histograms.
+
+* [CHANGE] **breaking** TSDB: Changed WAL record format for the experimental native histograms. #11783
+* [FEATURE] Add 'keep_firing_for' field to alerting rules. #11827
+* [FEATURE] Promtool: Add support of selecting timeseries for TSDB dump. #11872
+* [ENHANCEMENT] Agent: Native histogram support. #11842
+* [ENHANCEMENT] Rules: Support native histograms in recording rules. #11838
+* [ENHANCEMENT] SD: Add container ID as a meta label for pod targets for Kubernetes. #11844
+* [ENHANCEMENT] SD: Add VM size label to azure service discovery. #11650
+* [ENHANCEMENT] Support native histograms in federation. #11830
+* [ENHANCEMENT] TSDB: Add gauge histogram support. #11783 #11840 #11814
+* [ENHANCEMENT] TSDB/Scrape: Support FloatHistogram that represents buckets as float64 values. #11522 #11817 #11716
+* [ENHANCEMENT] UI: Show individual scrape pools on /targets page. #11142
+
 ## 2.41.0 / 2022-12-20
 
 * [FEATURE] Relabeling: Add `keepequal` and `dropequal` relabel actions. #11564
@@ -61,7 +83,7 @@ Your existing histograms won't switch to native histograms until `NativeHistogra
 * [ENHANCEMENT] Kubernetes SD: Use protobuf encoding. #11353
 * [ENHANCEMENT] TSDB: Use golang.org/x/exp/slices for improved sorting speed. #11054 #11318 #11380
 * [ENHANCEMENT] Consul SD: Add enterprise admin partitions. Adds `__meta_consul_partition` label. Adds `partition` config in `consul_sd_config`. #11482
-* [BUGFIX] API: Fix API error codes for `/api/v1/labels` and `/api/v1/series`. #11356 
+* [BUGFIX] API: Fix API error codes for `/api/v1/labels` and `/api/v1/series`. #11356
 
 ## 2.39.2 / 2022-11-09
 
