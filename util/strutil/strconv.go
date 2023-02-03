@@ -17,7 +17,11 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+
+	"github.com/grafana/regexp"
 )
+
+var invalidLabelCharRE = regexp.MustCompile(`[^a-zA-Z0-9_]`)
 
 // TableLinkForExpression creates an escaped relative link to the table view of
 // the provided expression.
@@ -33,9 +37,18 @@ func GraphLinkForExpression(expr string) string {
 	return fmt.Sprintf("/graph?g0.expr=%s&g0.tab=0", escapedExpression)
 }
 
-// SanitizeLabelName replaces any invalid character with an underscore, and if
-// given an empty string, returns a string containing a single underscore.
+// SanitizeLabelName replaces anything that doesn't match
+// client_label.LabelNameRE with an underscore.
+// Note: this does not handle all Prometheus label name restrictions (such as
+// not starting with a digit 0-9), and hence should only be used if the label
+// name is prefixed with a known valid string.
 func SanitizeLabelName(name string) string {
+	return invalidLabelCharRE.ReplaceAllString(name, "_")
+}
+
+// SanitizeFullLabelName replaces any invalid character with an underscore, and
+// if given an empty string, returns a string containing a single underscore.
+func SanitizeFullLabelName(name string) string {
 	if len(name) == 0 {
 		return "_"
 	}
