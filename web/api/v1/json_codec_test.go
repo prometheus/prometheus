@@ -30,7 +30,7 @@ func TestJsonCodec_Encode(t *testing.T) {
 		expected string
 	}{
 		{
-			response: &queryData{
+			response: &QueryData{
 				ResultType: parser.ValueTypeMatrix,
 				Result: promql.Matrix{
 					promql.Series{
@@ -42,7 +42,7 @@ func TestJsonCodec_Encode(t *testing.T) {
 			expected: `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"__name__":"foo"},"values":[[1,"1"]]}]}}`,
 		},
 		{
-			response: &queryData{
+			response: &QueryData{
 				ResultType: parser.ValueTypeMatrix,
 				Result: promql.Matrix{
 					promql.Series{

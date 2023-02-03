@@ -833,8 +833,8 @@ func TestStats(t *testing.T) {
 			name:  "stats is blank",
 			param: "",
 			expected: func(t *testing.T, i interface{}) {
-				require.IsType(t, i, &queryData{})
-				qd := i.(*queryData)
+				require.IsType(t, i, &QueryData{})
+				qd := i.(*QueryData)
 				require.Nil(t, qd.Stats)
 			},
 		},
@@ -842,8 +842,8 @@ func TestStats(t *testing.T) {
 			name:  "stats is true",
 			param: "true",
 			expected: func(t *testing.T, i interface{}) {
-				require.IsType(t, i, &queryData{})
-				qd := i.(*queryData)
+				require.IsType(t, i, &QueryData{})
+				qd := i.(*QueryData)
 				require.NotNil(t, qd.Stats)
 				qs := qd.Stats.Builtin()
 				require.NotNil(t, qs.Timings)
@@ -857,8 +857,8 @@ func TestStats(t *testing.T) {
 			name:  "stats is all",
 			param: "all",
 			expected: func(t *testing.T, i interface{}) {
-				require.IsType(t, i, &queryData{})
-				qd := i.(*queryData)
+				require.IsType(t, i, &QueryData{})
+				qd := i.(*QueryData)
 				require.NotNil(t, qd.Stats)
 				qs := qd.Stats.Builtin()
 				require.NotNil(t, qs.Timings)
@@ -878,8 +878,8 @@ func TestStats(t *testing.T) {
 			},
 			param: "known",
 			expected: func(t *testing.T, i interface{}) {
-				require.IsType(t, i, &queryData{})
-				qd := i.(*queryData)
+				require.IsType(t, i, &QueryData{})
+				qd := i.(*QueryData)
 				require.NotNil(t, qd.Stats)
 				j, err := json.Marshal(qd.Stats)
 				require.NoError(t, err)
@@ -1039,7 +1039,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				"query": []string{"2"},
 				"time":  []string{"123.4"},
 			},
-			response: &queryData{
+			response: &QueryData{
 				ResultType: parser.ValueTypeScalar,
 				Result: promql.Scalar{
 					V: 2,
@@ -1053,7 +1053,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				"query": []string{"0.333"},
 				"time":  []string{"1970-01-01T00:02:03Z"},
 			},
-			response: &queryData{
+			response: &QueryData{
 				ResultType: parser.ValueTypeScalar,
 				Result: promql.Scalar{
 					V: 0.333,
@@ -1067,7 +1067,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				"query": []string{"0.333"},
 				"time":  []string{"1970-01-01T01:02:03+01:00"},
 			},
-			response: &queryData{
+			response: &QueryData{
 				ResultType: parser.ValueTypeScalar,
 				Result: promql.Scalar{
 					V: 0.333,
@@ -1080,7 +1080,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			query: url.Values{
 				"query": []string{"0.333"},
 			},
-			response: &queryData{
+			response: &QueryData{
 				ResultType: parser.ValueTypeScalar,
 				Result: promql.Scalar{
 					V: 0.333,
@@ -1096,7 +1096,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				"end":   []string{"2"},
 				"step":  []string{"1"},
 			},
-			response: &queryData{
+			response: &QueryData{
 				ResultType: parser.ValueTypeMatrix,
 				Result: promql.Matrix{
 					promql.Series{
@@ -3182,7 +3182,7 @@ func BenchmarkRespond(b *testing.B) {
 	for i := 0; i < 10000; i++ {
 		points = append(points, promql.Point{V: float64(i * 1000000), T: int64(i)})
 	}
-	response := &queryData{
+	response := &QueryData{
 		ResultType: parser.ValueTypeMatrix,
 		Result: promql.Matrix{
 			promql.Series{

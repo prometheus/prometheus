@@ -388,7 +388,7 @@ func (api *API) Register(r *route.Router) {
 	r.Put("/admin/tsdb/snapshot", wrapAgent(api.snapshot))
 }
 
-type queryData struct {
+type QueryData struct {
 	ResultType parser.ValueType `json:"resultType"`
 	Result     parser.Value     `json:"result"`
 	Stats      stats.QueryStats `json:"stats,omitempty"`
@@ -450,7 +450,7 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 	}
 	qs := sr(ctx, qry.Stats(), r.FormValue("stats"))
 
-	return apiFuncResult{&queryData{
+	return apiFuncResult{&QueryData{
 		ResultType: res.Value.Type(),
 		Result:     res.Value,
 		Stats:      qs,
@@ -541,7 +541,7 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 	}
 	qs := sr(ctx, qry.Stats(), r.FormValue("stats"))
 
-	return apiFuncResult{&queryData{
+	return apiFuncResult{&QueryData{
 		ResultType: res.Value.Type(),
 		Result:     res.Value,
 		Stats:      qs,
