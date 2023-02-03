@@ -58,4 +58,12 @@ func TestSanitizeLabelName(t *testing.T) {
 	actual = SanitizeLabelName("barClient.LABEL$$##")
 	expected = "barClient_LABEL____"
 	require.Equal(t, expected, actual, "SanitizeLabelName failed for label (%s)", expected)
+
+	actual = SanitizeLabelName("0zerothClient1LABEL")
+	expected = "_zerothClient1LABEL"
+	require.Equal(t, expected, actual, "SanitizeLabelName failed for label (%s)", expected)
+
+	actual = SanitizeLabelName("")
+	expected = "_"
+	require.Equal(t, expected, actual, "SanitizeLabelName failed for the empty label")
 }

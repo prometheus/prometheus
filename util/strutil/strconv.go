@@ -16,11 +16,8 @@ package strutil
 import (
 	"fmt"
 	"net/url"
-
-	"github.com/grafana/regexp"
+	"strings"
 )
-
-var invalidLabelCharRE = regexp.MustCompile(`[^a-zA-Z0-9_]`)
 
 // TableLinkForExpression creates an escaped relative link to the table view of
 // the provided expression.
@@ -36,8 +33,19 @@ func GraphLinkForExpression(expr string) string {
 	return fmt.Sprintf("/graph?g0.expr=%s&g0.tab=0", escapedExpression)
 }
 
-// SanitizeLabelName replaces anything that doesn't match
-// client_label.LabelNameRE with an underscore.
+// SanitizeLabelName replaces any invalid character with an underscore, and if
+// given an empty string, returns a string containing a single underscore.
 func SanitizeLabelName(name string) string {
-	return invalidLabelCharRE.ReplaceAllString(name, "_")
+	if len(name) == 0 {
+		return "_"
+	}
+	var validSb strings.Builder
+	for i, b := range name {
+		if !((b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || b == '_' || (b >= '0' && b <= '9' && i > 0)) {
+			validSb.WriteRune('_')
+		} else {
+			validSb.WriteRune(b)
+		}
+	}
+	return validSb.String()
 }
