@@ -72,6 +72,8 @@ func ChunkFromSamplesGeneric(s Samples) chunks.Meta {
 			ca.Append(s.Get(i).T(), s.Get(i).V())
 		case chunkenc.ValHistogram:
 			ca.AppendHistogram(s.Get(i).T(), s.Get(i).H())
+		case chunkenc.ValFloatHistogram:
+			ca.AppendFloatHistogram(s.Get(i).T(), s.Get(i).FH())
 		default:
 			panic(fmt.Sprintf("unknown sample type %s", sampleType.String()))
 		}

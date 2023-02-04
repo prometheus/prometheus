@@ -401,6 +401,21 @@ func TestCompactingChunkSeriesMerger(t *testing.T) {
 		}}
 	}
 
+	floatHistogramSample := func(ts int64) sample {
+		idx := float64(ts + 1)
+		return sample{t: ts, fh: &histogram.FloatHistogram{
+			Schema:          2,
+			ZeroThreshold:   0.001,
+			ZeroCount:       2 * idx,
+			Count:           5 * idx,
+			Sum:             12.34 * idx,
+			PositiveSpans:   []histogram.Span{{Offset: 1, Length: 2}, {Offset: 2, Length: 1}},
+			NegativeSpans:   []histogram.Span{{Offset: 2, Length: 1}, {Offset: 1, Length: 2}},
+			PositiveBuckets: []float64{1 * idx, -1 * idx, 3 * idx},
+			NegativeBuckets: []float64{1 * idx, 2 * idx, 3 * idx},
+		}}
+	}
+
 	for _, tc := range []struct {
 		name     string
 		input    []ChunkSeries
@@ -527,6 +542,46 @@ func TestCompactingChunkSeriesMerger(t *testing.T) {
 				[]tsdbutil.Sample{histogramSample(5), histogramSample(10)},
 				[]tsdbutil.Sample{sample{12, 12, nil, nil}, sample{14, 14, nil, nil}},
 				[]tsdbutil.Sample{histogramSample(15)},
+			),
+		},
+		{
+			name: "float histogram chunks overlapping",
+			input: []ChunkSeries{
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{floatHistogramSample(0), floatHistogramSample(5)}, []tsdbutil.Sample{floatHistogramSample(10), floatHistogramSample(15)}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{floatHistogramSample(2), floatHistogramSample(20)}, []tsdbutil.Sample{floatHistogramSample(25), floatHistogramSample(30)}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{floatHistogramSample(18), floatHistogramSample(26)}, []tsdbutil.Sample{floatHistogramSample(31), floatHistogramSample(35)}),
+			},
+			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+				[]tsdbutil.Sample{floatHistogramSample(0), floatHistogramSample(2), floatHistogramSample(5), floatHistogramSample(10), floatHistogramSample(15), floatHistogramSample(18), floatHistogramSample(20), floatHistogramSample(25), floatHistogramSample(26), floatHistogramSample(30)},
+				[]tsdbutil.Sample{floatHistogramSample(31), floatHistogramSample(35)},
+			),
+		},
+		{
+			name: "float histogram chunks overlapping with float chunks",
+			input: []ChunkSeries{
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{floatHistogramSample(0), floatHistogramSample(5)}, []tsdbutil.Sample{floatHistogramSample(10), floatHistogramSample(15)}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{1, 1, nil, nil}, sample{12, 12, nil, nil}}, []tsdbutil.Sample{sample{14, 14, nil, nil}}),
+			},
+			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+				[]tsdbutil.Sample{floatHistogramSample(0)},
+				[]tsdbutil.Sample{sample{1, 1, nil, nil}},
+				[]tsdbutil.Sample{floatHistogramSample(5), floatHistogramSample(10)},
+				[]tsdbutil.Sample{sample{12, 12, nil, nil}, sample{14, 14, nil, nil}},
+				[]tsdbutil.Sample{floatHistogramSample(15)},
+			),
+		},
+		{
+			name: "float histogram chunks overlapping with histogram chunks",
+			input: []ChunkSeries{
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{floatHistogramSample(0), floatHistogramSample(5)}, []tsdbutil.Sample{floatHistogramSample(10), floatHistogramSample(15)}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{histogramSample(1), histogramSample(12)}, []tsdbutil.Sample{histogramSample(14)}),
+			},
+			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+				[]tsdbutil.Sample{floatHistogramSample(0)},
+				[]tsdbutil.Sample{histogramSample(1)},
+				[]tsdbutil.Sample{floatHistogramSample(5), floatHistogramSample(10)},
+				[]tsdbutil.Sample{histogramSample(12), histogramSample(14)},
+				[]tsdbutil.Sample{floatHistogramSample(15)},
 			),
 		},
 	} {
