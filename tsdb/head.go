@@ -18,7 +18,6 @@ import (
 	"io"
 	"math"
 	"math/rand"
-	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -571,29 +570,33 @@ func (h *Head) Init(minValidTime int64) error {
 	if h.opts.EnableMemorySnapshotOnShutdown {
 		level.Info(h.logger).Log("msg", "Chunk snapshot is enabled, replaying from the snapshot")
 		var err error
-		snapIdx, snapOffset, refSeries, err = h.loadChunkSnapshot()
-
 		// If there are any WAL files, there should be at least one WAL file with an index that is current or newer
 		// than the snapshot index. If the WAL index is behind the snapshot index somehow, the snapshot is assumed
-		// to be incorrect.
+		// to be outdated.
+		_, endAt, err := wlog.Segments(h.wal.Dir())
 		if h.wal != nil {
-			_, endAt, err := wlog.Segments(h.wal.Dir())
 			if err != nil {
 				return errors.Wrap(err, "finding WAL segments")
 			}
 
-			snapDir, _, _, err := LastChunkSnapshot(h.opts.ChunkDirRoot)
-			if err != nil {
-				level.Error(h.logger).Log("msg", "Could not find last snapshot", "err", err)
+			_, idx, _, e := LastChunkSnapshot(h.opts.ChunkDirRoot)
+			if e != nil && e != record.ErrNotFound {
+				level.Error(h.logger).Log("msg", "Could not find last snapshot", "err", e)
 			}
 
-			if err == nil && endAt < snapIdx {
-				level.Error(h.logger).Log("msg", "WAL index is behind snapshot, removing snapshot", "err", err)
-				err = os.RemoveAll(snapDir)
-				if err != nil {
-					level.Error(h.logger).Log("msg", "Error while deleting snapshot directory", "err", err)
+			if e == nil {
+				if endAt < idx {
+					level.Warn(h.logger).Log("msg", "WAL index is behind snapshot, removing snapshots")
+					err = DeleteAllChunkSnapshots(h.opts.ChunkDirRoot)
+					if err != nil {
+						level.Error(h.logger).Log("msg", "Error while deleting snapshot directories", "err", e)
+					}
+				} else {
+					snapIdx, snapOffset, refSeries, err = h.loadChunkSnapshot()
 				}
 			}
+		} else {
+			snapIdx, snapOffset, refSeries, err = h.loadChunkSnapshot()
 		}
 
 		if err != nil {

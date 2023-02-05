@@ -4747,6 +4747,7 @@ func TestGaugeFloatHistogramWALAndChunkHeader(t *testing.T) {
 
 func TestSnapshotAheadOfWALError(t *testing.T) {
 	head, _ := newTestHead(t, 120*4, false, false)
+	head.opts.EnableMemorySnapshotOnShutdown = true
 	entries := []interface{}{
 		[]record.RefSeries{
 			{Ref: 10, Labels: labels.FromStrings("a", "1")},
@@ -4779,26 +4780,41 @@ func TestSnapshotAheadOfWALError(t *testing.T) {
 	w, _ := wlog.NewSize(nil, nil, head.wal.Dir(), 32768, false)
 	populateTestWAL(t, w, entries)
 
-	head.opts.EnableMemorySnapshotOnShutdown = true
-	require.NoError(t, head.Close()) // This will create a snapshot.
+	nextSegment, err := w.NextSegment() // Increment snapshot index to create sufficiently large difference.
+	require.NoError(t, err)
+	require.Equal(t, 2, nextSegment)
 	require.NoError(t, w.Close())
+	require.NoError(t, head.Close()) // This will create a snapshot.
 
-	snapDir, _, _, err := LastChunkSnapshot(head.opts.ChunkDirRoot)
+	snapDir, snapIdx, _, err := LastChunkSnapshot(head.opts.ChunkDirRoot)
 	require.NoError(t, err)
 
-	// Corrupt the filename by increasing the snapshot index beyond the WAL index
-	baseDir := filepath.Dir(snapDir)
-	newFilename := "chunk_snapshot.000003.000000000"
-
-	require.NoError(t, os.Rename(snapDir, filepath.Join(baseDir, newFilename)))
-
-	// Create new Head which should detect the incorrect index and delete the snapshot
+	// Restart the WAL while keeping the old snapshot. The new head is created manually in this case in order
+	// to keep using the same snapshot directory instead of a random one.
+	require.NoError(t, head.wal.Truncate(snapIdx+1))
+	head.opts.EnableMemorySnapshotOnShutdown = false
 	w, _ = wlog.NewSize(nil, nil, head.wal.Dir(), 32768, false)
-	require.NoError(t, head.Init(math.MinInt64))
+	head, err = NewHead(nil, nil, w, nil, head.opts, nil)
+	populateTestWAL(t, w, entries)
+	require.NoError(t, err)
+	require.NoError(t, head.Close())
+
+	lastSegment, _, _ := w.LastSegmentAndOffset()
+	require.Equal(t, 0, lastSegment)
+
+	// New WAL is saved, but old snapshot still exists.
 	_, _, _, err = LastChunkSnapshot(head.opts.ChunkDirRoot)
-	require.Error(t, err)
-	require.NoError(t, w.Close())
-	// Verify that renamed directory does not exist anymore
-	_, err = os.Stat(filepath.Join(baseDir, newFilename))
+	require.NoError(t, err)
+
+	// Create new Head which should detect the incorrect index and delete the snapshot.
+	head.opts.EnableMemorySnapshotOnShutdown = true
+	w, _ = wlog.NewSize(nil, nil, head.wal.Dir(), 32768, false)
+	head, err = NewHead(nil, nil, w, nil, head.opts, nil)
+	require.NoError(t, err)
+	require.NoError(t, head.Init(math.MinInt64))
+
+	// Verify that renamed directory does not exist anymore.
+	_, err = os.Stat(snapDir)
 	require.True(t, os.IsNotExist(err))
+	require.NoError(t, head.Close())
 }

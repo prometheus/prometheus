@@ -1350,6 +1350,42 @@ func DeleteChunkSnapshots(dir string, maxIndex, maxOffset int) error {
 	return errs.Err()
 }
 
+// DeleteAllChunkSnapshots deletes all chunk snapshots in a directory.
+// This is used to clean up lingering outdated snapshots.
+func DeleteAllChunkSnapshots(dir string) error {
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+
+	errs := tsdb_errors.NewMulti()
+	for _, fi := range files {
+		if !strings.HasPrefix(fi.Name(), chunkSnapshotPrefix) {
+			continue
+		}
+
+		splits := strings.Split(fi.Name()[len(chunkSnapshotPrefix):], ".")
+		if len(splits) != 2 {
+			continue
+		}
+
+		_, err := strconv.Atoi(splits[0])
+		if err != nil {
+			continue
+		}
+
+		_, err = strconv.Atoi(splits[1])
+		if err != nil {
+			continue
+		}
+
+		if err := os.RemoveAll(filepath.Join(dir, fi.Name())); err != nil {
+			errs.Add(err)
+		}
+	}
+	return errs.Err()
+}
+
 // loadChunkSnapshot replays the chunk snapshot and restores the Head state from it. If there was any error returned,
 // it is the responsibility of the caller to clear the contents of the Head.
 func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSeries, error) {
