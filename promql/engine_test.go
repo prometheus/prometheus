@@ -25,6 +25,8 @@ import (
 
 	"github.com/go-kit/log"
 
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
+
 	"github.com/prometheus/prometheus/util/stats"
 
 	"github.com/stretchr/testify/require"
@@ -35,7 +37,6 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/tsdb"
 )
 
 func TestMain(m *testing.M) {
@@ -3136,7 +3137,7 @@ func TestNativeHistogramRate(t *testing.T) {
 	lbls := labels.FromStrings("__name__", seriesName)
 
 	app := test.Storage().Appender(context.TODO())
-	for i, h := range tsdb.GenerateTestHistograms(100) {
+	for i, h := range tsdbutil.GenerateTestHistograms(100) {
 		_, err := app.AppendHistogram(0, lbls, int64(i)*int64(15*time.Second/time.Millisecond), h, nil)
 		require.NoError(t, err)
 	}
@@ -3181,7 +3182,7 @@ func TestNativeFloatHistogramRate(t *testing.T) {
 	lbls := labels.FromStrings("__name__", seriesName)
 
 	app := test.Storage().Appender(context.TODO())
-	for i, fh := range tsdb.GenerateTestFloatHistograms(100) {
+	for i, fh := range tsdbutil.GenerateTestFloatHistograms(100) {
 		_, err := app.AppendHistogram(0, lbls, int64(i)*int64(15*time.Second/time.Millisecond), nil, fh)
 		require.NoError(t, err)
 	}

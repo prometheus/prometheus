@@ -23,7 +23,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
@@ -388,32 +387,12 @@ func TestCompactingChunkSeriesMerger(t *testing.T) {
 	// histogramSample returns a histogram that is unique to the ts.
 	histogramSample := func(ts int64) sample {
 		idx := ts + 1
-		return sample{t: ts, h: &histogram.Histogram{
-			Schema:          2,
-			ZeroThreshold:   0.001,
-			ZeroCount:       2 * uint64(idx),
-			Count:           5 * uint64(idx),
-			Sum:             12.34 * float64(idx),
-			PositiveSpans:   []histogram.Span{{Offset: 1, Length: 2}, {Offset: 2, Length: 1}},
-			NegativeSpans:   []histogram.Span{{Offset: 2, Length: 1}, {Offset: 1, Length: 2}},
-			PositiveBuckets: []int64{1 * idx, -1 * idx, 3 * idx},
-			NegativeBuckets: []int64{1 * idx, 2 * idx, 3 * idx},
-		}}
+		return sample{t: ts, h: tsdbutil.GenerateTestHistogram(int(idx))}
 	}
 
 	floatHistogramSample := func(ts int64) sample {
 		idx := float64(ts + 1)
-		return sample{t: ts, fh: &histogram.FloatHistogram{
-			Schema:          2,
-			ZeroThreshold:   0.001,
-			ZeroCount:       2 * idx,
-			Count:           5 * idx,
-			Sum:             12.34 * idx,
-			PositiveSpans:   []histogram.Span{{Offset: 1, Length: 2}, {Offset: 2, Length: 1}},
-			NegativeSpans:   []histogram.Span{{Offset: 2, Length: 1}, {Offset: 1, Length: 2}},
-			PositiveBuckets: []float64{1 * idx, -1 * idx, 3 * idx},
-			NegativeBuckets: []float64{1 * idx, 2 * idx, 3 * idx},
-		}}
+		return sample{t: ts, fh: tsdbutil.GenerateTestFloatHistogram(int(idx))}
 	}
 
 	for _, tc := range []struct {
