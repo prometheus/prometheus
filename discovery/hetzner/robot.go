@@ -70,7 +70,7 @@ func newRobotDiscovery(conf *SDConfig, logger log.Logger) (*robotDiscovery, erro
 }
 
 func (d *robotDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
-	req, err := http.NewRequest("GET", d.endpoint+"/server", nil)
+	req, err := http.NewRequest(http.MethodGet, d.endpoint+"/server", nil)
 	if err != nil {
 		return nil, err
 	}

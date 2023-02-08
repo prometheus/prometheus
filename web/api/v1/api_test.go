@@ -2783,7 +2783,7 @@ func TestRespondSuccess(t *testing.T) {
 		t.Fatalf("Error reading response body: %s", err)
 	}
 
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("Return code %d expected in success response but got %d", 200, resp.StatusCode)
 	}
 	if h := resp.Header.Get("Content-Type"); h != "application/json" {
@@ -2888,7 +2888,7 @@ func TestParseTimeParam(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		req, err := http.NewRequest("GET", "localhost:42/foo?"+test.paramName+"="+test.paramValue, nil)
+		req, err := http.NewRequest(http.MethodGet, "localhost:42/foo?"+test.paramName+"="+test.paramValue, nil)
 		require.NoError(t, err)
 
 		result := test.result
@@ -3034,7 +3034,7 @@ func TestOptionsMethod(t *testing.T) {
 	s := httptest.NewServer(r)
 	defer s.Close()
 
-	req, err := http.NewRequest("OPTIONS", s.URL+"/any_path", nil)
+	req, err := http.NewRequest(http.MethodOptions, s.URL+"/any_path", nil)
 	if err != nil {
 		t.Fatalf("Error creating OPTIONS request: %s", err)
 	}

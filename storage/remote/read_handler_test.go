@@ -68,7 +68,7 @@ func TestSampledReadEndpoint(t *testing.T) {
 	require.NoError(t, err)
 
 	compressed := snappy.Encode(nil, data)
-	request, err := http.NewRequest("POST", "", bytes.NewBuffer(compressed))
+	request, err := http.NewRequest(http.MethodPost, "", bytes.NewBuffer(compressed))
 	require.NoError(t, err)
 
 	recorder := httptest.NewRecorder()
@@ -150,7 +150,7 @@ func BenchmarkStreamReadEndpoint(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		compressed := snappy.Encode(nil, data)
-		request, err := http.NewRequest("POST", "", bytes.NewBuffer(compressed))
+		request, err := http.NewRequest(http.MethodPost, "", bytes.NewBuffer(compressed))
 		require.NoError(b, err)
 
 		recorder := httptest.NewRecorder()
@@ -238,7 +238,7 @@ func TestStreamReadEndpoint(t *testing.T) {
 	require.NoError(t, err)
 
 	compressed := snappy.Encode(nil, data)
-	request, err := http.NewRequest("POST", "", bytes.NewBuffer(compressed))
+	request, err := http.NewRequest(http.MethodPost, "", bytes.NewBuffer(compressed))
 	require.NoError(t, err)
 
 	recorder := httptest.NewRecorder()
