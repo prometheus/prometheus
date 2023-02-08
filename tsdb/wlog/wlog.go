@@ -188,6 +188,8 @@ type WL struct {
 	compress    bool
 	snappyBuf   []byte
 
+	WriteNotified WriteNotified
+
 	metrics *wlMetrics
 }
 
@@ -328,6 +330,10 @@ func (w *WL) CompressionEnabled() bool {
 // Dir returns the directory of the WAL.
 func (w *WL) Dir() string {
 	return w.dir
+}
+
+func (w *WL) SetWriteNotified(wn WriteNotified) {
+	w.WriteNotified = wn
 }
 
 func (w *WL) run() {
@@ -610,6 +616,11 @@ func (w *WL) pagesPerSegment() int {
 func (w *WL) Log(recs ...[]byte) error {
 	w.mtx.Lock()
 	defer w.mtx.Unlock()
+	defer func() {
+		if w.WriteNotified != nil {
+			w.WriteNotified.Notify()
+		}
+	}()
 	// Callers could just implement their own list record format but adding
 	// a bit of extra logic here frees them from that overhead.
 	for i, r := range recs {

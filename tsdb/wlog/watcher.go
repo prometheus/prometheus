@@ -34,7 +34,8 @@ import (
 )
 
 const (
-	readPeriod         = 10 * time.Millisecond
+	// readPeriod         = 10 * time.Millisecond
+	readTimeout        = 15 * time.Second
 	checkpointPeriod   = 5 * time.Second
 	segmentCheckPeriod = 100 * time.Millisecond
 	consumer           = "consumer"
@@ -59,6 +60,11 @@ type WriteTo interface {
 	// Then SeriesReset is called to allow the deletion
 	// of all series created in a segment lower than the argument.
 	SeriesReset(int)
+}
+
+// Used to notifier the watcher that data has been written so that it can read.
+type WriteNotified interface {
+	Notify()
 }
 
 type WatcherMetrics struct {
@@ -89,8 +95,9 @@ type Watcher struct {
 	samplesSentPreTailing   prometheus.Counter
 	currentSegmentMetric    prometheus.Gauge
 
-	quit chan struct{}
-	done chan struct{}
+	readNotify chan struct{}
+	quit       chan struct{}
+	done       chan struct{}
 
 	// For testing, stop when we hit this segment.
 	MaxSegment int
@@ -161,10 +168,20 @@ func NewWatcher(metrics *WatcherMetrics, readerMetrics *LiveReaderMetrics, logge
 		sendExemplars:  sendExemplars,
 		sendHistograms: sendHistograms,
 
-		quit: make(chan struct{}),
-		done: make(chan struct{}),
+		readNotify: make(chan struct{}),
+		quit:       make(chan struct{}),
+		done:       make(chan struct{}),
 
 		MaxSegment: -1,
+	}
+}
+
+func (w *Watcher) Notfy() {
+	select {
+	case w.readNotify <- struct{}{}:
+	default: // default so we can ext
+		// we don't need a buffered channel or any buffering since
+		// for each notification it recv's the watcher will read until EOF
 	}
 }
 
@@ -342,7 +359,7 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 
 	reader := NewLiveReader(w.logger, w.readerMetrics, segment)
 
-	readTicker := time.NewTicker(readPeriod)
+	readTicker := time.NewTicker(readTimeout)
 	defer readTicker.Stop()
 
 	checkpointTicker := time.NewTicker(checkpointPeriod)
@@ -420,9 +437,31 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 
 			return nil
 
+		// we haven't read due to a notification in quite some time, try reading anyways
 		case <-readTicker.C:
+			fmt.Println("READ BECAUSE OF TIMEOUT")
 			err = w.readSegment(reader, segmentNum, tail)
+			readTicker.Reset(time.Duration(readTimeout))
+			// Ignore all errors reading to end of segment whilst replaying the WAL.
+			if !tail {
+				if err != nil && errors.Cause(err) != io.EOF {
+					level.Warn(w.logger).Log("msg", "Ignoring error reading to end of segment, may have dropped data", "segment", segmentNum, "err", err)
+				} else if reader.Offset() != size {
+					level.Warn(w.logger).Log("msg", "Expected to have read whole segment, may have dropped data", "segment", segmentNum, "read", reader.Offset(), "size", size)
+				}
+				return nil
+			}
 
+			// Otherwise, when we are tailing, non-EOFs are fatal.
+			if errors.Cause(err) != io.EOF {
+				return err
+			}
+
+		case <-w.readNotify:
+			fmt.Println("READ BECAUSE OF NOTIFICATION")
+			err = w.readSegment(reader, segmentNum, tail)
+			// still want to reset the ticker so we don't read too often
+			readTicker.Reset(time.Duration(readTimeout))
 			// Ignore all errors reading to end of segment whilst replaying the WAL.
 			if !tail {
 				if err != nil && errors.Cause(err) != io.EOF {

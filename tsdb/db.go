@@ -2000,6 +2000,10 @@ func (db *DB) CleanTombstones() (err error) {
 	return nil
 }
 
+func (db *DB) SetWriteNotified(wn wlog.WriteNotified) {
+	db.head.wal.SetWriteNotified(wn)
+}
+
 func isBlockDir(fi fs.DirEntry) bool {
 	if !fi.IsDir() {
 		return false
