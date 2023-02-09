@@ -27,8 +27,6 @@ import (
 
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 
-	"github.com/prometheus/prometheus/util/stats"
-
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 
@@ -37,6 +35,7 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/stats"
 )
 
 func TestMain(m *testing.M) {

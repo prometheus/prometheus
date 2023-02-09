@@ -138,26 +138,6 @@ func GenerateSamples(start, numSamples int) []Sample {
 	})
 }
 
-// GenerateHistogramSamples starting at stat and counting up to numSamples.
-func GenerateHistogramSamples(start, numSamples int) []Sample {
-	return generateSamples(start, numSamples, func(i int) Sample {
-		return sample{
-			t: int64(i),
-			h: GenerateTestHistogram(i),
-		}
-	})
-}
-
-// GenerateFloatHistogramSamples starting at stat and counting up to numSamples.
-func GenerateFloatHistogramSamples(start, numSamples int) []Sample {
-	return generateSamples(start, numSamples, func(i int) Sample {
-		return sample{
-			t:  int64(i),
-			fh: GenerateTestFloatHistogram(i),
-		}
-	})
-}
-
 func generateSamples(start, numSamples int, gen func(int) Sample) []Sample {
 	samples := make([]Sample, 0, numSamples)
 	for i := start; i < start+numSamples; i++ {
