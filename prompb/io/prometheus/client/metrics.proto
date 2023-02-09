@@ -21,6 +21,7 @@ syntax = "proto3";
 package io.prometheus.client;
 option go_package = "io_prometheus_client";
 
+import "gogoproto/gogo.proto";
 import "google/protobuf/timestamp.proto";
 
 message LabelPair {
@@ -58,9 +59,9 @@ message Quantile {
 }
 
 message Summary {
-  uint64   sample_count = 1;
-  double   sample_sum   = 2;
-  repeated Quantile quantile     = 3;
+  uint64            sample_count = 1;
+  double            sample_sum   = 2;
+  repeated Quantile quantile     = 3 [(gogoproto.nullable) = false];
 }
 
 message Untyped {
@@ -72,7 +73,7 @@ message Histogram {
   double sample_count_float = 4; // Overrides sample_count if > 0.
   double sample_sum         = 2;
   // Buckets for the conventional histogram.
-  repeated Bucket bucket    = 3; // Ordered in increasing order of upper_bound, +Inf bucket is optional.
+  repeated Bucket bucket = 3 [(gogoproto.nullable) = false]; // Ordered in increasing order of upper_bound, +Inf bucket is optional.
 
   // Everything below here is for native histograms (also known as sparse histograms).
   // Native histograms are an experimental feature without stability guarantees.
@@ -88,20 +89,20 @@ message Histogram {
   double zero_count_float = 8; // Overrides sb_zero_count if > 0.
 
   // Negative buckets for the native histogram.
-  repeated BucketSpan negative_span =  9;
+  repeated BucketSpan negative_span = 9 [(gogoproto.nullable) = false];
   // Use either "negative_delta" or "negative_count", the former for
   // regular histograms with integer counts, the latter for float
   // histograms.
-  repeated sint64 negative_delta    = 10; // Count delta of each bucket compared to previous one (or to zero for 1st bucket).
-  repeated double negative_count    = 11; // Absolute count of each bucket.
+  repeated sint64 negative_delta = 10; // Count delta of each bucket compared to previous one (or to zero for 1st bucket).
+  repeated double negative_count = 11; // Absolute count of each bucket.
 
   // Positive buckets for the native histogram.
-  repeated BucketSpan positive_span = 12;
+  repeated BucketSpan positive_span = 12 [(gogoproto.nullable) = false];
   // Use either "positive_delta" or "positive_count", the former for
   // regular histograms with integer counts, the latter for float
   // histograms.
-  repeated sint64 positive_delta    = 13; // Count delta of each bucket compared to previous one (or to zero for 1st bucket).
-  repeated double positive_count    = 14; // Absolute count of each bucket.
+  repeated sint64 positive_delta = 13; // Count delta of each bucket compared to previous one (or to zero for 1st bucket).
+  repeated double positive_count = 14; // Absolute count of each bucket.
 }
 
 message Bucket {
@@ -123,24 +124,24 @@ message BucketSpan {
 }
 
 message Exemplar {
-  repeated LabelPair                 label     = 1;
+  repeated LabelPair        label     = 1 [(gogoproto.nullable) = false];
   double                    value     = 2;
   google.protobuf.Timestamp timestamp = 3; // OpenMetrics-style.
 }
 
 message Metric {
-  repeated LabelPair label = 1;
-  Gauge     gauge          = 2;
-  Counter   counter        = 3;
-  Summary   summary        = 4;
-  Untyped   untyped        = 5;
-  Histogram histogram      = 7;
-  int64     timestamp_ms   = 6;
+  repeated LabelPair label        = 1 [(gogoproto.nullable) = false];
+  Gauge              gauge        = 2;
+  Counter            counter      = 3;
+  Summary            summary      = 4;
+  Untyped            untyped      = 5;
+  Histogram          histogram    = 7;
+  int64              timestamp_ms = 6;
 }
 
 message MetricFamily {
   string          name   = 1;
   string          help   = 2;
   MetricType      type   = 3;
-  repeated Metric metric = 4;
+  repeated Metric metric = 4 [(gogoproto.nullable) = false];
 }
