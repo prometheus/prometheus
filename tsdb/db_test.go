@@ -4639,8 +4639,11 @@ func TestOOODisabled(t *testing.T) {
 }
 
 func TestOOOScheduledCompact(t *testing.T) {
+	// Verify the OOO compact happens at the right time.
 	opts := DefaultOptions()
-  opts.OutOfOrderTimeWindow = 30 * time.Minute.Milliseconds()
+	opts.OutOfOrderTimeWindow = 30 * time.Minute.Milliseconds()
+	// OOO compact should happen every 2 seconds aligned with half of the interval
+	// (1 second) in wall time.
 	opts.OutOfOrderCompactInterval = 2 * time.Second
 	db := openTestDB(t, opts, nil)
 	t.Cleanup(func() {
@@ -4653,21 +4656,29 @@ func TestOOOScheduledCompact(t *testing.T) {
 		for min := fromMins; min <= toMins; min++ {
 			ts := min * time.Minute.Milliseconds()
 			_, err := app.Append(0, s1, ts, float64(ts))
-      require.NoError(t, err)
+			require.NoError(t, err)
 		}
 		require.NoError(t, app.Commit())
 	}
 
-  // add in-order samples
-  addSamples(t, db, 300, 490)
-  require.Equal(t, 0, len(db.Blocks()))
+	// Wait until the start of the odd seconds (t = 1).
+	nextOddSec := time.Now().Truncate(2 * time.Second).Add(time.Second)
+	if nextOddSec.Before(time.Now()) {
+		nextOddSec = nextOddSec.Add(2 * time.Second)
+	}
+	time.Sleep(nextOddSec.Sub(time.Now()))
 
-  // add out-of-order samples
-  addSamples(t, db, 480, 480)
-  require.Equal(t, 0, len(db.Blocks()))
+	// Add in-order samples.
+	addSamples(t, db, 450, 490)
+	require.Equal(t, 0, len(db.Blocks()))
 
-  time.Sleep(3 * time.Second)
-  require.Equal(t, 1, len(db.Blocks()))
+	// Add out-of-order samples.
+	addSamples(t, db, 480, 480)
+	require.Equal(t, 0, len(db.Blocks()))
+
+	// Wait until the start of the next seconds + 100 millisecond for buffer (t = 2.1).
+	time.Sleep(1100 * time.Millisecond)
+	require.Equal(t, 1, len(db.Blocks()))
 }
 
 func TestWBLAndMmapReplay(t *testing.T) {
@@ -5570,7 +5581,7 @@ func TestNoGapAfterRestartWithOOO(t *testing.T) {
 
 			// We get 2 blocks. 1 from OOO, 1 from in-order.
 			require.NoError(t, db.Compact())
-      require.NoError(t, db.CompactOOOHead())
+			require.NoError(t, db.CompactOOOHead())
 			verifyBlockRanges := func() {
 				blocks := db.Blocks()
 				require.Equal(t, len(c.blockRanges), len(blocks))

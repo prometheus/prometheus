@@ -52,7 +52,7 @@ const (
 	// Default duration of a block in milliseconds.
 	DefaultBlockDuration = int64(2 * time.Hour / time.Millisecond)
 
-	// Default interval duration for out-of-order head compaction
+	// Default interval duration for out-of-order head compaction.
 	DefaultOutOfOrderCompactInterval = 2 * time.Hour
 
 	// Block dir suffixes to make deletion and creation operations atomic.
@@ -720,6 +720,9 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64) {
 	if opts.OutOfOrderTimeWindow < 0 {
 		opts.OutOfOrderTimeWindow = 0
 	}
+	if opts.OutOfOrderCompactInterval.Milliseconds() == 0 {
+		opts.OutOfOrderCompactInterval = DefaultOutOfOrderCompactInterval
+	}
 
 	if len(rngs) == 0 {
 		// Start with smallest block duration and create exponential buckets until the exceed the
@@ -962,9 +965,18 @@ func (db *DB) run() {
 
 	backoff := time.Duration(0)
 
-	// interval * 3 / 2 so that OOO compaction will happen around the same time as
-	// in-order compaction with default options
-	OOOScheduledCompact := time.NewTimer(db.opts.OutOfOrderCompactInterval * 3 / 2)
+	// We align the compactions to happen with in-order compaction, which happens midway
+	// between aligned intervals of time.
+	nowUnix := time.Now().Unix()
+	oooCompactionIntvSec := int64(db.opts.OutOfOrderCompactInterval / time.Second)
+	nextCompaction := (nowUnix / oooCompactionIntvSec) * oooCompactionIntvSec
+	nextCompaction += oooCompactionIntvSec / 2
+	if nextCompaction < nowUnix {
+		nextCompaction += oooCompactionIntvSec
+	}
+	timeUntilNextCompaction := time.Duration(nextCompaction-nowUnix) * time.Second
+
+	oooScheduledCompact := time.NewTimer(timeUntilNextCompaction)
 
 	for {
 		select {
@@ -985,36 +997,36 @@ func (db *DB) run() {
 			case db.compactc <- struct{}{}:
 			default:
 			}
-		case <-OOOScheduledCompact.C:
-      OOOScheduledCompact.Reset(db.opts.OutOfOrderCompactInterval)
+		case <-oooScheduledCompact.C:
+			oooScheduledCompact.Reset(db.opts.OutOfOrderCompactInterval)
 
-      db.metrics.compactionsTriggered.Inc()
+			db.metrics.compactionsTriggered.Inc()
 
-      db.autoCompactMtx.Lock()
-      if db.autoCompact {
-        if err := db.CompactOOOHead(); err != nil {
-          level.Error(db.logger).Log("msg", "compaction failed", "err", "compact ooo head")
-        }
-      } else {
-        db.metrics.compactionsSkipped.Inc()
-      }
-      db.autoCompactMtx.Unlock()
+			db.autoCompactMtx.Lock()
+			if db.autoCompact {
+				if err := db.CompactOOOHead(); err != nil {
+					level.Error(db.logger).Log("msg", "compaction failed", "err", "compact ooo head")
+				}
+			} else {
+				db.metrics.compactionsSkipped.Inc()
+			}
+			db.autoCompactMtx.Unlock()
 		case <-db.compactc:
-      db.metrics.compactionsTriggered.Inc()
+			db.metrics.compactionsTriggered.Inc()
 
-      db.autoCompactMtx.Lock()
-      if db.autoCompact {
-        if err := db.Compact(); err != nil {
-          level.Error(db.logger).Log("msg", "compaction failed", "err", err)
-          backoff = exponential(backoff, 1*time.Second, 1*time.Minute)
-        } else {
-          backoff = 0
-        }
-      } else {
-        db.metrics.compactionsSkipped.Inc()
-      }
-      db.autoCompactMtx.Unlock()
-      case <-db.stopc:
+			db.autoCompactMtx.Lock()
+			if db.autoCompact {
+				if err := db.Compact(); err != nil {
+					level.Error(db.logger).Log("msg", "compaction failed", "err", err)
+					backoff = exponential(backoff, 1*time.Second, 1*time.Minute)
+				} else {
+					backoff = 0
+				}
+			} else {
+				db.metrics.compactionsSkipped.Inc()
+			}
+			db.autoCompactMtx.Unlock()
+		case <-db.stopc:
 			return
 		}
 	}
@@ -1214,9 +1226,14 @@ func (db *DB) CompactHead(head *RangeHead) error {
 }
 
 // CompactOOOHead compacts the OOO Head.
-func (db *DB) CompactOOOHead() error {
+func (db *DB) CompactOOOHead() (returnErr error) {
 	db.cmtx.Lock()
 	defer db.cmtx.Unlock()
+	defer func() {
+		if returnErr != nil {
+			db.metrics.compactionsFailed.Inc()
+		}
+	}()
 
 	return db.compactOOOHead()
 }
