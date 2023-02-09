@@ -399,7 +399,7 @@ func exampleHistogramProto() prompb.Histogram {
 		Schema:        0,
 		ZeroThreshold: 0,
 		ZeroCount:     &prompb.Histogram_ZeroCountInt{ZeroCountInt: 0},
-		NegativeSpans: []*prompb.BucketSpan{
+		NegativeSpans: []prompb.BucketSpan{
 			{
 				Offset: 0,
 				Length: 5,
@@ -414,7 +414,7 @@ func exampleHistogramProto() prompb.Histogram {
 			},
 		},
 		NegativeDeltas: []int64{1, 2, -2, 1, -1, 0},
-		PositiveSpans: []*prompb.BucketSpan{
+		PositiveSpans: []prompb.BucketSpan{
 			{
 				Offset: 0,
 				Length: 4,
@@ -497,7 +497,7 @@ func exampleFloatHistogramProto() prompb.Histogram {
 		Schema:        0,
 		ZeroThreshold: 0,
 		ZeroCount:     &prompb.Histogram_ZeroCountFloat{ZeroCountFloat: 0},
-		NegativeSpans: []*prompb.BucketSpan{
+		NegativeSpans: []prompb.BucketSpan{
 			{
 				Offset: 0,
 				Length: 5,
@@ -512,7 +512,7 @@ func exampleFloatHistogramProto() prompb.Histogram {
 			},
 		},
 		NegativeCounts: []float64{1, 2, -2, 1, -1, 0},
-		PositiveSpans: []*prompb.BucketSpan{
+		PositiveSpans: []prompb.BucketSpan{
 			{
 				Offset: 0,
 				Length: 4,
