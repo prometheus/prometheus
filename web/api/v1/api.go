@@ -212,6 +212,7 @@ type API struct {
 
 	remoteWriteHandler http.Handler
 	remoteReadHandler  http.Handler
+	otlpWriteHandler   http.Handler
 }
 
 func init() {
@@ -249,6 +250,8 @@ func NewAPI(
 	gatherer prometheus.Gatherer,
 	registerer prometheus.Registerer,
 	statsRenderer StatsRenderer,
+	rwEnabled bool,
+	otlpEnabled bool,
 ) *API {
 	a := &API{
 		QueryEngine:       qe,
@@ -284,7 +287,13 @@ func NewAPI(
 	}
 
 	if ap != nil {
+		// TODO: Check for nil in the caller.
+	}
+	if rwEnabled {
 		a.remoteWriteHandler = remote.NewWriteHandler(logger, ap)
+	}
+	if otlpEnabled {
+		a.otlpWriteHandler = remote.NewOTLPWriteHandler(logger, ap)
 	}
 
 	return a
@@ -366,6 +375,7 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/status/walreplay", api.serveWALReplayStatus)
 	r.Post("/read", api.ready(api.remoteRead))
 	r.Post("/write", api.ready(api.remoteWrite))
+	r.Post("/otel/v1/metrics", api.ready(api.remoteWrite))
 
 	r.Get("/alerts", wrapAgent(api.alerts))
 	r.Get("/rules", wrapAgent(api.rules))
