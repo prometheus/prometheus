@@ -2783,7 +2783,7 @@ func TestRespondSuccess(t *testing.T) {
 		t.Fatalf("Error reading response body: %s", err)
 	}
 
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("Return code %d expected in success response but got %d", 200, resp.StatusCode)
 	}
 	if h := resp.Header.Get("Content-Type"); h != "application/json" {
