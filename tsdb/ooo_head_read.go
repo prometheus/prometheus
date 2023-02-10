@@ -277,11 +277,11 @@ type OOOCompactionHead struct {
 // on the sample append latency. So call NewOOOCompactionHead only right before compaction.
 func NewOOOCompactionHead(head *Head) (*OOOCompactionHead, error) {
 	ch := &OOOCompactionHead{
-		chunkRange:  head.chunkRange.Load(),
-		mint:        math.MaxInt64,
-		maxt:        math.MinInt64,
-		lastWBLFile: 0,
+		chunkRange: head.chunkRange.Load(),
+		mint:       math.MaxInt64,
+		maxt:       math.MinInt64,
 	}
+
 	if head.wbl != nil {
 		lastWBLFile, err := head.wbl.NextSegmentSync()
 		if err != nil {
