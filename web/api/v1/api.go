@@ -1602,7 +1602,7 @@ func (api *API) negotiateCodec(req *http.Request, resp *Response) Codec {
 		}
 	}
 
-	level.Warn(api.logger).Log("msg", "could not find suitable codec for response, falling back to default codec", "accept_header", acceptHeader)
+	level.Debug(api.logger).Log("msg", "could not find suitable codec for response, falling back to default codec", "accept_header", acceptHeader)
 	return defaultCodec
 }
 
