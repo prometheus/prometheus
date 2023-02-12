@@ -375,7 +375,7 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/status/walreplay", api.serveWALReplayStatus)
 	r.Post("/read", api.ready(api.remoteRead))
 	r.Post("/write", api.ready(api.remoteWrite))
-	r.Post("/otel/v1/metrics", api.ready(api.remoteWrite))
+	r.Post("/otlp/v1/metrics", api.ready(api.otlpWrite))
 
 	r.Get("/alerts", wrapAgent(api.alerts))
 	r.Get("/rules", wrapAgent(api.rules))
@@ -1491,6 +1491,14 @@ func (api *API) remoteWrite(w http.ResponseWriter, r *http.Request) {
 		api.remoteWriteHandler.ServeHTTP(w, r)
 	} else {
 		http.Error(w, "remote write receiver needs to be enabled with --enable-feature=remote-write-receiver", http.StatusNotFound)
+	}
+}
+
+func (api *API) otlpWrite(w http.ResponseWriter, r *http.Request) {
+	if api.otlpWriteHandler != nil {
+		api.otlpWriteHandler.ServeHTTP(w, r)
+	} else {
+		http.Error(w, "otlp write receiver needs to be enabled with --enable-feature=otlp-write-receiver", http.StatusNotFound)
 	}
 }
 
