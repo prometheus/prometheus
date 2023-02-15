@@ -21,7 +21,7 @@ import (
 // azureADRoundTripper is round tripper adding Azure AD authorization to calls.
 type azureADRoundTripper struct {
 	next          http.RoundTripper
-	tokenProvider TokenProvider
+	tokenProvider tokenProvider
 }
 
 // NewAzureADRoundTripper creates round tripper adding Azure AD authorization to calls.
@@ -42,7 +42,7 @@ func NewAzureADRoundTripper(cfg *AzureADConfig, next http.RoundTripper) (http.Ro
 
 	rt := &azureADRoundTripper{
 		next:          next,
-		tokenProvider: tokenProvider,
+		tokenProvider: TokenProvider,
 	}
 	return rt, nil
 }
