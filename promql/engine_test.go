@@ -3155,8 +3155,7 @@ func TestNativeHistogramRate(t *testing.T) {
 	require.Len(t, vector, 1)
 	actualHistogram := vector[0].H
 	expectedHistogram := &histogram.FloatHistogram{
-		// TODO(beorn7): This should be GaugeType. Change it once supported by PromQL.
-		CounterResetHint: histogram.NotCounterReset,
+		CounterResetHint: histogram.GaugeType,
 		Schema:           1,
 		ZeroThreshold:    0.001,
 		ZeroCount:        1. / 15.,
@@ -3200,8 +3199,7 @@ func TestNativeFloatHistogramRate(t *testing.T) {
 	require.Len(t, vector, 1)
 	actualHistogram := vector[0].H
 	expectedHistogram := &histogram.FloatHistogram{
-		// TODO(beorn7): This should be GaugeType. Change it once supported by PromQL.
-		CounterResetHint: histogram.NotCounterReset,
+		CounterResetHint: histogram.GaugeType,
 		Schema:           1,
 		ZeroThreshold:    0.001,
 		ZeroCount:        1. / 15.,

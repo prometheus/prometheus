@@ -192,6 +192,8 @@ func (h *FloatHistogram) Scale(factor float64) *FloatHistogram {
 //
 // This method returns a pointer to the receiving histogram for convenience.
 func (h *FloatHistogram) Add(other *FloatHistogram) *FloatHistogram {
+	// TODO(trevorwhitney): If other.CounterResetHint != h.CounterResetHint then
+	// we should return some warning.
 	otherZeroCount := h.reconcileZeroBuckets(other)
 	h.ZeroCount += otherZeroCount
 	h.Count += other.Count
@@ -438,6 +440,15 @@ func (h *FloatHistogram) Compact(maxEmptyBuckets int) *FloatHistogram {
 // information can be read directly from there rather than be detected each time
 // again.
 func (h *FloatHistogram) DetectReset(previous *FloatHistogram) bool {
+	if h.CounterResetHint == CounterReset {
+		return true
+	}
+	if h.CounterResetHint == NotCounterReset {
+		return false
+	}
+	// In all other cases of CounterResetHint, we go on as we would otherwise.
+	// Even in the GaugeHistogram case, we pretend this is a counter histogram
+	// for consistency.
 	if h.Count < previous.Count {
 		return true
 	}
