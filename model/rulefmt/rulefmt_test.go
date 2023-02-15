@@ -73,12 +73,21 @@ func TestParseFileFailure(t *testing.T) {
 			filename: "invalid_label_name.bad.yaml",
 			errMsg:   "invalid label name",
 		},
+		{
+			filename: "record_and_for.bad.yaml",
+			errMsg:   "invalid field 'for' in recording rule",
+		},
+		{
+			filename: "record_and_keep_firing_for.bad.yaml",
+			errMsg:   "invalid field 'keep_firing_for' in recording rule",
+		},
 	}
 
 	for _, c := range table {
 		_, errs := ParseFile(filepath.Join("testdata", c.filename))
 		require.NotNil(t, errs, "Expected error parsing %s but got none", c.filename)
-		require.Error(t, errs[0], c.errMsg, "Expected error for %s.", c.filename)
+		require.Error(t, errs[0])
+		require.Containsf(t, errs[0].Error(), c.errMsg, "Expected error for %s.", c.filename)
 	}
 }
 

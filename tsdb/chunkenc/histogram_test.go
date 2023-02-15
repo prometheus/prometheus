@@ -67,7 +67,9 @@ func TestHistogramChunkSameBuckets(t *testing.T) {
 	h.PositiveBuckets = []int64{5, -2, 1, -2} // counts: 5, 3, 4, 2 (total 14)
 	h.NegativeBuckets = []int64{4, -1, 1, -1} // counts: 4, 3, 4, 4 (total 15)
 	app.AppendHistogram(ts, h)
-	exp = append(exp, result{t: ts, h: h, fh: h.ToFloat()})
+	hExp := h.Copy()
+	hExp.CounterResetHint = histogram.NotCounterReset
+	exp = append(exp, result{t: ts, h: hExp, fh: hExp.ToFloat()})
 	require.Equal(t, 2, c.NumSamples())
 
 	// Add update with new appender.
@@ -82,7 +84,9 @@ func TestHistogramChunkSameBuckets(t *testing.T) {
 	h.PositiveBuckets = []int64{6, 1, -3, 6} // counts: 6, 7, 4, 10 (total 27)
 	h.NegativeBuckets = []int64{5, 1, -2, 3} // counts: 5, 6, 4, 7 (total 22)
 	app.AppendHistogram(ts, h)
-	exp = append(exp, result{t: ts, h: h, fh: h.ToFloat()})
+	hExp = h.Copy()
+	hExp.CounterResetHint = histogram.NotCounterReset
+	exp = append(exp, result{t: ts, h: hExp, fh: hExp.ToFloat()})
 	require.Equal(t, 3, c.NumSamples())
 
 	// 1. Expand iterator in simple case.
@@ -149,7 +153,7 @@ func TestHistogramChunkSameBuckets(t *testing.T) {
 	require.Equal(t, ValNone, it4.Seek(exp[len(exp)-1].t+1))
 }
 
-// Mimics the scenario described for compareSpans().
+// Mimics the scenario described for expandSpansForward.
 func TestHistogramChunkBucketChanges(t *testing.T) {
 	c := Chunk(NewHistogramChunk())
 
@@ -220,9 +224,11 @@ func TestHistogramChunkBucketChanges(t *testing.T) {
 	h1.PositiveBuckets = []int64{6, -3, -3, 3, -3, 0, 2, 2, 1, -5, 1}
 	h1.NegativeSpans = h2.NegativeSpans
 	h1.NegativeBuckets = []int64{0, 1}
+	hExp := h2.Copy()
+	hExp.CounterResetHint = histogram.NotCounterReset
 	exp := []result{
 		{t: ts1, h: h1, fh: h1.ToFloat()},
-		{t: ts2, h: h2, fh: h2.ToFloat()},
+		{t: ts2, h: hExp, fh: hExp.ToFloat()},
 	}
 	it := c.Iterator(nil)
 	var act []result
@@ -463,11 +469,12 @@ func TestAtFloatHistogram(t *testing.T) {
 			NegativeBuckets: []float64{1, 2, 1, 2, 2, 2, 2},
 		},
 		{
-			Schema:        0,
-			Count:         36,
-			Sum:           2345.6,
-			ZeroThreshold: 0.001,
-			ZeroCount:     5,
+			CounterResetHint: histogram.NotCounterReset,
+			Schema:           0,
+			Count:            36,
+			Sum:              2345.6,
+			ZeroThreshold:    0.001,
+			ZeroCount:        5,
 			PositiveSpans: []histogram.Span{
 				{Offset: 0, Length: 4},
 				{Offset: 0, Length: 0},
@@ -482,11 +489,12 @@ func TestAtFloatHistogram(t *testing.T) {
 			NegativeBuckets: []float64{1, 4, 2, 7, 5, 5, 2},
 		},
 		{
-			Schema:        0,
-			Count:         36,
-			Sum:           1111.1,
-			ZeroThreshold: 0.001,
-			ZeroCount:     5,
+			CounterResetHint: histogram.NotCounterReset,
+			Schema:           0,
+			Count:            36,
+			Sum:              1111.1,
+			ZeroThreshold:    0.001,
+			ZeroCount:        5,
 			PositiveSpans: []histogram.Span{
 				{Offset: 0, Length: 4},
 				{Offset: 0, Length: 0},

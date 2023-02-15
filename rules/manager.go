@@ -1119,6 +1119,7 @@ func (m *Manager) LoadGroups(
 						r.Alert.Value,
 						expr,
 						time.Duration(r.For),
+						time.Duration(r.KeepFiringFor),
 						labels.FromMap(r.Labels),
 						labels.FromMap(r.Annotations),
 						externalLabels,
