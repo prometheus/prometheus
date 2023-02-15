@@ -4,6 +4,8 @@ go 1.18
 
 require (
 	github.com/Azure/azure-sdk-for-go v65.0.0+incompatible
+	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.3.1
+	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.2.1
 	github.com/Azure/go-autorest/autorest v0.11.28
 	github.com/Azure/go-autorest/autorest/adal v0.9.22
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
@@ -83,9 +85,14 @@ require (
 
 require (
 	cloud.google.com/go/compute/metadata v0.2.3 // indirect
+	github.com/Azure/azure-sdk-for-go/sdk/internal v1.1.2 // indirect
+	github.com/AzureAD/microsoft-authentication-library-for-go v0.8.1 // indirect
 	github.com/coreos/go-systemd/v22 v22.4.0 // indirect
 	github.com/hashicorp/errwrap v1.0.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
+	github.com/kylelemons/godebug v1.1.0 // indirect
+	github.com/pkg/browser v0.0.0-20210115035449-ce105d075bb4 // indirect
+	github.com/stretchr/objx v0.5.0 // indirect
 )
 
 require (
@@ -124,7 +131,7 @@ require (
 	github.com/go-openapi/swag v0.22.3 // indirect
 	github.com/go-openapi/validate v0.22.0 // indirect
 	github.com/go-resty/resty/v2 v2.1.1-0.20191201195748-d7b97669fe48 // indirect
-	github.com/golang-jwt/jwt/v4 v4.2.0 // indirect
+	github.com/golang-jwt/jwt/v4 v4.4.2 // indirect
 	github.com/golang/glog v1.0.0 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
@@ -132,7 +139,7 @@ require (
 	github.com/google/go-cmp v0.5.9 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
-	github.com/google/uuid v1.3.0 // indirect
+	github.com/google/uuid v1.3.0
 	github.com/googleapis/enterprise-certificate-proxy v0.2.1 // indirect
 	github.com/googleapis/gax-go/v2 v2.7.0 // indirect
 	github.com/gorilla/websocket v1.5.0 // indirect

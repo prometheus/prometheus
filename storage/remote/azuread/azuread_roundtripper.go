@@ -19,9 +19,9 @@ import (
 )
 
 // Round tripper adding Azure AD authorization to calls
-type azureAdRoundTripper struct {
+type azureADRoundTripper struct {
 	next          http.RoundTripper
-	tokenProvider TokenProvider
+	tokenProvider tokenProvider
 }
 
 // Creates round tripper adding Azure AD authorization to calls
@@ -30,26 +30,26 @@ func NewAzureAdRoundTripper(cfg *AzureAdConfig, next http.RoundTripper) (http.Ro
 		next = http.DefaultTransport
 	}
 
-	cred, err := NewTokenCredential(cfg)
+	cred, err := newTokenCredential(cfg)
 	if err != nil {
 		return nil, err
 	}
 
-	tokenProvider, err := NewTokenProvider(context.Background(), cfg, cred)
+	tokenProvider, err := newTokenProvider(context.Background(), cfg, cred)
 	if err != nil {
 		return nil, err
 	}
 
-	rt := &azureAdRoundTripper{
+	rt := &azureADRoundTripper{
 		next:          next,
-		tokenProvider: tokenProvider,
+		tokenProvider: TokenProvider,
 	}
 	return rt, nil
 }
 
 // Sets Auhtorization header for requests
-func (rt *azureAdRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
-	bearerAccessToken := "Bearer " + rt.tokenProvider.GetAccessToken()
+func (rt *azureADRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	bearerAccessToken := "Bearer " + rt.tokenProvider.getAccessToken()
 	req.Header.Set("Authorization", bearerAccessToken)
 
 	return rt.next.RoundTrip(req)

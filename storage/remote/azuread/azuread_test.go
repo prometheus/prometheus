@@ -47,16 +47,16 @@ func (ad *AzureAdTestSuite) TestAzureAdRoundTripper() {
 	}
 
 	azureAdConfig := &AzureAdConfig{
-		Cloud:         "AzurePublic",
-		AzureClientId: dummyClientId,
+		Cloud:    "AzurePublic",
+		ClientId: dummyClientId,
 	}
 
 	ad.mockCredential.On("GetToken", mock.Anything, mock.Anything).Return(*testToken, nil)
 
-	tokenProvider, err := NewTokenProvider(context.Background(), azureAdConfig, ad.mockCredential)
+	tokenProvider, err := newTokenProvider(context.Background(), azureAdConfig, ad.mockCredential)
 	ad.Assert().NoError(err)
 
-	rt := &azureAdRoundTripper{
+	rt := &azureADRoundTripper{
 		next: promhttp.RoundTripperFunc(func(req *http.Request) (*http.Response, error) {
 			gotReq = req
 			return &http.Response{StatusCode: http.StatusOK}, nil

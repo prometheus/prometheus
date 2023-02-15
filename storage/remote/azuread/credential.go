@@ -19,12 +19,12 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 )
 
-// NewTokenCredential return TokenCredential of different kinds like Azure Managed Identity and Azure AD application.
-func NewTokenCredential(cfg *AzureAdConfig) (azcore.TokenCredential, error) {
+// newTokenCredential return TokenCredential of different kinds like Azure Managed Identity and Azure AD application.
+func newTokenCredential(cfg *AzureAdConfig) (azcore.TokenCredential, error) {
 	var cred azcore.TokenCredential
 	var err error
-	if len(cfg.AzureClientId) > 0 {
-		cred, err = NewManagedIdentityTokenCredential(cfg.AzureClientId)
+	if len(cfg.ClientId) > 0 {
+		cred, err = newManagedIdentityTokenCredential(cfg.ClientId)
 		if err != nil {
 			return nil, err
 		}

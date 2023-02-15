@@ -47,11 +47,11 @@ func TestTokenProvider(t *testing.T) {
 
 func (s *TokenProviderTestSuite) TestNewTokenProvider_NilAudience_Fail() {
 	azureAdConfig := &AzureAdConfig{
-		Cloud:         "PublicAzure",
-		AzureClientId: dummyClientId,
+		Cloud:    "PublicAzure",
+		ClientId: dummyClientId,
 	}
 
-	actualTokenProvider, actualErr := NewTokenProvider(context.Background(), azureAdConfig, s.mockCredential)
+	actualTokenProvider, actualErr := newTokenProvider(context.Background(), azureAdConfig, s.mockCredential)
 
 	//assert
 	s.Assert().Nil(actualTokenProvider)
@@ -61,24 +61,24 @@ func (s *TokenProviderTestSuite) TestNewTokenProvider_NilAudience_Fail() {
 
 func (s *TokenProviderTestSuite) TestNewTokenProvider_Success() {
 	azureAdConfig := &AzureAdConfig{
-		Cloud:         "AzurePublic",
-		AzureClientId: dummyClientId,
+		Cloud:    "AzurePublic",
+		ClientId: dummyClientId,
 	}
 	s.mockCredential.On("GetToken", mock.Anything, mock.Anything).Return(getToken(), nil)
 
-	actualTokenProvider, actualErr := NewTokenProvider(context.Background(), azureAdConfig, s.mockCredential)
+	actualTokenProvider, actualErr := newTokenProvider(context.Background(), azureAdConfig, s.mockCredential)
 
 	//assert
 	s.Assert().NotNil(actualTokenProvider)
 	s.Assert().Nil(actualErr)
-	s.Assert().NotNil(actualTokenProvider.GetAccessToken())
+	s.Assert().NotNil(actualTokenProvider.getAccessToken())
 }
 
 func (s *TokenProviderTestSuite) TestPeriodicTokenRefresh_Success() {
 	// setup
 	azureAdConfig := &AzureAdConfig{
-		Cloud:         "AzurePublic",
-		AzureClientId: dummyClientId,
+		Cloud:    "AzurePublic",
+		ClientId: dummyClientId,
 	}
 	testToken := &azcore.AccessToken{
 		Token:     testTokenString,
@@ -88,19 +88,19 @@ func (s *TokenProviderTestSuite) TestPeriodicTokenRefresh_Success() {
 	s.mockCredential.On("GetToken", mock.Anything, mock.Anything).Return(*testToken, nil).Once().
 		On("GetToken", mock.Anything, mock.Anything).Return(getToken(), nil)
 
-	actualTokenProvider, actualErr := NewTokenProvider(context.Background(), azureAdConfig, s.mockCredential)
+	actualTokenProvider, actualErr := newTokenProvider(context.Background(), azureAdConfig, s.mockCredential)
 
 	// assert
 	s.Assert().NotNil(actualTokenProvider)
 	s.Assert().Nil(actualErr)
-	s.Assert().NotNil(actualTokenProvider.GetAccessToken())
+	s.Assert().NotNil(actualTokenProvider.getAccessToken())
 
 	// Token set to refresh at half of the expiry time. The test tokens are set to expiry in 10s.
 	// Hence, the 6 seconds wait to check if the token is refreshed.
 	time.Sleep(6 * time.Second)
 
 	s.mockCredential.AssertNumberOfCalls(s.T(), "GetToken", 2)
-	s.Assert().NotEqual(actualTokenProvider.GetAccessToken(), testTokenString)
+	s.Assert().NotEqual(actualTokenProvider.getAccessToken(), testTokenString)
 }
 
 func getToken() azcore.AccessToken {

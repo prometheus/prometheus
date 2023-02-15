@@ -24,6 +24,18 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 )
 
+const (
+	// Clouds
+	AzureChina      = "AzureChina"
+	AzureGovernment = "AzureGovernment"
+	AzurePublic     = "AzurePublic"
+
+	// Audiences
+	INGESTION_CHINA_AUDIENCE      = "https://monitor.azure.cn//.default"
+	INGESTION_GOVERNMENT_AUDIENCE = "https://monitor.azure.us//.default"
+	INGESTION_PUBLIC_AUDIENCE     = "https://monitor.azure.com//.default"
+)
+
 // tokenProvider is used to store and retrieve Azure AD accessToken
 type tokenProvider struct {
 	// token is member used to store the current valid accessToken
@@ -38,12 +50,12 @@ type tokenProvider struct {
 
 // TokenProvider is the interface for Credential client
 type TokenProvider interface {
-	GetAccessToken() string
+	getAccessToken() string
 }
 
-// NewTokenProvider helps to fetch accessToken for different types of credential. This also takes care of
+// newTokenProvider helps to fetch accessToken for different types of credential. This also takes care of
 // refreshing the accessToken before expiry. This accessToken is attached to the Authorization header while making requests.
-func NewTokenProvider(ctx context.Context, cfg *AzureAdConfig, cred azcore.TokenCredential) (TokenProvider, error) {
+func newTokenProvider(ctx context.Context, cfg *AzureAdConfig, cred azcore.TokenCredential) (TokenProvider, error) {
 	audience, err := getAudience(cfg.Cloud)
 	if err != nil {
 		return nil, err
@@ -65,7 +77,7 @@ func NewTokenProvider(ctx context.Context, cfg *AzureAdConfig, cred azcore.Token
 }
 
 // Returns the current valid accessToken
-func (tokenProvider *tokenProvider) GetAccessToken() string {
+func (tokenProvider *tokenProvider) getAccessToken() string {
 	return tokenProvider.token
 }
 

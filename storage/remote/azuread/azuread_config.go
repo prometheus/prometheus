@@ -22,8 +22,8 @@ import (
 // AzureAdConfig is the configuration for getting the accessToken
 // for remote write requests to Azure Monitoring Workspace
 type AzureAdConfig struct {
-	// AzureClientId is the clientId of the managed identity that is being used to authenticate.
-	AzureClientId string `yaml:"azure_client_id,omitempty"`
+	// ClientId is the clientId of the managed identity that is being used to authenticate.
+	ClientId string `yaml:"client_id,omitempty"`
 
 	// Cloud is the Azure cloud in which the service is running. Example: AzurePublic/AzureGovernment/AzureChina
 	Cloud string `yaml:"cloud,omitempty"`
@@ -35,11 +35,11 @@ func (c *AzureAdConfig) Validate() error {
 		return fmt.Errorf("must provide Cloud in the Azure AD config")
 	}
 
-	if c.AzureClientId == "" {
+	if c.ClientId == "" {
 		return fmt.Errorf("must provide a Azure Managed Identity clientId in the Azure AD config")
 	}
 
-	_, err := uuid.Parse(c.AzureClientId)
+	_, err := uuid.Parse(c.ClientId)
 
 	if err != nil {
 		return fmt.Errorf("Azure Managed Identity clientId provided is invalid")
