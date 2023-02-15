@@ -15,7 +15,6 @@ package azuread
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -33,6 +32,5 @@ func (m *mockCredential) GetToken(ctx context.Context, options policy.TokenReque
 		return azcore.AccessToken{}, args.Error(1)
 	}
 
-	fmt.Println(args.Get(0).(azcore.AccessToken))
 	return args.Get(0).(azcore.AccessToken), nil
 }
