@@ -27,11 +27,11 @@ import (
 
 type AzureAdTestSuite struct {
 	suite.Suite
-	mockCredential *MockCredential
+	mockCredential *mockCredential
 }
 
 func (ad *AzureAdTestSuite) BeforeTest(suiteName, testName string) {
-	ad.mockCredential = new(MockCredential)
+	ad.mockCredential = new(mockCredential)
 }
 
 func TestAzureAd(t *testing.T) {
@@ -46,7 +46,7 @@ func (ad *AzureAdTestSuite) TestAzureAdRoundTripper() {
 		ExpiresOn: testTokenExpiry,
 	}
 
-	azureAdConfig := &AzureAdConfig{
+	azureAdConfig := &AzureADConfig{
 		Cloud:    "AzurePublic",
 		ClientId: dummyClientId,
 	}

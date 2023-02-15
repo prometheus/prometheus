@@ -34,11 +34,11 @@ var testTokenExpiry = time.Now().Add(10 * time.Second)
 
 type TokenProviderTestSuite struct {
 	suite.Suite
-	mockCredential *MockCredential
+	mockCredential *mockCredential
 }
 
 func (s *TokenProviderTestSuite) BeforeTest(suiteName, testName string) {
-	s.mockCredential = new(MockCredential)
+	s.mockCredential = new(mockCredential)
 }
 
 func TestTokenProvider(t *testing.T) {
@@ -46,7 +46,7 @@ func TestTokenProvider(t *testing.T) {
 }
 
 func (s *TokenProviderTestSuite) TestNewTokenProvider_NilAudience_Fail() {
-	azureAdConfig := &AzureAdConfig{
+	azureAdConfig := &AzureADConfig{
 		Cloud:    "PublicAzure",
 		ClientId: dummyClientId,
 	}
@@ -60,7 +60,7 @@ func (s *TokenProviderTestSuite) TestNewTokenProvider_NilAudience_Fail() {
 }
 
 func (s *TokenProviderTestSuite) TestNewTokenProvider_Success() {
-	azureAdConfig := &AzureAdConfig{
+	azureAdConfig := &AzureADConfig{
 		Cloud:    "AzurePublic",
 		ClientId: dummyClientId,
 	}
@@ -76,7 +76,7 @@ func (s *TokenProviderTestSuite) TestNewTokenProvider_Success() {
 
 func (s *TokenProviderTestSuite) TestPeriodicTokenRefresh_Success() {
 	// setup
-	azureAdConfig := &AzureAdConfig{
+	azureAdConfig := &AzureADConfig{
 		Cloud:    "AzurePublic",
 		ClientId: dummyClientId,
 	}

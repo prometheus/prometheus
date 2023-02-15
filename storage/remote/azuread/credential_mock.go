@@ -23,11 +23,11 @@ import (
 )
 
 // Mock azidentity TokenCredential interface
-type MockCredential struct {
+type mockCredential struct {
 	mock.Mock
 }
 
-func (m *MockCredential) GetToken(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
+func (m *mockCredential) GetToken(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
 	args := m.MethodCalled("GetToken", ctx, options)
 	if args.Get(0) == nil {
 		return azcore.AccessToken{}, args.Error(1)

@@ -55,7 +55,7 @@ type TokenProvider interface {
 
 // newTokenProvider helps to fetch accessToken for different types of credential. This also takes care of
 // refreshing the accessToken before expiry. This accessToken is attached to the Authorization header while making requests.
-func newTokenProvider(ctx context.Context, cfg *AzureAdConfig, cred azcore.TokenCredential) (TokenProvider, error) {
+func newTokenProvider(ctx context.Context, cfg *AzureADConfig, cred azcore.TokenCredential) (TokenProvider, error) {
 	audience, err := getAudience(cfg.Cloud)
 	if err != nil {
 		return nil, err

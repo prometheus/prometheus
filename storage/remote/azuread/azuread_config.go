@@ -19,9 +19,9 @@ import (
 	"github.com/google/uuid"
 )
 
-// AzureAdConfig is the configuration for getting the accessToken
+// AzureADConfig is the configuration for getting the accessToken
 // for remote write requests to Azure Monitoring Workspace
-type AzureAdConfig struct {
+type AzureADConfig struct {
 	// ClientId is the clientId of the managed identity that is being used to authenticate.
 	ClientId string `yaml:"client_id,omitempty"`
 
@@ -30,7 +30,7 @@ type AzureAdConfig struct {
 }
 
 // Used to validate config values provided
-func (c *AzureAdConfig) Validate() error {
+func (c *AzureADConfig) Validate() error {
 	if c.Cloud == "" {
 		return fmt.Errorf("must provide Cloud in the Azure AD config")
 	}
@@ -48,9 +48,9 @@ func (c *AzureAdConfig) Validate() error {
 }
 
 // Used to unmarshal Azure Ad config yaml
-func (c *AzureAdConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	type plain AzureAdConfig
-	*c = AzureAdConfig{}
+func (c *AzureADConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	type plain AzureADConfig
+	*c = AzureADConfig{}
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}

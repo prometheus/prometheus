@@ -20,7 +20,7 @@ import (
 )
 
 // newTokenCredential return TokenCredential of different kinds like Azure Managed Identity and Azure AD application.
-func newTokenCredential(cfg *AzureAdConfig) (azcore.TokenCredential, error) {
+func newTokenCredential(cfg *AzureADConfig) (azcore.TokenCredential, error) {
 	var cred azcore.TokenCredential
 	var err error
 	if len(cfg.ClientId) > 0 {

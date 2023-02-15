@@ -21,12 +21,12 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-func loadAzureAdConfig(filename string) (*AzureAdConfig, error) {
+func loadAzureAdConfig(filename string) (*AzureADConfig, error) {
 	content, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}
-	cfg := AzureAdConfig{}
+	cfg := AzureADConfig{}
 	if err = yaml.UnmarshalStrict(content, &cfg); err != nil {
 		return nil, err
 	}
