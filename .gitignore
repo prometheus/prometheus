@@ -28,3 +28,5 @@ npm_licenses.tar.bz2
 /.build
 
 /**/node_modules
+
+.idea
