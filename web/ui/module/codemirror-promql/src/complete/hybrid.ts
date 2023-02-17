@@ -110,6 +110,26 @@ export interface Context {
   matchers?: Matcher[];
 }
 
+function getMetricNameInGroupBy(tree: SyntaxNode, state: EditorState): string {
+  // There should be an AggregateExpr as parent of the GroupingLabels.
+  // Then we should find the VectorSelector child to be able to find the metric name.
+  const currentNode: SyntaxNode | null = walkBackward(tree, AggregateExpr);
+  if (!currentNode) {
+    return '';
+  }
+  let metricName = '';
+  currentNode.cursor().iterate((node) => {
+    // Continue until we find the VectorSelector, then look up the metric name.
+    if (node.type.id === VectorSelector) {
+      metricName = getMetricNameInVectorSelector(node.node, state);
+      if (metricName) {
+        return false;
+      }
+    }
+  });
+  return metricName;
+}
+
 function getMetricNameInVectorSelector(tree: SyntaxNode, state: EditorState): string {
   // Find if there is a defined metric name. Should be used to autocomplete a labelValue or a labelName
   // First find the parent "VectorSelector" to be able to find then the subChild "Identifier" if it exists.
@@ -344,9 +364,9 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode): Context
       break;
     case GroupingLabels:
       // In this case we are in the given situation:
-      //      sum by ()
-      // So we have to autocomplete any labelName
-      result.push({ kind: ContextKind.LabelName });
+      //      sum by () or sum (metric_name) by ()
+      // so we have or to autocomplete any kind of labelName or to autocomplete only the labelName associated to the metric
+      result.push({ kind: ContextKind.LabelName, metricName: getMetricNameInGroupBy(node, state) });
       break;
     case LabelMatchers:
       // In that case we are in the given situation:
