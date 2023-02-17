@@ -76,6 +76,43 @@ func Load(s string, expandExternalLabels bool, logger log.Logger) (*Config, erro
 		return nil, err
 	}
 
+	//if had scrape configs need to include
+	if len(cfg.IncludeScrapeConfigs) > 0 {
+		for _, rf := range cfg.IncludeScrapeConfigs {
+			if !patRulePath.MatchString(rf) {
+				return nil, fmt.Errorf("invalid include file path %q", rf)
+			}
+		}
+
+		for _, includeFiles := range cfg.IncludeScrapeConfigs {
+			files, err := filepath.Glob(includeFiles)
+
+			if err != nil {
+				return nil, err
+			}
+
+			for _, f := range files {
+				if content, err := os.ReadFile(f); err != nil {
+					return nil, err
+				} else {
+					var includeScrapeConfigs struct {
+						ScrapeConfigs []*ScrapeConfig `yaml:"scrape_configs,omitempty"`
+					}
+					if err := yaml.Unmarshal(content, &includeScrapeConfigs); err != nil {
+						return nil, err
+					} else {
+						cfg.ScrapeConfigs = append(cfg.ScrapeConfigs, includeScrapeConfigs.ScrapeConfigs...)
+					}
+				}
+			}
+		}
+	}
+
+	//when all the scrape configs had loaded from above, process them together
+	if err := cfg.mergeScrapeConfig(); err != nil {
+		return nil, err
+	}
+
 	if !expandExternalLabels {
 		return cfg, nil
 	}
@@ -107,6 +144,7 @@ func LoadFile(filename string, agentMode, expandExternalLabels bool, logger log.
 	if err != nil {
 		return nil, err
 	}
+
 	cfg, err := Load(string(content), expandExternalLabels, logger)
 	if err != nil {
 		return nil, fmt.Errorf("parsing YAML file %s: %w", filename, err)
@@ -216,15 +254,15 @@ var (
 
 // Config is the top-level configuration for Prometheus's config files.
 type Config struct {
-	GlobalConfig   GlobalConfig    `yaml:"global"`
-	AlertingConfig AlertingConfig  `yaml:"alerting,omitempty"`
-	RuleFiles      []string        `yaml:"rule_files,omitempty"`
-	ScrapeConfigs  []*ScrapeConfig `yaml:"scrape_configs,omitempty"`
-	StorageConfig  StorageConfig   `yaml:"storage,omitempty"`
-	TracingConfig  TracingConfig   `yaml:"tracing,omitempty"`
-
-	RemoteWriteConfigs []*RemoteWriteConfig `yaml:"remote_write,omitempty"`
-	RemoteReadConfigs  []*RemoteReadConfig  `yaml:"remote_read,omitempty"`
+	GlobalConfig         GlobalConfig         `yaml:"global"`
+	AlertingConfig       AlertingConfig       `yaml:"alerting,omitempty"`
+	RuleFiles            []string             `yaml:"rule_files,omitempty"`
+	ScrapeConfigs        []*ScrapeConfig      `yaml:"scrape_configs,omitempty"`
+	StorageConfig        StorageConfig        `yaml:"storage,omitempty"`
+	TracingConfig        TracingConfig        `yaml:"tracing,omitempty"`
+	IncludeScrapeConfigs []string             `yaml:"include_scrape_configs"`
+	RemoteWriteConfigs   []*RemoteWriteConfig `yaml:"remote_write,omitempty"`
+	RemoteReadConfigs    []*RemoteReadConfig  `yaml:"remote_read,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -254,28 +292,9 @@ func (c Config) String() string {
 	return string(b)
 }
 
-// UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	*c = DefaultConfig
-	// We want to set c to the defaults and then overwrite it with the input.
-	// To make unmarshal fill the plain data struct rather than calling UnmarshalYAML
-	// again, we have to hide it using a type indirection.
-	type plain Config
-	if err := unmarshal((*plain)(c)); err != nil {
-		return err
-	}
-
-	// If a global block was open but empty the default global config is overwritten.
-	// We have to restore it here.
-	if c.GlobalConfig.isZero() {
-		c.GlobalConfig = DefaultGlobalConfig
-	}
-
-	for _, rf := range c.RuleFiles {
-		if !patRulePath.MatchString(rf) {
-			return fmt.Errorf("invalid rule file path %q", rf)
-		}
-	}
+// separate ScrapeConfigs handler from Config UnmarshalYAML function
+// used by include scrape config content merge with origin file scrape config and process together
+func (c *Config) mergeScrapeConfig() error {
 	// Do global overrides and validate unique names.
 	jobNames := map[string]struct{}{}
 	for _, scfg := range c.ScrapeConfigs {
@@ -302,6 +321,31 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 			return fmt.Errorf("found multiple scrape configs with job name %q", scfg.JobName)
 		}
 		jobNames[scfg.JobName] = struct{}{}
+	}
+	return nil
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultConfig
+	// We want to set c to the defaults and then overwrite it with the input.
+	// To make unmarshal fill the plain data struct rather than calling UnmarshalYAML
+	// again, we have to hide it using a type indirection.
+	type plain Config
+	if err := unmarshal((*plain)(c)); err != nil {
+		return err
+	}
+
+	// If a global block was open but empty the default global config is overwritten.
+	// We have to restore it here.
+	if c.GlobalConfig.isZero() {
+		c.GlobalConfig = DefaultGlobalConfig
+	}
+
+	for _, rf := range c.RuleFiles {
+		if !patRulePath.MatchString(rf) {
+			return fmt.Errorf("invalid rule file path %q", rf)
+		}
 	}
 	rwNames := map[string]struct{}{}
 	for _, rwcfg := range c.RemoteWriteConfigs {
