@@ -17,7 +17,6 @@
 package textparse
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -30,8 +29,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
 )
-
-var allowedSuffixes = [][]byte{[]byte("_total"), []byte("_bucket")}
 
 type openMetricsLexer struct {
 	b     []byte
@@ -364,12 +361,6 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 }
 
 func (p *OpenMetricsParser) parseComment() error {
-	// Validate the name of the metric. It must have _total or _bucket as
-	// suffix for exemplars to be supported.
-	if err := p.validateNameForExemplar(p.series[:p.offsets[0]-p.start]); err != nil {
-		return err
-	}
-
 	var err error
 	// Parse the labels.
 	p.eOffsets, err = p.parseLVals(p.eOffsets)
@@ -473,13 +464,4 @@ func (p *OpenMetricsParser) getFloatValue(t token, after string) (float64, error
 		val = math.Float64frombits(value.NormalNaN)
 	}
 	return val, nil
-}
-
-func (p *OpenMetricsParser) validateNameForExemplar(name []byte) error {
-	for _, suffix := range allowedSuffixes {
-		if bytes.HasSuffix(name, suffix) {
-			return nil
-		}
-	}
-	return fmt.Errorf("metric name %v does not support exemplars", string(name))
 }

@@ -45,9 +45,14 @@ hh_bucket{le="+Inf"} 1
 # TYPE gh gaugehistogram
 gh_bucket{le="+Inf"} 1
 # TYPE hhh histogram
-hhh_bucket{le="+Inf"} 1 # {aa="bb"} 4
+hhh_bucket{le="+Inf"} 1 # {id="histogram-bucket-test"} 4
+hhh_count 1 # {id="histogram-count-test"} 4
 # TYPE ggh gaugehistogram
-ggh_bucket{le="+Inf"} 1 # {cc="dd",xx="yy"} 4 123.123
+ggh_bucket{le="+Inf"} 1 # {id="gaugehistogram-bucket-test",xx="yy"} 4 123.123
+ggh_count 1 # {id="gaugehistogram-count-test",xx="yy"} 4 123.123
+# TYPE smr_seconds summary
+smr_seconds_count 2.0 # {id="summary-count-test"} 1 123.321
+smr_seconds_sum 42.0 # {id="summary-sum-test"} 1 123.321
 # TYPE ii info
 ii{foo="bar"} 1
 # TYPE ss stateset
@@ -59,7 +64,7 @@ _metric_starting_with_underscore 1
 testmetric{_label_starting_with_underscore="foo"} 1
 testmetric{label="\"bar\""} 1
 # TYPE foo counter
-foo_total 17.0 1520879607.789 # {xx="yy"} 5`
+foo_total 17.0 1520879607.789 # {id="counter-test"} 5`
 
 	input += "\n# HELP metric foo\x00bar"
 	input += "\nnull_byte_metric{a=\"abc\x00\"} 1"
@@ -152,7 +157,12 @@ foo_total 17.0 1520879607.789 # {xx="yy"} 5`
 			m:    `hhh_bucket{le="+Inf"}`,
 			v:    1,
 			lset: labels.FromStrings("__name__", "hhh_bucket", "le", "+Inf"),
-			e:    &exemplar.Exemplar{Labels: labels.FromStrings("aa", "bb"), Value: 4},
+			e:    &exemplar.Exemplar{Labels: labels.FromStrings("id", "histogram-bucket-test"), Value: 4},
+		}, {
+			m:    `hhh_count`,
+			v:    1,
+			lset: labels.FromStrings("__name__", "hhh_count"),
+			e:    &exemplar.Exemplar{Labels: labels.FromStrings("id", "histogram-count-test"), Value: 4},
 		}, {
 			m:   "ggh",
 			typ: MetricTypeGaugeHistogram,
@@ -160,7 +170,25 @@ foo_total 17.0 1520879607.789 # {xx="yy"} 5`
 			m:    `ggh_bucket{le="+Inf"}`,
 			v:    1,
 			lset: labels.FromStrings("__name__", "ggh_bucket", "le", "+Inf"),
-			e:    &exemplar.Exemplar{Labels: labels.FromStrings("cc", "dd", "xx", "yy"), Value: 4, HasTs: true, Ts: 123123},
+			e:    &exemplar.Exemplar{Labels: labels.FromStrings("id", "gaugehistogram-bucket-test", "xx", "yy"), Value: 4, HasTs: true, Ts: 123123},
+		}, {
+			m:    `ggh_count`,
+			v:    1,
+			lset: labels.FromStrings("__name__", "ggh_count"),
+			e:    &exemplar.Exemplar{Labels: labels.FromStrings("id", "gaugehistogram-count-test", "xx", "yy"), Value: 4, HasTs: true, Ts: 123123},
+		}, {
+			m:   "smr_seconds",
+			typ: MetricTypeSummary,
+		}, {
+			m:    `smr_seconds_count`,
+			v:    2,
+			lset: labels.FromStrings("__name__", "smr_seconds_count"),
+			e:    &exemplar.Exemplar{Labels: labels.FromStrings("id", "summary-count-test"), Value: 1, HasTs: true, Ts: 123321},
+		}, {
+			m:    `smr_seconds_sum`,
+			v:    42,
+			lset: labels.FromStrings("__name__", "smr_seconds_sum"),
+			e:    &exemplar.Exemplar{Labels: labels.FromStrings("id", "summary-sum-test"), Value: 1, HasTs: true, Ts: 123321},
 		}, {
 			m:   "ii",
 			typ: MetricTypeInfo,
@@ -206,7 +234,7 @@ foo_total 17.0 1520879607.789 # {xx="yy"} 5`
 			v:    17,
 			lset: labels.FromStrings("__name__", "foo_total"),
 			t:    int64p(1520879607789),
-			e:    &exemplar.Exemplar{Labels: labels.FromStrings("xx", "yy"), Value: 5},
+			e:    &exemplar.Exemplar{Labels: labels.FromStrings("id", "counter-test"), Value: 5},
 		}, {
 			m:    "metric",
 			help: "foo\x00bar",
@@ -494,10 +522,6 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 		{
 			input: `custom_metric_total 1 # {aa="bb"}`,
 			err:   "expected value after exemplar labels, got \"}\" (\"EOF\") while parsing: \"custom_metric_total 1 # {aa=\\\"bb\\\"}\"",
-		},
-		{
-			input: `custom_metric 1 # {aa="bb"}`,
-			err:   "metric name custom_metric does not support exemplars",
 		},
 		{
 			input: `custom_metric_total 1 # {aa="bb",,cc="dd"} 1`,
