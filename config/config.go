@@ -292,7 +292,7 @@ func (c Config) String() string {
 	return string(b)
 }
 
-// separate ScrapeConfigs handler from Config UnmarshalYAML function
+// separate ScrapeConfigs handler from Config UnmarshalYAML function.
 // used by include scrape config content merge with origin file scrape config and process together
 func (c *Config) mergeScrapeConfig() error {
 	// Do global overrides and validate unique names.
