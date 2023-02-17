@@ -212,7 +212,7 @@ func (q querier) addExternalLabels(ms []*labels.Matcher) ([]*labels.Matcher, []s
 
 // LabelValues implements storage.Querier and is a noop.
 func (q *querier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	// TODO(sgrzemski): Fix parameters passing
+	// TODO(sgrzemski): Implement matchers.
 	return q.client.LabelValues(q.ctx, name)
 }
 
