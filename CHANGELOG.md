@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.37.6 / 2023-02-14
+
+This release contains a toolchain update. It is built on top of Go 1.19, as the Go
+1.18 release is no longer supported upstream.
+
 ## 2.37.5 / 2022-12-09
 
 * [SECURITY] Security upgrade from go and upstream dependencies that include
