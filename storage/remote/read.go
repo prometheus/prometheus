@@ -218,7 +218,7 @@ func (q *querier) LabelValues(name string, matchers ...*labels.Matcher) ([]strin
 
 // LabelNames implements storage.Querier and is a noop.
 func (q *querier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	// TODO(sgrzemski): Fix parameters passing
+	// TODO(sgrzemski): Implement matchers.
 	return q.client.LabelNames(q.ctx)
 }
 
