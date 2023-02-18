@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.37.6 / 2023-02-14
+## 2.37.6 / 2023-02-20
 
 This release contains a toolchain update. It is built on top of Go 1.19, as the Go
 1.18 release is no longer supported upstream.
