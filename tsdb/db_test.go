@@ -6334,3 +6334,76 @@ func compareSeries(t require.TestingT, expected, actual map[string][]tsdbutil.Sa
 		}
 	}
 }
+
+// TestChunkQuerierReadWriteRace looks for any possible race between appending
+// samples and reading chunks because the head chunk that is being appended to
+// can be read in parallel and we should be able to make a copy of the chunk without
+// worrying about the parallel write.
+func TestChunkQuerierReadWriteRace(t *testing.T) {
+	db := openTestDB(t, nil, nil)
+	defer func() {
+		require.NoError(t, db.Close())
+	}()
+
+	lbls := labels.FromStrings("foo", "bar")
+
+	writer := func() error {
+		<-time.After(5 * time.Millisecond) // Initial pause while readers start.
+		ts := 0
+		for i := 0; i < 500; i++ {
+			app := db.Appender(context.Background())
+			for j := 0; j < 10; j++ {
+				ts++
+				_, err := app.Append(0, lbls, int64(ts), float64(ts*100))
+				if err != nil {
+					return err
+				}
+			}
+			err := app.Commit()
+			if err != nil {
+				return err
+			}
+			<-time.After(time.Millisecond)
+		}
+		return nil
+	}
+
+	reader := func() {
+		querier, err := db.ChunkQuerier(context.Background(), math.MinInt64, math.MaxInt64)
+		require.NoError(t, err)
+		defer func(q storage.ChunkQuerier) {
+			require.NoError(t, q.Close())
+		}(querier)
+		ss := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+		for ss.Next() {
+			cs := ss.At()
+			it := cs.Iterator(nil)
+			for it.Next() {
+				m := it.At()
+				b := m.Chunk.Bytes()
+				bb := make([]byte, len(b))
+				copy(bb, b) // This copying of chunk bytes detects any race.
+			}
+		}
+		require.NoError(t, ss.Err())
+	}
+
+	ch := make(chan struct{})
+	var writerErr error
+	go func() {
+		defer close(ch)
+		writerErr = writer()
+	}()
+
+Outer:
+	for {
+		reader()
+		select {
+		case <-ch:
+			break Outer
+		default:
+		}
+	}
+
+	require.NoError(t, writerErr)
+}
