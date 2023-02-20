@@ -28,7 +28,6 @@ scrape_configs:
           your: label
 
   - job_name: bar
-
     azure_sd_configs:
       - environment: AzurePublicCloud
         authentication_method: OAuth
