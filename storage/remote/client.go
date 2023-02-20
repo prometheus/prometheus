@@ -19,6 +19,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"strconv"
 	"strings"
@@ -340,4 +341,27 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 	}
 
 	return resp.Results[0], nil
+}
+
+type TestClient struct {
+	name string
+	url  string
+}
+
+func NewTestClient(name, url string) WriteClient {
+	return &TestClient{name: name, url: url}
+}
+
+func (c *TestClient) Store(_ context.Context, req []byte) error {
+	r := rand.Intn(200-100) + 100
+	time.Sleep(time.Duration(r) * time.Millisecond)
+	return nil
+}
+
+func (c *TestClient) Name() string {
+	return c.name
+}
+
+func (c *TestClient) Endpoint() string {
+	return c.url
 }
