@@ -867,3 +867,24 @@ func DecodeOTLPWriteRequest(r *http.Request) (pmetricotlp.ExportRequest, error) 
 
 	return otlpReq, nil
 }
+
+// DecodeWriteRequest from an io.Reader into a prompb.WriteRequest, handling
+// snappy decompression.
+func DecodeReducedWriteRequest(r io.Reader) (*prompb.WriteRequestWithRefs, error) {
+	compressed, err := io.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
+
+	reqBuf, err := snappy.Decode(nil, compressed)
+	if err != nil {
+		return nil, err
+	}
+
+	var req prompb.WriteRequestWithRefs
+	if err := proto.Unmarshal(reqBuf, &req); err != nil {
+		return nil, err
+	}
+
+	return &req, nil
+}
