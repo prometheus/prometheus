@@ -94,16 +94,17 @@ func Load(s string, expandExternalLabels bool, logger log.Logger) (*Config, erro
 				content, err := os.ReadFile(f)
 				if err != nil {
 					return nil, err
-				} else {
-					var includeScrapeConfigs struct {
-						ScrapeConfigs []*ScrapeConfig `yaml:"scrape_configs,omitempty"`
-					}
-					if err := yaml.Unmarshal(content, &includeScrapeConfigs); err != nil {
-						return nil, err
-					} else {
-						cfg.ScrapeConfigs = append(cfg.ScrapeConfigs, includeScrapeConfigs.ScrapeConfigs...)
-					}
 				}
+
+				var includeScrapeConfigs struct {
+					ScrapeConfigs []*ScrapeConfig `yaml:"scrape_configs,omitempty"`
+				}
+				if err := yaml.Unmarshal(content, &includeScrapeConfigs); err != nil {
+					return nil, err
+				}
+
+				cfg.ScrapeConfigs = append(cfg.ScrapeConfigs, includeScrapeConfigs.ScrapeConfigs...)
+
 			}
 		}
 	}
