@@ -65,6 +65,7 @@ type WriteStorage struct {
 	externalLabels    labels.Labels
 	dir               string
 	queues            map[string]*QueueManager
+	writeReducedProto bool
 	samplesIn         *ewmaRate
 	flushDeadline     time.Duration
 	interner          *pool
@@ -76,12 +77,13 @@ type WriteStorage struct {
 }
 
 // NewWriteStorage creates and runs a WriteStorage.
-func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, dir string, flushDeadline time.Duration, sm ReadyScrapeManager) *WriteStorage {
+func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, dir string, flushDeadline time.Duration, sm ReadyScrapeManager, writeReducedProto bool) *WriteStorage {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
 	rws := &WriteStorage{
 		queues:            make(map[string]*QueueManager),
+		writeReducedProto: writeReducedProto,
 		watcherMetrics:    wlog.NewWatcherMetrics(reg),
 		liveReaderMetrics: wlog.NewLiveReaderMetrics(reg),
 		logger:            logger,
@@ -153,17 +155,23 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			name = rwConf.Name
 		}
 
-		c, err := NewWriteClient(name, &ClientConfig{
-			URL:              rwConf.URL,
-			Timeout:          rwConf.RemoteTimeout,
-			HTTPClientConfig: rwConf.HTTPClientConfig,
-			SigV4Config:      rwConf.SigV4Config,
-			AzureADConfig:    rwConf.AzureADConfig,
-			Headers:          rwConf.Headers,
-			RetryOnRateLimit: rwConf.QueueConfig.RetryOnRateLimit,
-		})
-		if err != nil {
-			return err
+		var c WriteClient
+		if rwConf.URL.String() == "fake" {
+			// f := "fake" + strconv.Itoa(rand.Intn(100))
+			// c = NewTestClient(f, f)
+		} else {
+			c, err = NewWriteClient(name, &ClientConfig{
+				URL:              rwConf.URL,
+				Timeout:          rwConf.RemoteTimeout,
+				HTTPClientConfig: rwConf.HTTPClientConfig,
+				SigV4Config:      rwConf.SigV4Config,
+				AzureADConfig:    rwConf.AzureADConfig,
+				Headers:          rwConf.Headers,
+				RetryOnRateLimit: rwConf.QueueConfig.RetryOnRateLimit,
+			})
+			if err != nil {
+				return err
+			}
 		}
 
 		queue, ok := rws.queues[hash]
@@ -197,6 +205,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rws.scraper,
 			rwConf.SendExemplars,
 			rwConf.SendNativeHistograms,
+			rws.writeReducedProto,
 		)
 		// Keep track of which queues are new so we know which to start.
 		newHashes = append(newHashes, hash)
