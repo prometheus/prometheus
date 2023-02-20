@@ -91,7 +91,8 @@ func Load(s string, expandExternalLabels bool, logger log.Logger) (*Config, erro
 			}
 
 			for _, f := range files {
-				if content, err := os.ReadFile(f); err != nil {
+				content, err := os.ReadFile(f)
+				if err != nil {
 					return nil, err
 				} else {
 					var includeScrapeConfigs struct {
