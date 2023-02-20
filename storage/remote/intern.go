@@ -100,3 +100,44 @@ func (p *pool) release(s string) {
 	}
 	delete(p.pool, s)
 }
+
+// used to create a lookup table for a new remote write request, should not be used concurrently
+type lookupPool struct {
+	nextRef      uint64
+	table        map[uint64]string
+	reverseTable map[string]uint64
+}
+
+func newLookupPool() *lookupPool {
+	return &lookupPool{
+		table:        map[uint64]string{},
+		reverseTable: map[string]uint64{},
+	}
+}
+
+func (p *lookupPool) intern(s string) uint64 {
+	if ref, ok := p.reverseTable[s]; ok {
+		return ref
+	}
+
+	ref := p.nextRef
+	p.reverseTable[s] = ref
+	p.table[ref] = s
+	p.nextRef++
+
+	return ref
+}
+
+func (p *lookupPool) getTable() map[uint64]string {
+	return p.table
+}
+
+func (p *lookupPool) clear() {
+	for k := range p.table {
+		delete(p.table, k)
+	}
+	for k := range p.reverseTable {
+		delete(p.reverseTable, k)
+	}
+	p.nextRef = 0
+}
