@@ -76,7 +76,7 @@ func Load(s string, expandExternalLabels bool, logger log.Logger) (*Config, erro
 		return nil, err
 	}
 
-	//if had scrape configs need to include
+	// if had scrape configs need to include
 	if len(cfg.IncludeScrapeConfigs) > 0 {
 		for _, rf := range cfg.IncludeScrapeConfigs {
 			if !patRulePath.MatchString(rf) {
@@ -86,7 +86,6 @@ func Load(s string, expandExternalLabels bool, logger log.Logger) (*Config, erro
 
 		for _, includeFiles := range cfg.IncludeScrapeConfigs {
 			files, err := filepath.Glob(includeFiles)
-
 			if err != nil {
 				return nil, err
 			}
@@ -108,7 +107,7 @@ func Load(s string, expandExternalLabels bool, logger log.Logger) (*Config, erro
 		}
 	}
 
-	//when all the scrape configs had loaded from above, process them together
+	// when all the scrape configs had loaded from above, process them together
 	if err := cfg.mergeScrapeConfig(); err != nil {
 		return nil, err
 	}
