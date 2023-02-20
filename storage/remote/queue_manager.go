@@ -24,7 +24,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
-	"github.com/golang/snappy"
+	reSnappy "github.com/klauspost/compress/snappy"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"go.opentelemetry.io/otel"
@@ -1643,6 +1643,6 @@ func buildWriteRequest(samples []prompb.TimeSeries, metadata []prompb.MetricMeta
 	if buf != nil {
 		buf = buf[0:cap(buf)]
 	}
-	compressed := snappy.Encode(buf, pBuf.Bytes())
+	compressed := reSnappy.Encode(buf, pBuf.Bytes())
 	return compressed, highest, nil
 }
