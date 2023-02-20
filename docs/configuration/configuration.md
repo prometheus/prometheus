@@ -823,7 +823,11 @@ for a detailed example of configuring Prometheus for Docker Engine.
 ### `<dockerswarm_sd_config>`
 
 Docker Swarm SD configurations allow retrieving scrape targets from [Docker Swarm](https://docs.docker.com/engine/swarm/)
-engine.
+engine.  When using a proxy, the daemon must allow access to the following APIs.
+
+- [GET /services](https://docs.docker.com/engine/api/v1.42/#tag/Service/operation/ServiceList)
+- [GET /nodes](https://docs.docker.com/engine/api/v1.42/#tag/Node/operation/NodeList)
+- [GET /tasks](https://docs.docker.com/engine/api/v1.42/#tag/Task/operation/TaskList)
 
 One of the following roles can be configured to discover targets:
 
