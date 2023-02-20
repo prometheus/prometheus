@@ -17,8 +17,6 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"github.com/go-kit/log/level"
-	"github.com/pkg/errors"
 	"io"
 	"math"
 	"os"
@@ -31,6 +29,9 @@ import (
 	"sync"
 	"text/tabwriter"
 	"time"
+
+	"github.com/go-kit/log/level"
+	"github.com/pkg/errors"
 
 	"github.com/alecthomas/units"
 	"github.com/go-kit/log"
