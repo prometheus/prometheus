@@ -17,6 +17,8 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"github.com/go-kit/log/level"
+	"github.com/pkg/errors"
 	"io"
 	"math"
 	"os"
@@ -32,7 +34,6 @@ import (
 
 	"github.com/alecthomas/units"
 	"github.com/go-kit/log"
-	"github.com/pkg/errors"
 	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -421,10 +422,42 @@ func openBlock(path, blockID string) (*tsdb.DBReadOnly, tsdb.BlockReader, error)
 	return db, block, nil
 }
 
-func relabelBlock(path, blockID, file string, addChangelog bool) error {
-	db, block, err := openBlock(path, blockID)
+// openBlocks tries to open multiple blocks specified by block IDs.
+// If no block ID is specified, all blocks under the TSDB path will be used.
+func openBlocks(path string, blockIDs ...string) (*tsdb.DBReadOnly, []tsdb.BlockReader, error) {
+	db, err := tsdb.OpenDBReadOnly(path, nil)
 	if err != nil {
-		return err
+		return nil, nil, err
+	}
+	blocks, err := db.Blocks()
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(blockIDs) == 0 {
+		return db, blocks, nil
+	}
+	blocks = make([]tsdb.BlockReader, 0, len(blockIDs))
+	for _, blockID := range blockIDs {
+		var block tsdb.BlockReader
+		for _, b := range blocks {
+			if b.Meta().ULID.String() == blockID {
+				block = b
+				break
+			}
+		}
+		if block == nil {
+			return nil, nil, fmt.Errorf("block %s not found", blockID)
+		}
+		blocks = append(blocks, block)
+	}
+	return db, blocks, nil
+}
+
+func relabelBlock(path, file string, addChangelog bool, blockIDs ...string) (err error) {
+	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
+	db, blocks, err := openBlocks(path, blockIDs...)
+	if err != nil {
+		return errors.Wrap(err, "open blocks")
 	}
 	defer func() {
 		err = tsdb_errors.NewMulti(err, db.Close()).Err()
@@ -433,14 +466,11 @@ func relabelBlock(path, blockID, file string, addChangelog bool) error {
 	var relabelConfig []*relabel.Config
 	b, err := os.ReadFile(file)
 	if err != nil {
-		return err
+		return fmt.Errorf("read relabel config file: %w", err)
 	}
 	if err := yaml.Unmarshal(b, &relabelConfig); err != nil {
-		return errors.Wrap(err, "parsing relabel configuration")
+		return fmt.Errorf("parse relabel configuration: %w", err)
 	}
-
-	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
-	meta := block.Meta()
 
 	changeLog := tsdb.NewChangeLog(io.Discard)
 	if addChangelog {
@@ -454,7 +484,7 @@ func relabelBlock(path, blockID, file string, addChangelog bool) error {
 		}()
 
 		changeLog = tsdb.NewChangeLog(f)
-		fmt.Printf("changelog will be available at: %s\n", changeLogPath)
+		level.Info(logger).Log("Changelog will be available at path " + changeLogPath)
 	}
 
 	compactor, err := tsdb.NewLeveledCompactor(
@@ -467,16 +497,19 @@ func relabelBlock(path, blockID, file string, addChangelog bool) error {
 		changeLog,
 	)
 	if err != nil {
-		return errors.Wrap(err, "create leveled compactor")
+		return fmt.Errorf("create leveled compactor: %w", err)
+	}
+	for _, block := range blocks {
+		meta := block.Meta()
+		newID, err := compactor.Write(path, block, meta.MinTime, meta.MaxTime, &meta, tsdb.WithRelabelModifier(relabelConfig...))
+		if err != nil {
+			return fmt.Errorf("create new block: %w", err)
+		}
+
+		level.Info(logger).Log("Created new block via relabeling successfully", "id", newID.String())
 	}
 
-	newID, err := compactor.Write(path, block, meta.MinTime, meta.MaxTime, &meta, tsdb.WithRelabelModifier(relabelConfig...))
-	if err != nil {
-		return errors.Wrap(err, "create new block")
-	}
-
-	fmt.Printf("Create new block %s successfully\n", newID.String())
-	return nil
+	return
 }
 
 func analyzeBlock(path, blockID string, limit int, runExtended bool) error {
