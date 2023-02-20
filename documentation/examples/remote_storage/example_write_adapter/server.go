@@ -57,5 +57,39 @@ func main() {
 		}
 	})
 
+	http.HandleFunc("/receiveNew", func(w http.ResponseWriter, r *http.Request) {
+		req, err := remote.DecodeReducedWriteRequest(r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		// req.StringSymbolTable
+		// fmt.Println("symbol table: ", req.StringSymbolTable)
+
+		for _, ts := range req.Timeseries {
+			m := make(model.Metric, len(ts.Labels))
+			for _, l := range ts.Labels {
+				m[model.LabelName(req.StringSymbolTable[l.NameRef])] = model.LabelValue(req.StringSymbolTable[l.ValueRef])
+			}
+
+			for _, s := range ts.Samples {
+				fmt.Printf("\tSample:  %f %d\n", s.Value, s.Timestamp)
+			}
+
+			for _, e := range ts.Exemplars {
+				m := make(model.Metric, len(e.Labels))
+				for _, l := range e.Labels {
+					m[model.LabelName(req.StringSymbolTable[l.NameRef])] = model.LabelValue(req.StringSymbolTable[l.ValueRef])
+				}
+				fmt.Printf("\tExemplar:  %+v %f %d\n", m, e.Value, e.Timestamp)
+			}
+
+			for _, hp := range ts.Histograms {
+				h := remote.HistogramProtoToHistogram(hp)
+				fmt.Printf("\tHistogram:  %s\n", h.String())
+			}
+		}
+	})
+
 	log.Fatal(http.ListenAndServe(":1234", nil))
 }
