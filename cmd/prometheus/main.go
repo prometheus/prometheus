@@ -146,6 +146,7 @@ type flagConfig struct {
 	queryConcurrency    int
 	queryMaxSamples     int
 	RemoteFlushDeadline model.Duration
+	rwProto             bool
 
 	featureList []string
 	// These options are extracted from featureList
@@ -210,6 +211,9 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 				continue
 			case "promql-at-modifier", "promql-negative-offset":
 				level.Warn(logger).Log("msg", "This option for --enable-feature is now permanently enabled and therefore a no-op.", "option", o)
+			case "reduced-rw-proto":
+				c.rwProto = true
+				level.Info(logger).Log("msg", "Reduced remote write proto format will be used, remote write receiver must be able to parse this new protobuf format.")
 			default:
 				level.Warn(logger).Log("msg", "Unknown option for --enable-feature", "option", o)
 			}
@@ -595,7 +599,7 @@ func main() {
 	var (
 		localStorage  = &readyStorage{stats: tsdb.NewDBStats()}
 		scraper       = &readyScrapeManager{}
-		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper)
+		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper, cfg.rwProto)
 		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
 	)
 

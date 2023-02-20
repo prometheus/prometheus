@@ -117,7 +117,7 @@ func TestNoDuplicateWriteConfigs(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		s := NewWriteStorage(nil, nil, dir, time.Millisecond, nil)
+		s := NewWriteStorage(nil, nil, dir, time.Millisecond, nil, false)
 		conf := &config.Config{
 			GlobalConfig:       config.DefaultGlobalConfig,
 			RemoteWriteConfigs: tc.cfgs,
@@ -139,7 +139,7 @@ func TestRestartOnNameChange(t *testing.T) {
 	hash, err := toHash(cfg)
 	require.NoError(t, err)
 
-	s := NewWriteStorage(nil, nil, dir, time.Millisecond, nil)
+	s := NewWriteStorage(nil, nil, dir, time.Millisecond, nil, false)
 
 	conf := &config.Config{
 		GlobalConfig: config.DefaultGlobalConfig,
@@ -164,7 +164,7 @@ func TestRestartOnNameChange(t *testing.T) {
 func TestUpdateWithRegisterer(t *testing.T) {
 	dir := t.TempDir()
 
-	s := NewWriteStorage(nil, prometheus.NewRegistry(), dir, time.Millisecond, nil)
+	s := NewWriteStorage(nil, prometheus.NewRegistry(), dir, time.Millisecond, nil, false)
 	c1 := &config.RemoteWriteConfig{
 		Name: "named",
 		URL: &common_config.URL{
@@ -204,7 +204,7 @@ func TestUpdateWithRegisterer(t *testing.T) {
 func TestWriteStorageLifecycle(t *testing.T) {
 	dir := t.TempDir()
 
-	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil)
+	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, false)
 	conf := &config.Config{
 		GlobalConfig: config.DefaultGlobalConfig,
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{
@@ -221,7 +221,7 @@ func TestWriteStorageLifecycle(t *testing.T) {
 func TestUpdateExternalLabels(t *testing.T) {
 	dir := t.TempDir()
 
-	s := NewWriteStorage(nil, prometheus.NewRegistry(), dir, time.Second, nil)
+	s := NewWriteStorage(nil, prometheus.NewRegistry(), dir, time.Second, nil, false)
 
 	externalLabels := labels.FromStrings("external", "true")
 	conf := &config.Config{
@@ -250,7 +250,7 @@ func TestUpdateExternalLabels(t *testing.T) {
 func TestWriteStorageApplyConfigsIdempotent(t *testing.T) {
 	dir := t.TempDir()
 
-	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil)
+	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, false)
 
 	conf := &config.Config{
 		GlobalConfig: config.GlobalConfig{},
@@ -276,7 +276,7 @@ func TestWriteStorageApplyConfigsIdempotent(t *testing.T) {
 func TestWriteStorageApplyConfigsPartialUpdate(t *testing.T) {
 	dir := t.TempDir()
 
-	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil)
+	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, false)
 
 	c0 := &config.RemoteWriteConfig{
 		RemoteTimeout: model.Duration(10 * time.Second),
