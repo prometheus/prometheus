@@ -616,11 +616,6 @@ func (w *WL) pagesPerSegment() int {
 func (w *WL) Log(recs ...[]byte) error {
 	w.mtx.Lock()
 	defer w.mtx.Unlock()
-	defer func() {
-		if w.WriteNotified != nil {
-			w.WriteNotified.Notify()
-		}
-	}()
 	// Callers could just implement their own list record format but adding
 	// a bit of extra logic here frees them from that overhead.
 	for i, r := range recs {
