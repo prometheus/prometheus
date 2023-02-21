@@ -201,9 +201,9 @@ func main() {
 	dumpMatch := tsdbDumpCmd.Flag("match", "Series selector.").Default("{__name__=~'(?s:.*)'}").String()
 
 	tsdbRelabelCmd := tsdbCmd.Command("relabel", "Relabel TSDB block.")
+	relabelConfig := tsdbRelabelCmd.Flag("file", "Relabel config file to apply.").Required().String()
 	relabelPath := tsdbRelabelCmd.Arg("db path", "Database path (default is "+defaultDBPath+").").Default(defaultDBPath).String()
 	relabelBlockIDs := tsdbRelabelCmd.Flag("block-id", "Blocks to relabel. If not specified, by default all blocks in the TSDB path will be included.").Strings()
-	relabelConfig := tsdbRelabelCmd.Arg("file", "Relabel config file to apply.").Default("relabel.yml").String()
 	relabelAddChangelog := tsdbRelabelCmd.Flag("add-changelog", "If specified, all modifications are written to db path. Disable if latency is too high.").Default("true").Bool()
 
 	importCmd := tsdbCmd.Command("create-blocks-from", "[Experimental] Import samples from input and produce TSDB blocks. Please refer to the storage docs for more details.")
