@@ -130,7 +130,25 @@ func query(t testing.TB, q storage.Querier, matchers ...*labels.Matcher) map[str
 	return result
 }
 
-// queryChunks runs a matcher query against the querier and fully expands its data.
+// queryAndExpandChunks runs a matcher query against the querier and fully expands its data into samples.
+func queryAndExpandChunks(t testing.TB, q storage.ChunkQuerier, matchers ...*labels.Matcher) map[string][][]tsdbutil.Sample {
+	s := queryChunks(t, q, matchers...)
+
+	res := make(map[string][][]tsdbutil.Sample)
+	for k, v := range s {
+		var samples [][]tsdbutil.Sample
+		for _, chk := range v {
+			sam, err := storage.ExpandSamples(chk.Chunk.Iterator(nil), nil)
+			require.NoError(t, err)
+			samples = append(samples, sam)
+		}
+		res[k] = samples
+	}
+
+	return res
+}
+
+// queryChunks runs a matcher query against the querier and expands its data.
 func queryChunks(t testing.TB, q storage.ChunkQuerier, matchers ...*labels.Matcher) map[string][]chunks.Meta {
 	ss := q.Select(false, nil, matchers...)
 	defer func() {
@@ -2367,7 +2385,7 @@ func TestDBReadOnly(t *testing.T) {
 		logger    = log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
 		expBlocks []*Block
 		expSeries map[string][]tsdbutil.Sample
-		expChunks map[string][]chunks.Meta
+		expChunks map[string][][]tsdbutil.Sample
 		expDBHash []byte
 		matchAll  = labels.MustNewMatcher(labels.MatchEqual, "", "")
 		err       error
@@ -2418,7 +2436,7 @@ func TestDBReadOnly(t *testing.T) {
 		expSeries = query(t, q, matchAll)
 		cq, err := dbWritable.ChunkQuerier(context.TODO(), math.MinInt64, math.MaxInt64)
 		require.NoError(t, err)
-		expChunks = queryChunks(t, cq, matchAll)
+		expChunks = queryAndExpandChunks(t, cq, matchAll)
 
 		require.NoError(t, dbWritable.Close()) // Close here to allow getting the dir hash for windows.
 		expDBHash = testutil.DirHash(t, dbWritable.Dir())
@@ -2452,7 +2470,7 @@ func TestDBReadOnly(t *testing.T) {
 	t.Run("chunk querier", func(t *testing.T) {
 		cq, err := dbReadOnly.ChunkQuerier(context.TODO(), math.MinInt64, math.MaxInt64)
 		require.NoError(t, err)
-		readOnlySeries := queryChunks(t, cq, matchAll)
+		readOnlySeries := queryAndExpandChunks(t, cq, matchAll)
 		readOnlyDBHash := testutil.DirHash(t, dbDir)
 
 		require.Equal(t, len(expChunks), len(readOnlySeries), "total series mismatch")
