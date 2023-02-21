@@ -333,23 +333,10 @@ func (c *genericMergeSeriesSet) Next() bool {
 	for {
 		// Firstly advance all the current series sets. If any of them have run out,
 		// we can drop them, otherwise they should be inserted back into the heap.
-		ch := make(chan genericSeriesSet, len(c.currentSets))
-		wg := sync.WaitGroup{}
-		for i := range c.currentSets {
-			wg.Add(1)
-			i := i
-			go func() {
-				defer wg.Done()
-				if c.currentSets[i].Next() {
-					ch <- c.currentSets[i]
-				}
-			}()
-		}
-
-		wg.Wait()
-		close(ch)
-		for set := range ch {
-			heap.Push(&c.heap, set)
+		for _, set := range c.currentSets {
+			if set.Next() {
+				heap.Push(&c.heap, set)
+			}
 		}
 
 		if len(c.heap) == 0 {

@@ -441,7 +441,7 @@ func TestCompactionFailWillCleanUpTempDir(t *testing.T) {
 
 	tmpdir := t.TempDir()
 
-	require.Error(t, compactor.write(tmpdir, &BlockMeta{}, nil, erringBReader{}))
+	require.Error(t, compactor.write(tmpdir, &BlockMeta{}, DefaultPopulateBlockFunc{}, erringBReader{}))
 	_, err = os.Stat(filepath.Join(tmpdir, BlockMeta{}.ULID.String()) + tmpForCreationBlockDirSuffix)
 	require.True(t, os.IsNotExist(err), "directory is not cleaned up")
 }
@@ -953,7 +953,8 @@ func TestCompaction_populateBlock(t *testing.T) {
 			}
 
 			iw := &mockIndexWriter{}
-			err = c.populateBlock(blocks, meta, iw, nopChunkWriter{}, nil)
+			populateBlockFunc := DefaultPopulateBlockFunc{}
+			err = populateBlockFunc.PopulateBlock(c.metrics, c.logger, c.chunkPool, c.ctx, c.mergeFunc, blocks, meta, iw, nopChunkWriter{})
 			if tc.expErr != nil {
 				require.Error(t, err)
 				require.Equal(t, tc.expErr.Error(), err.Error())
@@ -1187,7 +1188,7 @@ func TestCancelCompactions(t *testing.T) {
 		require.Equal(t, 0.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran), "initial compaction counter mismatch")
 		db.compactc <- struct{}{} // Trigger a compaction.
 		var start time.Time
-		for prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.populatingBlocks) <= 0 {
+		for prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.PopulatingBlocks) <= 0 {
 			time.Sleep(3 * time.Millisecond)
 		}
 		start = time.Now()
@@ -1208,7 +1209,7 @@ func TestCancelCompactions(t *testing.T) {
 		db.compactc <- struct{}{} // Trigger a compaction.
 		dbClosed := make(chan struct{})
 
-		for prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.populatingBlocks) <= 0 {
+		for prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.PopulatingBlocks) <= 0 {
 			time.Sleep(3 * time.Millisecond)
 		}
 		go func() {

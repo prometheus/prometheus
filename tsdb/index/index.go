@@ -26,6 +26,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"syscall"
 	"unsafe"
 
 	"github.com/pkg/errors"
@@ -1155,6 +1156,7 @@ func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 		return nil, errors.Wrap(err, "read TOC")
 	}
 
+	syscall.Mlock(r.b.Range(int(r.toc.Symbols), int(r.toc.Series)))
 	r.symbols, err = NewSymbols(r.b, r.version, int(r.toc.Symbols))
 	if err != nil {
 		return nil, errors.Wrap(err, "read symbols")
@@ -1434,6 +1436,7 @@ func ReadPostingsOffsetTable(bs ByteSlice, off uint64, f func(name, value []byte
 
 // Close the reader and its underlying resources.
 func (r *Reader) Close() error {
+	syscall.Munlock(r.b.Range(int(r.toc.Symbols), int(r.toc.Series)))
 	return r.c.Close()
 }
 
