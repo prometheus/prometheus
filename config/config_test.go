@@ -1523,7 +1523,7 @@ var expectedErrors = []struct {
 	},
 	{
 		filename: "remote_write_authorization_header.bad.yml",
-		errMsg:   `authorization header must be changed via the basic_auth, authorization, oauth2, or sigv4 parameter`,
+		errMsg:   `authorization header must be changed via the basic_auth, authorization, oauth2, sigv4, or azuread parameter`,
 	},
 	{
 		filename: "remote_write_url_missing.bad.yml",
