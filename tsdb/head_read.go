@@ -304,12 +304,10 @@ func (h *headChunkReader) Chunk(meta chunks.Meta) (chunkenc.Chunk, error) {
 	s.Unlock()
 
 	return &safeChunk{
-		Chunk:           c.chunk,
-		s:               s,
-		cid:             cid,
-		isoState:        h.isoState,
-		chunkDiskMapper: h.head.chunkDiskMapper,
-		memChunkPool:    &h.head.memChunkPool,
+		Chunk:    c.chunk,
+		s:        s,
+		cid:      cid,
+		isoState: h.isoState,
 	}, nil
 }
 
@@ -600,43 +598,24 @@ func (b boundedIterator) Seek(t int64) chunkenc.ValueType {
 // safeChunk makes sure that the chunk can be accessed without a race condition
 type safeChunk struct {
 	chunkenc.Chunk
-	s               *memSeries
-	cid             chunks.HeadChunkID
-	isoState        *isolationState
-	chunkDiskMapper *chunks.ChunkDiskMapper
-	memChunkPool    *sync.Pool
+	s        *memSeries
+	cid      chunks.HeadChunkID
+	isoState *isolationState
 }
 
 func (c *safeChunk) Iterator(reuseIter chunkenc.Iterator) chunkenc.Iterator {
 	c.s.Lock()
-	it := c.s.iterator(c.cid, c.isoState, c.chunkDiskMapper, c.memChunkPool, reuseIter)
+	it := c.s.iterator(c.cid, c.Chunk, c.isoState, reuseIter)
 	c.s.Unlock()
 	return it
 }
 
 // iterator returns a chunk iterator for the requested chunkID, or a NopIterator if the requested ID is out of range.
 // It is unsafe to call this concurrently with s.append(...) without holding the series lock.
-func (s *memSeries) iterator(id chunks.HeadChunkID, isoState *isolationState, chunkDiskMapper *chunks.ChunkDiskMapper, memChunkPool *sync.Pool, it chunkenc.Iterator) chunkenc.Iterator {
-	c, garbageCollect, err := s.chunk(id, chunkDiskMapper, memChunkPool)
-	// TODO(fabxc): Work around! An error will be returns when a querier have retrieved a pointer to a
-	// series's chunk, which got then garbage collected before it got
-	// accessed.  We must ensure to not garbage collect as long as any
-	// readers still hold a reference.
-	if err != nil {
-		return chunkenc.NewNopIterator()
-	}
-	defer func() {
-		if garbageCollect {
-			// Set this to nil so that Go GC can collect it after it has been used.
-			// This should be done always at the end.
-			c.chunk = nil
-			memChunkPool.Put(c)
-		}
-	}()
-
+func (s *memSeries) iterator(id chunks.HeadChunkID, c chunkenc.Chunk, isoState *isolationState, it chunkenc.Iterator) chunkenc.Iterator {
 	ix := int(id) - int(s.firstChunkID)
 
-	numSamples := c.chunk.NumSamples()
+	numSamples := c.NumSamples()
 	stopAfter := numSamples
 
 	if isoState != nil && !isoState.IsolationDisabled() {
@@ -681,9 +660,9 @@ func (s *memSeries) iterator(id chunks.HeadChunkID, isoState *isolationState, ch
 		return chunkenc.NewNopIterator()
 	}
 	if stopAfter == numSamples {
-		return c.chunk.Iterator(it)
+		return c.Iterator(it)
 	}
-	return makeStopIterator(c.chunk, it, stopAfter)
+	return makeStopIterator(c, it, stopAfter)
 }
 
 // stopIterator wraps an Iterator, but only returns the first
