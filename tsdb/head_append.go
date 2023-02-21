@@ -367,7 +367,7 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	}
 	s.Unlock()
 	if delta > 0 {
-		a.head.metrics.oooHistogram.Observe(float64(delta))
+		a.head.metrics.oooHistogram.Observe(float64(delta) / 1000)
 	}
 	if err != nil {
 		switch err {
