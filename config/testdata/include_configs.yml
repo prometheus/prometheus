@@ -1,0 +1,10 @@
+#example, same as the scrape_configs section
+scrape_configs:
+  - job_name: include_job
+    static_configs:
+      - targets:
+          - localhost:9090
+          - localhost:9191
+        labels:
+          name: ljq
+          env: dev
