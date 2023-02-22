@@ -598,7 +598,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, populateBlockFunc
 	}
 	closers = append(closers, indexw)
 
-	if err := populateBlockFunc.PopulateBlock(c.metrics, c.logger, c.chunkPool, c.ctx, c.mergeFunc, blocks, meta, indexw, chunkw); err != nil {
+	if err := populateBlockFunc.PopulateBlock(c.ctx, c.metrics, c.logger, c.chunkPool, c.mergeFunc, blocks, meta, indexw, chunkw); err != nil {
 		return errors.Wrap(err, "populate block")
 	}
 
@@ -664,16 +664,15 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, populateBlockFunc
 }
 
 type PopulateBlockFunc interface {
-	PopulateBlock(metrics *CompactorMetrics, logger log.Logger, chunkPool chunkenc.Pool, ctx context.Context, mergeFunc storage.VerticalChunkSeriesMergeFunc, blocks []BlockReader, meta *BlockMeta, indexw IndexWriter, chunkw ChunkWriter) error
+	PopulateBlock(ctx context.Context, metrics *CompactorMetrics, logger log.Logger, chunkPool chunkenc.Pool, mergeFunc storage.VerticalChunkSeriesMergeFunc, blocks []BlockReader, meta *BlockMeta, indexw IndexWriter, chunkw ChunkWriter) error
 }
 
-type DefaultPopulateBlockFunc struct {
-}
+type DefaultPopulateBlockFunc struct{}
 
 // PopulateBlock fills the index and chunk writers with new data gathered as the union
 // of the provided blocks. It returns meta information for the new block.
 // It expects sorted blocks input by mint.
-func (c DefaultPopulateBlockFunc) PopulateBlock(metrics *CompactorMetrics, logger log.Logger, chunkPool chunkenc.Pool, ctx context.Context, mergeFunc storage.VerticalChunkSeriesMergeFunc, blocks []BlockReader, meta *BlockMeta, indexw IndexWriter, chunkw ChunkWriter) (err error) {
+func (c DefaultPopulateBlockFunc) PopulateBlock(ctx context.Context, metrics *CompactorMetrics, logger log.Logger, chunkPool chunkenc.Pool, mergeFunc storage.VerticalChunkSeriesMergeFunc, blocks []BlockReader, meta *BlockMeta, indexw IndexWriter, chunkw ChunkWriter) (err error) {
 	if len(blocks) == 0 {
 		return errors.New("cannot populate block from no readers")
 	}

@@ -954,7 +954,7 @@ func TestCompaction_populateBlock(t *testing.T) {
 
 			iw := &mockIndexWriter{}
 			populateBlockFunc := DefaultPopulateBlockFunc{}
-			err = populateBlockFunc.PopulateBlock(c.metrics, c.logger, c.chunkPool, c.ctx, c.mergeFunc, blocks, meta, iw, nopChunkWriter{})
+			err = populateBlockFunc.PopulateBlock(c.ctx, c.metrics, c.logger, c.chunkPool, c.mergeFunc, blocks, meta, iw, nopChunkWriter{})
 			if tc.expErr != nil {
 				require.Error(t, err)
 				require.Equal(t, tc.expErr.Error(), err.Error())
