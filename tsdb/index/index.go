@@ -25,6 +25,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"syscall"
 	"unsafe"
@@ -1080,6 +1081,8 @@ type Reader struct {
 	dec *Decoder
 
 	version int
+
+	mlockEnabled bool
 }
 
 type postingOffset struct {
@@ -1156,7 +1159,18 @@ func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 		return nil, errors.Wrap(err, "read TOC")
 	}
 
-	syscall.Mlock(r.b.Range(int(r.toc.Symbols), int(r.toc.Series)))
+	switch runtime.GOOS {
+	case "darwin", "linux":
+		r.mlockEnabled = true
+	default:
+		r.mlockEnabled = false
+	}
+	if r.mlockEnabled {
+		if err := syscall.Mlock(r.b.Range(int(r.toc.Symbols), int(r.toc.Series))); err != nil {
+			r.mlockEnabled = false
+			fmt.Printf("unable to call mlock, err: %v\n", err)
+		}
+	}
 	r.symbols, err = NewSymbols(r.b, r.version, int(r.toc.Symbols))
 	if err != nil {
 		return nil, errors.Wrap(err, "read symbols")
@@ -1436,7 +1450,11 @@ func ReadPostingsOffsetTable(bs ByteSlice, off uint64, f func(name, value []byte
 
 // Close the reader and its underlying resources.
 func (r *Reader) Close() error {
-	syscall.Munlock(r.b.Range(int(r.toc.Symbols), int(r.toc.Series)))
+	if r.mlockEnabled {
+		if err := syscall.Munlock(r.b.Range(int(r.toc.Symbols), int(r.toc.Series))); err != nil {
+			fmt.Printf("unable to call munlock, err: %v\n", err)
+		}
+	}
 	return r.c.Close()
 }
 
