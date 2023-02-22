@@ -557,3 +557,20 @@ func BenchmarkWAL_Log(b *testing.B) {
 		})
 	}
 }
+
+func TestWALStorageSizeMetric(t *testing.T) {
+	const (
+		segmentSize = pageSize
+		recordSize  = (pageSize / 2) - recordHeaderSize
+	)
+
+	dirPath := t.TempDir()
+
+	w, err := NewSize(nil, nil, dirPath, segmentSize, false)
+	require.NoError(t, err)
+
+	buf := make([]byte, recordSize)
+	require.NoError(t, w.Log(buf))
+	require.Greater(t, client_testutil.ToFloat64(w.metrics.walFileSize), 0.0)
+	require.NoError(t, w.Close())
+}
