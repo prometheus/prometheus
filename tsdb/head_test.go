@@ -537,11 +537,18 @@ func TestHead_ReadWAL(t *testing.T) {
 				require.NoError(t, c.Err())
 				return x
 			}
-			require.Equal(t, []sample{{100, 2, nil, nil}, {101, 5, nil, nil}}, expandChunk(s10.iterator(0, nil, head.chunkDiskMapper, nil, nil)))
-			require.Equal(t, []sample{{101, 6, nil, nil}}, expandChunk(s50.iterator(0, nil, head.chunkDiskMapper, nil, nil)))
+
+			c, _, err := s10.chunk(0, head.chunkDiskMapper, &head.memChunkPool)
+			require.NoError(t, err)
+			require.Equal(t, []sample{{100, 2, nil, nil}, {101, 5, nil, nil}}, expandChunk(c.chunk.Iterator(nil)))
+			c, _, err = s50.chunk(0, head.chunkDiskMapper, &head.memChunkPool)
+			require.NoError(t, err)
+			require.Equal(t, []sample{{101, 6, nil, nil}}, expandChunk(c.chunk.Iterator(nil)))
 			// The samples before the new series record should be discarded since a duplicate record
 			// is only possible when old samples were compacted.
-			require.Equal(t, []sample{{101, 7, nil, nil}}, expandChunk(s100.iterator(0, nil, head.chunkDiskMapper, nil, nil)))
+			c, _, err = s100.chunk(0, head.chunkDiskMapper, &head.memChunkPool)
+			require.NoError(t, err)
+			require.Equal(t, []sample{{101, 7, nil, nil}}, expandChunk(c.chunk.Iterator(nil)))
 
 			q, err := head.ExemplarQuerier(context.Background())
 			require.NoError(t, err)
@@ -2566,7 +2573,13 @@ func TestIteratorSeekIntoBuffer(t *testing.T) {
 		require.True(t, ok, "sample append failed")
 	}
 
-	it := s.iterator(s.headChunkID(len(s.mmappedChunks)), nil, chunkDiskMapper, nil, nil)
+	c, _, err := s.chunk(0, chunkDiskMapper, &sync.Pool{
+		New: func() interface{} {
+			return &memChunk{}
+		},
+	})
+	require.NoError(t, err)
+	it := c.chunk.Iterator(nil)
 
 	// First point.
 	require.Equal(t, chunkenc.ValFloat, it.Seek(0))
