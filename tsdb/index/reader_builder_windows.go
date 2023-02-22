@@ -16,6 +16,10 @@
 
 package index
 
+import (
+	"io"
+)
+
 func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 	return createReader(b, c, nil)
 }
