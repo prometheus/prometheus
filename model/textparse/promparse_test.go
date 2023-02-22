@@ -219,63 +219,63 @@ func TestPromParseErrors(t *testing.T) {
 	}{
 		{
 			input: "a",
-			err:   "expected value after metric, got \"INVALID\"",
+			err:   "expected value after metric, got \"\\n\" (\"INVALID\") while parsing: \"a\\n\"",
 		},
 		{
 			input: "a{b='c'} 1\n",
-			err:   "expected label value, got \"INVALID\"",
+			err:   "expected label value, got \"'\" (\"INVALID\") while parsing: \"a{b='\"",
 		},
 		{
 			input: "a{b=\n",
-			err:   "expected label value, got \"INVALID\"",
+			err:   "expected label value, got \"\\n\" (\"INVALID\") while parsing: \"a{b=\\n\"",
 		},
 		{
 			input: "a{\xff=\"foo\"} 1\n",
-			err:   "expected label name, got \"INVALID\"",
+			err:   "expected label name, got \"\\xff\" (\"INVALID\") while parsing: \"a{\\xff\"",
 		},
 		{
 			input: "a{b=\"\xff\"} 1\n",
-			err:   "invalid UTF-8 label value",
+			err:   "invalid UTF-8 label value: \"\\\"\\xff\\\"\"",
 		},
 		{
 			input: "a true\n",
-			err:   "strconv.ParseFloat: parsing \"true\": invalid syntax",
+			err:   "strconv.ParseFloat: parsing \"true\": invalid syntax while parsing: \"a true\"",
 		},
 		{
 			input: "something_weird{problem=\"",
-			err:   "expected label value, got \"INVALID\"",
+			err:   "expected label value, got \"\\\"\\n\" (\"INVALID\") while parsing: \"something_weird{problem=\\\"\\n\"",
 		},
 		{
 			input: "empty_label_name{=\"\"} 0",
-			err:   "expected label name, got \"EQUAL\"",
+			err:   "expected label name, got \"=\\\"\" (\"EQUAL\") while parsing: \"empty_label_name{=\\\"\"",
 		},
 		{
 			input: "foo 1_2\n",
-			err:   "unsupported character in float",
+			err:   "unsupported character in float while parsing: \"foo 1_2\"",
 		},
 		{
 			input: "foo 0x1p-3\n",
-			err:   "unsupported character in float",
+			err:   "unsupported character in float while parsing: \"foo 0x1p-3\"",
 		},
 		{
 			input: "foo 0x1P-3\n",
-			err:   "unsupported character in float",
+			err:   "unsupported character in float while parsing: \"foo 0x1P-3\"",
 		},
 		{
 			input: "foo 0 1_2\n",
-			err:   "expected next entry after timestamp, got \"INVALID\"",
+			err:   "expected next entry after timestamp, got \"_\" (\"INVALID\") while parsing: \"foo 0 1_\"",
 		},
 		{
 			input: `{a="ok"} 1`,
-			err:   `"INVALID" is not a valid start token`,
+			err:   "expected a valid start token, got \"{\" (\"INVALID\") while parsing: \"{\"",
 		},
 		{
 			input: "# TYPE #\n#EOF\n",
-			err:   "expected metric name after TYPE, got \"INVALID\"",
+			err:   "expected metric name after TYPE, got \"#\" (\"INVALID\") while parsing: \"# TYPE #\"",
 		},
 		{
 			input: "# HELP #\n#EOF\n",
-			err:   "expected metric name after HELP, got \"INVALID\"",
+			err:   "expected metric name after HELP, got \"#\" (\"INVALID\") while parsing: \"# HELP #\"",
 		},
 	}
 
@@ -313,23 +313,23 @@ func TestPromNullByteHandling(t *testing.T) {
 		},
 		{
 			input: "a{b=\x00\"ssss\"} 1\n",
-			err:   "expected label value, got \"INVALID\"",
+			err:   "expected label value, got \"\\x00\" (\"INVALID\") while parsing: \"a{b=\\x00\"",
 		},
 		{
 			input: "a{b=\"\x00",
-			err:   "expected label value, got \"INVALID\"",
+			err:   "expected label value, got \"\\\"\\x00\\n\" (\"INVALID\") while parsing: \"a{b=\\\"\\x00\\n\"",
 		},
 		{
 			input: "a{b\x00=\"hiih\"}	1",
-			err:   "expected equal, got \"INVALID\"",
+			err:   "expected equal, got \"\\x00\" (\"INVALID\") while parsing: \"a{b\\x00\"",
 		},
 		{
 			input: "a\x00{b=\"ddd\"} 1",
-			err:   "expected value after metric, got \"INVALID\"",
+			err:   "expected value after metric, got \"\\x00\" (\"INVALID\") while parsing: \"a\\x00\"",
 		},
 		{
 			input: "a 0 1\x00",
-			err:   "expected next entry after timestamp, got \"INVALID\"",
+			err:   "expected next entry after timestamp, got \"\\x00\" (\"INVALID\") while parsing: \"a 0 1\\x00\"",
 		},
 	}
 
