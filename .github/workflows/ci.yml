@@ -17,6 +17,7 @@ jobs:
       - uses: ./.github/promci/actions/setup_environment
       - run: make GO_ONLY=1 SKIP_GOLANGCI_LINT=1
       - run: go test ./tsdb/ -test.tsdb-isolation=false
+      - run: go test --tags=stringlabels ./...
       - run: GOARCH=386 go test ./cmd/prometheus
       - run: make -C documentation/examples/remote_storage
       - run: make -C documentation/examples
