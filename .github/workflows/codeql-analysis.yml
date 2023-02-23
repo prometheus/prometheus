@@ -1,7 +1,7 @@
 ---
 name: "CodeQL"
 
-on:  # yamllint disable-line rule:truthy
+on:
   workflow_call:
   schedule:
     - cron: "26 14 * * 1"

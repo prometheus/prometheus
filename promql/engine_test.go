@@ -25,7 +25,7 @@ import (
 
 	"github.com/go-kit/log"
 
-	"github.com/prometheus/prometheus/util/stats"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
@@ -35,7 +35,7 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/util/stats"
 )
 
 func TestMain(m *testing.M) {
@@ -684,6 +684,7 @@ load 10s
 			Result: Matrix{
 				Series{
 					Points: []Point{{V: 1, T: 0}, {V: 1, T: 1000}, {V: 1, T: 2000}},
+					Metric: labels.EmptyLabels(),
 				},
 			},
 			Start:    time.Unix(0, 0),
@@ -3124,7 +3125,7 @@ func TestRangeQuery(t *testing.T) {
 	}
 }
 
-func TestSparseHistogramRate(t *testing.T) {
+func TestNativeHistogramRate(t *testing.T) {
 	// TODO(beorn7): Integrate histograms into the PromQL testing framework
 	// and write more tests there.
 	test, err := NewTest(t, "")
@@ -3135,8 +3136,8 @@ func TestSparseHistogramRate(t *testing.T) {
 	lbls := labels.FromStrings("__name__", seriesName)
 
 	app := test.Storage().Appender(context.TODO())
-	for i, h := range tsdb.GenerateTestHistograms(100) {
-		_, err := app.AppendHistogram(0, lbls, int64(i)*int64(15*time.Second/time.Millisecond), h)
+	for i, h := range tsdbutil.GenerateTestHistograms(100) {
+		_, err := app.AppendHistogram(0, lbls, int64(i)*int64(15*time.Second/time.Millisecond), h, nil)
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
@@ -3154,18 +3155,67 @@ func TestSparseHistogramRate(t *testing.T) {
 	require.Len(t, vector, 1)
 	actualHistogram := vector[0].H
 	expectedHistogram := &histogram.FloatHistogram{
-		Schema:          1,
-		ZeroThreshold:   0.001,
-		ZeroCount:       1. / 15.,
-		Count:           4. / 15.,
-		Sum:             1.226666666666667,
-		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
-		PositiveBuckets: []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
+		// TODO(beorn7): This should be GaugeType. Change it once supported by PromQL.
+		CounterResetHint: histogram.NotCounterReset,
+		Schema:           1,
+		ZeroThreshold:    0.001,
+		ZeroCount:        1. / 15.,
+		Count:            8. / 15.,
+		Sum:              1.226666666666667,
+		PositiveSpans:    []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+		PositiveBuckets:  []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
+		NegativeSpans:    []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+		NegativeBuckets:  []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
 	}
 	require.Equal(t, expectedHistogram, actualHistogram)
 }
 
-func TestSparseHistogram_HistogramCountAndSum(t *testing.T) {
+func TestNativeFloatHistogramRate(t *testing.T) {
+	// TODO(beorn7): Integrate histograms into the PromQL testing framework
+	// and write more tests there.
+	test, err := NewTest(t, "")
+	require.NoError(t, err)
+	defer test.Close()
+
+	seriesName := "sparse_histogram_series"
+	lbls := labels.FromStrings("__name__", seriesName)
+
+	app := test.Storage().Appender(context.TODO())
+	for i, fh := range tsdbutil.GenerateTestFloatHistograms(100) {
+		_, err := app.AppendHistogram(0, lbls, int64(i)*int64(15*time.Second/time.Millisecond), nil, fh)
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	require.NoError(t, test.Run())
+	engine := test.QueryEngine()
+
+	queryString := fmt.Sprintf("rate(%s[1m])", seriesName)
+	qry, err := engine.NewInstantQuery(test.Queryable(), nil, queryString, timestamp.Time(int64(5*time.Minute/time.Millisecond)))
+	require.NoError(t, err)
+	res := qry.Exec(test.Context())
+	require.NoError(t, res.Err)
+	vector, err := res.Vector()
+	require.NoError(t, err)
+	require.Len(t, vector, 1)
+	actualHistogram := vector[0].H
+	expectedHistogram := &histogram.FloatHistogram{
+		// TODO(beorn7): This should be GaugeType. Change it once supported by PromQL.
+		CounterResetHint: histogram.NotCounterReset,
+		Schema:           1,
+		ZeroThreshold:    0.001,
+		ZeroCount:        1. / 15.,
+		Count:            8. / 15.,
+		Sum:              1.226666666666667,
+		PositiveSpans:    []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+		PositiveBuckets:  []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
+		NegativeSpans:    []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+		NegativeBuckets:  []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
+	}
+	require.Equal(t, expectedHistogram, actualHistogram)
+}
+
+func TestNativeHistogram_HistogramCountAndSum(t *testing.T) {
 	// TODO(codesome): Integrate histograms into the PromQL testing framework
 	// and write more tests there.
 	h := &histogram.Histogram{
@@ -3185,51 +3235,66 @@ func TestSparseHistogram_HistogramCountAndSum(t *testing.T) {
 		},
 		NegativeBuckets: []int64{2, 1, -2, 3},
 	}
+	for _, floatHisto := range []bool{true, false} {
+		t.Run(fmt.Sprintf("floatHistogram=%t", floatHisto), func(t *testing.T) {
+			test, err := NewTest(t, "")
+			require.NoError(t, err)
+			t.Cleanup(test.Close)
 
-	test, err := NewTest(t, "")
-	require.NoError(t, err)
-	t.Cleanup(test.Close)
+			seriesName := "sparse_histogram_series"
+			lbls := labels.FromStrings("__name__", seriesName)
+			engine := test.QueryEngine()
 
-	seriesName := "sparse_histogram_series"
-	lbls := labels.FromStrings("__name__", seriesName)
-	engine := test.QueryEngine()
+			ts := int64(10 * time.Minute / time.Millisecond)
+			app := test.Storage().Appender(context.TODO())
+			if floatHisto {
+				_, err = app.AppendHistogram(0, lbls, ts, nil, h.ToFloat())
+			} else {
+				_, err = app.AppendHistogram(0, lbls, ts, h, nil)
+			}
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
 
-	ts := int64(10 * time.Minute / time.Millisecond)
-	app := test.Storage().Appender(context.TODO())
-	_, err = app.AppendHistogram(0, lbls, ts, h)
-	require.NoError(t, err)
-	require.NoError(t, app.Commit())
+			queryString := fmt.Sprintf("histogram_count(%s)", seriesName)
+			qry, err := engine.NewInstantQuery(test.Queryable(), nil, queryString, timestamp.Time(ts))
+			require.NoError(t, err)
 
-	queryString := fmt.Sprintf("histogram_count(%s)", seriesName)
-	qry, err := engine.NewInstantQuery(test.Queryable(), nil, queryString, timestamp.Time(ts))
-	require.NoError(t, err)
+			res := qry.Exec(test.Context())
+			require.NoError(t, res.Err)
 
-	res := qry.Exec(test.Context())
-	require.NoError(t, res.Err)
+			vector, err := res.Vector()
+			require.NoError(t, err)
 
-	vector, err := res.Vector()
-	require.NoError(t, err)
+			require.Len(t, vector, 1)
+			require.Nil(t, vector[0].H)
+			if floatHisto {
+				require.Equal(t, float64(h.ToFloat().Count), vector[0].V)
+			} else {
+				require.Equal(t, float64(h.Count), vector[0].V)
+			}
 
-	require.Len(t, vector, 1)
-	require.Nil(t, vector[0].H)
-	require.Equal(t, float64(h.Count), vector[0].V)
+			queryString = fmt.Sprintf("histogram_sum(%s)", seriesName)
+			qry, err = engine.NewInstantQuery(test.Queryable(), nil, queryString, timestamp.Time(ts))
+			require.NoError(t, err)
 
-	queryString = fmt.Sprintf("histogram_sum(%s)", seriesName)
-	qry, err = engine.NewInstantQuery(test.Queryable(), nil, queryString, timestamp.Time(ts))
-	require.NoError(t, err)
+			res = qry.Exec(test.Context())
+			require.NoError(t, res.Err)
 
-	res = qry.Exec(test.Context())
-	require.NoError(t, res.Err)
+			vector, err = res.Vector()
+			require.NoError(t, err)
 
-	vector, err = res.Vector()
-	require.NoError(t, err)
-
-	require.Len(t, vector, 1)
-	require.Nil(t, vector[0].H)
-	require.Equal(t, h.Sum, vector[0].V)
+			require.Len(t, vector, 1)
+			require.Nil(t, vector[0].H)
+			if floatHisto {
+				require.Equal(t, h.ToFloat().Sum, vector[0].V)
+			} else {
+				require.Equal(t, h.Sum, vector[0].V)
+			}
+		})
+	}
 }
 
-func TestSparseHistogram_HistogramQuantile(t *testing.T) {
+func TestNativeHistogram_HistogramQuantile(t *testing.T) {
 	// TODO(codesome): Integrate histograms into the PromQL testing framework
 	// and write more tests there.
 	type subCase struct {
@@ -3425,40 +3490,47 @@ func TestSparseHistogram_HistogramQuantile(t *testing.T) {
 	test, err := NewTest(t, "")
 	require.NoError(t, err)
 	t.Cleanup(test.Close)
-	for i, c := range cases {
-		t.Run(c.text, func(t *testing.T) {
-			seriesName := "sparse_histogram_series"
-			lbls := labels.FromStrings("__name__", seriesName)
-			engine := test.QueryEngine()
+	idx := int64(0)
+	for _, floatHisto := range []bool{true, false} {
+		for _, c := range cases {
+			t.Run(fmt.Sprintf("%s floatHistogram=%t", c.text, floatHisto), func(t *testing.T) {
+				seriesName := "sparse_histogram_series"
+				lbls := labels.FromStrings("__name__", seriesName)
+				engine := test.QueryEngine()
+				ts := idx * int64(10*time.Minute/time.Millisecond)
+				app := test.Storage().Appender(context.TODO())
+				if floatHisto {
+					_, err = app.AppendHistogram(0, lbls, ts, nil, c.h.ToFloat())
+				} else {
+					_, err = app.AppendHistogram(0, lbls, ts, c.h, nil)
+				}
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
 
-			ts := int64(i+1) * int64(10*time.Minute/time.Millisecond)
-			app := test.Storage().Appender(context.TODO())
-			_, err = app.AppendHistogram(0, lbls, ts, c.h)
-			require.NoError(t, err)
-			require.NoError(t, app.Commit())
+				for j, sc := range c.subCases {
+					t.Run(fmt.Sprintf("%d %s", j, sc.quantile), func(t *testing.T) {
+						queryString := fmt.Sprintf("histogram_quantile(%s, %s)", sc.quantile, seriesName)
+						qry, err := engine.NewInstantQuery(test.Queryable(), nil, queryString, timestamp.Time(ts))
+						require.NoError(t, err)
 
-			for j, sc := range c.subCases {
-				t.Run(fmt.Sprintf("%d %s", j, sc.quantile), func(t *testing.T) {
-					queryString := fmt.Sprintf("histogram_quantile(%s, %s)", sc.quantile, seriesName)
-					qry, err := engine.NewInstantQuery(test.Queryable(), nil, queryString, timestamp.Time(ts))
-					require.NoError(t, err)
+						res := qry.Exec(test.Context())
+						require.NoError(t, res.Err)
 
-					res := qry.Exec(test.Context())
-					require.NoError(t, res.Err)
+						vector, err := res.Vector()
+						require.NoError(t, err)
 
-					vector, err := res.Vector()
-					require.NoError(t, err)
-
-					require.Len(t, vector, 1)
-					require.Nil(t, vector[0].H)
-					require.True(t, almostEqual(sc.value, vector[0].V))
-				})
-			}
-		})
+						require.Len(t, vector, 1)
+						require.Nil(t, vector[0].H)
+						require.True(t, almostEqual(sc.value, vector[0].V))
+					})
+				}
+				idx++
+			})
+		}
 	}
 }
 
-func TestSparseHistogram_HistogramFraction(t *testing.T) {
+func TestNativeHistogram_HistogramFraction(t *testing.T) {
 	// TODO(codesome): Integrate histograms into the PromQL testing framework
 	// and write more tests there.
 	type subCase struct {
@@ -3844,49 +3916,56 @@ func TestSparseHistogram_HistogramFraction(t *testing.T) {
 			}, invariantCases...),
 		},
 	}
+	idx := int64(0)
+	for _, floatHisto := range []bool{true, false} {
+		for _, c := range cases {
+			t.Run(fmt.Sprintf("%s floatHistogram=%t", c.text, floatHisto), func(t *testing.T) {
+				test, err := NewTest(t, "")
+				require.NoError(t, err)
+				t.Cleanup(test.Close)
 
-	for i, c := range cases {
-		t.Run(c.text, func(t *testing.T) {
-			test, err := NewTest(t, "")
-			require.NoError(t, err)
-			t.Cleanup(test.Close)
+				seriesName := "sparse_histogram_series"
+				lbls := labels.FromStrings("__name__", seriesName)
+				engine := test.QueryEngine()
 
-			seriesName := "sparse_histogram_series"
-			lbls := labels.FromStrings("__name__", seriesName)
-			engine := test.QueryEngine()
+				ts := idx * int64(10*time.Minute/time.Millisecond)
+				app := test.Storage().Appender(context.TODO())
+				if floatHisto {
+					_, err = app.AppendHistogram(0, lbls, ts, nil, c.h.ToFloat())
+				} else {
+					_, err = app.AppendHistogram(0, lbls, ts, c.h, nil)
+				}
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
 
-			ts := int64(i+1) * int64(10*time.Minute/time.Millisecond)
-			app := test.Storage().Appender(context.TODO())
-			_, err = app.AppendHistogram(0, lbls, ts, c.h)
-			require.NoError(t, err)
-			require.NoError(t, app.Commit())
+				for j, sc := range c.subCases {
+					t.Run(fmt.Sprintf("%d %s %s", j, sc.lower, sc.upper), func(t *testing.T) {
+						queryString := fmt.Sprintf("histogram_fraction(%s, %s, %s)", sc.lower, sc.upper, seriesName)
+						qry, err := engine.NewInstantQuery(test.Queryable(), nil, queryString, timestamp.Time(ts))
+						require.NoError(t, err)
 
-			for j, sc := range c.subCases {
-				t.Run(fmt.Sprintf("%d %s %s", j, sc.lower, sc.upper), func(t *testing.T) {
-					queryString := fmt.Sprintf("histogram_fraction(%s, %s, %s)", sc.lower, sc.upper, seriesName)
-					qry, err := engine.NewInstantQuery(test.Queryable(), nil, queryString, timestamp.Time(ts))
-					require.NoError(t, err)
+						res := qry.Exec(test.Context())
+						require.NoError(t, res.Err)
 
-					res := qry.Exec(test.Context())
-					require.NoError(t, res.Err)
+						vector, err := res.Vector()
+						require.NoError(t, err)
 
-					vector, err := res.Vector()
-					require.NoError(t, err)
-
-					require.Len(t, vector, 1)
-					require.Nil(t, vector[0].H)
-					if math.IsNaN(sc.value) {
-						require.True(t, math.IsNaN(vector[0].V))
-						return
-					}
-					require.Equal(t, sc.value, vector[0].V)
-				})
-			}
-		})
+						require.Len(t, vector, 1)
+						require.Nil(t, vector[0].H)
+						if math.IsNaN(sc.value) {
+							require.True(t, math.IsNaN(vector[0].V))
+							return
+						}
+						require.Equal(t, sc.value, vector[0].V)
+					})
+				}
+				idx++
+			})
+		}
 	}
 }
 
-func TestSparseHistogram_Sum_Count_AddOperator(t *testing.T) {
+func TestNativeHistogram_Sum_Count_AddOperator(t *testing.T) {
 	// TODO(codesome): Integrate histograms into the PromQL testing framework
 	// and write more tests there.
 	cases := []struct {
@@ -3972,60 +4051,68 @@ func TestSparseHistogram_Sum_Count_AddOperator(t *testing.T) {
 		},
 	}
 
-	for i, c := range cases {
-		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
-			test, err := NewTest(t, "")
-			require.NoError(t, err)
-			t.Cleanup(test.Close)
-
-			seriesName := "sparse_histogram_series"
-
-			engine := test.QueryEngine()
-
-			ts := int64(i+1) * int64(10*time.Minute/time.Millisecond)
-			app := test.Storage().Appender(context.TODO())
-			for idx, h := range c.histograms {
-				lbls := labels.FromStrings("__name__", seriesName, "idx", fmt.Sprintf("%d", idx))
-				// Since we mutate h later, we need to create a copy here.
-				_, err = app.AppendHistogram(0, lbls, ts, h.Copy())
+	idx0 := int64(0)
+	for _, c := range cases {
+		for _, floatHisto := range []bool{true, false} {
+			t.Run(fmt.Sprintf("floatHistogram=%t %d", floatHisto, idx0), func(t *testing.T) {
+				test, err := NewTest(t, "")
 				require.NoError(t, err)
-			}
-			require.NoError(t, app.Commit())
+				t.Cleanup(test.Close)
 
-			queryAndCheck := func(queryString string, exp Vector) {
-				qry, err := engine.NewInstantQuery(test.Queryable(), nil, queryString, timestamp.Time(ts))
-				require.NoError(t, err)
+				seriesName := "sparse_histogram_series"
 
-				res := qry.Exec(test.Context())
-				require.NoError(t, res.Err)
+				engine := test.QueryEngine()
 
-				vector, err := res.Vector()
-				require.NoError(t, err)
+				ts := idx0 * int64(10*time.Minute/time.Millisecond)
+				app := test.Storage().Appender(context.TODO())
+				for idx1, h := range c.histograms {
+					lbls := labels.FromStrings("__name__", seriesName, "idx", fmt.Sprintf("%d", idx1))
+					// Since we mutate h later, we need to create a copy here.
+					if floatHisto {
+						_, err = app.AppendHistogram(0, lbls, ts, nil, h.Copy().ToFloat())
+					} else {
+						_, err = app.AppendHistogram(0, lbls, ts, h.Copy(), nil)
+					}
+					require.NoError(t, err)
+				}
+				require.NoError(t, app.Commit())
 
-				require.Equal(t, exp, vector)
-			}
+				queryAndCheck := func(queryString string, exp Vector) {
+					qry, err := engine.NewInstantQuery(test.Queryable(), nil, queryString, timestamp.Time(ts))
+					require.NoError(t, err)
 
-			// sum().
-			queryString := fmt.Sprintf("sum(%s)", seriesName)
-			queryAndCheck(queryString, []Sample{
-				{Point{T: ts, H: &c.expected}, labels.Labels{}},
+					res := qry.Exec(test.Context())
+					require.NoError(t, res.Err)
+
+					vector, err := res.Vector()
+					require.NoError(t, err)
+
+					require.Equal(t, exp, vector)
+				}
+
+				// sum().
+				queryString := fmt.Sprintf("sum(%s)", seriesName)
+				queryAndCheck(queryString, []Sample{
+					{Point{T: ts, H: &c.expected}, labels.EmptyLabels()},
+				})
+
+				// + operator.
+				queryString = fmt.Sprintf(`%s{idx="0"}`, seriesName)
+				for idx := 1; idx < len(c.histograms); idx++ {
+					queryString += fmt.Sprintf(` + ignoring(idx) %s{idx="%d"}`, seriesName, idx)
+				}
+				queryAndCheck(queryString, []Sample{
+					{Point{T: ts, H: &c.expected}, labels.EmptyLabels()},
+				})
+
+				// count().
+				queryString = fmt.Sprintf("count(%s)", seriesName)
+				queryAndCheck(queryString, []Sample{
+					{Point{T: ts, V: 3}, labels.EmptyLabels()},
+				})
 			})
-
-			// + operator.
-			queryString = fmt.Sprintf(`%s{idx="0"}`, seriesName)
-			for idx := 1; idx < len(c.histograms); idx++ {
-				queryString += fmt.Sprintf(` + ignoring(idx) %s{idx="%d"}`, seriesName, idx)
-			}
-			queryAndCheck(queryString, []Sample{
-				{Point{T: ts, H: &c.expected}, labels.Labels{}},
-			})
-
-			// count().
-			queryString = fmt.Sprintf("count(%s)", seriesName)
-			queryAndCheck(queryString, []Sample{
-				{Point{T: ts, V: 3}, labels.Labels{}},
-			})
-		})
+			idx0++
+		}
 	}
 }
 

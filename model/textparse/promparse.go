@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"sort"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -144,6 +143,7 @@ func (l *promlexer) Error(es string) {
 // Prometheus text exposition format.
 type PromParser struct {
 	l       *promlexer
+	builder labels.ScratchBuilder
 	series  []byte
 	text    []byte
 	mtype   MetricType
@@ -168,8 +168,8 @@ func (p *PromParser) Series() ([]byte, *int64, float64) {
 	return p.series, nil, p.val
 }
 
-// Histogram always returns (nil, nil, nil, nil) because the Prometheus text format
-// does not support sparse histograms.
+// Histogram returns (nil, nil, nil, nil) for now because the Prometheus text
+// format does not support sparse histograms yet.
 func (p *PromParser) Histogram() ([]byte, *int64, *histogram.Histogram, *histogram.FloatHistogram) {
 	return nil, nil, nil, nil
 }
@@ -212,14 +212,11 @@ func (p *PromParser) Comment() []byte {
 // Metric writes the labels of the current sample into the passed labels.
 // It returns the string from which the metric was parsed.
 func (p *PromParser) Metric(l *labels.Labels) string {
-	// Allocate the full immutable string immediately, so we just
-	// have to create references on it below.
+	// Copy the buffer to a string: this is only necessary for the return value.
 	s := string(p.series)
 
-	*l = append(*l, labels.Label{
-		Name:  labels.MetricName,
-		Value: s[:p.offsets[0]-p.start],
-	})
+	p.builder.Reset()
+	p.builder.Add(labels.MetricName, s[:p.offsets[0]-p.start])
 
 	for i := 1; i < len(p.offsets); i += 4 {
 		a := p.offsets[i] - p.start
@@ -227,16 +224,16 @@ func (p *PromParser) Metric(l *labels.Labels) string {
 		c := p.offsets[i+2] - p.start
 		d := p.offsets[i+3] - p.start
 
+		value := s[c:d]
 		// Replacer causes allocations. Replace only when necessary.
 		if strings.IndexByte(s[c:d], byte('\\')) >= 0 {
-			*l = append(*l, labels.Label{Name: s[a:b], Value: lvalReplacer.Replace(s[c:d])})
-			continue
+			value = lvalReplacer.Replace(value)
 		}
-		*l = append(*l, labels.Label{Name: s[a:b], Value: s[c:d]})
+		p.builder.Add(s[a:b], value)
 	}
 
-	// Sort labels to maintain the sorted labels invariant.
-	sort.Sort(*l)
+	p.builder.Sort()
+	*l = p.builder.Labels()
 
 	return s
 }
@@ -257,8 +254,12 @@ func (p *PromParser) nextToken() token {
 	}
 }
 
-func parseError(exp string, got token) error {
-	return fmt.Errorf("%s, got %q", exp, got)
+func (p *PromParser) parseError(exp string, got token) error {
+	e := p.l.i + 1
+	if len(p.l.b) < e {
+		e = len(p.l.b)
+	}
+	return fmt.Errorf("%s, got %q (%q) while parsing: %q", exp, p.l.b[p.l.start:e], got, p.l.b[p.start:e])
 }
 
 // Next advances the parser to the next sample. It returns false if no
@@ -281,7 +282,7 @@ func (p *PromParser) Next() (Entry, error) {
 		case tMName:
 			p.offsets = append(p.offsets, p.l.start, p.l.i)
 		default:
-			return EntryInvalid, parseError("expected metric name after "+t.String(), t2)
+			return EntryInvalid, p.parseError("expected metric name after "+t.String(), t2)
 		}
 		switch t2 := p.nextToken(); t2 {
 		case tText:
@@ -311,11 +312,11 @@ func (p *PromParser) Next() (Entry, error) {
 			}
 		case tHelp:
 			if !utf8.Valid(p.text) {
-				return EntryInvalid, fmt.Errorf("help text is not a valid utf8 string")
+				return EntryInvalid, fmt.Errorf("help text %q is not a valid utf8 string", p.text)
 			}
 		}
 		if t := p.nextToken(); t != tLinebreak {
-			return EntryInvalid, parseError("linebreak expected after metadata", t)
+			return EntryInvalid, p.parseError("linebreak expected after metadata", t)
 		}
 		switch t {
 		case tHelp:
@@ -326,7 +327,7 @@ func (p *PromParser) Next() (Entry, error) {
 	case tComment:
 		p.text = p.l.buf()
 		if t := p.nextToken(); t != tLinebreak {
-			return EntryInvalid, parseError("linebreak expected after comment", t)
+			return EntryInvalid, p.parseError("linebreak expected after comment", t)
 		}
 		return EntryComment, nil
 
@@ -343,34 +344,34 @@ func (p *PromParser) Next() (Entry, error) {
 			t2 = p.nextToken()
 		}
 		if t2 != tValue {
-			return EntryInvalid, parseError("expected value after metric", t)
+			return EntryInvalid, p.parseError("expected value after metric", t2)
 		}
 		if p.val, err = parseFloat(yoloString(p.l.buf())); err != nil {
-			return EntryInvalid, err
+			return EntryInvalid, fmt.Errorf("%v while parsing: %q", err, p.l.b[p.start:p.l.i])
 		}
 		// Ensure canonical NaN value.
 		if math.IsNaN(p.val) {
 			p.val = math.Float64frombits(value.NormalNaN)
 		}
 		p.hasTS = false
-		switch p.nextToken() {
+		switch t := p.nextToken(); t {
 		case tLinebreak:
 			break
 		case tTimestamp:
 			p.hasTS = true
 			if p.ts, err = strconv.ParseInt(yoloString(p.l.buf()), 10, 64); err != nil {
-				return EntryInvalid, err
+				return EntryInvalid, fmt.Errorf("%v while parsing: %q", err, p.l.b[p.start:p.l.i])
 			}
 			if t2 := p.nextToken(); t2 != tLinebreak {
-				return EntryInvalid, parseError("expected next entry after timestamp", t)
+				return EntryInvalid, p.parseError("expected next entry after timestamp", t2)
 			}
 		default:
-			return EntryInvalid, parseError("expected timestamp or new record", t)
+			return EntryInvalid, p.parseError("expected timestamp or new record", t)
 		}
 		return EntrySeries, nil
 
 	default:
-		err = fmt.Errorf("%q is not a valid start token", t)
+		err = p.parseError("expected a valid start token", t)
 	}
 	return EntryInvalid, err
 }
@@ -383,18 +384,18 @@ func (p *PromParser) parseLVals() error {
 			return nil
 		case tLName:
 		default:
-			return parseError("expected label name", t)
+			return p.parseError("expected label name", t)
 		}
 		p.offsets = append(p.offsets, p.l.start, p.l.i)
 
 		if t := p.nextToken(); t != tEqual {
-			return parseError("expected equal", t)
+			return p.parseError("expected equal", t)
 		}
 		if t := p.nextToken(); t != tLValue {
-			return parseError("expected label value", t)
+			return p.parseError("expected label value", t)
 		}
 		if !utf8.Valid(p.l.buf()) {
-			return fmt.Errorf("invalid UTF-8 label value")
+			return fmt.Errorf("invalid UTF-8 label value: %q", p.l.buf())
 		}
 
 		// The promlexer ensures the value string is quoted. Strip first

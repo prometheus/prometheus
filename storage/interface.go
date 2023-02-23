@@ -248,7 +248,8 @@ type GetRef interface {
 	// Returns reference number that can be used to pass to Appender.Append(),
 	// and a set of labels that will not cause another copy when passed to Appender.Append().
 	// 0 means the appender does not have a reference to this series.
-	GetRef(lset labels.Labels) (SeriesRef, labels.Labels)
+	// hash should be a hash of lset.
+	GetRef(lset labels.Labels, hash uint64) (SeriesRef, labels.Labels)
 }
 
 // ExemplarAppender provides an interface for adding samples to exemplar storage, which
@@ -281,7 +282,7 @@ type HistogramAppender interface {
 	// For efficiency reasons, the histogram is passed as a
 	// pointer. AppendHistogram won't mutate the histogram, but in turn
 	// depends on the caller to not mutate it either.
-	AppendHistogram(ref SeriesRef, l labels.Labels, t int64, h *histogram.Histogram) (SeriesRef, error)
+	AppendHistogram(ref SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (SeriesRef, error)
 }
 
 // MetadataUpdater provides an interface for associating metadata to stored series.
@@ -381,7 +382,7 @@ func (s mockSeries) Labels() labels.Labels {
 	return labels.FromStrings(s.labelSet...)
 }
 
-func (s mockSeries) Iterator() chunkenc.Iterator {
+func (s mockSeries) Iterator(chunkenc.Iterator) chunkenc.Iterator {
 	return chunkenc.MockSeriesIterator(s.timestamps, s.values)
 }
 
@@ -420,14 +421,17 @@ type Labels interface {
 }
 
 type SampleIterable interface {
-	// Iterator returns a new, independent iterator of the data of the series.
-	Iterator() chunkenc.Iterator
+	// Iterator returns an iterator of the data of the series.
+	// The iterator passed as argument is for re-use, if not nil.
+	// Depending on implementation, the iterator can
+	// be re-used or a new iterator can be allocated.
+	Iterator(chunkenc.Iterator) chunkenc.Iterator
 }
 
 type ChunkIterable interface {
-	// Iterator returns a new, independent iterator that iterates over potentially overlapping
+	// Iterator returns an iterator that iterates over potentially overlapping
 	// chunks of the series, sorted by min time.
-	Iterator() chunks.Iterator
+	Iterator(chunks.Iterator) chunks.Iterator
 }
 
 type Warnings []error

@@ -96,7 +96,7 @@ type LiveReader struct {
 // not be used again.  It is up to the user to decide when to stop trying should
 // io.EOF be returned.
 func (r *LiveReader) Err() error {
-	if r.eofNonErr && r.err == io.EOF {
+	if r.eofNonErr && errors.Is(r.err, io.EOF) {
 		return nil
 	}
 	return r.err

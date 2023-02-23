@@ -17,9 +17,9 @@ Rule files use YAML.
 The rule files can be reloaded at runtime by sending `SIGHUP` to the Prometheus
 process. The changes are only applied if all rule files are well-formatted.
 
-_Note about native histograms (experimental feature): Rules evaluating to
-native histograms do not yet work as expected. Instead of a native histogram,
-the sample stored is just a floating point value of zero._
+_Note about native histograms (experimental feature): Native histogram are always
+recorded as gauge histograms (for now). Most cases will create gauge histograms
+naturally, e.g. after `rate()`._
 
 ## Syntax-checking rules
 
@@ -70,8 +70,8 @@ A simple example rules file would be:
 groups:
   - name: example
     rules:
-    - record: job:http_inprogress_requests:sum
-      expr: sum by (job) (http_inprogress_requests)
+    - record: code:prometheus_http_requests_total:sum
+      expr: sum by (code) (prometheus_http_requests_total)
 ```
 
 ### `<rule_group>`
@@ -123,6 +123,10 @@ expr: <string>
 # Alerts which have not yet fired for long enough are considered pending.
 [ for: <duration> | default = 0s ]
 
+# How long an alert will continue firing after the condition that triggered it
+# has cleared.
+[ keep_firing_for: <duration> | default = 0s ]
+
 # Labels to add or overwrite for each alert.
 labels:
   [ <labelname>: <tmpl_string> ]
@@ -131,6 +135,9 @@ labels:
 annotations:
   [ <labelname>: <tmpl_string> ]
 ```
+
+See also the
+[best practices for naming metrics created by recording rules](https://prometheus.io/docs/practices/rules/#recording-rules).
 
 # Limiting alerts and series
 

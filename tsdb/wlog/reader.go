@@ -43,7 +43,7 @@ func NewReader(r io.Reader) *Reader {
 // It must not be called again after it returned false.
 func (r *Reader) Next() bool {
 	err := r.next()
-	if errors.Cause(err) == io.EOF {
+	if errors.Is(err, io.EOF) {
 		// The last WAL segment record shouldn't be torn(should be full or last).
 		// The last record would be torn after a crash just before
 		// the last record part could be persisted to disk.

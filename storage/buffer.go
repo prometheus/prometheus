@@ -68,9 +68,11 @@ func (b *BufferedSeriesIterator) ReduceDelta(delta int64) bool {
 
 // PeekBack returns the nth previous element of the iterator. If there is none buffered,
 // ok is false.
-func (b *BufferedSeriesIterator) PeekBack(n int) (t int64, v float64, h *histogram.Histogram, ok bool) {
+func (b *BufferedSeriesIterator) PeekBack(n int) (
+	t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, ok bool,
+) {
 	s, ok := b.buf.nthLast(n)
-	return s.t, s.v, s.h, ok
+	return s.t, s.v, s.h, s.fh, ok
 }
 
 // Buffer returns an iterator over the buffered data. Invalidates previously

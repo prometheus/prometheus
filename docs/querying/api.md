@@ -449,9 +449,7 @@ raw numbers.
 
 The keys `"histogram"` and `"histograms"` only show up if the experimental
 native histograms are present in the response. Their placeholder `<histogram>`
-is explained in detail in its own section below. Any one object will only have
-the `"value"`/`"values"` key or the `"histogram"`/`"histograms"` key, but not
-both.
+is explained in detail in its own section below. 
 
 ### Range vectors
 
@@ -469,6 +467,9 @@ Range vectors are returned as result type `matrix`. The corresponding
 ]
 ```
 
+Each series could have the `"values"` key, or the `"histograms"` key, or both. 
+For a given timestamp, there will only be one sample of either float or histogram type.
+
 ### Instant vectors
 
 Instant vectors are returned as result type `vector`. The corresponding
@@ -484,6 +485,8 @@ Instant vectors are returned as result type `vector`. The corresponding
   ...
 ]
 ```
+
+Each series could have the `"value"` key, or the `"histogram"` key, but not both.
 
 ### Scalars
 
@@ -623,6 +626,38 @@ $ curl 'http://localhost:9090/api/v1/targets?state=active'
 }
 ```
 
+The `scrapePool` query parameter allows the caller to filter by scrape pool name.
+
+```json
+$ curl 'http://localhost:9090/api/v1/targets?scrapePool=node_exporter'
+{
+  "status": "success",
+  "data": {
+    "activeTargets": [
+      {
+        "discoveredLabels": {
+          "__address__": "127.0.0.1:9091",
+          "__metrics_path__": "/metrics",
+          "__scheme__": "http",
+          "job": "node_exporter"
+        },
+        "labels": {
+          "instance": "127.0.0.1:9091",
+          "job": "node_exporter"
+        },
+        "scrapePool": "node_exporter",
+        "scrapeUrl": "http://127.0.0.1:9091/metrics",
+        "globalUrl": "http://example-prometheus:9091/metrics",
+        "lastError": "",
+        "lastScrape": "2017-01-17T15:07:44.723715405+01:00",
+        "lastScrapeDuration": 50688943,
+        "health": "up"
+      }
+    ],
+    "droppedTargets": []
+  }
+}
+```
 
 ## Rules
 

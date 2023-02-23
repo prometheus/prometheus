@@ -110,7 +110,7 @@ func TestExternalLabelsQuerierAddExternalLabels(t *testing.T) {
 		el          labels.Labels
 		inMatchers  []*labels.Matcher
 		outMatchers []*labels.Matcher
-		added       labels.Labels
+		added       []string
 	}{
 		{
 			inMatchers: []*labels.Matcher{
@@ -119,7 +119,7 @@ func TestExternalLabelsQuerierAddExternalLabels(t *testing.T) {
 			outMatchers: []*labels.Matcher{
 				labels.MustNewMatcher(labels.MatchEqual, "job", "api-server"),
 			},
-			added: labels.Labels{},
+			added: []string{},
 		},
 		{
 			el: labels.FromStrings("dc", "berlin-01", "region", "europe"),
@@ -131,7 +131,7 @@ func TestExternalLabelsQuerierAddExternalLabels(t *testing.T) {
 				labels.MustNewMatcher(labels.MatchEqual, "region", "europe"),
 				labels.MustNewMatcher(labels.MatchEqual, "dc", "berlin-01"),
 			},
-			added: labels.FromStrings("dc", "berlin-01", "region", "europe"),
+			added: []string{"dc", "region"},
 		},
 		{
 			el: labels.FromStrings("dc", "berlin-01", "region", "europe"),
@@ -144,7 +144,7 @@ func TestExternalLabelsQuerierAddExternalLabels(t *testing.T) {
 				labels.MustNewMatcher(labels.MatchEqual, "region", "europe"),
 				labels.MustNewMatcher(labels.MatchEqual, "dc", "munich-02"),
 			},
-			added: labels.FromStrings("region", "europe"),
+			added: []string{"region"},
 		},
 	}
 
@@ -163,12 +163,12 @@ func TestExternalLabelsQuerierAddExternalLabels(t *testing.T) {
 func TestSeriesSetFilter(t *testing.T) {
 	tests := []struct {
 		in       *prompb.QueryResult
-		toRemove labels.Labels
+		toRemove []string
 
 		expected *prompb.QueryResult
 	}{
 		{
-			toRemove: labels.Labels{{Name: "foo", Value: "bar"}},
+			toRemove: []string{"foo"},
 			in: &prompb.QueryResult{
 				Timeseries: []*prompb.TimeSeries{
 					{Labels: labelsToLabelsProto(labels.FromStrings("foo", "bar", "a", "b"), nil), Samples: []prompb.Sample{}},

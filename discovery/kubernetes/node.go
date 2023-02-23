@@ -55,7 +55,7 @@ func NewNode(l log.Logger, inf cache.SharedInformer) *Node {
 		l = log.NewNopLogger()
 	}
 	n := &Node{logger: l, informer: inf, store: inf.GetStore(), queue: workqueue.NewNamed("node")}
-	n.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+	_, err := n.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
 			nodeAddCount.Inc()
 			n.enqueue(o)
@@ -69,6 +69,9 @@ func NewNode(l log.Logger, inf cache.SharedInformer) *Node {
 			n.enqueue(o)
 		},
 	})
+	if err != nil {
+		level.Error(l).Log("msg", "Error adding nodes event handler.", "err", err)
+	}
 	return n
 }
 

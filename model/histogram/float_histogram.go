@@ -27,6 +27,8 @@ import (
 // used to represent a histogram with integer counts and thus serves as a more
 // generalized representation.
 type FloatHistogram struct {
+	// Counter reset information.
+	CounterResetHint CounterResetHint
 	// Currently valid schema numbers are -4 <= n <= 8.  They are all for
 	// base-2 bucket schemas, where 1 is a bucket boundary in each case, and
 	// then each power of two is divided into 2^n logarithmic buckets.  Or
@@ -242,6 +244,37 @@ func (h *FloatHistogram) Sub(other *FloatHistogram) *FloatHistogram {
 		index = b.Index
 	}
 	return h
+}
+
+// Equals returns true if the given float histogram matches exactly.
+// Exact match is when there are no new buckets (even empty) and no missing buckets,
+// and all the bucket values match. Spans can have different empty length spans in between,
+// but they must represent the same bucket layout to match.
+func (h *FloatHistogram) Equals(h2 *FloatHistogram) bool {
+	if h2 == nil {
+		return false
+	}
+
+	if h.Schema != h2.Schema || h.ZeroThreshold != h2.ZeroThreshold ||
+		h.ZeroCount != h2.ZeroCount || h.Count != h2.Count || h.Sum != h2.Sum {
+		return false
+	}
+
+	if !spansMatch(h.PositiveSpans, h2.PositiveSpans) {
+		return false
+	}
+	if !spansMatch(h.NegativeSpans, h2.NegativeSpans) {
+		return false
+	}
+
+	if !bucketsMatch(h.PositiveBuckets, h2.PositiveBuckets) {
+		return false
+	}
+	if !bucketsMatch(h.NegativeBuckets, h2.NegativeBuckets) {
+		return false
+	}
+
+	return true
 }
 
 // addBucket takes the "coordinates" of the last bucket that was handled and

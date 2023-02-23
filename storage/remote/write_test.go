@@ -228,14 +228,14 @@ func TestUpdateExternalLabels(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, s.ApplyConfig(conf))
 	require.Equal(t, 1, len(s.queues))
-	require.Equal(t, labels.Labels(nil), s.queues[hash].externalLabels)
+	require.Equal(t, 0, len(s.queues[hash].externalLabels))
 
 	conf.GlobalConfig.ExternalLabels = externalLabels
 	hash, err = toHash(conf.RemoteWriteConfigs[0])
 	require.NoError(t, err)
 	require.NoError(t, s.ApplyConfig(conf))
 	require.Equal(t, 1, len(s.queues))
-	require.Equal(t, externalLabels, s.queues[hash].externalLabels)
+	require.Equal(t, []labels.Label{{Name: "external", Value: "true"}}, s.queues[hash].externalLabels)
 
 	err = s.Close()
 	require.NoError(t, err)

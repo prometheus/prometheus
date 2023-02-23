@@ -27,26 +27,31 @@ import (
 
 type SeriesEntry struct {
 	Lset             labels.Labels
-	SampleIteratorFn func() chunkenc.Iterator
+	SampleIteratorFn func(chunkenc.Iterator) chunkenc.Iterator
 }
 
-func (s *SeriesEntry) Labels() labels.Labels       { return s.Lset }
-func (s *SeriesEntry) Iterator() chunkenc.Iterator { return s.SampleIteratorFn() }
+func (s *SeriesEntry) Labels() labels.Labels                           { return s.Lset }
+func (s *SeriesEntry) Iterator(it chunkenc.Iterator) chunkenc.Iterator { return s.SampleIteratorFn(it) }
 
 type ChunkSeriesEntry struct {
 	Lset            labels.Labels
-	ChunkIteratorFn func() chunks.Iterator
+	ChunkIteratorFn func(chunks.Iterator) chunks.Iterator
 }
 
-func (s *ChunkSeriesEntry) Labels() labels.Labels     { return s.Lset }
-func (s *ChunkSeriesEntry) Iterator() chunks.Iterator { return s.ChunkIteratorFn() }
+func (s *ChunkSeriesEntry) Labels() labels.Labels                       { return s.Lset }
+func (s *ChunkSeriesEntry) Iterator(it chunks.Iterator) chunks.Iterator { return s.ChunkIteratorFn(it) }
 
 // NewListSeries returns series entry with iterator that allows to iterate over provided samples.
 func NewListSeries(lset labels.Labels, s []tsdbutil.Sample) *SeriesEntry {
+	samplesS := Samples(samples(s))
 	return &SeriesEntry{
 		Lset: lset,
-		SampleIteratorFn: func() chunkenc.Iterator {
-			return NewListSeriesIterator(samples(s))
+		SampleIteratorFn: func(it chunkenc.Iterator) chunkenc.Iterator {
+			if lsi, ok := it.(*listSeriesIterator); ok {
+				lsi.Reset(samplesS)
+				return lsi
+			}
+			return NewListSeriesIterator(samplesS)
 		},
 	}
 }
@@ -56,10 +61,20 @@ func NewListSeries(lset labels.Labels, s []tsdbutil.Sample) *SeriesEntry {
 func NewListChunkSeriesFromSamples(lset labels.Labels, samples ...[]tsdbutil.Sample) *ChunkSeriesEntry {
 	return &ChunkSeriesEntry{
 		Lset: lset,
-		ChunkIteratorFn: func() chunks.Iterator {
-			chks := make([]chunks.Meta, 0, len(samples))
+		ChunkIteratorFn: func(it chunks.Iterator) chunks.Iterator {
+			lcsi, existing := it.(*listChunkSeriesIterator)
+			var chks []chunks.Meta
+			if existing {
+				chks = lcsi.chks[:0]
+			} else {
+				chks = make([]chunks.Meta, 0, len(samples))
+			}
 			for _, s := range samples {
 				chks = append(chks, tsdbutil.ChunkFromSamples(s))
+			}
+			if existing {
+				lcsi.Reset(chks...)
+				return lcsi
 			}
 			return NewListChunkSeriesIterator(chks...)
 		},
@@ -85,6 +100,11 @@ type Samples interface {
 // NewListSeriesIterator returns listSeriesIterator that allows to iterate over provided samples.
 func NewListSeriesIterator(samples Samples) chunkenc.Iterator {
 	return &listSeriesIterator{samples: samples, idx: -1}
+}
+
+func (it *listSeriesIterator) Reset(samples Samples) {
+	it.samples = samples
+	it.idx = -1
 }
 
 func (it *listSeriesIterator) At() (int64, float64) {
@@ -150,6 +170,11 @@ func NewListChunkSeriesIterator(chks ...chunks.Meta) chunks.Iterator {
 	return &listChunkSeriesIterator{chks: chks, idx: -1}
 }
 
+func (it *listChunkSeriesIterator) Reset(chks ...chunks.Meta) {
+	it.chks = chks
+	it.idx = -1
+}
+
 func (it *listChunkSeriesIterator) At() chunks.Meta {
 	return it.chks[it.idx]
 }
@@ -164,6 +189,7 @@ func (it *listChunkSeriesIterator) Err() error { return nil }
 type chunkSetToSeriesSet struct {
 	ChunkSeriesSet
 
+	iter             chunks.Iterator
 	chkIterErr       error
 	sameSeriesChunks []Series
 }
@@ -178,18 +204,18 @@ func (c *chunkSetToSeriesSet) Next() bool {
 		return false
 	}
 
-	iter := c.ChunkSeriesSet.At().Iterator()
-	c.sameSeriesChunks = c.sameSeriesChunks[:0]
+	c.iter = c.ChunkSeriesSet.At().Iterator(c.iter)
+	c.sameSeriesChunks = nil
 
-	for iter.Next() {
+	for c.iter.Next() {
 		c.sameSeriesChunks = append(
 			c.sameSeriesChunks,
-			newChunkToSeriesDecoder(c.ChunkSeriesSet.At().Labels(), iter.At()),
+			newChunkToSeriesDecoder(c.ChunkSeriesSet.At().Labels(), c.iter.At()),
 		)
 	}
 
-	if iter.Err() != nil {
-		c.chkIterErr = iter.Err()
+	if c.iter.Err() != nil {
+		c.chkIterErr = c.iter.Err()
 		return false
 	}
 	return true
@@ -210,9 +236,9 @@ func (c *chunkSetToSeriesSet) Err() error {
 func newChunkToSeriesDecoder(labels labels.Labels, chk chunks.Meta) Series {
 	return &SeriesEntry{
 		Lset: labels,
-		SampleIteratorFn: func() chunkenc.Iterator {
+		SampleIteratorFn: func(it chunkenc.Iterator) chunkenc.Iterator {
 			// TODO(bwplotka): Can we provide any chunkenc buffer?
-			return chk.Chunk.Iterator(nil)
+			return chk.Chunk.Iterator(it)
 		},
 	}
 }
@@ -252,7 +278,7 @@ func NewSeriesToChunkEncoder(series Series) ChunkSeries {
 	return &seriesToChunkEncoder{series}
 }
 
-func (s *seriesToChunkEncoder) Iterator() chunks.Iterator {
+func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 	var (
 		chk chunkenc.Chunk
 		app chunkenc.Appender
@@ -261,9 +287,14 @@ func (s *seriesToChunkEncoder) Iterator() chunks.Iterator {
 	mint := int64(math.MaxInt64)
 	maxt := int64(math.MinInt64)
 
-	chks := []chunks.Meta{}
+	var chks []chunks.Meta
+	lcsi, existing := it.(*listChunkSeriesIterator)
+	if existing {
+		chks = lcsi.chks[:0]
+	}
+
 	i := 0
-	seriesIter := s.Series.Iterator()
+	seriesIter := s.Series.Iterator(nil)
 	lastType := chunkenc.ValNone
 	for typ := seriesIter.Next(); typ != chunkenc.ValNone; typ = seriesIter.Next() {
 		if typ != lastType || i >= seriesToChunkEncoderSplit {
@@ -290,9 +321,10 @@ func (s *seriesToChunkEncoder) Iterator() chunks.Iterator {
 		lastType = typ
 
 		var (
-			t int64
-			v float64
-			h *histogram.Histogram
+			t  int64
+			v  float64
+			h  *histogram.Histogram
+			fh *histogram.FloatHistogram
 		)
 		switch typ {
 		case chunkenc.ValFloat:
@@ -301,6 +333,9 @@ func (s *seriesToChunkEncoder) Iterator() chunks.Iterator {
 		case chunkenc.ValHistogram:
 			t, h = seriesIter.AtHistogram()
 			app.AppendHistogram(t, h)
+		case chunkenc.ValFloatHistogram:
+			t, fh = seriesIter.AtFloatHistogram()
+			app.AppendFloatHistogram(t, fh)
 		default:
 			return errChunksIterator{err: fmt.Errorf("unknown sample type %s", typ.String())}
 		}
@@ -323,6 +358,10 @@ func (s *seriesToChunkEncoder) Iterator() chunks.Iterator {
 		})
 	}
 
+	if existing {
+		lcsi.Reset(chks...)
+		return lcsi
+	}
 	return NewListChunkSeriesIterator(chks...)
 }
 
@@ -362,7 +401,6 @@ func ExpandSamples(iter chunkenc.Iterator, newSampleFn func(t int64, v float64, 
 		case chunkenc.ValFloatHistogram:
 			t, fh := iter.AtFloatHistogram()
 			result = append(result, newSampleFn(t, 0, nil, fh))
-
 		}
 	}
 }

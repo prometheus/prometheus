@@ -432,7 +432,7 @@ func (p *parser) expectType(node Node, want ValueType, context string) {
 	}
 }
 
-// checkAST checks the sanity of the provided AST. This includes type checking.
+// checkAST checks the validity of the provided AST. This includes type checking.
 func (p *parser) checkAST(node Node) (typ ValueType) {
 	// For expressions the type is determined by their Type function.
 	// Lists do not have a type but are not invalid either.

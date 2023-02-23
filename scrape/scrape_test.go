@@ -1020,6 +1020,51 @@ func TestScrapeLoopSeriesAdded(t *testing.T) {
 	require.Equal(t, 0, seriesAdded)
 }
 
+func TestScrapeLoopFailWithInvalidLabelsAfterRelabel(t *testing.T) {
+	s := teststorage.New(t)
+	defer s.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	target := &Target{
+		labels: labels.FromStrings("pod_label_invalid_012", "test"),
+	}
+	relabelConfig := []*relabel.Config{{
+		Action:      relabel.LabelMap,
+		Regex:       relabel.MustNewRegexp("pod_label_invalid_(.+)"),
+		Separator:   ";",
+		Replacement: "$1",
+	}}
+	sl := newScrapeLoop(ctx,
+		&testScraper{},
+		nil, nil,
+		func(l labels.Labels) labels.Labels {
+			return mutateSampleLabels(l, target, true, relabelConfig)
+		},
+		nopMutator,
+		s.Appender,
+		nil,
+		0,
+		true,
+		0,
+		nil,
+		0,
+		0,
+		false,
+		false,
+		nil,
+		false,
+	)
+
+	slApp := sl.appender(ctx)
+	total, added, seriesAdded, err := sl.append(slApp, []byte("test_metric 1\n"), "", time.Time{})
+	require.ErrorContains(t, err, "invalid metric name or label names")
+	require.NoError(t, slApp.Rollback())
+	require.Equal(t, 1, total)
+	require.Equal(t, 0, added)
+	require.Equal(t, 0, seriesAdded)
+}
+
 func makeTestMetrics(n int) []byte {
 	// Construct a metrics string to parse
 	sb := bytes.Buffer{}
@@ -1541,21 +1586,21 @@ func TestScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T) {
 
 	fakeRef := storage.SeriesRef(1)
 	expValue := float64(1)
-	metric := `metric{n="1"} 1`
-	p, warning := textparse.New([]byte(metric), "")
+	metric := []byte(`metric{n="1"} 1`)
+	p, warning := textparse.New(metric, "")
 	require.NoError(t, warning)
 
 	var lset labels.Labels
 	p.Next()
-	mets := p.Metric(&lset)
+	p.Metric(&lset)
 	hash := lset.Hash()
 
 	// Create a fake entry in the cache
-	sl.cache.addRef(mets, fakeRef, lset, hash)
+	sl.cache.addRef(metric, fakeRef, lset, hash)
 	now := time.Now()
 
 	slApp := sl.appender(context.Background())
-	_, _, _, err := sl.append(slApp, []byte(metric), "", now)
+	_, _, _, err := sl.append(slApp, metric, "", now)
 	require.NoError(t, err)
 	require.NoError(t, slApp.Commit())
 
@@ -1578,7 +1623,7 @@ func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 		nil, nil, nil,
 		func(l labels.Labels) labels.Labels {
 			if l.Has("deleteme") {
-				return nil
+				return labels.EmptyLabels()
 			}
 			return l
 		},
@@ -2914,7 +2959,7 @@ func TestScrapeReportSingleAppender(t *testing.T) {
 
 		c := 0
 		for series.Next() {
-			i := series.At().Iterator()
+			i := series.At().Iterator(nil)
 			for i.Next() != chunkenc.ValNone {
 				c++
 			}
@@ -2987,7 +3032,7 @@ func TestScrapeReportLimit(t *testing.T) {
 
 	var found bool
 	for series.Next() {
-		i := series.At().Iterator()
+		i := series.At().Iterator(nil)
 		for i.Next() == chunkenc.ValFloat {
 			_, v := i.At()
 			require.Equal(t, 1.0, v)

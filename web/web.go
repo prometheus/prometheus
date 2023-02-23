@@ -309,6 +309,7 @@ func New(logger log.Logger, o *Options) *Handler {
 	}
 	h.SetReady(false)
 
+	factorySPr := func(_ context.Context) api_v1.ScrapePoolsRetriever { return h.scrapeManager }
 	factoryTr := func(_ context.Context) api_v1.TargetRetriever { return h.scrapeManager }
 	factoryAr := func(_ context.Context) api_v1.AlertmanagerRetriever { return h.notifier }
 	FactoryRr := func(_ context.Context) api_v1.RulesRetriever { return h.ruleManager }
@@ -318,7 +319,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		app = h.storage
 	}
 
-	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, app, h.exemplarStorage, factoryTr, factoryAr,
+	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, app, h.exemplarStorage, factorySPr, factoryTr, factoryAr,
 		func() config.Config {
 			h.mtx.RLock()
 			defer h.mtx.RUnlock()
@@ -400,6 +401,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		replacedIdx := bytes.ReplaceAll(idx, []byte("CONSOLES_LINK_PLACEHOLDER"), []byte(h.consolesPath()))
 		replacedIdx = bytes.ReplaceAll(replacedIdx, []byte("TITLE_PLACEHOLDER"), []byte(h.options.PageTitle))
 		replacedIdx = bytes.ReplaceAll(replacedIdx, []byte("AGENT_MODE_PLACEHOLDER"), []byte(strconv.FormatBool(h.options.IsAgent)))
+		replacedIdx = bytes.ReplaceAll(replacedIdx, []byte("READY_PLACEHOLDER"), []byte(strconv.FormatBool(h.isReady())))
 		w.Write(replacedIdx)
 	}
 
@@ -653,13 +655,10 @@ func (h *Handler) consoles(w http.ResponseWriter, r *http.Request) {
 		params[k] = v[0]
 	}
 
-	externalLabels := map[string]string{}
 	h.mtx.RLock()
 	els := h.config.GlobalConfig.ExternalLabels
 	h.mtx.RUnlock()
-	for _, el := range els {
-		externalLabels[el.Name] = el.Value
-	}
+	externalLabels := els.Map()
 
 	// Inject some convenience variables that are easier to remember for users
 	// who are not used to Go's templating system.

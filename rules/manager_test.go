@@ -30,6 +30,7 @@ import (
 	"go.uber.org/goleak"
 	"gopkg.in/yaml.v2"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -38,6 +39,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
@@ -64,6 +66,7 @@ func TestAlertingRule(t *testing.T) {
 		"HTTPRequestRateLow",
 		expr,
 		time.Minute,
+		0,
 		labels.FromStrings("severity", "{{\"c\"}}ritical"),
 		labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
 	)
@@ -207,6 +210,7 @@ func TestForStateAddSamples(t *testing.T) {
 		"HTTPRequestRateLow",
 		expr,
 		time.Minute,
+		0,
 		labels.FromStrings("severity", "{{\"c\"}}ritical"),
 		labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
 	)
@@ -381,6 +385,7 @@ func TestForStateRestore(t *testing.T) {
 		"HTTPRequestRateLow",
 		expr,
 		alertForDuration,
+		0,
 		labels.FromStrings("severity", "critical"),
 		labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
 	)
@@ -447,6 +452,7 @@ func TestForStateRestore(t *testing.T) {
 			"HTTPRequestRateLow",
 			expr,
 			alertForDuration,
+			0,
 			labels.FromStrings("severity", "critical"),
 			labels.EmptyLabels(), labels.EmptyLabels(), "", false, nil,
 		)
@@ -592,12 +598,13 @@ func TestStaleness(t *testing.T) {
 // Convert a SeriesSet into a form usable with require.Equal.
 func readSeriesSet(ss storage.SeriesSet) (map[string][]promql.Point, error) {
 	result := map[string][]promql.Point{}
+	var it chunkenc.Iterator
 
 	for ss.Next() {
 		series := ss.At()
 
 		points := []promql.Point{}
-		it := series.Iterator()
+		it := series.Iterator(it)
 		for it.Next() == chunkenc.ValFloat {
 			t, v := it.At()
 			points = append(points, promql.Point{T: t, V: v})
@@ -612,13 +619,13 @@ func readSeriesSet(ss storage.SeriesSet) (map[string][]promql.Point, error) {
 func TestCopyState(t *testing.T) {
 	oldGroup := &Group{
 		rules: []Rule{
-			NewAlertingRule("alert", nil, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
+			NewAlertingRule("alert", nil, 0, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
 			NewRecordingRule("rule1", nil, labels.EmptyLabels()),
 			NewRecordingRule("rule2", nil, labels.EmptyLabels()),
 			NewRecordingRule("rule3", nil, labels.FromStrings("l1", "v1")),
 			NewRecordingRule("rule3", nil, labels.FromStrings("l1", "v2")),
 			NewRecordingRule("rule3", nil, labels.FromStrings("l1", "v3")),
-			NewAlertingRule("alert2", nil, 0, labels.FromStrings("l2", "v1"), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
+			NewAlertingRule("alert2", nil, 0, 0, labels.FromStrings("l2", "v1"), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
 		},
 		seriesInPreviousEval: []map[string]labels.Labels{
 			{},
@@ -637,10 +644,10 @@ func TestCopyState(t *testing.T) {
 			NewRecordingRule("rule3", nil, labels.FromStrings("l1", "v0")),
 			NewRecordingRule("rule3", nil, labels.FromStrings("l1", "v1")),
 			NewRecordingRule("rule3", nil, labels.FromStrings("l1", "v2")),
-			NewAlertingRule("alert", nil, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
+			NewAlertingRule("alert", nil, 0, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
 			NewRecordingRule("rule1", nil, labels.EmptyLabels()),
-			NewAlertingRule("alert2", nil, 0, labels.FromStrings("l2", "v0"), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
-			NewAlertingRule("alert2", nil, 0, labels.FromStrings("l2", "v1"), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
+			NewAlertingRule("alert2", nil, 0, 0, labels.FromStrings("l2", "v0"), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
+			NewAlertingRule("alert2", nil, 0, 0, labels.FromStrings("l2", "v1"), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
 			NewRecordingRule("rule4", nil, labels.EmptyLabels()),
 		},
 		seriesInPreviousEval: make([]map[string]labels.Labels, 8),
@@ -872,7 +879,7 @@ func TestNotify(t *testing.T) {
 
 	expr, err := parser.ParseExpr("a > 1")
 	require.NoError(t, err)
-	rule := NewAlertingRule("aTooHigh", expr, 0, labels.Labels{}, labels.Labels{}, labels.EmptyLabels(), "", true, log.NewNopLogger())
+	rule := NewAlertingRule("aTooHigh", expr, 0, 0, labels.Labels{}, labels.Labels{}, labels.EmptyLabels(), "", true, log.NewNopLogger())
 	group := NewGroup(GroupOptions{
 		Name:          "alert",
 		Interval:      time.Second,
@@ -1144,7 +1151,7 @@ func TestGroupHasAlertingRules(t *testing.T) {
 			group: &Group{
 				name: "HasAlertingRule",
 				rules: []Rule{
-					NewAlertingRule("alert", nil, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
+					NewAlertingRule("alert", nil, 0, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
 					NewRecordingRule("record", nil, labels.EmptyLabels()),
 				},
 			},
@@ -1329,4 +1336,69 @@ func TestUpdateMissedEvalMetrics(t *testing.T) {
 	for _, tst := range tests {
 		testFunc(tst)
 	}
+}
+
+func TestNativeHistogramsInRecordingRules(t *testing.T) {
+	suite, err := promql.NewTest(t, "")
+	require.NoError(t, err)
+	t.Cleanup(suite.Close)
+
+	err = suite.Run()
+	require.NoError(t, err)
+
+	// Add some histograms.
+	db := suite.TSDB()
+	hists := tsdbutil.GenerateTestHistograms(5)
+	ts := time.Now()
+	app := db.Appender(context.Background())
+	for i, h := range hists {
+		l := labels.FromStrings("__name__", "histogram_metric", "idx", fmt.Sprintf("%d", i))
+		_, err := app.AppendHistogram(0, l, ts.UnixMilli(), h.Copy(), nil)
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	opts := &ManagerOptions{
+		QueryFunc:  EngineQueryFunc(suite.QueryEngine(), suite.Storage()),
+		Appendable: suite.Storage(),
+		Queryable:  suite.Storage(),
+		Context:    context.Background(),
+		Logger:     log.NewNopLogger(),
+	}
+
+	expr, err := parser.ParseExpr("sum(histogram_metric)")
+	require.NoError(t, err)
+	rule := NewRecordingRule("sum:histogram_metric", expr, labels.Labels{})
+
+	group := NewGroup(GroupOptions{
+		Name:          "default",
+		Interval:      time.Hour,
+		Rules:         []Rule{rule},
+		ShouldRestore: true,
+		Opts:          opts,
+	})
+
+	group.Eval(context.Background(), ts.Add(10*time.Second))
+
+	q, err := db.Querier(context.Background(), ts.UnixMilli(), ts.Add(20*time.Second).UnixMilli())
+	require.NoError(t, err)
+	ss := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "__name__", "sum:histogram_metric"))
+	require.True(t, ss.Next())
+	s := ss.At()
+	require.False(t, ss.Next())
+
+	require.Equal(t, labels.FromStrings("__name__", "sum:histogram_metric"), s.Labels())
+
+	expHist := hists[0].ToFloat()
+	for _, h := range hists[1:] {
+		expHist = expHist.Add(h.ToFloat())
+	}
+	expHist.CounterResetHint = histogram.GaugeType
+
+	it := s.Iterator(nil)
+	require.Equal(t, chunkenc.ValFloatHistogram, it.Next())
+	tsp, fh := it.AtFloatHistogram()
+	require.Equal(t, ts.Add(10*time.Second).UnixMilli(), tsp)
+	require.Equal(t, expHist, fh)
+	require.Equal(t, chunkenc.ValNone, it.Next())
 }

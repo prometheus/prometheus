@@ -49,7 +49,7 @@ func queryAllSeries(t testing.TB, q storage.Querier, expectedMinTime, expectedMa
 	samples := []backfillSample{}
 	for ss.Next() {
 		series := ss.At()
-		it := series.Iterator()
+		it := series.Iterator(nil)
 		require.NoError(t, it.Err())
 		for it.Next() == chunkenc.ValFloat {
 			ts, v := it.At()

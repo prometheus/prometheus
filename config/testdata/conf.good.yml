@@ -87,6 +87,12 @@ scrape_configs:
       - regex:
         replacement: static
         target_label: abc
+      - source_labels: [foo]
+        target_label: abc
+        action: keepequal
+      - source_labels: [foo]
+        target_label: abc
+        action: dropequal
 
     authorization:
       credentials_file: valid_token_file

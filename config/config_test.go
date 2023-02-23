@@ -217,25 +217,44 @@ var expectedConf = &Config{
 					Regex:        relabel.MustNewRegexp("(.*)some-[regex]"),
 					Replacement:  "foo-${1}",
 					Action:       relabel.Replace,
-				}, {
+				},
+				{
 					SourceLabels: model.LabelNames{"abc"},
 					TargetLabel:  "cde",
 					Separator:    ";",
 					Regex:        relabel.DefaultRelabelConfig.Regex,
 					Replacement:  relabel.DefaultRelabelConfig.Replacement,
 					Action:       relabel.Replace,
-				}, {
+				},
+				{
 					TargetLabel: "abc",
 					Separator:   ";",
 					Regex:       relabel.DefaultRelabelConfig.Regex,
 					Replacement: "static",
 					Action:      relabel.Replace,
-				}, {
+				},
+				{
 					TargetLabel: "abc",
 					Separator:   ";",
 					Regex:       relabel.MustNewRegexp(""),
 					Replacement: "static",
 					Action:      relabel.Replace,
+				},
+				{
+					SourceLabels: model.LabelNames{"foo"},
+					TargetLabel:  "abc",
+					Action:       relabel.KeepEqual,
+					Regex:        relabel.DefaultRelabelConfig.Regex,
+					Replacement:  relabel.DefaultRelabelConfig.Replacement,
+					Separator:    relabel.DefaultRelabelConfig.Separator,
+				},
+				{
+					SourceLabels: model.LabelNames{"foo"},
+					TargetLabel:  "abc",
+					Action:       relabel.DropEqual,
+					Regex:        relabel.DefaultRelabelConfig.Regex,
+					Replacement:  relabel.DefaultRelabelConfig.Replacement,
+					Separator:    relabel.DefaultRelabelConfig.Separator,
 				},
 			},
 		},
@@ -567,6 +586,7 @@ var expectedConf = &Config{
 							Values: []string{"web", "db"},
 						},
 					},
+					HTTPClientConfig: config.DefaultHTTPClientConfig,
 				},
 			},
 		},
@@ -583,12 +603,13 @@ var expectedConf = &Config{
 
 			ServiceDiscoveryConfigs: discovery.Configs{
 				&aws.LightsailSDConfig{
-					Region:          "us-east-1",
-					AccessKey:       "access",
-					SecretKey:       "mysecret",
-					Profile:         "profile",
-					RefreshInterval: model.Duration(60 * time.Second),
-					Port:            80,
+					Region:           "us-east-1",
+					AccessKey:        "access",
+					SecretKey:        "mysecret",
+					Profile:          "profile",
+					RefreshInterval:  model.Duration(60 * time.Second),
+					Port:             80,
+					HTTPClientConfig: config.DefaultHTTPClientConfig,
 				},
 			},
 		},
@@ -1317,6 +1338,22 @@ var expectedErrors = []struct {
 		errMsg:   "labeldrop action requires only 'regex', and no other fields",
 	},
 	{
+		filename: "dropequal.bad.yml",
+		errMsg:   "relabel configuration for dropequal action requires 'target_label' value",
+	},
+	{
+		filename: "dropequal1.bad.yml",
+		errMsg:   "dropequal action requires only 'source_labels' and `target_label`, and no other fields",
+	},
+	{
+		filename: "keepequal.bad.yml",
+		errMsg:   "relabel configuration for keepequal action requires 'target_label' value",
+	},
+	{
+		filename: "keepequal1.bad.yml",
+		errMsg:   "keepequal action requires only 'source_labels' and `target_label`, and no other fields",
+	},
+	{
 		filename: "labelmap.bad.yml",
 		errMsg:   "\"l-$1\" is invalid 'replacement' for labelmap action",
 	},
@@ -1706,6 +1743,33 @@ func TestExpandExternalLabels(t *testing.T) {
 	c, err = LoadFile("testdata/external_labels.good.yml", false, true, log.NewNopLogger())
 	require.NoError(t, err)
 	require.Equal(t, labels.FromStrings("bar", "foo", "baz", "fooTestValuebar", "foo", "TestValue", "qux", "foo${TEST}", "xyz", "foo$bar"), c.GlobalConfig.ExternalLabels)
+}
+
+func TestAgentMode(t *testing.T) {
+	_, err := LoadFile("testdata/agent_mode.with_alert_manager.yml", true, false, log.NewNopLogger())
+	require.ErrorContains(t, err, "field alerting is not allowed in agent mode")
+
+	_, err = LoadFile("testdata/agent_mode.with_alert_relabels.yml", true, false, log.NewNopLogger())
+	require.ErrorContains(t, err, "field alerting is not allowed in agent mode")
+
+	_, err = LoadFile("testdata/agent_mode.with_rule_files.yml", true, false, log.NewNopLogger())
+	require.ErrorContains(t, err, "field rule_files is not allowed in agent mode")
+
+	_, err = LoadFile("testdata/agent_mode.with_remote_reads.yml", true, false, log.NewNopLogger())
+	require.ErrorContains(t, err, "field remote_read is not allowed in agent mode")
+
+	c, err := LoadFile("testdata/agent_mode.without_remote_writes.yml", true, false, log.NewNopLogger())
+	require.NoError(t, err)
+	require.Len(t, c.RemoteWriteConfigs, 0)
+
+	c, err = LoadFile("testdata/agent_mode.good.yml", true, false, log.NewNopLogger())
+	require.NoError(t, err)
+	require.Len(t, c.RemoteWriteConfigs, 1)
+	require.Equal(
+		t,
+		"http://remote1/push",
+		c.RemoteWriteConfigs[0].URL.String(),
+	)
 }
 
 func TestEmptyGlobalBlock(t *testing.T) {

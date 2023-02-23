@@ -1298,105 +1298,128 @@ func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 }
 
 func TestHeadCompactionWithHistograms(t *testing.T) {
-	head, _ := newTestHead(t, DefaultBlockDuration, false, false)
-	require.NoError(t, head.Init(0))
-	t.Cleanup(func() {
-		require.NoError(t, head.Close())
-	})
+	for _, floatTest := range []bool{true, false} {
+		t.Run(fmt.Sprintf("float=%t", floatTest), func(t *testing.T) {
+			head, _ := newTestHead(t, DefaultBlockDuration, false, false)
+			require.NoError(t, head.Init(0))
+			t.Cleanup(func() {
+				require.NoError(t, head.Close())
+			})
 
-	minute := func(m int) int64 { return int64(m) * time.Minute.Milliseconds() }
-	ctx := context.Background()
-	appendHistogram := func(lbls labels.Labels, from, to int, h *histogram.Histogram, exp *[]tsdbutil.Sample) {
-		t.Helper()
-		app := head.Appender(ctx)
-		for tsMinute := from; tsMinute <= to; tsMinute++ {
-			_, err := app.AppendHistogram(0, lbls, minute(tsMinute), h)
+			minute := func(m int) int64 { return int64(m) * time.Minute.Milliseconds() }
+			ctx := context.Background()
+			appendHistogram := func(
+				lbls labels.Labels, from, to int, h *histogram.Histogram, exp *[]tsdbutil.Sample,
+			) {
+				t.Helper()
+				app := head.Appender(ctx)
+				for tsMinute := from; tsMinute <= to; tsMinute++ {
+					var err error
+					if floatTest {
+						_, err = app.AppendHistogram(0, lbls, minute(tsMinute), nil, h.ToFloat())
+						efh := h.ToFloat()
+						if tsMinute == from {
+							efh.CounterResetHint = histogram.UnknownCounterReset
+						} else {
+							efh.CounterResetHint = histogram.NotCounterReset
+						}
+						*exp = append(*exp, sample{t: minute(tsMinute), fh: efh})
+					} else {
+						_, err = app.AppendHistogram(0, lbls, minute(tsMinute), h, nil)
+						eh := h.Copy()
+						if tsMinute == from {
+							eh.CounterResetHint = histogram.UnknownCounterReset
+						} else {
+							eh.CounterResetHint = histogram.NotCounterReset
+						}
+						*exp = append(*exp, sample{t: minute(tsMinute), h: eh})
+					}
+					require.NoError(t, err)
+				}
+				require.NoError(t, app.Commit())
+			}
+			appendFloat := func(lbls labels.Labels, from, to int, exp *[]tsdbutil.Sample) {
+				t.Helper()
+				app := head.Appender(ctx)
+				for tsMinute := from; tsMinute <= to; tsMinute++ {
+					_, err := app.Append(0, lbls, minute(tsMinute), float64(tsMinute))
+					require.NoError(t, err)
+					*exp = append(*exp, sample{t: minute(tsMinute), v: float64(tsMinute)})
+				}
+				require.NoError(t, app.Commit())
+			}
+
+			var (
+				series1                = labels.FromStrings("foo", "bar1")
+				series2                = labels.FromStrings("foo", "bar2")
+				series3                = labels.FromStrings("foo", "bar3")
+				series4                = labels.FromStrings("foo", "bar4")
+				exp1, exp2, exp3, exp4 []tsdbutil.Sample
+			)
+			h := &histogram.Histogram{
+				Count:         11,
+				ZeroCount:     4,
+				ZeroThreshold: 0.001,
+				Sum:           35.5,
+				Schema:        1,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 2, Length: 2},
+				},
+				PositiveBuckets: []int64{1, 1, -1, 0},
+				NegativeSpans: []histogram.Span{
+					{Offset: 0, Length: 1},
+					{Offset: 1, Length: 2},
+				},
+				NegativeBuckets: []int64{1, 2, -1},
+			}
+
+			// Series with only histograms.
+			appendHistogram(series1, 100, 105, h, &exp1)
+
+			// Series starting with float and then getting histograms.
+			appendFloat(series2, 100, 102, &exp2)
+			appendHistogram(series2, 103, 105, h.Copy(), &exp2)
+			appendFloat(series2, 106, 107, &exp2)
+			appendHistogram(series2, 108, 109, h.Copy(), &exp2)
+
+			// Series starting with histogram and then getting float.
+			appendHistogram(series3, 101, 103, h.Copy(), &exp3)
+			appendFloat(series3, 104, 106, &exp3)
+			appendHistogram(series3, 107, 108, h.Copy(), &exp3)
+			appendFloat(series3, 109, 110, &exp3)
+
+			// A float only series.
+			appendFloat(series4, 100, 102, &exp4)
+
+			// Compaction.
+			mint := head.MinTime()
+			maxt := head.MaxTime() + 1 // Block intervals are half-open: [b.MinTime, b.MaxTime).
+			compactor, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{DefaultBlockDuration}, chunkenc.NewPool(), nil)
 			require.NoError(t, err)
-			*exp = append(*exp, sample{t: minute(tsMinute), h: h.Copy()})
-		}
-
-		require.NoError(t, app.Commit())
-	}
-	appendFloat := func(lbls labels.Labels, from, to int, exp *[]tsdbutil.Sample) {
-		t.Helper()
-		app := head.Appender(ctx)
-		for tsMinute := from; tsMinute <= to; tsMinute++ {
-			_, err := app.Append(0, lbls, minute(tsMinute), float64(tsMinute))
+			id, err := compactor.Write(head.opts.ChunkDirRoot, head, mint, maxt, nil)
 			require.NoError(t, err)
-			*exp = append(*exp, sample{t: minute(tsMinute), v: float64(tsMinute)})
-		}
-		require.NoError(t, app.Commit())
+			require.NotEqual(t, ulid.ULID{}, id)
+
+			// Open the block and query it and check the histograms.
+			block, err := OpenBlock(nil, path.Join(head.opts.ChunkDirRoot, id.String()), nil)
+			require.NoError(t, err)
+			t.Cleanup(func() {
+				require.NoError(t, block.Close())
+			})
+
+			q, err := NewBlockQuerier(block, block.MinTime(), block.MaxTime())
+			require.NoError(t, err)
+
+			actHists := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
+			require.Equal(t, map[string][]tsdbutil.Sample{
+				series1.String(): exp1,
+				series2.String(): exp2,
+				series3.String(): exp3,
+				series4.String(): exp4,
+			}, actHists)
+		})
 	}
-
-	var (
-		series1                = labels.FromStrings("foo", "bar1")
-		series2                = labels.FromStrings("foo", "bar2")
-		series3                = labels.FromStrings("foo", "bar3")
-		series4                = labels.FromStrings("foo", "bar4")
-		exp1, exp2, exp3, exp4 []tsdbutil.Sample
-	)
-	h := &histogram.Histogram{
-		Count:         11,
-		ZeroCount:     4,
-		ZeroThreshold: 0.001,
-		Sum:           35.5,
-		Schema:        1,
-		PositiveSpans: []histogram.Span{
-			{Offset: 0, Length: 2},
-			{Offset: 2, Length: 2},
-		},
-		PositiveBuckets: []int64{1, 1, -1, 0},
-		NegativeSpans: []histogram.Span{
-			{Offset: 0, Length: 1},
-			{Offset: 1, Length: 2},
-		},
-		NegativeBuckets: []int64{1, 2, -1},
-	}
-
-	// Series with only histograms.
-	appendHistogram(series1, 100, 105, h, &exp1)
-
-	// Series starting with float and then getting histograms.
-	appendFloat(series2, 100, 102, &exp2)
-	appendHistogram(series2, 103, 105, h.Copy(), &exp2)
-	appendFloat(series2, 106, 107, &exp2)
-	appendHistogram(series2, 108, 109, h.Copy(), &exp2)
-
-	// Series starting with histogram and then getting float.
-	appendHistogram(series3, 101, 103, h.Copy(), &exp3)
-	appendFloat(series3, 104, 106, &exp3)
-	appendHistogram(series3, 107, 108, h.Copy(), &exp3)
-	appendFloat(series3, 109, 110, &exp3)
-
-	// A float only series.
-	appendFloat(series4, 100, 102, &exp4)
-
-	// Compaction.
-	mint := head.MinTime()
-	maxt := head.MaxTime() + 1 // Block intervals are half-open: [b.MinTime, b.MaxTime).
-	compactor, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{DefaultBlockDuration}, chunkenc.NewPool(), nil)
-	require.NoError(t, err)
-	id, err := compactor.Write(head.opts.ChunkDirRoot, head, mint, maxt, nil)
-	require.NoError(t, err)
-	require.NotEqual(t, ulid.ULID{}, id)
-
-	// Open the block and query it and check the histograms.
-	block, err := OpenBlock(nil, path.Join(head.opts.ChunkDirRoot, id.String()), nil)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, block.Close())
-	})
-
-	q, err := NewBlockQuerier(block, block.MinTime(), block.MaxTime())
-	require.NoError(t, err)
-
-	actHists := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
-	require.Equal(t, map[string][]tsdbutil.Sample{
-		series1.String(): exp1,
-		series2.String(): exp2,
-		series3.String(): exp3,
-		series4.String(): exp4,
-	}, actHists)
 }
 
 // Depending on numSeriesPerSchema, it can take few gigs of memory;
@@ -1478,11 +1501,11 @@ func TestSparseHistogramSpaceSavings(t *testing.T) {
 
 				for sid, schema := range allSchemas {
 					for i := 0; i < c.numSeriesPerSchema; i++ {
-						lbls := labels.Labels{
-							{Name: "__name__", Value: fmt.Sprintf("rpc_durations_%d_histogram_seconds", i)},
-							{Name: "instance", Value: "localhost:8080"},
-							{Name: "job", Value: fmt.Sprintf("sparse_histogram_schema_%s", schemaDescription[sid])},
-						}
+						lbls := labels.FromStrings(
+							"__name__", fmt.Sprintf("rpc_durations_%d_histogram_seconds", i),
+							"instance", "localhost:8080",
+							"job", fmt.Sprintf("sparse_histogram_schema_%s", schemaDescription[sid]),
+						)
 						allSparseSeries = append(allSparseSeries, struct {
 							baseLabels labels.Labels
 							hists      []*histogram.Histogram
@@ -1511,7 +1534,7 @@ func TestSparseHistogramSpaceSavings(t *testing.T) {
 						)
 						for i := 0; i < numHistograms; i++ {
 							ts := int64(i) * timeStep
-							ref, err = sparseApp.AppendHistogram(ref, ah.baseLabels, ts, ah.hists[i])
+							ref, err = sparseApp.AppendHistogram(ref, ah.baseLabels, ts, ah.hists[i], nil)
 							require.NoError(t, err)
 						}
 					}
@@ -1546,21 +1569,20 @@ func TestSparseHistogramSpaceSavings(t *testing.T) {
 							for it.Next() {
 								numOldSeriesPerHistogram++
 								b := it.At()
-								lbls := append(ah.baseLabels, labels.Label{Name: "le", Value: fmt.Sprintf("%.16f", b.Upper)})
+								lbls := labels.NewBuilder(ah.baseLabels).Set("le", fmt.Sprintf("%.16f", b.Upper)).Labels(labels.EmptyLabels())
 								refs[itIdx], err = oldApp.Append(refs[itIdx], lbls, ts, float64(b.Count))
 								require.NoError(t, err)
 								itIdx++
 							}
+							baseName := ah.baseLabels.Get(labels.MetricName)
 							// _count metric.
-							countLbls := ah.baseLabels.Copy()
-							countLbls[0].Value = countLbls[0].Value + "_count"
+							countLbls := labels.NewBuilder(ah.baseLabels).Set(labels.MetricName, baseName+"_count").Labels(labels.EmptyLabels())
 							_, err = oldApp.Append(0, countLbls, ts, float64(h.Count))
 							require.NoError(t, err)
 							numOldSeriesPerHistogram++
 
 							// _sum metric.
-							sumLbls := ah.baseLabels.Copy()
-							sumLbls[0].Value = sumLbls[0].Value + "_sum"
+							sumLbls := labels.NewBuilder(ah.baseLabels).Set(labels.MetricName, baseName+"_sum").Labels(labels.EmptyLabels())
 							_, err = oldApp.Append(0, sumLbls, ts, h.Sum)
 							require.NoError(t, err)
 							numOldSeriesPerHistogram++

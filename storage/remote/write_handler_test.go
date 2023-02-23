@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/stretchr/testify/require"
@@ -31,6 +32,7 @@ import (
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
 )
 
 func TestRemoteWriteHandler(t *testing.T) {
@@ -66,8 +68,14 @@ func TestRemoteWriteHandler(t *testing.T) {
 		}
 
 		for _, hp := range ts.Histograms {
-			h := HistogramProtoToHistogram(hp)
-			require.Equal(t, mockHistogram{labels, hp.Timestamp, h}, appendable.histograms[k])
+			if hp.GetCountFloat() > 0 || hp.GetZeroCountFloat() > 0 { // It is a float histogram.
+				fh := HistogramProtoToFloatHistogram(hp)
+				require.Equal(t, mockHistogram{labels, hp.Timestamp, nil, fh}, appendable.histograms[k])
+			} else {
+				h := HistogramProtoToHistogram(hp)
+				require.Equal(t, mockHistogram{labels, hp.Timestamp, h, nil}, appendable.histograms[k])
+			}
+
 			k++
 		}
 	}
@@ -124,7 +132,7 @@ func TestOutOfOrderExemplar(t *testing.T) {
 func TestOutOfOrderHistogram(t *testing.T) {
 	buf, _, err := buildWriteRequest([]prompb.TimeSeries{{
 		Labels:     []prompb.Label{{Name: "__name__", Value: "test_metric"}},
-		Histograms: []prompb.Histogram{HistogramToHistogramProto(0, &testHistogram)},
+		Histograms: []prompb.Histogram{HistogramToHistogramProto(0, &testHistogram), FloatHistogramToHistogramProto(1, testHistogram.ToFloat())},
 	}}, nil, nil, nil)
 	require.NoError(t, err)
 
@@ -165,6 +173,65 @@ func TestCommitErr(t *testing.T) {
 	require.Equal(t, "commit error\n", string(body))
 }
 
+func BenchmarkRemoteWriteOOOSamples(b *testing.B) {
+	dir := b.TempDir()
+
+	opts := tsdb.DefaultOptions()
+	opts.OutOfOrderCapMax = 30
+	opts.OutOfOrderTimeWindow = 120 * time.Minute.Milliseconds()
+
+	db, err := tsdb.Open(dir, nil, nil, opts, nil)
+	require.NoError(b, err)
+
+	b.Cleanup(func() {
+		require.NoError(b, db.Close())
+	})
+
+	handler := NewWriteHandler(log.NewNopLogger(), db.Head())
+
+	buf, _, err := buildWriteRequest(genSeriesWithSample(1000, 200*time.Minute.Milliseconds()), nil, nil, nil)
+	require.NoError(b, err)
+
+	req, err := http.NewRequest("", "", bytes.NewReader(buf))
+	require.NoError(b, err)
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+	require.Equal(b, http.StatusNoContent, recorder.Code)
+	require.Equal(b, db.Head().NumSeries(), uint64(1000))
+
+	var bufRequests [][]byte
+	for i := 0; i < 100; i++ {
+		buf, _, err = buildWriteRequest(genSeriesWithSample(1000, int64(80+i)*time.Minute.Milliseconds()), nil, nil, nil)
+		require.NoError(b, err)
+		bufRequests = append(bufRequests, buf)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < 100; i++ {
+		req, err = http.NewRequest("", "", bytes.NewReader(bufRequests[i]))
+		require.NoError(b, err)
+
+		recorder = httptest.NewRecorder()
+		handler.ServeHTTP(recorder, req)
+		require.Equal(b, http.StatusNoContent, recorder.Code)
+		require.Equal(b, db.Head().NumSeries(), uint64(1000))
+	}
+}
+
+func genSeriesWithSample(numSeries int, ts int64) []prompb.TimeSeries {
+	var series []prompb.TimeSeries
+	for i := 0; i < numSeries; i++ {
+		s := prompb.TimeSeries{
+			Labels:  []prompb.Label{{Name: "__name__", Value: fmt.Sprintf("test_metric_%d", i)}},
+			Samples: []prompb.Sample{{Value: float64(i), Timestamp: ts}},
+		}
+		series = append(series, s)
+	}
+
+	return series
+}
+
 type mockAppendable struct {
 	latestSample    int64
 	samples         []mockSample
@@ -189,9 +256,10 @@ type mockExemplar struct {
 }
 
 type mockHistogram struct {
-	l labels.Labels
-	t int64
-	h *histogram.Histogram
+	l  labels.Labels
+	t  int64
+	h  *histogram.Histogram
+	fh *histogram.FloatHistogram
 }
 
 func (m *mockAppendable) Appender(_ context.Context) storage.Appender {
@@ -226,13 +294,13 @@ func (m *mockAppendable) AppendExemplar(_ storage.SeriesRef, l labels.Labels, e 
 	return 0, nil
 }
 
-func (m *mockAppendable) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram) (storage.SeriesRef, error) {
+func (m *mockAppendable) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	if t < m.latestHistogram {
 		return 0, storage.ErrOutOfOrderSample
 	}
 
 	m.latestHistogram = t
-	m.histograms = append(m.histograms, mockHistogram{l, t, h})
+	m.histograms = append(m.histograms, mockHistogram{l, t, h, fh})
 	return 0, nil
 }
 
