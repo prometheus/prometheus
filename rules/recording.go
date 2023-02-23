@@ -81,7 +81,7 @@ func (rule *RecordingRule) Eval(ctx context.Context, ts time.Time, query QueryFu
 	}
 
 	// Override the metric name and labels.
-	lb := labels.NewBuilder(nil)
+	lb := labels.NewBuilder(labels.EmptyLabels())
 
 	for i := range vector {
 		sample := &vector[i]
