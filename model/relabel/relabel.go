@@ -249,7 +249,7 @@ func relabel(lset labels.Labels, cfg *Config, lb *labels.Builder) labels.Labels 
 		lb.Set(cfg.TargetLabel, strings.ToUpper(val))
 	case HashMod:
 		hash := md5.Sum([]byte(val))
-		// use only the last 8 bytes of the hash, to give the same result as earlier versions of this code
+		// Use only the last 8 bytes of the hash to give the same result as earlier versions of this code.
 		mod := binary.BigEndian.Uint64(hash[8:]) % cfg.Modulus
 		lb.Set(cfg.TargetLabel, fmt.Sprintf("%d", mod))
 	case LabelMap:
