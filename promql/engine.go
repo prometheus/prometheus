@@ -1561,7 +1561,33 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 					return ev.VectorBinop(e.Op, v[0].(Vector), v[1].(Vector), e.VectorMatching, e.ReturnBool, sh[0], sh[1], enh), nil
 				}, e.LHS, e.RHS)
 			}
+		case lt == parser.ValueTypeMatrix && rt == parser.ValueTypeScalar:
+			var warnings storage.Warnings
+			lv, lws := ev.eval(e.LHS)
+			warnings = append(warnings, lws...)
+			rv, rws := ev.eval(e.RHS)
+			compareWith := rv.(Matrix)[0].Points[0].V
+			warnings = append(warnings, rws...)
 
+			mat := lv.(Matrix)
+			outmat := make(Matrix, 0, len(mat))
+
+			for _, ss := range mat {
+				filteredss := Series{
+					Metric: ss.Metric,
+				}
+				ps := getPointSlice(16)
+				for _, point := range ss.Points {
+
+					value, _, keep := vectorElemBinop(e.Op, point.V, compareWith, nil, nil)
+					if keep {
+						ps = append(ps, Point{T: point.T, V: value})
+					}
+					fmt.Printf("keep: %t time: %d + value: %f\n", keep, point.T, value)
+				}
+				outmat = append(outmat, filteredss)
+			}
+			return outmat, warnings
 		case lt == parser.ValueTypeVector && rt == parser.ValueTypeScalar:
 			return ev.rangeEval(nil, func(v []parser.Value, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, storage.Warnings) {
 				return ev.VectorscalarBinop(e.Op, v[0].(Vector), Scalar{V: v[1].(Vector)[0].Point.V}, false, e.ReturnBool, enh), nil

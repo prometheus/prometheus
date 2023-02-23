@@ -233,6 +233,8 @@ func (e *VectorSelector) Type() ValueType { return ValueTypeVector }
 func (e *BinaryExpr) Type() ValueType {
 	if e.LHS.Type() == ValueTypeScalar && e.RHS.Type() == ValueTypeScalar {
 		return ValueTypeScalar
+	} else if e.LHS.Type() == ValueTypeMatrix && e.RHS.Type() == ValueTypeScalar {
+		return ValueTypeMatrix
 	}
 	return ValueTypeVector
 }
