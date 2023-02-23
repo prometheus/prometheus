@@ -235,6 +235,8 @@ func (e *BinaryExpr) Type() ValueType {
 		return ValueTypeScalar
 	} else if e.LHS.Type() == ValueTypeMatrix && e.RHS.Type() == ValueTypeScalar {
 		return ValueTypeMatrix
+	} else if e.LHS.Type() == ValueTypeScalar && e.RHS.Type() == ValueTypeMatrix {
+		return ValueTypeMatrix
 	}
 	return ValueTypeVector
 }

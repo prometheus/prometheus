@@ -511,6 +511,8 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 		if !n.Op.IsOperator() {
 			p.addParseErrf(n.PositionRange(), "binary expression does not support operator %q", n.Op)
 		}
+		// Due to comparison of range vectors with scalars, the following validation check
+		//  needs to be skipped.
 		/*
 			if lt != ValueTypeScalar && lt != ValueTypeVector {
 				p.addParseErrf(n.LHS.PositionRange(), "binary expression must contain only scalar and instant vector types")
