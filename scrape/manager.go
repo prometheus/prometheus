@@ -270,8 +270,13 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 	m.mtxScrape.Lock()
 	defer m.mtxScrape.Unlock()
 
+	scfgs, err := cfg.GetScrapeConfigs()
+	if err != nil {
+		return err
+	}
+
 	c := make(map[string]*config.ScrapeConfig)
-	for _, scfg := range cfg.ScrapeConfigs {
+	for _, scfg := range scfgs {
 		c[scfg.JobName] = scfg
 	}
 	m.scrapeConfigs = c
