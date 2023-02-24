@@ -29,8 +29,8 @@ import (
 
 var (
 	ruleEvaluationTime       = time.Unix(0, 0).UTC()
-	exprWithMetricName, _    = parser.ParseExpr(`metric`)
-	exprWithoutMetricName, _ = parser.ParseExpr(`metric + metric`)
+	exprWithMetricName, _    = parser.ParseExpr(`sort(metric)`)
+	exprWithoutMetricName, _ = parser.ParseExpr(`sort(metric + metric)`)
 )
 
 var ruleEvalTestScenarios = []struct {
@@ -50,7 +50,7 @@ var ruleEvalTestScenarios = []struct {
 			},
 			promql.Sample{
 				Metric: labels.FromStrings("__name__", "test_rule", "label_a", "2", "label_b", "4"),
-				Point:  promql.Point{V: 1, T: timestamp.FromTime(ruleEvaluationTime)},
+				Point:  promql.Point{V: 10, T: timestamp.FromTime(ruleEvaluationTime)},
 			},
 		},
 	},
@@ -65,7 +65,7 @@ var ruleEvalTestScenarios = []struct {
 			},
 			promql.Sample{
 				Metric: labels.FromStrings("__name__", "test_rule", "label_a", "2", "label_b", "4", "extra_from_rule", "foo"),
-				Point:  promql.Point{V: 1, T: timestamp.FromTime(ruleEvaluationTime)},
+				Point:  promql.Point{V: 10, T: timestamp.FromTime(ruleEvaluationTime)},
 			},
 		},
 	},
@@ -80,7 +80,7 @@ var ruleEvalTestScenarios = []struct {
 			},
 			promql.Sample{
 				Metric: labels.FromStrings("__name__", "test_rule", "label_a", "from_rule", "label_b", "4"),
-				Point:  promql.Point{V: 1, T: timestamp.FromTime(ruleEvaluationTime)},
+				Point:  promql.Point{V: 10, T: timestamp.FromTime(ruleEvaluationTime)},
 			},
 		},
 	},
@@ -95,7 +95,7 @@ var ruleEvalTestScenarios = []struct {
 			},
 			promql.Sample{
 				Metric: labels.FromStrings("__name__", "test_rule", "label_a", "2", "label_b", "4"),
-				Point:  promql.Point{V: 2, T: timestamp.FromTime(ruleEvaluationTime)},
+				Point:  promql.Point{V: 20, T: timestamp.FromTime(ruleEvaluationTime)},
 			},
 		},
 	},
@@ -105,7 +105,7 @@ func setUpRuleEvalTest(t require.TestingT) *promql.Test {
 	suite, err := promql.NewTest(t, `
 		load 1m
 			metric{label_a="1",label_b="3"} 1
-			metric{label_a="2",label_b="4"} 1
+			metric{label_a="2",label_b="4"} 10
 	`)
 	require.NoError(t, err)
 
