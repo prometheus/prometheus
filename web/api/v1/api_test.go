@@ -2769,9 +2769,11 @@ func TestRespondSuccess(t *testing.T) {
 		logger: log.NewNopLogger(),
 	}
 
-	api.InstallCodec(&testCodec{contentType: "test/cannot-encode", canEncode: false})
-	api.InstallCodec(&testCodec{contentType: "test/can-encode", canEncode: true})
-	api.InstallCodec(&testCodec{contentType: "test/can-encode-2", canEncode: true})
+	api.ClearCodecs()
+	api.InstallCodec(JSONCodec{})
+	api.InstallCodec(&testCodec{contentType: MIMEType{"test", "cannot-encode"}, canEncode: false})
+	api.InstallCodec(&testCodec{contentType: MIMEType{"test", "can-encode"}, canEncode: true})
+	api.InstallCodec(&testCodec{contentType: MIMEType{"test", "can-encode-2"}, canEncode: true})
 
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		api.respond(w, r, "test", nil)
@@ -3307,11 +3309,11 @@ func TestGetGlobalURL(t *testing.T) {
 }
 
 type testCodec struct {
-	contentType string
+	contentType MIMEType
 	canEncode   bool
 }
 
-func (t *testCodec) ContentType() string {
+func (t *testCodec) ContentType() MIMEType {
 	return t.contentType
 }
 
