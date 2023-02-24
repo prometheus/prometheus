@@ -2856,6 +2856,34 @@ func TestRespondSuccess(t *testing.T) {
 	}
 }
 
+func TestRespondSuccess_DefaultCodecCannotEncodeResponse(t *testing.T) {
+	api := API{
+		logger: log.NewNopLogger(),
+	}
+
+	api.ClearCodecs()
+	api.InstallCodec(&testCodec{contentType: MIMEType{"application", "default-format"}, canEncode: false})
+
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		api.respond(w, r, "test", nil)
+	}))
+	defer s.Close()
+
+	req, err := http.NewRequest(http.MethodGet, s.URL, nil)
+	require.NoError(t, err)
+
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+
+	body, err := io.ReadAll(resp.Body)
+	defer resp.Body.Close()
+	require.NoError(t, err)
+
+	require.Equal(t, http.StatusNotAcceptable, resp.StatusCode)
+	require.Equal(t, "application/json", resp.Header.Get("Content-Type"))
+	require.Equal(t, `{"status":"error","errorType":"not_acceptable","error":"cannot encode response as application/default-format"}`, string(body))
+}
+
 func TestRespondError(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		api := API{}

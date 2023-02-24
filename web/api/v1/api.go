@@ -69,14 +69,15 @@ const (
 type errorType string
 
 const (
-	errorNone        errorType = ""
-	errorTimeout     errorType = "timeout"
-	errorCanceled    errorType = "canceled"
-	errorExec        errorType = "execution"
-	errorBadData     errorType = "bad_data"
-	errorInternal    errorType = "internal"
-	errorUnavailable errorType = "unavailable"
-	errorNotFound    errorType = "not_found"
+	errorNone          errorType = ""
+	errorTimeout       errorType = "timeout"
+	errorCanceled      errorType = "canceled"
+	errorExec          errorType = "execution"
+	errorBadData       errorType = "bad_data"
+	errorInternal      errorType = "internal"
+	errorUnavailable   errorType = "unavailable"
+	errorNotFound      errorType = "not_found"
+	errorNotAcceptable errorType = "not_acceptable"
 )
 
 var LocalhostRepresentations = []string{"127.0.0.1", "localhost", "::1"}
@@ -1582,7 +1583,12 @@ func (api *API) respond(w http.ResponseWriter, req *http.Request, data interface
 		Warnings: warningStrings,
 	}
 
-	codec := api.negotiateCodec(req, resp)
+	codec, err := api.negotiateCodec(req, resp)
+	if err != nil {
+		api.respondError(w, &apiError{errorNotAcceptable, err}, nil)
+		return
+	}
+
 	b, err := codec.Encode(resp)
 	if err != nil {
 		level.Error(api.logger).Log("msg", "error marshaling response", "err", err)
@@ -1597,16 +1603,21 @@ func (api *API) respond(w http.ResponseWriter, req *http.Request, data interface
 	}
 }
 
-func (api *API) negotiateCodec(req *http.Request, resp *Response) Codec {
+func (api *API) negotiateCodec(req *http.Request, resp *Response) (Codec, error) {
 	for _, clause := range goautoneg.ParseAccept(req.Header.Get("Accept")) {
 		for _, codec := range api.codecs {
 			if codec.ContentType().Satisfies(clause) && codec.CanEncode(resp) {
-				return codec
+				return codec, nil
 			}
 		}
 	}
 
-	return api.codecs[0]
+	defaultCodec := api.codecs[0]
+	if !defaultCodec.CanEncode(resp) {
+		return nil, fmt.Errorf("cannot encode response as %s", defaultCodec.ContentType())
+	}
+
+	return defaultCodec, nil
 }
 
 func (api *API) respondError(w http.ResponseWriter, apiErr *apiError, data interface{}) {
@@ -1637,6 +1648,8 @@ func (api *API) respondError(w http.ResponseWriter, apiErr *apiError, data inter
 		code = http.StatusInternalServerError
 	case errorNotFound:
 		code = http.StatusNotFound
+	case errorNotAcceptable:
+		code = http.StatusNotAcceptable
 	default:
 		code = http.StatusInternalServerError
 	}
