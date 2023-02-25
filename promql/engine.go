@@ -58,6 +58,8 @@ const (
 	maxInt64 = 9223372036854774784
 	// The smallest SampleValue that can be converted to an int64 without underflow.
 	minInt64 = -9223372036854775808
+	// default size of slice
+	defaultSliceSize = 16
 )
 
 type engineMetrics struct {
@@ -1395,7 +1397,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 			stepRange = ev.interval
 		}
 		// Reuse objects across steps to save memory allocations.
-		points := getPointSlice(16)
+		points := getPointSlice(defaultSliceSize)
 		inMatrix := make(Matrix, 1)
 		inArgs[matrixArgIndex] = inMatrix
 		enh := &EvalNodeHelper{Out: make(Vector, 0, 1)}
@@ -1562,12 +1564,10 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 				}, e.LHS, e.RHS)
 			}
 		case lt == parser.ValueTypeScalar && rt == parser.ValueTypeMatrix:
-			outmat, warnings := ev.RangeVectorscalarbinop(e.Op, e.LHS, e.RHS, true)
-			return outmat, warnings
+			return ev.RangeVectorScalarBinop(e.Op, e.LHS, e.RHS, true)
 
 		case lt == parser.ValueTypeMatrix && rt == parser.ValueTypeScalar:
-			outmat, warnings := ev.RangeVectorscalarbinop(e.Op, e.LHS, e.RHS, false)
-			return outmat, warnings
+			return ev.RangeVectorScalarBinop(e.Op, e.LHS, e.RHS, false)
 
 		case lt == parser.ValueTypeVector && rt == parser.ValueTypeScalar:
 			return ev.rangeEval(nil, func(v []parser.Value, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, storage.Warnings) {
@@ -1845,7 +1845,7 @@ func (ev *evaluator) matrixSelector(node *parser.MatrixSelector) (Matrix, storag
 			Metric: series[i].Labels(),
 		}
 
-		ss.Points = ev.matrixIterSlice(it, mint, maxt, getPointSlice(16))
+		ss.Points = ev.matrixIterSlice(it, mint, maxt, getPointSlice(defaultSliceSize))
 		ev.samplesStats.IncrementSamplesAtTimestamp(ev.startTimestamp, int64(len(ss.Points)))
 
 		if len(ss.Points) > 0 {
@@ -2239,8 +2239,8 @@ func (ev *evaluator) VectorscalarBinop(op parser.ItemType, lhs Vector, rhs Scala
 	return enh.Out
 }
 
-// RangeVectorscalarbinop evaluates a binary operation between a RangeVector and a Scalar.
-func (ev *evaluator) RangeVectorscalarbinop(op parser.ItemType, lhs, rhs parser.Expr, swap bool) (Matrix, storage.Warnings) {
+// RangeVectorScalarbinop evaluates a binary operation between a RangeVector and a Scalar.
+func (ev *evaluator) RangeVectorScalarBinop(op parser.ItemType, lhs, rhs parser.Expr, swap bool) (Matrix, storage.Warnings) {
 	var warnings storage.Warnings
 
 	lv, lws := ev.eval(lhs)
@@ -2252,15 +2252,20 @@ func (ev *evaluator) RangeVectorscalarbinop(op parser.ItemType, lhs, rhs parser.
 		lv, rv = rv, lv
 		op = op.InverseComparisonOperator()
 	}
-	compareWith := rv.(Matrix)[0].Points[0].V
+
 	warnings = append(warnings, rws...)
 
 	mat := lv.(Matrix)
 	outmat := make(Matrix, 0, len(mat))
+	out, ok := rv.(Matrix)
+	if !ok {
+		return outmat, storage.Warnings{errors.New("invalid type")}
+	}
+	compareWith := out[0].Points[0].V
 
 	for _, ss := range mat {
 
-		ps := getPointSlice(16)
+		ps := getPointSlice(defaultSliceSize)
 		for _, point := range ss.Points {
 
 			value, _, keep := vectorElemBinop(op, point.V, compareWith, nil, nil)
@@ -2268,7 +2273,6 @@ func (ev *evaluator) RangeVectorscalarbinop(op parser.ItemType, lhs, rhs parser.
 			if keep {
 				ps = append(ps, Point{T: point.T, V: value})
 			}
-			// fmt.Printf("keep: %t time: %d + value: %f\n", keep, point.T, value)
 		}
 
 		if len(ps) > 0 {
