@@ -34,8 +34,8 @@ func init() {
 // JSONCodec is a Codec that encodes API responses as JSON.
 type JSONCodec struct{}
 
-func (j JSONCodec) ContentType() string {
-	return "application/json"
+func (j JSONCodec) ContentType() MIMEType {
+	return MIMEType{Type: "application", SubType: "json"}
 }
 
 func (j JSONCodec) CanEncode(_ *Response) bool {

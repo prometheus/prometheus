@@ -2769,9 +2769,11 @@ func TestRespondSuccess(t *testing.T) {
 		logger: log.NewNopLogger(),
 	}
 
-	api.InstallCodec(&testCodec{contentType: "test/cannot-encode", canEncode: false})
-	api.InstallCodec(&testCodec{contentType: "test/can-encode", canEncode: true})
-	api.InstallCodec(&testCodec{contentType: "test/can-encode-2", canEncode: true})
+	api.ClearCodecs()
+	api.InstallCodec(JSONCodec{})
+	api.InstallCodec(&testCodec{contentType: MIMEType{"test", "cannot-encode"}, canEncode: false})
+	api.InstallCodec(&testCodec{contentType: MIMEType{"test", "can-encode"}, canEncode: true})
+	api.InstallCodec(&testCodec{contentType: MIMEType{"test", "can-encode-2"}, canEncode: true})
 
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		api.respond(w, r, "test", nil)
@@ -2852,6 +2854,34 @@ func TestRespondSuccess(t *testing.T) {
 			require.Equal(t, tc.expectedBody, string(body))
 		})
 	}
+}
+
+func TestRespondSuccess_DefaultCodecCannotEncodeResponse(t *testing.T) {
+	api := API{
+		logger: log.NewNopLogger(),
+	}
+
+	api.ClearCodecs()
+	api.InstallCodec(&testCodec{contentType: MIMEType{"application", "default-format"}, canEncode: false})
+
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		api.respond(w, r, "test", nil)
+	}))
+	defer s.Close()
+
+	req, err := http.NewRequest(http.MethodGet, s.URL, nil)
+	require.NoError(t, err)
+
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+
+	body, err := io.ReadAll(resp.Body)
+	defer resp.Body.Close()
+	require.NoError(t, err)
+
+	require.Equal(t, http.StatusNotAcceptable, resp.StatusCode)
+	require.Equal(t, "application/json", resp.Header.Get("Content-Type"))
+	require.Equal(t, `{"status":"error","errorType":"not_acceptable","error":"cannot encode response as application/default-format"}`, string(body))
 }
 
 func TestRespondError(t *testing.T) {
@@ -3307,11 +3337,11 @@ func TestGetGlobalURL(t *testing.T) {
 }
 
 type testCodec struct {
-	contentType string
+	contentType MIMEType
 	canEncode   bool
 }
 
-func (t *testCodec) ContentType() string {
+func (t *testCodec) ContentType() MIMEType {
 	return t.contentType
 }
 

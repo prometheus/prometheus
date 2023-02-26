@@ -32,6 +32,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/regexp"
 	jsoniter "github.com/json-iterator/go"
+	"github.com/munnerz/goautoneg"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
@@ -68,19 +69,18 @@ const (
 type errorType string
 
 const (
-	errorNone        errorType = ""
-	errorTimeout     errorType = "timeout"
-	errorCanceled    errorType = "canceled"
-	errorExec        errorType = "execution"
-	errorBadData     errorType = "bad_data"
-	errorInternal    errorType = "internal"
-	errorUnavailable errorType = "unavailable"
-	errorNotFound    errorType = "not_found"
+	errorNone          errorType = ""
+	errorTimeout       errorType = "timeout"
+	errorCanceled      errorType = "canceled"
+	errorExec          errorType = "execution"
+	errorBadData       errorType = "bad_data"
+	errorInternal      errorType = "internal"
+	errorUnavailable   errorType = "unavailable"
+	errorNotFound      errorType = "not_found"
+	errorNotAcceptable errorType = "not_acceptable"
 )
 
 var LocalhostRepresentations = []string{"127.0.0.1", "localhost", "::1"}
-
-var defaultCodec = JSONCodec{}
 
 type apiError struct {
 	typ errorType
@@ -212,7 +212,7 @@ type API struct {
 	remoteWriteHandler http.Handler
 	remoteReadHandler  http.Handler
 
-	codecs map[string]Codec
+	codecs []Codec
 }
 
 // NewAPI returns an initialized API type.
@@ -271,11 +271,9 @@ func NewAPI(
 		statsRenderer:    defaultStatsRenderer,
 
 		remoteReadHandler: remote.NewReadHandler(logger, registerer, q, configFunc, remoteReadSampleLimit, remoteReadConcurrencyLimit, remoteReadMaxBytesInFrame),
-
-		codecs: map[string]Codec{},
 	}
 
-	a.InstallCodec(defaultCodec)
+	a.InstallCodec(JSONCodec{})
 
 	if statsRenderer != nil {
 		a.statsRenderer = statsRenderer
@@ -289,13 +287,15 @@ func NewAPI(
 }
 
 // InstallCodec adds codec to this API's available codecs.
-// If codec handles a content type handled by a codec already installed in this API, codec replaces the previous codec.
+// Codecs installed first take precedence over codecs installed later when evaluating wildcards in Accept headers.
+// The first installed codec is used as a fallback when the Accept header cannot be satisfied or if there is no Accept header.
 func (api *API) InstallCodec(codec Codec) {
-	if api.codecs == nil {
-		api.codecs = map[string]Codec{}
-	}
+	api.codecs = append(api.codecs, codec)
+}
 
-	api.codecs[codec.ContentType()] = codec
+// ClearCodecs removes all available codecs from this API, including the default codec installed by NewAPI.
+func (api *API) ClearCodecs() {
+	api.codecs = nil
 }
 
 func setUnavailStatusOnTSDBNotReady(r apiFuncResult) apiFuncResult {
@@ -1583,7 +1583,12 @@ func (api *API) respond(w http.ResponseWriter, req *http.Request, data interface
 		Warnings: warningStrings,
 	}
 
-	codec := api.negotiateCodec(req, resp)
+	codec, err := api.negotiateCodec(req, resp)
+	if err != nil {
+		api.respondError(w, &apiError{errorNotAcceptable, err}, nil)
+		return
+	}
+
 	b, err := codec.Encode(resp)
 	if err != nil {
 		level.Error(api.logger).Log("msg", "error marshaling response", "err", err)
@@ -1591,33 +1596,28 @@ func (api *API) respond(w http.ResponseWriter, req *http.Request, data interface
 		return
 	}
 
-	w.Header().Set("Content-Type", codec.ContentType())
+	w.Header().Set("Content-Type", codec.ContentType().String())
 	w.WriteHeader(http.StatusOK)
 	if n, err := w.Write(b); err != nil {
 		level.Error(api.logger).Log("msg", "error writing response", "bytesWritten", n, "err", err)
 	}
 }
 
-// FIXME: HTTP content negotiation is hard (see https://developer.mozilla.org/en-US/docs/Web/HTTP/Content_negotiation).
-// Ideally, we shouldn't be implementing this ourselves - https://github.com/golang/go/issues/19307 is an open proposal to add
-// this to the Go stdlib and has links to a number of other implementations.
-//
-// This is an initial MVP, and doesn't support features like wildcards or weighting.
-func (api *API) negotiateCodec(req *http.Request, resp *Response) Codec {
-	acceptHeader := req.Header.Get("Accept")
-	if acceptHeader == "" {
-		return defaultCodec
-	}
-
-	for _, contentType := range strings.Split(acceptHeader, ",") {
-		codec, ok := api.codecs[strings.TrimSpace(contentType)]
-		if ok && codec.CanEncode(resp) {
-			return codec
+func (api *API) negotiateCodec(req *http.Request, resp *Response) (Codec, error) {
+	for _, clause := range goautoneg.ParseAccept(req.Header.Get("Accept")) {
+		for _, codec := range api.codecs {
+			if codec.ContentType().Satisfies(clause) && codec.CanEncode(resp) {
+				return codec, nil
+			}
 		}
 	}
 
-	level.Warn(api.logger).Log("msg", "could not find suitable codec for response, falling back to default codec", "accept_header", acceptHeader)
-	return defaultCodec
+	defaultCodec := api.codecs[0]
+	if !defaultCodec.CanEncode(resp) {
+		return nil, fmt.Errorf("cannot encode response as %s", defaultCodec.ContentType())
+	}
+
+	return defaultCodec, nil
 }
 
 func (api *API) respondError(w http.ResponseWriter, apiErr *apiError, data interface{}) {
@@ -1648,6 +1648,8 @@ func (api *API) respondError(w http.ResponseWriter, apiErr *apiError, data inter
 		code = http.StatusInternalServerError
 	case errorNotFound:
 		code = http.StatusNotFound
+	case errorNotAcceptable:
+		code = http.StatusNotAcceptable
 	default:
 		code = http.StatusInternalServerError
 	}
