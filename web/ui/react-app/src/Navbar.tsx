@@ -13,21 +13,22 @@ import {
   DropdownItem,
 } from 'reactstrap';
 import { ThemeToggle } from './Theme';
-import logo from './images/prometheus_logo_grey.svg';
+import { ReactComponent as PromLogo } from './images/prometheus_logo_grey.svg';
 
 interface NavbarProps {
   consolesLink: string | null;
   agentMode: boolean;
+  animateLogo?: boolean | false;
 }
 
-const Navigation: FC<NavbarProps> = ({ consolesLink, agentMode }) => {
+const Navigation: FC<NavbarProps> = ({ consolesLink, agentMode, animateLogo }) => {
   const [isOpen, setIsOpen] = useState(false);
   const toggle = () => setIsOpen(!isOpen);
   return (
     <Navbar className="mb-3" dark color="dark" expand="md" fixed="top">
       <NavbarToggler onClick={toggle} className="mr-2" />
       <Link className="pt-0 navbar-brand" to={agentMode ? '/agent' : '/graph'}>
-        <img src={logo} className="d-inline-block align-top" alt="Prometheus logo" title="Prometheus" />
+        <PromLogo className={`d-inline-block align-top${animateLogo ? ' animate' : ''}`} title="Prometheus" />
         Prometheus{agentMode && ' Agent'}
       </Link>
       <Collapse isOpen={isOpen} navbar style={{ justifyContent: 'space-between' }}>
