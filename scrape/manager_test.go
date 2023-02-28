@@ -443,7 +443,7 @@ func TestPopulateLabels(t *testing.T) {
 	}
 }
 
-func loadConfiguration(t *testing.T, c string) *config.Config {
+func loadConfiguration(t testing.TB, c string) *config.Config {
 	t.Helper()
 
 	cfg := &config.Config{}
