@@ -431,7 +431,7 @@ func TestPopulateLabels(t *testing.T) {
 	for _, c := range cases {
 		in := c.in.Copy()
 
-		res, orig, err := PopulateLabels(c.in, c.cfg, c.noDefaultPort)
+		res, orig, err := PopulateLabels(labels.NewBuilder(c.in), c.cfg, c.noDefaultPort)
 		if c.err != "" {
 			require.EqualError(t, err, c.err)
 		} else {

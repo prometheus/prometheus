@@ -349,7 +349,7 @@ func (app *timeLimitAppender) Append(ref storage.SeriesRef, lset labels.Labels, 
 // PopulateLabels builds a label set from the given label set and scrape configuration.
 // It returns a label set before relabeling was applied as the second return value.
 // Returns the original discovered label set found before relabelling was applied if the target is dropped during relabeling.
-func PopulateLabels(lset labels.Labels, cfg *config.ScrapeConfig, noDefaultPort bool) (res, orig labels.Labels, err error) {
+func PopulateLabels(lb *labels.Builder, cfg *config.ScrapeConfig, noDefaultPort bool) (res, orig labels.Labels, err error) {
 	// Copy labels into the labelset for the target if they are not set already.
 	scrapeLabels := []labels.Label{
 		{Name: model.JobLabel, Value: cfg.JobName},
@@ -358,7 +358,6 @@ func PopulateLabels(lset labels.Labels, cfg *config.ScrapeConfig, noDefaultPort 
 		{Name: model.MetricsPathLabel, Value: cfg.MetricsPath},
 		{Name: model.SchemeLabel, Value: cfg.Scheme},
 	}
-	lb := labels.NewBuilder(lset)
 
 	for _, l := range scrapeLabels {
 		if lb.Get(l.Name) == "" {
@@ -487,21 +486,20 @@ func TargetsFromGroup(tg *targetgroup.Group, cfg *config.ScrapeConfig, noDefault
 	targets := make([]*Target, 0, len(tg.Targets))
 	failures := []error{}
 
+	lb := labels.NewBuilder(labels.EmptyLabels())
 	for i, tlset := range tg.Targets {
-		lbls := make([]labels.Label, 0, len(tlset)+len(tg.Labels))
+		lb.Reset(labels.EmptyLabels())
 
 		for ln, lv := range tlset {
-			lbls = append(lbls, labels.Label{Name: string(ln), Value: string(lv)})
+			lb.Set(string(ln), string(lv))
 		}
 		for ln, lv := range tg.Labels {
 			if _, ok := tlset[ln]; !ok {
-				lbls = append(lbls, labels.Label{Name: string(ln), Value: string(lv)})
+				lb.Set(string(ln), string(lv))
 			}
 		}
 
-		lset := labels.New(lbls...)
-
-		lset, origLabels, err := PopulateLabels(lset, cfg, noDefaultPort)
+		lset, origLabels, err := PopulateLabels(lb, cfg, noDefaultPort)
 		if err != nil {
 			failures = append(failures, errors.Wrapf(err, "instance %d in group %s", i, tg))
 		}
