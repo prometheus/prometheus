@@ -361,7 +361,7 @@ func PopulateLabels(lset labels.Labels, cfg *config.ScrapeConfig, noDefaultPort 
 	lb := labels.NewBuilder(lset)
 
 	for _, l := range scrapeLabels {
-		if lv := lset.Get(l.Name); lv == "" {
+		if lb.Get(l.Name) == "" {
 			lb.Set(l.Name, l.Value)
 		}
 	}
@@ -373,17 +373,15 @@ func PopulateLabels(lset labels.Labels, cfg *config.ScrapeConfig, noDefaultPort 
 	}
 
 	preRelabelLabels := lb.Labels(labels.EmptyLabels())
-	lset, keep := relabel.Process(preRelabelLabels, cfg.RelabelConfigs...)
+	keep := relabel.ProcessBuilder(lb, cfg.RelabelConfigs...)
 
 	// Check if the target was dropped.
 	if !keep {
 		return labels.EmptyLabels(), preRelabelLabels, nil
 	}
-	if v := lset.Get(model.AddressLabel); v == "" {
+	if v := lb.Get(model.AddressLabel); v == "" {
 		return labels.EmptyLabels(), labels.EmptyLabels(), errors.New("no address")
 	}
-
-	lb = labels.NewBuilder(lset)
 
 	// addPort checks whether we should add a default port to the address.
 	// If the address is not valid, we don't append a port either.
@@ -398,8 +396,8 @@ func PopulateLabels(lset labels.Labels, cfg *config.ScrapeConfig, noDefaultPort 
 		return "", "", err == nil
 	}
 
-	addr := lset.Get(model.AddressLabel)
-	scheme := lset.Get(model.SchemeLabel)
+	addr := lb.Get(model.AddressLabel)
+	scheme := lb.Get(model.SchemeLabel)
 	host, port, add := addPort(addr)
 	// If it's an address with no trailing port, infer it based on the used scheme
 	// unless the no-default-scrape-port feature flag is present.
@@ -435,7 +433,7 @@ func PopulateLabels(lset labels.Labels, cfg *config.ScrapeConfig, noDefaultPort 
 		return labels.EmptyLabels(), labels.EmptyLabels(), err
 	}
 
-	interval := lset.Get(model.ScrapeIntervalLabel)
+	interval := lb.Get(model.ScrapeIntervalLabel)
 	intervalDuration, err := model.ParseDuration(interval)
 	if err != nil {
 		return labels.EmptyLabels(), labels.EmptyLabels(), errors.Errorf("error parsing scrape interval: %v", err)
@@ -444,7 +442,7 @@ func PopulateLabels(lset labels.Labels, cfg *config.ScrapeConfig, noDefaultPort 
 		return labels.EmptyLabels(), labels.EmptyLabels(), errors.New("scrape interval cannot be 0")
 	}
 
-	timeout := lset.Get(model.ScrapeTimeoutLabel)
+	timeout := lb.Get(model.ScrapeTimeoutLabel)
 	timeoutDuration, err := model.ParseDuration(timeout)
 	if err != nil {
 		return labels.EmptyLabels(), labels.EmptyLabels(), errors.Errorf("error parsing scrape timeout: %v", err)
@@ -459,14 +457,14 @@ func PopulateLabels(lset labels.Labels, cfg *config.ScrapeConfig, noDefaultPort 
 
 	// Meta labels are deleted after relabelling. Other internal labels propagate to
 	// the target which decides whether they will be part of their label set.
-	lset.Range(func(l labels.Label) {
+	lb.Range(func(l labels.Label) {
 		if strings.HasPrefix(l.Name, model.MetaLabelPrefix) {
 			lb.Del(l.Name)
 		}
 	})
 
 	// Default the instance label to the target address.
-	if v := lset.Get(model.InstanceLabel); v == "" {
+	if v := lb.Get(model.InstanceLabel); v == "" {
 		lb.Set(model.InstanceLabel, addr)
 	}
 
