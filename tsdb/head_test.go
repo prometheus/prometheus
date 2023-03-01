@@ -4748,63 +4748,43 @@ func TestGaugeFloatHistogramWALAndChunkHeader(t *testing.T) {
 func TestSnapshotAheadOfWALError(t *testing.T) {
 	head, _ := newTestHead(t, 120*4, false, false)
 	head.opts.EnableMemorySnapshotOnShutdown = true
-	entries := []interface{}{
-		[]record.RefSeries{
-			{Ref: 10, Labels: labels.FromStrings("a", "1")},
-			{Ref: 11, Labels: labels.FromStrings("a", "2")},
-			{Ref: 100, Labels: labels.FromStrings("a", "3")},
-		},
-		[]record.RefSample{
-			{Ref: 0, T: 99, V: 1},
-			{Ref: 10, T: 100, V: 2},
-			{Ref: 100, T: 100, V: 3},
-		},
-		[]record.RefSeries{
-			{Ref: 50, Labels: labels.FromStrings("a", "4")},
-			// This series has two refs pointing to it.
-			{Ref: 101, Labels: labels.FromStrings("a", "3")},
-		},
-		[]record.RefSample{
-			{Ref: 10, T: 101, V: 5},
-			{Ref: 50, T: 101, V: 6},
-			{Ref: 101, T: 101, V: 7},
-		},
-		[]tombstones.Stone{
-			{Ref: 0, Intervals: []tombstones.Interval{{Mint: 99, Maxt: 101}}},
-		},
-		[]record.RefExemplar{
-			{Ref: 10, T: 100, V: 1, Labels: labels.FromStrings("traceID", "asdf")},
-		},
-	}
-
-	w, _ := wlog.NewSize(nil, nil, head.wal.Dir(), 32768, false)
-	populateTestWAL(t, w, entries)
-
-	nextSegment, err := w.NextSegment() // Increment snapshot index to create sufficiently large difference.
+	// Add a sample to fill WAL.
+	app := head.Appender(context.Background())
+	_, err := app.Append(0, labels.FromStrings("foo", "bar"), 10, 10)
 	require.NoError(t, err)
-	require.Equal(t, 2, nextSegment)
-	require.NoError(t, w.Close())
+	require.NoError(t, app.Commit())
+
+	// Increment snapshot index to create sufficiently large difference.
+	for i := 0; i < 2; i++ {
+		_, err = head.wal.NextSegment()
+		require.NoError(t, err)
+	}
 	require.NoError(t, head.Close()) // This will create a snapshot.
 
-	snapDir, snapIdx, _, err := LastChunkSnapshot(head.opts.ChunkDirRoot)
+	_, idx, _, err := LastChunkSnapshot(head.opts.ChunkDirRoot)
 	require.NoError(t, err)
+	require.Equal(t, 2, idx)
 
 	// Restart the WAL while keeping the old snapshot. The new head is created manually in this case in order
 	// to keep using the same snapshot directory instead of a random one.
-	require.NoError(t, head.wal.Truncate(snapIdx+1))
+	require.NoError(t, os.RemoveAll(head.wal.Dir()))
 	head.opts.EnableMemorySnapshotOnShutdown = false
-	w, _ = wlog.NewSize(nil, nil, head.wal.Dir(), 32768, false)
+	w, _ := wlog.NewSize(nil, nil, head.wal.Dir(), 32768, false)
 	head, err = NewHead(nil, nil, w, nil, head.opts, nil)
-	populateTestWAL(t, w, entries)
 	require.NoError(t, err)
-	require.NoError(t, head.Close())
-
+	// Add a sample to fill WAL.
+	app = head.Appender(context.Background())
+	_, err = app.Append(0, labels.FromStrings("foo", "bar"), 10, 10)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
 	lastSegment, _, _ := w.LastSegmentAndOffset()
 	require.Equal(t, 0, lastSegment)
+	require.NoError(t, head.Close())
 
 	// New WAL is saved, but old snapshot still exists.
-	_, _, _, err = LastChunkSnapshot(head.opts.ChunkDirRoot)
+	_, idx, _, err = LastChunkSnapshot(head.opts.ChunkDirRoot)
 	require.NoError(t, err)
+	require.Equal(t, 2, idx)
 
 	// Create new Head which should detect the incorrect index and delete the snapshot.
 	head.opts.EnableMemorySnapshotOnShutdown = true
@@ -4813,8 +4793,9 @@ func TestSnapshotAheadOfWALError(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, head.Init(math.MinInt64))
 
-	// Verify that renamed directory does not exist anymore.
-	_, err = os.Stat(snapDir)
-	require.True(t, os.IsNotExist(err))
+	// Verify that snapshot directory does not exist anymore.
+	_, _, _, err = LastChunkSnapshot(head.opts.ChunkDirRoot)
+	require.Equal(t, record.ErrNotFound, err)
+
 	require.NoError(t, head.Close())
 }
