@@ -19,7 +19,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grafana/regexp"
 	"github.com/grafana/regexp/syntax"
 	"github.com/stretchr/testify/require"
 )
@@ -60,6 +59,7 @@ var (
 		"foo", " foo bar", "bar", "buzz\nbar", "bar foo", "bfoo", "\n", "\nfoo", "foo\n", "hello foo world", "hello foo\n world", "",
 		"FOO", "Foo", "OO", "Oo", "\nfoo\n", strings.Repeat("f", 20), "prometheus", "prometheus_api_v1", "prometheus_api_v1_foo",
 		"10.0.1.20", "10.0.2.10", "10.0.3.30", "10.0.4.40",
+		"foofoo0", "foofoo",
 	}
 )
 
@@ -72,9 +72,7 @@ func TestNewFastRegexMatcher(t *testing.T) {
 				t.Parallel()
 				m, err := NewFastRegexMatcher(r)
 				require.NoError(t, err)
-				re, err := regexp.Compile("^(?:" + r + ")$")
-				require.NoError(t, err)
-				require.Equal(t, re.MatchString(v), m.MatchString(v))
+				require.Equal(t, m.re.MatchString(v), m.MatchString(v))
 			})
 		}
 
@@ -328,4 +326,25 @@ func RandStringRunes(n int) string {
 		b[i] = letterRunes[rand.Intn(len(letterRunes))]
 	}
 	return string(b)
+}
+
+func FuzzFastRegexMatcher_WithStaticallyDefinedRegularExpressions(f *testing.F) {
+	// Create all matchers.
+	matchers := make([]*FastRegexMatcher, 0, len(regexes))
+	for _, re := range regexes {
+		m, err := NewFastRegexMatcher(re)
+		require.NoError(f, err)
+		matchers = append(matchers, m)
+	}
+
+	// Add known values to seed corpus.
+	for _, v := range values {
+		f.Add(v)
+	}
+
+	f.Fuzz(func(t *testing.T, text string) {
+		for _, m := range matchers {
+			require.Equalf(t, m.re.MatchString(text), m.MatchString(text), "regexp: %s text: %s", m.re.String(), text)
+		}
+	})
 }

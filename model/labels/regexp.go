@@ -397,27 +397,36 @@ type containsStringMatcher struct {
 func (m *containsStringMatcher) Matches(s string) bool {
 	for _, substr := range m.substrings {
 		if m.right != nil && m.left != nil {
-			pos := strings.Index(s, substr)
-			if pos < 0 {
-				continue
+			searchStartPos := 0
+
+			for {
+				pos := strings.Index(s[searchStartPos:], substr)
+				if pos < 0 {
+					break
+				}
+
+				// Since we started searching from searchStartPos, we have to add that offset
+				// to get the actual position of the substring inside the text.
+				pos += searchStartPos
+
+				// If both the left and right matchers match, then we can stop searching because
+				// we've found a match.
+				if m.left.Matches(s[:pos]) && m.right.Matches(s[pos+len(substr):]) {
+					return true
+				}
+
+				// Continue searching for another occurrence of the substring inside the text.
+				searchStartPos = pos + 1
 			}
-			if m.left.Matches(s[:pos]) && m.right.Matches(s[pos+len(substr):]) {
-				return true
-			}
-			continue
-		}
-		// If we have to check for characters on the left then we need to match a suffix.
-		if m.left != nil {
+		} else if m.left != nil {
+			// If we have to check for characters on the left then we need to match a suffix.
 			if strings.HasSuffix(s, substr) && m.left.Matches(s[:len(s)-len(substr)]) {
 				return true
 			}
-			continue
-		}
-		if m.right != nil {
+		} else if m.right != nil {
 			if strings.HasPrefix(s, substr) && m.right.Matches(s[len(substr):]) {
 				return true
 			}
-			continue
 		}
 	}
 	return false
