@@ -49,7 +49,7 @@ func NewFastRegexMatcher(v string) (*FastRegexMatcher, error) {
 	if parsed.Op == syntax.OpConcat {
 		m.prefix, m.suffix, m.contains = optimizeConcatRegex(parsed)
 	}
-	if matches, caseSensitive := findSetMatches(parsed, ""); caseSensitive {
+	if matches, caseSensitive := findSetMatches(parsed); caseSensitive {
 		m.setMatches = matches
 	}
 	m.stringMatcher = stringMatcherFromRegexp(parsed)
@@ -60,10 +60,22 @@ func NewFastRegexMatcher(v string) (*FastRegexMatcher, error) {
 // findSetMatches extract equality matches from a regexp.
 // Returns nil if we can't replace the regexp by only equality matchers or the regexp contains
 // a mix of case sensitive and case insensitive matchers.
-func findSetMatches(re *syntax.Regexp, base string) (matches []string, caseSensitive bool) {
+func findSetMatches(re *syntax.Regexp) (matches []string, caseSensitive bool) {
 	clearBeginEndText(re)
 
+	return findSetMatchesInternal(re, "")
+}
+
+func findSetMatchesInternal(re *syntax.Regexp, base string) (matches []string, caseSensitive bool) {
 	switch re.Op {
+	case syntax.OpBeginText:
+		// Correctly handling the begin text operator inside a regex is tricky,
+		// so in this case we fallback to the regex engine.
+		return nil, false
+	case syntax.OpEndText:
+		// Correctly handling the end text operator inside a regex is tricky,
+		// so in this case we fallback to the regex engine.
+		return nil, false
 	case syntax.OpLiteral:
 		return []string{base + string(re.Rune)}, isCaseSensitive(re)
 	case syntax.OpEmptyMatch:
@@ -74,7 +86,7 @@ func findSetMatches(re *syntax.Regexp, base string) (matches []string, caseSensi
 		return findSetMatchesFromAlternate(re, base)
 	case syntax.OpCapture:
 		clearCapture(re)
-		return findSetMatches(re, base)
+		return findSetMatchesInternal(re, base)
 	case syntax.OpConcat:
 		return findSetMatchesFromConcat(re, base)
 	case syntax.OpCharClass:
@@ -116,7 +128,7 @@ func findSetMatchesFromConcat(re *syntax.Regexp, base string) (matches []string,
 	for i := 0; i < len(re.Sub); i++ {
 		var newMatches []string
 		for j, b := range matches {
-			m, caseSensitive := findSetMatches(re.Sub[i], b)
+			m, caseSensitive := findSetMatchesInternal(re.Sub[i], b)
 			if m == nil {
 				return nil, false
 			}
@@ -144,7 +156,7 @@ func findSetMatchesFromConcat(re *syntax.Regexp, base string) (matches []string,
 
 func findSetMatchesFromAlternate(re *syntax.Regexp, base string) (matches []string, matchesCaseSensitive bool) {
 	for i, sub := range re.Sub {
-		found, caseSensitive := findSetMatches(sub, base)
+		found, caseSensitive := findSetMatchesInternal(sub, base)
 		if found == nil {
 			return nil, false
 		}
@@ -179,6 +191,12 @@ func clearCapture(regs ...*syntax.Regexp) {
 
 // clearBeginEndText removes the begin and end text from the regexp. Prometheus regexp are anchored to the beginning and end of the string.
 func clearBeginEndText(re *syntax.Regexp) {
+	// Do not clear begin/end text from an alternate operator because it could
+	// change the actual regexp properties.
+	if re.Op == syntax.OpAlternate {
+		return
+	}
+
 	if len(re.Sub) == 0 {
 		return
 	}
@@ -298,10 +316,23 @@ type StringMatcher interface {
 // It returns nil if the regexp is not supported.
 // For examples, it will replace `.*foo` with `foo.*` and `.*foo.*` with `(?i)foo`.
 func stringMatcherFromRegexp(re *syntax.Regexp) StringMatcher {
-	clearCapture(re)
 	clearBeginEndText(re)
 
+	return stringMatcherFromRegexpInternal(re)
+}
+
+func stringMatcherFromRegexpInternal(re *syntax.Regexp) StringMatcher {
+	clearCapture(re)
+
 	switch re.Op {
+	case syntax.OpBeginText:
+		// Correctly handling the begin text operator inside a regex is tricky,
+		// so in this case we fallback to the regex engine.
+		return nil
+	case syntax.OpEndText:
+		// Correctly handling the end text operator inside a regex is tricky,
+		// so in this case we fallback to the regex engine.
+		return nil
 	case syntax.OpPlus, syntax.OpStar:
 		if re.Sub[0].Op != syntax.OpAnyChar && re.Sub[0].Op != syntax.OpAnyCharNotNL {
 			return nil
@@ -321,7 +352,7 @@ func stringMatcherFromRegexp(re *syntax.Regexp) StringMatcher {
 	case syntax.OpAlternate:
 		or := make([]StringMatcher, 0, len(re.Sub))
 		for _, sub := range re.Sub {
-			m := stringMatcherFromRegexp(sub)
+			m := stringMatcherFromRegexpInternal(sub)
 			if m == nil {
 				return nil
 			}
@@ -334,26 +365,26 @@ func stringMatcherFromRegexp(re *syntax.Regexp) StringMatcher {
 			return emptyStringMatcher{}
 		}
 		if len(re.Sub) == 1 {
-			return stringMatcherFromRegexp(re.Sub[0])
+			return stringMatcherFromRegexpInternal(re.Sub[0])
 		}
 		var left, right StringMatcher
 		// Let's try to find if there's a first and last any matchers.
 		if re.Sub[0].Op == syntax.OpPlus || re.Sub[0].Op == syntax.OpStar {
-			left = stringMatcherFromRegexp(re.Sub[0])
+			left = stringMatcherFromRegexpInternal(re.Sub[0])
 			if left == nil {
 				return nil
 			}
 			re.Sub = re.Sub[1:]
 		}
 		if re.Sub[len(re.Sub)-1].Op == syntax.OpPlus || re.Sub[len(re.Sub)-1].Op == syntax.OpStar {
-			right = stringMatcherFromRegexp(re.Sub[len(re.Sub)-1])
+			right = stringMatcherFromRegexpInternal(re.Sub[len(re.Sub)-1])
 			if right == nil {
 				return nil
 			}
 			re.Sub = re.Sub[:len(re.Sub)-1]
 		}
 
-		matches, matchesCaseSensitive := findSetMatches(re, "")
+		matches, matchesCaseSensitive := findSetMatchesInternal(re, "")
 		if len(matches) == 0 {
 			return nil
 		}
