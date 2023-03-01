@@ -49,27 +49,26 @@ func NewFastRegexMatcher(v string) (*FastRegexMatcher, error) {
 	if parsed.Op == syntax.OpConcat {
 		m.prefix, m.suffix, m.contains = optimizeConcatRegex(parsed)
 	}
-	m.setMatches = findSetMatches(parsed, "")
+	if matches, caseSensitive := findSetMatches(parsed, ""); caseSensitive {
+		m.setMatches = matches
+	}
 	m.stringMatcher = stringMatcherFromRegexp(parsed)
 
 	return m, nil
 }
 
 // findSetMatches extract equality matches from a regexp.
-// Returns nil if we can't replace the regexp by only equality matchers.
-func findSetMatches(re *syntax.Regexp, base string) []string {
-	// Matches are case sensitive, if we find a case insensitive regexp.
-	// We have to abort.
-	if isCaseInsensitive(re) {
-		return nil
-	}
+// Returns nil if we can't replace the regexp by only equality matchers or the regexp contains
+// a mix of case sensitive and case insensitive matchers.
+func findSetMatches(re *syntax.Regexp, base string) (matches []string, caseSensitive bool) {
 	clearBeginEndText(re)
+
 	switch re.Op {
 	case syntax.OpLiteral:
-		return []string{base + string(re.Rune)}
+		return []string{base + string(re.Rune)}, isCaseSensitive(re)
 	case syntax.OpEmptyMatch:
 		if base != "" {
-			return []string{base}
+			return []string{base}, isCaseSensitive(re)
 		}
 	case syntax.OpAlternate:
 		return findSetMatchesFromAlternate(re, base)
@@ -80,7 +79,7 @@ func findSetMatches(re *syntax.Regexp, base string) []string {
 		return findSetMatchesFromConcat(re, base)
 	case syntax.OpCharClass:
 		if len(re.Rune)%2 != 0 {
-			return nil
+			return nil, false
 		}
 		var matches []string
 		var totalSet int
@@ -91,60 +90,82 @@ func findSetMatches(re *syntax.Regexp, base string) []string {
 		// In some case like negation [^0-9] a lot of possibilities exists and that
 		// can create thousands of possible matches at which points we're better off using regexp.
 		if totalSet > maxSetMatches {
-			return nil
+			return nil, false
 		}
 		for i := 0; i+1 < len(re.Rune); i = i + 2 {
 			lo, hi := re.Rune[i], re.Rune[i+1]
 			for c := lo; c <= hi; c++ {
 				matches = append(matches, base+string(c))
 			}
-
 		}
-		return matches
+		return matches, isCaseSensitive(re)
 	default:
-		return nil
+		return nil, false
 	}
-	return nil
+	return nil, false
 }
 
-func findSetMatchesFromConcat(re *syntax.Regexp, base string) []string {
+func findSetMatchesFromConcat(re *syntax.Regexp, base string) (matches []string, matchesCaseSensitive bool) {
 	if len(re.Sub) == 0 {
-		return nil
+		return nil, false
 	}
 	clearCapture(re.Sub...)
-	matches := []string{base}
+
+	matches = []string{base}
 
 	for i := 0; i < len(re.Sub); i++ {
 		var newMatches []string
-		for _, b := range matches {
-			m := findSetMatches(re.Sub[i], b)
+		for j, b := range matches {
+			m, caseSensitive := findSetMatches(re.Sub[i], b)
 			if m == nil {
-				return nil
+				return nil, false
 			}
 			if tooManyMatches(newMatches, m...) {
-				return nil
+				return nil, false
 			}
+
+			// All matches must have the same case sensitivity. If it's the first set of matches
+			// returned, we store its sensitivity as the expected case, and then we'll check all
+			// other ones.
+			if i == 0 && j == 0 {
+				matchesCaseSensitive = caseSensitive
+			}
+			if matchesCaseSensitive != caseSensitive {
+				return nil, false
+			}
+
 			newMatches = append(newMatches, m...)
 		}
 		matches = newMatches
 	}
 
-	return matches
+	return matches, matchesCaseSensitive
 }
 
-func findSetMatchesFromAlternate(re *syntax.Regexp, base string) []string {
-	var setMatches []string
-	for _, sub := range re.Sub {
-		found := findSetMatches(sub, base)
+func findSetMatchesFromAlternate(re *syntax.Regexp, base string) (matches []string, matchesCaseSensitive bool) {
+	for i, sub := range re.Sub {
+		found, caseSensitive := findSetMatches(sub, base)
 		if found == nil {
-			return nil
+			return nil, false
 		}
-		if tooManyMatches(setMatches, found...) {
-			return nil
+		if tooManyMatches(matches, found...) {
+			return nil, false
 		}
-		setMatches = append(setMatches, found...)
+
+		// All matches must have the same case sensitivity. If it's the first set of matches
+		// returned, we store its sensitivity as the expected case, and then we'll check all
+		// other ones.
+		if i == 0 {
+			matchesCaseSensitive = caseSensitive
+		}
+		if matchesCaseSensitive != caseSensitive {
+			return nil, false
+		}
+
+		matches = append(matches, found...)
 	}
-	return setMatches
+
+	return matches, matchesCaseSensitive
 }
 
 // clearCapture removes capture operation as they are not used for matching.
@@ -182,6 +203,12 @@ func clearBeginEndText(re *syntax.Regexp) {
 // The flag should be check at each level of the syntax tree.
 func isCaseInsensitive(reg *syntax.Regexp) bool {
 	return (reg.Flags & syntax.FoldCase) != 0
+}
+
+// isCaseSensitive tells if a regexp is case sensitive.
+// The flag should be check at each level of the syntax tree.
+func isCaseSensitive(reg *syntax.Regexp) bool {
+	return !isCaseInsensitive(reg)
 }
 
 // tooManyMatches guards against creating too many set matches
@@ -273,6 +300,7 @@ type StringMatcher interface {
 func stringMatcherFromRegexp(re *syntax.Regexp) StringMatcher {
 	clearCapture(re)
 	clearBeginEndText(re)
+
 	switch re.Op {
 	case syntax.OpPlus, syntax.OpStar:
 		if re.Sub[0].Op != syntax.OpAnyChar && re.Sub[0].Op != syntax.OpAnyCharNotNL {
@@ -324,22 +352,28 @@ func stringMatcherFromRegexp(re *syntax.Regexp) StringMatcher {
 			}
 			re.Sub = re.Sub[:len(re.Sub)-1]
 		}
-		// findSetMatches will returns only literals that are case sensitive.
-		matches := findSetMatches(re, "")
-		if left == nil && right == nil && len(matches) > 0 {
-			// if there's no any matchers on both side it's a concat of literals
 
+		matches, matchesCaseSensitive := findSetMatches(re, "")
+		if len(matches) == 0 {
+			return nil
+		}
+
+		if left == nil && right == nil {
+			// if there's no any matchers on both side it's a concat of literals
 			or := make([]StringMatcher, 0, len(matches))
 			for _, match := range matches {
 				or = append(or, &equalStringMatcher{
 					s:             match,
-					caseSensitive: true,
+					caseSensitive: matchesCaseSensitive,
 				})
 			}
 			return orStringMatcher(or)
 		}
-		// others we found literals in the middle.
-		if len(matches) > 0 {
+
+		// We found literals in the middle. We can triggered the fast path only if
+		// the matches are case sensitive because containsStringMatcher doesn't
+		// support case insensitive.
+		if matchesCaseSensitive {
 			return &containsStringMatcher{
 				substrings: matches,
 				left:       left,

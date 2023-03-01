@@ -147,60 +147,72 @@ func TestOptimizeConcatRegex(t *testing.T) {
 // Refer to https://github.com/prometheus/prometheus/issues/2651.
 func TestFindSetMatches(t *testing.T) {
 	for _, c := range []struct {
-		pattern string
-		exp     []string
+		pattern          string
+		expMatches       []string
+		expCaseSensitive bool
 	}{
 		// Single value, coming from a `bar=~"foo"` selector.
-		{"foo", []string{"foo"}},
-		{"^foo", []string{"foo"}},
-		{"^foo$", []string{"foo"}},
+		{"foo", []string{"foo"}, true},
+		{"^foo", []string{"foo"}, true},
+		{"^foo$", []string{"foo"}, true},
 		// Simple sets alternates.
-		{"foo|bar|zz", []string{"foo", "bar", "zz"}},
+		{"foo|bar|zz", []string{"foo", "bar", "zz"}, true},
 		// Simple sets alternate and concat (bar|baz is parsed as "ba[rz]").
-		{"foo|bar|baz", []string{"foo", "bar", "baz"}},
+		{"foo|bar|baz", []string{"foo", "bar", "baz"}, true},
 		// Simple sets alternate and concat and capture
-		{"foo|bar|baz|(zz)", []string{"foo", "bar", "baz", "zz"}},
+		{"foo|bar|baz|(zz)", []string{"foo", "bar", "baz", "zz"}, true},
 		// Simple sets alternate and concat and alternates with empty matches
 		// parsed as  b(ar|(?:)|uzz) where b(?:) means literal b.
-		{"bar|b|buzz", []string{"bar", "b", "buzz"}},
+		{"bar|b|buzz", []string{"bar", "b", "buzz"}, true},
 		// Skip anchors it's enforced anyway at the root.
-		{"(^bar$)|(b$)|(^buzz)", []string{"bar", "b", "buzz"}},
+		{"(^bar$)|(b$)|(^buzz)", []string{"bar", "b", "buzz"}, true},
 		// Simple sets containing escaped characters.
-		{"fo\\.o|bar\\?|\\^baz", []string{"fo.o", "bar?", "^baz"}},
+		{"fo\\.o|bar\\?|\\^baz", []string{"fo.o", "bar?", "^baz"}, true},
 		// using charclass
-		{"[abc]d", []string{"ad", "bd", "cd"}},
+		{"[abc]d", []string{"ad", "bd", "cd"}, true},
 		// high low charset different => A(B[CD]|EF)|BC[XY]
-		{"ABC|ABD|AEF|BCX|BCY", []string{"ABC", "ABD", "AEF", "BCX", "BCY"}},
+		{"ABC|ABD|AEF|BCX|BCY", []string{"ABC", "ABD", "AEF", "BCX", "BCY"}, true},
 		// triple concat
-		{"api_(v1|prom)_push", []string{"api_v1_push", "api_prom_push"}},
+		{"api_(v1|prom)_push", []string{"api_v1_push", "api_prom_push"}, true},
 		// triple concat with multiple alternates
-		{"(api|rpc)_(v1|prom)_push", []string{"api_v1_push", "api_prom_push", "rpc_v1_push", "rpc_prom_push"}},
-		{"(api|rpc)_(v1|prom)_(push|query)", []string{"api_v1_push", "api_v1_query", "api_prom_push", "api_prom_query", "rpc_v1_push", "rpc_v1_query", "rpc_prom_push", "rpc_prom_query"}},
+		{"(api|rpc)_(v1|prom)_push", []string{"api_v1_push", "api_prom_push", "rpc_v1_push", "rpc_prom_push"}, true},
+		{"(api|rpc)_(v1|prom)_(push|query)", []string{"api_v1_push", "api_v1_query", "api_prom_push", "api_prom_query", "rpc_v1_push", "rpc_v1_query", "rpc_prom_push", "rpc_prom_query"}, true},
 		// class starting with "-"
-		{"[-1-2][a-c]", []string{"-a", "-b", "-c", "1a", "1b", "1c", "2a", "2b", "2c"}},
-		{"[1^3]", []string{"1", "3", "^"}},
+		{"[-1-2][a-c]", []string{"-a", "-b", "-c", "1a", "1b", "1c", "2a", "2b", "2c"}, true},
+		{"[1^3]", []string{"1", "3", "^"}, true},
 		// OpPlus with concat
-		{"(.+)/(foo|bar)", nil},
+		{"(.+)/(foo|bar)", nil, false},
 		// Simple sets containing special characters without escaping.
-		{"fo.o|bar?|^baz", nil},
+		{"fo.o|bar?|^baz", nil, false},
 		// case sensitive wrapper.
-		{"(?i)foo", nil},
+		{"(?i)foo", []string{"FOO"}, false},
 		// case sensitive wrapper on alternate.
-		{"(?i)foo|bar|baz", nil},
-		// case sensitive wrapper on concat.
-		{"(api|rpc)_(v1|prom)_((?i)push|query)", nil},
+		{"(?i)foo|bar|baz", []string{"FOO", "BAR", "BAZ", "BAr", "BAz"}, false},
+		// mixed case sensitivity.
+		{"(api|rpc)_(v1|prom)_((?i)push|query)", nil, false},
+		// mixed case sensitivity concatenation only without capture group.
+		{"api_v1_(?i)push", nil, false},
+		// mixed case sensitivity alternation only without capture group.
+		{"api|(?i)rpc", nil, false},
+		// case sensitive after unsetting insensitivity.
+		{"rpc|(?i)(?-i)api", []string{"rpc", "api"}, true},
+		// case sensitive after unsetting insensitivity in all alternation options.
+		{"(?i)((?-i)api|(?-i)rpc)", []string{"api", "rpc"}, true},
+		// mixed case sensitivity after unsetting insensitivity.
+		{"(?i)rpc|(?-i)api", nil, false},
 		// too high charset combination
-		{"(api|rpc)_[^0-9]", nil},
+		{"(api|rpc)_[^0-9]", nil, false},
 		// too many combinations
-		{"[a-z][a-z]", nil},
+		{"[a-z][a-z]", nil, false},
 	} {
 		c := c
 		t.Run(c.pattern, func(t *testing.T) {
 			t.Parallel()
 			parsed, err := syntax.Parse(c.pattern, syntax.Perl)
 			require.NoError(t, err)
-			matches := findSetMatches(parsed, "")
-			require.Equal(t, c.exp, matches)
+			matches, actualCaseSensitive := findSetMatches(parsed, "")
+			require.Equal(t, c.expMatches, matches)
+			require.Equal(t, c.expCaseSensitive, actualCaseSensitive)
 		})
 	}
 }
@@ -225,6 +237,9 @@ func BenchmarkFastRegexMatcher(b *testing.B) {
 		".+foo",
 		".*foo.*",
 		"(?i:foo)",
+		"(?i:(foo|bar))",
+		"(?i:(foo1|foo2|bar))",
+		"(?i:(foo1|foo2|aaa|bbb|ccc|ddd|eee|fff|ggg|hhh|iii|lll|mmm|nnn|ooo|ppp|qqq|rrr|sss|ttt|uuu|vvv|www|xxx|yyy|zzz))",
 		"(prometheus|api_prom)_api_v1_.+",
 		"((fo(bar))|.+foo)",
 	}
@@ -263,6 +278,7 @@ func Test_OptimizeRegex(t *testing.T) {
 		{"^(?i:foo)$", &equalStringMatcher{s: "FOO", caseSensitive: false}},
 		{"^(?i:foo)|(bar)$", orStringMatcher([]StringMatcher{&equalStringMatcher{s: "FOO", caseSensitive: false}, &equalStringMatcher{s: "bar", caseSensitive: true}})},
 		{"^(?i:foo|oo)|(bar)$", orStringMatcher([]StringMatcher{orStringMatcher([]StringMatcher{&equalStringMatcher{s: "FOO", caseSensitive: false}, &equalStringMatcher{s: "OO", caseSensitive: false}}), &equalStringMatcher{s: "bar", caseSensitive: true}})},
+		{"(?i:(foo1|foo2|bar))", orStringMatcher([]StringMatcher{orStringMatcher([]StringMatcher{&equalStringMatcher{s: "FOO1", caseSensitive: false}, &equalStringMatcher{s: "FOO2", caseSensitive: false}}), &equalStringMatcher{s: "BAR", caseSensitive: false}})},
 		{".*foo.*", &containsStringMatcher{substrings: []string{"foo"}, left: &anyStringMatcher{allowEmpty: true, matchNL: false}, right: &anyStringMatcher{allowEmpty: true, matchNL: false}}},
 		{"(.*)foo.*", &containsStringMatcher{substrings: []string{"foo"}, left: &anyStringMatcher{allowEmpty: true, matchNL: false}, right: &anyStringMatcher{allowEmpty: true, matchNL: false}}},
 		{"(.*)foo(.*)", &containsStringMatcher{substrings: []string{"foo"}, left: &anyStringMatcher{allowEmpty: true, matchNL: false}, right: &anyStringMatcher{allowEmpty: true, matchNL: false}}},
