@@ -57,6 +57,14 @@ func NewFastRegexMatcher(v string) (*FastRegexMatcher, error) {
 	return m, nil
 }
 
+// isOptimized returns true if any fast-path optimization is applied to the
+// regex matcher.
+//
+//nolint:unused
+func (m *FastRegexMatcher) isOptimized() bool {
+	return len(m.setMatches) > 0 || m.stringMatcher != nil || m.prefix != "" || m.suffix != "" || m.contains != ""
+}
+
 // findSetMatches extract equality matches from a regexp.
 // Returns nil if we can't replace the regexp by only equality matchers or the regexp contains
 // a mix of case sensitive and case insensitive matchers.

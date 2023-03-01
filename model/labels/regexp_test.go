@@ -14,11 +14,14 @@
 package labels
 
 import (
+	"bufio"
 	"math/rand"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/grafana/regexp"
 	"github.com/grafana/regexp/syntax"
 	"github.com/stretchr/testify/require"
 )
@@ -373,4 +376,55 @@ func FuzzFastRegexMatcher_WithFuzzyRegularExpressions(f *testing.F) {
 
 		require.Equalf(t, m.re.MatchString(text), m.MatchString(text), "regexp: %s text: %s", m.re.String(), text)
 	})
+}
+
+// This test can be used to analyze real queries from Mimir logs. You can extract real queries with a regexp matcher
+// running the following command:
+//
+// logcli --addr=XXX --username=YYY --password=ZZZ query '{namespace=~"(cortex|mimir).*",name="query-frontend"} |= "query stats" |= "=~" --limit=100000 > logs.txt
+func TestAnalyzeRealQueries(t *testing.T) {
+	t.Skip("Decomment this test only to manually analyze real queries")
+
+	labelValueRE := regexp.MustCompile(`=~\\"([^"]+)\\"`)
+	labelValues := make(map[string]struct{})
+
+	// Read the logs file line-by-line, and find all values for regex label matchers.
+	readFile, err := os.Open("logs.txt")
+	require.NoError(t, err)
+
+	fileScanner := bufio.NewScanner(readFile)
+	fileScanner.Split(bufio.ScanLines)
+
+	for fileScanner.Scan() {
+		line := fileScanner.Text()
+		matches := labelValueRE.FindAllStringSubmatch(line, -1)
+
+		for _, match := range matches {
+			labelValues[match[1]] = struct{}{}
+		}
+	}
+
+	require.NoError(t, readFile.Close())
+	t.Logf("Found %d unique regexp matchers", len(labelValues))
+
+	// Check if each regexp matcher is supported by our optimization.
+	numChecked := 0
+	numOptimized := 0
+
+	for re := range labelValues {
+		m, err := NewFastRegexMatcher(re)
+		if err != nil {
+			// Ignore it, because we may have failed to extract the label matcher.
+			continue
+		}
+
+		numChecked++
+		if m.isOptimized() {
+			numOptimized++
+		} else {
+			t.Logf("Not optimized matcher: %s", re)
+		}
+	}
+
+	t.Logf("Found %d (%.2f%%) optimized matchers out of %d", numOptimized, (float64(numOptimized)/float64(numChecked))*100, numChecked)
 }
