@@ -323,7 +323,6 @@ type headMetrics struct {
 	mmapChunkCorruptionTotal  prometheus.Counter
 	snapshotReplayErrorTotal  prometheus.Counter // Will be either 0 or 1.
 	oooHistogram              prometheus.Histogram
-	headChunksStorageSize     prometheus.GaugeFunc
 }
 
 const (
@@ -448,17 +447,6 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 				60 * 60 * 12, // 12h
 			},
 		}),
-		headChunksStorageSize: prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-			Name: "prometheus_tsdb_head_chunks_storage_size_bytes",
-			Help: "Size of the chunks_head directory.",
-		}, func() float64 {
-			val, err := h.chunkDiskMapper.Size()
-			if err != nil {
-				level.Error(h.logger).Log("msg", "Failed to calculate size of \"chunks_head\" dir",
-					"err", err.Error())
-			}
-			return float64(val)
-		}),
 	}
 
 	if r != nil {
@@ -488,7 +476,6 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.checkpointCreationTotal,
 			m.mmapChunkCorruptionTotal,
 			m.snapshotReplayErrorTotal,
-			m.headChunksStorageSize,
 			// Metrics bound to functions and not needed in tests
 			// can be created and registered on the spot.
 			prometheus.NewGaugeFunc(prometheus.GaugeOpts{
@@ -514,6 +501,17 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 				Help: "The highest TSDB append ID that has been given out.",
 			}, func() float64 {
 				return float64(h.iso.lastAppendID())
+			}),
+			prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+				Name: "prometheus_tsdb_head_chunks_storage_size_bytes",
+				Help: "Size of the chunks_head directory.",
+			}, func() float64 {
+				val, err := h.chunkDiskMapper.Size()
+				if err != nil {
+					level.Error(h.logger).Log("msg", "Failed to calculate size of \"chunks_head\" dir",
+						"err", err.Error())
+				}
+				return float64(val)
 			}),
 		)
 	}

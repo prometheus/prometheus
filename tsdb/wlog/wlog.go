@@ -236,10 +236,8 @@ func newWLMetrics(w *WL, r prometheus.Registerer) *wlMetrics {
 	})
 	m.walFileSize = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "storage_size_bytes",
-		Help: "Size of the WAL directory.",
+		Help: "Size of the write log directory.",
 	}, func() float64 {
-		w.mtx.RLock()
-		defer w.mtx.RUnlock()
 		val, err := w.Size()
 		if err != nil {
 			level.Error(w.logger).Log("msg", "Failed to calculate size of \"wal\" dir",
