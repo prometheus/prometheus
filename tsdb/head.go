@@ -502,6 +502,17 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			}, func() float64 {
 				return float64(h.iso.lastAppendID())
 			}),
+			prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+				Name: "prometheus_tsdb_head_chunks_storage_size_bytes",
+				Help: "Size of the chunks_head directory.",
+			}, func() float64 {
+				val, err := h.chunkDiskMapper.Size()
+				if err != nil {
+					level.Error(h.logger).Log("msg", "Failed to calculate size of \"chunks_head\" dir",
+						"err", err.Error())
+				}
+				return float64(val)
+			}),
 		)
 	}
 	return m
