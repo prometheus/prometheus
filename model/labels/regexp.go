@@ -20,7 +20,14 @@ import (
 	"github.com/grafana/regexp/syntax"
 )
 
-const maxSetMatches = 256
+const (
+	maxSetMatches = 256
+
+	// The minimum number of alternate values a regex should have to trigger
+	// the optimization done by optimizeEqualStringMatchers(). This value has
+	// been computed running BenchmarkOptimizeEqualStringMatchers.
+	optimizeEqualStringMatchersThreshold = 16
+)
 
 type FastRegexMatcher struct {
 	re *regexp.Regexp
@@ -326,7 +333,10 @@ type StringMatcher interface {
 func stringMatcherFromRegexp(re *syntax.Regexp) StringMatcher {
 	clearBeginEndText(re)
 
-	return stringMatcherFromRegexpInternal(re)
+	m := stringMatcherFromRegexpInternal(re)
+	m = optimizeEqualStringMatchers(m, optimizeEqualStringMatchersThreshold)
+
+	return m
 }
 
 func stringMatcherFromRegexpInternal(re *syntax.Regexp) StringMatcher {
@@ -503,6 +513,24 @@ func (m *equalStringMatcher) Matches(s string) bool {
 	return strings.EqualFold(m.s, s)
 }
 
+// equalMultiStringMatcher matches a string exactly against a set of valid values.
+type equalMultiStringMatcher struct {
+	// values to match a string against. If the matching is case insensitive,
+	// the values here must be lowercase.
+	values map[string]struct{}
+
+	caseSensitive bool
+}
+
+func (m *equalMultiStringMatcher) Matches(s string) bool {
+	if !m.caseSensitive {
+		s = strings.ToLower(s)
+	}
+
+	_, ok := m.values[s]
+	return ok
+}
+
 // anyStringMatcher is a matcher that matches any string.
 // It is used for the + and * operator. matchNL tells if it should matches newlines or not.
 type anyStringMatcher struct {
@@ -517,5 +545,94 @@ func (m *anyStringMatcher) Matches(s string) bool {
 	if !m.matchNL && strings.ContainsRune(s, '\n') {
 		return false
 	}
+	return true
+}
+
+// optimizeEqualStringMatchers optimize a specific case where all matchers are made by an
+// alternation (orStringMatcher) of strings checked for equality (equalStringMatcher). In
+// this specific case, when we have many strings to match against we can use a map instead
+// of iterating over the list of strings.
+func optimizeEqualStringMatchers(input StringMatcher, threshold int) StringMatcher {
+	var (
+		caseSensitive    bool
+		caseSensitiveSet bool
+		numValues        int
+	)
+
+	// Analyse the input StringMatcher to count the number of occurrences
+	// and ensure all of them have the same case sensitivity.
+	analyseCallback := func(matcher *equalStringMatcher) bool {
+		// Ensure we don't have mixed case sensitivity.
+		if caseSensitiveSet && caseSensitive != matcher.caseSensitive {
+			return false
+		} else if !caseSensitiveSet {
+			caseSensitive = matcher.caseSensitive
+			caseSensitiveSet = true
+		}
+
+		numValues++
+		return true
+	}
+
+	if !findEqualStringMatchers(input, analyseCallback) {
+		return input
+	}
+
+	// If the number of values found is less than the threshold, then we should skip the optimization.
+	if numValues < threshold {
+		return input
+	}
+
+	// Parse again the input StringMatcher to extract all values and storing them.
+	// We can skip the case sensitivity check because we've already checked it and
+	// if the code reach this point then it means all matchers have the same case sensitivity.
+	values := make(map[string]struct{}, numValues)
+
+	// Ignore the return value because we already iterated over the input StringMatcher
+	// and it was all good.
+	findEqualStringMatchers(input, func(matcher *equalStringMatcher) bool {
+		if caseSensitive {
+			values[matcher.s] = struct{}{}
+		} else {
+			values[strings.ToLower(matcher.s)] = struct{}{}
+		}
+
+		return true
+	})
+
+	return &equalMultiStringMatcher{
+		values:        values,
+		caseSensitive: caseSensitive,
+	}
+}
+
+// findEqualStringMatchers analyze the input StringMatcher and calls the callback for each
+// equalStringMatcher found. Returns true if and only if the input StringMatcher is *only*
+// composed by an alternation of equalStringMatcher.
+func findEqualStringMatchers(input StringMatcher, callback func(matcher *equalStringMatcher) bool) bool {
+	orInput, ok := input.(orStringMatcher)
+	if !ok {
+		return false
+	}
+
+	for _, m := range orInput {
+		switch casted := m.(type) {
+		case orStringMatcher:
+			if !findEqualStringMatchers(m, callback) {
+				return false
+			}
+
+		case *equalStringMatcher:
+			if !callback(casted) {
+				return false
+			}
+
+		default:
+			// It's not an equal string matcher, so we have to stop searching
+			// cause this optimization can't be applied.
+			return false
+		}
+	}
+
 	return true
 }
