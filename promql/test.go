@@ -15,12 +15,14 @@ package promql
 
 import (
 	"context"
+	"embed"
 	"errors"
 	"fmt"
+	"io/fs"
 	"math"
-	"os"
 	"strconv"
 	"strings"
+	"testing"
 	"time"
 
 	"github.com/grafana/regexp"
@@ -32,7 +34,6 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -51,23 +52,74 @@ const (
 
 var testStartTime = time.Unix(0, 0).UTC()
 
-// Test is a sequence of read and write commands that are run
+// LoadedStorage returns storage with generated data using the provided load statements.
+// Non-load statements will cause test errors.
+func LoadedStorage(t testutil.T, input string) *teststorage.TestStorage {
+	test, err := newTest(t, input)
+	require.NoError(t, err)
+
+	for _, cmd := range test.cmds {
+		switch cmd.(type) {
+		case *loadCmd:
+			require.NoError(t, test.exec(cmd, nil))
+		default:
+			t.Errorf("only 'load' commands accepted, got '%s'", cmd)
+		}
+	}
+	return test.storage
+}
+
+// RunBuiltinTests runs an acceptance test suite against the provided engine.
+func RunBuiltinTests(t *testing.T, engine engineQuerier) {
+	files, err := fs.Glob(testsFs, "*/*.test")
+	require.NoError(t, err)
+
+	for _, fn := range files {
+		t.Run(fn, func(t *testing.T) {
+			content, err := fs.ReadFile(testsFs, fn)
+			require.NoError(t, err)
+			RunTest(t, string(content), engine)
+		})
+	}
+}
+
+// RunTest parses and runs the test against the provided engine.
+func RunTest(t testutil.T, input string, engine engineQuerier) {
+	test, err := newTest(t, input)
+	require.NoError(t, err)
+
+	defer func() {
+		if test.storage != nil {
+			test.storage.Close()
+		}
+		if test.cancelCtx != nil {
+			test.cancelCtx()
+		}
+	}()
+
+	for _, cmd := range test.cmds {
+		// TODO(fabxc): aggregate command errors, yield diffs for result
+		// comparison errors.
+		require.NoError(t, test.exec(cmd, engine))
+	}
+}
+
+// test is a sequence of read and write commands that are run
 // against a test storage.
-type Test struct {
+type test struct {
 	testutil.T
 
 	cmds []testCommand
 
 	storage *teststorage.TestStorage
 
-	queryEngine *Engine
-	context     context.Context
-	cancelCtx   context.CancelFunc
+	context   context.Context
+	cancelCtx context.CancelFunc
 }
 
-// NewTest returns an initialized empty Test.
-func NewTest(t testutil.T, input string) (*Test, error) {
-	test := &Test{
+// newTest returns an initialized empty Test.
+func newTest(t testutil.T, input string) (*test, error) {
+	test := &test{
 		T:    t,
 		cmds: []testCommand{},
 	}
@@ -77,46 +129,12 @@ func NewTest(t testutil.T, input string) (*Test, error) {
 	return test, err
 }
 
-func newTestFromFile(t testutil.T, filename string) (*Test, error) {
-	content, err := os.ReadFile(filename)
-	if err != nil {
-		return nil, err
-	}
-	return NewTest(t, string(content))
-}
+//go:embed testdata
+var testsFs embed.FS
 
-// QueryEngine returns the test's query engine.
-func (t *Test) QueryEngine() *Engine {
-	return t.queryEngine
-}
-
-// Queryable allows querying the test data.
-func (t *Test) Queryable() storage.Queryable {
-	return t.storage
-}
-
-// Context returns the test's context.
-func (t *Test) Context() context.Context {
-	return t.context
-}
-
-// Storage returns the test's storage.
-func (t *Test) Storage() storage.Storage {
-	return t.storage
-}
-
-// TSDB returns test's TSDB.
-func (t *Test) TSDB() *tsdb.DB {
-	return t.storage.DB
-}
-
-// ExemplarStorage returns the test's exemplar storage.
-func (t *Test) ExemplarStorage() storage.ExemplarStorage {
-	return t.storage
-}
-
-func (t *Test) ExemplarQueryable() storage.ExemplarQueryable {
-	return t.storage.ExemplarQueryable()
+type engineQuerier interface {
+	NewRangeQuery(ctx context.Context, q storage.Queryable, opts QueryOpts, qs string, start, end time.Time, interval time.Duration) (Query, error)
+	NewInstantQuery(ctx context.Context, q storage.Queryable, opts QueryOpts, qs string, ts time.Time) (Query, error)
 }
 
 func raise(line int, format string, v ...interface{}) error {
@@ -157,7 +175,7 @@ func parseLoad(lines []string, i int) (int, *loadCmd, error) {
 	return i, cmd, nil
 }
 
-func (t *Test) parseEval(lines []string, i int) (int, *evalCmd, error) {
+func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 	if !patEvalInstant.MatchString(lines[i]) {
 		return i, nil, raise(i, "invalid evaluation command. (eval[_fail|_ordered] instant [at <offset:duration>] <query>")
 	}
@@ -237,7 +255,7 @@ func getLines(input string) []string {
 }
 
 // parse the given command sequence and appends it to the test.
-func (t *Test) parse(input string) error {
+func (t *test) parse(input string) error {
 	lines := getLines(input)
 	var err error
 	// Scan for steps line by line.
@@ -433,19 +451,6 @@ func (cmd clearCmd) String() string {
 	return "clear"
 }
 
-// Run executes the command sequence of the test. Until the maximum error number
-// is reached, evaluation errors do not terminate execution.
-func (t *Test) Run() error {
-	for _, cmd := range t.cmds {
-		// TODO(fabxc): aggregate command errors, yield diffs for result
-		// comparison errors.
-		if err := t.exec(cmd); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 type atModifierTestCase struct {
 	expr     string
 	evalTime time.Time
@@ -515,7 +520,7 @@ func atModifierTestCases(exprStr string, evalTime time.Time) ([]atModifierTestCa
 }
 
 // exec processes a single step of the test.
-func (t *Test) exec(tc testCommand) error {
+func (t *test) exec(tc testCommand, engine engineQuerier) error {
 	switch cmd := tc.(type) {
 	case *clearCmd:
 		t.clear()
@@ -538,7 +543,7 @@ func (t *Test) exec(tc testCommand) error {
 		}
 		queries = append([]atModifierTestCase{{expr: cmd.expr, evalTime: cmd.start}}, queries...)
 		for _, iq := range queries {
-			q, err := t.QueryEngine().NewInstantQuery(t.context, t.storage, nil, iq.expr, iq.evalTime)
+			q, err := engine.NewInstantQuery(t.context, t.storage, nil, iq.expr, iq.evalTime)
 			if err != nil {
 				return err
 			}
@@ -560,7 +565,7 @@ func (t *Test) exec(tc testCommand) error {
 
 			// Check query returns same result in range mode,
 			// by checking against the middle step.
-			q, err = t.queryEngine.NewRangeQuery(t.context, t.storage, nil, iq.expr, iq.evalTime.Add(-time.Minute), iq.evalTime.Add(time.Minute), time.Minute)
+			q, err = engine.NewRangeQuery(t.context, t.storage, nil, iq.expr, iq.evalTime.Add(-time.Minute), iq.evalTime.Add(time.Minute), time.Minute)
 			if err != nil {
 				return err
 			}
@@ -601,7 +606,7 @@ func (t *Test) exec(tc testCommand) error {
 }
 
 // clear the current test storage of all inserted samples.
-func (t *Test) clear() {
+func (t *test) clear() {
 	if t.storage != nil {
 		err := t.storage.Close()
 		require.NoError(t.T, err, "Unexpected error while closing test storage.")
@@ -610,28 +615,7 @@ func (t *Test) clear() {
 		t.cancelCtx()
 	}
 	t.storage = teststorage.New(t)
-
-	opts := EngineOpts{
-		Logger:                   nil,
-		Reg:                      nil,
-		MaxSamples:               10000,
-		Timeout:                  100 * time.Second,
-		NoStepSubqueryIntervalFn: func(int64) int64 { return durationMilliseconds(1 * time.Minute) },
-		EnableAtModifier:         true,
-		EnableNegativeOffset:     true,
-		EnablePerStepStats:       true,
-	}
-
-	t.queryEngine = NewEngine(opts)
 	t.context, t.cancelCtx = context.WithCancel(context.Background())
-}
-
-// Close closes resources associated with the Test.
-func (t *Test) Close() {
-	t.cancelCtx()
-
-	err := t.storage.Close()
-	require.NoError(t.T, err, "Unexpected error while closing test storage.")
 }
 
 // samplesAlmostEqual returns true if the two sample lines only differ by a
