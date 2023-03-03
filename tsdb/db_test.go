@@ -247,8 +247,8 @@ func TestNoPanicAfterWALCorruption(t *testing.T) {
 	var maxt int64
 	ctx := context.Background()
 	{
-		// Appending 121 samples because on the 121st a new chunk will be created.
-		for i := 0; i < 121; i++ {
+		// Appending 221 samples because on the 221st a new chunk will be created.
+		for i := 0; i < 221; i++ {
 			app := db.Appender(ctx)
 			_, err := app.Append(0, labels.FromStrings("foo", "bar"), maxt, 0)
 			expSamples = append(expSamples, sample{t: maxt, v: 0})
@@ -1089,9 +1089,9 @@ func TestWALReplayRaceOnSamplesLoggedBeforeSeries(t *testing.T) {
 		numSamplesBeforeSeriesCreation = 1000
 	)
 
-	// We test both with few and many samples appended after series creation. If samples are < 120 then there's no
+	// We test both with few and many samples appended after series creation. If samples are < 220 then there's no
 	// mmap-ed chunk, otherwise there's at least 1 mmap-ed chunk when replaying the WAL.
-	for _, numSamplesAfterSeriesCreation := range []int{1, 1000} {
+	for _, numSamplesAfterSeriesCreation := range []int{1, 2000} {
 		for run := 1; run <= numRuns; run++ {
 			t.Run(fmt.Sprintf("samples after series creation = %d, run = %d", numSamplesAfterSeriesCreation, run), func(t *testing.T) {
 				testWALReplayRaceOnSamplesLoggedBeforeSeries(t, numSamplesBeforeSeriesCreation, numSamplesAfterSeriesCreation)
@@ -1160,8 +1160,8 @@ func testWALReplayRaceOnSamplesLoggedBeforeSeries(t *testing.T, numSamplesBefore
 		}
 		require.NoError(t, chunksIt.Err())
 
-		// We expect 1 chunk every 120 samples after series creation.
-		require.Equalf(t, (numSamplesAfterSeriesCreation/120)+1, actualChunks, "series: %s", set.At().Labels().String())
+		// We expect 1 chunk every 220 samples after series creation.
+		require.Equalf(t, (numSamplesAfterSeriesCreation/220)+1, actualChunks, "series: %s", set.At().Labels().String())
 	}
 
 	require.NoError(t, set.Err())
