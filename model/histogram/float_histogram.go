@@ -438,6 +438,14 @@ func (h *FloatHistogram) Compact(maxEmptyBuckets int) *FloatHistogram {
 // information can be read directly from there rather than be detected each time
 // again.
 func (h *FloatHistogram) DetectReset(previous *FloatHistogram) bool {
+	// Use the reset hint if it's set
+	if h.CounterResetHint == CounterReset {
+		return true
+	}
+	if h.CounterResetHint == NotCounterReset {
+		return false
+	}
+
 	if h.Count < previous.Count {
 		return true
 	}

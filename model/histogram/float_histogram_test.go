@@ -679,6 +679,24 @@ func TestFloatHistogramDetectReset(t *testing.T) {
 			},
 			true,
 		},
+		{
+			"counter reset hint set to no reset",
+			nil,
+			&FloatHistogram{
+				CounterResetHint: NotCounterReset,
+				// remaining fields should not be relevant.
+			},
+			false,
+		},
+		{
+			"counter reset hint set to reset",
+			nil,
+			&FloatHistogram{
+				CounterResetHint: CounterReset,
+				// remaining fields should not be relevant.
+			},
+			true,
+		},
 	}
 
 	for _, c := range cases {
