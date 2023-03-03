@@ -1279,6 +1279,12 @@ func (s *memSeries) appendPreprocessor(t int64, e chunkenc.Encoding, o chunkOpts
 		// There is no head chunk in this series yet, create the first chunk for the sample.
 		c = s.cutNewHeadChunk(t, e, o.chunkRange)
 		chunkCreated = true
+	} else {
+		maxBytesPerChunk := chunkenc.MaxBytesPerChunk(e)
+		if maxBytesPerChunk > 0 && len(c.chunk.Bytes()) > maxBytesPerChunk {
+			c = s.cutNewHeadChunk(t, e, chunkDiskMapper, chunkRange)
+			chunkCreated = true
+		}
 	}
 
 	// Out of order sample.

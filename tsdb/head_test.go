@@ -4807,15 +4807,15 @@ func TestHistogramValidation(t *testing.T) {
 }
 
 func BenchmarkHistogramValidation(b *testing.B) {
-	histograms := generateBigTestHistograms(b.N)
+	histograms := generateBigTestHistograms(b.N, 1)
 	b.ResetTimer()
 	for _, h := range histograms {
 		require.NoError(b, ValidateHistogram(h))
 	}
 }
 
-func generateBigTestHistograms(n int) []*histogram.Histogram {
-	const numBuckets = 500
+func generateBigTestHistograms(n, bktMultFactor int) []*histogram.Histogram {
+	numBuckets := 500 * bktMultFactor
 	numSpans := numBuckets / 10
 	bucketsPerSide := numBuckets / 2
 	spanLength := uint32(bucketsPerSide / numSpans)
@@ -4837,7 +4837,7 @@ func generateBigTestHistograms(n int) []*histogram.Histogram {
 		}
 
 		for j := 0; j < numSpans; j++ {
-			s := histogram.Span{Offset: 1 + int32(i), Length: spanLength}
+			s := histogram.Span{Offset: 1, Length: spanLength}
 			h.NegativeSpans[j] = s
 			h.PositiveSpans[j] = s
 		}
@@ -5185,4 +5185,103 @@ func TestSnapshotAheadOfWALError(t *testing.T) {
 	require.Equal(t, record.ErrNotFound, err)
 
 	require.NoError(t, head.Close())
+}
+
+func TestHeadMaxBytesPerChunk(t *testing.T) {
+	const numSamples = 120
+
+	testCases := map[string]struct {
+		floatValFunc func(i int) float64
+		histValFunc  func(i int) *histogram.Histogram
+		expectedChks []struct {
+			numSamples int
+			numBytes   int
+		}
+	}{
+		"xor": {
+			floatValFunc: func(i int) float64 {
+				// Flipping between these two make each sample val take at least 64 bits.
+				vals := []float64{math.MaxFloat64, 0x00}
+				return vals[i%len(vals)]
+			},
+			expectedChks: []struct {
+				numSamples int
+				numBytes   int
+			}{
+				{101, 1030},
+				{19, 200},
+			},
+		},
+		"histogram": {
+			histValFunc: func() func(i int) *histogram.Histogram {
+				hists := generateBigTestHistograms(numSamples, 200)
+				return func(i int) *histogram.Histogram {
+					return hists[i]
+				}
+			}(),
+			expectedChks: []struct {
+				numSamples int
+				numBytes   int
+			}{
+				{78, 1050664},
+				{42, 600370},
+			},
+		},
+	}
+	for testName, tc := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			h, _ := newTestHead(t, DefaultBlockDuration, false, false)
+			defer func() {
+				require.NoError(t, h.Close())
+			}()
+
+			a := h.Appender(context.Background())
+
+			ts := time.Now().UnixMilli()
+			lbls := labels.FromStrings("foo", "bar")
+			jitter := []int64{0, 1} // Introduce a bit of jitter to prevent dod=0.
+
+			for i := 0; i < 120; i++ {
+				if tc.floatValFunc != nil {
+					_, err := a.Append(0, lbls, ts, tc.floatValFunc(i))
+					require.NoError(t, err)
+				} else if tc.histValFunc != nil {
+					_, err := a.AppendHistogram(0, lbls, ts, tc.histValFunc(i), nil)
+					require.NoError(t, err)
+				}
+
+				ts += int64(10*time.Second/time.Millisecond) + jitter[i%len(jitter)]
+			}
+
+			require.NoError(t, a.Commit())
+
+			idxReader, err := h.Index()
+			require.NoError(t, err)
+
+			chkReader, err := h.Chunks()
+			require.NoError(t, err)
+
+			p, err := idxReader.Postings("foo", "bar")
+			require.NoError(t, err)
+
+			var lblBuilder labels.ScratchBuilder
+
+			for p.Next() {
+				sRef := p.At()
+
+				chkMetas := make([]chunks.Meta, len(tc.expectedChks))
+				require.NoError(t, idxReader.Series(sRef, &lblBuilder, &chkMetas))
+
+				require.Len(t, chkMetas, len(tc.expectedChks))
+
+				for i, expected := range tc.expectedChks {
+					chk, err := chkReader.Chunk(chkMetas[i])
+					require.NoError(t, err)
+
+					require.Equal(t, expected.numSamples, chk.NumSamples())
+					require.Len(t, chk.Bytes(), expected.numBytes)
+				}
+			}
+		})
+	}
 }

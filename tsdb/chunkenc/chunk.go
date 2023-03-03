@@ -52,6 +52,27 @@ func IsValidEncoding(e Encoding) bool {
 	return e == EncXOR || e == EncHistogram || e == EncFloatHistogram
 }
 
+const (
+	MaxBytesPerXORChunk            = 1024
+	MaxBytesPerHistogramChunk      = 1024 * 1024
+	MaxBytesPerFloatHistogramChunk = 1024 * 1024
+)
+
+// MaxBytesPerChunk returns a soft cap for the maximum size we want a chunk of that encoding to be. A 0 signifies no
+// cap.
+func MaxBytesPerChunk(e Encoding) int {
+	switch e {
+	case EncXOR:
+		return MaxBytesPerXORChunk
+	case EncHistogram:
+		return MaxBytesPerHistogramChunk
+	case EncFloatHistogram:
+		return MaxBytesPerFloatHistogramChunk
+	default:
+		return 0
+	}
+}
+
 // Chunk holds a sequence of sample pairs that can be iterated over and appended to.
 type Chunk interface {
 	// Bytes returns the underlying byte slice of the chunk.
