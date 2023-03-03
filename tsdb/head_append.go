@@ -1324,6 +1324,7 @@ func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, 
 func (s *memSeries) appendPreprocessor(
 	t int64, e chunkenc.Encoding, chunkDiskMapper *chunks.ChunkDiskMapper, chunkRange int64,
 ) (c *memChunk, sampleInOrder, chunkCreated bool) {
+	// The basis for this number can be found here: https://github.com/prometheus/prometheus/pull/12055
 	const samplesPerChunk = 220
 
 	c = s.head()
