@@ -651,6 +651,7 @@ func main() {
 
 		ruleManager = rules.NewManager(&rules.ManagerOptions{
 			Appendable:      fanoutStorage,
+			ExemplarStorage: localStorage,
 			Queryable:       localStorage,
 			QueryFunc:       rules.EngineQueryFunc(queryEngine, fanoutStorage),
 			NotifyFunc:      rules.SendAlerts(notifierManager, cfg.web.ExternalURL.String()),
@@ -1052,7 +1053,7 @@ func main() {
 				)
 
 				startTimeMargin := int64(2 * time.Duration(cfg.tsdb.MinBlockDuration).Seconds() * 1000)
-				localStorage.Set(db, startTimeMargin)
+				localStorage.Set(db, db, startTimeMargin)
 				db.SetWriteNotified(remoteStorage)
 				close(dbOpen)
 				<-cancel
@@ -1106,7 +1107,7 @@ func main() {
 					"MaxWALTime", cfg.agent.MaxWALTime,
 				)
 
-				localStorage.Set(db, 0)
+				localStorage.Set(db, db, 0)
 				close(dbOpen)
 				<-cancel
 				return nil
@@ -1314,6 +1315,7 @@ func computeExternalURL(u, listenAddr string) (*url.URL, error) {
 type readyStorage struct {
 	mtx             sync.RWMutex
 	db              storage.Storage
+	dbex            storage.ExemplarStorage
 	startTimeMargin int64
 	stats           *tsdb.DBStats
 }
@@ -1327,17 +1329,25 @@ func (s *readyStorage) ApplyConfig(conf *config.Config) error {
 }
 
 // Set the storage.
-func (s *readyStorage) Set(db storage.Storage, startTimeMargin int64) {
+func (s *readyStorage) Set(db storage.Storage, dbex storage.ExemplarStorage, startTimeMargin int64) {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
 	s.db = db
+	s.dbex = dbex
 	s.startTimeMargin = startTimeMargin
 }
 
 func (s *readyStorage) get() storage.Storage {
 	s.mtx.RLock()
 	x := s.db
+	s.mtx.RUnlock()
+	return x
+}
+
+func (s *readyStorage) getex() storage.ExemplarStorage {
+	s.mtx.RLock()
+	x := s.dbex
 	s.mtx.RUnlock()
 	return x
 }
@@ -1408,6 +1418,14 @@ func (s *readyStorage) Appender(ctx context.Context) storage.Appender {
 		return x.Appender(ctx)
 	}
 	return notReadyAppender{}
+}
+
+func (s *readyStorage) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
+	if x := s.getex(); x != nil {
+		return x.AppendExemplar(ref, l, e)
+	}
+
+	return 0, tsdb.ErrNotReady
 }
 
 type notReadyAppender struct{}

@@ -751,6 +751,15 @@ func (db *DB) Appender(context.Context) storage.Appender {
 	return db.appenderPool.Get().(storage.Appender)
 }
 
+func (db *DB) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
+	app, ok := db.appenderPool.Get().(*appender)
+	if !ok {
+		return 0, fmt.Errorf("unable to get appender")
+	}
+
+	return app.AppendExemplar(ref, l, e)
+}
+
 // Close implements the Storage interface.
 func (db *DB) Close() error {
 	db.mtx.Lock()

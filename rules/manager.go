@@ -31,6 +31,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 
+	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -218,15 +219,17 @@ type Rule interface {
 	Name() string
 	// Labels of the rule.
 	Labels() labels.Labels
-	// eval evaluates the rule, including any associated recording or alerting actions.
+	// Eval evaluates the rule, including any associated recording or alerting actions.
 	Eval(context.Context, time.Time, QueryFunc, *url.URL, int) (promql.Vector, error)
+	// EvalWithExemplars evaluates the rule, including any associated recording or alerting actions and emit exemplars.
+	EvalWithExemplars(ctx context.Context, ts time.Time, interval time.Duration, query QueryFunc, eq storage.ExemplarQuerier, _ *url.URL, limit int) (promql.Vector, []exemplar.QueryResult, error)
 	// String returns a human-readable string representation of the rule.
 	String() string
 	// Query returns the rule query expression.
 	Query() parser.Expr
-	// SetLastErr sets the current error experienced by the rule.
+	// SetLastError sets the current error experienced by the rule.
 	SetLastError(error)
-	// LastErr returns the last error experienced by the rule.
+	// LastError returns the last error experienced by the rule.
 	LastError() error
 	// SetHealth sets the current health of the rule.
 	SetHealth(RuleHealth)
@@ -649,7 +652,23 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 
 			g.metrics.EvalTotal.WithLabelValues(GroupKey(g.File(), g.Name())).Inc()
 
-			vector, err := rule.Eval(ctx, ts, g.opts.QueryFunc, g.opts.ExternalURL, g.Limit())
+			var (
+				vector promql.Vector
+				eqr    []exemplar.QueryResult
+				err    error
+			)
+			if g.opts.ExemplarStorage != nil {
+				ex, e := g.opts.ExemplarStorage.ExemplarQuerier(ctx)
+				if e != nil {
+					level.Warn(g.logger).Log("name", rule.Name(), "index", i, "msg", "Error fetching exemplar querier", "rule", rule, "err", err)
+					err = e
+				} else {
+					vector, eqr, err = rule.EvalWithExemplars(ctx, ts, g.Interval(), g.opts.QueryFunc, ex, g.opts.ExternalURL, g.Limit())
+				}
+
+			} else {
+				vector, err = rule.Eval(ctx, ts, g.opts.QueryFunc, g.opts.ExternalURL, g.Limit())
+			}
 			if err != nil {
 				rule.SetHealth(HealthBad)
 				rule.SetLastError(err)
@@ -725,6 +744,18 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 					seriesReturned[string(s.Metric.Bytes(buf[:]))] = s.Metric
 				}
 			}
+
+			// For each series, append exemplars. Reuse the ref for faster appends.
+			for _, eq := range eqr {
+				var ref storage.SeriesRef
+				for _, e := range eq.Exemplars {
+					ref, err = app.AppendExemplar(ref, eq.SeriesLabels, e)
+					if err != nil {
+						level.Warn(g.logger).Log("name", rule.Name(), "index", i, "msg", "Exemplar append failed", "err", err, "exemplar", fmt.Sprint(e))
+					}
+				}
+			}
+
 			if numOutOfOrder > 0 {
 				level.Warn(g.logger).Log("name", rule.Name(), "index", i, "msg", "Error on ingesting out-of-order result from rule evaluation", "numDropped", numOutOfOrder)
 			}
@@ -958,6 +989,7 @@ type ManagerOptions struct {
 	Context         context.Context
 	Appendable      storage.Appendable
 	Queryable       storage.Queryable
+	ExemplarStorage storage.ExemplarStorage
 	Logger          log.Logger
 	Registerer      prometheus.Registerer
 	OutageTolerance time.Duration
