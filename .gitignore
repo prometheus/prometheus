@@ -28,3 +28,6 @@ npm_licenses.tar.bz2
 /.build
 
 /**/node_modules
+
+# Ignore parser debug
+y.output

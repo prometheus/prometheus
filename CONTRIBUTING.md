@@ -78,3 +78,20 @@ GO111MODULE=on go mod tidy
 ```
 
 You have to commit the changes to `go.mod` and `go.sum` before submitting the pull request.
+
+## Working with the PromQL parser
+
+The PromQL parser grammar is located in `promql/parser/generated_parser.y` and it can be built using `make parser`.
+The parser is built using [goyacc](https://pkg.go.dev/golang.org/x/tools/cmd/goyacc)
+
+If doing some sort of debugging, then it is possible to add some verbose output. After generating the parser, then you
+can modify the the `./promql/parser/generated_parser.y.go` manually.
+
+```golang
+// As of writing this was somewhere around line 600.
+var (
+	yyDebug        = 0 // This can be be a number 0 -> 5.
+	yyErrorVerbose = false  // This can be set to true.
+)
+
+```
