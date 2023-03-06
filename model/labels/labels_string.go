@@ -19,12 +19,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"reflect"
-	"sort"
 	"strconv"
 	"unsafe"
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/prometheus/common/model"
+	"golang.org/x/exp/slices"
 )
 
 // Well-known label names used by Prometheus components.
@@ -385,7 +385,7 @@ func yoloBytes(s string) (b []byte) {
 // New returns a sorted Labels from the given labels.
 // The caller has to guarantee that all label names are unique.
 func New(ls ...Label) Labels {
-	sort.Sort(labelSlice(ls))
+	slices.SortFunc(ls, func(a, b Label) bool { return a.Name < b.Name })
 	size := labelsSize(ls)
 	buf := make([]byte, size)
 	marshalLabelsToSizedBuffer(ls, buf)
@@ -411,7 +411,7 @@ func FromStrings(ss ...string) Labels {
 		ls = append(ls, Label{Name: ss[i], Value: ss[i+1]})
 	}
 
-	sort.Sort(labelSlice(ls))
+	slices.SortFunc(ls, func(a, b Label) bool { return a.Name < b.Name })
 	return New(ls...)
 }
 
@@ -595,8 +595,8 @@ func (b *Builder) Labels(res Labels) Labels {
 		return b.base
 	}
 
-	sort.Sort(labelSlice(b.add))
-	sort.Strings(b.del)
+	slices.SortFunc(b.add, func(a, b Label) bool { return a.Name < b.Name })
+	slices.Sort(b.del)
 	a, d := 0, 0
 
 	buf := make([]byte, 0, len(b.base.data)) // TODO: see if we can re-use the buffer from res.
@@ -753,7 +753,7 @@ func (b *ScratchBuilder) Add(name, value string) {
 
 // Sort the labels added so far by name.
 func (b *ScratchBuilder) Sort() {
-	sort.Sort(labelSlice(b.add))
+	slices.SortFunc(b.add, func(a, b Label) bool { return a.Name < b.Name })
 }
 
 // Asssign is for when you already have a Labels which you want this ScratchBuilder to return.
