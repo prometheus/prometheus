@@ -1037,3 +1037,81 @@ eval instant at 5m log10(exp_root_log - 20)
 	{l="y"} -Inf
 
 clear
+
+# Tests for consecutive_gt
+load 10s
+  metric 0 1 0 1 0
+  metric2 0 1 1 1 0
+  metric3 0 1 2 2 -Inf
+  metric4 1 0 Inf Inf -Inf
+  metric5 0 1 1.1 1.2 0 0
+
+eval instant at 1m consecutive_gt(metric[1m],0,2)
+  {} 0
+
+eval instant at 1m consecutive_gt(metric[1m],0,1)
+  {} 1
+
+eval instant at 1m consecutive_gt(metric[1m],1,1)
+  {} 0
+
+eval instant at 1m consecutive_gt(metric[1m],1,0)
+  {} 1
+
+eval instant at 1m consecutive_gt(metric[1m],-1,6)
+  {} 0
+
+eval instant at 1m consecutive_gt(metric2[1m],0,3)
+  {} 1
+
+eval instant at 1m consecutive_gt(metric2[1m],0,4)
+  {} 0
+
+eval instant at 1m consecutive_gt(metric3[1m],1,2)
+  {} 1
+
+eval instant at 1m consecutive_gt(metric4[1m],1,2)
+  {} 1
+
+eval instant at 1m consecutive_gt(metric5[1m],0.99,3)
+  {} 1
+
+clear
+
+# Tests for consecutive_lt
+load 10s
+  metric 0 1 0 1 0
+  metric2 0 1 1 1 0
+  metric3 0 -1 -2 -Inf 0
+  metric4 1 0 -Inf -Inf -Inf
+  metric5 0 1 1.1 1.2 2 0
+
+eval instant at 1m consecutive_lt(metric[1m],1,2)
+  {} 0
+
+eval instant at 1m consecutive_lt(metric[1m],1,1)
+  {} 1
+
+eval instant at 1m consecutive_lt(metric[1m],0,1)
+  {} 0
+
+eval instant at 1m consecutive_lt(metric[1m],0,0)
+  {} 1
+
+eval instant at 1m consecutive_lt(metric2[1m],2,3)
+  {} 1
+
+eval instant at 1m consecutive_lt(metric2[1m],2,6)
+  {} 0
+
+eval instant at 1m consecutive_lt(metric3[1m],0,3)
+  {} 1
+
+eval instant at 1m consecutive_lt(metric4[1m],1,4)
+  {} 1
+
+eval instant at 1m consecutive_lt(metric5[1m],1.3,4)
+  {} 1
+
+clear
+

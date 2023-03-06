@@ -1233,6 +1233,64 @@ func funcYear(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper)
 	})
 }
 
+// === consecutive_gt(node parser.ValueTypeMatrix, valueThreshold, countThreshold parser.ValueTypeScalar) Vector ===
+func funcConsecutiveGT(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	samples := vals[0].(Matrix)[0]
+	valueThreshold := vals[1].(Vector)[0].V
+	countThreshold := int(vals[2].(Vector)[0].V)
+
+	count := 0
+	if len(samples.Points) >= countThreshold {
+		for _, p := range samples.Points {
+			if p.V > valueThreshold {
+				count++
+				if count >= countThreshold {
+					break
+				}
+			} else {
+				count = 0
+			}
+		}
+	}
+
+	v := 0.0
+	if count >= countThreshold {
+		v = 1.0
+	}
+	return append(enh.Out, Sample{
+		Point: Point{V: v},
+	})
+}
+
+// === consecutive_lt(node parser.ValueTypeMatrix, valueThreshold, countThreshold parser.ValueTypeScalar) Vector ===
+func funcConsecutiveLT(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	samples := vals[0].(Matrix)[0]
+	valueThreshold := vals[1].(Vector)[0].V
+	countThreshold := int(vals[2].(Vector)[0].V)
+
+	count := 0
+	if len(samples.Points) >= countThreshold {
+		for _, p := range samples.Points {
+			if p.V < valueThreshold {
+				count++
+				if count >= countThreshold {
+					break
+				}
+			} else {
+				count = 0
+			}
+		}
+	}
+
+	v := 0.0
+	if count >= countThreshold {
+		v = 1.0
+	}
+	return append(enh.Out, Sample{
+		Point: Point{V: v},
+	})
+}
+
 // FunctionCalls is a list of all functions supported by PromQL, including their types.
 var FunctionCalls = map[string]FunctionCall{
 	"abs":                funcAbs,
@@ -1250,6 +1308,8 @@ var FunctionCalls = map[string]FunctionCall{
 	"clamp":              funcClamp,
 	"clamp_max":          funcClampMax,
 	"clamp_min":          funcClampMin,
+	"consecutive_gt":     funcConsecutiveGT,
+	"consecutive_lt":     funcConsecutiveLT,
 	"cos":                funcCos,
 	"cosh":               funcCosh,
 	"count_over_time":    funcCountOverTime,
