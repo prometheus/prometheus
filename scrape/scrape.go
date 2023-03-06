@@ -328,7 +328,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 			options.PassMetadataInContext,
 		)
 	}
-
+	targetScrapePoolTargetLimit.WithLabelValues(sp.config.JobName).Set(float64(sp.config.TargetLimit))
 	return sp, nil
 }
 
