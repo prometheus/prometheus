@@ -54,6 +54,8 @@ IDENTIFIER
 LEFT_BRACE
 LEFT_BRACKET
 LEFT_PAREN
+OPEN_HIST
+CLOSE_HIST
 METRIC_IDENTIFIER
 NUMBER
 RIGHT_BRACE
@@ -63,6 +65,16 @@ SEMICOLON
 SPACE
 STRING
 TIMES
+
+// Histogram Descriptors
+%token histogramDescStart
+%token <item>
+SUM_DESC
+COUNT_DESC
+SCHEMA_DESC
+OFFSET_DESC
+BUCKETS_DESC
+%token histogramDescEnd
 
 // Operators.
 %token	operatorsStart

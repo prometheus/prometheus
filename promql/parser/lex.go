@@ -133,9 +133,19 @@ var key = map[string]ItemType{
 	"end":   END,
 }
 
+var histogramDesc = map[string]ItemType{
+	"sum":     SUM_DESC,
+	"count":   COUNT_DESC,
+	"schema":  SCHEMA_DESC,
+	"offset":  OFFSET_DESC,
+	"buckets": BUCKETS_DESC,
+}
+
 // ItemTypeStr is the default string representations for common Items. It does not
 // imply that those are the only character sequences that can be lexed to such an Item.
 var ItemTypeStr = map[ItemType]string{
+	OPEN_HIST:     "{{",
+	CLOSE_HIST:    "}}",
 	LEFT_PAREN:    "(",
 	RIGHT_PAREN:   ")",
 	LEFT_BRACE:    "{",
@@ -235,12 +245,12 @@ type Lexer struct {
 	itemp       *Item   // Pointer to where the next scanned item should be placed.
 	scannedItem bool    // Set to true every time an item is scanned.
 
-	parenDepth  int  // Nesting depth of ( ) exprs.
-	braceOpen   bool // Whether a { is opened.
-	bracketOpen bool // Whether a [ is opened.
-	gotColon    bool // Whether we got a ':' after [ was opened.
-	stringOpen  rune // Quote rune of the string currently being read.
-
+	parenDepth        int  // Nesting depth of ( ) exprs.
+	braceOpen         bool // Whether a { is opened.
+	bracketOpen       bool // Whether a [ is opened.
+	gotColon          bool // Whether we got a ':' after [ was opened.
+	stringOpen        rune // Quote rune of the string currently being read.
+	histogramDescOpen bool // (Unit Tests Only) Determines whether or not inside of a histogram description.
 	// seriesDesc is set when a series description for the testing
 	// language is lexed.
 	seriesDesc bool
@@ -303,6 +313,7 @@ func (l *Lexer) acceptRun(valid string) {
 // back a nil pointer that will be the next state, terminating l.NextItem.
 func (l *Lexer) errorf(format string, args ...interface{}) stateFn {
 	*l.itemp = Item{ERROR, l.start, fmt.Sprintf(format, args...)}
+	fmt.Printf(format, args...)
 	l.scannedItem = true
 
 	return nil
@@ -338,9 +349,15 @@ const lineComment = "#"
 
 // lexStatements is the top-level state for lexing.
 func lexStatements(l *Lexer) stateFn {
+	println("Entering lexStatements:", string(l.peek()))
+	if l.histogramDescOpen {
+		return lexHistogram
+	}
 	if l.braceOpen {
+		println("Entering braces from lexStatements")
 		return lexInsideBraces
 	}
+
 	if strings.HasPrefix(l.input[l.pos:], lineComment) {
 		return lexLineComment
 	}
@@ -460,9 +477,56 @@ func lexStatements(l *Lexer) stateFn {
 	return lexStatements
 }
 
+func lexHistogram(l *Lexer) stateFn {
+	println("Entering lexHistogram", string(l.peek()))
+	if l.bracketOpen {
+		return lexBuckets
+	}
+	switch r := l.next(); {
+	case isSpace(r):
+		l.emit(SPACE)
+		return lexSpace
+	case isAlpha(r):
+		l.backup()
+		return lexKeywordOrIdentifier
+	case r == ':':
+		l.emit(COLON)
+		return lexHistogram
+	case r == '[':
+		l.bracketOpen = true
+		l.emit(LEFT_BRACKET)
+		return lexBuckets
+	case r == '}' && l.peek() == '}':
+		l.histogramDescOpen = false
+		l.next()
+		l.emit(CLOSE_HIST)
+		return lexStatements
+	default:
+		return l.errorf("histogram description incomplete unexpected: %q", r)
+	}
+}
+
+func lexBuckets(l *Lexer) stateFn {
+	println("Entering lexInsideBraces", string(l.peek()))
+	switch r := l.next(); {
+	case isSpace(r):
+		return lexSpace
+	case isDigit(r):
+		l.backup()
+		return lexNumber
+	case r == ']':
+		l.bracketOpen = false
+		l.emit(RIGHT_BRACKET)
+		return lexHistogram
+	default:
+		return l.errorf("invalid character in buckets description: %q", r)
+	}
+}
+
 // lexInsideBraces scans the inside of a vector selector. Keywords are ignored and
 // scanned as identifiers.
 func lexInsideBraces(l *Lexer) stateFn {
+	println("Entering lexInsideBraces", string(l.peek()))
 	if strings.HasPrefix(l.input[l.pos:], lineComment) {
 		return lexLineComment
 	}
@@ -502,8 +566,8 @@ func lexInsideBraces(l *Lexer) stateFn {
 	case r == '{':
 		return l.errorf("unexpected left brace %q", r)
 	case r == '}':
-		l.emit(RIGHT_BRACE)
 		l.braceOpen = false
+		l.emit(RIGHT_BRACE)
 
 		if l.seriesDesc {
 			return lexValueSequence
@@ -517,9 +581,21 @@ func lexInsideBraces(l *Lexer) stateFn {
 
 // lexValueSequence scans a value sequence of a series description.
 func lexValueSequence(l *Lexer) stateFn {
+	println("Entering lexValueSequence", string(l.peek()))
+	if l.histogramDescOpen {
+		return lexHistogram
+	}
 	switch r := l.next(); {
 	case r == eof:
 		return lexStatements
+	case r == '{' && l.peek() == '{':
+		if l.histogramDescOpen {
+			return l.errorf("unexpected histogram opening {{")
+		}
+		l.histogramDescOpen = true
+		l.next()
+		l.emit(OPEN_HIST)
+		return lexHistogram
 	case isSpace(r):
 		l.emit(SPACE)
 		lexSpace(l)
@@ -553,6 +629,7 @@ func lexValueSequence(l *Lexer) stateFn {
 // None of the actual escaping/quoting logic was changed in this function - it
 // was only modified to integrate with our lexer.
 func lexEscape(l *Lexer) stateFn {
+	println("Entering lexEscape", string(l.peek()))
 	var n int
 	var base, max uint32
 
@@ -629,6 +706,7 @@ func skipSpaces(l *Lexer) {
 
 // lexString scans a quoted string. The initial quote has already been seen.
 func lexString(l *Lexer) stateFn {
+	println("Entering lexString", string(l.peek()))
 Loop:
 	for {
 		switch l.next() {
@@ -649,6 +727,7 @@ Loop:
 
 // lexRawString scans a raw quoted string. The initial quote has already been seen.
 func lexRawString(l *Lexer) stateFn {
+	println("Entering lexRawString", string(l.peek()))
 Loop:
 	for {
 		switch l.next() {
@@ -668,6 +747,7 @@ Loop:
 
 // lexSpace scans a run of space characters. One space has already been seen.
 func lexSpace(l *Lexer) stateFn {
+	println("Entering lexSpace", string(l.peek()))
 	for isSpace(l.peek()) {
 		l.next()
 	}
@@ -677,6 +757,7 @@ func lexSpace(l *Lexer) stateFn {
 
 // lexLineComment scans a line comment. Left comment marker is known to be present.
 func lexLineComment(l *Lexer) stateFn {
+	println("Entering lexLineComment", string(l.peek()))
 	l.pos += Pos(len(lineComment))
 	for r := l.next(); !isEndOfLine(r) && r != eof; {
 		r = l.next()
@@ -687,6 +768,7 @@ func lexLineComment(l *Lexer) stateFn {
 }
 
 func lexDuration(l *Lexer) stateFn {
+	println("Entering lexDuration", string(l.peek()))
 	if l.scanNumber() {
 		return l.errorf("missing unit character in duration")
 	}
@@ -700,6 +782,7 @@ func lexDuration(l *Lexer) stateFn {
 
 // lexNumber scans a number: decimal, hex, oct or float.
 func lexNumber(l *Lexer) stateFn {
+	println("Entering lexNumber", string(l.peek()))
 	if !l.scanNumber() {
 		return l.errorf("bad number syntax: %q", l.input[l.start:l.pos])
 	}
@@ -709,6 +792,7 @@ func lexNumber(l *Lexer) stateFn {
 
 // lexNumberOrDuration scans a number or a duration Item.
 func lexNumberOrDuration(l *Lexer) stateFn {
+	println("Entering lexNumberOrDuration", string(l.peek()))
 	if l.scanNumber() {
 		l.emit(NUMBER)
 		return lexStatements
@@ -773,6 +857,7 @@ func (l *Lexer) scanNumber() bool {
 // lexIdentifier scans an alphanumeric identifier. The next character
 // is known to be a letter.
 func lexIdentifier(l *Lexer) stateFn {
+	println("Entering lexIdentifier", string(l.peek()))
 	for isAlphaNumeric(l.next()) {
 		// absorb
 	}
@@ -785,6 +870,7 @@ func lexIdentifier(l *Lexer) stateFn {
 // a colon rune. If the identifier is a keyword the respective keyword Item
 // is scanned.
 func lexKeywordOrIdentifier(l *Lexer) stateFn {
+	println("Entering lexKeywordOrIdentifier", string(l.peek()))
 Loop:
 	for {
 		switch r := l.next(); {
@@ -792,6 +878,20 @@ Loop:
 			// absorb.
 		default:
 			l.backup()
+			if l.histogramDescOpen {
+				l.pos -= 1
+				word := l.input[l.start:l.pos]
+				if desc, ok := histogramDesc[strings.ToLower(word)]; ok {
+					if l.peek() == ':' {
+						l.emit(desc)
+						return lexHistogram
+					} else {
+						l.errorf("missing `:` for histogram descriptor")
+					}
+				} else {
+					l.errorf("bad histogram descriptor found: %q", word)
+				}
+			}
 			word := l.input[l.start:l.pos]
 			switch kw, ok := key[strings.ToLower(word)]; {
 			case ok:

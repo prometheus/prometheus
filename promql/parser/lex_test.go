@@ -495,6 +495,45 @@ var tests = []struct {
 		},
 	},
 	{
+		name: "histogram series descriptions",
+		tests: []testCase{
+			{
+				input: `{} {{buckets:[5]}}`,
+				expected: []Item{
+					{LEFT_BRACE, 0, `{`},
+					{RIGHT_BRACE, 1, `}`},
+					{SPACE, 2, ` `},
+					{OPEN_HIST, 3, `{{`},
+					{BUCKETS_DESC, 5, `buckets`},
+					{COLON, 12, `:`},
+					{LEFT_BRACKET, 13, `[`},
+					{NUMBER, 14, `5`},
+					{RIGHT_BRACKET, 15, `]`},
+					{CLOSE_HIST, 16, `}}`},
+				},
+				seriesDesc: true,
+			}, {
+				input: `{} {{buckets: [5 10 7]}}`,
+				expected: []Item{
+					{LEFT_BRACE, 0, `{`},
+					{RIGHT_BRACE, 1, `}`},
+					{SPACE, 2, ` `},
+					{OPEN_HIST, 3, `{{`},
+					{BUCKETS_DESC, 5, `buckets`},
+					{COLON, 12, `:`},
+					{SPACE, 13, ` `},
+					{LEFT_BRACKET, 14, `[`},
+					{NUMBER, 15, `5`}, // We should ignore spaces between numbers
+					{NUMBER, 17, `10`},
+					{NUMBER, 20, `7`},
+					{RIGHT_BRACKET, 21, `]`},
+					{CLOSE_HIST, 22, `}}`},
+				},
+				seriesDesc: true,
+			},
+		},
+	},
+	{
 		name: "series descriptions",
 		tests: []testCase{
 			{
@@ -735,7 +774,6 @@ func TestLexer(t *testing.T) {
 
 				for l.state = lexStatements; l.state != nil; {
 					out = append(out, Item{})
-
 					l.NextItem(&out[len(out)-1])
 				}
 
