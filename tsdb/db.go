@@ -601,6 +601,85 @@ func (db *DBReadOnly) Blocks() ([]BlockReader, error) {
 	return blockReaders, nil
 }
 
+// LastBlockID returns the BlockID of latest block.
+func (db *DBReadOnly) LastBlockID(logger log.Logger) (string, error) {
+	select {
+	case <-db.closed:
+		return "", ErrClosed
+	default:
+	}
+	latestDirName, err := db.lastBlockDirName(logger)
+	if err != nil {
+		return "", err
+	}
+	// Open the latest block and get its ID
+	block, err := db.Block(logger, latestDirName)
+	if err != nil {
+		return "", err
+	}
+	return block.Meta().ULID.String(), nil
+}
+
+func (db *DBReadOnly) lastBlockDirName(logger log.Logger) (string, error) {
+	entries, err := os.ReadDir(db.dir)
+	if err != nil {
+		return "", err
+	}
+	skipNames := map[string]struct{}{
+		"index":          {},
+		"chunks_head":    {},
+		"lock":           {},
+		"queries.active": {},
+		"wal":            {},
+	}
+	max := uint64(0)
+
+	latestDirName := ""
+	// Walk the blocks directory and find the latest subdirectory
+	for _, e := range entries {
+		dirName := e.Name()
+
+		if _, skip := skipNames[dirName]; skip {
+			// Skip the  directory
+			continue
+		}
+
+		ulidObj, err := ulid.Parse(dirName)
+		if err != nil {
+			return "", err
+		}
+		timestamp := ulidObj.Time()
+
+		if timestamp > max {
+			max = timestamp
+			latestDirName = dirName
+		}
+	}
+
+	if latestDirName == "" {
+		return "", errors.New("no blocks found")
+	}
+
+	return latestDirName, nil
+}
+
+// Block returns a block reader by given block id.
+func (db *DBReadOnly) Block(logger log.Logger, blockID string) (BlockReader, error) {
+	select {
+	case <-db.closed:
+		return nil, ErrClosed
+	default:
+	}
+
+	block, err := OpenBlock(logger, filepath.Join(db.dir, blockID), nil)
+	if err != nil {
+		return nil, err
+	}
+	db.closers = append(db.closers, block)
+
+	return block, nil
+}
+
 // Close all block readers.
 func (db *DBReadOnly) Close() error {
 	select {

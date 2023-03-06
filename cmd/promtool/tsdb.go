@@ -398,22 +398,24 @@ func openBlock(path, blockID string) (*tsdb.DBReadOnly, tsdb.BlockReader, error)
 	if err != nil {
 		return nil, nil, err
 	}
-	blocks, err := db.Blocks()
-	if err != nil {
-		return nil, nil, err
-	}
+
 	var block tsdb.BlockReader
-	switch {
-	case blockID != "":
-		for _, b := range blocks {
-			if b.Meta().ULID.String() == blockID {
-				block = b
-				break
-			}
+
+	if blockID == "" {
+		blockID, err = db.LastBlockID(nil)
+		if err != nil {
+			return nil, nil, err
 		}
-	case len(blocks) > 0:
-		block = blocks[len(blocks)-1]
 	}
+
+	if blockID != "" {
+		b, err := db.Block(nil, filepath.Join(blockID))
+		if err != nil {
+			return nil, nil, err
+		}
+		block = b
+	}
+
 	if block == nil {
 		return nil, nil, fmt.Errorf("block %s not found", blockID)
 	}

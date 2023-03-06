@@ -2384,6 +2384,7 @@ func TestDBReadOnly(t *testing.T) {
 		dbDir     string
 		logger    = log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
 		expBlocks []*Block
+		expBlock  *Block
 		expSeries map[string][]tsdbutil.Sample
 		expChunks map[string][][]tsdbutil.Sample
 		expDBHash []byte
@@ -2427,6 +2428,7 @@ func TestDBReadOnly(t *testing.T) {
 		require.NoError(t, app.Commit())
 
 		expBlocks = dbWritable.Blocks()
+		expBlock = expBlocks[0]
 		expDbSize, err := fileutil.DirSize(dbWritable.Dir())
 		require.NoError(t, err)
 		require.Greater(t, expDbSize, dbSizeBeforeAppend, "db size didn't increase after an append")
@@ -2455,7 +2457,25 @@ func TestDBReadOnly(t *testing.T) {
 			require.Equal(t, expBlock.Meta(), blocks[i].Meta(), "block meta mismatch")
 		}
 	})
-
+	t.Run("analyse-block-id", func(t *testing.T) {
+		blockID := expBlock.meta.ULID.String()
+		block, err := dbReadOnly.Block(nil, blockID)
+		require.NoError(t, err)
+		require.Equal(t, expBlock.Meta(), block.Meta(), "block meta mismatch")
+	})
+	t.Run("invalid-block-id", func(t *testing.T) {
+		blockID := "01GTDVZZF52NSWB5SXQF0P2PGF"
+		_, err := dbReadOnly.Block(nil, blockID)
+		require.Error(t, err)
+	})
+	t.Run("analyse-latest-block", func(t *testing.T) {
+		blockID, err := dbReadOnly.LastBlockID(nil)
+		expBlock = expBlocks[2]
+		require.NoError(t, err)
+		block, err := dbReadOnly.Block(nil, blockID)
+		require.NoError(t, err)
+		require.Equal(t, expBlock.Meta(), block.Meta(), "block meta mismatch")
+	})
 	t.Run("querier", func(t *testing.T) {
 		// Open a read only db and ensure that the API returns the same result as the normal DB.
 		q, err := dbReadOnly.Querier(context.TODO(), math.MinInt64, math.MaxInt64)
