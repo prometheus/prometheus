@@ -22,6 +22,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -124,6 +125,11 @@ type Options struct {
 
 	// WALCompression will turn on Snappy compression for records on the WAL.
 	WALCompression bool
+
+	// Maximum number of CPUs that can simultaneously processes WAL replay.
+	// If this value is negative, zero, or greater than the number of available CPUs that
+	// can be executing simultaneously, GOMAXPROCS will be used.
+	WALReplayConcurrency int
 
 	// StripeSize is the size in entries of the series hash map. Reducing the size will save memory but impact performance.
 	StripeSize int
@@ -645,6 +651,10 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64) {
 	if opts.OutOfOrderTimeWindow < 0 {
 		opts.OutOfOrderTimeWindow = 0
 	}
+	walReplyConcurrency := runtime.GOMAXPROCS(0)
+	if opts.WALReplayConcurrency <= 0 || opts.WALReplayConcurrency > walReplyConcurrency {
+		opts.WALReplayConcurrency = walReplyConcurrency
+	}
 
 	if len(rngs) == 0 {
 		// Start with smallest block duration and create exponential buckets until the exceed the
@@ -782,6 +792,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	headOpts.EnableNativeHistograms.Store(opts.EnableNativeHistograms)
 	headOpts.OutOfOrderTimeWindow.Store(opts.OutOfOrderTimeWindow)
 	headOpts.OutOfOrderCapMax.Store(opts.OutOfOrderCapMax)
+	headOpts.WALReplayConcurrency = opts.WALReplayConcurrency
 	if opts.IsolationDisabled {
 		// We only override this flag if isolation is disabled at DB level. We use the default otherwise.
 		headOpts.IsolationDisabled = opts.IsolationDisabled

@@ -155,6 +155,9 @@ type HeadOptions struct {
 	EnableMemorySnapshotOnShutdown bool
 
 	IsolationDisabled bool
+
+	// Maximum number of CPUs that can simultaneously processes WAL replay.
+	WALReplayConcurrency int
 }
 
 const (
