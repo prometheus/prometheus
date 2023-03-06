@@ -48,7 +48,7 @@ func (ad *AzureAdTestSuite) TestAzureAdRoundTripper() {
 
 	azureAdConfig := &AzureADConfig{
 		Cloud:    "AzurePublic",
-		ClientId: dummyClientId,
+		ClientID: dummyClientID,
 	}
 
 	ad.mockCredential.On("GetToken", mock.Anything, mock.Anything).Return(*testToken, nil)

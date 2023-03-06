@@ -36,19 +36,19 @@ const (
 	INGESTION_PUBLIC_AUDIENCE     = "https://monitor.azure.com//.default"
 )
 
-// tokenProvider is used to store and retrieve Azure AD accessToken
+// tokenProvider is used to store and retrieve Azure AD accessToken.
 type tokenProvider struct {
-	// token is member used to store the current valid accessToken
+	// token is member used to store the current valid accessToken.
 	token string
 	ctx   context.Context
-	// refreshDuration is used to store the refresh time duration of the current valid accessToken
+	// refreshDuration is used to store the refresh time duration of the current valid accessToken.
 	refreshDuration time.Duration
-	// credentialClient is the Azure AD credential client that is being used to retrive accessToken
+	// credentialClient is the Azure AD credential client that is being used to retrive accessToken.
 	credentialClient azcore.TokenCredential
 	options          *policy.TokenRequestOptions
 }
 
-// TokenProvider is the interface for Credential client
+// TokenProvider is the interface for Credential client.
 type TokenProvider interface {
 	getAccessToken() string
 }
@@ -76,12 +76,12 @@ func newTokenProvider(ctx context.Context, cfg *AzureADConfig, cred azcore.Token
 	return tokenProvider, nil
 }
 
-// Returns the current valid accessToken
+// getAccessToken returns the current valid accessToken.
 func (tokenProvider *tokenProvider) getAccessToken() string {
 	return tokenProvider.token
 }
 
-// Retrieves a new accessToken and stores the newly retrieved token in the tokenProvider
+// setAccessToken retrieves a new accessToken and stores the newly retrieved token in the tokenProvider.
 func (tokenProvider *tokenProvider) setAccessToken() error {
 	accessToken, err := tokenProvider.credentialClient.GetToken(tokenProvider.ctx, *tokenProvider.options)
 	if err != nil {
@@ -93,7 +93,7 @@ func (tokenProvider *tokenProvider) setAccessToken() error {
 	return nil
 }
 
-// Periodically looks at the token refreshDuration and calls setAccessToken when it is past the refreshDuration
+// periodicallyRefreshClientToken periodically looks at the token refreshDuration and calls setAccessToken when it is past the refreshDuration.
 func (tokenProvider *tokenProvider) periodicallyRefreshClientToken() error {
 	for {
 		select {
@@ -108,14 +108,14 @@ func (tokenProvider *tokenProvider) periodicallyRefreshClientToken() error {
 	}
 }
 
-// Handles storing of accessToken value in tokenProvider
+// setToken handles storing of accessToken value in tokenProvider.
 func (tokenProvider *tokenProvider) setToken(token string) {
 	var V atomic.Value
 	V.Store(token)
 	tokenProvider.token = V.Load().(string)
 }
 
-// Handles logic to set refreshDuration. The refreshDuration is set at half the duration of the actual token expiry.
+// updateRefreshDuration handles logic to set refreshDuration. The refreshDuration is set at half the duration of the actual token expiry.
 func (tokenProvider *tokenProvider) updateRefreshDuration(accessToken azcore.AccessToken) error {
 	if len(accessToken.Token) == 0 {
 		return errors.New("Access Token is empty")
@@ -131,7 +131,7 @@ func (tokenProvider *tokenProvider) updateRefreshDuration(accessToken azcore.Acc
 	return nil
 }
 
-// Returns audiences for different clouds
+// getAudience returns audiences for different clouds.
 func getAudience(cloud string) (string, error) {
 	switch strings.ToLower(cloud) {
 	case strings.ToLower(AzureChina):

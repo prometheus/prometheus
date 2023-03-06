@@ -14,22 +14,14 @@
 package azuread
 
 import (
-	"errors"
-
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 )
 
-// newTokenCredential return TokenCredential of different kinds like Azure Managed Identity and Azure AD application.
+// newTokenCredential returns a TokenCredential of different kinds like Azure Managed Identity and Azure AD application.
 func newTokenCredential(cfg *AzureADConfig) (azcore.TokenCredential, error) {
-	var cred azcore.TokenCredential
-	var err error
-	if len(cfg.ClientId) > 0 {
-		cred, err = newManagedIdentityTokenCredential(cfg.ClientId)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		return nil, errors.New("Azure Client ID is invalid")
+	cred, err := newManagedIdentityTokenCredential(cfg.ClientID)
+	if err != nil {
+		return nil, err
 	}
 
 	return cred, nil

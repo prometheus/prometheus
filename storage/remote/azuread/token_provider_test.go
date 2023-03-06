@@ -26,7 +26,7 @@ import (
 
 const (
 	dummyAudience   = "dummyAudience"
-	dummyClientId   = "00000000-0000-0000-0000-000000000000"
+	dummyClientID   = "00000000-0000-0000-0000-000000000000"
 	testTokenString = "testTokenString"
 )
 
@@ -48,7 +48,7 @@ func TestTokenProvider(t *testing.T) {
 func (s *TokenProviderTestSuite) TestNewTokenProvider_NilAudience_Fail() {
 	azureAdConfig := &AzureADConfig{
 		Cloud:    "PublicAzure",
-		ClientId: dummyClientId,
+		ClientID: dummyClientID,
 	}
 
 	actualTokenProvider, actualErr := newTokenProvider(context.Background(), azureAdConfig, s.mockCredential)
@@ -62,7 +62,7 @@ func (s *TokenProviderTestSuite) TestNewTokenProvider_NilAudience_Fail() {
 func (s *TokenProviderTestSuite) TestNewTokenProvider_Success() {
 	azureAdConfig := &AzureADConfig{
 		Cloud:    "AzurePublic",
-		ClientId: dummyClientId,
+		ClientID: dummyClientID,
 	}
 	s.mockCredential.On("GetToken", mock.Anything, mock.Anything).Return(getToken(), nil)
 
@@ -78,7 +78,7 @@ func (s *TokenProviderTestSuite) TestPeriodicTokenRefresh_Success() {
 	// setup
 	azureAdConfig := &AzureADConfig{
 		Cloud:    "AzurePublic",
-		ClientId: dummyClientId,
+		ClientID: dummyClientID,
 	}
 	testToken := &azcore.AccessToken{
 		Token:     testTokenString,

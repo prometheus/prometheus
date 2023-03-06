@@ -1,6 +1,5 @@
-azuread provides a http.RoundTripper that will help attach Azure AD accessToken
-to the requests using the Azure AD library, which is used to retrieve accessToken
-for an Azure Managed Identity.
+azuread provides an http.RoundTripper that attaches an Azure AD accessToken
+to remote write requests.
 
 This module is considered internal to Prometheus, without any stability
 guarantees for external usage.

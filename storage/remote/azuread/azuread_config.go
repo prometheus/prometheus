@@ -20,34 +20,34 @@ import (
 )
 
 // AzureADConfig is the configuration for getting the accessToken
-// for remote write requests to Azure Monitoring Workspace
+// for remote write requests to Azure Monitoring Workspace.
 type AzureADConfig struct {
-	// ClientId is the clientId of the managed identity that is being used to authenticate.
-	ClientId string `yaml:"client_id,omitempty"`
+	// ClientID is the clientId of the managed identity that is being used to authenticate.
+	ClientID string `yaml:"client_id,omitempty"`
 
-	// Cloud is the Azure cloud in which the service is running. Example: AzurePublic/AzureGovernment/AzureChina
+	// Cloud is the Azure cloud in which the service is running. Example: AzurePublic/AzureGovernment/AzureChina.
 	Cloud string `yaml:"cloud,omitempty"`
 }
 
-// Used to validate config values provided
+// Validate validates config values provided.
 func (c *AzureADConfig) Validate() error {
 	if c.Cloud == "" {
-		return fmt.Errorf("must provide Cloud in the Azure AD config")
+		return fmt.Errorf("must provide a cloud in the Azure AD config")
 	}
 
-	if c.ClientId == "" {
-		return fmt.Errorf("must provide a Azure Managed Identity clientId in the Azure AD config")
+	if c.ClientID == "" {
+		return fmt.Errorf("must provide an Azure Managed Identity client_id in the Azure AD config")
 	}
 
-	_, err := uuid.Parse(c.ClientId)
+	_, err := uuid.Parse(c.ClientID)
 
 	if err != nil {
-		return fmt.Errorf("Azure Managed Identity clientId provided is invalid")
+		return fmt.Errorf("the provided Azure Managed Identity client_id provided is invalid")
 	}
 	return nil
 }
 
-// Used to unmarshal Azure Ad config yaml
+// UnmarshalYAML unmarshal the Azure AD config yaml.
 func (c *AzureADConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	type plain AzureADConfig
 	*c = AzureADConfig{}

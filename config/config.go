@@ -791,7 +791,7 @@ type RemoteWriteConfig struct {
 	QueueConfig      QueueConfig             `yaml:"queue_config,omitempty"`
 	MetadataConfig   MetadataConfig          `yaml:"metadata_config,omitempty"`
 	SigV4Config      *sigv4.SigV4Config      `yaml:"sigv4,omitempty"`
-	AzureADConfig    *azuread.AzureADConfig  `yaml:"azuread, omitempty"`
+	AzureADConfig    *azuread.AzureADConfig  `yaml:"azuread,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
