@@ -18,6 +18,7 @@ import (
 	"io"
 	"math"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 
@@ -157,7 +158,13 @@ type HeadOptions struct {
 	IsolationDisabled bool
 
 	// Maximum number of CPUs that can simultaneously processes WAL replay.
+	// The default value is GOMAXPROCS.
+	// If it is set to a negative value or zero, the default value is used.
 	WALReplayConcurrency int
+}
+
+func getDefaultWALReplayConcurrency() int {
+	return runtime.GOMAXPROCS(0)
 }
 
 const (
@@ -175,6 +182,7 @@ func DefaultHeadOptions() *HeadOptions {
 		StripeSize:           DefaultStripeSize,
 		SeriesCallback:       &noopSeriesLifecycleCallback{},
 		IsolationDisabled:    defaultIsolationDisabled,
+		WALReplayConcurrency: getDefaultWALReplayConcurrency(),
 	}
 	ho.OutOfOrderCapMax.Store(DefaultOutOfOrderCapMax)
 	return ho
@@ -248,6 +256,10 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal, wbl *wlog.WL, opts *Hea
 
 	if opts.ChunkPool == nil {
 		opts.ChunkPool = chunkenc.NewPool()
+	}
+
+	if opts.WALReplayConcurrency <= 0 {
+		opts.WALReplayConcurrency = getDefaultWALReplayConcurrency()
 	}
 
 	h.chunkDiskMapper, err = chunks.NewChunkDiskMapper(
