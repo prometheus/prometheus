@@ -599,7 +599,8 @@ func (b *Builder) Labels(res Labels) Labels {
 	sort.Strings(b.del)
 	a, d := 0, 0
 
-	buf := make([]byte, 0, len(b.base.data)) // TODO: see if we can re-use the buffer from res.
+	bufSize := len(b.base.data) + labelsSize(b.add)
+	buf := make([]byte, 0, bufSize) // TODO: see if we can re-use the buffer from res.
 	for pos := 0; pos < len(b.base.data); {
 		oldPos := pos
 		var lName string
