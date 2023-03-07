@@ -1,0 +1,11 @@
+global:
+  scrape_interval: 15s
+
+scrape_config_files:
+  - scrape_config_files.good.yml
+  - scrape_config_files.good.yml
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:8080']
