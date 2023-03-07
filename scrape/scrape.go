@@ -505,7 +505,7 @@ func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 			t.LabelsRange(func(l labels.Label) { nonEmpty = true })
 			if nonEmpty {
 				all = append(all, t)
-			} else if !t.DiscoveredLabels().IsEmpty() {
+			} else if !t.discoveredLabels.IsEmpty() {
 				sp.droppedTargets = append(sp.droppedTargets, t)
 			}
 		}
