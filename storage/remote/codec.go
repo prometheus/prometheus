@@ -120,10 +120,13 @@ func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, 
 	for ss.Next() {
 		series := ss.At()
 		iter = series.Iterator(iter)
-		samples := []prompb.Sample{}
 
-		for iter.Next() == chunkenc.ValFloat {
-			// TODO(beorn7): Add Histogram support.
+		var (
+			samples    []prompb.Sample
+			histograms []prompb.Histogram
+		)
+
+		for valType := iter.Next(); valType != chunkenc.ValNone; valType = iter.Next() {
 			numSamples++
 			if sampleLimit > 0 && numSamples > sampleLimit {
 				return nil, ss.Warnings(), HTTPError{
@@ -131,19 +134,32 @@ func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, 
 					status: http.StatusBadRequest,
 				}
 			}
-			ts, val := iter.At()
-			samples = append(samples, prompb.Sample{
-				Timestamp: ts,
-				Value:     val,
-			})
+
+			switch valType {
+			case chunkenc.ValFloat:
+				ts, val := iter.At()
+				samples = append(samples, prompb.Sample{
+					Timestamp: ts,
+					Value:     val,
+				})
+			case chunkenc.ValHistogram:
+				ts, h := iter.AtHistogram()
+				histograms = append(histograms, HistogramToHistogramProto(ts, h))
+			case chunkenc.ValFloatHistogram:
+				ts, fh := iter.AtFloatHistogram()
+				histograms = append(histograms, FloatHistogramToHistogramProto(ts, fh))
+			default:
+				return nil, ss.Warnings(), fmt.Errorf("unrecognized value type: %s", valType)
+			}
 		}
 		if err := iter.Err(); err != nil {
 			return nil, ss.Warnings(), err
 		}
 
 		resp.Timeseries = append(resp.Timeseries, &prompb.TimeSeries{
-			Labels:  labelsToLabelsProto(series.Labels(), nil),
-			Samples: samples,
+			Labels:     labelsToLabelsProto(series.Labels(), nil),
+			Samples:    samples,
+			Histograms: histograms,
 		})
 	}
 	return resp, ss.Warnings(), ss.Err()

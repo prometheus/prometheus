@@ -33,6 +33,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -302,14 +303,26 @@ func (cmd loadCmd) String() string {
 func (cmd *loadCmd) set(m labels.Labels, vals ...parser.SequenceValue) {
 	h := m.Hash()
 
+	metricName := m.Get("__name__")
+	isHistogram := strings.Contains(metricName, "_histogram_")
+
 	samples := make([]Point, 0, len(vals))
 	ts := testStartTime
 	for _, v := range vals {
 		if !v.Omitted {
-			samples = append(samples, Point{
-				T: ts.UnixNano() / int64(time.Millisecond/time.Nanosecond),
-				V: v.Value,
-			})
+			t := ts.UnixNano() / int64(time.Millisecond/time.Nanosecond)
+
+			if isHistogram {
+				samples = append(samples, Point{
+					T: t,
+					H: tsdbutil.GenerateTestFloatHistogram(int(v.Value)),
+				})
+			} else {
+				samples = append(samples, Point{
+					T: t,
+					V: v.Value,
+				})
+			}
 		}
 		ts = ts.Add(cmd.gap)
 	}
@@ -323,8 +336,14 @@ func (cmd *loadCmd) append(a storage.Appender) error {
 		m := cmd.metrics[h]
 
 		for _, s := range smpls {
-			if _, err := a.Append(0, m, s.T, s.V); err != nil {
-				return err
+			if s.H == nil {
+				if _, err := a.Append(0, m, s.T, s.V); err != nil {
+					return err
+				}
+			} else {
+				if _, err := a.AppendHistogram(0, m, s.T, nil, s.H); err != nil {
+					return err
+				}
 			}
 		}
 	}
