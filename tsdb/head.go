@@ -59,6 +59,8 @@ var (
 
 	// defaultIsolationDisabled is true if isolation is disabled by default.
 	defaultIsolationDisabled = false
+
+	defaultWALReplayConcurrency = runtime.GOMAXPROCS(0)
 )
 
 // Head handles reads and writes of time series data within a time window.
@@ -163,10 +165,6 @@ type HeadOptions struct {
 	WALReplayConcurrency int
 }
 
-func getDefaultWALReplayConcurrency() int {
-	return runtime.GOMAXPROCS(0)
-}
-
 const (
 	// DefaultOutOfOrderCapMax is the default maximum size of an in-memory out-of-order chunk.
 	DefaultOutOfOrderCapMax int64 = 32
@@ -182,7 +180,7 @@ func DefaultHeadOptions() *HeadOptions {
 		StripeSize:           DefaultStripeSize,
 		SeriesCallback:       &noopSeriesLifecycleCallback{},
 		IsolationDisabled:    defaultIsolationDisabled,
-		WALReplayConcurrency: getDefaultWALReplayConcurrency(),
+		WALReplayConcurrency: defaultWALReplayConcurrency,
 	}
 	ho.OutOfOrderCapMax.Store(DefaultOutOfOrderCapMax)
 	return ho
@@ -259,7 +257,7 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal, wbl *wlog.WL, opts *Hea
 	}
 
 	if opts.WALReplayConcurrency <= 0 {
-		opts.WALReplayConcurrency = getDefaultWALReplayConcurrency()
+		opts.WALReplayConcurrency = defaultWALReplayConcurrency
 	}
 
 	h.chunkDiskMapper, err = chunks.NewChunkDiskMapper(

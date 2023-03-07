@@ -126,6 +126,7 @@ type Options struct {
 	WALCompression bool
 
 	// Maximum number of CPUs that can simultaneously processes WAL replay.
+	// If it is <=0, then GOMAXPROCS is used.
 	WALReplayConcurrency int
 
 	// StripeSize is the size in entries of the series hash map. Reducing the size will save memory but impact performance.
