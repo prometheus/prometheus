@@ -29,7 +29,7 @@ import (
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/sigv4"
-	yaml "gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/model/labels"
@@ -80,7 +80,8 @@ func Load(s string, expandExternalLabels bool, logger log.Logger) (*Config, erro
 		return cfg, nil
 	}
 
-	for i, v := range cfg.GlobalConfig.ExternalLabels {
+	b := labels.ScratchBuilder{}
+	cfg.GlobalConfig.ExternalLabels.Range(func(v labels.Label) {
 		newV := os.Expand(v.Value, func(s string) string {
 			if s == "$" {
 				return "$"
@@ -93,10 +94,10 @@ func Load(s string, expandExternalLabels bool, logger log.Logger) (*Config, erro
 		})
 		if newV != v.Value {
 			level.Debug(logger).Log("msg", "External label replaced", "label", v.Name, "input", v.Value, "output", newV)
-			v.Value = newV
-			cfg.GlobalConfig.ExternalLabels[i] = v
 		}
-	}
+		b.Add(v.Name, newV)
+	})
+	cfg.GlobalConfig.ExternalLabels = b.Labels()
 	return cfg, nil
 }
 
@@ -112,10 +113,6 @@ func LoadFile(filename string, agentMode, expandExternalLabels bool, logger log.
 	}
 
 	if agentMode {
-		if len(cfg.RemoteWriteConfigs) == 0 {
-			return nil, errors.New("at least one remote_write target must be specified in agent mode")
-		}
-
 		if len(cfg.AlertingConfig.AlertmanagerConfigs) > 0 || len(cfg.AlertingConfig.AlertRelabelConfigs) > 0 {
 			return nil, errors.New("field alerting is not allowed in agent mode")
 		}
@@ -361,13 +358,16 @@ func (c *GlobalConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 
-	for _, l := range gc.ExternalLabels {
+	if err := gc.ExternalLabels.Validate(func(l labels.Label) error {
 		if !model.LabelName(l.Name).IsValid() {
 			return fmt.Errorf("%q is not a valid label name", l.Name)
 		}
 		if !model.LabelValue(l.Value).IsValid() {
 			return fmt.Errorf("%q is not a valid label value", l.Value)
 		}
+		return nil
+	}); err != nil {
+		return err
 	}
 
 	// First set the correct scrape interval, then check that the timeout
@@ -394,7 +394,7 @@ func (c *GlobalConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 // isZero returns true iff the global config is the zero value.
 func (c *GlobalConfig) isZero() bool {
-	return c.ExternalLabels == nil &&
+	return c.ExternalLabels.IsEmpty() &&
 		c.ScrapeInterval == 0 &&
 		c.ScrapeTimeout == 0 &&
 		c.EvaluationInterval == 0 &&
@@ -501,7 +501,35 @@ func (c *ScrapeConfig) MarshalYAML() (interface{}, error) {
 
 // StorageConfig configures runtime reloadable configuration options.
 type StorageConfig struct {
+	TSDBConfig      *TSDBConfig      `yaml:"tsdb,omitempty"`
 	ExemplarsConfig *ExemplarsConfig `yaml:"exemplars,omitempty"`
+}
+
+// TSDBConfig configures runtime reloadable configuration options.
+type TSDBConfig struct {
+	// OutOfOrderTimeWindow sets how long back in time an out-of-order sample can be inserted
+	// into the TSDB. This flag is typically set while unmarshaling the configuration file and translating
+	// OutOfOrderTimeWindowFlag's duration. The unit of this flag is expected to be the same as any
+	// other timestamp in the TSDB.
+	OutOfOrderTimeWindow int64
+
+	// OutOfOrderTimeWindowFlag holds the parsed duration from the config file.
+	// During unmarshall, this is converted into milliseconds and stored in OutOfOrderTimeWindow.
+	// This should not be used directly and must be converted into OutOfOrderTimeWindow.
+	OutOfOrderTimeWindowFlag model.Duration `yaml:"out_of_order_time_window,omitempty"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (t *TSDBConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*t = TSDBConfig{}
+	type plain TSDBConfig
+	if err := unmarshal((*plain)(t)); err != nil {
+		return err
+	}
+
+	t.OutOfOrderTimeWindow = time.Duration(t.OutOfOrderTimeWindowFlag).Milliseconds()
+
+	return nil
 }
 
 type TracingClientType string
@@ -748,12 +776,13 @@ func CheckTargetAddress(address model.LabelValue) error {
 
 // RemoteWriteConfig is the configuration for writing to remote storage.
 type RemoteWriteConfig struct {
-	URL                 *config.URL       `yaml:"url"`
-	RemoteTimeout       model.Duration    `yaml:"remote_timeout,omitempty"`
-	Headers             map[string]string `yaml:"headers,omitempty"`
-	WriteRelabelConfigs []*relabel.Config `yaml:"write_relabel_configs,omitempty"`
-	Name                string            `yaml:"name,omitempty"`
-	SendExemplars       bool              `yaml:"send_exemplars,omitempty"`
+	URL                  *config.URL       `yaml:"url"`
+	RemoteTimeout        model.Duration    `yaml:"remote_timeout,omitempty"`
+	Headers              map[string]string `yaml:"headers,omitempty"`
+	WriteRelabelConfigs  []*relabel.Config `yaml:"write_relabel_configs,omitempty"`
+	Name                 string            `yaml:"name,omitempty"`
+	SendExemplars        bool              `yaml:"send_exemplars,omitempty"`
+	SendNativeHistograms bool              `yaml:"send_native_histograms,omitempty"`
 
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.

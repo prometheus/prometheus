@@ -40,6 +40,7 @@ import (
 
 const (
 	pdbLabel            = model.MetaLabelPrefix + "puppetdb_"
+	pdbLabelQuery       = pdbLabel + "query"
 	pdbLabelCertname    = pdbLabel + "certname"
 	pdbLabelResource    = pdbLabel + "resource"
 	pdbLabelType        = pdbLabel + "type"
@@ -215,6 +216,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 	for _, resource := range resources {
 		labels := model.LabelSet{
+			pdbLabelQuery:       model.LabelValue(d.query),
 			pdbLabelCertname:    model.LabelValue(resource.Certname),
 			pdbLabelResource:    model.LabelValue(resource.Resource),
 			pdbLabelType:        model.LabelValue(resource.Type),

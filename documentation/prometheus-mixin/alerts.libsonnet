@@ -317,6 +317,20 @@
               description: '{{ printf "%%.0f" $value }} targets in Prometheus %(prometheusName)s have failed to sync because invalid configuration was supplied.' % $._config,
             },
           },
+          {
+            alert: 'PrometheusHighQueryLoad',
+            expr: |||
+              avg_over_time(prometheus_engine_queries{%(prometheusSelector)s}[5m]) / max_over_time(prometheus_engine_queries_concurrent_max{%(prometheusSelector)s}[5m]) > 0.8
+            ||| % $._config,
+            'for': '15m',
+            labels: {
+              severity: 'warning',
+            },
+            annotations: {
+              summary: 'Prometheus is reaching its maximum capacity serving concurrent requests.',
+              description: 'Prometheus %(prometheusName)s query API has less than 20%% available capacity in its query engine for the last 15 minutes.' % $._config,
+            },
+          },
         ] + if $._config.prometheusHAGroupLabels == '' then self.rulesWithoutHA else self.rulesWithHA,
         rulesWithoutHA:: [
           {

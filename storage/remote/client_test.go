@@ -15,6 +15,7 @@ package remote
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -22,7 +23,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pkg/errors"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
@@ -87,7 +87,7 @@ func TestStoreHTTPErrorHandling(t *testing.T) {
 func TestClientRetryAfter(t *testing.T) {
 	server := httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			http.Error(w, longErrMessage, 429)
+			http.Error(w, longErrMessage, http.StatusTooManyRequests)
 		}),
 	)
 	defer server.Close()

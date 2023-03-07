@@ -99,6 +99,7 @@ remote_read:
 
 # Storage related settings that are runtime reloadable.
 storage:
+  [ tsdb: <tsdb> ]
   [ exemplars: <exemplars> ]
 
 # Configures exporting traces.
@@ -207,6 +208,10 @@ tls_config:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
+
 
 # List of Azure service discovery configurations.
 azure_sd_configs:
@@ -285,9 +290,17 @@ marathon_sd_configs:
 nerve_sd_configs:
   [ - <nerve_sd_config> ... ]
 
+# List of Nomad service discovery configurations.
+nomad_sd_configs:
+  [ - <nomad_sd_config> ... ]
+
 # List of OpenStack service discovery configurations.
 openstack_sd_configs:
   [ - <openstack_sd_config> ... ]
+
+# List of OVHcloud service discovery configurations.
+ovhcloud_sd_configs:
+  [ - <ovhcloud_sd_config> ... ]
 
 # List of PuppetDB service discovery configurations.
 puppetdb_sd_configs:
@@ -380,6 +393,11 @@ A `tls_config` allows configuring TLS connections.
 # If unset, Prometheus will use Go default minimum version, which is TLS 1.2.
 # See MinVersion in https://pkg.go.dev/crypto/tls#Config.
 [ min_version: <string> ]
+# Maximum acceptable TLS version. Accepted values: TLS10 (TLS 1.0), TLS11 (TLS
+# 1.1), TLS12 (TLS 1.2), TLS13 (TLS 1.3).
+# If unset, Prometheus will use Go default maximum version, which is TLS 1.3.
+# See MaxVersion in https://pkg.go.dev/crypto/tls#Config.
+[ max_version: <string> ]
 ```
 
 ### `<oauth2>`
@@ -413,6 +431,9 @@ tls_config:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
 ```
 
 ### `<azure_sd_config>`
@@ -431,6 +452,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_azure_machine_resource_group`: the machine's resource group
 * `__meta_azure_machine_tag_<tagname>`: each tag value of the machine
 * `__meta_azure_machine_scale_set`: the name of the scale set which the vm is part of (this value is only set if you are using a [scale set](https://docs.microsoft.com/en-us/azure/virtual-machine-scale-sets/))
+* `__meta_azure_machine_size`: the machine size
 * `__meta_azure_subscription_id`: the subscription ID
 * `__meta_azure_tenant_id`: the tenant ID
 
@@ -453,7 +475,7 @@ subscription_id: <string>
 # Optional client secret. Only required with authentication_method OAuth.
 [ client_secret: <secret> ]
 
-# Optional resource group name. Limits discovery to this resource group. 
+# Optional resource group name. Limits discovery to this resource group.
 [ resource_group: <string> ]
 
 # Refresh interval to re-read the instance list.
@@ -491,6 +513,9 @@ oauth2:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
@@ -513,6 +538,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_consul_address`: the address of the target
 * `__meta_consul_dc`: the datacenter name for the target
 * `__meta_consul_health`: the health status of the service
+* `__meta_consul_partition`: the admin partition name where the service is registered 
 * `__meta_consul_metadata_<key>`: each node metadata key value of the target
 * `__meta_consul_node`: the node name defined for the target
 * `__meta_consul_service_address`: the service address of the target
@@ -531,6 +557,8 @@ The following meta labels are available on targets during [relabeling](#relabel_
 [ datacenter: <string> ]
 # Namespaces are only supported in Consul Enterprise.
 [ namespace: <string> ]
+# Admin Partitions are only supported in Consul Enterprise.
+[ partition: <string> ]
 [ scheme: <string> | default = "http" ]
 # The username and password fields are deprecated in favor of the basic_auth configuration.
 [ username: <string> ]
@@ -590,6 +618,9 @@ oauth2:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
@@ -619,7 +650,7 @@ metadata and a single tag).
 DigitalOcean SD configurations allow retrieving scrape targets from [DigitalOcean's](https://www.digitalocean.com/)
 Droplets API.
 This service discovery uses the public IPv4 address by default, by that can be
-changed with relabelling, as demonstrated in [the Prometheus digitalocean-sd
+changed with relabeling, as demonstrated in [the Prometheus digitalocean-sd
 configuration file](/documentation/examples/prometheus-digitalocean.yml).
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
@@ -668,6 +699,9 @@ oauth2:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
@@ -717,6 +751,9 @@ host: <string>
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
 
 # TLS configuration.
 tls_config:
@@ -883,6 +920,9 @@ host: <string>
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
 
 # TLS configuration.
 tls_config:
@@ -957,8 +997,8 @@ A DNS-based service discovery configuration allows specifying a set of DNS
 domain names which are periodically queried to discover a list of targets. The
 DNS servers to be contacted are read from `/etc/resolv.conf`.
 
-This service discovery method only supports basic DNS A, AAAA and SRV record
-queries, but not the advanced DNS-SD approach specified in
+This service discovery method only supports basic DNS A, AAAA, MX and SRV
+record queries, but not the advanced DNS-SD approach specified in
 [RFC6763](https://tools.ietf.org/html/rfc6763).
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
@@ -966,13 +1006,14 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_dns_name`: the record name that produced the discovered target.
 * `__meta_dns_srv_record_target`: the target field of the SRV record
 * `__meta_dns_srv_record_port`: the port field of the SRV record
+* `__meta_dns_mx_record_target`: the target field of the MX record
 
 ```yaml
 # A list of DNS domain names to be queried.
 names:
   [ - <string> ]
 
-# The type of DNS query to perform. One of SRV, A, or AAAA.
+# The type of DNS query to perform. One of SRV, A, AAAA or MX.
 [ type: <string> | default = 'SRV' ]
 
 # The port number used if the query type is not SRV.
@@ -987,6 +1028,11 @@ names:
 EC2 SD configurations allow retrieving scrape targets from AWS EC2
 instances. The private IP address is used by default, but may be changed to
 the public IP address with relabeling.
+
+The IAM credentials used must have the `ec2:DescribeInstances` permission to
+discover scrape targets, and may optionally have the
+`ec2:DescribeAvailabilityZones` permission if you want the availability zone ID
+available as a label (see below).
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
@@ -1006,6 +1052,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_ec2_private_ip`: the private IP address of the instance, if present
 * `__meta_ec2_public_dns_name`: the public DNS name of the instance, if available
 * `__meta_ec2_public_ip`: the public IP address of the instance, if available
+* `__meta_ec2_region`: the region of the instance
 * `__meta_ec2_subnet_id`: comma separated list of subnets IDs in which the instance is running, if available
 * `__meta_ec2_tag_<tagkey>`: each tag value of the instance
 * `__meta_ec2_vpc_id`: the ID of the VPC in which the instance is running, if available
@@ -1045,6 +1092,48 @@ See below for the configuration options for EC2 discovery:
 filters:
   [ - name: <string>
       values: <string>, [...] ]
+
+# Authentication information used to authenticate to the EC2 API.
+# Note that `basic_auth`, `authorization` and `oauth2` options are
+# mutually exclusive.
+# `password` and `password_file` are mutually exclusive.
+
+# Optional HTTP basic authentication information, currently not supported by AWS.
+basic_auth:
+  [ username: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
+
+# Optional `Authorization` header configuration, currently not supported by AWS.
+authorization:
+  # Sets the authentication type.
+  [ type: <string> | default: Bearer ]
+  # Sets the credentials. It is mutually exclusive with
+  # `credentials_file`.
+  [ credentials: <secret> ]
+  # Sets the credentials to the credentials read from the configured file.
+  # It is mutuall exclusive with `credentials`.
+  [ credentials_file: <filename> ]
+
+# Optional OAuth 2.0 configuration, currently not supported by AWS.
+oauth2:
+  [ <oauth2> ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <bool> | default: true ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
 ```
 
 The [relabeling phase](#relabel_config) is the preferred and more powerful
@@ -1161,6 +1250,66 @@ tls_config:
   [ <tls_config> ]
 ```
 
+### `<ovhcloud_sd_config>`
+
+OVHcloud SD configurations allow retrieving scrape targets from OVHcloud's [dedicated servers](https://www.ovhcloud.com/en/bare-metal/) and [VPS](https://www.ovhcloud.com/en/vps/) using
+their [API](https://api.ovh.com/).
+Prometheus will periodically check the REST endpoint and create a target for every discovered server.
+The role will try to use the public IPv4 address as default address, if there's none it will try to use the IPv6 one. This may be changed with relabeling.
+For OVHcloud's [public cloud instances](https://www.ovhcloud.com/en/public-cloud/) you can use the [openstack_sd_config](#openstack_sd_config).
+
+#### VPS
+
+* `__meta_ovhcloud_vps_cluster`: the cluster of the server
+* `__meta_ovhcloud_vps_datacenter`: the datacenter of the server
+* `__meta_ovhcloud_vps_disk`: the disk of the server
+* `__meta_ovhcloud_vps_display_name`: the display name of the server
+* `__meta_ovhcloud_vps_ipv4`: the IPv4 of the server
+* `__meta_ovhcloud_vps_ipv6`: the IPv6 of the server
+* `__meta_ovhcloud_vps_keymap`: the KVM keyboard layout of the server
+* `__meta_ovhcloud_vps_maximum_additional_ip`: the maximum additional IPs of the server
+* `__meta_ovhcloud_vps_memory_limit`: the memory limit of the server
+* `__meta_ovhcloud_vps_memory`: the memory of the server
+* `__meta_ovhcloud_vps_monitoring_ip_blocks`: the monitoring IP blocks of the server
+* `__meta_ovhcloud_vps_name`: the name of the server
+* `__meta_ovhcloud_vps_netboot_mode`: the netboot mode of the server
+* `__meta_ovhcloud_vps_offer_type`: the offer type of the server
+* `__meta_ovhcloud_vps_offer`: the offer of the server
+* `__meta_ovhcloud_vps_state`: the state of the server
+* `__meta_ovhcloud_vps_vcore`: the number of virtual cores of the server
+* `__meta_ovhcloud_vps_version`: the version of the server
+* `__meta_ovhcloud_vps_zone`: the zone of the server
+
+#### Dedicated servers
+
+* `__meta_ovhcloud_dedicated_server_commercial_range`: the commercial range of the server
+* `__meta_ovhcloud_dedicated_server_datacenter`: the datacenter of the server
+* `__meta_ovhcloud_dedicated_server_ipv4`: the IPv4 of the server
+* `__meta_ovhcloud_dedicated_server_ipv6`: the IPv6 of the server
+* `__meta_ovhcloud_dedicated_server_link_speed`: the link speed of the server
+* `__meta_ovhcloud_dedicated_server_name`: the name of the server
+* `__meta_ovhcloud_dedicated_server_os`: the operating system of the server
+* `__meta_ovhcloud_dedicated_server_rack`: the rack of the server
+* `__meta_ovhcloud_dedicated_server_reverse`: the reverse DNS name of the server
+* `__meta_ovhcloud_dedicated_server_server_id`: the ID of the server
+* `__meta_ovhcloud_dedicated_server_state`: the state of the server
+* `__meta_ovhcloud_dedicated_server_support_level`: the support level of the server
+
+See below for the configuration options for OVHcloud discovery:
+
+```yaml
+# Access key to use. https://api.ovh.com
+application_key: <string>
+application_secret: <secret>
+consumer_key: <secret>
+# Service of the targets to retrieve. Must be `vps` or `dedicated_server`.
+service: <string>
+# API endpoint. https://github.com/ovh/go-ovh#supported-apis
+[ endpoint: <string> | default = "ovh-eu" ]
+# Refresh interval to re-read the resources list.
+[ refresh_interval: <duration> | default = 60s ]
+```
+
 ### `<puppetdb_sd_config>`
 
 PuppetDB SD configurations allow retrieving scrape targets from
@@ -1174,6 +1323,7 @@ The resource address is the `certname` of the resource and can be changed during
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
+* `__meta_puppetdb_query`: the Puppet Query Language (PQL) query
 * `__meta_puppetdb_certname`: the name of the node associated with the resource
 * `__meta_puppetdb_resource`: a SHA-1 hash of the resource’s type, title, and parameters, for identification
 * `__meta_puppetdb_type`: the resource type
@@ -1240,6 +1390,9 @@ oauth2:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
@@ -1265,6 +1418,7 @@ changes resulting in well-formed target groups are applied.
 Files must contain a list of static configs, using these formats:
 
 **JSON**
+
 ```json
 [
   {
@@ -1278,6 +1432,7 @@ Files must contain a list of static configs, using these formats:
 ```
 
 **YAML**
+
 ```yaml
 - targets:
   [ - '<host>' ]
@@ -1394,7 +1549,6 @@ The labels below are only available for targets with `role` set to `hcloud`:
 * `__meta_hetzner_hcloud_image_description`: the description of the server image
 * `__meta_hetzner_hcloud_image_os_flavor`: the OS flavor of the server image
 * `__meta_hetzner_hcloud_image_os_version`: the OS version of the server image
-* `__meta_hetzner_hcloud_image_description`: the description of the server image
 * `__meta_hetzner_hcloud_datacenter_location`: the location of the server
 * `__meta_hetzner_hcloud_datacenter_location_network_zone`: the network zone of the server
 * `__meta_hetzner_hcloud_server_type`: the type of the server
@@ -1447,6 +1601,9 @@ oauth2:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
@@ -1490,8 +1647,8 @@ Example response body:
 ```
 
 The endpoint is queried periodically at the specified refresh interval.
-The `prometheus_sd_http_failures_total` counter metric tracks the number of 
-refresh failures. 
+The `prometheus_sd_http_failures_total` counter metric tracks the number of
+refresh failures.
 
 Each target has a meta label `__meta_url` during the
 [relabeling phase](#relabel_config). Its value is set to the
@@ -1532,6 +1689,9 @@ oauth2:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
@@ -1553,7 +1713,7 @@ following meta labels are available on all targets during
 [relabeling](#relabel_config):
 
 * `__meta_ionos_server_availability_zone`: the availability zone of the server
-* `__meta_ionos_server_boot_cdrom_id`: the ID of the CD-ROM the server is booted 
+* `__meta_ionos_server_boot_cdrom_id`: the ID of the CD-ROM the server is booted
   from
 * `__meta_ionos_server_boot_image_id`: the ID of the boot image or snapshot the
   server is booted from
@@ -1606,6 +1766,9 @@ oauth2:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
@@ -1666,11 +1829,13 @@ Available meta labels:
 * `__meta_kubernetes_service_annotation_<annotationname>`: Each annotation from the service object.
 * `__meta_kubernetes_service_annotationpresent_<annotationname>`: "true" for each annotation of the service object.
 * `__meta_kubernetes_service_cluster_ip`: The cluster IP address of the service. (Does not apply to services of type ExternalName)
+* `__meta_kubernetes_service_loadbalancer_ip`: The IP address of the loadbalancer. (Applies to services of type LoadBalancer)
 * `__meta_kubernetes_service_external_name`: The DNS name of the service. (Applies to services of type ExternalName)
 * `__meta_kubernetes_service_label_<labelname>`: Each label from the service object.
 * `__meta_kubernetes_service_labelpresent_<labelname>`: `true` for each label of the service object.
 * `__meta_kubernetes_service_name`: The name of the service object.
 * `__meta_kubernetes_service_port_name`: Name of the service port for the target.
+* `__meta_kubernetes_service_port_number`: Number of the service port for the target.
 * `__meta_kubernetes_service_port_protocol`: Protocol of the service port for the target.
 * `__meta_kubernetes_service_type`: The type of the service.
 
@@ -1686,11 +1851,13 @@ Available meta labels:
 * `__meta_kubernetes_pod_name`: The name of the pod object.
 * `__meta_kubernetes_pod_ip`: The pod IP of the pod object.
 * `__meta_kubernetes_pod_label_<labelname>`: Each label from the pod object.
-* `__meta_kubernetes_pod_labelpresent_<labelname>`: `true`for each label from the pod object.
+* `__meta_kubernetes_pod_labelpresent_<labelname>`: `true` for each label from the pod object.
 * `__meta_kubernetes_pod_annotation_<annotationname>`: Each annotation from the pod object.
 * `__meta_kubernetes_pod_annotationpresent_<annotationname>`: `true` for each annotation from the pod object.
 * `__meta_kubernetes_pod_container_init`: `true` if the container is an [InitContainer](https://kubernetes.io/docs/concepts/workloads/pods/init-containers/)
 * `__meta_kubernetes_pod_container_name`: Name of the container the target address points to.
+* `__meta_kubernetes_pod_container_id`: ID of the container the target address points to. The ID is in the form `<type>://<container_id>`.
+* `__meta_kubernetes_pod_container_image`: The image the container is using.
 * `__meta_kubernetes_pod_container_port_name`: Name of the container port.
 * `__meta_kubernetes_pod_container_port_number`: Number of the container port.
 * `__meta_kubernetes_pod_container_port_protocol`: Protocol of the container port.
@@ -1713,6 +1880,8 @@ Available meta labels:
 
 * `__meta_kubernetes_namespace`: The namespace of the endpoints object.
 * `__meta_kubernetes_endpoints_name`: The names of the endpoints object.
+* `__meta_kubernetes_endpoints_label_<labelname>`: Each label from the endpoints object.
+* `__meta_kubernetes_endpoints_labelpresent_<labelname>`: `true` for each label from the endpoints object.
 * For all targets discovered directly from the endpoints list (those not additionally inferred
   from underlying pods), the following labels are attached:
   * `__meta_kubernetes_endpoint_hostname`: Hostname of the endpoint.
@@ -1741,6 +1910,8 @@ Available meta labels:
   * `__meta_kubernetes_endpointslice_address_target_name`: Name of referenced object.
   * `__meta_kubernetes_endpointslice_address_type`: The ip protocol family of the address of the target.
   * `__meta_kubernetes_endpointslice_endpoint_conditions_ready`:  Set to `true` or `false` for the referenced endpoint's ready state.
+  * `__meta_kubernetes_endpointslice_endpoint_conditions_serving`:  Set to `true` or `false` for the referenced endpoint's serving state.
+  * `__meta_kubernetes_endpointslice_endpoint_conditions_terminating`:  Set to `true` or `false` for the referenced endpoint's terminating state.
   * `__meta_kubernetes_endpointslice_endpoint_topology_kubernetes_io_hostname`:  Name of the node hosting the referenced endpoint.
   * `__meta_kubernetes_endpointslice_endpoint_topology_present_kubernetes_io_hostname`: Flag that shows if the referenced object has a kubernetes.io/hostname annotation.
   * `__meta_kubernetes_endpointslice_port`: Port of the referenced endpoint.
@@ -1814,6 +1985,9 @@ oauth2:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
@@ -1851,8 +2025,8 @@ namespaces:
 
 # Optional metadata to attach to discovered targets. If omitted, no additional metadata is attached.
 attach_metadata:
-# Attaches node metadata to discovered targets. Valid for roles: pod, endpoints, endpointslice. 
-# When set to true, Prometheus must have permissions to get Nodes. 
+# Attaches node metadata to discovered targets. Valid for roles: pod, endpoints, endpointslice.
+# When set to true, Prometheus must have permissions to get Nodes.
   [ node: <boolean> | default = false ]
 ```
 
@@ -1891,6 +2065,9 @@ server: <string>
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
 
 # TLS configuration.
 tls_config:
@@ -1950,6 +2127,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_lightsail_ipv6_addresses`: comma separated list of IPv6 addresses assigned to the instance's network interfaces, if present
 * `__meta_lightsail_private_ip`: the private IP address of the instance
 * `__meta_lightsail_public_ip`: the public IP address of the instance, if available
+* `__meta_lightsail_region`: the region of the instance
 * `__meta_lightsail_tag_<tagkey>`: each tag value of the instance
 
 See below for the configuration options for Lightsail discovery:
@@ -1979,6 +2157,48 @@ See below for the configuration options for Lightsail discovery:
 # The port to scrape metrics from. If using the public IP address, this must
 # instead be specified in the relabeling rule.
 [ port: <int> | default = 80 ]
+
+# Authentication information used to authenticate to the Lightsail API.
+# Note that `basic_auth`, `authorization` and `oauth2` options are
+# mutually exclusive.
+# `password` and `password_file` are mutually exclusive.
+
+# Optional HTTP basic authentication information, currently not supported by AWS.
+basic_auth:
+  [ username: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
+
+# Optional `Authorization` header configuration, currently not supported by AWS.
+authorization:
+  # Sets the authentication type.
+  [ type: <string> | default: Bearer ]
+  # Sets the credentials. It is mutually exclusive with
+  # `credentials_file`.
+  [ credentials: <secret> ]
+  # Sets the credentials to the credentials read from the configured file.
+  # It is mutuall exclusive with `credentials`.
+  [ credentials_file: <filename> ]
+
+# Optional OAuth 2.0 configuration, currently not supported by AWS.
+oauth2:
+  [ <oauth2> ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <bool> | default: true ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
 ```
 
 ### `<linode_sd_config>`
@@ -1986,7 +2206,7 @@ See below for the configuration options for Lightsail discovery:
 Linode SD configurations allow retrieving scrape targets from [Linode's](https://www.linode.com/)
 Linode APIv4.
 This service discovery uses the public IPv4 address by default, by that can be
-changed with relabelling, as demonstrated in [the Prometheus linode-sd
+changed with relabeling, as demonstrated in [the Prometheus linode-sd
 configuration file](/documentation/examples/prometheus-linode.yml).
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
@@ -2041,6 +2261,9 @@ oauth2:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
@@ -2140,6 +2363,9 @@ tls_config:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
 ```
 
 By default every app listed in Marathon will be scraped by Prometheus. If not all
@@ -2174,11 +2400,80 @@ paths:
   - <string>
 [ timeout: <duration> | default = 10s ]
 ```
+### `<nomad_sd_config>`
+
+Nomad SD configurations allow retrieving scrape targets from [Nomad's](https://www.nomadproject.io/)
+Service API.
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_nomad_address`: the service address of the target
+* `__meta_nomad_dc`: the datacenter name for the target
+* `__meta_nomad_namespace`: the namespace of the target
+* `__meta_nomad_node_id`: the node name defined for the target
+* `__meta_nomad_service`: the name of the service the target belongs to
+* `__meta_nomad_service_address`: the service address of the target
+* `__meta_nomad_service_id`: the service ID of the target
+* `__meta_nomad_service_port`: the service port of the target
+* `__meta_nomad_tags`: the list of tags of the target joined by the tag separator
+
+```yaml
+# The information to access the Nomad API. It is to be defined
+# as the Nomad documentation requires.
+[ allow_stale: <boolean> | default = true ]
+[ namespace: <string> | default = default ]
+[ refresh_interval: <duration> | default = 60s ]
+[ region: <string> | default = global ]
+[ server: <host> ]
+[ tag_separator: <string> | default = ,]
+
+# Authentication information used to authenticate to the nomad server.
+# Note that `basic_auth`, `authorization` and `oauth2` options are
+# mutually exclusive.
+# `password` and `password_file` are mutually exclusive.
+
+# Optional HTTP basic authentication information.
+basic_auth:
+  [ username: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
+
+# Optional `Authorization` header configuration.
+authorization:
+  # Sets the authentication type.
+  [ type: <string> | default: Bearer ]
+  # Sets the credentials. It is mutually exclusive with
+  # `credentials_file`.
+  [ credentials: <secret> ]
+  # Sets the credentials to the credentials read from the configured file.
+  # It is mutually exclusive with `credentials`.
+  [ credentials_file: <filename> ]
+
+# Optional OAuth 2.0 configuration.
+oauth2:
+  [ <oauth2> ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <bool> | default: true ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
+```
 
 ### `<serverset_sd_config>`
 
 Serverset SD configurations allow retrieving scrape targets from [Serversets]
-(https://github.com/twitter/finagle/tree/master/finagle-serversets) which are
+(https://github.com/twitter/finagle/tree/develop/finagle-serversets) which are
 stored in [Zookeeper](https://zookeeper.apache.org/). Serversets are commonly
 used by [Finagle](https://twitter.github.io/finagle/) and
 [Aurora](https://aurora.apache.org/).
@@ -2340,6 +2635,9 @@ tls_config:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
@@ -2388,7 +2686,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_scaleway_instance_zone`: the zone of the server (ex: `fr-par-1`, complete list [here](https://developers.scaleway.com/en/products/instance/api/#introduction))
 
 This role uses the private IPv4 address by default. This can be
-changed with relabelling, as demonstrated in [the Prometheus scaleway-sd
+changed with relabeling, as demonstrated in [the Prometheus scaleway-sd
 configuration file](/documentation/examples/prometheus-scaleway.yml).
 
 #### Baremetal role
@@ -2406,7 +2704,7 @@ configuration file](/documentation/examples/prometheus-scaleway.yml).
 * `__meta_scaleway_baremetal_zone`: the zone of the server (ex: `fr-par-1`, complete list [here](https://developers.scaleway.com/en/products/instance/api/#introduction))
 
 This role uses the public IPv4 address by default. This can be
-changed with relabelling, as demonstrated in [the Prometheus scaleway-sd
+changed with relabeling, as demonstrated in [the Prometheus scaleway-sd
 configuration file](/documentation/examples/prometheus-scaleway.yml).
 
 See below for the configuration options for Scaleway discovery:
@@ -2456,6 +2754,9 @@ tags_filter:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
 
 # TLS configuration.
 tls_config:
@@ -2523,6 +2824,9 @@ oauth2:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
@@ -2543,7 +2847,7 @@ for a practical example on how to set up Uyuni Prometheus configuration.
 Vultr SD configurations allow retrieving scrape targets from [Vultr](https://www.vultr.com/).
 
 This service discovery uses the main IPv4 address by default, which that be
-changed with relabelling, as demonstrated in [the Prometheus vultr-sd
+changed with relabeling, as demonstrated in [the Prometheus vultr-sd
 configuration file](/documentation/examples/prometheus-vultr.yml).
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
@@ -2596,6 +2900,9 @@ oauth2:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
@@ -2702,6 +3009,8 @@ anchored on both ends. To un-anchor the regex, use `.*<regex>.*`.
 * `uppercase`: Maps the concatenated `source_labels` to their upper case.
 * `keep`: Drop targets for which `regex` does not match the concatenated `source_labels`.
 * `drop`: Drop targets for which `regex` matches the concatenated `source_labels`.
+* `keepequal`: Drop targets for which the concatenated `source_labels` do not match `target_label`.
+* `dropequal`: Drop targets for which the concatenated `source_labels` do match `target_label`.
 * `hashmod`: Set `target_label` to the `modulus` of a hash of the concatenated `source_labels`.
 * `labelmap`: Match `regex` against all source label names, not just those specified in `source_labels`. Then
    copy the values of the matching labels  to label names given by `replacement` with match
@@ -2787,6 +3096,9 @@ tls_config:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
@@ -2866,9 +3178,17 @@ marathon_sd_configs:
 nerve_sd_configs:
   [ - <nerve_sd_config> ... ]
 
+# List of Nomad service discovery configurations.
+nomad_sd_configs:
+  [ - <nomad_sd_config> ... ]
+
 # List of OpenStack service discovery configurations.
 openstack_sd_configs:
   [ - <openstack_sd_config> ... ]
+
+# List of OVHcloud service discovery configurations.
+ovhcloud_sd_configs:
+  [ - <ovhcloud_sd_config> ... ]
 
 # List of PuppetDB service discovery configurations.
 puppetdb_sd_configs:
@@ -2903,38 +3223,6 @@ relabel_configs:
   [ - <relabel_config> ... ]
 ```
 
-### `<tracing_config>`
-
-`tracing_config` configures exporting traces from Prometheus to a tracing backend via the OTLP protocol. Tracing is currently an **experimental** feature and could change in the future.
-
-```yaml
-# Client used to export the traces. Options are 'http' or 'grpc'.
-[ client_type: <string> | default = grpc ]
-
-# Endpoint to send the traces to. Should be provided in format <host>:<port>.
-[ endpoint: <string> ]
-
-# Sets the probability a given trace will be sampled. Must be a float from 0 through 1.
-[ sampling_fraction: <float> | default = 0 ]
-
-# If disabled, the client will use a secure connection.
-[ insecure: <boolean> | default = false ]
-
-# Key-value pairs to be used as headers associated with gRPC or HTTP requests.
-headers:
-  [ <string>: <string> ... ]
-
-# Compression key for supported compression types. Supported compression: gzip.
-[ compression: <string> ]
-
-# Maximum time the exporter will wait for each batch export.
-[ timeout: <duration> | default = 10s ]
-
-# TLS configuration.
-tls_config:
-  [ <tls_config> ]
-```
-
 ### `<remote_write>`
 
 `write_relabel_configs` is relabeling applied to samples before sending them
@@ -2967,6 +3255,9 @@ write_relabel_configs:
 
 # Enables sending of exemplars over remote write. Note that exemplar storage itself must be enabled for exemplars to be scraped in the first place.
 [ send_exemplars: <boolean> | default = false ]
+
+# Enables sending of native histograms, also known as sparse histograms, over remote write.
+[ send_native_histograms: <boolean> | default = false ]
 
 # Sets the `Authorization` header on every remote write request with the
 # configured username and password.
@@ -3017,6 +3308,9 @@ tls_config:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
@@ -3121,6 +3415,9 @@ tls_config:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
@@ -3136,6 +3433,25 @@ There is a list of
 [integrations](https://prometheus.io/docs/operating/integrations/#remote-endpoints-and-storage)
 with this feature.
 
+### `<tsdb>`
+
+`tsdb` lets you configure the runtime-reloadable configuration settings of the TSDB.
+
+NOTE: Out-of-order ingestion is an experimental feature, but you do not need any additional flag to enable it. Setting `out_of_order_time_window` to a positive duration enables it.
+
+```yaml
+# Configures how old an out-of-order/out-of-bounds sample can be w.r.t. the TSDB max time.
+# An out-of-order/out-of-bounds sample is ingested into the TSDB as long as the timestamp
+# of the sample is >= TSDB.MaxTime-out_of_order_time_window.
+#
+# When out_of_order_time_window is >0, the errors out-of-order and out-of-bounds are
+# combined into a single error called 'too-old'; a sample is either (a) ingestible
+# into the TSDB, i.e. it is an in-order sample or an out-of-order/out-of-bounds sample
+# that is within the out-of-order window, or (b) too-old, i.e. not in-order
+# and before the out-of-order window.
+[ out_of_order_time_window: <duration> | default = 0s ]
+```
+
 ### `<exemplars>`
 
 Note that exemplar storage is still considered experimental and must be enabled via `--enable-feature=exemplar-storage`.
@@ -3143,4 +3459,36 @@ Note that exemplar storage is still considered experimental and must be enabled 
 ```yaml
 # Configures the maximum size of the circular buffer used to store exemplars for all series. Resizable during runtime.
 [ max_exemplars: <int> | default = 100000 ]
+```
+
+### `<tracing_config>`
+
+`tracing_config` configures exporting traces from Prometheus to a tracing backend via the OTLP protocol. Tracing is currently an **experimental** feature and could change in the future.
+
+```yaml
+# Client used to export the traces. Options are 'http' or 'grpc'.
+[ client_type: <string> | default = grpc ]
+
+# Endpoint to send the traces to. Should be provided in format <host>:<port>.
+[ endpoint: <string> ]
+
+# Sets the probability a given trace will be sampled. Must be a float from 0 through 1.
+[ sampling_fraction: <float> | default = 0 ]
+
+# If disabled, the client will use a secure connection.
+[ insecure: <boolean> | default = false ]
+
+# Key-value pairs to be used as headers associated with gRPC or HTTP requests.
+headers:
+  [ <string>: <string> ... ]
+
+# Compression key for supported compression types. Supported compression: gzip.
+[ compression: <string> ]
+
+# Maximum time the exporter will wait for each batch export.
+[ timeout: <duration> | default = 10s ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
 ```

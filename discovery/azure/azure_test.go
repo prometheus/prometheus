@@ -28,6 +28,7 @@ func TestMain(m *testing.M) {
 func TestMapFromVMWithEmptyTags(t *testing.T) {
 	id := "test"
 	name := "name"
+	size := "size"
 	vmType := "type"
 	location := "westeurope"
 	computerName := "computer_name"
@@ -44,6 +45,9 @@ func TestMapFromVMWithEmptyTags(t *testing.T) {
 			},
 		},
 		NetworkProfile: &networkProfile,
+		HardwareProfile: &compute.HardwareProfile{
+			VMSize: compute.VirtualMachineSizeTypes(size),
+		},
 	}
 
 	testVM := compute.VirtualMachine{
@@ -64,6 +68,7 @@ func TestMapFromVMWithEmptyTags(t *testing.T) {
 		OsType:            "Linux",
 		Tags:              map[string]*string{},
 		NetworkInterfaces: []string{},
+		Size:              size,
 	}
 
 	actualVM := mapFromVM(testVM)
@@ -74,6 +79,7 @@ func TestMapFromVMWithEmptyTags(t *testing.T) {
 func TestMapFromVMWithTags(t *testing.T) {
 	id := "test"
 	name := "name"
+	size := "size"
 	vmType := "type"
 	location := "westeurope"
 	computerName := "computer_name"
@@ -93,6 +99,9 @@ func TestMapFromVMWithTags(t *testing.T) {
 			},
 		},
 		NetworkProfile: &networkProfile,
+		HardwareProfile: &compute.HardwareProfile{
+			VMSize: compute.VirtualMachineSizeTypes(size),
+		},
 	}
 
 	testVM := compute.VirtualMachine{
@@ -113,6 +122,7 @@ func TestMapFromVMWithTags(t *testing.T) {
 		OsType:            "Linux",
 		Tags:              tags,
 		NetworkInterfaces: []string{},
+		Size:              size,
 	}
 
 	actualVM := mapFromVM(testVM)
@@ -123,6 +133,7 @@ func TestMapFromVMWithTags(t *testing.T) {
 func TestMapFromVMScaleSetVMWithEmptyTags(t *testing.T) {
 	id := "test"
 	name := "name"
+	size := "size"
 	vmType := "type"
 	location := "westeurope"
 	computerName := "computer_name"
@@ -139,6 +150,9 @@ func TestMapFromVMScaleSetVMWithEmptyTags(t *testing.T) {
 			},
 		},
 		NetworkProfile: &networkProfile,
+		HardwareProfile: &compute.HardwareProfile{
+			VMSize: compute.VirtualMachineSizeTypes(size),
+		},
 	}
 
 	testVM := compute.VirtualMachineScaleSetVM{
@@ -161,6 +175,7 @@ func TestMapFromVMScaleSetVMWithEmptyTags(t *testing.T) {
 		Tags:              map[string]*string{},
 		NetworkInterfaces: []string{},
 		ScaleSet:          scaleSet,
+		Size:              size,
 	}
 
 	actualVM := mapFromVMScaleSetVM(testVM, scaleSet)
@@ -171,6 +186,7 @@ func TestMapFromVMScaleSetVMWithEmptyTags(t *testing.T) {
 func TestMapFromVMScaleSetVMWithTags(t *testing.T) {
 	id := "test"
 	name := "name"
+	size := "size"
 	vmType := "type"
 	location := "westeurope"
 	computerName := "computer_name"
@@ -190,6 +206,9 @@ func TestMapFromVMScaleSetVMWithTags(t *testing.T) {
 			},
 		},
 		NetworkProfile: &networkProfile,
+		HardwareProfile: &compute.HardwareProfile{
+			VMSize: compute.VirtualMachineSizeTypes(size),
+		},
 	}
 
 	testVM := compute.VirtualMachineScaleSetVM{
@@ -212,6 +231,7 @@ func TestMapFromVMScaleSetVMWithTags(t *testing.T) {
 		Tags:              tags,
 		NetworkInterfaces: []string{},
 		ScaleSet:          scaleSet,
+		Size:              size,
 	}
 
 	actualVM := mapFromVMScaleSetVM(testVM, scaleSet)

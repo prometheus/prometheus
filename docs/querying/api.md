@@ -206,6 +206,35 @@ $ curl 'http://localhost:9090/api/v1/query_range?query=up&start=2015-07-01T20:10
 }
 ```
 
+## Formatting query expressions
+
+The following endpoint formats a PromQL expression in a prettified way:
+
+```
+GET /api/v1/format_query
+POST /api/v1/format_query
+```
+
+URL query parameters:
+
+- `query=<string>`: Prometheus expression query string.
+
+You can URL-encode these parameters directly in the request body by using the `POST` method and
+`Content-Type: application/x-www-form-urlencoded` header. This is useful when specifying a large
+query that may breach server-side URL character limits.
+
+The `data` section of the query result is a string containing the formatted query expression. Note that any comments are removed in the formatted string.
+
+The following example formats the expression `foo/bar`:
+
+```json
+$ curl 'http://localhost:9090/api/v1/format_query?query=foo/bar'
+{
+   "status" : "success",
+   "data" : "foo / bar"
+}
+```
+
 ## Querying metadata
 
 Prometheus offers a set of API endpoints to query metadata about series and their labels.
@@ -418,6 +447,10 @@ sample values. JSON does not support special float values such as `NaN`, `Inf`,
 and `-Inf`, so sample values are transferred as quoted JSON strings rather than
 raw numbers.
 
+The keys `"histogram"` and `"histograms"` only show up if the experimental
+native histograms are present in the response. Their placeholder `<histogram>`
+is explained in detail in its own section below. 
+
 ### Range vectors
 
 Range vectors are returned as result type `matrix`. The corresponding
@@ -427,11 +460,15 @@ Range vectors are returned as result type `matrix`. The corresponding
 [
   {
     "metric": { "<label_name>": "<label_value>", ... },
-    "values": [ [ <unix_time>, "<sample_value>" ], ... ]
+    "values": [ [ <unix_time>, "<sample_value>" ], ... ],
+    "histograms": [ [ <unix_time>, <histogram> ], ... ]
   },
   ...
 ]
 ```
+
+Each series could have the `"values"` key, or the `"histograms"` key, or both. 
+For a given timestamp, there will only be one sample of either float or histogram type.
 
 ### Instant vectors
 
@@ -442,11 +479,14 @@ Instant vectors are returned as result type `vector`. The corresponding
 [
   {
     "metric": { "<label_name>": "<label_value>", ... },
-    "value": [ <unix_time>, "<sample_value>" ]
+    "value": [ <unix_time>, "<sample_value>" ],
+    "histogram": [ <unix_time>, <histogram> ]
   },
   ...
 ]
 ```
+
+Each series could have the `"value"` key, or the `"histogram"` key, but not both.
 
 ### Scalars
 
@@ -466,6 +506,33 @@ String results are returned as result type `string`. The corresponding
 [ <unix_time>, "<string_value>" ]
 ```
 
+### Native histograms
+
+The `<histogram>` placeholder used above is formatted as follows.
+
+_Note that native histograms are an experimental feature, and the format below
+might still change._
+
+```
+{
+  "count": "<count_of_observations>",
+  "sum": "<sum_of_observations>",
+  "buckets": [ [ <boundary_rule>, "<left_boundary>", "<right_boundary>", "<count_in_bucket>" ], ... ]
+}
+```
+
+The `<boundary_rule>` placeholder is an integer between 0 and 3 with the
+following meaning:
+
+* 0: “open left” (left boundary is exclusive, right boundary in inclusive)
+* 1: “open right” (left boundary is inclusive, right boundary in exclusive)
+* 2: “open both” (both boundaries are exclusive)
+* 3: “closed both” (both boundaries are inclusive)
+
+Note that with the currently implemented bucket schemas, positive buckets are
+“open left”, negative buckets are “open right”, and the zero bucket (with a
+negative left boundary and a positive right boundary) is “closed both”.
+
 ## Targets
 
 The following endpoint returns an overview of the current state of the
@@ -476,8 +543,8 @@ GET /api/v1/targets
 ```
 
 Both the active and dropped targets are part of the response by default.
-`labels` represents the label set after relabelling has occurred.
-`discoveredLabels` represent the unmodified labels retrieved during service discovery before relabelling has occurred.
+`labels` represents the label set after relabeling has occurred.
+`discoveredLabels` represent the unmodified labels retrieved during service discovery before relabeling has occurred.
 
 ```json
 $ curl http://localhost:9090/api/v1/targets
@@ -559,6 +626,38 @@ $ curl 'http://localhost:9090/api/v1/targets?state=active'
 }
 ```
 
+The `scrapePool` query parameter allows the caller to filter by scrape pool name.
+
+```json
+$ curl 'http://localhost:9090/api/v1/targets?scrapePool=node_exporter'
+{
+  "status": "success",
+  "data": {
+    "activeTargets": [
+      {
+        "discoveredLabels": {
+          "__address__": "127.0.0.1:9091",
+          "__metrics_path__": "/metrics",
+          "__scheme__": "http",
+          "job": "node_exporter"
+        },
+        "labels": {
+          "instance": "127.0.0.1:9091",
+          "job": "node_exporter"
+        },
+        "scrapePool": "node_exporter",
+        "scrapeUrl": "http://127.0.0.1:9091/metrics",
+        "globalUrl": "http://example-prometheus:9091/metrics",
+        "lastError": "",
+        "lastScrape": "2017-01-17T15:07:44.723715405+01:00",
+        "lastScrapeDuration": 50688943,
+        "health": "up"
+      }
+    ],
+    "droppedTargets": []
+  }
+}
+```
 
 ## Rules
 
@@ -750,7 +849,7 @@ curl -G http://localhost:9091/api/v1/targets/metadata \
 
 ## Querying metric metadata
 
-It returns metadata about metrics currently scrapped from targets. However, it does not provide any target information.
+It returns metadata about metrics currently scraped from targets. However, it does not provide any target information.
 This is considered **experimental** and might change in the future.
 
 ```

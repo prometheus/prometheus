@@ -26,9 +26,11 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/tsdb/wal"
+	"github.com/prometheus/prometheus/tsdb/wlog"
 )
 
 var (
@@ -44,6 +46,12 @@ var (
 		Name:      "exemplars_in_total",
 		Help:      "Exemplars in to remote storage, compare to exemplars out for queue managers.",
 	})
+	histogramsIn = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: namespace,
+		Subsystem: subsystem,
+		Name:      "histograms_in_total",
+		Help:      "HistogramSamples in to remote storage, compare to histograms out for queue managers.",
+	})
 )
 
 // WriteStorage represents all the remote write storage.
@@ -52,8 +60,8 @@ type WriteStorage struct {
 	reg    prometheus.Registerer
 	mtx    sync.Mutex
 
-	watcherMetrics    *wal.WatcherMetrics
-	liveReaderMetrics *wal.LiveReaderMetrics
+	watcherMetrics    *wlog.WatcherMetrics
+	liveReaderMetrics *wlog.LiveReaderMetrics
 	externalLabels    labels.Labels
 	dir               string
 	queues            map[string]*QueueManager
@@ -74,8 +82,8 @@ func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, dir string, f
 	}
 	rws := &WriteStorage{
 		queues:            make(map[string]*QueueManager),
-		watcherMetrics:    wal.NewWatcherMetrics(reg),
-		liveReaderMetrics: wal.NewLiveReaderMetrics(reg),
+		watcherMetrics:    wlog.NewWatcherMetrics(reg),
+		liveReaderMetrics: wlog.NewLiveReaderMetrics(reg),
 		logger:            logger,
 		reg:               reg,
 		flushDeadline:     flushDeadline,
@@ -187,6 +195,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rws.highestTimestamp,
 			rws.scraper,
 			rwConf.SendExemplars,
+			rwConf.SendNativeHistograms,
 		)
 		// Keep track of which queues are new so we know which to start.
 		newHashes = append(newHashes, hash)
@@ -250,6 +259,7 @@ type timestampTracker struct {
 	writeStorage         *WriteStorage
 	samples              int64
 	exemplars            int64
+	histograms           int64
 	highestTimestamp     int64
 	highestRecvTimestamp *maxTimestamp
 }
@@ -268,12 +278,27 @@ func (t *timestampTracker) AppendExemplar(_ storage.SeriesRef, _ labels.Labels, 
 	return 0, nil
 }
 
+func (t *timestampTracker) AppendHistogram(_ storage.SeriesRef, _ labels.Labels, ts int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	t.histograms++
+	if ts > t.highestTimestamp {
+		t.highestTimestamp = ts
+	}
+	return 0, nil
+}
+
+func (t *timestampTracker) UpdateMetadata(_ storage.SeriesRef, _ labels.Labels, _ metadata.Metadata) (storage.SeriesRef, error) {
+	// TODO: Add and increment a `metadata` field when we get around to wiring metadata in remote_write.
+	// UpadteMetadata is no-op for remote write (where timestampTracker is being used) for now.
+	return 0, nil
+}
+
 // Commit implements storage.Appender.
 func (t *timestampTracker) Commit() error {
-	t.writeStorage.samplesIn.incr(t.samples + t.exemplars)
+	t.writeStorage.samplesIn.incr(t.samples + t.exemplars + t.histograms)
 
 	samplesIn.Add(float64(t.samples))
 	exemplarsIn.Add(float64(t.exemplars))
+	histogramsIn.Add(float64(t.histograms))
 	t.highestRecvTimestamp.Set(float64(t.highestTimestamp / 1000))
 	return nil
 }

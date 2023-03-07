@@ -16,12 +16,13 @@ package storage
 import (
 	"bytes"
 	"container/heap"
+	"fmt"
 	"math"
-	"sort"
 	"sync"
 
-	"github.com/pkg/errors"
+	"golang.org/x/exp/slices"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -159,7 +160,7 @@ func (l labelGenericQueriers) SplitByHalf() (labelGenericQueriers, labelGenericQ
 func (q *mergeGenericQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, Warnings, error) {
 	res, ws, err := q.lvals(q.queriers, name, matchers...)
 	if err != nil {
-		return nil, nil, errors.Wrapf(err, "LabelValues() from merge generic querier for label %s", name)
+		return nil, nil, fmt.Errorf("LabelValues() from merge generic querier for label %s: %w", name, err)
 	}
 	return res, ws, nil
 }
@@ -227,7 +228,7 @@ func (q *mergeGenericQuerier) LabelNames(matchers ...*labels.Matcher) ([]string,
 			warnings = append(warnings, wrn...)
 		}
 		if err != nil {
-			return nil, nil, errors.Wrap(err, "LabelNames() from merge generic querier")
+			return nil, nil, fmt.Errorf("LabelNames() from merge generic querier: %w", err)
 		}
 		for _, name := range names {
 			labelNamesMap[name] = struct{}{}
@@ -241,7 +242,7 @@ func (q *mergeGenericQuerier) LabelNames(matchers ...*labels.Matcher) ([]string,
 	for name := range labelNamesMap {
 		labelNames = append(labelNames, name)
 	}
-	sort.Strings(labelNames)
+	slices.Sort(labelNames)
 	return labelNames, warnings, nil
 }
 
@@ -424,12 +425,8 @@ func ChainedSeriesMerge(series ...Series) Series {
 	}
 	return &SeriesEntry{
 		Lset: series[0].Labels(),
-		SampleIteratorFn: func() chunkenc.Iterator {
-			iterators := make([]chunkenc.Iterator, 0, len(series))
-			for _, s := range series {
-				iterators = append(iterators, s.Iterator())
-			}
-			return NewChainSampleIterator(iterators)
+		SampleIteratorFn: func(it chunkenc.Iterator) chunkenc.Iterator {
+			return ChainSampleIteratorFromSeries(it, series)
 		},
 	}
 }
@@ -442,70 +439,146 @@ type chainSampleIterator struct {
 	h         samplesIteratorHeap
 
 	curr  chunkenc.Iterator
-	lastt int64
+	lastT int64
+
+	// Whether the previous and the current sample are direct neighbors
+	// within the same base iterator.
+	consecutive bool
 }
 
-// NewChainSampleIterator returns a single iterator that iterates over the samples from the given iterators in a sorted
-// fashion. If samples overlap, one sample from overlapped ones is kept (randomly) and all others with the same
-// timestamp are dropped.
-func NewChainSampleIterator(iterators []chunkenc.Iterator) chunkenc.Iterator {
-	return &chainSampleIterator{
-		iterators: iterators,
-		h:         nil,
-		lastt:     math.MinInt64,
+// Return a chainSampleIterator initialized for length entries, re-using the memory from it if possible.
+func getChainSampleIterator(it chunkenc.Iterator, length int) *chainSampleIterator {
+	csi, ok := it.(*chainSampleIterator)
+	if !ok {
+		csi = &chainSampleIterator{}
 	}
+	if cap(csi.iterators) < length {
+		csi.iterators = make([]chunkenc.Iterator, length)
+	} else {
+		csi.iterators = csi.iterators[:length]
+	}
+	csi.h = nil
+	csi.lastT = math.MinInt64
+	return csi
 }
 
-func (c *chainSampleIterator) Seek(t int64) bool {
-	// No-op check
-	if c.curr != nil && c.lastt >= t {
-		return true
+func ChainSampleIteratorFromSeries(it chunkenc.Iterator, series []Series) chunkenc.Iterator {
+	csi := getChainSampleIterator(it, len(series))
+	for i, s := range series {
+		csi.iterators[i] = s.Iterator(csi.iterators[i])
 	}
+	return csi
+}
 
+func ChainSampleIteratorFromMetas(it chunkenc.Iterator, chunks []chunks.Meta) chunkenc.Iterator {
+	csi := getChainSampleIterator(it, len(chunks))
+	for i, c := range chunks {
+		csi.iterators[i] = c.Chunk.Iterator(csi.iterators[i])
+	}
+	return csi
+}
+
+func ChainSampleIteratorFromIterators(it chunkenc.Iterator, iterators []chunkenc.Iterator) chunkenc.Iterator {
+	csi := getChainSampleIterator(it, 0)
+	csi.iterators = iterators
+	return csi
+}
+
+func (c *chainSampleIterator) Seek(t int64) chunkenc.ValueType {
+	// No-op check.
+	if c.curr != nil && c.lastT >= t {
+		return c.curr.Seek(c.lastT)
+	}
+	// Don't bother to find out if the next sample is consecutive. Callers
+	// of Seek usually aren't interested anyway.
+	c.consecutive = false
 	c.h = samplesIteratorHeap{}
 	for _, iter := range c.iterators {
-		if iter.Seek(t) {
+		if iter.Seek(t) != chunkenc.ValNone {
 			heap.Push(&c.h, iter)
 		}
 	}
 	if len(c.h) > 0 {
 		c.curr = heap.Pop(&c.h).(chunkenc.Iterator)
-		c.lastt, _ = c.curr.At()
-		return true
+		c.lastT = c.curr.AtT()
+		return c.curr.Seek(c.lastT)
 	}
 	c.curr = nil
-	return false
+	return chunkenc.ValNone
 }
 
 func (c *chainSampleIterator) At() (t int64, v float64) {
 	if c.curr == nil {
-		panic("chainSampleIterator.At() called before first .Next() or after .Next() returned false.")
+		panic("chainSampleIterator.At called before first .Next or after .Next returned false.")
 	}
 	return c.curr.At()
 }
 
-func (c *chainSampleIterator) Next() bool {
+func (c *chainSampleIterator) AtHistogram() (int64, *histogram.Histogram) {
+	if c.curr == nil {
+		panic("chainSampleIterator.AtHistogram called before first .Next or after .Next returned false.")
+	}
+	t, h := c.curr.AtHistogram()
+	// If the current sample is not consecutive with the previous one, we
+	// cannot be sure anymore that there was no counter reset.
+	if !c.consecutive && h.CounterResetHint == histogram.NotCounterReset {
+		h.CounterResetHint = histogram.UnknownCounterReset
+	}
+	return t, h
+}
+
+func (c *chainSampleIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+	if c.curr == nil {
+		panic("chainSampleIterator.AtFloatHistogram called before first .Next or after .Next returned false.")
+	}
+	t, fh := c.curr.AtFloatHistogram()
+	// If the current sample is not consecutive with the previous one, we
+	// cannot be sure anymore about counter resets for counter histograms.
+	// TODO(beorn7): If a `NotCounterReset` sample is followed by a
+	// non-consecutive `CounterReset` sample, we could keep the hint as
+	// `CounterReset`. But then we needed to track the previous sample
+	// in more detail, which might not be worth it.
+	if !c.consecutive && fh.CounterResetHint != histogram.GaugeType {
+		fh.CounterResetHint = histogram.UnknownCounterReset
+	}
+	return t, fh
+}
+
+func (c *chainSampleIterator) AtT() int64 {
+	if c.curr == nil {
+		panic("chainSampleIterator.AtT called before first .Next or after .Next returned false.")
+	}
+	return c.curr.AtT()
+}
+
+func (c *chainSampleIterator) Next() chunkenc.ValueType {
+	var (
+		currT           int64
+		currValueType   chunkenc.ValueType
+		iteratorChanged bool
+	)
 	if c.h == nil {
+		iteratorChanged = true
 		c.h = samplesIteratorHeap{}
 		// We call c.curr.Next() as the first thing below.
 		// So, we don't call Next() on it here.
 		c.curr = c.iterators[0]
 		for _, iter := range c.iterators[1:] {
-			if iter.Next() {
+			if iter.Next() != chunkenc.ValNone {
 				heap.Push(&c.h, iter)
 			}
 		}
 	}
 
 	if c.curr == nil {
-		return false
+		return chunkenc.ValNone
 	}
 
-	var currt int64
 	for {
-		if c.curr.Next() {
-			currt, _ = c.curr.At()
-			if currt == c.lastt {
+		currValueType = c.curr.Next()
+		if currValueType != chunkenc.ValNone {
+			currT = c.curr.AtT()
+			if currT == c.lastT {
 				// Ignoring sample for the same timestamp.
 				continue
 			}
@@ -516,7 +589,8 @@ func (c *chainSampleIterator) Next() bool {
 			}
 
 			// Check current iterator with the top of the heap.
-			if nextt, _ := c.h[0].At(); currt < nextt {
+			nextT := c.h[0].AtT()
+			if currT < nextT {
 				// Current iterator has smaller timestamp than the heap.
 				break
 			}
@@ -525,18 +599,21 @@ func (c *chainSampleIterator) Next() bool {
 		} else if len(c.h) == 0 {
 			// No iterator left to iterate.
 			c.curr = nil
-			return false
+			return chunkenc.ValNone
 		}
 
 		c.curr = heap.Pop(&c.h).(chunkenc.Iterator)
-		currt, _ = c.curr.At()
-		if currt != c.lastt {
+		iteratorChanged = true
+		currT = c.curr.AtT()
+		currValueType = c.curr.Seek(currT)
+		if currT != c.lastT {
 			break
 		}
 	}
 
-	c.lastt = currt
-	return true
+	c.consecutive = !iteratorChanged
+	c.lastT = currT
+	return currValueType
 }
 
 func (c *chainSampleIterator) Err() error {
@@ -553,9 +630,7 @@ func (h samplesIteratorHeap) Len() int      { return len(h) }
 func (h samplesIteratorHeap) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
 
 func (h samplesIteratorHeap) Less(i, j int) bool {
-	at, _ := h[i].At()
-	bt, _ := h[j].At()
-	return at < bt
+	return h[i].AtT() < h[j].AtT()
 }
 
 func (h *samplesIteratorHeap) Push(x interface{}) {
@@ -584,10 +659,10 @@ func NewCompactingChunkSeriesMerger(mergeFunc VerticalSeriesMergeFunc) VerticalC
 		}
 		return &ChunkSeriesEntry{
 			Lset: series[0].Labels(),
-			ChunkIteratorFn: func() chunks.Iterator {
+			ChunkIteratorFn: func(chunks.Iterator) chunks.Iterator {
 				iterators := make([]chunks.Iterator, 0, len(series))
 				for _, s := range series {
-					iterators = append(iterators, s.Iterator())
+					iterators = append(iterators, s.Iterator(nil))
 				}
 				return &compactChunkIterator{
 					mergeFunc: mergeFunc,
@@ -653,7 +728,7 @@ func (c *compactChunkIterator) Next() bool {
 			// 1:1 duplicates, skip it.
 		} else {
 			// We operate on same series, so labels does not matter here.
-			overlapping = append(overlapping, newChunkToSeriesDecoder(nil, next))
+			overlapping = append(overlapping, newChunkToSeriesDecoder(labels.EmptyLabels(), next))
 			if next.MaxTime > oMaxTime {
 				oMaxTime = next.MaxTime
 			}
@@ -670,7 +745,7 @@ func (c *compactChunkIterator) Next() bool {
 	}
 
 	// Add last as it's not yet included in overlap. We operate on same series, so labels does not matter here.
-	iter = NewSeriesToChunkEncoder(c.mergeFunc(append(overlapping, newChunkToSeriesDecoder(nil, c.curr))...)).Iterator()
+	iter = NewSeriesToChunkEncoder(c.mergeFunc(append(overlapping, newChunkToSeriesDecoder(labels.EmptyLabels(), c.curr))...)).Iterator(nil)
 	if !iter.Next() {
 		if c.err = iter.Err(); c.err != nil {
 			return false
@@ -717,4 +792,57 @@ func (h *chunkIteratorHeap) Pop() interface{} {
 	x := old[n-1]
 	*h = old[0 : n-1]
 	return x
+}
+
+// NewConcatenatingChunkSeriesMerger returns a VerticalChunkSeriesMergeFunc that simply concatenates the
+// chunks from the series. The resultant stream of chunks for a series might be overlapping and unsorted.
+func NewConcatenatingChunkSeriesMerger() VerticalChunkSeriesMergeFunc {
+	return func(series ...ChunkSeries) ChunkSeries {
+		if len(series) == 0 {
+			return nil
+		}
+		return &ChunkSeriesEntry{
+			Lset: series[0].Labels(),
+			ChunkIteratorFn: func(chunks.Iterator) chunks.Iterator {
+				iterators := make([]chunks.Iterator, 0, len(series))
+				for _, s := range series {
+					iterators = append(iterators, s.Iterator(nil))
+				}
+				return &concatenatingChunkIterator{
+					iterators: iterators,
+				}
+			},
+		}
+	}
+}
+
+type concatenatingChunkIterator struct {
+	iterators []chunks.Iterator
+	idx       int
+
+	curr chunks.Meta
+}
+
+func (c *concatenatingChunkIterator) At() chunks.Meta {
+	return c.curr
+}
+
+func (c *concatenatingChunkIterator) Next() bool {
+	if c.idx >= len(c.iterators) {
+		return false
+	}
+	if c.iterators[c.idx].Next() {
+		c.curr = c.iterators[c.idx].At()
+		return true
+	}
+	c.idx++
+	return c.Next()
+}
+
+func (c *concatenatingChunkIterator) Err() error {
+	errs := tsdb_errors.NewMulti()
+	for _, iter := range c.iterators {
+		errs.Add(iter.Err())
+	}
+	return errs.Err()
 }

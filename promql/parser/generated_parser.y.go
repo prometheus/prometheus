@@ -9,7 +9,6 @@ import __yyfmt__ "fmt"
 
 import (
 	"math"
-	"sort"
 	"strconv"
 	"time"
 
@@ -26,6 +25,7 @@ type yySymType struct {
 	matcher  *labels.Matcher
 	label    labels.Label
 	labels   labels.Labels
+	lblList  []labels.Label
 	strings  []string
 	series   []SequenceValue
 	uint     uint64
@@ -458,7 +458,7 @@ var yyPact = [...]int{
 
 var yyPgo = [...]int{
 	0, 267, 7, 265, 2, 264, 262, 164, 261, 257,
-	115, 253, 181, 8, 252, 4, 5, 251, 250, 0,
+	115, 181, 253, 8, 252, 4, 5, 251, 250, 0,
 	23, 248, 6, 247, 246, 245, 10, 64, 244, 239,
 	1, 231, 230, 9, 217, 21, 214, 213, 205, 201,
 	198, 196, 189, 188, 206, 3, 180, 165, 127,
@@ -474,10 +474,10 @@ var yyR1 = [...]int{
 	31, 33, 33, 32, 32, 32, 40, 38, 38, 38,
 	24, 24, 24, 9, 9, 36, 42, 42, 42, 42,
 	42, 43, 44, 44, 44, 35, 35, 35, 1, 1,
-	1, 2, 2, 2, 2, 12, 12, 7, 7, 7,
+	1, 2, 2, 2, 2, 11, 11, 7, 7, 7,
 	7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
 	7, 7, 7, 7, 7, 7, 7, 7, 7, 10,
-	10, 10, 10, 11, 11, 11, 13, 13, 13, 13,
+	10, 10, 10, 12, 12, 12, 13, 13, 13, 13,
 	48, 18, 18, 18, 18, 17, 17, 17, 17, 17,
 	21, 21, 21, 3, 3, 3, 3, 3, 3, 3,
 	3, 3, 3, 3, 3, 6, 6, 6, 6, 6,
@@ -513,14 +513,14 @@ var yyR2 = [...]int{
 }
 
 var yyChk = [...]int{
-	-1000, -47, 75, 76, 77, 78, 2, 10, -12, -7,
+	-1000, -47, 75, 76, 77, 78, 2, 10, -11, -7,
 	-10, 47, 48, 62, 49, 50, 51, 12, 32, 33,
 	36, 52, 16, 53, 66, 54, 55, 56, 57, 58,
-	68, 71, 72, 13, -48, -12, 10, -30, -25, -28,
+	68, 71, 72, 13, -48, -11, 10, -30, -25, -28,
 	-31, -36, -37, -38, -40, -41, -42, -43, -44, -24,
 	-3, 12, 17, 15, 23, -8, -7, -35, 47, 48,
 	49, 50, 51, 52, 53, 54, 55, 56, 57, 58,
-	26, 42, 13, -44, -10, -11, 18, -13, 12, 2,
+	26, 42, 13, -44, -10, -12, 18, -13, 12, 2,
 	-18, 2, 26, 44, 27, 28, 30, 31, 32, 33,
 	34, 35, 36, 37, 38, 39, 41, 42, 66, 43,
 	14, -26, -33, 2, 62, 68, 15, -33, -30, -30,
@@ -1492,8 +1492,9 @@ yydefault:
 		yyDollar = yyS[yypt-2 : yypt+1]
 //line promql/parser/generated_parser.y:570
 		{
-			yyVAL.labels = append(yyDollar[2].labels, labels.Label{Name: labels.MetricName, Value: yyDollar[1].item.Val})
-			sort.Sort(yyVAL.labels)
+			b := labels.NewBuilder(yyDollar[2].labels)
+			b.Set(labels.MetricName, yyDollar[1].item.Val)
+			yyVAL.labels = b.Labels(labels.EmptyLabels())
 		}
 	case 96:
 		yyDollar = yyS[yypt-1 : yypt+1]
@@ -1505,13 +1506,13 @@ yydefault:
 		yyDollar = yyS[yypt-3 : yypt+1]
 //line promql/parser/generated_parser.y:579
 		{
-			yyVAL.labels = labels.New(yyDollar[2].labels...)
+			yyVAL.labels = labels.New(yyDollar[2].lblList...)
 		}
 	case 120:
 		yyDollar = yyS[yypt-4 : yypt+1]
 //line promql/parser/generated_parser.y:581
 		{
-			yyVAL.labels = labels.New(yyDollar[2].labels...)
+			yyVAL.labels = labels.New(yyDollar[2].lblList...)
 		}
 	case 121:
 		yyDollar = yyS[yypt-2 : yypt+1]
@@ -1529,20 +1530,20 @@ yydefault:
 		yyDollar = yyS[yypt-3 : yypt+1]
 //line promql/parser/generated_parser.y:589
 		{
-			yyVAL.labels = append(yyDollar[1].labels, yyDollar[3].label)
+			yyVAL.lblList = append(yyDollar[1].lblList, yyDollar[3].label)
 		}
 	case 124:
 		yyDollar = yyS[yypt-1 : yypt+1]
 //line promql/parser/generated_parser.y:591
 		{
-			yyVAL.labels = []labels.Label{yyDollar[1].label}
+			yyVAL.lblList = []labels.Label{yyDollar[1].label}
 		}
 	case 125:
 		yyDollar = yyS[yypt-2 : yypt+1]
 //line promql/parser/generated_parser.y:593
 		{
 			yylex.(*parser).unexpected("label set", "\",\" or \"}\"")
-			yyVAL.labels = yyDollar[1].labels
+			yyVAL.lblList = yyDollar[1].lblList
 		}
 	case 126:
 		yyDollar = yyS[yypt-3 : yypt+1]

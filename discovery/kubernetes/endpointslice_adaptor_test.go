@@ -35,6 +35,8 @@ func Test_EndpointSliceAdaptor_v1(t *testing.T) {
 		require.Equal(t, endpointSlice.Endpoints[i].Addresses, endpointAdaptor.addresses())
 		require.Equal(t, endpointSlice.Endpoints[i].Hostname, endpointAdaptor.hostname())
 		require.Equal(t, endpointSlice.Endpoints[i].Conditions.Ready, endpointAdaptor.conditions().ready())
+		require.Equal(t, endpointSlice.Endpoints[i].Conditions.Serving, endpointAdaptor.conditions().serving())
+		require.Equal(t, endpointSlice.Endpoints[i].Conditions.Terminating, endpointAdaptor.conditions().terminating())
 		require.Equal(t, endpointSlice.Endpoints[i].TargetRef, endpointAdaptor.targetRef())
 		require.Equal(t, endpointSlice.Endpoints[i].DeprecatedTopology, endpointAdaptor.topology())
 	}
@@ -61,6 +63,8 @@ func Test_EndpointSliceAdaptor_v1beta1(t *testing.T) {
 		require.Equal(t, endpointSlice.Endpoints[i].Addresses, endpointAdaptor.addresses())
 		require.Equal(t, endpointSlice.Endpoints[i].Hostname, endpointAdaptor.hostname())
 		require.Equal(t, endpointSlice.Endpoints[i].Conditions.Ready, endpointAdaptor.conditions().ready())
+		require.Equal(t, endpointSlice.Endpoints[i].Conditions.Serving, endpointAdaptor.conditions().serving())
+		require.Equal(t, endpointSlice.Endpoints[i].Conditions.Terminating, endpointAdaptor.conditions().terminating())
 		require.Equal(t, endpointSlice.Endpoints[i].TargetRef, endpointAdaptor.targetRef())
 		require.Equal(t, endpointSlice.Endpoints[i].Topology, endpointAdaptor.topology())
 	}

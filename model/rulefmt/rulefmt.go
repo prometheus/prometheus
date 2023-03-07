@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
-	yaml "gopkg.in/yaml.v3"
+	"gopkg.in/yaml.v3"
 
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -53,6 +53,11 @@ func (err *Error) Error() string {
 	return fmt.Sprintf("group %q, rule %d, %q: %v", err.Group, err.Rule, err.RuleName, err.Err.err)
 }
 
+// Unwrap unpacks wrapped error for use in errors.Is & errors.As.
+func (err *Error) Unwrap() error {
+	return &err.Err
+}
+
 // WrappedError wraps error with the yaml node which can be used to represent
 // the line and column numbers of the error.
 type WrappedError struct {
@@ -73,6 +78,11 @@ func (we *WrappedError) Error() string {
 		return fmt.Sprintf("%d:%d: %v", we.node.Line, we.node.Column, we.err)
 	}
 	return we.err.Error()
+}
+
+// Unwrap unpacks wrapped error for use in errors.Is & errors.As.
+func (we *WrappedError) Unwrap() error {
+	return we.err
 }
 
 // RuleGroups is a set of rule groups that are typically exposed in a file.
@@ -133,22 +143,24 @@ type RuleGroup struct {
 
 // Rule describes an alerting or recording rule.
 type Rule struct {
-	Record      string            `yaml:"record,omitempty"`
-	Alert       string            `yaml:"alert,omitempty"`
-	Expr        string            `yaml:"expr"`
-	For         model.Duration    `yaml:"for,omitempty"`
-	Labels      map[string]string `yaml:"labels,omitempty"`
-	Annotations map[string]string `yaml:"annotations,omitempty"`
+	Record        string            `yaml:"record,omitempty"`
+	Alert         string            `yaml:"alert,omitempty"`
+	Expr          string            `yaml:"expr"`
+	For           model.Duration    `yaml:"for,omitempty"`
+	KeepFiringFor model.Duration    `yaml:"keep_firing_for,omitempty"`
+	Labels        map[string]string `yaml:"labels,omitempty"`
+	Annotations   map[string]string `yaml:"annotations,omitempty"`
 }
 
 // RuleNode adds yaml.v3 layer to support line and column outputs for invalid rules.
 type RuleNode struct {
-	Record      yaml.Node         `yaml:"record,omitempty"`
-	Alert       yaml.Node         `yaml:"alert,omitempty"`
-	Expr        yaml.Node         `yaml:"expr"`
-	For         model.Duration    `yaml:"for,omitempty"`
-	Labels      map[string]string `yaml:"labels,omitempty"`
-	Annotations map[string]string `yaml:"annotations,omitempty"`
+	Record        yaml.Node         `yaml:"record,omitempty"`
+	Alert         yaml.Node         `yaml:"alert,omitempty"`
+	Expr          yaml.Node         `yaml:"expr"`
+	For           model.Duration    `yaml:"for,omitempty"`
+	KeepFiringFor model.Duration    `yaml:"keep_firing_for,omitempty"`
+	Labels        map[string]string `yaml:"labels,omitempty"`
+	Annotations   map[string]string `yaml:"annotations,omitempty"`
 }
 
 // Validate the rule and return a list of encountered errors.
@@ -195,6 +207,12 @@ func (r *RuleNode) Validate() (nodes []WrappedError) {
 		if r.For != 0 {
 			nodes = append(nodes, WrappedError{
 				err:  fmt.Errorf("invalid field 'for' in recording rule"),
+				node: &r.Record,
+			})
+		}
+		if r.KeepFiringFor != 0 {
+			nodes = append(nodes, WrappedError{
+				err:  fmt.Errorf("invalid field 'keep_firing_for' in recording rule"),
 				node: &r.Record,
 			})
 		}

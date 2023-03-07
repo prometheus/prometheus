@@ -15,6 +15,7 @@ package rulefmt
 
 import (
 	"errors"
+	"io"
 	"path/filepath"
 	"testing"
 
@@ -72,12 +73,21 @@ func TestParseFileFailure(t *testing.T) {
 			filename: "invalid_label_name.bad.yaml",
 			errMsg:   "invalid label name",
 		},
+		{
+			filename: "record_and_for.bad.yaml",
+			errMsg:   "invalid field 'for' in recording rule",
+		},
+		{
+			filename: "record_and_keep_firing_for.bad.yaml",
+			errMsg:   "invalid field 'keep_firing_for' in recording rule",
+		},
 	}
 
 	for _, c := range table {
 		_, errs := ParseFile(filepath.Join("testdata", c.filename))
 		require.NotNil(t, errs, "Expected error parsing %s but got none", c.filename)
-		require.Error(t, errs[0], c.errMsg, "Expected error for %s.", c.filename)
+		require.Error(t, errs[0])
+		require.Containsf(t, errs[0].Error(), c.errMsg, "Expected error for %s.", c.filename)
 	}
 }
 
@@ -300,6 +310,30 @@ func TestWrappedError(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got := tt.wrappedError.Error()
 			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestErrorUnwrap(t *testing.T) {
+	err1 := errors.New("test error")
+
+	tests := []struct {
+		wrappedError   *Error
+		unwrappedError error
+	}{
+		{
+			wrappedError:   &Error{Err: WrappedError{err: err1}},
+			unwrappedError: err1,
+		},
+		{
+			wrappedError:   &Error{Err: WrappedError{err: io.ErrClosedPipe}},
+			unwrappedError: io.ErrClosedPipe,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.wrappedError.Error(), func(t *testing.T) {
+			require.ErrorIs(t, tt.wrappedError, tt.unwrappedError)
 		})
 	}
 }

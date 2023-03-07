@@ -42,9 +42,10 @@ import (
 	"github.com/prometheus/common/version"
 	"github.com/prometheus/exporter-toolkit/web"
 	"gopkg.in/alecthomas/kingpin.v2"
-	yaml "gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v2"
 
 	dto "github.com/prometheus/client_model/go"
+	promconfig "github.com/prometheus/common/config"
 	"github.com/prometheus/common/expfmt"
 
 	"github.com/prometheus/prometheus/config"
@@ -74,6 +75,12 @@ const (
 var lintOptions = []string{lintOptionAll, lintOptionDuplicateRules, lintOptionNone}
 
 func main() {
+	var (
+		httpRoundTripper   = api.DefaultRoundTripper
+		serverURL          *url.URL
+		httpConfigFilePath string
+	)
+
 	app := kingpin.New(filepath.Base(os.Args[0]), "Tooling for the Prometheus monitoring system.").UsageWriter(os.Stdout)
 	app.Version(version.Print("promtool"))
 	app.HelpFlag.Short('h')
@@ -124,14 +131,15 @@ func main() {
 
 	queryCmd := app.Command("query", "Run query against a Prometheus server.")
 	queryCmdFmt := queryCmd.Flag("format", "Output format of the query.").Short('o').Default("promql").Enum("promql", "json")
+	queryCmd.Flag("http.config.file", "HTTP client configuration file for promtool to connect to Prometheus.").PlaceHolder("<filename>").ExistingFileVar(&httpConfigFilePath)
 
 	queryInstantCmd := queryCmd.Command("instant", "Run instant query.")
-	queryInstantServer := queryInstantCmd.Arg("server", "Prometheus server to query.").Required().URL()
+	queryInstantCmd.Arg("server", "Prometheus server to query.").Required().URLVar(&serverURL)
 	queryInstantExpr := queryInstantCmd.Arg("expr", "PromQL query expression.").Required().String()
 	queryInstantTime := queryInstantCmd.Flag("time", "Query evaluation time (RFC3339 or Unix timestamp).").String()
 
 	queryRangeCmd := queryCmd.Command("range", "Run range query.")
-	queryRangeServer := queryRangeCmd.Arg("server", "Prometheus server to query.").Required().URL()
+	queryRangeCmd.Arg("server", "Prometheus server to query.").Required().URLVar(&serverURL)
 	queryRangeExpr := queryRangeCmd.Arg("expr", "PromQL query expression.").Required().String()
 	queryRangeHeaders := queryRangeCmd.Flag("header", "Extra headers to send to server.").StringMap()
 	queryRangeBegin := queryRangeCmd.Flag("start", "Query range start time (RFC3339 or Unix timestamp).").String()
@@ -139,7 +147,7 @@ func main() {
 	queryRangeStep := queryRangeCmd.Flag("step", "Query step size (duration).").Duration()
 
 	querySeriesCmd := queryCmd.Command("series", "Run series query.")
-	querySeriesServer := querySeriesCmd.Arg("server", "Prometheus server to query.").Required().URL()
+	querySeriesCmd.Arg("server", "Prometheus server to query.").Required().URLVar(&serverURL)
 	querySeriesMatch := querySeriesCmd.Flag("match", "Series selector. Can be specified multiple times.").Required().Strings()
 	querySeriesBegin := querySeriesCmd.Flag("start", "Start time (RFC3339 or Unix timestamp).").String()
 	querySeriesEnd := querySeriesCmd.Flag("end", "End time (RFC3339 or Unix timestamp).").String()
@@ -153,7 +161,7 @@ func main() {
 	debugAllServer := debugAllCmd.Arg("server", "Prometheus server to get all debug information from.").Required().String()
 
 	queryLabelsCmd := queryCmd.Command("labels", "Run labels query.")
-	queryLabelsServer := queryLabelsCmd.Arg("server", "Prometheus server to query.").Required().URL()
+	queryLabelsCmd.Arg("server", "Prometheus server to query.").Required().URLVar(&serverURL)
 	queryLabelsName := queryLabelsCmd.Arg("name", "Label name to provide label values for.").Required().String()
 	queryLabelsBegin := queryLabelsCmd.Flag("start", "Start time (RFC3339 or Unix timestamp).").String()
 	queryLabelsEnd := queryLabelsCmd.Flag("end", "End time (RFC3339 or Unix timestamp).").String()
@@ -190,6 +198,7 @@ func main() {
 	dumpPath := tsdbDumpCmd.Arg("db path", "Database path (default is "+defaultDBPath+").").Default(defaultDBPath).String()
 	dumpMinTime := tsdbDumpCmd.Flag("min-time", "Minimum timestamp to dump.").Default(strconv.FormatInt(math.MinInt64, 10)).Int64()
 	dumpMaxTime := tsdbDumpCmd.Flag("max-time", "Maximum timestamp to dump.").Default(strconv.FormatInt(math.MaxInt64, 10)).Int64()
+	dumpMatch := tsdbDumpCmd.Flag("match", "Series selector.").Default("{__name__=~'(?s:.*)'}").String()
 
 	importCmd := tsdbCmd.Command("create-blocks-from", "[Experimental] Import samples from input and produce TSDB blocks. Please refer to the storage docs for more details.")
 	importHumanReadable := importCmd.Flag("human-readable", "Print human readable values.").Short('r').Bool()
@@ -199,7 +208,8 @@ func main() {
 	importFilePath := openMetricsImportCmd.Arg("input file", "OpenMetrics file to read samples from.").Required().String()
 	importDBPath := openMetricsImportCmd.Arg("output directory", "Output directory for generated blocks.").Default(defaultDBPath).String()
 	importRulesCmd := importCmd.Command("rules", "Create blocks of data for new recording rules.")
-	importRulesURL := importRulesCmd.Flag("url", "The URL for the Prometheus API with the data where the rule will be backfilled from.").Default("http://localhost:9090").URL()
+	importRulesCmd.Flag("http.config.file", "HTTP client configuration file for promtool to connect to Prometheus.").PlaceHolder("<filename>").ExistingFileVar(&httpConfigFilePath)
+	importRulesCmd.Flag("url", "The URL for the Prometheus API with the data where the rule will be backfilled from.").Default("http://localhost:9090").URLVar(&serverURL)
 	importRulesStart := importRulesCmd.Flag("start", "The time to start backfilling the new rule from. Must be a RFC3339 formatted date or Unix timestamp. Required.").
 		Required().String()
 	importRulesEnd := importRulesCmd.Flag("end", "If an end time is provided, all recording rules in the rule files provided will be backfilled to the end time. Default will backfill up to 3 hours ago. Must be a RFC3339 formatted date or Unix timestamp.").String()
@@ -211,7 +221,7 @@ func main() {
 		"A list of one or more files containing recording rules to be backfilled. All recording rules listed in the files will be backfilled. Alerting rules are not evaluated.",
 	).Required().ExistingFiles()
 
-	featureList := app.Flag("enable-feature", "Comma separated feature names to enable (only PromQL related). See https://prometheus.io/docs/prometheus/latest/feature_flags/ for the options and more details.").Default("").Strings()
+	featureList := app.Flag("enable-feature", "Comma separated feature names to enable (only PromQL related and no-default-scrape-port). See https://prometheus.io/docs/prometheus/latest/feature_flags/ for the options and more details.").Default("").Strings()
 
 	parsedCmd := kingpin.MustParse(app.Parse(os.Args[1:]))
 
@@ -223,10 +233,29 @@ func main() {
 		p = &promqlPrinter{}
 	}
 
+	if httpConfigFilePath != "" {
+		if serverURL != nil && serverURL.User.Username() != "" {
+			kingpin.Fatalf("Cannot set base auth in the server URL and use a http.config.file at the same time")
+		}
+		var err error
+		httpConfig, _, err := config_util.LoadHTTPConfigFile(httpConfigFilePath)
+		if err != nil {
+			kingpin.Fatalf("Failed to load HTTP config file: %v", err)
+		}
+
+		httpRoundTripper, err = promconfig.NewRoundTripperFromConfig(*httpConfig, "promtool", config_util.WithUserAgent("promtool/"+version.Version))
+		if err != nil {
+			kingpin.Fatalf("Failed to create a new HTTP round tripper: %v", err)
+		}
+	}
+
+	var noDefaultScrapePort bool
 	for _, f := range *featureList {
 		opts := strings.Split(f, ",")
 		for _, o := range opts {
 			switch o {
+			case "no-default-scrape-port":
+				noDefaultScrapePort = true
 			case "":
 				continue
 			case "promql-at-modifier", "promql-negative-offset":
@@ -239,7 +268,7 @@ func main() {
 
 	switch parsedCmd {
 	case sdCheckCmd.FullCommand():
-		os.Exit(CheckSD(*sdConfigFile, *sdJobName, *sdTimeout))
+		os.Exit(CheckSD(*sdConfigFile, *sdJobName, *sdTimeout, noDefaultScrapePort))
 
 	case checkConfigCmd.FullCommand():
 		os.Exit(CheckConfig(*agentMode, *checkConfigSyntaxOnly, newLintConfig(*checkConfigLint, *checkConfigLintFatal), *configFiles...))
@@ -254,13 +283,13 @@ func main() {
 		os.Exit(CheckMetrics(*checkMetricsExtended))
 
 	case queryInstantCmd.FullCommand():
-		os.Exit(QueryInstant(*queryInstantServer, *queryInstantExpr, *queryInstantTime, p))
+		os.Exit(QueryInstant(serverURL, httpRoundTripper, *queryInstantExpr, *queryInstantTime, p))
 
 	case queryRangeCmd.FullCommand():
-		os.Exit(QueryRange(*queryRangeServer, *queryRangeHeaders, *queryRangeExpr, *queryRangeBegin, *queryRangeEnd, *queryRangeStep, p))
+		os.Exit(QueryRange(serverURL, httpRoundTripper, *queryRangeHeaders, *queryRangeExpr, *queryRangeBegin, *queryRangeEnd, *queryRangeStep, p))
 
 	case querySeriesCmd.FullCommand():
-		os.Exit(QuerySeries(*querySeriesServer, *querySeriesMatch, *querySeriesBegin, *querySeriesEnd, p))
+		os.Exit(QuerySeries(serverURL, httpRoundTripper, *querySeriesMatch, *querySeriesBegin, *querySeriesEnd, p))
 
 	case debugPprofCmd.FullCommand():
 		os.Exit(debugPprof(*debugPprofServer))
@@ -272,7 +301,7 @@ func main() {
 		os.Exit(debugAll(*debugAllServer))
 
 	case queryLabelsCmd.FullCommand():
-		os.Exit(QueryLabels(*queryLabelsServer, *queryLabelsMatch, *queryLabelsName, *queryLabelsBegin, *queryLabelsEnd, p))
+		os.Exit(QueryLabels(serverURL, httpRoundTripper, *queryLabelsMatch, *queryLabelsName, *queryLabelsBegin, *queryLabelsEnd, p))
 
 	case testRulesCmd.FullCommand():
 		os.Exit(RulesUnitTest(
@@ -293,13 +322,13 @@ func main() {
 		os.Exit(checkErr(listBlocks(*listPath, *listHumanReadable)))
 
 	case tsdbDumpCmd.FullCommand():
-		os.Exit(checkErr(dumpSamples(*dumpPath, *dumpMinTime, *dumpMaxTime)))
+		os.Exit(checkErr(dumpSamples(*dumpPath, *dumpMinTime, *dumpMaxTime, *dumpMatch)))
 	// TODO(aSquare14): Work on adding support for custom block size.
 	case openMetricsImportCmd.FullCommand():
 		os.Exit(backfillOpenMetrics(*importFilePath, *importDBPath, *importHumanReadable, *importQuiet, *maxBlockDuration))
 
 	case importRulesCmd.FullCommand():
-		os.Exit(checkErr(importRules(*importRulesURL, *importRulesStart, *importRulesEnd, *importRulesOutputDir, *importRulesEvalInterval, *maxBlockDuration, *importRulesFiles...)))
+		os.Exit(checkErr(importRules(serverURL, httpRoundTripper, *importRulesStart, *importRulesEnd, *importRulesOutputDir, *importRulesEvalInterval, *maxBlockDuration, *importRulesFiles...)))
 	}
 }
 
@@ -344,6 +373,7 @@ func CheckConfig(agentMode, checkSyntaxOnly bool, lintSettings lintConfig, files
 		ruleFiles, err := checkConfig(agentMode, f, checkSyntaxOnly)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "  FAILED:", err)
+			hasErrors = true
 			failed = true
 		} else {
 			if len(ruleFiles) > 0 {
@@ -627,9 +657,9 @@ func checkRules(filename string, lintSettings lintConfig) (int, []error) {
 			errMessage := fmt.Sprintf("%d duplicate rule(s) found.\n", len(dRules))
 			for _, n := range dRules {
 				errMessage += fmt.Sprintf("Metric: %s\nLabel(s):\n", n.metric)
-				for _, l := range n.label {
+				n.label.Range(func(l labels.Label) {
 					errMessage += fmt.Sprintf("\t%s: %s\n", l.Name, l.Value)
-				}
+				})
 			}
 			errMessage += "Might cause inconsistency while recording expressions"
 			return 0, []error{fmt.Errorf("%w %s", lintError, errMessage)}
@@ -790,12 +820,13 @@ func checkMetricsExtended(r io.Reader) ([]metricStat, int, error) {
 }
 
 // QueryInstant performs an instant query against a Prometheus server.
-func QueryInstant(url *url.URL, query, evalTime string, p printer) int {
+func QueryInstant(url *url.URL, roundTripper http.RoundTripper, query, evalTime string, p printer) int {
 	if url.Scheme == "" {
 		url.Scheme = "http"
 	}
 	config := api.Config{
-		Address: url.String(),
+		Address:      url.String(),
+		RoundTripper: roundTripper,
 	}
 
 	// Create new client.
@@ -830,12 +861,13 @@ func QueryInstant(url *url.URL, query, evalTime string, p printer) int {
 }
 
 // QueryRange performs a range query against a Prometheus server.
-func QueryRange(url *url.URL, headers map[string]string, query, start, end string, step time.Duration, p printer) int {
+func QueryRange(url *url.URL, roundTripper http.RoundTripper, headers map[string]string, query, start, end string, step time.Duration, p printer) int {
 	if url.Scheme == "" {
 		url.Scheme = "http"
 	}
 	config := api.Config{
-		Address: url.String(),
+		Address:      url.String(),
+		RoundTripper: roundTripper,
 	}
 
 	if len(headers) > 0 {
@@ -843,7 +875,7 @@ func QueryRange(url *url.URL, headers map[string]string, query, start, end strin
 			for key, value := range headers {
 				req.Header.Add(key, value)
 			}
-			return http.DefaultTransport.RoundTrip(req)
+			return roundTripper.RoundTrip(req)
 		})
 	}
 
@@ -903,12 +935,13 @@ func QueryRange(url *url.URL, headers map[string]string, query, start, end strin
 }
 
 // QuerySeries queries for a series against a Prometheus server.
-func QuerySeries(url *url.URL, matchers []string, start, end string, p printer) int {
+func QuerySeries(url *url.URL, roundTripper http.RoundTripper, matchers []string, start, end string, p printer) int {
 	if url.Scheme == "" {
 		url.Scheme = "http"
 	}
 	config := api.Config{
-		Address: url.String(),
+		Address:      url.String(),
+		RoundTripper: roundTripper,
 	}
 
 	// Create new client.
@@ -939,12 +972,13 @@ func QuerySeries(url *url.URL, matchers []string, start, end string, p printer) 
 }
 
 // QueryLabels queries for label values against a Prometheus server.
-func QueryLabels(url *url.URL, matchers []string, name, start, end string, p printer) int {
+func QueryLabels(url *url.URL, roundTripper http.RoundTripper, matchers []string, name, start, end string, p printer) int {
 	if url.Scheme == "" {
 		url.Scheme = "http"
 	}
 	config := api.Config{
-		Address: url.String(),
+		Address:      url.String(),
+		RoundTripper: roundTripper,
 	}
 
 	// Create new client.
@@ -1149,7 +1183,7 @@ func (j *jsonPrinter) printLabelValues(v model.LabelValues) {
 
 // importRules backfills recording rules from the files provided. The output are blocks of data
 // at the outputDir location.
-func importRules(url *url.URL, start, end, outputDir string, evalInterval, maxBlockDuration time.Duration, files ...string) error {
+func importRules(url *url.URL, roundTripper http.RoundTripper, start, end, outputDir string, evalInterval, maxBlockDuration time.Duration, files ...string) error {
 	ctx := context.Background()
 	var stime, etime time.Time
 	var err error
@@ -1179,7 +1213,8 @@ func importRules(url *url.URL, start, end, outputDir string, evalInterval, maxBl
 		maxBlockDuration: maxBlockDuration,
 	}
 	client, err := api.NewClient(api.Config{
-		Address: url.String(),
+		Address:      url.String(),
+		RoundTripper: roundTripper,
 	})
 	if err != nil {
 		return fmt.Errorf("new api client error: %w", err)
@@ -1216,7 +1251,7 @@ func checkTargetGroupsForAlertmanager(targetGroups []*targetgroup.Group, amcfg *
 
 func checkTargetGroupsForScrapeConfig(targetGroups []*targetgroup.Group, scfg *config.ScrapeConfig) error {
 	for _, tg := range targetGroups {
-		_, failures := scrape.TargetsFromGroup(tg, scfg)
+		_, failures := scrape.TargetsFromGroup(tg, scfg, false)
 		if len(failures) > 0 {
 			first := failures[0]
 			return first

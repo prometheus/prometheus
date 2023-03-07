@@ -87,6 +87,12 @@ scrape_configs:
       - regex:
         replacement: static
         target_label: abc
+      - source_labels: [foo]
+        target_label: abc
+        action: keepequal
+      - source_labels: [foo]
+        target_label: abc
+        action: dropequal
 
     authorization:
       credentials_file: valid_token_file
@@ -213,6 +219,10 @@ scrape_configs:
         tls_config:
           cert_file: valid_cert_file
           key_file: valid_key_file
+
+  - job_name: service-nomad
+    nomad_sd_configs:
+      - server: 'http://localhost:4646'
 
   - job_name: service-ec2
     ec2_sd_configs:
@@ -345,6 +355,21 @@ scrape_configs:
     eureka_sd_configs:
       - server: "http://eureka.example.com:8761/eureka"
 
+  - job_name: ovhcloud
+    ovhcloud_sd_configs:
+      - service: vps
+        endpoint: ovh-eu
+        application_key: testAppKey
+        application_secret: testAppSecret
+        consumer_key: testConsumerKey
+        refresh_interval: 1m
+      - service: dedicated_server
+        endpoint: ovh-eu
+        application_key: testAppKey
+        application_secret: testAppSecret
+        consumer_key: testConsumerKey
+        refresh_interval: 1m
+
   - job_name: scaleway
     scaleway_sd_configs:
       - role: instance
@@ -386,6 +411,10 @@ alerting:
             - "1.2.3.4:9093"
             - "1.2.3.5:9093"
             - "1.2.3.6:9093"
+
+storage:
+  tsdb:
+    out_of_order_time_window: 30m
 
 tracing:
   endpoint: "localhost:4317"

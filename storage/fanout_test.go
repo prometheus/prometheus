@@ -23,6 +23,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
@@ -85,12 +86,13 @@ func TestFanout_SelectSorted(t *testing.T) {
 
 		result := make(map[int64]float64)
 		var labelsResult labels.Labels
+		var iterator chunkenc.Iterator
 		for seriesSet.Next() {
 			series := seriesSet.At()
 			seriesLabels := series.Labels()
 			labelsResult = seriesLabels
-			iterator := series.Iterator()
-			for iterator.Next() {
+			iterator := series.Iterator(iterator)
+			for iterator.Next() == chunkenc.ValFloat {
 				timestamp, value := iterator.At()
 				result[timestamp] = value
 			}
@@ -111,12 +113,13 @@ func TestFanout_SelectSorted(t *testing.T) {
 
 		result := make(map[int64]float64)
 		var labelsResult labels.Labels
+		var iterator chunkenc.Iterator
 		for seriesSet.Next() {
 			series := seriesSet.At()
 			seriesLabels := series.Labels()
 			labelsResult = seriesLabels
-			iterator := series.Iterator()
-			for iterator.Next() {
+			iterator := series.Iterator(iterator)
+			for iterator.Next() == chunkenc.ValFloat {
 				timestamp, value := iterator.At()
 				result[timestamp] = value
 			}

@@ -58,7 +58,7 @@ func TestApiStatusCodes(t *testing.T) {
 		"promql.ErrQueryCanceled": {
 			err:            promql.ErrQueryCanceled("some error"),
 			expectedString: "query was canceled",
-			expectedCode:   http.StatusServiceUnavailable,
+			expectedCode:   statusClientClosedConnection,
 		},
 
 		"promql.ErrQueryTimeout": {
@@ -76,7 +76,7 @@ func TestApiStatusCodes(t *testing.T) {
 		"context.Canceled": {
 			err:            context.Canceled,
 			expectedString: "context canceled",
-			expectedCode:   http.StatusUnprocessableEntity,
+			expectedCode:   statusClientClosedConnection,
 		},
 	} {
 		for k, q := range map[string]storage.SampleAndChunkQueryable{
@@ -113,6 +113,7 @@ func createPrometheusAPI(q storage.SampleAndChunkQueryable) *route.Router {
 		q,
 		nil,
 		nil,
+		func(context.Context) ScrapePoolsRetriever { return &DummyScrapePoolsRetriever{} },
 		func(context.Context) TargetRetriever { return &DummyTargetRetriever{} },
 		func(context.Context) AlertmanagerRetriever { return &DummyAlertmanagerRetriever{} },
 		func() config.Config { return config.Config{} },
@@ -141,8 +142,13 @@ func createPrometheusAPI(q storage.SampleAndChunkQueryable) *route.Router {
 }
 
 type errorTestQueryable struct {
+	storage.ExemplarQueryable
 	q   storage.Querier
 	err error
+}
+
+func (t errorTestQueryable) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, error) {
+	return nil, t.err
 }
 
 func (t errorTestQueryable) ChunkQuerier(ctx context.Context, mint, maxt int64) (storage.ChunkQuerier, error) {
@@ -198,6 +204,13 @@ func (t errorTestSeriesSet) Err() error {
 
 func (t errorTestSeriesSet) Warnings() storage.Warnings {
 	return nil
+}
+
+// DummyTargetRetriever implements github.com/prometheus/prometheus/web/api/v1.ScrapePoolsRetriever.
+type DummyScrapePoolsRetriever struct{}
+
+func (DummyScrapePoolsRetriever) ScrapePools() []string {
+	return []string{}
 }
 
 // DummyTargetRetriever implements github.com/prometheus/prometheus/web/api/v1.targetRetriever.

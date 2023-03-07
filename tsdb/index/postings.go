@@ -21,6 +21,7 @@ import (
 	"sync"
 
 	"github.com/pkg/errors"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -90,7 +91,7 @@ func (p *MemPostings) Symbols() StringIter {
 		res = append(res, k)
 	}
 
-	sort.Strings(res)
+	slices.Sort(res)
 	return NewStringListIter(res)
 }
 
@@ -239,11 +240,9 @@ func (p *MemPostings) EnsureOrder() {
 
 	for i := 0; i < n; i++ {
 		go func() {
-			var sortable seriesRefSlice
 			for job := range workc {
 				for _, l := range *job {
-					sortable = l
-					sort.Sort(&sortable)
+					slices.Sort(l)
 				}
 
 				*job = (*job)[:0]
@@ -354,9 +353,9 @@ func (p *MemPostings) Iter(f func(labels.Label, Postings) error) error {
 func (p *MemPostings) Add(id storage.SeriesRef, lset labels.Labels) {
 	p.mtx.Lock()
 
-	for _, l := range lset {
+	lset.Range(func(l labels.Label) {
 		p.addFor(id, l)
-	}
+	})
 	p.addFor(id, allPostingsKey)
 
 	p.mtx.Unlock()
@@ -427,6 +426,13 @@ var emptyPostings = errPostings{}
 // It triggers optimized flow in other functions like Intersect, Without etc.
 func EmptyPostings() Postings {
 	return emptyPostings
+}
+
+// IsEmptyPostingsType returns true if the postings are an empty postings list.
+// When this function returns false, it doesn't mean that the postings isn't empty
+// (it could be an empty intersection of two non-empty postings, for example).
+func IsEmptyPostingsType(p Postings) bool {
+	return p == emptyPostings
 }
 
 // ErrPostings returns new postings that immediately error.
@@ -829,13 +835,6 @@ func (it *bigEndianPostings) Seek(x storage.SeriesRef) bool {
 func (it *bigEndianPostings) Err() error {
 	return nil
 }
-
-// seriesRefSlice attaches the methods of sort.Interface to []storage.SeriesRef, sorting in increasing order.
-type seriesRefSlice []storage.SeriesRef
-
-func (x seriesRefSlice) Len() int           { return len(x) }
-func (x seriesRefSlice) Less(i, j int) bool { return x[i] < x[j] }
-func (x seriesRefSlice) Swap(i, j int)      { x[i], x[j] = x[j], x[i] }
 
 // FindIntersectingPostings checks the intersection of p and candidates[i] for each i in candidates,
 // if intersection is non empty, then i is added to the indexes returned.

@@ -23,7 +23,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
 	"sync"
 	"time"
 
@@ -32,14 +31,13 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
-	"github.com/prometheus/prometheus/tsdb/wal"
+	"github.com/prometheus/prometheus/tsdb/wlog"
 )
 
 // WALEntryType indicates what data a WAL entry contains.
@@ -91,7 +89,7 @@ func newWalMetrics(r prometheus.Registerer) *walMetrics {
 // WAL is a write ahead log that can log new series labels and samples.
 // It must be completely read before new entries are logged.
 //
-// DEPRECATED: use wal pkg combined with the record codex instead.
+// DEPRECATED: use wlog pkg combined with the record codex instead.
 type WAL interface {
 	Reader() WALReader
 	LogSeries([]record.RefSeries) error
@@ -148,7 +146,7 @@ func newCRC32() hash.Hash32 {
 
 // SegmentWAL is a write ahead log for series data.
 //
-// DEPRECATED: use wal pkg combined with the record coders instead.
+// DEPRECATED: use wlog pkg combined with the record coders instead.
 type SegmentWAL struct {
 	mtx     sync.Mutex
 	metrics *walMetrics
@@ -790,12 +788,7 @@ const (
 func (w *SegmentWAL) encodeSeries(buf *encoding.Encbuf, series []record.RefSeries) uint8 {
 	for _, s := range series {
 		buf.PutBE64(uint64(s.Ref))
-		buf.PutUvarint(len(s.Labels))
-
-		for _, l := range s.Labels {
-			buf.PutUvarintStr(l.Name)
-			buf.PutUvarintStr(l.Value)
-		}
+		record.EncodeLabels(buf, s.Labels)
 	}
 	return walSeriesSimple
 }
@@ -840,6 +833,7 @@ type walReader struct {
 	cur   int
 	buf   []byte
 	crc32 hash.Hash32
+	dec   record.Decoder
 
 	curType    WALEntryType
 	curFlag    byte
@@ -1024,7 +1018,7 @@ func (r *walReader) next() bool {
 	// If we reached the end of the reader, advance to the next one
 	// and close.
 	// Do not close on the last one as it will still be appended to.
-	if err == io.EOF {
+	if errors.Is(err, io.EOF) {
 		if r.cur == len(r.files)-1 {
 			return false
 		}
@@ -1123,14 +1117,7 @@ func (r *walReader) decodeSeries(flag byte, b []byte, res *[]record.RefSeries) e
 
 	for len(dec.B) > 0 && dec.Err() == nil {
 		ref := chunks.HeadSeriesRef(dec.Be64())
-
-		lset := make(labels.Labels, dec.Uvarint())
-
-		for i := range lset {
-			lset[i].Name = dec.UvarintStr()
-			lset[i].Value = dec.UvarintStr()
-		}
-		sort.Sort(lset)
+		lset := r.dec.DecodeLabels(&dec)
 
 		*res = append(*res, record.RefSeries{
 			Ref:    ref,
@@ -1242,7 +1229,7 @@ func MigrateWAL(logger log.Logger, dir string) (err error) {
 	if err := os.RemoveAll(tmpdir); err != nil {
 		return errors.Wrap(err, "cleanup replacement dir")
 	}
-	repl, err := wal.New(logger, nil, tmpdir, false)
+	repl, err := wlog.New(logger, nil, tmpdir, false)
 	if err != nil {
 		return errors.Wrap(err, "open new WAL")
 	}

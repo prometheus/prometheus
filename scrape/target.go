@@ -172,22 +172,20 @@ func (t *Target) offset(interval time.Duration, jitterSeed uint64) time.Duration
 
 // Labels returns a copy of the set of all public labels of the target.
 func (t *Target) Labels() labels.Labels {
-	lset := make(labels.Labels, 0, len(t.labels))
-	for _, l := range t.labels {
+	b := labels.NewScratchBuilder(t.labels.Len())
+	t.labels.Range(func(l labels.Label) {
 		if !strings.HasPrefix(l.Name, model.ReservedLabelPrefix) {
-			lset = append(lset, l)
+			b.Add(l.Name, l.Value)
 		}
-	}
-	return lset
+	})
+	return b.Labels()
 }
 
 // DiscoveredLabels returns a copy of the target's labels before any processing.
 func (t *Target) DiscoveredLabels() labels.Labels {
 	t.mtx.Lock()
 	defer t.mtx.Unlock()
-	lset := make(labels.Labels, len(t.discoveredLabels))
-	copy(lset, t.discoveredLabels)
-	return lset
+	return t.discoveredLabels.Copy()
 }
 
 // SetDiscoveredLabels sets new DiscoveredLabels
@@ -205,9 +203,9 @@ func (t *Target) URL() *url.URL {
 		params[k] = make([]string, len(v))
 		copy(params[k], v)
 	}
-	for _, l := range t.labels {
+	t.labels.Range(func(l labels.Label) {
 		if !strings.HasPrefix(l.Name, model.ParamLabelPrefix) {
-			continue
+			return
 		}
 		ks := l.Name[len(model.ParamLabelPrefix):]
 
@@ -216,7 +214,7 @@ func (t *Target) URL() *url.URL {
 		} else {
 			params[ks] = []string{l.Value}
 		}
-	}
+	})
 
 	return &url.URL{
 		Scheme:   t.labels.Get(model.SchemeLabel),
@@ -351,7 +349,7 @@ func (app *timeLimitAppender) Append(ref storage.SeriesRef, lset labels.Labels, 
 // PopulateLabels builds a label set from the given label set and scrape configuration.
 // It returns a label set before relabeling was applied as the second return value.
 // Returns the original discovered label set found before relabelling was applied if the target is dropped during relabeling.
-func PopulateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig labels.Labels, err error) {
+func PopulateLabels(lset labels.Labels, cfg *config.ScrapeConfig, noDefaultPort bool) (res, orig labels.Labels, err error) {
 	// Copy labels into the labelset for the target if they are not set already.
 	scrapeLabels := []labels.Label{
 		{Name: model.JobLabel, Value: cfg.JobName},
@@ -374,97 +372,120 @@ func PopulateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 		}
 	}
 
-	preRelabelLabels := lb.Labels()
-	lset = relabel.Process(preRelabelLabels, cfg.RelabelConfigs...)
+	preRelabelLabels := lb.Labels(labels.EmptyLabels())
+	lset, keep := relabel.Process(preRelabelLabels, cfg.RelabelConfigs...)
 
 	// Check if the target was dropped.
-	if lset == nil {
-		return nil, preRelabelLabels, nil
+	if !keep {
+		return labels.EmptyLabels(), preRelabelLabels, nil
 	}
 	if v := lset.Get(model.AddressLabel); v == "" {
-		return nil, nil, errors.New("no address")
+		return labels.EmptyLabels(), labels.EmptyLabels(), errors.New("no address")
 	}
 
 	lb = labels.NewBuilder(lset)
 
 	// addPort checks whether we should add a default port to the address.
 	// If the address is not valid, we don't append a port either.
-	addPort := func(s string) bool {
+	addPort := func(s string) (string, string, bool) {
 		// If we can split, a port exists and we don't have to add one.
-		if _, _, err := net.SplitHostPort(s); err == nil {
-			return false
+		if host, port, err := net.SplitHostPort(s); err == nil {
+			return host, port, false
 		}
 		// If adding a port makes it valid, the previous error
 		// was not due to an invalid address and we can append a port.
 		_, _, err := net.SplitHostPort(s + ":1234")
-		return err == nil
+		return "", "", err == nil
 	}
+
 	addr := lset.Get(model.AddressLabel)
-	// If it's an address with no trailing port, infer it based on the used scheme.
-	if addPort(addr) {
+	scheme := lset.Get(model.SchemeLabel)
+	host, port, add := addPort(addr)
+	// If it's an address with no trailing port, infer it based on the used scheme
+	// unless the no-default-scrape-port feature flag is present.
+	if !noDefaultPort && add {
 		// Addresses reaching this point are already wrapped in [] if necessary.
-		switch lset.Get(model.SchemeLabel) {
+		switch scheme {
 		case "http", "":
 			addr = addr + ":80"
 		case "https":
 			addr = addr + ":443"
 		default:
-			return nil, nil, errors.Errorf("invalid scheme: %q", cfg.Scheme)
+			return labels.EmptyLabels(), labels.EmptyLabels(), errors.Errorf("invalid scheme: %q", cfg.Scheme)
 		}
 		lb.Set(model.AddressLabel, addr)
 	}
 
+	if noDefaultPort {
+		// If it's an address with a trailing default port and the
+		// no-default-scrape-port flag is present, remove the port.
+		switch port {
+		case "80":
+			if scheme == "http" {
+				lb.Set(model.AddressLabel, host)
+			}
+		case "443":
+			if scheme == "https" {
+				lb.Set(model.AddressLabel, host)
+			}
+		}
+	}
+
 	if err := config.CheckTargetAddress(model.LabelValue(addr)); err != nil {
-		return nil, nil, err
+		return labels.EmptyLabels(), labels.EmptyLabels(), err
 	}
 
 	interval := lset.Get(model.ScrapeIntervalLabel)
 	intervalDuration, err := model.ParseDuration(interval)
 	if err != nil {
-		return nil, nil, errors.Errorf("error parsing scrape interval: %v", err)
+		return labels.EmptyLabels(), labels.EmptyLabels(), errors.Errorf("error parsing scrape interval: %v", err)
 	}
 	if time.Duration(intervalDuration) == 0 {
-		return nil, nil, errors.New("scrape interval cannot be 0")
+		return labels.EmptyLabels(), labels.EmptyLabels(), errors.New("scrape interval cannot be 0")
 	}
 
 	timeout := lset.Get(model.ScrapeTimeoutLabel)
 	timeoutDuration, err := model.ParseDuration(timeout)
 	if err != nil {
-		return nil, nil, errors.Errorf("error parsing scrape timeout: %v", err)
+		return labels.EmptyLabels(), labels.EmptyLabels(), errors.Errorf("error parsing scrape timeout: %v", err)
 	}
 	if time.Duration(timeoutDuration) == 0 {
-		return nil, nil, errors.New("scrape timeout cannot be 0")
+		return labels.EmptyLabels(), labels.EmptyLabels(), errors.New("scrape timeout cannot be 0")
 	}
 
 	if timeoutDuration > intervalDuration {
-		return nil, nil, errors.Errorf("scrape timeout cannot be greater than scrape interval (%q > %q)", timeout, interval)
+		return labels.EmptyLabels(), labels.EmptyLabels(), errors.Errorf("scrape timeout cannot be greater than scrape interval (%q > %q)", timeout, interval)
 	}
 
 	// Meta labels are deleted after relabelling. Other internal labels propagate to
 	// the target which decides whether they will be part of their label set.
-	for _, l := range lset {
+	lset.Range(func(l labels.Label) {
 		if strings.HasPrefix(l.Name, model.MetaLabelPrefix) {
 			lb.Del(l.Name)
 		}
-	}
+	})
 
 	// Default the instance label to the target address.
 	if v := lset.Get(model.InstanceLabel); v == "" {
 		lb.Set(model.InstanceLabel, addr)
 	}
 
-	res = lb.Labels()
-	for _, l := range res {
+	res = lb.Labels(labels.EmptyLabels())
+	err = res.Validate(func(l labels.Label) error {
 		// Check label values are valid, drop the target if not.
 		if !model.LabelValue(l.Value).IsValid() {
-			return nil, nil, errors.Errorf("invalid label value for %q: %q", l.Name, l.Value)
+			return errors.Errorf("invalid label value for %q: %q", l.Name, l.Value)
 		}
+		return nil
+	})
+	if err != nil {
+		return labels.EmptyLabels(), labels.EmptyLabels(), err
 	}
 	return res, preRelabelLabels, nil
 }
 
 // TargetsFromGroup builds targets based on the given TargetGroup and config.
-func TargetsFromGroup(tg *targetgroup.Group, cfg *config.ScrapeConfig) ([]*Target, []error) {
+func TargetsFromGroup(tg *targetgroup.Group, cfg *config.ScrapeConfig, noDefaultPort bool) ([]*Target, []error) {
 	targets := make([]*Target, 0, len(tg.Targets))
 	failures := []error{}
 
@@ -482,12 +503,12 @@ func TargetsFromGroup(tg *targetgroup.Group, cfg *config.ScrapeConfig) ([]*Targe
 
 		lset := labels.New(lbls...)
 
-		lbls, origLabels, err := PopulateLabels(lset, cfg)
+		lset, origLabels, err := PopulateLabels(lset, cfg, noDefaultPort)
 		if err != nil {
 			failures = append(failures, errors.Wrapf(err, "instance %d in group %s", i, tg))
 		}
-		if lbls != nil || origLabels != nil {
-			targets = append(targets, NewTarget(lbls, origLabels, cfg.Params))
+		if !lset.IsEmpty() || !origLabels.IsEmpty() {
+			targets = append(targets, NewTarget(lset, origLabels, cfg.Params))
 		}
 	}
 	return targets, failures

@@ -55,8 +55,14 @@ import (
 	// Register moby plugin.
 	_ "github.com/prometheus/prometheus/discovery/moby"
 
+	// Register nomad plugin.
+	_ "github.com/prometheus/prometheus/discovery/nomad"
+
 	// Register openstack plugin.
 	_ "github.com/prometheus/prometheus/discovery/openstack"
+
+	// Register ovhcloud plugin.
+	_ "github.com/prometheus/prometheus/discovery/ovhcloud"
 
 	// Register puppetdb plugin.
 	_ "github.com/prometheus/prometheus/discovery/puppetdb"

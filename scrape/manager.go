@@ -124,10 +124,17 @@ func NewManager(o *Options, logger log.Logger, app storage.Appendable) *Manager 
 
 // Options are the configuration parameters to the scrape manager.
 type Options struct {
-	ExtraMetrics bool
+	ExtraMetrics  bool
+	NoDefaultPort bool
 	// Option used by downstream scraper users like OpenTelemetry Collector
 	// to help lookup metric metadata. Should be false for Prometheus.
 	PassMetadataInContext bool
+	// Option to enable the experimental in-memory metadata storage and append
+	// metadata to the WAL.
+	EnableMetadataStorage bool
+	// Option to enable protobuf negotiation with the client. Note that the client can already
+	// send protobuf without needing to enable this.
+	EnableProtobufNegotiation bool
 	// Option to increase the interval used by scrape manager to throttle target groups updates.
 	DiscoveryReloadInterval model.Duration
 
@@ -207,7 +214,7 @@ func (m *Manager) reload() {
 				level.Error(m.logger).Log("msg", "error reloading target set", "err", "invalid config id:"+setName)
 				continue
 			}
-			sp, err := newScrapePool(scrapeConfig, m.append, m.jitterSeed, log.With(m.logger, "scrape_pool", setName), m.opts.ExtraMetrics, m.opts.PassMetadataInContext, m.opts.HTTPClientOptions)
+			sp, err := newScrapePool(scrapeConfig, m.append, m.jitterSeed, log.With(m.logger, "scrape_pool", setName), m.opts)
 			if err != nil {
 				level.Error(m.logger).Log("msg", "error creating new scrape pool", "err", err, "scrape_pool", setName)
 				continue
@@ -304,6 +311,18 @@ func (m *Manager) TargetsAll() map[string][]*Target {
 		targets[tset] = append(sp.ActiveTargets(), sp.DroppedTargets()...)
 	}
 	return targets
+}
+
+// ScrapePools returns the list of all scrape pool names.
+func (m *Manager) ScrapePools() []string {
+	m.mtxScrape.Lock()
+	defer m.mtxScrape.Unlock()
+
+	names := make([]string, 0, len(m.scrapePools))
+	for name := range m.scrapePools {
+		names = append(names, name)
+	}
+	return names
 }
 
 // TargetsActive returns the active targets currently being scraped.

@@ -17,6 +17,7 @@ import (
 	"context"
 	"math"
 	"net/url"
+	"reflect"
 	"testing"
 	"time"
 
@@ -430,6 +431,16 @@ func TestTemplateExpansion(t *testing.T) {
 			output: "2015-06-23 13:19:44.128 +0000 UTC",
 		},
 		{
+			// ToTime - model.SampleValue input - float64.
+			text:   `{{ (1435065584.128 | toTime).Format "2006" }}`,
+			output: "2015",
+		},
+		{
+			// ToTime - model.SampleValue input - string.
+			text:   `{{ ("1435065584.128" | toTime).Format "2006" }}`,
+			output: "2015",
+		},
+		{
 			// Title.
 			text:   "{{ \"aa bb CC\" | title }}",
 			output: "Aa Bb CC",
@@ -558,5 +569,57 @@ func testTemplateExpansion(t *testing.T, scenarios []scenario) {
 		if err == nil {
 			require.Equal(t, s.output, result)
 		}
+	}
+}
+
+func Test_floatToTime(t *testing.T) {
+	type args struct {
+		v float64
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    *time.Time
+		wantErr bool
+	}{
+		{
+			"happy path",
+			args{
+				v: 1657155181,
+			},
+			func() *time.Time {
+				tm := time.Date(2022, 7, 7, 0, 53, 1, 0, time.UTC)
+				return &tm
+			}(),
+			false,
+		},
+		{
+			"more than math.MaxInt64",
+			args{
+				v: 1.79769313486231570814527423731704356798070e+300,
+			},
+			nil,
+			true,
+		},
+		{
+			"less than math.MinInt64",
+			args{
+				v: -1.79769313486231570814527423731704356798070e+300,
+			},
+			nil,
+			true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := floatToTime(tt.args.v)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("floatToTime() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("floatToTime() got = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }

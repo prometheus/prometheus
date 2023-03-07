@@ -244,21 +244,31 @@ export const encodePanelOptionsToQueryString = (panels: PanelMeta[]): string => 
 };
 
 export const setQuerySearchFilter = (search: string) => {
-  window.history.pushState({}, '', `?search=${search}`);
+  setQueryParam('search', search);
 };
 
 export const getQuerySearchFilter = (): string => {
+  return getQueryParam('search');
+};
+
+export const setQueryParam = (key: string, value: string) => {
+  const params = new URLSearchParams(window.location.search);
+  params.set(key, value);
+  window.history.pushState({}, '', '?' + params.toString());
+};
+
+export const getQueryParam = (key: string): string => {
   const locationSearch = window.location.search;
   const params = new URLSearchParams(locationSearch);
-  const search = params.get('search') || '';
-  return search;
+  return params.get(key) || '';
 };
 
 export const createExpressionLink = (expr: string): string => {
   return `../graph?g0.expr=${encodeURIComponent(expr)}&g0.tab=1&g0.stacked=0&g0.show_exemplars=0.g0.range_input=1h.`;
 };
 
-export const mapObjEntries = <T, key extends keyof T, Z>(
+// eslint-disable-next-line @typescript-eslint/no-explicit-any,
+export const mapObjEntries = <T extends { [s: string]: any }, key extends keyof T, Z>(
   o: T,
   cb: ([k, v]: [string, T[key]], i: number, arr: [string, T[key]][]) => Z
 ): Z[] => Object.entries(o).map(cb);

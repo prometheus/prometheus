@@ -28,17 +28,21 @@ import (
 // or a chain of function definitions (e.g. String(), PromQLExpr(), etc.) convention is
 // to list them as follows:
 //
-// 	- Statements
-// 	- statement types (alphabetical)
-// 	- ...
-// 	- Expressions
-// 	- expression types (alphabetical)
-// 	- ...
-//
+//   - Statements
+//   - statement types (alphabetical)
+//   - ...
+//   - Expressions
+//   - expression types (alphabetical)
+//   - ...
 type Node interface {
 	// String representation of the node that returns the given node when parsed
 	// as part of a valid query.
 	String() string
+
+	// Pretty returns the prettified representation of the node.
+	// It uses the level information to determine at which level/depth the current
+	// node is in the AST and uses this to apply indentation.
+	Pretty(level int) string
 
 	// PositionRange returns the position of the AST Node in the query string.
 	PositionRange() PositionRange
@@ -63,6 +67,8 @@ type EvalStmt struct {
 	Start, End time.Time
 	// Time between two evaluated instants for the range [Start:End].
 	Interval time.Duration
+	// Lookback delta to use for this evaluation.
+	LookbackDelta time.Duration
 }
 
 func (*EvalStmt) PromQLStmt() {}
@@ -205,8 +211,9 @@ type VectorSelector struct {
 // of an arbitrary function during handling. It is used to test the Engine.
 type TestStmt func(context.Context) error
 
-func (TestStmt) String() string { return "test statement" }
-func (TestStmt) PromQLStmt()    {}
+func (TestStmt) String() string      { return "test statement" }
+func (TestStmt) PromQLStmt()         {}
+func (t TestStmt) Pretty(int) string { return t.String() }
 
 func (TestStmt) PositionRange() PositionRange {
 	return PositionRange{

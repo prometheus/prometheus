@@ -80,6 +80,7 @@ func TestDNS(t *testing.T) {
 							"__meta_dns_name":              "web.example.com.",
 							"__meta_dns_srv_record_target": "",
 							"__meta_dns_srv_record_port":   "",
+							"__meta_dns_mx_record_target":  "",
 						},
 					},
 				},
@@ -110,6 +111,7 @@ func TestDNS(t *testing.T) {
 							"__meta_dns_name":              "web.example.com.",
 							"__meta_dns_srv_record_target": "",
 							"__meta_dns_srv_record_port":   "",
+							"__meta_dns_mx_record_target":  "",
 						},
 					},
 				},
@@ -140,12 +142,14 @@ func TestDNS(t *testing.T) {
 							"__meta_dns_name":              "_mysql._tcp.db.example.com.",
 							"__meta_dns_srv_record_target": "db1.example.com.",
 							"__meta_dns_srv_record_port":   "3306",
+							"__meta_dns_mx_record_target":  "",
 						},
 						{
 							"__address__":                  "db2.example.com:3306",
 							"__meta_dns_name":              "_mysql._tcp.db.example.com.",
 							"__meta_dns_srv_record_target": "db2.example.com.",
 							"__meta_dns_srv_record_port":   "3306",
+							"__meta_dns_mx_record_target":  "",
 						},
 					},
 				},
@@ -175,6 +179,7 @@ func TestDNS(t *testing.T) {
 							"__meta_dns_name":              "_mysql._tcp.db.example.com.",
 							"__meta_dns_srv_record_target": "db1.example.com.",
 							"__meta_dns_srv_record_port":   "3306",
+							"__meta_dns_mx_record_target":  "",
 						},
 					},
 				},
@@ -192,6 +197,45 @@ func TestDNS(t *testing.T) {
 			expected: []*targetgroup.Group{
 				{
 					Source: "_mysql._tcp.db.example.com.",
+				},
+			},
+		},
+		{
+			name: "MX record query",
+			config: SDConfig{
+				Names:           []string{"example.com."},
+				Type:            "MX",
+				Port:            25,
+				RefreshInterval: model.Duration(time.Minute),
+			},
+			lookup: func(name string, qtype uint16, logger log.Logger) (*dns.Msg, error) {
+				return &dns.Msg{
+						Answer: []dns.RR{
+							&dns.MX{Preference: 0, Mx: "smtp1.example.com."},
+							&dns.MX{Preference: 10, Mx: "smtp2.example.com."},
+						},
+					},
+					nil
+			},
+			expected: []*targetgroup.Group{
+				{
+					Source: "example.com.",
+					Targets: []model.LabelSet{
+						{
+							"__address__":                  "smtp1.example.com:25",
+							"__meta_dns_name":              "example.com.",
+							"__meta_dns_srv_record_target": "",
+							"__meta_dns_srv_record_port":   "",
+							"__meta_dns_mx_record_target":  "smtp1.example.com.",
+						},
+						{
+							"__address__":                  "smtp2.example.com:25",
+							"__meta_dns_name":              "example.com.",
+							"__meta_dns_srv_record_target": "",
+							"__meta_dns_srv_record_port":   "",
+							"__meta_dns_mx_record_target":  "smtp2.example.com.",
+						},
+					},
 				},
 			},
 		},

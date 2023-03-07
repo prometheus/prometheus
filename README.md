@@ -1,6 +1,13 @@
-# Prometheus
+<h1 align="center" style="border-bottom: none">
+    <a href="//prometheus.io" target="_blank"><img alt="Prometheus" src="/documentation/images/prometheus-logo.svg"></a><br>Prometheus
+</h1>
 
-[![CircleCI](https://circleci.com/gh/prometheus/prometheus/tree/main.svg?style=shield)][circleci]
+<p align="center">Visit <a href="//prometheus.io" target="_blank">prometheus.io</a> for the full documentation,
+examples and guides.</p>
+
+<div align="center">
+
+[![CI](https://github.com/prometheus/prometheus/actions/workflows/ci.yml/badge.svg)](https://github.com/prometheus/prometheus/actions/workflows/ci.yml)
 [![Docker Repository on Quay](https://quay.io/repository/prometheus/prometheus/status)][quay]
 [![Docker Pulls](https://img.shields.io/docker/pulls/prom/prometheus.svg?maxAge=604800)][hub]
 [![Go Report Card](https://goreportcard.com/badge/github.com/prometheus/prometheus)](https://goreportcard.com/report/github.com/prometheus/prometheus)
@@ -8,8 +15,7 @@
 [![Gitpod ready-to-code](https://img.shields.io/badge/Gitpod-ready--to--code-blue?logo=gitpod)](https://gitpod.io/#https://github.com/prometheus/prometheus)
 [![Fuzzing Status](https://oss-fuzz-build-logs.storage.googleapis.com/badges/prometheus.svg)](https://bugs.chromium.org/p/oss-fuzz/issues/list?sort=-opened&can=1&q=proj:prometheus)
 
-Visit [prometheus.io](https://prometheus.io) for the full documentation,
-examples and guides.
+</div>
 
 Prometheus, a [Cloud Native Computing Foundation](https://cncf.io/) project, is a systems and service monitoring system. It collects metrics
 from configured targets at given intervals, evaluates rule expressions,
@@ -132,8 +138,6 @@ make npm_licenses
 make common-docker-amd64
 ```
 
-*NB* if you are on a Mac, you will need [gnu-tar](https://formulae.brew.sh/formula/gnu-tar).
-
 ## Using Prometheus as a Go Library
 
 ### Remote Write
@@ -172,7 +176,6 @@ For more information on building, running, and developing on the React-based UI,
 ## More information
 
 * Godoc documentation is available via [pkg.go.dev](https://pkg.go.dev/github.com/prometheus/prometheus). Due to peculiarities of Go Modules, v2.x.y will be displayed as v0.x.y.
-* You will find a CircleCI configuration in [`.circleci/config.yml`](.circleci/config.yml).
 * See the [Community page](https://prometheus.io/community) for how to reach the Prometheus developers and users on various communication channels.
 
 ## Contributing
@@ -184,5 +187,4 @@ Refer to [CONTRIBUTING.md](https://github.com/prometheus/prometheus/blob/main/CO
 Apache License 2.0, see [LICENSE](https://github.com/prometheus/prometheus/blob/main/LICENSE).
 
 [hub]: https://hub.docker.com/r/prom/prometheus/
-[circleci]: https://circleci.com/gh/prometheus/prometheus
 [quay]: https://quay.io/repository/prometheus/prometheus

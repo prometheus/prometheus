@@ -54,6 +54,9 @@ tls_server_config:
   # Go default cipher suites are used. Available cipher suites are documented
   # in the go documentation:
   # https://golang.org/pkg/crypto/tls/#pkg-constants
+  #
+  # Note that only the cipher returned by the following function are supported:
+  # https://pkg.go.dev/crypto/tls#CipherSuites
   [ cipher_suites:
     [ - <string> ] ]
 
@@ -87,7 +90,7 @@ http_server_config:
     # https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Content-Type-Options
     [ X-Content-Type-Options: <string> ]
     # Set the X-XSS-Protection header to all responses.
-    # Unset if blank. Accepted value is nosniff.
+    # Unset if blank.
     # https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-XSS-Protection
     [ X-XSS-Protection: <string> ]
     # Set the Strict-Transport-Security header to HTTP responses.
