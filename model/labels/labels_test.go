@@ -696,6 +696,31 @@ func BenchmarkLabels_Hash(b *testing.B) {
 	}
 }
 
+func BenchmarkBuilder(b *testing.B) {
+	m := []Label{
+		{"job", "node"},
+		{"instance", "123.123.1.211:9090"},
+		{"path", "/api/v1/namespaces/<namespace>/deployments/<name>"},
+		{"method", "GET"},
+		{"namespace", "system"},
+		{"status", "500"},
+		{"prometheus", "prometheus-core-1"},
+		{"datacenter", "eu-west-1"},
+		{"pod_name", "abcdef-99999-defee"},
+	}
+
+	var l Labels
+	builder := NewBuilder(EmptyLabels())
+	for i := 0; i < b.N; i++ {
+		builder.Reset(EmptyLabels())
+		for _, l := range m {
+			builder.Set(l.Name, l.Value)
+		}
+		l = builder.Labels(EmptyLabels())
+	}
+	require.Equal(b, 9, l.Len())
+}
+
 func BenchmarkLabels_Copy(b *testing.B) {
 	m := map[string]string{
 		"job":        "node",
