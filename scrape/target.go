@@ -482,11 +482,10 @@ func PopulateLabels(lb *labels.Builder, cfg *config.ScrapeConfig, noDefaultPort 
 }
 
 // TargetsFromGroup builds targets based on the given TargetGroup and config.
-func TargetsFromGroup(tg *targetgroup.Group, cfg *config.ScrapeConfig, noDefaultPort bool) ([]*Target, []error) {
-	targets := make([]*Target, 0, len(tg.Targets))
+func TargetsFromGroup(tg *targetgroup.Group, cfg *config.ScrapeConfig, noDefaultPort bool, targets []*Target, lb *labels.Builder) ([]*Target, []error) {
+	targets = targets[:0]
 	failures := []error{}
 
-	lb := labels.NewBuilder(labels.EmptyLabels())
 	for i, tlset := range tg.Targets {
 		lb.Reset(labels.EmptyLabels())
 

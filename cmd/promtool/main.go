@@ -1250,8 +1250,11 @@ func checkTargetGroupsForAlertmanager(targetGroups []*targetgroup.Group, amcfg *
 }
 
 func checkTargetGroupsForScrapeConfig(targetGroups []*targetgroup.Group, scfg *config.ScrapeConfig) error {
+	var targets []*scrape.Target
+	lb := labels.NewBuilder(labels.EmptyLabels())
 	for _, tg := range targetGroups {
-		_, failures := scrape.TargetsFromGroup(tg, scfg, false)
+		var failures []error
+		targets, failures = scrape.TargetsFromGroup(tg, scfg, false, targets, lb)
 		if len(failures) > 0 {
 			first := failures[0]
 			return first
