@@ -18,6 +18,7 @@ import (
 	"io"
 	"math"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 
@@ -58,6 +59,8 @@ var (
 
 	// defaultIsolationDisabled is true if isolation is disabled by default.
 	defaultIsolationDisabled = false
+
+	defaultWALReplayConcurrency = runtime.GOMAXPROCS(0)
 )
 
 // Head handles reads and writes of time series data within a time window.
@@ -155,6 +158,11 @@ type HeadOptions struct {
 	EnableMemorySnapshotOnShutdown bool
 
 	IsolationDisabled bool
+
+	// Maximum number of CPUs that can simultaneously processes WAL replay.
+	// The default value is GOMAXPROCS.
+	// If it is set to a negative value or zero, the default value is used.
+	WALReplayConcurrency int
 }
 
 const (
@@ -172,6 +180,7 @@ func DefaultHeadOptions() *HeadOptions {
 		StripeSize:           DefaultStripeSize,
 		SeriesCallback:       &noopSeriesLifecycleCallback{},
 		IsolationDisabled:    defaultIsolationDisabled,
+		WALReplayConcurrency: defaultWALReplayConcurrency,
 	}
 	ho.OutOfOrderCapMax.Store(DefaultOutOfOrderCapMax)
 	return ho
@@ -245,6 +254,10 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal, wbl *wlog.WL, opts *Hea
 
 	if opts.ChunkPool == nil {
 		opts.ChunkPool = chunkenc.NewPool()
+	}
+
+	if opts.WALReplayConcurrency <= 0 {
+		opts.WALReplayConcurrency = defaultWALReplayConcurrency
 	}
 
 	h.chunkDiskMapper, err = chunks.NewChunkDiskMapper(
