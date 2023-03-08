@@ -1233,16 +1233,19 @@ func funcYear(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper)
 	})
 }
 
-// === consecutive_gt(node parser.ValueTypeMatrix, valueThreshold, countThreshold parser.ValueTypeScalar) Vector ===
-func funcConsecutiveGT(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+// === streak(matrix parser.ValueTypeMatrix, comparisonOperator parser.ValueTypeString, targetValue, countThreshold parser.ValueTypeScalar) Vector ===
+func funcStreak(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	samples := vals[0].(Matrix)[0]
-	valueThreshold := vals[1].(Vector)[0].V
-	countThreshold := int(vals[2].(Vector)[0].V)
+	operator := vals[1].(String).V
+	targetValue := vals[2].(Vector)[0].V
+	countThreshold := int(vals[3].(Vector)[0].V)
+
+	comparator := ScalarComparators[operator]
 
 	count := 0
-	if len(samples.Points) >= countThreshold {
+	if len(samples.Points) >= countThreshold && comparator != nil {
 		for _, p := range samples.Points {
-			if p.V > valueThreshold {
+			if comparator(p.V, targetValue) {
 				count++
 				if count >= countThreshold {
 					break
@@ -1262,33 +1265,15 @@ func funcConsecutiveGT(vals []parser.Value, args parser.Expressions, enh *EvalNo
 	})
 }
 
-// === consecutive_lt(node parser.ValueTypeMatrix, valueThreshold, countThreshold parser.ValueTypeScalar) Vector ===
-func funcConsecutiveLT(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
-	samples := vals[0].(Matrix)[0]
-	valueThreshold := vals[1].(Vector)[0].V
-	countThreshold := int(vals[2].(Vector)[0].V)
+type ScalarComparator func(s1, s2 float64) bool
 
-	count := 0
-	if len(samples.Points) >= countThreshold {
-		for _, p := range samples.Points {
-			if p.V < valueThreshold {
-				count++
-				if count >= countThreshold {
-					break
-				}
-			} else {
-				count = 0
-			}
-		}
-	}
-
-	v := 0.0
-	if count >= countThreshold {
-		v = 1.0
-	}
-	return append(enh.Out, Sample{
-		Point: Point{V: v},
-	})
+var ScalarComparators = map[string]ScalarComparator{
+	"gt": func(s1, s2 float64) bool { return s1 > s2 },
+	"ge": func(s1, s2 float64) bool { return s1 >= s2 },
+	"lt": func(s1, s2 float64) bool { return s1 < s2 },
+	"le": func(s1, s2 float64) bool { return s1 <= s2 },
+	"eq": func(s1, s2 float64) bool { return s1 == s2 },
+	"ne": func(s1, s2 float64) bool { return s1 != s2 },
 }
 
 // FunctionCalls is a list of all functions supported by PromQL, including their types.
@@ -1308,8 +1293,6 @@ var FunctionCalls = map[string]FunctionCall{
 	"clamp":              funcClamp,
 	"clamp_max":          funcClampMax,
 	"clamp_min":          funcClampMin,
-	"consecutive_gt":     funcConsecutiveGT,
-	"consecutive_lt":     funcConsecutiveLT,
 	"cos":                funcCos,
 	"cosh":               funcCosh,
 	"count_over_time":    funcCountOverTime,
@@ -1358,6 +1341,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"sqrt":               funcSqrt,
 	"stddev_over_time":   funcStddevOverTime,
 	"stdvar_over_time":   funcStdvarOverTime,
+	"streak":             funcStreak,
 	"sum_over_time":      funcSumOverTime,
 	"tan":                funcTan,
 	"tanh":               funcTanh,

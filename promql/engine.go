@@ -1369,6 +1369,11 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		for i, e := range e.Args {
 			if i != matrixArgIndex {
 				val, ws := ev.eval(e)
+				_, isString := val.(String)
+				if isString {
+					inArgs[i] = val
+					continue
+				}
 				otherArgs[i] = val.(Matrix)
 				otherInArgs[i] = Vector{Sample{}}
 				inArgs[i] = otherInArgs[i]
@@ -1426,7 +1431,8 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 				// They are scalar, so it is safe to use the step number
 				// when looking up the argument, as there will be no gaps.
 				for j := range e.Args {
-					if j != matrixArgIndex {
+					_, isString := inArgs[j].(String)
+					if j != matrixArgIndex && !isString {
 						otherInArgs[j][0].V = otherArgs[j][0].Points[step].V
 					}
 				}

@@ -358,6 +358,11 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeMatrix},
 		ReturnType: ValueTypeVector,
 	},
+	"streak": {
+		Name:       "streak",
+		ArgTypes:   []ValueType{ValueTypeMatrix, ValueTypeString, ValueTypeScalar, ValueTypeScalar},
+		ReturnType: ValueTypeVector,
+	},
 	"sum_over_time": {
 		Name:       "sum_over_time",
 		ArgTypes:   []ValueType{ValueTypeMatrix},
