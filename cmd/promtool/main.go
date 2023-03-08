@@ -463,7 +463,18 @@ func checkConfig(agentMode bool, filename string, checkSyntaxOnly bool) ([]strin
 		}
 	}
 
-	for _, scfg := range cfg.ScrapeConfigs {
+	var scfgs []*config.ScrapeConfig
+	if checkSyntaxOnly {
+		scfgs = cfg.ScrapeConfigs
+	} else {
+		var err error
+		scfgs, err = cfg.GetScrapeConfigs()
+		if err != nil {
+			return nil, fmt.Errorf("error loading scrape configs: %w", err)
+		}
+	}
+
+	for _, scfg := range scfgs {
 		if !checkSyntaxOnly && scfg.HTTPClientConfig.Authorization != nil {
 			if err := checkFileExists(scfg.HTTPClientConfig.Authorization.CredentialsFile); err != nil {
 				return nil, fmt.Errorf("error checking authorization credentials or bearer token file %q: %w", scfg.HTTPClientConfig.Authorization.CredentialsFile, err)

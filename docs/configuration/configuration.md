@@ -78,6 +78,11 @@ global:
 rule_files:
   [ - <filepath_glob> ... ]
 
+# Scrape config files specifies a list of globs. Scrape configs are read from
+# all matching files and appended to the list of scrape configs.
+scrape_config_files:
+  [ - <filepath_glob> ... ]
+
 # A list of scrape configurations.
 scrape_configs:
   [ - <scrape_config> ... ]
