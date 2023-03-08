@@ -398,14 +398,18 @@ func CheckServerHealth(url string) error {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "  FAILED:", err)
 		return err
+	} else if healthCheckResp.StatusCode != 200 {
+		return fmt.Errorf("health check failed: URL=%s, status=%d", url, healthCheckResp.StatusCode)
 	}
+
 	healthCheckBody, err := io.ReadAll(healthCheckResp.Body)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "  FAILED:", err)
 		return err
 	}
 
-	fmt.Printf("  SUCCESS: %v", string(healthCheckBody))
+	fmt.Fprintf(os.Stderr, "  SUCCESS: %v", string(healthCheckBody))
+	fmt.Println()
 	return nil
 }
 
@@ -419,13 +423,16 @@ func CheckServerReadiness(url string) error {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "  FAILED:", err)
 		return err
+	} else if readinessCheckResp.StatusCode != 200 {
+		return fmt.Errorf("readiness check failed: URL=%s, status=%d", url, readinessCheckResp.StatusCode)
 	}
 	readinessCheckBody, err := io.ReadAll(readinessCheckResp.Body)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "  FAILED:", err)
 		return err
 	}
-	fmt.Printf("  SUCCESS: %v", string(readinessCheckBody))
+	fmt.Fprintf(os.Stderr, "  SUCCESS: %v", string(readinessCheckBody))
+	fmt.Println()
 	return nil
 }
 
