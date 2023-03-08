@@ -14,7 +14,7 @@ require (
 	github.com/digitalocean/godo v1.95.0
 	github.com/docker/docker v20.10.23+incompatible
 	github.com/edsrzf/mmap-go v1.1.0
-	github.com/envoyproxy/go-control-plane v0.10.3
+	github.com/envoyproxy/go-control-plane v0.11.0
 	github.com/envoyproxy/protoc-gen-validate v0.9.1
 	github.com/fsnotify/fsnotify v1.6.0
 	github.com/go-kit/log v0.2.1
