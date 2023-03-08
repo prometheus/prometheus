@@ -1569,8 +1569,8 @@ func sendWriteRequestWithBackoff(ctx context.Context, cfg config.QueueConfig, l 
 		}
 
 		// If the error is unrecoverable, we should not retry.
-		backoffErr, ok := err.(RecoverableError)
-		if !ok {
+		var backoffErr RecoverableError
+		if !errors.As(err, &backoffErr) {
 			return err
 		}
 
