@@ -192,8 +192,25 @@ func (h *FloatHistogram) Scale(factor float64) *FloatHistogram {
 //
 // This method returns a pointer to the receiving histogram for convenience.
 func (h *FloatHistogram) Add(other *FloatHistogram) *FloatHistogram {
-	// TODO(trevorwhitney): If other.CounterResetHint != h.CounterResetHint then
-	// we should return some warning.
+	if other.CounterResetHint != h.CounterResetHint {
+		// The outcome of adding an increment to a guage histogram will always be a GaugeType
+		if other.CounterResetHint == GaugeType && h.CounterResetHint != GaugeType {
+			h.CounterResetHint = GaugeType
+		}
+
+		// This could be legitime if the caller knows what they are doing, but the resulting hint
+		// must be UnknownCounterReset.
+		if other.CounterResetHint == UnknownCounterReset && h.CounterResetHint != GaugeType {
+			h.CounterResetHint = UnknownCounterReset
+		}
+
+		// TODO(trevorwhitney): this leaves CounterReset and NotCounterReset. If we have mismatch of
+		// these hints, that cannot be right, and we should raise a warning when possible.
+		// if other.CounterResetHint == CounterReset && h.CounterResetHint == NotCounterReset ||
+		// 	other.CounterResetHint == NotCounterReset && h.CounterResetHint == CounterReset {
+		// }
+	}
+
 	otherZeroCount := h.reconcileZeroBuckets(other)
 	h.ZeroCount += otherZeroCount
 	h.Count += other.Count
@@ -416,6 +433,10 @@ func (h *FloatHistogram) Compact(maxEmptyBuckets int) *FloatHistogram {
 // of observations, but NOT the sum of observations) is smaller in the receiving
 // histogram compared to the previous histogram. Otherwise, it returns false.
 //
+//	This method will shortcut to true if a CounterReset is detected, and shortcut
+//	to false if NotCounterReset is detected. Otherwise it will do the work to detect
+//	a reset.
+//
 // Special behavior in case the Schema or the ZeroThreshold are not the same in
 // both histograms:
 //
@@ -434,11 +455,6 @@ func (h *FloatHistogram) Compact(maxEmptyBuckets int) *FloatHistogram {
 //   - Upon a decrease of the Schema, the buckets of the previous histogram are
 //     merged so that they match the new, lower-resolution schema (again without
 //     mutating the provided previous histogram).
-//
-// Note that this kind of reset detection is quite expensive. Ideally, resets
-// are detected at ingest time and stored in the TSDB, so that the reset
-// information can be read directly from there rather than be detected each time
-// again.
 func (h *FloatHistogram) DetectReset(previous *FloatHistogram) bool {
 	if h.CounterResetHint == CounterReset {
 		return true
@@ -446,9 +462,16 @@ func (h *FloatHistogram) DetectReset(previous *FloatHistogram) bool {
 	if h.CounterResetHint == NotCounterReset {
 		return false
 	}
-	// In all other cases of CounterResetHint, we go on as we would otherwise.
-	// Even in the GaugeHistogram case, we pretend this is a counter histogram
-	// for consistency.
+	// In all other cases of CounterResetHint (UnknownCounterReset and GaugeType),
+	// we go on as we would otherwise, for reasons explained below.
+	//
+	// If the CounterResetHint is UnknownCounterReset, we do not know yet if this histogram comes
+	// with a counter reset. Therefore, we have to do all the detailed work to find out if there
+	// is a counter reset or not.
+	// We do the same if the CounterResetHint is GaugeType, which should not happen, but PromQL still
+	// allows the user to apply functions to gauge histograms that are only meant for counter histograms.
+	// In this case, we treat the gauge histograms as a counter histograms
+	// (and we plan to return a warning about it to the user).
 	if h.Count < previous.Count {
 		return true
 	}
