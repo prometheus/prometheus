@@ -72,6 +72,8 @@ func ChunkFromSamplesGeneric(s Samples) chunks.Meta {
 			ca.Append(s.Get(i).T(), s.Get(i).V())
 		case chunkenc.ValHistogram:
 			ca.AppendHistogram(s.Get(i).T(), s.Get(i).H())
+		case chunkenc.ValFloatHistogram:
+			ca.AppendFloatHistogram(s.Get(i).T(), s.Get(i).FH())
 		default:
 			panic(fmt.Sprintf("unknown sample type %s", sampleType.String()))
 		}
@@ -128,12 +130,18 @@ func PopulatedChunk(numSamples int, minTime int64) chunks.Meta {
 
 // GenerateSamples starting at start and counting up numSamples.
 func GenerateSamples(start, numSamples int) []Sample {
-	samples := make([]Sample, 0, numSamples)
-	for i := start; i < start+numSamples; i++ {
-		samples = append(samples, sample{
+	return generateSamples(start, numSamples, func(i int) Sample {
+		return sample{
 			t: int64(i),
 			v: float64(i),
-		})
+		}
+	})
+}
+
+func generateSamples(start, numSamples int, gen func(int) Sample) []Sample {
+	samples := make([]Sample, 0, numSamples)
+	for i := start; i < start+numSamples; i++ {
+		samples = append(samples, gen(i))
 	}
 	return samples
 }

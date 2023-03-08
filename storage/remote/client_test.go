@@ -87,7 +87,7 @@ func TestStoreHTTPErrorHandling(t *testing.T) {
 func TestClientRetryAfter(t *testing.T) {
 	server := httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			http.Error(w, longErrMessage, 429)
+			http.Error(w, longErrMessage, http.StatusTooManyRequests)
 		}),
 	)
 	defer server.Close()

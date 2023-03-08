@@ -40,8 +40,8 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
@@ -1815,7 +1815,7 @@ func TestNativeHistogramsInRecordingRules(t *testing.T) {
 
 	// Add some histograms.
 	db := suite.TSDB()
-	hists := tsdb.GenerateTestHistograms(5)
+	hists := tsdbutil.GenerateTestHistograms(5)
 	ts := time.Now()
 	app := db.Appender(context.Background())
 	for i, h := range hists {
