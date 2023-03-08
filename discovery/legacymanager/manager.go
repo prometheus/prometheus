@@ -121,7 +121,7 @@ type Manager struct {
 	ctx            context.Context
 	discoverCancel []context.CancelFunc
 
-	// Some Discoverers(eg. k8s) send only the updates for a given target group
+	// Some Discoverers(e.g. k8s) send only the updates for a given target group
 	// so we use map[tg.Source]*targetgroup.Group to know which group to update.
 	targets map[poolKey]map[string]*targetgroup.Group
 	// providers keeps track of SD providers.
