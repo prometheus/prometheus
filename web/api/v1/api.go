@@ -413,7 +413,10 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 		defer cancel()
 	}
 
-	opts := extractQueryOpts(r)
+	opts, err := extractQueryOpts(r)
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+	}
 	qry, err := api.QueryEngine.NewInstantQuery(api.Queryable, opts, r.FormValue("query"), ts)
 	if err != nil {
 		return invalidParamError(err, "query")
@@ -458,10 +461,18 @@ func (api *API) formatQuery(r *http.Request) (result apiFuncResult) {
 	return apiFuncResult{expr.Pretty(0), nil, nil, nil}
 }
 
-func extractQueryOpts(r *http.Request) *promql.QueryOpts {
-	return &promql.QueryOpts{
+func extractQueryOpts(r *http.Request) (*promql.QueryOpts, error) {
+	opts := &promql.QueryOpts{
 		EnablePerStepStats: r.FormValue("stats") == "all",
 	}
+	if strDuration := r.FormValue("lookback_delta"); strDuration != "" {
+		duration, err := parseDuration(strDuration)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing lookback delta duration: %w", err)
+		}
+		opts.LookbackDelta = duration
+	}
+	return opts, nil
 }
 
 func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
@@ -505,7 +516,10 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 		defer cancel()
 	}
 
-	opts := extractQueryOpts(r)
+	opts, err := extractQueryOpts(r)
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+	}
 	qry, err := api.QueryEngine.NewRangeQuery(api.Queryable, opts, r.FormValue("query"), start, end, step)
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
