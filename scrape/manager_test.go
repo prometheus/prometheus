@@ -263,7 +263,7 @@ func TestPopulateLabels(t *testing.T) {
 			},
 			res:     labels.EmptyLabels(),
 			resOrig: labels.EmptyLabels(),
-			err:     "error parsing scrape interval: not a valid duration string: \"2notseconds\"",
+			err:     "error parsing scrape interval: unknown unit \"notseconds\" in duration \"2notseconds\"",
 		},
 		// Invalid duration in timeout label.
 		{
@@ -280,7 +280,7 @@ func TestPopulateLabels(t *testing.T) {
 			},
 			res:     labels.EmptyLabels(),
 			resOrig: labels.EmptyLabels(),
-			err:     "error parsing scrape timeout: not a valid duration string: \"2notseconds\"",
+			err:     "error parsing scrape timeout: unknown unit \"notseconds\" in duration \"2notseconds\"",
 		},
 		// 0 interval in timeout label.
 		{
