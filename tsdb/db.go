@@ -131,6 +131,10 @@ type Options struct {
 	// WALCompression will turn on Snappy compression for records on the WAL.
 	WALCompression bool
 
+	// Maximum number of CPUs that can simultaneously processes WAL replay.
+	// If it is <=0, then GOMAXPROCS is used.
+	WALReplayConcurrency int
+
 	// StripeSize is the size in entries of the series hash map. Reducing the size will save memory but impact performance.
 	StripeSize int
 
@@ -813,6 +817,9 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	headOpts.PostingsForMatchersCacheTTL = opts.HeadPostingsForMatchersCacheTTL
 	headOpts.PostingsForMatchersCacheSize = opts.HeadPostingsForMatchersCacheSize
 	headOpts.PostingsForMatchersCacheForce = opts.HeadPostingsForMatchersCacheForce
+	if opts.WALReplayConcurrency > 0 {
+		headOpts.WALReplayConcurrency = opts.WALReplayConcurrency
+	}
 	if opts.IsolationDisabled {
 		// We only override this flag if isolation is disabled at DB level. We use the default otherwise.
 		headOpts.IsolationDisabled = opts.IsolationDisabled

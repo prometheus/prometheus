@@ -894,6 +894,10 @@ func (t *QueueManager) releaseLabels(ls labels.Labels) {
 // processExternalLabels merges externalLabels into ls. If ls contains
 // a label in externalLabels, the value in ls wins.
 func processExternalLabels(ls labels.Labels, externalLabels []labels.Label) labels.Labels {
+	if len(externalLabels) == 0 {
+		return ls
+	}
+
 	b := labels.NewScratchBuilder(ls.Len() + len(externalLabels))
 	j := 0
 	ls.Range(func(l labels.Label) {

@@ -19,7 +19,7 @@ benchmark.txt
 !/.promu.yml
 !/.golangci.yml
 /documentation/examples/remote_storage/remote_storage_adapter/remote_storage_adapter
-/documentation/examples/remote_storage/example_write_adapter/example_writer_adapter
+/documentation/examples/remote_storage/example_write_adapter/example_write_adapter
 
 npm_licenses.tar.bz2
 /web/ui/static/react
@@ -28,3 +28,6 @@ npm_licenses.tar.bz2
 /.build
 
 /**/node_modules
+
+# Ignore parser debug
+y.output
