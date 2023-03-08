@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package install has the side-effect of registering all builtin
+// Package installation has the side-effect of registering all builtin
 // service discovery config types.
 package install
 
