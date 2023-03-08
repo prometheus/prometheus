@@ -113,6 +113,18 @@ func main() {
 		"The config files to check.",
 	).Required().ExistingFiles()
 
+	checkServerHealthCmd := checkCmd.Command("health", "Check the health of a Prometheus server")
+	serverHealthURLArg := checkServerHealthCmd.Arg(
+		"url",
+		"The URL of the Prometheus server to check (e.g. http://localhost:9090)",
+	).String()
+
+	checkServerReadinessCmd := checkCmd.Command("readiness", "Check the readiness of a Prometheus server")
+	serverReadinessURLArg := checkServerReadinessCmd.Arg(
+		"url",
+		"The URL of the Prometheus server to check (e.g. http://localhost:9090)",
+	).String()
+
 	checkRulesCmd := checkCmd.Command("rules", "Check if the rule files are valid or not.")
 	ruleFiles := checkRulesCmd.Arg(
 		"rule-files",
@@ -276,6 +288,12 @@ func main() {
 	case checkConfigCmd.FullCommand():
 		os.Exit(CheckConfig(*agentMode, *checkConfigSyntaxOnly, newLintConfig(*checkConfigLint, *checkConfigLintFatal), *configFiles...))
 
+	case checkServerHealthCmd.FullCommand():
+		os.Exit(checkErr(CheckServerHealth(*serverHealthURLArg)))
+
+	case checkServerReadinessCmd.FullCommand():
+		os.Exit(checkErr(CheckServerReadiness(*serverReadinessURLArg)))
+
 	case checkWebConfigCmd.FullCommand():
 		os.Exit(CheckWebConfig(*webConfigFiles...))
 
@@ -367,6 +385,48 @@ func newLintConfig(stringVal string, fatal bool) lintConfig {
 
 func (ls lintConfig) lintDuplicateRules() bool {
 	return ls.all || ls.duplicateRules
+}
+
+// Check server health.
+func CheckServerHealth(url string) error {
+	if url == "" {
+		url = "http://localhost:9090"
+	}
+
+	// Check Health
+	healthCheckResp, err := http.Get(url + "/-/healthy")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "  FAILED:", err)
+		return err
+	}
+	healthCheckBody, err := io.ReadAll(healthCheckResp.Body)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "  FAILED:", err)
+		return err
+	}
+
+	fmt.Printf("  SUCCESS: %v", string(healthCheckBody))
+	return nil
+}
+
+// Check server readiness.
+func CheckServerReadiness(url string) error {
+	if url == "" {
+		url = "http://localhost:9090"
+	}
+	// Check Readiness
+	readinessCheckResp, err := http.Get(url + "/-/ready")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "  FAILED:", err)
+		return err
+	}
+	readinessCheckBody, err := io.ReadAll(readinessCheckResp.Body)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "  FAILED:", err)
+		return err
+	}
+	fmt.Printf("  SUCCESS: %v", string(readinessCheckBody))
+	return nil
 }
 
 // CheckConfig validates configuration files.
