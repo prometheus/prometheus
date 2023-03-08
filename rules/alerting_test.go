@@ -919,8 +919,8 @@ func TestAlertingEvalWithOrigin(t *testing.T) {
 		time.Second,
 		time.Minute,
 		lbs,
-		nil,
-		nil,
+		labels.EmptyLabels(),
+		labels.EmptyLabels(),
 		"",
 		true, log.NewNopLogger(),
 	)
