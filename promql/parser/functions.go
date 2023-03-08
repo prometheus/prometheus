@@ -99,16 +99,6 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeScalar},
 		ReturnType: ValueTypeVector,
 	},
-	"consecutive_gt": {
-		Name:       "consecutive_gt",
-		ArgTypes:   []ValueType{ValueTypeMatrix, ValueTypeScalar, ValueTypeScalar},
-		ReturnType: ValueTypeVector,
-	},
-	"consecutive_lt": {
-		Name:       "consecutive_lt",
-		ArgTypes:   []ValueType{ValueTypeMatrix, ValueTypeScalar, ValueTypeScalar},
-		ReturnType: ValueTypeVector,
-	},
 	"cos": {
 		Name:       "cos",
 		ArgTypes:   []ValueType{ValueTypeVector},
