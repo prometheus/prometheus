@@ -109,10 +109,11 @@ func TestClientRetryAfter(t *testing.T) {
 		RetryOnRateLimit: false,
 	}
 
+	var recErr RecoverableError
+
 	c := getClient(conf)
 	err = c.Store(context.Background(), []byte{})
-	_, ok := err.(RecoverableError)
-	require.False(t, ok, "Recoverable error not expected.")
+	require.False(t, errors.As(err, &recErr), "Recoverable error not expected.")
 
 	conf = &ClientConfig{
 		URL:              &config_util.URL{URL: serverURL},
@@ -122,8 +123,7 @@ func TestClientRetryAfter(t *testing.T) {
 
 	c = getClient(conf)
 	err = c.Store(context.Background(), []byte{})
-	_, ok = err.(RecoverableError)
-	require.True(t, ok, "Recoverable error was expected.")
+	require.True(t, errors.As(err, &recErr), "Recoverable error was expected.")
 }
 
 func TestRetryAfterDuration(t *testing.T) {
