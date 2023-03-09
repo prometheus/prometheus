@@ -537,11 +537,18 @@ func TestHead_ReadWAL(t *testing.T) {
 				require.NoError(t, c.Err())
 				return x
 			}
-			require.Equal(t, []sample{{100, 2, nil, nil}, {101, 5, nil, nil}}, expandChunk(s10.iterator(0, nil, head.chunkDiskMapper, nil, nil)))
-			require.Equal(t, []sample{{101, 6, nil, nil}}, expandChunk(s50.iterator(0, nil, head.chunkDiskMapper, nil, nil)))
+
+			c, _, err := s10.chunk(0, head.chunkDiskMapper, &head.memChunkPool)
+			require.NoError(t, err)
+			require.Equal(t, []sample{{100, 2, nil, nil}, {101, 5, nil, nil}}, expandChunk(c.chunk.Iterator(nil)))
+			c, _, err = s50.chunk(0, head.chunkDiskMapper, &head.memChunkPool)
+			require.NoError(t, err)
+			require.Equal(t, []sample{{101, 6, nil, nil}}, expandChunk(c.chunk.Iterator(nil)))
 			// The samples before the new series record should be discarded since a duplicate record
 			// is only possible when old samples were compacted.
-			require.Equal(t, []sample{{101, 7, nil, nil}}, expandChunk(s100.iterator(0, nil, head.chunkDiskMapper, nil, nil)))
+			c, _, err = s100.chunk(0, head.chunkDiskMapper, &head.memChunkPool)
+			require.NoError(t, err)
+			require.Equal(t, []sample{{101, 7, nil, nil}}, expandChunk(c.chunk.Iterator(nil)))
 
 			q, err := head.ExemplarQuerier(context.Background())
 			require.NoError(t, err)
@@ -2566,7 +2573,13 @@ func TestIteratorSeekIntoBuffer(t *testing.T) {
 		require.True(t, ok, "sample append failed")
 	}
 
-	it := s.iterator(s.headChunkID(len(s.mmappedChunks)), nil, chunkDiskMapper, nil, nil)
+	c, _, err := s.chunk(0, chunkDiskMapper, &sync.Pool{
+		New: func() interface{} {
+			return &memChunk{}
+		},
+	})
+	require.NoError(t, err)
+	it := c.chunk.Iterator(nil)
 
 	// First point.
 	require.Equal(t, chunkenc.ValFloat, it.Seek(0))
@@ -4772,4 +4785,59 @@ func TestGaugeFloatHistogramWALAndChunkHeader(t *testing.T) {
 	require.NoError(t, head.Init(0))
 
 	checkHeaders()
+}
+
+func TestSnapshotAheadOfWALError(t *testing.T) {
+	head, _ := newTestHead(t, 120*4, false, false)
+	head.opts.EnableMemorySnapshotOnShutdown = true
+	// Add a sample to fill WAL.
+	app := head.Appender(context.Background())
+	_, err := app.Append(0, labels.FromStrings("foo", "bar"), 10, 10)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Increment snapshot index to create sufficiently large difference.
+	for i := 0; i < 2; i++ {
+		_, err = head.wal.NextSegment()
+		require.NoError(t, err)
+	}
+	require.NoError(t, head.Close()) // This will create a snapshot.
+
+	_, idx, _, err := LastChunkSnapshot(head.opts.ChunkDirRoot)
+	require.NoError(t, err)
+	require.Equal(t, 2, idx)
+
+	// Restart the WAL while keeping the old snapshot. The new head is created manually in this case in order
+	// to keep using the same snapshot directory instead of a random one.
+	require.NoError(t, os.RemoveAll(head.wal.Dir()))
+	head.opts.EnableMemorySnapshotOnShutdown = false
+	w, _ := wlog.NewSize(nil, nil, head.wal.Dir(), 32768, false)
+	head, err = NewHead(nil, nil, w, nil, head.opts, nil)
+	require.NoError(t, err)
+	// Add a sample to fill WAL.
+	app = head.Appender(context.Background())
+	_, err = app.Append(0, labels.FromStrings("foo", "bar"), 10, 10)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	lastSegment, _, _ := w.LastSegmentAndOffset()
+	require.Equal(t, 0, lastSegment)
+	require.NoError(t, head.Close())
+
+	// New WAL is saved, but old snapshot still exists.
+	_, idx, _, err = LastChunkSnapshot(head.opts.ChunkDirRoot)
+	require.NoError(t, err)
+	require.Equal(t, 2, idx)
+
+	// Create new Head which should detect the incorrect index and delete the snapshot.
+	head.opts.EnableMemorySnapshotOnShutdown = true
+	w, _ = wlog.NewSize(nil, nil, head.wal.Dir(), 32768, false)
+	head, err = NewHead(nil, nil, w, nil, head.opts, nil)
+	require.NoError(t, err)
+	require.NoError(t, head.Init(math.MinInt64))
+
+	// Verify that snapshot directory does not exist anymore.
+	_, _, _, err = LastChunkSnapshot(head.opts.ChunkDirRoot)
+	require.Equal(t, record.ErrNotFound, err)
+
+	require.NoError(t, head.Close())
 }

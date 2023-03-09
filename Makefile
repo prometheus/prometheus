@@ -78,6 +78,17 @@ assets-tarball: assets
 	@echo '>> packaging assets'
 	scripts/package_assets.sh
 
+# We only want to generate the parser when there's changes to the grammar.
+.PHONY: parser
+parser:
+	@echo ">> running goyacc to generate the .go file."
+ifeq (, $(shell which goyacc))
+	@echo "goyacc not installed so skipping"
+	@echo "To install: go install golang.org/x/tools/cmd/goyacc@v0.6.0"
+else
+	goyacc -o promql/parser/generated_parser.y.go promql/parser/generated_parser.y
+endif
+
 .PHONY: test
 # If we only want to only test go code we have to change the test target
 # which is called by all.

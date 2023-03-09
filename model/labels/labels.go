@@ -11,16 +11,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build !stringlabels
+
 package labels
 
 import (
 	"bytes"
 	"encoding/json"
-	"sort"
 	"strconv"
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/prometheus/common/model"
+	"golang.org/x/exp/slices"
 )
 
 // Well-known label names used by Prometheus components.
@@ -358,7 +360,7 @@ func EmptyLabels() Labels {
 func New(ls ...Label) Labels {
 	set := make(Labels, 0, len(ls))
 	set = append(set, ls...)
-	sort.Sort(set)
+	slices.SortFunc(set, func(a, b Label) bool { return a.Name < b.Name })
 
 	return set
 }
@@ -382,7 +384,7 @@ func FromStrings(ss ...string) Labels {
 		res = append(res, Label{Name: ss[i], Value: ss[i+1]})
 	}
 
-	sort.Sort(res)
+	slices.SortFunc(res, func(a, b Label) bool { return a.Name < b.Name })
 	return res
 }
 
@@ -562,7 +564,7 @@ Outer:
 	}
 	if len(b.add) > 0 { // Base is already in order, so we only need to sort if we add to it.
 		res = append(res, b.add...)
-		sort.Sort(res)
+		slices.SortFunc(res, func(a, b Label) bool { return a.Name < b.Name })
 	}
 	return res
 }
@@ -589,7 +591,7 @@ func (b *ScratchBuilder) Add(name, value string) {
 
 // Sort the labels added so far by name.
 func (b *ScratchBuilder) Sort() {
-	sort.Sort(b.add)
+	slices.SortFunc(b.add, func(a, b Label) bool { return a.Name < b.Name })
 }
 
 // Asssign is for when you already have a Labels which you want this ScratchBuilder to return.

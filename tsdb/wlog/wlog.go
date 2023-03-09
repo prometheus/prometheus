@@ -199,9 +199,10 @@ type wlMetrics struct {
 	truncateTotal   prometheus.Counter
 	currentSegment  prometheus.Gauge
 	writesFailed    prometheus.Counter
+	walFileSize     prometheus.GaugeFunc
 }
 
-func newWLMetrics(r prometheus.Registerer) *wlMetrics {
+func newWLMetrics(w *WL, r prometheus.Registerer) *wlMetrics {
 	m := &wlMetrics{}
 
 	m.fsyncDuration = prometheus.NewSummary(prometheus.SummaryOpts{
@@ -233,6 +234,17 @@ func newWLMetrics(r prometheus.Registerer) *wlMetrics {
 		Name: "writes_failed_total",
 		Help: "Total number of write log writes that failed.",
 	})
+	m.walFileSize = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "storage_size_bytes",
+		Help: "Size of the write log directory.",
+	}, func() float64 {
+		val, err := w.Size()
+		if err != nil {
+			level.Error(w.logger).Log("msg", "Failed to calculate size of \"wal\" dir",
+				"err", err.Error())
+		}
+		return float64(val)
+	})
 
 	if r != nil {
 		r.MustRegister(
@@ -243,6 +255,7 @@ func newWLMetrics(r prometheus.Registerer) *wlMetrics {
 			m.truncateTotal,
 			m.currentSegment,
 			m.writesFailed,
+			m.walFileSize,
 		)
 	}
 
@@ -279,7 +292,7 @@ func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSi
 	if filepath.Base(dir) == WblDirName {
 		prefix = "prometheus_tsdb_out_of_order_wbl_"
 	}
-	w.metrics = newWLMetrics(prometheus.WrapRegistererWithPrefix(prefix, reg))
+	w.metrics = newWLMetrics(w, prometheus.WrapRegistererWithPrefix(prefix, reg))
 
 	_, last, err := Segments(w.Dir())
 	if err != nil {
