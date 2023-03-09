@@ -895,3 +895,41 @@ func TestPendingAndKeepFiringFor(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0, len(res))
 }
+
+// TestAlertingEvalWithOrigin checks that the alerting rule details are passed through the context.
+func TestAlertingEvalWithOrigin(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now()
+
+	const (
+		name  = "my-recording-rule"
+		query = `count(metric{foo="bar"}) > 0`
+	)
+	var (
+		detail RuleDetail
+		lbs    = labels.FromStrings("test", "test")
+	)
+
+	expr, err := parser.ParseExpr(query)
+	require.NoError(t, err)
+
+	rule := NewAlertingRule(
+		name,
+		expr,
+		time.Second,
+		time.Minute,
+		lbs,
+		labels.EmptyLabels(),
+		labels.EmptyLabels(),
+		"",
+		true, log.NewNopLogger(),
+	)
+
+	_, err = rule.Eval(ctx, 0, now, func(ctx context.Context, qs string, _ time.Time) (promql.Vector, error) {
+		detail = FromOriginContext(ctx)
+		return nil, nil
+	}, nil, 0)
+
+	require.NoError(t, err)
+	require.Equal(t, detail, NewRuleDetail(rule))
+}

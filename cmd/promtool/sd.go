@@ -47,9 +47,15 @@ func CheckSD(sdConfigFiles, sdJobName string, sdTimeout time.Duration, noDefault
 	}
 
 	var scrapeConfig *config.ScrapeConfig
+	scfgs, err := cfg.GetScrapeConfigs()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Cannot load scrape configs", err)
+		return failureExitCode
+	}
+
 	jobs := []string{}
 	jobMatched := false
-	for _, v := range cfg.ScrapeConfigs {
+	for _, v := range scfgs {
 		jobs = append(jobs, v.JobName)
 		if v.JobName == sdJobName {
 			jobMatched = true

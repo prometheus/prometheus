@@ -1,6 +1,6 @@
 {
   "name": "@prometheus-io/app",
-  "version": "0.41.0",
+  "version": "0.42.0",
   "private": true,
   "dependencies": {
     "@codemirror/autocomplete": "^6.4.0",
@@ -19,7 +19,7 @@
     "@lezer/common": "^1.0.2",
     "@nexucis/fuzzy": "^0.4.1",
     "@nexucis/kvsearch": "^0.8.1",
-    "@prometheus-io/codemirror-promql": "^0.41.0",
+    "@prometheus-io/codemirror-promql": "^0.42.0",
     "bootstrap": "^4.6.2",
     "css.escape": "^1.5.1",
     "downshift": "^7.2.0",
