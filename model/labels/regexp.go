@@ -37,6 +37,9 @@ type FastRegexMatcher struct {
 	prefix        string
 	suffix        string
 	contains      string
+
+	// matchString is the "compiled" function to run by MatchString().
+	matchString func(string) bool
 }
 
 func NewFastRegexMatcher(v string) (*FastRegexMatcher, error) {
@@ -61,7 +64,40 @@ func NewFastRegexMatcher(v string) (*FastRegexMatcher, error) {
 	}
 	m.stringMatcher = stringMatcherFromRegexp(parsed)
 
+	m.matchString = m.compileMatchStringFunction()
 	return m, nil
+}
+
+// compileMatchStringFunction returns the function to run by MatchString().
+func (m *FastRegexMatcher) compileMatchStringFunction() func(string) bool {
+	// If the only optimization available is the string matcher, then we can just run it.
+	if len(m.setMatches) == 0 && m.prefix == "" && m.suffix == "" && m.contains == "" && m.stringMatcher != nil {
+		return m.stringMatcher.Matches
+	}
+
+	return func(s string) bool {
+		if len(m.setMatches) != 0 {
+			for _, match := range m.setMatches {
+				if match == s {
+					return true
+				}
+			}
+			return false
+		}
+		if m.prefix != "" && !strings.HasPrefix(s, m.prefix) {
+			return false
+		}
+		if m.suffix != "" && !strings.HasSuffix(s, m.suffix) {
+			return false
+		}
+		if m.contains != "" && !strings.Contains(s, m.contains) {
+			return false
+		}
+		if m.stringMatcher != nil {
+			return m.stringMatcher.Matches(s)
+		}
+		return m.re.MatchString(s)
+	}
 }
 
 // isOptimized returns true if any fast-path optimization is applied to the
@@ -250,27 +286,7 @@ func tooManyMatches(matches []string, new ...string) bool {
 }
 
 func (m *FastRegexMatcher) MatchString(s string) bool {
-	if len(m.setMatches) != 0 {
-		for _, match := range m.setMatches {
-			if match == s {
-				return true
-			}
-		}
-		return false
-	}
-	if m.prefix != "" && !strings.HasPrefix(s, m.prefix) {
-		return false
-	}
-	if m.suffix != "" && !strings.HasSuffix(s, m.suffix) {
-		return false
-	}
-	if m.contains != "" && !strings.Contains(s, m.contains) {
-		return false
-	}
-	if m.stringMatcher != nil {
-		return m.stringMatcher.Matches(s)
-	}
-	return m.re.MatchString(s)
+	return m.matchString(s)
 }
 
 func (m *FastRegexMatcher) SetMatches() []string {
@@ -351,14 +367,25 @@ func stringMatcherFromRegexpInternal(re *syntax.Regexp) StringMatcher {
 		// Correctly handling the end text operator inside a regex is tricky,
 		// so in this case we fallback to the regex engine.
 		return nil
-	case syntax.OpPlus, syntax.OpStar:
+	case syntax.OpPlus:
 		if re.Sub[0].Op != syntax.OpAnyChar && re.Sub[0].Op != syntax.OpAnyCharNotNL {
 			return nil
 		}
-		return &anyStringMatcher{
-			allowEmpty: re.Op == syntax.OpStar,
-			matchNL:    re.Sub[0].Op == syntax.OpAnyChar,
+		return &anyNonEmptyStringMatcher{
+			matchNL: re.Sub[0].Op == syntax.OpAnyChar,
 		}
+	case syntax.OpStar:
+		if re.Sub[0].Op != syntax.OpAnyChar && re.Sub[0].Op != syntax.OpAnyCharNotNL {
+			return nil
+		}
+
+		// If the newline is valid, than this matcher literally match any string (even empty).
+		if re.Sub[0].Op == syntax.OpAnyChar {
+			return trueMatcher{}
+		}
+
+		// Any string is fine (including an empty one), as far as it doesn't contain any newline.
+		return anyStringWithoutNewlineMatcher{}
 	case syntax.OpEmptyMatch:
 		return emptyStringMatcher{}
 
@@ -531,20 +558,37 @@ func (m *equalMultiStringMatcher) Matches(s string) bool {
 	return ok
 }
 
-// anyStringMatcher is a matcher that matches any string.
-// It is used for the + and * operator. matchNL tells if it should matches newlines or not.
-type anyStringMatcher struct {
-	allowEmpty bool
-	matchNL    bool
+// anyStringWithoutNewlineMatcher is a stringMatcher which matches any string
+// (including an empty one) as far as it doesn't contain any newline character.
+type anyStringWithoutNewlineMatcher struct{}
+
+func (m anyStringWithoutNewlineMatcher) Matches(s string) bool {
+	// We need to make sure it doesn't contain a newline. Since the newline is
+	// an ASCII character, we can use strings.IndexByte().
+	return strings.IndexByte(s, '\n') == -1
 }
 
-func (m *anyStringMatcher) Matches(s string) bool {
-	if !m.allowEmpty && len(s) == 0 {
-		return false
+// anyNonEmptyStringMatcher is a stringMatcher which matches any non-empty string.
+type anyNonEmptyStringMatcher struct {
+	matchNL bool
+}
+
+func (m *anyNonEmptyStringMatcher) Matches(s string) bool {
+	if m.matchNL {
+		// It's OK if the string contains a newline so we just need to make
+		// sure it's non-empty.
+		return len(s) > 0
 	}
-	if !m.matchNL && strings.ContainsRune(s, '\n') {
-		return false
-	}
+
+	// We need to make sure it non-empty and doesn't contain a newline.
+	// Since the newline is an ASCII character, we can use strings.IndexByte().
+	return len(s) > 0 && strings.IndexByte(s, '\n') == -1
+}
+
+// trueMatcher is a stringMatcher which matches any string (always returns true).
+type trueMatcher struct{}
+
+func (m trueMatcher) Matches(_ string) bool {
 	return true
 }
 
