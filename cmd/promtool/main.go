@@ -857,20 +857,20 @@ func CheckServer(url *url.URL, roundTripper http.RoundTripper, endpoint string) 
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url.JoinPath("-", endpoint).String(), nil)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "http request creation failed: ", err)
+		fmt.Fprintln(os.Stderr, "error creating http request: ", err)
 		return failureExitCode
 	}
 
 	res, err := client.Do(req)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "http request failed: ", err)
+		fmt.Fprintln(os.Stderr, "error making http request: ", err)
 		return failureExitCode
 	}
 	defer res.Body.Close()
 
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "failed to read response body: ", err)
+		fmt.Fprintln(os.Stderr, "error reading response body: ", err)
 		return failureExitCode
 	}
 
@@ -880,7 +880,7 @@ func CheckServer(url *url.URL, roundTripper http.RoundTripper, endpoint string) 
 		return failureExitCode
 	}
 
-	fmt.Println(string(body))
+	fmt.Println("SUCCESS: " + string(body))
 
 	return successExitCode
 }
