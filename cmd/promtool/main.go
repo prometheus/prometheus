@@ -71,6 +71,8 @@ const (
 	lintOptionAll            = "all"
 	lintOptionDuplicateRules = "duplicate-rules"
 	lintOptionNone           = "none"
+	checkHealth              = "health"
+	checkReadiness           = "readiness"
 )
 
 var lintOptions = []string{lintOptionAll, lintOptionDuplicateRules, lintOptionNone}
@@ -289,10 +291,10 @@ func main() {
 		os.Exit(CheckConfig(*agentMode, *checkConfigSyntaxOnly, newLintConfig(*checkConfigLint, *checkConfigLintFatal), *configFiles...))
 
 	case checkServerHealthCmd.FullCommand():
-		os.Exit(checkErr(CheckServerHealth(*serverHealthURLArg)))
+		os.Exit(checkErr(CheckServerHealthAndReadiness(*serverHealthURLArg, checkHealth)))
 
 	case checkServerReadinessCmd.FullCommand():
-		os.Exit(checkErr(CheckServerReadiness(*serverReadinessURLArg)))
+		os.Exit(checkErr(CheckServerHealthAndReadiness(*serverReadinessURLArg, checkReadiness)))
 
 	case checkWebConfigCmd.FullCommand():
 		os.Exit(CheckWebConfig(*webConfigFiles...))
@@ -387,52 +389,43 @@ func (ls lintConfig) lintDuplicateRules() bool {
 	return ls.all || ls.duplicateRules
 }
 
-// Check server health.
-func CheckServerHealth(url string) error {
-	if url == "" {
-		url = "http://localhost:9090"
+const promDefaultURL = "http://localhost:9090"
+
+// Check server health & readiness.
+func CheckServerHealthAndReadiness(serverURL, check string) error {
+	if serverURL == "" {
+		serverURL = promDefaultURL
 	}
 
-	// Check Health
-	healthCheckResp, err := http.Get(url + "/-/healthy")
+	u, err := url.Parse(serverURL)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "  FAILED:", err)
-		return err
-	} else if healthCheckResp.StatusCode != 200 {
-		return fmt.Errorf("health check failed: URL=%s, status=%d", url, healthCheckResp.StatusCode)
+		return fmt.Errorf("error parsing URL: %s", serverURL)
 	}
 
-	healthCheckBody, err := io.ReadAll(healthCheckResp.Body)
+	if check == checkHealth {
+		u.Path += "/-/healthy"
+	} else if check == checkReadiness {
+		u.Path += "/-/ready"
+	}
+
+	serverURL = u.String()
+
+	// Check Health & Readiness.
+	res, err := http.Get(serverURL)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "  FAILED:", err)
+		return err
+	}
+	if res.StatusCode != 200 {
+		return fmt.Errorf("%s check failed: URL=%s, status=%d", check, serverURL, res.StatusCode)
+	}
+
+	// Read response body.
+	resBody, err := io.ReadAll(res.Body)
+	if err != nil {
 		return err
 	}
 
-	fmt.Fprintf(os.Stderr, "  SUCCESS: %v", string(healthCheckBody))
-	fmt.Println()
-	return nil
-}
-
-// Check server readiness.
-func CheckServerReadiness(url string) error {
-	if url == "" {
-		url = "http://localhost:9090"
-	}
-	// Check Readiness
-	readinessCheckResp, err := http.Get(url + "/-/ready")
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "  FAILED:", err)
-		return err
-	} else if readinessCheckResp.StatusCode != 200 {
-		return fmt.Errorf("readiness check failed: URL=%s, status=%d", url, readinessCheckResp.StatusCode)
-	}
-	readinessCheckBody, err := io.ReadAll(readinessCheckResp.Body)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "  FAILED:", err)
-		return err
-	}
-	fmt.Fprintf(os.Stderr, "  SUCCESS: %v", string(readinessCheckBody))
-	fmt.Println()
+	fmt.Fprintf(os.Stderr, "  SUCCESS: %v\n", string(resBody))
 	return nil
 }
 
