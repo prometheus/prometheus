@@ -42,6 +42,8 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
 	"github.com/prometheus/exporter-toolkit/web"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 	"gopkg.in/yaml.v2"
 
 	dto "github.com/prometheus/client_model/go"
@@ -874,7 +876,9 @@ func CheckServer(url *url.URL, roundTripper http.RoundTripper, endpoint string) 
 		return failureExitCode
 	}
 
-	expectedResponse := fmt.Sprintf(promAPIExpectedResponse, strings.Title(endpoint))
+	caser := cases.Title(language.English)
+	titleEndpoint := caser.String(endpoint)
+	expectedResponse := fmt.Sprintf(promAPIExpectedResponse, titleEndpoint)
 	if !strings.Contains(string(body), expectedResponse) {
 		fmt.Fprintln(os.Stderr, "Prometheus server is not", endpoint)
 		return failureExitCode
