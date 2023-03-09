@@ -15,11 +15,13 @@ package remote
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
@@ -37,11 +39,11 @@ func TestSampledReadEndpoint(t *testing.T) {
 	suite, err := promql.NewTest(t, `
 		load 1m
 			test_metric1{foo="bar",baz="qux"} 1
-			test_histogram_metric1{foo="bar",baz="qux"} 1
 	`)
 	require.NoError(t, err)
-
 	defer suite.Close()
+
+	addNativeHistogramsToTestSuite(t, suite, 1)
 
 	err = suite.Run()
 	require.NoError(t, err)
@@ -123,10 +125,9 @@ func TestSampledReadEndpoint(t *testing.T) {
 					{Name: "b", Value: "c"},
 					{Name: "baz", Value: "qux"},
 					{Name: "d", Value: "e"},
-					{Name: "foo", Value: "bar"},
 				},
 				Histograms: []prompb.Histogram{
-					FloatHistogramToHistogramProto(0, tsdbutil.GenerateTestFloatHistogram(1)),
+					FloatHistogramToHistogramProto(0, tsdbutil.GenerateTestFloatHistogram(0)),
 				},
 			},
 		},
@@ -139,7 +140,7 @@ func BenchmarkStreamReadEndpoint(b *testing.B) {
 		test_metric1{foo="bar1",baz="qux"} 0+100x119
 		test_metric1{foo="bar2",baz="qux"} 0+100x120
 		test_metric1{foo="bar3",baz="qux"} 0+100x240
-`)
+	`)
 	require.NoError(b, err)
 
 	defer suite.Close()
@@ -210,11 +211,11 @@ func TestStreamReadEndpoint(t *testing.T) {
 			test_metric1{foo="bar1",baz="qux"} 0+100x119
 			test_metric1{foo="bar2",baz="qux"} 0+100x120
 			test_metric1{foo="bar3",baz="qux"} 0+100x240
-			test_histogram_metric1{foo="bar4",baz="qux"} 0+1x119
 	`)
 	require.NoError(t, err)
-
 	defer suite.Close()
+
+	addNativeHistogramsToTestSuite(t, suite, 120)
 
 	require.NoError(t, suite.Run())
 
@@ -424,7 +425,6 @@ func TestStreamReadEndpoint(t *testing.T) {
 						{Name: "b", Value: "c"},
 						{Name: "baz", Value: "qux"},
 						{Name: "d", Value: "e"},
-						{Name: "foo", Value: "bar4"},
 					},
 					Chunks: []prompb.Chunk{
 						{
@@ -438,4 +438,15 @@ func TestStreamReadEndpoint(t *testing.T) {
 			QueryIndex: 2,
 		},
 	}, results)
+}
+
+func addNativeHistogramsToTestSuite(t *testing.T, pqlTest *promql.Test, n int) {
+	lbls := labels.FromStrings("__name__", "test_histogram_metric1", "baz", "qux")
+
+	app := pqlTest.Storage().Appender(context.TODO())
+	for i, fh := range tsdbutil.GenerateTestFloatHistograms(n) {
+		_, err := app.AppendHistogram(0, lbls, int64(i)*int64(60*time.Second/time.Millisecond), nil, fh)
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
 }
