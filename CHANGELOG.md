@@ -1,5 +1,32 @@
 # Changelog
 
+## 2.43.0-rc.0 / 2023-03-09
+
+We are working on some performance improvements in Prometheus, which are only
+built into Prometheus when compiling it using the Go tag `stringlabels`
+(therefore they are not shipped in the default binaries). It uses a data
+structure for labels that uses a single string to hold all the label/values,
+resulting in a smaller heap size and some speedups in most cases. We would like
+to encourage users who are interested in these improvements to help us measure
+the gains on their production architecture. Building Prometheus from source
+with the `stringlabels` Go tag and providing feedback on its effectiveness in
+their specific use cases would be incredibly helpful to us. #10991
+
+* [FEATURE] Promtool: Add HTTP client configuration to query commands. #11487
+* [FEATURE] Scrape: Add `include_scrape_configs` to include scrape configs from different files. #12019
+* [FEATURE] HTTP client: Add `no_proxy` to exclude URLs from proxied requests. #12098
+* [FEATURE] HTTP client: Add `proxy_from_enviroment` to read proxies from env variables. #12098
+* [ENHANCEMENT] API: Add support for setting lookback delta per query via the API. #12088
+* [ENHANCEMENT] API: Change HTTP status code from 503/422 to 499 if a request is canceled. #11897
+* [ENHANCEMENT] Scrape: Allow exemplars for all metric types. #11984
+* [ENHANCEMENT] TSDB: Add metrics for head chunks and WAL folders size. #12013
+* [ENHANCEMENT] TSDB: Automatically remove incorrect snapshot with index that is ahead of WAL. #11859
+* [ENHANCEMENT] TSDB: Improve Prometheus parser error outputs to be more comprehensible. #11682
+* [ENHANCEMENT] UI: Scope `group by` labels to metric in autocompletion. #11914
+* [BUGFIX] Scrape: Fix `prometheus_target_scrape_pool_target_limit` metric not set before reloading. #12002
+* [BUGFIX] TSDB: Correctly update `prometheus_tsdb_head_chunks_removed_total` and `prometheus_tsdb_head_chunks` metrics when reading WAL. #11858
+* [BUGFIX] TSDB: Use the correct unit (seconds) when recording out-of-order append deltas in the `prometheus_tsdb_sample_ooo_delta` metric. #12004
+
 ## 2.42.0 / 2023-01-31
 
 This release comes with a bunch of feature coverage for native histograms and breaking changes.
