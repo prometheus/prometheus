@@ -411,7 +411,6 @@ func FromStrings(ss ...string) Labels {
 		ls = append(ls, Label{Name: ss[i], Value: ss[i+1]})
 	}
 
-	slices.SortFunc(ls, func(a, b Label) bool { return a.Name < b.Name })
 	return New(ls...)
 }
 
