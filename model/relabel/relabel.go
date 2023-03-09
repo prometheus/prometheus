@@ -207,45 +207,52 @@ func (re Regexp) String() string {
 // If a label set is dropped, EmptyLabels and false is returned.
 // May return the input labelSet modified.
 func Process(lbls labels.Labels, cfgs ...*Config) (ret labels.Labels, keep bool) {
-	lb := labels.NewBuilder(labels.EmptyLabels())
-	for _, cfg := range cfgs {
-		lbls, keep = relabel(lbls, cfg, lb)
-		if !keep {
-			return labels.EmptyLabels(), false
-		}
+	lb := labels.NewBuilder(lbls)
+	if !ProcessBuilder(lb, cfgs...) {
+		return labels.EmptyLabels(), false
 	}
-	return lbls, true
+	return lb.Labels(lbls), true
 }
 
-func relabel(lset labels.Labels, cfg *Config, lb *labels.Builder) (ret labels.Labels, keep bool) {
+// ProcessBuilder is like Process, but the caller passes a labels.Builder
+// containing the initial set of labels, which is mutated by the rules.
+func ProcessBuilder(lb *labels.Builder, cfgs ...*Config) (keep bool) {
+	for _, cfg := range cfgs {
+		keep = relabel(cfg, lb)
+		if !keep {
+			return false
+		}
+	}
+	return true
+}
+
+func relabel(cfg *Config, lb *labels.Builder) (keep bool) {
 	var va [16]string
 	values := va[:0]
 	if len(cfg.SourceLabels) > cap(values) {
 		values = make([]string, 0, len(cfg.SourceLabels))
 	}
 	for _, ln := range cfg.SourceLabels {
-		values = append(values, lset.Get(string(ln)))
+		values = append(values, lb.Get(string(ln)))
 	}
 	val := strings.Join(values, cfg.Separator)
-
-	lb.Reset(lset)
 
 	switch cfg.Action {
 	case Drop:
 		if cfg.Regex.MatchString(val) {
-			return labels.EmptyLabels(), false
+			return false
 		}
 	case Keep:
 		if !cfg.Regex.MatchString(val) {
-			return labels.EmptyLabels(), false
+			return false
 		}
 	case DropEqual:
-		if lset.Get(cfg.TargetLabel) == val {
-			return labels.EmptyLabels(), false
+		if lb.Get(cfg.TargetLabel) == val {
+			return false
 		}
 	case KeepEqual:
-		if lset.Get(cfg.TargetLabel) != val {
-			return labels.EmptyLabels(), false
+		if lb.Get(cfg.TargetLabel) != val {
+			return false
 		}
 	case Replace:
 		indexes := cfg.Regex.FindStringSubmatchIndex(val)
@@ -274,20 +281,20 @@ func relabel(lset labels.Labels, cfg *Config, lb *labels.Builder) (ret labels.La
 		mod := binary.BigEndian.Uint64(hash[8:]) % cfg.Modulus
 		lb.Set(cfg.TargetLabel, fmt.Sprintf("%d", mod))
 	case LabelMap:
-		lset.Range(func(l labels.Label) {
+		lb.Range(func(l labels.Label) {
 			if cfg.Regex.MatchString(l.Name) {
 				res := cfg.Regex.ReplaceAllString(l.Name, cfg.Replacement)
 				lb.Set(res, l.Value)
 			}
 		})
 	case LabelDrop:
-		lset.Range(func(l labels.Label) {
+		lb.Range(func(l labels.Label) {
 			if cfg.Regex.MatchString(l.Name) {
 				lb.Del(l.Name)
 			}
 		})
 	case LabelKeep:
-		lset.Range(func(l labels.Label) {
+		lb.Range(func(l labels.Label) {
 			if !cfg.Regex.MatchString(l.Name) {
 				lb.Del(l.Name)
 			}
@@ -296,5 +303,5 @@ func relabel(lset labels.Labels, cfg *Config, lb *labels.Builder) (ret labels.La
 		panic(fmt.Errorf("relabel: unknown relabel action type %q", cfg.Action))
 	}
 
-	return lb.Labels(lset), true
+	return true
 }
