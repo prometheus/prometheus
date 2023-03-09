@@ -840,11 +840,11 @@ func checkMetricsExtended(r io.Reader) ([]metricStat, int, error) {
 func CheckServer(url *url.URL, roundTripper http.RoundTripper, endpoint string) int {
 	// Ensure API endpoint is a valid healthcheck endpoint.
 	promAPIExpectedResponse := `Prometheus Server is %s.`
+	endpoint = strings.ToLower(endpoint)
 	if endpoint != "healthy" && endpoint != "ready" {
 		fmt.Fprintln(os.Stderr, "prometheus API healthcheck endpoint unsupported: ", endpoint)
 		return failureExitCode
 	}
-	endpoint = strings.ToLower(endpoint)
 
 	if url.Scheme == "" {
 		url.Scheme = "http"
