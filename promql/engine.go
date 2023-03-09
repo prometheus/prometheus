@@ -562,10 +562,8 @@ func (ng *Engine) validateOpts(expr *parser.EvalStmt) error {
 		return nil
 	}
 
-	var atModifierUsed, negativeOffsetUsed bool
-
-	var validationErr error
-	parser.Inspect(context.TODO(), expr, func(node parser.Node, path []parser.Node) error {
+	_, err := parser.Inspect(context.TODO(), expr, func(node parser.Node, path []parser.Node) error {
+		var atModifierUsed, negativeOffsetUsed bool
 		switch n := node.(type) {
 		case *parser.VectorSelector:
 			if n.Timestamp != nil || n.StartOrEnd == parser.START || n.StartOrEnd == parser.END {
@@ -594,18 +592,16 @@ func (ng *Engine) validateOpts(expr *parser.EvalStmt) error {
 		}
 
 		if atModifierUsed && !ng.enableAtModifier {
-			validationErr = ErrValidationAtModifierDisabled
-			return validationErr
+			return ErrValidationAtModifierDisabled
 		}
 		if negativeOffsetUsed && !ng.enableNegativeOffset {
-			validationErr = ErrValidationNegativeOffsetDisabled
-			return validationErr
+			return ErrValidationNegativeOffsetDisabled
 		}
 
 		return nil
 	}, nil)
 
-	return validationErr
+	return err
 }
 
 // NewTestQuery injects special behaviour into Query for testing.
@@ -879,20 +875,38 @@ func FindMinMaxTime(s *parser.EvalStmt) (int64, int64) {
 	// Whenever a MatrixSelector is evaluated, evalRange is set to the corresponding range.
 	// The evaluation of the VectorSelector inside then evaluates the given range and unsets
 	// the variable.
-	var evalRange time.Duration
+	//var evalRange time.Duration
+
+	// Since this fork allows for parallel execution of the tree Walk we need a more
+	// sophisticated datastructure (to avoid conflicts)
+	ranges := make([]evalRange, 0, 10) // TODO: better size guess?
+	// We are dual-purposing the lock for both the `ranges` and the `min/max` timestamp variables
+	l := sync.RWMutex{}
+
 	parser.Inspect(context.TODO(), s, func(node parser.Node, path []parser.Node) error {
 		switch n := node.(type) {
 		case *parser.VectorSelector:
+			l.RLock()
+			evalRange := findPathRange(path, ranges)
+			l.RUnlock()
 			start, end := getTimeRangesForSelector(s, n, path, evalRange)
+			l.Lock()
 			if start < minTimestamp {
 				minTimestamp = start
 			}
 			if end > maxTimestamp {
 				maxTimestamp = end
 			}
-			evalRange = 0
+			l.Unlock()
+
 		case *parser.MatrixSelector:
-			evalRange = n.Range
+			l.Lock()
+			prefix := make([]posrange.PositionRange, len(path))
+			for i, p := range path {
+				prefix[i] = p.PositionRange()
+			}
+			ranges = append(ranges, evalRange{Prefix: prefix, Range: n.Range})
+			l.Unlock()
 		}
 		return nil
 	}, nil)
@@ -964,14 +978,20 @@ func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s
 	// Whenever a MatrixSelector is evaluated, evalRange is set to the corresponding range.
 	// The evaluation of the VectorSelector inside then evaluates the given range and unsets
 	// the variable.
-	var evalRange time.Duration
-	l := sync.Mutex{}
+	//var evalRange time.Duration
+
+	// Since this fork allows for parallel execution of the tree Walk we need a more
+	// sophisticated datastructure (to avoid conflicts)
+	ranges := make([]evalRange, 0, 10) // TODO: better size guess?
+	l := sync.RWMutex{}
 
 	n, err := parser.Inspect(ctx, s, func(node parser.Node, path []parser.Node) error {
-		l.Lock()
-		defer l.Unlock()
 		switch n := node.(type) {
 		case *parser.VectorSelector:
+			l.RLock()
+			evalRange := findPathRange(path, ranges)
+			l.RUnlock()
+
 			start, end := getTimeRangesForSelector(s, n, path, evalRange)
 			interval := ng.getLastSubqueryInterval(path)
 			if interval == 0 {
@@ -984,12 +1004,17 @@ func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s
 				Range: durationMilliseconds(evalRange),
 				Func:  extractFuncFromPath(path),
 			}
-			evalRange = 0
 			hints.By, hints.Grouping = extractGroupsFromPath(path)
 			n.UnexpandedSeriesSet = querier.Select(ctx, false, hints, n.LabelMatchers...)
 
 		case *parser.MatrixSelector:
-			evalRange = n.Range
+			l.Lock()
+			prefix := make([]posrange.PositionRange, len(path))
+			for i, p := range path {
+				prefix[i] = p.PositionRange()
+			}
+			ranges = append(ranges, evalRange{Prefix: prefix, Range: n.Range})
+			l.Unlock()
 		}
 		return nil
 	}, ng.NodeReplacer)
