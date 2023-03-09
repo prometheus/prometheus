@@ -87,6 +87,10 @@ func main() {
 
 	checkCmd := app.Command("check", "Check the resources for validity.")
 
+	serverCheckCmd := checkCmd.Command("server", "Run Prometheus server checks.")
+	serverCheckCmd.Arg("server", "Prometheus server to check status of.").Required().URLVar(&serverURL)
+	serverCheckEndpoint := serverCheckCmd.Arg("endpoint", "Prometheus API healthcheck endpoint [valid: 'healthy', 'ready']").Required().String()
+
 	sdCheckCmd := checkCmd.Command("service-discovery", "Perform service discovery for the given job name and report the results, including relabeling.")
 	sdConfigFile := sdCheckCmd.Arg("config-file", "The prometheus config file.").Required().ExistingFile()
 	sdJobName := sdCheckCmd.Arg("job", "The job to run service discovery for.").Required().String()
@@ -267,6 +271,9 @@ func main() {
 	}
 
 	switch parsedCmd {
+	case serverCheckCmd.FullCommand():
+		os.Exit(CheckServer(serverURL, httpRoundTripper, *serverCheckEndpoint))
+
 	case sdCheckCmd.FullCommand():
 		os.Exit(CheckSD(*sdConfigFile, *sdJobName, *sdTimeout, noDefaultScrapePort))
 
@@ -828,6 +835,53 @@ func checkMetricsExtended(r io.Reader) ([]metricStat, int, error) {
 	})
 
 	return stats, total, nil
+}
+
+func CheckServer(url *url.URL, roundTripper http.RoundTripper, endpoint string) int {
+	// Ensure API endpoint is a valid healthcheck endpoint.
+	promAPIExpectedResponse := `Prometheus Server is %s.`
+	if endpoint != "healthy" && endpoint != "ready" {
+		fmt.Fprintln(os.Stderr, "prometheus API healthcheck endpoint unsupported: ", endpoint)
+		return failureExitCode
+	}
+	endpoint = strings.ToLower(endpoint)
+
+	if url.Scheme == "" {
+		url.Scheme = "http"
+	}
+
+	client := http.Client{Transport: roundTripper}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url.JoinPath("-", endpoint).String(), nil)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "http request creation failed: ", err)
+		return failureExitCode
+	}
+
+	res, err := client.Do(req)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "http request failed: ", err)
+		return failureExitCode
+	}
+	defer res.Body.Close()
+
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "failed to read response body: ", err)
+		return failureExitCode
+	}
+
+	expectedResponse := fmt.Sprintf(promAPIExpectedResponse, strings.Title(endpoint))
+	if !strings.Contains(string(body), expectedResponse) {
+		fmt.Fprintln(os.Stderr, "Prometheus server is not", endpoint)
+		return failureExitCode
+	}
+
+	fmt.Println(string(body))
+
+	return successExitCode
 }
 
 // QueryInstant performs an instant query against a Prometheus server.
