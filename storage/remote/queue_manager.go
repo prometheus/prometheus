@@ -454,7 +454,7 @@ func NewQueueManager(
 		logger = log.NewNopLogger()
 	}
 
-	// Copy externalLabels into slice, which we need for processExternalLabels.
+	// Copy externalLabels into a slice, which we need for processExternalLabels.
 	extLabelsSlice := make([]labels.Label, 0, externalLabels.Len())
 	externalLabels.Range(func(l labels.Label) {
 		extLabelsSlice = append(extLabelsSlice, l)
