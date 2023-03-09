@@ -90,6 +90,7 @@ func main() {
 	serverCheckCmd := checkCmd.Command("server", "Run Prometheus server checks.")
 	serverCheckCmd.Arg("server", "Prometheus server to check status of.").Required().URLVar(&serverURL)
 	serverCheckEndpoint := serverCheckCmd.Arg("endpoint", "Prometheus API healthcheck endpoint [valid: 'healthy', 'ready']").Required().String()
+	serverCheckCmd.Flag("http.config.file", "HTTP client configuration file for promtool to connect to Prometheus.").PlaceHolder("<filename>").ExistingFileVar(&httpConfigFilePath)
 
 	sdCheckCmd := checkCmd.Command("service-discovery", "Perform service discovery for the given job name and report the results, including relabeling.")
 	sdConfigFile := sdCheckCmd.Arg("config-file", "The prometheus config file.").Required().ExistingFile()
