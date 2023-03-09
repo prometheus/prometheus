@@ -855,7 +855,7 @@ func CheckServer(url *url.URL, roundTripper http.RoundTripper, endpoint string) 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url.JoinPath("-", endpoint).String(), nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/-/%s", url.String(), endpoint), nil)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error creating http request: ", err)
 		return failureExitCode
