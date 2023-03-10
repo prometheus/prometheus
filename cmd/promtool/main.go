@@ -71,8 +71,8 @@ const (
 	lintOptionAll            = "all"
 	lintOptionDuplicateRules = "duplicate-rules"
 	lintOptionNone           = "none"
-	checkHealth              = "health"
-	checkReadiness           = "readiness"
+	checkHealth              = "/-/healthy"
+	checkReadiness           = "/-/ready"
 )
 
 var lintOptions = []string{lintOptionAll, lintOptionDuplicateRules, lintOptionNone}
@@ -121,8 +121,8 @@ func main() {
 		"The URL of the Prometheus server to check (e.g. http://localhost:9090)",
 	).String()
 
-	checkServerReadinessCmd := checkCmd.Command("readiness", "Check the readiness of a Prometheus server")
-	serverReadinessURLArg := checkServerReadinessCmd.Arg(
+	checkServerReadyCmd := checkCmd.Command("ready", "Check the readiness of a Prometheus server")
+	serverReadyURLArg := checkServerReadyCmd.Arg(
 		"url",
 		"The URL of the Prometheus server to check (e.g. http://localhost:9090)",
 	).String()
@@ -291,10 +291,10 @@ func main() {
 		os.Exit(CheckConfig(*agentMode, *checkConfigSyntaxOnly, newLintConfig(*checkConfigLint, *checkConfigLintFatal), *configFiles...))
 
 	case checkServerHealthCmd.FullCommand():
-		os.Exit(checkErr(CheckServerHealthAndReadiness(*serverHealthURLArg, checkHealth)))
+		os.Exit(checkErr(CheckServerStatus(*serverHealthURLArg, checkHealth)))
 
-	case checkServerReadinessCmd.FullCommand():
-		os.Exit(checkErr(CheckServerHealthAndReadiness(*serverReadinessURLArg, checkReadiness)))
+	case checkServerReadyCmd.FullCommand():
+		os.Exit(checkErr(CheckServerStatus(*serverReadyURLArg, checkReadiness)))
 
 	case checkWebConfigCmd.FullCommand():
 		os.Exit(CheckWebConfig(*webConfigFiles...))
@@ -391,8 +391,8 @@ func (ls lintConfig) lintDuplicateRules() bool {
 
 const promDefaultURL = "http://localhost:9090"
 
-// Check server health & readiness.
-func CheckServerHealthAndReadiness(serverURL, check string) error {
+// Check server status - healthy & ready.
+func CheckServerStatus(serverURL, checkEndpoint string) error {
 	if serverURL == "" {
 		serverURL = promDefaultURL
 	}
@@ -402,11 +402,7 @@ func CheckServerHealthAndReadiness(serverURL, check string) error {
 		return fmt.Errorf("error parsing URL: %s", serverURL)
 	}
 
-	if check == checkHealth {
-		u.Path += "/-/healthy"
-	} else if check == checkReadiness {
-		u.Path += "/-/ready"
-	}
+	u.Path += checkEndpoint
 
 	serverURL = u.String()
 
@@ -416,7 +412,7 @@ func CheckServerHealthAndReadiness(serverURL, check string) error {
 		return err
 	}
 	if res.StatusCode != 200 {
-		return fmt.Errorf("%s check failed: URL=%s, status=%d", check, serverURL, res.StatusCode)
+		return fmt.Errorf("check failed: URL=%s, status=%d", serverURL, res.StatusCode)
 	}
 
 	// Read response body.
