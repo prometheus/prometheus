@@ -59,6 +59,7 @@ import (
 	_ "github.com/prometheus/prometheus/plugins" // Register plugins.
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/scrape"
+	"github.com/prometheus/prometheus/util/documentcli"
 )
 
 const (
@@ -223,6 +224,8 @@ func main() {
 
 	featureList := app.Flag("enable-feature", "Comma separated feature names to enable (only PromQL related and no-default-scrape-port). See https://prometheus.io/docs/prometheus/latest/feature_flags/ for the options and more details.").Default("").Strings()
 
+	documentationCmd := app.Command("write-documentation", "Generate command line documentation. Internal use.").Hidden()
+
 	parsedCmd := kingpin.MustParse(app.Parse(os.Args[1:]))
 
 	var p printer
@@ -329,6 +332,8 @@ func main() {
 
 	case importRulesCmd.FullCommand():
 		os.Exit(checkErr(importRules(serverURL, httpRoundTripper, *importRulesStart, *importRulesEnd, *importRulesOutputDir, *importRulesEvalInterval, *maxBlockDuration, *importRulesFiles...)))
+	case documentationCmd.FullCommand():
+		os.Exit(checkErr(documentcli.GenerateMarkdown(app.Model(), os.Stdout)))
 	}
 }
 
