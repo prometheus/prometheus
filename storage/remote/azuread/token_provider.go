@@ -17,7 +17,7 @@ import (
 	"context"
 	"errors"
 	"strings"
-	"sync/atomic"
+	"sync"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -40,9 +40,11 @@ const (
 type tokenProvider struct {
 	// token is member used to store the current valid accessToken.
 	token string
-	ctx   context.Context
-	// refreshDuration is used to store the refresh time duration of the current valid accessToken.
-	refreshDuration time.Duration
+	// mu guards access to token
+	mu  sync.Mutex
+	ctx context.Context
+	// refreshTime is used to store the refresh time of the current valid accessToken.
+	refreshTime time.Time
 	// credentialClient is the Azure AD credential client that is being used to retrive accessToken.
 	credentialClient azcore.TokenCredential
 	options          *policy.TokenRequestOptions
@@ -50,7 +52,7 @@ type tokenProvider struct {
 
 // TokenProvider is the interface for Credential client.
 type TokenProvider interface {
-	getAccessToken() string
+	getAccessToken() (string, error)
 }
 
 // newTokenProvider helps to fetch accessToken for different types of credential. This also takes care of
@@ -67,67 +69,64 @@ func newTokenProvider(ctx context.Context, cfg *AzureADConfig, cred azcore.Token
 		options:          &policy.TokenRequestOptions{Scopes: []string{audience}},
 	}
 
-	err = tokenProvider.setAccessToken()
+	_, err = tokenProvider.getAccessToken()
 	if err != nil {
 		return nil, errors.New("Failed to get access token: " + err.Error())
 	}
 
-	go tokenProvider.periodicallyRefreshClientToken()
 	return tokenProvider, nil
 }
 
 // getAccessToken returns the current valid accessToken.
-func (tokenProvider *tokenProvider) getAccessToken() string {
-	return tokenProvider.token
+func (tokenProvider *tokenProvider) getAccessToken() (string, error) {
+	tokenProvider.mu.Lock()
+	defer tokenProvider.mu.Unlock()
+	if tokenProvider.valid() {
+		return tokenProvider.token, nil
+	}
+	err := tokenProvider.getToken()
+	if err != nil {
+		return "", err
+	}
+	return tokenProvider.token, nil
 }
 
-// setAccessToken retrieves a new accessToken and stores the newly retrieved token in the tokenProvider.
-func (tokenProvider *tokenProvider) setAccessToken() error {
+// valid checks if the token in the token provider is valid and not expired
+func (tokenProvider *tokenProvider) valid() bool {
+	if tokenProvider.token != "" && tokenProvider.refreshTime.After(time.Now().UTC()) {
+		return true
+	} else {
+		return false
+	}
+}
+
+// getToken retrieves a new accessToken and stores the newly retrieved token in the tokenProvider.
+func (tokenProvider *tokenProvider) getToken() error {
 	accessToken, err := tokenProvider.credentialClient.GetToken(tokenProvider.ctx, *tokenProvider.options)
 	if err != nil {
 		return err
 	}
 
-	tokenProvider.setToken(accessToken.Token)
-	tokenProvider.updateRefreshDuration(accessToken)
+	tokenProvider.token = accessToken.Token
+	err = tokenProvider.updateRefreshTime(accessToken)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
-// periodicallyRefreshClientToken periodically looks at the token refreshDuration and calls setAccessToken when it is past the refreshDuration.
-func (tokenProvider *tokenProvider) periodicallyRefreshClientToken() error {
-	for {
-		select {
-		case <-tokenProvider.ctx.Done():
-			return nil
-		case <-time.After(tokenProvider.refreshDuration):
-			err := tokenProvider.setAccessToken()
-			if err != nil {
-				return errors.New("Failed to refresh token: " + err.Error())
-			}
-		}
-	}
-}
-
-// setToken handles storing of accessToken value in tokenProvider.
-func (tokenProvider *tokenProvider) setToken(token string) {
-	var V atomic.Value
-	V.Store(token)
-	tokenProvider.token = V.Load().(string)
-}
-
-// updateRefreshDuration handles logic to set refreshDuration. The refreshDuration is set at half the duration of the actual token expiry.
-func (tokenProvider *tokenProvider) updateRefreshDuration(accessToken azcore.AccessToken) error {
+// updateRefreshTime handles logic to set refreshTime. The refreshTime is set at half the duration of the actual token expiry.
+func (tokenProvider *tokenProvider) updateRefreshTime(accessToken azcore.AccessToken) error {
 	if len(accessToken.Token) == 0 {
 		return errors.New("Access Token is empty")
 	}
 	tokenExpiryTimestamp := accessToken.ExpiresOn.UTC()
 	deltaExpirytime := time.Now().Add(tokenExpiryTimestamp.Sub(time.Now()) / 2)
 	if deltaExpirytime.After(time.Now().UTC()) {
-		tokenProvider.refreshDuration = deltaExpirytime.Sub(time.Now().UTC())
+		tokenProvider.refreshTime = deltaExpirytime
 	} else {
 		return errors.New("Access Token expiry is less than the current time")
 	}
-
 	return nil
 }
 

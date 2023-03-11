@@ -100,7 +100,9 @@ func (s *TokenProviderTestSuite) TestPeriodicTokenRefresh_Success() {
 	time.Sleep(6 * time.Second)
 
 	s.mockCredential.AssertNumberOfCalls(s.T(), "GetToken", 2)
-	s.Assert().NotEqual(actualTokenProvider.getAccessToken(), testTokenString)
+	accessToken, err := actualTokenProvider.getAccessToken()
+	s.Assert().Nil(err)
+	s.Assert().NotEqual(accessToken, testTokenString)
 }
 
 func getToken() azcore.AccessToken {

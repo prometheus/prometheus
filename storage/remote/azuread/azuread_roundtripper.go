@@ -49,7 +49,11 @@ func NewAzureADRoundTripper(cfg *AzureADConfig, next http.RoundTripper) (http.Ro
 
 // RoundTrip sets Authorization header for requests.
 func (rt *azureADRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
-	bearerAccessToken := "Bearer " + rt.tokenProvider.getAccessToken()
+	accessToken, err := rt.tokenProvider.getAccessToken()
+	if err != nil {
+		return nil, err
+	}
+	bearerAccessToken := "Bearer " + accessToken
 	req.Header.Set("Authorization", bearerAccessToken)
 
 	return rt.next.RoundTrip(req)
