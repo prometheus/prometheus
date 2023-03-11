@@ -3595,6 +3595,17 @@ func TestNaNExpression(t *testing.T) {
 	require.True(t, math.IsNaN(nl.Val), "expected 'NaN' in number literal but got %v", nl.Val)
 }
 
+var testHistogramSeries = []struct {
+	input string
+	fail  bool
+}{
+	{input: `{} {{buckets:[5 10 7] schema:1}}`,
+		fail: false,
+	}, {
+		input: ``,
+		fail:  false,
+	},
+}
 var testSeries = []struct {
 	input          string
 	expectedMetric labels.Labels
@@ -3696,8 +3707,25 @@ func newSeq(vals ...float64) (res []SequenceValue) {
 	return res
 }
 
+func TestParseHistogramSeries(t *testing.T) {
+	for _, test := range testHistogramSeries {
+		_, _, err := ParseSeriesDesc(test.input)
+
+		// Unexpected errors are always caused by a bug.
+		require.NotEqual(t, err, errUnexpected, "unexpected error occurred")
+
+		if !test.fail {
+			require.NoError(t, err)
+		} else {
+			require.Error(t, err)
+		}
+	}
+}
 func TestParseSeries(t *testing.T) {
 	for _, test := range testSeries {
+        if !test.fail {
+            println("Test Input:", test.input)
+        }
 		metric, vals, err := ParseSeriesDesc(test.input)
 
 		// Unexpected errors are always caused by a bug.

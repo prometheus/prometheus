@@ -225,6 +225,16 @@ func (v SequenceValue) String() string {
 	return fmt.Sprintf("%f", v.Value)
 }
 
+type seriesDescriptionBuilder struct {
+    labels labels.Labels
+    values []SequenceValue
+}
+
+func newSeriesDescriptionBuilder() *seriesDescriptionBuilder{
+    return &seriesDescriptionBuilder{
+    }
+}
+
 type seriesDescription struct {
 	labels labels.Labels
 	values []SequenceValue

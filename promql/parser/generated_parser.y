@@ -582,17 +582,19 @@ metric          : metric_identifier label_set
                         { b := labels.NewBuilder($2); b.Set(labels.MetricName, $1.Val); $$ = b.Labels() }
                 | label_set
                         {$$ = $1}
+                | metric_identifier label_set
+                        { b := labels.NewBuilder($2); b.Set(labels.MetricName, $1.Val); $$ = b.Labels(labels.EmptyLabels()) }
                 ;
 
 
 metric_identifier: AVG | BOTTOMK | BY | COUNT | COUNT_VALUES | GROUP | IDENTIFIER |  LAND | LOR | LUNLESS | MAX | METRIC_IDENTIFIER | MIN | OFFSET | QUANTILE | STDDEV | STDVAR | SUM | TOPK | WITHOUT | START | END;
 
-label_set       : LEFT_BRACE label_set_list RIGHT_BRACE
+label_set       :LEFT_BRACE RIGHT_BRACE
+                        { $$ = labels.New() }
+                |LEFT_BRACE label_set_list RIGHT_BRACE
                         { $$ = labels.New($2...) }
                 | LEFT_BRACE label_set_list COMMA RIGHT_BRACE
                         { $$ = labels.New($2...) }
-                | LEFT_BRACE RIGHT_BRACE
-                        { $$ = labels.New() }
                 | /* empty */
                         { $$ = labels.New() }
                 ;
@@ -610,8 +612,8 @@ label_set_item  : IDENTIFIER EQL STRING
                         { $$ = labels.Label{Name: $1.Val, Value: yylex.(*parser).unquoteString($3.Val) } }
                 | IDENTIFIER EQL error
                         { yylex.(*parser).unexpected("label set", "string"); $$ = labels.Label{}}
-                | IDENTIFIER error
-                        { yylex.(*parser).unexpected("label set", "\"=\""); $$ = labels.Label{}}
+                //| IDENTIFIER error
+                //        { yylex.(*parser).unexpected("label set", "\"=\""); $$ = labels.Label{}}
                 | error
                         { yylex.(*parser).unexpected("label set", "identifier or \"}\""); $$ = labels.Label{} }
                 ;
@@ -619,23 +621,22 @@ label_set_item  : IDENTIFIER EQL STRING
 /*
  * Series descriptions (only used by unit tests).
  */
+                /*TODO: Add code sequence*/
 
-series_description: metric series_values
+series_description: metric SPACE series_values
                         {
-                        yylex.(*parser).generatedParserResult = &seriesDescription{
-                                labels: $1,
-                                values: $2,
+                        yylex.(*parser).generatedParserResult = &seriesDescription{labels:$1} // TODO
                         }
-                        }
+                | metric SPACE histogram_desc_set
+                {
+                }
                 ;
 
-series_values   : /*empty*/
-                        { $$ = []SequenceValue{} }
-                | series_values SPACE series_item
-                        { $$ = append($1, $3...) }
-                | series_values SPACE
-                        { $$ = $1 }
-                | error
+series_values   : series_values SPACE series_item
+                        { /*$$ = append($1, $3...)*/ }
+                series_item
+
+                | error SPACE
                         { yylex.(*parser).unexpected("series values", ""); $$ = nil }
                 ;
 
@@ -679,6 +680,30 @@ series_value    : IDENTIFIER
                 ;
 
 
+/*
+ * Histogram descriptions (part of unit testing)
+ */
+histogram_desc_set: OPEN_HIST histogram_desc_list CLOSE_HIST
+                  ;
+
+histogram_desc_list:
+                   | histogram_desc_list SPACE histogram_desc_item
+                   | histogram_desc_item SPACE
+                   | histogram_desc_list error
+                   ;
+
+histogram_desc_item: BUCKETS_DESC COLON bucket_set
+                   | SCHEMA_DESC COLON NUMBER
+                   ;
+
+bucket_set: LEFT_BRACKET bucket_set_list RIGHT_BRACKET
+          | LEFT_BRACKET bucket_set_list SPACE RIGHT_BRACKET
+          ;
+
+bucket_set_list: bucket_set_list SPACE NUMBER
+               | NUMBER
+               | bucket_set_list error
+               ;
 
 
 /*
