@@ -19,10 +19,10 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/prometheus/prometheus/tsdb/index"
-	"github.com/stretchr/testify/require"
-
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb/index"
+
+	"github.com/stretchr/testify/require"
 )
 
 // Make entries ~50B in size, to emulate real-world high cardinality.
@@ -211,7 +211,7 @@ func BenchmarkMergedStringIter(b *testing.B) {
 	}
 
 	for i := 0; i < b.N; i++ {
-		var it = NewMergedStringIter(index.NewStringListIter(s), index.NewStringListIter(s))
+		it := NewMergedStringIter(index.NewStringListIter(s), index.NewStringListIter(s))
 		for j := 0; j < 100; j++ {
 			it = NewMergedStringIter(it, index.NewStringListIter(s))
 		}
