@@ -192,23 +192,28 @@ func (h *FloatHistogram) Scale(factor float64) *FloatHistogram {
 //
 // This method returns a pointer to the receiving histogram for convenience.
 func (h *FloatHistogram) Add(other *FloatHistogram) *FloatHistogram {
-	if other.CounterResetHint != h.CounterResetHint {
-		// The outcome of adding an increment to a guage histogram will always be a GaugeType
-		if other.CounterResetHint == GaugeType && h.CounterResetHint != GaugeType {
-			h.CounterResetHint = GaugeType
-		}
-
-		// This could be legitime if the caller knows what they are doing, but the resulting hint
-		// must be UnknownCounterReset.
-		if other.CounterResetHint == UnknownCounterReset && h.CounterResetHint != GaugeType {
-			h.CounterResetHint = UnknownCounterReset
-		}
-
-		// TODO(trevorwhitney): this leaves CounterReset and NotCounterReset. If we have mismatch of
-		// these hints, that cannot be right, and we should raise a warning when possible.
-		// if other.CounterResetHint == CounterReset && h.CounterResetHint == NotCounterReset ||
-		// 	other.CounterResetHint == NotCounterReset && h.CounterResetHint == CounterReset {
-		// }
+	switch {
+	case other.CounterResetHint == h.CounterResetHint:
+		// Adding apples to apples, all good. No need to change anything.
+	case h.CounterResetHint == GaugeType:
+		// Adding something else to a gauge. That's probably OK. Outcome is a gauge.
+		// Nothing to do since the receiver is already marked as gauge.
+	case other.CounterResetHint == GaugeType:
+		// Similar to before, but this time the receiver is "something else" and we have to change it to gauge.
+		h.CounterResetHint = GaugeType
+	case h.CounterResetHint == UnknownCounterReset:
+		// With the receiver's CounterResetHint being "unknown", this could still be legitimate
+		// if the caller knows what they are doing. Outcome is then again "unknown".
+		// No need to do anything since the receiver's CounterResetHint is already "unknown".
+	case other.CounterResetHint == UnknownCounterReset:
+		// Similar to before, but now we have to set the receiver's CounterResetHint to "unknown".
+		h.CounterResetHint = UnknownCounterReset
+	default:
+		// All other cases shouldn't actually happen.
+		// They are a direct collision of CounterReset and NotCounterReset.
+		// Conservatively set the CounterResetHint to "unknown" and isse a warning.
+		h.CounterResetHint = UnknownCounterReset
+		// TODO(trevorwhitney): Actually issue the warning as soon as the plumbing for it is in place
 	}
 
 	otherZeroCount := h.reconcileZeroBuckets(other)
@@ -433,9 +438,9 @@ func (h *FloatHistogram) Compact(maxEmptyBuckets int) *FloatHistogram {
 // of observations, but NOT the sum of observations) is smaller in the receiving
 // histogram compared to the previous histogram. Otherwise, it returns false.
 //
-//	This method will shortcut to true if a CounterReset is detected, and shortcut
-//	to false if NotCounterReset is detected. Otherwise it will do the work to detect
-//	a reset.
+// This method will shortcut to true if a CounterReset is detected, and shortcut
+// to false if NotCounterReset is detected. Otherwise it will do the work to detect
+// a reset.
 //
 // Special behavior in case the Schema or the ZeroThreshold are not the same in
 // both histograms:
