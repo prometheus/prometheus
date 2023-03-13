@@ -276,11 +276,10 @@ func NewChunkDiskMapper(reg prometheus.Registerer, dir string, pool chunkenc.Poo
 // Chunk encodings for out-of-order chunks.
 // These encodings must be only used by the Head block for its internal bookkeeping.
 const (
-	OutOfOrderMask        = 0b10000000
-	RestoreOutOfOrderMask = 0b01111111
+	OutOfOrderMask = 0b10000000
 )
 
-func (cdm *ChunkDiskMapper) ApplyOutOfOrderEncoding(sourceEncoding chunkenc.Encoding) chunkenc.Encoding {
+func (cdm *ChunkDiskMapper) ApplyOutOfOrderMask(sourceEncoding chunkenc.Encoding) chunkenc.Encoding {
 	return sourceEncoding | OutOfOrderMask
 }
 
@@ -288,8 +287,10 @@ func (cdm *ChunkDiskMapper) IsOutOfOrderChunk(e chunkenc.Encoding) bool {
 	return (e & OutOfOrderMask) != 0
 }
 
-func (cdm *ChunkDiskMapper) ApplyOutOfOrderDecoding(sourceEncoding chunkenc.Encoding) chunkenc.Encoding {
-	return sourceEncoding & RestoreOutOfOrderMask
+func (cdm *ChunkDiskMapper) UnapplyOutOfOrderMask(sourceEncoding chunkenc.Encoding) chunkenc.Encoding {
+	oooMask := uint8(OutOfOrderMask)
+	restored := uint8(sourceEncoding) & (^oooMask)
+	return chunkenc.Encoding(restored)
 }
 
 // openMMapFiles opens all files within dir for mmapping.
@@ -498,7 +499,7 @@ func (cdm *ChunkDiskMapper) writeChunk(seriesRef HeadSeriesRef, mint, maxt int64
 	bytesWritten += MintMaxtSize
 	enc := chk.Encoding()
 	if isOOO {
-		enc = cdm.ApplyOutOfOrderEncoding(enc)
+		enc = cdm.ApplyOutOfOrderMask(enc)
 	}
 	cdm.byteBuf[bytesWritten] = byte(enc)
 	bytesWritten += ChunkEncodingSize
@@ -721,10 +722,8 @@ func (cdm *ChunkDiskMapper) Chunk(ref ChunkDiskMapperRef) (chunkenc.Chunk, error
 	// Encoding.
 	chkEnc := mmapFile.byteSlice.Range(chkStart, chkStart+ChunkEncodingSize)[0]
 	sourceChkEnc := chunkenc.Encoding(chkEnc)
-	if cdm.IsOutOfOrderChunk(sourceChkEnc) {
-		// update the chunk encoding by restoring the original encoding
-		chkEnc = byte(cdm.ApplyOutOfOrderDecoding(sourceChkEnc))
-	}
+	// update the chunk encoding by restoring the original encoding, if needed
+	chkEnc = byte(cdm.UnapplyOutOfOrderMask(sourceChkEnc))
 	// Data length.
 	// With the minimum chunk length this should never cause us reading
 	// over the end of the slice.
@@ -891,7 +890,7 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef HeadSeriesRef, chu
 			isOOO := cdm.IsOutOfOrderChunk(chkEnc)
 			// flip the first bit to restore the original encoding
 			if isOOO {
-				chkEnc = cdm.ApplyOutOfOrderDecoding(chkEnc)
+				chkEnc = cdm.UnapplyOutOfOrderMask(chkEnc)
 			}
 
 			if err := f(seriesRef, chunkRef, mint, maxt, numSamples, chkEnc, isOOO); err != nil {

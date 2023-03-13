@@ -100,7 +100,7 @@ func TestChunkDiskMapper_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 				bytesWritten += MintMaxtSize
 				enc := chunk.Encoding()
 				if isOOO {
-					enc = hrw.ApplyOutOfOrderEncoding(enc)
+					enc = hrw.ApplyOutOfOrderMask(enc)
 				}
 				buf[bytesWritten] = byte(enc)
 				bytesWritten += ChunkEncodingSize
