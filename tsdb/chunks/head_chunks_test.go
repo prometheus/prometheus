@@ -100,7 +100,7 @@ func TestChunkDiskMapper_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 				bytesWritten += MintMaxtSize
 				enc := chunk.Encoding()
 				if isOOO {
-					enc = hrw.OutOfOrderEncoding(enc)
+					enc = hrw.ApplyOutOfOrderEncoding(enc)
 				}
 				buf[bytesWritten] = byte(enc)
 				bytesWritten += ChunkEncodingSize
@@ -153,7 +153,7 @@ func TestChunkDiskMapper_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 	hrw = createChunkDiskMapper(t, dir)
 
 	idx := 0
-	require.NoError(t, hrw.IterateAllChunks(func(seriesRef HeadSeriesRef, chunkRef ChunkDiskMapperRef, mint, maxt int64, numSamples uint16, encoding chunkenc.Encoding) error {
+	require.NoError(t, hrw.IterateAllChunks(func(seriesRef HeadSeriesRef, chunkRef ChunkDiskMapperRef, mint, maxt int64, numSamples uint16, encoding chunkenc.Encoding, isOOO bool) error {
 		t.Helper()
 
 		expData := expectedData[idx]
@@ -162,7 +162,7 @@ func TestChunkDiskMapper_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 		require.Equal(t, expData.maxt, maxt)
 		require.Equal(t, expData.maxt, maxt)
 		require.Equal(t, expData.numSamples, numSamples)
-		require.Equal(t, expData.isOOO, hrw.IsOutOfOrderChunk(encoding))
+		require.Equal(t, expData.isOOO, isOOO)
 
 		actChunk, err := hrw.Chunk(expData.chunkRef)
 		require.NoError(t, err)
@@ -381,7 +381,7 @@ func TestHeadReadWriter_TruncateAfterFailedIterateChunks(t *testing.T) {
 	hrw = createChunkDiskMapper(t, dir)
 
 	// Forcefully failing IterateAllChunks.
-	require.Error(t, hrw.IterateAllChunks(func(_ HeadSeriesRef, _ ChunkDiskMapperRef, _, _ int64, _ uint16, _ chunkenc.Encoding) error {
+	require.Error(t, hrw.IterateAllChunks(func(_ HeadSeriesRef, _ ChunkDiskMapperRef, _, _ int64, _ uint16, _ chunkenc.Encoding, _ bool) error {
 		return errors.New("random error")
 	}))
 
@@ -493,7 +493,7 @@ func createChunkDiskMapper(t *testing.T, dir string) *ChunkDiskMapper {
 	hrw, err := NewChunkDiskMapper(nil, dir, chunkenc.NewPool(), DefaultWriteBufferSize, writeQueueSize)
 	require.NoError(t, err)
 	require.False(t, hrw.fileMaxtSet)
-	require.NoError(t, hrw.IterateAllChunks(func(_ HeadSeriesRef, _ ChunkDiskMapperRef, _, _ int64, _ uint16, _ chunkenc.Encoding) error {
+	require.NoError(t, hrw.IterateAllChunks(func(_ HeadSeriesRef, _ ChunkDiskMapperRef, _, _ int64, _ uint16, _ chunkenc.Encoding, _ bool) error {
 		return nil
 	}))
 	require.True(t, hrw.fileMaxtSet)

@@ -784,14 +784,9 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 	mmappedChunks := map[chunks.HeadSeriesRef][]*mmappedChunk{}
 	oooMmappedChunks := map[chunks.HeadSeriesRef][]*mmappedChunk{}
 	var lastRef, secondLastRef chunks.ChunkDiskMapperRef
-	if err := h.chunkDiskMapper.IterateAllChunks(func(seriesRef chunks.HeadSeriesRef, chunkRef chunks.ChunkDiskMapperRef, mint, maxt int64, numSamples uint16, encoding chunkenc.Encoding) error {
+	if err := h.chunkDiskMapper.IterateAllChunks(func(seriesRef chunks.HeadSeriesRef, chunkRef chunks.ChunkDiskMapperRef, mint, maxt int64, numSamples uint16, encoding chunkenc.Encoding, isOOO bool) error {
 		secondLastRef = lastRef
 		lastRef = chunkRef
-		isOOO := h.chunkDiskMapper.IsOutOfOrderChunk(encoding)
-		// flip the first bit to restore the original encoding
-		if isOOO {
-			encoding = h.chunkDiskMapper.OutOfOrderDecoding(encoding)
-		}
 		if !isOOO && maxt < h.minValidTime.Load() {
 			return nil
 		}
