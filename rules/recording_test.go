@@ -27,59 +27,126 @@ import (
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
+var (
+	ruleEvaluationTime       = time.Unix(0, 0).UTC()
+	exprWithMetricName, _    = parser.ParseExpr(`sort(metric)`)
+	exprWithoutMetricName, _ = parser.ParseExpr(`sort(metric + metric)`)
+)
+
+var ruleEvalTestScenarios = []struct {
+	name       string
+	ruleLabels labels.Labels
+	expr       parser.Expr
+	expected   promql.Vector
+}{
+	{
+		name:       "no labels in recording rule, metric name in query result",
+		ruleLabels: labels.EmptyLabels(),
+		expr:       exprWithMetricName,
+		expected: promql.Vector{
+			promql.Sample{
+				Metric: labels.FromStrings("__name__", "test_rule", "label_a", "1", "label_b", "3"),
+				Point:  promql.Point{V: 1, T: timestamp.FromTime(ruleEvaluationTime)},
+			},
+			promql.Sample{
+				Metric: labels.FromStrings("__name__", "test_rule", "label_a", "2", "label_b", "4"),
+				Point:  promql.Point{V: 10, T: timestamp.FromTime(ruleEvaluationTime)},
+			},
+		},
+	},
+	{
+		name:       "only new labels in recording rule, metric name in query result",
+		ruleLabels: labels.FromStrings("extra_from_rule", "foo"),
+		expr:       exprWithMetricName,
+		expected: promql.Vector{
+			promql.Sample{
+				Metric: labels.FromStrings("__name__", "test_rule", "label_a", "1", "label_b", "3", "extra_from_rule", "foo"),
+				Point:  promql.Point{V: 1, T: timestamp.FromTime(ruleEvaluationTime)},
+			},
+			promql.Sample{
+				Metric: labels.FromStrings("__name__", "test_rule", "label_a", "2", "label_b", "4", "extra_from_rule", "foo"),
+				Point:  promql.Point{V: 10, T: timestamp.FromTime(ruleEvaluationTime)},
+			},
+		},
+	},
+	{
+		name:       "some replacement labels in recording rule, metric name in query result",
+		ruleLabels: labels.FromStrings("label_a", "from_rule"),
+		expr:       exprWithMetricName,
+		expected: promql.Vector{
+			promql.Sample{
+				Metric: labels.FromStrings("__name__", "test_rule", "label_a", "from_rule", "label_b", "3"),
+				Point:  promql.Point{V: 1, T: timestamp.FromTime(ruleEvaluationTime)},
+			},
+			promql.Sample{
+				Metric: labels.FromStrings("__name__", "test_rule", "label_a", "from_rule", "label_b", "4"),
+				Point:  promql.Point{V: 10, T: timestamp.FromTime(ruleEvaluationTime)},
+			},
+		},
+	},
+	{
+		name:       "no labels in recording rule, no metric name in query result",
+		ruleLabels: labels.EmptyLabels(),
+		expr:       exprWithoutMetricName,
+		expected: promql.Vector{
+			promql.Sample{
+				Metric: labels.FromStrings("__name__", "test_rule", "label_a", "1", "label_b", "3"),
+				Point:  promql.Point{V: 2, T: timestamp.FromTime(ruleEvaluationTime)},
+			},
+			promql.Sample{
+				Metric: labels.FromStrings("__name__", "test_rule", "label_a", "2", "label_b", "4"),
+				Point:  promql.Point{V: 20, T: timestamp.FromTime(ruleEvaluationTime)},
+			},
+		},
+	},
+}
+
+func setUpRuleEvalTest(t require.TestingT) *promql.Test {
+	suite, err := promql.NewTest(t, `
+		load 1m
+			metric{label_a="1",label_b="3"} 1
+			metric{label_a="2",label_b="4"} 10
+	`)
+	require.NoError(t, err)
+
+	return suite
+}
+
 func TestRuleEval(t *testing.T) {
-	storage := teststorage.New(t)
-	defer storage.Close()
+	suite := setUpRuleEvalTest(t)
+	defer suite.Close()
 
-	opts := promql.EngineOpts{
-		Logger:     nil,
-		Reg:        nil,
-		MaxSamples: 10,
-		Timeout:    10 * time.Second,
-	}
+	require.NoError(t, suite.Run())
 
-	engine := promql.NewEngine(opts)
-	ctx, cancelCtx := context.WithCancel(context.Background())
-	defer cancelCtx()
-
-	now := time.Now()
-
-	suite := []struct {
-		name   string
-		expr   parser.Expr
-		labels labels.Labels
-		result promql.Vector
-		err    string
-	}{
-		{
-			name:   "nolabels",
-			expr:   &parser.NumberLiteral{Val: 1},
-			labels: labels.Labels{},
-			result: promql.Vector{promql.Sample{
-				Metric: labels.FromStrings("__name__", "nolabels"),
-				Point:  promql.Point{V: 1, T: timestamp.FromTime(now)},
-			}},
-		},
-		{
-			name:   "labels",
-			expr:   &parser.NumberLiteral{Val: 1},
-			labels: labels.FromStrings("foo", "bar"),
-			result: promql.Vector{promql.Sample{
-				Metric: labels.FromStrings("__name__", "labels", "foo", "bar"),
-				Point:  promql.Point{V: 1, T: timestamp.FromTime(now)},
-			}},
-		},
-	}
-
-	for _, test := range suite {
-		rule := NewRecordingRule(test.name, test.expr, test.labels)
-		result, err := rule.Eval(ctx, 0, now, EngineQueryFunc(engine, storage), nil, 0)
-		if test.err == "" {
+	for _, scenario := range ruleEvalTestScenarios {
+		t.Run(scenario.name, func(t *testing.T) {
+			rule := NewRecordingRule("test_rule", scenario.expr, scenario.ruleLabels)
+			result, err := rule.Eval(suite.Context(), 0, ruleEvaluationTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil, 0)
 			require.NoError(t, err)
-		} else {
-			require.Equal(t, test.err, err.Error())
-		}
-		require.Equal(t, test.result, result)
+			require.Equal(t, scenario.expected, result)
+		})
+	}
+}
+
+func BenchmarkRuleEval(b *testing.B) {
+	suite := setUpRuleEvalTest(b)
+	defer suite.Close()
+
+	require.NoError(b, suite.Run())
+
+	for _, scenario := range ruleEvalTestScenarios {
+		b.Run(scenario.name, func(b *testing.B) {
+			rule := NewRecordingRule("test_rule", scenario.expr, scenario.ruleLabels)
+
+			b.ResetTimer()
+
+			for i := 0; i < b.N; i++ {
+				_, err := rule.Eval(suite.Context(), 0, ruleEvaluationTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil, 0)
+				if err != nil {
+					require.NoError(b, err)
+				}
+			}
+		})
 	}
 }
 

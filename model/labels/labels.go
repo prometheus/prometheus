@@ -530,6 +530,43 @@ func (b *Builder) Set(n, v string) *Builder {
 	return b
 }
 
+func (b *Builder) Get(n string) string {
+	for _, d := range b.del {
+		if d == n {
+			return ""
+		}
+	}
+	for _, a := range b.add {
+		if a.Name == n {
+			return a.Value
+		}
+	}
+	return b.base.Get(n)
+}
+
+// Range calls f on each label in the Builder.
+// If f calls Set or Del on b then this may affect what callbacks subsequently happen.
+func (b *Builder) Range(f func(l Label)) {
+	origAdd, origDel := b.add, b.del
+	b.base.Range(func(l Label) {
+		if !slices.Contains(origDel, l.Name) && !contains(origAdd, l.Name) {
+			f(l)
+		}
+	})
+	for _, a := range origAdd {
+		f(a)
+	}
+}
+
+func contains(s []Label, n string) bool {
+	for _, a := range s {
+		if a.Name == n {
+			return true
+		}
+	}
+	return false
+}
+
 // Labels returns the labels from the builder, adding them to res if non-nil.
 // Argument res can be the same as b.base, if caller wants to overwrite that slice.
 // If no modifications were made, the original labels are returned.
@@ -545,20 +582,12 @@ func (b *Builder) Labels(res Labels) Labels {
 	} else {
 		res = res[:0]
 	}
-Outer:
 	// Justification that res can be the same slice as base: in this loop
 	// we move forward through base, and either skip an element or assign
 	// it to res at its current position or an earlier position.
 	for _, l := range b.base {
-		for _, n := range b.del {
-			if l.Name == n {
-				continue Outer
-			}
-		}
-		for _, la := range b.add {
-			if l.Name == la.Name {
-				continue Outer
-			}
+		if slices.Contains(b.del, l.Name) || contains(b.add, l.Name) {
+			continue
 		}
 		res = append(res, l)
 	}

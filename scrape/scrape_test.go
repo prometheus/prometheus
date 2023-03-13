@@ -2735,7 +2735,7 @@ func TestReuseScrapeCache(t *testing.T) {
 				HonorTimestamps: true,
 				SampleLimit:     400,
 				HTTPClientConfig: config_util.HTTPClientConfig{
-					ProxyURL: config_util.URL{URL: proxyURL},
+					ProxyConfig: config_util.ProxyConfig{ProxyURL: config_util.URL{URL: proxyURL}},
 				},
 				ScrapeInterval: model.Duration(5 * time.Second),
 				ScrapeTimeout:  model.Duration(15 * time.Second),
