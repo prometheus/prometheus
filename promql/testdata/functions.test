@@ -1044,7 +1044,7 @@ load 10s
   metric_gt_1 0 1 0 1 0
   metric_gt_2 0 1 1 1 0
   metric_gt_3 0 1 2 2 -Inf
-  metric_gt_4 1 0 Inf Inf -Inf
+  metric_gt_4 2 2 0 Inf Inf -Inf
   metric_gt_5 0 1 1.1 1.2 0 0
   metric_gt_6 NaN NaN NaN NaN
 
@@ -1052,34 +1052,34 @@ eval instant at 1m streak(metric_gt_1[1m],"gt",0,2)
   {} 0
 
 eval instant at 1m streak(metric_gt_1[1m],"gt",0,1)
-  {} 1
+  {} 2
 
 eval instant at 1m streak(metric_gt_1[1m],"gt",1,1)
   {} 0
 
 eval instant at 1m streak(metric_gt_1[1m],"gt",1,0)
-  {} 1
+  {} 0
 
 eval instant at 1m streak(metric_gt_1[1m],"gt",-1,6)
   {} 0
 
 eval instant at 1m streak(metric_gt_1[1m],"gt",-Inf,5)
-  {} 1
+  {} 5
 
 eval instant at 1m streak(metric_gt_2[1m],"gt",0,3)
-  {} 1
+  {} 3
 
 eval instant at 1m streak(metric_gt_2[1m],"gt",0,4)
   {} 0
 
 eval instant at 1m streak(metric_gt_3[1m],"gt",1,2)
-  {} 1
+  {} 2
 
 eval instant at 1m streak(metric_gt_4[1m],"gt",1,2)
-  {} 1
+  {} 4
 
 eval instant at 1m streak(metric_gt_5[1m],"gt",0.99,3)
-  {} 1
+  {} 3
 
 eval instant at 1m streak(metric_gt_5[1m],"gt",NaN,1)
   {} 0
@@ -1101,31 +1101,28 @@ eval instant at 1m streak(metric_lt_1[1m],"lt",1,2)
   {} 0
 
 eval instant at 1m streak(metric_lt_1[1m],"lt",1,1)
-  {} 1
-
-eval instant at 1m streak(metric_lt_1[1m],"lt",0,1)
-  {} 0
+  {} 3
 
 eval instant at 1m streak(metric_lt_1[1m],"lt",0,0)
-  {} 1
+  {} 0
 
 eval instant at 1m streak(metric_lt_1[1m],"lt",Inf,5)
-  {} 1
+  {} 5
 
 eval instant at 1m streak(metric_lt_2[1m],"lt",2,3)
-  {} 1
+  {} 5
 
 eval instant at 1m streak(metric_lt_2[1m],"lt",2,6)
   {} 0
 
 eval instant at 1m streak(metric_lt_3[1m],"lt",0,3)
-  {} 1
+  {} 3
 
 eval instant at 1m streak(metric_lt_4[1m],"lt",1,4)
-  {} 1
+  {} 4
 
 eval instant at 1m streak(metric_lt_5[1m],"lt",1.3,4)
-  {} 1
+  {} 4
 
 eval instant at 1m streak(metric_lt_5[1m],"lt",NaN,4)
   {} 0
@@ -1141,10 +1138,10 @@ load 10s
   metric3 NaN NaN NaN NaN
 
 eval instant at 1m streak(metric1[1m],"ge",0,5)
-  {} 1
+  {} 5
 
 eval instant at 1m streak(metric1[1m],"le",1,5)
-  {} 1
+  {} 5
 
 eval instant at 1m streak(metric2[1m],"eq",0,2)
   {} 0
@@ -1153,16 +1150,16 @@ eval instant at 1m streak(metric2[1m],"eq",NaN,1)
   {} 0
 
 eval instant at 1m streak(metric2[1m],"eq",NaN,0)
-  {} 1
+  {} 0
 
 eval instant at 1m streak(metric2[1m],"ne",0,3)
-  {} 1
+  {} 3
 
 eval instant at 1m streak(metric3[1m],"eq",NaN,1)
   {} 0
 
 eval instant at 1m streak(metric3[1m],"ne",NaN,3)
-  {} 1
+  {} 4
 
 clear
 

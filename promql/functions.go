@@ -1242,26 +1242,26 @@ func funcStreak(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelpe
 
 	comparator := ScalarComparators[operator]
 
+	totalCount := 0
 	count := 0
 	if len(samples.Points) >= countThreshold && comparator != nil {
 		for _, p := range samples.Points {
 			if comparator(p.V, targetValue) {
 				count++
-				if count >= countThreshold {
-					break
-				}
 			} else {
+				if count >= countThreshold {
+					totalCount += count
+				}
 				count = 0
 			}
 		}
+		if count >= countThreshold {
+			totalCount += count
+		}
 	}
 
-	v := 0.0
-	if count >= countThreshold {
-		v = 1.0
-	}
 	return append(enh.Out, Sample{
-		Point: Point{V: v},
+		Point: Point{V: float64(totalCount)},
 	})
 }
 
