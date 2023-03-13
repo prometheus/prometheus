@@ -4433,6 +4433,115 @@ func TestOOOCompactionWithDisabledWriteLog(t *testing.T) {
 	verifySamples(db.Blocks()[1], 250, 350)
 }
 
+// TestOOOQueryAfterRestartWithSnapshotAndRemovedWBL tests the scenario where the WBL goes
+// missing after a restart while snapshot was enabled, but the query still returns the right
+// data from the mmap chunks.
+func TestOOOQueryAfterRestartWithSnapshotAndRemovedWBL(t *testing.T) {
+	dir := t.TempDir()
+
+	opts := DefaultOptions()
+	opts.OutOfOrderCapMax = 10
+	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
+	opts.EnableMemorySnapshotOnShutdown = true
+
+	db, err := Open(dir, nil, nil, opts, nil)
+	require.NoError(t, err)
+	db.DisableCompactions() // We want to manually call it.
+	t.Cleanup(func() {
+		require.NoError(t, db.Close())
+	})
+
+	series1 := labels.FromStrings("foo", "bar1")
+	series2 := labels.FromStrings("foo", "bar2")
+
+	addSamples := func(fromMins, toMins int64) {
+		app := db.Appender(context.Background())
+		for min := fromMins; min <= toMins; min++ {
+			ts := min * time.Minute.Milliseconds()
+			_, err := app.Append(0, series1, ts, float64(ts))
+			require.NoError(t, err)
+			_, err = app.Append(0, series2, ts, float64(2*ts))
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+	}
+
+	// Add an in-order samples.
+	addSamples(250, 350)
+
+	// Add ooo samples that will result into a single block.
+	addSamples(90, 110) // The sample 110 will not be in m-map chunks.
+
+	// Checking that there are some ooo m-map chunks.
+	for _, lbls := range []labels.Labels{series1, series2} {
+		ms, created, err := db.head.getOrCreate(lbls.Hash(), lbls)
+		require.NoError(t, err)
+		require.False(t, created)
+		require.Equal(t, 2, len(ms.ooo.oooMmappedChunks))
+		require.NotNil(t, ms.ooo.oooHeadChunk)
+	}
+
+	// Restart DB.
+	require.NoError(t, db.Close())
+
+	// For some reason wbl goes missing.
+	require.NoError(t, os.RemoveAll(path.Join(dir, "wbl")))
+
+	db, err = Open(dir, nil, nil, opts, nil)
+	require.NoError(t, err)
+	db.DisableCompactions() // We want to manually call it.
+
+	// Check ooo m-map chunks again.
+	for _, lbls := range []labels.Labels{series1, series2} {
+		ms, created, err := db.head.getOrCreate(lbls.Hash(), lbls)
+		require.NoError(t, err)
+		require.False(t, created)
+		require.Equal(t, 2, len(ms.ooo.oooMmappedChunks))
+		require.Equal(t, 109*time.Minute.Milliseconds(), ms.ooo.oooMmappedChunks[1].maxTime)
+		require.Nil(t, ms.ooo.oooHeadChunk) // Because of missing wbl.
+	}
+
+	verifySamples := func(fromMins, toMins int64) {
+		series1Samples := make([]tsdbutil.Sample, 0, toMins-fromMins+1)
+		series2Samples := make([]tsdbutil.Sample, 0, toMins-fromMins+1)
+		for min := fromMins; min <= toMins; min++ {
+			ts := min * time.Minute.Milliseconds()
+			series1Samples = append(series1Samples, sample{ts, float64(ts), nil, nil})
+			series2Samples = append(series2Samples, sample{ts, float64(2 * ts), nil, nil})
+		}
+		expRes := map[string][]tsdbutil.Sample{
+			series1.String(): series1Samples,
+			series2.String(): series2Samples,
+		}
+
+		q, err := db.Querier(context.Background(), fromMins*time.Minute.Milliseconds(), toMins*time.Minute.Milliseconds())
+		require.NoError(t, err)
+
+		actRes := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
+		require.Equal(t, expRes, actRes)
+	}
+
+	// Checking for expected ooo data from mmap chunks.
+	verifySamples(90, 109)
+
+	// Compaction should also work fine.
+	require.Equal(t, len(db.Blocks()), 0)
+	require.NoError(t, db.CompactOOOHead())
+	require.Equal(t, len(db.Blocks()), 1) // One block from OOO data.
+	require.Equal(t, int64(0), db.Blocks()[0].MinTime())
+	require.Equal(t, 120*time.Minute.Milliseconds(), db.Blocks()[0].MaxTime())
+
+	// Checking that ooo chunk is empty in Head.
+	for _, lbls := range []labels.Labels{series1, series2} {
+		ms, created, err := db.head.getOrCreate(lbls.Hash(), lbls)
+		require.NoError(t, err)
+		require.False(t, created)
+		require.Nil(t, ms.ooo)
+	}
+
+	verifySamples(90, 109)
+}
+
 func Test_Querier_OOOQuery(t *testing.T) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 30
