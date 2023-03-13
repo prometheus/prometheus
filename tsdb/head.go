@@ -1284,6 +1284,10 @@ func (h *Head) truncateOOO(lastWBLFile int, minOOOMmapRef chunks.ChunkDiskMapper
 		}
 	}
 
+	if h.wbl == nil {
+		return nil
+	}
+
 	return h.wbl.Truncate(lastWBLFile)
 }
 
