@@ -836,6 +836,7 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 				numSamples: numSamples,
 			})
 
+			h.updateMinOOOMaxOOOTime(mint, maxt)
 			return nil
 		}
 
