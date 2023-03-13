@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -200,6 +201,28 @@ func benchmarkLabelValuesWithMatchers(b *testing.B, ir IndexReader) {
 			}
 		})
 	}
+}
+
+func BenchmarkMergedStringIter(b *testing.B) {
+	numSymbols := 100000
+	s := make([]string, numSymbols)
+	for i := 0; i < numSymbols; i++ {
+		s[i] = fmt.Sprintf("symbol%v", i)
+	}
+
+	for i := 0; i < b.N; i++ {
+		var it = NewMergedStringIter(index.NewStringListIter(s), index.NewStringListIter(s))
+		for j := 0; j < 100; j++ {
+			it = NewMergedStringIter(it, index.NewStringListIter(s))
+		}
+
+		for it.Next() {
+			require.NotNil(b, it.At())
+			require.NoError(b, it.Err())
+		}
+	}
+
+	b.ReportAllocs()
 }
 
 func BenchmarkQuerierSelect(b *testing.B) {
