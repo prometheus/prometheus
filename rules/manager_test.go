@@ -30,7 +30,6 @@ import (
 	"go.uber.org/goleak"
 	"gopkg.in/yaml.v2"
 
-	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -1393,7 +1392,6 @@ func TestNativeHistogramsInRecordingRules(t *testing.T) {
 	for _, h := range hists[1:] {
 		expHist = expHist.Add(h.ToFloat())
 	}
-	expHist.CounterResetHint = histogram.GaugeType
 
 	it := s.Iterator(nil)
 	require.Equal(t, chunkenc.ValFloatHistogram, it.Next())
