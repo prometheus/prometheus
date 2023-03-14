@@ -70,6 +70,7 @@ import (
 	"github.com/prometheus/prometheus/tracing"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/agent"
+	"github.com/prometheus/prometheus/util/documentcli"
 	"github.com/prometheus/prometheus/util/logging"
 	prom_runtime "github.com/prometheus/prometheus/util/runtime"
 	"github.com/prometheus/prometheus/web"
@@ -412,6 +413,15 @@ func main() {
 		Default("").StringsVar(&cfg.featureList)
 
 	promlogflag.AddFlags(a, &cfg.promlogConfig)
+
+	a.Flag("write-documentation", "Generate command line documentation. Internal use.").Hidden().Action(func(ctx *kingpin.ParseContext) error {
+		if err := documentcli.GenerateMarkdown(a.Model(), os.Stdout); err != nil {
+			os.Exit(1)
+			return err
+		}
+		os.Exit(0)
+		return nil
+	}).Bool()
 
 	_, err := a.Parse(os.Args[1:])
 	if err != nil {
