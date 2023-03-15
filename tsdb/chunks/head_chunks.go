@@ -276,18 +276,19 @@ func NewChunkDiskMapper(reg prometheus.Registerer, dir string, pool chunkenc.Poo
 // Chunk encodings for out-of-order chunks.
 // These encodings must be only used by the Head block for its internal bookkeeping.
 const (
-	OutOfOrderMask = 0b10000000
+	OutOfOrderMask = uint8(0b10000000)
 )
 
 func (cdm *ChunkDiskMapper) ApplyOutOfOrderMask(sourceEncoding chunkenc.Encoding) chunkenc.Encoding {
-	return sourceEncoding | OutOfOrderMask
+	enc := uint8(sourceEncoding) | OutOfOrderMask
+	return chunkenc.Encoding(enc)
 }
 
 func (cdm *ChunkDiskMapper) IsOutOfOrderChunk(e chunkenc.Encoding) bool {
-	return (e & OutOfOrderMask) != 0
+	return (uint8(e) & OutOfOrderMask) != 0
 }
 
-func (cdm *ChunkDiskMapper) UnapplyOutOfOrderMask(sourceEncoding chunkenc.Encoding) chunkenc.Encoding {
+func (cdm *ChunkDiskMapper) RemoveMasks(sourceEncoding chunkenc.Encoding) chunkenc.Encoding {
 	oooMask := uint8(OutOfOrderMask)
 	restored := uint8(sourceEncoding) & (^oooMask)
 	return chunkenc.Encoding(restored)
@@ -722,8 +723,8 @@ func (cdm *ChunkDiskMapper) Chunk(ref ChunkDiskMapperRef) (chunkenc.Chunk, error
 	// Encoding.
 	chkEnc := mmapFile.byteSlice.Range(chkStart, chkStart+ChunkEncodingSize)[0]
 	sourceChkEnc := chunkenc.Encoding(chkEnc)
-	// update the chunk encoding by restoring the original encoding, if needed
-	chkEnc = byte(cdm.UnapplyOutOfOrderMask(sourceChkEnc))
+	// Extract the encoding from the byte. ChunkDiskMapper uses only the last 7 bits for the encoding.
+	chkEnc = byte(cdm.RemoveMasks(sourceChkEnc))
 	// Data length.
 	// With the minimum chunk length this should never cause us reading
 	// over the end of the slice.
@@ -888,11 +889,8 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef HeadSeriesRef, chu
 				mmapFile.maxt = maxt
 			}
 			isOOO := cdm.IsOutOfOrderChunk(chkEnc)
-			// flip the first bit to restore the original encoding
-			if isOOO {
-				chkEnc = cdm.UnapplyOutOfOrderMask(chkEnc)
-			}
-
+			// Extract the encoding from the byte. ChunkDiskMapper uses only the last 7 bits for the encoding.
+			chkEnc = cdm.RemoveMasks(chkEnc)
 			if err := f(seriesRef, chunkRef, mint, maxt, numSamples, chkEnc, isOOO); err != nil {
 				if cerr, ok := err.(*CorruptionErr); ok {
 					cerr.Dir = cdm.dir.Name()
