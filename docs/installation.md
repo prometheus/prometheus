@@ -87,7 +87,7 @@ the following third-party contributions:
 
 ### Ansible
 
-* [Cloud Alchemy/ansible-prometheus](https://github.com/cloudalchemy/ansible-prometheus)
+* [prometheus-community/ansible](https://github.com/prometheus-community/ansible)
 
 ### Chef
 
