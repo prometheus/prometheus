@@ -25,28 +25,6 @@ jobs:
         with:
           version: "3.15.8"
 
-  test_ui:
-    name: UI tests
-    runs-on: ubuntu-latest
-    # Whenever the Go version is updated here, .promu.yml
-    # should also be updated.
-    container:
-      image: quay.io/prometheus/golang-builder:1.19-base
-
-    steps:
-      - uses: actions/checkout@v3
-      - uses: prometheus/promci@v0.0.2
-      - uses: ./.github/promci/actions/setup_environment
-        with:
-          enable_go: false
-          enable_npm: true
-      - run: make assets-tarball
-      - run: make ui-lint
-      - run: make ui-test
-      - uses: ./.github/promci/actions/save_artifacts
-        with:
-          directory: .tarballs
-
   test_windows:
     name: Go tests on Windows
     runs-on: windows-latest
@@ -158,7 +136,7 @@ jobs:
   publish_main:
     name: Publish main branch artifacts
     runs-on: ubuntu-latest
-    needs: [test_ui, test_go, test_windows, golangci, codeql, build_all]
+    needs: [test_go, test_windows, golangci, codeql, build_all]
     if: github.event_name == 'push' && github.event.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v3
@@ -172,7 +150,7 @@ jobs:
   publish_release:
     name: Publish release arfefacts
     runs-on: ubuntu-latest
-    needs: [test_ui, test_go, test_windows, golangci, codeql, build_all]
+    needs: [test_go, test_windows, golangci, codeql, build_all]
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v2.')
     steps:
       - uses: actions/checkout@v3
@@ -184,39 +162,3 @@ jobs:
           quay_io_login: ${{ secrets.quay_io_login }}
           quay_io_password: ${{ secrets.quay_io_password }}
           github_token: ${{ secrets.PROMBOT_GITHUB_TOKEN }}
-  publish_ui_release:
-    name: Publish UI on npm Registry
-    runs-on: ubuntu-latest
-    needs: [test_ui, codeql]
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v3
-      - uses: prometheus/promci@v0.0.2
-      - name: Install nodejs
-        uses: actions/setup-node@v3
-        with:
-          node-version-file: "web/ui/.nvmrc"
-          registry-url: "https://registry.npmjs.org"
-      - uses: actions/cache@v3.2.4
-        with:
-          path: ~/.npm
-          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-
-      - name: Check libraries version
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v2.')
-        run: ./scripts/ui_release.sh --check-package "$(echo ${{ github.ref_name }}|sed s/v2/v0/)"
-      - name: build
-        run: make assets
-      - name: Copy files before publishing libs
-        run: ./scripts/ui_release.sh --copy
-      - name: Publish dry-run libraries
-        if: "!(github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v2.'))"
-        run: ./scripts/ui_release.sh --publish dry-run
-      - name: Publish libraries
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v2.')
-        run: ./scripts/ui_release.sh --publish
-        env:
-          # The setup-node action writes an .npmrc file with this env variable
-          # as the placeholder for the auth token
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
