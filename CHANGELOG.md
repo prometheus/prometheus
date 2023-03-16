@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.43.0-rc.1+stringlabels / 2023-03-16
+
+Special release candidate build that incorporates performance improvements using
+the stringlabels Go tag. This release aims to provide a more efficient and
+faster solution for users managing large-scale deployments or facing performance
+issues with the default Prometheus binaries.
+
+The new labels data structure replaces the existing label/value storage with a
+single string, reducing heap size and improving performance in most cases. It
+enables Prometheus to use fewer system resources, particularly in
+memory-intensive environments.
+
 ## 2.43.0-rc.1 / 2023-03-16
 
 * [BUGFIX] Fixed a bug where changes in the Builder's Range function could lead to skipped labels during iteration (#12145)
