@@ -98,7 +98,11 @@ func TestChunkDiskMapper_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 				bytesWritten += MintMaxtSize
 				binary.BigEndian.PutUint64(buf[bytesWritten:], uint64(maxt))
 				bytesWritten += MintMaxtSize
-				buf[bytesWritten] = byte(chunk.Encoding())
+				enc := chunk.Encoding()
+				if isOOO {
+					enc = hrw.ApplyOutOfOrderMask(enc)
+				}
+				buf[bytesWritten] = byte(enc)
 				bytesWritten += ChunkEncodingSize
 				n := binary.PutUvarint(buf[bytesWritten:], uint64(len(chunk.Bytes())))
 				bytesWritten += n
@@ -149,7 +153,7 @@ func TestChunkDiskMapper_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 	hrw = createChunkDiskMapper(t, dir)
 
 	idx := 0
-	require.NoError(t, hrw.IterateAllChunks(func(seriesRef HeadSeriesRef, chunkRef ChunkDiskMapperRef, mint, maxt int64, numSamples uint16, encoding chunkenc.Encoding) error {
+	require.NoError(t, hrw.IterateAllChunks(func(seriesRef HeadSeriesRef, chunkRef ChunkDiskMapperRef, mint, maxt int64, numSamples uint16, encoding chunkenc.Encoding, isOOO bool) error {
 		t.Helper()
 
 		expData := expectedData[idx]
@@ -158,7 +162,7 @@ func TestChunkDiskMapper_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 		require.Equal(t, expData.maxt, maxt)
 		require.Equal(t, expData.maxt, maxt)
 		require.Equal(t, expData.numSamples, numSamples)
-		require.Equal(t, expData.isOOO, chunkenc.IsOutOfOrderChunk(encoding))
+		require.Equal(t, expData.isOOO, isOOO)
 
 		actChunk, err := hrw.Chunk(expData.chunkRef)
 		require.NoError(t, err)
@@ -188,7 +192,7 @@ func TestChunkDiskMapper_Truncate(t *testing.T) {
 		mint, maxt := timeRange+1, timeRange+step-1
 		var err error
 		awaitCb := make(chan struct{})
-		hrw.WriteChunk(1, int64(mint), int64(maxt), randomChunk(t), func(cbErr error) {
+		hrw.WriteChunk(1, int64(mint), int64(maxt), randomChunk(t), false, func(cbErr error) {
 			err = cbErr
 			close(awaitCb)
 		})
@@ -282,7 +286,7 @@ func TestChunkDiskMapper_Truncate_PreservesFileSequence(t *testing.T) {
 
 		step := 100
 		mint, maxt := timeRange+1, timeRange+step-1
-		hrw.WriteChunk(1, int64(mint), int64(maxt), randomChunk(t), func(err error) {
+		hrw.WriteChunk(1, int64(mint), int64(maxt), randomChunk(t), false, func(err error) {
 			close(awaitCb)
 			require.NoError(t, err)
 		})
@@ -363,7 +367,7 @@ func TestHeadReadWriter_TruncateAfterFailedIterateChunks(t *testing.T) {
 	// Write a chunks to iterate on it later.
 	var err error
 	awaitCb := make(chan struct{})
-	hrw.WriteChunk(1, 0, 1000, randomChunk(t), func(cbErr error) {
+	hrw.WriteChunk(1, 0, 1000, randomChunk(t), false, func(cbErr error) {
 		err = cbErr
 		close(awaitCb)
 	})
@@ -377,7 +381,7 @@ func TestHeadReadWriter_TruncateAfterFailedIterateChunks(t *testing.T) {
 	hrw = createChunkDiskMapper(t, dir)
 
 	// Forcefully failing IterateAllChunks.
-	require.Error(t, hrw.IterateAllChunks(func(_ HeadSeriesRef, _ ChunkDiskMapperRef, _, _ int64, _ uint16, _ chunkenc.Encoding) error {
+	require.Error(t, hrw.IterateAllChunks(func(_ HeadSeriesRef, _ ChunkDiskMapperRef, _, _ int64, _ uint16, _ chunkenc.Encoding, _ bool) error {
 		return errors.New("random error")
 	}))
 
@@ -396,7 +400,7 @@ func TestHeadReadWriter_ReadRepairOnEmptyLastFile(t *testing.T) {
 		mint, maxt := timeRange+1, timeRange+step-1
 		var err error
 		awaitCb := make(chan struct{})
-		hrw.WriteChunk(1, int64(mint), int64(maxt), randomChunk(t), func(cbErr error) {
+		hrw.WriteChunk(1, int64(mint), int64(maxt), randomChunk(t), false, func(cbErr error) {
 			err = cbErr
 			close(awaitCb)
 		})
@@ -489,7 +493,7 @@ func createChunkDiskMapper(t *testing.T, dir string) *ChunkDiskMapper {
 	hrw, err := NewChunkDiskMapper(nil, dir, chunkenc.NewPool(), DefaultWriteBufferSize, writeQueueSize)
 	require.NoError(t, err)
 	require.False(t, hrw.fileMaxtSet)
-	require.NoError(t, hrw.IterateAllChunks(func(_ HeadSeriesRef, _ ChunkDiskMapperRef, _, _ int64, _ uint16, _ chunkenc.Encoding) error {
+	require.NoError(t, hrw.IterateAllChunks(func(_ HeadSeriesRef, _ ChunkDiskMapperRef, _, _ int64, _ uint16, _ chunkenc.Encoding, _ bool) error {
 		return nil
 	}))
 	require.True(t, hrw.fileMaxtSet)
@@ -517,9 +521,8 @@ func createChunk(t *testing.T, idx int, hrw *ChunkDiskMapper) (seriesRef HeadSer
 	awaitCb := make(chan struct{})
 	if rand.Intn(2) == 0 {
 		isOOO = true
-		chunk = &chunkenc.OOOXORChunk{XORChunk: chunk.(*chunkenc.XORChunk)}
 	}
-	chunkRef = hrw.WriteChunk(seriesRef, mint, maxt, chunk, func(cbErr error) {
+	chunkRef = hrw.WriteChunk(seriesRef, mint, maxt, chunk, isOOO, func(cbErr error) {
 		require.NoError(t, err)
 		close(awaitCb)
 	})

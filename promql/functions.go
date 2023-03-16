@@ -187,6 +187,7 @@ func histogramRate(points []Point, isCounter bool) *histogram.FloatHistogram {
 		if curr == nil {
 			return nil // Range contains a mix of histograms and floats.
 		}
+		// TODO(trevorwhitney): Check if isCounter is consistent with curr.CounterResetHint.
 		if !isCounter {
 			continue
 		}
@@ -208,6 +209,8 @@ func histogramRate(points []Point, isCounter bool) *histogram.FloatHistogram {
 			prev = curr
 		}
 	}
+
+	h.CounterResetHint = histogram.GaugeType
 	return h.Compact(0)
 }
 

@@ -133,3 +133,8 @@ bench_tsdb: $(PROMU)
 	@$(GO) tool pprof --alloc_space -svg $(PROMTOOL) $(TSDB_BENCHMARK_OUTPUT_DIR)/mem.prof > $(TSDB_BENCHMARK_OUTPUT_DIR)/memprof.alloc.svg
 	@$(GO) tool pprof -svg $(PROMTOOL) $(TSDB_BENCHMARK_OUTPUT_DIR)/block.prof > $(TSDB_BENCHMARK_OUTPUT_DIR)/blockprof.svg
 	@$(GO) tool pprof -svg $(PROMTOOL) $(TSDB_BENCHMARK_OUTPUT_DIR)/mutex.prof > $(TSDB_BENCHMARK_OUTPUT_DIR)/mutexprof.svg
+
+.PHONY: cli-documentation
+cli-documentation:
+	$(GO) run ./cmd/prometheus/ --write-documentation > docs/command-line/prometheus.md
+	$(GO) run ./cmd/promtool/ write-documentation > docs/command-line/promtool.md
