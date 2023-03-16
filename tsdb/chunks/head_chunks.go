@@ -289,8 +289,7 @@ func (cdm *ChunkDiskMapper) IsOutOfOrderChunk(e chunkenc.Encoding) bool {
 }
 
 func (cdm *ChunkDiskMapper) RemoveMasks(sourceEncoding chunkenc.Encoding) chunkenc.Encoding {
-	oooMask := uint8(OutOfOrderMask)
-	restored := uint8(sourceEncoding) & (^oooMask)
+	restored := uint8(sourceEncoding) & (^OutOfOrderMask)
 	return chunkenc.Encoding(restored)
 }
 
