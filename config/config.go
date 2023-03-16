@@ -266,7 +266,7 @@ func (c *Config) GetScrapeConfigs() ([]*ScrapeConfig, error) {
 	for i, scfg := range c.ScrapeConfigs {
 		// We do these checks for library users that would not call Validate in
 		// Unmarshal.
-		if err := scfg.Validate(c.GlobalConfig.ScrapeInterval, c.GlobalConfig.ScrapeTimeout); err != nil {
+		if err := scfg.Validate(c.GlobalConfig); err != nil {
 			return nil, err
 		}
 
@@ -293,7 +293,7 @@ func (c *Config) GetScrapeConfigs() ([]*ScrapeConfig, error) {
 				return nil, fileErr(filename, err)
 			}
 			for _, scfg := range cfg.ScrapeConfigs {
-				if err := scfg.Validate(c.GlobalConfig.ScrapeInterval, c.GlobalConfig.ScrapeTimeout); err != nil {
+				if err := scfg.Validate(c.GlobalConfig); err != nil {
 					return nil, fileErr(filename, err)
 				}
 
@@ -342,27 +342,8 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	// Do global overrides and validate unique names.
 	jobNames := map[string]struct{}{}
 	for _, scfg := range c.ScrapeConfigs {
-		if err := scfg.Validate(c.GlobalConfig.ScrapeInterval, c.GlobalConfig.ScrapeTimeout); err != nil {
+		if err := scfg.Validate(c.GlobalConfig); err != nil {
 			return err
-		}
-
-		if scfg.BodySizeLimit == 0 {
-			scfg.BodySizeLimit = c.GlobalConfig.BodySizeLimit
-		}
-		if scfg.SampleLimit == 0 {
-			scfg.SampleLimit = c.GlobalConfig.SampleLimit
-		}
-		if scfg.TargetLimit == 0 {
-			scfg.TargetLimit = c.GlobalConfig.TargetLimit
-		}
-		if scfg.LabelLimit == 0 {
-			scfg.LabelLimit = c.GlobalConfig.LabelLimit
-		}
-		if scfg.LabelNameLengthLimit == 0 {
-			scfg.LabelNameLengthLimit = c.GlobalConfig.LabelNameLengthLimit
-		}
-		if scfg.LabelValueLengthLimit == 0 {
-			scfg.LabelValueLengthLimit = c.GlobalConfig.LabelValueLengthLimit
 		}
 
 		if _, ok := jobNames[scfg.JobName]; ok {
@@ -583,25 +564,44 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return nil
 }
 
-func (c *ScrapeConfig) Validate(defaultInterval, defaultTimeout model.Duration) error {
+func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 	if c == nil {
 		return errors.New("empty or null scrape config section")
 	}
 	// First set the correct scrape interval, then check that the timeout
 	// (inferred or explicit) is not greater than that.
 	if c.ScrapeInterval == 0 {
-		c.ScrapeInterval = defaultInterval
+		c.ScrapeInterval = globalConfig.ScrapeInterval
 	}
 	if c.ScrapeTimeout > c.ScrapeInterval {
 		return fmt.Errorf("scrape timeout greater than scrape interval for scrape config with job name %q", c.JobName)
 	}
 	if c.ScrapeTimeout == 0 {
-		if defaultTimeout > c.ScrapeInterval {
+		if globalConfig.ScrapeTimeout > c.ScrapeInterval {
 			c.ScrapeTimeout = c.ScrapeInterval
 		} else {
-			c.ScrapeTimeout = defaultTimeout
+			c.ScrapeTimeout = globalConfig.ScrapeTimeout
 		}
 	}
+	if c.BodySizeLimit == 0 {
+		c.BodySizeLimit = globalConfig.BodySizeLimit
+	}
+	if c.SampleLimit == 0 {
+		c.SampleLimit = globalConfig.SampleLimit
+	}
+	if c.TargetLimit == 0 {
+		c.TargetLimit = globalConfig.TargetLimit
+	}
+	if c.LabelLimit == 0 {
+		c.LabelLimit = globalConfig.LabelLimit
+	}
+	if c.LabelNameLengthLimit == 0 {
+		c.LabelNameLengthLimit = globalConfig.LabelNameLengthLimit
+	}
+	if c.LabelValueLengthLimit == 0 {
+		c.LabelValueLengthLimit = globalConfig.LabelValueLengthLimit
+	}
+
 	return nil
 }
 
