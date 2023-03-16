@@ -13,6 +13,11 @@ func findPathRange(path []parser.Node, eRanges []evalRange) time.Duration {
 		depth     int
 	)
 	for _, r := range eRanges {
+		// If the prefix is longer then it can't be the parent of `child`
+		if len(r.Prefix) > len(path) {
+			continue
+		}
+
 		// Check if we are a child
 		child := true
 		for i, p := range r.Prefix {
