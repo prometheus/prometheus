@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.43.0-rc.1 / 2023-03-16
+
+* [BUGFIX] Fixed a bug where changes in the Builder's Range function could lead to skipped labels during iteration (#12145)
+
 ## 2.43.0-rc.0 / 2023-03-09
 
 We are working on some performance improvements in Prometheus, which are only
