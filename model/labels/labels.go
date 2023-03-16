@@ -545,9 +545,12 @@ func (b *Builder) Get(n string) string {
 }
 
 // Range calls f on each label in the Builder.
-// If f calls Set or Del on b then this may affect what callbacks subsequently happen.
 func (b *Builder) Range(f func(l Label)) {
-	origAdd, origDel := b.add, b.del
+	// Stack-based arrays to avoid heap allocation in most cases.
+	var addStack [1024]Label
+	var delStack [1024]string
+	// Take a copy of add and del, so they are unaffected by calls to Set() or Del().
+	origAdd, origDel := append(addStack[:0], b.add...), append(delStack[:0], b.del...)
 	b.base.Range(func(l Label) {
 		if !slices.Contains(origDel, l.Name) && !contains(origAdd, l.Name) {
 			f(l)
