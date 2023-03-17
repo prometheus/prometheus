@@ -117,15 +117,17 @@ func main() {
 
 	checkServerHealthCmd := checkCmd.Command("health", "Check the health of a Prometheus server")
 	serverHealthURLArg := checkServerHealthCmd.Arg(
-		"url",
+		"server",
 		"The URL of the Prometheus server to check (e.g. http://localhost:9090)",
-	).String()
+	).URL()
+	checkServerHealthCmd.Flag("http.config.file", "HTTP client configuration file for promtool to connect to Prometheus.").PlaceHolder("<filename>").ExistingFileVar(&httpConfigFilePath)
 
 	checkServerReadyCmd := checkCmd.Command("ready", "Check the readiness of a Prometheus server")
 	serverReadyURLArg := checkServerReadyCmd.Arg(
-		"url",
+		"server",
 		"The URL of the Prometheus server to check (e.g. http://localhost:9090)",
-	).String()
+	).URL()
+	checkServerReadyCmd.Flag("http.config.file", "HTTP client configuration file for promtool to connect to Prometheus.").PlaceHolder("<filename>").ExistingFileVar(&httpConfigFilePath)
 
 	checkRulesCmd := checkCmd.Command("rules", "Check if the rule files are valid or not.")
 	ruleFiles := checkRulesCmd.Arg(
@@ -291,10 +293,10 @@ func main() {
 		os.Exit(CheckConfig(*agentMode, *checkConfigSyntaxOnly, newLintConfig(*checkConfigLint, *checkConfigLintFatal), *configFiles...))
 
 	case checkServerHealthCmd.FullCommand():
-		os.Exit(checkErr(CheckServerStatus(*serverHealthURLArg, checkHealth)))
+		os.Exit(checkErr(CheckServerStatus(*serverHealthURLArg, checkHealth, httpRoundTripper)))
 
 	case checkServerReadyCmd.FullCommand():
-		os.Exit(checkErr(CheckServerStatus(*serverReadyURLArg, checkReadiness)))
+		os.Exit(checkErr(CheckServerStatus(*serverReadyURLArg, checkReadiness, httpRoundTripper)))
 
 	case checkWebConfigCmd.FullCommand():
 		os.Exit(CheckWebConfig(*webConfigFiles...))
@@ -392,36 +394,39 @@ func (ls lintConfig) lintDuplicateRules() bool {
 const promDefaultURL = "http://localhost:9090"
 
 // Check server status - healthy & ready.
-func CheckServerStatus(serverURL, checkEndpoint string) error {
-	if serverURL == "" {
-		serverURL = promDefaultURL
+func CheckServerStatus(serverURL *url.URL, checkEndpoint string, roundTripper http.RoundTripper) error {
+	if serverURL == nil {
+		serverURL, _ = url.Parse(promDefaultURL)
 	}
 
-	u, err := url.Parse(serverURL)
+	config := api.Config{
+		Address:      serverURL.String() + checkEndpoint,
+		RoundTripper: roundTripper,
+	}
+
+	// Create new client.
+	c, err := api.NewClient(config)
 	if err != nil {
-		return fmt.Errorf("error parsing URL: %s", serverURL)
-	}
-
-	u.Path += checkEndpoint
-
-	serverURL = u.String()
-
-	// Check Health & Readiness.
-	res, err := http.Get(serverURL)
-	if err != nil {
-		return err
-	}
-	if res.StatusCode != 200 {
-		return fmt.Errorf("check failed: URL=%s, status=%d", serverURL, res.StatusCode)
-	}
-
-	// Read response body.
-	resBody, err := io.ReadAll(res.Body)
-	if err != nil {
+		fmt.Fprintln(os.Stderr, "error creating API client:", err)
 		return err
 	}
 
-	fmt.Fprintf(os.Stderr, "  SUCCESS: %v\n", string(resBody))
+	request, err := http.NewRequest("GET", config.Address, nil)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	response, dataBytes, err := c.Do(ctx, request)
+	if err != nil {
+		return err
+	}
+
+	if response.StatusCode != http.StatusOK {
+		return fmt.Errorf("check failed: URL=%s, status=%d", serverURL, response.StatusCode)
+	}
+
+	fmt.Fprintf(os.Stderr, "  SUCCESS: %v\n", string(dataBytes))
 	return nil
 }
 
