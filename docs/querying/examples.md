@@ -86,7 +86,7 @@ following for every instance:
     instance_cpu_time_ns{app="fox", proc="widget", rev="4d3a513", env="prod", job="cluster-manager"}
     ...
 
-...we could get the top 3 CPU users grouped by application (`app`) and process
+...we could get the top 3 CPU usage grouped by application (`app`) and process
 type (`proc`) like this:
 
     topk(3, sum by (app, proc) (rate(instance_cpu_time_ns[5m])))
