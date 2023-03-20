@@ -834,7 +834,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 			if err := wal.Repair(initErr); err != nil {
 				return nil, errors.Wrap(err, "repair corrupted WAL")
 			}
-			level.Info(db.logger).Log("msg", "successfully repaired WAL")
+			level.Info(db.logger).Log("msg", "Successfully repaired WAL")
 		}
 	}
 
