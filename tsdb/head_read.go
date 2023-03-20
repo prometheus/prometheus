@@ -378,7 +378,7 @@ func (s *memSeries) chunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDi
 // chunks in the OOOHead.
 // This function is not thread safe unless the caller holds a lock.
 // The caller must ensure that s.ooo is not nil.
-func (s *memSeries) oooMergedChunk(meta chunks.Meta, cdm *chunks.ChunkDiskMapper, mint, maxt int64) (chunk *mergedOOOChunks, err error) {
+func (s *memSeries) oooMergedChunk(meta chunks.Meta, cdm *chunks.ChunkDiskMapper, mint, maxt int64, oooSt *OOOState) (chunk *mergedOOOChunks, err error) {
 	_, cid := chunks.HeadChunkRef(meta.Ref).Unpack()
 
 	// ix represents the index of chunk in the s.mmappedChunks slice. The chunk meta's are
@@ -405,12 +405,12 @@ func (s *memSeries) oooMergedChunk(meta chunks.Meta, cdm *chunks.ChunkDiskMapper
 		// We only want to append the head chunk if this chunk existed when
 		// Series() was called. This brings consistency in case new data
 		// is added in between Series() and Chunk() calls.
-		if oooHeadRef == meta.OOOLastRef {
+		if oooHeadRef == oooSt.OOOLastRef {
 			tmpChks = append(tmpChks, chunkMetaAndChunkDiskMapperRef{
 				meta: chunks.Meta{
 					// Ignoring samples added before and after the last known min and max time for this chunk.
-					MinTime: meta.OOOLastMinTime,
-					MaxTime: meta.OOOLastMaxTime,
+					MinTime: oooSt.OOOLastMinTime,
+					MaxTime: oooSt.OOOLastMaxTime,
 					Ref:     oooHeadRef,
 				},
 			})
@@ -420,15 +420,15 @@ func (s *memSeries) oooMergedChunk(meta chunks.Meta, cdm *chunks.ChunkDiskMapper
 	for i, c := range s.ooo.oooMmappedChunks {
 		chunkRef := chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.oooHeadChunkID(i)))
 		// We can skip chunks that came in later than the last known OOOLastRef.
-		if chunkRef > meta.OOOLastRef {
+		if chunkRef > oooSt.OOOLastRef {
 			break
 		}
 
-		if chunkRef == meta.OOOLastRef {
+		if chunkRef == oooSt.OOOLastRef {
 			tmpChks = append(tmpChks, chunkMetaAndChunkDiskMapperRef{
 				meta: chunks.Meta{
-					MinTime: meta.OOOLastMinTime,
-					MaxTime: meta.OOOLastMaxTime,
+					MinTime: oooSt.OOOLastMinTime,
+					MaxTime: oooSt.OOOLastMaxTime,
 					Ref:     chunkRef,
 				},
 				ref:      c.ref,
@@ -459,14 +459,14 @@ func (s *memSeries) oooMergedChunk(meta chunks.Meta, cdm *chunks.ChunkDiskMapper
 		}
 		if c.meta.Ref == oooHeadRef {
 			var xor *chunkenc.XORChunk
-			// If head chunk min and max time match the meta OOO markers
+			// If head chunk min and max time match the OOOState markers
 			// that means that the chunk has not expanded so we can append
 			// it as it is.
-			if s.ooo.oooHeadChunk.minTime == meta.OOOLastMinTime && s.ooo.oooHeadChunk.maxTime == meta.OOOLastMaxTime {
+			if s.ooo.oooHeadChunk.minTime == oooSt.OOOLastMinTime && s.ooo.oooHeadChunk.maxTime == oooSt.OOOLastMaxTime {
 				xor, err = s.ooo.oooHeadChunk.chunk.ToXOR() // TODO(jesus.vazquez) (This is an optimization idea that has no priority and might not be that useful) See if we could use a copy of the underlying slice. That would leave the more expensive ToXOR() function only for the usecase where Bytes() is called.
 			} else {
 				// We need to remove samples that are outside of the markers
-				xor, err = s.ooo.oooHeadChunk.chunk.ToXORBetweenTimestamps(meta.OOOLastMinTime, meta.OOOLastMaxTime)
+				xor, err = s.ooo.oooHeadChunk.chunk.ToXORBetweenTimestamps(oooSt.OOOLastMinTime, oooSt.OOOLastMaxTime)
 			}
 			if err != nil {
 				return nil, errors.Wrap(err, "failed to convert ooo head chunk to xor chunk")
@@ -480,13 +480,13 @@ func (s *memSeries) oooMergedChunk(meta chunks.Meta, cdm *chunks.ChunkDiskMapper
 				}
 				return nil, err
 			}
-			if c.meta.Ref == meta.OOOLastRef &&
-				(c.origMinT != meta.OOOLastMinTime || c.origMaxT != meta.OOOLastMaxTime) {
+			if c.meta.Ref == oooSt.OOOLastRef &&
+				(c.origMinT != oooSt.OOOLastMinTime || c.origMaxT != oooSt.OOOLastMaxTime) {
 				// The head expanded and was memory mapped so now we need to
 				// wrap the chunk within a chunk that doesnt allows us to iterate
 				// through samples out of the OOOLastMinT and OOOLastMaxT
 				// markers.
-				c.meta.Chunk = boundedChunk{chk, meta.OOOLastMinTime, meta.OOOLastMaxTime}
+				c.meta.Chunk = boundedChunk{chk, oooSt.OOOLastMinTime, oooSt.OOOLastMaxTime}
 			} else {
 				c.meta.Chunk = chk
 			}

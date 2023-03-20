@@ -18,6 +18,7 @@ import (
 	"sort"
 
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 )
 
@@ -101,6 +102,17 @@ func (o *OOOChunk) ToXORBetweenTimestamps(mint, maxt int64) (*chunkenc.XORChunk,
 	return x, nil
 }
 
+type OOOState struct {
+	// OOOLastRef, OOOLastMinTime and OOOLastMaxTime are kept as markers for
+	// overlapping chunks.
+	// These fields point to the last created out of order Chunk (the head) that existed
+	// when Series() was called and was overlapping.
+	// Series() and Chunk() method responses should be consistent for the same
+	// query even if new data is added in between the calls.
+	OOOLastRef                     chunks.ChunkRef
+	OOOLastMinTime, OOOLastMaxTime int64
+}
+
 var _ BlockReader = &OOORangeHead{}
 
 // OOORangeHead allows querying Head out of order samples via BlockReader
@@ -111,22 +123,24 @@ type OOORangeHead struct {
 	// the timerange of the query and having preexisting pointers to the first
 	// and last timestamp help with that.
 	mint, maxt int64
+	oooSt      *OOOState
 }
 
 func NewOOORangeHead(head *Head, mint, maxt int64) *OOORangeHead {
 	return &OOORangeHead{
-		head: head,
-		mint: mint,
-		maxt: maxt,
+		head:  head,
+		mint:  mint,
+		maxt:  maxt,
+		oooSt: &OOOState{},
 	}
 }
 
 func (oh *OOORangeHead) Index() (IndexReader, error) {
-	return NewOOOHeadIndexReader(oh.head, oh.mint, oh.maxt), nil
+	return NewOOOHeadIndexReader(oh.head, oh.mint, oh.maxt, oh.oooSt), nil
 }
 
 func (oh *OOORangeHead) Chunks() (ChunkReader, error) {
-	return NewOOOHeadChunkReader(oh.head, oh.mint, oh.maxt), nil
+	return NewOOOHeadChunkReader(oh.head, oh.mint, oh.maxt, oh.oooSt), nil
 }
 
 func (oh *OOORangeHead) Tombstones() (tombstones.Reader, error) {
