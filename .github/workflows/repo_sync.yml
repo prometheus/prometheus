@@ -1,6 +1,6 @@
 ---
 name: Sync repo files
-on:  # yamllint disable-line rule:truthy
+on:
   schedule:
     - cron: '44 17 * * *'
 jobs:

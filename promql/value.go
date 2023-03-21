@@ -82,7 +82,7 @@ func (s Series) String() string {
 func (s Series) MarshalJSON() ([]byte, error) {
 	// Note that this is rather inefficient because it re-creates the whole
 	// series, just separated by Histogram Points and Value Points. For API
-	// purposes, there is a more efficcient jsoniter implementation in
+	// purposes, there is a more efficient jsoniter implementation in
 	// web/api/v1/api.go.
 	series := struct {
 		M labels.Labels `json:"metric"`

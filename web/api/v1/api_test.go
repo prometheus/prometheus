@@ -209,6 +209,7 @@ func (m rulesRetrieverMock) AlertingRules() []*rules.AlertingRule {
 		"test_metric3",
 		expr1,
 		time.Second,
+		0,
 		labels.Labels{},
 		labels.Labels{},
 		labels.Labels{},
@@ -220,6 +221,7 @@ func (m rulesRetrieverMock) AlertingRules() []*rules.AlertingRule {
 		"test_metric4",
 		expr2,
 		time.Second,
+		0,
 		labels.Labels{},
 		labels.Labels{},
 		labels.Labels{},
@@ -2781,7 +2783,7 @@ func TestRespondSuccess(t *testing.T) {
 		t.Fatalf("Error reading response body: %s", err)
 	}
 
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("Return code %d expected in success response but got %d", 200, resp.StatusCode)
 	}
 	if h := resp.Header.Get("Content-Type"); h != "application/json" {
@@ -3405,6 +3407,69 @@ func TestGetGlobalURL(t *testing.T) {
 			}
 			require.NoError(t, err)
 			require.Equal(t, tc.expected, output)
+		})
+	}
+}
+
+func TestExtractQueryOpts(t *testing.T) {
+	tests := []struct {
+		name   string
+		form   url.Values
+		expect *promql.QueryOpts
+		err    error
+	}{
+		{
+			name: "with stats all",
+			form: url.Values{
+				"stats": []string{"all"},
+			},
+			expect: &promql.QueryOpts{
+				EnablePerStepStats: true,
+			},
+			err: nil,
+		},
+		{
+			name: "with stats none",
+			form: url.Values{
+				"stats": []string{"none"},
+			},
+			expect: &promql.QueryOpts{
+				EnablePerStepStats: false,
+			},
+			err: nil,
+		},
+		{
+			name: "with lookback delta",
+			form: url.Values{
+				"stats":          []string{"all"},
+				"lookback_delta": []string{"30s"},
+			},
+			expect: &promql.QueryOpts{
+				EnablePerStepStats: true,
+				LookbackDelta:      30 * time.Second,
+			},
+			err: nil,
+		},
+		{
+			name: "with invalid lookback delta",
+			form: url.Values{
+				"lookback_delta": []string{"invalid"},
+			},
+			expect: nil,
+			err:    errors.New(`error parsing lookback delta duration: cannot parse "invalid" to a valid duration`),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			req := &http.Request{Form: test.form}
+			opts, err := extractQueryOpts(req)
+			require.Equal(t, test.expect, opts)
+			if test.err == nil {
+				require.NoError(t, err)
+			} else {
+				require.Equal(t, test.err.Error(), err.Error())
+			}
 		})
 	}
 }

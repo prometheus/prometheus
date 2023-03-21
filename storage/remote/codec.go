@@ -528,15 +528,16 @@ func exemplarProtoToExemplar(ep prompb.Exemplar) exemplar.Exemplar {
 // represents an integer histogram and not a float histogram.
 func HistogramProtoToHistogram(hp prompb.Histogram) *histogram.Histogram {
 	return &histogram.Histogram{
-		Schema:          hp.Schema,
-		ZeroThreshold:   hp.ZeroThreshold,
-		ZeroCount:       hp.GetZeroCountInt(),
-		Count:           hp.GetCountInt(),
-		Sum:             hp.Sum,
-		PositiveSpans:   spansProtoToSpans(hp.GetPositiveSpans()),
-		PositiveBuckets: hp.GetPositiveDeltas(),
-		NegativeSpans:   spansProtoToSpans(hp.GetNegativeSpans()),
-		NegativeBuckets: hp.GetNegativeDeltas(),
+		CounterResetHint: histogram.CounterResetHint(hp.ResetHint),
+		Schema:           hp.Schema,
+		ZeroThreshold:    hp.ZeroThreshold,
+		ZeroCount:        hp.GetZeroCountInt(),
+		Count:            hp.GetCountInt(),
+		Sum:              hp.Sum,
+		PositiveSpans:    spansProtoToSpans(hp.GetPositiveSpans()),
+		PositiveBuckets:  hp.GetPositiveDeltas(),
+		NegativeSpans:    spansProtoToSpans(hp.GetNegativeSpans()),
+		NegativeBuckets:  hp.GetNegativeDeltas(),
 	}
 }
 
@@ -545,19 +546,20 @@ func HistogramProtoToHistogram(hp prompb.Histogram) *histogram.Histogram {
 // the proto message represents an float histogram and not a integer histogram.
 func HistogramProtoToFloatHistogram(hp prompb.Histogram) *histogram.FloatHistogram {
 	return &histogram.FloatHistogram{
-		Schema:          hp.Schema,
-		ZeroThreshold:   hp.ZeroThreshold,
-		ZeroCount:       hp.GetZeroCountFloat(),
-		Count:           hp.GetCountFloat(),
-		Sum:             hp.Sum,
-		PositiveSpans:   spansProtoToSpans(hp.GetPositiveSpans()),
-		PositiveBuckets: hp.GetPositiveCounts(),
-		NegativeSpans:   spansProtoToSpans(hp.GetNegativeSpans()),
-		NegativeBuckets: hp.GetNegativeCounts(),
+		CounterResetHint: histogram.CounterResetHint(hp.ResetHint),
+		Schema:           hp.Schema,
+		ZeroThreshold:    hp.ZeroThreshold,
+		ZeroCount:        hp.GetZeroCountFloat(),
+		Count:            hp.GetCountFloat(),
+		Sum:              hp.Sum,
+		PositiveSpans:    spansProtoToSpans(hp.GetPositiveSpans()),
+		PositiveBuckets:  hp.GetPositiveCounts(),
+		NegativeSpans:    spansProtoToSpans(hp.GetNegativeSpans()),
+		NegativeBuckets:  hp.GetNegativeCounts(),
 	}
 }
 
-func spansProtoToSpans(s []*prompb.BucketSpan) []histogram.Span {
+func spansProtoToSpans(s []prompb.BucketSpan) []histogram.Span {
 	spans := make([]histogram.Span, len(s))
 	for i := 0; i < len(s); i++ {
 		spans[i] = histogram.Span{Offset: s[i].Offset, Length: s[i].Length}
@@ -577,6 +579,7 @@ func HistogramToHistogramProto(timestamp int64, h *histogram.Histogram) prompb.H
 		NegativeDeltas: h.NegativeBuckets,
 		PositiveSpans:  spansToSpansProto(h.PositiveSpans),
 		PositiveDeltas: h.PositiveBuckets,
+		ResetHint:      prompb.Histogram_ResetHint(h.CounterResetHint),
 		Timestamp:      timestamp,
 	}
 }
@@ -592,14 +595,15 @@ func FloatHistogramToHistogramProto(timestamp int64, fh *histogram.FloatHistogra
 		NegativeCounts: fh.NegativeBuckets,
 		PositiveSpans:  spansToSpansProto(fh.PositiveSpans),
 		PositiveCounts: fh.PositiveBuckets,
+		ResetHint:      prompb.Histogram_ResetHint(fh.CounterResetHint),
 		Timestamp:      timestamp,
 	}
 }
 
-func spansToSpansProto(s []histogram.Span) []*prompb.BucketSpan {
-	spans := make([]*prompb.BucketSpan, len(s))
+func spansToSpansProto(s []histogram.Span) []prompb.BucketSpan {
+	spans := make([]prompb.BucketSpan, len(s))
 	for i := 0; i < len(s); i++ {
-		spans[i] = &prompb.BucketSpan{Offset: s[i].Offset, Length: s[i].Length}
+		spans[i] = prompb.BucketSpan{Offset: s[i].Offset, Length: s[i].Length}
 	}
 
 	return spans

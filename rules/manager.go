@@ -31,7 +31,6 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 
-	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -693,9 +692,6 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 
 			for _, s := range vector {
 				if s.H != nil {
-					// We assume that all native histogram results are gauge histograms.
-					// TODO(codesome): once PromQL can give the counter reset info, remove this assumption.
-					s.H.CounterResetHint = histogram.GaugeType
 					_, err = app.AppendHistogram(0, s.Metric, s.T, nil, s.H)
 				} else {
 					_, err = app.Append(0, s.Metric, s.T, s.V)
@@ -1141,6 +1137,7 @@ func (m *Manager) LoadGroups(
 						r.Alert.Value,
 						expr,
 						time.Duration(r.For),
+						time.Duration(r.KeepFiringFor),
 						labels.FromMap(r.Labels),
 						labels.FromMap(r.Annotations),
 						externalLabels,

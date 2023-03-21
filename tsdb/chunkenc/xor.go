@@ -506,12 +506,3 @@ func xorRead(br *bstreamReader, value *float64, leading, trailing *uint8) error 
 	*value = math.Float64frombits(vbits)
 	return nil
 }
-
-// OOOXORChunk holds a XORChunk and overrides the Encoding() method.
-type OOOXORChunk struct {
-	*XORChunk
-}
-
-func (c *OOOXORChunk) Encoding() Encoding {
-	return EncOOOXOR
-}

@@ -375,7 +375,8 @@ func TestTargetsFromGroup(t *testing.T) {
 		ScrapeTimeout:  model.Duration(10 * time.Second),
 		ScrapeInterval: model.Duration(1 * time.Minute),
 	}
-	targets, failures := TargetsFromGroup(&targetgroup.Group{Targets: []model.LabelSet{{}, {model.AddressLabel: "localhost:9090"}}}, &cfg, false)
+	lb := labels.NewBuilder(labels.EmptyLabels())
+	targets, failures := TargetsFromGroup(&targetgroup.Group{Targets: []model.LabelSet{{}, {model.AddressLabel: "localhost:9090"}}}, &cfg, false, nil, lb)
 	if len(targets) != 1 {
 		t.Fatalf("Expected 1 target, got %v", len(targets))
 	}
@@ -384,5 +385,95 @@ func TestTargetsFromGroup(t *testing.T) {
 	}
 	if failures[0].Error() != expectedError {
 		t.Fatalf("Expected error %s, got %s", expectedError, failures[0])
+	}
+}
+
+func BenchmarkTargetsFromGroup(b *testing.B) {
+	// Simulate Kubernetes service-discovery and use subset of rules from typical Prometheus config.
+	cfgText := `
+scrape_configs:
+  - job_name: job1
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    relabel_configs:
+    - source_labels: [__meta_kubernetes_pod_container_port_name]
+      separator: ;
+      regex: .*-metrics
+      replacement: $1
+      action: keep
+    - source_labels: [__meta_kubernetes_pod_phase]
+      separator: ;
+      regex: Succeeded|Failed
+      replacement: $1
+      action: drop
+    - source_labels: [__meta_kubernetes_namespace, __meta_kubernetes_pod_label_name]
+      separator: /
+      regex: (.*)
+      target_label: job
+      replacement: $1
+      action: replace
+    - source_labels: [__meta_kubernetes_namespace]
+      separator: ;
+      regex: (.*)
+      target_label: namespace
+      replacement: $1
+      action: replace
+    - source_labels: [__meta_kubernetes_pod_name]
+      separator: ;
+      regex: (.*)
+      target_label: pod
+      replacement: $1
+      action: replace
+    - source_labels: [__meta_kubernetes_pod_container_name]
+      separator: ;
+      regex: (.*)
+      target_label: container
+      replacement: $1
+      action: replace
+    - source_labels: [__meta_kubernetes_pod_name, __meta_kubernetes_pod_container_name,
+        __meta_kubernetes_pod_container_port_name]
+      separator: ':'
+      regex: (.*)
+      target_label: instance
+      replacement: $1
+      action: replace
+    - separator: ;
+      regex: (.*)
+      target_label: cluster
+      replacement: dev-us-central-0
+      action: replace
+`
+	config := loadConfiguration(b, cfgText)
+	for _, nTargets := range []int{1, 10, 100} {
+		b.Run(fmt.Sprintf("%d_targets", nTargets), func(b *testing.B) {
+			targets := []model.LabelSet{}
+			for i := 0; i < nTargets; i++ {
+				labels := model.LabelSet{
+					model.AddressLabel:                            model.LabelValue(fmt.Sprintf("localhost:%d", i)),
+					"__meta_kubernetes_namespace":                 "some_namespace",
+					"__meta_kubernetes_pod_container_name":        "some_container",
+					"__meta_kubernetes_pod_container_port_name":   "http-metrics",
+					"__meta_kubernetes_pod_container_port_number": "80",
+					"__meta_kubernetes_pod_label_name":            "some_name",
+					"__meta_kubernetes_pod_name":                  "some_pod",
+					"__meta_kubernetes_pod_phase":                 "Running",
+				}
+				// Add some more labels, because Kubernetes SD generates a lot
+				for i := 0; i < 10; i++ {
+					labels[model.LabelName(fmt.Sprintf("__meta_kubernetes_pod_label_extra%d", i))] = "a_label_abcdefgh"
+					labels[model.LabelName(fmt.Sprintf("__meta_kubernetes_pod_labelpresent_extra%d", i))] = "true"
+				}
+				targets = append(targets, labels)
+			}
+			var tgets []*Target
+			lb := labels.NewBuilder(labels.EmptyLabels())
+			group := &targetgroup.Group{Targets: targets}
+			for i := 0; i < b.N; i++ {
+				tgets, _ = TargetsFromGroup(group, config.ScrapeConfigs[0], false, tgets, lb)
+				if len(targets) != nTargets {
+					b.Fatalf("Expected %d targets, got %d", nTargets, len(targets))
+				}
+			}
+		})
 	}
 }

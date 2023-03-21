@@ -11,16 +11,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build !stringlabels
+
 package labels
 
 import (
 	"bytes"
 	"encoding/json"
-	"sort"
 	"strconv"
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/prometheus/common/model"
+	"golang.org/x/exp/slices"
 )
 
 // Well-known label names used by Prometheus components.
@@ -358,7 +360,7 @@ func EmptyLabels() Labels {
 func New(ls ...Label) Labels {
 	set := make(Labels, 0, len(ls))
 	set = append(set, ls...)
-	sort.Sort(set)
+	slices.SortFunc(set, func(a, b Label) bool { return a.Name < b.Name })
 
 	return set
 }
@@ -382,7 +384,7 @@ func FromStrings(ss ...string) Labels {
 		res = append(res, Label{Name: ss[i], Value: ss[i+1]})
 	}
 
-	sort.Sort(res)
+	slices.SortFunc(res, func(a, b Label) bool { return a.Name < b.Name })
 	return res
 }
 
@@ -528,6 +530,46 @@ func (b *Builder) Set(n, v string) *Builder {
 	return b
 }
 
+func (b *Builder) Get(n string) string {
+	for _, d := range b.del {
+		if d == n {
+			return ""
+		}
+	}
+	for _, a := range b.add {
+		if a.Name == n {
+			return a.Value
+		}
+	}
+	return b.base.Get(n)
+}
+
+// Range calls f on each label in the Builder.
+func (b *Builder) Range(f func(l Label)) {
+	// Stack-based arrays to avoid heap allocation in most cases.
+	var addStack [1024]Label
+	var delStack [1024]string
+	// Take a copy of add and del, so they are unaffected by calls to Set() or Del().
+	origAdd, origDel := append(addStack[:0], b.add...), append(delStack[:0], b.del...)
+	b.base.Range(func(l Label) {
+		if !slices.Contains(origDel, l.Name) && !contains(origAdd, l.Name) {
+			f(l)
+		}
+	})
+	for _, a := range origAdd {
+		f(a)
+	}
+}
+
+func contains(s []Label, n string) bool {
+	for _, a := range s {
+		if a.Name == n {
+			return true
+		}
+	}
+	return false
+}
+
 // Labels returns the labels from the builder, adding them to res if non-nil.
 // Argument res can be the same as b.base, if caller wants to overwrite that slice.
 // If no modifications were made, the original labels are returned.
@@ -543,26 +585,18 @@ func (b *Builder) Labels(res Labels) Labels {
 	} else {
 		res = res[:0]
 	}
-Outer:
 	// Justification that res can be the same slice as base: in this loop
 	// we move forward through base, and either skip an element or assign
 	// it to res at its current position or an earlier position.
 	for _, l := range b.base {
-		for _, n := range b.del {
-			if l.Name == n {
-				continue Outer
-			}
-		}
-		for _, la := range b.add {
-			if l.Name == la.Name {
-				continue Outer
-			}
+		if slices.Contains(b.del, l.Name) || contains(b.add, l.Name) {
+			continue
 		}
 		res = append(res, l)
 	}
 	if len(b.add) > 0 { // Base is already in order, so we only need to sort if we add to it.
 		res = append(res, b.add...)
-		sort.Sort(res)
+		slices.SortFunc(res, func(a, b Label) bool { return a.Name < b.Name })
 	}
 	return res
 }
@@ -589,7 +623,7 @@ func (b *ScratchBuilder) Add(name, value string) {
 
 // Sort the labels added so far by name.
 func (b *ScratchBuilder) Sort() {
-	sort.Sort(b.add)
+	slices.SortFunc(b.add, func(a, b Label) bool { return a.Name < b.Name })
 }
 
 // Asssign is for when you already have a Labels which you want this ScratchBuilder to return.
