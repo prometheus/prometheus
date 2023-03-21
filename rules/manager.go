@@ -447,7 +447,7 @@ func (g *Group) run(ctx context.Context) {
 }
 
 // Default implementation of GroupEvalIterationFunc that is periodically
-// invoked to evaluate the rules in a group at a given point in time and 
+// invoked to evaluate the rules in a group at a given point in time and
 // updates Group state and metrics accordingly. Custom GroupEvalIterationFunc
 // implementations are reccommended to invoke this function as well,
 // to ensure correct Group state and metrics are maintained.
