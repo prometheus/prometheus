@@ -449,7 +449,7 @@ func (g *Group) run(ctx context.Context) {
 // Default implementation of GroupEvalIterationFunc that is periodically
 // invoked to evaluate the rules in a group at a given point in time and
 // updates Group state and metrics accordingly. Custom GroupEvalIterationFunc
-// implementations are reccommended to invoke this function as well,
+// implementations are recommended to invoke this function as well,
 // to ensure correct Group state and metrics are maintained.
 func DefaultEvalIterationFunc(ctx context.Context, g *Group, evalTimestamp time.Time) {
 	g.metrics.IterationsScheduled.WithLabelValues(GroupKey(g.file, g.name)).Inc()
