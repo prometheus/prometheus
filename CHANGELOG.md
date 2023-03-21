@@ -21,7 +21,7 @@ structure for labels that uses a single string to hold all the label/values,
 resulting in a smaller heap size and some speedups in most cases. We would like
 to encourage users who are interested in these improvements to help us measure
 the gains on their production architecture. We are providing release artefacts
-2.43.0+stringlabels and docker images tagged v2.43.0-stringlabels with those
+`2.43.0+stringlabels` and Docker images tagged `v2.43.0-stringlabels` with those
 improvements for testing. #10991
 
 * [FEATURE] Promtool: Add HTTP client configuration to query commands. #11487
