@@ -64,7 +64,7 @@ tls_server_config:
   # client's most preferred ciphersuite, or the server's most preferred
   # ciphersuite. If true then the server's preference, as expressed in
   # the order of elements in cipher_suites, is used.
-  [ prefer_server_cipher_suites: <bool> | default = true ]
+  [ prefer_server_cipher_suites: <boolean> | default = true ]
 
   # Elliptic curves that will be used in an ECDHE handshake, in preference
   # order. Available curves are documented in the go documentation:
