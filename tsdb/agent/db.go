@@ -303,6 +303,7 @@ func Open(l log.Logger, reg prometheus.Registerer, rs *remote.Storage, dir strin
 		if err := w.Repair(err); err != nil {
 			return nil, errors.Wrap(err, "repair corrupted WAL")
 		}
+		level.Info(db.logger).Log("msg", "successfully repaired WAL")
 	}
 
 	go db.run()
