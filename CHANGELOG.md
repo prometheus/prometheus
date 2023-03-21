@@ -1,8 +1,8 @@
 # Changelog
 
-## 2.43.0-rc.1+stringlabels / 2023-03-16
+## 2.43.0+stringlabels / 2023-03-21
 
-Special release candidate build that incorporates performance improvements using
+Special release build that incorporates performance improvements using
 the stringlabels Go tag. This release aims to provide a more efficient and
 faster solution for users managing large-scale deployments or facing performance
 issues with the default Prometheus binaries.
@@ -12,11 +12,7 @@ single string, reducing heap size and improving performance in most cases. It
 enables Prometheus to use fewer system resources, particularly in
 memory-intensive environments.
 
-## 2.43.0-rc.1 / 2023-03-16
-
-* [BUGFIX] Fixed a bug where changes in the Builder's Range function could lead to skipped labels during iteration (#12145)
-
-## 2.43.0-rc.0 / 2023-03-09
+## 2.43.0 / 2023-03-21
 
 We are working on some performance improvements in Prometheus, which are only
 built into Prometheus when compiling it using the Go tag `stringlabels`
@@ -24,9 +20,9 @@ built into Prometheus when compiling it using the Go tag `stringlabels`
 structure for labels that uses a single string to hold all the label/values,
 resulting in a smaller heap size and some speedups in most cases. We would like
 to encourage users who are interested in these improvements to help us measure
-the gains on their production architecture. Building Prometheus from source
-with the `stringlabels` Go tag and providing feedback on its effectiveness in
-their specific use cases would be incredibly helpful to us. #10991
+the gains on their production architecture. We are providing release artefacts
+`2.43.0+stringlabels` and Docker images tagged `v2.43.0-stringlabels` with those
+improvements for testing. #10991
 
 * [FEATURE] Promtool: Add HTTP client configuration to query commands. #11487
 * [FEATURE] Scrape: Add `include_scrape_configs` to include scrape configs from different files. #12019
