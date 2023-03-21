@@ -65,7 +65,7 @@
     "not op_mini all"
   ],
   "devDependencies": {
-    "@testing-library/react-hooks": "^7.0.2",
+    "@testing-library/react-hooks": "^8.0.1",
     "@types/enzyme": "^3.10.12",
     "@types/flot": "0.0.32",
     "@types/jquery": "^3.5.16",
