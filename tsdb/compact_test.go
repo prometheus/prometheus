@@ -1569,20 +1569,20 @@ func TestSparseHistogramSpaceSavings(t *testing.T) {
 							for it.Next() {
 								numOldSeriesPerHistogram++
 								b := it.At()
-								lbls := labels.NewBuilder(ah.baseLabels).Set("le", fmt.Sprintf("%.16f", b.Upper)).Labels(labels.EmptyLabels())
+								lbls := labels.NewBuilder(ah.baseLabels).Set("le", fmt.Sprintf("%.16f", b.Upper)).Labels()
 								refs[itIdx], err = oldApp.Append(refs[itIdx], lbls, ts, float64(b.Count))
 								require.NoError(t, err)
 								itIdx++
 							}
 							baseName := ah.baseLabels.Get(labels.MetricName)
 							// _count metric.
-							countLbls := labels.NewBuilder(ah.baseLabels).Set(labels.MetricName, baseName+"_count").Labels(labels.EmptyLabels())
+							countLbls := labels.NewBuilder(ah.baseLabels).Set(labels.MetricName, baseName+"_count").Labels()
 							_, err = oldApp.Append(0, countLbls, ts, float64(h.Count))
 							require.NoError(t, err)
 							numOldSeriesPerHistogram++
 
 							// _sum metric.
-							sumLbls := labels.NewBuilder(ah.baseLabels).Set(labels.MetricName, baseName+"_sum").Labels(labels.EmptyLabels())
+							sumLbls := labels.NewBuilder(ah.baseLabels).Set(labels.MetricName, baseName+"_sum").Labels()
 							_, err = oldApp.Append(0, sumLbls, ts, h.Sum)
 							require.NoError(t, err)
 							numOldSeriesPerHistogram++

@@ -567,7 +567,7 @@ label_matcher   : IDENTIFIER match_op STRING
  */
 
 metric          : metric_identifier label_set
-                        { b := labels.NewBuilder($2); b.Set(labels.MetricName, $1.Val); $$ = b.Labels(labels.EmptyLabels()) }
+                        { b := labels.NewBuilder($2); b.Set(labels.MetricName, $1.Val); $$ = b.Labels() }
                 | label_set
                         {$$ = $1}
                 ;

@@ -1494,7 +1494,7 @@ yydefault:
 		{
 			b := labels.NewBuilder(yyDollar[2].labels)
 			b.Set(labels.MetricName, yyDollar[1].item.Val)
-			yyVAL.labels = b.Labels(labels.EmptyLabels())
+			yyVAL.labels = b.Labels()
 		}
 	case 96:
 		yyDollar = yyS[yypt-1 : yypt+1]

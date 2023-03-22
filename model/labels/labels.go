@@ -570,24 +570,14 @@ func contains(s []Label, n string) bool {
 	return false
 }
 
-// Labels returns the labels from the builder, adding them to res if non-nil.
-// Argument res can be the same as b.base, if caller wants to overwrite that slice.
+// Labels returns the labels from the builder.
 // If no modifications were made, the original labels are returned.
-func (b *Builder) Labels(res Labels) Labels {
+func (b *Builder) Labels() Labels {
 	if len(b.del) == 0 && len(b.add) == 0 {
 		return b.base
 	}
 
-	if res == nil {
-		// In the general case, labels are removed, modified or moved
-		// rather than added.
-		res = make(Labels, 0, len(b.base))
-	} else {
-		res = res[:0]
-	}
-	// Justification that res can be the same slice as base: in this loop
-	// we move forward through base, and either skip an element or assign
-	// it to res at its current position or an earlier position.
+	res := make(Labels, 0, len(b.base)-len(b.del)+len(b.add))
 	for _, l := range b.base {
 		if slices.Contains(b.del, l.Name) || contains(b.add, l.Name) {
 			continue
