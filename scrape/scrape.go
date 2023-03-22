@@ -1365,7 +1365,7 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 	if appErr != nil {
 		app.Rollback()
 		app = sl.appender(sl.appenderCtx)
-		level.Debug(sl.l).Log("msg", "Append failed", "err", appErr)
+		level.Warn(sl.l).Log("msg", "Append failed", "err", appErr)
 		// The append failed, probably due to a parse error or sample limit.
 		// Call sl.append again with an empty scrape to trigger stale markers.
 		if _, _, _, err := sl.append(app, []byte{}, "", appendTime); err != nil {
