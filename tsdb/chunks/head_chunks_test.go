@@ -595,7 +595,7 @@ func writeUnsupportedChunk(t *testing.T, idx int, hrw *ChunkDiskMapper) (seriesR
 }
 
 const (
-	UnsupportedMask   = 0b11000000
+	UnsupportedMask   = 0b01000000
 	EncUnsupportedXOR = chunkenc.EncXOR | UnsupportedMask
 )
 
