@@ -69,7 +69,7 @@ func newTestHead(t testing.TB, chunkRange int64, compressWAL, oooEnabled bool) (
 	h, err := NewHead(nil, nil, wal, nil, opts, nil)
 	require.NoError(t, err)
 
-	require.NoError(t, h.chunkDiskMapper.IterateAllChunks(func(_ chunks.HeadSeriesRef, _ chunks.ChunkDiskMapperRef, _, _ int64, _ uint16, _ chunkenc.Encoding) error {
+	require.NoError(t, h.chunkDiskMapper.IterateAllChunks(func(_ chunks.HeadSeriesRef, _ chunks.ChunkDiskMapperRef, _, _ int64, _ uint16, _ chunkenc.Encoding, _ bool) error {
 		return nil
 	}))
 
@@ -4247,7 +4247,7 @@ func TestHeadInit_DiscardChunksWithUnsupportedEncoding(t *testing.T) {
 
 	uc := newUnsupportedChunk()
 	// Make this chunk not overlap with the previous and the next
-	h.chunkDiskMapper.WriteChunk(chunks.HeadSeriesRef(seriesRef), 500, 600, uc, func(err error) { require.NoError(t, err) })
+	h.chunkDiskMapper.WriteChunk(chunks.HeadSeriesRef(seriesRef), 500, 600, uc, false, func(err error) { require.NoError(t, err) })
 
 	app = h.Appender(ctx)
 	for i := 700; i < 1200; i++ {

@@ -1487,8 +1487,7 @@ func (s *memSeries) mmapCurrentOOOHeadChunk(chunkDiskMapper chunkDiskMapper) chu
 		return 0
 	}
 	xor, _ := s.ooo.oooHeadChunk.chunk.ToXOR() // Encode to XorChunk which is more compact and implements all of the needed functionality.
-	oooXor := &chunkenc.OOOXORChunk{XORChunk: xor}
-	chunkRef := chunkDiskMapper.WriteChunk(s.ref, s.ooo.oooHeadChunk.minTime, s.ooo.oooHeadChunk.maxTime, oooXor, handleChunkWriteError)
+	chunkRef := chunkDiskMapper.WriteChunk(s.ref, s.ooo.oooHeadChunk.minTime, s.ooo.oooHeadChunk.maxTime, xor, true, handleChunkWriteError)
 	s.ooo.oooMmappedChunks = append(s.ooo.oooMmappedChunks, &mmappedChunk{
 		ref:        chunkRef,
 		numSamples: uint16(xor.NumSamples()),
@@ -1505,7 +1504,7 @@ func (s *memSeries) mmapCurrentHeadChunk(chunkDiskMapper chunkDiskMapper) {
 		return
 	}
 
-	chunkRef := chunkDiskMapper.WriteChunk(s.ref, s.headChunk.minTime, s.headChunk.maxTime, s.headChunk.chunk, handleChunkWriteError)
+	chunkRef := chunkDiskMapper.WriteChunk(s.ref, s.headChunk.minTime, s.headChunk.maxTime, s.headChunk.chunk, false, handleChunkWriteError)
 	s.mmappedChunks = append(s.mmappedChunks, &mmappedChunk{
 		ref:        chunkRef,
 		numSamples: uint16(s.headChunk.chunk.NumSamples()),

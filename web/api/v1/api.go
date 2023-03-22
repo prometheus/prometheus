@@ -1502,7 +1502,7 @@ func (api *API) remoteWrite(w http.ResponseWriter, r *http.Request) {
 	if api.remoteWriteHandler != nil {
 		api.remoteWriteHandler.ServeHTTP(w, r)
 	} else {
-		http.Error(w, "remote write receiver needs to be enabled with --enable-feature=remote-write-receiver", http.StatusNotFound)
+		http.Error(w, "remote write receiver needs to be enabled with --web.enable-remote-write-receiver", http.StatusNotFound)
 	}
 }
 

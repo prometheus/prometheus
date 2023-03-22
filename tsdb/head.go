@@ -67,13 +67,13 @@ var (
 // 0 size queue to queue based chunk disk mapper.
 type chunkDiskMapper interface {
 	CutNewFile() (returnErr error)
-	IterateAllChunks(f func(seriesRef chunks.HeadSeriesRef, chunkRef chunks.ChunkDiskMapperRef, mint, maxt int64, numSamples uint16, encoding chunkenc.Encoding) error) (err error)
+	IterateAllChunks(f func(seriesRef chunks.HeadSeriesRef, chunkRef chunks.ChunkDiskMapperRef, mint, maxt int64, numSamples uint16, encoding chunkenc.Encoding, isOOO bool) error) (err error)
 	Truncate(fileNo uint32) error
 	DeleteCorrupted(originalErr error) error
 	Size() (int64, error)
 	Close() error
 	Chunk(ref chunks.ChunkDiskMapperRef) (chunkenc.Chunk, error)
-	WriteChunk(seriesRef chunks.HeadSeriesRef, mint, maxt int64, chk chunkenc.Chunk, callback func(err error)) (chkRef chunks.ChunkDiskMapperRef)
+	WriteChunk(seriesRef chunks.HeadSeriesRef, mint, maxt int64, chk chunkenc.Chunk, isOOO bool, callback func(err error)) (chkRef chunks.ChunkDiskMapperRef)
 	IsQueueEmpty() bool
 }
 
@@ -811,10 +811,9 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 	mmappedChunks := map[chunks.HeadSeriesRef][]*mmappedChunk{}
 	oooMmappedChunks := map[chunks.HeadSeriesRef][]*mmappedChunk{}
 	var lastRef, secondLastRef chunks.ChunkDiskMapperRef
-	if err := h.chunkDiskMapper.IterateAllChunks(func(seriesRef chunks.HeadSeriesRef, chunkRef chunks.ChunkDiskMapperRef, mint, maxt int64, numSamples uint16, encoding chunkenc.Encoding) error {
+	if err := h.chunkDiskMapper.IterateAllChunks(func(seriesRef chunks.HeadSeriesRef, chunkRef chunks.ChunkDiskMapperRef, mint, maxt int64, numSamples uint16, encoding chunkenc.Encoding, isOOO bool) error {
 		secondLastRef = lastRef
 		lastRef = chunkRef
-		isOOO := chunkenc.IsOutOfOrderChunk(encoding)
 		if !isOOO && maxt < h.minValidTime.Load() {
 			return nil
 		}

@@ -531,6 +531,11 @@ func TestBuilder(t *testing.T) {
 		},
 		{
 			base: FromStrings("aaa", "111", "bbb", "222", "ccc", "333"),
+			set:  []Label{{"aaa", "444"}, {"bbb", "555"}, {"ccc", "666"}},
+			want: FromStrings("aaa", "444", "bbb", "555", "ccc", "666"),
+		},
+		{
+			base: FromStrings("aaa", "111", "bbb", "222", "ccc", "333"),
 			del:  []string{"bbb"},
 			want: FromStrings("aaa", "111", "ccc", "333"),
 		},
@@ -591,7 +596,15 @@ func TestBuilder(t *testing.T) {
 				b.Keep(tcase.keep...)
 			}
 			b.Del(tcase.del...)
-			require.Equal(t, tcase.want, b.Labels(tcase.base))
+			require.Equal(t, tcase.want, b.Labels(EmptyLabels()))
+
+			// Check what happens when we call Range and mutate the builder.
+			b.Range(func(l Label) {
+				if l.Name == "aaa" || l.Name == "bbb" {
+					b.Del(l.Name)
+				}
+			})
+			require.Equal(t, tcase.want.BytesWithoutLabels(nil, "aaa", "bbb"), b.Labels(tcase.base).Bytes(nil))
 		})
 	}
 }
