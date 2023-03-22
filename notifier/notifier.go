@@ -349,19 +349,6 @@ func (n *Manager) Send(alerts ...*Alert) {
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
 
-	// Attach external labels before relabelling and sending.
-	for _, a := range alerts {
-		lb := labels.NewBuilder(a.Labels)
-
-		n.opts.ExternalLabels.Range(func(l labels.Label) {
-			if a.Labels.Get(l.Name) == "" {
-				lb.Set(l.Name, l.Value)
-			}
-		})
-
-		a.Labels = lb.Labels()
-	}
-
 	alerts = n.relabelAlerts(alerts)
 	if len(alerts) == 0 {
 		return
@@ -390,15 +377,25 @@ func (n *Manager) Send(alerts ...*Alert) {
 	n.setMore()
 }
 
+// Attach external labels and process relabelling rules.
 func (n *Manager) relabelAlerts(alerts []*Alert) []*Alert {
+	lb := labels.NewBuilder(labels.EmptyLabels())
 	var relabeledAlerts []*Alert
 
-	for _, alert := range alerts {
-		labels, keep := relabel.Process(alert.Labels, n.opts.RelabelConfigs...)
-		if keep {
-			alert.Labels = labels
-			relabeledAlerts = append(relabeledAlerts, alert)
+	for _, a := range alerts {
+		lb.Reset(a.Labels)
+		n.opts.ExternalLabels.Range(func(l labels.Label) {
+			if a.Labels.Get(l.Name) == "" {
+				lb.Set(l.Name, l.Value)
+			}
+		})
+
+		keep := relabel.ProcessBuilder(lb, n.opts.RelabelConfigs...)
+		if !keep {
+			continue
 		}
+		a.Labels = lb.Labels()
+		relabeledAlerts = append(relabeledAlerts, a)
 	}
 	return relabeledAlerts
 }
