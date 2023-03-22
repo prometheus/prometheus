@@ -235,7 +235,19 @@ func testBlockQuerier(t *testing.T, c blockQuerierTestCase, ir IndexReader, cr C
 			chksRes, errRes := storage.ExpandChunks(sres.Iterator(nil))
 			rmChunkRefs(chksRes)
 			require.Equal(t, errExp, errRes)
-			require.Equal(t, chksExp, chksRes)
+
+			require.Equal(t, len(chksExp), len(chksRes))
+			var exp, act [][]tsdbutil.Sample
+			for i := range chksExp {
+				samples, err := storage.ExpandSamples(chksExp[i].Chunk.Iterator(nil), nil)
+				require.NoError(t, err)
+				exp = append(exp, samples)
+				samples, err = storage.ExpandSamples(chksRes[i].Chunk.Iterator(nil), nil)
+				require.NoError(t, err)
+				act = append(act, samples)
+			}
+
+			require.Equal(t, exp, act)
 		}
 		require.NoError(t, res.Err())
 	})
@@ -2271,5 +2283,95 @@ func TestBlockBaseSeriesSet(t *testing.T) {
 		}
 		require.Equal(t, len(tc.expIdxs), i)
 		require.NoError(t, bcs.Err())
+	}
+}
+
+func BenchmarkHeadChunkQuerier(b *testing.B) {
+	db := openTestDB(b, nil, nil)
+	defer func() {
+		require.NoError(b, db.Close())
+	}()
+
+	// 3h of data.
+	numTimeseries := 100
+	app := db.Appender(context.Background())
+	for i := 0; i < 120*6; i++ {
+		for j := 0; j < numTimeseries; j++ {
+			lbls := labels.FromStrings("foo", fmt.Sprintf("bar%d", j))
+			if i%10 == 0 {
+				require.NoError(b, app.Commit())
+				app = db.Appender(context.Background())
+			}
+			_, err := app.Append(0, lbls, int64(i*15)*time.Second.Milliseconds(), float64(i*100))
+			require.NoError(b, err)
+		}
+	}
+	require.NoError(b, app.Commit())
+
+	querier, err := db.ChunkQuerier(context.Background(), math.MinInt64, math.MaxInt64)
+	require.NoError(b, err)
+	defer func(q storage.ChunkQuerier) {
+		require.NoError(b, q.Close())
+	}(querier)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		ss := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
+		total := 0
+		for ss.Next() {
+			cs := ss.At()
+			it := cs.Iterator(nil)
+			for it.Next() {
+				m := it.At()
+				total += m.Chunk.NumSamples()
+			}
+		}
+		_ = total
+		require.NoError(b, ss.Err())
+	}
+}
+
+func BenchmarkHeadQuerier(b *testing.B) {
+	db := openTestDB(b, nil, nil)
+	defer func() {
+		require.NoError(b, db.Close())
+	}()
+
+	// 3h of data.
+	numTimeseries := 100
+	app := db.Appender(context.Background())
+	for i := 0; i < 120*6; i++ {
+		for j := 0; j < numTimeseries; j++ {
+			lbls := labels.FromStrings("foo", fmt.Sprintf("bar%d", j))
+			if i%10 == 0 {
+				require.NoError(b, app.Commit())
+				app = db.Appender(context.Background())
+			}
+			_, err := app.Append(0, lbls, int64(i*15)*time.Second.Milliseconds(), float64(i*100))
+			require.NoError(b, err)
+		}
+	}
+	require.NoError(b, app.Commit())
+
+	querier, err := db.Querier(context.Background(), math.MinInt64, math.MaxInt64)
+	require.NoError(b, err)
+	defer func(q storage.Querier) {
+		require.NoError(b, q.Close())
+	}(querier)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		ss := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
+		total := int64(0)
+		for ss.Next() {
+			cs := ss.At()
+			it := cs.Iterator(nil)
+			for it.Next() != chunkenc.ValNone {
+				ts, _ := it.At()
+				total += ts
+			}
+		}
+		_ = total
+		require.NoError(b, ss.Err())
 	}
 }

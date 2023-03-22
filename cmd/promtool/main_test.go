@@ -14,6 +14,8 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -21,6 +23,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"syscall"
@@ -432,4 +435,32 @@ func TestExitCodes(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDocumentation(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.SkipNow()
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, promtoolPath, "-test.main", "write-documentation")
+
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+
+	if err := cmd.Run(); err != nil {
+		if exitError, ok := err.(*exec.ExitError); ok {
+			if exitError.ExitCode() != 0 {
+				fmt.Println("Command failed with non-zero exit code")
+			}
+		}
+	}
+
+	generatedContent := strings.ReplaceAll(stdout.String(), filepath.Base(promtoolPath), strings.TrimSuffix(filepath.Base(promtoolPath), ".test"))
+
+	expectedContent, err := os.ReadFile(filepath.Join("..", "..", "docs", "command-line", "promtool.md"))
+	require.NoError(t, err)
+
+	require.Equal(t, string(expectedContent), generatedContent, "Generated content does not match documentation. Hint: run `make cli-documentation`.")
 }

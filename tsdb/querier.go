@@ -533,19 +533,17 @@ func (p *populateWithDelGenericSeriesIterator) reset(blockID ulid.ULID, cr Chunk
 	p.currChkMeta = chunks.Meta{}
 }
 
-func (p *populateWithDelGenericSeriesIterator) next() bool {
+// If copyHeadChunk is true, then the head chunk (i.e. the in-memory chunk of the TSDB)
+// is deep copied to avoid races between reads and copying chunk bytes.
+// However, if the deletion intervals overlaps with the head chunk, then the head chunk is
+// not copied irrespective of copyHeadChunk because it will be re-encoded later anyway.
+func (p *populateWithDelGenericSeriesIterator) next(copyHeadChunk bool) bool {
 	if p.err != nil || p.i >= len(p.chks)-1 {
 		return false
 	}
 
 	p.i++
 	p.currChkMeta = p.chks[p.i]
-
-	p.currChkMeta.Chunk, p.err = p.chunks.Chunk(p.currChkMeta)
-	if p.err != nil {
-		p.err = errors.Wrapf(p.err, "cannot populate chunk %d from block %s", p.currChkMeta.Ref, p.blockID.String())
-		return false
-	}
 
 	p.bufIter.Intervals = p.bufIter.Intervals[:0]
 	for _, interval := range p.intervals {
@@ -554,22 +552,28 @@ func (p *populateWithDelGenericSeriesIterator) next() bool {
 		}
 	}
 
-	// Re-encode head chunks that are still open (being appended to) or
-	// outside the compacted MaxTime range.
-	// The chunk.Bytes() method is not safe for open chunks hence the re-encoding.
-	// This happens when snapshotting the head block or just fetching chunks from TSDB.
-	//
-	// TODO(codesome): think how to avoid the typecasting to verify when it is head block.
-	_, isSafeChunk := p.currChkMeta.Chunk.(*safeChunk)
-	if len(p.bufIter.Intervals) == 0 && !(isSafeChunk && p.currChkMeta.MaxTime == math.MaxInt64) {
-		// If there is no overlap with deletion intervals AND it's NOT
-		// an "open" head chunk, we can take chunk as it is.
+	hcr, ok := p.chunks.(*headChunkReader)
+	if ok && copyHeadChunk && len(p.bufIter.Intervals) == 0 {
+		// ChunkWithCopy will copy the head chunk.
+		var maxt int64
+		p.currChkMeta.Chunk, maxt, p.err = hcr.ChunkWithCopy(p.currChkMeta)
+		// For the in-memory head chunk the index reader sets maxt as MaxInt64. We fix it here.
+		p.currChkMeta.MaxTime = maxt
+	} else {
+		p.currChkMeta.Chunk, p.err = p.chunks.Chunk(p.currChkMeta)
+	}
+	if p.err != nil {
+		p.err = errors.Wrapf(p.err, "cannot populate chunk %d from block %s", p.currChkMeta.Ref, p.blockID.String())
+		return false
+	}
+
+	if len(p.bufIter.Intervals) == 0 {
+		// If there is no overlap with deletion intervals, we can take chunk as it is.
 		p.currDelIter = nil
 		return true
 	}
 
-	// We don't want the full chunk, or it's potentially still opened, take
-	// just a part of it.
+	// We don't want the full chunk, take just a part of it.
 	p.bufIter.Iter = p.currChkMeta.Chunk.Iterator(p.bufIter.Iter)
 	p.currDelIter = &p.bufIter
 	return true
@@ -626,7 +630,7 @@ func (p *populateWithDelSeriesIterator) Next() chunkenc.ValueType {
 		}
 	}
 
-	for p.next() {
+	for p.next(false) {
 		if p.currDelIter != nil {
 			p.curr = p.currDelIter
 		} else {
@@ -691,7 +695,7 @@ func (p *populateWithDelChunkSeriesIterator) reset(blockID ulid.ULID, cr ChunkRe
 }
 
 func (p *populateWithDelChunkSeriesIterator) Next() bool {
-	if !p.next() {
+	if !p.next(true) {
 		return false
 	}
 	p.curr = p.currChkMeta

@@ -31,7 +31,7 @@ func TestChunkWriteQueue_GettingChunkFromQueue(t *testing.T) {
 	blockWriterWg.Add(1)
 
 	// blockingChunkWriter blocks until blockWriterWg is done.
-	blockingChunkWriter := func(_ HeadSeriesRef, _, _ int64, _ chunkenc.Chunk, _ ChunkDiskMapperRef, _ bool) error {
+	blockingChunkWriter := func(_ HeadSeriesRef, _, _ int64, _ chunkenc.Chunk, _ ChunkDiskMapperRef, _, _ bool) error {
 		blockWriterWg.Wait()
 		return nil
 	}
@@ -63,7 +63,7 @@ func TestChunkWriteQueue_WritingThroughQueue(t *testing.T) {
 		gotCutFile       bool
 	)
 
-	blockingChunkWriter := func(seriesRef HeadSeriesRef, mint, maxt int64, chunk chunkenc.Chunk, ref ChunkDiskMapperRef, cutFile bool) error {
+	blockingChunkWriter := func(seriesRef HeadSeriesRef, mint, maxt int64, chunk chunkenc.Chunk, ref ChunkDiskMapperRef, isOOO, cutFile bool) error {
 		gotSeriesRef = seriesRef
 		gotMint = mint
 		gotMaxt = maxt
@@ -101,7 +101,7 @@ func TestChunkWriteQueue_WrappingAroundSizeLimit(t *testing.T) {
 	unblockChunkWriterCh := make(chan struct{}, sizeLimit)
 
 	// blockingChunkWriter blocks until the unblockChunkWriterCh channel returns a value.
-	blockingChunkWriter := func(seriesRef HeadSeriesRef, mint, maxt int64, chunk chunkenc.Chunk, ref ChunkDiskMapperRef, cutFile bool) error {
+	blockingChunkWriter := func(seriesRef HeadSeriesRef, mint, maxt int64, chunk chunkenc.Chunk, ref ChunkDiskMapperRef, isOOO, cutFile bool) error {
 		<-unblockChunkWriterCh
 		return nil
 	}
@@ -183,7 +183,7 @@ func TestChunkWriteQueue_WrappingAroundSizeLimit(t *testing.T) {
 
 func TestChunkWriteQueue_HandlerErrorViaCallback(t *testing.T) {
 	testError := errors.New("test error")
-	chunkWriter := func(_ HeadSeriesRef, _, _ int64, _ chunkenc.Chunk, _ ChunkDiskMapperRef, _ bool) error {
+	chunkWriter := func(_ HeadSeriesRef, _, _ int64, _ chunkenc.Chunk, _ ChunkDiskMapperRef, _, _ bool) error {
 		return testError
 	}
 
@@ -211,7 +211,7 @@ func BenchmarkChunkWriteQueue_addJob(b *testing.B) {
 			for _, concurrentWrites := range []int{1, 10, 100, 1000} {
 				b.Run(fmt.Sprintf("%d concurrent writes", concurrentWrites), func(b *testing.B) {
 					issueReadSignal := make(chan struct{})
-					q := newChunkWriteQueue(nil, 1000, func(ref HeadSeriesRef, i, i2 int64, chunk chunkenc.Chunk, ref2 ChunkDiskMapperRef, b bool) error {
+					q := newChunkWriteQueue(nil, 1000, func(ref HeadSeriesRef, i, i2 int64, chunk chunkenc.Chunk, ref2 ChunkDiskMapperRef, ooo, b bool) error {
 						if withReads {
 							select {
 							case issueReadSignal <- struct{}{}:

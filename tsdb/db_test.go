@@ -130,7 +130,25 @@ func query(t testing.TB, q storage.Querier, matchers ...*labels.Matcher) map[str
 	return result
 }
 
-// queryChunks runs a matcher query against the querier and fully expands its data.
+// queryAndExpandChunks runs a matcher query against the querier and fully expands its data into samples.
+func queryAndExpandChunks(t testing.TB, q storage.ChunkQuerier, matchers ...*labels.Matcher) map[string][][]tsdbutil.Sample {
+	s := queryChunks(t, q, matchers...)
+
+	res := make(map[string][][]tsdbutil.Sample)
+	for k, v := range s {
+		var samples [][]tsdbutil.Sample
+		for _, chk := range v {
+			sam, err := storage.ExpandSamples(chk.Chunk.Iterator(nil), nil)
+			require.NoError(t, err)
+			samples = append(samples, sam)
+		}
+		res[k] = samples
+	}
+
+	return res
+}
+
+// queryChunks runs a matcher query against the querier and expands its data.
 func queryChunks(t testing.TB, q storage.ChunkQuerier, matchers ...*labels.Matcher) map[string][]chunks.Meta {
 	ss := q.Select(false, nil, matchers...)
 	defer func() {
@@ -2367,7 +2385,7 @@ func TestDBReadOnly(t *testing.T) {
 		logger    = log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
 		expBlocks []*Block
 		expSeries map[string][]tsdbutil.Sample
-		expChunks map[string][]chunks.Meta
+		expChunks map[string][][]tsdbutil.Sample
 		expDBHash []byte
 		matchAll  = labels.MustNewMatcher(labels.MatchEqual, "", "")
 		err       error
@@ -2418,7 +2436,7 @@ func TestDBReadOnly(t *testing.T) {
 		expSeries = query(t, q, matchAll)
 		cq, err := dbWritable.ChunkQuerier(context.TODO(), math.MinInt64, math.MaxInt64)
 		require.NoError(t, err)
-		expChunks = queryChunks(t, cq, matchAll)
+		expChunks = queryAndExpandChunks(t, cq, matchAll)
 
 		require.NoError(t, dbWritable.Close()) // Close here to allow getting the dir hash for windows.
 		expDBHash = testutil.DirHash(t, dbWritable.Dir())
@@ -2452,7 +2470,7 @@ func TestDBReadOnly(t *testing.T) {
 	t.Run("chunk querier", func(t *testing.T) {
 		cq, err := dbReadOnly.ChunkQuerier(context.TODO(), math.MinInt64, math.MaxInt64)
 		require.NoError(t, err)
-		readOnlySeries := queryChunks(t, cq, matchAll)
+		readOnlySeries := queryAndExpandChunks(t, cq, matchAll)
 		readOnlyDBHash := testutil.DirHash(t, dbDir)
 
 		require.Equal(t, len(expChunks), len(readOnlySeries), "total series mismatch")
@@ -4202,22 +4220,11 @@ func TestOOOCompaction(t *testing.T) {
 	verifySamples(db.Blocks()[1], 120, 239)
 	verifySamples(db.Blocks()[2], 240, 310)
 
-	// Because of OOO compaction, the current mmap file will end.
-	// All the chunks are only in the first file.
-	// Add a dummy mmap chunk to create a new mmap file.
+	// There should be a single m-map file.
 	mmapDir := mmappedChunksDir(db.head.opts.ChunkDirRoot)
 	files, err = os.ReadDir(mmapDir)
 	require.NoError(t, err)
 	require.Len(t, files, 1)
-	waitC := make(chan struct{})
-	db.head.chunkDiskMapper.WriteChunk(100, 0, 0, chunkenc.NewXORChunk(), func(err error) {
-		require.NoError(t, err)
-		close(waitC)
-	})
-	<-waitC
-	files, err = os.ReadDir(mmapDir)
-	require.NoError(t, err)
-	require.Len(t, files, 2)
 
 	// Compact the in-order head and expect another block.
 	// Since this is a forced compaction, this block is not aligned with 2h.
@@ -4233,7 +4240,7 @@ func TestOOOCompaction(t *testing.T) {
 	files, err = os.ReadDir(mmapDir)
 	require.NoError(t, err)
 	require.Len(t, files, 1)
-	require.Equal(t, "000002", files[0].Name())
+	require.Equal(t, "000001", files[0].Name())
 
 	// This will merge overlapping block.
 	require.NoError(t, db.Compact())
@@ -5088,17 +5095,8 @@ func TestOOOCompactionFailure(t *testing.T) {
 	require.Equal(t, len(db.Blocks()), 3)
 	require.Equal(t, oldBlocks, db.Blocks())
 
-	// Because of OOO compaction, the current mmap file will end.
-	// All the chunks are only in the first file.
-	// Add a dummy mmap chunk to create a new mmap file.
+	// There should be a single m-map file
 	verifyMmapFiles("000001")
-	waitC := make(chan struct{})
-	db.head.chunkDiskMapper.WriteChunk(100, 0, 0, chunkenc.NewXORChunk(), func(err error) {
-		require.NoError(t, err)
-		close(waitC)
-	})
-	<-waitC
-	verifyMmapFiles("000001", "000002")
 
 	// All but last WBL file will be deleted.
 	// 8 files in total (starting at 0) because of 7 compaction calls.
@@ -5141,7 +5139,7 @@ func TestOOOCompactionFailure(t *testing.T) {
 
 	// The compaction also clears out the old m-map files. Including
 	// the file that has ooo chunks.
-	verifyMmapFiles("000002")
+	verifyMmapFiles("000001")
 }
 
 func TestWBLCorruption(t *testing.T) {
@@ -6453,4 +6451,77 @@ func compareSeries(t require.TestingT, expected, actual map[string][]tsdbutil.Sa
 			require.Equal(t, eS, aS, "sample %d in series %q differs", i, key)
 		}
 	}
+}
+
+// TestChunkQuerierReadWriteRace looks for any possible race between appending
+// samples and reading chunks because the head chunk that is being appended to
+// can be read in parallel and we should be able to make a copy of the chunk without
+// worrying about the parallel write.
+func TestChunkQuerierReadWriteRace(t *testing.T) {
+	db := openTestDB(t, nil, nil)
+	defer func() {
+		require.NoError(t, db.Close())
+	}()
+
+	lbls := labels.FromStrings("foo", "bar")
+
+	writer := func() error {
+		<-time.After(5 * time.Millisecond) // Initial pause while readers start.
+		ts := 0
+		for i := 0; i < 500; i++ {
+			app := db.Appender(context.Background())
+			for j := 0; j < 10; j++ {
+				ts++
+				_, err := app.Append(0, lbls, int64(ts), float64(ts*100))
+				if err != nil {
+					return err
+				}
+			}
+			err := app.Commit()
+			if err != nil {
+				return err
+			}
+			<-time.After(time.Millisecond)
+		}
+		return nil
+	}
+
+	reader := func() {
+		querier, err := db.ChunkQuerier(context.Background(), math.MinInt64, math.MaxInt64)
+		require.NoError(t, err)
+		defer func(q storage.ChunkQuerier) {
+			require.NoError(t, q.Close())
+		}(querier)
+		ss := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+		for ss.Next() {
+			cs := ss.At()
+			it := cs.Iterator(nil)
+			for it.Next() {
+				m := it.At()
+				b := m.Chunk.Bytes()
+				bb := make([]byte, len(b))
+				copy(bb, b) // This copying of chunk bytes detects any race.
+			}
+		}
+		require.NoError(t, ss.Err())
+	}
+
+	ch := make(chan struct{})
+	var writerErr error
+	go func() {
+		defer close(ch)
+		writerErr = writer()
+	}()
+
+Outer:
+	for {
+		reader()
+		select {
+		case <-ch:
+			break Outer
+		default:
+		}
+	}
+
+	require.NoError(t, writerErr)
 }
