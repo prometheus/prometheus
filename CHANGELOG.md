@@ -13,7 +13,7 @@ the gains on their production architecture. We are providing release artefacts
 improvements for testing. #10991
 
 * [FEATURE] Promtool: Add HTTP client configuration to query commands. #11487
-* [FEATURE] Scrape: Add `include_scrape_configs` to include scrape configs from different files. #12019
+* [FEATURE] Scrape: Add `scrape_config_files` to include scrape configs from different files. #12019
 * [FEATURE] HTTP client: Add `no_proxy` to exclude URLs from proxied requests. #12098
 * [FEATURE] HTTP client: Add `proxy_from_enviroment` to read proxies from env variables. #12098
 * [ENHANCEMENT] API: Add support for setting lookback delta per query via the API. #12088
