@@ -7,7 +7,7 @@
     "declaration": true,
     "outDir": "dist",
     "strict": true,
-    "sourceMap": true,
+    "sourceMap": false,
     "moduleResolution": "node",
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
