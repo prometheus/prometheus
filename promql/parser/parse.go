@@ -70,6 +70,7 @@ func WithFunctions(functions map[string]*Function) Opt {
 }
 
 // NewParser returns a new parser.
+// nolint:revive
 func NewParser(input string, opts ...Opt) *parser {
 	p := parserPool.Get().(*parser)
 
