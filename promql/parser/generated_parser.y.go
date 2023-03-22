@@ -1210,7 +1210,7 @@ yydefault:
 		yyDollar = yyS[yypt-2 : yypt+1]
 //line promql/parser/generated_parser.y:341
 		{
-			fn, exist := getFunction(yyDollar[1].item.Val)
+			fn, exist := getFunction(yyDollar[1].item.Val, yylex.(*parser).functions)
 			if !exist {
 				yylex.(*parser).addParseErrf(yyDollar[1].item.PositionRange(), "unknown function with name %q", yyDollar[1].item.Val)
 			}
