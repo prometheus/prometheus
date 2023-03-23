@@ -539,7 +539,7 @@ func (c *LeveledCompactor) compact(dest string, dirs []string, open []*Block, sh
 	}
 
 	errs := tsdb_errors.NewMulti(err)
-	if err != context.Canceled {
+	if !errors.Is(err, context.Canceled) {
 		for _, b := range bs {
 			if err := b.setCompactionFailed(); err != nil {
 				errs.Add(errors.Wrapf(err, "setting compaction failed for block: %s", b.Dir()))
