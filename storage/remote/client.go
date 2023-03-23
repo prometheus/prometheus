@@ -149,7 +149,7 @@ func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
 	}
 
 	if conf.AzureADConfig != nil {
-		t, err = azuread.NewAzureAdRoundTripper(conf.AzureADConfig, httpClient.Transport)
+		t, err = azuread.NewAzureADRoundTripper(conf.AzureADConfig, httpClient.Transport)
 		if err != nil {
 			return nil, err
 		}

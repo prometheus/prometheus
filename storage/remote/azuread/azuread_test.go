@@ -16,18 +16,41 @@ package azuread
 import (
 	"context"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
+	"gopkg.in/yaml.v2"
 )
+
+const (
+	dummyAudience   = "dummyAudience"
+	dummyClientID   = "00000000-0000-0000-0000-000000000000"
+	testTokenString = "testTokenString"
+)
+
+var testTokenExpiry = time.Now().Add(10 * time.Second)
 
 type AzureAdTestSuite struct {
 	suite.Suite
 	mockCredential *mockCredential
+}
+
+type TokenProviderTestSuite struct {
+	suite.Suite
+	mockCredential *mockCredential
+}
+
+// mockCredential mocks azidentity TokenCredential interface.
+type mockCredential struct {
+	mock.Mock
 }
 
 func (ad *AzureAdTestSuite) BeforeTest(suiteName, testName string) {
@@ -76,4 +99,142 @@ func (ad *AzureAdTestSuite) TestAzureAdRoundTripper() {
 	origReq := gotReq
 	ad.Assert().NotEmpty(origReq.Header.Get("Authorization"))
 	ad.Assert().Equal("Bearer "+testTokenString, origReq.Header.Get("Authorization"))
+}
+
+func loadAzureAdConfig(filename string) (*AzureADConfig, error) {
+	content, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, err
+	}
+	cfg := AzureADConfig{}
+	if err = yaml.UnmarshalStrict(content, &cfg); err != nil {
+		return nil, err
+	}
+	return &cfg, nil
+}
+
+func testGoodConfig(t *testing.T, filename string) {
+	_, err := loadAzureAdConfig(filename)
+	if err != nil {
+		t.Fatalf("Unexpected error parsing %s: %s", filename, err)
+	}
+}
+
+func TestGoodAzureAdConfig(t *testing.T) {
+	filename := "testdata/azuread_good.yaml"
+	testGoodConfig(t, filename)
+}
+
+func TestBadClientIdMissingAzureAdConfig(t *testing.T) {
+	filename := "testdata/azuread_bad_clientidmissing.yaml"
+	_, err := loadAzureAdConfig(filename)
+	if err == nil {
+		t.Fatalf("Did not receive expected error unmarshaling bad azuread config")
+	}
+	if !strings.Contains(err.Error(), "must provide a Azure Managed Identity clientId in the Azure AD config") {
+		t.Errorf("Received unexpected error from unmarshal of %s: %s", filename, err.Error())
+	}
+}
+
+func TestBadCloudMissingAzureAdConfig(t *testing.T) {
+	filename := "testdata/azuread_bad_cloudmissing.yaml"
+	_, err := loadAzureAdConfig(filename)
+	if err == nil {
+		t.Fatalf("Did not receive expected error unmarshaling bad azuread config")
+	}
+	if !strings.Contains(err.Error(), "must provide Cloud in the Azure AD config") {
+		t.Errorf("Received unexpected error from unmarshal of %s: %s", filename, err.Error())
+	}
+}
+
+func TestBadInvalidClientIdAzureAdConfig(t *testing.T) {
+	filename := "testdata/azuread_bad_invalidclientid.yaml"
+	_, err := loadAzureAdConfig(filename)
+	if err == nil {
+		t.Fatalf("Did not receive expected error unmarshaling bad azuread config")
+	}
+	if !strings.Contains(err.Error(), "Azure Managed Identity clientId provided is invalid") {
+		t.Errorf("Received unexpected error from unmarshal of %s: %s", filename, err.Error())
+	}
+}
+
+func (m *mockCredential) GetToken(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
+	args := m.MethodCalled("GetToken", ctx, options)
+	if args.Get(0) == nil {
+		return azcore.AccessToken{}, args.Error(1)
+	}
+
+	return args.Get(0).(azcore.AccessToken), nil
+}
+
+func (s *TokenProviderTestSuite) BeforeTest(suiteName, testName string) {
+	s.mockCredential = new(mockCredential)
+}
+
+func TestTokenProvider(t *testing.T) {
+	suite.Run(t, new(TokenProviderTestSuite))
+}
+
+func (s *TokenProviderTestSuite) TestNewTokenProvider_NilAudience_Fail() {
+	azureAdConfig := &AzureADConfig{
+		Cloud:    "PublicAzure",
+		ClientID: dummyClientID,
+	}
+
+	actualTokenProvider, actualErr := newTokenProvider(context.Background(), azureAdConfig, s.mockCredential)
+
+	s.Assert().Nil(actualTokenProvider)
+	s.Assert().NotNil(actualErr)
+	s.Assert().Equal("Cloud is not specified or is incorrect: "+azureAdConfig.Cloud, actualErr.Error())
+}
+
+func (s *TokenProviderTestSuite) TestNewTokenProvider_Success() {
+	azureAdConfig := &AzureADConfig{
+		Cloud:    "AzurePublic",
+		ClientID: dummyClientID,
+	}
+	s.mockCredential.On("GetToken", mock.Anything, mock.Anything).Return(getToken(), nil)
+
+	actualTokenProvider, actualErr := newTokenProvider(context.Background(), azureAdConfig, s.mockCredential)
+
+	s.Assert().NotNil(actualTokenProvider)
+	s.Assert().Nil(actualErr)
+	s.Assert().NotNil(actualTokenProvider.getAccessToken())
+}
+
+func (s *TokenProviderTestSuite) TestPeriodicTokenRefresh_Success() {
+	// setup
+	azureAdConfig := &AzureADConfig{
+		Cloud:    "AzurePublic",
+		ClientID: dummyClientID,
+	}
+	testToken := &azcore.AccessToken{
+		Token:     testTokenString,
+		ExpiresOn: testTokenExpiry,
+	}
+
+	s.mockCredential.On("GetToken", mock.Anything, mock.Anything).Return(*testToken, nil).Once().
+		On("GetToken", mock.Anything, mock.Anything).Return(getToken(), nil)
+
+	actualTokenProvider, actualErr := newTokenProvider(context.Background(), azureAdConfig, s.mockCredential)
+
+	s.Assert().NotNil(actualTokenProvider)
+	s.Assert().Nil(actualErr)
+	s.Assert().NotNil(actualTokenProvider.getAccessToken())
+
+	// Token set to refresh at half of the expiry time. The test tokens are set to expiry in 10s.
+	// Hence, the 6 seconds wait to check if the token is refreshed.
+	time.Sleep(6 * time.Second)
+
+	s.mockCredential.AssertNumberOfCalls(s.T(), "GetToken", 2)
+	accessToken, err := actualTokenProvider.getAccessToken()
+	s.Assert().Nil(err)
+	s.Assert().NotEqual(accessToken, testTokenString)
+}
+
+func getToken() azcore.AccessToken {
+	return azcore.AccessToken{
+		Token:     uuid.New().String(),
+		ExpiresOn: time.Now().Add(10 * time.Second),
+	}
 }
