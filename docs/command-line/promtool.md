@@ -58,6 +58,7 @@ Check the resources for validity.
 
 | Flag | Description |
 | --- | --- |
+| <code class="text-nowrap">--http.config.file</code> | HTTP client configuration file for promtool to connect to Prometheus. |
 | <code class="text-nowrap">--extended</code> | Print extended information related to the cardinality of the metrics. |
 
 
@@ -130,18 +131,9 @@ Check if the web config files are valid or not.
 
 
 
-##### `promtool check health`
+##### `promtool check healthy`
 
-Check the health of a Prometheus server
-
-
-
-###### Flags
-
-| Flag | Description |
-| --- | --- |
-| <code class="text-nowrap">--http.config.file</code> | HTTP client configuration file for promtool to connect to Prometheus. |
-
+Check if the Prometheus server is healthy.
 
 
 
@@ -156,16 +148,7 @@ Check the health of a Prometheus server
 
 ##### `promtool check ready`
 
-Check the readiness of a Prometheus server
-
-
-
-###### Flags
-
-| Flag | Description |
-| --- | --- |
-| <code class="text-nowrap">--http.config.file</code> | HTTP client configuration file for promtool to connect to Prometheus. |
-
+Check if the Prometheus server is ready.
 
 
 

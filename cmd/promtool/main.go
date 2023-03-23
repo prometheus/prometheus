@@ -89,6 +89,7 @@ func main() {
 	app.HelpFlag.Short('h')
 
 	checkCmd := app.Command("check", "Check the resources for validity.")
+	checkCmd.Flag("http.config.file", "HTTP client configuration file for promtool to connect to Prometheus.").PlaceHolder("<filename>").ExistingFileVar(&httpConfigFilePath)
 
 	sdCheckCmd := checkCmd.Command("service-discovery", "Perform service discovery for the given job name and report the results, including relabeling.")
 	sdConfigFile := sdCheckCmd.Arg("config-file", "The prometheus config file.").Required().ExistingFile()
@@ -115,19 +116,17 @@ func main() {
 		"The config files to check.",
 	).Required().ExistingFiles()
 
-	checkServerHealthCmd := checkCmd.Command("health", "Check the health of a Prometheus server")
+	checkServerHealthCmd := checkCmd.Command("healthy", "Check if the Prometheus server is healthy.")
 	serverHealthURLArg := checkServerHealthCmd.Arg(
 		"server",
 		"The URL of the Prometheus server to check (e.g. http://localhost:9090)",
 	).URL()
-	checkServerHealthCmd.Flag("http.config.file", "HTTP client configuration file for promtool to connect to Prometheus.").PlaceHolder("<filename>").ExistingFileVar(&httpConfigFilePath)
 
-	checkServerReadyCmd := checkCmd.Command("ready", "Check the readiness of a Prometheus server")
+	checkServerReadyCmd := checkCmd.Command("ready", "Check if the Prometheus server is ready.")
 	serverReadyURLArg := checkServerReadyCmd.Arg(
 		"server",
 		"The URL of the Prometheus server to check (e.g. http://localhost:9090)",
 	).URL()
-	checkServerReadyCmd.Flag("http.config.file", "HTTP client configuration file for promtool to connect to Prometheus.").PlaceHolder("<filename>").ExistingFileVar(&httpConfigFilePath)
 
 	checkRulesCmd := checkCmd.Command("rules", "Check if the rule files are valid or not.")
 	ruleFiles := checkRulesCmd.Arg(
@@ -415,7 +414,7 @@ func CheckServerStatus(serverURL *url.URL, checkEndpoint string, roundTripper ht
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	response, dataBytes, err := c.Do(ctx, request)
 	if err != nil {
@@ -426,7 +425,7 @@ func CheckServerStatus(serverURL *url.URL, checkEndpoint string, roundTripper ht
 		return fmt.Errorf("check failed: URL=%s, status=%d", serverURL, response.StatusCode)
 	}
 
-	fmt.Fprintf(os.Stderr, "  SUCCESS: %v\n", string(dataBytes))
+	fmt.Fprintln(os.Stderr, "  SUCCESS: ", string(dataBytes))
 	return nil
 }
 
