@@ -114,7 +114,7 @@ func TestLabels_MatchLabels(t *testing.T) {
 
 	for i, test := range tests {
 		got := labels.MatchLabels(test.on, test.providedNames...)
-		require.Equal(t, test.expected, got, "unexpected labelset for test case %d", i)
+		require.True(t, Equal(test.expected, got), "unexpected labelset for test case %d", i)
 	}
 }
 
@@ -207,7 +207,7 @@ func TestLabels_WithoutEmpty(t *testing.T) {
 		},
 	} {
 		t.Run("", func(t *testing.T) {
-			require.Equal(t, test.expected, test.input.WithoutEmpty())
+			require.True(t, Equal(test.expected, test.input.WithoutEmpty()))
 		})
 	}
 }
@@ -647,7 +647,7 @@ func TestBuilder(t *testing.T) {
 				b.Keep(tcase.keep...)
 			}
 			b.Del(tcase.del...)
-			require.Equal(t, tcase.want, b.Labels())
+			require.True(t, Equal(tcase.want, b.Labels()))
 
 			// Check what happens when we call Range and mutate the builder.
 			b.Range(func(l Label) {
@@ -694,14 +694,14 @@ func TestScratchBuilder(t *testing.T) {
 		},
 	} {
 		t.Run(fmt.Sprint(i), func(t *testing.T) {
-			b := ScratchBuilder{}
+			b := NewScratchBuilder(len(tcase.add))
 			for _, lbl := range tcase.add {
 				b.Add(lbl.Name, lbl.Value)
 			}
 			b.Sort()
-			require.Equal(t, tcase.want, b.Labels())
+			require.True(t, Equal(tcase.want, b.Labels()))
 			b.Assign(tcase.want)
-			require.Equal(t, tcase.want, b.Labels())
+			require.True(t, Equal(tcase.want, b.Labels()))
 		})
 	}
 }
