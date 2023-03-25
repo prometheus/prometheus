@@ -905,8 +905,7 @@ func BenchmarkRelabel_ReplaceAddLabel(b *testing.B) {
 			labels.Label{Name: "abcdefg12", Value: "hijklmn12"},
 			labels.Label{Name: "abcdefg13", Value: "hijklmn13"},
 		}
-		actual, _ := Process(lset, cfgs...)
-		var _ = actual
+		_, _ = Process(lset, cfgs...)
 		// require.Equal(b, actual, expectLset)
 	}
 }
