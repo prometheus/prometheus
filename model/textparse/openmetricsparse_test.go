@@ -247,7 +247,7 @@ foo_total 17.0 1520879607.789 # {id="counter-test"} 5`
 		},
 	}
 
-	p := NewOpenMetricsParser([]byte(input))
+	p := NewOpenMetricsParser([]byte(input), labels.NewSymbolTable())
 	i := 0
 
 	var res labels.Labels
@@ -378,7 +378,7 @@ choices}`, "strange©™\n'quoted' \"name\"", "6"),
 		},
 	}
 
-	p := NewOpenMetricsParser([]byte(input))
+	p := NewOpenMetricsParser([]byte(input), labels.NewSymbolTable())
 	i := 0
 
 	var res labels.Labels
@@ -727,7 +727,7 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		p := NewOpenMetricsParser([]byte(c.input))
+		p := NewOpenMetricsParser([]byte(c.input), labels.NewSymbolTable())
 		var err error
 		for err == nil {
 			_, err = p.Next()
@@ -792,7 +792,7 @@ func TestOMNullByteHandling(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		p := NewOpenMetricsParser([]byte(c.input))
+		p := NewOpenMetricsParser([]byte(c.input), labels.NewSymbolTable())
 		var err error
 		for err == nil {
 			_, err = p.Next()

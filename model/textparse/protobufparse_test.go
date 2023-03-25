@@ -743,7 +743,7 @@ func TestProtobufParse(t *testing.T) {
 	}{
 		{
 			name:   "ignore classic buckets of native histograms",
-			parser: NewProtobufParser(inputBuf.Bytes(), false),
+			parser: NewProtobufParser(inputBuf.Bytes(), false, labels.NewSymbolTable()),
 			expected: []parseResult{
 				{
 					m:    "go_build_info",
@@ -1280,7 +1280,7 @@ func TestProtobufParse(t *testing.T) {
 		},
 		{
 			name:   "parse classic and native buckets",
-			parser: NewProtobufParser(inputBuf.Bytes(), true),
+			parser: NewProtobufParser(inputBuf.Bytes(), true, labels.NewSymbolTable()),
 			expected: []parseResult{
 				{ // 0
 					m:    "go_build_info",
