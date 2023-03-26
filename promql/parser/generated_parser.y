@@ -612,8 +612,8 @@ label_set_item  : IDENTIFIER EQL STRING
                         { $$ = labels.Label{Name: $1.Val, Value: yylex.(*parser).unquoteString($3.Val) } }
                 | IDENTIFIER EQL error
                         { yylex.(*parser).unexpected("label set", "string"); $$ = labels.Label{}}
-                //| IDENTIFIER error
-                //        { yylex.(*parser).unexpected("label set", "\"=\""); $$ = labels.Label{}}
+                | IDENTIFIER error
+                        { yylex.(*parser).unexpected("label set", "\"=\""); $$ = labels.Label{}}
                 | error
                         { yylex.(*parser).unexpected("label set", "identifier or \"}\""); $$ = labels.Label{} }
                 ;
@@ -623,20 +623,19 @@ label_set_item  : IDENTIFIER EQL STRING
  */
                 /*TODO: Add code sequence*/
 
-series_description: metric SPACE series_values
+series_description: metric series_values
                         {
-                        yylex.(*parser).generatedParserResult = &seriesDescription{labels:$1} // TODO
+                        yylex.(*parser).generatedParserResult = &seriesDescription{labels:$1, values: $2} // TODO
                         }
-                | metric SPACE histogram_desc_set
-                {
-                }
                 ;
 
-series_values   : series_values SPACE series_item
-                        { /*$$ = append($1, $3...)*/ }
-                series_item
-
-                | error SPACE
+series_values   : /*empty*/
+                        { $$ = []SequenceValue{} }
+                | series_values SPACE series_item
+                        { $$ = append($1, $3...) }
+                | series_values SPACE
+                        { $$ = $1 }
+                | error
                         { yylex.(*parser).unexpected("series values", ""); $$ = nil }
                 ;
 
@@ -666,6 +665,10 @@ series_item     : BLANK
                                 $1 += $2
                         }
                         }
+                | histogram_desc_set
+                { $$ = []SequenceValue{{Omitted: true}}}
+                | histogram_desc_set TIMES uint
+                { $$ = []SequenceValue{{Omitted: true}}}
                 ;
 
 series_value    : IDENTIFIER

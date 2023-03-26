@@ -3707,6 +3707,10 @@ func newSeq(vals ...float64) (res []SequenceValue) {
 	return res
 }
 
+func newHistogramSequence(TBD) (TBD) {
+    // TODO: Fill out this functon to create histogram series.
+}
+
 func TestParseHistogramSeries(t *testing.T) {
 	for _, test := range testHistogramSeries {
 		_, _, err := ParseSeriesDesc(test.input)
