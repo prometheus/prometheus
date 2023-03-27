@@ -281,7 +281,7 @@ func NewSeriesToChunkEncoder(series Series) ChunkSeries {
 func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 	var (
 		chk chunkenc.Chunk
-		app chunkenc.Appender
+		app *RecodingAppender
 		err error
 	)
 	mint := int64(math.MaxInt64)
@@ -299,21 +299,16 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 	for typ := seriesIter.Next(); typ != chunkenc.ValNone; typ = seriesIter.Next() {
 		if typ != lastType || i >= seriesToChunkEncoderSplit {
 			// Create a new chunk if the sample type changed or too many samples in the current one.
-			if chk != nil {
-				chks = append(chks, chunks.Meta{
-					MinTime: mint,
-					MaxTime: maxt,
-					Chunk:   chk,
-				})
-			}
+			appendChunk(chks, mint, maxt, chk)
 			chk, err = chunkenc.NewEmptyChunk(typ.ChunkEncoding())
 			if err != nil {
 				return errChunksIterator{err: err}
 			}
-			app, err = chk.Appender()
+			chkAppender, err := chk.Appender()
 			if err != nil {
 				return errChunksIterator{err: err}
 			}
+			app = NewRecodingAppender(&chk, chkAppender)
 			mint = int64(math.MaxInt64)
 			// maxt is immediately overwritten below which is why setting it here won't make a difference.
 			i = 0
@@ -332,10 +327,37 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 			app.Append(t, v)
 		case chunkenc.ValHistogram:
 			t, h = seriesIter.AtHistogram()
-			app.AppendHistogram(t, h)
+			ok := app.AppendHistogram(t, h)
+			if !ok {
+				chks = appendChunk(chks, mint, maxt, chk)
+				chk = chunkenc.NewHistogramChunk()
+				chkAppender, err := chk.Appender()
+				if err != nil {
+					return errChunksIterator{err: err}
+				}
+				mint = int64(math.MaxInt64)
+				i = 0
+				app = NewRecodingAppender(&chk, chkAppender)
+				if ok := app.AppendHistogram(t, h); !ok {
+					panic("unexpected error while appending histogram")
+				}
+			}
 		case chunkenc.ValFloatHistogram:
 			t, fh = seriesIter.AtFloatHistogram()
-			app.AppendFloatHistogram(t, fh)
+			if ok := app.AppendFloatHistogram(t, fh); !ok {
+				chks = appendChunk(chks, mint, maxt, chk)
+				chk = chunkenc.NewFloatHistogramChunk()
+				chkAppender, err := chk.Appender()
+				if err != nil {
+					return errChunksIterator{err: err}
+				}
+				mint = int64(math.MaxInt64)
+				i = 0
+				app = NewRecodingAppender(&chk, chkAppender)
+				if ok := app.AppendFloatHistogram(t, fh); !ok {
+					panic("unexpected error while appending histogram")
+				}
+			}
 		default:
 			return errChunksIterator{err: fmt.Errorf("unknown sample type %s", typ.String())}
 		}
@@ -363,6 +385,17 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 		return lcsi
 	}
 	return NewListChunkSeriesIterator(chks...)
+}
+
+func appendChunk(chks []chunks.Meta, mint int64, maxt int64, chk chunkenc.Chunk) []chunks.Meta {
+	if chk != nil {
+		chks = append(chks, chunks.Meta{
+			MinTime: mint,
+			MaxTime: maxt,
+			Chunk:   chk,
+		})
+	}
+	return chks
 }
 
 type errChunksIterator struct {
@@ -419,4 +452,119 @@ func ExpandChunks(iter chunks.Iterator) ([]chunks.Meta, error) {
 		result = append(result, iter.At())
 	}
 	return result, iter.Err()
+}
+
+// RecodingAppender is a tsdb.Appender that recodes histogram samples if needed during appends.
+// It takes an existing appender and a chunk to which samples are appended.
+type RecodingAppender struct {
+	chk *chunkenc.Chunk
+	app chunkenc.Appender
+}
+
+func NewRecodingAppender(chk *chunkenc.Chunk, app chunkenc.Appender) *RecodingAppender {
+	return &RecodingAppender{
+		chk: chk,
+		app: app,
+	}
+}
+
+// Append appends a float sample to the appender.
+func (a *RecodingAppender) Append(t int64, v float64) {
+	a.app.Append(t, v)
+}
+
+// AppendHistogram appends a histogram sample to the underlying chunk.
+// It returns false if the sample cannot be appended.
+func (a *RecodingAppender) AppendHistogram(t int64, h *histogram.Histogram) bool {
+	app, _ := a.app.(*chunkenc.HistogramAppender)
+
+	if app.NumSamples() > 0 {
+		var (
+			pForwardInserts, nForwardInserts   []chunkenc.Insert
+			pBackwardInserts, nBackwardInserts []chunkenc.Insert
+			pMergedSpans, nMergedSpans         []histogram.Span
+			okToAppend                         bool
+		)
+		switch h.CounterResetHint {
+		case histogram.GaugeType:
+			if app != nil {
+				pForwardInserts, nForwardInserts,
+					pBackwardInserts, nBackwardInserts,
+					pMergedSpans, nMergedSpans,
+					okToAppend = app.AppendableGauge(h)
+			}
+		default:
+			if app != nil {
+				pForwardInserts, nForwardInserts, okToAppend, _ = app.Appendable(h)
+			}
+		}
+		if !okToAppend {
+			return false
+		}
+
+		if len(pBackwardInserts)+len(nBackwardInserts) > 0 {
+			h.PositiveSpans = pMergedSpans
+			h.NegativeSpans = nMergedSpans
+			app.RecodeHistogram(h, pBackwardInserts, nBackwardInserts)
+		}
+		if len(pForwardInserts) > 0 || len(nForwardInserts) > 0 {
+			chk, app := app.Recode(
+				pForwardInserts, nForwardInserts,
+				h.PositiveSpans, h.NegativeSpans,
+			)
+			*a.chk = chk
+			a.app = app
+		}
+	}
+
+	a.app.AppendHistogram(t, h)
+	return true
+}
+
+// AppendFloatHistogram appends a float histogram sample to the underlying chunk.
+// It returns false if the sample cannot be appended.
+func (a *RecodingAppender) AppendFloatHistogram(t int64, fh *histogram.FloatHistogram) bool {
+	app, _ := a.app.(*chunkenc.FloatHistogramAppender)
+
+	if app.NumSamples() > 0 {
+		var (
+			pForwardInserts, nForwardInserts   []chunkenc.Insert
+			pBackwardInserts, nBackwardInserts []chunkenc.Insert
+			pMergedSpans, nMergedSpans         []histogram.Span
+			okToAppend                         bool
+		)
+		switch fh.CounterResetHint {
+		case histogram.GaugeType:
+			pForwardInserts, nForwardInserts,
+				pBackwardInserts, nBackwardInserts,
+				pMergedSpans, nMergedSpans,
+				okToAppend = app.AppendableGauge(fh)
+		default:
+			if app != nil {
+				pForwardInserts, nForwardInserts, okToAppend, _ = app.Appendable(fh)
+			}
+		}
+
+		if !okToAppend {
+			return false
+		}
+
+		if len(pBackwardInserts)+len(nBackwardInserts) > 0 {
+			fh.PositiveSpans = pMergedSpans
+			fh.NegativeSpans = nMergedSpans
+			app.RecodeHistogramm(fh, pBackwardInserts, nBackwardInserts)
+		}
+
+		if len(pForwardInserts) > 0 || len(nForwardInserts) > 0 {
+			chunk, app := app.Recode(
+				pForwardInserts, nForwardInserts,
+				fh.PositiveSpans, fh.NegativeSpans,
+			)
+			*a.chk = chunk
+			a.app = app
+		}
+	}
+
+	a.app.AppendFloatHistogram(t, fh)
+	return true
 }

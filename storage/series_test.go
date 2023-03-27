@@ -14,10 +14,12 @@
 package storage
 
 import (
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
@@ -117,5 +119,70 @@ func TestChunkSeriesSetToSeriesSet(t *testing.T) {
 			require.EqualValues(t, series[i].samples[j], fSample{t: ts, f: v})
 			j++
 		}
+	}
+}
+
+func TestHistogramSeriesToChunks(t *testing.T) {
+	hSample := &histogram.Histogram{
+		PositiveSpans:   []histogram.Span{{-2, 1}, {2, 3}},
+		PositiveBuckets: []int64{1, 3, 4, 1},
+		NegativeSpans:   []histogram.Span{{3, 2}, {3, 2}},
+		NegativeBuckets: []int64{3, 3, 1, 1000},
+	}
+	staleSample := &histogram.Histogram{
+		Sum: math.NaN(),
+	}
+	tests := []struct {
+		name           string
+		lbs            labels.Labels
+		samples        []tsdbutil.Sample
+		expectedChunks int
+	}{
+		{
+			name: "histogram encoding to single chunk",
+			lbs:  labels.FromStrings("__name__", "up", "instance", "localhost:8080"),
+			samples: []tsdbutil.Sample{
+				&sample{t: 1, h: hSample},
+			},
+			expectedChunks: 1,
+		},
+		{
+			name: "histogram encoding to two chunks",
+			lbs:  labels.FromStrings("__name__", "up", "instance", "localhost:8080"),
+			samples: []tsdbutil.Sample{
+				&sample{t: 1, h: hSample},
+				&sample{t: 2, h: staleSample},
+			},
+			expectedChunks: 2,
+		},
+		{
+			name: "float histogram encoding to single chunk",
+			lbs:  labels.FromStrings("__name__", "up", "instance", "localhost:8080"),
+			samples: []tsdbutil.Sample{
+				&sample{t: 1, fh: hSample.ToFloat()},
+			},
+			expectedChunks: 1,
+		},
+		{
+			name: "float histogram encoding to two chunks",
+			lbs:  labels.FromStrings("__name__", "up", "instance", "localhost:8080"),
+			samples: []tsdbutil.Sample{
+				&sample{t: 1, fh: hSample.ToFloat()},
+				&sample{t: 2, fh: staleSample.ToFloat()},
+			},
+			expectedChunks: 2,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			series := NewListSeries(test.lbs, test.samples)
+			encoder := NewSeriesToChunkEncoder(series)
+			require.EqualValues(t, test.lbs, encoder.Labels())
+
+			chks, err := ExpandChunks(encoder.Iterator(nil))
+			require.NoError(t, err)
+			require.Equal(t, test.expectedChunks, len(chks))
+		})
 	}
 }
