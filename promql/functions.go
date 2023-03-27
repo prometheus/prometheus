@@ -905,6 +905,66 @@ func funcHistogramSum(vals []parser.Value, args parser.Expressions, enh *EvalNod
 	return enh.Out
 }
 
+// === histogram_min(Vector parser.ValueTypeVector) Vector ===
+func funcHistogramMin(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	inVec := vals[0].(Vector)
+
+	for _, sample := range inVec {
+		// Skip non-histogram samples.
+		if sample.H == nil {
+			continue
+		}
+
+		min := math.NaN() // initialize to NaN in case histogram is empty
+
+		it := sample.H.AllBucketIterator() // AllBucketIterator starts at the lowest bucket in the native histogram
+		for it.Next() {
+			bucket := it.At()
+			// Find the lower limit of the lowest populated bucket
+			if bucket.Count > 0 {
+				min = bucket.Lower
+				break
+			}
+		}
+
+		enh.Out = append(enh.Out, Sample{
+			Metric: enh.DropMetricName(sample.Metric),
+			Point:  Point{V: min},
+		})
+	}
+	return enh.Out
+}
+
+// === histogram_max(Vector parser.ValueTypeVector) Vector ===
+func funcHistogramMax(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	inVec := vals[0].(Vector)
+
+	for _, sample := range inVec {
+		// Skip non-histogram samples.
+		if sample.H == nil {
+			continue
+		}
+
+		max := math.NaN() // initialize to NaN in case histogram is empty
+
+		it := sample.H.AllReverseBucketIterator() // AllReverseBucketIterator starts at the highest bucket in the native histogram
+		for it.Next() {
+			bucket := it.At()
+			// Find the upper limit of the highest populated bucket
+			if bucket.Count > 0 {
+				max = bucket.Upper
+				break
+			}
+		}
+
+		enh.Out = append(enh.Out, Sample{
+			Metric: enh.DropMetricName(sample.Metric),
+			Point:  Point{V: max},
+		})
+	}
+	return enh.Out
+}
+
 // === histogram_fraction(lower, upper parser.ValueTypeScalar, Vector parser.ValueTypeVector) Vector ===
 func funcHistogramFraction(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	lower := vals[0].(Vector)[0].V
@@ -1267,6 +1327,8 @@ var FunctionCalls = map[string]FunctionCall{
 	"floor":              funcFloor,
 	"histogram_count":    funcHistogramCount,
 	"histogram_fraction": funcHistogramFraction,
+	"histogram_max":      funcHistogramMax,
+	"histogram_min":      funcHistogramMin,
 	"histogram_quantile": funcHistogramQuantile,
 	"histogram_sum":      funcHistogramSum,
 	"holt_winters":       funcHoltWinters,
