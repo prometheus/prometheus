@@ -200,6 +200,28 @@ observed values (in this case corresponding to “average request duration”):
 	/
       histogram_count(rate(http_request_duration_seconds[10m]))
 
+## `histogram_min()`
+
+_This function only acts on native histograms, which are an experimental
+feature. The behavior of this function may change in future versions of
+Prometheus, including its removal from PromQL._
+
+`histogram_min(v instant-vector)` returns the estimated minimum value stored in
+a native histogram. This estimation is based on the lower boundary of the lowest
+bucket that contains values in the native histogram. Samples that are not native
+histograms are ignored and do not show up in the returned vector.
+
+## `histogram_max()`
+
+_This function only acts on native histograms, which are an experimental
+feature. The behavior of this function may change in future versions of
+Prometheus, including its removal from PromQL._
+
+`histogram_max(v instant-vector)` returns the estimated maximum value stored in
+a native histogram. This estimation is based on the upper boundary of the highest
+bucket that contains values in the native histogram. Samples that are not native 
+histograms are ignored and do not show up in the returned vector.
+
 ## `histogram_fraction()`
 
 _This function only acts on native histograms, which are an experimental
