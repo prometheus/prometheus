@@ -607,6 +607,20 @@ func (h *FloatHistogram) AllBucketIterator() BucketIterator[float64] {
 	}
 }
 
+// AllReverseBucketIterator returns a BucketIterator to iterate over all negative,
+// zero, and positive buckets in descending order (starting at the lowest bucket
+// and going up). If the highest negative bucket or the lowest positive bucket
+// overlap with the zero bucket, their upper or lower boundary, respectively, is
+// set to the zero threshold.
+func (h *FloatHistogram) AllReverseBucketIterator() BucketIterator[float64] {
+	return &allReverseFloatBucketIterator{
+		h:       h,
+		negIter: h.NegativeBucketIterator(),
+		posIter: h.PositiveReverseBucketIterator(),
+		state:   1,
+	}
+}
+
 // zeroCountForLargerThreshold returns what the histogram's zero count would be
 // if the ZeroThreshold had the provided larger (or equal) value. If the
 // provided value is less than the histogram's ZeroThreshold, the method panics.
@@ -939,5 +953,61 @@ func (i *allFloatBucketIterator) Next() bool {
 }
 
 func (i *allFloatBucketIterator) At() Bucket[float64] {
+	return i.currBucket
+}
+
+type allReverseFloatBucketIterator struct {
+	h                *FloatHistogram
+	negIter, posIter BucketIterator[float64]
+	// 1 means we are iterating positive buckets.
+	// 0 means it is time for the zero bucket.
+	// -1 means we are iterating negative buckets.
+	// Anything else means iteration is over.
+	state      int8
+	currBucket Bucket[float64]
+}
+
+func (i *allReverseFloatBucketIterator) Next() bool {
+	switch i.state {
+	case 1:
+		if i.posIter.Next() {
+			i.currBucket = i.posIter.At()
+			if i.currBucket.Lower < i.h.ZeroThreshold {
+				i.currBucket.Lower = i.h.ZeroThreshold
+			}
+			return true
+		}
+		i.state = 0
+		return i.Next()
+	case 0:
+		i.state = -1
+		if i.h.ZeroCount > 0 {
+			i.currBucket = Bucket[float64]{
+				Lower:          -i.h.ZeroThreshold,
+				Upper:          i.h.ZeroThreshold,
+				LowerInclusive: true,
+				UpperInclusive: true,
+				Count:          i.h.ZeroCount,
+				// Index is irrelevant for the zero bucket.
+			}
+			return true
+		}
+		return i.Next()
+	case -1:
+		if i.negIter.Next() {
+			i.currBucket = i.negIter.At()
+			if i.currBucket.Upper > -i.h.ZeroThreshold {
+				i.currBucket.Upper = -i.h.ZeroThreshold
+			}
+			return true
+		}
+		i.state = 42
+		return false
+	}
+
+	return false
+}
+
+func (i *allReverseFloatBucketIterator) At() Bucket[float64] {
 	return i.currBucket
 }
