@@ -3295,6 +3295,212 @@ func TestNativeHistogram_HistogramCountAndSum(t *testing.T) {
 	}
 }
 
+func TestNativeHistogram_HistogramMinAndMax(t *testing.T) {
+	// TODO(carrieedwards): Integrate histograms into the PromQL testing framework
+	// and write more tests there.
+	cases := []struct {
+		text string
+		// Histogram to test.
+		h *histogram.Histogram
+		// Expected
+		expectedMin float64
+		expectedMax float64
+	}{
+		{
+			text: "all negative buckets",
+			h: &histogram.Histogram{
+				Count:         12,
+				ZeroThreshold: 0.001,
+				Sum:           100, // Does not matter.
+				Schema:        0,
+				NegativeSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				NegativeBuckets: []int64{2, 1, -2, 3},
+			},
+			expectedMin: -16,
+			expectedMax: -0.5,
+		},
+		{
+			text: "all positive buckets",
+			h: &histogram.Histogram{
+				Count:         12,
+				ZeroThreshold: 0.001,
+				Sum:           100, // Does not matter.
+				Schema:        0,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []int64{2, 1, -2, 3},
+			},
+			expectedMin: 0.5,
+			expectedMax: 16,
+		},
+		{
+			text: "all negative buckets",
+			h: &histogram.Histogram{
+				Count:         12,
+				ZeroThreshold: 0.001,
+				Sum:           100, // Does not matter.
+				Schema:        0,
+				NegativeSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				NegativeBuckets: []int64{2, 1, -2, 3},
+			},
+			expectedMin: -16,
+			expectedMax: -0.5,
+		},
+		{
+			text: "both positive and negative buckets",
+			h: &histogram.Histogram{
+				Count:         24,
+				ZeroThreshold: 0.001,
+				Sum:           100, // Does not matter.
+				Schema:        0,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []int64{2, 1, -2, 3},
+				NegativeSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				NegativeBuckets: []int64{2, 1, -2, 3},
+			},
+			expectedMin: -16,
+			expectedMax: 16,
+		},
+		{
+			text: "all positive buckets with zero bucket count",
+			h: &histogram.Histogram{
+				Count:         12,
+				ZeroCount:     2,
+				ZeroThreshold: 0.001,
+				Sum:           100, // Does not matter.
+				Schema:        0,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []int64{2, 1, -2, 3},
+			},
+			expectedMin: -0.001,
+			expectedMax: 16,
+		},
+		{
+			text: "all negative buckets with zero bucket count",
+			h: &histogram.Histogram{
+				Count:         12,
+				ZeroCount:     2,
+				ZeroThreshold: 0.001,
+				Sum:           100, // Does not matter.
+				Schema:        0,
+				NegativeSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				NegativeBuckets: []int64{2, 1, -2, 3},
+			},
+			expectedMin: -16,
+			expectedMax: 0.001,
+		},
+		{
+			text: "both positive and negative buckets with zero bucket count",
+			h: &histogram.Histogram{
+				Count:         24,
+				ZeroCount:     4,
+				ZeroThreshold: 0.001,
+				Sum:           100, // Does not matter.
+				Schema:        0,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []int64{2, 1, -2, 3},
+				NegativeSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				NegativeBuckets: []int64{2, 1, -2, 3},
+			},
+			expectedMin: -16,
+			expectedMax: 16,
+		},
+		{
+			text:        "empty histogram",
+			h:           &histogram.Histogram{},
+			expectedMin: math.NaN(),
+			expectedMax: math.NaN(),
+		},
+	}
+
+	test, err := NewTest(t, "")
+	require.NoError(t, err)
+	t.Cleanup(test.Close)
+	idx := int64(0)
+	for _, floatHisto := range []bool{true, false} {
+		for _, c := range cases {
+			t.Run(fmt.Sprintf("%s floatHistogram=%t", c.text, floatHisto), func(t *testing.T) {
+				seriesName := "sparse_histogram_series"
+				lbls := labels.FromStrings("__name__", seriesName)
+				engine := test.QueryEngine()
+
+				ts := idx * int64(10*time.Minute/time.Millisecond)
+				app := test.Storage().Appender(context.TODO())
+				if floatHisto {
+					_, err = app.AppendHistogram(0, lbls, ts, nil, c.h.ToFloat())
+				} else {
+					_, err = app.AppendHistogram(0, lbls, ts, c.h, nil)
+				}
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+
+				queryString := fmt.Sprintf("histogram_min(%s)", seriesName)
+				qry, err := engine.NewInstantQuery(test.Queryable(), nil, queryString, timestamp.Time(ts))
+				require.NoError(t, err)
+
+				res := qry.Exec(test.Context())
+				require.NoError(t, res.Err)
+
+				vector, err := res.Vector()
+				require.NoError(t, err)
+
+				require.Len(t, vector, 1)
+				require.Nil(t, vector[0].H)
+				if math.IsNaN(c.expectedMin) {
+					require.True(t, math.IsNaN(vector[0].V))
+				} else {
+					require.Equal(t, float64(c.expectedMin), vector[0].V)
+				}
+
+				queryString = fmt.Sprintf("histogram_max(%s)", seriesName)
+				qry, err = engine.NewInstantQuery(test.Queryable(), nil, queryString, timestamp.Time(ts))
+				require.NoError(t, err)
+
+				res = qry.Exec(test.Context())
+				require.NoError(t, res.Err)
+
+				vector, err = res.Vector()
+				require.NoError(t, err)
+
+				require.Len(t, vector, 1)
+				require.Nil(t, vector[0].H)
+				if math.IsNaN(c.expectedMax) {
+					require.True(t, math.IsNaN(vector[0].V))
+				} else {
+					require.Equal(t, c.expectedMax, vector[0].V)
+				}
+				idx++
+			})
+		}
+	}
+}
+
 func TestNativeHistogram_HistogramQuantile(t *testing.T) {
 	// TODO(codesome): Integrate histograms into the PromQL testing framework
 	// and write more tests there.
