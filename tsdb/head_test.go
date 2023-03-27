@@ -2495,7 +2495,7 @@ func TestHeadShardedPostings(t *testing.T) {
 			var lbls labels.ScratchBuilder
 
 			require.NoError(t, ir.Series(id, &lbls, nil))
-			require.Equal(t, shardIndex, lbls.Labels().Hash()%shardCount)
+			require.Equal(t, shardIndex, labels.StableHash(lbls.Labels())%shardCount)
 		}
 	}
 }
