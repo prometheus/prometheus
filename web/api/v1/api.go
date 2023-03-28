@@ -143,6 +143,7 @@ type RuntimeInfo struct {
 	CorruptionCount     int64     `json:"corruptionCount"`
 	GoroutineCount      int       `json:"goroutineCount"`
 	GOMAXPROCS          int       `json:"GOMAXPROCS"`
+	GOMEMLIMIT          int64     `json:"GOMEMLIMIT"`
 	GOGC                string    `json:"GOGC"`
 	GODEBUG             string    `json:"GODEBUG"`
 	StorageRetention    string    `json:"storageRetention"`
