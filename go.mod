@@ -10,7 +10,6 @@ require (
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
 	github.com/aws/aws-sdk-go v1.44.217
 	github.com/cespare/xxhash/v2 v2.2.0
-	github.com/colega/zeropool v0.0.0-20230328090742-a544cfde6655
 	github.com/dennwc/varint v1.0.0
 	github.com/digitalocean/godo v1.97.0
 	github.com/docker/docker v23.0.1+incompatible

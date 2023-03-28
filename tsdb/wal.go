@@ -26,11 +26,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/colega/zeropool"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/prometheus/prometheus/util/zeropool"
 
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
