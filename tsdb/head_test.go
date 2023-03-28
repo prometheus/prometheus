@@ -79,15 +79,46 @@ func newTestHead(t testing.TB, chunkRange int64, compressWAL, oooEnabled bool) (
 func BenchmarkCreateSeries(b *testing.B) {
 	series := genSeries(b.N, 10, 0, 0)
 	h, _ := newTestHead(b, 10000, false, false)
-	defer func() {
+	b.Cleanup(func() {
 		require.NoError(b, h.Close())
-	}()
+	})
 
 	b.ReportAllocs()
 	b.ResetTimer()
 
 	for _, s := range series {
 		h.getOrCreate(s.Labels().Hash(), s.Labels())
+	}
+}
+
+func BenchmarkHeadAppender_Append_Commit_ExistingSeries(b *testing.B) {
+	series := genSeries(1000, 10, 0, 0)
+	h, _ := newTestHead(b, 10000, false, false)
+	b.Cleanup(func() {
+		require.NoError(b, h.Close())
+	})
+
+	ts := int64(1000)
+
+	append := func() error {
+		app := h.Appender(context.Background())
+		for _, s := range series {
+			_, err := app.Append(0, s.Labels(), ts, float64(ts))
+			if err != nil {
+				return err
+			}
+		}
+		return app.Commit()
+	}
+
+	// Init series, that's not what we're benchmarking here.
+	require.NoError(b, append())
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		require.NoError(b, append())
+		ts += 1000
 	}
 }
 
