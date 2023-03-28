@@ -593,13 +593,13 @@ func TestCompaction_CompactWithSplitting(t *testing.T) {
 						ref := p.At()
 						require.NoError(t, idxr.Series(ref, &lbls, nil))
 
-						require.Equal(t, uint64(shardIndex), lbls.Labels().Hash()%shardCount)
+						require.Equal(t, uint64(shardIndex), labels.StableHash(lbls.Labels())%shardCount)
 
 						// Collect all symbols used by series.
-						for _, l := range lbls.Labels() {
+						lbls.Labels().Range(func(l labels.Label) {
 							seriesSymbols[l.Name] = struct{}{}
 							seriesSymbols[l.Value] = struct{}{}
-						}
+						})
 					}
 					require.NoError(t, p.Err())
 

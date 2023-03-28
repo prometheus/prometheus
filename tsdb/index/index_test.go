@@ -292,7 +292,7 @@ func TestIndexRW_Postings(t *testing.T) {
 					var lbls labels.ScratchBuilder
 
 					require.NoError(t, ir.Series(id, &lbls, nil))
-					require.Equal(t, shardIndex, lbls.Labels().Hash()%shardCount)
+					require.Equal(t, shardIndex, labels.StableHash(lbls.Labels())%shardCount)
 				}
 			}
 		})
@@ -630,10 +630,8 @@ func BenchmarkReader_ShardedPostings(b *testing.B) {
 	require.NoError(b, iw.AddSymbol("unique"))
 
 	for i := 1; i <= numSeries; i++ {
-		require.NoError(b, iw.AddSeries(storage.SeriesRef(i), labels.Labels{
-			{Name: "const", Value: fmt.Sprintf("%10d", 1)},
-			{Name: "unique", Value: fmt.Sprintf("%10d", i)},
-		}))
+		require.NoError(b, iw.AddSeries(storage.SeriesRef(i),
+			labels.FromStrings("const", fmt.Sprintf("%10d", 1), "unique", fmt.Sprintf("%10d", i))))
 	}
 
 	require.NoError(b, iw.Close())
