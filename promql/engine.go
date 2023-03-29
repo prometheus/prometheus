@@ -45,6 +45,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/stats"
+	"github.com/prometheus/prometheus/util/zeropool"
 )
 
 const (
@@ -1794,18 +1795,16 @@ func (ev *evaluator) vectorSelectorSingle(it *storage.MemoizedSeriesIterator, no
 	return t, v, h, true
 }
 
-var pointPool = sync.Pool{}
+var pointPool zeropool.Pool[[]Point]
 
 func getPointSlice(sz int) []Point {
-	p := pointPool.Get()
-	if p != nil {
-		return p.([]Point)
+	if p := pointPool.Get(); p != nil {
+		return p
 	}
 	return make([]Point, 0, sz)
 }
 
 func putPointSlice(p []Point) {
-	//nolint:staticcheck // Ignore SA6002 relax staticcheck verification.
 	pointPool.Put(p[:0])
 }
 
