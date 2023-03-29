@@ -38,6 +38,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/wlog"
+	"github.com/prometheus/prometheus/util/zeropool"
 )
 
 // WALEntryType indicates what data a WAL entry contains.
@@ -870,9 +871,9 @@ func (r *walReader) Read(
 	// Historically, the processing is the bottleneck with reading and decoding using only
 	// 15% of the CPU.
 	var (
-		seriesPool sync.Pool
-		samplePool sync.Pool
-		deletePool sync.Pool
+		seriesPool zeropool.Pool[[]record.RefSeries]
+		samplePool zeropool.Pool[[]record.RefSample]
+		deletePool zeropool.Pool[[]tombstones.Stone]
 	)
 	donec := make(chan struct{})
 	datac := make(chan interface{}, 100)
@@ -886,19 +887,16 @@ func (r *walReader) Read(
 				if seriesf != nil {
 					seriesf(v)
 				}
-				//nolint:staticcheck // Ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
 				seriesPool.Put(v[:0])
 			case []record.RefSample:
 				if samplesf != nil {
 					samplesf(v)
 				}
-				//nolint:staticcheck // Ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
 				samplePool.Put(v[:0])
 			case []tombstones.Stone:
 				if deletesf != nil {
 					deletesf(v)
 				}
-				//nolint:staticcheck // Ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
 				deletePool.Put(v[:0])
 			default:
 				level.Error(r.logger).Log("msg", "unexpected data type")
@@ -915,11 +913,9 @@ func (r *walReader) Read(
 		// Those should generally be caught by entry decoding before.
 		switch et {
 		case WALEntrySeries:
-			var series []record.RefSeries
-			if v := seriesPool.Get(); v == nil {
+			series := seriesPool.Get()
+			if series == nil {
 				series = make([]record.RefSeries, 0, 512)
-			} else {
-				series = v.([]record.RefSeries)
 			}
 
 			err = r.decodeSeries(flag, b, &series)
@@ -936,11 +932,9 @@ func (r *walReader) Read(
 				}
 			}
 		case WALEntrySamples:
-			var samples []record.RefSample
-			if v := samplePool.Get(); v == nil {
+			samples := samplePool.Get()
+			if samples == nil {
 				samples = make([]record.RefSample, 0, 512)
-			} else {
-				samples = v.([]record.RefSample)
 			}
 
 			err = r.decodeSamples(flag, b, &samples)
@@ -958,11 +952,9 @@ func (r *walReader) Read(
 				}
 			}
 		case WALEntryDeletes:
-			var deletes []tombstones.Stone
-			if v := deletePool.Get(); v == nil {
+			deletes := deletePool.Get()
+			if deletes == nil {
 				deletes = make([]tombstones.Stone, 0, 512)
-			} else {
-				deletes = v.([]tombstones.Stone)
 			}
 
 			err = r.decodeDeletes(flag, b, &deletes)

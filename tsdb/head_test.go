@@ -79,15 +79,58 @@ func newTestHead(t testing.TB, chunkRange int64, compressWAL, oooEnabled bool) (
 func BenchmarkCreateSeries(b *testing.B) {
 	series := genSeries(b.N, 10, 0, 0)
 	h, _ := newTestHead(b, 10000, false, false)
-	defer func() {
+	b.Cleanup(func() {
 		require.NoError(b, h.Close())
-	}()
+	})
 
 	b.ReportAllocs()
 	b.ResetTimer()
 
 	for _, s := range series {
 		h.getOrCreate(s.Labels().Hash(), s.Labels())
+	}
+}
+
+func BenchmarkHeadAppender_Append_Commit_ExistingSeries(b *testing.B) {
+	seriesCounts := []int{100, 1000, 10000}
+	series := genSeries(10000, 10, 0, 0)
+
+	for _, seriesCount := range seriesCounts {
+		b.Run(fmt.Sprintf("%d series", seriesCount), func(b *testing.B) {
+			for _, samplesPerAppend := range []int64{1, 2, 5, 100} {
+				b.Run(fmt.Sprintf("%d samples per append", samplesPerAppend), func(b *testing.B) {
+					h, _ := newTestHead(b, 10000, false, false)
+					b.Cleanup(func() { require.NoError(b, h.Close()) })
+
+					ts := int64(1000)
+					append := func() error {
+						var err error
+						app := h.Appender(context.Background())
+						for _, s := range series[:seriesCount] {
+							var ref storage.SeriesRef
+							for sampleIndex := int64(0); sampleIndex < samplesPerAppend; sampleIndex++ {
+								ref, err = app.Append(ref, s.Labels(), ts+sampleIndex, float64(ts+sampleIndex))
+								if err != nil {
+									return err
+								}
+							}
+						}
+						ts += 1000 // should increment more than highest samplesPerAppend
+						return app.Commit()
+					}
+
+					// Init series, that's not what we're benchmarking here.
+					require.NoError(b, append())
+
+					b.ReportAllocs()
+					b.ResetTimer()
+
+					for i := 0; i < b.N; i++ {
+						require.NoError(b, append())
+					}
+				})
+			}
+		})
 	}
 }
 

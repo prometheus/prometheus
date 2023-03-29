@@ -199,11 +199,10 @@ func (h *Head) getAppendBuffer() []record.RefSample {
 	if b == nil {
 		return make([]record.RefSample, 0, 512)
 	}
-	return b.([]record.RefSample)
+	return b
 }
 
 func (h *Head) putAppendBuffer(b []record.RefSample) {
-	//nolint:staticcheck // Ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
 	h.appendPool.Put(b[:0])
 }
 
@@ -212,7 +211,7 @@ func (h *Head) getExemplarBuffer() []exemplarWithSeriesRef {
 	if b == nil {
 		return make([]exemplarWithSeriesRef, 0, 512)
 	}
-	return b.([]exemplarWithSeriesRef)
+	return b
 }
 
 func (h *Head) putExemplarBuffer(b []exemplarWithSeriesRef) {
@@ -220,7 +219,6 @@ func (h *Head) putExemplarBuffer(b []exemplarWithSeriesRef) {
 		return
 	}
 
-	//nolint:staticcheck // Ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
 	h.exemplarsPool.Put(b[:0])
 }
 
@@ -229,11 +227,10 @@ func (h *Head) getHistogramBuffer() []record.RefHistogramSample {
 	if b == nil {
 		return make([]record.RefHistogramSample, 0, 512)
 	}
-	return b.([]record.RefHistogramSample)
+	return b
 }
 
 func (h *Head) putHistogramBuffer(b []record.RefHistogramSample) {
-	//nolint:staticcheck // Ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
 	h.histogramsPool.Put(b[:0])
 }
 
@@ -242,11 +239,10 @@ func (h *Head) getFloatHistogramBuffer() []record.RefFloatHistogramSample {
 	if b == nil {
 		return make([]record.RefFloatHistogramSample, 0, 512)
 	}
-	return b.([]record.RefFloatHistogramSample)
+	return b
 }
 
 func (h *Head) putFloatHistogramBuffer(b []record.RefFloatHistogramSample) {
-	//nolint:staticcheck // Ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
 	h.floatHistogramsPool.Put(b[:0])
 }
 
@@ -255,11 +251,10 @@ func (h *Head) getMetadataBuffer() []record.RefMetadata {
 	if b == nil {
 		return make([]record.RefMetadata, 0, 512)
 	}
-	return b.([]record.RefMetadata)
+	return b
 }
 
 func (h *Head) putMetadataBuffer(b []record.RefMetadata) {
-	//nolint:staticcheck // Ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
 	h.metadataPool.Put(b[:0])
 }
 
@@ -268,11 +263,10 @@ func (h *Head) getSeriesBuffer() []*memSeries {
 	if b == nil {
 		return make([]*memSeries, 0, 512)
 	}
-	return b.([]*memSeries)
+	return b
 }
 
 func (h *Head) putSeriesBuffer(b []*memSeries) {
-	//nolint:staticcheck // Ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
 	h.seriesPool.Put(b[:0])
 }
 
@@ -281,11 +275,10 @@ func (h *Head) getBytesBuffer() []byte {
 	if b == nil {
 		return make([]byte, 0, 1024)
 	}
-	return b.([]byte)
+	return b
 }
 
 func (h *Head) putBytesBuffer(b []byte) {
-	//nolint:staticcheck // Ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
 	h.bytesPool.Put(b[:0])
 }
 
