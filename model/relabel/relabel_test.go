@@ -858,6 +858,8 @@ func BenchmarkRelabel_ReplaceAddLabel(b *testing.B) {
 		"wwwwww":       "wwwwww",
 		"xxxxxxxxx":    "xxxxxxxxx",
 		"yyyyyyyyyyyy": "yyyyyyyyyyyy",
+		"new\nline1":   "dropped",
+		"new\r\nline2": "dropped",
 		"${0}":         "dropped",
 		"dropped":      "${0}",
 	} {
@@ -905,7 +907,7 @@ func BenchmarkRelabel_ReplaceAddLabel(b *testing.B) {
 			labels.Label{Name: "abcdefg12", Value: "hijklmn12"},
 			labels.Label{Name: "abcdefg13", Value: "hijklmn13"},
 		}
-		_, _ = Process(lset, cfgs...)
-		// require.Equal(b, actual, expectLset)
+		actual, _ := Process(lset, cfgs...)
+		require.Equal(b, actual, expectLset)
 	}
 }
