@@ -89,7 +89,9 @@ func TestPool(t *testing.T) {
 			slice := pool.Get()
 			pool.Put(slice)
 		})
-		require.Equalf(t, float64(0), allocs, "Should not allocate.")
+		// Don't compare to 0, as when passing all the tests the GC could flush the pools during this test and we would allocate.
+		// Just check that it's less than 1 on average, which is mostly the same thing.
+		require.Less(t, allocs, 1., "Should not allocate.")
 	})
 
 	t.Run("zero value is valid", func(t *testing.T) {
@@ -101,7 +103,9 @@ func TestPool(t *testing.T) {
 			slice := pool.Get()
 			pool.Put(slice)
 		})
-		require.Equalf(t, float64(0), allocs, "Should not allocate.")
+		// Don't compare to 0, as when passing all the tests the GC could flush the pools during this test and we would allocate.
+		// Just check that it's less than 1 on average, which is mostly the same thing.
+		require.Less(t, allocs, 1., "Should not allocate.")
 	})
 }
 
