@@ -891,7 +891,7 @@ type mergedStringIter struct {
 }
 
 func (m *mergedStringIter) Next() bool {
-	if !m.aok && !m.bok {
+	if (!m.aok && !m.bok) || (m.Err() != nil) {
 		return false
 	}
 

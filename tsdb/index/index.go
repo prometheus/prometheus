@@ -1079,8 +1079,6 @@ type Reader struct {
 	dec *Decoder
 
 	version int
-
-	closeReaderFunc func() error
 }
 
 type postingOffset struct {
@@ -1131,7 +1129,7 @@ func NewFileReader(path string) (*Reader, error) {
 	return r, nil
 }
 
-func createReader(b ByteSlice, c io.Closer, preReaderFunc func(r *Reader) error) (*Reader, error) {
+func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 	r := &Reader{
 		b:        b,
 		c:        c,
@@ -1157,12 +1155,6 @@ func createReader(b ByteSlice, c io.Closer, preReaderFunc func(r *Reader) error)
 		return nil, errors.Wrap(err, "read TOC")
 	}
 
-	if preReaderFunc != nil {
-		err = preReaderFunc(r)
-		if err != nil {
-			return nil, errors.Wrap(err, "call pre reader function")
-		}
-	}
 	r.symbols, err = NewSymbols(r.b, r.version, int(r.toc.Symbols))
 	if err != nil {
 		return nil, errors.Wrap(err, "read symbols")
@@ -1442,17 +1434,6 @@ func ReadPostingsOffsetTable(bs ByteSlice, off uint64, f func(name, value []byte
 
 // Close the reader and its underlying resources.
 func (r *Reader) Close() error {
-	if r.closeReaderFunc != nil {
-		err := r.closeReaderFunc()
-		closeErr := r.c.Close()
-		if err == nil {
-			return closeErr
-		} else if closeErr == nil {
-			return err
-		} else {
-			return errors.Wrap(err, closeErr.Error())
-		}
-	}
 	return r.c.Close()
 }
 
