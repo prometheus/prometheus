@@ -1186,12 +1186,11 @@ func TestCancelCompactions(t *testing.T) {
 		require.Equal(t, 3, len(db.Blocks()), "initial block count mismatch")
 		require.Equal(t, 0.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran), "initial compaction counter mismatch")
 		db.compactc <- struct{}{} // Trigger a compaction.
-		var start time.Time
 		for prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.populatingBlocks) <= 0 {
 			time.Sleep(3 * time.Millisecond)
 		}
-		start = time.Now()
 
+		start := time.Now()
 		for prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran) != 1 {
 			time.Sleep(3 * time.Millisecond)
 		}
@@ -1206,21 +1205,29 @@ func TestCancelCompactions(t *testing.T) {
 		require.Equal(t, 3, len(db.Blocks()), "initial block count mismatch")
 		require.Equal(t, 0.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran), "initial compaction counter mismatch")
 		db.compactc <- struct{}{} // Trigger a compaction.
-		dbClosed := make(chan struct{})
 
 		for prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.populatingBlocks) <= 0 {
 			time.Sleep(3 * time.Millisecond)
 		}
-		go func() {
-			require.NoError(t, db.Close())
-			close(dbClosed)
-		}()
 
 		start := time.Now()
-		<-dbClosed
+		require.NoError(t, db.Close())
 		actT := time.Since(start)
-		expT := time.Duration(timeCompactionUninterrupted / 2) // Closing the db in the middle of compaction should less than half the time.
+
+		expT := timeCompactionUninterrupted / 2 // Closing the db in the middle of compaction should less than half the time.
 		require.True(t, actT < expT, "closing the db took more than expected. exp: <%v, act: %v", expT, actT)
+
+		// Make sure that no blocks were marked as compaction failed.
+		// This checks that the `context.Canceled` error is properly checked at all levels:
+		// - tsdb_errors.NewMulti() should have the Is() method implemented for correct checks.
+		// - callers should check with errors.Is() instead of ==.
+		readOnlyDB, err := OpenDBReadOnly(tmpdirCopy, log.NewNopLogger())
+		require.NoError(t, err)
+		blocks, err := readOnlyDB.Blocks()
+		require.NoError(t, err)
+		for i, b := range blocks {
+			require.Falsef(t, b.Meta().Compaction.Failed, "block %d (%s) should not be marked as compaction failed", i, b.Meta().ULID)
+		}
 	}
 }
 
