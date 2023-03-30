@@ -1097,6 +1097,9 @@ func (m *Manager) LoadGroups(
 			return nil, errs
 		}
 
+		//
+		replaceLabelValue(rgs)
+
 		for _, rg := range rgs.Groups {
 			itv := interval
 			if rg.Interval != 0 {
@@ -1147,6 +1150,16 @@ func (m *Manager) LoadGroups(
 	}
 
 	return groups, nil
+}
+
+func replaceLabelValue(rgs *rulefmt.RuleGroups) {
+	for _, rg := range rgs.Groups {
+		for _, r := range rg.Rules {
+			for k, v := range r.Labels {
+				r.Labels[k] = strutil.ReplacePlaceholders(v)
+			}
+		}
+	}
 }
 
 // GroupKey group names need not be unique across filenames.
