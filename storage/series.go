@@ -365,6 +365,25 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 	return NewListChunkSeriesIterator(chks...)
 }
 
+type listChunkSeriesSet struct {
+	css []ChunkSeries
+	idx int
+}
+
+// NewListChunkSeriesSet creates a ChunkSeriesSet that allows to iterate over provided ChunkSeries.
+func NewListChunkSeriesSet(css ...ChunkSeries) ChunkSeriesSet {
+	return &listChunkSeriesSet{css: css, idx: -1}
+}
+
+func (s *listChunkSeriesSet) Next() bool {
+	s.idx++
+	return s.idx < len(s.css)
+}
+
+func (s *listChunkSeriesSet) At() ChunkSeries    { return s.css[s.idx] }
+func (s *listChunkSeriesSet) Err() error         { return nil }
+func (s *listChunkSeriesSet) Warnings() Warnings { return nil }
+
 type errChunksIterator struct {
 	err error
 }

@@ -201,6 +201,12 @@ func main() {
 	dumpMaxTime := tsdbDumpCmd.Flag("max-time", "Maximum timestamp to dump.").Default(strconv.FormatInt(math.MaxInt64, 10)).Int64()
 	dumpMatch := tsdbDumpCmd.Flag("match", "Series selector.").Default("{__name__=~'(?s:.*)'}").String()
 
+	tsdbRelabelCmd := tsdbCmd.Command("relabel", "Relabel TSDB block.")
+	relabelConfig := tsdbRelabelCmd.Flag("file", "Relabel config file to apply.").Required().String()
+	relabelPath := tsdbRelabelCmd.Arg("db path", "Database path (default is "+defaultDBPath+").").Default(defaultDBPath).String()
+	relabelBlockIDs := tsdbRelabelCmd.Flag("block-id", "Blocks to relabel. If not specified, by default all blocks in the TSDB path will be included.").Strings()
+	relabelAddChangelog := tsdbRelabelCmd.Flag("add-changelog", "If specified, all modifications are written to db path. Disable if latency is too high.").Default("true").Bool()
+
 	importCmd := tsdbCmd.Command("create-blocks-from", "[Experimental] Import samples from input and produce TSDB blocks. Please refer to the storage docs for more details.")
 	importHumanReadable := importCmd.Flag("human-readable", "Print human readable values.").Short('r').Bool()
 	importQuiet := importCmd.Flag("quiet", "Do not print created blocks.").Short('q').Bool()
@@ -327,6 +333,10 @@ func main() {
 	case tsdbDumpCmd.FullCommand():
 		os.Exit(checkErr(dumpSamples(*dumpPath, *dumpMinTime, *dumpMaxTime, *dumpMatch)))
 	// TODO(aSquare14): Work on adding support for custom block size.
+
+	case tsdbRelabelCmd.FullCommand():
+		os.Exit(checkErr(relabelBlock(*relabelPath, *relabelConfig, *relabelAddChangelog, *relabelBlockIDs...)))
+
 	case openMetricsImportCmd.FullCommand():
 		os.Exit(backfillOpenMetrics(*importFilePath, *importDBPath, *importHumanReadable, *importQuiet, *maxBlockDuration))
 
