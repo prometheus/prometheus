@@ -70,7 +70,7 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 		samples            = vals[0].(Matrix)[0]
 		rangeStart         = enh.Ts - durationMilliseconds(ms.Range+vs.Offset)
 		rangeEnd           = enh.Ts - durationMilliseconds(vs.Offset)
-		resultValue        float64
+		resultFloat        float64
 		resultHistogram    *histogram.FloatHistogram
 		firstT, lastT      int64
 		numSamplesMinusOne int
@@ -99,7 +99,7 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 		numSamplesMinusOne = len(samples.Floats) - 1
 		firstT = samples.Floats[0].T
 		lastT = samples.Floats[numSamplesMinusOne].T
-		resultValue = samples.Floats[numSamplesMinusOne].F - samples.Floats[0].F
+		resultFloat = samples.Floats[numSamplesMinusOne].F - samples.Floats[0].F
 		if !isCounter {
 			break
 		}
@@ -107,7 +107,7 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 		prevValue := samples.Floats[0].F
 		for _, currPoint := range samples.Floats[1:] {
 			if currPoint.F < prevValue {
-				resultValue += prevValue
+				resultFloat += prevValue
 			}
 			prevValue = currPoint.F
 		}
@@ -124,14 +124,14 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 	averageDurationBetweenSamples := sampledInterval / float64(numSamplesMinusOne)
 
 	// TODO(beorn7): Do this for histograms, too.
-	if isCounter && resultValue > 0 && len(samples.Floats) > 0 && samples.Floats[0].F >= 0 {
+	if isCounter && resultFloat > 0 && len(samples.Floats) > 0 && samples.Floats[0].F >= 0 {
 		// Counters cannot be negative. If we have any slope at all
-		// (i.e. resultValue went up), we can extrapolate the zero point
+		// (i.e. resultFloat went up), we can extrapolate the zero point
 		// of the counter. If the duration to the zero point is shorter
 		// than the durationToStart, we take the zero point as the start
 		// of the series, thereby avoiding extrapolation to negative
 		// counter values.
-		durationToZero := sampledInterval * (samples.Floats[0].F / resultValue)
+		durationToZero := sampledInterval * (samples.Floats[0].F / resultFloat)
 		if durationToZero < durationToStart {
 			durationToStart = durationToZero
 		}
@@ -159,12 +159,12 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 		factor /= ms.Range.Seconds()
 	}
 	if resultHistogram == nil {
-		resultValue *= factor
+		resultFloat *= factor
 	} else {
 		resultHistogram.Scale(factor)
 	}
 
-	return append(enh.Out, Sample{F: resultValue, H: resultHistogram})
+	return append(enh.Out, Sample{F: resultFloat, H: resultHistogram})
 }
 
 // histogramRate is a helper function for extrapolatedRate. It requires
@@ -418,10 +418,10 @@ func funcRound(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper
 	toNearestInverse := 1.0 / toNearest
 
 	for _, el := range vec {
-		v := math.Floor(el.F*toNearestInverse+0.5) / toNearestInverse
+		f := math.Floor(el.F*toNearestInverse+0.5) / toNearestInverse
 		enh.Out = append(enh.Out, Sample{
 			Metric: enh.DropMetricName(el.Metric),
-			F:      v,
+			F:      f,
 		})
 	}
 	return enh.Out

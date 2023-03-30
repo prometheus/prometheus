@@ -173,7 +173,7 @@ func (s fSample) T() int64 {
 	return s.t
 }
 
-func (s fSample) V() float64 {
+func (s fSample) F() float64 {
 	return s.f
 }
 
@@ -198,7 +198,7 @@ func (s hSample) T() int64 {
 	return s.t
 }
 
-func (s hSample) V() float64 {
+func (s hSample) F() float64 {
 	panic("F() called for hSample")
 }
 
@@ -223,7 +223,7 @@ func (s fhSample) T() int64 {
 	return s.t
 }
 
-func (s fhSample) V() float64 {
+func (s fhSample) F() float64 {
 	panic("F() called for fhSample")
 }
 
@@ -337,7 +337,7 @@ func (it *sampleRingIterator) Next() chunkenc.ValueType {
 		it.fh = s.FH()
 		return chunkenc.ValFloatHistogram
 	default:
-		it.f = s.V()
+		it.f = s.F()
 		return chunkenc.ValFloat
 	}
 }

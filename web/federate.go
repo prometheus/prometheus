@@ -132,7 +132,7 @@ Loop:
 			t = sample.T()
 			switch sample.Type() {
 			case chunkenc.ValFloat:
-				f = sample.V()
+				f = sample.F()
 			case chunkenc.ValHistogram:
 				fh = sample.H().ToFloat()
 			case chunkenc.ValFloatHistogram:

@@ -109,7 +109,7 @@ func (it *listSeriesIterator) Reset(samples Samples) {
 
 func (it *listSeriesIterator) At() (int64, float64) {
 	s := it.samples.Get(it.idx)
-	return s.T(), s.V()
+	return s.T(), s.F()
 }
 
 func (it *listSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {

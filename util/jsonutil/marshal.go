@@ -45,12 +45,12 @@ func MarshalTimestamp(t int64, stream *jsoniter.Stream) {
 }
 
 // MarshalFloat marshals a float value using the passed jsoniter stream.
-func MarshalFloat(v float64, stream *jsoniter.Stream) {
+func MarshalFloat(f float64, stream *jsoniter.Stream) {
 	stream.WriteRaw(`"`)
 	// Taken from https://github.com/json-iterator/go/blob/master/stream_float.go#L71 as a workaround
 	// to https://github.com/json-iterator/go/issues/365 (jsoniter, to follow json standard, doesn't allow inf/nan).
 	buf := stream.Buffer()
-	abs := math.Abs(v)
+	abs := math.Abs(f)
 	fmt := byte('f')
 	// Note: Must use float32 comparisons for underlying float32 value to get precise cutoffs right.
 	if abs != 0 {
@@ -58,7 +58,7 @@ func MarshalFloat(v float64, stream *jsoniter.Stream) {
 			fmt = 'e'
 		}
 	}
-	buf = strconv.AppendFloat(buf, v, fmt, -1, 64)
+	buf = strconv.AppendFloat(buf, f, fmt, -1, 64)
 	stream.SetBuffer(buf)
 	stream.WriteRaw(`"`)
 }

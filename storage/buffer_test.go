@@ -73,7 +73,7 @@ func TestSampleRing(t *testing.T) {
 			for _, sold := range input[:i] {
 				found := false
 				for _, bs := range buffered {
-					if bs.T() == sold.t && bs.V() == sold.f {
+					if bs.T() == sold.t && bs.F() == sold.f {
 						found = true
 						break
 					}
@@ -110,7 +110,7 @@ func TestBufferedSeriesIterator(t *testing.T) {
 		s, ok := it.PeekBack(1)
 		require.Equal(t, eok, ok, "exist mismatch")
 		require.Equal(t, ets, s.T(), "timestamp mismatch")
-		require.Equal(t, ev, s.V(), "value mismatch")
+		require.Equal(t, ev, s.F(), "value mismatch")
 	}
 
 	it = NewBufferIterator(NewListSeriesIterator(samples{
