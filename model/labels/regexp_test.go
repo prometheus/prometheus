@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -408,8 +409,23 @@ func FuzzFastRegexMatcher_WithFuzzyRegularExpressions(f *testing.F) {
 func TestAnalyzeRealQueries(t *testing.T) {
 	t.Skip("Decomment this test only to manually analyze real queries")
 
+	type labelValueInfo struct {
+		numMatchingQueries       int     //nolint:unused
+		numShardedQueries        int     //nolint:unused
+		numSplitQueries          int     //nolint:unused
+		optimized                bool    //nolint:unused
+		averageParsingTimeMillis float64 //nolint:unused
+
+		// Sorted list of timestamps when the queries have been received.
+		queryStartTimes []time.Time
+	}
+
 	labelValueRE := regexp.MustCompile(`=~\\"([^"]+)\\"`)
-	labelValues := make(map[string]struct{})
+	tsRE := regexp.MustCompile(`ts=([^ ]+)`)
+	shardedQueriesRE := regexp.MustCompile(`sharded_queries=(\d+)`)
+	splitQueriesRE := regexp.MustCompile(`split_queries=(\d+)`)
+
+	labelValues := make(map[string]*labelValueInfo)
 
 	// Read the logs file line-by-line, and find all values for regex label matchers.
 	readFile, err := os.Open("logs.txt")
@@ -418,23 +434,67 @@ func TestAnalyzeRealQueries(t *testing.T) {
 	fileScanner := bufio.NewScanner(readFile)
 	fileScanner.Split(bufio.ScanLines)
 
+	numQueries := 0
+
 	for fileScanner.Scan() {
 		line := fileScanner.Text()
 		matches := labelValueRE.FindAllStringSubmatch(line, -1)
+		if len(matches) == 0 {
+			continue
+		}
+
+		// Look up query stats.
+		tsRaw := tsRE.FindStringSubmatch(line)
+		shardedQueriesRaw := shardedQueriesRE.FindStringSubmatch(line)
+		splitQueriesRaw := splitQueriesRE.FindStringSubmatch(line)
+		shardedQueries := 0
+		splitQueries := 0
+		var ts time.Time
+
+		if len(tsRaw) > 0 {
+			ts, _ = time.Parse(time.RFC3339Nano, tsRaw[1])
+		}
+		if len(shardedQueriesRaw) > 0 {
+			shardedQueries, _ = strconv.Atoi(shardedQueriesRaw[1])
+		}
+		if len(splitQueriesRaw) > 0 {
+			splitQueries, _ = strconv.Atoi(splitQueriesRaw[1])
+		}
+
+		numQueries++
 
 		for _, match := range matches {
-			labelValues[match[1]] = struct{}{}
+			info := labelValues[match[1]]
+			if info == nil {
+				info = &labelValueInfo{}
+				labelValues[match[1]] = info
+			}
+
+			info.numMatchingQueries++
+			info.numShardedQueries += shardedQueries
+			info.numSplitQueries += splitQueries
+
+			if !ts.IsZero() {
+				info.queryStartTimes = append(info.queryStartTimes, ts)
+			}
 		}
 	}
 
-	require.NoError(t, readFile.Close())
-	t.Logf("Found %d unique regexp matchers", len(labelValues))
+	// Sort query start times.
+	for _, info := range labelValues {
+		sort.Slice(info.queryStartTimes, func(i, j int) bool {
+			return info.queryStartTimes[i].Before(info.queryStartTimes[j])
+		})
+	}
 
-	// Check if each regexp matcher is supported by our optimization.
+	require.NoError(t, readFile.Close())
+	t.Logf("Found %d unique regexp matchers out of %d queries", len(labelValues), numQueries)
+
+	// Analyze each regexp matcher found.
 	numChecked := 0
 	numOptimized := 0
 
-	for re := range labelValues {
+	for re, info := range labelValues {
 		m, err := NewFastRegexMatcher(re)
 		if err != nil {
 			// Ignore it, because we may have failed to extract the label matcher.
@@ -442,14 +502,59 @@ func TestAnalyzeRealQueries(t *testing.T) {
 		}
 
 		numChecked++
+
+		// Check if each regexp matcher is supported by our optimization.
 		if m.isOptimized() {
 			numOptimized++
-		} else {
-			t.Logf("Not optimized matcher: %s", re)
+			info.optimized = true
 		}
+
+		// Estimate the parsing complexity.
+		startTime := time.Now()
+		const numParsingRuns = 1000
+
+		for i := 0; i < numParsingRuns; i++ {
+			NewFastRegexMatcher(re)
+		}
+
+		info.averageParsingTimeMillis = float64(time.Since(startTime).Milliseconds()) / float64(numParsingRuns)
 	}
 
-	t.Logf("Found %d (%.2f%%) optimized matchers out of %d", numOptimized, (float64(numOptimized)/float64(numChecked))*100, numChecked)
+	t.Logf("Found %d out of %d (%.2f%%) regexp matchers optimized by FastRegexMatcher", numOptimized, numChecked, (float64(numOptimized)/float64(numChecked))*100)
+
+	// Print some statistics.
+	for labelValue, info := range labelValues {
+		// Find the min/avg/max difference between query start times.
+		var (
+			minQueryStartTimeDiff time.Duration
+			maxQueryStartTimeDiff time.Duration
+			avgQueryStartTimeDiff time.Duration
+			sumQueryStartTime     time.Duration
+			countQueryStartTime   int
+		)
+
+		for i := 1; i < len(info.queryStartTimes); i++ {
+			diff := info.queryStartTimes[i].Sub(info.queryStartTimes[i-1])
+
+			sumQueryStartTime += diff
+			countQueryStartTime++
+
+			if minQueryStartTimeDiff == 0 || diff < minQueryStartTimeDiff {
+				minQueryStartTimeDiff = diff
+			}
+			if diff > maxQueryStartTimeDiff {
+				maxQueryStartTimeDiff = diff
+			}
+		}
+
+		if countQueryStartTime > 0 {
+			avgQueryStartTimeDiff = sumQueryStartTime / time.Duration(countQueryStartTime)
+		}
+
+		t.Logf("num queries: %d\t num split queries: %d\t num sharded queries: %d\t optimized: %t\t parsing time: %.0fms\t min/avg/max query start time diff (sec): %.2f/%.2f/%.2f regexp: %s",
+			info.numMatchingQueries, info.numSplitQueries, info.numShardedQueries, info.optimized, info.averageParsingTimeMillis,
+			minQueryStartTimeDiff.Seconds(), avgQueryStartTimeDiff.Seconds(), maxQueryStartTimeDiff.Seconds(), labelValue)
+	}
 }
 
 func TestOptimizeEqualStringMatchers(t *testing.T) {
