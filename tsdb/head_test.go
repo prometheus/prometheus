@@ -1466,44 +1466,58 @@ Outer:
 }
 
 func TestComputeChunkEndTime(t *testing.T) {
-	cases := []struct {
+	cases := map[string]struct {
 		start, cur, max int64
+		ratioToFull     float64
 		res             int64
 	}{
-		{
-			start: 0,
-			cur:   250,
-			max:   1000,
-			res:   1000,
+		"exactly 1/4 full, even increment": {
+			start:       0,
+			cur:         250,
+			max:         1000,
+			ratioToFull: 4,
+			res:         1000,
 		},
-		{
-			start: 100,
-			cur:   200,
-			max:   1000,
-			res:   550,
+		"exactly 1/4 full, uneven increment": {
+			start:       100,
+			cur:         200,
+			max:         1000,
+			ratioToFull: 4,
+			res:         550,
+		},
+		"decimal ratio to full": {
+			start:       5000,
+			cur:         5110,
+			max:         10000,
+			ratioToFull: 4.2,
+			res:         5500,
 		},
 		// Case where we fit floored 0 chunks. Must catch division by 0
 		// and default to maximum time.
-		{
-			start: 0,
-			cur:   500,
-			max:   1000,
-			res:   1000,
+		"fit floored 0 chunks": {
+			start:       0,
+			cur:         500,
+			max:         1000,
+			ratioToFull: 4,
+			res:         1000,
 		},
 		// Catch division by zero for cur == start. Strictly not a possible case.
-		{
-			start: 100,
-			cur:   100,
-			max:   1000,
-			res:   104,
+		"cur == start": {
+			start:       100,
+			cur:         100,
+			max:         1000,
+			ratioToFull: 4,
+			res:         104,
 		},
 	}
 
-	for _, c := range cases {
-		got := computeChunkEndTime(c.start, c.cur, c.max)
-		if got != c.res {
-			t.Errorf("expected %d for (start: %d, cur: %d, max: %d), got %d", c.res, c.start, c.cur, c.max, got)
-		}
+	for testName, tc := range cases {
+		t.Run(testName, func(t *testing.T) {
+			got := computeChunkEndTime(tc.start, tc.cur, tc.max, tc.ratioToFull)
+			if got != tc.res {
+				t.Errorf("expected %d for (start: %d, cur: %d, max: %d, ratioToFull: %f), got %d", tc.res, tc.start, tc.cur, tc.max, tc.ratioToFull, got)
+			}
+		})
 	}
 }
 
@@ -3273,10 +3287,10 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 		head.mmapHeadChunks()
 	}
 
-	// There should be 11 mmap chunks in s1.
+	// There should be 15 mmap chunks in s1.
 	ms := head.series.getByHash(s1.Hash(), s1)
-	require.Len(t, ms.mmappedChunks, 11)
-	expMmapChunks := make([]*mmappedChunk, 0, 11)
+	require.Len(t, ms.mmappedChunks, 15)
+	expMmapChunks := make([]*mmappedChunk, 0, 15)
 	for _, mmap := range ms.mmappedChunks {
 		require.Greater(t, mmap.numSamples, uint16(0))
 		cpy := *mmap
@@ -4026,8 +4040,8 @@ func TestHistogramCounterResetHeader(t *testing.T) {
 			appendHistogram(h)
 			checkExpCounterResetHeader(chunkenc.CounterReset)
 
-			// Add 2 non-counter reset histogram chunks.
-			for i := 0; i < 250; i++ {
+			// Add 2 non-counter reset histograms (each chunk targets 1024 bytes which contains ~1000 samples).
+			for i := 0; i < 2000; i++ {
 				appendHistogram(h)
 			}
 			checkExpCounterResetHeader(chunkenc.NotCounterReset, chunkenc.NotCounterReset)
@@ -4055,7 +4069,7 @@ func TestHistogramCounterResetHeader(t *testing.T) {
 			checkExpCounterResetHeader(chunkenc.CounterReset)
 
 			// Add 2 non-counter reset histograms. Just to have some non-counter reset chunks in between.
-			for i := 0; i < 250; i++ {
+			for i := 0; i < 2000; i++ {
 				appendHistogram(h)
 			}
 			checkExpCounterResetHeader(chunkenc.NotCounterReset, chunkenc.NotCounterReset)
@@ -4807,23 +4821,22 @@ func TestHistogramValidation(t *testing.T) {
 }
 
 func BenchmarkHistogramValidation(b *testing.B) {
-	histograms := generateBigTestHistograms(b.N, 1)
+	histograms := generateBigTestHistograms(b.N, 500)
 	b.ResetTimer()
 	for _, h := range histograms {
 		require.NoError(b, ValidateHistogram(h))
 	}
 }
 
-func generateBigTestHistograms(n, bktMultFactor int) []*histogram.Histogram {
-	numBuckets := 500 * bktMultFactor
+func generateBigTestHistograms(numHistograms, numBuckets int) []*histogram.Histogram {
 	numSpans := numBuckets / 10
 	bucketsPerSide := numBuckets / 2
 	spanLength := uint32(bucketsPerSide / numSpans)
-	// Given all bucket deltas are 1, sum n + 1.
+	// Given all bucket deltas are 1, sum numHistograms + 1.
 	observationCount := numBuckets / 2 * (1 + numBuckets)
 
 	var histograms []*histogram.Histogram
-	for i := 0; i < n; i++ {
+	for i := 0; i < numHistograms; i++ {
 		h := &histogram.Histogram{
 			Count:           uint64(i + observationCount),
 			ZeroCount:       uint64(i),
@@ -5187,18 +5200,58 @@ func TestSnapshotAheadOfWALError(t *testing.T) {
 	require.NoError(t, head.Close())
 }
 
-func TestHeadMaxBytesPerChunk(t *testing.T) {
-	const numSamples = 120
+func BenchmarkCuttingHeadHistogramChunks(b *testing.B) {
+	const (
+		numSamples = 50000
+		numBuckets = 100
+	)
+	samples := generateBigTestHistograms(numSamples, numBuckets)
 
+	h, _ := newTestHead(b, DefaultBlockDuration, wlog.CompressionNone, false)
+	defer func() {
+		require.NoError(b, h.Close())
+	}()
+
+	a := h.Appender(context.Background())
+	ts := time.Now().UnixMilli()
+	lbls := labels.FromStrings("foo", "bar")
+
+	b.ResetTimer()
+
+	for _, s := range samples {
+		_, err := a.AppendHistogram(0, lbls, ts, s, nil)
+		require.NoError(b, err)
+	}
+}
+
+func TestCuttingNewHeadChunks(t *testing.T) {
 	testCases := map[string]struct {
-		floatValFunc func(i int) float64
-		histValFunc  func(i int) *histogram.Histogram
-		expectedChks []struct {
+		numTotalSamples int
+		timestampJitter bool
+		floatValFunc    func(i int) float64
+		histValFunc     func(i int) *histogram.Histogram
+		expectedChks    []struct {
 			numSamples int
 			numBytes   int
 		}
 	}{
-		"xor": {
+		"float samples": {
+			numTotalSamples: 180,
+			floatValFunc: func(i int) float64 {
+				return 1.
+			},
+			expectedChks: []struct {
+				numSamples int
+				numBytes   int
+			}{
+				{numSamples: 120, numBytes: 46},
+				{numSamples: 60, numBytes: 32},
+			},
+		},
+		"large float samples": {
+			// Normally 120 samples would fit into a single chunk but not in this case.
+			numTotalSamples: 120,
+			timestampJitter: true,
 			floatValFunc: func(i int) float64 {
 				// Flipping between these two make each sample val take at least 64 bits.
 				vals := []float64{math.MaxFloat64, 0x00}
@@ -5208,13 +5261,14 @@ func TestHeadMaxBytesPerChunk(t *testing.T) {
 				numSamples int
 				numBytes   int
 			}{
-				{101, 1030},
-				{19, 200},
+				{101, 1028},
+				{19, 199},
 			},
 		},
-		"histogram": {
+		"histograms": {
+			numTotalSamples: 240,
 			histValFunc: func() func(i int) *histogram.Histogram {
-				hists := generateBigTestHistograms(numSamples, 200)
+				hists := generateBigTestHistograms(240, 100)
 				return func(i int) *histogram.Histogram {
 					return hists[i]
 				}
@@ -5223,25 +5277,46 @@ func TestHeadMaxBytesPerChunk(t *testing.T) {
 				numSamples int
 				numBytes   int
 			}{
-				{78, 1050664},
-				{42, 600370},
+				{60, 1300},
+				{60, 1297},
+				{60, 1279},
+				{60, 1283},
+			},
+		},
+		"really large histograms": {
+			// Really large histograms; each chunk can only contain a single histogram.
+			numTotalSamples: 4,
+			histValFunc: func() func(i int) *histogram.Histogram {
+				hists := generateBigTestHistograms(4, 100000)
+				return func(i int) *histogram.Histogram {
+					return hists[i]
+				}
+			}(),
+			expectedChks: []struct {
+				numSamples int
+				numBytes   int
+			}{
+				{1, 87538},
+				{1, 87539},
+				{1, 87539},
+				{1, 87540},
 			},
 		},
 	}
 	for testName, tc := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			h, _ := newTestHead(t, DefaultBlockDuration, false, false)
+			h, _ := newTestHead(t, DefaultBlockDuration, wlog.CompressionNone, false)
 			defer func() {
 				require.NoError(t, h.Close())
 			}()
 
 			a := h.Appender(context.Background())
 
-			ts := time.Now().UnixMilli()
+			ts := int64(10000)
 			lbls := labels.FromStrings("foo", "bar")
-			jitter := []int64{0, 1} // Introduce a bit of jitter to prevent dod=0.
+			jitter := []int64{0, 1} // A bit of jitter to prevent dod=0.
 
-			for i := 0; i < 120; i++ {
+			for i := 0; i < tc.numTotalSamples; i++ {
 				if tc.floatValFunc != nil {
 					_, err := a.Append(0, lbls, ts, tc.floatValFunc(i))
 					require.NoError(t, err)
@@ -5250,7 +5325,10 @@ func TestHeadMaxBytesPerChunk(t *testing.T) {
 					require.NoError(t, err)
 				}
 
-				ts += int64(10*time.Second/time.Millisecond) + jitter[i%len(jitter)]
+				ts += int64(60 * time.Second / time.Millisecond)
+				if tc.timestampJitter {
+					ts += jitter[i%len(jitter)]
+				}
 			}
 
 			require.NoError(t, a.Commit())

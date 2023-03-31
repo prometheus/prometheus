@@ -53,7 +53,7 @@ func GenerateTestHistogram(i int) *histogram.Histogram {
 
 func GenerateTestGaugeHistograms(n int) (r []*histogram.Histogram) {
 	for x := 0; x < n; x++ {
-		r = append(r, GenerateTestGaugeHistogram(rand.Intn(n)))
+		r = append(r, GenerateTestGaugeHistogram(n))
 	}
 	return r
 }

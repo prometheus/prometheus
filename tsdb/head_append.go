@@ -1163,7 +1163,7 @@ func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID ui
 	// Ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway.
 	prevApp, _ := s.app.(*chunkenc.HistogramAppender)
 
-	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.EncHistogram, o)
+	c, sampleInOrder, chunkCreated := s.nativeHistogramsAppendPreprocessor(t, chunkenc.EncHistogram, o)
 	if !sampleInOrder {
 		return sampleInOrder, chunkCreated
 	}
@@ -1220,7 +1220,7 @@ func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, 
 	// Ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway.
 	prevApp, _ := s.app.(*chunkenc.FloatHistogramAppender)
 
-	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.EncFloatHistogram, o)
+	c, sampleInOrder, chunkCreated := s.nativeHistogramsAppendPreprocessor(t, chunkenc.EncFloatHistogram, o)
 	if !sampleInOrder {
 		return sampleInOrder, chunkCreated
 	}
@@ -1265,7 +1265,8 @@ func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, 
 	return true, true
 }
 
-// appendPreprocessor takes care of cutting new chunks and m-mapping old chunks.
+// appendPreprocessor takes care of cutting new XOR chunks and m-mapping old ones. XOR chunks are cut based on the
+// number of samples they contain with a soft cap in bytes.
 // It is unsafe to call this concurrently with s.iterator(...) without holding the series lock.
 // This should be called only when appending data.
 func (s *memSeries) appendPreprocessor(t int64, e chunkenc.Encoding, o chunkOpts) (c *memChunk, sampleInOrder, chunkCreated bool) {
@@ -1280,9 +1281,8 @@ func (s *memSeries) appendPreprocessor(t int64, e chunkenc.Encoding, o chunkOpts
 		c = s.cutNewHeadChunk(t, e, o.chunkRange)
 		chunkCreated = true
 	} else {
-		maxBytesPerChunk := chunkenc.MaxBytesPerChunk(e)
-		if maxBytesPerChunk > 0 && len(c.chunk.Bytes()) > maxBytesPerChunk {
-			c = s.cutNewHeadChunk(t, e, chunkDiskMapper, chunkRange)
+		if len(c.chunk.Bytes()) > chunkenc.MaxBytesPerXORChunk {
+			c = s.cutNewHeadChunk(t, e, o.chunkDiskMapper, o.chunkRange)
 			chunkCreated = true
 		}
 	}
@@ -1313,7 +1313,7 @@ func (s *memSeries) appendPreprocessor(t int64, e chunkenc.Encoding, o chunkOpts
 	// the remaining chunks in the current chunk range.
 	// At latest it must happen at the timestamp set when the chunk was cut.
 	if numSamples == o.samplesPerChunk/4 {
-		s.nextAt = computeChunkEndTime(c.minTime, c.maxTime, s.nextAt)
+		s.nextAt = computeChunkEndTime(c.minTime, c.maxTime, s.nextAt, 4)
 	}
 	// If numSamples > samplesPerChunk*2 then our previous prediction was invalid,
 	// most likely because samples rate has changed and now they are arriving more frequently.
@@ -1328,17 +1328,97 @@ func (s *memSeries) appendPreprocessor(t int64, e chunkenc.Encoding, o chunkOpts
 	return c, true, chunkCreated
 }
 
+// nativeHistogramsAppendPreprocessor takes care of cutting new native histogram chunks and m-mapping old ones. Native
+// histogram chunks are cut based on their size in bytes.
+// It is unsafe to call this concurrently with s.iterator(...) without holding the series lock.
+// This should be called only when appending data.
+func (s *memSeries) nativeHistogramsAppendPreprocessor(t int64, e chunkenc.Encoding, o chunkOpts) (c *memChunk, sampleInOrder, chunkCreated bool) {
+	c = s.head()
+
+	if c == nil {
+		if len(s.mmappedChunks) > 0 && s.mmappedChunks[len(s.mmappedChunks)-1].maxTime >= t {
+			// Out of order sample. Sample timestamp is already in the mmapped chunks, so ignore it.
+			return c, false, false
+		}
+		// There is no head chunk in this series yet, create the first chunk for the sample.
+		c = s.cutNewHeadChunk(t, e, o.chunkDiskMapper, o.chunkRange)
+		chunkCreated = true
+	}
+
+	// Out of order sample.
+	if c.maxTime >= t {
+		return c, false, chunkCreated
+	}
+
+	if c.chunk.Encoding() != e {
+		// The chunk encoding expected by this append is different than the head chunk's
+		// encoding. So we cut a new chunk with the expected encoding.
+		c = s.cutNewHeadChunk(t, e, o.chunkDiskMapper, o.chunkRange)
+		chunkCreated = true
+	}
+
+	// The first sample also encodes the layout so it's expected to be larger than the rest of the samples. We consider
+	// it overhead so we remove it from the calculations below.
+	if c.chunk.NumSamples() == 1 {
+		s.nativeHistogramChunkBytesOverhead = len(c.chunk.Bytes())
+		s.nativeHistogramChunkFirstSampleTS = c.maxTime
+	}
+	targetBytes := chunkenc.TargetBytesPerNativeHistogramChunk - s.nativeHistogramChunkBytesOverhead
+	numBytes := len(c.chunk.Bytes()) - s.nativeHistogramChunkBytesOverhead
+
+	if numBytes+s.nativeHistogramChunkBytesOverhead == 0 {
+		// It could be the new chunk created after reading the chunk snapshot,
+		// hence we fix the minTime of the chunk here.
+		c.minTime = t
+		s.nextAt = rangeForTimestamp(c.minTime, o.chunkRange)
+	}
+
+	// If we reach 25% of a chunk's desired maximum size, predict an end time
+	// for this chunk that will try to make samples equally distributed within
+	// the remaining chunks in the current chunk range.
+	// At the latest it must happen at the timestamp set when the chunk was cut.
+	if !s.nativeHistogramChunkHasComputedEndTime && numBytes >= targetBytes/4 {
+		// s.nativeHistogramChunkFirstSampleTS can be unset if we're already past targetBytes/4 within the first 2
+		// samples. In this case, c.minTime is the start time for the s.nextAt computation instead.
+		start := s.nativeHistogramChunkFirstSampleTS
+		if start == 0 {
+			start = c.minTime
+		}
+		ratioToFull := float64(targetBytes) / float64(numBytes)
+		s.nextAt = computeChunkEndTime(start, c.maxTime, s.nextAt, ratioToFull)
+		s.nativeHistogramChunkHasComputedEndTime = true
+	}
+	// If numBytes > targetBytes*2 then our previous prediction was invalid,
+	// most likely because samples rate has changed and now they are arriving more frequently.
+	// Since we assume that the rate is higher, we're being conservative and cutting at 2*targetBytes
+	// as we expect more chunks to come.
+	// Note that next chunk will have its nextAt recalculated for the new rate.
+	if t >= s.nextAt || numBytes >= targetBytes*2 {
+		c = s.cutNewHeadChunk(t, e, o.chunkDiskMapper, o.chunkRange)
+		chunkCreated = true
+	}
+
+	// The new chunk will also need a new computed end time.
+	if chunkCreated {
+		s.nativeHistogramChunkHasComputedEndTime = false
+		s.nativeHistogramChunkBytesOverhead = 0
+		s.nativeHistogramChunkFirstSampleTS = 0
+	}
+
+	return c, true, chunkCreated
+}
+
 // computeChunkEndTime estimates the end timestamp based the beginning of a
 // chunk, its current timestamp and the upper bound up to which we insert data.
-// It assumes that the time range is 1/4 full.
+// It assumes that the time range is 1/ratioToFull full.
 // Assuming that the samples will keep arriving at the same rate, it will make the
 // remaining n chunks within this chunk range (before max) equally sized.
-func computeChunkEndTime(start, cur, max int64) int64 {
-	n := (max - start) / ((cur - start + 1) * 4)
+func computeChunkEndTime(start, cur, max int64, ratioToFull float64) int64 {
+	n := (float64(max) - float64(start)) / ((float64(cur) - float64(start) + 1) * ratioToFull)
 	if n <= 1 {
 		return max
 	}
-	return start + (max-start)/n
+	return int64(float64(start) + (float64(max)-float64(start))/math.Floor(n))
 }
 
 func (s *memSeries) cutNewHeadChunk(mint int64, e chunkenc.Encoding, chunkRange int64) *memChunk {
