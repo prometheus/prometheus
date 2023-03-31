@@ -170,6 +170,7 @@ func main() {
 
 	testCmd := app.Command("test", "Unit testing.")
 	testRulesCmd := testCmd.Command("rules", "Unit tests for rules.")
+	testRulesRun := testRulesCmd.Flag("run", "If set, will only run test groups whose names match the regular expression. Can be specified multiple times.").Strings()
 	testRulesFiles := testRulesCmd.Arg(
 		"test-rule-file",
 		"The unit test file.",
@@ -312,6 +313,7 @@ func main() {
 				EnableAtModifier:     true,
 				EnableNegativeOffset: true,
 			},
+			*testRulesRun,
 			*testRulesFiles...),
 		)
 
