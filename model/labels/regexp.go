@@ -18,6 +18,7 @@ import (
 
 	"github.com/grafana/regexp"
 	"github.com/grafana/regexp/syntax"
+	lru "github.com/hashicorp/golang-lru/v2"
 )
 
 const (
@@ -28,6 +29,14 @@ const (
 	// been computed running BenchmarkOptimizeEqualStringMatchers.
 	optimizeEqualStringMatchersThreshold = 16
 )
+
+var fastRegexMatcherCache *lru.Cache[string, *FastRegexMatcher]
+
+func init() {
+	// Ignore error because it can only return error if size is invalid,
+	// but we're using an hardcoded size here.
+	fastRegexMatcherCache, _ = lru.New[string, *FastRegexMatcher](10000)
+}
 
 type FastRegexMatcher struct {
 	re *regexp.Regexp
@@ -43,6 +52,24 @@ type FastRegexMatcher struct {
 }
 
 func NewFastRegexMatcher(v string) (*FastRegexMatcher, error) {
+	// Check the cache.
+	if matcher, ok := fastRegexMatcherCache.Get(v); ok {
+		return matcher, nil
+	}
+
+	// Create a new matcher.
+	matcher, err := newFastRegexMatcherWithoutCache(v)
+	if err != nil {
+		return nil, err
+	}
+
+	// Cache it.
+	fastRegexMatcherCache.Add(v, matcher)
+
+	return matcher, nil
+}
+
+func newFastRegexMatcherWithoutCache(v string) (*FastRegexMatcher, error) {
 	parsed, err := syntax.Parse(v, syntax.Perl)
 	if err != nil {
 		return nil, err

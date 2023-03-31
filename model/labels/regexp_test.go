@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -89,10 +90,46 @@ func TestNewFastRegexMatcher(t *testing.T) {
 }
 
 func BenchmarkNewFastRegexMatcher(b *testing.B) {
-	for _, r := range regexes {
-		b.Run(getTestNameFromRegexp(r), func(b *testing.B) {
+	runBenchmark := func(newFunc func(v string) (*FastRegexMatcher, error)) func(b *testing.B) {
+		return func(b *testing.B) {
+			for _, r := range regexes {
+				b.Run(getTestNameFromRegexp(r), func(b *testing.B) {
+					for n := 0; n < b.N; n++ {
+						_, err := newFunc(r)
+						if err != nil {
+							b.Fatal(err)
+						}
+					}
+				})
+			}
+		}
+	}
+
+	b.Run("with cache", runBenchmark(NewFastRegexMatcher))
+	b.Run("without cache", runBenchmark(newFastRegexMatcherWithoutCache))
+}
+
+func BenchmarkNewFastRegexMatcher_CacheMisses(b *testing.B) {
+	// Init the random seed with a constant, so that it doesn't change between runs.
+	randGenerator := rand.New(rand.NewSource(1))
+
+	tests := map[string]string{
+		"simple regexp":  randString(randGenerator, 10),
+		"complex regexp": strings.Join(randStrings(randGenerator, 100, 10), "|"),
+	}
+
+	for testName, regexpPrefix := range tests {
+		b.Run(testName, func(b *testing.B) {
+			// Ensure the cache is empty.
+			fastRegexMatcherCache.Purge()
+
+			b.ResetTimer()
+
 			for n := 0; n < b.N; n++ {
-				_, err := NewFastRegexMatcher(r)
+				// Unique regexp to emulate 100% cache misses.
+				regexp := regexpPrefix + strconv.Itoa(n)
+
+				_, err := NewFastRegexMatcher(regexp)
 				if err != nil {
 					b.Fatal(err)
 				}
