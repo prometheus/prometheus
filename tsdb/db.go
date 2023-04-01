@@ -37,7 +37,6 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -998,11 +997,6 @@ func (db *DB) run() {
 // Appender opens a new appender against the database.
 func (db *DB) Appender(ctx context.Context) storage.Appender {
 	return dbAppender{db: db, Appender: db.head.Appender(ctx)}
-}
-
-// AppendExemplar appends an exemplar into the head tsdb assuming that a series ref already exists
-func (db *DB) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
-	return db.head.appender().AppendExemplar(ref, l, e)
 }
 
 // ApplyConfig applies a new config to the DB.

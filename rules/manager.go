@@ -657,8 +657,8 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				eqr    []exemplar.QueryResult
 				err    error
 			)
-			if g.opts.ExemplarStorage != nil {
-				ex, e := g.opts.ExemplarStorage.ExemplarQuerier(ctx)
+			if g.opts.ExemplarQueryable != nil {
+				ex, e := g.opts.ExemplarQueryable.ExemplarQuerier(ctx)
 				if e != nil {
 					level.Warn(g.logger).Log("name", rule.Name(), "index", i, "msg", "Error fetching exemplar querier", "rule", rule, "err", err)
 					err = e
@@ -983,19 +983,19 @@ type NotifyFunc func(ctx context.Context, expr string, alerts ...*Alert)
 
 // ManagerOptions bundles options for the Manager.
 type ManagerOptions struct {
-	ExternalURL     *url.URL
-	QueryFunc       QueryFunc
-	NotifyFunc      NotifyFunc
-	Context         context.Context
-	Appendable      storage.Appendable
-	Queryable       storage.Queryable
-	ExemplarStorage storage.ExemplarStorage
-	Logger          log.Logger
-	Registerer      prometheus.Registerer
-	OutageTolerance time.Duration
-	ForGracePeriod  time.Duration
-	ResendDelay     time.Duration
-	GroupLoader     GroupLoader
+	ExternalURL       *url.URL
+	QueryFunc         QueryFunc
+	NotifyFunc        NotifyFunc
+	Context           context.Context
+	Appendable        storage.Appendable
+	Queryable         storage.Queryable
+	ExemplarQueryable storage.ExemplarQueryable
+	Logger            log.Logger
+	Registerer        prometheus.Registerer
+	OutageTolerance   time.Duration
+	ForGracePeriod    time.Duration
+	ResendDelay       time.Duration
+	GroupLoader       GroupLoader
 
 	Metrics *Metrics
 }
