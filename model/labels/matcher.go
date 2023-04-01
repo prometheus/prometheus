@@ -126,7 +126,7 @@ func (m *Matcher) SetMatches() []string {
 	if m.re == nil {
 		return nil
 	}
-	return m.re.setMatches
+	return m.re.SetMatches()
 }
 
 // Prefix returns the required prefix of the value to match, if possible.
