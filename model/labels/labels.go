@@ -577,7 +577,11 @@ func (b *Builder) Labels() Labels {
 		return b.base
 	}
 
-	res := make(Labels, 0, len(b.base)-len(b.del)+len(b.add))
+	expectedSize := len(b.base) + len(b.add) - len(b.del)
+	if expectedSize < 1 {
+		expectedSize = 1
+	}
+	res := make(Labels, 0, expectedSize)
 	for _, l := range b.base {
 		if slices.Contains(b.del, l.Name) || contains(b.add, l.Name) {
 			continue
