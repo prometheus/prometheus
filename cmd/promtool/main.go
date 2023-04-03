@@ -89,7 +89,6 @@ func main() {
 	app.HelpFlag.Short('h')
 
 	checkCmd := app.Command("check", "Check the resources for validity.")
-	checkCmd.Flag("http.config.file", "HTTP client configuration file for promtool to connect to Prometheus.").PlaceHolder("<filename>").ExistingFileVar(&httpConfigFilePath)
 
 	sdCheckCmd := checkCmd.Command("service-discovery", "Perform service discovery for the given job name and report the results, including relabeling.")
 	sdConfigFile := sdCheckCmd.Arg("config-file", "The prometheus config file.").Required().ExistingFile()
@@ -117,16 +116,12 @@ func main() {
 	).Required().ExistingFiles()
 
 	checkServerHealthCmd := checkCmd.Command("healthy", "Check if the Prometheus server is healthy.")
-	serverHealthURLArg := checkServerHealthCmd.Arg(
-		"server",
-		"The URL of the Prometheus server to check (e.g. http://localhost:9090)",
-	).URL()
+	checkServerHealthCmd.Flag("http.config.file", "HTTP client configuration file for promtool to connect to Prometheus.").PlaceHolder("<filename>").ExistingFileVar(&httpConfigFilePath)
+	checkServerHealthCmd.Flag("url", "The URL for the Prometheus server.").Default("http://localhost:9090").URLVar(&serverURL)
 
 	checkServerReadyCmd := checkCmd.Command("ready", "Check if the Prometheus server is ready.")
-	serverReadyURLArg := checkServerReadyCmd.Arg(
-		"server",
-		"The URL of the Prometheus server to check (e.g. http://localhost:9090)",
-	).URL()
+	checkServerReadyCmd.Flag("http.config.file", "HTTP client configuration file for promtool to connect to Prometheus.").PlaceHolder("<filename>").ExistingFileVar(&httpConfigFilePath)
+	checkServerReadyCmd.Flag("url", "The URL for the Prometheus server.").Default("http://localhost:9090").URLVar(&serverURL)
 
 	checkRulesCmd := checkCmd.Command("rules", "Check if the rule files are valid or not.")
 	ruleFiles := checkRulesCmd.Arg(
@@ -292,10 +287,10 @@ func main() {
 		os.Exit(CheckConfig(*agentMode, *checkConfigSyntaxOnly, newLintConfig(*checkConfigLint, *checkConfigLintFatal), *configFiles...))
 
 	case checkServerHealthCmd.FullCommand():
-		os.Exit(checkErr(CheckServerStatus(*serverHealthURLArg, checkHealth, httpRoundTripper)))
+		os.Exit(checkErr(CheckServerStatus(serverURL, checkHealth, httpRoundTripper)))
 
 	case checkServerReadyCmd.FullCommand():
-		os.Exit(checkErr(CheckServerStatus(*serverReadyURLArg, checkReadiness, httpRoundTripper)))
+		os.Exit(checkErr(CheckServerStatus(serverURL, checkReadiness, httpRoundTripper)))
 
 	case checkWebConfigCmd.FullCommand():
 		os.Exit(CheckWebConfig(*webConfigFiles...))
@@ -390,12 +385,10 @@ func (ls lintConfig) lintDuplicateRules() bool {
 	return ls.all || ls.duplicateRules
 }
 
-const promDefaultURL = "http://localhost:9090"
-
 // Check server status - healthy & ready.
 func CheckServerStatus(serverURL *url.URL, checkEndpoint string, roundTripper http.RoundTripper) error {
-	if serverURL == nil {
-		serverURL, _ = url.Parse(promDefaultURL)
+	if serverURL.Scheme == "" {
+		serverURL.Scheme = "http"
 	}
 
 	config := api.Config{
