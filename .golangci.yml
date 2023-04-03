@@ -33,7 +33,18 @@ linters-settings:
       - io/ioutil: "Use corresponding 'os' or 'io' functions instead."
       - regexp: "Use github.com/grafana/regexp instead of regexp"
   errcheck:
-    exclude: scripts/errcheck_excludes.txt
+    exclude-functions:
+      # Don't flag lines such as "io.Copy(io.Discard, resp.Body)".
+      - io.Copy
+      # The next two are used in HTTP handlers, any error is handled by the server itself.
+      - io.WriteString
+      - (net/http.ResponseWriter).Write
+      # No need to check for errors on server's shutdown.
+      - (*net/http.Server).Shutdown
+      # Never check for logger errors.
+      - (github.com/go-kit/log.Logger).Log
+      # Never check for rollback errors as Rollback() is called when a previous error was detected.
+      - (github.com/prometheus/prometheus/storage.Appender).Rollback
   goimports:
     local-prefixes: github.com/prometheus/prometheus
   gofumpt:
