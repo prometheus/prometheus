@@ -138,8 +138,6 @@ make npm_licenses
 make common-docker-amd64
 ```
 
-*NB* if you are on a Mac, you will need [gnu-tar](https://formulae.brew.sh/formula/gnu-tar).
-
 ## Using Prometheus as a Go Library
 
 ### Remote Write

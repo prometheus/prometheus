@@ -16,6 +16,7 @@ package textparse
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"io"
 	"testing"
 
@@ -155,10 +156,150 @@ metric: <
 >
 
 `,
+		`name: "test_gauge_histogram"
+help: "Like test_histogram but as gauge histogram."
+type: GAUGE_HISTOGRAM
+metric: <
+  histogram: <
+    sample_count: 175
+    sample_sum: 0.0008280461746287094
+    bucket: <
+      cumulative_count: 2
+      upper_bound: -0.0004899999999999998
+    >
+    bucket: <
+      cumulative_count: 4
+      upper_bound: -0.0003899999999999998
+      exemplar: <
+        label: <
+          name: "dummyID"
+          value: "59727"
+        >
+        value: -0.00039
+        timestamp: <
+          seconds: 1625851155
+          nanos: 146848499
+        >
+      >
+    >
+    bucket: <
+      cumulative_count: 16
+      upper_bound: -0.0002899999999999998
+      exemplar: <
+        label: <
+          name: "dummyID"
+          value: "5617"
+        >
+        value: -0.00029
+      >
+    >
+    schema: 3
+    zero_threshold: 2.938735877055719e-39
+    zero_count: 2
+    negative_span: <
+      offset: -162
+      length: 1
+    >
+    negative_span: <
+      offset: 23
+      length: 4
+    >
+    negative_delta: 1
+    negative_delta: 3
+    negative_delta: -2
+    negative_delta: -1
+    negative_delta: 1
+    positive_span: <
+      offset: -161
+      length: 1
+    >
+    positive_span: <
+      offset: 8
+      length: 3
+    >
+    positive_delta: 1
+    positive_delta: 2
+    positive_delta: -1
+    positive_delta: -1
+  >
+  timestamp_ms: 1234568
+>
 
+`,
 		`name: "test_float_histogram"
 help: "Test float histogram with many buckets removed to keep it manageable in size."
 type: HISTOGRAM
+metric: <
+  histogram: <
+    sample_count: 175
+	sample_count_float: 175.0
+    sample_sum: 0.0008280461746287094
+    bucket: <
+      cumulative_count_float: 2.0
+      upper_bound: -0.0004899999999999998
+    >
+    bucket: <
+      cumulative_count_float: 4.0
+      upper_bound: -0.0003899999999999998
+      exemplar: <
+        label: <
+          name: "dummyID"
+          value: "59727"
+        >
+        value: -0.00039
+        timestamp: <
+          seconds: 1625851155
+          nanos: 146848499
+        >
+      >
+    >
+    bucket: <
+      cumulative_count_float: 16
+      upper_bound: -0.0002899999999999998
+      exemplar: <
+        label: <
+          name: "dummyID"
+          value: "5617"
+        >
+        value: -0.00029
+      >
+    >
+    schema: 3
+    zero_threshold: 2.938735877055719e-39
+    zero_count_float: 2.0
+    negative_span: <
+      offset: -162
+      length: 1
+    >
+    negative_span: <
+      offset: 23
+      length: 4
+    >
+    negative_count: 1.0
+    negative_count: 3.0
+    negative_count: -2.0
+    negative_count: -1.0
+    negative_count: 1.0
+    positive_span: <
+      offset: -161
+      length: 1
+    >
+    positive_span: <
+      offset: 8
+      length: 3
+    >
+    positive_count: 1.0
+    positive_count: 2.0
+    positive_count: -1.0
+    positive_count: -1.0
+  >
+  timestamp_ms: 1234568
+>
+
+`,
+		`name: "test_gauge_float_histogram"
+help: "Like test_float_histogram but as gauge histogram."
+type: GAUGE_HISTOGRAM
 metric: <
   histogram: <
     sample_count: 175
@@ -427,6 +568,43 @@ metric: <
 			},
 		},
 		{
+			m:    "test_gauge_histogram",
+			help: "Like test_histogram but as gauge histogram.",
+		},
+		{
+			m:   "test_gauge_histogram",
+			typ: MetricTypeGaugeHistogram,
+		},
+		{
+			m: "test_gauge_histogram",
+			t: 1234568,
+			shs: &histogram.Histogram{
+				CounterResetHint: histogram.GaugeType,
+				Count:            175,
+				ZeroCount:        2,
+				Sum:              0.0008280461746287094,
+				ZeroThreshold:    2.938735877055719e-39,
+				Schema:           3,
+				PositiveSpans: []histogram.Span{
+					{Offset: -161, Length: 1},
+					{Offset: 8, Length: 3},
+				},
+				NegativeSpans: []histogram.Span{
+					{Offset: -162, Length: 1},
+					{Offset: 23, Length: 4},
+				},
+				PositiveBuckets: []int64{1, 2, -1, -1},
+				NegativeBuckets: []int64{1, 3, -2, -1, 1},
+			},
+			lset: labels.FromStrings(
+				"__name__", "test_gauge_histogram",
+			),
+			e: []exemplar.Exemplar{
+				{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00039, HasTs: true, Ts: 1625851155146},
+				{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.00029, HasTs: false},
+			},
+		},
+		{
 			m:    "test_float_histogram",
 			help: "Test float histogram with many buckets removed to keep it manageable in size.",
 		},
@@ -456,6 +634,43 @@ metric: <
 			},
 			lset: labels.FromStrings(
 				"__name__", "test_float_histogram",
+			),
+			e: []exemplar.Exemplar{
+				{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00039, HasTs: true, Ts: 1625851155146},
+				{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.00029, HasTs: false},
+			},
+		},
+		{
+			m:    "test_gauge_float_histogram",
+			help: "Like test_float_histogram but as gauge histogram.",
+		},
+		{
+			m:   "test_gauge_float_histogram",
+			typ: MetricTypeGaugeHistogram,
+		},
+		{
+			m: "test_gauge_float_histogram",
+			t: 1234568,
+			fhs: &histogram.FloatHistogram{
+				CounterResetHint: histogram.GaugeType,
+				Count:            175.0,
+				ZeroCount:        2.0,
+				Sum:              0.0008280461746287094,
+				ZeroThreshold:    2.938735877055719e-39,
+				Schema:           3,
+				PositiveSpans: []histogram.Span{
+					{Offset: -161, Length: 1},
+					{Offset: 8, Length: 3},
+				},
+				NegativeSpans: []histogram.Span{
+					{Offset: -162, Length: 1},
+					{Offset: 23, Length: 4},
+				},
+				PositiveBuckets: []float64{1.0, 2.0, -1.0, -1.0},
+				NegativeBuckets: []float64{1.0, 3.0, -2.0, -1.0, 1.0},
+			},
+			lset: labels.FromStrings(
+				"__name__", "test_gauge_float_histogram",
 			),
 			e: []exemplar.Exemplar{
 				{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00039, HasTs: true, Ts: 1625851155146},
@@ -604,7 +819,7 @@ metric: <
 
 	for {
 		et, err := p.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		require.NoError(t, err)
@@ -630,7 +845,6 @@ metric: <
 				require.Equal(t, true, found)
 				require.Equal(t, exp[i].e[0], e)
 			}
-			res = res[:0]
 
 		case EntryHistogram:
 			m, ts, shs, fhs := p.Histogram()
@@ -642,7 +856,6 @@ metric: <
 				require.Equal(t, exp[i].t, int64(0))
 			}
 			require.Equal(t, exp[i].lset, res)
-			res = res[:0]
 			require.Equal(t, exp[i].m, string(m))
 			if shs != nil {
 				require.Equal(t, exp[i].shs, shs)

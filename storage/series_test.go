@@ -18,7 +18,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 )
 
 func TestListSeriesIterator(t *testing.T) {
@@ -64,4 +66,56 @@ func TestListSeriesIterator(t *testing.T) {
 	require.Equal(t, chunkenc.ValNone, it.Seek(5))
 	// And we don't go back. (This exposes issue #10027.)
 	require.Equal(t, chunkenc.ValNone, it.Seek(2))
+}
+
+// TestSeriesSetToChunkSet test the property of SeriesSet that says
+// returned series should be iterable even after Next is called.
+func TestChunkSeriesSetToSeriesSet(t *testing.T) {
+	series := []struct {
+		lbs     labels.Labels
+		samples []tsdbutil.Sample
+	}{
+		{
+			lbs: labels.FromStrings("__name__", "up", "instance", "localhost:8080"),
+			samples: []tsdbutil.Sample{
+				sample{t: 1, v: 1},
+				sample{t: 2, v: 2},
+				sample{t: 3, v: 3},
+				sample{t: 4, v: 4},
+			},
+		}, {
+			lbs: labels.FromStrings("__name__", "up", "instance", "localhost:8081"),
+			samples: []tsdbutil.Sample{
+				sample{t: 1, v: 2},
+				sample{t: 2, v: 3},
+				sample{t: 3, v: 4},
+				sample{t: 4, v: 5},
+				sample{t: 5, v: 6},
+				sample{t: 6, v: 7},
+			},
+		},
+	}
+	var chunkSeries []ChunkSeries
+	for _, s := range series {
+		chunkSeries = append(chunkSeries, NewListChunkSeriesFromSamples(s.lbs, s.samples))
+	}
+	css := NewMockChunkSeriesSet(chunkSeries...)
+
+	ss := NewSeriesSetFromChunkSeriesSet(css)
+	var ssSlice []Series
+	for ss.Next() {
+		ssSlice = append(ssSlice, ss.At())
+	}
+	require.Len(t, ssSlice, 2)
+	var iter chunkenc.Iterator
+	for i, s := range ssSlice {
+		require.EqualValues(t, series[i].lbs, s.Labels())
+		iter = s.Iterator(iter)
+		j := 0
+		for iter.Next() == chunkenc.ValFloat {
+			ts, v := iter.At()
+			require.EqualValues(t, series[i].samples[j], sample{t: ts, v: v})
+			j++
+		}
+	}
 }

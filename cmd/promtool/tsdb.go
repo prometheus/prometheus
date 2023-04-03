@@ -30,6 +30,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -315,7 +316,7 @@ func readPrometheusLabels(r io.Reader, n int) ([]labels.Labels, error) {
 	i := 0
 
 	for scanner.Scan() && i < n {
-		m := make(labels.Labels, 0, 10)
+		m := make([]labels.Label, 0, 10)
 
 		r := strings.NewReplacer("\"", "", "{", "", "}", "")
 		s := r.Replace(scanner.Text())
@@ -325,13 +326,12 @@ func readPrometheusLabels(r io.Reader, n int) ([]labels.Labels, error) {
 			split := strings.Split(labelChunk, ":")
 			m = append(m, labels.Label{Name: split[0], Value: split[1]})
 		}
-		// Order of the k/v labels matters, don't assume we'll always receive them already sorted.
-		sort.Sort(m)
-		h := m.Hash()
+		ml := labels.New(m...) // This sorts by name - order of the k/v labels matters, don't assume we'll always receive them already sorted.
+		h := ml.Hash()
 		if _, ok := hashes[h]; ok {
 			continue
 		}
-		mets = append(mets, m)
+		mets = append(mets, ml)
 		hashes[h] = struct{}{}
 		i++
 	}
@@ -470,21 +470,21 @@ func analyzeBlock(path, blockID string, limit int, runExtended bool) error {
 	if err != nil {
 		return err
 	}
-	lbls := labels.Labels{}
 	chks := []chunks.Meta{}
+	builder := labels.ScratchBuilder{}
 	for p.Next() {
-		if err = ir.Series(p.At(), &lbls, &chks); err != nil {
+		if err = ir.Series(p.At(), &builder, &chks); err != nil {
 			return err
 		}
 		// Amount of the block time range not covered by this series.
 		uncovered := uint64(meta.MaxTime-meta.MinTime) - uint64(chks[len(chks)-1].MaxTime-chks[0].MinTime)
-		for _, lbl := range lbls {
+		builder.Labels().Range(func(lbl labels.Label) {
 			key := lbl.Name + "=" + lbl.Value
 			labelsUncovered[lbl.Name] += uncovered
 			labelpairsUncovered[key] += uncovered
 			labelpairsCount[key]++
 			entries++
-		}
+		})
 	}
 	if p.Err() != nil {
 		return p.Err()
@@ -589,10 +589,10 @@ func analyzeCompaction(block tsdb.BlockReader, indexr tsdb.IndexReader) (err err
 	nBuckets := 10
 	histogram := make([]int, nBuckets)
 	totalChunks := 0
+	var builder labels.ScratchBuilder
 	for postingsr.Next() {
-		lbsl := labels.Labels{}
 		var chks []chunks.Meta
-		if err := indexr.Series(postingsr.At(), &lbsl, &chks); err != nil {
+		if err := indexr.Series(postingsr.At(), &builder, &chks); err != nil {
 			return err
 		}
 
@@ -625,7 +625,7 @@ func analyzeCompaction(block tsdb.BlockReader, indexr tsdb.IndexReader) (err err
 	return nil
 }
 
-func dumpSamples(path string, mint, maxt int64) (err error) {
+func dumpSamples(path string, mint, maxt int64, match string) (err error) {
 	db, err := tsdb.OpenDBReadOnly(path, nil)
 	if err != nil {
 		return err
@@ -639,12 +639,16 @@ func dumpSamples(path string, mint, maxt int64) (err error) {
 	}
 	defer q.Close()
 
-	ss := q.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
+	matchers, err := parser.ParseMetricSelector(match)
+	if err != nil {
+		return err
+	}
+	ss := q.Select(false, nil, matchers...)
 
 	for ss.Next() {
 		series := ss.At()
 		lbs := series.Labels()
-		it := series.Iterator()
+		it := series.Iterator(nil)
 		for it.Next() == chunkenc.ValFloat {
 			ts, val := it.At()
 			fmt.Printf("%s %g %d\n", lbs, val, ts)

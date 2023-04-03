@@ -649,6 +649,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			}
 			var (
 				numOutOfOrder = 0
+				numTooOld     = 0
 				numDuplicates = 0
 			)
 
@@ -668,14 +669,26 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			}()
 
 			for _, s := range vector {
-				if _, err := app.Append(0, s.Metric, s.T, s.V); err != nil {
+				if s.H != nil {
+					_, err = app.AppendHistogram(0, s.Metric, s.T, nil, s.H)
+				} else {
+					_, err = app.Append(0, s.Metric, s.T, s.V)
+				}
+
+				if err != nil {
 					rule.SetHealth(HealthBad)
 					rule.SetLastError(err)
 					sp.SetStatus(codes.Error, err.Error())
 					unwrappedErr := errors.Unwrap(err)
+					if unwrappedErr == nil {
+						unwrappedErr = err
+					}
 					switch {
 					case errors.Is(unwrappedErr, storage.ErrOutOfOrderSample):
 						numOutOfOrder++
+						level.Debug(g.logger).Log("name", rule.Name(), "index", i, "msg", "Rule evaluation result discarded", "err", err, "sample", s)
+					case errors.Is(unwrappedErr, storage.ErrTooOldSample):
+						numTooOld++
 						level.Debug(g.logger).Log("name", rule.Name(), "index", i, "msg", "Rule evaluation result discarded", "err", err, "sample", s)
 					case errors.Is(unwrappedErr, storage.ErrDuplicateSampleForTimestamp):
 						numDuplicates++
@@ -691,6 +704,9 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			if numOutOfOrder > 0 {
 				level.Warn(g.logger).Log("name", rule.Name(), "index", i, "msg", "Error on ingesting out-of-order result from rule evaluation", "numDropped", numOutOfOrder)
 			}
+			if numTooOld > 0 {
+				level.Warn(g.logger).Log("name", rule.Name(), "index", i, "msg", "Error on ingesting too old result from rule evaluation", "numDropped", numTooOld)
+			}
 			if numDuplicates > 0 {
 				level.Warn(g.logger).Log("name", rule.Name(), "index", i, "msg", "Error on ingesting results from rule evaluation with different value but same timestamp", "numDropped", numDuplicates)
 			}
@@ -700,9 +716,14 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 					// Series no longer exposed, mark it stale.
 					_, err = app.Append(0, lset, timestamp.FromTime(ts), math.Float64frombits(value.StaleNaN))
 					unwrappedErr := errors.Unwrap(err)
+					if unwrappedErr == nil {
+						unwrappedErr = err
+					}
 					switch {
 					case unwrappedErr == nil:
-					case errors.Is(unwrappedErr, storage.ErrOutOfOrderSample), errors.Is(unwrappedErr, storage.ErrDuplicateSampleForTimestamp):
+					case errors.Is(unwrappedErr, storage.ErrOutOfOrderSample),
+						errors.Is(unwrappedErr, storage.ErrTooOldSample),
+						errors.Is(unwrappedErr, storage.ErrDuplicateSampleForTimestamp):
 						// Do not count these in logging, as this is expected if series
 						// is exposed from a different rule.
 					default:
@@ -727,9 +748,14 @@ func (g *Group) cleanupStaleSeries(ctx context.Context, ts time.Time) {
 		// Rule that produced series no longer configured, mark it stale.
 		_, err := app.Append(0, s, timestamp.FromTime(ts), math.Float64frombits(value.StaleNaN))
 		unwrappedErr := errors.Unwrap(err)
+		if unwrappedErr == nil {
+			unwrappedErr = err
+		}
 		switch {
 		case unwrappedErr == nil:
-		case errors.Is(unwrappedErr, storage.ErrOutOfOrderSample), errors.Is(unwrappedErr, storage.ErrDuplicateSampleForTimestamp):
+		case errors.Is(unwrappedErr, storage.ErrOutOfOrderSample),
+			errors.Is(unwrappedErr, storage.ErrTooOldSample),
+			errors.Is(unwrappedErr, storage.ErrDuplicateSampleForTimestamp):
 			// Do not count these in logging, as this is expected if series
 			// is exposed from a different rule.
 		default:
@@ -798,7 +824,7 @@ func (g *Group) RestoreForState(ts time.Time) {
 			// Series found for the 'for' state.
 			var t int64
 			var v float64
-			it := s.Iterator()
+			it := s.Iterator(nil)
 			for it.Next() == chunkenc.ValFloat {
 				t, v = it.At()
 			}
@@ -1089,6 +1115,7 @@ func (m *Manager) LoadGroups(
 						r.Alert.Value,
 						expr,
 						time.Duration(r.For),
+						time.Duration(r.KeepFiringFor),
 						labels.FromMap(r.Labels),
 						labels.FromMap(r.Annotations),
 						externalLabels,

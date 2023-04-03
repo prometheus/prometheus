@@ -475,7 +475,7 @@ func (c *LeveledCompactor) CompactWithPopulateBlockFunc(dest string, dirs []stri
 	}
 
 	errs := tsdb_errors.NewMulti(err)
-	if err != context.Canceled {
+	if !errors.Is(err, context.Canceled) {
 		for _, b := range bs {
 			if err := b.setCompactionFailed(); err != nil {
 				errs.Add(errors.Wrapf(err, "setting compaction failed for block: %s", b.Dir()))
@@ -756,8 +756,9 @@ func (c DefaultPopulateBlockFunc) PopulateBlock(ctx context.Context, metrics *Co
 	}
 
 	var (
-		ref  = storage.SeriesRef(0)
-		chks []chunks.Meta
+		ref      = storage.SeriesRef(0)
+		chks     []chunks.Meta
+		chksIter chunks.Iterator
 	)
 
 	set := sets[0]
@@ -775,7 +776,7 @@ func (c DefaultPopulateBlockFunc) PopulateBlock(ctx context.Context, metrics *Co
 		default:
 		}
 		s := set.At()
-		chksIter := s.Iterator()
+		chksIter = s.Iterator(chksIter)
 		chks = chks[:0]
 		for chksIter.Next() {
 			// We are not iterating in streaming way over chunk as

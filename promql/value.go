@@ -82,7 +82,7 @@ func (s Series) String() string {
 func (s Series) MarshalJSON() ([]byte, error) {
 	// Note that this is rather inefficient because it re-creates the whole
 	// series, just separated by Histogram Points and Value Points. For API
-	// purposes, there is a more efficcient jsoniter implementation in
+	// purposes, there is a more efficient jsoniter implementation in
 	// web/api/v1/api.go.
 	series := struct {
 		M labels.Labels `json:"metric"`
@@ -363,7 +363,11 @@ func (ss *StorageSeries) Labels() labels.Labels {
 }
 
 // Iterator returns a new iterator of the data of the series.
-func (ss *StorageSeries) Iterator() chunkenc.Iterator {
+func (ss *StorageSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
+	if ssi, ok := it.(*storageSeriesIterator); ok {
+		ssi.reset(ss.series)
+		return ssi
+	}
 	return newStorageSeriesIterator(ss.series)
 }
 
@@ -377,6 +381,11 @@ func newStorageSeriesIterator(series Series) *storageSeriesIterator {
 		points: series.Points,
 		curr:   -1,
 	}
+}
+
+func (ssi *storageSeriesIterator) reset(series Series) {
+	ssi.points = series.Points
+	ssi.curr = -1
 }
 
 func (ssi *storageSeriesIterator) Seek(t int64) chunkenc.ValueType {

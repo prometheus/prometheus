@@ -49,6 +49,8 @@ type endpointSliceEndpointAdaptor interface {
 
 type endpointSliceEndpointConditionsAdaptor interface {
 	ready() *bool
+	serving() *bool
+	terminating() *bool
 }
 
 // Adaptor for k8s.io/api/discovery/v1
@@ -193,6 +195,14 @@ func (e *endpointSliceEndpointConditionsAdaptorV1) ready() *bool {
 	return e.endpointConditions.Ready
 }
 
+func (e *endpointSliceEndpointConditionsAdaptorV1) serving() *bool {
+	return e.endpointConditions.Serving
+}
+
+func (e *endpointSliceEndpointConditionsAdaptorV1) terminating() *bool {
+	return e.endpointConditions.Terminating
+}
+
 type endpointSliceEndpointAdaptorV1beta1 struct {
 	endpoint v1beta1.Endpoint
 }
@@ -235,6 +245,14 @@ func newEndpointSliceEndpointConditionsAdaptorFromV1beta1(endpointConditions v1b
 
 func (e *endpointSliceEndpointConditionsAdaptorV1beta1) ready() *bool {
 	return e.endpointConditions.Ready
+}
+
+func (e *endpointSliceEndpointConditionsAdaptorV1beta1) serving() *bool {
+	return e.endpointConditions.Serving
+}
+
+func (e *endpointSliceEndpointConditionsAdaptorV1beta1) terminating() *bool {
+	return e.endpointConditions.Terminating
 }
 
 type endpointSlicePortAdaptorV1 struct {

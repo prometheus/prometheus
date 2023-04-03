@@ -311,10 +311,10 @@ func (m *Manager) registerProviders(cfgs discovery.Configs, setName string) int 
 		}
 		typ := cfg.Name()
 		d, err := cfg.NewDiscoverer(discovery.DiscovererOptions{
-			Logger: log.With(m.logger, "discovery", typ),
+			Logger: log.With(m.logger, "discovery", typ, "config", setName),
 		})
 		if err != nil {
-			level.Error(m.logger).Log("msg", "Cannot create service discovery", "err", err, "type", typ)
+			level.Error(m.logger).Log("msg", "Cannot create service discovery", "err", err, "type", typ, "config", setName)
 			failed++
 			return
 		}

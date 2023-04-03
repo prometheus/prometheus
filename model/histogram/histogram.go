@@ -19,6 +19,17 @@ import (
 	"strings"
 )
 
+// CounterResetHint contains the known information about a counter reset,
+// or alternatively that we are dealing with a gauge histogram, where counter resets do not apply.
+type CounterResetHint byte
+
+const (
+	UnknownCounterReset CounterResetHint = iota // UnknownCounterReset means we cannot say if this histogram signals a counter reset or not.
+	CounterReset                                // CounterReset means there was definitely a counter reset starting from this histogram.
+	NotCounterReset                             // NotCounterReset means there was definitely no counter reset with this histogram.
+	GaugeType                                   // GaugeType means this is a gauge histogram, where counter resets do not happen.
+)
+
 // Histogram encodes a sparse, high-resolution histogram. See the design
 // document for full details:
 // https://docs.google.com/document/d/1cLNv3aufPZb3fNfaJgdaRBZsInZKKIHo9E6HinJVbpM/edit#
@@ -35,6 +46,8 @@ import (
 //
 // Which bucket indices are actually used is determined by the spans.
 type Histogram struct {
+	// Counter reset information.
+	CounterResetHint CounterResetHint
 	// Currently valid schema numbers are -4 <= n <= 8.  They are all for
 	// base-2 bucket schemas, where 1 is a bucket boundary in each case, and
 	// then each power of two is divided into 2^n logarithmic buckets.  Or
@@ -250,18 +263,6 @@ func allEmptySpans(s []Span) bool {
 	return true
 }
 
-func bucketsMatch(b1, b2 []int64) bool {
-	if len(b1) != len(b2) {
-		return false
-	}
-	for i, b := range b1 {
-		if b != b2[i] {
-			return false
-		}
-	}
-	return true
-}
-
 // Compact works like FloatHistogram.Compact. See there for detailed
 // explanations.
 func (h *Histogram) Compact(maxEmptyBuckets int) *Histogram {
@@ -307,15 +308,16 @@ func (h *Histogram) ToFloat() *FloatHistogram {
 	}
 
 	return &FloatHistogram{
-		Schema:          h.Schema,
-		ZeroThreshold:   h.ZeroThreshold,
-		ZeroCount:       float64(h.ZeroCount),
-		Count:           float64(h.Count),
-		Sum:             h.Sum,
-		PositiveSpans:   positiveSpans,
-		NegativeSpans:   negativeSpans,
-		PositiveBuckets: positiveBuckets,
-		NegativeBuckets: negativeBuckets,
+		CounterResetHint: h.CounterResetHint,
+		Schema:           h.Schema,
+		ZeroThreshold:    h.ZeroThreshold,
+		ZeroCount:        float64(h.ZeroCount),
+		Count:            float64(h.Count),
+		Sum:              h.Sum,
+		PositiveSpans:    positiveSpans,
+		NegativeSpans:    negativeSpans,
+		PositiveBuckets:  positiveBuckets,
+		NegativeBuckets:  negativeBuckets,
 	}
 }
 

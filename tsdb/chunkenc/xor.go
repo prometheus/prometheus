@@ -156,6 +156,10 @@ func (a *xorAppender) AppendHistogram(t int64, h *histogram.Histogram) {
 	panic("appended a histogram to an xor chunk")
 }
 
+func (a *xorAppender) AppendFloatHistogram(t int64, h *histogram.FloatHistogram) {
+	panic("appended a float histogram to an xor chunk")
+}
+
 func (a *xorAppender) Append(t int64, v float64) {
 	var tDelta uint64
 	num := binary.BigEndian.Uint16(a.b.bytes())
@@ -501,13 +505,4 @@ func xorRead(br *bstreamReader, value *float64, leading, trailing *uint8) error 
 	vbits ^= bits << newTrailing
 	*value = math.Float64frombits(vbits)
 	return nil
-}
-
-// OOOXORChunk holds a XORChunk and overrides the Encoding() method.
-type OOOXORChunk struct {
-	*XORChunk
-}
-
-func (c *OOOXORChunk) Encoding() Encoding {
-	return EncOOOXOR
 }

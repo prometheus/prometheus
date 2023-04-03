@@ -428,11 +428,11 @@ func (m *Manager) registerProviders(cfgs Configs, setName string) int {
 		}
 		typ := cfg.Name()
 		d, err := cfg.NewDiscoverer(DiscovererOptions{
-			Logger:            log.With(m.logger, "discovery", typ),
+			Logger:            log.With(m.logger, "discovery", typ, "config", setName),
 			HTTPClientOptions: m.httpOpts,
 		})
 		if err != nil {
-			level.Error(m.logger).Log("msg", "Cannot create service discovery", "err", err, "type", typ)
+			level.Error(m.logger).Log("msg", "Cannot create service discovery", "err", err, "type", typ, "config", setName)
 			failed++
 			return
 		}

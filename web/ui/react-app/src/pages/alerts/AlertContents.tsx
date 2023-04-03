@@ -29,6 +29,7 @@ export interface Alert {
   value: string;
   annotations: Record<string, string>;
   activeAt: string;
+  keepFiringSince: string;
 }
 
 interface RuleGroup {

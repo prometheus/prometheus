@@ -1586,21 +1586,21 @@ func TestScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T) {
 
 	fakeRef := storage.SeriesRef(1)
 	expValue := float64(1)
-	metric := `metric{n="1"} 1`
-	p, warning := textparse.New([]byte(metric), "")
+	metric := []byte(`metric{n="1"} 1`)
+	p, warning := textparse.New(metric, "")
 	require.NoError(t, warning)
 
 	var lset labels.Labels
 	p.Next()
-	mets := p.Metric(&lset)
+	p.Metric(&lset)
 	hash := lset.Hash()
 
 	// Create a fake entry in the cache
-	sl.cache.addRef(mets, fakeRef, lset, hash)
+	sl.cache.addRef(metric, fakeRef, lset, hash)
 	now := time.Now()
 
 	slApp := sl.appender(context.Background())
-	_, _, _, err := sl.append(slApp, []byte(metric), "", now)
+	_, _, _, err := sl.append(slApp, metric, "", now)
 	require.NoError(t, err)
 	require.NoError(t, slApp.Commit())
 
@@ -1623,7 +1623,7 @@ func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 		nil, nil, nil,
 		func(l labels.Labels) labels.Labels {
 			if l.Has("deleteme") {
-				return nil
+				return labels.EmptyLabels()
 			}
 			return l
 		},
@@ -2735,7 +2735,7 @@ func TestReuseScrapeCache(t *testing.T) {
 				HonorTimestamps: true,
 				SampleLimit:     400,
 				HTTPClientConfig: config_util.HTTPClientConfig{
-					ProxyURL: config_util.URL{URL: proxyURL},
+					ProxyConfig: config_util.ProxyConfig{ProxyURL: config_util.URL{URL: proxyURL}},
 				},
 				ScrapeInterval: model.Duration(5 * time.Second),
 				ScrapeTimeout:  model.Duration(15 * time.Second),
@@ -2959,7 +2959,7 @@ func TestScrapeReportSingleAppender(t *testing.T) {
 
 		c := 0
 		for series.Next() {
-			i := series.At().Iterator()
+			i := series.At().Iterator(nil)
 			for i.Next() != chunkenc.ValNone {
 				c++
 			}
@@ -3032,7 +3032,7 @@ func TestScrapeReportLimit(t *testing.T) {
 
 	var found bool
 	for series.Next() {
-		i := series.At().Iterator()
+		i := series.At().Iterator(nil)
 		for i.Next() == chunkenc.ValFloat {
 			_, v := i.At()
 			require.Equal(t, 1.0, v)

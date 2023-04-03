@@ -93,12 +93,13 @@ func query(t testing.TB, q storage.Querier, matchers ...*labels.Matcher) map[str
 		require.NoError(t, q.Close())
 	}()
 
+	var it chunkenc.Iterator
 	result := map[string][]tsdbutil.Sample{}
 	for ss.Next() {
 		series := ss.At()
 
 		samples := []tsdbutil.Sample{}
-		it := series.Iterator()
+		it = series.Iterator(it)
 		for typ := it.Next(); typ != chunkenc.ValNone; typ = it.Next() {
 			switch typ {
 			case chunkenc.ValFloat:
@@ -107,6 +108,9 @@ func query(t testing.TB, q storage.Querier, matchers ...*labels.Matcher) map[str
 			case chunkenc.ValHistogram:
 				ts, h := it.AtHistogram()
 				samples = append(samples, sample{t: ts, h: h})
+			case chunkenc.ValFloatHistogram:
+				ts, fh := it.AtFloatHistogram()
+				samples = append(samples, sample{t: ts, fh: fh})
 			default:
 				t.Fatalf("unknown sample type in query %s", typ.String())
 			}
@@ -126,19 +130,38 @@ func query(t testing.TB, q storage.Querier, matchers ...*labels.Matcher) map[str
 	return result
 }
 
-// queryChunks runs a matcher query against the querier and fully expands its data.
+// queryAndExpandChunks runs a matcher query against the querier and fully expands its data into samples.
+func queryAndExpandChunks(t testing.TB, q storage.ChunkQuerier, matchers ...*labels.Matcher) map[string][][]tsdbutil.Sample {
+	s := queryChunks(t, q, matchers...)
+
+	res := make(map[string][][]tsdbutil.Sample)
+	for k, v := range s {
+		var samples [][]tsdbutil.Sample
+		for _, chk := range v {
+			sam, err := storage.ExpandSamples(chk.Chunk.Iterator(nil), nil)
+			require.NoError(t, err)
+			samples = append(samples, sam)
+		}
+		res[k] = samples
+	}
+
+	return res
+}
+
+// queryChunks runs a matcher query against the querier and expands its data.
 func queryChunks(t testing.TB, q storage.ChunkQuerier, matchers ...*labels.Matcher) map[string][]chunks.Meta {
 	ss := q.Select(false, nil, matchers...)
 	defer func() {
 		require.NoError(t, q.Close())
 	}()
 
+	var it chunks.Iterator
 	result := map[string][]chunks.Meta{}
 	for ss.Next() {
 		series := ss.At()
 
 		chks := []chunks.Meta{}
-		it := series.Iterator()
+		it = series.Iterator(it)
 		for it.Next() {
 			chks = append(chks, it.At())
 		}
@@ -454,8 +477,8 @@ Outer:
 
 			require.Equal(t, sexp.Labels(), sres.Labels())
 
-			smplExp, errExp := storage.ExpandSamples(sexp.Iterator(), nil)
-			smplRes, errRes := storage.ExpandSamples(sres.Iterator(), nil)
+			smplExp, errExp := storage.ExpandSamples(sexp.Iterator(nil), nil)
+			smplRes, errRes := storage.ExpandSamples(sres.Iterator(nil), nil)
 
 			require.Equal(t, errExp, errRes)
 			require.Equal(t, smplExp, smplRes)
@@ -463,7 +486,7 @@ Outer:
 	}
 }
 
-func TestAmendDatapointCausesError(t *testing.T) {
+func TestAmendHistogramDatapointCausesError(t *testing.T) {
 	db := openTestDB(t, nil, nil)
 	defer func() {
 		require.NoError(t, db.Close())
@@ -476,9 +499,9 @@ func TestAmendDatapointCausesError(t *testing.T) {
 	require.NoError(t, app.Commit())
 
 	app = db.Appender(ctx)
-	_, err = app.Append(0, labels.Labels{{Name: "a", Value: "b"}}, 0, 0)
+	_, err = app.Append(0, labels.FromStrings("a", "b"), 0, 0)
 	require.NoError(t, err)
-	_, err = app.Append(0, labels.Labels{{Name: "a", Value: "b"}}, 0, 1)
+	_, err = app.Append(0, labels.FromStrings("a", "b"), 0, 1)
 	require.Equal(t, storage.ErrDuplicateSampleForTimestamp, err)
 	require.NoError(t, app.Rollback())
 
@@ -494,17 +517,32 @@ func TestAmendDatapointCausesError(t *testing.T) {
 		},
 		PositiveBuckets: []int64{1, 2, -2, 1, -1, 0, 0},
 	}
+	fh := h.ToFloat()
 
 	app = db.Appender(ctx)
-	_, err = app.AppendHistogram(0, labels.Labels{{Name: "a", Value: "c"}}, 0, h.Copy())
+	_, err = app.AppendHistogram(0, labels.FromStrings("a", "c"), 0, h.Copy(), nil)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
 	app = db.Appender(ctx)
-	_, err = app.AppendHistogram(0, labels.Labels{{Name: "a", Value: "c"}}, 0, h.Copy())
+	_, err = app.AppendHistogram(0, labels.FromStrings("a", "c"), 0, h.Copy(), nil)
 	require.NoError(t, err)
 	h.Schema = 2
-	_, err = app.AppendHistogram(0, labels.Labels{{Name: "a", Value: "c"}}, 0, h.Copy())
+	_, err = app.AppendHistogram(0, labels.FromStrings("a", "c"), 0, h.Copy(), nil)
+	require.Equal(t, storage.ErrDuplicateSampleForTimestamp, err)
+	require.NoError(t, app.Rollback())
+
+	// Float histogram.
+	app = db.Appender(ctx)
+	_, err = app.AppendHistogram(0, labels.FromStrings("a", "d"), 0, nil, fh.Copy())
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	app = db.Appender(ctx)
+	_, err = app.AppendHistogram(0, labels.FromStrings("a", "d"), 0, nil, fh.Copy())
+	require.NoError(t, err)
+	fh.Schema = 2
+	_, err = app.AppendHistogram(0, labels.FromStrings("a", "d"), 0, nil, fh.Copy())
 	require.Equal(t, storage.ErrDuplicateSampleForTimestamp, err)
 	require.NoError(t, app.Rollback())
 }
@@ -628,9 +666,10 @@ func TestDB_Snapshot(t *testing.T) {
 
 	// sum values
 	seriesSet := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+	var series chunkenc.Iterator
 	sum := 0.0
 	for seriesSet.Next() {
-		series := seriesSet.At().Iterator()
+		series = seriesSet.At().Iterator(series)
 		for series.Next() == chunkenc.ValFloat {
 			_, v := series.At()
 			sum += v
@@ -676,9 +715,10 @@ func TestDB_Snapshot_ChunksOutsideOfCompactedRange(t *testing.T) {
 
 	// Sum values.
 	seriesSet := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+	var series chunkenc.Iterator
 	sum := 0.0
 	for seriesSet.Next() {
-		series := seriesSet.At().Iterator()
+		series = seriesSet.At().Iterator(series)
 		for series.Next() == chunkenc.ValFloat {
 			_, v := series.At()
 			sum += v
@@ -770,8 +810,8 @@ Outer:
 
 			require.Equal(t, sexp.Labels(), sres.Labels())
 
-			smplExp, errExp := storage.ExpandSamples(sexp.Iterator(), nil)
-			smplRes, errRes := storage.ExpandSamples(sres.Iterator(), nil)
+			smplExp, errExp := storage.ExpandSamples(sexp.Iterator(nil), nil)
+			smplRes, errRes := storage.ExpandSamples(sres.Iterator(nil), nil)
 
 			require.Equal(t, errExp, errRes)
 			require.Equal(t, smplExp, smplRes)
@@ -921,7 +961,7 @@ func TestDB_e2e(t *testing.T) {
 			for ss.Next() {
 				x := ss.At()
 
-				smpls, err := storage.ExpandSamples(x.Iterator(), newSample)
+				smpls, err := storage.ExpandSamples(x.Iterator(nil), newSample)
 				require.NoError(t, err)
 
 				if len(smpls) > 0 {
@@ -1108,12 +1148,13 @@ func testWALReplayRaceOnSamplesLoggedBeforeSeries(t *testing.T, numSamplesBefore
 
 	set := q.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "series_id", ".+"))
 	actualSeries := 0
+	var chunksIt chunks.Iterator
 
 	for set.Next() {
 		actualSeries++
 		actualChunks := 0
 
-		chunksIt := set.At().Iterator()
+		chunksIt = set.At().Iterator(chunksIt)
 		for chunksIt.Next() {
 			actualChunks++
 		}
@@ -1205,8 +1246,8 @@ func TestTombstoneClean(t *testing.T) {
 
 			require.Equal(t, sexp.Labels(), sres.Labels())
 
-			smplExp, errExp := storage.ExpandSamples(sexp.Iterator(), nil)
-			smplRes, errRes := storage.ExpandSamples(sres.Iterator(), nil)
+			smplExp, errExp := storage.ExpandSamples(sexp.Iterator(nil), nil)
+			smplRes, errRes := storage.ExpandSamples(sres.Iterator(nil), nil)
 
 			require.Equal(t, errExp, errRes)
 			require.Equal(t, smplExp, smplRes)
@@ -1479,11 +1520,12 @@ func TestSizeRetention(t *testing.T) {
 	// Add some data to the WAL.
 	headApp := db.Head().Appender(context.Background())
 	var aSeries labels.Labels
+	var it chunkenc.Iterator
 	for _, m := range headBlocks {
 		series := genSeries(100, 10, m.MinTime, m.MaxTime+1)
 		for _, s := range series {
 			aSeries = s.Labels()
-			it := s.Iterator()
+			it = s.Iterator(it)
 			for it.Next() == chunkenc.ValFloat {
 				tim, v := it.At()
 				_, err := headApp.Append(0, s.Labels(), tim, v)
@@ -1691,10 +1733,11 @@ func TestNotMatcherSelectsLabelsUnsetSeries(t *testing.T) {
 func expandSeriesSet(ss storage.SeriesSet) ([]labels.Labels, map[string][]sample, storage.Warnings, error) {
 	resultLabels := []labels.Labels{}
 	resultSamples := map[string][]sample{}
+	var it chunkenc.Iterator
 	for ss.Next() {
 		series := ss.At()
 		samples := []sample{}
-		it := series.Iterator()
+		it = series.Iterator(it)
 		for it.Next() == chunkenc.ValFloat {
 			t, v := it.At()
 			samples = append(samples, sample{t: t, v: v})
@@ -1823,6 +1866,8 @@ func TestChunkAtBlockBoundary(t *testing.T) {
 	err = db.Compact()
 	require.NoError(t, err)
 
+	var builder labels.ScratchBuilder
+
 	for _, block := range db.Blocks() {
 		r, err := block.Index()
 		require.NoError(t, err)
@@ -1834,15 +1879,12 @@ func TestChunkAtBlockBoundary(t *testing.T) {
 		p, err := r.Postings(k, v)
 		require.NoError(t, err)
 
-		var (
-			lset labels.Labels
-			chks []chunks.Meta
-		)
+		var chks []chunks.Meta
 
 		chunkCount := 0
 
 		for p.Next() {
-			err = r.Series(p.At(), &lset, &chks)
+			err = r.Series(p.At(), &builder, &chks)
 			require.NoError(t, err)
 			for _, c := range chks {
 				require.True(t, meta.MinTime <= c.MinTime && c.MaxTime <= meta.MaxTime,
@@ -2343,7 +2385,7 @@ func TestDBReadOnly(t *testing.T) {
 		logger    = log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
 		expBlocks []*Block
 		expSeries map[string][]tsdbutil.Sample
-		expChunks map[string][]chunks.Meta
+		expChunks map[string][][]tsdbutil.Sample
 		expDBHash []byte
 		matchAll  = labels.MustNewMatcher(labels.MatchEqual, "", "")
 		err       error
@@ -2394,7 +2436,7 @@ func TestDBReadOnly(t *testing.T) {
 		expSeries = query(t, q, matchAll)
 		cq, err := dbWritable.ChunkQuerier(context.TODO(), math.MinInt64, math.MaxInt64)
 		require.NoError(t, err)
-		expChunks = queryChunks(t, cq, matchAll)
+		expChunks = queryAndExpandChunks(t, cq, matchAll)
 
 		require.NoError(t, dbWritable.Close()) // Close here to allow getting the dir hash for windows.
 		expDBHash = testutil.DirHash(t, dbWritable.Dir())
@@ -2428,7 +2470,7 @@ func TestDBReadOnly(t *testing.T) {
 	t.Run("chunk querier", func(t *testing.T) {
 		cq, err := dbReadOnly.ChunkQuerier(context.TODO(), math.MinInt64, math.MaxInt64)
 		require.NoError(t, err)
-		readOnlySeries := queryChunks(t, cq, matchAll)
+		readOnlySeries := queryAndExpandChunks(t, cq, matchAll)
 		readOnlyDBHash := testutil.DirHash(t, dbDir)
 
 		require.Equal(t, len(expChunks), len(readOnlySeries), "total series mismatch")
@@ -2500,10 +2542,11 @@ func TestDBReadOnly_FlushWAL(t *testing.T) {
 
 	// Sum the values.
 	seriesSet := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, defaultLabelName, "flush"))
+	var series chunkenc.Iterator
 
 	sum := 0.0
 	for seriesSet.Next() {
-		series := seriesSet.At().Iterator()
+		series = seriesSet.At().Iterator(series)
 		for series.Next() == chunkenc.ValFloat {
 			_, v := series.At()
 			sum += v
@@ -2946,10 +2989,11 @@ func TestCompactHead(t *testing.T) {
 	defer func() { require.NoError(t, querier.Close()) }()
 
 	seriesSet := querier.Select(false, nil, &labels.Matcher{Type: labels.MatchEqual, Name: "a", Value: "b"})
+	var series chunkenc.Iterator
 	var actSamples []sample
 
 	for seriesSet.Next() {
-		series := seriesSet.At().Iterator()
+		series = seriesSet.At().Iterator(series)
 		for series.Next() == chunkenc.ValFloat {
 			time, val := series.At()
 			actSamples = append(actSamples, sample{int64(time), val, nil, nil})
@@ -3347,7 +3391,7 @@ func testQuerierShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks(t 
 		actualSeries++
 
 		// Get the iterator and call Next() so that we're sure the chunk is loaded.
-		it := seriesSet.At().Iterator()
+		it := seriesSet.At().Iterator(nil)
 		it.Next()
 		it.At()
 
@@ -3477,11 +3521,13 @@ func testChunkQuerierShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChun
 	seriesSet := querier.Select(true, hints, labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, ".+"))
 
 	// Iterate all series and get their chunks.
+	var it chunks.Iterator
 	var chunks []chunkenc.Chunk
 	actualSeries := 0
 	for seriesSet.Next() {
 		actualSeries++
-		for it := seriesSet.At().Iterator(); it.Next(); {
+		it = seriesSet.At().Iterator(it)
+		for it.Next() {
 			chunks = append(chunks, it.At().Chunk)
 		}
 	}
@@ -4067,8 +4113,7 @@ func TestOOOCompaction(t *testing.T) {
 		ms, created, err := db.head.getOrCreate(lbls.Hash(), lbls)
 		require.NoError(t, err)
 		require.False(t, created)
-		require.Nil(t, ms.oooHeadChunk)
-		require.Equal(t, 0, len(ms.oooMmappedChunks))
+		require.Nil(t, ms.ooo)
 	}
 	checkEmptyOOOChunk(series1)
 	checkEmptyOOOChunk(series2)
@@ -4110,8 +4155,8 @@ func TestOOOCompaction(t *testing.T) {
 		ms, created, err := db.head.getOrCreate(lbls.Hash(), lbls)
 		require.NoError(t, err)
 		require.False(t, created)
-		require.Greater(t, ms.oooHeadChunk.chunk.NumSamples(), 0)
-		require.Equal(t, 14, len(ms.oooMmappedChunks)) // 7 original, 7 duplicate.
+		require.Greater(t, ms.ooo.oooHeadChunk.chunk.NumSamples(), 0)
+		require.Equal(t, 14, len(ms.ooo.oooMmappedChunks)) // 7 original, 7 duplicate.
 	}
 	checkNonEmptyOOOChunk(series1)
 	checkNonEmptyOOOChunk(series2)
@@ -4250,7 +4295,7 @@ func TestOOOCompactionWithNormalCompaction(t *testing.T) {
 		ms, created, err := db.head.getOrCreate(lbls.Hash(), lbls)
 		require.NoError(t, err)
 		require.False(t, created)
-		require.Greater(t, ms.oooHeadChunk.chunk.NumSamples(), 0)
+		require.Greater(t, ms.ooo.oooHeadChunk.chunk.NumSamples(), 0)
 	}
 
 	// If the normal Head is not compacted, the OOO head compaction does not take place.
@@ -4278,8 +4323,107 @@ func TestOOOCompactionWithNormalCompaction(t *testing.T) {
 		ms, created, err := db.head.getOrCreate(lbls.Hash(), lbls)
 		require.NoError(t, err)
 		require.False(t, created)
-		require.Nil(t, ms.oooHeadChunk)
-		require.Equal(t, 0, len(ms.oooMmappedChunks))
+		require.Nil(t, ms.ooo)
+	}
+
+	verifySamples := func(block *Block, fromMins, toMins int64) {
+		series1Samples := make([]tsdbutil.Sample, 0, toMins-fromMins+1)
+		series2Samples := make([]tsdbutil.Sample, 0, toMins-fromMins+1)
+		for min := fromMins; min <= toMins; min++ {
+			ts := min * time.Minute.Milliseconds()
+			series1Samples = append(series1Samples, sample{ts, float64(ts), nil, nil})
+			series2Samples = append(series2Samples, sample{ts, float64(2 * ts), nil, nil})
+		}
+		expRes := map[string][]tsdbutil.Sample{
+			series1.String(): series1Samples,
+			series2.String(): series2Samples,
+		}
+
+		q, err := NewBlockQuerier(block, math.MinInt64, math.MaxInt64)
+		require.NoError(t, err)
+
+		actRes := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
+		require.Equal(t, expRes, actRes)
+	}
+
+	// Checking for expected data in the blocks.
+	verifySamples(db.Blocks()[0], 90, 110)
+	verifySamples(db.Blocks()[1], 250, 350)
+}
+
+// TestOOOCompactionWithDisabledWriteLog tests the scenario where the TSDB is
+// configured to not have wal and wbl but its able to compact both the in-order
+// and out-of-order head
+func TestOOOCompactionWithDisabledWriteLog(t *testing.T) {
+	dir := t.TempDir()
+
+	opts := DefaultOptions()
+	opts.OutOfOrderCapMax = 30
+	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
+	opts.WALSegmentSize = -1 // disabled WAL and WBL
+
+	db, err := Open(dir, nil, nil, opts, nil)
+	require.NoError(t, err)
+	db.DisableCompactions() // We want to manually call it.
+	t.Cleanup(func() {
+		require.NoError(t, db.Close())
+	})
+
+	series1 := labels.FromStrings("foo", "bar1")
+	series2 := labels.FromStrings("foo", "bar2")
+
+	addSamples := func(fromMins, toMins int64) {
+		app := db.Appender(context.Background())
+		for min := fromMins; min <= toMins; min++ {
+			ts := min * time.Minute.Milliseconds()
+			_, err := app.Append(0, series1, ts, float64(ts))
+			require.NoError(t, err)
+			_, err = app.Append(0, series2, ts, float64(2*ts))
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+	}
+
+	// Add an in-order samples.
+	addSamples(250, 350)
+
+	// Add ooo samples that will result into a single block.
+	addSamples(90, 110)
+
+	// Checking that ooo chunk is not empty.
+	for _, lbls := range []labels.Labels{series1, series2} {
+		ms, created, err := db.head.getOrCreate(lbls.Hash(), lbls)
+		require.NoError(t, err)
+		require.False(t, created)
+		require.Greater(t, ms.ooo.oooHeadChunk.chunk.NumSamples(), 0)
+	}
+
+	// If the normal Head is not compacted, the OOO head compaction does not take place.
+	require.NoError(t, db.Compact())
+	require.Equal(t, len(db.Blocks()), 0)
+
+	// Add more in-order samples in future that would trigger the compaction.
+	addSamples(400, 450)
+
+	// No blocks before compaction.
+	require.Equal(t, len(db.Blocks()), 0)
+
+	// Compacts normal and OOO head.
+	require.NoError(t, db.Compact())
+
+	// 2 blocks exist now. [0, 120), [250, 360)
+	require.Equal(t, len(db.Blocks()), 2)
+	require.Equal(t, int64(0), db.Blocks()[0].MinTime())
+	require.Equal(t, 120*time.Minute.Milliseconds(), db.Blocks()[0].MaxTime())
+	require.Equal(t, 250*time.Minute.Milliseconds(), db.Blocks()[1].MinTime())
+	require.Equal(t, 360*time.Minute.Milliseconds(), db.Blocks()[1].MaxTime())
+
+	// Checking that ooo chunk is empty.
+	for _, lbls := range []labels.Labels{series1, series2} {
+		ms, created, err := db.head.getOrCreate(lbls.Hash(), lbls)
+		require.NoError(t, err)
+		require.False(t, created)
+		require.Nil(t, ms.ooo)
 	}
 
 	verifySamples := func(block *Block, fromMins, toMins int64) {
@@ -4672,8 +4816,7 @@ func TestOOODisabled(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, created)
 	require.NotNil(t, ms)
-	require.Nil(t, ms.oooHeadChunk)
-	require.Len(t, ms.oooMmappedChunks, 0)
+	require.Nil(t, ms.ooo)
 }
 
 func TestWBLAndMmapReplay(t *testing.T) {
@@ -4737,7 +4880,7 @@ func TestWBLAndMmapReplay(t *testing.T) {
 	require.False(t, created)
 	require.NoError(t, err)
 	var s1MmapSamples []tsdbutil.Sample
-	for _, mc := range ms.oooMmappedChunks {
+	for _, mc := range ms.ooo.oooMmappedChunks {
 		chk, err := db.head.chunkDiskMapper.Chunk(mc.ref)
 		require.NoError(t, err)
 		it := chk.Iterator(nil)
@@ -4944,8 +5087,7 @@ func TestOOOCompactionFailure(t *testing.T) {
 	ms, created, err := db.head.getOrCreate(series1.Hash(), series1)
 	require.NoError(t, err)
 	require.False(t, created)
-	require.Nil(t, ms.oooHeadChunk)
-	require.Len(t, ms.oooMmappedChunks, 0)
+	require.Nil(t, ms.ooo)
 
 	// The failed compaction should not have left the ooo Head corrupted.
 	// Hence, expect no new blocks with another OOO compaction call.
@@ -5750,7 +5892,7 @@ func TestDiskFillingUpAfterDisablingOOO(t *testing.T) {
 	db.DisableCompactions()
 
 	ms := db.head.series.getByHash(series1.Hash(), series1)
-	require.Greater(t, len(ms.oooMmappedChunks), 0, "OOO mmap chunk was not replayed")
+	require.Greater(t, len(ms.ooo.oooMmappedChunks), 0, "OOO mmap chunk was not replayed")
 
 	checkMmapFileContents := func(contains, notContains []string) {
 		mmapDir := mmappedChunksDir(db.head.opts.ChunkDirRoot)
@@ -5778,7 +5920,7 @@ func TestDiskFillingUpAfterDisablingOOO(t *testing.T) {
 	checkMmapFileContents([]string{"000001", "000002"}, nil)
 	require.NoError(t, db.Compact())
 	checkMmapFileContents([]string{"000002"}, []string{"000001"})
-	require.Equal(t, 0, len(ms.oooMmappedChunks), "OOO mmap chunk was not compacted")
+	require.Nil(t, ms.ooo, "OOO mmap chunk was not compacted")
 
 	addSamples(501, 650)
 	checkMmapFileContents([]string{"000002", "000003"}, []string{"000001"})
@@ -5795,6 +5937,16 @@ func TestDiskFillingUpAfterDisablingOOO(t *testing.T) {
 }
 
 func TestHistogramAppendAndQuery(t *testing.T) {
+	t.Run("integer histograms", func(t *testing.T) {
+		testHistogramAppendAndQueryHelper(t, false)
+	})
+	t.Run("float histograms", func(t *testing.T) {
+		testHistogramAppendAndQueryHelper(t, true)
+	})
+}
+
+func testHistogramAppendAndQueryHelper(t *testing.T, floatHistogram bool) {
+	t.Helper()
 	db := openTestDB(t, nil, nil)
 	minute := func(m int) int64 { return int64(m) * time.Minute.Milliseconds() }
 	t.Cleanup(func() {
@@ -5802,13 +5954,26 @@ func TestHistogramAppendAndQuery(t *testing.T) {
 	})
 
 	ctx := context.Background()
-	appendHistogram := func(lbls labels.Labels, tsMinute int, h *histogram.Histogram, exp *[]tsdbutil.Sample) {
+	appendHistogram := func(
+		lbls labels.Labels, tsMinute int, h *histogram.Histogram,
+		exp *[]tsdbutil.Sample, expCRH histogram.CounterResetHint,
+	) {
 		t.Helper()
+		var err error
 		app := db.Appender(ctx)
-		_, err := app.AppendHistogram(0, lbls, minute(tsMinute), h)
+		if floatHistogram {
+			_, err = app.AppendHistogram(0, lbls, minute(tsMinute), nil, h.ToFloat())
+			efh := h.ToFloat()
+			efh.CounterResetHint = expCRH
+			*exp = append(*exp, sample{t: minute(tsMinute), fh: efh})
+		} else {
+			_, err = app.AppendHistogram(0, lbls, minute(tsMinute), h.Copy(), nil)
+			eh := h.Copy()
+			eh.CounterResetHint = expCRH
+			*exp = append(*exp, sample{t: minute(tsMinute), h: eh})
+		}
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
-		*exp = append(*exp, sample{t: minute(tsMinute), h: h.Copy()})
 	}
 	appendFloat := func(lbls labels.Labels, tsMinute int, val float64, exp *[]tsdbutil.Sample) {
 		t.Helper()
@@ -5857,23 +6022,23 @@ func TestHistogramAppendAndQuery(t *testing.T) {
 	t.Run("series with only histograms", func(t *testing.T) {
 		h := baseH.Copy() // This is shared across all sub tests.
 
-		appendHistogram(series1, 100, h.Copy(), &exp1)
+		appendHistogram(series1, 100, h, &exp1, histogram.UnknownCounterReset)
 		testQuery("foo", "bar1", map[string][]tsdbutil.Sample{series1.String(): exp1})
 
 		h.PositiveBuckets[0]++
 		h.NegativeBuckets[0] += 2
 		h.Count += 10
-		appendHistogram(series1, 101, h.Copy(), &exp1)
+		appendHistogram(series1, 101, h, &exp1, histogram.NotCounterReset)
 		testQuery("foo", "bar1", map[string][]tsdbutil.Sample{series1.String(): exp1})
 
 		t.Run("changing schema", func(t *testing.T) {
 			h.Schema = 2
-			appendHistogram(series1, 102, h.Copy(), &exp1)
+			appendHistogram(series1, 102, h, &exp1, histogram.UnknownCounterReset)
 			testQuery("foo", "bar1", map[string][]tsdbutil.Sample{series1.String(): exp1})
 
 			// Schema back to old.
 			h.Schema = 1
-			appendHistogram(series1, 103, h.Copy(), &exp1)
+			appendHistogram(series1, 103, h, &exp1, histogram.UnknownCounterReset)
 			testQuery("foo", "bar1", map[string][]tsdbutil.Sample{series1.String(): exp1})
 		})
 
@@ -5884,10 +6049,17 @@ func TestHistogramAppendAndQuery(t *testing.T) {
 			// because the chunk will be re-encoded. So this forces us to modify
 			// the last histogram in exp1 so when we query we get the expected
 			// results.
-			lh := exp1[len(exp1)-1].H().Copy()
-			lh.PositiveSpans[1].Length++
-			lh.PositiveBuckets = append(lh.PositiveBuckets, -2) // -2 makes the last bucket 0.
-			exp1[len(exp1)-1] = sample{t: exp1[len(exp1)-1].T(), h: lh}
+			if floatHistogram {
+				lh := exp1[len(exp1)-1].FH().Copy()
+				lh.PositiveSpans[1].Length++
+				lh.PositiveBuckets = append(lh.PositiveBuckets, 0)
+				exp1[len(exp1)-1] = sample{t: exp1[len(exp1)-1].T(), fh: lh}
+			} else {
+				lh := exp1[len(exp1)-1].H().Copy()
+				lh.PositiveSpans[1].Length++
+				lh.PositiveBuckets = append(lh.PositiveBuckets, -2) // -2 makes the last bucket 0.
+				exp1[len(exp1)-1] = sample{t: exp1[len(exp1)-1].T(), h: lh}
+			}
 
 			// This histogram with new bucket at the end causes the re-encoding of the previous histogram.
 			// Hence the previous histogram is recoded into this new layout.
@@ -5895,23 +6067,37 @@ func TestHistogramAppendAndQuery(t *testing.T) {
 			h.PositiveSpans[1].Length++
 			h.PositiveBuckets = append(h.PositiveBuckets, 1)
 			h.Count += 3
-			appendHistogram(series1, 104, h.Copy(), &exp1)
+			appendHistogram(series1, 104, h, &exp1, histogram.NotCounterReset)
 			testQuery("foo", "bar1", map[string][]tsdbutil.Sample{series1.String(): exp1})
 
 			// Because of the previous two histograms being on the active chunk,
 			// and the next append is only adding a new bucket, the active chunk
 			// will be re-encoded to the new layout.
-			lh = exp1[len(exp1)-2].H().Copy()
-			lh.PositiveSpans[0].Length++
-			lh.PositiveSpans[1].Offset--
-			lh.PositiveBuckets = []int64{2, 1, -3, 2, 0, -2}
-			exp1[len(exp1)-2] = sample{t: exp1[len(exp1)-2].T(), h: lh}
+			if floatHistogram {
+				lh := exp1[len(exp1)-2].FH().Copy()
+				lh.PositiveSpans[0].Length++
+				lh.PositiveSpans[1].Offset--
+				lh.PositiveBuckets = []float64{2, 3, 0, 2, 2, 0}
+				exp1[len(exp1)-2] = sample{t: exp1[len(exp1)-2].T(), fh: lh}
 
-			lh = exp1[len(exp1)-1].H().Copy()
-			lh.PositiveSpans[0].Length++
-			lh.PositiveSpans[1].Offset--
-			lh.PositiveBuckets = []int64{2, 1, -3, 2, 0, 1}
-			exp1[len(exp1)-1] = sample{t: exp1[len(exp1)-1].T(), h: lh}
+				lh = exp1[len(exp1)-1].FH().Copy()
+				lh.PositiveSpans[0].Length++
+				lh.PositiveSpans[1].Offset--
+				lh.PositiveBuckets = []float64{2, 3, 0, 2, 2, 3}
+				exp1[len(exp1)-1] = sample{t: exp1[len(exp1)-1].T(), fh: lh}
+			} else {
+				lh := exp1[len(exp1)-2].H().Copy()
+				lh.PositiveSpans[0].Length++
+				lh.PositiveSpans[1].Offset--
+				lh.PositiveBuckets = []int64{2, 1, -3, 2, 0, -2}
+				exp1[len(exp1)-2] = sample{t: exp1[len(exp1)-2].T(), h: lh}
+
+				lh = exp1[len(exp1)-1].H().Copy()
+				lh.PositiveSpans[0].Length++
+				lh.PositiveSpans[1].Offset--
+				lh.PositiveBuckets = []int64{2, 1, -3, 2, 0, 1}
+				exp1[len(exp1)-1] = sample{t: exp1[len(exp1)-1].T(), h: lh}
+			}
 
 			// Now we add the new buckets in between. Empty bucket is again not present for the old histogram.
 			h.PositiveSpans[0].Length++
@@ -5919,26 +6105,39 @@ func TestHistogramAppendAndQuery(t *testing.T) {
 			h.Count += 3
 			// {2, 1, -1, 0, 1} -> {2, 1, 0, -1, 0, 1}
 			h.PositiveBuckets = append(h.PositiveBuckets[:2], append([]int64{0}, h.PositiveBuckets[2:]...)...)
-			appendHistogram(series1, 105, h.Copy(), &exp1)
+			appendHistogram(series1, 105, h, &exp1, histogram.NotCounterReset)
 			testQuery("foo", "bar1", map[string][]tsdbutil.Sample{series1.String(): exp1})
 
 			// We add 4 more histograms to clear out the buffer and see the re-encoded histograms.
-			appendHistogram(series1, 106, h.Copy(), &exp1)
-			appendHistogram(series1, 107, h.Copy(), &exp1)
-			appendHistogram(series1, 108, h.Copy(), &exp1)
-			appendHistogram(series1, 109, h.Copy(), &exp1)
+			appendHistogram(series1, 106, h, &exp1, histogram.NotCounterReset)
+			appendHistogram(series1, 107, h, &exp1, histogram.NotCounterReset)
+			appendHistogram(series1, 108, h, &exp1, histogram.NotCounterReset)
+			appendHistogram(series1, 109, h, &exp1, histogram.NotCounterReset)
 
 			// Update the expected histograms to reflect the re-encoding.
-			l := len(exp1)
-			h7 := exp1[l-7].H()
-			h7.PositiveSpans = exp1[l-1].H().PositiveSpans
-			h7.PositiveBuckets = []int64{2, 1, -3, 2, 0, -2} // -3 and -2 are the empty buckets.
-			exp1[l-7] = sample{t: exp1[l-7].T(), h: h7}
+			if floatHistogram {
+				l := len(exp1)
+				h7 := exp1[l-7].FH()
+				h7.PositiveSpans = exp1[l-1].FH().PositiveSpans
+				h7.PositiveBuckets = []float64{2, 3, 0, 2, 2, 0}
+				exp1[l-7] = sample{t: exp1[l-7].T(), fh: h7}
 
-			h6 := exp1[l-6].H()
-			h6.PositiveSpans = exp1[l-1].H().PositiveSpans
-			h6.PositiveBuckets = []int64{2, 1, -3, 2, 0, 1} // -3 is the empty bucket.
-			exp1[l-6] = sample{t: exp1[l-6].T(), h: h6}
+				h6 := exp1[l-6].FH()
+				h6.PositiveSpans = exp1[l-1].FH().PositiveSpans
+				h6.PositiveBuckets = []float64{2, 3, 0, 2, 2, 3}
+				exp1[l-6] = sample{t: exp1[l-6].T(), fh: h6}
+			} else {
+				l := len(exp1)
+				h7 := exp1[l-7].H()
+				h7.PositiveSpans = exp1[l-1].H().PositiveSpans
+				h7.PositiveBuckets = []int64{2, 1, -3, 2, 0, -2} // -3 and -2 are the empty buckets.
+				exp1[l-7] = sample{t: exp1[l-7].T(), h: h7}
+
+				h6 := exp1[l-6].H()
+				h6.PositiveSpans = exp1[l-1].H().PositiveSpans
+				h6.PositiveBuckets = []int64{2, 1, -3, 2, 0, 1} // -3 is the empty bucket.
+				exp1[l-6] = sample{t: exp1[l-6].T(), h: h6}
+			}
 
 			testQuery("foo", "bar1", map[string][]tsdbutil.Sample{series1.String(): exp1})
 		})
@@ -5946,7 +6145,7 @@ func TestHistogramAppendAndQuery(t *testing.T) {
 		t.Run("buckets disappearing", func(t *testing.T) {
 			h.PositiveSpans[1].Length--
 			h.PositiveBuckets = h.PositiveBuckets[:len(h.PositiveBuckets)-1]
-			appendHistogram(series1, 110, h.Copy(), &exp1)
+			appendHistogram(series1, 110, h, &exp1, histogram.CounterReset)
 			testQuery("foo", "bar1", map[string][]tsdbutil.Sample{series1.String(): exp1})
 		})
 	})
@@ -5958,9 +6157,9 @@ func TestHistogramAppendAndQuery(t *testing.T) {
 		testQuery("foo", "bar2", map[string][]tsdbutil.Sample{series2.String(): exp2})
 
 		h := baseH.Copy()
-		appendHistogram(series2, 103, h.Copy(), &exp2)
-		appendHistogram(series2, 104, h.Copy(), &exp2)
-		appendHistogram(series2, 105, h.Copy(), &exp2)
+		appendHistogram(series2, 103, h, &exp2, histogram.UnknownCounterReset)
+		appendHistogram(series2, 104, h, &exp2, histogram.NotCounterReset)
+		appendHistogram(series2, 105, h, &exp2, histogram.NotCounterReset)
 		testQuery("foo", "bar2", map[string][]tsdbutil.Sample{series2.String(): exp2})
 
 		// Switching between float and histograms again.
@@ -5968,16 +6167,16 @@ func TestHistogramAppendAndQuery(t *testing.T) {
 		appendFloat(series2, 107, 107, &exp2)
 		testQuery("foo", "bar2", map[string][]tsdbutil.Sample{series2.String(): exp2})
 
-		appendHistogram(series2, 108, h.Copy(), &exp2)
-		appendHistogram(series2, 109, h.Copy(), &exp2)
+		appendHistogram(series2, 108, h, &exp2, histogram.UnknownCounterReset)
+		appendHistogram(series2, 109, h, &exp2, histogram.NotCounterReset)
 		testQuery("foo", "bar2", map[string][]tsdbutil.Sample{series2.String(): exp2})
 	})
 
 	t.Run("series starting with histogram and then getting float", func(t *testing.T) {
 		h := baseH.Copy()
-		appendHistogram(series3, 101, h.Copy(), &exp3)
-		appendHistogram(series3, 102, h.Copy(), &exp3)
-		appendHistogram(series3, 103, h.Copy(), &exp3)
+		appendHistogram(series3, 101, h, &exp3, histogram.UnknownCounterReset)
+		appendHistogram(series3, 102, h, &exp3, histogram.NotCounterReset)
+		appendHistogram(series3, 103, h, &exp3, histogram.NotCounterReset)
 		testQuery("foo", "bar3", map[string][]tsdbutil.Sample{series3.String(): exp3})
 
 		appendFloat(series3, 104, 100, &exp3)
@@ -5986,8 +6185,8 @@ func TestHistogramAppendAndQuery(t *testing.T) {
 		testQuery("foo", "bar3", map[string][]tsdbutil.Sample{series3.String(): exp3})
 
 		// Switching between histogram and float again.
-		appendHistogram(series3, 107, h.Copy(), &exp3)
-		appendHistogram(series3, 108, h.Copy(), &exp3)
+		appendHistogram(series3, 107, h, &exp3, histogram.UnknownCounterReset)
+		appendHistogram(series3, 108, h, &exp3, histogram.NotCounterReset)
 		testQuery("foo", "bar3", map[string][]tsdbutil.Sample{series3.String(): exp3})
 
 		appendFloat(series3, 109, 106, &exp3)
@@ -6017,7 +6216,7 @@ func TestQueryHistogramFromBlocksWithCompaction(t *testing.T) {
 		t.Helper()
 
 		opts := DefaultOptions()
-		opts.AllowOverlappingCompaction = true // TODO(jesus.vazquez) This replaced AllowOverlappingBlocks, make sure that works
+		opts.AllowOverlappingCompaction = true // TODO(jesusvazquez): This replaced AllowOverlappingBlocks, make sure that works.
 		db := openTestDB(t, opts, nil)
 		t.Cleanup(func() {
 			require.NoError(t, db.Close())
@@ -6025,13 +6224,14 @@ func TestQueryHistogramFromBlocksWithCompaction(t *testing.T) {
 
 		ctx := context.Background()
 
+		var it chunkenc.Iterator
 		exp := make(map[string][]tsdbutil.Sample)
 		for _, series := range blockSeries {
 			createBlock(t, db.Dir(), series)
 
 			for _, s := range series {
 				key := s.Labels().String()
-				it := s.Iterator()
+				it = s.Iterator(it)
 				slice := exp[key]
 				for typ := it.Next(); typ != chunkenc.ValNone; typ = it.Next() {
 					switch typ {
@@ -6041,6 +6241,11 @@ func TestQueryHistogramFromBlocksWithCompaction(t *testing.T) {
 					case chunkenc.ValHistogram:
 						ts, h := it.AtHistogram()
 						slice = append(slice, sample{t: ts, h: h})
+					case chunkenc.ValFloatHistogram:
+						ts, h := it.AtFloatHistogram()
+						slice = append(slice, sample{t: ts, fh: h})
+					default:
+						t.Fatalf("unexpected sample value type %d", typ)
 					}
 				}
 				sort.Slice(slice, func(i, j int) bool {
@@ -6057,7 +6262,7 @@ func TestQueryHistogramFromBlocksWithCompaction(t *testing.T) {
 		q, err := db.Querier(ctx, math.MinInt64, math.MaxInt64)
 		require.NoError(t, err)
 		res := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
-		require.Equal(t, exp, res)
+		compareSeries(t, exp, res)
 
 		// Compact all the blocks together and query again.
 		blocks := db.Blocks()
@@ -6074,66 +6279,83 @@ func TestQueryHistogramFromBlocksWithCompaction(t *testing.T) {
 		q, err = db.Querier(ctx, math.MinInt64, math.MaxInt64)
 		require.NoError(t, err)
 		res = query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
-		require.Equal(t, exp, res)
+
+		// After compaction, we do not require "unknown" counter resets
+		// due to origin from different overlapping chunks anymore.
+		for _, ss := range exp {
+			for i, s := range ss[1:] {
+				if s.H() != nil && ss[i].H() != nil && s.H().CounterResetHint == histogram.UnknownCounterReset {
+					s.H().CounterResetHint = histogram.NotCounterReset
+				}
+				if s.FH() != nil && ss[i].FH() != nil && s.FH().CounterResetHint == histogram.UnknownCounterReset {
+					s.FH().CounterResetHint = histogram.NotCounterReset
+				}
+			}
+		}
+		compareSeries(t, exp, res)
 	}
 
-	t.Run("serial blocks with only histograms", func(t *testing.T) {
-		testBlockQuerying(t,
-			genHistogramSeries(10, 5, minute(0), minute(119), minute(1)),
-			genHistogramSeries(10, 5, minute(120), minute(239), minute(1)),
-			genHistogramSeries(10, 5, minute(240), minute(359), minute(1)),
-		)
-	})
+	for _, floatHistogram := range []bool{false, true} {
+		t.Run(fmt.Sprintf("floatHistogram=%t", floatHistogram), func(t *testing.T) {
+			t.Run("serial blocks with only histograms", func(t *testing.T) {
+				testBlockQuerying(t,
+					genHistogramSeries(10, 5, minute(0), minute(119), minute(1), floatHistogram),
+					genHistogramSeries(10, 5, minute(120), minute(239), minute(1), floatHistogram),
+					genHistogramSeries(10, 5, minute(240), minute(359), minute(1), floatHistogram),
+				)
+			})
 
-	t.Run("serial blocks with either histograms or floats in a block and not both", func(t *testing.T) {
-		testBlockQuerying(t,
-			genHistogramSeries(10, 5, minute(0), minute(119), minute(1)),
-			genSeriesFromSampleGenerator(10, 5, minute(120), minute(239), minute(1), func(ts int64) tsdbutil.Sample {
-				return sample{t: ts, v: rand.Float64()}
-			}),
-			genHistogramSeries(10, 5, minute(240), minute(359), minute(1)),
-		)
-	})
+			t.Run("serial blocks with either histograms or floats in a block and not both", func(t *testing.T) {
+				testBlockQuerying(t,
+					genHistogramSeries(10, 5, minute(0), minute(119), minute(1), floatHistogram),
+					genSeriesFromSampleGenerator(10, 5, minute(120), minute(239), minute(1), func(ts int64) tsdbutil.Sample {
+						return sample{t: ts, v: rand.Float64()}
+					}),
+					genHistogramSeries(10, 5, minute(240), minute(359), minute(1), floatHistogram),
+				)
+			})
 
-	t.Run("serial blocks with mix of histograms and float64", func(t *testing.T) {
-		testBlockQuerying(t,
-			genHistogramAndFloatSeries(10, 5, minute(0), minute(60), minute(1)),
-			genHistogramSeries(10, 5, minute(61), minute(120), minute(1)),
-			genHistogramAndFloatSeries(10, 5, minute(121), minute(180), minute(1)),
-			genSeriesFromSampleGenerator(10, 5, minute(181), minute(240), minute(1), func(ts int64) tsdbutil.Sample {
-				return sample{t: ts, v: rand.Float64()}
-			}),
-		)
-	})
+			t.Run("serial blocks with mix of histograms and float64", func(t *testing.T) {
+				testBlockQuerying(t,
+					genHistogramAndFloatSeries(10, 5, minute(0), minute(60), minute(1), floatHistogram),
+					genHistogramSeries(10, 5, minute(61), minute(120), minute(1), floatHistogram),
+					genHistogramAndFloatSeries(10, 5, minute(121), minute(180), minute(1), floatHistogram),
+					genSeriesFromSampleGenerator(10, 5, minute(181), minute(240), minute(1), func(ts int64) tsdbutil.Sample {
+						return sample{t: ts, v: rand.Float64()}
+					}),
+				)
+			})
 
-	t.Run("overlapping blocks with only histograms", func(t *testing.T) {
-		testBlockQuerying(t,
-			genHistogramSeries(10, 5, minute(0), minute(120), minute(3)),
-			genHistogramSeries(10, 5, minute(1), minute(120), minute(3)),
-			genHistogramSeries(10, 5, minute(2), minute(120), minute(3)),
-		)
-	})
+			t.Run("overlapping blocks with only histograms", func(t *testing.T) {
+				testBlockQuerying(t,
+					genHistogramSeries(10, 5, minute(0), minute(120), minute(3), floatHistogram),
+					genHistogramSeries(10, 5, minute(1), minute(120), minute(3), floatHistogram),
+					genHistogramSeries(10, 5, minute(2), minute(120), minute(3), floatHistogram),
+				)
+			})
 
-	t.Run("overlapping blocks with only histograms and only float in a series", func(t *testing.T) {
-		testBlockQuerying(t,
-			genHistogramSeries(10, 5, minute(0), minute(120), minute(3)),
-			genSeriesFromSampleGenerator(10, 5, minute(1), minute(120), minute(3), func(ts int64) tsdbutil.Sample {
-				return sample{t: ts, v: rand.Float64()}
-			}),
-			genHistogramSeries(10, 5, minute(2), minute(120), minute(3)),
-		)
-	})
+			t.Run("overlapping blocks with only histograms and only float in a series", func(t *testing.T) {
+				testBlockQuerying(t,
+					genHistogramSeries(10, 5, minute(0), minute(120), minute(3), floatHistogram),
+					genSeriesFromSampleGenerator(10, 5, minute(1), minute(120), minute(3), func(ts int64) tsdbutil.Sample {
+						return sample{t: ts, v: rand.Float64()}
+					}),
+					genHistogramSeries(10, 5, minute(2), minute(120), minute(3), floatHistogram),
+				)
+			})
 
-	t.Run("overlapping blocks with mix of histograms and float64", func(t *testing.T) {
-		testBlockQuerying(t,
-			genHistogramAndFloatSeries(10, 5, minute(0), minute(60), minute(3)),
-			genHistogramSeries(10, 5, minute(46), minute(100), minute(3)),
-			genHistogramAndFloatSeries(10, 5, minute(89), minute(140), minute(3)),
-			genSeriesFromSampleGenerator(10, 5, minute(126), minute(200), minute(3), func(ts int64) tsdbutil.Sample {
-				return sample{t: ts, v: rand.Float64()}
-			}),
-		)
-	})
+			t.Run("overlapping blocks with mix of histograms and float64", func(t *testing.T) {
+				testBlockQuerying(t,
+					genHistogramAndFloatSeries(10, 5, minute(0), minute(60), minute(3), floatHistogram),
+					genHistogramSeries(10, 5, minute(46), minute(100), minute(3), floatHistogram),
+					genHistogramAndFloatSeries(10, 5, minute(89), minute(140), minute(3), floatHistogram),
+					genSeriesFromSampleGenerator(10, 5, minute(126), minute(200), minute(3), func(ts int64) tsdbutil.Sample {
+						return sample{t: ts, v: rand.Float64()}
+					}),
+				)
+			})
+		})
+	}
 }
 
 func TestNativeHistogramFlag(t *testing.T) {
@@ -6161,16 +6383,22 @@ func TestNativeHistogramFlag(t *testing.T) {
 	app := db.Appender(context.Background())
 
 	// Disabled by default.
-	_, err = app.AppendHistogram(0, l, 100, h)
+	_, err = app.AppendHistogram(0, l, 100, h, nil)
+	require.Equal(t, storage.ErrNativeHistogramsDisabled, err)
+	_, err = app.AppendHistogram(0, l, 105, nil, h.ToFloat())
 	require.Equal(t, storage.ErrNativeHistogramsDisabled, err)
 
 	// Enable and append.
 	db.EnableNativeHistograms()
-	_, err = app.AppendHistogram(0, l, 200, h)
+	_, err = app.AppendHistogram(0, l, 200, h, nil)
+	require.NoError(t, err)
+	_, err = app.AppendHistogram(0, l, 205, nil, h.ToFloat())
 	require.NoError(t, err)
 
 	db.DisableNativeHistograms()
-	_, err = app.AppendHistogram(0, l, 300, h)
+	_, err = app.AppendHistogram(0, l, 300, h, nil)
+	require.Equal(t, storage.ErrNativeHistogramsDisabled, err)
+	_, err = app.AppendHistogram(0, l, 305, nil, h.ToFloat())
 	require.Equal(t, storage.ErrNativeHistogramsDisabled, err)
 
 	require.NoError(t, app.Commit())
@@ -6178,5 +6406,122 @@ func TestNativeHistogramFlag(t *testing.T) {
 	q, err := db.Querier(context.Background(), math.MinInt, math.MaxInt64)
 	require.NoError(t, err)
 	act := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
-	require.Equal(t, map[string][]tsdbutil.Sample{l.String(): {sample{t: 200, h: h}}}, act)
+	require.Equal(t, map[string][]tsdbutil.Sample{
+		l.String(): {sample{t: 200, h: h}, sample{t: 205, fh: h.ToFloat()}},
+	}, act)
+}
+
+// compareSeries essentially replaces `require.Equal(t, expected, actual) in
+// situations where the actual series might contain more counter reset hints
+// "unknown" than the expected series. This can easily happen for long series
+// that trigger new chunks. This function therefore tolerates counter reset
+// hints "CounterReset" and "NotCounterReset" in an expected series where the
+// actual series contains a counter reset hint "UnknownCounterReset".
+// "GaugeType" hints are still strictly checked, and any "UnknownCounterReset"
+// in an expected series has to be matched precisely by the actual series.
+func compareSeries(t require.TestingT, expected, actual map[string][]tsdbutil.Sample) {
+	if len(expected) != len(actual) {
+		// The reason for the difference is not the counter reset hints
+		// (alone), so let's use the pretty diffing by the require
+		// package.
+		require.Equal(t, expected, actual, "number of series differs")
+	}
+	for key, eSamples := range expected {
+		aSamples, ok := actual[key]
+		if !ok {
+			require.Equal(t, expected, actual, "expected series %q not found", key)
+		}
+		if len(eSamples) != len(aSamples) {
+			require.Equal(t, eSamples, aSamples, "number of samples for series %q differs", key)
+		}
+		for i, eS := range eSamples {
+			aS := aSamples[i]
+			aH, eH := aS.H(), eS.H()
+			aFH, eFH := aS.FH(), eS.FH()
+			switch {
+			case aH != nil && eH != nil && aH.CounterResetHint == histogram.UnknownCounterReset && eH.CounterResetHint != histogram.GaugeType:
+				eH = eH.Copy()
+				eH.CounterResetHint = histogram.UnknownCounterReset
+				eS = sample{t: eS.T(), h: eH}
+			case aFH != nil && eFH != nil && aFH.CounterResetHint == histogram.UnknownCounterReset && eFH.CounterResetHint != histogram.GaugeType:
+				eFH = eFH.Copy()
+				eFH.CounterResetHint = histogram.UnknownCounterReset
+				eS = sample{t: eS.T(), fh: eFH}
+			}
+			require.Equal(t, eS, aS, "sample %d in series %q differs", i, key)
+		}
+	}
+}
+
+// TestChunkQuerierReadWriteRace looks for any possible race between appending
+// samples and reading chunks because the head chunk that is being appended to
+// can be read in parallel and we should be able to make a copy of the chunk without
+// worrying about the parallel write.
+func TestChunkQuerierReadWriteRace(t *testing.T) {
+	db := openTestDB(t, nil, nil)
+	defer func() {
+		require.NoError(t, db.Close())
+	}()
+
+	lbls := labels.FromStrings("foo", "bar")
+
+	writer := func() error {
+		<-time.After(5 * time.Millisecond) // Initial pause while readers start.
+		ts := 0
+		for i := 0; i < 500; i++ {
+			app := db.Appender(context.Background())
+			for j := 0; j < 10; j++ {
+				ts++
+				_, err := app.Append(0, lbls, int64(ts), float64(ts*100))
+				if err != nil {
+					return err
+				}
+			}
+			err := app.Commit()
+			if err != nil {
+				return err
+			}
+			<-time.After(time.Millisecond)
+		}
+		return nil
+	}
+
+	reader := func() {
+		querier, err := db.ChunkQuerier(context.Background(), math.MinInt64, math.MaxInt64)
+		require.NoError(t, err)
+		defer func(q storage.ChunkQuerier) {
+			require.NoError(t, q.Close())
+		}(querier)
+		ss := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+		for ss.Next() {
+			cs := ss.At()
+			it := cs.Iterator(nil)
+			for it.Next() {
+				m := it.At()
+				b := m.Chunk.Bytes()
+				bb := make([]byte, len(b))
+				copy(bb, b) // This copying of chunk bytes detects any race.
+			}
+		}
+		require.NoError(t, ss.Err())
+	}
+
+	ch := make(chan struct{})
+	var writerErr error
+	go func() {
+		defer close(ch)
+		writerErr = writer()
+	}()
+
+Outer:
+	for {
+		reader()
+		select {
+		case <-ch:
+			break Outer
+		default:
+		}
+	}
+
+	require.NoError(t, writerErr)
 }

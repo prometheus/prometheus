@@ -14,6 +14,7 @@
 package scrape
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"testing"
@@ -24,6 +25,7 @@ import (
 	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
@@ -149,8 +151,8 @@ func TestPopulateLabels(t *testing.T) {
 				ScrapeInterval: model.Duration(time.Second),
 				ScrapeTimeout:  model.Duration(time.Second),
 			},
-			res:     nil,
-			resOrig: nil,
+			res:     labels.EmptyLabels(),
+			resOrig: labels.EmptyLabels(),
 			err:     "no address",
 		},
 		// Address label missing, but added in relabelling.
@@ -242,8 +244,8 @@ func TestPopulateLabels(t *testing.T) {
 				ScrapeInterval: model.Duration(time.Second),
 				ScrapeTimeout:  model.Duration(time.Second),
 			},
-			res:     nil,
-			resOrig: nil,
+			res:     labels.EmptyLabels(),
+			resOrig: labels.EmptyLabels(),
 			err:     "invalid label value for \"custom\": \"\\xbd\"",
 		},
 		// Invalid duration in interval label.
@@ -259,9 +261,9 @@ func TestPopulateLabels(t *testing.T) {
 				ScrapeInterval: model.Duration(time.Second),
 				ScrapeTimeout:  model.Duration(time.Second),
 			},
-			res:     nil,
-			resOrig: nil,
-			err:     "error parsing scrape interval: not a valid duration string: \"2notseconds\"",
+			res:     labels.EmptyLabels(),
+			resOrig: labels.EmptyLabels(),
+			err:     "error parsing scrape interval: unknown unit \"notseconds\" in duration \"2notseconds\"",
 		},
 		// Invalid duration in timeout label.
 		{
@@ -276,9 +278,9 @@ func TestPopulateLabels(t *testing.T) {
 				ScrapeInterval: model.Duration(time.Second),
 				ScrapeTimeout:  model.Duration(time.Second),
 			},
-			res:     nil,
-			resOrig: nil,
-			err:     "error parsing scrape timeout: not a valid duration string: \"2notseconds\"",
+			res:     labels.EmptyLabels(),
+			resOrig: labels.EmptyLabels(),
+			err:     "error parsing scrape timeout: unknown unit \"notseconds\" in duration \"2notseconds\"",
 		},
 		// 0 interval in timeout label.
 		{
@@ -293,8 +295,8 @@ func TestPopulateLabels(t *testing.T) {
 				ScrapeInterval: model.Duration(time.Second),
 				ScrapeTimeout:  model.Duration(time.Second),
 			},
-			res:     nil,
-			resOrig: nil,
+			res:     labels.EmptyLabels(),
+			resOrig: labels.EmptyLabels(),
 			err:     "scrape interval cannot be 0",
 		},
 		// 0 duration in timeout label.
@@ -310,8 +312,8 @@ func TestPopulateLabels(t *testing.T) {
 				ScrapeInterval: model.Duration(time.Second),
 				ScrapeTimeout:  model.Duration(time.Second),
 			},
-			res:     nil,
-			resOrig: nil,
+			res:     labels.EmptyLabels(),
+			resOrig: labels.EmptyLabels(),
 			err:     "scrape timeout cannot be 0",
 		},
 		// Timeout less than interval.
@@ -328,8 +330,8 @@ func TestPopulateLabels(t *testing.T) {
 				ScrapeInterval: model.Duration(time.Second),
 				ScrapeTimeout:  model.Duration(time.Second),
 			},
-			res:     nil,
-			resOrig: nil,
+			res:     labels.EmptyLabels(),
+			resOrig: labels.EmptyLabels(),
 			err:     "scrape timeout cannot be greater than scrape interval (\"2s\" > \"1s\")",
 		},
 		// Don't attach default port.
@@ -429,7 +431,7 @@ func TestPopulateLabels(t *testing.T) {
 	for _, c := range cases {
 		in := c.in.Copy()
 
-		res, orig, err := PopulateLabels(c.in, c.cfg, c.noDefaultPort)
+		res, orig, err := PopulateLabels(labels.NewBuilder(c.in), c.cfg, c.noDefaultPort)
 		if c.err != "" {
 			require.EqualError(t, err, c.err)
 		} else {
@@ -441,7 +443,7 @@ func TestPopulateLabels(t *testing.T) {
 	}
 }
 
-func loadConfiguration(t *testing.T, c string) *config.Config {
+func loadConfiguration(t testing.TB, c string) *config.Config {
 	t.Helper()
 
 	cfg := &config.Config{}
@@ -634,4 +636,70 @@ global:
 	if jitter1 == jitter2 {
 		t.Error("Jitter should not be the same on different set of external labels")
 	}
+}
+
+func TestManagerScrapePools(t *testing.T) {
+	cfgText1 := `
+scrape_configs:
+- job_name: job1
+  static_configs:
+  - targets: ["foo:9090"]
+- job_name: job2
+  static_configs:
+  - targets: ["foo:9091", "foo:9092"]
+`
+	cfgText2 := `
+scrape_configs:
+- job_name: job1
+  static_configs:
+  - targets: ["foo:9090", "foo:9094"]
+- job_name: job3
+  static_configs:
+  - targets: ["foo:9093"]
+`
+	var (
+		cfg1 = loadConfiguration(t, cfgText1)
+		cfg2 = loadConfiguration(t, cfgText2)
+	)
+
+	reload := func(scrapeManager *Manager, cfg *config.Config) {
+		newLoop := func(scrapeLoopOptions) loop {
+			return noopLoop()
+		}
+		scrapeManager.scrapePools = map[string]*scrapePool{}
+		for _, sc := range cfg.ScrapeConfigs {
+			_, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			sp := &scrapePool{
+				appendable:    &nopAppendable{},
+				activeTargets: map[uint64]*Target{},
+				loops: map[uint64]loop{
+					1: noopLoop(),
+				},
+				newLoop: newLoop,
+				logger:  nil,
+				config:  sc,
+				client:  http.DefaultClient,
+				cancel:  cancel,
+			}
+			for _, c := range sc.ServiceDiscoveryConfigs {
+				staticConfig := c.(discovery.StaticConfig)
+				for _, group := range staticConfig {
+					for i := range group.Targets {
+						sp.activeTargets[uint64(i)] = &Target{}
+					}
+				}
+			}
+			scrapeManager.scrapePools[sc.JobName] = sp
+		}
+	}
+
+	opts := Options{}
+	scrapeManager := NewManager(&opts, nil, nil)
+
+	reload(scrapeManager, cfg1)
+	require.ElementsMatch(t, []string{"job1", "job2"}, scrapeManager.ScrapePools())
+
+	reload(scrapeManager, cfg2)
+	require.ElementsMatch(t, []string{"job1", "job3"}, scrapeManager.ScrapePools())
 }

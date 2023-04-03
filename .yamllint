@@ -21,8 +21,4 @@ rules:
   line-length: disable
   truthy:
     ignore: |
-      .github/workflows/codeql-analysis.yml
-      .github/workflows/funcbench.yml
-      .github/workflows/fuzzing.yml
-      .github/workflows/prombench.yml
-      .github/workflows/golangci-lint.yml
+      .github/workflows/*.yml

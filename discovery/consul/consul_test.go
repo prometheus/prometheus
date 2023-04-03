@@ -365,7 +365,7 @@ func TestGetDatacenterShouldReturnError(t *testing.T) {
 		{
 			// Define a handler that will return status 500.
 			handler: func(w http.ResponseWriter, r *http.Request) {
-				w.WriteHeader(500)
+				w.WriteHeader(http.StatusInternalServerError)
 			},
 			errMessage: "Unexpected response code: 500 ()",
 		},

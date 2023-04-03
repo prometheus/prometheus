@@ -142,14 +142,14 @@ func createIdxChkReaders(t *testing.T, tc []seriesSamples) (IndexReader, ChunkRe
 
 		postings.Add(storage.SeriesRef(i), ls)
 
-		for _, l := range ls {
+		ls.Range(func(l labels.Label) {
 			vs, present := lblIdx[l.Name]
 			if !present {
 				vs = map[string]struct{}{}
 				lblIdx[l.Name] = vs
 			}
 			vs[l.Value] = struct{}{}
-		}
+		})
 	}
 
 	require.NoError(t, postings.Iter(func(l labels.Label, p index.Postings) error {
@@ -194,8 +194,8 @@ func testBlockQuerier(t *testing.T, c blockQuerierTestCase, ir IndexReader, cr C
 			sres := res.At()
 			require.Equal(t, sexp.Labels(), sres.Labels())
 
-			smplExp, errExp := storage.ExpandSamples(sexp.Iterator(), nil)
-			smplRes, errRes := storage.ExpandSamples(sres.Iterator(), nil)
+			smplExp, errExp := storage.ExpandSamples(sexp.Iterator(nil), nil)
+			smplRes, errRes := storage.ExpandSamples(sres.Iterator(nil), nil)
 
 			require.Equal(t, errExp, errRes)
 			require.Equal(t, smplExp, smplRes)
@@ -230,12 +230,24 @@ func testBlockQuerier(t *testing.T, c blockQuerierTestCase, ir IndexReader, cr C
 
 			require.Equal(t, sexpChks.Labels(), sres.Labels())
 
-			chksExp, errExp := storage.ExpandChunks(sexpChks.Iterator())
+			chksExp, errExp := storage.ExpandChunks(sexpChks.Iterator(nil))
 			rmChunkRefs(chksExp)
-			chksRes, errRes := storage.ExpandChunks(sres.Iterator())
+			chksRes, errRes := storage.ExpandChunks(sres.Iterator(nil))
 			rmChunkRefs(chksRes)
 			require.Equal(t, errExp, errRes)
-			require.Equal(t, chksExp, chksRes)
+
+			require.Equal(t, len(chksExp), len(chksRes))
+			var exp, act [][]tsdbutil.Sample
+			for i := range chksExp {
+				samples, err := storage.ExpandSamples(chksExp[i].Chunk.Iterator(nil), nil)
+				require.NoError(t, err)
+				exp = append(exp, samples)
+				samples, err = storage.ExpandSamples(chksRes[i].Chunk.Iterator(nil), nil)
+				require.NoError(t, err)
+				act = append(act, samples)
+			}
+
+			require.Equal(t, exp, act)
 		}
 		require.NoError(t, res.Err())
 	})
@@ -859,7 +871,8 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Run("sample", func(t *testing.T) {
 				f, chkMetas := createFakeReaderAndNotPopulatedChunks(tc.chks...)
-				it := newPopulateWithDelGenericSeriesIterator(ulid.ULID{}, f, chkMetas, tc.intervals).toSeriesIterator()
+				it := &populateWithDelSeriesIterator{}
+				it.reset(ulid.ULID{}, f, chkMetas, tc.intervals)
 
 				var r []tsdbutil.Sample
 				if tc.seek != 0 {
@@ -879,7 +892,8 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 			})
 			t.Run("chunk", func(t *testing.T) {
 				f, chkMetas := createFakeReaderAndNotPopulatedChunks(tc.chks...)
-				it := newPopulateWithDelGenericSeriesIterator(ulid.ULID{}, f, chkMetas, tc.intervals).toChunkSeriesIterator()
+				it := &populateWithDelChunkSeriesIterator{}
+				it.reset(ulid.ULID{}, f, chkMetas, tc.intervals)
 
 				if tc.seek != 0 {
 					// Chunk iterator does not have Seek method.
@@ -911,7 +925,8 @@ func TestPopulateWithDelSeriesIterator_DoubleSeek(t *testing.T) {
 		[]tsdbutil.Sample{sample{4, 4, nil, nil}, sample{5, 5, nil, nil}},
 	)
 
-	it := newPopulateWithDelGenericSeriesIterator(ulid.ULID{}, f, chkMetas, nil).toSeriesIterator()
+	it := &populateWithDelSeriesIterator{}
+	it.reset(ulid.ULID{}, f, chkMetas, nil)
 	require.Equal(t, chunkenc.ValFloat, it.Seek(1))
 	require.Equal(t, chunkenc.ValFloat, it.Seek(2))
 	require.Equal(t, chunkenc.ValFloat, it.Seek(2))
@@ -929,7 +944,8 @@ func TestPopulateWithDelSeriesIterator_SeekInCurrentChunk(t *testing.T) {
 		[]tsdbutil.Sample{},
 	)
 
-	it := newPopulateWithDelGenericSeriesIterator(ulid.ULID{}, f, chkMetas, nil).toSeriesIterator()
+	it := &populateWithDelSeriesIterator{}
+	it.reset(ulid.ULID{}, f, chkMetas, nil)
 	require.Equal(t, chunkenc.ValFloat, it.Next())
 	ts, v := it.At()
 	require.Equal(t, int64(1), ts)
@@ -946,7 +962,8 @@ func TestPopulateWithDelSeriesIterator_SeekWithMinTime(t *testing.T) {
 		[]tsdbutil.Sample{sample{1, 6, nil, nil}, sample{5, 6, nil, nil}, sample{6, 8, nil, nil}},
 	)
 
-	it := newPopulateWithDelGenericSeriesIterator(ulid.ULID{}, f, chkMetas, nil).toSeriesIterator()
+	it := &populateWithDelSeriesIterator{}
+	it.reset(ulid.ULID{}, f, chkMetas, nil)
 	require.Equal(t, chunkenc.ValNone, it.Seek(7))
 	require.Equal(t, chunkenc.ValFloat, it.Seek(3))
 }
@@ -958,9 +975,8 @@ func TestPopulateWithDelSeriesIterator_NextWithMinTime(t *testing.T) {
 		[]tsdbutil.Sample{sample{1, 6, nil, nil}, sample{5, 6, nil, nil}, sample{7, 8, nil, nil}},
 	)
 
-	it := newPopulateWithDelGenericSeriesIterator(
-		ulid.ULID{}, f, chkMetas, tombstones.Intervals{{Mint: math.MinInt64, Maxt: 2}}.Add(tombstones.Interval{Mint: 4, Maxt: math.MaxInt64}),
-	).toSeriesIterator()
+	it := &populateWithDelSeriesIterator{}
+	it.reset(ulid.ULID{}, f, chkMetas, tombstones.Intervals{{Mint: math.MinInt64, Maxt: 2}}.Add(tombstones.Interval{Mint: 4, Maxt: math.MaxInt64}))
 	require.Equal(t, chunkenc.ValNone, it.Next())
 }
 
@@ -1164,10 +1180,10 @@ func (m *mockIndex) AddSeries(ref storage.SeriesRef, l labels.Labels, chunks ...
 	if _, ok := m.series[ref]; ok {
 		return errors.Errorf("series with reference %d already added", ref)
 	}
-	for _, lbl := range l {
+	l.Range(func(lbl labels.Label) {
 		m.symbols[lbl.Name] = struct{}{}
 		m.symbols[lbl.Value] = struct{}{}
-	}
+	})
 
 	s := series{l: l}
 	// Actual chunk data is not stored in the index.
@@ -1234,9 +1250,9 @@ func (m mockIndex) LabelValueFor(id storage.SeriesRef, label string) (string, er
 func (m mockIndex) LabelNamesFor(ids ...storage.SeriesRef) ([]string, error) {
 	namesMap := make(map[string]bool)
 	for _, id := range ids {
-		for _, lbl := range m.series[id].l {
+		m.series[id].l.Range(func(lbl labels.Label) {
 			namesMap[lbl.Name] = true
-		}
+		})
 	}
 	names := make([]string, 0, len(namesMap))
 	for name := range namesMap {
@@ -1266,12 +1282,12 @@ func (m mockIndex) SortedPostings(p index.Postings) index.Postings {
 	return index.NewListPostings(ep)
 }
 
-func (m mockIndex) Series(ref storage.SeriesRef, lset *labels.Labels, chks *[]chunks.Meta) error {
+func (m mockIndex) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
 	s, ok := m.series[ref]
 	if !ok {
 		return storage.ErrNotFound
 	}
-	*lset = append((*lset)[:0], s.l...)
+	builder.Assign(s.l)
 	*chks = append((*chks)[:0], s.chunks...)
 
 	return nil
@@ -1293,9 +1309,9 @@ func (m mockIndex) LabelNames(matchers ...*labels.Matcher) ([]string, error) {
 				}
 			}
 			if matches {
-				for _, lbl := range series.l {
+				series.l.Range(func(lbl labels.Label) {
 					names[lbl.Name] = struct{}{}
-				}
+				})
 			}
 		}
 	}
@@ -1433,9 +1449,10 @@ func BenchmarkQuerySeek(b *testing.B) {
 				b.ResetTimer()
 				b.ReportAllocs()
 
+				var it chunkenc.Iterator
 				ss := sq.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
 				for ss.Next() {
-					it := ss.At().Iterator()
+					it = ss.At().Iterator(it)
 					for t := mint; t <= maxt; t++ {
 						it.Seek(t)
 					}
@@ -1879,9 +1896,10 @@ func TestPostingsForMatchers(t *testing.T) {
 		p, err := PostingsForMatchers(ir, c.matchers...)
 		require.NoError(t, err)
 
+		var builder labels.ScratchBuilder
 		for p.Next() {
-			lbls := labels.Labels{}
-			require.NoError(t, ir.Series(p.At(), &lbls, &[]chunks.Meta{}))
+			require.NoError(t, ir.Series(p.At(), &builder, &[]chunks.Meta{}))
+			lbls := builder.Labels()
 			if _, ok := exp[lbls.String()]; !ok {
 				t.Errorf("Evaluating %v, unexpected result %s", c.matchers, lbls.String())
 			} else {
@@ -1968,7 +1986,7 @@ func BenchmarkQueries(b *testing.B) {
 
 				// Add some common labels to make the matchers select these series.
 				{
-					var commonLbls labels.Labels
+					var commonLbls []labels.Label
 					for _, selector := range selectors {
 						switch selector.Type {
 						case labels.MatchEqual:
@@ -1979,8 +1997,11 @@ func BenchmarkQueries(b *testing.B) {
 					}
 					for i := range commonLbls {
 						s := series[i].(*storage.SeriesEntry)
-						allLabels := append(commonLbls, s.Labels()...)
-						newS := storage.NewListSeries(allLabels, nil)
+						allLabels := commonLbls
+						s.Labels().Range(func(l labels.Label) {
+							allLabels = append(allLabels, l)
+						})
+						newS := storage.NewListSeries(labels.New(allLabels...), nil)
 						newS.SampleIteratorFn = s.SampleIteratorFn
 
 						series[i] = newS
@@ -2042,11 +2063,13 @@ func benchQuery(b *testing.B, expExpansions int, q storage.Querier, selectors la
 	for i := 0; i < b.N; i++ {
 		ss := q.Select(false, nil, selectors...)
 		var actualExpansions int
+		var it chunkenc.Iterator
 		for ss.Next() {
 			s := ss.At()
 			s.Labels()
-			it := s.Iterator()
+			it = s.Iterator(it)
 			for it.Next() != chunkenc.ValNone {
+				_, _ = it.At()
 			}
 			actualExpansions++
 		}
@@ -2090,7 +2113,7 @@ func (m mockMatcherIndex) SortedPostings(p index.Postings) index.Postings {
 	return index.EmptyPostings()
 }
 
-func (m mockMatcherIndex) Series(ref storage.SeriesRef, lset *labels.Labels, chks *[]chunks.Meta) error {
+func (m mockMatcherIndex) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
 	return nil
 }
 
@@ -2153,7 +2176,7 @@ func TestBlockBaseSeriesSet(t *testing.T) {
 		{
 			series: []refdSeries{
 				{
-					lset: labels.New([]labels.Label{{Name: "a", Value: "a"}}...),
+					lset: labels.FromStrings("a", "a"),
 					chunks: []chunks.Meta{
 						{Ref: 29},
 						{Ref: 45},
@@ -2166,19 +2189,19 @@ func TestBlockBaseSeriesSet(t *testing.T) {
 					ref: 12,
 				},
 				{
-					lset: labels.New([]labels.Label{{Name: "a", Value: "a"}, {Name: "b", Value: "b"}}...),
+					lset: labels.FromStrings("a", "a", "b", "b"),
 					chunks: []chunks.Meta{
 						{Ref: 82}, {Ref: 23}, {Ref: 234}, {Ref: 65}, {Ref: 26},
 					},
 					ref: 10,
 				},
 				{
-					lset:   labels.New([]labels.Label{{Name: "b", Value: "c"}}...),
+					lset:   labels.FromStrings("b", "c"),
 					chunks: []chunks.Meta{{Ref: 8282}},
 					ref:    1,
 				},
 				{
-					lset: labels.New([]labels.Label{{Name: "b", Value: "b"}}...),
+					lset: labels.FromStrings("b", "b"),
 					chunks: []chunks.Meta{
 						{Ref: 829}, {Ref: 239}, {Ref: 2349}, {Ref: 659}, {Ref: 269},
 					},
@@ -2191,14 +2214,14 @@ func TestBlockBaseSeriesSet(t *testing.T) {
 		{
 			series: []refdSeries{
 				{
-					lset: labels.New([]labels.Label{{Name: "a", Value: "a"}, {Name: "b", Value: "b"}}...),
+					lset: labels.FromStrings("a", "a", "b", "b"),
 					chunks: []chunks.Meta{
 						{Ref: 82}, {Ref: 23}, {Ref: 234}, {Ref: 65}, {Ref: 26},
 					},
 					ref: 10,
 				},
 				{
-					lset:   labels.New([]labels.Label{{Name: "b", Value: "c"}}...),
+					lset:   labels.FromStrings("b", "c"),
 					chunks: []chunks.Meta{{Ref: 8282}},
 					ref:    3,
 				},
@@ -2222,15 +2245,106 @@ func TestBlockBaseSeriesSet(t *testing.T) {
 
 		i := 0
 		for bcs.Next() {
-			chks := bcs.currIterFn().chks
+			si := populateWithDelGenericSeriesIterator{}
+			si.reset(bcs.blockID, bcs.chunks, bcs.curr.chks, bcs.curr.intervals)
 			idx := tc.expIdxs[i]
 
-			require.Equal(t, tc.series[idx].lset, bcs.currLabels)
-			require.Equal(t, tc.series[idx].chunks, chks)
+			require.Equal(t, tc.series[idx].lset, bcs.curr.labels)
+			require.Equal(t, tc.series[idx].chunks, si.chks)
 
 			i++
 		}
 		require.Equal(t, len(tc.expIdxs), i)
 		require.NoError(t, bcs.Err())
+	}
+}
+
+func BenchmarkHeadChunkQuerier(b *testing.B) {
+	db := openTestDB(b, nil, nil)
+	defer func() {
+		require.NoError(b, db.Close())
+	}()
+
+	// 3h of data.
+	numTimeseries := 100
+	app := db.Appender(context.Background())
+	for i := 0; i < 120*6; i++ {
+		for j := 0; j < numTimeseries; j++ {
+			lbls := labels.FromStrings("foo", fmt.Sprintf("bar%d", j))
+			if i%10 == 0 {
+				require.NoError(b, app.Commit())
+				app = db.Appender(context.Background())
+			}
+			_, err := app.Append(0, lbls, int64(i*15)*time.Second.Milliseconds(), float64(i*100))
+			require.NoError(b, err)
+		}
+	}
+	require.NoError(b, app.Commit())
+
+	querier, err := db.ChunkQuerier(context.Background(), math.MinInt64, math.MaxInt64)
+	require.NoError(b, err)
+	defer func(q storage.ChunkQuerier) {
+		require.NoError(b, q.Close())
+	}(querier)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		ss := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
+		total := 0
+		for ss.Next() {
+			cs := ss.At()
+			it := cs.Iterator(nil)
+			for it.Next() {
+				m := it.At()
+				total += m.Chunk.NumSamples()
+			}
+		}
+		_ = total
+		require.NoError(b, ss.Err())
+	}
+}
+
+func BenchmarkHeadQuerier(b *testing.B) {
+	db := openTestDB(b, nil, nil)
+	defer func() {
+		require.NoError(b, db.Close())
+	}()
+
+	// 3h of data.
+	numTimeseries := 100
+	app := db.Appender(context.Background())
+	for i := 0; i < 120*6; i++ {
+		for j := 0; j < numTimeseries; j++ {
+			lbls := labels.FromStrings("foo", fmt.Sprintf("bar%d", j))
+			if i%10 == 0 {
+				require.NoError(b, app.Commit())
+				app = db.Appender(context.Background())
+			}
+			_, err := app.Append(0, lbls, int64(i*15)*time.Second.Milliseconds(), float64(i*100))
+			require.NoError(b, err)
+		}
+	}
+	require.NoError(b, app.Commit())
+
+	querier, err := db.Querier(context.Background(), math.MinInt64, math.MaxInt64)
+	require.NoError(b, err)
+	defer func(q storage.Querier) {
+		require.NoError(b, q.Close())
+	}(querier)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		ss := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
+		total := int64(0)
+		for ss.Next() {
+			cs := ss.At()
+			it := cs.Iterator(nil)
+			for it.Next() != chunkenc.ValNone {
+				ts, _ := it.At()
+				total += ts
+			}
+		}
+		_ = total
+		require.NoError(b, ss.Err())
 	}
 }

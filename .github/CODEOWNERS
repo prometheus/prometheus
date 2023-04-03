@@ -3,5 +3,5 @@
 /storage/remote @csmarchbanks @cstyan @bwplotka @tomwilkie
 /discovery/kubernetes @brancz
 /tsdb @codesome
-/promql @codesome @roidelapluie
+/promql @roidelapluie
 /cmd/promtool @dgl

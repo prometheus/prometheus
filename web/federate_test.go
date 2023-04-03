@@ -16,6 +16,8 @@ package web
 import (
 	"bytes"
 	"context"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"sort"
@@ -28,7 +30,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
@@ -162,7 +166,7 @@ test_metric_without_labels{instance=""} 1001 6000000
 	},
 	"external labels are added if not already present": {
 		params:         "match[]={__name__=~'.%2b'}", // '%2b' is an URL-encoded '+'.
-		externalLabels: labels.Labels{{Name: "foo", Value: "baz"}, {Name: "zone", Value: "ie"}},
+		externalLabels: labels.FromStrings("foo", "baz", "zone", "ie"),
 		code:           200,
 		body: `# TYPE test_metric1 untyped
 test_metric1{foo="bar",instance="i",zone="ie"} 10000 6000000
@@ -179,7 +183,7 @@ test_metric_without_labels{foo="baz",instance="",zone="ie"} 1001 6000000
 		// This makes no sense as a configuration, but we should
 		// know what it does anyway.
 		params:         "match[]={__name__=~'.%2b'}", // '%2b' is an URL-encoded '+'.
-		externalLabels: labels.Labels{{Name: "instance", Value: "baz"}},
+		externalLabels: labels.FromStrings("instance", "baz"),
 		code:           200,
 		body: `# TYPE test_metric1 untyped
 test_metric1{foo="bar",instance="i"} 10000 6000000
@@ -298,4 +302,115 @@ func normalizeBody(body *bytes.Buffer) string {
 		sort.Strings(lines[lastHash+1:])
 	}
 	return strings.Join(lines, "")
+}
+
+func TestFederationWithNativeHistograms(t *testing.T) {
+	suite, err := promql.NewTest(t, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer suite.Close()
+
+	if err := suite.Run(); err != nil {
+		t.Fatal(err)
+	}
+
+	var expVec promql.Vector
+
+	db := suite.TSDB()
+	hist := &histogram.Histogram{
+		Count:         10,
+		ZeroCount:     2,
+		ZeroThreshold: 0.001,
+		Sum:           39.4,
+		Schema:        1,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 1, Length: 2},
+		},
+		PositiveBuckets: []int64{1, 1, -1, 0},
+		NegativeSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 1, Length: 2},
+		},
+		NegativeBuckets: []int64{1, 1, -1, 0},
+	}
+	app := db.Appender(context.Background())
+	for i := 0; i < 6; i++ {
+		l := labels.FromStrings("__name__", "test_metric", "foo", fmt.Sprintf("%d", i))
+		expL := labels.FromStrings("__name__", "test_metric", "instance", "", "foo", fmt.Sprintf("%d", i))
+		if i%3 == 0 {
+			_, err = app.Append(0, l, 100*60*1000, float64(i*100))
+			expVec = append(expVec, promql.Sample{
+				Point:  promql.Point{T: 100 * 60 * 1000, V: float64(i * 100)},
+				Metric: expL,
+			})
+		} else {
+			hist.ZeroCount++
+			_, err = app.AppendHistogram(0, l, 100*60*1000, hist.Copy(), nil)
+			expVec = append(expVec, promql.Sample{
+				Point:  promql.Point{T: 100 * 60 * 1000, H: hist.ToFloat()},
+				Metric: expL,
+			})
+		}
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	h := &Handler{
+		localStorage:  &dbAdapter{suite.TSDB()},
+		lookbackDelta: 5 * time.Minute,
+		now:           func() model.Time { return 101 * 60 * 1000 }, // 101min after epoch.
+		config: &config.Config{
+			GlobalConfig: config.GlobalConfig{},
+		},
+	}
+
+	req := httptest.NewRequest("GET", "http://example.org/federate?match[]=test_metric", nil)
+	req.Header.Add("Accept", `application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited,application/openmetrics-text;version=1.0.0;q=0.8,application/openmetrics-text;version=0.0.1;q=0.75,text/plain;version=0.0.4;q=0.5,*/*;q=0.1`)
+	res := httptest.NewRecorder()
+
+	h.federation(res, req)
+
+	require.Equal(t, http.StatusOK, res.Code)
+	body, err := io.ReadAll(res.Body)
+	require.NoError(t, err)
+
+	p := textparse.NewProtobufParser(body)
+	var actVec promql.Vector
+	metricFamilies := 0
+	for {
+		et, err := p.Next()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		if et == textparse.EntryHelp {
+			metricFamilies++
+		}
+		if et == textparse.EntryHistogram || et == textparse.EntrySeries {
+			l := labels.Labels{}
+			p.Metric(&l)
+			actVec = append(actVec, promql.Sample{Metric: l})
+		}
+		if et == textparse.EntryHistogram {
+			_, parsedTimestamp, h, fh := p.Histogram()
+			require.Nil(t, h)
+			actVec[len(actVec)-1].Point = promql.Point{
+				T: *parsedTimestamp,
+				H: fh,
+			}
+		} else if et == textparse.EntrySeries {
+			_, parsedTimestamp, v := p.Series()
+			actVec[len(actVec)-1].Point = promql.Point{
+				T: *parsedTimestamp,
+				V: v,
+			}
+		}
+	}
+
+	// TODO(codesome): Once PromQL is able to set the CounterResetHint on histograms,
+	// test it with switching histogram types for metric families.
+	require.Equal(t, 4, metricFamilies)
+	require.Equal(t, expVec, actVec)
 }

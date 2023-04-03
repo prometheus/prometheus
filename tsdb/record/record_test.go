@@ -153,6 +153,34 @@ func TestRecord_EncodeDecode(t *testing.T) {
 	decHistograms, err := dec.HistogramSamples(enc.HistogramSamples(histograms, nil), nil)
 	require.NoError(t, err)
 	require.Equal(t, histograms, decHistograms)
+
+	floatHistograms := make([]RefFloatHistogramSample, len(histograms))
+	for i, h := range histograms {
+		floatHistograms[i] = RefFloatHistogramSample{
+			Ref: h.Ref,
+			T:   h.T,
+			FH:  h.H.ToFloat(),
+		}
+	}
+	decFloatHistograms, err := dec.FloatHistogramSamples(enc.FloatHistogramSamples(floatHistograms, nil), nil)
+	require.NoError(t, err)
+	require.Equal(t, floatHistograms, decFloatHistograms)
+
+	// Gauge ingeger histograms.
+	for i := range histograms {
+		histograms[i].H.CounterResetHint = histogram.GaugeType
+	}
+	decHistograms, err = dec.HistogramSamples(enc.HistogramSamples(histograms, nil), nil)
+	require.NoError(t, err)
+	require.Equal(t, histograms, decHistograms)
+
+	// Gauge float histograms.
+	for i := range floatHistograms {
+		floatHistograms[i].FH.CounterResetHint = histogram.GaugeType
+	}
+	decFloatHistograms, err = dec.FloatHistogramSamples(enc.FloatHistogramSamples(floatHistograms, nil), nil)
+	require.NoError(t, err)
+	require.Equal(t, floatHistograms, decFloatHistograms)
 }
 
 // TestRecord_Corrupted ensures that corrupted records return the correct error.

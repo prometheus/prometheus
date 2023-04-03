@@ -1693,6 +1693,10 @@ var expectedErrors = []struct {
 		filename: "ovhcloud_bad_service.bad.yml",
 		errMsg:   "unknown service: fakeservice",
 	},
+	{
+		filename: "scrape_config_files_glob.bad.yml",
+		errMsg:   `parsing YAML file testdata/scrape_config_files_glob.bad.yml: invalid scrape config file path "scrape_configs/*/*"`,
+	},
 }
 
 func TestBadConfigs(t *testing.T) {
@@ -1745,11 +1749,188 @@ func TestExpandExternalLabels(t *testing.T) {
 	require.Equal(t, labels.FromStrings("bar", "foo", "baz", "fooTestValuebar", "foo", "TestValue", "qux", "foo${TEST}", "xyz", "foo$bar"), c.GlobalConfig.ExternalLabels)
 }
 
+func TestAgentMode(t *testing.T) {
+	_, err := LoadFile("testdata/agent_mode.with_alert_manager.yml", true, false, log.NewNopLogger())
+	require.ErrorContains(t, err, "field alerting is not allowed in agent mode")
+
+	_, err = LoadFile("testdata/agent_mode.with_alert_relabels.yml", true, false, log.NewNopLogger())
+	require.ErrorContains(t, err, "field alerting is not allowed in agent mode")
+
+	_, err = LoadFile("testdata/agent_mode.with_rule_files.yml", true, false, log.NewNopLogger())
+	require.ErrorContains(t, err, "field rule_files is not allowed in agent mode")
+
+	_, err = LoadFile("testdata/agent_mode.with_remote_reads.yml", true, false, log.NewNopLogger())
+	require.ErrorContains(t, err, "field remote_read is not allowed in agent mode")
+
+	c, err := LoadFile("testdata/agent_mode.without_remote_writes.yml", true, false, log.NewNopLogger())
+	require.NoError(t, err)
+	require.Len(t, c.RemoteWriteConfigs, 0)
+
+	c, err = LoadFile("testdata/agent_mode.good.yml", true, false, log.NewNopLogger())
+	require.NoError(t, err)
+	require.Len(t, c.RemoteWriteConfigs, 1)
+	require.Equal(
+		t,
+		"http://remote1/push",
+		c.RemoteWriteConfigs[0].URL.String(),
+	)
+}
+
 func TestEmptyGlobalBlock(t *testing.T) {
 	c, err := Load("global:\n", false, log.NewNopLogger())
 	require.NoError(t, err)
 	exp := DefaultConfig
 	require.Equal(t, exp, *c)
+}
+
+func TestGetScrapeConfigs(t *testing.T) {
+	sc := func(jobName string, scrapeInterval, scrapeTimeout model.Duration) *ScrapeConfig {
+		return &ScrapeConfig{
+			JobName:          jobName,
+			HonorTimestamps:  true,
+			ScrapeInterval:   scrapeInterval,
+			ScrapeTimeout:    scrapeTimeout,
+			MetricsPath:      "/metrics",
+			Scheme:           "http",
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
+			ServiceDiscoveryConfigs: discovery.Configs{
+				discovery.StaticConfig{
+					{
+						Targets: []model.LabelSet{
+							{
+								model.AddressLabel: "localhost:8080",
+							},
+						},
+						Source: "0",
+					},
+				},
+			},
+		}
+	}
+
+	testCases := []struct {
+		name           string
+		configFile     string
+		expectedResult []*ScrapeConfig
+		expectedError  string
+	}{
+		{
+			name:           "An included config file should be a valid global config.",
+			configFile:     "testdata/scrape_config_files.good.yml",
+			expectedResult: []*ScrapeConfig{sc("prometheus", model.Duration(60*time.Second), model.Duration(10*time.Second))},
+		},
+		{
+			name:           "An global config that only include a scrape config file.",
+			configFile:     "testdata/scrape_config_files_only.good.yml",
+			expectedResult: []*ScrapeConfig{sc("prometheus", model.Duration(60*time.Second), model.Duration(10*time.Second))},
+		},
+		{
+			name:       "An global config that combine scrape config files and scrape configs.",
+			configFile: "testdata/scrape_config_files_combined.good.yml",
+			expectedResult: []*ScrapeConfig{
+				sc("node", model.Duration(60*time.Second), model.Duration(10*time.Second)),
+				sc("prometheus", model.Duration(60*time.Second), model.Duration(10*time.Second)),
+				sc("alertmanager", model.Duration(60*time.Second), model.Duration(10*time.Second)),
+			},
+		},
+		{
+			name:       "An global config that includes a scrape config file with globs",
+			configFile: "testdata/scrape_config_files_glob.good.yml",
+			expectedResult: []*ScrapeConfig{
+				{
+					JobName: "prometheus",
+
+					HonorTimestamps: true,
+					ScrapeInterval:  model.Duration(60 * time.Second),
+					ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+
+					MetricsPath: DefaultScrapeConfig.MetricsPath,
+					Scheme:      DefaultScrapeConfig.Scheme,
+
+					HTTPClientConfig: config.HTTPClientConfig{
+						TLSConfig: config.TLSConfig{
+							CertFile: filepath.FromSlash("testdata/scrape_configs/valid_cert_file"),
+							KeyFile:  filepath.FromSlash("testdata/scrape_configs/valid_key_file"),
+						},
+						FollowRedirects: true,
+						EnableHTTP2:     true,
+					},
+
+					ServiceDiscoveryConfigs: discovery.Configs{
+						discovery.StaticConfig{
+							{
+								Targets: []model.LabelSet{
+									{model.AddressLabel: "localhost:8080"},
+								},
+								Source: "0",
+							},
+						},
+					},
+				},
+				{
+					JobName: "node",
+
+					HonorTimestamps: true,
+					ScrapeInterval:  model.Duration(15 * time.Second),
+					ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+					HTTPClientConfig: config.HTTPClientConfig{
+						TLSConfig: config.TLSConfig{
+							CertFile: filepath.FromSlash("testdata/valid_cert_file"),
+							KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
+						},
+						FollowRedirects: true,
+						EnableHTTP2:     true,
+					},
+
+					MetricsPath: DefaultScrapeConfig.MetricsPath,
+					Scheme:      DefaultScrapeConfig.Scheme,
+
+					ServiceDiscoveryConfigs: discovery.Configs{
+						&vultr.SDConfig{
+							HTTPClientConfig: config.HTTPClientConfig{
+								Authorization: &config.Authorization{
+									Type:        "Bearer",
+									Credentials: "abcdef",
+								},
+								FollowRedirects: true,
+								EnableHTTP2:     true,
+							},
+							Port:            80,
+							RefreshInterval: model.Duration(60 * time.Second),
+						},
+					},
+				},
+			},
+		},
+		{
+			name:          "An global config that includes twice the same scrape configs.",
+			configFile:    "testdata/scrape_config_files_double_import.bad.yml",
+			expectedError: `found multiple scrape configs with job name "prometheus"`,
+		},
+		{
+			name:          "An global config that includes a scrape config identical to a scrape config in the main file.",
+			configFile:    "testdata/scrape_config_files_duplicate.bad.yml",
+			expectedError: `found multiple scrape configs with job name "prometheus"`,
+		},
+		{
+			name:          "An global config that includes a scrape config file with errors.",
+			configFile:    "testdata/scrape_config_files_global.bad.yml",
+			expectedError: `scrape timeout greater than scrape interval for scrape config with job name "prometheus"`,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			c, err := LoadFile(tc.configFile, false, false, log.NewNopLogger())
+			require.NoError(t, err)
+
+			scfgs, err := c.GetScrapeConfigs()
+			if len(tc.expectedError) > 0 {
+				require.ErrorContains(t, err, tc.expectedError)
+			}
+			require.Equal(t, tc.expectedResult, scfgs)
+		})
+	}
 }
 
 func kubernetesSDHostURL() config.URL {

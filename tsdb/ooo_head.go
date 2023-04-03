@@ -36,6 +36,15 @@ func NewOOOChunk() *OOOChunk {
 // Insert inserts the sample such that order is maintained.
 // Returns false if insert was not possible due to the same timestamp already existing.
 func (o *OOOChunk) Insert(t int64, v float64) bool {
+	// Although out-of-order samples can be out-of-order amongst themselves, we
+	// are opinionated and expect them to be usually in-order meaning we could
+	// try to append at the end first if the new timestamp is higher than the
+	// last known timestamp.
+	if len(o.samples) == 0 || t > o.samples[len(o.samples)-1].t {
+		o.samples = append(o.samples, sample{t, v, nil, nil})
+		return true
+	}
+
 	// Find index of sample we should replace.
 	i := sort.Search(len(o.samples), func(i int) bool { return o.samples[i].t >= t })
 
@@ -45,6 +54,7 @@ func (o *OOOChunk) Insert(t int64, v float64) bool {
 		return true
 	}
 
+	// Duplicate sample for timestamp is not allowed.
 	if o.samples[i].t == t {
 		return false
 	}
