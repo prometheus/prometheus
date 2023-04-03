@@ -10,7 +10,7 @@ Julien Pivotto (<roidelapluie@prometheus.io> / @roidelapluie) and Levi Harrison 
   * `prometheus-mixin`: Björn Rabenstein (<beorn@grafana.com> / @beorn7)
 * `storage`
   * `remote`: Chris Marchbanks (<csmarchbanks@gmail.com> / @csmarchbanks), Callum Styan (<callumstyan@gmail.com> / @cstyan), Bartłomiej Płotka (<bwplotka@gmail.com> / @bwplotka), Tom Wilkie (<tom.wilkie@gmail.com> / @tomwilkie)
-* `tsdb`: Ganesh Vernekar (<ganesh@grafana.com> / @codesome), Bartłomiej Płotka (<bwplotka@gmail.com> / @bwplotka)
+* `tsdb`: Ganesh Vernekar (<ganesh@grafana.com> / @codesome), Bartłomiej Płotka (<bwplotka@gmail.com> / @bwplotka), Jesús Vázquez (<jesus.vazquez@grafana.com> / @jesusvazquez)
   * `agent`: Robert Fratto (<robert.fratto@grafana.com> / @rfratto)
 * `web`
   * `ui`: Julius Volz (<julius.volz@gmail.com> / @juliusv)
