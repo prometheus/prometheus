@@ -253,8 +253,8 @@ type Group struct {
 	opts                 *ManagerOptions
 	mtx                  sync.Mutex
 	evaluationTime       time.Duration
-	lastEvaluation       time.Time // Wall-clock time of most recent evaluation
-	lastEvalTimestamp    time.Time // Time slot used for most recent evaluation
+	lastEvaluation       time.Time // Wall-clock time of most recent evaluation.
+	lastEvalTimestamp    time.Time // Time slot used for most recent evaluation.
 
 	shouldRestore bool
 
@@ -268,7 +268,7 @@ type Group struct {
 	metrics *Metrics
 
 	// Rule group evaluation iteration function,
-	// defaults to DefaultEvalIterationFunc
+	// defaults to DefaultEvalIterationFunc.
 	evalIterationFunc GroupEvalIterationFunc
 }
 
