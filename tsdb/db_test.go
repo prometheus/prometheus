@@ -2055,7 +2055,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, len(db.Blocks()), len(actBlocks))
 		require.Equal(t, 0, len(actBlocks))
-		require.Equal(t, 0, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran)), "no compaction should be triggered here")
+		require.Equal(t, 0, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.Ran)), "no compaction should be triggered here")
 	})
 
 	t.Run("Test no blocks after deleting all samples from head.", func(t *testing.T) {
@@ -2069,7 +2069,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 		require.NoError(t, app.Commit())
 		require.NoError(t, db.Delete(math.MinInt64, math.MaxInt64, defaultMatcher))
 		require.NoError(t, db.Compact())
-		require.Equal(t, 1, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran)), "compaction should have been triggered here")
+		require.Equal(t, 1, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.Ran)), "compaction should have been triggered here")
 
 		actBlocks, err := blockDirs(db.Dir())
 		require.NoError(t, err)
@@ -2091,7 +2091,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 		require.NoError(t, app.Commit())
 
 		require.NoError(t, db.Compact())
-		require.Equal(t, 2, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran)), "compaction should have been triggered here")
+		require.Equal(t, 2, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.Ran)), "compaction should have been triggered here")
 		actBlocks, err = blockDirs(db.Dir())
 		require.NoError(t, err)
 		require.Equal(t, len(db.Blocks()), len(actBlocks))
@@ -2112,7 +2112,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 		require.NoError(t, app.Commit())
 		require.NoError(t, db.head.Delete(math.MinInt64, math.MaxInt64, defaultMatcher))
 		require.NoError(t, db.Compact())
-		require.Equal(t, 3, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran)), "compaction should have been triggered here")
+		require.Equal(t, 3, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.Ran)), "compaction should have been triggered here")
 		require.Equal(t, oldBlocks, db.Blocks())
 	})
 
@@ -2131,7 +2131,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 		require.Equal(t, len(blocks)+len(oldBlocks), len(db.Blocks())) // Ensure all blocks are registered.
 		require.NoError(t, db.Delete(math.MinInt64, math.MaxInt64, defaultMatcher))
 		require.NoError(t, db.Compact())
-		require.Equal(t, 5, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran)), "compaction should have been triggered here once for each block that have tombstones")
+		require.Equal(t, 5, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.Ran)), "compaction should have been triggered here once for each block that have tombstones")
 
 		actBlocks, err := blockDirs(db.Dir())
 		require.NoError(t, err)
