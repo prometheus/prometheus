@@ -131,8 +131,8 @@ func main() {
 	checkRulesCmd := checkCmd.Command("rules", "Check if the rule files are valid or not.")
 	ruleFiles := checkRulesCmd.Arg(
 		"rule-files",
-		"The rule files to check.",
-	).Required().ExistingFiles()
+		"The rule files to check, default is read from standard input (STDIN).",
+	).Default("-").Strings()
 	checkRulesLint := checkRulesCmd.Flag(
 		"lint",
 		"Linting checks to apply. Available options are: "+strings.Join(lintOptions, ", ")+". Use --lint=none to disable linting",
@@ -715,9 +715,22 @@ func CheckRules(ls lintConfig, files ...string) int {
 }
 
 func checkRules(filename string, lintSettings lintConfig) (int, []error) {
-	fmt.Println("Checking", filename)
+	var rgs *rulefmt.RuleGroups
+	var errs []error
+	if filename == "-" || filename == "" {
+		var buf bytes.Buffer
+		tee := io.TeeReader(os.Stdin, &buf)
+		if _, err := buf.ReadFrom(tee); err != nil {
+			errs = append(errs, err)
+			return failureExitCode, errs
+		}
+		fmt.Println("Checking stdin")
+		rgs, errs = rulefmt.Parse(buf.Bytes())
+	} else {
+		fmt.Println("Checking", filename)
+		rgs, errs = rulefmt.ParseFile(filename)
+	}
 
-	rgs, errs := rulefmt.ParseFile(filename)
 	if errs != nil {
 		return successExitCode, errs
 	}
