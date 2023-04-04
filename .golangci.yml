@@ -56,3 +56,9 @@ linters-settings:
     local-prefixes: github.com/prometheus/prometheus
   gofumpt:
     extra-rules: true
+  revive:
+    rules:
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#unused-parameter
+      - name: unused-parameter
+        severity: warning
+        disabled: true
