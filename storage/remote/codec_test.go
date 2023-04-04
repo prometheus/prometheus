@@ -362,6 +362,21 @@ func TestDecodeWriteRequest(t *testing.T) {
 	actual, err := DecodeWriteRequest(bytes.NewReader(buf))
 	require.NoError(t, err)
 	require.Equal(t, writeRequestFixture, actual)
+
+	tss := append(writeRequestFixture.Timeseries, prompb.TimeSeries{
+		Labels: []prompb.Label{
+			{Name: "__name__", Value: "test_metric3"},
+			{Name: "b-c", Value: "c"},
+			{Name: "baz", Value: "qux"},
+		},
+		Samples: []prompb.Sample{{Value: 1, Timestamp: 0}},
+	})
+	buf, _, err = buildWriteRequest(tss, nil, nil, nil)
+	require.NoError(t, err)
+
+	actual, err = DecodeWriteRequest(bytes.NewReader(buf))
+	require.Error(t, err)
+	require.Nil(t, actual)
 }
 
 func TestNilHistogramProto(t *testing.T) {

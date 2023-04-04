@@ -684,6 +684,10 @@ func DecodeWriteRequest(r io.Reader) (*prompb.WriteRequest, error) {
 	if err := proto.Unmarshal(reqBuf, &req); err != nil {
 		return nil, err
 	}
-
+	for _, ts := range req.Timeseries {
+		if err := validateLabelsAndMetricName(ts.Labels); err != nil {
+			return nil, err
+		}
+	}
 	return &req, nil
 }
