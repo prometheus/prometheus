@@ -211,7 +211,7 @@ func Process(lbls labels.Labels, cfgs ...*Config) (ret labels.Labels, keep bool)
 	if !ProcessBuilder(lb, cfgs...) {
 		return labels.EmptyLabels(), false
 	}
-	return lb.Labels(lbls), true
+	return lb.Labels(), true
 }
 
 // ProcessBuilder is like Process, but the caller passes a labels.Builder

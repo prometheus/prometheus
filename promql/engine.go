@@ -2192,7 +2192,7 @@ func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.V
 		}
 	}
 
-	ret := enh.lb.Labels(labels.EmptyLabels())
+	ret := enh.lb.Labels()
 	enh.resultMetric[str] = ret
 	return ret
 }
@@ -2232,7 +2232,7 @@ func (ev *evaluator) VectorscalarBinop(op parser.ItemType, lhs Vector, rhs Scala
 }
 
 func dropMetricName(l labels.Labels) labels.Labels {
-	return labels.NewBuilder(l).Del(labels.MetricName).Labels(labels.EmptyLabels())
+	return labels.NewBuilder(l).Del(labels.MetricName).Labels()
 }
 
 // scalarBinop evaluates a binary operation between two Scalars.
@@ -2366,7 +2366,7 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 		if op == parser.COUNT_VALUES {
 			enh.resetBuilder(metric)
 			enh.lb.Set(valueLabel, strconv.FormatFloat(s.V, 'f', -1, 64))
-			metric = enh.lb.Labels(labels.EmptyLabels())
+			metric = enh.lb.Labels()
 
 			// We've changed the metric so we have to recompute the grouping key.
 			recomputeGroupingKey = true
@@ -2388,10 +2388,10 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 			if without {
 				enh.lb.Del(grouping...)
 				enh.lb.Del(labels.MetricName)
-				m = enh.lb.Labels(labels.EmptyLabels())
+				m = enh.lb.Labels()
 			} else if len(grouping) > 0 {
 				enh.lb.Keep(grouping...)
-				m = enh.lb.Labels(labels.EmptyLabels())
+				m = enh.lb.Labels()
 			} else {
 				m = labels.EmptyLabels()
 			}
