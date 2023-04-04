@@ -181,9 +181,9 @@ Check if the rule files are valid or not.
 
 ###### Arguments
 
-| Argument | Description | Required |
+| Argument | Description | Default |
 | --- | --- | --- |
-| rule-files | The rule files to check. | Yes |
+| rule-files | The rule files to check, default is read from standard input (STDIN). | `-` |
 
 
 
