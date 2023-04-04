@@ -253,8 +253,8 @@ type Group struct {
 	opts                 *ManagerOptions
 	mtx                  sync.Mutex
 	evaluationTime       time.Duration
-	lastEvaluation       time.Time // wall-clock time of most recent evaluation
-	lastEvalTimestamp    time.Time // time slot used for most recent evaluation
+	lastEvaluation       time.Time // Wall-clock time of most recent evaluation
+	lastEvalTimestamp    time.Time // Time slot used for most recent evaluation
 
 	shouldRestore bool
 
@@ -267,16 +267,16 @@ type Group struct {
 
 	metrics *Metrics
 
-	// rule group evaluation iteration function,
+	// Rule group evaluation iteration function,
 	// defaults to DefaultEvalIterationFunc
 	evalIterationFunc GroupEvalIterationFunc
 }
 
-// Function type for extending rule group evaluation iteration logic.
-// Configured in Group.evalIterationFunc, and periodically invoked
-// at each group evaluation interval to evaluate the rules in the group
-// at that point in time.
-// The default implementation is DefaultEvalIterationFunc.
+// GroupEvalIterationFunc is used to implement and extend rule group
+// evaluation iteration logic. It is configured in Group.evalIterationFunc,
+// and periodically invoked at each group evaluation interval to
+// evaluate the rules in the group at that point in time.
+// DefaultEvalIterationFunc is the default implementation.
 type GroupEvalIterationFunc func(ctx context.Context, g *Group, evalTimestamp time.Time)
 
 type GroupOptions struct {
@@ -446,11 +446,12 @@ func (g *Group) run(ctx context.Context) {
 	}
 }
 
-// Default implementation of GroupEvalIterationFunc that is periodically
-// invoked to evaluate the rules in a group at a given point in time and
-// updates Group state and metrics accordingly. Custom GroupEvalIterationFunc
-// implementations are recommended to invoke this function as well,
-// to ensure correct Group state and metrics are maintained.
+// DefaultEvalIterationFunc is the default implementation of
+// GroupEvalIterationFunc that is periodically invoked to evaluate the rules
+// in a group at a given point in time and updates Group state and metrics
+// accordingly. Custom GroupEvalIterationFunc implementations are recommended
+// to invoke this function as well, to ensure correct Group state and metrics
+// are maintained.
 func DefaultEvalIterationFunc(ctx context.Context, g *Group, evalTimestamp time.Time) {
 	g.metrics.IterationsScheduled.WithLabelValues(GroupKey(g.file, g.name)).Inc()
 
