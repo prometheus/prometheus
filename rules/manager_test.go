@@ -1237,7 +1237,7 @@ func TestRuleHealthUpdates(t *testing.T) {
 	require.Equal(t, HealthBad, rules.Health())
 }
 
-func TestUpdateMissedEvalMetrics(t *testing.T) {
+func TestRuleGroupEvalIterationFunc(t *testing.T) {
 	suite, err := promql.NewTest(t, `
 		load 5m
 		http_requests{instance="0"}	75  85 50 0 0 25 0 0 40 0 120
@@ -1254,26 +1254,40 @@ func TestUpdateMissedEvalMetrics(t *testing.T) {
 
 	testValue := 1
 
-	overrideFunc := func(g *Group, lastEvalTimestamp time.Time, log log.Logger) error {
+	evalIterationFunc := func(ctx context.Context, g *Group, evalTimestamp time.Time) {
 		testValue = 2
-		return nil
+		DefaultEvalIterationFunc(ctx, g, evalTimestamp)
+		testValue = 3
+	}
+
+	skipEvalIterationFunc := func(ctx context.Context, g *Group, evalTimestamp time.Time) {
+		testValue = 4
 	}
 
 	type testInput struct {
-		overrideFunc  func(g *Group, lastEvalTimestamp time.Time, logger log.Logger) error
-		expectedValue int
+		evalIterationFunc       GroupEvalIterationFunc
+		expectedValue           int
+		lastEvalTimestampIsZero bool
 	}
 
 	tests := []testInput{
-		// testValue should still have value of 1 since overrideFunc is nil.
+		// testValue should still have value of 1 since the default iteration function will be called.
 		{
-			overrideFunc:  nil,
-			expectedValue: 1,
+			evalIterationFunc:       nil,
+			expectedValue:           1,
+			lastEvalTimestampIsZero: false,
 		},
-		// testValue should be incremented to 2 since overrideFunc is called.
+		// testValue should be incremented to 3 since evalIterationFunc is called.
 		{
-			overrideFunc:  overrideFunc,
-			expectedValue: 2,
+			evalIterationFunc:       evalIterationFunc,
+			expectedValue:           3,
+			lastEvalTimestampIsZero: false,
+		},
+		// testValue should be incremented to 4 since skipEvalIterationFunc is called.
+		{
+			evalIterationFunc:       skipEvalIterationFunc,
+			expectedValue:           4,
+			lastEvalTimestampIsZero: true,
 		},
 	}
 
@@ -1315,12 +1329,12 @@ func TestUpdateMissedEvalMetrics(t *testing.T) {
 		}
 
 		group := NewGroup(GroupOptions{
-			Name:                     "default",
-			Interval:                 time.Second,
-			Rules:                    []Rule{rule},
-			ShouldRestore:            true,
-			Opts:                     opts,
-			RuleGroupPostProcessFunc: tst.overrideFunc,
+			Name:              "default",
+			Interval:          time.Second,
+			Rules:             []Rule{rule},
+			ShouldRestore:     true,
+			Opts:              opts,
+			EvalIterationFunc: tst.evalIterationFunc,
 		})
 
 		go func() {
@@ -1329,10 +1343,18 @@ func TestUpdateMissedEvalMetrics(t *testing.T) {
 
 		time.Sleep(3 * time.Second)
 		group.stop()
+
 		require.Equal(t, tst.expectedValue, testValue)
+		if tst.lastEvalTimestampIsZero {
+			require.Zero(t, group.GetLastEvalTimestamp())
+		} else {
+			oneMinute, _ := time.ParseDuration("1m")
+			require.WithinDuration(t, time.Now(), group.GetLastEvalTimestamp(), oneMinute)
+		}
 	}
 
-	for _, tst := range tests {
+	for i, tst := range tests {
+		t.Logf("case %d", i)
 		testFunc(tst)
 	}
 }
