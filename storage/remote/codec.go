@@ -455,8 +455,7 @@ func (c *concreteSeriesIterator) Seek(t int64) chunkenc.ValueType {
 }
 
 func getHistogramValType(h *prompb.Histogram) chunkenc.ValueType {
-	_, isInt := h.GetCount().(*prompb.Histogram_CountInt)
-	if isInt {
+	if _, isInt := h.GetCount().(*prompb.Histogram_CountInt); isInt {
 		return chunkenc.ValHistogram
 	}
 	return chunkenc.ValFloatHistogram
