@@ -132,7 +132,7 @@ func main() {
 	ruleFiles := checkRulesCmd.Arg(
 		"rule-files",
 		"The rule files to check, default is read from standard input (STDIN).",
-	).Default("-").Strings()
+	).ExistingFiles()
 	checkRulesLint := checkRulesCmd.Flag(
 		"lint",
 		"Linting checks to apply. Available options are: "+strings.Join(lintOptions, ", ")+". Use --lint=none to disable linting",
@@ -690,6 +690,11 @@ func CheckRules(ls lintConfig, files ...string) int {
 	failed := false
 	hasErrors := false
 
+	// add empty string to avoid matching filename
+	if len(files) == 0 {
+		files = append(files, "")
+	}
+
 	for _, f := range files {
 		if n, errs := checkRules(f, ls); errs != nil {
 			fmt.Fprintln(os.Stderr, "  FAILED:")
@@ -717,15 +722,16 @@ func CheckRules(ls lintConfig, files ...string) int {
 func checkRules(filename string, lintSettings lintConfig) (int, []error) {
 	var rgs *rulefmt.RuleGroups
 	var errs []error
-	if filename == "-" || filename == "" {
-		var buf bytes.Buffer
-		tee := io.TeeReader(os.Stdin, &buf)
-		if _, err := buf.ReadFrom(tee); err != nil {
+
+	// if filename is an empty string it is a stdin
+	if filename == "" {
+		data, err := io.ReadAll(os.Stdin)
+		if err != nil {
 			errs = append(errs, err)
 			return failureExitCode, errs
 		}
 		fmt.Println("Checking stdin")
-		rgs, errs = rulefmt.Parse(buf.Bytes())
+		rgs, errs = rulefmt.Parse(data)
 	} else {
 		fmt.Println("Checking", filename)
 		rgs, errs = rulefmt.ParseFile(filename)
