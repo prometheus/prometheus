@@ -56,9 +56,10 @@ var (
 
 // WriteStorage represents all the remote write storage.
 type WriteStorage struct {
-	logger log.Logger
-	reg    prometheus.Registerer
-	mtx    sync.Mutex
+	options *Options
+	logger  log.Logger
+	reg     prometheus.Registerer
+	mtx     sync.Mutex
 
 	watcherMetrics    *wlog.WatcherMetrics
 	liveReaderMetrics *wlog.LiveReaderMetrics
@@ -76,11 +77,12 @@ type WriteStorage struct {
 }
 
 // NewWriteStorage creates and runs a WriteStorage.
-func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, dir string, flushDeadline time.Duration, sm ReadyScrapeManager) *WriteStorage {
+func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, dir string, flushDeadline time.Duration, sm ReadyScrapeManager, options *Options) *WriteStorage {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
 	rws := &WriteStorage{
+		options:           options,
 		queues:            make(map[string]*QueueManager),
 		watcherMetrics:    wlog.NewWatcherMetrics(reg),
 		liveReaderMetrics: wlog.NewLiveReaderMetrics(reg),
@@ -160,7 +162,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			SigV4Config:      rwConf.SigV4Config,
 			Headers:          rwConf.Headers,
 			RetryOnRateLimit: rwConf.QueueConfig.RetryOnRateLimit,
-		})
+		}, rws.options)
 		if err != nil {
 			return err
 		}

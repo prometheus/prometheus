@@ -80,7 +80,7 @@ func TestSampleDelivery(t *testing.T) {
 
 	dir := t.TempDir()
 
-	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil)
+	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, nil)
 	defer s.Close()
 
 	queueConfig := config.DefaultQueueConfig

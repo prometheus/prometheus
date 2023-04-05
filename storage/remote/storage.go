@@ -23,6 +23,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
+	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"gopkg.in/yaml.v2"
 
@@ -51,8 +52,9 @@ type startTimeCallback func() (int64, error)
 // Storage represents all the remote read and write endpoints.  It implements
 // storage.Storage.
 type Storage struct {
-	logger *logging.Deduper
-	mtx    sync.Mutex
+	options *Options
+	logger  *logging.Deduper
+	mtx     sync.Mutex
 
 	rws *WriteStorage
 
@@ -61,8 +63,15 @@ type Storage struct {
 	localStartTimeCallback startTimeCallback
 }
 
+// Options are configuration parmaeters to the remote.Storage.
+type Options struct {
+	// Optional HTTP client options to use when performing remote_read or
+	// remote_write.
+	HTTPClientOptions []config_util.HTTPClientOption
+}
+
 // NewStorage returns a remote.Storage.
-func NewStorage(l log.Logger, reg prometheus.Registerer, stCallback startTimeCallback, walDir string, flushDeadline time.Duration, sm ReadyScrapeManager) *Storage {
+func NewStorage(l log.Logger, reg prometheus.Registerer, stCallback startTimeCallback, walDir string, flushDeadline time.Duration, sm ReadyScrapeManager, options *Options) *Storage {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
@@ -71,8 +80,9 @@ func NewStorage(l log.Logger, reg prometheus.Registerer, stCallback startTimeCal
 	s := &Storage{
 		logger:                 logger,
 		localStartTimeCallback: stCallback,
+		options:                options,
 	}
-	s.rws = NewWriteStorage(s.logger, reg, walDir, flushDeadline, sm)
+	s.rws = NewWriteStorage(s.logger, reg, walDir, flushDeadline, sm, options)
 	return s
 }
 
@@ -113,7 +123,7 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 			Timeout:          rrConf.RemoteTimeout,
 			HTTPClientConfig: rrConf.HTTPClientConfig,
 			Headers:          rrConf.Headers,
-		})
+		}, s.options)
 		if err != nil {
 			return err
 		}

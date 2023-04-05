@@ -108,8 +108,12 @@ type ReadClient interface {
 }
 
 // NewReadClient creates a new client for remote read.
-func NewReadClient(name string, conf *ClientConfig) (ReadClient, error) {
-	httpClient, err := config_util.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage_read_client")
+func NewReadClient(name string, conf *ClientConfig, options *Options) (ReadClient, error) {
+	var clientOptions []config_util.HTTPClientOption
+	if options != nil {
+		clientOptions = options.HTTPClientOptions
+	}
+	httpClient, err := config_util.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage_read_client", clientOptions...)
 	if err != nil {
 		return nil, err
 	}
@@ -132,8 +136,12 @@ func NewReadClient(name string, conf *ClientConfig) (ReadClient, error) {
 }
 
 // NewWriteClient creates a new client for remote write.
-func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
-	httpClient, err := config_util.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage_write_client")
+func NewWriteClient(name string, conf *ClientConfig, options *Options) (WriteClient, error) {
+	var clientOptions []config_util.HTTPClientOption
+	if options != nil {
+		clientOptions = options.HTTPClientOptions
+	}
+	httpClient, err := config_util.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage_write_client", clientOptions...)
 	if err != nil {
 		return nil, err
 	}

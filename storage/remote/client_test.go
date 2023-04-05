@@ -70,7 +70,7 @@ func TestStoreHTTPErrorHandling(t *testing.T) {
 
 		hash, err := toHash(conf)
 		require.NoError(t, err)
-		c, err := NewWriteClient(hash, conf)
+		c, err := NewWriteClient(hash, conf, nil)
 		require.NoError(t, err)
 
 		err = c.Store(context.Background(), []byte{})
@@ -95,7 +95,7 @@ func TestClientRetryAfter(t *testing.T) {
 	getClient := func(conf *ClientConfig) WriteClient {
 		hash, err := toHash(conf)
 		require.NoError(t, err)
-		c, err := NewWriteClient(hash, conf)
+		c, err := NewWriteClient(hash, conf, nil)
 		require.NoError(t, err)
 		return c
 	}

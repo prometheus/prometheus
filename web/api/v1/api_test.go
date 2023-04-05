@@ -416,7 +416,7 @@ func TestEndpoints(t *testing.T) {
 
 		remote := remote.NewStorage(promlog.New(&promlogConfig), prometheus.DefaultRegisterer, func() (int64, error) {
 			return 0, nil
-		}, dbDir, 1*time.Second, nil)
+		}, dbDir, 1*time.Second, nil, nil)
 
 		err = remote.ApplyConfig(&config.Config{
 			RemoteReadConfigs: []*config.RemoteReadConfig{
