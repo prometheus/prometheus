@@ -1874,7 +1874,9 @@ func getFPointSlice(sz int) []FPoint {
 }
 
 func putFPointSlice(p []FPoint) {
-	fPointPool.Put(p[:0])
+	if p != nil {
+		fPointPool.Put(p[:0])
+	}
 }
 
 func getHPointSlice(sz int) []HPoint {
@@ -1885,7 +1887,9 @@ func getHPointSlice(sz int) []HPoint {
 }
 
 func putHPointSlice(p []HPoint) {
-	hPointPool.Put(p[:0])
+	if p != nil {
+		hPointPool.Put(p[:0])
+	}
 }
 
 // matrixSelector evaluates a *parser.MatrixSelector expression.
