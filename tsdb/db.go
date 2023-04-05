@@ -602,76 +602,54 @@ func (db *DBReadOnly) Blocks() ([]BlockReader, error) {
 }
 
 // LastBlockID returns the BlockID of latest block.
-func (db *DBReadOnly) LastBlockID(logger log.Logger) (string, error) {
-	select {
-	case <-db.closed:
-		return "", ErrClosed
-	default:
-	}
-	latestDirName, err := db.lastBlockDirName(logger)
-	if err != nil {
-		return "", err
-	}
-	// Open the latest block and get its ID
-	block, err := db.Block(logger, latestDirName)
-	if err != nil {
-		return "", err
-	}
-	return block.Meta().ULID.String(), nil
-}
-
-func (db *DBReadOnly) lastBlockDirName(logger log.Logger) (string, error) {
+func (db *DBReadOnly) LastBlockID() (string, error) {
 	entries, err := os.ReadDir(db.dir)
 	if err != nil {
 		return "", err
 	}
-	skipNames := map[string]struct{}{
-		"index":          {},
-		"chunks_head":    {},
-		"lock":           {},
-		"queries.active": {},
-		"wal":            {},
-	}
+
 	max := uint64(0)
 
-	latestDirName := ""
+	lastBlockID := ""
 	// Walk the blocks directory and find the latest subdirectory
 	for _, e := range entries {
-		dirName := e.Name()
+		// Check if dir is BLOCK dir or not
+		if isBlockDir(e) {
+			dirName := e.Name()
+			ulidObj, err := ulid.ParseStrict(dirName)
+			if err != nil {
+				return "", err
+			}
+			timestamp := ulidObj.Time()
 
-		if _, skip := skipNames[dirName]; skip {
-			// Skip the  directory
-			continue
-		}
-
-		ulidObj, err := ulid.Parse(dirName)
-		if err != nil {
-			return "", err
-		}
-		timestamp := ulidObj.Time()
-
-		if timestamp > max {
-			max = timestamp
-			latestDirName = dirName
+			if timestamp > max {
+				max = timestamp
+				lastBlockID = dirName
+			}
 		}
 	}
 
-	if latestDirName == "" {
+	if lastBlockID == "" {
 		return "", errors.New("no blocks found")
 	}
 
-	return latestDirName, nil
+	return lastBlockID, nil
 }
 
 // Block returns a block reader by given block id.
-func (db *DBReadOnly) Block(logger log.Logger, blockID string) (BlockReader, error) {
+func (db *DBReadOnly) Block(blockID string) (BlockReader, error) {
 	select {
 	case <-db.closed:
 		return nil, ErrClosed
 	default:
 	}
 
-	block, err := OpenBlock(logger, filepath.Join(db.dir, blockID), nil)
+	_, err := os.Stat(filepath.Join(db.dir, blockID))
+	if os.IsNotExist(err) {
+		return nil, errors.Errorf("Invalid Block ID %s", blockID)
+	}
+
+	block, err := OpenBlock(db.logger, filepath.Join(db.dir, blockID), nil)
 	if err != nil {
 		return nil, err
 	}

@@ -2457,24 +2457,21 @@ func TestDBReadOnly(t *testing.T) {
 			require.Equal(t, expBlock.Meta(), blocks[i].Meta(), "block meta mismatch")
 		}
 	})
-	t.Run("analyse-block-id", func(t *testing.T) {
+	t.Run("block", func(t *testing.T) {
 		blockID := expBlock.meta.ULID.String()
-		block, err := dbReadOnly.Block(nil, blockID)
+		block, err := dbReadOnly.Block(blockID)
 		require.NoError(t, err)
 		require.Equal(t, expBlock.Meta(), block.Meta(), "block meta mismatch")
 	})
-	t.Run("invalid-block-id", func(t *testing.T) {
+	t.Run("invalid block ID", func(t *testing.T) {
 		blockID := "01GTDVZZF52NSWB5SXQF0P2PGF"
-		_, err := dbReadOnly.Block(nil, blockID)
+		_, err := dbReadOnly.Block(blockID)
 		require.Error(t, err)
 	})
-	t.Run("analyse-latest-block", func(t *testing.T) {
-		blockID, err := dbReadOnly.LastBlockID(nil)
-		expBlock = expBlocks[2]
+	t.Run("last block ID", func(t *testing.T) {
+		blockID, err := dbReadOnly.LastBlockID()
 		require.NoError(t, err)
-		block, err := dbReadOnly.Block(nil, blockID)
-		require.NoError(t, err)
-		require.Equal(t, expBlock.Meta(), block.Meta(), "block meta mismatch")
+		require.Equal(t, expBlocks[2].Meta().ULID.String(), blockID)
 	})
 	t.Run("querier", func(t *testing.T) {
 		// Open a read only db and ensure that the API returns the same result as the normal DB.
