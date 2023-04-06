@@ -8,9 +8,11 @@ require (
 	github.com/Azure/go-autorest/autorest/adal v0.9.23
 	github.com/alecthomas/kingpin/v2 v2.3.2
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
+	github.com/aliyun/alibaba-cloud-sdk-go v1.62.271
 	github.com/aws/aws-sdk-go v1.44.217
 	github.com/cespare/xxhash/v2 v2.2.0
 	github.com/dennwc/varint v1.0.0
+	github.com/denverdino/aliyungo v0.0.0-20230306010910-3b4854507fe6
 	github.com/digitalocean/godo v1.98.0
 	github.com/docker/docker v23.0.1+incompatible
 	github.com/edsrzf/mmap-go v1.1.0
@@ -85,6 +87,7 @@ require (
 	github.com/coreos/go-systemd/v22 v22.5.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
+	github.com/opentracing/opentracing-go v1.2.1-0.20220228012449-10b1cf09e00b // indirect
 	github.com/rogpeppe/go-internal v1.9.0 // indirect
 	github.com/xhit/go-str2duration/v2 v2.1.0 // indirect
 )
@@ -112,7 +115,7 @@ require (
 	github.com/fatih/color v1.14.1 // indirect
 	github.com/felixge/httpsnoop v1.0.3 // indirect
 	github.com/ghodss/yaml v1.0.0 // indirect
-	github.com/go-kit/kit v0.12.0 // indirect
+	github.com/go-kit/kit v0.12.0
 	github.com/go-logr/logr v1.2.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-openapi/analysis v0.21.4 // indirect
