@@ -106,12 +106,12 @@ func (c *sampleAndChunkQueryableClient) ChunkQuerier(ctx context.Context, mint, 
 
 // preferLocalStorage returns noop if requested timeframe can be answered completely by the local TSDB, and
 // reduces maxt if the timeframe can be partially answered by TSDB.
-func (c *sampleAndChunkQueryableClient) preferLocalStorage(mint, maxt int64) (cmaxt int64, noop bool, err error) {
+func (c *sampleAndChunkQueryableClient) preferLocalStorage(mint int64, maxt int64) (int64, bool, error) {
 	localStartTime, err := c.callback()
 	if err != nil {
 		return 0, false, err
 	}
-	cmaxt = maxt
+	cmaxt := maxt
 
 	// Avoid queries whose time range is later than the first timestamp in local DB.
 	if mint > localStartTime {

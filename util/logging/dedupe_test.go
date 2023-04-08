@@ -22,7 +22,7 @@ import (
 
 type counter int
 
-func (c *counter) Log(keyvals ...interface{}) error {
+func (c *counter) Log(_ ...interface{}) error {
 	(*c)++
 	return nil
 }

@@ -779,7 +779,7 @@ func kahanSum(samples []float64) float64 {
 	return sum + c
 }
 
-func kahanSumInc(inc, sum, c float64) (newSum, newC float64) {
+func kahanSumInc(inc, sum, c float64) (float64, float64) {
 	t := sum + inc
 	// Using Neumaier improvement, swap if next term larger than sum.
 	if math.Abs(sum) >= math.Abs(inc) {
@@ -793,7 +793,7 @@ func kahanSumInc(inc, sum, c float64) (newSum, newC float64) {
 // linearRegression performs a least-square linear regression analysis on the
 // provided SamplePairs. It returns the slope, and the intercept value at the
 // provided time.
-func linearRegression(samples []Point, interceptTime int64) (slope, intercept float64) {
+func linearRegression(samples []Point, interceptTime int64) (float64, float64) {
 	var (
 		n          float64
 		sumX, cX   float64
@@ -831,8 +831,8 @@ func linearRegression(samples []Point, interceptTime int64) (slope, intercept fl
 	covXY := sumXY - sumX*sumY/n
 	varX := sumX2 - sumX*sumX/n
 
-	slope = covXY / varX
-	intercept = sumY/n - slope*sumX/n
+	slope := covXY / varX
+	intercept := sumY/n - slope*sumX/n
 	return slope, intercept
 }
 

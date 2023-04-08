@@ -66,7 +66,7 @@ func (b *MemoizedSeriesIterator) Reset(it chunkenc.Iterator) {
 
 // PeekPrev returns the previous element of the iterator. If there is none buffered,
 // ok is false.
-func (b *MemoizedSeriesIterator) PeekPrev() (t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, ok bool) {
+func (b *MemoizedSeriesIterator) PeekPrev() (int64, float64, *histogram.Histogram, *histogram.FloatHistogram, bool) {
 	if b.prevTime == math.MinInt64 {
 		return 0, 0, nil, nil, false
 	}

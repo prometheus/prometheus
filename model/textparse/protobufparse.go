@@ -479,7 +479,7 @@ var errInvalidVarint = errors.New("protobufparse: invalid varint encountered")
 // specific to a MetricFamily, utilizes the more efficient gogo-protobuf
 // unmarshaling, and acts on a byte slice directly without any additional
 // staging buffers.
-func readDelimited(b []byte, mf *dto.MetricFamily) (n int, err error) {
+func readDelimited(b []byte, mf *dto.MetricFamily) (int, error) {
 	if len(b) == 0 {
 		return 0, io.EOF
 	}

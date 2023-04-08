@@ -1121,7 +1121,8 @@ func (c *scrapeCache) ListMetadata() []MetricMetadata {
 }
 
 // MetadataSize returns the size of the metadata cache.
-func (c *scrapeCache) SizeMetadata() (s int) {
+func (c *scrapeCache) SizeMetadata() int {
+	var s int
 	c.metaMtx.Lock()
 	defer c.metaMtx.Unlock()
 	for _, e := range c.metadata {
@@ -1466,7 +1467,11 @@ type appendErrors struct {
 	numExemplarOutOfOrder int
 }
 
-func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string, ts time.Time) (total, added, seriesAdded int, err error) {
+func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string, ts time.Time) (int, int, int, error) {
+	var total int
+	var added int
+	var seriesAdded int
+	var err error
 	p, err := textparse.New(b, contentType)
 	if err != nil {
 		level.Debug(sl.l).Log(
@@ -1704,7 +1709,7 @@ loop:
 			return err == nil
 		})
 	}
-	return
+	return total, added, seriesAdded, err
 }
 
 // Adds samples to the appender, checking the error, and then returns the # of samples added,
@@ -1770,7 +1775,8 @@ var (
 	scrapeBodySizeBytesMetricName = []byte("scrape_body_size_bytes" + "\xff")
 )
 
-func (sl *scrapeLoop) report(app storage.Appender, start time.Time, duration time.Duration, scraped, added, seriesAdded, bytes int, scrapeErr error) (err error) {
+func (sl *scrapeLoop) report(app storage.Appender, start time.Time, duration time.Duration, scraped, added, seriesAdded, bytes int, scrapeErr error) error {
+	var err error
 	sl.scraper.Report(start, duration, scrapeErr)
 
 	ts := timestamp.FromTime(start)
@@ -1781,66 +1787,67 @@ func (sl *scrapeLoop) report(app storage.Appender, start time.Time, duration tim
 	}
 
 	if err = sl.addReportSample(app, scrapeHealthMetricName, ts, health); err != nil {
-		return
+		return err
 	}
 	if err = sl.addReportSample(app, scrapeDurationMetricName, ts, duration.Seconds()); err != nil {
-		return
+		return err
 	}
 	if err = sl.addReportSample(app, scrapeSamplesMetricName, ts, float64(scraped)); err != nil {
-		return
+		return err
 	}
 	if err = sl.addReportSample(app, samplesPostRelabelMetricName, ts, float64(added)); err != nil {
-		return
+		return err
 	}
 	if err = sl.addReportSample(app, scrapeSeriesAddedMetricName, ts, float64(seriesAdded)); err != nil {
-		return
+		return err
 	}
 	if sl.reportExtraMetrics {
 		if err = sl.addReportSample(app, scrapeTimeoutMetricName, ts, sl.timeout.Seconds()); err != nil {
-			return
+			return err
 		}
 		if err = sl.addReportSample(app, scrapeSampleLimitMetricName, ts, float64(sl.sampleLimit)); err != nil {
-			return
+			return err
 		}
 		if err = sl.addReportSample(app, scrapeBodySizeBytesMetricName, ts, float64(bytes)); err != nil {
-			return
+			return err
 		}
 	}
-	return
+	return err
 }
 
-func (sl *scrapeLoop) reportStale(app storage.Appender, start time.Time) (err error) {
+func (sl *scrapeLoop) reportStale(app storage.Appender, start time.Time) error {
+	var err error
 	ts := timestamp.FromTime(start)
 
 	stale := math.Float64frombits(value.StaleNaN)
 
 	if err = sl.addReportSample(app, scrapeHealthMetricName, ts, stale); err != nil {
-		return
+		return err
 	}
 	if err = sl.addReportSample(app, scrapeDurationMetricName, ts, stale); err != nil {
-		return
+		return err
 	}
 	if err = sl.addReportSample(app, scrapeSamplesMetricName, ts, stale); err != nil {
-		return
+		return err
 	}
 	if err = sl.addReportSample(app, samplesPostRelabelMetricName, ts, stale); err != nil {
-		return
+		return err
 	}
 	if err = sl.addReportSample(app, scrapeSeriesAddedMetricName, ts, stale); err != nil {
-		return
+		return err
 	}
 	if sl.reportExtraMetrics {
 		if err = sl.addReportSample(app, scrapeTimeoutMetricName, ts, stale); err != nil {
-			return
+			return err
 		}
 		if err = sl.addReportSample(app, scrapeSampleLimitMetricName, ts, stale); err != nil {
-			return
+			return err
 		}
 		if err = sl.addReportSample(app, scrapeBodySizeBytesMetricName, ts, stale); err != nil {
-			return
+			return err
 		}
 	}
-	return
+	return err
 }
 
 func (sl *scrapeLoop) addReportSample(app storage.Appender, s []byte, t int64, v float64) error {

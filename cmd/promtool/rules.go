@@ -68,7 +68,7 @@ func newRuleImporter(logger log.Logger, config ruleImporterConfig, apiClient que
 }
 
 // loadGroups parses groups from a list of recording rule files.
-func (importer *ruleImporter) loadGroups(ctx context.Context, filenames []string) (errs []error) {
+func (importer *ruleImporter) loadGroups(ctx context.Context, filenames []string) []error {
 	groups, errs := importer.ruleManager.LoadGroups(importer.config.evalInterval, labels.Labels{}, "", nil, filenames...)
 	if errs != nil {
 		return errs
@@ -78,7 +78,8 @@ func (importer *ruleImporter) loadGroups(ctx context.Context, filenames []string
 }
 
 // importAll evaluates all the recording rules and creates new time series and writes them to disk in blocks.
-func (importer *ruleImporter) importAll(ctx context.Context) (errs []error) {
+func (importer *ruleImporter) importAll(ctx context.Context) []error {
+	var errs []error
 	for name, group := range importer.groups {
 		level.Info(importer.logger).Log("backfiller", "processing group", "name", name)
 
@@ -95,7 +96,8 @@ func (importer *ruleImporter) importAll(ctx context.Context) (errs []error) {
 // importRule queries a prometheus API to evaluate rules at times in the past.
 func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName string, ruleLabels labels.Labels, start, end time.Time,
 	maxBlockDuration int64, grp *rules.Group,
-) (err error) {
+) error {
+	var err error
 	blockDuration := getCompatibleBlockDuration(maxBlockDuration)
 	startInMs := start.Unix() * int64(time.Second/time.Millisecond)
 	endInMs := end.Unix() * int64(time.Second/time.Millisecond)

@@ -202,8 +202,8 @@ func (f *fanoutAppender) UpdateMetadata(ref SeriesRef, l labels.Labels, m metada
 	return ref, nil
 }
 
-func (f *fanoutAppender) Commit() (err error) {
-	err = f.primary.Commit()
+func (f *fanoutAppender) Commit() error {
+	err := f.primary.Commit()
 
 	for _, appender := range f.secondaries {
 		if err == nil {
@@ -214,7 +214,7 @@ func (f *fanoutAppender) Commit() (err error) {
 			}
 		}
 	}
-	return
+	return err
 }
 
 func (f *fanoutAppender) Rollback() (err error) {

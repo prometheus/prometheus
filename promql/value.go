@@ -407,7 +407,7 @@ func (ssi *storageSeriesIterator) Seek(t int64) chunkenc.ValueType {
 	return chunkenc.ValNone
 }
 
-func (ssi *storageSeriesIterator) At() (t int64, v float64) {
+func (ssi *storageSeriesIterator) At() (int64, float64) {
 	p := ssi.points[ssi.curr]
 	return p.T, p.V
 }

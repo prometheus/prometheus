@@ -507,7 +507,7 @@ func (c *chainSampleIterator) Seek(t int64) chunkenc.ValueType {
 	return chunkenc.ValNone
 }
 
-func (c *chainSampleIterator) At() (t int64, v float64) {
+func (c *chainSampleIterator) At() (int64, float64) {
 	if c.curr == nil {
 		panic("chainSampleIterator.At called before first .Next or after .Next returned false.")
 	}

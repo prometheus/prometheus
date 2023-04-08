@@ -68,7 +68,10 @@ func (m *FastRegexMatcher) GetRegexString() string {
 
 // optimizeConcatRegex returns literal prefix/suffix text that can be safely
 // checked against the label value before running the regexp matcher.
-func optimizeConcatRegex(r *syntax.Regexp) (prefix, suffix, contains string) {
+func optimizeConcatRegex(r *syntax.Regexp) (string, string, string) {
+	var prefix string
+	var suffix string
+	var contains string
 	sub := r.Sub
 
 	// We can safely remove begin and end text matchers respectively
@@ -81,7 +84,7 @@ func optimizeConcatRegex(r *syntax.Regexp) (prefix, suffix, contains string) {
 	}
 
 	if len(sub) == 0 {
-		return
+		return prefix, suffix, contains
 	}
 
 	// Given Prometheus regex matchers are always anchored to the begin/end
@@ -104,5 +107,5 @@ func optimizeConcatRegex(r *syntax.Regexp) (prefix, suffix, contains string) {
 		}
 	}
 
-	return
+	return prefix, suffix, contains
 }

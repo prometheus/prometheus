@@ -310,10 +310,7 @@ func addBucket(
 	spans []Span, buckets []float64,
 	iSpan, iBucket int,
 	iInSpan, index int32,
-) (
-	newSpans []Span, newBuckets []float64,
-	newISpan, newIBucket int, newIInSpan int32,
-) {
+) ([]Span, []float64, int, int, int32) {
 	if iSpan == -1 {
 		// First add, check if it is before all spans.
 		if len(spans) == 0 || spans[0].Offset > b.Index {
@@ -614,7 +611,8 @@ func (h *FloatHistogram) AllBucketIterator() BucketIterator[float64] {
 // is adjusted upwards to the lower limit of that bucket (all in terms of
 // absolute values) and that bucket's count is included in the returned
 // count. The adjusted threshold is returned, too.
-func (h *FloatHistogram) zeroCountForLargerThreshold(largerThreshold float64) (count, threshold float64) {
+func (h *FloatHistogram) zeroCountForLargerThreshold(largerThreshold float64) (float64, float64) {
+	var count float64
 	// Fast path.
 	if largerThreshold == h.ZeroThreshold {
 		return h.ZeroCount, largerThreshold

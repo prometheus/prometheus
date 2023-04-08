@@ -104,7 +104,9 @@ func (errs ParseErrors) Error() string {
 }
 
 // ParseExpr returns the expression parsed from the input.
-func ParseExpr(input string) (expr Expr, err error) {
+func ParseExpr(input string) (Expr, error) {
+	var expr Expr 
+	var err error
 	p := newParser(input)
 	defer parserPool.Put(p)
 	defer p.recover(&err)
@@ -128,7 +130,9 @@ func ParseExpr(input string) (expr Expr, err error) {
 }
 
 // ParseMetric parses the input into a metric
-func ParseMetric(input string) (m labels.Labels, err error) {
+func ParseMetric(input string) (labels.Labels, error) {
+	var m labels.Labels
+	var err error
 	p := newParser(input)
 	defer parserPool.Put(p)
 	defer p.recover(&err)
@@ -147,7 +151,9 @@ func ParseMetric(input string) (m labels.Labels, err error) {
 
 // ParseMetricSelector parses the provided textual metric selector into a list of
 // label matchers.
-func ParseMetricSelector(input string) (m []*labels.Matcher, err error) {
+func ParseMetricSelector(input string) ([]*labels.Matcher, error) {
+	var m []*labels.Matcher
+	var err error
 	p := newParser(input)
 	defer parserPool.Put(p)
 	defer p.recover(&err)
@@ -199,7 +205,10 @@ type seriesDescription struct {
 }
 
 // ParseSeriesDesc parses the description of a time series.
-func ParseSeriesDesc(input string) (labels labels.Labels, values []SequenceValue, err error) {
+func ParseSeriesDesc(input string) (labels.Labels, []SequenceValue, error) {
+	var labels labels.Labels
+	var values []SequenceValue
+	var err error
 	p := newParser(input)
 	p.lex.seriesDesc = true
 
@@ -375,8 +384,8 @@ func (p *parser) assembleVectorSelector(vs *VectorSelector) {
 	}
 }
 
-func (p *parser) newAggregateExpr(op Item, modifier, args Node) (ret *AggregateExpr) {
-	ret = modifier.(*AggregateExpr)
+func (p *parser) newAggregateExpr(op Item, modifier, args Node) *AggregateExpr {
+	ret := modifier.(*AggregateExpr)
 	arguments := args.(Expressions)
 
 	ret.PosRange = PositionRange{
@@ -390,7 +399,7 @@ func (p *parser) newAggregateExpr(op Item, modifier, args Node) (ret *AggregateE
 		p.addParseErrf(ret.PositionRange(), "no arguments for aggregate expression provided")
 
 		// Prevents invalid array accesses.
-		return
+		return ret
 	}
 
 	desiredArgs := 1
@@ -402,7 +411,7 @@ func (p *parser) newAggregateExpr(op Item, modifier, args Node) (ret *AggregateE
 
 	if len(arguments) != desiredArgs {
 		p.addParseErrf(ret.PositionRange(), "wrong number of arguments for aggregate expression provided, expected %d, got %d", desiredArgs, len(arguments))
-		return
+		return ret
 	}
 
 	ret.Expr = arguments[desiredArgs-1]
@@ -433,7 +442,8 @@ func (p *parser) expectType(node Node, want ValueType, context string) {
 }
 
 // checkAST checks the validity of the provided AST. This includes type checking.
-func (p *parser) checkAST(node Node) (typ ValueType) {
+func (p *parser) checkAST(node Node) ValueType {
+	var typ ValueType
 	// For expressions the type is determined by their Type function.
 	// Lists do not have a type but are not invalid either.
 	switch n := node.(type) {
@@ -620,7 +630,7 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 	default:
 		p.addParseErrf(n.PositionRange(), "unknown node type: %T", node)
 	}
-	return
+	return typ
 }
 
 func (p *parser) unquoteString(s string) string {

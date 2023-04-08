@@ -396,7 +396,8 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		// If "v1" is not available, use "networking.k8s.io/v1beta1" for backward compatibility
 		var v1Supported bool
 		if retryOnError(ctx, 10*time.Second,
-			func() (err error) {
+			func() error {
+				var err error
 				v1Supported, err = checkDiscoveryV1Supported(d.client)
 				if err != nil {
 					level.Error(d.logger).Log("msg", "Failed to check networking.k8s.io/v1 availability", "err", err)
@@ -600,7 +601,8 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		// If "v1" is not available, use "networking.k8s.io/v1beta1" for backward compatibility
 		var v1Supported bool
 		if retryOnError(ctx, 10*time.Second,
-			func() (err error) {
+			func() error {
+				var err error
 				v1Supported, err = checkNetworkingV1Supported(d.client)
 				if err != nil {
 					level.Error(d.logger).Log("msg", "Failed to check networking.k8s.io/v1 availability", "err", err)
@@ -690,7 +692,7 @@ func send(ctx context.Context, ch chan<- []*targetgroup.Group, tg *targetgroup.G
 	}
 }
 
-func retryOnError(ctx context.Context, interval time.Duration, f func() error) (canceled bool) {
+func retryOnError(ctx context.Context, interval time.Duration, f func() error) bool {
 	var err error
 	err = f()
 	for {

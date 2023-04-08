@@ -347,7 +347,7 @@ func TestSampleAndChunkQueryableClient(t *testing.T) {
 		{
 			name: "prefer local storage",
 			mint: 0, maxt: 50,
-			callback:   func() (i int64, err error) { return 100, nil },
+			callback:   func() (int64, error) { return 100, nil },
 			readRecent: false,
 
 			expectedQuery: &prompb.Query{
@@ -381,7 +381,7 @@ func TestSampleAndChunkQueryableClient(t *testing.T) {
 		{
 			name: "prefer local storage, skipped",
 			mint: 30, maxt: 50,
-			callback:   func() (i int64, err error) { return 20, nil },
+			callback:   func() (int64, error) { return 20, nil },
 			readRecent: false,
 
 			expectedQuery:  nil,

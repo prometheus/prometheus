@@ -535,7 +535,8 @@ func (ng *Engine) newTestQuery(f func(context.Context) error) Query {
 //
 // At this point per query only one EvalStmt is evaluated. Alert and record
 // statements are not handled by the Engine.
-func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, ws storage.Warnings, err error) {
+func (ng *Engine) exec(ctx context.Context, q *query) (parser.Value, storage.Warnings, error) {
+	var err error
 	ng.metrics.currentQueries.Inc()
 	defer ng.metrics.currentQueries.Dec()
 
@@ -921,7 +922,8 @@ func checkAndExpandSeriesSet(ctx context.Context, expr parser.Expr) (storage.War
 	return nil, nil
 }
 
-func expandSeriesSet(ctx context.Context, it storage.SeriesSet) (res []storage.Series, ws storage.Warnings, err error) {
+func expandSeriesSet(ctx context.Context, it storage.SeriesSet) ([]storage.Series, storage.Warnings, error) {
+	var res []storage.Series
 	for it.Next() {
 		select {
 		case <-ctx.Done():
@@ -993,10 +995,12 @@ func (ev *evaluator) recover(expr parser.Expr, ws *storage.Warnings, errp *error
 	}
 }
 
-func (ev *evaluator) Eval(expr parser.Expr) (v parser.Value, ws storage.Warnings, err error) {
+func (ev *evaluator) Eval(expr parser.Expr) (parser.Value, storage.Warnings, error) {
+	var err error
+	var ws storage.Warnings 
 	defer ev.recover(expr, &ws, &err)
 
-	v, ws = ev.eval(expr)
+	v, ws := ev.eval(expr)
 	return v, ws, nil
 }
 

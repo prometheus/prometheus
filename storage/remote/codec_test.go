@@ -615,7 +615,7 @@ type mockWriter struct {
 	actual []*prompb.ChunkedSeries
 }
 
-func (m *mockWriter) Write(p []byte) (n int, err error) {
+func (m *mockWriter) Write(p []byte) (int, error) {
 	cr := &prompb.ChunkedReadResponse{}
 	if err := proto.Unmarshal(p, cr); err != nil {
 		return 0, fmt.Errorf("unmarshaling: %w", err)

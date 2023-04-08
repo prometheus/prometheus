@@ -113,21 +113,14 @@ func (t temporaryDirectory) Path() string {
 
 // NewTemporaryDirectory creates a new temporary directory for transient POSIX
 // activities.
-func NewTemporaryDirectory(name string, t T) (handler TemporaryDirectory) {
-	var (
-		directory string
-		err       error
-	)
-
-	directory, err = os.MkdirTemp(defaultDirectory, name)
+func NewTemporaryDirectory(name string, t T) TemporaryDirectory {
+	directory, err := os.MkdirTemp(defaultDirectory, name)
 	require.NoError(t, err)
 
-	handler = temporaryDirectory{
+	return temporaryDirectory{
 		path:   directory,
 		tester: t,
 	}
-
-	return
 }
 
 // DirHash returns a hash of all files attributes and their content within a directory.

@@ -95,7 +95,8 @@ type ruleGroups struct {
 }
 
 // Validate validates all rules in the rule groups.
-func (g *RuleGroups) Validate(node ruleGroups) (errs []error) {
+func (g *RuleGroups) Validate(node ruleGroups) []error {
+	var errs []error
 	set := map[string]struct{}{}
 
 	for j, g := range g.Groups {
@@ -164,7 +165,8 @@ type RuleNode struct {
 }
 
 // Validate the rule and return a list of encountered errors.
-func (r *RuleNode) Validate() (nodes []WrappedError) {
+func (r *RuleNode) Validate() []WrappedError {
+	var nodes []WrappedError
 	if r.Record.Value != "" && r.Alert.Value != "" {
 		nodes = append(nodes, WrappedError{
 			err:     fmt.Errorf("only one of 'record' and 'alert' must be set"),
@@ -250,12 +252,13 @@ func (r *RuleNode) Validate() (nodes []WrappedError) {
 		nodes = append(nodes, WrappedError{err: err})
 	}
 
-	return
+	return nodes
 }
 
 // testTemplateParsing checks if the templates used in labels and annotations
 // of the alerting rules are parsed correctly.
-func testTemplateParsing(rl *RuleNode) (errs []error) {
+func testTemplateParsing(rl *RuleNode) []error {
+	var errs []error
 	if rl.Alert.Value == "" {
 		// Not an alerting rule.
 		return errs

@@ -206,7 +206,7 @@ func (re Regexp) String() string {
 // are applied in order of input.
 // If a label set is dropped, EmptyLabels and false is returned.
 // May return the input labelSet modified.
-func Process(lbls labels.Labels, cfgs ...*Config) (ret labels.Labels, keep bool) {
+func Process(lbls labels.Labels, cfgs ...*Config) (labels.Labels, bool) {
 	lb := labels.NewBuilder(lbls)
 	if !ProcessBuilder(lb, cfgs...) {
 		return labels.EmptyLabels(), false
@@ -216,9 +216,9 @@ func Process(lbls labels.Labels, cfgs ...*Config) (ret labels.Labels, keep bool)
 
 // ProcessBuilder is like Process, but the caller passes a labels.Builder
 // containing the initial set of labels, which is mutated by the rules.
-func ProcessBuilder(lb *labels.Builder, cfgs ...*Config) (keep bool) {
+func ProcessBuilder(lb *labels.Builder, cfgs ...*Config) bool {
 	for _, cfg := range cfgs {
-		keep = relabel(cfg, lb)
+		keep := relabel(cfg, lb)
 		if !keep {
 			return false
 		}
@@ -226,7 +226,7 @@ func ProcessBuilder(lb *labels.Builder, cfgs ...*Config) (keep bool) {
 	return true
 }
 
-func relabel(cfg *Config, lb *labels.Builder) (keep bool) {
+func relabel(cfg *Config, lb *labels.Builder) bool {
 	var va [16]string
 	values := va[:0]
 	if len(cfg.SourceLabels) > cap(values) {
