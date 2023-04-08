@@ -105,7 +105,7 @@ func (errs ParseErrors) Error() string {
 
 // ParseExpr returns the expression parsed from the input.
 func ParseExpr(input string) (Expr, error) {
-	var expr Expr 
+	var expr Expr
 	var err error
 	p := newParser(input)
 	defer parserPool.Put(p)
@@ -489,13 +489,14 @@ func (p *parser) checkAST(node Node) ValueType {
 
 		// opRange returns the PositionRange of the operator part of the BinaryExpr.
 		// This is made a function instead of a variable, so it is lazily evaluated on demand.
-		opRange := func() (r PositionRange) {
+		opRange := func() PositionRange {
+			var r PositionRange
 			// Remove whitespace at the beginning and end of the range.
 			for r.Start = n.LHS.PositionRange().End; isSpace(rune(p.lex.input[r.Start])); r.Start++ {
 			}
 			for r.End = n.RHS.PositionRange().Start - 1; isSpace(rune(p.lex.input[r.End])); r.End-- {
 			}
-			return
+			return r
 		}
 
 		if n.ReturnBool && !n.Op.IsComparisonOperator() {

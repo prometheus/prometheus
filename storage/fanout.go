@@ -217,8 +217,8 @@ func (f *fanoutAppender) Commit() error {
 	return err
 }
 
-func (f *fanoutAppender) Rollback() (err error) {
-	err = f.primary.Rollback()
+func (f *fanoutAppender) Rollback() error {
+	err := f.primary.Rollback()
 
 	for _, appender := range f.secondaries {
 		rollbackErr := appender.Rollback()

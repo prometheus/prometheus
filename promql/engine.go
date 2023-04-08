@@ -997,7 +997,7 @@ func (ev *evaluator) recover(expr parser.Expr, ws *storage.Warnings, errp *error
 
 func (ev *evaluator) Eval(expr parser.Expr) (parser.Value, storage.Warnings, error) {
 	var err error
-	var ws storage.Warnings 
+	var ws storage.Warnings
 	defer ev.recover(expr, &ws, &err)
 
 	v, ws := ev.eval(expr)
