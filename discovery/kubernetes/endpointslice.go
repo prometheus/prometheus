@@ -300,7 +300,7 @@ func (e *EndpointSlice) buildEndpointSlice(eps endpointSliceAdaptor) *targetgrou
 		}
 
 		if port.protocol() != nil {
-			target[endpointSlicePortProtocolLabel] = lv(string(*port.protocol()))
+			target[endpointSlicePortProtocolLabel] = lv(*port.protocol())
 		}
 
 		if port.port() != nil {

@@ -130,11 +130,12 @@ func (node *MatrixSelector) String() string {
 		offset = fmt.Sprintf(" offset -%s", model.Duration(-vecSelector.OriginalOffset))
 	}
 	at := ""
-	if vecSelector.Timestamp != nil {
+	switch {
+	case vecSelector.Timestamp != nil:
 		at = fmt.Sprintf(" @ %.3f", float64(*vecSelector.Timestamp)/1000.0)
-	} else if vecSelector.StartOrEnd == START {
+	case vecSelector.StartOrEnd == START:
 		at = " @ start()"
-	} else if vecSelector.StartOrEnd == END {
+	case vecSelector.StartOrEnd == END:
 		at = " @ end()"
 	}
 
@@ -168,11 +169,12 @@ func (node *SubqueryExpr) getSubqueryTimeSuffix() string {
 		offset = fmt.Sprintf(" offset -%s", model.Duration(-node.OriginalOffset))
 	}
 	at := ""
-	if node.Timestamp != nil {
+	switch {
+	case node.Timestamp != nil:
 		at = fmt.Sprintf(" @ %.3f", float64(*node.Timestamp)/1000.0)
-	} else if node.StartOrEnd == START {
+	case node.StartOrEnd == START:
 		at = " @ start()"
-	} else if node.StartOrEnd == END {
+	case node.StartOrEnd == END:
 		at = " @ end()"
 	}
 	return fmt.Sprintf("[%s:%s]%s%s", model.Duration(node.Range), step, at, offset)
@@ -213,11 +215,12 @@ func (node *VectorSelector) String() string {
 		offset = fmt.Sprintf(" offset -%s", model.Duration(-node.OriginalOffset))
 	}
 	at := ""
-	if node.Timestamp != nil {
+	switch {
+	case node.Timestamp != nil:
 		at = fmt.Sprintf(" @ %.3f", float64(*node.Timestamp)/1000.0)
-	} else if node.StartOrEnd == START {
+	case node.StartOrEnd == START:
 		at = " @ start()"
-	} else if node.StartOrEnd == END {
+	case node.StartOrEnd == END:
 		at = " @ end()"
 	}
 

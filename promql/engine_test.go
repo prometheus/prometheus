@@ -3267,7 +3267,7 @@ func TestNativeHistogram_HistogramCountAndSum(t *testing.T) {
 			require.Len(t, vector, 1)
 			require.Nil(t, vector[0].H)
 			if floatHisto {
-				require.Equal(t, float64(h.ToFloat().Count), vector[0].F)
+				require.Equal(t, h.ToFloat().Count, vector[0].F)
 			} else {
 				require.Equal(t, float64(h.Count), vector[0].F)
 			}

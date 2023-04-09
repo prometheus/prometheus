@@ -113,7 +113,7 @@ func createIdxChkReaders(t *testing.T, tc []seriesSamples) (IndexReader, ChunkRe
 
 	var chunkRef chunks.ChunkRef
 	for i, s := range tc {
-		i = i + 1 // 0 is not a valid posting.
+		i++ // 0 is not a valid posting.
 		metas := make([]chunks.Meta, 0, len(s.chunks))
 		for _, chk := range s.chunks {
 			if chk[0].t < blockMint {
@@ -2012,7 +2012,7 @@ func BenchmarkQueries(b *testing.B) {
 				for x := 0; x <= 10; x++ {
 					block, err := OpenBlock(nil, createBlock(b, dir, series), nil)
 					require.NoError(b, err)
-					q, err := NewBlockQuerier(block, 1, int64(nSamples))
+					q, err := NewBlockQuerier(block, 1, nSamples)
 					require.NoError(b, err)
 					qs = append(qs, q)
 				}

@@ -561,10 +561,8 @@ func newMergedPostings(p []Postings) (m *mergedPostings, nonEmpty bool) {
 		// NOTE: mergedPostings struct requires the user to issue an initial Next.
 		if it.Next() {
 			ph = append(ph, it)
-		} else {
-			if it.Err() != nil {
-				return &mergedPostings{err: it.Err()}, true
-			}
+		} else if it.Err() != nil {
+			return &mergedPostings{err: it.Err()}, true
 		}
 	}
 
@@ -699,15 +697,16 @@ func (rp *removedPostings) Next() bool {
 		}
 
 		fcur, rcur := rp.full.At(), rp.remove.At()
-		if fcur < rcur {
+		switch {
+		case fcur < rcur:
 			rp.cur = fcur
 			rp.fok = rp.full.Next()
 
 			return true
-		} else if rcur < fcur {
+		case rcur < fcur:
 			// Forward the remove postings to the right position.
 			rp.rok = rp.remove.Seek(fcur)
-		} else {
+		default:
 			// Skip the current posting.
 			rp.fok = rp.full.Next()
 		}

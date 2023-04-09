@@ -253,7 +253,7 @@ func replaceYAMLTypeError(err error, oldTyp, newTyp reflect.Type) error {
 		oldStr := oldTyp.String()
 		newStr := newTyp.String()
 		for i, s := range e.Errors {
-			e.Errors[i] = strings.Replace(s, oldStr, newStr, -1)
+			e.Errors[i] = strings.ReplaceAll(s, oldStr, newStr)
 		}
 	}
 	return err

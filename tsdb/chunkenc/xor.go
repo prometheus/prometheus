@@ -163,15 +163,15 @@ func (a *xorAppender) AppendFloatHistogram(t int64, h *histogram.FloatHistogram)
 func (a *xorAppender) Append(t int64, v float64) {
 	var tDelta uint64
 	num := binary.BigEndian.Uint16(a.b.bytes())
-
-	if num == 0 {
+	switch {
+	case num == 0:
 		buf := make([]byte, binary.MaxVarintLen64)
 		for _, b := range buf[:binary.PutVarint(buf, t)] {
 			a.b.writeByte(b)
 		}
 		a.b.writeBits(math.Float64bits(v), 64)
 
-	} else if num == 1 {
+	case num == 1:
 		tDelta = uint64(t - a.t)
 
 		buf := make([]byte, binary.MaxVarintLen64)
@@ -181,7 +181,7 @@ func (a *xorAppender) Append(t int64, v float64) {
 
 		a.writeVDelta(v)
 
-	} else {
+	default:
 		tDelta = uint64(t - a.t)
 		dod := int64(tDelta - a.tDelta)
 
@@ -321,7 +321,7 @@ func (it *xorIterator) Next() ValueType {
 			return ValNone
 		}
 		it.tDelta = tDelta
-		it.t = it.t + int64(it.tDelta)
+		it.t += int64(it.tDelta)
 
 		return it.readValue()
 	}
@@ -384,7 +384,7 @@ func (it *xorIterator) Next() ValueType {
 	}
 
 	it.tDelta = uint64(int64(it.tDelta) + dod)
-	it.t = it.t + int64(it.tDelta)
+	it.t += int64(it.tDelta)
 
 	return it.readValue()
 }

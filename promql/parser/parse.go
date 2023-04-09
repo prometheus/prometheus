@@ -523,15 +523,13 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 				p.addParseErrf(n.PositionRange(), "vector matching only allowed between instant vectors")
 			}
 			n.VectorMatching = nil
-		} else {
 			// Both operands are Vectors.
-			if n.Op.IsSetOperator() {
-				if n.VectorMatching.Card == CardOneToMany || n.VectorMatching.Card == CardManyToOne {
-					p.addParseErrf(n.PositionRange(), "no grouping allowed for %q operation", n.Op)
-				}
-				if n.VectorMatching.Card != CardManyToMany {
-					p.addParseErrf(n.PositionRange(), "set operations must always be many-to-many")
-				}
+		} else if n.Op.IsSetOperator() {
+			if n.VectorMatching.Card == CardOneToMany || n.VectorMatching.Card == CardManyToOne {
+				p.addParseErrf(n.PositionRange(), "no grouping allowed for %q operation", n.Op)
+			}
+			if n.VectorMatching.Card != CardManyToMany {
+				p.addParseErrf(n.PositionRange(), "set operations must always be many-to-many")
 			}
 		}
 

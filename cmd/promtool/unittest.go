@@ -130,7 +130,7 @@ func resolveAndGlobFilepaths(baseDir string, utf *unitTestFile) error {
 		if err != nil {
 			return err
 		}
-		if len(m) <= 0 {
+		if len(m) == 0 {
 			fmt.Fprintln(os.Stderr, "  WARNING: no file match pattern", rf)
 		}
 		globbedFiles = append(globbedFiles, m...)

@@ -100,7 +100,7 @@ func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName
 	startInMs := start.Unix() * int64(time.Second/time.Millisecond)
 	endInMs := end.Unix() * int64(time.Second/time.Millisecond)
 
-	for startOfBlock := blockDuration * (startInMs / blockDuration); startOfBlock <= endInMs; startOfBlock = startOfBlock + blockDuration {
+	for startOfBlock := blockDuration * (startInMs / blockDuration); startOfBlock <= endInMs; startOfBlock += blockDuration {
 		endOfBlock := startOfBlock + blockDuration - 1
 
 		currStart := max(startOfBlock/int64(time.Second/time.Millisecond), start.Unix())

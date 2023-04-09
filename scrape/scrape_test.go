@@ -322,7 +322,7 @@ func TestScrapePoolReloadPreserveRelabeledIntervalTimeout(t *testing.T) {
 		ScrapeTimeout:  model.Duration(2 * time.Second),
 	}
 	newLoop := func(opts scrapeLoopOptions) loop {
-		l := &testLoop{interval: time.Duration(opts.interval), timeout: time.Duration(opts.timeout)}
+		l := &testLoop{interval: opts.interval, timeout: opts.timeout}
 		l.startFunc = func(interval, timeout time.Duration, errc chan<- error) {
 			require.Equal(t, 5*time.Second, interval, "Unexpected scrape interval")
 			require.Equal(t, 3*time.Second, timeout, "Unexpected scrape timeout")
@@ -546,7 +546,7 @@ func TestScrapePoolRaces(t *testing.T) {
 	require.Equal(t, expectedDropped, len(dropped), "Invalid number of dropped targets")
 
 	for i := 0; i < 20; i++ {
-		time.Sleep(time.Duration(10 * time.Millisecond))
+		time.Sleep(10 * time.Millisecond)
 		sp.reload(newConfig())
 	}
 	sp.stop()
@@ -1199,14 +1199,14 @@ func TestScrapeLoopRunCreatesStaleMarkersOnParseFailure(t *testing.T) {
 	// Succeed once, several failures, then stop.
 	scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
 		numScrapes++
-
-		if numScrapes == 1 {
+		switch {
+		case numScrapes == 1:
 			w.Write([]byte("metric_a 42\n"))
 			return nil
-		} else if numScrapes == 2 {
+		case numScrapes == 2:
 			w.Write([]byte("7&-\n"))
 			return nil
-		} else if numScrapes == 3 {
+		case numScrapes == 3:
 			cancel()
 		}
 		return errors.New("scrape failed")
@@ -1282,14 +1282,14 @@ func TestScrapeLoopCache(t *testing.T) {
 		}
 
 		numScrapes++
-
-		if numScrapes == 1 {
+		switch {
+		case numScrapes == 1:
 			w.Write([]byte("metric_a 42\nmetric_b 43\n"))
 			return nil
-		} else if numScrapes == 3 {
+		case numScrapes == 3:
 			w.Write([]byte("metric_a 44\n"))
 			return nil
-		} else if numScrapes == 4 {
+		case numScrapes == 4:
 			cancel()
 		}
 		return fmt.Errorf("scrape failed")
@@ -2280,11 +2280,12 @@ func TestTargetScrapeScrapeCancel(t *testing.T) {
 
 	go func() {
 		_, err := ts.scrape(ctx, io.Discard)
-		if err == nil {
+		switch {
+		case err == nil:
 			errc <- errors.New("Expected error but got nil")
-		} else if ctx.Err() != context.Canceled {
+		case ctx.Err() != context.Canceled:
 			errc <- errors.Errorf("Expected context cancellation error but got: %s", ctx.Err())
-		} else {
+		default:
 			close(errc)
 		}
 	}()
