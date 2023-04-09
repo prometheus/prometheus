@@ -164,6 +164,10 @@ type HeadOptions struct {
 	// The default value is GOMAXPROCS.
 	// If it is set to a negative value or zero, the default value is used.
 	WALReplayConcurrency int
+
+	// Maximum number of CPUs that can be used for sorting postings lists.
+	// The default value is 0, meaning all available CPU cores will be used.
+	MemPostingsEnsureOrderConcurrency int
 }
 
 const (
@@ -574,7 +578,7 @@ const cardinalityCacheExpirationTime = time.Duration(30) * time.Second
 func (h *Head) Init(minValidTime int64) error {
 	h.minValidTime.Store(minValidTime)
 	defer func() {
-		h.postings.EnsureOrder()
+		h.postings.EnsureOrder(h.opts.MemPostingsEnsureOrderConcurrency)
 	}()
 	defer h.gc() // After loading the wal remove the obsolete data from the head.
 	defer func() {

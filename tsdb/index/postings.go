@@ -224,7 +224,10 @@ func (p *MemPostings) All() Postings {
 
 // EnsureOrder ensures that all postings lists are sorted. After it returns all further
 // calls to add and addFor will insert new IDs in a sorted manner.
-func (p *MemPostings) EnsureOrder() {
+// Parameter numberOfConcurrentProcesses is used to specify the maximal number of
+// CPU cores used for this operation. If it is <= 0, GOMAXPROCS(0) is used.
+// GOMAXPROCS(0) was the default before introducing this parameter.
+func (p *MemPostings) EnsureOrder(numberOfConcurrentProcesses int) {
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
 
@@ -232,13 +235,16 @@ func (p *MemPostings) EnsureOrder() {
 		return
 	}
 
-	n := runtime.GOMAXPROCS(0)
+	concurrency := numberOfConcurrentProcesses
+	if concurrency <= 0 {
+		concurrency = runtime.GOMAXPROCS(0)
+	}
 	workc := make(chan *[][]storage.SeriesRef)
 
 	var wg sync.WaitGroup
-	wg.Add(n)
+	wg.Add(concurrency)
 
-	for i := 0; i < n; i++ {
+	for i := 0; i < concurrency; i++ {
 		go func() {
 			for job := range workc {
 				for _, l := range *job {
