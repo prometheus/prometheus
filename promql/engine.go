@@ -1857,7 +1857,7 @@ func (ev *evaluator) vectorSelectorSingle(it *storage.MemoizedSeriesIterator, no
 	}
 	if valueType == chunkenc.ValNone || t > refTime {
 		var ok bool
-		t, v, _, h, ok = it.PeekPrev()
+		t, v, h, ok = it.PeekPrev()
 		if !ok || t < refTime-durationMilliseconds(ev.lookbackDelta) {
 			return 0, 0, nil, false
 		}
