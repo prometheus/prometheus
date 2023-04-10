@@ -16,6 +16,10 @@
 
 package index
 
+import (
+	"io"
+)
+
 func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 	r := &Reader{
 		b:        b,
@@ -23,11 +27,7 @@ func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 		postings: map[string][]postingOffset{},
 	}
 	r.readSymbolsFunc = func() (*Symbols, error) {
-		symbols, err = NewSymbols(r.b, r.version, int(r.toc.Symbols))
-		if err != nil {
-			return nil, errors.Wrap(err, "read symbols")
-		}
-		return symbols, nil
+		return NewSymbols(r.b, r.version, int(r.toc.Symbols))
 	}
 	r.closeReaderFunc = func() error {
 		return r.c.Close()
