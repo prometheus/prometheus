@@ -69,7 +69,7 @@ func TestRemoteWriteHandler(t *testing.T) {
 
 		for _, hp := range ts.Histograms {
 			if hp.GetCountFloat() > 0 || hp.GetZeroCountFloat() > 0 { // It is a float histogram.
-				fh := HistogramProtoToFloatHistogram(hp)
+				fh := FloatHistogramProtoToFloatHistogram(hp)
 				require.Equal(t, mockHistogram{labels, hp.Timestamp, nil, fh}, appendable.histograms[k])
 			} else {
 				h := HistogramProtoToHistogram(hp)
