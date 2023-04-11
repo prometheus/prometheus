@@ -3140,7 +3140,6 @@ func TestRespondSeries(t *testing.T) {
 			require.Equal(t, c.expected, string(body))
 		})
 	}
-
 }
 
 func TestOptionsMethod(t *testing.T) {
