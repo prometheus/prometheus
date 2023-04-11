@@ -3026,6 +3026,123 @@ func TestParseDuration(t *testing.T) {
 	}
 }
 
+func BenchmarkSeriesRespond(b *testing.B) {
+	suite, err := promql.NewTest(b, "")
+	b.ReportAllocs()
+	app := suite.TSDB().Appender(context.Background())
+	for i := 0; i < 50000; i++ {
+		s := labels.Labels{
+			{
+				Name:  "__name__",
+				Value: fmt.Sprintf("series%v", i),
+			},
+			{
+				Name:  "label",
+				Value: fmt.Sprintf("series%v", i),
+			},
+			{
+				Name:  "label2",
+				Value: fmt.Sprintf("series%v", i),
+			},
+		}
+		app.Append(0, s, 0, 1)
+	}
+	app.Commit()
+	require.NoError(b, err)
+	defer suite.Close()
+	require.NoError(b, suite.Run())
+	api := &API{
+		Queryable: suite.Storage(),
+		ready:     func(f http.HandlerFunc) http.HandlerFunc { return f },
+	}
+
+	r := route.New()
+
+	api.Register(r)
+
+	s := httptest.NewServer(r)
+	defer s.Close()
+
+	req, err := http.NewRequest("POST", s.URL+"/series?match[]={__name__=~\".%2B\"}", nil)
+	if err != nil {
+		b.Fatalf("Error creating request: %s", err)
+	}
+	client := &http.Client{}
+	for i := 0; i < b.N; i++ {
+		resp, err := client.Do(req)
+		require.NoError(b, err)
+		if resp.StatusCode != http.StatusOK {
+			b.Fatalf("Expected status %d, got %d", http.StatusNoContent, resp.StatusCode)
+		}
+	}
+}
+
+func TestRespondSeries(t *testing.T) {
+	suite, err := promql.NewTest(t, `
+		load 1m
+			test_metric1{foo="bar"} 0+100x100
+			test_metric1{foo="boo"} 1+0x100
+			test_metric2{foo="boo"} 1+0x100
+			test_metric3{foo="bar", dup="1"} 1+0x100
+			test_metric3{foo="boo", dup="1"} 1+0x100
+			test_metric4{foo="bar", dup="1"} 1+0x100
+			test_metric4{foo="boo", dup="1"} 1+0x100
+			test_metric4{foo="boo"} 1+0x100
+	`)
+
+	defer suite.Close()
+	require.NoError(t, err)
+
+	require.NoError(t, suite.Run())
+	api := &API{
+		Queryable: suite.Storage(),
+		ready:     func(f http.HandlerFunc) http.HandlerFunc { return f },
+	}
+
+	r := route.New()
+
+	api.Register(r)
+
+	s := httptest.NewServer(r)
+	defer s.Close()
+
+	client := &http.Client{}
+
+	cases := []struct {
+		match    string
+		expected string
+	}{
+		{
+			match:    "test_metric2",
+			expected: `{"status":"success","data":[{"__name__":"test_metric2","foo":"boo"}]}`,
+		},
+		{
+			match:    "test_metric4",
+			expected: `{"status":"success","data":[{"__name__":"test_metric4","dup":"1","foo":"bar"},{"__name__":"test_metric4","dup":"1","foo":"boo"},{"__name__":"test_metric4","foo":"boo"}]}`,
+		},
+		{
+			match:    "{__name__=~\".%2B\"}",
+			expected: `{"status":"success","data":[{"__name__":"test_metric1","foo":"bar"},{"__name__":"test_metric1","foo":"boo"},{"__name__":"test_metric2","foo":"boo"},{"__name__":"test_metric3","dup":"1","foo":"bar"},{"__name__":"test_metric3","dup":"1","foo":"boo"},{"__name__":"test_metric4","dup":"1","foo":"bar"},{"__name__":"test_metric4","dup":"1","foo":"boo"},{"__name__":"test_metric4","foo":"boo"}]}`,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.match, func(t *testing.T) {
+			req, err := http.NewRequest("POST", s.URL+"/series?match[]=nothing&match[]="+c.match, nil)
+			require.NoError(t, err)
+
+			resp, err := client.Do(req)
+			require.NoError(t, err)
+
+			body, err := io.ReadAll(resp.Body)
+			defer resp.Body.Close()
+			require.NoError(t, err)
+			require.Equal(t, c.expected, string(body))
+		})
+	}
+
+}
+
 func TestOptionsMethod(t *testing.T) {
 	r := route.New()
 	api := &API{ready: func(f http.HandlerFunc) http.HandlerFunc { return f }}

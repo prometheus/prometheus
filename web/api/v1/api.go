@@ -219,6 +219,7 @@ func init() {
 	jsoniter.RegisterTypeEncoderFunc("promql.Sample", marshalSampleJSON, marshalSampleJSONIsEmpty)
 	jsoniter.RegisterTypeEncoderFunc("promql.Point", marshalPointJSON, marshalPointJSONIsEmpty)
 	jsoniter.RegisterTypeEncoderFunc("exemplar.Exemplar", marshalExemplarJSON, marshalExemplarJSONEmpty)
+	jsoniter.RegisterTypeEncoderFunc("labels.Labels", marshalLabelsJSON, marshalLabelsJSONEmpty)
 }
 
 // NewAPI returns an initialized API type.
@@ -1952,5 +1953,30 @@ func marshalExemplarJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 }
 
 func marshalExemplarJSONEmpty(ptr unsafe.Pointer) bool {
+	return false
+}
+
+// marshalLabelsJSON writes.
+//
+//	{
+//	   <labelName1>: <labelValue1>,
+//	   <labelName2>: <labelValue2>,
+//	   ...
+//	   <labelNameN>: <labelValueN>
+//	}
+func marshalLabelsJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
+	lbls := *((*labels.Labels)(ptr))
+	stream.WriteObjectStart()
+	for i, lbl := range lbls {
+		stream.WriteObjectField(lbl.Name)
+		stream.WriteString(lbl.Value)
+		if i < len(lbls)-1 {
+			stream.WriteMore()
+		}
+	}
+	stream.WriteObjectEnd()
+}
+
+func marshalLabelsJSONEmpty(ptr unsafe.Pointer) bool {
 	return false
 }
