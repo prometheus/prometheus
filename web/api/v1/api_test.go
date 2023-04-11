@@ -3028,6 +3028,7 @@ func TestParseDuration(t *testing.T) {
 
 func BenchmarkSeriesRespond(b *testing.B) {
 	suite, err := promql.NewTest(b, "")
+	require.NoError(b, err)
 	b.ReportAllocs()
 	app := suite.TSDB().Appender(context.Background())
 	for i := 0; i < 50000; i++ {
@@ -3045,10 +3046,10 @@ func BenchmarkSeriesRespond(b *testing.B) {
 				Value: fmt.Sprintf("series%v", i),
 			},
 		}
-		app.Append(0, s, 0, 1)
+		_, err = app.Append(0, s, 0, 1)
+		require.NoError(b, err)
 	}
-	app.Commit()
-	require.NoError(b, err)
+	require.NoError(b, app.Commit())
 	defer suite.Close()
 	require.NoError(b, suite.Run())
 	api := &API{
@@ -3064,9 +3065,7 @@ func BenchmarkSeriesRespond(b *testing.B) {
 	defer s.Close()
 
 	req, err := http.NewRequest("POST", s.URL+"/series?match[]={__name__=~\".%2B\"}", nil)
-	if err != nil {
-		b.Fatalf("Error creating request: %s", err)
-	}
+	require.NoError(b, err)
 	client := &http.Client{}
 	for i := 0; i < b.N; i++ {
 		resp, err := client.Do(req)
@@ -3089,9 +3088,8 @@ func TestRespondSeries(t *testing.T) {
 			test_metric4{foo="boo", dup="1"} 1+0x100
 			test_metric4{foo="boo"} 1+0x100
 	`)
-
-	defer suite.Close()
 	require.NoError(t, err)
+	defer suite.Close()
 
 	require.NoError(t, suite.Run())
 	api := &API{
