@@ -1202,7 +1202,7 @@ func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID ui
 		chunk:   newChunk,
 		minTime: t,
 		maxTime: t,
-		next:    s.headChunks,
+		prev:    s.headChunks,
 	}
 	s.nextAt = rangeForTimestamp(t, o.chunkRange)
 	return true, true
@@ -1259,7 +1259,7 @@ func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, 
 		chunk:   newChunk,
 		minTime: t,
 		maxTime: t,
-		next:    s.headChunks,
+		prev:    s.headChunks,
 	}
 	s.nextAt = rangeForTimestamp(t, o.chunkRange)
 	return true, true
@@ -1336,14 +1336,14 @@ func computeChunkEndTime(start, cur, max int64) int64 {
 }
 
 func (s *memSeries) cutNewHeadChunk(mint int64, e chunkenc.Encoding, chunkRange int64) *memChunk {
-	// When cutting a new head chunk we create a new memChunk instance with .next
-	// pointing at the current .headChunk, so it forms a linked list.
+	// When cutting a new head chunk we create a new memChunk instance with .prev
+	// pointing at the current .headChunks, so it forms a linked list.
 	// All but first headChunks list elements will be m-mapped as soon as possible
 	// so this is a single element list most of the time.
 	s.headChunks = &memChunk{
 		minTime: mint,
 		maxTime: math.MinInt64,
-		next:    s.headChunks,
+		prev:    s.headChunks,
 	}
 
 	if chunkenc.IsValidEncoding(e) {
@@ -1399,17 +1399,16 @@ func (s *memSeries) mmapCurrentOOOHeadChunk(chunkDiskMapper *chunks.ChunkDiskMap
 	return chunkRef
 }
 
-func (s *memSeries) mmapHeadChunks(chunkDiskMapper *chunks.ChunkDiskMapper) (count int) {
-	if s.headChunks == nil || s.headChunks.next == nil {
+// mmapChunks will m-map all but first chunk on s.headChunks list.
+func (s *memSeries) mmapChunks(chunkDiskMapper *chunks.ChunkDiskMapper) (count int) {
+	if s.headChunks == nil || s.headChunks.prev == nil {
 		// There is none or only one head chunk, so nothing to m-map here.
 		return
 	}
 
 	// Write chunks starting from the oldest one and stop before we get to current s.headChunk.
 	// If we have this chain: s.headChunk{t4} -> t3 -> t2 -> t1 -> t0
-	// then we need to write chunks t3 to t0, but skip s.headChunk. To do that we write every chunk
-	// where next field points to something, once next field is nil we've reached out s.headChunk
-	// and we need to stop writing.
+	// then we need to write chunks t0 to t3, but skip s.headChunks.
 	for i := s.headChunks.len() - 1; i > 0; i-- {
 		chk := s.headChunks.atOffset(i)
 		chunkRef := chunkDiskMapper.WriteChunk(s.ref, chk.minTime, chk.maxTime, chk.chunk, false, handleChunkWriteError)
@@ -1423,7 +1422,7 @@ func (s *memSeries) mmapHeadChunks(chunkDiskMapper *chunks.ChunkDiskMapper) (cou
 	}
 
 	// Once we've written out all chunks except s.headChunks we need to unlink these from s.headChunk.
-	s.headChunks.next = nil
+	s.headChunks.prev = nil
 
 	return count
 }

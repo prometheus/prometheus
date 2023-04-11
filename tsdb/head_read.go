@@ -320,7 +320,7 @@ func (h *headChunkReader) chunk(meta chunks.Meta, copyLastChunk bool) (chunkenc.
 		if !headChunk {
 			// Set this to nil so that Go GC can collect it after it has been used.
 			c.chunk = nil
-			c.next = nil
+			c.prev = nil
 			h.head.memChunkPool.Put(c)
 		}
 	}()

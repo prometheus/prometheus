@@ -1640,6 +1640,21 @@ func (h *Head) getOrCreateWithID(id chunks.HeadSeriesRef, hash uint64, lset labe
 	return s, true, nil
 }
 
+// mmapHeadChunks will iterate all memSeries stored on Head and call mmapHeadChunks() on each of them.
+//
+// There are two types of chunks that store samples for each memSeries:
+// A) Head chunk - stored on Go heap, when new samples are appended they go there.
+// B) M-mapped chunks - memory mapped chunks, kernel manages the memory for us on-demand, these chunks
+//
+//	are read-only.
+//
+// Calling mmapHeadChunks() will iterate all memSeries and m-mmap all chunks that should be m-mapped.
+// The m-mapping operation is needs to be serialised and so it goes via central lock.
+// If there are multiple concurrent memSeries that need to m-map some chunk then they can block each-other.
+//
+// To minimise the effect of locking on TSDB operations m-mapping is serialised and done away from
+// sample append path, since waiting on a lock inside an append would lock the entire memSeries for
+// (potentially) a long time, since that could eventually delay next scrape and/or cause query timeouts.
 func (h *Head) mmapHeadChunks() {
 	var count int
 	for i := 0; i < h.series.size; i++ {
@@ -1647,13 +1662,13 @@ func (h *Head) mmapHeadChunks() {
 		for _, all := range h.series.hashes[i] {
 			for _, series := range all {
 				series.Lock()
-				count = series.mmapHeadChunks(h.chunkDiskMapper)
+				count += series.mmapChunks(h.chunkDiskMapper)
 				series.Unlock()
-				h.metrics.mmapChunksTotal.Add(float64(count))
 			}
 		}
 		h.series.locks[i].RUnlock()
 	}
+	h.metrics.mmapChunksTotal.Add(float64(count))
 }
 
 // seriesHashmap is a simple hashmap for memSeries by their label set. It is built
@@ -1996,7 +2011,7 @@ func (s *memSeries) minTime() int64 {
 		return s.mmappedChunks[0].minTime
 	}
 	if s.headChunks != nil {
-		return s.headChunks.last().minTime
+		return s.headChunks.oldest().minTime
 	}
 	return math.MinInt64
 }
@@ -2019,6 +2034,7 @@ func (s *memSeries) truncateChunksBefore(mint int64, minOOOMmapRef chunks.ChunkD
 	var removedInOrder int
 	if s.headChunks != nil {
 		var i int
+		var nextChk *memChunk
 		chk := s.headChunks
 		for chk != nil {
 			if chk.maxTime < mint {
@@ -2026,16 +2042,17 @@ func (s *memSeries) truncateChunksBefore(mint int64, minOOOMmapRef chunks.ChunkD
 				removedInOrder = chk.len() + len(s.mmappedChunks)
 				s.firstChunkID += chunks.HeadChunkID(removedInOrder)
 				if i == 0 {
-					// this is the first chunk on the list so we need to remove the entire list
+					// This is the first chunk on the list so we need to remove the entire list.
 					s.headChunks = nil
 				} else {
-					// this is NOT the first chunk, unlink it from parent
-					s.headChunks.atOffset(i - 1).next = nil
+					// This is NOT the first chunk, unlink it from parent.
+					nextChk.prev = nil
 				}
 				s.mmappedChunks = nil
 				break
 			}
-			chk = chk.next
+			nextChk = chk
+			chk = chk.prev
 			i++
 		}
 	}
@@ -2080,7 +2097,7 @@ func (s *memSeries) cleanupAppendIDsBelow(bound uint64) {
 type memChunk struct {
 	chunk            chunkenc.Chunk
 	minTime, maxTime int64
-	next             *memChunk // link to the next element on the list
+	prev             *memChunk // Link to the previous element on the list.
 }
 
 // len returns the length of memChunk list, including the element it was called on.
@@ -2088,17 +2105,17 @@ func (mc *memChunk) len() (count int) {
 	elem := mc
 	for elem != nil {
 		count++
-		elem = elem.next
+		elem = elem.prev
 	}
 	return count
 }
 
-// last returns the last element on the list.
-// For single element list this will be the same memChunk last() was called on
-func (mc *memChunk) last() (elem *memChunk) {
+// oldest returns the oldest element on the list.
+// For single element list this will be the same memChunk oldest() was called on.
+func (mc *memChunk) oldest() (elem *memChunk) {
 	elem = mc
-	for elem.next != nil {
-		elem = elem.next
+	for elem.prev != nil {
+		elem = elem.prev
 	}
 	return elem
 }
@@ -2116,7 +2133,7 @@ func (mc *memChunk) atOffset(offset int) (elem *memChunk) {
 	elem = mc
 	for i < offset {
 		i++
-		elem = elem.next
+		elem = elem.prev
 		if elem == nil {
 			break
 		}
