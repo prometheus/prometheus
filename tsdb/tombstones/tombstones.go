@@ -252,7 +252,11 @@ func NewTestMemTombstones(intervals []Intervals) *MemTombstones {
 func (t *MemTombstones) Get(ref storage.SeriesRef) (Intervals, error) {
 	t.mtx.RLock()
 	defer t.mtx.RUnlock()
-	return t.intvlGroups[ref], nil
+	intervals, ok := t.intvlGroups[ref]
+	if !ok {
+		return nil, nil
+	}
+	return append(Intervals(nil), intervals...), nil // Make a copy to avoid race.
 }
 
 func (t *MemTombstones) DeleteTombstones(refs map[storage.SeriesRef]struct{}) {
