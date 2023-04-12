@@ -347,9 +347,10 @@ func lexStatements(l *Lexer) stateFn {
 
 	switch r := l.next(); {
 	case r == eof:
-		if l.parenDepth != 0 {
+		switch {
+		case l.parenDepth != 0:
 			return l.errorf("unclosed left parenthesis")
-		} else if l.bracketOpen {
+		case l.bracketOpen:
 			return l.errorf("unclosed left bracket")
 		}
 		l.emit(EOF)
@@ -371,12 +372,13 @@ func lexStatements(l *Lexer) stateFn {
 	case r == '^':
 		l.emit(POW)
 	case r == '=':
-		if t := l.peek(); t == '=' {
+		switch t := l.peek(); t {
+		case '=':
 			l.next()
 			l.emit(EQLC)
-		} else if t == '~' {
+		case '~':
 			return l.errorf("unexpected character after '=': %q", t)
-		} else {
+		default:
 			l.emit(EQL)
 		}
 	case r == '!':
@@ -791,11 +793,12 @@ Loop:
 		default:
 			l.backup()
 			word := l.input[l.start:l.pos]
-			if kw, ok := key[strings.ToLower(word)]; ok {
+			switch kw, ok := key[strings.ToLower(word)]; {
+			case ok:
 				l.emit(kw)
-			} else if !strings.Contains(word, ":") {
+			case !strings.Contains(word, ":"):
 				l.emit(IDENTIFIER)
-			} else {
+			default:
 				l.emit(METRIC_IDENTIFIER)
 			}
 			break Loop

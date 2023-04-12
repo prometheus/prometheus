@@ -424,7 +424,8 @@ func (s *memSeries) oooMergedChunk(meta chunks.Meta, cdm *chunks.ChunkDiskMapper
 			break
 		}
 
-		if chunkRef == meta.OOOLastRef {
+		switch {
+		case chunkRef == meta.OOOLastRef:
 			tmpChks = append(tmpChks, chunkMetaAndChunkDiskMapperRef{
 				meta: chunks.Meta{
 					MinTime: meta.OOOLastMinTime,
@@ -435,7 +436,7 @@ func (s *memSeries) oooMergedChunk(meta chunks.Meta, cdm *chunks.ChunkDiskMapper
 				origMinT: c.minTime,
 				origMaxT: c.maxTime,
 			})
-		} else if c.OverlapsClosedInterval(mint, maxt) {
+		case c.OverlapsClosedInterval(mint, maxt):
 			tmpChks = append(tmpChks, chunkMetaAndChunkDiskMapperRef{
 				meta: chunks.Meta{
 					MinTime: c.minTime,
@@ -594,12 +595,14 @@ type boundedIterator struct {
 func (b boundedIterator) Next() chunkenc.ValueType {
 	for b.Iterator.Next() == chunkenc.ValFloat {
 		t, _ := b.Iterator.At()
-		if t < b.minT {
+		switch {
+		case t < b.minT:
 			continue
-		} else if t > b.maxT {
+		case t > b.maxT:
 			return chunkenc.ValNone
+		default:
+			return chunkenc.ValFloat
 		}
-		return chunkenc.ValFloat
 	}
 	return chunkenc.ValNone
 }

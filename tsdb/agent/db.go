@@ -951,7 +951,8 @@ func (a *appender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int
 		return 0, storage.ErrOutOfOrderSample
 	}
 
-	if h != nil {
+	switch {
+	case h != nil:
 		// NOTE: always modify pendingHistograms and histogramSeries together
 		a.pendingHistograms = append(a.pendingHistograms, record.RefHistogramSample{
 			Ref: series.ref,
@@ -959,7 +960,7 @@ func (a *appender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int
 			H:   h,
 		})
 		a.histogramSeries = append(a.histogramSeries, series)
-	} else if fh != nil {
+	case fh != nil:
 		// NOTE: always modify pendingFloatHistograms and floatHistogramSeries together
 		a.pendingFloatHistograms = append(a.pendingFloatHistograms, record.RefFloatHistogramSample{
 			Ref: series.ref,

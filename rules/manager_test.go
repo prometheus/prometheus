@@ -481,17 +481,18 @@ func TestForStateRestore(t *testing.T) {
 		})
 
 		// Checking if we have restored it correctly.
-		if tst.noRestore {
+		switch {
+		case tst.noRestore:
 			require.Equal(t, tst.num, len(got))
 			for _, e := range got {
 				require.Equal(t, e.ActiveAt, restoreTime)
 			}
-		} else if tst.gracePeriod {
+		case tst.gracePeriod:
 			require.Equal(t, tst.num, len(got))
 			for _, e := range got {
 				require.Equal(t, opts.ForGracePeriod, e.ActiveAt.Add(alertForDuration).Sub(restoreTime))
 			}
-		} else {
+		default:
 			exp := tst.alerts
 			require.Equal(t, len(exp), len(got))
 			sortAlerts(exp)

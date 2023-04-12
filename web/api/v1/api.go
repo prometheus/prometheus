@@ -989,12 +989,14 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 					ScrapeURL:        target.URL().String(),
 					GlobalURL:        globalURL.String(),
 					LastError: func() string {
-						if err == nil && lastErrStr == "" {
+						switch {
+						case err == nil && lastErrStr == "":
 							return ""
-						} else if err != nil {
+						case err != nil:
 							return errors.Wrapf(err, lastErrStr).Error()
+						default:
+							return lastErrStr
 						}
-						return lastErrStr
 					}(),
 					LastScrape:         target.LastScrape(),
 					LastScrapeDuration: target.LastScrapeDuration().Seconds(),

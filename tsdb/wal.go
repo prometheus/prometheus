@@ -522,9 +522,10 @@ func (w *SegmentWAL) openSegmentFile(name string) (*os.File, error) {
 		}
 	}()
 
-	if n, err := f.Read(metab); err != nil {
+	switch n, err := f.Read(metab); {
+	case err != nil:
 		return nil, errors.Wrapf(err, "validate meta %q", f.Name())
-	} else if n != 8 {
+	case n != 8:
 		return nil, errors.Errorf("invalid header size %d in %q", n, f.Name())
 	}
 
@@ -1063,9 +1064,10 @@ func (r *walReader) entry(cr io.Reader) (WALEntryType, byte, []byte, error) {
 	tr := io.TeeReader(cr, r.crc32)
 
 	b := make([]byte, 6)
-	if n, err := tr.Read(b); err != nil {
+	switch n, err := tr.Read(b); {
+	case err != nil:
 		return 0, 0, nil, err
-	} else if n != 6 {
+	case n != 6:
 		return 0, 0, nil, r.corruptionErr("invalid entry header size %d", n)
 	}
 
@@ -1087,15 +1089,17 @@ func (r *walReader) entry(cr io.Reader) (WALEntryType, byte, []byte, error) {
 	}
 	buf := r.buf[:length]
 
-	if n, err := tr.Read(buf); err != nil {
+	switch n, err := tr.Read(buf); {
+	case err != nil:
 		return 0, 0, nil, err
-	} else if n != length {
+	case n != length:
 		return 0, 0, nil, r.corruptionErr("invalid entry body size %d", n)
 	}
 
-	if n, err := cr.Read(b[:4]); err != nil {
+	switch n, err := cr.Read(b[:4]); {
+	case err != nil:
 		return 0, 0, nil, err
-	} else if n != 4 {
+	case n != 4:
 		return 0, 0, nil, r.corruptionErr("invalid checksum length %d", n)
 	}
 	if exp, has := binary.BigEndian.Uint32(b[:4]), r.crc32.Sum32(); has != exp {

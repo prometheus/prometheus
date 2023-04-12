@@ -2960,10 +2960,11 @@ func TestAppendHistogram(t *testing.T) {
 			actHistograms := make([]tsdbutil.Sample, 0, len(expHistograms))
 			actFloatHistograms := make([]tsdbutil.Sample, 0, len(expFloatHistograms))
 			for typ := it.Next(); typ != chunkenc.ValNone; typ = it.Next() {
-				if typ == chunkenc.ValHistogram {
+				switch typ {
+				case chunkenc.ValHistogram:
 					ts, h := it.AtHistogram()
 					actHistograms = append(actHistograms, sample{t: ts, h: h})
-				} else if typ == chunkenc.ValFloatHistogram {
+				case chunkenc.ValFloatHistogram:
 					ts, fh := it.AtFloatHistogram()
 					actFloatHistograms = append(actFloatHistograms, sample{t: ts, fh: fh})
 				}
@@ -3565,14 +3566,15 @@ func testHistogramStaleSampleHelper(t *testing.T, floatHistogram bool) {
 		for i, eh := range expHistograms {
 			ah := actHistograms[i]
 			if floatHistogram {
-				if value.IsStaleNaN(eh.fh.Sum) {
+				switch {
+				case value.IsStaleNaN(eh.fh.Sum):
 					actNumStale++
 					require.True(t, value.IsStaleNaN(ah.fh.Sum))
 					// To make require.Equal work.
 					ah.fh.Sum = 0
 					eh.fh = eh.fh.Copy()
 					eh.fh.Sum = 0
-				} else if i > 0 {
+				case i > 0:
 					prev := expHistograms[i-1]
 					if prev.fh == nil || value.IsStaleNaN(prev.fh.Sum) {
 						eh.fh.CounterResetHint = histogram.UnknownCounterReset
@@ -3580,14 +3582,15 @@ func testHistogramStaleSampleHelper(t *testing.T, floatHistogram bool) {
 				}
 				require.Equal(t, eh, ah)
 			} else {
-				if value.IsStaleNaN(eh.h.Sum) {
+				switch {
+				case value.IsStaleNaN(eh.h.Sum):
 					actNumStale++
 					require.True(t, value.IsStaleNaN(ah.h.Sum))
 					// To make require.Equal work.
 					ah.h.Sum = 0
 					eh.h = eh.h.Copy()
 					eh.h.Sum = 0
-				} else if i > 0 {
+				case i > 0:
 					prev := expHistograms[i-1]
 					if prev.h == nil || value.IsStaleNaN(prev.h.Sum) {
 						eh.h.CounterResetHint = histogram.UnknownCounterReset
@@ -4488,19 +4491,19 @@ func TestHistogramValidation(t *testing.T) {
 
 	for testName, tc := range tests {
 		t.Run(testName, func(t *testing.T) {
-			err := ValidateHistogram(tc.h)
-			if tc.errMsg != "" {
+			switch err := ValidateHistogram(tc.h); {
+			case tc.errMsg != "":
 				require.ErrorContains(t, err, tc.errMsg)
-			} else {
+			default:
 				require.NoError(t, err)
 			}
 
-			err = ValidateFloatHistogram(tc.h.ToFloat())
-			if tc.errMsgFloat != "" {
+			switch err := ValidateFloatHistogram(tc.h.ToFloat()); {
+			case tc.errMsgFloat != "":
 				require.ErrorContains(t, err, tc.errMsgFloat)
-			} else if tc.errMsg != "" {
+			case tc.errMsg != "":
 				require.ErrorContains(t, err, tc.errMsg)
-			} else {
+			default:
 				require.NoError(t, err)
 			}
 		})
