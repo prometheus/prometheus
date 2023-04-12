@@ -77,6 +77,10 @@ type TokenProvider interface {
 // Validate validates config values provided.
 func (c *AzureADConfig) Validate() error {
 	if c.Cloud == "" {
+		c.Cloud = AzurePublic
+	}
+
+	if c.Cloud != AzureChina && c.Cloud != AzureGovernment && c.Cloud != AzurePublic {
 		return fmt.Errorf("must provide a cloud in the Azure AD config")
 	}
 

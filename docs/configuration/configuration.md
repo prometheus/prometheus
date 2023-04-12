@@ -3279,7 +3279,7 @@ authorization:
   [ credentials_file: <filename> ]
 
 # Optionally configures AWS's Signature Verification 4 signing process to
-# sign requests. Cannot be set at the same time as basic_auth, authorization, or oauth2.
+# sign requests. Cannot be set at the same time as basic_auth, authorization, oauth2, or azuread.
 # To use the default credentials from the AWS SDK, use `sigv4: {}`.
 sigv4:
   # The AWS region. If blank, the region from the default credentials chain
@@ -3298,9 +3298,19 @@ sigv4:
   [ role_arn: <string> ]
 
 # Optional OAuth 2.0 configuration.
-# Cannot be used at the same time as basic_auth, authorization, or sigv4.
+# Cannot be used at the same time as basic_auth, authorization, sigv4, or azuread.
 oauth2:
   [ <oauth2> ]
+
+# Optional AzureAD configuration.
+# Cannot be used at the same time as basic_auth, authorization, or sigv4.
+azuread:
+  # The Azure Cloud. If blank, the default cloud considered is AzurePublic.
+  [ cloud: <string>]
+
+  # The client id of the Azure managed identity.
+  [ client_id: <string>]
+
 
 # Configures the remote write request's TLS settings.
 tls_config:
