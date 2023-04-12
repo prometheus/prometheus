@@ -70,6 +70,7 @@ type engineMetrics struct {
 	queryPrepareTime     prometheus.Observer
 	queryInnerEval       prometheus.Observer
 	queryResultSort      prometheus.Observer
+	querySamples         prometheus.Counter
 }
 
 // convertibleToInt64 returns true if v does not over-/underflow an int64.
@@ -332,6 +333,12 @@ func NewEngine(opts EngineOpts) *Engine {
 			Name:      "queries_concurrent_max",
 			Help:      "The max number of concurrent queries.",
 		}),
+		querySamples: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "query_samples_total",
+			Help:      "The total number of samples loaded by all queries.",
+		}),
 		queryQueueTime:   queryResultSummary.WithLabelValues("queue_time"),
 		queryPrepareTime: queryResultSummary.WithLabelValues("prepare_time"),
 		queryInnerEval:   queryResultSummary.WithLabelValues("inner_eval"),
@@ -357,6 +364,7 @@ func NewEngine(opts EngineOpts) *Engine {
 			metrics.maxConcurrentQueries,
 			metrics.queryLogEnabled,
 			metrics.queryLogFailures,
+			metrics.querySamples,
 			queryResultSummary,
 		)
 	}
@@ -537,7 +545,10 @@ func (ng *Engine) newTestQuery(f func(context.Context) error) Query {
 // statements are not handled by the Engine.
 func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, ws storage.Warnings, err error) {
 	ng.metrics.currentQueries.Inc()
-	defer ng.metrics.currentQueries.Dec()
+	defer func() {
+		ng.metrics.currentQueries.Dec()
+		ng.metrics.querySamples.Add(float64(q.sampleStats.TotalSamples))
+	}()
 
 	ctx, cancel := context.WithTimeout(ctx, ng.timeout)
 	q.cancel = cancel
