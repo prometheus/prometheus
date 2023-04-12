@@ -78,6 +78,7 @@ func DefaultOptions() *Options {
 		NoLockfile:                 false,
 		AllowOverlappingCompaction: true,
 		WALCompression:             false,
+		SamplesPerChunk:            DefaultSamplesPerChunk,
 		StripeSize:                 DefaultStripeSize,
 		HeadChunksWriteBufferSize:  chunks.DefaultWriteBufferSize,
 		IsolationDisabled:          defaultIsolationDisabled,
@@ -148,6 +149,9 @@ type Options struct {
 
 	// HeadChunksWriteQueueSize configures the size of the chunk write queue used in the head chunks mapper.
 	HeadChunksWriteQueueSize int
+
+	// SamplesPerChunk configures the target number of samples per chunk.
+	SamplesPerChunk int
 
 	// SeriesLifecycleCallback specifies a list of callbacks that will be called during a lifecycle of a series.
 	// It is always a no-op in Prometheus and mainly meant for external users who import TSDB.
@@ -778,6 +782,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	headOpts.ChunkPool = db.chunkPool
 	headOpts.ChunkWriteBufferSize = opts.HeadChunksWriteBufferSize
 	headOpts.ChunkWriteQueueSize = opts.HeadChunksWriteQueueSize
+	headOpts.SamplesPerChunk = opts.SamplesPerChunk
 	headOpts.StripeSize = opts.StripeSize
 	headOpts.SeriesCallback = opts.SeriesLifecycleCallback
 	headOpts.EnableExemplarStorage = opts.EnableExemplarStorage
