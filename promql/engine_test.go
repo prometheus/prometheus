@@ -3125,6 +3125,138 @@ func TestRangeQuery(t *testing.T) {
 	}
 }
 
+func TestRangeVectorComparisonWithScalar(t *testing.T) {
+	cases := []struct {
+		Name   string
+		Load   string
+		Query  string
+		Result parser.Value
+		Start  time.Time
+	}{
+		{
+			Name: "metric query(lhs) with greater than scalar(rhs)",
+			Load: `load 10s
+              bar 30 60 90 120 150 180 210 240`,
+			Query: "bar[30s] > 60",
+			Result: Matrix{
+				Series{
+					Points: []Point{
+						{V: 90, T: 20000}, {V: 120, T: 30000},
+					},
+					Metric: labels.FromStrings("__name__", "bar"),
+				},
+			},
+			Start: time.Unix(30, 0),
+		},
+		{
+			Name: "metric query(lhs) with greater than equal to scalar(rhs)",
+			Load: `load 10s
+              bar 30 60 90 120 150 180 210 240`,
+			Query: "bar[30s] >= 60",
+			Result: Matrix{
+				Series{
+					Points: []Point{
+						{V: 60, T: 10000}, {V: 90, T: 20000}, {V: 120, T: 30000},
+					},
+					Metric: labels.FromStrings("__name__", "bar"),
+				},
+			},
+			Start: time.Unix(30, 0),
+		},
+		{
+			Name: "metric query(lhs) with less than scalar(rhs)",
+			Load: `load 10s
+              bar 30 40 55 60 90 120 150 180 210 240`,
+			Query: "bar[30s] < 60",
+			Result: Matrix{
+				Series{
+					Points: []Point{
+						{V: 30, T: 0}, {V: 40, T: 10000}, {V: 55, T: 20000},
+					},
+					Metric: labels.FromStrings("__name__", "bar"),
+				},
+			},
+			Start: time.Unix(30, 0),
+		},
+		{
+			Name: "metric query(lhs) with less than equal to scalar(rhs)",
+			Load: `load 10s
+              bar 30 60 90 120 150 180 210 240`,
+			Query: "bar[30s] <= 60",
+			Result: Matrix{
+				Series{
+					Points: []Point{
+						{V: 30, T: 0}, {V: 60, T: 10000},
+					},
+					Metric: labels.FromStrings("__name__", "bar"),
+				},
+			},
+			Start: time.Unix(30, 0),
+		},
+		{
+			Name: "metric query(lhs) equal to scalar(rhs)",
+			Load: `load 10s
+              bar 30 60 90 120 150 180 210 240`,
+			Query: "bar[30s] == 60",
+			Result: Matrix{
+				Series{
+					Points: []Point{
+						{V: 60, T: 10000},
+					},
+					Metric: labels.FromStrings("__name__", "bar"),
+				},
+			},
+			Start: time.Unix(30, 0),
+		},
+		{
+			Name: "metric query(lhs) not equal to scalar(rhs)",
+			Load: `load 10s
+              bar 30 60 90 120 150 180 210 240`,
+			Query: "bar[30s] != 60",
+			Result: Matrix{
+				Series{
+					Points: []Point{
+						{V: 30, T: 0}, {V: 90, T: 20000}, {V: 120, T: 30000},
+					},
+					Metric: labels.FromStrings("__name__", "bar"),
+				},
+			},
+			Start: time.Unix(30, 0),
+		},
+		{
+			Name: "metric query(rhs) with less than scalar(lhs)",
+			Load: `load 10s
+              bar 30 40 55 60 90 120 150 180 210 240`,
+			Query: "60 > bar[30s]",
+			Result: Matrix{
+				Series{
+					Points: []Point{
+						{V: 30, T: 0}, {V: 40, T: 10000}, {V: 55, T: 20000},
+					},
+					Metric: labels.FromStrings("__name__", "bar"),
+				},
+			},
+			Start: time.Unix(30, 0),
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.Name, func(t *testing.T) {
+			test, err := NewTest(t, c.Load)
+			require.NoError(t, err)
+			defer test.Close()
+
+			err = test.Run()
+			require.NoError(t, err)
+			qry, err := test.QueryEngine().NewInstantQuery(test.Queryable(), nil, c.Query, c.Start)
+			require.NoError(t, err)
+
+			res := qry.Exec(test.Context())
+			require.NoError(t, res.Err)
+			require.Equal(t, c.Result, res.Value)
+		})
+	}
+}
+
 func TestNativeHistogramRate(t *testing.T) {
 	// TODO(beorn7): Integrate histograms into the PromQL testing framework
 	// and write more tests there.

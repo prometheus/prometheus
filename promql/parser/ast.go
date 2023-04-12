@@ -231,8 +231,13 @@ func (e *StringLiteral) Type() ValueType  { return ValueTypeString }
 func (e *UnaryExpr) Type() ValueType      { return e.Expr.Type() }
 func (e *VectorSelector) Type() ValueType { return ValueTypeVector }
 func (e *BinaryExpr) Type() ValueType {
-	if e.LHS.Type() == ValueTypeScalar && e.RHS.Type() == ValueTypeScalar {
+	lhsType, rhsType := e.LHS.Type(), e.RHS.Type()
+	if lhsType == ValueTypeScalar && rhsType == ValueTypeScalar {
 		return ValueTypeScalar
+	} else if lhsType == ValueTypeMatrix && rhsType == ValueTypeScalar {
+		return ValueTypeMatrix
+	} else if lhsType == ValueTypeScalar && rhsType == ValueTypeMatrix {
+		return ValueTypeMatrix
 	}
 	return ValueTypeVector
 }

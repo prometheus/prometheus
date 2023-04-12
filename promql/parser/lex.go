@@ -90,6 +90,23 @@ func (i ItemType) IsSetOperator() bool {
 	return false
 }
 
+// InverseComparisonOperator returns inverse counterpart of a comparison operator.
+func (i ItemType) InverseComparisonOperator() ItemType {
+	if i.IsComparisonOperator() {
+		switch i {
+		case LTE:
+			return GTE
+		case GTE:
+			return LTE
+		case GTR:
+			return LSS
+		case LSS:
+			return GTR
+		}
+	}
+	return i
+}
+
 type ItemType int
 
 // This is a list of all keywords in PromQL.

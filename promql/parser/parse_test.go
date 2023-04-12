@@ -2653,12 +2653,6 @@ var testExpr = []struct {
 		errMsg: `expected type range vector`,
 	},
 	{
-		// This is testing that we are not re-rendering the expression string for each error, which would timeout.
-		input:  "(" + strings.Repeat("-{}-1", 10000) + ")" + strings.Repeat("[1m:]", 1000),
-		fail:   true,
-		errMsg: `1:3: parse error: vector selector must contain at least one non-empty matcher`,
-	},
-	{
 		input: "sum(sum)",
 		expected: &AggregateExpr{
 			Op: SUM,
@@ -3546,6 +3540,183 @@ var testExpr = []struct {
 				On:             true,
 			},
 		},
+	},
+	// These test cases validate the range vector and scalar comparisons.
+	// LHS: range vector on left side of expression and scalar on RHS
+	{
+		input: "some_metric[2m] > 1",
+		expected: &BinaryExpr{
+			Op: GTR,
+			LHS: &MatrixSelector{
+				VectorSelector: &VectorSelector{
+					Name: "some_metric",
+					LabelMatchers: []*labels.Matcher{
+						MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric"),
+					},
+					PosRange: PositionRange{
+						Start: 0,
+						End:   11,
+					},
+				},
+				Range:  2 * time.Minute,
+				EndPos: 15,
+			},
+			RHS: &NumberLiteral{
+				Val:      1,
+				PosRange: PositionRange{Start: 18, End: 19},
+			},
+		},
+	},
+	{
+		input: "some_metric[2m] < 1",
+		expected: &BinaryExpr{
+			Op: LSS,
+			LHS: &MatrixSelector{
+				VectorSelector: &VectorSelector{
+					Name: "some_metric",
+					LabelMatchers: []*labels.Matcher{
+						MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric"),
+					},
+					PosRange: PositionRange{
+						Start: 0,
+						End:   11,
+					},
+				},
+				Range:  2 * time.Minute,
+				EndPos: 15,
+			},
+			RHS: &NumberLiteral{
+				Val:      1,
+				PosRange: PositionRange{Start: 18, End: 19},
+			},
+		},
+	},
+	{
+		input: "some_metric[2m] >= 1",
+		expected: &BinaryExpr{
+			Op: GTE,
+			LHS: &MatrixSelector{
+				VectorSelector: &VectorSelector{
+					Name: "some_metric",
+					LabelMatchers: []*labels.Matcher{
+						MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric"),
+					},
+					PosRange: PositionRange{
+						Start: 0,
+						End:   11,
+					},
+				},
+				Range:  2 * time.Minute,
+				EndPos: 15,
+			},
+			RHS: &NumberLiteral{
+				Val:      1,
+				PosRange: PositionRange{Start: 19, End: 20},
+			},
+		},
+	},
+	{
+		input: "some_metric[2m] <= 1",
+		expected: &BinaryExpr{
+			Op: LTE,
+			LHS: &MatrixSelector{
+				VectorSelector: &VectorSelector{
+					Name: "some_metric",
+					LabelMatchers: []*labels.Matcher{
+						MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric"),
+					},
+					PosRange: PositionRange{
+						Start: 0,
+						End:   11,
+					},
+				},
+				Range:  2 * time.Minute,
+				EndPos: 15,
+			},
+			RHS: &NumberLiteral{
+				Val:      1,
+				PosRange: PositionRange{Start: 19, End: 20},
+			},
+		},
+	},
+	{
+		input: "some_metric[2m] == 1",
+		expected: &BinaryExpr{
+			Op: EQLC,
+			LHS: &MatrixSelector{
+				VectorSelector: &VectorSelector{
+					Name: "some_metric",
+					LabelMatchers: []*labels.Matcher{
+						MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric"),
+					},
+					PosRange: PositionRange{
+						Start: 0,
+						End:   11,
+					},
+				},
+				Range:  2 * time.Minute,
+				EndPos: 15,
+			},
+			RHS: &NumberLiteral{
+				Val:      1,
+				PosRange: PositionRange{Start: 19, End: 20},
+			},
+		},
+	},
+	{
+		input: "some_metric[2m] != 1",
+		expected: &BinaryExpr{
+			Op: NEQ,
+			LHS: &MatrixSelector{
+				VectorSelector: &VectorSelector{
+					Name: "some_metric",
+					LabelMatchers: []*labels.Matcher{
+						MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric"),
+					},
+					PosRange: PositionRange{
+						Start: 0,
+						End:   11,
+					},
+				},
+				Range:  2 * time.Minute,
+				EndPos: 15,
+			},
+			RHS: &NumberLiteral{
+				Val:      1,
+				PosRange: PositionRange{Start: 19, End: 20},
+			},
+		},
+	},
+	// Scalar on the LHS
+	{
+		input: "1 < some_metric[2m]",
+		expected: &BinaryExpr{
+			Op: LSS,
+			RHS: &MatrixSelector{
+				VectorSelector: &VectorSelector{
+					Name: "some_metric",
+					LabelMatchers: []*labels.Matcher{
+						MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric"),
+					},
+					PosRange: PositionRange{
+						Start: 4,
+						End:   15,
+					},
+				},
+				Range:  2 * time.Minute,
+				EndPos: 19,
+			},
+			LHS: &NumberLiteral{
+				Val:      1,
+				PosRange: PositionRange{Start: 0, End: 1},
+			},
+		},
+	},
+	{
+		// This is testing that we are not re-rendering the expression string for each error, which would timeout.
+		input:  "(" + strings.Repeat("-{}-1", 10000) + ")" + strings.Repeat("[1m:]", 1000),
+		fail:   true,
+		errMsg: `1:3: parse error: vector selector must contain at least one non-empty matcher`,
 	},
 }
 
