@@ -1957,7 +1957,7 @@ func (ev *evaluator) matrixIterSlice(
 		//   (b) the number of samples is relatively small.
 		// so a linear search will be as fast as a binary search.
 		var drop int
-		for drop = 0; floats[drop].T < mint; drop++ {
+		for drop = 0; floats[drop].T < mint; drop++ { // nolint:revive
 		}
 		ev.currentSamples -= drop
 		copy(floats, floats[drop:])

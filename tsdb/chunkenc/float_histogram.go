@@ -107,7 +107,7 @@ func (c *FloatHistogramChunk) Appender() (Appender, error) {
 	// To get an appender, we must know the state it would have if we had
 	// appended all existing data from scratch. We iterate through the end
 	// and populate via the iterator's state.
-	for it.Next() == ValFloatHistogram {
+	for it.Next() == ValFloatHistogram { // nolint:revive
 	}
 	if err := it.Err(); err != nil {
 		return nil, err

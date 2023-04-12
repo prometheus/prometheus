@@ -1085,7 +1085,7 @@ func newNopChunkReader() ChunkReader {
 	}
 }
 
-func (cr nopChunkReader) Chunk(meta chunks.Meta) (chunkenc.Chunk, error) {
+func (cr nopChunkReader) Chunk(chunks.Meta) (chunkenc.Chunk, error) {
 	return cr.emptyChunk, nil
 }
 

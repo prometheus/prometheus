@@ -779,13 +779,13 @@ func TestUpdate(t *testing.T) {
 			rgs.Groups[i].Interval = model.Duration(10)
 		}
 	}
-	reloadAndValidate(rgs, t, tmpFile, ruleManager, expected, ogs)
+	reloadAndValidate(rgs, t, tmpFile, ruleManager, ogs)
 
 	// Update limit and reload.
 	for i := range rgs.Groups {
 		rgs.Groups[i].Limit = 1
 	}
-	reloadAndValidate(rgs, t, tmpFile, ruleManager, expected, ogs)
+	reloadAndValidate(rgs, t, tmpFile, ruleManager, ogs)
 
 	// Change group rules and reload.
 	for i, g := range rgs.Groups {
@@ -793,7 +793,7 @@ func TestUpdate(t *testing.T) {
 			rgs.Groups[i].Rules[j].Expr.SetString(fmt.Sprintf("%s * 0", r.Expr.Value))
 		}
 	}
-	reloadAndValidate(rgs, t, tmpFile, ruleManager, expected, ogs)
+	reloadAndValidate(rgs, t, tmpFile, ruleManager, ogs)
 }
 
 // ruleGroupsTest for running tests over rules.
@@ -836,7 +836,7 @@ func formatRules(r *rulefmt.RuleGroups) ruleGroupsTest {
 	}
 }
 
-func reloadAndValidate(rgs *rulefmt.RuleGroups, t *testing.T, tmpFile *os.File, ruleManager *Manager, expected map[string]labels.Labels, ogs map[string]*Group) {
+func reloadAndValidate(rgs *rulefmt.RuleGroups, t *testing.T, tmpFile *os.File, ruleManager *Manager, ogs map[string]*Group) {
 	bs, err := yaml.Marshal(formatRules(rgs))
 	require.NoError(t, err)
 	tmpFile.Seek(0, 0)

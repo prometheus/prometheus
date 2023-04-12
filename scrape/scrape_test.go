@@ -2405,7 +2405,7 @@ type testScraper struct {
 	scrapeFunc func(context.Context, io.Writer) error
 }
 
-func (ts *testScraper) offset(interval time.Duration, jitterSeed uint64) time.Duration {
+func (ts *testScraper) offset(time.Duration, uint64) time.Duration {
 	return ts.offsetDur
 }
 
@@ -2867,7 +2867,7 @@ func TestScrapeAddFast(t *testing.T) {
 	require.NoError(t, slApp.Commit())
 }
 
-func TestReuseCacheRace(t *testing.T) {
+func TestReuseCacheRace(*testing.T) {
 	var (
 		app = &nopAppendable{}
 		cfg = &config.ScrapeConfig{

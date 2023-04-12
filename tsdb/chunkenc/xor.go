@@ -99,7 +99,7 @@ func (c *XORChunk) Appender() (Appender, error) {
 	// To get an appender we must know the state it would have if we had
 	// appended all existing data from scratch.
 	// We iterate through the end and populate via the iterator's state.
-	for it.Next() != ValNone {
+	for it.Next() != ValNone { // nolint:revive
 	}
 	if err := it.Err(); err != nil {
 		return nil, err
@@ -152,11 +152,11 @@ type xorAppender struct {
 	trailing uint8
 }
 
-func (a *xorAppender) AppendHistogram(t int64, h *histogram.Histogram) {
+func (a *xorAppender) AppendHistogram(int64, *histogram.Histogram) {
 	panic("appended a histogram to an xor chunk")
 }
 
-func (a *xorAppender) AppendFloatHistogram(t int64, h *histogram.FloatHistogram) {
+func (a *xorAppender) AppendFloatHistogram(int64, *histogram.FloatHistogram) {
 	panic("appended a float histogram to an xor chunk")
 }
 

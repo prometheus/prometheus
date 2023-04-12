@@ -755,14 +755,14 @@ func toFloat64(f *io_prometheus_client.MetricFamily) float64 {
 	return math.NaN()
 }
 
-func (h *Handler) version(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) version(w http.ResponseWriter, _ *http.Request) {
 	dec := json.NewEncoder(w)
 	if err := dec.Encode(h.versionInfo); err != nil {
 		http.Error(w, fmt.Sprintf("error encoding JSON: %s", err), http.StatusInternalServerError)
 	}
 }
 
-func (h *Handler) quit(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) quit(w http.ResponseWriter, _ *http.Request) {
 	var closed bool
 	h.quitOnce.Do(func() {
 		closed = true
@@ -774,7 +774,7 @@ func (h *Handler) quit(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *Handler) reload(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) reload(w http.ResponseWriter, _ *http.Request) {
 	rc := make(chan error)
 	h.reloadCh <- rc
 	if err := <-rc; err != nil {

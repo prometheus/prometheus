@@ -732,22 +732,22 @@ func (db *DB) StartTime() (int64, error) {
 }
 
 // Querier implements the Storage interface.
-func (db *DB) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+func (db *DB) Querier(context.Context, int64, int64) (storage.Querier, error) {
 	return nil, ErrUnsupported
 }
 
 // ChunkQuerier implements the Storage interface.
-func (db *DB) ChunkQuerier(ctx context.Context, mint, maxt int64) (storage.ChunkQuerier, error) {
+func (db *DB) ChunkQuerier(context.Context, int64, int64) (storage.ChunkQuerier, error) {
 	return nil, ErrUnsupported
 }
 
 // ExemplarQuerier implements the Storage interface.
-func (db *DB) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, error) {
+func (db *DB) ExemplarQuerier(context.Context) (storage.ExemplarQuerier, error) {
 	return nil, ErrUnsupported
 }
 
 // Appender implements storage.Storage.
-func (db *DB) Appender(_ context.Context) storage.Appender {
+func (db *DB) Appender(context.Context) storage.Appender {
 	return db.appenderPool.Get().(storage.Appender)
 }
 
@@ -823,7 +823,7 @@ func (a *appender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v flo
 		return 0, storage.ErrOutOfOrderSample
 	}
 
-	// NOTE: always modify pendingSamples and sampleSeries together
+	// NOTE: always modify pendingSamples and sampleSeries together.
 	a.pendingSamples = append(a.pendingSamples, record.RefSample{
 		Ref: series.ref,
 		T:   t,
@@ -849,8 +849,8 @@ func (a *appender) getOrCreate(l labels.Labels) (series *memSeries, created bool
 	return series, true
 }
 
-func (a *appender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
-	// series references and chunk references are identical for agent mode.
+func (a *appender) AppendExemplar(ref storage.SeriesRef, _ labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
+	// Series references and chunk references are identical for agent mode.
 	headRef := chunks.HeadSeriesRef(ref)
 
 	s := a.series.GetByID(headRef)
@@ -973,7 +973,7 @@ func (a *appender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int
 	return storage.SeriesRef(series.ref), nil
 }
 
-func (a *appender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m metadata.Metadata) (storage.SeriesRef, error) {
+func (a *appender) UpdateMetadata(storage.SeriesRef, labels.Labels, metadata.Metadata) (storage.SeriesRef, error) {
 	// TODO: Wire metadata in the Agent's appender.
 	return 0, nil
 }

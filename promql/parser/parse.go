@@ -332,7 +332,7 @@ func (p *parser) Lex(lval *yySymType) int {
 // It is a no-op since the parsers error routines are triggered
 // by mechanisms that allow more fine-grained control
 // For more information, see https://pkg.go.dev/golang.org/x/tools/cmd/goyacc.
-func (p *parser) Error(e string) {
+func (p *parser) Error(string) {
 }
 
 // InjectItem allows injecting a single Item at the beginning of the token stream
@@ -481,9 +481,9 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 		// This is made a function instead of a variable, so it is lazily evaluated on demand.
 		opRange := func() (r PositionRange) {
 			// Remove whitespace at the beginning and end of the range.
-			for r.Start = n.LHS.PositionRange().End; isSpace(rune(p.lex.input[r.Start])); r.Start++ {
+			for r.Start = n.LHS.PositionRange().End; isSpace(rune(p.lex.input[r.Start])); r.Start++ { // nolint:revive
 			}
-			for r.End = n.RHS.PositionRange().Start - 1; isSpace(rune(p.lex.input[r.End])); r.End-- {
+			for r.End = n.RHS.PositionRange().Start - 1; isSpace(rune(p.lex.input[r.End])); r.End-- { // nolint:revive
 			}
 			return
 		}

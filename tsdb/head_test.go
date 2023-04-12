@@ -11,6 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// nolint:revive // Many legitimately empty blocks in this file.
 package tsdb
 
 import (
@@ -103,7 +104,7 @@ func BenchmarkHeadAppender_Append_Commit_ExistingSeries(b *testing.B) {
 					b.Cleanup(func() { require.NoError(b, h.Close()) })
 
 					ts := int64(1000)
-					append := func() error {
+					appendSamples := func() error {
 						var err error
 						app := h.Appender(context.Background())
 						for _, s := range series[:seriesCount] {
@@ -120,13 +121,13 @@ func BenchmarkHeadAppender_Append_Commit_ExistingSeries(b *testing.B) {
 					}
 
 					// Init series, that's not what we're benchmarking here.
-					require.NoError(b, append())
+					require.NoError(b, appendSamples())
 
 					b.ReportAllocs()
 					b.ResetTimer()
 
 					for i := 0; i < b.N; i++ {
-						require.NoError(b, append())
+						require.NoError(b, appendSamples())
 					}
 				})
 			}

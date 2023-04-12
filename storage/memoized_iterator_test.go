@@ -82,8 +82,8 @@ func BenchmarkMemoizedSeriesIterator(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for it.Next() != chunkenc.ValNone {
-		// scan everything
+	for it.Next() != chunkenc.ValNone { // nolint:revive
+		// Scan everything.
 	}
 	require.NoError(b, it.Err())
 }

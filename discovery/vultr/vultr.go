@@ -202,10 +202,8 @@ func (d *Discovery) listInstances(ctx context.Context) ([]govultr.Instance, erro
 
 		if meta.Links.Next == "" {
 			break
-		} else {
-			listOptions.Cursor = meta.Links.Next
-			continue
 		}
+		listOptions.Cursor = meta.Links.Next
 	}
 
 	return instances, nil

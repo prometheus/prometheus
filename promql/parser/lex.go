@@ -11,6 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// nolint:revive // Many legitimately empty blocks in this file.
 package parser
 
 import (
@@ -293,7 +294,7 @@ func (l *Lexer) accept(valid string) bool {
 // acceptRun consumes a run of runes from the valid set.
 func (l *Lexer) acceptRun(valid string) {
 	for strings.ContainsRune(valid, l.next()) {
-		// consume
+		// Consume.
 	}
 	l.backup()
 }
