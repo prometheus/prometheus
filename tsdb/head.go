@@ -61,8 +61,7 @@ var (
 	// defaultIsolationDisabled is true if isolation is disabled by default.
 	defaultIsolationDisabled = false
 
-	defaultWALReplayConcurrency              = runtime.GOMAXPROCS(0)
-	defaultMemPostingsEnsureOrderConcurrency = runtime.GOMAXPROCS(0)
+	defaultWALReplayConcurrency = runtime.GOMAXPROCS(0)
 )
 
 // Head handles reads and writes of time series data within a time window.
@@ -165,11 +164,6 @@ type HeadOptions struct {
 	// The default value is GOMAXPROCS.
 	// If it is set to a negative value or zero, the default value is used.
 	WALReplayConcurrency int
-
-	// Maximum number of CPUs that can be used for sorting postings lists.
-	// The default value is GOMAXPROCS.
-	// If it is set to a negative value or zero, the default value is used.
-	MemPostingsEnsureOrderConcurrency int
 }
 
 const (
@@ -179,16 +173,15 @@ const (
 
 func DefaultHeadOptions() *HeadOptions {
 	ho := &HeadOptions{
-		ChunkRange:                        DefaultBlockDuration,
-		ChunkDirRoot:                      "",
-		ChunkPool:                         chunkenc.NewPool(),
-		ChunkWriteBufferSize:              chunks.DefaultWriteBufferSize,
-		ChunkWriteQueueSize:               chunks.DefaultWriteQueueSize,
-		StripeSize:                        DefaultStripeSize,
-		SeriesCallback:                    &noopSeriesLifecycleCallback{},
-		IsolationDisabled:                 defaultIsolationDisabled,
-		WALReplayConcurrency:              defaultWALReplayConcurrency,
-		MemPostingsEnsureOrderConcurrency: defaultMemPostingsEnsureOrderConcurrency,
+		ChunkRange:           DefaultBlockDuration,
+		ChunkDirRoot:         "",
+		ChunkPool:            chunkenc.NewPool(),
+		ChunkWriteBufferSize: chunks.DefaultWriteBufferSize,
+		ChunkWriteQueueSize:  chunks.DefaultWriteQueueSize,
+		StripeSize:           DefaultStripeSize,
+		SeriesCallback:       &noopSeriesLifecycleCallback{},
+		IsolationDisabled:    defaultIsolationDisabled,
+		WALReplayConcurrency: defaultWALReplayConcurrency,
 	}
 	ho.OutOfOrderCapMax.Store(DefaultOutOfOrderCapMax)
 	return ho
@@ -266,10 +259,6 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal, wbl *wlog.WL, opts *Hea
 
 	if opts.WALReplayConcurrency <= 0 {
 		opts.WALReplayConcurrency = defaultWALReplayConcurrency
-	}
-
-	if opts.MemPostingsEnsureOrderConcurrency <= 0 {
-		opts.MemPostingsEnsureOrderConcurrency = defaultMemPostingsEnsureOrderConcurrency
 	}
 
 	h.chunkDiskMapper, err = chunks.NewChunkDiskMapper(
@@ -585,7 +574,7 @@ const cardinalityCacheExpirationTime = time.Duration(30) * time.Second
 func (h *Head) Init(minValidTime int64) error {
 	h.minValidTime.Store(minValidTime)
 	defer func() {
-		h.postings.EnsureOrder(h.opts.MemPostingsEnsureOrderConcurrency)
+		h.postings.EnsureOrder(h.opts.WALReplayConcurrency)
 	}()
 	defer h.gc() // After loading the wal remove the obsolete data from the head.
 	defer func() {

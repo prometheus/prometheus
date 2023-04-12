@@ -129,10 +129,6 @@ type Options struct {
 	// If it is <=0, then GOMAXPROCS is used.
 	WALReplayConcurrency int
 
-	// Maximum number of CPUs that can simultaneously sort postings lists.
-	// If it is <=0, then GOMAXPROCS is used.
-	MemPostsEnsureOrderConcurrency int
-
 	// StripeSize is the size in entries of the series hash map. Reducing the size will save memory but impact performance.
 	StripeSize int
 
@@ -792,9 +788,6 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	headOpts.OutOfOrderCapMax.Store(opts.OutOfOrderCapMax)
 	if opts.WALReplayConcurrency > 0 {
 		headOpts.WALReplayConcurrency = opts.WALReplayConcurrency
-	}
-	if opts.MemPostsEnsureOrderConcurrency > 0 {
-		headOpts.MemPostingsEnsureOrderConcurrency = opts.MemPostsEnsureOrderConcurrency
 	}
 	if opts.IsolationDisabled {
 		// We only override this flag if isolation is disabled at DB level. We use the default otherwise.

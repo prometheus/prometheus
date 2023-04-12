@@ -226,7 +226,7 @@ func (p *MemPostings) All() Postings {
 // calls to add and addFor will insert new IDs in a sorted manner.
 // Parameter numberOfConcurrentProcesses is used to specify the maximal number of
 // CPU cores used for this operation. If it is <= 0, GOMAXPROCS is used.
-// GOMAXPROCS(0) was the default before introducing this parameter.
+// GOMAXPROCS was the default before introducing this parameter.
 func (p *MemPostings) EnsureOrder(numberOfConcurrentProcesses int) {
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
