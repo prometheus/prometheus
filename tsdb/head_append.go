@@ -430,7 +430,7 @@ func (s *memSeries) appendable(t int64, v float64, headMaxt, minValidTime, oooTi
 	return false, headMaxt - t, storage.ErrOutOfOrderSample
 }
 
-// appendableHistogram checks whether the given sample is valid for appending to the series.
+// appendableHistogram checks whether the given histogram is valid for appending to the series.
 func (s *memSeries) appendableHistogram(t int64, h *histogram.Histogram) error {
 	c := s.head()
 	if c == nil {
@@ -452,7 +452,7 @@ func (s *memSeries) appendableHistogram(t int64, h *histogram.Histogram) error {
 	return nil
 }
 
-// appendableFloatHistogram checks whether the given sample is valid for appending to the series.
+// appendableFloatHistogram checks whether the given float histogram is valid for appending to the series.
 func (s *memSeries) appendableFloatHistogram(t int64, fh *histogram.FloatHistogram) error {
 	c := s.head()
 	if c == nil {

@@ -46,11 +46,13 @@ var ruleEvalTestScenarios = []struct {
 		expected: promql.Vector{
 			promql.Sample{
 				Metric: labels.FromStrings("__name__", "test_rule", "label_a", "1", "label_b", "3"),
-				Point:  promql.Point{V: 1, T: timestamp.FromTime(ruleEvaluationTime)},
+				F:      1,
+				T:      timestamp.FromTime(ruleEvaluationTime),
 			},
 			promql.Sample{
 				Metric: labels.FromStrings("__name__", "test_rule", "label_a", "2", "label_b", "4"),
-				Point:  promql.Point{V: 10, T: timestamp.FromTime(ruleEvaluationTime)},
+				F:      10,
+				T:      timestamp.FromTime(ruleEvaluationTime),
 			},
 		},
 	},
@@ -61,11 +63,13 @@ var ruleEvalTestScenarios = []struct {
 		expected: promql.Vector{
 			promql.Sample{
 				Metric: labels.FromStrings("__name__", "test_rule", "label_a", "1", "label_b", "3", "extra_from_rule", "foo"),
-				Point:  promql.Point{V: 1, T: timestamp.FromTime(ruleEvaluationTime)},
+				F:      1,
+				T:      timestamp.FromTime(ruleEvaluationTime),
 			},
 			promql.Sample{
 				Metric: labels.FromStrings("__name__", "test_rule", "label_a", "2", "label_b", "4", "extra_from_rule", "foo"),
-				Point:  promql.Point{V: 10, T: timestamp.FromTime(ruleEvaluationTime)},
+				F:      10,
+				T:      timestamp.FromTime(ruleEvaluationTime),
 			},
 		},
 	},
@@ -76,11 +80,13 @@ var ruleEvalTestScenarios = []struct {
 		expected: promql.Vector{
 			promql.Sample{
 				Metric: labels.FromStrings("__name__", "test_rule", "label_a", "from_rule", "label_b", "3"),
-				Point:  promql.Point{V: 1, T: timestamp.FromTime(ruleEvaluationTime)},
+				F:      1,
+				T:      timestamp.FromTime(ruleEvaluationTime),
 			},
 			promql.Sample{
 				Metric: labels.FromStrings("__name__", "test_rule", "label_a", "from_rule", "label_b", "4"),
-				Point:  promql.Point{V: 10, T: timestamp.FromTime(ruleEvaluationTime)},
+				F:      10,
+				T:      timestamp.FromTime(ruleEvaluationTime),
 			},
 		},
 	},
@@ -91,11 +97,13 @@ var ruleEvalTestScenarios = []struct {
 		expected: promql.Vector{
 			promql.Sample{
 				Metric: labels.FromStrings("__name__", "test_rule", "label_a", "1", "label_b", "3"),
-				Point:  promql.Point{V: 2, T: timestamp.FromTime(ruleEvaluationTime)},
+				F:      2,
+				T:      timestamp.FromTime(ruleEvaluationTime),
 			},
 			promql.Sample{
 				Metric: labels.FromStrings("__name__", "test_rule", "label_a", "2", "label_b", "4"),
-				Point:  promql.Point{V: 20, T: timestamp.FromTime(ruleEvaluationTime)},
+				F:      20,
+				T:      timestamp.FromTime(ruleEvaluationTime),
 			},
 		},
 	},

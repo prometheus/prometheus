@@ -631,3 +631,9 @@ func (b *ScratchBuilder) Labels() Labels {
 	// Copy the slice, so the next use of ScratchBuilder doesn't overwrite.
 	return append([]Label{}, b.add...)
 }
+
+// Write the newly-built Labels out to ls.
+// Callers must ensure that there are no other references to ls, or any strings fetched from it.
+func (b *ScratchBuilder) Overwrite(ls *Labels) {
+	*ls = append((*ls)[:0], b.add...)
+}

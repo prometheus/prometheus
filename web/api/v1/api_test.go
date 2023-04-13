@@ -1102,10 +1102,10 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				ResultType: parser.ValueTypeMatrix,
 				Result: promql.Matrix{
 					promql.Series{
-						Points: []promql.Point{
-							{V: 0, T: timestamp.FromTime(start)},
-							{V: 1, T: timestamp.FromTime(start.Add(1 * time.Second))},
-							{V: 2, T: timestamp.FromTime(start.Add(2 * time.Second))},
+						Floats: []promql.FPoint{
+							{F: 0, T: timestamp.FromTime(start)},
+							{F: 1, T: timestamp.FromTime(start.Add(1 * time.Second))},
+							{F: 2, T: timestamp.FromTime(start.Add(2 * time.Second))},
 						},
 						// No Metric returned - use zero value for comparison.
 					},
@@ -3059,7 +3059,7 @@ func TestRespond(t *testing.T) {
 				ResultType: parser.ValueTypeMatrix,
 				Result: promql.Matrix{
 					promql.Series{
-						Points: []promql.Point{{V: 1, T: 1000}},
+						Floats: []promql.FPoint{{F: 1, T: 1000}},
 						Metric: labels.FromStrings("__name__", "foo"),
 					},
 				},
@@ -3071,7 +3071,7 @@ func TestRespond(t *testing.T) {
 				ResultType: parser.ValueTypeMatrix,
 				Result: promql.Matrix{
 					promql.Series{
-						Points: []promql.Point{{H: &histogram.FloatHistogram{
+						Histograms: []promql.HPoint{{H: &histogram.FloatHistogram{
 							Schema:        2,
 							ZeroThreshold: 0.001,
 							ZeroCount:     12,
@@ -3094,63 +3094,63 @@ func TestRespond(t *testing.T) {
 			expected: `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"__name__":"foo"},"histograms":[[1,{"count":"10","sum":"20","buckets":[[1,"-1.6817928305074288","-1.414213562373095","1"],[1,"-1.414213562373095","-1.189207115002721","2"],[3,"-0.001","0.001","12"],[0,"1.414213562373095","1.6817928305074288","1"],[0,"1.6817928305074288","2","2"],[0,"2.378414230005442","2.82842712474619","2"],[0,"2.82842712474619","3.3635856610148576","1"],[0,"3.3635856610148576","4","1"]]}]]}]}}`,
 		},
 		{
-			response: promql.Point{V: 0, T: 0},
+			response: promql.FPoint{F: 0, T: 0},
 			expected: `{"status":"success","data":[0,"0"]}`,
 		},
 		{
-			response: promql.Point{V: 20, T: 1},
+			response: promql.FPoint{F: 20, T: 1},
 			expected: `{"status":"success","data":[0.001,"20"]}`,
 		},
 		{
-			response: promql.Point{V: 20, T: 10},
+			response: promql.FPoint{F: 20, T: 10},
 			expected: `{"status":"success","data":[0.010,"20"]}`,
 		},
 		{
-			response: promql.Point{V: 20, T: 100},
+			response: promql.FPoint{F: 20, T: 100},
 			expected: `{"status":"success","data":[0.100,"20"]}`,
 		},
 		{
-			response: promql.Point{V: 20, T: 1001},
+			response: promql.FPoint{F: 20, T: 1001},
 			expected: `{"status":"success","data":[1.001,"20"]}`,
 		},
 		{
-			response: promql.Point{V: 20, T: 1010},
+			response: promql.FPoint{F: 20, T: 1010},
 			expected: `{"status":"success","data":[1.010,"20"]}`,
 		},
 		{
-			response: promql.Point{V: 20, T: 1100},
+			response: promql.FPoint{F: 20, T: 1100},
 			expected: `{"status":"success","data":[1.100,"20"]}`,
 		},
 		{
-			response: promql.Point{V: 20, T: 12345678123456555},
+			response: promql.FPoint{F: 20, T: 12345678123456555},
 			expected: `{"status":"success","data":[12345678123456.555,"20"]}`,
 		},
 		{
-			response: promql.Point{V: 20, T: -1},
+			response: promql.FPoint{F: 20, T: -1},
 			expected: `{"status":"success","data":[-0.001,"20"]}`,
 		},
 		{
-			response: promql.Point{V: math.NaN(), T: 0},
+			response: promql.FPoint{F: math.NaN(), T: 0},
 			expected: `{"status":"success","data":[0,"NaN"]}`,
 		},
 		{
-			response: promql.Point{V: math.Inf(1), T: 0},
+			response: promql.FPoint{F: math.Inf(1), T: 0},
 			expected: `{"status":"success","data":[0,"+Inf"]}`,
 		},
 		{
-			response: promql.Point{V: math.Inf(-1), T: 0},
+			response: promql.FPoint{F: math.Inf(-1), T: 0},
 			expected: `{"status":"success","data":[0,"-Inf"]}`,
 		},
 		{
-			response: promql.Point{V: 1.2345678e6, T: 0},
+			response: promql.FPoint{F: 1.2345678e6, T: 0},
 			expected: `{"status":"success","data":[0,"1234567.8"]}`,
 		},
 		{
-			response: promql.Point{V: 1.2345678e-6, T: 0},
+			response: promql.FPoint{F: 1.2345678e-6, T: 0},
 			expected: `{"status":"success","data":[0,"0.0000012345678"]}`,
 		},
 		{
-			response: promql.Point{V: 1.2345678e-67, T: 0},
+			response: promql.FPoint{F: 1.2345678e-67, T: 0},
 			expected: `{"status":"success","data":[0,"1.2345678e-67"]}`,
 		},
 		{
@@ -3283,15 +3283,15 @@ var testResponseWriter = httptest.ResponseRecorder{}
 
 func BenchmarkRespond(b *testing.B) {
 	b.ReportAllocs()
-	points := []promql.Point{}
+	points := []promql.FPoint{}
 	for i := 0; i < 10000; i++ {
-		points = append(points, promql.Point{V: float64(i * 1000000), T: int64(i)})
+		points = append(points, promql.FPoint{F: float64(i * 1000000), T: int64(i)})
 	}
 	response := &queryData{
 		ResultType: parser.ValueTypeMatrix,
 		Result: promql.Matrix{
 			promql.Series{
-				Points: points,
+				Floats: points,
 				Metric: labels.EmptyLabels(),
 			},
 		},

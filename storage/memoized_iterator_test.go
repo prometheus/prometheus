@@ -38,14 +38,14 @@ func TestMemoizedSeriesIterator(t *testing.T) {
 	}
 
 	it = NewMemoizedIterator(NewListSeriesIterator(samples{
-		sample{t: 1, v: 2},
-		sample{t: 2, v: 3},
-		sample{t: 3, v: 4},
-		sample{t: 4, v: 5},
-		sample{t: 5, v: 6},
-		sample{t: 99, v: 8},
-		sample{t: 100, v: 9},
-		sample{t: 101, v: 10},
+		fSample{t: 1, f: 2},
+		fSample{t: 2, f: 3},
+		fSample{t: 3, f: 4},
+		fSample{t: 4, f: 5},
+		fSample{t: 5, f: 6},
+		fSample{t: 99, f: 8},
+		fSample{t: 100, f: 9},
+		fSample{t: 101, f: 10},
 	}), 2)
 
 	require.Equal(t, it.Seek(-123), chunkenc.ValFloat, "seek failed")

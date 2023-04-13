@@ -126,7 +126,7 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 
 		for _, hp := range ts.Histograms {
 			if hp.GetCountFloat() > 0 || hp.GetZeroCountFloat() > 0 { // It is a float histogram.
-				fhs := HistogramProtoToFloatHistogram(hp)
+				fhs := FloatHistogramProtoToFloatHistogram(hp)
 				_, err = app.AppendHistogram(0, labels, hp.Timestamp, nil, fhs)
 			} else {
 				hs := HistogramProtoToHistogram(hp)

@@ -465,8 +465,8 @@ func TestHead_HighConcurrencyReadAndWrite(t *testing.T) {
 					if sample.T() != int64(expectedValue) {
 						return false, fmt.Errorf("expected sample %d to have ts %d, got %d", sampleIdx, expectedValue, sample.T())
 					}
-					if sample.V() != float64(expectedValue) {
-						return false, fmt.Errorf("expected sample %d to have value %d, got %f", sampleIdx, expectedValue, sample.V())
+					if sample.F() != float64(expectedValue) {
+						return false, fmt.Errorf("expected sample %d to have value %d, got %f", sampleIdx, expectedValue, sample.F())
 					}
 				}
 
@@ -575,7 +575,7 @@ func TestHead_ReadWAL(t *testing.T) {
 			expandChunk := func(c chunkenc.Iterator) (x []sample) {
 				for c.Next() == chunkenc.ValFloat {
 					t, v := c.At()
-					x = append(x, sample{t: t, v: v})
+					x = append(x, sample{t: t, f: v})
 				}
 				require.NoError(t, c.Err())
 				return x
@@ -870,7 +870,7 @@ func TestHeadDeleteSimple(t *testing.T) {
 	buildSmpls := func(s []int64) []sample {
 		ss := make([]sample, 0, len(s))
 		for _, t := range s {
-			ss = append(ss, sample{t: t, v: float64(t)})
+			ss = append(ss, sample{t: t, f: float64(t)})
 		}
 		return ss
 	}
@@ -925,7 +925,7 @@ func TestHeadDeleteSimple(t *testing.T) {
 
 				app := head.Appender(context.Background())
 				for _, smpl := range smplsAll {
-					_, err := app.Append(0, lblsDefault, smpl.t, smpl.v)
+					_, err := app.Append(0, lblsDefault, smpl.t, smpl.f)
 					require.NoError(t, err)
 
 				}
@@ -939,7 +939,7 @@ func TestHeadDeleteSimple(t *testing.T) {
 				// Add more samples.
 				app = head.Appender(context.Background())
 				for _, smpl := range c.addSamples {
-					_, err := app.Append(0, lblsDefault, smpl.t, smpl.v)
+					_, err := app.Append(0, lblsDefault, smpl.t, smpl.f)
 					require.NoError(t, err)
 
 				}
@@ -1924,7 +1924,7 @@ func TestMemSeriesIsolation(t *testing.T) {
 		require.Equal(t, 0, len(ws))
 
 		for _, series := range seriesSet {
-			return int(series[len(series)-1].v)
+			return int(series[len(series)-1].f)
 		}
 		return -1
 	}
@@ -3088,7 +3088,7 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 					ts++
 					_, err := app.Append(0, s2, int64(ts), float64(ts))
 					require.NoError(t, err)
-					exp[k2] = append(exp[k2], sample{t: int64(ts), v: float64(ts)})
+					exp[k2] = append(exp[k2], sample{t: int64(ts), f: float64(ts)})
 				}
 				require.NoError(t, app.Commit())
 				app = head.Appender(context.Background())
@@ -3125,7 +3125,7 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 					ts++
 					_, err := app.Append(0, s2, int64(ts), float64(ts))
 					require.NoError(t, err)
-					exp[k2] = append(exp[k2], sample{t: int64(ts), v: float64(ts)})
+					exp[k2] = append(exp[k2], sample{t: int64(ts), f: float64(ts)})
 				}
 				require.NoError(t, app.Commit())
 				app = head.Appender(context.Background())
@@ -3812,7 +3812,7 @@ func TestAppendingDifferentEncodingToSameSeries(t *testing.T) {
 			expChunks: 1,
 		},
 		{
-			samples:   []tsdbutil.Sample{sample{t: 200, v: 2}},
+			samples:   []tsdbutil.Sample{sample{t: 200, f: 2}},
 			expChunks: 2,
 		},
 		{
@@ -3836,7 +3836,7 @@ func TestAppendingDifferentEncodingToSameSeries(t *testing.T) {
 			expChunks: 6,
 		},
 		{
-			samples: []tsdbutil.Sample{sample{t: 100, v: 2}},
+			samples: []tsdbutil.Sample{sample{t: 100, f: 2}},
 			err:     storage.ErrOutOfOrderSample,
 		},
 		{
@@ -3847,13 +3847,13 @@ func TestAppendingDifferentEncodingToSameSeries(t *testing.T) {
 			// Combination of histograms and float64 in the same commit. The behaviour is undefined, but we want to also
 			// verify how TSDB would behave. Here the histogram is appended at the end, hence will be considered as out of order.
 			samples: []tsdbutil.Sample{
-				sample{t: 400, v: 4},
+				sample{t: 400, f: 4},
 				sample{t: 500, h: hists[5]}, // This won't be committed.
-				sample{t: 600, v: 6},
+				sample{t: 600, f: 6},
 			},
 			addToExp: []tsdbutil.Sample{
-				sample{t: 400, v: 4},
-				sample{t: 600, v: 6},
+				sample{t: 400, f: 4},
+				sample{t: 600, f: 6},
 			},
 			expChunks: 7, // Only 1 new chunk for float64.
 		},
@@ -3861,11 +3861,11 @@ func TestAppendingDifferentEncodingToSameSeries(t *testing.T) {
 			// Here the histogram is appended at the end, hence the first histogram is out of order.
 			samples: []tsdbutil.Sample{
 				sample{t: 700, h: hists[7]}, // Out of order w.r.t. the next float64 sample that is appended first.
-				sample{t: 800, v: 8},
+				sample{t: 800, f: 8},
 				sample{t: 900, h: hists[9]},
 			},
 			addToExp: []tsdbutil.Sample{
-				sample{t: 800, v: 8},
+				sample{t: 800, f: 8},
 				sample{t: 900, h: hists[9].Copy()},
 			},
 			expChunks: 8, // float64 added to old chunk, only 1 new for histograms.
@@ -3890,7 +3890,7 @@ func TestAppendingDifferentEncodingToSameSeries(t *testing.T) {
 			if s.H() != nil || s.FH() != nil {
 				_, err = app.AppendHistogram(0, lbls, s.T(), s.H(), s.FH())
 			} else {
-				_, err = app.Append(0, lbls, s.T(), s.V())
+				_, err = app.Append(0, lbls, s.T(), s.F())
 			}
 			require.Equal(t, a.err, err)
 		}
@@ -4056,7 +4056,7 @@ func TestOOOWalReplay(t *testing.T) {
 		require.NoError(t, app.Commit())
 
 		if isOOO {
-			expOOOSamples = append(expOOOSamples, sample{t: ts, v: v})
+			expOOOSamples = append(expOOOSamples, sample{t: ts, f: v})
 		}
 	}
 
@@ -4100,7 +4100,7 @@ func TestOOOWalReplay(t *testing.T) {
 	actOOOSamples := make([]sample, 0, len(expOOOSamples))
 	for it.Next() == chunkenc.ValFloat {
 		ts, v := it.At()
-		actOOOSamples = append(actOOOSamples, sample{t: ts, v: v})
+		actOOOSamples = append(actOOOSamples, sample{t: ts, f: v})
 	}
 
 	// OOO chunk will be sorted. Hence sort the expected samples.
@@ -4360,7 +4360,7 @@ func TestReplayAfterMmapReplayError(t *testing.T) {
 		var ref storage.SeriesRef
 		for i := 0; i < numSamples; i++ {
 			ref, err = app.Append(ref, lbls, lastTs, float64(lastTs))
-			expSamples = append(expSamples, sample{t: lastTs, v: float64(lastTs)})
+			expSamples = append(expSamples, sample{t: lastTs, f: float64(lastTs)})
 			require.NoError(t, err)
 			lastTs += itvl
 			if i%10 == 0 {

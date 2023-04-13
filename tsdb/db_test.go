@@ -104,7 +104,7 @@ func query(t testing.TB, q storage.Querier, matchers ...*labels.Matcher) map[str
 			switch typ {
 			case chunkenc.ValFloat:
 				ts, v := it.At()
-				samples = append(samples, sample{t: ts, v: v})
+				samples = append(samples, sample{t: ts, f: v})
 			case chunkenc.ValHistogram:
 				ts, h := it.AtHistogram()
 				samples = append(samples, sample{t: ts, h: h})
@@ -233,7 +233,7 @@ func TestDataAvailableOnlyAfterCommit(t *testing.T) {
 
 	seriesSet = query(t, querier, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 
-	require.Equal(t, map[string][]tsdbutil.Sample{`{foo="bar"}`: {sample{t: 0, v: 0}}}, seriesSet)
+	require.Equal(t, map[string][]tsdbutil.Sample{`{foo="bar"}`: {sample{t: 0, f: 0}}}, seriesSet)
 }
 
 // TestNoPanicAfterWALCorruption ensures that querying the db after a WAL corruption doesn't cause a panic.
@@ -251,7 +251,7 @@ func TestNoPanicAfterWALCorruption(t *testing.T) {
 		for i := 0; i < 121; i++ {
 			app := db.Appender(ctx)
 			_, err := app.Append(0, labels.FromStrings("foo", "bar"), maxt, 0)
-			expSamples = append(expSamples, sample{t: maxt, v: 0})
+			expSamples = append(expSamples, sample{t: maxt, f: 0})
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
 			maxt++
@@ -364,11 +364,11 @@ func TestDBAppenderAddRef(t *testing.T) {
 
 	require.Equal(t, map[string][]tsdbutil.Sample{
 		labels.FromStrings("a", "b").String(): {
-			sample{t: 123, v: 0},
-			sample{t: 124, v: 1},
-			sample{t: 125, v: 0},
-			sample{t: 133, v: 1},
-			sample{t: 143, v: 2},
+			sample{t: 123, f: 0},
+			sample{t: 124, f: 1},
+			sample{t: 125, f: 0},
+			sample{t: 133, f: 1},
+			sample{t: 143, f: 2},
 		},
 	}, res)
 }
@@ -1740,7 +1740,7 @@ func expandSeriesSet(ss storage.SeriesSet) ([]labels.Labels, map[string][]sample
 		it = series.Iterator(it)
 		for it.Next() == chunkenc.ValFloat {
 			t, v := it.At()
-			samples = append(samples, sample{t: t, v: v})
+			samples = append(samples, sample{t: t, f: v})
 		}
 		resultLabels = append(resultLabels, series.Labels())
 		resultSamples[series.Labels().String()] = samples
@@ -2617,7 +2617,7 @@ func TestDBCannotSeePartialCommits(t *testing.T) {
 
 			values := map[float64]struct{}{}
 			for _, series := range seriesSet {
-				values[series[len(series)-1].v] = struct{}{}
+				values[series[len(series)-1].f] = struct{}{}
 			}
 			if len(values) != 1 {
 				inconsistencies++
@@ -2693,7 +2693,7 @@ func TestDBQueryDoesntSeeAppendsAfterCreation(t *testing.T) {
 	_, seriesSet, ws, err = expandSeriesSet(ss)
 	require.NoError(t, err)
 	require.Equal(t, 0, len(ws))
-	require.Equal(t, map[string][]sample{`{foo="bar"}`: {{t: 0, v: 0}}}, seriesSet)
+	require.Equal(t, map[string][]sample{`{foo="bar"}`: {{t: 0, f: 0}}}, seriesSet)
 }
 
 // TestChunkWriter_ReadAfterWrite ensures that chunk segment are cut at the set segment size and
@@ -4575,7 +4575,7 @@ func Test_Querier_OOOQuery(t *testing.T) {
 		for min := fromMins; min <= toMins; min += time.Minute.Milliseconds() {
 			_, err := app.Append(0, series1, min, float64(min))
 			if min >= queryMinT && min <= queryMaxT {
-				expSamples = append(expSamples, sample{t: min, v: float64(min)})
+				expSamples = append(expSamples, sample{t: min, f: float64(min)})
 			}
 			require.NoError(t, err)
 			totalAppended++
@@ -4660,7 +4660,7 @@ func Test_ChunkQuerier_OOOQuery(t *testing.T) {
 		for min := fromMins; min <= toMins; min += time.Minute.Milliseconds() {
 			_, err := app.Append(0, series1, min, float64(min))
 			if min >= queryMinT && min <= queryMaxT {
-				expSamples = append(expSamples, sample{t: min, v: float64(min)})
+				expSamples = append(expSamples, sample{t: min, f: float64(min)})
 			}
 			require.NoError(t, err)
 			totalAppended++
@@ -4730,7 +4730,7 @@ func Test_ChunkQuerier_OOOQuery(t *testing.T) {
 				it := chunk.Chunk.Iterator(nil)
 				for it.Next() == chunkenc.ValFloat {
 					ts, v := it.At()
-					gotSamples = append(gotSamples, sample{t: ts, v: v})
+					gotSamples = append(gotSamples, sample{t: ts, f: v})
 				}
 			}
 			require.Equal(t, expSamples, gotSamples)
@@ -4766,7 +4766,7 @@ func TestOOOAppendAndQuery(t *testing.T) {
 				require.Error(t, err)
 			} else {
 				require.NoError(t, err)
-				appendedSamples[key] = append(appendedSamples[key], sample{t: min, v: val})
+				appendedSamples[key] = append(appendedSamples[key], sample{t: min, f: val})
 				totalSamples++
 			}
 		}
@@ -4889,7 +4889,7 @@ func TestOOODisabled(t *testing.T) {
 				failedSamples++
 			} else {
 				require.NoError(t, err)
-				expSamples[key] = append(expSamples[key], sample{t: min, v: val})
+				expSamples[key] = append(expSamples[key], sample{t: min, f: val})
 				totalSamples++
 			}
 		}
@@ -4952,7 +4952,7 @@ func TestWBLAndMmapReplay(t *testing.T) {
 			val := rand.Float64()
 			_, err := app.Append(0, lbls, min, val)
 			require.NoError(t, err)
-			expSamples[key] = append(expSamples[key], sample{t: min, v: val})
+			expSamples[key] = append(expSamples[key], sample{t: min, f: val})
 			totalSamples++
 		}
 		require.NoError(t, app.Commit())
@@ -4995,7 +4995,7 @@ func TestWBLAndMmapReplay(t *testing.T) {
 		it := chk.Iterator(nil)
 		for it.Next() == chunkenc.ValFloat {
 			ts, val := it.At()
-			s1MmapSamples = append(s1MmapSamples, sample{t: ts, v: val})
+			s1MmapSamples = append(s1MmapSamples, sample{t: ts, f: val})
 		}
 	}
 	require.Greater(t, len(s1MmapSamples), 0)
@@ -5273,9 +5273,9 @@ func TestWBLCorruption(t *testing.T) {
 			ts := min * time.Minute.Milliseconds()
 			_, err := app.Append(0, series1, ts, float64(ts))
 			require.NoError(t, err)
-			allSamples = append(allSamples, sample{t: ts, v: float64(ts)})
+			allSamples = append(allSamples, sample{t: ts, f: float64(ts)})
 			if afterRestart {
-				expAfterRestart = append(expAfterRestart, sample{t: ts, v: float64(ts)})
+				expAfterRestart = append(expAfterRestart, sample{t: ts, f: float64(ts)})
 			}
 		}
 		require.NoError(t, app.Commit())
@@ -5419,9 +5419,9 @@ func TestOOOMmapCorruption(t *testing.T) {
 			ts := min * time.Minute.Milliseconds()
 			_, err := app.Append(0, series1, ts, float64(ts))
 			require.NoError(t, err)
-			allSamples = append(allSamples, sample{t: ts, v: float64(ts)})
+			allSamples = append(allSamples, sample{t: ts, f: float64(ts)})
 			if inMmapAfterCorruption {
-				expInMmapChunks = append(expInMmapChunks, sample{t: ts, v: float64(ts)})
+				expInMmapChunks = append(expInMmapChunks, sample{t: ts, f: float64(ts)})
 			}
 		}
 		require.NoError(t, app.Commit())
@@ -5555,7 +5555,7 @@ func TestOutOfOrderRuntimeConfig(t *testing.T) {
 			_, err := app.Append(0, series1, ts, float64(ts))
 			if success {
 				require.NoError(t, err)
-				allSamples = append(allSamples, sample{t: ts, v: float64(ts)})
+				allSamples = append(allSamples, sample{t: ts, f: float64(ts)})
 			} else {
 				require.Error(t, err)
 			}
@@ -5769,7 +5769,7 @@ func TestNoGapAfterRestartWithOOO(t *testing.T) {
 		var expSamples []tsdbutil.Sample
 		for min := fromMins; min <= toMins; min++ {
 			ts := min * time.Minute.Milliseconds()
-			expSamples = append(expSamples, sample{t: ts, v: float64(ts)})
+			expSamples = append(expSamples, sample{t: ts, f: float64(ts)})
 		}
 
 		expRes := map[string][]tsdbutil.Sample{
@@ -5876,7 +5876,7 @@ func TestWblReplayAfterOOODisableAndRestart(t *testing.T) {
 			ts := min * time.Minute.Milliseconds()
 			_, err := app.Append(0, series1, ts, float64(ts))
 			require.NoError(t, err)
-			allSamples = append(allSamples, sample{t: ts, v: float64(ts)})
+			allSamples = append(allSamples, sample{t: ts, f: float64(ts)})
 		}
 		require.NoError(t, app.Commit())
 	}
@@ -5935,7 +5935,7 @@ func TestPanicOnApplyConfig(t *testing.T) {
 			ts := min * time.Minute.Milliseconds()
 			_, err := app.Append(0, series1, ts, float64(ts))
 			require.NoError(t, err)
-			allSamples = append(allSamples, sample{t: ts, v: float64(ts)})
+			allSamples = append(allSamples, sample{t: ts, f: float64(ts)})
 		}
 		require.NoError(t, app.Commit())
 	}
@@ -5983,7 +5983,7 @@ func TestDiskFillingUpAfterDisablingOOO(t *testing.T) {
 			ts := min * time.Minute.Milliseconds()
 			_, err := app.Append(0, series1, ts, float64(ts))
 			require.NoError(t, err)
-			allSamples = append(allSamples, sample{t: ts, v: float64(ts)})
+			allSamples = append(allSamples, sample{t: ts, f: float64(ts)})
 		}
 		require.NoError(t, app.Commit())
 	}
@@ -6090,7 +6090,7 @@ func testHistogramAppendAndQueryHelper(t *testing.T, floatHistogram bool) {
 		_, err := app.Append(0, lbls, minute(tsMinute), val)
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
-		*exp = append(*exp, sample{t: minute(tsMinute), v: val})
+		*exp = append(*exp, sample{t: minute(tsMinute), f: val})
 	}
 
 	testQuery := func(name, value string, exp map[string][]tsdbutil.Sample) {
@@ -6346,7 +6346,7 @@ func TestQueryHistogramFromBlocksWithCompaction(t *testing.T) {
 					switch typ {
 					case chunkenc.ValFloat:
 						ts, v := it.At()
-						slice = append(slice, sample{t: ts, v: v})
+						slice = append(slice, sample{t: ts, f: v})
 					case chunkenc.ValHistogram:
 						ts, h := it.AtHistogram()
 						slice = append(slice, sample{t: ts, h: h})
@@ -6418,7 +6418,7 @@ func TestQueryHistogramFromBlocksWithCompaction(t *testing.T) {
 				testBlockQuerying(t,
 					genHistogramSeries(10, 5, minute(0), minute(119), minute(1), floatHistogram),
 					genSeriesFromSampleGenerator(10, 5, minute(120), minute(239), minute(1), func(ts int64) tsdbutil.Sample {
-						return sample{t: ts, v: rand.Float64()}
+						return sample{t: ts, f: rand.Float64()}
 					}),
 					genHistogramSeries(10, 5, minute(240), minute(359), minute(1), floatHistogram),
 				)
@@ -6430,7 +6430,7 @@ func TestQueryHistogramFromBlocksWithCompaction(t *testing.T) {
 					genHistogramSeries(10, 5, minute(61), minute(120), minute(1), floatHistogram),
 					genHistogramAndFloatSeries(10, 5, minute(121), minute(180), minute(1), floatHistogram),
 					genSeriesFromSampleGenerator(10, 5, minute(181), minute(240), minute(1), func(ts int64) tsdbutil.Sample {
-						return sample{t: ts, v: rand.Float64()}
+						return sample{t: ts, f: rand.Float64()}
 					}),
 				)
 			})
@@ -6447,7 +6447,7 @@ func TestQueryHistogramFromBlocksWithCompaction(t *testing.T) {
 				testBlockQuerying(t,
 					genHistogramSeries(10, 5, minute(0), minute(120), minute(3), floatHistogram),
 					genSeriesFromSampleGenerator(10, 5, minute(1), minute(120), minute(3), func(ts int64) tsdbutil.Sample {
-						return sample{t: ts, v: rand.Float64()}
+						return sample{t: ts, f: rand.Float64()}
 					}),
 					genHistogramSeries(10, 5, minute(2), minute(120), minute(3), floatHistogram),
 				)
@@ -6459,7 +6459,7 @@ func TestQueryHistogramFromBlocksWithCompaction(t *testing.T) {
 					genHistogramSeries(10, 5, minute(46), minute(100), minute(3), floatHistogram),
 					genHistogramAndFloatSeries(10, 5, minute(89), minute(140), minute(3), floatHistogram),
 					genSeriesFromSampleGenerator(10, 5, minute(126), minute(200), minute(3), func(ts int64) tsdbutil.Sample {
-						return sample{t: ts, v: rand.Float64()}
+						return sample{t: ts, f: rand.Float64()}
 					}),
 				)
 			})
