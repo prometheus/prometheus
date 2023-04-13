@@ -202,18 +202,15 @@ func BenchmarkStreamReadEndpoint(b *testing.B) {
 }
 
 func TestStreamReadEndpoint(t *testing.T) {
-	// Note: samplesPerChunk is set to 220, but that isn't cleanly divisible by the chunkRange of 24 hrs and 1 min
-	// resolution used in this test so tsdb.computeChunkEndTime will put 240 samples in each chunk.
-	//
-	// First with 239 samples; we expect 1 frame with 1 full chunk.
-	// Second with 241 samples; we expect 1 frame with 2 chunks.
-	// Third with 481 samples; we expect 1 frame with 2 chunks, and 1 frame with 1 chunk for the same series due to bytes limit.
+	// First with 120 samples. We expect 1 frame with 1 chunk.
+	// Second with 121 samples, We expect 1 frame with 2 chunks.
+	// Third with 241 samples. We expect 1 frame with 2 chunks, and 1 frame with 1 chunk for the same series due to bytes limit.
 	// Fourth with 120 histogram samples. We expect 1 frame with 1 chunk.
 	suite, err := promql.NewTest(t, `
 		load 1m
-			test_metric1{foo="bar1",baz="qux"} 0+100x239
-            test_metric1{foo="bar2",baz="qux"} 0+100x240
-            test_metric1{foo="bar3",baz="qux"} 0+100x480
+			test_metric1{foo="bar1",baz="qux"} 0+100x119
+			test_metric1{foo="bar2",baz="qux"} 0+100x120
+			test_metric1{foo="bar3",baz="qux"} 0+100x240
 	`)
 	require.NoError(t, err)
 	defer suite.Close()
@@ -231,8 +228,8 @@ func TestStreamReadEndpoint(t *testing.T) {
 		}
 	},
 		1e6, 1,
-		// Labelset has 57 bytes. Full chunk in test data has roughly 440 bytes. This allows us to have at max 2 chunks in this test.
-		57+880,
+		// Labelset has 57 bytes. Full chunk in test data has roughly 240 bytes. This allows us to have at max 2 chunks in this test.
+		57+480,
 	)
 
 	// Encode the request.
@@ -248,19 +245,19 @@ func TestStreamReadEndpoint(t *testing.T) {
 	matcher4, err := labels.NewMatcher(labels.MatchEqual, "__name__", "test_histogram_metric1")
 	require.NoError(t, err)
 
-	query1, err := ToQuery(0, 32460001, []*labels.Matcher{matcher1, matcher2}, &storage.SelectHints{
+	query1, err := ToQuery(0, 14400001, []*labels.Matcher{matcher1, matcher2}, &storage.SelectHints{
 		Step:  1,
 		Func:  "avg",
 		Start: 0,
-		End:   32460001,
+		End:   14400001,
 	})
 	require.NoError(t, err)
 
-	query2, err := ToQuery(0, 32460001, []*labels.Matcher{matcher1, matcher3}, &storage.SelectHints{
+	query2, err := ToQuery(0, 14400001, []*labels.Matcher{matcher1, matcher3}, &storage.SelectHints{
 		Step:  1,
 		Func:  "avg",
 		Start: 0,
-		End:   32460001,
+		End:   14400001,
 	})
 	require.NoError(t, err)
 
@@ -319,8 +316,8 @@ func TestStreamReadEndpoint(t *testing.T) {
 					Chunks: []prompb.Chunk{
 						{
 							Type:      prompb.Chunk_XOR,
-							MaxTimeMs: 14340000,
-							Data:      []byte("\x00\xf0\x00\x00\x00\x00\x00\x00\x00\x00\x00\xe0\xd4\x03\xc2|\x05\x94\x00\xc1\xac}\xe9z2\xd0O\xed\xb4n[\aΔ\xa3md\xf9\xd0\xfd\x1aPm\nS\x9d\x0eQ\xad\x06P\xbd\xa8\xbfʁZ\x03(3\xa0R\x87\xda\x05(\x0f\xa0ҁ\xda=(\x13\xa02\x83Z\a(w\xa02\x81Z\x0f(\x13\xb5\x97\xf4P\x1b@\xa5\a\xf4\nP\x1bC\xa5\x02t\x1eP+@e\x1e\xf4\x0ePk@e\x02t:P;A\xa5\x01\xf4\nS\xfb@\xa5\x06t\x06P+C\xe5\x02\xf4\x06Pk@\xe5\x1et\nP\x1bA\xa5\x03\xf4:P\x1b@\xa5\x06t\x0eZJ\xff\\\x85ˈ\u05f8\x0f\xe5+F[\xc8\xe7E)\xed\x14\xa1\xf6\xe2}(v\x8d(N\x83)և(ރ(V\xdaW\xf2\x82t4\xa0m\x05(\xffAJ\x06\xd0҂t\xfc\xa0\xad\x03(oA\xca:\xd02\x82t4\xa0\xed\xb0\xbfҀ\xfa\x05(=\xa0R\x87:\x03(\x15\xa0\xf2\x81z\x03(\xf5\xa0r\x83:\x05(\r\xa1ҁ\xfa\r(\r\xa0R\x9f:\a(5\xa02\x81z\x1f(\x15\xa02\x83:\x05(\xfd\xa0R\x80\xfa\r(\x1d\xa1ҁ:\x03(5\xa0r\xd6g\xf4\xb9\x8b\x97!\xabq\x1f\xcaN\xe0GJ\x1bE)\xfd\x14\xa1\xb6\xf2}(N\x8f(V\x83)އ(փ(N\xdcW҃\xb44\xa0}\x05(\xfbAJ\x19\xd02\x82\xb4\xfc\xa0\xbd\x03(kA\xca9\xd0R\x81\xb44\xa0\xfd\xb4\xbfҀ\xda\x05(3\xa0r\x87Z\x03(\x17\xa0\xf2\x81Z\x03(\xf3\xa0R\x83\xda\x05(\x0f\xa1ҁ\xda\r(\x13\xa02\x9fZ\a(7\xa02\x81Z\x1f(\x13\xa0Ҁ\xda\x05(\xff\xa0R\x80\xda\r "),
+							MaxTimeMs: 7140000,
+							Data:      []byte("\000x\000\000\000\000\000\000\000\000\000\340\324\003\302|\005\224\000\301\254}\351z2\320O\355\264n[\007\316\224\243md\371\320\375\032Pm\nS\235\016Q\255\006P\275\250\277\312\201Z\003(3\240R\207\332\005(\017\240\322\201\332=(\023\2402\203Z\007(w\2402\201Z\017(\023\265\227\364P\033@\245\007\364\nP\033C\245\002t\036P+@e\036\364\016Pk@e\002t:P;A\245\001\364\nS\373@\245\006t\006P+C\345\002\364\006Pk@\345\036t\nP\033A\245\003\364:P\033@\245\006t\016ZJ\377\\\205\313\210\327\270\017\345+F[\310\347E)\355\024\241\366\342}(v\215(N\203)\326\207(\336\203(V\332W\362\202t4\240m\005(\377AJ\006\320\322\202t\374\240\255\003(oA\312:\3202"),
 						},
 					},
 				},
@@ -339,61 +336,61 @@ func TestStreamReadEndpoint(t *testing.T) {
 					Chunks: []prompb.Chunk{
 						{
 							Type:      prompb.Chunk_XOR,
-							MaxTimeMs: 14340000,
-							Data:      []byte("\x00\xf0\x00\x00\x00\x00\x00\x00\x00\x00\x00\xe0\xd4\x03\xc2|\x05\x94\x00\xc1\xac}\xe9z2\xd0O\xed\xb4n[\aΔ\xa3md\xf9\xd0\xfd\x1aPm\nS\x9d\x0eQ\xad\x06P\xbd\xa8\xbfʁZ\x03(3\xa0R\x87\xda\x05(\x0f\xa0ҁ\xda=(\x13\xa02\x83Z\a(w\xa02\x81Z\x0f(\x13\xb5\x97\xf4P\x1b@\xa5\a\xf4\nP\x1bC\xa5\x02t\x1eP+@e\x1e\xf4\x0ePk@e\x02t:P;A\xa5\x01\xf4\nS\xfb@\xa5\x06t\x06P+C\xe5\x02\xf4\x06Pk@\xe5\x1et\nP\x1bA\xa5\x03\xf4:P\x1b@\xa5\x06t\x0eZJ\xff\\\x85ˈ\u05f8\x0f\xe5+F[\xc8\xe7E)\xed\x14\xa1\xf6\xe2}(v\x8d(N\x83)և(ރ(V\xdaW\xf2\x82t4\xa0m\x05(\xffAJ\x06\xd0҂t\xfc\xa0\xad\x03(oA\xca:\xd02\x82t4\xa0\xed\xb0\xbfҀ\xfa\x05(=\xa0R\x87:\x03(\x15\xa0\xf2\x81z\x03(\xf5\xa0r\x83:\x05(\r\xa1ҁ\xfa\r(\r\xa0R\x9f:\a(5\xa02\x81z\x1f(\x15\xa02\x83:\x05(\xfd\xa0R\x80\xfa\r(\x1d\xa1ҁ:\x03(5\xa0r\xd6g\xf4\xb9\x8b\x97!\xabq\x1f\xcaN\xe0GJ\x1bE)\xfd\x14\xa1\xb6\xf2}(N\x8f(V\x83)އ(փ(N\xdcW҃\xb44\xa0}\x05(\xfbAJ\x19\xd02\x82\xb4\xfc\xa0\xbd\x03(kA\xca9\xd0R\x81\xb44\xa0\xfd\xb4\xbfҀ\xda\x05(3\xa0r\x87Z\x03(\x17\xa0\xf2\x81Z\x03(\xf3\xa0R\x83\xda\x05(\x0f\xa1ҁ\xda\r(\x13\xa02\x9fZ\a(7\xa02\x81Z\x1f(\x13\xa0Ҁ\xda\x05(\xff\xa0R\x80\xda\r "),
+							MaxTimeMs: 7140000,
+							Data:      []byte("\000x\000\000\000\000\000\000\000\000\000\340\324\003\302|\005\224\000\301\254}\351z2\320O\355\264n[\007\316\224\243md\371\320\375\032Pm\nS\235\016Q\255\006P\275\250\277\312\201Z\003(3\240R\207\332\005(\017\240\322\201\332=(\023\2402\203Z\007(w\2402\201Z\017(\023\265\227\364P\033@\245\007\364\nP\033C\245\002t\036P+@e\036\364\016Pk@e\002t:P;A\245\001\364\nS\373@\245\006t\006P+C\345\002\364\006Pk@\345\036t\nP\033A\245\003\364:P\033@\245\006t\016ZJ\377\\\205\313\210\327\270\017\345+F[\310\347E)\355\024\241\366\342}(v\215(N\203)\326\207(\336\203(V\332W\362\202t4\240m\005(\377AJ\006\320\322\202t\374\240\255\003(oA\312:\3202"),
 						},
+						{
+							Type:      prompb.Chunk_XOR,
+							MinTimeMs: 7200000,
+							MaxTimeMs: 7200000,
+							Data:      []byte("\000\001\200\364\356\006@\307p\000\000\000\000\000\000"),
+						},
+					},
+				},
+			},
+		},
+		{
+			ChunkedSeries: []*prompb.ChunkedSeries{
+				{
+					Labels: []prompb.Label{
+						{Name: "__name__", Value: "test_metric1"},
+						{Name: "b", Value: "c"},
+						{Name: "baz", Value: "qux"},
+						{Name: "d", Value: "e"},
+						{Name: "foo", Value: "bar3"},
+					},
+					Chunks: []prompb.Chunk{
+						{
+							Type:      prompb.Chunk_XOR,
+							MaxTimeMs: 7140000,
+							Data:      []byte("\000x\000\000\000\000\000\000\000\000\000\340\324\003\302|\005\224\000\301\254}\351z2\320O\355\264n[\007\316\224\243md\371\320\375\032Pm\nS\235\016Q\255\006P\275\250\277\312\201Z\003(3\240R\207\332\005(\017\240\322\201\332=(\023\2402\203Z\007(w\2402\201Z\017(\023\265\227\364P\033@\245\007\364\nP\033C\245\002t\036P+@e\036\364\016Pk@e\002t:P;A\245\001\364\nS\373@\245\006t\006P+C\345\002\364\006Pk@\345\036t\nP\033A\245\003\364:P\033@\245\006t\016ZJ\377\\\205\313\210\327\270\017\345+F[\310\347E)\355\024\241\366\342}(v\215(N\203)\326\207(\336\203(V\332W\362\202t4\240m\005(\377AJ\006\320\322\202t\374\240\255\003(oA\312:\3202"),
+						},
+						{
+							Type:      prompb.Chunk_XOR,
+							MinTimeMs: 7200000,
+							MaxTimeMs: 14340000,
+							Data:      []byte("\000x\200\364\356\006@\307p\000\000\000\000\000\340\324\003\340>\224\355\260\277\322\200\372\005(=\240R\207:\003(\025\240\362\201z\003(\365\240r\203:\005(\r\241\322\201\372\r(\r\240R\237:\007(5\2402\201z\037(\025\2402\203:\005(\375\240R\200\372\r(\035\241\322\201:\003(5\240r\326g\364\271\213\227!\253q\037\312N\340GJ\033E)\375\024\241\266\362}(N\217(V\203)\336\207(\326\203(N\334W\322\203\2644\240}\005(\373AJ\031\3202\202\264\374\240\275\003(kA\3129\320R\201\2644\240\375\264\277\322\200\332\005(3\240r\207Z\003(\027\240\362\201Z\003(\363\240R\203\332\005(\017\241\322\201\332\r(\023\2402\237Z\007(7\2402\201Z\037(\023\240\322\200\332\005(\377\240R\200\332\r "),
+						},
+					},
+				},
+			},
+		},
+		{
+			ChunkedSeries: []*prompb.ChunkedSeries{
+				{
+					Labels: []prompb.Label{
+						{Name: "__name__", Value: "test_metric1"},
+						{Name: "b", Value: "c"},
+						{Name: "baz", Value: "qux"},
+						{Name: "d", Value: "e"},
+						{Name: "foo", Value: "bar3"},
+					},
+					Chunks: []prompb.Chunk{
 						{
 							Type:      prompb.Chunk_XOR,
 							MinTimeMs: 14400000,
 							MaxTimeMs: 14400000,
-							Data:      []byte("\x00\x01\x80\xe8\xdd\r@\xd7p\x00\x00\x00\x00\x00\x00"),
-						},
-					},
-				},
-			},
-		},
-		{
-			ChunkedSeries: []*prompb.ChunkedSeries{
-				{
-					Labels: []prompb.Label{
-						{Name: "__name__", Value: "test_metric1"},
-						{Name: "b", Value: "c"},
-						{Name: "baz", Value: "qux"},
-						{Name: "d", Value: "e"},
-						{Name: "foo", Value: "bar3"},
-					},
-					Chunks: []prompb.Chunk{
-						{
-							Type:      prompb.Chunk_XOR,
-							MaxTimeMs: 14340000,
-							Data:      []byte("\x00\xf0\x00\x00\x00\x00\x00\x00\x00\x00\x00\xe0\xd4\x03\xc2|\x05\x94\x00\xc1\xac}\xe9z2\xd0O\xed\xb4n[\aΔ\xa3md\xf9\xd0\xfd\x1aPm\nS\x9d\x0eQ\xad\x06P\xbd\xa8\xbfʁZ\x03(3\xa0R\x87\xda\x05(\x0f\xa0ҁ\xda=(\x13\xa02\x83Z\a(w\xa02\x81Z\x0f(\x13\xb5\x97\xf4P\x1b@\xa5\a\xf4\nP\x1bC\xa5\x02t\x1eP+@e\x1e\xf4\x0ePk@e\x02t:P;A\xa5\x01\xf4\nS\xfb@\xa5\x06t\x06P+C\xe5\x02\xf4\x06Pk@\xe5\x1et\nP\x1bA\xa5\x03\xf4:P\x1b@\xa5\x06t\x0eZJ\xff\\\x85ˈ\u05f8\x0f\xe5+F[\xc8\xe7E)\xed\x14\xa1\xf6\xe2}(v\x8d(N\x83)և(ރ(V\xdaW\xf2\x82t4\xa0m\x05(\xffAJ\x06\xd0҂t\xfc\xa0\xad\x03(oA\xca:\xd02\x82t4\xa0\xed\xb0\xbfҀ\xfa\x05(=\xa0R\x87:\x03(\x15\xa0\xf2\x81z\x03(\xf5\xa0r\x83:\x05(\r\xa1ҁ\xfa\r(\r\xa0R\x9f:\a(5\xa02\x81z\x1f(\x15\xa02\x83:\x05(\xfd\xa0R\x80\xfa\r(\x1d\xa1ҁ:\x03(5\xa0r\xd6g\xf4\xb9\x8b\x97!\xabq\x1f\xcaN\xe0GJ\x1bE)\xfd\x14\xa1\xb6\xf2}(N\x8f(V\x83)އ(փ(N\xdcW҃\xb44\xa0}\x05(\xfbAJ\x19\xd02\x82\xb4\xfc\xa0\xbd\x03(kA\xca9\xd0R\x81\xb44\xa0\xfd\xb4\xbfҀ\xda\x05(3\xa0r\x87Z\x03(\x17\xa0\xf2\x81Z\x03(\xf3\xa0R\x83\xda\x05(\x0f\xa1ҁ\xda\r(\x13\xa02\x9fZ\a(7\xa02\x81Z\x1f(\x13\xa0Ҁ\xda\x05(\xff\xa0R\x80\xda\r "),
-						},
-						{
-							Type:      prompb.Chunk_XOR,
-							MinTimeMs: 14400000,
-							MaxTimeMs: 28740000,
-							Data:      []byte("\x00\xf0\x80\xe8\xdd\r@\xd7p\x00\x00\x00\x00\x00\xe0\xd4\x03\xe0G\xca+C)\xbd\x1c\xb6\x19\xfdh\x06P\x13\xa0i@v\x83\xa5\x00\xfa\x02\x94\x0fh\nP\xf3\xa0\x19@V\x81\xe5\x01z\x01\x94\x1dh\x0eP3\xa0)@6\x8f\xa5\x01\xfa\x06\x94\x03h\nPs\xa09@րe\x01z\x1f\x94\x05h\x06P3\xa0)A\xf6\x80\xa5\x00\xfa\x06\x94\ai\xfaP\x13\xa0\x19@ր\xe5\az\x01\x94\x05h\x1eP\x13\xa1\xe9@6\x80\xa5\x03\xfa\x02\x94\x03h:P\x13\xa0y@V\x80e\x1fz\x03\x94\rh\x06P\x13\xa0\xe9@v\x81\xa5\x00\xfa\x02\x94?h\nP3\xa0\x19@V\x83\xe5\x01z\x01\x94\rh\x0eZ\x8e\xff\xad\xccjSnC\xe9O\xdcH\xe9Ch\xa53\xa3\x97\x02}h2\x85\xe8\xf2\x85h2\x9c\xe8R\x8fhR\x83\xed\xe5}(;CJ\t\xd02\x8e\xb4\x1c\xa1\xbd\x03(+O\xca\t\xd0ҁ\xb4\x14\xa3\xfd\x05(\x1bCJ\tۋ\xff(\x15\xa02\x83z\a(u\xa02\x81:\r(\x1d\xa3Ҁ\xfa\x05(=\xa0R\x87:\x03(\x15\xa0\xf2\x81z\x03)\xf5\xa0r\x83:\x05(\r\xa1ҁ\xfa\r(\r\xa0R\x8f:\a(5\xa02\x81z\x1f(\x15\xa02\x83:\x05-\xa6\x7f\xda\x02\x94\x03\xe8\x1aP\x1d\xa0\xe9@N\x80e\x03Z\x03\x94=\xe8\x06P\x15\xa0y@N\x83\xa5\x00\xda\x02\x94\x0f\xe8\nP\r\xa3\xe9@N\x81\xe5\x01Z\x01\x94\x1d\xe8\x0eP5\xa0\x19@N\x87\xa5\x01\xda\x06\x94\x03\xe8\nP}\xa0)@\u0380e\x01Z\x7f\x94\x05\xe8\x06P5\xa09A\u0380\xa5\x00\xda\x06\x94\a\xe8zP\r\xa0)@\u0380\xe5\aZ\x01\x94\x05\xe8\x1eP\x15\xa0\x19G\u0380\xa5\x03\xda\x02\x94\x03\xe8:P\x1d\xa0i"),
-						},
-					},
-				},
-			},
-		},
-		{
-			ChunkedSeries: []*prompb.ChunkedSeries{
-				{
-					Labels: []prompb.Label{
-						{Name: "__name__", Value: "test_metric1"},
-						{Name: "b", Value: "c"},
-						{Name: "baz", Value: "qux"},
-						{Name: "d", Value: "e"},
-						{Name: "foo", Value: "bar3"},
-					},
-					Chunks: []prompb.Chunk{
-						{
-							Type:      prompb.Chunk_XOR,
-							MinTimeMs: 28800000,
-							MaxTimeMs: 28800000,
-							Data:      []byte("\x00\x01\x80л\x1b@\xe7p\x00\x00\x00\x00\x00\x00"),
+							Data:      []byte("\000\001\200\350\335\r@\327p\000\000\000\000\000\000"),
 						},
 					},
 				},
@@ -412,8 +409,8 @@ func TestStreamReadEndpoint(t *testing.T) {
 					Chunks: []prompb.Chunk{
 						{
 							Type:      prompb.Chunk_XOR,
-							MaxTimeMs: 14340000,
-							Data:      []byte("\x00\xf0\x00\x00\x00\x00\x00\x00\x00\x00\x00\xe0\xd4\x03\xc2|\x05\x94\x00\xc1\xac}\xe9z2\xd0O\xed\xb4n[\aΔ\xa3md\xf9\xd0\xfd\x1aPm\nS\x9d\x0eQ\xad\x06P\xbd\xa8\xbfʁZ\x03(3\xa0R\x87\xda\x05(\x0f\xa0ҁ\xda=(\x13\xa02\x83Z\a(w\xa02\x81Z\x0f(\x13\xb5\x97\xf4P\x1b@\xa5\a\xf4\nP\x1bC\xa5\x02t\x1eP+@e\x1e\xf4\x0ePk@e\x02t:P;A\xa5\x01\xf4\nS\xfb@\xa5\x06t\x06P+C\xe5\x02\xf4\x06Pk@\xe5\x1et\nP\x1bA\xa5\x03\xf4:P\x1b@\xa5\x06t\x0eZJ\xff\\\x85ˈ\u05f8\x0f\xe5+F[\xc8\xe7E)\xed\x14\xa1\xf6\xe2}(v\x8d(N\x83)և(ރ(V\xdaW\xf2\x82t4\xa0m\x05(\xffAJ\x06\xd0҂t\xfc\xa0\xad\x03(oA\xca:\xd02\x82t4\xa0\xed\xb0\xbfҀ\xfa\x05(=\xa0R\x87:\x03(\x15\xa0\xf2\x81z\x03(\xf5\xa0r\x83:\x05(\r\xa1ҁ\xfa\r(\r\xa0R\x9f:\a(5\xa02\x81z\x1f(\x15\xa02\x83:\x05(\xfd\xa0R\x80\xfa\r(\x1d\xa1ҁ:\x03(5\xa0r\xd6g\xf4\xb9\x8b\x97!\xabq\x1f\xcaN\xe0GJ\x1bE)\xfd\x14\xa1\xb6\xf2}(N\x8f(V\x83)އ(փ(N\xdcW҃\xb44\xa0}\x05(\xfbAJ\x19\xd02\x82\xb4\xfc\xa0\xbd\x03(kA\xca9\xd0R\x81\xb44\xa0\xfd\xb4\xbfҀ\xda\x05(3\xa0r\x87Z\x03(\x17\xa0\xf2\x81Z\x03(\xf3\xa0R\x83\xda\x05(\x0f\xa1ҁ\xda\r(\x13\xa02\x9fZ\a(7\xa02\x81Z\x1f(\x13\xa0Ҁ\xda\x05(\xff\xa0R\x80\xda\r "),
+							MaxTimeMs: 7140000,
+							Data:      []byte("\000x\000\000\000\000\000\000\000\000\000\340\324\003\302|\005\224\000\301\254}\351z2\320O\355\264n[\007\316\224\243md\371\320\375\032Pm\nS\235\016Q\255\006P\275\250\277\312\201Z\003(3\240R\207\332\005(\017\240\322\201\332=(\023\2402\203Z\007(w\2402\201Z\017(\023\265\227\364P\033@\245\007\364\nP\033C\245\002t\036P+@e\036\364\016Pk@e\002t:P;A\245\001\364\nS\373@\245\006t\006P+C\345\002\364\006Pk@\345\036t\nP\033A\245\003\364:P\033@\245\006t\016ZJ\377\\\205\313\210\327\270\017\345+F[\310\347E)\355\024\241\366\342}(v\215(N\203)\326\207(\336\203(V\332W\362\202t4\240m\005(\377AJ\006\320\322\202t\374\240\255\003(oA\312:\3202"),
 						},
 					},
 				},

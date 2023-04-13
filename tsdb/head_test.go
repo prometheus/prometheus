@@ -808,7 +808,7 @@ func TestMemSeries_truncateChunks(t *testing.T) {
 
 	s := newMemSeries(labels.FromStrings("a", "b"), 1, defaultIsolationDisabled, DefaultSamplesPerChunk)
 
-	for i := 0; i < 8000; i += 5 {
+	for i := 0; i < 4000; i += 5 {
 		ok, _ := s.append(int64(i), float64(i), 0, chunkDiskMapper, chunkRange)
 		require.True(t, ok, "sample append failed")
 	}
@@ -825,9 +825,9 @@ func TestMemSeries_truncateChunks(t *testing.T) {
 	require.NotNil(t, chk)
 	require.NoError(t, err)
 
-	s.truncateChunksBefore(4000, 0)
+	s.truncateChunksBefore(2000, 0)
 
-	require.Equal(t, int64(4000), s.mmappedChunks[0].minTime)
+	require.Equal(t, int64(2000), s.mmappedChunks[0].minTime)
 	_, _, err = s.chunk(0, chunkDiskMapper, &memChunkPool)
 	require.Equal(t, storage.ErrNotFound, err, "first chunks not gone")
 	require.Equal(t, countBefore/2, len(s.mmappedChunks)+1) // +1 for the head chunk.
@@ -1364,9 +1364,9 @@ func TestMemSeries_append(t *testing.T) {
 	require.Equal(t, int64(1000), s.headChunk.minTime, "wrong chunk range")
 	require.Equal(t, int64(1001), s.headChunk.maxTime, "wrong chunk range")
 
-	// Fill the range [1000,3000) with many samples. Intermediate chunks should be cut
-	// at approximately 220 samples per chunk.
-	for i := 1; i < 2000; i++ {
+	// Fill the range [1000,2000) with many samples. Intermediate chunks should be cut
+	// at approximately 120 samples per chunk.
+	for i := 1; i < 1000; i++ {
 		ok, _ := s.append(1001+int64(i), float64(i), 0, chunkDiskMapper, chunkRange)
 		require.True(t, ok, "append failed")
 	}
@@ -1437,7 +1437,7 @@ func TestMemSeries_appendHistogram(t *testing.T) {
 }
 
 func TestMemSeries_append_atVariableRate(t *testing.T) {
-	const samplesPerChunk = 220
+	const samplesPerChunk = 120
 	dir := t.TempDir()
 	// This is usually taken from the Head, but passing manually here.
 	chunkDiskMapper, err := chunks.NewChunkDiskMapper(nil, dir, chunkenc.NewPool(), chunks.DefaultWriteBufferSize, chunks.DefaultWriteQueueSize)
@@ -2983,7 +2983,7 @@ func TestAppendHistogram(t *testing.T) {
 }
 
 func TestHistogramInWALAndMmapChunk(t *testing.T) {
-	head, _ := newTestHead(t, 6000, false, false)
+	head, _ := newTestHead(t, 3000, false, false)
 	t.Cleanup(func() {
 		require.NoError(t, head.Close())
 	})
@@ -2992,7 +2992,7 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 	// Series with only histograms.
 	s1 := labels.FromStrings("a", "b1")
 	k1 := s1.String()
-	numHistograms := 600
+	numHistograms := 300
 	exp := map[string][]tsdbutil.Sample{}
 	ts := int64(0)
 	var app storage.Appender
@@ -3728,7 +3728,7 @@ func TestHistogramCounterResetHeader(t *testing.T) {
 			checkExpCounterResetHeader(chunkenc.CounterReset)
 
 			// Add 2 non-counter reset histograms.
-			for i := 0; i < 500; i++ {
+			for i := 0; i < 250; i++ {
 				appendHistogram(h)
 			}
 			checkExpCounterResetHeader(chunkenc.NotCounterReset, chunkenc.NotCounterReset)
@@ -3756,7 +3756,7 @@ func TestHistogramCounterResetHeader(t *testing.T) {
 			checkExpCounterResetHeader(chunkenc.CounterReset)
 
 			// Add 2 non-counter reset histograms. Just to have some non-counter reset chunks in between.
-			for i := 0; i < 500; i++ {
+			for i := 0; i < 250; i++ {
 				appendHistogram(h)
 			}
 			checkExpCounterResetHeader(chunkenc.NotCounterReset, chunkenc.NotCounterReset)
@@ -4223,7 +4223,7 @@ func TestHeadInit_DiscardChunksWithUnsupportedEncoding(t *testing.T) {
 	h.chunkDiskMapper.WriteChunk(chunks.HeadSeriesRef(seriesRef), 500, 600, uc, false, func(err error) { require.NoError(t, err) })
 
 	app = h.Appender(ctx)
-	for i := 700; i < 1700; i++ {
+	for i := 700; i < 1200; i++ {
 		_, err := app.Append(0, seriesLabels, int64(i), float64(i))
 		require.NoError(t, err)
 	}
