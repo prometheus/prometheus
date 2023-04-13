@@ -401,17 +401,17 @@ func (r *sampleRing) add(s tsdbutil.Sample) {
 		switch s := s.(type) {
 		case fSample:
 			if len(r.hBuf)+len(r.fhBuf) == 0 {
-				r.fBuf = genericAdd(s, r.fBuf, r)
+				r.fBuf = addF(s, r.fBuf, r)
 				return
 			}
 		case hSample:
 			if len(r.fBuf)+len(r.fhBuf) == 0 {
-				r.hBuf = genericAdd(s, r.hBuf, r)
+				r.hBuf = addH(s, r.hBuf, r)
 				return
 			}
 		case fhSample:
 			if len(r.fBuf)+len(r.hBuf) == 0 {
-				r.fhBuf = genericAdd(s, r.fhBuf, r)
+				r.fhBuf = addFH(s, r.fhBuf, r)
 				return
 			}
 		}
@@ -435,7 +435,7 @@ func (r *sampleRing) add(s tsdbutil.Sample) {
 			r.fhBuf = nil
 		}
 	}
-	r.buf = genericAdd(s, r.buf, r)
+	r.buf = addSample(s, r.buf, r)
 }
 
 // addF is a version of the add method specialized for fSample.
@@ -443,13 +443,13 @@ func (r *sampleRing) addF(s fSample) {
 	switch {
 	case len(r.buf) > 0:
 		// Already have interface samples. Add to the interface buf.
-		r.buf = genericAdd[tsdbutil.Sample](s, r.buf, r)
+		r.buf = addSample(s, r.buf, r)
 	case len(r.hBuf)+len(r.fhBuf) > 0:
 		// Already have specialized samples that are not fSamples.
 		// Need to call the checked add method for conversion.
 		r.add(s)
 	default:
-		r.fBuf = genericAdd(s, r.fBuf, r)
+		r.fBuf = addF(s, r.fBuf, r)
 	}
 }
 
@@ -458,13 +458,13 @@ func (r *sampleRing) addH(s hSample) {
 	switch {
 	case len(r.buf) > 0:
 		// Already have interface samples. Add to the interface buf.
-		r.buf = genericAdd[tsdbutil.Sample](s, r.buf, r)
+		r.buf = addSample(s, r.buf, r)
 	case len(r.fBuf)+len(r.fhBuf) > 0:
 		// Already have samples that are not hSamples.
 		// Need to call the checked add method for conversion.
 		r.add(s)
 	default:
-		r.hBuf = genericAdd(s, r.hBuf, r)
+		r.hBuf = addH(s, r.hBuf, r)
 	}
 }
 
@@ -473,25 +473,191 @@ func (r *sampleRing) addFH(s fhSample) {
 	switch {
 	case len(r.buf) > 0:
 		// Already have interface samples. Add to the interface buf.
-		r.buf = genericAdd[tsdbutil.Sample](s, r.buf, r)
+		r.buf = addSample(s, r.buf, r)
 	case len(r.fBuf)+len(r.hBuf) > 0:
 		// Already have samples that are not fhSamples.
 		// Need to call the checked add method for conversion.
 		r.add(s)
 	default:
-		r.fhBuf = genericAdd(s, r.fhBuf, r)
+		r.fhBuf = addFH(s, r.fhBuf, r)
 	}
 }
 
-func genericAdd[T tsdbutil.Sample](s T, buf []T, r *sampleRing) []T {
+// genericAdd is a generic implementation of adding a tsdbutil.Sample
+// implementation to a buffer of a sample ring. However, the Go compiler
+// currently (go1.20) decides to not expand the code during compile time, but
+// creates dynamic code to handle the different types. That has a significant
+// overhead during runtime, noticeable in PromQL benchmarks. For example, the
+// "RangeQuery/expr=rate(a_hundred[1d]),steps=.*" benchmarks show about 7%
+// longer runtime, 9% higher allocation size, and 10% more allocations.
+// Therefore, genericAdd has been manually implemented for all the types
+// (addSample, addF, addH, addFH) below.
+//
+// func genericAdd[T tsdbutil.Sample](s T, buf []T, r *sampleRing) []T {
+// 	l := len(buf)
+// 	// Grow the ring buffer if it fits no more elements.
+// 	if l == 0 {
+// 		buf = make([]T, 16)
+// 		l = 16
+// 	}
+// 	if l == r.l {
+// 		newBuf := make([]T, 2*l)
+// 		copy(newBuf[l+r.f:], buf[r.f:])
+// 		copy(newBuf, buf[:r.f])
+//
+// 		buf = newBuf
+// 		r.i = r.f
+// 		r.f += l
+// 		l = 2 * l
+// 	} else {
+// 		r.i++
+// 		if r.i >= l {
+// 			r.i -= l
+// 		}
+// 	}
+//
+// 	buf[r.i] = s
+// 	r.l++
+//
+// 	// Free head of the buffer of samples that just fell out of the range.
+// 	tmin := s.T() - r.delta
+// 	for buf[r.f].T() < tmin {
+// 		r.f++
+// 		if r.f >= l {
+// 			r.f -= l
+// 		}
+// 		r.l--
+// 	}
+// 	return buf
+// }
+
+// addSample is a handcoded specialization of genericAdd (see above).
+func addSample(s tsdbutil.Sample, buf []tsdbutil.Sample, r *sampleRing) []tsdbutil.Sample {
 	l := len(buf)
 	// Grow the ring buffer if it fits no more elements.
 	if l == 0 {
-		buf = make([]T, 16)
+		buf = make([]tsdbutil.Sample, 16)
 		l = 16
 	}
 	if l == r.l {
-		newBuf := make([]T, 2*l)
+		newBuf := make([]tsdbutil.Sample, 2*l)
+		copy(newBuf[l+r.f:], buf[r.f:])
+		copy(newBuf, buf[:r.f])
+
+		buf = newBuf
+		r.i = r.f
+		r.f += l
+		l = 2 * l
+	} else {
+		r.i++
+		if r.i >= l {
+			r.i -= l
+		}
+	}
+
+	buf[r.i] = s
+	r.l++
+
+	// Free head of the buffer of samples that just fell out of the range.
+	tmin := s.T() - r.delta
+	for buf[r.f].T() < tmin {
+		r.f++
+		if r.f >= l {
+			r.f -= l
+		}
+		r.l--
+	}
+	return buf
+}
+
+// addF is a handcoded specialization of genericAdd (see above).
+func addF(s fSample, buf []fSample, r *sampleRing) []fSample {
+	l := len(buf)
+	// Grow the ring buffer if it fits no more elements.
+	if l == 0 {
+		buf = make([]fSample, 16)
+		l = 16
+	}
+	if l == r.l {
+		newBuf := make([]fSample, 2*l)
+		copy(newBuf[l+r.f:], buf[r.f:])
+		copy(newBuf, buf[:r.f])
+
+		buf = newBuf
+		r.i = r.f
+		r.f += l
+		l = 2 * l
+	} else {
+		r.i++
+		if r.i >= l {
+			r.i -= l
+		}
+	}
+
+	buf[r.i] = s
+	r.l++
+
+	// Free head of the buffer of samples that just fell out of the range.
+	tmin := s.T() - r.delta
+	for buf[r.f].T() < tmin {
+		r.f++
+		if r.f >= l {
+			r.f -= l
+		}
+		r.l--
+	}
+	return buf
+}
+
+// addH is a handcoded specialization of genericAdd (see above).
+func addH(s hSample, buf []hSample, r *sampleRing) []hSample {
+	l := len(buf)
+	// Grow the ring buffer if it fits no more elements.
+	if l == 0 {
+		buf = make([]hSample, 16)
+		l = 16
+	}
+	if l == r.l {
+		newBuf := make([]hSample, 2*l)
+		copy(newBuf[l+r.f:], buf[r.f:])
+		copy(newBuf, buf[:r.f])
+
+		buf = newBuf
+		r.i = r.f
+		r.f += l
+		l = 2 * l
+	} else {
+		r.i++
+		if r.i >= l {
+			r.i -= l
+		}
+	}
+
+	buf[r.i] = s
+	r.l++
+
+	// Free head of the buffer of samples that just fell out of the range.
+	tmin := s.T() - r.delta
+	for buf[r.f].T() < tmin {
+		r.f++
+		if r.f >= l {
+			r.f -= l
+		}
+		r.l--
+	}
+	return buf
+}
+
+// addFH is a handcoded specialization of genericAdd (see above).
+func addFH(s fhSample, buf []fhSample, r *sampleRing) []fhSample {
+	l := len(buf)
+	// Grow the ring buffer if it fits no more elements.
+	if l == 0 {
+		buf = make([]fhSample, 16)
+		l = 16
+	}
+	if l == r.l {
+		newBuf := make([]fhSample, 2*l)
 		copy(newBuf[l+r.f:], buf[r.f:])
 		copy(newBuf, buf[:r.f])
 
