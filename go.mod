@@ -11,7 +11,7 @@ require (
 	github.com/aws/aws-sdk-go v1.44.217
 	github.com/cespare/xxhash/v2 v2.2.0
 	github.com/dennwc/varint v1.0.0
-	github.com/digitalocean/godo v1.97.0
+	github.com/digitalocean/godo v1.98.0
 	github.com/docker/docker v23.0.1+incompatible
 	github.com/edsrzf/mmap-go v1.1.0
 	github.com/envoyproxy/go-control-plane v0.11.0
@@ -31,11 +31,11 @@ require (
 	github.com/hashicorp/golang-lru/v2 v2.0.2
 	github.com/hashicorp/nomad/api v0.0.0-20230308192510-48e7d70fcd4b
 	github.com/hetznercloud/hcloud-go v1.41.0
-	github.com/ionos-cloud/sdk-go/v6 v6.1.4
+	github.com/ionos-cloud/sdk-go/v6 v6.1.5
 	github.com/json-iterator/go v1.1.12
 	github.com/kolo/xmlrpc v0.0.0-20220921171641-a4b6fa1dd06b
 	github.com/linode/linodego v1.14.1
-	github.com/miekg/dns v1.1.51
+	github.com/miekg/dns v1.1.53
 	github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f
 	github.com/oklog/run v1.1.0
 	github.com/oklog/ulid v1.3.1
@@ -68,10 +68,10 @@ require (
 	golang.org/x/sys v0.6.0
 	golang.org/x/time v0.3.0
 	golang.org/x/tools v0.7.0
-	google.golang.org/api v0.111.0
+	google.golang.org/api v0.114.0
 	google.golang.org/genproto v0.0.0-20230306155012-7f2fa6fef1f4
 	google.golang.org/grpc v1.53.0
-	google.golang.org/protobuf v1.29.0
+	google.golang.org/protobuf v1.29.1
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/api v0.26.2
@@ -135,7 +135,7 @@ require (
 	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.2.3 // indirect
-	github.com/googleapis/gax-go/v2 v2.7.0 // indirect
+	github.com/googleapis/gax-go/v2 v2.7.1 // indirect
 	github.com/gorilla/websocket v1.5.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.15.2 // indirect
 	github.com/hashicorp/cronexpr v1.1.1 // indirect

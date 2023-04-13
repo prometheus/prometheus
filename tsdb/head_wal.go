@@ -40,6 +40,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/wlog"
+	"github.com/prometheus/prometheus/util/zeropool"
 )
 
 // histogramRecord combines both RefHistogramSample and RefFloatHistogramSample
@@ -74,41 +75,14 @@ func (h *Head) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.
 
 		decoded                      = make(chan interface{}, 10)
 		decodeErr, seriesCreationErr error
-		seriesPool                   = sync.Pool{
-			New: func() interface{} {
-				return []record.RefSeries{}
-			},
-		}
-		samplesPool = sync.Pool{
-			New: func() interface{} {
-				return []record.RefSample{}
-			},
-		}
-		tstonesPool = sync.Pool{
-			New: func() interface{} {
-				return []tombstones.Stone{}
-			},
-		}
-		exemplarsPool = sync.Pool{
-			New: func() interface{} {
-				return []record.RefExemplar{}
-			},
-		}
-		histogramsPool = sync.Pool{
-			New: func() interface{} {
-				return []record.RefHistogramSample{}
-			},
-		}
-		floatHistogramsPool = sync.Pool{
-			New: func() interface{} {
-				return []record.RefFloatHistogramSample{}
-			},
-		}
-		metadataPool = sync.Pool{
-			New: func() interface{} {
-				return []record.RefMetadata{}
-			},
-		}
+
+		seriesPool          zeropool.Pool[[]record.RefSeries]
+		samplesPool         zeropool.Pool[[]record.RefSample]
+		tstonesPool         zeropool.Pool[[]tombstones.Stone]
+		exemplarsPool       zeropool.Pool[[]record.RefExemplar]
+		histogramsPool      zeropool.Pool[[]record.RefHistogramSample]
+		floatHistogramsPool zeropool.Pool[[]record.RefFloatHistogramSample]
+		metadataPool        zeropool.Pool[[]record.RefMetadata]
 	)
 
 	defer func() {
@@ -167,7 +141,7 @@ func (h *Head) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.
 			rec := r.Record()
 			switch dec.Type(rec) {
 			case record.Series:
-				series := seriesPool.Get().([]record.RefSeries)[:0]
+				series := seriesPool.Get()[:0]
 				series, err = dec.Series(rec, series)
 				if err != nil {
 					decodeErr = &wlog.CorruptionErr{
@@ -179,7 +153,7 @@ func (h *Head) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.
 				}
 				decoded <- series
 			case record.Samples:
-				samples := samplesPool.Get().([]record.RefSample)[:0]
+				samples := samplesPool.Get()[:0]
 				samples, err = dec.Samples(rec, samples)
 				if err != nil {
 					decodeErr = &wlog.CorruptionErr{
@@ -191,7 +165,7 @@ func (h *Head) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.
 				}
 				decoded <- samples
 			case record.Tombstones:
-				tstones := tstonesPool.Get().([]tombstones.Stone)[:0]
+				tstones := tstonesPool.Get()[:0]
 				tstones, err = dec.Tombstones(rec, tstones)
 				if err != nil {
 					decodeErr = &wlog.CorruptionErr{
@@ -203,7 +177,7 @@ func (h *Head) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.
 				}
 				decoded <- tstones
 			case record.Exemplars:
-				exemplars := exemplarsPool.Get().([]record.RefExemplar)[:0]
+				exemplars := exemplarsPool.Get()[:0]
 				exemplars, err = dec.Exemplars(rec, exemplars)
 				if err != nil {
 					decodeErr = &wlog.CorruptionErr{
@@ -215,7 +189,7 @@ func (h *Head) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.
 				}
 				decoded <- exemplars
 			case record.HistogramSamples:
-				hists := histogramsPool.Get().([]record.RefHistogramSample)[:0]
+				hists := histogramsPool.Get()[:0]
 				hists, err = dec.HistogramSamples(rec, hists)
 				if err != nil {
 					decodeErr = &wlog.CorruptionErr{
@@ -227,7 +201,7 @@ func (h *Head) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.
 				}
 				decoded <- hists
 			case record.FloatHistogramSamples:
-				hists := floatHistogramsPool.Get().([]record.RefFloatHistogramSample)[:0]
+				hists := floatHistogramsPool.Get()[:0]
 				hists, err = dec.FloatHistogramSamples(rec, hists)
 				if err != nil {
 					decodeErr = &wlog.CorruptionErr{
@@ -239,7 +213,7 @@ func (h *Head) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.
 				}
 				decoded <- hists
 			case record.Metadata:
-				meta := metadataPool.Get().([]record.RefMetadata)[:0]
+				meta := metadataPool.Get()[:0]
 				meta, err := dec.Metadata(rec, meta)
 				if err != nil {
 					decodeErr = &wlog.CorruptionErr{
@@ -278,7 +252,6 @@ Outer:
 				idx := uint64(mSeries.ref) % uint64(concurrency)
 				processors[idx].input <- walSubsetProcessorInputItem{walSeriesRef: walSeries.Ref, existingSeries: mSeries}
 			}
-			//nolint:staticcheck // Ignore SA6002 relax staticcheck verification.
 			seriesPool.Put(v)
 		case []record.RefSample:
 			samples := v
@@ -315,7 +288,6 @@ Outer:
 				}
 				samples = samples[m:]
 			}
-			//nolint:staticcheck // Ignore SA6002 relax staticcheck verification.
 			samplesPool.Put(v)
 		case []tombstones.Stone:
 			for _, s := range v {
@@ -330,13 +302,11 @@ Outer:
 					h.tombstones.AddInterval(storage.SeriesRef(s.Ref), itv)
 				}
 			}
-			//nolint:staticcheck // Ignore SA6002 relax staticcheck verification.
 			tstonesPool.Put(v)
 		case []record.RefExemplar:
 			for _, e := range v {
 				exemplarsInput <- e
 			}
-			//nolint:staticcheck // Ignore SA6002 relax staticcheck verification.
 			exemplarsPool.Put(v)
 		case []record.RefHistogramSample:
 			samples := v
@@ -373,7 +343,6 @@ Outer:
 				}
 				samples = samples[m:]
 			}
-			//nolint:staticcheck // Ignore SA6002 relax staticcheck verification.
 			histogramsPool.Put(v)
 		case []record.RefFloatHistogramSample:
 			samples := v
@@ -410,7 +379,6 @@ Outer:
 				}
 				samples = samples[m:]
 			}
-			//nolint:staticcheck // Ignore SA6002 relax staticcheck verification.
 			floatHistogramsPool.Put(v)
 		case []record.RefMetadata:
 			for _, m := range v {
@@ -425,7 +393,6 @@ Outer:
 					Help: m.Help,
 				}
 			}
-			//nolint:staticcheck // Ignore SA6002 relax staticcheck verification.
 			metadataPool.Put(v)
 		default:
 			panic(fmt.Errorf("unexpected decoded type: %T", d))
@@ -795,7 +762,6 @@ func (h *Head) loadWBL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.
 				}
 				samples = samples[m:]
 			}
-			//nolint:staticcheck // Ignore SA6002 relax staticcheck verification.
 			samplesPool.Put(d)
 		case []record.RefMmapMarker:
 			markers := v

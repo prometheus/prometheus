@@ -45,6 +45,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/stats"
+	"github.com/prometheus/prometheus/util/zeropool"
 )
 
 const (
@@ -1794,18 +1795,16 @@ func (ev *evaluator) vectorSelectorSingle(it *storage.MemoizedSeriesIterator, no
 	return t, v, h, true
 }
 
-var pointPool = sync.Pool{}
+var pointPool zeropool.Pool[[]Point]
 
 func getPointSlice(sz int) []Point {
-	p := pointPool.Get()
-	if p != nil {
-		return p.([]Point)
+	if p := pointPool.Get(); p != nil {
+		return p
 	}
 	return make([]Point, 0, sz)
 }
 
 func putPointSlice(p []Point) {
-	//nolint:staticcheck // Ignore SA6002 relax staticcheck verification.
 	pointPool.Put(p[:0])
 }
 
@@ -2508,39 +2507,39 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 			group.value += delta * (s.V - group.mean)
 
 		case parser.TOPK:
-			if int64(len(group.heap)) < k || group.heap[0].V < s.V || math.IsNaN(group.heap[0].V) {
-				if int64(len(group.heap)) == k {
-					if k == 1 { // For k==1 we can replace in-situ.
-						group.heap[0] = Sample{
-							Point:  Point{V: s.V},
-							Metric: s.Metric,
-						}
-						break
-					}
-					heap.Pop(&group.heap)
-				}
+			// We build a heap of up to k elements, with the smallest element at heap[0].
+			if int64(len(group.heap)) < k {
 				heap.Push(&group.heap, &Sample{
 					Point:  Point{V: s.V},
 					Metric: s.Metric,
 				})
+			} else if group.heap[0].V < s.V || (math.IsNaN(group.heap[0].V) && !math.IsNaN(s.V)) {
+				// This new element is bigger than the previous smallest element - overwrite that.
+				group.heap[0] = Sample{
+					Point:  Point{V: s.V},
+					Metric: s.Metric,
+				}
+				if k > 1 {
+					heap.Fix(&group.heap, 0) // Maintain the heap invariant.
+				}
 			}
 
 		case parser.BOTTOMK:
-			if int64(len(group.reverseHeap)) < k || group.reverseHeap[0].V > s.V || math.IsNaN(group.reverseHeap[0].V) {
-				if int64(len(group.reverseHeap)) == k {
-					if k == 1 { // For k==1 we can replace in-situ.
-						group.reverseHeap[0] = Sample{
-							Point:  Point{V: s.V},
-							Metric: s.Metric,
-						}
-						break
-					}
-					heap.Pop(&group.reverseHeap)
-				}
+			// We build a heap of up to k elements, with the biggest element at heap[0].
+			if int64(len(group.reverseHeap)) < k {
 				heap.Push(&group.reverseHeap, &Sample{
 					Point:  Point{V: s.V},
 					Metric: s.Metric,
 				})
+			} else if group.reverseHeap[0].V > s.V || (math.IsNaN(group.reverseHeap[0].V) && !math.IsNaN(s.V)) {
+				// This new element is smaller than the previous biggest element - overwrite that.
+				group.reverseHeap[0] = Sample{
+					Point:  Point{V: s.V},
+					Metric: s.Metric,
+				}
+				if k > 1 {
+					heap.Fix(&group.reverseHeap, 0) // Maintain the heap invariant.
+				}
 			}
 
 		case parser.QUANTILE:

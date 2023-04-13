@@ -1373,12 +1373,9 @@ func TestCancelCompactions(t *testing.T) {
 	createBlock(t, tmpdir, genSeries(1, 1, 2000, 2001)) // The most recent block is ignored so can be e small one.
 
 	// Copy the db so we have an exact copy to compare compaction times.
-	tmpdirCopy := tmpdir + "Copy"
+	tmpdirCopy := t.TempDir()
 	err := fileutil.CopyDirs(tmpdir, tmpdirCopy)
 	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(tmpdirCopy))
-	}()
 
 	// Measure the compaction time without interrupting it.
 	var timeCompactionUninterrupted time.Duration
@@ -1430,6 +1427,7 @@ func TestCancelCompactions(t *testing.T) {
 		for i, b := range blocks {
 			require.Falsef(t, b.Meta().Compaction.Failed, "block %d (%s) should not be marked as compaction failed", i, b.Meta().ULID)
 		}
+		require.NoError(t, readOnlyDB.Close())
 	}
 }
 

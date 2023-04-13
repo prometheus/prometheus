@@ -181,6 +181,15 @@ func (t *Target) Labels() labels.Labels {
 	return b.Labels()
 }
 
+// LabelsRange calls f on each public label of the target.
+func (t *Target) LabelsRange(f func(l labels.Label)) {
+	t.labels.Range(func(l labels.Label) {
+		if !strings.HasPrefix(l.Name, model.ReservedLabelPrefix) {
+			f(l)
+		}
+	})
+}
+
 // DiscoveredLabels returns a copy of the target's labels before any processing.
 func (t *Target) DiscoveredLabels() labels.Labels {
 	t.mtx.Lock()

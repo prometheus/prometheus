@@ -369,7 +369,7 @@ func (h *headChunkReader) chunk(meta chunks.Meta, copyLastChunk bool) (chunkenc.
 }
 
 // chunk returns the chunk for the HeadChunkID from memory or by m-mapping it from the disk.
-// If headChunk is true, it means that the returned *memChunk
+// If headChunk is false, it means that the returned *memChunk
 // (and not the chunkenc.Chunk inside it) can be garbage collected after its usage.
 func (s *memSeries) chunk(id chunks.HeadChunkID, cdm chunkDiskMapper, memChunkPool *sync.Pool) (chunk *memChunk, headChunk bool, err error) {
 	// ix represents the index of chunk in the s.mmappedChunks slice. The chunk id's are

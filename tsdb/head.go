@@ -44,6 +44,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wlog"
+	"github.com/prometheus/prometheus/util/zeropool"
 )
 
 var (
@@ -97,13 +98,13 @@ type Head struct {
 	exemplarMetrics     *ExemplarMetrics
 	exemplars           ExemplarStorage
 	logger              log.Logger
-	appendPool          sync.Pool
-	exemplarsPool       sync.Pool
-	histogramsPool      sync.Pool
-	floatHistogramsPool sync.Pool
-	metadataPool        sync.Pool
-	seriesPool          sync.Pool
-	bytesPool           sync.Pool
+	appendPool          zeropool.Pool[[]record.RefSample]
+	exemplarsPool       zeropool.Pool[[]exemplarWithSeriesRef]
+	histogramsPool      zeropool.Pool[[]record.RefHistogramSample]
+	floatHistogramsPool zeropool.Pool[[]record.RefFloatHistogramSample]
+	metadataPool        zeropool.Pool[[]record.RefMetadata]
+	seriesPool          zeropool.Pool[[]*memSeries]
+	bytesPool           zeropool.Pool[[]byte]
 	memChunkPool        sync.Pool
 
 	// All series addressable by their ID or hash.

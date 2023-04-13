@@ -907,6 +907,7 @@ type mergedStringIter struct {
 	b        index.StringIter
 	aok, bok bool
 	cur      string
+	err      error
 }
 
 func (m *mergedStringIter) Next() bool {
@@ -917,29 +918,34 @@ func (m *mergedStringIter) Next() bool {
 	if !m.aok {
 		m.cur = m.b.At()
 		m.bok = m.b.Next()
+		m.err = m.b.Err()
 	} else if !m.bok {
 		m.cur = m.a.At()
 		m.aok = m.a.Next()
+		m.err = m.a.Err()
 	} else if m.b.At() > m.a.At() {
 		m.cur = m.a.At()
 		m.aok = m.a.Next()
+		m.err = m.a.Err()
 	} else if m.a.At() > m.b.At() {
 		m.cur = m.b.At()
 		m.bok = m.b.Next()
+		m.err = m.b.Err()
 	} else { // Equal.
 		m.cur = m.b.At()
 		m.aok = m.a.Next()
+		m.err = m.a.Err()
 		m.bok = m.b.Next()
+		if m.err == nil {
+			m.err = m.b.Err()
+		}
 	}
 
 	return true
 }
 func (m mergedStringIter) At() string { return m.cur }
 func (m mergedStringIter) Err() error {
-	if m.a.Err() != nil {
-		return m.a.Err()
-	}
-	return m.b.Err()
+	return m.err
 }
 
 // DeletedIterator wraps chunk Iterator and makes sure any deleted metrics are not returned.

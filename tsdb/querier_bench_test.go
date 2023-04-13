@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
+	"github.com/prometheus/prometheus/tsdb/index"
 )
 
 // Make entries ~50B in size, to emulate real-world high cardinality.
@@ -202,6 +203,28 @@ func benchmarkLabelValuesWithMatchers(b *testing.B, ir IndexReader) {
 			}
 		})
 	}
+}
+
+func BenchmarkMergedStringIter(b *testing.B) {
+	numSymbols := 100000
+	s := make([]string, numSymbols)
+	for i := 0; i < numSymbols; i++ {
+		s[i] = fmt.Sprintf("symbol%v", i)
+	}
+
+	for i := 0; i < b.N; i++ {
+		it := NewMergedStringIter(index.NewStringListIter(s), index.NewStringListIter(s))
+		for j := 0; j < 100; j++ {
+			it = NewMergedStringIter(it, index.NewStringListIter(s))
+		}
+
+		for it.Next() {
+			require.NotNil(b, it.At())
+			require.NoError(b, it.Err())
+		}
+	}
+
+	b.ReportAllocs()
 }
 
 func BenchmarkQuerierSelect(b *testing.B) {
