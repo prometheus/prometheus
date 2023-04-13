@@ -18,8 +18,9 @@ import (
 	"math"
 	"testing"
 
-	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/tsdb/encoding"
 )
 
 func TestHistogramString(t *testing.T) {
