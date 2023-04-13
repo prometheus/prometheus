@@ -975,7 +975,7 @@ func TestCompaction_populateBlock(t *testing.T) {
 						s       sample
 					)
 					for iter.Next() == chunkenc.ValFloat {
-						s.t, s.v = iter.At()
+						s.t, s.f = iter.At()
 						if firstTs == math.MaxInt64 {
 							firstTs = s.t
 						}
@@ -1350,7 +1350,7 @@ func TestHeadCompactionWithHistograms(t *testing.T) {
 				for tsMinute := from; tsMinute <= to; tsMinute++ {
 					_, err := app.Append(0, lbls, minute(tsMinute), float64(tsMinute))
 					require.NoError(t, err)
-					*exp = append(*exp, sample{t: minute(tsMinute), v: float64(tsMinute)})
+					*exp = append(*exp, sample{t: minute(tsMinute), f: float64(tsMinute)})
 				}
 				require.NoError(t, app.Commit())
 			}

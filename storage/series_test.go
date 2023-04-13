@@ -25,11 +25,11 @@ import (
 
 func TestListSeriesIterator(t *testing.T) {
 	it := NewListSeriesIterator(samples{
-		sample{0, 0, nil, nil},
-		sample{1, 1, nil, nil},
-		sample{1, 1.5, nil, nil},
-		sample{2, 2, nil, nil},
-		sample{3, 3, nil, nil},
+		fSample{0, 0},
+		fSample{1, 1},
+		fSample{1, 1.5},
+		fSample{2, 2},
+		fSample{3, 3},
 	})
 
 	// Seek to the first sample with ts=1.
@@ -78,20 +78,20 @@ func TestChunkSeriesSetToSeriesSet(t *testing.T) {
 		{
 			lbs: labels.FromStrings("__name__", "up", "instance", "localhost:8080"),
 			samples: []tsdbutil.Sample{
-				sample{t: 1, v: 1},
-				sample{t: 2, v: 2},
-				sample{t: 3, v: 3},
-				sample{t: 4, v: 4},
+				fSample{t: 1, f: 1},
+				fSample{t: 2, f: 2},
+				fSample{t: 3, f: 3},
+				fSample{t: 4, f: 4},
 			},
 		}, {
 			lbs: labels.FromStrings("__name__", "up", "instance", "localhost:8081"),
 			samples: []tsdbutil.Sample{
-				sample{t: 1, v: 2},
-				sample{t: 2, v: 3},
-				sample{t: 3, v: 4},
-				sample{t: 4, v: 5},
-				sample{t: 5, v: 6},
-				sample{t: 6, v: 7},
+				fSample{t: 1, f: 2},
+				fSample{t: 2, f: 3},
+				fSample{t: 3, f: 4},
+				fSample{t: 4, f: 5},
+				fSample{t: 5, f: 6},
+				fSample{t: 6, f: 7},
 			},
 		},
 	}
@@ -114,7 +114,7 @@ func TestChunkSeriesSetToSeriesSet(t *testing.T) {
 		j := 0
 		for iter.Next() == chunkenc.ValFloat {
 			ts, v := iter.At()
-			require.EqualValues(t, series[i].samples[j], sample{t: ts, v: v})
+			require.EqualValues(t, series[i].samples[j], fSample{t: ts, f: v})
 			j++
 		}
 	}

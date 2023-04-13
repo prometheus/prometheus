@@ -47,8 +47,8 @@ func TestLazyLoader_WithSamplesTill(t *testing.T) {
 					series: []Series{
 						{
 							Metric: labels.FromStrings("__name__", "metric1"),
-							Points: []Point{
-								{0, 1, nil}, {10000, 2, nil}, {20000, 3, nil}, {30000, 4, nil}, {40000, 5, nil},
+							Floats: []FPoint{
+								{0, 1}, {10000, 2}, {20000, 3}, {30000, 4}, {40000, 5},
 							},
 						},
 					},
@@ -58,8 +58,8 @@ func TestLazyLoader_WithSamplesTill(t *testing.T) {
 					series: []Series{
 						{
 							Metric: labels.FromStrings("__name__", "metric1"),
-							Points: []Point{
-								{0, 1, nil}, {10000, 2, nil}, {20000, 3, nil}, {30000, 4, nil}, {40000, 5, nil},
+							Floats: []FPoint{
+								{0, 1}, {10000, 2}, {20000, 3}, {30000, 4}, {40000, 5},
 							},
 						},
 					},
@@ -69,8 +69,8 @@ func TestLazyLoader_WithSamplesTill(t *testing.T) {
 					series: []Series{
 						{
 							Metric: labels.FromStrings("__name__", "metric1"),
-							Points: []Point{
-								{0, 1, nil}, {10000, 2, nil}, {20000, 3, nil}, {30000, 4, nil}, {40000, 5, nil}, {50000, 6, nil}, {60000, 7, nil},
+							Floats: []FPoint{
+								{0, 1}, {10000, 2}, {20000, 3}, {30000, 4}, {40000, 5}, {50000, 6}, {60000, 7},
 							},
 						},
 					},
@@ -89,14 +89,14 @@ func TestLazyLoader_WithSamplesTill(t *testing.T) {
 					series: []Series{
 						{
 							Metric: labels.FromStrings("__name__", "metric1"),
-							Points: []Point{
-								{0, 1, nil}, {10000, 1, nil}, {20000, 1, nil}, {30000, 1, nil}, {40000, 1, nil}, {50000, 1, nil},
+							Floats: []FPoint{
+								{0, 1}, {10000, 1}, {20000, 1}, {30000, 1}, {40000, 1}, {50000, 1},
 							},
 						},
 						{
 							Metric: labels.FromStrings("__name__", "metric2"),
-							Points: []Point{
-								{0, 1, nil}, {10000, 2, nil}, {20000, 3, nil}, {30000, 4, nil}, {40000, 5, nil}, {50000, 6, nil}, {60000, 7, nil}, {70000, 8, nil},
+							Floats: []FPoint{
+								{0, 1}, {10000, 2}, {20000, 3}, {30000, 4}, {40000, 5}, {50000, 6}, {60000, 7}, {70000, 8},
 							},
 						},
 					},
@@ -146,7 +146,7 @@ func TestLazyLoader_WithSamplesTill(t *testing.T) {
 					it := storageSeries.Iterator(nil)
 					for it.Next() == chunkenc.ValFloat {
 						t, v := it.At()
-						got.Points = append(got.Points, Point{T: t, V: v})
+						got.Floats = append(got.Floats, FPoint{T: t, F: v})
 					}
 					require.NoError(t, it.Err())
 

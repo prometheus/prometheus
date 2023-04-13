@@ -70,7 +70,7 @@ func TestTemplateExpansion(t *testing.T) {
 		{
 			text:        "{{ query \"1.5\" | first | value }}",
 			output:      "1.5",
-			queryResult: promql.Vector{{Point: promql.Point{T: 0, V: 1.5}}},
+			queryResult: promql.Vector{{T: 0, F: 1.5}},
 		},
 		{
 			// Get value from query.
@@ -78,7 +78,8 @@ func TestTemplateExpansion(t *testing.T) {
 			queryResult: promql.Vector{
 				{
 					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
-					Point:  promql.Point{T: 0, V: 11},
+					T:      0,
+					F:      11,
 				},
 			},
 			output: "11",
@@ -90,7 +91,8 @@ func TestTemplateExpansion(t *testing.T) {
 			queryResult: promql.Vector{
 				{
 					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
-					Point:  promql.Point{T: 0, V: 11},
+					T:      0,
+					F:      11,
 				},
 			},
 			output: "a",
@@ -101,7 +103,8 @@ func TestTemplateExpansion(t *testing.T) {
 			queryResult: promql.Vector{
 				{
 					Metric: labels.FromStrings(labels.MetricName, "metric", "__value__", "a"),
-					Point:  promql.Point{T: 0, V: 11},
+					T:      0,
+					F:      11,
 				},
 			},
 			output: "a",
@@ -112,7 +115,8 @@ func TestTemplateExpansion(t *testing.T) {
 			queryResult: promql.Vector{
 				{
 					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
-					Point:  promql.Point{T: 0, V: 11},
+					T:      0,
+					F:      11,
 				},
 			},
 			output: "",
@@ -123,7 +127,8 @@ func TestTemplateExpansion(t *testing.T) {
 			queryResult: promql.Vector{
 				{
 					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
-					Point:  promql.Point{T: 0, V: 11},
+					T:      0,
+					F:      11,
 				},
 			},
 			output: "",
@@ -133,7 +138,8 @@ func TestTemplateExpansion(t *testing.T) {
 			queryResult: promql.Vector{
 				{
 					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
-					Point:  promql.Point{T: 0, V: 11},
+					T:      0,
+					F:      11,
 				},
 			},
 			output: "",
@@ -145,10 +151,12 @@ func TestTemplateExpansion(t *testing.T) {
 			queryResult: promql.Vector{
 				{
 					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "b"),
-					Point:  promql.Point{T: 0, V: 21},
+					T:      0,
+					F:      21,
 				}, {
 					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
-					Point:  promql.Point{T: 0, V: 11},
+					T:      0,
+					F:      11,
 				},
 			},
 			output: "a:11: b:21: ",

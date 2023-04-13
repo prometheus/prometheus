@@ -17,9 +17,7 @@ _Notes about the experimental native histograms:_
   flag](../feature_flags/#native-histograms). As long as no native histograms
   have been ingested into the TSDB, all functions will behave as usual.
 * Functions that do not explicitly mention native histograms in their
-  documentation (see below) effectively treat a native histogram as a float
-  sample of value 0. (This is confusing and will change before native
-  histograms become a stable feature.)
+  documentation (see below) will ignore histogram samples.
 * Functions that do already act on native histograms might still change their
   behavior in the future.
 * If a function requires the same bucket layout between multiple native
@@ -404,6 +402,8 @@ For each timeseries in `v`, `label_join(v instant-vector, dst_label string, sepa
 using `separator` and returns the timeseries with the label `dst_label` containing the joined value.
 There can be any number of `src_labels` in this function.
 
+`label_join` acts on float and histogram samples in the same way.
+
 This example will return a vector with each time series having a `foo` label with the value `a,b,c` added to it:
 
 ```
@@ -418,6 +418,8 @@ matches, the value of the label `dst_label` in the returned timeseries will be t
 of `replacement`, together with the original labels in the input. Capturing groups in the
 regular expression can be referenced with `$1`, `$2`, etc. If the regular expression doesn't
 match then the timeseries is returned unchanged.
+
+`label_replace` acts on float and histogram samples in the same way.
 
 This example will return timeseries with the values `a:c` at label `service` and `a` at label `foo`:
 
@@ -501,10 +503,21 @@ counter resets when your target restarts.
 
 For each input time series, `resets(v range-vector)` returns the number of
 counter resets within the provided time range as an instant vector. Any
-decrease in the value between two consecutive samples is interpreted as a
-counter reset.
+decrease in the value between two consecutive float samples is interpreted as a
+counter reset. A reset in a native histogram is detected in a more complex way:
+Any decrease in any bucket, including the zero bucket, or in the count of
+observation constitutes a counter reset, but also the disappearance of any
+previously populated bucket, an increase in bucket resolution, or a decrease of
+the zero-bucket width.
 
-`resets` should only be used with counters.
+`resets` should only be used with counters and counter-like native
+histograms.
+
+If the range vector contains a mix of float and histogram samples for the same
+series, counter resets are detected separately and their numbers added up. The
+change from a float to a histogram sample is _not_ considered a counter
+reset. Each float sample is compared to the next float sample, and each
+histogram is comprared to the next histogram.
 
 ## `round()`
 
@@ -526,7 +539,7 @@ have exactly one element, `scalar` will return `NaN`.
 ## `sort()`
 
 `sort(v instant-vector)` returns vector elements sorted by their sample values,
-in ascending order.
+in ascending order. Native histograms are sorted by their sum of observations.
 
 ## `sort_desc()`
 
@@ -545,7 +558,8 @@ expression is to be evaluated.
 ## `timestamp()`
 
 `timestamp(v instant-vector)` returns the timestamp of each of the samples of
-the given vector as the number of seconds since January 1, 1970 UTC.
+the given vector as the number of seconds since January 1, 1970 UTC. It also
+works with histogram samples.
 
 ## `vector()`
 
@@ -569,11 +583,14 @@ over time and return an instant vector with per-series aggregation results:
 * `quantile_over_time(scalar, range-vector)`: the φ-quantile (0 ≤ φ ≤ 1) of the values in the specified interval.
 * `stddev_over_time(range-vector)`: the population standard deviation of the values in the specified interval.
 * `stdvar_over_time(range-vector)`: the population standard variance of the values in the specified interval.
-* `last_over_time(range-vector)`: the most recent point value in specified interval.
+* `last_over_time(range-vector)`: the most recent point value in the specified interval.
 * `present_over_time(range-vector)`: the value 1 for any series in the specified interval.
 
 Note that all values in the specified interval have the same weight in the
 aggregation even if the values are not equally spaced throughout the interval.
+
+`count_over_time`, `last_over_time`, and `present_over_time` handle native
+histograms as expected. All other functions ignore histogram samples.
 
 ## Trigonometric Functions
 

@@ -78,7 +78,7 @@ func (o *OOOChunk) ToXOR() (*chunkenc.XORChunk, error) {
 		return nil, err
 	}
 	for _, s := range o.samples {
-		app.Append(s.t, s.v)
+		app.Append(s.t, s.f)
 	}
 	return x, nil
 }
@@ -96,7 +96,7 @@ func (o *OOOChunk) ToXORBetweenTimestamps(mint, maxt int64) (*chunkenc.XORChunk,
 		if s.t > maxt {
 			break
 		}
-		app.Append(s.t, s.v)
+		app.Append(s.t, s.f)
 	}
 	return x, nil
 }

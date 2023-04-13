@@ -1864,7 +1864,7 @@ func (s *stripeSeries) getOrSet(hash uint64, lset labels.Labels, createSeries fu
 
 type sample struct {
 	t  int64
-	v  float64
+	f  float64
 	h  *histogram.Histogram
 	fh *histogram.FloatHistogram
 }
@@ -1874,7 +1874,7 @@ func newSample(t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHi
 }
 
 func (s sample) T() int64                      { return s.t }
-func (s sample) V() float64                    { return s.v }
+func (s sample) F() float64                    { return s.f }
 func (s sample) H() *histogram.Histogram       { return s.h }
 func (s sample) FH() *histogram.FloatHistogram { return s.fh }
 
