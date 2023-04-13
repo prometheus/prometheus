@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -128,12 +129,356 @@ func TestRuleEval(t *testing.T) {
 
 	for _, scenario := range ruleEvalTestScenarios {
 		t.Run(scenario.name, func(t *testing.T) {
-			rule := NewRecordingRule("test_rule", scenario.expr, scenario.ruleLabels)
-			result, err := rule.Eval(suite.Context(), ruleEvaluationTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil, 0)
+			rule := NewRecordingRule(
+				"test_rule",
+				scenario.expr,
+				scenario.ruleLabels,
+				labels.EmptyLabels(),
+				"",
+				nil,
+			)
+			result, err := rule.Eval(
+				suite.Context(),
+				ruleEvaluationTime,
+				EngineQueryFunc(suite.QueryEngine(), suite.Storage()),
+				nil,
+				0,
+			)
 			require.NoError(t, err)
 			require.Equal(t, scenario.expected, result)
 		})
 	}
+}
+
+func TestRecordingRuleLabelsUpdate(t *testing.T) {
+	suite := setUpRuleEvalTest(t)
+	defer suite.Close()
+
+	require.NoError(t, suite.Run())
+
+	rule := NewRecordingRule(
+		"test_rule",
+		exprWithMetricName,
+		labels.FromStrings("label_c", "{{ if lt $value 4.0 }}foo{{ else }}bar{{ end }}"),
+		labels.EmptyLabels(),
+		"",
+		nil,
+	)
+	result, err := rule.Eval(
+		suite.Context(),
+		ruleEvaluationTime,
+		EngineQueryFunc(suite.QueryEngine(), suite.Storage()),
+		nil,
+		0,
+	)
+	require.NoError(t, err)
+	expected := promql.Vector{
+		promql.Sample{
+			Metric: labels.FromStrings("__name__", "test_rule", "label_a", "1", "label_b", "3", "label_c", "foo"),
+			F:      1,
+		},
+		promql.Sample{
+			Metric: labels.FromStrings("__name__", "test_rule", "label_a", "2", "label_b", "4", "label_c", "bar"),
+			F:      10,
+		},
+	}
+	require.Equal(t, expected, result)
+}
+
+func TestRecordingRuleExternalLabelsInTemplate(t *testing.T) {
+	suite, err := promql.NewTest(t, `
+		load 1m
+			http_requests{job="app-server", instance="0"}	75 85 70 70
+	`)
+	require.NoError(t, err)
+	defer suite.Close()
+
+	require.NoError(t, suite.Run())
+
+	expr, err := parser.ParseExpr(`http_requests < 100`)
+	require.NoError(t, err)
+
+	ruleWithoutExternalLabels := NewRecordingRule(
+		"ExternalLabelDoesNotExist",
+		expr,
+		labels.FromStrings(
+			"templated_label",
+			"There are {{ len $externalLabels }} external Labels, of which foo is {{ $externalLabels.foo }}.",
+		),
+		labels.EmptyLabels(),
+		"",
+		nil,
+	)
+	ruleWithExternalLabels := NewRecordingRule(
+		"ExternalLabelExists",
+		expr,
+		labels.FromStrings(
+			"templated_label",
+			"There are {{ len $externalLabels }} external Labels, of which foo is {{ $externalLabels.foo }}.",
+		),
+		labels.FromStrings("foo", "bar", "dings", "bums"),
+		"",
+		nil,
+	)
+
+	expected := promql.Vector{
+		promql.Sample{
+			Metric: labels.FromStrings(
+				"__name__", "ExternalLabelDoesNotExist",
+				"instance", "0",
+				"job", "app-server",
+				"templated_label", "There are 0 external Labels, of which foo is .",
+			),
+			F: 75,
+		},
+		promql.Sample{
+			Metric: labels.FromStrings(
+				"__name__", "ExternalLabelExists",
+				"instance", "0",
+				"job", "app-server",
+				"templated_label", "There are 2 external Labels, of which foo is bar.",
+			),
+			F: 75,
+		},
+	}
+	var results promql.Vector
+	result, err := ruleWithoutExternalLabels.Eval(
+		suite.Context(),
+		ruleEvaluationTime,
+		EngineQueryFunc(suite.QueryEngine(), suite.Storage()),
+		nil,
+		0,
+	)
+	require.NoError(t, err)
+	results = append(results, result...)
+	result, err = ruleWithExternalLabels.Eval(
+		suite.Context(),
+		ruleEvaluationTime,
+		EngineQueryFunc(suite.QueryEngine(), suite.Storage()),
+		nil,
+		0,
+	)
+	require.NoError(t, err)
+	results = append(results, result...)
+
+	require.Equal(t, expected, results)
+}
+
+func TestRecordingRuleExternalURLInTemplate(t *testing.T) {
+	suite, err := promql.NewTest(t, `
+		load 1m
+			http_requests{job="app-server", instance="0"}	75 85 70 70
+	`)
+	require.NoError(t, err)
+	defer suite.Close()
+
+	require.NoError(t, suite.Run())
+
+	expr, err := parser.ParseExpr(`http_requests < 100`)
+	require.NoError(t, err)
+
+	ruleWithoutExternalURL := NewRecordingRule(
+		"ExternalURLDoesNotExist",
+		expr,
+		labels.FromStrings("templated_label", "The external URL is {{ $externalURL }}."),
+		labels.EmptyLabels(),
+		"",
+		nil,
+	)
+	ruleWithExternalURL := NewRecordingRule(
+		"ExternalURLExists",
+		expr,
+		labels.FromStrings("templated_label", "The external URL is {{ $externalURL }}."),
+		labels.EmptyLabels(),
+		"http://localhost:1234",
+		nil,
+	)
+
+	expected := promql.Vector{
+		promql.Sample{
+			Metric: labels.FromStrings(
+				"__name__", "ExternalURLDoesNotExist",
+				"instance", "0",
+				"job", "app-server",
+				"templated_label", "The external URL is .",
+			),
+			F: 75,
+		},
+		promql.Sample{
+			Metric: labels.FromStrings(
+				"__name__", "ExternalURLExists",
+				"instance", "0",
+				"job", "app-server",
+				"templated_label", "The external URL is http://localhost:1234.",
+			),
+			F: 75,
+		},
+	}
+	var results promql.Vector
+	result, err := ruleWithoutExternalURL.Eval(
+		suite.Context(),
+		ruleEvaluationTime,
+		EngineQueryFunc(suite.QueryEngine(), suite.Storage()),
+		nil,
+		0,
+	)
+	require.NoError(t, err)
+	results = append(results, result...)
+	result, err = ruleWithExternalURL.Eval(
+		suite.Context(), ruleEvaluationTime,
+		EngineQueryFunc(suite.QueryEngine(), suite.Storage()),
+		nil,
+		0,
+	)
+	require.NoError(t, err)
+	results = append(results, result...)
+
+	require.Equal(t, expected, results)
+}
+
+func TestRecordingRuleEmptyLabelFromTemplate(t *testing.T) {
+	suite, err := promql.NewTest(t, `
+		load 1m
+			http_requests{job="app-server", instance="0"}	75 85 70 70
+	`)
+	require.NoError(t, err)
+	defer suite.Close()
+
+	require.NoError(t, suite.Run())
+
+	expr, err := parser.ParseExpr(`http_requests < 100`)
+	require.NoError(t, err)
+
+	rule := NewRecordingRule(
+		"EmptyLabel",
+		expr,
+		labels.FromStrings("empty_label", ""),
+		labels.EmptyLabels(),
+		"",
+		nil,
+	)
+
+	expected := promql.Vector{
+		promql.Sample{
+			Metric: labels.FromStrings(
+				"__name__", "EmptyLabel",
+				"instance", "0",
+				"job", "app-server",
+			),
+			F: 75,
+		},
+	}
+	result, err := rule.Eval(
+		suite.Context(),
+		ruleEvaluationTime,
+		EngineQueryFunc(suite.QueryEngine(), suite.Storage()),
+		nil,
+		0,
+	)
+	require.NoError(t, err)
+
+	require.Equal(t, expected, result)
+}
+
+func TestRecordingRuleQueryInTemplate(t *testing.T) {
+	suite, err := promql.NewTest(t, `
+		load 1m
+			http_requests{job="app-server", instance="0"}	75 85 70 70
+	`)
+	require.NoError(t, err)
+	defer suite.Close()
+
+	require.NoError(t, suite.Run())
+
+	expr, err := parser.ParseExpr(`sum(http_requests) < 100`)
+	require.NoError(t, err)
+
+	rule := NewRecordingRule(
+		"ruleWithQueryInTemplate",
+		expr,
+		labels.FromStrings(
+			"label", "value",
+			"templated_label", `{{- with "sort(sum(http_requests) by (instance))" | query -}}
+{{- range $i,$v := . -}}
+instance: {{ $v.Labels.instance }}, value: {{ printf "%.0f" $v.Value }};
+{{- end -}}
+{{- end -}}
+`,
+		),
+		labels.EmptyLabels(),
+		"",
+		nil,
+	)
+
+	expected := promql.Vector{
+		promql.Sample{
+			Metric: labels.FromStrings(
+				"__name__", "ruleWithQueryInTemplate",
+				"label", "value",
+				"templated_label", "instance: 0, value: 75;",
+			),
+			F: 75,
+		},
+	}
+	result, err := rule.Eval(
+		suite.Context(),
+		ruleEvaluationTime,
+		EngineQueryFunc(suite.QueryEngine(), suite.Storage()),
+		nil,
+		0,
+	)
+	require.NoError(t, err)
+
+	require.Equal(t, expected, result)
+}
+
+func TestRecordingRuleExpendError(t *testing.T) {
+	suite, err := promql.NewTest(t, `
+		load 1m
+			http_requests{job="app-server", instance="0"}	75 85 70 70
+	`)
+	require.NoError(t, err)
+	defer suite.Close()
+
+	require.NoError(t, suite.Run())
+
+	expr, err := parser.ParseExpr(`sum(http_requests) < 100`)
+	require.NoError(t, err)
+
+	rule := NewRecordingRule(
+		"test_rule",
+		expr,
+		labels.FromStrings(
+			"label", "value",
+			"templated_label", `{{ $notExist }}`,
+		),
+		labels.EmptyLabels(),
+		"",
+		log.NewNopLogger(),
+	)
+
+	expected := promql.Vector{
+		promql.Sample{
+			Metric: labels.FromStrings(
+				"__name__", "test_rule",
+				"label", "value",
+				"templated_label",
+				"<error expanding template: error parsing template __record_test_rule: "+
+					"template: __record_test_rule:1: undefined variable \"$notExist\">",
+			),
+			F: 75,
+		},
+	}
+	result, err := rule.Eval(
+		suite.Context(),
+		ruleEvaluationTime,
+		EngineQueryFunc(suite.QueryEngine(), suite.Storage()),
+		nil,
+		0,
+	)
+	require.NoError(t, err)
+
+	require.Equal(t, expected, result)
 }
 
 func BenchmarkRuleEval(b *testing.B) {
@@ -144,7 +489,14 @@ func BenchmarkRuleEval(b *testing.B) {
 
 	for _, scenario := range ruleEvalTestScenarios {
 		b.Run(scenario.name, func(b *testing.B) {
-			rule := NewRecordingRule("test_rule", scenario.expr, scenario.ruleLabels)
+			rule := NewRecordingRule(
+				"test_rule",
+				scenario.expr,
+				scenario.ruleLabels,
+				labels.EmptyLabels(),
+				"",
+				nil,
+			)
 
 			b.ResetTimer()
 
@@ -177,7 +529,14 @@ func TestRuleEvalDuplicate(t *testing.T) {
 	now := time.Now()
 
 	expr, _ := parser.ParseExpr(`vector(0) or label_replace(vector(0),"test","x","","")`)
-	rule := NewRecordingRule("foo", expr, labels.FromStrings("test", "test"))
+	rule := NewRecordingRule(
+		"foo",
+		expr,
+		labels.FromStrings("test", "test"),
+		labels.EmptyLabels(),
+		"",
+		nil,
+	)
 	_, err := rule.Eval(ctx, now, EngineQueryFunc(engine, storage), nil, 0)
 	require.Error(t, err)
 	require.EqualError(t, err, "vector contains metrics with the same labelset after applying rule labels")
@@ -218,6 +577,9 @@ func TestRecordingRuleLimit(t *testing.T) {
 		"foo",
 		expr,
 		labels.FromStrings("test", "test"),
+		labels.EmptyLabels(),
+		"",
+		nil,
 	)
 
 	evalTime := time.Unix(0, 0)
@@ -250,7 +612,7 @@ func TestRecordingEvalWithOrigin(t *testing.T) {
 	expr, err := parser.ParseExpr(query)
 	require.NoError(t, err)
 
-	rule := NewRecordingRule(name, expr, lbs)
+	rule := NewRecordingRule(name, expr, lbs, labels.EmptyLabels(), "", nil)
 	_, err = rule.Eval(ctx, now, func(ctx context.Context, qs string, _ time.Time) (promql.Vector, error) {
 		detail = FromOriginContext(ctx)
 		return nil, nil

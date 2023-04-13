@@ -105,7 +105,7 @@ expr: <string>
 
 # Labels to add or overwrite before storing the result.
 labels:
-  [ <labelname>: <labelvalue> ]
+  [ <labelname>: <tmpl_string> ]
 ```
 
 The syntax for alerting rules is:
@@ -138,6 +138,33 @@ annotations:
 
 See also the
 [best practices for naming metrics created by recording rules](https://prometheus.io/docs/practices/rules/#recording-rules).
+
+### Templating
+
+Label values can be templated using [console
+templates](https://prometheus.io/docs/visualization/consoles).  The `$labels`
+variable holds the label key/value pairs of an record instance. The configured
+external labels can be accessed via the `$externalLabels` variable. The
+`$value` variable holds the evaluated value of an alert instance.
+
+    # To insert a firing element's label values:
+    {{ $labels.<labelname> }}
+    # To insert the numeric expression value of the firing element:
+    {{ $value }}
+
+Examples:
+
+```yaml
+groups:
+- name: example
+  rules:
+
+  - record: code:prometheus_http_requests_total:sum
+    expr: sum by (code) (prometheus_http_requests_total)
+    labels: 
+      custom: "{{ $labels.instance }}"
+
+```
 
 # Limiting alerts and series
 

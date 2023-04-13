@@ -17,15 +17,21 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"strings"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
+	"github.com/prometheus/common/model"
 	"go.uber.org/atomic"
 	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/template"
 )
 
 // A RecordingRule records its vector expression into new timeseries.
@@ -41,10 +47,20 @@ type RecordingRule struct {
 	lastError *atomic.Error
 	// Duration of how long it took to evaluate the recording rule.
 	evaluationDuration *atomic.Duration
+	// External labels from the global config.
+	externalLabels map[string]string
+	// The external URL from the --web.external-url flag.
+	externalURL string
+	logger      log.Logger
 }
 
 // NewRecordingRule returns a new recording rule.
-func NewRecordingRule(name string, vector parser.Expr, lset labels.Labels) *RecordingRule {
+func NewRecordingRule(
+	name string, vector parser.Expr, lset labels.Labels,
+	externalLabels labels.Labels, externalURL string,
+	logger log.Logger,
+) *RecordingRule {
+	el := externalLabels.Map()
 	return &RecordingRule{
 		name:                name,
 		vector:              vector,
@@ -53,6 +69,9 @@ func NewRecordingRule(name string, vector parser.Expr, lset labels.Labels) *Reco
 		evaluationTimestamp: atomic.NewTime(time.Time{}),
 		evaluationDuration:  atomic.NewDuration(0),
 		lastError:           atomic.NewError(nil),
+		externalLabels:      el,
+		externalURL:         externalURL,
+		logger:              logger,
 	}
 }
 
@@ -72,7 +91,7 @@ func (rule *RecordingRule) Labels() labels.Labels {
 }
 
 // Eval evaluates the rule and then overrides the metric names and labels accordingly.
-func (rule *RecordingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, _ *url.URL, limit int) (promql.Vector, error) {
+func (rule *RecordingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, externalURL *url.URL, limit int) (promql.Vector, error) {
 	ctx = NewOriginContext(ctx, NewRuleDetail(rule))
 
 	vector, err := query(ctx, rule.vector.String(), ts)
@@ -85,12 +104,44 @@ func (rule *RecordingRule) Eval(ctx context.Context, ts time.Time, query QueryFu
 
 	for i := range vector {
 		sample := &vector[i]
+		l := sample.Metric.Map()
 
+		tmplData := template.AlertTemplateData(l, rule.externalLabels, rule.externalURL, sample.F)
+		// Inject some convenience variables that are easier to remember for users
+		// who are not used to Go's templating system.
+		defs := []string{
+			"{{$labels := .Labels}}",
+			"{{$externalLabels := .ExternalLabels}}",
+			"{{$externalURL := .ExternalURL}}",
+			"{{$value := .Value}}",
+		}
+
+		expand := func(text string) string {
+			tmpl := template.NewTemplateExpander(
+				ctx,
+				strings.Join(append(defs, text), ""),
+				"__record_"+rule.Name(),
+				tmplData,
+				model.Time(timestamp.FromTime(ts)),
+				template.QueryFunc(query),
+				externalURL,
+				nil,
+			)
+			result, err := tmpl.Expand()
+			if err != nil {
+				result = fmt.Sprintf("<error expanding template: %s>", err)
+				level.Warn(rule.logger).Log(
+					"msg",
+					"Expanding record template failed", "err", err, "data", tmplData,
+				)
+			}
+			return result
+		}
 		lb.Reset(sample.Metric)
 		lb.Set(labels.MetricName, rule.name)
 
 		rule.labels.Range(func(l labels.Label) {
-			lb.Set(l.Name, l.Value)
+			lb.Set(l.Name, expand(l.Value))
 		})
 
 		sample.Metric = lb.Labels()

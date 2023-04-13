@@ -1153,6 +1153,9 @@ func (m *Manager) LoadGroups(
 					r.Record.Value,
 					expr,
 					labels.FromMap(r.Labels),
+					externalLabels,
+					externalURL,
+					log.With(m.logger, "record", r.Record),
 				))
 			}
 
