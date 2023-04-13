@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/stretchr/testify/require"
 )
 
@@ -686,6 +687,23 @@ func TestFloatHistogramDetectReset(t *testing.T) {
 			require.Equal(t, c.resetExpected, c.current.DetectReset(c.previous))
 		})
 	}
+}
+
+func TestFloatHistogramEncodeDecode(t *testing.T) {
+	h := &FloatHistogram{
+		ZeroThreshold:   0.01,
+		ZeroCount:       5.5,
+		Count:           3493.3,
+		Sum:             2349209.324,
+		PositiveSpans:   []Span{{-2, 1}, {2, 3}},
+		PositiveBuckets: []float64{1, 3.3, 4.2, 0.1},
+		NegativeSpans:   []Span{{3, 2}, {3, 2}},
+		NegativeBuckets: []float64{3.1, 3, 1.234e5, 1000},
+	}
+	enc := EncodeFloatHistogram(h)
+	dec := encoding.Decbuf{B: enc.B}
+	newH := DecodeFloatHistogram(&dec)
+	require.Equal(t, h, newH)
 }
 
 func TestFloatHistogramCompact(t *testing.T) {

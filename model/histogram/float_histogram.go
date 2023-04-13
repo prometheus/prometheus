@@ -16,6 +16,8 @@ package histogram
 import (
 	"fmt"
 	"strings"
+
+	"github.com/prometheus/prometheus/tsdb/encoding"
 )
 
 // FloatHistogram is similar to Histogram but uses float64 for all
@@ -753,6 +755,78 @@ func (h *FloatHistogram) floatBucketIterator(
 		i.buckets = h.NegativeBuckets
 	}
 	return i
+}
+
+// Encode encodes the Float Histogram into a byte slice.
+func EncodeFloatHistogram(h *FloatHistogram) *encoding.Encbuf {
+	buf := encoding.Encbuf{}
+	buf.PutByte(byte(h.CounterResetHint))
+
+	buf.PutVarint64(int64(h.Schema))
+	buf.PutBEFloat64(h.ZeroThreshold)
+
+	buf.PutBEFloat64(h.ZeroCount)
+	buf.PutBEFloat64(h.Count)
+	buf.PutBEFloat64(h.Sum)
+
+	buf.PutUvarint(len(h.PositiveSpans))
+	for _, s := range h.PositiveSpans {
+		buf.PutVarint64(int64(s.Offset))
+		buf.PutUvarint32(s.Length)
+	}
+
+	buf.PutUvarint(len(h.NegativeSpans))
+	for _, s := range h.NegativeSpans {
+		buf.PutVarint64(int64(s.Offset))
+		buf.PutUvarint32(s.Length)
+	}
+
+	buf.PutUvarint(len(h.PositiveBuckets))
+	for _, b := range h.PositiveBuckets {
+		buf.PutBEFloat64(b)
+	}
+
+	buf.PutUvarint(len(h.NegativeBuckets))
+	for _, b := range h.NegativeBuckets {
+		buf.PutBEFloat64(b)
+	}
+	return &buf
+}
+
+// Decode decodes a Histogram from a byte slice.
+func DecodeFloatHistogram(buf *encoding.Decbuf) *FloatHistogram {
+	fh := &FloatHistogram{}
+	fh.CounterResetHint = CounterResetHint(buf.Byte())
+
+	fh.Schema = int32(buf.Varint64())
+	fh.ZeroThreshold = buf.Be64Float64()
+
+	fh.ZeroCount = buf.Be64Float64()
+	fh.Count = buf.Be64Float64()
+	fh.Sum = buf.Be64Float64()
+
+	fh.PositiveSpans = make([]Span, buf.Uvarint())
+	for i := range fh.PositiveSpans {
+		fh.PositiveSpans[i].Offset = int32(buf.Varint64())
+		fh.PositiveSpans[i].Length = buf.Uvarint32()
+	}
+
+	fh.NegativeSpans = make([]Span, buf.Uvarint())
+	for i := range fh.NegativeSpans {
+		fh.NegativeSpans[i].Offset = int32(buf.Varint64())
+		fh.NegativeSpans[i].Length = buf.Uvarint32()
+	}
+
+	fh.PositiveBuckets = make([]float64, buf.Uvarint())
+	for i := range fh.PositiveBuckets {
+		fh.PositiveBuckets[i] = buf.Be64Float64()
+	}
+
+	fh.NegativeBuckets = make([]float64, buf.Uvarint())
+	for i := range fh.NegativeBuckets {
+		fh.NegativeBuckets[i] = buf.Be64Float64()
+	}
+	return fh
 }
 
 // reverseFloatbucketiterator is a low-level constructor for reverse bucket iterators.

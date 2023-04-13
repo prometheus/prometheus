@@ -412,7 +412,7 @@ func TestHistogramToFloat(t *testing.T) {
 	require.Equal(t, h.String(), fh.String())
 }
 
-func TestEncodeDecodeHistogram(t *testing.T) {
+func TestHistogramEncodeDecode(t *testing.T) {
 	h := &Histogram{
 		CounterResetHint: 0,
 		Schema:           3,
@@ -433,9 +433,9 @@ func TestEncodeDecodeHistogram(t *testing.T) {
 		},
 		NegativeBuckets: []int64{1, 2, -2, 1, -1, 0},
 	}
-	enc := Encode(h)
+	enc := EncodeHistogram(h)
 	dec := encoding.Decbuf{B: enc.B}
-	newH := Decode(&dec)
+	newH := DecodeHistogram(&dec)
 	require.Equal(t, h, newH)
 }
 

@@ -3180,9 +3180,12 @@ func TestChunkSnapshot(t *testing.T) {
 	numSeries := 10
 	expSeries := make(map[string][]tsdbutil.Sample)
 	expHist := make(map[string][]tsdbutil.Sample)
+	expFloatHist := make(map[string][]tsdbutil.Sample)
 	expTombstones := make(map[storage.SeriesRef]tombstones.Intervals)
 	expExemplars := make([]ex, 0)
-	histograms := tsdbutil.GenerateTestGaugeHistograms(481) // TODO(marctc): use histograms instead of gauge histograms
+	// TODO(marctc): use histograms instead of gauge histograms.
+	histograms := tsdbutil.GenerateTestGaugeHistograms(481)
+	floatHistogram := tsdbutil.GenerateTestGaugeFloatHistograms(481)
 
 	addExemplar := func(app storage.Appender, ref storage.SeriesRef, lbls labels.Labels, ts int64) {
 		e := ex{
@@ -3209,6 +3212,12 @@ func TestChunkSnapshot(t *testing.T) {
 		require.NoError(t, err)
 		series := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "hist", "baz.*"))
 		require.Equal(t, expHist, series)
+	}
+	checkFloatHistograms := func() {
+		q, err := NewBlockQuerier(head, math.MinInt64, math.MaxInt64)
+		require.NoError(t, err)
+		series := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "floathist", "bat.*"))
+		require.Equal(t, expFloatHist, series)
 	}
 	checkTombstones := func() {
 		tr, err := head.Tombstones()
@@ -3259,6 +3268,7 @@ func TestChunkSnapshot(t *testing.T) {
 
 		checkSamples()
 		checkHistograms()
+		checkFloatHistograms()
 		checkTombstones()
 		checkExemplars()
 	}
@@ -3271,6 +3281,8 @@ func TestChunkSnapshot(t *testing.T) {
 			lblStr := lbls.String()
 			lblsHist := labels.FromStrings("hist", fmt.Sprintf("baz%d", i))
 			lblsHistStr := lblsHist.String()
+			lblsFloatHist := labels.FromStrings("floathist", fmt.Sprintf("bat%d", i))
+			lblsFloatHistStr := lblsFloatHist.String()
 
 			// 240 samples should m-map at least 1 chunk.
 			for ts := int64(1); ts <= 240; ts++ {
@@ -3282,6 +3294,11 @@ func TestChunkSnapshot(t *testing.T) {
 				hist := histograms[int(ts)]
 				expHist[lblsHistStr] = append(expHist[lblsHistStr], sample{ts, 0, hist, nil})
 				_, err = app.AppendHistogram(0, lblsHist, ts, hist, nil)
+				require.NoError(t, err)
+
+				floatHist := floatHistogram[int(ts)]
+				expFloatHist[lblsFloatHistStr] = append(expFloatHist[lblsFloatHistStr], sample{ts, 0, nil, floatHist})
+				_, err = app.AppendHistogram(0, lblsFloatHist, ts, nil, floatHist)
 				require.NoError(t, err)
 
 				// Add an exemplar and to create multiple WAL records.
@@ -3339,6 +3356,8 @@ func TestChunkSnapshot(t *testing.T) {
 			lblStr := lbls.String()
 			lblsHist := labels.FromStrings("hist", fmt.Sprintf("baz%d", i))
 			lblsHistStr := lblsHist.String()
+			lblsFloatHist := labels.FromStrings("floathist", fmt.Sprintf("bat%d", i))
+			lblsFloatHistStr := lblsFloatHist.String()
 
 			// 240 samples should m-map at least 1 chunk.
 			for ts := int64(241); ts <= 480; ts++ {
@@ -3350,6 +3369,11 @@ func TestChunkSnapshot(t *testing.T) {
 				hist := histograms[int(ts)]
 				expHist[lblsHistStr] = append(expHist[lblsHistStr], sample{ts, 0, hist, nil})
 				_, err = app.AppendHistogram(0, lblsHist, ts, hist, nil)
+				require.NoError(t, err)
+
+				floatHist := floatHistogram[int(ts)]
+				expFloatHist[lblsFloatHistStr] = append(expFloatHist[lblsFloatHistStr], sample{ts, 0, nil, floatHist})
+				_, err = app.AppendHistogram(0, lblsFloatHist, ts, nil, floatHist)
 				require.NoError(t, err)
 
 				// Add an exemplar and to create multiple WAL records.

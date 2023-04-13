@@ -938,11 +938,12 @@ const (
 )
 
 type chunkSnapshotRecord struct {
-	ref                chunks.HeadSeriesRef
-	lset               labels.Labels
-	mc                 *memChunk
-	lastValue          float64
-	lastHistogramValue *histogram.Histogram
+	ref                     chunks.HeadSeriesRef
+	lset                    labels.Labels
+	mc                      *memChunk
+	lastValue               float64
+	lastHistogramValue      *histogram.Histogram
+	lastFloatHistogramValue *histogram.FloatHistogram
 }
 
 func (s *memSeries) encodeToSnapshotRecord(b []byte) []byte {
@@ -971,8 +972,11 @@ func (s *memSeries) encodeToSnapshotRecord(b []byte) []byte {
 			}
 			buf.PutBE64int64(0)
 			buf.PutBEFloat64(s.lastValue)
+		} else if enc == chunkenc.EncHistogram {
+			encodedHist := histogram.EncodeHistogram(s.lastHistogramValue)
+			buf.PutBytes(encodedHist.B)
 		} else {
-			encodedHist := histogram.Encode(s.lastHistogramValue)
+			encodedHist := histogram.EncodeFloatHistogram(s.lastFloatHistogramValue)
 			buf.PutBytes(encodedHist.B)
 		}
 	}
@@ -1022,8 +1026,10 @@ func decodeSeriesFromChunkSnapshot(d *record.Decoder, b []byte) (csr chunkSnapsh
 		}
 		_ = dec.Be64int64()
 		csr.lastValue = dec.Be64Float64()
+	} else if enc == chunkenc.EncHistogram {
+		csr.lastHistogramValue = histogram.DecodeHistogram(&dec)
 	} else {
-		csr.lastHistogramValue = histogram.Decode(&dec)
+		csr.lastFloatHistogramValue = histogram.DecodeFloatHistogram(&dec)
 	}
 
 	err = dec.Err()

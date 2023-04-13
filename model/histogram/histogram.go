@@ -323,8 +323,8 @@ func (h *Histogram) ToFloat() *FloatHistogram {
 	}
 }
 
-// Encode encodes a Histogram into a byte slice.
-func Encode(h *Histogram) *encoding.Encbuf {
+// EncodeHistogram encodes a Histogram into a byte slice.
+func EncodeHistogram(h *Histogram) *encoding.Encbuf {
 	buf := encoding.Encbuf{}
 	buf.PutByte(byte(h.CounterResetHint))
 
@@ -359,8 +359,8 @@ func Encode(h *Histogram) *encoding.Encbuf {
 	return &buf
 }
 
-// Decode decodes a Histogram from a byte slice.
-func Decode(buf *encoding.Decbuf) *Histogram {
+// DecodeHistogram decodes a Histogram from a byte slice.
+func DecodeHistogram(buf *encoding.Decbuf) *Histogram {
 	h := &Histogram{}
 	h.CounterResetHint = CounterResetHint(buf.Byte())
 
