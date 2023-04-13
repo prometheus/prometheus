@@ -284,7 +284,8 @@ func BenchmarkLoadWAL(b *testing.B) {
 						require.NoError(b, err)
 						for k := 0; k < c.batches*c.seriesPerBatch; k++ {
 							// Create one mmapped chunk per series, with one sample at the given time.
-							s := newMemSeries(labels.Labels{}, chunks.HeadSeriesRef(k)*101, defaultIsolationDisabled)
+							lbls := labels.Labels{}
+							s := newMemSeries(lbls, chunks.HeadSeriesRef(k)*101, labels.StableHash(lbls), 0, defaultIsolationDisabled)
 							s.append(c.mmappedChunkT, 42, 0, chunkDiskMapper, c.mmappedChunkT)
 							s.mmapCurrentHeadChunk(chunkDiskMapper)
 						}
@@ -378,9 +379,9 @@ func TestHead_HighConcurrencyReadAndWrite(t *testing.T) {
 	workerReadyWg.Add(writeConcurrency + readConcurrency)
 
 	// Start the write workers.
-	for wid := 0; wid < writeConcurrency; wid++ {
+	for workerID := 0; workerID < writeConcurrency; workerID++ {
 		// Create copy of workerID to be used by worker routine.
-		workerID := wid
+		workerID := workerID
 
 		g.Go(func() error {
 			// The label sets which this worker will write.
@@ -422,9 +423,9 @@ func TestHead_HighConcurrencyReadAndWrite(t *testing.T) {
 	readerTsCh := make(chan uint64)
 
 	// Start the read workers.
-	for wid := 0; wid < readConcurrency; wid++ {
+	for workerID := 0; workerID < readConcurrency; workerID++ {
 		// Create copy of threadID to be used by worker routine.
-		workerID := wid
+		workerID := workerID
 
 		g.Go(func() error {
 			querySeriesRef := (seriesCnt / readConcurrency) * workerID
@@ -451,7 +452,7 @@ func TestHead_HighConcurrencyReadAndWrite(t *testing.T) {
 				}
 
 				if len(samples) != 1 {
-					return false, fmt.Errorf("expected 1 series, got %d", len(samples))
+					return false, fmt.Errorf("expected 1 sample, got %d", len(samples))
 				}
 
 				series := lbls.String()
@@ -806,7 +807,8 @@ func TestMemSeries_truncateChunks(t *testing.T) {
 		},
 	}
 
-	s := newMemSeries(labels.FromStrings("a", "b"), 1, defaultIsolationDisabled)
+	lbls := labels.FromStrings("a", "b")
+	s := newMemSeries(lbls, 1, labels.StableHash(lbls), 0, defaultIsolationDisabled)
 
 	for i := 0; i < 4000; i += 5 {
 		ok, _ := s.append(int64(i), float64(i), 0, chunkDiskMapper, chunkRange)
@@ -1337,7 +1339,8 @@ func TestMemSeries_append(t *testing.T) {
 	}()
 	const chunkRange = 500
 
-	s := newMemSeries(labels.Labels{}, 1, defaultIsolationDisabled)
+	lbls := labels.Labels{}
+	s := newMemSeries(lbls, 1, labels.StableHash(lbls), 0, defaultIsolationDisabled)
 
 	// Add first two samples at the very end of a chunk range and the next two
 	// on and after it.
@@ -1391,7 +1394,8 @@ func TestMemSeries_appendHistogram(t *testing.T) {
 	}()
 	chunkRange := int64(1000)
 
-	s := newMemSeries(labels.Labels{}, 1, defaultIsolationDisabled)
+	lbls := labels.Labels{}
+	s := newMemSeries(lbls, 1, labels.StableHash(lbls), 0, defaultIsolationDisabled)
 
 	histograms := tsdbutil.GenerateTestHistograms(4)
 	histogramWithOneMoreBucket := histograms[3].Copy()
@@ -1447,7 +1451,8 @@ func TestMemSeries_append_atVariableRate(t *testing.T) {
 	})
 	chunkRange := DefaultBlockDuration
 
-	s := newMemSeries(labels.Labels{}, 1, defaultIsolationDisabled)
+	lbls := labels.Labels{}
+	s := newMemSeries(lbls, 1, labels.StableHash(lbls), 0, defaultIsolationDisabled)
 
 	// At this slow rate, we will fill the chunk in two block durations.
 	slowRate := (DefaultBlockDuration * 2) / samplesPerChunk
@@ -1800,7 +1805,7 @@ func TestHeadReadWriterRepair(t *testing.T) {
 			ok, chunkCreated = s.append(int64(i*chunkRange)+chunkRange-1, float64(i*chunkRange), 0, h.chunkDiskMapper, chunkRange)
 			require.True(t, ok, "series append failed")
 			require.False(t, chunkCreated, "chunk was created")
-			h.chunkDiskMapper.CutNewFile()
+			require.NoError(t, h.chunkDiskMapper.CutNewFile())
 		}
 		require.NoError(t, h.Close())
 
@@ -2477,6 +2482,67 @@ func TestHeadLabelNamesWithMatchers(t *testing.T) {
 	}
 }
 
+func TestHeadShardedPostings(t *testing.T) {
+	head, _ := newTestHead(t, 1000, false, false)
+	defer func() {
+		require.NoError(t, head.Close())
+	}()
+
+	// Append some series.
+	app := head.Appender(context.Background())
+	for i := 0; i < 100; i++ {
+		_, err := app.Append(0, labels.FromStrings("unique", fmt.Sprintf("value%d", i), "const", "1"), 100, 0)
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	ir := head.indexRange(0, 200)
+
+	// List all postings for a given label value. This is what we expect to get
+	// in output from all shards.
+	p, err := ir.Postings("const", "1")
+	require.NoError(t, err)
+
+	var expected []storage.SeriesRef
+	for p.Next() {
+		expected = append(expected, p.At())
+	}
+	require.NoError(t, p.Err())
+	require.Greater(t, len(expected), 0)
+
+	// Query the same postings for each shard.
+	const shardCount = uint64(4)
+	actualShards := make(map[uint64][]storage.SeriesRef)
+	actualPostings := make([]storage.SeriesRef, 0, len(expected))
+
+	for shardIndex := uint64(0); shardIndex < shardCount; shardIndex++ {
+		p, err = ir.Postings("const", "1")
+		require.NoError(t, err)
+
+		p = ir.ShardedPostings(p, shardIndex, shardCount)
+		for p.Next() {
+			ref := p.At()
+
+			actualShards[shardIndex] = append(actualShards[shardIndex], ref)
+			actualPostings = append(actualPostings, ref)
+		}
+		require.NoError(t, p.Err())
+	}
+
+	// We expect the postings merged out of shards is the exact same of the non sharded ones.
+	require.ElementsMatch(t, expected, actualPostings)
+
+	// We expect the series in each shard are the expected ones.
+	for shardIndex, ids := range actualShards {
+		for _, id := range ids {
+			var lbls labels.ScratchBuilder
+
+			require.NoError(t, ir.Series(id, &lbls, nil))
+			require.Equal(t, shardIndex, labels.StableHash(lbls.Labels())%shardCount)
+		}
+	}
+}
+
 func TestErrReuseAppender(t *testing.T) {
 	head, _ := newTestHead(t, 1000, false, false)
 	defer func() {
@@ -2609,7 +2675,8 @@ func TestIteratorSeekIntoBuffer(t *testing.T) {
 	}()
 	const chunkRange = 500
 
-	s := newMemSeries(labels.Labels{}, 1, defaultIsolationDisabled)
+	lbls := labels.Labels{}
+	s := newMemSeries(lbls, 1, labels.StableHash(lbls), 0, defaultIsolationDisabled)
 
 	for i := 0; i < 7; i++ {
 		ok, _ := s.append(int64(i), float64(i), 0, chunkDiskMapper, chunkRange)

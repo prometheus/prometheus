@@ -178,7 +178,6 @@ func TestChunkWriteQueue_WrappingAroundSizeLimit(t *testing.T) {
 
 	// Wait until all jobs have been processed.
 	callbackWg.Wait()
-
 	require.Eventually(t, q.queueIsEmpty, 500*time.Millisecond, 50*time.Millisecond)
 }
 

@@ -249,7 +249,7 @@ func (c *chunkWriteQueue) queueIsEmpty() bool {
 }
 
 func (c *chunkWriteQueue) queueIsFull() bool {
-	// When the queue is full and blocked on the writer the chunkRefMap has one more job than the cap of the jobCh
+	// When the queue is full and blocked on the writer the chunkRefMap has one more job than the capacity of the queue
 	// because one job is currently being processed and blocked in the writer.
 	return c.queueSize() == c.jobs.maxSize+1
 }
@@ -258,7 +258,7 @@ func (c *chunkWriteQueue) queueSize() int {
 	c.chunkRefMapMtx.Lock()
 	defer c.chunkRefMapMtx.Unlock()
 
-	// Looking at chunkRefMap instead of jobCh because the job is popped from the chan before it has
-	// been fully processed, it remains in the chunkRefMap until the processing is complete.
+	// Looking at chunkRefMap instead of jobs queue because the job is popped from the queue before it has
+	// been fully processed, but it remains in the chunkRefMap until the processing is complete.
 	return len(c.chunkRefMap)
 }

@@ -217,8 +217,9 @@ type Rule interface {
 	Name() string
 	// Labels of the rule.
 	Labels() labels.Labels
-	// eval evaluates the rule, including any associated recording or alerting actions.
-	Eval(context.Context, time.Time, QueryFunc, *url.URL, int) (promql.Vector, error)
+	// Eval evaluates the rule, including any associated recording or alerting actions.
+	// The duration passed is the evaluation delay.
+	Eval(context.Context, time.Duration, time.Time, QueryFunc, *url.URL, int) (promql.Vector, error)
 	// String returns a human-readable string representation of the rule.
 	String() string
 	// Query returns the rule query expression.
@@ -246,8 +247,10 @@ type Group struct {
 	name                 string
 	file                 string
 	interval             time.Duration
+	evaluationDelay      *time.Duration
 	limit                int
 	rules                []Rule
+	sourceTenants        []string
 	seriesInPreviousEval []map[string]labels.Labels // One per Rule.
 	staleSeries          []labels.Labels
 	opts                 *ManagerOptions
@@ -266,7 +269,8 @@ type Group struct {
 
 	metrics *Metrics
 
-	ruleGroupPostProcessFunc RuleGroupPostProcessFunc
+	ruleGroupPostProcessFunc      RuleGroupPostProcessFunc
+	alignEvaluationTimeOnInterval bool
 }
 
 // This function will be used before each rule group evaluation if not nil.
@@ -274,14 +278,17 @@ type Group struct {
 type RuleGroupPostProcessFunc func(g *Group, lastEvalTimestamp time.Time, log log.Logger) error
 
 type GroupOptions struct {
-	Name, File               string
-	Interval                 time.Duration
-	Limit                    int
-	Rules                    []Rule
-	ShouldRestore            bool
-	Opts                     *ManagerOptions
-	done                     chan struct{}
-	RuleGroupPostProcessFunc RuleGroupPostProcessFunc
+	Name, File                    string
+	Interval                      time.Duration
+	Limit                         int
+	Rules                         []Rule
+	SourceTenants                 []string
+	ShouldRestore                 bool
+	Opts                          *ManagerOptions
+	EvaluationDelay               *time.Duration
+	done                          chan struct{}
+	RuleGroupPostProcessFunc      RuleGroupPostProcessFunc
+	AlignEvaluationTimeOnInterval bool
 }
 
 // NewGroup makes a new Group with the given name, options, and rules.
@@ -303,20 +310,23 @@ func NewGroup(o GroupOptions) *Group {
 	metrics.GroupInterval.WithLabelValues(key).Set(o.Interval.Seconds())
 
 	return &Group{
-		name:                     o.Name,
-		file:                     o.File,
-		interval:                 o.Interval,
-		limit:                    o.Limit,
-		rules:                    o.Rules,
-		shouldRestore:            o.ShouldRestore,
-		opts:                     o.Opts,
-		seriesInPreviousEval:     make([]map[string]labels.Labels, len(o.Rules)),
-		done:                     make(chan struct{}),
-		managerDone:              o.done,
-		terminated:               make(chan struct{}),
-		logger:                   log.With(o.Opts.Logger, "file", o.File, "group", o.Name),
-		metrics:                  metrics,
-		ruleGroupPostProcessFunc: o.RuleGroupPostProcessFunc,
+		name:                          o.Name,
+		file:                          o.File,
+		interval:                      o.Interval,
+		evaluationDelay:               o.EvaluationDelay,
+		limit:                         o.Limit,
+		rules:                         o.Rules,
+		shouldRestore:                 o.ShouldRestore,
+		opts:                          o.Opts,
+		sourceTenants:                 o.SourceTenants,
+		seriesInPreviousEval:          make([]map[string]labels.Labels, len(o.Rules)),
+		done:                          make(chan struct{}),
+		managerDone:                   o.done,
+		terminated:                    make(chan struct{}),
+		logger:                        log.With(o.Opts.Logger, "file", o.File, "group", o.Name),
+		metrics:                       metrics,
+		ruleGroupPostProcessFunc:      o.RuleGroupPostProcessFunc,
+		alignEvaluationTimeOnInterval: o.AlignEvaluationTimeOnInterval,
 	}
 }
 
@@ -340,6 +350,10 @@ func (g *Group) Interval() time.Duration { return g.interval }
 
 // Limit returns the group's limit.
 func (g *Group) Limit() int { return g.limit }
+
+// SourceTenants returns the source tenants for the group.
+// If it's empty or nil, then the owning user/tenant is considered to be the source tenant.
+func (g *Group) SourceTenants() []string { return g.sourceTenants }
 
 func (g *Group) run(ctx context.Context) {
 	defer close(g.terminated)
@@ -535,11 +549,13 @@ func (g *Group) setLastEvaluation(ts time.Time) {
 
 // EvalTimestamp returns the immediately preceding consistently slotted evaluation time.
 func (g *Group) EvalTimestamp(startTime int64) time.Time {
-	var (
+	var offset int64
+	if !g.alignEvaluationTimeOnInterval {
 		offset = int64(g.hash() % uint64(g.interval))
-		adjNow = startTime - offset
-		base   = adjNow - (adjNow % int64(g.interval))
-	)
+	}
+
+	adjNow := startTime - offset
+	base := adjNow - (adjNow % int64(g.interval))
 
 	return time.Unix(0, base+offset).UTC()
 }
@@ -604,6 +620,7 @@ func (g *Group) CopyState(from *Group) {
 // Eval runs a single evaluation cycle in which all rules are evaluated sequentially.
 func (g *Group) Eval(ctx context.Context, ts time.Time) {
 	var samplesTotal float64
+	evaluationDelay := g.EvaluationDelay()
 	for i, rule := range g.rules {
 		select {
 		case <-g.done:
@@ -625,7 +642,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 
 			g.metrics.EvalTotal.WithLabelValues(GroupKey(g.File(), g.Name())).Inc()
 
-			vector, err := rule.Eval(ctx, ts, g.opts.QueryFunc, g.opts.ExternalURL, g.Limit())
+			vector, err := rule.Eval(ctx, evaluationDelay, ts, g.opts.QueryFunc, g.opts.ExternalURL, g.Limit())
 			if err != nil {
 				rule.SetHealth(HealthBad)
 				rule.SetLastError(err)
@@ -714,7 +731,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			for metric, lset := range g.seriesInPreviousEval[i] {
 				if _, ok := seriesReturned[metric]; !ok {
 					// Series no longer exposed, mark it stale.
-					_, err = app.Append(0, lset, timestamp.FromTime(ts), math.Float64frombits(value.StaleNaN))
+					_, err = app.Append(0, lset, timestamp.FromTime(ts.Add(-evaluationDelay)), math.Float64frombits(value.StaleNaN))
 					unwrappedErr := errors.Unwrap(err)
 					if unwrappedErr == nil {
 						unwrappedErr = err
@@ -739,14 +756,25 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 	g.cleanupStaleSeries(ctx, ts)
 }
 
+func (g *Group) EvaluationDelay() time.Duration {
+	if g.evaluationDelay != nil {
+		return *g.evaluationDelay
+	}
+	if g.opts.DefaultEvaluationDelay != nil {
+		return g.opts.DefaultEvaluationDelay()
+	}
+	return time.Duration(0)
+}
+
 func (g *Group) cleanupStaleSeries(ctx context.Context, ts time.Time) {
 	if len(g.staleSeries) == 0 {
 		return
 	}
 	app := g.opts.Appendable.Appender(ctx)
+	evaluationDelay := g.EvaluationDelay()
 	for _, s := range g.staleSeries {
 		// Rule that produced series no longer configured, mark it stale.
-		_, err := app.Append(0, s, timestamp.FromTime(ts), math.Float64frombits(value.StaleNaN))
+		_, err := app.Append(0, s, timestamp.FromTime(ts.Add(-evaluationDelay)), math.Float64frombits(value.StaleNaN))
 		unwrappedErr := errors.Unwrap(err)
 		if unwrappedErr == nil {
 			unwrappedErr = err
@@ -901,9 +929,35 @@ func (g *Group) Equals(ng *Group) bool {
 		return false
 	}
 
+	if g.alignEvaluationTimeOnInterval != ng.alignEvaluationTimeOnInterval {
+		return false
+	}
+
 	for i, gr := range g.rules {
 		if gr.String() != ng.rules[i].String() {
 			return false
+		}
+	}
+	{
+		// compare source tenants
+		if len(g.sourceTenants) != len(ng.sourceTenants) {
+			return false
+		}
+
+		copyAndSort := func(x []string) []string {
+			copied := make([]string, len(x))
+			copy(copied, x)
+			sort.Strings(copied)
+			return copied
+		}
+
+		ngSourceTenantsCopy := copyAndSort(ng.sourceTenants)
+		gSourceTenantsCopy := copyAndSort(g.sourceTenants)
+
+		for i := range ngSourceTenantsCopy {
+			if gSourceTenantsCopy[i] != ngSourceTenantsCopy[i] {
+				return false
+			}
 		}
 	}
 
@@ -925,20 +979,30 @@ type Manager struct {
 // NotifyFunc sends notifications about a set of alerts generated by the given expression.
 type NotifyFunc func(ctx context.Context, expr string, alerts ...*Alert)
 
+type ContextWrapFunc func(ctx context.Context, g *Group) context.Context
+
 // ManagerOptions bundles options for the Manager.
 type ManagerOptions struct {
-	ExternalURL     *url.URL
-	QueryFunc       QueryFunc
-	NotifyFunc      NotifyFunc
-	Context         context.Context
-	Appendable      storage.Appendable
-	Queryable       storage.Queryable
-	Logger          log.Logger
-	Registerer      prometheus.Registerer
-	OutageTolerance time.Duration
-	ForGracePeriod  time.Duration
-	ResendDelay     time.Duration
-	GroupLoader     GroupLoader
+	ExternalURL *url.URL
+	QueryFunc   QueryFunc
+	NotifyFunc  NotifyFunc
+	Context     context.Context
+	// GroupEvaluationContextFunc will be called to wrap Context based on the group being evaluated.
+	// Will be skipped if nil.
+	GroupEvaluationContextFunc ContextWrapFunc
+	Appendable                 storage.Appendable
+	Queryable                  storage.Queryable
+	Logger                     log.Logger
+	Registerer                 prometheus.Registerer
+	OutageTolerance            time.Duration
+	ForGracePeriod             time.Duration
+	ResendDelay                time.Duration
+	GroupLoader                GroupLoader
+	DefaultEvaluationDelay     func() time.Duration
+
+	// AlwaysRestoreAlertState forces all new or changed groups in calls to Update to restore.
+	// Useful when you know you will be adding alerting rules after the manager has already started.
+	AlwaysRestoreAlertState bool
 
 	Metrics *Metrics
 }
@@ -1032,11 +1096,16 @@ func (m *Manager) Update(interval time.Duration, files []string, externalLabels 
 				newg.CopyState(oldg)
 			}
 			wg.Done()
+
+			ctx := m.opts.Context
+			if m.opts.GroupEvaluationContextFunc != nil {
+				ctx = m.opts.GroupEvaluationContextFunc(ctx, newg)
+			}
 			// Wait with starting evaluation until the rule manager
 			// is told to run. This is necessary to avoid running
 			// queries against a bootstrapping storage.
 			<-m.block
-			newg.run(m.opts.Context)
+			newg.run(ctx)
 		}(newg)
 	}
 
@@ -1089,7 +1158,7 @@ func (m *Manager) LoadGroups(
 ) (map[string]*Group, []error) {
 	groups := make(map[string]*Group)
 
-	shouldRestore := !m.restored
+	shouldRestore := !m.restored || m.opts.AlwaysRestoreAlertState
 
 	for _, fn := range filenames {
 		rgs, errs := m.opts.GroupLoader.Load(fn)
@@ -1120,7 +1189,7 @@ func (m *Manager) LoadGroups(
 						labels.FromMap(r.Annotations),
 						externalLabels,
 						externalURL,
-						m.restored,
+						!shouldRestore,
 						log.With(m.logger, "alert", r.Alert),
 					))
 					continue
@@ -1133,15 +1202,18 @@ func (m *Manager) LoadGroups(
 			}
 
 			groups[GroupKey(fn, rg.Name)] = NewGroup(GroupOptions{
-				Name:                     rg.Name,
-				File:                     fn,
-				Interval:                 itv,
-				Limit:                    rg.Limit,
-				Rules:                    rules,
-				ShouldRestore:            shouldRestore,
-				Opts:                     m.opts,
-				done:                     m.done,
-				RuleGroupPostProcessFunc: ruleGroupPostProcessFunc,
+				Name:                          rg.Name,
+				File:                          fn,
+				Interval:                      itv,
+				Limit:                         rg.Limit,
+				Rules:                         rules,
+				SourceTenants:                 rg.SourceTenants,
+				ShouldRestore:                 shouldRestore,
+				Opts:                          m.opts,
+				EvaluationDelay:               (*time.Duration)(rg.EvaluationDelay),
+				done:                          m.done,
+				RuleGroupPostProcessFunc:      ruleGroupPostProcessFunc,
+				AlignEvaluationTimeOnInterval: rg.AlignEvaluationTimeOnInterval,
 			})
 		}
 	}

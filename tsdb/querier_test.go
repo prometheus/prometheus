@@ -381,6 +381,46 @@ func TestBlockQuerier(t *testing.T) {
 				),
 			}),
 		},
+		{
+			// This tests query sharding. The label sets involved both hash into this test's result set. The test
+			// following this is companion to this test (same test but with a different ShardIndex) and should find that
+			// the label sets involved do not hash to that test's result set.
+			mint:  math.MinInt64,
+			maxt:  math.MaxInt64,
+			hints: &storage.SelectHints{Start: math.MinInt64, End: math.MaxInt64, ShardIndex: 0, ShardCount: 2},
+			ms:    []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "a", ".*")},
+			exp: newMockSeriesSet([]storage.Series{
+				storage.NewListSeries(labels.FromStrings("a", "a"),
+					[]tsdbutil.Sample{sample{1, 2, nil, nil}, sample{2, 3, nil, nil}, sample{3, 4, nil, nil}, sample{5, 2, nil, nil}, sample{6, 3, nil, nil}, sample{7, 4, nil, nil}},
+				),
+				storage.NewListSeries(labels.FromStrings("a", "a", "b", "b"),
+					[]tsdbutil.Sample{sample{1, 1, nil, nil}, sample{2, 2, nil, nil}, sample{3, 3, nil, nil}, sample{5, 3, nil, nil}, sample{6, 6, nil, nil}},
+				),
+				storage.NewListSeries(labels.FromStrings("b", "b"),
+					[]tsdbutil.Sample{sample{1, 3, nil, nil}, sample{2, 2, nil, nil}, sample{3, 6, nil, nil}, sample{5, 1, nil, nil}, sample{6, 7, nil, nil}, sample{7, 2, nil, nil}},
+				),
+			}),
+			expChks: newMockChunkSeriesSet([]storage.ChunkSeries{
+				storage.NewListChunkSeriesFromSamples(labels.FromStrings("a", "a"),
+					[]tsdbutil.Sample{sample{1, 2, nil, nil}, sample{2, 3, nil, nil}, sample{3, 4, nil, nil}}, []tsdbutil.Sample{sample{5, 2, nil, nil}, sample{6, 3, nil, nil}, sample{7, 4, nil, nil}},
+				),
+				storage.NewListChunkSeriesFromSamples(labels.FromStrings("a", "a", "b", "b"),
+					[]tsdbutil.Sample{sample{1, 1, nil, nil}, sample{2, 2, nil, nil}, sample{3, 3, nil, nil}}, []tsdbutil.Sample{sample{5, 3, nil, nil}, sample{6, 6, nil, nil}},
+				),
+				storage.NewListChunkSeriesFromSamples(labels.FromStrings("b", "b"),
+					[]tsdbutil.Sample{sample{1, 3, nil, nil}, sample{2, 2, nil, nil}, sample{3, 6, nil, nil}}, []tsdbutil.Sample{sample{5, 1, nil, nil}, sample{6, 7, nil, nil}, sample{7, 2, nil, nil}},
+				),
+			}),
+		},
+		{
+			// This is a companion to the test above.
+			mint:    math.MinInt64,
+			maxt:    math.MaxInt64,
+			hints:   &storage.SelectHints{Start: math.MinInt64, End: math.MaxInt64, ShardIndex: 1, ShardCount: 2},
+			ms:      []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "a", ".*")},
+			exp:     newMockSeriesSet([]storage.Series{}),
+			expChks: newMockChunkSeriesSet([]storage.ChunkSeries{}),
+		},
 	} {
 		t.Run("", func(t *testing.T) {
 			ir, cr, _, _ := createIdxChkReaders(t, testData)
@@ -1282,6 +1322,48 @@ func (m mockIndex) SortedPostings(p index.Postings) index.Postings {
 	return index.NewListPostings(ep)
 }
 
+func (m mockIndex) PostingsForMatchers(concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
+	var ps []storage.SeriesRef
+	for p, s := range m.series {
+		if matches(ms, s.l) {
+			ps = append(ps, p)
+		}
+	}
+	sort.Slice(ps, func(i, j int) bool { return ps[i] < ps[j] })
+	return index.NewListPostings(ps), nil
+}
+
+func matches(ms []*labels.Matcher, lbls labels.Labels) bool {
+	lm := lbls.Map()
+	for _, m := range ms {
+		if !m.Matches(lm[m.Name]) {
+			return false
+		}
+	}
+	return true
+}
+
+func (m mockIndex) ShardedPostings(p index.Postings, shardIndex, shardCount uint64) index.Postings {
+	out := make([]storage.SeriesRef, 0, 128)
+
+	for p.Next() {
+		ref := p.At()
+		s, ok := m.series[ref]
+		if !ok {
+			continue
+		}
+
+		// Check if the series belong to the shard.
+		if s.l.Hash()%shardCount != shardIndex {
+			continue
+		}
+
+		out = append(out, ref)
+	}
+
+	return index.NewListPostings(out)
+}
+
 func (m mockIndex) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
 	s, ok := m.series[ref]
 	if !ok {
@@ -1590,69 +1672,6 @@ func BenchmarkSetMatcher(b *testing.B) {
 				require.Equal(b, 0, len(ss.Warnings()))
 			}
 		})
-	}
-}
-
-// Refer to https://github.com/prometheus/prometheus/issues/2651.
-func TestFindSetMatches(t *testing.T) {
-	cases := []struct {
-		pattern string
-		exp     []string
-	}{
-		// Single value, coming from a `bar=~"foo"` selector.
-		{
-			pattern: "^(?:foo)$",
-			exp: []string{
-				"foo",
-			},
-		},
-		// Simple sets.
-		{
-			pattern: "^(?:foo|bar|baz)$",
-			exp: []string{
-				"foo",
-				"bar",
-				"baz",
-			},
-		},
-		// Simple sets containing escaped characters.
-		{
-			pattern: "^(?:fo\\.o|bar\\?|\\^baz)$",
-			exp: []string{
-				"fo.o",
-				"bar?",
-				"^baz",
-			},
-		},
-		// Simple sets containing special characters without escaping.
-		{
-			pattern: "^(?:fo.o|bar?|^baz)$",
-			exp:     nil,
-		},
-		// Missing wrapper.
-		{
-			pattern: "foo|bar|baz",
-			exp:     nil,
-		},
-	}
-
-	for _, c := range cases {
-		matches := findSetMatches(c.pattern)
-		if len(c.exp) == 0 {
-			if len(matches) != 0 {
-				t.Errorf("Evaluating %s, unexpected result %v", c.pattern, matches)
-			}
-		} else {
-			if len(matches) != len(c.exp) {
-				t.Errorf("Evaluating %s, length of result not equal to exp", c.pattern)
-			} else {
-				for i := 0; i < len(c.exp); i++ {
-					if c.exp[i] != matches[i] {
-						t.Errorf("Evaluating %s, unexpected result %s", c.pattern, matches[i])
-					}
-				}
-			}
-		}
 	}
 }
 
@@ -2109,8 +2128,16 @@ func (m mockMatcherIndex) Postings(name string, values ...string) (index.Posting
 	return index.EmptyPostings(), nil
 }
 
+func (m mockMatcherIndex) PostingsForMatchers(bool, ...*labels.Matcher) (index.Postings, error) {
+	return index.EmptyPostings(), nil
+}
+
 func (m mockMatcherIndex) SortedPostings(p index.Postings) index.Postings {
 	return index.EmptyPostings()
+}
+
+func (m mockMatcherIndex) ShardedPostings(ps index.Postings, shardIndex, shardCount uint64) index.Postings {
+	return ps
 }
 
 func (m mockMatcherIndex) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
@@ -2143,7 +2170,7 @@ func TestPostingsForMatcher(t *testing.T) {
 		{
 			// Test case for double quoted regex matcher
 			matcher:  labels.MustNewMatcher(labels.MatchRegexp, "test", "^(?:a|b)$"),
-			hasError: true,
+			hasError: false,
 		},
 	}
 

@@ -5328,13 +5328,13 @@ func TestOOOMmapCorruption(t *testing.T) {
 	addSamples(120, 120, false)
 
 	// Second m-map file. We will corrupt this file. Sample 120 goes into this new file.
-	db.head.chunkDiskMapper.CutNewFile()
+	require.NoError(t, db.head.chunkDiskMapper.CutNewFile())
 
 	// More OOO samples.
 	addSamples(200, 230, false)
 	addSamples(240, 255, false)
 
-	db.head.chunkDiskMapper.CutNewFile()
+	require.NoError(t, db.head.chunkDiskMapper.CutNewFile())
 	addSamples(260, 290, false)
 
 	verifySamples := func(expSamples []tsdbutil.Sample) {

@@ -121,6 +121,10 @@ func (h *headIndexReader) Postings(name string, values ...string) (index.Posting
 	}
 }
 
+func (h *headIndexReader) PostingsForMatchers(concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
+	return h.head.pfmc.PostingsForMatchers(h, concurrent, ms...)
+}
+
 func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {
 	series := make([]*memSeries, 0, 128)
 
@@ -149,6 +153,27 @@ func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {
 	return index.NewListPostings(ep)
 }
 
+func (h *headIndexReader) ShardedPostings(p index.Postings, shardIndex, shardCount uint64) index.Postings {
+	out := make([]storage.SeriesRef, 0, 128)
+
+	for p.Next() {
+		s := h.head.series.getByID(chunks.HeadSeriesRef(p.At()))
+		if s == nil {
+			level.Debug(h.head.logger).Log("msg", "Looked up series not found")
+			continue
+		}
+
+		// Check if the series belong to the shard.
+		if s.shardHash%shardCount != shardIndex {
+			continue
+		}
+
+		out = append(out, storage.SeriesRef(s.ref))
+	}
+
+	return index.NewListPostings(out)
+}
+
 // Series returns the series for the given reference.
 func (h *headIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
 	s := h.head.series.getByID(chunks.HeadSeriesRef(ref))
@@ -158,6 +183,10 @@ func (h *headIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchB
 		return storage.ErrNotFound
 	}
 	builder.Assign(s.lset)
+
+	if chks == nil {
+		return nil
+	}
 
 	s.Lock()
 	defer s.Unlock()
@@ -342,7 +371,7 @@ func (h *headChunkReader) chunk(meta chunks.Meta, copyLastChunk bool) (chunkenc.
 // chunk returns the chunk for the HeadChunkID from memory or by m-mapping it from the disk.
 // If headChunk is false, it means that the returned *memChunk
 // (and not the chunkenc.Chunk inside it) can be garbage collected after its usage.
-func (s *memSeries) chunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDiskMapper, memChunkPool *sync.Pool) (chunk *memChunk, headChunk bool, err error) {
+func (s *memSeries) chunk(id chunks.HeadChunkID, cdm chunkDiskMapper, memChunkPool *sync.Pool) (chunk *memChunk, headChunk bool, err error) {
 	// ix represents the index of chunk in the s.mmappedChunks slice. The chunk id's are
 	// incremented by 1 when new chunk is created, hence (id - firstChunkID) gives the slice index.
 	// The max index for the s.mmappedChunks slice can be len(s.mmappedChunks)-1, hence if the ix
@@ -358,7 +387,7 @@ func (s *memSeries) chunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDi
 		}
 		return s.headChunk, true, nil
 	}
-	chk, err := chunkDiskMapper.Chunk(s.mmappedChunks[ix].ref)
+	chk, err := cdm.Chunk(s.mmappedChunks[ix].ref)
 	if err != nil {
 		if _, ok := err.(*chunks.CorruptionErr); ok {
 			panic(err)
@@ -378,7 +407,7 @@ func (s *memSeries) chunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDi
 // chunks in the OOOHead.
 // This function is not thread safe unless the caller holds a lock.
 // The caller must ensure that s.ooo is not nil.
-func (s *memSeries) oooMergedChunk(meta chunks.Meta, cdm *chunks.ChunkDiskMapper, mint, maxt int64) (chunk *mergedOOOChunks, err error) {
+func (s *memSeries) oooMergedChunk(meta chunks.Meta, cdm chunkDiskMapper, mint, maxt int64) (chunk *mergedOOOChunks, err error) {
 	_, cid := chunks.HeadChunkRef(meta.Ref).Unpack()
 
 	// ix represents the index of chunk in the s.mmappedChunks slice. The chunk meta's are
