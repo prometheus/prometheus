@@ -450,7 +450,7 @@ func TestCompactionFailWillCleanUpTempDir(t *testing.T) {
 		{meta: &BlockMeta{ULID: ulid.MustNew(ulid.Now(), crand.Reader)}},
 	}
 
-	require.Error(t, compactor.write(tmpdir, shardedBlocks, DefaultPopulateBlockFunc{}, erringBReader{}))
+	require.Error(t, compactor.write(tmpdir, shardedBlocks, DefaultBlockPopulator{}, erringBReader{}))
 
 	// We rely on the fact that blockDir and tmpDir will be updated by compactor.write.
 	for _, b := range shardedBlocks {
@@ -1155,8 +1155,8 @@ func TestCompaction_populateBlock(t *testing.T) {
 
 			iw := &mockIndexWriter{}
 			ob := shardedBlock{meta: meta, indexw: iw, chunkw: nopChunkWriter{}}
-			populateBlockFunc := DefaultPopulateBlockFunc{}
-			err = populateBlockFunc.PopulateBlock(c.ctx, c.metrics, c.logger, c.chunkPool, c.mergeFunc, c.concurrencyOpts, blocks, meta.MinTime, meta.MaxTime, []shardedBlock{ob})
+			blockPopulator := DefaultBlockPopulator{}
+			err = blockPopulator.PopulateBlock(c.ctx, c.metrics, c.logger, c.chunkPool, c.mergeFunc, c.concurrencyOpts, blocks, meta.MinTime, meta.MaxTime, []shardedBlock{ob})
 
 			if tc.expErr != nil {
 				require.Error(t, err)
