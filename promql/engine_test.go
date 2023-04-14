@@ -3114,11 +3114,11 @@ func TestRangeQuery(t *testing.T) {
 			Query: `foo > 2 or bar`,
 			Result: Matrix{
 				Series{
-					Points: []Point{{V: 1, T: 0}, {V: 3, T: 60000}, {V: 5, T: 120000}},
+					Floats: []FPoint{{F: 1, T: 0}, {F: 3, T: 60000}, {F: 5, T: 120000}},
 					Metric: labels.FromStrings("__name__", "bar", "job", "2"),
 				},
 				Series{
-					Points: []Point{{V: 3, T: 60000}, {V: 5, T: 120000}},
+					Floats: []FPoint{{F: 3, T: 60000}, {F: 5, T: 120000}},
 					Metric: labels.FromStrings("__name__", "foo", "job", "1"),
 				},
 			},

@@ -30,7 +30,7 @@ func TestJsonCodec_Encode(t *testing.T) {
 		expected string
 	}{
 		{
-			response: &queryData{
+			response: &QueryData{
 				ResultType: parser.ValueTypeMatrix,
 				Result: promql.Matrix{
 					promql.Series{
@@ -42,7 +42,7 @@ func TestJsonCodec_Encode(t *testing.T) {
 			expected: `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"__name__":"foo"},"values":[[1,"1"]]}]}}`,
 		},
 		{
-			response: &queryData{
+			response: &QueryData{
 				ResultType: parser.ValueTypeMatrix,
 				Result: promql.Matrix{
 					promql.Series{
@@ -160,21 +160,15 @@ func TestJsonCodec_Encode(t *testing.T) {
 		},
 	}
 
-	for _, c := range cases {
-		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			api := API{}
-			api.respond(w, c.response, nil)
-		}))
-		defer s.Close()
+	codec := JSONCodec{}
 
-		resp, err := http.Get(s.URL)
+	for _, c := range cases {
+		body, err := codec.Encode(&Response{
+			Status: statusSuccess,
+			Data:   c.response,
+		})
 		if err != nil {
-			t.Fatalf("Error on test request: %s", err)
-		}
-		body, err := io.ReadAll(resp.Body)
-		defer resp.Body.Close()
-		if err != nil {
-			t.Fatalf("Error reading response body: %s", err)
+			t.Fatalf("Error encoding response body: %s", err)
 		}
 
 		if string(body) != c.expected {
