@@ -58,7 +58,6 @@ Check the resources for validity.
 
 | Flag | Description |
 | --- | --- |
-| <code class="text-nowrap">--http.config.file</code> | HTTP client configuration file for promtool to connect to Prometheus. |
 | <code class="text-nowrap">--extended</code> | Print extended information related to the cardinality of the metrics. |
 
 
@@ -137,11 +136,12 @@ Check if the Prometheus server is healthy.
 
 
 
-###### Arguments
+###### Flags
 
-| Argument | Description |
-| --- | --- |
-| server | The URL of the Prometheus server to check (e.g. http://localhost:9090) |
+| Flag | Description | Default |
+| --- | --- | --- |
+| <code class="text-nowrap">--http.config.file</code> | HTTP client configuration file for promtool to connect to Prometheus. |  |
+| <code class="text-nowrap">--url</code> | The URL for the Prometheus server. | `http://localhost:9090` |
 
 
 
@@ -152,11 +152,12 @@ Check if the Prometheus server is ready.
 
 
 
-###### Arguments
+###### Flags
 
-| Argument | Description |
-| --- | --- |
-| server | The URL of the Prometheus server to check (e.g. http://localhost:9090) |
+| Flag | Description | Default |
+| --- | --- | --- |
+| <code class="text-nowrap">--http.config.file</code> | HTTP client configuration file for promtool to connect to Prometheus. |  |
+| <code class="text-nowrap">--url</code> | The URL for the Prometheus server. | `http://localhost:9090` |
 
 
 

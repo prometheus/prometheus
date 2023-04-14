@@ -93,7 +93,7 @@ func query(ctx context.Context, q string, ts time.Time, queryFn QueryFunc) (quer
 	result := make(queryResult, len(vector))
 	for n, v := range vector {
 		s := sample{
-			Value:  v.V,
+			Value:  v.F,
 			Labels: v.Metric.Map(),
 		}
 		result[n] = &s

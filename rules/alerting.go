@@ -234,8 +234,9 @@ func (r *AlertingRule) sample(alert *Alert, ts time.Time) promql.Sample {
 	lb.Set(alertStateLabel, alert.State.String())
 
 	s := promql.Sample{
-		Metric: lb.Labels(labels.EmptyLabels()),
-		Point:  promql.Point{T: timestamp.FromTime(ts), V: 1},
+		Metric: lb.Labels(),
+		T:      timestamp.FromTime(ts),
+		F:      1,
 	}
 	return s
 }
@@ -252,8 +253,9 @@ func (r *AlertingRule) forStateSample(alert *Alert, ts time.Time, v float64) pro
 	lb.Set(labels.AlertName, r.name)
 
 	s := promql.Sample{
-		Metric: lb.Labels(labels.EmptyLabels()),
-		Point:  promql.Point{T: timestamp.FromTime(ts), V: v},
+		Metric: lb.Labels(),
+		T:      timestamp.FromTime(ts),
+		F:      v,
 	}
 	return s
 }
@@ -339,7 +341,7 @@ func (r *AlertingRule) Eval(ctx context.Context, evalDelay time.Duration, ts tim
 		// Provide the alert information to the template.
 		l := smpl.Metric.Map()
 
-		tmplData := template.AlertTemplateData(l, r.externalLabels, r.externalURL, smpl.V)
+		tmplData := template.AlertTemplateData(l, r.externalLabels, r.externalURL, smpl.F)
 		// Inject some convenience variables that are easier to remember for users
 		// who are not used to Go's templating system.
 		defs := []string{
@@ -381,7 +383,7 @@ func (r *AlertingRule) Eval(ctx context.Context, evalDelay time.Duration, ts tim
 		})
 		annotations := sb.Labels()
 
-		lbs := lb.Labels(labels.EmptyLabels())
+		lbs := lb.Labels()
 		h := lbs.Hash()
 		resultFPs[h] = struct{}{}
 
@@ -394,7 +396,7 @@ func (r *AlertingRule) Eval(ctx context.Context, evalDelay time.Duration, ts tim
 			Annotations: annotations,
 			ActiveAt:    ts,
 			State:       StatePending,
-			Value:       smpl.V,
+			Value:       smpl.F,
 		}
 	}
 

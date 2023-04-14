@@ -189,7 +189,8 @@ func (q *query) Cancel() {
 // Close implements the Query interface.
 func (q *query) Close() {
 	for _, s := range q.matrix {
-		putPointSlice(s.Points)
+		putFPointSlice(s.Floats)
+		putHPointSlice(s.Histograms)
 	}
 }
 
@@ -680,11 +681,15 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 			for i, s := range mat {
 				// Point might have a different timestamp, force it to the evaluation
 				// timestamp as that is when we ran the evaluation.
-				vector[i] = Sample{Metric: s.Metric, Point: Point{V: s.Points[0].V, H: s.Points[0].H, T: start}}
+				if len(s.Histograms) > 0 {
+					vector[i] = Sample{Metric: s.Metric, H: s.Histograms[0].H, T: start}
+				} else {
+					vector[i] = Sample{Metric: s.Metric, F: s.Floats[0].F, T: start}
+				}
 			}
 			return vector, warnings, nil
 		case parser.ValueTypeScalar:
-			return Scalar{V: mat[0].Points[0].V, T: start}, warnings, nil
+			return Scalar{V: mat[0].Floats[0].F, T: start}, warnings, nil
 		case parser.ValueTypeMatrix:
 			return mat, warnings, nil
 		default:
@@ -940,9 +945,10 @@ type errWithWarnings struct {
 
 func (e errWithWarnings) Error() string { return e.err.Error() }
 
-// An evaluator evaluates given expressions over given fixed timestamps. It
-// is attached to an engine through which it connects to a querier and reports
-// errors. On timeout or cancellation of its context it terminates.
+// An evaluator evaluates the given expressions over the given fixed
+// timestamps. It is attached to an engine through which it connects to a
+// querier and reports errors. On timeout or cancellation of its context it
+// terminates.
 type evaluator struct {
 	ctx context.Context
 
@@ -1137,17 +1143,35 @@ func (ev *evaluator) rangeEval(prepSeries func(labels.Labels, *EvalSeriesHelper)
 			}
 
 			for si, series := range matrixes[i] {
-				for _, point := range series.Points {
+				for _, point := range series.Floats {
 					if point.T == ts {
 						if ev.currentSamples < ev.maxSamples {
-							vectors[i] = append(vectors[i], Sample{Metric: series.Metric, Point: point})
+							vectors[i] = append(vectors[i], Sample{Metric: series.Metric, F: point.F, T: ts})
 							if prepSeries != nil {
 								bufHelpers[i] = append(bufHelpers[i], seriesHelpers[i][si])
 							}
 
 							// Move input vectors forward so we don't have to re-scan the same
 							// past points at the next step.
-							matrixes[i][si].Points = series.Points[1:]
+							matrixes[i][si].Floats = series.Floats[1:]
+							ev.currentSamples++
+						} else {
+							ev.error(ErrTooManySamples(env))
+						}
+					}
+					break
+				}
+				for _, point := range series.Histograms {
+					if point.T == ts {
+						if ev.currentSamples < ev.maxSamples {
+							vectors[i] = append(vectors[i], Sample{Metric: series.Metric, H: point.H, T: ts})
+							if prepSeries != nil {
+								bufHelpers[i] = append(bufHelpers[i], seriesHelpers[i][si])
+							}
+
+							// Move input vectors forward so we don't have to re-scan the same
+							// past points at the next step.
+							matrixes[i][si].Histograms = series.Histograms[1:]
 							ev.currentSamples++
 						} else {
 							ev.error(ErrTooManySamples(env))
@@ -1184,8 +1208,11 @@ func (ev *evaluator) rangeEval(prepSeries func(labels.Labels, *EvalSeriesHelper)
 		if ev.endTimestamp == ev.startTimestamp {
 			mat := make(Matrix, len(result))
 			for i, s := range result {
-				s.Point.T = ts
-				mat[i] = Series{Metric: s.Metric, Points: []Point{s.Point}}
+				if s.H == nil {
+					mat[i] = Series{Metric: s.Metric, Floats: []FPoint{{T: ts, F: s.F}}}
+				} else {
+					mat[i] = Series{Metric: s.Metric, Histograms: []HPoint{{T: ts, H: s.H}}}
+				}
 			}
 			ev.currentSamples = originalNumSamples + mat.TotalSamples()
 			ev.samplesStats.UpdatePeak(ev.currentSamples)
@@ -1197,22 +1224,28 @@ func (ev *evaluator) rangeEval(prepSeries func(labels.Labels, *EvalSeriesHelper)
 			h := sample.Metric.Hash()
 			ss, ok := seriess[h]
 			if !ok {
-				ss = Series{
-					Metric: sample.Metric,
-					Points: getPointSlice(numSteps),
-				}
+				ss = Series{Metric: sample.Metric}
 			}
-			sample.Point.T = ts
-			ss.Points = append(ss.Points, sample.Point)
+			if sample.H == nil {
+				if ss.Floats == nil {
+					ss.Floats = getFPointSlice(numSteps)
+				}
+				ss.Floats = append(ss.Floats, FPoint{T: ts, F: sample.F})
+			} else {
+				if ss.Histograms == nil {
+					ss.Histograms = getHPointSlice(numSteps)
+				}
+				ss.Histograms = append(ss.Histograms, HPoint{T: ts, H: sample.H})
+			}
 			seriess[h] = ss
-
 		}
 	}
 
 	// Reuse the original point slices.
 	for _, m := range origMatrixes {
 		for _, s := range m {
-			putPointSlice(s.Points)
+			putFPointSlice(s.Floats)
+			putHPointSlice(s.Histograms)
 		}
 	}
 	// Assemble the output matrix. By the time we get here we know we don't have too many samples.
@@ -1253,7 +1286,7 @@ func (ev *evaluator) evalSubquery(subq *parser.SubqueryExpr) (*parser.MatrixSele
 	}
 	totalSamples := 0
 	for _, s := range mat {
-		totalSamples += len(s.Points)
+		totalSamples += len(s.Floats) + len(s.Histograms)
 		vs.Series = append(vs.Series, NewStorageSeries(s))
 	}
 	return ms, totalSamples, ws
@@ -1297,7 +1330,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		return ev.rangeEval(initSeries, func(v []parser.Value, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, storage.Warnings) {
 			var param float64
 			if e.Param != nil {
-				param = v[0].(Vector)[0].V
+				param = v[0].(Vector)[0].F
 			}
 			return ev.aggregation(e.Op, sortedGrouping, e.Without, param, v[1].(Vector), sh[1], enh), nil
 		}, e.Param, e.Expr)
@@ -1396,7 +1429,8 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 			stepRange = ev.interval
 		}
 		// Reuse objects across steps to save memory allocations.
-		points := getPointSlice(16)
+		var floats []FPoint
+		var histograms []HPoint
 		inMatrix := make(Matrix, 1)
 		inArgs[matrixArgIndex] = inMatrix
 		enh := &EvalNodeHelper{Out: make(Vector, 0, 1)}
@@ -1404,8 +1438,13 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		it := storage.NewBuffer(selRange)
 		var chkIter chunkenc.Iterator
 		for i, s := range selVS.Series {
-			ev.currentSamples -= len(points)
-			points = points[:0]
+			ev.currentSamples -= len(floats) + len(histograms)
+			if floats != nil {
+				floats = floats[:0]
+			}
+			if histograms != nil {
+				histograms = histograms[:0]
+			}
 			chkIter = s.Iterator(chkIter)
 			it.Reset(chkIter)
 			metric := selVS.Series[i].Labels()
@@ -1418,7 +1457,6 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 			}
 			ss := Series{
 				Metric: metric,
-				Points: getPointSlice(numSteps),
 			}
 			inMatrix[0].Metric = selVS.Series[i].Labels()
 			for ts, step := ev.startTimestamp, -1; ts <= ev.endTimestamp; ts += ev.interval {
@@ -1428,44 +1466,54 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 				// when looking up the argument, as there will be no gaps.
 				for j := range e.Args {
 					if j != matrixArgIndex {
-						otherInArgs[j][0].V = otherArgs[j][0].Points[step].V
+						otherInArgs[j][0].F = otherArgs[j][0].Floats[step].F
 					}
 				}
 				maxt := ts - offset
 				mint := maxt - selRange
 				// Evaluate the matrix selector for this series for this step.
-				points = ev.matrixIterSlice(it, mint, maxt, points)
-				if len(points) == 0 {
+				floats, histograms = ev.matrixIterSlice(it, mint, maxt, floats, histograms)
+				if len(floats)+len(histograms) == 0 {
 					continue
 				}
-				inMatrix[0].Points = points
+				inMatrix[0].Floats = floats
+				inMatrix[0].Histograms = histograms
 				enh.Ts = ts
 				// Make the function call.
 				outVec := call(inArgs, e.Args, enh)
-				ev.samplesStats.IncrementSamplesAtStep(step, int64(len(points)))
+				ev.samplesStats.IncrementSamplesAtStep(step, int64(len(floats)+len(histograms)))
 				enh.Out = outVec[:0]
 				if len(outVec) > 0 {
-					ss.Points = append(ss.Points, Point{V: outVec[0].Point.V, H: outVec[0].Point.H, T: ts})
+					if outVec[0].H == nil {
+						if ss.Floats == nil {
+							ss.Floats = getFPointSlice(numSteps)
+						}
+						ss.Floats = append(ss.Floats, FPoint{F: outVec[0].F, T: ts})
+					} else {
+						if ss.Histograms == nil {
+							ss.Histograms = getHPointSlice(numSteps)
+						}
+						ss.Histograms = append(ss.Histograms, HPoint{H: outVec[0].H, T: ts})
+					}
 				}
 				// Only buffer stepRange milliseconds from the second step on.
 				it.ReduceDelta(stepRange)
 			}
-			if len(ss.Points) > 0 {
-				if ev.currentSamples+len(ss.Points) <= ev.maxSamples {
+			if len(ss.Floats)+len(ss.Histograms) > 0 {
+				if ev.currentSamples+len(ss.Floats)+len(ss.Histograms) <= ev.maxSamples {
 					mat = append(mat, ss)
-					ev.currentSamples += len(ss.Points)
+					ev.currentSamples += len(ss.Floats) + len(ss.Histograms)
 				} else {
 					ev.error(ErrTooManySamples(env))
 				}
-			} else {
-				putPointSlice(ss.Points)
 			}
 			ev.samplesStats.UpdatePeak(ev.currentSamples)
 		}
 		ev.samplesStats.UpdatePeak(ev.currentSamples)
 
-		ev.currentSamples -= len(points)
-		putPointSlice(points)
+		ev.currentSamples -= len(floats) + len(histograms)
+		putFPointSlice(floats)
+		putHPointSlice(histograms)
 
 		// The absent_over_time function returns 0 or 1 series. So far, the matrix
 		// contains multiple series. The following code will create a new series
@@ -1474,7 +1522,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 			steps := int(1 + (ev.endTimestamp-ev.startTimestamp)/ev.interval)
 			// Iterate once to look for a complete series.
 			for _, s := range mat {
-				if len(s.Points) == steps {
+				if len(s.Floats)+len(s.Histograms) == steps {
 					return Matrix{}, warnings
 				}
 			}
@@ -1482,7 +1530,10 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 			found := map[int64]struct{}{}
 
 			for i, s := range mat {
-				for _, p := range s.Points {
+				for _, p := range s.Floats {
+					found[p.T] = struct{}{}
+				}
+				for _, p := range s.Histograms {
 					found[p.T] = struct{}{}
 				}
 				if i > 0 && len(found) == steps {
@@ -1490,17 +1541,17 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 				}
 			}
 
-			newp := make([]Point, 0, steps-len(found))
+			newp := make([]FPoint, 0, steps-len(found))
 			for ts := ev.startTimestamp; ts <= ev.endTimestamp; ts += ev.interval {
 				if _, ok := found[ts]; !ok {
-					newp = append(newp, Point{T: ts, V: 1})
+					newp = append(newp, FPoint{T: ts, F: 1})
 				}
 			}
 
 			return Matrix{
 				Series{
 					Metric: createLabelsForAbsentFunction(e.Args[0]),
-					Points: newp,
+					Floats: newp,
 				},
 			}, warnings
 		}
@@ -1520,8 +1571,8 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		if e.Op == parser.SUB {
 			for i := range mat {
 				mat[i].Metric = dropMetricName(mat[i].Metric)
-				for j := range mat[i].Points {
-					mat[i].Points[j].V = -mat[i].Points[j].V
+				for j := range mat[i].Floats {
+					mat[i].Floats[j].F = -mat[i].Floats[j].F
 				}
 			}
 			if mat.ContainsSameLabelset() {
@@ -1534,8 +1585,8 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		switch lt, rt := e.LHS.Type(), e.RHS.Type(); {
 		case lt == parser.ValueTypeScalar && rt == parser.ValueTypeScalar:
 			return ev.rangeEval(nil, func(v []parser.Value, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, storage.Warnings) {
-				val := scalarBinop(e.Op, v[0].(Vector)[0].Point.V, v[1].(Vector)[0].Point.V)
-				return append(enh.Out, Sample{Point: Point{V: val}}), nil
+				val := scalarBinop(e.Op, v[0].(Vector)[0].F, v[1].(Vector)[0].F)
+				return append(enh.Out, Sample{F: val}), nil
 			}, e.LHS, e.RHS)
 		case lt == parser.ValueTypeVector && rt == parser.ValueTypeVector:
 			// Function to compute the join signature for each series.
@@ -1565,18 +1616,18 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 
 		case lt == parser.ValueTypeVector && rt == parser.ValueTypeScalar:
 			return ev.rangeEval(nil, func(v []parser.Value, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, storage.Warnings) {
-				return ev.VectorscalarBinop(e.Op, v[0].(Vector), Scalar{V: v[1].(Vector)[0].Point.V}, false, e.ReturnBool, enh), nil
+				return ev.VectorscalarBinop(e.Op, v[0].(Vector), Scalar{V: v[1].(Vector)[0].F}, false, e.ReturnBool, enh), nil
 			}, e.LHS, e.RHS)
 
 		case lt == parser.ValueTypeScalar && rt == parser.ValueTypeVector:
 			return ev.rangeEval(nil, func(v []parser.Value, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, storage.Warnings) {
-				return ev.VectorscalarBinop(e.Op, v[1].(Vector), Scalar{V: v[0].(Vector)[0].Point.V}, true, e.ReturnBool, enh), nil
+				return ev.VectorscalarBinop(e.Op, v[1].(Vector), Scalar{V: v[0].(Vector)[0].F}, true, e.ReturnBool, enh), nil
 			}, e.LHS, e.RHS)
 		}
 
 	case *parser.NumberLiteral:
 		return ev.rangeEval(nil, func(v []parser.Value, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, storage.Warnings) {
-			return append(enh.Out, Sample{Point: Point{V: e.Val}, Metric: labels.EmptyLabels()}), nil
+			return append(enh.Out, Sample{F: e.Val, Metric: labels.EmptyLabels()}), nil
 		})
 
 	case *parser.StringLiteral:
@@ -1595,15 +1646,24 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 			it.Reset(chkIter)
 			ss := Series{
 				Metric: e.Series[i].Labels(),
-				Points: getPointSlice(numSteps),
 			}
 
 			for ts, step := ev.startTimestamp, -1; ts <= ev.endTimestamp; ts += ev.interval {
 				step++
-				_, v, h, ok := ev.vectorSelectorSingle(it, e, ts)
+				_, f, h, ok := ev.vectorSelectorSingle(it, e, ts)
 				if ok {
 					if ev.currentSamples < ev.maxSamples {
-						ss.Points = append(ss.Points, Point{V: v, H: h, T: ts})
+						if h == nil {
+							if ss.Floats == nil {
+								ss.Floats = getFPointSlice(numSteps)
+							}
+							ss.Floats = append(ss.Floats, FPoint{F: f, T: ts})
+						} else {
+							if ss.Histograms == nil {
+								ss.Histograms = getHPointSlice(numSteps)
+							}
+							ss.Histograms = append(ss.Histograms, HPoint{H: h, T: ts})
+						}
 						ev.samplesStats.IncrementSamplesAtStep(step, 1)
 						ev.currentSamples++
 					} else {
@@ -1612,10 +1672,8 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 				}
 			}
 
-			if len(ss.Points) > 0 {
+			if len(ss.Floats)+len(ss.Histograms) > 0 {
 				mat = append(mat, ss)
-			} else {
-				putPointSlice(ss.Points)
 			}
 		}
 		ev.samplesStats.UpdatePeak(ev.currentSamples)
@@ -1706,15 +1764,21 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 			panic(fmt.Errorf("unexpected result in StepInvariantExpr evaluation: %T", expr))
 		}
 		for i := range mat {
-			if len(mat[i].Points) != 1 {
+			if len(mat[i].Floats)+len(mat[i].Histograms) != 1 {
 				panic(fmt.Errorf("unexpected number of samples"))
 			}
 			for ts := ev.startTimestamp + ev.interval; ts <= ev.endTimestamp; ts = ts + ev.interval {
-				mat[i].Points = append(mat[i].Points, Point{
-					T: ts,
-					V: mat[i].Points[0].V,
-					H: mat[i].Points[0].H,
-				})
+				if len(mat[i].Floats) > 0 {
+					mat[i].Floats = append(mat[i].Floats, FPoint{
+						T: ts,
+						F: mat[i].Floats[0].F,
+					})
+				} else {
+					mat[i].Histograms = append(mat[i].Histograms, HPoint{
+						T: ts,
+						H: mat[i].Histograms[0].H,
+					})
+				}
 				ev.currentSamples++
 				if ev.currentSamples > ev.maxSamples {
 					ev.error(ErrTooManySamples(env))
@@ -1741,11 +1805,13 @@ func (ev *evaluator) vectorSelector(node *parser.VectorSelector, ts int64) (Vect
 		chkIter = s.Iterator(chkIter)
 		it.Reset(chkIter)
 
-		t, v, h, ok := ev.vectorSelectorSingle(it, node, ts)
+		t, f, h, ok := ev.vectorSelectorSingle(it, node, ts)
 		if ok {
 			vec = append(vec, Sample{
 				Metric: node.Series[i].Labels(),
-				Point:  Point{V: v, H: h, T: t},
+				T:      t,
+				F:      f,
+				H:      h,
 			})
 
 			ev.currentSamples++
@@ -1795,17 +1861,35 @@ func (ev *evaluator) vectorSelectorSingle(it *storage.MemoizedSeriesIterator, no
 	return t, v, h, true
 }
 
-var pointPool zeropool.Pool[[]Point]
+var (
+	fPointPool zeropool.Pool[[]FPoint]
+	hPointPool zeropool.Pool[[]HPoint]
+)
 
-func getPointSlice(sz int) []Point {
-	if p := pointPool.Get(); p != nil {
+func getFPointSlice(sz int) []FPoint {
+	if p := fPointPool.Get(); p != nil {
 		return p
 	}
-	return make([]Point, 0, sz)
+	return make([]FPoint, 0, sz)
 }
 
-func putPointSlice(p []Point) {
-	pointPool.Put(p[:0])
+func putFPointSlice(p []FPoint) {
+	if p != nil {
+		fPointPool.Put(p[:0])
+	}
+}
+
+func getHPointSlice(sz int) []HPoint {
+	if p := hPointPool.Get(); p != nil {
+		return p
+	}
+	return make([]HPoint, 0, sz)
+}
+
+func putHPointSlice(p []HPoint) {
+	if p != nil {
+		hPointPool.Put(p[:0])
+	}
 }
 
 // matrixSelector evaluates a *parser.MatrixSelector expression.
@@ -1837,13 +1921,15 @@ func (ev *evaluator) matrixSelector(node *parser.MatrixSelector) (Matrix, storag
 			Metric: series[i].Labels(),
 		}
 
-		ss.Points = ev.matrixIterSlice(it, mint, maxt, getPointSlice(16))
-		ev.samplesStats.IncrementSamplesAtTimestamp(ev.startTimestamp, int64(len(ss.Points)))
+		ss.Floats, ss.Histograms = ev.matrixIterSlice(it, mint, maxt, nil, nil)
+		totalLen := int64(len(ss.Floats)) + int64(len(ss.Histograms))
+		ev.samplesStats.IncrementSamplesAtTimestamp(ev.startTimestamp, totalLen)
 
-		if len(ss.Points) > 0 {
+		if totalLen > 0 {
 			matrix = append(matrix, ss)
 		} else {
-			putPointSlice(ss.Points)
+			putFPointSlice(ss.Floats)
+			putHPointSlice(ss.Histograms)
 		}
 	}
 	return matrix, ws
@@ -1857,24 +1943,54 @@ func (ev *evaluator) matrixSelector(node *parser.MatrixSelector) (Matrix, storag
 // values). Any such points falling before mint are discarded; points that fall
 // into the [mint, maxt] range are retained; only points with later timestamps
 // are populated from the iterator.
-func (ev *evaluator) matrixIterSlice(it *storage.BufferedSeriesIterator, mint, maxt int64, out []Point) []Point {
-	if len(out) > 0 && out[len(out)-1].T >= mint {
+func (ev *evaluator) matrixIterSlice(
+	it *storage.BufferedSeriesIterator, mint, maxt int64,
+	floats []FPoint, histograms []HPoint,
+) ([]FPoint, []HPoint) {
+	mintFloats, mintHistograms := mint, mint
+
+	// First floats...
+	if len(floats) > 0 && floats[len(floats)-1].T >= mint {
 		// There is an overlap between previous and current ranges, retain common
 		// points. In most such cases:
 		//   (a) the overlap is significantly larger than the eval step; and/or
 		//   (b) the number of samples is relatively small.
 		// so a linear search will be as fast as a binary search.
 		var drop int
-		for drop = 0; out[drop].T < mint; drop++ {
+		for drop = 0; floats[drop].T < mint; drop++ {
 		}
 		ev.currentSamples -= drop
-		copy(out, out[drop:])
-		out = out[:len(out)-drop]
+		copy(floats, floats[drop:])
+		floats = floats[:len(floats)-drop]
 		// Only append points with timestamps after the last timestamp we have.
-		mint = out[len(out)-1].T + 1
+		mintFloats = floats[len(floats)-1].T + 1
 	} else {
-		ev.currentSamples -= len(out)
-		out = out[:0]
+		ev.currentSamples -= len(floats)
+		if floats != nil {
+			floats = floats[:0]
+		}
+	}
+
+	// ...then the same for histograms. TODO(beorn7): Use generics?
+	if len(histograms) > 0 && histograms[len(histograms)-1].T >= mint {
+		// There is an overlap between previous and current ranges, retain common
+		// points. In most such cases:
+		//   (a) the overlap is significantly larger than the eval step; and/or
+		//   (b) the number of samples is relatively small.
+		// so a linear search will be as fast as a binary search.
+		var drop int
+		for drop = 0; histograms[drop].T < mint; drop++ {
+		}
+		ev.currentSamples -= drop
+		copy(histograms, histograms[drop:])
+		histograms = histograms[:len(histograms)-drop]
+		// Only append points with timestamps after the last timestamp we have.
+		mintHistograms = histograms[len(histograms)-1].T + 1
+	} else {
+		ev.currentSamples -= len(histograms)
+		if histograms != nil {
+			histograms = histograms[:0]
+		}
 	}
 
 	soughtValueType := it.Seek(maxt)
@@ -1896,25 +2012,31 @@ loop:
 				continue loop
 			}
 			// Values in the buffer are guaranteed to be smaller than maxt.
-			if t >= mint {
+			if t >= mintHistograms {
 				if ev.currentSamples >= ev.maxSamples {
 					ev.error(ErrTooManySamples(env))
 				}
 				ev.currentSamples++
-				out = append(out, Point{T: t, H: h})
+				if histograms == nil {
+					histograms = getHPointSlice(16)
+				}
+				histograms = append(histograms, HPoint{T: t, H: h})
 			}
 		case chunkenc.ValFloat:
-			t, v := buf.At()
-			if value.IsStaleNaN(v) {
+			t, f := buf.At()
+			if value.IsStaleNaN(f) {
 				continue loop
 			}
 			// Values in the buffer are guaranteed to be smaller than maxt.
-			if t >= mint {
+			if t >= mintFloats {
 				if ev.currentSamples >= ev.maxSamples {
 					ev.error(ErrTooManySamples(env))
 				}
 				ev.currentSamples++
-				out = append(out, Point{T: t, V: v})
+				if floats == nil {
+					floats = getFPointSlice(16)
+				}
+				floats = append(floats, FPoint{T: t, F: f})
 			}
 		}
 	}
@@ -1926,21 +2048,27 @@ loop:
 			if ev.currentSamples >= ev.maxSamples {
 				ev.error(ErrTooManySamples(env))
 			}
-			out = append(out, Point{T: t, H: h})
+			if histograms == nil {
+				histograms = getHPointSlice(16)
+			}
+			histograms = append(histograms, HPoint{T: t, H: h})
 			ev.currentSamples++
 		}
 	case chunkenc.ValFloat:
-		t, v := it.At()
-		if t == maxt && !value.IsStaleNaN(v) {
+		t, f := it.At()
+		if t == maxt && !value.IsStaleNaN(f) {
 			if ev.currentSamples >= ev.maxSamples {
 				ev.error(ErrTooManySamples(env))
 			}
-			out = append(out, Point{T: t, V: v})
+			if floats == nil {
+				floats = getFPointSlice(16)
+			}
+			floats = append(floats, FPoint{T: t, F: f})
 			ev.currentSamples++
 		}
 	}
 	ev.samplesStats.UpdatePeak(ev.currentSamples)
-	return out
+	return floats, histograms
 }
 
 func (ev *evaluator) VectorAnd(lhs, rhs Vector, matching *parser.VectorMatching, lhsh, rhsh []EvalSeriesHelper, enh *EvalNodeHelper) Vector {
@@ -2086,18 +2214,18 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 		}
 
 		// Account for potentially swapped sidedness.
-		vl, vr := ls.V, rs.V
+		fl, fr := ls.F, rs.F
 		hl, hr := ls.H, rs.H
 		if matching.Card == parser.CardOneToMany {
-			vl, vr = vr, vl
+			fl, fr = fr, fl
 			hl, hr = hr, hl
 		}
-		value, histogramValue, keep := vectorElemBinop(op, vl, vr, hl, hr)
+		floatValue, histogramValue, keep := vectorElemBinop(op, fl, fr, hl, hr)
 		if returnBool {
 			if keep {
-				value = 1.0
+				floatValue = 1.0
 			} else {
-				value = 0.0
+				floatValue = 0.0
 			}
 		} else if !keep {
 			continue
@@ -2131,7 +2259,8 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 			// Both lhs and rhs are of same type.
 			enh.Out = append(enh.Out, Sample{
 				Metric: metric,
-				Point:  Point{V: value, H: histogramValue},
+				F:      floatValue,
+				H:      histogramValue,
 			})
 		}
 	}
@@ -2192,7 +2321,7 @@ func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.V
 		}
 	}
 
-	ret := enh.lb.Labels(labels.EmptyLabels())
+	ret := enh.lb.Labels()
 	enh.resultMetric[str] = ret
 	return ret
 }
@@ -2200,7 +2329,7 @@ func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.V
 // VectorscalarBinop evaluates a binary operation between a Vector and a Scalar.
 func (ev *evaluator) VectorscalarBinop(op parser.ItemType, lhs Vector, rhs Scalar, swap, returnBool bool, enh *EvalNodeHelper) Vector {
 	for _, lhsSample := range lhs {
-		lv, rv := lhsSample.V, rhs.V
+		lv, rv := lhsSample.F, rhs.V
 		// lhs always contains the Vector. If the original position was different
 		// swap for calculating the value.
 		if swap {
@@ -2221,7 +2350,7 @@ func (ev *evaluator) VectorscalarBinop(op parser.ItemType, lhs Vector, rhs Scala
 			keep = true
 		}
 		if keep {
-			lhsSample.V = value
+			lhsSample.F = value
 			if shouldDropMetricName(op) || returnBool {
 				lhsSample.Metric = enh.DropMetricName(lhsSample.Metric)
 			}
@@ -2232,7 +2361,7 @@ func (ev *evaluator) VectorscalarBinop(op parser.ItemType, lhs Vector, rhs Scala
 }
 
 func dropMetricName(l labels.Labels) labels.Labels {
-	return labels.NewBuilder(l).Del(labels.MetricName).Labels(labels.EmptyLabels())
+	return labels.NewBuilder(l).Del(labels.MetricName).Labels()
 }
 
 // scalarBinop evaluates a binary operation between two Scalars.
@@ -2313,7 +2442,7 @@ type groupedAggregation struct {
 	hasFloat       bool // Has at least 1 float64 sample aggregated.
 	hasHistogram   bool // Has at least 1 histogram sample aggregated.
 	labels         labels.Labels
-	value          float64
+	floatValue     float64
 	histogramValue *histogram.FloatHistogram
 	mean           float64
 	groupCount     int
@@ -2365,8 +2494,8 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 
 		if op == parser.COUNT_VALUES {
 			enh.resetBuilder(metric)
-			enh.lb.Set(valueLabel, strconv.FormatFloat(s.V, 'f', -1, 64))
-			metric = enh.lb.Labels(labels.EmptyLabels())
+			enh.lb.Set(valueLabel, strconv.FormatFloat(s.F, 'f', -1, 64))
+			metric = enh.lb.Labels()
 
 			// We've changed the metric so we have to recompute the grouping key.
 			recomputeGroupingKey = true
@@ -2388,17 +2517,17 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 			if without {
 				enh.lb.Del(grouping...)
 				enh.lb.Del(labels.MetricName)
-				m = enh.lb.Labels(labels.EmptyLabels())
+				m = enh.lb.Labels()
 			} else if len(grouping) > 0 {
 				enh.lb.Keep(grouping...)
-				m = enh.lb.Labels(labels.EmptyLabels())
+				m = enh.lb.Labels()
 			} else {
 				m = labels.EmptyLabels()
 			}
 			newAgg := &groupedAggregation{
 				labels:     m,
-				value:      s.V,
-				mean:       s.V,
+				floatValue: s.F,
+				mean:       s.F,
 				groupCount: 1,
 			}
 			if s.H == nil {
@@ -2420,21 +2549,21 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 			}
 			switch op {
 			case parser.STDVAR, parser.STDDEV:
-				result[groupingKey].value = 0
+				result[groupingKey].floatValue = 0
 			case parser.TOPK, parser.QUANTILE:
 				result[groupingKey].heap = make(vectorByValueHeap, 1, resultSize)
 				result[groupingKey].heap[0] = Sample{
-					Point:  Point{V: s.V},
+					F:      s.F,
 					Metric: s.Metric,
 				}
 			case parser.BOTTOMK:
 				result[groupingKey].reverseHeap = make(vectorByReverseValueHeap, 1, resultSize)
 				result[groupingKey].reverseHeap[0] = Sample{
-					Point:  Point{V: s.V},
+					F:      s.F,
 					Metric: s.Metric,
 				}
 			case parser.GROUP:
-				result[groupingKey].value = 1
+				result[groupingKey].floatValue = 1
 			}
 			continue
 		}
@@ -2459,19 +2588,19 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 				// point in copying the histogram in that case.
 			} else {
 				group.hasFloat = true
-				group.value += s.V
+				group.floatValue += s.F
 			}
 
 		case parser.AVG:
 			group.groupCount++
 			if math.IsInf(group.mean, 0) {
-				if math.IsInf(s.V, 0) && (group.mean > 0) == (s.V > 0) {
+				if math.IsInf(s.F, 0) && (group.mean > 0) == (s.F > 0) {
 					// The `mean` and `s.V` values are `Inf` of the same sign.  They
 					// can't be subtracted, but the value of `mean` is correct
 					// already.
 					break
 				}
-				if !math.IsInf(s.V, 0) && !math.IsNaN(s.V) {
+				if !math.IsInf(s.F, 0) && !math.IsNaN(s.F) {
 					// At this stage, the mean is an infinite. If the added
 					// value is neither an Inf or a Nan, we can keep that mean
 					// value.
@@ -2482,19 +2611,19 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 				}
 			}
 			// Divide each side of the `-` by `group.groupCount` to avoid float64 overflows.
-			group.mean += s.V/float64(group.groupCount) - group.mean/float64(group.groupCount)
+			group.mean += s.F/float64(group.groupCount) - group.mean/float64(group.groupCount)
 
 		case parser.GROUP:
 			// Do nothing. Required to avoid the panic in `default:` below.
 
 		case parser.MAX:
-			if group.value < s.V || math.IsNaN(group.value) {
-				group.value = s.V
+			if group.floatValue < s.F || math.IsNaN(group.floatValue) {
+				group.floatValue = s.F
 			}
 
 		case parser.MIN:
-			if group.value > s.V || math.IsNaN(group.value) {
-				group.value = s.V
+			if group.floatValue > s.F || math.IsNaN(group.floatValue) {
+				group.floatValue = s.F
 			}
 
 		case parser.COUNT, parser.COUNT_VALUES:
@@ -2502,21 +2631,21 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 
 		case parser.STDVAR, parser.STDDEV:
 			group.groupCount++
-			delta := s.V - group.mean
+			delta := s.F - group.mean
 			group.mean += delta / float64(group.groupCount)
-			group.value += delta * (s.V - group.mean)
+			group.floatValue += delta * (s.F - group.mean)
 
 		case parser.TOPK:
 			// We build a heap of up to k elements, with the smallest element at heap[0].
 			if int64(len(group.heap)) < k {
 				heap.Push(&group.heap, &Sample{
-					Point:  Point{V: s.V},
+					F:      s.F,
 					Metric: s.Metric,
 				})
-			} else if group.heap[0].V < s.V || (math.IsNaN(group.heap[0].V) && !math.IsNaN(s.V)) {
+			} else if group.heap[0].F < s.F || (math.IsNaN(group.heap[0].F) && !math.IsNaN(s.F)) {
 				// This new element is bigger than the previous smallest element - overwrite that.
 				group.heap[0] = Sample{
-					Point:  Point{V: s.V},
+					F:      s.F,
 					Metric: s.Metric,
 				}
 				if k > 1 {
@@ -2528,13 +2657,13 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 			// We build a heap of up to k elements, with the biggest element at heap[0].
 			if int64(len(group.reverseHeap)) < k {
 				heap.Push(&group.reverseHeap, &Sample{
-					Point:  Point{V: s.V},
+					F:      s.F,
 					Metric: s.Metric,
 				})
-			} else if group.reverseHeap[0].V > s.V || (math.IsNaN(group.reverseHeap[0].V) && !math.IsNaN(s.V)) {
+			} else if group.reverseHeap[0].F > s.F || (math.IsNaN(group.reverseHeap[0].F) && !math.IsNaN(s.F)) {
 				// This new element is smaller than the previous biggest element - overwrite that.
 				group.reverseHeap[0] = Sample{
-					Point:  Point{V: s.V},
+					F:      s.F,
 					Metric: s.Metric,
 				}
 				if k > 1 {
@@ -2554,16 +2683,16 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 	for _, aggr := range orderedResult {
 		switch op {
 		case parser.AVG:
-			aggr.value = aggr.mean
+			aggr.floatValue = aggr.mean
 
 		case parser.COUNT, parser.COUNT_VALUES:
-			aggr.value = float64(aggr.groupCount)
+			aggr.floatValue = float64(aggr.groupCount)
 
 		case parser.STDVAR:
-			aggr.value = aggr.value / float64(aggr.groupCount)
+			aggr.floatValue = aggr.floatValue / float64(aggr.groupCount)
 
 		case parser.STDDEV:
-			aggr.value = math.Sqrt(aggr.value / float64(aggr.groupCount))
+			aggr.floatValue = math.Sqrt(aggr.floatValue / float64(aggr.groupCount))
 
 		case parser.TOPK:
 			// The heap keeps the lowest value on top, so reverse it.
@@ -2573,7 +2702,7 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 			for _, v := range aggr.heap {
 				enh.Out = append(enh.Out, Sample{
 					Metric: v.Metric,
-					Point:  Point{V: v.V},
+					F:      v.F,
 				})
 			}
 			continue // Bypass default append.
@@ -2586,13 +2715,13 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 			for _, v := range aggr.reverseHeap {
 				enh.Out = append(enh.Out, Sample{
 					Metric: v.Metric,
-					Point:  Point{V: v.V},
+					F:      v.F,
 				})
 			}
 			continue // Bypass default append.
 
 		case parser.QUANTILE:
-			aggr.value = quantile(q, aggr.heap)
+			aggr.floatValue = quantile(q, aggr.heap)
 
 		case parser.SUM:
 			if aggr.hasFloat && aggr.hasHistogram {
@@ -2605,7 +2734,8 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 
 		enh.Out = append(enh.Out, Sample{
 			Metric: aggr.labels,
-			Point:  Point{V: aggr.value, H: aggr.histogramValue},
+			F:      aggr.floatValue,
+			H:      aggr.histogramValue,
 		})
 	}
 	return enh.Out
