@@ -30,6 +30,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
@@ -50,6 +51,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wlog"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 // newTestHeadDefaultOptions returns the HeadOptions that should be used by default in unit tests.
@@ -3743,7 +3745,7 @@ func TestChunkSnapshot(t *testing.T) {
 		})
 		require.NoError(t, err)
 		// Verifies both existence of right exemplars and order of exemplars in the buffer.
-		require.Equal(t, expExemplars, actExemplars)
+		testutil.RequireEqualWithOptions(t, expExemplars, actExemplars, []cmp.Option{cmp.AllowUnexported(ex{})})
 	}
 
 	var (

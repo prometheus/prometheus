@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestLastCheckpoint(t *testing.T) {
@@ -286,7 +287,7 @@ func TestCheckpoint(t *testing.T) {
 				{Ref: 2, Labels: labels.FromStrings("a", "b", "c", "2")},
 				{Ref: 4, Labels: labels.FromStrings("a", "b", "c", "4")},
 			}
-			require.Equal(t, expectedRefSeries, series)
+			testutil.RequireEqual(t, expectedRefSeries, series)
 
 			expectedRefMetadata := []record.RefMetadata{
 				{Ref: 0, Unit: fmt.Sprintf("%d", last-100), Help: fmt.Sprintf("%d", last-100)},
