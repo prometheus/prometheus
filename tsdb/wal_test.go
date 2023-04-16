@@ -510,7 +510,7 @@ func TestMigrateWAL_Fuzz(t *testing.T) {
 
 	r := wlog.NewReader(sr)
 	var res []interface{}
-	var dec record.Decoder
+	dec := record.NewDecoder(labels.NewSymbolTable())
 
 	for r.Next() {
 		rec := r.Record()

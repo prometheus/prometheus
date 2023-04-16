@@ -29,7 +29,7 @@ import (
 
 func TestRecord_EncodeDecode(t *testing.T) {
 	var enc Encoder
-	var dec Decoder
+	dec := NewDecoder(labels.NewSymbolTable())
 
 	series := []RefSeries{
 		{
@@ -187,7 +187,7 @@ func TestRecord_EncodeDecode(t *testing.T) {
 // Bugfix check for pull/521 and pull/523.
 func TestRecord_Corrupted(t *testing.T) {
 	var enc Encoder
-	var dec Decoder
+	dec := NewDecoder(labels.NewSymbolTable())
 
 	t.Run("Test corrupted series record", func(t *testing.T) {
 		series := []RefSeries{
