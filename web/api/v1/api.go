@@ -1009,6 +1009,7 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 		targetsActive := api.targetRetriever(r.Context()).TargetsActive()
 		activeKeys, numTargets := sortKeys(targetsActive)
 		res.ActiveTargets = make([]*Target, 0, numTargets)
+		builder := labels.NewScratchBuilder(0)
 
 		for _, key := range activeKeys {
 			if scrapePool != "" && key != scrapePool {
@@ -1025,7 +1026,7 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 
 				res.ActiveTargets = append(res.ActiveTargets, &Target{
 					DiscoveredLabels: target.DiscoveredLabels(),
-					Labels:           target.Labels(),
+					Labels:           target.Labels(&builder),
 					ScrapePool:       key,
 					ScrapeURL:        target.URL().String(),
 					GlobalURL:        globalURL.String(),
@@ -1101,6 +1102,7 @@ func (api *API) targetMetadata(r *http.Request) apiFuncResult {
 		}
 	}
 
+	builder := labels.NewScratchBuilder(0)
 	metric := r.FormValue("metric")
 	res := []metricMetadata{}
 	for _, tt := range api.targetRetriever(r.Context()).TargetsActive() {
@@ -1108,15 +1110,16 @@ func (api *API) targetMetadata(r *http.Request) apiFuncResult {
 			if limit >= 0 && len(res) >= limit {
 				break
 			}
+			targetLabels := t.Labels(&builder)
 			// Filter targets that don't satisfy the label matchers.
-			if matchTarget != "" && !matchLabels(t.Labels(), matchers) {
+			if matchTarget != "" && !matchLabels(targetLabels, matchers) {
 				continue
 			}
 			// If no metric is specified, get the full list for the target.
 			if metric == "" {
 				for _, md := range t.ListMetadata() {
 					res = append(res, metricMetadata{
-						Target: t.Labels(),
+						Target: targetLabels,
 						Metric: md.Metric,
 						Type:   md.Type,
 						Help:   md.Help,
@@ -1128,7 +1131,7 @@ func (api *API) targetMetadata(r *http.Request) apiFuncResult {
 			// Get metadata for the specified metric.
 			if md, ok := t.GetMetadata(metric); ok {
 				res = append(res, metricMetadata{
-					Target: t.Labels(),
+					Target: targetLabels,
 					Type:   md.Type,
 					Help:   md.Help,
 					Unit:   md.Unit,
