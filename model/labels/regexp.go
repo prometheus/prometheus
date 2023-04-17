@@ -15,10 +15,12 @@ package labels
 
 import (
 	"strings"
+	"time"
 
+	"github.com/DmitriyVTitov/size"
+	"github.com/dgraph-io/ristretto"
 	"github.com/grafana/regexp"
 	"github.com/grafana/regexp/syntax"
-	lru "github.com/hashicorp/golang-lru/v2"
 )
 
 const (
@@ -29,14 +31,22 @@ const (
 	// to match values instead of iterating over a list. This value has
 	// been computed running BenchmarkOptimizeEqualStringMatchers.
 	minEqualMultiStringMatcherMapThreshold = 16
+
+	fastRegexMatcherCacheMaxSizeBytes = 1024 * 1024 * 1024 // 1GB
+	fastRegexMatcherCacheTTL          = 5 * time.Minute
 )
 
-var fastRegexMatcherCache *lru.Cache[string, *FastRegexMatcher]
+var fastRegexMatcherCache *ristretto.Cache
 
 func init() {
-	// Ignore error because it can only return error if size is invalid,
-	// but we're using an hardcoded size here.
-	fastRegexMatcherCache, _ = lru.New[string, *FastRegexMatcher](10000)
+	// Ignore error because it can only return error if config is invalid,
+	// but we're using an hardcoded static config here.
+	fastRegexMatcherCache, _ = ristretto.NewCache(&ristretto.Config{
+		NumCounters: 100_000, // 10x the max number of expected items (takes 3 bytes per counter),
+		MaxCost:     fastRegexMatcherCacheMaxSizeBytes,
+		BufferItems: 64, // Recommended default per the Config docs,
+		Metrics:     false,
+	})
 }
 
 type FastRegexMatcher struct {
@@ -58,7 +68,7 @@ type FastRegexMatcher struct {
 func NewFastRegexMatcher(v string) (*FastRegexMatcher, error) {
 	// Check the cache.
 	if matcher, ok := fastRegexMatcherCache.Get(v); ok {
-		return matcher, nil
+		return matcher.(*FastRegexMatcher), nil
 	}
 
 	// Create a new matcher.
@@ -68,7 +78,7 @@ func NewFastRegexMatcher(v string) (*FastRegexMatcher, error) {
 	}
 
 	// Cache it.
-	fastRegexMatcherCache.Add(v, matcher)
+	fastRegexMatcherCache.SetWithTTL(v, matcher, int64(size.Of(matcher)), fastRegexMatcherCacheTTL)
 
 	return matcher, nil
 }

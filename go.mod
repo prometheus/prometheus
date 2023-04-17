@@ -6,11 +6,13 @@ require (
 	github.com/Azure/azure-sdk-for-go v65.0.0+incompatible
 	github.com/Azure/go-autorest/autorest v0.11.28
 	github.com/Azure/go-autorest/autorest/adal v0.9.22
+	github.com/DmitriyVTitov/size v1.5.0
 	github.com/alecthomas/kingpin/v2 v2.3.2
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
 	github.com/aws/aws-sdk-go v1.44.217
 	github.com/cespare/xxhash/v2 v2.2.0
 	github.com/dennwc/varint v1.0.0
+	github.com/dgraph-io/ristretto v0.1.1
 	github.com/digitalocean/godo v1.98.0
 	github.com/docker/docker v23.0.1+incompatible
 	github.com/edsrzf/mmap-go v1.1.0
@@ -28,7 +30,6 @@ require (
 	github.com/grafana/regexp v0.0.0-20221122212121-6b5c0a4cb7fd
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0
 	github.com/hashicorp/consul/api v1.20.0
-	github.com/hashicorp/golang-lru/v2 v2.0.2
 	github.com/hashicorp/nomad/api v0.0.0-20230308192510-48e7d70fcd4b
 	github.com/hetznercloud/hcloud-go v1.41.0
 	github.com/ionos-cloud/sdk-go/v6 v6.1.5
@@ -84,6 +85,7 @@ require (
 require (
 	cloud.google.com/go/compute/metadata v0.2.3 // indirect
 	github.com/coreos/go-systemd/v22 v22.5.0 // indirect
+	github.com/dustin/go-humanize v1.0.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/rogpeppe/go-internal v1.9.0 // indirect
