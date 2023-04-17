@@ -3303,14 +3303,13 @@ oauth2:
   [ <oauth2> ]
 
 # Optional AzureAD configuration.
-# Cannot be used at the same time as basic_auth, authorization, or sigv4.
+# Cannot be used at the same time as basic_auth, authorization, oauth2, or sigv4.
 azuread:
-  # The Azure Cloud. If blank, the default cloud considered is AzurePublic.
-  [ cloud: <string>]
+  # The Azure Cloud. Options are 'AzurePublic', 'AzureChina', or 'AzureGovernment'.
+  [ cloud: <string> | default = AzurePublic ]
 
   # The client id of the Azure managed identity.
   [ client_id: <string>]
-
 
 # Configures the remote write request's TLS settings.
 tls_config:
