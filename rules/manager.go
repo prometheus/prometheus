@@ -683,7 +683,6 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			)
 			if g.opts.ExemplarQueryFunc != nil {
 				vector, eqr, err = rule.EvalWithExemplars(ctx, ts, g.Interval(), g.opts.QueryFunc, g.opts.ExemplarQueryFunc, g.opts.ExternalURL, g.Limit())
-
 			} else {
 				vector, err = rule.Eval(ctx, ts, g.opts.QueryFunc, g.opts.ExternalURL, g.Limit())
 			}

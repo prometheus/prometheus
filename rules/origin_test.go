@@ -21,6 +21,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -43,6 +44,9 @@ func (u unknownRule) SetEvaluationDuration(time.Duration)  {}
 func (u unknownRule) GetEvaluationDuration() time.Duration { return 0 }
 func (u unknownRule) SetEvaluationTimestamp(time.Time)     {}
 func (u unknownRule) GetEvaluationTimestamp() time.Time    { return time.Time{} }
+func (u unknownRule) EvalWithExemplars(ctx context.Context, ts time.Time, interval time.Duration, query QueryFunc, exquery ExemplarQueryFunc, url *url.URL, limit int) (promql.Vector, []exemplar.QueryResult, error) {
+	return nil, nil, nil
+}
 
 func TestNewRuleDetailPanics(t *testing.T) {
 	require.PanicsWithValue(t, `unknown rule type "rules.unknownRule"`, func() {

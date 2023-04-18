@@ -94,7 +94,8 @@ func (rule *RecordingRule) Eval(ctx context.Context, ts time.Time, query QueryFu
 
 // EvalWithExemplars evaluates the rule along with emitting exemplars.
 func (rule *RecordingRule) EvalWithExemplars(ctx context.Context, ts time.Time, interval time.Duration,
-	query QueryFunc, eq ExemplarQueryFunc, _ *url.URL, limit int) (promql.Vector, []exemplar.QueryResult, error) {
+	query QueryFunc, eq ExemplarQueryFunc, _ *url.URL, limit int,
+) (promql.Vector, []exemplar.QueryResult, error) {
 	vector, err := rule.eval(ctx, ts, query)
 	if err != nil {
 		return nil, nil, err
