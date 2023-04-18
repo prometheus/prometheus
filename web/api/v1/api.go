@@ -1292,19 +1292,25 @@ type RecordingRule struct {
 }
 
 func (api *API) rules(r *http.Request) apiFuncResult {
+	if err := r.ParseForm(); err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, errors.Wrapf(err, "error parsing form values")}, nil, nil}
+	}
+
+	queryFormToSet := func(values []string) map[string]struct{} {
+		set := make(map[string]struct{}, len(values))
+		for _, v := range values {
+			set[v] = struct{}{}
+		}
+		return set
+	}
+
+	rnSet := queryFormToSet(r.Form["rule_name[]"])
+	rgSet := queryFormToSet(r.Form["rule_group[]"])
+	fSet := queryFormToSet(r.Form["file[]"])
+
 	ruleGroups := api.rulesRetriever(r.Context()).RuleGroups()
 	res := &RuleDiscovery{RuleGroups: make([]*RuleGroup, len(ruleGroups))}
 	typ := strings.ToLower(r.URL.Query().Get("type"))
-
-	// Parse the rule names into a comma separated list of rule names, then create a set.
-	rulesQuery := r.URL.Query().Get("rules")
-	ruleNamesSet := map[string]struct{}{}
-	if rulesQuery != "" {
-		names := strings.Split(rulesQuery, ",")
-		for _, rn := range names {
-			ruleNamesSet[strings.TrimSpace(rn)] = struct{}{}
-		}
-	}
 
 	if typ != "" && typ != "alert" && typ != "record" {
 		return invalidParamError(errors.Errorf("not supported value %q", typ), "type")
@@ -1314,6 +1320,18 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 	returnRecording := typ == "" || typ == "record"
 
 	for i, grp := range ruleGroups {
+		if len(rgSet) > 0 {
+			if _, ok := rgSet[grp.Name()]; !ok {
+				continue
+			}
+		}
+
+		if len(fSet) > 0 {
+			if _, ok := fSet[grp.File()]; !ok {
+				continue
+			}
+		}
+
 		apiRuleGroup := &RuleGroup{
 			Name:           grp.Name(),
 			File:           grp.File(),
@@ -1326,8 +1344,8 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 		for _, rr := range grp.Rules() {
 			var enrichedRule Rule
 
-			if len(ruleNamesSet) > 0 {
-				if _, ok := ruleNamesSet[rr.Name()]; !ok {
+			if len(rnSet) > 0 {
+				if _, ok := rnSet[rr.Name()]; !ok {
 					continue
 				}
 			}
