@@ -24,6 +24,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DmitriyVTitov/size"
 	"github.com/grafana/regexp"
 	"github.com/grafana/regexp/syntax"
 	"github.com/stretchr/testify/require"
@@ -98,6 +99,66 @@ func TestNewFastRegexMatcher(t *testing.T) {
 	}
 }
 
+func TestNewFastRegexMatcher_CacheSizeLimit(t *testing.T) {
+	// Start with an empty cache.
+	fastRegexMatcherCache.Clear()
+
+	// Init the random seed with a constant, so that it doesn't change between runs.
+	randGenerator := rand.New(rand.NewSource(1))
+
+	// Generate a very expensive regex.
+	alternates := make([]string, 1000)
+	for i := 0; i < len(alternates); i++ {
+		alternates[i] = randString(randGenerator, 100) + fmt.Sprintf(".%d", i)
+	}
+	expensiveRegexp := strings.Join(alternates, "|")
+
+	// Utility function to get a unique expensive regexp.
+	getExpensiveRegexp := func(id int) string {
+		return expensiveRegexp + fmt.Sprintf("%d", id)
+	}
+
+	// Estimate the size of the matcher with the expensive regexp.
+	m, err := newFastRegexMatcherWithoutCache(expensiveRegexp)
+	require.NoError(t, err)
+	expensiveRegexpSizeBytes := size.Of(m)
+	t.Logf("expensive regexp estimated size (bytes): %d", expensiveRegexpSizeBytes)
+
+	// Estimate the max number of items in the cache.
+	estimatedMaxItemsInCache := fastRegexMatcherCacheMaxSizeBytes / expensiveRegexpSizeBytes
+
+	// Fill the cache.
+	for i := 0; i < estimatedMaxItemsInCache; i++ {
+		_, err := NewFastRegexMatcher(getExpensiveRegexp(i))
+		require.NoError(t, err)
+	}
+
+	// Ensure all regexp matchers are still in the cache.
+	fastRegexMatcherCache.Wait()
+
+	for i := 0; i < estimatedMaxItemsInCache; i++ {
+		_, ok := fastRegexMatcherCache.Get(getExpensiveRegexp(i))
+		require.True(t, ok, "checking if regexp matcher #%d is still in the cache", i)
+	}
+
+	// Add one more regexp matcher to the cache.
+	_, err = NewFastRegexMatcher(getExpensiveRegexp(estimatedMaxItemsInCache + 1))
+	require.NoError(t, err)
+
+	// Ensure one item has been evicted from the cache to make room for the new entry.
+	fastRegexMatcherCache.Wait()
+
+	numEvicted := 0
+	for i := 0; i < estimatedMaxItemsInCache; i++ {
+		if _, ok := fastRegexMatcherCache.Get(getExpensiveRegexp(i)); !ok {
+			t.Logf("the regexp matcher #%d has been evicted from the cache", i)
+			numEvicted++
+		}
+	}
+
+	require.Equal(t, 1, numEvicted)
+}
+
 func BenchmarkNewFastRegexMatcher(b *testing.B) {
 	runBenchmark := func(newFunc func(v string) (*FastRegexMatcher, error)) func(b *testing.B) {
 		return func(b *testing.B) {
@@ -130,7 +191,7 @@ func BenchmarkNewFastRegexMatcher_CacheMisses(b *testing.B) {
 	for testName, regexpPrefix := range tests {
 		b.Run(testName, func(b *testing.B) {
 			// Ensure the cache is empty.
-			fastRegexMatcherCache.Purge()
+			fastRegexMatcherCache.Clear()
 
 			b.ResetTimer()
 
