@@ -240,16 +240,17 @@ func BenchmarkRangeQuery(b *testing.B) {
 	for _, c := range cases {
 		name := fmt.Sprintf("expr=%s,steps=%d", c.expr, c.steps)
 		b.Run(name, func(b *testing.B) {
+			ctx := context.Background()
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
 				qry, err := engine.NewRangeQuery(
-					stor, nil, c.expr,
+					ctx, stor, nil, c.expr,
 					time.Unix(int64((numIntervals-c.steps)*10), 0),
 					time.Unix(int64(numIntervals*10), 0), time.Second*10)
 				if err != nil {
 					b.Fatal(err)
 				}
-				res := qry.Exec(context.Background())
+				res := qry.Exec(ctx)
 				if res.Err != nil {
 					b.Fatal(res.Err)
 				}

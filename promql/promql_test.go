@@ -81,14 +81,15 @@ func TestConcurrentRangeQueries(t *testing.T) {
 			defer func() {
 				sem <- struct{}{}
 			}()
+			ctx := context.Background()
 			qry, err := engine.NewRangeQuery(
-				stor, nil, c.expr,
+				ctx, stor, nil, c.expr,
 				time.Unix(int64((numIntervals-c.steps)*10), 0),
 				time.Unix(int64(numIntervals*10), 0), time.Second*10)
 			if err != nil {
 				return err
 			}
-			res := qry.Exec(context.Background())
+			res := qry.Exec(ctx)
 			if res.Err != nil {
 				t.Logf("Query: %q, steps: %d, result: %s", c.expr, c.steps, res.Err)
 				return res.Err

@@ -400,7 +400,7 @@ func (ng *Engine) SetQueryLogger(l QueryLogger) {
 }
 
 // NewInstantQuery returns an evaluation query for the given expression at the given time.
-func (ng *Engine) NewInstantQuery(q storage.Queryable, opts *QueryOpts, qs string, ts time.Time) (Query, error) {
+func (ng *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts *QueryOpts, qs string, ts time.Time) (Query, error) {
 	expr, err := parser.ParseExpr(qs)
 	if err != nil {
 		return nil, err
@@ -416,7 +416,7 @@ func (ng *Engine) NewInstantQuery(q storage.Queryable, opts *QueryOpts, qs strin
 
 // NewRangeQuery returns an evaluation query for the given time range and with
 // the resolution set by the interval.
-func (ng *Engine) NewRangeQuery(q storage.Queryable, opts *QueryOpts, qs string, start, end time.Time, interval time.Duration) (Query, error) {
+func (ng *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts *QueryOpts, qs string, start, end time.Time, interval time.Duration) (Query, error) {
 	expr, err := parser.ParseExpr(qs)
 	if err != nil {
 		return nil, err
