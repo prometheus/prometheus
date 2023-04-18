@@ -14,8 +14,6 @@
 package tsdbutil
 
 import (
-	"math/rand"
-
 	"github.com/prometheus/prometheus/model/histogram"
 )
 
@@ -53,7 +51,7 @@ func GenerateTestHistogram(i int) *histogram.Histogram {
 
 func GenerateTestGaugeHistograms(n int) (r []*histogram.Histogram) {
 	for x := 0; x < n; x++ {
-		r = append(r, GenerateTestGaugeHistogram(n))
+		r = append(r, GenerateTestGaugeHistogram(x))
 	}
 	return r
 }
@@ -98,7 +96,7 @@ func GenerateTestFloatHistogram(i int) *histogram.FloatHistogram {
 
 func GenerateTestGaugeFloatHistograms(n int) (r []*histogram.FloatHistogram) {
 	for x := 0; x < n; x++ {
-		r = append(r, GenerateTestGaugeFloatHistogram(rand.Intn(n)))
+		r = append(r, GenerateTestGaugeFloatHistogram(x))
 	}
 	return r
 }

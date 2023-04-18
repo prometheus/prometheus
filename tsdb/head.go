@@ -1968,8 +1968,6 @@ type memSeries struct {
 	mmMaxTime int64 // Max time of any mmapped chunk, only used during WAL replay.
 
 	nextAt                                 int64 // Timestamp at which to cut the next chunk.
-	nativeHistogramChunkBytesOverhead      int   // Captures the number of bytes it takes to store the header and first sample of a native histograms chunk.
-	nativeHistogramChunkFirstSampleTS      int64 // Captures the timestamp of the first sample of a native histograms chunk.
 	nativeHistogramChunkHasComputedEndTime bool  // True if nextAt has been predicted for the current native histograms chunk; false otherwise.
 
 	// We keep the last value here (in addition to appending it to the chunk) so we can check for duplicates.

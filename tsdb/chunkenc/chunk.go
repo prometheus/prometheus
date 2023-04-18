@@ -55,11 +55,19 @@ func IsValidEncoding(e Encoding) bool {
 const (
 	// MaxBytesPerXORChunk is a soft cap for the size of an XOR chunk. It is a soft cap in that a final
 	// sample may be appended that exceeds the cap but no further samples will be appended to that chunk.
-	// This results in an effective hard cap of 1043 bytes (1024 bytes already in a chunk followed by a
-	// sample that takes the maximum size).
-	MaxBytesPerXORChunk = 1024
+	// This results in an effective hard cap of 1024 bytes (1005 bytes already in a chunk followed by a
+	// sample that takes the maximum size of 19 bytes).
+	MaxBytesPerXORChunk = 1005
 	// TargetBytesPerNativeHistogramChunk sets a size target for each native histogram chunk.
 	TargetBytesPerNativeHistogramChunk = 1024
+	// MinSamplesPerNativeHistogramChunk sets a minimum sample count for native histogram chunks. This is
+	// desirable because a single native histogram sample can be larger than TargetBytesPerNativeHistogramChunk
+	// but we want to avoid too-small sample count chunks so we can achieve some measure of compression advantage
+	// even while dealing with really large histograms.
+	// Note that this minimum sample count is not enforced across chunk range boundaries (for example, if the chunk
+	// range is 100 and the first sample in the chunk range is 99, the next sample will be included in a new chunk
+	// resulting in the old chunk containing only a single sample).
+	MinSamplesPerNativeHistogramChunk = 10
 )
 
 // Chunk holds a sequence of sample pairs that can be iterated over and appended to.

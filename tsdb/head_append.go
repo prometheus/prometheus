@@ -1357,16 +1357,11 @@ func (s *memSeries) nativeHistogramsAppendPreprocessor(t int64, e chunkenc.Encod
 		chunkCreated = true
 	}
 
-	// The first sample also encodes the layout so it's expected to be larger than the rest of the samples. We consider
-	// it overhead so we remove it from the calculations below.
-	if c.chunk.NumSamples() == 1 {
-		s.nativeHistogramChunkBytesOverhead = len(c.chunk.Bytes())
-		s.nativeHistogramChunkFirstSampleTS = c.maxTime
-	}
-	targetBytes := chunkenc.TargetBytesPerNativeHistogramChunk - s.nativeHistogramChunkBytesOverhead
-	numBytes := len(c.chunk.Bytes()) - s.nativeHistogramChunkBytesOverhead
+	numSamples := c.chunk.NumSamples()
+	targetBytes := chunkenc.TargetBytesPerNativeHistogramChunk
+	numBytes := len(c.chunk.Bytes())
 
-	if numBytes+s.nativeHistogramChunkBytesOverhead == 0 {
+	if numSamples == 0 {
 		// It could be the new chunk created after reading the chunk snapshot,
 		// hence we fix the minTime of the chunk here.
 		c.minTime = t
@@ -1378,22 +1373,16 @@ func (s *memSeries) nativeHistogramsAppendPreprocessor(t int64, e chunkenc.Encod
 	// the remaining chunks in the current chunk range.
 	// At the latest it must happen at the timestamp set when the chunk was cut.
 	if !s.nativeHistogramChunkHasComputedEndTime && numBytes >= targetBytes/4 {
-		// s.nativeHistogramChunkFirstSampleTS can be unset if we're already past targetBytes/4 within the first 2
-		// samples. In this case, c.minTime is the start time for the s.nextAt computation instead.
-		start := s.nativeHistogramChunkFirstSampleTS
-		if start == 0 {
-			start = c.minTime
-		}
 		ratioToFull := float64(targetBytes) / float64(numBytes)
-		s.nextAt = computeChunkEndTime(start, c.maxTime, s.nextAt, ratioToFull)
+		s.nextAt = computeChunkEndTime(c.minTime, c.maxTime, s.nextAt, ratioToFull)
 		s.nativeHistogramChunkHasComputedEndTime = true
 	}
-	// If numBytes > targetBytes*2 then our previous prediction was invalid,
-	// most likely because samples rate has changed and now they are arriving more frequently.
-	// Since we assume that the rate is higher, we're being conservative and cutting at 2*targetBytes
-	// as we expect more chunks to come.
+	// If numBytes > targetBytes*2 then our previous prediction was invalid. This could happen if the sample rate has
+	// increased or if the bucket/span count has increased.
+	// We also enforce a minimum sample count per chunk here.
 	// Note that next chunk will have its nextAt recalculated for the new rate.
-	if t >= s.nextAt || numBytes >= targetBytes*2 {
+	nextChunkRangeStart := (o.chunkRange - (c.maxTime % o.chunkRange)) + c.maxTime
+	if (t >= s.nextAt || numBytes >= targetBytes*2) && (numSamples >= chunkenc.MinSamplesPerNativeHistogramChunk || t >= nextChunkRangeStart) {
 		c = s.cutNewHeadChunk(t, e, o.chunkDiskMapper, o.chunkRange)
 		chunkCreated = true
 	}
@@ -1401,8 +1390,6 @@ func (s *memSeries) nativeHistogramsAppendPreprocessor(t int64, e chunkenc.Encod
 	// The new chunk will also need a new computed end time.
 	if chunkCreated {
 		s.nativeHistogramChunkHasComputedEndTime = false
-		s.nativeHistogramChunkBytesOverhead = 0
-		s.nativeHistogramChunkFirstSampleTS = 0
 	}
 
 	return c, true, chunkCreated
