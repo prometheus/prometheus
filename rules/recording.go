@@ -118,10 +118,10 @@ func (rule *RecordingRule) EvalWithExemplars(ctx context.Context, ts time.Time, 
 	// If none of the selectors match, then drop the exemplars on the floor.
 	var exemplars []exemplar.QueryResult
 	for _, v := range vector {
-		matchers := make([]*labels.Matcher, 0, len(v.Metric))
-		for _, l := range v.Metric {
+		matchers := make([]*labels.Matcher, 0, v.Metric.Len())
+		v.Metric.Range(func(l labels.Label) {
 			matchers = append(matchers, labels.MustNewMatcher(labels.MatchEqual, l.Name, l.Value))
-		}
+		})
 
 		for i := range ex {
 			if ok := matches(ex[i].SeriesLabels, matchers); ok {
