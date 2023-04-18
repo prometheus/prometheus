@@ -54,7 +54,7 @@ func TestMemPostings_ensureOrder(t *testing.T) {
 		p.m["a"][v] = l
 	}
 
-	p.EnsureOrder()
+	p.EnsureOrder(0)
 
 	for _, e := range p.m {
 		for _, l := range e {
@@ -114,7 +114,7 @@ func BenchmarkMemPostings_ensureOrder(b *testing.B) {
 			b.ResetTimer()
 
 			for n := 0; n < b.N; n++ {
-				p.EnsureOrder()
+				p.EnsureOrder(0)
 				p.ordered = false
 			}
 		})
