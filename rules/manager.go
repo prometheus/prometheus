@@ -222,7 +222,7 @@ type Rule interface {
 	// Eval evaluates the rule, including any associated recording or alerting actions.
 	Eval(context.Context, time.Time, QueryFunc, *url.URL, int) (promql.Vector, error)
 	// EvalWithExemplars evaluates the rule, including any associated recording or alerting actions and emit exemplars.
-	EvalWithExemplars(ctx context.Context, ts time.Time, interval time.Duration, query QueryFunc, eq storage.ExemplarQuerier, _ *url.URL, limit int) (promql.Vector, []exemplar.QueryResult, error)
+	EvalWithExemplars(ctx context.Context, ts time.Time, interval time.Duration, query QueryFunc, eq storage.ExemplarQuerier, url *url.URL, limit int) (promql.Vector, []exemplar.QueryResult, error)
 	// String returns a human-readable string representation of the rule.
 	String() string
 	// Query returns the rule query expression.
@@ -751,7 +751,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				for _, e := range eq.Exemplars {
 					ref, err = app.AppendExemplar(ref, eq.SeriesLabels, e)
 					if err != nil {
-						level.Warn(g.logger).Log("name", rule.Name(), "index", i, "msg", "Exemplar append failed", "err", err, "exemplar", fmt.Sprint(e))
+						level.Warn(g.logger).Log("name", rule.Name(), "index", i, "msg", "Rule evaluation exemplar discarded", "err", err, "exemplar", fmt.Sprint(e))
 					}
 				}
 			}
