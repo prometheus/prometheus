@@ -582,7 +582,7 @@ func TestAnalyzeRealQueries(t *testing.T) {
 		numChecked++
 
 		// Check if each regexp matcher is supported by our optimization.
-		if m.isOptimized() {
+		if m.IsOptimized() {
 			numOptimized++
 			info.optimized = true
 		}

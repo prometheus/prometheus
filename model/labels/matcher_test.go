@@ -186,6 +186,30 @@ func TestPrefix(t *testing.T) {
 	}
 }
 
+func TestIsRegexOptimized(t *testing.T) {
+	for i, tc := range []struct {
+		matcher          *Matcher
+		isRegexOptimized bool
+	}{
+		{
+			matcher:          mustNewMatcher(t, MatchEqual, "abc"),
+			isRegexOptimized: false,
+		},
+		{
+			matcher:          mustNewMatcher(t, MatchRegexp, "."),
+			isRegexOptimized: false,
+		},
+		{
+			matcher:          mustNewMatcher(t, MatchRegexp, "abc.+"),
+			isRegexOptimized: true,
+		},
+	} {
+		t.Run(fmt.Sprintf("%d: %s", i, tc.matcher), func(t *testing.T) {
+			require.Equal(t, tc.isRegexOptimized, tc.matcher.IsRegexOptimized())
+		})
+	}
+}
+
 func BenchmarkMatchType_String(b *testing.B) {
 	for i := 0; i <= b.N; i++ {
 		_ = MatchType(i % int(MatchNotRegexp+1)).String()

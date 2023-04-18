@@ -151,11 +151,9 @@ func (m *FastRegexMatcher) compileMatchStringFunction() func(string) bool {
 	}
 }
 
-// isOptimized returns true if any fast-path optimization is applied to the
+// IsOptimized returns true if any fast-path optimization is applied to the
 // regex matcher.
-//
-//nolint:unused
-func (m *FastRegexMatcher) isOptimized() bool {
+func (m *FastRegexMatcher) IsOptimized() bool {
 	return len(m.setMatches) > 0 || m.stringMatcher != nil || m.prefix != "" || m.suffix != "" || m.contains != ""
 }
 

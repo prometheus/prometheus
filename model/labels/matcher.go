@@ -137,3 +137,11 @@ func (m *Matcher) Prefix() string {
 	}
 	return m.re.prefix
 }
+
+// IsRegexOptimized returns whether regex is optimized.
+func (m *Matcher) IsRegexOptimized() bool {
+	if m.re == nil {
+		return false
+	}
+	return m.re.IsOptimized()
+}
