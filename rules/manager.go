@@ -185,6 +185,8 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 // QueryFunc processes PromQL queries.
 type QueryFunc func(ctx context.Context, q string, t time.Time) (promql.Vector, error)
 
+type ExemplarQueryFunc func(ctx context.Context, expr parser.Expr, ts time.Time, interval time.Duration) ([]exemplar.QueryResult, error)
+
 // EngineQueryFunc returns a new query function that executes instant queries against
 // the given engine.
 // It converts scalar into vector results.
@@ -213,6 +215,28 @@ func EngineQueryFunc(engine *promql.Engine, q storage.Queryable) QueryFunc {
 	}
 }
 
+func ExemplarQuerierQueryFunc(q storage.ExemplarQueryable) ExemplarQueryFunc {
+	return func(ctx context.Context, expr parser.Expr, ts time.Time, interval time.Duration) ([]exemplar.QueryResult, error) {
+		selectors := parser.ExtractSelectors(expr)
+		if len(selectors) < 1 {
+			return nil, fmt.Errorf("no selectors found on exemplar query")
+		}
+
+		eq, err := q.ExemplarQuerier(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		// Query all the raw exemplars that match the query
+		ex, err := eq.Select(timestamp.FromTime(ts.Add(-1*interval)), timestamp.FromTime(ts), selectors...)
+		if err != nil {
+			return nil, err
+		}
+
+		return ex, nil
+	}
+}
+
 // A Rule encapsulates a vector expression which is evaluated at a specified
 // interval and acted upon (currently either recorded or used for alerting).
 type Rule interface {
@@ -222,7 +246,7 @@ type Rule interface {
 	// Eval evaluates the rule, including any associated recording or alerting actions.
 	Eval(context.Context, time.Time, QueryFunc, *url.URL, int) (promql.Vector, error)
 	// EvalWithExemplars evaluates the rule, including any associated recording or alerting actions and emit exemplars.
-	EvalWithExemplars(ctx context.Context, ts time.Time, interval time.Duration, query QueryFunc, eq storage.ExemplarQuerier, url *url.URL, limit int) (promql.Vector, []exemplar.QueryResult, error)
+	EvalWithExemplars(ctx context.Context, ts time.Time, interval time.Duration, query QueryFunc, exquery ExemplarQueryFunc, url *url.URL, limit int) (promql.Vector, []exemplar.QueryResult, error)
 	// String returns a human-readable string representation of the rule.
 	String() string
 	// Query returns the rule query expression.
@@ -657,14 +681,8 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				eqr    []exemplar.QueryResult
 				err    error
 			)
-			if g.opts.ExemplarQueryable != nil {
-				ex, e := g.opts.ExemplarQueryable.ExemplarQuerier(ctx)
-				if e != nil {
-					level.Warn(g.logger).Log("name", rule.Name(), "index", i, "msg", "Error fetching exemplar querier", "rule", rule, "err", err)
-					err = e
-				} else {
-					vector, eqr, err = rule.EvalWithExemplars(ctx, ts, g.Interval(), g.opts.QueryFunc, ex, g.opts.ExternalURL, g.Limit())
-				}
+			if g.opts.ExemplarQueryFunc != nil {
+				vector, eqr, err = rule.EvalWithExemplars(ctx, ts, g.Interval(), g.opts.QueryFunc, g.opts.ExemplarQueryFunc, g.opts.ExternalURL, g.Limit())
 
 			} else {
 				vector, err = rule.Eval(ctx, ts, g.opts.QueryFunc, g.opts.ExternalURL, g.Limit())
@@ -989,7 +1007,7 @@ type ManagerOptions struct {
 	Context           context.Context
 	Appendable        storage.Appendable
 	Queryable         storage.Queryable
-	ExemplarQueryable storage.ExemplarQueryable
+	ExemplarQueryFunc ExemplarQueryFunc
 	Logger            log.Logger
 	Registerer        prometheus.Registerer
 	OutageTolerance   time.Duration

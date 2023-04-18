@@ -651,9 +651,9 @@ func main() {
 
 		ruleManager = rules.NewManager(&rules.ManagerOptions{
 			Appendable:        fanoutStorage,
-			ExemplarQueryable: localStorage,
 			Queryable:         localStorage,
 			QueryFunc:         rules.EngineQueryFunc(queryEngine, fanoutStorage),
+			ExemplarQueryFunc: rules.ExemplarQuerierQueryFunc(localStorage),
 			NotifyFunc:        rules.SendAlerts(notifierManager, cfg.web.ExternalURL.String()),
 			Context:           ctxRule,
 			ExternalURL:       cfg.web.ExternalURL,

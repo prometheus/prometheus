@@ -25,10 +25,8 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
-	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/prometheus/prometheus/storage"
 )
 
 // A RecordingRule records its vector expression into new timeseries.
@@ -96,7 +94,7 @@ func (rule *RecordingRule) Eval(ctx context.Context, ts time.Time, query QueryFu
 
 // EvalWithExemplars evaluates the rule along with emitting exemplars.
 func (rule *RecordingRule) EvalWithExemplars(ctx context.Context, ts time.Time, interval time.Duration,
-	query QueryFunc, eq storage.ExemplarQuerier, _ *url.URL, limit int) (promql.Vector, []exemplar.QueryResult, error) {
+	query QueryFunc, eq ExemplarQueryFunc, _ *url.URL, limit int) (promql.Vector, []exemplar.QueryResult, error) {
 	vector, err := rule.eval(ctx, ts, query)
 	if err != nil {
 		return nil, nil, err
@@ -108,7 +106,7 @@ func (rule *RecordingRule) EvalWithExemplars(ctx context.Context, ts time.Time, 
 	}
 
 	// Query all the raw exemplars that match the query
-	ex, err := eq.Select(timestamp.FromTime(ts.Add(-1*interval)), timestamp.FromTime(ts), selectors...)
+	ex, err := eq(ctx, rule.vector, ts, interval)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -140,6 +138,7 @@ func (rule *RecordingRule) EvalWithExemplars(ctx context.Context, ts time.Time, 
 		return nil, nil, err
 	}
 
+	rule.applyExemplarLabels(exemplars)
 	rule.SetHealth(HealthGood)
 	rule.SetLastError(err)
 	return vector, exemplars, nil
