@@ -675,7 +675,9 @@ GET /api/v1/rules
 URL query parameters:
 
 - `type=alert|record`: return only the alerting rules (e.g. `type=alert`) or the recording rules (e.g. `type=record`). When the parameter is absent or empty, no filtering is done.
-- `rules=alertName,RuleName`: return only the alerting and recording rules with the specified names. If we've filtered out all the rules of a group, the group is not returned. When the parameter is absent or empty, no filtering is done.
+- `rule_name[]=<rule name>`: return the groups and rules of the specified alerting and recording rules names, the parameter supports repetition. If we've filtered out all the rules of a group, the group is not returned. When the parameter is absent or empty, no filtering is done.
+- `rule_group[]=<group name>`: return the group and rules of the specified rule group names, the parameter supports repetitions. When the parameter is absent or empty, no filtering is done.
+- `file[]=<filepath>`: return the group and rules of specified filepath for rule groups, the parameter supports repetition. When the parameter is absent or empty, no filtering is done.
 
 ```json
 $ curl http://localhost:9090/api/v1/rules
