@@ -177,8 +177,8 @@ type TSDBAdminStats interface {
 // QueryEngine defines the interface for the *promql.Engine, so it can be replaced, wrapped or mocked.
 type QueryEngine interface {
 	SetQueryLogger(l promql.QueryLogger)
-	NewInstantQuery(q storage.Queryable, opts *promql.QueryOpts, qs string, ts time.Time) (promql.Query, error)
-	NewRangeQuery(q storage.Queryable, opts *promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error)
+	NewInstantQuery(ctx context.Context, q storage.Queryable, opts *promql.QueryOpts, qs string, ts time.Time) (promql.Query, error)
+	NewRangeQuery(ctx context.Context, q storage.Queryable, opts *promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error)
 }
 
 // API can register a set of endpoints in a router and handle
@@ -417,7 +417,7 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
-	qry, err := api.QueryEngine.NewInstantQuery(api.Queryable, opts, r.FormValue("query"), ts)
+	qry, err := api.QueryEngine.NewInstantQuery(ctx, api.Queryable, opts, r.FormValue("query"), ts)
 	if err != nil {
 		return invalidParamError(err, "query")
 	}
@@ -520,7 +520,7 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
-	qry, err := api.QueryEngine.NewRangeQuery(api.Queryable, opts, r.FormValue("query"), start, end, step)
+	qry, err := api.QueryEngine.NewRangeQuery(ctx, api.Queryable, opts, r.FormValue("query"), start, end, step)
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}

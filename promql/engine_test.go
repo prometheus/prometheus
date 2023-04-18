@@ -231,14 +231,14 @@ func TestQueryError(t *testing.T) {
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 
-	vectorQuery, err := engine.NewInstantQuery(queryable, nil, "foo", time.Unix(1, 0))
+	vectorQuery, err := engine.NewInstantQuery(ctx, queryable, nil, "foo", time.Unix(1, 0))
 	require.NoError(t, err)
 
 	res := vectorQuery.Exec(ctx)
 	require.Error(t, res.Err, "expected error on failed select but got none")
 	require.True(t, errors.Is(res.Err, errStorage), "expected error doesn't match")
 
-	matrixQuery, err := engine.NewInstantQuery(queryable, nil, "foo[1m]", time.Unix(1, 0))
+	matrixQuery, err := engine.NewInstantQuery(ctx, queryable, nil, "foo[1m]", time.Unix(1, 0))
 	require.NoError(t, err)
 
 	res = matrixQuery.Exec(ctx)
@@ -564,14 +564,15 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 				query Query
 				err   error
 			)
+			ctx := context.Background()
 			if tc.end == 0 {
-				query, err = engine.NewInstantQuery(hintsRecorder, nil, tc.query, timestamp.Time(tc.start))
+				query, err = engine.NewInstantQuery(ctx, hintsRecorder, nil, tc.query, timestamp.Time(tc.start))
 			} else {
-				query, err = engine.NewRangeQuery(hintsRecorder, nil, tc.query, timestamp.Time(tc.start), timestamp.Time(tc.end), time.Second)
+				query, err = engine.NewRangeQuery(ctx, hintsRecorder, nil, tc.query, timestamp.Time(tc.start), timestamp.Time(tc.end), time.Second)
 			}
 			require.NoError(t, err)
 
-			res := query.Exec(context.Background())
+			res := query.Exec(ctx)
 			require.NoError(t, res.Err)
 
 			require.Equal(t, tc.expected, hintsRecorder.hints)
@@ -727,9 +728,9 @@ load 10s
 			var err error
 			var qry Query
 			if c.Interval == 0 {
-				qry, err = test.QueryEngine().NewInstantQuery(test.Queryable(), nil, c.Query, c.Start)
+				qry, err = test.QueryEngine().NewInstantQuery(test.context, test.Queryable(), nil, c.Query, c.Start)
 			} else {
-				qry, err = test.QueryEngine().NewRangeQuery(test.Queryable(), nil, c.Query, c.Start, c.End, c.Interval)
+				qry, err = test.QueryEngine().NewRangeQuery(test.context, test.Queryable(), nil, c.Query, c.Start, c.End, c.Interval)
 			}
 			require.NoError(t, err)
 
@@ -1204,9 +1205,9 @@ load 10s
 				var err error
 				var qry Query
 				if c.Interval == 0 {
-					qry, err = engine.NewInstantQuery(test.Queryable(), opts, c.Query, c.Start)
+					qry, err = engine.NewInstantQuery(test.context, test.Queryable(), opts, c.Query, c.Start)
 				} else {
-					qry, err = engine.NewRangeQuery(test.Queryable(), opts, c.Query, c.Start, c.End, c.Interval)
+					qry, err = engine.NewRangeQuery(test.context, test.Queryable(), opts, c.Query, c.Start, c.End, c.Interval)
 				}
 				require.NoError(t, err)
 
@@ -1387,9 +1388,9 @@ load 10s
 				var err error
 				var qry Query
 				if c.Interval == 0 {
-					qry, err = engine.NewInstantQuery(test.Queryable(), nil, c.Query, c.Start)
+					qry, err = engine.NewInstantQuery(test.context, test.Queryable(), nil, c.Query, c.Start)
 				} else {
-					qry, err = engine.NewRangeQuery(test.Queryable(), nil, c.Query, c.Start, c.End, c.Interval)
+					qry, err = engine.NewRangeQuery(test.context, test.Queryable(), nil, c.Query, c.Start, c.End, c.Interval)
 				}
 				require.NoError(t, err)
 
@@ -1628,9 +1629,9 @@ load 1ms
 			var err error
 			var qry Query
 			if c.end == 0 {
-				qry, err = test.QueryEngine().NewInstantQuery(test.Queryable(), nil, c.query, start)
+				qry, err = test.QueryEngine().NewInstantQuery(test.context, test.Queryable(), nil, c.query, start)
 			} else {
-				qry, err = test.QueryEngine().NewRangeQuery(test.Queryable(), nil, c.query, start, end, interval)
+				qry, err = test.QueryEngine().NewRangeQuery(test.context, test.Queryable(), nil, c.query, start, end, interval)
 			}
 			require.NoError(t, err)
 
@@ -1961,7 +1962,7 @@ func TestSubquerySelector(t *testing.T) {
 			engine := test.QueryEngine()
 			for _, c := range tst.cases {
 				t.Run(c.Query, func(t *testing.T) {
-					qry, err := engine.NewInstantQuery(test.Queryable(), nil, c.Query, c.Start)
+					qry, err := engine.NewInstantQuery(test.context, test.Queryable(), nil, c.Query, c.Start)
 					require.NoError(t, err)
 
 					res := qry.Exec(test.Context())
@@ -2909,6 +2910,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 }
 
 func TestEngineOptsValidation(t *testing.T) {
+	ctx := context.Background()
 	cases := []struct {
 		opts     EngineOpts
 		query    string
@@ -2968,8 +2970,8 @@ func TestEngineOptsValidation(t *testing.T) {
 
 	for _, c := range cases {
 		eng := NewEngine(c.opts)
-		_, err1 := eng.NewInstantQuery(nil, nil, c.query, time.Unix(10, 0))
-		_, err2 := eng.NewRangeQuery(nil, nil, c.query, time.Unix(0, 0), time.Unix(10, 0), time.Second)
+		_, err1 := eng.NewInstantQuery(ctx, nil, nil, c.query, time.Unix(10, 0))
+		_, err2 := eng.NewRangeQuery(ctx, nil, nil, c.query, time.Unix(0, 0), time.Unix(10, 0), time.Second)
 		if c.fail {
 			require.Equal(t, c.expError, err1)
 			require.Equal(t, c.expError, err2)
@@ -3116,7 +3118,7 @@ func TestRangeQuery(t *testing.T) {
 			err = test.Run()
 			require.NoError(t, err)
 
-			qry, err := test.QueryEngine().NewRangeQuery(test.Queryable(), nil, c.Query, c.Start, c.End, c.Interval)
+			qry, err := test.QueryEngine().NewRangeQuery(test.context, test.Queryable(), nil, c.Query, c.Start, c.End, c.Interval)
 			require.NoError(t, err)
 
 			res := qry.Exec(test.Context())
@@ -3147,7 +3149,7 @@ func TestNativeHistogramRate(t *testing.T) {
 	engine := test.QueryEngine()
 
 	queryString := fmt.Sprintf("rate(%s[1m])", seriesName)
-	qry, err := engine.NewInstantQuery(test.Queryable(), nil, queryString, timestamp.Time(int64(5*time.Minute/time.Millisecond)))
+	qry, err := engine.NewInstantQuery(test.context, test.Queryable(), nil, queryString, timestamp.Time(int64(5*time.Minute/time.Millisecond)))
 	require.NoError(t, err)
 	res := qry.Exec(test.Context())
 	require.NoError(t, res.Err)
@@ -3191,7 +3193,7 @@ func TestNativeFloatHistogramRate(t *testing.T) {
 	engine := test.QueryEngine()
 
 	queryString := fmt.Sprintf("rate(%s[1m])", seriesName)
-	qry, err := engine.NewInstantQuery(test.Queryable(), nil, queryString, timestamp.Time(int64(5*time.Minute/time.Millisecond)))
+	qry, err := engine.NewInstantQuery(test.context, test.Queryable(), nil, queryString, timestamp.Time(int64(5*time.Minute/time.Millisecond)))
 	require.NoError(t, err)
 	res := qry.Exec(test.Context())
 	require.NoError(t, res.Err)
@@ -3255,7 +3257,7 @@ func TestNativeHistogram_HistogramCountAndSum(t *testing.T) {
 			require.NoError(t, app.Commit())
 
 			queryString := fmt.Sprintf("histogram_count(%s)", seriesName)
-			qry, err := engine.NewInstantQuery(test.Queryable(), nil, queryString, timestamp.Time(ts))
+			qry, err := engine.NewInstantQuery(test.context, test.Queryable(), nil, queryString, timestamp.Time(ts))
 			require.NoError(t, err)
 
 			res := qry.Exec(test.Context())
@@ -3273,7 +3275,7 @@ func TestNativeHistogram_HistogramCountAndSum(t *testing.T) {
 			}
 
 			queryString = fmt.Sprintf("histogram_sum(%s)", seriesName)
-			qry, err = engine.NewInstantQuery(test.Queryable(), nil, queryString, timestamp.Time(ts))
+			qry, err = engine.NewInstantQuery(test.context, test.Queryable(), nil, queryString, timestamp.Time(ts))
 			require.NoError(t, err)
 
 			res = qry.Exec(test.Context())
@@ -3509,7 +3511,7 @@ func TestNativeHistogram_HistogramQuantile(t *testing.T) {
 				for j, sc := range c.subCases {
 					t.Run(fmt.Sprintf("%d %s", j, sc.quantile), func(t *testing.T) {
 						queryString := fmt.Sprintf("histogram_quantile(%s, %s)", sc.quantile, seriesName)
-						qry, err := engine.NewInstantQuery(test.Queryable(), nil, queryString, timestamp.Time(ts))
+						qry, err := engine.NewInstantQuery(test.context, test.Queryable(), nil, queryString, timestamp.Time(ts))
 						require.NoError(t, err)
 
 						res := qry.Exec(test.Context())
@@ -3940,7 +3942,7 @@ func TestNativeHistogram_HistogramFraction(t *testing.T) {
 				for j, sc := range c.subCases {
 					t.Run(fmt.Sprintf("%d %s %s", j, sc.lower, sc.upper), func(t *testing.T) {
 						queryString := fmt.Sprintf("histogram_fraction(%s, %s, %s)", sc.lower, sc.upper, seriesName)
-						qry, err := engine.NewInstantQuery(test.Queryable(), nil, queryString, timestamp.Time(ts))
+						qry, err := engine.NewInstantQuery(test.context, test.Queryable(), nil, queryString, timestamp.Time(ts))
 						require.NoError(t, err)
 
 						res := qry.Exec(test.Context())
@@ -4077,7 +4079,7 @@ func TestNativeHistogram_Sum_Count_AddOperator(t *testing.T) {
 				require.NoError(t, app.Commit())
 
 				queryAndCheck := func(queryString string, exp Vector) {
-					qry, err := engine.NewInstantQuery(test.Queryable(), nil, queryString, timestamp.Time(ts))
+					qry, err := engine.NewInstantQuery(test.context, test.Queryable(), nil, queryString, timestamp.Time(ts))
 					require.NoError(t, err)
 
 					res := qry.Exec(test.Context())
@@ -4186,7 +4188,7 @@ metric 0 1 2
 			opts := &QueryOpts{
 				LookbackDelta: c.queryLookback,
 			}
-			qry, err := eng.NewInstantQuery(test.Queryable(), opts, query, c.ts)
+			qry, err := eng.NewInstantQuery(test.context, test.Queryable(), opts, query, c.ts)
 			require.NoError(t, err)
 
 			res := qry.Exec(test.Context())

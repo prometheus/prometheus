@@ -56,10 +56,11 @@ func TestDeriv(t *testing.T) {
 
 	require.NoError(t, a.Commit())
 
-	query, err := engine.NewInstantQuery(storage, nil, "deriv(foo[30m])", timestamp.Time(1493712846939))
+	ctx := context.Background()
+	query, err := engine.NewInstantQuery(ctx, storage, nil, "deriv(foo[30m])", timestamp.Time(1493712846939))
 	require.NoError(t, err)
 
-	result := query.Exec(context.Background())
+	result := query.Exec(ctx)
 	require.NoError(t, result.Err)
 
 	vec, _ := result.Vector()
