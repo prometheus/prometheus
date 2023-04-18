@@ -1296,6 +1296,16 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 	res := &RuleDiscovery{RuleGroups: make([]*RuleGroup, len(ruleGroups))}
 	typ := strings.ToLower(r.URL.Query().Get("type"))
 
+	// Parse the rule names into a comma separated list of rule names, then create a set.
+	rulesQuery := r.URL.Query().Get("rules")
+	ruleNamesSet := map[string]struct{}{}
+	if rulesQuery != "" {
+		names := strings.Split(rulesQuery, ",")
+		for _, rn := range names {
+			ruleNamesSet[strings.TrimSpace(rn)] = struct{}{}
+		}
+	}
+
 	if typ != "" && typ != "alert" && typ != "record" {
 		return invalidParamError(errors.Errorf("not supported value %q", typ), "type")
 	}
@@ -1313,14 +1323,20 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 			EvaluationTime: grp.GetEvaluationTime().Seconds(),
 			LastEvaluation: grp.GetLastEvaluation(),
 		}
-		for _, r := range grp.Rules() {
+		for _, rr := range grp.Rules() {
 			var enrichedRule Rule
 
-			lastError := ""
-			if r.LastError() != nil {
-				lastError = r.LastError().Error()
+			if len(ruleNamesSet) > 0 {
+				if _, ok := ruleNamesSet[rr.Name()]; !ok {
+					continue
+				}
 			}
-			switch rule := r.(type) {
+
+			lastError := ""
+			if rr.LastError() != nil {
+				lastError = rr.LastError().Error()
+			}
+			switch rule := rr.(type) {
 			case *rules.AlertingRule:
 				if !returnAlerts {
 					break
@@ -1358,11 +1374,16 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 				err := errors.Errorf("failed to assert type of rule '%v'", rule.Name())
 				return apiFuncResult{nil, &apiError{errorInternal, err}, nil, nil}
 			}
+
 			if enrichedRule != nil {
 				apiRuleGroup.Rules = append(apiRuleGroup.Rules, enrichedRule)
 			}
 		}
-		res.RuleGroups[i] = apiRuleGroup
+
+		// If the rule group response has no rules, skip it - this means we filtered all the rules of this group.
+		if len(apiRuleGroup.Rules) > 0 {
+			res.RuleGroups[i] = apiRuleGroup
+		}
 	}
 	return apiFuncResult{res, nil, nil, nil}
 }

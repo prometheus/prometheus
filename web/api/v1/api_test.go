@@ -1974,6 +1974,33 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			},
 		},
 		{
+			endpoint: api.rules,
+			query:    url.Values{"rules": []string{"test_metric4"}},
+			response: &RuleDiscovery{
+				RuleGroups: []*RuleGroup{
+					{
+						Name:     "grp",
+						File:     "/path/to/file",
+						Interval: 1,
+						Limit:    0,
+						Rules: []Rule{
+							AlertingRule{
+								State:       "inactive",
+								Name:        "test_metric4",
+								Query:       "up == 1",
+								Duration:    1,
+								Labels:      labels.Labels{},
+								Annotations: labels.Labels{},
+								Alerts:      []*Alert{},
+								Health:      "unknown",
+								Type:        "alerting",
+							},
+						},
+					},
+				},
+			},
+		},
+		{
 			endpoint: api.queryExemplars,
 			query: url.Values{
 				"query": []string{`test_metric3{foo="boo"} - test_metric4{foo="bar"}`},
