@@ -1100,10 +1100,10 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				ResultType: parser.ValueTypeMatrix,
 				Result: promql.Matrix{
 					promql.Series{
-						Points: []promql.Point{
-							{V: 0, T: timestamp.FromTime(start)},
-							{V: 1, T: timestamp.FromTime(start.Add(1 * time.Second))},
-							{V: 2, T: timestamp.FromTime(start.Add(2 * time.Second))},
+						Floats: []promql.FPoint{
+							{F: 0, T: timestamp.FromTime(start)},
+							{F: 1, T: timestamp.FromTime(start.Add(1 * time.Second))},
+							{F: 2, T: timestamp.FromTime(start.Add(2 * time.Second))},
 						},
 						// No Metric returned - use zero value for comparison.
 					},
@@ -3208,15 +3208,15 @@ func BenchmarkRespond(b *testing.B) {
 	b.ReportAllocs()
 	request, err := http.NewRequest(http.MethodGet, "/does-not-matter", nil)
 	require.NoError(b, err)
-	points := []promql.Point{}
+	points := []promql.FPoint{}
 	for i := 0; i < 10000; i++ {
-		points = append(points, promql.Point{V: float64(i * 1000000), T: int64(i)})
+		points = append(points, promql.FPoint{F: float64(i * 1000000), T: int64(i)})
 	}
 	response := &QueryData{
 		ResultType: parser.ValueTypeMatrix,
 		Result: promql.Matrix{
 			promql.Series{
-				Points: points,
+				Floats: points,
 				Metric: labels.EmptyLabels(),
 			},
 		},

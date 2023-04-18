@@ -96,7 +96,7 @@ type Iterator interface {
 	// timestamp equal or greater than t. If the current sample found by a
 	// previous `Next` or `Seek` operation already has this property, Seek
 	// has no effect. If a sample has been found, Seek returns the type of
-	// its value. Otherwise, it returns ValNone, after with the iterator is
+	// its value. Otherwise, it returns ValNone, after which the iterator is
 	// exhausted.
 	Seek(t int64) ValueType
 	// At returns the current timestamp/value pair if the value is a float.

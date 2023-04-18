@@ -158,7 +158,7 @@ func (ls Labels) MatchLabels(on bool, names ...string) Labels {
 		b.Del(MetricName)
 		b.Del(names...)
 	}
-	return b.Labels(EmptyLabels())
+	return b.Labels()
 }
 
 // Hash returns a hash value for the label set.
@@ -624,10 +624,9 @@ func contains(s []Label, n string) bool {
 	return false
 }
 
-// Labels returns the labels from the builder, adding them to res if non-nil.
-// Argument res can be the same as b.base, if caller wants to overwrite that slice.
+// Labels returns the labels from the builder.
 // If no modifications were made, the original labels are returned.
-func (b *Builder) Labels(res Labels) Labels {
+func (b *Builder) Labels() Labels {
 	if len(b.del) == 0 && len(b.add) == 0 {
 		return b.base
 	}
@@ -637,7 +636,7 @@ func (b *Builder) Labels(res Labels) Labels {
 	a, d := 0, 0
 
 	bufSize := len(b.base.data) + labelsSize(b.add)
-	buf := make([]byte, 0, bufSize) // TODO: see if we can re-use the buffer from res.
+	buf := make([]byte, 0, bufSize)
 	for pos := 0; pos < len(b.base.data); {
 		oldPos := pos
 		var lName string
@@ -812,7 +811,7 @@ func (b *ScratchBuilder) Labels() Labels {
 }
 
 // Write the newly-built Labels out to ls, reusing an internal buffer.
-// Callers must ensure that there are no other references to ls.
+// Callers must ensure that there are no other references to ls, or any strings fetched from it.
 func (b *ScratchBuilder) Overwrite(ls *Labels) {
 	size := labelsSize(b.add)
 	if size <= cap(b.overwriteBuffer) {

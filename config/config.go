@@ -173,16 +173,16 @@ var (
 
 	// DefaultQueueConfig is the default remote queue configuration.
 	DefaultQueueConfig = QueueConfig{
-		// With a maximum of 200 shards, assuming an average of 100ms remote write
-		// time and 500 samples per batch, we will be able to push 1M samples/s.
-		MaxShards:         200,
+		// With a maximum of 50 shards, assuming an average of 100ms remote write
+		// time and 2000 samples per batch, we will be able to push 1M samples/s.
+		MaxShards:         50,
 		MinShards:         1,
-		MaxSamplesPerSend: 500,
+		MaxSamplesPerSend: 2000,
 
-		// Each shard will have a max of 2500 samples pending in its channel, plus the pending
-		// samples that have been enqueued. Theoretically we should only ever have about 3000 samples
-		// per shard pending. At 200 shards that's 600k.
-		Capacity:          2500,
+		// Each shard will have a max of 10,000 samples pending in its channel, plus the pending
+		// samples that have been enqueued. Theoretically we should only ever have about 12,000 samples
+		// per shard pending. At 50 shards that's 600k.
+		Capacity:          10000,
 		BatchSendDeadline: model.Duration(5 * time.Second),
 
 		// Backoff times for retrying a batch of samples on recoverable errors.
@@ -194,7 +194,7 @@ var (
 	DefaultMetadataConfig = MetadataConfig{
 		Send:              true,
 		SendInterval:      model.Duration(1 * time.Minute),
-		MaxSamplesPerSend: 500,
+		MaxSamplesPerSend: 2000,
 	}
 
 	// DefaultRemoteReadConfig is the default remote read configuration.

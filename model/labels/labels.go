@@ -570,24 +570,18 @@ func contains(s []Label, n string) bool {
 	return false
 }
 
-// Labels returns the labels from the builder, adding them to res if non-nil.
-// Argument res can be the same as b.base, if caller wants to overwrite that slice.
+// Labels returns the labels from the builder.
 // If no modifications were made, the original labels are returned.
-func (b *Builder) Labels(res Labels) Labels {
+func (b *Builder) Labels() Labels {
 	if len(b.del) == 0 && len(b.add) == 0 {
 		return b.base
 	}
 
-	if res == nil {
-		// In the general case, labels are removed, modified or moved
-		// rather than added.
-		res = make(Labels, 0, len(b.base))
-	} else {
-		res = res[:0]
+	expectedSize := len(b.base) + len(b.add) - len(b.del)
+	if expectedSize < 1 {
+		expectedSize = 1
 	}
-	// Justification that res can be the same slice as base: in this loop
-	// we move forward through base, and either skip an element or assign
-	// it to res at its current position or an earlier position.
+	res := make(Labels, 0, expectedSize)
 	for _, l := range b.base {
 		if slices.Contains(b.del, l.Name) || contains(b.add, l.Name) {
 			continue
@@ -636,4 +630,10 @@ func (b *ScratchBuilder) Assign(ls Labels) {
 func (b *ScratchBuilder) Labels() Labels {
 	// Copy the slice, so the next use of ScratchBuilder doesn't overwrite.
 	return append([]Label{}, b.add...)
+}
+
+// Write the newly-built Labels out to ls.
+// Callers must ensure that there are no other references to ls, or any strings fetched from it.
+func (b *ScratchBuilder) Overwrite(ls *Labels) {
+	*ls = append((*ls)[:0], b.add...)
 }

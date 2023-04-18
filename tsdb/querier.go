@@ -171,7 +171,7 @@ func (q *blockChunkQuerier) Select(sortSeries bool, hints *storage.SelectHints, 
 	if sortSeries {
 		p = q.index.SortedPostings(p)
 	}
-	return newBlockChunkSeriesSet(q.blockID, q.index, q.chunks, q.tombstones, p, mint, maxt, disableTrimming)
+	return NewBlockChunkSeriesSet(q.blockID, q.index, q.chunks, q.tombstones, p, mint, maxt, disableTrimming)
 }
 
 // PostingsForMatchers assembles a single postings iterator against the index reader
@@ -387,7 +387,7 @@ func (s *seriesData) Labels() labels.Labels { return s.labels }
 
 // blockBaseSeriesSet allows to iterate over all series in the single block.
 // Iterated series are trimmed with given min and max time as well as tombstones.
-// See newBlockSeriesSet and newBlockChunkSeriesSet to use it for either sample or chunk iterating.
+// See newBlockSeriesSet and NewBlockChunkSeriesSet to use it for either sample or chunk iterating.
 type blockBaseSeriesSet struct {
 	blockID         ulid.ULID
 	p               index.Postings
@@ -873,7 +873,7 @@ type blockChunkSeriesSet struct {
 	blockBaseSeriesSet
 }
 
-func newBlockChunkSeriesSet(id ulid.ULID, i IndexReader, c ChunkReader, t tombstones.Reader, p index.Postings, mint, maxt int64, disableTrimming bool) storage.ChunkSeriesSet {
+func NewBlockChunkSeriesSet(id ulid.ULID, i IndexReader, c ChunkReader, t tombstones.Reader, p index.Postings, mint, maxt int64, disableTrimming bool) storage.ChunkSeriesSet {
 	return &blockChunkSeriesSet{
 		blockBaseSeriesSet{
 			blockID:         id,

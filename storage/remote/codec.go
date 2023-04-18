@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"sort"
 	"strings"
@@ -173,7 +174,7 @@ func FromQueryResult(sortSeries bool, res *prompb.QueryResult) storage.SeriesSet
 			return errSeriesSet{err: err}
 		}
 		lbls := labelProtosToLabels(ts.Labels)
-		series = append(series, &concreteSeries{labels: lbls, samples: ts.Samples})
+		series = append(series, &concreteSeries{labels: lbls, floats: ts.Samples, histograms: ts.Histograms})
 	}
 
 	if sortSeries {
@@ -359,8 +360,9 @@ func (c *concreteSeriesSet) Warnings() storage.Warnings { return nil }
 
 // concreteSeries implements storage.Series.
 type concreteSeries struct {
-	labels  labels.Labels
-	samples []prompb.Sample
+	labels     labels.Labels
+	floats     []prompb.Sample
+	histograms []prompb.Histogram
 }
 
 func (c *concreteSeries) Labels() labels.Labels {
@@ -372,84 +374,167 @@ func (c *concreteSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
 		csi.reset(c)
 		return csi
 	}
-	return newConcreteSeriersIterator(c)
+	return newConcreteSeriesIterator(c)
 }
 
 // concreteSeriesIterator implements storage.SeriesIterator.
 type concreteSeriesIterator struct {
-	cur    int
-	series *concreteSeries
+	floatsCur     int
+	histogramsCur int
+	curValType    chunkenc.ValueType
+	series        *concreteSeries
 }
 
-func newConcreteSeriersIterator(series *concreteSeries) chunkenc.Iterator {
+func newConcreteSeriesIterator(series *concreteSeries) chunkenc.Iterator {
 	return &concreteSeriesIterator{
-		cur:    -1,
-		series: series,
+		floatsCur:     -1,
+		histogramsCur: -1,
+		curValType:    chunkenc.ValNone,
+		series:        series,
 	}
 }
 
 func (c *concreteSeriesIterator) reset(series *concreteSeries) {
-	c.cur = -1
+	c.floatsCur = -1
+	c.histogramsCur = -1
+	c.curValType = chunkenc.ValNone
 	c.series = series
 }
 
 // Seek implements storage.SeriesIterator.
 func (c *concreteSeriesIterator) Seek(t int64) chunkenc.ValueType {
-	if c.cur == -1 {
-		c.cur = 0
+	if c.floatsCur == -1 {
+		c.floatsCur = 0
 	}
-	if c.cur >= len(c.series.samples) {
+	if c.histogramsCur == -1 {
+		c.histogramsCur = 0
+	}
+	if c.floatsCur >= len(c.series.floats) && c.histogramsCur >= len(c.series.histograms) {
 		return chunkenc.ValNone
 	}
+
 	// No-op check.
-	if s := c.series.samples[c.cur]; s.Timestamp >= t {
-		return chunkenc.ValFloat
+	if (c.curValType == chunkenc.ValFloat && c.series.floats[c.floatsCur].Timestamp >= t) ||
+		((c.curValType == chunkenc.ValHistogram || c.curValType == chunkenc.ValFloatHistogram) && c.series.histograms[c.histogramsCur].Timestamp >= t) {
+		return c.curValType
 	}
-	// Do binary search between current position and end.
-	c.cur += sort.Search(len(c.series.samples)-c.cur, func(n int) bool {
-		return c.series.samples[n+c.cur].Timestamp >= t
+
+	c.curValType = chunkenc.ValNone
+
+	// Binary search between current position and end for both float and histograms samples.
+	c.floatsCur += sort.Search(len(c.series.floats)-c.floatsCur, func(n int) bool {
+		return c.series.floats[n+c.floatsCur].Timestamp >= t
 	})
-	if c.cur < len(c.series.samples) {
-		return chunkenc.ValFloat
+	c.histogramsCur += sort.Search(len(c.series.histograms)-c.histogramsCur, func(n int) bool {
+		return c.series.histograms[n+c.histogramsCur].Timestamp >= t
+	})
+
+	if c.floatsCur < len(c.series.floats) && c.histogramsCur < len(c.series.histograms) {
+		// If float samples and histogram samples have overlapping timestamps prefer the float samples.
+		if c.series.floats[c.floatsCur].Timestamp <= c.series.histograms[c.histogramsCur].Timestamp {
+			c.curValType = chunkenc.ValFloat
+		} else {
+			c.curValType = getHistogramValType(&c.series.histograms[c.histogramsCur])
+		}
+		// When the timestamps do not overlap the cursor for the non-selected sample type has advanced too
+		// far; we decrement it back down here.
+		if c.series.floats[c.floatsCur].Timestamp != c.series.histograms[c.histogramsCur].Timestamp {
+			if c.curValType == chunkenc.ValFloat {
+				c.histogramsCur--
+			} else {
+				c.floatsCur--
+			}
+		}
+	} else if c.floatsCur < len(c.series.floats) {
+		c.curValType = chunkenc.ValFloat
+	} else if c.histogramsCur < len(c.series.histograms) {
+		c.curValType = getHistogramValType(&c.series.histograms[c.histogramsCur])
 	}
-	return chunkenc.ValNone
-	// TODO(beorn7): Add histogram support.
+
+	return c.curValType
+}
+
+func getHistogramValType(h *prompb.Histogram) chunkenc.ValueType {
+	if _, isInt := h.GetCount().(*prompb.Histogram_CountInt); isInt {
+		return chunkenc.ValHistogram
+	}
+	return chunkenc.ValFloatHistogram
 }
 
 // At implements chunkenc.Iterator.
 func (c *concreteSeriesIterator) At() (t int64, v float64) {
-	s := c.series.samples[c.cur]
+	if c.curValType != chunkenc.ValFloat {
+		panic("iterator is not on a float sample")
+	}
+	s := c.series.floats[c.floatsCur]
 	return s.Timestamp, s.Value
 }
 
-// AtHistogram always returns (0, nil) because there is no support for histogram
-// values yet.
-// TODO(beorn7): Fix that for histogram support in remote storage.
+// AtHistogram implements chunkenc.Iterator
 func (c *concreteSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
-	return 0, nil
+	if c.curValType != chunkenc.ValHistogram {
+		panic("iterator is not on an integer histogram sample")
+	}
+	h := c.series.histograms[c.histogramsCur]
+	return h.Timestamp, HistogramProtoToHistogram(h)
 }
 
-// AtFloatHistogram always returns (0, nil) because there is no support for histogram
-// values yet.
-// TODO(beorn7): Fix that for histogram support in remote storage.
+// AtFloatHistogram implements chunkenc.Iterator
 func (c *concreteSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
-	return 0, nil
+	switch c.curValType {
+	case chunkenc.ValHistogram:
+		fh := c.series.histograms[c.histogramsCur]
+		return fh.Timestamp, HistogramProtoToFloatHistogram(fh)
+	case chunkenc.ValFloatHistogram:
+		fh := c.series.histograms[c.histogramsCur]
+		return fh.Timestamp, FloatHistogramProtoToFloatHistogram(fh)
+	default:
+		panic("iterator is not on a histogram sample")
+	}
 }
 
 // AtT implements chunkenc.Iterator.
 func (c *concreteSeriesIterator) AtT() int64 {
-	s := c.series.samples[c.cur]
-	return s.Timestamp
+	if c.curValType == chunkenc.ValHistogram || c.curValType == chunkenc.ValFloatHistogram {
+		return c.series.histograms[c.histogramsCur].Timestamp
+	}
+	return c.series.floats[c.floatsCur].Timestamp
 }
+
+const noTS = int64(math.MaxInt64)
 
 // Next implements chunkenc.Iterator.
 func (c *concreteSeriesIterator) Next() chunkenc.ValueType {
-	c.cur++
-	if c.cur < len(c.series.samples) {
-		return chunkenc.ValFloat
+	peekFloatTS := noTS
+	if c.floatsCur+1 < len(c.series.floats) {
+		peekFloatTS = c.series.floats[c.floatsCur+1].Timestamp
 	}
-	return chunkenc.ValNone
-	// TODO(beorn7): Add histogram support.
+	peekHistTS := noTS
+	if c.histogramsCur+1 < len(c.series.histograms) {
+		peekHistTS = c.series.histograms[c.histogramsCur+1].Timestamp
+	}
+	c.curValType = chunkenc.ValNone
+
+	if peekFloatTS < peekHistTS {
+		c.floatsCur++
+		c.curValType = chunkenc.ValFloat
+	} else if peekHistTS < peekFloatTS {
+		c.histogramsCur++
+		c.curValType = chunkenc.ValHistogram
+	} else if peekFloatTS == noTS && peekHistTS == noTS {
+		// This only happens when the iterator is exhausted; we set the cursors off the end to prevent
+		// Seek() from returning anything afterwards.
+		c.floatsCur = len(c.series.floats)
+		c.histogramsCur = len(c.series.histograms)
+	} else {
+		// Prefer float samples to histogram samples if there's a conflict. We advance the cursor for histograms
+		// anyway otherwise the histogram sample will get selected on the next call to Next().
+		c.floatsCur++
+		c.histogramsCur++
+		c.curValType = chunkenc.ValFloat
+	}
+
+	return c.curValType
 }
 
 // Err implements chunkenc.Iterator.
@@ -557,10 +642,10 @@ func HistogramProtoToHistogram(hp prompb.Histogram) *histogram.Histogram {
 	}
 }
 
-// HistogramProtoToFloatHistogram extracts a (normal integer) Histogram from the
+// FloatHistogramProtoToFloatHistogram extracts a float Histogram from the
 // provided proto message to a Float Histogram. The caller has to make sure that
-// the proto message represents an float histogram and not a integer histogram.
-func HistogramProtoToFloatHistogram(hp prompb.Histogram) *histogram.FloatHistogram {
+// the proto message represents a float histogram and not an integer histogram.
+func FloatHistogramProtoToFloatHistogram(hp prompb.Histogram) *histogram.FloatHistogram {
 	return &histogram.FloatHistogram{
 		CounterResetHint: histogram.CounterResetHint(hp.ResetHint),
 		Schema:           hp.Schema,
@@ -575,6 +660,24 @@ func HistogramProtoToFloatHistogram(hp prompb.Histogram) *histogram.FloatHistogr
 	}
 }
 
+// HistogramProtoToFloatHistogram extracts and converts a (normal integer) histogram from the provided proto message
+// to a float histogram. The caller has to make sure that the proto message represents an integer histogram and not a
+// float histogram.
+func HistogramProtoToFloatHistogram(hp prompb.Histogram) *histogram.FloatHistogram {
+	return &histogram.FloatHistogram{
+		CounterResetHint: histogram.CounterResetHint(hp.ResetHint),
+		Schema:           hp.Schema,
+		ZeroThreshold:    hp.ZeroThreshold,
+		ZeroCount:        float64(hp.GetZeroCountInt()),
+		Count:            float64(hp.GetCountInt()),
+		Sum:              hp.Sum,
+		PositiveSpans:    spansProtoToSpans(hp.GetPositiveSpans()),
+		PositiveBuckets:  deltasToCounts(hp.GetPositiveDeltas()),
+		NegativeSpans:    spansProtoToSpans(hp.GetNegativeSpans()),
+		NegativeBuckets:  deltasToCounts(hp.GetNegativeDeltas()),
+	}
+}
+
 func spansProtoToSpans(s []prompb.BucketSpan) []histogram.Span {
 	spans := make([]histogram.Span, len(s))
 	for i := 0; i < len(s); i++ {
@@ -582,6 +685,16 @@ func spansProtoToSpans(s []prompb.BucketSpan) []histogram.Span {
 	}
 
 	return spans
+}
+
+func deltasToCounts(deltas []int64) []float64 {
+	counts := make([]float64, len(deltas))
+	var cur float64
+	for i, d := range deltas {
+		cur += float64(d)
+		counts[i] = cur
+	}
+	return counts
 }
 
 func HistogramToHistogramProto(timestamp int64, h *histogram.Histogram) prompb.Histogram {

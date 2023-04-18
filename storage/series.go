@@ -109,7 +109,7 @@ func (it *listSeriesIterator) Reset(samples Samples) {
 
 func (it *listSeriesIterator) At() (int64, float64) {
 	s := it.samples.Get(it.idx)
-	return s.T(), s.V()
+	return s.T(), s.F()
 }
 
 func (it *listSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
@@ -376,10 +376,17 @@ func (e errChunksIterator) Err() error      { return e.err }
 // ExpandSamples iterates over all samples in the iterator, buffering all in slice.
 // Optionally it takes samples constructor, useful when you want to compare sample slices with different
 // sample implementations. if nil, sample type from this package will be used.
-func ExpandSamples(iter chunkenc.Iterator, newSampleFn func(t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) tsdbutil.Sample) ([]tsdbutil.Sample, error) {
+func ExpandSamples(iter chunkenc.Iterator, newSampleFn func(t int64, f float64, h *histogram.Histogram, fh *histogram.FloatHistogram) tsdbutil.Sample) ([]tsdbutil.Sample, error) {
 	if newSampleFn == nil {
-		newSampleFn = func(t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) tsdbutil.Sample {
-			return sample{t, v, h, fh}
+		newSampleFn = func(t int64, f float64, h *histogram.Histogram, fh *histogram.FloatHistogram) tsdbutil.Sample {
+			switch {
+			case h != nil:
+				return hSample{t, h}
+			case fh != nil:
+				return fhSample{t, fh}
+			default:
+				return fSample{t, f}
+			}
 		}
 	}
 
@@ -389,12 +396,12 @@ func ExpandSamples(iter chunkenc.Iterator, newSampleFn func(t int64, v float64, 
 		case chunkenc.ValNone:
 			return result, iter.Err()
 		case chunkenc.ValFloat:
-			t, v := iter.At()
+			t, f := iter.At()
 			// NaNs can't be compared normally, so substitute for another value.
-			if math.IsNaN(v) {
-				v = -42
+			if math.IsNaN(f) {
+				f = -42
 			}
-			result = append(result, newSampleFn(t, v, nil, nil))
+			result = append(result, newSampleFn(t, f, nil, nil))
 		case chunkenc.ValHistogram:
 			t, h := iter.AtHistogram()
 			result = append(result, newSampleFn(t, 0, h, nil))

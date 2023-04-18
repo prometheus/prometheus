@@ -132,7 +132,7 @@ func createIdxChkReaders(t *testing.T, tc []seriesSamples) (IndexReader, ChunkRe
 			chunk := chunkenc.NewXORChunk()
 			app, _ := chunk.Appender()
 			for _, smpl := range chk {
-				app.Append(smpl.t, smpl.v)
+				app.Append(smpl.t, smpl.f)
 			}
 			chkReader[chunkRef] = chunk
 			chunkRef++
@@ -519,7 +519,7 @@ func TestBlockQuerier_AgainstHeadWithOpenChunks(t *testing.T) {
 			for _, s := range testData {
 				for _, chk := range s.chunks {
 					for _, sample := range chk {
-						_, err = app.Append(0, labels.FromMap(s.lset), sample.t, sample.v)
+						_, err = app.Append(0, labels.FromMap(s.lset), sample.t, sample.f)
 						require.NoError(t, err)
 					}
 				}
@@ -922,7 +922,7 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 					if tc.seekSuccess {
 						// After successful seek iterator is ready. Grab the value.
 						t, v := it.At()
-						r = append(r, sample{t: t, v: v})
+						r = append(r, sample{t: t, f: v})
 					}
 				}
 				expandedResult, err := storage.ExpandSamples(it, newSample)
@@ -1094,8 +1094,8 @@ func TestDeletedIterator(t *testing.T) {
 	act := make([]sample, 1000)
 	for i := 0; i < 1000; i++ {
 		act[i].t = int64(i)
-		act[i].v = rand.Float64()
-		app.Append(act[i].t, act[i].v)
+		act[i].f = rand.Float64()
+		app.Append(act[i].t, act[i].f)
 	}
 
 	cases := []struct {
@@ -1130,7 +1130,7 @@ func TestDeletedIterator(t *testing.T) {
 
 			ts, v := it.At()
 			require.Equal(t, act[i].t, ts)
-			require.Equal(t, act[i].v, v)
+			require.Equal(t, act[i].f, v)
 		}
 		// There has been an extra call to Next().
 		i++
@@ -1154,8 +1154,8 @@ func TestDeletedIterator_WithSeek(t *testing.T) {
 	act := make([]sample, 1000)
 	for i := 0; i < 1000; i++ {
 		act[i].t = int64(i)
-		act[i].v = float64(i)
-		app.Append(act[i].t, act[i].v)
+		act[i].f = float64(i)
+		app.Append(act[i].t, act[i].f)
 	}
 
 	cases := []struct {

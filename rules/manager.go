@@ -202,7 +202,8 @@ func EngineQueryFunc(engine *promql.Engine, q storage.Queryable) QueryFunc {
 			return v, nil
 		case promql.Scalar:
 			return promql.Vector{promql.Sample{
-				Point:  promql.Point{T: v.T, V: v.V},
+				T:      v.T,
+				F:      v.V,
 				Metric: labels.Labels{},
 			}}, nil
 		default:
@@ -256,7 +257,8 @@ type Group struct {
 	opts                 *ManagerOptions
 	mtx                  sync.Mutex
 	evaluationTime       time.Duration
-	lastEvaluation       time.Time
+	lastEvaluation       time.Time // Wall-clock time of most recent evaluation.
+	lastEvalTimestamp    time.Time // Time slot used for most recent evaluation.
 
 	shouldRestore bool
 
@@ -269,13 +271,19 @@ type Group struct {
 
 	metrics *Metrics
 
-	ruleGroupPostProcessFunc      RuleGroupPostProcessFunc
+	// Rule group evaluation iteration function,
+	// defaults to DefaultEvalIterationFunc.
+	evalIterationFunc GroupEvalIterationFunc
+
 	alignEvaluationTimeOnInterval bool
 }
 
-// This function will be used before each rule group evaluation if not nil.
-// Use this function type if the rule group post processing is needed.
-type RuleGroupPostProcessFunc func(g *Group, lastEvalTimestamp time.Time, log log.Logger) error
+// GroupEvalIterationFunc is used to implement and extend rule group
+// evaluation iteration logic. It is configured in Group.evalIterationFunc,
+// and periodically invoked at each group evaluation interval to
+// evaluate the rules in the group at that point in time.
+// DefaultEvalIterationFunc is the default implementation.
+type GroupEvalIterationFunc func(ctx context.Context, g *Group, evalTimestamp time.Time)
 
 type GroupOptions struct {
 	Name, File                    string
@@ -287,7 +295,7 @@ type GroupOptions struct {
 	Opts                          *ManagerOptions
 	EvaluationDelay               *time.Duration
 	done                          chan struct{}
-	RuleGroupPostProcessFunc      RuleGroupPostProcessFunc
+	EvalIterationFunc             GroupEvalIterationFunc
 	AlignEvaluationTimeOnInterval bool
 }
 
@@ -309,6 +317,11 @@ func NewGroup(o GroupOptions) *Group {
 	metrics.GroupSamples.WithLabelValues(key)
 	metrics.GroupInterval.WithLabelValues(key).Set(o.Interval.Seconds())
 
+	evalIterationFunc := o.EvalIterationFunc
+	if evalIterationFunc == nil {
+		evalIterationFunc = DefaultEvalIterationFunc
+	}
+
 	return &Group{
 		name:                          o.Name,
 		file:                          o.File,
@@ -325,7 +338,7 @@ func NewGroup(o GroupOptions) *Group {
 		terminated:                    make(chan struct{}),
 		logger:                        log.With(o.Opts.Logger, "file", o.File, "group", o.Name),
 		metrics:                       metrics,
-		ruleGroupPostProcessFunc:      o.RuleGroupPostProcessFunc,
+		evalIterationFunc:             evalIterationFunc,
 		alignEvaluationTimeOnInterval: o.AlignEvaluationTimeOnInterval,
 	}
 }
@@ -355,6 +368,8 @@ func (g *Group) Limit() int { return g.limit }
 // If it's empty or nil, then the owning user/tenant is considered to be the source tenant.
 func (g *Group) SourceTenants() []string { return g.sourceTenants }
 
+func (g *Group) Logger() log.Logger { return g.logger }
+
 func (g *Group) run(ctx context.Context) {
 	defer close(g.terminated)
 
@@ -372,18 +387,6 @@ func (g *Group) run(ctx context.Context) {
 			"name": g.Name(),
 		},
 	})
-
-	iter := func() {
-		g.metrics.IterationsScheduled.WithLabelValues(GroupKey(g.file, g.name)).Inc()
-
-		start := time.Now()
-		g.Eval(ctx, evalTimestamp)
-		timeSinceStart := time.Since(start)
-
-		g.metrics.IterationDuration.Observe(timeSinceStart.Seconds())
-		g.setEvaluationTime(timeSinceStart)
-		g.setLastEvaluation(start)
-	}
 
 	// The assumption here is that since the ticker was started after having
 	// waited for `evalTimestamp` to pass, the ticks will trigger soon
@@ -414,7 +417,7 @@ func (g *Group) run(ctx context.Context) {
 		}(time.Now())
 	}()
 
-	iter()
+	g.evalIterationFunc(ctx, g, evalTimestamp)
 	if g.shouldRestore {
 		// If we have to restore, we wait for another Eval to finish.
 		// The reason behind this is, during first eval (or before it)
@@ -430,7 +433,7 @@ func (g *Group) run(ctx context.Context) {
 				g.metrics.IterationsScheduled.WithLabelValues(GroupKey(g.file, g.name)).Add(float64(missed))
 			}
 			evalTimestamp = evalTimestamp.Add((missed + 1) * g.interval)
-			iter()
+			g.evalIterationFunc(ctx, g, evalTimestamp)
 		}
 
 		g.RestoreForState(time.Now())
@@ -453,21 +456,29 @@ func (g *Group) run(ctx context.Context) {
 				}
 				evalTimestamp = evalTimestamp.Add((missed + 1) * g.interval)
 
-				useRuleGroupPostProcessFunc(g, evalTimestamp.Add(-(missed+1)*g.interval))
-
-				iter()
+				g.evalIterationFunc(ctx, g, evalTimestamp)
 			}
 		}
 	}
 }
 
-func useRuleGroupPostProcessFunc(g *Group, lastEvalTimestamp time.Time) {
-	if g.ruleGroupPostProcessFunc != nil {
-		err := g.ruleGroupPostProcessFunc(g, lastEvalTimestamp, g.logger)
-		if err != nil {
-			level.Warn(g.logger).Log("msg", "ruleGroupPostProcessFunc failed", "err", err)
-		}
-	}
+// DefaultEvalIterationFunc is the default implementation of
+// GroupEvalIterationFunc that is periodically invoked to evaluate the rules
+// in a group at a given point in time and updates Group state and metrics
+// accordingly. Custom GroupEvalIterationFunc implementations are recommended
+// to invoke this function as well, to ensure correct Group state and metrics
+// are maintained.
+func DefaultEvalIterationFunc(ctx context.Context, g *Group, evalTimestamp time.Time) {
+	g.metrics.IterationsScheduled.WithLabelValues(GroupKey(g.file, g.name)).Inc()
+
+	start := time.Now()
+	g.Eval(ctx, evalTimestamp)
+	timeSinceStart := time.Since(start)
+
+	g.metrics.IterationDuration.Observe(timeSinceStart.Seconds())
+	g.setEvaluationTime(timeSinceStart)
+	g.setLastEvaluation(start)
+	g.setLastEvalTimestamp(evalTimestamp)
 }
 
 func (g *Group) stop() {
@@ -545,6 +556,20 @@ func (g *Group) setLastEvaluation(ts time.Time) {
 	g.mtx.Lock()
 	defer g.mtx.Unlock()
 	g.lastEvaluation = ts
+}
+
+// GetLastEvalTimestamp returns the timestamp of the last evaluation.
+func (g *Group) GetLastEvalTimestamp() time.Time {
+	g.mtx.Lock()
+	defer g.mtx.Unlock()
+	return g.lastEvalTimestamp
+}
+
+// setLastEvalTimestamp updates lastEvalTimestamp to the timestamp of the last evaluation.
+func (g *Group) setLastEvalTimestamp(ts time.Time) {
+	g.mtx.Lock()
+	defer g.mtx.Unlock()
+	g.lastEvalTimestamp = ts
 }
 
 // EvalTimestamp returns the immediately preceding consistently slotted evaluation time.
@@ -689,7 +714,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				if s.H != nil {
 					_, err = app.AppendHistogram(0, s.Metric, s.T, nil, s.H)
 				} else {
-					_, err = app.Append(0, s.Metric, s.T, s.V)
+					_, err = app.Append(0, s.Metric, s.T, s.F)
 				}
 
 				if err != nil {
@@ -1060,11 +1085,11 @@ func (m *Manager) Stop() {
 
 // Update the rule manager's state as the config requires. If
 // loading the new rules failed the old rule set is restored.
-func (m *Manager) Update(interval time.Duration, files []string, externalLabels labels.Labels, externalURL string, ruleGroupPostProcessFunc RuleGroupPostProcessFunc) error {
+func (m *Manager) Update(interval time.Duration, files []string, externalLabels labels.Labels, externalURL string, groupEvalIterationFunc GroupEvalIterationFunc) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
-	groups, errs := m.LoadGroups(interval, externalLabels, externalURL, ruleGroupPostProcessFunc, files...)
+	groups, errs := m.LoadGroups(interval, externalLabels, externalURL, groupEvalIterationFunc, files...)
 
 	if errs != nil {
 		for _, e := range errs {
@@ -1154,7 +1179,7 @@ func (FileLoader) Parse(query string) (parser.Expr, error) { return parser.Parse
 
 // LoadGroups reads groups from a list of files.
 func (m *Manager) LoadGroups(
-	interval time.Duration, externalLabels labels.Labels, externalURL string, ruleGroupPostProcessFunc RuleGroupPostProcessFunc, filenames ...string,
+	interval time.Duration, externalLabels labels.Labels, externalURL string, groupEvalIterationFunc GroupEvalIterationFunc, filenames ...string,
 ) (map[string]*Group, []error) {
 	groups := make(map[string]*Group)
 
@@ -1212,7 +1237,7 @@ func (m *Manager) LoadGroups(
 				Opts:                          m.opts,
 				EvaluationDelay:               (*time.Duration)(rg.EvaluationDelay),
 				done:                          m.done,
-				RuleGroupPostProcessFunc:      ruleGroupPostProcessFunc,
+				EvalIterationFunc:             groupEvalIterationFunc,
 				AlignEvaluationTimeOnInterval: rg.AlignEvaluationTimeOnInterval,
 			})
 		}
