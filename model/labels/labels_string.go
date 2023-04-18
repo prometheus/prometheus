@@ -56,8 +56,14 @@ func (ls labelSlice) Swap(i, j int)      { ls[i], ls[j] = ls[j], ls[i] }
 func (ls labelSlice) Less(i, j int) bool { return ls[i].Name < ls[j].Name }
 
 func decodeSize(data string, index int) (int, int) {
-	var size int
-	for shift := uint(0); ; shift += 7 {
+	// Fast-path for common case of a single byte, value 0..127.
+	b := data[index]
+	index++
+	if b < 0x80 {
+		return int(b), index
+	}
+	size := int(b & 0x7F)
+	for shift := uint(7); ; shift += 7 {
 		// Just panic if we go of the end of data, since all Labels strings are constructed internally and
 		// malformed data indicates a bug, or memory corruption.
 		b := data[index]
