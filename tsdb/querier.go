@@ -347,13 +347,15 @@ func labelValuesWithMatchers(r IndexReader, name string, matchers ...*labels.Mat
 			continue
 		}
 
-		for i := len(allValues) - 1; i >= 0; i-- {
-			if m.Matches(allValues[i]) {
-				continue
+		// re-use the allValues slice to avoid allocations
+		// this is safe because the iteration is always ahead of the append
+		filteredValues := allValues[:0]
+		for _, v := range allValues {
+			if m.Matches(v) {
+				filteredValues = append(filteredValues, v)
 			}
-
-			allValues = append(allValues[:i], allValues[i+1:]...)
 		}
+		allValues = filteredValues
 	}
 
 	valuesPostings := make([]index.Postings, len(allValues))
