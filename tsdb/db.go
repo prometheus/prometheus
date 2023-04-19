@@ -963,10 +963,11 @@ func (db *DB) ApplyConfig(conf *config.Config) error {
 	// Create WBL if it was not present and if OOO is enabled with WAL enabled.
 	var wblog *wlog.WL
 	var err error
-	if db.head.wbl != nil {
+	switch {
+	case db.head.wbl != nil:
 		// The existing WBL from the disk might have been replayed while OOO was disabled.
 		wblog = db.head.wbl
-	} else if !db.oooWasEnabled.Load() && oooTimeWindow > 0 && db.opts.WALSegmentSize >= 0 {
+	case !db.oooWasEnabled.Load() && oooTimeWindow > 0 && db.opts.WALSegmentSize >= 0:
 		segmentSize := wlog.DefaultSegmentSize
 		// Wal is set to a custom size.
 		if db.opts.WALSegmentSize > 0 {
@@ -1532,10 +1533,11 @@ func (db *DB) deleteBlocks(blocks map[ulid.ULID]*Block) error {
 		}
 
 		toDelete := filepath.Join(db.dir, ulid.String())
-		if _, err := os.Stat(toDelete); os.IsNotExist(err) {
+		switch _, err := os.Stat(toDelete); {
+		case os.IsNotExist(err):
 			// Noop.
 			continue
-		} else if err != nil {
+		case err != nil:
 			return errors.Wrapf(err, "stat dir %v", toDelete)
 		}
 

@@ -290,13 +290,14 @@ func mergeSamples(a, b []prompb.Sample) []prompb.Sample {
 	result := make([]prompb.Sample, 0, len(a)+len(b))
 	i, j := 0, 0
 	for i < len(a) && j < len(b) {
-		if a[i].Timestamp < b[j].Timestamp {
+		switch {
+		case a[i].Timestamp < b[j].Timestamp:
 			result = append(result, a[i])
 			i++
-		} else if a[i].Timestamp > b[j].Timestamp {
+		case a[i].Timestamp > b[j].Timestamp:
 			result = append(result, b[j])
 			j++
-		} else {
+		default:
 			result = append(result, a[i])
 			i++
 			j++

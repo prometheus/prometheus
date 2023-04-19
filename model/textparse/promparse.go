@@ -238,9 +238,10 @@ func (p *PromParser) Metric(l *labels.Labels) string {
 	return s
 }
 
-// Exemplar writes the exemplar of the current sample into the passed
-// exemplar. It returns if an exemplar exists.
-func (p *PromParser) Exemplar(e *exemplar.Exemplar) bool {
+// Exemplar implements the Parser interface. However, since the classic
+// Prometheus text format does not support exemplars, this implementation simply
+// returns false and does nothing else.
+func (p *PromParser) Exemplar(*exemplar.Exemplar) bool {
 	return false
 }
 

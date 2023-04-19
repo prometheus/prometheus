@@ -193,7 +193,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		}
 		for _, pathUpdate := range d.pathUpdates {
 			// Drain event channel in case the treecache leaks goroutines otherwise.
-			for range pathUpdate {
+			for range pathUpdate { // nolint:revive
 			}
 		}
 		d.conn.Close()

@@ -565,12 +565,11 @@ func newMergedPostings(p []Postings) (m *mergedPostings, nonEmpty bool) {
 
 	for _, it := range p {
 		// NOTE: mergedPostings struct requires the user to issue an initial Next.
-		if it.Next() {
+		switch {
+		case it.Next():
 			ph = append(ph, it)
-		} else {
-			if it.Err() != nil {
-				return &mergedPostings{err: it.Err()}, true
-			}
+		case it.Err() != nil:
+			return &mergedPostings{err: it.Err()}, true
 		}
 	}
 
@@ -704,16 +703,16 @@ func (rp *removedPostings) Next() bool {
 			return true
 		}
 
-		fcur, rcur := rp.full.At(), rp.remove.At()
-		if fcur < rcur {
+		switch fcur, rcur := rp.full.At(), rp.remove.At(); {
+		case fcur < rcur:
 			rp.cur = fcur
 			rp.fok = rp.full.Next()
 
 			return true
-		} else if rcur < fcur {
+		case rcur < fcur:
 			// Forward the remove postings to the right position.
 			rp.rok = rp.remove.Seek(fcur)
-		} else {
+		default:
 			// Skip the current posting.
 			rp.fok = rp.full.Next()
 		}
@@ -848,9 +847,10 @@ func (it *bigEndianPostings) Err() error {
 func FindIntersectingPostings(p Postings, candidates []Postings) (indexes []int, err error) {
 	h := make(postingsWithIndexHeap, 0, len(candidates))
 	for idx, it := range candidates {
-		if it.Next() {
+		switch {
+		case it.Next():
 			h = append(h, postingsWithIndex{index: idx, p: it})
-		} else if it.Err() != nil {
+		case it.Err() != nil:
 			return nil, it.Err()
 		}
 	}

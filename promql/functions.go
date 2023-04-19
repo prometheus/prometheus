@@ -11,6 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// nolint:revive // Many unsued function arguments in this file by design.
 package promql
 
 import (
@@ -803,12 +804,14 @@ func funcPi(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) V
 // === sgn(Vector parser.ValueTypeVector) Vector ===
 func funcSgn(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return simpleFunc(vals, enh, func(v float64) float64 {
-		if v < 0 {
+		switch {
+		case v < 0:
 			return -1
-		} else if v > 0 {
+		case v > 0:
 			return 1
+		default:
+			return v
 		}
-		return v
 	})
 }
 

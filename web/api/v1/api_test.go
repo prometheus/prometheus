@@ -2560,9 +2560,9 @@ type fakeDB struct {
 	err error
 }
 
-func (f *fakeDB) CleanTombstones() error                               { return f.err }
-func (f *fakeDB) Delete(mint, maxt int64, ms ...*labels.Matcher) error { return f.err }
-func (f *fakeDB) Snapshot(dir string, withHead bool) error             { return f.err }
+func (f *fakeDB) CleanTombstones() error                        { return f.err }
+func (f *fakeDB) Delete(int64, int64, ...*labels.Matcher) error { return f.err }
+func (f *fakeDB) Snapshot(string, bool) error                   { return f.err }
 func (f *fakeDB) Stats(statsByLabelName string) (_ *tsdb.Stats, retErr error) {
 	dbDir, err := os.MkdirTemp("", "tsdb-api-ready")
 	if err != nil {

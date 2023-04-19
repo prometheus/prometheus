@@ -24,4 +24,4 @@ import (
 //
 // The blank import above is actually what invokes the test of this package. If
 // the import succeeds (the code compiles), the test passed.
-func Test(t *testing.T) {}
+func Test(*testing.T) {}

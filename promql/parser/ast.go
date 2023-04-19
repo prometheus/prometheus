@@ -368,13 +368,14 @@ func Children(node Node) []Node {
 	case *AggregateExpr:
 		// While this does not look nice, it should avoid unnecessary allocations
 		// caused by slice resizing
-		if n.Expr == nil && n.Param == nil {
+		switch {
+		case n.Expr == nil && n.Param == nil:
 			return nil
-		} else if n.Expr == nil {
+		case n.Expr == nil:
 			return []Node{n.Param}
-		} else if n.Param == nil {
+		case n.Param == nil:
 			return []Node{n.Expr}
-		} else {
+		default:
 			return []Node{n.Expr, n.Param}
 		}
 	case *BinaryExpr:

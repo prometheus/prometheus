@@ -72,9 +72,11 @@ Loop:
 	if !startedOk {
 		t.Fatal("prometheus didn't start in the specified timeout")
 	}
-	if err := prom.Process.Kill(); err == nil {
+	switch err := prom.Process.Kill(); {
+	case err == nil:
 		t.Errorf("prometheus didn't shutdown gracefully after sending the Interrupt signal")
-	} else if stoppedErr != nil && stoppedErr.Error() != "signal: interrupt" { // TODO - find a better way to detect when the process didn't exit as expected!
+	case stoppedErr != nil && stoppedErr.Error() != "signal: interrupt":
+		// TODO: find a better way to detect when the process didn't exit as expected!
 		t.Errorf("prometheus exited with an unexpected error: %v", stoppedErr)
 	}
 }
