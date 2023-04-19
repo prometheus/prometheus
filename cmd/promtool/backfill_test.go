@@ -44,7 +44,7 @@ func sortSamples(samples []backfillSample) {
 	})
 }
 
-func queryAllSeries(t testing.TB, q storage.Querier, expectedMinTime, expectedMaxTime int64) []backfillSample {
+func queryAllSeries(t testing.TB, q storage.Querier, expectedMinTime, expectedMaxTime int64) []backfillSample { // nolint:revive
 	ss := q.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
 	samples := []backfillSample{}
 	for ss.Next() {

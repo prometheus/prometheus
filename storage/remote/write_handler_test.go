@@ -294,7 +294,7 @@ func (m *mockAppendable) AppendExemplar(_ storage.SeriesRef, l labels.Labels, e 
 	return 0, nil
 }
 
-func (m *mockAppendable) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+func (m *mockAppendable) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	if t < m.latestHistogram {
 		return 0, storage.ErrOutOfOrderSample
 	}

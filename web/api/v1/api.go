@@ -117,7 +117,7 @@ type RulesRetriever interface {
 
 type StatsRenderer func(context.Context, *stats.Statistics, string) stats.QueryStats
 
-func defaultStatsRenderer(ctx context.Context, s *stats.Statistics, param string) stats.QueryStats {
+func defaultStatsRenderer(_ context.Context, s *stats.Statistics, param string) stats.QueryStats {
 	if param != "" {
 		return stats.NewQueryStats(s)
 	}
@@ -177,8 +177,8 @@ type TSDBAdminStats interface {
 // QueryEngine defines the interface for the *promql.Engine, so it can be replaced, wrapped or mocked.
 type QueryEngine interface {
 	SetQueryLogger(l promql.QueryLogger)
-	NewInstantQuery(q storage.Queryable, opts *promql.QueryOpts, qs string, ts time.Time) (promql.Query, error)
-	NewRangeQuery(q storage.Queryable, opts *promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error)
+	NewInstantQuery(ctx context.Context, q storage.Queryable, opts *promql.QueryOpts, qs string, ts time.Time) (promql.Query, error)
+	NewRangeQuery(ctx context.Context, q storage.Queryable, opts *promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error)
 }
 
 // API can register a set of endpoints in a router and handle
@@ -392,7 +392,7 @@ func invalidParamError(err error, parameter string) apiFuncResult {
 	}, nil, nil}
 }
 
-func (api *API) options(r *http.Request) apiFuncResult {
+func (api *API) options(*http.Request) apiFuncResult {
 	return apiFuncResult{nil, nil, nil, nil}
 }
 
@@ -417,7 +417,7 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
-	qry, err := api.QueryEngine.NewInstantQuery(api.Queryable, opts, r.FormValue("query"), ts)
+	qry, err := api.QueryEngine.NewInstantQuery(ctx, api.Queryable, opts, r.FormValue("query"), ts)
 	if err != nil {
 		return invalidParamError(err, "query")
 	}
@@ -520,7 +520,7 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
-	qry, err := api.QueryEngine.NewRangeQuery(api.Queryable, opts, r.FormValue("query"), start, end, step)
+	qry, err := api.QueryEngine.NewRangeQuery(ctx, api.Queryable, opts, r.FormValue("query"), start, end, step)
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
@@ -989,12 +989,14 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 					ScrapeURL:        target.URL().String(),
 					GlobalURL:        globalURL.String(),
 					LastError: func() string {
-						if err == nil && lastErrStr == "" {
+						switch {
+						case err == nil && lastErrStr == "":
 							return ""
-						} else if err != nil {
+						case err != nil:
 							return errors.Wrapf(err, lastErrStr).Error()
+						default:
+							return lastErrStr
 						}
-						return lastErrStr
 					}(),
 					LastScrape:         target.LastScrape(),
 					LastScrapeDuration: target.LastScrapeDuration().Seconds(),
@@ -1565,7 +1567,7 @@ func (api *API) snapshot(r *http.Request) apiFuncResult {
 	}{name}, nil, nil, nil}
 }
 
-func (api *API) cleanTombstones(r *http.Request) apiFuncResult {
+func (api *API) cleanTombstones(*http.Request) apiFuncResult {
 	if !api.enableAdmin {
 		return apiFuncResult{nil, &apiError{errorUnavailable, errors.New("admin APIs disabled")}, nil, nil}
 	}
@@ -1764,7 +1766,7 @@ func marshalSeriesJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 	stream.WriteObjectEnd()
 }
 
-func marshalSeriesJSONIsEmpty(ptr unsafe.Pointer) bool {
+func marshalSeriesJSONIsEmpty(unsafe.Pointer) bool {
 	return false
 }
 
@@ -1817,7 +1819,7 @@ func marshalSampleJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 	stream.WriteObjectEnd()
 }
 
-func marshalSampleJSONIsEmpty(ptr unsafe.Pointer) bool {
+func marshalSampleJSONIsEmpty(unsafe.Pointer) bool {
 	return false
 }
 
@@ -1841,7 +1843,7 @@ func marshalHPointJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 	stream.WriteArrayEnd()
 }
 
-func marshalPointJSONIsEmpty(ptr unsafe.Pointer) bool {
+func marshalPointJSONIsEmpty(unsafe.Pointer) bool {
 	return false
 }
 
@@ -1878,6 +1880,6 @@ func marshalExemplarJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 	stream.WriteObjectEnd()
 }
 
-func marshalExemplarJSONEmpty(ptr unsafe.Pointer) bool {
+func marshalExemplarJSONEmpty(unsafe.Pointer) bool {
 	return false
 }

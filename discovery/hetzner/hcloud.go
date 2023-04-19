@@ -59,7 +59,7 @@ type hcloudDiscovery struct {
 }
 
 // newHcloudDiscovery returns a new hcloudDiscovery which periodically refreshes its targets.
-func newHcloudDiscovery(conf *SDConfig, logger log.Logger) (*hcloudDiscovery, error) {
+func newHcloudDiscovery(conf *SDConfig, _ log.Logger) (*hcloudDiscovery, error) {
 	d := &hcloudDiscovery{
 		port: conf.Port,
 	}

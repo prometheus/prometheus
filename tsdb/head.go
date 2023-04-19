@@ -574,7 +574,7 @@ const cardinalityCacheExpirationTime = time.Duration(30) * time.Second
 func (h *Head) Init(minValidTime int64) error {
 	h.minValidTime.Store(minValidTime)
 	defer func() {
-		h.postings.EnsureOrder()
+		h.postings.EnsureOrder(h.opts.WALReplayConcurrency)
 	}()
 	defer h.gc() // After loading the wal remove the obsolete data from the head.
 	defer func() {

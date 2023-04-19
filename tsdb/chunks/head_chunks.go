@@ -999,9 +999,10 @@ func (cdm *ChunkDiskMapper) DeleteCorrupted(originalErr error) error {
 	cdm.readPathMtx.RLock()
 	lastSeq := 0
 	for seg := range cdm.mmappedChunkFiles {
-		if seg >= cerr.FileIndex {
+		switch {
+		case seg >= cerr.FileIndex:
 			segs = append(segs, seg)
-		} else if seg > lastSeq {
+		case seg > lastSeq:
 			lastSeq = seg
 		}
 	}

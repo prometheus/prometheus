@@ -124,9 +124,10 @@ func (node *MatrixSelector) String() string {
 	// Copy the Vector selector before changing the offset
 	vecSelector := *node.VectorSelector.(*VectorSelector)
 	offset := ""
-	if vecSelector.OriginalOffset > time.Duration(0) {
+	switch {
+	case vecSelector.OriginalOffset > time.Duration(0):
 		offset = fmt.Sprintf(" offset %s", model.Duration(vecSelector.OriginalOffset))
-	} else if vecSelector.OriginalOffset < time.Duration(0) {
+	case vecSelector.OriginalOffset < time.Duration(0):
 		offset = fmt.Sprintf(" offset -%s", model.Duration(-vecSelector.OriginalOffset))
 	}
 	at := ""
@@ -163,9 +164,10 @@ func (node *SubqueryExpr) getSubqueryTimeSuffix() string {
 		step = model.Duration(node.Step).String()
 	}
 	offset := ""
-	if node.OriginalOffset > time.Duration(0) {
+	switch {
+	case node.OriginalOffset > time.Duration(0):
 		offset = fmt.Sprintf(" offset %s", model.Duration(node.OriginalOffset))
-	} else if node.OriginalOffset < time.Duration(0) {
+	case node.OriginalOffset < time.Duration(0):
 		offset = fmt.Sprintf(" offset -%s", model.Duration(-node.OriginalOffset))
 	}
 	at := ""
@@ -209,9 +211,10 @@ func (node *VectorSelector) String() string {
 		labelStrings = append(labelStrings, matcher.String())
 	}
 	offset := ""
-	if node.OriginalOffset > time.Duration(0) {
+	switch {
+	case node.OriginalOffset > time.Duration(0):
 		offset = fmt.Sprintf(" offset %s", model.Duration(node.OriginalOffset))
-	} else if node.OriginalOffset < time.Duration(0) {
+	case node.OriginalOffset < time.Duration(0):
 		offset = fmt.Sprintf(" offset -%s", model.Duration(-node.OriginalOffset))
 	}
 	at := ""

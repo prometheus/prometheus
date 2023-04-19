@@ -344,9 +344,10 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	}
 
 	if value.IsStaleNaN(v) {
-		if s.lastHistogramValue != nil {
+		switch {
+		case s.lastHistogramValue != nil:
 			return a.AppendHistogram(ref, lset, t, &histogram.Histogram{Sum: v}, nil)
-		} else if s.lastFloatHistogramValue != nil {
+		case s.lastFloatHistogramValue != nil:
 			return a.AppendHistogram(ref, lset, t, nil, &histogram.FloatHistogram{Sum: v})
 		}
 	}
@@ -552,9 +553,10 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 			return 0, err
 		}
 		if created {
-			if h != nil {
+			switch {
+			case h != nil:
 				s.lastHistogramValue = &histogram.Histogram{}
-			} else if fh != nil {
+			case fh != nil:
 				s.lastFloatHistogramValue = &histogram.FloatHistogram{}
 			}
 			a.series = append(a.series, record.RefSeries{
@@ -564,7 +566,8 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		}
 	}
 
-	if h != nil {
+	switch {
+	case h != nil:
 		s.Lock()
 		if err := s.appendableHistogram(t, h); err != nil {
 			s.Unlock()
@@ -581,7 +584,7 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 			H:   h,
 		})
 		a.histogramSeries = append(a.histogramSeries, s)
-	} else if fh != nil {
+	case fh != nil:
 		s.Lock()
 		if err := s.appendableFloatHistogram(t, fh); err != nil {
 			s.Unlock()
@@ -938,7 +941,10 @@ func (a *headAppender) Commit() (err error) {
 
 		var ok, chunkCreated bool
 
-		if err == nil && oooSample {
+		switch {
+		case err != nil:
+			// Do nothing here.
+		case oooSample:
 			// Sample is OOO and OOO handling is enabled
 			// and the delta is within the OOO tolerance.
 			var mmapRef chunks.ChunkDiskMapperRef
@@ -976,7 +982,7 @@ func (a *headAppender) Commit() (err error) {
 				// TODO(codesome): Add error reporting? It depends on addressing https://github.com/prometheus/prometheus/discussions/10305.
 				samplesAppended--
 			}
-		} else if err == nil {
+		default:
 			ok, chunkCreated = series.append(s.T, s.V, a.appendID, a.head.chunkDiskMapper, chunkRange)
 			if ok {
 				if s.T < inOrderMint {
@@ -1177,14 +1183,15 @@ func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID ui
 			app.RecodeHistogram(h, pBackwardInserts, nBackwardInserts)
 		}
 		// We have 3 cases here
-		// - !okToAppend -> We need to cut a new chunk.
+		// - !okToAppend or counterReset -> We need to cut a new chunk.
 		// - okToAppend but we have inserts → Existing chunk needs
 		//   recoding before we can append our histogram.
 		// - okToAppend and no inserts → Chunk is ready to support our histogram.
-		if !okToAppend || counterReset {
+		switch {
+		case !okToAppend || counterReset:
 			c = s.cutNewHeadChunk(t, chunkenc.EncHistogram, chunkDiskMapper, chunkRange)
 			chunkCreated = true
-		} else if len(pForwardInserts) > 0 || len(nForwardInserts) > 0 {
+		case len(pForwardInserts) > 0 || len(nForwardInserts) > 0:
 			// New buckets have appeared. We need to recode all
 			// prior histogram samples within the chunk before we
 			// can process this one.
@@ -1270,14 +1277,15 @@ func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, 
 			app.RecodeHistogramm(fh, pBackwardInserts, nBackwardInserts)
 		}
 		// We have 3 cases here
-		// - !okToAppend -> We need to cut a new chunk.
+		// - !okToAppend or counterReset -> We need to cut a new chunk.
 		// - okToAppend but we have inserts → Existing chunk needs
 		//   recoding before we can append our histogram.
 		// - okToAppend and no inserts → Chunk is ready to support our histogram.
-		if !okToAppend || counterReset {
+		switch {
+		case !okToAppend || counterReset:
 			c = s.cutNewHeadChunk(t, chunkenc.EncFloatHistogram, chunkDiskMapper, chunkRange)
 			chunkCreated = true
-		} else if len(pForwardInserts) > 0 || len(nForwardInserts) > 0 {
+		case len(pForwardInserts) > 0 || len(nForwardInserts) > 0:
 			// New buckets have appeared. We need to recode all
 			// prior histogram samples within the chunk before we
 			// can process this one.

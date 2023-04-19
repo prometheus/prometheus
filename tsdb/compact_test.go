@@ -441,7 +441,7 @@ func TestCompactionFailWillCleanUpTempDir(t *testing.T) {
 
 	tmpdir := t.TempDir()
 
-	require.Error(t, compactor.write(tmpdir, &BlockMeta{}, DefaultPopulateBlockFunc{}, erringBReader{}))
+	require.Error(t, compactor.write(tmpdir, &BlockMeta{}, DefaultBlockPopulator{}, erringBReader{}))
 	_, err = os.Stat(filepath.Join(tmpdir, BlockMeta{}.ULID.String()) + tmpForCreationBlockDirSuffix)
 	require.True(t, os.IsNotExist(err), "directory is not cleaned up")
 }
@@ -467,8 +467,8 @@ func (erringBReader) Size() int64                            { return 0 }
 
 type nopChunkWriter struct{}
 
-func (nopChunkWriter) WriteChunks(chunks ...chunks.Meta) error { return nil }
-func (nopChunkWriter) Close() error                            { return nil }
+func (nopChunkWriter) WriteChunks(...chunks.Meta) error { return nil }
+func (nopChunkWriter) Close() error                     { return nil }
 
 func samplesForRange(minTime, maxTime int64, maxSamplesPerChunk int) (ret [][]sample) {
 	var curr []sample
@@ -953,8 +953,8 @@ func TestCompaction_populateBlock(t *testing.T) {
 			}
 
 			iw := &mockIndexWriter{}
-			populateBlockFunc := DefaultPopulateBlockFunc{}
-			err = populateBlockFunc.PopulateBlock(c.ctx, c.metrics, c.logger, c.chunkPool, c.mergeFunc, blocks, meta, iw, nopChunkWriter{})
+			blockPopulator := DefaultBlockPopulator{}
+			err = blockPopulator.PopulateBlock(c.ctx, c.metrics, c.logger, c.chunkPool, c.mergeFunc, blocks, meta, iw, nopChunkWriter{})
 			if tc.expErr != nil {
 				require.Error(t, err)
 				require.Equal(t, tc.expErr.Error(), err.Error())

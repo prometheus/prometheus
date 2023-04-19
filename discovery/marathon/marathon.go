@@ -136,9 +136,10 @@ func NewDiscovery(conf SDConfig, logger log.Logger) (*Discovery, error) {
 		return nil, err
 	}
 
-	if len(conf.AuthToken) > 0 {
+	switch {
+	case len(conf.AuthToken) > 0:
 		rt, err = newAuthTokenRoundTripper(conf.AuthToken, rt)
-	} else if len(conf.AuthTokenFile) > 0 {
+	case len(conf.AuthTokenFile) > 0:
 		rt, err = newAuthTokenFileRoundTripper(conf.AuthTokenFile, rt)
 	}
 	if err != nil {

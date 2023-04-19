@@ -723,12 +723,11 @@ func (c *compactChunkIterator) Next() bool {
 			break
 		}
 
-		if next.MinTime == prev.MinTime &&
-			next.MaxTime == prev.MaxTime &&
-			bytes.Equal(next.Chunk.Bytes(), prev.Chunk.Bytes()) {
-			// 1:1 duplicates, skip it.
-		} else {
-			// We operate on same series, so labels does not matter here.
+		// Only do something if it is not a perfect duplicate.
+		if next.MinTime != prev.MinTime ||
+			next.MaxTime != prev.MaxTime ||
+			!bytes.Equal(next.Chunk.Bytes(), prev.Chunk.Bytes()) {
+			// We operate on same series, so labels do not matter here.
 			overlapping = append(overlapping, newChunkToSeriesDecoder(labels.EmptyLabels(), next))
 			if next.MaxTime > oMaxTime {
 				oMaxTime = next.MaxTime

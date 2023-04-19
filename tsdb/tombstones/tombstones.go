@@ -190,9 +190,10 @@ type Stone struct {
 
 func ReadTombstones(dir string) (Reader, int64, error) {
 	b, err := os.ReadFile(filepath.Join(dir, TombstonesFilename))
-	if os.IsNotExist(err) {
+	switch {
+	case os.IsNotExist(err):
 		return NewMemTombstones(), 0, nil
-	} else if err != nil {
+	case err != nil:
 		return nil, 0, err
 	}
 

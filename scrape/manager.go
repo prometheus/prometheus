@@ -288,10 +288,11 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 	// Cleanup and reload pool if the configuration has changed.
 	var failed bool
 	for name, sp := range m.scrapePools {
-		if cfg, ok := m.scrapeConfigs[name]; !ok {
+		switch cfg, ok := m.scrapeConfigs[name]; {
+		case !ok:
 			sp.stop()
 			delete(m.scrapePools, name)
-		} else if !reflect.DeepEqual(sp.config, cfg) {
+		case !reflect.DeepEqual(sp.config, cfg):
 			err := sp.reload(cfg)
 			if err != nil {
 				level.Error(m.logger).Log("msg", "error reloading scrape pool", "err", err, "scrape_pool", name)

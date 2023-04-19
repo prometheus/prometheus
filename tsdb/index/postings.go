@@ -224,7 +224,10 @@ func (p *MemPostings) All() Postings {
 
 // EnsureOrder ensures that all postings lists are sorted. After it returns all further
 // calls to add and addFor will insert new IDs in a sorted manner.
-func (p *MemPostings) EnsureOrder() {
+// Parameter numberOfConcurrentProcesses is used to specify the maximal number of
+// CPU cores used for this operation. If it is <= 0, GOMAXPROCS is used.
+// GOMAXPROCS was the default before introducing this parameter.
+func (p *MemPostings) EnsureOrder(numberOfConcurrentProcesses int) {
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
 
@@ -232,13 +235,16 @@ func (p *MemPostings) EnsureOrder() {
 		return
 	}
 
-	n := runtime.GOMAXPROCS(0)
+	concurrency := numberOfConcurrentProcesses
+	if concurrency <= 0 {
+		concurrency = runtime.GOMAXPROCS(0)
+	}
 	workc := make(chan *[][]storage.SeriesRef)
 
 	var wg sync.WaitGroup
-	wg.Add(n)
+	wg.Add(concurrency)
 
-	for i := 0; i < n; i++ {
+	for i := 0; i < concurrency; i++ {
 		go func() {
 			for job := range workc {
 				for _, l := range *job {
@@ -559,9 +565,10 @@ func newMergedPostings(p []Postings) (m *mergedPostings, nonEmpty bool) {
 
 	for _, it := range p {
 		// NOTE: mergedPostings struct requires the user to issue an initial Next.
-		if it.Next() {
+		switch {
+		case it.Next():
 			ph = append(ph, it)
-		} else if it.Err() != nil {
+		case it.Err() != nil:
 			return &mergedPostings{err: it.Err()}, true
 		}
 	}
@@ -695,9 +702,7 @@ func (rp *removedPostings) Next() bool {
 			rp.fok = rp.full.Next()
 			return true
 		}
-
-		fcur, rcur := rp.full.At(), rp.remove.At()
-		switch {
+		switch fcur, rcur := rp.full.At(), rp.remove.At(); {
 		case fcur < rcur:
 			rp.cur = fcur
 			rp.fok = rp.full.Next()
@@ -841,9 +846,10 @@ func (it *bigEndianPostings) Err() error {
 func FindIntersectingPostings(p Postings, candidates []Postings) (indexes []int, err error) {
 	h := make(postingsWithIndexHeap, 0, len(candidates))
 	for idx, it := range candidates {
-		if it.Next() {
+		switch {
+		case it.Next():
 			h = append(h, postingsWithIndex{index: idx, p: it})
-		} else if it.Err() != nil {
+		case it.Err() != nil:
 			return nil, it.Err()
 		}
 	}

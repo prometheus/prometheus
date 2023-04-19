@@ -503,9 +503,10 @@ func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 			// Replicate .Labels().IsEmpty() with a loop here to avoid generating garbage.
 			nonEmpty := false
 			t.LabelsRange(func(l labels.Label) { nonEmpty = true })
-			if nonEmpty {
+			switch {
+			case nonEmpty:
 				all = append(all, t)
-			} else if !t.discoveredLabels.IsEmpty() {
+			case !t.discoveredLabels.IsEmpty():
 				sp.droppedTargets = append(sp.droppedTargets, t)
 			}
 		}
@@ -946,9 +947,10 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 	count := len(c.series) + len(c.droppedSeries) + len(c.metadata)
 	c.metaMtx.Unlock()
 
-	if flushCache {
+	switch {
+	case flushCache:
 		c.successfulCount = count
-	} else if count > c.successfulCount*2+1000 {
+	case count > c.successfulCount*2+1000:
 		// If a target had varying labels in scrapes that ultimately failed,
 		// the caches would grow indefinitely. Force a flush when this happens.
 		// We use the heuristic that this is a doubling of the cache size

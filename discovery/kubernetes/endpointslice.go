@@ -190,7 +190,7 @@ func (e *EndpointSlice) Run(ctx context.Context, ch chan<- []*targetgroup.Group)
 	}
 
 	go func() {
-		for e.process(ctx, ch) {
+		for e.process(ctx, ch) { // nolint:revive
 		}
 	}()
 
