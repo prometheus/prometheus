@@ -450,6 +450,9 @@ func main() {
 	serverOnlyFlag(a, "storage.tsdb.retention.size", "Maximum number of bytes that can be stored for blocks. A unit is required, supported units: B, KB, MB, GB, TB, PB, EB. Ex: \"512MB\". Based on powers-of-2, so 1KB is 1024B.").
 		BytesVar(&cfg.tsdb.MaxBytes)
 
+	serverOnlyFlag(a, "storage.tsdb.retention.percentage", "Maximum percentage of the disk space that can be used to store blocks (prevails over storage.tsdb.retention.size).").
+		UintVar(&cfg.tsdb.MaxPercentage)
+
 	serverOnlyFlag(a, "storage.tsdb.no-lockfile", "Do not create lockfile in data directory.").
 		Default("false").BoolVar(&cfg.tsdb.NoLockfile)
 
@@ -714,9 +717,9 @@ func main() {
 	cfg.web.RoutePrefix = "/" + strings.Trim(cfg.web.RoutePrefix, "/")
 
 	if !agentMode {
-		if cfg.tsdb.RetentionDuration == 0 && cfg.tsdb.MaxBytes == 0 {
+		if cfg.tsdb.RetentionDuration == 0 && cfg.tsdb.MaxBytes == 0 && cfg.tsdb.MaxPercentage == 0 {
 			cfg.tsdb.RetentionDuration = defaultRetentionDuration
-			logger.Info("No time or size retention was set so using the default time retention", "duration", defaultRetentionDuration)
+			logger.Info("No time, size or percentage retention was set so using the default time retention", "duration", defaultRetentionDuration)
 		}
 
 		// Check for overflows. This limits our max retention to 100y.
@@ -727,6 +730,17 @@ func main() {
 			}
 			cfg.tsdb.RetentionDuration = y
 			logger.Warn("Time retention value is too high. Limiting to: " + y.String())
+		}
+
+		if cfg.tsdb.MaxPercentage > 100 {
+			cfg.tsdb.MaxPercentage = 100
+			logger.Warn("Percentage retention value is too high. Limiting to: 100%")
+		}
+		if cfg.tsdb.MaxPercentage > 0 {
+			if prom_runtime.FsSize(localStoragePath) == 0 {
+				fmt.Fprintln(os.Stderr, fmt.Errorf("unable to detect size of partition %s, please disable retention percentage (%d%%)", localStoragePath, cfg.tsdb.MaxPercentage))
+				os.Exit(2)
+			}
 		}
 
 		// Max block size settings.
@@ -892,6 +906,7 @@ func main() {
 	cfg.web.Context = ctxWeb
 	cfg.web.TSDBRetentionDuration = cfg.tsdb.RetentionDuration
 	cfg.web.TSDBMaxBytes = cfg.tsdb.MaxBytes
+	cfg.web.TSDBMaxPercentage = cfg.tsdb.MaxPercentage
 	cfg.web.TSDBDir = localStoragePath
 	cfg.web.LocalStorage = localStorage
 	cfg.web.Storage = fanoutStorage
@@ -1304,7 +1319,7 @@ func main() {
 					return fmt.Errorf("opening storage failed: %w", err)
 				}
 
-				switch fsType := prom_runtime.Statfs(localStoragePath); fsType {
+				switch fsType := prom_runtime.FsType(localStoragePath); fsType {
 				case "NFS_SUPER_MAGIC":
 					logger.Warn("This filesystem is not supported and may lead to data corruption and data loss. Please carefully read https://prometheus.io/docs/prometheus/latest/storage/ to learn more about supported filesystems.", "fs_type", fsType)
 				default:
@@ -1316,6 +1331,7 @@ func main() {
 					"MinBlockDuration", cfg.tsdb.MinBlockDuration,
 					"MaxBlockDuration", cfg.tsdb.MaxBlockDuration,
 					"MaxBytes", cfg.tsdb.MaxBytes,
+					"MaxPercentage", cfg.tsdb.MaxPercentage,
 					"NoLockfile", cfg.tsdb.NoLockfile,
 					"RetentionDuration", cfg.tsdb.RetentionDuration,
 					"WALSegmentSize", cfg.tsdb.WALSegmentSize,
@@ -1360,7 +1376,7 @@ func main() {
 					return fmt.Errorf("opening storage failed: %w", err)
 				}
 
-				switch fsType := prom_runtime.Statfs(localStoragePath); fsType {
+				switch fsType := prom_runtime.FsType(localStoragePath); fsType {
 				case "NFS_SUPER_MAGIC":
 					logger.Warn(fsType, "msg", "This filesystem is not supported and may lead to data corruption and data loss. Please carefully read https://prometheus.io/docs/prometheus/latest/storage/ to learn more about supported filesystems.")
 				default:
@@ -1861,6 +1877,7 @@ type tsdbOptions struct {
 	MaxBlockChunkSegmentSize       units.Base2Bytes
 	RetentionDuration              model.Duration
 	MaxBytes                       units.Base2Bytes
+	MaxPercentage                  uint
 	NoLockfile                     bool
 	WALCompressionType             compression.Type
 	HeadChunksWriteQueueSize       int
@@ -1885,6 +1902,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		MaxBlockChunkSegmentSize:       int64(opts.MaxBlockChunkSegmentSize),
 		RetentionDuration:              int64(time.Duration(opts.RetentionDuration) / time.Millisecond),
 		MaxBytes:                       int64(opts.MaxBytes),
+		MaxPercentage:                  opts.MaxPercentage,
 		NoLockfile:                     opts.NoLockfile,
 		WALCompression:                 opts.WALCompressionType,
 		HeadChunksWriteQueueSize:       opts.HeadChunksWriteQueueSize,
