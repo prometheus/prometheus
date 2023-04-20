@@ -875,7 +875,7 @@ func (it *histogramIterator) Next() ValueType {
 		it.err = err
 		return ValNone
 	}
-	it.tDelta = it.tDelta + tDod
+	it.tDelta += tDod
 	it.t += it.tDelta
 
 	cntDod, err := readVarbitInt(&it.br)
@@ -883,7 +883,7 @@ func (it *histogramIterator) Next() ValueType {
 		it.err = err
 		return ValNone
 	}
-	it.cntDelta = it.cntDelta + cntDod
+	it.cntDelta += cntDod
 	it.cnt = uint64(int64(it.cnt) + it.cntDelta)
 
 	zcntDod, err := readVarbitInt(&it.br)
@@ -891,7 +891,7 @@ func (it *histogramIterator) Next() ValueType {
 		it.err = err
 		return ValNone
 	}
-	it.zCntDelta = it.zCntDelta + zcntDod
+	it.zCntDelta += zcntDod
 	it.zCnt = uint64(int64(it.zCnt) + it.zCntDelta)
 
 	ok := it.readSum()

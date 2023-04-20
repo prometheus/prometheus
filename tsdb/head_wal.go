@@ -300,7 +300,7 @@ Outer:
 						unknownRefs.Inc()
 						continue
 					}
-					h.tombstones.AddInterval(storage.SeriesRef(s.Ref), itv)
+					h.tombstones.AddInterval(s.Ref, itv)
 				}
 			}
 			tstonesPool.Put(v)
@@ -383,7 +383,7 @@ Outer:
 			floatHistogramsPool.Put(v)
 		case []record.RefMetadata:
 			for _, m := range v {
-				s := h.series.getByID(chunks.HeadSeriesRef(m.Ref))
+				s := h.series.getByID(m.Ref)
 				if s == nil {
 					unknownMetadataRefs.Inc()
 					continue

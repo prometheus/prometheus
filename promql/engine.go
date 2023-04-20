@@ -783,7 +783,6 @@ func (ng *Engine) findMinMaxTime(s *parser.EvalStmt) (int64, int64) {
 				maxTimestamp = end
 			}
 			evalRange = 0
-
 		case *parser.MatrixSelector:
 			evalRange = n.Range
 		}
@@ -816,20 +815,20 @@ func (ng *Engine) getTimeRangesForSelector(s *parser.EvalStmt, n *parser.VectorS
 	} else {
 		offsetMilliseconds := durationMilliseconds(subqOffset)
 		start = start - offsetMilliseconds - durationMilliseconds(subqRange)
-		end = end - offsetMilliseconds
+		end -= offsetMilliseconds
 	}
 
 	if evalRange == 0 {
-		start = start - durationMilliseconds(s.LookbackDelta)
+		start -= durationMilliseconds(s.LookbackDelta)
 	} else {
 		// For all matrix queries we want to ensure that we have (end-start) + range selected
 		// this way we have `range` data before the start time
-		start = start - durationMilliseconds(evalRange)
+		start -= durationMilliseconds(evalRange)
 	}
 
 	offsetMilliseconds := durationMilliseconds(n.OriginalOffset)
-	start = start - offsetMilliseconds
-	end = end - offsetMilliseconds
+	start -= offsetMilliseconds
+	end -= offsetMilliseconds
 
 	return start, end
 }
@@ -1745,7 +1744,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		res, ws := newEv.eval(e.Expr)
 		ev.currentSamples = newEv.currentSamples
 		ev.samplesStats.UpdatePeakFromSubquery(newEv.samplesStats)
-		for ts, step := ev.startTimestamp, -1; ts <= ev.endTimestamp; ts = ts + ev.interval {
+		for ts, step := ev.startTimestamp, -1; ts <= ev.endTimestamp; ts += ev.interval {
 			step++
 			ev.samplesStats.IncrementSamplesAtStep(step, newEv.samplesStats.TotalSamples)
 		}
@@ -1767,7 +1766,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 			if len(mat[i].Floats)+len(mat[i].Histograms) != 1 {
 				panic(fmt.Errorf("unexpected number of samples"))
 			}
-			for ts := ev.startTimestamp + ev.interval; ts <= ev.endTimestamp; ts = ts + ev.interval {
+			for ts := ev.startTimestamp + ev.interval; ts <= ev.endTimestamp; ts += ev.interval {
 				if len(mat[i].Floats) > 0 {
 					mat[i].Floats = append(mat[i].Floats, FPoint{
 						T: ts,
@@ -2695,7 +2694,7 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 			aggr.floatValue = float64(aggr.groupCount)
 
 		case parser.STDVAR:
-			aggr.floatValue = aggr.floatValue / float64(aggr.groupCount)
+			aggr.floatValue /= float64(aggr.groupCount)
 
 		case parser.STDDEV:
 			aggr.floatValue = math.Sqrt(aggr.floatValue / float64(aggr.groupCount))

@@ -967,7 +967,6 @@ func (m *mergedStringIter) Next() bool {
 	if (!m.aok && !m.bok) || (m.Err() != nil) {
 		return false
 	}
-
 	switch {
 	case !m.aok:
 		m.cur = m.b.At()

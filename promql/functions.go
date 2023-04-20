@@ -880,10 +880,10 @@ func linearRegression(samples []FPoint, interceptTime int64) (slope, intercept f
 		}
 		return 0, initY
 	}
-	sumX = sumX + cX
-	sumY = sumY + cY
-	sumXY = sumXY + cXY
-	sumX2 = sumX2 + cX2
+	sumX += cX
+	sumY += cY
+	sumXY += cXY
+	sumX2 += cX2
 
 	covXY := sumXY - sumX*sumY/n
 	varX := sumX2 - sumX*sumX/n

@@ -785,7 +785,7 @@ func (it *floatHistogramIterator) Next() ValueType {
 		it.err = err
 		return ValNone
 	}
-	it.tDelta = it.tDelta + tDod
+	it.tDelta += tDod
 	it.t += it.tDelta
 
 	if ok := it.readXor(&it.cnt.value, &it.cnt.leading, &it.cnt.trailing); !ok {

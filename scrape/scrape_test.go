@@ -322,7 +322,7 @@ func TestScrapePoolReloadPreserveRelabeledIntervalTimeout(t *testing.T) {
 		ScrapeTimeout:  model.Duration(2 * time.Second),
 	}
 	newLoop := func(opts scrapeLoopOptions) loop {
-		l := &testLoop{interval: time.Duration(opts.interval), timeout: time.Duration(opts.timeout)}
+		l := &testLoop{interval: opts.interval, timeout: opts.timeout}
 		l.startFunc = func(interval, timeout time.Duration, errc chan<- error) {
 			require.Equal(t, 5*time.Second, interval, "Unexpected scrape interval")
 			require.Equal(t, 3*time.Second, timeout, "Unexpected scrape timeout")
@@ -546,7 +546,7 @@ func TestScrapePoolRaces(t *testing.T) {
 	require.Equal(t, expectedDropped, len(dropped), "Invalid number of dropped targets")
 
 	for i := 0; i < 20; i++ {
-		time.Sleep(time.Duration(10 * time.Millisecond))
+		time.Sleep(10 * time.Millisecond)
 		sp.reload(newConfig())
 	}
 	sp.stop()
@@ -1201,7 +1201,6 @@ func TestScrapeLoopRunCreatesStaleMarkersOnParseFailure(t *testing.T) {
 	// Succeed once, several failures, then stop.
 	scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
 		numScrapes++
-
 		switch numScrapes {
 		case 1:
 			w.Write([]byte("metric_a 42\n"))
@@ -1286,7 +1285,6 @@ func TestScrapeLoopCache(t *testing.T) {
 		}
 
 		numScrapes++
-
 		switch numScrapes {
 		case 1:
 			w.Write([]byte("metric_a 42\nmetric_b 43\n"))

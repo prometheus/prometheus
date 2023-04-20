@@ -184,11 +184,11 @@ func (c *Client) buildCommand(q *prompb.Query) (string, error) {
 }
 
 func escapeSingleQuotes(str string) string {
-	return strings.Replace(str, `'`, `\'`, -1)
+	return strings.ReplaceAll(str, `'`, `\'`)
 }
 
 func escapeSlashes(str string) string {
-	return strings.Replace(str, `/`, `\/`, -1)
+	return strings.ReplaceAll(str, `/`, `\/`)
 }
 
 func mergeResult(labelsToSeries map[string]*prompb.TimeSeries, results []influx.Result) error {

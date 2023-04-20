@@ -1076,7 +1076,7 @@ func TestWALSegmentSizeOptions(t *testing.T) {
 
 			dbDir := db.Dir()
 			require.NoError(t, db.Close())
-			testFunc(dbDir, int(opts.WALSegmentSize))
+			testFunc(dbDir, opts.WALSegmentSize)
 		})
 	}
 }
@@ -2996,7 +2996,7 @@ func TestCompactHead(t *testing.T) {
 		series = seriesSet.At().Iterator(series)
 		for series.Next() == chunkenc.ValFloat {
 			time, val := series.At()
-			actSamples = append(actSamples, sample{int64(time), val, nil, nil})
+			actSamples = append(actSamples, sample{time, val, nil, nil})
 		}
 		require.NoError(t, series.Err())
 	}

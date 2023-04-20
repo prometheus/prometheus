@@ -249,7 +249,6 @@ func (d *Discovery) refreshData(ctx context.Context) ([]*targetgroup.Group, erro
 				if detailedIP.Address != ip.String() {
 					continue
 				}
-
 				switch {
 				case detailedIP.Public && publicIPv4 == "":
 					publicIPv4 = detailedIP.Address

@@ -39,7 +39,7 @@ func getLimits(resource int, unit string) string {
 	if err != nil {
 		panic("syscall.Getrlimit failed: " + err.Error())
 	}
-	return fmt.Sprintf("(soft=%s, hard=%s)", limitToString(uint64(rlimit.Cur), unit), limitToString(uint64(rlimit.Max), unit))
+	return fmt.Sprintf("(soft=%s, hard=%s)", limitToString(rlimit.Cur, unit), limitToString(rlimit.Max, unit))
 }
 
 // FdLimits returns the soft and hard limits for file descriptors.

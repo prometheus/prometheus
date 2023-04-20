@@ -254,7 +254,7 @@ func (txr *txRing) add(appendID uint64) {
 	if txr.txIDCount == len(txr.txIDs) {
 		// Ring buffer is full, expand by doubling.
 		newRing := make([]uint64, txr.txIDCount*2)
-		idx := copy(newRing[:], txr.txIDs[txr.txIDFirst:])
+		idx := copy(newRing, txr.txIDs[txr.txIDFirst:])
 		copy(newRing[idx:], txr.txIDs[:txr.txIDFirst])
 		txr.txIDs = newRing
 		txr.txIDFirst = 0

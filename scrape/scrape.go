@@ -641,7 +641,7 @@ func verifyLabelLimits(lset labels.Labels, limits *labelLimits) error {
 	met := lset.Get(labels.MetricName)
 	if limits.labelLimit > 0 {
 		nbLabels := lset.Len()
-		if nbLabels > int(limits.labelLimit) {
+		if nbLabels > limits.labelLimit {
 			return fmt.Errorf("label_limit exceeded (metric: %.50s, number of labels: %d, limit: %d)", met, nbLabels, limits.labelLimit)
 		}
 	}
@@ -653,14 +653,14 @@ func verifyLabelLimits(lset labels.Labels, limits *labelLimits) error {
 	return lset.Validate(func(l labels.Label) error {
 		if limits.labelNameLengthLimit > 0 {
 			nameLength := len(l.Name)
-			if nameLength > int(limits.labelNameLengthLimit) {
+			if nameLength > limits.labelNameLengthLimit {
 				return fmt.Errorf("label_name_length_limit exceeded (metric: %.50s, label name: %.50s, length: %d, limit: %d)", met, l.Name, nameLength, limits.labelNameLengthLimit)
 			}
 		}
 
 		if limits.labelValueLengthLimit > 0 {
 			valueLength := len(l.Value)
-			if valueLength > int(limits.labelValueLengthLimit) {
+			if valueLength > limits.labelValueLengthLimit {
 				return fmt.Errorf("label_value_length_limit exceeded (metric: %.50s, label name: %.50s, value: %.50q, length: %d, limit: %d)", met, l.Name, l.Value, valueLength, limits.labelValueLengthLimit)
 			}
 		}

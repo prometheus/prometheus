@@ -429,7 +429,6 @@ func (c *concreteSeriesIterator) Seek(t int64) chunkenc.ValueType {
 	c.histogramsCur += sort.Search(len(c.series.histograms)-c.histogramsCur, func(n int) bool {
 		return c.series.histograms[n+c.histogramsCur].Timestamp >= t
 	})
-
 	switch {
 	case c.floatsCur < len(c.series.floats) && c.histogramsCur < len(c.series.histograms):
 		// If float samples and histogram samples have overlapping timestamps prefer the float samples.
@@ -452,7 +451,6 @@ func (c *concreteSeriesIterator) Seek(t int64) chunkenc.ValueType {
 	case c.histogramsCur < len(c.series.histograms):
 		c.curValType = getHistogramValType(&c.series.histograms[c.histogramsCur])
 	}
-
 	return c.curValType
 }
 
@@ -516,7 +514,6 @@ func (c *concreteSeriesIterator) Next() chunkenc.ValueType {
 		peekHistTS = c.series.histograms[c.histogramsCur+1].Timestamp
 	}
 	c.curValType = chunkenc.ValNone
-
 	switch {
 	case peekFloatTS < peekHistTS:
 		c.floatsCur++
@@ -536,7 +533,6 @@ func (c *concreteSeriesIterator) Next() chunkenc.ValueType {
 		c.histogramsCur++
 		c.curValType = chunkenc.ValFloat
 	}
-
 	return c.curValType
 }
 

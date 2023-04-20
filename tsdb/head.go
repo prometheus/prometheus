@@ -1453,7 +1453,7 @@ func (h *Head) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
 		}
 	}
 	for _, s := range stones {
-		h.tombstones.AddInterval(storage.SeriesRef(s.Ref), s.Intervals[0])
+		h.tombstones.AddInterval(s.Ref, s.Intervals[0])
 	}
 
 	return nil

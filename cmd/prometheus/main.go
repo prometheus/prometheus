@@ -491,7 +491,7 @@ func main() {
 		if cfgFile.StorageConfig.ExemplarsConfig == nil {
 			cfgFile.StorageConfig.ExemplarsConfig = &config.DefaultExemplarsConfig
 		}
-		cfg.tsdb.MaxExemplars = int64(cfgFile.StorageConfig.ExemplarsConfig.MaxExemplars)
+		cfg.tsdb.MaxExemplars = cfgFile.StorageConfig.ExemplarsConfig.MaxExemplars
 	}
 	if cfgFile.StorageConfig.TSDBConfig != nil {
 		cfg.tsdb.OutOfOrderTimeWindow = cfgFile.StorageConfig.TSDBConfig.OutOfOrderTimeWindow

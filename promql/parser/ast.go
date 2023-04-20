@@ -349,7 +349,7 @@ func (f inspector) Visit(node Node, path []Node) (Visitor, error) {
 // for all the non-nil children of node, recursively.
 func Inspect(node Node, f inspector) {
 	//nolint: errcheck
-	Walk(inspector(f), node, nil)
+	Walk(f, node, nil)
 }
 
 // Children returns a list of all child nodes of a syntax tree node.

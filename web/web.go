@@ -719,9 +719,9 @@ func (h *Handler) runtimeInfo() (api_v1.RuntimeInfo, error) {
 	}
 	if h.options.TSDBMaxBytes != 0 {
 		if status.StorageRetention != "" {
-			status.StorageRetention = status.StorageRetention + " or "
+			status.StorageRetention += " or "
 		}
-		status.StorageRetention = status.StorageRetention + h.options.TSDBMaxBytes.String()
+		status.StorageRetention += h.options.TSDBMaxBytes.String()
 	}
 
 	metrics, err := h.gatherer.Gather()

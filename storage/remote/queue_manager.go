@@ -609,7 +609,7 @@ outer:
 
 			t.metrics.enqueueRetriesTotal.Inc()
 			time.Sleep(time.Duration(backoff))
-			backoff = backoff * 2
+			backoff *= 2
 			// It is reasonable to use t.cfg.MaxBackoff here, as if we have hit
 			// the full backoff we are likely waiting for external resources.
 			if backoff > t.cfg.MaxBackoff {
@@ -660,7 +660,7 @@ outer:
 
 			t.metrics.enqueueRetriesTotal.Inc()
 			time.Sleep(time.Duration(backoff))
-			backoff = backoff * 2
+			backoff *= 2
 			if backoff > t.cfg.MaxBackoff {
 				backoff = t.cfg.MaxBackoff
 			}
@@ -707,7 +707,7 @@ outer:
 
 			t.metrics.enqueueRetriesTotal.Inc()
 			time.Sleep(time.Duration(backoff))
-			backoff = backoff * 2
+			backoff *= 2
 			if backoff > t.cfg.MaxBackoff {
 				backoff = t.cfg.MaxBackoff
 			}
@@ -754,7 +754,7 @@ outer:
 
 			t.metrics.enqueueRetriesTotal.Inc()
 			time.Sleep(time.Duration(backoff))
-			backoff = backoff * 2
+			backoff *= 2
 			if backoff > t.cfg.MaxBackoff {
 				backoff = t.cfg.MaxBackoff
 			}

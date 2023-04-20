@@ -2850,7 +2850,7 @@ func TestRespondSuccess(t *testing.T) {
 	}
 
 	var res response
-	if err = json.Unmarshal([]byte(body), &res); err != nil {
+	if err = json.Unmarshal(body, &res); err != nil {
 		t.Fatalf("Error unmarshaling JSON body: %s", err)
 	}
 
@@ -2886,7 +2886,7 @@ func TestRespondError(t *testing.T) {
 	}
 
 	var res response
-	if err = json.Unmarshal([]byte(body), &res); err != nil {
+	if err = json.Unmarshal(body, &res); err != nil {
 		t.Fatalf("Error unmarshaling JSON body: %s", err)
 	}
 

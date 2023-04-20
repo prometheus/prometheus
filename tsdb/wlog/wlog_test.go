@@ -428,10 +428,10 @@ func TestLogPartialWrite(t *testing.T) {
 			faultyRecord: pageSize / (recordHeaderSize + len(record)),
 		},
 		// TODO the current implementation suffers this:
-		//"partial write when logging a record overlapping two pages": {
+		// "partial write when logging a record overlapping two pages": {
 		//	numRecords:   (pageSize / (recordHeaderSize + len(record))) + 10,
 		//	faultyRecord: pageSize/(recordHeaderSize+len(record)) + 1,
-		//},
+		// },
 	}
 
 	for testName, testData := range tests {

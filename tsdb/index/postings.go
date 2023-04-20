@@ -702,7 +702,6 @@ func (rp *removedPostings) Next() bool {
 			rp.fok = rp.full.Next()
 			return true
 		}
-
 		switch fcur, rcur := rp.full.At(), rp.remove.At(); {
 		case fcur < rcur:
 			rp.cur = fcur

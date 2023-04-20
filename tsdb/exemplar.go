@@ -151,7 +151,7 @@ func (ce *CircularExemplarStorage) Querier(_ context.Context) (storage.ExemplarQ
 func (ce *CircularExemplarStorage) Select(start, end int64, matchers ...[]*labels.Matcher) ([]exemplar.QueryResult, error) {
 	ret := make([]exemplar.QueryResult, 0)
 
-	if len(ce.exemplars) <= 0 {
+	if len(ce.exemplars) == 0 {
 		return ret, nil
 	}
 
@@ -219,7 +219,7 @@ func (ce *CircularExemplarStorage) ValidateExemplar(l labels.Labels, e exemplar.
 // Not thread safe. The append parameters tells us whether this is an external validation, or internal
 // as a result of an AddExemplar call, in which case we should update any relevant metrics.
 func (ce *CircularExemplarStorage) validateExemplar(key []byte, e exemplar.Exemplar, append bool) error {
-	if len(ce.exemplars) <= 0 {
+	if len(ce.exemplars) == 0 {
 		return storage.ErrExemplarsDisabled
 	}
 
@@ -334,7 +334,7 @@ func (ce *CircularExemplarStorage) migrate(entry *circularBufferEntry) {
 }
 
 func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemplar) error {
-	if len(ce.exemplars) <= 0 {
+	if len(ce.exemplars) == 0 {
 		return storage.ErrExemplarsDisabled
 	}
 

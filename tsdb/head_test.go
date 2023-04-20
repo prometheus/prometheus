@@ -3007,7 +3007,7 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 			hists = tsdbutil.GenerateTestHistograms(numHistograms)
 		}
 		for _, h := range hists {
-			h.Count = h.Count * 2
+			h.Count *= 2
 			h.NegativeSpans = h.PositiveSpans
 			h.NegativeBuckets = h.PositiveBuckets
 			_, err := app.AppendHistogram(0, s1, ts, h, nil)
@@ -3030,7 +3030,7 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 			hists = tsdbutil.GenerateTestFloatHistograms(numHistograms)
 		}
 		for _, h := range hists {
-			h.Count = h.Count * 2
+			h.Count *= 2
 			h.NegativeSpans = h.PositiveSpans
 			h.NegativeBuckets = h.PositiveBuckets
 			_, err := app.AppendHistogram(0, s1, ts, nil, h)
@@ -3071,26 +3071,26 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 		}
 		for _, h := range hists {
 			ts++
-			h.Count = h.Count * 2
+			h.Count *= 2
 			h.NegativeSpans = h.PositiveSpans
 			h.NegativeBuckets = h.PositiveBuckets
-			_, err := app.AppendHistogram(0, s2, int64(ts), h, nil)
+			_, err := app.AppendHistogram(0, s2, ts, h, nil)
 			require.NoError(t, err)
 			eh := h.Copy()
 			if !gauge && ts > 30 && (ts-10)%20 == 1 {
 				// Need "unknown" hint after float sample.
 				eh.CounterResetHint = histogram.UnknownCounterReset
 			}
-			exp[k2] = append(exp[k2], sample{t: int64(ts), h: eh})
+			exp[k2] = append(exp[k2], sample{t: ts, h: eh})
 			if ts%20 == 0 {
 				require.NoError(t, app.Commit())
 				app = head.Appender(context.Background())
 				// Add some float.
 				for i := 0; i < 10; i++ {
 					ts++
-					_, err := app.Append(0, s2, int64(ts), float64(ts))
+					_, err := app.Append(0, s2, ts, float64(ts))
 					require.NoError(t, err)
-					exp[k2] = append(exp[k2], sample{t: int64(ts), f: float64(ts)})
+					exp[k2] = append(exp[k2], sample{t: ts, f: float64(ts)})
 				}
 				require.NoError(t, app.Commit())
 				app = head.Appender(context.Background())
@@ -3108,26 +3108,26 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 		}
 		for _, h := range hists {
 			ts++
-			h.Count = h.Count * 2
+			h.Count *= 2
 			h.NegativeSpans = h.PositiveSpans
 			h.NegativeBuckets = h.PositiveBuckets
-			_, err := app.AppendHistogram(0, s2, int64(ts), nil, h)
+			_, err := app.AppendHistogram(0, s2, ts, nil, h)
 			require.NoError(t, err)
 			eh := h.Copy()
 			if !gauge && ts > 30 && (ts-10)%20 == 1 {
 				// Need "unknown" hint after float sample.
 				eh.CounterResetHint = histogram.UnknownCounterReset
 			}
-			exp[k2] = append(exp[k2], sample{t: int64(ts), fh: eh})
+			exp[k2] = append(exp[k2], sample{t: ts, fh: eh})
 			if ts%20 == 0 {
 				require.NoError(t, app.Commit())
 				app = head.Appender(context.Background())
 				// Add some float.
 				for i := 0; i < 10; i++ {
 					ts++
-					_, err := app.Append(0, s2, int64(ts), float64(ts))
+					_, err := app.Append(0, s2, ts, float64(ts))
 					require.NoError(t, err)
-					exp[k2] = append(exp[k2], sample{t: int64(ts), f: float64(ts)})
+					exp[k2] = append(exp[k2], sample{t: ts, f: float64(ts)})
 				}
 				require.NoError(t, app.Commit())
 				app = head.Appender(context.Background())
@@ -4497,7 +4497,6 @@ func TestHistogramValidation(t *testing.T) {
 			default:
 				require.NoError(t, err)
 			}
-
 			switch err := ValidateFloatHistogram(tc.h.ToFloat()); {
 			case tc.errMsgFloat != "":
 				require.ErrorContains(t, err, tc.errMsgFloat)
