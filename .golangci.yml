@@ -24,9 +24,6 @@ issues:
     - linters:
         - gocritic
       text: "appendAssign"
-    - linters:
-        - gocritic
-      text: "singleCaseSwitch"
     - path: _test.go
       linters:
         - errcheck
