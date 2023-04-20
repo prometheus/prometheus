@@ -1309,7 +1309,7 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 	fSet := queryFormToSet(r.Form["file[]"])
 
 	ruleGroups := api.rulesRetriever(r.Context()).RuleGroups()
-	res := &RuleDiscovery{RuleGroups: make([]*RuleGroup, len(ruleGroups))}
+	res := &RuleDiscovery{RuleGroups: make([]*RuleGroup, 0, len(ruleGroups))}
 	typ := strings.ToLower(r.URL.Query().Get("type"))
 
 	if typ != "" && typ != "alert" && typ != "record" {
@@ -1319,7 +1319,8 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 	returnAlerts := typ == "" || typ == "alert"
 	returnRecording := typ == "" || typ == "record"
 
-	for i, grp := range ruleGroups {
+	rgs := make([]*RuleGroup, 0, len(ruleGroups))
+	for _, grp := range ruleGroups {
 		if len(rgSet) > 0 {
 			if _, ok := rgSet[grp.Name()]; !ok {
 				continue
@@ -1400,9 +1401,10 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 
 		// If the rule group response has no rules, skip it - this means we filtered all the rules of this group.
 		if len(apiRuleGroup.Rules) > 0 {
-			res.RuleGroups[i] = apiRuleGroup
+			rgs = append(rgs, apiRuleGroup)
 		}
 	}
+	res.RuleGroups = rgs
 	return apiFuncResult{res, nil, nil, nil}
 }
 

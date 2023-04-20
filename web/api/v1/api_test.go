@@ -2003,7 +2003,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 		{
 			endpoint: api.rules,
 			query:    url.Values{"rule_group[]": []string{"respond-with-nothing"}},
-			response: &RuleDiscovery{RuleGroups: []*RuleGroup{nil}},
+			response: &RuleDiscovery{RuleGroups: []*RuleGroup{}},
 		},
 		{
 			endpoint: api.rules,
