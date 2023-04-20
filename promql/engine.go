@@ -757,8 +757,7 @@ func subqueryTimes(path []parser.Node) (time.Duration, time.Duration, *int64) {
 		ts                    int64 = math.MaxInt64
 	)
 	for _, node := range path {
-		switch n := node.(type) {
-		case *parser.SubqueryExpr:
+		if n, ok := node.(*parser.SubqueryExpr); ok {
 			subqOffset += n.OriginalOffset
 			subqRange += n.Range
 			if n.Timestamp != nil {
@@ -847,8 +846,7 @@ func (ng *Engine) getTimeRangesForSelector(s *parser.EvalStmt, n *parser.VectorS
 func (ng *Engine) getLastSubqueryInterval(path []parser.Node) time.Duration {
 	var interval time.Duration
 	for _, node := range path {
-		switch n := node.(type) {
-		case *parser.SubqueryExpr:
+		if n, ok := node.(*parser.SubqueryExpr); ok {
 			interval = n.Step
 			if n.Step == 0 {
 				interval = time.Duration(ng.noStepSubqueryIntervalFn(durationMilliseconds(n.Range))) * time.Millisecond
@@ -914,8 +912,7 @@ func extractGroupsFromPath(p []parser.Node) (bool, []string) {
 	if len(p) == 0 {
 		return false, nil
 	}
-	switch n := p[len(p)-1].(type) {
-	case *parser.AggregateExpr:
+	if n, ok := p[len(p)-1].(*parser.AggregateExpr); ok {
 		return !n.Without, n.Grouping
 	}
 	return false, nil
