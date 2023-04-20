@@ -21,6 +21,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 )
 
 func TestSampleRing(t *testing.T) {
@@ -178,6 +179,28 @@ func TestBufferedSeriesIteratorNoBadAt(t *testing.T) {
 	it := NewBufferIterator(m, 60)
 	it.Next()
 	it.Next()
+}
+
+func TestBufferedSeriesIteratorMixedHistograms(t *testing.T) {
+	histograms := tsdbutil.GenerateTestHistograms(2)
+
+	it := NewBufferIterator(NewListSeriesIterator(samples{
+		fhSample{t: 1, fh: histograms[0].ToFloat()},
+		hSample{t: 2, h: histograms[1]},
+	}), 2)
+
+	require.Equal(t, chunkenc.ValNone, it.Seek(3))
+	require.NoError(t, it.Err())
+
+	buf := it.Buffer()
+
+	require.Equal(t, chunkenc.ValFloatHistogram, buf.Next())
+	_, fh := buf.AtFloatHistogram()
+	require.Equal(t, histograms[0].ToFloat(), fh)
+
+	require.Equal(t, chunkenc.ValHistogram, buf.Next())
+	_, fh = buf.AtFloatHistogram()
+	require.Equal(t, histograms[1].ToFloat(), fh)
 }
 
 func BenchmarkBufferedSeriesIterator(b *testing.B) {
