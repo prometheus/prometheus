@@ -30,6 +30,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -1707,6 +1708,95 @@ func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 	require.Equal(t, 9, total)
 	require.Equal(t, 6, added)
 	require.Equal(t, 0, seriesAdded)
+}
+
+func TestScrapeLoop_HistogramBucketLimit(t *testing.T) {
+	resApp := &collectResultAppender{}
+	app := &bucketLimitAppender{Appender: resApp, limit: 2}
+
+	sl := newScrapeLoop(context.Background(),
+		nil, nil, nil,
+		func(l labels.Labels) labels.Labels {
+			if l.Has("deleteme") {
+				return labels.EmptyLabels()
+			}
+			return l
+		},
+		nopMutator,
+		func(ctx context.Context) storage.Appender { return app },
+		nil,
+		0,
+		true,
+		app.limit, 0,
+		nil,
+		0,
+		0,
+		false,
+		false,
+		nil,
+		false,
+	)
+
+	metric := dto.Metric{}
+	err := targetScrapeNativeHistogramBucketLimit.Write(&metric)
+	require.NoError(t, err)
+	beforeMetricValue := metric.GetCounter().GetValue()
+
+	nativeHistogram := prometheus.NewHistogram(prometheus.HistogramOpts{
+		Namespace:                      "testing",
+		Name:                           "example_native_histogram",
+		Help:                           "This is used for testing",
+		ConstLabels:                    map[string]string{"some": "value"},
+		NativeHistogramBucketFactor:    1.1, // 10% increase from bucket to bucket
+		NativeHistogramMaxBucketNumber: 100, // intentionally higher than the limit we'll use in the scraper
+	})
+	registry := prometheus.NewRegistry()
+	registry.Register(nativeHistogram)
+	nativeHistogram.Observe(1.0)
+	nativeHistogram.Observe(10.0) // in different bucket since > 1*1.1
+
+	gathered, err := registry.Gather()
+	require.NoError(t, err)
+	require.NotEmpty(t, gathered)
+
+	histogramMetricFamily := gathered[0]
+	msg, err := testutil.MetricFamilyToProtobuf(histogramMetricFamily)
+	require.NoError(t, err)
+
+	now := time.Now()
+	total, added, seriesAdded, err := sl.append(app, msg, "application/vnd.google.protobuf", now)
+	require.NoError(t, err)
+	require.Equal(t, 1, total)
+	require.Equal(t, 1, added)
+	require.Equal(t, 1, seriesAdded)
+
+	err = targetScrapeNativeHistogramBucketLimit.Write(&metric)
+	require.NoError(t, err)
+	metricValue := metric.GetCounter().GetValue()
+	require.Equal(t, beforeMetricValue, metricValue)
+	beforeMetricValue = metricValue
+
+	nativeHistogram.Observe(100.0) // in different bucket since > 10*1.1
+
+	gathered, err = registry.Gather()
+	require.NoError(t, err)
+	require.NotEmpty(t, gathered)
+
+	histogramMetricFamily = gathered[0]
+	msg, err = testutil.MetricFamilyToProtobuf(histogramMetricFamily)
+	require.NoError(t, err)
+
+	now = time.Now()
+	total, added, seriesAdded, err = sl.append(app, msg, "application/vnd.google.protobuf", now)
+	require.NoError(t, err)
+	require.Equal(t, 1, total)
+	require.Equal(t, 1, added)
+	require.Equal(t, 0, seriesAdded)
+
+	err = targetScrapeNativeHistogramBucketLimit.Write(&metric)
+	require.NoError(t, err)
+	metricValue = metric.GetCounter().GetValue()
+	require.Equal(t, beforeMetricValue+1, metricValue)
 }
 
 func TestScrapeLoop_ChangingMetricString(t *testing.T) {
