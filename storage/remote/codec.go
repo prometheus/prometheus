@@ -624,10 +624,11 @@ func exemplarProtoToExemplar(ep prompb.Exemplar) exemplar.Exemplar {
 }
 
 // HistogramProtoToHistogram extracts a (normal integer) Histogram from the
-// provided proto message.
+// provided proto message. The caller has to make sure that the proto message
+// represents an integer histogram and not a float histogram, or it panics.
 func HistogramProtoToHistogram(hp prompb.Histogram) *histogram.Histogram {
 	if hp.IsFloatHistogram() {
-		panic("don't call HistogramProtoToHistogram on a float histogram")
+		panic("HistogramProtoToHistogram called with a float histogram")
 	}
 	return &histogram.Histogram{
 		CounterResetHint: histogram.CounterResetHint(hp.ResetHint),
@@ -644,10 +645,12 @@ func HistogramProtoToHistogram(hp prompb.Histogram) *histogram.Histogram {
 }
 
 // FloatHistogramProtoToFloatHistogram extracts a float Histogram from the
-// provided proto message to a Float Histogram.
+// provided proto message to a Float Histogram. The caller has to make sure that
+// the proto message represents a float histogram and not an integer histogram,
+// or it panics.
 func FloatHistogramProtoToFloatHistogram(hp prompb.Histogram) *histogram.FloatHistogram {
 	if !hp.IsFloatHistogram() {
-		panic("don't call FloatHistogramProtoToFloatHistogram on an integer histogram")
+		panic("FloatHistogramProtoToFloatHistogram called with an integer histogram")
 	}
 	return &histogram.FloatHistogram{
 		CounterResetHint: histogram.CounterResetHint(hp.ResetHint),
@@ -664,10 +667,11 @@ func FloatHistogramProtoToFloatHistogram(hp prompb.Histogram) *histogram.FloatHi
 }
 
 // HistogramProtoToFloatHistogram extracts and converts a (normal integer) histogram from the provided proto message
-// to a float histogram.
+// to a float histogram. The caller has to make sure that the proto message represents an integer histogram and not a
+// float histogram, or it panics.
 func HistogramProtoToFloatHistogram(hp prompb.Histogram) *histogram.FloatHistogram {
 	if hp.IsFloatHistogram() {
-		panic("don't call HistogramProtoToFloatHistogram on a float histogram")
+		panic("HistogramProtoToFloatHistogram called with a float histogram")
 	}
 	return &histogram.FloatHistogram{
 		CounterResetHint: histogram.CounterResetHint(hp.ResetHint),
