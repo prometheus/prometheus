@@ -489,6 +489,9 @@ type ScrapeConfig struct {
 	// More than this label value length post metric-relabeling will cause the
 	// scrape to fail.
 	LabelValueLengthLimit uint `yaml:"label_value_length_limit,omitempty"`
+	// More than this many buckets in a native histogram will cause the scrape to
+	// fail.
+	NativeHistogramBucketLimit uint `yaml:"bucket_limit,omitempty"`
 
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.

@@ -27,6 +27,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/model/textparse"
@@ -349,6 +350,31 @@ func (app *timeLimitAppender) Append(ref storage.SeriesRef, lset labels.Labels, 
 	}
 
 	ref, err := app.Appender.Append(ref, lset, t, v)
+	if err != nil {
+		return 0, err
+	}
+	return ref, nil
+}
+
+// bucketLimitAppender limits the number of total appended samples in a batch.
+type bucketLimitAppender struct {
+	storage.Appender
+
+	limit int
+}
+
+func (app *bucketLimitAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	if h != nil {
+		if len(h.PositiveBuckets)+len(h.NegativeBuckets) > app.limit {
+			return 0, storage.ErrHistogramBucketLimit
+		}
+	}
+	if fh != nil {
+		if len(fh.PositiveBuckets)+len(fh.NegativeBuckets) > app.limit {
+			return 0, storage.ErrHistogramBucketLimit
+		}
+	}
+	ref, err := app.Appender.AppendHistogram(ref, lset, t, h, fh)
 	if err != nil {
 		return 0, err
 	}
