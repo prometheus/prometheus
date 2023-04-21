@@ -455,10 +455,10 @@ func (c *concreteSeriesIterator) Seek(t int64) chunkenc.ValueType {
 }
 
 func getHistogramValType(h *prompb.Histogram) chunkenc.ValueType {
-	if _, isInt := h.GetCount().(*prompb.Histogram_CountInt); isInt {
-		return chunkenc.ValHistogram
+	if h.IsFloatHistogram() {
+		return chunkenc.ValFloatHistogram
 	}
-	return chunkenc.ValFloatHistogram
+	return chunkenc.ValHistogram
 }
 
 // At implements chunkenc.Iterator.
@@ -625,8 +625,11 @@ func exemplarProtoToExemplar(ep prompb.Exemplar) exemplar.Exemplar {
 
 // HistogramProtoToHistogram extracts a (normal integer) Histogram from the
 // provided proto message. The caller has to make sure that the proto message
-// represents an integer histogram and not a float histogram.
+// represents an integer histogram and not a float histogram, or it panics.
 func HistogramProtoToHistogram(hp prompb.Histogram) *histogram.Histogram {
+	if hp.IsFloatHistogram() {
+		panic("HistogramProtoToHistogram called with a float histogram")
+	}
 	return &histogram.Histogram{
 		CounterResetHint: histogram.CounterResetHint(hp.ResetHint),
 		Schema:           hp.Schema,
@@ -643,8 +646,12 @@ func HistogramProtoToHistogram(hp prompb.Histogram) *histogram.Histogram {
 
 // FloatHistogramProtoToFloatHistogram extracts a float Histogram from the
 // provided proto message to a Float Histogram. The caller has to make sure that
-// the proto message represents a float histogram and not an integer histogram.
+// the proto message represents a float histogram and not an integer histogram,
+// or it panics.
 func FloatHistogramProtoToFloatHistogram(hp prompb.Histogram) *histogram.FloatHistogram {
+	if !hp.IsFloatHistogram() {
+		panic("FloatHistogramProtoToFloatHistogram called with an integer histogram")
+	}
 	return &histogram.FloatHistogram{
 		CounterResetHint: histogram.CounterResetHint(hp.ResetHint),
 		Schema:           hp.Schema,
@@ -661,8 +668,11 @@ func FloatHistogramProtoToFloatHistogram(hp prompb.Histogram) *histogram.FloatHi
 
 // HistogramProtoToFloatHistogram extracts and converts a (normal integer) histogram from the provided proto message
 // to a float histogram. The caller has to make sure that the proto message represents an integer histogram and not a
-// float histogram.
+// float histogram, or it panics.
 func HistogramProtoToFloatHistogram(hp prompb.Histogram) *histogram.FloatHistogram {
+	if hp.IsFloatHistogram() {
+		panic("HistogramProtoToFloatHistogram called with a float histogram")
+	}
 	return &histogram.FloatHistogram{
 		CounterResetHint: histogram.CounterResetHint(hp.ResetHint),
 		Schema:           hp.Schema,
