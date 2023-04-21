@@ -802,7 +802,7 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte) error {
 
 		for _, histogram := range ts.Histograms {
 			count++
-			if histogram.GetCountFloat() > 0 || histogram.GetZeroCountFloat() > 0 {
+			if histogram.IsFloatHistogram() {
 				c.receivedFloatHistograms[seriesName] = append(c.receivedFloatHistograms[seriesName], histogram)
 			} else {
 				c.receivedHistograms[seriesName] = append(c.receivedHistograms[seriesName], histogram)
