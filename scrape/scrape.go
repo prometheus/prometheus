@@ -194,7 +194,7 @@ var (
 	targetScrapeNativeHistogramBucketLimit = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "prometheus_target_scrapes_histogram_exceeded_bucket_limit_total",
-			Help: "Total number of native histograms rejected due to exceeding the bucket limit.",
+			Help: "Total number of scrapes that hit the native histograms bucket limit and were rejected.",
 		},
 	)
 )
@@ -1485,11 +1485,10 @@ func (sl *scrapeLoop) getCache() *scrapeCache {
 }
 
 type appendErrors struct {
-	numOutOfOrder           int
-	numDuplicates           int
-	numOutOfBounds          int
-	numExemplarOutOfOrder   int
-	numHistogramBucketLimit int
+	numOutOfOrder         int
+	numDuplicates         int
+	numOutOfBounds        int
+	numExemplarOutOfOrder int
 }
 
 func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string, ts time.Time) (total, added, seriesAdded int, err error) {
@@ -1506,6 +1505,7 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 		defTime         = timestamp.FromTime(ts)
 		appErrs         = appendErrors{}
 		sampleLimitErr  error
+		bucketLimitErr  error
 		e               exemplar.Exemplar // escapes to heap so hoisted out of loop
 		meta            metadata.Metadata
 		metadataChanged bool
@@ -1655,7 +1655,7 @@ loop:
 		} else {
 			ref, err = app.Append(ref, lset, t, val)
 		}
-		sampleAdded, err = sl.checkAddError(ce, met, parsedTimestamp, err, &sampleLimitErr, &appErrs)
+		sampleAdded, err = sl.checkAddError(ce, met, parsedTimestamp, err, &sampleLimitErr, &bucketLimitErr, &appErrs)
 		if err != nil {
 			if err != storage.ErrNotFound {
 				level.Debug(sl.l).Log("msg", "Unexpected error", "series", string(met), "err", err)
@@ -1669,7 +1669,7 @@ loop:
 				sl.cache.trackStaleness(hash, lset)
 			}
 			sl.cache.addRef(met, ref, lset, hash)
-			if sampleAdded && sampleLimitErr == nil {
+			if sampleAdded && sampleLimitErr == nil && bucketLimitErr == nil {
 				seriesAdded++
 			}
 		}
@@ -1705,6 +1705,13 @@ loop:
 		// We only want to increment this once per scrape, so this is Inc'd outside the loop.
 		targetScrapeSampleLimit.Inc()
 	}
+	if bucketLimitErr != nil {
+		if err == nil {
+			err = bucketLimitErr // if sample limit is hit, that error takes precedence
+		}
+		// We only want to increment this once per scrape, so this is Inc'd outside the loop.
+		targetScrapeNativeHistogramBucketLimit.Inc()
+	}
 	if appErrs.numOutOfOrder > 0 {
 		level.Warn(sl.l).Log("msg", "Error on ingesting out-of-order samples", "num_dropped", appErrs.numOutOfOrder)
 	}
@@ -1716,9 +1723,6 @@ loop:
 	}
 	if appErrs.numExemplarOutOfOrder > 0 {
 		level.Warn(sl.l).Log("msg", "Error on ingesting out-of-order exemplars", "num_dropped", appErrs.numExemplarOutOfOrder)
-	}
-	if appErrs.numHistogramBucketLimit > 0 {
-		level.Warn(sl.l).Log("msg", "Error on ingesting native histograms that exceeded bucket limit", "num_dropped", appErrs.numHistogramBucketLimit)
 	}
 	if err == nil {
 		sl.cache.forEachStale(func(lset labels.Labels) bool {
@@ -1737,8 +1741,8 @@ loop:
 }
 
 // Adds samples to the appender, checking the error, and then returns the # of samples added,
-// whether the caller should continue to process more samples, and any sample limit errors.
-func (sl *scrapeLoop) checkAddError(ce *cacheEntry, met []byte, tp *int64, err error, sampleLimitErr *error, appErrs *appendErrors) (bool, error) {
+// whether the caller should continue to process more samples, and any sample or bucket limit errors.
+func (sl *scrapeLoop) checkAddError(ce *cacheEntry, met []byte, tp *int64, err error, sampleLimitErr, bucketLimitErr *error, appErrs *appendErrors) (bool, error) {
 	switch errors.Cause(err) {
 	case nil:
 		if tp == nil && ce != nil {
@@ -1762,15 +1766,15 @@ func (sl *scrapeLoop) checkAddError(ce *cacheEntry, met []byte, tp *int64, err e
 		level.Debug(sl.l).Log("msg", "Out of bounds metric", "series", string(met))
 		targetScrapeSampleOutOfBounds.Inc()
 		return false, nil
-	case storage.ErrHistogramBucketLimit:
-		appErrs.numHistogramBucketLimit++
-		level.Debug(sl.l).Log("msg", "Exceeded bucket limit for native histograms", "series", string(met))
-		targetScrapeNativeHistogramBucketLimit.Inc()
-		return false, nil
 	case errSampleLimit:
 		// Keep on parsing output if we hit the limit, so we report the correct
 		// total number of samples scraped.
 		*sampleLimitErr = err
+		return false, nil
+	case errBucketLimit:
+		// Keep on parsing output if we hit the limit, so we report the correct
+		// total number of samples scraped.
+		*bucketLimitErr = err
 		return false, nil
 	default:
 		return false, err

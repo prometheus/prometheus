@@ -1788,7 +1788,10 @@ func TestScrapeLoop_HistogramBucketLimit(t *testing.T) {
 
 	now = time.Now()
 	total, added, seriesAdded, err = sl.append(app, msg, "application/vnd.google.protobuf", now)
-	require.NoError(t, err)
+	if err != errBucketLimit {
+		t.Fatalf("Did not see expected histogram bucket limit error: %s", err)
+	}
+	require.NoError(t, app.Rollback())
 	require.Equal(t, 1, total)
 	require.Equal(t, 1, added)
 	require.Equal(t, 0, seriesAdded)
@@ -3010,7 +3013,7 @@ func TestReuseCacheRace(*testing.T) {
 func TestCheckAddError(t *testing.T) {
 	var appErrs appendErrors
 	sl := scrapeLoop{l: log.NewNopLogger()}
-	sl.checkAddError(nil, nil, nil, storage.ErrOutOfOrderSample, nil, &appErrs)
+	sl.checkAddError(nil, nil, nil, storage.ErrOutOfOrderSample, nil, nil, &appErrs)
 	require.Equal(t, 1, appErrs.numOutOfOrder)
 }
 

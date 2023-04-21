@@ -378,8 +378,8 @@ metric_relabel_configs:
 [ target_limit: <int> | default = 0 ]
 
 # Limit on total number of positive and negative buckets allowed in a native
-# histogram. If this is exceeded, the histogram will be ignored, but this will
-# not make the scrape fail. 0 means no limit.
+# histogram. If this is exceeded, the entire scrape will be treated as failed.
+# 0 means no limit.
 [ sample_limit: <int> | default = 0 ]
 ```
 
