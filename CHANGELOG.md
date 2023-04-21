@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.44.0-rc.0 / 2023-04-22
+
+* [CHANGE] remote-write: raise default samples per send to 2,000. #12203
+* [FEATURE] remote-read: handle native histograms. #12085, #12192
+* [FEATURE] promtool: health and readiness check of prometheus server in CLI. #12096
+* [FEATURE] promql engine: add query_samples_total metric, the total number of samples loaded by all queries. #12251
+* [ENHANCEMENT] scraping: reduce memory allocations on Target labels. #12084
+* [ENHANCEMENT] promql: use faster heap method for topk/bottomk. #12190
+* [ENHANCEMENT] rules API: Allow filtering by rule name. #12270
+* [ENHANCEMENT] native histograms: various fixes and improvements. #11687, #12264, #12272
+* [ENHANCEMENT] ui: search of "Scrape Pools" is now case-insensitive. #12207
+* [ENHANCEMENT] tsdb: add an affirmative log message for successful WAL repair. #12135
+* [BUGFIX] tsdb: block compaction failed when shutting down. #12179
+* [BUGFIX] tsdb: out-of-order chunks could be ignored if the write-behind log was deleted. #12127
+
 ## 2.43.0 / 2023-03-21
 
 We are working on some performance improvements in Prometheus, which are only
