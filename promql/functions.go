@@ -924,6 +924,21 @@ func funcPredictLinear(vals []parser.Value, args parser.Expressions, enh *EvalNo
 	return append(enh.Out, Sample{F: slope*duration + intercept})
 }
 
+// === predict_linear_at(node parser.ValueTypeMatrix, k parser.ValueTypeScalar) Vector ===
+func funcPredictLinearAt(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	samples := vals[0].(Matrix)[0]
+	pred_point := vals[1].(Vector)[0].F
+
+	// No sense in trying to predict anything without at least two points.
+	// Drop this Vector element.
+	if len(samples.Floats) < 2 {
+		return enh.Out
+	}
+	_, intercept := linearRegression(samples.Floats, int64(pred_point))
+
+	return append(enh.Out, Sample{F: intercept})
+}
+
 // === histogram_count(Vector parser.ValueTypeVector) Vector ===
 func funcHistogramCount(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	inVec := vals[0].(Vector)

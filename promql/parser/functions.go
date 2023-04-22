@@ -272,6 +272,11 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeMatrix, ValueTypeScalar},
 		ReturnType: ValueTypeVector,
 	},
+	"predict_linear_at": {
+		Name:       "predict_linear_at",
+		ArgTypes:   []ValueType{ValueTypeMatrix, ValueTypeScalar},
+		ReturnType: ValueTypeVector,
+	},
 	"present_over_time": {
 		Name:       "present_over_time",
 		ArgTypes:   []ValueType{ValueTypeMatrix},

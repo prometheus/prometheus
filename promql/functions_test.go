@@ -86,3 +86,41 @@ func TestKahanSum(t *testing.T) {
 	expected := 2.0
 	require.Equal(t, expected, kahanSum(vals))
 }
+
+func TestPredictLinear(t *testing.T) {
+	storage := teststorage.New(t)
+	defer storage.Close()
+	opts := EngineOpts{
+		Logger:           nil,
+		Reg:              nil,
+		MaxSamples:       10000,
+		Timeout:          10 * time.Second,
+		EnableAtModifier: true,
+	}
+	engine := NewEngine(opts)
+
+	a := storage.Appender(context.Background())
+
+	var start, interval, i int64
+	metric := labels.FromStrings("__name__", "foo")
+	start = 0
+	interval = 1000
+	for i = 0; i < 1000; i++ {
+		a.Append(0, metric, int64(start+interval*i), float64(i))
+	}
+
+	require.NoError(t, a.Commit())
+
+	ctx := context.Background()
+	// Query: "Use a 30 second window @ t=100 for geenrating slope, extrapolate to get predicted value at t=3500"
+	query, err := engine.NewInstantQuery(ctx, storage, nil, "predict_linear_at(foo[30s] @ 100, 3500)", timestamp.Time(0))
+	require.NoError(t, err)
+
+	result := query.Exec(ctx)
+	require.NoError(t, result.Err)
+
+	vec, _ := result.Vector()
+	require.Equal(t, 1, len(vec), "Expected 1 result, got %d", len(vec))
+	// Sampled slope of 0.01 should yield a predicted value of 3.5 at t=3500
+	require.Equal(t, 3.5, vec[0].F, "Expected 0.0 as value, got %f", vec[0].F)
+}
