@@ -33,12 +33,13 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/prompb"
 	writev2 "github.com/prometheus/prometheus/prompb/write/v2"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
@@ -640,6 +641,14 @@ func minExemplarProtoToExemplar(ep writev2.Exemplar, symbols []string) exemplar.
 	}
 }
 
+func metadataProtoToMetadata(mp prompb.Metadata) metadata.Metadata {
+	return metadata.Metadata{
+		Type: metricTypeFromProtoEquivalent(mp.Type),
+		Unit: mp.Unit,
+		Help: mp.Help,
+	}
+}
+
 // HistogramProtoToHistogram extracts a (normal integer) Histogram from the
 // provided proto message. The caller has to make sure that the proto message
 // represents an integer histogram and not a float histogram, or it panics.
@@ -844,24 +853,6 @@ func spansToSpansProto(s []histogram.Span) []prompb.BucketSpan {
 	return spans
 }
 
-func spansToMinSpansProto(s []histogram.Span) []writev2.BucketSpan {
-	spans := make([]writev2.BucketSpan, len(s))
-	for i := 0; i < len(s); i++ {
-		spans[i] = writev2.BucketSpan{Offset: s[i].Offset, Length: s[i].Length}
-	}
-
-	return spans
-}
-
-func MetadataToMetadataProto(metricName string, m record.RefMetadata) prompb.MetricMetadata {
-	return prompb.MetricMetadata{
-		MetricFamilyName: metricName,
-		Type:             metricTypeToMetricTypeProto(record.ToTextparseMetricType(m.Type)),
-		Help:             m.Help,
-		Unit:             m.Unit,
-	}
-}
-
 // LabelProtosToMetric unpack a []*prompb.Label to a model.Metric
 func LabelProtosToMetric(labelPairs []*prompb.Label) model.Metric {
 	metric := make(model.Metric, len(labelPairs))
@@ -932,6 +923,21 @@ func metricTypeToMetricTypeProto(t model.MetricType) prompb.MetricMetadata_Metri
 	}
 
 	return prompb.MetricMetadata_MetricType(v)
+}
+
+func metricTypeToProtoEquivalent(t textparse.MetricType) prompb.Metadata_MetricType {
+	mt := strings.ToUpper(string(t))
+	v, ok := prompb.Metadata_MetricType_value[mt]
+	if !ok {
+		return prompb.Metadata_UNKNOWN
+	}
+
+	return prompb.Metadata_MetricType(v)
+}
+
+func metricTypeFromProtoEquivalent(t prompb.Metadata_MetricType) textparse.MetricType {
+	mt := strings.ToLower(t.String())
+	return textparse.MetricType(mt) // TODO(@tpaschalis) a better way for this?
 }
 
 // DecodeWriteRequest from an io.Reader into a prompb.WriteRequest, handling

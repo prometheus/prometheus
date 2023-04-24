@@ -211,6 +211,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rwConf.SendExemplars,
 			rwConf.SendNativeHistograms,
 			rws.rwFormat,
+			rwConf.SendWALMetadata,
 		)
 		// Keep track of which queues are new so we know which to start.
 		newHashes = append(newHashes, hash)

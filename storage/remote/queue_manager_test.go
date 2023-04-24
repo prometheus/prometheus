@@ -67,19 +67,14 @@ func TestSampleDelivery(t *testing.T) {
 		exemplars       bool
 		histograms      bool
 		floatHistograms bool
-		rwFormat        RemoteWriteFormat
+		//metadata        bool
+		rwFormat RemoteWriteFormat
 	}{
 		{samples: true, exemplars: false, histograms: false, floatHistograms: false, name: "samples only"},
 		{samples: true, exemplars: true, histograms: true, floatHistograms: true, name: "samples, exemplars, and histograms"},
 		{samples: false, exemplars: true, histograms: false, floatHistograms: false, name: "exemplars only"},
 		{samples: false, exemplars: false, histograms: true, floatHistograms: false, name: "histograms only"},
 		{samples: false, exemplars: false, histograms: false, floatHistograms: true, name: "float histograms only"},
-
-		{rwFormat: MinStrings, samples: true, exemplars: false, histograms: false, name: "interned samples only"},
-		{rwFormat: MinStrings, samples: true, exemplars: true, histograms: true, floatHistograms: true, name: "interned samples, exemplars, and histograms"},
-		{rwFormat: MinStrings, samples: false, exemplars: true, histograms: false, name: "interned exemplars only"},
-		{rwFormat: MinStrings, samples: false, exemplars: false, histograms: true, name: "interned histograms only"},
-		{rwFormat: MinStrings, samples: false, exemplars: false, histograms: false, floatHistograms: true, name: "interned float histograms only"},
 	}
 
 	// Let's create an even number of send batches so we don't run into the
@@ -95,6 +90,7 @@ func TestSampleDelivery(t *testing.T) {
 	writeConfig.QueueConfig = queueConfig
 	writeConfig.SendExemplars = true
 	writeConfig.SendNativeHistograms = true
+	writeConfig.SendWALMetadata = true
 
 	conf := &config.Config{
 		GlobalConfig: config.DefaultGlobalConfig,
@@ -111,6 +107,7 @@ func TestSampleDelivery(t *testing.T) {
 
 			var (
 				series          []record.RefSeries
+				metadata        []record.RefMetadata
 				samples         []record.RefSample
 				exemplars       []record.RefExemplar
 				histograms      []record.RefHistogramSample
@@ -120,6 +117,7 @@ func TestSampleDelivery(t *testing.T) {
 			// Generates same series in both cases.
 			if tc.samples {
 				samples, series = createTimeseries(n, n)
+				metadata = createSeriesMetadata(series)
 			}
 			if tc.exemplars {
 				exemplars, series = createExemplars(n, n)
@@ -143,6 +141,7 @@ func TestSampleDelivery(t *testing.T) {
 			qm.SetClient(c)
 
 			qm.StoreSeries(series, 0)
+			qm.StoreMetadata(metadata)
 
 			// Send first half of data.
 			c.expectSamples(samples[:len(samples)/2], series)
@@ -193,7 +192,7 @@ func TestMetadataDelivery(t *testing.T) {
 		})
 	}
 
-	m.AppendMetadata(context.Background(), metadata)
+	m.AppendWatcherMetadata(context.Background(), metadata)
 
 	require.Len(t, c.receivedMetadata, numMetadata)
 	// One more write than the rounded qoutient should be performed in order to get samples that didn't
@@ -211,8 +210,6 @@ func TestWALMetadataDelivery(t *testing.T) {
 	cfg := config.DefaultQueueConfig
 	cfg.BatchSendDeadline = model.Duration(100 * time.Millisecond)
 	cfg.MaxShards = 1
-	mcfg := config.DefaultMetadataConfig
-	mcfg.SendFromWAL = true
 
 	writeConfig := baseRemoteWriteConfig("http://test-storage.com")
 	writeConfig.QueueConfig = cfg
@@ -224,22 +221,25 @@ func TestWALMetadataDelivery(t *testing.T) {
 		},
 	}
 
-	metadata, series := createMetadata(3)
+	num := 3
+	_, series := createTimeseries(0, num)
+	metadata := createSeriesMetadata(series)
 
 	require.NoError(t, s.ApplyConfig(conf))
 	hash, err := toHash(writeConfig)
 	require.NoError(t, err)
 	qm := s.rws.queues[hash]
-	qm.mcfg.SendFromWAL = true
-	qm.mcfg.MaxSamplesPerSend = 10
+	qm.sendMetadata = true
 
 	c := NewTestWriteClient()
 	qm.SetClient(c)
 
 	qm.StoreSeries(series, 0)
-	c.expectMetadata(metadata, series)
+	qm.StoreMetadata(metadata)
 
-	qm.AppendWALMetadata(metadata)
+	require.Equal(t, num, len(qm.seriesLabels))
+	require.Equal(t, num, len(qm.seriesMetadata))
+
 	c.waitForExpectedData(t)
 }
 
@@ -368,14 +368,19 @@ func TestSeriesReset(t *testing.T) {
 	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, deadline, newPool(), newHighestTimestampMetric(), nil, false, false, Base1)
 	for i := 0; i < numSegments; i++ {
 		series := []record.RefSeries{}
+		metadata := []record.RefMetadata{}
 		for j := 0; j < numSeries; j++ {
 			series = append(series, record.RefSeries{Ref: chunks.HeadSeriesRef((i * 100) + j), Labels: labels.FromStrings("a", "a")})
+			metadata = append(metadata, record.RefMetadata{Ref: chunks.HeadSeriesRef((i * 100) + j), Type: 0, Unit: "unit text", Help: "help text"})
 		}
 		m.StoreSeries(series, i)
+		m.StoreMetadata(metadata)
 	}
 	require.Len(t, m.seriesLabels, numSegments*numSeries)
+	require.Equal(t, numSegments*numSeries, len(m.seriesMetadata))
 	m.SeriesReset(2)
 	require.Len(t, m.seriesLabels, numSegments*numSeries/2)
+	require.Equal(t, numSegments*numSeries/2, len(m.seriesMetadata))
 }
 
 func TestReshard(t *testing.T) {
@@ -427,7 +432,6 @@ func TestReshardRaceWithStop(t *testing.T) {
 			c := NewTestWriteClient(rwFormat)
 			var m *QueueManager
 			h := sync.Mutex{}
-
 			h.Lock()
 
 			cfg := config.DefaultQueueConfig
@@ -558,7 +562,6 @@ func TestReleaseNoninternedString(t *testing.T) {
 			m := NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, rwFormat)
 			m.Start()
 			defer m.Stop()
-
 			for i := 1; i < 1000; i++ {
 				m.StoreSeries([]record.RefSeries{
 					{
@@ -721,26 +724,18 @@ func createHistograms(numSamples, numSeries int, floatHistogram bool) ([]record.
 	return histograms, nil, series
 }
 
-func createMetadata(numMetadata int) ([]record.RefMetadata, []record.RefSeries) {
-	series := make([]record.RefSeries, 0, numMetadata)
-	metas := make([]record.RefMetadata, 0, numMetadata)
+func createSeriesMetadata(series []record.RefSeries) []record.RefMetadata {
+	metas := make([]record.RefMetadata, len(series))
 
-	for i := 0; i < numMetadata; i++ {
-		name := fmt.Sprintf("test_metric_%d", i)
-
+	for _, s := range series {
 		metas = append(metas, record.RefMetadata{
-			Ref:  chunks.HeadSeriesRef(i),
+			Ref:  s.Ref,
 			Type: uint8(record.Counter),
 			Unit: "unit text",
 			Help: "help text",
 		})
-		series = append(series, record.RefSeries{
-			Ref:    chunks.HeadSeriesRef(i),
-			Labels: labels.Labels{{Name: "__name__", Value: name}},
-		})
-
 	}
-	return metas, series
+	return metas
 }
 
 func getSeriesNameFromRef(r record.RefSeries) string {
@@ -757,7 +752,6 @@ type TestWriteClient struct {
 	expectedHistograms      map[string][]prompb.Histogram
 	expectedFloatHistograms map[string][]prompb.Histogram
 	receivedMetadata        map[string][]prompb.MetricMetadata
-	expectedMetadata        map[string][]prompb.MetricMetadata
 	writesReceived          int
 	withWaitGroup           bool
 	wg                      sync.WaitGroup
@@ -852,23 +846,6 @@ func (c *TestWriteClient) expectFloatHistograms(fhs []record.RefFloatHistogramSa
 	c.wg.Add(len(fhs))
 }
 
-func (c *TestWriteClient) expectMetadata(ms []record.RefMetadata, series []record.RefSeries) {
-	if !c.withWaitGroup {
-		return
-	}
-	c.mtx.Lock()
-	defer c.mtx.Unlock()
-
-	c.expectedMetadata = map[string][]prompb.MetricMetadata{}
-	c.receivedMetadata = map[string][]prompb.MetricMetadata{}
-
-	for _, m := range ms {
-		seriesName := getSeriesNameFromRef(series[m.Ref])
-		c.expectedMetadata[seriesName] = append(c.expectedMetadata[seriesName], MetadataToMetadataProto(seriesName, m))
-	}
-	c.wg.Add(len(ms))
-}
-
 func (c *TestWriteClient) waitForExpectedData(tb testing.TB) {
 	if !c.withWaitGroup {
 		return
@@ -890,10 +867,9 @@ func (c *TestWriteClient) waitForExpectedData(tb testing.TB) {
 	for ts, expectedFloatHistogram := range c.expectedFloatHistograms {
 		require.Equal(tb, expectedFloatHistogram, c.receivedFloatHistograms[ts], ts)
 	}
-	for ts, expectedMetadata := range c.expectedMetadata {
-		require.Equal(tb, expectedMetadata, c.receivedMetadata[ts], ts)
-	}
 }
+
+var emptyMetadata prompb.Metadata
 
 func (c *TestWriteClient) Store(_ context.Context, req []byte, _ int) error {
 	c.mtx.Lock()
@@ -947,18 +923,16 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte, _ int) error {
 			} else {
 				c.receivedHistograms[seriesName] = append(c.receivedHistograms[seriesName], hist)
 			}
-
 		}
 	}
-
-	for _, m := range reqProto.Metadata {
-		count++
-		c.receivedMetadata[m.MetricFamilyName] = append(c.receivedMetadata[m.MetricFamilyName], m)
-	}
-
 	if c.withWaitGroup {
 		c.wg.Add(-count)
 	}
+
+	for _, m := range reqProto.Metadata {
+		c.receivedMetadata[m.MetricFamilyName] = append(c.receivedMetadata[m.MetricFamilyName], m)
+	}
+
 	c.writesReceived++
 
 	return nil
