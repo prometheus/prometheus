@@ -857,6 +857,7 @@ type RemoteWriteConfig struct {
 	Name                 string            `yaml:"name,omitempty"`
 	SendExemplars        bool              `yaml:"send_exemplars,omitempty"`
 	SendNativeHistograms bool              `yaml:"send_native_histograms,omitempty"`
+	SendWALMetadata      bool              `yaml:"send_metadata,omitempty"` // TODO(@tpaschalis) Adding an extra field to enable us to remove the `metadata_config` struct in the future.
 
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
@@ -965,10 +966,6 @@ type MetadataConfig struct {
 	SendInterval model.Duration `yaml:"send_interval"`
 	// Maximum number of samples per send.
 	MaxSamplesPerSend int `yaml:"max_samples_per_send,omitempty"`
-	// SendFromWAL controls whether we send metadata from the WAL
-	// TODO (@tpaschalis) Maybe this should also be the feature flag that
-	// disables the current MetadataWatcher?
-	SendFromWAL bool `yaml:"send_from_wal,omitempty"`
 }
 
 // RemoteReadConfig is the configuration for reading from remote storage.

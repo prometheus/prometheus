@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
@@ -624,6 +625,14 @@ func exemplarProtoToExemplar(ep prompb.Exemplar) exemplar.Exemplar {
 	}
 }
 
+func metadataProtoToMetadata(mp prompb.Metadata) metadata.Metadata {
+	return metadata.Metadata{
+		Type: metricTypeFromProtoEquivalent(mp.Type),
+		Unit: mp.Unit,
+		Help: mp.Help,
+	}
+}
+
 // HistogramProtoToHistogram extracts a (normal integer) Histogram from the
 // provided proto message. The caller has to make sure that the proto message
 // represents an integer histogram and not a float histogram, or it panics.
@@ -797,6 +806,21 @@ func metricTypeToMetricTypeProto(t textparse.MetricType) prompb.MetricMetadata_M
 	}
 
 	return prompb.MetricMetadata_MetricType(v)
+}
+
+func metricTypeToProtoEquivalent(t textparse.MetricType) prompb.Metadata_MetricType {
+	mt := strings.ToUpper(string(t))
+	v, ok := prompb.Metadata_MetricType_value[mt]
+	if !ok {
+		return prompb.Metadata_UNKNOWN
+	}
+
+	return prompb.Metadata_MetricType(v)
+}
+
+func metricTypeFromProtoEquivalent(t prompb.Metadata_MetricType) textparse.MetricType {
+	mt := strings.ToLower(t.String())
+	return textparse.MetricType(mt) // TODO(@tpaschalis) a better way for this?
 }
 
 // DecodeWriteRequest from an io.Reader into a prompb.WriteRequest, handling

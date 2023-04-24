@@ -78,6 +78,7 @@ type Watcher struct {
 	lastCheckpoint string
 	sendExemplars  bool
 	sendHistograms bool
+	sendMetadata   bool
 	metrics        *WatcherMetrics
 	readerMetrics  *LiveReaderMetrics
 
@@ -148,7 +149,7 @@ func NewWatcherMetrics(reg prometheus.Registerer) *WatcherMetrics {
 }
 
 // NewWatcher creates a new WAL watcher for a given WriteTo.
-func NewWatcher(metrics *WatcherMetrics, readerMetrics *LiveReaderMetrics, logger log.Logger, name string, writer WriteTo, dir string, sendExemplars, sendHistograms bool) *Watcher {
+func NewWatcher(metrics *WatcherMetrics, readerMetrics *LiveReaderMetrics, logger log.Logger, name string, writer WriteTo, dir string, sendExemplars, sendHistograms, sendMetadata bool) *Watcher {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -603,6 +604,9 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			}
 
 		case record.Metadata:
+			if !w.sendHistograms || !tail {
+				break
+			}
 			meta, err := dec.Metadata(rec, metadata[:0])
 			if err != nil {
 				w.recordDecodeFailsMetric.Inc()

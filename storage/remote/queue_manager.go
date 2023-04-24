@@ -410,6 +410,7 @@ type QueueManager struct {
 	relabelConfigs       []*relabel.Config
 	sendExemplars        bool
 	sendNativeHistograms bool
+	sendMetadata         bool
 	watcher              *wlog.Watcher
 	metadataWatcher      *MetadataWatcher
 
@@ -459,6 +460,7 @@ func NewQueueManager(
 	sm ReadyScrapeManager,
 	enableExemplarRemoteWrite bool,
 	enableNativeHistogramRemoteWrite bool,
+	enableMetadataRemoteWrite bool,
 ) *QueueManager {
 	if logger == nil {
 		logger = log.NewNopLogger()
@@ -481,6 +483,7 @@ func NewQueueManager(
 		storeClient:          client,
 		sendExemplars:        enableExemplarRemoteWrite,
 		sendNativeHistograms: enableNativeHistogramRemoteWrite,
+		sendMetadata:         enableMetadataRemoteWrite,
 
 		seriesLabels:         make(map[chunks.HeadSeriesRef]labels.Labels),
 		seriesSegmentIndexes: make(map[chunks.HeadSeriesRef]int),
@@ -500,7 +503,7 @@ func NewQueueManager(
 		highestRecvTimestamp: highestRecvTimestamp,
 	}
 
-	t.watcher = wlog.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, dir, enableExemplarRemoteWrite, enableNativeHistogramRemoteWrite)
+	t.watcher = wlog.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, dir, enableExemplarRemoteWrite, enableNativeHistogramRemoteWrite, enableMetadataRemoteWrite)
 	if t.mcfg.Send {
 		t.metadataWatcher = NewMetadataWatcher(logger, sm, client.Name(), t, t.mcfg.SendInterval, flushDeadline)
 	}
@@ -774,7 +777,7 @@ outer:
 }
 
 func (t *QueueManager) AppendWALMetadata(ms []record.RefMetadata) bool {
-	if !t.mcfg.SendFromWAL {
+	if !t.sendMetadata {
 		return true
 	}
 
@@ -784,16 +787,16 @@ outer:
 		lbls, ok := t.seriesLabels[m.Ref]
 		if !ok {
 			t.metrics.droppedMetadataTotal.Inc()
-			// Track dropped exemplars in the same EWMA for sharding calc.
+			// Track dropped metadata in the same EWMA for sharding calc.
 			t.dataDropped.incr(1)
 			if _, ok := t.droppedSeries[m.Ref]; !ok {
-				level.Info(t.logger).Log("msg", "Dropped exemplar for series that was not explicitly dropped via relabelling", "ref", m.Ref)
+				level.Info(t.logger).Log("msg", "Dropped metadata for series that was not explicitly dropped via relabelling", "ref", m.Ref)
 			}
 			t.seriesMtx.Unlock()
 			continue
 		}
 		t.seriesMtx.Unlock()
-		// This will only loop if the queues are being resharded.
+
 		backoff := t.cfg.MinBackoff
 		for {
 			select {
@@ -802,12 +805,12 @@ outer:
 			default:
 			}
 			if t.shards.enqueue(m.Ref, timeSeries{
+				seriesLabels: lbls,
 				sType:        tMetadata,
-				seriesLabels: lbls, // TODO (@tpaschalis) We take the labels here so we can refer to the metric's name on populateTimeSeries. There's probably a better way to do that.
 				metadata: &metadata.Metadata{
+					Type: record.ToTextparseMetricType(m.Type),
 					Help: m.Help,
 					Unit: m.Unit,
-					Type: record.ToTextparseMetricType(m.Type),
 				},
 			}) {
 				continue outer
@@ -1180,6 +1183,7 @@ func (s *shards) start(n int) {
 	s.samplesDroppedOnHardShutdown.Store(0)
 	s.exemplarsDroppedOnHardShutdown.Store(0)
 	s.histogramsDroppedOnHardShutdown.Store(0)
+	s.metadataDroppedOnHardShutdown.Store(0)
 	for i := 0; i < n; i++ {
 		go s.runShard(hardShutdownCtx, i, newQueues[i])
 	}
@@ -1416,6 +1420,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 		pBuf = proto.NewBuffer(nil)
 		buf  []byte
 	)
+	// TODO(@tpaschalis) Should we also raise the max if we have WAL metadata?
 	if s.qm.sendExemplars {
 		max += int(float64(max) * 0.1)
 	}
@@ -1428,11 +1433,6 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 			pendingData[i].Exemplars = []prompb.Exemplar{{}}
 		}
 	}
-
-	// TODO(@tpaschalis) Since metadata might appear infrequently, I'm not sure
-	// whether it's cheaper to pre-allocate, or initialize the slice as empty
-	// and append whenever metadata is encountered.
-	pendingMetadata := make([]prompb.MetricMetadata, s.qm.mcfg.MaxSamplesPerSend)
 
 	timer := time.NewTimer(time.Duration(s.qm.cfg.BatchSendDeadline))
 	stop := func() {
@@ -1471,10 +1471,10 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 			if !ok {
 				return
 			}
-			nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata := s.populateTimeSeries(batch, pendingData, pendingMetadata)
+			nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata := s.populateTimeSeries(batch, pendingData)
 			queue.ReturnForReuse(batch)
-			n := nPendingSamples + nPendingExemplars + nPendingHistograms
-			s.sendSamples(ctx, pendingData[:n], pendingMetadata[:nPendingMetadata], nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, pBuf, &buf)
+			n := nPendingSamples + nPendingExemplars + nPendingHistograms + nPendingMetadata
+			s.sendSamples(ctx, pendingData[:n], nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, pBuf, &buf)
 
 			stop()
 			timer.Reset(time.Duration(s.qm.cfg.BatchSendDeadline))
@@ -1482,12 +1482,11 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 		case <-timer.C:
 			batch := queue.Batch()
 			if len(batch) > 0 {
-				nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata := s.populateTimeSeries(batch, pendingData, pendingMetadata)
-				n := nPendingSamples + nPendingExemplars + nPendingHistograms
+				nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata := s.populateTimeSeries(batch, pendingData)
+				n := nPendingSamples + nPendingExemplars + nPendingHistograms + nPendingMetadata
 				level.Debug(s.qm.logger).Log("msg", "runShard timer ticked, sending buffered data", "samples", nPendingSamples,
-					"exemplars", nPendingExemplars, "shard", shardNum, "histograms", nPendingHistograms)
-				level.Debug(s.qm.logger).Log("msg", "runShard timer ticked, sending buffered data", "samples", nPendingSamples, "exemplars", nPendingExemplars, "shard", shardNum)
-				s.sendSamples(ctx, pendingData[:n], pendingMetadata[:nPendingMetadata], nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, pBuf, &buf)
+					"exemplars", nPendingExemplars, "shard", shardNum, "histograms", nPendingHistograms, "metadata", nPendingMetadata)
+				s.sendSamples(ctx, pendingData[:n], nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, pBuf, &buf)
 			}
 			queue.ReturnForReuse(batch)
 			timer.Reset(time.Duration(s.qm.cfg.BatchSendDeadline))
@@ -1495,7 +1494,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 	}
 }
 
-func (s *shards) populateTimeSeries(batch []timeSeries, pendingData []prompb.TimeSeries, pendingMetadata []prompb.MetricMetadata) (int, int, int, int) {
+func (s *shards) populateTimeSeries(batch []timeSeries, pendingData []prompb.TimeSeries) (int, int, int, int) {
 	var nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata int
 	for nPending, d := range batch {
 		pendingData[nPending].Samples = pendingData[nPending].Samples[:0]
@@ -1504,6 +1503,9 @@ func (s *shards) populateTimeSeries(batch []timeSeries, pendingData []prompb.Tim
 		}
 		if s.qm.sendNativeHistograms {
 			pendingData[nPending].Histograms = pendingData[nPending].Histograms[:0]
+		}
+		if s.qm.sendMetadata {
+			pendingData[nPending].Metadatas = pendingData[nPending].Metadatas[:0]
 		}
 
 		// Number of pending samples is limited by the fact that sendSamples (via sendSamplesWithBackoff)
@@ -1531,19 +1533,20 @@ func (s *shards) populateTimeSeries(batch []timeSeries, pendingData []prompb.Tim
 			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, FloatHistogramToHistogramProto(d.timestamp, d.floatHistogram))
 			nPendingHistograms++
 		case tMetadata:
-			pendingMetadata[nPendingMetadata].MetricFamilyName = d.seriesLabels.Get(labels.MetricName)
-			pendingMetadata[nPendingMetadata].Type = metricTypeToMetricTypeProto(d.metadata.Type)
-			pendingMetadata[nPendingMetadata].Help = d.metadata.Help
-			pendingMetadata[nPendingMetadata].Unit = d.metadata.Unit
+			pendingData[nPending].Metadatas = append(pendingData[nPending].Metadatas, prompb.Metadata{
+				Type: metricTypeToProtoEquivalent(d.metadata.Type),
+				Help: d.metadata.Help,
+				Unit: d.metadata.Unit,
+			})
 			nPendingMetadata++
 		}
 	}
 	return nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata
 }
 
-func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, metadata []prompb.MetricMetadata, sampleCount, exemplarCount, histogramCount, metadataCount int, pBuf *proto.Buffer, buf *[]byte) {
+func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, sampleCount, exemplarCount, histogramCount, metadataCount int, pBuf *proto.Buffer, buf *[]byte) {
 	begin := time.Now()
-	err := s.sendSamplesWithBackoff(ctx, samples, metadata, sampleCount, exemplarCount, histogramCount, metadataCount, pBuf, buf)
+	err := s.sendSamplesWithBackoff(ctx, samples, sampleCount, exemplarCount, histogramCount, metadataCount, pBuf, buf)
 	if err != nil {
 		level.Error(s.qm.logger).Log("msg", "non-recoverable error", "count", sampleCount, "exemplarCount", exemplarCount, "err", err)
 		s.qm.metrics.failedSamplesTotal.Add(float64(sampleCount))
@@ -1570,12 +1573,9 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, m
 }
 
 // sendSamples to the remote storage with backoff for recoverable errors.
-// TODO(@tpaschalis) If we're going to reuse this method for metadata as well,
-// we need a better name.
-// TODO(@tpaschalis) Add metadata-specific metrics and attributes.
-func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.TimeSeries, metadata []prompb.MetricMetadata, sampleCount, exemplarCount, histogramCount, metadataCount int, pBuf *proto.Buffer, buf *[]byte) error {
+func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.TimeSeries, sampleCount, exemplarCount, histogramCount, metadataCount int, pBuf *proto.Buffer, buf *[]byte) error {
 	// Build the WriteRequest with no metadata.
-	req, highest, err := buildWriteRequest(samples, metadata, pBuf, *buf)
+	req, highest, err := buildWriteRequest(samples, nil, pBuf, *buf)
 	if err != nil {
 		// Failing to build the write request is non-recoverable, since it will
 		// only error if marshaling the proto to bytes fails.
@@ -1605,6 +1605,9 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 		}
 		if histogramCount > 0 {
 			span.SetAttributes(attribute.Int("histograms", histogramCount))
+		}
+		if metadataCount > 0 {
+			span.SetAttributes(attribute.Int("metadata", metadataCount))
 		}
 
 		begin := time.Now()

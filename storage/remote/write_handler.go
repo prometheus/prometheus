@@ -145,6 +145,11 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 				return err
 			}
 		}
+
+		for _, mp := range ts.Metadatas {
+			m := metadataProtoToMetadata(mp)
+			app.UpdateMetadata(0, labels, m)
+		}
 	}
 
 	if outOfOrderExemplarErrs > 0 {
