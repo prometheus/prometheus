@@ -36,7 +36,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/prometheus/prometheus/tsdb/record"
 )
 
 // decodeReadLimit is the maximum size of a read request body in bytes.
@@ -755,15 +754,6 @@ func spansToSpansProto(s []histogram.Span) []prompb.BucketSpan {
 	}
 
 	return spans
-}
-
-func MetadataToMetadataProto(metricName string, m record.RefMetadata) prompb.MetricMetadata {
-	return prompb.MetricMetadata{
-		MetricFamilyName: metricName,
-		Type:             metricTypeToMetricTypeProto(record.ToTextparseMetricType(m.Type)),
-		Help:             m.Help,
-		Unit:             m.Unit,
-	}
 }
 
 // LabelProtosToMetric unpack a []*prompb.Label to a model.Metric
