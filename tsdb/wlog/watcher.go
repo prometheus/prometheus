@@ -162,6 +162,7 @@ func NewWatcher(metrics *WatcherMetrics, readerMetrics *LiveReaderMetrics, logge
 		name:           name,
 		sendExemplars:  sendExemplars,
 		sendHistograms: sendHistograms,
+		sendMetadata:   sendMetadata,
 
 		quit: make(chan struct{}),
 		done: make(chan struct{}),
@@ -604,7 +605,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			}
 
 		case record.Metadata:
-			if !w.sendHistograms || !tail {
+			if !w.sendMetadata || !tail {
 				break
 			}
 			meta, err := dec.Metadata(rec, metadata[:0])
