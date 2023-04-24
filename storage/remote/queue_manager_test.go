@@ -705,7 +705,7 @@ func createMetadata(numMetadata int) ([]record.RefMetadata, []record.RefSeries) 
 		})
 		series = append(series, record.RefSeries{
 			Ref:    chunks.HeadSeriesRef(i),
-			Labels: labels.Labels{labels.Label{Name: "__name__", Value: name}, labels.Label{Name: "foo", Value: "bar"}},
+			Labels: labels.FromStrings("__name__", name, "foo", "bar"),
 		})
 
 	}
