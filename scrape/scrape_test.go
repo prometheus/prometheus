@@ -1742,18 +1742,24 @@ func TestScrapeLoop_HistogramBucketLimit(t *testing.T) {
 	require.NoError(t, err)
 	beforeMetricValue := metric.GetCounter().GetValue()
 
-	nativeHistogram := prometheus.NewHistogram(prometheus.HistogramOpts{
-		Namespace:                      "testing",
-		Name:                           "example_native_histogram",
-		Help:                           "This is used for testing",
-		ConstLabels:                    map[string]string{"some": "value"},
-		NativeHistogramBucketFactor:    1.1, // 10% increase from bucket to bucket
-		NativeHistogramMaxBucketNumber: 100, // intentionally higher than the limit we'll use in the scraper
-	})
+	nativeHistogram := prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace:                      "testing",
+			Name:                           "example_native_histogram",
+			Help:                           "This is used for testing",
+			ConstLabels:                    map[string]string{"some": "value"},
+			NativeHistogramBucketFactor:    1.1, // 10% increase from bucket to bucket
+			NativeHistogramMaxBucketNumber: 100, // intentionally higher than the limit we'll use in the scraper
+		},
+		[]string{"size"},
+	)
 	registry := prometheus.NewRegistry()
 	registry.Register(nativeHistogram)
-	nativeHistogram.Observe(1.0)
-	nativeHistogram.Observe(10.0) // in different bucket since > 1*1.1
+	nativeHistogram.WithLabelValues("S").Observe(1.0)
+	nativeHistogram.WithLabelValues("M").Observe(1.0)
+	nativeHistogram.WithLabelValues("L").Observe(1.0)
+	nativeHistogram.WithLabelValues("M").Observe(10.0)
+	nativeHistogram.WithLabelValues("L").Observe(10.0) // in different bucket since > 1*1.1
 
 	gathered, err := registry.Gather()
 	require.NoError(t, err)
@@ -1766,9 +1772,9 @@ func TestScrapeLoop_HistogramBucketLimit(t *testing.T) {
 	now := time.Now()
 	total, added, seriesAdded, err := sl.append(app, msg, "application/vnd.google.protobuf", now)
 	require.NoError(t, err)
-	require.Equal(t, 1, total)
-	require.Equal(t, 1, added)
-	require.Equal(t, 1, seriesAdded)
+	require.Equal(t, 3, total)
+	require.Equal(t, 3, added)
+	require.Equal(t, 3, seriesAdded)
 
 	err = targetScrapeNativeHistogramBucketLimit.Write(&metric)
 	require.NoError(t, err)
@@ -1776,7 +1782,7 @@ func TestScrapeLoop_HistogramBucketLimit(t *testing.T) {
 	require.Equal(t, beforeMetricValue, metricValue)
 	beforeMetricValue = metricValue
 
-	nativeHistogram.Observe(100.0) // in different bucket since > 10*1.1
+	nativeHistogram.WithLabelValues("L").Observe(100.0) // in different bucket since > 10*1.1
 
 	gathered, err = registry.Gather()
 	require.NoError(t, err)
@@ -1792,8 +1798,8 @@ func TestScrapeLoop_HistogramBucketLimit(t *testing.T) {
 		t.Fatalf("Did not see expected histogram bucket limit error: %s", err)
 	}
 	require.NoError(t, app.Rollback())
-	require.Equal(t, 1, total)
-	require.Equal(t, 1, added)
+	require.Equal(t, 3, total)
+	require.Equal(t, 3, added)
 	require.Equal(t, 0, seriesAdded)
 
 	err = targetScrapeNativeHistogramBucketLimit.Write(&metric)
