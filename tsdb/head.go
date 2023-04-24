@@ -96,9 +96,6 @@ type Head struct {
 	// All series addressable by their ID or hash.
 	series *stripeSeries
 
-	deletedMtx sync.Mutex
-	deleted    map[chunks.HeadSeriesRef]int // Deleted series, and what WAL segment they must be kept until.
-
 	// TODO(codesome): Extend MemPostings to return only OOOPostings, Set OOOStatus, ... Like an additional map of ooo postings.
 	postings *index.MemPostings // Postings lists for terms.
 
@@ -299,7 +296,6 @@ func (h *Head) resetInMemoryState() error {
 	h.series = newStripeSeries(h.opts.StripeSize, h.opts.SeriesCallback)
 	h.postings = index.NewUnorderedMemPostings()
 	h.tombstones = tombstones.NewMemTombstones()
-	h.deleted = map[chunks.HeadSeriesRef]int{}
 	h.chunkRange.Store(h.opts.ChunkRange)
 	h.minTime.Store(math.MaxInt64)
 	h.maxTime.Store(math.MinInt64)
@@ -1175,6 +1171,7 @@ func (h *Head) IsQuerierCollidingWithTruncation(querierMint, querierMaxt int64) 
 }
 
 // truncateWAL removes old data before mint from the WAL.
+// Assumes that head has already been truncated to the same mint.
 func (h *Head) truncateWAL(mint int64) error {
 	h.chunkSnapshotMtx.Lock()
 	defer h.chunkSnapshotMtx.Unlock()
@@ -1207,14 +1204,10 @@ func (h *Head) truncateWAL(mint int64) error {
 		return nil
 	}
 
+	// All samples before mint will be removed from the WAL, so we only
+	// need to keep series that still have data in the head.
 	keep := func(id chunks.HeadSeriesRef) bool {
-		if h.series.getByID(id) != nil {
-			return true
-		}
-		h.deletedMtx.Lock()
-		_, ok := h.deleted[id]
-		h.deletedMtx.Unlock()
-		return ok
+		return h.series.getByID(id) != nil
 	}
 	h.metrics.checkpointCreationTotal.Inc()
 	if _, err = wlog.Checkpoint(h.logger, h.wal, first, last, keep, mint); err != nil {
@@ -1230,16 +1223,6 @@ func (h *Head) truncateWAL(mint int64) error {
 		// that supersedes them.
 		level.Error(h.logger).Log("msg", "truncating segments failed", "err", err)
 	}
-
-	// The checkpoint is written and segments before it is truncated, so we no
-	// longer need to track deleted series that are before it.
-	h.deletedMtx.Lock()
-	for ref, segment := range h.deleted {
-		if segment < first {
-			delete(h.deleted, ref)
-		}
-	}
-	h.deletedMtx.Unlock()
 
 	h.metrics.checkpointDeleteTotal.Inc()
 	if err := wlog.DeleteCheckpoints(h.wal.Dir(), last); err != nil {
@@ -1487,21 +1470,6 @@ func (h *Head) gc() (actualInOrderMint, minOOOTime int64, minMmapFile int) {
 	// Remove tombstones referring to the deleted series.
 	h.tombstones.DeleteTombstones(deleted)
 	h.tombstones.TruncateBefore(mint)
-
-	if h.wal != nil {
-		_, last, _ := wlog.Segments(h.wal.Dir())
-		h.deletedMtx.Lock()
-		// Keep series records until we're past segment 'last'
-		// because the WAL will still have samples records with
-		// this ref ID. If we didn't keep these series records then
-		// on start up when we replay the WAL, or any other code
-		// that reads the WAL, wouldn't be able to use those
-		// samples since we would have no labels for that ref ID.
-		for ref := range deleted {
-			h.deleted[chunks.HeadSeriesRef(ref)] = last
-		}
-		h.deletedMtx.Unlock()
-	}
 
 	return actualInOrderMint, minOOOTime, minMmapFile
 }
