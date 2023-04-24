@@ -50,6 +50,11 @@ type FloatHistogram struct {
 	PositiveBuckets, NegativeBuckets []float64
 }
 
+// Convenience Method, initially used in parser.
+func New() FloatHistogram {
+	return FloatHistogram{}
+}
+
 // Copy returns a deep copy of the Histogram.
 func (h *FloatHistogram) Copy() *FloatHistogram {
 	c := *h

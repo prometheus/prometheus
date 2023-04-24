@@ -26,6 +26,7 @@ import (
 
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/util/strutil"
@@ -214,8 +215,9 @@ func ParseMetricSelector(input string) (m []*labels.Matcher, err error) {
 
 // SequenceValue is an omittable value in a sequence of time series values.
 type SequenceValue struct {
-	Value   float64
-	Omitted bool
+	Value     float64
+	Omitted   bool
+	Histogram *histogram.FloatHistogram
 }
 
 func (v SequenceValue) String() string {
@@ -226,13 +228,12 @@ func (v SequenceValue) String() string {
 }
 
 type seriesDescriptionBuilder struct {
-    labels labels.Labels
-    values []SequenceValue
+	labels labels.Labels
+	values []SequenceValue
 }
 
-func newSeriesDescriptionBuilder() *seriesDescriptionBuilder{
-    return &seriesDescriptionBuilder{
-    }
+func newSeriesDescriptionBuilder() *seriesDescriptionBuilder {
+	return &seriesDescriptionBuilder{}
 }
 
 type seriesDescription struct {
@@ -451,6 +452,52 @@ func (p *parser) newAggregateExpr(op Item, modifier, args Node) (ret *AggregateE
 	ret.Expr = arguments[desiredArgs-1]
 
 	return ret
+}
+
+// Used when building the FloatHistogram from a map.
+func (p *parser) newMap() (ret map[string]interface{}) {
+	return map[string]interface{}{}
+}
+
+// This function is used to combine maps as they're used to later build the Float histogram.
+// This will merge the right map into the left map.
+func (p *parser) mergeMaps(left, right *map[string]interface{}) (ret *map[string]interface{}) {
+	for key, value := range *right {
+		(*left)[key] = value
+	}
+	return left
+}
+
+// This is used in the grammar to take then individual
+// parts of the histogram and complete it.
+func (p *parser) buildHistogramFromMap(desc *map[string]interface{}) (ret *histogram.FloatHistogram) {
+	output := &histogram.FloatHistogram{}
+	val, ok := (*desc)["buckets"]
+	if ok {
+		buckets, ok := val.([]float64)
+		if ok {
+			output.PositiveBuckets = buckets
+		}
+	}
+	val, ok = (*desc)["schema"]
+	if ok {
+		schema, ok := val.(int32)
+		if ok {
+			output.Schema = schema
+		}
+	}
+
+	return output
+}
+
+// parses an integer for histogram unit tests
+func (p *parser) integer(val string) int32 {
+	n, err := strconv.ParseInt(val, 0, 32)
+	o := int32(n)
+	if err != nil {
+		p.addParseErrf(p.yyParser.lval.item.PositionRange(), "error parsing number: %s", err)
+	}
+	return o
 }
 
 // number parses a number.
@@ -757,6 +804,29 @@ func (p *parser) addOffset(e Node, offset time.Duration) {
 	}
 
 	*endPosp = p.lastClosing
+}
+
+// setSchema is used to populate the histogram
+func (p *parser) setSchema(h histogram.FloatHistogram, schema int32) {
+	// TODO(h.dost): Determine if we need this.
+	h.Schema = schema
+}
+
+// setSpanArray is used to populate the histogram
+func (p *parser) setBucketArray(h histogram.FloatHistogram, buckets []float64) {
+	// TODO(h.dost): Determine if we need this.
+	h.PositiveBuckets = buckets
+}
+
+// setSpanArray is used to populate the histogram
+func (p *parser) setSpanArray(h histogram.FloatHistogram, spans []histogram.Span) {
+	// TODO(h.dost): Determine if we need this.
+	h.PositiveSpans = spans
+}
+
+// createSpanArray is used to populate the
+func (p *parser) makeSpanArray() []histogram.Span {
+	return []histogram.Span{}
 }
 
 // setTimestamp is used to set the timestamp from the @ modifier in the generated parser.

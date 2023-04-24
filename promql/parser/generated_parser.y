@@ -21,6 +21,7 @@ import (
 
         "github.com/prometheus/prometheus/model/labels"
         "github.com/prometheus/prometheus/model/value"
+        "github.com/prometheus/prometheus/model/histogram"
 )
 
 %}
@@ -35,6 +36,9 @@ import (
     lblList   []labels.Label
     strings   []string
     series    []SequenceValue
+    histogram *histogram.FloatHistogram
+    descriptors map[string]interface{}
+    bucket_set []float64
     uint      uint64
     float     float64
     duration  time.Duration
@@ -157,6 +161,9 @@ START_METRIC_SELECTOR
 %type <label> label_set_item
 %type <strings> grouping_label_list grouping_labels maybe_grouping_labels
 %type <series> series_item series_values
+%type <histogram> histogram_desc_set
+%type <descriptors> histogram_desc_map histogram_desc_item
+%type <bucket_set> bucket_set bucket_set_list
 %type <uint> uint
 %type <float> number series_value signed_number signed_or_unsigned_number
 %type <node> step_invariant_expr aggregate_expr aggregate_modifier bin_modifier binary_expr bool_modifier expr function_call function_call_args function_call_body group_modifiers label_matchers matrix_selector number_literal offset_expr on_or_ignoring paren_expr string_literal subquery_expr unary_expr vector_selector
@@ -666,9 +673,17 @@ series_item     : BLANK
                         }
                         }
                 | histogram_desc_set
-                { $$ = []SequenceValue{{Omitted: true}}}
+                        {
+                        $$ = []SequenceValue{{Histogram:$1}}
+                        }
                 | histogram_desc_set TIMES uint
-                { $$ = []SequenceValue{{Omitted: true}}}
+                        {
+                        $$ = []SequenceValue{}
+                        for i:=uint64(0); i <= $3; i++{
+                                $$ = append($$, SequenceValue{Histogram:$1})
+                                //$1 += $2
+                        }
+                        }
                 ;
 
 series_value    : IDENTIFIER
@@ -686,25 +701,60 @@ series_value    : IDENTIFIER
 /*
  * Histogram descriptions (part of unit testing)
  */
-histogram_desc_set: OPEN_HIST histogram_desc_list CLOSE_HIST
+histogram_desc_set: OPEN_HIST histogram_desc_map SPACE CLOSE_HIST
+                  {
+                    $$ = yylex.(*parser).buildHistogramFromMap(&$2)
+                  }
+                  | OPEN_HIST histogram_desc_map CLOSE_HIST
+                  {
+                    $$ = yylex.(*parser).buildHistogramFromMap(&$2)
+                  }
                   ;
 
-histogram_desc_list:
-                   | histogram_desc_list SPACE histogram_desc_item
-                   | histogram_desc_item SPACE
-                   | histogram_desc_list error
+histogram_desc_map:
+                   histogram_desc_map SPACE histogram_desc_item
+                   {
+                     $$ = *(yylex.(*parser).mergeMaps(&$1,&$3))
+                   }
+                   | histogram_desc_item
+                   {
+                     $$ = $1
+                   }
+                   | histogram_desc_map error {
+                     yylex.(*parser).unexpected("series values", "number or \"stale\"")
+                   }
                    ;
 
 histogram_desc_item: BUCKETS_DESC COLON bucket_set
+                   {
+                      $$ = yylex.(*parser).newMap()
+                      $$["buckets"] = $3
+                   }
                    | SCHEMA_DESC COLON NUMBER
+                   {
+                      $$ = yylex.(*parser).newMap()
+                      $$["schema"] = yylex.(*parser).integer($3.Val)
+                   }
                    ;
 
-bucket_set: LEFT_BRACKET bucket_set_list RIGHT_BRACKET
-          | LEFT_BRACKET bucket_set_list SPACE RIGHT_BRACKET
+bucket_set: LEFT_BRACKET bucket_set_list SPACE RIGHT_BRACKET
+          {
+            $$ = $2
+          }
+          | LEFT_BRACKET bucket_set_list RIGHT_BRACKET
+          {
+            $$ = $2
+          }
           ;
 
 bucket_set_list: bucket_set_list SPACE NUMBER
+               {
+                 $$ = append($1, yylex.(*parser).number($3.Val))
+               }
                | NUMBER
+               {
+                 $$ = []float64{yylex.(*parser).number($1.Val)}
+               }
                | bucket_set_list error
                ;
 

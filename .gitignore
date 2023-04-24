@@ -4,6 +4,8 @@
 /*.yml
 *.exe
 
+.idea/
+
 /prometheus
 /promtool
 benchmark.txt

@@ -3596,14 +3596,16 @@ func TestNaNExpression(t *testing.T) {
 }
 
 var testHistogramSeries = []struct {
-	input string
-	fail  bool
+	input          string
+	expectedMetric labels.Labels
+	fail           bool
 }{
 	{input: `{} {{buckets:[5 10 7] schema:1}}`,
-		fail: false,
-	}, {
-		input: ``,
-		fail:  false,
+		expectedMetric: labels.EmptyLabels(),
+		fail:           false,
+	}, {input: `{} {{schema:1 buckets:[5 10 7]}}`,
+		expectedMetric: labels.EmptyLabels(),
+		fail:           false,
 	},
 }
 var testSeries = []struct {
@@ -3707,14 +3709,17 @@ func newSeq(vals ...float64) (res []SequenceValue) {
 	return res
 }
 
-func newHistogramSequence(TBD) (TBD) {
-    // TODO: Fill out this functon to create histogram series.
-}
+//func newHistogramSequence(TBD) (TBD) {
+//    // TODO: Fill out this functon to create histogram series.
+//}
 
 func TestParseHistogramSeries(t *testing.T) {
 	for _, test := range testHistogramSeries {
-		_, _, err := ParseSeriesDesc(test.input)
-
+		_, vals, err := ParseSeriesDesc(test.input)
+		if len(vals) > 0 {
+			fmt.Printf("PositiveBuckets: %v\n", vals[0].Histogram.PositiveBuckets)
+			println("Schema:", vals[0].Histogram.Schema)
+		}
 		// Unexpected errors are always caused by a bug.
 		require.NotEqual(t, err, errUnexpected, "unexpected error occurred")
 
@@ -3727,9 +3732,9 @@ func TestParseHistogramSeries(t *testing.T) {
 }
 func TestParseSeries(t *testing.T) {
 	for _, test := range testSeries {
-        if !test.fail {
-            println("Test Input:", test.input)
-        }
+		if !test.fail {
+			println("Test Input:", test.input)
+		}
 		metric, vals, err := ParseSeriesDesc(test.input)
 
 		// Unexpected errors are always caused by a bug.

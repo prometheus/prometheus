@@ -533,8 +533,8 @@ var tests = []struct {
 				},
 				seriesDesc: true,
 			},
-            {
-                input: `{} {{buckets: [5 10 7] schema:1}}`,
+			{
+				input: `{} {{buckets: [5 10 7] schema:1}}`,
 				expected: []Item{
 					{LEFT_BRACE, 0, `{`},
 					{RIGHT_BRACE, 1, `}`},
