@@ -148,7 +148,10 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 
 		for _, mp := range ts.Metadatas {
 			m := metadataProtoToMetadata(mp)
-			app.UpdateMetadata(0, labels, m)
+			_, err := app.UpdateMetadata(0, labels, m)
+			if err != nil {
+				level.Debug(h.logger).Log("msg", "error while updating metadata from remote write", "err", err)
+			}
 		}
 	}
 
