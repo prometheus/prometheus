@@ -84,8 +84,11 @@ func (d *DictCache) Get(key string) int64 {
 	}
 	d.kLocks[s].RUnlock()
 
-	id := d.inc.Add(1)
 	d.kLocks[s].Lock()
+	if v, ok := d.dbk[s][key]; ok {
+		return v.id
+	}
+	id := d.inc.Add(1)
 	v := &dictValue{
 		id:    id,
 		value: key,
