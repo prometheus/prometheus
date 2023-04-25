@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	shardSize = 128
+	shardSize = 256
 )
 
 type dictValue struct {
@@ -35,23 +35,25 @@ type dictValue struct {
 }
 
 type DictCache struct {
-	dbk   []map[string]*dictValue
-	dbv   map[int64]*dictValue
-	locks []*sync.RWMutex
-	vLock *sync.RWMutex
-	inc   atomic.Int64
+	dbk    []map[string]*dictValue
+	dbv    []map[int64]*dictValue
+	kLocks []*sync.RWMutex
+	vLocks []*sync.RWMutex
+	inc    atomic.Int64
 }
 
 func NewDictCache() *DictCache {
 	dc := DictCache{
-		dbk:   make([]map[string]*dictValue, shardSize),
-		dbv:   make(map[int64]*dictValue),
-		locks: make([]*sync.RWMutex, shardSize),
-		vLock: &sync.RWMutex{},
+		dbk:    make([]map[string]*dictValue, shardSize),
+		dbv:    make([]map[int64]*dictValue, shardSize),
+		kLocks: make([]*sync.RWMutex, shardSize),
+		vLocks: make([]*sync.RWMutex, shardSize),
 	}
 	for i := 0; i < shardSize; i++ {
 		dc.dbk[i] = make(map[string]*dictValue)
-		dc.locks[i] = &sync.RWMutex{}
+		dc.dbv[i] = make(map[int64]*dictValue)
+		dc.kLocks[i] = &sync.RWMutex{}
+		dc.vLocks[i] = &sync.RWMutex{}
 	}
 	return &dc
 }
@@ -75,25 +77,26 @@ func (d *DictCache) Get(key string) int64 {
 	}
 	s := d.shard(key)
 
-	d.locks[s].RLock()
+	d.kLocks[s].RLock()
 	if v, ok := d.dbk[s][key]; ok {
-		d.locks[s].RUnlock()
+		d.kLocks[s].RUnlock()
 		return v.id
 	}
-	d.locks[s].RUnlock()
+	d.kLocks[s].RUnlock()
 
 	id := d.inc.Add(1)
-	d.locks[s].Lock()
+	d.kLocks[s].Lock()
 	v := &dictValue{
 		id:    id,
 		value: key,
 	}
 	d.dbk[s][key] = v
-	d.locks[s].Unlock()
+	d.kLocks[s].Unlock()
 
-	d.vLock.Lock()
-	d.dbv[id] = v
-	d.vLock.Unlock()
+	shardV := id % shardSize
+	d.vLocks[shardV].Lock()
+	d.dbv[shardV][id] = v
+	d.vLocks[shardV].Unlock()
 
 	return id
 }
@@ -102,9 +105,10 @@ func (d *DictCache) Value(id int64) (value string, ok bool) {
 	if id <= 0 {
 		return "", false
 	}
-	d.vLock.RLock()
-	defer d.vLock.RUnlock()
-	if v, ok := d.dbv[id]; ok {
+	shardV := id % shardSize
+	d.vLocks[shardV].RLock()
+	defer d.vLocks[shardV].RUnlock()
+	if v, ok := d.dbv[shardV][id]; ok {
 		return v.value, true
 	}
 	return "", false
