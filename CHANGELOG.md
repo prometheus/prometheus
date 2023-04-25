@@ -2,6 +2,10 @@
 
 ## 2.44.0-rc.0 / 2023-04-22
 
+This version is built with Go tag `stringlabels`, to use the smaller data
+structure for Labels that was optional in the previous release. For more
+details about this code change see #10991.
+
 * [CHANGE] Remote-write: Raise default samples per send to 2,000. #12203
 * [FEATURE] Remote-read: Handle native histograms. #12085, #12192
 * [FEATURE] Promtool: Health and readiness check of prometheus server in CLI. #12096
