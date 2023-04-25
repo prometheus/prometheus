@@ -31,6 +31,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/cache"
 	"github.com/prometheus/prometheus/util/osutil"
 )
 
@@ -162,6 +163,8 @@ type Manager struct {
 // Run receives and saves target set updates and triggers the scraping loops reloading.
 // Reloading happens in the background so that it doesn't block receiving targets updates.
 func (m *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) error {
+	cache.Default.RunGC()
+	defer cache.Default.Stop()
 	go m.reloader()
 	for {
 		select {

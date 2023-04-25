@@ -38,7 +38,7 @@ const (
 
 var seps = []byte{'\xff'}
 
-var dictCache = cache.NewDictCache()
+var dictCache = cache.Default
 
 type internalLabel struct {
 	name, value int64

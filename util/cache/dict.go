@@ -21,33 +21,46 @@ package cache
 
 import (
 	"sync"
+	"time"
 
 	"go.uber.org/atomic"
 )
 
 const (
-	shardSize = 256
+	shardSize      = 256
+	cleanBatchSize = 1000
 )
+
+var Default = NewDictCacheWithTTL(60 * 6)
 
 type dictValue struct {
 	id    int64
 	value string
+	ts    int32
 }
 
 type DictCache struct {
-	dbk    []map[string]*dictValue
-	dbv    []map[int64]*dictValue
-	kLocks []*sync.RWMutex
-	vLocks []*sync.RWMutex
-	inc    atomic.Int64
+	dbk     []map[string]*dictValue
+	dbv     []map[int64]*dictValue
+	kLocks  []*sync.RWMutex
+	vLocks  []*sync.RWMutex
+	inc     atomic.Int64
+	current int32
+	ttl     int32
+	stopped bool
+	closeCh chan interface{}
 }
 
-func NewDictCache() *DictCache {
+// ttl unit is minute, not second
+func NewDictCacheWithTTL(ttl int32) *DictCache {
 	dc := DictCache{
-		dbk:    make([]map[string]*dictValue, shardSize),
-		dbv:    make([]map[int64]*dictValue, shardSize),
-		kLocks: make([]*sync.RWMutex, shardSize),
-		vLocks: make([]*sync.RWMutex, shardSize),
+		dbk:     make([]map[string]*dictValue, shardSize),
+		dbv:     make([]map[int64]*dictValue, shardSize),
+		kLocks:  make([]*sync.RWMutex, shardSize),
+		vLocks:  make([]*sync.RWMutex, shardSize),
+		ttl:     ttl,
+		closeCh: make(chan interface{}, 1),
+		stopped: true,
 	}
 	for i := 0; i < shardSize; i++ {
 		dc.dbk[i] = make(map[string]*dictValue)
@@ -56,6 +69,70 @@ func NewDictCache() *DictCache {
 		dc.vLocks[i] = &sync.RWMutex{}
 	}
 	return &dc
+
+}
+
+func NewDictCache() *DictCache {
+	dc := NewDictCacheWithTTL(0)
+	return dc
+}
+
+func (d *DictCache) gc() {
+	delBuff := make([]string, cleanBatchSize)
+	var delIdx, dbIdx int
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	shiftTs := time.Now().Unix()
+	for !d.stopped && d.ttl > 0 {
+		select {
+		case <-d.closeCh:
+			return
+		case <-ticker.C:
+		}
+		if now := time.Now().Unix(); now-shiftTs > 60 { //one minute
+			d.current++
+			shiftTs = now
+		}
+		if dbIdx >= shardSize {
+			dbIdx %= shardSize
+		}
+		delIdx = 0
+		scan := 0
+		now := d.current
+		minTs := now - d.ttl
+		d.vLocks[dbIdx].RLock()
+		for _, v := range d.dbv[dbIdx] {
+			if v.ts < minTs {
+				delBuff[delIdx] = v.value
+			}
+			scan++
+			if scan >= cleanBatchSize {
+				break
+			}
+		}
+		d.vLocks[dbIdx].RUnlock()
+		d.del(delBuff[:delIdx])
+		dbIdx++
+	}
+}
+
+func (d *DictCache) del(keys []string) {
+	for _, key := range keys {
+		shard := d.shard(key)
+		d.kLocks[shard].Lock()
+		v, ok := d.dbk[shard][key]
+		if !ok {
+			d.kLocks[shard].Unlock()
+			continue
+		}
+		delete(d.dbk[shard], key)
+		d.kLocks[shard].Unlock()
+
+		shardV := v.id % shardSize
+		d.vLocks[shardV].Lock()
+		delete(d.dbv[shardV], v.id)
+		d.vLocks[shardV].Unlock()
+	}
 }
 
 func (d *DictCache) shard(key string) int {
@@ -79,6 +156,9 @@ func (d *DictCache) Get(key string) int64 {
 
 	d.kLocks[s].RLock()
 	if v, ok := d.dbk[s][key]; ok {
+		if d.current != v.ts {
+			v.ts = d.current
+		}
 		d.kLocks[s].RUnlock()
 		return v.id
 	}
@@ -86,12 +166,14 @@ func (d *DictCache) Get(key string) int64 {
 
 	d.kLocks[s].Lock()
 	if v, ok := d.dbk[s][key]; ok {
+		d.kLocks[s].Unlock()
 		return v.id
 	}
 	id := d.inc.Add(1)
 	v := &dictValue{
 		id:    id,
 		value: key,
+		ts:    d.current,
 	}
 	d.dbk[s][key] = v
 	d.kLocks[s].Unlock()
@@ -112,7 +194,30 @@ func (d *DictCache) Value(id int64) (value string, ok bool) {
 	d.vLocks[shardV].RLock()
 	defer d.vLocks[shardV].RUnlock()
 	if v, ok := d.dbv[shardV][id]; ok {
+		if c := d.current; c != v.ts {
+			v.ts = c
+		}
 		return v.value, true
 	}
 	return "", false
+}
+
+func (d *DictCache) RunGC() {
+	d.vLocks[0].Lock()
+	defer d.vLocks[0].Unlock()
+	if !d.stopped {
+		return
+	}
+	d.stopped = false
+	go d.gc()
+}
+
+func (d *DictCache) Stop() {
+	d.vLocks[0].Lock()
+	defer d.vLocks[0].Unlock()
+	if d.stopped {
+		return
+	}
+	d.closeCh <- ""
+	d.stopped = true
 }

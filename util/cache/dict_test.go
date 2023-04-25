@@ -21,10 +21,13 @@ package cache
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestDictCache(t *testing.T) {
 	dc := NewDictCache()
+	dc.RunGC()
 	values := []string{
 		"abc",
 		"123",
@@ -44,4 +47,13 @@ func TestDictCache(t *testing.T) {
 			t.Fatal("not match")
 		}
 	}
+	dc.del(values)
+	for _, db := range dc.dbv {
+		if len(db) > 0 {
+			t.Fatal("not empty dict cache")
+		}
+	}
+	require.False(t, dc.stopped, "dict gc thread not running well")
+	dc.Stop()
+	require.True(t, dc.stopped, "dict gc thread not stop well")
 }
