@@ -142,7 +142,7 @@ func TestHistogramSeriesToChunks(t *testing.T) {
 		PositiveSpans: []histogram.Span{
 			{Offset: 0, Length: 2},
 		},
-		PositiveBuckets: []int64{2, 1}, // Abs: 2, 3, 1, 4
+		PositiveBuckets: []int64{2, 1}, // Abs: 2, 3
 	}
 	h2 := &histogram.Histogram{
 		Count:         12,
