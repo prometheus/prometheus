@@ -11,6 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// nolint:revive // Many unsued function arguments in this file by design.
 package tsdb
 
 import (
@@ -90,7 +91,7 @@ func newWalMetrics(r prometheus.Registerer) *walMetrics {
 // WAL is a write ahead log that can log new series labels and samples.
 // It must be completely read before new entries are logged.
 //
-// DEPRECATED: use wlog pkg combined with the record codex instead.
+// Deprecated: use wlog pkg combined with the record codex instead.
 type WAL interface {
 	Reader() WALReader
 	LogSeries([]record.RefSeries) error
@@ -147,7 +148,7 @@ func newCRC32() hash.Hash32 {
 
 // SegmentWAL is a write ahead log for series data.
 //
-// DEPRECATED: use wlog pkg combined with the record coders instead.
+// Deprecated: use wlog pkg combined with the record coders instead.
 type SegmentWAL struct {
 	mtx     sync.Mutex
 	metrics *walMetrics
@@ -521,9 +522,10 @@ func (w *SegmentWAL) openSegmentFile(name string) (*os.File, error) {
 		}
 	}()
 
-	if n, err := f.Read(metab); err != nil {
+	switch n, err := f.Read(metab); {
+	case err != nil:
 		return nil, errors.Wrapf(err, "validate meta %q", f.Name())
-	} else if n != 8 {
+	case n != 8:
 		return nil, errors.Errorf("invalid header size %d in %q", n, f.Name())
 	}
 
@@ -1062,9 +1064,10 @@ func (r *walReader) entry(cr io.Reader) (WALEntryType, byte, []byte, error) {
 	tr := io.TeeReader(cr, r.crc32)
 
 	b := make([]byte, 6)
-	if n, err := tr.Read(b); err != nil {
+	switch n, err := tr.Read(b); {
+	case err != nil:
 		return 0, 0, nil, err
-	} else if n != 6 {
+	case n != 6:
 		return 0, 0, nil, r.corruptionErr("invalid entry header size %d", n)
 	}
 
@@ -1086,15 +1089,17 @@ func (r *walReader) entry(cr io.Reader) (WALEntryType, byte, []byte, error) {
 	}
 	buf := r.buf[:length]
 
-	if n, err := tr.Read(buf); err != nil {
+	switch n, err := tr.Read(buf); {
+	case err != nil:
 		return 0, 0, nil, err
-	} else if n != length {
+	case n != length:
 		return 0, 0, nil, r.corruptionErr("invalid entry body size %d", n)
 	}
 
-	if n, err := cr.Read(b[:4]); err != nil {
+	switch n, err := cr.Read(b[:4]); {
+	case err != nil:
 		return 0, 0, nil, err
-	} else if n != 4 {
+	case n != 4:
 		return 0, 0, nil, r.corruptionErr("invalid checksum length %d", n)
 	}
 	if exp, has := binary.BigEndian.Uint32(b[:4]), r.crc32.Sum32(); has != exp {

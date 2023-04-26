@@ -291,13 +291,14 @@ func MergeLabels(primary, secondary []prompb.Label) []prompb.Label {
 	result := make([]prompb.Label, 0, len(primary)+len(secondary))
 	i, j := 0, 0
 	for i < len(primary) && j < len(secondary) {
-		if primary[i].Name < secondary[j].Name {
+		switch {
+		case primary[i].Name < secondary[j].Name:
 			result = append(result, primary[i])
 			i++
-		} else if primary[i].Name > secondary[j].Name {
+		case primary[i].Name > secondary[j].Name:
 			result = append(result, secondary[j])
 			j++
-		} else {
+		default:
 			result = append(result, primary[i])
 			i++
 			j++
@@ -428,8 +429,8 @@ func (c *concreteSeriesIterator) Seek(t int64) chunkenc.ValueType {
 	c.histogramsCur += sort.Search(len(c.series.histograms)-c.histogramsCur, func(n int) bool {
 		return c.series.histograms[n+c.histogramsCur].Timestamp >= t
 	})
-
-	if c.floatsCur < len(c.series.floats) && c.histogramsCur < len(c.series.histograms) {
+	switch {
+	case c.floatsCur < len(c.series.floats) && c.histogramsCur < len(c.series.histograms):
 		// If float samples and histogram samples have overlapping timestamps prefer the float samples.
 		if c.series.floats[c.floatsCur].Timestamp <= c.series.histograms[c.histogramsCur].Timestamp {
 			c.curValType = chunkenc.ValFloat
@@ -445,20 +446,19 @@ func (c *concreteSeriesIterator) Seek(t int64) chunkenc.ValueType {
 				c.floatsCur--
 			}
 		}
-	} else if c.floatsCur < len(c.series.floats) {
+	case c.floatsCur < len(c.series.floats):
 		c.curValType = chunkenc.ValFloat
-	} else if c.histogramsCur < len(c.series.histograms) {
+	case c.histogramsCur < len(c.series.histograms):
 		c.curValType = getHistogramValType(&c.series.histograms[c.histogramsCur])
 	}
-
 	return c.curValType
 }
 
 func getHistogramValType(h *prompb.Histogram) chunkenc.ValueType {
-	if _, isInt := h.GetCount().(*prompb.Histogram_CountInt); isInt {
-		return chunkenc.ValHistogram
+	if h.IsFloatHistogram() {
+		return chunkenc.ValFloatHistogram
 	}
-	return chunkenc.ValFloatHistogram
+	return chunkenc.ValHistogram
 }
 
 // At implements chunkenc.Iterator.
@@ -514,26 +514,25 @@ func (c *concreteSeriesIterator) Next() chunkenc.ValueType {
 		peekHistTS = c.series.histograms[c.histogramsCur+1].Timestamp
 	}
 	c.curValType = chunkenc.ValNone
-
-	if peekFloatTS < peekHistTS {
+	switch {
+	case peekFloatTS < peekHistTS:
 		c.floatsCur++
 		c.curValType = chunkenc.ValFloat
-	} else if peekHistTS < peekFloatTS {
+	case peekHistTS < peekFloatTS:
 		c.histogramsCur++
 		c.curValType = chunkenc.ValHistogram
-	} else if peekFloatTS == noTS && peekHistTS == noTS {
+	case peekFloatTS == noTS && peekHistTS == noTS:
 		// This only happens when the iterator is exhausted; we set the cursors off the end to prevent
 		// Seek() from returning anything afterwards.
 		c.floatsCur = len(c.series.floats)
 		c.histogramsCur = len(c.series.histograms)
-	} else {
+	default:
 		// Prefer float samples to histogram samples if there's a conflict. We advance the cursor for histograms
 		// anyway otherwise the histogram sample will get selected on the next call to Next().
 		c.floatsCur++
 		c.histogramsCur++
 		c.curValType = chunkenc.ValFloat
 	}
-
 	return c.curValType
 }
 
@@ -626,8 +625,11 @@ func exemplarProtoToExemplar(ep prompb.Exemplar) exemplar.Exemplar {
 
 // HistogramProtoToHistogram extracts a (normal integer) Histogram from the
 // provided proto message. The caller has to make sure that the proto message
-// represents an integer histogram and not a float histogram.
+// represents an integer histogram and not a float histogram, or it panics.
 func HistogramProtoToHistogram(hp prompb.Histogram) *histogram.Histogram {
+	if hp.IsFloatHistogram() {
+		panic("HistogramProtoToHistogram called with a float histogram")
+	}
 	return &histogram.Histogram{
 		CounterResetHint: histogram.CounterResetHint(hp.ResetHint),
 		Schema:           hp.Schema,
@@ -644,8 +646,12 @@ func HistogramProtoToHistogram(hp prompb.Histogram) *histogram.Histogram {
 
 // FloatHistogramProtoToFloatHistogram extracts a float Histogram from the
 // provided proto message to a Float Histogram. The caller has to make sure that
-// the proto message represents a float histogram and not an integer histogram.
+// the proto message represents a float histogram and not an integer histogram,
+// or it panics.
 func FloatHistogramProtoToFloatHistogram(hp prompb.Histogram) *histogram.FloatHistogram {
+	if !hp.IsFloatHistogram() {
+		panic("FloatHistogramProtoToFloatHistogram called with an integer histogram")
+	}
 	return &histogram.FloatHistogram{
 		CounterResetHint: histogram.CounterResetHint(hp.ResetHint),
 		Schema:           hp.Schema,
@@ -662,8 +668,11 @@ func FloatHistogramProtoToFloatHistogram(hp prompb.Histogram) *histogram.FloatHi
 
 // HistogramProtoToFloatHistogram extracts and converts a (normal integer) histogram from the provided proto message
 // to a float histogram. The caller has to make sure that the proto message represents an integer histogram and not a
-// float histogram.
+// float histogram, or it panics.
 func HistogramProtoToFloatHistogram(hp prompb.Histogram) *histogram.FloatHistogram {
+	if hp.IsFloatHistogram() {
+		panic("HistogramProtoToFloatHistogram called with a float histogram")
+	}
 	return &histogram.FloatHistogram{
 		CounterResetHint: histogram.CounterResetHint(hp.ResetHint),
 		Schema:           hp.Schema,

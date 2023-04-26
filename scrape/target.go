@@ -413,9 +413,9 @@ func PopulateLabels(lb *labels.Builder, cfg *config.ScrapeConfig, noDefaultPort 
 		// Addresses reaching this point are already wrapped in [] if necessary.
 		switch scheme {
 		case "http", "":
-			addr = addr + ":80"
+			addr += ":80"
 		case "https":
-			addr = addr + ":443"
+			addr += ":443"
 		default:
 			return labels.EmptyLabels(), labels.EmptyLabels(), errors.Errorf("invalid scheme: %q", cfg.Scheme)
 		}

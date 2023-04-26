@@ -299,12 +299,13 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 		err          error
 		ownNamespace string
 	)
-	if conf.KubeConfig != "" {
+	switch {
+	case conf.KubeConfig != "":
 		kcfg, err = clientcmd.BuildConfigFromFlags("", conf.KubeConfig)
 		if err != nil {
 			return nil, err
 		}
-	} else if conf.APIServer.URL == nil {
+	case conf.APIServer.URL == nil:
 		// Use the Kubernetes provided pod service account
 		// as described in https://kubernetes.io/docs/admin/service-accounts-admin/
 		kcfg, err = rest.InClusterConfig()
@@ -324,7 +325,7 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 		}
 
 		level.Info(l).Log("msg", "Using pod service account via in-cluster config")
-	} else {
+	default:
 		rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "kubernetes_sd")
 		if err != nil {
 			return nil, err

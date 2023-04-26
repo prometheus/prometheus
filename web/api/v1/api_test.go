@@ -1972,6 +1972,65 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			},
 		},
 		{
+			endpoint: api.rules,
+			query:    url.Values{"rule_name[]": []string{"test_metric4"}},
+			response: &RuleDiscovery{
+				RuleGroups: []*RuleGroup{
+					{
+						Name:     "grp",
+						File:     "/path/to/file",
+						Interval: 1,
+						Limit:    0,
+						Rules: []Rule{
+							AlertingRule{
+								State:       "inactive",
+								Name:        "test_metric4",
+								Query:       "up == 1",
+								Duration:    1,
+								Labels:      labels.Labels{},
+								Annotations: labels.Labels{},
+								Alerts:      []*Alert{},
+								Health:      "unknown",
+								Type:        "alerting",
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			endpoint: api.rules,
+			query:    url.Values{"rule_group[]": []string{"respond-with-nothing"}},
+			response: &RuleDiscovery{RuleGroups: []*RuleGroup{}},
+		},
+		{
+			endpoint: api.rules,
+			query:    url.Values{"file[]": []string{"/path/to/file"}, "rule_name[]": []string{"test_metric4"}},
+			response: &RuleDiscovery{
+				RuleGroups: []*RuleGroup{
+					{
+						Name:     "grp",
+						File:     "/path/to/file",
+						Interval: 1,
+						Limit:    0,
+						Rules: []Rule{
+							AlertingRule{
+								State:       "inactive",
+								Name:        "test_metric4",
+								Query:       "up == 1",
+								Duration:    1,
+								Labels:      labels.Labels{},
+								Annotations: labels.Labels{},
+								Alerts:      []*Alert{},
+								Health:      "unknown",
+								Type:        "alerting",
+							},
+						},
+					},
+				},
+			},
+		},
+		{
 			endpoint: api.queryExemplars,
 			query: url.Values{
 				"query": []string{`test_metric3{foo="boo"} - test_metric4{foo="bar"}`},
@@ -2558,9 +2617,9 @@ type fakeDB struct {
 	err error
 }
 
-func (f *fakeDB) CleanTombstones() error                               { return f.err }
-func (f *fakeDB) Delete(mint, maxt int64, ms ...*labels.Matcher) error { return f.err }
-func (f *fakeDB) Snapshot(dir string, withHead bool) error             { return f.err }
+func (f *fakeDB) CleanTombstones() error                        { return f.err }
+func (f *fakeDB) Delete(int64, int64, ...*labels.Matcher) error { return f.err }
+func (f *fakeDB) Snapshot(string, bool) error                   { return f.err }
 func (f *fakeDB) Stats(statsByLabelName string) (_ *tsdb.Stats, retErr error) {
 	dbDir, err := os.MkdirTemp("", "tsdb-api-ready")
 	if err != nil {
@@ -2909,7 +2968,7 @@ func TestRespondError(t *testing.T) {
 	}
 
 	var res Response
-	if err = json.Unmarshal([]byte(body), &res); err != nil {
+	if err = json.Unmarshal(body, &res); err != nil {
 		t.Fatalf("Error unmarshaling JSON body: %s", err)
 	}
 

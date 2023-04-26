@@ -169,11 +169,12 @@ func (ls Labels) HashForLabels(b []byte, names ...string) (uint64, []byte) {
 	b = b[:0]
 	i, j := 0, 0
 	for i < len(ls) && j < len(names) {
-		if names[j] < ls[i].Name {
+		switch {
+		case names[j] < ls[i].Name:
 			j++
-		} else if ls[i].Name < names[j] {
+		case ls[i].Name < names[j]:
 			i++
-		} else {
+		default:
 			b = append(b, ls[i].Name...)
 			b = append(b, seps[0])
 			b = append(b, ls[i].Value...)
@@ -213,11 +214,12 @@ func (ls Labels) BytesWithLabels(buf []byte, names ...string) []byte {
 	b.WriteByte(labelSep)
 	i, j := 0, 0
 	for i < len(ls) && j < len(names) {
-		if names[j] < ls[i].Name {
+		switch {
+		case names[j] < ls[i].Name:
 			j++
-		} else if ls[i].Name < names[j] {
+		case ls[i].Name < names[j]:
 			i++
-		} else {
+		default:
 			if b.Len() > 1 {
 				b.WriteByte(seps[0])
 			}

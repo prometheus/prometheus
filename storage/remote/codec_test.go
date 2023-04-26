@@ -524,11 +524,11 @@ func TestDecodeWriteRequest(t *testing.T) {
 	require.Equal(t, writeRequestFixture, actual)
 }
 
-func TestNilHistogramProto(t *testing.T) {
+func TestNilHistogramProto(*testing.T) {
 	// This function will panic if it impromperly handles nil
 	// values, causing the test to fail.
 	HistogramProtoToHistogram(prompb.Histogram{})
-	FloatHistogramProtoToFloatHistogram(prompb.Histogram{})
+	HistogramProtoToFloatHistogram(prompb.Histogram{})
 }
 
 func exampleHistogram() histogram.Histogram {

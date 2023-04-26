@@ -332,9 +332,11 @@ func (it *sampleRingIterator) Next() chunkenc.ValueType {
 	switch s.Type() {
 	case chunkenc.ValHistogram:
 		it.h = s.H()
+		it.fh = nil
 		return chunkenc.ValHistogram
 	case chunkenc.ValFloatHistogram:
 		it.fh = s.FH()
+		it.h = nil
 		return chunkenc.ValFloatHistogram
 	default:
 		it.f = s.F()

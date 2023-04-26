@@ -249,20 +249,20 @@ func (d *Discovery) refreshData(ctx context.Context) ([]*targetgroup.Group, erro
 				if detailedIP.Address != ip.String() {
 					continue
 				}
-
-				if detailedIP.Public && publicIPv4 == "" {
+				switch {
+				case detailedIP.Public && publicIPv4 == "":
 					publicIPv4 = detailedIP.Address
 
 					if detailedIP.RDNS != "" && detailedIP.RDNS != "null" {
 						publicIPv4RDNS = detailedIP.RDNS
 					}
-				} else if !detailedIP.Public && privateIPv4 == "" {
+				case !detailedIP.Public && privateIPv4 == "":
 					privateIPv4 = detailedIP.Address
 
 					if detailedIP.RDNS != "" && detailedIP.RDNS != "null" {
 						privateIPv4RDNS = detailedIP.RDNS
 					}
-				} else {
+				default:
 					extraIPs = append(extraIPs, detailedIP.Address)
 				}
 			}

@@ -100,7 +100,7 @@ func marshalSeriesJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 	stream.WriteObjectEnd()
 }
 
-func marshalSeriesJSONIsEmpty(ptr unsafe.Pointer) bool {
+func marshalSeriesJSONIsEmpty(unsafe.Pointer) bool {
 	return false
 }
 
@@ -153,7 +153,7 @@ func marshalSampleJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 	stream.WriteObjectEnd()
 }
 
-func marshalSampleJSONIsEmpty(ptr unsafe.Pointer) bool {
+func marshalSampleJSONIsEmpty(unsafe.Pointer) bool {
 	return false
 }
 
@@ -177,7 +177,7 @@ func marshalHPointJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 	stream.WriteArrayEnd()
 }
 
-func marshalPointJSONIsEmpty(ptr unsafe.Pointer) bool {
+func marshalPointJSONIsEmpty(unsafe.Pointer) bool {
 	return false
 }
 
@@ -214,6 +214,6 @@ func marshalExemplarJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 	stream.WriteObjectEnd()
 }
 
-func marshalExemplarJSONEmpty(ptr unsafe.Pointer) bool {
+func marshalExemplarJSONEmpty(unsafe.Pointer) bool {
 	return false
 }

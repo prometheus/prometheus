@@ -503,9 +503,10 @@ func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 			// Replicate .Labels().IsEmpty() with a loop here to avoid generating garbage.
 			nonEmpty := false
 			t.LabelsRange(func(l labels.Label) { nonEmpty = true })
-			if nonEmpty {
+			switch {
+			case nonEmpty:
 				all = append(all, t)
-			} else if !t.discoveredLabels.IsEmpty() {
+			case !t.discoveredLabels.IsEmpty():
 				sp.droppedTargets = append(sp.droppedTargets, t)
 			}
 		}
@@ -640,7 +641,7 @@ func verifyLabelLimits(lset labels.Labels, limits *labelLimits) error {
 	met := lset.Get(labels.MetricName)
 	if limits.labelLimit > 0 {
 		nbLabels := lset.Len()
-		if nbLabels > int(limits.labelLimit) {
+		if nbLabels > limits.labelLimit {
 			return fmt.Errorf("label_limit exceeded (metric: %.50s, number of labels: %d, limit: %d)", met, nbLabels, limits.labelLimit)
 		}
 	}
@@ -652,14 +653,14 @@ func verifyLabelLimits(lset labels.Labels, limits *labelLimits) error {
 	return lset.Validate(func(l labels.Label) error {
 		if limits.labelNameLengthLimit > 0 {
 			nameLength := len(l.Name)
-			if nameLength > int(limits.labelNameLengthLimit) {
+			if nameLength > limits.labelNameLengthLimit {
 				return fmt.Errorf("label_name_length_limit exceeded (metric: %.50s, label name: %.50s, length: %d, limit: %d)", met, l.Name, nameLength, limits.labelNameLengthLimit)
 			}
 		}
 
 		if limits.labelValueLengthLimit > 0 {
 			valueLength := len(l.Value)
-			if valueLength > int(limits.labelValueLengthLimit) {
+			if valueLength > limits.labelValueLengthLimit {
 				return fmt.Errorf("label_value_length_limit exceeded (metric: %.50s, label name: %.50s, value: %.50q, length: %d, limit: %d)", met, l.Name, l.Value, valueLength, limits.labelValueLengthLimit)
 			}
 		}
@@ -946,9 +947,10 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 	count := len(c.series) + len(c.droppedSeries) + len(c.metadata)
 	c.metaMtx.Unlock()
 
-	if flushCache {
+	switch {
+	case flushCache:
 		c.successfulCount = count
-	} else if count > c.successfulCount*2+1000 {
+	case count > c.successfulCount*2+1000:
 		// If a target had varying labels in scrapes that ultimately failed,
 		// the caches would grow indefinitely. Force a flush when this happens.
 		// We use the heuristic that this is a doubling of the cache size

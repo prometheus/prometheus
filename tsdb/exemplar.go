@@ -115,17 +115,17 @@ func NewExemplarMetrics(reg prometheus.Registerer) *ExemplarMetrics {
 // 1GB of extra memory, accounting for the fact that this is heap allocated space.
 // If len <= 0, then the exemplar storage is essentially a noop storage but can later be
 // resized to store exemplars.
-func NewCircularExemplarStorage(len int64, m *ExemplarMetrics) (ExemplarStorage, error) {
-	if len < 0 {
-		len = 0
+func NewCircularExemplarStorage(length int64, m *ExemplarMetrics) (ExemplarStorage, error) {
+	if length < 0 {
+		length = 0
 	}
 	c := &CircularExemplarStorage{
-		exemplars: make([]*circularBufferEntry, len),
-		index:     make(map[string]*indexEntry, len/estimatedExemplarsPerSeries),
+		exemplars: make([]*circularBufferEntry, length),
+		index:     make(map[string]*indexEntry, length/estimatedExemplarsPerSeries),
 		metrics:   m,
 	}
 
-	c.metrics.maxExemplars.Set(float64(len))
+	c.metrics.maxExemplars.Set(float64(length))
 
 	return c, nil
 }
@@ -151,7 +151,7 @@ func (ce *CircularExemplarStorage) Querier(_ context.Context) (storage.ExemplarQ
 func (ce *CircularExemplarStorage) Select(start, end int64, matchers ...[]*labels.Matcher) ([]exemplar.QueryResult, error) {
 	ret := make([]exemplar.QueryResult, 0)
 
-	if len(ce.exemplars) <= 0 {
+	if len(ce.exemplars) == 0 {
 		return ret, nil
 	}
 
@@ -219,7 +219,7 @@ func (ce *CircularExemplarStorage) ValidateExemplar(l labels.Labels, e exemplar.
 // Not thread safe. The append parameters tells us whether this is an external validation, or internal
 // as a result of an AddExemplar call, in which case we should update any relevant metrics.
 func (ce *CircularExemplarStorage) validateExemplar(key []byte, e exemplar.Exemplar, append bool) error {
-	if len(ce.exemplars) <= 0 {
+	if len(ce.exemplars) == 0 {
 		return storage.ErrExemplarsDisabled
 	}
 
@@ -334,7 +334,7 @@ func (ce *CircularExemplarStorage) migrate(entry *circularBufferEntry) {
 }
 
 func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemplar) error {
-	if len(ce.exemplars) <= 0 {
+	if len(ce.exemplars) == 0 {
 		return storage.ErrExemplarsDisabled
 	}
 

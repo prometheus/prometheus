@@ -1083,7 +1083,7 @@ func TestWALSegmentSizeOptions(t *testing.T) {
 
 			dbDir := db.Dir()
 			require.NoError(t, db.Close())
-			testFunc(dbDir, int(opts.WALSegmentSize))
+			testFunc(dbDir, opts.WALSegmentSize)
 		})
 	}
 }
@@ -1433,11 +1433,11 @@ type mockCompactorFailing struct {
 	max    int
 }
 
-func (*mockCompactorFailing) Plan(dir string) ([]string, error) {
+func (*mockCompactorFailing) Plan(string) ([]string, error) {
 	return nil, nil
 }
 
-func (c *mockCompactorFailing) Write(dest string, b BlockReader, mint, maxt int64, parent *BlockMeta) (ulid.ULID, error) {
+func (c *mockCompactorFailing) Write(dest string, _ BlockReader, _, _ int64, _ *BlockMeta) (ulid.ULID, error) {
 	if len(c.blocks) >= c.max {
 		return ulid.ULID{}, fmt.Errorf("the compactor already did the maximum allowed blocks so it is time to fail")
 	}
@@ -1465,7 +1465,7 @@ func (*mockCompactorFailing) Compact(string, []string, []*Block) (ulid.ULID, err
 	return ulid.ULID{}, nil
 }
 
-func (*mockCompactorFailing) CompactOOO(dest string, oooHead *OOOCompactionHead) (result []ulid.ULID, err error) {
+func (*mockCompactorFailing) CompactOOO(string, *OOOCompactionHead) (result []ulid.ULID, err error) {
 	return nil, fmt.Errorf("mock compaction failing CompactOOO")
 }
 
@@ -3003,7 +3003,7 @@ func TestCompactHead(t *testing.T) {
 		series = seriesSet.At().Iterator(series)
 		for series.Next() == chunkenc.ValFloat {
 			time, val := series.At()
-			actSamples = append(actSamples, sample{int64(time), val, nil, nil})
+			actSamples = append(actSamples, sample{time, val, nil, nil})
 		}
 		require.NoError(t, series.Err())
 	}

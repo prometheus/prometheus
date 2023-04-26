@@ -485,8 +485,8 @@ func (erringBReader) Size() int64                            { return 0 }
 
 type nopChunkWriter struct{}
 
-func (nopChunkWriter) WriteChunks(chunks ...chunks.Meta) error { return nil }
-func (nopChunkWriter) Close() error                            { return nil }
+func (nopChunkWriter) WriteChunks(...chunks.Meta) error { return nil }
+func (nopChunkWriter) Close() error                     { return nil }
 
 func samplesForRange(minTime, maxTime int64, maxSamplesPerChunk int) (ret [][]sample) {
 	var curr []sample
@@ -1770,12 +1770,6 @@ func TestSparseHistogramSpaceSavings(t *testing.T) {
 		{100, 15, 3, 5},
 		{100, 50, 3, 3},
 		{100, 100, 3, 2},
-		//{1000, 15, 1, 0},
-		//{1000, 50, 1, 0},
-		//{1000, 100, 1, 0},
-		//{1000, 15, 3, 5},
-		//{1000, 50, 3, 3},
-		//{1000, 100, 3, 2},
 	}
 
 	type testSummary struct {

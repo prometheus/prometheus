@@ -134,7 +134,7 @@ func TestTargetURL(t *testing.T) {
 	require.Equal(t, expectedURL, target.URL())
 }
 
-func newTestTarget(targetURL string, deadline time.Duration, lbls labels.Labels) *Target {
+func newTestTarget(targetURL string, _ time.Duration, lbls labels.Labels) *Target {
 	lb := labels.NewBuilder(lbls)
 	lb.Set(model.SchemeLabel, "http")
 	lb.Set(model.AddressLabel, strings.TrimPrefix(targetURL, "http://"))
