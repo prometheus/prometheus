@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.44.0-rc.0 / 2023-04-22
+
+This version is built with Go tag `stringlabels`, to use the smaller data
+structure for Labels that was optional in the previous release. For more
+details about this code change see #10991.
+
+* [CHANGE] Remote-write: Raise default samples per send to 2,000. #12203
+* [FEATURE] Remote-read: Handle native histograms. #12085, #12192
+* [FEATURE] Promtool: Health and readiness check of prometheus server in CLI. #12096
+* [FEATURE] PromQL: Add `query_samples_total` metric, the total number of samples loaded by all queries. #12251
+* [ENHANCEMENT] Scrape: Reduce memory allocations on target labels. #12084
+* [ENHANCEMENT] PromQL: Use faster heap method for `topk()` / `bottomk()`. #12190
+* [ENHANCEMENT] Rules API: Allow filtering by rule name. #12270
+* [ENHANCEMENT] Native Histograms: Various fixes and improvements. #11687, #12264, #12272
+* [ENHANCEMENT] UI: Search of scraping pools is now case-insensitive. #12207
+* [ENHANCEMENT] TSDB: Add an affirmative log message for successful WAL repair. #12135
+* [BUGFIX] TSDB: Block compaction failed when shutting down. #12179
+* [BUGFIX] TSDB: Out-of-order chunks could be ignored if the write-behind log was deleted. #12127
+
 ## 2.43.0 / 2023-03-21
 
 We are working on some performance improvements in Prometheus, which are only
