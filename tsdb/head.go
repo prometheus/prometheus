@@ -1212,9 +1212,9 @@ func (h *Head) truncateWAL(mint int64) error {
 			return true
 		}
 		h.deletedMtx.Lock()
-		_, ok := h.deleted[id]
+		keepUntil, ok := h.deleted[id]
 		h.deletedMtx.Unlock()
-		return ok
+		return ok && keepUntil <= last
 	}
 	h.metrics.checkpointCreationTotal.Inc()
 	if _, err = wlog.Checkpoint(h.logger, h.wal, first, last, keep, mint); err != nil {
@@ -1235,7 +1235,7 @@ func (h *Head) truncateWAL(mint int64) error {
 	// longer need to track deleted series that are before it.
 	h.deletedMtx.Lock()
 	for ref, segment := range h.deleted {
-		if segment < first {
+		if segment <= last {
 			delete(h.deleted, ref)
 		}
 	}
