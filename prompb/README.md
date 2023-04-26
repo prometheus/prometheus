@@ -6,3 +6,4 @@ If however you have modified the defs and do need to re-compile, run
 
 In order for the [script][../scripts/genproto.sh] to run, you'll need `protoc` (version 3.15.8) in
 your PATH.
+
