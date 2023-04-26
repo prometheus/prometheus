@@ -748,6 +748,10 @@ func (w *WL) LastSegmentAndOffset() (seg, offset int, err error) {
 	return
 }
 
+func (w *WL) CurrentSegment() int {
+	return w.segment.i
+}
+
 // Truncate drops all segments before i.
 func (w *WL) Truncate(i int) (err error) {
 	w.metrics.truncateTotal.Inc()

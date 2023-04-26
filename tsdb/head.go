@@ -64,6 +64,18 @@ var (
 	defaultWALReplayConcurrency = runtime.GOMAXPROCS(0)
 )
 
+type seriesAndSegment struct {
+	*stripeSeries
+	segments map[storage.SeriesRef]int
+}
+
+func newSeriesAndSegment(stripeSize int, seriesCallback SeriesLifecycleCallback) seriesAndSegment {
+	var s seriesAndSegment
+	s.stripeSeries = newStripeSeries(stripeSize, seriesCallback)
+	s.segments = make(map[storage.SeriesRef]int)
+	return s
+}
+
 // Head handles reads and writes of time series data within a time window.
 type Head struct {
 	chunkRange               atomic.Int64
@@ -94,7 +106,7 @@ type Head struct {
 	memChunkPool        sync.Pool
 
 	// All series addressable by their ID or hash.
-	series *stripeSeries
+	series seriesAndSegment
 
 	deletedMtx sync.Mutex
 	deleted    map[chunks.HeadSeriesRef]int // Deleted series, and what WAL segment they must be kept until.
@@ -296,7 +308,7 @@ func (h *Head) resetInMemoryState() error {
 
 	h.exemplarMetrics = em
 	h.exemplars = es
-	h.series = newStripeSeries(h.opts.StripeSize, h.opts.SeriesCallback)
+	h.series = newSeriesAndSegment(h.opts.StripeSize, h.opts.SeriesCallback)
 	h.postings = index.NewUnorderedMemPostings()
 	h.tombstones = tombstones.NewMemTombstones()
 	h.deleted = map[chunks.HeadSeriesRef]int{}
@@ -1211,10 +1223,10 @@ func (h *Head) truncateWAL(mint int64) error {
 		if h.series.getByID(id) != nil {
 			return true
 		}
-		h.deletedMtx.Lock()
-		_, ok := h.deleted[id]
-		h.deletedMtx.Unlock()
-		return ok
+		if h.series.segments[storage.SeriesRef(id)] > last {
+			return true
+		}
+		return false
 	}
 	h.metrics.checkpointCreationTotal.Inc()
 	if _, err = wlog.Checkpoint(h.logger, h.wal, first, last, keep, mint); err != nil {
@@ -1230,16 +1242,6 @@ func (h *Head) truncateWAL(mint int64) error {
 		// that supersedes them.
 		level.Error(h.logger).Log("msg", "truncating segments failed", "err", err)
 	}
-
-	// The checkpoint is written and segments before it is truncated, so we no
-	// longer need to track deleted series that are before it.
-	h.deletedMtx.Lock()
-	for ref, segment := range h.deleted {
-		if segment < first {
-			delete(h.deleted, ref)
-		}
-	}
-	h.deletedMtx.Unlock()
 
 	h.metrics.checkpointDeleteTotal.Inc()
 	if err := wlog.DeleteCheckpoints(h.wal.Dir(), last); err != nil {
@@ -1487,21 +1489,6 @@ func (h *Head) gc() (actualInOrderMint, minOOOTime int64, minMmapFile int) {
 	// Remove tombstones referring to the deleted series.
 	h.tombstones.DeleteTombstones(deleted)
 	h.tombstones.TruncateBefore(mint)
-
-	if h.wal != nil {
-		_, last, _ := wlog.Segments(h.wal.Dir())
-		h.deletedMtx.Lock()
-		// Keep series records until we're past segment 'last'
-		// because the WAL will still have samples records with
-		// this ref ID. If we didn't keep these series records then
-		// on start up when we replay the WAL, or any other code
-		// that reads the WAL, wouldn't be able to use those
-		// samples since we would have no labels for that ref ID.
-		for ref := range deleted {
-			h.deleted[chunks.HeadSeriesRef(ref)] = last
-		}
-		h.deletedMtx.Unlock()
-	}
 
 	return actualInOrderMint, minOOOTime, minMmapFile
 }

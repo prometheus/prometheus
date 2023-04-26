@@ -48,7 +48,11 @@ func (a *initAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 
 	a.head.initTime(t)
 	a.app = a.head.appender()
-	return a.app.Append(ref, lset, t, v)
+	ref, err := a.app.Append(ref, lset, t, v)
+	if err != nil {
+		a.head.series.segments[ref] = a.head.wal.CurrentSegment()
+	}
+	return ref, err
 }
 
 func (a *initAppender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {

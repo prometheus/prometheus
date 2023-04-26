@@ -1095,6 +1095,94 @@ func TestDeletedSamplesAndSeriesStillInWALAfterCheckpoint(t *testing.T) {
 	require.Equal(t, 0, metadata)
 }
 
+func TestDeleteWithSegmentIndexLogic(t *testing.T) {
+	numSamples := 10000
+
+	// Enough samples to cause a checkpoint.
+	hb, w := newTestHead(t, int64(numSamples)*10, false, false)
+
+	for i := 0; i < numSamples; i++ {
+		app := hb.Appender(context.Background())
+		_, err := app.Append(0, labels.FromStrings("a", "b"), int64(i), 0)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+	}
+	require.NoError(t, hb.Truncate(1))
+
+	// Confirm there's been a checkpoint.
+	cdir, _, err := wlog.LastCheckpoint(w.Dir())
+	require.NoError(t, err)
+	// Read in checkpoint and WAL.
+	recs := readTestWAL(t, cdir)
+	recs = append(recs, readTestWAL(t, w.Dir())...)
+
+	var series, samples, stones, metadata int
+	for _, rec := range recs {
+		switch rec.(type) {
+		case []record.RefSeries:
+			series++
+		case []record.RefSample:
+			samples++
+		case []tombstones.Stone:
+			stones++
+		case []record.RefMetadata:
+			metadata++
+		default:
+			t.Fatalf("unknown record type")
+		}
+	}
+	require.Equal(t, 1, series)
+	require.Equal(t, 9999, samples)
+	require.Equal(t, 0, metadata)
+
+	// lets write some samples for a new series and truncate again to see if deletes work
+	// as expected
+	n := time.Now().Unix()
+	// create a new segment so we avoid samples for the previous series being in the same segment as
+	// our new series for the purposes of the test
+	w.NextSegmentSync()
+
+	for i := 0; i < numSamples; i++ {
+		app := hb.Appender(context.Background())
+		_, err := app.Append(0, labels.FromStrings("b", "c"), int64(i)+n, 0)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+	}
+
+	require.NoError(t, hb.Truncate(n))
+	require.NoError(t, hb.Close())
+	// Confirm there's been a checkpoint.
+	cdir, _, err = wlog.LastCheckpoint(w.Dir())
+	require.NoError(t, err)
+	// Read in checkpoint and WAL.
+	recs = readTestWAL(t, cdir)
+	recs = append(recs, readTestWAL(t, w.Dir())...)
+
+	// reset the counters
+	series = 0
+	samples = 0
+	stones = 0
+	metadata = 0
+	for _, rec := range recs {
+		switch rec.(type) {
+		case []record.RefSeries:
+			series++
+		case []record.RefSample:
+			samples++
+		case []tombstones.Stone:
+			stones++
+		case []record.RefMetadata:
+			metadata++
+		default:
+			t.Fatalf("unknown record type")
+		}
+	}
+
+	require.Equal(t, 1, series)
+	require.Equal(t, 10000, samples)
+	require.Equal(t, 0, metadata)
+}
+
 func TestDelete_e2e(t *testing.T) {
 	numDatapoints := 1000
 	numRanges := 1000
