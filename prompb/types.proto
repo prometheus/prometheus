@@ -147,7 +147,7 @@ message TimeSeries {
   repeated Sample samples       = 2 [(gogoproto.nullable) = false];
   repeated Exemplar exemplars   = 3 [(gogoproto.nullable) = false];
   repeated Histogram histograms = 4 [(gogoproto.nullable) = false];
-  repeated Metadata metadatas   = 5 [(gogoproto.nullable) = false];
+  Metadata metadata             = 5 [(gogoproto.nullable) = false];
 }
 
 message Label {

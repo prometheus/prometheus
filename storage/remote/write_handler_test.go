@@ -80,10 +80,9 @@ func TestRemoteWriteHandler(t *testing.T) {
 			k++
 		}
 
-		for _, m := range ts.Metadatas {
-			require.Equal(t, mockMetadata{labels, int32(m.Type), m.Unit, m.Help}, appendable.metadata[l])
-			l++
-		}
+		m := ts.Metadata
+		require.Equal(t, mockMetadata{labels, int32(m.Type), m.Unit, m.Help}, appendable.metadata[l])
+		l++
 	}
 }
 
