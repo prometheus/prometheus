@@ -178,6 +178,18 @@ func main() {
 	queryLabelsEnd := queryLabelsCmd.Flag("end", "End time (RFC3339 or Unix timestamp).").String()
 	queryLabelsMatch := queryLabelsCmd.Flag("match", "Series selector. Can be specified multiple times.").Strings()
 
+	pushCmd := app.Command("push", "Push to a Prometheus server.")
+	pushCmd.Flag("http.config.file", "HTTP client configuration file for promtool to connect to Prometheus.").PlaceHolder("<filename>").ExistingFileVar(&httpConfigFilePath)
+	pushMetricsCmd := pushCmd.Command("metrics", "Push metrics to a prometheus remote write.")
+	pushMetricsCmd.Arg("remote-write-url", "Prometheus remote write url to push metrics.").Required().URLVar(&serverURL)
+	metricFiles := pushMetricsCmd.Arg(
+		"metric-files",
+		"The metric files to push.",
+	).Required().ExistingFiles()
+	metricJobLabel := pushMetricsCmd.Flag("job-label", "Job label to attach to metrics.").Default("promtool").String()
+	pushMetricsTimeout := pushMetricsCmd.Flag("timeout", "The time to wait for pushing metrics.").Default("30s").Duration()
+	pushMetricsHeaders := pushMetricsCmd.Flag("header", "Prometheus remote write header.").StringMap()
+
 	testCmd := app.Command("test", "Unit testing.")
 	testRulesCmd := testCmd.Command("rules", "Unit tests for rules.")
 	testRulesFiles := testRulesCmd.Arg(
@@ -300,6 +312,9 @@ func main() {
 
 	case checkMetricsCmd.FullCommand():
 		os.Exit(CheckMetrics(*checkMetricsExtended))
+
+	case pushMetricsCmd.FullCommand():
+		os.Exit(PushMetrics(serverURL, httpRoundTripper, *pushMetricsHeaders, *pushMetricsTimeout, *metricJobLabel, *metricFiles...))
 
 	case queryInstantCmd.FullCommand():
 		os.Exit(QueryInstant(serverURL, httpRoundTripper, *queryInstantExpr, *queryInstantTime, p))

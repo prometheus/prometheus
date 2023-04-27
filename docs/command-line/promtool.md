@@ -27,6 +27,7 @@ Tooling for the Prometheus monitoring system.
 | check | Check the resources for validity. |
 | query | Run query against a Prometheus server. |
 | debug | Fetch debug information. |
+| push | Push to a Prometheus server. |
 | test | Unit testing. |
 | tsdb | Run tsdb commands. |
 
@@ -368,6 +369,48 @@ Fetch all debug information.
 | Argument | Description | Required |
 | --- | --- | --- |
 | server | Prometheus server to get all debug information from. | Yes |
+
+
+
+
+### `promtool push`
+
+Push to a Prometheus server.
+
+
+
+#### Flags
+
+| Flag | Description |
+| --- | --- |
+| <code class="text-nowrap">--http.config.file</code> | HTTP client configuration file for promtool to connect to Prometheus. |
+
+
+
+
+##### `promtool push metrics`
+
+Push metrics to a prometheus remote write.
+
+
+
+###### Flags
+
+| Flag | Description | Default |
+| --- | --- | --- |
+| <code class="text-nowrap">--job-label</code> | Job label to attach to metrics. | `promtool` |
+| <code class="text-nowrap">--timeout</code> | The time to wait for pushing metrics. | `30s` |
+| <code class="text-nowrap">--header</code> | Prometheus remote write header. |  |
+
+
+
+
+###### Arguments
+
+| Argument | Description | Required |
+| --- | --- | --- |
+| remote-write-url | Prometheus remote write url to push metrics. | Yes |
+| metric-files | The metric files to push. | Yes |
 
 
 
