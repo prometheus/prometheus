@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.37.7 / 2023-04-27
+
+* [BUGFIX] Scrape: Fix prometheus_target_scrape_pool_target_limit metric not set
+  before reloading. #12002
+
 ## 2.37.6 / 2023-02-20
 
 This release contains a toolchain update. It is built on top of Go 1.19, as the Go
