@@ -1,6 +1,6 @@
 {
   "name": "@prometheus-io/lezer-promql",
-  "version": "0.37.6",
+  "version": "0.37.7",
   "description": "lezer-based PromQL grammar",
   "main": "index.cjs",
   "type": "module",
