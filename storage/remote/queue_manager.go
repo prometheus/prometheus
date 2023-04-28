@@ -1505,7 +1505,7 @@ func (s *shards) populateTimeSeries(batch []timeSeries, pendingData []prompb.Tim
 			pendingData[nPending].Histograms = pendingData[nPending].Histograms[:0]
 		}
 		if s.qm.sendMetadata {
-			pendingData[nPending].Metadatas = pendingData[nPending].Metadatas[:0]
+			pendingData[nPending].Metadata = prompb.Metadata{}
 		}
 
 		// Number of pending samples is limited by the fact that sendSamples (via sendSamplesWithBackoff)
@@ -1533,20 +1533,20 @@ func (s *shards) populateTimeSeries(batch []timeSeries, pendingData []prompb.Tim
 			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, FloatHistogramToHistogramProto(d.timestamp, d.floatHistogram))
 			nPendingHistograms++
 		case tMetadata:
-			pendingData[nPending].Metadatas = append(pendingData[nPending].Metadatas, prompb.Metadata{
+			pendingData[nPending].Metadata = prompb.Metadata{
 				Type: metricTypeToProtoEquivalent(d.metadata.Type),
 				Help: d.metadata.Help,
 				Unit: d.metadata.Unit,
-			})
+			}
 			nPendingMetadata++
 		}
 	}
 	return nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata
 }
 
-func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, sampleCount, exemplarCount, histogramCount, metadataCount int, pBuf *proto.Buffer, buf *[]byte) {
+func (s *shards) sendSamples(ctx context.Context, series []prompb.TimeSeries, sampleCount, exemplarCount, histogramCount, metadataCount int, pBuf *proto.Buffer, buf *[]byte) {
 	begin := time.Now()
-	err := s.sendSamplesWithBackoff(ctx, samples, sampleCount, exemplarCount, histogramCount, metadataCount, pBuf, buf)
+	err := s.sendSamplesWithBackoff(ctx, series, sampleCount, exemplarCount, histogramCount, metadataCount, pBuf, buf)
 	if err != nil {
 		level.Error(s.qm.logger).Log("msg", "non-recoverable error", "count", sampleCount, "exemplarCount", exemplarCount, "err", err)
 		s.qm.metrics.failedSamplesTotal.Add(float64(sampleCount))
@@ -1557,7 +1557,7 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, s
 
 	// These counters are used to calculate the dynamic sharding, and as such
 	// should be maintained irrespective of success or failure.
-	s.qm.dataOut.incr(int64(len(samples)))
+	s.qm.dataOut.incr(int64(len(series)))
 	s.qm.dataOutDuration.incr(int64(time.Since(begin)))
 	s.qm.lastSendTimestamp.Store(time.Now().Unix())
 	// Pending samples/exemplars/histograms also should be subtracted, as an error means
@@ -1572,10 +1572,10 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, s
 	s.enqueuedMetadata.Sub(int64(metadataCount))
 }
 
-// sendSamples to the remote storage with backoff for recoverable errors.
-func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.TimeSeries, sampleCount, exemplarCount, histogramCount, metadataCount int, pBuf *proto.Buffer, buf *[]byte) error {
-	// Build the WriteRequest with no metadata.
-	req, highest, err := buildWriteRequest(samples, nil, pBuf, *buf)
+// sendSamplesWithBackoff to the remote storage with backoff for recoverable errors.
+func (s *shards) sendSamplesWithBackoff(ctx context.Context, series []prompb.TimeSeries, sampleCount, exemplarCount, histogramCount, metadataCount int, pBuf *proto.Buffer, buf *[]byte) error {
+	// Build the WriteRequest with no separate metadata struct.
+	req, highest, err := buildWriteRequest(series, nil, pBuf, *buf)
 	if err != nil {
 		// Failing to build the write request is non-recoverable, since it will
 		// only error if marshaling the proto to bytes fails.

@@ -861,6 +861,8 @@ func (c *TestWriteClient) waitForExpectedData(tb testing.TB) {
 	}
 }
 
+var emptyMetadata prompb.Metadata
+
 func (c *TestWriteClient) Store(_ context.Context, req []byte) error {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
@@ -900,9 +902,10 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte) error {
 				c.receivedHistograms[seriesName] = append(c.receivedHistograms[seriesName], histogram)
 			}
 		}
-		for _, metadata := range ts.Metadatas {
+
+		if ts.Metadata.String() != "" { // only count non-empty metadata
+			c.receivedTsMetadata[seriesName] = append(c.receivedTsMetadata[seriesName], ts.Metadata)
 			count++
-			c.receivedTsMetadata[seriesName] = append(c.receivedTsMetadata[seriesName], metadata)
 		}
 	}
 	if c.withWaitGroup {
