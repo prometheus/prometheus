@@ -72,6 +72,7 @@ type WatcherMetrics struct {
 	recordDecodeFails     *prometheus.CounterVec
 	samplesSentPreTailing *prometheus.CounterVec
 	currentSegment        *prometheus.GaugeVec
+	notificationsSkipped  *prometheus.CounterVec
 }
 
 // Watcher watches the TSDB WAL for a given WriteTo.
@@ -94,6 +95,7 @@ type Watcher struct {
 	recordDecodeFailsMetric prometheus.Counter
 	samplesSentPreTailing   prometheus.Counter
 	currentSegmentMetric    prometheus.Gauge
+	notificationsSkipped    prometheus.Counter
 
 	readNotify chan struct{}
 	quit       chan struct{}
@@ -141,6 +143,15 @@ func NewWatcherMetrics(reg prometheus.Registerer) *WatcherMetrics {
 			},
 			[]string{consumer},
 		),
+		notificationsSkipped: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: "prometheus",
+				Subsystem: "wal_watcher",
+				Name:      "notifications_skipped_total",
+				Help:      "The number of WAL write notifications that the Watcher has skipped due to already being in a WAL read routine.",
+			},
+			[]string{consumer},
+		),
 	}
 
 	if reg != nil {
@@ -148,6 +159,7 @@ func NewWatcherMetrics(reg prometheus.Registerer) *WatcherMetrics {
 		reg.MustRegister(m.recordDecodeFails)
 		reg.MustRegister(m.samplesSentPreTailing)
 		reg.MustRegister(m.currentSegment)
+		reg.MustRegister(m.notificationsSkipped)
 	}
 
 	return m
@@ -176,12 +188,14 @@ func NewWatcher(metrics *WatcherMetrics, readerMetrics *LiveReaderMetrics, logge
 	}
 }
 
-func (w *Watcher) Notfy() {
+func (w *Watcher) Notify() {
 	select {
 	case w.readNotify <- struct{}{}:
-	default: // default so we can ext
+		return
+	default: // default so we can exit
 		// we don't need a buffered channel or any buffering since
 		// for each notification it recv's the watcher will read until EOF
+		w.notificationsSkipped.Inc()
 	}
 }
 
@@ -194,6 +208,8 @@ func (w *Watcher) setMetrics() {
 		w.recordDecodeFailsMetric = w.metrics.recordDecodeFails.WithLabelValues(w.name)
 		w.samplesSentPreTailing = w.metrics.samplesSentPreTailing.WithLabelValues(w.name)
 		w.currentSegmentMetric = w.metrics.currentSegment.WithLabelValues(w.name)
+		w.notificationsSkipped = w.metrics.notificationsSkipped.WithLabelValues(w.name)
+
 	}
 }
 
@@ -439,7 +455,7 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 
 		// we haven't read due to a notification in quite some time, try reading anyways
 		case <-readTicker.C:
-			fmt.Println("READ BECAUSE OF TIMEOUT")
+			level.Debug(w.logger).Log("msg", "Watcher is reading the WAL due to timeout, haven't received any write notifications recently", "timeout", readTimeout)
 			err = w.readSegment(reader, segmentNum, tail)
 			readTicker.Reset(time.Duration(readTimeout))
 			// Ignore all errors reading to end of segment whilst replaying the WAL.
@@ -458,7 +474,6 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 			}
 
 		case <-w.readNotify:
-			fmt.Println("READ BECAUSE OF NOTIFICATION")
 			err = w.readSegment(reader, segmentNum, tail)
 			// still want to reset the ticker so we don't read too often
 			readTicker.Reset(time.Duration(readTimeout))

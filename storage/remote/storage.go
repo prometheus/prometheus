@@ -79,7 +79,7 @@ func NewStorage(l log.Logger, reg prometheus.Registerer, stCallback startTimeCal
 func (s *Storage) Notify() {
 	for _, s := range s.rws.queues {
 		// These should all be non blocking
-		s.watcher.Notfy()
+		s.watcher.Notify()
 	}
 }
 

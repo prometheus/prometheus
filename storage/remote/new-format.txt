@@ -1,0 +1,17 @@
+goos: linux
+goarch: amd64
+pkg: github.com/prometheus/prometheus/storage/remote
+cpu: AMD Ryzen 9 5950X 16-Core Processor            
+BenchmarkBuildWriteRequest
+BenchmarkBuildWriteRequest-32    	     627	   1975060 ns/op	    262630 compressedSize/op	 1351783 B/op	       3 allocs/op
+BenchmarkBuildWriteRequest-32    	     606	   1951344 ns/op	    262410 compressedSize/op	 1351783 B/op	       3 allocs/op
+BenchmarkBuildWriteRequest-32    	     604	   1946873 ns/op	    262707 compressedSize/op	 1351782 B/op	       3 allocs/op
+BenchmarkBuildWriteRequest-32    	     598	   1970729 ns/op	    262633 compressedSize/op	 1351781 B/op	       3 allocs/op
+BenchmarkBuildWriteRequest-32    	     602	   1961725 ns/op	    262385 compressedSize/op	 1351779 B/op	       3 allocs/op
+BenchmarkBuildWriteRequest-32    	     606	   1970901 ns/op	    262573 compressedSize/op	 1351782 B/op	       3 allocs/op
+BenchmarkBuildWriteRequest-32    	     595	   1974425 ns/op	    262474 compressedSize/op	 1351783 B/op	       3 allocs/op
+BenchmarkBuildWriteRequest-32    	     597	   1986389 ns/op	    262534 compressedSize/op	 1351782 B/op	       3 allocs/op
+BenchmarkBuildWriteRequest-32    	     602	   1973763 ns/op	    262526 compressedSize/op	 1351780 B/op	       3 allocs/op
+BenchmarkBuildWriteRequest-32    	     598	   1972656 ns/op	    262490 compressedSize/op	 1351782 B/op	       3 allocs/op
+PASS
+ok  	github.com/prometheus/prometheus/storage/remote	14.217s
