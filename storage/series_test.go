@@ -14,6 +14,7 @@
 package storage
 
 import (
+	"fmt"
 	"math"
 	"testing"
 
@@ -125,8 +126,6 @@ func TestChunkSeriesSetToSeriesSet(t *testing.T) {
 }
 
 type histogramTest struct {
-	name                 string
-	lbs                  labels.Labels
 	samples              []tsdbutil.Sample
 	expectedChunks       int
 	expectedCounterReset bool
@@ -144,6 +143,7 @@ func TestHistogramSeriesToChunks(t *testing.T) {
 		},
 		PositiveBuckets: []int64{2, 1}, // Abs: 2, 3
 	}
+	// appendable to h1
 	h2 := &histogram.Histogram{
 		Count:         12,
 		ZeroCount:     2,
@@ -156,91 +156,175 @@ func TestHistogramSeriesToChunks(t *testing.T) {
 		},
 		PositiveBuckets: []int64{2, 1, -2, 3}, // Abs: 2, 3, 1, 4
 	}
+	// implicit counter reset by reduction in buckets, not appendable
+	h2down := &histogram.Histogram{
+		Count:         8,
+		ZeroCount:     2,
+		ZeroThreshold: 0.001,
+		Sum:           100, // Does not matter.
+		Schema:        0,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 1, Length: 2},
+		},
+		PositiveBuckets: []int64{1, 1, -1, 3}, // Abs: 1, 2, 1, 4
+	}
+
+	fh1 := &histogram.FloatHistogram{
+		Count:         4,
+		ZeroCount:     2,
+		ZeroThreshold: 0.001,
+		Sum:           100, // Does not matter.
+		Schema:        0,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+		},
+		PositiveBuckets: []float64{3, 1},
+	}
+	// appendable to fh1
+	fh2 := &histogram.FloatHistogram{
+		Count:         15,
+		ZeroCount:     2,
+		ZeroThreshold: 0.001,
+		Sum:           100, // Does not matter.
+		Schema:        0,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 1, Length: 2},
+		},
+		PositiveBuckets: []float64{4, 2, 7, 2},
+	}
+	// implicit counter reset by reduction in buckets, not appendable
+	fh2down := &histogram.FloatHistogram{
+		Count:         13,
+		ZeroCount:     2,
+		ZeroThreshold: 0.001,
+		Sum:           100, // Does not matter.
+		Schema:        0,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 1, Length: 2},
+		},
+		PositiveBuckets: []float64{2, 2, 7, 2},
+	}
+
 	staleHistogram := &histogram.Histogram{
 		Sum: math.Float64frombits(value.StaleNaN),
 	}
-	tests := []histogramTest{
-		{
-			name: "single histogram to single chunk",
-			lbs:  labels.FromStrings("__name__", "up", "instance", "localhost:8080"),
+	staleFloatHistogram := &histogram.FloatHistogram{
+		Sum: math.Float64frombits(value.StaleNaN),
+	}
+
+	tests := map[string]histogramTest{
+		"single histogram to single chunk": {
 			samples: []tsdbutil.Sample{
-				&sample{t: 1, h: h1},
+				hSample{t: 1, h: h1},
 			},
 			expectedChunks: 1,
 		},
-		{
-			name: "two histograms encoded to a single chunk",
-			lbs:  labels.FromStrings("__name__", "up", "instance", "localhost:8080"),
+		"two histograms encoded to a single chunk": {
 			samples: []tsdbutil.Sample{
-				&sample{t: 1, h: h1},
-				&sample{t: 2, h: h2},
+				hSample{t: 1, h: h1},
+				hSample{t: 2, h: h2},
 			},
 			expectedChunks: 1,
 		},
-		{
-			name: "two histograms encoded to two chunks",
-			lbs:  labels.FromStrings("__name__", "up", "instance", "localhost:8080"),
+		"two histograms encoded to two chunks": {
 			samples: []tsdbutil.Sample{
-				&sample{t: 1, h: h2},
-				&sample{t: 2, h: h1},
+				hSample{t: 1, h: h2},
+				hSample{t: 2, h: h1},
 			},
 			expectedChunks:       2,
 			expectedCounterReset: true,
 		},
-		{
-			name: "histogram and stale sample encoded to two chunks",
-			lbs:  labels.FromStrings("__name__", "up", "instance", "localhost:8080"),
+		"histogram and stale sample encoded to two chunks": {
 			samples: []tsdbutil.Sample{
-				&sample{t: 1, h: staleHistogram},
-				&sample{t: 2, h: h1},
+				hSample{t: 1, h: staleHistogram},
+				hSample{t: 2, h: h1},
+			},
+			expectedChunks: 2,
+		},
+		"histogram and reduction in bucket encoded to two chunks": {
+			samples: []tsdbutil.Sample{
+				hSample{t: 1, h: h1},
+				hSample{t: 2, h: h2down},
+			},
+			expectedChunks:       2,
+			expectedCounterReset: true,
+		},
+		// Float histograms
+		"single float histogram to single chunk": {
+			samples: []tsdbutil.Sample{
+				fhSample{t: 1, fh: fh1},
+			},
+			expectedChunks: 1,
+		},
+		"two float histograms encoded to a single chunk": {
+			samples: []tsdbutil.Sample{
+				fhSample{t: 1, fh: fh1},
+				fhSample{t: 2, fh: fh2},
+			},
+			expectedChunks: 1,
+		},
+		"two float histograms encoded to two chunks": {
+			samples: []tsdbutil.Sample{
+				fhSample{t: 1, fh: fh2},
+				fhSample{t: 2, fh: fh1},
+			},
+			expectedChunks:       2,
+			expectedCounterReset: true,
+		},
+		"float histogram and stale sample encoded to two chunks": {
+			samples: []tsdbutil.Sample{
+				fhSample{t: 1, fh: staleFloatHistogram},
+				fhSample{t: 2, fh: fh1},
+			},
+			expectedChunks: 2,
+		},
+		"float histogram and reduction in bucket encoded to two chunks": {
+			samples: []tsdbutil.Sample{
+				fhSample{t: 1, fh: fh1},
+				fhSample{t: 2, fh: fh2down},
+			},
+			expectedChunks:       2,
+			expectedCounterReset: true,
+		},
+		// Mixed
+		"histogram and float histogram encoded to two chunks": {
+			samples: []tsdbutil.Sample{
+				hSample{t: 1, h: h1},
+				fhSample{t: 2, fh: fh2},
+			},
+			expectedChunks: 2,
+		},
+		"float histogram and histogram encoded to two chunks": {
+			samples: []tsdbutil.Sample{
+				fhSample{t: 1, fh: fh1},
+				hSample{t: 2, h: h2},
+			},
+			expectedChunks: 2,
+		},
+		"histogram and stale float histogram encoded to two chunks": {
+			samples: []tsdbutil.Sample{
+				hSample{t: 1, h: h1},
+				fhSample{t: 2, fh: staleFloatHistogram},
 			},
 			expectedChunks: 2,
 		},
 	}
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			t.Run("histograms", func(t *testing.T) {
-				testHistogramsSeriesToChunks(t, test)
-			})
-			t.Run("float_histograms", func(t *testing.T) {
-				// Convert all histograms to float histograms.
-				for i := range test.samples {
-					test.samples[i].(*sample).fh = test.samples[i].H().ToFloat()
-					test.samples[i].(*sample).h = nil
-				}
-				testHistogramsSeriesToChunks(t, test)
-			})
+	for testName, test := range tests {
+		t.Run(testName, func(t *testing.T) {
+			testHistogramsSeriesToChunks(t, test)
 		})
 	}
-	t.Run("mixed_histograms", func(t *testing.T) {
-		mixedTests := []histogramTest{{
-			name: "histogram and float histogram encoded to two chunks",
-			lbs:  labels.FromStrings("__name__", "up", "instance", "localhost:8080"),
-			samples: []tsdbutil.Sample{
-				&sample{t: 1, h: h1},
-				&sample{t: 2, fh: h2.ToFloat()},
-			},
-			expectedChunks: 2,
-		}, {
-			name: "histogram and float histogram encoded to two chunks",
-			lbs:  labels.FromStrings("__name__", "up", "instance", "localhost:8080"),
-			samples: []tsdbutil.Sample{
-				&sample{t: 1, fh: h1.ToFloat()},
-				&sample{t: 2, h: h2},
-			},
-			expectedChunks: 2,
-		}}
-		for _, test := range mixedTests {
-			testHistogramsSeriesToChunks(t, test)
-		}
-	})
 }
 
 func testHistogramsSeriesToChunks(t *testing.T, test histogramTest) {
-	series := NewListSeries(test.lbs, test.samples)
+	lbs := labels.FromStrings("__name__", "up", "instance", "localhost:8080")
+	series := NewListSeries(lbs, test.samples)
 	encoder := NewSeriesToChunkEncoder(series)
-	require.EqualValues(t, test.lbs, encoder.Labels())
+	require.EqualValues(t, lbs, encoder.Labels())
 
 	chks, err := ExpandChunks(encoder.Iterator(nil))
 	require.NoError(t, err)
@@ -249,19 +333,32 @@ func testHistogramsSeriesToChunks(t *testing.T, test histogramTest) {
 	// Decode all encoded samples and assert they are equal to the original ones.
 	encodedSamples := expandHistogramSamples(chks)
 	require.Equal(t, len(test.samples), len(encodedSamples))
-	for i, encodedSample := range encodedSamples {
-		var testSample *histogram.FloatHistogram
-		if test.samples[i].H() != nil {
-			testSample = test.samples[i].H().ToFloat()
-		} else {
-			testSample = test.samples[i].FH()
-		}
 
-		if value.IsStaleNaN(testSample.Sum) {
-			require.True(t, value.IsStaleNaN(encodedSample.Sum))
-			continue
+	for i, s := range test.samples {
+		switch expectedSample := s.(type) {
+		case hSample:
+			encodedSample, ok := encodedSamples[i].(hSample)
+			require.True(t, ok, "expect histogram", fmt.Sprintf("at idx %d", i))
+			// ignore counter reset here, will check on chunk level
+			encodedSample.h.CounterResetHint = histogram.UnknownCounterReset
+			if value.IsStaleNaN(expectedSample.h.Sum) {
+				require.True(t, value.IsStaleNaN(encodedSample.h.Sum), fmt.Sprintf("at idx %d", i))
+				continue
+			}
+			require.Equal(t, *expectedSample.h, *encodedSample.h.Compact(0), fmt.Sprintf("at idx %d", i))
+		case fhSample:
+			encodedSample, ok := encodedSamples[i].(fhSample)
+			require.True(t, ok, "expect float histogram", fmt.Sprintf("at idx %d", i))
+			// ignore counter reset here, will check on chunk level
+			encodedSample.fh.CounterResetHint = histogram.UnknownCounterReset
+			if value.IsStaleNaN(expectedSample.fh.Sum) {
+				require.True(t, value.IsStaleNaN(encodedSample.fh.Sum), fmt.Sprintf("at idx %d", i))
+				continue
+			}
+			require.Equal(t, *expectedSample.fh, *encodedSample.fh.Compact(0), fmt.Sprintf("at idx %d", i))
+		default:
+			t.Error("internal error, unexpected type")
 		}
-		require.True(t, encodedSample.Compact(0).Equals(testSample))
 	}
 
 	// If a counter reset hint is expected, it can only be found in the second chunk.
@@ -276,24 +373,27 @@ func testHistogramsSeriesToChunks(t *testing.T, test histogramTest) {
 	}
 }
 
-func expandHistogramSamples(chunks []chunks.Meta) []*histogram.FloatHistogram {
+func expandHistogramSamples(chunks []chunks.Meta) (result []tsdbutil.Sample) {
 	if len(chunks) == 0 {
-		return nil
+		return
 	}
 
-	return append(
-		expandHistogramChunk(chunks[0].Chunk.Iterator(nil)),
-		expandHistogramSamples(chunks[1:])...,
-	)
-}
-
-func expandHistogramChunk(it chunkenc.Iterator) []*histogram.FloatHistogram {
-	floatHistograms := make([]*histogram.FloatHistogram, 0)
-	for it.Next() != chunkenc.ValNone {
-		_, fh := it.AtFloatHistogram()
-		floatHistograms = append(floatHistograms, fh)
+	for _, chunk := range chunks {
+		it := chunk.Chunk.Iterator(nil)
+		for vt := it.Next(); vt != chunkenc.ValNone; vt = it.Next() {
+			switch vt {
+			case chunkenc.ValHistogram:
+				t, h := it.AtHistogram()
+				result = append(result, hSample{t: t, h: h})
+			case chunkenc.ValFloatHistogram:
+				t, fh := it.AtFloatHistogram()
+				result = append(result, fhSample{t: t, fh: fh})
+			default:
+				panic("unexpected value type")
+			}
+		}
 	}
-	return floatHistograms
+	return
 }
 
 func getCounterResetHint(chunk chunks.Meta) chunkenc.CounterResetHeader {

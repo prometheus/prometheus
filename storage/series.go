@@ -485,38 +485,41 @@ func (a *RecodingAppender) AppendHistogram(t int64, h *histogram.Histogram) (okT
 		return false, false
 	}
 
-	if app.NumSamples() > 0 {
-		var (
-			pForwardInserts, nForwardInserts   []chunkenc.Insert
-			pBackwardInserts, nBackwardInserts []chunkenc.Insert
-			pMergedSpans, nMergedSpans         []histogram.Span
-		)
-		switch h.CounterResetHint {
-		case histogram.GaugeType:
-			pForwardInserts, nForwardInserts,
-				pBackwardInserts, nBackwardInserts,
-				pMergedSpans, nMergedSpans,
-				okToAppend = app.AppendableGauge(h)
-		default:
-			pForwardInserts, nForwardInserts, okToAppend, counterReset = app.Appendable(h)
-		}
-		if !okToAppend || counterReset {
-			return false, counterReset
-		}
+	if app.NumSamples() == 0 {
+		a.app.AppendHistogram(t, h)
+		return true, false
+	}
 
-		if len(pBackwardInserts)+len(nBackwardInserts) > 0 {
-			h.PositiveSpans = pMergedSpans
-			h.NegativeSpans = nMergedSpans
-			app.RecodeHistogram(h, pBackwardInserts, nBackwardInserts)
-		}
-		if len(pForwardInserts) > 0 || len(nForwardInserts) > 0 {
-			chk, app := app.Recode(
-				pForwardInserts, nForwardInserts,
-				h.PositiveSpans, h.NegativeSpans,
-			)
-			*a.chk = chk
-			a.app = app
-		}
+	var (
+		pForwardInserts, nForwardInserts   []chunkenc.Insert
+		pBackwardInserts, nBackwardInserts []chunkenc.Insert
+		pMergedSpans, nMergedSpans         []histogram.Span
+	)
+	switch h.CounterResetHint {
+	case histogram.GaugeType:
+		pForwardInserts, nForwardInserts,
+			pBackwardInserts, nBackwardInserts,
+			pMergedSpans, nMergedSpans,
+			okToAppend = app.AppendableGauge(h)
+	default:
+		pForwardInserts, nForwardInserts, okToAppend, counterReset = app.Appendable(h)
+	}
+	if !okToAppend || counterReset {
+		return false, counterReset
+	}
+
+	if len(pBackwardInserts)+len(nBackwardInserts) > 0 {
+		h.PositiveSpans = pMergedSpans
+		h.NegativeSpans = nMergedSpans
+		app.RecodeHistogram(h, pBackwardInserts, nBackwardInserts)
+	}
+	if len(pForwardInserts) > 0 || len(nForwardInserts) > 0 {
+		chk, app := app.Recode(
+			pForwardInserts, nForwardInserts,
+			h.PositiveSpans, h.NegativeSpans,
+		)
+		*a.chk = chk
+		a.app = app
 	}
 
 	a.app.AppendHistogram(t, h)
@@ -533,40 +536,43 @@ func (a *RecodingAppender) AppendFloatHistogram(t int64, fh *histogram.FloatHist
 		return false, false
 	}
 
-	if app.NumSamples() > 0 {
-		var (
-			pForwardInserts, nForwardInserts   []chunkenc.Insert
-			pBackwardInserts, nBackwardInserts []chunkenc.Insert
-			pMergedSpans, nMergedSpans         []histogram.Span
-		)
-		switch fh.CounterResetHint {
-		case histogram.GaugeType:
+	if app.NumSamples() == 0 {
+		a.app.AppendFloatHistogram(t, fh)
+		return true, false
+	}
+
+	var (
+		pForwardInserts, nForwardInserts   []chunkenc.Insert
+		pBackwardInserts, nBackwardInserts []chunkenc.Insert
+		pMergedSpans, nMergedSpans         []histogram.Span
+	)
+	switch fh.CounterResetHint {
+	case histogram.GaugeType:
+		pForwardInserts, nForwardInserts,
+			pBackwardInserts, nBackwardInserts,
+			pMergedSpans, nMergedSpans,
+			okToAppend = app.AppendableGauge(fh)
+	default:
+		pForwardInserts, nForwardInserts, okToAppend, counterReset = app.Appendable(fh)
+	}
+
+	if !okToAppend || counterReset {
+		return false, counterReset
+	}
+
+	if len(pBackwardInserts)+len(nBackwardInserts) > 0 {
+		fh.PositiveSpans = pMergedSpans
+		fh.NegativeSpans = nMergedSpans
+		app.RecodeHistogramm(fh, pBackwardInserts, nBackwardInserts)
+	}
+
+	if len(pForwardInserts) > 0 || len(nForwardInserts) > 0 {
+		chunk, app := app.Recode(
 			pForwardInserts, nForwardInserts,
-				pBackwardInserts, nBackwardInserts,
-				pMergedSpans, nMergedSpans,
-				okToAppend = app.AppendableGauge(fh)
-		default:
-			pForwardInserts, nForwardInserts, okToAppend, counterReset = app.Appendable(fh)
-		}
-
-		if !okToAppend || counterReset {
-			return false, counterReset
-		}
-
-		if len(pBackwardInserts)+len(nBackwardInserts) > 0 {
-			fh.PositiveSpans = pMergedSpans
-			fh.NegativeSpans = nMergedSpans
-			app.RecodeHistogramm(fh, pBackwardInserts, nBackwardInserts)
-		}
-
-		if len(pForwardInserts) > 0 || len(nForwardInserts) > 0 {
-			chunk, app := app.Recode(
-				pForwardInserts, nForwardInserts,
-				fh.PositiveSpans, fh.NegativeSpans,
-			)
-			*a.chk = chunk
-			a.app = app
-		}
+			fh.PositiveSpans, fh.NegativeSpans,
+		)
+		*a.chk = chunk
+		a.app = app
 	}
 
 	a.app.AppendFloatHistogram(t, fh)
