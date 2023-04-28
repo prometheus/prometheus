@@ -1214,7 +1214,7 @@ func (h *Head) truncateWAL(mint int64) error {
 		h.deletedMtx.Lock()
 		keepUntil, ok := h.deleted[id]
 		h.deletedMtx.Unlock()
-		return ok && keepUntil <= last
+		return ok && keepUntil > last
 	}
 	h.metrics.checkpointCreationTotal.Inc()
 	if _, err = wlog.Checkpoint(h.logger, h.wal, first, last, keep, mint); err != nil {
