@@ -136,19 +136,19 @@ func TestHistogramSeriesToChunks(t *testing.T) {
 		Count:         3,
 		ZeroCount:     2,
 		ZeroThreshold: 0.001,
-		Sum:           100, // Does not matter.
+		Sum:           100,
 		Schema:        0,
 		PositiveSpans: []histogram.Span{
 			{Offset: 0, Length: 2},
 		},
 		PositiveBuckets: []int64{2, 1}, // Abs: 2, 3
 	}
-	// appendable to h1
+	// Appendable to h1.
 	h2 := &histogram.Histogram{
 		Count:         12,
 		ZeroCount:     2,
 		ZeroThreshold: 0.001,
-		Sum:           100, // Does not matter.
+		Sum:           100,
 		Schema:        0,
 		PositiveSpans: []histogram.Span{
 			{Offset: 0, Length: 2},
@@ -156,12 +156,12 @@ func TestHistogramSeriesToChunks(t *testing.T) {
 		},
 		PositiveBuckets: []int64{2, 1, -2, 3}, // Abs: 2, 3, 1, 4
 	}
-	// implicit counter reset by reduction in buckets, not appendable
+	// Implicit counter reset by reduction in buckets, not appendable.
 	h2down := &histogram.Histogram{
 		Count:         8,
 		ZeroCount:     2,
 		ZeroThreshold: 0.001,
-		Sum:           100, // Does not matter.
+		Sum:           100,
 		Schema:        0,
 		PositiveSpans: []histogram.Span{
 			{Offset: 0, Length: 2},
@@ -174,19 +174,19 @@ func TestHistogramSeriesToChunks(t *testing.T) {
 		Count:         4,
 		ZeroCount:     2,
 		ZeroThreshold: 0.001,
-		Sum:           100, // Does not matter.
+		Sum:           100,
 		Schema:        0,
 		PositiveSpans: []histogram.Span{
 			{Offset: 0, Length: 2},
 		},
 		PositiveBuckets: []float64{3, 1},
 	}
-	// appendable to fh1
+	// Appendable to fh1.
 	fh2 := &histogram.FloatHistogram{
 		Count:         15,
 		ZeroCount:     2,
 		ZeroThreshold: 0.001,
-		Sum:           100, // Does not matter.
+		Sum:           100,
 		Schema:        0,
 		PositiveSpans: []histogram.Span{
 			{Offset: 0, Length: 2},
@@ -194,12 +194,12 @@ func TestHistogramSeriesToChunks(t *testing.T) {
 		},
 		PositiveBuckets: []float64{4, 2, 7, 2},
 	}
-	// implicit counter reset by reduction in buckets, not appendable
+	// Implicit counter reset by reduction in buckets, not appendable.
 	fh2down := &histogram.FloatHistogram{
 		Count:         13,
 		ZeroCount:     2,
 		ZeroThreshold: 0.001,
-		Sum:           100, // Does not matter.
+		Sum:           100,
 		Schema:        0,
 		PositiveSpans: []histogram.Span{
 			{Offset: 0, Length: 2},
@@ -252,7 +252,7 @@ func TestHistogramSeriesToChunks(t *testing.T) {
 			expectedChunks:       2,
 			expectedCounterReset: true,
 		},
-		// Float histograms
+		// Float histograms.
 		"single float histogram to single chunk": {
 			samples: []tsdbutil.Sample{
 				fhSample{t: 1, fh: fh1},
@@ -289,7 +289,7 @@ func TestHistogramSeriesToChunks(t *testing.T) {
 			expectedChunks:       2,
 			expectedCounterReset: true,
 		},
-		// Mixed
+		// Mixed.
 		"histogram and float histogram encoded to two chunks": {
 			samples: []tsdbutil.Sample{
 				hSample{t: 1, h: h1},
@@ -339,7 +339,7 @@ func testHistogramsSeriesToChunks(t *testing.T, test histogramTest) {
 		case hSample:
 			encodedSample, ok := encodedSamples[i].(hSample)
 			require.True(t, ok, "expect histogram", fmt.Sprintf("at idx %d", i))
-			// ignore counter reset here, will check on chunk level
+			// Ignore counter reset here, will check on chunk level.
 			encodedSample.h.CounterResetHint = histogram.UnknownCounterReset
 			if value.IsStaleNaN(expectedSample.h.Sum) {
 				require.True(t, value.IsStaleNaN(encodedSample.h.Sum), fmt.Sprintf("at idx %d", i))
@@ -349,7 +349,7 @@ func testHistogramsSeriesToChunks(t *testing.T, test histogramTest) {
 		case fhSample:
 			encodedSample, ok := encodedSamples[i].(fhSample)
 			require.True(t, ok, "expect float histogram", fmt.Sprintf("at idx %d", i))
-			// ignore counter reset here, will check on chunk level
+			// Ignore counter reset here, will check on chunk level.
 			encodedSample.fh.CounterResetHint = histogram.UnknownCounterReset
 			if value.IsStaleNaN(expectedSample.fh.Sum) {
 				require.True(t, value.IsStaleNaN(encodedSample.fh.Sum), fmt.Sprintf("at idx %d", i))
