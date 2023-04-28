@@ -48,7 +48,7 @@ func ExponentialBlockRanges(minSize int64, steps, stepSize int) []int64 {
 	curRange := minSize
 	for i := 0; i < steps; i++ {
 		ranges = append(ranges, curRange)
-		curRange = curRange * int64(stepSize)
+		curRange *= int64(stepSize)
 	}
 
 	return ranges
@@ -594,7 +594,7 @@ func (c *LeveledCompactor) compactOOO(dest string, oooHead *OOOCompactionHead, s
 	blockSize := oooHead.ChunkRange()
 	oooHeadMint, oooHeadMaxt := oooHead.MinTime(), oooHead.MaxTime()
 	ulids := make([][]ulid.ULID, 0)
-	for t := blockSize * (oooHeadMint / blockSize); t <= oooHeadMaxt; t = t + blockSize {
+	for t := blockSize * (oooHeadMint / blockSize); t <= oooHeadMaxt; t += blockSize {
 		mint, maxt := t, t+blockSize
 
 		outBlocks = append(outBlocks, make([]shardedBlock, shardCount))

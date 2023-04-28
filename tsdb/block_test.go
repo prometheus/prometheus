@@ -633,7 +633,7 @@ func genHistogramSeries(totalSeries, labelCount int, mint, maxt, step int64, flo
 				{Offset: 0, Length: 2},
 				{Offset: 1, Length: 2},
 			},
-			PositiveBuckets: []int64{int64(ts + 1), 1, -1, 0},
+			PositiveBuckets: []int64{ts + 1, 1, -1, 0},
 		}
 		if ts != mint {
 			// By setting the counter reset hint to "no counter
@@ -672,7 +672,7 @@ func genHistogramAndFloatSeries(totalSeries, labelCount int, mint, maxt, step in
 					{Offset: 0, Length: 2},
 					{Offset: 1, Length: 2},
 				},
-				PositiveBuckets: []int64{int64(ts + 1), 1, -1, 0},
+				PositiveBuckets: []int64{ts + 1, 1, -1, 0},
 			}
 			if count > 1 && count%5 != 1 {
 				// Same rationale for this as above in

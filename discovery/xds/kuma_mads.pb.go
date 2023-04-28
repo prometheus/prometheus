@@ -132,13 +132,13 @@ type MonitoringAssignment_Target struct {
 	// E.g., `backend-01`
 	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	// Scheme on which to scrape the target.
-	//E.g., `http`
+	// E.g., `http`
 	Scheme string `protobuf:"bytes,2,opt,name=scheme,proto3" json:"scheme,omitempty"`
 	// Address (preferably IP) for the service
 	// E.g., `backend.svc` or `10.1.4.32:9090`
 	Address string `protobuf:"bytes,3,opt,name=address,proto3" json:"address,omitempty"`
 	// Optional path to append to the address for scraping
-	//E.g., `/metrics`
+	// E.g., `/metrics`
 	MetricsPath string `protobuf:"bytes,4,opt,name=metrics_path,json=metricsPath,proto3" json:"metrics_path,omitempty"`
 	// Arbitrary labels associated with that particular target.
 	//

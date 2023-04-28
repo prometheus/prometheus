@@ -91,7 +91,7 @@ func MockVpsAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	if string(r.URL.Path) == "/vps" {
+	if r.URL.Path == "/vps" {
 		dedicatedServersList, err := os.ReadFile("testdata/vps/vps.json")
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -103,7 +103,7 @@ func MockVpsAPI(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if string(r.URL.Path) == "/vps/abc" {
+	if r.URL.Path == "/vps/abc" {
 		dedicatedServer, err := os.ReadFile("testdata/vps/vps_details.json")
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -115,7 +115,7 @@ func MockVpsAPI(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if string(r.URL.Path) == "/vps/abc/ips" {
+	if r.URL.Path == "/vps/abc/ips" {
 		dedicatedServerIPs, err := os.ReadFile("testdata/vps/vps_abc_ips.json")
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)

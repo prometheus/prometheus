@@ -824,10 +824,11 @@ mergeLoop: // Merge together all buckets from the original schema that fall into
 			origIdx += span.Offset
 		}
 		currIdx := i.targetIdx(origIdx)
-		if firstPass {
+		switch {
+		case firstPass:
 			i.currIdx = currIdx
 			firstPass = false
-		} else if currIdx != i.currIdx {
+		case currIdx != i.currIdx:
 			// Reached next bucket in targetSchema.
 			// Do not actually forward to the next bucket, but break out.
 			break mergeLoop

@@ -99,7 +99,7 @@ func (f *symbolFlushers) loop() {
 		}
 	}
 
-	for range f.jobs {
+	for range f.jobs { //nolint:revive // This "empty" block is intentional
 		// drain the channel, don't do more flushing. only used when error occurs.
 	}
 }

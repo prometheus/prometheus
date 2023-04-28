@@ -421,7 +421,7 @@ func (te Expander) ExpandHTML(templateFiles []string) (result string, resultErr 
 			}
 		}
 	}()
-
+	//nolint:unconvert // Before Go 1.19 conversion from text_template to html_template is mandatory
 	tmpl := html_template.New(te.name).Funcs(html_template.FuncMap(te.funcMap))
 	tmpl.Option(te.options...)
 	tmpl.Funcs(html_template.FuncMap{

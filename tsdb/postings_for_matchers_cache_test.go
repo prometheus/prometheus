@@ -261,11 +261,11 @@ func TestPostingsForMatchersCache(t *testing.T) {
 
 type indexForPostingsMock struct{}
 
-func (idx indexForPostingsMock) LabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
+func (idx indexForPostingsMock) LabelValues(string, ...*labels.Matcher) ([]string, error) {
 	panic("implement me")
 }
 
-func (idx indexForPostingsMock) Postings(name string, values ...string) (index.Postings, error) {
+func (idx indexForPostingsMock) Postings(string, ...string) (index.Postings, error) {
 	panic("implement me")
 }
 

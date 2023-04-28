@@ -73,7 +73,7 @@ func main() {
 
 	c, err := tsdb.NewLeveledCompactorWithChunkSize(ctx, nil, logger, []int64{0}, nil, segmentSizeMB*1024*1024, nil, true)
 	if err != nil {
-		log.Fatalln("creating compator", err)
+		log.Panicln("creating compactor", err)
 	}
 
 	opts := tsdb.DefaultLeveledCompactorConcurrencyOptions()
@@ -84,6 +84,6 @@ func main() {
 
 	_, err = c.CompactWithSplitting(outputDir, blockDirs, nil, uint64(shardCount))
 	if err != nil {
-		log.Fatalln("compacting", err)
+		log.Panicln("compacting", err)
 	}
 }

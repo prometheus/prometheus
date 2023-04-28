@@ -739,8 +739,7 @@ func TestStorage_DuplicateExemplarsIgnored(t *testing.T) {
 	var dec record.Decoder
 	for r.Next() {
 		rec := r.Record()
-		switch dec.Type(rec) {
-		case record.Exemplars:
+		if dec.Type(rec) == record.Exemplars {
 			var exemplars []record.RefExemplar
 			exemplars, err = dec.Exemplars(rec, exemplars)
 			require.NoError(t, err)

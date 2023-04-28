@@ -30,19 +30,19 @@ type unknownRule struct{}
 
 func (u unknownRule) Name() string          { return "" }
 func (u unknownRule) Labels() labels.Labels { return labels.EmptyLabels() }
-func (u unknownRule) Eval(ctx context.Context, evalDelay time.Duration, time time.Time, queryFunc QueryFunc, url *url.URL, i int) (promql.Vector, error) {
+func (u unknownRule) Eval(context.Context, time.Duration, time.Time, QueryFunc, *url.URL, int) (promql.Vector, error) {
 	return nil, nil
 }
-func (u unknownRule) String() string                               { return "" }
-func (u unknownRule) Query() parser.Expr                           { return nil }
-func (u unknownRule) SetLastError(err error)                       {}
-func (u unknownRule) LastError() error                             { return nil }
-func (u unknownRule) SetHealth(health RuleHealth)                  {}
-func (u unknownRule) Health() RuleHealth                           { return "" }
-func (u unknownRule) SetEvaluationDuration(duration time.Duration) {}
-func (u unknownRule) GetEvaluationDuration() time.Duration         { return 0 }
-func (u unknownRule) SetEvaluationTimestamp(time time.Time)        {}
-func (u unknownRule) GetEvaluationTimestamp() time.Time            { return time.Time{} }
+func (u unknownRule) String() string                       { return "" }
+func (u unknownRule) Query() parser.Expr                   { return nil }
+func (u unknownRule) SetLastError(error)                   {}
+func (u unknownRule) LastError() error                     { return nil }
+func (u unknownRule) SetHealth(RuleHealth)                 {}
+func (u unknownRule) Health() RuleHealth                   { return "" }
+func (u unknownRule) SetEvaluationDuration(time.Duration)  {}
+func (u unknownRule) GetEvaluationDuration() time.Duration { return 0 }
+func (u unknownRule) SetEvaluationTimestamp(time.Time)     {}
+func (u unknownRule) GetEvaluationTimestamp() time.Time    { return time.Time{} }
 
 func TestNewRuleDetailPanics(t *testing.T) {
 	require.PanicsWithValue(t, `unknown rule type "rules.unknownRule"`, func() {

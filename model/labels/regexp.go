@@ -195,7 +195,7 @@ func findSetMatchesInternal(re *syntax.Regexp, base string) (matches []string, c
 		}
 		var matches []string
 		var totalSet int
-		for i := 0; i+1 < len(re.Rune); i = i + 2 {
+		for i := 0; i+1 < len(re.Rune); i += 2 {
 			totalSet += int(re.Rune[i+1]-re.Rune[i]) + 1
 		}
 		// limits the total characters that can be used to create matches.
@@ -204,7 +204,7 @@ func findSetMatchesInternal(re *syntax.Regexp, base string) (matches []string, c
 		if totalSet > maxSetMatches {
 			return nil, false
 		}
-		for i := 0; i+1 < len(re.Rune); i = i + 2 {
+		for i := 0; i+1 < len(re.Rune); i += 2 {
 			lo, hi := re.Rune[i], re.Rune[i+1]
 			for c := lo; c <= hi; c++ {
 				matches = append(matches, base+string(c))
@@ -566,7 +566,8 @@ type containsStringMatcher struct {
 
 func (m *containsStringMatcher) Matches(s string) bool {
 	for _, substr := range m.substrings {
-		if m.right != nil && m.left != nil {
+		switch {
+		case m.right != nil && m.left != nil:
 			searchStartPos := 0
 
 			for {
@@ -588,12 +589,12 @@ func (m *containsStringMatcher) Matches(s string) bool {
 				// Continue searching for another occurrence of the substring inside the text.
 				searchStartPos = pos + 1
 			}
-		} else if m.left != nil {
+		case m.left != nil:
 			// If we have to check for characters on the left then we need to match a suffix.
 			if strings.HasSuffix(s, substr) && m.left.Matches(s[:len(s)-len(substr)]) {
 				return true
 			}
-		} else if m.right != nil {
+		case m.right != nil:
 			if strings.HasPrefix(s, substr) && m.right.Matches(s[len(substr):]) {
 				return true
 			}

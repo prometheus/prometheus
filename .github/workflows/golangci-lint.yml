@@ -20,11 +20,11 @@ jobs:
       - name: install Go
         uses: actions/setup-go@v2
         with:
-          go-version: '<1.19'
+          go-version: '>=1.20 <1.21'
       - name: Install snmp_exporter/generator dependencies
         run: sudo apt-get update && sudo apt-get -y install libsnmp-dev
         if: github.repository == 'prometheus/snmp_exporter'
       - name: Lint
         uses: golangci/golangci-lint-action@v3.3.1
         with:
-          version: v1.50.1
+          version: v1.52.2

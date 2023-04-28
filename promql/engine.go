@@ -70,6 +70,7 @@ type engineMetrics struct {
 	queryPrepareTime     prometheus.Observer
 	queryInnerEval       prometheus.Observer
 	queryResultSort      prometheus.Observer
+	querySamples         prometheus.Counter
 }
 
 // convertibleToInt64 returns true if v does not over-/underflow an int64.
@@ -333,6 +334,12 @@ func NewEngine(opts EngineOpts) *Engine {
 			Name:      "queries_concurrent_max",
 			Help:      "The max number of concurrent queries.",
 		}),
+		querySamples: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "query_samples_total",
+			Help:      "The total number of samples loaded by all queries.",
+		}),
 		queryQueueTime:   queryResultSummary.WithLabelValues("queue_time"),
 		queryPrepareTime: queryResultSummary.WithLabelValues("prepare_time"),
 		queryInnerEval:   queryResultSummary.WithLabelValues("inner_eval"),
@@ -358,6 +365,7 @@ func NewEngine(opts EngineOpts) *Engine {
 			metrics.maxConcurrentQueries,
 			metrics.queryLogEnabled,
 			metrics.queryLogFailures,
+			metrics.querySamples,
 			queryResultSummary,
 		)
 	}
@@ -400,7 +408,7 @@ func (ng *Engine) SetQueryLogger(l QueryLogger) {
 }
 
 // NewInstantQuery returns an evaluation query for the given expression at the given time.
-func (ng *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts *QueryOpts, qs string, ts time.Time) (Query, error) {
+func (ng *Engine) NewInstantQuery(_ context.Context, q storage.Queryable, opts *QueryOpts, qs string, ts time.Time) (Query, error) {
 	expr, err := parser.ParseExpr(qs)
 	if err != nil {
 		return nil, err
@@ -416,7 +424,7 @@ func (ng *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts
 
 // NewRangeQuery returns an evaluation query for the given time range and with
 // the resolution set by the interval.
-func (ng *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts *QueryOpts, qs string, start, end time.Time, interval time.Duration) (Query, error) {
+func (ng *Engine) NewRangeQuery(_ context.Context, q storage.Queryable, opts *QueryOpts, qs string, start, end time.Time, interval time.Duration) (Query, error) {
 	expr, err := parser.ParseExpr(qs)
 	if err != nil {
 		return nil, err
@@ -538,7 +546,10 @@ func (ng *Engine) newTestQuery(f func(context.Context) error) Query {
 // statements are not handled by the Engine.
 func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, ws storage.Warnings, err error) {
 	ng.metrics.currentQueries.Inc()
-	defer ng.metrics.currentQueries.Dec()
+	defer func() {
+		ng.metrics.currentQueries.Dec()
+		ng.metrics.querySamples.Add(float64(q.sampleStats.TotalSamples))
+	}()
 
 	ctx, cancel := context.WithTimeout(ctx, ng.timeout)
 	q.cancel = cancel
@@ -746,8 +757,7 @@ func subqueryTimes(path []parser.Node) (time.Duration, time.Duration, *int64) {
 		ts                    int64 = math.MaxInt64
 	)
 	for _, node := range path {
-		switch n := node.(type) {
-		case *parser.SubqueryExpr:
+		if n, ok := node.(*parser.SubqueryExpr); ok {
 			subqOffset += n.OriginalOffset
 			subqRange += n.Range
 			if n.Timestamp != nil {
@@ -783,7 +793,6 @@ func (ng *Engine) findMinMaxTime(s *parser.EvalStmt) (int64, int64) {
 				maxTimestamp = end
 			}
 			evalRange = 0
-
 		case *parser.MatrixSelector:
 			evalRange = n.Range
 		}
@@ -816,20 +825,20 @@ func (ng *Engine) getTimeRangesForSelector(s *parser.EvalStmt, n *parser.VectorS
 	} else {
 		offsetMilliseconds := durationMilliseconds(subqOffset)
 		start = start - offsetMilliseconds - durationMilliseconds(subqRange)
-		end = end - offsetMilliseconds
+		end -= offsetMilliseconds
 	}
 
 	if evalRange == 0 {
-		start = start - durationMilliseconds(s.LookbackDelta)
+		start -= durationMilliseconds(s.LookbackDelta)
 	} else {
 		// For all matrix queries we want to ensure that we have (end-start) + range selected
 		// this way we have `range` data before the start time
-		start = start - durationMilliseconds(evalRange)
+		start -= durationMilliseconds(evalRange)
 	}
 
 	offsetMilliseconds := durationMilliseconds(n.OriginalOffset)
-	start = start - offsetMilliseconds
-	end = end - offsetMilliseconds
+	start -= offsetMilliseconds
+	end -= offsetMilliseconds
 
 	return start, end
 }
@@ -837,8 +846,7 @@ func (ng *Engine) getTimeRangesForSelector(s *parser.EvalStmt, n *parser.VectorS
 func (ng *Engine) getLastSubqueryInterval(path []parser.Node) time.Duration {
 	var interval time.Duration
 	for _, node := range path {
-		switch n := node.(type) {
-		case *parser.SubqueryExpr:
+		if n, ok := node.(*parser.SubqueryExpr); ok {
 			interval = n.Step
 			if n.Step == 0 {
 				interval = time.Duration(ng.noStepSubqueryIntervalFn(durationMilliseconds(n.Range))) * time.Millisecond
@@ -904,8 +912,7 @@ func extractGroupsFromPath(p []parser.Node) (bool, []string) {
 	if len(p) == 0 {
 		return false, nil
 	}
-	switch n := p[len(p)-1].(type) {
-	case *parser.AggregateExpr:
+	if n, ok := p[len(p)-1].(*parser.AggregateExpr); ok {
 		return !n.Without, n.Grouping
 	}
 	return false, nil
@@ -1745,7 +1752,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		res, ws := newEv.eval(e.Expr)
 		ev.currentSamples = newEv.currentSamples
 		ev.samplesStats.UpdatePeakFromSubquery(newEv.samplesStats)
-		for ts, step := ev.startTimestamp, -1; ts <= ev.endTimestamp; ts = ts + ev.interval {
+		for ts, step := ev.startTimestamp, -1; ts <= ev.endTimestamp; ts += ev.interval {
 			step++
 			ev.samplesStats.IncrementSamplesAtStep(step, newEv.samplesStats.TotalSamples)
 		}
@@ -1767,7 +1774,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 			if len(mat[i].Floats)+len(mat[i].Histograms) != 1 {
 				panic(fmt.Errorf("unexpected number of samples"))
 			}
-			for ts := ev.startTimestamp + ev.interval; ts <= ev.endTimestamp; ts = ts + ev.interval {
+			for ts := ev.startTimestamp + ev.interval; ts <= ev.endTimestamp; ts += ev.interval {
 				if len(mat[i].Floats) > 0 {
 					mat[i].Floats = append(mat[i].Floats, FPoint{
 						T: ts,
@@ -1957,7 +1964,7 @@ func (ev *evaluator) matrixIterSlice(
 		//   (b) the number of samples is relatively small.
 		// so a linear search will be as fast as a binary search.
 		var drop int
-		for drop = 0; floats[drop].T < mint; drop++ {
+		for drop = 0; floats[drop].T < mint; drop++ { // nolint:revive
 		}
 		ev.currentSamples -= drop
 		copy(floats, floats[drop:])
@@ -1979,7 +1986,7 @@ func (ev *evaluator) matrixIterSlice(
 		//   (b) the number of samples is relatively small.
 		// so a linear search will be as fast as a binary search.
 		var drop int
-		for drop = 0; histograms[drop].T < mint; drop++ {
+		for drop = 0; histograms[drop].T < mint; drop++ { // nolint:revive
 		}
 		ev.currentSamples -= drop
 		copy(histograms, histograms[drop:])
@@ -2096,13 +2103,13 @@ func (ev *evaluator) VectorAnd(lhs, rhs Vector, matching *parser.VectorMatching,
 }
 
 func (ev *evaluator) VectorOr(lhs, rhs Vector, matching *parser.VectorMatching, lhsh, rhsh []EvalSeriesHelper, enh *EvalNodeHelper) Vector {
-	if matching.Card != parser.CardManyToMany {
+	switch {
+	case matching.Card != parser.CardManyToMany:
 		panic("set operations must only use many-to-many matching")
-	}
-	if len(lhs) == 0 { // Short-circuit.
+	case len(lhs) == 0: // Short-circuit.
 		enh.Out = append(enh.Out, rhs...)
 		return enh.Out
-	} else if len(rhs) == 0 {
+	case len(rhs) == 0:
 		enh.Out = append(enh.Out, lhs...)
 		return enh.Out
 	}
@@ -2221,13 +2228,14 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 			hl, hr = hr, hl
 		}
 		floatValue, histogramValue, keep := vectorElemBinop(op, fl, fr, hl, hr)
-		if returnBool {
+		switch {
+		case returnBool:
 			if keep {
 				floatValue = 1.0
 			} else {
 				floatValue = 0.0
 			}
-		} else if !keep {
+		case !keep:
 			continue
 		}
 		metric := resultMetric(ls.Metric, rs.Metric, op, matching, enh)
@@ -2514,14 +2522,15 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 		if !ok {
 			var m labels.Labels
 			enh.resetBuilder(metric)
-			if without {
+			switch {
+			case without:
 				enh.lb.Del(grouping...)
 				enh.lb.Del(labels.MetricName)
 				m = enh.lb.Labels()
-			} else if len(grouping) > 0 {
+			case len(grouping) > 0:
 				enh.lb.Keep(grouping...)
 				m = enh.lb.Labels()
-			} else {
+			default:
 				m = labels.EmptyLabels()
 			}
 			newAgg := &groupedAggregation{
@@ -2530,9 +2539,10 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 				mean:       s.F,
 				groupCount: 1,
 			}
-			if s.H == nil {
+			switch {
+			case s.H == nil:
 				newAgg.hasFloat = true
-			} else if op == parser.SUM {
+			case op == parser.SUM:
 				newAgg.histogramValue = s.H.Copy()
 				newAgg.hasHistogram = true
 			}
@@ -2542,9 +2552,10 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 
 			inputVecLen := int64(len(vec))
 			resultSize := k
-			if k > inputVecLen {
+			switch {
+			case k > inputVecLen:
 				resultSize = inputVecLen
-			} else if k == 0 {
+			case k == 0:
 				resultSize = 1
 			}
 			switch op {
@@ -2637,12 +2648,13 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 
 		case parser.TOPK:
 			// We build a heap of up to k elements, with the smallest element at heap[0].
-			if int64(len(group.heap)) < k {
+			switch {
+			case int64(len(group.heap)) < k:
 				heap.Push(&group.heap, &Sample{
 					F:      s.F,
 					Metric: s.Metric,
 				})
-			} else if group.heap[0].F < s.F || (math.IsNaN(group.heap[0].F) && !math.IsNaN(s.F)) {
+			case group.heap[0].F < s.F || (math.IsNaN(group.heap[0].F) && !math.IsNaN(s.F)):
 				// This new element is bigger than the previous smallest element - overwrite that.
 				group.heap[0] = Sample{
 					F:      s.F,
@@ -2655,12 +2667,13 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 
 		case parser.BOTTOMK:
 			// We build a heap of up to k elements, with the biggest element at heap[0].
-			if int64(len(group.reverseHeap)) < k {
+			switch {
+			case int64(len(group.reverseHeap)) < k:
 				heap.Push(&group.reverseHeap, &Sample{
 					F:      s.F,
 					Metric: s.Metric,
 				})
-			} else if group.reverseHeap[0].F > s.F || (math.IsNaN(group.reverseHeap[0].F) && !math.IsNaN(s.F)) {
+			case group.reverseHeap[0].F > s.F || (math.IsNaN(group.reverseHeap[0].F) && !math.IsNaN(s.F)):
 				// This new element is smaller than the previous biggest element - overwrite that.
 				group.reverseHeap[0] = Sample{
 					F:      s.F,
@@ -2689,7 +2702,7 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 			aggr.floatValue = float64(aggr.groupCount)
 
 		case parser.STDVAR:
-			aggr.floatValue = aggr.floatValue / float64(aggr.groupCount)
+			aggr.floatValue /= float64(aggr.groupCount)
 
 		case parser.STDDEV:
 			aggr.floatValue = math.Sqrt(aggr.floatValue / float64(aggr.groupCount))
@@ -2819,9 +2832,10 @@ func PreprocessExpr(expr parser.Expr, start, end time.Time) parser.Expr {
 func preprocessExprHelper(expr parser.Expr, start, end time.Time) bool {
 	switch n := expr.(type) {
 	case *parser.VectorSelector:
-		if n.StartOrEnd == parser.START {
+		switch n.StartOrEnd {
+		case parser.START:
 			n.Timestamp = makeInt64Pointer(timestamp.FromTime(start))
-		} else if n.StartOrEnd == parser.END {
+		case parser.END:
 			n.Timestamp = makeInt64Pointer(timestamp.FromTime(end))
 		}
 		return n.Timestamp != nil
@@ -2878,9 +2892,10 @@ func preprocessExprHelper(expr parser.Expr, start, end time.Time) bool {
 		if isInvariant {
 			n.Expr = newStepInvariantExpr(n.Expr)
 		}
-		if n.StartOrEnd == parser.START {
+		switch n.StartOrEnd {
+		case parser.START:
 			n.Timestamp = makeInt64Pointer(timestamp.FromTime(start))
-		} else if n.StartOrEnd == parser.END {
+		case parser.END:
 			n.Timestamp = makeInt64Pointer(timestamp.FromTime(end))
 		}
 		return n.Timestamp != nil

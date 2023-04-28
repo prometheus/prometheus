@@ -27,7 +27,7 @@ import (
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
-func setupRangeQueryTestData(stor *teststorage.TestStorage, engine *Engine, interval, numIntervals int) error {
+func setupRangeQueryTestData(stor *teststorage.TestStorage, _ *Engine, interval, numIntervals int) error {
 	metrics := []labels.Labels{}
 	metrics = append(metrics, labels.FromStrings("__name__", "a_one"))
 	metrics = append(metrics, labels.FromStrings("__name__", "b_one"))
@@ -194,9 +194,9 @@ func rangeQueryCases() []benchCase {
 		if !strings.Contains(c.expr, "X") {
 			tmp = append(tmp, c)
 		} else {
-			tmp = append(tmp, benchCase{expr: strings.Replace(c.expr, "X", "one", -1), steps: c.steps})
-			tmp = append(tmp, benchCase{expr: strings.Replace(c.expr, "X", "ten", -1), steps: c.steps})
-			tmp = append(tmp, benchCase{expr: strings.Replace(c.expr, "X", "hundred", -1), steps: c.steps})
+			tmp = append(tmp, benchCase{expr: strings.ReplaceAll(c.expr, "X", "one"), steps: c.steps})
+			tmp = append(tmp, benchCase{expr: strings.ReplaceAll(c.expr, "X", "ten"), steps: c.steps})
+			tmp = append(tmp, benchCase{expr: strings.ReplaceAll(c.expr, "X", "hundred"), steps: c.steps})
 		}
 	}
 	cases = tmp

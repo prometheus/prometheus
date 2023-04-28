@@ -265,7 +265,7 @@ func BenchmarkQuerierSelect(b *testing.B) {
 					}
 
 					ss := q.Select(sorted, hints, matcher)
-					for ss.Next() {
+					for ss.Next() { // nolint:revive
 					}
 					require.NoError(b, ss.Err())
 				}

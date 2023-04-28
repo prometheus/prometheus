@@ -126,9 +126,10 @@ func (r *LiveReader) Next() bool {
 		// we return  EOF and the user can try again later. If we have a full
 		// page, buildRecord is guaranteed to return a record or a non-EOF; it
 		// has checks the records fit in pages.
-		if ok, err := r.buildRecord(); ok {
+		switch ok, err := r.buildRecord(); {
+		case ok:
 			return true
-		} else if err != nil && err != io.EOF {
+		case err != nil && err != io.EOF:
 			r.err = err
 			return false
 		}

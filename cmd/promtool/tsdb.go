@@ -403,14 +403,15 @@ func openBlock(path, blockID string) (*tsdb.DBReadOnly, tsdb.BlockReader, error)
 		return nil, nil, err
 	}
 	var block tsdb.BlockReader
-	if blockID != "" {
+	switch {
+	case blockID != "":
 		for _, b := range blocks {
 			if b.Meta().ULID.String() == blockID {
 				block = b
 				break
 			}
 		}
-	} else if len(blocks) > 0 {
+	case len(blocks) > 0:
 		block = blocks[len(blocks)-1]
 	}
 	if block == nil {

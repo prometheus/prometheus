@@ -322,7 +322,7 @@ func TestScrapePoolReloadPreserveRelabeledIntervalTimeout(t *testing.T) {
 		ScrapeTimeout:  model.Duration(2 * time.Second),
 	}
 	newLoop := func(opts scrapeLoopOptions) loop {
-		l := &testLoop{interval: time.Duration(opts.interval), timeout: time.Duration(opts.timeout)}
+		l := &testLoop{interval: opts.interval, timeout: opts.timeout}
 		l.startFunc = func(interval, timeout time.Duration, errc chan<- error) {
 			require.Equal(t, 5*time.Second, interval, "Unexpected scrape interval")
 			require.Equal(t, 3*time.Second, timeout, "Unexpected scrape timeout")
@@ -546,7 +546,7 @@ func TestScrapePoolRaces(t *testing.T) {
 	require.Equal(t, expectedDropped, len(dropped), "Invalid number of dropped targets")
 
 	for i := 0; i < 20; i++ {
-		time.Sleep(time.Duration(10 * time.Millisecond))
+		time.Sleep(10 * time.Millisecond)
 		sp.reload(newConfig())
 	}
 	sp.stop()
@@ -724,9 +724,10 @@ func TestScrapeLoopStop(t *testing.T) {
 	// All samples in a scrape must have the same timestamp.
 	var ts int64
 	for i, s := range appender.result {
-		if i%6 == 0 {
+		switch {
+		case i%6 == 0:
 			ts = s.t
-		} else if s.t != ts {
+		case s.t != ts:
 			t.Fatalf("Unexpected multiple timestamps within single scrape")
 		}
 	}
@@ -1139,10 +1140,11 @@ func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrape(t *testing.T) {
 	scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
 		numScrapes++
 
-		if numScrapes == 1 {
+		switch numScrapes {
+		case 1:
 			w.Write([]byte("metric_a 42\n"))
 			return nil
-		} else if numScrapes == 5 {
+		case 5:
 			cancel()
 		}
 		return errors.New("scrape failed")
@@ -1199,14 +1201,14 @@ func TestScrapeLoopRunCreatesStaleMarkersOnParseFailure(t *testing.T) {
 	// Succeed once, several failures, then stop.
 	scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
 		numScrapes++
-
-		if numScrapes == 1 {
+		switch numScrapes {
+		case 1:
 			w.Write([]byte("metric_a 42\n"))
 			return nil
-		} else if numScrapes == 2 {
+		case 2:
 			w.Write([]byte("7&-\n"))
 			return nil
-		} else if numScrapes == 3 {
+		case 3:
 			cancel()
 		}
 		return errors.New("scrape failed")
@@ -1265,14 +1267,15 @@ func TestScrapeLoopCache(t *testing.T) {
 	numScrapes := 0
 
 	scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
-		if numScrapes == 1 || numScrapes == 2 {
+		switch numScrapes {
+		case 1, 2:
 			if _, ok := sl.cache.series["metric_a"]; !ok {
 				t.Errorf("metric_a missing from cache after scrape %d", numScrapes)
 			}
 			if _, ok := sl.cache.series["metric_b"]; !ok {
 				t.Errorf("metric_b missing from cache after scrape %d", numScrapes)
 			}
-		} else if numScrapes == 3 {
+		case 3:
 			if _, ok := sl.cache.series["metric_a"]; !ok {
 				t.Errorf("metric_a missing from cache after scrape %d", numScrapes)
 			}
@@ -1282,14 +1285,14 @@ func TestScrapeLoopCache(t *testing.T) {
 		}
 
 		numScrapes++
-
-		if numScrapes == 1 {
+		switch numScrapes {
+		case 1:
 			w.Write([]byte("metric_a 42\nmetric_b 43\n"))
 			return nil
-		} else if numScrapes == 3 {
+		case 3:
 			w.Write([]byte("metric_a 44\n"))
 			return nil
-		} else if numScrapes == 4 {
+		case 4:
 			cancel()
 		}
 		return fmt.Errorf("scrape failed")
@@ -2280,11 +2283,12 @@ func TestTargetScrapeScrapeCancel(t *testing.T) {
 
 	go func() {
 		_, err := ts.scrape(ctx, io.Discard)
-		if err == nil {
+		switch {
+		case err == nil:
 			errc <- errors.New("Expected error but got nil")
-		} else if ctx.Err() != context.Canceled {
+		case ctx.Err() != context.Canceled:
 			errc <- errors.Errorf("Expected context cancellation error but got: %s", ctx.Err())
-		} else {
+		default:
 			close(errc)
 		}
 	}()
@@ -2405,7 +2409,7 @@ type testScraper struct {
 	scrapeFunc func(context.Context, io.Writer) error
 }
 
-func (ts *testScraper) offset(interval time.Duration, jitterSeed uint64) time.Duration {
+func (ts *testScraper) offset(time.Duration, uint64) time.Duration {
 	return ts.offsetDur
 }
 
@@ -2867,7 +2871,7 @@ func TestScrapeAddFast(t *testing.T) {
 	require.NoError(t, slApp.Commit())
 }
 
-func TestReuseCacheRace(t *testing.T) {
+func TestReuseCacheRace(*testing.T) {
 	var (
 		app = &nopAppendable{}
 		cfg = &config.ScrapeConfig{

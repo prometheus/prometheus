@@ -37,6 +37,6 @@ func (c *MockContext) Err() error {
 }
 
 // Value ignores the Value and always returns nil
-func (c *MockContext) Value(key interface{}) interface{} {
+func (c *MockContext) Value(interface{}) interface{} {
 	return nil
 }

@@ -116,7 +116,7 @@ type RulesRetriever interface {
 
 type StatsRenderer func(context.Context, *stats.Statistics, string) stats.QueryStats
 
-func defaultStatsRenderer(ctx context.Context, s *stats.Statistics, param string) stats.QueryStats {
+func defaultStatsRenderer(_ context.Context, s *stats.Statistics, param string) stats.QueryStats {
 	if param != "" {
 		return stats.NewQueryStats(s)
 	}
@@ -142,6 +142,7 @@ type RuntimeInfo struct {
 	CorruptionCount     int64     `json:"corruptionCount"`
 	GoroutineCount      int       `json:"goroutineCount"`
 	GOMAXPROCS          int       `json:"GOMAXPROCS"`
+	GOMEMLIMIT          int64     `json:"GOMEMLIMIT"`
 	GOGC                string    `json:"GOGC"`
 	GODEBUG             string    `json:"GODEBUG"`
 	StorageRetention    string    `json:"storageRetention"`
@@ -237,7 +238,7 @@ func NewAPI(
 	remoteReadConcurrencyLimit int,
 	remoteReadMaxBytesInFrame int,
 	isAgent bool,
-	CORSOrigin *regexp.Regexp,
+	corsOrigin *regexp.Regexp,
 	runtimeInfo func() (RuntimeInfo, error),
 	buildInfo *PrometheusVersion,
 	gatherer prometheus.Gatherer,
@@ -263,7 +264,7 @@ func NewAPI(
 		enableAdmin:      enableAdmin,
 		rulesRetriever:   rr,
 		logger:           logger,
-		CORSOrigin:       CORSOrigin,
+		CORSOrigin:       corsOrigin,
 		runtimeInfo:      runtimeInfo,
 		buildInfo:        buildInfo,
 		gatherer:         gatherer,
@@ -400,7 +401,7 @@ func invalidParamError(err error, parameter string) apiFuncResult {
 	}, nil, nil}
 }
 
-func (api *API) options(r *http.Request) apiFuncResult {
+func (api *API) options(*http.Request) apiFuncResult {
 	return apiFuncResult{nil, nil, nil, nil}
 }
 
@@ -530,7 +531,7 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 	}
 	qry, err := api.QueryEngine.NewRangeQuery(ctx, api.Queryable, opts, r.FormValue("query"), start, end, step)
 	if err != nil {
-		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+		return invalidParamError(err, "query")
 	}
 	// From now on, we must only return with a finalizer in the result (to
 	// be called by the caller) or call qry.Close ourselves (which is
@@ -997,12 +998,14 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 					ScrapeURL:        target.URL().String(),
 					GlobalURL:        globalURL.String(),
 					LastError: func() string {
-						if err == nil && lastErrStr == "" {
+						switch {
+						case err == nil && lastErrStr == "":
 							return ""
-						} else if err != nil {
+						case err != nil:
 							return errors.Wrapf(err, lastErrStr).Error()
+						default:
+							return lastErrStr
 						}
-						return lastErrStr
 					}(),
 					LastScrape:         target.LastScrape(),
 					LastScrapeDuration: target.LastScrapeDuration().Seconds(),
@@ -1300,8 +1303,24 @@ type RecordingRule struct {
 }
 
 func (api *API) rules(r *http.Request) apiFuncResult {
+	if err := r.ParseForm(); err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, errors.Wrapf(err, "error parsing form values")}, nil, nil}
+	}
+
+	queryFormToSet := func(values []string) map[string]struct{} {
+		set := make(map[string]struct{}, len(values))
+		for _, v := range values {
+			set[v] = struct{}{}
+		}
+		return set
+	}
+
+	rnSet := queryFormToSet(r.Form["rule_name[]"])
+	rgSet := queryFormToSet(r.Form["rule_group[]"])
+	fSet := queryFormToSet(r.Form["file[]"])
+
 	ruleGroups := api.rulesRetriever(r.Context()).RuleGroups()
-	res := &RuleDiscovery{RuleGroups: make([]*RuleGroup, len(ruleGroups))}
+	res := &RuleDiscovery{RuleGroups: make([]*RuleGroup, 0, len(ruleGroups))}
 	typ := strings.ToLower(r.URL.Query().Get("type"))
 
 	if typ != "" && typ != "alert" && typ != "record" {
@@ -1311,7 +1330,20 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 	returnAlerts := typ == "" || typ == "alert"
 	returnRecording := typ == "" || typ == "record"
 
-	for i, grp := range ruleGroups {
+	rgs := make([]*RuleGroup, 0, len(ruleGroups))
+	for _, grp := range ruleGroups {
+		if len(rgSet) > 0 {
+			if _, ok := rgSet[grp.Name()]; !ok {
+				continue
+			}
+		}
+
+		if len(fSet) > 0 {
+			if _, ok := fSet[grp.File()]; !ok {
+				continue
+			}
+		}
+
 		apiRuleGroup := &RuleGroup{
 			Name:           grp.Name(),
 			File:           grp.File(),
@@ -1321,14 +1353,20 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 			EvaluationTime: grp.GetEvaluationTime().Seconds(),
 			LastEvaluation: grp.GetLastEvaluation(),
 		}
-		for _, r := range grp.Rules() {
+		for _, rr := range grp.Rules() {
 			var enrichedRule Rule
 
-			lastError := ""
-			if r.LastError() != nil {
-				lastError = r.LastError().Error()
+			if len(rnSet) > 0 {
+				if _, ok := rnSet[rr.Name()]; !ok {
+					continue
+				}
 			}
-			switch rule := r.(type) {
+
+			lastError := ""
+			if rr.LastError() != nil {
+				lastError = rr.LastError().Error()
+			}
+			switch rule := rr.(type) {
 			case *rules.AlertingRule:
 				if !returnAlerts {
 					break
@@ -1366,12 +1404,18 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 				err := errors.Errorf("failed to assert type of rule '%v'", rule.Name())
 				return apiFuncResult{nil, &apiError{errorInternal, err}, nil, nil}
 			}
+
 			if enrichedRule != nil {
 				apiRuleGroup.Rules = append(apiRuleGroup.Rules, enrichedRule)
 			}
 		}
-		res.RuleGroups[i] = apiRuleGroup
+
+		// If the rule group response has no rules, skip it - this means we filtered all the rules of this group.
+		if len(apiRuleGroup.Rules) > 0 {
+			rgs = append(rgs, apiRuleGroup)
+		}
 	}
+	res.RuleGroups = rgs
 	return apiFuncResult{res, nil, nil, nil}
 }
 
@@ -1573,7 +1617,7 @@ func (api *API) snapshot(r *http.Request) apiFuncResult {
 	}{name}, nil, nil, nil}
 }
 
-func (api *API) cleanTombstones(r *http.Request) apiFuncResult {
+func (api *API) cleanTombstones(*http.Request) apiFuncResult {
 	if !api.enableAdmin {
 		return apiFuncResult{nil, &apiError{errorUnavailable, errors.New("admin APIs disabled")}, nil, nil}
 	}

@@ -300,7 +300,7 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 		Help: "Size of symbol table in memory for loaded blocks",
 	}, func() float64 {
 		db.mtx.RLock()
-		blocks := db.blocks[:]
+		blocks := db.blocks
 		db.mtx.RUnlock()
 		symTblSize := uint64(0)
 		for _, b := range blocks {
@@ -1011,10 +1011,11 @@ func (db *DB) ApplyConfig(conf *config.Config) error {
 	// Create WBL if it was not present and if OOO is enabled with WAL enabled.
 	var wblog *wlog.WL
 	var err error
-	if db.head.wbl != nil {
+	switch {
+	case db.head.wbl != nil:
 		// The existing WBL from the disk might have been replayed while OOO was disabled.
 		wblog = db.head.wbl
-	} else if !db.oooWasEnabled.Load() && oooTimeWindow > 0 && db.opts.WALSegmentSize >= 0 {
+	case !db.oooWasEnabled.Load() && oooTimeWindow > 0 && db.opts.WALSegmentSize >= 0:
 		segmentSize := wlog.DefaultSegmentSize
 		// Wal is set to a custom size.
 		if db.opts.WALSegmentSize > 0 {
@@ -1234,7 +1235,7 @@ func (db *DB) compactOOO(dest string, oooHead *OOOCompactionHead) (_ []ulid.ULID
 		}
 	}()
 
-	for t := blockSize * (oooHeadMint / blockSize); t <= oooHeadMaxt; t = t + blockSize {
+	for t := blockSize * (oooHeadMint / blockSize); t <= oooHeadMaxt; t += blockSize {
 		mint, maxt := t, t+blockSize
 		// Block intervals are half-open: [b.MinTime, b.MaxTime). Block intervals are always +1 than the total samples it includes.
 		uid, err := db.compactor.Write(dest, oooHead.CloneForTimeRange(mint, maxt-1), mint, maxt, nil)
@@ -1561,7 +1562,7 @@ func BeyondSizeRetention(db *DB, blocks []*Block) (deletable map[ulid.ULID]struc
 	blocksSize := db.Head().Size()
 	for i, block := range blocks {
 		blocksSize += block.Size()
-		if blocksSize > int64(db.opts.MaxBytes) {
+		if blocksSize > db.opts.MaxBytes {
 			// Add this and all following blocks for deletion.
 			for _, b := range blocks[i:] {
 				deletable[b.meta.ULID] = struct{}{}
@@ -1585,10 +1586,11 @@ func (db *DB) deleteBlocks(blocks map[ulid.ULID]*Block) error {
 		}
 
 		toDelete := filepath.Join(db.dir, ulid.String())
-		if _, err := os.Stat(toDelete); os.IsNotExist(err) {
+		switch _, err := os.Stat(toDelete); {
+		case os.IsNotExist(err):
 			// Noop.
 			continue
-		} else if err != nil {
+		case err != nil:
 			return errors.Wrapf(err, "stat dir %v", toDelete)
 		}
 
