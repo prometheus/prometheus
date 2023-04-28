@@ -190,8 +190,9 @@ func TestScrapePoolStop(t *testing.T) {
 			labels: labels.FromStrings(model.AddressLabel, fmt.Sprintf("example.com:%d", i)),
 		}
 		l := &testLoop{}
+		d := time.Duration((i+1)*20) * time.Millisecond
 		l.stopFunc = func() {
-			time.Sleep(time.Duration(i*20) * time.Millisecond)
+			time.Sleep(d)
 
 			mtx.Lock()
 			stopped[t.hash()] = true
@@ -273,8 +274,9 @@ func TestScrapePoolReload(t *testing.T) {
 			discoveredLabels: labels,
 		}
 		l := &testLoop{}
+		d := time.Duration((i+1)*20) * time.Millisecond
 		l.stopFunc = func() {
-			time.Sleep(time.Duration(i*20) * time.Millisecond)
+			time.Sleep(d)
 
 			mtx.Lock()
 			stopped[t.hash()] = true

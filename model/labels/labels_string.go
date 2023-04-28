@@ -799,7 +799,7 @@ func (b *ScratchBuilder) Sort() {
 	slices.SortFunc(b.add, func(a, b Label) bool { return a.Name < b.Name })
 }
 
-// Asssign is for when you already have a Labels which you want this ScratchBuilder to return.
+// Assign is for when you already have a Labels which you want this ScratchBuilder to return.
 func (b *ScratchBuilder) Assign(l Labels) {
 	b.output = l
 }
