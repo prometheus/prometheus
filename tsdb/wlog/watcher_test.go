@@ -299,11 +299,11 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 			go watcher.Start()
 
 			expected := seriesCount
-			retry(t, defaultRetryInterval, defaultRetries, func() bool {
-				return wt.checkNumLabels() >= expected
-			})
+			require.Eventually(t, func() bool {
+				watcher.Notify()
+				return wt.checkNumLabels() == expected
+			}, 10*time.Second, 1*time.Second)
 			watcher.Stop()
-			require.Equal(t, expected, wt.checkNumLabels())
 		})
 	}
 }
@@ -388,11 +388,12 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 			go watcher.Start()
 
 			expected := seriesCount * 2
-			retry(t, defaultRetryInterval, defaultRetries, func() bool {
-				return wt.checkNumLabels() >= expected
-			})
+
+			require.Eventually(t, func() bool {
+				watcher.Notify()
+				return wt.checkNumLabels() == expected
+			}, 10*time.Second, 1*time.Second)
 			watcher.Stop()
-			require.Equal(t, expected, wt.checkNumLabels())
 		})
 	}
 }
@@ -604,7 +605,10 @@ func TestCheckpointSeriesReset(t *testing.T) {
 			retry(t, defaultRetryInterval, defaultRetries, func() bool {
 				return wt.checkNumLabels() >= expected
 			})
-			require.Equal(t, seriesCount, wt.checkNumLabels())
+			require.Eventually(t, func() bool {
+				watcher.Notify()
+				return wt.checkNumLabels() == seriesCount
+			}, 10*time.Second, 1*time.Second)
 
 			_, err = Checkpoint(log.NewNopLogger(), w, 2, 4, func(x chunks.HeadSeriesRef) bool { return true }, 0)
 			require.NoError(t, err)
@@ -621,7 +625,10 @@ func TestCheckpointSeriesReset(t *testing.T) {
 			// If you modify the checkpoint and truncate segment #'s run the test to see how
 			// many series records you end up with and change the last Equals check accordingly
 			// or modify the Equals to Assert(len(wt.seriesLabels) < seriesCount*10)
-			require.Equal(t, tc.segments, wt.checkNumLabels())
+			require.Eventually(t, func() bool {
+				watcher.Notify()
+				return wt.checkNumLabels() == tc.segments
+			}, 10*time.Second, 1*time.Second)
 		})
 	}
 }
