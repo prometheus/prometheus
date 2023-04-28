@@ -509,9 +509,9 @@ func NewQueueManager(
 	// with the new approach, which stores metadata as WAL records and
 	// ships them alongside series. If both mechanisms are set, the new one
 	// takes precedence by implicitly disabling the older one.
-	if mCfg.Send && enableMetadataRemoteWrite {
+	if t.mcfg.Send && t.sendMetadata {
 		level.Warn(logger).Log("msg", "the 'send_metadata' and 'metadata_config.send' parameters are mutually exclusive; defaulting to use 'send_metadata'")
-		mCfg.Send = false
+		t.mcfg.Send = false
 	}
 
 	if t.mcfg.Send {
