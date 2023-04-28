@@ -126,3 +126,12 @@ still ingest those conventional histograms that do not come with a
 corresponding native histogram. However, if a native histogram is present,
 Prometheus will ignore the corresponding conventional histogram, with the
 notable exception of exemplars, which are always ingested.
+
+## Metadata Storage
+`--enable-features=metadata-storage`
+
+When enabled, Prometheus will store metadata in-memory and keep track of
+metadata changes as WAL records. This should be used along the remote write's
+`send_metadata` parameter.
+This new way of storing and sending metadata is mutually exclusive with the
+`metadata_config.send` field and the current way of sending metadata.
