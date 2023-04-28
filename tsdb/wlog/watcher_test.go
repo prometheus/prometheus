@@ -81,7 +81,7 @@ func (wtm *writeToMock) AppendFloatHistograms(fh []record.RefFloatHistogramSampl
 	return true
 }
 
-func (wtm *writeToMock) AppendWALMetadata(m []record.RefMetadata) bool {
+func (wtm *writeToMock) AppendMetadata(m []record.RefMetadata) bool {
 	wtm.metadataAppended += len(m)
 	return true
 }

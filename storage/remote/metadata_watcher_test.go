@@ -58,7 +58,7 @@ type writeMetadataToMock struct {
 	metadataAppended int
 }
 
-func (mwtm *writeMetadataToMock) AppendMetadata(_ context.Context, m []scrape.MetricMetadata) {
+func (mwtm *writeMetadataToMock) AppendWatcherMetadata(_ context.Context, m []scrape.MetricMetadata) {
 	mwtm.metadataAppended += len(m)
 }
 

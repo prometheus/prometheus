@@ -154,7 +154,7 @@ func TestSampleDelivery(t *testing.T) {
 			qm.AppendExemplars(exemplars[:len(exemplars)/2])
 			qm.AppendHistograms(histograms[:len(histograms)/2])
 			qm.AppendFloatHistograms(floatHistograms[:len(floatHistograms)/2])
-			qm.AppendWALMetadata(metadata[:len(metadata)/2])
+			qm.AppendMetadata(metadata[:len(metadata)/2])
 			c.waitForExpectedData(t)
 
 			// Send second half of data.
@@ -167,7 +167,7 @@ func TestSampleDelivery(t *testing.T) {
 			qm.AppendExemplars(exemplars[len(exemplars)/2:])
 			qm.AppendHistograms(histograms[len(histograms)/2:])
 			qm.AppendFloatHistograms(floatHistograms[len(floatHistograms)/2:])
-			qm.AppendWALMetadata(metadata[len(metadata)/2:])
+			qm.AppendMetadata(metadata[len(metadata)/2:])
 			c.waitForExpectedData(t)
 		})
 	}
@@ -197,7 +197,7 @@ func TestMetadataDelivery(t *testing.T) {
 		})
 	}
 
-	m.AppendMetadata(context.Background(), metadata)
+	m.AppendWatcherMetadata(context.Background(), metadata)
 
 	require.Equal(t, numMetadata, len(c.receivedMetadata))
 	// One more write than the rounded qoutient should be performed in order to get samples that didn't
@@ -240,7 +240,7 @@ func TestWALMetadataDelivery(t *testing.T) {
 	qm.StoreSeries(series, 0)
 	c.expectTsMetadata(metadata, series)
 
-	qm.AppendWALMetadata(metadata)
+	qm.AppendMetadata(metadata)
 	c.waitForExpectedData(t)
 }
 

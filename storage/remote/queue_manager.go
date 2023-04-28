@@ -512,8 +512,8 @@ func NewQueueManager(
 	return t
 }
 
-// AppendMetadata sends metadata to the remote storage. Metadata is sent in batches, but is not parallelized.
-func (t *QueueManager) AppendMetadata(ctx context.Context, metadata []scrape.MetricMetadata) {
+// AppendWatcherMetadata sends metadata to the remote storage. Metadata is sent in batches, but is not parallelized.
+func (t *QueueManager) AppendWatcherMetadata(ctx context.Context, metadata []scrape.MetricMetadata) {
 	mm := make([]prompb.MetricMetadata, 0, len(metadata))
 	for _, entry := range metadata {
 		mm = append(mm, prompb.MetricMetadata{
@@ -776,7 +776,7 @@ outer:
 	return true
 }
 
-func (t *QueueManager) AppendWALMetadata(ms []record.RefMetadata) bool {
+func (t *QueueManager) AppendMetadata(ms []record.RefMetadata) bool {
 	if !t.sendMetadata {
 		return true
 	}
