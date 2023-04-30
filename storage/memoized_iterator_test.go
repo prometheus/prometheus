@@ -16,11 +16,11 @@ package storage
 import (
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
-
-	"github.com/stretchr/testify/require"
 )
 
 func TestMemoizedSeriesIterator(t *testing.T) {
@@ -64,55 +64,43 @@ func TestMemoizedSeriesIterator(t *testing.T) {
 		hSample{t: 200, h: tsdbutil.GenerateTestHistogram(4)},
 		fhSample{t: 299, fh: tsdbutil.GenerateTestFloatHistogram(5)},
 		fSample{t: 300, f: 11},
+		hSample{t: 399, h: tsdbutil.GenerateTestHistogram(6)},
+		fSample{t: 400, f: 12},
 	}), 2)
 
 	require.Equal(t, it.Seek(-123), chunkenc.ValFloat, "seek failed")
 	sampleEq(1, 2, nil)
 	prevSampleEq(0, 0, nil, false)
 
-	require.Equal(t, it.Next(), chunkenc.ValFloat, "next failed")
-	sampleEq(2, 3, nil)
-	prevSampleEq(1, 2, nil, true)
-
-	require.Equal(t, it.Next(), chunkenc.ValFloat, "next failed")
-	require.Equal(t, it.Next(), chunkenc.ValFloat, "next failed")
-	require.Equal(t, it.Next(), chunkenc.ValFloat, "next failed")
-	sampleEq(5, 6, nil)
-	prevSampleEq(4, 5, nil, true)
-
 	require.Equal(t, it.Seek(5), chunkenc.ValFloat, "seek failed")
 	sampleEq(5, 6, nil)
 	prevSampleEq(4, 5, nil, true)
 
-	require.Equal(t, it.Seek(101), chunkenc.ValFloat, "seek failed")
-	sampleEq(101, 10, nil)
-	prevSampleEq(100, 9, nil, true)
-
-	require.Equal(t, chunkenc.ValHistogram, it.Next(), "next failed")
-	sampleEq(102, 0, tsdbutil.GenerateTestFloatHistogram(0))
+	// Seek to a histogram sample with a previous float sample.
+	require.Equal(t, it.Seek(102), chunkenc.ValFloatHistogram, "seek failed")
+	sampleEq(102, 10, tsdbutil.GenerateTestFloatHistogram(0))
 	prevSampleEq(101, 10, nil, true)
 
-	require.Equal(t, chunkenc.ValHistogram, it.Next(), "next failed")
-	sampleEq(103, 0, tsdbutil.GenerateTestFloatHistogram(1))
-	prevSampleEq(102, 0, tsdbutil.GenerateTestFloatHistogram(0), true)
+	// Attempt to seek backwards (no-op).
+	require.Equal(t, it.Seek(50), chunkenc.ValFloatHistogram, "seek failed")
+	sampleEq(102, 10, tsdbutil.GenerateTestFloatHistogram(0))
+	prevSampleEq(101, 10, nil, true)
 
-	require.Equal(t, chunkenc.ValFloatHistogram, it.Seek(104), "seek failed")
+	// Seek to a float histogram sample with a previous histogram sample.
+	require.Equal(t, it.Seek(104), chunkenc.ValFloatHistogram, "seek failed")
 	sampleEq(104, 0, tsdbutil.GenerateTestFloatHistogram(2))
 	prevSampleEq(103, 0, tsdbutil.GenerateTestFloatHistogram(1), true)
 
-	require.Equal(t, chunkenc.ValFloatHistogram, it.Next(), "next failed")
-	sampleEq(199, 0, tsdbutil.GenerateTestFloatHistogram(3))
-	prevSampleEq(104, 0, tsdbutil.GenerateTestFloatHistogram(2), true)
-
-	require.Equal(t, chunkenc.ValFloatHistogram, it.Seek(280), "seek failed")
-	sampleEq(299, 0, tsdbutil.GenerateTestFloatHistogram(5))
-	prevSampleEq(0, 0, nil, false)
-
-	require.Equal(t, chunkenc.ValFloat, it.Next(), "next failed")
+	// Seek to a float sample with a previous float histogram sample.
+	require.Equal(t, chunkenc.ValFloat, it.Seek(300), "seek failed")
 	sampleEq(300, 11, nil)
 	prevSampleEq(299, 0, tsdbutil.GenerateTestFloatHistogram(5), true)
 
-	require.Equal(t, it.Next(), chunkenc.ValNone, "next succeeded unexpectedly")
+	// Seek to a float sample with a previous histogram sample.
+	require.Equal(t, chunkenc.ValFloat, it.Seek(400), "seek failed")
+	sampleEq(400, 12, nil)
+	prevSampleEq(399, 0, tsdbutil.GenerateTestFloatHistogram(6), true)
+
 	require.Equal(t, it.Seek(1024), chunkenc.ValNone, "seek succeeded unexpectedly")
 }
 

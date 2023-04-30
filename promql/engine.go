@@ -1850,7 +1850,7 @@ func (ev *evaluator) vectorSelectorSingle(it *storage.MemoizedSeriesIterator, no
 		}
 	case chunkenc.ValFloat:
 		t, v = it.At()
-	case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
+	case chunkenc.ValFloatHistogram:
 		t, h = it.AtFloatHistogram()
 	default:
 		panic(fmt.Errorf("unknown value type %v", valueType))
