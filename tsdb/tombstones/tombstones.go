@@ -256,7 +256,10 @@ func (t *MemTombstones) Get(ref storage.SeriesRef) (Intervals, error) {
 	if !ok {
 		return nil, nil
 	}
-	return append(Intervals(nil), intervals...), nil // Make a copy to avoid race.
+	// Make a copy to avoid race.
+	res := make(Intervals, len(intervals))
+	copy(res, intervals)
+	return res, nil
 }
 
 func (t *MemTombstones) DeleteTombstones(refs map[storage.SeriesRef]struct{}) {
