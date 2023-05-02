@@ -611,21 +611,18 @@ func (db *DBReadOnly) LastBlockID() (string, error) {
 	max := uint64(0)
 
 	lastBlockID := ""
-	// Walk the blocks directory and find the latest subdirectory
-	for _, e := range entries {
-		// Check if dir is BLOCK dir or not
-		if isBlockDir(e) {
-			dirName := e.Name()
-			ulidObj, err := ulid.ParseStrict(dirName)
-			if err != nil {
-				return "", err
-			}
-			timestamp := ulidObj.Time()
 
-			if timestamp > max {
-				max = timestamp
-				lastBlockID = dirName
-			}
+	for _, e := range entries {
+		// Check if dir is a block dir or not.
+		dirName := e.Name()
+		ulidObj, err := ulid.ParseStrict(dirName)
+		if err != nil {
+			continue // Not a block dir.
+		}
+		timestamp := ulidObj.Time()
+		if timestamp > max {
+			max = timestamp
+			lastBlockID = dirName
 		}
 	}
 
@@ -646,7 +643,7 @@ func (db *DBReadOnly) Block(blockID string) (BlockReader, error) {
 
 	_, err := os.Stat(filepath.Join(db.dir, blockID))
 	if os.IsNotExist(err) {
-		return nil, errors.Errorf("Invalid Block ID %s", blockID)
+		return nil, errors.Errorf("invalid block ID %s", blockID)
 	}
 
 	block, err := OpenBlock(db.logger, filepath.Join(db.dir, blockID), nil)

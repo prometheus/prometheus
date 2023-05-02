@@ -399,8 +399,6 @@ func openBlock(path, blockID string) (*tsdb.DBReadOnly, tsdb.BlockReader, error)
 		return nil, nil, err
 	}
 
-	var block tsdb.BlockReader
-
 	if blockID == "" {
 		blockID, err = db.LastBlockID()
 		if err != nil {
@@ -412,9 +410,8 @@ func openBlock(path, blockID string) (*tsdb.DBReadOnly, tsdb.BlockReader, error)
 	if err != nil {
 		return nil, nil, err
 	}
-	block = b
 
-	return db, block, nil
+	return db, b, nil
 }
 
 func analyzeBlock(path, blockID string, limit int, runExtended bool) error {
