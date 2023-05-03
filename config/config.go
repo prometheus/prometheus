@@ -22,6 +22,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/prometheus/prometheus/promql/parser"
+
 	"github.com/alecthomas/units"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -258,7 +260,7 @@ func (c Config) String() string {
 	return string(b)
 }
 
-// ScrapeConfigs returns the scrape configurations.
+// GetScrapeConfigs returns the scrape configurations.
 func (c *Config) GetScrapeConfigs() ([]*ScrapeConfig, error) {
 	scfgs := make([]*ScrapeConfig, len(c.ScrapeConfigs))
 
@@ -498,8 +500,44 @@ type ScrapeConfig struct {
 
 	// List of target relabel configurations.
 	RelabelConfigs []*relabel.Config `yaml:"relabel_configs,omitempty"`
+
 	// List of metric relabel configurations.
 	MetricRelabelConfigs []*relabel.Config `yaml:"metric_relabel_configs,omitempty"`
+
+	// List of rules to execute at scrape time.
+	RuleConfigs []*ScrapeRuleConfig `yaml:"scrape_rule_configs,omitempty"`
+}
+
+// ScrapeRuleConfig is the configuration for rules executed
+// at scrape time for each individual target.
+type ScrapeRuleConfig struct {
+	Expr   string `yaml:"expr"`
+	Record string `yaml:"record"`
+}
+
+func (a *ScrapeRuleConfig) Validate() error {
+	if a.Record == "" {
+		return errors.New("aggregation rule record must not be empty")
+	}
+
+	if a.Expr == "" {
+		return errors.New("aggregation rule expression must not be empty")
+	}
+
+	expr, err := parser.ParseExpr(a.Expr)
+	if err != nil {
+		return fmt.Errorf("invalid scrape rule expression: %w", err)
+	}
+
+	parser.Inspect(expr, func(node parser.Node, nodes []parser.Node) error {
+		if _, ok := node.(*parser.MatrixSelector); ok {
+			err = errors.New("matrix selectors are not allowed in scrape rule expressions")
+			return err
+		}
+		return nil
+	})
+
+	return err
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -540,6 +578,12 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	for _, rlcfg := range c.MetricRelabelConfigs {
 		if rlcfg == nil {
 			return errors.New("empty or null metric relabeling rule in scrape config")
+		}
+	}
+
+	for _, aggrRule := range c.RuleConfigs {
+		if err := aggrRule.Validate(); err != nil {
+			return err
 		}
 	}
 

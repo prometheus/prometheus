@@ -20,6 +20,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/prometheus/promql"
+
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
@@ -101,7 +103,7 @@ func (mc *MetadataMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 }
 
 // NewManager is the Manager constructor
-func NewManager(o *Options, logger log.Logger, app storage.Appendable) *Manager {
+func NewManager(o *Options, logger log.Logger, app storage.Appendable, queryEngine *promql.Engine) *Manager {
 	if o == nil {
 		o = &Options{}
 	}
@@ -116,6 +118,7 @@ func NewManager(o *Options, logger log.Logger, app storage.Appendable) *Manager 
 		scrapePools:   make(map[string]*scrapePool),
 		graceShut:     make(chan struct{}),
 		triggerReload: make(chan struct{}, 1),
+		queryEngine:   queryEngine,
 	}
 	targetMetadataCache.registerManager(m)
 
@@ -156,7 +159,9 @@ type Manager struct {
 	scrapePools   map[string]*scrapePool
 	targetSets    map[string][]*targetgroup.Group
 
-	triggerReload chan struct{}
+	triggerReload     chan struct{}
+	enableScrapeRules bool
+	queryEngine       *promql.Engine
 }
 
 // Run receives and saves target set updates and triggers the scraping loops reloading.
@@ -177,6 +182,11 @@ func (m *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) error {
 			return nil
 		}
 	}
+}
+
+// EnableScrapeRules enables evaluating rules at scrape time.
+func (m *Manager) EnableScrapeRules() {
+	m.enableScrapeRules = true
 }
 
 func (m *Manager) reloader() {
@@ -214,11 +224,12 @@ func (m *Manager) reload() {
 				level.Error(m.logger).Log("msg", "error reloading target set", "err", "invalid config id:"+setName)
 				continue
 			}
-			sp, err := newScrapePool(scrapeConfig, m.append, m.jitterSeed, log.With(m.logger, "scrape_pool", setName), m.opts)
+			sp, err := newScrapePool(scrapeConfig, m.append, m.jitterSeed, log.With(m.logger, "scrape_pool", setName), m.queryEngine, m.opts)
 			if err != nil {
 				level.Error(m.logger).Log("msg", "error creating new scrape pool", "err", err, "scrape_pool", setName)
 				continue
 			}
+			sp.enableScrapeRules = m.enableScrapeRules
 			m.scrapePools[setName] = sp
 		}
 

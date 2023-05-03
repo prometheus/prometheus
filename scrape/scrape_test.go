@@ -28,6 +28,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/prometheus/promql"
+
 	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 	dto "github.com/prometheus/client_model/go"
@@ -57,7 +59,7 @@ func TestNewScrapePool(t *testing.T) {
 	var (
 		app   = &nopAppendable{}
 		cfg   = &config.ScrapeConfig{}
-		sp, _ = newScrapePool(cfg, app, 0, nil, &Options{})
+		sp, _ = newScrapePool(cfg, app, 0, nil, promql.NewEngine(promql.EngineOpts{}), &Options{})
 	)
 
 	if a, ok := sp.appendable.(*nopAppendable); !ok || a != app {
@@ -92,7 +94,7 @@ func TestDroppedTargetsList(t *testing.T) {
 				},
 			},
 		}
-		sp, _                  = newScrapePool(cfg, app, 0, nil, &Options{})
+		sp, _                  = newScrapePool(cfg, app, 0, nil, promql.NewEngine(promql.EngineOpts{}), &Options{})
 		expectedLabelSetString = "{__address__=\"127.0.0.1:9090\", __scrape_interval__=\"0s\", __scrape_timeout__=\"0s\", job=\"dropMe\"}"
 		expectedLength         = 1
 	)
@@ -481,7 +483,7 @@ func TestScrapePoolTargetLimit(t *testing.T) {
 func TestScrapePoolAppender(t *testing.T) {
 	cfg := &config.ScrapeConfig{}
 	app := &nopAppendable{}
-	sp, _ := newScrapePool(cfg, app, 0, nil, &Options{})
+	sp, _ := newScrapePool(cfg, app, 0, nil, promql.NewEngine(promql.EngineOpts{}), &Options{})
 
 	loop := sp.newLoop(scrapeLoopOptions{
 		target: &Target{},
@@ -523,7 +525,7 @@ func TestScrapePoolRaces(t *testing.T) {
 	newConfig := func() *config.ScrapeConfig {
 		return &config.ScrapeConfig{ScrapeInterval: interval, ScrapeTimeout: timeout}
 	}
-	sp, _ := newScrapePool(newConfig(), &nopAppendable{}, 0, nil, &Options{})
+	sp, _ := newScrapePool(newConfig(), &nopAppendable{}, 0, nil, promql.NewEngine(promql.EngineOpts{}), &Options{})
 	tgts := []*targetgroup.Group{
 		{
 			Targets: []model.LabelSet{
@@ -610,7 +612,7 @@ func TestScrapeLoopStopBeforeRun(t *testing.T) {
 		nil, nil,
 		nopMutator,
 		nopMutator,
-		nil, nil, 0,
+		nil, nil, nil, 0,
 		true,
 		0,
 		nil,
@@ -681,6 +683,7 @@ func TestScrapeLoopStop(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		app,
+		&nopRuleEngine{},
 		nil,
 		0,
 		true,
@@ -757,6 +760,7 @@ func TestScrapeLoopRun(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		app,
+		&nopRuleEngine{},
 		nil,
 		0,
 		true,
@@ -812,6 +816,7 @@ func TestScrapeLoopRun(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		app,
+		&nopRuleEngine{},
 		nil,
 		0,
 		true,
@@ -871,6 +876,7 @@ func TestScrapeLoopForcedErr(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		app,
+		&nopRuleEngine{},
 		nil,
 		0,
 		true,
@@ -929,6 +935,7 @@ func TestScrapeLoopMetadata(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		func(ctx context.Context) storage.Appender { return nopAppender{} },
+		&nopRuleEngine{},
 		cache,
 		0,
 		true,
@@ -986,6 +993,7 @@ func simpleTestScrapeLoop(t testing.TB) (context.Context, *scrapeLoop) {
 		nopMutator,
 		nopMutator,
 		s.Appender,
+		&nopRuleEngine{},
 		nil,
 		0,
 		true,
@@ -1046,6 +1054,7 @@ func TestScrapeLoopFailWithInvalidLabelsAfterRelabel(t *testing.T) {
 		},
 		nopMutator,
 		s.Appender,
+		&nopRuleEngine{},
 		nil,
 		0,
 		true,
@@ -1124,6 +1133,7 @@ func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrape(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		app,
+		&nopRuleEngine{},
 		nil,
 		0,
 		true,
@@ -1187,6 +1197,7 @@ func TestScrapeLoopRunCreatesStaleMarkersOnParseFailure(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		app,
+		&nopRuleEngine{},
 		nil,
 		0,
 		true,
@@ -1253,6 +1264,7 @@ func TestScrapeLoopCache(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		app,
+		&nopRuleEngine{},
 		nil,
 		0,
 		true,
@@ -1336,6 +1348,7 @@ func TestScrapeLoopCacheMemoryExhaustionProtection(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		app,
+		&nopRuleEngine{},
 		nil,
 		0,
 		true,
@@ -1450,6 +1463,7 @@ func TestScrapeLoopAppend(t *testing.T) {
 				return mutateReportSampleLabels(l, discoveryLabels)
 			},
 			func(ctx context.Context) storage.Appender { return app },
+			&nopRuleEngine{},
 			nil,
 			0,
 			true,
@@ -1548,7 +1562,7 @@ func TestScrapeLoopAppendForConflictingPrefixedLabels(t *testing.T) {
 					return mutateSampleLabels(l, &Target{labels: labels.FromStrings(tc.targetLabels...)}, false, nil)
 				},
 				nil,
-				func(ctx context.Context) storage.Appender { return app }, nil, 0, true, 0, nil, 0, 0, false, false, nil, false,
+				func(ctx context.Context) storage.Appender { return app }, &nopRuleEngine{}, nil, 0, true, 0, nil, 0, 0, false, false, nil, false,
 			)
 			slApp := sl.appender(context.Background())
 			_, _, _, err := sl.append(slApp, []byte(tc.exposedLabels), "", time.Date(2000, 1, 1, 1, 0, 0, 0, time.UTC))
@@ -1576,6 +1590,7 @@ func TestScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		func(ctx context.Context) storage.Appender { return app },
+		&nopRuleEngine{},
 		nil,
 		0,
 		true,
@@ -1634,6 +1649,7 @@ func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 		},
 		nopMutator,
 		func(ctx context.Context) storage.Appender { return app },
+		&nopRuleEngine{},
 		nil,
 		0,
 		true,
@@ -1711,6 +1727,7 @@ func TestScrapeLoop_ChangingMetricString(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		func(ctx context.Context) storage.Appender { capp.next = s.Appender(ctx); return capp },
+		&nopRuleEngine{},
 		nil,
 		0,
 		true,
@@ -1759,6 +1776,7 @@ func TestScrapeLoopAppendStaleness(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		func(ctx context.Context) storage.Appender { return app },
+		&nopRuleEngine{},
 		nil,
 		0,
 		true,
@@ -1810,6 +1828,7 @@ func TestScrapeLoopAppendNoStalenessIfTimestamp(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		func(ctx context.Context) storage.Appender { return app },
+		&nopRuleEngine{},
 		nil,
 		0,
 		true,
@@ -1921,6 +1940,7 @@ metric_total{n="2"} 2 # {t="2"} 2.0 20000
 					return mutateReportSampleLabels(l, discoveryLabels)
 				},
 				func(ctx context.Context) storage.Appender { return app },
+				&nopRuleEngine{},
 				nil,
 				0,
 				true,
@@ -1986,6 +2006,7 @@ func TestScrapeLoopAppendExemplarSeries(t *testing.T) {
 			return mutateReportSampleLabels(l, discoveryLabels)
 		},
 		func(ctx context.Context) storage.Appender { return app },
+		&nopRuleEngine{},
 		nil,
 		0,
 		true,
@@ -2038,6 +2059,7 @@ func TestScrapeLoopRunReportsTargetDownOnScrapeError(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		app,
+		&nopRuleEngine{},
 		nil,
 		0,
 		true,
@@ -2074,6 +2096,7 @@ func TestScrapeLoopRunReportsTargetDownOnInvalidUTF8(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		app,
+		&nopRuleEngine{},
 		nil,
 		0,
 		true,
@@ -2123,6 +2146,7 @@ func TestScrapeLoopAppendGracefullyIfAmendOrOutOfOrderOrOutOfBounds(t *testing.T
 		nopMutator,
 		nopMutator,
 		func(ctx context.Context) storage.Appender { return app },
+		&nopRuleEngine{},
 		nil,
 		0,
 		true,
@@ -2168,6 +2192,7 @@ func TestScrapeLoopOutOfBoundsTimeError(t *testing.T) {
 				maxTime:  timestamp.FromTime(time.Now().Add(10 * time.Minute)),
 			}
 		},
+		&nopRuleEngine{},
 		nil,
 		0,
 		true,
@@ -2441,6 +2466,7 @@ func TestScrapeLoop_RespectTimestamps(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		func(ctx context.Context) storage.Appender { return capp },
+		&nopRuleEngine{},
 		nil, 0,
 		true,
 		0,
@@ -2482,6 +2508,7 @@ func TestScrapeLoop_DiscardTimestamps(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		func(ctx context.Context) storage.Appender { return capp },
+		&nopRuleEngine{},
 		nil, 0,
 		false,
 		0,
@@ -2521,6 +2548,7 @@ func TestScrapeLoopDiscardDuplicateLabels(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		s.Appender,
+		&nopRuleEngine{},
 		nil,
 		0,
 		true,
@@ -2579,6 +2607,7 @@ func TestScrapeLoopDiscardUnnamedMetrics(t *testing.T) {
 		},
 		nopMutator,
 		func(ctx context.Context) storage.Appender { return app },
+		&nopRuleEngine{},
 		nil,
 		0,
 		true,
@@ -2682,7 +2711,7 @@ func TestReuseScrapeCache(t *testing.T) {
 			ScrapeInterval: model.Duration(5 * time.Second),
 			MetricsPath:    "/metrics",
 		}
-		sp, _ = newScrapePool(cfg, app, 0, nil, &Options{})
+		sp, _ = newScrapePool(cfg, app, 0, nil, promql.NewEngine(promql.EngineOpts{}), &Options{})
 		t1    = &Target{
 			discoveredLabels: labels.FromStrings("labelNew", "nameNew", "labelNew1", "nameNew1", "labelNew2", "nameNew2"),
 		}
@@ -2842,6 +2871,7 @@ func TestScrapeAddFast(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		s.Appender,
+		&nopRuleEngine{},
 		nil,
 		0,
 		true,
@@ -2882,7 +2912,7 @@ func TestReuseCacheRace(*testing.T) {
 			ScrapeInterval: model.Duration(5 * time.Second),
 			MetricsPath:    "/metrics",
 		}
-		sp, _ = newScrapePool(cfg, app, 0, nil, &Options{})
+		sp, _ = newScrapePool(cfg, app, 0, nil, promql.NewEngine(promql.EngineOpts{}), &Options{})
 		t1    = &Target{
 			discoveredLabels: labels.FromStrings("labelNew", "nameNew"),
 		}
@@ -2928,6 +2958,7 @@ func TestScrapeReportSingleAppender(t *testing.T) {
 		nopMutator,
 		nopMutator,
 		s.Appender,
+		&nopRuleEngine{},
 		nil,
 		0,
 		true,
@@ -3009,7 +3040,7 @@ func TestScrapeReportLimit(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	sp, err := newScrapePool(cfg, s, 0, nil, &Options{})
+	sp, err := newScrapePool(cfg, s, 0, nil, promql.NewEngine(promql.EngineOpts{}), &Options{})
 	require.NoError(t, err)
 	defer sp.stop()
 
@@ -3130,6 +3161,7 @@ func TestScrapeLoopLabelLimit(t *testing.T) {
 				return mutateReportSampleLabels(l, discoveryLabels)
 			},
 			func(ctx context.Context) storage.Appender { return app },
+			&nopRuleEngine{},
 			nil,
 			0,
 			true,
@@ -3179,7 +3211,7 @@ func TestTargetScrapeIntervalAndTimeoutRelabel(t *testing.T) {
 			},
 		},
 	}
-	sp, _ := newScrapePool(config, &nopAppendable{}, 0, nil, &Options{})
+	sp, _ := newScrapePool(config, &nopAppendable{}, 0, nil, promql.NewEngine(promql.EngineOpts{}), &Options{})
 	tgts := []*targetgroup.Group{
 		{
 			Targets: []model.LabelSet{{model.AddressLabel: "127.0.0.1:9090"}},
@@ -3191,4 +3223,230 @@ func TestTargetScrapeIntervalAndTimeoutRelabel(t *testing.T) {
 
 	require.Equal(t, "3s", sp.ActiveTargets()[0].labels.Get(model.ScrapeIntervalLabel))
 	require.Equal(t, "750ms", sp.ActiveTargets()[0].labels.Get(model.ScrapeTimeoutLabel))
+}
+
+func TestScrapeWithScrapeRules(t *testing.T) {
+	ts := time.Now()
+
+	tests := []struct {
+		name            string
+		scrape          string
+		discoveryLabels []string
+		scrapeRules     []*config.ScrapeRuleConfig
+		relabelConfig   []*relabel.Config
+		expectedSamples []sample
+	}{
+		{
+			name: "scrape rules without relabeling",
+			scrape: `
+metric{l1="1", l2="1"} 3
+metric{l1="1", l2="2"} 5`,
+			discoveryLabels: []string{"instance", "local"},
+			scrapeRules: []*config.ScrapeRuleConfig{
+				{
+					Expr:   "sum by (l1) (metric)",
+					Record: "l1:metric:sum",
+				},
+			},
+			relabelConfig: nil,
+			expectedSamples: []sample{
+				{
+					metric: labels.FromStrings("__name__", "metric", "instance", "local", "l1", "1", "l2", "1"),
+					t:      ts.UnixMilli(),
+					v:      3,
+				},
+				{
+					metric: labels.FromStrings("__name__", "metric", "instance", "local", "l1", "1", "l2", "2"),
+					t:      ts.UnixMilli(),
+					v:      5,
+				},
+				{
+					metric: labels.FromStrings("__name__", "l1:metric:sum", "instance", "local", "l1", "1"),
+					t:      ts.UnixMilli(),
+					v:      8,
+				},
+			},
+		},
+		{
+			name: "scrape rules with relabeling on original series",
+			scrape: `
+metric{l1="1", l2="1"} 3
+metric{l1="1", l2="2"} 5`,
+			discoveryLabels: []string{"instance", "local"},
+			scrapeRules: []*config.ScrapeRuleConfig{
+				{
+					Expr:   "sum by (l1) (metric)",
+					Record: "l1:metric:sum",
+				},
+			},
+			relabelConfig: []*relabel.Config{
+				{
+					SourceLabels: model.LabelNames{"__name__"},
+					Regex:        relabel.MustNewRegexp("^metric$"),
+					Action:       relabel.Drop,
+				},
+			},
+			expectedSamples: []sample{
+				{
+					metric: labels.FromStrings("__name__", "l1:metric:sum", "instance", "local", "l1", "1"),
+					t:      ts.UnixMilli(),
+					v:      8,
+				},
+			},
+		},
+		{
+			name: "scrape rules with relabeling on recorded series",
+			scrape: `
+metric{l1="1", l2="1"} 3
+metric{l1="1", l2="2"} 5`,
+			discoveryLabels: []string{"instance", "local"},
+			scrapeRules: []*config.ScrapeRuleConfig{
+				{
+					Expr:   "sum by (l1) (metric)",
+					Record: "l1:metric:sum",
+				},
+			},
+			relabelConfig: []*relabel.Config{
+				{
+					SourceLabels: model.LabelNames{"__name__"},
+					Regex:        relabel.MustNewRegexp("l1:metric:sum"),
+					Action:       relabel.Keep,
+				},
+				{
+					SourceLabels: model.LabelNames{"__name__"},
+					Regex:        relabel.MustNewRegexp("l1:metric:sum"),
+					Action:       relabel.Replace,
+					TargetLabel:  "__name__",
+					Replacement:  "relabeled_rule",
+				},
+			},
+			expectedSamples: []sample{
+				{
+					metric: labels.FromStrings("__name__", "relabeled_rule", "instance", "local", "l1", "1"),
+					t:      ts.UnixMilli(),
+					v:      8,
+				},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			discoveryLabels := &Target{
+				labels: labels.FromStrings(test.discoveryLabels...),
+			}
+			app := &collectResultAppender{}
+			sl := newScrapeLoop(context.Background(),
+				nil, nil, nil,
+				func(l labels.Labels) labels.Labels {
+					return mutateSampleLabels(l, discoveryLabels, false, test.relabelConfig)
+				},
+				func(l labels.Labels) labels.Labels {
+					return mutateReportSampleLabels(l, discoveryLabels)
+				},
+				func(ctx context.Context) storage.Appender { return app },
+				newRuleEngine(test.scrapeRules, promql.NewEngine(
+					promql.EngineOpts{
+						MaxSamples: 500000,
+						Timeout:    30 * time.Second,
+					}),
+				),
+				nil,
+				0,
+				true,
+				0,
+				nil,
+				0,
+				0,
+				false,
+				false,
+				nil,
+				false,
+			)
+
+			slApp := sl.appender(context.Background())
+			_, _, _, err := sl.append(slApp, []byte(test.scrape), "", ts)
+			require.NoError(t, err)
+
+			require.NoError(t, slApp.Commit())
+			require.Equal(t, test.expectedSamples, app.result)
+		})
+	}
+}
+
+func TestScrapeReportWithScrapeRules(t *testing.T) {
+	ts := time.Now()
+
+	scrapeRule := config.ScrapeRuleConfig{
+		Expr:   "sum by (l1) (metric)",
+		Record: "l1:metric:sum",
+	}
+
+	scrape := `
+metric{l1="1", l2="1"} 3
+metric{l1="1", l2="2"} 5`
+
+	_, sl := simpleTestScrapeLoop(t)
+	sl.ruleEngine = newRuleEngine([]*config.ScrapeRuleConfig{&scrapeRule}, promql.NewEngine(
+		promql.EngineOpts{
+			MaxSamples: 500000,
+			Timeout:    30 * time.Second,
+		},
+	))
+
+	slApp := sl.appender(context.Background())
+	scraped, added, seriesAdded, err := sl.append(slApp, []byte(scrape), "", ts)
+	require.NoError(t, err)
+	require.Equal(t, 2, scraped)
+	require.Equal(t, 3, added)
+	require.Equal(t, 3, seriesAdded)
+
+	scraped, added, seriesAdded, err = sl.append(slApp, []byte(scrape), "", ts)
+	require.NoError(t, err)
+	require.Equal(t, 2, scraped)
+	require.Equal(t, 3, added)
+	require.Equal(t, 0, seriesAdded)
+}
+
+func TestScrapeReportWithScrapeRulesAndRelabeling(t *testing.T) {
+	ts := time.Now()
+
+	scrapeRule := config.ScrapeRuleConfig{
+		Expr:   "sum by (l1) (metric)",
+		Record: "l1:metric:sum",
+	}
+
+	scrape := `
+metric{l1="1", l2="1"} 3
+metric{l1="1", l2="2"} 5`
+
+	_, sl := simpleTestScrapeLoop(t)
+	sl.sampleMutator = func(l labels.Labels) labels.Labels {
+		return mutateSampleLabels(l, &Target{}, false, []*relabel.Config{
+			{
+				SourceLabels: model.LabelNames{"__name__"},
+				Regex:        relabel.MustNewRegexp("metric"),
+				Action:       relabel.Drop,
+			},
+		})
+	}
+	sl.ruleEngine = newRuleEngine([]*config.ScrapeRuleConfig{&scrapeRule}, promql.NewEngine(
+		promql.EngineOpts{
+			MaxSamples: 500000,
+			Timeout:    30 * time.Second,
+		},
+	))
+
+	slApp := sl.appender(context.Background())
+	scraped, added, seriesAdded, err := sl.append(slApp, []byte(scrape), "", ts)
+	require.NoError(t, err)
+	require.Equal(t, 2, scraped)
+	require.Equal(t, 1, added)
+	require.Equal(t, 1, seriesAdded)
+
+	scraped, added, seriesAdded, err = sl.append(slApp, []byte(scrape), "", ts)
+	require.NoError(t, err)
+	require.Equal(t, 2, scraped)
+	require.Equal(t, 1, added)
+	require.Equal(t, 0, seriesAdded)
 }

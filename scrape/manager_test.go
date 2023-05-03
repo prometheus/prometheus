@@ -20,6 +20,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/prometheus/promql"
+
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
@@ -495,7 +497,7 @@ scrape_configs:
 	)
 
 	opts := Options{}
-	scrapeManager := NewManager(&opts, nil, nil)
+	scrapeManager := NewManager(&opts, nil, nil, promql.NewEngine(promql.EngineOpts{}))
 	newLoop := func(scrapeLoopOptions) loop {
 		ch <- struct{}{}
 		return noopLoop()
@@ -560,7 +562,7 @@ scrape_configs:
 
 func TestManagerTargetsUpdates(t *testing.T) {
 	opts := Options{}
-	m := NewManager(&opts, nil, nil)
+	m := NewManager(&opts, nil, nil, promql.NewEngine(promql.EngineOpts{}))
 
 	ts := make(chan map[string][]*targetgroup.Group)
 	go m.Run(ts)
@@ -613,7 +615,7 @@ global:
 	}
 
 	opts := Options{}
-	scrapeManager := NewManager(&opts, nil, nil)
+	scrapeManager := NewManager(&opts, nil, nil, promql.NewEngine(promql.EngineOpts{}))
 
 	// Load the first config.
 	cfg1 := getConfig("ha1")
@@ -695,7 +697,7 @@ scrape_configs:
 	}
 
 	opts := Options{}
-	scrapeManager := NewManager(&opts, nil, nil)
+	scrapeManager := NewManager(&opts, nil, nil, nil)
 
 	reload(scrapeManager, cfg1)
 	require.ElementsMatch(t, []string{"job1", "job2"}, scrapeManager.ScrapePools())
