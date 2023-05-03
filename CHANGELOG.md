@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.44.0-rc.1 / 2023-05-03
+
+* [BUGFIX] Labels: Set after Del would be ignored, which broke some relabeling rules. #12322
+
 ## 2.44.0-rc.0 / 2023-04-22
 
 This version is built with Go tag `stringlabels`, to use the smaller data
