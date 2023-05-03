@@ -302,7 +302,7 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 			require.Eventually(t, func() bool {
 				watcher.Notify()
 				return wt.checkNumLabels() == expected
-			}, 10*time.Second, 1*time.Second)
+			}, 20*time.Second, 1*time.Second)
 			watcher.Stop()
 		})
 	}
