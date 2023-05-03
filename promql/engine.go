@@ -1850,14 +1850,14 @@ func (ev *evaluator) vectorSelectorSingle(it *storage.MemoizedSeriesIterator, no
 		}
 	case chunkenc.ValFloat:
 		t, v = it.At()
-	case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
+	case chunkenc.ValFloatHistogram:
 		t, h = it.AtFloatHistogram()
 	default:
 		panic(fmt.Errorf("unknown value type %v", valueType))
 	}
 	if valueType == chunkenc.ValNone || t > refTime {
 		var ok bool
-		t, v, _, h, ok = it.PeekPrev()
+		t, v, h, ok = it.PeekPrev()
 		if !ok || t < refTime-durationMilliseconds(ev.lookbackDelta) {
 			return 0, 0, nil, false
 		}
