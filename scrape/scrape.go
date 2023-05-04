@@ -193,8 +193,8 @@ var (
 	)
 	targetScrapeNativeHistogramBucketLimit = prometheus.NewCounter(
 		prometheus.CounterOpts{
-			Name: "prometheus_target_scrapes_histogram_exceeded_bucket_limit_total",
-			Help: "Total number of scrapes that hit the native histograms bucket limit and were rejected.",
+			Name: "prometheus_target_scrapes_exceeded_native_histogram_bucket_limit_total",
+			Help: "Total number of scrapes that hit the native histogram bucket limit and were rejected.",
 		},
 	)
 )
@@ -744,17 +744,17 @@ func mutateReportSampleLabels(lset labels.Labels, target *Target) labels.Labels 
 }
 
 // appender returns an appender for ingested samples from the target.
-func appender(app storage.Appender, limit, bucketLimit int) storage.Appender {
+func appender(app storage.Appender, sampleLimit, bucketLimit int) storage.Appender {
 	app = &timeLimitAppender{
 		Appender: app,
 		maxTime:  timestamp.FromTime(time.Now().Add(maxAheadTime)),
 	}
 
-	// The limit is applied after metrics are potentially dropped via relabeling.
-	if limit > 0 {
+	// The sampleLimit is applied after metrics are potentially dropped via relabeling.
+	if sampleLimit > 0 {
 		app = &limitAppender{
 			Appender: app,
-			limit:    limit,
+			limit:    sampleLimit,
 		}
 	}
 
@@ -1707,7 +1707,7 @@ loop:
 	}
 	if bucketLimitErr != nil {
 		if err == nil {
-			err = bucketLimitErr // if sample limit is hit, that error takes precedence
+			err = bucketLimitErr // If sample limit is hit, that error takes precedence.
 		}
 		// We only want to increment this once per scrape, so this is Inc'd outside the loop.
 		targetScrapeNativeHistogramBucketLimit.Inc()
