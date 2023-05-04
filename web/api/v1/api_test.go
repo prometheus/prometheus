@@ -1102,10 +1102,10 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				ResultType: parser.ValueTypeMatrix,
 				Result: promql.Matrix{
 					promql.Series{
-						Points: []promql.Point{
-							{V: 0, T: timestamp.FromTime(start)},
-							{V: 1, T: timestamp.FromTime(start.Add(1 * time.Second))},
-							{V: 2, T: timestamp.FromTime(start.Add(2 * time.Second))},
+						Floats: []promql.FPoint{
+							{F: 0, T: timestamp.FromTime(start)},
+							{F: 1, T: timestamp.FromTime(start.Add(1 * time.Second))},
+							{F: 2, T: timestamp.FromTime(start.Add(2 * time.Second))},
 						},
 						// No Metric returned - use zero value for comparison.
 					},
@@ -1974,6 +1974,65 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			},
 		},
 		{
+			endpoint: api.rules,
+			query:    url.Values{"rule_name[]": []string{"test_metric4"}},
+			response: &RuleDiscovery{
+				RuleGroups: []*RuleGroup{
+					{
+						Name:     "grp",
+						File:     "/path/to/file",
+						Interval: 1,
+						Limit:    0,
+						Rules: []Rule{
+							AlertingRule{
+								State:       "inactive",
+								Name:        "test_metric4",
+								Query:       "up == 1",
+								Duration:    1,
+								Labels:      labels.Labels{},
+								Annotations: labels.Labels{},
+								Alerts:      []*Alert{},
+								Health:      "unknown",
+								Type:        "alerting",
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			endpoint: api.rules,
+			query:    url.Values{"rule_group[]": []string{"respond-with-nothing"}},
+			response: &RuleDiscovery{RuleGroups: []*RuleGroup{}},
+		},
+		{
+			endpoint: api.rules,
+			query:    url.Values{"file[]": []string{"/path/to/file"}, "rule_name[]": []string{"test_metric4"}},
+			response: &RuleDiscovery{
+				RuleGroups: []*RuleGroup{
+					{
+						Name:     "grp",
+						File:     "/path/to/file",
+						Interval: 1,
+						Limit:    0,
+						Rules: []Rule{
+							AlertingRule{
+								State:       "inactive",
+								Name:        "test_metric4",
+								Query:       "up == 1",
+								Duration:    1,
+								Labels:      labels.Labels{},
+								Annotations: labels.Labels{},
+								Alerts:      []*Alert{},
+								Health:      "unknown",
+								Type:        "alerting",
+							},
+						},
+					},
+				},
+			},
+		},
+		{
 			endpoint: api.queryExemplars,
 			query: url.Values{
 				"query": []string{`test_metric3{foo="boo"} - test_metric4{foo="bar"}`},
@@ -2560,9 +2619,9 @@ type fakeDB struct {
 	err error
 }
 
-func (f *fakeDB) CleanTombstones() error                               { return f.err }
-func (f *fakeDB) Delete(mint, maxt int64, ms ...*labels.Matcher) error { return f.err }
-func (f *fakeDB) Snapshot(dir string, withHead bool) error             { return f.err }
+func (f *fakeDB) CleanTombstones() error                        { return f.err }
+func (f *fakeDB) Delete(int64, int64, ...*labels.Matcher) error { return f.err }
+func (f *fakeDB) Snapshot(string, bool) error                   { return f.err }
 func (f *fakeDB) Stats(statsByLabelName string) (_ *tsdb.Stats, retErr error) {
 	dbDir, err := os.MkdirTemp("", "tsdb-api-ready")
 	if err != nil {
@@ -2783,7 +2842,7 @@ func TestRespondSuccess(t *testing.T) {
 		t.Fatalf("Error reading response body: %s", err)
 	}
 
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("Return code %d expected in success response but got %d", 200, resp.StatusCode)
 	}
 	if h := resp.Header.Get("Content-Type"); h != "application/json" {
@@ -2791,7 +2850,7 @@ func TestRespondSuccess(t *testing.T) {
 	}
 
 	var res response
-	if err = json.Unmarshal([]byte(body), &res); err != nil {
+	if err = json.Unmarshal(body, &res); err != nil {
 		t.Fatalf("Error unmarshaling JSON body: %s", err)
 	}
 
@@ -2827,7 +2886,7 @@ func TestRespondError(t *testing.T) {
 	}
 
 	var res response
-	if err = json.Unmarshal([]byte(body), &res); err != nil {
+	if err = json.Unmarshal(body, &res); err != nil {
 		t.Fatalf("Error unmarshaling JSON body: %s", err)
 	}
 
@@ -3059,7 +3118,7 @@ func TestRespond(t *testing.T) {
 				ResultType: parser.ValueTypeMatrix,
 				Result: promql.Matrix{
 					promql.Series{
-						Points: []promql.Point{{V: 1, T: 1000}},
+						Floats: []promql.FPoint{{F: 1, T: 1000}},
 						Metric: labels.FromStrings("__name__", "foo"),
 					},
 				},
@@ -3071,7 +3130,7 @@ func TestRespond(t *testing.T) {
 				ResultType: parser.ValueTypeMatrix,
 				Result: promql.Matrix{
 					promql.Series{
-						Points: []promql.Point{{H: &histogram.FloatHistogram{
+						Histograms: []promql.HPoint{{H: &histogram.FloatHistogram{
 							Schema:        2,
 							ZeroThreshold: 0.001,
 							ZeroCount:     12,
@@ -3094,63 +3153,63 @@ func TestRespond(t *testing.T) {
 			expected: `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"__name__":"foo"},"histograms":[[1,{"count":"10","sum":"20","buckets":[[1,"-1.6817928305074288","-1.414213562373095","1"],[1,"-1.414213562373095","-1.189207115002721","2"],[3,"-0.001","0.001","12"],[0,"1.414213562373095","1.6817928305074288","1"],[0,"1.6817928305074288","2","2"],[0,"2.378414230005442","2.82842712474619","2"],[0,"2.82842712474619","3.3635856610148576","1"],[0,"3.3635856610148576","4","1"]]}]]}]}}`,
 		},
 		{
-			response: promql.Point{V: 0, T: 0},
+			response: promql.FPoint{F: 0, T: 0},
 			expected: `{"status":"success","data":[0,"0"]}`,
 		},
 		{
-			response: promql.Point{V: 20, T: 1},
+			response: promql.FPoint{F: 20, T: 1},
 			expected: `{"status":"success","data":[0.001,"20"]}`,
 		},
 		{
-			response: promql.Point{V: 20, T: 10},
+			response: promql.FPoint{F: 20, T: 10},
 			expected: `{"status":"success","data":[0.010,"20"]}`,
 		},
 		{
-			response: promql.Point{V: 20, T: 100},
+			response: promql.FPoint{F: 20, T: 100},
 			expected: `{"status":"success","data":[0.100,"20"]}`,
 		},
 		{
-			response: promql.Point{V: 20, T: 1001},
+			response: promql.FPoint{F: 20, T: 1001},
 			expected: `{"status":"success","data":[1.001,"20"]}`,
 		},
 		{
-			response: promql.Point{V: 20, T: 1010},
+			response: promql.FPoint{F: 20, T: 1010},
 			expected: `{"status":"success","data":[1.010,"20"]}`,
 		},
 		{
-			response: promql.Point{V: 20, T: 1100},
+			response: promql.FPoint{F: 20, T: 1100},
 			expected: `{"status":"success","data":[1.100,"20"]}`,
 		},
 		{
-			response: promql.Point{V: 20, T: 12345678123456555},
+			response: promql.FPoint{F: 20, T: 12345678123456555},
 			expected: `{"status":"success","data":[12345678123456.555,"20"]}`,
 		},
 		{
-			response: promql.Point{V: 20, T: -1},
+			response: promql.FPoint{F: 20, T: -1},
 			expected: `{"status":"success","data":[-0.001,"20"]}`,
 		},
 		{
-			response: promql.Point{V: math.NaN(), T: 0},
+			response: promql.FPoint{F: math.NaN(), T: 0},
 			expected: `{"status":"success","data":[0,"NaN"]}`,
 		},
 		{
-			response: promql.Point{V: math.Inf(1), T: 0},
+			response: promql.FPoint{F: math.Inf(1), T: 0},
 			expected: `{"status":"success","data":[0,"+Inf"]}`,
 		},
 		{
-			response: promql.Point{V: math.Inf(-1), T: 0},
+			response: promql.FPoint{F: math.Inf(-1), T: 0},
 			expected: `{"status":"success","data":[0,"-Inf"]}`,
 		},
 		{
-			response: promql.Point{V: 1.2345678e6, T: 0},
+			response: promql.FPoint{F: 1.2345678e6, T: 0},
 			expected: `{"status":"success","data":[0,"1234567.8"]}`,
 		},
 		{
-			response: promql.Point{V: 1.2345678e-6, T: 0},
+			response: promql.FPoint{F: 1.2345678e-6, T: 0},
 			expected: `{"status":"success","data":[0,"0.0000012345678"]}`,
 		},
 		{
-			response: promql.Point{V: 1.2345678e-67, T: 0},
+			response: promql.FPoint{F: 1.2345678e-67, T: 0},
 			expected: `{"status":"success","data":[0,"1.2345678e-67"]}`,
 		},
 		{
@@ -3283,15 +3342,15 @@ var testResponseWriter = httptest.ResponseRecorder{}
 
 func BenchmarkRespond(b *testing.B) {
 	b.ReportAllocs()
-	points := []promql.Point{}
+	points := []promql.FPoint{}
 	for i := 0; i < 10000; i++ {
-		points = append(points, promql.Point{V: float64(i * 1000000), T: int64(i)})
+		points = append(points, promql.FPoint{F: float64(i * 1000000), T: int64(i)})
 	}
 	response := &queryData{
 		ResultType: parser.ValueTypeMatrix,
 		Result: promql.Matrix{
 			promql.Series{
-				Points: points,
+				Floats: points,
 				Metric: labels.EmptyLabels(),
 			},
 		},
@@ -3407,6 +3466,69 @@ func TestGetGlobalURL(t *testing.T) {
 			}
 			require.NoError(t, err)
 			require.Equal(t, tc.expected, output)
+		})
+	}
+}
+
+func TestExtractQueryOpts(t *testing.T) {
+	tests := []struct {
+		name   string
+		form   url.Values
+		expect *promql.QueryOpts
+		err    error
+	}{
+		{
+			name: "with stats all",
+			form: url.Values{
+				"stats": []string{"all"},
+			},
+			expect: &promql.QueryOpts{
+				EnablePerStepStats: true,
+			},
+			err: nil,
+		},
+		{
+			name: "with stats none",
+			form: url.Values{
+				"stats": []string{"none"},
+			},
+			expect: &promql.QueryOpts{
+				EnablePerStepStats: false,
+			},
+			err: nil,
+		},
+		{
+			name: "with lookback delta",
+			form: url.Values{
+				"stats":          []string{"all"},
+				"lookback_delta": []string{"30s"},
+			},
+			expect: &promql.QueryOpts{
+				EnablePerStepStats: true,
+				LookbackDelta:      30 * time.Second,
+			},
+			err: nil,
+		},
+		{
+			name: "with invalid lookback delta",
+			form: url.Values{
+				"lookback_delta": []string{"invalid"},
+			},
+			expect: nil,
+			err:    errors.New(`error parsing lookback delta duration: cannot parse "invalid" to a valid duration`),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			req := &http.Request{Form: test.form}
+			opts, err := extractQueryOpts(req)
+			require.Equal(t, test.expect, opts)
+			if test.err == nil {
+				require.NoError(t, err)
+			} else {
+				require.Equal(t, test.err.Error(), err.Error())
+			}
 		})
 	}
 }

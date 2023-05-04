@@ -136,9 +136,10 @@ func NewDiscovery(conf SDConfig, logger log.Logger) (*Discovery, error) {
 		return nil, err
 	}
 
-	if len(conf.AuthToken) > 0 {
+	switch {
+	case len(conf.AuthToken) > 0:
 		rt, err = newAuthTokenRoundTripper(conf.AuthToken, rt)
-	} else if len(conf.AuthTokenFile) > 0 {
+	case len(conf.AuthTokenFile) > 0:
 		rt, err = newAuthTokenFileRoundTripper(conf.AuthTokenFile, rt)
 	}
 	if err != nil {
@@ -400,19 +401,20 @@ func targetsForApp(app *app) []model.LabelSet {
 	var labels []map[string]string
 	var prefix string
 
-	if len(app.Container.PortMappings) != 0 {
+	switch {
+	case len(app.Container.PortMappings) != 0:
 		// In Marathon 1.5.x the "container.docker.portMappings" object was moved
 		// to "container.portMappings".
 		ports, labels = extractPortMapping(app.Container.PortMappings, app.isContainerNet())
 		prefix = portMappingLabelPrefix
 
-	} else if len(app.Container.Docker.PortMappings) != 0 {
+	case len(app.Container.Docker.PortMappings) != 0:
 		// Prior to Marathon 1.5 the port mappings could be found at the path
 		// "container.docker.portMappings".
 		ports, labels = extractPortMapping(app.Container.Docker.PortMappings, app.isContainerNet())
 		prefix = portMappingLabelPrefix
 
-	} else if len(app.PortDefinitions) != 0 {
+	case len(app.PortDefinitions) != 0:
 		// PortDefinitions deprecates the "ports" array and can be used to specify
 		// a list of ports with metadata in case a mapping is not required.
 		ports = make([]uint32, len(app.PortDefinitions))

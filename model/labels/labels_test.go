@@ -531,6 +531,11 @@ func TestBuilder(t *testing.T) {
 		},
 		{
 			base: FromStrings("aaa", "111", "bbb", "222", "ccc", "333"),
+			set:  []Label{{"aaa", "444"}, {"bbb", "555"}, {"ccc", "666"}},
+			want: FromStrings("aaa", "444", "bbb", "555", "ccc", "666"),
+		},
+		{
+			base: FromStrings("aaa", "111", "bbb", "222", "ccc", "333"),
 			del:  []string{"bbb"},
 			want: FromStrings("aaa", "111", "ccc", "333"),
 		},
@@ -591,7 +596,15 @@ func TestBuilder(t *testing.T) {
 				b.Keep(tcase.keep...)
 			}
 			b.Del(tcase.del...)
-			require.Equal(t, tcase.want, b.Labels(tcase.base))
+			require.Equal(t, tcase.want, b.Labels())
+
+			// Check what happens when we call Range and mutate the builder.
+			b.Range(func(l Label) {
+				if l.Name == "aaa" || l.Name == "bbb" {
+					b.Del(l.Name)
+				}
+			})
+			require.Equal(t, tcase.want.BytesWithoutLabels(nil, "aaa", "bbb"), b.Labels().Bytes(nil))
 		})
 	}
 }
@@ -656,7 +669,7 @@ func BenchmarkLabels_Hash(b *testing.B) {
 					// Label ~20B name, 50B value.
 					b.Set(fmt.Sprintf("abcdefghijabcdefghijabcdefghij%d", i), fmt.Sprintf("abcdefghijabcdefghijabcdefghijabcdefghijabcdefghij%d", i))
 				}
-				return b.Labels(EmptyLabels())
+				return b.Labels()
 			}(),
 		},
 		{
@@ -667,7 +680,7 @@ func BenchmarkLabels_Hash(b *testing.B) {
 					// Label ~50B name, 50B value.
 					b.Set(fmt.Sprintf("abcdefghijabcdefghijabcdefghijabcdefghijabcdefghij%d", i), fmt.Sprintf("abcdefghijabcdefghijabcdefghijabcdefghijabcdefghij%d", i))
 				}
-				return b.Labels(EmptyLabels())
+				return b.Labels()
 			}(),
 		},
 		{
@@ -693,6 +706,50 @@ func BenchmarkLabels_Hash(b *testing.B) {
 			}
 			benchmarkLabelsResult = h
 		})
+	}
+}
+
+func BenchmarkBuilder(b *testing.B) {
+	m := []Label{
+		{"job", "node"},
+		{"instance", "123.123.1.211:9090"},
+		{"path", "/api/v1/namespaces/<namespace>/deployments/<name>"},
+		{"method", "GET"},
+		{"namespace", "system"},
+		{"status", "500"},
+		{"prometheus", "prometheus-core-1"},
+		{"datacenter", "eu-west-1"},
+		{"pod_name", "abcdef-99999-defee"},
+	}
+
+	var l Labels
+	builder := NewBuilder(EmptyLabels())
+	for i := 0; i < b.N; i++ {
+		builder.Reset(EmptyLabels())
+		for _, l := range m {
+			builder.Set(l.Name, l.Value)
+		}
+		l = builder.Labels()
+	}
+	require.Equal(b, 9, l.Len())
+}
+
+func BenchmarkLabels_Copy(b *testing.B) {
+	m := map[string]string{
+		"job":        "node",
+		"instance":   "123.123.1.211:9090",
+		"path":       "/api/v1/namespaces/<namespace>/deployments/<name>",
+		"method":     "GET",
+		"namespace":  "system",
+		"status":     "500",
+		"prometheus": "prometheus-core-1",
+		"datacenter": "eu-west-1",
+		"pod_name":   "abcdef-99999-defee",
+	}
+	l := FromMap(m)
+
+	for i := 0; i < b.N; i++ {
+		l = l.Copy()
 	}
 }
 

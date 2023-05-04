@@ -686,12 +686,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 				case tgs := <-provUpdates:
 					discoveryManager.updateGroup(poolKey{setName: strconv.Itoa(i), provider: tc.title}, tgs)
 					for _, got := range discoveryManager.allGroups() {
-						assertEqualGroups(t, got, tc.expectedTargets[x], func(got, expected string) string {
-							return fmt.Sprintf("%d: \ntargets mismatch \ngot: %v \nexpected: %v",
-								x,
-								got,
-								expected)
-						})
+						assertEqualGroups(t, got, tc.expectedTargets[x])
 					}
 				}
 			}
@@ -699,7 +694,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 	}
 }
 
-func assertEqualGroups(t *testing.T, got, expected []*targetgroup.Group, msg func(got, expected string) string) {
+func assertEqualGroups(t *testing.T, got, expected []*targetgroup.Group) {
 	t.Helper()
 
 	// Need to sort by the groups's source as the received order is not guaranteed.
@@ -1079,9 +1074,7 @@ func TestCoordinationWithReceiver(t *testing.T) {
 						if _, ok := tgs[k]; !ok {
 							t.Fatalf("step %d: target group not found: %s\ngot: %#v", i, k, tgs)
 						}
-						assertEqualGroups(t, tgs[k], expected.tgs[k], func(got, expected string) string {
-							return fmt.Sprintf("step %d: targets mismatch \ngot: %q \nexpected: %q", i, got, expected)
-						})
+						assertEqualGroups(t, tgs[k], expected.tgs[k])
 					}
 				}
 			}

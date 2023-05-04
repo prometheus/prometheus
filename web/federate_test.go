@@ -342,14 +342,16 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 		if i%3 == 0 {
 			_, err = app.Append(0, l, 100*60*1000, float64(i*100))
 			expVec = append(expVec, promql.Sample{
-				Point:  promql.Point{T: 100 * 60 * 1000, V: float64(i * 100)},
+				T:      100 * 60 * 1000,
+				F:      float64(i * 100),
 				Metric: expL,
 			})
 		} else {
 			hist.ZeroCount++
 			_, err = app.AppendHistogram(0, l, 100*60*1000, hist.Copy(), nil)
 			expVec = append(expVec, promql.Sample{
-				Point:  promql.Point{T: 100 * 60 * 1000, H: hist.ToFloat()},
+				T:      100 * 60 * 1000,
+				H:      hist.ToFloat(),
 				Metric: expL,
 			})
 		}
@@ -379,33 +381,34 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 	p := textparse.NewProtobufParser(body)
 	var actVec promql.Vector
 	metricFamilies := 0
+	l := labels.Labels{}
 	for {
 		et, err := p.Next()
 		if err == io.EOF {
 			break
 		}
 		require.NoError(t, err)
-		if et == textparse.EntryHelp {
-			metricFamilies++
-		}
 		if et == textparse.EntryHistogram || et == textparse.EntrySeries {
-			l := labels.Labels{}
 			p.Metric(&l)
-			actVec = append(actVec, promql.Sample{Metric: l})
 		}
-		if et == textparse.EntryHistogram {
+		switch et {
+		case textparse.EntryHelp:
+			metricFamilies++
+		case textparse.EntryHistogram:
 			_, parsedTimestamp, h, fh := p.Histogram()
 			require.Nil(t, h)
-			actVec[len(actVec)-1].Point = promql.Point{
-				T: *parsedTimestamp,
-				H: fh,
-			}
-		} else if et == textparse.EntrySeries {
-			_, parsedTimestamp, v := p.Series()
-			actVec[len(actVec)-1].Point = promql.Point{
-				T: *parsedTimestamp,
-				V: v,
-			}
+			actVec = append(actVec, promql.Sample{
+				T:      *parsedTimestamp,
+				H:      fh,
+				Metric: l,
+			})
+		case textparse.EntrySeries:
+			_, parsedTimestamp, f := p.Series()
+			actVec = append(actVec, promql.Sample{
+				T:      *parsedTimestamp,
+				F:      f,
+				Metric: l,
+			})
 		}
 	}
 

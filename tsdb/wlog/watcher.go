@@ -438,9 +438,10 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 
 			// Ignore errors reading to end of segment whilst replaying the WAL.
 			if !tail {
-				if err != nil && errors.Cause(err) != io.EOF {
+				switch {
+				case err != nil && errors.Cause(err) != io.EOF:
 					level.Warn(w.logger).Log("msg", "Ignoring error reading to end of segment, may have dropped data", "err", err)
-				} else if reader.Offset() != size {
+				case reader.Offset() != size:
 					level.Warn(w.logger).Log("msg", "Expected to have read whole segment, may have dropped data", "segment", segmentNum, "read", reader.Offset(), "size", size)
 				}
 				return nil
@@ -479,9 +480,10 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 			readTicker.Reset(time.Duration(readTimeout))
 			// Ignore all errors reading to end of segment whilst replaying the WAL.
 			if !tail {
-				if err != nil && errors.Cause(err) != io.EOF {
+				switch {
+				case err != nil && errors.Cause(err) != io.EOF:
 					level.Warn(w.logger).Log("msg", "Ignoring error reading to end of segment, may have dropped data", "segment", segmentNum, "err", err)
-				} else if reader.Offset() != size {
+				case reader.Offset() != size:
 					level.Warn(w.logger).Log("msg", "Expected to have read whole segment, may have dropped data", "segment", segmentNum, "read", reader.Offset(), "size", size)
 				}
 				return nil

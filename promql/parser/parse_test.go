@@ -2029,7 +2029,7 @@ var testExpr = []struct {
 	{
 		input:  `foo[5y1hs]`,
 		fail:   true,
-		errMsg: "not a valid duration string: \"5y1hs\"",
+		errMsg: "unknown unit \"hs\" in duration \"5y1hs\"",
 	},
 	{
 		input:  `foo[5m1h]`,
@@ -3592,7 +3592,7 @@ func TestNaNExpression(t *testing.T) {
 
 	nl, ok := expr.(*NumberLiteral)
 	require.True(t, ok, "expected number literal but got %T", expr)
-	require.True(t, math.IsNaN(float64(nl.Val)), "expected 'NaN' in number literal but got %v", nl.Val)
+	require.True(t, math.IsNaN(nl.Val), "expected 'NaN' in number literal but got %v", nl.Val)
 }
 
 var testSeries = []struct {

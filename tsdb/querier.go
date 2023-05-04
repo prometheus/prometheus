@@ -180,7 +180,7 @@ func (q *blockChunkQuerier) Select(sortSeries bool, hints *storage.SelectHints, 
 	if sortSeries {
 		p = q.index.SortedPostings(p)
 	}
-	return newBlockChunkSeriesSet(q.blockID, q.index, q.chunks, q.tombstones, p, mint, maxt, disableTrimming)
+	return NewBlockChunkSeriesSet(q.blockID, q.index, q.chunks, q.tombstones, p, mint, maxt, disableTrimming)
 }
 
 func findSetMatches(pattern string) []string {
@@ -239,18 +239,20 @@ func PostingsForMatchers(ix IndexReader, ms ...*labels.Matcher) (index.Postings,
 	}
 
 	for _, m := range ms {
-		if m.Name == "" && m.Value == "" { // Special-case for AllPostings, used in tests at least.
+		switch {
+		case m.Name == "" && m.Value == "": // Special-case for AllPostings, used in tests at least.
 			k, v := index.AllPostingsKey()
 			allPostings, err := ix.Postings(k, v)
 			if err != nil {
 				return nil, err
 			}
 			its = append(its, allPostings)
-		} else if labelMustBeSet[m.Name] {
+		case labelMustBeSet[m.Name]:
 			// If this matcher must be non-empty, we can be smarter.
 			matchesEmpty := m.Matches("")
 			isNot := m.Type == labels.MatchNotEqual || m.Type == labels.MatchNotRegexp
-			if isNot && matchesEmpty { // l!="foo"
+			switch {
+			case isNot && matchesEmpty: // l!="foo"
 				// If the label can't be empty and is a Not and the inner matcher
 				// doesn't match empty, then subtract it out at the end.
 				inverse, err := m.Inverse()
@@ -263,7 +265,7 @@ func PostingsForMatchers(ix IndexReader, ms ...*labels.Matcher) (index.Postings,
 					return nil, err
 				}
 				notIts = append(notIts, it)
-			} else if isNot && !matchesEmpty { // l!=""
+			case isNot && !matchesEmpty: // l!=""
 				// If the label can't be empty and is a Not, but the inner matcher can
 				// be empty we need to use inversePostingsForMatcher.
 				inverse, err := m.Inverse()
@@ -279,7 +281,7 @@ func PostingsForMatchers(ix IndexReader, ms ...*labels.Matcher) (index.Postings,
 					return index.EmptyPostings(), nil
 				}
 				its = append(its, it)
-			} else { // l="a"
+			default: // l="a"
 				// Non-Not matcher, use normal postingsForMatcher.
 				it, err := postingsForMatcher(ix, m)
 				if err != nil {
@@ -290,7 +292,7 @@ func PostingsForMatchers(ix IndexReader, ms ...*labels.Matcher) (index.Postings,
 				}
 				its = append(its, it)
 			}
-		} else { // l=""
+		default: // l=""
 			// If the matchers for a labelname selects an empty value, it selects all
 			// the series which don't have the label name set too. See:
 			// https://github.com/prometheus/prometheus/issues/3575 and
@@ -438,7 +440,7 @@ func (s *seriesData) Labels() labels.Labels { return s.labels }
 
 // blockBaseSeriesSet allows to iterate over all series in the single block.
 // Iterated series are trimmed with given min and max time as well as tombstones.
-// See newBlockSeriesSet and newBlockChunkSeriesSet to use it for either sample or chunk iterating.
+// See newBlockSeriesSet and NewBlockChunkSeriesSet to use it for either sample or chunk iterating.
 type blockBaseSeriesSet struct {
 	blockID         ulid.ULID
 	p               index.Postings
@@ -584,19 +586,17 @@ func (p *populateWithDelGenericSeriesIterator) reset(blockID ulid.ULID, cr Chunk
 	p.currChkMeta = chunks.Meta{}
 }
 
-func (p *populateWithDelGenericSeriesIterator) next() bool {
+// If copyHeadChunk is true, then the head chunk (i.e. the in-memory chunk of the TSDB)
+// is deep copied to avoid races between reads and copying chunk bytes.
+// However, if the deletion intervals overlaps with the head chunk, then the head chunk is
+// not copied irrespective of copyHeadChunk because it will be re-encoded later anyway.
+func (p *populateWithDelGenericSeriesIterator) next(copyHeadChunk bool) bool {
 	if p.err != nil || p.i >= len(p.chks)-1 {
 		return false
 	}
 
 	p.i++
 	p.currChkMeta = p.chks[p.i]
-
-	p.currChkMeta.Chunk, p.err = p.chunks.Chunk(p.currChkMeta)
-	if p.err != nil {
-		p.err = errors.Wrapf(p.err, "cannot populate chunk %d from block %s", p.currChkMeta.Ref, p.blockID.String())
-		return false
-	}
 
 	p.bufIter.Intervals = p.bufIter.Intervals[:0]
 	for _, interval := range p.intervals {
@@ -605,22 +605,28 @@ func (p *populateWithDelGenericSeriesIterator) next() bool {
 		}
 	}
 
-	// Re-encode head chunks that are still open (being appended to) or
-	// outside the compacted MaxTime range.
-	// The chunk.Bytes() method is not safe for open chunks hence the re-encoding.
-	// This happens when snapshotting the head block or just fetching chunks from TSDB.
-	//
-	// TODO(codesome): think how to avoid the typecasting to verify when it is head block.
-	_, isSafeChunk := p.currChkMeta.Chunk.(*safeChunk)
-	if len(p.bufIter.Intervals) == 0 && !(isSafeChunk && p.currChkMeta.MaxTime == math.MaxInt64) {
-		// If there is no overlap with deletion intervals AND it's NOT
-		// an "open" head chunk, we can take chunk as it is.
+	hcr, ok := p.chunks.(*headChunkReader)
+	if ok && copyHeadChunk && len(p.bufIter.Intervals) == 0 {
+		// ChunkWithCopy will copy the head chunk.
+		var maxt int64
+		p.currChkMeta.Chunk, maxt, p.err = hcr.ChunkWithCopy(p.currChkMeta)
+		// For the in-memory head chunk the index reader sets maxt as MaxInt64. We fix it here.
+		p.currChkMeta.MaxTime = maxt
+	} else {
+		p.currChkMeta.Chunk, p.err = p.chunks.Chunk(p.currChkMeta)
+	}
+	if p.err != nil {
+		p.err = errors.Wrapf(p.err, "cannot populate chunk %d from block %s", p.currChkMeta.Ref, p.blockID.String())
+		return false
+	}
+
+	if len(p.bufIter.Intervals) == 0 {
+		// If there is no overlap with deletion intervals, we can take chunk as it is.
 		p.currDelIter = nil
 		return true
 	}
 
-	// We don't want the full chunk, or it's potentially still opened, take
-	// just a part of it.
+	// We don't want the full chunk, take just a part of it.
 	p.bufIter.Iter = p.currChkMeta.Chunk.Iterator(p.bufIter.Iter)
 	p.currDelIter = &p.bufIter
 	return true
@@ -677,7 +683,7 @@ func (p *populateWithDelSeriesIterator) Next() chunkenc.ValueType {
 		}
 	}
 
-	for p.next() {
+	for p.next(false) {
 		if p.currDelIter != nil {
 			p.curr = p.currDelIter
 		} else {
@@ -742,7 +748,7 @@ func (p *populateWithDelChunkSeriesIterator) reset(blockID ulid.ULID, cr ChunkRe
 }
 
 func (p *populateWithDelChunkSeriesIterator) Next() bool {
-	if !p.next() {
+	if !p.next(true) {
 		return false
 	}
 	p.curr = p.currChkMeta
@@ -920,7 +926,7 @@ type blockChunkSeriesSet struct {
 	blockBaseSeriesSet
 }
 
-func newBlockChunkSeriesSet(id ulid.ULID, i IndexReader, c ChunkReader, t tombstones.Reader, p index.Postings, mint, maxt int64, disableTrimming bool) storage.ChunkSeriesSet {
+func NewBlockChunkSeriesSet(id ulid.ULID, i IndexReader, c ChunkReader, t tombstones.Reader, p index.Postings, mint, maxt int64, disableTrimming bool) storage.ChunkSeriesSet {
 	return &blockChunkSeriesSet{
 		blockBaseSeriesSet{
 			blockID:         id,
@@ -954,39 +960,45 @@ type mergedStringIter struct {
 	b        index.StringIter
 	aok, bok bool
 	cur      string
+	err      error
 }
 
 func (m *mergedStringIter) Next() bool {
 	if (!m.aok && !m.bok) || (m.Err() != nil) {
 		return false
 	}
-
-	if !m.aok {
+	switch {
+	case !m.aok:
 		m.cur = m.b.At()
 		m.bok = m.b.Next()
-	} else if !m.bok {
+		m.err = m.b.Err()
+	case !m.bok:
 		m.cur = m.a.At()
 		m.aok = m.a.Next()
-	} else if m.b.At() > m.a.At() {
+		m.err = m.a.Err()
+	case m.b.At() > m.a.At():
 		m.cur = m.a.At()
 		m.aok = m.a.Next()
-	} else if m.a.At() > m.b.At() {
+		m.err = m.a.Err()
+	case m.a.At() > m.b.At():
 		m.cur = m.b.At()
 		m.bok = m.b.Next()
-	} else { // Equal.
+		m.err = m.b.Err()
+	default: // Equal.
 		m.cur = m.b.At()
 		m.aok = m.a.Next()
+		m.err = m.a.Err()
 		m.bok = m.b.Next()
+		if m.err == nil {
+			m.err = m.b.Err()
+		}
 	}
 
 	return true
 }
 func (m mergedStringIter) At() string { return m.cur }
 func (m mergedStringIter) Err() error {
-	if m.a.Err() != nil {
-		return m.a.Err()
-	}
-	return m.b.Err()
+	return m.err
 }
 
 // DeletedIterator wraps chunk Iterator and makes sure any deleted metrics are not returned.
@@ -1075,7 +1087,7 @@ func newNopChunkReader() ChunkReader {
 	}
 }
 
-func (cr nopChunkReader) Chunk(meta chunks.Meta) (chunkenc.Chunk, error) {
+func (cr nopChunkReader) Chunk(chunks.Meta) (chunkenc.Chunk, error) {
 	return cr.emptyChunk, nil
 }
 

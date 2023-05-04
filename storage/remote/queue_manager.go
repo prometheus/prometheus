@@ -454,7 +454,7 @@ func NewQueueManager(
 		logger = log.NewNopLogger()
 	}
 
-	// Copy externalLabels into slice which we need for processExternalLabels.
+	// Copy externalLabels into a slice, which we need for processExternalLabels.
 	extLabelsSlice := make([]labels.Label, 0, externalLabels.Len())
 	externalLabels.Range(func(l labels.Label) {
 		extLabelsSlice = append(extLabelsSlice, l)
@@ -499,7 +499,7 @@ func NewQueueManager(
 	return t
 }
 
-// AppendMetadata sends metadata the remote storage. Metadata is sent in batches, but is not parallelized.
+// AppendMetadata sends metadata to the remote storage. Metadata is sent in batches, but is not parallelized.
 func (t *QueueManager) AppendMetadata(ctx context.Context, metadata []scrape.MetricMetadata) {
 	mm := make([]prompb.MetricMetadata, 0, len(metadata))
 	for _, entry := range metadata {
@@ -609,7 +609,7 @@ outer:
 
 			t.metrics.enqueueRetriesTotal.Inc()
 			time.Sleep(time.Duration(backoff))
-			backoff = backoff * 2
+			backoff *= 2
 			// It is reasonable to use t.cfg.MaxBackoff here, as if we have hit
 			// the full backoff we are likely waiting for external resources.
 			if backoff > t.cfg.MaxBackoff {
@@ -660,7 +660,7 @@ outer:
 
 			t.metrics.enqueueRetriesTotal.Inc()
 			time.Sleep(time.Duration(backoff))
-			backoff = backoff * 2
+			backoff *= 2
 			if backoff > t.cfg.MaxBackoff {
 				backoff = t.cfg.MaxBackoff
 			}
@@ -707,7 +707,7 @@ outer:
 
 			t.metrics.enqueueRetriesTotal.Inc()
 			time.Sleep(time.Duration(backoff))
-			backoff = backoff * 2
+			backoff *= 2
 			if backoff > t.cfg.MaxBackoff {
 				backoff = t.cfg.MaxBackoff
 			}
@@ -754,7 +754,7 @@ outer:
 
 			t.metrics.enqueueRetriesTotal.Inc()
 			time.Sleep(time.Duration(backoff))
-			backoff = backoff * 2
+			backoff *= 2
 			if backoff > t.cfg.MaxBackoff {
 				backoff = t.cfg.MaxBackoff
 			}
@@ -894,6 +894,10 @@ func (t *QueueManager) releaseLabels(ls labels.Labels) {
 // processExternalLabels merges externalLabels into ls. If ls contains
 // a label in externalLabels, the value in ls wins.
 func processExternalLabels(ls labels.Labels, externalLabels []labels.Label) labels.Labels {
+	if len(externalLabels) == 0 {
+		return ls
+	}
+
 	b := labels.NewScratchBuilder(ls.Len() + len(externalLabels))
 	j := 0
 	ls.Range(func(l labels.Label) {
@@ -940,7 +944,7 @@ func (t *QueueManager) updateShardsLoop() {
 	}
 }
 
-// shouldReshard returns if resharding should occur
+// shouldReshard returns whether resharding should occur.
 func (t *QueueManager) shouldReshard(desiredShards int) bool {
 	if desiredShards == t.numShards {
 		return false
@@ -1026,9 +1030,10 @@ func (t *QueueManager) calculateDesiredShards() int {
 		return t.numShards
 	}
 
-	if numShards > t.cfg.MaxShards {
+	switch {
+	case numShards > t.cfg.MaxShards:
 		numShards = t.cfg.MaxShards
-	} else if numShards < t.cfg.MinShards {
+	case numShards < t.cfg.MinShards:
 		numShards = t.cfg.MinShards
 	}
 	return numShards
@@ -1119,7 +1124,7 @@ func (s *shards) start(n int) {
 // stop the shards; subsequent call to enqueue will return false.
 func (s *shards) stop() {
 	// Attempt a clean shutdown, but only wait flushDeadline for all the shards
-	// to cleanly exit.  As we're doing RPCs, enqueue can block indefinitely.
+	// to cleanly exit. As we're doing RPCs, enqueue can block indefinitely.
 	// We must be able so call stop concurrently, hence we can only take the
 	// RLock here.
 	s.mtx.RLock()
@@ -1467,7 +1472,7 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, s
 	s.qm.dataOut.incr(int64(len(samples)))
 	s.qm.dataOutDuration.incr(int64(time.Since(begin)))
 	s.qm.lastSendTimestamp.Store(time.Now().Unix())
-	// Pending samples/exemplars/histograms also should be subtracted as an error means
+	// Pending samples/exemplars/histograms also should be subtracted, as an error means
 	// they will not be retried.
 	s.qm.metrics.pendingSamples.Sub(float64(sampleCount))
 	s.qm.metrics.pendingExemplars.Sub(float64(exemplarCount))
@@ -1565,16 +1570,17 @@ func sendWriteRequestWithBackoff(ctx context.Context, cfg config.QueueConfig, l 
 		}
 
 		// If the error is unrecoverable, we should not retry.
-		backoffErr, ok := err.(RecoverableError)
-		if !ok {
+		var backoffErr RecoverableError
+		if !errors.As(err, &backoffErr) {
 			return err
 		}
 
 		sleepDuration = backoff
-		if backoffErr.retryAfter > 0 {
+		switch {
+		case backoffErr.retryAfter > 0:
 			sleepDuration = backoffErr.retryAfter
 			level.Info(l).Log("msg", "Retrying after duration specified by Retry-After header", "duration", sleepDuration)
-		} else if backoffErr.retryAfter < 0 {
+		case backoffErr.retryAfter < 0:
 			level.Debug(l).Log("msg", "retry-after cannot be in past, retrying using default backoff mechanism")
 		}
 

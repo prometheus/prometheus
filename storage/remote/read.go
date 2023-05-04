@@ -278,5 +278,5 @@ func (sf seriesFilter) Labels() labels.Labels {
 	b := labels.NewBuilder(sf.Series.Labels())
 	// todo: check if this is too inefficient.
 	b.Del(sf.toFilter...)
-	return b.Labels(labels.EmptyLabels())
+	return b.Labels()
 }

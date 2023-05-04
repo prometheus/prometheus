@@ -30,7 +30,6 @@ import (
 	"go.uber.org/goleak"
 	"gopkg.in/yaml.v2"
 
-	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -38,8 +37,8 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
@@ -81,7 +80,7 @@ func TestAlertingRule(t *testing.T) {
 				"job", "app-server",
 				"severity", "critical",
 			),
-			Point: promql.Point{V: 1},
+			F: 1,
 		},
 		promql.Sample{
 			Metric: labels.FromStrings(
@@ -93,7 +92,7 @@ func TestAlertingRule(t *testing.T) {
 				"job", "app-server",
 				"severity", "critical",
 			),
-			Point: promql.Point{V: 1},
+			F: 1,
 		},
 		promql.Sample{
 			Metric: labels.FromStrings(
@@ -105,7 +104,7 @@ func TestAlertingRule(t *testing.T) {
 				"job", "app-server",
 				"severity", "critical",
 			),
-			Point: promql.Point{V: 1},
+			F: 1,
 		},
 		promql.Sample{
 			Metric: labels.FromStrings(
@@ -117,7 +116,7 @@ func TestAlertingRule(t *testing.T) {
 				"job", "app-server",
 				"severity", "critical",
 			),
-			Point: promql.Point{V: 1},
+			F: 1,
 		},
 	}
 
@@ -224,7 +223,7 @@ func TestForStateAddSamples(t *testing.T) {
 				"job", "app-server",
 				"severity", "critical",
 			),
-			Point: promql.Point{V: 1},
+			F: 1,
 		},
 		promql.Sample{
 			Metric: labels.FromStrings(
@@ -235,7 +234,7 @@ func TestForStateAddSamples(t *testing.T) {
 				"job", "app-server",
 				"severity", "critical",
 			),
-			Point: promql.Point{V: 1},
+			F: 1,
 		},
 		promql.Sample{
 			Metric: labels.FromStrings(
@@ -246,7 +245,7 @@ func TestForStateAddSamples(t *testing.T) {
 				"job", "app-server",
 				"severity", "critical",
 			),
-			Point: promql.Point{V: 1},
+			F: 1,
 		},
 		promql.Sample{
 			Metric: labels.FromStrings(
@@ -257,7 +256,7 @@ func TestForStateAddSamples(t *testing.T) {
 				"job", "app-server",
 				"severity", "critical",
 			),
-			Point: promql.Point{V: 1},
+			F: 1,
 		},
 	}
 
@@ -328,8 +327,8 @@ func TestForStateAddSamples(t *testing.T) {
 		for i := range test.result {
 			test.result[i].T = timestamp.FromTime(evalTime)
 			// Updating the expected 'for' state.
-			if test.result[i].V >= 0 {
-				test.result[i].V = forState
+			if test.result[i].F >= 0 {
+				test.result[i].F = forState
 			}
 		}
 		require.Equal(t, len(test.result), len(filteredRes), "%d. Number of samples in expected and actual output don't match (%d vs. %d)", i, len(test.result), len(res))
@@ -482,17 +481,18 @@ func TestForStateRestore(t *testing.T) {
 		})
 
 		// Checking if we have restored it correctly.
-		if tst.noRestore {
+		switch {
+		case tst.noRestore:
 			require.Equal(t, tst.num, len(got))
 			for _, e := range got {
 				require.Equal(t, e.ActiveAt, restoreTime)
 			}
-		} else if tst.gracePeriod {
+		case tst.gracePeriod:
 			require.Equal(t, tst.num, len(got))
 			for _, e := range got {
 				require.Equal(t, opts.ForGracePeriod, e.ActiveAt.Add(alertForDuration).Sub(restoreTime))
 			}
-		} else {
+		default:
 			exp := tst.alerts
 			require.Equal(t, len(exp), len(got))
 			sortAlerts(exp)
@@ -585,29 +585,29 @@ func TestStaleness(t *testing.T) {
 	metricSample, ok := samples[metric]
 
 	require.True(t, ok, "Series %s not returned.", metric)
-	require.True(t, value.IsStaleNaN(metricSample[2].V), "Appended second sample not as expected. Wanted: stale NaN Got: %x", math.Float64bits(metricSample[2].V))
-	metricSample[2].V = 42 // require.Equal cannot handle NaN.
+	require.True(t, value.IsStaleNaN(metricSample[2].F), "Appended second sample not as expected. Wanted: stale NaN Got: %x", math.Float64bits(metricSample[2].F))
+	metricSample[2].F = 42 // require.Equal cannot handle NaN.
 
-	want := map[string][]promql.Point{
-		metric: {{T: 0, V: 2}, {T: 1000, V: 3}, {T: 2000, V: 42}},
+	want := map[string][]promql.FPoint{
+		metric: {{T: 0, F: 2}, {T: 1000, F: 3}, {T: 2000, F: 42}},
 	}
 
 	require.Equal(t, want, samples)
 }
 
 // Convert a SeriesSet into a form usable with require.Equal.
-func readSeriesSet(ss storage.SeriesSet) (map[string][]promql.Point, error) {
-	result := map[string][]promql.Point{}
+func readSeriesSet(ss storage.SeriesSet) (map[string][]promql.FPoint, error) {
+	result := map[string][]promql.FPoint{}
 	var it chunkenc.Iterator
 
 	for ss.Next() {
 		series := ss.At()
 
-		points := []promql.Point{}
+		points := []promql.FPoint{}
 		it := series.Iterator(it)
 		for it.Next() == chunkenc.ValFloat {
 			t, v := it.At()
-			points = append(points, promql.Point{T: t, V: v})
+			points = append(points, promql.FPoint{T: t, F: v})
 		}
 
 		name := series.Labels().String()
@@ -708,7 +708,7 @@ func TestDeletedRuleMarkedStale(t *testing.T) {
 	metricSample, ok := samples[metric]
 
 	require.True(t, ok, "Series %s not returned.", metric)
-	require.True(t, value.IsStaleNaN(metricSample[0].V), "Appended sample not as expected. Wanted: stale NaN Got: %x", math.Float64bits(metricSample[0].V))
+	require.True(t, value.IsStaleNaN(metricSample[0].F), "Appended sample not as expected. Wanted: stale NaN Got: %x", math.Float64bits(metricSample[0].F))
 }
 
 func TestUpdate(t *testing.T) {
@@ -780,13 +780,13 @@ func TestUpdate(t *testing.T) {
 			rgs.Groups[i].Interval = model.Duration(10)
 		}
 	}
-	reloadAndValidate(rgs, t, tmpFile, ruleManager, expected, ogs)
+	reloadAndValidate(rgs, t, tmpFile, ruleManager, ogs)
 
 	// Update limit and reload.
 	for i := range rgs.Groups {
 		rgs.Groups[i].Limit = 1
 	}
-	reloadAndValidate(rgs, t, tmpFile, ruleManager, expected, ogs)
+	reloadAndValidate(rgs, t, tmpFile, ruleManager, ogs)
 
 	// Change group rules and reload.
 	for i, g := range rgs.Groups {
@@ -794,7 +794,7 @@ func TestUpdate(t *testing.T) {
 			rgs.Groups[i].Rules[j].Expr.SetString(fmt.Sprintf("%s * 0", r.Expr.Value))
 		}
 	}
-	reloadAndValidate(rgs, t, tmpFile, ruleManager, expected, ogs)
+	reloadAndValidate(rgs, t, tmpFile, ruleManager, ogs)
 }
 
 // ruleGroupsTest for running tests over rules.
@@ -837,7 +837,7 @@ func formatRules(r *rulefmt.RuleGroups) ruleGroupsTest {
 	}
 }
 
-func reloadAndValidate(rgs *rulefmt.RuleGroups, t *testing.T, tmpFile *os.File, ruleManager *Manager, expected map[string]labels.Labels, ogs map[string]*Group) {
+func reloadAndValidate(rgs *rulefmt.RuleGroups, t *testing.T, tmpFile *os.File, ruleManager *Manager, ogs map[string]*Group) {
 	bs, err := yaml.Marshal(formatRules(rgs))
 	require.NoError(t, err)
 	tmpFile.Seek(0, 0)
@@ -1135,7 +1135,7 @@ func countStaleNaN(t *testing.T, st storage.Storage) int {
 
 	require.True(t, ok, "Series %s not returned.", metric)
 	for _, s := range metricSample {
-		if value.IsStaleNaN(s.V) {
+		if value.IsStaleNaN(s.F) {
 			c++
 		}
 	}
@@ -1238,7 +1238,7 @@ func TestRuleHealthUpdates(t *testing.T) {
 	require.Equal(t, HealthBad, rules.Health())
 }
 
-func TestUpdateMissedEvalMetrics(t *testing.T) {
+func TestRuleGroupEvalIterationFunc(t *testing.T) {
 	suite, err := promql.NewTest(t, `
 		load 5m
 		http_requests{instance="0"}	75  85 50 0 0 25 0 0 40 0 120
@@ -1255,26 +1255,40 @@ func TestUpdateMissedEvalMetrics(t *testing.T) {
 
 	testValue := 1
 
-	overrideFunc := func(g *Group, lastEvalTimestamp time.Time, log log.Logger) error {
+	evalIterationFunc := func(ctx context.Context, g *Group, evalTimestamp time.Time) {
 		testValue = 2
-		return nil
+		DefaultEvalIterationFunc(ctx, g, evalTimestamp)
+		testValue = 3
+	}
+
+	skipEvalIterationFunc := func(ctx context.Context, g *Group, evalTimestamp time.Time) {
+		testValue = 4
 	}
 
 	type testInput struct {
-		overrideFunc  func(g *Group, lastEvalTimestamp time.Time, logger log.Logger) error
-		expectedValue int
+		evalIterationFunc       GroupEvalIterationFunc
+		expectedValue           int
+		lastEvalTimestampIsZero bool
 	}
 
 	tests := []testInput{
-		// testValue should still have value of 1 since overrideFunc is nil.
+		// testValue should still have value of 1 since the default iteration function will be called.
 		{
-			overrideFunc:  nil,
-			expectedValue: 1,
+			evalIterationFunc:       nil,
+			expectedValue:           1,
+			lastEvalTimestampIsZero: false,
 		},
-		// testValue should be incremented to 2 since overrideFunc is called.
+		// testValue should be incremented to 3 since evalIterationFunc is called.
 		{
-			overrideFunc:  overrideFunc,
-			expectedValue: 2,
+			evalIterationFunc:       evalIterationFunc,
+			expectedValue:           3,
+			lastEvalTimestampIsZero: false,
+		},
+		// testValue should be incremented to 4 since skipEvalIterationFunc is called.
+		{
+			evalIterationFunc:       skipEvalIterationFunc,
+			expectedValue:           4,
+			lastEvalTimestampIsZero: true,
 		},
 	}
 
@@ -1316,12 +1330,12 @@ func TestUpdateMissedEvalMetrics(t *testing.T) {
 		}
 
 		group := NewGroup(GroupOptions{
-			Name:                     "default",
-			Interval:                 time.Second,
-			Rules:                    []Rule{rule},
-			ShouldRestore:            true,
-			Opts:                     opts,
-			RuleGroupPostProcessFunc: tst.overrideFunc,
+			Name:              "default",
+			Interval:          time.Second,
+			Rules:             []Rule{rule},
+			ShouldRestore:     true,
+			Opts:              opts,
+			EvalIterationFunc: tst.evalIterationFunc,
 		})
 
 		go func() {
@@ -1330,10 +1344,18 @@ func TestUpdateMissedEvalMetrics(t *testing.T) {
 
 		time.Sleep(3 * time.Second)
 		group.stop()
+
 		require.Equal(t, tst.expectedValue, testValue)
+		if tst.lastEvalTimestampIsZero {
+			require.Zero(t, group.GetLastEvalTimestamp())
+		} else {
+			oneMinute, _ := time.ParseDuration("1m")
+			require.WithinDuration(t, time.Now(), group.GetLastEvalTimestamp(), oneMinute)
+		}
 	}
 
-	for _, tst := range tests {
+	for i, tst := range tests {
+		t.Logf("case %d", i)
 		testFunc(tst)
 	}
 }
@@ -1348,7 +1370,7 @@ func TestNativeHistogramsInRecordingRules(t *testing.T) {
 
 	// Add some histograms.
 	db := suite.TSDB()
-	hists := tsdb.GenerateTestHistograms(5)
+	hists := tsdbutil.GenerateTestHistograms(5)
 	ts := time.Now()
 	app := db.Appender(context.Background())
 	for i, h := range hists {
@@ -1393,7 +1415,6 @@ func TestNativeHistogramsInRecordingRules(t *testing.T) {
 	for _, h := range hists[1:] {
 		expHist = expHist.Add(h.ToFloat())
 	}
-	expHist.CounterResetHint = histogram.GaugeType
 
 	it := s.Iterator(nil)
 	require.Equal(t, chunkenc.ValFloatHistogram, it.Next())

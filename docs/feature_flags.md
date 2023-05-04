@@ -1,6 +1,6 @@
 ---
 title: Feature flags
-sort_rank: 11
+sort_rank: 12
 ---
 
 # Feature flags

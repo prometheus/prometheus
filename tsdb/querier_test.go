@@ -11,6 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// nolint:revive // Many unsued function arguments in this file by design.
 package tsdb
 
 import (
@@ -113,7 +114,7 @@ func createIdxChkReaders(t *testing.T, tc []seriesSamples) (IndexReader, ChunkRe
 
 	var chunkRef chunks.ChunkRef
 	for i, s := range tc {
-		i = i + 1 // 0 is not a valid posting.
+		i++ // 0 is not a valid posting.
 		metas := make([]chunks.Meta, 0, len(s.chunks))
 		for _, chk := range s.chunks {
 			if chk[0].t < blockMint {
@@ -132,7 +133,7 @@ func createIdxChkReaders(t *testing.T, tc []seriesSamples) (IndexReader, ChunkRe
 			chunk := chunkenc.NewXORChunk()
 			app, _ := chunk.Appender()
 			for _, smpl := range chk {
-				app.Append(smpl.t, smpl.v)
+				app.Append(smpl.t, smpl.f)
 			}
 			chkReader[chunkRef] = chunk
 			chunkRef++
@@ -235,7 +236,19 @@ func testBlockQuerier(t *testing.T, c blockQuerierTestCase, ir IndexReader, cr C
 			chksRes, errRes := storage.ExpandChunks(sres.Iterator(nil))
 			rmChunkRefs(chksRes)
 			require.Equal(t, errExp, errRes)
-			require.Equal(t, chksExp, chksRes)
+
+			require.Equal(t, len(chksExp), len(chksRes))
+			var exp, act [][]tsdbutil.Sample
+			for i := range chksExp {
+				samples, err := storage.ExpandSamples(chksExp[i].Chunk.Iterator(nil), nil)
+				require.NoError(t, err)
+				exp = append(exp, samples)
+				samples, err = storage.ExpandSamples(chksRes[i].Chunk.Iterator(nil), nil)
+				require.NoError(t, err)
+				act = append(act, samples)
+			}
+
+			require.Equal(t, exp, act)
 		}
 		require.NoError(t, res.Err())
 	})
@@ -467,7 +480,7 @@ func TestBlockQuerier_AgainstHeadWithOpenChunks(t *testing.T) {
 			for _, s := range testData {
 				for _, chk := range s.chunks {
 					for _, sample := range chk {
-						_, err = app.Append(0, labels.FromMap(s.lset), sample.t, sample.v)
+						_, err = app.Append(0, labels.FromMap(s.lset), sample.t, sample.f)
 						require.NoError(t, err)
 					}
 				}
@@ -870,7 +883,7 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 					if tc.seekSuccess {
 						// After successful seek iterator is ready. Grab the value.
 						t, v := it.At()
-						r = append(r, sample{t: t, v: v})
+						r = append(r, sample{t: t, f: v})
 					}
 				}
 				expandedResult, err := storage.ExpandSamples(it, newSample)
@@ -1042,8 +1055,8 @@ func TestDeletedIterator(t *testing.T) {
 	act := make([]sample, 1000)
 	for i := 0; i < 1000; i++ {
 		act[i].t = int64(i)
-		act[i].v = rand.Float64()
-		app.Append(act[i].t, act[i].v)
+		act[i].f = rand.Float64()
+		app.Append(act[i].t, act[i].f)
 	}
 
 	cases := []struct {
@@ -1078,7 +1091,7 @@ func TestDeletedIterator(t *testing.T) {
 
 			ts, v := it.At()
 			require.Equal(t, act[i].t, ts)
-			require.Equal(t, act[i].v, v)
+			require.Equal(t, act[i].f, v)
 		}
 		// There has been an extra call to Next().
 		i++
@@ -1102,8 +1115,8 @@ func TestDeletedIterator_WithSeek(t *testing.T) {
 	act := make([]sample, 1000)
 	for i := 0; i < 1000; i++ {
 		act[i].t = int64(i)
-		act[i].v = float64(i)
-		app.Append(act[i].t, act[i].v)
+		act[i].f = float64(i)
+		app.Append(act[i].t, act[i].f)
 	}
 
 	cases := []struct {
@@ -2000,7 +2013,7 @@ func BenchmarkQueries(b *testing.B) {
 				for x := 0; x <= 10; x++ {
 					block, err := OpenBlock(nil, createBlock(b, dir, series), nil)
 					require.NoError(b, err)
-					q, err := NewBlockQuerier(block, 1, int64(nSamples))
+					q, err := NewBlockQuerier(block, 1, nSamples)
 					require.NoError(b, err)
 					qs = append(qs, q)
 				}
@@ -2244,5 +2257,95 @@ func TestBlockBaseSeriesSet(t *testing.T) {
 		}
 		require.Equal(t, len(tc.expIdxs), i)
 		require.NoError(t, bcs.Err())
+	}
+}
+
+func BenchmarkHeadChunkQuerier(b *testing.B) {
+	db := openTestDB(b, nil, nil)
+	defer func() {
+		require.NoError(b, db.Close())
+	}()
+
+	// 3h of data.
+	numTimeseries := 100
+	app := db.Appender(context.Background())
+	for i := 0; i < 120*6; i++ {
+		for j := 0; j < numTimeseries; j++ {
+			lbls := labels.FromStrings("foo", fmt.Sprintf("bar%d", j))
+			if i%10 == 0 {
+				require.NoError(b, app.Commit())
+				app = db.Appender(context.Background())
+			}
+			_, err := app.Append(0, lbls, int64(i*15)*time.Second.Milliseconds(), float64(i*100))
+			require.NoError(b, err)
+		}
+	}
+	require.NoError(b, app.Commit())
+
+	querier, err := db.ChunkQuerier(context.Background(), math.MinInt64, math.MaxInt64)
+	require.NoError(b, err)
+	defer func(q storage.ChunkQuerier) {
+		require.NoError(b, q.Close())
+	}(querier)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		ss := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
+		total := 0
+		for ss.Next() {
+			cs := ss.At()
+			it := cs.Iterator(nil)
+			for it.Next() {
+				m := it.At()
+				total += m.Chunk.NumSamples()
+			}
+		}
+		_ = total
+		require.NoError(b, ss.Err())
+	}
+}
+
+func BenchmarkHeadQuerier(b *testing.B) {
+	db := openTestDB(b, nil, nil)
+	defer func() {
+		require.NoError(b, db.Close())
+	}()
+
+	// 3h of data.
+	numTimeseries := 100
+	app := db.Appender(context.Background())
+	for i := 0; i < 120*6; i++ {
+		for j := 0; j < numTimeseries; j++ {
+			lbls := labels.FromStrings("foo", fmt.Sprintf("bar%d", j))
+			if i%10 == 0 {
+				require.NoError(b, app.Commit())
+				app = db.Appender(context.Background())
+			}
+			_, err := app.Append(0, lbls, int64(i*15)*time.Second.Milliseconds(), float64(i*100))
+			require.NoError(b, err)
+		}
+	}
+	require.NoError(b, app.Commit())
+
+	querier, err := db.Querier(context.Background(), math.MinInt64, math.MaxInt64)
+	require.NoError(b, err)
+	defer func(q storage.Querier) {
+		require.NoError(b, q.Close())
+	}(querier)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		ss := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
+		total := int64(0)
+		for ss.Next() {
+			cs := ss.At()
+			it := cs.Iterator(nil)
+			for it.Next() != chunkenc.ValNone {
+				ts, _ := it.At()
+				total += ts
+			}
+		}
+		_ = total
+		require.NoError(b, ss.Err())
 	}
 }

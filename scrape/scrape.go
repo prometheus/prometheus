@@ -328,7 +328,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 			options.PassMetadataInContext,
 		)
 	}
-
+	targetScrapePoolTargetLimit.WithLabelValues(sp.config.JobName).Set(float64(sp.config.TargetLimit))
 	return sp, nil
 }
 
@@ -490,17 +490,23 @@ func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 
 	sp.targetMtx.Lock()
 	var all []*Target
+	var targets []*Target
+	lb := labels.NewBuilder(labels.EmptyLabels())
 	sp.droppedTargets = []*Target{}
 	for _, tg := range tgs {
-		targets, failures := TargetsFromGroup(tg, sp.config, sp.noDefaultPort)
+		targets, failures := TargetsFromGroup(tg, sp.config, sp.noDefaultPort, targets, lb)
 		for _, err := range failures {
 			level.Error(sp.logger).Log("msg", "Creating target failed", "err", err)
 		}
 		targetSyncFailed.WithLabelValues(sp.config.JobName).Add(float64(len(failures)))
 		for _, t := range targets {
-			if !t.Labels().IsEmpty() {
+			// Replicate .Labels().IsEmpty() with a loop here to avoid generating garbage.
+			nonEmpty := false
+			t.LabelsRange(func(l labels.Label) { nonEmpty = true })
+			switch {
+			case nonEmpty:
 				all = append(all, t)
-			} else if !t.DiscoveredLabels().IsEmpty() {
+			case !t.discoveredLabels.IsEmpty():
 				sp.droppedTargets = append(sp.droppedTargets, t)
 			}
 		}
@@ -635,7 +641,7 @@ func verifyLabelLimits(lset labels.Labels, limits *labelLimits) error {
 	met := lset.Get(labels.MetricName)
 	if limits.labelLimit > 0 {
 		nbLabels := lset.Len()
-		if nbLabels > int(limits.labelLimit) {
+		if nbLabels > limits.labelLimit {
 			return fmt.Errorf("label_limit exceeded (metric: %.50s, number of labels: %d, limit: %d)", met, nbLabels, limits.labelLimit)
 		}
 	}
@@ -647,14 +653,14 @@ func verifyLabelLimits(lset labels.Labels, limits *labelLimits) error {
 	return lset.Validate(func(l labels.Label) error {
 		if limits.labelNameLengthLimit > 0 {
 			nameLength := len(l.Name)
-			if nameLength > int(limits.labelNameLengthLimit) {
+			if nameLength > limits.labelNameLengthLimit {
 				return fmt.Errorf("label_name_length_limit exceeded (metric: %.50s, label name: %.50s, length: %d, limit: %d)", met, l.Name, nameLength, limits.labelNameLengthLimit)
 			}
 		}
 
 		if limits.labelValueLengthLimit > 0 {
 			valueLength := len(l.Value)
-			if valueLength > int(limits.labelValueLengthLimit) {
+			if valueLength > limits.labelValueLengthLimit {
 				return fmt.Errorf("label_value_length_limit exceeded (metric: %.50s, label name: %.50s, value: %.50q, length: %d, limit: %d)", met, l.Name, l.Value, valueLength, limits.labelValueLengthLimit)
 			}
 		}
@@ -664,17 +670,16 @@ func verifyLabelLimits(lset labels.Labels, limits *labelLimits) error {
 
 func mutateSampleLabels(lset labels.Labels, target *Target, honor bool, rc []*relabel.Config) labels.Labels {
 	lb := labels.NewBuilder(lset)
-	targetLabels := target.Labels()
 
 	if honor {
-		targetLabels.Range(func(l labels.Label) {
+		target.LabelsRange(func(l labels.Label) {
 			if !lset.Has(l.Name) {
 				lb.Set(l.Name, l.Value)
 			}
 		})
 	} else {
 		var conflictingExposedLabels []labels.Label
-		targetLabels.Range(func(l labels.Label) {
+		target.LabelsRange(func(l labels.Label) {
 			existingValue := lset.Get(l.Name)
 			if existingValue != "" {
 				conflictingExposedLabels = append(conflictingExposedLabels, labels.Label{Name: l.Name, Value: existingValue})
@@ -684,11 +689,11 @@ func mutateSampleLabels(lset labels.Labels, target *Target, honor bool, rc []*re
 		})
 
 		if len(conflictingExposedLabels) > 0 {
-			resolveConflictingExposedLabels(lb, lset, targetLabels, conflictingExposedLabels)
+			resolveConflictingExposedLabels(lb, conflictingExposedLabels)
 		}
 	}
 
-	res := lb.Labels(labels.EmptyLabels())
+	res := lb.Labels()
 
 	if len(rc) > 0 {
 		res, _ = relabel.Process(res, rc...)
@@ -697,47 +702,32 @@ func mutateSampleLabels(lset labels.Labels, target *Target, honor bool, rc []*re
 	return res
 }
 
-func resolveConflictingExposedLabels(lb *labels.Builder, exposedLabels, targetLabels labels.Labels, conflictingExposedLabels []labels.Label) {
+func resolveConflictingExposedLabels(lb *labels.Builder, conflictingExposedLabels []labels.Label) {
 	sort.SliceStable(conflictingExposedLabels, func(i, j int) bool {
 		return len(conflictingExposedLabels[i].Name) < len(conflictingExposedLabels[j].Name)
 	})
 
-	for i, l := range conflictingExposedLabels {
+	for _, l := range conflictingExposedLabels {
 		newName := l.Name
 		for {
 			newName = model.ExportedLabelPrefix + newName
-			if !exposedLabels.Has(newName) &&
-				!targetLabels.Has(newName) &&
-				!labelSliceHas(conflictingExposedLabels[:i], newName) {
-				conflictingExposedLabels[i].Name = newName
+			if lb.Get(newName) == "" {
+				lb.Set(newName, l.Value)
 				break
 			}
 		}
 	}
-
-	for _, l := range conflictingExposedLabels {
-		lb.Set(l.Name, l.Value)
-	}
-}
-
-func labelSliceHas(lbls []labels.Label, name string) bool {
-	for _, l := range lbls {
-		if l.Name == name {
-			return true
-		}
-	}
-	return false
 }
 
 func mutateReportSampleLabels(lset labels.Labels, target *Target) labels.Labels {
 	lb := labels.NewBuilder(lset)
 
-	target.Labels().Range(func(l labels.Label) {
+	target.LabelsRange(func(l labels.Label) {
 		lb.Set(model.ExportedLabelPrefix+l.Name, lset.Get(l.Name))
 		lb.Set(l.Name, l.Value)
 	})
 
-	return lb.Labels(labels.EmptyLabels())
+	return lb.Labels()
 }
 
 // appender returns an appender for ingested samples from the target.
@@ -957,9 +947,10 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 	count := len(c.series) + len(c.droppedSeries) + len(c.metadata)
 	c.metaMtx.Unlock()
 
-	if flushCache {
+	switch {
+	case flushCache:
 		c.successfulCount = count
-	} else if count > c.successfulCount*2+1000 {
+	case count > c.successfulCount*2+1000:
 		// If a target had varying labels in scrapes that ultimately failed,
 		// the caches would grow indefinitely. Force a flush when this happens.
 		// We use the heuristic that this is a doubling of the cache size
