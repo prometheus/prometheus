@@ -611,7 +611,7 @@ func TestBuilder(t *testing.T) {
 		b := NewBuilder(FromStrings("aaa", "111"))
 		b.Del("bbb")
 		b.Set("bbb", "222")
-		require.Equal(t, FromStrings("aaa", "111", "bbb", "222"), b.Labels())
+		require.Equal(t, FromStrings("aaa", "111", "bbb", "222"), b.Labels(EmptyLabels()))
 		require.Equal(t, "222", b.Get("bbb"))
 	})
 }
