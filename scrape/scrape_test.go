@@ -1766,7 +1766,7 @@ func TestScrapeLoop_HistogramBucketLimit(t *testing.T) {
 	require.NotEmpty(t, gathered)
 
 	histogramMetricFamily := gathered[0]
-	msg, err := testutil.MetricFamilyToProtobuf(histogramMetricFamily)
+	msg, err := MetricFamilyToProtobuf(histogramMetricFamily)
 	require.NoError(t, err)
 
 	now := time.Now()
@@ -1789,7 +1789,7 @@ func TestScrapeLoop_HistogramBucketLimit(t *testing.T) {
 	require.NotEmpty(t, gathered)
 
 	histogramMetricFamily = gathered[0]
-	msg, err = testutil.MetricFamilyToProtobuf(histogramMetricFamily)
+	msg, err = MetricFamilyToProtobuf(histogramMetricFamily)
 	require.NoError(t, err)
 
 	now = time.Now()
