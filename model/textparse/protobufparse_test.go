@@ -15,6 +15,7 @@ package textparse
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"io"
 	"testing"
@@ -25,9 +26,8 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/util/testutil"
 
-	dto "github.com/prometheus/client_model/go"
+	dto "github.com/prometheus/prometheus/prompb/io/prometheus/client"
 )
 
 func TestProtobufParse(t *testing.T) {
@@ -449,6 +449,7 @@ metric: <
 `,
 	}
 
+	varintBuf := make([]byte, binary.MaxVarintLen32)
 	inputBuf := &bytes.Buffer{}
 
 	for _, tmf := range textMetricFamilies {
@@ -456,8 +457,13 @@ metric: <
 		// From text to proto message.
 		require.NoError(t, proto.UnmarshalText(tmf, pb))
 		// From proto message to binary protobuf.
-		err := testutil.AddMetricFamilyToProtobuf(inputBuf, pb)
+		protoBuf, err := proto.Marshal(pb)
 		require.NoError(t, err)
+
+		// Write first length, then binary protobuf.
+		varintLength := binary.PutUvarint(varintBuf, uint64(len(protoBuf)))
+		inputBuf.Write(varintBuf[:varintLength])
+		inputBuf.Write(protoBuf)
 	}
 
 	exp := []struct {
