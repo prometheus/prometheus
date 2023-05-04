@@ -297,9 +297,11 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 	seriesIter := s.Series.Iterator(nil)
 	lastType := chunkenc.ValNone
 	for typ := seriesIter.Next(); typ != chunkenc.ValNone; typ = seriesIter.Next() {
+		chunkCreated := false
 		if typ != lastType || i >= seriesToChunkEncoderSplit {
 			// Create a new chunk if the sample type changed or too many samples in the current one.
 			chks = appendChunk(chks, mint, maxt, chk)
+			chunkCreated = true
 			chk, err = chunkenc.NewEmptyChunk(typ.ChunkEncoding())
 			if err != nil {
 				return errChunksIterator{err: err}
@@ -330,6 +332,7 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 			if ok, counterReset := app.AppendHistogram(t, h); !ok {
 				chks = appendChunk(chks, mint, maxt, chk)
 				histChunk := chunkenc.NewHistogramChunk()
+				chunkCreated = true
 				if counterReset {
 					histChunk.SetCounterResetHeader(chunkenc.CounterReset)
 				}
@@ -346,11 +349,15 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 					panic("unexpected error while appending histogram")
 				}
 			}
+			if chunkCreated && h.CounterResetHint == histogram.GaugeType {
+				chk.(*chunkenc.HistogramChunk).SetCounterResetHeader(chunkenc.GaugeType)
+			}
 		case chunkenc.ValFloatHistogram:
 			t, fh = seriesIter.AtFloatHistogram()
 			if ok, counterReset := app.AppendFloatHistogram(t, fh); !ok {
 				chks = appendChunk(chks, mint, maxt, chk)
 				floatHistChunk := chunkenc.NewFloatHistogramChunk()
+				chunkCreated = true
 				if counterReset {
 					floatHistChunk.SetCounterResetHeader(chunkenc.CounterReset)
 				}
@@ -365,6 +372,9 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 				if ok, _ := app.AppendFloatHistogram(t, fh); !ok {
 					panic("unexpected error while float appending histogram")
 				}
+			}
+			if chunkCreated && fh.CounterResetHint == histogram.GaugeType {
+				chk.(*chunkenc.FloatHistogramChunk).SetCounterResetHeader(chunkenc.GaugeType)
 			}
 		default:
 			return errChunksIterator{err: fmt.Errorf("unknown sample type %s", typ.String())}
