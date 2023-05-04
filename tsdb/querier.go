@@ -784,7 +784,14 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 		t, h = p.currDelIter.AtHistogram()
 		p.curr.MinTime = t
 
+		// Detect missing guage reset hint and set it on first sample
+		if h.CounterResetHint == histogram.GaugeType && newChunk.(*chunkenc.HistogramChunk).GetCounterResetHeader() != chunkenc.GaugeType {
+			newChunk.(*chunkenc.HistogramChunk).SetCounterResetHeader(chunkenc.GaugeType)
+		}
+
 		app.AppendHistogram(t, h)
+
+	loopH:
 		for vt := p.currDelIter.Next(); vt != chunkenc.ValNone; vt = p.currDelIter.Next() {
 			if vt != chunkenc.ValHistogram {
 				err = fmt.Errorf("found value type %v in histogram chunk", vt)
@@ -793,23 +800,38 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 			t, h = p.currDelIter.AtHistogram()
 
 			// Defend against corrupted chunks.
-			pI, nI, okToAppend, counterReset := app.(*chunkenc.HistogramAppender).Appendable(h)
-			if len(pI)+len(nI) > 0 {
-				err = fmt.Errorf(
-					"bucket layout has changed unexpectedly: %d positive and %d negative bucket interjections required",
-					len(pI), len(nI),
-				)
-				break
+			switch h.CounterResetHint {
+			case histogram.GaugeType:
+				pI, nI, bpI, bnI, _, _, okToAppend := app.(*chunkenc.HistogramAppender).AppendableGauge(h)
+				if len(pI)+len(nI)+len(bpI)+len(bnI) > 0 {
+					err = fmt.Errorf(
+						"bucket layout has changed unexpectedly: forward %d positive, %d negative, backward %d positive %d negative bucket interjections required",
+						len(pI), len(nI), len(bpI), len(bnI),
+					)
+					break loopH
+				}
+				if !okToAppend {
+					err = errors.New("unable to append histogram due to unexpected schema change")
+					break loopH
+				}
+			default:
+				pI, nI, okToAppend, counterReset := app.(*chunkenc.HistogramAppender).Appendable(h)
+				if len(pI)+len(nI) > 0 {
+					err = fmt.Errorf(
+						"bucket layout has changed unexpectedly: %d positive and %d negative bucket interjections required",
+						len(pI), len(nI),
+					)
+					break loopH
+				}
+				if counterReset {
+					err = errors.New("detected unexpected counter reset in histogram")
+					break loopH
+				}
+				if !okToAppend {
+					err = errors.New("unable to append histogram due to unexpected schema change")
+					break loopH
+				}
 			}
-			if counterReset {
-				err = errors.New("detected unexpected counter reset in histogram")
-				break
-			}
-			if !okToAppend {
-				err = errors.New("unable to append histogram due to unexpected schema change")
-				break
-			}
-
 			app.AppendHistogram(t, h)
 		}
 	case chunkenc.ValFloat:
@@ -841,7 +863,14 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 		t, h = p.currDelIter.AtFloatHistogram()
 		p.curr.MinTime = t
 
+		// Detect missing guage reset hint and set it on first sample
+		if h.CounterResetHint == histogram.GaugeType && newChunk.(*chunkenc.HistogramChunk).GetCounterResetHeader() != chunkenc.GaugeType {
+			newChunk.(*chunkenc.FloatHistogramChunk).SetCounterResetHeader(chunkenc.GaugeType)
+		}
+
 		app.AppendFloatHistogram(t, h)
+
+	loopFH:
 		for vt := p.currDelIter.Next(); vt != chunkenc.ValNone; vt = p.currDelIter.Next() {
 			if vt != chunkenc.ValFloatHistogram {
 				err = fmt.Errorf("found value type %v in histogram chunk", vt)
@@ -850,21 +879,37 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 			t, h = p.currDelIter.AtFloatHistogram()
 
 			// Defend against corrupted chunks.
-			pI, nI, okToAppend, counterReset := app.(*chunkenc.FloatHistogramAppender).Appendable(h)
-			if len(pI)+len(nI) > 0 {
-				err = fmt.Errorf(
-					"bucket layout has changed unexpectedly: %d positive and %d negative bucket interjections required",
-					len(pI), len(nI),
-				)
-				break
-			}
-			if counterReset {
-				err = errors.New("detected unexpected counter reset in histogram")
-				break
-			}
-			if !okToAppend {
-				err = errors.New("unable to append histogram due to unexpected schema change")
-				break
+			switch h.CounterResetHint {
+			case histogram.GaugeType:
+				pI, nI, bpI, bnI, _, _, okToAppend := app.(*chunkenc.FloatHistogramAppender).AppendableGauge(h)
+				if len(pI)+len(nI)+len(bpI)+len(bnI) > 0 {
+					err = fmt.Errorf(
+						"bucket layout has changed unexpectedly: forward %d positive, %d negative, backward %d positive %d negative bucket interjections required",
+						len(pI), len(nI), len(bpI), len(bnI),
+					)
+					break loopFH
+				}
+				if !okToAppend {
+					err = errors.New("unable to append histogram due to unexpected schema change")
+					break loopFH
+				}
+			default:
+				pI, nI, okToAppend, counterReset := app.(*chunkenc.FloatHistogramAppender).Appendable(h)
+				if len(pI)+len(nI) > 0 {
+					err = fmt.Errorf(
+						"bucket layout has changed unexpectedly: %d positive and %d negative bucket interjections required",
+						len(pI), len(nI),
+					)
+					break loopFH
+				}
+				if counterReset {
+					err = errors.New("detected unexpected counter reset in histogram")
+					break loopFH
+				}
+				if !okToAppend {
+					err = errors.New("unable to append histogram due to unexpected schema change")
+					break loopFH
+				}
 			}
 
 			app.AppendFloatHistogram(t, h)
