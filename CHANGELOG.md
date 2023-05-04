@@ -2,7 +2,7 @@
 
 ## 2.43.1 / 2023-05-03
 
-* [BUGFIX] Labels: Set after Del would be ignored, which broke some relabeling rules. #12322
+* [BUGFIX] Labels: `Set()` after `Del()` would be ignored, which broke some relabeling rules. #12322
 
 ## 2.43.0 / 2023-03-21
 
