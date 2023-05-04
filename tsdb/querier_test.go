@@ -501,6 +501,46 @@ func TestBlockQuerier_AgainstHeadWithOpenChunks(t *testing.T) {
 	}
 }
 
+func TestBlockQuerier_TrimmingDoesNotModifyOriginalTombstoneIntervals(t *testing.T) {
+	c := blockQuerierTestCase{
+		mint: 2,
+		maxt: 6,
+		ms:   []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "a", "a")},
+		exp: newMockSeriesSet([]storage.Series{
+			storage.NewListSeries(labels.FromStrings("a", "a"),
+				[]tsdbutil.Sample{sample{3, 4, nil, nil}, sample{5, 2, nil, nil}, sample{6, 3, nil, nil}},
+			),
+			storage.NewListSeries(labels.FromStrings("a", "a", "b", "b"),
+				[]tsdbutil.Sample{sample{3, 3, nil, nil}, sample{5, 3, nil, nil}, sample{6, 6, nil, nil}},
+			),
+		}),
+		expChks: newMockChunkSeriesSet([]storage.ChunkSeries{
+			storage.NewListChunkSeriesFromSamples(labels.FromStrings("a", "a"),
+				[]tsdbutil.Sample{sample{3, 4, nil, nil}}, []tsdbutil.Sample{sample{5, 2, nil, nil}, sample{6, 3, nil, nil}},
+			),
+			storage.NewListChunkSeriesFromSamples(labels.FromStrings("a", "a", "b", "b"),
+				[]tsdbutil.Sample{sample{3, 3, nil, nil}}, []tsdbutil.Sample{sample{5, 3, nil, nil}, sample{6, 6, nil, nil}},
+			),
+		}),
+	}
+	ir, cr, _, _ := createIdxChkReaders(t, testData)
+	stones := tombstones.NewMemTombstones()
+	p, err := ir.Postings("a", "a")
+	require.NoError(t, err)
+	refs, err := index.ExpandPostings(p)
+	require.NoError(t, err)
+	for _, ref := range refs {
+		stones.AddInterval(ref, tombstones.Interval{Mint: 1, Maxt: 2})
+	}
+	testBlockQuerier(t, c, ir, cr, stones)
+	for _, ref := range refs {
+		intervals, err := stones.Get(ref)
+		require.NoError(t, err)
+		// Without copy, the intervals could be [math.MinInt64, 2].
+		require.Equal(t, tombstones.Intervals{{Mint: 1, Maxt: 2}}, intervals)
+	}
+}
+
 var testData = []seriesSamples{
 	{
 		lset: map[string]string{"a": "a"},
