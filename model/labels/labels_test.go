@@ -607,6 +607,13 @@ func TestBuilder(t *testing.T) {
 			require.Equal(t, tcase.want.BytesWithoutLabels(nil, "aaa", "bbb"), b.Labels(tcase.base).Bytes(nil))
 		})
 	}
+	t.Run("set_after_del", func(t *testing.T) {
+		b := NewBuilder(FromStrings("aaa", "111"))
+		b.Del("bbb")
+		b.Set("bbb", "222")
+		require.Equal(t, FromStrings("aaa", "111", "bbb", "222"), b.Labels(EmptyLabels()))
+		require.Equal(t, "222", b.Get("bbb"))
+	})
 }
 
 func TestScratchBuilder(t *testing.T) {
