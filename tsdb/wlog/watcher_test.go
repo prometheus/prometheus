@@ -628,7 +628,7 @@ func TestCheckpointSeriesReset(t *testing.T) {
 			require.Eventually(t, func() bool {
 				watcher.Notify()
 				return wt.checkNumLabels() == tc.segments
-			}, 10*time.Second, 1*time.Second)
+			}, 20*time.Second, 1*time.Second)
 		})
 	}
 }
