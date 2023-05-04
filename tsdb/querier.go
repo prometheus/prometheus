@@ -784,7 +784,7 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 		t, h = p.currDelIter.AtHistogram()
 		p.curr.MinTime = t
 
-		// Detect missing guage reset hint and set it on first sample
+		// Detect missing gauge reset hint and set it on first sample
 		if h.CounterResetHint == histogram.GaugeType && newChunk.(*chunkenc.HistogramChunk).GetCounterResetHeader() != chunkenc.GaugeType {
 			newChunk.(*chunkenc.HistogramChunk).SetCounterResetHeader(chunkenc.GaugeType)
 		}
@@ -863,7 +863,7 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 		t, h = p.currDelIter.AtFloatHistogram()
 		p.curr.MinTime = t
 
-		// Detect missing guage reset hint and set it on first sample
+		// Detect missing gauge reset hint and set it on first sample
 		if h.CounterResetHint == histogram.GaugeType && newChunk.(*chunkenc.HistogramChunk).GetCounterResetHeader() != chunkenc.GaugeType {
 			newChunk.(*chunkenc.FloatHistogramChunk).SetCounterResetHeader(chunkenc.GaugeType)
 		}
