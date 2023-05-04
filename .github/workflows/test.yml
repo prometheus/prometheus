@@ -28,3 +28,27 @@ jobs:
 
       - name: Run Tests
         run: GO=/usr/local/go/bin/go make common-test
+
+  test-stringlabels:
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Upgrade golang
+        run: |
+          cd /tmp
+          wget https://dl.google.com/go/go1.20.3.linux-amd64.tar.gz
+          tar -zxvf go1.20.3.linux-amd64.tar.gz
+          sudo rm -fr /usr/local/go
+          sudo mv /tmp/go /usr/local/go
+          cd -
+          ls -l /usr/bin/go
+
+      - name: Checkout Repo
+        uses: actions/checkout@v2
+
+      # This file would normally be created by `make assets`, here we just
+      #  mock it because the file is required for the tests to pass.
+      - name: Mock building of necessary react file
+        run: mkdir web/ui/static/react && touch web/ui/static/react/index.html
+
+      - name: Run Tests -tags=stringlabels
+        run: GO=/usr/local/go/bin/go GOOPTS=-tags=stringlabels make common-test
