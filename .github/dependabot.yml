@@ -4,19 +4,25 @@ updates:
     directory: "/"
     schedule:
       interval: "monthly"
+    # Disable version updates; we will get them when we update from upstream Prometheus.
+    open-pull-requests-limit: 0
   - package-ecosystem: "gomod"
     directory: "/documentation/examples/remote_storage"
     schedule:
       interval: "monthly"
+    open-pull-requests-limit: 0
   - package-ecosystem: "npm"
     directory: "/web/ui"
     schedule:
       interval: "monthly"
+    open-pull-requests-limit: 0
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "monthly"
+    open-pull-requests-limit: 0
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
       interval: "monthly"
+    open-pull-requests-limit: 0
