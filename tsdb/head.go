@@ -971,7 +971,7 @@ func (h *Head) DisableNativeHistograms() {
 }
 
 // PostingsCardinalityStats returns top 10 highest cardinality stats By label and value names.
-func (h *Head) PostingsCardinalityStats(statsByLabelName string) *index.PostingsStats {
+func (h *Head) PostingsCardinalityStats(statsByLabelName string, topN int) *index.PostingsStats {
 	h.cardinalityMutex.Lock()
 	defer h.cardinalityMutex.Unlock()
 	currentTime := time.Duration(time.Now().Unix()) * time.Second
@@ -982,7 +982,7 @@ func (h *Head) PostingsCardinalityStats(statsByLabelName string) *index.Postings
 	if h.cardinalityCache != nil {
 		return h.cardinalityCache
 	}
-	h.cardinalityCache = h.postings.Stats(statsByLabelName)
+	h.cardinalityCache = h.postings.Stats(statsByLabelName, topN)
 	h.lastPostingsStatsCall = time.Duration(time.Now().Unix()) * time.Second
 
 	return h.cardinalityCache
@@ -1322,12 +1322,12 @@ type Stats struct {
 
 // Stats returns important current HEAD statistics. Note that it is expensive to
 // calculate these.
-func (h *Head) Stats(statsByLabelName string) *Stats {
+func (h *Head) Stats(statsByLabelName string, topN int) *Stats {
 	return &Stats{
 		NumSeries:         h.NumSeries(),
 		MaxTime:           h.MaxTime(),
 		MinTime:           h.MinTime(),
-		IndexPostingStats: h.PostingsCardinalityStats(statsByLabelName),
+		IndexPostingStats: h.PostingsCardinalityStats(statsByLabelName, topN),
 	}
 }
 

@@ -912,7 +912,7 @@ func BenchmarkPostings_Stats(b *testing.B) {
 	}
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
-		p.Stats("__name__")
+		p.Stats("__name__", 10)
 	}
 }
 

@@ -251,7 +251,7 @@ func (notReadyReadStorage) StartTime() (int64, error) {
 	return 0, errors.Wrap(tsdb.ErrNotReady, "wrap")
 }
 
-func (notReadyReadStorage) Stats(string) (*tsdb.Stats, error) {
+func (notReadyReadStorage) Stats(string, int) (*tsdb.Stats, error) {
 	return nil, errors.Wrap(tsdb.ErrNotReady, "wrap")
 }
 
