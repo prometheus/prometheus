@@ -2263,14 +2263,11 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 			insertedSigs[insertSig] = struct{}{}
 		}
 
-		if (hl != nil && hr != nil) || (hl == nil && hr == nil) {
-			// Both lhs and rhs are of same type.
-			enh.Out = append(enh.Out, Sample{
-				Metric: metric,
-				F:      floatValue,
-				H:      histogramValue,
-			})
-		}
+		enh.Out = append(enh.Out, Sample{
+			Metric: metric,
+			F:      floatValue,
+			H:      histogramValue,
+		})
 	}
 	return enh.Out
 }
@@ -2338,16 +2335,20 @@ func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.V
 func (ev *evaluator) VectorscalarBinop(op parser.ItemType, lhs Vector, rhs Scalar, swap, returnBool bool, enh *EvalNodeHelper) Vector {
 	for _, lhsSample := range lhs {
 		lv, rv := lhsSample.F, rhs.V
+		var rh *histogram.FloatHistogram
+		lh, rh := lhsSample.H, nil
 		// lhs always contains the Vector. If the original position was different
 		// swap for calculating the value.
 		if swap {
 			lv, rv = rv, lv
+			lh, rh = rh, lh
 		}
-		value, _, keep := vectorElemBinop(op, lv, rv, nil, nil)
+		value, histogramValue, keep := vectorElemBinop(op, lv, rv, lh, rh)
 		// Catch cases where the scalar is the LHS in a scalar-vector comparison operation.
 		// We want to always keep the vector element value as the output value, even if it's on the RHS.
 		if op.IsComparisonOperator() && swap {
 			value = rv
+			histogramValue = rh
 		}
 		if returnBool {
 			if keep {
@@ -2359,6 +2360,7 @@ func (ev *evaluator) VectorscalarBinop(op parser.ItemType, lhs Vector, rhs Scala
 		}
 		if keep {
 			lhsSample.F = value
+			lhsSample.H = histogramValue
 			if shouldDropMetricName(op) || returnBool {
 				lhsSample.Metric = enh.DropMetricName(lhsSample.Metric)
 			}
@@ -2419,10 +2421,28 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 		}
 		return lhs + rhs, nil, true
 	case parser.SUB:
+		if hlhs != nil && hrhs != nil {
+			// The histogram being subtracted must have the larger schema
+			// code (i.e. the higher resolution).
+			if hrhs.Schema >= hlhs.Schema {
+				return 0, hlhs.Copy().Sub(hrhs), true
+			}
+			// return 0, hrhs.Copy().Sub(hlhs).Mul(-1), true
+			return 0, hrhs.Copy().Mul(-1).Add(hlhs), true
+		}
 		return lhs - rhs, nil, true
 	case parser.MUL:
+		if hlhs != nil && hrhs == nil {
+			return 0, hlhs.Copy().Mul(rhs), true
+		}
+		if hlhs == nil && hrhs != nil {
+			return 0, hrhs.Copy().Mul(lhs), true
+		}
 		return lhs * rhs, nil, true
 	case parser.DIV:
+		if hlhs != nil && hrhs == nil && rhs != 0 {
+			return 0, hlhs.Copy().Div(rhs), true
+		}
 		return lhs / rhs, nil, true
 	case parser.POW:
 		return math.Pow(lhs, rhs), nil, true

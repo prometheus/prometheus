@@ -270,6 +270,40 @@ func (h *FloatHistogram) Sub(other *FloatHistogram) *FloatHistogram {
 	return h
 }
 
+// Mul multiplies a histogram by the provided float scalar, adjusting count, sum,
+// and bucket counts, and keeping the spans untouched.
+//
+// This method returns a pointer to the receiving histogram for convenience.
+func (h *FloatHistogram) Mul(scalar float64) *FloatHistogram {
+	h.ZeroCount *= scalar
+	h.Count *= scalar
+	h.Sum *= scalar
+	for i := range h.PositiveBuckets {
+		h.PositiveBuckets[i] *= scalar
+	}
+	for i := range h.NegativeBuckets {
+		h.NegativeBuckets[i] *= scalar
+	}
+	return h
+}
+
+// Div divides a histogram by the provided float scalar (assuming non-0), adjusting count, sum,
+// and bucket counts, and keeping the spans untouched.
+//
+// This method returns a pointer to the receiving histogram for convenience.
+func (h *FloatHistogram) Div(scalar float64) *FloatHistogram {
+	h.ZeroCount /= scalar
+	h.Count /= scalar
+	h.Sum /= scalar
+	for i := range h.PositiveBuckets {
+		h.PositiveBuckets[i] /= scalar
+	}
+	for i := range h.NegativeBuckets {
+		h.NegativeBuckets[i] /= scalar
+	}
+	return h
+}
+
 // Equals returns true if the given float histogram matches exactly.
 // Exact match is when there are no new buckets (even empty) and no missing buckets,
 // and all the bucket values match. Spans can have different empty length spans in between,
