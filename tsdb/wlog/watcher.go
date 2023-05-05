@@ -34,7 +34,6 @@ import (
 )
 
 const (
-	// readPeriod         = 10 * time.Millisecond
 	readTimeout        = 15 * time.Second
 	checkpointPeriod   = 5 * time.Second
 	segmentCheckPeriod = 100 * time.Millisecond
@@ -458,7 +457,7 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 		case <-readTicker.C:
 			level.Debug(w.logger).Log("msg", "Watcher is reading the WAL due to timeout, haven't received any write notifications recently", "timeout", readTimeout)
 			err = w.readSegment(reader, segmentNum, tail)
-			readTicker.Reset(time.Duration(readTimeout))
+			readTicker.Reset(readTimeout)
 			// Ignore all errors reading to end of segment whilst replaying the WAL.
 			if !tail {
 				if err != nil && errors.Cause(err) != io.EOF {
@@ -477,7 +476,7 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 		case <-w.readNotify:
 			err = w.readSegment(reader, segmentNum, tail)
 			// still want to reset the ticker so we don't read too often
-			readTicker.Reset(time.Duration(readTimeout))
+			readTicker.Reset(readTimeout)
 			// Ignore all errors reading to end of segment whilst replaying the WAL.
 			if !tail {
 				switch {
