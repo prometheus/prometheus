@@ -2473,6 +2473,7 @@ type groupedAggregation struct {
 	floatValue     float64
 	histogramValue *histogram.FloatHistogram
 	mean           float64
+	histogramMean  *histogram.FloatHistogram
 	groupCount     int
 	heap           vectorByValueHeap
 	reverseHeap    vectorByReverseValueHeap
@@ -2565,6 +2566,9 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 			case op == parser.SUM:
 				newAgg.histogramValue = s.H.Copy()
 				newAgg.hasHistogram = true
+			case op == parser.AVG:
+				newAgg.histogramMean = s.H.Copy()
+				newAgg.hasHistogram = true
 			}
 
 			result[groupingKey] = newAgg
@@ -2624,25 +2628,50 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 
 		case parser.AVG:
 			group.groupCount++
-			if math.IsInf(group.mean, 0) {
-				if math.IsInf(s.F, 0) && (group.mean > 0) == (s.F > 0) {
-					// The `mean` and `s.V` values are `Inf` of the same sign.  They
-					// can't be subtracted, but the value of `mean` is correct
-					// already.
+			if s.H != nil {
+				group.hasHistogram = true
+				if group.hasFloat && group.hasHistogram {
 					break
 				}
-				if !math.IsInf(s.F, 0) && !math.IsNaN(s.F) {
-					// At this stage, the mean is an infinite. If the added
-					// value is neither an Inf or a Nan, we can keep that mean
-					// value.
-					// This is required because our calculation below removes
-					// the mean value, which would look like Inf += x - Inf and
-					// end up as a NaN.
+				if group.histogramMean != nil {
+					// The histogram being added must have
+					// an equal or larger schema.
+					if s.H.Schema >= group.histogramMean.Schema {
+						group.histogramMean.Add(s.H)
+					} else {
+						h := s.H.Copy()
+						h.Add(group.histogramMean)
+						group.histogramMean = h
+					}
+				}
+				// Otherwise the aggregation contained floats
+				// previously and will be invalid anyway. No
+				// point in copying the histogram in that case.
+			} else {
+				group.hasFloat = true
+				if group.hasFloat && group.hasHistogram {
 					break
 				}
+				if math.IsInf(group.mean, 0) {
+					if math.IsInf(s.F, 0) && (group.mean > 0) == (s.F > 0) {
+						// The `mean` and `s.V` values are `Inf` of the same sign.  They
+						// can't be subtracted, but the value of `mean` is correct
+						// already.
+						break
+					}
+					if !math.IsInf(s.F, 0) && !math.IsNaN(s.F) {
+						// At this stage, the mean is an infinite. If the added
+						// value is neither an Inf or a Nan, we can keep that mean
+						// value.
+						// This is required because our calculation below removes
+						// the mean value, which would look like Inf += x - Inf and
+						// end up as a NaN.
+						break
+					}
+				}
+				// Divide each side of the `-` by `group.groupCount` to avoid float64 overflows.
+				group.mean += s.F/float64(group.groupCount) - group.mean/float64(group.groupCount)
 			}
-			// Divide each side of the `-` by `group.groupCount` to avoid float64 overflows.
-			group.mean += s.F/float64(group.groupCount) - group.mean/float64(group.groupCount)
 
 		case parser.GROUP:
 			// Do nothing. Required to avoid the panic in `default:` below.
@@ -2716,7 +2745,15 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 	for _, aggr := range orderedResult {
 		switch op {
 		case parser.AVG:
-			aggr.floatValue = aggr.mean
+			if aggr.hasFloat && aggr.hasHistogram {
+				// We cannot aggregate histogram sample with a float64 sample.
+				continue
+			}
+			if aggr.hasHistogram {
+				aggr.histogramValue = aggr.histogramMean.Copy().Div(float64(aggr.groupCount))
+			} else {
+				aggr.floatValue = aggr.mean
+			}
 
 		case parser.COUNT, parser.COUNT_VALUES:
 			aggr.floatValue = float64(aggr.groupCount)

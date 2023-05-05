@@ -3966,12 +3966,13 @@ func TestNativeHistogram_HistogramFraction(t *testing.T) {
 	}
 }
 
-func TestNativeHistogram_Sum_Count_AddOperator(t *testing.T) {
+func TestNativeHistogram_Sum_Count_Add_AvgOperator(t *testing.T) {
 	// TODO(codesome): Integrate histograms into the PromQL testing framework
 	// and write more tests there.
 	cases := []struct {
-		histograms []histogram.Histogram
-		expected   histogram.FloatHistogram
+		histograms  []histogram.Histogram
+		expected    histogram.FloatHistogram
+		expectedAvg histogram.FloatHistogram
 	}{
 		{
 			histograms: []histogram.Histogram{
@@ -4030,6 +4031,9 @@ func TestNativeHistogram_Sum_Count_AddOperator(t *testing.T) {
 					},
 					NegativeBuckets: []int64{1, 3, -2, 5, -2, 0, -3},
 				},
+				{
+					Schema: 0, // Everything is 0 just to make the count 4 so avg has nicer numbers.
+				},
 			},
 			expected: histogram.FloatHistogram{
 				Schema:        0,
@@ -4048,6 +4052,24 @@ func TestNativeHistogram_Sum_Count_AddOperator(t *testing.T) {
 					{Offset: 3, Length: 3},
 				},
 				NegativeBuckets: []float64{2, 6, 8, 4, 15, 9, 10, 10, 4},
+			},
+			expectedAvg: histogram.FloatHistogram{
+				Schema:        0,
+				ZeroThreshold: 0.001,
+				ZeroCount:     3.5,
+				Count:         23.25,
+				Sum:           1172.8,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 3},
+					{Offset: 0, Length: 4},
+				},
+				PositiveBuckets: []float64{0.75, 2, 0.5, 1.25, 0.75, 0.5, 0.5},
+				NegativeSpans: []histogram.Span{
+					{Offset: 0, Length: 4},
+					{Offset: 0, Length: 2},
+					{Offset: 3, Length: 3},
+				},
+				NegativeBuckets: []float64{0.5, 1.5, 2, 1, 3.75, 2.25, 2.5, 2.5, 1},
 			},
 		},
 	}
@@ -4104,7 +4126,11 @@ func TestNativeHistogram_Sum_Count_AddOperator(t *testing.T) {
 
 				// count().
 				queryString = fmt.Sprintf("count(%s)", seriesName)
-				queryAndCheck(queryString, []Sample{{T: ts, F: 3, Metric: labels.EmptyLabels()}})
+				queryAndCheck(queryString, []Sample{{T: ts, F: 4, Metric: labels.EmptyLabels()}})
+
+				// avg().
+				queryString = fmt.Sprintf("avg(%s)", seriesName)
+				queryAndCheck(queryString, []Sample{{T: ts, H: &c.expectedAvg, Metric: labels.EmptyLabels()}})
 			})
 			idx0++
 		}
