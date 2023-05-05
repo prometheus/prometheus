@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.37.8 / 2023-05-04
+
+This update includes an update to the Go toolchain and an update to the Docker
+dependency.
+
 ## 2.37.7 / 2023-04-27
 
 * [BUGFIX] Scrape: Fix prometheus_target_scrape_pool_target_limit metric not set
