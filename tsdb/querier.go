@@ -800,8 +800,7 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 			t, h = p.currDelIter.AtHistogram()
 
 			// Defend against corrupted chunks.
-			switch h.CounterResetHint {
-			case histogram.GaugeType:
+			if h.CounterResetHint == histogram.GaugeType {
 				pI, nI, bpI, bnI, _, _, okToAppend := app.(*chunkenc.HistogramAppender).AppendableGauge(h)
 				if len(pI)+len(nI)+len(bpI)+len(bnI) > 0 {
 					err = fmt.Errorf(
@@ -814,7 +813,7 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 					err = errors.New("unable to append histogram due to unexpected schema change")
 					break loopH
 				}
-			default:
+			} else {
 				pI, nI, okToAppend, counterReset := app.(*chunkenc.HistogramAppender).Appendable(h)
 				if len(pI)+len(nI) > 0 {
 					err = fmt.Errorf(
@@ -879,8 +878,7 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 			t, h = p.currDelIter.AtFloatHistogram()
 
 			// Defend against corrupted chunks.
-			switch h.CounterResetHint {
-			case histogram.GaugeType:
+			if h.CounterResetHint == histogram.GaugeType {
 				pI, nI, bpI, bnI, _, _, okToAppend := app.(*chunkenc.FloatHistogramAppender).AppendableGauge(h)
 				if len(pI)+len(nI)+len(bpI)+len(bnI) > 0 {
 					err = fmt.Errorf(
@@ -893,7 +891,7 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 					err = errors.New("unable to append histogram due to unexpected schema change")
 					break loopFH
 				}
-			default:
+			} else {
 				pI, nI, okToAppend, counterReset := app.(*chunkenc.FloatHistogramAppender).Appendable(h)
 				if len(pI)+len(nI) > 0 {
 					err = fmt.Errorf(
