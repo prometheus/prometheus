@@ -4032,7 +4032,7 @@ func TestNativeHistogram_Sum_Count_Add_AvgOperator(t *testing.T) {
 					NegativeBuckets: []int64{1, 3, -2, 5, -2, 0, -3},
 				},
 				{
-					Schema: 0, // Everything is 0 just to make the count 4 so avg has nicer numbers.
+					Schema: 1, // Everything is 0 just to make the count 4 so avg has nicer numbers.
 				},
 			},
 			expected: histogram.FloatHistogram{

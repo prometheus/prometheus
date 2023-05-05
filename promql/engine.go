@@ -2634,14 +2634,16 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 					break
 				}
 				if group.histogramMean != nil {
-					// The histogram being added must have
+					left := s.H.Copy().Div(float64(group.groupCount))
+					right := group.histogramMean.Copy().Div(float64(group.groupCount))
+					// The histogram being added/subtracted must have
 					// an equal or larger schema.
 					if s.H.Schema >= group.histogramMean.Schema {
-						group.histogramMean.Add(s.H)
+						toAdd := right.Mul(-1).Add(left)
+						group.histogramMean.Add(toAdd)
 					} else {
-						h := s.H.Copy()
-						h.Add(group.histogramMean)
-						group.histogramMean = h
+						toAdd := left.Sub(right)
+						group.histogramMean = toAdd.Add(group.histogramMean)
 					}
 				}
 				// Otherwise the aggregation contained floats
@@ -2750,7 +2752,7 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 				continue
 			}
 			if aggr.hasHistogram {
-				aggr.histogramValue = aggr.histogramMean.Copy().Div(float64(aggr.groupCount))
+				aggr.histogramValue = aggr.histogramMean
 			} else {
 				aggr.floatValue = aggr.mean
 			}
