@@ -2440,7 +2440,7 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 		}
 		return lhs * rhs, nil, true
 	case parser.DIV:
-		if hlhs != nil && hrhs == nil && rhs != 0 {
+		if hlhs != nil && hrhs == nil {
 			return 0, hlhs.Copy().Div(rhs), true
 		}
 		return lhs / rhs, nil, true

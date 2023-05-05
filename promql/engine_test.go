@@ -4345,6 +4345,22 @@ func TestNativeHistogram_SubOperator(t *testing.T) {
 func TestNativeHistogram_MulDivOperator(t *testing.T) {
 	// TODO(codesome): Integrate histograms into the PromQL testing framework
 	// and write more tests there.
+	originalHistogram := histogram.Histogram{
+		Schema:        0,
+		Count:         21,
+		Sum:           33,
+		ZeroThreshold: 0.001,
+		ZeroCount:     3,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 3},
+		},
+		PositiveBuckets: []int64{3, 0, 0},
+		NegativeSpans: []histogram.Span{
+			{Offset: 0, Length: 3},
+		},
+		NegativeBuckets: []int64{3, 0, 0},
+	}
+
 	cases := []struct {
 		scalar      float64
 		histogram   histogram.Histogram
@@ -4352,22 +4368,8 @@ func TestNativeHistogram_MulDivOperator(t *testing.T) {
 		expectedDiv histogram.FloatHistogram
 	}{
 		{
-			scalar: 3,
-			histogram: histogram.Histogram{
-				Schema:        0,
-				Count:         21,
-				Sum:           33,
-				ZeroThreshold: 0.001,
-				ZeroCount:     3,
-				PositiveSpans: []histogram.Span{
-					{Offset: 0, Length: 3},
-				},
-				PositiveBuckets: []int64{3, 0, 0},
-				NegativeSpans: []histogram.Span{
-					{Offset: 0, Length: 3},
-				},
-				NegativeBuckets: []int64{3, 0, 0},
-			},
+			scalar:    3,
+			histogram: originalHistogram,
 			expectedMul: histogram.FloatHistogram{
 				Schema:        0,
 				Count:         63,
@@ -4397,6 +4399,40 @@ func TestNativeHistogram_MulDivOperator(t *testing.T) {
 					{Offset: 0, Length: 3},
 				},
 				NegativeBuckets: []float64{1, 1, 1},
+			},
+		},
+		{
+			scalar:    0,
+			histogram: originalHistogram,
+			expectedMul: histogram.FloatHistogram{
+				Schema:        0,
+				Count:         0,
+				Sum:           0,
+				ZeroThreshold: 0.001,
+				ZeroCount:     0,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 3},
+				},
+				PositiveBuckets: []float64{0, 0, 0},
+				NegativeSpans: []histogram.Span{
+					{Offset: 0, Length: 3},
+				},
+				NegativeBuckets: []float64{0, 0, 0},
+			},
+			expectedDiv: histogram.FloatHistogram{
+				Schema:        0,
+				Count:         math.Inf(1),
+				Sum:           math.Inf(1),
+				ZeroThreshold: 0.001,
+				ZeroCount:     math.Inf(1),
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 3},
+				},
+				PositiveBuckets: []float64{math.Inf(1), math.Inf(1), math.Inf(1)},
+				NegativeSpans: []histogram.Span{
+					{Offset: 0, Length: 3},
+				},
+				NegativeBuckets: []float64{math.Inf(1), math.Inf(1), math.Inf(1)},
 			},
 		},
 	}
