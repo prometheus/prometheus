@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.44.0-rc.2 / 2023-05-07
+
+* [ENHANCEMENT] Storage: Optimise buffer used to iterate through samples. #12326
+
 ## 2.44.0-rc.1 / 2023-05-03
 
 * [BUGFIX] Labels: Set after Del would be ignored, which broke some relabeling rules. #12322
