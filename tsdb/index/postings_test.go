@@ -916,6 +916,35 @@ func BenchmarkPostings_Stats(b *testing.B) {
 	}
 }
 
+func TestMemPostingsStats(t *testing.T) {
+	// create a new MemPostings
+	p := NewMemPostings()
+
+	// add some postings to the MemPostings
+	p.Add(1, labels.FromStrings("metric1", "label1"))
+	p.Add(1, labels.FromStrings("metric1", "label2"))
+	p.Add(1, labels.FromStrings("metric1", "label3"))
+	p.Add(2, labels.FromStrings("metric1", "label1"))
+
+	// call the Stats method to calculate the cardinality statistics
+	stats := p.Stats("metric1")
+
+	// assert that the expected statistics were calculated
+	require.Equal(t, uint64(2), stats.CardinalityMetricsStats[0].Count)
+	require.Equal(t, "label1", stats.CardinalityMetricsStats[0].Name)
+
+	require.Equal(t, uint64(3), stats.CardinalityLabelStats[0].Count)
+	require.Equal(t, "metric1", stats.CardinalityLabelStats[0].Name)
+
+	require.Equal(t, uint64(24), stats.LabelValueStats[0].Count)
+	require.Equal(t, "metric1", stats.LabelValueStats[0].Name)
+
+	require.Equal(t, uint64(2), stats.LabelValuePairsStats[0].Count)
+	require.Equal(t, "metric1=label1", stats.LabelValuePairsStats[0].Name)
+
+	require.Equal(t, 3, stats.NumLabelPairs)
+}
+
 func TestMemPostings_Delete(t *testing.T) {
 	p := NewMemPostings()
 	p.Add(1, labels.FromStrings("lbl1", "a"))
