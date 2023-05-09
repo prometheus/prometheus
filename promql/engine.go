@@ -2607,15 +2607,16 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 		case parser.SUM:
 			if s.H != nil {
 				group.hasHistogram = true
+				if group.hasFloat && group.hasHistogram {
+					break
+				}
 				if group.histogramValue != nil {
 					// The histogram being added must have
 					// an equal or larger schema.
 					if s.H.Schema >= group.histogramValue.Schema {
 						group.histogramValue.Add(s.H)
 					} else {
-						h := s.H.Copy()
-						h.Add(group.histogramValue)
-						group.histogramValue = h
+						group.histogramValue = s.H.Copy().Add(group.histogramValue)
 					}
 				}
 				// Otherwise the aggregation contained floats
@@ -2623,6 +2624,9 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 				// point in copying the histogram in that case.
 			} else {
 				group.hasFloat = true
+				if group.hasFloat && group.hasHistogram {
+					break
+				}
 				group.floatValue += s.F
 			}
 
