@@ -3970,18 +3970,21 @@ func TestNativeHistogram_Sum_Count_Add_AvgOperator(t *testing.T) {
 	// TODO(codesome): Integrate histograms into the PromQL testing framework
 	// and write more tests there.
 	cases := []struct {
-		histograms  []histogram.Histogram
-		expected    histogram.FloatHistogram
-		expectedAvg histogram.FloatHistogram
+		histograms   []histogram.Histogram
+		expected     histogram.FloatHistogram
+		expectedAvg  histogram.FloatHistogram
+		expected2    histogram.FloatHistogram
+		expectedAvg2 histogram.FloatHistogram
 	}{
 		{
 			histograms: []histogram.Histogram{
 				{
-					Schema:        0,
-					Count:         21,
-					Sum:           1234.5,
-					ZeroThreshold: 0.001,
-					ZeroCount:     4,
+					CounterResetHint: histogram.GaugeType,
+					Schema:           0,
+					Count:            21,
+					Sum:              1234.5,
+					ZeroThreshold:    0.001,
+					ZeroCount:        4,
 					PositiveSpans: []histogram.Span{
 						{Offset: 0, Length: 2},
 						{Offset: 1, Length: 2},
@@ -3994,11 +3997,12 @@ func TestNativeHistogram_Sum_Count_Add_AvgOperator(t *testing.T) {
 					NegativeBuckets: []int64{2, 2, -3, 8},
 				},
 				{
-					Schema:        0,
-					Count:         36,
-					Sum:           2345.6,
-					ZeroThreshold: 0.001,
-					ZeroCount:     5,
+					CounterResetHint: histogram.GaugeType,
+					Schema:           0,
+					Count:            36,
+					Sum:              2345.6,
+					ZeroThreshold:    0.001,
+					ZeroCount:        5,
 					PositiveSpans: []histogram.Span{
 						{Offset: 0, Length: 4},
 						{Offset: 0, Length: 0},
@@ -4013,11 +4017,12 @@ func TestNativeHistogram_Sum_Count_Add_AvgOperator(t *testing.T) {
 					NegativeBuckets: []int64{1, 3, -2, 5, -2, 0, -3},
 				},
 				{
-					Schema:        0,
-					Count:         36,
-					Sum:           1111.1,
-					ZeroThreshold: 0.001,
-					ZeroCount:     5,
+					CounterResetHint: histogram.GaugeType,
+					Schema:           0,
+					Count:            36,
+					Sum:              1111.1,
+					ZeroThreshold:    0.001,
+					ZeroCount:        5,
 					PositiveSpans: []histogram.Span{
 						{Offset: 0, Length: 4},
 						{Offset: 0, Length: 0},
@@ -4032,15 +4037,17 @@ func TestNativeHistogram_Sum_Count_Add_AvgOperator(t *testing.T) {
 					NegativeBuckets: []int64{1, 3, -2, 5, -2, 0, -3},
 				},
 				{
-					Schema: 1, // Everything is 0 just to make the count 4 so avg has nicer numbers.
+					CounterResetHint: histogram.GaugeType,
+					Schema:           1, // Everything is 0 just to make the count 4 so avg has nicer numbers.
 				},
 			},
 			expected: histogram.FloatHistogram{
-				Schema:        0,
-				ZeroThreshold: 0.001,
-				ZeroCount:     14,
-				Count:         93,
-				Sum:           4691.2,
+				CounterResetHint: histogram.GaugeType,
+				Schema:           0,
+				ZeroThreshold:    0.001,
+				ZeroCount:        14,
+				Count:            93,
+				Sum:              4691.2,
 				PositiveSpans: []histogram.Span{
 					{Offset: 0, Length: 3},
 					{Offset: 0, Length: 4},
@@ -4054,11 +4061,12 @@ func TestNativeHistogram_Sum_Count_Add_AvgOperator(t *testing.T) {
 				NegativeBuckets: []float64{2, 6, 8, 4, 15, 9, 10, 10, 4},
 			},
 			expectedAvg: histogram.FloatHistogram{
-				Schema:        0,
-				ZeroThreshold: 0.001,
-				ZeroCount:     3.5,
-				Count:         23.25,
-				Sum:           1172.8,
+				CounterResetHint: histogram.GaugeType,
+				Schema:           0,
+				ZeroThreshold:    0.001,
+				ZeroCount:        3.5,
+				Count:            23.25,
+				Sum:              1172.8,
 				PositiveSpans: []histogram.Span{
 					{Offset: 0, Length: 3},
 					{Offset: 0, Length: 4},
@@ -4067,6 +4075,40 @@ func TestNativeHistogram_Sum_Count_Add_AvgOperator(t *testing.T) {
 				NegativeSpans: []histogram.Span{
 					{Offset: 0, Length: 4},
 					{Offset: 0, Length: 2},
+					{Offset: 3, Length: 3},
+				},
+				NegativeBuckets: []float64{0.5, 1.5, 2, 1, 3.75, 2.25, 2.5, 2.5, 1},
+			},
+			expected2: histogram.FloatHistogram{
+				CounterResetHint: histogram.GaugeType,
+				Schema:           0,
+				ZeroThreshold:    0.001,
+				ZeroCount:        14,
+				Count:            93,
+				Sum:              4691.2,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 7},
+				},
+				PositiveBuckets: []float64{3, 8, 2, 5, 3, 2, 2},
+				NegativeSpans: []histogram.Span{
+					{Offset: 0, Length: 6},
+					{Offset: 3, Length: 3},
+				},
+				NegativeBuckets: []float64{2, 6, 8, 4, 15, 9, 10, 10, 4},
+			},
+			expectedAvg2: histogram.FloatHistogram{
+				CounterResetHint: histogram.GaugeType,
+				Schema:           0,
+				ZeroThreshold:    0.001,
+				ZeroCount:        3.5,
+				Count:            23.25,
+				Sum:              1172.8,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 7},
+				},
+				PositiveBuckets: []float64{0.75, 2, 0.5, 1.25, 0.75, 0.5, 0.5},
+				NegativeSpans: []histogram.Span{
+					{Offset: 0, Length: 6},
 					{Offset: 3, Length: 3},
 				},
 				NegativeBuckets: []float64{0.5, 1.5, 2, 1, 3.75, 2.25, 2.5, 2.5, 1},
@@ -4083,6 +4125,7 @@ func TestNativeHistogram_Sum_Count_Add_AvgOperator(t *testing.T) {
 				t.Cleanup(test.Close)
 
 				seriesName := "sparse_histogram_series"
+				seriesNameOverTime := "sparse_histogram_series_over_time"
 
 				engine := test.QueryEngine()
 
@@ -4097,10 +4140,20 @@ func TestNativeHistogram_Sum_Count_Add_AvgOperator(t *testing.T) {
 						_, err = app.AppendHistogram(0, lbls, ts, h.Copy(), nil)
 					}
 					require.NoError(t, err)
+
+					lbls = labels.FromStrings("__name__", seriesNameOverTime)
+					newTs := ts + int64(idx1)*int64(time.Minute/time.Millisecond)
+					// Since we mutate h later, we need to create a copy here.
+					if floatHisto {
+						_, err = app.AppendHistogram(0, lbls, newTs, nil, h.Copy().ToFloat())
+					} else {
+						_, err = app.AppendHistogram(0, lbls, newTs, h.Copy(), nil)
+					}
+					require.NoError(t, err)
 				}
 				require.NoError(t, app.Commit())
 
-				queryAndCheck := func(queryString string, exp Vector) {
+				queryAndCheck := func(queryString string, ts int64, exp Vector) {
 					qry, err := engine.NewInstantQuery(test.context, test.Queryable(), nil, queryString, timestamp.Time(ts))
 					require.NoError(t, err)
 
@@ -4115,22 +4168,33 @@ func TestNativeHistogram_Sum_Count_Add_AvgOperator(t *testing.T) {
 
 				// sum().
 				queryString := fmt.Sprintf("sum(%s)", seriesName)
-				queryAndCheck(queryString, []Sample{{T: ts, H: &c.expected, Metric: labels.EmptyLabels()}})
+				queryAndCheck(queryString, ts, []Sample{{T: ts, H: &c.expected, Metric: labels.EmptyLabels()}})
 
 				// + operator.
 				queryString = fmt.Sprintf(`%s{idx="0"}`, seriesName)
 				for idx := 1; idx < len(c.histograms); idx++ {
 					queryString += fmt.Sprintf(` + ignoring(idx) %s{idx="%d"}`, seriesName, idx)
 				}
-				queryAndCheck(queryString, []Sample{{T: ts, H: &c.expected, Metric: labels.EmptyLabels()}})
+				queryAndCheck(queryString, ts, []Sample{{T: ts, H: &c.expected, Metric: labels.EmptyLabels()}})
 
 				// count().
 				queryString = fmt.Sprintf("count(%s)", seriesName)
-				queryAndCheck(queryString, []Sample{{T: ts, F: 4, Metric: labels.EmptyLabels()}})
+				queryAndCheck(queryString, ts, []Sample{{T: ts, F: 4, Metric: labels.EmptyLabels()}})
 
 				// avg().
 				queryString = fmt.Sprintf("avg(%s)", seriesName)
-				queryAndCheck(queryString, []Sample{{T: ts, H: &c.expectedAvg, Metric: labels.EmptyLabels()}})
+				queryAndCheck(queryString, ts, []Sample{{T: ts, H: &c.expectedAvg, Metric: labels.EmptyLabels()}})
+
+				offset := int64(len(c.histograms) - 1)
+				newTs := ts + offset*int64(time.Minute/time.Millisecond)
+
+				// sum_over_time().
+				queryString = fmt.Sprintf("sum_over_time(%s[%dm:1m])", seriesNameOverTime, offset)
+				queryAndCheck(queryString, newTs, []Sample{{T: newTs, H: &c.expected2, Metric: labels.EmptyLabels()}})
+
+				// avg_over_time().
+				queryString = fmt.Sprintf("avg_over_time(%s[%dm:1m])", seriesNameOverTime, offset)
+				queryAndCheck(queryString, newTs, []Sample{{T: newTs, H: &c.expectedAvg2, Metric: labels.EmptyLabels()}})
 			})
 			idx0++
 		}
