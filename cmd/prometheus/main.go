@@ -337,6 +337,9 @@ func main() {
 	serverOnlyFlag(a, "storage.tsdb.head-chunks-write-queue-size", "Size of the queue through which head chunks are written to the disk to be m-mapped, 0 disables the queue completely. Experimental.").
 		Default("0").IntVar(&cfg.tsdb.HeadChunksWriteQueueSize)
 
+	serverOnlyFlag(a, "storage.tsdb.samples-per-chunk", "Target number of samples per chunk.").
+		Default("120").Hidden().IntVar(&cfg.tsdb.SamplesPerChunk)
+
 	agentOnlyFlag(a, "storage.agent.path", "Base path for metrics storage.").
 		Default("data-agent/").StringVar(&cfg.agentStoragePath)
 
@@ -1543,6 +1546,7 @@ type tsdbOptions struct {
 	NoLockfile                     bool
 	WALCompression                 bool
 	HeadChunksWriteQueueSize       int
+	SamplesPerChunk                int
 	StripeSize                     int
 	MinBlockDuration               model.Duration
 	MaxBlockDuration               model.Duration
@@ -1563,6 +1567,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		AllowOverlappingCompaction:     true,
 		WALCompression:                 opts.WALCompression,
 		HeadChunksWriteQueueSize:       opts.HeadChunksWriteQueueSize,
+		SamplesPerChunk:                opts.SamplesPerChunk,
 		StripeSize:                     opts.StripeSize,
 		MinBlockDuration:               int64(time.Duration(opts.MinBlockDuration) / time.Millisecond),
 		MaxBlockDuration:               int64(time.Duration(opts.MaxBlockDuration) / time.Millisecond),
