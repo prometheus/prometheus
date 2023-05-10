@@ -134,6 +134,10 @@ job_name: <job_name>
 # Per-scrape timeout when scraping this job.
 [ scrape_timeout: <duration> | default = <global_config.scrape_timeout> ]
 
+# Whether to scrape a classic histogram that is also exposed as a native
+# histogram (has no effect without --enable-feature=native-histograms).
+[ scrape_classic_histograms: <boolean> | default = false ]
+
 # The HTTP resource path on which to fetch metrics from targets.
 [ metrics_path: <path> | default = /metrics ]
 

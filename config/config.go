@@ -146,13 +146,14 @@ var (
 
 	// DefaultScrapeConfig is the default scrape configuration.
 	DefaultScrapeConfig = ScrapeConfig{
-		// ScrapeTimeout and ScrapeInterval default to the
-		// configured globals.
-		MetricsPath:      "/metrics",
-		Scheme:           "http",
-		HonorLabels:      false,
-		HonorTimestamps:  true,
-		HTTPClientConfig: config.DefaultHTTPClientConfig,
+		// ScrapeTimeout and ScrapeInterval default to the configured
+		// globals.
+		ScrapeClassicHistograms: false,
+		MetricsPath:             "/metrics",
+		Scheme:                  "http",
+		HonorLabels:             false,
+		HonorTimestamps:         true,
+		HTTPClientConfig:        config.DefaultHTTPClientConfig,
 	}
 
 	// DefaultAlertmanagerConfig is the default alertmanager configuration.
@@ -467,6 +468,8 @@ type ScrapeConfig struct {
 	ScrapeInterval model.Duration `yaml:"scrape_interval,omitempty"`
 	// The timeout for scraping targets of this config.
 	ScrapeTimeout model.Duration `yaml:"scrape_timeout,omitempty"`
+	// Whether to scrape a classic histogram that is also exposed as a native histogram.
+	ScrapeClassicHistograms bool `yaml:"scrape_classic_histograms,omitempty"`
 	// The HTTP resource path on which to fetch metrics from targets.
 	MetricsPath string `yaml:"metrics_path,omitempty"`
 	// The URL scheme with which to fetch metrics from targets.
