@@ -376,6 +376,11 @@ metric_relabel_configs:
 # 0 means no limit. This is an experimental feature, this behaviour could
 # change in the future.
 [ target_limit: <int> | default = 0 ]
+
+# Limit on total number of positive and negative buckets allowed in a single
+# native histogram. If this is exceeded, the entire scrape will be treated as
+# failed. 0 means no limit.
+[ native_histogram_bucket_limit: <int> | default = 0 ]
 ```
 
 Where `<job_name>` must be unique across all scrape configurations.
