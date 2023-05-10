@@ -786,7 +786,6 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 
 		app.AppendHistogram(t, h)
 
-	loopH:
 		for vt := p.currDelIter.Next(); vt != chunkenc.ValNone; vt = p.currDelIter.Next() {
 			if vt != chunkenc.ValHistogram {
 				err = fmt.Errorf("found value type %v in histogram chunk", vt)
@@ -802,11 +801,11 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 						"bucket layout has changed unexpectedly: forward %d positive, %d negative, backward %d positive %d negative bucket interjections required",
 						len(pI), len(nI), len(bpI), len(bnI),
 					)
-					break loopH
+					break
 				}
 				if !okToAppend {
 					err = errors.New("unable to append histogram due to unexpected schema change")
-					break loopH
+					break
 				}
 			} else {
 				pI, nI, okToAppend, counterReset := app.(*chunkenc.HistogramAppender).Appendable(h)
@@ -815,15 +814,15 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 						"bucket layout has changed unexpectedly: %d positive and %d negative bucket interjections required",
 						len(pI), len(nI),
 					)
-					break loopH
+					break
 				}
 				if counterReset {
 					err = errors.New("detected unexpected counter reset in histogram")
-					break loopH
+					break
 				}
 				if !okToAppend {
 					err = errors.New("unable to append histogram due to unexpected schema change")
-					break loopH
+					break
 				}
 			}
 			app.AppendHistogram(t, h)
@@ -859,7 +858,6 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 
 		app.AppendFloatHistogram(t, h)
 
-	loopFH:
 		for vt := p.currDelIter.Next(); vt != chunkenc.ValNone; vt = p.currDelIter.Next() {
 			if vt != chunkenc.ValFloatHistogram {
 				err = fmt.Errorf("found value type %v in histogram chunk", vt)
@@ -875,11 +873,11 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 						"bucket layout has changed unexpectedly: forward %d positive, %d negative, backward %d positive %d negative bucket interjections required",
 						len(pI), len(nI), len(bpI), len(bnI),
 					)
-					break loopFH
+					break
 				}
 				if !okToAppend {
 					err = errors.New("unable to append histogram due to unexpected schema change")
-					break loopFH
+					break
 				}
 			} else {
 				pI, nI, okToAppend, counterReset := app.(*chunkenc.FloatHistogramAppender).Appendable(h)
@@ -888,15 +886,15 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 						"bucket layout has changed unexpectedly: %d positive and %d negative bucket interjections required",
 						len(pI), len(nI),
 					)
-					break loopFH
+					break
 				}
 				if counterReset {
 					err = errors.New("detected unexpected counter reset in histogram")
-					break loopFH
+					break
 				}
 				if !okToAppend {
 					err = errors.New("unable to append histogram due to unexpected schema change")
-					break loopFH
+					break
 				}
 			}
 
