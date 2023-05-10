@@ -150,6 +150,8 @@ type HeadOptions struct {
 	ChunkWriteBufferSize int
 	ChunkWriteQueueSize  int
 
+	SamplesPerChunk int
+
 	// StripeSize sets the number of entries in the hash map, it must be a power of 2.
 	// A larger StripeSize will allocate more memory up-front, but will increase performance when handling a large number of series.
 	// A smaller StripeSize reduces the memory allocated, but can decrease performance with large number of series.
@@ -169,6 +171,8 @@ type HeadOptions struct {
 const (
 	// DefaultOutOfOrderCapMax is the default maximum size of an in-memory out-of-order chunk.
 	DefaultOutOfOrderCapMax int64 = 32
+	// DefaultSamplesPerChunk provides a default target number of samples per chunk.
+	DefaultSamplesPerChunk = 120
 )
 
 func DefaultHeadOptions() *HeadOptions {
@@ -178,6 +182,7 @@ func DefaultHeadOptions() *HeadOptions {
 		ChunkPool:            chunkenc.NewPool(),
 		ChunkWriteBufferSize: chunks.DefaultWriteBufferSize,
 		ChunkWriteQueueSize:  chunks.DefaultWriteQueueSize,
+		SamplesPerChunk:      DefaultSamplesPerChunk,
 		StripeSize:           DefaultStripeSize,
 		SeriesCallback:       &noopSeriesLifecycleCallback{},
 		IsolationDisabled:    defaultIsolationDisabled,
@@ -1607,7 +1612,7 @@ func (h *Head) getOrCreate(hash uint64, lset labels.Labels) (*memSeries, bool, e
 
 func (h *Head) getOrCreateWithID(id chunks.HeadSeriesRef, hash uint64, lset labels.Labels) (*memSeries, bool, error) {
 	s, created, err := h.series.getOrSet(hash, lset, func() *memSeries {
-		return newMemSeries(lset, id, h.opts.IsolationDisabled)
+		return newMemSeries(lset, id, h.opts.IsolationDisabled, h.opts.SamplesPerChunk)
 	})
 	if err != nil {
 		return nil, false, err
@@ -1915,7 +1920,8 @@ type memSeries struct {
 
 	mmMaxTime int64 // Max time of any mmapped chunk, only used during WAL replay.
 
-	nextAt int64 // Timestamp at which to cut the next chunk.
+	samplesPerChunk int   // Target number of samples per chunk.
+	nextAt          int64 // Timestamp at which to cut the next chunk.
 
 	// We keep the last value here (in addition to appending it to the chunk) so we can check for duplicates.
 	lastValue float64
@@ -1943,11 +1949,12 @@ type memSeriesOOOFields struct {
 	firstOOOChunkID  chunks.HeadChunkID // HeadOOOChunkID for oooMmappedChunks[0].
 }
 
-func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, isolationDisabled bool) *memSeries {
+func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, isolationDisabled bool, samplesPerChunk int) *memSeries {
 	s := &memSeries{
-		lset:   lset,
-		ref:    id,
-		nextAt: math.MinInt64,
+		lset:            lset,
+		ref:             id,
+		nextAt:          math.MinInt64,
+		samplesPerChunk: samplesPerChunk,
 	}
 	if !isolationDisabled {
 		s.txs = newTxRing(4)

@@ -285,7 +285,7 @@ func BenchmarkLoadWAL(b *testing.B) {
 						require.NoError(b, err)
 						for k := 0; k < c.batches*c.seriesPerBatch; k++ {
 							// Create one mmapped chunk per series, with one sample at the given time.
-							s := newMemSeries(labels.Labels{}, chunks.HeadSeriesRef(k)*101, defaultIsolationDisabled)
+							s := newMemSeries(labels.Labels{}, chunks.HeadSeriesRef(k)*101, defaultIsolationDisabled, DefaultSamplesPerChunk)
 							s.append(c.mmappedChunkT, 42, 0, chunkDiskMapper, c.mmappedChunkT)
 							s.mmapCurrentHeadChunk(chunkDiskMapper)
 						}
@@ -807,7 +807,7 @@ func TestMemSeries_truncateChunks(t *testing.T) {
 		},
 	}
 
-	s := newMemSeries(labels.FromStrings("a", "b"), 1, defaultIsolationDisabled)
+	s := newMemSeries(labels.FromStrings("a", "b"), 1, defaultIsolationDisabled, DefaultSamplesPerChunk)
 
 	for i := 0; i < 4000; i += 5 {
 		ok, _ := s.append(int64(i), float64(i), 0, chunkDiskMapper, chunkRange)
@@ -1338,7 +1338,7 @@ func TestMemSeries_append(t *testing.T) {
 	}()
 	const chunkRange = 500
 
-	s := newMemSeries(labels.Labels{}, 1, defaultIsolationDisabled)
+	s := newMemSeries(labels.Labels{}, 1, defaultIsolationDisabled, DefaultSamplesPerChunk)
 
 	// Add first two samples at the very end of a chunk range and the next two
 	// on and after it.
@@ -1392,7 +1392,7 @@ func TestMemSeries_appendHistogram(t *testing.T) {
 	}()
 	chunkRange := int64(1000)
 
-	s := newMemSeries(labels.Labels{}, 1, defaultIsolationDisabled)
+	s := newMemSeries(labels.Labels{}, 1, defaultIsolationDisabled, DefaultSamplesPerChunk)
 
 	histograms := tsdbutil.GenerateTestHistograms(4)
 	histogramWithOneMoreBucket := histograms[3].Copy()
@@ -1448,7 +1448,7 @@ func TestMemSeries_append_atVariableRate(t *testing.T) {
 	})
 	chunkRange := DefaultBlockDuration
 
-	s := newMemSeries(labels.Labels{}, 1, defaultIsolationDisabled)
+	s := newMemSeries(labels.Labels{}, 1, defaultIsolationDisabled, DefaultSamplesPerChunk)
 
 	// At this slow rate, we will fill the chunk in two block durations.
 	slowRate := (DefaultBlockDuration * 2) / samplesPerChunk
@@ -2610,7 +2610,7 @@ func TestIteratorSeekIntoBuffer(t *testing.T) {
 	}()
 	const chunkRange = 500
 
-	s := newMemSeries(labels.Labels{}, 1, defaultIsolationDisabled)
+	s := newMemSeries(labels.Labels{}, 1, defaultIsolationDisabled, DefaultSamplesPerChunk)
 
 	for i := 0; i < 7; i++ {
 		ok, _ := s.append(int64(i), float64(i), 0, chunkDiskMapper, chunkRange)
