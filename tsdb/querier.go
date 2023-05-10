@@ -777,12 +777,32 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 		if app, err = newChunk.Appender(); err != nil {
 			break
 		}
-		if hc, ok := p.currChkMeta.Chunk.(*chunkenc.HistogramChunk); ok {
+
+		switch hc := p.currChkMeta.Chunk.(type) {
+		case *chunkenc.HistogramChunk:
 			newChunk.(*chunkenc.HistogramChunk).SetCounterResetHeader(hc.GetCounterResetHeader())
+		case *safeChunk:
+			if wrapped, ok := hc.Chunk.(*chunkenc.HistogramChunk); ok {
+				newChunk.(*chunkenc.HistogramChunk).SetCounterResetHeader(wrapped.GetCounterResetHeader())
+			} else {
+				err = fmt.Errorf("internal error, could not unwrapper safeChunk to histogram chunk: %T", hc.Chunk)
+			}
+		default:
+			err = fmt.Errorf("internal error, unknown chunk type %T when expecting histogram", p.currChkMeta.Chunk)
 		}
+		if err != nil {
+			break
+		}
+
 		var h *histogram.Histogram
 		t, h = p.currDelIter.AtHistogram()
 		p.curr.MinTime = t
+
+		// Detect missing gauge reset hint
+		if h.CounterResetHint == histogram.GaugeType && newChunk.(*chunkenc.HistogramChunk).GetCounterResetHeader() != chunkenc.GaugeType {
+			err = fmt.Errorf("found gauge histogram in non gauge chunk")
+			break
+		}
 
 		app.AppendHistogram(t, h)
 
@@ -849,12 +869,32 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 		if app, err = newChunk.Appender(); err != nil {
 			break
 		}
-		if hc, ok := p.currChkMeta.Chunk.(*chunkenc.FloatHistogramChunk); ok {
+
+		switch hc := p.currChkMeta.Chunk.(type) {
+		case *chunkenc.HistogramChunk:
 			newChunk.(*chunkenc.FloatHistogramChunk).SetCounterResetHeader(hc.GetCounterResetHeader())
+		case *safeChunk:
+			if wrapped, ok := hc.Chunk.(*chunkenc.FloatHistogramChunk); ok {
+				newChunk.(*chunkenc.FloatHistogramChunk).SetCounterResetHeader(wrapped.GetCounterResetHeader())
+			} else {
+				err = fmt.Errorf("internal error, could not unwrapper safeChunk to float histogram chunk: %T", hc.Chunk)
+			}
+		default:
+			err = fmt.Errorf("internal error, unknown chunk type %T when expecting float histogram", p.currChkMeta.Chunk)
 		}
+		if err != nil {
+			break
+		}
+
 		var h *histogram.FloatHistogram
 		t, h = p.currDelIter.AtFloatHistogram()
 		p.curr.MinTime = t
+
+		// Detect missing gauge reset hint
+		if h.CounterResetHint == histogram.GaugeType && newChunk.(*chunkenc.FloatHistogramChunk).GetCounterResetHeader() != chunkenc.GaugeType {
+			err = fmt.Errorf("found float gauge histogram in non gauge chunk")
+			break
+		}
 
 		app.AppendFloatHistogram(t, h)
 
