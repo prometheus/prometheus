@@ -84,6 +84,18 @@ type Appender interface {
 	Append(int64, float64)
 	AppendHistogram(t int64, h *histogram.Histogram)
 	AppendFloatHistogram(t int64, h *histogram.FloatHistogram)
+
+	// Appends a float64 sample to the Chunk and returns nil, self, nil
+	// If sample cannot be appended to current Chunk, returns a new Chunk, new AppenderCreator, nil
+	AppendOrCreate(int64, float64) (Chunk, Appender, error)
+
+	// Appends a histogram sample to the Chunk and returns nil, self, nil
+	// If sample cannot be appended to current Chunk, returns a new Chunk, new Appender, nil
+	AppendOrCreateHistogram(t int64, h *histogram.Histogram) (Chunk, Appender, error)
+
+	// Appends a histogram sample to the Chunk and returns nil, self, nil
+	// If sample cannot be appended to current Chunk, returns a new Chunk, new Appender, nil
+	AppendOrCreateFloatHistogram(t int64, h *histogram.FloatHistogram) (Chunk, Appender, error)
 }
 
 // Iterator is a simple iterator that can only get the next value.

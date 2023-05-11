@@ -227,6 +227,10 @@ func (a *HistogramAppender) GetCounterResetHeader() CounterResetHeader {
 	return CounterResetHeader(a.b.bytes()[2] & 0b11000000)
 }
 
+func (a *HistogramAppender) setCounterResetHeader(cr CounterResetHeader) {
+	a.b.bytes()[2] = (a.b.bytes()[2] & 0b00111111) | (byte(cr) & 0b11000000)
+}
+
 func (a *HistogramAppender) NumSamples() int {
 	return int(binary.BigEndian.Uint16(a.b.bytes()))
 }
@@ -610,6 +614,81 @@ func (a *HistogramAppender) RecodeHistogram(
 
 func (a *HistogramAppender) writeSumDelta(v float64) {
 	xorWrite(a.b, v, a.sum, &a.leading, &a.trailing)
+}
+
+func (a *HistogramAppender) AppendOrCreate(int64, float64) (Chunk, Appender, error) {
+	panic("appended a float sample to a histogram chunk")
+}
+
+func (a *HistogramAppender) AppendOrCreateFloatHistogram(t int64, h *histogram.FloatHistogram) (Chunk, Appender, error) {
+	panic("appended a float histogram sample to a histogram chunk")
+}
+
+func (a *HistogramAppender) AppendOrCreateHistogram(t int64, h *histogram.Histogram) (Chunk, Appender, error) {
+	if a.NumSamples() == 0 {
+		a.AppendHistogram(t, h)
+		if h.CounterResetHint == histogram.GaugeType {
+			a.setCounterResetHeader(GaugeType)
+		}
+		return nil, a, nil
+	}
+
+	// Adding non gauge histogram.
+	if h.CounterResetHint != histogram.CounterResetHint(GaugeType) {
+		pForwardInserts, nForwardInserts, okToAppend, counterReset := a.Appendable(h)
+		if !okToAppend || counterReset {
+			newChunk := NewHistogramChunk()
+			if counterReset {
+				newChunk.SetCounterResetHeader(CounterReset)
+			}
+			app, err := newChunk.Appender()
+			if err != nil {
+				return nil, nil, err
+			}
+			app.AppendHistogram(t, h)
+			return newChunk, app, nil
+		}
+		if len(pForwardInserts) > 0 || len(nForwardInserts) > 0 {
+			chk, app := a.Recode(
+				pForwardInserts, nForwardInserts,
+				h.PositiveSpans, h.NegativeSpans,
+			)
+			app.AppendHistogram(t, h)
+			return chk, app, nil
+		}
+		a.AppendHistogram(t, h)
+		return nil, a, nil
+	}
+	// Adding gauge histogram
+	pForwardInserts, nForwardInserts, pBackwardInserts, nBackwardInserts, pMergedSpans, nMergedSpans, okToAppend := a.AppendableGauge(h)
+	if !okToAppend {
+		newChunk := NewHistogramChunk()
+		newChunk.SetCounterResetHeader(GaugeType)
+		app, err := newChunk.Appender()
+		if err != nil {
+			return nil, nil, err
+		}
+		app.AppendHistogram(t, h)
+		return newChunk, app, nil
+	}
+
+	if len(pBackwardInserts)+len(nBackwardInserts) > 0 {
+		h.PositiveSpans = pMergedSpans
+		h.NegativeSpans = nMergedSpans
+		a.RecodeHistogram(h, pBackwardInserts, nBackwardInserts)
+	}
+
+	if len(pForwardInserts) > 0 || len(nForwardInserts) > 0 {
+		chk, app := a.Recode(
+			pForwardInserts, nForwardInserts,
+			h.PositiveSpans, h.NegativeSpans,
+		)
+		app.AppendHistogram(t, h)
+		return chk, app, nil
+	}
+
+	a.AppendHistogram(t, h)
+	return nil, a, nil
 }
 
 type histogramIterator struct {
