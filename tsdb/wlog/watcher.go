@@ -370,7 +370,7 @@ func (w *Watcher) readAndHandlerError(r *LiveReader, segmentNum int, tail bool, 
 		if err != nil && errors.Cause(err) != io.EOF {
 			level.Warn(w.logger).Log("msg", "Ignoring error reading to end of segment, may have dropped data", "segment", segmentNum, "err", err)
 		} else if r.Offset() != size {
-			level.Warn(w.logger).Log("msg", "Expected to have read whole segment, may have dropped data", "segment", segmentNum, "read", reader.Offset(), "size", size)
+			level.Warn(w.logger).Log("msg", "Expected to have read whole segment, may have dropped data", "segment", segmentNum, "read", r.Offset(), "size", size)
 		}
 		return nil
 	}
@@ -379,6 +379,7 @@ func (w *Watcher) readAndHandlerError(r *LiveReader, segmentNum int, tail bool, 
 	if errors.Cause(err) != io.EOF {
 		return err
 	}
+	return nil
 }
 
 // Use tail true to indicate that the reader is currently on a segment that is
