@@ -2336,7 +2336,7 @@ func (ev *evaluator) VectorscalarBinop(op parser.ItemType, lhs Vector, rhs Scala
 	for _, lhsSample := range lhs {
 		lv, rv := lhsSample.F, rhs.V
 		var rh *histogram.FloatHistogram
-		lh, rh := lhsSample.H, nil
+		lh := lhsSample.H
 		// lhs always contains the Vector. If the original position was different
 		// swap for calculating the value.
 		if swap {
@@ -2607,9 +2607,6 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 		case parser.SUM:
 			if s.H != nil {
 				group.hasHistogram = true
-				if group.hasFloat && group.hasHistogram {
-					break
-				}
 				if group.histogramValue != nil {
 					// The histogram being added must have
 					// an equal or larger schema.
@@ -2624,9 +2621,6 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 				// point in copying the histogram in that case.
 			} else {
 				group.hasFloat = true
-				if group.hasFloat && group.hasHistogram {
-					break
-				}
 				group.floatValue += s.F
 			}
 
@@ -2634,9 +2628,6 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 			group.groupCount++
 			if s.H != nil {
 				group.hasHistogram = true
-				if group.hasFloat && group.hasHistogram {
-					break
-				}
 				if group.histogramMean != nil {
 					left := s.H.Copy().Div(float64(group.groupCount))
 					right := group.histogramMean.Copy().Div(float64(group.groupCount))
@@ -2655,9 +2646,6 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 				// point in copying the histogram in that case.
 			} else {
 				group.hasFloat = true
-				if group.hasFloat && group.hasHistogram {
-					break
-				}
 				if math.IsInf(group.mean, 0) {
 					if math.IsInf(s.F, 0) && (group.mean > 0) == (s.F > 0) {
 						// The `mean` and `s.V` values are `Inf` of the same sign.  They
@@ -2753,6 +2741,7 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 		case parser.AVG:
 			if aggr.hasFloat && aggr.hasHistogram {
 				// We cannot aggregate histogram sample with a float64 sample.
+				// TODO(zenador): Issue warning when plumbing is in place.
 				continue
 			}
 			if aggr.hasHistogram {
@@ -2802,6 +2791,7 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 		case parser.SUM:
 			if aggr.hasFloat && aggr.hasHistogram {
 				// We cannot aggregate histogram sample with a float64 sample.
+				// TODO(zenador): Issue warning when plumbing is in place.
 				continue
 			}
 		default:
