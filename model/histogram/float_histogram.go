@@ -177,6 +177,20 @@ func (h *FloatHistogram) Scale(factor float64) *FloatHistogram {
 	return h
 }
 
+// Div works like Scale but divides instead of multiplies.
+func (h *FloatHistogram) Div(scalar float64) *FloatHistogram {
+	h.ZeroCount /= scalar
+	h.Count /= scalar
+	h.Sum /= scalar
+	for i := range h.PositiveBuckets {
+		h.PositiveBuckets[i] /= scalar
+	}
+	for i := range h.NegativeBuckets {
+		h.NegativeBuckets[i] /= scalar
+	}
+	return h
+}
+
 // Add adds the provided other histogram to the receiving histogram. Count, Sum,
 // and buckets from the other histogram are added to the corresponding
 // components of the receiving histogram. Buckets in the other histogram that do
@@ -266,40 +280,6 @@ func (h *FloatHistogram) Sub(other *FloatHistogram) *FloatHistogram {
 			b, h.NegativeSpans, h.NegativeBuckets, iSpan, iBucket, iInSpan, index,
 		)
 		index = b.Index
-	}
-	return h
-}
-
-// Mul multiplies a histogram by the provided float scalar, adjusting count, sum,
-// and bucket counts, and keeping the spans untouched.
-//
-// This method returns a pointer to the receiving histogram for convenience.
-func (h *FloatHistogram) Mul(scalar float64) *FloatHistogram {
-	h.ZeroCount *= scalar
-	h.Count *= scalar
-	h.Sum *= scalar
-	for i := range h.PositiveBuckets {
-		h.PositiveBuckets[i] *= scalar
-	}
-	for i := range h.NegativeBuckets {
-		h.NegativeBuckets[i] *= scalar
-	}
-	return h
-}
-
-// Div divides a histogram by the provided float scalar (assuming non-0), adjusting count, sum,
-// and bucket counts, and keeping the spans untouched.
-//
-// This method returns a pointer to the receiving histogram for convenience.
-func (h *FloatHistogram) Div(scalar float64) *FloatHistogram {
-	h.ZeroCount /= scalar
-	h.Count /= scalar
-	h.Sum /= scalar
-	for i := range h.PositiveBuckets {
-		h.PositiveBuckets[i] /= scalar
-	}
-	for i := range h.NegativeBuckets {
-		h.NegativeBuckets[i] /= scalar
 	}
 	return h
 }
