@@ -41,11 +41,17 @@ func (s SampleSlice) Len() int         { return len(s) }
 
 // ChunkFromSamples requires all samples to have the same type.
 func ChunkFromSamples(s []Sample) chunks.Meta {
-	return ChunkFromSamplesGeneric(SampleSlice(s))
+	// TODO(krajo) return error / multiple chunks
+	chk, err := ChunkFromSamplesGeneric(SampleSlice(s))
+	if err != nil {
+		panic("unexpected error in ChunkFromSamples")
+	}
+	return chk
 }
 
 // ChunkFromSamplesGeneric requires all samples to have the same type.
-func ChunkFromSamplesGeneric(s Samples) chunks.Meta {
+func ChunkFromSamplesGeneric(s Samples) (chunks.Meta, error) {
+	emptyChunk := chunks.Meta{Chunk: chunkenc.NewXORChunk()}
 	mint, maxt := int64(0), int64(0)
 
 	if s.Len() > 0 {
@@ -53,27 +59,40 @@ func ChunkFromSamplesGeneric(s Samples) chunks.Meta {
 	}
 
 	if s.Len() == 0 {
-		return chunks.Meta{
-			Chunk: chunkenc.NewXORChunk(),
-		}
+		return emptyChunk, nil
 	}
 
 	sampleType := s.Get(0).Type()
 	c, err := chunkenc.NewEmptyChunk(sampleType.ChunkEncoding())
 	if err != nil {
-		panic(err) // TODO(codesome): dont panic.
+		return chunks.Meta{
+			Chunk: chunkenc.NewXORChunk(),
+		}, err
 	}
 
 	ca, _ := c.Appender()
+	var newc chunkenc.Chunk
 
 	for i := 0; i < s.Len(); i++ {
 		switch sampleType {
 		case chunkenc.ValFloat:
 			ca.Append(s.Get(i).T(), s.Get(i).F())
 		case chunkenc.ValHistogram:
-			ca.AppendHistogram(s.Get(i).T(), s.Get(i).H())
+			newc, _, ca, err = ca.AppendOrCreateHistogram(s.Get(i).T(), s.Get(i).H())
+			if err != nil {
+				return emptyChunk, err
+			}
+			if newc != nil {
+				return emptyChunk, fmt.Errorf("did not expect to start a second chunk")
+			}
 		case chunkenc.ValFloatHistogram:
-			ca.AppendFloatHistogram(s.Get(i).T(), s.Get(i).FH())
+			newc, _, ca, err = ca.AppendOrCreateFloatHistogram(s.Get(i).T(), s.Get(i).FH())
+			if err != nil {
+				return emptyChunk, err
+			}
+			if newc != nil {
+				return emptyChunk, fmt.Errorf("did not expect to start a second chunk")
+			}
 		default:
 			panic(fmt.Sprintf("unknown sample type %s", sampleType.String()))
 		}
@@ -82,7 +101,7 @@ func ChunkFromSamplesGeneric(s Samples) chunks.Meta {
 		MinTime: mint,
 		MaxTime: maxt,
 		Chunk:   c,
-	}
+	}, nil
 }
 
 type sample struct {

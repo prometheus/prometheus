@@ -85,17 +85,17 @@ type Appender interface {
 	AppendHistogram(t int64, h *histogram.Histogram)
 	AppendFloatHistogram(t int64, h *histogram.FloatHistogram)
 
-	// Appends a float64 sample to the Chunk and returns nil, self, nil
-	// If sample cannot be appended to current Chunk, returns a new Chunk, new AppenderCreator, nil
-	AppendOrCreate(int64, float64) (Chunk, Appender, error)
+	// Appends a histogram sample to the Chunk.
+	// Returned Chunk is nil if sample could be appended to current Chunk.
+	// If sample cannot be appeneded, a new Chunk is returned which is either the current Chunk recoded or a completely new Chunk.
+	// The Appender to use next is always returned.
+	AppendOrCreateHistogram(t int64, h *histogram.Histogram) (c Chunk, isRecoded bool, app Appender, err error)
 
-	// Appends a histogram sample to the Chunk and returns nil, self, nil
-	// If sample cannot be appended to current Chunk, returns a new Chunk, new Appender, nil
-	AppendOrCreateHistogram(t int64, h *histogram.Histogram) (Chunk, Appender, error)
-
-	// Appends a histogram sample to the Chunk and returns nil, self, nil
-	// If sample cannot be appended to current Chunk, returns a new Chunk, new Appender, nil
-	AppendOrCreateFloatHistogram(t int64, h *histogram.FloatHistogram) (Chunk, Appender, error)
+	// Appends a float histogram sample to the Chunk.
+	// Returned Chunk is nil if sample could be appended to current Chunk.
+	// If sample cannot be appeneded, a new Chunk is returned which is either the current Chunk recoded or a completely new Chunk.
+	// The Appender to use next is always returned.
+	AppendOrCreateFloatHistogram(t int64, h *histogram.FloatHistogram) (c Chunk, isRecorded bool, app Appender, err error)
 }
 
 // Iterator is a simple iterator that can only get the next value.

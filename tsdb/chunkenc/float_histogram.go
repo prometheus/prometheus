@@ -577,21 +577,21 @@ func (a *FloatHistogramAppender) AppendOrCreate(int64, float64) (Chunk, Appender
 	panic("appended a float sample to a float histogram chunk")
 }
 
-func (a *FloatHistogramAppender) AppendOrCreateHistogram(t int64, h *histogram.Histogram) (Chunk, Appender, error) {
+func (a *FloatHistogramAppender) AppendOrCreateHistogram(int64, *histogram.Histogram) (Chunk, bool, Appender, error) {
 	panic("appended a histogram sample to a float histogram chunk")
 }
 
-func (a *FloatHistogramAppender) AppendOrCreateFloatHistogram(t int64, h *histogram.FloatHistogram) (Chunk, Appender, error) {
+func (a *FloatHistogramAppender) AppendOrCreateFloatHistogram(t int64, h *histogram.FloatHistogram) (Chunk, bool, Appender, error) {
 	if a.NumSamples() == 0 {
 		a.AppendFloatHistogram(t, h)
 		if h.CounterResetHint == histogram.GaugeType {
 			a.setCounterResetHeader(GaugeType)
 		}
-		return nil, a, nil
+		return nil, false, a, nil
 	}
 
 	// Adding non gauge histogram.
-	if h.CounterResetHint != histogram.CounterResetHint(GaugeType) {
+	if h.CounterResetHint != histogram.GaugeType {
 		pForwardInserts, nForwardInserts, okToAppend, counterReset := a.Appendable(h)
 		if !okToAppend || counterReset {
 			newChunk := NewFloatHistogramChunk()
@@ -600,10 +600,10 @@ func (a *FloatHistogramAppender) AppendOrCreateFloatHistogram(t int64, h *histog
 			}
 			app, err := newChunk.Appender()
 			if err != nil {
-				return nil, nil, err
+				return nil, false, a, err
 			}
 			app.AppendFloatHistogram(t, h)
-			return newChunk, app, nil
+			return newChunk, false, app, nil
 		}
 		if len(pForwardInserts) > 0 || len(nForwardInserts) > 0 {
 			chk, app := a.Recode(
@@ -611,10 +611,10 @@ func (a *FloatHistogramAppender) AppendOrCreateFloatHistogram(t int64, h *histog
 				h.PositiveSpans, h.NegativeSpans,
 			)
 			app.AppendFloatHistogram(t, h)
-			return chk, app, nil
+			return chk, true, app, nil
 		}
 		a.AppendFloatHistogram(t, h)
-		return nil, a, nil
+		return nil, false, a, nil
 	}
 	// Adding gauge histogram
 	pForwardInserts, nForwardInserts, pBackwardInserts, nBackwardInserts, pMergedSpans, nMergedSpans, okToAppend := a.AppendableGauge(h)
@@ -623,10 +623,10 @@ func (a *FloatHistogramAppender) AppendOrCreateFloatHistogram(t int64, h *histog
 		newChunk.SetCounterResetHeader(GaugeType)
 		app, err := newChunk.Appender()
 		if err != nil {
-			return nil, nil, err
+			return nil, false, a, err
 		}
 		app.AppendFloatHistogram(t, h)
-		return newChunk, app, nil
+		return newChunk, false, app, nil
 	}
 
 	if len(pBackwardInserts)+len(nBackwardInserts) > 0 {
@@ -641,11 +641,11 @@ func (a *FloatHistogramAppender) AppendOrCreateFloatHistogram(t int64, h *histog
 			h.PositiveSpans, h.NegativeSpans,
 		)
 		app.AppendFloatHistogram(t, h)
-		return chk, app, nil
+		return chk, true, app, nil
 	}
 
 	a.AppendFloatHistogram(t, h)
-	return nil, a, nil
+	return nil, false, a, nil
 }
 
 type floatHistogramIterator struct {
