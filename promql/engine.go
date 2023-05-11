@@ -2415,9 +2415,9 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 			// The histogram being added must have the larger schema
 			// code (i.e. the higher resolution).
 			if hrhs.Schema >= hlhs.Schema {
-				return 0, hlhs.Copy().Add(hrhs), true
+				return 0, hlhs.Copy().Add(hrhs).Compact(0), true
 			}
-			return 0, hrhs.Copy().Add(hlhs), true
+			return 0, hrhs.Copy().Add(hlhs).Compact(0), true
 		}
 		return lhs + rhs, nil, true
 	case parser.SUB:
@@ -2425,10 +2425,9 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 			// The histogram being subtracted must have the larger schema
 			// code (i.e. the higher resolution).
 			if hrhs.Schema >= hlhs.Schema {
-				return 0, hlhs.Copy().Sub(hrhs), true
+				return 0, hlhs.Copy().Sub(hrhs).Compact(0), true
 			}
-			// return 0, hrhs.Copy().Sub(hlhs).Scale(-1), true
-			return 0, hrhs.Copy().Scale(-1).Add(hlhs), true
+			return 0, hrhs.Copy().Scale(-1).Add(hlhs).Compact(0), true
 		}
 		return lhs - rhs, nil, true
 	case parser.MUL:
@@ -2745,7 +2744,7 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 				continue
 			}
 			if aggr.hasHistogram {
-				aggr.histogramValue = aggr.histogramMean
+				aggr.histogramValue = aggr.histogramMean.Compact(0)
 			} else {
 				aggr.floatValue = aggr.floatMean
 			}
@@ -2793,6 +2792,9 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 				// We cannot aggregate histogram sample with a float64 sample.
 				// TODO(zenador): Issue warning when plumbing is in place.
 				continue
+			}
+			if aggr.hasHistogram {
+				aggr.histogramValue.Compact(0)
 			}
 		default:
 			// For other aggregations, we already have the right value.

@@ -3970,11 +3970,9 @@ func TestNativeHistogram_Sum_Count_Add_AvgOperator(t *testing.T) {
 	// TODO(codesome): Integrate histograms into the PromQL testing framework
 	// and write more tests there.
 	cases := []struct {
-		histograms   []histogram.Histogram
-		expected     histogram.FloatHistogram
-		expectedAvg  histogram.FloatHistogram
-		expected2    histogram.FloatHistogram
-		expectedAvg2 histogram.FloatHistogram
+		histograms  []histogram.Histogram
+		expected    histogram.FloatHistogram
+		expectedAvg histogram.FloatHistogram
 	}{
 		{
 			histograms: []histogram.Histogram{
@@ -4049,44 +4047,6 @@ func TestNativeHistogram_Sum_Count_Add_AvgOperator(t *testing.T) {
 				Count:            93,
 				Sum:              4691.2,
 				PositiveSpans: []histogram.Span{
-					{Offset: 0, Length: 3},
-					{Offset: 0, Length: 4},
-				},
-				PositiveBuckets: []float64{3, 8, 2, 5, 3, 2, 2},
-				NegativeSpans: []histogram.Span{
-					{Offset: 0, Length: 4},
-					{Offset: 0, Length: 2},
-					{Offset: 3, Length: 3},
-				},
-				NegativeBuckets: []float64{2, 6, 8, 4, 15, 9, 10, 10, 4},
-			},
-			expectedAvg: histogram.FloatHistogram{
-				CounterResetHint: histogram.GaugeType,
-				Schema:           0,
-				ZeroThreshold:    0.001,
-				ZeroCount:        3.5,
-				Count:            23.25,
-				Sum:              1172.8,
-				PositiveSpans: []histogram.Span{
-					{Offset: 0, Length: 3},
-					{Offset: 0, Length: 4},
-				},
-				PositiveBuckets: []float64{0.75, 2, 0.5, 1.25, 0.75, 0.5, 0.5},
-				NegativeSpans: []histogram.Span{
-					{Offset: 0, Length: 4},
-					{Offset: 0, Length: 2},
-					{Offset: 3, Length: 3},
-				},
-				NegativeBuckets: []float64{0.5, 1.5, 2, 1, 3.75, 2.25, 2.5, 2.5, 1},
-			},
-			expected2: histogram.FloatHistogram{
-				CounterResetHint: histogram.GaugeType,
-				Schema:           0,
-				ZeroThreshold:    0.001,
-				ZeroCount:        14,
-				Count:            93,
-				Sum:              4691.2,
-				PositiveSpans: []histogram.Span{
 					{Offset: 0, Length: 7},
 				},
 				PositiveBuckets: []float64{3, 8, 2, 5, 3, 2, 2},
@@ -4096,7 +4056,7 @@ func TestNativeHistogram_Sum_Count_Add_AvgOperator(t *testing.T) {
 				},
 				NegativeBuckets: []float64{2, 6, 8, 4, 15, 9, 10, 10, 4},
 			},
-			expectedAvg2: histogram.FloatHistogram{
+			expectedAvg: histogram.FloatHistogram{
 				CounterResetHint: histogram.GaugeType,
 				Schema:           0,
 				ZeroThreshold:    0.001,
@@ -4190,11 +4150,11 @@ func TestNativeHistogram_Sum_Count_Add_AvgOperator(t *testing.T) {
 
 				// sum_over_time().
 				queryString = fmt.Sprintf("sum_over_time(%s[%dm:1m])", seriesNameOverTime, offset)
-				queryAndCheck(queryString, newTs, []Sample{{T: newTs, H: &c.expected2, Metric: labels.EmptyLabels()}})
+				queryAndCheck(queryString, newTs, []Sample{{T: newTs, H: &c.expected, Metric: labels.EmptyLabels()}})
 
 				// avg_over_time().
 				queryString = fmt.Sprintf("avg_over_time(%s[%dm:1m])", seriesNameOverTime, offset)
-				queryAndCheck(queryString, newTs, []Sample{{T: newTs, H: &c.expectedAvg2, Metric: labels.EmptyLabels()}})
+				queryAndCheck(queryString, newTs, []Sample{{T: newTs, H: &c.expectedAvg, Metric: labels.EmptyLabels()}})
 			})
 			idx0++
 		}
@@ -4252,17 +4212,16 @@ func TestNativeHistogram_SubOperator(t *testing.T) {
 				ZeroThreshold: 0.001,
 				ZeroCount:     2,
 				PositiveSpans: []histogram.Span{
-					{Offset: 0, Length: 4},
-					{Offset: 0, Length: 0},
-					{Offset: 0, Length: 3},
-				},
-				PositiveBuckets: []float64{1, 1, 0, 2, 1, 1, 1},
-				NegativeSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
 					{Offset: 1, Length: 4},
-					{Offset: 2, Length: 0},
-					{Offset: 2, Length: 3},
 				},
-				NegativeBuckets: []float64{1, 1, 0, 7, 5, 5, 2},
+				PositiveBuckets: []float64{1, 1, 2, 1, 1, 1},
+				NegativeSpans: []histogram.Span{
+					{Offset: 1, Length: 2},
+					{Offset: 1, Length: 1},
+					{Offset: 4, Length: 3},
+				},
+				NegativeBuckets: []float64{1, 1, 7, 5, 5, 2},
 			},
 		},
 		{
@@ -4309,15 +4268,13 @@ func TestNativeHistogram_SubOperator(t *testing.T) {
 				ZeroThreshold: 0.001,
 				ZeroCount:     2,
 				PositiveSpans: []histogram.Span{
-					{Offset: 0, Length: 4},
-					{Offset: 0, Length: 0},
-					{Offset: 0, Length: 3},
+					{Offset: 0, Length: 1},
+					{Offset: 1, Length: 5},
 				},
-				PositiveBuckets: []float64{1, 0, 1, 2, 1, 1, 1},
+				PositiveBuckets: []float64{1, 1, 2, 1, 1, 1},
 				NegativeSpans: []histogram.Span{
 					{Offset: 1, Length: 4},
-					{Offset: 2, Length: 0},
-					{Offset: 2, Length: 3},
+					{Offset: 4, Length: 3},
 				},
 				NegativeBuckets: []float64{-2, 2, 2, 7, 5, 5, 2},
 			},
@@ -4366,15 +4323,13 @@ func TestNativeHistogram_SubOperator(t *testing.T) {
 				ZeroThreshold: 0.001,
 				ZeroCount:     -2,
 				PositiveSpans: []histogram.Span{
-					{Offset: 0, Length: 4},
-					{Offset: 0, Length: 0},
-					{Offset: 0, Length: 3},
+					{Offset: 0, Length: 1},
+					{Offset: 1, Length: 5},
 				},
-				PositiveBuckets: []float64{-1, 0, -1, -2, -1, -1, -1},
+				PositiveBuckets: []float64{-1, -1, -2, -1, -1, -1},
 				NegativeSpans: []histogram.Span{
 					{Offset: 1, Length: 4},
-					{Offset: 2, Length: 0},
-					{Offset: 2, Length: 3},
+					{Offset: 4, Length: 3},
 				},
 				NegativeBuckets: []float64{2, -2, -2, -7, -5, -5, -2},
 			},
