@@ -21,7 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestFloatHistogramScale(t *testing.T) {
+func TestFloatHistogramMul(t *testing.T) {
 	cases := []struct {
 		name     string
 		in       *FloatHistogram
@@ -134,7 +134,7 @@ func TestFloatHistogramScale(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			require.Equal(t, c.expected, c.in.Scale(c.scale))
+			require.Equal(t, c.expected, c.in.Mul(c.scale))
 			// Has it also happened in-place?
 			require.Equal(t, c.expected, c.in)
 		})

@@ -2427,15 +2427,15 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 			if hrhs.Schema >= hlhs.Schema {
 				return 0, hlhs.Copy().Sub(hrhs).Compact(0), true
 			}
-			return 0, hrhs.Copy().Scale(-1).Add(hlhs).Compact(0), true
+			return 0, hrhs.Copy().Mul(-1).Add(hlhs).Compact(0), true
 		}
 		return lhs - rhs, nil, true
 	case parser.MUL:
 		if hlhs != nil && hrhs == nil {
-			return 0, hlhs.Copy().Scale(rhs), true
+			return 0, hlhs.Copy().Mul(rhs), true
 		}
 		if hlhs == nil && hrhs != nil {
-			return 0, hrhs.Copy().Scale(lhs), true
+			return 0, hrhs.Copy().Mul(lhs), true
 		}
 		return lhs * rhs, nil, true
 	case parser.DIV:
@@ -2635,7 +2635,7 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 					// The histogram being added/subtracted must have
 					// an equal or larger schema.
 					if s.H.Schema >= group.histogramMean.Schema {
-						toAdd := right.Scale(-1).Add(left)
+						toAdd := right.Mul(-1).Add(left)
 						group.histogramMean.Add(toAdd)
 					} else {
 						toAdd := left.Sub(right)

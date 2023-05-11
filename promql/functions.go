@@ -162,7 +162,7 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 	if resultHistogram == nil {
 		resultFloat *= factor
 	} else {
-		resultHistogram.Scale(factor)
+		resultHistogram.Mul(factor)
 	}
 
 	return append(enh.Out, Sample{F: resultFloat, H: resultHistogram})
@@ -467,7 +467,7 @@ func funcAvgOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 				// The histogram being added/subtracted must have
 				// an equal or larger schema.
 				if h.H.Schema >= mean.Schema {
-					toAdd := right.Scale(-1).Add(left)
+					toAdd := right.Mul(-1).Add(left)
 					mean.Add(toAdd)
 				} else {
 					toAdd := left.Sub(right)
