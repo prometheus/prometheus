@@ -18,7 +18,7 @@ import (
 	"io"
 	"math"
 	"os"
-	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -156,7 +156,7 @@ func NewWatcher(metrics *WatcherMetrics, readerMetrics *LiveReaderMetrics, logge
 		writer:         writer,
 		metrics:        metrics,
 		readerMetrics:  readerMetrics,
-		walDir:         path.Join(dir, "wal"),
+		walDir:         filepath.Join(dir, "wal"),
 		name:           name,
 		sendExemplars:  sendExemplars,
 		sendHistograms: sendHistograms,
@@ -691,7 +691,7 @@ func (w *Watcher) readCheckpoint(checkpointDir string, readFn segmentReadFn) err
 func checkpointNum(dir string) (int, error) {
 	// Checkpoint dir names are in the format checkpoint.000001
 	// dir may contain a hidden directory, so only check the base directory
-	chunks := strings.Split(path.Base(dir), ".")
+	chunks := strings.Split(filepath.Base(dir), ".")
 	if len(chunks) != 2 {
 		return 0, errors.Errorf("invalid checkpoint dir string: %s", dir)
 	}
