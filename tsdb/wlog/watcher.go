@@ -362,6 +362,25 @@ func (w *Watcher) segments(dir string) ([]int, error) {
 	return refs, nil
 }
 
+func (w *Watcher) readAndHandlerError(r *LiveReader, segmentNum int, tail bool, size int64) error {
+	err := w.readSegment(r, segmentNum, tail)
+
+	// Ignore all errors reading to end of segment whilst replaying the WAL.
+	if !tail {
+		if err != nil && errors.Cause(err) != io.EOF {
+			level.Warn(w.logger).Log("msg", "Ignoring error reading to end of segment, may have dropped data", "segment", segmentNum, "err", err)
+		} else if r.Offset() != size {
+			level.Warn(w.logger).Log("msg", "Expected to have read whole segment, may have dropped data", "segment", segmentNum, "read", reader.Offset(), "size", size)
+		}
+		return nil
+	}
+
+	// Otherwise, when we are tailing, non-EOFs are fatal.
+	if errors.Cause(err) != io.EOF {
+		return err
+	}
+}
+
 // Use tail true to indicate that the reader is currently on a segment that is
 // actively being written to. If false, assume it's a full segment and we're
 // replaying it on start to cache the series records.
@@ -432,7 +451,6 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 			if last <= segmentNum {
 				continue
 			}
-
 			err = w.readSegment(reader, segmentNum, tail)
 
 			// Ignore errors reading to end of segment whilst replaying the WAL.
@@ -456,42 +474,14 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 		// we haven't read due to a notification in quite some time, try reading anyways
 		case <-readTicker.C:
 			level.Debug(w.logger).Log("msg", "Watcher is reading the WAL due to timeout, haven't received any write notifications recently", "timeout", readTimeout)
-			err = w.readSegment(reader, segmentNum, tail)
-			readTicker.Reset(readTimeout)
-			// Ignore all errors reading to end of segment whilst replaying the WAL.
-			if !tail {
-				if err != nil && errors.Cause(err) != io.EOF {
-					level.Warn(w.logger).Log("msg", "Ignoring error reading to end of segment, may have dropped data", "segment", segmentNum, "err", err)
-				} else if reader.Offset() != size {
-					level.Warn(w.logger).Log("msg", "Expected to have read whole segment, may have dropped data", "segment", segmentNum, "read", reader.Offset(), "size", size)
-				}
-				return nil
-			}
-
-			// Otherwise, when we are tailing, non-EOFs are fatal.
-			if errors.Cause(err) != io.EOF {
-				return err
-			}
-
-		case <-w.readNotify:
-			err = w.readSegment(reader, segmentNum, tail)
+			w.readAndHandlerError(reader, segmentNum, tail, size)
 			// still want to reset the ticker so we don't read too often
 			readTicker.Reset(readTimeout)
-			// Ignore all errors reading to end of segment whilst replaying the WAL.
-			if !tail {
-				switch {
-				case err != nil && errors.Cause(err) != io.EOF:
-					level.Warn(w.logger).Log("msg", "Ignoring error reading to end of segment, may have dropped data", "segment", segmentNum, "err", err)
-				case reader.Offset() != size:
-					level.Warn(w.logger).Log("msg", "Expected to have read whole segment, may have dropped data", "segment", segmentNum, "read", reader.Offset(), "size", size)
-				}
-				return nil
-			}
 
-			// Otherwise, when we are tailing, non-EOFs are fatal.
-			if errors.Cause(err) != io.EOF {
-				return err
-			}
+		case <-w.readNotify:
+			w.readAndHandlerError(reader, segmentNum, tail, size)
+			// still want to reset the ticker so we don't read too often
+			readTicker.Reset(readTimeout)
 		}
 	}
 }
