@@ -2568,6 +2568,8 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 			case op == parser.AVG:
 				newAgg.histogramMean = s.H.Copy()
 				newAgg.hasHistogram = true
+			case op == parser.STDVAR || op == parser.STDDEV:
+				newAgg.groupCount = 0
 			}
 
 			result[groupingKey] = newAgg
@@ -2683,10 +2685,12 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 			group.groupCount++
 
 		case parser.STDVAR, parser.STDDEV:
-			group.groupCount++
-			delta := s.F - group.floatMean
-			group.floatMean += delta / float64(group.groupCount)
-			group.floatValue += delta * (s.F - group.floatMean)
+			if s.H == nil { // Ignore native histograms.
+				group.groupCount++
+				delta := s.F - group.floatMean
+				group.floatMean += delta / float64(group.groupCount)
+				group.floatValue += delta * (s.F - group.floatMean)
+			}
 
 		case parser.TOPK:
 			// We build a heap of up to k elements, with the smallest element at heap[0].
