@@ -91,6 +91,8 @@ func BenchmarkQuerier(b *testing.B) {
 }
 
 func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
+	ctx := context.Background()
+
 	n1 := labels.MustNewMatcher(labels.MatchEqual, "n", "1"+postingsBenchSuffix)
 	nX := labels.MustNewMatcher(labels.MatchEqual, "n", "X"+postingsBenchSuffix)
 
@@ -166,7 +168,7 @@ func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				_, err := PostingsForMatchers(ir, c.matchers...)
+				_, err := PostingsForMatchers(ctx, ir, c.matchers...)
 				require.NoError(b, err)
 			}
 		})
