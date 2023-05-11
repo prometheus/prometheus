@@ -1774,7 +1774,7 @@ func (db *DB) Snapshot(dir string, withHead bool) error {
 }
 
 // Querier returns a new querier over the data partition for the given time range.
-func (db *DB) Querier(_ context.Context, mint, maxt int64) (storage.Querier, error) {
+func (db *DB) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 	var blocks []BlockReader
 
 	db.mtx.RLock()
@@ -1789,7 +1789,7 @@ func (db *DB) Querier(_ context.Context, mint, maxt int64) (storage.Querier, err
 	if maxt >= db.head.MinTime() {
 		rh := NewRangeHead(db.head, mint, maxt)
 		var err error
-		inOrderHeadQuerier, err = NewBlockQuerier(rh, mint, maxt)
+		inOrderHeadQuerier, err = NewBlockQuerier(ctx, rh, mint, maxt)
 		if err != nil {
 			return nil, errors.Wrapf(err, "open block querier for head %s", rh)
 		}
@@ -1806,7 +1806,7 @@ func (db *DB) Querier(_ context.Context, mint, maxt int64) (storage.Querier, err
 		}
 		if getNew {
 			rh := NewRangeHead(db.head, newMint, maxt)
-			inOrderHeadQuerier, err = NewBlockQuerier(rh, newMint, maxt)
+			inOrderHeadQuerier, err = NewBlockQuerier(ctx, rh, newMint, maxt)
 			if err != nil {
 				return nil, errors.Wrapf(err, "open block querier for head while getting new querier %s", rh)
 			}
@@ -1817,7 +1817,7 @@ func (db *DB) Querier(_ context.Context, mint, maxt int64) (storage.Querier, err
 	if overlapsClosedInterval(mint, maxt, db.head.MinOOOTime(), db.head.MaxOOOTime()) {
 		rh := NewOOORangeHead(db.head, mint, maxt)
 		var err error
-		outOfOrderHeadQuerier, err = NewBlockQuerier(rh, mint, maxt)
+		outOfOrderHeadQuerier, err = NewBlockQuerier(ctx, rh, mint, maxt)
 		if err != nil {
 			return nil, errors.Wrapf(err, "open block querier for ooo head %s", rh)
 		}
@@ -1825,7 +1825,7 @@ func (db *DB) Querier(_ context.Context, mint, maxt int64) (storage.Querier, err
 
 	blockQueriers := make([]storage.Querier, 0, len(blocks))
 	for _, b := range blocks {
-		q, err := NewBlockQuerier(b, mint, maxt)
+		q, err := NewBlockQuerier(ctx, b, mint, maxt)
 		if err == nil {
 			blockQueriers = append(blockQueriers, q)
 			continue
@@ -1848,7 +1848,7 @@ func (db *DB) Querier(_ context.Context, mint, maxt int64) (storage.Querier, err
 
 // blockChunkQuerierForRange returns individual block chunk queriers from the persistent blocks, in-order head block, and the
 // out-of-order head block, overlapping with the given time range.
-func (db *DB) blockChunkQuerierForRange(mint, maxt int64) ([]storage.ChunkQuerier, error) {
+func (db *DB) blockChunkQuerierForRange(ctx context.Context, mint, maxt int64) ([]storage.ChunkQuerier, error) {
 	var blocks []BlockReader
 
 	db.mtx.RLock()
@@ -1863,7 +1863,7 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) ([]storage.ChunkQuerie
 	if maxt >= db.head.MinTime() {
 		rh := NewRangeHead(db.head, mint, maxt)
 		var err error
-		inOrderHeadQuerier, err = NewBlockChunkQuerier(rh, mint, maxt)
+		inOrderHeadQuerier, err = NewBlockChunkQuerier(ctx, rh, mint, maxt)
 		if err != nil {
 			return nil, errors.Wrapf(err, "open querier for head %s", rh)
 		}
@@ -1880,7 +1880,7 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) ([]storage.ChunkQuerie
 		}
 		if getNew {
 			rh := NewRangeHead(db.head, newMint, maxt)
-			inOrderHeadQuerier, err = NewBlockChunkQuerier(rh, newMint, maxt)
+			inOrderHeadQuerier, err = NewBlockChunkQuerier(ctx, rh, newMint, maxt)
 			if err != nil {
 				return nil, errors.Wrapf(err, "open querier for head while getting new querier %s", rh)
 			}
@@ -1891,7 +1891,7 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) ([]storage.ChunkQuerie
 	if overlapsClosedInterval(mint, maxt, db.head.MinOOOTime(), db.head.MaxOOOTime()) {
 		rh := NewOOORangeHead(db.head, mint, maxt)
 		var err error
-		outOfOrderHeadQuerier, err = NewBlockChunkQuerier(rh, mint, maxt)
+		outOfOrderHeadQuerier, err = NewBlockChunkQuerier(ctx, rh, mint, maxt)
 		if err != nil {
 			return nil, errors.Wrapf(err, "open block chunk querier for ooo head %s", rh)
 		}
@@ -1899,7 +1899,7 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) ([]storage.ChunkQuerie
 
 	blockQueriers := make([]storage.ChunkQuerier, 0, len(blocks))
 	for _, b := range blocks {
-		q, err := NewBlockChunkQuerier(b, mint, maxt)
+		q, err := NewBlockChunkQuerier(ctx, b, mint, maxt)
 		if err == nil {
 			blockQueriers = append(blockQueriers, q)
 			continue
@@ -1922,8 +1922,8 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) ([]storage.ChunkQuerie
 }
 
 // ChunkQuerier returns a new chunk querier over the data partition for the given time range.
-func (db *DB) ChunkQuerier(_ context.Context, mint, maxt int64) (storage.ChunkQuerier, error) {
-	blockQueriers, err := db.blockChunkQuerierForRange(mint, maxt)
+func (db *DB) ChunkQuerier(ctx context.Context, mint, maxt int64) (storage.ChunkQuerier, error) {
+	blockQueriers, err := db.blockChunkQuerierForRange(ctx, mint, maxt)
 	if err != nil {
 		return nil, err
 	}

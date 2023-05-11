@@ -1414,7 +1414,7 @@ func TestHeadCompactionWithHistograms(t *testing.T) {
 				require.NoError(t, block.Close())
 			})
 
-			q, err := NewBlockQuerier(block, block.MinTime(), block.MaxTime())
+			q, err := NewBlockQuerier(context.Background(), block, block.MinTime(), block.MaxTime())
 			require.NoError(t, err)
 
 			actHists := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))

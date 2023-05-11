@@ -49,7 +49,7 @@ func TestBlockWriter(t *testing.T) {
 	b, err := OpenBlock(nil, blockpath, nil)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, b.Close()) }()
-	q, err := NewBlockQuerier(b, math.MinInt64, math.MaxInt64)
+	q, err := NewBlockQuerier(context.Background(), b, math.MinInt64, math.MaxInt64)
 	require.NoError(t, err)
 	series := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
 	sample1 := []tsdbutil.Sample{sample{t: ts1, f: v1}}

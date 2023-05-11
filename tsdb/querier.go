@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"strings"
@@ -113,15 +114,16 @@ func (q *blockBaseQuerier) Close() error {
 
 type blockQuerier struct {
 	*blockBaseQuerier
+	ctx context.Context
 }
 
 // NewBlockQuerier returns a querier against the block reader and requested min and max time range.
-func NewBlockQuerier(b BlockReader, mint, maxt int64) (storage.Querier, error) {
+func NewBlockQuerier(ctx context.Context, b BlockReader, mint, maxt int64) (storage.Querier, error) {
 	q, err := newBlockBaseQuerier(b, mint, maxt)
 	if err != nil {
 		return nil, err
 	}
-	return &blockQuerier{blockBaseQuerier: q}, nil
+	return &blockQuerier{blockBaseQuerier: q, ctx: ctx}, nil
 }
 
 func (q *blockQuerier) Select(sortSeries bool, hints *storage.SelectHints, ms ...*labels.Matcher) storage.SeriesSet {
@@ -129,7 +131,7 @@ func (q *blockQuerier) Select(sortSeries bool, hints *storage.SelectHints, ms ..
 	maxt := q.maxt
 	disableTrimming := false
 
-	p, err := PostingsForMatchers(q.index, ms...)
+	p, err := PostingsForMatchers(q.ctx, q.index, ms...)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
@@ -153,15 +155,16 @@ func (q *blockQuerier) Select(sortSeries bool, hints *storage.SelectHints, ms ..
 // blockChunkQuerier provides chunk querying access to a single block database.
 type blockChunkQuerier struct {
 	*blockBaseQuerier
+	ctx context.Context
 }
 
 // NewBlockChunkQuerier returns a chunk querier against the block reader and requested min and max time range.
-func NewBlockChunkQuerier(b BlockReader, mint, maxt int64) (storage.ChunkQuerier, error) {
+func NewBlockChunkQuerier(ctx context.Context, b BlockReader, mint, maxt int64) (storage.ChunkQuerier, error) {
 	q, err := newBlockBaseQuerier(b, mint, maxt)
 	if err != nil {
 		return nil, err
 	}
-	return &blockChunkQuerier{blockBaseQuerier: q}, nil
+	return &blockChunkQuerier{blockBaseQuerier: q, ctx: ctx}, nil
 }
 
 func (q *blockChunkQuerier) Select(sortSeries bool, hints *storage.SelectHints, ms ...*labels.Matcher) storage.ChunkSeriesSet {
@@ -173,7 +176,7 @@ func (q *blockChunkQuerier) Select(sortSeries bool, hints *storage.SelectHints, 
 		maxt = hints.End
 		disableTrimming = hints.DisableTrimming
 	}
-	p, err := PostingsForMatchers(q.index, ms...)
+	p, err := PostingsForMatchers(q.ctx, q.index, ms...)
 	if err != nil {
 		return storage.ErrChunkSeriesSet(err)
 	}
@@ -227,7 +230,7 @@ func findSetMatches(pattern string) []string {
 
 // PostingsForMatchers assembles a single postings iterator against the index reader
 // based on the given matchers. The resulting postings are not ordered by series.
-func PostingsForMatchers(ix IndexReader, ms ...*labels.Matcher) (index.Postings, error) {
+func PostingsForMatchers(ctx context.Context, ix IndexReader, ms ...*labels.Matcher) (index.Postings, error) {
 	var its, notIts []index.Postings
 	// See which label must be non-empty.
 	// Optimization for case like {l=~".", l!="1"}.
@@ -239,6 +242,9 @@ func PostingsForMatchers(ix IndexReader, ms ...*labels.Matcher) (index.Postings,
 	}
 
 	for _, m := range ms {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		switch {
 		case m.Name == "" && m.Value == "": // Special-case for AllPostings, used in tests at least.
 			k, v := index.AllPostingsKey()
@@ -260,7 +266,7 @@ func PostingsForMatchers(ix IndexReader, ms ...*labels.Matcher) (index.Postings,
 					return nil, err
 				}
 
-				it, err := postingsForMatcher(ix, inverse)
+				it, err := postingsForMatcher(ctx, ix, inverse)
 				if err != nil {
 					return nil, err
 				}
@@ -273,7 +279,7 @@ func PostingsForMatchers(ix IndexReader, ms ...*labels.Matcher) (index.Postings,
 					return nil, err
 				}
 
-				it, err := inversePostingsForMatcher(ix, inverse)
+				it, err := inversePostingsForMatcher(ctx, ix, inverse)
 				if err != nil {
 					return nil, err
 				}
@@ -283,7 +289,7 @@ func PostingsForMatchers(ix IndexReader, ms ...*labels.Matcher) (index.Postings,
 				its = append(its, it)
 			default: // l="a"
 				// Non-Not matcher, use normal postingsForMatcher.
-				it, err := postingsForMatcher(ix, m)
+				it, err := postingsForMatcher(ctx, ix, m)
 				if err != nil {
 					return nil, err
 				}
@@ -297,7 +303,7 @@ func PostingsForMatchers(ix IndexReader, ms ...*labels.Matcher) (index.Postings,
 			// the series which don't have the label name set too. See:
 			// https://github.com/prometheus/prometheus/issues/3575 and
 			// https://github.com/prometheus/prometheus/pull/3578#issuecomment-351653555
-			it, err := inversePostingsForMatcher(ix, m)
+			it, err := inversePostingsForMatcher(ctx, ix, m)
 			if err != nil {
 				return nil, err
 			}
@@ -324,7 +330,7 @@ func PostingsForMatchers(ix IndexReader, ms ...*labels.Matcher) (index.Postings,
 	return it, nil
 }
 
-func postingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Postings, error) {
+func postingsForMatcher(ctx context.Context, ix IndexReader, m *labels.Matcher) (index.Postings, error) {
 	// This method will not return postings for missing labels.
 
 	// Fast-path for equal matching.
@@ -347,6 +353,9 @@ func postingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Postings, erro
 
 	var res []string
 	for _, val := range vals {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		if m.Matches(val) {
 			res = append(res, val)
 		}
@@ -360,7 +369,7 @@ func postingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Postings, erro
 }
 
 // inversePostingsForMatcher returns the postings for the series with the label name set but not matching the matcher.
-func inversePostingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Postings, error) {
+func inversePostingsForMatcher(ctx context.Context, ix IndexReader, m *labels.Matcher) (index.Postings, error) {
 	vals, err := ix.LabelValues(m.Name)
 	if err != nil {
 		return nil, err
@@ -380,6 +389,10 @@ func inversePostingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Posting
 			}
 		}
 		for _, val := range vals {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+
 			if !m.Matches(val) {
 				res = append(res, val)
 			}
@@ -389,8 +402,8 @@ func inversePostingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Posting
 	return ix.Postings(m.Name, res...)
 }
 
-func labelValuesWithMatchers(r IndexReader, name string, matchers ...*labels.Matcher) ([]string, error) {
-	p, err := PostingsForMatchers(r, matchers...)
+func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, matchers ...*labels.Matcher) ([]string, error) {
+	p, err := PostingsForMatchers(ctx, r, matchers...)
 	if err != nil {
 		return nil, errors.Wrap(err, "fetching postings for matchers")
 	}
@@ -419,8 +432,8 @@ func labelValuesWithMatchers(r IndexReader, name string, matchers ...*labels.Mat
 	return values, nil
 }
 
-func labelNamesWithMatchers(r IndexReader, matchers ...*labels.Matcher) ([]string, error) {
-	p, err := PostingsForMatchers(r, matchers...)
+func labelNamesWithMatchers(ctx context.Context, r IndexReader, matchers ...*labels.Matcher) ([]string, error) {
+	p, err := PostingsForMatchers(ctx, r, matchers...)
 	if err != nil {
 		return nil, err
 	}

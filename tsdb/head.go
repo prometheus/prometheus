@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"math"
@@ -1425,7 +1426,7 @@ func (h *Head) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
 
 	ir := h.indexRange(mint, maxt)
 
-	p, err := PostingsForMatchers(ir, ms...)
+	p, err := PostingsForMatchers(context.Background(), ir, ms...)
 	if err != nil {
 		return errors.Wrap(err, "select series")
 	}

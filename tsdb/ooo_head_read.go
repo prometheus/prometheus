@@ -15,6 +15,7 @@
 package tsdb
 
 import (
+	"context"
 	"errors"
 	"math"
 	"sort"
@@ -165,7 +166,7 @@ func (oh *OOOHeadIndexReader) LabelValues(name string, matchers ...*labels.Match
 		return oh.head.postings.LabelValues(name), nil
 	}
 
-	return labelValuesWithMatchers(oh, name, matchers...)
+	return labelValuesWithMatchers(context.Background(), oh, name, matchers...)
 }
 
 type chunkMetaAndChunkDiskMapperRef struct {
