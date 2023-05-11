@@ -178,6 +178,7 @@ func (h *FloatHistogram) Scale(factor float64) *FloatHistogram {
 }
 
 // Div works like Scale but divides instead of multiplies.
+// When dividing by 0, everything will be set to Inf.
 func (h *FloatHistogram) Div(scalar float64) *FloatHistogram {
 	h.ZeroCount /= scalar
 	h.Count /= scalar
