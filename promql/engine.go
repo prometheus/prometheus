@@ -2334,33 +2334,33 @@ func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.V
 // VectorscalarBinop evaluates a binary operation between a Vector and a Scalar.
 func (ev *evaluator) VectorscalarBinop(op parser.ItemType, lhs Vector, rhs Scalar, swap, returnBool bool, enh *EvalNodeHelper) Vector {
 	for _, lhsSample := range lhs {
-		lv, rv := lhsSample.F, rhs.V
+		lf, rf := lhsSample.F, rhs.V
 		var rh *histogram.FloatHistogram
 		lh := lhsSample.H
 		// lhs always contains the Vector. If the original position was different
 		// swap for calculating the value.
 		if swap {
-			lv, rv = rv, lv
+			lf, rf = rf, lf
 			lh, rh = rh, lh
 		}
-		value, histogramValue, keep := vectorElemBinop(op, lv, rv, lh, rh)
+		float, histogram, keep := vectorElemBinop(op, lf, rf, lh, rh)
 		// Catch cases where the scalar is the LHS in a scalar-vector comparison operation.
 		// We want to always keep the vector element value as the output value, even if it's on the RHS.
 		if op.IsComparisonOperator() && swap {
-			value = rv
-			histogramValue = rh
+			float = rf
+			histogram = rh
 		}
 		if returnBool {
 			if keep {
-				value = 1.0
+				float = 1.0
 			} else {
-				value = 0.0
+				float = 0.0
 			}
 			keep = true
 		}
 		if keep {
-			lhsSample.F = value
-			lhsSample.H = histogramValue
+			lhsSample.F = float
+			lhsSample.H = histogram
 			if shouldDropMetricName(op) || returnBool {
 				lhsSample.Metric = enh.DropMetricName(lhsSample.Metric)
 			}
@@ -2472,7 +2472,7 @@ type groupedAggregation struct {
 	labels         labels.Labels
 	floatValue     float64
 	histogramValue *histogram.FloatHistogram
-	mean           float64
+	floatMean      float64
 	histogramMean  *histogram.FloatHistogram
 	groupCount     int
 	heap           vectorByValueHeap
@@ -2557,7 +2557,7 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 			newAgg := &groupedAggregation{
 				labels:     m,
 				floatValue: s.F,
-				mean:       s.F,
+				floatMean:  s.F,
 				groupCount: 1,
 			}
 			switch {
@@ -2646,10 +2646,10 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 				// point in copying the histogram in that case.
 			} else {
 				group.hasFloat = true
-				if math.IsInf(group.mean, 0) {
-					if math.IsInf(s.F, 0) && (group.mean > 0) == (s.F > 0) {
-						// The `mean` and `s.V` values are `Inf` of the same sign.  They
-						// can't be subtracted, but the value of `mean` is correct
+				if math.IsInf(group.floatMean, 0) {
+					if math.IsInf(s.F, 0) && (group.floatMean > 0) == (s.F > 0) {
+						// The `floatMean` and `s.F` values are `Inf` of the same sign.  They
+						// can't be subtracted, but the value of `floatMean` is correct
 						// already.
 						break
 					}
@@ -2664,7 +2664,7 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 					}
 				}
 				// Divide each side of the `-` by `group.groupCount` to avoid float64 overflows.
-				group.mean += s.F/float64(group.groupCount) - group.mean/float64(group.groupCount)
+				group.floatMean += s.F/float64(group.groupCount) - group.floatMean/float64(group.groupCount)
 			}
 
 		case parser.GROUP:
@@ -2685,9 +2685,9 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 
 		case parser.STDVAR, parser.STDDEV:
 			group.groupCount++
-			delta := s.F - group.mean
-			group.mean += delta / float64(group.groupCount)
-			group.floatValue += delta * (s.F - group.mean)
+			delta := s.F - group.floatMean
+			group.floatMean += delta / float64(group.groupCount)
+			group.floatValue += delta * (s.F - group.floatMean)
 
 		case parser.TOPK:
 			// We build a heap of up to k elements, with the smallest element at heap[0].
@@ -2747,7 +2747,7 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 			if aggr.hasHistogram {
 				aggr.histogramValue = aggr.histogramMean
 			} else {
-				aggr.floatValue = aggr.mean
+				aggr.floatValue = aggr.floatMean
 			}
 
 		case parser.COUNT, parser.COUNT_VALUES:
