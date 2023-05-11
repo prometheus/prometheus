@@ -1802,6 +1802,19 @@ func TestPostingsForMatchers(t *testing.T) {
 			},
 		},
 		{
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotRegexp, "n", "1")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "2"),
+				labels.FromStrings("n", "2.5"),
+			},
+		},
+		{
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotRegexp, "n", "1|2.5")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "2"),
+			},
+		},
+		{
 			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "n", "1"), labels.MustNewMatcher(labels.MatchNotRegexp, "i", "^a$")},
 			exp: []labels.Labels{
 				labels.FromStrings("n", "1"),
@@ -1890,27 +1903,36 @@ func TestPostingsForMatchers(t *testing.T) {
 	require.NoError(t, err)
 
 	for _, c := range cases {
-		exp := map[string]struct{}{}
-		for _, l := range c.exp {
-			exp[l.String()] = struct{}{}
-		}
-		p, err := PostingsForMatchers(ir, c.matchers...)
-		require.NoError(t, err)
-
-		var builder labels.ScratchBuilder
-		for p.Next() {
-			require.NoError(t, ir.Series(p.At(), &builder, &[]chunks.Meta{}))
-			lbls := builder.Labels()
-			if _, ok := exp[lbls.String()]; !ok {
-				t.Errorf("Evaluating %v, unexpected result %s", c.matchers, lbls.String())
-			} else {
-				delete(exp, lbls.String())
+		name := ""
+		for i, matcher := range c.matchers {
+			if i > 0 {
+				name += ","
 			}
+			name += matcher.String()
 		}
-		require.NoError(t, p.Err())
-		if len(exp) != 0 {
-			t.Errorf("Evaluating %v, missing results %+v", c.matchers, exp)
-		}
+		t.Run(name, func(t *testing.T) {
+			exp := map[string]struct{}{}
+			for _, l := range c.exp {
+				exp[l.String()] = struct{}{}
+			}
+			p, err := PostingsForMatchers(ir, c.matchers...)
+			require.NoError(t, err)
+
+			var builder labels.ScratchBuilder
+			for p.Next() {
+				require.NoError(t, ir.Series(p.At(), &builder, &[]chunks.Meta{}))
+				lbls := builder.Labels()
+				if _, ok := exp[lbls.String()]; !ok {
+					t.Errorf("Evaluating %v, unexpected result %s", c.matchers, lbls.String())
+				} else {
+					delete(exp, lbls.String())
+				}
+			}
+			require.NoError(t, p.Err())
+			if len(exp) != 0 {
+				t.Errorf("Evaluating %v, missing results %+v", c.matchers, exp)
+			}
+		})
 	}
 }
 
