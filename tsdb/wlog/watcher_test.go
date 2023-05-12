@@ -104,7 +104,7 @@ func (wtm *writeToMock) SeriesReset(index int) {
 	}
 }
 
-func (wtm *writeToMock) checkNumLabels() int {
+func (wtm *writeToMock) checkNumSeries() int {
 	wtm.seriesLock.Lock()
 	defer wtm.seriesLock.Unlock()
 	return len(wtm.seriesSegmentIndexes)
@@ -230,9 +230,9 @@ func TestTailSamples(t *testing.T) {
 			expectedExemplars := seriesCount * exemplarsCount
 			expectedHistograms := seriesCount * histogramsCount
 			retry(t, defaultRetryInterval, defaultRetries, func() bool {
-				return wt.checkNumLabels() >= expectedSeries
+				return wt.checkNumSeries() >= expectedSeries
 			})
-			require.Equal(t, expectedSeries, wt.checkNumLabels(), "did not receive the expected number of series")
+			require.Equal(t, expectedSeries, wt.checkNumSeries(), "did not receive the expected number of series")
 			require.Equal(t, expectedSamples, wt.samplesAppended, "did not receive the expected number of samples")
 			require.Equal(t, expectedExemplars, wt.exemplarsAppended, "did not receive the expected number of exemplars")
 			require.Equal(t, expectedHistograms, wt.histogramsAppended, "did not receive the expected number of histograms")
@@ -301,7 +301,7 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 			expected := seriesCount
 			require.Eventually(t, func() bool {
 				watcher.Notify()
-				return wt.checkNumLabels() == expected
+				return wt.checkNumSeries() == expected
 			}, 20*time.Second, 1*time.Second)
 			watcher.Stop()
 		})
@@ -391,7 +391,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 
 			require.Eventually(t, func() bool {
 				watcher.Notify()
-				return wt.checkNumLabels() == expected
+				return wt.checkNumSeries() == expected
 			}, 10*time.Second, 1*time.Second)
 			watcher.Stop()
 		})
@@ -461,10 +461,10 @@ func TestReadCheckpoint(t *testing.T) {
 
 			expectedSeries := seriesCount
 			retry(t, defaultRetryInterval, defaultRetries, func() bool {
-				return wt.checkNumLabels() >= expectedSeries
+				return wt.checkNumSeries() >= expectedSeries
 			})
 			watcher.Stop()
-			require.Equal(t, expectedSeries, wt.checkNumLabels())
+			require.Equal(t, expectedSeries, wt.checkNumSeries())
 		})
 	}
 }
@@ -603,11 +603,11 @@ func TestCheckpointSeriesReset(t *testing.T) {
 
 			expected := seriesCount
 			retry(t, defaultRetryInterval, defaultRetries, func() bool {
-				return wt.checkNumLabels() >= expected
+				return wt.checkNumSeries() >= expected
 			})
 			require.Eventually(t, func() bool {
 				watcher.Notify()
-				return wt.checkNumLabels() == seriesCount
+				return wt.checkNumSeries() == seriesCount
 			}, 10*time.Second, 1*time.Second)
 
 			_, err = Checkpoint(log.NewNopLogger(), w, 2, 4, func(x chunks.HeadSeriesRef) bool { return true }, 0)
@@ -627,7 +627,7 @@ func TestCheckpointSeriesReset(t *testing.T) {
 			// or modify the Equals to Assert(len(wt.seriesLabels) < seriesCount*10)
 			require.Eventually(t, func() bool {
 				watcher.Notify()
-				return wt.checkNumLabels() == tc.segments
+				return wt.checkNumSeries() == tc.segments
 			}, 20*time.Second, 1*time.Second)
 		})
 	}

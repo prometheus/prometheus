@@ -40,6 +40,8 @@ const (
 	consumer           = "consumer"
 )
 
+var IgnorableReadError = errors.New("ignore me")
+
 // WriteTo is an interface used by the Watcher to send the samples it's read
 // from the WAL on to somewhere else. Functions will be called concurrently
 // and it is left to the implementer to make sure they are safe.
@@ -294,7 +296,7 @@ func (w *Watcher) Run() error {
 
 		// On start, after reading the existing WAL for series records, we have a pointer to what is the latest segment.
 		// On subsequent calls to this function, currentSegment will have been incremented and we should open that segment.
-		if err := w.watch(currentSegment, currentSegment >= lastSegment); err != nil {
+		if err := w.watch(currentSegment, currentSegment >= lastSegment); err != nil && !errors.Is(err, IgnorableReadError) {
 			return err
 		}
 
@@ -362,7 +364,7 @@ func (w *Watcher) segments(dir string) ([]int, error) {
 	return refs, nil
 }
 
-func (w *Watcher) readAndHandlerError(r *LiveReader, segmentNum int, tail bool, size int64) error {
+func (w *Watcher) readAndHandleError(r *LiveReader, segmentNum int, tail bool, size int64) error {
 	err := w.readSegment(r, segmentNum, tail)
 
 	// Ignore all errors reading to end of segment whilst replaying the WAL.
@@ -372,7 +374,7 @@ func (w *Watcher) readAndHandlerError(r *LiveReader, segmentNum int, tail bool, 
 		} else if r.Offset() != size {
 			level.Warn(w.logger).Log("msg", "Expected to have read whole segment, may have dropped data", "segment", segmentNum, "read", r.Offset(), "size", size)
 		}
-		return nil
+		return IgnorableReadError
 	}
 
 	// Otherwise, when we are tailing, non-EOFs are fatal.
@@ -475,12 +477,18 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 		// we haven't read due to a notification in quite some time, try reading anyways
 		case <-readTicker.C:
 			level.Debug(w.logger).Log("msg", "Watcher is reading the WAL due to timeout, haven't received any write notifications recently", "timeout", readTimeout)
-			w.readAndHandlerError(reader, segmentNum, tail, size)
+			err := w.readAndHandleError(reader, segmentNum, tail, size)
+			if err != nil {
+				return err
+			}
 			// still want to reset the ticker so we don't read too often
 			readTicker.Reset(readTimeout)
 
 		case <-w.readNotify:
-			w.readAndHandlerError(reader, segmentNum, tail, size)
+			err := w.readAndHandleError(reader, segmentNum, tail, size)
+			if err != nil {
+				return err
+			}
 			// still want to reset the ticker so we don't read too often
 			readTicker.Reset(readTimeout)
 		}
