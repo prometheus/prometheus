@@ -782,10 +782,10 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 		case *chunkenc.HistogramChunk:
 			newChunk.(*chunkenc.HistogramChunk).SetCounterResetHeader(hc.GetCounterResetHeader())
 		case *safeChunk:
-			if wrapped, ok := hc.Chunk.(*chunkenc.HistogramChunk); ok {
-				newChunk.(*chunkenc.HistogramChunk).SetCounterResetHeader(wrapped.GetCounterResetHeader())
+			if unwrapped, ok := hc.Chunk.(*chunkenc.HistogramChunk); ok {
+				newChunk.(*chunkenc.HistogramChunk).SetCounterResetHeader(unwrapped.GetCounterResetHeader())
 			} else {
-				err = fmt.Errorf("internal error, could not unwrapper safeChunk to histogram chunk: %T", hc.Chunk)
+				err = fmt.Errorf("internal error, could not unwrap safeChunk to histogram chunk: %T", hc.Chunk)
 			}
 		default:
 			err = fmt.Errorf("internal error, unknown chunk type %T when expecting histogram", p.currChkMeta.Chunk)
@@ -816,15 +816,15 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 			// Defend against corrupted chunks.
 			if h.CounterResetHint == histogram.GaugeType {
 				pI, nI, bpI, bnI, _, _, okToAppend := app.(*chunkenc.HistogramAppender).AppendableGauge(h)
+				if !okToAppend {
+					err = errors.New("unable to append histogram due to unexpected schema change")
+					break
+				}
 				if len(pI)+len(nI)+len(bpI)+len(bnI) > 0 {
 					err = fmt.Errorf(
 						"bucket layout has changed unexpectedly: forward %d positive, %d negative, backward %d positive %d negative bucket interjections required",
 						len(pI), len(nI), len(bpI), len(bnI),
 					)
-					break
-				}
-				if !okToAppend {
-					err = errors.New("unable to append histogram due to unexpected schema change")
 					break
 				}
 			} else {
@@ -874,10 +874,10 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 		case *chunkenc.HistogramChunk:
 			newChunk.(*chunkenc.FloatHistogramChunk).SetCounterResetHeader(hc.GetCounterResetHeader())
 		case *safeChunk:
-			if wrapped, ok := hc.Chunk.(*chunkenc.FloatHistogramChunk); ok {
-				newChunk.(*chunkenc.FloatHistogramChunk).SetCounterResetHeader(wrapped.GetCounterResetHeader())
+			if unwrapped, ok := hc.Chunk.(*chunkenc.FloatHistogramChunk); ok {
+				newChunk.(*chunkenc.FloatHistogramChunk).SetCounterResetHeader(unwrapped.GetCounterResetHeader())
 			} else {
-				err = fmt.Errorf("internal error, could not unwrapper safeChunk to float histogram chunk: %T", hc.Chunk)
+				err = fmt.Errorf("internal error, could not unwrap safeChunk to float histogram chunk: %T", hc.Chunk)
 			}
 		default:
 			err = fmt.Errorf("internal error, unknown chunk type %T when expecting float histogram", p.currChkMeta.Chunk)
@@ -908,15 +908,15 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 			// Defend against corrupted chunks.
 			if h.CounterResetHint == histogram.GaugeType {
 				pI, nI, bpI, bnI, _, _, okToAppend := app.(*chunkenc.FloatHistogramAppender).AppendableGauge(h)
+				if !okToAppend {
+					err = errors.New("unable to append histogram due to unexpected schema change")
+					break
+				}
 				if len(pI)+len(nI)+len(bpI)+len(bnI) > 0 {
 					err = fmt.Errorf(
 						"bucket layout has changed unexpectedly: forward %d positive, %d negative, backward %d positive %d negative bucket interjections required",
 						len(pI), len(nI), len(bpI), len(bnI),
 					)
-					break
-				}
-				if !okToAppend {
-					err = errors.New("unable to append histogram due to unexpected schema change")
 					break
 				}
 			} else {
