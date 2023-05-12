@@ -40,8 +40,8 @@ const (
 )
 
 var (
-	IgnorableReadError = errors.New("ignore me")
-	readTimeout        = 15 * time.Second
+	ErrIgnorable = errors.New("ignore me")
+	readTimeout  = 15 * time.Second
 )
 
 // WriteTo is an interface used by the Watcher to send the samples it's read
@@ -298,7 +298,7 @@ func (w *Watcher) Run() error {
 
 		// On start, after reading the existing WAL for series records, we have a pointer to what is the latest segment.
 		// On subsequent calls to this function, currentSegment will have been incremented and we should open that segment.
-		if err := w.watch(currentSegment, currentSegment >= lastSegment); err != nil && !errors.Is(err, IgnorableReadError) {
+		if err := w.watch(currentSegment, currentSegment >= lastSegment); err != nil && !errors.Is(err, ErrIgnorable) {
 			return err
 		}
 
@@ -376,7 +376,7 @@ func (w *Watcher) readAndHandleError(r *LiveReader, segmentNum int, tail bool, s
 		} else if r.Offset() != size {
 			level.Warn(w.logger).Log("msg", "Expected to have read whole segment, may have dropped data", "segment", segmentNum, "read", r.Offset(), "size", size)
 		}
-		return IgnorableReadError
+		return ErrIgnorable
 	}
 
 	// Otherwise, when we are tailing, non-EOFs are fatal.
