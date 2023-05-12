@@ -29,6 +29,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -2347,5 +2348,82 @@ func BenchmarkHeadQuerier(b *testing.B) {
 		}
 		_ = total
 		require.NoError(b, ss.Err())
+	}
+}
+
+// This is a regression test for the case where gauge histograms were not handled by
+// populateWithDelChunkSeriesIterator correctly.
+func TestQueryWithDeletedHistograms(t *testing.T) {
+	testcases := map[string]func(int) (*histogram.Histogram, *histogram.FloatHistogram){
+		"intCounter": func(i int) (*histogram.Histogram, *histogram.FloatHistogram) {
+			return tsdbutil.GenerateTestHistogram(i), nil
+		},
+		"intgauge": func(i int) (*histogram.Histogram, *histogram.FloatHistogram) {
+			return tsdbutil.GenerateTestGaugeHistogram(rand.Int() % 1000), nil
+		},
+		"floatCounter": func(i int) (*histogram.Histogram, *histogram.FloatHistogram) {
+			return nil, tsdbutil.GenerateTestFloatHistogram(i)
+		},
+		"floatGauge": func(i int) (*histogram.Histogram, *histogram.FloatHistogram) {
+			return nil, tsdbutil.GenerateTestGaugeFloatHistogram(rand.Int() % 1000)
+		},
+	}
+
+	for name, tc := range testcases {
+		t.Run(name, func(t *testing.T) {
+			db := openTestDB(t, nil, nil)
+			defer func() {
+				require.NoError(t, db.Close())
+			}()
+
+			db.EnableNativeHistograms()
+			appender := db.Appender(context.Background())
+
+			var (
+				err       error
+				seriesRef storage.SeriesRef
+			)
+			lbs := labels.FromStrings("__name__", "test", "type", name)
+
+			for i := 0; i < 100; i++ {
+				h, fh := tc(i)
+				seriesRef, err = appender.AppendHistogram(seriesRef, lbs, int64(i), h, fh)
+				require.NoError(t, err)
+			}
+
+			err = appender.Commit()
+			require.NoError(t, err)
+
+			matcher, err := labels.NewMatcher(labels.MatchEqual, "__name__", "test")
+			require.NoError(t, err)
+
+			// Delete the last 20.
+			err = db.Delete(80, 100, matcher)
+			require.NoError(t, err)
+
+			chunkQuerier, err := db.ChunkQuerier(context.Background(), 0, 100)
+			require.NoError(t, err)
+
+			css := chunkQuerier.Select(false, nil, matcher)
+
+			seriesCount := 0
+			for css.Next() {
+				seriesCount++
+				series := css.At()
+
+				sampleCount := 0
+				it := series.Iterator(nil)
+				for it.Next() {
+					chk := it.At()
+					for cit := chk.Chunk.Iterator(nil); cit.Next() != chunkenc.ValNone; {
+						sampleCount++
+					}
+				}
+				require.NoError(t, it.Err())
+				require.Equal(t, 80, sampleCount)
+			}
+			require.NoError(t, css.Err())
+			require.Equal(t, 1, seriesCount)
+		})
 	}
 }
