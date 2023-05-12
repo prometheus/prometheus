@@ -781,11 +781,11 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 		switch hc := p.currChkMeta.Chunk.(type) {
 		case *chunkenc.HistogramChunk:
 			newChunk.(*chunkenc.HistogramChunk).SetCounterResetHeader(hc.GetCounterResetHeader())
-		case *safeChunk:
+		case *safeHeadChunk:
 			if unwrapped, ok := hc.Chunk.(*chunkenc.HistogramChunk); ok {
 				newChunk.(*chunkenc.HistogramChunk).SetCounterResetHeader(unwrapped.GetCounterResetHeader())
 			} else {
-				err = fmt.Errorf("internal error, could not unwrap safeChunk to histogram chunk: %T", hc.Chunk)
+				err = fmt.Errorf("internal error, could not unwrap safeHeadChunk to histogram chunk: %T", hc.Chunk)
 			}
 		default:
 			err = fmt.Errorf("internal error, unknown chunk type %T when expecting histogram", p.currChkMeta.Chunk)
@@ -873,11 +873,11 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 		switch hc := p.currChkMeta.Chunk.(type) {
 		case *chunkenc.HistogramChunk:
 			newChunk.(*chunkenc.FloatHistogramChunk).SetCounterResetHeader(hc.GetCounterResetHeader())
-		case *safeChunk:
+		case *safeHeadChunk:
 			if unwrapped, ok := hc.Chunk.(*chunkenc.FloatHistogramChunk); ok {
 				newChunk.(*chunkenc.FloatHistogramChunk).SetCounterResetHeader(unwrapped.GetCounterResetHeader())
 			} else {
-				err = fmt.Errorf("internal error, could not unwrap safeChunk to float histogram chunk: %T", hc.Chunk)
+				err = fmt.Errorf("internal error, could not unwrap safeHeadChunk to float histogram chunk: %T", hc.Chunk)
 			}
 		default:
 			err = fmt.Errorf("internal error, unknown chunk type %T when expecting float histogram", p.currChkMeta.Chunk)
