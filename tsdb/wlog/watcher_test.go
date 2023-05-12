@@ -290,7 +290,7 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 				}
 			}
 			require.NoError(t, w.Log(recs...))
-
+			readTimeout = time.Second
 			_, _, err = Segments(w.Dir())
 			require.NoError(t, err)
 
@@ -300,7 +300,6 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 
 			expected := seriesCount
 			require.Eventually(t, func() bool {
-				watcher.Notify()
 				return wt.checkNumSeries() == expected
 			}, 20*time.Second, 1*time.Second)
 			watcher.Stop()
@@ -383,6 +382,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 
 			_, _, err = Segments(w.Dir())
 			require.NoError(t, err)
+			readTimeout = time.Second
 			wt := newWriteToMock()
 			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false)
 			go watcher.Start()
@@ -390,7 +390,6 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 			expected := seriesCount * 2
 
 			require.Eventually(t, func() bool {
-				watcher.Notify()
 				return wt.checkNumSeries() == expected
 			}, 10*time.Second, 1*time.Second)
 			watcher.Stop()
@@ -596,6 +595,7 @@ func TestCheckpointSeriesReset(t *testing.T) {
 			_, _, err = Segments(w.Dir())
 			require.NoError(t, err)
 
+			readTimeout = time.Second
 			wt := newWriteToMock()
 			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false)
 			watcher.MaxSegment = -1
@@ -606,7 +606,6 @@ func TestCheckpointSeriesReset(t *testing.T) {
 				return wt.checkNumSeries() >= expected
 			})
 			require.Eventually(t, func() bool {
-				watcher.Notify()
 				return wt.checkNumSeries() == seriesCount
 			}, 10*time.Second, 1*time.Second)
 
@@ -626,7 +625,6 @@ func TestCheckpointSeriesReset(t *testing.T) {
 			// many series records you end up with and change the last Equals check accordingly
 			// or modify the Equals to Assert(len(wt.seriesLabels) < seriesCount*10)
 			require.Eventually(t, func() bool {
-				watcher.Notify()
 				return wt.checkNumSeries() == tc.segments
 			}, 20*time.Second, 1*time.Second)
 		})

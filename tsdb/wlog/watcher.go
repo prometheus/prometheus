@@ -34,13 +34,15 @@ import (
 )
 
 const (
-	readTimeout        = 15 * time.Second
 	checkpointPeriod   = 5 * time.Second
 	segmentCheckPeriod = 100 * time.Millisecond
 	consumer           = "consumer"
 )
 
-var IgnorableReadError = errors.New("ignore me")
+var (
+	IgnorableReadError = errors.New("ignore me")
+	readTimeout        = 15 * time.Second
+)
 
 // WriteTo is an interface used by the Watcher to send the samples it's read
 // from the WAL on to somewhere else. Functions will be called concurrently
