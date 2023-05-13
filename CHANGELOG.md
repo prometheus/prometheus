@@ -17,7 +17,6 @@ details about this code change see #10991.
 * [ENHANCEMENT] Native Histograms: Various fixes and improvements. #11687, #12264, #12272
 * [ENHANCEMENT] UI: Search of scraping pools is now case-insensitive. #12207
 * [ENHANCEMENT] TSDB: Add an affirmative log message for successful WAL repair. #12135
-* [BUGFIX] Labels: Set after Del would be ignored, which broke some relabeling rules. #12322
 * [BUGFIX] TSDB: Block compaction failed when shutting down. #12179
 * [BUGFIX] TSDB: Out-of-order chunks could be ignored if the write-behind log was deleted. #12127
 
