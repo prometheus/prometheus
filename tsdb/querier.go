@@ -798,7 +798,7 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 		t, h = p.currDelIter.AtHistogram()
 		p.curr.MinTime = t
 
-		// Detect missing gauge reset hint
+		// Detect missing gauge reset hint.
 		if h.CounterResetHint == histogram.GaugeType && newChunk.(*chunkenc.HistogramChunk).GetCounterResetHeader() != chunkenc.GaugeType {
 			err = fmt.Errorf("found gauge histogram in non gauge chunk")
 			break
@@ -890,7 +890,7 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 		t, h = p.currDelIter.AtFloatHistogram()
 		p.curr.MinTime = t
 
-		// Detect missing gauge reset hint
+		// Detect missing gauge reset hint.
 		if h.CounterResetHint == histogram.GaugeType && newChunk.(*chunkenc.FloatHistogramChunk).GetCounterResetHeader() != chunkenc.GaugeType {
 			err = fmt.Errorf("found float gauge histogram in non gauge chunk")
 			break
