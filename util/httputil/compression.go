@@ -14,11 +14,12 @@
 package httputil
 
 import (
-	"compress/gzip"
 	"compress/zlib"
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/klauspost/compress/gzhttp"
 )
 
 const (
@@ -45,36 +46,17 @@ func (c *compressedResponseWriter) Close() {
 	if zlibWriter, ok := c.writer.(*zlib.Writer); ok {
 		zlibWriter.Flush()
 	}
-	if gzipWriter, ok := c.writer.(*gzip.Writer); ok {
-		gzipWriter.Flush()
-	}
 	if closer, ok := c.writer.(io.Closer); ok {
 		defer closer.Close()
 	}
 }
 
 // Constructs a new compressedResponseWriter based on client request headers.
-func newCompressedResponseWriter(writer http.ResponseWriter, req *http.Request) *compressedResponseWriter {
-	encodings := strings.Split(req.Header.Get(acceptEncodingHeader), ",")
-	for _, encoding := range encodings {
-		switch strings.TrimSpace(encoding) {
-		case gzipEncoding:
-			writer.Header().Set(contentEncodingHeader, gzipEncoding)
-			return &compressedResponseWriter{
-				ResponseWriter: writer,
-				writer:         gzip.NewWriter(writer),
-			}
-		case deflateEncoding:
-			writer.Header().Set(contentEncodingHeader, deflateEncoding)
-			return &compressedResponseWriter{
-				ResponseWriter: writer,
-				writer:         zlib.NewWriter(writer),
-			}
-		}
-	}
+func newCompressedResponseWriter(writer http.ResponseWriter) *compressedResponseWriter {
+	writer.Header().Set(contentEncodingHeader, deflateEncoding)
 	return &compressedResponseWriter{
 		ResponseWriter: writer,
-		writer:         writer,
+		writer:         zlib.NewWriter(writer),
 	}
 }
 
@@ -86,7 +68,20 @@ type CompressionHandler struct {
 
 // ServeHTTP adds compression to the original http.Handler's ServeHTTP() method.
 func (c CompressionHandler) ServeHTTP(writer http.ResponseWriter, req *http.Request) {
-	compWriter := newCompressedResponseWriter(writer, req)
-	c.Handler.ServeHTTP(compWriter, req)
-	compWriter.Close()
+	encodings := strings.Split(req.Header.Get(acceptEncodingHeader), ",")
+	for _, encoding := range encodings {
+		switch strings.TrimSpace(encoding) {
+		case gzipEncoding:
+			gzhttp.GzipHandler(c.Handler).ServeHTTP(writer, req)
+			return
+		case deflateEncoding:
+			compWriter := newCompressedResponseWriter(writer)
+			c.Handler.ServeHTTP(compWriter, req)
+			compWriter.Close()
+			return
+		default:
+			c.Handler.ServeHTTP(writer, req)
+			return
+		}
+	}
 }
