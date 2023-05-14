@@ -1,14 +1,6 @@
 # Changelog
 
-## 2.44.0-rc.2 / 2023-05-07
-
-* [ENHANCEMENT] Storage: Optimise buffer used to iterate through samples. #12326
-
-## 2.44.0-rc.1 / 2023-05-03
-
-* [BUGFIX] Labels: Set after Del would be ignored, which broke some relabeling rules. #12322
-
-## 2.44.0-rc.0 / 2023-04-22
+## 2.44.0 / 2023-05-13
 
 This version is built with Go tag `stringlabels`, to use the smaller data
 structure for Labels that was optional in the previous release. For more
@@ -18,6 +10,7 @@ details about this code change see #10991.
 * [FEATURE] Remote-read: Handle native histograms. #12085, #12192
 * [FEATURE] Promtool: Health and readiness check of prometheus server in CLI. #12096
 * [FEATURE] PromQL: Add `query_samples_total` metric, the total number of samples loaded by all queries. #12251
+* [ENHANCEMENT] Storage: Optimise buffer used to iterate through samples. #12326
 * [ENHANCEMENT] Scrape: Reduce memory allocations on target labels. #12084
 * [ENHANCEMENT] PromQL: Use faster heap method for `topk()` / `bottomk()`. #12190
 * [ENHANCEMENT] Rules API: Allow filtering by rule name. #12270
