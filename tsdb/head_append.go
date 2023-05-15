@@ -842,6 +842,10 @@ func (a *headAppender) Commit() (err error) {
 		return errors.Wrap(err, "write to WAL")
 	}
 
+	if a.head.writeNotified != nil {
+		a.head.writeNotified.Notify()
+	}
+
 	// No errors logging to WAL, so pass the exemplars along to the in memory storage.
 	for _, e := range a.exemplars {
 		s := a.head.series.getByID(chunks.HeadSeriesRef(e.ref))
