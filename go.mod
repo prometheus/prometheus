@@ -29,7 +29,7 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0
 	github.com/hashicorp/consul/api v1.20.0
 	github.com/hashicorp/nomad/api v0.0.0-20230418003350-3067191c5197
-	github.com/hetznercloud/hcloud-go v1.43.0
+	github.com/hetznercloud/hcloud-go v1.45.1
 	github.com/ionos-cloud/sdk-go/v6 v6.1.6
 	github.com/json-iterator/go v1.1.12
 	github.com/kolo/xmlrpc v0.0.0-20220921171641-a4b6fa1dd06b
@@ -41,7 +41,7 @@ require (
 	github.com/ovh/go-ovh v1.4.1
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/alertmanager v0.25.0
-	github.com/prometheus/client_golang v1.15.0
+	github.com/prometheus/client_golang v1.15.1
 	github.com/prometheus/client_model v0.3.0
 	github.com/prometheus/common v0.42.0
 	github.com/prometheus/common/assets v0.2.0
