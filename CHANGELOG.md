@@ -20,6 +20,10 @@ details about this code change see #10991.
 * [BUGFIX] TSDB: Block compaction failed when shutting down. #12179
 * [BUGFIX] TSDB: Out-of-order chunks could be ignored if the write-behind log was deleted. #12127
 
+## 2.43.1 / 2023-05-03
+
+* [BUGFIX] Labels: `Set()` after `Del()` would be ignored, which broke some relabeling rules. #12322
+
 ## 2.43.0 / 2023-03-21
 
 We are working on some performance improvements in Prometheus, which are only
@@ -33,7 +37,7 @@ the gains on their production architecture. We are providing release artefacts
 improvements for testing. #10991
 
 * [FEATURE] Promtool: Add HTTP client configuration to query commands. #11487
-* [FEATURE] Scrape: Add `include_scrape_configs` to include scrape configs from different files. #12019
+* [FEATURE] Scrape: Add `scrape_config_files` to include scrape configs from different files. #12019
 * [FEATURE] HTTP client: Add `no_proxy` to exclude URLs from proxied requests. #12098
 * [FEATURE] HTTP client: Add `proxy_from_enviroment` to read proxies from env variables. #12098
 * [ENHANCEMENT] API: Add support for setting lookback delta per query via the API. #12088
