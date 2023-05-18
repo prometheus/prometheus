@@ -363,6 +363,7 @@ var expectedConf = &Config{
 			ServiceDiscoveryConfigs: discovery.Configs{
 				&consul.SDConfig{
 					Server:          "localhost:1234",
+					PathPrefix:      "/consul",
 					Token:           "mysecret",
 					Services:        []string{"nginx", "cache", "mysql"},
 					ServiceTags:     []string{"canary", "v1"},

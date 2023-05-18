@@ -585,6 +585,8 @@ The following meta labels are available on targets during [relabeling](#relabel_
 # The information to access the Consul API. It is to be defined
 # as the Consul documentation requires.
 [ server: <host> | default = "localhost:8500" ]
+# Prefix for URIs for when consul is behind an API gateway (reverse proxy).
+[ path_prefix: <string> ]
 [ token: <secret> ]
 [ datacenter: <string> ]
 # Namespaces are only supported in Consul Enterprise.
