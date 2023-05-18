@@ -40,10 +40,16 @@ const (
 	INGESTION_PUBLIC_AUDIENCE     = "https://monitor.azure.com//.default"
 )
 
-// AzureADConfig is used to store the config values.
-type AzureADConfig struct {
+// ManagedIdentityConfig is used to store managed identity config values
+type ManagedIdentityConfig struct {
 	// ClientID is the clientId of the managed identity that is being used to authenticate.
 	ClientID string `yaml:"client_id,omitempty"`
+}
+
+// AzureADConfig is used to store the config values.
+type AzureADConfig struct {
+	// ManagedIdentity is the managed identity that is being used to authenticate.
+	ManagedIdentity *ManagedIdentityConfig `yaml:"managed_identity,omitempty"`
 
 	// Cloud is the Azure cloud in which the service is running. Example: AzurePublic/AzureGovernment/AzureChina.
 	Cloud string `yaml:"cloud,omitempty"`
@@ -84,11 +90,11 @@ func (c *AzureADConfig) Validate() error {
 		return fmt.Errorf("must provide a cloud in the Azure AD config")
 	}
 
-	if c.ClientID == "" {
+	if c.ManagedIdentity.ClientID == "" {
 		return fmt.Errorf("must provide an Azure Managed Identity client_id in the Azure AD config")
 	}
 
-	_, err := uuid.Parse(c.ClientID)
+	_, err := uuid.Parse(c.ManagedIdentity.ClientID)
 
 	if err != nil {
 		return fmt.Errorf("the provided Azure Managed Identity client_id provided is invalid")
@@ -143,7 +149,7 @@ func (rt *azureADRoundTripper) RoundTrip(req *http.Request) (*http.Response, err
 
 // newTokenCredential returns a TokenCredential of different kinds like Azure Managed Identity and Azure AD application.
 func newTokenCredential(cfg *AzureADConfig) (azcore.TokenCredential, error) {
-	cred, err := newManagedIdentityTokenCredential(cfg.ClientID)
+	cred, err := newManagedIdentityTokenCredential(cfg.ManagedIdentity.ClientID)
 	if err != nil {
 		return nil, err
 	}
@@ -172,11 +178,6 @@ func newTokenProvider(ctx context.Context, cfg *AzureADConfig, cred azcore.Token
 		options:          &policy.TokenRequestOptions{Scopes: []string{audience}},
 	}
 
-	_, err = tokenProvider.getAccessToken()
-	if err != nil {
-		return nil, errors.New("Failed to get access token: " + err.Error())
-	}
-
 	return tokenProvider, nil
 }
 
@@ -189,13 +190,16 @@ func (tokenProvider *tokenProvider) getAccessToken() (string, error) {
 	}
 	err := tokenProvider.getToken()
 	if err != nil {
-		return "", err
+		return "", errors.New("Failed to get access token: " + err.Error())
 	}
 	return tokenProvider.token, nil
 }
 
 // valid checks if the token in the token provider is valid and not expired.
 func (tokenProvider *tokenProvider) valid() bool {
+	if len(tokenProvider.token) == 0 {
+		return false
+	}
 	if tokenProvider.refreshTime.After(time.Now().UTC()) {
 		return true
 	} else {

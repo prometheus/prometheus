@@ -69,9 +69,13 @@ func (ad *AzureAdTestSuite) TestAzureAdRoundTripper() {
 		ExpiresOn: testTokenExpiry,
 	}
 
-	azureAdConfig := &AzureADConfig{
-		Cloud:    "AzurePublic",
+	managedIdentityConfig := &ManagedIdentityConfig{
 		ClientID: dummyClientID,
+	}
+
+	azureAdConfig := &AzureADConfig{
+		Cloud:           "AzurePublic",
+		ManagedIdentity: managedIdentityConfig,
 	}
 
 	ad.mockCredential.On("GetToken", mock.Anything, mock.Anything).Return(*testToken, nil)
@@ -176,9 +180,13 @@ func TestTokenProvider(t *testing.T) {
 }
 
 func (s *TokenProviderTestSuite) TestNewTokenProvider_NilAudience_Fail() {
-	azureAdConfig := &AzureADConfig{
-		Cloud:    "PublicAzure",
+	managedIdentityConfig := &ManagedIdentityConfig{
 		ClientID: dummyClientID,
+	}
+
+	azureAdConfig := &AzureADConfig{
+		Cloud:           "PublicAzure",
+		ManagedIdentity: managedIdentityConfig,
 	}
 
 	actualTokenProvider, actualErr := newTokenProvider(context.Background(), azureAdConfig, s.mockCredential)
@@ -189,9 +197,13 @@ func (s *TokenProviderTestSuite) TestNewTokenProvider_NilAudience_Fail() {
 }
 
 func (s *TokenProviderTestSuite) TestNewTokenProvider_Success() {
-	azureAdConfig := &AzureADConfig{
-		Cloud:    "AzurePublic",
+	managedIdentityConfig := &ManagedIdentityConfig{
 		ClientID: dummyClientID,
+	}
+
+	azureAdConfig := &AzureADConfig{
+		Cloud:           "AzurePublic",
+		ManagedIdentity: managedIdentityConfig,
 	}
 	s.mockCredential.On("GetToken", mock.Anything, mock.Anything).Return(getToken(), nil)
 
@@ -204,9 +216,13 @@ func (s *TokenProviderTestSuite) TestNewTokenProvider_Success() {
 
 func (s *TokenProviderTestSuite) TestPeriodicTokenRefresh_Success() {
 	// setup
-	azureAdConfig := &AzureADConfig{
-		Cloud:    "AzurePublic",
+	managedIdentityConfig := &ManagedIdentityConfig{
 		ClientID: dummyClientID,
+	}
+
+	azureAdConfig := &AzureADConfig{
+		Cloud:           "AzurePublic",
+		ManagedIdentity: managedIdentityConfig,
 	}
 	testToken := &azcore.AccessToken{
 		Token:     testTokenString,
