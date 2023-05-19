@@ -2622,7 +2622,7 @@ type fakeDB struct {
 func (f *fakeDB) CleanTombstones() error                        { return f.err }
 func (f *fakeDB) Delete(int64, int64, ...*labels.Matcher) error { return f.err }
 func (f *fakeDB) Snapshot(string, bool) error                   { return f.err }
-func (f *fakeDB) Stats(statsByLabelName string, topN int) (_ *tsdb.Stats, retErr error) {
+func (f *fakeDB) Stats(statsByLabelName string, limit int) (_ *tsdb.Stats, retErr error) {
 	dbDir, err := os.MkdirTemp("", "tsdb-api-ready")
 	if err != nil {
 		return nil, err
@@ -2636,7 +2636,7 @@ func (f *fakeDB) Stats(statsByLabelName string, topN int) (_ *tsdb.Stats, retErr
 	opts := tsdb.DefaultHeadOptions()
 	opts.ChunkRange = 1000
 	h, _ := tsdb.NewHead(nil, nil, nil, nil, opts, nil)
-	return h.Stats(statsByLabelName, topN), nil
+	return h.Stats(statsByLabelName, limit), nil
 }
 
 func (f *fakeDB) WALReplayStatus() (tsdb.WALReplayStatus, error) {
@@ -3288,13 +3288,13 @@ func TestTSDBStatus(t *testing.T) {
 		{
 			db:       tsdb,
 			endpoint: tsdbStatusAPI,
-			values:   map[string][]string{"topN": {"20"}},
+			values:   map[string][]string{"limit": {"20"}},
 			errType:  errorNone,
 		},
 		{
 			db:       tsdb,
 			endpoint: tsdbStatusAPI,
-			values:   map[string][]string{"topN": {"0"}},
+			values:   map[string][]string{"limit": {"0"}},
 			errType:  errorBadData,
 		},
 	} {

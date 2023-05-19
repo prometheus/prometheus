@@ -156,7 +156,7 @@ type PostingsStats struct {
 }
 
 // Stats calculates the cardinality statistics from postings.
-func (p *MemPostings) Stats(label string, topN int) *PostingsStats {
+func (p *MemPostings) Stats(label string, limit int) *PostingsStats {
 	var size uint64
 	p.mtx.RLock()
 
@@ -166,10 +166,10 @@ func (p *MemPostings) Stats(label string, topN int) *PostingsStats {
 	labelValuePairs := &maxHeap{}
 	numLabelPairs := 0
 
-	metrics.init(topN)
-	labels.init(topN)
-	labelValueLength.init(topN)
-	labelValuePairs.init(topN)
+	metrics.init(limit)
+	labels.init(limit)
+	labelValueLength.init(limit)
+	labelValuePairs.init(limit)
 
 	for n, e := range p.m {
 		if n == "" {

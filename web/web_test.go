@@ -52,8 +52,8 @@ type dbAdapter struct {
 	*tsdb.DB
 }
 
-func (a *dbAdapter) Stats(statsByLabelName string, topN int) (*tsdb.Stats, error) {
-	return a.Head().Stats(statsByLabelName, topN), nil
+func (a *dbAdapter) Stats(statsByLabelName string, limit int) (*tsdb.Stats, error) {
+	return a.Head().Stats(statsByLabelName, limit), nil
 }
 
 func (a *dbAdapter) WALReplayStatus() (tsdb.WALReplayStatus, error) {

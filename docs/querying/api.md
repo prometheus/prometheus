@@ -1075,7 +1075,7 @@ The following endpoint returns various cardinality statistics about the Promethe
 GET /api/v1/status/tsdb
 ```
 URL query parameters:
-- `topN=<number>`: Return top N values for each statistics. Top 10 values are returned if not specified.
+- `limit=<number>`: Limit the number of returned items to a given number for each set of statistics. By default, 10 items are returned.
 
 The `data` section of the query result consists of
 - **headStats**: This provides the following data about the head block of the TSDB:
