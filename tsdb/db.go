@@ -78,6 +78,7 @@ func DefaultOptions() *Options {
 		NoLockfile:                 false,
 		AllowOverlappingCompaction: true,
 		WALCompression:             false,
+		SamplesPerChunk:            DefaultSamplesPerChunk,
 		StripeSize:                 DefaultStripeSize,
 		HeadChunksWriteBufferSize:  chunks.DefaultWriteBufferSize,
 		IsolationDisabled:          defaultIsolationDisabled,
@@ -148,6 +149,9 @@ type Options struct {
 
 	// HeadChunksWriteQueueSize configures the size of the chunk write queue used in the head chunks mapper.
 	HeadChunksWriteQueueSize int
+
+	// SamplesPerChunk configures the target number of samples per chunk.
+	SamplesPerChunk int
 
 	// SeriesLifecycleCallback specifies a list of callbacks that will be called during a lifecycle of a series.
 	// It is always a no-op in Prometheus and mainly meant for external users who import TSDB.
@@ -224,6 +228,8 @@ type DB struct {
 	// during the time TSDB was up. In which case we need to keep supporting
 	// out-of-order compaction and vertical queries.
 	oooWasEnabled atomic.Bool
+
+	writeNotified wlog.WriteNotified
 
 	registerer prometheus.Registerer
 }
@@ -778,6 +784,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	headOpts.ChunkPool = db.chunkPool
 	headOpts.ChunkWriteBufferSize = opts.HeadChunksWriteBufferSize
 	headOpts.ChunkWriteQueueSize = opts.HeadChunksWriteQueueSize
+	headOpts.SamplesPerChunk = opts.SamplesPerChunk
 	headOpts.StripeSize = opts.StripeSize
 	headOpts.SeriesCallback = opts.SeriesLifecycleCallback
 	headOpts.EnableExemplarStorage = opts.EnableExemplarStorage
@@ -797,6 +804,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	if err != nil {
 		return nil, err
 	}
+	db.head.writeNotified = db.writeNotified
 
 	// Register metrics after assigning the head block.
 	db.metrics = newDBMetrics(db, r)
@@ -2009,6 +2017,12 @@ func (db *DB) CleanTombstones() (err error) {
 		}
 	}
 	return nil
+}
+
+func (db *DB) SetWriteNotified(wn wlog.WriteNotified) {
+	db.writeNotified = wn
+	// It's possible we already created the head struct, so we should also set the WN for that.
+	db.head.writeNotified = wn
 }
 
 func isBlockDir(fi fs.DirEntry) bool {

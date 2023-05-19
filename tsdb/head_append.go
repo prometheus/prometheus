@@ -842,6 +842,10 @@ func (a *headAppender) Commit() (err error) {
 		return errors.Wrap(err, "write to WAL")
 	}
 
+	if a.head.writeNotified != nil {
+		a.head.writeNotified.Notify()
+	}
+
 	// No errors logging to WAL, so pass the exemplars along to the in memory storage.
 	for _, e := range a.exemplars {
 		s := a.head.series.getByID(chunks.HeadSeriesRef(e.ref))
@@ -1332,11 +1336,6 @@ func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, 
 func (s *memSeries) appendPreprocessor(
 	t int64, e chunkenc.Encoding, chunkDiskMapper *chunks.ChunkDiskMapper, chunkRange int64,
 ) (c *memChunk, sampleInOrder, chunkCreated bool) {
-	// Based on Gorilla white papers this offers near-optimal compression ratio
-	// so anything bigger that this has diminishing returns and increases
-	// the time range within which we have to decompress all samples.
-	const samplesPerChunk = 120
-
 	c = s.head()
 
 	if c == nil {
@@ -1373,7 +1372,7 @@ func (s *memSeries) appendPreprocessor(
 	// for this chunk that will try to make samples equally distributed within
 	// the remaining chunks in the current chunk range.
 	// At latest it must happen at the timestamp set when the chunk was cut.
-	if numSamples == samplesPerChunk/4 {
+	if numSamples == s.samplesPerChunk/4 {
 		s.nextAt = computeChunkEndTime(c.minTime, c.maxTime, s.nextAt)
 	}
 	// If numSamples > samplesPerChunk*2 then our previous prediction was invalid,
@@ -1381,7 +1380,7 @@ func (s *memSeries) appendPreprocessor(
 	// Since we assume that the rate is higher, we're being conservative and cutting at 2*samplesPerChunk
 	// as we expect more chunks to come.
 	// Note that next chunk will have its nextAt recalculated for the new rate.
-	if t >= s.nextAt || numSamples >= samplesPerChunk*2 {
+	if t >= s.nextAt || numSamples >= s.samplesPerChunk*2 {
 		c = s.cutNewHeadChunk(t, e, chunkDiskMapper, chunkRange)
 		chunkCreated = true
 	}

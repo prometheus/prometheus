@@ -501,6 +501,46 @@ func TestBlockQuerier_AgainstHeadWithOpenChunks(t *testing.T) {
 	}
 }
 
+func TestBlockQuerier_TrimmingDoesNotModifyOriginalTombstoneIntervals(t *testing.T) {
+	c := blockQuerierTestCase{
+		mint: 2,
+		maxt: 6,
+		ms:   []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "a", "a")},
+		exp: newMockSeriesSet([]storage.Series{
+			storage.NewListSeries(labels.FromStrings("a", "a"),
+				[]tsdbutil.Sample{sample{3, 4, nil, nil}, sample{5, 2, nil, nil}, sample{6, 3, nil, nil}},
+			),
+			storage.NewListSeries(labels.FromStrings("a", "a", "b", "b"),
+				[]tsdbutil.Sample{sample{3, 3, nil, nil}, sample{5, 3, nil, nil}, sample{6, 6, nil, nil}},
+			),
+		}),
+		expChks: newMockChunkSeriesSet([]storage.ChunkSeries{
+			storage.NewListChunkSeriesFromSamples(labels.FromStrings("a", "a"),
+				[]tsdbutil.Sample{sample{3, 4, nil, nil}}, []tsdbutil.Sample{sample{5, 2, nil, nil}, sample{6, 3, nil, nil}},
+			),
+			storage.NewListChunkSeriesFromSamples(labels.FromStrings("a", "a", "b", "b"),
+				[]tsdbutil.Sample{sample{3, 3, nil, nil}}, []tsdbutil.Sample{sample{5, 3, nil, nil}, sample{6, 6, nil, nil}},
+			),
+		}),
+	}
+	ir, cr, _, _ := createIdxChkReaders(t, testData)
+	stones := tombstones.NewMemTombstones()
+	p, err := ir.Postings("a", "a")
+	require.NoError(t, err)
+	refs, err := index.ExpandPostings(p)
+	require.NoError(t, err)
+	for _, ref := range refs {
+		stones.AddInterval(ref, tombstones.Interval{Mint: 1, Maxt: 2})
+	}
+	testBlockQuerier(t, c, ir, cr, stones)
+	for _, ref := range refs {
+		intervals, err := stones.Get(ref)
+		require.NoError(t, err)
+		// Without copy, the intervals could be [math.MinInt64, 2].
+		require.Equal(t, tombstones.Intervals{{Mint: 1, Maxt: 2}}, intervals)
+	}
+}
+
 var testData = []seriesSamples{
 	{
 		lset: map[string]string{"a": "a"},
@@ -1802,6 +1842,19 @@ func TestPostingsForMatchers(t *testing.T) {
 			},
 		},
 		{
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotRegexp, "n", "1")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "2"),
+				labels.FromStrings("n", "2.5"),
+			},
+		},
+		{
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotRegexp, "n", "1|2.5")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "2"),
+			},
+		},
+		{
 			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "n", "1"), labels.MustNewMatcher(labels.MatchNotRegexp, "i", "^a$")},
 			exp: []labels.Labels{
 				labels.FromStrings("n", "1"),
@@ -1890,27 +1943,36 @@ func TestPostingsForMatchers(t *testing.T) {
 	require.NoError(t, err)
 
 	for _, c := range cases {
-		exp := map[string]struct{}{}
-		for _, l := range c.exp {
-			exp[l.String()] = struct{}{}
-		}
-		p, err := PostingsForMatchers(ir, c.matchers...)
-		require.NoError(t, err)
-
-		var builder labels.ScratchBuilder
-		for p.Next() {
-			require.NoError(t, ir.Series(p.At(), &builder, &[]chunks.Meta{}))
-			lbls := builder.Labels()
-			if _, ok := exp[lbls.String()]; !ok {
-				t.Errorf("Evaluating %v, unexpected result %s", c.matchers, lbls.String())
-			} else {
-				delete(exp, lbls.String())
+		name := ""
+		for i, matcher := range c.matchers {
+			if i > 0 {
+				name += ","
 			}
+			name += matcher.String()
 		}
-		require.NoError(t, p.Err())
-		if len(exp) != 0 {
-			t.Errorf("Evaluating %v, missing results %+v", c.matchers, exp)
-		}
+		t.Run(name, func(t *testing.T) {
+			exp := map[string]struct{}{}
+			for _, l := range c.exp {
+				exp[l.String()] = struct{}{}
+			}
+			p, err := PostingsForMatchers(ir, c.matchers...)
+			require.NoError(t, err)
+
+			var builder labels.ScratchBuilder
+			for p.Next() {
+				require.NoError(t, ir.Series(p.At(), &builder, &[]chunks.Meta{}))
+				lbls := builder.Labels()
+				if _, ok := exp[lbls.String()]; !ok {
+					t.Errorf("Evaluating %v, unexpected result %s", c.matchers, lbls.String())
+				} else {
+					delete(exp, lbls.String())
+				}
+			}
+			require.NoError(t, p.Err())
+			if len(exp) != 0 {
+				t.Errorf("Evaluating %v, missing results %+v", c.matchers, exp)
+			}
+		})
 	}
 }
 

@@ -378,7 +378,7 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 	body, err := io.ReadAll(res.Body)
 	require.NoError(t, err)
 
-	p := textparse.NewProtobufParser(body)
+	p := textparse.NewProtobufParser(body, false)
 	var actVec promql.Vector
 	metricFamilies := 0
 	l := labels.Labels{}

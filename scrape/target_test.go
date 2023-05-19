@@ -31,6 +31,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 )
 
@@ -486,5 +487,65 @@ scrape_configs:
 				}
 			}
 		})
+	}
+}
+
+func TestBucketLimitAppender(t *testing.T) {
+	example := histogram.Histogram{
+		Schema:        0,
+		Count:         21,
+		Sum:           33,
+		ZeroThreshold: 0.001,
+		ZeroCount:     3,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 3},
+		},
+		PositiveBuckets: []int64{3, 0, 0},
+		NegativeSpans: []histogram.Span{
+			{Offset: 0, Length: 3},
+		},
+		NegativeBuckets: []int64{3, 0, 0},
+	}
+
+	cases := []struct {
+		h           histogram.Histogram
+		limit       int
+		expectError bool
+	}{
+		{
+			h:           example,
+			limit:       3,
+			expectError: true,
+		},
+		{
+			h:           example,
+			limit:       10,
+			expectError: false,
+		},
+	}
+
+	resApp := &collectResultAppender{}
+
+	for _, c := range cases {
+		for _, floatHisto := range []bool{true, false} {
+			t.Run(fmt.Sprintf("floatHistogram=%t", floatHisto), func(t *testing.T) {
+				app := &bucketLimitAppender{Appender: resApp, limit: c.limit}
+				ts := int64(10 * time.Minute / time.Millisecond)
+				h := c.h
+				lbls := labels.FromStrings("__name__", "sparse_histogram_series")
+				var err error
+				if floatHisto {
+					_, err = app.AppendHistogram(0, lbls, ts, nil, h.Copy().ToFloat())
+				} else {
+					_, err = app.AppendHistogram(0, lbls, ts, h.Copy(), nil)
+				}
+				if c.expectError {
+					require.Error(t, err)
+				} else {
+					require.NoError(t, err)
+				}
+				require.NoError(t, app.Commit())
+			})
+		}
 	}
 }

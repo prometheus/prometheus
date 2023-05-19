@@ -134,6 +134,10 @@ job_name: <job_name>
 # Per-scrape timeout when scraping this job.
 [ scrape_timeout: <duration> | default = <global_config.scrape_timeout> ]
 
+# Whether to scrape a classic histogram that is also exposed as a native
+# histogram (has no effect without --enable-feature=native-histograms).
+[ scrape_classic_histograms: <boolean> | default = false ]
+
 # The HTTP resource path on which to fetch metrics from targets.
 [ metrics_path: <path> | default = /metrics ]
 
@@ -376,6 +380,11 @@ metric_relabel_configs:
 # 0 means no limit. This is an experimental feature, this behaviour could
 # change in the future.
 [ target_limit: <int> | default = 0 ]
+
+# Limit on total number of positive and negative buckets allowed in a single
+# native histogram. If this is exceeded, the entire scrape will be treated as
+# failed. 0 means no limit.
+[ native_histogram_bucket_limit: <int> | default = 0 ]
 ```
 
 Where `<job_name>` must be unique across all scrape configurations.
@@ -576,6 +585,8 @@ The following meta labels are available on targets during [relabeling](#relabel_
 # The information to access the Consul API. It is to be defined
 # as the Consul documentation requires.
 [ server: <host> | default = "localhost:8500" ]
+# Prefix for URIs for when consul is behind an API gateway (reverse proxy).
+[ path_prefix: <string> ]
 [ token: <secret> ]
 [ datacenter: <string> ]
 # Namespaces are only supported in Consul Enterprise.

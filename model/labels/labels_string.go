@@ -593,13 +593,14 @@ func (b *Builder) Set(n, v string) *Builder {
 }
 
 func (b *Builder) Get(n string) string {
-	if slices.Contains(b.del, n) {
-		return ""
-	}
+	// Del() removes entries from .add but Set() does not remove from .del, so check .add first.
 	for _, a := range b.add {
 		if a.Name == n {
 			return a.Value
 		}
+	}
+	if slices.Contains(b.del, n) {
+		return ""
 	}
 	return b.base.Get(n)
 }

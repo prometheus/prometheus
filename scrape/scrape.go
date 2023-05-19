@@ -191,6 +191,12 @@ var (
 		},
 		[]string{"scrape_job"},
 	)
+	targetScrapeNativeHistogramBucketLimit = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "prometheus_target_scrapes_exceeded_native_histogram_bucket_limit_total",
+			Help: "Total number of scrapes that hit the native histogram bucket limit and were rejected.",
+		},
+	)
 )
 
 func init() {
@@ -216,6 +222,7 @@ func init() {
 		targetScrapeExemplarOutOfOrder,
 		targetScrapePoolExceededLabelLimits,
 		targetSyncFailed,
+		targetScrapeNativeHistogramBucketLimit,
 	)
 }
 
@@ -253,16 +260,18 @@ type labelLimits struct {
 }
 
 type scrapeLoopOptions struct {
-	target          *Target
-	scraper         scraper
-	sampleLimit     int
-	labelLimits     *labelLimits
-	honorLabels     bool
-	honorTimestamps bool
-	interval        time.Duration
-	timeout         time.Duration
-	mrc             []*relabel.Config
-	cache           *scrapeCache
+	target                  *Target
+	scraper                 scraper
+	sampleLimit             int
+	bucketLimit             int
+	labelLimits             *labelLimits
+	honorLabels             bool
+	honorTimestamps         bool
+	interval                time.Duration
+	timeout                 time.Duration
+	scrapeClassicHistograms bool
+	mrc                     []*relabel.Config
+	cache                   *scrapeCache
 }
 
 const maxAheadTime = 10 * time.Minute
@@ -319,9 +328,11 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 			jitterSeed,
 			opts.honorTimestamps,
 			opts.sampleLimit,
+			opts.bucketLimit,
 			opts.labelLimits,
 			opts.interval,
 			opts.timeout,
+			opts.scrapeClassicHistograms,
 			options.ExtraMetrics,
 			options.EnableMetadataStorage,
 			opts.target,
@@ -412,6 +423,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 		timeout       = time.Duration(sp.config.ScrapeTimeout)
 		bodySizeLimit = int64(sp.config.BodySizeLimit)
 		sampleLimit   = int(sp.config.SampleLimit)
+		bucketLimit   = int(sp.config.NativeHistogramBucketLimit)
 		labelLimits   = &labelLimits{
 			labelLimit:            int(sp.config.LabelLimit),
 			labelNameLengthLimit:  int(sp.config.LabelNameLengthLimit),
@@ -446,6 +458,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 				target:          t,
 				scraper:         s,
 				sampleLimit:     sampleLimit,
+				bucketLimit:     bucketLimit,
 				labelLimits:     labelLimits,
 				honorLabels:     honorLabels,
 				honorTimestamps: honorTimestamps,
@@ -530,14 +543,16 @@ func (sp *scrapePool) sync(targets []*Target) {
 		timeout       = time.Duration(sp.config.ScrapeTimeout)
 		bodySizeLimit = int64(sp.config.BodySizeLimit)
 		sampleLimit   = int(sp.config.SampleLimit)
+		bucketLimit   = int(sp.config.NativeHistogramBucketLimit)
 		labelLimits   = &labelLimits{
 			labelLimit:            int(sp.config.LabelLimit),
 			labelNameLengthLimit:  int(sp.config.LabelNameLengthLimit),
 			labelValueLengthLimit: int(sp.config.LabelValueLengthLimit),
 		}
-		honorLabels     = sp.config.HonorLabels
-		honorTimestamps = sp.config.HonorTimestamps
-		mrc             = sp.config.MetricRelabelConfigs
+		honorLabels             = sp.config.HonorLabels
+		honorTimestamps         = sp.config.HonorTimestamps
+		mrc                     = sp.config.MetricRelabelConfigs
+		scrapeClassicHistograms = sp.config.ScrapeClassicHistograms
 	)
 
 	sp.targetMtx.Lock()
@@ -556,15 +571,17 @@ func (sp *scrapePool) sync(targets []*Target) {
 			}
 			s := &targetScraper{Target: t, client: sp.client, timeout: timeout, bodySizeLimit: bodySizeLimit, acceptHeader: acceptHeader}
 			l := sp.newLoop(scrapeLoopOptions{
-				target:          t,
-				scraper:         s,
-				sampleLimit:     sampleLimit,
-				labelLimits:     labelLimits,
-				honorLabels:     honorLabels,
-				honorTimestamps: honorTimestamps,
-				mrc:             mrc,
-				interval:        interval,
-				timeout:         timeout,
+				target:                  t,
+				scraper:                 s,
+				sampleLimit:             sampleLimit,
+				bucketLimit:             bucketLimit,
+				labelLimits:             labelLimits,
+				honorLabels:             honorLabels,
+				honorTimestamps:         honorTimestamps,
+				mrc:                     mrc,
+				interval:                interval,
+				timeout:                 timeout,
+				scrapeClassicHistograms: scrapeClassicHistograms,
 			})
 			if err != nil {
 				l.setForcedError(err)
@@ -731,17 +748,24 @@ func mutateReportSampleLabels(lset labels.Labels, target *Target) labels.Labels 
 }
 
 // appender returns an appender for ingested samples from the target.
-func appender(app storage.Appender, limit int) storage.Appender {
+func appender(app storage.Appender, sampleLimit, bucketLimit int) storage.Appender {
 	app = &timeLimitAppender{
 		Appender: app,
 		maxTime:  timestamp.FromTime(time.Now().Add(maxAheadTime)),
 	}
 
-	// The limit is applied after metrics are potentially dropped via relabeling.
-	if limit > 0 {
+	// The sampleLimit is applied after metrics are potentially dropped via relabeling.
+	if sampleLimit > 0 {
 		app = &limitAppender{
 			Appender: app,
-			limit:    limit,
+			limit:    sampleLimit,
+		}
+	}
+
+	if bucketLimit > 0 {
+		app = &bucketLimitAppender{
+			Appender: app,
+			limit:    bucketLimit,
 		}
 	}
 	return app
@@ -862,19 +886,21 @@ type cacheEntry struct {
 }
 
 type scrapeLoop struct {
-	scraper         scraper
-	l               log.Logger
-	cache           *scrapeCache
-	lastScrapeSize  int
-	buffers         *pool.Pool
-	jitterSeed      uint64
-	honorTimestamps bool
-	forcedErr       error
-	forcedErrMtx    sync.Mutex
-	sampleLimit     int
-	labelLimits     *labelLimits
-	interval        time.Duration
-	timeout         time.Duration
+	scraper                 scraper
+	l                       log.Logger
+	cache                   *scrapeCache
+	lastScrapeSize          int
+	buffers                 *pool.Pool
+	jitterSeed              uint64
+	honorTimestamps         bool
+	forcedErr               error
+	forcedErrMtx            sync.Mutex
+	sampleLimit             int
+	bucketLimit             int
+	labelLimits             *labelLimits
+	interval                time.Duration
+	timeout                 time.Duration
+	scrapeClassicHistograms bool
 
 	appender            func(ctx context.Context) storage.Appender
 	sampleMutator       labelsMutator
@@ -1152,9 +1178,11 @@ func newScrapeLoop(ctx context.Context,
 	jitterSeed uint64,
 	honorTimestamps bool,
 	sampleLimit int,
+	bucketLimit int,
 	labelLimits *labelLimits,
 	interval time.Duration,
 	timeout time.Duration,
+	scrapeClassicHistograms bool,
 	reportExtraMetrics bool,
 	appendMetadataToWAL bool,
 	target *Target,
@@ -1182,24 +1210,26 @@ func newScrapeLoop(ctx context.Context,
 	}
 
 	sl := &scrapeLoop{
-		scraper:             sc,
-		buffers:             buffers,
-		cache:               cache,
-		appender:            appender,
-		sampleMutator:       sampleMutator,
-		reportSampleMutator: reportSampleMutator,
-		stopped:             make(chan struct{}),
-		jitterSeed:          jitterSeed,
-		l:                   l,
-		parentCtx:           ctx,
-		appenderCtx:         appenderCtx,
-		honorTimestamps:     honorTimestamps,
-		sampleLimit:         sampleLimit,
-		labelLimits:         labelLimits,
-		interval:            interval,
-		timeout:             timeout,
-		reportExtraMetrics:  reportExtraMetrics,
-		appendMetadataToWAL: appendMetadataToWAL,
+		scraper:                 sc,
+		buffers:                 buffers,
+		cache:                   cache,
+		appender:                appender,
+		sampleMutator:           sampleMutator,
+		reportSampleMutator:     reportSampleMutator,
+		stopped:                 make(chan struct{}),
+		jitterSeed:              jitterSeed,
+		l:                       l,
+		parentCtx:               ctx,
+		appenderCtx:             appenderCtx,
+		honorTimestamps:         honorTimestamps,
+		sampleLimit:             sampleLimit,
+		bucketLimit:             bucketLimit,
+		labelLimits:             labelLimits,
+		interval:                interval,
+		timeout:                 timeout,
+		scrapeClassicHistograms: scrapeClassicHistograms,
+		reportExtraMetrics:      reportExtraMetrics,
+		appendMetadataToWAL:     appendMetadataToWAL,
 	}
 	sl.ctx, sl.cancel = context.WithCancel(ctx)
 
@@ -1469,7 +1499,7 @@ type appendErrors struct {
 }
 
 func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string, ts time.Time) (total, added, seriesAdded int, err error) {
-	p, err := textparse.New(b, contentType)
+	p, err := textparse.New(b, contentType, sl.scrapeClassicHistograms)
 	if err != nil {
 		level.Debug(sl.l).Log(
 			"msg", "Invalid content type on scrape, using prometheus parser as fallback.",
@@ -1482,6 +1512,7 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 		defTime         = timestamp.FromTime(ts)
 		appErrs         = appendErrors{}
 		sampleLimitErr  error
+		bucketLimitErr  error
 		e               exemplar.Exemplar // escapes to heap so hoisted out of loop
 		meta            metadata.Metadata
 		metadataChanged bool
@@ -1510,7 +1541,7 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 	}
 
 	// Take an appender with limits.
-	app = appender(app, sl.sampleLimit)
+	app = appender(app, sl.sampleLimit, sl.bucketLimit)
 
 	defer func() {
 		if err != nil {
@@ -1631,7 +1662,7 @@ loop:
 		} else {
 			ref, err = app.Append(ref, lset, t, val)
 		}
-		sampleAdded, err = sl.checkAddError(ce, met, parsedTimestamp, err, &sampleLimitErr, &appErrs)
+		sampleAdded, err = sl.checkAddError(ce, met, parsedTimestamp, err, &sampleLimitErr, &bucketLimitErr, &appErrs)
 		if err != nil {
 			if err != storage.ErrNotFound {
 				level.Debug(sl.l).Log("msg", "Unexpected error", "series", string(met), "err", err)
@@ -1645,7 +1676,7 @@ loop:
 				sl.cache.trackStaleness(hash, lset)
 			}
 			sl.cache.addRef(met, ref, lset, hash)
-			if sampleAdded && sampleLimitErr == nil {
+			if sampleAdded && sampleLimitErr == nil && bucketLimitErr == nil {
 				seriesAdded++
 			}
 		}
@@ -1681,6 +1712,13 @@ loop:
 		// We only want to increment this once per scrape, so this is Inc'd outside the loop.
 		targetScrapeSampleLimit.Inc()
 	}
+	if bucketLimitErr != nil {
+		if err == nil {
+			err = bucketLimitErr // If sample limit is hit, that error takes precedence.
+		}
+		// We only want to increment this once per scrape, so this is Inc'd outside the loop.
+		targetScrapeNativeHistogramBucketLimit.Inc()
+	}
 	if appErrs.numOutOfOrder > 0 {
 		level.Warn(sl.l).Log("msg", "Error on ingesting out-of-order samples", "num_dropped", appErrs.numOutOfOrder)
 	}
@@ -1710,8 +1748,8 @@ loop:
 }
 
 // Adds samples to the appender, checking the error, and then returns the # of samples added,
-// whether the caller should continue to process more samples, and any sample limit errors.
-func (sl *scrapeLoop) checkAddError(ce *cacheEntry, met []byte, tp *int64, err error, sampleLimitErr *error, appErrs *appendErrors) (bool, error) {
+// whether the caller should continue to process more samples, and any sample or bucket limit errors.
+func (sl *scrapeLoop) checkAddError(ce *cacheEntry, met []byte, tp *int64, err error, sampleLimitErr, bucketLimitErr *error, appErrs *appendErrors) (bool, error) {
 	switch errors.Cause(err) {
 	case nil:
 		if tp == nil && ce != nil {
@@ -1739,6 +1777,11 @@ func (sl *scrapeLoop) checkAddError(ce *cacheEntry, met []byte, tp *int64, err e
 		// Keep on parsing output if we hit the limit, so we report the correct
 		// total number of samples scraped.
 		*sampleLimitErr = err
+		return false, nil
+	case errBucketLimit:
+		// Keep on parsing output if we hit the limit, so we report the correct
+		// total number of samples scraped.
+		*bucketLimitErr = err
 		return false, nil
 	default:
 		return false, err

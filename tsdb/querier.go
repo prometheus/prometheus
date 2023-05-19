@@ -371,6 +371,14 @@ func inversePostingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Posting
 	if m.Type == labels.MatchEqual && m.Value == "" {
 		res = vals
 	} else {
+		// Inverse of a MatchNotRegexp is MatchRegexp (double negation).
+		// Fast-path for set matching.
+		if m.Type == labels.MatchNotRegexp {
+			setMatches := findSetMatches(m.GetRegexString())
+			if len(setMatches) > 0 {
+				return ix.Postings(m.Name, setMatches...)
+			}
+		}
 		for _, val := range vals {
 			if !m.Matches(val) {
 				res = append(res, val)
