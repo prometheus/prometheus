@@ -871,7 +871,7 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 		}
 
 		switch hc := p.currChkMeta.Chunk.(type) {
-		case *chunkenc.HistogramChunk:
+		case *chunkenc.FloatHistogramChunk:
 			newChunk.(*chunkenc.FloatHistogramChunk).SetCounterResetHeader(hc.GetCounterResetHeader())
 		case *safeHeadChunk:
 			if unwrapped, ok := hc.Chunk.(*chunkenc.FloatHistogramChunk); ok {
