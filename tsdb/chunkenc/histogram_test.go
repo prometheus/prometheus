@@ -14,7 +14,6 @@
 package chunkenc
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -649,15 +648,9 @@ func TestAtFloatHistogram(t *testing.T) {
 	app, err := chk.Appender()
 	require.NoError(t, err)
 	for i := range input {
-		if i > 0 {
-			_, _, okToAppend, _ := app.(*HistogramAppender).Appendable(&input[i])
-			require.True(t, okToAppend, fmt.Sprintf("idx: %d", i))
-		}
-		app.AppendHistogram(int64(i), &input[i])
-		// Pending: https://github.com/prometheus/prometheus/pull/12357
-		// newc, _, _, err := app.AppendOrCreateHistogram(int64(i), &input[i])
-		// require.NoError(t, err)
-		// require.Nil(t, newc)
+		newc, _, _, err := app.AppendOrCreateHistogram(int64(i), &input[i])
+		require.NoError(t, err)
+		require.Nil(t, newc)
 	}
 	it := chk.Iterator(nil)
 	i := int64(0)
