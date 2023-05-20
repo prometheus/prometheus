@@ -15,6 +15,7 @@ package chunkenc
 
 import (
 	"encoding/binary"
+	"fmt"
 	"math"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -637,6 +638,12 @@ func (a *HistogramAppender) AppendOrCreateHistogram(t int64, h *histogram.Histog
 	if h.CounterResetHint != histogram.GaugeType {
 		pForwardInserts, nForwardInserts, okToAppend, counterReset := a.Appendable(h)
 		if !okToAppend || counterReset {
+			if appendOnly {
+				if !okToAppend {
+					return nil, false, a, fmt.Errorf("histogram schema change")
+				}
+				return nil, false, a, fmt.Errorf("histogram counter reset")
+			}
 			newChunk := NewHistogramChunk()
 			if counterReset {
 				newChunk.SetCounterResetHeader(CounterReset)
@@ -649,6 +656,9 @@ func (a *HistogramAppender) AppendOrCreateHistogram(t int64, h *histogram.Histog
 			return newChunk, false, app, nil
 		}
 		if len(pForwardInserts) > 0 || len(nForwardInserts) > 0 {
+			if appendOnly {
+				return nil, false, a, fmt.Errorf("histogram layout change with %d positive and %d negative forwards inserts", len(pForwardInserts), len(nForwardInserts))
+			}
 			chk, app := a.Recode(
 				pForwardInserts, nForwardInserts,
 				h.PositiveSpans, h.NegativeSpans,
@@ -662,6 +672,9 @@ func (a *HistogramAppender) AppendOrCreateHistogram(t int64, h *histogram.Histog
 	// Adding gauge histogram
 	pForwardInserts, nForwardInserts, pBackwardInserts, nBackwardInserts, pMergedSpans, nMergedSpans, okToAppend := a.AppendableGauge(h)
 	if !okToAppend {
+		if appendOnly {
+			return nil, false, a, fmt.Errorf("gauge histogram schema change")
+		}
 		newChunk := NewHistogramChunk()
 		newChunk.SetCounterResetHeader(GaugeType)
 		app, err := newChunk.Appender()
@@ -673,12 +686,18 @@ func (a *HistogramAppender) AppendOrCreateHistogram(t int64, h *histogram.Histog
 	}
 
 	if len(pBackwardInserts)+len(nBackwardInserts) > 0 {
+		if appendOnly {
+			return nil, false, a, fmt.Errorf("gauge histogram layout change with %d positive and %d negative backwards inserts", len(pBackwardInserts), len(nBackwardInserts))
+		}
 		h.PositiveSpans = pMergedSpans
 		h.NegativeSpans = nMergedSpans
 		a.RecodeHistogram(h, pBackwardInserts, nBackwardInserts)
 	}
 
 	if len(pForwardInserts) > 0 || len(nForwardInserts) > 0 {
+		if appendOnly {
+			return nil, false, a, fmt.Errorf("gauge histogram layout change with %d positive and %d negative forwards inserts", len(pForwardInserts), len(nForwardInserts))
+		}
 		chk, app := a.Recode(
 			pForwardInserts, nForwardInserts,
 			h.PositiveSpans, h.NegativeSpans,
