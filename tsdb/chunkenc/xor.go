@@ -233,11 +233,11 @@ func (a *xorAppender) AppendOrCreate(t int64, v float64) (Chunk, Appender, error
 	return nil, a, nil
 }
 
-func (a *xorAppender) AppendOrCreateHistogram(t int64, h *histogram.Histogram) (Chunk, bool, Appender, error) {
+func (a *xorAppender) AppendOrCreateHistogram(int64, *histogram.Histogram, bool) (Chunk, bool, Appender, error) {
 	panic("appended a histogram sample to a float chunk")
 }
 
-func (a *xorAppender) AppendOrCreateFloatHistogram(t int64, h *histogram.FloatHistogram) (Chunk, bool, Appender, error) {
+func (a *xorAppender) AppendOrCreateFloatHistogram(int64, *histogram.FloatHistogram, bool) (Chunk, bool, Appender, error) {
 	panic("appended a float histogram sample to a float chunk")
 }
 

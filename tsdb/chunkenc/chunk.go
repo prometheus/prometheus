@@ -89,13 +89,13 @@ type Appender interface {
 	// Returned Chunk is nil if sample could be appended to current Chunk.
 	// If sample cannot be appeneded, a new Chunk is returned which is either the current Chunk recoded or a completely new Chunk.
 	// The Appender to use next is always returned.
-	AppendOrCreateHistogram(t int64, h *histogram.Histogram) (c Chunk, isRecoded bool, app Appender, err error)
+	AppendOrCreateHistogram(t int64, h *histogram.Histogram, appendOny bool) (c Chunk, isRecoded bool, app Appender, err error)
 
 	// Appends a float histogram sample to the Chunk.
 	// Returned Chunk is nil if sample could be appended to current Chunk.
 	// If sample cannot be appeneded, a new Chunk is returned which is either the current Chunk recoded or a completely new Chunk.
 	// The Appender to use next is always returned.
-	AppendOrCreateFloatHistogram(t int64, h *histogram.FloatHistogram) (c Chunk, isRecorded bool, app Appender, err error)
+	AppendOrCreateFloatHistogram(t int64, h *histogram.FloatHistogram, appendOnly bool) (c Chunk, isRecorded bool, app Appender, err error)
 }
 
 // Iterator is a simple iterator that can only get the next value.

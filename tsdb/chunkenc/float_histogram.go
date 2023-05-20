@@ -577,11 +577,11 @@ func (a *FloatHistogramAppender) AppendOrCreate(int64, float64) (Chunk, Appender
 	panic("appended a float sample to a float histogram chunk")
 }
 
-func (a *FloatHistogramAppender) AppendOrCreateHistogram(int64, *histogram.Histogram) (Chunk, bool, Appender, error) {
+func (a *FloatHistogramAppender) AppendOrCreateHistogram(int64, *histogram.Histogram, bool) (Chunk, bool, Appender, error) {
 	panic("appended a histogram sample to a float histogram chunk")
 }
 
-func (a *FloatHistogramAppender) AppendOrCreateFloatHistogram(t int64, h *histogram.FloatHistogram) (Chunk, bool, Appender, error) {
+func (a *FloatHistogramAppender) AppendOrCreateFloatHistogram(t int64, h *histogram.FloatHistogram, appendOnly bool) (Chunk, bool, Appender, error) {
 	if a.NumSamples() == 0 {
 		a.AppendFloatHistogram(t, h)
 		if h.CounterResetHint == histogram.GaugeType {

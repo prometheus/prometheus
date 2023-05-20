@@ -327,7 +327,7 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 			app.Append(t, v)
 		case chunkenc.ValHistogram:
 			t, h = seriesIter.AtHistogram()
-			newchk, recoded, app, err = app.AppendOrCreateHistogram(t, h)
+			newchk, recoded, app, err = app.AppendOrCreateHistogram(t, h, false)
 			if err != nil {
 				return errChunksIterator{err: err}
 			}
@@ -342,7 +342,7 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 			}
 		case chunkenc.ValFloatHistogram:
 			t, fh = seriesIter.AtFloatHistogram()
-			newchk, recoded, app, err = app.AppendOrCreateFloatHistogram(t, fh)
+			newchk, recoded, app, err = app.AppendOrCreateFloatHistogram(t, fh, false)
 			if err != nil {
 				return errChunksIterator{err: err}
 			}
