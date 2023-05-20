@@ -371,6 +371,14 @@ func inversePostingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Posting
 	if m.Type == labels.MatchEqual && m.Value == "" {
 		res = vals
 	} else {
+		// Inverse of a MatchNotRegexp is MatchRegexp (double negation).
+		// Fast-path for set matching.
+		if m.Type == labels.MatchNotRegexp {
+			setMatches := findSetMatches(m.GetRegexString())
+			if len(setMatches) > 0 {
+				return ix.Postings(m.Name, setMatches...)
+			}
+		}
 		for _, val := range vals {
 			if !m.Matches(val) {
 				res = append(res, val)
@@ -871,7 +879,7 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 		}
 
 		switch hc := p.currChkMeta.Chunk.(type) {
-		case *chunkenc.HistogramChunk:
+		case *chunkenc.FloatHistogramChunk:
 			newChunk.(*chunkenc.FloatHistogramChunk).SetCounterResetHeader(hc.GetCounterResetHeader())
 		case *safeHeadChunk:
 			if unwrapped, ok := hc.Chunk.(*chunkenc.FloatHistogramChunk); ok {

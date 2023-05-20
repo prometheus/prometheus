@@ -184,8 +184,9 @@ func (p *MemPostings) Stats(label string) *PostingsStats {
 			if n == label {
 				metrics.push(Stat{Name: name, Count: uint64(len(values))})
 			}
-			labelValuePairs.push(Stat{Name: n + "=" + name, Count: uint64(len(values))})
-			size += uint64(len(name))
+			seriesCnt := uint64(len(values))
+			labelValuePairs.push(Stat{Name: n + "=" + name, Count: seriesCnt})
+			size += uint64(len(name)) * seriesCnt
 		}
 		labelValueLength.push(Stat{Name: n, Count: size})
 	}

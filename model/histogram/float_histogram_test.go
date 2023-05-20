@@ -15,12 +15,13 @@ package histogram
 
 import (
 	"fmt"
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
-func TestFloatHistogramScale(t *testing.T) {
+func TestFloatHistogramMul(t *testing.T) {
 	cases := []struct {
 		name     string
 		in       *FloatHistogram
@@ -32,6 +33,30 @@ func TestFloatHistogramScale(t *testing.T) {
 			&FloatHistogram{},
 			3.1415,
 			&FloatHistogram{},
+		},
+		{
+			"zero multiplier",
+			&FloatHistogram{
+				ZeroThreshold:   0.01,
+				ZeroCount:       5.5,
+				Count:           3493.3,
+				Sum:             2349209.324,
+				PositiveSpans:   []Span{{-2, 1}, {2, 3}},
+				PositiveBuckets: []float64{1, 3.3, 4.2, 0.1},
+				NegativeSpans:   []Span{{3, 2}, {3, 2}},
+				NegativeBuckets: []float64{3.1, 3, 1.234e5, 1000},
+			},
+			0,
+			&FloatHistogram{
+				ZeroThreshold:   0.01,
+				ZeroCount:       0,
+				Count:           0,
+				Sum:             0,
+				PositiveSpans:   []Span{{-2, 1}, {2, 3}},
+				PositiveBuckets: []float64{0, 0, 0, 0},
+				NegativeSpans:   []Span{{3, 2}, {3, 2}},
+				NegativeBuckets: []float64{0, 0, 0, 0},
+			},
 		},
 		{
 			"no-op",
@@ -81,13 +106,133 @@ func TestFloatHistogramScale(t *testing.T) {
 				NegativeBuckets: []float64{6.2, 6, 1.234e5 * 2, 2000},
 			},
 		},
+		{
+			"triple",
+			&FloatHistogram{
+				ZeroThreshold:   0.01,
+				ZeroCount:       11,
+				Count:           30,
+				Sum:             23,
+				PositiveSpans:   []Span{{-2, 2}, {1, 3}},
+				PositiveBuckets: []float64{1, 0, 3, 4, 7},
+				NegativeSpans:   []Span{{3, 2}, {3, 2}},
+				NegativeBuckets: []float64{3, 1, 5, 6},
+			},
+			3,
+			&FloatHistogram{
+				ZeroThreshold:   0.01,
+				ZeroCount:       33,
+				Count:           90,
+				Sum:             69,
+				PositiveSpans:   []Span{{-2, 2}, {1, 3}},
+				PositiveBuckets: []float64{3, 0, 9, 12, 21},
+				NegativeSpans:   []Span{{3, 2}, {3, 2}},
+				NegativeBuckets: []float64{9, 3, 15, 18},
+			},
+		},
 	}
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			require.Equal(t, c.expected, c.in.Scale(c.scale))
+			require.Equal(t, c.expected, c.in.Mul(c.scale))
 			// Has it also happened in-place?
 			require.Equal(t, c.expected, c.in)
+		})
+	}
+}
+
+func TestFloatHistogramDiv(t *testing.T) {
+	cases := []struct {
+		name     string
+		fh       *FloatHistogram
+		s        float64
+		expected *FloatHistogram
+	}{
+		{
+			"zero value",
+			&FloatHistogram{},
+			3.1415,
+			&FloatHistogram{},
+		},
+		{
+			"zero divisor",
+			&FloatHistogram{
+				ZeroThreshold:   0.01,
+				ZeroCount:       5.5,
+				Count:           3493.3,
+				Sum:             2349209.324,
+				PositiveSpans:   []Span{{-2, 1}, {2, 3}},
+				PositiveBuckets: []float64{1, 3.3, 4.2, 0.1},
+				NegativeSpans:   []Span{{3, 2}, {3, 2}},
+				NegativeBuckets: []float64{3.1, 3, 1.234e5, 1000},
+			},
+			0,
+			&FloatHistogram{
+				ZeroThreshold:   0.01,
+				ZeroCount:       math.Inf(1),
+				Count:           math.Inf(1),
+				Sum:             math.Inf(1),
+				PositiveSpans:   []Span{{-2, 1}, {2, 3}},
+				PositiveBuckets: []float64{math.Inf(1), math.Inf(1), math.Inf(1), math.Inf(1)},
+				NegativeSpans:   []Span{{3, 2}, {3, 2}},
+				NegativeBuckets: []float64{math.Inf(1), math.Inf(1), math.Inf(1), math.Inf(1)},
+			},
+		},
+		{
+			"no-op",
+			&FloatHistogram{
+				ZeroThreshold:   0.01,
+				ZeroCount:       5.5,
+				Count:           3493.3,
+				Sum:             2349209.324,
+				PositiveSpans:   []Span{{-2, 1}, {2, 3}},
+				PositiveBuckets: []float64{1, 3.3, 4.2, 0.1},
+				NegativeSpans:   []Span{{3, 2}, {3, 2}},
+				NegativeBuckets: []float64{3.1, 3, 1.234e5, 1000},
+			},
+			1,
+			&FloatHistogram{
+				ZeroThreshold:   0.01,
+				ZeroCount:       5.5,
+				Count:           3493.3,
+				Sum:             2349209.324,
+				PositiveSpans:   []Span{{-2, 1}, {2, 3}},
+				PositiveBuckets: []float64{1, 3.3, 4.2, 0.1},
+				NegativeSpans:   []Span{{3, 2}, {3, 2}},
+				NegativeBuckets: []float64{3.1, 3, 1.234e5, 1000},
+			},
+		},
+		{
+			"half",
+			&FloatHistogram{
+				ZeroThreshold:   0.01,
+				ZeroCount:       11,
+				Count:           30,
+				Sum:             23,
+				PositiveSpans:   []Span{{-2, 2}, {1, 3}},
+				PositiveBuckets: []float64{1, 0, 3, 4, 7},
+				NegativeSpans:   []Span{{3, 2}, {3, 2}},
+				NegativeBuckets: []float64{3, 1, 5, 6},
+			},
+			2,
+			&FloatHistogram{
+				ZeroThreshold:   0.01,
+				ZeroCount:       5.5,
+				Count:           15,
+				Sum:             11.5,
+				PositiveSpans:   []Span{{-2, 2}, {1, 3}},
+				PositiveBuckets: []float64{0.5, 0, 1.5, 2, 3.5},
+				NegativeSpans:   []Span{{3, 2}, {3, 2}},
+				NegativeBuckets: []float64{1.5, 0.5, 2.5, 3},
+			},
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			require.Equal(t, c.expected, c.fh.Div(c.s))
+			// Has it also happened in-place?
+			require.Equal(t, c.expected, c.fh)
 		})
 	}
 }
