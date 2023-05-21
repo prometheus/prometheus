@@ -9,7 +9,6 @@ output:
 
 linters:
   enable:
-    - contextcheck
     - depguard
     - gocritic
     - gofumpt
@@ -18,6 +17,7 @@ linters:
     - misspell
     - unconvert
     - unused
+    - whitespace
 
 issues:
   max-same-issues: 0
