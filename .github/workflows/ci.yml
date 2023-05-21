@@ -4,7 +4,7 @@ on:
   pull_request:
   push:
   
-permissions: read-all
+permissions: write-all
 
 jobs:
   test_go:
