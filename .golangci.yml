@@ -9,6 +9,7 @@ output:
 
 linters:
   enable:
+    - contextcheck
     - depguard
     - gocritic
     - gofumpt
