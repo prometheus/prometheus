@@ -159,12 +159,12 @@ func (h *FloatHistogram) ZeroBucket() Bucket[float64] {
 	}
 }
 
-// Scale scales the FloatHistogram by the provided factor, i.e. it scales all
+// Mul multiplies the FloatHistogram by the provided factor, i.e. it scales all
 // bucket counts including the zero bucket and the count and the sum of
 // observations. The bucket layout stays the same. This method changes the
 // receiving histogram directly (rather than acting on a copy). It returns a
 // pointer to the receiving histogram for convenience.
-func (h *FloatHistogram) Scale(factor float64) *FloatHistogram {
+func (h *FloatHistogram) Mul(factor float64) *FloatHistogram {
 	h.ZeroCount *= factor
 	h.Count *= factor
 	h.Sum *= factor
@@ -173,6 +173,21 @@ func (h *FloatHistogram) Scale(factor float64) *FloatHistogram {
 	}
 	for i := range h.NegativeBuckets {
 		h.NegativeBuckets[i] *= factor
+	}
+	return h
+}
+
+// Div works like Scale but divides instead of multiplies.
+// When dividing by 0, everything will be set to Inf.
+func (h *FloatHistogram) Div(scalar float64) *FloatHistogram {
+	h.ZeroCount /= scalar
+	h.Count /= scalar
+	h.Sum /= scalar
+	for i := range h.PositiveBuckets {
+		h.PositiveBuckets[i] /= scalar
+	}
+	for i := range h.NegativeBuckets {
+		h.NegativeBuckets[i] /= scalar
 	}
 	return h
 }

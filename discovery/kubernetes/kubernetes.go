@@ -761,15 +761,21 @@ func (d *Discovery) newEndpointsByNodeInformer(plw *cache.ListWatch) cache.Share
 	indexers[nodeIndex] = func(obj interface{}) ([]string, error) {
 		e, ok := obj.(*apiv1.Endpoints)
 		if !ok {
-			return nil, fmt.Errorf("object is not a pod")
+			return nil, fmt.Errorf("object is not endpoints")
 		}
 		var nodes []string
 		for _, target := range e.Subsets {
 			for _, addr := range target.Addresses {
-				if addr.NodeName == nil {
-					continue
+				if addr.TargetRef != nil {
+					switch addr.TargetRef.Kind {
+					case "Pod":
+						if addr.NodeName != nil {
+							nodes = append(nodes, *addr.NodeName)
+						}
+					case "Node":
+						nodes = append(nodes, addr.TargetRef.Name)
+					}
 				}
-				nodes = append(nodes, *addr.NodeName)
 			}
 		}
 		return nodes, nil
@@ -789,17 +795,29 @@ func (d *Discovery) newEndpointSlicesByNodeInformer(plw *cache.ListWatch, object
 		switch e := obj.(type) {
 		case *disv1.EndpointSlice:
 			for _, target := range e.Endpoints {
-				if target.NodeName == nil {
-					continue
+				if target.TargetRef != nil {
+					switch target.TargetRef.Kind {
+					case "Pod":
+						if target.NodeName != nil {
+							nodes = append(nodes, *target.NodeName)
+						}
+					case "Node":
+						nodes = append(nodes, target.TargetRef.Name)
+					}
 				}
-				nodes = append(nodes, *target.NodeName)
 			}
 		case *disv1beta1.EndpointSlice:
 			for _, target := range e.Endpoints {
-				if target.NodeName == nil {
-					continue
+				if target.TargetRef != nil {
+					switch target.TargetRef.Kind {
+					case "Pod":
+						if target.NodeName != nil {
+							nodes = append(nodes, *target.NodeName)
+						}
+					case "Node":
+						nodes = append(nodes, target.TargetRef.Name)
+					}
 				}
-				nodes = append(nodes, *target.NodeName)
 			}
 		default:
 			return nil, fmt.Errorf("object is not an endpointslice")

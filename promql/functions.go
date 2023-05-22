@@ -162,7 +162,7 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 	if resultHistogram == nil {
 		resultFloat *= factor
 	} else {
-		resultHistogram.Scale(factor)
+		resultHistogram.Mul(factor)
 	}
 
 	return append(enh.Out, Sample{F: resultFloat, H: resultHistogram})
@@ -443,14 +443,39 @@ func aggrOverTime(vals []parser.Value, enh *EvalNodeHelper, aggrFn func(Series) 
 	return append(enh.Out, Sample{F: aggrFn(el)})
 }
 
+func aggrHistOverTime(vals []parser.Value, enh *EvalNodeHelper, aggrFn func(Series) *histogram.FloatHistogram) Vector {
+	el := vals[0].(Matrix)[0]
+
+	return append(enh.Out, Sample{H: aggrFn(el)})
+}
+
 // === avg_over_time(Matrix parser.ValueTypeMatrix) Vector ===
 func funcAvgOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
-	if len(vals[0].(Matrix)[0].Floats) == 0 {
-		// TODO(beorn7): The passed values only contain
-		// histograms. avg_over_time ignores histograms for now. If
-		// there are only histograms, we have to return without adding
-		// anything to enh.Out.
+	if len(vals[0].(Matrix)[0].Floats) > 0 && len(vals[0].(Matrix)[0].Histograms) > 0 {
+		// TODO(zenador): Add warning for mixed floats and histograms.
 		return enh.Out
+	}
+	if len(vals[0].(Matrix)[0].Floats) == 0 {
+		// The passed values only contain histograms.
+		return aggrHistOverTime(vals, enh, func(s Series) *histogram.FloatHistogram {
+			count := 1
+			mean := s.Histograms[0].H.Copy()
+			for _, h := range s.Histograms[1:] {
+				count++
+				left := h.H.Copy().Div(float64(count))
+				right := mean.Copy().Div(float64(count))
+				// The histogram being added/subtracted must have
+				// an equal or larger schema.
+				if h.H.Schema >= mean.Schema {
+					toAdd := right.Mul(-1).Add(left)
+					mean.Add(toAdd)
+				} else {
+					toAdd := left.Sub(right)
+					mean = toAdd.Add(mean)
+				}
+			}
+			return mean
+		})
 	}
 	return aggrOverTime(vals, enh, func(s Series) float64 {
 		var mean, count, c float64
@@ -558,12 +583,25 @@ func funcMinOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 
 // === sum_over_time(Matrix parser.ValueTypeMatrix) Vector ===
 func funcSumOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
-	if len(vals[0].(Matrix)[0].Floats) == 0 {
-		// TODO(beorn7): The passed values only contain
-		// histograms. sum_over_time ignores histograms for now. If
-		// there are only histograms, we have to return without adding
-		// anything to enh.Out.
+	if len(vals[0].(Matrix)[0].Floats) > 0 && len(vals[0].(Matrix)[0].Histograms) > 0 {
+		// TODO(zenador): Add warning for mixed floats and histograms.
 		return enh.Out
+	}
+	if len(vals[0].(Matrix)[0].Floats) == 0 {
+		// The passed values only contain histograms.
+		return aggrHistOverTime(vals, enh, func(s Series) *histogram.FloatHistogram {
+			sum := s.Histograms[0].H.Copy()
+			for _, h := range s.Histograms[1:] {
+				// The histogram being added must have
+				// an equal or larger schema.
+				if h.H.Schema >= sum.Schema {
+					sum.Add(h.H)
+				} else {
+					sum = h.H.Copy().Add(sum)
+				}
+			}
+			return sum
+		})
 	}
 	return aggrOverTime(vals, enh, func(s Series) float64 {
 		var sum, c float64

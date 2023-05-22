@@ -1074,6 +1074,10 @@ The following endpoint returns various cardinality statistics about the Promethe
 ```
 GET /api/v1/status/tsdb
 ```
+URL query parameters:
+- `limit=<number>`: Limit the number of returned items to a given number for each set of statistics. By default, 10 items are returned.
+
+The `data` section of the query result consists of
 - **headStats**: This provides the following data about the head block of the TSDB:
   - **numSeries**: The number of series.
   - **chunkCount**: The number of chunks.

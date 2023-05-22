@@ -29,6 +29,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -541,6 +542,46 @@ func TestBlockQuerier_AgainstHeadWithOpenChunks(t *testing.T) {
 	}
 }
 
+func TestBlockQuerier_TrimmingDoesNotModifyOriginalTombstoneIntervals(t *testing.T) {
+	c := blockQuerierTestCase{
+		mint: 2,
+		maxt: 6,
+		ms:   []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "a", "a")},
+		exp: newMockSeriesSet([]storage.Series{
+			storage.NewListSeries(labels.FromStrings("a", "a"),
+				[]tsdbutil.Sample{sample{3, 4, nil, nil}, sample{5, 2, nil, nil}, sample{6, 3, nil, nil}},
+			),
+			storage.NewListSeries(labels.FromStrings("a", "a", "b", "b"),
+				[]tsdbutil.Sample{sample{3, 3, nil, nil}, sample{5, 3, nil, nil}, sample{6, 6, nil, nil}},
+			),
+		}),
+		expChks: newMockChunkSeriesSet([]storage.ChunkSeries{
+			storage.NewListChunkSeriesFromSamples(labels.FromStrings("a", "a"),
+				[]tsdbutil.Sample{sample{3, 4, nil, nil}}, []tsdbutil.Sample{sample{5, 2, nil, nil}, sample{6, 3, nil, nil}},
+			),
+			storage.NewListChunkSeriesFromSamples(labels.FromStrings("a", "a", "b", "b"),
+				[]tsdbutil.Sample{sample{3, 3, nil, nil}}, []tsdbutil.Sample{sample{5, 3, nil, nil}, sample{6, 6, nil, nil}},
+			),
+		}),
+	}
+	ir, cr, _, _ := createIdxChkReaders(t, testData)
+	stones := tombstones.NewMemTombstones()
+	p, err := ir.Postings("a", "a")
+	require.NoError(t, err)
+	refs, err := index.ExpandPostings(p)
+	require.NoError(t, err)
+	for _, ref := range refs {
+		stones.AddInterval(ref, tombstones.Interval{Mint: 1, Maxt: 2})
+	}
+	testBlockQuerier(t, c, ir, cr, stones)
+	for _, ref := range refs {
+		intervals, err := stones.Get(ref)
+		require.NoError(t, err)
+		// Without copy, the intervals could be [math.MinInt64, 2].
+		require.Equal(t, tombstones.Intervals{{Mint: 1, Maxt: 2}}, intervals)
+	}
+}
+
 var testData = []seriesSamples{
 	{
 		lset: map[string]string{"a": "a"},
@@ -905,6 +946,202 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 			seekSuccess: true,
 			expected: []tsdbutil.Sample{
 				sample{3, 5, nil, nil}, sample{6, 1, nil, nil}, sample{7, 89, nil, nil},
+			},
+		},
+		{
+			name: "one histogram chunk",
+			chks: [][]tsdbutil.Sample{
+				{
+					sample{1, 0, tsdbutil.GenerateTestHistogram(1), nil},
+					sample{2, 0, tsdbutil.GenerateTestHistogram(2), nil},
+					sample{3, 0, tsdbutil.GenerateTestHistogram(3), nil},
+					sample{6, 0, tsdbutil.GenerateTestHistogram(6), nil},
+				},
+			},
+			expected: []tsdbutil.Sample{
+				sample{1, 0, tsdbutil.GenerateTestHistogram(1), nil},
+				sample{2, 0, tsdbutil.SetHistogramNotCounterReset(tsdbutil.GenerateTestHistogram(2)), nil},
+				sample{3, 0, tsdbutil.SetHistogramNotCounterReset(tsdbutil.GenerateTestHistogram(3)), nil},
+				sample{6, 0, tsdbutil.SetHistogramNotCounterReset(tsdbutil.GenerateTestHistogram(6)), nil},
+			},
+			expectedChks: []chunks.Meta{
+				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+					sample{1, 0, tsdbutil.GenerateTestHistogram(1), nil},
+					sample{2, 0, tsdbutil.SetHistogramNotCounterReset(tsdbutil.GenerateTestHistogram(2)), nil},
+					sample{3, 0, tsdbutil.SetHistogramNotCounterReset(tsdbutil.GenerateTestHistogram(3)), nil},
+					sample{6, 0, tsdbutil.SetHistogramNotCounterReset(tsdbutil.GenerateTestHistogram(6)), nil},
+				}),
+			},
+		},
+		{
+			name: "one histogram chunk intersect with deletion interval",
+			chks: [][]tsdbutil.Sample{
+				{
+					sample{1, 0, tsdbutil.GenerateTestHistogram(1), nil},
+					sample{2, 0, tsdbutil.GenerateTestHistogram(2), nil},
+					sample{3, 0, tsdbutil.GenerateTestHistogram(3), nil},
+					sample{6, 0, tsdbutil.GenerateTestHistogram(6), nil},
+				},
+			},
+			intervals: tombstones.Intervals{{Mint: 5, Maxt: 20}},
+			expected: []tsdbutil.Sample{
+				sample{1, 0, tsdbutil.GenerateTestHistogram(1), nil},
+				sample{2, 0, tsdbutil.SetHistogramNotCounterReset(tsdbutil.GenerateTestHistogram(2)), nil},
+				sample{3, 0, tsdbutil.SetHistogramNotCounterReset(tsdbutil.GenerateTestHistogram(3)), nil},
+			},
+			expectedChks: []chunks.Meta{
+				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+					sample{1, 0, tsdbutil.GenerateTestHistogram(1), nil},
+					sample{2, 0, tsdbutil.SetHistogramNotCounterReset(tsdbutil.GenerateTestHistogram(2)), nil},
+					sample{3, 0, tsdbutil.SetHistogramNotCounterReset(tsdbutil.GenerateTestHistogram(3)), nil},
+				}),
+			},
+		},
+		{
+			name: "one float histogram chunk",
+			chks: [][]tsdbutil.Sample{
+				{
+					sample{1, 0, nil, tsdbutil.GenerateTestFloatHistogram(1)},
+					sample{2, 0, nil, tsdbutil.GenerateTestFloatHistogram(2)},
+					sample{3, 0, nil, tsdbutil.GenerateTestFloatHistogram(3)},
+					sample{6, 0, nil, tsdbutil.GenerateTestFloatHistogram(6)},
+				},
+			},
+			expected: []tsdbutil.Sample{
+				sample{1, 0, nil, tsdbutil.GenerateTestFloatHistogram(1)},
+				sample{2, 0, nil, tsdbutil.SetFloatHistogramNotCounterReset(tsdbutil.GenerateTestFloatHistogram(2))},
+				sample{3, 0, nil, tsdbutil.SetFloatHistogramNotCounterReset(tsdbutil.GenerateTestFloatHistogram(3))},
+				sample{6, 0, nil, tsdbutil.SetFloatHistogramNotCounterReset(tsdbutil.GenerateTestFloatHistogram(6))},
+			},
+			expectedChks: []chunks.Meta{
+				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+					sample{1, 0, nil, tsdbutil.GenerateTestFloatHistogram(1)},
+					sample{2, 0, nil, tsdbutil.SetFloatHistogramNotCounterReset(tsdbutil.GenerateTestFloatHistogram(2))},
+					sample{3, 0, nil, tsdbutil.SetFloatHistogramNotCounterReset(tsdbutil.GenerateTestFloatHistogram(3))},
+					sample{6, 0, nil, tsdbutil.SetFloatHistogramNotCounterReset(tsdbutil.GenerateTestFloatHistogram(6))},
+				}),
+			},
+		},
+		{
+			name: "one float histogram chunk intersect with deletion interval",
+			chks: [][]tsdbutil.Sample{
+				{
+					sample{1, 0, nil, tsdbutil.GenerateTestFloatHistogram(1)},
+					sample{2, 0, nil, tsdbutil.GenerateTestFloatHistogram(2)},
+					sample{3, 0, nil, tsdbutil.GenerateTestFloatHistogram(3)},
+					sample{6, 0, nil, tsdbutil.GenerateTestFloatHistogram(6)},
+				},
+			},
+			intervals: tombstones.Intervals{{Mint: 5, Maxt: 20}},
+			expected: []tsdbutil.Sample{
+				sample{1, 0, nil, tsdbutil.GenerateTestFloatHistogram(1)},
+				sample{2, 0, nil, tsdbutil.SetFloatHistogramNotCounterReset(tsdbutil.GenerateTestFloatHistogram(2))},
+				sample{3, 0, nil, tsdbutil.SetFloatHistogramNotCounterReset(tsdbutil.GenerateTestFloatHistogram(3))},
+			},
+			expectedChks: []chunks.Meta{
+				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+					sample{1, 0, nil, tsdbutil.GenerateTestFloatHistogram(1)},
+					sample{2, 0, nil, tsdbutil.SetFloatHistogramNotCounterReset(tsdbutil.GenerateTestFloatHistogram(2))},
+					sample{3, 0, nil, tsdbutil.SetFloatHistogramNotCounterReset(tsdbutil.GenerateTestFloatHistogram(3))},
+				}),
+			},
+		},
+		{
+			name: "one gauge histogram chunk",
+			chks: [][]tsdbutil.Sample{
+				{
+					sample{1, 0, tsdbutil.GenerateTestGaugeHistogram(1), nil},
+					sample{2, 0, tsdbutil.GenerateTestGaugeHistogram(2), nil},
+					sample{3, 0, tsdbutil.GenerateTestGaugeHistogram(3), nil},
+					sample{6, 0, tsdbutil.GenerateTestGaugeHistogram(6), nil},
+				},
+			},
+			expected: []tsdbutil.Sample{
+				sample{1, 0, tsdbutil.GenerateTestGaugeHistogram(1), nil},
+				sample{2, 0, tsdbutil.GenerateTestGaugeHistogram(2), nil},
+				sample{3, 0, tsdbutil.GenerateTestGaugeHistogram(3), nil},
+				sample{6, 0, tsdbutil.GenerateTestGaugeHistogram(6), nil},
+			},
+			expectedChks: []chunks.Meta{
+				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+					sample{1, 0, tsdbutil.GenerateTestGaugeHistogram(1), nil},
+					sample{2, 0, tsdbutil.GenerateTestGaugeHistogram(2), nil},
+					sample{3, 0, tsdbutil.GenerateTestGaugeHistogram(3), nil},
+					sample{6, 0, tsdbutil.GenerateTestGaugeHistogram(6), nil},
+				}),
+			},
+		},
+		{
+			name: "one gauge histogram chunk intersect with deletion interval",
+			chks: [][]tsdbutil.Sample{
+				{
+					sample{1, 0, tsdbutil.GenerateTestGaugeHistogram(1), nil},
+					sample{2, 0, tsdbutil.GenerateTestGaugeHistogram(2), nil},
+					sample{3, 0, tsdbutil.GenerateTestGaugeHistogram(3), nil},
+					sample{6, 0, tsdbutil.GenerateTestGaugeHistogram(6), nil},
+				},
+			},
+			intervals: tombstones.Intervals{{Mint: 5, Maxt: 20}},
+			expected: []tsdbutil.Sample{
+				sample{1, 0, tsdbutil.GenerateTestGaugeHistogram(1), nil},
+				sample{2, 0, tsdbutil.GenerateTestGaugeHistogram(2), nil},
+				sample{3, 0, tsdbutil.GenerateTestGaugeHistogram(3), nil},
+			},
+			expectedChks: []chunks.Meta{
+				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+					sample{1, 0, tsdbutil.GenerateTestGaugeHistogram(1), nil},
+					sample{2, 0, tsdbutil.GenerateTestGaugeHistogram(2), nil},
+					sample{3, 0, tsdbutil.GenerateTestGaugeHistogram(3), nil},
+				}),
+			},
+		},
+		{
+			name: "one gauge float histogram",
+			chks: [][]tsdbutil.Sample{
+				{
+					sample{1, 0, nil, tsdbutil.GenerateTestGaugeFloatHistogram(1)},
+					sample{2, 0, nil, tsdbutil.GenerateTestGaugeFloatHistogram(2)},
+					sample{3, 0, nil, tsdbutil.GenerateTestGaugeFloatHistogram(3)},
+					sample{6, 0, nil, tsdbutil.GenerateTestGaugeFloatHistogram(6)},
+				},
+			},
+			expected: []tsdbutil.Sample{
+				sample{1, 0, nil, tsdbutil.GenerateTestGaugeFloatHistogram(1)},
+				sample{2, 0, nil, tsdbutil.GenerateTestGaugeFloatHistogram(2)},
+				sample{3, 0, nil, tsdbutil.GenerateTestGaugeFloatHistogram(3)},
+				sample{6, 0, nil, tsdbutil.GenerateTestGaugeFloatHistogram(6)},
+			},
+			expectedChks: []chunks.Meta{
+				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+					sample{1, 0, nil, tsdbutil.GenerateTestGaugeFloatHistogram(1)},
+					sample{2, 0, nil, tsdbutil.GenerateTestGaugeFloatHistogram(2)},
+					sample{3, 0, nil, tsdbutil.GenerateTestGaugeFloatHistogram(3)},
+					sample{6, 0, nil, tsdbutil.GenerateTestGaugeFloatHistogram(6)},
+				}),
+			},
+		},
+		{
+			name: "one gauge float histogram chunk intersect with deletion interval",
+			chks: [][]tsdbutil.Sample{
+				{
+					sample{1, 0, nil, tsdbutil.GenerateTestGaugeFloatHistogram(1)},
+					sample{2, 0, nil, tsdbutil.GenerateTestGaugeFloatHistogram(2)},
+					sample{3, 0, nil, tsdbutil.GenerateTestGaugeFloatHistogram(3)},
+					sample{6, 0, nil, tsdbutil.GenerateTestGaugeFloatHistogram(6)},
+				},
+			},
+			intervals: tombstones.Intervals{{Mint: 5, Maxt: 20}},
+			expected: []tsdbutil.Sample{
+				sample{1, 0, nil, tsdbutil.GenerateTestGaugeFloatHistogram(1)},
+				sample{2, 0, nil, tsdbutil.GenerateTestGaugeFloatHistogram(2)},
+				sample{3, 0, nil, tsdbutil.GenerateTestGaugeFloatHistogram(3)},
+			},
+			expectedChks: []chunks.Meta{
+				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+					sample{1, 0, nil, tsdbutil.GenerateTestGaugeFloatHistogram(1)},
+					sample{2, 0, nil, tsdbutil.GenerateTestGaugeFloatHistogram(2)},
+					sample{3, 0, nil, tsdbutil.GenerateTestGaugeFloatHistogram(3)},
+				}),
 			},
 		},
 	}
@@ -1821,6 +2058,19 @@ func TestPostingsForMatchers(t *testing.T) {
 			},
 		},
 		{
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotRegexp, "n", "1")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "2"),
+				labels.FromStrings("n", "2.5"),
+			},
+		},
+		{
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotRegexp, "n", "1|2.5")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "2"),
+			},
+		},
+		{
 			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "n", "1"), labels.MustNewMatcher(labels.MatchNotRegexp, "i", "^a$")},
 			exp: []labels.Labels{
 				labels.FromStrings("n", "1"),
@@ -1909,27 +2159,36 @@ func TestPostingsForMatchers(t *testing.T) {
 	require.NoError(t, err)
 
 	for _, c := range cases {
-		exp := map[string]struct{}{}
-		for _, l := range c.exp {
-			exp[l.String()] = struct{}{}
-		}
-		p, err := PostingsForMatchers(ir, c.matchers...)
-		require.NoError(t, err)
-
-		var builder labels.ScratchBuilder
-		for p.Next() {
-			require.NoError(t, ir.Series(p.At(), &builder, &[]chunks.Meta{}))
-			lbls := builder.Labels()
-			if _, ok := exp[lbls.String()]; !ok {
-				t.Errorf("Evaluating %v, unexpected result %s", c.matchers, lbls.String())
-			} else {
-				delete(exp, lbls.String())
+		name := ""
+		for i, matcher := range c.matchers {
+			if i > 0 {
+				name += ","
 			}
+			name += matcher.String()
 		}
-		require.NoError(t, p.Err())
-		if len(exp) != 0 {
-			t.Errorf("Evaluating %v, missing results %+v", c.matchers, exp)
-		}
+		t.Run(name, func(t *testing.T) {
+			exp := map[string]struct{}{}
+			for _, l := range c.exp {
+				exp[l.String()] = struct{}{}
+			}
+			p, err := PostingsForMatchers(ir, c.matchers...)
+			require.NoError(t, err)
+
+			var builder labels.ScratchBuilder
+			for p.Next() {
+				require.NoError(t, ir.Series(p.At(), &builder, &[]chunks.Meta{}))
+				lbls := builder.Labels()
+				if _, ok := exp[lbls.String()]; !ok {
+					t.Errorf("Evaluating %v, unexpected result %s", c.matchers, lbls.String())
+				} else {
+					delete(exp, lbls.String())
+				}
+			}
+			require.NoError(t, p.Err())
+			if len(exp) != 0 {
+				t.Errorf("Evaluating %v, missing results %+v", c.matchers, exp)
+			}
+		})
 	}
 }
 
@@ -2374,5 +2633,82 @@ func BenchmarkHeadQuerier(b *testing.B) {
 		}
 		_ = total
 		require.NoError(b, ss.Err())
+	}
+}
+
+// This is a regression test for the case where gauge histograms were not handled by
+// populateWithDelChunkSeriesIterator correctly.
+func TestQueryWithDeletedHistograms(t *testing.T) {
+	testcases := map[string]func(int) (*histogram.Histogram, *histogram.FloatHistogram){
+		"intCounter": func(i int) (*histogram.Histogram, *histogram.FloatHistogram) {
+			return tsdbutil.GenerateTestHistogram(i), nil
+		},
+		"intgauge": func(i int) (*histogram.Histogram, *histogram.FloatHistogram) {
+			return tsdbutil.GenerateTestGaugeHistogram(rand.Int() % 1000), nil
+		},
+		"floatCounter": func(i int) (*histogram.Histogram, *histogram.FloatHistogram) {
+			return nil, tsdbutil.GenerateTestFloatHistogram(i)
+		},
+		"floatGauge": func(i int) (*histogram.Histogram, *histogram.FloatHistogram) {
+			return nil, tsdbutil.GenerateTestGaugeFloatHistogram(rand.Int() % 1000)
+		},
+	}
+
+	for name, tc := range testcases {
+		t.Run(name, func(t *testing.T) {
+			db := openTestDB(t, nil, nil)
+			defer func() {
+				require.NoError(t, db.Close())
+			}()
+
+			db.EnableNativeHistograms()
+			appender := db.Appender(context.Background())
+
+			var (
+				err       error
+				seriesRef storage.SeriesRef
+			)
+			lbs := labels.FromStrings("__name__", "test", "type", name)
+
+			for i := 0; i < 100; i++ {
+				h, fh := tc(i)
+				seriesRef, err = appender.AppendHistogram(seriesRef, lbs, int64(i), h, fh)
+				require.NoError(t, err)
+			}
+
+			err = appender.Commit()
+			require.NoError(t, err)
+
+			matcher, err := labels.NewMatcher(labels.MatchEqual, "__name__", "test")
+			require.NoError(t, err)
+
+			// Delete the last 20.
+			err = db.Delete(80, 100, matcher)
+			require.NoError(t, err)
+
+			chunkQuerier, err := db.ChunkQuerier(context.Background(), 0, 100)
+			require.NoError(t, err)
+
+			css := chunkQuerier.Select(false, nil, matcher)
+
+			seriesCount := 0
+			for css.Next() {
+				seriesCount++
+				series := css.At()
+
+				sampleCount := 0
+				it := series.Iterator(nil)
+				for it.Next() {
+					chk := it.At()
+					for cit := chk.Chunk.Iterator(nil); cit.Next() != chunkenc.ValNone; {
+						sampleCount++
+					}
+				}
+				require.NoError(t, it.Err())
+				require.Equal(t, 80, sampleCount)
+			}
+			require.NoError(t, css.Err())
+			require.Equal(t, 1, seriesCount)
+		})
 	}
 }

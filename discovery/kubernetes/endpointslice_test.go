@@ -90,6 +90,17 @@ func makeEndpointSliceV1() *v1.EndpointSlice {
 					Serving:     boolptr(true),
 					Terminating: boolptr(true),
 				},
+			}, {
+				Addresses: []string{"4.5.6.7"},
+				Conditions: v1.EndpointConditions{
+					Ready:       boolptr(true),
+					Serving:     boolptr(true),
+					Terminating: boolptr(false),
+				},
+				TargetRef: &corev1.ObjectReference{
+					Kind: "Node",
+					Name: "barbaz",
+				},
 			},
 		},
 	}
@@ -129,6 +140,17 @@ func makeEndpointSliceV1beta1() *v1beta1.EndpointSlice {
 					Ready:       boolptr(false),
 					Serving:     boolptr(true),
 					Terminating: boolptr(true),
+				},
+			}, {
+				Addresses: []string{"4.5.6.7"},
+				Conditions: v1beta1.EndpointConditions{
+					Ready:       boolptr(true),
+					Serving:     boolptr(true),
+					Terminating: boolptr(false),
+				},
+				TargetRef: &corev1.ObjectReference{
+					Kind: "Node",
+					Name: "barbaz",
 				},
 			},
 		},
@@ -183,6 +205,18 @@ func TestEndpointSliceDiscoveryBeforeRun(t *testing.T) {
 						"__meta_kubernetes_endpointslice_port_name":                       "testport",
 						"__meta_kubernetes_endpointslice_port_protocol":                   "TCP",
 					},
+					{
+						"__address__": "4.5.6.7:9000",
+						"__meta_kubernetes_endpointslice_address_target_kind":             "Node",
+						"__meta_kubernetes_endpointslice_address_target_name":             "barbaz",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "true",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "false",
+						"__meta_kubernetes_endpointslice_port":                            "9000",
+						"__meta_kubernetes_endpointslice_port_app_protocol":               "http",
+						"__meta_kubernetes_endpointslice_port_name":                       "testport",
+						"__meta_kubernetes_endpointslice_port_protocol":                   "TCP",
+					},
 				},
 				Labels: model.LabelSet{
 					"__meta_kubernetes_endpointslice_address_type": "IPv4",
@@ -229,6 +263,17 @@ func TestEndpointSliceDiscoveryBeforeRunV1beta1(t *testing.T) {
 						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "false",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "true",
+						"__meta_kubernetes_endpointslice_port":                            "9000",
+						"__meta_kubernetes_endpointslice_port_name":                       "testport",
+						"__meta_kubernetes_endpointslice_port_protocol":                   "TCP",
+					},
+					{
+						"__address__": "4.5.6.7:9000",
+						"__meta_kubernetes_endpointslice_address_target_kind":             "Node",
+						"__meta_kubernetes_endpointslice_address_target_name":             "barbaz",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "true",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "false",
 						"__meta_kubernetes_endpointslice_port":                            "9000",
 						"__meta_kubernetes_endpointslice_port_name":                       "testport",
 						"__meta_kubernetes_endpointslice_port_protocol":                   "TCP",
@@ -419,6 +464,18 @@ func TestEndpointSliceDiscoveryDelete(t *testing.T) {
 						"__meta_kubernetes_endpointslice_port_name":                       "testport",
 						"__meta_kubernetes_endpointslice_port_protocol":                   "TCP",
 					},
+					{
+						"__address__": "4.5.6.7:9000",
+						"__meta_kubernetes_endpointslice_address_target_kind":             "Node",
+						"__meta_kubernetes_endpointslice_address_target_name":             "barbaz",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "true",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "false",
+						"__meta_kubernetes_endpointslice_port":                            "9000",
+						"__meta_kubernetes_endpointslice_port_app_protocol":               "http",
+						"__meta_kubernetes_endpointslice_port_name":                       "testport",
+						"__meta_kubernetes_endpointslice_port_protocol":                   "TCP",
+					},
 				},
 				Labels: map[model.LabelName]model.LabelValue{
 					"__meta_kubernetes_endpointslice_address_type": "IPv4",
@@ -503,6 +560,18 @@ func TestEndpointSliceDiscoveryUpdate(t *testing.T) {
 						"__meta_kubernetes_endpointslice_port_name":                       "testport",
 						"__meta_kubernetes_endpointslice_port_protocol":                   "TCP",
 					},
+					{
+						"__address__": "4.5.6.7:9000",
+						"__meta_kubernetes_endpointslice_address_target_kind":             "Node",
+						"__meta_kubernetes_endpointslice_address_target_name":             "barbaz",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "true",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "false",
+						"__meta_kubernetes_endpointslice_port":                            "9000",
+						"__meta_kubernetes_endpointslice_port_app_protocol":               "http",
+						"__meta_kubernetes_endpointslice_port_name":                       "testport",
+						"__meta_kubernetes_endpointslice_port_protocol":                   "TCP",
+					},
 				},
 				Labels: model.LabelSet{
 					"__meta_kubernetes_endpointslice_address_type": "IPv4",
@@ -576,6 +645,18 @@ func TestEndpointSliceDiscoveryEmptyEndpoints(t *testing.T) {
 						"__meta_kubernetes_endpointslice_port_name":                       "testport",
 						"__meta_kubernetes_endpointslice_port_protocol":                   "TCP",
 					},
+					{
+						"__address__": "4.5.6.7:9000",
+						"__meta_kubernetes_endpointslice_address_target_kind":             "Node",
+						"__meta_kubernetes_endpointslice_address_target_name":             "barbaz",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "true",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "false",
+						"__meta_kubernetes_endpointslice_port":                            "9000",
+						"__meta_kubernetes_endpointslice_port_app_protocol":               "http",
+						"__meta_kubernetes_endpointslice_port_name":                       "testport",
+						"__meta_kubernetes_endpointslice_port_protocol":                   "TCP",
+					},
 				},
 				Labels: model.LabelSet{
 					"__meta_kubernetes_endpointslice_address_type": "IPv4",
@@ -639,6 +720,18 @@ func TestEndpointSliceDiscoveryWithService(t *testing.T) {
 						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "false",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
 						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "true",
+						"__meta_kubernetes_endpointslice_port":                            "9000",
+						"__meta_kubernetes_endpointslice_port_app_protocol":               "http",
+						"__meta_kubernetes_endpointslice_port_name":                       "testport",
+						"__meta_kubernetes_endpointslice_port_protocol":                   "TCP",
+					},
+					{
+						"__address__": "4.5.6.7:9000",
+						"__meta_kubernetes_endpointslice_address_target_kind":             "Node",
+						"__meta_kubernetes_endpointslice_address_target_name":             "barbaz",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "true",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "false",
 						"__meta_kubernetes_endpointslice_port":                            "9000",
 						"__meta_kubernetes_endpointslice_port_app_protocol":               "http",
 						"__meta_kubernetes_endpointslice_port_name":                       "testport",
@@ -728,6 +821,18 @@ func TestEndpointSliceDiscoveryWithServiceUpdate(t *testing.T) {
 						"__meta_kubernetes_endpointslice_port_protocol":                   "TCP",
 						"__meta_kubernetes_endpointslice_port_app_protocol":               "http",
 					},
+					{
+						"__address__": "4.5.6.7:9000",
+						"__meta_kubernetes_endpointslice_address_target_kind":             "Node",
+						"__meta_kubernetes_endpointslice_address_target_name":             "barbaz",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "true",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "false",
+						"__meta_kubernetes_endpointslice_port":                            "9000",
+						"__meta_kubernetes_endpointslice_port_app_protocol":               "http",
+						"__meta_kubernetes_endpointslice_port_name":                       "testport",
+						"__meta_kubernetes_endpointslice_port_protocol":                   "TCP",
+					},
 				},
 				Labels: model.LabelSet{
 					"__meta_kubernetes_endpointslice_address_type":     "IPv4",
@@ -747,7 +852,8 @@ func TestEndpointSliceDiscoveryWithServiceUpdate(t *testing.T) {
 
 func TestEndpointsSlicesDiscoveryWithNodeMetadata(t *testing.T) {
 	metadataConfig := AttachMetadataConfig{Node: true}
-	nodeLabels := map[string]string{"az": "us-east1"}
+	nodeLabels1 := map[string]string{"az": "us-east1"}
+	nodeLabels2 := map[string]string{"az": "us-west2"}
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "testendpoints",
@@ -757,7 +863,7 @@ func TestEndpointsSlicesDiscoveryWithNodeMetadata(t *testing.T) {
 			},
 		},
 	}
-	objs := []runtime.Object{makeEndpointSliceV1(), makeNode("foobar", "", "", nodeLabels, nil), svc}
+	objs := []runtime.Object{makeEndpointSliceV1(), makeNode("foobar", "", "", nodeLabels1, nil), makeNode("barbaz", "", "", nodeLabels2, nil), svc}
 	n, _ := makeDiscoveryWithMetadata(RoleEndpointSlice, NamespaceDiscovery{}, metadataConfig, objs...)
 
 	k8sDiscoveryTest{
@@ -804,6 +910,21 @@ func TestEndpointsSlicesDiscoveryWithNodeMetadata(t *testing.T) {
 						"__meta_kubernetes_endpointslice_port_name":                       "testport",
 						"__meta_kubernetes_endpointslice_port_protocol":                   "TCP",
 					},
+					{
+						"__address__": "4.5.6.7:9000",
+						"__meta_kubernetes_endpointslice_address_target_kind":             "Node",
+						"__meta_kubernetes_endpointslice_address_target_name":             "barbaz",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "true",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "false",
+						"__meta_kubernetes_endpointslice_port":                            "9000",
+						"__meta_kubernetes_endpointslice_port_app_protocol":               "http",
+						"__meta_kubernetes_endpointslice_port_name":                       "testport",
+						"__meta_kubernetes_endpointslice_port_protocol":                   "TCP",
+						"__meta_kubernetes_node_label_az":                                 "us-west2",
+						"__meta_kubernetes_node_labelpresent_az":                          "true",
+						"__meta_kubernetes_node_name":                                     "barbaz",
+					},
 				},
 				Labels: model.LabelSet{
 					"__meta_kubernetes_endpointslice_address_type":    "IPv4",
@@ -821,7 +942,8 @@ func TestEndpointsSlicesDiscoveryWithNodeMetadata(t *testing.T) {
 
 func TestEndpointsSlicesDiscoveryWithUpdatedNodeMetadata(t *testing.T) {
 	metadataConfig := AttachMetadataConfig{Node: true}
-	nodeLabels := map[string]string{"az": "us-east1"}
+	nodeLabels1 := map[string]string{"az": "us-east1"}
+	nodeLabels2 := map[string]string{"az": "us-west2"}
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "testendpoints",
@@ -831,16 +953,17 @@ func TestEndpointsSlicesDiscoveryWithUpdatedNodeMetadata(t *testing.T) {
 			},
 		},
 	}
-	node := makeNode("foobar", "", "", nodeLabels, nil)
-	objs := []runtime.Object{makeEndpointSliceV1(), node, svc}
+	node1 := makeNode("foobar", "", "", nodeLabels1, nil)
+	node2 := makeNode("barbaz", "", "", nodeLabels2, nil)
+	objs := []runtime.Object{makeEndpointSliceV1(), node1, node2, svc}
 	n, c := makeDiscoveryWithMetadata(RoleEndpointSlice, NamespaceDiscovery{}, metadataConfig, objs...)
 
 	k8sDiscoveryTest{
 		discovery:        n,
 		expectedMaxItems: 2,
 		afterStart: func() {
-			node.Labels["az"] = "us-central1"
-			c.CoreV1().Nodes().Update(context.Background(), node, metav1.UpdateOptions{})
+			node1.Labels["az"] = "us-central1"
+			c.CoreV1().Nodes().Update(context.Background(), node1, metav1.UpdateOptions{})
 		},
 		expectedRes: map[string]*targetgroup.Group{
 			"endpointslice/default/testendpoints": {
@@ -859,7 +982,7 @@ func TestEndpointsSlicesDiscoveryWithUpdatedNodeMetadata(t *testing.T) {
 						"__meta_kubernetes_endpointslice_port_app_protocol":                  "http",
 						"__meta_kubernetes_endpointslice_port_name":                          "testport",
 						"__meta_kubernetes_endpointslice_port_protocol":                      "TCP",
-						"__meta_kubernetes_node_label_az":                                    "us-central1",
+						"__meta_kubernetes_node_label_az":                                    "us-east1",
 						"__meta_kubernetes_node_labelpresent_az":                             "true",
 						"__meta_kubernetes_node_name":                                        "foobar",
 					},
@@ -882,6 +1005,21 @@ func TestEndpointsSlicesDiscoveryWithUpdatedNodeMetadata(t *testing.T) {
 						"__meta_kubernetes_endpointslice_port_app_protocol":               "http",
 						"__meta_kubernetes_endpointslice_port_name":                       "testport",
 						"__meta_kubernetes_endpointslice_port_protocol":                   "TCP",
+					},
+					{
+						"__address__": "4.5.6.7:9000",
+						"__meta_kubernetes_endpointslice_address_target_kind":             "Node",
+						"__meta_kubernetes_endpointslice_address_target_name":             "barbaz",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "true",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "false",
+						"__meta_kubernetes_endpointslice_port":                            "9000",
+						"__meta_kubernetes_endpointslice_port_app_protocol":               "http",
+						"__meta_kubernetes_endpointslice_port_name":                       "testport",
+						"__meta_kubernetes_endpointslice_port_protocol":                   "TCP",
+						"__meta_kubernetes_node_label_az":                                 "us-west2",
+						"__meta_kubernetes_node_labelpresent_az":                          "true",
+						"__meta_kubernetes_node_name":                                     "barbaz",
 					},
 				},
 				Labels: model.LabelSet{
@@ -1006,6 +1144,18 @@ func TestEndpointSliceDiscoveryNamespaces(t *testing.T) {
 						"__meta_kubernetes_endpointslice_port_name":                       "testport",
 						"__meta_kubernetes_endpointslice_port_protocol":                   "TCP",
 						"__meta_kubernetes_endpointslice_port_app_protocol":               "http",
+					},
+					{
+						"__address__": "4.5.6.7:9000",
+						"__meta_kubernetes_endpointslice_address_target_kind":             "Node",
+						"__meta_kubernetes_endpointslice_address_target_name":             "barbaz",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "true",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "false",
+						"__meta_kubernetes_endpointslice_port":                            "9000",
+						"__meta_kubernetes_endpointslice_port_app_protocol":               "http",
+						"__meta_kubernetes_endpointslice_port_name":                       "testport",
+						"__meta_kubernetes_endpointslice_port_protocol":                   "TCP",
 					},
 				},
 				Labels: model.LabelSet{
@@ -1138,6 +1288,18 @@ func TestEndpointSliceDiscoveryOwnNamespace(t *testing.T) {
 						"__meta_kubernetes_endpointslice_port_name":                       "testport",
 						"__meta_kubernetes_endpointslice_port_protocol":                   "TCP",
 						"__meta_kubernetes_endpointslice_port_app_protocol":               "http",
+					},
+					{
+						"__address__": "4.5.6.7:9000",
+						"__meta_kubernetes_endpointslice_address_target_kind":             "Node",
+						"__meta_kubernetes_endpointslice_address_target_name":             "barbaz",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":       "true",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_serving":     "true",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_terminating": "false",
+						"__meta_kubernetes_endpointslice_port":                            "9000",
+						"__meta_kubernetes_endpointslice_port_app_protocol":               "http",
+						"__meta_kubernetes_endpointslice_port_name":                       "testport",
+						"__meta_kubernetes_endpointslice_port_protocol":                   "TCP",
 					},
 				},
 				Labels: model.LabelSet{
