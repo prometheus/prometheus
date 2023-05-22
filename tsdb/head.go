@@ -1329,12 +1329,12 @@ type Stats struct {
 
 // Stats returns important current HEAD statistics. Note that it is expensive to
 // calculate these.
-func (h *Head) Stats(statsByLabelName string, topN int) *Stats {
+func (h *Head) Stats(statsByLabelName string, limit int) *Stats {
 	return &Stats{
 		NumSeries:         h.NumSeries(),
 		MaxTime:           h.MaxTime(),
 		MinTime:           h.MinTime(),
-		IndexPostingStats: h.PostingsCardinalityStats(statsByLabelName, topN),
+		IndexPostingStats: h.PostingsCardinalityStats(statsByLabelName, limit),
 	}
 }
 
