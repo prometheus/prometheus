@@ -125,6 +125,7 @@ func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 		{`n="X",j="foo"`, []*labels.Matcher{nX, jFoo}},
 		{`j="foo",n="1"`, []*labels.Matcher{jFoo, n1}},
 		{`n="1",j!="foo"`, []*labels.Matcher{n1, jNotFoo}},
+		{`n="1",i!="2"`, []*labels.Matcher{n1, iNot2}},
 		{`n="X",j!="foo"`, []*labels.Matcher{nX, jNotFoo}},
 		{`i=~"1[0-9]",j=~"foo|bar"`, []*labels.Matcher{iCharSet, jFooBar}},
 		{`j=~"foo|bar"`, []*labels.Matcher{jFooBar}},
