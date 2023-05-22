@@ -896,10 +896,10 @@ func debugOutOfOrderChunks(chks []chunks.Meta, logger log.Logger) {
 		}
 
 		// Looks like the chunk is out of order.
-		prevSafeChk, prevIsSafeChk := prevChk.Chunk.(*safeChunk)
-		currSafeChk, currIsSafeChk := currChk.Chunk.(*safeChunk)
+		prevSafeChk, prevIsSafeChk := prevChk.Chunk.(*safeHeadChunk)
+		currSafeChk, currIsSafeChk := currChk.Chunk.(*safeHeadChunk)
 
-		// Get info out of safeChunk (if possible).
+		// Get info out of safeHeadChunk (if possible).
 		prevHeadChunkID := chunks.HeadChunkID(0)
 		currHeadChunkID := chunks.HeadChunkID(0)
 		prevLabels := labels.Labels{}
