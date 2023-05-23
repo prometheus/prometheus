@@ -21,22 +21,18 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"sort"
 	"time"
 
 	"github.com/golang/snappy"
-	dto "github.com/prometheus/client_model/go"
 	config_util "github.com/prometheus/common/config"
-	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage/remote"
+	"github.com/prometheus/prometheus/util/fmtutil"
 )
 
-// Push metrics to a prometheus remote write.
+// Push metrics to a prometheus remote write (for testing purpose only).
 func PushMetrics(url *url.URL, roundTripper http.RoundTripper, headers map[string]string, timeout time.Duration, jobLabel string, files ...string) int {
-	// remote write should respect specification: https://prometheus.io/docs/concepts/remote_write_spec/
 	failed := false
 
 	addressURL, err := url.Parse(url.String())
@@ -67,18 +63,36 @@ func PushMetrics(url *url.URL, roundTripper http.RoundTripper, headers map[strin
 		headers:      headers,
 	}
 
-	for _, f := range files {
+	// add empty string to avoid matching filename
+	if len(files) == 0 {
+		files = append(files, "")
+	}
+
+	for _, file := range files {
 		var data []byte
 		var err error
-		data, err = os.ReadFile(f)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			failed = true
-			continue
-		}
 
-		fmt.Printf("Parsing metric file %s\n", f)
-		metricsData, err := parseMetricsTextAndFormat(bytes.NewReader(data), jobLabel)
+		// if file is an empty string it is a stdin
+		if file == "" {
+			data, err = io.ReadAll(os.Stdin)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				failed = true
+				break
+			}
+
+			fmt.Printf("Parsing stdin\n")
+		} else {
+			data, err = os.ReadFile(file)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				failed = true
+				continue
+			}
+
+			fmt.Printf("Parsing metric file %s\n", file)
+		}
+		metricsData, err := fmtutil.ParseMetricsTextAndFormat(bytes.NewReader(data), jobLabel)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			failed = true
@@ -100,7 +114,7 @@ func PushMetrics(url *url.URL, roundTripper http.RoundTripper, headers map[strin
 			failed = true
 			continue
 		}
-		fmt.Printf("Successfully pushed metric file %s\n", f)
+		fmt.Printf("Successfully pushed metric file %s\n", file)
 	}
 
 	if failed {
@@ -120,115 +134,4 @@ func (s *setHeadersTransport) RoundTrip(req *http.Request) (*http.Response, erro
 		req.Header.Set(key, value)
 	}
 	return s.RoundTripper.RoundTrip(req)
-}
-
-var MetricMetadataTypeValue = map[string]int32{
-	"UNKNOWN":        0,
-	"COUNTER":        1,
-	"GAUGE":          2,
-	"HISTOGRAM":      3,
-	"GAUGEHISTOGRAM": 4,
-	"SUMMARY":        5,
-	"INFO":           6,
-	"STATESET":       7,
-}
-
-// formatMetrics convert metric family to a writerequest
-func formatMetrics(mf map[string]*dto.MetricFamily, jobLabel string) (*prompb.WriteRequest, error) {
-	wr := &prompb.WriteRequest{}
-
-	// build metric list
-	sortedMetricNames := make([]string, 0, len(mf))
-	for metric := range mf {
-		sortedMetricNames = append(sortedMetricNames, metric)
-	}
-	// sort metrics name in lexicographical order
-	sort.Strings(sortedMetricNames)
-
-	for _, metricName := range sortedMetricNames {
-		// Set metadata writerequest
-		mtype := MetricMetadataTypeValue[mf[metricName].Type.String()]
-		metadata := prompb.MetricMetadata{
-			MetricFamilyName: mf[metricName].GetName(),
-			Type:             prompb.MetricMetadata_MetricType(mtype),
-			Help:             mf[metricName].GetHelp(),
-		}
-		wr.Metadata = append(wr.Metadata, metadata)
-
-		for _, metric := range mf[metricName].Metric {
-			var timeserie prompb.TimeSeries
-
-			// build labels map
-			labels := make(map[string]string, len(metric.Label)+2)
-			labels[model.MetricNameLabel] = metricName
-			labels[model.JobLabel] = jobLabel
-
-			for _, label := range metric.Label {
-				labelname := label.GetName()
-				if labelname == model.JobLabel {
-					labelname = fmt.Sprintf("%s%s", model.ExportedLabelPrefix, labelname)
-				}
-				labels[labelname] = label.GetValue()
-			}
-
-			// build labels name list
-			sortedLabelNames := make([]string, 0, len(labels))
-			for label := range labels {
-				sortedLabelNames = append(sortedLabelNames, label)
-			}
-			// sort labels name in lexicographical order
-			sort.Strings(sortedLabelNames)
-
-			for _, label := range sortedLabelNames {
-				timeserie.Labels = append(timeserie.Labels, prompb.Label{
-					Name:  label,
-					Value: labels[label],
-				})
-			}
-
-			timeserie.Samples = []prompb.Sample{
-				{
-					Timestamp: time.Now().UnixNano() / int64(time.Millisecond),
-					Value:     getMetricsValue(metric),
-				},
-			}
-
-			wr.Timeseries = append(wr.Timeseries, timeserie)
-		}
-	}
-	return wr, nil
-}
-
-// parseMetricsTextReader consumes an io.Reader and returns the MetricFamily
-func parseMetricsTextReader(input io.Reader) (map[string]*dto.MetricFamily, error) {
-	var parser expfmt.TextParser
-	mf, err := parser.TextToMetricFamilies(input)
-	if err != nil {
-		return nil, err
-	}
-	return mf, nil
-}
-
-// getMetricsValue return the value of a timeserie without the need to give value type
-func getMetricsValue(m *dto.Metric) float64 {
-	switch {
-	case m.Gauge != nil:
-		return m.GetGauge().GetValue()
-	case m.Counter != nil:
-		return m.GetCounter().GetValue()
-	case m.Untyped != nil:
-		return m.GetUntyped().GetValue()
-	default:
-		return 0.
-	}
-}
-
-// parseMetricsTextAndFormat return the data in the expected prometheus metrics write request format
-func parseMetricsTextAndFormat(input io.Reader, jobLabel string) (*prompb.WriteRequest, error) {
-	mf, err := parseMetricsTextReader(input)
-	if err != nil {
-		return nil, err
-	}
-
-	return formatMetrics(mf, jobLabel)
 }

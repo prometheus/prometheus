@@ -390,7 +390,7 @@ Push to a Prometheus server.
 
 ##### `promtool push metrics`
 
-Push metrics to a prometheus remote write.
+Push metrics to a prometheus remote write (for testing purpose only).
 
 
 
@@ -410,7 +410,7 @@ Push metrics to a prometheus remote write.
 | Argument | Description | Required |
 | --- | --- | --- |
 | remote-write-url | Prometheus remote write url to push metrics. | Yes |
-| metric-files | The metric files to push. | Yes |
+| metric-files | The metric files to push, default is read from standard input (STDIN). |  |
 
 
 
