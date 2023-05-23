@@ -51,9 +51,8 @@ func (c *deflatedResponseWriter) Close() {
 	}
 }
 
-// Constructs a new deflatedResponseWriter based on client request headers.
+// Constructs a new deflatedResponseWriter to compress the original writer using 'deflate' compression.
 func newDeflateResponseWriter(writer http.ResponseWriter) *deflatedResponseWriter {
-	writer.Header().Set(contentEncodingHeader, deflateEncoding)
 	return &deflatedResponseWriter{
 		ResponseWriter: writer,
 		writer:         zlib.NewWriter(writer),
@@ -76,6 +75,7 @@ func (c CompressionHandler) ServeHTTP(writer http.ResponseWriter, req *http.Requ
 			return
 		case deflateEncoding:
 			compWriter := newDeflateResponseWriter(writer)
+			writer.Header().Set(contentEncodingHeader, deflateEncoding)
 			c.Handler.ServeHTTP(compWriter, req)
 			compWriter.Close()
 			return
