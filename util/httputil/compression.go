@@ -14,12 +14,11 @@
 package httputil
 
 import (
-	"compress/zlib"
-	"io"
 	"net/http"
 	"strings"
 
 	"github.com/klauspost/compress/gzhttp"
+	"github.com/klauspost/compress/zlib"
 )
 
 const (
@@ -29,11 +28,10 @@ const (
 	deflateEncoding       = "deflate"
 )
 
-// Wrapper around http.Handler which adds suitable response compression based
-// on the client's Accept-Encoding headers.
+// Wrapper around http.ResponseWriter which adds deflate compression
 type deflatedResponseWriter struct {
 	http.ResponseWriter
-	writer io.Writer
+	writer *zlib.Writer
 }
 
 // Writes HTTP response content data.
@@ -41,14 +39,9 @@ func (c *deflatedResponseWriter) Write(p []byte) (int, error) {
 	return c.writer.Write(p)
 }
 
-// Closes the deflatedResponseWriter and ensures to flush all data before.
+// Close Closes the deflatedResponseWriter and ensures to flush all data before.
 func (c *deflatedResponseWriter) Close() {
-	if zlibWriter, ok := c.writer.(*zlib.Writer); ok {
-		zlibWriter.Flush()
-	}
-	if closer, ok := c.writer.(io.Closer); ok {
-		defer closer.Close()
-	}
+	c.writer.Close()
 }
 
 // Constructs a new deflatedResponseWriter to compress the original writer using 'deflate' compression.
