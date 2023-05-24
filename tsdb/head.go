@@ -136,6 +136,8 @@ type Head struct {
 	stats *HeadStats
 	reg   prometheus.Registerer
 
+	writeNotified wlog.WriteNotified
+
 	memTruncationInProcess atomic.Bool
 }
 
@@ -166,6 +168,8 @@ type HeadOptions struct {
 	ChunkEndTimeVariance float64
 	ChunkWriteQueueSize  int
 
+	SamplesPerChunk int
+
 	// StripeSize sets the number of entries in the hash map, it must be a power of 2.
 	// A larger StripeSize will allocate more memory up-front, but will increase performance when handling a large number of series.
 	// A smaller StripeSize reduces the memory allocated, but can decrease performance with large number of series.
@@ -189,6 +193,8 @@ type HeadOptions struct {
 const (
 	// DefaultOutOfOrderCapMax is the default maximum size of an in-memory out-of-order chunk.
 	DefaultOutOfOrderCapMax int64 = 32
+	// DefaultSamplesPerChunk provides a default target number of samples per chunk.
+	DefaultSamplesPerChunk = 120
 )
 
 func DefaultHeadOptions() *HeadOptions {
@@ -199,6 +205,7 @@ func DefaultHeadOptions() *HeadOptions {
 		ChunkWriteBufferSize:          chunks.DefaultWriteBufferSize,
 		ChunkEndTimeVariance:          0,
 		ChunkWriteQueueSize:           chunks.DefaultWriteQueueSize,
+		SamplesPerChunk:               DefaultSamplesPerChunk,
 		StripeSize:                    DefaultStripeSize,
 		SeriesCallback:                &noopSeriesLifecycleCallback{},
 		IsolationDisabled:             defaultIsolationDisabled,
@@ -998,7 +1005,7 @@ func (h *Head) DisableNativeHistograms() {
 }
 
 // PostingsCardinalityStats returns top 10 highest cardinality stats By label and value names.
-func (h *Head) PostingsCardinalityStats(statsByLabelName string) *index.PostingsStats {
+func (h *Head) PostingsCardinalityStats(statsByLabelName string, limit int) *index.PostingsStats {
 	h.cardinalityMutex.Lock()
 	defer h.cardinalityMutex.Unlock()
 	currentTime := time.Duration(time.Now().Unix()) * time.Second
@@ -1009,7 +1016,7 @@ func (h *Head) PostingsCardinalityStats(statsByLabelName string) *index.Postings
 	if h.cardinalityCache != nil {
 		return h.cardinalityCache
 	}
-	h.cardinalityCache = h.postings.Stats(statsByLabelName)
+	h.cardinalityCache = h.postings.Stats(statsByLabelName, limit)
 	h.lastPostingsStatsCall = time.Duration(time.Now().Unix()) * time.Second
 
 	return h.cardinalityCache
@@ -1239,9 +1246,9 @@ func (h *Head) truncateWAL(mint int64) error {
 			return true
 		}
 		h.deletedMtx.Lock()
-		_, ok := h.deleted[id]
+		keepUntil, ok := h.deleted[id]
 		h.deletedMtx.Unlock()
-		return ok
+		return ok && keepUntil > last
 	}
 	h.metrics.checkpointCreationTotal.Inc()
 	if _, err = wlog.Checkpoint(h.logger, h.wal, first, last, keep, mint); err != nil {
@@ -1262,7 +1269,7 @@ func (h *Head) truncateWAL(mint int64) error {
 	// longer need to track deleted series that are before it.
 	h.deletedMtx.Lock()
 	for ref, segment := range h.deleted {
-		if segment < first {
+		if segment <= last {
 			delete(h.deleted, ref)
 		}
 	}
@@ -1349,12 +1356,12 @@ type Stats struct {
 
 // Stats returns important current HEAD statistics. Note that it is expensive to
 // calculate these.
-func (h *Head) Stats(statsByLabelName string) *Stats {
+func (h *Head) Stats(statsByLabelName string, limit int) *Stats {
 	return &Stats{
 		NumSeries:         h.NumSeries(),
 		MaxTime:           h.MaxTime(),
 		MinTime:           h.MinTime(),
-		IndexPostingStats: h.PostingsCardinalityStats(statsByLabelName),
+		IndexPostingStats: h.PostingsCardinalityStats(statsByLabelName, limit),
 	}
 }
 
@@ -1634,7 +1641,7 @@ func (h *Head) getOrCreate(hash uint64, lset labels.Labels) (*memSeries, bool, e
 
 func (h *Head) getOrCreateWithID(id chunks.HeadSeriesRef, hash uint64, lset labels.Labels) (*memSeries, bool, error) {
 	s, created, err := h.series.getOrSet(hash, lset, func() *memSeries {
-		return newMemSeries(lset, id, labels.StableHash(lset), h.opts.ChunkEndTimeVariance, h.opts.IsolationDisabled)
+		return newMemSeries(lset, id, labels.StableHash(lset), h.opts.ChunkEndTimeVariance, h.opts.IsolationDisabled, h.opts.SamplesPerChunk)
 	})
 	if err != nil {
 		return nil, false, err
@@ -1949,7 +1956,8 @@ type memSeries struct {
 	// to spread chunks writing across time. Doesn't apply to the last chunk of the chunk range. 0 to disable variance.
 	chunkEndTimeVariance float64
 
-	nextAt int64 // Timestamp at which to cut the next chunk.
+	samplesPerChunk int   // Target number of samples per chunk.
+	nextAt          int64 // Timestamp at which to cut the next chunk.
 
 	// We keep the last value here (in addition to appending it to the chunk) so we can check for duplicates.
 	lastValue float64
@@ -1977,13 +1985,14 @@ type memSeriesOOOFields struct {
 	firstOOOChunkID  chunks.HeadChunkID // HeadOOOChunkID for oooMmappedChunks[0].
 }
 
-func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, shardHash uint64, chunkEndTimeVariance float64, isolationDisabled bool) *memSeries {
+func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, shardHash uint64, chunkEndTimeVariance float64, isolationDisabled bool, samplesPerChunk int) *memSeries {
 	s := &memSeries{
 		lset:                 lset,
 		ref:                  id,
 		nextAt:               math.MinInt64,
 		chunkEndTimeVariance: chunkEndTimeVariance,
 		shardHash:            shardHash,
+		samplesPerChunk:      samplesPerChunk,
 	}
 	if !isolationDisabled {
 		s.txs = newTxRing(4)

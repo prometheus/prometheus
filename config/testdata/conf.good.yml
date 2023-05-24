@@ -151,6 +151,7 @@ scrape_configs:
     consul_sd_configs:
       - server: "localhost:1234"
         token: mysecret
+        path_prefix: /consul
         services: ["nginx", "cache", "mysql"]
         tags: ["canary", "v1"]
         node_meta:

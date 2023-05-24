@@ -251,7 +251,7 @@ func (notReadyReadStorage) StartTime() (int64, error) {
 	return 0, errors.Wrap(tsdb.ErrNotReady, "wrap")
 }
 
-func (notReadyReadStorage) Stats(string) (*tsdb.Stats, error) {
+func (notReadyReadStorage) Stats(string, int) (*tsdb.Stats, error) {
 	return nil, errors.Wrap(tsdb.ErrNotReady, "wrap")
 }
 
@@ -378,7 +378,7 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 	body, err := io.ReadAll(res.Body)
 	require.NoError(t, err)
 
-	p := textparse.NewProtobufParser(body)
+	p := textparse.NewProtobufParser(body, false)
 	var actVec promql.Vector
 	metricFamilies := 0
 	l := labels.Labels{}
