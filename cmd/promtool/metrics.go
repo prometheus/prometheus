@@ -32,7 +32,7 @@ import (
 )
 
 // Push metrics to a prometheus remote write (for testing purpose only).
-func PushMetrics(url *url.URL, roundTripper http.RoundTripper, headers map[string]string, timeout time.Duration, jobLabel string, files ...string) int {
+func PushMetrics(url *url.URL, roundTripper http.RoundTripper, headers map[string]string, timeout time.Duration, labels map[string]string, files ...string) int {
 	failed := false
 
 	addressURL, err := url.Parse(url.String())
@@ -76,32 +76,32 @@ func PushMetrics(url *url.URL, roundTripper http.RoundTripper, headers map[strin
 		if file == "" {
 			data, err = io.ReadAll(os.Stdin)
 			if err != nil {
-				fmt.Fprintln(os.Stderr, err)
+				fmt.Fprintln(os.Stderr, "  FAILED:", err)
 				failed = true
 				break
 			}
 
-			fmt.Printf("Parsing stdin\n")
+			fmt.Printf("Parsing input from stdin\n")
 		} else {
 			data, err = os.ReadFile(file)
 			if err != nil {
-				fmt.Fprintln(os.Stderr, err)
+				fmt.Fprintln(os.Stderr, "  FAILED:", err)
 				failed = true
 				continue
 			}
 
-			fmt.Printf("Parsing metric file %s\n", file)
+			fmt.Printf("Parsing input from metric file %s\n", file)
 		}
-		metricsData, err := fmtutil.ParseMetricsTextAndFormat(bytes.NewReader(data), jobLabel)
+		metricsData, err := fmtutil.ParseMetricsTextAndFormat(bytes.NewReader(data), labels)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
+			fmt.Fprintln(os.Stderr, "  FAILED:", err)
 			failed = true
 			continue
 		}
 
 		raw, err := metricsData.Marshal()
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
+			fmt.Fprintln(os.Stderr, "  FAILED:", err)
 			failed = true
 			continue
 		}
@@ -110,11 +110,16 @@ func PushMetrics(url *url.URL, roundTripper http.RoundTripper, headers map[strin
 		compressed := snappy.Encode(nil, raw)
 		err = client.Store(context.Background(), compressed)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
+			fmt.Fprintln(os.Stderr, "  FAILED:", err)
 			failed = true
 			continue
 		}
-		fmt.Printf("Successfully pushed metric file %s\n", file)
+
+		if file == "" {
+			fmt.Printf("  SUCCESS: metric pushed to remote write.\n")
+		} else {
+			fmt.Printf("  SUCCESS: metric file %s pushed to remote write.\n", file)
+		}
 	}
 
 	if failed {

@@ -63,8 +63,9 @@ func TestParseMetricsTextAndFormat(t *testing.T) {
 	test_metric1{b="c",baz="qux",d="e",foo="bar"} 1 1
 	test_metric1{b="c",baz="qux",d="e",foo="bar"} 2 1
 	`))
+	labels := map[string]string{"job": "promtool"}
 
-	expected, err := ParseMetricsTextAndFormat(input, "promtool")
+	expected, err := ParseMetricsTextAndFormat(input, labels)
 	require.NoError(t, err)
 
 	require.Equal(t, writeRequestFixture, expected)

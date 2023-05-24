@@ -187,7 +187,7 @@ func main() {
 		"metric-files",
 		"The metric files to push, default is read from standard input (STDIN).",
 	).ExistingFiles()
-	metricJobLabel := pushMetricsCmd.Flag("job-label", "Job label to attach to metrics.").Default("promtool").String()
+	pushMetricsLabels := pushMetricsCmd.Flag("label", "Label to attach to metrics. Can be specified multiple times.").Default("job=promtool").StringMap()
 	pushMetricsTimeout := pushMetricsCmd.Flag("timeout", "The time to wait for pushing metrics.").Default("30s").Duration()
 	pushMetricsHeaders := pushMetricsCmd.Flag("header", "Prometheus remote write header.").StringMap()
 
@@ -315,7 +315,7 @@ func main() {
 		os.Exit(CheckMetrics(*checkMetricsExtended))
 
 	case pushMetricsCmd.FullCommand():
-		os.Exit(PushMetrics(remoteWriteURL, httpRoundTripper, *pushMetricsHeaders, *pushMetricsTimeout, *metricJobLabel, *metricFiles...))
+		os.Exit(PushMetrics(remoteWriteURL, httpRoundTripper, *pushMetricsHeaders, *pushMetricsTimeout, *pushMetricsLabels, *metricFiles...))
 
 	case queryInstantCmd.FullCommand():
 		os.Exit(QueryInstant(serverURL, httpRoundTripper, *queryInstantExpr, *queryInstantTime, p))

@@ -398,7 +398,7 @@ Push metrics to a prometheus remote write (for testing purpose only).
 
 | Flag | Description | Default |
 | --- | --- | --- |
-| <code class="text-nowrap">--job-label</code> | Job label to attach to metrics. | `promtool` |
+| <code class="text-nowrap">--label</code> | Label to attach to metrics. Can be specified multiple times. | `job=promtool` |
 | <code class="text-nowrap">--timeout</code> | The time to wait for pushing metrics. | `30s` |
 | <code class="text-nowrap">--header</code> | Prometheus remote write header. |  |
 

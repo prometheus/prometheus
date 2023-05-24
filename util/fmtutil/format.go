@@ -38,7 +38,7 @@ var MetricMetadataTypeValue = map[string]int32{
 }
 
 // FormatMetrics convert metric family to a writerequest.
-func FormatMetrics(mf map[string]*dto.MetricFamily, jobLabel string) (*prompb.WriteRequest, error) {
+func FormatMetrics(mf map[string]*dto.MetricFamily, extraLabels map[string]string) (*prompb.WriteRequest, error) {
 	wr := &prompb.WriteRequest{}
 
 	// build metric list
@@ -63,10 +63,15 @@ func FormatMetrics(mf map[string]*dto.MetricFamily, jobLabel string) (*prompb.Wr
 			var timeserie prompb.TimeSeries
 
 			// build labels map
-			labels := make(map[string]string, len(metric.Label)+2)
+			labels := make(map[string]string, len(metric.Label)+len(extraLabels))
 			labels[model.MetricNameLabel] = metricName
-			labels[model.JobLabel] = jobLabel
 
+			// add extra labels
+			for key, value := range extraLabels {
+				labels[key] = value
+			}
+
+			// add metric labels
 			for _, label := range metric.Label {
 				labelname := label.GetName()
 				if labelname == model.JobLabel {
@@ -133,10 +138,10 @@ func ParseMetricsTextReader(input io.Reader) (map[string]*dto.MetricFamily, erro
 }
 
 // ParseMetricsTextAndFormat return the data in the expected prometheus metrics write request format.
-func ParseMetricsTextAndFormat(input io.Reader, jobLabel string) (*prompb.WriteRequest, error) {
+func ParseMetricsTextAndFormat(input io.Reader, labels map[string]string) (*prompb.WriteRequest, error) {
 	mf, err := ParseMetricsTextReader(input)
 	if err != nil {
 		return nil, err
 	}
-	return FormatMetrics(mf, jobLabel)
+	return FormatMetrics(mf, labels)
 }
