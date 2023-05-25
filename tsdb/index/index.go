@@ -536,7 +536,7 @@ func (w *Writer) finishSymbols() error {
 	// Write out the length and symbol count.
 	w.buf1.Reset()
 	w.buf1.PutBE32int(int(symbolTableSize))
-	w.buf1.PutBE32int(int(w.numSymbols))
+	w.buf1.PutBE32int(w.numSymbols)
 	if err := w.writeAt(w.buf1.Get(), w.toc.Symbols); err != nil {
 		return err
 	}

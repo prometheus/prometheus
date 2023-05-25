@@ -199,11 +199,10 @@ func (h *Head) getAppendBuffer() []record.RefSample {
 	if b == nil {
 		return make([]record.RefSample, 0, 512)
 	}
-	return b.([]record.RefSample)
+	return b
 }
 
 func (h *Head) putAppendBuffer(b []record.RefSample) {
-	//nolint:staticcheck // Ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
 	h.appendPool.Put(b[:0])
 }
 
@@ -212,7 +211,7 @@ func (h *Head) getExemplarBuffer() []exemplarWithSeriesRef {
 	if b == nil {
 		return make([]exemplarWithSeriesRef, 0, 512)
 	}
-	return b.([]exemplarWithSeriesRef)
+	return b
 }
 
 func (h *Head) putExemplarBuffer(b []exemplarWithSeriesRef) {
@@ -220,7 +219,6 @@ func (h *Head) putExemplarBuffer(b []exemplarWithSeriesRef) {
 		return
 	}
 
-	//nolint:staticcheck // Ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
 	h.exemplarsPool.Put(b[:0])
 }
 
@@ -229,11 +227,10 @@ func (h *Head) getHistogramBuffer() []record.RefHistogramSample {
 	if b == nil {
 		return make([]record.RefHistogramSample, 0, 512)
 	}
-	return b.([]record.RefHistogramSample)
+	return b
 }
 
 func (h *Head) putHistogramBuffer(b []record.RefHistogramSample) {
-	//nolint:staticcheck // Ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
 	h.histogramsPool.Put(b[:0])
 }
 
@@ -242,11 +239,10 @@ func (h *Head) getFloatHistogramBuffer() []record.RefFloatHistogramSample {
 	if b == nil {
 		return make([]record.RefFloatHistogramSample, 0, 512)
 	}
-	return b.([]record.RefFloatHistogramSample)
+	return b
 }
 
 func (h *Head) putFloatHistogramBuffer(b []record.RefFloatHistogramSample) {
-	//nolint:staticcheck // Ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
 	h.floatHistogramsPool.Put(b[:0])
 }
 
@@ -255,11 +251,10 @@ func (h *Head) getMetadataBuffer() []record.RefMetadata {
 	if b == nil {
 		return make([]record.RefMetadata, 0, 512)
 	}
-	return b.([]record.RefMetadata)
+	return b
 }
 
 func (h *Head) putMetadataBuffer(b []record.RefMetadata) {
-	//nolint:staticcheck // Ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
 	h.metadataPool.Put(b[:0])
 }
 
@@ -268,11 +263,10 @@ func (h *Head) getSeriesBuffer() []*memSeries {
 	if b == nil {
 		return make([]*memSeries, 0, 512)
 	}
-	return b.([]*memSeries)
+	return b
 }
 
 func (h *Head) putSeriesBuffer(b []*memSeries) {
-	//nolint:staticcheck // Ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
 	h.seriesPool.Put(b[:0])
 }
 
@@ -281,11 +275,10 @@ func (h *Head) getBytesBuffer() []byte {
 	if b == nil {
 		return make([]byte, 0, 1024)
 	}
-	return b.([]byte)
+	return b
 }
 
 func (h *Head) putBytesBuffer(b []byte) {
-	//nolint:staticcheck // Ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
 	h.bytesPool.Put(b[:0])
 }
 
@@ -351,9 +344,10 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	}
 
 	if value.IsStaleNaN(v) {
-		if s.lastHistogramValue != nil {
+		switch {
+		case s.lastHistogramValue != nil:
 			return a.AppendHistogram(ref, lset, t, &histogram.Histogram{Sum: v}, nil)
-		} else if s.lastFloatHistogramValue != nil {
+		case s.lastFloatHistogramValue != nil:
 			return a.AppendHistogram(ref, lset, t, nil, &histogram.FloatHistogram{Sum: v})
 		}
 	}
@@ -367,7 +361,7 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	}
 	s.Unlock()
 	if delta > 0 {
-		a.head.metrics.oooHistogram.Observe(float64(delta))
+		a.head.metrics.oooHistogram.Observe(float64(delta) / 1000)
 	}
 	if err != nil {
 		switch err {
@@ -437,7 +431,7 @@ func (s *memSeries) appendable(t int64, v float64, headMaxt, minValidTime, oooTi
 	return false, headMaxt - t, storage.ErrOutOfOrderSample
 }
 
-// appendableHistogram checks whether the given sample is valid for appending to the series.
+// appendableHistogram checks whether the given histogram is valid for appending to the series.
 func (s *memSeries) appendableHistogram(t int64, h *histogram.Histogram) error {
 	c := s.head()
 	if c == nil {
@@ -459,7 +453,7 @@ func (s *memSeries) appendableHistogram(t int64, h *histogram.Histogram) error {
 	return nil
 }
 
-// appendableFloatHistogram checks whether the given sample is valid for appending to the series.
+// appendableFloatHistogram checks whether the given float histogram is valid for appending to the series.
 func (s *memSeries) appendableFloatHistogram(t int64, fh *histogram.FloatHistogram) error {
 	c := s.head()
 	if c == nil {
@@ -559,9 +553,10 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 			return 0, err
 		}
 		if created {
-			if h != nil {
+			switch {
+			case h != nil:
 				s.lastHistogramValue = &histogram.Histogram{}
-			} else if fh != nil {
+			case fh != nil:
 				s.lastFloatHistogramValue = &histogram.FloatHistogram{}
 			}
 			a.series = append(a.series, record.RefSeries{
@@ -571,7 +566,8 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		}
 	}
 
-	if h != nil {
+	switch {
+	case h != nil:
 		s.Lock()
 		if err := s.appendableHistogram(t, h); err != nil {
 			s.Unlock()
@@ -588,7 +584,7 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 			H:   h,
 		})
 		a.histogramSeries = append(a.histogramSeries, s)
-	} else if fh != nil {
+	case fh != nil:
 		s.Lock()
 		if err := s.appendableFloatHistogram(t, fh); err != nil {
 			s.Unlock()
@@ -846,6 +842,10 @@ func (a *headAppender) Commit() (err error) {
 		return errors.Wrap(err, "write to WAL")
 	}
 
+	if a.head.writeNotified != nil {
+		a.head.writeNotified.Notify()
+	}
+
 	// No errors logging to WAL, so pass the exemplars along to the in memory storage.
 	for _, e := range a.exemplars {
 		s := a.head.series.getByID(chunks.HeadSeriesRef(e.ref))
@@ -945,7 +945,10 @@ func (a *headAppender) Commit() (err error) {
 
 		var ok, chunkCreated bool
 
-		if err == nil && oooSample {
+		switch {
+		case err != nil:
+			// Do nothing here.
+		case oooSample:
 			// Sample is OOO and OOO handling is enabled
 			// and the delta is within the OOO tolerance.
 			var mmapRef chunks.ChunkDiskMapperRef
@@ -983,7 +986,7 @@ func (a *headAppender) Commit() (err error) {
 				// TODO(codesome): Add error reporting? It depends on addressing https://github.com/prometheus/prometheus/discussions/10305.
 				samplesAppended--
 			}
-		} else if err == nil {
+		default:
 			ok, chunkCreated = series.append(s.T, s.V, a.appendID, a.head.chunkDiskMapper, chunkRange)
 			if ok {
 				if s.T < inOrderMint {
@@ -1184,14 +1187,15 @@ func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID ui
 			app.RecodeHistogram(h, pBackwardInserts, nBackwardInserts)
 		}
 		// We have 3 cases here
-		// - !okToAppend -> We need to cut a new chunk.
+		// - !okToAppend or counterReset -> We need to cut a new chunk.
 		// - okToAppend but we have inserts → Existing chunk needs
 		//   recoding before we can append our histogram.
 		// - okToAppend and no inserts → Chunk is ready to support our histogram.
-		if !okToAppend || counterReset {
+		switch {
+		case !okToAppend || counterReset:
 			c = s.cutNewHeadChunk(t, chunkenc.EncHistogram, chunkDiskMapper, chunkRange)
 			chunkCreated = true
-		} else if len(pForwardInserts) > 0 || len(nForwardInserts) > 0 {
+		case len(pForwardInserts) > 0 || len(nForwardInserts) > 0:
 			// New buckets have appeared. We need to recode all
 			// prior histogram samples within the chunk before we
 			// can process this one.
@@ -1277,14 +1281,15 @@ func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, 
 			app.RecodeHistogramm(fh, pBackwardInserts, nBackwardInserts)
 		}
 		// We have 3 cases here
-		// - !okToAppend -> We need to cut a new chunk.
+		// - !okToAppend or counterReset -> We need to cut a new chunk.
 		// - okToAppend but we have inserts → Existing chunk needs
 		//   recoding before we can append our histogram.
 		// - okToAppend and no inserts → Chunk is ready to support our histogram.
-		if !okToAppend || counterReset {
+		switch {
+		case !okToAppend || counterReset:
 			c = s.cutNewHeadChunk(t, chunkenc.EncFloatHistogram, chunkDiskMapper, chunkRange)
 			chunkCreated = true
-		} else if len(pForwardInserts) > 0 || len(nForwardInserts) > 0 {
+		case len(pForwardInserts) > 0 || len(nForwardInserts) > 0:
 			// New buckets have appeared. We need to recode all
 			// prior histogram samples within the chunk before we
 			// can process this one.
@@ -1331,11 +1336,6 @@ func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, 
 func (s *memSeries) appendPreprocessor(
 	t int64, e chunkenc.Encoding, chunkDiskMapper *chunks.ChunkDiskMapper, chunkRange int64,
 ) (c *memChunk, sampleInOrder, chunkCreated bool) {
-	// Based on Gorilla white papers this offers near-optimal compression ratio
-	// so anything bigger that this has diminishing returns and increases
-	// the time range within which we have to decompress all samples.
-	const samplesPerChunk = 120
-
 	c = s.head()
 
 	if c == nil {
@@ -1372,7 +1372,7 @@ func (s *memSeries) appendPreprocessor(
 	// for this chunk that will try to make samples equally distributed within
 	// the remaining chunks in the current chunk range.
 	// At latest it must happen at the timestamp set when the chunk was cut.
-	if numSamples == samplesPerChunk/4 {
+	if numSamples == s.samplesPerChunk/4 {
 		s.nextAt = computeChunkEndTime(c.minTime, c.maxTime, s.nextAt)
 	}
 	// If numSamples > samplesPerChunk*2 then our previous prediction was invalid,
@@ -1380,7 +1380,7 @@ func (s *memSeries) appendPreprocessor(
 	// Since we assume that the rate is higher, we're being conservative and cutting at 2*samplesPerChunk
 	// as we expect more chunks to come.
 	// Note that next chunk will have its nextAt recalculated for the new rate.
-	if t >= s.nextAt || numSamples >= samplesPerChunk*2 {
+	if t >= s.nextAt || numSamples >= s.samplesPerChunk*2 {
 		c = s.cutNewHeadChunk(t, e, chunkDiskMapper, chunkRange)
 		chunkCreated = true
 	}
@@ -1453,8 +1453,7 @@ func (s *memSeries) mmapCurrentOOOHeadChunk(chunkDiskMapper *chunks.ChunkDiskMap
 		return 0
 	}
 	xor, _ := s.ooo.oooHeadChunk.chunk.ToXOR() // Encode to XorChunk which is more compact and implements all of the needed functionality.
-	oooXor := &chunkenc.OOOXORChunk{XORChunk: xor}
-	chunkRef := chunkDiskMapper.WriteChunk(s.ref, s.ooo.oooHeadChunk.minTime, s.ooo.oooHeadChunk.maxTime, oooXor, handleChunkWriteError)
+	chunkRef := chunkDiskMapper.WriteChunk(s.ref, s.ooo.oooHeadChunk.minTime, s.ooo.oooHeadChunk.maxTime, xor, true, handleChunkWriteError)
 	s.ooo.oooMmappedChunks = append(s.ooo.oooMmappedChunks, &mmappedChunk{
 		ref:        chunkRef,
 		numSamples: uint16(xor.NumSamples()),
@@ -1471,7 +1470,7 @@ func (s *memSeries) mmapCurrentHeadChunk(chunkDiskMapper *chunks.ChunkDiskMapper
 		return
 	}
 
-	chunkRef := chunkDiskMapper.WriteChunk(s.ref, s.headChunk.minTime, s.headChunk.maxTime, s.headChunk.chunk, handleChunkWriteError)
+	chunkRef := chunkDiskMapper.WriteChunk(s.ref, s.headChunk.minTime, s.headChunk.maxTime, s.headChunk.chunk, false, handleChunkWriteError)
 	s.mmappedChunks = append(s.mmappedChunks, &mmappedChunk{
 		ref:        chunkRef,
 		numSamples: uint16(s.headChunk.chunk.NumSamples()),

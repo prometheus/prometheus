@@ -1,5 +1,56 @@
 # Changelog
 
+## 2.44.0 / 2023-05-13
+
+This version is built with Go tag `stringlabels`, to use the smaller data
+structure for Labels that was optional in the previous release. For more
+details about this code change see #10991.
+
+* [CHANGE] Remote-write: Raise default samples per send to 2,000. #12203
+* [FEATURE] Remote-read: Handle native histograms. #12085, #12192
+* [FEATURE] Promtool: Health and readiness check of prometheus server in CLI. #12096
+* [FEATURE] PromQL: Add `query_samples_total` metric, the total number of samples loaded by all queries. #12251
+* [ENHANCEMENT] Storage: Optimise buffer used to iterate through samples. #12326
+* [ENHANCEMENT] Scrape: Reduce memory allocations on target labels. #12084
+* [ENHANCEMENT] PromQL: Use faster heap method for `topk()` / `bottomk()`. #12190
+* [ENHANCEMENT] Rules API: Allow filtering by rule name. #12270
+* [ENHANCEMENT] Native Histograms: Various fixes and improvements. #11687, #12264, #12272
+* [ENHANCEMENT] UI: Search of scraping pools is now case-insensitive. #12207
+* [ENHANCEMENT] TSDB: Add an affirmative log message for successful WAL repair. #12135
+* [BUGFIX] TSDB: Block compaction failed when shutting down. #12179
+* [BUGFIX] TSDB: Out-of-order chunks could be ignored if the write-behind log was deleted. #12127
+
+## 2.43.1 / 2023-05-03
+
+* [BUGFIX] Labels: `Set()` after `Del()` would be ignored, which broke some relabeling rules. #12322
+
+## 2.43.0 / 2023-03-21
+
+We are working on some performance improvements in Prometheus, which are only
+built into Prometheus when compiling it using the Go tag `stringlabels`
+(therefore they are not shipped in the default binaries). It uses a data
+structure for labels that uses a single string to hold all the label/values,
+resulting in a smaller heap size and some speedups in most cases. We would like
+to encourage users who are interested in these improvements to help us measure
+the gains on their production architecture. We are providing release artefacts
+`2.43.0+stringlabels` and Docker images tagged `v2.43.0-stringlabels` with those
+improvements for testing. #10991
+
+* [FEATURE] Promtool: Add HTTP client configuration to query commands. #11487
+* [FEATURE] Scrape: Add `scrape_config_files` to include scrape configs from different files. #12019
+* [FEATURE] HTTP client: Add `no_proxy` to exclude URLs from proxied requests. #12098
+* [FEATURE] HTTP client: Add `proxy_from_enviroment` to read proxies from env variables. #12098
+* [ENHANCEMENT] API: Add support for setting lookback delta per query via the API. #12088
+* [ENHANCEMENT] API: Change HTTP status code from 503/422 to 499 if a request is canceled. #11897
+* [ENHANCEMENT] Scrape: Allow exemplars for all metric types. #11984
+* [ENHANCEMENT] TSDB: Add metrics for head chunks and WAL folders size. #12013
+* [ENHANCEMENT] TSDB: Automatically remove incorrect snapshot with index that is ahead of WAL. #11859
+* [ENHANCEMENT] TSDB: Improve Prometheus parser error outputs to be more comprehensible. #11682
+* [ENHANCEMENT] UI: Scope `group by` labels to metric in autocompletion. #11914
+* [BUGFIX] Scrape: Fix `prometheus_target_scrape_pool_target_limit` metric not set before reloading. #12002
+* [BUGFIX] TSDB: Correctly update `prometheus_tsdb_head_chunks_removed_total` and `prometheus_tsdb_head_chunks` metrics when reading WAL. #11858
+* [BUGFIX] TSDB: Use the correct unit (seconds) when recording out-of-order append deltas in the `prometheus_tsdb_sample_ooo_delta` metric. #12004
+
 ## 2.42.0 / 2023-01-31
 
 This release comes with a bunch of feature coverage for native histograms and breaking changes.

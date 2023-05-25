@@ -68,8 +68,8 @@ func TestRemoteWriteHandler(t *testing.T) {
 		}
 
 		for _, hp := range ts.Histograms {
-			if hp.GetCountFloat() > 0 || hp.GetZeroCountFloat() > 0 { // It is a float histogram.
-				fh := HistogramProtoToFloatHistogram(hp)
+			if hp.IsFloatHistogram() {
+				fh := FloatHistogramProtoToFloatHistogram(hp)
 				require.Equal(t, mockHistogram{labels, hp.Timestamp, nil, fh}, appendable.histograms[k])
 			} else {
 				h := HistogramProtoToHistogram(hp)
@@ -294,7 +294,7 @@ func (m *mockAppendable) AppendExemplar(_ storage.SeriesRef, l labels.Labels, e 
 	return 0, nil
 }
 
-func (m *mockAppendable) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+func (m *mockAppendable) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	if t < m.latestHistogram {
 		return 0, storage.ErrOutOfOrderSample
 	}

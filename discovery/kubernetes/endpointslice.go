@@ -190,7 +190,7 @@ func (e *EndpointSlice) Run(ctx context.Context, ch chan<- []*targetgroup.Group)
 	}
 
 	go func() {
-		for e.process(ctx, ch) {
+		for e.process(ctx, ch) { // nolint:revive
 		}
 	}()
 
@@ -300,7 +300,7 @@ func (e *EndpointSlice) buildEndpointSlice(eps endpointSliceAdaptor) *targetgrou
 		}
 
 		if port.protocol() != nil {
-			target[endpointSlicePortProtocolLabel] = lv(string(*port.protocol()))
+			target[endpointSlicePortProtocolLabel] = lv(*port.protocol())
 		}
 
 		if port.port() != nil {
@@ -339,7 +339,11 @@ func (e *EndpointSlice) buildEndpointSlice(eps endpointSliceAdaptor) *targetgrou
 		}
 
 		if e.withNodeMetadata {
-			target = addNodeLabels(target, e.nodeInf, e.logger, ep.nodename())
+			if ep.targetRef() != nil && ep.targetRef().Kind == "Node" {
+				target = addNodeLabels(target, e.nodeInf, e.logger, &ep.targetRef().Name)
+			} else {
+				target = addNodeLabels(target, e.nodeInf, e.logger, ep.nodename())
+			}
 		}
 
 		pod := e.resolvePodRef(ep.targetRef())

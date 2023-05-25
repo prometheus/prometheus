@@ -285,21 +285,22 @@ func lookupWithSearchPath(name string, qtype uint16, logger log.Logger) (*dns.Ms
 	for _, lname := range conf.NameList(name) {
 		response, err := lookupFromAnyServer(lname, qtype, conf, logger)
 
-		if err != nil {
+		switch {
+		case err != nil:
 			// We can't go home yet, because a later name
 			// may give us a valid, successful answer.  However
 			// we can no longer say "this name definitely doesn't
 			// exist", because we did not get that answer for
 			// at least one name.
 			allResponsesValid = false
-		} else if response.Rcode == dns.RcodeSuccess {
+		case response.Rcode == dns.RcodeSuccess:
 			// Outcome 1: GOLD!
 			return response, nil
 		}
 	}
 
 	if allResponsesValid {
-		// Outcome 2: everyone says NXDOMAIN, that's good enough for me
+		// Outcome 2: everyone says NXDOMAIN, that's good enough for me.
 		return &dns.Msg{}, nil
 	}
 	// Outcome 3: boned.

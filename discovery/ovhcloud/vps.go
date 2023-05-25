@@ -117,7 +117,7 @@ func (d *vpsDiscovery) getSource() string {
 	return fmt.Sprintf("%s_%s", d.config.Name(), d.getService())
 }
 
-func (d *vpsDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
+func (d *vpsDiscovery) refresh(context.Context) ([]*targetgroup.Group, error) {
 	client, err := createClient(d.config)
 	if err != nil {
 		return nil, err

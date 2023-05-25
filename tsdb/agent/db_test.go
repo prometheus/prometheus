@@ -54,10 +54,10 @@ func TestDB_InvalidSeries(t *testing.T) {
 	})
 
 	t.Run("Histograms", func(t *testing.T) {
-		_, err := app.AppendHistogram(0, labels.Labels{}, 0, tsdb.GenerateTestHistograms(1)[0], nil)
+		_, err := app.AppendHistogram(0, labels.Labels{}, 0, tsdbutil.GenerateTestHistograms(1)[0], nil)
 		require.ErrorIs(t, err, tsdb.ErrInvalidSample, "should reject empty labels")
 
-		_, err = app.AppendHistogram(0, labels.FromStrings("a", "1", "a", "2"), 0, tsdb.GenerateTestHistograms(1)[0], nil)
+		_, err = app.AppendHistogram(0, labels.FromStrings("a", "1", "a", "2"), 0, tsdbutil.GenerateTestHistograms(1)[0], nil)
 		require.ErrorIs(t, err, tsdb.ErrInvalidSample, "should reject duplicate labels")
 	})
 
@@ -133,13 +133,13 @@ func TestCommit(t *testing.T) {
 
 		for i := 0; i < numDatapoints; i++ {
 			sample := tsdbutil.GenerateSamples(0, 1)
-			ref, err := app.Append(0, lset, sample[0].T(), sample[0].V())
+			ref, err := app.Append(0, lset, sample[0].T(), sample[0].F())
 			require.NoError(t, err)
 
 			e := exemplar.Exemplar{
 				Labels: lset,
 				Ts:     sample[0].T() + int64(i),
-				Value:  sample[0].V(),
+				Value:  sample[0].F(),
 				HasTs:  true,
 			}
 			_, err = app.AppendExemplar(ref, lset, e)
@@ -151,7 +151,7 @@ func TestCommit(t *testing.T) {
 	for _, l := range lbls {
 		lset := labels.New(l...)
 
-		histograms := tsdb.GenerateTestHistograms(numHistograms)
+		histograms := tsdbutil.GenerateTestHistograms(numHistograms)
 
 		for i := 0; i < numHistograms; i++ {
 			_, err := app.AppendHistogram(0, lset, int64(i), histograms[i], nil)
@@ -163,7 +163,7 @@ func TestCommit(t *testing.T) {
 	for _, l := range lbls {
 		lset := labels.New(l...)
 
-		floatHistograms := tsdb.GenerateTestFloatHistograms(numHistograms)
+		floatHistograms := tsdbutil.GenerateTestFloatHistograms(numHistograms)
 
 		for i := 0; i < numHistograms; i++ {
 			_, err := app.AppendHistogram(0, lset, int64(i), nil, floatHistograms[i])
@@ -248,7 +248,7 @@ func TestRollback(t *testing.T) {
 
 		for i := 0; i < numDatapoints; i++ {
 			sample := tsdbutil.GenerateSamples(0, 1)
-			_, err := app.Append(0, lset, sample[0].T(), sample[0].V())
+			_, err := app.Append(0, lset, sample[0].T(), sample[0].F())
 			require.NoError(t, err)
 		}
 	}
@@ -257,7 +257,7 @@ func TestRollback(t *testing.T) {
 	for _, l := range lbls {
 		lset := labels.New(l...)
 
-		histograms := tsdb.GenerateTestHistograms(numHistograms)
+		histograms := tsdbutil.GenerateTestHistograms(numHistograms)
 
 		for i := 0; i < numHistograms; i++ {
 			_, err := app.AppendHistogram(0, lset, int64(i), histograms[i], nil)
@@ -269,7 +269,7 @@ func TestRollback(t *testing.T) {
 	for _, l := range lbls {
 		lset := labels.New(l...)
 
-		floatHistograms := tsdb.GenerateTestFloatHistograms(numHistograms)
+		floatHistograms := tsdbutil.GenerateTestFloatHistograms(numHistograms)
 
 		for i := 0; i < numHistograms; i++ {
 			_, err := app.AppendHistogram(0, lset, int64(i), nil, floatHistograms[i])
@@ -374,7 +374,7 @@ func TestFullTruncateWAL(t *testing.T) {
 	for _, l := range lbls {
 		lset := labels.New(l...)
 
-		histograms := tsdb.GenerateTestHistograms(numHistograms)
+		histograms := tsdbutil.GenerateTestHistograms(numHistograms)
 
 		for i := 0; i < numHistograms; i++ {
 			_, err := app.AppendHistogram(0, lset, int64(lastTs), histograms[i], nil)
@@ -387,7 +387,7 @@ func TestFullTruncateWAL(t *testing.T) {
 	for _, l := range lbls {
 		lset := labels.New(l...)
 
-		floatHistograms := tsdb.GenerateTestFloatHistograms(numHistograms)
+		floatHistograms := tsdbutil.GenerateTestFloatHistograms(numHistograms)
 
 		for i := 0; i < numHistograms; i++ {
 			_, err := app.AppendHistogram(0, lset, int64(lastTs), nil, floatHistograms[i])
@@ -436,7 +436,7 @@ func TestPartialTruncateWAL(t *testing.T) {
 	for _, l := range lbls {
 		lset := labels.New(l...)
 
-		histograms := tsdb.GenerateTestHistograms(numDatapoints)
+		histograms := tsdbutil.GenerateTestHistograms(numDatapoints)
 
 		for i := 0; i < numDatapoints; i++ {
 			_, err := app.AppendHistogram(0, lset, lastTs, histograms[i], nil)
@@ -449,7 +449,7 @@ func TestPartialTruncateWAL(t *testing.T) {
 	for _, l := range lbls {
 		lset := labels.New(l...)
 
-		floatHistograms := tsdb.GenerateTestFloatHistograms(numDatapoints)
+		floatHistograms := tsdbutil.GenerateTestFloatHistograms(numDatapoints)
 
 		for i := 0; i < numDatapoints; i++ {
 			_, err := app.AppendHistogram(0, lset, lastTs, nil, floatHistograms[i])
@@ -475,7 +475,7 @@ func TestPartialTruncateWAL(t *testing.T) {
 	for _, l := range lbls {
 		lset := labels.New(l...)
 
-		histograms := tsdb.GenerateTestHistograms(numDatapoints)
+		histograms := tsdbutil.GenerateTestHistograms(numDatapoints)
 
 		for i := 0; i < numDatapoints; i++ {
 			_, err := app.AppendHistogram(0, lset, lastTs, histograms[i], nil)
@@ -488,7 +488,7 @@ func TestPartialTruncateWAL(t *testing.T) {
 	for _, l := range lbls {
 		lset := labels.New(l...)
 
-		floatHistograms := tsdb.GenerateTestFloatHistograms(numDatapoints)
+		floatHistograms := tsdbutil.GenerateTestFloatHistograms(numDatapoints)
 
 		for i := 0; i < numDatapoints; i++ {
 			_, err := app.AppendHistogram(0, lset, lastTs, nil, floatHistograms[i])
@@ -529,7 +529,7 @@ func TestWALReplay(t *testing.T) {
 	for _, l := range lbls {
 		lset := labels.New(l...)
 
-		histograms := tsdb.GenerateTestHistograms(numHistograms)
+		histograms := tsdbutil.GenerateTestHistograms(numHistograms)
 
 		for i := 0; i < numHistograms; i++ {
 			_, err := app.AppendHistogram(0, lset, lastTs, histograms[i], nil)
@@ -541,7 +541,7 @@ func TestWALReplay(t *testing.T) {
 	for _, l := range lbls {
 		lset := labels.New(l...)
 
-		floatHistograms := tsdb.GenerateTestFloatHistograms(numHistograms)
+		floatHistograms := tsdbutil.GenerateTestFloatHistograms(numHistograms)
 
 		for i := 0; i < numHistograms; i++ {
 			_, err := app.AppendHistogram(0, lset, lastTs, nil, floatHistograms[i])
@@ -622,7 +622,7 @@ func Test_ExistingWAL_NextRef(t *testing.T) {
 	}
 
 	histogramCount := 10
-	histograms := tsdb.GenerateTestHistograms(histogramCount)
+	histograms := tsdbutil.GenerateTestHistograms(histogramCount)
 	// Append <histogramCount> series
 	for i := 0; i < histogramCount; i++ {
 		lset := labels.FromStrings(model.MetricNameLabel, fmt.Sprintf("histogram_%d", i))
@@ -739,8 +739,7 @@ func TestStorage_DuplicateExemplarsIgnored(t *testing.T) {
 	var dec record.Decoder
 	for r.Next() {
 		rec := r.Record()
-		switch dec.Type(rec) {
-		case record.Exemplars:
+		if dec.Type(rec) == record.Exemplars {
 			var exemplars []record.RefExemplar
 			exemplars, err = dec.Exemplars(rec, exemplars)
 			require.NoError(t, err)

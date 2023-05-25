@@ -318,19 +318,23 @@ histograms is still very limited.
 Logical/set binary operators work as expected even if histogram samples are
 involved. They only check for the existence of a vector element and don't
 change their behavior depending on the sample type of an element (float or
-histogram).
+histogram). The `count` aggregation operator works similarly.
 
-The binary `+` operator between two native histograms and the `sum` aggregation
-operator to aggregate native histograms are fully supported. Even if the
-histograms involved have different bucket layouts, the buckets are
-automatically converted appropriately so that the operation can be
+The binary `+` and `-` operators between two native histograms and the `sum`
+and `avg` aggregation operators to aggregate native histograms are fully
+supported. Even if the histograms involved have different bucket layouts, the
+buckets are automatically converted appropriately so that the operation can be
 performed. (With the currently supported bucket schemas, that's always
-possible.) If either operator has to sum up a mix of histogram samples and
+possible.) If either operator has to aggregate a mix of histogram samples and
 float samples, the corresponding vector element is removed from the output
 vector entirely.
 
-All other operators do not behave in a meaningful way. They either treat the
-histogram sample as if it were a float sample of value 0, or (in case of
-arithmetic operations between a scalar and a vector) they leave the histogram
-sample unchanged. This behavior will change to a meaningful one before native
-histograms are a stable feature.
+The binary `*` operator works between a native histogram and a float in any
+order, while the binary `/` operator can be used between a native histogram
+and a float in that exact order.
+
+All other operators (and unmentioned cases for the above operators) do not
+behave in a meaningful way. They either treat the histogram sample as if it
+were a float sample of value 0, or (in case of arithmetic operations between a
+scalar and a vector) they leave the histogram sample unchanged. This behavior
+will change to a meaningful one before native histograms are a stable feature.
