@@ -243,19 +243,22 @@ type DB struct {
 }
 
 type dbMetrics struct {
-	loadedBlocks         prometheus.GaugeFunc
-	symbolTableSize      prometheus.GaugeFunc
-	reloads              prometheus.Counter
-	reloadsFailed        prometheus.Counter
-	compactionsFailed    prometheus.Counter
-	compactionsTriggered prometheus.Counter
-	compactionsSkipped   prometheus.Counter
-	sizeRetentionCount   prometheus.Counter
-	timeRetentionCount   prometheus.Counter
-	startTime            prometheus.GaugeFunc
-	tombCleanTimer       prometheus.Histogram
-	blocksBytes          prometheus.Gauge
-	maxBytes             prometheus.Gauge
+	loadedBlocks             prometheus.GaugeFunc
+	symbolTableSize          prometheus.GaugeFunc
+	reloads                  prometheus.Counter
+	reloadsFailed            prometheus.Counter
+	headCompactionsFailed    prometheus.Counter
+	headCompactionsTriggered prometheus.Counter
+	headCompactionsSkipped   prometheus.Counter
+	oooCompactionsFailed     prometheus.Counter
+	oooCompactionsTriggered  prometheus.Counter
+	oooCompactionsSkipped    prometheus.Counter
+	sizeRetentionCount       prometheus.Counter
+	timeRetentionCount       prometheus.Counter
+	startTime                prometheus.GaugeFunc
+	tombCleanTimer           prometheus.Histogram
+	blocksBytes              prometheus.Gauge
+	maxBytes                 prometheus.Gauge
 }
 
 func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
@@ -290,21 +293,39 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 		Name: "prometheus_tsdb_reloads_failures_total",
 		Help: "Number of times the database failed to reloadBlocks block data from disk.",
 	})
-	m.compactionsTriggered = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_tsdb_compactions_triggered_total",
-		Help: "Total number of triggered compactions for the partition.",
+	m.headCompactionsTriggered = prometheus.NewCounter(prometheus.CounterOpts{
+		Name:        "prometheus_tsdb_head_compactions_triggered_total",
+		Help:        "Total number of triggered compactions for the partition.",
+		ConstLabels: prometheus.Labels{"type": "head"},
 	})
-	m.compactionsFailed = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_tsdb_compactions_failed_total",
-		Help: "Total number of compactions that failed for the partition.",
+	m.headCompactionsFailed = prometheus.NewCounter(prometheus.CounterOpts{
+		Name:        "prometheus_tsdb_compactions_failed_total",
+		Help:        "Total number of compactions that failed for the partition.",
+		ConstLabels: prometheus.Labels{"type": "head"},
+	})
+	m.headCompactionsSkipped = prometheus.NewCounter(prometheus.CounterOpts{
+		Name:        "prometheus_tsdb_compactions_skipped_total",
+		Help:        "Total number of skipped compactions due to disabled auto compaction.",
+		ConstLabels: prometheus.Labels{"type": "head"},
+	})
+	m.oooCompactionsTriggered = prometheus.NewCounter(prometheus.CounterOpts{
+		Name:        "prometheus_tsdb_compactions_triggered_total",
+		Help:        "Total number of triggered compactions for the partition.",
+		ConstLabels: prometheus.Labels{"type": "ooo"},
+	})
+	m.oooCompactionsFailed = prometheus.NewCounter(prometheus.CounterOpts{
+		Name:        "prometheus_tsdb_compactions_failed_total",
+		Help:        "Total number of compactions that failed for the partition.",
+		ConstLabels: prometheus.Labels{"type": "ooo"},
+	})
+	m.oooCompactionsSkipped = prometheus.NewCounter(prometheus.CounterOpts{
+		Name:        "prometheus_tsdb_compactions_skipped_total",
+		Help:        "Total number of skipped compactions due to disabled auto compaction.",
+		ConstLabels: prometheus.Labels{"type": "ooo"},
 	})
 	m.timeRetentionCount = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_time_retentions_total",
 		Help: "The number of times that blocks were deleted because the maximum time limit was exceeded.",
-	})
-	m.compactionsSkipped = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_tsdb_compactions_skipped_total",
-		Help: "Total number of skipped compactions due to disabled auto compaction.",
 	})
 	m.startTime = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "prometheus_tsdb_lowest_timestamp",
@@ -340,9 +361,9 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 			m.symbolTableSize,
 			m.reloads,
 			m.reloadsFailed,
-			m.compactionsFailed,
-			m.compactionsTriggered,
-			m.compactionsSkipped,
+			m.headCompactionsFailed,
+			m.headCompactionsTriggered,
+			m.headCompactionsSkipped,
 			m.sizeRetentionCount,
 			m.timeRetentionCount,
 			m.startTime,
@@ -1000,7 +1021,7 @@ func (db *DB) run() {
 		case <-oooScheduledCompact.C:
 			oooScheduledCompact.Reset(db.opts.OutOfOrderCompactInterval)
 
-			db.metrics.compactionsTriggered.Inc()
+			db.metrics.oooCompactionsTriggered.Inc()
 
 			db.autoCompactMtx.Lock()
 			if db.autoCompact {
@@ -1008,11 +1029,11 @@ func (db *DB) run() {
 					level.Error(db.logger).Log("msg", "compaction failed", "err", "compact ooo head")
 				}
 			} else {
-				db.metrics.compactionsSkipped.Inc()
+				db.metrics.oooCompactionsSkipped.Inc()
 			}
 			db.autoCompactMtx.Unlock()
 		case <-db.compactc:
-			db.metrics.compactionsTriggered.Inc()
+			db.metrics.headCompactionsTriggered.Inc()
 
 			db.autoCompactMtx.Lock()
 			if db.autoCompact {
@@ -1023,7 +1044,7 @@ func (db *DB) run() {
 					backoff = 0
 				}
 			} else {
-				db.metrics.compactionsSkipped.Inc()
+				db.metrics.headCompactionsSkipped.Inc()
 			}
 			db.autoCompactMtx.Unlock()
 		case <-db.stopc:
@@ -1143,7 +1164,7 @@ func (db *DB) Compact() (returnErr error) {
 		if returnErr != nil && !errors.Is(returnErr, context.Canceled) {
 			// If we got an error because context was canceled then we're most likely
 			// shutting down TSDB and we don't need to report this on metrics
-			db.metrics.compactionsFailed.Inc()
+			db.metrics.headCompactionsFailed.Inc()
 		}
 	}()
 
@@ -1231,7 +1252,7 @@ func (db *DB) CompactOOOHead() (returnErr error) {
 	defer db.cmtx.Unlock()
 	defer func() {
 		if returnErr != nil {
-			db.metrics.compactionsFailed.Inc()
+			db.metrics.oooCompactionsFailed.Inc()
 		}
 	}()
 
