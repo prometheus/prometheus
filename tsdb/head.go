@@ -1641,7 +1641,7 @@ func (h *Head) getOrCreate(hash uint64, lset labels.Labels) (*memSeries, bool, e
 
 func (h *Head) getOrCreateWithID(id chunks.HeadSeriesRef, hash uint64, lset labels.Labels) (*memSeries, bool, error) {
 	s, created, err := h.series.getOrSet(hash, lset, func() *memSeries {
-		return newMemSeries(lset, id, labels.StableHash(lset), h.opts.ChunkEndTimeVariance, h.opts.IsolationDisabled, h.opts.SamplesPerChunk)
+		return newMemSeries(lset, id, labels.StableHash(lset), h.opts.ChunkEndTimeVariance, h.opts.IsolationDisabled)
 	})
 	if err != nil {
 		return nil, false, err
@@ -1956,8 +1956,7 @@ type memSeries struct {
 	// to spread chunks writing across time. Doesn't apply to the last chunk of the chunk range. 0 to disable variance.
 	chunkEndTimeVariance float64
 
-	samplesPerChunk int   // Target number of samples per chunk.
-	nextAt          int64 // Timestamp at which to cut the next chunk.
+	nextAt int64 // Timestamp at which to cut the next chunk.
 
 	// We keep the last value here (in addition to appending it to the chunk) so we can check for duplicates.
 	lastValue float64
@@ -1985,14 +1984,13 @@ type memSeriesOOOFields struct {
 	firstOOOChunkID  chunks.HeadChunkID // HeadOOOChunkID for oooMmappedChunks[0].
 }
 
-func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, shardHash uint64, chunkEndTimeVariance float64, isolationDisabled bool, samplesPerChunk int) *memSeries {
+func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, shardHash uint64, chunkEndTimeVariance float64, isolationDisabled bool) *memSeries {
 	s := &memSeries{
 		lset:                 lset,
 		ref:                  id,
 		nextAt:               math.MinInt64,
 		chunkEndTimeVariance: chunkEndTimeVariance,
 		shardHash:            shardHash,
-		samplesPerChunk:      samplesPerChunk,
 	}
 	if !isolationDisabled {
 		s.txs = newTxRing(4)
