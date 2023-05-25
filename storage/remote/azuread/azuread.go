@@ -69,7 +69,7 @@ type tokenProvider struct {
 	mu sync.Mutex
 	// refreshTime is used to store the refresh time of the current valid accessToken.
 	refreshTime time.Time
-	// credentialClient is the Azure AD credential client that is being used to retrive accessToken.
+	// credentialClient is the Azure AD credential client that is being used to retrieve accessToken.
 	credentialClient azcore.TokenCredential
 	options          *policy.TokenRequestOptions
 }
@@ -89,7 +89,6 @@ func (c *AzureADConfig) Validate() error {
 	}
 
 	_, err := uuid.Parse(c.ManagedIdentity.ClientID)
-
 	if err != nil {
 		return fmt.Errorf("the provided Azure Managed Identity client_id provided is invalid")
 	}
@@ -207,7 +206,7 @@ func (tokenProvider *tokenProvider) getToken(ctx context.Context) error {
 		return err
 	}
 	if len(accessToken.Token) == 0 {
-		return errors.New("Access Token is empty")
+		return errors.New("access token is empty")
 	}
 
 	tokenProvider.token = accessToken.Token
@@ -221,11 +220,11 @@ func (tokenProvider *tokenProvider) getToken(ctx context.Context) error {
 // updateRefreshTime handles logic to set refreshTime. The refreshTime is set at half the duration of the actual token expiry.
 func (tokenProvider *tokenProvider) updateRefreshTime(accessToken azcore.AccessToken) error {
 	tokenExpiryTimestamp := accessToken.ExpiresOn.UTC()
-	deltaExpirytime := time.Now().Add(tokenExpiryTimestamp.Sub(time.Now()) / 2)
+	deltaExpirytime := time.Now().Add(time.Until(tokenExpiryTimestamp) / 2)
 	if deltaExpirytime.After(time.Now().UTC()) {
 		tokenProvider.refreshTime = deltaExpirytime
 	} else {
-		return errors.New("Access Token expiry is less than the current time")
+		return errors.New("access token expiry is less than the current time")
 	}
 	return nil
 }

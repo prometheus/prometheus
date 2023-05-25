@@ -1,2 +1,3 @@
-client_id: 00000000-0000-0000-0000-000000000000
 cloud: AzurePublic
+managed_identity:
+  client_id: 00000000-0000-0000-0000-000000000000

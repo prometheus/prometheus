@@ -1,2 +1,3 @@
-client_id: foo-foobar-bar-foo-00000000
 cloud: PublicAzure
+managed_identity:
+  client_id: foo-foobar-bar-foo-00000000
