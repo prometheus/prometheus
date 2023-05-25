@@ -3308,8 +3308,9 @@ azuread:
   # The Azure Cloud. Options are 'AzurePublic', 'AzureChina', or 'AzureGovernment'.
   [ cloud: <string> | default = AzurePublic ]
 
-  # The client id of the Azure managed identity.
-  [ client_id: <string>]
+  # Azure User-assigned Managed identity.
+  [ managed_identity:
+      [ client_id: <string> ]  
 
 # Configures the remote write request's TLS settings.
 tls_config:

@@ -58,7 +58,7 @@ type AzureADConfig struct {
 // azureADRoundTripper is used to store the roundtripper and the tokenprovider.
 type azureADRoundTripper struct {
 	next          http.RoundTripper
-	tokenProvider TokenProvider
+	tokenProvider *tokenProvider
 }
 
 // tokenProvider is used to store and retrieve Azure AD accessToken.
@@ -66,18 +66,12 @@ type tokenProvider struct {
 	// token is member used to store the current valid accessToken.
 	token string
 	// mu guards access to token.
-	mu  sync.Mutex
-	ctx context.Context
+	mu sync.Mutex
 	// refreshTime is used to store the refresh time of the current valid accessToken.
 	refreshTime time.Time
 	// credentialClient is the Azure AD credential client that is being used to retrive accessToken.
 	credentialClient azcore.TokenCredential
 	options          *policy.TokenRequestOptions
-}
-
-// TokenProvider is the interface for Credential client.
-type TokenProvider interface {
-	getAccessToken() (string, error)
 }
 
 // Validate validates config values provided.
@@ -123,7 +117,7 @@ func NewAzureADRoundTripper(cfg *AzureADConfig, next http.RoundTripper) (http.Ro
 		return nil, err
 	}
 
-	tokenProvider, err := newTokenProvider(context.Background(), cfg, cred)
+	tokenProvider, err := newTokenProvider(cfg, cred)
 	if err != nil {
 		return nil, err
 	}
@@ -137,7 +131,7 @@ func NewAzureADRoundTripper(cfg *AzureADConfig, next http.RoundTripper) (http.Ro
 
 // RoundTrip sets Authorization header for requests.
 func (rt *azureADRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
-	accessToken, err := rt.tokenProvider.getAccessToken()
+	accessToken, err := rt.tokenProvider.getAccessToken(req.Context())
 	if err != nil {
 		return nil, err
 	}
@@ -166,14 +160,13 @@ func newManagedIdentityTokenCredential(managedIdentityClientId string) (azcore.T
 
 // newTokenProvider helps to fetch accessToken for different types of credential. This also takes care of
 // refreshing the accessToken before expiry. This accessToken is attached to the Authorization header while making requests.
-func newTokenProvider(ctx context.Context, cfg *AzureADConfig, cred azcore.TokenCredential) (TokenProvider, error) {
+func newTokenProvider(cfg *AzureADConfig, cred azcore.TokenCredential) (*tokenProvider, error) {
 	audience, err := getAudience(cfg.Cloud)
 	if err != nil {
 		return nil, err
 	}
 
 	tokenProvider := &tokenProvider{
-		ctx:              ctx,
 		credentialClient: cred,
 		options:          &policy.TokenRequestOptions{Scopes: []string{audience}},
 	}
@@ -182,13 +175,13 @@ func newTokenProvider(ctx context.Context, cfg *AzureADConfig, cred azcore.Token
 }
 
 // getAccessToken returns the current valid accessToken.
-func (tokenProvider *tokenProvider) getAccessToken() (string, error) {
+func (tokenProvider *tokenProvider) getAccessToken(ctx context.Context) (string, error) {
 	tokenProvider.mu.Lock()
 	defer tokenProvider.mu.Unlock()
 	if tokenProvider.valid() {
 		return tokenProvider.token, nil
 	}
-	err := tokenProvider.getToken()
+	err := tokenProvider.getToken(ctx)
 	if err != nil {
 		return "", errors.New("Failed to get access token: " + err.Error())
 	}
@@ -208,8 +201,8 @@ func (tokenProvider *tokenProvider) valid() bool {
 }
 
 // getToken retrieves a new accessToken and stores the newly retrieved token in the tokenProvider.
-func (tokenProvider *tokenProvider) getToken() error {
-	accessToken, err := tokenProvider.credentialClient.GetToken(tokenProvider.ctx, *tokenProvider.options)
+func (tokenProvider *tokenProvider) getToken(ctx context.Context) error {
+	accessToken, err := tokenProvider.credentialClient.GetToken(ctx, *tokenProvider.options)
 	if err != nil {
 		return err
 	}
