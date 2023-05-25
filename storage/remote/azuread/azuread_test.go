@@ -129,6 +129,11 @@ func TestGoodAzureAdConfig(t *testing.T) {
 	testGoodConfig(t, filename)
 }
 
+func TestGoodCloudMissingAzureAdConfig(t *testing.T) {
+	filename := "testdata/azuread_good_cloudmissing.yaml"
+	testGoodConfig(t, filename)
+}
+
 func TestBadClientIdMissingAzureAdConfig(t *testing.T) {
 	filename := "testdata/azuread_bad_clientidmissing.yaml"
 	_, err := loadAzureAdConfig(filename)
@@ -140,24 +145,13 @@ func TestBadClientIdMissingAzureAdConfig(t *testing.T) {
 	}
 }
 
-func TestBadCloudMissingAzureAdConfig(t *testing.T) {
-	filename := "testdata/azuread_bad_cloudmissing.yaml"
-	_, err := loadAzureAdConfig(filename)
-	if err == nil {
-		t.Fatalf("Did not receive expected error unmarshaling bad azuread config")
-	}
-	if !strings.Contains(err.Error(), "must provide Cloud in the Azure AD config") {
-		t.Errorf("Received unexpected error from unmarshal of %s: %s", filename, err.Error())
-	}
-}
-
 func TestBadInvalidClientIdAzureAdConfig(t *testing.T) {
 	filename := "testdata/azuread_bad_invalidclientid.yaml"
 	_, err := loadAzureAdConfig(filename)
 	if err == nil {
 		t.Fatalf("Did not receive expected error unmarshaling bad azuread config")
 	}
-	if !strings.Contains(err.Error(), "Azure Managed Identity clientId provided is invalid") {
+	if !strings.Contains(err.Error(), "the provided Azure Managed Identity client_id provided is invalid") {
 		t.Errorf("Received unexpected error from unmarshal of %s: %s", filename, err.Error())
 	}
 }
@@ -241,6 +235,8 @@ func (s *TokenProviderTestSuite) TestPeriodicTokenRefresh_Success() {
 	// Token set to refresh at half of the expiry time. The test tokens are set to expiry in 10s.
 	// Hence, the 6 seconds wait to check if the token is refreshed.
 	time.Sleep(6 * time.Second)
+
+	s.Assert().NotNil(actualTokenProvider.getAccessToken(context.Background()))
 
 	s.mockCredential.AssertNumberOfCalls(s.T(), "GetToken", 2)
 	accessToken, err := actualTokenProvider.getAccessToken(context.Background())
