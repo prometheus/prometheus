@@ -564,7 +564,11 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 
 	minValidTime := h.minValidTime.Load()
 	mint, maxt := int64(math.MaxInt64), int64(math.MinInt64)
-	chunkRange := h.chunkRange.Load()
+	appendChunkOpts := chunkOpts{
+		chunkDiskMapper: h.chunkDiskMapper,
+		chunkRange:      h.chunkRange.Load(),
+		samplesPerChunk: h.opts.SamplesPerChunk,
+	}
 
 	for in := range wp.input {
 		if in.existingSeries != nil {
@@ -588,7 +592,7 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 			if s.T <= ms.mmMaxTime {
 				continue
 			}
-			if _, chunkCreated := ms.append(s.T, s.V, 0, h.chunkDiskMapper, chunkRange, h.opts.SamplesPerChunk); chunkCreated {
+			if _, chunkCreated := ms.append(s.T, s.V, 0, appendChunkOpts); chunkCreated {
 				h.metrics.chunksCreated.Inc()
 				h.metrics.chunks.Inc()
 			}
@@ -618,9 +622,9 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 			}
 			var chunkCreated bool
 			if s.h != nil {
-				_, chunkCreated = ms.appendHistogram(s.t, s.h, 0, h.chunkDiskMapper, chunkRange, h.opts.SamplesPerChunk)
+				_, chunkCreated = ms.appendHistogram(s.t, s.h, 0, appendChunkOpts)
 			} else {
-				_, chunkCreated = ms.appendFloatHistogram(s.t, s.fh, 0, h.chunkDiskMapper, chunkRange, h.opts.SamplesPerChunk)
+				_, chunkCreated = ms.appendFloatHistogram(s.t, s.fh, 0, appendChunkOpts)
 			}
 			if chunkCreated {
 				h.metrics.chunksCreated.Inc()
