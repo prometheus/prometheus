@@ -135,7 +135,7 @@ func TestBadClientIdMissingAzureAdConfig(t *testing.T) {
 	if err == nil {
 		t.Fatalf("Did not receive expected error unmarshaling bad azuread config")
 	}
-	if !strings.Contains(err.Error(), "must provide a Azure Managed Identity clientId in the Azure AD config") {
+	if !strings.Contains(err.Error(), "must provide an Azure Managed Identity in the Azure AD config") {
 		t.Errorf("Received unexpected error from unmarshal of %s: %s", filename, err.Error())
 	}
 }

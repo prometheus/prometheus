@@ -84,6 +84,10 @@ func (c *AzureADConfig) Validate() error {
 		return fmt.Errorf("must provide a cloud in the Azure AD config")
 	}
 
+	if c.ManagedIdentity == nil {
+		return fmt.Errorf("must provide an Azure Managed Identity in the Azure AD config")
+	}
+
 	if c.ManagedIdentity.ClientID == "" {
 		return fmt.Errorf("must provide an Azure Managed Identity client_id in the Azure AD config")
 	}
