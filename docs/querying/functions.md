@@ -359,7 +359,7 @@ increase(http_requests_total{job="api-server"}[5m])
 ```
 
 `increase` acts on native histograms by calculating a new histogram where each
-compononent (sum and count of observations, buckets) is the increase between
+component (sum and count of observations, buckets) is the increase between
 the respective component in the first and last native histogram in
 `v`. However, each element in `v` that contains a mix of float and native
 histogram samples within the range, will be missing from the result vector.
