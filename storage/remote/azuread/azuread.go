@@ -35,9 +35,9 @@ const (
 	AzurePublic     = "AzurePublic"
 
 	// Audiences.
-	INGESTION_CHINA_AUDIENCE      = "https://monitor.azure.cn//.default"
-	INGESTION_GOVERNMENT_AUDIENCE = "https://monitor.azure.us//.default"
-	INGESTION_PUBLIC_AUDIENCE     = "https://monitor.azure.com//.default"
+	IngestionChinaAudience      = "https://monitor.azure.cn//.default"
+	IngestionGovernmentAudience = "https://monitor.azure.us//.default"
+	IngestionPublicAudience     = "https://monitor.azure.com//.default"
 )
 
 // ManagedIdentityConfig is used to store managed identity config values
@@ -47,7 +47,7 @@ type ManagedIdentityConfig struct {
 }
 
 // AzureADConfig is used to store the config values.
-type AzureADConfig struct {
+type AzureADConfig struct { // nolint:revive
 	// ManagedIdentity is the managed identity that is being used to authenticate.
 	ManagedIdentity *ManagedIdentityConfig `yaml:"managed_identity,omitempty"`
 
@@ -155,9 +155,9 @@ func newTokenCredential(cfg *AzureADConfig) (azcore.TokenCredential, error) {
 }
 
 // newManagedIdentityTokenCredential returns new Managed Identity token credential.
-func newManagedIdentityTokenCredential(managedIdentityClientId string) (azcore.TokenCredential, error) {
-	clientId := azidentity.ClientID(managedIdentityClientId)
-	opts := &azidentity.ManagedIdentityCredentialOptions{ID: clientId}
+func newManagedIdentityTokenCredential(managedIdentityClientID string) (azcore.TokenCredential, error) {
+	clientID := azidentity.ClientID(managedIdentityClientID)
+	opts := &azidentity.ManagedIdentityCredentialOptions{ID: clientID}
 	return azidentity.NewManagedIdentityCredential(opts)
 }
 
@@ -198,9 +198,8 @@ func (tokenProvider *tokenProvider) valid() bool {
 	}
 	if tokenProvider.refreshTime.After(time.Now().UTC()) {
 		return true
-	} else {
-		return false
 	}
+	return false
 }
 
 // getToken retrieves a new accessToken and stores the newly retrieved token in the tokenProvider.
@@ -237,11 +236,11 @@ func (tokenProvider *tokenProvider) updateRefreshTime(accessToken azcore.AccessT
 func getAudience(cloud string) (string, error) {
 	switch strings.ToLower(cloud) {
 	case strings.ToLower(AzureChina):
-		return INGESTION_CHINA_AUDIENCE, nil
+		return IngestionChinaAudience, nil
 	case strings.ToLower(AzureGovernment):
-		return INGESTION_GOVERNMENT_AUDIENCE, nil
+		return IngestionGovernmentAudience, nil
 	case strings.ToLower(AzurePublic):
-		return INGESTION_PUBLIC_AUDIENCE, nil
+		return IngestionPublicAudience, nil
 	default:
 		return "", errors.New("Cloud is not specified or is incorrect: " + cloud)
 	}

@@ -53,7 +53,7 @@ type mockCredential struct {
 	mock.Mock
 }
 
-func (ad *AzureAdTestSuite) BeforeTest(suiteName, testName string) {
+func (ad *AzureAdTestSuite) BeforeTest(_, _ string) {
 	ad.mockCredential = new(mockCredential)
 }
 
@@ -165,7 +165,7 @@ func (m *mockCredential) GetToken(ctx context.Context, options policy.TokenReque
 	return args.Get(0).(azcore.AccessToken), nil
 }
 
-func (s *TokenProviderTestSuite) BeforeTest(suiteName, testName string) {
+func (s *TokenProviderTestSuite) BeforeTest(_, _ string) {
 	s.mockCredential = new(mockCredential)
 }
 
