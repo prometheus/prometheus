@@ -10,12 +10,12 @@ import PanelList from './graph/PanelList';
 import TSDBStatus from './tsdbStatus/TSDBStatus';
 import { withStartingIndicator } from '../components/withStartingIndicator';
 
-const AgentPage = withStartingIndicator(Agent);
-const AlertsPage = withStartingIndicator(Alerts);
-const ConfigPage = withStartingIndicator(Config);
 const FlagsPage = withStartingIndicator(Flags);
 const RulesPage = withStartingIndicator(Rules);
 const ServiceDiscoveryPage = withStartingIndicator(ServiceDiscovery);
+const AgentPage = withStartingIndicator(Agent);
+const AlertsPage = withStartingIndicator(Alerts);
+const ConfigPage = withStartingIndicator(Config);
 const StatusPage = withStartingIndicator(Status);
 const TSDBStatusPage = withStartingIndicator(TSDBStatus);
 const TargetsPage = withStartingIndicator(Targets);
