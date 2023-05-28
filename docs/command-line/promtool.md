@@ -183,7 +183,7 @@ Check if the rule files are valid or not.
 
 | Argument | Description |
 | --- | --- |
-| rule-files | The rule files to check, default is read from standard input (STDIN). |
+| rule-files | The rule files to check, default is read from standard input. |
 
 
 
