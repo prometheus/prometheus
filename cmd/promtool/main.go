@@ -131,7 +131,7 @@ func main() {
 	checkRulesCmd := checkCmd.Command("rules", "Check if the rule files are valid or not.")
 	ruleFiles := checkRulesCmd.Arg(
 		"rule-files",
-		"The rule files to check, default is read from standard input (STDIN).",
+		"The rule files to check, default is read from standard input.",
 	).ExistingFiles()
 	checkRulesLint := checkRulesCmd.Flag(
 		"lint",
@@ -690,7 +690,7 @@ func CheckRules(ls lintConfig, files ...string) int {
 	failed := false
 	hasErrors := false
 
-	// add empty string to avoid matching filename
+	// Add empty string to avoid matching filename.
 	if len(files) == 0 {
 		files = append(files, "")
 	}
@@ -723,7 +723,7 @@ func checkRules(filename string, lintSettings lintConfig) (int, []error) {
 	var rgs *rulefmt.RuleGroups
 	var errs []error
 
-	// if filename is an empty string it is a stdin
+	// Empty string is stdin input.
 	if filename == "" {
 		data, err := io.ReadAll(os.Stdin)
 		if err != nil {
