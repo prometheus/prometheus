@@ -1,7 +1,7 @@
 CodeMirror-promql
 =================
 
-This project provides a mode for [CodeMirror Next](https://codemirror.net/6) that handles syntax highlighting, linting
+This project provides a mode for [CodeMirror](https://codemirror.net/6/) that handles syntax highlighting, linting
 and autocompletion for PromQL ([Prometheus Query Language](https://prometheus.io/docs/introduction/overview/)).
 
 ![preview](https://user-images.githubusercontent.com/4548045/95660829-d5e4b680-0b2a-11eb-9ecb-41dca6396273.gif)
@@ -15,7 +15,7 @@ npm install --save @prometheus-io/codemirror-promql
 ```
 
 **Note:** You will have to manually install different packages that are part
-of [CodeMirror Next](https://codemirror.net/6), as they are a peer dependency to this package. Here are the different
+of [CodeMirror](https://codemirror.net/6/), as they are a peer dependency to this package. Here are the different
 packages you need to install:
 
 * **@codemirror/autocomplete**
