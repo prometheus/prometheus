@@ -393,19 +393,19 @@ type GlobalConfig struct {
 	// scrape to fail. 0 means no limit.
 	BodySizeLimit units.Base2Bytes `yaml:"body_size_limit,omitempty"`
 	// More than this many samples post metric-relabeling will cause the scrape to
-	// fail.
+	// fail. 0 means no limit.
 	SampleLimit uint `yaml:"sample_limit,omitempty"`
 	// More than this many targets after the target relabeling will cause the
-	// scrapes to fail.
+	// scrapes to fail. 0 means no limit.
 	TargetLimit uint `yaml:"target_limit,omitempty"`
 	// More than this many labels post metric-relabeling will cause the scrape to
-	// fail.
+	// fail. 0 means no limit.
 	LabelLimit uint `yaml:"label_limit,omitempty"`
 	// More than this label name length post metric-relabeling will cause the
-	// scrape to fail.
+	// scrape to fail. 0 means no limit.
 	LabelNameLengthLimit uint `yaml:"label_name_length_limit,omitempty"`
 	// More than this label value length post metric-relabeling will cause the
-	// scrape to fail.
+	// scrape to fail. 0 means no limit.
 	LabelValueLengthLimit uint `yaml:"label_value_length_limit,omitempty"`
 }
 
@@ -493,19 +493,19 @@ type ScrapeConfig struct {
 	// scrape to fail. 0 means no limit.
 	BodySizeLimit units.Base2Bytes `yaml:"body_size_limit,omitempty"`
 	// More than this many samples post metric-relabeling will cause the scrape to
-	// fail.
+	// fail. 0 means no limit.
 	SampleLimit uint `yaml:"sample_limit,omitempty"`
 	// More than this many targets after the target relabeling will cause the
-	// scrapes to fail.
+	// scrapes to fail. 0 means no limit.
 	TargetLimit uint `yaml:"target_limit,omitempty"`
 	// More than this many labels post metric-relabeling will cause the scrape to
-	// fail.
+	// fail. 0 means no limit.
 	LabelLimit uint `yaml:"label_limit,omitempty"`
 	// More than this label name length post metric-relabeling will cause the
-	// scrape to fail.
+	// scrape to fail. 0 means no limit.
 	LabelNameLengthLimit uint `yaml:"label_name_length_limit,omitempty"`
 	// More than this label value length post metric-relabeling will cause the
-	// scrape to fail.
+	// scrape to fail. 0 means no limit.
 	LabelValueLengthLimit uint `yaml:"label_value_length_limit,omitempty"`
 
 	// We cannot do proper Go type embedding below as the parser will then parse
