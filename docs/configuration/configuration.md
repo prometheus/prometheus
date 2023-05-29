@@ -73,6 +73,39 @@ global:
   # Reloading the configuration will reopen the file.
   [ query_log_file: <string> ]
 
+  # An uncompressed response body larger than this many bytes will cause the
+  # scrape to fail. 0 means no limit. Example: 100MB.
+  # This is an experimental feature, this behaviour could
+  # change or be removed in the future.
+  [ body_size_limit: <size> | default = 0 ]
+
+  # Per-scrape limit on number of scraped samples that will be accepted.
+  # If more than this number of samples are present after metric relabeling
+  # the entire scrape will be treated as failed. 0 means no limit.
+  [ sample_limit: <int> | default = 0 ]
+
+  # Per-scrape limit on number of labels that will be accepted for a sample. If
+  # more than this number of labels are present post metric-relabeling, the
+  # entire scrape will be treated as failed. 0 means no limit.
+  [ label_limit: <int> | default = 0 ]
+
+  # Per-scrape limit on length of labels name that will be accepted for a sample.
+  # If a label name is longer than this number post metric-relabeling, the entire
+  # scrape will be treated as failed. 0 means no limit.
+  [ label_name_length_limit: <int> | default = 0 ]
+
+  # Per-scrape limit on length of labels value that will be accepted for a sample.
+  # If a label value is longer than this number post metric-relabeling, the
+  # entire scrape will be treated as failed. 0 means no limit.
+  [ label_value_length_limit: <int> | default = 0 ]
+
+  # Per-scrape config limit on number of unique targets that will be
+  # accepted. If more than this number of targets are present after target
+  # relabeling, Prometheus will mark the targets as failed without scraping them.
+  # 0 means no limit. This is an experimental feature, this behaviour could
+  # change in the future.
+  [ target_limit: <int> | default = 0 ]
+
 # Rule files specifies a list of globs. Rules and alerts are read from
 # all matching files.
 rule_files:
