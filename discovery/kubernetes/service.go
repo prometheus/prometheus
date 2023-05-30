@@ -28,7 +28,6 @@ import (
 	"k8s.io/client-go/util/workqueue"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/prometheus/prometheus/util/strutil"
 )
 
 var (
@@ -162,23 +161,10 @@ const (
 )
 
 func serviceLabels(svc *apiv1.Service) model.LabelSet {
-	// Each label and annotation will create two key-value pairs in the map.
-	ls := make(model.LabelSet, 2*(len(svc.Labels)+len(svc.Annotations))+2)
-
-	ls[serviceNameLabel] = lv(svc.Name)
+	ls := make(model.LabelSet)
 	ls[namespaceLabel] = lv(svc.Namespace)
+	addObjectMetaLabels(ls, svc.ObjectMeta, RoleService)
 
-	for k, v := range svc.Labels {
-		ln := strutil.SanitizeLabelName(k)
-		ls[model.LabelName(serviceLabelPrefix+ln)] = lv(v)
-		ls[model.LabelName(serviceLabelPresentPrefix+ln)] = presentValue
-	}
-
-	for k, v := range svc.Annotations {
-		ln := strutil.SanitizeLabelName(k)
-		ls[model.LabelName(serviceAnnotationPrefix+ln)] = lv(v)
-		ls[model.LabelName(serviceAnnotationPresentPrefix+ln)] = presentValue
-	}
 	return ls
 }
 

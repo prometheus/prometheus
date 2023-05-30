@@ -274,9 +274,11 @@ func (e *EndpointSlice) buildEndpointSlice(eps endpointSliceAdaptor) *targetgrou
 	}
 	tg.Labels = model.LabelSet{
 		namespaceLabel:                lv(eps.namespace()),
-		endpointSliceNameLabel:        lv(eps.name()),
 		endpointSliceAddressTypeLabel: lv(eps.addressType()),
 	}
+
+	addObjectMetaLabels(tg.Labels, eps.getObjectMeta(), RoleEndpointSlice)
+
 	e.addServiceLabels(eps, tg)
 
 	type podEntry struct {

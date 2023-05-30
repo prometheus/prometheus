@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/prometheus/prometheus/util/strutil"
 	"os"
 	"reflect"
 	"strings"
@@ -842,4 +843,20 @@ func checkDiscoveryV1Supported(client kubernetes.Interface) (bool, error) {
 	// discovery.k8s.io/v1 is available since Kubernetes v1.21
 	// https://kubernetes.io/docs/reference/using-api/deprecation-guide/#v1-25
 	return semVer.Major() >= 1 && semVer.Minor() >= 21, nil
+}
+
+func addObjectMetaLabels(labelSet model.LabelSet, objectMeta metav1.ObjectMeta, role Role) {
+	labelSet[model.LabelName(metaLabelPrefix+string(role)+"_name")] = lv(objectMeta.Name)
+
+	for k, v := range objectMeta.Labels {
+		ln := strutil.SanitizeLabelName(k)
+		labelSet[model.LabelName(metaLabelPrefix+string(role)+"_label_"+ln)] = lv(v)
+		labelSet[model.LabelName(metaLabelPrefix+string(role)+"_labelpresent_"+ln)] = presentValue
+	}
+
+	for k, v := range objectMeta.Annotations {
+		ln := strutil.SanitizeLabelName(k)
+		labelSet[model.LabelName(metaLabelPrefix+string(role)+"_annotation_"+ln)] = lv(v)
+		labelSet[model.LabelName(metaLabelPrefix+string(role)+"_annotationpresent_"+ln)] = presentValue
+	}
 }
