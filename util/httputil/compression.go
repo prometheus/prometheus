@@ -14,11 +14,11 @@
 package httputil
 
 import (
-	"compress/gzip"
-	"compress/zlib"
-	"io"
 	"net/http"
 	"strings"
+
+	"github.com/klauspost/compress/gzhttp"
+	"github.com/klauspost/compress/zlib"
 )
 
 const (
@@ -28,53 +28,27 @@ const (
 	deflateEncoding       = "deflate"
 )
 
-// Wrapper around http.Handler which adds suitable response compression based
-// on the client's Accept-Encoding headers.
-type compressedResponseWriter struct {
+// Wrapper around http.ResponseWriter which adds deflate compression
+type deflatedResponseWriter struct {
 	http.ResponseWriter
-	writer io.Writer
+	writer *zlib.Writer
 }
 
 // Writes HTTP response content data.
-func (c *compressedResponseWriter) Write(p []byte) (int, error) {
+func (c *deflatedResponseWriter) Write(p []byte) (int, error) {
 	return c.writer.Write(p)
 }
 
-// Closes the compressedResponseWriter and ensures to flush all data before.
-func (c *compressedResponseWriter) Close() {
-	if zlibWriter, ok := c.writer.(*zlib.Writer); ok {
-		zlibWriter.Flush()
-	}
-	if gzipWriter, ok := c.writer.(*gzip.Writer); ok {
-		gzipWriter.Flush()
-	}
-	if closer, ok := c.writer.(io.Closer); ok {
-		defer closer.Close()
-	}
+// Close Closes the deflatedResponseWriter and ensures to flush all data before.
+func (c *deflatedResponseWriter) Close() {
+	c.writer.Close()
 }
 
-// Constructs a new compressedResponseWriter based on client request headers.
-func newCompressedResponseWriter(writer http.ResponseWriter, req *http.Request) *compressedResponseWriter {
-	encodings := strings.Split(req.Header.Get(acceptEncodingHeader), ",")
-	for _, encoding := range encodings {
-		switch strings.TrimSpace(encoding) {
-		case gzipEncoding:
-			writer.Header().Set(contentEncodingHeader, gzipEncoding)
-			return &compressedResponseWriter{
-				ResponseWriter: writer,
-				writer:         gzip.NewWriter(writer),
-			}
-		case deflateEncoding:
-			writer.Header().Set(contentEncodingHeader, deflateEncoding)
-			return &compressedResponseWriter{
-				ResponseWriter: writer,
-				writer:         zlib.NewWriter(writer),
-			}
-		}
-	}
-	return &compressedResponseWriter{
+// Constructs a new deflatedResponseWriter to compress the original writer using 'deflate' compression.
+func newDeflateResponseWriter(writer http.ResponseWriter) *deflatedResponseWriter {
+	return &deflatedResponseWriter{
 		ResponseWriter: writer,
-		writer:         writer,
+		writer:         zlib.NewWriter(writer),
 	}
 }
 
@@ -86,7 +60,21 @@ type CompressionHandler struct {
 
 // ServeHTTP adds compression to the original http.Handler's ServeHTTP() method.
 func (c CompressionHandler) ServeHTTP(writer http.ResponseWriter, req *http.Request) {
-	compWriter := newCompressedResponseWriter(writer, req)
-	c.Handler.ServeHTTP(compWriter, req)
-	compWriter.Close()
+	encodings := strings.Split(req.Header.Get(acceptEncodingHeader), ",")
+	for _, encoding := range encodings {
+		switch strings.TrimSpace(encoding) {
+		case gzipEncoding:
+			gzhttp.GzipHandler(c.Handler).ServeHTTP(writer, req)
+			return
+		case deflateEncoding:
+			compWriter := newDeflateResponseWriter(writer)
+			writer.Header().Set(contentEncodingHeader, deflateEncoding)
+			c.Handler.ServeHTTP(compWriter, req)
+			compWriter.Close()
+			return
+		default:
+			c.Handler.ServeHTTP(writer, req)
+			return
+		}
+	}
 }
