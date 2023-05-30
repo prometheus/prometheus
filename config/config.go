@@ -267,7 +267,7 @@ func (c *Config) GetScrapeConfigs() ([]*ScrapeConfig, error) {
 	for i, scfg := range c.ScrapeConfigs {
 		// We do these checks for library users that would not call Validate in
 		// Unmarshal.
-		if err := scfg.Validate(c.GlobalConfig.ScrapeInterval, c.GlobalConfig.ScrapeTimeout); err != nil {
+		if err := scfg.Validate(c.GlobalConfig); err != nil {
 			return nil, err
 		}
 
@@ -294,7 +294,7 @@ func (c *Config) GetScrapeConfigs() ([]*ScrapeConfig, error) {
 				return nil, fileErr(filename, err)
 			}
 			for _, scfg := range cfg.ScrapeConfigs {
-				if err := scfg.Validate(c.GlobalConfig.ScrapeInterval, c.GlobalConfig.ScrapeTimeout); err != nil {
+				if err := scfg.Validate(c.GlobalConfig); err != nil {
 					return nil, fileErr(filename, err)
 				}
 
@@ -343,7 +343,7 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	// Do global overrides and validate unique names.
 	jobNames := map[string]struct{}{}
 	for _, scfg := range c.ScrapeConfigs {
-		if err := scfg.Validate(c.GlobalConfig.ScrapeInterval, c.GlobalConfig.ScrapeTimeout); err != nil {
+		if err := scfg.Validate(c.GlobalConfig); err != nil {
 			return err
 		}
 
@@ -390,6 +390,24 @@ type GlobalConfig struct {
 	QueryLogFile string `yaml:"query_log_file,omitempty"`
 	// The labels to add to any timeseries that this Prometheus instance scrapes.
 	ExternalLabels labels.Labels `yaml:"external_labels,omitempty"`
+	// An uncompressed response body larger than this many bytes will cause the
+	// scrape to fail. 0 means no limit.
+	BodySizeLimit units.Base2Bytes `yaml:"body_size_limit,omitempty"`
+	// More than this many samples post metric-relabeling will cause the scrape to
+	// fail. 0 means no limit.
+	SampleLimit uint `yaml:"sample_limit,omitempty"`
+	// More than this many targets after the target relabeling will cause the
+	// scrapes to fail. 0 means no limit.
+	TargetLimit uint `yaml:"target_limit,omitempty"`
+	// More than this many labels post metric-relabeling will cause the scrape to
+	// fail. 0 means no limit.
+	LabelLimit uint `yaml:"label_limit,omitempty"`
+	// More than this label name length post metric-relabeling will cause the
+	// scrape to fail. 0 means no limit.
+	LabelNameLengthLimit uint `yaml:"label_name_length_limit,omitempty"`
+	// More than this label value length post metric-relabeling will cause the
+	// scrape to fail. 0 means no limit.
+	LabelValueLengthLimit uint `yaml:"label_value_length_limit,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -478,19 +496,19 @@ type ScrapeConfig struct {
 	// scrape to fail. 0 means no limit.
 	BodySizeLimit units.Base2Bytes `yaml:"body_size_limit,omitempty"`
 	// More than this many samples post metric-relabeling will cause the scrape to
-	// fail.
+	// fail. 0 means no limit.
 	SampleLimit uint `yaml:"sample_limit,omitempty"`
 	// More than this many targets after the target relabeling will cause the
-	// scrapes to fail.
+	// scrapes to fail. 0 means no limit.
 	TargetLimit uint `yaml:"target_limit,omitempty"`
 	// More than this many labels post metric-relabeling will cause the scrape to
-	// fail.
+	// fail. 0 means no limit.
 	LabelLimit uint `yaml:"label_limit,omitempty"`
 	// More than this label name length post metric-relabeling will cause the
-	// scrape to fail.
+	// scrape to fail. 0 means no limit.
 	LabelNameLengthLimit uint `yaml:"label_name_length_limit,omitempty"`
 	// More than this label value length post metric-relabeling will cause the
-	// scrape to fail.
+	// scrape to fail. 0 means no limit.
 	LabelValueLengthLimit uint `yaml:"label_value_length_limit,omitempty"`
 	// More than this many buckets in a native histogram will cause the scrape to
 	// fail.
@@ -552,25 +570,44 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return nil
 }
 
-func (c *ScrapeConfig) Validate(defaultInterval, defaultTimeout model.Duration) error {
+func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 	if c == nil {
 		return errors.New("empty or null scrape config section")
 	}
 	// First set the correct scrape interval, then check that the timeout
 	// (inferred or explicit) is not greater than that.
 	if c.ScrapeInterval == 0 {
-		c.ScrapeInterval = defaultInterval
+		c.ScrapeInterval = globalConfig.ScrapeInterval
 	}
 	if c.ScrapeTimeout > c.ScrapeInterval {
 		return fmt.Errorf("scrape timeout greater than scrape interval for scrape config with job name %q", c.JobName)
 	}
 	if c.ScrapeTimeout == 0 {
-		if defaultTimeout > c.ScrapeInterval {
+		if globalConfig.ScrapeTimeout > c.ScrapeInterval {
 			c.ScrapeTimeout = c.ScrapeInterval
 		} else {
-			c.ScrapeTimeout = defaultTimeout
+			c.ScrapeTimeout = globalConfig.ScrapeTimeout
 		}
 	}
+	if c.BodySizeLimit == 0 {
+		c.BodySizeLimit = globalConfig.BodySizeLimit
+	}
+	if c.SampleLimit == 0 {
+		c.SampleLimit = globalConfig.SampleLimit
+	}
+	if c.TargetLimit == 0 {
+		c.TargetLimit = globalConfig.TargetLimit
+	}
+	if c.LabelLimit == 0 {
+		c.LabelLimit = globalConfig.LabelLimit
+	}
+	if c.LabelNameLengthLimit == 0 {
+		c.LabelNameLengthLimit = globalConfig.LabelNameLengthLimit
+	}
+	if c.LabelValueLengthLimit == 0 {
+		c.LabelValueLengthLimit = globalConfig.LabelValueLengthLimit
+	}
+
 	return nil
 }
 
