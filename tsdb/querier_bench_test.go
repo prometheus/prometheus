@@ -113,6 +113,7 @@ func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 	jXplus := labels.MustNewMatcher(labels.MatchRegexp, "j", "X.+")
 	iCharSet := labels.MustNewMatcher(labels.MatchRegexp, "i", "1[0-9]")
 	iAlternate := labels.MustNewMatcher(labels.MatchRegexp, "i", "(1|2|3|4|5|6|20|55)")
+	iNotAlternate := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "(1|2|3|4|5|6|20|55)")
 	iXYZ := labels.MustNewMatcher(labels.MatchRegexp, "i", "X|Y|Z")
 	iNotXYZ := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "X|Y|Z")
 	cases := []struct {
@@ -132,6 +133,7 @@ func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 		{`j=~"XXX|YYY"`, []*labels.Matcher{jXXXYYY}},
 		{`j=~"X.+"`, []*labels.Matcher{jXplus}},
 		{`i=~"(1|2|3|4|5|6|20|55)"`, []*labels.Matcher{iAlternate}},
+		{`i!~"(1|2|3|4|5|6|20|55)"`, []*labels.Matcher{iNotAlternate}},
 		{`i=~"X|Y|Z"`, []*labels.Matcher{iXYZ}},
 		{`i!~"X|Y|Z"`, []*labels.Matcher{iNotXYZ}},
 		{`i=~".*"`, []*labels.Matcher{iStar}},
@@ -161,6 +163,8 @@ func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 
 	for _, c := range cases {
 		b.Run(c.name, func(b *testing.B) {
+			b.ReportAllocs()
+			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				_, err := PostingsForMatchers(ir, c.matchers...)
 				require.NoError(b, err)
