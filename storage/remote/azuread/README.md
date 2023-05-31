@@ -1,3 +1,6 @@
+azuread package
+=========================================
+
 azuread provides an http.RoundTripper that attaches an Azure AD accessToken
 to remote write requests.
 
