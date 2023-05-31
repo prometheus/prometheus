@@ -14,6 +14,7 @@
 package fmtutil
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -24,6 +25,12 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/prompb"
+)
+
+const (
+	sumStr    = "_sum"
+	countStr  = "_count"
+	bucketStr = "_bucket"
 )
 
 var MetricMetadataTypeValue = map[string]int32{
@@ -60,71 +67,129 @@ func FormatMetrics(mf map[string]*dto.MetricFamily, extraLabels map[string]strin
 		wr.Metadata = append(wr.Metadata, metadata)
 
 		for _, metric := range mf[metricName].Metric {
-			var timeserie prompb.TimeSeries
-
-			// build labels map
-			labels := make(map[string]string, len(metric.Label)+len(extraLabels))
-			labels[model.MetricNameLabel] = metricName
-
-			// add extra labels
-			for key, value := range extraLabels {
-				labels[key] = value
+			labels := makeLabelsMap(metric, metricName, extraLabels)
+			if err := makeTimeseries(wr, labels, metric); err != nil {
+				return wr, err
 			}
-
-			// add metric labels
-			for _, label := range metric.Label {
-				labelname := label.GetName()
-				if labelname == model.JobLabel {
-					labelname = fmt.Sprintf("%s%s", model.ExportedLabelPrefix, labelname)
-				}
-				labels[labelname] = label.GetValue()
-			}
-
-			// build labels name list
-			sortedLabelNames := make([]string, 0, len(labels))
-			for label := range labels {
-				sortedLabelNames = append(sortedLabelNames, label)
-			}
-			// sort labels name in lexicographical order
-			sort.Strings(sortedLabelNames)
-
-			for _, label := range sortedLabelNames {
-				timeserie.Labels = append(timeserie.Labels, prompb.Label{
-					Name:  label,
-					Value: labels[label],
-				})
-			}
-
-			timestamp := metric.GetTimestampMs()
-			if timestamp == 0 {
-				timestamp = time.Now().UnixNano() / int64(time.Millisecond)
-			}
-
-			timeserie.Samples = []prompb.Sample{
-				{
-					Timestamp: timestamp,
-					Value:     getMetricsValue(metric),
-				},
-			}
-
-			wr.Timeseries = append(wr.Timeseries, timeserie)
 		}
 	}
 	return wr, nil
 }
 
-// getMetricsValue return the value of a timeserie without the need to give value type
-func getMetricsValue(m *dto.Metric) float64 {
+func makeTimeserie(wr *prompb.WriteRequest, labels map[string]string, timestamp int64, value float64) {
+	var timeserie prompb.TimeSeries
+	timeserie.Labels = makeLabels(labels)
+	timeserie.Samples = []prompb.Sample{
+		{
+			Timestamp: timestamp,
+			Value:     value,
+		},
+	}
+	wr.Timeseries = append(wr.Timeseries, timeserie)
+}
+
+func makeTimeseries(wr *prompb.WriteRequest, labels map[string]string, m *dto.Metric) error {
+	var err error
+
+	timestamp := m.GetTimestampMs()
+	if timestamp == 0 {
+		timestamp = time.Now().UnixNano() / int64(time.Millisecond)
+	}
+
 	switch {
 	case m.Gauge != nil:
-		return m.GetGauge().GetValue()
+		makeTimeserie(wr, labels, timestamp, m.GetGauge().GetValue())
 	case m.Counter != nil:
-		return m.GetCounter().GetValue()
+		makeTimeserie(wr, labels, timestamp, m.GetCounter().GetValue())
+	case m.Summary != nil:
+		metricName := labels[model.MetricNameLabel]
+		// Preserve metric name order with first quantile labels timeseries then sum suffix timeserie and finally count suffix timeserie
+		// Add Summary quantile timeseries
+		quantileLabels := make(map[string]string, len(labels)+1)
+		for key, value := range labels {
+			quantileLabels[key] = value
+		}
+
+		for _, q := range m.GetSummary().Quantile {
+			quantileLabels[model.QuantileLabel] = fmt.Sprint(q.GetQuantile())
+			makeTimeserie(wr, quantileLabels, timestamp, q.GetValue())
+		}
+		// Overwrite label model.MetricNameLabel for count and sum metrics
+		// Add Summary sum timeserie
+		labels[model.MetricNameLabel] = metricName + sumStr
+		makeTimeserie(wr, labels, timestamp, m.GetSummary().GetSampleSum())
+		// Add Summary count timeserie
+		labels[model.MetricNameLabel] = metricName + countStr
+		makeTimeserie(wr, labels, timestamp, float64(m.GetSummary().GetSampleCount()))
+
+	case m.Histogram != nil:
+		metricName := labels[model.MetricNameLabel]
+		// Preserve metric name order with first bucket suffix timeseries then sum suffix timeserie and finally count suffix timeserie
+		// Add Histogram bucket timeseries
+		bucketLabels := make(map[string]string, len(labels)+1)
+		for key, value := range labels {
+			bucketLabels[key] = value
+		}
+		for _, b := range m.GetHistogram().Bucket {
+			bucketLabels[model.MetricNameLabel] = metricName + bucketStr
+			bucketLabels[model.BucketLabel] = fmt.Sprint(b.GetUpperBound())
+			makeTimeserie(wr, bucketLabels, timestamp, float64(b.GetCumulativeCount()))
+		}
+		// Overwrite label model.MetricNameLabel for count and sum metrics
+		// Add Histogram sum timeserie
+		labels[model.MetricNameLabel] = metricName + sumStr
+		makeTimeserie(wr, labels, timestamp, m.GetHistogram().GetSampleSum())
+		// Add Histogram count timeserie
+		labels[model.MetricNameLabel] = metricName + countStr
+		makeTimeserie(wr, labels, timestamp, float64(m.GetHistogram().GetSampleCount()))
+
 	case m.Untyped != nil:
-		return m.GetUntyped().GetValue()
+		makeTimeserie(wr, labels, timestamp, m.GetUntyped().GetValue())
 	default:
-		return 0.
+		err = errors.New("unsupported metric type")
 	}
+	return err
+}
+
+func makeLabels(labelsMap map[string]string) []prompb.Label {
+	// build labels name list
+	sortedLabelNames := make([]string, 0, len(labelsMap))
+	for label := range labelsMap {
+		sortedLabelNames = append(sortedLabelNames, label)
+	}
+	// sort labels name in lexicographical order
+	sort.Strings(sortedLabelNames)
+
+	var labels []prompb.Label
+	for _, label := range sortedLabelNames {
+		labels = append(labels, prompb.Label{
+			Name:  label,
+			Value: labelsMap[label],
+		})
+	}
+	return labels
+}
+
+func makeLabelsMap(m *dto.Metric, metricName string, extraLabels map[string]string) map[string]string {
+	// build labels map
+	labels := make(map[string]string, len(m.Label)+len(extraLabels))
+	labels[model.MetricNameLabel] = metricName
+
+	// add extra labels
+	for key, value := range extraLabels {
+		labels[key] = value
+	}
+
+	// add metric labels
+	for _, label := range m.Label {
+		labelname := label.GetName()
+		if labelname == model.JobLabel {
+			labelname = fmt.Sprintf("%s%s", model.ExportedLabelPrefix, labelname)
+		}
+		labels[labelname] = label.GetValue()
+	}
+
+	return labels
 }
 
 // ParseMetricsTextReader consumes an io.Reader and returns the MetricFamily.
