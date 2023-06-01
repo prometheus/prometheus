@@ -409,15 +409,15 @@ func (ng *Engine) SetQueryLogger(l QueryLogger) {
 
 // NewInstantQuery returns an evaluation query for the given expression at the given time.
 func (ng *Engine) NewInstantQuery(_ context.Context, q storage.Queryable, opts *QueryOpts, qs string, ts time.Time) (Query, error) {
+	pExpr, qry := ng.newQuery(q, qs, opts, ts, ts, 0)
 	expr, err := parser.ParseExpr(qs)
 	if err != nil {
 		return nil, err
 	}
-	qry, err := ng.newQuery(q, opts, expr, ts, ts, 0)
-	if err != nil {
+	if err := ng.validateOpts(expr); err != nil {
 		return nil, err
 	}
-	qry.q = qs
+	*pExpr = PreprocessExpr(expr, ts, ts)
 
 	return qry, nil
 }
@@ -425,27 +425,23 @@ func (ng *Engine) NewInstantQuery(_ context.Context, q storage.Queryable, opts *
 // NewRangeQuery returns an evaluation query for the given time range and with
 // the resolution set by the interval.
 func (ng *Engine) NewRangeQuery(_ context.Context, q storage.Queryable, opts *QueryOpts, qs string, start, end time.Time, interval time.Duration) (Query, error) {
+	pExpr, qry := ng.newQuery(q, qs, opts, start, end, interval)
 	expr, err := parser.ParseExpr(qs)
 	if err != nil {
+		return nil, err
+	}
+	if err := ng.validateOpts(expr); err != nil {
 		return nil, err
 	}
 	if expr.Type() != parser.ValueTypeVector && expr.Type() != parser.ValueTypeScalar {
 		return nil, fmt.Errorf("invalid expression type %q for range query, must be Scalar or instant Vector", parser.DocumentedType(expr.Type()))
 	}
-	qry, err := ng.newQuery(q, opts, expr, start, end, interval)
-	if err != nil {
-		return nil, err
-	}
-	qry.q = qs
+	*pExpr = PreprocessExpr(expr, start, end)
 
 	return qry, nil
 }
 
-func (ng *Engine) newQuery(q storage.Queryable, opts *QueryOpts, expr parser.Expr, start, end time.Time, interval time.Duration) (*query, error) {
-	if err := ng.validateOpts(expr); err != nil {
-		return nil, err
-	}
-
+func (ng *Engine) newQuery(q storage.Queryable, qs string, opts *QueryOpts, start, end time.Time, interval time.Duration) (*parser.Expr, *query) {
 	// Default to empty QueryOpts if not provided.
 	if opts == nil {
 		opts = &QueryOpts{}
@@ -457,20 +453,20 @@ func (ng *Engine) newQuery(q storage.Queryable, opts *QueryOpts, expr parser.Exp
 	}
 
 	es := &parser.EvalStmt{
-		Expr:          PreprocessExpr(expr, start, end),
 		Start:         start,
 		End:           end,
 		Interval:      interval,
 		LookbackDelta: lookbackDelta,
 	}
 	qry := &query{
+		q:           qs,
 		stmt:        es,
 		ng:          ng,
 		stats:       stats.NewQueryTimers(),
 		sampleStats: stats.NewQuerySamples(ng.enablePerStepStats && opts.EnablePerStepStats),
 		queryable:   q,
 	}
-	return qry, nil
+	return &es.Expr, qry
 }
 
 var (
