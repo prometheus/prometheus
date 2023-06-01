@@ -185,7 +185,7 @@ func main() {
 	pushMetricsCmd.Arg("remote-write-url", "Prometheus remote write url to push metrics.").Required().URLVar(&remoteWriteURL)
 	metricFiles := pushMetricsCmd.Arg(
 		"metric-files",
-		"The metric files to push, default is read from standard input (STDIN).",
+		"The metric files to push, default is read from standard input.",
 	).ExistingFiles()
 	pushMetricsLabels := pushMetricsCmd.Flag("label", "Label to attach to metrics. Can be specified multiple times.").Default("job=promtool").StringMap()
 	pushMetricsTimeout := pushMetricsCmd.Flag("timeout", "The time to wait for pushing metrics.").Default("30s").Duration()
