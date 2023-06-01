@@ -410,11 +410,11 @@ func (ng *Engine) SetQueryLogger(l QueryLogger) {
 // NewInstantQuery returns an evaluation query for the given expression at the given time.
 func (ng *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts *QueryOpts, qs string, ts time.Time) (Query, error) {
 	pExpr, qry := ng.newQuery(q, qs, opts, ts, ts, 0)
-	if finish, err := ng.queueActive(ctx, qry); err != nil {
+	finishQueue, err := ng.queueActive(ctx, qry)
+	if err != nil {
 		return nil, err
-	} else {
-		defer finish()
 	}
+	defer finishQueue()
 	expr, err := parser.ParseExpr(qs)
 	if err != nil {
 		return nil, err
@@ -431,11 +431,11 @@ func (ng *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts
 // the resolution set by the interval.
 func (ng *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts *QueryOpts, qs string, start, end time.Time, interval time.Duration) (Query, error) {
 	pExpr, qry := ng.newQuery(q, qs, opts, start, end, interval)
-	if finish, err := ng.queueActive(ctx, qry); err != nil {
+	finishQueue, err := ng.queueActive(ctx, qry)
+	if err != nil {
 		return nil, err
-	} else {
-		defer finish()
 	}
+	defer finishQueue()
 	expr, err := parser.ParseExpr(qs)
 	if err != nil {
 		return nil, err
@@ -595,11 +595,11 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, ws storag
 	execSpanTimer, ctx := q.stats.GetSpanTimer(ctx, stats.ExecTotalTime)
 	defer execSpanTimer.Finish()
 
-	if finish, err := ng.queueActive(ctx, q); err != nil {
+	finishQueue, err := ng.queueActive(ctx, q)
+	if err != nil {
 		return nil, nil, err
-	} else {
-		defer finish()
 	}
+	defer finishQueue()
 
 	// Cancel when execution is done or an error was raised.
 	defer q.cancel()
