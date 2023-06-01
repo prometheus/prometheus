@@ -589,18 +589,11 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, ws storag
 	execSpanTimer, ctx := q.stats.GetSpanTimer(ctx, stats.ExecTotalTime)
 	defer execSpanTimer.Finish()
 
-	queueSpanTimer, _ := q.stats.GetSpanTimer(ctx, stats.ExecQueueTime, ng.metrics.queryQueueTime)
-	// Log query in active log. The active log guarantees that we don't run over
-	// MaxConcurrent queries.
-	if ng.activeQueryTracker != nil {
-		queryIndex, err := ng.activeQueryTracker.Insert(ctx, q.q)
-		if err != nil {
-			queueSpanTimer.Finish()
-			return nil, nil, contextErr(err, "query queue")
-		}
-		defer ng.activeQueryTracker.Delete(queryIndex)
+	if finish, err := ng.queueActive(ctx, q); err != nil {
+		return nil, nil, err
+	} else {
+		defer finish()
 	}
-	queueSpanTimer.Finish()
 
 	// Cancel when execution is done or an error was raised.
 	defer q.cancel()
@@ -621,6 +614,18 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, ws storag
 	}
 
 	panic(fmt.Errorf("promql.Engine.exec: unhandled statement of type %T", q.Statement()))
+}
+
+// Log query in active log. The active log guarantees that we don't run over
+// MaxConcurrent queries.
+func (ng *Engine) queueActive(ctx context.Context, q *query) (func(), error) {
+	if ng.activeQueryTracker == nil {
+		return func() {}, nil
+	}
+	queueSpanTimer, _ := q.stats.GetSpanTimer(ctx, stats.ExecQueueTime, ng.metrics.queryQueueTime)
+	queryIndex, err := ng.activeQueryTracker.Insert(ctx, q.q)
+	queueSpanTimer.Finish()
+	return func() { ng.activeQueryTracker.Delete(queryIndex) }, err
 }
 
 func timeMilliseconds(t time.Time) int64 {
