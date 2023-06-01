@@ -173,7 +173,7 @@ var writeRequestFixture = &prompb.WriteRequest{
 	},
 }
 
-func TestParseMetricsTextAndFormat(t *testing.T) {
+func TestParseAndPushMetricsTextAndFormat(t *testing.T) {
 	input := bytes.NewReader([]byte(`
 	# HELP http_request_duration_seconds A histogram of the request duration.
 	# TYPE http_request_duration_seconds histogram
@@ -205,4 +205,29 @@ func TestParseMetricsTextAndFormat(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, writeRequestFixture, expected)
+}
+
+func TestParseMetricsTextAndFormatErrorParsingFloatValue(t *testing.T) {
+	input := bytes.NewReader([]byte(`
+	# HELP http_requests_total The total number of HTTP requests.
+	# TYPE http_requests_total counter
+	http_requests_total{method="post",code="200"} 1027Error 1395066363000
+	http_requests_total{method="post",code="400"}    3 1395066363000
+	`))
+	labels := map[string]string{"job": "promtool"}
+
+	_, err := ParseMetricsTextAndFormat(input, labels)
+	require.Equal(t, err.Error(), "text format parsing error in line 4: expected float as value, got \"1027Error\"")
+}
+
+func TestParseMetricsTextAndFormatErrorParsingMetricType(t *testing.T) {
+	input := bytes.NewReader([]byte(`
+	# HELP node_info node info summary.
+	# TYPE node_info info
+	node_info{test="summary"} 1 1395066363000
+	`))
+	labels := map[string]string{"job": "promtool"}
+
+	_, err := ParseMetricsTextAndFormat(input, labels)
+	require.Equal(t, err.Error(), "text format parsing error in line 3: unknown metric type \"info\"")
 }

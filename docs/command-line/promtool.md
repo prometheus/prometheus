@@ -410,7 +410,7 @@ Push metrics to a prometheus remote write (for testing purpose only).
 | Argument | Description | Required |
 | --- | --- | --- |
 | remote-write-url | Prometheus remote write url to push metrics. | Yes |
-| metric-files | The metric files to push, default is read from standard input (STDIN). |  |
+| metric-files | The metric files to push, default is read from standard input. |  |
 
 
 
