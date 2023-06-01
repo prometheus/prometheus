@@ -408,8 +408,13 @@ func (ng *Engine) SetQueryLogger(l QueryLogger) {
 }
 
 // NewInstantQuery returns an evaluation query for the given expression at the given time.
-func (ng *Engine) NewInstantQuery(_ context.Context, q storage.Queryable, opts *QueryOpts, qs string, ts time.Time) (Query, error) {
+func (ng *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts *QueryOpts, qs string, ts time.Time) (Query, error) {
 	pExpr, qry := ng.newQuery(q, qs, opts, ts, ts, 0)
+	if finish, err := ng.queueActive(ctx, qry); err != nil {
+		return nil, err
+	} else {
+		defer finish()
+	}
 	expr, err := parser.ParseExpr(qs)
 	if err != nil {
 		return nil, err
@@ -424,8 +429,13 @@ func (ng *Engine) NewInstantQuery(_ context.Context, q storage.Queryable, opts *
 
 // NewRangeQuery returns an evaluation query for the given time range and with
 // the resolution set by the interval.
-func (ng *Engine) NewRangeQuery(_ context.Context, q storage.Queryable, opts *QueryOpts, qs string, start, end time.Time, interval time.Duration) (Query, error) {
+func (ng *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts *QueryOpts, qs string, start, end time.Time, interval time.Duration) (Query, error) {
 	pExpr, qry := ng.newQuery(q, qs, opts, start, end, interval)
+	if finish, err := ng.queueActive(ctx, qry); err != nil {
+		return nil, err
+	} else {
+		defer finish()
+	}
 	expr, err := parser.ParseExpr(qs)
 	if err != nil {
 		return nil, err
