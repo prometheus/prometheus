@@ -228,6 +228,14 @@ func (c *mockedRemoteClient) Read(_ context.Context, query *prompb.Query) (*prom
 	return q, nil
 }
 
+func (c *mockedRemoteClient) LabelNames(_ context.Context) ([]string, storage.Warnings, error) {
+	return nil, nil, nil
+}
+
+func (c *mockedRemoteClient) LabelValues(_ context.Context, _ string) ([]string, storage.Warnings, error) {
+	return nil, nil, nil
+}
+
 func (c *mockedRemoteClient) reset() {
 	c.got = nil
 }

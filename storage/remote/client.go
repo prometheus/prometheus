@@ -17,6 +17,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -24,9 +25,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/grafana/regexp"
+
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/sigv4"
@@ -36,6 +41,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/storage"
 )
 
 const maxErrMsgLen = 1024
@@ -105,6 +111,8 @@ type ClientConfig struct {
 // TODO(bwplotka): Add streamed chunked remote read method as well (https://github.com/prometheus/prometheus/issues/5926).
 type ReadClient interface {
 	Read(ctx context.Context, query *prompb.Query) (*prompb.QueryResult, error)
+	LabelNames(ctx context.Context) ([]string, storage.Warnings, error)
+	LabelValues(ctx context.Context, label string) ([]string, storage.Warnings, error)
 }
 
 // NewReadClient creates a new client for remote read.
@@ -137,6 +145,7 @@ func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	t := httpClient.Transport
 
 	if conf.SigV4Config != nil {
@@ -329,4 +338,78 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 	}
 
 	return resp.Results[0], nil
+}
+
+type LabelsResponse struct {
+	Data     []string `json:"data,omitempty"`
+	Error    string   `json:"error,omitempty"`
+	Warnings []string `json:"warnings,omitempty"`
+}
+
+func (c *Client) FormBaseURL(ctx context.Context, url string) string {
+	regexp := regexp.MustCompile(`read/?$`)
+	baseURL := regexp.ReplaceAllString(c.url.String(), "")
+	baseURL = strings.TrimRight(baseURL, "/")
+	return baseURL
+}
+
+func (c *Client) QueryLabels(ctx context.Context, url string) ([]string, storage.Warnings, error) {
+	httpReq, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	httpReq.Header.Set("User-Agent", UserAgent)
+	httpReq.Header.Set("X-Prometheus-Remote-Read-Version", "0.1.0")
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+
+	ctx, span := otel.Tracer("").Start(ctx, "Remote Read", trace.WithSpanKind(trace.SpanKindClient))
+	defer span.End()
+
+	resp, err := c.Client.Do(httpReq.WithContext(ctx))
+	if err != nil {
+		return nil, nil, fmt.Errorf("error sending request: %w", err)
+	}
+	defer func() {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+	}()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, nil, fmt.Errorf("error reading response. HTTP status code: %s: %w", resp.Status, err)
+	}
+
+	if resp.StatusCode/100 != 2 {
+		return nil, nil, fmt.Errorf("remote server %s returned HTTP status %s: %s", c.url.String(), resp.Status, strings.TrimSpace(string(respBody)))
+	}
+
+	var labelsResponse LabelsResponse
+	if err = json.Unmarshal(respBody, &labelsResponse); err != nil {
+		return nil, nil, errors.Wrap(err, "unable to unmarshal response body")
+	}
+
+	if labelsResponse.Error != "" {
+		return nil, nil, errors.New(labelsResponse.Error)
+	}
+
+	var warnings storage.Warnings
+	for _, warning := range labelsResponse.Warnings {
+		warnings = append(warnings, errors.New(warning))
+	}
+
+	return labelsResponse.Data, warnings, nil
+}
+
+// LabelNames queries the remote read source for all label names
+func (c *Client) LabelNames(ctx context.Context) ([]string, storage.Warnings, error) {
+	apiURL := fmt.Sprintf("%s/labels", c.FormBaseURL(ctx, c.url.String()))
+	return c.QueryLabels(ctx, apiURL)
+}
+
+// LabelValues queries the remote read source for all values of a particular label
+func (c *Client) LabelValues(ctx context.Context, label string) ([]string, storage.Warnings, error) {
+	apiURL := fmt.Sprintf("%s/label/%s/values", c.FormBaseURL(ctx, c.url.String()), label)
+	return c.QueryLabels(ctx, apiURL)
 }
