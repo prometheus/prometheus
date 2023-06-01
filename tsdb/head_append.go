@@ -1270,6 +1270,11 @@ func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, 
 // It is unsafe to call this concurrently with s.iterator(...) without holding the series lock.
 // This should be called only when appending data.
 func (s *memSeries) appendPreprocessor(t int64, e chunkenc.Encoding, o chunkOpts) (c *memChunk, sampleInOrder, chunkCreated bool) {
+	// We target chunkenc.MaxBytesPerXORChunk as a hard for the size of an XOR chunk. We must determine whether to cut
+	// a new head chunk without knowing the size of the next sample, however, so we assume the next sample will be a
+	// maximally-sized sample (19 bytes).
+	const maxBytesPerXORChunk = chunkenc.MaxBytesPerXORChunk - 19
+
 	c = s.headChunks
 
 	if c == nil {
@@ -1280,11 +1285,9 @@ func (s *memSeries) appendPreprocessor(t int64, e chunkenc.Encoding, o chunkOpts
 		// There is no head chunk in this series yet, create the first chunk for the sample.
 		c = s.cutNewHeadChunk(t, e, o.chunkRange)
 		chunkCreated = true
-	} else {
-		if len(c.chunk.Bytes()) > chunkenc.MaxBytesPerXORChunk {
-			c = s.cutNewHeadChunk(t, e, o.chunkDiskMapper, o.chunkRange)
-			chunkCreated = true
-		}
+	} else if len(c.chunk.Bytes()) > maxBytesPerXORChunk {
+		c = s.cutNewHeadChunk(t, e, o.chunkRange)
+		chunkCreated = true
 	}
 
 	// Out of order sample.
@@ -1333,7 +1336,7 @@ func (s *memSeries) appendPreprocessor(t int64, e chunkenc.Encoding, o chunkOpts
 // It is unsafe to call this concurrently with s.iterator(...) without holding the series lock.
 // This should be called only when appending data.
 func (s *memSeries) nativeHistogramsAppendPreprocessor(t int64, e chunkenc.Encoding, o chunkOpts) (c *memChunk, sampleInOrder, chunkCreated bool) {
-	c = s.head()
+	c = s.headChunks
 
 	if c == nil {
 		if len(s.mmappedChunks) > 0 && s.mmappedChunks[len(s.mmappedChunks)-1].maxTime >= t {
@@ -1341,7 +1344,7 @@ func (s *memSeries) nativeHistogramsAppendPreprocessor(t int64, e chunkenc.Encod
 			return c, false, false
 		}
 		// There is no head chunk in this series yet, create the first chunk for the sample.
-		c = s.cutNewHeadChunk(t, e, o.chunkDiskMapper, o.chunkRange)
+		c = s.cutNewHeadChunk(t, e, o.chunkRange)
 		chunkCreated = true
 	}
 
@@ -1353,7 +1356,7 @@ func (s *memSeries) nativeHistogramsAppendPreprocessor(t int64, e chunkenc.Encod
 	if c.chunk.Encoding() != e {
 		// The chunk encoding expected by this append is different than the head chunk's
 		// encoding. So we cut a new chunk with the expected encoding.
-		c = s.cutNewHeadChunk(t, e, o.chunkDiskMapper, o.chunkRange)
+		c = s.cutNewHeadChunk(t, e, o.chunkRange)
 		chunkCreated = true
 	}
 
@@ -1383,7 +1386,7 @@ func (s *memSeries) nativeHistogramsAppendPreprocessor(t int64, e chunkenc.Encod
 	// Note that next chunk will have its nextAt recalculated for the new rate.
 	nextChunkRangeStart := (o.chunkRange - (c.maxTime % o.chunkRange)) + c.maxTime
 	if (t >= s.nextAt || numBytes >= targetBytes*2) && (numSamples >= chunkenc.MinSamplesPerNativeHistogramChunk || t >= nextChunkRangeStart) {
-		c = s.cutNewHeadChunk(t, e, o.chunkDiskMapper, o.chunkRange)
+		c = s.cutNewHeadChunk(t, e, o.chunkRange)
 		chunkCreated = true
 	}
 
