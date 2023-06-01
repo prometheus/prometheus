@@ -34,6 +34,7 @@ import (
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/prometheus/prometheus/storage/remote/azuread"
 )
 
 var (
@@ -907,6 +908,7 @@ type RemoteWriteConfig struct {
 	QueueConfig      QueueConfig             `yaml:"queue_config,omitempty"`
 	MetadataConfig   MetadataConfig          `yaml:"metadata_config,omitempty"`
 	SigV4Config      *sigv4.SigV4Config      `yaml:"sigv4,omitempty"`
+	AzureADConfig    *azuread.AzureADConfig  `yaml:"azuread,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -943,8 +945,12 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 	httpClientConfigAuthEnabled := c.HTTPClientConfig.BasicAuth != nil ||
 		c.HTTPClientConfig.Authorization != nil || c.HTTPClientConfig.OAuth2 != nil
 
-	if httpClientConfigAuthEnabled && c.SigV4Config != nil {
-		return fmt.Errorf("at most one of basic_auth, authorization, oauth2, & sigv4 must be configured")
+	if httpClientConfigAuthEnabled && (c.SigV4Config != nil || c.AzureADConfig != nil) {
+		return fmt.Errorf("at most one of basic_auth, authorization, oauth2, sigv4, & azuread must be configured")
+	}
+
+	if c.SigV4Config != nil && c.AzureADConfig != nil {
+		return fmt.Errorf("at most one of basic_auth, authorization, oauth2, sigv4, & azuread must be configured")
 	}
 
 	return nil
@@ -965,7 +971,7 @@ func validateHeadersForTracing(headers map[string]string) error {
 func validateHeaders(headers map[string]string) error {
 	for header := range headers {
 		if strings.ToLower(header) == "authorization" {
-			return errors.New("authorization header must be changed via the basic_auth, authorization, oauth2, or sigv4 parameter")
+			return errors.New("authorization header must be changed via the basic_auth, authorization, oauth2, sigv4, or azuread parameter")
 		}
 		if _, ok := reservedHeaders[strings.ToLower(header)]; ok {
 			return fmt.Errorf("%s is a reserved header. It must not be changed", header)
