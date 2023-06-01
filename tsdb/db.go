@@ -607,6 +607,60 @@ func (db *DBReadOnly) Blocks() ([]BlockReader, error) {
 	return blockReaders, nil
 }
 
+// LastBlockID returns the BlockID of latest block.
+func (db *DBReadOnly) LastBlockID() (string, error) {
+	entries, err := os.ReadDir(db.dir)
+	if err != nil {
+		return "", err
+	}
+
+	max := uint64(0)
+
+	lastBlockID := ""
+
+	for _, e := range entries {
+		// Check if dir is a block dir or not.
+		dirName := e.Name()
+		ulidObj, err := ulid.ParseStrict(dirName)
+		if err != nil {
+			continue // Not a block dir.
+		}
+		timestamp := ulidObj.Time()
+		if timestamp > max {
+			max = timestamp
+			lastBlockID = dirName
+		}
+	}
+
+	if lastBlockID == "" {
+		return "", errors.New("no blocks found")
+	}
+
+	return lastBlockID, nil
+}
+
+// Block returns a block reader by given block id.
+func (db *DBReadOnly) Block(blockID string) (BlockReader, error) {
+	select {
+	case <-db.closed:
+		return nil, ErrClosed
+	default:
+	}
+
+	_, err := os.Stat(filepath.Join(db.dir, blockID))
+	if os.IsNotExist(err) {
+		return nil, errors.Errorf("invalid block ID %s", blockID)
+	}
+
+	block, err := OpenBlock(db.logger, filepath.Join(db.dir, blockID), nil)
+	if err != nil {
+		return nil, err
+	}
+	db.closers = append(db.closers, block)
+
+	return block, nil
+}
+
 // Close all block readers.
 func (db *DBReadOnly) Close() error {
 	select {
