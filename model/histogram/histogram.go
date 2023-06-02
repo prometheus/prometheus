@@ -17,8 +17,6 @@ import (
 	"fmt"
 	"math"
 	"strings"
-
-	"github.com/prometheus/prometheus/tsdb/encoding"
 )
 
 // CounterResetHint contains the known information about a counter reset,
@@ -321,78 +319,6 @@ func (h *Histogram) ToFloat() *FloatHistogram {
 		PositiveBuckets:  positiveBuckets,
 		NegativeBuckets:  negativeBuckets,
 	}
-}
-
-// EncodeHistogram encodes a Histogram into a byte slice.
-func EncodeHistogram(h *Histogram) *encoding.Encbuf {
-	buf := encoding.Encbuf{}
-	buf.PutByte(byte(h.CounterResetHint))
-
-	buf.PutVarint64(int64(h.Schema))
-	buf.PutBE64(math.Float64bits(h.ZeroThreshold))
-
-	buf.PutUvarint64(h.ZeroCount)
-	buf.PutUvarint64(h.Count)
-	buf.PutBE64(math.Float64bits(h.Sum))
-
-	buf.PutUvarint(len(h.PositiveSpans))
-	for _, s := range h.PositiveSpans {
-		buf.PutVarint64(int64(s.Offset))
-		buf.PutUvarint32(s.Length)
-	}
-
-	buf.PutUvarint(len(h.NegativeSpans))
-	for _, s := range h.NegativeSpans {
-		buf.PutVarint64(int64(s.Offset))
-		buf.PutUvarint32(s.Length)
-	}
-
-	buf.PutUvarint(len(h.PositiveBuckets))
-	for _, b := range h.PositiveBuckets {
-		buf.PutVarint64(b)
-	}
-
-	buf.PutUvarint(len(h.NegativeBuckets))
-	for _, b := range h.NegativeBuckets {
-		buf.PutVarint64(b)
-	}
-	return &buf
-}
-
-// DecodeHistogram decodes a Histogram from a byte slice.
-func DecodeHistogram(buf *encoding.Decbuf) *Histogram {
-	h := &Histogram{}
-	h.CounterResetHint = CounterResetHint(buf.Byte())
-
-	h.Schema = int32(buf.Varint64())
-	h.ZeroThreshold = math.Float64frombits(buf.Be64())
-
-	h.ZeroCount = buf.Uvarint64()
-	h.Count = buf.Uvarint64()
-	h.Sum = math.Float64frombits(buf.Be64())
-
-	h.PositiveSpans = make([]Span, buf.Uvarint())
-	for i := range h.PositiveSpans {
-		h.PositiveSpans[i].Offset = int32(buf.Varint64())
-		h.PositiveSpans[i].Length = buf.Uvarint32()
-	}
-
-	h.NegativeSpans = make([]Span, buf.Uvarint())
-	for i := range h.NegativeSpans {
-		h.NegativeSpans[i].Offset = int32(buf.Varint64())
-		h.NegativeSpans[i].Length = buf.Uvarint32()
-	}
-
-	h.PositiveBuckets = make([]int64, buf.Uvarint())
-	for i := range h.PositiveBuckets {
-		h.PositiveBuckets[i] = buf.Varint64()
-	}
-
-	h.NegativeBuckets = make([]int64, buf.Uvarint())
-	for i := range h.NegativeBuckets {
-		h.NegativeBuckets[i] = buf.Varint64()
-	}
-	return h
 }
 
 type regularBucketIterator struct {

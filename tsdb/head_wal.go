@@ -973,11 +973,9 @@ func (s *memSeries) encodeToSnapshotRecord(b []byte) []byte {
 			buf.PutBE64int64(0)
 			buf.PutBEFloat64(s.lastValue)
 		} else if enc == chunkenc.EncHistogram {
-			encodedHist := histogram.EncodeHistogram(s.lastHistogramValue)
-			buf.PutBytes(encodedHist.B)
+			record.EncodeHistogram(&buf, s.lastHistogramValue)
 		} else {
-			encodedHist := histogram.EncodeFloatHistogram(s.lastFloatHistogramValue)
-			buf.PutBytes(encodedHist.B)
+			record.EncodeFloatHistogram(&buf, s.lastFloatHistogramValue)
 		}
 	}
 	s.Unlock()
@@ -1027,9 +1025,11 @@ func decodeSeriesFromChunkSnapshot(d *record.Decoder, b []byte) (csr chunkSnapsh
 		_ = dec.Be64int64()
 		csr.lastValue = dec.Be64Float64()
 	} else if enc == chunkenc.EncHistogram {
-		csr.lastHistogramValue = histogram.DecodeHistogram(&dec)
+		csr.lastHistogramValue = &histogram.Histogram{}
+		record.DecodeHistogram(&dec, csr.lastHistogramValue)
 	} else {
-		csr.lastFloatHistogramValue = histogram.DecodeFloatHistogram(&dec)
+		csr.lastFloatHistogramValue = &histogram.FloatHistogram{}
+		record.DecodeFloatHistogram(&dec, csr.lastFloatHistogramValue)
 	}
 
 	err = dec.Err()

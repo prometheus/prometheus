@@ -19,8 +19,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/prometheus/prometheus/tsdb/encoding"
 )
 
 func TestHistogramString(t *testing.T) {
@@ -411,33 +409,6 @@ func TestHistogramToFloat(t *testing.T) {
 	fh := h.ToFloat()
 
 	require.Equal(t, h.String(), fh.String())
-}
-
-func TestHistogramEncodeDecode(t *testing.T) {
-	h := &Histogram{
-		CounterResetHint: 0,
-		Schema:           3,
-		Count:            61,
-		Sum:              2.7,
-		ZeroThreshold:    0.1,
-		ZeroCount:        42,
-		PositiveSpans: []Span{
-			{Offset: 0, Length: 4},
-			{Offset: 0, Length: 0},
-			{Offset: 0, Length: 3},
-		},
-		PositiveBuckets: []int64{1, 2, -2, 1, -1, 0, 0},
-		NegativeSpans: []Span{
-			{Offset: 0, Length: 5},
-			{Offset: 1, Length: 0},
-			{Offset: 0, Length: 1},
-		},
-		NegativeBuckets: []int64{1, 2, -2, 1, -1, 0},
-	}
-	enc := EncodeHistogram(h)
-	dec := encoding.Decbuf{B: enc.B}
-	newH := DecodeHistogram(&dec)
-	require.Equal(t, h, newH)
 }
 
 // TestHistogramMatches tests both Histogram and FloatHistogram.
