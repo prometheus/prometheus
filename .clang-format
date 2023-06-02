@@ -1,0 +1,6 @@
+---
+BasedOnStyle: Chromium
+ColumnLimit: 160
+AttributeMacros:
+  - __capability
+  - __attribute__

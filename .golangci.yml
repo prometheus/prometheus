@@ -1,0 +1,231 @@
+---
+# This file contains all available configuration options
+# with their default values.
+
+# options for analysis running
+run:
+  # default concurrency is a available CPU number
+  concurrency: 4
+
+  # timeout for analysis, e.g. 30s, 5m, default is 1m
+  deadline: 10m
+
+  # exit code when at least one issue was found, default is 1
+  issues-exit-code: 1
+
+  # include test files or not, default is true
+  tests: true
+# output configuration options
+output:
+  # colored-line-number|line-number|json|tab|checkstyle|code-climate, default is "colored-line-number"
+  format: colored-line-number
+
+  # print lines of code with issue, default is true
+  print-issued-lines: true
+
+  # print linter name in the end of issue text, default is true
+  print-linter-name: true
+
+# all available settings of specific linters
+linters-settings:
+  govet:
+    # report about shadowed variables
+    check-shadowing: true
+
+    # settings per analyzer
+    settings:
+      printf: # analyzer name, run `go tool vet help` to see all analyzers
+        funcs: # run `go tool vet help printf` to see available settings for `printf` analyzer
+          - (github.com/golangci/golangci-lint/pkg/logutils.Log).Infof
+          - (github.com/golangci/golangci-lint/pkg/logutils.Log).Warnf
+          - (github.com/golangci/golangci-lint/pkg/logutils.Log).Errorf
+          - (github.com/golangci/golangci-lint/pkg/logutils.Log).Fatalf
+  gofmt:
+    # simplify code: gofmt with `-s` option, true by default
+    simplify: true
+  goimports:
+    # put imports beginning with prefix after 3rd-party packages;
+    # it's a comma-separated list of prefixes
+    local-prefixes: fox.flant.com
+  dupl:
+    # tokens count to trigger issue, 150 by default
+    threshold: 100
+  goconst:
+    # minimal length of string constant, 3 by default
+    min-len: 3
+    # minimal occurrences count to trigger, 3 by default
+    min-occurrences: 3
+  misspell:
+    # Correct spellings using locale preferences for US or UK.
+    # Default is to use a neutral variety of English.
+    # Setting locale to US will correct the British spelling of 'colour' to 'color'.
+    locale: US
+    ignore-words:
+      - someword
+  unused:
+    # treat code as a program (not a library) and report unused exported identifiers; default is false.
+    # XXX: if you enable this setting, unused will report a lot of false-positives in text editors:
+    # if it's called for subdir of a project it can't find funcs usages. All text editor integrations
+    # with golangci-lint call it on a directory with the changed file.
+    check-exported: false
+  nakedret:
+    # make an issue if func has more lines of code than this setting and it has naked returns; default is 30
+    max-func-lines: 30
+  gocritic:
+    # Enable multiple checks by tags, run `GL_DEBUG=gocritic golangci-lint` run to see all tags and checks.
+    # Empty list by default. See https://github.com/go-critic/go-critic#usage -> section "Tags".
+    enabled-tags:
+      - style
+      - performance
+    settings: # settings passed to gocritic
+      captLocal: # must be valid enabled check name
+        paramsOnly: true
+  revive:
+    ignore-generated-header: true
+    rules:
+      - name: context-keys-type
+      - name: time-naming
+      - name: var-declaration
+      - name: unexported-return
+      - name: errorf
+      - name: blank-imports
+      - name: context-as-argument
+      - name: dot-imports
+      - name: error-return
+      - name: error-strings
+      - name: error-naming
+      - name: exported
+      - name: if-return
+      - name: increment-decrement
+      - name: range
+      - name: receiver-naming
+      - name: indent-error-flow
+      - name: argument-limit
+        arguments:
+          - 10
+      - name: cyclomatic
+        arguments:
+          - 10
+      - name: empty-block
+      - name: superfluous-else
+      - name: confusing-naming
+      - name: get-return
+      - name: modifies-parameter
+      - name: confusing-results
+      - name: deep-exit
+      - name: unused-parameter
+      - name: unreachable-code
+      - name: add-constant
+        arguments:
+          - allowInts: "0,1"
+            allowStrs: '"","/"'
+      - name: flag-parameter
+      - name: unnecessary-stmt
+      - name: struct-tag
+      - name: modifies-value-receiver
+      - name: constant-logical-expr
+      - name: bool-literal-in-expr
+      - name: redefines-builtin-id
+      - name: function-result-limit
+        arguments:
+          - 3
+      - name: imports-blacklist
+        arguments:
+          - github.com/davecgh/go-spew/spew
+      - name: range-val-in-closure
+      - name: range-val-address
+      - name: waitgroup-by-value
+      - name: atomic
+      - name: empty-lines
+      - name: line-length-limit
+        arguments:
+          - 120
+      - name: duplicated-imports
+      - name: import-shadowing
+      - name: bare-return
+      - name: unused-receiver
+      - name: unhandled-error
+      - name: cognitive-complexity
+        arguments:
+          - 20
+      - name: string-of-int
+      - name: early-return
+      - name: unconditional-recursion
+      - name: identical-branches
+      - name: function-length
+        arguments:
+          - 30
+          - 50
+
+linters:
+  disable-all: true
+  enable:
+    - bodyclose # checks whether HTTP response body is closed successfully [fast: false, auto-fix: false]
+    - dupl # Tool for code clone detection [fast: true, auto-fix: false]
+    - goconst # Finds repeated strings that could be replaced by a constant [fast: true, auto-fix: false]
+    - gocritic # The most opinionated Go source code linter [fast: true, auto-fix: false]
+    - godox # Tool for detection of FIXME, TODO and other comment keywords [fast: true, auto-fix: false]
+    - gofmt
+    - goimports # Goimports does everything that gofmt does. Additionally it checks unused imports [fast: true, auto-fix: true]
+    - gosec # Inspects source code for security problems [fast: true, auto-fix: false]
+    - gosimple # Linter for Go source code that specializes in simplifying a code [fast: false, auto-fix: false]
+    - govet # Vet examines Go source code and reports suspicious constructs, such as Printf calls whose arguments do not align with the format string [fast: false, auto-fix: false]
+    - ineffassign # Detects when assignments to existing variables are not used [fast: true, auto-fix: false]
+    - misspell # Finds commonly misspelled English words in comments [fast: true, auto-fix: true]
+    - nakedret # Finds naked returns in functions greater than a specified function length [fast: true, auto-fix: false]
+    - staticcheck # Staticcheck is a go vet on steroids, applying a ton of static analysis checks [fast: false, auto-fix: false]
+    - typecheck # Like the front-end of a Go compiler, parses and type-checks Go code [fast: true, auto-fix: false]
+    - unconvert # Remove unnecessary type conversions [fast: true, auto-fix: false]
+    - unused # Checks Go code for unused constants, variables, functions and types [fast: false, auto-fix: false]
+    - revive
+  fast: false
+
+issues:
+  # List of regexps of issue texts to exclude, empty list by default.
+  # But independently from this option we use default exclude patterns,
+  # it can be disabled by `exclude-use-default: false`. To list all
+  # excluded by default patterns execute `golangci-lint run --help`
+  exclude:
+    - abcdef
+
+  # Excluding configuration per-path, per-linter, per-text and per-source
+  exclude-rules:
+    # Exclude some linters from running on tests files.
+    - path: _test\.go
+      linters:
+        - gocyclo
+        - errcheck
+        - dupl
+        - gosec
+        - scopelint
+
+    - path: _test\.go
+      linters:
+        - revive
+      text: "add-constant"
+
+    - path: _test\.go
+      linters:
+        - revive
+      text: "line-length-limit"
+
+    - path: _test\.go
+      linters:
+        - revive
+      text: "function-length"
+
+    # Exclude some staticcheck messages
+    - linters:
+        - staticcheck
+      text: "SA9003:" # Empty body in an if or else branch
+
+    # Exclude some stylecheck messages
+    - linters:
+        - stylecheck
+      text: "ST1000:" # Incorrect or missing package comment
+
+  # Independently from option `exclude` we use default exclude patterns,
+  # it can be disabled by this option. To list all
+  # excluded by default patterns execute `golangci-lint run --help`.
+  # Default value for this option is true.
+  exclude-use-default: false

@@ -1,0 +1,9 @@
+data/
+out/
+*.a
+performance_tests/test_data/large/*
+!performance_tests/test_data/large/dummy_wal.*
+performance_tests/test_data/small/*
+!performance_tests/test_data/small/dummy_wal.*
+bazel-*
+.vscode

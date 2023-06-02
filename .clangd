@@ -1,0 +1,7 @@
+# Work around https://github.com/clangd/clangd/issues/1004 by ignoring that bazel flag.
+CompileFlags:
+  Remove:
+   - '-fno-canonical-system-headers'
+  Add:
+   - '-std=c++2b'
+

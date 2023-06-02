@@ -1,0 +1,49 @@
+---
+Checks: 'clang-diagnostic-*,clang-analyzer-*,google-*,readability-identifier-naming,-google-readability-todo,-google-readability-braces-around-statements,-google-readability-avoid-underscore-in-googletest-name'
+WarningsAsErrors: '*'
+HeaderFilterRegex: '.*/(bare_bones|primitives|prometheus|wal)/(|tests/).*'
+AnalyzeTemporaryDtors: false
+FormatStyle: file
+CheckOptions:
+  modernize-loop-convert.MinConfidence: reasonable
+  modernize-replace-auto-ptr.IncludeStyle: llvm
+  google-readability-namespace-comments.ShortNamespaceLines: '10'
+  cert-oop54-cpp.WarnOnlyIfThisHasSuspiciousField: 'false'
+  cppcoreguidelines-non-private-member-variables-in-classes.IgnoreClassesWithAllMemberVariablesBeingPublic: 'true'
+  cert-dcl16-c.NewSuffixes: 'L;LL;LU;LLU'
+  modernize-loop-convert.MaxCopySize: '16'
+  google-readability-namespace-comments.SpacesBeforeComments: '2'
+  google-build-namespaces.HeaderFileExtensions: ';h;hh;hpp;hxx'
+  google-readability-function-size.VariableThreshold: '4294967295'
+  google-readability-function-size.LineThreshold: '4294967295'
+  llvm-qualified-auto.AddConstToQualified: 'false'
+  google-readability-function-size.BranchThreshold: '4294967295'
+  modernize-loop-convert.NamingStyle: CamelCase
+  google-runtime-int.SignedTypePrefix: int
+  google-readability-function-size.StatementThreshold: '800'
+  llvm-else-after-return.WarnOnConditionVariables: 'false'
+  google-runtime-int.UnsignedTypePrefix: uint
+  google-readability-function-size.NestingThreshold: '4294967295'
+  cert-str34-c.DiagnoseSignedUnsignedCharComparisons: 'false'
+  modernize-pass-by-value.IncludeStyle: llvm
+  cert-err33-c.CheckedFunctions: '::aligned_alloc;::asctime_s;::at_quick_exit;::atexit;::bsearch;::bsearch_s;::btowc;::c16rtomb;::c32rtomb;::calloc;::clock;::cnd_broadcast;::cnd_init;::cnd_signal;::cnd_timedwait;::cnd_wait;::ctime_s;::fclose;::fflush;::fgetc;::fgetpos;::fgets;::fgetwc;::fopen;::fopen_s;::fprintf;::fprintf_s;::fputc;::fputs;::fputwc;::fputws;::fread;::freopen;::freopen_s;::fscanf;::fscanf_s;::fseek;::fsetpos;::ftell;::fwprintf;::fwprintf_s;::fwrite;::fwscanf;::fwscanf_s;::getc;::getchar;::getenv;::getenv_s;::gets_s;::getwc;::getwchar;::gmtime;::gmtime_s;::localtime;::localtime_s;::malloc;::mbrtoc16;::mbrtoc32;::mbsrtowcs;::mbsrtowcs_s;::mbstowcs;::mbstowcs_s;::memchr;::mktime;::mtx_init;::mtx_lock;::mtx_timedlock;::mtx_trylock;::mtx_unlock;::printf_s;::putc;::putwc;::raise;::realloc;::remove;::rename;::scanf;::scanf_s;::setlocale;::setvbuf;::signal;::snprintf;::snprintf_s;::sprintf;::sprintf_s;::sscanf;::sscanf_s;::strchr;::strerror_s;::strftime;::strpbrk;::strrchr;::strstr;::strtod;::strtof;::strtoimax;::strtok;::strtok_s;::strtol;::strtold;::strtoll;::strtoul;::strtoull;::strtoumax;::strxfrm;::swprintf;::swprintf_s;::swscanf;::swscanf_s;::thrd_create;::thrd_detach;::thrd_join;::thrd_sleep;::time;::timespec_get;::tmpfile;::tmpfile_s;::tmpnam;::tmpnam_s;::tss_create;::tss_get;::tss_set;::ungetc;::ungetwc;::vfprintf;::vfprintf_s;::vfscanf;::vfscanf_s;::vfwprintf;::vfwprintf_s;::vfwscanf;::vfwscanf_s;::vprintf_s;::vscanf;::vscanf_s;::vsnprintf;::vsnprintf_s;::vsprintf;::vsprintf_s;::vsscanf;::vsscanf_s;::vswprintf;::vswprintf_s;::vswscanf;::vswscanf_s;::vwprintf_s;::vwscanf;::vwscanf_s;::wcrtomb;::wcschr;::wcsftime;::wcspbrk;::wcsrchr;::wcsrtombs;::wcsrtombs_s;::wcsstr;::wcstod;::wcstof;::wcstoimax;::wcstok;::wcstok_s;::wcstol;::wcstold;::wcstoll;::wcstombs;::wcstombs_s;::wcstoul;::wcstoull;::wcstoumax;::wcsxfrm;::wctob;::wctrans;::wctype;::wmemchr;::wprintf_s;::wscanf;::wscanf_s;'
+  google-readability-braces-around-statements.ShortStatementLines: '1'
+  google-readability-function-size.ParameterThreshold: '4294967295'
+  google-runtime-int.TypeSuffix: ''
+  google-global-names-in-headers.HeaderFileExtensions: ';h;hh;hpp;hxx'
+  modernize-use-nullptr.NullMacros: 'NULL'
+  llvm-else-after-return.WarnOnUnfixable: 'false'
+
+  readability-identifier-naming.NamespaceCase: CamelCase
+  readability-identifier-naming.ClassCase: CamelCase
+  readability-identifier-naming.StructCase: CamelCase
+  readability-identifier-naming.MemberCase: lower_case
+  readability-identifier-naming.PrivateMemberSuffix: _
+  readability-identifier-naming.PrivateMemberCase: lower_case
+  readability-identifier-naming.ProtectedMemberSuffix: _
+  readability-identifier-naming.ProtectedMemberCase: lower_case
+  readability-identifier-naming.FunctionCase: lower_case
+  readability-identifier-naming.VariableCase: lower_case
+  readability-identifier-naming.GlobalConstantCase: UPPER_CASE
+...
+
