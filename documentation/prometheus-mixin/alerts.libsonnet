@@ -23,15 +23,15 @@
           {
             alert: 'PrometheusSDRefreshFailure',
             expr: |||
-              rate(prometheus_sd_refresh_failures_total{%(prometheusSelector)s}[5m]) > 0
+              increase(prometheus_sd_refresh_failures_total{%(prometheusSelector)s}[10m]) > 0
             ||| % $._config,
-            'for': '10m',
+            'for': '20m',
             labels: {
               severity: 'warning',
             },
             annotations: {
               summary: 'Failed Prometheus SD refresh.',
-              description: 'Prometheus %(prometheusName)s has failed to refresh sd with mechanism {{$labels.mechanism}}' % $._config,
+              description: 'Prometheus %(prometheusName)s has failed to refresh SD with mechanism {{$labels.mechanism}}.' % $._config,
             },
           },
           {
