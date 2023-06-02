@@ -3183,7 +3183,6 @@ func TestChunkSnapshot(t *testing.T) {
 	expFloatHist := make(map[string][]tsdbutil.Sample)
 	expTombstones := make(map[storage.SeriesRef]tombstones.Intervals)
 	expExemplars := make([]ex, 0)
-	// TODO(marctc): use histograms instead of gauge histograms.
 	histograms := tsdbutil.GenerateTestGaugeHistograms(481)
 	floatHistogram := tsdbutil.GenerateTestGaugeFloatHistograms(481)
 
