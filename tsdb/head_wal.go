@@ -1409,6 +1409,7 @@ func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSerie
 				series.headChunk = csr.mc
 				series.lastValue = csr.lastValue
 				series.lastHistogramValue = csr.lastHistogramValue
+				series.lastFloatHistogramValue = csr.lastFloatHistogramValue
 
 				app, err := series.headChunk.chunk.Appender()
 				if err != nil {
