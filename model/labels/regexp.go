@@ -66,6 +66,10 @@ func (m *FastRegexMatcher) GetRegexString() string {
 	return m.re.String()
 }
 
+func isLiteral(re string) bool {
+	return regexp.QuoteMeta(re) == re
+}
+
 // optimizeConcatRegex returns literal prefix/suffix text that can be safely
 // checked against the label value before running the regexp matcher.
 func optimizeConcatRegex(r *syntax.Regexp) (prefix, suffix, contains string) {
