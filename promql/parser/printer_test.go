@@ -110,12 +110,10 @@ func TestExprString(t *testing.T) {
 			in: `a{b!="c"}[1m]`,
 		},
 		{
-			in:  `a{b=~"c"}[1m]`,
-			out: `a{b="c"}[1m]`,
+			in: `a{b=~"c"}[1m]`,
 		},
 		{
-			in:  `a{b!~"c"}[1m]`,
-			out: `a{b!="c"}[1m]`,
+			in: `a{b!~"c"}[1m]`,
 		},
 		{
 			in:  `a @ 10`,

@@ -59,20 +59,11 @@ func NewMatcher(t MatchType, n, v string) (*Matcher, error) {
 		Value: v,
 	}
 	if t == MatchRegexp || t == MatchNotRegexp {
-		if isLiteral(v) {
-			switch t {
-			case MatchRegexp:
-				m.Type = MatchEqual
-			case MatchNotRegexp:
-				m.Type = MatchNotEqual
-			}
-		} else {
-			re, err := NewFastRegexMatcher(v)
-			if err != nil {
-				return nil, err
-			}
-			m.re = re
+		re, err := NewFastRegexMatcher(v)
+		if err != nil {
+			return nil, err
 		}
+		m.re = re
 	}
 	return m, nil
 }
