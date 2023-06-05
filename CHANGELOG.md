@@ -12,6 +12,7 @@ Please read more about our LTS release cycle at
 * [FEATURE] Native histograms: Add option to scrape both classic and native histograms. #12350
 * [FEATURE] Remote-write: New azure ad configuration to support remote writing directly to Azure Monitor workspace. #11944
 * [FEATURE] TSDB: Samples per chunk are now configurable with flag `storage.tsdb.samples-per-chunk`. By default set to its former value 120. #12055
+* [FEATURE] Config: Add limits to global config. #12126
 * [ENHACEMENT] API: Improving Performance on the API Gzip Handler. #12363
 * [ENHACEMENT] Alerting: More efficient relabeling. #12171
 * [ENHACEMENT] Native histograms: bucket size can now be limited to avoid scrape fails. #12254
@@ -20,7 +21,7 @@ Please read more about our LTS release cycle at
 * [BUGFIX] Native histograms: ChunkSeries iterator now checks if a new sample can be appended to the open chunk. #12185
 * [BUGFIX] Native histograms: Fix Histogram Appender `Appendable()` segfault. #12357
 * [BUGFIX] Native histograms: Fix setting reset header to gauge histograms in seriesToChunkEncoder. #12329
-* [BUGFIX] Write Log: Use path/filepath to set the WAL directory. #12349
+* [BUGFIX] TSDB: Use path/filepath to set the WAL directory. #12349
 
 ## 2.44.0 / 2023-05-13
 
