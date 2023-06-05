@@ -1,5 +1,27 @@
 # Changelog
 
+## 2.45.0-rc.0 / 2023-06-05
+
+This release is a LTS (Long-Term Support) release of Prometheus and will
+receive security, documentation and bugfix patches for at least 6 months.
+Please read more about our LTS release cycle at
+<https://prometheus.io/docs/introduction/release-cycle/>.
+
+* [FEATURE] API: New limit parameter to limit the number of items returned by `/api/v1/status/tsdb` endpoint. #12336
+* [FEATURE] Consul SD: Added support for `path_prefix`. #12372
+* [FEATURE] Native histograms: Add option to scrape both classic and native histograms. #12350
+* [FEATURE] Remote-write: New azure ad configuration to support remote writing directly to Azure Monitor workspace. #11944
+* [FEATURE] TSDB: Samples per chunk are now configurable with flag `storage.tsdb.samples-per-chunk`. By default set to its former value 120. #12055
+* [ENHACEMENT] API: Improving Performance on the API Gzip Handler. #12363
+* [ENHACEMENT] Alerting: More efficient relabeling. #12171
+* [ENHACEMENT] Native histograms: bucket size can now be limited to avoid scrape fails. #12254
+* [ENHACEMENT] TSDB: Dropped series are now deleted from the WAL sooner. #12297
+* [ENHACEMENT] TSDB: Optimizations for regex matchers including ors, `MatchNotRegexp` and `MatchNotEqual`. #12375 #12377 #12351
+* [BUGFIX] Native histograms: ChunkSeries iterator now checks if a new sample can be appended to the open chunk. #12185
+* [BUGFIX] Native histograms: Fix Histogram Appender `Appendable()` segfault. #12357
+* [BUGFIX] Native histograms: Fix setting reset header to gauge histograms in seriesToChunkEncoder. #12329
+* [BUGFIX] Write Log: Use path/filepath to set the WAL directory. #12349
+
 ## 2.44.0 / 2023-05-13
 
 This version is built with Go tag `stringlabels`, to use the smaller data
