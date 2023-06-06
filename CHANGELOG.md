@@ -3,7 +3,7 @@
 ## 2.45.0-rc.0 / 2023-06-05
 
 This release is a LTS (Long-Term Support) release of Prometheus and will
-receive security, documentation and bugfix patches for at least 6 months.
+receive security, documentation and bugfix patches for at least 12 months.
 Please read more about our LTS release cycle at
 <https://prometheus.io/docs/introduction/release-cycle/>.
 
