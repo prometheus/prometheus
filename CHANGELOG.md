@@ -14,10 +14,8 @@ Please read more about our LTS release cycle at
 * [FEATURE] TSDB: Samples per chunk are now configurable with flag `storage.tsdb.samples-per-chunk`. By default set to its former value 120. #12055
 * [FEATURE] Config: Add limits to global config. #12126
 * [ENHACEMENT] API: Improving Performance on the API Gzip Handler. #12363
-* [ENHACEMENT] Alerting: More efficient relabeling. #12171
 * [ENHACEMENT] Native histograms: bucket size can now be limited to avoid scrape fails. #12254
 * [ENHACEMENT] TSDB: Dropped series are now deleted from the WAL sooner. #12297
-* [ENHACEMENT] TSDB: Optimizations for regex matchers including ors, `MatchNotRegexp` and `MatchNotEqual`. #12375 #12377 #12351
 * [BUGFIX] Native histograms: ChunkSeries iterator now checks if a new sample can be appended to the open chunk. #12185
 * [BUGFIX] Native histograms: Fix Histogram Appender `Appendable()` segfault. #12357
 * [BUGFIX] Native histograms: Fix setting reset header to gauge histograms in seriesToChunkEncoder. #12329
