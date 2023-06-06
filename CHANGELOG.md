@@ -10,7 +10,7 @@ Please read more about our LTS release cycle at
 * [FEATURE] API: New limit parameter to limit the number of items returned by `/api/v1/status/tsdb` endpoint. #12336
 * [FEATURE] Consul SD: Added support for `path_prefix`. #12372
 * [FEATURE] Native histograms: Add option to scrape both classic and native histograms. #12350
-* [FEATURE] Remote-write: New azure ad configuration to support remote writing directly to Azure Monitor workspace. #11944
+* [FEATURE] Remote-write: New Azure ad configuration to support remote writing directly to Azure Monitor workspace. #11944
 * [FEATURE] TSDB: Samples per chunk are now configurable with flag `storage.tsdb.samples-per-chunk`. By default set to its former value 120. #12055
 * [FEATURE] Config: Add limits to global config. #12126
 * [ENHACEMENT] API: Improving Performance on the API Gzip Handler. #12363
