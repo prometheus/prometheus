@@ -744,7 +744,7 @@ func (h *Handler) runtimeInfo() (api_v1.RuntimeInfo, error) {
 }
 
 func toFloat64(f *io_prometheus_client.MetricFamily) float64 {
-	m := *f.Metric[0]
+	m := f.Metric[0]
 	if m.Gauge != nil {
 		return m.Gauge.GetValue()
 	}
