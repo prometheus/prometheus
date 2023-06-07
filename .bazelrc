@@ -1,2 +1,2 @@
-build:address-sanitizer --cxxopt='-std=c++20' --crosstool_top=//bazel/toolchain:g++-12 --copt="-fno-omit-frame-pointer" --copt="-fsanitize=address" --linkopt="-fsanitize=address" --strip=never
-build:g++-12 --cxxopt='-std=c++20' --crosstool_top=//bazel/toolchain:g++-12
+build:address-sanitizer --crosstool_top=//bazel/toolchain:g++-12 --copt="-fno-omit-frame-pointer" --copt="-fsanitize=address" --linkopt="-fsanitize=address" --strip=never
+build:g++-12 --crosstool_top=//bazel/toolchain:g++-12

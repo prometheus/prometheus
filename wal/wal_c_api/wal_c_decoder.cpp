@@ -6,6 +6,15 @@
 #include <new>
 #include <sstream>
 
+#if __has_include(<spanstream>)  // sanity checks..
+#if __cplusplus <= 202002L
+#error "Please set -std="c++2b" or similar flag for C++23 for your compiler."
+#endif
+#include <spanstream>
+#else
+#error "Your C++ Standard library doesn't implement the std::spanstream. Make sure that you use conformant Library (e.g., libstdc++ from GCC 12)"
+#endif
+
 namespace Wrapper {
 class Decoder {
  private:
@@ -16,7 +25,7 @@ class Decoder {
 
   // decode - decoding incoming data and make protbuf.
   inline __attribute__((always_inline)) uint32_t decode(c_slice c_seg, c_slice_with_string_buffer* c_protobuf) {
-    std::stringstream income_buffer{std::string{(char*)(c_seg.array), c_seg.len}};
+    std::ispanstream income_buffer({(char*)(c_seg.array), c_seg.len});
     income_buffer >> reader_;
 
     auto protobuf_buffer = new std::string;
@@ -33,7 +42,7 @@ class Decoder {
 
   // decode_dry - decoding incoming data without protbuf.
   inline __attribute__((always_inline)) uint32_t decode_dry(c_slice c_seg) {
-    std::stringstream income_buffer{std::string{(char*)(c_seg.array), c_seg.len}};
+    std::ispanstream income_buffer({(char*)(c_seg.array), c_seg.len});
     income_buffer >> reader_;
     reader_.process_segment([](uint32_t ls_id, uint64_t ts, double v) {});
 
@@ -42,7 +51,7 @@ class Decoder {
 
   // snapshot - restore reader from snapshot.
   inline __attribute__((always_inline)) void snapshot(c_slice c_snap) {
-    std::stringstream income_buffer{std::string{(char*)(c_snap.array), c_snap.len}};
+    std::ispanstream income_buffer({(char*)(c_snap.array), c_snap.len});
     reader_.load_snapshot(income_buffer);
   }
 
