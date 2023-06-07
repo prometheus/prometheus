@@ -81,7 +81,7 @@ def _impl(ctx):
                             flags = [
 				# Common compile flags here
 				"-Wall",
-                                "-std=c++20",
+                                "-std=c++2b",
                             ],
                         ),
                     ],

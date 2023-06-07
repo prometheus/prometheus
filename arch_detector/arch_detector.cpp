@@ -1,21 +1,42 @@
 // SPDX-License-Identifier: BSD-3-Clause
-// Adopted from github.com/simdjson/simdjson.
+// Partially inspired by github.com/simdjson/simdjson.
+/*!
+  \file arch_detector.cpp Contains implementation for arch flavours detection.
+                          Defines the main public C API
+                          \ref arch_detector_detect_supported_architectures().
+*/
+#include "arch_detector.h"
+
 #include <cstdint>
 #include <cstdlib>
 
-#if defined(__x86_64__) || defined(_M_AMD64)  // x64
-#if __has_include(<cpuid.h>)                  // intel x86/x86-64 specific #include.
+// impl API fwd declaration.
+namespace arch_detector {
+uint32_t detect_supported_architectures();
+}  // namespace arch_detector
+
+/*!
+  \brief The main API for detecting instruction sets' features.
+  \return Bit flags with \ref arch_detector::instruction_set values.
+*/
+extern "C" uint32_t arch_detector_detect_supported_architectures() {
+  return arch_detector::detect_supported_architectures();
+}
+
+//
+// Impl...
+
+#if ARCH_DETECTOR_BUILD_FOR_X86_64  // x64
+#if __has_include(<cpuid.h>)        // intel x86/x86-64 specific #include.
 #include <cpuid.h>
 #else
 #error "<cpuid.h> is not available for your toolchain"
 #endif
 #endif
 
-#include "arch_detector.h"
-
 namespace arch_detector {
 
-#if defined(__aarch64__) || defined(_M_ARM64)
+#if ARCH_DETECTOR_BUILD_FOR_ARM64
 // Detect CRC32 via getauxval(3) which uses the /proc/self/auxv (linux kernel only)
 // Note that if you need 32 bit support, you must use HWCAP2_CRC32, not HWCAP_CRC32!
 // This function is available since glibc 2.16 (and has a minor bug with errno until 2.19).
@@ -59,7 +80,7 @@ uint32_t detect_supported_architectures() {
   return instruction_set::NEON | (has_crc32 ? instruction_set::CRC32 : 0);
 }
 
-#elif defined(__x86_64__) || defined(_M_AMD64)  // ^__aarch64 /  x64 ---v
+#elif ARCH_DETECTOR_BUILD_FOR_X86_64  // ^__aarch64 /  x64 ---v
 
 namespace {
 
@@ -102,7 +123,7 @@ uint32_t detect_supported_architectures() {
   }
   return host_isa;
 }
-#else                                           // fallback
+#else                                 // fallback
 
 uint32_t detect_supported_architectures() {
   return instruction_set::DEFAULT;
@@ -111,7 +132,3 @@ uint32_t detect_supported_architectures() {
 #endif  // end SIMD extension detection code
 
 }  // namespace arch_detector
-
-extern "C" uint32_t arch_detector_detect_supported_architectures() {
-  return arch_detector::detect_supported_architectures();
-}

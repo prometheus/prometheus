@@ -14,8 +14,8 @@
 
 #ifdef OKDB_WAL_API_SET_NAME
 #undef OKDB_WAL_API_SET_NAME
-#define OKDB_WAL_API_SET_NAME okdb_wal_decoder
 #endif
+#define OKDB_WAL_API_SET_NAME okdb_wal_decoder
 
 #include "wal_prefixed_name.h"
 extern "C" {
@@ -25,14 +25,8 @@ extern "C" {
 
 // c_decoder_ptr - encoder pointer.
 typedef void* c_decoder_ptr;
-
-#ifndef OKDB_WAL_DECODER_DEFINED
-
 // c_decoder - C wrapper C++, for init memory.
 typedef c_decoder_ptr c_decoder;
-
-#define OKDB_WAL_DECODER_DEFINED
-#endif
 
 // Decoder
 // okdb_wal_c_decoder_ctor - constructor, C wrapper C++, init C++ class Decoder.

@@ -20,7 +20,7 @@ class Hashdex {
 
   // presharding - from protobuf make presharding slice with hash end proto.
   inline __attribute__((always_inline)) void presharding(c_slice proto_data) {
-    protozero::pbf_reader pb(std::string_view{(char*)(proto_data.array), proto_data.len});
+    protozero::pbf_reader pb(std::string_view{static_cast<const char*>(proto_data.array), proto_data.len});
     PromPP::Prometheus::RemoteWrite::read_many_timeseries_in_hashdex<PromPP::Primitives::TimeseriesSemiview,
                                                                    BareBones::Vector<PromPP::Prometheus::RemoteWrite::TimeseriesProtobufHashdexRecord>>(pb,
                                                                                                                                                       hashdex_);
@@ -63,9 +63,9 @@ class Encoder {
 
   // snapshot - from redundants make snapshot.
   inline __attribute__((always_inline)) void snapshot(c_slice c_rts, c_slice_with_stream_buffer* c_snap) {
-    auto span_redundants = new std::span<PromPP::WAL::Writer::Redundant*>((PromPP::WAL::Writer::Redundant**)(c_rts.array), c_rts.len);
+    std::span<PromPP::WAL::Writer::Redundant*> span_redundants{(PromPP::WAL::Writer::Redundant**)(c_rts.array), c_rts.len};
     auto snapshot_buffer = new std::stringstream;
-    writer_.snapshot(*span_redundants, *snapshot_buffer);
+    writer_.snapshot(span_redundants, *snapshot_buffer);
 
     std::string_view outcome = snapshot_buffer->view();
     c_snap->data.array = outcome.begin();
@@ -74,7 +74,7 @@ class Encoder {
     c_snap->buf = snapshot_buffer;
   }
 
-  inline __attribute__((always_inline)) ~Encoder(){};
+  inline __attribute__((always_inline)) ~Encoder() = default;
 };
 }  // namespace Wrapper
 
