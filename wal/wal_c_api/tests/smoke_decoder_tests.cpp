@@ -4,8 +4,13 @@
 
 #include <iostream>
 
-extern "C" int okdb_wal_initialize_decoder();
-int some_decoder = okdb_wal_initialize_decoder();
+int some_decoder = okdb_wal_initialize();
+
 TEST(DecoderSmokeCheckIntCount, DecoderSmokeTest) {
   std::cout << some_decoder;
+}
+
+TEST(DecoderSmokeCheckCreateDestroy, DecoderSmokeTest) {
+  auto decoder = okdb_wal_c_decoder_ctor();
+  okdb_wal_c_decoder_dtor(decoder);
 }

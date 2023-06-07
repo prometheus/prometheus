@@ -14,8 +14,8 @@
 
 #ifdef OKDB_WAL_API_SET_NAME
 #undef OKDB_WAL_API_SET_NAME
-#define OKDB_WAL_API_SET_NAME okdb_wal_encoder
 #endif
+#define OKDB_WAL_API_SET_NAME okdb_wal_encoder
 
 #include "wal_prefixed_name.h"
 extern "C" {

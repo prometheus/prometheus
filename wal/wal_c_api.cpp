@@ -1,3 +1,8 @@
+/// \file wal/wal_c_api.cpp
+///       Contains multiarch API wrappers for
+///       \ref BasicDecoder<>, \ref BasicEncoder<> classes.
+/// \note Use the \ref okdb_wal_initialize() before
+///       any function from this module for multiarch initialization.
 #include <string>
 #include <string_view>
 #include <variant>
@@ -7,107 +12,120 @@
 // supported arch flavours
 enum arch_flavour {
   generic,
-#ifndef __arm__
+#if ARCH_DETECTOR_BUILD_FOR_X86_64
   nehalem,
   haswell,
-#else
+#elif ARCH_DETECTOR_BUILD_FOR_ARM64
   crc32,
 #endif
   arch_count,
 };
 
-#ifndef __arm__
+//
+// Generate prefixed C API declarations.
+
+#if ARCH_DETECTOR_BUILD_FOR_X86_64
 
 #define OKDB_WAL_FUNCTION_NAME_PREFIX x86_generic_
-#include "wal_c_api/wal_basic_decoder.h"
-#include "wal_c_api/wal_basic_encoder.h"
+#include "wal_c_api/wal_c_decoder.h"
+#include "wal_c_api/wal_c_encoder.h"
 
 // manually declare bunch of functions
 #undef OKDB_WAL_FUNCTION_NAME_PREFIX
 #define OKDB_WAL_FUNCTION_NAME_PREFIX x86_nehalem_
-#include "wal_c_api/wal_basic_decoder.h"
-#include "wal_c_api/wal_basic_encoder.h"
+#include "wal_c_api/wal_c_decoder.h"
+#include "wal_c_api/wal_c_encoder.h"
 
 #undef OKDB_WAL_FUNCTION_NAME_PREFIX
 #define OKDB_WAL_FUNCTION_NAME_PREFIX x86_haswell_
-#include "wal_c_api/wal_basic_decoder.h"
-#include "wal_c_api/wal_basic_encoder.h"
+#include "wal_c_api/wal_c_decoder.h"
+#include "wal_c_api/wal_c_encoder.h"
 #undef OKDB_WAL_FUNCTION_NAME_PREFIX
 #define TOTAL_FLAVOURS 3
-static_assert(TOTAL_FLAVOURS == arch_count, "Update the #includes for new arch flavours!");
-#else
+static_assert(TOTAL_FLAVOURS == arch_count, "Update the #includes for new x86_64 arch flavours!");
+#elif ARCH_DETECTOR_BUILD_FOR_ARM64  // ^----- x86_64 / aarch64 ------v
 
 #define OKDB_WAL_FUNCTION_NAME_PREFIX aarch64_generic_
-#include "wal_c_api/wal_basic_decoder.h"
-#include "wal_c_api/wal_basic_encoder.h"
+#include "wal_c_api/wal_c_decoder.h"
+#include "wal_c_api/wal_c_encoder.h"
 #define OKDB_WAL_FUNCTION_NAME_PREFIX aarch64_crc_
-#include "wal_c_api/wal_basic_decoder.h"
-#include "wal_c_api/wal_basic_encoder.h"
+#include "wal_c_api/wal_c_decoder.h"
+#include "wal_c_api/wal_c_encoder.h"
 
+#define TOTAL_FLAVOURS 2
+static_assert(TOTAL_FLAVOURS == arch_count, "Update the #includes for new ARM64 arch flavours!");
 #endif
 
+// internal namespace for determining arch instruction set and initializing vtables
 namespace {
 arch_flavour determine_arch_flavour() {
   auto flags = arch_detector::detect_supported_architectures();
+
+#if ARCH_DETECTOR_BUILD_FOR_X86_64
   if (flags & (arch_detector::instruction_set::BMI1 | arch_detector::instruction_set::AVX2)) {
     return haswell;
   }
   if (flags & (arch_detector::instruction_set::SSE42)) {
     return nehalem;
   }
+#elif ARCH_DETECTOR_BUILD_FOR_ARM64  // ^----- x86_64 / aarch64 ------v
+  if (flags & (arch_detector::instruction_set::CRC32)) {
+    return crc32;
+  }
+#endif
   return generic;
 }
 
+/// \brief Vtable with arch flavours for \ref BasicDecoder<> wrapped API.
 std::variant<
-#ifndef __arm__
-    x86_generic_okdb_wal_writer_api_vtbl,
-    x86_nehalem_okdb_wal_writer_api_vtbl,
-    x86_haswell_okdb_wal_writer_api_vtbl
-#else
-    arm_okdb_wal_writer_api_vtbl,
-    arm_crc_okdb_wal_writer_api_vtbl
+#if ARCH_DETECTOR_BUILD_FOR_X86_64
+    x86_generic_okdb_wal_decoder_api_vtbl,
+    x86_nehalem_okdb_wal_decoder_api_vtbl,
+    x86_haswell_okdb_wal_decoder_api_vtbl
+#elif ARCH_DETECTOR_BUILD_FOR_ARM64
+    aarch64_generic_okdb_wal_decoder_api_vtbl,
+    aarch64_crc_okdb_wal_decoder_api_vtbl
 #endif
     >
-    writer_vtbl;
-std::variant<
-#ifndef __arm__
-    x86_generic_okdb_wal_reader_api_vtbl,
-    x86_nehalem_okdb_wal_reader_api_vtbl,
-    x86_haswell_okdb_wal_reader_api_vtbl
-#else
-    arm_okdb_wal_reader_api_vtbl,
-    arm_crc_okdb_wal_reader_api_vtbl
-#endif
-    >
-    reader_vtbl;
+    decoder_vtbl;
 
-#define SETUP_VTBL(vtbl, type) (vtbl).emplace(type{})
+std::variant<
+#if ARCH_DETECTOR_BUILD_FOR_X86_64
+    x86_generic_okdb_wal_encoder_api_vtbl,
+    x86_nehalem_okdb_wal_encoder_api_vtbl,
+    x86_haswell_okdb_wal_encoder_api_vtbl
+#elif ARCH_DETECTOR_BUILD_FOR_ARM64
+    aarch64_generic_okdb_wal_encoder_api_vtbl,
+    aarch64_crc_okdb_wal_encoder_api_vtbl
+#endif
+    >
+    encoder_vtbl;
+
+#define SETUP_VTBL(vtbl, type) vtbl.emplace<type>()
 
 void setup_arch_functions(size_t index) {
   switch (index) {
-#ifndef __arm__
+#if ARCH_DETECTOR_BUILD_FOR_X86_64
     default:
     case generic:
-      writer_vtbl.emplace<x86_generic_okdb_wal_writer_api_vtbl>();
-      reader_vtbl.emplace<x86_generic_okdb_wal_reader_api_vtbl>();
+      SETUP_VTBL(decoder_vtbl, x86_generic_okdb_wal_decoder_api_vtbl);
+      SETUP_VTBL(encoder_vtbl, x86_generic_okdb_wal_encoder_api_vtbl);
       break;
     case nehalem:
-      writer_vtbl.emplace<x86_nehalem_okdb_wal_writer_api_vtbl>();
-      reader_vtbl.emplace<x86_nehalem_okdb_wal_reader_api_vtbl>();
+      SETUP_VTBL(decoder_vtbl, x86_nehalem_okdb_wal_decoder_api_vtbl);
+      SETUP_VTBL(encoder_vtbl, x86_generic_okdb_wal_encoder_api_vtbl);
       break;
     case haswell:
-      writer_vtbl.emplace<x86_haswell_okdb_wal_writer_api_vtbl>();
-      reader_vtbl.emplace<x86_haswell_okdb_wal_reader_api_vtbl>();
+      SETUP_VTBL(decoder_vtbl, x86_haswell_okdb_wal_decoder_api_vtbl);
+      SETUP_VTBL(encoder_vtbl, x86_generic_okdb_wal_encoder_api_vtbl);
       break;
-#else
+#elif ARCH_DETECTOR_BUILD_FOR_ARM64
     default:
     case generic:
-      writer_vtbl.emplace<arm_okdb_wal_writer_api_vtbl>();
-      reader_vtbl.emplace<arm_okdb_wal_writer_api_vtbl>();
+      SETUP_VTBL(decoder_vtbl, aarch64_generic_okdb_wal_decoder_api_vtbl);
       break;
     case crc32:
-      writer_vtbl.emplace<arm_crc_okdb_wal_writer_api_vtbl>();
-      reader_vtbl.emplace<arm_crc_okdb_wal_writer_api_vtbl>();
+      SETUP_VTBL(decoder_vtbl, aarch64_crc_okdb_wal_decoder_api_vtbl);
       break;
 #endif
   }
@@ -116,36 +134,84 @@ void setup_arch_functions(size_t index) {
 }  // namespace
 
 extern "C" {
-#undef OKDB_WAL_PREFIXED_NAME
-#define OKDB_WAL_PREFIXED_NAME(name) name
 
-// basic reader routed C API
-
-// ctor
-basic_decoder_ptr okdb_wal_basic_decoder_create() {
-  return std::visit([](auto& vtbl) { return vtbl.template call<"okdb_wal_basic_decoder_create">(); }, reader_vtbl);
-}
-
-// getters
 //
-uint32_t OKDB_WAL_PREFIXED_NAME(okdb_wal_basic_decoder_get_series_count)(basic_decoder_ptr reader);
+// decoder and types routed C API
+//
 
-uint32_t OKDB_WAL_PREFIXED_NAME(okdb_wal_basic_decoder_get_samples_count)(basic_decoder_ptr reader);
-
-// dtor
-void okdb_wal_basic_decoder_destroy(basic_decoder_ptr reader) {
-  return std::visit([&](auto& vtbl) { return vtbl.template call<"okdb_wal_basic_decoder_destroy">(reader); }, reader_vtbl);
+// Decoder
+// okdb_wal_c_decoder_ctor - constructor, C wrapper C++, init C++ class Decoder.
+c_decoder okdb_wal_c_decoder_ctor() {
+  return std::visit([&](auto& vtbl) { return vtbl.template call<"okdb_wal_c_decoder_ctor">(); }, decoder_vtbl);
 }
 
-basic_encoder_ptr okdb_wal_basic_encoder_create() {
-  return std::visit([](auto& vtbl) { return vtbl.template call<"okdb_wal_basic_encoder_create">(); }, writer_vtbl);
+// okdb_wal_c_decoder_decode - C wrapper C++, calls C++ class Decoder methods.
+uint32_t okdb_wal_c_decoder_decode(c_decoder c_dec, c_slice c_seg, c_slice_with_string_buffer* c_protobuf) {
+  return std::visit([&](auto& vtbl) { return vtbl.template call<"okdb_wal_c_decoder_decode">(c_dec, c_seg, c_protobuf); }, decoder_vtbl);
 }
 
-void okdb_wal_basic_encoder_destroy(basic_encoder_ptr writer) {
-  return std::visit([&](auto& vtbl) { return vtbl.template call<"okdb_wal_basic_encoder_destroy">(writer); }, writer_vtbl);
+// okdb_wal_c_decoder_decode_dry - C wrapper C++, calls C++ class Decoder methods.
+uint32_t okdb_wal_c_decoder_decode_dry(c_decoder c_dec, c_slice c_seg) {
+  return std::visit([&](auto& vtbl) { return vtbl.template call<"okdb_wal_c_decoder_decode_dry">(c_dec, c_seg); }, decoder_vtbl);
 }
 
+// okdb_wal_c_decoder_snapshot - C wrapper C++, calls C++ class Decoder methods.
+void okdb_wal_c_decoder_snapshot(c_decoder c_dec, c_slice c_snap) {
+  return std::visit([&](auto& vtbl) { return vtbl.template call<"okdb_wal_c_decoder_snapshot">(c_dec, c_snap); }, decoder_vtbl);
+}
+
+// okdb_wal_c_decoder_dtor - calls the destructor, C wrapper C++ for clear memory.
+void okdb_wal_c_decoder_dtor(c_decoder c_dec) {
+  return std::visit([&](auto& vtbl) { return vtbl.template call<"okdb_wal_c_decoder_dtor">(c_dec); }, decoder_vtbl);
+}  // encoder and types routed C API
+
+// okdb_wal_c_redundant_destroy - calls the destructor, C wrapper C++ for clear memory.
+void okdb_wal_c_redundant_destroy(c_redundant* c_rt) {
+  return std::visit([&](auto& vtbl) { return vtbl.template call<"okdb_wal_c_redundant_destroy">(c_rt); }, encoder_vtbl);
+}
+
+//
+// Hashdex
+// okdb_wal_c_hashdex_ctor - constructor, C wrapper C++, init C++ class Hashdex.
+c_hashdex okdb_wal_c_hashdex_ctor() {
+  return std::visit([&](auto& vtbl) { return vtbl.template call<"okdb_wal_c_hashdex_ctor">(); }, encoder_vtbl);
+}
+
+// okdb_wal_c_hashdex_presharding - C wrapper C++, calls C++ class Hashdex methods.
+void okdb_wal_c_hashdex_presharding(c_hashdex c_hx, c_slice proto_data) {
+  return std::visit([&](auto& vtbl) { return vtbl.template call<"okdb_wal_c_hashdex_presharding">(c_hx, proto_data); }, encoder_vtbl);
+}
+
+// okdb_wal_c_hashdex_dtor - calls the destructor, C wrapper C++ for clear memory.
+void okdb_wal_c_hashdex_dtor(c_hashdex c_hx) {
+  return std::visit([&](auto& vtbl) { return vtbl.template call<"okdb_wal_c_hashdex_dtor">(c_hx); }, encoder_vtbl);
+}
+
+//
+// Encoder
+// okdb_wal_c_encoder_ctor - constructor, C wrapper C++, init C++ class Encoder.
+c_encoder okdb_wal_c_encoder_ctor(uint16_t shard_id, uint16_t number_of_shards) {
+  return std::visit([&](auto& vtbl) { return vtbl.template call<"okdb_wal_c_encoder_ctor">(shard_id, number_of_shards); }, encoder_vtbl);
+}
+
+// okdb_wal_c_encoder_encode - C wrapper C++, calls C++ class Encoder methods.
+void okdb_wal_c_encoder_encode(c_encoder c_enc, c_hashdex c_hx, c_slice_with_stream_buffer* c_seg, c_redundant* c_rt) {
+  return std::visit([&](auto& vtbl) { return vtbl.template call<"okdb_wal_c_encoder_encode">(c_enc, c_hx, c_seg, c_rt); }, encoder_vtbl);
+}
+
+// okdb_wal_c_encoder_snapshot - C wrapper C++, calls C++ class Encoder methods.
+void okdb_wal_c_encoder_snapshot(c_encoder c_enc, c_slice c_rts, c_slice_with_stream_buffer* c_snap) {
+  return std::visit([&](auto& vtbl) { return vtbl.template call<"okdb_wal_c_encoder_snapshot">(c_enc, c_rts, c_snap); }, encoder_vtbl);
+}
+
+// okdb_wal_c_encoder_dtor - calls the destructor, C wrapper C++ for clear memory.
+void okdb_wal_c_encoder_dtor(c_encoder c_enc) {
+  return std::visit([&](auto& vtbl) { return vtbl.template call<"okdb_wal_c_encoder_dtor">(c_enc); }, encoder_vtbl);
+}
+
+//
 // Entry point
+//
 
 /// \brief Entry point for WAL C API. Call this function before
 ///        using any another.
