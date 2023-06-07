@@ -1,3 +1,8 @@
+/**
+ * \file wal/wal_c_types_api.h
+ * Contains bridged Go <-> C types API declarations.
+ *
+ */
 #pragma once
 
 #include "wal_c_api/wal_c_types.h"

@@ -1,11 +1,16 @@
+/**
+ * \file arch_detector.h
+ * Contains simple architecture instruction set features detector.
+ * Current supported architectures: x86-64, aarch64.
+ * All detected features are defined in \ref instruction_set enum.
+ */
 #pragma once
 #include <stdint.h>
 
 namespace arch_detector {
 
 /*!
-  \note Some flags has been cleaned for the sake of easiness of supporting
-        only required architectures' flavours.
+  \brief Minimal set of required features from architecture instruction sets.
  */
 enum instruction_set {
   DEFAULT = 0x0,
@@ -17,5 +22,18 @@ enum instruction_set {
 };
 
 uint32_t detect_supported_architectures();
+
+/*!
+  \defgroup arch_detector.helper_macros Helper macros for compile time arch
+                                        family detection.
+*/
+
+#if defined(__x86_64__) || defined(_M_AMD64)  // x64
+#define ARCH_DETECTOR_BUILD_FOR_X86_64 1
+#endif
+
+#if defined(__aarch64__) || defined(_M_ARM64)  // aarch64
+#define ARCH_DETECTOR_BUILD_FOR_ARM64 1
+#endif  //__arm__
 
 }  // namespace arch_detector

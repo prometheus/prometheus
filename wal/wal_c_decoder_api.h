@@ -25,7 +25,10 @@ void okdb_wal_c_decoder_dtor(c_decoder c_dec);
 // Entry point
 
 /// \returns arch flavour ID.
-int okdb_wal_initialize_decoder();
+int okdb_wal_initialize();
+
+// convenience macro for api set initialization.
+#define okdb_wal_initialize_decoder okdb_wal_initialize
 #ifdef __cplusplus
 }
 #endif
