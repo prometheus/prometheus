@@ -978,7 +978,7 @@ func (h *Head) DisableNativeHistograms() {
 }
 
 // PostingsCardinalityStats returns top 10 highest cardinality stats By label and value names.
-func (h *Head) PostingsCardinalityStats(statsByLabelName string) *index.PostingsStats {
+func (h *Head) PostingsCardinalityStats(statsByLabelName string, limit int) *index.PostingsStats {
 	h.cardinalityMutex.Lock()
 	defer h.cardinalityMutex.Unlock()
 	currentTime := time.Duration(time.Now().Unix()) * time.Second
@@ -989,7 +989,7 @@ func (h *Head) PostingsCardinalityStats(statsByLabelName string) *index.Postings
 	if h.cardinalityCache != nil {
 		return h.cardinalityCache
 	}
-	h.cardinalityCache = h.postings.Stats(statsByLabelName)
+	h.cardinalityCache = h.postings.Stats(statsByLabelName, limit)
 	h.lastPostingsStatsCall = time.Duration(time.Now().Unix()) * time.Second
 
 	return h.cardinalityCache
@@ -1329,12 +1329,12 @@ type Stats struct {
 
 // Stats returns important current HEAD statistics. Note that it is expensive to
 // calculate these.
-func (h *Head) Stats(statsByLabelName string) *Stats {
+func (h *Head) Stats(statsByLabelName string, limit int) *Stats {
 	return &Stats{
 		NumSeries:         h.NumSeries(),
 		MaxTime:           h.MaxTime(),
 		MinTime:           h.MinTime(),
-		IndexPostingStats: h.PostingsCardinalityStats(statsByLabelName),
+		IndexPostingStats: h.PostingsCardinalityStats(statsByLabelName, limit),
 	}
 }
 
@@ -1614,7 +1614,7 @@ func (h *Head) getOrCreate(hash uint64, lset labels.Labels) (*memSeries, bool, e
 
 func (h *Head) getOrCreateWithID(id chunks.HeadSeriesRef, hash uint64, lset labels.Labels) (*memSeries, bool, error) {
 	s, created, err := h.series.getOrSet(hash, lset, func() *memSeries {
-		return newMemSeries(lset, id, h.opts.IsolationDisabled, h.opts.SamplesPerChunk)
+		return newMemSeries(lset, id, h.opts.IsolationDisabled)
 	})
 	if err != nil {
 		return nil, false, err
@@ -1922,8 +1922,7 @@ type memSeries struct {
 
 	mmMaxTime int64 // Max time of any mmapped chunk, only used during WAL replay.
 
-	samplesPerChunk int   // Target number of samples per chunk.
-	nextAt          int64 // Timestamp at which to cut the next chunk.
+	nextAt int64 // Timestamp at which to cut the next chunk.
 
 	// We keep the last value here (in addition to appending it to the chunk) so we can check for duplicates.
 	lastValue float64
@@ -1951,12 +1950,11 @@ type memSeriesOOOFields struct {
 	firstOOOChunkID  chunks.HeadChunkID // HeadOOOChunkID for oooMmappedChunks[0].
 }
 
-func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, isolationDisabled bool, samplesPerChunk int) *memSeries {
+func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, isolationDisabled bool) *memSeries {
 	s := &memSeries{
-		lset:            lset,
-		ref:             id,
-		nextAt:          math.MinInt64,
-		samplesPerChunk: samplesPerChunk,
+		lset:   lset,
+		ref:    id,
+		nextAt: math.MinInt64,
 	}
 	if !isolationDisabled {
 		s.txs = newTxRing(4)

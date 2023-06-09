@@ -13,8 +13,9 @@ linters:
     - gocritic
     - gofumpt
     - goimports
-    - revive
     - misspell
+    - predeclared
+    - revive
     - unconvert
     - unused
 

@@ -279,7 +279,7 @@ const maxAheadTime = 10 * time.Minute
 // returning an empty label set is interpreted as "drop"
 type labelsMutator func(labels.Labels) labels.Labels
 
-func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed uint64, logger log.Logger, options *Options) (*scrapePool, error) {
+func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed uint64, logger log.Logger, options *Options) (*scrapePool, error) {
 	targetScrapePools.Inc()
 	if logger == nil {
 		logger = log.NewNopLogger()
@@ -325,7 +325,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 			func(l labels.Labels) labels.Labels { return mutateReportSampleLabels(l, opts.target) },
 			func(ctx context.Context) storage.Appender { return app.Appender(ctx) },
 			cache,
-			jitterSeed,
+			offsetSeed,
 			opts.honorTimestamps,
 			opts.sampleLimit,
 			opts.bucketLimit,
@@ -775,7 +775,7 @@ func appender(app storage.Appender, sampleLimit, bucketLimit int) storage.Append
 type scraper interface {
 	scrape(ctx context.Context, w io.Writer) (string, error)
 	Report(start time.Time, dur time.Duration, err error)
-	offset(interval time.Duration, jitterSeed uint64) time.Duration
+	offset(interval time.Duration, offsetSeed uint64) time.Duration
 }
 
 // targetScraper implements the scraper interface for a target.
@@ -891,7 +891,7 @@ type scrapeLoop struct {
 	cache                   *scrapeCache
 	lastScrapeSize          int
 	buffers                 *pool.Pool
-	jitterSeed              uint64
+	offsetSeed              uint64
 	honorTimestamps         bool
 	forcedErr               error
 	forcedErrMtx            sync.Mutex
@@ -1175,7 +1175,7 @@ func newScrapeLoop(ctx context.Context,
 	reportSampleMutator labelsMutator,
 	appender func(ctx context.Context) storage.Appender,
 	cache *scrapeCache,
-	jitterSeed uint64,
+	offsetSeed uint64,
 	honorTimestamps bool,
 	sampleLimit int,
 	bucketLimit int,
@@ -1217,7 +1217,7 @@ func newScrapeLoop(ctx context.Context,
 		sampleMutator:           sampleMutator,
 		reportSampleMutator:     reportSampleMutator,
 		stopped:                 make(chan struct{}),
-		jitterSeed:              jitterSeed,
+		offsetSeed:              offsetSeed,
 		l:                       l,
 		parentCtx:               ctx,
 		appenderCtx:             appenderCtx,
@@ -1238,7 +1238,7 @@ func newScrapeLoop(ctx context.Context,
 
 func (sl *scrapeLoop) run(errc chan<- error) {
 	select {
-	case <-time.After(sl.scraper.offset(sl.interval, sl.jitterSeed)):
+	case <-time.After(sl.scraper.offset(sl.interval, sl.offsetSeed)):
 		// Continue after a scraping offset.
 	case <-sl.ctx.Done():
 		close(sl.stopped)

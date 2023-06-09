@@ -17,23 +17,30 @@ import (
 	"bytes"
 	"compress/gzip"
 	"compress/zlib"
+	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/model/labels"
 )
 
 var (
-	mux    *http.ServeMux
-	server *httptest.Server
+	mux      *http.ServeMux
+	server   *httptest.Server
+	respBody = strings.Repeat("Hello World!", 500)
 )
 
 func setup() func() {
 	mux = http.NewServeMux()
 	server = httptest.NewServer(mux)
 	return func() {
+		server.CloseClientConnections()
 		server.Close()
 	}
 }
@@ -41,7 +48,7 @@ func setup() func() {
 func getCompressionHandlerFunc() CompressionHandler {
 	hf := func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("Hello World!"))
+		w.Write([]byte(respBody))
 	}
 	return CompressionHandler{
 		Handler: http.HandlerFunc(hf),
@@ -67,9 +74,8 @@ func TestCompressionHandler_PlainText(t *testing.T) {
 	contents, err := io.ReadAll(resp.Body)
 	require.NoError(t, err, "unexpected error while creating the response body reader")
 
-	expected := "Hello World!"
 	actual := string(contents)
-	require.Equal(t, expected, actual, "expected response with content")
+	require.Equal(t, respBody, actual, "expected response with content")
 }
 
 func TestCompressionHandler_Gzip(t *testing.T) {
@@ -103,8 +109,7 @@ func TestCompressionHandler_Gzip(t *testing.T) {
 	require.NoError(t, err, "unexpected error while reading the response body")
 
 	actual := buf.String()
-	expected := "Hello World!"
-	require.Equal(t, expected, actual, "unexpected response content")
+	require.Equal(t, respBody, actual, "unexpected response content")
 }
 
 func TestCompressionHandler_Deflate(t *testing.T) {
@@ -138,6 +143,98 @@ func TestCompressionHandler_Deflate(t *testing.T) {
 	require.NoError(t, err, "unexpected error while reading the response body")
 
 	actual := buf.String()
-	expected := "Hello World!"
-	require.Equal(t, expected, actual, "expected response with content")
+	require.Equal(t, respBody, actual, "expected response with content")
+}
+
+func Benchmark_compression(b *testing.B) {
+	client := &http.Client{
+		Transport: &http.Transport{
+			DisableCompression: true,
+		},
+	}
+
+	cases := map[string]struct {
+		enc            string
+		numberOfLabels int
+	}{
+		"gzip-10-labels": {
+			enc:            gzipEncoding,
+			numberOfLabels: 10,
+		},
+		"gzip-100-labels": {
+			enc:            gzipEncoding,
+			numberOfLabels: 100,
+		},
+		"gzip-1K-labels": {
+			enc:            gzipEncoding,
+			numberOfLabels: 1000,
+		},
+		"gzip-10K-labels": {
+			enc:            gzipEncoding,
+			numberOfLabels: 10000,
+		},
+		"gzip-100K-labels": {
+			enc:            gzipEncoding,
+			numberOfLabels: 100000,
+		},
+		"gzip-1M-labels": {
+			enc:            gzipEncoding,
+			numberOfLabels: 1000000,
+		},
+	}
+
+	for name, tc := range cases {
+		b.Run(name, func(b *testing.B) {
+			tearDown := setup()
+			defer tearDown()
+			labels := labels.ScratchBuilder{}
+
+			for i := 0; i < tc.numberOfLabels; i++ {
+				labels.Add(fmt.Sprintf("Name%v", i), fmt.Sprintf("Value%v", i))
+			}
+
+			respBody, err := json.Marshal(labels.Labels())
+			require.NoError(b, err)
+
+			hf := func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+				w.Write(respBody)
+			}
+			h := CompressionHandler{
+				Handler: http.HandlerFunc(hf),
+			}
+
+			mux.Handle("/foo_endpoint", h)
+
+			req, _ := http.NewRequest("GET", server.URL+"/foo_endpoint", nil)
+			req.Header.Set(acceptEncodingHeader, tc.enc)
+
+			b.ReportAllocs()
+			b.ResetTimer()
+
+			// Reusing the array to read the body and avoid allocation on the test
+			encRespBody := make([]byte, len(respBody))
+
+			for i := 0; i < b.N; i++ {
+				resp, err := client.Do(req)
+
+				require.NoError(b, err)
+
+				require.NoError(b, err, "client get failed with unexpected error")
+				responseBodySize := 0
+				for {
+					n, err := resp.Body.Read(encRespBody)
+					responseBodySize += n
+					if err == io.EOF {
+						break
+					}
+				}
+
+				b.ReportMetric(float64(responseBodySize), "ContentLength")
+				resp.Body.Close()
+			}
+
+			client.CloseIdleConnections()
+		})
+	}
 }
