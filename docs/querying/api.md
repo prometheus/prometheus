@@ -407,7 +407,7 @@ $ curl -g 'http://localhost:9090/api/v1/query_exemplars?query=test_exemplar_metr
                         "traceID": "EpTxMJ40fUus7aGY"
                     },
                     "value": "6",
-                    "timestamp": 1600096945.479,
+                    "timestamp": 1600096945.479
                 }
             ]
         },
@@ -424,15 +424,15 @@ $ curl -g 'http://localhost:9090/api/v1/query_exemplars?query=test_exemplar_metr
                         "traceID": "Olp9XHlq763ccsfa"
                     },
                     "value": "19",
-                    "timestamp": 1600096955.479,
+                    "timestamp": 1600096955.479
                 },
                 {
                     "labels": {
                         "traceID": "hCtjygkIHwAN9vs4"
                     },
                     "value": "20",
-                    "timestamp": 1600096965.489,
-                },
+                    "timestamp": 1600096965.489
+                }
             ]
         }
     ]
