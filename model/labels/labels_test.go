@@ -363,6 +363,18 @@ func TestLabels_Compare(t *testing.T) {
 		},
 		{
 			compared: FromStrings(
+				"aaa", "111",
+				"bb", "222"),
+			expected: 1,
+		},
+		{
+			compared: FromStrings(
+				"aaa", "111",
+				"bbbb", "222"),
+			expected: -1,
+		},
+		{
+			compared: FromStrings(
 				"aaa", "111"),
 			expected: 1,
 		},
@@ -468,31 +480,49 @@ func BenchmarkLabels_Get(b *testing.B) {
 	}
 }
 
+var comparisonBenchmarkScenarios = []struct {
+	desc        string
+	base, other Labels
+}{
+	{
+		"equal",
+		FromStrings("a_label_name", "a_label_value", "another_label_name", "another_label_value"),
+		FromStrings("a_label_name", "a_label_value", "another_label_name", "another_label_value"),
+	},
+	{
+		"not equal",
+		FromStrings("a_label_name", "a_label_value", "another_label_name", "another_label_value"),
+		FromStrings("a_label_name", "a_label_value", "another_label_name", "a_different_label_value"),
+	},
+	{
+		"different sizes",
+		FromStrings("a_label_name", "a_label_value", "another_label_name", "another_label_value"),
+		FromStrings("a_label_name", "a_label_value"),
+	},
+	{
+		"lots",
+		FromStrings("aaa", "bbb", "ccc", "ddd", "eee", "fff", "ggg", "hhh", "iii", "jjj", "kkk", "lll", "mmm", "nnn", "ooo", "ppp", "qqq", "rrz"),
+		FromStrings("aaa", "bbb", "ccc", "ddd", "eee", "fff", "ggg", "hhh", "iii", "jjj", "kkk", "lll", "mmm", "nnn", "ooo", "ppp", "qqq", "rrr"),
+	},
+}
+
 func BenchmarkLabels_Equals(b *testing.B) {
-	for _, scenario := range []struct {
-		desc        string
-		base, other Labels
-	}{
-		{
-			"equal",
-			FromStrings("a_label_name", "a_label_value", "another_label_name", "another_label_value"),
-			FromStrings("a_label_name", "a_label_value", "another_label_name", "another_label_value"),
-		},
-		{
-			"not equal",
-			FromStrings("a_label_name", "a_label_value", "another_label_name", "another_label_value"),
-			FromStrings("a_label_name", "a_label_value", "another_label_name", "a_different_label_value"),
-		},
-		{
-			"different sizes",
-			FromStrings("a_label_name", "a_label_value", "another_label_name", "another_label_value"),
-			FromStrings("a_label_name", "a_label_value"),
-		},
-	} {
+	for _, scenario := range comparisonBenchmarkScenarios {
 		b.Run(scenario.desc, func(b *testing.B) {
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				_ = Equal(scenario.base, scenario.other)
+			}
+		})
+	}
+}
+
+func BenchmarkLabels_Compare(b *testing.B) {
+	for _, scenario := range comparisonBenchmarkScenarios {
+		b.Run(scenario.desc, func(b *testing.B) {
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				_ = Compare(scenario.base, scenario.other)
 			}
 		})
 	}
