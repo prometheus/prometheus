@@ -1202,15 +1202,25 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 			return apiFuncResult{nil, &apiError{errorBadData, errors.New("limit must be a number")}, nil, nil}
 		}
 	}
+	limitPerMetric := -1
+	if s := r.FormValue("limit_per_metric"); s != "" {
+		var err error
+		if limitPerMetric, err = strconv.Atoi(s); err != nil {
+			return apiFuncResult{nil, &apiError{errorBadData, errors.New("limit_per_metric must be a number")}, nil, nil}
+		}
+	}
 
 	metric := r.FormValue("metric")
 	for _, tt := range api.targetRetriever(r.Context()).TargetsActive() {
 		for _, t := range tt {
-
 			if metric == "" {
 				for _, mm := range t.MetadataList() {
 					m := metadata{Type: mm.Type, Help: mm.Help, Unit: mm.Unit}
 					ms, ok := metrics[mm.Metric]
+
+					if limitPerMetric > 0 && len(ms) >= limitPerMetric {
+						continue
+					}
 
 					if !ok {
 						ms = map[metadata]struct{}{}
@@ -1224,6 +1234,10 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 			if md, ok := t.Metadata(metric); ok {
 				m := metadata{Type: md.Type, Help: md.Help, Unit: md.Unit}
 				ms, ok := metrics[md.Metric]
+
+				if limitPerMetric > 0 && len(ms) >= limitPerMetric {
+					continue
+				}
 
 				if !ok {
 					ms = map[metadata]struct{}{}
