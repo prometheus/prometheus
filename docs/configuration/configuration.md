@@ -2160,7 +2160,7 @@ attach_metadata:
 See [this example Prometheus configuration file](/documentation/examples/prometheus-kubernetes.yml)
 for a detailed example of configuring Prometheus for Kubernetes.
 
-You may wish to check out the 3rd party [Prometheus Operator](https://github.com/coreos/prometheus-operator),
+You may wish to check out the 3rd party [Prometheus Operator](https://github.com/prometheus-operator/prometheus-operator),
 which automates the Prometheus setup on top of Kubernetes.
 
 ### `<kuma_sd_config>`
