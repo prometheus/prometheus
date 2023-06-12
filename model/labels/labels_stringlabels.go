@@ -425,34 +425,50 @@ func FromStrings(ss ...string) Labels {
 // TODO: replace with Less function - Compare is never needed.
 // TODO: just compare the underlying strings when we don't need alphanumeric sorting.
 func Compare(a, b Labels) int {
-	l := len(a.data)
-	if len(b.data) < l {
-		l = len(b.data)
+	// Find the first byte in the string where a and b differ.
+	shorter, longer := a.data, b.data
+	if len(b.data) < len(a.data) {
+		shorter, longer = b.data, a.data
+	}
+	if len(shorter) == 0 {
+		return len(longer)
+	}
+	i := 0
+	_ = longer[len(shorter)-1] // Get compiler to do bounds-check on longer just once here.
+	for ; i < len(shorter); i++ {
+		if shorter[i] != longer[i] {
+			break
+		}
+	}
+	firstCharDifferent := i
+	if firstCharDifferent == len(shorter) {
+		if len(shorter) == len(longer) {
+			return 0
+		} else if firstCharDifferent == len(a.data) {
+			// All labels in a were also in b; the set with fewer labels compares lower.
+			return -1
+		} else if firstCharDifferent == len(b.data) {
+			return +1
+		}
 	}
 
-	ia, ib := 0, 0
-	for ia < l {
-		var aName, bName string
-		aName, ia = decodeString(a.data, ia)
-		bName, ib = decodeString(b.data, ib)
-		if aName != bName {
-			if aName < bName {
-				return -1
-			}
-			return 1
+	// Now we know that there is some difference before the end of a and b.
+	// Go back through the fields and find which field that difference is in.
+	i = 0
+	for {
+		size, nextI := decodeSize(a.data, i)
+		if nextI+size > firstCharDifferent {
+			break
 		}
-		var aValue, bValue string
-		aValue, ia = decodeString(a.data, ia)
-		bValue, ib = decodeString(b.data, ib)
-		if aValue != bValue {
-			if aValue < bValue {
-				return -1
-			}
-			return 1
-		}
+		i = nextI + size
 	}
-	// If all labels so far were in common, the set with fewer labels comes first.
-	return len(a.data) - len(b.data)
+	// Difference is inside this entry.
+	aStr, _ := decodeString(a.data, i)
+	bStr, _ := decodeString(b.data, i)
+	if aStr < bStr {
+		return -1
+	}
+	return +1
 }
 
 // Copy labels from b on top of whatever was in ls previously, reusing memory or expanding if needed.
