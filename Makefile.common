@@ -180,7 +180,7 @@ endif
 .PHONY: common-yamllint
 common-yamllint:
 	@echo ">> running yamllint on all YAML files in the repository"
-ifeq (, $(shell which yamllint))
+ifeq (, $(shell which yamllint 2>/dev/null))
 	@echo "yamllint not installed so skipping"
 else
 	yamllint .
