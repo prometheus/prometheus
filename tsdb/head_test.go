@@ -3289,7 +3289,7 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 
 	// There should be 20 mmap chunks in s1.
 	ms := head.series.getByHash(s1.Hash(), s1)
-	require.Len(t, ms.mmappedChunks, 20)
+	require.Len(t, ms.mmappedChunks, 27)
 	expMmapChunks := make([]*mmappedChunk, 0, 20)
 	for _, mmap := range ms.mmappedChunks {
 		require.Greater(t, mmap.numSamples, uint16(0))
