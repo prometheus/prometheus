@@ -628,8 +628,13 @@ func (a *HistogramAppender) AppendOrCreateFloatHistogram(int64, *histogram.Float
 func (a *HistogramAppender) AppendOrCreateHistogram(t int64, h *histogram.Histogram, appendOnly bool) (Chunk, bool, Appender, error) {
 	if a.NumSamples() == 0 {
 		a.AppendHistogram(t, h)
-		if h.CounterResetHint == histogram.GaugeType {
+		switch h.CounterResetHint {
+		case histogram.CounterReset:
+			a.setCounterResetHeader(CounterReset)
+		case histogram.GaugeType:
 			a.setCounterResetHeader(GaugeType)
+		default:
+			a.setCounterResetHeader(UnknownCounterReset)
 		}
 		return nil, false, a, nil
 	}
