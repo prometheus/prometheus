@@ -392,6 +392,10 @@ func TestLabels_Compare(t *testing.T) {
 				"bbb", "222"),
 			expected: 0,
 		},
+		{
+			compared: EmptyLabels(),
+			expected: 1,
+		},
 	}
 
 	sign := func(a int) int {
@@ -407,6 +411,8 @@ func TestLabels_Compare(t *testing.T) {
 	for i, test := range tests {
 		got := Compare(labels, test.compared)
 		require.Equal(t, sign(test.expected), sign(got), "unexpected comparison result for test case %d", i)
+		got = Compare(test.compared, labels)
+		require.Equal(t, -sign(test.expected), sign(got), "unexpected comparison result for reverse test case %d", i)
 	}
 }
 
