@@ -425,13 +425,15 @@ func FromStrings(ss ...string) Labels {
 // TODO: replace with Less function - Compare is never needed.
 // TODO: just compare the underlying strings when we don't need alphanumeric sorting.
 func Compare(a, b Labels) int {
+	if len(a.data) == 0 {
+		return -len(b.data)
+	} else if len(b.data) == 0 {
+		return len(a.data)
+	}
 	// Find the first byte in the string where a and b differ.
 	shorter, longer := a.data, b.data
 	if len(b.data) < len(a.data) {
 		shorter, longer = b.data, a.data
-	}
-	if len(shorter) == 0 {
-		return len(longer)
 	}
 	i := 0
 	_ = longer[len(shorter)-1] // Get compiler to do bounds-check on longer just once here.
