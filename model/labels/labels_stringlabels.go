@@ -449,9 +449,8 @@ func Compare(a, b Labels) int {
 		} else if firstCharDifferent == len(a.data) {
 			// All labels in a were also in b; the set with fewer labels compares lower.
 			return -1
-		} else if firstCharDifferent == len(b.data) {
-			return +1
 		}
+		return +1 // b is a prefix of a.
 	}
 
 	// Now we know that there is some difference before the end of a and b.
