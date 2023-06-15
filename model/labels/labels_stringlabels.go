@@ -422,8 +422,6 @@ func FromStrings(ss ...string) Labels {
 
 // Compare compares the two label sets.
 // The result will be 0 if a==b, <0 if a < b, and >0 if a > b.
-// TODO: replace with Less function - Compare is never needed.
-// TODO: just compare the underlying strings when we don't need alphanumeric sorting.
 func Compare(a, b Labels) int {
 	// Find the first byte in the string where a and b differ.
 	shorter, longer := a.data, b.data
