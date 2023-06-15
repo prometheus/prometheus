@@ -425,38 +425,35 @@ func FromStrings(ss ...string) Labels {
 // TODO: replace with Less function - Compare is never needed.
 // TODO: just compare the underlying strings when we don't need alphanumeric sorting.
 func Compare(a, b Labels) int {
-	if len(a.data) == 0 {
-		return -len(b.data)
-	} else if len(b.data) == 0 {
-		return len(a.data)
-	}
 	// Find the first byte in the string where a and b differ.
 	shorter, longer := a.data, b.data
 	if len(b.data) < len(a.data) {
 		shorter, longer = b.data, a.data
 	}
 	i := 0
-	_ = longer[len(shorter)-1] // Get compiler to do bounds-check on longer just once here.
+	// First, go 8 bytes at a time. Data strings are expected to be 8-byte aligned.
+	sp := unsafe.Pointer((*reflect.StringHeader)(unsafe.Pointer(&shorter)).Data)
+	lp := unsafe.Pointer((*reflect.StringHeader)(unsafe.Pointer(&longer)).Data)
+	for ; i < len(shorter)-8; i += 8 {
+		if *(*uint64)(unsafe.Add(sp, i)) != *(*uint64)(unsafe.Add(lp, i)) {
+			break
+		}
+	}
+	// Now go 1 byte at a time.
 	for ; i < len(shorter); i++ {
 		if shorter[i] != longer[i] {
 			break
 		}
 	}
-	firstCharDifferent := i
-	if firstCharDifferent == len(shorter) {
-		if len(shorter) == len(longer) {
-			return 0
-		} else if firstCharDifferent == len(a.data) {
-			// All labels in a were also in b; the set with fewer labels compares lower.
-			return -1
-		}
-		return +1 // b is a prefix of a.
+	if i == len(shorter) {
+		// One Labels was a prefix of the other; the set with fewer labels compares lower.
+		return len(a.data) - len(b.data)
 	}
 
 	// Now we know that there is some difference before the end of a and b.
 	// Go back through the fields and find which field that difference is in.
-	i = 0
-	for {
+	firstCharDifferent := i
+	for i = 0; ; {
 		size, nextI := decodeSize(a.data, i)
 		if nextI+size > firstCharDifferent {
 			break
