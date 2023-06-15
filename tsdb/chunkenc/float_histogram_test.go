@@ -489,7 +489,8 @@ func TestFloatHistogramChunkAppendableWithEmptySpan(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0, c.NumSamples())
 
-	app.AppendFloatHistogram(1, h1)
+	_, _, _, err = app.AppendOrCreateFloatHistogram(nil, 1, h1, true)
+	require.NoError(t, err)
 	require.Equal(t, 1, c.NumSamples())
 	hApp, _ := app.(*FloatHistogramAppender)
 

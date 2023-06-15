@@ -82,8 +82,6 @@ type Chunk interface {
 // Appender adds sample pairs to a chunk.
 type Appender interface {
 	Append(int64, float64)
-	AppendHistogram(t int64, h *histogram.Histogram)
-	AppendFloatHistogram(t int64, h *histogram.FloatHistogram)
 
 	// Appends a histogram sample to the Chunk.
 	// prev Appender is used to determine counter reset, only set when starting new empty chunk.

@@ -242,12 +242,6 @@ func (a *HistogramAppender) Append(int64, float64) {
 	panic("appended a float sample to a histogram chunk")
 }
 
-// AppendFloatHistogram implements Appender. This implementation panics because float
-// histogram samples must never be appended to a histogram chunk.
-func (a *HistogramAppender) AppendFloatHistogram(int64, *histogram.FloatHistogram) {
-	panic("appended a float histogram to a histogram chunk")
-}
-
 // Appendable returns whether the chunk can be appended to, and if so whether
 // any recoding needs to happen using the provided inserts (in case of any new
 // buckets, positive or negative range, respectively).  If the sample is a gauge
@@ -590,7 +584,7 @@ func (a *HistogramAppender) Recode(
 		if len(negativeInserts) > 0 {
 			hOld.NegativeBuckets = insert(hOld.NegativeBuckets, negativeBuckets, negativeInserts, true)
 		}
-		app.AppendHistogram(tOld, hOld)
+		app.(*HistogramAppender).AppendHistogram(tOld, hOld)
 	}
 
 	hc.setCounterResetHeader(CounterResetHeader(byts[2] & 0b11000000))
@@ -669,7 +663,7 @@ func (a *HistogramAppender) AppendOrCreateHistogram(prev *HistogramAppender, t i
 			if err != nil {
 				return nil, false, a, err
 			}
-			app.AppendHistogram(t, h)
+			app.(*HistogramAppender).AppendHistogram(t, h)
 			return newChunk, false, app, nil
 		}
 		if len(pForwardInserts) > 0 || len(nForwardInserts) > 0 {
@@ -680,7 +674,7 @@ func (a *HistogramAppender) AppendOrCreateHistogram(prev *HistogramAppender, t i
 				pForwardInserts, nForwardInserts,
 				h.PositiveSpans, h.NegativeSpans,
 			)
-			app.AppendHistogram(t, h)
+			app.(*HistogramAppender).AppendHistogram(t, h)
 			return chk, true, app, nil
 		}
 		a.AppendHistogram(t, h)
@@ -698,7 +692,7 @@ func (a *HistogramAppender) AppendOrCreateHistogram(prev *HistogramAppender, t i
 		if err != nil {
 			return nil, false, a, err
 		}
-		app.AppendHistogram(t, h)
+		app.(*HistogramAppender).AppendHistogram(t, h)
 		return newChunk, false, app, nil
 	}
 
@@ -719,7 +713,7 @@ func (a *HistogramAppender) AppendOrCreateHistogram(prev *HistogramAppender, t i
 			pForwardInserts, nForwardInserts,
 			h.PositiveSpans, h.NegativeSpans,
 		)
-		app.AppendHistogram(t, h)
+		app.(*HistogramAppender).AppendHistogram(t, h)
 		return chk, true, app, nil
 	}
 

@@ -152,14 +152,6 @@ type xorAppender struct {
 	trailing uint8
 }
 
-func (a *xorAppender) AppendHistogram(int64, *histogram.Histogram) {
-	panic("appended a histogram to an xor chunk")
-}
-
-func (a *xorAppender) AppendFloatHistogram(int64, *histogram.FloatHistogram) {
-	panic("appended a float histogram to an xor chunk")
-}
-
 func (a *xorAppender) Append(t int64, v float64) {
 	var tDelta uint64
 	num := binary.BigEndian.Uint16(a.b.bytes())

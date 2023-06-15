@@ -216,12 +216,6 @@ func (a *FloatHistogramAppender) Append(int64, float64) {
 	panic("appended a float sample to a histogram chunk")
 }
 
-// AppendHistogram implements Appender. This implementation panics because integer
-// histogram samples must never be appended to a float histogram chunk.
-func (a *FloatHistogramAppender) AppendHistogram(int64, *histogram.Histogram) {
-	panic("appended an integer histogram to a float histogram chunk")
-}
-
 // Appendable returns whether the chunk can be appended to, and if so whether
 // any recoding needs to happen using the provided inserts (in case of any new
 // buckets, positive or negative range, respectively). If the sample is a gauge
@@ -551,7 +545,7 @@ func (a *FloatHistogramAppender) Recode(
 		if len(negativeInserts) > 0 {
 			hOld.NegativeBuckets = insert(hOld.NegativeBuckets, negativeBuckets, negativeInserts, false)
 		}
-		app.AppendFloatHistogram(tOld, hOld)
+		app.(*FloatHistogramAppender).AppendFloatHistogram(tOld, hOld)
 	}
 
 	hc.setCounterResetHeader(CounterResetHeader(byts[2] & 0b11000000))
@@ -626,7 +620,7 @@ func (a *FloatHistogramAppender) AppendOrCreateFloatHistogram(prev *FloatHistogr
 			if err != nil {
 				return nil, false, a, err
 			}
-			app.AppendFloatHistogram(t, h)
+			app.(*FloatHistogramAppender).AppendFloatHistogram(t, h)
 			return newChunk, false, app, nil
 		}
 		if len(pForwardInserts) > 0 || len(nForwardInserts) > 0 {
@@ -637,7 +631,7 @@ func (a *FloatHistogramAppender) AppendOrCreateFloatHistogram(prev *FloatHistogr
 				pForwardInserts, nForwardInserts,
 				h.PositiveSpans, h.NegativeSpans,
 			)
-			app.AppendFloatHistogram(t, h)
+			app.(*FloatHistogramAppender).AppendFloatHistogram(t, h)
 			return chk, true, app, nil
 		}
 		a.AppendFloatHistogram(t, h)
@@ -655,7 +649,7 @@ func (a *FloatHistogramAppender) AppendOrCreateFloatHistogram(prev *FloatHistogr
 		if err != nil {
 			return nil, false, a, err
 		}
-		app.AppendFloatHistogram(t, h)
+		app.(*FloatHistogramAppender).AppendFloatHistogram(t, h)
 		return newChunk, false, app, nil
 	}
 
@@ -676,7 +670,7 @@ func (a *FloatHistogramAppender) AppendOrCreateFloatHistogram(prev *FloatHistogr
 			pForwardInserts, nForwardInserts,
 			h.PositiveSpans, h.NegativeSpans,
 		)
-		app.AppendFloatHistogram(t, h)
+		app.(*FloatHistogramAppender).AppendFloatHistogram(t, h)
 		return chk, true, app, nil
 	}
 

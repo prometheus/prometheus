@@ -510,7 +510,8 @@ func TestHistogramChunkAppendableWithEmptySpan(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0, c.NumSamples())
 
-	app.AppendHistogram(1, h1)
+	_, _, _, err = app.AppendOrCreateHistogram(nil, 1, h1, true)
+	require.NoError(t, err)
 	require.Equal(t, 1, c.NumSamples())
 	hApp, _ := app.(*HistogramAppender)
 
