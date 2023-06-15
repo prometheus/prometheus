@@ -1,6 +1,6 @@
 package server
 
-// #cgo LDFLAGS: -L ../common/wal_c_bindings -l:aarch_wal_c_api.a
+// #cgo LDFLAGS: -L ../common/wal_c_bindings -l:aarch64_wal_c_api.a
 // #cgo LDFLAGS: -lstdc++
 // #include <stdlib.h>
 // #include "../common/wal_c_decoder.h"
