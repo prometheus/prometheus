@@ -226,8 +226,8 @@ cc_static_library(
 
 cc_library(
     name = "wal_c_api",
-    hdrs = ["wal/wal_c_api.h"],
-    srcs = ["wal/wal_c_api.cpp"],
+    hdrs = ["wal/wal_c_api.h", "wal/wal_c_types_api.h"],
+    srcs = ["wal/wal_c_api.cpp", "wal/wal_c_types.cpp"],
 
     deps = [":arch_detector"] + 
     select({

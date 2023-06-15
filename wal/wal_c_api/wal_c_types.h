@@ -7,6 +7,7 @@
  *  with distinct OKDB_WAL_NAME_PREFIX
  */
 #pragma once
+#include <stddef.h>  // size_t
 #include <stdint.h>
 
 #ifdef __cplusplus
