@@ -574,10 +574,6 @@ func (a *FloatHistogramAppender) RecodeHistogramm(
 	}
 }
 
-func (a *FloatHistogramAppender) AppendOrCreate(int64, float64) (Chunk, Appender, error) {
-	panic("appended a float sample to a float histogram chunk")
-}
-
 func (a *FloatHistogramAppender) AppendOrCreateHistogram(*HistogramAppender, int64, *histogram.Histogram, bool) (Chunk, bool, Appender, error) {
 	panic("appended a histogram sample to a float histogram chunk")
 }

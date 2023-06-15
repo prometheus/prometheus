@@ -228,11 +228,6 @@ func (a *xorAppender) writeVDelta(v float64) {
 	xorWrite(a.b, v, a.v, &a.leading, &a.trailing)
 }
 
-func (a *xorAppender) AppendOrCreate(t int64, v float64) (Chunk, Appender, error) {
-	a.Append(t, v)
-	return nil, a, nil
-}
-
 func (a *xorAppender) AppendOrCreateHistogram(*HistogramAppender, int64, *histogram.Histogram, bool) (Chunk, bool, Appender, error) {
 	panic("appended a histogram sample to a float chunk")
 }

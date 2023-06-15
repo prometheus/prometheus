@@ -617,10 +617,6 @@ func (a *HistogramAppender) writeSumDelta(v float64) {
 	xorWrite(a.b, v, a.sum, &a.leading, &a.trailing)
 }
 
-func (a *HistogramAppender) AppendOrCreate(int64, float64) (Chunk, Appender, error) {
-	panic("appended a float sample to a histogram chunk")
-}
-
 func (a *HistogramAppender) AppendOrCreateFloatHistogram(*FloatHistogramAppender, int64, *histogram.FloatHistogram, bool) (Chunk, bool, Appender, error) {
 	panic("appended a float histogram sample to a histogram chunk")
 }
