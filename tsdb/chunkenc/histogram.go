@@ -100,8 +100,8 @@ func setCounterResetHeader(h CounterResetHeader, bytes []byte) {
 	}
 }
 
-// SetCounterResetHeader sets the counter reset header.
-func (c *HistogramChunk) SetCounterResetHeader(h CounterResetHeader) {
+// setCounterResetHeader sets the counter reset header.
+func (c *HistogramChunk) setCounterResetHeader(h CounterResetHeader) {
 	setCounterResetHeader(h, c.Bytes())
 }
 
@@ -593,7 +593,7 @@ func (a *HistogramAppender) Recode(
 		app.AppendHistogram(tOld, hOld)
 	}
 
-	hc.SetCounterResetHeader(CounterResetHeader(byts[2] & 0b11000000))
+	hc.setCounterResetHeader(CounterResetHeader(byts[2] & 0b11000000))
 	return hc, app
 }
 
@@ -621,20 +621,36 @@ func (a *HistogramAppender) AppendOrCreate(int64, float64) (Chunk, Appender, err
 	panic("appended a float sample to a histogram chunk")
 }
 
-func (a *HistogramAppender) AppendOrCreateFloatHistogram(int64, *histogram.FloatHistogram, bool) (Chunk, bool, Appender, error) {
+func (a *HistogramAppender) AppendOrCreateFloatHistogram(*FloatHistogramAppender, int64, *histogram.FloatHistogram, bool) (Chunk, bool, Appender, error) {
 	panic("appended a float histogram sample to a histogram chunk")
 }
 
-func (a *HistogramAppender) AppendOrCreateHistogram(t int64, h *histogram.Histogram, appendOnly bool) (Chunk, bool, Appender, error) {
+func (a *HistogramAppender) AppendOrCreateHistogram(prev *HistogramAppender, t int64, h *histogram.Histogram, appendOnly bool) (Chunk, bool, Appender, error) {
 	if a.NumSamples() == 0 {
 		a.AppendHistogram(t, h)
-		switch h.CounterResetHint {
-		case histogram.CounterReset:
-			a.setCounterResetHeader(CounterReset)
-		case histogram.GaugeType:
+		if h.CounterResetHint == histogram.GaugeType {
 			a.setCounterResetHeader(GaugeType)
-		default:
-			a.setCounterResetHeader(UnknownCounterReset)
+			return nil, false, a, nil
+		}
+
+		if prev != nil && h.CounterResetHint != histogram.CounterReset {
+			// This is a new chunk, but continued from a previous one. We need to calculate the reset header unless already set.
+			_, _, _, counterReset := prev.Appendable(h)
+			if counterReset {
+				a.setCounterResetHeader(CounterReset)
+			} else {
+				a.setCounterResetHeader(NotCounterReset)
+			}
+		} else {
+			// Honor the explicit counter reset hint.
+			switch h.CounterResetHint {
+			case histogram.CounterReset:
+				a.setCounterResetHeader(CounterReset)
+			case histogram.NotCounterReset:
+				a.setCounterResetHeader(NotCounterReset)
+			default:
+				a.setCounterResetHeader(UnknownCounterReset)
+			}
 		}
 		return nil, false, a, nil
 	}
@@ -651,7 +667,7 @@ func (a *HistogramAppender) AppendOrCreateHistogram(t int64, h *histogram.Histog
 			}
 			newChunk := NewHistogramChunk()
 			if counterReset {
-				newChunk.SetCounterResetHeader(CounterReset)
+				newChunk.setCounterResetHeader(CounterReset)
 			}
 			app, err := newChunk.Appender()
 			if err != nil {
@@ -681,7 +697,7 @@ func (a *HistogramAppender) AppendOrCreateHistogram(t int64, h *histogram.Histog
 			return nil, false, a, fmt.Errorf("gauge histogram schema change")
 		}
 		newChunk := NewHistogramChunk()
-		newChunk.SetCounterResetHeader(GaugeType)
+		newChunk.setCounterResetHeader(GaugeType)
 		app, err := newChunk.Appender()
 		if err != nil {
 			return nil, false, a, err

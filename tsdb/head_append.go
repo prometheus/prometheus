@@ -1146,85 +1146,32 @@ func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper 
 // It is unsafe to call this concurrently with s.iterator(...) without holding the series lock.
 func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID uint64, chunkDiskMapper *chunks.ChunkDiskMapper, chunkRange int64, samplesPerChunk int) (sampleInOrder, chunkCreated bool) {
 	// Head controls the execution of recoding, so that we own the proper
-	// chunk reference afterwards. We check for Appendable from appender before
-	// appendPreprocessor because in case it ends up creating a new chunk,
-	// we need to know if there was also a counter reset or not to set the
-	// meta properly.
-	app, _ := s.app.(*chunkenc.HistogramAppender)
-	var (
-		pForwardInserts, nForwardInserts   []chunkenc.Insert
-		pBackwardInserts, nBackwardInserts []chunkenc.Insert
-		pMergedSpans, nMergedSpans         []histogram.Span
-		okToAppend, counterReset, gauge    bool
-	)
+	// chunk reference afterwards and mmap used up chunks.
+
+	// ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway
+	prevApp, _ := s.app.(*chunkenc.HistogramAppender)
+
 	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.EncHistogram, chunkDiskMapper, chunkRange, samplesPerChunk)
 	if !sampleInOrder {
 		return sampleInOrder, chunkCreated
 	}
-	switch h.CounterResetHint {
-	case histogram.GaugeType:
-		gauge = true
-		if app != nil {
-			pForwardInserts, nForwardInserts,
-				pBackwardInserts, nBackwardInserts,
-				pMergedSpans, nMergedSpans,
-				okToAppend = app.AppendableGauge(h)
-		}
-	case histogram.CounterReset:
-		// The caller tells us this is a counter reset, even if it
-		// doesn't look like one.
-		counterReset = true
-	default:
-		if app != nil {
-			pForwardInserts, nForwardInserts, okToAppend, counterReset = app.Appendable(h)
-		}
-	}
+
+	var (
+		nc      chunkenc.Chunk
+		recoded bool
+		err     error
+	)
 
 	if !chunkCreated {
-		if len(pBackwardInserts)+len(nBackwardInserts) > 0 {
-			h.PositiveSpans = pMergedSpans
-			h.NegativeSpans = nMergedSpans
-			app.RecodeHistogram(h, pBackwardInserts, nBackwardInserts)
-		}
-		// We have 3 cases here
-		// - !okToAppend or counterReset -> We need to cut a new chunk.
-		// - okToAppend but we have inserts → Existing chunk needs
-		//   recoding before we can append our histogram.
-		// - okToAppend and no inserts → Chunk is ready to support our histogram.
-		switch {
-		case !okToAppend || counterReset:
-			c = s.cutNewHeadChunk(t, chunkenc.EncHistogram, chunkDiskMapper, chunkRange)
-			chunkCreated = true
-		case len(pForwardInserts) > 0 || len(nForwardInserts) > 0:
-			// New buckets have appeared. We need to recode all
-			// prior histogram samples within the chunk before we
-			// can process this one.
-			chunk, app := app.Recode(
-				pForwardInserts, nForwardInserts,
-				h.PositiveSpans, h.NegativeSpans,
-			)
-			c.chunk = chunk
-			s.app = app
-		}
+		// ignore the previous appender if we continue the current chunk
+		prevApp = nil
 	}
 
-	if chunkCreated {
-		hc := s.headChunk.chunk.(*chunkenc.HistogramChunk)
-		header := chunkenc.UnknownCounterReset
-		switch {
-		case gauge:
-			header = chunkenc.GaugeType
-		case counterReset:
-			header = chunkenc.CounterReset
-		case okToAppend:
-			header = chunkenc.NotCounterReset
-		}
-		hc.SetCounterResetHeader(header)
+	nc, recoded, s.app, err = s.app.AppendOrCreateHistogram(prevApp, t, h, false) // false=request a new chunk if needed
+
+	if err != nil {
+		panic("appendOrCreateHistogram failed") // TODO: handle error
 	}
-
-	s.app.AppendHistogram(t, h)
-
-	c.maxTime = t
 
 	s.lastHistogramValue = h
 	s.lastFloatHistogramValue = nil
@@ -1233,101 +1180,86 @@ func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID ui
 		s.txs.add(appendID)
 	}
 
-	return true, chunkCreated
+	if nc == nil { // sample was appeneded to existing chunk or is the first sample in a new chunk
+		c.maxTime = t
+		return true, chunkCreated
+	}
+
+	if recoded { // needed to recode the chunk
+		c.maxTime = t
+		c.chunk = nc
+		return true, false // @krajorama I think technically this is lying to the caller, since we do allocate a new chunk in memory currently, but it's what the original code did
+	}
+
+	// brand new chunk, switch out the head chunk (based on cutNewHeadChunk)
+	s.mmapCurrentHeadChunk(chunkDiskMapper)
+	s.headChunk = &memChunk{
+		chunk:   nc,
+		minTime: t,
+		maxTime: t,
+	}
+	s.nextAt = rangeForTimestamp(t, chunkRange)
+	return true, true
 }
 
 // appendFloatHistogram adds the float histogram.
 // It is unsafe to call this concurrently with s.iterator(...) without holding the series lock.
 func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, appendID uint64, chunkDiskMapper *chunks.ChunkDiskMapper, chunkRange int64, samplesPerChunk int) (sampleInOrder, chunkCreated bool) {
 	// Head controls the execution of recoding, so that we own the proper
-	// chunk reference afterwards.  We check for Appendable from appender before
-	// appendPreprocessor because in case it ends up creating a new chunk,
-	// we need to know if there was also a counter reset or not to set the
-	// meta properly.
-	app, _ := s.app.(*chunkenc.FloatHistogramAppender)
-	var (
-		pForwardInserts, nForwardInserts   []chunkenc.Insert
-		pBackwardInserts, nBackwardInserts []chunkenc.Insert
-		pMergedSpans, nMergedSpans         []histogram.Span
-		okToAppend, counterReset, gauge    bool
-	)
+	// chunk reference afterwards and mmap used up chunks.
+
+	// ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway
+	prevApp, _ := s.app.(*chunkenc.FloatHistogramAppender)
+
 	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.EncFloatHistogram, chunkDiskMapper, chunkRange, samplesPerChunk)
 	if !sampleInOrder {
 		return sampleInOrder, chunkCreated
 	}
-	switch fh.CounterResetHint {
-	case histogram.GaugeType:
-		gauge = true
-		if app != nil {
-			pForwardInserts, nForwardInserts,
-				pBackwardInserts, nBackwardInserts,
-				pMergedSpans, nMergedSpans,
-				okToAppend = app.AppendableGauge(fh)
-		}
-	case histogram.CounterReset:
-		// The caller tells us this is a counter reset, even if it
-		// doesn't look like one.
-		counterReset = true
-	default:
-		if app != nil {
-			pForwardInserts, nForwardInserts, okToAppend, counterReset = app.Appendable(fh)
-		}
-	}
+
+	var (
+		nc      chunkenc.Chunk
+		recoded bool
+		err     error
+	)
 
 	if !chunkCreated {
-		if len(pBackwardInserts)+len(nBackwardInserts) > 0 {
-			fh.PositiveSpans = pMergedSpans
-			fh.NegativeSpans = nMergedSpans
-			app.RecodeHistogramm(fh, pBackwardInserts, nBackwardInserts)
-		}
-		// We have 3 cases here
-		// - !okToAppend or counterReset -> We need to cut a new chunk.
-		// - okToAppend but we have inserts → Existing chunk needs
-		//   recoding before we can append our histogram.
-		// - okToAppend and no inserts → Chunk is ready to support our histogram.
-		switch {
-		case !okToAppend || counterReset:
-			c = s.cutNewHeadChunk(t, chunkenc.EncFloatHistogram, chunkDiskMapper, chunkRange)
-			chunkCreated = true
-		case len(pForwardInserts) > 0 || len(nForwardInserts) > 0:
-			// New buckets have appeared. We need to recode all
-			// prior histogram samples within the chunk before we
-			// can process this one.
-			chunk, app := app.Recode(
-				pForwardInserts, nForwardInserts,
-				fh.PositiveSpans, fh.NegativeSpans,
-			)
-			c.chunk = chunk
-			s.app = app
-		}
+		// ignore the previous appender if we continue the current chunk
+		prevApp = nil
 	}
 
-	if chunkCreated {
-		hc := s.headChunk.chunk.(*chunkenc.FloatHistogramChunk)
-		header := chunkenc.UnknownCounterReset
-		switch {
-		case gauge:
-			header = chunkenc.GaugeType
-		case counterReset:
-			header = chunkenc.CounterReset
-		case okToAppend:
-			header = chunkenc.NotCounterReset
-		}
-		hc.SetCounterResetHeader(header)
+	nc, recoded, s.app, err = s.app.AppendOrCreateFloatHistogram(prevApp, t, fh, false) // false=request a new chunk if needed
+
+	if err != nil {
+		panic("appendOrCreateFloatHistogram failed") // TODO: handle error
 	}
 
-	s.app.AppendFloatHistogram(t, fh)
-
-	c.maxTime = t
-
-	s.lastFloatHistogramValue = fh
 	s.lastHistogramValue = nil
+	s.lastFloatHistogramValue = fh
 
 	if appendID > 0 {
 		s.txs.add(appendID)
 	}
 
-	return true, chunkCreated
+	if nc == nil { // sample was appeneded to existing chunk or is the first sample in a new chunk
+		c.maxTime = t
+		return true, chunkCreated
+	}
+
+	if recoded { // needed to recode the chunk
+		c.maxTime = t
+		c.chunk = nc
+		return true, false // @krajorama I think technically this is lying to the caller, since we do allocate a new chunk in memory currently, but it's what the original code did
+	}
+
+	// brand new chunk, switch out the head chunk (based on cutNewHeadChunk)
+	s.mmapCurrentHeadChunk(chunkDiskMapper)
+	s.headChunk = &memChunk{
+		chunk:   nc,
+		minTime: t,
+		maxTime: t,
+	}
+	s.nextAt = rangeForTimestamp(t, chunkRange)
+	return true, true
 }
 
 // appendPreprocessor takes care of cutting new chunks and m-mapping old chunks.
