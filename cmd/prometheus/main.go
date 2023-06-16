@@ -429,7 +429,7 @@ func main() {
 
 	_, err := a.Parse(os.Args[1:])
 	if err != nil {
-		fmt.Fprintln(os.Stderr, fmt.Errorf("Error parsing commandline arguments: %w", err))
+		fmt.Fprintln(os.Stderr, fmt.Errorf("Error parsing command line arguments: %w", err))
 		a.Usage(os.Args[1:])
 		os.Exit(2)
 	}
