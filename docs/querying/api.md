@@ -407,7 +407,7 @@ $ curl -g 'http://localhost:9090/api/v1/query_exemplars?query=test_exemplar_metr
                         "traceID": "EpTxMJ40fUus7aGY"
                     },
                     "value": "6",
-                    "timestamp": 1600096945.479,
+                    "timestamp": 1600096945.479
                 }
             ]
         },
@@ -424,15 +424,15 @@ $ curl -g 'http://localhost:9090/api/v1/query_exemplars?query=test_exemplar_metr
                         "traceID": "Olp9XHlq763ccsfa"
                     },
                     "value": "19",
-                    "timestamp": 1600096955.479,
+                    "timestamp": 1600096955.479
                 },
                 {
                     "labels": {
                         "traceID": "hCtjygkIHwAN9vs4"
                     },
                     "value": "20",
-                    "timestamp": 1600096965.489,
-                },
+                    "timestamp": 1600096965.489
+                }
             ]
         }
     ]
@@ -863,6 +863,7 @@ GET /api/v1/metadata
 URL query parameters:
 
 - `limit=<number>`: Maximum number of metrics to return.
+- `limit_per_metric=<number>`: Maximum number of metadata to return per metric.
 - `metric=<string>`: A metric name to filter metadata for. All metric metadata is retrieved if left empty.
 
 The `data` section of the query result consists of an object where each key is a metric name and each value is a list of unique metadata objects, as exposed for that metric name across all targets.
@@ -891,6 +892,32 @@ curl -G http://localhost:9090/api/v1/metadata?limit=2
       {
         "type": "counter",
         "help": "Amount of HTTP requests",
+        "unit": ""
+      }
+    ]
+  }
+}
+```
+
+The following example returns only one metadata entry for each metric.
+
+```json
+curl -G http://localhost:9090/api/v1/metadata?limit_per_metric=1
+
+{
+  "status": "success",
+  "data": {
+    "cortex_ring_tokens": [
+      {
+        "type": "gauge",
+        "help": "Number of tokens in the ring",
+        "unit": ""
+      }
+    ],
+    "http_requests_total": [
+      {
+        "type": "counter",
+        "help": "Number of HTTP requests",
         "unit": ""
       }
     ]
