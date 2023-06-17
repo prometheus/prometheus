@@ -263,7 +263,7 @@ func TestHistogramQuantile(t *testing.T) {
 					},
 				},
 			},
-			expected: 0,
+			expected: -1,
 		},
 	}
 
