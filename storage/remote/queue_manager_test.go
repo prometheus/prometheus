@@ -66,14 +66,12 @@ func TestSampleDelivery(t *testing.T) {
 		exemplars       bool
 		histograms      bool
 		floatHistograms bool
-		metadata        bool
 	}{
-		{samples: true, exemplars: false, histograms: false, floatHistograms: false, metadata: false, name: "samples only"},
-		{samples: true, exemplars: true, histograms: true, floatHistograms: true, metadata: false, name: "samples, exemplars, and histograms"},
-		{samples: false, exemplars: true, histograms: false, floatHistograms: false, metadata: false, name: "exemplars only"},
-		{samples: false, exemplars: false, histograms: true, floatHistograms: false, metadata: false, name: "histograms only"},
-		{samples: false, exemplars: false, histograms: false, floatHistograms: true, metadata: false, name: "float histograms only"},
-		{samples: false, exemplars: false, histograms: false, floatHistograms: false, metadata: true, name: "metadata only"},
+		{samples: true, exemplars: false, histograms: false, floatHistograms: false, name: "samples only"},
+		{samples: true, exemplars: true, histograms: true, floatHistograms: true, name: "samples, exemplars, and histograms"},
+		{samples: false, exemplars: true, histograms: false, floatHistograms: false, name: "exemplars only"},
+		{samples: false, exemplars: false, histograms: true, floatHistograms: false, name: "histograms only"},
+		{samples: false, exemplars: false, histograms: false, floatHistograms: true, name: "float histograms only"},
 	}
 
 	// Let's create an even number of send batches so we don't run into the
@@ -107,16 +105,17 @@ func TestSampleDelivery(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var (
 				series          []record.RefSeries
+				metadata        []record.RefMetadata
 				samples         []record.RefSample
 				exemplars       []record.RefExemplar
 				histograms      []record.RefHistogramSample
 				floatHistograms []record.RefFloatHistogramSample
-				metadata        []record.RefMetadata
 			)
 
 			// Generates same series in both cases.
 			if tc.samples {
 				samples, series = createTimeseries(n, n)
+				metadata = createSeriesMetadata2(series)
 			}
 			if tc.exemplars {
 				exemplars, series = createExemplars(n, n)
@@ -126,9 +125,6 @@ func TestSampleDelivery(t *testing.T) {
 			}
 			if tc.floatHistograms {
 				_, floatHistograms, series = createHistograms(n, n, true)
-			}
-			if tc.metadata {
-				metadata, series = createMetadata(n)
 			}
 
 			// Apply new config.
@@ -143,18 +139,17 @@ func TestSampleDelivery(t *testing.T) {
 			qm.SetClient(c)
 
 			qm.StoreSeries(series, 0)
+			qm.StoreMetadata(metadata)
 
 			// Send first half of data.
 			c.expectSamples(samples[:len(samples)/2], series)
 			c.expectExemplars(exemplars[:len(exemplars)/2], series)
 			c.expectHistograms(histograms[:len(histograms)/2], series)
 			c.expectFloatHistograms(floatHistograms[:len(floatHistograms)/2], series)
-			c.expectTsMetadata(metadata[:len(metadata)/2], series)
 			qm.Append(samples[:len(samples)/2])
 			qm.AppendExemplars(exemplars[:len(exemplars)/2])
 			qm.AppendHistograms(histograms[:len(histograms)/2])
 			qm.AppendFloatHistograms(floatHistograms[:len(floatHistograms)/2])
-			qm.AppendMetadata(metadata[:len(metadata)/2])
 			c.waitForExpectedData(t)
 
 			// Send second half of data.
@@ -162,12 +157,10 @@ func TestSampleDelivery(t *testing.T) {
 			c.expectExemplars(exemplars[len(exemplars)/2:], series)
 			c.expectHistograms(histograms[len(histograms)/2:], series)
 			c.expectFloatHistograms(floatHistograms[len(floatHistograms)/2:], series)
-			c.expectTsMetadata(metadata[len(metadata)/2:], series)
 			qm.Append(samples[len(samples)/2:])
 			qm.AppendExemplars(exemplars[len(exemplars)/2:])
 			qm.AppendHistograms(histograms[len(histograms)/2:])
 			qm.AppendFloatHistograms(floatHistograms[len(floatHistograms)/2:])
-			qm.AppendMetadata(metadata[len(metadata)/2:])
 			c.waitForExpectedData(t)
 		})
 	}
@@ -226,7 +219,10 @@ func TestWALMetadataDelivery(t *testing.T) {
 		},
 	}
 
-	metadata, series := createMetadata(3)
+	num := 3
+	// series, metadata := createSeriesMetadata(num)
+	_, series := createTimeseries(0, num)
+	metadata := createSeriesMetadata2(series)
 
 	require.NoError(t, s.ApplyConfig(conf))
 	hash, err := toHash(writeConfig)
@@ -238,9 +234,11 @@ func TestWALMetadataDelivery(t *testing.T) {
 	qm.SetClient(c)
 
 	qm.StoreSeries(series, 0)
-	c.expectTsMetadata(metadata, series)
+	qm.StoreMetadata(metadata)
 
-	qm.AppendMetadata(metadata)
+	require.Equal(t, num, len(qm.seriesLabels))
+	require.Equal(t, num, len(qm.seriesMetadata))
+
 	c.waitForExpectedData(t)
 }
 
@@ -358,17 +356,22 @@ func TestSeriesReset(t *testing.T) {
 	cfg := config.DefaultQueueConfig
 	mcfg := config.DefaultMetadataConfig
 	metrics := newQueueManagerMetrics(nil, "", "")
-	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, deadline, newPool(), newHighestTimestampMetric(), nil, false, false, false)
+	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, deadline, newPool(), newHighestTimestampMetric(), nil, false, false, true)
 	for i := 0; i < numSegments; i++ {
 		series := []record.RefSeries{}
+		metadata := []record.RefMetadata{}
 		for j := 0; j < numSeries; j++ {
 			series = append(series, record.RefSeries{Ref: chunks.HeadSeriesRef((i * 100) + j), Labels: labels.FromStrings("a", "a")})
+			metadata = append(metadata, record.RefMetadata{Ref: chunks.HeadSeriesRef((i * 100) + j), Type: 0, Unit: "unit text", Help: "help text"})
 		}
 		m.StoreSeries(series, i)
+		m.StoreMetadata(metadata)
 	}
 	require.Equal(t, numSegments*numSeries, len(m.seriesLabels))
+	require.Equal(t, numSegments*numSeries, len(m.seriesMetadata))
 	m.SeriesReset(2)
 	require.Equal(t, numSegments*numSeries/2, len(m.seriesLabels))
+	require.Equal(t, numSegments*numSeries/2, len(m.seriesMetadata))
 }
 
 func TestReshard(t *testing.T) {
@@ -690,26 +693,40 @@ func createHistograms(numSamples, numSeries int, floatHistogram bool) ([]record.
 	return histograms, nil, series
 }
 
-func createMetadata(numMetadata int) ([]record.RefMetadata, []record.RefSeries) {
-	series := make([]record.RefSeries, 0, numMetadata)
-	metas := make([]record.RefMetadata, 0, numMetadata)
+// func createSeriesMetadata(numMetadata int) ([]record.RefSeries, []record.RefMetadata) {
+// 	series := make([]record.RefSeries, 0, numMetadata)
+// 	metas := make([]record.RefMetadata, 0, numMetadata)
 
-	for i := 0; i < numMetadata; i++ {
-		name := fmt.Sprintf("test_metric_%d", i)
+// 	for i := 0; i < numMetadata; i++ {
+// 		name := fmt.Sprintf("test_metric_%d", i)
 
+// 		metas = append(metas, record.RefMetadata{
+// 			Ref:  chunks.HeadSeriesRef(i),
+// 			Type: uint8(record.Counter),
+// 			Unit: "unit text",
+// 			Help: "help text",
+// 		})
+// 		series = append(series, record.RefSeries{
+// 			Ref:    chunks.HeadSeriesRef(i),
+// 			Labels: labels.FromStrings("__name__", name, "foo", "bar"),
+// 		})
+
+// 	}
+// 	return series, metas
+// }
+
+func createSeriesMetadata2(series []record.RefSeries) []record.RefMetadata {
+	metas := make([]record.RefMetadata, len(series))
+
+	for _, s := range series {
 		metas = append(metas, record.RefMetadata{
-			Ref:  chunks.HeadSeriesRef(i),
+			Ref:  chunks.HeadSeriesRef(s.Ref),
 			Type: uint8(record.Counter),
 			Unit: "unit text",
 			Help: "help text",
 		})
-		series = append(series, record.RefSeries{
-			Ref:    chunks.HeadSeriesRef(i),
-			Labels: labels.FromStrings("__name__", name, "foo", "bar"),
-		})
-
 	}
-	return metas, series
+	return metas
 }
 
 func getSeriesNameFromRef(r record.RefSeries) string {
@@ -725,8 +742,6 @@ type TestWriteClient struct {
 	receivedFloatHistograms map[string][]prompb.Histogram
 	expectedHistograms      map[string][]prompb.Histogram
 	expectedFloatHistograms map[string][]prompb.Histogram
-	receivedTsMetadata      map[string][]prompb.Metadata
-	expectedTsMetadata      map[string][]prompb.Metadata
 	receivedMetadata        map[string][]prompb.MetricMetadata
 	writesReceived          int
 	withWaitGroup           bool
@@ -820,23 +835,6 @@ func (c *TestWriteClient) expectFloatHistograms(fhs []record.RefFloatHistogramSa
 	c.wg.Add(len(fhs))
 }
 
-func (c *TestWriteClient) expectTsMetadata(ms []record.RefMetadata, series []record.RefSeries) {
-	if !c.withWaitGroup {
-		return
-	}
-	c.mtx.Lock()
-	defer c.mtx.Unlock()
-
-	c.expectedTsMetadata = map[string][]prompb.Metadata{}
-	c.receivedTsMetadata = map[string][]prompb.Metadata{}
-
-	for _, m := range ms {
-		seriesName := getSeriesNameFromRef(series[m.Ref])
-		c.expectedTsMetadata[seriesName] = append(c.expectedTsMetadata[seriesName], prompb.Metadata{Type: metricTypeToProtoEquivalent(record.ToTextparseMetricType(m.Type)), Unit: m.Unit, Help: m.Help})
-	}
-	c.wg.Add(len(ms))
-}
-
 func (c *TestWriteClient) waitForExpectedData(tb testing.TB) {
 	if !c.withWaitGroup {
 		return
@@ -855,9 +853,6 @@ func (c *TestWriteClient) waitForExpectedData(tb testing.TB) {
 	}
 	for ts, expectedFloatHistogram := range c.expectedFloatHistograms {
 		require.Equal(tb, expectedFloatHistogram, c.receivedFloatHistograms[ts], ts)
-	}
-	for ts, expectedMetadata := range c.expectedTsMetadata {
-		require.Equal(tb, expectedMetadata, c.receivedTsMetadata[ts], ts)
 	}
 }
 
@@ -899,11 +894,6 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte) error {
 			} else {
 				c.receivedHistograms[seriesName] = append(c.receivedHistograms[seriesName], histogram)
 			}
-		}
-
-		if ts.Metadata.String() != "" { // only count non-empty metadata
-			c.receivedTsMetadata[seriesName] = append(c.receivedTsMetadata[seriesName], ts.Metadata)
-			count++
 		}
 	}
 	if c.withWaitGroup {
