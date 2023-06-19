@@ -115,7 +115,7 @@ func TestSampleDelivery(t *testing.T) {
 			// Generates same series in both cases.
 			if tc.samples {
 				samples, series = createTimeseries(n, n)
-				metadata = createSeriesMetadata2(series)
+				metadata = createSeriesMetadata(series)
 			}
 			if tc.exemplars {
 				exemplars, series = createExemplars(n, n)
@@ -220,9 +220,8 @@ func TestWALMetadataDelivery(t *testing.T) {
 	}
 
 	num := 3
-	// series, metadata := createSeriesMetadata(num)
 	_, series := createTimeseries(0, num)
-	metadata := createSeriesMetadata2(series)
+	metadata := createSeriesMetadata(series)
 
 	require.NoError(t, s.ApplyConfig(conf))
 	hash, err := toHash(writeConfig)
@@ -693,34 +692,12 @@ func createHistograms(numSamples, numSeries int, floatHistogram bool) ([]record.
 	return histograms, nil, series
 }
 
-// func createSeriesMetadata(numMetadata int) ([]record.RefSeries, []record.RefMetadata) {
-// 	series := make([]record.RefSeries, 0, numMetadata)
-// 	metas := make([]record.RefMetadata, 0, numMetadata)
-
-// 	for i := 0; i < numMetadata; i++ {
-// 		name := fmt.Sprintf("test_metric_%d", i)
-
-// 		metas = append(metas, record.RefMetadata{
-// 			Ref:  chunks.HeadSeriesRef(i),
-// 			Type: uint8(record.Counter),
-// 			Unit: "unit text",
-// 			Help: "help text",
-// 		})
-// 		series = append(series, record.RefSeries{
-// 			Ref:    chunks.HeadSeriesRef(i),
-// 			Labels: labels.FromStrings("__name__", name, "foo", "bar"),
-// 		})
-
-// 	}
-// 	return series, metas
-// }
-
-func createSeriesMetadata2(series []record.RefSeries) []record.RefMetadata {
+func createSeriesMetadata(series []record.RefSeries) []record.RefMetadata {
 	metas := make([]record.RefMetadata, len(series))
 
 	for _, s := range series {
 		metas = append(metas, record.RefMetadata{
-			Ref:  chunks.HeadSeriesRef(s.Ref),
+			Ref:  s.Ref,
 			Type: uint8(record.Counter),
 			Unit: "unit text",
 			Help: "help text",
