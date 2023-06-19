@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
@@ -8,7 +9,6 @@ import (
 	"io"
 	"net"
 	"time"
-	"unsafe"
 )
 
 var (
@@ -240,26 +240,86 @@ func (rm *ResponseMsg) DecodeBinary(data []byte) {
 	rm.SegmentID = uint32(id)
 }
 
+// MessageData - data for the start message of the refill.
+type MessageData struct {
+	ID      uint32
+	Size    uint32
+	Typemsg MsgType
+}
+
 // RefillMsg - message for Refill.
 type RefillMsg struct {
-	NumberOfMessage uint32
+	Messages []MessageData
 }
 
-// EncodeBinary - encoding to byte.
-func (rm *RefillMsg) EncodeBinary() []byte {
-	buf := make([]byte, 0, unsafe.Sizeof(rm.NumberOfMessage))
+// MarshalBinary - encoding to byte.
+func (rm *RefillMsg) MarshalBinary() ([]byte, error) {
+	// Uvarint use only 1 byte, and in the remaining cases x2 is enough for everything, so we allocate 1 byte each
+	const (
+		reserveSizeForUvarint32 = 1
+		reserveSizeForUvarint8  = 1
+	)
 
-	buf = binary.AppendUvarint(buf, uint64(rm.NumberOfMessage))
+	// ID, Size, Typemsg
+	msgSize := reserveSizeForUvarint32 + reserveSizeForUvarint32 + reserveSizeForUvarint8
+	// number of messages + messages
+	bufSize := reserveSizeForUvarint32 + msgSize*len(rm.Messages)
 
-	return buf
+	buf := make(
+		[]byte,
+		0,
+		bufSize,
+	)
+
+	// write length statuses on destinations and move offset
+	buf = binary.AppendUvarint(buf, uint64(len(rm.Messages)))
+
+	for i := range rm.Messages {
+		buf = binary.AppendUvarint(buf, uint64(rm.Messages[i].ID))
+		buf = binary.AppendUvarint(buf, uint64(rm.Messages[i].Size))
+		buf = binary.AppendUvarint(buf, uint64(rm.Messages[i].Typemsg))
+	}
+
+	return buf, nil
 }
 
-// DecodeBinary - decoding from byte.
-func (rm *RefillMsg) DecodeBinary(data []byte) {
-	var offset int
+// UnmarshalBinary - decoding from byte.
+func (rm *RefillMsg) UnmarshalBinary(data []byte) error {
+	r := bytes.NewReader(data)
+	length, err := binary.ReadUvarint(r)
+	if err != nil {
+		return fmt.Errorf("fail read length: %w", err)
+	}
 
-	size, _ := binary.Uvarint(data[offset:])
-	rm.NumberOfMessage = uint32(size)
+	rm.Messages = make([]MessageData, 0, length)
+	var id, size, typemsg uint64
+	for i := 0; i < int(length); i++ {
+		id, err = binary.ReadUvarint(r)
+		if err != nil {
+			return fmt.Errorf("fail read id: %w", err)
+		}
+
+		size, err = binary.ReadUvarint(r)
+		if err != nil {
+			return fmt.Errorf("fail read size: %w", err)
+		}
+
+		typemsg, err = binary.ReadUvarint(r)
+		if err != nil {
+			return fmt.Errorf("fail read typemsg: %w", err)
+		}
+
+		rm.Messages = append(
+			rm.Messages,
+			MessageData{
+				ID:      uint32(id),
+				Size:    uint32(size),
+				Typemsg: MsgType(typemsg),
+			},
+		)
+	}
+
+	return nil
 }
 
 // Config - config for Transport.

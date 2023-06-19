@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	"github.com/prometheus/prometheus/prompb"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gotest.tools/assert"
 
 	"github.com/prometheus/prometheus/pp/go/server"
 )

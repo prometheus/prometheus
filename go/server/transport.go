@@ -2,41 +2,122 @@ package server
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net"
+	"os"
+	"path/filepath"
 
 	"github.com/prometheus/prometheus/prompb"
 
 	"github.com/prometheus/prometheus/pp/go/transport"
 )
 
-const ProtocolVersion uint8 = 3
+const protocolVersion uint8 = 3
+
+// Reader - implementation of the reader with the Next iterator function.
+type Reader interface {
+	Next(ctx context.Context) (*transport.RawMessage, error)
+}
+
+// ProtocolReader - reader that reads raw messages and decodes them into WriteRequest.
+type ProtocolReader struct {
+	reader  Reader
+	decoder *Decoder
+}
+
+// NewProtocolReader - init new ProtocolReader.
+func NewProtocolReader(r Reader) *ProtocolReader {
+	return &ProtocolReader{
+		reader: r,
+	}
+}
+
+// Next - func-iterator, read from reader raw message and return WriteRequest.
+func (pr *ProtocolReader) Next(ctx context.Context) (uint32, *prompb.WriteRequest, error) {
+	for {
+		raw, err := pr.reader.Next(ctx)
+		if err != nil {
+			return 0, nil, err
+		}
+
+		switch raw.Header.Type {
+		case transport.MsgSnapshot:
+			if err := pr.handleSnapshot(ctx, raw.Payload); err != nil {
+				return 0, nil, fmt.Errorf("decode snapshot: %w", err)
+			}
+		case transport.MsgDryPut:
+			if err := pr.handleDryPut(ctx, raw.Payload); err != nil {
+				return 0, nil, fmt.Errorf("decode dry segment: %w", err)
+			}
+		case transport.MsgPut:
+			return pr.handlePut(ctx, raw.Payload)
+		default:
+			return 0, nil, fmt.Errorf("unexpected msg type %d", raw.Header.Type)
+		}
+	}
+}
+
+// Destroy - destroy the decoder reader.
+func (pr *ProtocolReader) Destroy() {
+	if pr.decoder != nil {
+		pr.decoder.Destroy()
+	}
+}
+
+// handleSnapshot - process the snapshot using the decoder.
+func (pr *ProtocolReader) handleSnapshot(ctx context.Context, snapshot []byte) error {
+	if pr.decoder != nil {
+		pr.decoder.Destroy()
+	}
+	pr.decoder = NewDecoder()
+	return pr.decoder.Snapshot(ctx, snapshot)
+}
+
+// handleDryPut - process the dry put using the decoder.
+func (pr *ProtocolReader) handleDryPut(ctx context.Context, segment []byte) error {
+	if pr.decoder == nil {
+		pr.decoder = NewDecoder()
+	}
+	return pr.decoder.DecodeDry(ctx, segment)
+}
+
+// handlePut - process the put using the decoder.
+func (pr *ProtocolReader) handlePut(ctx context.Context, segment []byte) (uint32, *prompb.WriteRequest, error) {
+	if pr.decoder == nil {
+		pr.decoder = NewDecoder()
+	}
+	blob, segmentID, err := pr.decoder.Decode(ctx, segment)
+	if err != nil {
+		return 0, nil, fmt.Errorf("decode segment: %w", err)
+	}
+	defer blob.Destroy()
+
+	msg := new(prompb.WriteRequest)
+	if err := msg.Unmarshal(blob.Bytes()); err != nil {
+		return segmentID, nil, fmt.Errorf("unmarshal protobuf: %w", err)
+	}
+	return segmentID, msg, nil
+}
 
 // TCPReader - wrappers over connection from cient.
 type TCPReader struct {
-	cfg     *transport.Config
-	tt      *transport.Transport
-	decoder *Decoder
-	workDir string
+	t *transport.Transport
 }
+
+var _ Reader = &TCPReader{}
 
 // NewTCPReader - init new TCPReader.
 func NewTCPReader(
-	ctx context.Context,
 	cfg *transport.Config,
 	conn net.Conn,
-) (*TCPReader, error) {
-	return &TCPReader{
-		cfg:     cfg,
-		tt:      transport.New(cfg, conn),
-		decoder: NewDecoder(),
-	}, nil
+) *TCPReader {
+	t := transport.New(cfg, conn)
+	return &TCPReader{t: t}
 }
 
 // Authorization - incoming connection authorization.
 func (r *TCPReader) Authorization(ctx context.Context) (*transport.AuthMsg, error) {
-	raw, err := r.tt.Read(ctx)
+	raw, err := r.t.Read(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -49,87 +130,90 @@ func (r *TCPReader) Authorization(ctx context.Context) (*transport.AuthMsg, erro
 	return am, am.Validate()
 }
 
+// Next - func-iterator, read from conn and return raw message.
+func (r *TCPReader) Next(ctx context.Context) (*transport.RawMessage, error) {
+	return r.t.Read(ctx)
+}
+
 // SendResponse - send response to client.
 func (r *TCPReader) SendResponse(ctx context.Context, text string, code, segmentID uint32) error {
-	resp := &transport.ResponseMsg{
+	msg := &transport.ResponseMsg{
 		Text:      text,
 		Code:      code,
 		SegmentID: segmentID,
 	}
 
-	return r.tt.Write(ctx, transport.NewRawMessage(
-		ProtocolVersion,
+	return r.t.Write(ctx, transport.NewRawMessage(
+		protocolVersion,
 		transport.MsgResponse,
-		resp.EncodeBinary(),
+		msg.EncodeBinary(),
 	))
 }
 
-// Next - read connection, decoding message and return protobuf in byte.
-func (r *TCPReader) Next(ctx context.Context) (uint32, *prompb.WriteRequest, error) {
-	for {
-		raw, err := r.tt.Read(ctx)
-		if err != nil {
-			return 0, nil, err
-		}
+// StartWithReader - special reader for read with start message.
+type StartWithReader struct {
+	Reader
+	firstMsg *transport.RawMessage
+}
 
-		switch raw.Header.Type {
-		case transport.MsgSnapshot:
-			err := r.decoder.Snapshot(ctx, raw.Payload)
-			if err != nil {
-				return 0, nil, err
-			}
-			continue
-		case transport.MsgPut:
-			blob, segmentID, err := r.decoder.Decode(ctx, raw.Payload)
-			if err != nil {
-				return 0, nil, err
-			}
+var _ Reader = &StartWithReader{}
 
-			msg := new(prompb.WriteRequest)
-			err = msg.Unmarshal(blob.Bytes())
-			blob.Destroy()
-			if err != nil {
-				return segmentID, nil, fmt.Errorf("unmarshal protobuf: %w", err)
-			}
-			return segmentID, msg, nil
-		case transport.MsgRefill:
-			// read refill and convert
-			return 0, nil, errors.New("Not implemented")
-		default:
-			return 0, nil, fmt.Errorf("unknown msg type %d", raw.Header.Type)
-		}
+// StartWith - init new StartWith Reader.
+func StartWith(r Reader, msg *transport.RawMessage) *StartWithReader {
+	return &StartWithReader{
+		Reader:   r,
+		firstMsg: msg,
 	}
 }
 
-/*
-// RefillHandle -
-func (r *TCPReader) RefillHandle(raw *delivery.RawMessage, s3sFn s3SenderFn) error {
-	var refillMsg delivery.RefillMsg
-	refillMsg.DecodeBinary(raw.Payload)
+// Next - func-iterator, read raw message from reader with start message.
+func (swr *StartWithReader) Next(ctx context.Context) (*transport.RawMessage, error) {
+	if swr.firstMsg != nil {
+		res := swr.firstMsg
+		swr.firstMsg = nil
+		return res, nil
+	}
+	return swr.Reader.Next(ctx)
+}
 
-	dir, err := r.initDir(cfs)
+// FileReader - reader raw messages from file.
+type FileReader struct {
+	file *os.File
+}
+
+var _ Reader = &FileReader{}
+
+// NewFileReader - init new FileReader.
+func NewFileReader(filePath string) (*FileReader, error) {
+	file, err := os.OpenFile(
+		filepath.Clean(filePath),
+		os.O_RDONLY,
+		0,
+	)
 	if err != nil {
-		return err
+		return nil, fmt.Errorf("open file %s: %w", filePath, err)
 	}
-	defer func() {
-		_ = os.RemoveAll(dir)
-	}()
 
-	// loop with processed read
-
-	return nil
+	return &FileReader{
+		file: file,
+	}, nil
 }
 
-func (r *TCPReader) initDir() (string, error) {
-	dir := filepath.Join(r.workDir, cfs.GetRequestID())
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "", fmt.Errorf("mkdir %s: %w", dir, err)
+// Next - func-iterator, read from file and return raw message.
+func (fr *FileReader) Next(ctx context.Context) (*transport.RawMessage, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
 	}
-	return dir, nil
-}
-*/
 
-// Close - close TCPReader.
-func (r *TCPReader) Close() error {
-	return r.tt.Close()
+	raw, err := transport.ReadRawMessage(fr.file)
+	if err != nil {
+		return nil, fmt.Errorf("read file %s: %w", fr.file.Name(), err)
+	}
+
+	return raw, nil
+}
+
+// Close - close the file reader.
+func (fr *FileReader) Close() error {
+	return fr.file.Close()
 }

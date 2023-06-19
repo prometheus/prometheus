@@ -17,7 +17,11 @@ func NewDecoder() *Decoder {
 }
 
 // Decode - decode income encoding data and return protobuf.
-func (d *Decoder) Decode(_ context.Context, segment []byte) (*GoSliceByte, uint32, error) {
+func (d *Decoder) Decode(ctx context.Context, segment []byte) (*GoSliceByte, uint32, error) {
+	if ctx.Err() != nil {
+		return nil, 0, ctx.Err()
+	}
+
 	cprotobuf := NewGoSliceByte()
 
 	segmentID := cDecoderDecode(d.decoder, segment, cprotobuf)
@@ -26,8 +30,15 @@ func (d *Decoder) Decode(_ context.Context, segment []byte) (*GoSliceByte, uint3
 }
 
 // DecodeDry - decode income encoding data, restore decoder.
-func (d *Decoder) DecodeDry(_ context.Context, segment []byte) error {
-	segmentID := cDecoderDecodeDry(d.decoder, segment)
+func (d *Decoder) DecodeDry(ctx context.Context, segment []byte) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	segmentID := cDecoderDecodeDry(
+		d.decoder,
+		segment,
+	)
 
 	// TODO  return segmentID
 	_ = segmentID
@@ -36,7 +47,11 @@ func (d *Decoder) DecodeDry(_ context.Context, segment []byte) error {
 }
 
 // Snapshot - decode income snapshot, restore decoder.
-func (d *Decoder) Snapshot(_ context.Context, snapshot []byte) error {
+func (d *Decoder) Snapshot(ctx context.Context, snapshot []byte) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
 	cDecoderDecodeSnapshot(d.decoder, snapshot)
 
 	return nil
