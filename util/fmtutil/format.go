@@ -44,8 +44,8 @@ var MetricMetadataTypeValue = map[string]int32{
 	"STATESET":       7,
 }
 
-// FormatMetrics convert metric family to a writerequest.
-func FormatMetrics(mf map[string]*dto.MetricFamily, extraLabels map[string]string) (*prompb.WriteRequest, error) {
+// CreateWriteRequest convert metric family to a writerequest.
+func CreateWriteRequest(mf map[string]*dto.MetricFamily, extraLabels map[string]string) (*prompb.WriteRequest, error) {
 	wr := &prompb.WriteRequest{}
 
 	// build metric list
@@ -76,16 +76,16 @@ func FormatMetrics(mf map[string]*dto.MetricFamily, extraLabels map[string]strin
 	return wr, nil
 }
 
-func makeTimeserie(wr *prompb.WriteRequest, labels map[string]string, timestamp int64, value float64) {
-	var timeserie prompb.TimeSeries
-	timeserie.Labels = makeLabels(labels)
-	timeserie.Samples = []prompb.Sample{
+func toTimeseries(wr *prompb.WriteRequest, labels map[string]string, timestamp int64, value float64) {
+	var ts prompb.TimeSeries
+	ts.Labels = makeLabels(labels)
+	ts.Samples = []prompb.Sample{
 		{
 			Timestamp: timestamp,
 			Value:     value,
 		},
 	}
-	wr.Timeseries = append(wr.Timeseries, timeserie)
+	wr.Timeseries = append(wr.Timeseries, ts)
 }
 
 func makeTimeseries(wr *prompb.WriteRequest, labels map[string]string, m *dto.Metric) error {
@@ -98,9 +98,9 @@ func makeTimeseries(wr *prompb.WriteRequest, labels map[string]string, m *dto.Me
 
 	switch {
 	case m.Gauge != nil:
-		makeTimeserie(wr, labels, timestamp, m.GetGauge().GetValue())
+		toTimeseries(wr, labels, timestamp, m.GetGauge().GetValue())
 	case m.Counter != nil:
-		makeTimeserie(wr, labels, timestamp, m.GetCounter().GetValue())
+		toTimeseries(wr, labels, timestamp, m.GetCounter().GetValue())
 	case m.Summary != nil:
 		metricName := labels[model.MetricNameLabel]
 		// Preserve metric name order with first quantile labels timeseries then sum suffix timeserie and finally count suffix timeserie
@@ -112,15 +112,15 @@ func makeTimeseries(wr *prompb.WriteRequest, labels map[string]string, m *dto.Me
 
 		for _, q := range m.GetSummary().Quantile {
 			quantileLabels[model.QuantileLabel] = fmt.Sprint(q.GetQuantile())
-			makeTimeserie(wr, quantileLabels, timestamp, q.GetValue())
+			toTimeseries(wr, quantileLabels, timestamp, q.GetValue())
 		}
 		// Overwrite label model.MetricNameLabel for count and sum metrics
 		// Add Summary sum timeserie
 		labels[model.MetricNameLabel] = metricName + sumStr
-		makeTimeserie(wr, labels, timestamp, m.GetSummary().GetSampleSum())
+		toTimeseries(wr, labels, timestamp, m.GetSummary().GetSampleSum())
 		// Add Summary count timeserie
 		labels[model.MetricNameLabel] = metricName + countStr
-		makeTimeserie(wr, labels, timestamp, float64(m.GetSummary().GetSampleCount()))
+		toTimeseries(wr, labels, timestamp, float64(m.GetSummary().GetSampleCount()))
 
 	case m.Histogram != nil:
 		metricName := labels[model.MetricNameLabel]
@@ -133,18 +133,18 @@ func makeTimeseries(wr *prompb.WriteRequest, labels map[string]string, m *dto.Me
 		for _, b := range m.GetHistogram().Bucket {
 			bucketLabels[model.MetricNameLabel] = metricName + bucketStr
 			bucketLabels[model.BucketLabel] = fmt.Sprint(b.GetUpperBound())
-			makeTimeserie(wr, bucketLabels, timestamp, float64(b.GetCumulativeCount()))
+			toTimeseries(wr, bucketLabels, timestamp, float64(b.GetCumulativeCount()))
 		}
 		// Overwrite label model.MetricNameLabel for count and sum metrics
 		// Add Histogram sum timeserie
 		labels[model.MetricNameLabel] = metricName + sumStr
-		makeTimeserie(wr, labels, timestamp, m.GetHistogram().GetSampleSum())
+		toTimeseries(wr, labels, timestamp, m.GetHistogram().GetSampleSum())
 		// Add Histogram count timeserie
 		labels[model.MetricNameLabel] = metricName + countStr
-		makeTimeserie(wr, labels, timestamp, float64(m.GetHistogram().GetSampleCount()))
+		toTimeseries(wr, labels, timestamp, float64(m.GetHistogram().GetSampleCount()))
 
 	case m.Untyped != nil:
-		makeTimeserie(wr, labels, timestamp, m.GetUntyped().GetValue())
+		toTimeseries(wr, labels, timestamp, m.GetUntyped().GetValue())
 	default:
 		err = errors.New("unsupported metric type")
 	}
@@ -208,5 +208,5 @@ func ParseMetricsTextAndFormat(input io.Reader, labels map[string]string) (*prom
 	if err != nil {
 		return nil, err
 	}
-	return FormatMetrics(mf, labels)
+	return CreateWriteRequest(mf, labels)
 }
