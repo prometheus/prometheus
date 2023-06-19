@@ -4666,7 +4666,7 @@ func TestOOOScheduledCompact(t *testing.T) {
 	if nextOddSec.Before(time.Now()) {
 		nextOddSec = nextOddSec.Add(2 * time.Second)
 	}
-	time.Sleep(nextOddSec.Sub(time.Now()))
+	time.Sleep(time.Until(nextOddSec))
 
 	// Add in-order samples.
 	addSamples(t, db, 450, 490)
