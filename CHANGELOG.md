@@ -3,7 +3,7 @@
 
 ## 2.45.0-rc.1 / 2023-06-20
 
-* [ENHANCEMENT] Reverts previous enhancement to the API Gzip Handler due to higher cpu and memory usage. #12363
+* [ENHANCEMENT] Reverts previous enhancement to the API Gzip Handler due to higher cpu and memory usage. #12476
 
 ## 2.45.0-rc.0 / 2023-06-05
 
