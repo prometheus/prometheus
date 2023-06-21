@@ -43,6 +43,9 @@ void okdb_wal_c_slice_with_stream_buffer_destroy(c_slice_with_stream_buffer* c_s
 // okdb_wal_c_slice_with_string_buffer_destroy - calls the destructor, C wrapper C++ for clear memory.
 void okdb_wal_c_slice_with_string_buffer_destroy(c_slice_with_string_buffer* c_segment);
 
+// okdb_wal_initialize - entry point for C bindings.
+int okdb_wal_initialize();
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif

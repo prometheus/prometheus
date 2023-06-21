@@ -22,7 +22,7 @@ go_in_wal_h_file := wal/wal_c_api.h
 wal_c_api_static_filename := $(go_bindings_arch)_wal_c_api_static.a
 go_out_filename := $(go_bindings_arch)_wal_c_api.a
 
-go_out_bindigs_dir := go/common/wal_c_bindings/
+go_out_bindigs_dir := go/common/internal/
 
 
 generate_wal_bindings: $(go_in_wal_h_file)
