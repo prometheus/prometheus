@@ -310,7 +310,7 @@ func (m *Manager) registerProviders(cfgs discovery.Configs, setName string) int 
 			}
 		}
 		typ := cfg.Name()
-		d, err := cfg.NewDiscoverer(discovery.DiscovererOptions{
+		d, err := discovery.NewWrappedDiscoverer(cfg, discovery.DiscovererOptions{
 			Logger: log.With(m.logger, "discovery", typ, "config", setName),
 		})
 		if err != nil {

@@ -427,7 +427,7 @@ func (m *Manager) registerProviders(cfgs Configs, setName string) int {
 			}
 		}
 		typ := cfg.Name()
-		d, err := cfg.NewDiscoverer(DiscovererOptions{
+		d, err := NewWrappedDiscoverer(cfg, DiscovererOptions{
 			Logger:            log.With(m.logger, "discovery", typ, "config", setName),
 			HTTPClientOptions: m.httpOpts,
 		})

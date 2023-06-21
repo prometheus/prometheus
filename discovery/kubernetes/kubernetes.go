@@ -122,6 +122,7 @@ func (c *Role) UnmarshalYAML(unmarshal func(interface{}) error) error {
 // SDConfig is the configuration for Kubernetes service discovery.
 type SDConfig struct {
 	APIServer          config.URL              `yaml:"api_server,omitempty"`
+	Instance           string                  `yaml:"name,omitempty"`
 	Role               Role                    `yaml:"role"`
 	KubeConfig         string                  `yaml:"kubeconfig_file"`
 	HTTPClientConfig   config.HTTPClientConfig `yaml:",inline"`
@@ -132,6 +133,11 @@ type SDConfig struct {
 
 // Name returns the name of the Config.
 func (*SDConfig) Name() string { return "kubernetes" }
+
+// InstanceName returns the name of the instance of the Config, if provided.
+func (c *SDConfig) InstanceName() string {
+	return c.Instance
+}
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
