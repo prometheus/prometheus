@@ -9,6 +9,7 @@ import (
 
 	"github.com/prometheus/prometheus/prompb"
 
+	"github.com/prometheus/prometheus/pp/go/common"
 	"github.com/prometheus/prometheus/pp/go/transport"
 )
 
@@ -22,7 +23,7 @@ type Reader interface {
 // ProtocolReader - reader that reads raw messages and decodes them into WriteRequest.
 type ProtocolReader struct {
 	reader  Reader
-	decoder *Decoder
+	decoder *common.Decoder
 }
 
 // NewProtocolReader - init new ProtocolReader.
@@ -69,14 +70,14 @@ func (pr *ProtocolReader) handleSnapshot(ctx context.Context, snapshot []byte) e
 	if pr.decoder != nil {
 		pr.decoder.Destroy()
 	}
-	pr.decoder = NewDecoder()
+	pr.decoder = common.NewDecoder()
 	return pr.decoder.Snapshot(ctx, snapshot)
 }
 
 // handleDryPut - process the dry put using the decoder.
 func (pr *ProtocolReader) handleDryPut(ctx context.Context, segment []byte) error {
 	if pr.decoder == nil {
-		pr.decoder = NewDecoder()
+		pr.decoder = common.NewDecoder()
 	}
 	return pr.decoder.DecodeDry(ctx, segment)
 }
@@ -84,7 +85,7 @@ func (pr *ProtocolReader) handleDryPut(ctx context.Context, segment []byte) erro
 // handlePut - process the put using the decoder.
 func (pr *ProtocolReader) handlePut(ctx context.Context, segment []byte) (uint32, *prompb.WriteRequest, error) {
 	if pr.decoder == nil {
-		pr.decoder = NewDecoder()
+		pr.decoder = common.NewDecoder()
 	}
 	blob, segmentID, err := pr.decoder.Decode(ctx, segment)
 	if err != nil {
