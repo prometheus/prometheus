@@ -274,12 +274,16 @@ func (ls Labels) Copy() Labels {
 // Returns an empty string if the label doesn't exist.
 func (ls Labels) Get(name string) string {
 	for i := 0; i < len(ls.data); {
-		var lName, lValue string
-		lName, i = decodeString(ls.data, i)
-		lValue, i = decodeString(ls.data, i)
+		var size int
+		size, i = decodeSize(ls.data, i)
+		lName := ls.data[i : i+size]
+		i += size
 		if lName == name {
+			lValue, _ := decodeString(ls.data, i)
 			return lValue
 		}
+		size, i = decodeSize(ls.data, i)
+		i += size
 	}
 	return ""
 }
