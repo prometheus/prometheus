@@ -475,6 +475,7 @@ func BenchmarkLabels_Get(b *testing.B) {
 				{"get first label", allLabels[0].Name},
 				{"get middle label", allLabels[size/2].Name},
 				{"get last label", allLabels[size-1].Name},
+				{"get not-found label", "benchmark"},
 			} {
 				b.Run(scenario.desc, func(b *testing.B) {
 					b.ResetTimer()
