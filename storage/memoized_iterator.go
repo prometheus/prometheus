@@ -21,6 +21,9 @@ import (
 )
 
 // MemoizedSeriesIterator wraps an iterator with a buffer to look back the previous element.
+//
+// This iterator regards integer histograms as float histograms; calls to Seek() will never return chunkenc.Histogram.
+// This iterator deliberately does not implement chunkenc.Iterator.
 type MemoizedSeriesIterator struct {
 	it    chunkenc.Iterator
 	delta int64
@@ -31,12 +34,7 @@ type MemoizedSeriesIterator struct {
 	// Keep track of the previously returned value.
 	prevTime           int64
 	prevValue          float64
-	prevHistogram      *histogram.Histogram
 	prevFloatHistogram *histogram.FloatHistogram
-	// TODO(beorn7): MemoizedSeriesIterator is currently only used by the
-	// PromQL engine, which only works with FloatHistograms. For better
-	// performance, we could change MemoizedSeriesIterator to also only
-	// handle FloatHistograms.
 }
 
 // NewMemoizedEmptyIterator is like NewMemoizedIterator but it's initialised with an empty iterator.
@@ -66,11 +64,11 @@ func (b *MemoizedSeriesIterator) Reset(it chunkenc.Iterator) {
 
 // PeekPrev returns the previous element of the iterator. If there is none buffered,
 // ok is false.
-func (b *MemoizedSeriesIterator) PeekPrev() (t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, ok bool) {
+func (b *MemoizedSeriesIterator) PeekPrev() (t int64, v float64, fh *histogram.FloatHistogram, ok bool) {
 	if b.prevTime == math.MinInt64 {
-		return 0, 0, nil, nil, false
+		return 0, 0, nil, false
 	}
-	return b.prevTime, b.prevValue, b.prevHistogram, b.prevFloatHistogram, true
+	return b.prevTime, b.prevValue, b.prevFloatHistogram, true
 }
 
 // Seek advances the iterator to the element at time t or greater.
@@ -83,8 +81,11 @@ func (b *MemoizedSeriesIterator) Seek(t int64) chunkenc.ValueType {
 		b.prevTime = math.MinInt64
 
 		b.valueType = b.it.Seek(t0)
-		if b.valueType == chunkenc.ValNone {
+		switch b.valueType {
+		case chunkenc.ValNone:
 			return chunkenc.ValNone
+		case chunkenc.ValHistogram:
+			b.valueType = chunkenc.ValFloatHistogram
 		}
 		b.lastTime = b.it.AtT()
 	}
@@ -100,7 +101,8 @@ func (b *MemoizedSeriesIterator) Seek(t int64) chunkenc.ValueType {
 	return chunkenc.ValNone
 }
 
-// Next advances the iterator to the next element.
+// Next advances the iterator to the next element. Note that this does not check whether the element being buffered is
+// within the time range of the current element and the duration of delta before.
 func (b *MemoizedSeriesIterator) Next() chunkenc.ValueType {
 	// Keep track of the previous element.
 	switch b.valueType {
@@ -108,21 +110,18 @@ func (b *MemoizedSeriesIterator) Next() chunkenc.ValueType {
 		return chunkenc.ValNone
 	case chunkenc.ValFloat:
 		b.prevTime, b.prevValue = b.it.At()
-		b.prevHistogram = nil
 		b.prevFloatHistogram = nil
-	case chunkenc.ValHistogram:
+	case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
 		b.prevValue = 0
-		b.prevTime, b.prevHistogram = b.it.AtHistogram()
-		_, b.prevFloatHistogram = b.it.AtFloatHistogram()
-	case chunkenc.ValFloatHistogram:
-		b.prevValue = 0
-		b.prevHistogram = nil
 		b.prevTime, b.prevFloatHistogram = b.it.AtFloatHistogram()
 	}
 
 	b.valueType = b.it.Next()
 	if b.valueType != chunkenc.ValNone {
 		b.lastTime = b.it.AtT()
+	}
+	if b.valueType == chunkenc.ValHistogram {
+		b.valueType = chunkenc.ValFloatHistogram
 	}
 	return b.valueType
 }
@@ -132,19 +131,9 @@ func (b *MemoizedSeriesIterator) At() (int64, float64) {
 	return b.it.At()
 }
 
-// AtHistogram returns the current histogram element of the iterator.
-func (b *MemoizedSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
-	return b.it.AtHistogram()
-}
-
 // AtFloatHistogram returns the current float-histogram element of the iterator.
 func (b *MemoizedSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
 	return b.it.AtFloatHistogram()
-}
-
-// AtT returns the current timestamp of the iterator.
-func (b *MemoizedSeriesIterator) AtT() int64 {
-	return b.it.AtT()
 }
 
 // Err returns the last encountered error.

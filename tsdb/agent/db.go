@@ -665,7 +665,7 @@ func (db *DB) truncate(mint int64) error {
 		}
 
 		seg, ok := db.deleted[id]
-		return ok && seg >= first
+		return ok && seg > last
 	}
 
 	db.metrics.checkpointCreationTotal.Inc()
@@ -687,7 +687,7 @@ func (db *DB) truncate(mint int64) error {
 	// The checkpoint is written and segments before it are truncated, so we
 	// no longer need to track deleted series that were being kept around.
 	for ref, segment := range db.deleted {
-		if segment < first {
+		if segment <= last {
 			delete(db.deleted, ref)
 		}
 	}

@@ -1023,15 +1023,16 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 	}
 
 	type test struct {
-		endpoint    apiFunc
-		params      map[string]string
-		query       url.Values
-		response    interface{}
-		responseLen int
-		errType     errorType
-		sorter      func(interface{})
-		metadata    []targetMetadata
-		exemplars   []exemplar.QueryResult
+		endpoint              apiFunc
+		params                map[string]string
+		query                 url.Values
+		response              interface{}
+		responseLen           int
+		responseMetadataTotal int
+		errType               errorType
+		sorter                func(interface{})
+		metadata              []targetMetadata
+		exemplars             []exemplar.QueryResult
 	}
 
 	tests := []test{
@@ -1775,6 +1776,126 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				},
 			},
 			responseLen: 2,
+		},
+		// With a limit for the number of metadata per metric.
+		{
+			endpoint: api.metricMetadata,
+			query:    url.Values{"limit_per_metric": []string{"1"}},
+			metadata: []targetMetadata{
+				{
+					identifier: "test",
+					metadata: []scrape.MetricMetadata{
+						{
+							Metric: "go_threads",
+							Type:   textparse.MetricTypeGauge,
+							Help:   "Number of OS threads created",
+							Unit:   "",
+						},
+						{
+							Metric: "go_threads",
+							Type:   textparse.MetricTypeGauge,
+							Help:   "Repeated metadata",
+							Unit:   "",
+						},
+						{
+							Metric: "go_gc_duration_seconds",
+							Type:   textparse.MetricTypeSummary,
+							Help:   "A summary of the GC invocation durations.",
+							Unit:   "",
+						},
+					},
+				},
+			},
+			response: map[string][]metadata{
+				"go_threads": {
+					{textparse.MetricTypeGauge, "Number of OS threads created", ""},
+				},
+				"go_gc_duration_seconds": {
+					{textparse.MetricTypeSummary, "A summary of the GC invocation durations.", ""},
+				},
+			},
+		},
+		// With a limit for the number of metadata per metric and per metric.
+		{
+			endpoint: api.metricMetadata,
+			query:    url.Values{"limit_per_metric": []string{"1"}, "limit": []string{"1"}},
+			metadata: []targetMetadata{
+				{
+					identifier: "test",
+					metadata: []scrape.MetricMetadata{
+						{
+							Metric: "go_threads",
+							Type:   textparse.MetricTypeGauge,
+							Help:   "Number of OS threads created",
+							Unit:   "",
+						},
+						{
+							Metric: "go_threads",
+							Type:   textparse.MetricTypeGauge,
+							Help:   "Repeated metadata",
+							Unit:   "",
+						},
+						{
+							Metric: "go_gc_duration_seconds",
+							Type:   textparse.MetricTypeSummary,
+							Help:   "A summary of the GC invocation durations.",
+							Unit:   "",
+						},
+					},
+				},
+			},
+			responseLen:           1,
+			responseMetadataTotal: 1,
+		},
+
+		// With a limit for the number of metadata per metric and per metric, while having multiple targets.
+		{
+			endpoint: api.metricMetadata,
+			query:    url.Values{"limit_per_metric": []string{"1"}, "limit": []string{"1"}},
+			metadata: []targetMetadata{
+				{
+					identifier: "test",
+					metadata: []scrape.MetricMetadata{
+						{
+							Metric: "go_threads",
+							Type:   textparse.MetricTypeGauge,
+							Help:   "Number of OS threads created",
+							Unit:   "",
+						},
+						{
+							Metric: "go_threads",
+							Type:   textparse.MetricTypeGauge,
+							Help:   "Repeated metadata",
+							Unit:   "",
+						},
+						{
+							Metric: "go_gc_duration_seconds",
+							Type:   textparse.MetricTypeSummary,
+							Help:   "A summary of the GC invocation durations.",
+							Unit:   "",
+						},
+					},
+				},
+				{
+					identifier: "secondTarget",
+					metadata: []scrape.MetricMetadata{
+						{
+							Metric: "go_threads",
+							Type:   textparse.MetricTypeGauge,
+							Help:   "Number of OS threads created, but from a different target",
+							Unit:   "",
+						},
+						{
+							Metric: "go_gc_duration_seconds",
+							Type:   textparse.MetricTypeSummary,
+							Help:   "A summary of the GC invocation durations, but from a different target.",
+							Unit:   "",
+						},
+					},
+				},
+			},
+			responseLen:           1,
+			responseMetadataTotal: 1,
 		},
 		// When requesting a specific metric that is present.
 		{
@@ -2565,6 +2686,9 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 
 					if test.responseLen != 0 {
 						assertAPIResponseLength(t, res.data, test.responseLen)
+						if test.responseMetadataTotal != 0 {
+							assertAPIResponseMetadataLen(t, res.data, test.responseMetadataTotal)
+						}
 					} else {
 						assertAPIResponse(t, res.data, test.response)
 					}
@@ -2615,6 +2739,24 @@ func assertAPIResponseLength(t *testing.T, got interface{}, expLen int) {
 	}
 }
 
+func assertAPIResponseMetadataLen(t *testing.T, got interface{}, expLen int) {
+	t.Helper()
+
+	var gotLen int
+	response := got.(map[string][]metadata)
+	for _, m := range response {
+		gotLen += len(m)
+	}
+
+	if gotLen != expLen {
+		t.Fatalf(
+			"Amount of metadata in the response does not match, expected:\n%d\ngot:\n%d",
+			expLen,
+			gotLen,
+		)
+	}
+}
+
 type fakeDB struct {
 	err error
 }
@@ -2622,7 +2764,7 @@ type fakeDB struct {
 func (f *fakeDB) CleanTombstones() error                        { return f.err }
 func (f *fakeDB) Delete(int64, int64, ...*labels.Matcher) error { return f.err }
 func (f *fakeDB) Snapshot(string, bool) error                   { return f.err }
-func (f *fakeDB) Stats(statsByLabelName string) (_ *tsdb.Stats, retErr error) {
+func (f *fakeDB) Stats(statsByLabelName string, limit int) (_ *tsdb.Stats, retErr error) {
 	dbDir, err := os.MkdirTemp("", "tsdb-api-ready")
 	if err != nil {
 		return nil, err
@@ -2636,7 +2778,7 @@ func (f *fakeDB) Stats(statsByLabelName string) (_ *tsdb.Stats, retErr error) {
 	opts := tsdb.DefaultHeadOptions()
 	opts.ChunkRange = 1000
 	h, _ := tsdb.NewHead(nil, nil, nil, nil, opts, nil)
-	return h.Stats(statsByLabelName), nil
+	return h.Stats(statsByLabelName, limit), nil
 }
 
 func (f *fakeDB) WALReplayStatus() (tsdb.WALReplayStatus, error) {
@@ -3283,8 +3425,19 @@ func TestTSDBStatus(t *testing.T) {
 		{
 			db:       tsdb,
 			endpoint: tsdbStatusAPI,
-
-			errType: errorNone,
+			errType:  errorNone,
+		},
+		{
+			db:       tsdb,
+			endpoint: tsdbStatusAPI,
+			values:   map[string][]string{"limit": {"20"}},
+			errType:  errorNone,
+		},
+		{
+			db:       tsdb,
+			endpoint: tsdbStatusAPI,
+			values:   map[string][]string{"limit": {"0"}},
+			errType:  errorBadData,
 		},
 	} {
 		tc := tc

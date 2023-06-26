@@ -339,7 +339,11 @@ func (e *EndpointSlice) buildEndpointSlice(eps endpointSliceAdaptor) *targetgrou
 		}
 
 		if e.withNodeMetadata {
-			target = addNodeLabels(target, e.nodeInf, e.logger, ep.nodename())
+			if ep.targetRef() != nil && ep.targetRef().Kind == "Node" {
+				target = addNodeLabels(target, e.nodeInf, e.logger, &ep.targetRef().Name)
+			} else {
+				target = addNodeLabels(target, e.nodeInf, e.logger, ep.nodename())
+			}
 		}
 
 		pod := e.resolvePodRef(ep.targetRef())

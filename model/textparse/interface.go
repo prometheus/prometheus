@@ -71,7 +71,7 @@ type Parser interface {
 //
 // This function always returns a valid parser, but might additionally
 // return an error if the content type cannot be parsed.
-func New(b []byte, contentType string) (Parser, error) {
+func New(b []byte, contentType string, parseClassicHistograms bool) (Parser, error) {
 	if contentType == "" {
 		return NewPromParser(b), nil
 	}
@@ -84,7 +84,7 @@ func New(b []byte, contentType string) (Parser, error) {
 	case "application/openmetrics-text":
 		return NewOpenMetricsParser(b), nil
 	case "application/vnd.google.protobuf":
-		return NewProtobufParser(b), nil
+		return NewProtobufParser(b, parseClassicHistograms), nil
 	default:
 		return NewPromParser(b), nil
 	}
@@ -100,7 +100,7 @@ const (
 	EntrySeries    Entry = 2 // A series with a simple float64 as value.
 	EntryComment   Entry = 3
 	EntryUnit      Entry = 4
-	EntryHistogram Entry = 5 // A series with a sparse histogram as a value.
+	EntryHistogram Entry = 5 // A series with a native histogram as a value.
 )
 
 // MetricType represents metric type values.

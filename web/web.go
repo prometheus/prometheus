@@ -29,6 +29,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -710,6 +711,7 @@ func (h *Handler) runtimeInfo() (api_v1.RuntimeInfo, error) {
 		CWD:            h.cwd,
 		GoroutineCount: runtime.NumGoroutine(),
 		GOMAXPROCS:     runtime.GOMAXPROCS(0),
+		GOMEMLIMIT:     debug.SetMemoryLimit(-1),
 		GOGC:           os.Getenv("GOGC"),
 		GODEBUG:        os.Getenv("GODEBUG"),
 	}
@@ -742,7 +744,7 @@ func (h *Handler) runtimeInfo() (api_v1.RuntimeInfo, error) {
 }
 
 func toFloat64(f *io_prometheus_client.MetricFamily) float64 {
-	m := *f.Metric[0]
+	m := f.Metric[0]
 	if m.Gauge != nil {
 		return m.Gauge.GetValue()
 	}

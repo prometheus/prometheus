@@ -52,8 +52,10 @@ type ProtobufParser struct {
 	// fieldPos is the position within a Summary or (legacy) Histogram. -2
 	// is the count. -1 is the sum. Otherwise it is the index within
 	// quantiles/buckets.
-	fieldPos   int
-	fieldsDone bool // true if no more fields of a Summary or (legacy) Histogram to be processed.
+	fieldPos    int
+	fieldsDone  bool // true if no more fields of a Summary or (legacy) Histogram to be processed.
+	redoClassic bool // true after parsing a native histogram if we need to parse it again as a classit histogram.
+
 	// state is marked by the entry we are processing. EntryInvalid implies
 	// that we have to decode the next MetricFamily.
 	state Entry
@@ -62,17 +64,22 @@ type ProtobufParser struct {
 
 	mf *dto.MetricFamily
 
+	// Wether to also parse a classic histogram that is also present as a
+	// native histogram.
+	parseClassicHistograms bool
+
 	// The following are just shenanigans to satisfy the Parser interface.
 	metricBytes *bytes.Buffer // A somewhat fluid representation of the current metric.
 }
 
 // NewProtobufParser returns a parser for the payload in the byte slice.
-func NewProtobufParser(b []byte) Parser {
+func NewProtobufParser(b []byte, parseClassicHistograms bool) Parser {
 	return &ProtobufParser{
-		in:          b,
-		state:       EntryInvalid,
-		mf:          &dto.MetricFamily{},
-		metricBytes: &bytes.Buffer{},
+		in:                     b,
+		state:                  EntryInvalid,
+		mf:                     &dto.MetricFamily{},
+		metricBytes:            &bytes.Buffer{},
+		parseClassicHistograms: parseClassicHistograms,
 	}
 }
 
@@ -106,19 +113,28 @@ func (p *ProtobufParser) Series() ([]byte, *int64, float64) {
 			v = s.GetQuantile()[p.fieldPos].GetValue()
 		}
 	case dto.MetricType_HISTOGRAM, dto.MetricType_GAUGE_HISTOGRAM:
-		// This should only happen for a legacy histogram.
+		// This should only happen for a classic histogram.
 		h := m.GetHistogram()
 		switch p.fieldPos {
 		case -2:
-			v = float64(h.GetSampleCount())
+			v = h.GetSampleCountFloat()
+			if v == 0 {
+				v = float64(h.GetSampleCount())
+			}
 		case -1:
 			v = h.GetSampleSum()
 		default:
 			bb := h.GetBucket()
 			if p.fieldPos >= len(bb) {
-				v = float64(h.GetSampleCount())
+				v = h.GetSampleCountFloat()
+				if v == 0 {
+					v = float64(h.GetSampleCount())
+				}
 			} else {
-				v = float64(bb[p.fieldPos].GetCumulativeCount())
+				v = bb[p.fieldPos].GetCumulativeCountFloat()
+				if v == 0 {
+					v = float64(bb[p.fieldPos].GetCumulativeCount())
+				}
 			}
 		}
 	default:
@@ -149,6 +165,9 @@ func (p *ProtobufParser) Histogram() ([]byte, *int64, *histogram.Histogram, *his
 		ts = m.GetTimestampMs()
 		h  = m.GetHistogram()
 	)
+	if p.parseClassicHistograms && len(h.GetBucket()) > 0 {
+		p.redoClassic = true
+	}
 	if h.GetSampleCountFloat() > 0 || h.GetZeroCountFloat() > 0 {
 		// It is a float histogram.
 		fh := histogram.FloatHistogram{
@@ -376,6 +395,12 @@ func (p *ProtobufParser) Next() (Entry, error) {
 			return EntryInvalid, err
 		}
 	case EntryHistogram, EntrySeries:
+		if p.redoClassic {
+			p.redoClassic = false
+			p.state = EntrySeries
+			p.fieldPos = -3
+			p.fieldsDone = false
+		}
 		t := p.mf.GetType()
 		if p.state == EntrySeries && !p.fieldsDone &&
 			(t == dto.MetricType_SUMMARY ||
@@ -432,7 +457,7 @@ func (p *ProtobufParser) updateMetricBytes() error {
 // state.
 func (p *ProtobufParser) getMagicName() string {
 	t := p.mf.GetType()
-	if p.state == EntryHistogram || (t != dto.MetricType_HISTOGRAM && t != dto.MetricType_SUMMARY) {
+	if p.state == EntryHistogram || (t != dto.MetricType_HISTOGRAM && t != dto.MetricType_GAUGE_HISTOGRAM && t != dto.MetricType_SUMMARY) {
 		return p.mf.GetName()
 	}
 	if p.fieldPos == -2 {

@@ -216,9 +216,9 @@ func (ce *CircularExemplarStorage) ValidateExemplar(l labels.Labels, e exemplar.
 	return ce.validateExemplar(seriesLabels, e, false)
 }
 
-// Not thread safe. The append parameters tells us whether this is an external validation, or internal
+// Not thread safe. The appended parameters tells us whether this is an external validation, or internal
 // as a result of an AddExemplar call, in which case we should update any relevant metrics.
-func (ce *CircularExemplarStorage) validateExemplar(key []byte, e exemplar.Exemplar, append bool) error {
+func (ce *CircularExemplarStorage) validateExemplar(key []byte, e exemplar.Exemplar, appended bool) error {
 	if len(ce.exemplars) == 0 {
 		return storage.ErrExemplarsDisabled
 	}
@@ -250,7 +250,7 @@ func (ce *CircularExemplarStorage) validateExemplar(key []byte, e exemplar.Exemp
 	}
 
 	if e.Ts <= ce.exemplars[idx.newest].exemplar.Ts {
-		if append {
+		if appended {
 			ce.metrics.outOfOrderExemplars.Inc()
 		}
 		return storage.ErrOutOfOrderExemplar

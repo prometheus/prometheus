@@ -359,7 +359,7 @@ increase(http_requests_total{job="api-server"}[5m])
 ```
 
 `increase` acts on native histograms by calculating a new histogram where each
-compononent (sum and count of observations, buckets) is the increase between
+component (sum and count of observations, buckets) is the increase between
 the respective component in the first and last native histogram in
 `v`. However, each element in `v` that contains a mix of float and native
 histogram samples within the range, will be missing from the result vector.
@@ -589,8 +589,9 @@ over time and return an instant vector with per-series aggregation results:
 Note that all values in the specified interval have the same weight in the
 aggregation even if the values are not equally spaced throughout the interval.
 
-`count_over_time`, `last_over_time`, and `present_over_time` handle native
-histograms as expected. All other functions ignore histogram samples.
+`avg_over_time`, `sum_over_time`, `count_over_time`, `last_over_time`, and
+`present_over_time` handle native histograms as expected. All other functions
+ignore histogram samples.
 
 ## Trigonometric Functions
 
