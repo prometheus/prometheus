@@ -273,13 +273,27 @@ func (ls Labels) Copy() Labels {
 // Get returns the value for the label with the given name.
 // Returns an empty string if the label doesn't exist.
 func (ls Labels) Get(name string) string {
+	if name == "" { // Avoid crash in loop if someone asks for "".
+		return "" // Prometheus does not store blank label names.
+	}
 	for i := 0; i < len(ls.data); {
-		var lName, lValue string
-		lName, i = decodeString(ls.data, i)
-		lValue, i = decodeString(ls.data, i)
-		if lName == name {
-			return lValue
+		var size int
+		size, i = decodeSize(ls.data, i)
+		if ls.data[i] == name[0] {
+			lName := ls.data[i : i+size]
+			i += size
+			if lName == name {
+				lValue, _ := decodeString(ls.data, i)
+				return lValue
+			}
+		} else {
+			if ls.data[i] > name[0] { // Stop looking if we've gone past.
+				break
+			}
+			i += size
 		}
+		size, i = decodeSize(ls.data, i)
+		i += size
 	}
 	return ""
 }

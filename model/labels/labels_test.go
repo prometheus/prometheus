@@ -443,7 +443,8 @@ func TestLabels_Has(t *testing.T) {
 
 func TestLabels_Get(t *testing.T) {
 	require.Equal(t, "", FromStrings("aaa", "111", "bbb", "222").Get("foo"))
-	require.Equal(t, "111", FromStrings("aaa", "111", "bbb", "222").Get("aaa"))
+	require.Equal(t, "111", FromStrings("aaaa", "111", "bbb", "222").Get("aaaa"))
+	require.Equal(t, "222", FromStrings("aaaa", "111", "bbb", "222").Get("bbb"))
 }
 
 // BenchmarkLabels_Get was written to check whether a binary search can improve the performance vs the linear search implementation
@@ -463,7 +464,7 @@ func BenchmarkLabels_Get(b *testing.B) {
 	maxLabels := 30
 	allLabels := make([]Label, maxLabels)
 	for i := 0; i < maxLabels; i++ {
-		allLabels[i] = Label{Name: strings.Repeat(string('a'+byte(i)), 5)}
+		allLabels[i] = Label{Name: strings.Repeat(string('a'+byte(i)), 5+(i%5))}
 	}
 	for _, size := range []int{5, 10, maxLabels} {
 		b.Run(fmt.Sprintf("with %d labels", size), func(b *testing.B) {
@@ -474,6 +475,7 @@ func BenchmarkLabels_Get(b *testing.B) {
 				{"get first label", allLabels[0].Name},
 				{"get middle label", allLabels[size/2].Name},
 				{"get last label", allLabels[size-1].Name},
+				{"get not-found label", "benchmark"},
 			} {
 				b.Run(scenario.desc, func(b *testing.B) {
 					b.ResetTimer()
