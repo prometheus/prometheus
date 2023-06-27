@@ -158,7 +158,7 @@ func (m *metrics) instrumentHandlerWithPrefix(prefix string) func(handlerName st
 }
 
 func (m *metrics) instrumentHandler(handlerName string, handler http.HandlerFunc) http.HandlerFunc {
-	m.requestCounter.WithLabelValues(handlerName, "200").Add(0)
+	m.requestCounter.WithLabelValues(handlerName, "200")
 	return promhttp.InstrumentHandlerCounter(
 		m.requestCounter.MustCurryWith(prometheus.Labels{"handler": handlerName}),
 		promhttp.InstrumentHandlerDuration(
