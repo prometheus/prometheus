@@ -44,8 +44,18 @@ var MetricMetadataTypeValue = map[string]int32{
 	"STATESET":       7,
 }
 
-// CreateWriteRequest convert metric family to a writerequest.
-func CreateWriteRequest(mf map[string]*dto.MetricFamily, extraLabels map[string]string) (*prompb.WriteRequest, error) {
+// MetricTextToWriteRequest consumes an io.Reader and return the data in write request format.
+func MetricTextToWriteRequest(input io.Reader, labels map[string]string) (*prompb.WriteRequest, error) {
+	var parser expfmt.TextParser
+	mf, err := parser.TextToMetricFamilies(input)
+	if err != nil {
+		return nil, err
+	}
+	return MetricFamiliesToWriteRequest(mf, labels)
+}
+
+// MetricFamiliesToWriteRequest convert metric family to a writerequest.
+func MetricFamiliesToWriteRequest(mf map[string]*dto.MetricFamily, extraLabels map[string]string) (*prompb.WriteRequest, error) {
 	wr := &prompb.WriteRequest{}
 
 	// build metric list
@@ -190,23 +200,4 @@ func makeLabelsMap(m *dto.Metric, metricName string, extraLabels map[string]stri
 	}
 
 	return labels
-}
-
-// ParseMetricsTextReader consumes an io.Reader and returns the MetricFamily.
-func ParseMetricsTextReader(input io.Reader) (map[string]*dto.MetricFamily, error) {
-	var parser expfmt.TextParser
-	mf, err := parser.TextToMetricFamilies(input)
-	if err != nil {
-		return nil, err
-	}
-	return mf, nil
-}
-
-// ParseMetricsTextAndFormat return the data in the expected prometheus metrics write request format.
-func ParseMetricsTextAndFormat(input io.Reader, labels map[string]string) (*prompb.WriteRequest, error) {
-	mf, err := ParseMetricsTextReader(input)
-	if err != nil {
-		return nil, err
-	}
-	return CreateWriteRequest(mf, labels)
 }

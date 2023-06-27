@@ -201,13 +201,13 @@ func TestParseAndPushMetricsTextAndFormat(t *testing.T) {
 	`))
 	labels := map[string]string{"job": "promtool"}
 
-	expected, err := ParseMetricsTextAndFormat(input, labels)
+	expected, err := MetricTextToWriteRequest(input, labels)
 	require.NoError(t, err)
 
 	require.Equal(t, writeRequestFixture, expected)
 }
 
-func TestParseMetricsTextAndFormatErrorParsingFloatValue(t *testing.T) {
+func TestMetricTextToWriteRequestErrorParsingFloatValue(t *testing.T) {
 	input := bytes.NewReader([]byte(`
 	# HELP http_requests_total The total number of HTTP requests.
 	# TYPE http_requests_total counter
@@ -216,11 +216,11 @@ func TestParseMetricsTextAndFormatErrorParsingFloatValue(t *testing.T) {
 	`))
 	labels := map[string]string{"job": "promtool"}
 
-	_, err := ParseMetricsTextAndFormat(input, labels)
+	_, err := MetricTextToWriteRequest(input, labels)
 	require.Equal(t, err.Error(), "text format parsing error in line 4: expected float as value, got \"1027Error\"")
 }
 
-func TestParseMetricsTextAndFormatErrorParsingMetricType(t *testing.T) {
+func TestMetricTextToWriteRequestErrorParsingMetricType(t *testing.T) {
 	input := bytes.NewReader([]byte(`
 	# HELP node_info node info summary.
 	# TYPE node_info info
@@ -228,6 +228,6 @@ func TestParseMetricsTextAndFormatErrorParsingMetricType(t *testing.T) {
 	`))
 	labels := map[string]string{"job": "promtool"}
 
-	_, err := ParseMetricsTextAndFormat(input, labels)
+	_, err := MetricTextToWriteRequest(input, labels)
 	require.Equal(t, err.Error(), "text format parsing error in line 3: unknown metric type \"info\"")
 }
