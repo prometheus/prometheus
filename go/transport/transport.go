@@ -348,8 +348,11 @@ func (nt *Transport) Read(ctx context.Context) (*RawMessage, error) {
 		return nil, net.ErrClosed
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, nt.cfg.ReadTimeout)
-	defer cancel()
+	if nt.cfg.ReadTimeout != 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, nt.cfg.ReadTimeout)
+		defer cancel()
+	}
 
 	deadline, _ := ctx.Deadline()
 	if err := nt.conn.SetReadDeadline(deadline); err != nil {
@@ -375,8 +378,11 @@ func (nt *Transport) Write(ctx context.Context, rm *RawMessage) error {
 		return net.ErrClosed
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, nt.cfg.WriteTimeout)
-	defer cancel()
+	if nt.cfg.WriteTimeout != 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, nt.cfg.WriteTimeout)
+		defer cancel()
+	}
 
 	deadline, _ := ctx.Deadline()
 	if err := nt.conn.SetWriteDeadline(deadline); err != nil {

@@ -21,8 +21,14 @@ struct TimeseriesProtobufHashdexRecord {
 template <class ProtobufWriter, class Sample>
 inline __attribute__((always_inline)) void write_sample(ProtobufWriter& pb, const Sample& sample) {
   protozero::pbf_writer pb_sample(pb, 2);
-  pb_sample.add_double(1, sample.value());
-  pb_sample.add_int64(2, sample.timestamp());
+
+  if (__builtin_expect(sample.value() != 0.0, true)) {
+    pb_sample.add_double(1, sample.value());
+  }
+
+  if (__builtin_expect(sample.timestamp() != 0, true)) {
+    pb_sample.add_int64(2, sample.timestamp());
+  }
 }
 
 template <class ProtobufWriter>
@@ -69,8 +75,12 @@ inline __attribute__((always_inline)) void read_sample(ProtobufReader& pb_sample
     }
   }
 
-  if (__builtin_expect(parsed != 0b11, false)) {
-    throw std::runtime_error("AOD3: Meaningful message supposed to be here!");
+  if (__builtin_expect((parsed & 0b10) == 0, false)) {
+    sample.timestamp() = 0;
+  }
+
+  if (__builtin_expect((parsed & 0b01) == 0, false)) {
+    sample.value() = 0.0;
   }
 }
 
