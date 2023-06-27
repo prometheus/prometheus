@@ -188,7 +188,7 @@ func TestMemSeries_chunk(t *testing.T) {
 
 	appendSamples := func(t *testing.T, s *memSeries, start, end int64, cdm *chunks.ChunkDiskMapper) {
 		for i := start; i < end; i += chunkStep {
-			ok, _ := s.append(int64(i), float64(i), 0, chunkOpts{
+			ok, _ := s.append(i, float64(i), 0, chunkOpts{
 				chunkDiskMapper: cdm,
 				chunkRange:      chunkRange,
 				samplesPerChunk: DefaultSamplesPerChunk,
