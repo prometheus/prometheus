@@ -680,6 +680,30 @@ func funcStdvarOverTime(vals []parser.Value, args parser.Expressions, enh *EvalN
 	})
 }
 
+// === zscore_over_time(Matrix parser.ValueTypeMatrix) Vector ===
+func funcZscoreOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	if len(vals[0].(Matrix)[0].Floats) == 0 {
+		// TODO(beorn7): The passed values only contain
+		// histograms. stdvar_over_time ignores histograms for now. If
+		// there are only histograms, we have to return without adding
+		// anything to enh.Out.
+		return enh.Out
+	}
+	return aggrOverTime(vals, enh, func(s Series) float64 {
+		var count float64
+		var mean, cMean float64
+		var aux, cAux float64
+		for _, f := range s.Floats {
+			count++
+			delta := f.F - (mean + cMean)
+			mean, cMean = kahanSumInc(delta/count, mean, cMean)
+			aux, cAux = kahanSumInc(delta*(f.F-(mean+cMean)), aux, cAux)
+		}
+		stddev := math.Sqrt((aux + cAux) / count)
+		return (s.Floats[len(s.Floats)-1].F - mean) / stddev
+	})
+}
+
 // === absent(Vector parser.ValueTypeVector) Vector ===
 func funcAbsent(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	if len(vals[0].(Vector)) > 0 {
@@ -1409,6 +1433,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"sqrt":               funcSqrt,
 	"stddev_over_time":   funcStddevOverTime,
 	"stdvar_over_time":   funcStdvarOverTime,
+	"zscore_over_time":   funcZscoreOverTime,
 	"sum_over_time":      funcSumOverTime,
 	"tan":                funcTan,
 	"tanh":               funcTanh,

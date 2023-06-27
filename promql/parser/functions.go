@@ -348,6 +348,11 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeMatrix},
 		ReturnType: ValueTypeVector,
 	},
+	"zscore_over_time": {
+		Name:       "zscore_over_time",
+		ArgTypes:   []ValueType{ValueTypeMatrix},
+		ReturnType: ValueTypeVector,
+	},
 	"sum_over_time": {
 		Name:       "sum_over_time",
 		ArgTypes:   []ValueType{ValueTypeMatrix},

@@ -629,6 +629,14 @@ eval instant at 1m stdvar_over_time(metric[1m])
 eval instant at 1m stddev_over_time(metric[1m])
   {} 0
 
+# Tests for zscore_over_time.
+clear
+load 10s
+  metric 0 8 8 2 3
+
+eval instant at 1m zscore_over_time(metric[1m])
+  {} -0.369275
+
 # Tests for quantile_over_time
 clear
 
