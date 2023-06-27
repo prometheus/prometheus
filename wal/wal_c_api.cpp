@@ -59,17 +59,18 @@ static_assert(TOTAL_FLAVOURS == arch_count, "Update the #includes for new ARM64 
 // internal namespace for determining arch instruction set and initializing vtables
 namespace {
 arch_flavour determine_arch_flavour() {
-  auto flags = arch_detector::detect_supported_architectures();
+  auto arch_feature_flags = arch_detector::detect_supported_architectures();
 
 #if ARCH_DETECTOR_BUILD_FOR_X86_64
-  if (flags & (arch_detector::instruction_set::BMI1 | arch_detector::instruction_set::AVX2)) {
-    return haswell;
-  }
-  if (flags & (arch_detector::instruction_set::SSE42)) {
-    return nehalem;
-  }
+  constexpr auto required_feature_flags_for_haswell = (arch_detector::instruction_set::BMI1 | arch_detector::instruction_set::AVX2);
+
+  bool cpu_is_nehalem_or_better = arch_feature_flags & (arch_detector::instruction_set::SSE42);
+  bool cpu_is_haswell_or_better = cpu_is_nehalem_or_better && ((arch_feature_flags & required_feature_flags_for_haswell) == required_feature_flags_for_haswell);
+
+  return cpu_is_haswell_or_better ? haswell : (cpu_is_nehalem_or_better ? nehalem : generic);
+
 #elif ARCH_DETECTOR_BUILD_FOR_ARM64  // ^----- x86_64 / aarch64 ------v
-  if (flags & (arch_detector::instruction_set::CRC32)) {
+  if (arch_feature_flags & (arch_detector::instruction_set::CRC32)) {
     return crc32;
   }
 #endif
@@ -113,19 +114,21 @@ void setup_arch_functions(size_t index) {
       break;
     case nehalem:
       SETUP_VTBL(decoder_vtbl, x86_nehalem_okdb_wal_decoder_api_vtbl);
-      SETUP_VTBL(encoder_vtbl, x86_generic_okdb_wal_encoder_api_vtbl);
+      SETUP_VTBL(encoder_vtbl, x86_nehalem_okdb_wal_encoder_api_vtbl);
       break;
     case haswell:
       SETUP_VTBL(decoder_vtbl, x86_haswell_okdb_wal_decoder_api_vtbl);
-      SETUP_VTBL(encoder_vtbl, x86_generic_okdb_wal_encoder_api_vtbl);
+      SETUP_VTBL(encoder_vtbl, x86_haswell_okdb_wal_encoder_api_vtbl);
       break;
 #elif ARCH_DETECTOR_BUILD_FOR_ARM64
     default:
     case generic:
       SETUP_VTBL(decoder_vtbl, aarch64_generic_okdb_wal_decoder_api_vtbl);
+      SETUP_VTBL(encoder_vtbl, aarch64_generic_okdb_wal_encoder_api_vtbl);
       break;
     case crc32:
       SETUP_VTBL(decoder_vtbl, aarch64_crc_okdb_wal_decoder_api_vtbl);
+      SETUP_VTBL(encoder_vtbl, aarch64_crc_okdb_wal_encoder_api_vtbl);
       break;
 #endif
   }

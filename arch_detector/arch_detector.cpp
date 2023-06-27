@@ -92,7 +92,8 @@ constexpr uint32_t CPUID_SSE42_BIT = 1 << 20;  ///< \private bit 20 of ECX for E
 
 void cpuid(uint32_t* eax, uint32_t* ebx, uint32_t* ecx, uint32_t* edx) {
   uint32_t level = *eax;
-  __get_cpuid(level, eax, ebx, ecx, edx);
+  uint32_t sublevel = *ecx;
+  __get_cpuid_count(level, sublevel, eax, ebx, ecx, edx);
 }
 
 uint32_t detect_supported_architectures() {
