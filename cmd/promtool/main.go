@@ -81,6 +81,7 @@ func main() {
 	var (
 		httpRoundTripper   = api.DefaultRoundTripper
 		serverURL          *url.URL
+		remoteWriteURL     *url.URL
 		httpConfigFilePath string
 	)
 
@@ -177,6 +178,18 @@ func main() {
 	queryLabelsBegin := queryLabelsCmd.Flag("start", "Start time (RFC3339 or Unix timestamp).").String()
 	queryLabelsEnd := queryLabelsCmd.Flag("end", "End time (RFC3339 or Unix timestamp).").String()
 	queryLabelsMatch := queryLabelsCmd.Flag("match", "Series selector. Can be specified multiple times.").Strings()
+
+	pushCmd := app.Command("push", "Push to a Prometheus server.")
+	pushCmd.Flag("http.config.file", "HTTP client configuration file for promtool to connect to Prometheus.").PlaceHolder("<filename>").ExistingFileVar(&httpConfigFilePath)
+	pushMetricsCmd := pushCmd.Command("metrics", "Push metrics to a prometheus remote write (for testing purpose only).")
+	pushMetricsCmd.Arg("remote-write-url", "Prometheus remote write url to push metrics.").Required().URLVar(&remoteWriteURL)
+	metricFiles := pushMetricsCmd.Arg(
+		"metric-files",
+		"The metric files to push, default is read from standard input.",
+	).ExistingFiles()
+	pushMetricsLabels := pushMetricsCmd.Flag("label", "Label to attach to metrics. Can be specified multiple times.").Default("job=promtool").StringMap()
+	pushMetricsTimeout := pushMetricsCmd.Flag("timeout", "The time to wait for pushing metrics.").Default("30s").Duration()
+	pushMetricsHeaders := pushMetricsCmd.Flag("header", "Prometheus remote write header.").StringMap()
 
 	testCmd := app.Command("test", "Unit testing.")
 	testRulesCmd := testCmd.Command("rules", "Unit tests for rules.")
@@ -300,6 +313,9 @@ func main() {
 
 	case checkMetricsCmd.FullCommand():
 		os.Exit(CheckMetrics(*checkMetricsExtended))
+
+	case pushMetricsCmd.FullCommand():
+		os.Exit(PushMetrics(remoteWriteURL, httpRoundTripper, *pushMetricsHeaders, *pushMetricsTimeout, *pushMetricsLabels, *metricFiles...))
 
 	case queryInstantCmd.FullCommand():
 		os.Exit(QueryInstant(serverURL, httpRoundTripper, *queryInstantExpr, *queryInstantTime, p))
