@@ -387,7 +387,7 @@ var Functions = map[string]*Function{
 }
 
 // getFunction returns a predefined Function object for the given name.
-func getFunction(name string) (*Function, bool) {
-	function, ok := Functions[name]
+func getFunction(name string, functions map[string]*Function) (*Function, bool) {
+	function, ok := functions[name]
 	return function, ok
 }

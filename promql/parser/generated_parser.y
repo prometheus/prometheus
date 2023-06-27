@@ -339,7 +339,7 @@ grouping_label  : maybe_label
 
 function_call   : IDENTIFIER function_call_body
                         {
-                        fn, exist := getFunction($1.Val)
+                        fn, exist := getFunction($1.Val, yylex.(*parser).functions)
                         if !exist{
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"unknown function with name %q", $1.Val)
                         }
