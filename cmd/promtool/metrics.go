@@ -102,7 +102,7 @@ func PushMetrics(url *url.URL, roundTripper http.RoundTripper, headers map[strin
 }
 
 func parseAndPushMetrics(client *remote.Client, data []byte, labels map[string]string) bool {
-	metricsData, err := fmtutil.ParseMetricsTextAndFormat(bytes.NewReader(data), labels)
+	metricsData, err := fmtutil.MetricTextToWriteRequest(bytes.NewReader(data), labels)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "  FAILED:", err)
 		return false
