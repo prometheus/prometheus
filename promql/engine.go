@@ -1796,6 +1796,7 @@ func (ev *evaluator) evalTimestampFunctionOverVectorSelector(vs *parser.VectorSe
 	if err != nil {
 		ev.error(errWithWarnings{fmt.Errorf("expanding series: %w", err), ws})
 	}
+	it := storage.NewMemoizedEmptyIterator(durationMilliseconds(ev.lookbackDelta))
 
 	return ev.rangeEval(nil, func(v []parser.Value, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, storage.Warnings) {
 		if vs.Timestamp != nil {
@@ -1804,7 +1805,6 @@ func (ev *evaluator) evalTimestampFunctionOverVectorSelector(vs *parser.VectorSe
 			vs.Offset = time.Duration(enh.Ts-*vs.Timestamp) * time.Millisecond
 		}
 		vec := make(Vector, 0, len(vs.Series))
-		it := storage.NewMemoizedEmptyIterator(durationMilliseconds(ev.lookbackDelta))
 		var chkIter chunkenc.Iterator
 		for _, s := range vs.Series {
 			chkIter = s.Iterator(chkIter)
