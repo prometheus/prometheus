@@ -1840,14 +1840,14 @@ func (ev *evaluator) evalTimestampFunctionOverVectorSelector(vs *parser.VectorSe
 		vec := make(Vector, 0, len(vs.Series))
 		it := storage.NewMemoizedEmptyIterator(durationMilliseconds(ev.lookbackDelta))
 		var chkIter chunkenc.Iterator
-		for i, s := range vs.Series {
+		for _, s := range vs.Series {
 			chkIter = s.Iterator(chkIter)
 			it.Reset(chkIter)
 
 			t, f, h, ok := ev.vectorSelectorSingle(it, vs, enh.Ts)
 			if ok {
 				vec = append(vec, Sample{
-					Metric: vs.Series[i].Labels(),
+					Metric: s.Labels(),
 					T:      t,
 					F:      f,
 					H:      h,
@@ -1859,7 +1859,6 @@ func (ev *evaluator) evalTimestampFunctionOverVectorSelector(vs *parser.VectorSe
 					ev.error(ErrTooManySamples(env))
 				}
 			}
-
 		}
 		ev.samplesStats.UpdatePeak(ev.currentSamples)
 		return call([]parser.Value{vec}, e.Args, enh), ws
