@@ -79,8 +79,6 @@ type Marker interface {
 	// The Watcher will start reading the first segment whose value is greater
 	// than the return value.
 	LastMarkedSegment() int
-	//TODO: Can it not just return -1? Is the *int some Go thing? Also, if it's -1 maybe the Watcher will just read from 0?
-	//TODO: Also, we anyway have to check for negative integers because this is not unsigned?
 }
 
 type WatcherMetrics struct {
@@ -199,6 +197,7 @@ func NewWatcher(metrics *WatcherMetrics, readerMetrics *LiveReaderMetrics, logge
 		name:           name,
 		sendExemplars:  sendExemplars,
 		sendHistograms: sendHistograms,
+		savedSegment:   -1,
 
 		readNotify: make(chan struct{}),
 		quit:       make(chan struct{}),
@@ -206,7 +205,6 @@ func NewWatcher(metrics *WatcherMetrics, readerMetrics *LiveReaderMetrics, logge
 
 		MaxSegment: -1,
 	}
-	//TODO: Set savedSegment to -1?
 }
 
 func (w *Watcher) Notify() {
@@ -266,7 +264,6 @@ func (w *Watcher) loop() {
 	for !isClosed(w.quit) {
 		if w.marker != nil {
 			w.savedSegment = w.marker.LastMarkedSegment()
-			//TODO: Does this print the int or the address of the int?
 			level.Debug(w.logger).Log("msg", "last saved segment", "segment", w.savedSegment)
 		}
 
