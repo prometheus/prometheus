@@ -1832,43 +1832,37 @@ func (ev *evaluator) evalTimestampFunctionOverVectorSelector(vs *parser.VectorSe
 			// needs to be adjusted for every point.
 			vs.Offset = time.Duration(enh.Ts-*vs.Timestamp) * time.Millisecond
 		}
-		val, ws := ev.vectorSelector(vs, enh.Ts)
-		return call([]parser.Value{val}, e.Args, enh), ws
-	})
-}
-
-// vectorSelector evaluates a *parser.VectorSelector expression.
-func (ev *evaluator) vectorSelector(node *parser.VectorSelector, ts int64) (Vector, storage.Warnings) {
-	ws, err := checkAndExpandSeriesSet(ev.ctx, node)
-	if err != nil {
-		ev.error(errWithWarnings{fmt.Errorf("expanding series: %w", err), ws})
-	}
-	vec := make(Vector, 0, len(node.Series))
-	it := storage.NewMemoizedEmptyIterator(durationMilliseconds(ev.lookbackDelta))
-	var chkIter chunkenc.Iterator
-	for i, s := range node.Series {
-		chkIter = s.Iterator(chkIter)
-		it.Reset(chkIter)
-
-		t, f, h, ok := ev.vectorSelectorSingle(it, node, ts)
-		if ok {
-			vec = append(vec, Sample{
-				Metric: node.Series[i].Labels(),
-				T:      t,
-				F:      f,
-				H:      h,
-			})
-
-			ev.currentSamples++
-			ev.samplesStats.IncrementSamplesAtTimestamp(ts, 1)
-			if ev.currentSamples > ev.maxSamples {
-				ev.error(ErrTooManySamples(env))
-			}
+		ws, err := checkAndExpandSeriesSet(ev.ctx, vs)
+		if err != nil {
+			ev.error(errWithWarnings{fmt.Errorf("expanding series: %w", err), ws})
 		}
+		vec := make(Vector, 0, len(vs.Series))
+		it := storage.NewMemoizedEmptyIterator(durationMilliseconds(ev.lookbackDelta))
+		var chkIter chunkenc.Iterator
+		for i, s := range vs.Series {
+			chkIter = s.Iterator(chkIter)
+			it.Reset(chkIter)
 
-	}
-	ev.samplesStats.UpdatePeak(ev.currentSamples)
-	return vec, ws
+			t, f, h, ok := ev.vectorSelectorSingle(it, vs, enh.Ts)
+			if ok {
+				vec = append(vec, Sample{
+					Metric: vs.Series[i].Labels(),
+					T:      t,
+					F:      f,
+					H:      h,
+				})
+
+				ev.currentSamples++
+				ev.samplesStats.IncrementSamplesAtTimestamp(enh.Ts, 1)
+				if ev.currentSamples > ev.maxSamples {
+					ev.error(ErrTooManySamples(env))
+				}
+			}
+
+		}
+		ev.samplesStats.UpdatePeak(ev.currentSamples)
+		return call([]parser.Value{vec}, e.Args, enh), ws
+	})
 }
 
 // vectorSelectorSingle evaluates an instant vector for the iterator of one time series.
