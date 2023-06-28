@@ -1826,15 +1826,16 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 }
 
 func (ev *evaluator) evalTimestampFunctionOverVectorSelector(vs *parser.VectorSelector, call FunctionCall, e *parser.Call) (parser.Value, storage.Warnings) {
+	ws, err := checkAndExpandSeriesSet(ev.ctx, vs)
+	if err != nil {
+		ev.error(errWithWarnings{fmt.Errorf("expanding series: %w", err), ws})
+	}
+
 	return ev.rangeEval(nil, func(v []parser.Value, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, storage.Warnings) {
 		if vs.Timestamp != nil {
 			// This is a special case only for "timestamp" since the offset
 			// needs to be adjusted for every point.
 			vs.Offset = time.Duration(enh.Ts-*vs.Timestamp) * time.Millisecond
-		}
-		ws, err := checkAndExpandSeriesSet(ev.ctx, vs)
-		if err != nil {
-			ev.error(errWithWarnings{fmt.Errorf("expanding series: %w", err), ws})
 		}
 		vec := make(Vector, 0, len(vs.Series))
 		it := storage.NewMemoizedEmptyIterator(durationMilliseconds(ev.lookbackDelta))
