@@ -175,6 +175,18 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			continue
 		}
 
+		logger := rws.logger
+		if logger == nil {
+			logger = log.NewNopLogger()
+		}
+
+		markerFileHandler, err := NewMarkerFileHandler(logger, rws.dir, hash)
+		if err != nil {
+			return err
+		}
+
+		markerHandler := NewMarkerHandler(markerFileHandler)
+
 		// Redacted to remove any passwords in the URL (that are
 		// technically accepted but not recommended) since this is
 		// only used for metric labels.
@@ -183,7 +195,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			newQueueManagerMetrics(rws.reg, name, endpoint),
 			rws.watcherMetrics,
 			rws.liveReaderMetrics,
-			rws.logger,
+			logger,
 			rws.dir,
 			rws.samplesIn,
 			rwConf.QueueConfig,
@@ -197,6 +209,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rws.scraper,
 			rwConf.SendExemplars,
 			rwConf.SendNativeHistograms,
+			markerHandler,
 		)
 		// Keep track of which queues are new so we know which to start.
 		newHashes = append(newHashes, hash)

@@ -51,23 +51,36 @@ type WriteTo interface {
 	// Append and AppendExemplar should block until the samples are fully accepted,
 	// whether enqueued in memory or successfully written to it's final destination.
 	// Once returned, the WAL Watcher will not attempt to pass that data again.
-	Append([]record.RefSample) bool
-	AppendExemplars([]record.RefExemplar) bool
-	AppendHistograms([]record.RefHistogramSample) bool
-	AppendFloatHistograms([]record.RefFloatHistogramSample) bool
-	StoreSeries([]record.RefSeries, int)
+	Append(samples []record.RefSample, segment int) bool
+	AppendExemplars(exemplars []record.RefExemplar, segment int) bool
+	AppendHistograms(histogramSamples []record.RefHistogramSample, segment int) bool
+	AppendFloatHistograms(floatHistogramSamples []record.RefFloatHistogramSample, segment int) bool
+	StoreSeries(series []record.RefSeries, segment int)
 
 	// Next two methods are intended for garbage-collection: first we call
 	// UpdateSeriesSegment on all current series
-	UpdateSeriesSegment([]record.RefSeries, int)
+	UpdateSeriesSegment(series []record.RefSeries, segment int)
 	// Then SeriesReset is called to allow the deletion
 	// of all series created in a segment lower than the argument.
-	SeriesReset(int)
+	SeriesReset(segment int)
 }
 
 // Used to notifier the watcher that data has been written so that it can read.
 type WriteNotified interface {
 	Notify()
+}
+
+// Marker allows the Watcher to start from a specific segment in the WAL.
+// Implementers can use this interface to save and restore save points.
+type Marker interface {
+	// LastMarkedSegment should return the last segment stored in the marker.
+	// Must return nil if there is no mark.
+	//
+	// The Watcher will start reading the first segment whose value is greater
+	// than the return value.
+	LastMarkedSegment() int
+	//TODO: Can it not just return -1? Is the *int some Go thing? Also, if it's -1 maybe the Watcher will just read from 0?
+	//TODO: Also, we anyway have to check for negative integers because this is not unsigned?
 }
 
 type WatcherMetrics struct {
@@ -82,6 +95,7 @@ type WatcherMetrics struct {
 type Watcher struct {
 	name           string
 	writer         WriteTo
+	marker         Marker
 	logger         log.Logger
 	walDir         string
 	lastCheckpoint string
@@ -92,6 +106,7 @@ type Watcher struct {
 
 	startTime      time.Time
 	startTimestamp int64 // the start time as a Prometheus timestamp
+	savedSegment   int   // Last tailed marker. Overrides startTimestamp.
 	sendSamples    bool
 
 	recordsReadMetric       *prometheus.CounterVec
@@ -169,13 +184,15 @@ func NewWatcherMetrics(reg prometheus.Registerer) *WatcherMetrics {
 }
 
 // NewWatcher creates a new WAL watcher for a given WriteTo.
-func NewWatcher(metrics *WatcherMetrics, readerMetrics *LiveReaderMetrics, logger log.Logger, name string, writer WriteTo, dir string, sendExemplars, sendHistograms bool) *Watcher {
+// Reading will start at the segment returned by marker if marker is non-nil.
+func NewWatcher(metrics *WatcherMetrics, readerMetrics *LiveReaderMetrics, logger log.Logger, name string, writer WriteTo, marker Marker, dir string, sendExemplars, sendHistograms bool) *Watcher {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
 	return &Watcher{
 		logger:         logger,
 		writer:         writer,
+		marker:         marker,
 		metrics:        metrics,
 		readerMetrics:  readerMetrics,
 		walDir:         filepath.Join(dir, "wal"),
@@ -189,6 +206,7 @@ func NewWatcher(metrics *WatcherMetrics, readerMetrics *LiveReaderMetrics, logge
 
 		MaxSegment: -1,
 	}
+	//TODO: Set savedSegment to -1?
 }
 
 func (w *Watcher) Notify() {
@@ -246,7 +264,14 @@ func (w *Watcher) loop() {
 
 	// We may encounter failures processing the WAL; we should wait and retry.
 	for !isClosed(w.quit) {
+		if w.marker != nil {
+			w.savedSegment = w.marker.LastMarkedSegment()
+			//TODO: Does this print the int or the address of the int?
+			level.Debug(w.logger).Log("msg", "last saved segment", "segment", w.savedSegment)
+		}
+
 		w.SetStartTime(time.Now())
+
 		if err := w.Run(); err != nil {
 			level.Error(w.logger).Log("msg", "error tailing WAL", "err", err)
 		}
@@ -568,17 +593,17 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 				return err
 			}
 			for _, s := range samples {
-				if s.T > w.startTimestamp {
+				if w.canSendSamples(segmentNum, s.T) {
 					if !w.sendSamples {
 						w.sendSamples = true
 						duration := time.Since(w.startTime)
-						level.Info(w.logger).Log("msg", "Done replaying WAL", "duration", duration)
+						level.Info(w.logger).Log("msg", "Done replaying WAL", "duration", duration, "segment", segmentNum)
 					}
 					samplesToSend = append(samplesToSend, s)
 				}
 			}
 			if len(samplesToSend) > 0 {
-				w.writer.Append(samplesToSend)
+				w.writer.Append(samplesToSend, segmentNum)
 				samplesToSend = samplesToSend[:0]
 			}
 
@@ -597,7 +622,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 				w.recordDecodeFailsMetric.Inc()
 				return err
 			}
-			w.writer.AppendExemplars(exemplars)
+			w.writer.AppendExemplars(exemplars, segmentNum)
 
 		case record.HistogramSamples:
 			// Skip if experimental "histograms over remote write" is not enabled.
@@ -623,7 +648,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 				}
 			}
 			if len(histogramsToSend) > 0 {
-				w.writer.AppendHistograms(histogramsToSend)
+				w.writer.AppendHistograms(histogramsToSend, segmentNum)
 				histogramsToSend = histogramsToSend[:0]
 			}
 		case record.FloatHistogramSamples:
@@ -650,7 +675,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 				}
 			}
 			if len(floatHistogramsToSend) > 0 {
-				w.writer.AppendFloatHistograms(floatHistogramsToSend)
+				w.writer.AppendFloatHistograms(floatHistogramsToSend, segmentNum)
 				floatHistogramsToSend = floatHistogramsToSend[:0]
 			}
 		case record.Tombstones:
@@ -661,6 +686,16 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 		}
 	}
 	return errors.Wrapf(r.Err(), "segment %d: %v", segmentNum, r.Err())
+}
+
+// TODO: Add a function description
+func (w *Watcher) canSendSamples(segmentNum int, ts int64) bool {
+	//TODO: What if we have already replayed the WAL? Then segmentNum > *w.savedSegment
+	//      will always return true, and we will never get to ts > w.startTimestamp?
+	if w.savedSegment >= 0 && segmentNum > w.savedSegment {
+		return true
+	}
+	return ts > w.startTimestamp
 }
 
 // Go through all series in a segment updating the segmentNum, so we can delete older series.

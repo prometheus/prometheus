@@ -60,22 +60,22 @@ type writeToMock struct {
 	seriesSegmentIndexes    map[chunks.HeadSeriesRef]int
 }
 
-func (wtm *writeToMock) Append(s []record.RefSample) bool {
+func (wtm *writeToMock) Append(s []record.RefSample, segment int) bool {
 	wtm.samplesAppended += len(s)
 	return true
 }
 
-func (wtm *writeToMock) AppendExemplars(e []record.RefExemplar) bool {
+func (wtm *writeToMock) AppendExemplars(e []record.RefExemplar, segment int) bool {
 	wtm.exemplarsAppended += len(e)
 	return true
 }
 
-func (wtm *writeToMock) AppendHistograms(h []record.RefHistogramSample) bool {
+func (wtm *writeToMock) AppendHistograms(h []record.RefHistogramSample, segment int) bool {
 	wtm.histogramsAppended += len(h)
 	return true
 }
 
-func (wtm *writeToMock) AppendFloatHistograms(fh []record.RefFloatHistogramSample) bool {
+func (wtm *writeToMock) AppendFloatHistograms(fh []record.RefFloatHistogramSample, segment int) bool {
 	wtm.floatHistogramsAppended += len(fh)
 	return true
 }
@@ -210,7 +210,7 @@ func TestTailSamples(t *testing.T) {
 			require.NoError(t, err)
 
 			wt := newWriteToMock()
-			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, true, true)
+			watcher := NewWatcher(wMetrics, nil, nil, "", wt, nil, dir, true, true)
 			watcher.SetStartTime(now)
 
 			// Set the Watcher's metrics so they're not nil pointers.
@@ -295,7 +295,7 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 			require.NoError(t, err)
 
 			wt := newWriteToMock()
-			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false)
+			watcher := NewWatcher(wMetrics, nil, nil, "", wt, nil, dir, false, false)
 			go watcher.Start()
 
 			expected := seriesCount
@@ -384,7 +384,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 			require.NoError(t, err)
 			readTimeout = time.Second
 			wt := newWriteToMock()
-			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false)
+			watcher := NewWatcher(wMetrics, nil, nil, "", wt, nil, dir, false, false)
 			go watcher.Start()
 
 			expected := seriesCount * 2
@@ -455,7 +455,7 @@ func TestReadCheckpoint(t *testing.T) {
 			require.NoError(t, err)
 
 			wt := newWriteToMock()
-			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false)
+			watcher := NewWatcher(wMetrics, nil, nil, "", wt, nil, dir, false, false)
 			go watcher.Start()
 
 			expectedSeries := seriesCount
@@ -524,7 +524,7 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 			}
 
 			wt := newWriteToMock()
-			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false)
+			watcher := NewWatcher(wMetrics, nil, nil, "", wt, nil, dir, false, false)
 			watcher.MaxSegment = -1
 
 			// Set the Watcher's metrics so they're not nil pointers.
@@ -597,7 +597,7 @@ func TestCheckpointSeriesReset(t *testing.T) {
 
 			readTimeout = time.Second
 			wt := newWriteToMock()
-			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false)
+			watcher := NewWatcher(wMetrics, nil, nil, "", wt, nil, dir, false, false)
 			watcher.MaxSegment = -1
 			go watcher.Start()
 

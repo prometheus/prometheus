@@ -413,6 +413,8 @@ type QueueManager struct {
 	seriesSegmentMtx     sync.Mutex // Covers seriesSegmentIndexes - if you also lock seriesMtx, take seriesMtx first.
 	seriesSegmentIndexes map[chunks.HeadSeriesRef]int
 
+	markerHandler MarkerHandler
+
 	shards      *shards
 	numShards   int
 	reshardChan chan int
@@ -425,6 +427,10 @@ type QueueManager struct {
 	interner             *pool
 	highestRecvTimestamp *maxTimestamp
 }
+
+var (
+	_ wlog.WriteTo = (*QueueManager)(nil)
+)
 
 // NewQueueManager builds a new QueueManager and starts a new
 // WAL watcher with queue manager as the WriteTo destination.
@@ -449,6 +455,7 @@ func NewQueueManager(
 	sm ReadyScrapeManager,
 	enableExemplarRemoteWrite bool,
 	enableNativeHistogramRemoteWrite bool,
+	markerHandler MarkerHandler,
 ) *QueueManager {
 	if logger == nil {
 		logger = log.NewNopLogger()
@@ -461,6 +468,7 @@ func NewQueueManager(
 	})
 
 	logger = log.With(logger, remoteName, client.Name(), endpoint, client.Endpoint())
+
 	t := &QueueManager{
 		logger:               logger,
 		flushDeadline:        flushDeadline,
@@ -476,6 +484,8 @@ func NewQueueManager(
 		seriesSegmentIndexes: make(map[chunks.HeadSeriesRef]int),
 		droppedSeries:        make(map[chunks.HeadSeriesRef]struct{}),
 
+		markerHandler: markerHandler,
+
 		numShards:   cfg.MinShards,
 		reshardChan: make(chan int),
 		quit:        make(chan struct{}),
@@ -490,7 +500,7 @@ func NewQueueManager(
 		highestRecvTimestamp: highestRecvTimestamp,
 	}
 
-	t.watcher = wlog.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, dir, enableExemplarRemoteWrite, enableNativeHistogramRemoteWrite)
+	t.watcher = wlog.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, t.markerHandler, dir, enableExemplarRemoteWrite, enableNativeHistogramRemoteWrite)
 	if t.mcfg.Send {
 		t.metadataWatcher = NewMetadataWatcher(logger, sm, client.Name(), t, t.mcfg.SendInterval, flushDeadline)
 	}
@@ -547,6 +557,7 @@ func (t *QueueManager) sendMetadataWithBackoff(ctx context.Context, metadata []p
 		)
 
 		begin := time.Now()
+		//TODO: Should metadata be part of the marker?
 		err := t.storeClient.Store(ctx, req)
 		t.metrics.sentBatchDuration.Observe(time.Since(begin).Seconds())
 
@@ -572,7 +583,7 @@ func (t *QueueManager) sendMetadataWithBackoff(ctx context.Context, metadata []p
 
 // Append queues a sample to be sent to the remote storage. Blocks until all samples are
 // enqueued on their shards or a shutdown signal is received.
-func (t *QueueManager) Append(samples []record.RefSample) bool {
+func (t *QueueManager) Append(samples []record.RefSample, segment int) bool {
 outer:
 	for _, s := range samples {
 		t.seriesMtx.Lock()
@@ -603,7 +614,9 @@ outer:
 				timestamp:    s.T,
 				value:        s.V,
 				sType:        tSample,
+				segment:      segment,
 			}) {
+				t.markerHandler.UpdatePendingData(len(samples), segment)
 				continue outer
 			}
 
@@ -620,7 +633,7 @@ outer:
 	return true
 }
 
-func (t *QueueManager) AppendExemplars(exemplars []record.RefExemplar) bool {
+func (t *QueueManager) AppendExemplars(exemplars []record.RefExemplar, segment int) bool {
 	if !t.sendExemplars {
 		return true
 	}
@@ -648,13 +661,16 @@ outer:
 				return false
 			default:
 			}
+			//TODO: Write a unit test where the enqueue is retried?
 			if t.shards.enqueue(e.Ref, timeSeries{
 				seriesLabels:   lbls,
 				timestamp:      e.T,
 				value:          e.V,
 				exemplarLabels: e.Labels,
 				sType:          tExemplar,
+				segment:        segment,
 			}) {
+				t.markerHandler.UpdatePendingData(len(exemplars), segment)
 				continue outer
 			}
 
@@ -669,7 +685,7 @@ outer:
 	return true
 }
 
-func (t *QueueManager) AppendHistograms(histograms []record.RefHistogramSample) bool {
+func (t *QueueManager) AppendHistograms(histograms []record.RefHistogramSample, segment int) bool {
 	if !t.sendNativeHistograms {
 		return true
 	}
@@ -701,7 +717,9 @@ outer:
 				timestamp:    h.T,
 				histogram:    h.H,
 				sType:        tHistogram,
+				segment:      segment,
 			}) {
+				t.markerHandler.UpdatePendingData(len(histograms), segment)
 				continue outer
 			}
 
@@ -716,7 +734,7 @@ outer:
 	return true
 }
 
-func (t *QueueManager) AppendFloatHistograms(floatHistograms []record.RefFloatHistogramSample) bool {
+func (t *QueueManager) AppendFloatHistograms(floatHistograms []record.RefFloatHistogramSample, segment int) bool {
 	if !t.sendNativeHistograms {
 		return true
 	}
@@ -748,7 +766,9 @@ outer:
 				timestamp:      h.T,
 				floatHistogram: h.FH,
 				sType:          tFloatHistogram,
+				segment:        segment,
 			}) {
+				t.markerHandler.UpdatePendingData(len(floatHistograms), segment)
 				continue outer
 			}
 
@@ -801,6 +821,7 @@ func (t *QueueManager) Stop() {
 	if t.mcfg.Send {
 		t.metadataWatcher.Stop()
 	}
+	t.markerHandler.Stop()
 
 	// On shutdown, release the strings in the labels from the intern pool.
 	t.seriesMtx.Lock()
@@ -1211,6 +1232,8 @@ type timeSeries struct {
 	exemplarLabels labels.Labels
 	// The type of series: sample, exemplar, or histogram.
 	sType seriesType
+	// WAL segment number this timeSeries came from
+	segment int
 }
 
 type seriesType int
@@ -1360,6 +1383,12 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 		}
 	}
 
+	// batchSegmentCount tracks the count of data per segment in our batch.
+	// After sending the batch (regardless of success),
+	// QueueManager.processConsumedData is called to recalculate the total
+	// amount of unprocessed data.
+	batchSegmentCount := make(map[int]int)
+
 	timer := time.NewTimer(time.Duration(s.qm.cfg.BatchSendDeadline))
 	stop := func() {
 		if !timer.Stop() {
@@ -1394,10 +1423,10 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 			if !ok {
 				return
 			}
-			nPendingSamples, nPendingExemplars, nPendingHistograms := s.populateTimeSeries(batch, pendingData)
+			nPendingSamples, nPendingExemplars, nPendingHistograms := s.populateTimeSeries(batch, pendingData, batchSegmentCount)
 			queue.ReturnForReuse(batch)
 			n := nPendingSamples + nPendingExemplars + nPendingHistograms
-			s.sendSamples(ctx, pendingData[:n], nPendingSamples, nPendingExemplars, nPendingHistograms, pBuf, &buf)
+			s.sendSamples(ctx, pendingData[:n], batchSegmentCount, nPendingSamples, nPendingExemplars, nPendingHistograms, pBuf, &buf)
 
 			stop()
 			timer.Reset(time.Duration(s.qm.cfg.BatchSendDeadline))
@@ -1405,11 +1434,11 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 		case <-timer.C:
 			batch := queue.Batch()
 			if len(batch) > 0 {
-				nPendingSamples, nPendingExemplars, nPendingHistograms := s.populateTimeSeries(batch, pendingData)
+				nPendingSamples, nPendingExemplars, nPendingHistograms := s.populateTimeSeries(batch, pendingData, batchSegmentCount)
 				n := nPendingSamples + nPendingExemplars + nPendingHistograms
 				level.Debug(s.qm.logger).Log("msg", "runShard timer ticked, sending buffered data", "samples", nPendingSamples,
 					"exemplars", nPendingExemplars, "shard", shardNum, "histograms", nPendingHistograms)
-				s.sendSamples(ctx, pendingData[:n], nPendingSamples, nPendingExemplars, nPendingHistograms, pBuf, &buf)
+				s.sendSamples(ctx, pendingData[:n], batchSegmentCount, nPendingSamples, nPendingExemplars, nPendingHistograms, pBuf, &buf)
 			}
 			queue.ReturnForReuse(batch)
 			timer.Reset(time.Duration(s.qm.cfg.BatchSendDeadline))
@@ -1417,7 +1446,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 	}
 }
 
-func (s *shards) populateTimeSeries(batch []timeSeries, pendingData []prompb.TimeSeries) (int, int, int) {
+func (s *shards) populateTimeSeries(batch []timeSeries, pendingData []prompb.TimeSeries, batchSegmentCount map[int]int) (int, int, int) {
 	var nPendingSamples, nPendingExemplars, nPendingHistograms int
 	for nPending, d := range batch {
 		pendingData[nPending].Samples = pendingData[nPending].Samples[:0]
@@ -1453,11 +1482,13 @@ func (s *shards) populateTimeSeries(batch []timeSeries, pendingData []prompb.Tim
 			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, FloatHistogramToHistogramProto(d.timestamp, d.floatHistogram))
 			nPendingHistograms++
 		}
+
+		batchSegmentCount[d.segment]++
 	}
 	return nPendingSamples, nPendingExemplars, nPendingHistograms
 }
 
-func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, sampleCount, exemplarCount, histogramCount int, pBuf *proto.Buffer, buf *[]byte) {
+func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, batchSegmentCount map[int]int, sampleCount, exemplarCount, histogramCount int, pBuf *proto.Buffer, buf *[]byte) {
 	begin := time.Now()
 	err := s.sendSamplesWithBackoff(ctx, samples, sampleCount, exemplarCount, histogramCount, pBuf, buf)
 	if err != nil {
@@ -1465,6 +1496,13 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, s
 		s.qm.metrics.failedSamplesTotal.Add(float64(sampleCount))
 		s.qm.metrics.failedExemplarsTotal.Add(float64(exemplarCount))
 		s.qm.metrics.failedHistogramsTotal.Add(float64(histogramCount))
+	}
+
+	// Inform our queue manager about the data that got processed and clear out
+	// our map to prepare for the next batch.
+	s.qm.markerHandler.ProcessConsumedData(batchSegmentCount)
+	for segment := range batchSegmentCount {
+		delete(batchSegmentCount, segment)
 	}
 
 	// These counters are used to calculate the dynamic sharding, and as such
