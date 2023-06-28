@@ -47,6 +47,7 @@ func NewMarkerFileHandler(logger log.Logger, walDir, markerId string) (MarkerFil
 		lastMarkedSegmentFilePath: filepath.Join(markerDir, "segment"),
 	}
 
+	//TODO: Should this be in a separate Start() function?
 	go mfh.markSegmentAsync()
 
 	return mfh, nil

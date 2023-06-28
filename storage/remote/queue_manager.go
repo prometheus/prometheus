@@ -616,7 +616,7 @@ outer:
 				sType:        tSample,
 				segment:      segment,
 			}) {
-				t.markerHandler.UpdatePendingData(len(samples), segment)
+				t.markerHandler.UpdateReceivedData(segment, len(samples))
 				continue outer
 			}
 
@@ -670,7 +670,7 @@ outer:
 				sType:          tExemplar,
 				segment:        segment,
 			}) {
-				t.markerHandler.UpdatePendingData(len(exemplars), segment)
+				t.markerHandler.UpdateReceivedData(segment, len(exemplars))
 				continue outer
 			}
 
@@ -719,7 +719,7 @@ outer:
 				sType:        tHistogram,
 				segment:      segment,
 			}) {
-				t.markerHandler.UpdatePendingData(len(histograms), segment)
+				t.markerHandler.UpdateReceivedData(segment, len(histograms))
 				continue outer
 			}
 
@@ -768,7 +768,7 @@ outer:
 				sType:          tFloatHistogram,
 				segment:        segment,
 			}) {
-				t.markerHandler.UpdatePendingData(len(floatHistograms), segment)
+				t.markerHandler.UpdateReceivedData(segment, len(floatHistograms))
 				continue outer
 			}
 
@@ -1500,7 +1500,10 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, b
 
 	// Inform our queue manager about the data that got processed and clear out
 	// our map to prepare for the next batch.
-	s.qm.markerHandler.ProcessConsumedData(batchSegmentCount)
+	// Even if the sending failed, we still have to move on with the WAL marker
+	for segment, count := range batchSegmentCount {
+		s.qm.markerHandler.UpdateSentData(segment, count)
+	}
 	for segment := range batchSegmentCount {
 		delete(batchSegmentCount, segment)
 	}
