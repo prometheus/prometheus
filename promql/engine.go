@@ -1353,15 +1353,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 			unwrapParenExpr(&arg)
 			vs, ok := arg.(*parser.VectorSelector)
 			if ok {
-				return ev.rangeEval(nil, func(v []parser.Value, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, storage.Warnings) {
-					if vs.Timestamp != nil {
-						// This is a special case only for "timestamp" since the offset
-						// needs to be adjusted for every point.
-						vs.Offset = time.Duration(enh.Ts-*vs.Timestamp) * time.Millisecond
-					}
-					val, ws := ev.vectorSelector(vs, enh.Ts)
-					return call([]parser.Value{val}, e.Args, enh), ws
-				})
+				return ev.evalTimestampFunctionOverVectorSelector(vs, call, e)
 			}
 		}
 
@@ -1797,6 +1789,18 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 	}
 
 	panic(fmt.Errorf("unhandled expression of type: %T", expr))
+}
+
+func (ev *evaluator) evalTimestampFunctionOverVectorSelector(vs *parser.VectorSelector, call FunctionCall, e *parser.Call) (parser.Value, storage.Warnings) {
+	return ev.rangeEval(nil, func(v []parser.Value, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, storage.Warnings) {
+		if vs.Timestamp != nil {
+			// This is a special case only for "timestamp" since the offset
+			// needs to be adjusted for every point.
+			vs.Offset = time.Duration(enh.Ts-*vs.Timestamp) * time.Millisecond
+		}
+		val, ws := ev.vectorSelector(vs, enh.Ts)
+		return call([]parser.Value{val}, e.Args, enh), ws
+	})
 }
 
 // vectorSelector evaluates a *parser.VectorSelector expression.
