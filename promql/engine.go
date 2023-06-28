@@ -1830,7 +1830,12 @@ func (ev *evaluator) evalTimestampFunctionOverVectorSelector(vs *parser.VectorSe
 	if err != nil {
 		ev.error(errWithWarnings{fmt.Errorf("expanding series: %w", err), ws})
 	}
-	it := storage.NewMemoizedEmptyIterator(durationMilliseconds(ev.lookbackDelta))
+
+	seriesIterators := make([]*storage.MemoizedSeriesIterator, len(vs.Series))
+	for i, s := range vs.Series {
+		it := s.Iterator(nil)
+		seriesIterators[i] = storage.NewMemoizedIterator(it, durationMilliseconds(ev.lookbackDelta))
+	}
 
 	return ev.rangeEval(nil, func(v []parser.Value, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, storage.Warnings) {
 		if vs.Timestamp != nil {
@@ -1838,12 +1843,10 @@ func (ev *evaluator) evalTimestampFunctionOverVectorSelector(vs *parser.VectorSe
 			// needs to be adjusted for every point.
 			vs.Offset = time.Duration(enh.Ts-*vs.Timestamp) * time.Millisecond
 		}
-		vec := make(Vector, 0, len(vs.Series))
-		var chkIter chunkenc.Iterator
-		for _, s := range vs.Series {
-			chkIter = s.Iterator(chkIter)
-			it.Reset(chkIter)
 
+		vec := make(Vector, 0, len(vs.Series))
+		for i, s := range vs.Series {
+			it := seriesIterators[i]
 			t, f, h, ok := ev.vectorSelectorSingle(it, vs, enh.Ts)
 			if ok {
 				vec = append(vec, Sample{
