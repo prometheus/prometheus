@@ -186,6 +186,10 @@ func rangeQueryCases() []benchCase {
 			expr:  "count({__name__!=\"\",l=\"\"})",
 			steps: 1,
 		},
+		// timestamp() function
+		{
+			expr: "timestamp(a_X)",
+		},
 	}
 
 	// X in an expr will be replaced by different metric sizes.
