@@ -63,7 +63,7 @@ improvements for testing. #10991
 * [FEATURE] Promtool: Add HTTP client configuration to query commands. #11487
 * [FEATURE] Scrape: Add `scrape_config_files` to include scrape configs from different files. #12019
 * [FEATURE] HTTP client: Add `no_proxy` to exclude URLs from proxied requests. #12098
-* [FEATURE] HTTP client: Add `proxy_from_enviroment` to read proxies from env variables. #12098
+* [FEATURE] HTTP client: Add `proxy_from_environment` to read proxies from env variables. #12098
 * [ENHANCEMENT] API: Add support for setting lookback delta per query via the API. #12088
 * [ENHANCEMENT] API: Change HTTP status code from 503/422 to 499 if a request is canceled. #11897
 * [ENHANCEMENT] Scrape: Allow exemplars for all metric types. #11984
