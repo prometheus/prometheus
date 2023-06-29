@@ -1977,6 +1977,100 @@ func TestSubquerySelector(t *testing.T) {
 	}
 }
 
+func TestTimestampFunction_StepsMoreOftenThanSamples(t *testing.T) {
+	test, err := NewTest(t, `
+load 1m
+  metric 0+1x1000
+`)
+	require.NoError(t, err)
+	defer test.Close()
+
+	err = test.Run()
+	require.NoError(t, err)
+
+	query := "timestamp(metric)"
+	start := time.Unix(0, 0)
+	end := time.Unix(61, 0)
+	interval := time.Second
+
+	expectedResult := Matrix{
+		Series{
+			Floats: []FPoint{
+				{F: 0, T: 0},
+				{F: 0, T: 1_000},
+				{F: 0, T: 2_000},
+				{F: 0, T: 3_000},
+				{F: 0, T: 4_000},
+				{F: 0, T: 5_000},
+				{F: 0, T: 6_000},
+				{F: 0, T: 7_000},
+				{F: 0, T: 8_000},
+				{F: 0, T: 9_000},
+				{F: 0, T: 10_000},
+				{F: 0, T: 11_000},
+				{F: 0, T: 12_000},
+				{F: 0, T: 13_000},
+				{F: 0, T: 14_000},
+				{F: 0, T: 15_000},
+				{F: 0, T: 16_000},
+				{F: 0, T: 17_000},
+				{F: 0, T: 18_000},
+				{F: 0, T: 19_000},
+				{F: 0, T: 20_000},
+				{F: 0, T: 21_000},
+				{F: 0, T: 22_000},
+				{F: 0, T: 23_000},
+				{F: 0, T: 24_000},
+				{F: 0, T: 25_000},
+				{F: 0, T: 26_000},
+				{F: 0, T: 27_000},
+				{F: 0, T: 28_000},
+				{F: 0, T: 29_000},
+				{F: 0, T: 30_000},
+				{F: 0, T: 31_000},
+				{F: 0, T: 32_000},
+				{F: 0, T: 33_000},
+				{F: 0, T: 34_000},
+				{F: 0, T: 35_000},
+				{F: 0, T: 36_000},
+				{F: 0, T: 37_000},
+				{F: 0, T: 38_000},
+				{F: 0, T: 39_000},
+				{F: 0, T: 40_000},
+				{F: 0, T: 41_000},
+				{F: 0, T: 42_000},
+				{F: 0, T: 43_000},
+				{F: 0, T: 44_000},
+				{F: 0, T: 45_000},
+				{F: 0, T: 46_000},
+				{F: 0, T: 47_000},
+				{F: 0, T: 48_000},
+				{F: 0, T: 49_000},
+				{F: 0, T: 50_000},
+				{F: 0, T: 51_000},
+				{F: 0, T: 52_000},
+				{F: 0, T: 53_000},
+				{F: 0, T: 54_000},
+				{F: 0, T: 55_000},
+				{F: 0, T: 56_000},
+				{F: 0, T: 57_000},
+				{F: 0, T: 58_000},
+				{F: 0, T: 59_000},
+				{F: 60, T: 60_000},
+				{F: 60, T: 61_000},
+			},
+			Metric: labels.EmptyLabels(),
+		},
+	}
+
+	qry, err := test.QueryEngine().NewRangeQuery(test.context, test.Queryable(), nil, query, start, end, interval)
+	require.NoError(t, err)
+
+	res := qry.Exec(test.Context())
+	require.NoError(t, res.Err)
+	require.Equal(t, expectedResult, res.Value)
+}
+
 type FakeQueryLogger struct {
 	closed bool
 	logs   []interface{}
