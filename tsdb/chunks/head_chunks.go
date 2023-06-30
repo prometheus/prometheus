@@ -955,7 +955,7 @@ func (cdm *ChunkDiskMapper) Truncate(fileNo uint32) error {
 		//
 		// The queueIsEmpty() function must be called while holding the cdm.evtlPosMtx to avoid
 		// a race condition with WriteChunk().
-		if isSafe := cdm.writeQueue == nil || cdm.writeQueue.queueIsEmpty(); isSafe {
+		if cdm.writeQueue == nil || cdm.writeQueue.queueIsEmpty() {
 			if err == nil {
 				cdm.evtlPos.setSeq(0)
 			} else {
