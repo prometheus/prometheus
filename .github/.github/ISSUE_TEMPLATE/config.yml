@@ -1,8 +1,0 @@
-blank_issues_enabled: false
-contact_links:
-  - name: Prometheus Community Support
-    url: https://prometheus.io/community/
-    about: If you need help or support, please request help here.
-  - name: Commercial Support & Training
-    url: https://prometheus.io/support-training/
-    about: If you want commercial support or training, vendors are listed here.
