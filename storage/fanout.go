@@ -222,9 +222,10 @@ func (f *fanoutAppender) Rollback() (err error) {
 
 	for _, appender := range f.secondaries {
 		rollbackErr := appender.Rollback()
-		if err == nil {
+		switch {
+		case err == nil:
 			err = rollbackErr
-		} else if rollbackErr != nil {
+		case rollbackErr != nil:
 			level.Error(f.logger).Log("msg", "Squashed rollback error on rollback", "err", rollbackErr)
 		}
 	}

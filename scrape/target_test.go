@@ -31,6 +31,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 )
 
@@ -43,11 +44,22 @@ func TestTargetLabels(t *testing.T) {
 	want := labels.FromStrings(model.JobLabel, "some_job", "foo", "bar")
 	got := target.Labels()
 	require.Equal(t, want, got)
+	i := 0
+	target.LabelsRange(func(l labels.Label) {
+		switch i {
+		case 0:
+			require.Equal(t, labels.Label{Name: "foo", Value: "bar"}, l)
+		case 1:
+			require.Equal(t, labels.Label{Name: model.JobLabel, Value: "some_job"}, l)
+		}
+		i++
+	})
+	require.Equal(t, 2, i)
 }
 
 func TestTargetOffset(t *testing.T) {
 	interval := 10 * time.Second
-	jitter := uint64(0)
+	offsetSeed := uint64(0)
 
 	offsets := make([]time.Duration, 10000)
 
@@ -56,7 +68,7 @@ func TestTargetOffset(t *testing.T) {
 		target := newTestTarget("example.com:80", 0, labels.FromStrings(
 			"label", fmt.Sprintf("%d", i),
 		))
-		offsets[i] = target.offset(interval, jitter)
+		offsets[i] = target.offset(interval, offsetSeed)
 	}
 
 	// Put the offsets into buckets and validate that they are all
@@ -123,13 +135,13 @@ func TestTargetURL(t *testing.T) {
 	require.Equal(t, expectedURL, target.URL())
 }
 
-func newTestTarget(targetURL string, deadline time.Duration, lbls labels.Labels) *Target {
+func newTestTarget(targetURL string, _ time.Duration, lbls labels.Labels) *Target {
 	lb := labels.NewBuilder(lbls)
 	lb.Set(model.SchemeLabel, "http")
 	lb.Set(model.AddressLabel, strings.TrimPrefix(targetURL, "http://"))
 	lb.Set(model.MetricsPathLabel, "/metrics")
 
-	return &Target{labels: lb.Labels(labels.EmptyLabels())}
+	return &Target{labels: lb.Labels()}
 }
 
 func TestNewHTTPBearerToken(t *testing.T) {
@@ -475,5 +487,65 @@ scrape_configs:
 				}
 			}
 		})
+	}
+}
+
+func TestBucketLimitAppender(t *testing.T) {
+	example := histogram.Histogram{
+		Schema:        0,
+		Count:         21,
+		Sum:           33,
+		ZeroThreshold: 0.001,
+		ZeroCount:     3,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 3},
+		},
+		PositiveBuckets: []int64{3, 0, 0},
+		NegativeSpans: []histogram.Span{
+			{Offset: 0, Length: 3},
+		},
+		NegativeBuckets: []int64{3, 0, 0},
+	}
+
+	cases := []struct {
+		h           histogram.Histogram
+		limit       int
+		expectError bool
+	}{
+		{
+			h:           example,
+			limit:       3,
+			expectError: true,
+		},
+		{
+			h:           example,
+			limit:       10,
+			expectError: false,
+		},
+	}
+
+	resApp := &collectResultAppender{}
+
+	for _, c := range cases {
+		for _, floatHisto := range []bool{true, false} {
+			t.Run(fmt.Sprintf("floatHistogram=%t", floatHisto), func(t *testing.T) {
+				app := &bucketLimitAppender{Appender: resApp, limit: c.limit}
+				ts := int64(10 * time.Minute / time.Millisecond)
+				h := c.h
+				lbls := labels.FromStrings("__name__", "sparse_histogram_series")
+				var err error
+				if floatHisto {
+					_, err = app.AppendHistogram(0, lbls, ts, nil, h.Copy().ToFloat())
+				} else {
+					_, err = app.AppendHistogram(0, lbls, ts, h.Copy(), nil)
+				}
+				if c.expectError {
+					require.Error(t, err)
+				} else {
+					require.NoError(t, err)
+				}
+				require.NoError(t, app.Commit())
+			})
+		}
 	}
 }

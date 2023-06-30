@@ -109,7 +109,7 @@ func (it *listSeriesIterator) Reset(samples Samples) {
 
 func (it *listSeriesIterator) At() (int64, float64) {
 	s := it.samples.Get(it.idx)
-	return s.T(), s.V()
+	return s.T(), s.F()
 }
 
 func (it *listSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
@@ -281,7 +281,7 @@ func NewSeriesToChunkEncoder(series Series) ChunkSeries {
 func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 	var (
 		chk chunkenc.Chunk
-		app chunkenc.Appender
+		app *RecodingAppender
 		err error
 	)
 	mint := int64(math.MaxInt64)
@@ -297,23 +297,20 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 	seriesIter := s.Series.Iterator(nil)
 	lastType := chunkenc.ValNone
 	for typ := seriesIter.Next(); typ != chunkenc.ValNone; typ = seriesIter.Next() {
+		chunkCreated := false
 		if typ != lastType || i >= seriesToChunkEncoderSplit {
 			// Create a new chunk if the sample type changed or too many samples in the current one.
-			if chk != nil {
-				chks = append(chks, chunks.Meta{
-					MinTime: mint,
-					MaxTime: maxt,
-					Chunk:   chk,
-				})
-			}
+			chks = appendChunk(chks, mint, maxt, chk)
+			chunkCreated = true
 			chk, err = chunkenc.NewEmptyChunk(typ.ChunkEncoding())
 			if err != nil {
 				return errChunksIterator{err: err}
 			}
-			app, err = chk.Appender()
+			chkAppender, err := chk.Appender()
 			if err != nil {
 				return errChunksIterator{err: err}
 			}
+			app = NewRecodingAppender(&chk, chkAppender)
 			mint = int64(math.MaxInt64)
 			// maxt is immediately overwritten below which is why setting it here won't make a difference.
 			i = 0
@@ -332,10 +329,53 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 			app.Append(t, v)
 		case chunkenc.ValHistogram:
 			t, h = seriesIter.AtHistogram()
-			app.AppendHistogram(t, h)
+			if ok, counterReset := app.AppendHistogram(t, h); !ok {
+				chks = appendChunk(chks, mint, maxt, chk)
+				histChunk := chunkenc.NewHistogramChunk()
+				chunkCreated = true
+				if counterReset {
+					histChunk.SetCounterResetHeader(chunkenc.CounterReset)
+				}
+				chk = histChunk
+
+				chkAppender, err := chk.Appender()
+				if err != nil {
+					return errChunksIterator{err: err}
+				}
+				mint = int64(math.MaxInt64)
+				i = 0
+				app = NewRecodingAppender(&chk, chkAppender)
+				if ok, _ := app.AppendHistogram(t, h); !ok {
+					panic("unexpected error while appending histogram")
+				}
+			}
+			if chunkCreated && h.CounterResetHint == histogram.GaugeType {
+				chk.(*chunkenc.HistogramChunk).SetCounterResetHeader(chunkenc.GaugeType)
+			}
 		case chunkenc.ValFloatHistogram:
 			t, fh = seriesIter.AtFloatHistogram()
-			app.AppendFloatHistogram(t, fh)
+			if ok, counterReset := app.AppendFloatHistogram(t, fh); !ok {
+				chks = appendChunk(chks, mint, maxt, chk)
+				floatHistChunk := chunkenc.NewFloatHistogramChunk()
+				chunkCreated = true
+				if counterReset {
+					floatHistChunk.SetCounterResetHeader(chunkenc.CounterReset)
+				}
+				chk = floatHistChunk
+				chkAppender, err := chk.Appender()
+				if err != nil {
+					return errChunksIterator{err: err}
+				}
+				mint = int64(math.MaxInt64)
+				i = 0
+				app = NewRecodingAppender(&chk, chkAppender)
+				if ok, _ := app.AppendFloatHistogram(t, fh); !ok {
+					panic("unexpected error while float appending histogram")
+				}
+			}
+			if chunkCreated && fh.CounterResetHint == histogram.GaugeType {
+				chk.(*chunkenc.FloatHistogramChunk).SetCounterResetHeader(chunkenc.GaugeType)
+			}
 		default:
 			return errChunksIterator{err: fmt.Errorf("unknown sample type %s", typ.String())}
 		}
@@ -350,6 +390,16 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 		return errChunksIterator{err: err}
 	}
 
+	chks = appendChunk(chks, mint, maxt, chk)
+
+	if existing {
+		lcsi.Reset(chks...)
+		return lcsi
+	}
+	return NewListChunkSeriesIterator(chks...)
+}
+
+func appendChunk(chks []chunks.Meta, mint, maxt int64, chk chunkenc.Chunk) []chunks.Meta {
 	if chk != nil {
 		chks = append(chks, chunks.Meta{
 			MinTime: mint,
@@ -357,12 +407,7 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 			Chunk:   chk,
 		})
 	}
-
-	if existing {
-		lcsi.Reset(chks...)
-		return lcsi
-	}
-	return NewListChunkSeriesIterator(chks...)
+	return chks
 }
 
 type errChunksIterator struct {
@@ -376,10 +421,17 @@ func (e errChunksIterator) Err() error      { return e.err }
 // ExpandSamples iterates over all samples in the iterator, buffering all in slice.
 // Optionally it takes samples constructor, useful when you want to compare sample slices with different
 // sample implementations. if nil, sample type from this package will be used.
-func ExpandSamples(iter chunkenc.Iterator, newSampleFn func(t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) tsdbutil.Sample) ([]tsdbutil.Sample, error) {
+func ExpandSamples(iter chunkenc.Iterator, newSampleFn func(t int64, f float64, h *histogram.Histogram, fh *histogram.FloatHistogram) tsdbutil.Sample) ([]tsdbutil.Sample, error) {
 	if newSampleFn == nil {
-		newSampleFn = func(t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) tsdbutil.Sample {
-			return sample{t, v, h, fh}
+		newSampleFn = func(t int64, f float64, h *histogram.Histogram, fh *histogram.FloatHistogram) tsdbutil.Sample {
+			switch {
+			case h != nil:
+				return hSample{t, h}
+			case fh != nil:
+				return fhSample{t, fh}
+			default:
+				return fSample{t, f}
+			}
 		}
 	}
 
@@ -389,12 +441,12 @@ func ExpandSamples(iter chunkenc.Iterator, newSampleFn func(t int64, v float64, 
 		case chunkenc.ValNone:
 			return result, iter.Err()
 		case chunkenc.ValFloat:
-			t, v := iter.At()
+			t, f := iter.At()
 			// NaNs can't be compared normally, so substitute for another value.
-			if math.IsNaN(v) {
-				v = -42
+			if math.IsNaN(f) {
+				f = -42
 			}
-			result = append(result, newSampleFn(t, v, nil, nil))
+			result = append(result, newSampleFn(t, f, nil, nil))
 		case chunkenc.ValHistogram:
 			t, h := iter.AtHistogram()
 			result = append(result, newSampleFn(t, 0, h, nil))
@@ -412,4 +464,127 @@ func ExpandChunks(iter chunks.Iterator) ([]chunks.Meta, error) {
 		result = append(result, iter.At())
 	}
 	return result, iter.Err()
+}
+
+// RecodingAppender is a tsdb.Appender that recodes histogram samples if needed during appends.
+// It takes an existing appender and a chunk to which samples are appended.
+type RecodingAppender struct {
+	chk *chunkenc.Chunk
+	app chunkenc.Appender
+}
+
+func NewRecodingAppender(chk *chunkenc.Chunk, app chunkenc.Appender) *RecodingAppender {
+	return &RecodingAppender{
+		chk: chk,
+		app: app,
+	}
+}
+
+// Append appends a float sample to the appender.
+func (a *RecodingAppender) Append(t int64, v float64) {
+	a.app.Append(t, v)
+}
+
+// AppendHistogram appends a histogram sample to the underlying chunk.
+// The method returns false if the sample cannot be appended and a boolean value set to true
+// when it is not appendable because of a counter reset.
+// If counterReset is true, okToAppend is always false.
+func (a *RecodingAppender) AppendHistogram(t int64, h *histogram.Histogram) (okToAppend, counterReset bool) {
+	app, ok := a.app.(*chunkenc.HistogramAppender)
+	if !ok {
+		return false, false
+	}
+
+	if app.NumSamples() == 0 {
+		a.app.AppendHistogram(t, h)
+		return true, false
+	}
+
+	var (
+		pForwardInserts, nForwardInserts   []chunkenc.Insert
+		pBackwardInserts, nBackwardInserts []chunkenc.Insert
+		pMergedSpans, nMergedSpans         []histogram.Span
+	)
+	switch h.CounterResetHint {
+	case histogram.GaugeType:
+		pForwardInserts, nForwardInserts,
+			pBackwardInserts, nBackwardInserts,
+			pMergedSpans, nMergedSpans,
+			okToAppend = app.AppendableGauge(h)
+	default:
+		pForwardInserts, nForwardInserts, okToAppend, counterReset = app.Appendable(h)
+	}
+	if !okToAppend || counterReset {
+		return false, counterReset
+	}
+
+	if len(pBackwardInserts)+len(nBackwardInserts) > 0 {
+		h.PositiveSpans = pMergedSpans
+		h.NegativeSpans = nMergedSpans
+		app.RecodeHistogram(h, pBackwardInserts, nBackwardInserts)
+	}
+	if len(pForwardInserts) > 0 || len(nForwardInserts) > 0 {
+		chk, app := app.Recode(
+			pForwardInserts, nForwardInserts,
+			h.PositiveSpans, h.NegativeSpans,
+		)
+		*a.chk = chk
+		a.app = app
+	}
+
+	a.app.AppendHistogram(t, h)
+	return true, counterReset
+}
+
+// AppendFloatHistogram appends a float histogram sample to the underlying chunk.
+// The method returns false if the sample cannot be appended and a boolean value set to true
+// when it is not appendable because of a counter reset.
+// If counterReset is true, okToAppend is always false.
+func (a *RecodingAppender) AppendFloatHistogram(t int64, fh *histogram.FloatHistogram) (okToAppend, counterReset bool) {
+	app, ok := a.app.(*chunkenc.FloatHistogramAppender)
+	if !ok {
+		return false, false
+	}
+
+	if app.NumSamples() == 0 {
+		a.app.AppendFloatHistogram(t, fh)
+		return true, false
+	}
+
+	var (
+		pForwardInserts, nForwardInserts   []chunkenc.Insert
+		pBackwardInserts, nBackwardInserts []chunkenc.Insert
+		pMergedSpans, nMergedSpans         []histogram.Span
+	)
+	switch fh.CounterResetHint {
+	case histogram.GaugeType:
+		pForwardInserts, nForwardInserts,
+			pBackwardInserts, nBackwardInserts,
+			pMergedSpans, nMergedSpans,
+			okToAppend = app.AppendableGauge(fh)
+	default:
+		pForwardInserts, nForwardInserts, okToAppend, counterReset = app.Appendable(fh)
+	}
+
+	if !okToAppend || counterReset {
+		return false, counterReset
+	}
+
+	if len(pBackwardInserts)+len(nBackwardInserts) > 0 {
+		fh.PositiveSpans = pMergedSpans
+		fh.NegativeSpans = nMergedSpans
+		app.RecodeHistogramm(fh, pBackwardInserts, nBackwardInserts)
+	}
+
+	if len(pForwardInserts) > 0 || len(nForwardInserts) > 0 {
+		chunk, app := app.Recode(
+			pForwardInserts, nForwardInserts,
+			fh.PositiveSpans, fh.NegativeSpans,
+		)
+		*a.chk = chunk
+		a.app = app
+	}
+
+	a.app.AppendFloatHistogram(t, fh)
+	return true, counterReset
 }

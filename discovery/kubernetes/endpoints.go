@@ -11,6 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// nolint:revive // Many legitimately empty blocks in this file.
 package kubernetes
 
 import (
@@ -304,7 +305,11 @@ func (e *Endpoints) buildEndpoints(eps *apiv1.Endpoints) *targetgroup.Group {
 		}
 
 		if e.withNodeMetadata {
-			target = addNodeLabels(target, e.nodeInf, e.logger, addr.NodeName)
+			if addr.NodeName != nil {
+				target = addNodeLabels(target, e.nodeInf, e.logger, addr.NodeName)
+			} else if addr.TargetRef != nil && addr.TargetRef.Kind == "Node" {
+				target = addNodeLabels(target, e.nodeInf, e.logger, &addr.TargetRef.Name)
+			}
 		}
 
 		pod := e.resolvePodRef(addr.TargetRef)
@@ -465,5 +470,6 @@ func addNodeLabels(tg model.LabelSet, nodeInf cache.SharedInformer, logger log.L
 		nodeLabelset[model.LabelName(nodeLabelPrefix+ln)] = lv(v)
 		nodeLabelset[model.LabelName(nodeLabelPresentPrefix+ln)] = presentValue
 	}
+
 	return tg.Merge(nodeLabelset)
 }

@@ -397,6 +397,34 @@ func TestRelabel(t *testing.T) {
 				"foo":              "bar",
 			}),
 		},
+		{ // From https://github.com/prometheus/prometheus/issues/12283
+			input: labels.FromMap(map[string]string{
+				"__meta_kubernetes_pod_container_port_name":         "foo",
+				"__meta_kubernetes_pod_annotation_XXX_metrics_port": "9091",
+			}),
+			relabel: []*Config{
+				{
+					Regex:  MustNewRegexp("^__meta_kubernetes_pod_container_port_name$"),
+					Action: LabelDrop,
+				},
+				{
+					SourceLabels: model.LabelNames{"__meta_kubernetes_pod_annotation_XXX_metrics_port"},
+					Regex:        MustNewRegexp("(.+)"),
+					Action:       Replace,
+					Replacement:  "metrics",
+					TargetLabel:  "__meta_kubernetes_pod_container_port_name",
+				},
+				{
+					SourceLabels: model.LabelNames{"__meta_kubernetes_pod_container_port_name"},
+					Regex:        MustNewRegexp("^metrics$"),
+					Action:       Keep,
+				},
+			},
+			output: labels.FromMap(map[string]string{
+				"__meta_kubernetes_pod_annotation_XXX_metrics_port": "9091",
+				"__meta_kubernetes_pod_container_port_name":         "metrics",
+			}),
+		},
 		{
 			input: labels.FromMap(map[string]string{
 				"a":  "foo",

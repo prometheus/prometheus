@@ -130,7 +130,7 @@ func resolveAndGlobFilepaths(baseDir string, utf *unitTestFile) error {
 		if err != nil {
 			return err
 		}
-		if len(m) <= 0 {
+		if len(m) == 0 {
 			fmt.Fprintln(os.Stderr, "  WARNING: no file match pattern", rf)
 		}
 		globbedFiles = append(globbedFiles, m...)
@@ -347,7 +347,7 @@ Outer:
 		for _, s := range got {
 			gotSamples = append(gotSamples, parsedSample{
 				Labels: s.Metric.Copy(),
-				Value:  s.V,
+				Value:  s.F,
 			})
 		}
 
@@ -434,7 +434,7 @@ func (tg *testGroup) maxEvalTime() time.Duration {
 }
 
 func query(ctx context.Context, qs string, t time.Time, engine *promql.Engine, qu storage.Queryable) (promql.Vector, error) {
-	q, err := engine.NewInstantQuery(qu, nil, qs, t)
+	q, err := engine.NewInstantQuery(ctx, qu, nil, qs, t)
 	if err != nil {
 		return nil, err
 	}
@@ -447,7 +447,8 @@ func query(ctx context.Context, qs string, t time.Time, engine *promql.Engine, q
 		return v, nil
 	case promql.Scalar:
 		return promql.Vector{promql.Sample{
-			Point:  promql.Point{T: v.T, V: v.V},
+			T:      v.T,
+			F:      v.V,
 			Metric: labels.Labels{},
 		}}, nil
 	default:

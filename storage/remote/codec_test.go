@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 )
 
 var testHistogram = histogram.Histogram{
@@ -174,12 +175,12 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 
 func TestConcreteSeriesSet(t *testing.T) {
 	series1 := &concreteSeries{
-		labels:  labels.FromStrings("foo", "bar"),
-		samples: []prompb.Sample{{Value: 1, Timestamp: 2}},
+		labels: labels.FromStrings("foo", "bar"),
+		floats: []prompb.Sample{{Value: 1, Timestamp: 2}},
 	}
 	series2 := &concreteSeries{
-		labels:  labels.FromStrings("foo", "baz"),
-		samples: []prompb.Sample{{Value: 3, Timestamp: 4}},
+		labels: labels.FromStrings("foo", "baz"),
+		floats: []prompb.Sample{{Value: 3, Timestamp: 4}},
 	}
 	c := &concreteSeriesSet{
 		series: []storage.Series{series1, series2},
@@ -206,10 +207,10 @@ func TestConcreteSeriesClonesLabels(t *testing.T) {
 	require.Equal(t, lbls, gotLabels)
 }
 
-func TestConcreteSeriesIterator(t *testing.T) {
+func TestConcreteSeriesIterator_FloatSamples(t *testing.T) {
 	series := &concreteSeries{
 		labels: labels.FromStrings("foo", "bar"),
-		samples: []prompb.Sample{
+		floats: []prompb.Sample{
 			{Value: 1, Timestamp: 1},
 			{Value: 1.5, Timestamp: 1},
 			{Value: 2, Timestamp: 2},
@@ -253,6 +254,165 @@ func TestConcreteSeriesIterator(t *testing.T) {
 	require.Equal(t, chunkenc.ValNone, it.Seek(5))
 	// And we don't go back. (This exposes issue #10027.)
 	require.Equal(t, chunkenc.ValNone, it.Seek(2))
+}
+
+func TestConcreteSeriesIterator_HistogramSamples(t *testing.T) {
+	histograms := tsdbutil.GenerateTestHistograms(5)
+	histProtos := make([]prompb.Histogram, len(histograms))
+	for i, h := range histograms {
+		// Results in ts sequence of 1, 1, 2, 3, 4.
+		var ts int64
+		if i == 0 {
+			ts = 1
+		} else {
+			ts = int64(i)
+		}
+		histProtos[i] = HistogramToHistogramProto(ts, h)
+	}
+	series := &concreteSeries{
+		labels:     labels.FromStrings("foo", "bar"),
+		histograms: histProtos,
+	}
+	it := series.Iterator(nil)
+
+	// Seek to the first sample with ts=1.
+	require.Equal(t, chunkenc.ValHistogram, it.Seek(1))
+	ts, v := it.AtHistogram()
+	require.Equal(t, int64(1), ts)
+	require.Equal(t, histograms[0], v)
+
+	// Seek one further, next sample still has ts=1.
+	require.Equal(t, chunkenc.ValHistogram, it.Next())
+	ts, v = it.AtHistogram()
+	require.Equal(t, int64(1), ts)
+	require.Equal(t, histograms[1], v)
+
+	// Seek again to 1 and make sure we stay where we are.
+	require.Equal(t, chunkenc.ValHistogram, it.Seek(1))
+	ts, v = it.AtHistogram()
+	require.Equal(t, int64(1), ts)
+	require.Equal(t, histograms[1], v)
+
+	// Another seek.
+	require.Equal(t, chunkenc.ValHistogram, it.Seek(3))
+	ts, v = it.AtHistogram()
+	require.Equal(t, int64(3), ts)
+	require.Equal(t, histograms[3], v)
+
+	// And we don't go back.
+	require.Equal(t, chunkenc.ValHistogram, it.Seek(2))
+	ts, v = it.AtHistogram()
+	require.Equal(t, int64(3), ts)
+	require.Equal(t, histograms[3], v)
+
+	// Seek beyond the end.
+	require.Equal(t, chunkenc.ValNone, it.Seek(5))
+	// And we don't go back. (This exposes issue #10027.)
+	require.Equal(t, chunkenc.ValNone, it.Seek(2))
+}
+
+func TestConcreteSeriesIterator_FloatAndHistogramSamples(t *testing.T) {
+	// Series starts as histograms, then transitions to floats at ts=8 (with an overlap from ts=8 to ts=10), then
+	// transitions back to histograms at ts=16.
+	histograms := tsdbutil.GenerateTestHistograms(15)
+	histProtos := make([]prompb.Histogram, len(histograms))
+	for i, h := range histograms {
+		if i < 10 {
+			histProtos[i] = HistogramToHistogramProto(int64(i+1), h)
+		} else {
+			histProtos[i] = HistogramToHistogramProto(int64(i+6), h)
+		}
+	}
+	series := &concreteSeries{
+		labels: labels.FromStrings("foo", "bar"),
+		floats: []prompb.Sample{
+			{Value: 1, Timestamp: 8},
+			{Value: 2, Timestamp: 9},
+			{Value: 3, Timestamp: 10},
+			{Value: 4, Timestamp: 11},
+			{Value: 5, Timestamp: 12},
+			{Value: 6, Timestamp: 13},
+			{Value: 7, Timestamp: 14},
+			{Value: 8, Timestamp: 15},
+		},
+		histograms: histProtos,
+	}
+	it := series.Iterator(nil)
+
+	var (
+		ts int64
+		v  float64
+		h  *histogram.Histogram
+		fh *histogram.FloatHistogram
+	)
+	require.Equal(t, chunkenc.ValHistogram, it.Next())
+	ts, h = it.AtHistogram()
+	require.Equal(t, int64(1), ts)
+	require.Equal(t, histograms[0], h)
+
+	require.Equal(t, chunkenc.ValHistogram, it.Next())
+	ts, h = it.AtHistogram()
+	require.Equal(t, int64(2), ts)
+	require.Equal(t, histograms[1], h)
+
+	// Seek to the first float/histogram sample overlap at ts=8 (should prefer the float sample).
+	require.Equal(t, chunkenc.ValFloat, it.Seek(8))
+	ts, v = it.At()
+	require.Equal(t, int64(8), ts)
+	require.Equal(t, 1., v)
+
+	// Attempting to seek backwards should do nothing.
+	require.Equal(t, chunkenc.ValFloat, it.Seek(1))
+	ts, v = it.At()
+	require.Equal(t, int64(8), ts)
+	require.Equal(t, 1., v)
+
+	// Seeking to 8 again should also do nothing.
+	require.Equal(t, chunkenc.ValFloat, it.Seek(8))
+	ts, v = it.At()
+	require.Equal(t, int64(8), ts)
+	require.Equal(t, 1., v)
+
+	// Again, should prefer the float sample.
+	require.Equal(t, chunkenc.ValFloat, it.Next())
+	ts, v = it.At()
+	require.Equal(t, int64(9), ts)
+	require.Equal(t, 2., v)
+
+	// Seek to ts=11 where there are only float samples.
+	require.Equal(t, chunkenc.ValFloat, it.Seek(11))
+	ts, v = it.At()
+	require.Equal(t, int64(11), ts)
+	require.Equal(t, 4., v)
+
+	// Seek to ts=15 right before the transition back to histogram samples.
+	require.Equal(t, chunkenc.ValFloat, it.Seek(15))
+	ts, v = it.At()
+	require.Equal(t, int64(15), ts)
+	require.Equal(t, 8., v)
+
+	require.Equal(t, chunkenc.ValHistogram, it.Next())
+	ts, h = it.AtHistogram()
+	require.Equal(t, int64(16), ts)
+	require.Equal(t, histograms[10], h)
+
+	// Getting a float histogram from an int histogram works.
+	require.Equal(t, chunkenc.ValHistogram, it.Next())
+	ts, fh = it.AtFloatHistogram()
+	require.Equal(t, int64(17), ts)
+	expected := HistogramProtoToFloatHistogram(HistogramToHistogramProto(int64(17), histograms[11]))
+	require.Equal(t, expected, fh)
+
+	// Keep calling Next() until the end.
+	for i := 0; i < 3; i++ {
+		require.Equal(t, chunkenc.ValHistogram, it.Next())
+	}
+
+	// The iterator is exhausted.
+	require.Equal(t, chunkenc.ValNone, it.Next())
+	require.Equal(t, chunkenc.ValNone, it.Next())
+	// Should also not be able to seek backwards again.
+	require.Equal(t, chunkenc.ValNone, it.Seek(1))
 }
 
 func TestFromQueryResultWithDuplicates(t *testing.T) {
@@ -364,7 +524,7 @@ func TestDecodeWriteRequest(t *testing.T) {
 	require.Equal(t, writeRequestFixture, actual)
 }
 
-func TestNilHistogramProto(t *testing.T) {
+func TestNilHistogramProto(*testing.T) {
 	// This function will panic if it impromperly handles nil
 	// values, causing the test to fail.
 	HistogramProtoToHistogram(prompb.Histogram{})
@@ -563,7 +723,7 @@ func TestFloatHistogramToProtoConvert(t *testing.T) {
 
 		require.Equal(t, p, FloatHistogramToHistogramProto(1337, &h))
 
-		require.Equal(t, h, *HistogramProtoToFloatHistogram(p))
+		require.Equal(t, h, *FloatHistogramProtoToFloatHistogram(p))
 	}
 }
 

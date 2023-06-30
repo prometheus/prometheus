@@ -28,7 +28,7 @@ type Samples interface {
 
 type Sample interface {
 	T() int64
-	V() float64
+	F() float64
 	H() *histogram.Histogram
 	FH() *histogram.FloatHistogram
 	Type() chunkenc.ValueType
@@ -69,11 +69,21 @@ func ChunkFromSamplesGeneric(s Samples) chunks.Meta {
 	for i := 0; i < s.Len(); i++ {
 		switch sampleType {
 		case chunkenc.ValFloat:
-			ca.Append(s.Get(i).T(), s.Get(i).V())
+			ca.Append(s.Get(i).T(), s.Get(i).F())
 		case chunkenc.ValHistogram:
-			ca.AppendHistogram(s.Get(i).T(), s.Get(i).H())
+			h := s.Get(i).H()
+			ca.AppendHistogram(s.Get(i).T(), h)
+			if i == 0 && h.CounterResetHint == histogram.GaugeType {
+				hc := c.(*chunkenc.HistogramChunk)
+				hc.SetCounterResetHeader(chunkenc.GaugeType)
+			}
 		case chunkenc.ValFloatHistogram:
-			ca.AppendFloatHistogram(s.Get(i).T(), s.Get(i).FH())
+			fh := s.Get(i).FH()
+			ca.AppendFloatHistogram(s.Get(i).T(), fh)
+			if i == 0 && fh.CounterResetHint == histogram.GaugeType {
+				hc := c.(*chunkenc.FloatHistogramChunk)
+				hc.SetCounterResetHeader(chunkenc.GaugeType)
+			}
 		default:
 			panic(fmt.Sprintf("unknown sample type %s", sampleType.String()))
 		}
@@ -87,7 +97,7 @@ func ChunkFromSamplesGeneric(s Samples) chunks.Meta {
 
 type sample struct {
 	t  int64
-	v  float64
+	f  float64
 	h  *histogram.Histogram
 	fh *histogram.FloatHistogram
 }
@@ -96,8 +106,8 @@ func (s sample) T() int64 {
 	return s.t
 }
 
-func (s sample) V() float64 {
-	return s.v
+func (s sample) F() float64 {
+	return s.f
 }
 
 func (s sample) H() *histogram.Histogram {
@@ -123,7 +133,7 @@ func (s sample) Type() chunkenc.ValueType {
 func PopulatedChunk(numSamples int, minTime int64) chunks.Meta {
 	samples := make([]Sample, numSamples)
 	for i := 0; i < numSamples; i++ {
-		samples[i] = sample{t: minTime + int64(i*1000), v: 1.0}
+		samples[i] = sample{t: minTime + int64(i*1000), f: 1.0}
 	}
 	return ChunkFromSamples(samples)
 }
@@ -133,7 +143,7 @@ func GenerateSamples(start, numSamples int) []Sample {
 	return generateSamples(start, numSamples, func(i int) Sample {
 		return sample{
 			t: int64(i),
-			v: float64(i),
+			f: float64(i),
 		}
 	})
 }

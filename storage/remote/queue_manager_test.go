@@ -362,7 +362,7 @@ func TestReshard(t *testing.T) {
 	c.waitForExpectedData(t)
 }
 
-func TestReshardRaceWithStop(t *testing.T) {
+func TestReshardRaceWithStop(*testing.T) {
 	c := NewTestWriteClient()
 	var m *QueueManager
 	h := sync.Mutex{}
@@ -802,7 +802,7 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte) error {
 
 		for _, histogram := range ts.Histograms {
 			count++
-			if histogram.GetCountFloat() > 0 || histogram.GetZeroCountFloat() > 0 {
+			if histogram.IsFloatHistogram() {
 				c.receivedFloatHistograms[seriesName] = append(c.receivedFloatHistograms[seriesName], histogram)
 			} else {
 				c.receivedHistograms[seriesName] = append(c.receivedHistograms[seriesName], histogram)
@@ -864,10 +864,10 @@ func (c *TestBlockingWriteClient) Endpoint() string {
 // For benchmarking the send and not the receive side.
 type NopWriteClient struct{}
 
-func NewNopWriteClient() *NopWriteClient                            { return &NopWriteClient{} }
-func (c *NopWriteClient) Store(_ context.Context, req []byte) error { return nil }
-func (c *NopWriteClient) Name() string                              { return "nopwriteclient" }
-func (c *NopWriteClient) Endpoint() string                          { return "http://test-remote.com/1234" }
+func NewNopWriteClient() *NopWriteClient                      { return &NopWriteClient{} }
+func (c *NopWriteClient) Store(context.Context, []byte) error { return nil }
+func (c *NopWriteClient) Name() string                        { return "nopwriteclient" }
+func (c *NopWriteClient) Endpoint() string                    { return "http://test-remote.com/1234" }
 
 func BenchmarkSampleSend(b *testing.B) {
 	// Send one sample per series, which is the typical remote_write case

@@ -14,6 +14,7 @@
 package chunkenc
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -116,7 +117,7 @@ func TestHistogramChunkSameBuckets(t *testing.T) {
 
 	// 3. Now recycle an iterator that was never used to access anything.
 	itX := c.Iterator(nil)
-	for itX.Next() == ValHistogram {
+	for itX.Next() == ValHistogram { // nolint:revive
 		// Just iterate through without accessing anything.
 	}
 	it3 := c.iterator(itX)
@@ -387,6 +388,64 @@ func TestHistogramChunkAppendable(t *testing.T) {
 	}
 }
 
+func TestHistogramChunkAppendableWithEmptySpan(t *testing.T) {
+	h1 := &histogram.Histogram{
+		Schema:        0,
+		Count:         21,
+		Sum:           1234.5,
+		ZeroThreshold: 0.001,
+		ZeroCount:     4,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 4},
+			{Offset: 0, Length: 0},
+			{Offset: 0, Length: 3},
+		},
+		PositiveBuckets: []int64{1, 1, -1, 0, 0, 0, 0},
+		NegativeSpans: []histogram.Span{
+			{Offset: 1, Length: 4},
+			{Offset: 2, Length: 0},
+			{Offset: 2, Length: 3},
+		},
+		NegativeBuckets: []int64{1, 1, -1, 1, 0, 0, 0},
+	}
+	h2 := &histogram.Histogram{
+		Schema:        0,
+		Count:         37,
+		Sum:           2345.6,
+		ZeroThreshold: 0.001,
+		ZeroCount:     5,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 4},
+			{Offset: 0, Length: 0},
+			{Offset: 0, Length: 3},
+		},
+		PositiveBuckets: []int64{1, 2, -2, 1, -1, 0, 0},
+		NegativeSpans: []histogram.Span{
+			{Offset: 1, Length: 4},
+			{Offset: 2, Length: 0},
+			{Offset: 2, Length: 3},
+		},
+		NegativeBuckets: []int64{1, 3, -2, 5, -2, 0, -3},
+	}
+
+	c := Chunk(NewHistogramChunk())
+
+	// Create fresh appender and add the first histogram.
+	app, err := c.Appender()
+	require.NoError(t, err)
+	require.Equal(t, 0, c.NumSamples())
+
+	app.AppendHistogram(1, h1)
+	require.Equal(t, 1, c.NumSamples())
+	hApp, _ := app.(*HistogramAppender)
+
+	pI, nI, okToAppend, counterReset := hApp.Appendable(h2)
+	require.Empty(t, pI)
+	require.Empty(t, nI)
+	require.True(t, okToAppend)
+	require.False(t, counterReset)
+}
+
 func TestAtFloatHistogram(t *testing.T) {
 	input := []histogram.Histogram{
 		{
@@ -514,6 +573,10 @@ func TestAtFloatHistogram(t *testing.T) {
 	app, err := chk.Appender()
 	require.NoError(t, err)
 	for i := range input {
+		if i > 0 {
+			_, _, okToAppend, _ := app.(*HistogramAppender).Appendable(&input[i])
+			require.True(t, okToAppend, fmt.Sprintf("idx: %d", i))
+		}
 		app.AppendHistogram(int64(i), &input[i])
 	}
 	it := chk.Iterator(nil)

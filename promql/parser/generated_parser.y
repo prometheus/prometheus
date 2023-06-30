@@ -339,7 +339,7 @@ grouping_label  : maybe_label
 
 function_call   : IDENTIFIER function_call_body
                         {
-                        fn, exist := getFunction($1.Val)
+                        fn, exist := getFunction($1.Val, yylex.(*parser).functions)
                         if !exist{
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"unknown function with name %q", $1.Val)
                         }
@@ -567,7 +567,7 @@ label_matcher   : IDENTIFIER match_op STRING
  */
 
 metric          : metric_identifier label_set
-                        { b := labels.NewBuilder($2); b.Set(labels.MetricName, $1.Val); $$ = b.Labels(labels.EmptyLabels()) }
+                        { b := labels.NewBuilder($2); b.Set(labels.MetricName, $1.Val); $$ = b.Labels() }
                 | label_set
                         {$$ = $1}
                 ;

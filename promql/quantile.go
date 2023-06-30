@@ -169,11 +169,12 @@ func histogramQuantile(q float64, h *histogram.FloatHistogram) float64 {
 		}
 	}
 	if bucket.Lower < 0 && bucket.Upper > 0 {
-		if len(h.NegativeBuckets) == 0 && len(h.PositiveBuckets) > 0 {
+		switch {
+		case len(h.NegativeBuckets) == 0 && len(h.PositiveBuckets) > 0:
 			// The result is in the zero bucket and the histogram has only
 			// positive buckets. So we consider 0 to be the lower bound.
 			bucket.Lower = 0
-		} else if len(h.PositiveBuckets) == 0 && len(h.NegativeBuckets) > 0 {
+		case len(h.PositiveBuckets) == 0 && len(h.NegativeBuckets) > 0:
 			// The result is in the zero bucket and the histogram has only
 			// negative buckets. So we consider 0 to be the upper bound.
 			bucket.Upper = 0
@@ -244,12 +245,13 @@ func histogramFraction(lower, upper float64, h *histogram.FloatHistogram) float6
 	for it.Next() {
 		b := it.At()
 		if b.Lower < 0 && b.Upper > 0 {
-			if len(h.NegativeBuckets) == 0 && len(h.PositiveBuckets) > 0 {
+			switch {
+			case len(h.NegativeBuckets) == 0 && len(h.PositiveBuckets) > 0:
 				// This is the zero bucket and the histogram has only
 				// positive buckets. So we consider 0 to be the lower
 				// bound.
 				b.Lower = 0
-			} else if len(h.PositiveBuckets) == 0 && len(h.NegativeBuckets) > 0 {
+			case len(h.PositiveBuckets) == 0 && len(h.NegativeBuckets) > 0:
 				// This is in the zero bucket and the histogram has only
 				// negative buckets. So we consider 0 to be the upper
 				// bound.
@@ -382,5 +384,5 @@ func quantile(q float64, values vectorByValueHeap) float64 {
 	upperIndex := math.Min(n-1, lowerIndex+1)
 
 	weight := rank - math.Floor(rank)
-	return values[int(lowerIndex)].V*(1-weight) + values[int(upperIndex)].V*weight
+	return values[int(lowerIndex)].F*(1-weight) + values[int(upperIndex)].F*weight
 }

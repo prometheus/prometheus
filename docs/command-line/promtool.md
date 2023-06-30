@@ -27,6 +27,7 @@ Tooling for the Prometheus monitoring system.
 | check | Check the resources for validity. |
 | query | Run query against a Prometheus server. |
 | debug | Fetch debug information. |
+| push | Push to a Prometheus server. |
 | test | Unit testing. |
 | tsdb | Run tsdb commands. |
 
@@ -130,6 +131,38 @@ Check if the web config files are valid or not.
 
 
 
+##### `promtool check healthy`
+
+Check if the Prometheus server is healthy.
+
+
+
+###### Flags
+
+| Flag | Description | Default |
+| --- | --- | --- |
+| <code class="text-nowrap">--http.config.file</code> | HTTP client configuration file for promtool to connect to Prometheus. |  |
+| <code class="text-nowrap">--url</code> | The URL for the Prometheus server. | `http://localhost:9090` |
+
+
+
+
+##### `promtool check ready`
+
+Check if the Prometheus server is ready.
+
+
+
+###### Flags
+
+| Flag | Description | Default |
+| --- | --- | --- |
+| <code class="text-nowrap">--http.config.file</code> | HTTP client configuration file for promtool to connect to Prometheus. |  |
+| <code class="text-nowrap">--url</code> | The URL for the Prometheus server. | `http://localhost:9090` |
+
+
+
+
 ##### `promtool check rules`
 
 Check if the rule files are valid or not.
@@ -148,9 +181,9 @@ Check if the rule files are valid or not.
 
 ###### Arguments
 
-| Argument | Description | Required |
-| --- | --- | --- |
-| rule-files | The rule files to check. | Yes |
+| Argument | Description |
+| --- | --- |
+| rule-files | The rule files to check, default is read from standard input. |
 
 
 
@@ -336,6 +369,48 @@ Fetch all debug information.
 | Argument | Description | Required |
 | --- | --- | --- |
 | server | Prometheus server to get all debug information from. | Yes |
+
+
+
+
+### `promtool push`
+
+Push to a Prometheus server.
+
+
+
+#### Flags
+
+| Flag | Description |
+| --- | --- |
+| <code class="text-nowrap">--http.config.file</code> | HTTP client configuration file for promtool to connect to Prometheus. |
+
+
+
+
+##### `promtool push metrics`
+
+Push metrics to a prometheus remote write (for testing purpose only).
+
+
+
+###### Flags
+
+| Flag | Description | Default |
+| --- | --- | --- |
+| <code class="text-nowrap">--label</code> | Label to attach to metrics. Can be specified multiple times. | `job=promtool` |
+| <code class="text-nowrap">--timeout</code> | The time to wait for pushing metrics. | `30s` |
+| <code class="text-nowrap">--header</code> | Prometheus remote write header. |  |
+
+
+
+
+###### Arguments
+
+| Argument | Description | Required |
+| --- | --- | --- |
+| remote-write-url | Prometheus remote write url to push metrics. | Yes |
+| metric-files | The metric files to push, default is read from standard input. |  |
 
 
 

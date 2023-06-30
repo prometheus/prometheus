@@ -512,7 +512,7 @@ func BenchmarkGzip(b *testing.B) {
 			k := b.N / promtestdataSampleCount
 
 			b.ReportAllocs()
-			b.SetBytes(int64(n) / promtestdataSampleCount)
+			b.SetBytes(n / promtestdataSampleCount)
 			b.ResetTimer()
 
 			total := 0
