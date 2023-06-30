@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"math/rand"
 	"reflect"
 	"runtime"
 	"sort"
@@ -2529,7 +2530,7 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 	result := map[uint64]*groupedAggregation{}
 	orderedResult := []*groupedAggregation{}
 	var k int64
-	if op == parser.TOPK || op == parser.BOTTOMK {
+	if op == parser.TOPK || op == parser.BOTTOMK || op == parser.SAMPLE_LIMIT {
 		f := param.(float64)
 		if !convertibleToInt64(f) {
 			ev.errorf("Scalar value %v overflows int64", f)
@@ -2542,6 +2543,12 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 	var q float64
 	if op == parser.QUANTILE {
 		q = param.(float64)
+	}
+	if op == parser.SAMPLE_RANDOM {
+		q = param.(float64)
+		if q == 0 {
+			return Vector{}
+		}
 	}
 	var valueLabel string
 	var recomputeGroupingKey bool
@@ -2631,12 +2638,24 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 			switch op {
 			case parser.STDVAR, parser.STDDEV:
 				result[groupingKey].floatValue = 0
-			case parser.TOPK, parser.QUANTILE:
+			case parser.TOPK, parser.QUANTILE, parser.SAMPLE_LIMIT:
 				result[groupingKey].heap = make(vectorByValueHeap, 1, resultSize)
 				result[groupingKey].heap[0] = Sample{
 					F:      s.F,
 					Metric: s.Metric,
 				}
+			case parser.SAMPLE_RANDOM:
+				// NB: As this switch visited only by the first element
+				// (sample) in the loop, we create the heap, then do
+				// the _same_ random sampling as with the rest of the
+				// elements (to avoid "losing" it).
+				// NB: slice capacity set to resultSize*q (as an statistical
+				// approximation).
+				result[groupingKey].heap = make(vectorByValueHeap, 0, int(float64(resultSize)*q))
+				addRandomSample(q, s.T, &result[groupingKey].heap, &Sample{
+					F:      s.F,
+					Metric: s.Metric,
+				})
 			case parser.BOTTOMK:
 				result[groupingKey].reverseHeap = make(vectorByReverseValueHeap, 1, resultSize)
 				result[groupingKey].reverseHeap[0] = Sample{
@@ -2775,6 +2794,24 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 				}
 			}
 
+		case parser.SAMPLE_LIMIT:
+			// We build a heap of up to k elements, without any specific order
+			if int64(len(group.heap)) < k {
+				heap.Push(&group.heap, &Sample{
+					F:      s.F,
+					Metric: s.Metric,
+				})
+			} else {
+				continue
+			}
+
+		case parser.SAMPLE_RANDOM:
+			// We randomly push elements to the heap, with `q` probability.
+			addRandomSample(q, s.T, &group.heap, &Sample{
+				F:      s.F,
+				Metric: s.Metric,
+			})
+
 		case parser.QUANTILE:
 			group.heap = append(group.heap, s)
 
@@ -2826,6 +2863,15 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 				sort.Sort(sort.Reverse(aggr.reverseHeap))
 			}
 			for _, v := range aggr.reverseHeap {
+				enh.Out = append(enh.Out, Sample{
+					Metric: v.Metric,
+					F:      v.F,
+				})
+			}
+			continue // Bypass default append.
+
+		case parser.SAMPLE_LIMIT, parser.SAMPLE_RANDOM:
+			for _, v := range aggr.heap {
 				enh.Out = append(enh.Out, Sample{
 					Metric: v.Metric,
 					F:      v.F,
@@ -3061,3 +3107,31 @@ func makeInt64Pointer(val int64) *int64 {
 	*valp = val
 	return valp
 }
+
+// Add Randomizer interface to allow unit-testing, `ts` argument is used only
+// for mocking rand.Float64() in a deterministic way (FakeRandomizer).
+type Randomizer interface {
+	Float64(ts int64) float64
+}
+
+type RealRandomizer struct{}
+
+func NewRealRandomizer(seed int64) *RealRandomizer {
+	rand.Seed(seed)
+	return &RealRandomizer{}
+}
+
+func (r *RealRandomizer) Float64(ts int64) float64 {
+	return rand.Float64()
+}
+
+func addRandomSample(q float64, ts int64, h *vectorByValueHeap, sample *Sample) {
+	if randomizer.Float64(ts) < q {
+		heap.Push(h, sample)
+	}
+}
+
+// Allow overridding to ease unit test mocking.
+var (
+	randomizer Randomizer = NewRealRandomizer(time.Now().UnixNano())
+)

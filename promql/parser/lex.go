@@ -64,7 +64,7 @@ func (i ItemType) IsAggregator() bool { return i > aggregatorsStart && i < aggre
 // IsAggregatorWithParam returns true if the Item is an aggregator that takes a parameter.
 // Returns false otherwise
 func (i ItemType) IsAggregatorWithParam() bool {
-	return i == TOPK || i == BOTTOMK || i == COUNT_VALUES || i == QUANTILE
+	return i == TOPK || i == BOTTOMK || i == COUNT_VALUES || i == QUANTILE || i == SAMPLE_LIMIT || i == SAMPLE_RANDOM
 }
 
 // IsKeyword returns true if the Item corresponds to a keyword.
@@ -105,18 +105,20 @@ var key = map[string]ItemType{
 	"atan2":  ATAN2,
 
 	// Aggregators.
-	"sum":          SUM,
-	"avg":          AVG,
-	"count":        COUNT,
-	"min":          MIN,
-	"max":          MAX,
-	"group":        GROUP,
-	"stddev":       STDDEV,
-	"stdvar":       STDVAR,
-	"topk":         TOPK,
-	"bottomk":      BOTTOMK,
-	"count_values": COUNT_VALUES,
-	"quantile":     QUANTILE,
+	"sum":           SUM,
+	"avg":           AVG,
+	"count":         COUNT,
+	"min":           MIN,
+	"max":           MAX,
+	"group":         GROUP,
+	"stddev":        STDDEV,
+	"stdvar":        STDVAR,
+	"topk":          TOPK,
+	"bottomk":       BOTTOMK,
+	"count_values":  COUNT_VALUES,
+	"quantile":      QUANTILE,
+	"sample_limit":  SAMPLE_LIMIT,
+	"sample_random": SAMPLE_RANDOM,
 
 	// Keywords.
 	"offset":      OFFSET,

@@ -38,6 +38,24 @@ import (
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
+// Mock Randomizer interface.
+type FakeRandomizer struct {
+	div int64
+}
+
+func NewFakeRandomizer(div int64) *FakeRandomizer {
+	return &FakeRandomizer{
+		div: div,
+	}
+}
+
+// FakeRandomizer.Float64() with div=100000 will return (tstamp%100000)/100000
+// i.e. will return [0.0, 1.0) values proportional to tstamp%100000.
+func (r *FakeRandomizer) Float64(ts int64) float64 {
+	tsmod := ts % r.div
+	return float64(tsmod) / float64(r.div)
+}
+
 func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m)
 }
@@ -1630,6 +1648,141 @@ load 1ms
 				sort.Sort(res.Value.(Matrix))
 			}
 			require.Equal(t, c.result, res.Value, "query %q failed", c.query)
+		})
+	}
+}
+
+func TestSample(t *testing.T) {
+	test, err := NewTest(t, `
+load 10s
+  metric{job="1"} 0+1x1000
+  metric{job="2"} 0+2x1000
+  metric{job="3"} 0+3x1000
+`)
+	require.NoError(t, err)
+	defer test.Close()
+
+	// Mock the default random number generator with a deterministic one.
+	randomizer = NewFakeRandomizer(100000)
+
+	err = test.Run()
+	require.NoError(t, err)
+
+	lbls1 := labels.FromStrings("__name__", "metric", "job", "1")
+	lbls2 := labels.FromStrings("__name__", "metric", "job", "2")
+	lbls3 := labels.FromStrings("__name__", "metric", "job", "3")
+
+	cases := []struct {
+		query                string
+		start, end, interval int64 // Time in seconds.
+		result               parser.Value
+		resultIn             parser.Value
+		resultLen            int // Required if resultIn is set
+	}{
+		{
+			query: `sample_limit(0, metric)`,
+			start: 0, end: 20, interval: 10,
+			result: Matrix{},
+		},
+		{
+			query: `sample_limit(2, metric)`,
+			start: 0, end: 20, interval: 10,
+			resultLen: 2,
+			resultIn: Matrix{
+				Series{
+					Floats: []FPoint{{F: 0, T: 0}, {F: 1, T: 10000}, {F: 2, T: 20000}},
+					Metric: lbls1,
+				},
+				Series{
+					Floats: []FPoint{{F: 0, T: 0}, {F: 2, T: 10000}, {F: 4, T: 20000}},
+					Metric: lbls2,
+				},
+				Series{
+					Floats: []FPoint{{F: 0, T: 0}, {F: 3, T: 10000}, {F: 6, T: 20000}},
+					Metric: lbls3,
+				},
+			},
+		},
+		{
+			query: `sample_random(0, metric)`,
+			start: 0, end: 90, interval: 10,
+			result: Matrix{},
+		},
+		{
+			// With 0.2 probability over 20 samples (interval=10s) we'll get
+			// the 1st two from each 100s period, as FakeRandomizer will return
+			// (tstamp%100s)/100s.
+			query: `sample_random(0.2, metric)`,
+			start: 0, end: 190, interval: 10,
+			result: Matrix{
+				Series{
+					Floats: []FPoint{{F: 0, T: 0}, {F: 1, T: 10000}, {F: 10, T: 100000}, {F: 11, T: 110000}},
+					Metric: lbls1,
+				},
+				Series{
+					Floats: []FPoint{{F: 0, T: 0}, {F: 2, T: 10000}, {F: 20, T: 100000}, {F: 22, T: 110000}},
+					Metric: lbls2,
+				},
+				Series{
+					Floats: []FPoint{{F: 0, T: 0}, {F: 3, T: 10000}, {F: 30, T: 100000}, {F: 33, T: 110000}},
+					Metric: lbls3,
+				},
+			},
+		},
+		{
+			query: `sample_random(1, metric)`,
+			start: 0, end: 20, interval: 10,
+			result: Matrix{
+				Series{
+					Floats: []FPoint{{F: 0, T: 0}, {F: 1, T: 10000}, {F: 2, T: 20000}},
+					Metric: lbls1,
+				},
+				Series{
+					Floats: []FPoint{{F: 0, T: 0}, {F: 2, T: 10000}, {F: 4, T: 20000}},
+					Metric: lbls2,
+				},
+				Series{
+					Floats: []FPoint{{F: 0, T: 0}, {F: 3, T: 10000}, {F: 6, T: 20000}},
+					Metric: lbls3,
+				},
+			},
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.query, func(t *testing.T) {
+			if c.interval == 0 {
+				c.interval = 1
+			}
+			start, end, interval := time.Unix(c.start, 0), time.Unix(c.end, 0), time.Duration(c.interval)*time.Second
+			var err error
+			var qry Query
+			if c.end == 0 {
+				qry, err = test.QueryEngine().NewInstantQuery(test.context, test.Queryable(), nil, c.query, start)
+			} else {
+				qry, err = test.QueryEngine().NewRangeQuery(test.context, test.Queryable(), nil, c.query, start, end, interval)
+			}
+			require.NoError(t, err)
+
+			res := qry.Exec(test.Context())
+			require.NoError(t, res.Err)
+			switch {
+			case c.result != nil:
+				if expMat, ok := c.result.(Matrix); ok {
+					sort.Sort(expMat)
+					sort.Sort(res.Value.(Matrix))
+				}
+				require.Equal(t, c.result, res.Value, "query %q failed for require.Equal()", c.query)
+			case c.resultIn != nil:
+				require.Equal(t, c.resultLen, len(res.Value.(Matrix)), "query %q failed", c.query)
+				if expMat, ok := c.resultIn.(Matrix); ok {
+					sort.Sort(expMat)
+					sort.Sort(res.Value.(Matrix))
+					for _, e := range res.Value.(Matrix) {
+						require.Contains(t, c.resultIn, e, "query %q failed for require.Contains()", c.query)
+					}
+				}
+			}
 		})
 	}
 }
