@@ -525,8 +525,8 @@ github.com/kylelemons/godebug v1.1.0 h1:RPNrshWIDI6G2gRW9EHilWtl7Z6Sb1BR0xunSBf0
 github.com/kylelemons/godebug v1.1.0/go.mod h1:9/0rRGxNHcop5bhtWyNeEfOS8JIWk580+fNqagV/RAw=
 github.com/lightstep/lightstep-tracer-common/golang/gogo v0.0.0-20190605223551-bc2310a04743/go.mod h1:qklhhLq1aX+mtWk9cPHPzaBjWImj5ULL6C7HFJtXQMM=
 github.com/lightstep/lightstep-tracer-go v0.18.1/go.mod h1:jlF1pusYV4pidLvZ+XD0UBX0ZE6WURAspgAczcDHrL4=
-github.com/linode/linodego v1.17.0 h1:aWS98f0jUoY2lhsEuBxRdVkqyGM0nazPd68AEDF0EvU=
-github.com/linode/linodego v1.17.0/go.mod h1:/omzPxie0/YI6S0sTw1q47qDt5IYSlbO/infRR4UG+A=
+github.com/linode/linodego v1.17.2 h1:b32dj4662PGG5P9qVa6nBezccWdqgukndlMIuPGq1CQ=
+github.com/linode/linodego v1.17.2/go.mod h1:C2iyT3Vg2O2sPxkWka4XAQ5WSUtm5LmTZ3Adw43Ra7Q=
 github.com/lyft/protoc-gen-validate v0.0.13/go.mod h1:XbGvPuh87YZc5TdIa2/I4pLk0QoUACkjt2znoq26NVQ=
 github.com/mailru/easyjson v0.0.0-20190614124828-94de47d64c63/go.mod h1:C1wdFJiN94OJF2b5HbByQZoLdCWB1Yqtg26g4irojpc=
 github.com/mailru/easyjson v0.0.0-20190626092158-b2ccc519800e/go.mod h1:C1wdFJiN94OJF2b5HbByQZoLdCWB1Yqtg26g4irojpc=
