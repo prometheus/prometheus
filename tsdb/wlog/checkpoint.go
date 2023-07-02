@@ -20,13 +20,13 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
@@ -374,8 +374,8 @@ func listCheckpoints(dir string) (refs []checkpointRef, err error) {
 		refs = append(refs, checkpointRef{name: fi.Name(), index: idx})
 	}
 
-	sort.Slice(refs, func(i, j int) bool {
-		return refs[i].index < refs[j].index
+	slices.SortFunc(refs, func(a, b checkpointRef) bool {
+		return a.index < b.index
 	})
 
 	return refs, nil
