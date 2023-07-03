@@ -3166,7 +3166,7 @@ func addRandomSample(q float64, ts int64, h *vectorByValueHeap, sample *Sample) 
 		//
 		// e.g.:
 		//   randomizer.Float64()==0.3 && q==-0.6
-		//     0.7 >= 0.6 ? --> don't add sample
+		//     0.3 >= 0.4 ? --> don't add sample
 		if randomizer.Float64(ts, sample) >= (1.0 + q) {
 			heap.Push(h, sample)
 		}
