@@ -16,11 +16,14 @@ extern "C" {
 // c types routed C API
 
 // dtor
-// okdb_wal_c_slice_with_stream_buffer_destroy - calls the destructor, C wrapper C++ for clear memory.
-void okdb_wal_c_slice_with_stream_buffer_destroy(c_slice_with_stream_buffer* c_segment);
+// okdb_wal_c_snapshot_destroy - calls the destructor, C wrapper C++ for clear memory.
+void okdb_wal_c_snapshot_destroy(c_snapshot* snapshot);
 
-// okdb_wal_c_slice_with_string_buffer_destroy - calls the destructor, C wrapper C++ for clear memory.
-void okdb_wal_c_slice_with_string_buffer_destroy(c_slice_with_string_buffer* c_segment);
+// okdb_wal_c_segment_destroy - calls the destructor, C wrapper C++ for clear memory.
+void okdb_wal_c_segment_destroy(c_segment* segment);
+
+// okdb_wal_c_decoded_segment_destroy - calls the destructor, C wrapper C++ for clear memory.
+void okdb_wal_c_decoded_segment_destroy(c_decoded_segment* decoded_segment);
 
 // Entry point
 

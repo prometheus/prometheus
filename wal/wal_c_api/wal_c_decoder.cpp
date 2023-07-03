@@ -24,7 +24,7 @@ class Decoder {
   inline __attribute__((always_inline)) Decoder() noexcept {}
 
   // decode - decoding incoming data and make protbuf.
-  inline __attribute__((always_inline)) uint32_t decode(c_slice c_seg, c_slice_with_string_buffer* c_protobuf) {
+  inline __attribute__((always_inline)) uint32_t decode(c_slice c_seg, c_decoded_segment* c_protobuf) {
     std::ispanstream income_buffer({(char*)(c_seg.array), c_seg.len});
     income_buffer >> reader_;
 
@@ -36,6 +36,8 @@ class Decoder {
     c_protobuf->data.len = protobuf_buffer->size();
     c_protobuf->data.cap = protobuf_buffer->size();
     c_protobuf->buf = protobuf_buffer;
+    c_protobuf->created_at = reader_.created_at_tsns();
+    c_protobuf->encoded_at = reader_.encoded_at_tsns();
 
     return reader_.last_processed_segment();
   }
@@ -71,7 +73,7 @@ c_decoder OKDB_WAL_PREFIXED_NAME(okdb_wal_c_decoder_ctor)() {
 }
 
 // okdb_wal_c_decoder_decode - C wrapper C++, calls C++ class Decoder methods.
-uint32_t OKDB_WAL_PREFIXED_NAME(okdb_wal_c_decoder_decode)(c_decoder c_dec, c_slice c_seg, c_slice_with_string_buffer* c_protobuf) {
+uint32_t OKDB_WAL_PREFIXED_NAME(okdb_wal_c_decoder_decode)(c_decoder c_dec, c_slice c_seg, c_decoded_segment* c_protobuf) {
   return static_cast<Wrapper::Decoder*>(c_dec)->decode(c_seg, c_protobuf);
 }
 

@@ -41,7 +41,7 @@ class Encoder {
       : shard_id_(shard_id), number_of_shards_(number_of_shards) {}
 
   // encode - encoding data from Hashdex and make segment, redundant.
-  inline __attribute__((always_inline)) void encode(c_hashdex c_hx, c_slice_with_stream_buffer* c_seg, c_redundant* c_rt) {
+  inline __attribute__((always_inline)) void encode(c_hashdex c_hx, c_segment* c_seg, c_redundant* c_rt) {
     auto hashdex_data = static_cast<Hashdex*>(c_hx)->data();
     for (const auto& [chksm, pb_view] : hashdex_data) {
       if ((chksm % number_of_shards_) == shard_id_) {
@@ -50,6 +50,10 @@ class Encoder {
         timeseries_.clear();
       }
     }
+    c_seg->samples = writer_.buffer().samples_count();
+    c_seg->series = writer_.buffer().series_count();
+    c_seg->earliest_timestamp = writer_.buffer().earliest_sample();
+    c_seg->latest_timestamp = writer_.buffer().latest_sample();
 
     auto segment_buffer = new std::stringstream;
     c_rt->data = writer_.write(*segment_buffer);
@@ -62,7 +66,7 @@ class Encoder {
   }
 
   // snapshot - from redundants make snapshot.
-  inline __attribute__((always_inline)) void snapshot(c_slice c_rts, c_slice_with_stream_buffer* c_snap) {
+  inline __attribute__((always_inline)) void snapshot(c_slice c_rts, c_snapshot* c_snap) {
     std::span<PromPP::WAL::Writer::Redundant*> span_redundants{(PromPP::WAL::Writer::Redundant**)(c_rts.array), c_rts.len};
     auto snapshot_buffer = new std::stringstream;
     writer_.snapshot(span_redundants, *snapshot_buffer);
@@ -112,12 +116,12 @@ c_encoder OKDB_WAL_PREFIXED_NAME(okdb_wal_c_encoder_ctor)(uint16_t shard_id, uin
 }
 
 // okdb_wal_c_encoder_encode - C wrapper C++, calls C++ class Encoder methods.
-void OKDB_WAL_PREFIXED_NAME(okdb_wal_c_encoder_encode)(c_encoder c_enc, c_hashdex c_hx, c_slice_with_stream_buffer* c_seg, c_redundant* c_rt) {
+void OKDB_WAL_PREFIXED_NAME(okdb_wal_c_encoder_encode)(c_encoder c_enc, c_hashdex c_hx, c_segment* c_seg, c_redundant* c_rt) {
   return static_cast<Wrapper::Encoder*>(c_enc)->encode(c_hx, c_seg, c_rt);
 }
 
 // okdb_wal_c_encoder_snapshot - C wrapper C++, calls C++ class Encoder methods.
-void OKDB_WAL_PREFIXED_NAME(okdb_wal_c_encoder_snapshot)(c_encoder c_enc, c_slice c_rts, c_slice_with_stream_buffer* c_snap) {
+void OKDB_WAL_PREFIXED_NAME(okdb_wal_c_encoder_snapshot)(c_encoder c_enc, c_slice c_rts, c_snapshot* c_snap) {
   return static_cast<Wrapper::Encoder*>(c_enc)->snapshot(c_rts, c_snap);
 }
 

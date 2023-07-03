@@ -1,6 +1,7 @@
 #pragma once
 
 #include <scope_exit.h>
+#include <chrono>
 #include <cstdlib>
 #include <iostream>
 #include <iterator>
@@ -31,6 +32,7 @@ class BasicEncoder {
     uint32_t series_count_ = 0;
     Primitives::Timestamp earliest_sample_ = std::numeric_limits<Primitives::Timestamp>::max();
     Primitives::Timestamp latest_sample_ = 0;
+    int64_t first_sample_added_at_tsns_ = 0;
 
    public:
     inline __attribute__((always_inline)) uint32_t samples_count() const { return samples_count_; }
@@ -41,6 +43,8 @@ class BasicEncoder {
 
     inline __attribute__((always_inline)) Primitives::Timestamp latest_sample() const { return latest_sample_; }
 
+    inline __attribute__((always_inline)) int64_t first_sample_added_at_ts_ns() const { return first_sample_added_at_tsns_; }
+
     inline __attribute__((always_inline)) void clear() {
       singular_.clear();
       plural_.clear();
@@ -50,11 +54,17 @@ class BasicEncoder {
 
       earliest_sample_ = std::numeric_limits<Primitives::Timestamp>::max();
       latest_sample_ = 0;
+      first_sample_added_at_tsns_ = 0;
     }
 
     template <class T>
     inline __attribute__((always_inline)) void add(Primitives::LabelSetID ls_id, const T& smpl) {
       // TODO What to do with non unique timestamps?
+
+      if (first_sample_added_at_tsns_ == 0) {
+        const auto now = std::chrono::system_clock::now();
+        first_sample_added_at_tsns_ = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
+      }
 
       ++samples_count_;
 
@@ -152,7 +162,7 @@ class BasicEncoder {
   uint8_t pow_two_of_total_shards_ = 0;
 
   template <class OutputStream>
-  Redundant* write_segment(OutputStream& out) {
+  Redundant* encode_segment(OutputStream& out) {
     BareBones::BitSequence gorilla_ts_bitseq, gorilla_v_bitseq;
     BareBones::EncodedSequence<BareBones::Encoding::DeltaRLE<>> ls_id_delta_rle_seq;
     BareBones::EncodedSequence<BareBones::Encoding::DeltaZigZagRLE<>> ts_delta_rle_seq;
@@ -229,6 +239,14 @@ class BasicEncoder {
     // write segment number
     out.write(reinterpret_cast<const char*>(&next_encoded_segment_), sizeof(next_encoded_segment_));
     metadata_bytes_ += sizeof(next_encoded_segment_);
+
+    // write open-close timestamps
+    const int64_t created_at_tsns = buffer_.first_sample_added_at_ts_ns();
+    const auto now = std::chrono::system_clock::now();
+    const int64_t encoded_at_tsns = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
+    out.write(reinterpret_cast<const char*>(&created_at_tsns), sizeof(created_at_tsns));
+    out.write(reinterpret_cast<const char*>(&encoded_at_tsns), sizeof(encoded_at_tsns));
+    metadata_bytes_ += 16;
 
     // write new label sets
     label_sets_checkpoint_ = label_sets_.checkpoint();
@@ -325,13 +343,13 @@ class BasicEncoder {
 
   template <class OutputStream>
   friend OutputStream& operator<<(OutputStream& out, BasicEncoder& wal) {
-    wal.write_segment(out);
+    wal.encode_segment(out);
     return out;
   }
 
   template <class OutputStream>
   inline __attribute__((always_inline)) Redundant* write(OutputStream& out) {
-    return write_segment(out);
+    return encode_segment(out);
   }
 
   template <std::ranges::bidirectional_range Iterator, typename OutputStream>
@@ -444,6 +462,8 @@ class BasicDecoder {
   BareBones::CRC32 segment_v_crc_;
   uint16_t shard_id_ = 0;
   uint8_t pow_two_of_total_shards_ = 0;
+  int64_t created_at_tsns_ = 0;
+  int64_t encoded_at_tsns_ = 0;
 
   void clear_segment() {
     segment_gorilla_ts_bitseq_.clear();
@@ -542,6 +562,9 @@ class BasicDecoder {
 
     if (segment != last_processed_segment_ + 1)
       throw std::runtime_error("A9: Meaningful message supposed to be here!");
+
+    in.read(reinterpret_cast<char*>(&created_at_tsns_), sizeof(created_at_tsns_));
+    in.read(reinterpret_cast<char*>(&encoded_at_tsns_), sizeof(encoded_at_tsns_));
 
     // read label sets
     label_sets_.load(in);
@@ -646,6 +669,10 @@ class BasicDecoder {
   inline __attribute__((always_inline)) uint8_t pow_two_of_total_shards() const noexcept { return pow_two_of_total_shards_; }
 
   inline __attribute__((always_inline)) uint32_t last_processed_segment() const { return last_processed_segment_; }
+
+  inline __attribute__((always_inline)) int64_t created_at_tsns() const { return created_at_tsns_; }
+
+  inline __attribute__((always_inline)) int64_t encoded_at_tsns() const { return encoded_at_tsns_; }
 
   template <class InputStream>
   friend InputStream& operator>>(InputStream& in, BasicDecoder& wal) {

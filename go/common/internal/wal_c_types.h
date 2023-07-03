@@ -20,28 +20,38 @@ typedef struct {
   size_t cap;
 } c_slice;
 
-// c_slice_with_stream_buffer - C wrapper C++ Segment and Snapshot for exchange memory
-// between C++ and Go.
 typedef struct {
   c_slice data;
   stringstream_ptr buf;
-} c_slice_with_stream_buffer;
+} c_snapshot;
 
-// c_slice_with_string_buffer - C wrapper C++ Segment and Snapshot for exchange memory
-// between C++ and Go.
+typedef struct {
+  c_slice data;
+  stringstream_ptr buf;
+  uint32_t samples;
+  uint32_t series;
+  int64_t earliest_timestamp;
+  int64_t latest_timestamp;
+} c_segment;
+
 typedef struct {
   c_slice data;
   string_ptr buf;
-} c_slice_with_string_buffer;
+  int64_t created_at;
+  int64_t encoded_at;
+} c_decoded_segment;
 #define OKDB_WAL_TYPES_DEFINED
 #endif
 
 // dtor
-// okdb_wal_c_slice_with_stream_buffer_destroy - calls the destructor, C wrapper C++ for clear memory.
-void okdb_wal_c_slice_with_stream_buffer_destroy(c_slice_with_stream_buffer* c_segment);
+// okdb_wal_c_snapshot_destroy - calls the destructor, C wrapper C++ for clear memory.
+void okdb_wal_c_snapshot_destroy(c_snapshot* snapshot);
 
-// okdb_wal_c_slice_with_string_buffer_destroy - calls the destructor, C wrapper C++ for clear memory.
-void okdb_wal_c_slice_with_string_buffer_destroy(c_slice_with_string_buffer* c_segment);
+// okdb_wal_c_segment_destroy - calls the destructor, C wrapper C++ for clear memory.
+void okdb_wal_c_segment_destroy(c_segment* segment);
+
+// okdb_wal_c_decoded_segment_destroy - calls the destructor, C wrapper C++ for clear memory.
+void okdb_wal_c_decoded_segment_destroy(c_decoded_segment* decoded_segment);
 
 // okdb_wal_initialize - entry point for C bindings.
 int okdb_wal_initialize();
