@@ -17,6 +17,18 @@ type ShardedData interface{}
 // Segment - encoded data segment
 type Segment interface {
 	Bytes() []byte
+	Samples() uint32
+	Series() uint32
+	Earliest() int64
+	Latest() int64
+	Destroy()
+}
+
+// DecodedSegment - decoded to RemoteWrite protobuf segment
+type DecodedSegment interface {
+	Bytes() []byte
+	CreatedAt() int64
+	EncodedAt() int64
 	Destroy()
 }
 

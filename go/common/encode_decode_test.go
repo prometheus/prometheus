@@ -4,6 +4,7 @@ import (
 	"context"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/suite"
@@ -110,10 +111,15 @@ func (eds *EncoderDecoderSuite) TestEncodeDecode() {
 		h := common.NewHashdex(data)
 
 		eds.T().Log("encoding protobuf")
+		createdAt := time.Now()
 		_, gos, gor, err := eds.enc.Encode(eds.ctx, h)
 		eds.T().Log("destroy hashdex")
 		h.Destroy()
 		eds.Require().NoError(err)
+
+		eds.EqualValues(10, gos.Series())
+		eds.EqualValues(30, gos.Samples())
+
 		eds.T().Log("destroy redundant")
 		gor.Destroy()
 
@@ -132,6 +138,8 @@ func (eds *EncoderDecoderSuite) TestEncodeDecode() {
 		err = actualWr.Unmarshal(protob.Bytes())
 		eds.Require().NoError(err)
 		eds.Equal(expectedWr.String(), actualWr.String())
+
+		eds.InDelta(createdAt.UnixNano(), protob.CreatedAt(), float64(time.Second))
 
 		eds.T().Log("destroy decoding proto")
 		protob.Destroy()

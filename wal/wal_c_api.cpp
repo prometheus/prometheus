@@ -149,7 +149,7 @@ c_decoder okdb_wal_c_decoder_ctor() {
 }
 
 // okdb_wal_c_decoder_decode - C wrapper C++, calls C++ class Decoder methods.
-uint32_t okdb_wal_c_decoder_decode(c_decoder c_dec, c_slice c_seg, c_slice_with_string_buffer* c_protobuf) {
+uint32_t okdb_wal_c_decoder_decode(c_decoder c_dec, c_slice c_seg, c_decoded_segment* c_protobuf) {
   return std::visit([&](auto& vtbl) { return vtbl.template call<"okdb_wal_c_decoder_decode">(c_dec, c_seg, c_protobuf); }, decoder_vtbl);
 }
 
@@ -198,12 +198,12 @@ c_encoder okdb_wal_c_encoder_ctor(uint16_t shard_id, uint16_t number_of_shards) 
 }
 
 // okdb_wal_c_encoder_encode - C wrapper C++, calls C++ class Encoder methods.
-void okdb_wal_c_encoder_encode(c_encoder c_enc, c_hashdex c_hx, c_slice_with_stream_buffer* c_seg, c_redundant* c_rt) {
+void okdb_wal_c_encoder_encode(c_encoder c_enc, c_hashdex c_hx, c_segment* c_seg, c_redundant* c_rt) {
   return std::visit([&](auto& vtbl) { return vtbl.template call<"okdb_wal_c_encoder_encode">(c_enc, c_hx, c_seg, c_rt); }, encoder_vtbl);
 }
 
 // okdb_wal_c_encoder_snapshot - C wrapper C++, calls C++ class Encoder methods.
-void okdb_wal_c_encoder_snapshot(c_encoder c_enc, c_slice c_rts, c_slice_with_stream_buffer* c_snap) {
+void okdb_wal_c_encoder_snapshot(c_encoder c_enc, c_slice c_rts, c_snapshot* c_snap) {
   return std::visit([&](auto& vtbl) { return vtbl.template call<"okdb_wal_c_encoder_snapshot">(c_enc, c_rts, c_snap); }, encoder_vtbl);
 }
 

@@ -37,8 +37,8 @@ func Init() {
 }
 
 // CByteSlice API
-func CSliceByteDestroy(p unsafe.Pointer) {
-	C.okdb_wal_c_slice_with_string_buffer_destroy((*C.c_slice_with_string_buffer)(p))
+func CSegmentDestroy(p unsafe.Pointer) {
+	C.okdb_wal_c_segment_destroy((*C.c_segment)(p))
 }
 
 //
@@ -49,11 +49,11 @@ func CDecoderCtor() CDecoder {
 	return CDecoder(C.okdb_wal_c_decoder_ctor())
 }
 
-func CDecoderDecode(decoder CDecoder, segment []byte, protobufResult *GoSliceByte) uint32 {
+func CDecoderDecode(decoder CDecoder, segment []byte, result *GoDecodedSegment) uint32 {
 	return uint32(C.okdb_wal_c_decoder_decode(
 		C.c_decoder(decoder),
 		*(*C.c_slice)(unsafe.Pointer(&segment)),
-		(*C.c_slice_with_string_buffer)(unsafe.Pointer(protobufResult)),
+		(*C.c_decoded_segment)(unsafe.Pointer(result)),
 	))
 }
 
@@ -87,7 +87,7 @@ func CEncoderEncode(encoder CEncoder, hashdex CHashdex, segment *GoSegment, redu
 	C.okdb_wal_c_encoder_encode(
 		C.c_encoder(encoder),
 		C.c_hashdex(hashdex),
-		(*C.c_slice_with_stream_buffer)(unsafe.Pointer(segment)),
+		(*C.c_segment)(unsafe.Pointer(segment)),
 		(*C.c_redundant)(unsafe.Pointer(redundant)),
 	)
 }
@@ -96,7 +96,7 @@ func CEncoderSnapshot(encoder CEncoder, redundants []unsafe.Pointer, snapshot *G
 	C.okdb_wal_c_encoder_snapshot(
 		C.c_encoder(encoder),
 		*(*C.c_slice)(unsafe.Pointer(&redundants)),
-		(*C.c_slice_with_stream_buffer)(unsafe.Pointer(snapshot)),
+		(*C.c_snapshot)(unsafe.Pointer(snapshot)),
 	)
 }
 
@@ -127,11 +127,16 @@ func CHashdexDtor(hashdex CHashdex) {
 // CSlice API
 //
 
-func CSliceWithStreamBufferDestroy(p unsafe.Pointer) {
-	C.okdb_wal_c_slice_with_stream_buffer_destroy((*C.c_slice_with_stream_buffer)(p))
+func CSnapshotDestroy(p unsafe.Pointer) {
+	C.okdb_wal_c_snapshot_destroy((*C.c_snapshot)(p))
 }
 
 // CRedundantDestroy calls C API for destroying GoRedunant's C API.
 func CRedundantDestroy(p unsafe.Pointer) {
 	C.okdb_wal_c_redundant_destroy((*C.c_redundant)(p))
+}
+
+// CDecodedSegmentDestroy calls C API for destroying GoDecodedSegment's C API.
+func CDecodedSegmentDestroy(p unsafe.Pointer) {
+	C.okdb_wal_c_decoded_segment_destroy((*C.c_decoded_segment)(p))
 }

@@ -19,16 +19,16 @@ func NewDecoder() *Decoder {
 }
 
 // Decode - decodes incoming encoding data and return protobuf.
-func (d *Decoder) Decode(ctx context.Context, segment []byte) (*internal.GoSliceByte, uint32, error) {
+func (d *Decoder) Decode(ctx context.Context, segment []byte) (DecodedSegment, uint32, error) {
 	if ctx.Err() != nil {
 		return nil, 0, ctx.Err()
 	}
 
-	cprotobuf := internal.NewGoSliceByte()
+	result := internal.NewGoDecodedSegment()
 
-	segmentID := internal.CDecoderDecode(d.decoder, segment, cprotobuf)
+	segmentID := internal.CDecoderDecode(d.decoder, segment, result)
 
-	return cprotobuf, segmentID, nil
+	return result, segmentID, nil
 }
 
 // DecodeDry - decode incoming encoding data, restores decoder.

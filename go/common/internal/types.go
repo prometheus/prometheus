@@ -16,8 +16,12 @@ import (
 // buf - unsafe.Pointer for C++'s std::stringstream, is needed for retaining data from C++'s Redundant
 // and must be deallocated using GoSegment's Destroy() function (to avoid memory leaks in C/C++ memory).
 type GoSegment struct {
-	data CSlice
-	buf  unsafe.Pointer
+	data     CSlice
+	buf      unsafe.Pointer
+	samples  uint32
+	series   uint32
+	earliest int64
+	latest   int64
 }
 
 // NewGoSegment - init GoSegment.
@@ -32,34 +36,64 @@ func (gs *GoSegment) Bytes() []byte {
 	return *(*[]byte)((unsafe.Pointer(&gs.data)))
 }
 
+// Samples returns count of samples in segment
+func (gs *GoSegment) Samples() uint32 {
+	return gs.samples
+}
+
+// Series returns count of series in segment
+func (gs *GoSegment) Series() uint32 {
+	return gs.series
+}
+
+// Earliest returns timestamp in ms of earliest sample in segment
+func (gs *GoSegment) Earliest() int64 {
+	return gs.earliest
+}
+
+// Latest returns timestamp in ms of latest sample in segment
+func (gs *GoSegment) Latest() int64 {
+	return gs.latest
+}
+
 // Destroy - Frees C/C++ allocated memory.
 func (gs *GoSegment) Destroy() {
-	CSliceWithStreamBufferDestroy(unsafe.Pointer(gs))
+	CSegmentDestroy(unsafe.Pointer(gs))
 }
 
-// GoSliceByte is the GO wrapper for Slice byte, init from GO and filling from C/C++.
-// data - slice struct for cast in C/C++. Contained C/C++ memory
-// buf - unsafe.Pointer for C++'s std::stringstream, is needed for retaining data from C++'s data
-type GoSliceByte struct {
-	data CSlice
-	buf  unsafe.Pointer
+// GoSliceByte is the GO wrapper for decoded segment into remote write protobuf
+type GoDecodedSegment struct {
+	data          CSlice
+	buf           unsafe.Pointer
+	createdAtTSNS int64
+	encodedAtTSNS int64
 }
 
-// NewGoSliceByte - init GoSliceByte.
-func NewGoSliceByte() *GoSliceByte {
-	return &GoSliceByte{
+// NewGoDecodedSegment - init GoDecodedSegment.
+func NewGoDecodedSegment() *GoDecodedSegment {
+	return &GoDecodedSegment{
 		data: CSlice{},
 	}
 }
 
 // Bytes - convert in go-slice byte from struct.
-func (gs *GoSliceByte) Bytes() []byte {
-	return *(*[]byte)((unsafe.Pointer(&gs.data)))
+func (ds *GoDecodedSegment) Bytes() []byte {
+	return *(*[]byte)((unsafe.Pointer(&ds.data)))
+}
+
+// CreatedAt returns timestamp in nanoseconds when source segment was created
+func (ds *GoDecodedSegment) CreatedAt() int64 {
+	return ds.createdAtTSNS
+}
+
+// EncodedAt returns timestamp in nanoseconds when source segment was encoded
+func (ds *GoDecodedSegment) EncodedAt() int64 {
+	return ds.encodedAtTSNS
 }
 
 // Destroy - clear memory in C/C++.
-func (gs *GoSliceByte) Destroy() {
-	CSliceByteDestroy(unsafe.Pointer(gs))
+func (ds *GoDecodedSegment) Destroy() {
+	CDecodedSegmentDestroy(unsafe.Pointer(ds))
 }
 
 // GoRedundant is GO wrapper for Redundant. This wrapper is initialized from GO and is processed in C/C++ code.
@@ -107,5 +141,5 @@ func (gs *GoSnapshot) Bytes() []byte {
 
 // Destroy - clear memory in C/C++.
 func (gs *GoSnapshot) Destroy() {
-	CSliceWithStreamBufferDestroy(unsafe.Pointer(gs))
+	CSnapshotDestroy(unsafe.Pointer(gs))
 }

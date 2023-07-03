@@ -49,9 +49,9 @@ void okdb_wal_c_hashdex_dtor(c_hashdex c_hx);
 // okdb_wal_c_encoder_ctor - constructor, C wrapper C++, init C++ class Encoder.
 c_encoder okdb_wal_c_encoder_ctor(uint16_t shard_id, uint16_t number_of_shards);
 // okdb_wal_c_encoder_encode - C wrapper C++, calls C++ class Encoder methods.
-void okdb_wal_c_encoder_encode(c_encoder c_enc, c_hashdex c_hx, c_slice_with_stream_buffer* c_seg, c_redundant* c_rt);
+void okdb_wal_c_encoder_encode(c_encoder c_enc, c_hashdex c_hx, c_segment* c_seg, c_redundant* c_rt);
 // okdb_wal_c_encoder_snapshot - C wrapper C++, calls C++ class Encoder methods.
-void okdb_wal_c_encoder_snapshot(c_encoder c_enc, c_slice c_rts, c_slice_with_stream_buffer* c_snap);
+void okdb_wal_c_encoder_snapshot(c_encoder c_enc, c_slice c_rts, c_snapshot* c_snap);
 // okdb_wal_c_encoder_dtor - calls the destructor, C wrapper C++ for clear memory.
 void okdb_wal_c_encoder_dtor(c_encoder c_enc);
 

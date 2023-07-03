@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"time"
+	"unsafe"
 )
 
 var (
@@ -23,8 +24,8 @@ var (
 )
 
 const (
-	// MaxHeaderSize - maximum header size.
-	MaxHeaderSize int64 = 6
+	// HeaderSize - maximum header size.
+	HeaderSize = int64(unsafe.Sizeof(Header{}))
 	// MaxMsgSize - maximum allowed message size.
 	MaxMsgSize uint32 = 31457280
 )
@@ -45,9 +46,10 @@ const (
 
 // Header - header containing information about the message.
 type Header struct {
-	Version uint8
-	Type    MsgType
-	Size    uint32
+	Version   uint8
+	Type      MsgType
+	Size      uint32
+	CreatedAt int64
 }
 
 // String - serialize to string.
@@ -87,9 +89,10 @@ type RawMessage struct {
 func NewRawMessage(version uint8, msgType MsgType, p []byte) *RawMessage {
 	return &RawMessage{
 		Header: Header{
-			Version: version,
-			Type:    msgType,
-			Size:    uint32(len(p)),
+			Version:   version,
+			Type:      msgType,
+			Size:      uint32(len(p)),
+			CreatedAt: time.Now().UnixNano(),
 		},
 		Payload: p,
 	}
