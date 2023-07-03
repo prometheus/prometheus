@@ -387,6 +387,7 @@ metric_relabel_configs:
 # This is an experimental feature, this behaviour could
 # change or be removed in the future.
 [ body_size_limit: <size> | default = 0 ]
+
 # Per-scrape limit on number of scraped samples that will be accepted.
 # If more than this number of samples are present after metric relabeling
 # the entire scrape will be treated as failed. 0 means no limit.
