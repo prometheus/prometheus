@@ -3111,7 +3111,7 @@ func makeInt64Pointer(val int64) *int64 {
 // Add Randomizer interface to allow unit-testing, `ts` argument is used only
 // for mocking rand.Float64() in a deterministic way (FakeRandomizer).
 type Randomizer interface {
-	Float64(ts int64) float64
+	Float64(ts int64, sample *Sample) float64
 }
 
 type RealRandomizer struct{}
@@ -3121,17 +3121,61 @@ func NewRealRandomizer(seed int64) *RealRandomizer {
 	return &RealRandomizer{}
 }
 
-func (r *RealRandomizer) Float64(ts int64) float64 {
+func (r *RealRandomizer) Float64(ts int64, sample *Sample) float64 {
 	return rand.Float64()
 }
 
+const (
+	float64MaxUint64 = float64(math.MaxUint64)
+)
+
+// Not-A-Randomizer: use Hash(labels.String()) / maxUint64 as a "deterministic"
+// value in [0.0, 1.0].
+type HashRandomizer struct{}
+
+func NewHashRandomizer() *HashRandomizer {
+	return &HashRandomizer{}
+}
+
+func (r *HashRandomizer) Float64(ts int64, sample *Sample) float64 {
+	return float64(sample.Metric.Hash()) / float64MaxUint64
+}
+
 func addRandomSample(q float64, ts int64, h *vectorByValueHeap, sample *Sample) {
-	if randomizer.Float64(ts) < q {
-		heap.Push(h, sample)
+	switch {
+	case q >= 0:
+		// If q >= 0 add sample if randomizer.Float64() is lesser than q
+		//
+		// 0.0        q                         1.0
+		//  [---------|--------------------------]
+		//  [#########...........................]
+		//
+		// e.g.:
+		//   randomizer.Float64()==0.3 && q==0.4
+		//     0.3 < 0.4 ? --> add sample
+		//
+		if randomizer.Float64(ts, sample) < q {
+			heap.Push(h, sample)
+		}
+	case q < 0:
+		// If q < 0 add sample if rand() return the "complement" of q>=0 case
+		//
+		// 0.0       1+q                        1.0
+		//  [---------|--------------------------]
+		//  [.........###########################]
+		//
+		// e.g.:
+		//   randomizer.Float64()==0.3 && q==-0.6
+		//     0.7 >= 0.6 ? --> don't add sample
+		if randomizer.Float64(ts, sample) >= (1.0 + q) {
+			heap.Push(h, sample)
+		}
 	}
 }
 
 // Allow overridding to ease unit test mocking.
 var (
-	randomizer Randomizer = NewRealRandomizer(time.Now().UnixNano())
+	// XXX(jjo): PR#12503 testing HashRandomizer at engine.go
+	// randomizer Randomizer = NewRealRandomizer(time.Now().UnixNano())
+	randomizer Randomizer = NewHashRandomizer()
 )

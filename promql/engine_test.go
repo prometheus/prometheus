@@ -1663,7 +1663,8 @@ load 10s
 	defer test.Close()
 
 	// Mock the default random number generator with a deterministic one.
-	randomizer = NewFakeRandomizer(100000)
+	// XXX(jjo): PR#12503 testing HashRandomizer at engine.go
+	// randomizer = FakeRandomizer(100000)
 
 	err = test.Run()
 	require.NoError(t, err)
@@ -1709,26 +1710,71 @@ load 10s
 			result: Matrix{},
 		},
 		{
-			// With 0.2 probability over 20 samples (interval=10s) we'll get
-			// the 1st two from each 100s period, as FakeRandomizer will return
-			// (tstamp%100s)/100s.
 			query: `sample_random(0.2, metric)`,
-			start: 0, end: 190, interval: 10,
+			start: 0, end: 20, interval: 10,
 			result: Matrix{
 				Series{
-					Floats: []FPoint{{F: 0, T: 0}, {F: 1, T: 10000}, {F: 10, T: 100000}, {F: 11, T: 110000}},
 					Metric: lbls1,
-				},
-				Series{
-					Floats: []FPoint{{F: 0, T: 0}, {F: 2, T: 10000}, {F: 20, T: 100000}, {F: 22, T: 110000}},
-					Metric: lbls2,
-				},
-				Series{
-					Floats: []FPoint{{F: 0, T: 0}, {F: 3, T: 10000}, {F: 30, T: 100000}, {F: 33, T: 110000}},
-					Metric: lbls3,
+					Floats: []FPoint{{T: 0, F: 0}, {T: 10000, F: 1}, {T: 20000, F: 2}},
 				},
 			},
 		},
+		{
+			// NB: must return the _completement_ of sample_random(0.2, metric)
+			query: `sample_random(-0.8, metric)`,
+			start: 0, end: 20, interval: 10,
+			result: Matrix{
+				Series{
+					Metric: lbls2,
+					Floats: []FPoint{{T: 0, F: 0}, {T: 10000, F: 2}, {T: 20000, F: 4}},
+				},
+				Series{
+					Metric: lbls3,
+					Floats: []FPoint{{T: 0, F: 0}, {T: 10000, F: 3}, {T: 20000, F: 6}},
+				},
+			},
+		},
+		{
+			// OR-ing these two (`p` and `1-p`) must return the whole set of series:
+			query: `sample_random(0.35, metric) or sample_random(-0.65, metric)`,
+			start: 0, end: 20, interval: 10,
+			result: Matrix{
+				Series{
+					Metric: lbls1,
+					Floats: []FPoint{{T: 0, F: 0}, {T: 10000, F: 1}, {T: 20000, F: 2}},
+				},
+				Series{
+					Metric: lbls2,
+					Floats: []FPoint{{T: 0, F: 0}, {T: 10000, F: 2}, {T: 20000, F: 4}},
+				},
+				Series{
+					Metric: lbls3,
+					Floats: []FPoint{{T: 0, F: 0}, {T: 10000, F: 3}, {T: 20000, F: 6}},
+				},
+			},
+		},
+
+		/*
+			// With 0.2 probability over 20 samples (interval=10s) we'll get
+			// the 1st two from each 100s period, as FakeRandomizer will return
+			// (tstamp%100s)/100s.
+			    query: `sample_random(0.4, metric)`,
+			    start: 0, end: 190, interval: 10,
+				result: Matrix{
+					Series{
+						Floats: []FPoint{{F: 0, T: 0}, {F: 1, T: 10000}, {F: 10, T: 100000}, {F: 11, T: 110000}},
+						Metric: lbls1,
+					},
+					Series{
+						Floats: []FPoint{{F: 0, T: 0}, {F: 2, T: 10000}, {F: 20, T: 100000}, {F: 22, T: 110000}},
+						Metric: lbls2,
+					},
+					Series{
+						Floats: []FPoint{{F: 0, T: 0}, {F: 3, T: 10000}, {F: 30, T: 100000}, {F: 33, T: 110000}},
+						Metric: lbls3,
+					},
+				},
+		*/
 		{
 			query: `sample_random(1, metric)`,
 			start: 0, end: 20, interval: 10,
