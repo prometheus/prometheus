@@ -3627,7 +3627,7 @@ func TestExtractQueryOpts(t *testing.T) {
 	tests := []struct {
 		name   string
 		form   url.Values
-		expect *promql.QueryOpts
+		expect promql.QueryOpts
 		err    error
 	}{
 		{
@@ -3635,9 +3635,8 @@ func TestExtractQueryOpts(t *testing.T) {
 			form: url.Values{
 				"stats": []string{"all"},
 			},
-			expect: &promql.QueryOpts{
-				EnablePerStepStats: true,
-			},
+			expect: promql.NewPrometheusQueryOpts(true, 0),
+
 			err: nil,
 		},
 		{
@@ -3645,10 +3644,8 @@ func TestExtractQueryOpts(t *testing.T) {
 			form: url.Values{
 				"stats": []string{"none"},
 			},
-			expect: &promql.QueryOpts{
-				EnablePerStepStats: false,
-			},
-			err: nil,
+			expect: promql.NewPrometheusQueryOpts(false, 0),
+			err:    nil,
 		},
 		{
 			name: "with lookback delta",
@@ -3656,11 +3653,8 @@ func TestExtractQueryOpts(t *testing.T) {
 				"stats":          []string{"all"},
 				"lookback_delta": []string{"30s"},
 			},
-			expect: &promql.QueryOpts{
-				EnablePerStepStats: true,
-				LookbackDelta:      30 * time.Second,
-			},
-			err: nil,
+			expect: promql.NewPrometheusQueryOpts(true, 30*time.Second),
+			err:    nil,
 		},
 		{
 			name: "with invalid lookback delta",
