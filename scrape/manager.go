@@ -150,7 +150,7 @@ type Manager struct {
 	append    storage.Appendable
 	graceShut chan struct{}
 
-	jitterSeed    uint64     // Global jitterSeed seed is used to spread scrape workload across HA setup.
+	offsetSeed    uint64     // Global offsetSeed seed is used to spread scrape workload across HA setup.
 	mtxScrape     sync.Mutex // Guards the fields below.
 	scrapeConfigs map[string]*config.ScrapeConfig
 	scrapePools   map[string]*scrapePool
@@ -214,7 +214,7 @@ func (m *Manager) reload() {
 				level.Error(m.logger).Log("msg", "error reloading target set", "err", "invalid config id:"+setName)
 				continue
 			}
-			sp, err := newScrapePool(scrapeConfig, m.append, m.jitterSeed, log.With(m.logger, "scrape_pool", setName), m.opts)
+			sp, err := newScrapePool(scrapeConfig, m.append, m.offsetSeed, log.With(m.logger, "scrape_pool", setName), m.opts)
 			if err != nil {
 				level.Error(m.logger).Log("msg", "error creating new scrape pool", "err", err, "scrape_pool", setName)
 				continue
@@ -234,8 +234,8 @@ func (m *Manager) reload() {
 	wg.Wait()
 }
 
-// setJitterSeed calculates a global jitterSeed per server relying on extra label set.
-func (m *Manager) setJitterSeed(labels labels.Labels) error {
+// setOffsetSeed calculates a global offsetSeed per server relying on extra label set.
+func (m *Manager) setOffsetSeed(labels labels.Labels) error {
 	h := fnv.New64a()
 	hostname, err := osutil.GetFQDN()
 	if err != nil {
@@ -244,7 +244,7 @@ func (m *Manager) setJitterSeed(labels labels.Labels) error {
 	if _, err := fmt.Fprintf(h, "%s%s", hostname, labels.String()); err != nil {
 		return err
 	}
-	m.jitterSeed = h.Sum64()
+	m.offsetSeed = h.Sum64()
 	return nil
 }
 
@@ -281,17 +281,18 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 	}
 	m.scrapeConfigs = c
 
-	if err := m.setJitterSeed(cfg.GlobalConfig.ExternalLabels); err != nil {
+	if err := m.setOffsetSeed(cfg.GlobalConfig.ExternalLabels); err != nil {
 		return err
 	}
 
 	// Cleanup and reload pool if the configuration has changed.
 	var failed bool
 	for name, sp := range m.scrapePools {
-		if cfg, ok := m.scrapeConfigs[name]; !ok {
+		switch cfg, ok := m.scrapeConfigs[name]; {
+		case !ok:
 			sp.stop()
 			delete(m.scrapePools, name)
-		} else if !reflect.DeepEqual(sp.config, cfg) {
+		case !reflect.DeepEqual(sp.config, cfg):
 			err := sp.reload(cfg)
 			if err != nil {
 				level.Error(m.logger).Log("msg", "error reloading scrape pool", "err", err, "scrape_pool", name)

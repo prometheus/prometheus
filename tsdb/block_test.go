@@ -353,14 +353,14 @@ func TestReadIndexFormatV1(t *testing.T) {
 	q, err := NewBlockQuerier(block, 0, 1000)
 	require.NoError(t, err)
 	require.Equal(t, query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")),
-		map[string][]tsdbutil.Sample{`{foo="bar"}`: {sample{t: 1, v: 2}}})
+		map[string][]tsdbutil.Sample{`{foo="bar"}`: {sample{t: 1, f: 2}}})
 
 	q, err = NewBlockQuerier(block, 0, 1000)
 	require.NoError(t, err)
 	require.Equal(t, query(t, q, labels.MustNewMatcher(labels.MatchNotRegexp, "foo", "^.?$")),
 		map[string][]tsdbutil.Sample{
-			`{foo="bar"}`: {sample{t: 1, v: 2}},
-			`{foo="baz"}`: {sample{t: 3, v: 4}},
+			`{foo="bar"}`: {sample{t: 1, f: 2}},
+			`{foo="baz"}`: {sample{t: 3, f: 4}},
 		})
 }
 
@@ -568,7 +568,7 @@ func createHeadWithOOOSamples(tb testing.TB, w *wlog.WL, series []storage.Series
 			count++
 			t, v := it.At()
 			if count%oooSampleFrequency == 0 {
-				os = append(os, sample{t: t, v: v})
+				os = append(os, sample{t: t, f: v})
 				continue
 			}
 			ref, err = app.Append(ref, lset, t, v)
@@ -589,7 +589,7 @@ func createHeadWithOOOSamples(tb testing.TB, w *wlog.WL, series []storage.Series
 	for i, lset := range oooSampleLabels {
 		ref := storage.SeriesRef(0)
 		for _, sample := range oooSamples[i] {
-			ref, err = app.Append(ref, lset, sample.T(), sample.V())
+			ref, err = app.Append(ref, lset, sample.T(), sample.F())
 			require.NoError(tb, err)
 			oooSamplesAppended++
 		}
@@ -613,7 +613,7 @@ const (
 // genSeries generates series of float64 samples with a given number of labels and values.
 func genSeries(totalSeries, labelCount int, mint, maxt int64) []storage.Series {
 	return genSeriesFromSampleGenerator(totalSeries, labelCount, mint, maxt, 1, func(ts int64) tsdbutil.Sample {
-		return sample{t: ts, v: rand.Float64()}
+		return sample{t: ts, f: rand.Float64()}
 	})
 }
 
@@ -630,7 +630,7 @@ func genHistogramSeries(totalSeries, labelCount int, mint, maxt, step int64, flo
 				{Offset: 0, Length: 2},
 				{Offset: 1, Length: 2},
 			},
-			PositiveBuckets: []int64{int64(ts + 1), 1, -1, 0},
+			PositiveBuckets: []int64{ts + 1, 1, -1, 0},
 		}
 		if ts != mint {
 			// By setting the counter reset hint to "no counter
@@ -657,7 +657,7 @@ func genHistogramAndFloatSeries(totalSeries, labelCount int, mint, maxt, step in
 		count++
 		var s sample
 		if floatSample {
-			s = sample{t: ts, v: rand.Float64()}
+			s = sample{t: ts, f: rand.Float64()}
 		} else {
 			h := &histogram.Histogram{
 				Count:         5 + uint64(ts*4),
@@ -669,7 +669,7 @@ func genHistogramAndFloatSeries(totalSeries, labelCount int, mint, maxt, step in
 					{Offset: 0, Length: 2},
 					{Offset: 1, Length: 2},
 				},
-				PositiveBuckets: []int64{int64(ts + 1), 1, -1, 0},
+				PositiveBuckets: []int64{ts + 1, 1, -1, 0},
 			}
 			if count > 1 && count%5 != 1 {
 				// Same rationale for this as above in
@@ -729,7 +729,7 @@ func populateSeries(lbls []map[string]string, mint, maxt int64) []storage.Series
 		}
 		samples := make([]tsdbutil.Sample, 0, maxt-mint+1)
 		for t := mint; t <= maxt; t++ {
-			samples = append(samples, sample{t: t, v: rand.Float64()})
+			samples = append(samples, sample{t: t, f: rand.Float64()})
 		}
 		series = append(series, storage.NewListSeries(labels.FromMap(lbl), samples))
 	}

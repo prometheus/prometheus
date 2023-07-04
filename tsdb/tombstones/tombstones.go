@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"hash"
 	"hash/crc32"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -190,9 +191,10 @@ type Stone struct {
 
 func ReadTombstones(dir string) (Reader, int64, error) {
 	b, err := os.ReadFile(filepath.Join(dir, TombstonesFilename))
-	if os.IsNotExist(err) {
+	switch {
+	case os.IsNotExist(err):
 		return NewMemTombstones(), 0, nil
-	} else if err != nil {
+	case err != nil:
 		return nil, 0, err
 	}
 
@@ -251,7 +253,14 @@ func NewTestMemTombstones(intervals []Intervals) *MemTombstones {
 func (t *MemTombstones) Get(ref storage.SeriesRef) (Intervals, error) {
 	t.mtx.RLock()
 	defer t.mtx.RUnlock()
-	return t.intvlGroups[ref], nil
+	intervals, ok := t.intvlGroups[ref]
+	if !ok {
+		return nil, nil
+	}
+	// Make a copy to avoid race.
+	res := make(Intervals, len(intervals))
+	copy(res, intervals)
+	return res, nil
 }
 
 func (t *MemTombstones) DeleteTombstones(refs map[storage.SeriesRef]struct{}) {
@@ -348,17 +357,23 @@ func (in Intervals) Add(n Interval) Intervals {
 	// Find min and max indexes of intervals that overlap with the new interval.
 	// Intervals are closed [t1, t2] and t is discreet, so if neighbour intervals are 1 step difference
 	// to the new one, we can merge those together.
-	mini := sort.Search(len(in), func(i int) bool { return in[i].Maxt >= n.Mint-1 })
-	if mini == len(in) {
-		return append(in, n)
+	mini := 0
+	if n.Mint != math.MinInt64 { // Avoid overflow.
+		mini = sort.Search(len(in), func(i int) bool { return in[i].Maxt >= n.Mint-1 })
+		if mini == len(in) {
+			return append(in, n)
+		}
 	}
 
-	maxi := sort.Search(len(in)-mini, func(i int) bool { return in[mini+i].Mint > n.Maxt+1 })
-	if maxi == 0 {
-		if mini == 0 {
-			return append(Intervals{n}, in...)
+	maxi := len(in)
+	if n.Maxt != math.MaxInt64 { // Avoid overflow.
+		maxi = sort.Search(len(in)-mini, func(i int) bool { return in[mini+i].Mint > n.Maxt+1 })
+		if maxi == 0 {
+			if mini == 0 {
+				return append(Intervals{n}, in...)
+			}
+			return append(in[:mini], append(Intervals{n}, in[mini:]...)...)
 		}
-		return append(in[:mini], append(Intervals{n}, in[mini:]...)...)
 	}
 
 	if n.Mint < in[mini].Mint {

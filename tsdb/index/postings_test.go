@@ -54,7 +54,7 @@ func TestMemPostings_ensureOrder(t *testing.T) {
 		p.m["a"][v] = l
 	}
 
-	p.EnsureOrder()
+	p.EnsureOrder(0)
 
 	for _, e := range p.m {
 		for _, l := range e {
@@ -114,7 +114,7 @@ func BenchmarkMemPostings_ensureOrder(b *testing.B) {
 			b.ResetTimer()
 
 			for n := 0; n < b.N; n++ {
-				p.EnsureOrder()
+				p.EnsureOrder(0)
 				p.ordered = false
 			}
 		})
@@ -912,8 +912,37 @@ func BenchmarkPostings_Stats(b *testing.B) {
 	}
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
-		p.Stats("__name__")
+		p.Stats("__name__", 10)
 	}
+}
+
+func TestMemPostingsStats(t *testing.T) {
+	// create a new MemPostings
+	p := NewMemPostings()
+
+	// add some postings to the MemPostings
+	p.Add(1, labels.FromStrings("label", "value1"))
+	p.Add(1, labels.FromStrings("label", "value2"))
+	p.Add(1, labels.FromStrings("label", "value3"))
+	p.Add(2, labels.FromStrings("label", "value1"))
+
+	// call the Stats method to calculate the cardinality statistics
+	stats := p.Stats("label", 10)
+
+	// assert that the expected statistics were calculated
+	require.Equal(t, uint64(2), stats.CardinalityMetricsStats[0].Count)
+	require.Equal(t, "value1", stats.CardinalityMetricsStats[0].Name)
+
+	require.Equal(t, uint64(3), stats.CardinalityLabelStats[0].Count)
+	require.Equal(t, "label", stats.CardinalityLabelStats[0].Name)
+
+	require.Equal(t, uint64(24), stats.LabelValueStats[0].Count)
+	require.Equal(t, "label", stats.LabelValueStats[0].Name)
+
+	require.Equal(t, uint64(2), stats.LabelValuePairsStats[0].Count)
+	require.Equal(t, "label=value1", stats.LabelValuePairsStats[0].Name)
+
+	require.Equal(t, 3, stats.NumLabelPairs)
 }
 
 func TestMemPostings_Delete(t *testing.T) {

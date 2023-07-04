@@ -56,8 +56,14 @@ func (ls labelSlice) Swap(i, j int)      { ls[i], ls[j] = ls[j], ls[i] }
 func (ls labelSlice) Less(i, j int) bool { return ls[i].Name < ls[j].Name }
 
 func decodeSize(data string, index int) (int, int) {
-	var size int
-	for shift := uint(0); ; shift += 7 {
+	// Fast-path for common case of a single byte, value 0..127.
+	b := data[index]
+	index++
+	if b < 0x80 {
+		return int(b), index
+	}
+	size := int(b & 0x7F)
+	for shift := uint(7); ; shift += 7 {
 		// Just panic if we go of the end of data, since all Labels strings are constructed internally and
 		// malformed data indicates a bug, or memory corruption.
 		b := data[index]
@@ -158,7 +164,7 @@ func (ls Labels) MatchLabels(on bool, names ...string) Labels {
 		b.Del(MetricName)
 		b.Del(names...)
 	}
-	return b.Labels(EmptyLabels())
+	return b.Labels()
 }
 
 // Hash returns a hash value for the label set.
@@ -267,13 +273,27 @@ func (ls Labels) Copy() Labels {
 // Get returns the value for the label with the given name.
 // Returns an empty string if the label doesn't exist.
 func (ls Labels) Get(name string) string {
+	if name == "" { // Avoid crash in loop if someone asks for "".
+		return "" // Prometheus does not store blank label names.
+	}
 	for i := 0; i < len(ls.data); {
-		var lName, lValue string
-		lName, i = decodeString(ls.data, i)
-		lValue, i = decodeString(ls.data, i)
-		if lName == name {
-			return lValue
+		var size int
+		size, i = decodeSize(ls.data, i)
+		if ls.data[i] == name[0] {
+			lName := ls.data[i : i+size]
+			i += size
+			if lName == name {
+				lValue, _ := decodeString(ls.data, i)
+				return lValue
+			}
+		} else {
+			if ls.data[i] > name[0] { // Stop looking if we've gone past.
+				break
+			}
+			i += size
 		}
+		size, i = decodeSize(ls.data, i)
+		i += size
 	}
 	return ""
 }
@@ -411,43 +431,54 @@ func FromStrings(ss ...string) Labels {
 		ls = append(ls, Label{Name: ss[i], Value: ss[i+1]})
 	}
 
-	slices.SortFunc(ls, func(a, b Label) bool { return a.Name < b.Name })
 	return New(ls...)
 }
 
 // Compare compares the two label sets.
 // The result will be 0 if a==b, <0 if a < b, and >0 if a > b.
-// TODO: replace with Less function - Compare is never needed.
-// TODO: just compare the underlying strings when we don't need alphanumeric sorting.
 func Compare(a, b Labels) int {
-	l := len(a.data)
-	if len(b.data) < l {
-		l = len(b.data)
+	// Find the first byte in the string where a and b differ.
+	shorter, longer := a.data, b.data
+	if len(b.data) < len(a.data) {
+		shorter, longer = b.data, a.data
+	}
+	i := 0
+	// First, go 8 bytes at a time. Data strings are expected to be 8-byte aligned.
+	sp := unsafe.Pointer((*reflect.StringHeader)(unsafe.Pointer(&shorter)).Data)
+	lp := unsafe.Pointer((*reflect.StringHeader)(unsafe.Pointer(&longer)).Data)
+	for ; i < len(shorter)-8; i += 8 {
+		if *(*uint64)(unsafe.Add(sp, i)) != *(*uint64)(unsafe.Add(lp, i)) {
+			break
+		}
+	}
+	// Now go 1 byte at a time.
+	for ; i < len(shorter); i++ {
+		if shorter[i] != longer[i] {
+			break
+		}
+	}
+	if i == len(shorter) {
+		// One Labels was a prefix of the other; the set with fewer labels compares lower.
+		return len(a.data) - len(b.data)
 	}
 
-	ia, ib := 0, 0
-	for ia < l {
-		var aName, bName string
-		aName, ia = decodeString(a.data, ia)
-		bName, ib = decodeString(b.data, ib)
-		if aName != bName {
-			if aName < bName {
-				return -1
-			}
-			return 1
+	// Now we know that there is some difference before the end of a and b.
+	// Go back through the fields and find which field that difference is in.
+	firstCharDifferent := i
+	for i = 0; ; {
+		size, nextI := decodeSize(a.data, i)
+		if nextI+size > firstCharDifferent {
+			break
 		}
-		var aValue, bValue string
-		aValue, ia = decodeString(a.data, ia)
-		bValue, ib = decodeString(b.data, ib)
-		if aValue != bValue {
-			if aValue < bValue {
-				return -1
-			}
-			return 1
-		}
+		i = nextI + size
 	}
-	// If all labels so far were in common, the set with fewer labels comes first.
-	return len(a.data) - len(b.data)
+	// Difference is inside this entry.
+	aStr, _ := decodeString(a.data, i)
+	bStr, _ := decodeString(b.data, i)
+	if aStr < bStr {
+		return -1
+	}
+	return +1
 }
 
 // Copy labels from b on top of whatever was in ls previously, reusing memory or expanding if needed.
@@ -587,10 +618,48 @@ func (b *Builder) Set(n, v string) *Builder {
 	return b
 }
 
-// Labels returns the labels from the builder, adding them to res if non-nil.
-// Argument res can be the same as b.base, if caller wants to overwrite that slice.
+func (b *Builder) Get(n string) string {
+	// Del() removes entries from .add but Set() does not remove from .del, so check .add first.
+	for _, a := range b.add {
+		if a.Name == n {
+			return a.Value
+		}
+	}
+	if slices.Contains(b.del, n) {
+		return ""
+	}
+	return b.base.Get(n)
+}
+
+// Range calls f on each label in the Builder.
+func (b *Builder) Range(f func(l Label)) {
+	// Stack-based arrays to avoid heap allocation in most cases.
+	var addStack [128]Label
+	var delStack [128]string
+	// Take a copy of add and del, so they are unaffected by calls to Set() or Del().
+	origAdd, origDel := append(addStack[:0], b.add...), append(delStack[:0], b.del...)
+	b.base.Range(func(l Label) {
+		if !slices.Contains(origDel, l.Name) && !contains(origAdd, l.Name) {
+			f(l)
+		}
+	})
+	for _, a := range origAdd {
+		f(a)
+	}
+}
+
+func contains(s []Label, n string) bool {
+	for _, a := range s {
+		if a.Name == n {
+			return true
+		}
+	}
+	return false
+}
+
+// Labels returns the labels from the builder.
 // If no modifications were made, the original labels are returned.
-func (b *Builder) Labels(res Labels) Labels {
+func (b *Builder) Labels() Labels {
 	if len(b.del) == 0 && len(b.add) == 0 {
 		return b.base
 	}
@@ -600,7 +669,7 @@ func (b *Builder) Labels(res Labels) Labels {
 	a, d := 0, 0
 
 	bufSize := len(b.base.data) + labelsSize(b.add)
-	buf := make([]byte, 0, bufSize) // TODO: see if we can re-use the buffer from res.
+	buf := make([]byte, 0, bufSize)
 	for pos := 0; pos < len(b.base.data); {
 		oldPos := pos
 		var lName string
@@ -757,7 +826,7 @@ func (b *ScratchBuilder) Sort() {
 	slices.SortFunc(b.add, func(a, b Label) bool { return a.Name < b.Name })
 }
 
-// Asssign is for when you already have a Labels which you want this ScratchBuilder to return.
+// Assign is for when you already have a Labels which you want this ScratchBuilder to return.
 func (b *ScratchBuilder) Assign(l Labels) {
 	b.output = l
 }
@@ -775,7 +844,7 @@ func (b *ScratchBuilder) Labels() Labels {
 }
 
 // Write the newly-built Labels out to ls, reusing an internal buffer.
-// Callers must ensure that there are no other references to ls.
+// Callers must ensure that there are no other references to ls, or any strings fetched from it.
 func (b *ScratchBuilder) Overwrite(ls *Labels) {
 	size := labelsSize(b.add)
 	if size <= cap(b.overwriteBuffer) {

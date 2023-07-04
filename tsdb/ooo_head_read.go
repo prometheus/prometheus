@@ -11,6 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// nolint:revive // Many unsued function arguments in this file by design.
 package tsdb
 
 import (
@@ -122,7 +123,7 @@ func (oh *OOOHeadIndexReader) series(ref storage.SeriesRef, builder *labels.Scra
 		}
 	}
 
-	// There is nothing to do if we did not collect any chunk
+	// There is nothing to do if we did not collect any chunk.
 	if len(tmpChks) == 0 {
 		return nil
 	}
@@ -135,14 +136,15 @@ func (oh *OOOHeadIndexReader) series(ref storage.SeriesRef, builder *labels.Scra
 	// chunks Meta the first chunk that overlaps with others.
 	// Example chunks of a series: 5:(100, 200) 6:(500, 600) 7:(150, 250) 8:(550, 650)
 	// In the example 5 overlaps with 7 and 6 overlaps with 8 so we only want to
-	// to return chunk Metas for chunk 5 and chunk 6
+	// to return chunk Metas for chunk 5 and chunk 6e
 	*chks = append(*chks, tmpChks[0])
-	maxTime := tmpChks[0].MaxTime // tracks the maxTime of the previous "to be merged chunk"
+	maxTime := tmpChks[0].MaxTime // Tracks the maxTime of the previous "to be merged chunk".
 	for _, c := range tmpChks[1:] {
-		if c.MinTime > maxTime {
+		switch {
+		case c.MinTime > maxTime:
 			*chks = append(*chks, c)
 			maxTime = c.MaxTime
-		} else if c.MaxTime > maxTime {
+		case c.MaxTime > maxTime:
 			maxTime = c.MaxTime
 			(*chks)[len(*chks)-1].MaxTime = c.MaxTime
 		}
@@ -276,16 +278,18 @@ type OOOCompactionHead struct {
 // All the above together have a bit of CPU and memory overhead, and can have a bit of impact
 // on the sample append latency. So call NewOOOCompactionHead only right before compaction.
 func NewOOOCompactionHead(head *Head) (*OOOCompactionHead, error) {
-	newWBLFile, err := head.wbl.NextSegmentSync()
-	if err != nil {
-		return nil, err
+	ch := &OOOCompactionHead{
+		chunkRange: head.chunkRange.Load(),
+		mint:       math.MaxInt64,
+		maxt:       math.MinInt64,
 	}
 
-	ch := &OOOCompactionHead{
-		chunkRange:  head.chunkRange.Load(),
-		mint:        math.MaxInt64,
-		maxt:        math.MinInt64,
-		lastWBLFile: newWBLFile,
+	if head.wbl != nil {
+		lastWBLFile, err := head.wbl.NextSegmentSync()
+		if err != nil {
+			return nil, err
+		}
+		ch.lastWBLFile = lastWBLFile
 	}
 
 	ch.oooIR = NewOOOHeadIndexReader(head, math.MinInt64, math.MaxInt64)

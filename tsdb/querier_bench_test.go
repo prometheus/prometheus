@@ -19,9 +19,10 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb/index"
+
+	"github.com/stretchr/testify/require"
 )
 
 // Make entries ~50B in size, to emulate real-world high cardinality.
@@ -112,7 +113,9 @@ func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 	jXplus := labels.MustNewMatcher(labels.MatchRegexp, "j", "X.+")
 	iCharSet := labels.MustNewMatcher(labels.MatchRegexp, "i", "1[0-9]")
 	iAlternate := labels.MustNewMatcher(labels.MatchRegexp, "i", "(1|2|3|4|5|6|20|55)")
+	iNotAlternate := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "(1|2|3|4|5|6|20|55)")
 	iXYZ := labels.MustNewMatcher(labels.MatchRegexp, "i", "X|Y|Z")
+	iNotXYZ := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "X|Y|Z")
 	cases := []struct {
 		name     string
 		matchers []*labels.Matcher
@@ -123,13 +126,16 @@ func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 		{`n="X",j="foo"`, []*labels.Matcher{nX, jFoo}},
 		{`j="foo",n="1"`, []*labels.Matcher{jFoo, n1}},
 		{`n="1",j!="foo"`, []*labels.Matcher{n1, jNotFoo}},
+		{`n="1",i!="2"`, []*labels.Matcher{n1, iNot2}},
 		{`n="X",j!="foo"`, []*labels.Matcher{nX, jNotFoo}},
 		{`i=~"1[0-9]",j=~"foo|bar"`, []*labels.Matcher{iCharSet, jFooBar}},
 		{`j=~"foo|bar"`, []*labels.Matcher{jFooBar}},
 		{`j=~"XXX|YYY"`, []*labels.Matcher{jXXXYYY}},
 		{`j=~"X.+"`, []*labels.Matcher{jXplus}},
 		{`i=~"(1|2|3|4|5|6|20|55)"`, []*labels.Matcher{iAlternate}},
+		{`i!~"(1|2|3|4|5|6|20|55)"`, []*labels.Matcher{iNotAlternate}},
 		{`i=~"X|Y|Z"`, []*labels.Matcher{iXYZ}},
+		{`i!~"X|Y|Z"`, []*labels.Matcher{iNotXYZ}},
 		{`i=~".*"`, []*labels.Matcher{iStar}},
 		{`i=~"1.*"`, []*labels.Matcher{i1Star}},
 		{`i=~".*1"`, []*labels.Matcher{iStar1}},
@@ -145,6 +151,7 @@ func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 		{`n="1",i!="",j=~"X.+"`, []*labels.Matcher{n1, iNotEmpty, jXplus}},
 		{`n="1",i!="",j=~"XXX|YYY"`, []*labels.Matcher{n1, iNotEmpty, jXXXYYY}},
 		{`n="1",i=~"X|Y|Z",j="foo"`, []*labels.Matcher{n1, iXYZ, jFoo}},
+		{`n="1",i!~"X|Y|Z",j="foo"`, []*labels.Matcher{n1, iNotXYZ, jFoo}},
 		{`n="1",i=~".+",j="foo"`, []*labels.Matcher{n1, iPlus, jFoo}},
 		{`n="1",i=~"1.+",j="foo"`, []*labels.Matcher{n1, i1Plus, jFoo}},
 		{`n="1",i=~".*1.*",j="foo"`, []*labels.Matcher{n1, iStar1Star, jFoo}},
@@ -156,6 +163,8 @@ func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 
 	for _, c := range cases {
 		b.Run(c.name, func(b *testing.B) {
+			b.ReportAllocs()
+			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				_, err := PostingsForMatchers(ir, c.matchers...)
 				require.NoError(b, err)
@@ -202,6 +211,28 @@ func benchmarkLabelValuesWithMatchers(b *testing.B, ir IndexReader) {
 	}
 }
 
+func BenchmarkMergedStringIter(b *testing.B) {
+	numSymbols := 100000
+	s := make([]string, numSymbols)
+	for i := 0; i < numSymbols; i++ {
+		s[i] = fmt.Sprintf("symbol%v", i)
+	}
+
+	for i := 0; i < b.N; i++ {
+		it := NewMergedStringIter(index.NewStringListIter(s), index.NewStringListIter(s))
+		for j := 0; j < 100; j++ {
+			it = NewMergedStringIter(it, index.NewStringListIter(s))
+		}
+
+		for it.Next() {
+			require.NotNil(b, it.At())
+			require.NoError(b, it.Err())
+		}
+	}
+
+	b.ReportAllocs()
+}
+
 func BenchmarkQuerierSelect(b *testing.B) {
 	chunkDir := b.TempDir()
 	opts := DefaultHeadOptions()
@@ -227,7 +258,7 @@ func BenchmarkQuerierSelect(b *testing.B) {
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
 					ss := q.Select(sorted, nil, matcher)
-					for ss.Next() {
+					for ss.Next() { // nolint:revive
 					}
 					require.NoError(b, ss.Err())
 				}

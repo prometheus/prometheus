@@ -37,11 +37,19 @@ var parserPool = sync.Pool{
 	},
 }
 
+type Parser interface {
+	ParseExpr() (Expr, error)
+	Close()
+}
+
 type parser struct {
 	lex Lexer
 
 	inject    ItemType
 	injecting bool
+
+	// functions contains all functions supported by the parser instance.
+	functions map[string]*Function
 
 	// Everytime an Item is lexed that could be the end
 	// of certain expressions its end position is stored here.
@@ -51,6 +59,63 @@ type parser struct {
 
 	generatedParserResult interface{}
 	parseErrors           ParseErrors
+}
+
+type Opt func(p *parser)
+
+func WithFunctions(functions map[string]*Function) Opt {
+	return func(p *parser) {
+		p.functions = functions
+	}
+}
+
+// NewParser returns a new parser.
+// nolint:revive
+func NewParser(input string, opts ...Opt) *parser {
+	p := parserPool.Get().(*parser)
+
+	p.functions = Functions
+	p.injecting = false
+	p.parseErrors = nil
+	p.generatedParserResult = nil
+
+	// Clear lexer struct before reusing.
+	p.lex = Lexer{
+		input: input,
+		state: lexStatements,
+	}
+
+	// Apply user define options.
+	for _, opt := range opts {
+		opt(p)
+	}
+
+	return p
+}
+
+func (p *parser) ParseExpr() (expr Expr, err error) {
+	defer p.recover(&err)
+
+	parseResult := p.parseGenerated(START_EXPRESSION)
+
+	if parseResult != nil {
+		expr = parseResult.(Expr)
+	}
+
+	// Only typecheck when there are no syntax errors.
+	if len(p.parseErrors) == 0 {
+		p.checkAST(expr)
+	}
+
+	if len(p.parseErrors) != 0 {
+		err = p.parseErrors
+	}
+
+	return expr, err
+}
+
+func (p *parser) Close() {
+	defer parserPool.Put(p)
 }
 
 // ParseErr wraps a parsing error with line and position context.
@@ -105,32 +170,15 @@ func (errs ParseErrors) Error() string {
 
 // ParseExpr returns the expression parsed from the input.
 func ParseExpr(input string) (expr Expr, err error) {
-	p := newParser(input)
-	defer parserPool.Put(p)
-	defer p.recover(&err)
-
-	parseResult := p.parseGenerated(START_EXPRESSION)
-
-	if parseResult != nil {
-		expr = parseResult.(Expr)
-	}
-
-	// Only typecheck when there are no syntax errors.
-	if len(p.parseErrors) == 0 {
-		p.checkAST(expr)
-	}
-
-	if len(p.parseErrors) != 0 {
-		err = p.parseErrors
-	}
-
-	return expr, err
+	p := NewParser(input)
+	defer p.Close()
+	return p.ParseExpr()
 }
 
 // ParseMetric parses the input into a metric
 func ParseMetric(input string) (m labels.Labels, err error) {
-	p := newParser(input)
-	defer parserPool.Put(p)
+	p := NewParser(input)
+	defer p.Close()
 	defer p.recover(&err)
 
 	parseResult := p.parseGenerated(START_METRIC)
@@ -148,8 +196,8 @@ func ParseMetric(input string) (m labels.Labels, err error) {
 // ParseMetricSelector parses the provided textual metric selector into a list of
 // label matchers.
 func ParseMetricSelector(input string) (m []*labels.Matcher, err error) {
-	p := newParser(input)
-	defer parserPool.Put(p)
+	p := NewParser(input)
+	defer p.Close()
 	defer p.recover(&err)
 
 	parseResult := p.parseGenerated(START_METRIC_SELECTOR)
@@ -162,22 +210,6 @@ func ParseMetricSelector(input string) (m []*labels.Matcher, err error) {
 	}
 
 	return m, err
-}
-
-// newParser returns a new parser.
-func newParser(input string) *parser {
-	p := parserPool.Get().(*parser)
-
-	p.injecting = false
-	p.parseErrors = nil
-	p.generatedParserResult = nil
-
-	// Clear lexer struct before reusing.
-	p.lex = Lexer{
-		input: input,
-		state: lexStatements,
-	}
-	return p
 }
 
 // SequenceValue is an omittable value in a sequence of time series values.
@@ -200,10 +232,10 @@ type seriesDescription struct {
 
 // ParseSeriesDesc parses the description of a time series.
 func ParseSeriesDesc(input string) (labels labels.Labels, values []SequenceValue, err error) {
-	p := newParser(input)
+	p := NewParser(input)
 	p.lex.seriesDesc = true
 
-	defer parserPool.Put(p)
+	defer p.Close()
 	defer p.recover(&err)
 
 	parseResult := p.parseGenerated(START_SERIES_DESCRIPTION)
@@ -270,14 +302,15 @@ var errUnexpected = errors.New("unexpected error")
 // recover is the handler that turns panics into returns from the top level of Parse.
 func (p *parser) recover(errp *error) {
 	e := recover()
-	if _, ok := e.(runtime.Error); ok {
+	switch _, ok := e.(runtime.Error); {
+	case ok:
 		// Print the stack trace but do not inhibit the running application.
 		buf := make([]byte, 64<<10)
 		buf = buf[:runtime.Stack(buf, false)]
 
 		fmt.Fprintf(os.Stderr, "parser panic: %v\n%s", e, buf)
 		*errp = errUnexpected
-	} else if e != nil {
+	case e != nil:
 		*errp = e.(error)
 	}
 }
@@ -332,7 +365,7 @@ func (p *parser) Lex(lval *yySymType) int {
 // It is a no-op since the parsers error routines are triggered
 // by mechanisms that allow more fine-grained control
 // For more information, see https://pkg.go.dev/golang.org/x/tools/cmd/goyacc.
-func (p *parser) Error(e string) {
+func (p *parser) Error(string) {
 }
 
 // InjectItem allows injecting a single Item at the beginning of the token stream
@@ -481,9 +514,9 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 		// This is made a function instead of a variable, so it is lazily evaluated on demand.
 		opRange := func() (r PositionRange) {
 			// Remove whitespace at the beginning and end of the range.
-			for r.Start = n.LHS.PositionRange().End; isSpace(rune(p.lex.input[r.Start])); r.Start++ {
+			for r.Start = n.LHS.PositionRange().End; isSpace(rune(p.lex.input[r.Start])); r.Start++ { // nolint:revive
 			}
-			for r.End = n.RHS.PositionRange().Start - 1; isSpace(rune(p.lex.input[r.End])); r.End-- {
+			for r.End = n.RHS.PositionRange().Start - 1; isSpace(rune(p.lex.input[r.End])); r.End-- { // nolint:revive
 			}
 			return
 		}
@@ -518,20 +551,18 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 			p.addParseErrf(n.RHS.PositionRange(), "binary expression must contain only scalar and instant vector types")
 		}
 
-		if (lt != ValueTypeVector || rt != ValueTypeVector) && n.VectorMatching != nil {
+		switch {
+		case (lt != ValueTypeVector || rt != ValueTypeVector) && n.VectorMatching != nil:
 			if len(n.VectorMatching.MatchingLabels) > 0 {
 				p.addParseErrf(n.PositionRange(), "vector matching only allowed between instant vectors")
 			}
 			n.VectorMatching = nil
-		} else {
-			// Both operands are Vectors.
-			if n.Op.IsSetOperator() {
-				if n.VectorMatching.Card == CardOneToMany || n.VectorMatching.Card == CardManyToOne {
-					p.addParseErrf(n.PositionRange(), "no grouping allowed for %q operation", n.Op)
-				}
-				if n.VectorMatching.Card != CardManyToMany {
-					p.addParseErrf(n.PositionRange(), "set operations must always be many-to-many")
-				}
+		case n.Op.IsSetOperator(): // Both operands are Vectors.
+			if n.VectorMatching.Card == CardOneToMany || n.VectorMatching.Card == CardManyToOne {
+				p.addParseErrf(n.PositionRange(), "no grouping allowed for %q operation", n.Op)
+			}
+			if n.VectorMatching.Card != CardManyToMany {
+				p.addParseErrf(n.PositionRange(), "set operations must always be many-to-many")
 			}
 		}
 
@@ -708,9 +739,10 @@ func (p *parser) addOffset(e Node, offset time.Duration) {
 	}
 
 	// it is already ensured by parseDuration func that there never will be a zero offset modifier
-	if *orgoffsetp != 0 {
+	switch {
+	case *orgoffsetp != 0:
 		p.addParseErrf(e.PositionRange(), "offset may not be set multiple times")
-	} else if orgoffsetp != nil {
+	case orgoffsetp != nil:
 		*orgoffsetp = offset
 	}
 
@@ -799,7 +831,7 @@ func MustLabelMatcher(mt labels.MatchType, name, val string) *labels.Matcher {
 }
 
 func MustGetFunction(name string) *Function {
-	f, ok := getFunction(name)
+	f, ok := getFunction(name, Functions)
 	if !ok {
 		panic(fmt.Errorf("function %q does not exist", name))
 	}
