@@ -273,13 +273,27 @@ func (ls Labels) Copy() Labels {
 // Get returns the value for the label with the given name.
 // Returns an empty string if the label doesn't exist.
 func (ls Labels) Get(name string) string {
+	if name == "" { // Avoid crash in loop if someone asks for "".
+		return "" // Prometheus does not store blank label names.
+	}
 	for i := 0; i < len(ls.data); {
-		var lName, lValue string
-		lName, i = decodeString(ls.data, i)
-		lValue, i = decodeString(ls.data, i)
-		if lName == name {
-			return lValue
+		var size int
+		size, i = decodeSize(ls.data, i)
+		if ls.data[i] == name[0] {
+			lName := ls.data[i : i+size]
+			i += size
+			if lName == name {
+				lValue, _ := decodeString(ls.data, i)
+				return lValue
+			}
+		} else {
+			if ls.data[i] > name[0] { // Stop looking if we've gone past.
+				break
+			}
+			i += size
 		}
+		size, i = decodeSize(ls.data, i)
+		i += size
 	}
 	return ""
 }
@@ -422,37 +436,49 @@ func FromStrings(ss ...string) Labels {
 
 // Compare compares the two label sets.
 // The result will be 0 if a==b, <0 if a < b, and >0 if a > b.
-// TODO: replace with Less function - Compare is never needed.
-// TODO: just compare the underlying strings when we don't need alphanumeric sorting.
 func Compare(a, b Labels) int {
-	l := len(a.data)
-	if len(b.data) < l {
-		l = len(b.data)
+	// Find the first byte in the string where a and b differ.
+	shorter, longer := a.data, b.data
+	if len(b.data) < len(a.data) {
+		shorter, longer = b.data, a.data
+	}
+	i := 0
+	// First, go 8 bytes at a time. Data strings are expected to be 8-byte aligned.
+	sp := unsafe.Pointer((*reflect.StringHeader)(unsafe.Pointer(&shorter)).Data)
+	lp := unsafe.Pointer((*reflect.StringHeader)(unsafe.Pointer(&longer)).Data)
+	for ; i < len(shorter)-8; i += 8 {
+		if *(*uint64)(unsafe.Add(sp, i)) != *(*uint64)(unsafe.Add(lp, i)) {
+			break
+		}
+	}
+	// Now go 1 byte at a time.
+	for ; i < len(shorter); i++ {
+		if shorter[i] != longer[i] {
+			break
+		}
+	}
+	if i == len(shorter) {
+		// One Labels was a prefix of the other; the set with fewer labels compares lower.
+		return len(a.data) - len(b.data)
 	}
 
-	ia, ib := 0, 0
-	for ia < l {
-		var aName, bName string
-		aName, ia = decodeString(a.data, ia)
-		bName, ib = decodeString(b.data, ib)
-		if aName != bName {
-			if aName < bName {
-				return -1
-			}
-			return 1
+	// Now we know that there is some difference before the end of a and b.
+	// Go back through the fields and find which field that difference is in.
+	firstCharDifferent := i
+	for i = 0; ; {
+		size, nextI := decodeSize(a.data, i)
+		if nextI+size > firstCharDifferent {
+			break
 		}
-		var aValue, bValue string
-		aValue, ia = decodeString(a.data, ia)
-		bValue, ib = decodeString(b.data, ib)
-		if aValue != bValue {
-			if aValue < bValue {
-				return -1
-			}
-			return 1
-		}
+		i = nextI + size
 	}
-	// If all labels so far were in common, the set with fewer labels comes first.
-	return len(a.data) - len(b.data)
+	// Difference is inside this entry.
+	aStr, _ := decodeString(a.data, i)
+	bStr, _ := decodeString(b.data, i)
+	if aStr < bStr {
+		return -1
+	}
+	return +1
 }
 
 // Copy labels from b on top of whatever was in ls previously, reusing memory or expanding if needed.
