@@ -3121,19 +3121,20 @@ type RatioSampler interface {
 	AddRatioSample(r float64, ts int64, h *vectorByValueHeap, sample *Sample)
 }
 
-const (
-	float64MaxUint64 = float64(math.MaxUint64)
-)
-
 // Use Hash(labels.String()) / maxUint64 as a "deterministic"
 // value in [0.0, 1.0].
 type HashRatioSampler struct{}
+
+var ratiosampler RatioSampler = NewHashRatioSampler()
 
 func NewHashRatioSampler() *HashRatioSampler {
 	return &HashRatioSampler{}
 }
 
 func (s *HashRatioSampler) sampleOffset(ts int64, sample *Sample) float64 {
+	const (
+		float64MaxUint64 = float64(math.MaxUint64)
+	)
 	return float64(sample.Metric.Hash()) / float64MaxUint64
 }
 
@@ -3170,8 +3171,3 @@ func (s *HashRatioSampler) AddRatioSample(ratioLimit float64, ts int64, h *vecto
 		}
 	}
 }
-
-// Allow overridding to ease unit test mocking.
-var (
-	ratiosampler RatioSampler = NewHashRatioSampler()
-)
