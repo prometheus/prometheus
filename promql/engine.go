@@ -20,7 +20,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"math/rand"
 	"reflect"
 	"runtime"
 	"sort"
@@ -2544,10 +2543,15 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 	if op == parser.QUANTILE {
 		q = param.(float64)
 	}
-	if op == parser.SAMPLE_RANDOM {
+	if op == parser.SAMPLE_RATIO {
 		q = param.(float64)
-		if q == 0 {
+		switch {
+		case q == 0:
 			return Vector{}
+		case q > 1.0:
+			ev.errorf("Float value %v is greater than 1.0", q)
+		case q < -1.0:
+			ev.errorf("Float value %v is less than -1.0", q)
 		}
 	}
 	var valueLabel string
@@ -2644,15 +2648,21 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 					F:      s.F,
 					Metric: s.Metric,
 				}
-			case parser.SAMPLE_RANDOM:
+			case parser.SAMPLE_RATIO:
 				// NB: As this switch visited only by the first element
 				// (sample) in the loop, we create the heap, then do
-				// the _same_ random sampling as with the rest of the
+				// the _same_ sampling as with the rest of the
 				// elements (to avoid "losing" it).
 				// NB: slice capacity set to resultSize*q (as an statistical
 				// approximation).
-				result[groupingKey].heap = make(vectorByValueHeap, 0, int(float64(resultSize)*q))
-				addRandomSample(q, s.T, &result[groupingKey].heap, &Sample{
+				var expectedCapacity int
+				if q > 0 {
+					expectedCapacity = int(float64(resultSize) * q)
+				} else {
+					expectedCapacity = int(float64(resultSize) * (1 + q))
+				}
+				result[groupingKey].heap = make(vectorByValueHeap, 0, expectedCapacity)
+				ratiosampler.AddRatioSample(q, s.T, &result[groupingKey].heap, &Sample{
 					F:      s.F,
 					Metric: s.Metric,
 				})
@@ -2805,9 +2815,9 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 				continue
 			}
 
-		case parser.SAMPLE_RANDOM:
-			// We randomly push elements to the heap, with `q` probability.
-			addRandomSample(q, s.T, &group.heap, &Sample{
+		case parser.SAMPLE_RATIO:
+			// We push elements to the heap, with `q` as ratio of samples.
+			ratiosampler.AddRatioSample(q, s.T, &group.heap, &Sample{
 				F:      s.F,
 				Metric: s.Metric,
 			})
@@ -2870,7 +2880,7 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 			}
 			continue // Bypass default append.
 
-		case parser.SAMPLE_LIMIT, parser.SAMPLE_RANDOM:
+		case parser.SAMPLE_LIMIT, parser.SAMPLE_RATIO:
 			for _, v := range aggr.heap {
 				enh.Out = append(enh.Out, Sample{
 					Metric: v.Metric,
@@ -3108,66 +3118,58 @@ func makeInt64Pointer(val int64) *int64 {
 	return valp
 }
 
-// Add Randomizer interface to allow unit-testing, `ts` argument is used only
-// for mocking rand.Float64() in a deterministic way (FakeRandomizer).
-type Randomizer interface {
-	Float64(ts int64, sample *Sample) float64
-}
-
-type RealRandomizer struct{}
-
-func NewRealRandomizer(seed int64) *RealRandomizer {
-	rand.Seed(seed)
-	return &RealRandomizer{}
-}
-
-func (r *RealRandomizer) Float64(ts int64, sample *Sample) float64 {
-	return rand.Float64()
+// Add RatioSampler interface to allow unit-testing (previously: Randomizer).
+type RatioSampler interface {
+	// Return this sample "offset" between [0.0, 1.0]
+	sampleOffset(ts int64, sample *Sample) float64
+	AddRatioSample(r float64, ts int64, h *vectorByValueHeap, sample *Sample)
 }
 
 const (
 	float64MaxUint64 = float64(math.MaxUint64)
 )
 
-// Not-A-Randomizer: use Hash(labels.String()) / maxUint64 as a "deterministic"
+// Use Hash(labels.String()) / maxUint64 as a "deterministic"
 // value in [0.0, 1.0].
-type HashRandomizer struct{}
+type HashRatioSampler struct{}
 
-func NewHashRandomizer() *HashRandomizer {
-	return &HashRandomizer{}
+func NewHashRatioSampler() *HashRatioSampler {
+	return &HashRatioSampler{}
 }
 
-func (r *HashRandomizer) Float64(ts int64, sample *Sample) float64 {
+func (s *HashRatioSampler) sampleOffset(ts int64, sample *Sample) float64 {
 	return float64(sample.Metric.Hash()) / float64MaxUint64
 }
 
-func addRandomSample(q float64, ts int64, h *vectorByValueHeap, sample *Sample) {
+func (s *HashRatioSampler) AddRatioSample(ratioLimit float64, ts int64, h *vectorByValueHeap, sample *Sample) {
+	sampleOffset := s.sampleOffset(ts, sample)
 	switch {
-	case q >= 0:
-		// If q >= 0 add sample if randomizer.Float64() is lesser than q
+	case ratioLimit >= 0:
+		// If ratioLimit >= 0: add sample if ratiosampler.sampleOffset() is lesser than ratioLimit
 		//
-		// 0.0        q                         1.0
+		// 0.0        ratioLimit                1.0
 		//  [---------|--------------------------]
 		//  [#########...........................]
 		//
 		// e.g.:
-		//   randomizer.Float64()==0.3 && q==0.4
+		//   ratiosampler.sampleOffset()==0.3 && ratioLimit==0.4
 		//     0.3 < 0.4 ? --> add sample
 		//
-		if randomizer.Float64(ts, sample) < q {
+		if sampleOffset < ratioLimit {
 			heap.Push(h, sample)
 		}
-	case q < 0:
-		// If q < 0 add sample if rand() return the "complement" of q>=0 case
+	case ratioLimit < 0:
+		// If ratioLimit < 0: add sample if rand() return the "complement" of ratioLimit>=0 case
+		// (loosely similar behavior to negative array index in other programming languages)
 		//
-		// 0.0       1+q                        1.0
+		// 0.0       1+ratioLimit               1.0
 		//  [---------|--------------------------]
 		//  [.........###########################]
 		//
 		// e.g.:
-		//   randomizer.Float64()==0.3 && q==-0.6
+		//   ratiosampler.sampleOffset()==0.3 && ratioLimit==-0.6
 		//     0.3 >= 0.4 ? --> don't add sample
-		if randomizer.Float64(ts, sample) >= (1.0 + q) {
+		if sampleOffset >= (1.0 + ratioLimit) {
 			heap.Push(h, sample)
 		}
 	}
@@ -3175,7 +3177,5 @@ func addRandomSample(q float64, ts int64, h *vectorByValueHeap, sample *Sample) 
 
 // Allow overridding to ease unit test mocking.
 var (
-	// XXX(jjo): PR#12503 testing HashRandomizer at engine.go
-	// randomizer Randomizer = NewRealRandomizer(time.Now().UnixNano())
-	randomizer Randomizer = NewHashRandomizer()
+	ratiosampler RatioSampler = NewHashRatioSampler()
 )

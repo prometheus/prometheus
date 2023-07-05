@@ -55,7 +55,7 @@ AggregateOp {
   Min |
   Quantile |
   SampleLimit |
-  SampleRandom |
+  SampleRatio |
   Stddev |
   Stdvar |
   Sum |
@@ -321,7 +321,7 @@ NumberLiteral  {
   Min,
   Quantile,
   SampleLimit,
-  SampleRandom,
+  SampleRatio,
   Stddev,
   Stdvar,
   Sum,

@@ -231,7 +231,7 @@ vector of fewer elements with aggregated values:
 * `topk` (largest k elements by sample value)
 * `quantile` (calculate φ-quantile (0 ≤ φ ≤ 1) over dimensions)
 * `sample_limit` (sample n elements)
-* `sample_random` (sample elements with 𝑝 probability)
+* `sample_ratio` (sample elements with approximately 𝑟 ratio)
 
 These operators can either be used to aggregate over **all** label dimensions
 or preserve distinct dimensions by including a `without` or `by` clause. These
@@ -252,7 +252,7 @@ labels that are not listed in the `by` clause, even if their label values are
 identical between all elements of the vector.
 
 `parameter` is only required for `count_values`, `quantile`, `topk`,
-`bottomk`, `sample_limit` and `sample_random`.
+`bottomk`, `sample_limit` and `sample_ratio`.
 
 `count_values` outputs one time series per unique sample value. Each series has
 an additional label. The name of that label is given by the aggregation
@@ -263,7 +263,7 @@ time series is the number of times that sample value was present.
 the input samples, including the original labels, are returned in the result
 vector. `by` and `without` are only used to bucket the input vector.
 
-`sample_limit` and `sample_random` also return a subset of the input samples,
+`sample_limit` and `sample_ratio` also return a subset of the input samples,
 including the original labels, in the result vector.
 
 `quantile` calculates the φ-quantile, the value that ranks at number φ*N among
@@ -302,9 +302,9 @@ could write:
 
     sample_limit(10, http_requests_total)
 
-To randomly sample approximately 10% of timeseries we could write:
+To deterministically sample approximately 10% of timeseries we could write:
 
-    sample_random(0.1, http_requests_total)
+    sample_ratio(0.1, http_requests_total)
 
 ## Binary operator precedence
 

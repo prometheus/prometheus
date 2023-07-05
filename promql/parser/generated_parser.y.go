@@ -89,7 +89,7 @@ const STDVAR = 57398
 const SUM = 57399
 const TOPK = 57400
 const SAMPLE_LIMIT = 57401
-const SAMPLE_RANDOM = 57402
+const SAMPLE_RATIO = 57402
 const aggregatorsEnd = 57403
 const keywordsStart = 57404
 const BOOL = 57405
@@ -172,7 +172,7 @@ var yyToknames = [...]string{
 	"SUM",
 	"TOPK",
 	"SAMPLE_LIMIT",
-	"SAMPLE_RANDOM",
+	"SAMPLE_RATIO",
 	"aggregatorsEnd",
 	"keywordsStart",
 	"BOOL",

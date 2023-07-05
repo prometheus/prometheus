@@ -38,24 +38,6 @@ import (
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
-// Mock Randomizer interface.
-type FakeRandomizer struct {
-	div int64
-}
-
-func NewFakeRandomizer(div int64) *FakeRandomizer {
-	return &FakeRandomizer{
-		div: div,
-	}
-}
-
-// FakeRandomizer.Float64() with div=100000 will return (tstamp%100000)/100000
-// i.e. will return [0.0, 1.0) values proportional to tstamp%100000.
-func (r *FakeRandomizer) Float64(ts int64) float64 {
-	tsmod := ts % r.div
-	return float64(tsmod) / float64(r.div)
-}
-
 func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m)
 }
@@ -1658,13 +1640,11 @@ load 10s
   metric{job="1"} 0+1x1000
   metric{job="2"} 0+2x1000
   metric{job="3"} 0+3x1000
+  metric{job="4"} 0+4x1000
+  metric{job="5"} 0+5x1000
 `)
 	require.NoError(t, err)
 	defer test.Close()
-
-	// Mock the default random number generator with a deterministic one.
-	// XXX(jjo): PR#12503 testing HashRandomizer at engine.go
-	// randomizer = FakeRandomizer(100000)
 
 	err = test.Run()
 	require.NoError(t, err)
@@ -1672,6 +1652,31 @@ load 10s
 	lbls1 := labels.FromStrings("__name__", "metric", "job", "1")
 	lbls2 := labels.FromStrings("__name__", "metric", "job", "2")
 	lbls3 := labels.FromStrings("__name__", "metric", "job", "3")
+	lbls4 := labels.FromStrings("__name__", "metric", "job", "4")
+	lbls5 := labels.FromStrings("__name__", "metric", "job", "5")
+
+	// Convenience function that returns a "full matrix" that matches test NewTest()
+	// for an specified number of jobs and time range.
+	fullMatrix := func(jobs, start, end, interval int) Matrix {
+		var mat Matrix
+		for job := 1; job <= jobs; job++ {
+			series := func(start, end, interval int) Series {
+				var points []FPoint
+				for i := start; i <= end; i += interval {
+					t := 1000 * int64(i)
+					points = append(points, FPoint{F: float64(job * i / interval), T: t})
+				}
+				return Series{
+					Floats: points,
+					Metric: labels.FromStrings("__name__", "metric", "job", fmt.Sprintf("%d", job)),
+				}
+			}(start, end, interval)
+			mat = append(mat, series)
+		}
+		return mat
+	}
+
+	fullMatrix20 := fullMatrix(5, 0, 20, 10)
 
 	cases := []struct {
 		query                string
@@ -1689,28 +1694,15 @@ load 10s
 			query: `sample_limit(2, metric)`,
 			start: 0, end: 20, interval: 10,
 			resultLen: 2,
-			resultIn: Matrix{
-				Series{
-					Floats: []FPoint{{F: 0, T: 0}, {F: 1, T: 10000}, {F: 2, T: 20000}},
-					Metric: lbls1,
-				},
-				Series{
-					Floats: []FPoint{{F: 0, T: 0}, {F: 2, T: 10000}, {F: 4, T: 20000}},
-					Metric: lbls2,
-				},
-				Series{
-					Floats: []FPoint{{F: 0, T: 0}, {F: 3, T: 10000}, {F: 6, T: 20000}},
-					Metric: lbls3,
-				},
-			},
+			resultIn:  fullMatrix20,
 		},
 		{
-			query: `sample_random(0, metric)`,
+			query: `sample_ratio(0, metric)`,
 			start: 0, end: 90, interval: 10,
 			result: Matrix{},
 		},
 		{
-			query: `sample_random(0.2, metric)`,
+			query: `sample_ratio(0.2, metric)`,
 			start: 0, end: 20, interval: 10,
 			result: Matrix{
 				Series{
@@ -1720,78 +1712,37 @@ load 10s
 			},
 		},
 		{
-			// NB: must return the _completement_ of sample_random(0.2, metric)
-			query: `sample_random(-0.8, metric)`,
+			// NB: must return the _completement_ of sample_ratio(0.2, metric)
+			query: `sample_ratio(-0.8, metric)`,
 			start: 0, end: 20, interval: 10,
 			result: Matrix{
 				Series{
-					Metric: lbls2,
 					Floats: []FPoint{{T: 0, F: 0}, {T: 10000, F: 2}, {T: 20000, F: 4}},
+					Metric: lbls2,
 				},
 				Series{
-					Metric: lbls3,
 					Floats: []FPoint{{T: 0, F: 0}, {T: 10000, F: 3}, {T: 20000, F: 6}},
+					Metric: lbls3,
+				},
+				Series{
+					Floats: []FPoint{{T: 0, F: 0}, {T: 10000, F: 4}, {T: 20000, F: 8}},
+					Metric: lbls4,
+				},
+				Series{
+					Floats: []FPoint{{F: 0, T: 0}, {T: 10000, F: 5}, {T: 20000, F: 10}},
+					Metric: lbls5,
 				},
 			},
 		},
 		{
-			// OR-ing these two (`p` and `1-p`) must return the whole set of series:
-			query: `sample_random(0.35, metric) or sample_random(-0.65, metric)`,
+			query: `sample_ratio(1.0, metric)`,
 			start: 0, end: 20, interval: 10,
-			result: Matrix{
-				Series{
-					Metric: lbls1,
-					Floats: []FPoint{{T: 0, F: 0}, {T: 10000, F: 1}, {T: 20000, F: 2}},
-				},
-				Series{
-					Metric: lbls2,
-					Floats: []FPoint{{T: 0, F: 0}, {T: 10000, F: 2}, {T: 20000, F: 4}},
-				},
-				Series{
-					Metric: lbls3,
-					Floats: []FPoint{{T: 0, F: 0}, {T: 10000, F: 3}, {T: 20000, F: 6}},
-				},
-			},
+			result: fullMatrix20,
 		},
-
-		/*
-			// With 0.2 probability over 20 samples (interval=10s) we'll get
-			// the 1st two from each 100s period, as FakeRandomizer will return
-			// (tstamp%100s)/100s.
-			    query: `sample_random(0.4, metric)`,
-			    start: 0, end: 190, interval: 10,
-				result: Matrix{
-					Series{
-						Floats: []FPoint{{F: 0, T: 0}, {F: 1, T: 10000}, {F: 10, T: 100000}, {F: 11, T: 110000}},
-						Metric: lbls1,
-					},
-					Series{
-						Floats: []FPoint{{F: 0, T: 0}, {F: 2, T: 10000}, {F: 20, T: 100000}, {F: 22, T: 110000}},
-						Metric: lbls2,
-					},
-					Series{
-						Floats: []FPoint{{F: 0, T: 0}, {F: 3, T: 10000}, {F: 30, T: 100000}, {F: 33, T: 110000}},
-						Metric: lbls3,
-					},
-				},
-		*/
 		{
-			query: `sample_random(1, metric)`,
+			query: `sample_ratio(-1.0, metric)`,
 			start: 0, end: 20, interval: 10,
-			result: Matrix{
-				Series{
-					Floats: []FPoint{{F: 0, T: 0}, {F: 1, T: 10000}, {F: 2, T: 20000}},
-					Metric: lbls1,
-				},
-				Series{
-					Floats: []FPoint{{F: 0, T: 0}, {F: 2, T: 10000}, {F: 4, T: 20000}},
-					Metric: lbls2,
-				},
-				Series{
-					Floats: []FPoint{{F: 0, T: 0}, {F: 3, T: 10000}, {F: 6, T: 20000}},
-					Metric: lbls3,
-				},
-			},
+			result: fullMatrix20,
 		},
 	}
 
@@ -1829,6 +1780,60 @@ load 10s
 					}
 				}
 			}
+		})
+	}
+
+	// Dynamically build sample_ratio() cases, to verify that
+	//   sample_ratio(v, metric)
+	// is the *exact complement* of
+	//   sample_ratio(-(1.0-v), metric)
+	//
+	// e.g. v=0.2 is the complement (set of timeseries) of v=-0.8
+	type ratioCase struct {
+		query                string
+		start, end, interval int64 // Time in seconds.
+		result               parser.Value
+	}
+	orQuery := `sample_ratio(%f, metric) or sample_ratio(%f, metric)`
+	andQuery := `sample_ratio(%f, metric) and sample_ratio(%f, metric)`
+	var ratioCases []ratioCase
+	for v := 0.0; v < 1.0; v += 0.1 {
+		// OR-ing both must return the full matrix
+		ratioCases = append(ratioCases, ratioCase{
+			query: fmt.Sprintf(orQuery, v, -(1.0 - v)),
+			start: 0, end: 20, interval: 10,
+			result: fullMatrix20,
+		})
+		// AND-ing both must return an empty matrix
+		ratioCases = append(ratioCases, ratioCase{
+			query: fmt.Sprintf(andQuery, v, -(1.0 - v)),
+			start: 0, end: 20, interval: 10,
+			result: Matrix{},
+		})
+	}
+
+	for _, c := range ratioCases {
+		t.Run(c.query, func(t *testing.T) {
+			if c.interval == 0 {
+				c.interval = 1
+			}
+			start, end, interval := time.Unix(c.start, 0), time.Unix(c.end, 0), time.Duration(c.interval)*time.Second
+			var err error
+			var qry Query
+			if c.end == 0 {
+				qry, err = test.QueryEngine().NewInstantQuery(test.context, test.Queryable(), nil, c.query, start)
+			} else {
+				qry, err = test.QueryEngine().NewRangeQuery(test.context, test.Queryable(), nil, c.query, start, end, interval)
+			}
+			require.NoError(t, err)
+
+			res := qry.Exec(test.Context())
+			require.NoError(t, res.Err)
+			if expMat, ok := c.result.(Matrix); ok {
+				sort.Sort(expMat)
+				sort.Sort(res.Value.(Matrix))
+			}
+			require.Equal(t, c.result, res.Value, "query %q failed", c.query)
 		})
 	}
 }

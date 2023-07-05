@@ -104,4 +104,4 @@ over some of them, we could use the following:
 Alternatively, if we wanted the returned timeseries to be more evenly sampled,
 we could use the following to get approximately 10% of them:
 
-    sample_random(0.1, app_foo_metric_bar)
+    sample_ratio(0.1, app_foo_metric_bar)
