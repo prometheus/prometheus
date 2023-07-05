@@ -441,49 +441,7 @@ func (d *Decoder) HistogramSamples(rec []byte, histograms []RefHistogramSample) 
 			H:   &histogram.Histogram{},
 		}
 
-		rh.H.CounterResetHint = histogram.CounterResetHint(dec.Byte())
-
-		rh.H.Schema = int32(dec.Varint64())
-		rh.H.ZeroThreshold = math.Float64frombits(dec.Be64())
-
-		rh.H.ZeroCount = dec.Uvarint64()
-		rh.H.Count = dec.Uvarint64()
-		rh.H.Sum = math.Float64frombits(dec.Be64())
-
-		l := dec.Uvarint()
-		if l > 0 {
-			rh.H.PositiveSpans = make([]histogram.Span, l)
-		}
-		for i := range rh.H.PositiveSpans {
-			rh.H.PositiveSpans[i].Offset = int32(dec.Varint64())
-			rh.H.PositiveSpans[i].Length = dec.Uvarint32()
-		}
-
-		l = dec.Uvarint()
-		if l > 0 {
-			rh.H.NegativeSpans = make([]histogram.Span, l)
-		}
-		for i := range rh.H.NegativeSpans {
-			rh.H.NegativeSpans[i].Offset = int32(dec.Varint64())
-			rh.H.NegativeSpans[i].Length = dec.Uvarint32()
-		}
-
-		l = dec.Uvarint()
-		if l > 0 {
-			rh.H.PositiveBuckets = make([]int64, l)
-		}
-		for i := range rh.H.PositiveBuckets {
-			rh.H.PositiveBuckets[i] = dec.Varint64()
-		}
-
-		l = dec.Uvarint()
-		if l > 0 {
-			rh.H.NegativeBuckets = make([]int64, l)
-		}
-		for i := range rh.H.NegativeBuckets {
-			rh.H.NegativeBuckets[i] = dec.Varint64()
-		}
-
+		DecodeHistogram(&dec, rh.H)
 		histograms = append(histograms, rh)
 	}
 
@@ -494,6 +452,52 @@ func (d *Decoder) HistogramSamples(rec []byte, histograms []RefHistogramSample) 
 		return nil, errors.Errorf("unexpected %d bytes left in entry", len(dec.B))
 	}
 	return histograms, nil
+}
+
+// DecodeHistogram decodes a Histogram from a byte slice.
+func DecodeHistogram(buf *encoding.Decbuf, h *histogram.Histogram) {
+	h.CounterResetHint = histogram.CounterResetHint(buf.Byte())
+
+	h.Schema = int32(buf.Varint64())
+	h.ZeroThreshold = math.Float64frombits(buf.Be64())
+
+	h.ZeroCount = buf.Uvarint64()
+	h.Count = buf.Uvarint64()
+	h.Sum = math.Float64frombits(buf.Be64())
+
+	l := buf.Uvarint()
+	if l > 0 {
+		h.PositiveSpans = make([]histogram.Span, l)
+	}
+	for i := range h.PositiveSpans {
+		h.PositiveSpans[i].Offset = int32(buf.Varint64())
+		h.PositiveSpans[i].Length = buf.Uvarint32()
+	}
+
+	l = buf.Uvarint()
+	if l > 0 {
+		h.NegativeSpans = make([]histogram.Span, l)
+	}
+	for i := range h.NegativeSpans {
+		h.NegativeSpans[i].Offset = int32(buf.Varint64())
+		h.NegativeSpans[i].Length = buf.Uvarint32()
+	}
+
+	l = buf.Uvarint()
+	if l > 0 {
+		h.PositiveBuckets = make([]int64, l)
+	}
+	for i := range h.PositiveBuckets {
+		h.PositiveBuckets[i] = buf.Varint64()
+	}
+
+	l = buf.Uvarint()
+	if l > 0 {
+		h.NegativeBuckets = make([]int64, l)
+	}
+	for i := range h.NegativeBuckets {
+		h.NegativeBuckets[i] = buf.Varint64()
+	}
 }
 
 func (d *Decoder) FloatHistogramSamples(rec []byte, histograms []RefFloatHistogramSample) ([]RefFloatHistogramSample, error) {
@@ -519,49 +523,7 @@ func (d *Decoder) FloatHistogramSamples(rec []byte, histograms []RefFloatHistogr
 			FH:  &histogram.FloatHistogram{},
 		}
 
-		rh.FH.CounterResetHint = histogram.CounterResetHint(dec.Byte())
-
-		rh.FH.Schema = int32(dec.Varint64())
-		rh.FH.ZeroThreshold = dec.Be64Float64()
-
-		rh.FH.ZeroCount = dec.Be64Float64()
-		rh.FH.Count = dec.Be64Float64()
-		rh.FH.Sum = dec.Be64Float64()
-
-		l := dec.Uvarint()
-		if l > 0 {
-			rh.FH.PositiveSpans = make([]histogram.Span, l)
-		}
-		for i := range rh.FH.PositiveSpans {
-			rh.FH.PositiveSpans[i].Offset = int32(dec.Varint64())
-			rh.FH.PositiveSpans[i].Length = dec.Uvarint32()
-		}
-
-		l = dec.Uvarint()
-		if l > 0 {
-			rh.FH.NegativeSpans = make([]histogram.Span, l)
-		}
-		for i := range rh.FH.NegativeSpans {
-			rh.FH.NegativeSpans[i].Offset = int32(dec.Varint64())
-			rh.FH.NegativeSpans[i].Length = dec.Uvarint32()
-		}
-
-		l = dec.Uvarint()
-		if l > 0 {
-			rh.FH.PositiveBuckets = make([]float64, l)
-		}
-		for i := range rh.FH.PositiveBuckets {
-			rh.FH.PositiveBuckets[i] = dec.Be64Float64()
-		}
-
-		l = dec.Uvarint()
-		if l > 0 {
-			rh.FH.NegativeBuckets = make([]float64, l)
-		}
-		for i := range rh.FH.NegativeBuckets {
-			rh.FH.NegativeBuckets[i] = dec.Be64Float64()
-		}
-
+		DecodeFloatHistogram(&dec, rh.FH)
 		histograms = append(histograms, rh)
 	}
 
@@ -572,6 +534,52 @@ func (d *Decoder) FloatHistogramSamples(rec []byte, histograms []RefFloatHistogr
 		return nil, errors.Errorf("unexpected %d bytes left in entry", len(dec.B))
 	}
 	return histograms, nil
+}
+
+// Decode decodes a Histogram from a byte slice.
+func DecodeFloatHistogram(buf *encoding.Decbuf, fh *histogram.FloatHistogram) {
+	fh.CounterResetHint = histogram.CounterResetHint(buf.Byte())
+
+	fh.Schema = int32(buf.Varint64())
+	fh.ZeroThreshold = buf.Be64Float64()
+
+	fh.ZeroCount = buf.Be64Float64()
+	fh.Count = buf.Be64Float64()
+	fh.Sum = buf.Be64Float64()
+
+	l := buf.Uvarint()
+	if l > 0 {
+		fh.PositiveSpans = make([]histogram.Span, l)
+	}
+	for i := range fh.PositiveSpans {
+		fh.PositiveSpans[i].Offset = int32(buf.Varint64())
+		fh.PositiveSpans[i].Length = buf.Uvarint32()
+	}
+
+	l = buf.Uvarint()
+	if l > 0 {
+		fh.NegativeSpans = make([]histogram.Span, l)
+	}
+	for i := range fh.NegativeSpans {
+		fh.NegativeSpans[i].Offset = int32(buf.Varint64())
+		fh.NegativeSpans[i].Length = buf.Uvarint32()
+	}
+
+	l = buf.Uvarint()
+	if l > 0 {
+		fh.PositiveBuckets = make([]float64, l)
+	}
+	for i := range fh.PositiveBuckets {
+		fh.PositiveBuckets[i] = buf.Be64Float64()
+	}
+
+	l = buf.Uvarint()
+	if l > 0 {
+		fh.NegativeBuckets = make([]float64, l)
+	}
+	for i := range fh.NegativeBuckets {
+		fh.NegativeBuckets[i] = buf.Be64Float64()
+	}
 }
 
 // Encoder encodes series, sample, and tombstones records.
@@ -719,39 +727,44 @@ func (e *Encoder) HistogramSamples(histograms []RefHistogramSample, b []byte) []
 		buf.PutVarint64(int64(h.Ref) - int64(first.Ref))
 		buf.PutVarint64(h.T - first.T)
 
-		buf.PutByte(byte(h.H.CounterResetHint))
-
-		buf.PutVarint64(int64(h.H.Schema))
-		buf.PutBE64(math.Float64bits(h.H.ZeroThreshold))
-
-		buf.PutUvarint64(h.H.ZeroCount)
-		buf.PutUvarint64(h.H.Count)
-		buf.PutBE64(math.Float64bits(h.H.Sum))
-
-		buf.PutUvarint(len(h.H.PositiveSpans))
-		for _, s := range h.H.PositiveSpans {
-			buf.PutVarint64(int64(s.Offset))
-			buf.PutUvarint32(s.Length)
-		}
-
-		buf.PutUvarint(len(h.H.NegativeSpans))
-		for _, s := range h.H.NegativeSpans {
-			buf.PutVarint64(int64(s.Offset))
-			buf.PutUvarint32(s.Length)
-		}
-
-		buf.PutUvarint(len(h.H.PositiveBuckets))
-		for _, b := range h.H.PositiveBuckets {
-			buf.PutVarint64(b)
-		}
-
-		buf.PutUvarint(len(h.H.NegativeBuckets))
-		for _, b := range h.H.NegativeBuckets {
-			buf.PutVarint64(b)
-		}
+		EncodeHistogram(&buf, h.H)
 	}
 
 	return buf.Get()
+}
+
+// EncodeHistogram encodes a Histogram into a byte slice.
+func EncodeHistogram(buf *encoding.Encbuf, h *histogram.Histogram) {
+	buf.PutByte(byte(h.CounterResetHint))
+
+	buf.PutVarint64(int64(h.Schema))
+	buf.PutBE64(math.Float64bits(h.ZeroThreshold))
+
+	buf.PutUvarint64(h.ZeroCount)
+	buf.PutUvarint64(h.Count)
+	buf.PutBE64(math.Float64bits(h.Sum))
+
+	buf.PutUvarint(len(h.PositiveSpans))
+	for _, s := range h.PositiveSpans {
+		buf.PutVarint64(int64(s.Offset))
+		buf.PutUvarint32(s.Length)
+	}
+
+	buf.PutUvarint(len(h.NegativeSpans))
+	for _, s := range h.NegativeSpans {
+		buf.PutVarint64(int64(s.Offset))
+		buf.PutUvarint32(s.Length)
+	}
+
+	buf.PutUvarint(len(h.PositiveBuckets))
+	for _, b := range h.PositiveBuckets {
+		buf.PutVarint64(b)
+	}
+
+	buf.PutUvarint(len(h.NegativeBuckets))
+	for _, b := range h.NegativeBuckets {
+		buf.PutVarint64(b)
+	}
 }
 
 func (e *Encoder) FloatHistogramSamples(histograms []RefFloatHistogramSample, b []byte) []byte {
@@ -772,37 +785,42 @@ func (e *Encoder) FloatHistogramSamples(histograms []RefFloatHistogramSample, b 
 		buf.PutVarint64(int64(h.Ref) - int64(first.Ref))
 		buf.PutVarint64(h.T - first.T)
 
-		buf.PutByte(byte(h.FH.CounterResetHint))
-
-		buf.PutVarint64(int64(h.FH.Schema))
-		buf.PutBEFloat64(h.FH.ZeroThreshold)
-
-		buf.PutBEFloat64(h.FH.ZeroCount)
-		buf.PutBEFloat64(h.FH.Count)
-		buf.PutBEFloat64(h.FH.Sum)
-
-		buf.PutUvarint(len(h.FH.PositiveSpans))
-		for _, s := range h.FH.PositiveSpans {
-			buf.PutVarint64(int64(s.Offset))
-			buf.PutUvarint32(s.Length)
-		}
-
-		buf.PutUvarint(len(h.FH.NegativeSpans))
-		for _, s := range h.FH.NegativeSpans {
-			buf.PutVarint64(int64(s.Offset))
-			buf.PutUvarint32(s.Length)
-		}
-
-		buf.PutUvarint(len(h.FH.PositiveBuckets))
-		for _, b := range h.FH.PositiveBuckets {
-			buf.PutBEFloat64(b)
-		}
-
-		buf.PutUvarint(len(h.FH.NegativeBuckets))
-		for _, b := range h.FH.NegativeBuckets {
-			buf.PutBEFloat64(b)
-		}
+		EncodeFloatHistogram(&buf, h.FH)
 	}
 
 	return buf.Get()
+}
+
+// Encode encodes the Float Histogram into a byte slice.
+func EncodeFloatHistogram(buf *encoding.Encbuf, h *histogram.FloatHistogram) {
+	buf.PutByte(byte(h.CounterResetHint))
+
+	buf.PutVarint64(int64(h.Schema))
+	buf.PutBEFloat64(h.ZeroThreshold)
+
+	buf.PutBEFloat64(h.ZeroCount)
+	buf.PutBEFloat64(h.Count)
+	buf.PutBEFloat64(h.Sum)
+
+	buf.PutUvarint(len(h.PositiveSpans))
+	for _, s := range h.PositiveSpans {
+		buf.PutVarint64(int64(s.Offset))
+		buf.PutUvarint32(s.Length)
+	}
+
+	buf.PutUvarint(len(h.NegativeSpans))
+	for _, s := range h.NegativeSpans {
+		buf.PutVarint64(int64(s.Offset))
+		buf.PutUvarint32(s.Length)
+	}
+
+	buf.PutUvarint(len(h.PositiveBuckets))
+	for _, b := range h.PositiveBuckets {
+		buf.PutBEFloat64(b)
+	}
+
+	buf.PutUvarint(len(h.NegativeBuckets))
+	for _, b := range h.NegativeBuckets {
+		buf.PutBEFloat64(b)
+	}
 }
