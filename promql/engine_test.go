@@ -1649,17 +1649,13 @@ load 10s
 	err = test.Run()
 	require.NoError(t, err)
 
-	lbls1 := labels.FromStrings("__name__", "metric", "job", "1")
-	lbls2 := labels.FromStrings("__name__", "metric", "job", "2")
-	lbls3 := labels.FromStrings("__name__", "metric", "job", "3")
-	lbls4 := labels.FromStrings("__name__", "metric", "job", "4")
-	lbls5 := labels.FromStrings("__name__", "metric", "job", "5")
-
 	// Convenience function that returns a "full matrix" that matches test NewTest()
 	// for an specified number of jobs and time range.
-	fullMatrix := func(jobs, start, end, interval int) Matrix {
+	fullMatrix := func(jobs, start, end, interval int) (Matrix, []labels.Labels) {
 		var mat Matrix
+		var lbls []labels.Labels
 		for job := 1; job <= jobs; job++ {
+			lbls = append(lbls, labels.FromStrings("__name__", "metric", "job", fmt.Sprintf("%d", job)))
 			series := func(start, end, interval int) Series {
 				var points []FPoint
 				for i := start; i <= end; i += interval {
@@ -1673,10 +1669,10 @@ load 10s
 			}(start, end, interval)
 			mat = append(mat, series)
 		}
-		return mat
+		return mat, lbls
 	}
 
-	fullMatrix20 := fullMatrix(5, 0, 20, 10)
+	fullMatrix20, lbls := fullMatrix(5, 0, 20, 10)
 
 	cases := []struct {
 		query                string
@@ -1686,60 +1682,74 @@ load 10s
 		resultLen            int // Required if resultIn is set
 	}{
 		{
+			// Limit==0 -> empty matrix
 			query: `sample_limit(0, metric)`,
 			start: 0, end: 20, interval: 10,
 			result: Matrix{},
 		},
 		{
+			// Limit==2 -> return 2 timeseries (resultLen: 2),
+			// also asserting that they are member of full TSs
 			query: `sample_limit(2, metric)`,
 			start: 0, end: 20, interval: 10,
 			resultLen: 2,
 			resultIn:  fullMatrix20,
 		},
 		{
+			// Limit==5 -> return full matrix (5 timeseries)
+			query: `sample_limit(5, metric)`,
+			start: 0, end: 20, interval: 10,
+			result: fullMatrix20,
+		},
+		{
+			// ratioLimit=0 -> empty matrix
 			query: `sample_ratio(0, metric)`,
-			start: 0, end: 90, interval: 10,
+			start: 0, end: 20, interval: 10,
 			result: Matrix{},
 		},
 		{
+			// ratioLimit=0.2 -> return some timeseries
+			// NB: given that involves Metric.Hash() this was _manually_ cherry-picked to match
 			query: `sample_ratio(0.2, metric)`,
 			start: 0, end: 20, interval: 10,
 			result: Matrix{
 				Series{
-					Metric: lbls1,
+					Metric: lbls[0],
 					Floats: []FPoint{{T: 0, F: 0}, {T: 10000, F: 1}, {T: 20000, F: 2}},
 				},
 			},
 		},
 		{
-			// NB: must return the _completement_ of sample_ratio(0.2, metric)
+			// ratioLimit=-0.8 -> the _completement_ of sample_ratio(0.2, metric)
 			query: `sample_ratio(-0.8, metric)`,
 			start: 0, end: 20, interval: 10,
 			result: Matrix{
 				Series{
 					Floats: []FPoint{{T: 0, F: 0}, {T: 10000, F: 2}, {T: 20000, F: 4}},
-					Metric: lbls2,
+					Metric: lbls[1],
 				},
 				Series{
 					Floats: []FPoint{{T: 0, F: 0}, {T: 10000, F: 3}, {T: 20000, F: 6}},
-					Metric: lbls3,
+					Metric: lbls[2],
 				},
 				Series{
 					Floats: []FPoint{{T: 0, F: 0}, {T: 10000, F: 4}, {T: 20000, F: 8}},
-					Metric: lbls4,
+					Metric: lbls[3],
 				},
 				Series{
 					Floats: []FPoint{{F: 0, T: 0}, {T: 10000, F: 5}, {T: 20000, F: 10}},
-					Metric: lbls5,
+					Metric: lbls[4],
 				},
 			},
 		},
 		{
+			// ratioLimit=1.0 -> full matrix
 			query: `sample_ratio(1.0, metric)`,
 			start: 0, end: 20, interval: 10,
 			result: fullMatrix20,
 		},
 		{
+			// ratioLimit=-1.0 -> full matrix also
 			query: `sample_ratio(-1.0, metric)`,
 			start: 0, end: 20, interval: 10,
 			result: fullMatrix20,
