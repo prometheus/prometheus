@@ -658,6 +658,7 @@ func NewCompactingChunkSeriesMerger(mergeFunc VerticalSeriesMergeFunc) VerticalC
 		if len(series) == 0 {
 			return nil
 		}
+
 		return &ChunkSeriesEntry{
 			Lset: series[0].Labels(),
 			ChunkIteratorFn: func(chunks.Iterator) chunks.Iterator {
@@ -670,8 +671,84 @@ func NewCompactingChunkSeriesMerger(mergeFunc VerticalSeriesMergeFunc) VerticalC
 					iterators: iterators,
 				}
 			},
+			ChunkCountFn: func() int {
+				return estimateCompactedChunkCount(series)
+			},
 		}
 	}
+}
+
+// estimateCompactedChunkCount computes an estimate of the resulting number of chunks
+// after compacting series.
+//
+// The estimate is imperfect in a few ways, due to the fact it does not examine individual samples:
+//   - it does not check for duplicate samples in overlapping chunks, and so may overestimate
+//     the resulting number of chunks if duplicate samples are present, or if an entire chunk is
+//     duplicated
+//   - it does not check if overlapping chunks have samples that swap back and forth between
+//     different encodings over time, and so may underestimate the resulting number of chunks
+func estimateCompactedChunkCount(series []ChunkSeries) int {
+	h := make(chunkIteratorHeap, 0, len(series))
+
+	for _, s := range series {
+		iter := s.Iterator(nil)
+		if iter.Next() {
+			h.Push(iter)
+		}
+	}
+
+	totalChunkCount := 0
+
+	for len(h) > 0 {
+		iter := heap.Pop(&h).(chunks.Iterator)
+		prev := iter.At()
+		if iter.Next() {
+			heap.Push(&h, iter)
+		}
+
+		chunkCountForThisTimePeriod := 0
+		sampleCount := prev.Chunk.NumSamples()
+		maxTime := prev.MaxTime
+
+		// Find all overlapping chunks and estimate the number of resulting chunks.
+		for len(h) > 0 && h[0].At().MinTime <= maxTime {
+			iter := heap.Pop(&h).(chunks.Iterator)
+			next := iter.At()
+			if iter.Next() {
+				heap.Push(&h, iter)
+			}
+
+			if next.MaxTime > maxTime {
+				maxTime = next.MaxTime
+			}
+
+			if prev.Chunk.Encoding() != next.Chunk.Encoding() {
+				// If we have more than seriesToChunkEncoderSplit samples, account for the additional chunks we'll create.
+				chunkCountForThisTimePeriod += sampleCount / seriesToChunkEncoderSplit
+				if sampleCount%seriesToChunkEncoderSplit > 0 {
+					chunkCountForThisTimePeriod++
+				}
+
+				sampleCount = 0
+			}
+
+			sampleCount += next.Chunk.NumSamples()
+			prev = next
+		}
+
+		// If we have more than seriesToChunkEncoderSplit samples, account for the additional chunks we'll create.
+		chunkCountForThisTimePeriod += sampleCount / seriesToChunkEncoderSplit
+		if sampleCount%seriesToChunkEncoderSplit > 0 {
+			chunkCountForThisTimePeriod++
+		}
+		if chunkCountForThisTimePeriod == 0 {
+			chunkCountForThisTimePeriod = 1 // We'll always create at least one chunk.
+		}
+
+		totalChunkCount += chunkCountForThisTimePeriod
+	}
+
+	return totalChunkCount
 }
 
 // compactChunkIterator is responsible to compact chunks from different iterators of the same time series into single chainSeries.
@@ -801,6 +878,7 @@ func NewConcatenatingChunkSeriesMerger() VerticalChunkSeriesMergeFunc {
 		if len(series) == 0 {
 			return nil
 		}
+
 		return &ChunkSeriesEntry{
 			Lset: series[0].Labels(),
 			ChunkIteratorFn: func(chunks.Iterator) chunks.Iterator {
@@ -811,6 +889,15 @@ func NewConcatenatingChunkSeriesMerger() VerticalChunkSeriesMergeFunc {
 				return &concatenatingChunkIterator{
 					iterators: iterators,
 				}
+			},
+			ChunkCountFn: func() int {
+				chunkCount := 0
+
+				for _, series := range series {
+					chunkCount += series.EstimatedChunkCount()
+				}
+
+				return chunkCount
 			},
 		}
 	}

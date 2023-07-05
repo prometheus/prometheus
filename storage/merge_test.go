@@ -394,9 +394,10 @@ func TestCompactingChunkSeriesMerger(t *testing.T) {
 	}
 
 	for _, tc := range []struct {
-		name     string
-		input    []ChunkSeries
-		expected ChunkSeries
+		name                   string
+		input                  []ChunkSeries
+		expected               ChunkSeries
+		expectedChunksEstimate int
 	}{
 		{
 			name: "single empty series",
@@ -483,6 +484,7 @@ func TestCompactingChunkSeriesMerger(t *testing.T) {
 			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
 				tsdbutil.GenerateSamples(0, 110),
 			),
+			expectedChunksEstimate: 2, // Estimation doesn't consider duplicate series when estimating the number of chunks.
 		},
 		{
 			name: "150 overlapping samples, split chunk",
@@ -520,6 +522,7 @@ func TestCompactingChunkSeriesMerger(t *testing.T) {
 				[]tsdbutil.Sample{fSample{12, 12}, fSample{14, 14}},
 				[]tsdbutil.Sample{histogramSample(15)},
 			),
+			expectedChunksEstimate: 4, // Estimation assumes overlapping chunks don't swap back and forth between different encodings.
 		},
 		{
 			name: "float histogram chunks overlapping",
@@ -546,6 +549,7 @@ func TestCompactingChunkSeriesMerger(t *testing.T) {
 				[]tsdbutil.Sample{fSample{12, 12}, fSample{14, 14}},
 				[]tsdbutil.Sample{floatHistogramSample(15)},
 			),
+			expectedChunksEstimate: 4, // Estimation assumes overlapping chunks don't swap back and forth between different encodings.
 		},
 		{
 			name: "float histogram chunks overlapping with histogram chunks",
@@ -560,6 +564,7 @@ func TestCompactingChunkSeriesMerger(t *testing.T) {
 				[]tsdbutil.Sample{histogramSample(12), histogramSample(14)},
 				[]tsdbutil.Sample{floatHistogramSample(15)},
 			),
+			expectedChunksEstimate: 4, // Estimation assumes overlapping chunks don't swap back and forth between different encodings.
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -570,6 +575,12 @@ func TestCompactingChunkSeriesMerger(t *testing.T) {
 
 			require.Equal(t, expErr, actErr)
 			require.Equal(t, expChks, actChks)
+
+			if tc.expectedChunksEstimate == 0 {
+				tc.expectedChunksEstimate = len(actChks)
+			}
+
+			require.Equalf(t, tc.expectedChunksEstimate, merged.EstimatedChunkCount(), "expected estimate of %v chunks, actual chunks are: %v", tc.expectedChunksEstimate, actChks)
 		})
 	}
 }
@@ -704,6 +715,7 @@ func TestConcatenatingChunkSeriesMerger(t *testing.T) {
 
 			require.Equal(t, expErr, actErr)
 			require.Equal(t, expChks, actChks)
+			require.Equal(t, len(expChks), merged.EstimatedChunkCount())
 		})
 	}
 }

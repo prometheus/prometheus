@@ -415,6 +415,12 @@ type ChunkSeriesSet interface {
 type ChunkSeries interface {
 	Labels
 	ChunkIterable
+
+	// EstimatedChunkCount returns an estimate of the number of chunks available from this ChunkSeries.
+	//
+	// This estimate is used by Mimir's ingesters to report the number of chunks expected to be returned by a query,
+	// which is used by queriers to enforce the 'max chunks per query' limit.
+	EstimatedChunkCount() int
 }
 
 // Labels represents an item that has labels e.g. time series.
