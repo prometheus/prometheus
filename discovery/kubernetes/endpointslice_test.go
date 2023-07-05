@@ -1312,3 +1312,46 @@ func TestEndpointSliceDiscoveryOwnNamespace(t *testing.T) {
 		},
 	}.Run(t)
 }
+
+func TestEndpointSliceDiscoveryEmptyPodStatus(t *testing.T) {
+	ep := makeEndpointSliceV1()
+	ep.Namespace = "ns"
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "testpod",
+			Namespace: "ns",
+			UID:       types.UID("deadbeef"),
+		},
+		Spec: corev1.PodSpec{
+			NodeName: "testnode",
+			Containers: []corev1.Container{
+				{
+					Name:  "p1",
+					Image: "p1:latest",
+					Ports: []corev1.ContainerPort{
+						{
+							Name:          "mainport",
+							ContainerPort: 9000,
+							Protocol:      corev1.ProtocolTCP,
+						},
+					},
+				},
+			},
+		},
+		Status: corev1.PodStatus{},
+	}
+
+	objs := []runtime.Object{
+		ep,
+		pod,
+	}
+
+	n, _ := makeDiscovery(RoleEndpoint, NamespaceDiscovery{IncludeOwnNamespace: true}, objs...)
+
+	k8sDiscoveryTest{
+		discovery:        n,
+		expectedMaxItems: 0,
+		expectedRes:      map[string]*targetgroup.Group{},
+	}.Run(t)
+}
