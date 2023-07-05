@@ -31,3 +31,6 @@ npm_licenses.tar.bz2
 
 # Ignore parser debug
 y.output
+
+# Ignore IntelliJ / GoLand directory
+.idea/
