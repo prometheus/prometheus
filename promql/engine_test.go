@@ -1637,11 +1637,16 @@ load 1ms
 func TestSample(t *testing.T) {
 	test, err := NewTest(t, `
 load 10s
+  metric{job="0"} 0+0x1000
   metric{job="1"} 0+1x1000
   metric{job="2"} 0+2x1000
   metric{job="3"} 0+3x1000
   metric{job="4"} 0+4x1000
   metric{job="5"} 0+5x1000
+  metric{job="6"} 0+6x1000
+  metric{job="7"} 0+7x1000
+  metric{job="8"} 0+8x1000
+  metric{job="9"} 0+9x1000
 `)
 	require.NoError(t, err)
 	defer test.Close()
@@ -1654,7 +1659,7 @@ load 10s
 	fullMatrix := func(jobs, start, end, interval int) (Matrix, []labels.Labels) {
 		var mat Matrix
 		var lbls []labels.Labels
-		for job := 1; job <= jobs; job++ {
+		for job := 0; job < jobs; job++ {
 			lbls = append(lbls, labels.FromStrings("__name__", "metric", "job", fmt.Sprintf("%d", job)))
 			series := func(start, end, interval int) Series {
 				var points []FPoint
@@ -1672,7 +1677,7 @@ load 10s
 		return mat, lbls
 	}
 
-	fullMatrix20, lbls := fullMatrix(5, 0, 20, 10)
+	fullMatrix10, lbls := fullMatrix(10, 0, 20, 10)
 
 	cases := []struct {
 		query                string
@@ -1693,13 +1698,13 @@ load 10s
 			query: `sample_limit(2, metric)`,
 			start: 0, end: 20, interval: 10,
 			resultLen: 2,
-			resultIn:  fullMatrix20,
+			resultIn:  fullMatrix10,
 		},
 		{
-			// Limit==5 -> return full matrix (5 timeseries)
-			query: `sample_limit(5, metric)`,
+			// Limit==10 -> return full matrix (10 timeseries)
+			query: `sample_limit(10, metric)`,
 			start: 0, end: 20, interval: 10,
-			result: fullMatrix20,
+			result: fullMatrix10,
 		},
 		{
 			// ratioLimit=0 -> empty matrix
@@ -1708,37 +1713,57 @@ load 10s
 			result: Matrix{},
 		},
 		{
-			// ratioLimit=0.2 -> return some timeseries
+			// ratioLimit=0.3 -> return some timeseries
 			// NB: given that involves Metric.Hash() this was _manually_ cherry-picked to match
-			query: `sample_ratio(0.2, metric)`,
+			query: `sample_ratio(0.3, metric)`,
 			start: 0, end: 20, interval: 10,
 			result: Matrix{
 				Series{
-					Metric: lbls[0],
+					Metric: lbls[1],
 					Floats: []FPoint{{T: 0, F: 0}, {T: 10000, F: 1}, {T: 20000, F: 2}},
+				},
+				Series{
+					Floats: []FPoint{{T: 0, F: 0}, {T: 10000, F: 3}, {T: 20000, F: 6}},
+					Metric: lbls[3],
 				},
 			},
 		},
 		{
-			// ratioLimit=-0.8 -> the _completement_ of sample_ratio(0.2, metric)
-			query: `sample_ratio(-0.8, metric)`,
+			// ratioLimit=-0.7 -> the _completement_ of sample_ratio(0.3, metric)
+			query: `sample_ratio(-0.7, metric)`,
 			start: 0, end: 20, interval: 10,
 			result: Matrix{
 				Series{
-					Floats: []FPoint{{T: 0, F: 0}, {T: 10000, F: 2}, {T: 20000, F: 4}},
-					Metric: lbls[1],
+					Floats: []FPoint{{T: 0, F: 0}, {T: 10000, F: 0}, {T: 20000, F: 0}},
+					Metric: lbls[0],
 				},
 				Series{
-					Floats: []FPoint{{T: 0, F: 0}, {T: 10000, F: 3}, {T: 20000, F: 6}},
+					Floats: []FPoint{{T: 0, F: 0}, {T: 10000, F: 2}, {T: 20000, F: 4}},
 					Metric: lbls[2],
 				},
 				Series{
 					Floats: []FPoint{{T: 0, F: 0}, {T: 10000, F: 4}, {T: 20000, F: 8}},
-					Metric: lbls[3],
+					Metric: lbls[4],
 				},
 				Series{
-					Floats: []FPoint{{F: 0, T: 0}, {T: 10000, F: 5}, {T: 20000, F: 10}},
-					Metric: lbls[4],
+					Floats: []FPoint{{T: 0, F: 0}, {T: 10000, F: 5}, {T: 20000, F: 10}},
+					Metric: lbls[5],
+				},
+				Series{
+					Floats: []FPoint{{T: 0, F: 0}, {T: 10000, F: 6}, {T: 20000, F: 12}},
+					Metric: lbls[6],
+				},
+				Series{
+					Floats: []FPoint{{T: 0, F: 0}, {T: 10000, F: 7}, {T: 20000, F: 14}},
+					Metric: lbls[7],
+				},
+				Series{
+					Floats: []FPoint{{T: 0, F: 0}, {T: 10000, F: 8}, {T: 20000, F: 16}},
+					Metric: lbls[8],
+				},
+				Series{
+					Floats: []FPoint{{T: 0, F: 0}, {T: 10000, F: 9}, {T: 20000, F: 18}},
+					Metric: lbls[9],
 				},
 			},
 		},
@@ -1746,13 +1771,13 @@ load 10s
 			// ratioLimit=1.0 -> full matrix
 			query: `sample_ratio(1.0, metric)`,
 			start: 0, end: 20, interval: 10,
-			result: fullMatrix20,
+			result: fullMatrix10,
 		},
 		{
 			// ratioLimit=-1.0 -> full matrix also
 			query: `sample_ratio(-1.0, metric)`,
 			start: 0, end: 20, interval: 10,
-			result: fullMatrix20,
+			result: fullMatrix10,
 		},
 	}
 
@@ -1812,7 +1837,7 @@ load 10s
 		ratioCases = append(ratioCases, ratioCase{
 			query: fmt.Sprintf(orQuery, v, -(1.0 - v)),
 			start: 0, end: 20, interval: 10,
-			result: fullMatrix20,
+			result: fullMatrix10,
 		})
 		// AND-ing both must return an empty matrix
 		ratioCases = append(ratioCases, ratioCase{
