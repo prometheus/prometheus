@@ -3465,6 +3465,19 @@ func TestSnapshotError(t *testing.T) {
 	lbls := labels.FromStrings("foo", "bar")
 	_, err := app.Append(0, lbls, 99, 99)
 	require.NoError(t, err)
+
+	// Add histograms
+	hist := tsdbutil.GenerateTestGaugeHistograms(1)[0]
+	floatHist := tsdbutil.GenerateTestGaugeFloatHistograms(1)[0]
+	lblsHist := labels.FromStrings("hist", "bar")
+	lblsFloatHist := labels.FromStrings("floathist", "bar")
+
+	_, err = app.AppendHistogram(0, lblsHist, 99, hist, nil)
+	require.NoError(t, err)
+
+	_, err = app.AppendHistogram(0, lblsFloatHist, 99, nil, floatHist)
+	require.NoError(t, err)
+
 	require.NoError(t, app.Commit())
 
 	// Add some tombstones.
