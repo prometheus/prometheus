@@ -158,9 +158,21 @@ func histogramQuantile(q float64, h *histogram.FloatHistogram) float64 {
 	var (
 		bucket histogram.Bucket[float64]
 		count  float64
-		it     = h.AllBucketIterator()
-		rank   = q * h.Count
+		it     histogram.BucketIterator[float64]
+		rank   float64
 	)
+
+	// if there are NaN observations in the histogram (h.Sum is NaN), use the forward iterator
+	// if the q < 0.5, use the forward iterator
+	// if the q >= 0.5, use the reverse iterator
+	if math.IsNaN(h.Sum) || q < 0.5 {
+		it = h.AllBucketIterator()
+		rank = q * h.Count
+	} else {
+		it = h.AllReverseBucketIterator()
+		rank = (1 - q) * h.Count
+	}
+
 	for it.Next() {
 		bucket = it.At()
 		count += bucket.Count
@@ -193,7 +205,15 @@ func histogramQuantile(q float64, h *histogram.FloatHistogram) float64 {
 		return bucket.Upper
 	}
 
-	rank -= count - bucket.Count
+	// if there are NaN observations in the histogram (h.Sum is NaN), use the forward iterator
+	// if the q < 0.5, use the forward iterator
+	// if the q >= 0.5, use the reverse iterator
+	if math.IsNaN(h.Sum) || q < 0.5 {
+		rank -= count - bucket.Count
+	} else {
+		rank = count - rank
+	}
+
 	// TODO(codesome): Use a better estimation than linear.
 	return bucket.Lower + (bucket.Upper-bucket.Lower)*(rank/bucket.Count)
 }
