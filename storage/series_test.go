@@ -232,7 +232,6 @@ func TestSeriesToChunks(t *testing.T) {
 type histogramTest struct {
 	samples                     []tsdbutil.Sample
 	expectedCounterResetHeaders []chunkenc.CounterResetHeader
-	expectedChunkCountEstimate  int
 }
 
 func TestHistogramSeriesToChunks(t *testing.T) {
@@ -393,7 +392,6 @@ func TestHistogramSeriesToChunks(t *testing.T) {
 				hSample{t: 2, h: h1},
 			},
 			expectedCounterResetHeaders: []chunkenc.CounterResetHeader{chunkenc.UnknownCounterReset, chunkenc.CounterReset},
-			expectedChunkCountEstimate:  1, // Estimate doesn't consider counter resets.
 		},
 		"histogram and stale sample encoded to two chunks": {
 			samples: []tsdbutil.Sample{
@@ -401,7 +399,6 @@ func TestHistogramSeriesToChunks(t *testing.T) {
 				hSample{t: 2, h: h1},
 			},
 			expectedCounterResetHeaders: []chunkenc.CounterResetHeader{chunkenc.UnknownCounterReset, chunkenc.UnknownCounterReset},
-			expectedChunkCountEstimate:  1, // Estimate doesn't consider stale markers.
 		},
 		"histogram and reduction in bucket encoded to two chunks": {
 			samples: []tsdbutil.Sample{
@@ -409,7 +406,6 @@ func TestHistogramSeriesToChunks(t *testing.T) {
 				hSample{t: 2, h: h2down},
 			},
 			expectedCounterResetHeaders: []chunkenc.CounterResetHeader{chunkenc.UnknownCounterReset, chunkenc.CounterReset},
-			expectedChunkCountEstimate:  1, // Estimate doesn't consider counter resets.
 		},
 		// Float histograms.
 		"single float histogram to single chunk": {
@@ -431,7 +427,6 @@ func TestHistogramSeriesToChunks(t *testing.T) {
 				fhSample{t: 2, fh: fh1},
 			},
 			expectedCounterResetHeaders: []chunkenc.CounterResetHeader{chunkenc.UnknownCounterReset, chunkenc.CounterReset},
-			expectedChunkCountEstimate:  1, // Estimate doesn't consider counter resets.
 		},
 		"float histogram and stale sample encoded to two chunks": {
 			samples: []tsdbutil.Sample{
@@ -439,7 +434,6 @@ func TestHistogramSeriesToChunks(t *testing.T) {
 				fhSample{t: 2, fh: fh1},
 			},
 			expectedCounterResetHeaders: []chunkenc.CounterResetHeader{chunkenc.UnknownCounterReset, chunkenc.UnknownCounterReset},
-			expectedChunkCountEstimate:  1, // Estimate doesn't consider stale markers.
 		},
 		"float histogram and reduction in bucket encoded to two chunks": {
 			samples: []tsdbutil.Sample{
@@ -447,7 +441,6 @@ func TestHistogramSeriesToChunks(t *testing.T) {
 				fhSample{t: 2, fh: fh2down},
 			},
 			expectedCounterResetHeaders: []chunkenc.CounterResetHeader{chunkenc.UnknownCounterReset, chunkenc.CounterReset},
-			expectedChunkCountEstimate:  1, // Estimate doesn't consider counter resets.
 		},
 		// Mixed.
 		"histogram and float histogram encoded to two chunks": {
@@ -541,11 +534,7 @@ func testHistogramsSeriesToChunks(t *testing.T, test histogramTest) {
 	require.NoError(t, err)
 	require.Equal(t, len(test.expectedCounterResetHeaders), len(chks))
 
-	if test.expectedChunkCountEstimate == 0 {
-		test.expectedChunkCountEstimate = len(chks)
-	}
-
-	require.Equal(t, test.expectedChunkCountEstimate, encoder.EstimatedChunkCount())
+	require.Len(t, chks, encoder.EstimatedChunkCount())
 
 	// Decode all encoded samples and assert they are equal to the original ones.
 	encodedSamples := expandChunks(chks)

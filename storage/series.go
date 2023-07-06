@@ -403,35 +403,15 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 }
 
 // EstimatedChunkCount returns an estimate of the number of chunks produced by Iterator.
-//
-// It is perfectly accurate except when histograms are present in series. When histograms are
-// present, EstimatedChunkCount will underestimate the number of chunks produced, as the
-// estimation does not consider individual samples and so triggers for new chunks such as
-// counter resets, changes to the bucket schema and changes to the zero threshold are not
-// taken into account.
 func (s *seriesToChunkEncoder) EstimatedChunkCount() int {
+	// This method is expensive, but we don't expect to ever actually use this on the ingester query path in Mimir -
+	// it's just here to ensure things don't break if this assumption ever changes.
+
 	chunkCount := 0
-	seriesIter := s.Series.Iterator(nil)
-	lastType := chunkenc.ValNone
-	samplesInChunk := 0
+	it := s.Iterator(nil)
 
-	for typ := seriesIter.Next(); typ != chunkenc.ValNone; typ = seriesIter.Next() {
-		if chunkCount == 0 {
-			// We'll always have at least one chunk if there's at least one sample.
-			chunkCount++
-		} else if lastType != typ {
-			// If the sample type changes, then we'll cut a new chunk.
-			chunkCount++
-			samplesInChunk = 0
-		}
-
-		if samplesInChunk == seriesToChunkEncoderSplit {
-			chunkCount++
-			samplesInChunk = 0
-		}
-
-		lastType = typ
-		samplesInChunk++
+	for it.Next() {
+		chunkCount++
 	}
 
 	return chunkCount
