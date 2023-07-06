@@ -112,10 +112,10 @@ func (rule *RecordingRule) EvalWithExemplars(ctx context.Context, ts time.Time, 
 		return nil, nil, err
 	}
 
-	// For each vector received, we create matchers for all labels of the vector. If it matches
-	// we replace the exemplar's series labels with the vector's labels. We do this to ensure that we are able to append
-	// the exemplars to the same series ref the recorded metric went into.
-	// If none of the selectors match, then drop the exemplars on the floor.
+	// Loop through each of the new series and try matching the new series labels against the exemplar series labels.
+	// If they match, replace the exemplar series labels with the incoming series labels. This is to ensure that the
+	// exemplars are stored against the refID of the new series. If there is no match then drop the exemplar on the
+	// floor.
 	var exemplars []exemplar.QueryResult
 	for _, v := range vector {
 		matchers := make([]*labels.Matcher, 0, v.Metric.Len())

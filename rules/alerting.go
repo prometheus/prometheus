@@ -472,9 +472,9 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 	return vec, nil
 }
 
-// EvalWithExemplars does everything that Eval does along with emit exemplars.
-// Right now it doesn't emit exemplars given the fact that alert state label isn't as straight forward to handle.
-func (r *AlertingRule) EvalWithExemplars(ctx context.Context, ts time.Time, interval time.Duration, query QueryFunc, eq ExemplarQueryFunc, url *url.URL, limit int) (promql.Vector, []exemplar.QueryResult, error) {
+// EvalWithExemplars is currently a pass through to Eval
+func (r *AlertingRule) EvalWithExemplars(ctx context.Context, ts time.Time, _ time.Duration, query QueryFunc, _ ExemplarQueryFunc, url *url.URL, limit int) (promql.Vector, []exemplar.QueryResult, error) {
+	// TODO: Right now EvalWithExemplars doesn't emit exemplars given the fact that alert state label isn't as straight forward to handle.
 	vector, err := r.Eval(ctx, ts, query, url, limit)
 	if err != nil {
 		return nil, nil, err
