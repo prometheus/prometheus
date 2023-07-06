@@ -125,11 +125,11 @@ process_repo() {
     fi
     target_filename="${source_file}"
     if [[ "${source_file}" == 'scripts/golangci-lint.yml' ]] ; then
-      target_filename=".github/workflows/${source_file}"
+      target_filename=".github/workflows/golangci-lint.yml"
     fi
     target_file="$(curl -sL --fail "https://raw.githubusercontent.com/${org_repo}/${default_branch}/${target_filename}")"
     if [[ -z "${target_file}" ]]; then
-      echo "${source_file} doesn't exist in ${org_repo}"
+      echo "${target_filename} doesn't exist in ${org_repo}"
       case "${source_file}" in
         CODE_OF_CONDUCT.md | SECURITY.md)
           echo "${source_file} missing in ${org_repo}, force updating."
@@ -164,7 +164,7 @@ process_repo() {
   for source_file in "${needs_update[@]}"; do
     target_filename="${source_file}"
     if [[ "${source_file}" == 'scripts/golangci-lint.yml' ]] ; then
-      target_filename=".github/workflows/${source_file}"
+      target_filename=".github/workflows/golangci-lint.yml"
     fi
     case "${source_file}" in
       *) cp -f "${source_dir}/${source_file}" "./${target_filename}" ;;
