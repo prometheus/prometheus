@@ -158,6 +158,7 @@ func (m *metrics) instrumentHandlerWithPrefix(prefix string) func(handlerName st
 }
 
 func (m *metrics) instrumentHandler(handlerName string, handler http.HandlerFunc) http.HandlerFunc {
+	m.requestCounter.WithLabelValues(handlerName, "200")
 	return promhttp.InstrumentHandlerCounter(
 		m.requestCounter.MustCurryWith(prometheus.Labels{"handler": handlerName}),
 		promhttp.InstrumentHandlerDuration(
@@ -744,7 +745,7 @@ func (h *Handler) runtimeInfo() (api_v1.RuntimeInfo, error) {
 }
 
 func toFloat64(f *io_prometheus_client.MetricFamily) float64 {
-	m := *f.Metric[0]
+	m := f.Metric[0]
 	if m.Gauge != nil {
 		return m.Gauge.GetValue()
 	}

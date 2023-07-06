@@ -18,7 +18,9 @@ import (
 	"math/rand"
 	"os"
 	"strconv"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
@@ -392,6 +394,56 @@ func TestChunkDiskMapper_Truncate_PreservesFileSequence(t *testing.T) {
 	// Restarting checks for unsequential files.
 	hrw = createChunkDiskMapper(t, dir)
 	verifyFiles([]int{5, 6, 7})
+}
+
+func TestChunkDiskMapper_Truncate_WriteQueueRaceCondition(t *testing.T) {
+	hrw := createChunkDiskMapper(t, "")
+	t.Cleanup(func() {
+		require.NoError(t, hrw.Close())
+	})
+
+	// This test should only run when the queue is enabled.
+	if hrw.writeQueue == nil {
+		t.Skip("This test should only run when the queue is enabled")
+	}
+
+	// Add an artificial delay in the writeChunk function to easily trigger the race condition.
+	origWriteChunk := hrw.writeQueue.writeChunk
+	hrw.writeQueue.writeChunk = func(seriesRef HeadSeriesRef, mint, maxt int64, chk chunkenc.Chunk, ref ChunkDiskMapperRef, isOOO, cutFile bool) error {
+		time.Sleep(100 * time.Millisecond)
+		return origWriteChunk(seriesRef, mint, maxt, chk, ref, isOOO, cutFile)
+	}
+
+	wg := sync.WaitGroup{}
+	wg.Add(2)
+
+	// Write a chunk. Since the queue is enabled, the chunk will be written asynchronously (with the artificial delay).
+	ref := hrw.WriteChunk(1, 0, 10, randomChunk(t), false, func(err error) {
+		defer wg.Done()
+		require.NoError(t, err)
+	})
+
+	seq, _ := ref.Unpack()
+	require.Equal(t, 1, seq)
+
+	// Truncate, simulating that all chunks from segment files before 1 can be dropped.
+	require.NoError(t, hrw.Truncate(1))
+
+	// Request to cut a new file when writing the next chunk. If there's a race condition, cutting a new file will
+	// allow us to detect there's actually an issue with the sequence number (because it's checked when a new segment
+	// file is created).
+	hrw.CutNewFile()
+
+	// Write another chunk. This will cut a new file.
+	ref = hrw.WriteChunk(1, 0, 10, randomChunk(t), false, func(err error) {
+		defer wg.Done()
+		require.NoError(t, err)
+	})
+
+	seq, _ = ref.Unpack()
+	require.Equal(t, 2, seq)
+
+	wg.Wait()
 }
 
 // TestHeadReadWriter_TruncateAfterIterateChunksError tests for

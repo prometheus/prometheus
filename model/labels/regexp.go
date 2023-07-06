@@ -330,8 +330,8 @@ func isCaseSensitive(reg *syntax.Regexp) bool {
 }
 
 // tooManyMatches guards against creating too many set matches
-func tooManyMatches(matches []string, new ...string) bool {
-	return len(matches)+len(new) > maxSetMatches
+func tooManyMatches(matches []string, added ...string) bool {
+	return len(matches)+len(added) > maxSetMatches
 }
 
 func (m *FastRegexMatcher) MatchString(s string) bool {

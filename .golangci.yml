@@ -13,8 +13,9 @@ linters:
     - gocritic
     - gofumpt
     - goimports
-    - revive
     - misspell
+    - predeclared
+    - revive
     - unconvert
     - unused
 
@@ -30,14 +31,19 @@ issues:
 
 linters-settings:
   depguard:
-    list-type: blacklist
-    include-go-root: true
-    packages-with-error-message:
-      - sync/atomic: "Use go.uber.org/atomic instead of sync/atomic"
-      - github.com/stretchr/testify/assert: "Use github.com/stretchr/testify/require instead of github.com/stretchr/testify/assert"
-      - github.com/go-kit/kit/log: "Use github.com/go-kit/log instead of github.com/go-kit/kit/log"
-      - io/ioutil: "Use corresponding 'os' or 'io' functions instead."
-      - regexp: "Use github.com/grafana/regexp instead of regexp"
+    rules:
+      main:
+        deny:
+        - pkg: "sync/atomic"
+          desc: "Use go.uber.org/atomic instead of sync/atomic"
+        - pkg: "github.com/stretchr/testify/assert"
+          desc: "Use github.com/stretchr/testify/require instead of github.com/stretchr/testify/assert"
+        - pkg: "github.com/go-kit/kit/log"
+          desc: "Use github.com/go-kit/log instead of github.com/go-kit/kit/log"
+        - pkg: "io/ioutil"
+          desc: "Use corresponding 'os' or 'io' functions instead."
+        - pkg: "regexp"
+          desc: "Use github.com/grafana/regexp instead of regexp"
   errcheck:
     exclude-functions:
       # Don't flag lines such as "io.Copy(io.Discard, resp.Body)".
@@ -55,3 +61,9 @@ linters-settings:
     local-prefixes: github.com/prometheus/prometheus
   gofumpt:
     extra-rules: true
+  revive:
+    rules:
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#unused-parameter
+      - name: unused-parameter
+        severity: warning
+        disabled: true

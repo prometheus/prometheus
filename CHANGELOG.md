@@ -1,5 +1,29 @@
 # Changelog
 
+
+## 2.45.0 / 2023-06-23
+
+This release is a LTS (Long-Term Support) release of Prometheus and will
+receive security, documentation and bugfix patches for at least 12 months.
+Please read more about our LTS release cycle at
+<https://prometheus.io/docs/introduction/release-cycle/>.
+
+* [FEATURE] API: New limit parameter to limit the number of items returned by `/api/v1/status/tsdb` endpoint. #12336
+* [FEATURE] Config: Add limits to global config. #12126
+* [FEATURE] Consul SD: Added support for `path_prefix`. #12372
+* [FEATURE] Native histograms: Add option to scrape both classic and native histograms. #12350
+* [FEATURE] Native histograms: Added support for two more arithmetic operators `avg_over_time` and `sum_over_time`. #12262
+* [FEATURE] Promtool: When providing the block id, only one block will be loaded and analyzed. #12031
+* [FEATURE] Remote-write: New Azure ad configuration to support remote writing directly to Azure Monitor workspace. #11944
+* [FEATURE] TSDB: Samples per chunk are now configurable with flag `storage.tsdb.samples-per-chunk`. By default set to its former value 120. #12055
+* [ENHANCEMENT] Native histograms: bucket size can now be limited to avoid scrape fails. #12254
+* [ENHANCEMENT] TSDB: Dropped series are now deleted from the WAL sooner. #12297
+* [BUGFIX] Native histograms: ChunkSeries iterator now checks if a new sample can be appended to the open chunk. #12185
+* [BUGFIX] Native histograms: Fix Histogram Appender `Appendable()` segfault. #12357
+* [BUGFIX] Native histograms: Fix setting reset header to gauge histograms in seriesToChunkEncoder. #12329
+* [BUGFIX] TSDB: Tombstone intervals are not modified after Get() call. #12245
+* [BUGFIX] TSDB: Use path/filepath to set the WAL directory. #12349
+
 ## 2.44.0 / 2023-05-13
 
 This version is built with Go tag `stringlabels`, to use the smaller data
@@ -39,7 +63,7 @@ improvements for testing. #10991
 * [FEATURE] Promtool: Add HTTP client configuration to query commands. #11487
 * [FEATURE] Scrape: Add `scrape_config_files` to include scrape configs from different files. #12019
 * [FEATURE] HTTP client: Add `no_proxy` to exclude URLs from proxied requests. #12098
-* [FEATURE] HTTP client: Add `proxy_from_enviroment` to read proxies from env variables. #12098
+* [FEATURE] HTTP client: Add `proxy_from_environment` to read proxies from env variables. #12098
 * [ENHANCEMENT] API: Add support for setting lookback delta per query via the API. #12088
 * [ENHANCEMENT] API: Change HTTP status code from 503/422 to 499 if a request is canceled. #11897
 * [ENHANCEMENT] Scrape: Allow exemplars for all metric types. #11984

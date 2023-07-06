@@ -81,6 +81,7 @@ func main() {
 	var (
 		httpRoundTripper   = api.DefaultRoundTripper
 		serverURL          *url.URL
+		remoteWriteURL     *url.URL
 		httpConfigFilePath string
 	)
 
@@ -126,8 +127,8 @@ func main() {
 	checkRulesCmd := checkCmd.Command("rules", "Check if the rule files are valid or not.")
 	ruleFiles := checkRulesCmd.Arg(
 		"rule-files",
-		"The rule files to check.",
-	).Required().ExistingFiles()
+		"The rule files to check, default is read from standard input.",
+	).ExistingFiles()
 	checkRulesLint := checkRulesCmd.Flag(
 		"lint",
 		"Linting checks to apply. Available options are: "+strings.Join(lintOptions, ", ")+". Use --lint=none to disable linting",
@@ -177,6 +178,18 @@ func main() {
 	queryLabelsBegin := queryLabelsCmd.Flag("start", "Start time (RFC3339 or Unix timestamp).").String()
 	queryLabelsEnd := queryLabelsCmd.Flag("end", "End time (RFC3339 or Unix timestamp).").String()
 	queryLabelsMatch := queryLabelsCmd.Flag("match", "Series selector. Can be specified multiple times.").Strings()
+
+	pushCmd := app.Command("push", "Push to a Prometheus server.")
+	pushCmd.Flag("http.config.file", "HTTP client configuration file for promtool to connect to Prometheus.").PlaceHolder("<filename>").ExistingFileVar(&httpConfigFilePath)
+	pushMetricsCmd := pushCmd.Command("metrics", "Push metrics to a prometheus remote write (for testing purpose only).")
+	pushMetricsCmd.Arg("remote-write-url", "Prometheus remote write url to push metrics.").Required().URLVar(&remoteWriteURL)
+	metricFiles := pushMetricsCmd.Arg(
+		"metric-files",
+		"The metric files to push, default is read from standard input.",
+	).ExistingFiles()
+	pushMetricsLabels := pushMetricsCmd.Flag("label", "Label to attach to metrics. Can be specified multiple times.").Default("job=promtool").StringMap()
+	pushMetricsTimeout := pushMetricsCmd.Flag("timeout", "The time to wait for pushing metrics.").Default("30s").Duration()
+	pushMetricsHeaders := pushMetricsCmd.Flag("header", "Prometheus remote write header.").StringMap()
 
 	testCmd := app.Command("test", "Unit testing.")
 	testRulesCmd := testCmd.Command("rules", "Unit tests for rules.")
@@ -300,6 +313,9 @@ func main() {
 
 	case checkMetricsCmd.FullCommand():
 		os.Exit(CheckMetrics(*checkMetricsExtended))
+
+	case pushMetricsCmd.FullCommand():
+		os.Exit(PushMetrics(remoteWriteURL, httpRoundTripper, *pushMetricsHeaders, *pushMetricsTimeout, *pushMetricsLabels, *metricFiles...))
 
 	case queryInstantCmd.FullCommand():
 		os.Exit(QueryInstant(serverURL, httpRoundTripper, *queryInstantExpr, *queryInstantTime, p))
@@ -441,20 +457,12 @@ func CheckConfig(agentMode, checkSyntaxOnly bool, lintSettings lintConfig, files
 		}
 		fmt.Println()
 
-		for _, rf := range ruleFiles {
-			if n, errs := checkRules(rf, lintSettings); len(errs) > 0 {
-				fmt.Fprintln(os.Stderr, "  FAILED:")
-				for _, err := range errs {
-					fmt.Fprintln(os.Stderr, "    ", err)
-				}
-				failed = true
-				for _, err := range errs {
-					hasErrors = hasErrors || !errors.Is(err, lintError)
-				}
-			} else {
-				fmt.Printf("  SUCCESS: %d rules found\n", n)
-			}
-			fmt.Println()
+		rulesFailed, rulesHasErrors := checkRules(ruleFiles, lintSettings)
+		if rulesFailed {
+			failed = rulesFailed
+		}
+		if rulesHasErrors {
+			hasErrors = rulesHasErrors
 		}
 	}
 	if failed && hasErrors {
@@ -682,9 +690,57 @@ func checkSDFile(filename string) ([]*targetgroup.Group, error) {
 func CheckRules(ls lintConfig, files ...string) int {
 	failed := false
 	hasErrors := false
+	if len(files) == 0 {
+		fmt.Println("Checking standard input")
+		data, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "  FAILED:", err)
+			return failureExitCode
+		}
+		rgs, errs := rulefmt.Parse(data)
+		for _, e := range errs {
+			fmt.Fprintln(os.Stderr, e.Error())
+			return failureExitCode
+		}
+		if n, errs := checkRuleGroups(rgs, ls); errs != nil {
+			fmt.Fprintln(os.Stderr, "  FAILED:")
+			for _, e := range errs {
+				fmt.Fprintln(os.Stderr, e.Error())
+			}
+			failed = true
+			for _, err := range errs {
+				hasErrors = hasErrors || !errors.Is(err, lintError)
+			}
+		} else {
+			fmt.Printf("  SUCCESS: %d rules found\n", n)
+		}
+		fmt.Println()
+	} else {
+		failed, hasErrors = checkRules(files, ls)
+	}
 
+	if failed && hasErrors {
+		return failureExitCode
+	}
+	if failed && ls.fatal {
+		return lintErrExitCode
+	}
+
+	return successExitCode
+}
+
+// checkRules validates rule files.
+func checkRules(files []string, ls lintConfig) (bool, bool) {
+	failed := false
+	hasErrors := false
 	for _, f := range files {
-		if n, errs := checkRules(f, ls); errs != nil {
+		fmt.Println("Checking", f)
+		rgs, errs := rulefmt.ParseFile(f)
+		if errs != nil {
+			failed = true
+			continue
+		}
+		if n, errs := checkRuleGroups(rgs, ls); errs != nil {
 			fmt.Fprintln(os.Stderr, "  FAILED:")
 			for _, e := range errs {
 				fmt.Fprintln(os.Stderr, e.Error())
@@ -698,23 +754,10 @@ func CheckRules(ls lintConfig, files ...string) int {
 		}
 		fmt.Println()
 	}
-	if failed && hasErrors {
-		return failureExitCode
-	}
-	if failed && ls.fatal {
-		return lintErrExitCode
-	}
-	return successExitCode
+	return failed, hasErrors
 }
 
-func checkRules(filename string, lintSettings lintConfig) (int, []error) {
-	fmt.Println("Checking", filename)
-
-	rgs, errs := rulefmt.ParseFile(filename)
-	if errs != nil {
-		return successExitCode, errs
-	}
-
+func checkRuleGroups(rgs *rulefmt.RuleGroups, lintSettings lintConfig) (int, []error) {
 	numRules := 0
 	for _, rg := range rgs.Groups {
 		numRules += len(rg.Rules)

@@ -73,6 +73,39 @@ global:
   # Reloading the configuration will reopen the file.
   [ query_log_file: <string> ]
 
+  # An uncompressed response body larger than this many bytes will cause the
+  # scrape to fail. 0 means no limit. Example: 100MB.
+  # This is an experimental feature, this behaviour could
+  # change or be removed in the future.
+  [ body_size_limit: <size> | default = 0 ]
+
+  # Per-scrape limit on number of scraped samples that will be accepted.
+  # If more than this number of samples are present after metric relabeling
+  # the entire scrape will be treated as failed. 0 means no limit.
+  [ sample_limit: <int> | default = 0 ]
+
+  # Per-scrape limit on number of labels that will be accepted for a sample. If
+  # more than this number of labels are present post metric-relabeling, the
+  # entire scrape will be treated as failed. 0 means no limit.
+  [ label_limit: <int> | default = 0 ]
+
+  # Per-scrape limit on length of labels name that will be accepted for a sample.
+  # If a label name is longer than this number post metric-relabeling, the entire
+  # scrape will be treated as failed. 0 means no limit.
+  [ label_name_length_limit: <int> | default = 0 ]
+
+  # Per-scrape limit on length of labels value that will be accepted for a sample.
+  # If a label value is longer than this number post metric-relabeling, the
+  # entire scrape will be treated as failed. 0 means no limit.
+  [ label_value_length_limit: <int> | default = 0 ]
+
+  # Per-scrape config limit on number of unique targets that will be
+  # accepted. If more than this number of targets are present after target
+  # relabeling, Prometheus will mark the targets as failed without scraping them.
+  # 0 means no limit. This is an experimental feature, this behaviour could
+  # change in the future.
+  [ target_limit: <int> | default = 0 ]
+
 # Rule files specifies a list of globs. Rules and alerts are read from
 # all matching files.
 rule_files:
@@ -354,6 +387,7 @@ metric_relabel_configs:
 # This is an experimental feature, this behaviour could
 # change or be removed in the future.
 [ body_size_limit: <size> | default = 0 ]
+
 # Per-scrape limit on number of scraped samples that will be accepted.
 # If more than this number of samples are present after metric relabeling
 # the entire scrape will be treated as failed. 0 means no limit.
@@ -394,11 +428,16 @@ Where `<job_name>` must be unique across all scrape configurations.
 A `tls_config` allows configuring TLS connections.
 
 ```yaml
-# CA certificate to validate API server certificate with.
+# CA certificate to validate API server certificate with. At most one of ca and ca_file is allowed.
+[ ca: <string> ]
 [ ca_file: <filename> ]
 
-# Certificate and key files for client cert authentication to the server.
+# Certificate and key for client cert authentication to the server.
+# At most one of cert and cert_file is allowed.
+# At most one of key and key_file is allowed.
+[ cert: <string> ]
 [ cert_file: <filename> ]
+[ key: <secret> ]
 [ key_file: <filename> ]
 
 # ServerName extension to indicate the name of the server.
@@ -2127,7 +2166,7 @@ attach_metadata:
 See [this example Prometheus configuration file](/documentation/examples/prometheus-kubernetes.yml)
 for a detailed example of configuring Prometheus for Kubernetes.
 
-You may wish to check out the 3rd party [Prometheus Operator](https://github.com/coreos/prometheus-operator),
+You may wish to check out the 3rd party [Prometheus Operator](https://github.com/prometheus-operator/prometheus-operator),
 which automates the Prometheus setup on top of Kubernetes.
 
 ### `<kuma_sd_config>`
@@ -3433,7 +3472,7 @@ authorization:
   [ credentials_file: <filename> ]
 
 # Optionally configures AWS's Signature Verification 4 signing process to
-# sign requests. Cannot be set at the same time as basic_auth, authorization, or oauth2.
+# sign requests. Cannot be set at the same time as basic_auth, authorization, oauth2, or azuread.
 # To use the default credentials from the AWS SDK, use `sigv4: {}`.
 sigv4:
   # The AWS region. If blank, the region from the default credentials chain
@@ -3452,9 +3491,19 @@ sigv4:
   [ role_arn: <string> ]
 
 # Optional OAuth 2.0 configuration.
-# Cannot be used at the same time as basic_auth, authorization, or sigv4.
+# Cannot be used at the same time as basic_auth, authorization, sigv4, or azuread.
 oauth2:
   [ <oauth2> ]
+
+# Optional AzureAD configuration.
+# Cannot be used at the same time as basic_auth, authorization, oauth2, or sigv4.
+azuread:
+  # The Azure Cloud. Options are 'AzurePublic', 'AzureChina', or 'AzureGovernment'.
+  [ cloud: <string> | default = AzurePublic ]
+
+  # Azure User-assigned Managed identity.
+  [ managed_identity:
+      [ client_id: <string> ]  
 
 # Configures the remote write request's TLS settings.
 tls_config:

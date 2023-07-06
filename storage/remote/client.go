@@ -36,6 +36,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/storage/remote/azuread"
 )
 
 const maxErrMsgLen = 1024
@@ -97,6 +98,7 @@ type ClientConfig struct {
 	Timeout          model.Duration
 	HTTPClientConfig config_util.HTTPClientConfig
 	SigV4Config      *sigv4.SigV4Config
+	AzureADConfig    *azuread.AzureADConfig
 	Headers          map[string]string
 	RetryOnRateLimit bool
 }
@@ -141,6 +143,13 @@ func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
 
 	if conf.SigV4Config != nil {
 		t, err = sigv4.NewSigV4RoundTripper(conf.SigV4Config, httpClient.Transport)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if conf.AzureADConfig != nil {
+		t, err = azuread.NewAzureADRoundTripper(conf.AzureADConfig, httpClient.Transport)
 		if err != nil {
 			return nil, err
 		}
