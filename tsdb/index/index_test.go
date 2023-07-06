@@ -528,6 +528,21 @@ func TestPersistence_index_e2e(t *testing.T) {
 	require.NoError(t, ir.Close())
 }
 
+func TestWriter_ShouldReturnErrorOnSeriesWithDuplicatedLabelNames(t *testing.T) {
+	w, err := NewWriter(context.Background(), filepath.Join(t.TempDir(), "index"))
+	require.NoError(t, err)
+
+	require.NoError(t, w.AddSymbol("__name__"))
+	require.NoError(t, w.AddSymbol("metric_1"))
+	require.NoError(t, w.AddSymbol("metric_2"))
+
+	require.NoError(t, w.AddSeries(0, labels.FromStrings("__name__", "metric_1", "__name__", "metric_2")))
+
+	err = w.Close()
+	require.Error(t, err)
+	require.ErrorContains(t, err, "corruption detected when writing postings to index")
+}
+
 func TestDecbufUvarintWithInvalidBuffer(t *testing.T) {
 	b := realByteSlice([]byte{0x81, 0x81, 0x81, 0x81, 0x81, 0x81})
 

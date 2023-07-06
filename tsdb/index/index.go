@@ -865,7 +865,10 @@ func (w *Writer) writePostingsToTmpFiles() error {
 		// using more memory than a single label name can.
 		for len(names) > 0 {
 			if w.labelNames[names[0]]+c > maxPostings {
-				break
+				if c > 0 {
+					break
+				}
+				return fmt.Errorf("corruption detected when writing postings to index: label %q has %d uses, but maxPostings is %d", names[0], w.labelNames[names[0]], maxPostings)
 			}
 			batchNames = append(batchNames, names[0])
 			c += w.labelNames[names[0]]

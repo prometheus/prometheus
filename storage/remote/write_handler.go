@@ -22,6 +22,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
@@ -30,15 +32,28 @@ import (
 type writeHandler struct {
 	logger     log.Logger
 	appendable storage.Appendable
+
+	samplesWithInvalidLabelsTotal prometheus.Counter
 }
 
 // NewWriteHandler creates a http.Handler that accepts remote write requests and
 // writes them to the provided appendable.
-func NewWriteHandler(logger log.Logger, appendable storage.Appendable) http.Handler {
-	return &writeHandler{
+func NewWriteHandler(logger log.Logger, reg prometheus.Registerer, appendable storage.Appendable) http.Handler {
+	h := &writeHandler{
 		logger:     logger,
 		appendable: appendable,
+
+		samplesWithInvalidLabelsTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: "prometheus",
+			Subsystem: "api",
+			Name:      "remote_write_invalid_labels_samples_total",
+			Help:      "The total number of remote write samples which contains invalid labels.",
+		}),
 	}
+	if reg != nil {
+		reg.MustRegister(h.samplesWithInvalidLabelsTotal)
+	}
+	return h
 }
 
 func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -85,6 +100,7 @@ func (h *writeHandler) checkAppendExemplarError(err error, e exemplar.Exemplar, 
 
 func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err error) {
 	outOfOrderExemplarErrs := 0
+	samplesWithInvalidLabels := 0
 
 	app := h.appendable.Appender(ctx)
 	defer func() {
@@ -98,6 +114,11 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 	var exemplarErr error
 	for _, ts := range req.Timeseries {
 		labels := labelProtosToLabels(ts.Labels)
+		if !labels.IsValid() {
+			level.Warn(h.logger).Log("msg", "Invalid metric names or labels", "got", labels.String())
+			samplesWithInvalidLabels++
+			continue
+		}
 		for _, s := range ts.Samples {
 			_, err = app.Append(0, labels, s.Timestamp, s.Value)
 			if err != nil {
@@ -149,6 +170,9 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 
 	if outOfOrderExemplarErrs > 0 {
 		_ = level.Warn(h.logger).Log("msg", "Error on ingesting out-of-order exemplars", "num_dropped", outOfOrderExemplarErrs)
+	}
+	if samplesWithInvalidLabels > 0 {
+		h.samplesWithInvalidLabelsTotal.Add(float64(samplesWithInvalidLabels))
 	}
 
 	return nil
