@@ -649,6 +649,10 @@ func (s *chunkSeriesEntry) Iterator(it chunks.Iterator) chunks.Iterator {
 	return pi
 }
 
+func (s *chunkSeriesEntry) ChunkCount() (int, error) {
+	return len(s.chks), nil
+}
+
 // populateWithDelSeriesIterator allows to iterate over samples for the single series.
 type populateWithDelSeriesIterator struct {
 	populateWithDelGenericSeriesIterator
