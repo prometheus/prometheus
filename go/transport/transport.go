@@ -27,7 +27,7 @@ const (
 	// HeaderSize - maximum header size.
 	HeaderSize = int64(unsafe.Sizeof(Header{}))
 	// MaxMsgSize - maximum allowed message size.
-	MaxMsgSize uint32 = 31457280
+	MaxMsgSize uint32 = 120 << 20 // 120 MB
 )
 
 // MsgType - type for messages.
