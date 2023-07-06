@@ -101,7 +101,7 @@ func TestNewListChunkSeriesFromSamples(t *testing.T) {
 	require.NoError(t, it.Err())
 	require.Len(t, chks, 2)
 
-	count, err := series.EstimatedChunkCount()
+	count, err := series.ChunkCount()
 	require.NoError(t, err)
 	require.Equal(t, len(chks), count, "should have one chunk per group of samples")
 }
@@ -224,7 +224,7 @@ func TestSeriesToChunks(t *testing.T) {
 			chks, err := ExpandChunks(encoder.Iterator(nil))
 			require.NoError(t, err)
 			require.Len(t, chks, testCase.expectedChunkCount)
-			count, err := encoder.EstimatedChunkCount()
+			count, err := encoder.ChunkCount()
 			require.NoError(t, err)
 			require.Equal(t, testCase.expectedChunkCount, count)
 
@@ -539,7 +539,7 @@ func testHistogramsSeriesToChunks(t *testing.T, test histogramTest) {
 	require.NoError(t, err)
 	require.Equal(t, len(test.expectedCounterResetHeaders), len(chks))
 
-	count, err := encoder.EstimatedChunkCount()
+	count, err := encoder.ChunkCount()
 	require.NoError(t, err)
 	require.Len(t, chks, count)
 

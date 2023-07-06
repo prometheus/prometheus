@@ -579,7 +579,7 @@ func TestCompactingChunkSeriesMerger(t *testing.T) {
 			require.Equal(t, expErr, actErr)
 			require.Equal(t, expChks, actChks)
 
-			count, err := merged.EstimatedChunkCount()
+			count, err := merged.ChunkCount()
 			require.NoError(t, err)
 			require.Len(t, actChks, count)
 		})
@@ -717,7 +717,7 @@ func TestConcatenatingChunkSeriesMerger(t *testing.T) {
 			require.Equal(t, expErr, actErr)
 			require.Equal(t, expChks, actChks)
 
-			count, err := merged.EstimatedChunkCount()
+			count, err := merged.ChunkCount()
 			require.NoError(t, err)
 			require.Equal(t, len(expChks), count)
 		})

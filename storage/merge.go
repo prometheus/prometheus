@@ -837,7 +837,7 @@ func NewConcatenatingChunkSeriesMerger() VerticalChunkSeriesMergeFunc {
 				chunkCount := 0
 
 				for _, series := range series {
-					c, err := series.EstimatedChunkCount()
+					c, err := series.ChunkCount()
 
 					if err != nil {
 						return 0, err

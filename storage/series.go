@@ -41,7 +41,7 @@ type ChunkSeriesEntry struct {
 
 func (s *ChunkSeriesEntry) Labels() labels.Labels                       { return s.Lset }
 func (s *ChunkSeriesEntry) Iterator(it chunks.Iterator) chunks.Iterator { return s.ChunkIteratorFn(it) }
-func (s *ChunkSeriesEntry) EstimatedChunkCount() (int, error)           { return s.ChunkCountFn() }
+func (s *ChunkSeriesEntry) ChunkCount() (int, error)                    { return s.ChunkCountFn() }
 
 // NewListSeries returns series entry with iterator that allows to iterate over provided samples.
 func NewListSeries(lset labels.Labels, s []tsdbutil.Sample) *SeriesEntry {
@@ -402,8 +402,7 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 	return NewListChunkSeriesIterator(chks...)
 }
 
-// EstimatedChunkCount returns an estimate of the number of chunks produced by Iterator.
-func (s *seriesToChunkEncoder) EstimatedChunkCount() (int, error) {
+func (s *seriesToChunkEncoder) ChunkCount() (int, error) {
 	// This method is expensive, but we don't expect to ever actually use this on the ingester query path in Mimir -
 	// it's just here to ensure things don't break if this assumption ever changes.
 
