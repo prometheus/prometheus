@@ -120,6 +120,21 @@ func setUpRuleEvalTest(t require.TestingT) *promql.Test {
 	return suite
 }
 
+func setUpRuleEvalExemplarTest(t require.TestingT) *promql.Test {
+	suite, err := promql.NewTest(t, `
+		load 1m
+			metric{label_a="1",label_b="3"} 1
+			metric{label_a="2",label_b="4"} 10
+
+		load_exemplars 1m
+			metric{label_a="1",label_b="3"} 1
+			metric{label_a="2",label_b="4"} 10
+	`)
+	require.NoError(t, err)
+
+	return suite
+}
+
 func TestRuleEval(t *testing.T) {
 	suite := setUpRuleEvalTest(t)
 	defer suite.Close()
@@ -155,9 +170,24 @@ func TestRuleEvalWithZeroExemplars(t *testing.T) {
 }
 
 func TestRuleEvalWithExemplars(t *testing.T) {
+	suite := setUpRuleEvalExemplarTest(t)
+	defer suite.Close()
+
+	require.NoError(t, suite.Run())
+
+	for _, scenario := range ruleEvalTestScenarios {
+		t.Run(scenario.name, func(t *testing.T) {
+			rule := NewRecordingRule("test_rule", scenario.expr, scenario.ruleLabels)
+			result, ex, err := rule.EvalWithExemplars(suite.Context(), ruleEvaluationTime, time.Second*60, EngineQueryFunc(suite.QueryEngine(), suite.Storage()),
+				ExemplarQuerierQueryFunc(suite.ExemplarQueryable()), nil, 0)
+			require.NoError(t, err)
+			require.Len(t, ex, 2)
+			require.Equal(t, scenario.expected, result)
+		})
+	}
 }
 
-func BenchmarkRuleEval(b *testing.B) {
+func BenchmarkRuleEvalWithNoExemplars(b *testing.B) {
 	suite := setUpRuleEvalTest(b)
 	defer suite.Close()
 
@@ -180,7 +210,30 @@ func BenchmarkRuleEval(b *testing.B) {
 	}
 }
 
-func BenchmarkRuleEvalWithZeroExemplars(b *testing.B) {
+func BenchmarkRuleEvalWithExemplars(b *testing.B) {
+	suite := setUpRuleEvalExemplarTest(b)
+	defer suite.Close()
+
+	require.NoError(b, suite.Run())
+
+	for _, scenario := range ruleEvalTestScenarios {
+		b.Run(scenario.name, func(b *testing.B) {
+			rule := NewRecordingRule("test_rule", scenario.expr, scenario.ruleLabels)
+
+			b.ResetTimer()
+
+			for i := 0; i < b.N; i++ {
+				_, _, err := rule.EvalWithExemplars(suite.Context(), ruleEvaluationTime, time.Second*60, EngineQueryFunc(suite.QueryEngine(), suite.Storage()),
+					ExemplarQuerierQueryFunc(suite.ExemplarQueryable()), nil, 0)
+				if err != nil {
+					require.NoError(b, err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkRuleEval(b *testing.B) {
 	suite := setUpRuleEvalTest(b)
 	defer suite.Close()
 

@@ -40,9 +40,10 @@ import (
 var (
 	minNormal = math.Float64frombits(0x0010000000000000) // The smallest positive normal value of type float64.
 
-	patSpace       = regexp.MustCompile("[\t ]+")
-	patLoad        = regexp.MustCompile(`^load\s+(.+?)$`)
-	patEvalInstant = regexp.MustCompile(`^eval(?:_(fail|ordered))?\s+instant\s+(?:at\s+(.+?))?\s+(.+)$`)
+	patSpace         = regexp.MustCompile("[\t ]+")
+	patLoad          = regexp.MustCompile(`^load\s+(.+?)$`)
+	patLoadExemplars = regexp.MustCompile(`^load_exemplars\s+(.+?)$`)
+	patEvalInstant   = regexp.MustCompile(`^eval(?:_(fail|ordered))?\s+instant\s+(?:at\s+(.+?))?\s+(.+)$`)
 )
 
 const (
@@ -157,6 +158,39 @@ func parseLoad(lines []string, i int) (int, *loadCmd, error) {
 	return i, cmd, nil
 }
 
+func parseLoadExemplars(lines []string, i int) (int, *loadExemplarsCmd, error) {
+	if !patLoadExemplars.MatchString(lines[i]) {
+		return i, nil, raise(i, "invalid load command. (load_exemplars <step:duration>)")
+	}
+	parts := patLoadExemplars.FindStringSubmatch(lines[i])
+	gap, err := model.ParseDuration(parts[1])
+	if err != nil {
+		return i, nil, raise(i, "invalid step definition %q: %s", parts[1], err)
+	}
+
+	cmd := newLoadExemplarsCmd(time.Duration(gap))
+	for i+1 < len(lines) {
+		i++
+		defLine := lines[i]
+		if len(defLine) == 0 {
+			i--
+			break
+		}
+		metric, vals, err := parser.ParseSeriesDesc(defLine)
+		if err != nil {
+			var perr *parser.ParseErr
+			if errors.As(err, &perr) {
+				perr.LineOffset = i
+			}
+			return i, nil, err
+		}
+
+		cmd.set(metric, vals...)
+	}
+
+	return i, cmd, nil
+}
+
 func (t *Test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 	if !patEvalInstant.MatchString(lines[i]) {
 		return i, nil, raise(i, "invalid evaluation command. (eval[_fail|_ordered] instant [at <offset:duration>] <query>")
@@ -253,6 +287,8 @@ func (t *Test) parse(input string) error {
 			cmd = &clearCmd{}
 		case c == "load":
 			i, cmd, err = parseLoad(lines, i)
+		case c == "load_exemplars":
+			i, cmd, err = parseLoadExemplars(lines, i)
 		case strings.HasPrefix(c, "eval"):
 			i, cmd, err = t.parseEval(lines, i)
 		default:
@@ -272,25 +308,24 @@ type testCommand interface {
 	testCmd()
 }
 
-func (*clearCmd) testCmd() {}
-func (*loadCmd) testCmd()  {}
-func (*evalCmd) testCmd()  {}
+func (*clearCmd) testCmd()         {}
+func (*loadCmd) testCmd()          {}
+func (*loadExemplarsCmd) testCmd() {}
+func (*evalCmd) testCmd()          {}
 
 // loadCmd is a command that loads sequences of sample values for specific
 // metrics into the storage.
 type loadCmd struct {
-	gap       time.Duration
-	metrics   map[uint64]labels.Labels
-	defs      map[uint64][]FPoint
-	exemplars map[uint64][]exemplar.Exemplar
+	gap     time.Duration
+	metrics map[uint64]labels.Labels
+	defs    map[uint64][]FPoint
 }
 
 func newLoadCmd(gap time.Duration) *loadCmd {
 	return &loadCmd{
-		gap:       gap,
-		metrics:   map[uint64]labels.Labels{},
-		defs:      map[uint64][]FPoint{},
-		exemplars: map[uint64][]exemplar.Exemplar{},
+		gap:     gap,
+		metrics: map[uint64]labels.Labels{},
+		defs:    map[uint64][]FPoint{},
 	}
 }
 
@@ -324,6 +359,65 @@ func (cmd *loadCmd) append(a storage.Appender) error {
 
 		for _, s := range smpls {
 			if _, err := a.Append(0, m, s.T, s.F); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// loadExemplarsCmd is a command that loads sequences of exemplars for specific
+// metrics into the storage.
+// TODO: this command piggybacks on regular metrics ingest. a new parser needs to be written to accept exemplar labels
+type loadExemplarsCmd struct {
+	gap       time.Duration
+	metrics   map[uint64]labels.Labels
+	exemplars map[uint64][]exemplar.Exemplar
+}
+
+func newLoadExemplarsCmd(gap time.Duration) *loadExemplarsCmd {
+	return &loadExemplarsCmd{
+		gap:       gap,
+		metrics:   map[uint64]labels.Labels{},
+		exemplars: map[uint64][]exemplar.Exemplar{},
+	}
+}
+
+func (cmd loadExemplarsCmd) String() string {
+	return "load_exemplars"
+}
+
+// set a sequence of exemplars for the given metric.
+func (cmd *loadExemplarsCmd) set(m labels.Labels, vals ...parser.SequenceValue) {
+	h := m.Hash()
+
+	ts := testStartTime
+	if _, ok := cmd.exemplars[h]; !ok {
+		cmd.exemplars[h] = make([]exemplar.Exemplar, 0)
+	}
+
+	samples := make([]exemplar.Exemplar, 0, len(vals))
+	for _, v := range vals {
+		if !v.Omitted {
+			samples = append(samples, exemplar.Exemplar{
+				Ts:    ts.UnixNano() / int64(time.Millisecond/time.Nanosecond),
+				HasTs: true,
+				Value: v.Value,
+			})
+		}
+		ts = ts.Add(cmd.gap)
+	}
+	cmd.exemplars[h] = append(cmd.exemplars[h], samples...)
+	cmd.metrics[h] = m
+}
+
+// append the defined exemplar to the storage.
+func (cmd *loadExemplarsCmd) append(a storage.ExemplarAppender) error {
+	for h, exs := range cmd.exemplars {
+		m := cmd.metrics[h]
+
+		for _, e := range exs {
+			if _, err := a.AppendExemplar(0, m, e); err != nil {
 				return err
 			}
 		}
@@ -528,6 +622,12 @@ func (t *Test) exec(tc testCommand) error {
 		}
 
 		if err := app.Commit(); err != nil {
+			return err
+		}
+
+	case *loadExemplarsCmd:
+		app := t.storage.ExemplarAppender()
+		if err := cmd.append(app); err != nil {
 			return err
 		}
 
