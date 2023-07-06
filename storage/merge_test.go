@@ -430,6 +430,14 @@ func TestCompactingChunkSeriesMerger(t *testing.T) {
 			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{1, 1}, fSample{2, 2}}, []tsdbutil.Sample{fSample{3, 3}, fSample{5, 5}}, []tsdbutil.Sample{fSample{7, 7}, fSample{9, 9}}, []tsdbutil.Sample{fSample{10, 10}}),
 		},
 		{
+			name: "two non overlapping in reverse order",
+			input: []ChunkSeries{
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{7, 7}, fSample{9, 9}}, []tsdbutil.Sample{fSample{10, 10}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{1, 1}, fSample{2, 2}}, []tsdbutil.Sample{fSample{3, 3}, fSample{5, 5}}),
+			},
+			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{1, 1}, fSample{2, 2}}, []tsdbutil.Sample{fSample{3, 3}, fSample{5, 5}}, []tsdbutil.Sample{fSample{7, 7}, fSample{9, 9}}, []tsdbutil.Sample{fSample{10, 10}}),
+		},
+		{
 			name: "two overlapping",
 			input: []ChunkSeries{
 				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{1, 1}, fSample{2, 2}}, []tsdbutil.Sample{fSample{3, 3}, fSample{8, 8}}),

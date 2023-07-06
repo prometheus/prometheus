@@ -693,7 +693,7 @@ func estimateCompactedChunkCount(series []ChunkSeries) int {
 	for _, s := range series {
 		iter := s.Iterator(nil)
 		if iter.Next() {
-			h.Push(iter)
+			heap.Push(&h, iter)
 		}
 	}
 
