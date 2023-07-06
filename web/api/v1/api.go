@@ -561,11 +561,11 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 }
 
 func (api *API) queryExemplars(r *http.Request) apiFuncResult {
-	start, err := parseTimeParam(r, "start", minTime)
+	start, err := parseTimeParam(r, "start", MinTime)
 	if err != nil {
 		return invalidParamError(err, "start")
 	}
-	end, err := parseTimeParam(r, "end", maxTime)
+	end, err := parseTimeParam(r, "end", MaxTime)
 	if err != nil {
 		return invalidParamError(err, "end")
 	}
@@ -625,11 +625,11 @@ func returnAPIError(err error) *apiError {
 }
 
 func (api *API) labelNames(r *http.Request) apiFuncResult {
-	start, err := parseTimeParam(r, "start", minTime)
+	start, err := parseTimeParam(r, "start", MinTime)
 	if err != nil {
 		return invalidParamError(err, "start")
 	}
-	end, err := parseTimeParam(r, "end", maxTime)
+	end, err := parseTimeParam(r, "end", MaxTime)
 	if err != nil {
 		return invalidParamError(err, "end")
 	}
@@ -691,11 +691,11 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 		return apiFuncResult{nil, &apiError{errorBadData, errors.Errorf("invalid label name: %q", name)}, nil, nil}
 	}
 
-	start, err := parseTimeParam(r, "start", minTime)
+	start, err := parseTimeParam(r, "start", MinTime)
 	if err != nil {
 		return invalidParamError(err, "start")
 	}
-	end, err := parseTimeParam(r, "end", maxTime)
+	end, err := parseTimeParam(r, "end", MaxTime)
 	if err != nil {
 		return invalidParamError(err, "end")
 	}
@@ -760,11 +760,16 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 }
 
 var (
-	minTime = time.Unix(math.MinInt64/1000+62135596801, 0).UTC()
-	maxTime = time.Unix(math.MaxInt64/1000-62135596801, 999999999).UTC()
+	// MinTime is the default timestamp used for the begin of optional time ranges.
+	// Exposed to let downstream projects to reference it.
+	MinTime = time.Unix(math.MinInt64/1000+62135596801, 0).UTC()
 
-	minTimeFormatted = minTime.Format(time.RFC3339Nano)
-	maxTimeFormatted = maxTime.Format(time.RFC3339Nano)
+	// MaxTime is the default timestamp used for the end of optional time ranges.
+	// Exposed to let downstream projects to reference it.
+	MaxTime = time.Unix(math.MaxInt64/1000-62135596801, 999999999).UTC()
+
+	minTimeFormatted = MinTime.Format(time.RFC3339Nano)
+	maxTimeFormatted = MaxTime.Format(time.RFC3339Nano)
 )
 
 func (api *API) series(r *http.Request) (result apiFuncResult) {
@@ -775,11 +780,11 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 		return apiFuncResult{nil, &apiError{errorBadData, errors.New("no match[] parameter provided")}, nil, nil}
 	}
 
-	start, err := parseTimeParam(r, "start", minTime)
+	start, err := parseTimeParam(r, "start", MinTime)
 	if err != nil {
 		return invalidParamError(err, "start")
 	}
-	end, err := parseTimeParam(r, "end", maxTime)
+	end, err := parseTimeParam(r, "end", MaxTime)
 	if err != nil {
 		return invalidParamError(err, "end")
 	}
@@ -1579,11 +1584,11 @@ func (api *API) deleteSeries(r *http.Request) apiFuncResult {
 		return apiFuncResult{nil, &apiError{errorBadData, errors.New("no match[] parameter provided")}, nil, nil}
 	}
 
-	start, err := parseTimeParam(r, "start", minTime)
+	start, err := parseTimeParam(r, "start", MinTime)
 	if err != nil {
 		return invalidParamError(err, "start")
 	}
-	end, err := parseTimeParam(r, "end", maxTime)
+	end, err := parseTimeParam(r, "end", MaxTime)
 	if err != nil {
 		return invalidParamError(err, "end")
 	}
@@ -1738,9 +1743,9 @@ func parseTime(s string) (time.Time, error) {
 	// Upstream issue: https://github.com/golang/go/issues/20555
 	switch s {
 	case minTimeFormatted:
-		return minTime, nil
+		return MinTime, nil
 	case maxTimeFormatted:
-		return maxTime, nil
+		return MaxTime, nil
 	}
 	return time.Time{}, errors.Errorf("cannot parse %q to a valid timestamp", s)
 }
