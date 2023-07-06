@@ -687,6 +687,8 @@ func NewCompactingChunkSeriesMerger(mergeFunc VerticalSeriesMergeFunc) VerticalC
 //     duplicated
 //   - it does not check if overlapping chunks have samples that swap back and forth between
 //     different encodings over time, and so may underestimate the resulting number of chunks
+//     (we don't expect this to happen often though, as switching from float samples to histograms
+//     involves changing the instrumentation)
 func estimateCompactedChunkCount(series []ChunkSeries) int {
 	h := make(chunkIteratorHeap, 0, len(series))
 
