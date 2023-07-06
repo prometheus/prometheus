@@ -12,7 +12,9 @@ import (
 )
 
 // ShardedData - array of structures with (*LabelSet, timestamp, value, LSHash)
-type ShardedData interface{}
+type ShardedData interface {
+	Destroy()
+}
 
 // Segment - encoded data segment
 type Segment interface {
