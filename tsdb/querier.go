@@ -649,8 +649,8 @@ func (s *chunkSeriesEntry) Iterator(it chunks.Iterator) chunks.Iterator {
 	return pi
 }
 
-func (s *chunkSeriesEntry) EstimatedChunkCount() int {
-	return len(s.chks)
+func (s *chunkSeriesEntry) EstimatedChunkCount() (int, error) {
+	return len(s.chks), nil
 }
 
 // populateWithDelSeriesIterator allows to iterate over samples for the single series.

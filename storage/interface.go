@@ -420,7 +420,7 @@ type ChunkSeries interface {
 	//
 	// This estimate is used by Mimir's ingesters to report the number of chunks expected to be returned by a query,
 	// which is used by queriers to enforce the 'max chunks per query' limit.
-	EstimatedChunkCount() int
+	EstimatedChunkCount() (int, error)
 }
 
 // Labels represents an item that has labels e.g. time series.

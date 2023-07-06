@@ -100,7 +100,10 @@ func TestNewListChunkSeriesFromSamples(t *testing.T) {
 
 	require.NoError(t, it.Err())
 	require.Len(t, chks, 2)
-	require.Equal(t, len(chks), series.EstimatedChunkCount(), "should have one chunk per sample")
+
+	count, err := series.EstimatedChunkCount()
+	require.NoError(t, err)
+	require.Equal(t, len(chks), count, "should have one chunk per group of samples")
 }
 
 // TestSeriesSetToChunkSet test the property of SeriesSet that says
@@ -221,7 +224,9 @@ func TestSeriesToChunks(t *testing.T) {
 			chks, err := ExpandChunks(encoder.Iterator(nil))
 			require.NoError(t, err)
 			require.Len(t, chks, testCase.expectedChunkCount)
-			require.Equal(t, testCase.expectedChunkCount, encoder.EstimatedChunkCount())
+			count, err := encoder.EstimatedChunkCount()
+			require.NoError(t, err)
+			require.Equal(t, testCase.expectedChunkCount, count)
 
 			encodedSamples := expandChunks(chks)
 			require.Equal(t, testCase.samples, encodedSamples)
@@ -534,7 +539,9 @@ func testHistogramsSeriesToChunks(t *testing.T, test histogramTest) {
 	require.NoError(t, err)
 	require.Equal(t, len(test.expectedCounterResetHeaders), len(chks))
 
-	require.Len(t, chks, encoder.EstimatedChunkCount())
+	count, err := encoder.EstimatedChunkCount()
+	require.NoError(t, err)
+	require.Len(t, chks, count)
 
 	// Decode all encoded samples and assert they are equal to the original ones.
 	encodedSamples := expandChunks(chks)
