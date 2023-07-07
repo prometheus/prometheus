@@ -17,21 +17,29 @@ block_converter_sources := $(absolute_project_dir)/tools/block_converter
 sort_type := $(shell echo $(word 2, $(subst ., ,$(test_data_file_name))) | tr a-z A-Z)
 
 BUILD_DIR := $(absolute_project_dir)bazel-bin/
-go_bindings_arch ?= x86
+go_bindings_arch ?= $(shell ./r --arch-from-uname)
 go_in_wal_h_file := wal/wal_c_api.h
 wal_c_api_static_filename := $(go_bindings_arch)_wal_c_api_static.a
 go_out_filename := $(go_bindings_arch)_wal_c_api.a
+go_out_filename_asan := $(go_bindings_arch)_wal_c_api_asan.a
 
-go_out_bindigs_dir := go/common/internal/
+go_out_bindings_dir := go/common/internal/
 
 
-generate_wal_bindings: $(go_in_wal_h_file)
+wal_bindings: $(go_in_wal_h_file)
 	./r --static-c-api --arch $(go_bindings_arch)
-	mkdir -p $(go_out_bindigs_dir)
-	cp -f $(BUILD_DIR)$(wal_c_api_static_filename) $(go_out_bindigs_dir)$(go_out_filename)
+	mkdir -p $(go_out_bindings_dir)
+	cp -f $(BUILD_DIR)$(wal_c_api_static_filename) $(go_out_bindings_dir)$(go_out_filename)
+
+
+asan wal_bindings_asan: $(go_in_wal_h_file)
+	./r --static-c-api --arch $(go_bindings_arch)
+	mkdir -p $(go_out_bindings_dir)
+	cp -f $(BUILD_DIR)$(wal_c_api_static_filename) $(go_out_bindings_dir)$(go_out_filename_asan)
 
 clean:
-	rm -f $(go_out_bindigs_dir)$(go_out_filename)
+	rm -f $(go_out_bindings_dir)$(go_out_filename)
+	rm -f $(go_out_bindings_dir)$(go_out_filename_asan)
 
 test_data_file_name_prefix := $(findstring dummy_wal, $(test_data_file_name))
 ifeq "$(test_data_file_name_prefix)" "dummy_wal"

@@ -100,8 +100,8 @@ c_hashdex OKDB_WAL_PREFIXED_NAME(okdb_wal_c_hashdex_ctor)() {
 }
 
 // okdb_wal_c_hashdex_presharding - C wrapper C++, calls C++ class Hashdex methods.
-void OKDB_WAL_PREFIXED_NAME(okdb_wal_c_hashdex_presharding)(c_hashdex c_hx, c_slice proto_data) {
-  return static_cast<Wrapper::Hashdex*>(c_hx)->presharding(proto_data);
+void OKDB_WAL_PREFIXED_NAME(okdb_wal_c_hashdex_presharding)(c_hashdex c_hx, c_slice_ptr proto_data) {
+  return static_cast<Wrapper::Hashdex*>(c_hx)->presharding(*proto_data);
 }
 
 // okdb_wal_c_hashdex_dtor - calls the destructor, C wrapper C++ for clear memory.
@@ -121,8 +121,8 @@ void OKDB_WAL_PREFIXED_NAME(okdb_wal_c_encoder_encode)(c_encoder c_enc, c_hashde
 }
 
 // okdb_wal_c_encoder_snapshot - C wrapper C++, calls C++ class Encoder methods.
-void OKDB_WAL_PREFIXED_NAME(okdb_wal_c_encoder_snapshot)(c_encoder c_enc, c_slice c_rts, c_snapshot* c_snap) {
-  return static_cast<Wrapper::Encoder*>(c_enc)->snapshot(c_rts, c_snap);
+void OKDB_WAL_PREFIXED_NAME(okdb_wal_c_encoder_snapshot)(c_encoder c_enc, c_slice* c_rts, c_snapshot* c_snap) {
+  return static_cast<Wrapper::Encoder*>(c_enc)->snapshot(*c_rts, c_snap);
 }
 
 // okdb_wal_c_encoder_dtor - calls the destructor, C wrapper C++ for clear memory.
