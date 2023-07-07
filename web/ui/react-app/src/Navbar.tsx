@@ -50,6 +50,11 @@ const Navigation: FC<NavbarProps> = ({ consolesLink, agentMode, animateLogo }) =
                   Graph
                 </NavLink>
               </NavItem>
+              <NavItem>
+                <NavLink tag={Link} to="/explore">
+                  Explore
+                </NavLink>
+              </NavItem>
             </>
           )}
           <UncontrolledDropdown nav inNavbar>

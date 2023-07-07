@@ -1,0 +1,161 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`Explore should match snapshot 1`] = `
+<Fragment>
+  <h2>
+    Metrics Explorer
+  </h2>
+  <InputGroup
+    tag="div"
+  >
+    <Input
+      autoFocus={true}
+      className="my-3"
+      onChange={[Function]}
+      placeholder="Filter by metric name..."
+      type="text"
+      value=""
+    />
+  </InputGroup>
+  <Table
+    bordered={true}
+    hover={true}
+    responsiveTag="div"
+    size="sm"
+    striped={true}
+    tag="table"
+  >
+    <thead>
+      <tr>
+        <td
+          className="px-4 Metric"
+          key="Metric"
+          onClick={[Function]}
+          style={
+            Object {
+              "width": "30%",
+            }
+          }
+        >
+          <span
+            className="mr-2"
+          >
+            Metric
+          </span>
+          <FontAwesomeIcon
+            beat={false}
+            beatFade={false}
+            border={false}
+            bounce={false}
+            className=""
+            fade={false}
+            fixedWidth={false}
+            flip={false}
+            icon={
+              Object {
+                "icon": Array [
+                  320,
+                  512,
+                  Array [
+                    "sort-desc",
+                  ],
+                  "f0dd",
+                  "M182.6 470.6c-12.5 12.5-32.8 12.5-45.3 0l-128-128c-9.2-9.2-11.9-22.9-6.9-34.9s16.6-19.8 29.6-19.8H288c12.9 0 24.6 7.8 29.6 19.8s2.2 25.7-6.9 34.9l-128 128z",
+                ],
+                "iconName": "sort-down",
+                "prefix": "fas",
+              }
+            }
+            inverse={false}
+            listItem={false}
+            mask={null}
+            maskId={null}
+            pull={null}
+            pulse={false}
+            rotation={null}
+            shake={false}
+            size={null}
+            spin={false}
+            spinPulse={false}
+            spinReverse={false}
+            swapOpacity={false}
+            symbol={false}
+            title=""
+            titleId={null}
+            transform={null}
+          />
+        </td>
+        <td
+          className="px-4 \\"Help\\""
+          key="Help"
+          style={
+            Object {
+              "width": "70%",
+            }
+          }
+        >
+          <span
+            className="mr-2"
+          >
+            Help
+          </span>
+        </td>
+      </tr>
+    </thead>
+    <tbody>
+      <tr
+        key="prometheus_web_federation_warnings_total"
+      >
+        <td
+          className="flag-item"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "prometheus_web_federation_warnings_total",
+              }
+            }
+          />
+        </td>
+        <td
+          className="flag-value"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "Total number of warnings that occurred while sending federation responses.",
+              }
+            }
+          />
+        </td>
+      </tr>
+      <tr
+        key="promttp_metric_handler_requests_in_flight"
+      >
+        <td
+          className="flag-item"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "promttp_metric_handler_requests_in_flight",
+              }
+            }
+          />
+        </td>
+        <td
+          className="flag-value"
+        >
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "Current numver of scrapes being served.",
+              }
+            }
+          />
+        </td>
+      </tr>
+    </tbody>
+  </Table>
+</Fragment>
+`;

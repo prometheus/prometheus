@@ -39,7 +39,7 @@ describe('App', () => {
       const c = app.find(component);
       expect(c).toHaveLength(1);
     });
-    expect(app.find(Route)).toHaveLength(10);
+    expect(app.find(Route)).toHaveLength(11);
     expect(app.find(Container)).toHaveLength(1);
   });
 });
