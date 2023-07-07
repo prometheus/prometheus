@@ -209,18 +209,18 @@ type ResponseMsg struct {
 	Text      string
 	Code      uint32
 	SegmentID uint32
+	SendAt    int64
 }
 
 // EncodeBinary - encoding to byte.
 func (rm *ResponseMsg) EncodeBinary() []byte {
-	buf := make([]byte, 0, 12+len(rm.Text))
+	buf := make([]byte, 0, 20+len(rm.Text))
 
 	buf = binary.AppendUvarint(buf, uint64(len(rm.Text)))
 	buf = append(buf, rm.Text...)
-
 	buf = binary.AppendUvarint(buf, uint64(rm.Code))
-
 	buf = binary.AppendUvarint(buf, uint64(rm.SegmentID))
+	buf = binary.AppendUvarint(buf, uint64(rm.SendAt))
 	return buf
 }
 
@@ -239,8 +239,12 @@ func (rm *ResponseMsg) DecodeBinary(data []byte) {
 	rm.Code = uint32(code)
 	offset += n
 
-	id, _ := binary.Uvarint(data[offset:])
+	id, n := binary.Uvarint(data[offset:])
 	rm.SegmentID = uint32(id)
+	offset += n
+
+	sendAt, _ := binary.Uvarint(data[offset:])
+	rm.SendAt = int64(sendAt)
 }
 
 // MessageData - data for the start message of the refill.
