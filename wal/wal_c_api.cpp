@@ -48,9 +48,11 @@ static_assert(TOTAL_FLAVOURS == arch_count, "Update the #includes for new x86_64
 #define OKDB_WAL_FUNCTION_NAME_PREFIX aarch64_generic_
 #include "wal_c_api/wal_c_decoder.h"
 #include "wal_c_api/wal_c_encoder.h"
+#undef OKDB_WAL_FUNCTION_NAME_PREFIX
 #define OKDB_WAL_FUNCTION_NAME_PREFIX aarch64_crc_
 #include "wal_c_api/wal_c_decoder.h"
 #include "wal_c_api/wal_c_encoder.h"
+#undef OKDB_WAL_FUNCTION_NAME_PREFIX
 
 #define TOTAL_FLAVOURS 2
 static_assert(TOTAL_FLAVOURS == arch_count, "Update the #includes for new ARM64 arch flavours!");
@@ -149,17 +151,17 @@ c_decoder okdb_wal_c_decoder_ctor() {
 }
 
 // okdb_wal_c_decoder_decode - C wrapper C++, calls C++ class Decoder methods.
-uint32_t okdb_wal_c_decoder_decode(c_decoder c_dec, c_slice c_seg, c_decoded_segment* c_protobuf) {
+uint32_t okdb_wal_c_decoder_decode(c_decoder c_dec, c_slice_ptr c_seg, c_decoded_segment* c_protobuf) {
   return std::visit([&](auto& vtbl) { return vtbl.template call<"okdb_wal_c_decoder_decode">(c_dec, c_seg, c_protobuf); }, decoder_vtbl);
 }
 
 // okdb_wal_c_decoder_decode_dry - C wrapper C++, calls C++ class Decoder methods.
-uint32_t okdb_wal_c_decoder_decode_dry(c_decoder c_dec, c_slice c_seg) {
+uint32_t okdb_wal_c_decoder_decode_dry(c_decoder c_dec, c_slice_ptr c_seg) {
   return std::visit([&](auto& vtbl) { return vtbl.template call<"okdb_wal_c_decoder_decode_dry">(c_dec, c_seg); }, decoder_vtbl);
 }
 
 // okdb_wal_c_decoder_snapshot - C wrapper C++, calls C++ class Decoder methods.
-void okdb_wal_c_decoder_snapshot(c_decoder c_dec, c_slice c_snap) {
+void okdb_wal_c_decoder_snapshot(c_decoder c_dec, c_slice_ptr c_snap) {
   return std::visit([&](auto& vtbl) { return vtbl.template call<"okdb_wal_c_decoder_snapshot">(c_dec, c_snap); }, decoder_vtbl);
 }
 
@@ -181,7 +183,7 @@ c_hashdex okdb_wal_c_hashdex_ctor() {
 }
 
 // okdb_wal_c_hashdex_presharding - C wrapper C++, calls C++ class Hashdex methods.
-void okdb_wal_c_hashdex_presharding(c_hashdex c_hx, c_slice proto_data) {
+void okdb_wal_c_hashdex_presharding(c_hashdex c_hx, c_slice_ptr proto_data) {
   return std::visit([&](auto& vtbl) { return vtbl.template call<"okdb_wal_c_hashdex_presharding">(c_hx, proto_data); }, encoder_vtbl);
 }
 
@@ -203,7 +205,7 @@ void okdb_wal_c_encoder_encode(c_encoder c_enc, c_hashdex c_hx, c_segment* c_seg
 }
 
 // okdb_wal_c_encoder_snapshot - C wrapper C++, calls C++ class Encoder methods.
-void okdb_wal_c_encoder_snapshot(c_encoder c_enc, c_slice c_rts, c_snapshot* c_snap) {
+void okdb_wal_c_encoder_snapshot(c_encoder c_enc, c_slice_ptr c_rts, c_snapshot* c_snap) {
   return std::visit([&](auto& vtbl) { return vtbl.template call<"okdb_wal_c_encoder_snapshot">(c_enc, c_rts, c_snap); }, encoder_vtbl);
 }
 

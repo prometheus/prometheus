@@ -1,10 +1,6 @@
 /**
  * \file wal_c_types.h
- *  Contains C API for types CGO class.
- *  \note You should set #define OKDB_WAL_FUNCTION_NAME_PREFIX before
- *  #include'ing this header for custom arch prefix.
- *  \note There are no include guard for allowing multiple #include-s
- *  with distinct OKDB_WAL_NAME_PREFIX
+ *  Contains C API bindings from C++ classes to CGO types.
  */
 #pragma once
 #include <stddef.h>  // size_t
@@ -17,12 +13,19 @@ extern "C" {
 typedef void* stringstream_ptr;
 typedef void* string_ptr;
 
+// go_ptr is the analogue of void * for forwarding Go's uintptr.
+typedef size_t go_ptr;
+
+typedef go_ptr c_slice_from_go_ptr;
+
 // c_slice - C wrapper C++ Slice for exchange memory between C++ and Go.
 typedef struct {
   const void* array;
   size_t len;
   size_t cap;
 } c_slice;
+
+typedef c_slice* c_slice_ptr;
 
 // c_snapshot - C wrapper C++ Segment and Snapshot for exchange memory
 // between C++ and Go.

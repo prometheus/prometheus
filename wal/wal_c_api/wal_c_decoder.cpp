@@ -73,18 +73,18 @@ c_decoder OKDB_WAL_PREFIXED_NAME(okdb_wal_c_decoder_ctor)() {
 }
 
 // okdb_wal_c_decoder_decode - C wrapper C++, calls C++ class Decoder methods.
-uint32_t OKDB_WAL_PREFIXED_NAME(okdb_wal_c_decoder_decode)(c_decoder c_dec, c_slice c_seg, c_decoded_segment* c_protobuf) {
-  return static_cast<Wrapper::Decoder*>(c_dec)->decode(c_seg, c_protobuf);
+uint32_t OKDB_WAL_PREFIXED_NAME(okdb_wal_c_decoder_decode)(c_decoder c_dec, c_slice_ptr c_seg, c_decoded_segment* c_protobuf) {
+  return static_cast<Wrapper::Decoder*>(c_dec)->decode(*c_seg, c_protobuf);
 }
 
 // okdb_wal_c_decoder_decode_dry - C wrapper C++, calls C++ class Decoder methods.
-uint32_t OKDB_WAL_PREFIXED_NAME(okdb_wal_c_decoder_decode_dry)(c_decoder c_dec, c_slice c_seg) {
-  return static_cast<Wrapper::Decoder*>(c_dec)->decode_dry(c_seg);
+uint32_t OKDB_WAL_PREFIXED_NAME(okdb_wal_c_decoder_decode_dry)(c_decoder c_dec, c_slice_ptr c_seg) {
+  return static_cast<Wrapper::Decoder*>(c_dec)->decode_dry(*c_seg);
 }
 
 // okdb_wal_c_decoder_snapshot - C wrapper C++, calls C++ class Decoder methods.
-void OKDB_WAL_PREFIXED_NAME(okdb_wal_c_decoder_snapshot)(c_decoder c_dec, c_slice c_snap) {
-  return static_cast<Wrapper::Decoder*>(c_dec)->snapshot(c_snap);
+void OKDB_WAL_PREFIXED_NAME(okdb_wal_c_decoder_snapshot)(c_decoder c_dec, c_slice_ptr c_snap) {
+  return static_cast<Wrapper::Decoder*>(c_dec)->snapshot(*c_snap);
 }
 
 // okdb_wal_c_decoder_dtor - calls the destructor, C wrapper C++ for clear memory.

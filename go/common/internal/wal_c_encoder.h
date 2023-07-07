@@ -1,6 +1,6 @@
 /**
  * \file wal_c_encoder.h
- *  Wrapper C API for BasicWriter<> class.
+ *  Wrapper C API for BasicEncoder<> class.
  */
 #include <stdint.h>
 
@@ -30,6 +30,9 @@ typedef c_hashdex_ptr c_hashdex;
 // c_encoder - C wrapper C++, for init memory.
 typedef c_encoder_ptr c_encoder;
 
+// go_ptr is the analogue of void * for forwarding Go's uintptr.
+typedef size_t go_ptr;
+
 #define OKDB_WAL_ENCODER_DEFINED
 #endif
 
@@ -41,7 +44,7 @@ void okdb_wal_c_redundant_destroy(c_redundant* c_rt);
 // okdb_wal_c_hashdex_ctor - constructor, C wrapper C++, init C++ class Hashdex.
 c_hashdex okdb_wal_c_hashdex_ctor();
 // okdb_wal_c_hashdex_presharding - C wrapper C++, calls C++ class Hashdex methods.
-void okdb_wal_c_hashdex_presharding(c_hashdex c_hx, c_slice proto_data);
+void okdb_wal_c_hashdex_presharding(c_hashdex c_hx, c_slice_from_go_ptr proto_data);
 // okdb_wal_c_hashdex_dtor - calls the destructor, C wrapper C++ for clear memory.
 void okdb_wal_c_hashdex_dtor(c_hashdex c_hx);
 
@@ -51,7 +54,7 @@ c_encoder okdb_wal_c_encoder_ctor(uint16_t shard_id, uint16_t number_of_shards);
 // okdb_wal_c_encoder_encode - C wrapper C++, calls C++ class Encoder methods.
 void okdb_wal_c_encoder_encode(c_encoder c_enc, c_hashdex c_hx, c_segment* c_seg, c_redundant* c_rt);
 // okdb_wal_c_encoder_snapshot - C wrapper C++, calls C++ class Encoder methods.
-void okdb_wal_c_encoder_snapshot(c_encoder c_enc, c_slice c_rts, c_snapshot* c_snap);
+void okdb_wal_c_encoder_snapshot(c_encoder c_enc, c_slice_from_go_ptr c_rts, c_snapshot* c_snap);
 // okdb_wal_c_encoder_dtor - calls the destructor, C wrapper C++ for clear memory.
 void okdb_wal_c_encoder_dtor(c_encoder c_enc);
 

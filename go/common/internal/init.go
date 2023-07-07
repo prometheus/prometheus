@@ -1,5 +1,12 @@
+//go:build (WITHOUT_FASTCGO || arm64) && !WITH_FASTCGO
+// +build WITHOUT_FASTCGO arm64
+// +build !WITH_FASTCGO
+
 // package internal is a Go counterpart of C bindings. It contains the bridged decoder/encoder API.
-// This file contains the C/fastcgo-dependent parts of GO API.
+
+// This file contains the C/cgo-dependent parts of GO API.
+// The usual cgo bindings API is default on arm64, but disabled on amd64,
+// but could be enabled via --tags=WITHOUT_FASTCGO build tag.
 package internal
 
 // #cgo CFLAGS: -I.
@@ -52,7 +59,7 @@ func CDecoderCtor() CDecoder {
 func CDecoderDecode(decoder CDecoder, segment []byte, result *GoDecodedSegment) uint32 {
 	return uint32(C.okdb_wal_c_decoder_decode(
 		C.c_decoder(decoder),
-		*(*C.c_slice)(unsafe.Pointer(&segment)),
+		C.size_t(uintptr((unsafe.Pointer(&segment)))),
 		(*C.c_decoded_segment)(unsafe.Pointer(result)),
 	))
 }
@@ -60,14 +67,14 @@ func CDecoderDecode(decoder CDecoder, segment []byte, result *GoDecodedSegment) 
 func CDecoderDecodeDry(decoder CDecoder, segment []byte) uint32 {
 	return uint32(C.okdb_wal_c_decoder_decode_dry(
 		C.c_decoder(decoder),
-		*(*C.c_slice)(unsafe.Pointer(&segment)),
+		C.size_t(uintptr((unsafe.Pointer(&segment)))),
 	))
 }
 
 func CDecoderDecodeSnapshot(decoder CDecoder, snapshot []byte) {
 	C.okdb_wal_c_decoder_snapshot(
 		C.c_decoder(decoder),
-		*(*C.c_slice)(unsafe.Pointer(&snapshot)),
+		C.size_t(uintptr((unsafe.Pointer(&snapshot)))),
 	)
 }
 
@@ -95,7 +102,7 @@ func CEncoderEncode(encoder CEncoder, hashdex CHashdex, segment *GoSegment, redu
 func CEncoderSnapshot(encoder CEncoder, redundants []unsafe.Pointer, snapshot *GoSnapshot) {
 	C.okdb_wal_c_encoder_snapshot(
 		C.c_encoder(encoder),
-		*(*C.c_slice)(unsafe.Pointer(&redundants)),
+		C.size_t(uintptr((unsafe.Pointer(&redundants)))),
 		(*C.c_snapshot)(unsafe.Pointer(snapshot)),
 	)
 }
@@ -115,7 +122,7 @@ func CHashdexCtor() CHashdex {
 func CHashdexPresharding(hashdex CHashdex, protoData []byte) {
 	C.okdb_wal_c_hashdex_presharding(
 		C.c_hashdex(hashdex),
-		*(*C.c_slice)(unsafe.Pointer(&protoData)),
+		C.size_t(uintptr(unsafe.Pointer(&protoData))),
 	)
 }
 
@@ -131,7 +138,7 @@ func CSnapshotDestroy(p unsafe.Pointer) {
 	C.okdb_wal_c_snapshot_destroy((*C.c_snapshot)(p))
 }
 
-// CRedundantDestroy calls C API for destroying GoRedunant's C API.
+// CRedundantDestroy calls C API for destroying GoRedundant's C API.
 func CRedundantDestroy(p unsafe.Pointer) {
 	C.okdb_wal_c_redundant_destroy((*C.c_redundant)(p))
 }

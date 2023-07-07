@@ -61,7 +61,7 @@ func (gs *GoSegment) Destroy() {
 	CSegmentDestroy(unsafe.Pointer(gs))
 }
 
-// GoSliceByte is the GO wrapper for decoded segment into remote write protobuf
+// GoDecodedSegment is the GO wrapper for decoded segment into remote write protobuf
 type GoDecodedSegment struct {
 	data          CSlice
 	buf           unsafe.Pointer

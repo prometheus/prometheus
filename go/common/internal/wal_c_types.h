@@ -1,8 +1,9 @@
 /**
  * \file wal_c_types.h
- *  Contains C API for types CGO class.
+ *  Contains C API bindings from C++ classes to CGO types.
  */
-#include <stddef.h>
+#pragma once
+#include <stddef.h>  // size_t
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -12,7 +13,11 @@ extern "C" {
 typedef void* stringstream_ptr;
 typedef void* string_ptr;
 
-#ifndef OKDB_WAL_TYPES_DEFINED
+// go_ptr is the analogue of void * for forwarding Go's uintptr.
+typedef size_t go_ptr;
+
+typedef go_ptr c_slice_from_go_ptr;
+
 // c_slice - C wrapper C++ Slice for exchange memory between C++ and Go.
 typedef struct {
   const void* array;
@@ -20,6 +25,10 @@ typedef struct {
   size_t cap;
 } c_slice;
 
+typedef c_slice* c_slice_ptr;
+
+// c_snapshot - C wrapper C++ Segment and Snapshot for exchange memory
+// between C++ and Go.
 typedef struct {
   c_slice data;
   stringstream_ptr buf;
@@ -40,8 +49,6 @@ typedef struct {
   int64_t created_at;
   int64_t encoded_at;
 } c_decoded_segment;
-#define OKDB_WAL_TYPES_DEFINED
-#endif
 
 // dtor
 // okdb_wal_c_snapshot_destroy - calls the destructor, C wrapper C++ for clear memory.

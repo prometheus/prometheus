@@ -32,11 +32,11 @@ typedef c_decoder_ptr c_decoder;
 // okdb_wal_c_decoder_ctor - constructor, C wrapper C++, init C++ class Decoder.
 c_decoder OKDB_WAL_PREFIXED_NAME(okdb_wal_c_decoder_ctor)();
 // okdb_wal_c_decoder_decode - C wrapper C++, calls C++ class Decoder methods.
-uint32_t OKDB_WAL_PREFIXED_NAME(okdb_wal_c_decoder_decode)(c_decoder c_dec, c_slice c_seg, c_decoded_segment* c_protobuf);
+uint32_t OKDB_WAL_PREFIXED_NAME(okdb_wal_c_decoder_decode)(c_decoder c_dec, c_slice_ptr c_seg, c_decoded_segment* c_protobuf);
 // okdb_wal_c_decoder_decode_dry - C wrapper C++, calls C++ class Decoder methods.
-uint32_t OKDB_WAL_PREFIXED_NAME(okdb_wal_c_decoder_decode_dry)(c_decoder c_dec, c_slice c_seg);
+uint32_t OKDB_WAL_PREFIXED_NAME(okdb_wal_c_decoder_decode_dry)(c_decoder c_dec, c_slice_ptr c_seg);
 // okdb_wal_c_decoder_snapshot - C wrapper C++, calls C++ class Decoder methods.
-void OKDB_WAL_PREFIXED_NAME(okdb_wal_c_decoder_snapshot)(c_decoder c_dec, c_slice c_snap);
+void OKDB_WAL_PREFIXED_NAME(okdb_wal_c_decoder_snapshot)(c_decoder c_dec, c_slice_ptr c_snap);
 // okdb_wal_c_decoder_dtor - calls the destructor, C wrapper C++ for clear memory.
 void OKDB_WAL_PREFIXED_NAME(okdb_wal_c_decoder_dtor)(c_decoder c_dec);
 

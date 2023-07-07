@@ -87,7 +87,7 @@ func NewHashdex(protoData []byte) *Hashdex {
 		data:    protoData,
 	}
 	internal.CHashdexPresharding(h.hashdex, h.data)
-
+	runtime.KeepAlive(h.data)
 	return h
 }
 
