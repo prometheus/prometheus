@@ -63,3 +63,39 @@ func TestRefillMsgQuick(t *testing.T) {
 		t.Error(err)
 	}
 }
+
+func TestResponseMsg(t *testing.T) {
+	wrm := &transport.ResponseMsg{
+		Text:      "ok",
+		Code:      200,
+		SegmentID: 45000,
+		SendAt:    1688452727260423481,
+	}
+
+	b := wrm.EncodeBinary()
+	rrm := &transport.ResponseMsg{}
+	rrm.DecodeBinary(b)
+
+	require.Equal(t, *wrm, *rrm)
+}
+
+func TestResponseMsgQuick(t *testing.T) {
+	f := func(text string, code, segmentID uint32, sendAt int64) bool {
+		wrm := &transport.ResponseMsg{
+			Text:      text,
+			Code:      code,
+			SegmentID: segmentID,
+			SendAt:    sendAt,
+		}
+
+		b := wrm.EncodeBinary()
+		rrm := &transport.ResponseMsg{}
+		rrm.DecodeBinary(b)
+
+		return assert.Equal(t, *wrm, *rrm)
+	}
+
+	if err := quick.Check(f, nil); err != nil {
+		t.Error(err)
+	}
+}

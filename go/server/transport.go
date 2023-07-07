@@ -34,26 +34,26 @@ func NewProtocolReader(r Reader) *ProtocolReader {
 }
 
 // Next - func-iterator, read from reader raw message and return WriteRequest.
-func (pr *ProtocolReader) Next(ctx context.Context) (uint32, *prompb.WriteRequest, error) {
+func (pr *ProtocolReader) Next(ctx context.Context) (*Request, error) {
 	for {
 		raw, err := pr.reader.Next(ctx)
 		if err != nil {
-			return 0, nil, err
+			return nil, err
 		}
 
 		switch raw.Header.Type {
 		case transport.MsgSnapshot:
 			if err := pr.handleSnapshot(ctx, raw.Payload); err != nil {
-				return 0, nil, fmt.Errorf("decode snapshot: %w", err)
+				return nil, fmt.Errorf("decode snapshot: %w", err)
 			}
 		case transport.MsgDryPut:
 			if err := pr.handleDryPut(ctx, raw.Payload); err != nil {
-				return 0, nil, fmt.Errorf("decode dry segment: %w", err)
+				return nil, fmt.Errorf("decode dry segment: %w", err)
 			}
 		case transport.MsgPut:
-			return pr.handlePut(ctx, raw.Payload)
+			return pr.handlePut(ctx, raw)
 		default:
-			return 0, nil, fmt.Errorf("unexpected msg type %d", raw.Header.Type)
+			return nil, fmt.Errorf("unexpected msg type %d", raw.Header.Type)
 		}
 	}
 }
@@ -83,21 +83,27 @@ func (pr *ProtocolReader) handleDryPut(ctx context.Context, segment []byte) erro
 }
 
 // handlePut - process the put using the decoder.
-func (pr *ProtocolReader) handlePut(ctx context.Context, segment []byte) (uint32, *prompb.WriteRequest, error) {
+func (pr *ProtocolReader) handlePut(ctx context.Context, raw *transport.RawMessage) (*Request, error) {
 	if pr.decoder == nil {
 		pr.decoder = common.NewDecoder()
 	}
-	blob, segmentID, err := pr.decoder.Decode(ctx, segment)
+	blob, segmentID, err := pr.decoder.Decode(ctx, raw.Payload)
 	if err != nil {
-		return 0, nil, fmt.Errorf("decode segment: %w", err)
+		return nil, fmt.Errorf("decode segment: %w", err)
 	}
 	defer blob.Destroy()
 
-	msg := new(prompb.WriteRequest)
-	if err := msg.Unmarshal(blob.Bytes()); err != nil {
-		return segmentID, nil, fmt.Errorf("unmarshal protobuf: %w", err)
+	rq := &Request{
+		SegmentID: segmentID,
+		Message:   new(prompb.WriteRequest),
+		SentAt:    raw.Header.CreatedAt,
+		CreatedAt: blob.CreatedAt(),
+		EncodedAt: blob.EncodedAt(),
 	}
-	return segmentID, msg, nil
+	if err := rq.Message.Unmarshal(blob.Bytes()); err != nil {
+		return rq, fmt.Errorf("unmarshal protobuf: %w", err)
+	}
+	return rq, nil
 }
 
 // TCPReader - wrappers over connection from cient.
@@ -137,13 +143,7 @@ func (r *TCPReader) Next(ctx context.Context) (*transport.RawMessage, error) {
 }
 
 // SendResponse - send response to client.
-func (r *TCPReader) SendResponse(ctx context.Context, text string, code, segmentID uint32) error {
-	msg := &transport.ResponseMsg{
-		Text:      text,
-		Code:      code,
-		SegmentID: segmentID,
-	}
-
+func (r *TCPReader) SendResponse(ctx context.Context, msg *transport.ResponseMsg) error {
 	return r.t.Write(ctx, transport.NewRawMessage(
 		protocolVersion,
 		transport.MsgResponse,
@@ -217,4 +217,13 @@ func (fr *FileReader) Next(ctx context.Context) (*transport.RawMessage, error) {
 // Close - close the file reader.
 func (fr *FileReader) Close() error {
 	return fr.file.Close()
+}
+
+// Request - incoming request.
+type Request struct {
+	SegmentID uint32
+	Message   *prompb.WriteRequest
+	SentAt    int64
+	CreatedAt int64
+	EncodedAt int64
 }

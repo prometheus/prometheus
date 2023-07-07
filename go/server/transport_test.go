@@ -17,13 +17,18 @@ func ExampleTCPReader() {
 		reader := server.NewProtocolReader(server.StartWith(tcpReader, msg))
 		defer reader.Destroy()
 		for {
-			segmentID, data, err := reader.Next(ctx)
+			rq, err := reader.Next(ctx)
 			if err != nil {
 				log.Printf("fail to read next message: %s", err)
 				return
 			}
-			_ = data // process data
-			if err := tcpReader.SendResponse(ctx, "OK", 200, segmentID); err != nil {
+			_ = rq // process data
+			if err := tcpReader.SendResponse(ctx, &transport.ResponseMsg{
+				Text:      "OK",
+				Code:      200,
+				SegmentID: rq.SegmentID,
+				SendAt:    rq.SentAt,
+			}); err != nil {
 				log.Printf("fail to send response: %s", err)
 				return
 			}
@@ -38,7 +43,10 @@ func ExampleTCPReader() {
 		// read until EOF from ProtocolReader and append to BlockWriter
 		// save BlockWriter
 		// send block to S3
-		if err := tcpReader.SendResponse(ctx, "OK", 200, 0); err != nil {
+		if err := tcpReader.SendResponse(ctx, &transport.ResponseMsg{
+			Text: "OK",
+			Code: 200,
+		}); err != nil {
 			log.Printf("fail to send response: %s", err)
 		}
 	}
