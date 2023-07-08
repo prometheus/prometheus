@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -337,7 +338,7 @@ func TestOOOHeadIndexReader_Series(t *testing.T) {
 						}
 						expChunks = append(expChunks, meta)
 					}
-					sort.Sort(metaByMinTimeAndMinRef(expChunks)) // we always want the chunks to come back sorted by minTime asc
+					slices.SortFunc(expChunks, lessByMinTimeAndMinRef) // We always want the chunks to come back sorted by minTime asc.
 
 					if headChunk && len(intervals) > 0 {
 						// Put the last interval in the head chunk
@@ -1116,7 +1117,7 @@ func TestSortByMinTimeAndMinRef(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(fmt.Sprintf("name=%s", tc.name), func(t *testing.T) {
-			sort.Sort(byMinTimeAndMinRef(tc.input))
+			slices.SortFunc(tc.input, refLessByMinTimeAndMinRef)
 			require.Equal(t, tc.exp, tc.input)
 		})
 	}
@@ -1180,7 +1181,7 @@ func TestSortMetaByMinTimeAndMinRef(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(fmt.Sprintf("name=%s", tc.name), func(t *testing.T) {
-			sort.Sort(metaByMinTimeAndMinRef(tc.inputMetas))
+			slices.SortFunc(tc.inputMetas, lessByMinTimeAndMinRef)
 			require.Equal(t, tc.expMetas, tc.inputMetas)
 		})
 	}
