@@ -450,7 +450,7 @@ func (s *memSeries) oooMergedChunk(meta chunks.Meta, cdm *chunks.ChunkDiskMapper
 
 	// Next we want to sort all the collected chunks by min time so we can find
 	// those that overlap and stop when we know the rest don't.
-	sort.Sort(byMinTimeAndMinRef(tmpChks))
+	slices.SortFunc(tmpChks, refLessByMinTimeAndMinRef)
 
 	mc := &mergedOOOChunks{}
 	absoluteMax := int64(math.MinInt64)

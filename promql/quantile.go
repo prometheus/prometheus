@@ -17,6 +17,8 @@ import (
 	"math"
 	"sort"
 
+	"golang.org/x/exp/slices"
+
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 )
@@ -37,10 +39,6 @@ type bucket struct {
 
 // buckets implements sort.Interface.
 type buckets []bucket
-
-func (b buckets) Len() int           { return len(b) }
-func (b buckets) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
-func (b buckets) Less(i, j int) bool { return b[i].upperBound < b[j].upperBound }
 
 type metricWithBuckets struct {
 	metric  labels.Labels
@@ -83,7 +81,9 @@ func bucketQuantile(q float64, buckets buckets) float64 {
 	if q > 1 {
 		return math.Inf(+1)
 	}
-	sort.Sort(buckets)
+	slices.SortFunc(buckets, func(a, b bucket) bool {
+		return a.upperBound < b.upperBound
+	})
 	if !math.IsInf(buckets[len(buckets)-1].upperBound, +1) {
 		return math.NaN()
 	}

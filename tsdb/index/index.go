@@ -924,7 +924,7 @@ func (w *Writer) writePostingsToTmpFiles() error {
 				values = append(values, v)
 			}
 			// Symbol numbers are in order, so the strings will also be in order.
-			sort.Sort(uint32slice(values))
+			slices.Sort(values)
 			for _, v := range values {
 				value, err := w.symbols.Lookup(v)
 				if err != nil {
@@ -1016,12 +1016,6 @@ func (w *Writer) writePostings() error {
 	w.fP = nil
 	return nil
 }
-
-type uint32slice []uint32
-
-func (s uint32slice) Len() int           { return len(s) }
-func (s uint32slice) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
-func (s uint32slice) Less(i, j int) bool { return s[i] < s[j] }
 
 type labelIndexHashEntry struct {
 	keys   []string
