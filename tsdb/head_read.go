@@ -16,7 +16,6 @@ package tsdb
 import (
 	"context"
 	"math"
-	"sort"
 	"sync"
 
 	"github.com/go-kit/log/level"
