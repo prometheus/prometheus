@@ -297,7 +297,8 @@ func TestRelabel(t *testing.T) {
 				"my_baz":        "bbb",
 			}),
 		},
-		{ // valid case
+		{
+			// valid case
 			input: labels.FromMap(map[string]string{
 				"a": "some-name-value",
 			}),
@@ -315,7 +316,8 @@ func TestRelabel(t *testing.T) {
 				"name": "value",
 			}),
 		},
-		{ // invalid replacement ""
+		{
+			// invalid replacement ""
 			input: labels.FromMap(map[string]string{
 				"a": "some-name-value",
 			}),
@@ -332,7 +334,8 @@ func TestRelabel(t *testing.T) {
 				"a": "some-name-value",
 			}),
 		},
-		{ // invalid target_labels
+		{
+			// invalid target_labels
 			input: labels.FromMap(map[string]string{
 				"a": "some-name-value",
 			}),
@@ -363,7 +366,8 @@ func TestRelabel(t *testing.T) {
 				"a": "some-name-value",
 			}),
 		},
-		{ // more complex real-life like usecase
+		{
+			// more complex real-life like usecase
 			input: labels.FromMap(map[string]string{
 				"__meta_sd_tags": "path:/secret,job:some-job,label:foo=bar",
 			}),
@@ -397,7 +401,8 @@ func TestRelabel(t *testing.T) {
 				"foo":              "bar",
 			}),
 		},
-		{ // From https://github.com/prometheus/prometheus/issues/12283
+		{
+			// From https://github.com/prometheus/prometheus/issues/12283
 			input: labels.FromMap(map[string]string{
 				"__meta_kubernetes_pod_container_port_name":         "foo",
 				"__meta_kubernetes_pod_annotation_XXX_metrics_port": "9091",
@@ -754,6 +759,44 @@ func BenchmarkRelabel(b *testing.B) {
 		b.Run(tt.name, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				_, _ = Process(tt.lbls, tt.cfgs...)
+			}
+		})
+	}
+}
+
+func TestConfig_UnmarshalYAML(t *testing.T) {
+	type fields struct {
+		Source string
+	}
+
+	tests := []struct {
+		name    string
+		fields  fields
+		wantErr bool
+	}{
+		{
+			name: "keepequal",
+			fields: fields{
+				Source: `
+action: keepequal
+regex: (.*)
+seprator: ;
+replacement: $1
+source_labels:
+- __meta_kubernetes_pod_annotation_prometheus_io_port
+target_label: __meta_kubernetes_pod_container_port_number`,
+			},
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := Config{}
+
+			if err := yaml.Unmarshal([]byte(tt.fields.Source), &c); (err != nil) != tt.wantErr {
+				t.Errorf("UnmarshalYAML() error = %v, wantErr %v", err, tt.wantErr)
+			} else {
+				t.Log("succeed")
 			}
 		})
 	}
