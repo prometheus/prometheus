@@ -137,8 +137,8 @@ func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {
 		return index.ErrPostings(errors.Wrap(err, "expand postings"))
 	}
 
-	sort.Slice(series, func(i, j int) bool {
-		return labels.Compare(series[i].lset, series[j].lset) < 0
+	slices.SortFunc(series, func(a, b *memSeries) bool {
+		return labels.Compare(a.lset, b.lset) < 0
 	})
 
 	// Convert back to list.
