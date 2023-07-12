@@ -1,6 +1,9 @@
 package remote
 
 import (
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
+
 	"github.com/prometheus/prometheus/tsdb/wlog"
 )
 
@@ -10,10 +13,13 @@ type MarkerHandler interface {
 	UpdateReceivedData(segmentId, dataCount int) // Data queued for sending
 	UpdateSentData(segmentId, dataCount int)     // Data which was sent or given up on sending
 
+	Start()
 	Stop()
 }
 
 type markerHandler struct {
+	logger            log.Logger
+	clientName        string
 	markerFileHandler MarkerFileHandler
 	lastMarkedSegment int
 	dataIOUpdate      chan data
@@ -26,12 +32,10 @@ type data struct {
 	dataCount int
 }
 
-var (
-	_ MarkerHandler = (*markerHandler)(nil)
-)
-
-func NewMarkerHandler(mfh MarkerFileHandler) MarkerHandler {
+func NewMarkerHandler(logger log.Logger, clientName string, mfh MarkerFileHandler) MarkerHandler {
 	mh := &markerHandler{
+		logger:            logger,
+		clientName:        clientName,
 		lastMarkedSegment: -1, // Segment ID last marked on disk.
 		markerFileHandler: mfh,
 		//TODO: What is a good size for the channel?
@@ -39,15 +43,16 @@ func NewMarkerHandler(mfh MarkerFileHandler) MarkerHandler {
 		quit:         make(chan struct{}),
 	}
 
+	return mh
+}
+
+func (mh *markerHandler) Start() {
 	// Load the last marked segment from disk (if it exists).
 	if lastSegment := mh.markerFileHandler.LastMarkedSegment(); lastSegment >= 0 {
 		mh.lastMarkedSegment = lastSegment
 	}
-
-	//TODO: Should this be in a separate Start() function?
+	level.Info(mh.logger).Log("msg", "Starting WAL marker handler", "queue", mh.clientName)
 	go mh.updatePendingData()
-
-	return mh
 }
 
 func (mh *markerHandler) LastMarkedSegment() int {

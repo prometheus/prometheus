@@ -1,8 +1,6 @@
 package remote
 
 import (
-	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -22,40 +20,37 @@ type MarkerFileHandler interface {
 type markerFileHandler struct {
 	segmentToMark chan int
 	quit          chan struct{}
+	dir           string
 
 	logger log.Logger
 
 	lastMarkedSegmentFilePath string
 }
 
-var (
-	_ MarkerFileHandler = (*markerFileHandler)(nil)
-)
-
-func NewMarkerFileHandler(logger log.Logger, walDir, markerId string) (MarkerFileHandler, error) {
-	markerDir := filepath.Join(walDir, "remote", markerId)
-
+func NewMarkerFileHandler(logger log.Logger, walDir, markerId string) MarkerFileHandler {
 	dir := filepath.Join(walDir, "remote", markerId)
-	if err := os.MkdirAll(dir, 0o777); err != nil {
-		return nil, fmt.Errorf("error creating segment marker folder %q: %w", dir, err)
-	}
 
 	mfh := &markerFileHandler{
 		segmentToMark:             make(chan int, 1),
 		quit:                      make(chan struct{}),
 		logger:                    logger,
-		lastMarkedSegmentFilePath: filepath.Join(markerDir, "segment"),
+		dir:                       dir,
+		lastMarkedSegmentFilePath: filepath.Join(dir, "segment"),
 	}
 
 	//TODO: Should this be in a separate Start() function?
 	go mfh.markSegmentAsync()
 
-	return mfh, nil
+	return mfh
+}
+
+func (mfh *markerFileHandler) Start() {
+	go mfh.markSegmentAsync()
 }
 
 // LastMarkedSegment implements wlog.Marker.
 func (mfh *markerFileHandler) LastMarkedSegment() int {
-	bb, err := ioutil.ReadFile(mfh.lastMarkedSegmentFilePath)
+	bb, err := os.ReadFile(mfh.lastMarkedSegmentFilePath)
 	if os.IsNotExist(err) {
 		level.Warn(mfh.logger).Log("msg", "marker segment file does not exist", "file", mfh.lastMarkedSegmentFilePath)
 		return -1

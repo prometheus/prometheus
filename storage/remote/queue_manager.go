@@ -428,10 +428,6 @@ type QueueManager struct {
 	highestRecvTimestamp *maxTimestamp
 }
 
-var (
-	_ wlog.WriteTo = (*QueueManager)(nil)
-)
-
 // NewQueueManager builds a new QueueManager and starts a new
 // WAL watcher with queue manager as the WriteTo destination.
 // The WAL watcher takes the dir parameter as the base directory
@@ -455,7 +451,7 @@ func NewQueueManager(
 	sm ReadyScrapeManager,
 	enableExemplarRemoteWrite bool,
 	enableNativeHistogramRemoteWrite bool,
-	markerHandler MarkerHandler,
+	markerDir string,
 ) *QueueManager {
 	if logger == nil {
 		logger = log.NewNopLogger()
@@ -484,8 +480,6 @@ func NewQueueManager(
 		seriesSegmentIndexes: make(map[chunks.HeadSeriesRef]int),
 		droppedSeries:        make(map[chunks.HeadSeriesRef]struct{}),
 
-		markerHandler: markerHandler,
-
 		numShards:   cfg.MinShards,
 		reshardChan: make(chan int),
 		quit:        make(chan struct{}),
@@ -505,6 +499,8 @@ func NewQueueManager(
 		t.metadataWatcher = NewMetadataWatcher(logger, sm, client.Name(), t, t.mcfg.SendInterval, flushDeadline)
 	}
 	t.shards = t.newShards()
+	markerFileHandler := NewMarkerFileHandler(logger, markerDir, client.Name())
+	t.markerHandler = NewMarkerHandler(logger, client.Name(), markerFileHandler)
 
 	return t
 }
@@ -796,6 +792,7 @@ func (t *QueueManager) Start() {
 
 	t.shards.start(t.numShards)
 	t.watcher.Start()
+	t.markerHandler.Start()
 	if t.mcfg.Send {
 		t.metadataWatcher.Start()
 	}
@@ -821,6 +818,7 @@ func (t *QueueManager) Stop() {
 	if t.mcfg.Send {
 		t.metadataWatcher.Stop()
 	}
+	// we should stop the marker last so that it can update the marker based on any last batches the shards sent
 	t.markerHandler.Stop()
 
 	// On shutdown, release the strings in the labels from the intern pool.
