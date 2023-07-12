@@ -205,9 +205,10 @@ func histogramQuantile(q float64, h *histogram.FloatHistogram) float64 {
 		return bucket.Upper
 	}
 
-	// if there are NaN observations in the histogram (h.Sum is NaN), use the forward iterator
-	// if the q < 0.5, use the forward iterator
-	// if the q >= 0.5, use the reverse iterator
+	// NaN observations increase h.Count but not the total number of
+	// observations in the buckets. Therefore, we have to use the forward
+	// iterator to find percentiles. We recognize histograms containing NaN
+	// observations by checking if their h.Sum is NaN.
 	if math.IsNaN(h.Sum) || q < 0.5 {
 		rank -= count - bucket.Count
 	} else {
