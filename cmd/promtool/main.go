@@ -92,6 +92,8 @@ func main() {
 
 	checkCmd := app.Command("check", "Check the resources for validity.")
 
+	experimental := app.Flag("experimental", "Enable experimental commands.").Bool()
+
 	sdCheckCmd := checkCmd.Command("service-discovery", "Perform service discovery for the given job name and report the results, including relabeling.")
 	sdConfigFile := sdCheckCmd.Arg("config-file", "The prometheus config file.").Required().ExistingFile()
 	sdJobName := sdCheckCmd.Arg("job", "The job to run service discovery for.").Required().String()
@@ -246,7 +248,7 @@ func main() {
 		"A list of one or more files containing recording rules to be backfilled. All recording rules listed in the files will be backfilled. Alerting rules are not evaluated.",
 	).Required().ExistingFiles()
 
-	promQLCmd := app.Command("promql", "PromQL formatting and editing.")
+	promQLCmd := app.Command("promql", "PromQL formatting and editing. Requires the --experimental flag.")
 
 	promQLFormatCmd := promQLCmd.Command("format", "Format PromQL query to pretty printed form.")
 	promQLFormatQuery := promQLFormatCmd.Arg("query", "PromQL query.").Required().String()
@@ -386,13 +388,23 @@ func main() {
 		os.Exit(checkErr(documentcli.GenerateMarkdown(app.Model(), os.Stdout)))
 
 	case promQLFormatCmd.FullCommand():
+		checkExperimental(*experimental)
 		os.Exit(checkErr(formatPromQL(*promQLFormatQuery)))
 
 	case promQLLabelsSetCmd.FullCommand():
+		checkExperimental(*experimental)
 		os.Exit(checkErr(labelsSetPromQL(*promQLLabelsSetQuery, *promQLLabelsSetType, *promQLLabelsSetName, *promQLLabelsSetValue)))
 
 	case promQLLabelsDeleteCmd.FullCommand():
+		checkExperimental(*experimental)
 		os.Exit(checkErr(labelsDeletePromQL(*promQLLabelsDeleteQuery, *promQLLabelsDeleteName)))
+	}
+}
+
+func checkExperimental(f bool) {
+	if !f {
+		fmt.Fprintln(os.Stderr, "This command is experimental and requires the --experimental flag to be set.")
+		os.Exit(1)
 	}
 }
 
