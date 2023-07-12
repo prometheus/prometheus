@@ -3591,7 +3591,60 @@ func newTestDB(t *testing.T) *DB {
 	return db
 }
 
+type recordRefTime struct {
+	Ref chunks.HeadSeriesRef
+	T   int64
+}
+
 func TestOOOWALWrite(t *testing.T) {
+	minutes := func(m int64) int64 { return m * time.Minute.Milliseconds() }
+	scenarios := map[string]struct {
+		name            string
+		appendSample    func(app storage.Appender, l labels.Labels, mins int64) (storage.SeriesRef, error)
+		recordsFromTime func(rt []recordRefTime) []interface{}
+	}{
+		"float": {
+			name: "float",
+			appendSample: func(app storage.Appender, l labels.Labels, mins int64) (storage.SeriesRef, error) {
+				seriesRef, err := app.Append(0, l, minutes(mins), float64(mins))
+				require.NoError(t, err)
+				return seriesRef, nil
+			},
+			recordsFromTime: func(rt []recordRefTime) []interface{} {
+				var records []interface{}
+				for _, r := range rt {
+					records = append(records, record.RefSample{Ref: r.Ref, T: minutes(r.T), V: float64(r.T)})
+				}
+				return records
+			},
+		},
+		"integer histogram": {
+			name: "integer histogram",
+			appendSample: func(app storage.Appender, l labels.Labels, mins int64) (storage.SeriesRef, error) {
+				seriesRef, err := app.AppendHistogram(0, l, minutes(mins), tsdbutil.GenerateTestHistogram(int(mins)), nil)
+				require.NoError(t, err)
+				return seriesRef, nil
+			},
+			recordsFromTime: func(rt []recordRefTime) []interface{} {
+				var records []interface{}
+				for _, r := range rt {
+					records = append(records, record.RefHistogramSample{Ref: r.Ref, T: minutes(r.T), H: tsdbutil.GenerateTestHistogram(int(r.T))})
+				}
+				return records
+			},
+		},
+	}
+	for name, scenario := range scenarios {
+		t.Run(name, func(t *testing.T) {
+			testOOOWALWrite(t, scenario.appendSample, scenario.recordsFromTime)
+		})
+	}
+}
+
+func testOOOWALWrite(t *testing.T,
+	appendSample func(app storage.Appender, l labels.Labels, mins int64) (storage.SeriesRef, error),
+	recordsFromTime func(rt []recordRefTime) []interface{},
+) {
 	dir := t.TempDir()
 
 	opts := DefaultOptions()
@@ -3600,18 +3653,13 @@ func TestOOOWALWrite(t *testing.T) {
 
 	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)
+	db.EnableNativeHistograms()
 
 	t.Cleanup(func() {
 		require.NoError(t, db.Close())
 	})
 
 	s1, s2 := labels.FromStrings("l", "v1"), labels.FromStrings("l", "v2")
-	minutes := func(m int64) int64 { return m * time.Minute.Milliseconds() }
-
-	appendSample := func(app storage.Appender, l labels.Labels, mins int64) {
-		_, err = app.Append(0, l, minutes(mins), float64(mins))
-		require.NoError(t, err)
-	}
 
 	// Ingest sample at 1h.
 	app := db.Appender(context.Background())
@@ -3657,51 +3705,33 @@ func TestOOOWALWrite(t *testing.T) {
 		[]record.RefMmapMarker{
 			{Ref: 1},
 		},
-		[]record.RefSample{
-			{Ref: 1, T: minutes(40), V: 40},
-		},
+		recordsFromTime([]recordRefTime{{1, 40}}),
 
 		[]record.RefMmapMarker{
 			{Ref: 2},
 		},
-		[]record.RefSample{
-			{Ref: 2, T: minutes(42), V: 42},
-		},
+		recordsFromTime([]recordRefTime{{2, 42}}),
 
-		[]record.RefSample{
-			{Ref: 2, T: minutes(45), V: 45},
-			{Ref: 1, T: minutes(35), V: 35},
-		},
+		recordsFromTime([]recordRefTime{{2, 45}, {1, 35}}),
 		[]record.RefMmapMarker{ // 3rd sample, hence m-mapped.
 			{Ref: 1, MmapRef: 4294967304},
 		},
-		[]record.RefSample{
-			{Ref: 1, T: minutes(36), V: 36},
-			{Ref: 1, T: minutes(37), V: 37},
-		},
+		recordsFromTime([]recordRefTime{{1, 36}, {1, 37}}),
 
 		[]record.RefMmapMarker{ // 3rd sample, hence m-mapped.
 			{Ref: 1, MmapRef: 4294967354},
 		},
-		[]record.RefSample{ // Does not contain the in-order sample here.
-			{Ref: 1, T: minutes(50), V: 50},
-		},
+		recordsFromTime([]recordRefTime{{1, 50}}), // Does not contain the in-order sample here.
 
 		// Single commit but multiple OOO records.
 		[]record.RefMmapMarker{
 			{Ref: 2, MmapRef: 4294967403},
 		},
-		[]record.RefSample{
-			{Ref: 2, T: minutes(50), V: 50},
-			{Ref: 2, T: minutes(51), V: 51},
-		},
+		recordsFromTime([]recordRefTime{{2, 50}, {2, 51}}),
 		[]record.RefMmapMarker{
 			{Ref: 2, MmapRef: 4294967452},
 		},
-		[]record.RefSample{
-			{Ref: 2, T: minutes(52), V: 52},
-			{Ref: 2, T: minutes(53), V: 53},
-		},
+		recordsFromTime([]recordRefTime{{2, 52}, {2, 53}}),
 	}
 
 	inOrderRecords := []interface{}{
@@ -3709,32 +3739,12 @@ func TestOOOWALWrite(t *testing.T) {
 			{Ref: 1, Labels: s1},
 			{Ref: 2, Labels: s2},
 		},
-		[]record.RefSample{
-			{Ref: 1, T: minutes(60), V: 60},
-			{Ref: 2, T: minutes(60), V: 60},
-		},
-		[]record.RefSample{
-			{Ref: 1, T: minutes(40), V: 40},
-		},
-		[]record.RefSample{
-			{Ref: 2, T: minutes(42), V: 42},
-		},
-		[]record.RefSample{
-			{Ref: 2, T: minutes(45), V: 45},
-			{Ref: 1, T: minutes(35), V: 35},
-			{Ref: 1, T: minutes(36), V: 36},
-			{Ref: 1, T: minutes(37), V: 37},
-		},
-		[]record.RefSample{ // Contains both in-order and ooo sample.
-			{Ref: 1, T: minutes(50), V: 50},
-			{Ref: 2, T: minutes(65), V: 65},
-		},
-		[]record.RefSample{
-			{Ref: 2, T: minutes(50), V: 50},
-			{Ref: 2, T: minutes(51), V: 51},
-			{Ref: 2, T: minutes(52), V: 52},
-			{Ref: 2, T: minutes(53), V: 53},
-		},
+		recordsFromTime([]recordRefTime{{1, 60}, {2, 60}}),
+		recordsFromTime([]recordRefTime{{1, 40}}),
+		recordsFromTime([]recordRefTime{{2, 42}}),
+		recordsFromTime([]recordRefTime{{2, 45}, {1, 35}, {1, 36}, {1, 37}}),
+		recordsFromTime([]recordRefTime{{1, 50}, {2, 65}}), // Contains both in-order and ooo sample.
+		recordsFromTime([]recordRefTime{{2, 50}, {2, 51}, {2, 52}, {2, 53}}),
 	}
 
 	getRecords := func(walDir string) []interface{} {
@@ -3764,6 +3774,10 @@ func TestOOOWALWrite(t *testing.T) {
 				markers, err := dec.MmapMarkers(rec, nil)
 				require.NoError(t, err)
 				records = append(records, markers)
+			case record.HistogramSamples:
+				histogramSamples, err := dec.HistogramSamples(rec, nil)
+				require.NoError(t, err)
+				records = append(records, histogramSamples)
 			default:
 				t.Fatalf("got a WAL record that is not series or samples: %v", typ)
 			}
@@ -3772,13 +3786,32 @@ func TestOOOWALWrite(t *testing.T) {
 		return records
 	}
 
+	assertEqualRecords := func(t *testing.T, expectedRecords, actRecs []interface{}) {
+		require.Equal(t, len(expectedRecords), len(actRecs))
+		for i, expected := range expectedRecords {
+			actual := actRecs[i]
+			switch v := actual.(type) {
+			case []record.RefMmapMarker:
+				require.Equal(t, expected, actual, "record %d", i)
+			case []record.RefSeries:
+				require.Equal(t, expected, actual, "record %d", i)
+			case []record.RefSample:
+				require.Equal(t, v, actual, "record %d", i)
+			case []record.RefHistogramSample:
+				require.Equal(t, v, actual, "record %d", i)
+			default:
+				require.Fail(t, "unexpected record type", "record %d", i)
+			}
+		}
+	}
+
 	// The normal WAL.
 	actRecs := getRecords(path.Join(dir, "wal"))
-	require.Equal(t, inOrderRecords, actRecs)
+	assertEqualRecords(t, inOrderRecords, actRecs)
 
 	// The OOO WAL.
 	actRecs = getRecords(path.Join(dir, wlog.WblDirName))
-	require.Equal(t, oooRecords, actRecs)
+	assertEqualRecords(t, oooRecords, actRecs)
 }
 
 // Tests https://github.com/prometheus/prometheus/issues/10291#issuecomment-1044373110.
