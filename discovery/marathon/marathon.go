@@ -107,15 +107,13 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return errors.New("marathon_sd: at most one of auth_token & auth_token_file must be configured")
 	}
 
-	isAuthTokenProvided := len(c.AuthToken) > 0 || len(c.AuthTokenFile) > 0
-	if isAuthTokenProvided {
-		if c.HTTPClientConfig.BasicAuth != nil {
+	if len(c.AuthToken) > 0 || len(c.AuthTokenFile) > 0 {
+		switch {
+		case c.HTTPClientConfig.BasicAuth != nil:
 			return errors.New("marathon_sd: at most one of basic_auth, auth_token & auth_token_file must be configured")
-		}
-		if len(c.HTTPClientConfig.BearerToken) > 0 || len(c.HTTPClientConfig.BearerTokenFile) > 0 {
+		case len(c.HTTPClientConfig.BearerToken) > 0 || len(c.HTTPClientConfig.BearerTokenFile) > 0:
 			return errors.New("marathon_sd: at most one of bearer_token, bearer_token_file, auth_token & auth_token_file must be configured")
-		}
-		if c.HTTPClientConfig.Authorization != nil {
+		case c.HTTPClientConfig.Authorization != nil:
 			return errors.New("marathon_sd: at most one of auth_token, auth_token_file & authorization must be configured")
 		}
 	}
