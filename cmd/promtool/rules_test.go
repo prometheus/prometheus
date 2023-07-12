@@ -28,13 +28,14 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
 type mockQueryRangeAPI struct {
 	samples model.Matrix
 }
 
-func (mockAPI mockQueryRangeAPI) QueryRange(ctx context.Context, query string, r v1.Range, opts ...v1.Option) (model.Value, v1.Warnings, error) {
+func (mockAPI mockQueryRangeAPI) QueryRange(_ context.Context, query string, r v1.Range, opts ...v1.Option) (model.Value, v1.Warnings, error) { // nolint:revive
 	return mockAPI.samples, v1.Warnings{}, nil
 }
 
@@ -99,7 +100,7 @@ func TestBackfillRuleIntegration(t *testing.T) {
 				require.Equal(t, 1, len(gRules))
 				require.Equal(t, "rule1", gRules[0].Name())
 				require.Equal(t, "ruleExpr", gRules[0].Query().String())
-				require.Equal(t, 1, len(gRules[0].Labels()))
+				require.Equal(t, 1, gRules[0].Labels().Len())
 
 				group2 := ruleImporter.groups[path2+";group2"]
 				require.NotNil(t, group2)
@@ -108,7 +109,7 @@ func TestBackfillRuleIntegration(t *testing.T) {
 				require.Equal(t, 2, len(g2Rules))
 				require.Equal(t, "grp2_rule1", g2Rules[0].Name())
 				require.Equal(t, "grp2_rule1_expr", g2Rules[0].Query().String())
-				require.Equal(t, 0, len(g2Rules[0].Labels()))
+				require.Equal(t, 0, g2Rules[0].Labels().Len())
 
 				// Backfill all recording rules then check the blocks to confirm the correct data was created.
 				errs = ruleImporter.importAll(ctx)
@@ -131,15 +132,15 @@ func TestBackfillRuleIntegration(t *testing.T) {
 				for selectedSeries.Next() {
 					seriesCount++
 					series := selectedSeries.At()
-					if len(series.Labels()) != 3 {
-						require.Equal(t, 2, len(series.Labels()))
+					if series.Labels().Len() != 3 {
+						require.Equal(t, 2, series.Labels().Len())
 						x := labels.FromStrings("__name__", "grp2_rule1", "name1", "val1")
 						require.Equal(t, x, series.Labels())
 					} else {
-						require.Equal(t, 3, len(series.Labels()))
+						require.Equal(t, 3, series.Labels().Len())
 					}
-					it := series.Iterator()
-					for it.Next() {
+					it := series.Iterator(nil)
+					for it.Next() == chunkenc.ValFloat {
 						samplesCount++
 						ts, v := it.At()
 						if v == testValue {
@@ -160,7 +161,7 @@ func TestBackfillRuleIntegration(t *testing.T) {
 	}
 }
 
-func newTestRuleImporter(ctx context.Context, start time.Time, tmpDir string, testSamples model.Matrix, maxBlockDuration time.Duration) (*ruleImporter, error) {
+func newTestRuleImporter(_ context.Context, start time.Time, tmpDir string, testSamples model.Matrix, maxBlockDuration time.Duration) (*ruleImporter, error) {
 	logger := log.NewNopLogger()
 	cfg := ruleImporterConfig{
 		outputDir:        tmpDir,

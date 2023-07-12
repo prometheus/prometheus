@@ -193,7 +193,7 @@ func (p *queryLogTest) String() string {
 	}
 	name = name + ", " + p.host + ":" + strconv.Itoa(p.port)
 	if p.enabledAtStart {
-		name = name + ", enabled at start"
+		name += ", enabled at start"
 	}
 	if p.prefix != "" {
 		name = name + ", with prefix " + p.prefix

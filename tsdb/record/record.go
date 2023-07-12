@@ -17,10 +17,10 @@ package record
 
 import (
 	"math"
-	"sort"
 
 	"github.com/pkg/errors"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/storage"
@@ -47,6 +47,10 @@ const (
 	MmapMarkers Type = 5
 	// Metadata is used to match WAL records of type Metadata.
 	Metadata Type = 6
+	// HistogramSamples is used to match WAL records of type Histograms.
+	HistogramSamples Type = 7
+	// FloatHistogramSamples is used to match WAL records of type Float Histograms.
+	FloatHistogramSamples Type = 8
 )
 
 func (rt Type) String() string {
@@ -55,10 +59,14 @@ func (rt Type) String() string {
 		return "series"
 	case Samples:
 		return "samples"
-	case Exemplars:
-		return "exemplars"
 	case Tombstones:
 		return "tombstones"
+	case Exemplars:
+		return "exemplars"
+	case HistogramSamples:
+		return "histogram_samples"
+	case FloatHistogramSamples:
+		return "float_histogram_samples"
 	case MmapMarkers:
 		return "mmapmarkers"
 	case Metadata:
@@ -72,14 +80,14 @@ func (rt Type) String() string {
 type MetricType uint8
 
 const (
-	UnknownMT      MetricType = 0
-	Counter        MetricType = 1
-	Gauge          MetricType = 2
-	Histogram      MetricType = 3
-	GaugeHistogram MetricType = 4
-	Summary        MetricType = 5
-	Info           MetricType = 6
-	Stateset       MetricType = 7
+	UnknownMT       MetricType = 0
+	Counter         MetricType = 1
+	Gauge           MetricType = 2
+	HistogramSample MetricType = 3
+	GaugeHistogram  MetricType = 4
+	Summary         MetricType = 5
+	Info            MetricType = 6
+	Stateset        MetricType = 7
 )
 
 func GetMetricType(t textparse.MetricType) uint8 {
@@ -89,7 +97,7 @@ func GetMetricType(t textparse.MetricType) uint8 {
 	case textparse.MetricTypeGauge:
 		return uint8(Gauge)
 	case textparse.MetricTypeHistogram:
-		return uint8(Histogram)
+		return uint8(HistogramSample)
 	case textparse.MetricTypeGaugeHistogram:
 		return uint8(GaugeHistogram)
 	case textparse.MetricTypeSummary:
@@ -109,7 +117,7 @@ func ToTextparseMetricType(m uint8) textparse.MetricType {
 		return textparse.MetricTypeCounter
 	case uint8(Gauge):
 		return textparse.MetricTypeGauge
-	case uint8(Histogram):
+	case uint8(HistogramSample):
 		return textparse.MetricTypeHistogram
 	case uint8(GaugeHistogram):
 		return textparse.MetricTypeGaugeHistogram
@@ -139,6 +147,7 @@ type RefSeries struct {
 }
 
 // RefSample is a timestamp/value pair associated with a reference to a series.
+// TODO(beorn7): Perhaps make this "polymorphic", including histogram and float-histogram pointers? Then get rid of RefHistogramSample.
 type RefSample struct {
 	Ref chunks.HeadSeriesRef
 	T   int64
@@ -161,6 +170,20 @@ type RefExemplar struct {
 	Labels labels.Labels
 }
 
+// RefHistogramSample is a histogram.
+type RefHistogramSample struct {
+	Ref chunks.HeadSeriesRef
+	T   int64
+	H   *histogram.Histogram
+}
+
+// RefFloatHistogramSample is a float histogram.
+type RefFloatHistogramSample struct {
+	Ref chunks.HeadSeriesRef
+	T   int64
+	FH  *histogram.FloatHistogram
+}
+
 // RefMmapMarker marks that the all the samples of the given series until now have been m-mapped to disk.
 type RefMmapMarker struct {
 	Ref     chunks.HeadSeriesRef
@@ -169,7 +192,9 @@ type RefMmapMarker struct {
 
 // Decoder decodes series, sample, metadata and tombstone records.
 // The zero value is ready to use.
-type Decoder struct{}
+type Decoder struct {
+	builder labels.ScratchBuilder
+}
 
 // Type returns the type of the record.
 // Returns RecordUnknown if no valid record type is found.
@@ -178,7 +203,7 @@ func (d *Decoder) Type(rec []byte) Type {
 		return Unknown
 	}
 	switch t := Type(rec[0]); t {
-	case Series, Samples, Tombstones, Exemplars, MmapMarkers, Metadata:
+	case Series, Samples, Tombstones, Exemplars, MmapMarkers, Metadata, HistogramSamples, FloatHistogramSamples:
 		return t
 	}
 	return Unknown
@@ -254,14 +279,15 @@ func (d *Decoder) Metadata(rec []byte, metadata []RefMetadata) ([]RefMetadata, e
 
 // DecodeLabels decodes one set of labels from buf.
 func (d *Decoder) DecodeLabels(dec *encoding.Decbuf) labels.Labels {
-	lset := make(labels.Labels, dec.Uvarint())
-
-	for i := range lset {
-		lset[i].Name = dec.UvarintStr()
-		lset[i].Value = dec.UvarintStr()
+	// TODO: reconsider if this function could be pushed down into labels.Labels to be more efficient.
+	d.builder.Reset()
+	nLabels := dec.Uvarint()
+	for i := 0; i < nLabels; i++ {
+		lName := dec.UvarintStr()
+		lValue := dec.UvarintStr()
+		d.builder.Add(lName, lValue)
 	}
-	sort.Sort(lset)
-	return lset
+	return d.builder.Labels()
 }
 
 // Samples appends samples in rec to the given slice.
@@ -392,6 +418,170 @@ func (d *Decoder) MmapMarkers(rec []byte, markers []RefMmapMarker) ([]RefMmapMar
 	return markers, nil
 }
 
+func (d *Decoder) HistogramSamples(rec []byte, histograms []RefHistogramSample) ([]RefHistogramSample, error) {
+	dec := encoding.Decbuf{B: rec}
+	t := Type(dec.Byte())
+	if t != HistogramSamples {
+		return nil, errors.New("invalid record type")
+	}
+	if dec.Len() == 0 {
+		return histograms, nil
+	}
+	var (
+		baseRef  = dec.Be64()
+		baseTime = dec.Be64int64()
+	)
+	for len(dec.B) > 0 && dec.Err() == nil {
+		dref := dec.Varint64()
+		dtime := dec.Varint64()
+
+		rh := RefHistogramSample{
+			Ref: chunks.HeadSeriesRef(baseRef + uint64(dref)),
+			T:   baseTime + dtime,
+			H:   &histogram.Histogram{},
+		}
+
+		DecodeHistogram(&dec, rh.H)
+		histograms = append(histograms, rh)
+	}
+
+	if dec.Err() != nil {
+		return nil, errors.Wrapf(dec.Err(), "decode error after %d histograms", len(histograms))
+	}
+	if len(dec.B) > 0 {
+		return nil, errors.Errorf("unexpected %d bytes left in entry", len(dec.B))
+	}
+	return histograms, nil
+}
+
+// DecodeHistogram decodes a Histogram from a byte slice.
+func DecodeHistogram(buf *encoding.Decbuf, h *histogram.Histogram) {
+	h.CounterResetHint = histogram.CounterResetHint(buf.Byte())
+
+	h.Schema = int32(buf.Varint64())
+	h.ZeroThreshold = math.Float64frombits(buf.Be64())
+
+	h.ZeroCount = buf.Uvarint64()
+	h.Count = buf.Uvarint64()
+	h.Sum = math.Float64frombits(buf.Be64())
+
+	l := buf.Uvarint()
+	if l > 0 {
+		h.PositiveSpans = make([]histogram.Span, l)
+	}
+	for i := range h.PositiveSpans {
+		h.PositiveSpans[i].Offset = int32(buf.Varint64())
+		h.PositiveSpans[i].Length = buf.Uvarint32()
+	}
+
+	l = buf.Uvarint()
+	if l > 0 {
+		h.NegativeSpans = make([]histogram.Span, l)
+	}
+	for i := range h.NegativeSpans {
+		h.NegativeSpans[i].Offset = int32(buf.Varint64())
+		h.NegativeSpans[i].Length = buf.Uvarint32()
+	}
+
+	l = buf.Uvarint()
+	if l > 0 {
+		h.PositiveBuckets = make([]int64, l)
+	}
+	for i := range h.PositiveBuckets {
+		h.PositiveBuckets[i] = buf.Varint64()
+	}
+
+	l = buf.Uvarint()
+	if l > 0 {
+		h.NegativeBuckets = make([]int64, l)
+	}
+	for i := range h.NegativeBuckets {
+		h.NegativeBuckets[i] = buf.Varint64()
+	}
+}
+
+func (d *Decoder) FloatHistogramSamples(rec []byte, histograms []RefFloatHistogramSample) ([]RefFloatHistogramSample, error) {
+	dec := encoding.Decbuf{B: rec}
+	t := Type(dec.Byte())
+	if t != FloatHistogramSamples {
+		return nil, errors.New("invalid record type")
+	}
+	if dec.Len() == 0 {
+		return histograms, nil
+	}
+	var (
+		baseRef  = dec.Be64()
+		baseTime = dec.Be64int64()
+	)
+	for len(dec.B) > 0 && dec.Err() == nil {
+		dref := dec.Varint64()
+		dtime := dec.Varint64()
+
+		rh := RefFloatHistogramSample{
+			Ref: chunks.HeadSeriesRef(baseRef + uint64(dref)),
+			T:   baseTime + dtime,
+			FH:  &histogram.FloatHistogram{},
+		}
+
+		DecodeFloatHistogram(&dec, rh.FH)
+		histograms = append(histograms, rh)
+	}
+
+	if dec.Err() != nil {
+		return nil, errors.Wrapf(dec.Err(), "decode error after %d histograms", len(histograms))
+	}
+	if len(dec.B) > 0 {
+		return nil, errors.Errorf("unexpected %d bytes left in entry", len(dec.B))
+	}
+	return histograms, nil
+}
+
+// Decode decodes a Histogram from a byte slice.
+func DecodeFloatHistogram(buf *encoding.Decbuf, fh *histogram.FloatHistogram) {
+	fh.CounterResetHint = histogram.CounterResetHint(buf.Byte())
+
+	fh.Schema = int32(buf.Varint64())
+	fh.ZeroThreshold = buf.Be64Float64()
+
+	fh.ZeroCount = buf.Be64Float64()
+	fh.Count = buf.Be64Float64()
+	fh.Sum = buf.Be64Float64()
+
+	l := buf.Uvarint()
+	if l > 0 {
+		fh.PositiveSpans = make([]histogram.Span, l)
+	}
+	for i := range fh.PositiveSpans {
+		fh.PositiveSpans[i].Offset = int32(buf.Varint64())
+		fh.PositiveSpans[i].Length = buf.Uvarint32()
+	}
+
+	l = buf.Uvarint()
+	if l > 0 {
+		fh.NegativeSpans = make([]histogram.Span, l)
+	}
+	for i := range fh.NegativeSpans {
+		fh.NegativeSpans[i].Offset = int32(buf.Varint64())
+		fh.NegativeSpans[i].Length = buf.Uvarint32()
+	}
+
+	l = buf.Uvarint()
+	if l > 0 {
+		fh.PositiveBuckets = make([]float64, l)
+	}
+	for i := range fh.PositiveBuckets {
+		fh.PositiveBuckets[i] = buf.Be64Float64()
+	}
+
+	l = buf.Uvarint()
+	if l > 0 {
+		fh.NegativeBuckets = make([]float64, l)
+	}
+	for i := range fh.NegativeBuckets {
+		fh.NegativeBuckets[i] = buf.Be64Float64()
+	}
+}
+
 // Encoder encodes series, sample, and tombstones records.
 // The zero value is ready to use.
 type Encoder struct{}
@@ -430,12 +620,13 @@ func (e *Encoder) Metadata(metadata []RefMetadata, b []byte) []byte {
 
 // EncodeLabels encodes the contents of labels into buf.
 func EncodeLabels(buf *encoding.Encbuf, lbls labels.Labels) {
-	buf.PutUvarint(len(lbls))
+	// TODO: reconsider if this function could be pushed down into labels.Labels to be more efficient.
+	buf.PutUvarint(lbls.Len())
 
-	for _, l := range lbls {
+	lbls.Range(func(l labels.Label) {
 		buf.PutUvarintStr(l.Name)
 		buf.PutUvarintStr(l.Value)
-	}
+	})
 }
 
 // Samples appends the encoded samples to b and returns the resulting slice.
@@ -516,4 +707,120 @@ func (e *Encoder) MmapMarkers(markers []RefMmapMarker, b []byte) []byte {
 	}
 
 	return buf.Get()
+}
+
+func (e *Encoder) HistogramSamples(histograms []RefHistogramSample, b []byte) []byte {
+	buf := encoding.Encbuf{B: b}
+	buf.PutByte(byte(HistogramSamples))
+
+	if len(histograms) == 0 {
+		return buf.Get()
+	}
+
+	// Store base timestamp and base reference number of first histogram.
+	// All histograms encode their timestamp and ref as delta to those.
+	first := histograms[0]
+	buf.PutBE64(uint64(first.Ref))
+	buf.PutBE64int64(first.T)
+
+	for _, h := range histograms {
+		buf.PutVarint64(int64(h.Ref) - int64(first.Ref))
+		buf.PutVarint64(h.T - first.T)
+
+		EncodeHistogram(&buf, h.H)
+	}
+
+	return buf.Get()
+}
+
+// EncodeHistogram encodes a Histogram into a byte slice.
+func EncodeHistogram(buf *encoding.Encbuf, h *histogram.Histogram) {
+	buf.PutByte(byte(h.CounterResetHint))
+
+	buf.PutVarint64(int64(h.Schema))
+	buf.PutBE64(math.Float64bits(h.ZeroThreshold))
+
+	buf.PutUvarint64(h.ZeroCount)
+	buf.PutUvarint64(h.Count)
+	buf.PutBE64(math.Float64bits(h.Sum))
+
+	buf.PutUvarint(len(h.PositiveSpans))
+	for _, s := range h.PositiveSpans {
+		buf.PutVarint64(int64(s.Offset))
+		buf.PutUvarint32(s.Length)
+	}
+
+	buf.PutUvarint(len(h.NegativeSpans))
+	for _, s := range h.NegativeSpans {
+		buf.PutVarint64(int64(s.Offset))
+		buf.PutUvarint32(s.Length)
+	}
+
+	buf.PutUvarint(len(h.PositiveBuckets))
+	for _, b := range h.PositiveBuckets {
+		buf.PutVarint64(b)
+	}
+
+	buf.PutUvarint(len(h.NegativeBuckets))
+	for _, b := range h.NegativeBuckets {
+		buf.PutVarint64(b)
+	}
+}
+
+func (e *Encoder) FloatHistogramSamples(histograms []RefFloatHistogramSample, b []byte) []byte {
+	buf := encoding.Encbuf{B: b}
+	buf.PutByte(byte(FloatHistogramSamples))
+
+	if len(histograms) == 0 {
+		return buf.Get()
+	}
+
+	// Store base timestamp and base reference number of first histogram.
+	// All histograms encode their timestamp and ref as delta to those.
+	first := histograms[0]
+	buf.PutBE64(uint64(first.Ref))
+	buf.PutBE64int64(first.T)
+
+	for _, h := range histograms {
+		buf.PutVarint64(int64(h.Ref) - int64(first.Ref))
+		buf.PutVarint64(h.T - first.T)
+
+		EncodeFloatHistogram(&buf, h.FH)
+	}
+
+	return buf.Get()
+}
+
+// Encode encodes the Float Histogram into a byte slice.
+func EncodeFloatHistogram(buf *encoding.Encbuf, h *histogram.FloatHistogram) {
+	buf.PutByte(byte(h.CounterResetHint))
+
+	buf.PutVarint64(int64(h.Schema))
+	buf.PutBEFloat64(h.ZeroThreshold)
+
+	buf.PutBEFloat64(h.ZeroCount)
+	buf.PutBEFloat64(h.Count)
+	buf.PutBEFloat64(h.Sum)
+
+	buf.PutUvarint(len(h.PositiveSpans))
+	for _, s := range h.PositiveSpans {
+		buf.PutVarint64(int64(s.Offset))
+		buf.PutUvarint32(s.Length)
+	}
+
+	buf.PutUvarint(len(h.NegativeSpans))
+	for _, s := range h.NegativeSpans {
+		buf.PutVarint64(int64(s.Offset))
+		buf.PutUvarint32(s.Length)
+	}
+
+	buf.PutUvarint(len(h.PositiveBuckets))
+	for _, b := range h.PositiveBuckets {
+		buf.PutBEFloat64(b)
+	}
+
+	buf.PutUvarint(len(h.NegativeBuckets))
+	for _, b := range h.NegativeBuckets {
+		buf.PutBEFloat64(b)
+	}
 }

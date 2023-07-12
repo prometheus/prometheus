@@ -15,11 +15,13 @@
 package record
 
 import (
+	"math/rand"
 	"testing"
 
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
@@ -107,6 +109,78 @@ func TestRecord_EncodeDecode(t *testing.T) {
 	decExemplars, err := dec.Exemplars(enc.Exemplars(exemplars, nil), nil)
 	require.NoError(t, err)
 	require.Equal(t, exemplars, decExemplars)
+
+	histograms := []RefHistogramSample{
+		{
+			Ref: 56,
+			T:   1234,
+			H: &histogram.Histogram{
+				Count:         5,
+				ZeroCount:     2,
+				ZeroThreshold: 0.001,
+				Sum:           18.4 * rand.Float64(),
+				Schema:        1,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []int64{1, 1, -1, 0},
+			},
+		},
+		{
+			Ref: 42,
+			T:   5678,
+			H: &histogram.Histogram{
+				Count:         11,
+				ZeroCount:     4,
+				ZeroThreshold: 0.001,
+				Sum:           35.5,
+				Schema:        1,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 2, Length: 2},
+				},
+				PositiveBuckets: []int64{1, 1, -1, 0},
+				NegativeSpans: []histogram.Span{
+					{Offset: 0, Length: 1},
+					{Offset: 1, Length: 2},
+				},
+				NegativeBuckets: []int64{1, 2, -1},
+			},
+		},
+	}
+
+	decHistograms, err := dec.HistogramSamples(enc.HistogramSamples(histograms, nil), nil)
+	require.NoError(t, err)
+	require.Equal(t, histograms, decHistograms)
+
+	floatHistograms := make([]RefFloatHistogramSample, len(histograms))
+	for i, h := range histograms {
+		floatHistograms[i] = RefFloatHistogramSample{
+			Ref: h.Ref,
+			T:   h.T,
+			FH:  h.H.ToFloat(),
+		}
+	}
+	decFloatHistograms, err := dec.FloatHistogramSamples(enc.FloatHistogramSamples(floatHistograms, nil), nil)
+	require.NoError(t, err)
+	require.Equal(t, floatHistograms, decFloatHistograms)
+
+	// Gauge ingeger histograms.
+	for i := range histograms {
+		histograms[i].H.CounterResetHint = histogram.GaugeType
+	}
+	decHistograms, err = dec.HistogramSamples(enc.HistogramSamples(histograms, nil), nil)
+	require.NoError(t, err)
+	require.Equal(t, histograms, decHistograms)
+
+	// Gauge float histograms.
+	for i := range floatHistograms {
+		floatHistograms[i].FH.CounterResetHint = histogram.GaugeType
+	}
+	decFloatHistograms, err = dec.FloatHistogramSamples(enc.FloatHistogramSamples(floatHistograms, nil), nil)
+	require.NoError(t, err)
+	require.Equal(t, floatHistograms, decFloatHistograms)
 }
 
 // TestRecord_Corrupted ensures that corrupted records return the correct error.
@@ -170,6 +244,31 @@ func TestRecord_Corrupted(t *testing.T) {
 		_, err := dec.Metadata(corrupted, nil)
 		require.Equal(t, errors.Cause(err), encoding.ErrInvalidSize)
 	})
+
+	t.Run("Test corrupted histogram record", func(t *testing.T) {
+		histograms := []RefHistogramSample{
+			{
+				Ref: 56,
+				T:   1234,
+				H: &histogram.Histogram{
+					Count:         5,
+					ZeroCount:     2,
+					ZeroThreshold: 0.001,
+					Sum:           18.4 * rand.Float64(),
+					Schema:        1,
+					PositiveSpans: []histogram.Span{
+						{Offset: 0, Length: 2},
+						{Offset: 1, Length: 2},
+					},
+					PositiveBuckets: []int64{1, 1, -1, 0},
+				},
+			},
+		}
+
+		corrupted := enc.HistogramSamples(histograms, nil)[:8]
+		_, err := dec.HistogramSamples(corrupted, nil)
+		require.Equal(t, errors.Cause(err), encoding.ErrInvalidSize)
+	})
 }
 
 func TestRecord_Type(t *testing.T) {
@@ -191,6 +290,27 @@ func TestRecord_Type(t *testing.T) {
 	metadata := []RefMetadata{{Ref: 147, Type: uint8(Counter), Unit: "unit", Help: "help"}}
 	recordType = dec.Type(enc.Metadata(metadata, nil))
 	require.Equal(t, Metadata, recordType)
+
+	histograms := []RefHistogramSample{
+		{
+			Ref: 56,
+			T:   1234,
+			H: &histogram.Histogram{
+				Count:         5,
+				ZeroCount:     2,
+				ZeroThreshold: 0.001,
+				Sum:           18.4 * rand.Float64(),
+				Schema:        1,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []int64{1, 1, -1, 0},
+			},
+		},
+	}
+	recordType = dec.Type(enc.HistogramSamples(histograms, nil))
+	require.Equal(t, HistogramSamples, recordType)
 
 	recordType = dec.Type(nil)
 	require.Equal(t, Unknown, recordType)

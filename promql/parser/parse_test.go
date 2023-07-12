@@ -2029,7 +2029,7 @@ var testExpr = []struct {
 	{
 		input:  `foo[5y1hs]`,
 		fail:   true,
-		errMsg: "not a valid duration string: \"5y1hs\"",
+		errMsg: "unknown unit \"hs\" in duration \"5y1hs\"",
 	},
 	{
 		input:  `foo[5m1h]`,
@@ -3592,7 +3592,7 @@ func TestNaNExpression(t *testing.T) {
 
 	nl, ok := expr.(*NumberLiteral)
 	require.True(t, ok, "expected number literal but got %T", expr)
-	require.True(t, math.IsNaN(float64(nl.Val)), "expected 'NaN' in number literal but got %v", nl.Val)
+	require.True(t, math.IsNaN(nl.Val), "expected 'NaN' in number literal but got %v", nl.Val)
 }
 
 var testSeries = []struct {
@@ -3714,7 +3714,7 @@ func TestParseSeries(t *testing.T) {
 }
 
 func TestRecoverParserRuntime(t *testing.T) {
-	p := newParser("foo bar")
+	p := NewParser("foo bar")
 	var err error
 
 	defer func() {
@@ -3728,7 +3728,7 @@ func TestRecoverParserRuntime(t *testing.T) {
 }
 
 func TestRecoverParserError(t *testing.T) {
-	p := newParser("foo bar")
+	p := NewParser("foo bar")
 	var err error
 
 	e := errors.New("custom error")
@@ -3775,4 +3775,21 @@ func TestExtractSelectors(t *testing.T) {
 
 		require.Equal(t, expected, ExtractSelectors(expr))
 	}
+}
+
+func TestParseCustomFunctions(t *testing.T) {
+	funcs := Functions
+	funcs["custom_func"] = &Function{
+		Name:       "custom_func",
+		ArgTypes:   []ValueType{ValueTypeMatrix},
+		ReturnType: ValueTypeVector,
+	}
+	input := "custom_func(metric[1m])"
+	p := NewParser(input, WithFunctions(funcs))
+	expr, err := p.ParseExpr()
+	require.NoError(t, err)
+
+	call, ok := expr.(*Call)
+	require.True(t, ok)
+	require.Equal(t, "custom_func", call.Func.Name)
 }

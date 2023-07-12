@@ -161,7 +161,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 	return d, nil
 }
 
-func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
+func (d *Discovery) refresh(context.Context) ([]*targetgroup.Group, error) {
 	opts := &nomad.QueryOptions{
 		AllowStale: d.allowStale,
 	}

@@ -27,7 +27,7 @@ local template = grafana.template;
             instance: { alias: 'Instance' },
             version: { alias: 'Version' },
             'Value #A': { alias: 'Count', type: 'hidden' },
-            'Value #B': { alias: 'Uptime' },
+            'Value #B': { alias: 'Uptime', type: 'number', unit: 's' },
           })
         )
       )
@@ -314,7 +314,7 @@ local template = grafana.template;
         template.new(
           'cluster',
           '$datasource',
-          'label_values(kube_pod_container_info{image=~".*prometheus.*"}, cluster)' % $._config,
+          'label_values(prometheus_build_info, cluster)' % $._config,
           refresh='time',
           current={
             selected: true,

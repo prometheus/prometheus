@@ -48,7 +48,7 @@ type Ingress struct {
 // NewIngress returns a new ingress discovery.
 func NewIngress(l log.Logger, inf cache.SharedInformer) *Ingress {
 	s := &Ingress{logger: l, informer: inf, store: inf.GetStore(), queue: workqueue.NewNamed("ingress")}
-	s.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+	_, err := s.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
 			ingressAddCount.Inc()
 			s.enqueue(o)
@@ -62,6 +62,9 @@ func NewIngress(l log.Logger, inf cache.SharedInformer) *Ingress {
 			s.enqueue(o)
 		},
 	})
+	if err != nil {
+		level.Error(l).Log("msg", "Error adding ingresses event handler.", "err", err)
+	}
 	return s
 }
 
@@ -86,7 +89,7 @@ func (i *Ingress) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	}
 
 	go func() {
-		for i.process(ctx, ch) {
+		for i.process(ctx, ch) { // nolint:revive
 		}
 	}()
 

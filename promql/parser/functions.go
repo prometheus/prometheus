@@ -163,6 +163,21 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeVector},
 		ReturnType: ValueTypeVector,
 	},
+	"histogram_count": {
+		Name:       "histogram_count",
+		ArgTypes:   []ValueType{ValueTypeVector},
+		ReturnType: ValueTypeVector,
+	},
+	"histogram_sum": {
+		Name:       "histogram_sum",
+		ArgTypes:   []ValueType{ValueTypeVector},
+		ReturnType: ValueTypeVector,
+	},
+	"histogram_fraction": {
+		Name:       "histogram_fraction",
+		ArgTypes:   []ValueType{ValueTypeScalar, ValueTypeScalar, ValueTypeVector},
+		ReturnType: ValueTypeVector,
+	},
 	"histogram_quantile": {
 		Name:       "histogram_quantile",
 		ArgTypes:   []ValueType{ValueTypeScalar, ValueTypeVector},
@@ -372,7 +387,7 @@ var Functions = map[string]*Function{
 }
 
 // getFunction returns a predefined Function object for the given name.
-func getFunction(name string) (*Function, bool) {
-	function, ok := Functions[name]
+func getFunction(name string, functions map[string]*Function) (*Function, bool) {
+	function, ok := functions[name]
 	return function, ok
 }

@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
 type backfillSample struct {
@@ -43,14 +44,14 @@ func sortSamples(samples []backfillSample) {
 	})
 }
 
-func queryAllSeries(t testing.TB, q storage.Querier, expectedMinTime, expectedMaxTime int64) []backfillSample {
+func queryAllSeries(t testing.TB, q storage.Querier, expectedMinTime, expectedMaxTime int64) []backfillSample { // nolint:revive
 	ss := q.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
 	samples := []backfillSample{}
 	for ss.Next() {
 		series := ss.At()
-		it := series.Iterator()
+		it := series.Iterator(nil)
 		require.NoError(t, it.Err())
-		for it.Next() {
+		for it.Next() == chunkenc.ValFloat {
 			ts, v := it.At()
 			samples = append(samples, backfillSample{Timestamp: ts, Value: v, Labels: series.Labels()})
 		}

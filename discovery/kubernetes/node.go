@@ -55,7 +55,7 @@ func NewNode(l log.Logger, inf cache.SharedInformer) *Node {
 		l = log.NewNopLogger()
 	}
 	n := &Node{logger: l, informer: inf, store: inf.GetStore(), queue: workqueue.NewNamed("node")}
-	n.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+	_, err := n.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
 			nodeAddCount.Inc()
 			n.enqueue(o)
@@ -69,6 +69,9 @@ func NewNode(l log.Logger, inf cache.SharedInformer) *Node {
 			n.enqueue(o)
 		},
 	})
+	if err != nil {
+		level.Error(l).Log("msg", "Error adding nodes event handler.", "err", err)
+	}
 	return n
 }
 
@@ -93,7 +96,7 @@ func (n *Node) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	}
 
 	go func() {
-		for n.process(ctx, ch) {
+		for n.process(ctx, ch) { // nolint:revive
 		}
 	}()
 
@@ -206,7 +209,7 @@ func (n *Node) buildNode(node *apiv1.Node) *targetgroup.Group {
 	return tg
 }
 
-// nodeAddresses returns the provided node's address, based on the priority:
+// nodeAddress returns the provided node's address, based on the priority:
 // 1. NodeInternalIP
 // 2. NodeInternalDNS
 // 3. NodeExternalIP

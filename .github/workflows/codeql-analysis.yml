@@ -1,7 +1,7 @@
 ---
 name: "CodeQL"
 
-on:  # yamllint disable-line rule:truthy
+on:
   workflow_call:
   schedule:
     - cron: "26 14 * * 1"
@@ -21,9 +21,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
-      - uses: actions/setup-go@v3
+      - uses: actions/setup-go@v4
         with:
-          go-version: '>=1.19 <1.20'
+          go-version: '>=1.20 <1.21'
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v2

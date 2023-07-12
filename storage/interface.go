@@ -19,6 +19,7 @@ import (
 	"fmt"
 
 	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -35,11 +36,16 @@ var (
 	// ErrTooOldSample is when out of order support is enabled but the sample is outside the time window allowed.
 	ErrTooOldSample = errors.New("too old sample")
 	// ErrDuplicateSampleForTimestamp is when the sample has same timestamp but different value.
-	ErrDuplicateSampleForTimestamp = errors.New("duplicate sample for timestamp")
-	ErrOutOfOrderExemplar          = errors.New("out of order exemplar")
-	ErrDuplicateExemplar           = errors.New("duplicate exemplar")
-	ErrExemplarLabelLength         = fmt.Errorf("label length for exemplar exceeds maximum of %d UTF-8 characters", exemplar.ExemplarMaxLabelSetLength)
-	ErrExemplarsDisabled           = fmt.Errorf("exemplar storage is disabled or max exemplars is less than or equal to 0")
+	ErrDuplicateSampleForTimestamp   = errors.New("duplicate sample for timestamp")
+	ErrOutOfOrderExemplar            = errors.New("out of order exemplar")
+	ErrDuplicateExemplar             = errors.New("duplicate exemplar")
+	ErrExemplarLabelLength           = fmt.Errorf("label length for exemplar exceeds maximum of %d UTF-8 characters", exemplar.ExemplarMaxLabelSetLength)
+	ErrExemplarsDisabled             = fmt.Errorf("exemplar storage is disabled or max exemplars is less than or equal to 0")
+	ErrNativeHistogramsDisabled      = fmt.Errorf("native histograms are disabled")
+	ErrHistogramCountNotBigEnough    = errors.New("histogram's observation count should be at least the number of observations found in the buckets")
+	ErrHistogramNegativeBucketCount  = errors.New("histogram has a bucket whose observation count is negative")
+	ErrHistogramSpanNegativeOffset   = errors.New("histogram has a span whose offset is negative")
+	ErrHistogramSpansBucketsMismatch = errors.New("histogram spans specify different number of buckets than provided")
 )
 
 // SeriesRef is a generic series reference. In prometheus it is either a
@@ -93,7 +99,7 @@ type MockQueryable struct {
 	MockQuerier Querier
 }
 
-func (q *MockQueryable) Querier(ctx context.Context, mint, maxt int64) (Querier, error) {
+func (q *MockQueryable) Querier(context.Context, int64, int64) (Querier, error) {
 	return q.MockQuerier, nil
 }
 
@@ -112,11 +118,11 @@ type MockQuerier struct {
 	SelectMockFunction func(sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) SeriesSet
 }
 
-func (q *MockQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, Warnings, error) {
+func (q *MockQuerier) LabelValues(string, ...*labels.Matcher) ([]string, Warnings, error) {
 	return nil, nil, nil
 }
 
-func (q *MockQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, Warnings, error) {
+func (q *MockQuerier) LabelNames(...*labels.Matcher) ([]string, Warnings, error) {
 	return nil, nil, nil
 }
 
@@ -207,6 +213,9 @@ func (f QueryableFunc) Querier(ctx context.Context, mint, maxt int64) (Querier, 
 // It must be completed with a call to Commit or Rollback and must not be reused afterwards.
 //
 // Operations on the Appender interface are not goroutine-safe.
+//
+// The type of samples (float64, histogram, etc) appended for a given series must remain same within an Appender.
+// The behaviour is undefined if samples of different types are appended to the same series in a single Commit().
 type Appender interface {
 	// Append adds a sample pair for the given series.
 	// An optional series reference can be provided to accelerate calls.
@@ -227,7 +236,9 @@ type Appender interface {
 	// Rollback rolls back all modifications made in the appender so far.
 	// Appender has to be discarded after rollback.
 	Rollback() error
+
 	ExemplarAppender
+	HistogramAppender
 	MetadataUpdater
 }
 
@@ -237,7 +248,8 @@ type GetRef interface {
 	// Returns reference number that can be used to pass to Appender.Append(),
 	// and a set of labels that will not cause another copy when passed to Appender.Append().
 	// 0 means the appender does not have a reference to this series.
-	GetRef(lset labels.Labels) (SeriesRef, labels.Labels)
+	// hash should be a hash of lset.
+	GetRef(lset labels.Labels, hash uint64) (SeriesRef, labels.Labels)
 }
 
 // ExemplarAppender provides an interface for adding samples to exemplar storage, which
@@ -255,6 +267,22 @@ type ExemplarAppender interface {
 	// calls to Append should generate the reference numbers, AppendExemplar
 	// generating a new reference number should be considered possible erroneous behaviour and be logged.
 	AppendExemplar(ref SeriesRef, l labels.Labels, e exemplar.Exemplar) (SeriesRef, error)
+}
+
+// HistogramAppender provides an interface for appending histograms to the storage.
+type HistogramAppender interface {
+	// AppendHistogram adds a histogram for the given series labels. An
+	// optional reference number can be provided to accelerate calls. A
+	// reference number is returned which can be used to add further
+	// histograms in the same or later transactions. Returned reference
+	// numbers are ephemeral and may be rejected in calls to Append() at any
+	// point. Adding the sample via Append() returns a new reference number.
+	// If the reference is 0, it must not be used for caching.
+	//
+	// For efficiency reasons, the histogram is passed as a
+	// pointer. AppendHistogram won't mutate the histogram, but in turn
+	// depends on the caller to not mutate it either.
+	AppendHistogram(ref SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (SeriesRef, error)
 }
 
 // MetadataUpdater provides an interface for associating metadata to stored series.
@@ -354,7 +382,7 @@ func (s mockSeries) Labels() labels.Labels {
 	return labels.FromStrings(s.labelSet...)
 }
 
-func (s mockSeries) Iterator() chunkenc.Iterator {
+func (s mockSeries) Iterator(chunkenc.Iterator) chunkenc.Iterator {
 	return chunkenc.MockSeriesIterator(s.timestamps, s.values)
 }
 
@@ -393,14 +421,17 @@ type Labels interface {
 }
 
 type SampleIterable interface {
-	// Iterator returns a new, independent iterator of the data of the series.
-	Iterator() chunkenc.Iterator
+	// Iterator returns an iterator of the data of the series.
+	// The iterator passed as argument is for re-use, if not nil.
+	// Depending on implementation, the iterator can
+	// be re-used or a new iterator can be allocated.
+	Iterator(chunkenc.Iterator) chunkenc.Iterator
 }
 
 type ChunkIterable interface {
-	// Iterator returns a new, independent iterator that iterates over potentially overlapping
+	// Iterator returns an iterator that iterates over potentially overlapping
 	// chunks of the series, sorted by min time.
-	Iterator() chunks.Iterator
+	Iterator(chunks.Iterator) chunks.Iterator
 }
 
 type Warnings []error

@@ -31,6 +31,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 )
 
@@ -43,11 +44,22 @@ func TestTargetLabels(t *testing.T) {
 	want := labels.FromStrings(model.JobLabel, "some_job", "foo", "bar")
 	got := target.Labels()
 	require.Equal(t, want, got)
+	i := 0
+	target.LabelsRange(func(l labels.Label) {
+		switch i {
+		case 0:
+			require.Equal(t, labels.Label{Name: "foo", Value: "bar"}, l)
+		case 1:
+			require.Equal(t, labels.Label{Name: model.JobLabel, Value: "some_job"}, l)
+		}
+		i++
+	})
+	require.Equal(t, 2, i)
 }
 
 func TestTargetOffset(t *testing.T) {
 	interval := 10 * time.Second
-	jitter := uint64(0)
+	offsetSeed := uint64(0)
 
 	offsets := make([]time.Duration, 10000)
 
@@ -56,7 +68,7 @@ func TestTargetOffset(t *testing.T) {
 		target := newTestTarget("example.com:80", 0, labels.FromStrings(
 			"label", fmt.Sprintf("%d", i),
 		))
-		offsets[i] = target.offset(interval, jitter)
+		offsets[i] = target.offset(interval, offsetSeed)
 	}
 
 	// Put the offsets into buckets and validate that they are all
@@ -123,13 +135,13 @@ func TestTargetURL(t *testing.T) {
 	require.Equal(t, expectedURL, target.URL())
 }
 
-func newTestTarget(targetURL string, deadline time.Duration, lbls labels.Labels) *Target {
+func newTestTarget(targetURL string, _ time.Duration, lbls labels.Labels) *Target {
 	lb := labels.NewBuilder(lbls)
 	lb.Set(model.SchemeLabel, "http")
 	lb.Set(model.AddressLabel, strings.TrimPrefix(targetURL, "http://"))
 	lb.Set(model.MetricsPathLabel, "/metrics")
 
-	return &Target{labels: lb.Labels(nil)}
+	return &Target{labels: lb.Labels()}
 }
 
 func TestNewHTTPBearerToken(t *testing.T) {
@@ -375,7 +387,8 @@ func TestTargetsFromGroup(t *testing.T) {
 		ScrapeTimeout:  model.Duration(10 * time.Second),
 		ScrapeInterval: model.Duration(1 * time.Minute),
 	}
-	targets, failures := TargetsFromGroup(&targetgroup.Group{Targets: []model.LabelSet{{}, {model.AddressLabel: "localhost:9090"}}}, &cfg, false)
+	lb := labels.NewBuilder(labels.EmptyLabels())
+	targets, failures := TargetsFromGroup(&targetgroup.Group{Targets: []model.LabelSet{{}, {model.AddressLabel: "localhost:9090"}}}, &cfg, false, nil, lb)
 	if len(targets) != 1 {
 		t.Fatalf("Expected 1 target, got %v", len(targets))
 	}
@@ -384,5 +397,155 @@ func TestTargetsFromGroup(t *testing.T) {
 	}
 	if failures[0].Error() != expectedError {
 		t.Fatalf("Expected error %s, got %s", expectedError, failures[0])
+	}
+}
+
+func BenchmarkTargetsFromGroup(b *testing.B) {
+	// Simulate Kubernetes service-discovery and use subset of rules from typical Prometheus config.
+	cfgText := `
+scrape_configs:
+  - job_name: job1
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    relabel_configs:
+    - source_labels: [__meta_kubernetes_pod_container_port_name]
+      separator: ;
+      regex: .*-metrics
+      replacement: $1
+      action: keep
+    - source_labels: [__meta_kubernetes_pod_phase]
+      separator: ;
+      regex: Succeeded|Failed
+      replacement: $1
+      action: drop
+    - source_labels: [__meta_kubernetes_namespace, __meta_kubernetes_pod_label_name]
+      separator: /
+      regex: (.*)
+      target_label: job
+      replacement: $1
+      action: replace
+    - source_labels: [__meta_kubernetes_namespace]
+      separator: ;
+      regex: (.*)
+      target_label: namespace
+      replacement: $1
+      action: replace
+    - source_labels: [__meta_kubernetes_pod_name]
+      separator: ;
+      regex: (.*)
+      target_label: pod
+      replacement: $1
+      action: replace
+    - source_labels: [__meta_kubernetes_pod_container_name]
+      separator: ;
+      regex: (.*)
+      target_label: container
+      replacement: $1
+      action: replace
+    - source_labels: [__meta_kubernetes_pod_name, __meta_kubernetes_pod_container_name,
+        __meta_kubernetes_pod_container_port_name]
+      separator: ':'
+      regex: (.*)
+      target_label: instance
+      replacement: $1
+      action: replace
+    - separator: ;
+      regex: (.*)
+      target_label: cluster
+      replacement: dev-us-central-0
+      action: replace
+`
+	config := loadConfiguration(b, cfgText)
+	for _, nTargets := range []int{1, 10, 100} {
+		b.Run(fmt.Sprintf("%d_targets", nTargets), func(b *testing.B) {
+			targets := []model.LabelSet{}
+			for i := 0; i < nTargets; i++ {
+				labels := model.LabelSet{
+					model.AddressLabel:                            model.LabelValue(fmt.Sprintf("localhost:%d", i)),
+					"__meta_kubernetes_namespace":                 "some_namespace",
+					"__meta_kubernetes_pod_container_name":        "some_container",
+					"__meta_kubernetes_pod_container_port_name":   "http-metrics",
+					"__meta_kubernetes_pod_container_port_number": "80",
+					"__meta_kubernetes_pod_label_name":            "some_name",
+					"__meta_kubernetes_pod_name":                  "some_pod",
+					"__meta_kubernetes_pod_phase":                 "Running",
+				}
+				// Add some more labels, because Kubernetes SD generates a lot
+				for i := 0; i < 10; i++ {
+					labels[model.LabelName(fmt.Sprintf("__meta_kubernetes_pod_label_extra%d", i))] = "a_label_abcdefgh"
+					labels[model.LabelName(fmt.Sprintf("__meta_kubernetes_pod_labelpresent_extra%d", i))] = "true"
+				}
+				targets = append(targets, labels)
+			}
+			var tgets []*Target
+			lb := labels.NewBuilder(labels.EmptyLabels())
+			group := &targetgroup.Group{Targets: targets}
+			for i := 0; i < b.N; i++ {
+				tgets, _ = TargetsFromGroup(group, config.ScrapeConfigs[0], false, tgets, lb)
+				if len(targets) != nTargets {
+					b.Fatalf("Expected %d targets, got %d", nTargets, len(targets))
+				}
+			}
+		})
+	}
+}
+
+func TestBucketLimitAppender(t *testing.T) {
+	example := histogram.Histogram{
+		Schema:        0,
+		Count:         21,
+		Sum:           33,
+		ZeroThreshold: 0.001,
+		ZeroCount:     3,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 3},
+		},
+		PositiveBuckets: []int64{3, 0, 0},
+		NegativeSpans: []histogram.Span{
+			{Offset: 0, Length: 3},
+		},
+		NegativeBuckets: []int64{3, 0, 0},
+	}
+
+	cases := []struct {
+		h           histogram.Histogram
+		limit       int
+		expectError bool
+	}{
+		{
+			h:           example,
+			limit:       3,
+			expectError: true,
+		},
+		{
+			h:           example,
+			limit:       10,
+			expectError: false,
+		},
+	}
+
+	resApp := &collectResultAppender{}
+
+	for _, c := range cases {
+		for _, floatHisto := range []bool{true, false} {
+			t.Run(fmt.Sprintf("floatHistogram=%t", floatHisto), func(t *testing.T) {
+				app := &bucketLimitAppender{Appender: resApp, limit: c.limit}
+				ts := int64(10 * time.Minute / time.Millisecond)
+				h := c.h
+				lbls := labels.FromStrings("__name__", "sparse_histogram_series")
+				var err error
+				if floatHisto {
+					_, err = app.AppendHistogram(0, lbls, ts, nil, h.Copy().ToFloat())
+				} else {
+					_, err = app.AppendHistogram(0, lbls, ts, h.Copy(), nil)
+				}
+				if c.expectError {
+					require.Error(t, err)
+				} else {
+					require.NoError(t, err)
+				}
+				require.NoError(t, app.Commit())
+			})
+		}
 	}
 }

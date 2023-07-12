@@ -244,13 +244,23 @@ export const encodePanelOptionsToQueryString = (panels: PanelMeta[]): string => 
 };
 
 export const setQuerySearchFilter = (search: string) => {
-  window.history.pushState({}, '', `?search=${search}`);
+  setQueryParam('search', search);
 };
 
 export const getQuerySearchFilter = (): string => {
+  return getQueryParam('search');
+};
+
+export const setQueryParam = (key: string, value: string) => {
+  const params = new URLSearchParams(window.location.search);
+  params.set(key, value);
+  window.history.pushState({}, '', '?' + params.toString());
+};
+
+export const getQueryParam = (key: string): string => {
   const locationSearch = window.location.search;
   const params = new URLSearchParams(locationSearch);
-  return params.get('search') || '';
+  return params.get(key) || '';
 };
 
 export const createExpressionLink = (expr: string): string => {

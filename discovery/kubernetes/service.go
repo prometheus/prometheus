@@ -51,7 +51,7 @@ func NewService(l log.Logger, inf cache.SharedInformer) *Service {
 		l = log.NewNopLogger()
 	}
 	s := &Service{logger: l, informer: inf, store: inf.GetStore(), queue: workqueue.NewNamed("service")}
-	s.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+	_, err := s.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
 			svcAddCount.Inc()
 			s.enqueue(o)
@@ -65,6 +65,9 @@ func NewService(l log.Logger, inf cache.SharedInformer) *Service {
 			s.enqueue(o)
 		},
 	})
+	if err != nil {
+		level.Error(l).Log("msg", "Error adding services event handler.", "err", err)
+	}
 	return s
 }
 
@@ -89,7 +92,7 @@ func (s *Service) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	}
 
 	go func() {
-		for s.process(ctx, ch) {
+		for s.process(ctx, ch) { // nolint:revive
 		}
 	}()
 

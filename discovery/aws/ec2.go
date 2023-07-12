@@ -66,8 +66,9 @@ const (
 
 // DefaultEC2SDConfig is the default EC2 SD configuration.
 var DefaultEC2SDConfig = EC2SDConfig{
-	Port:            80,
-	RefreshInterval: model.Duration(60 * time.Second),
+	Port:             80,
+	RefreshInterval:  model.Duration(60 * time.Second),
+	HTTPClientConfig: config.DefaultHTTPClientConfig,
 }
 
 func init() {
@@ -91,6 +92,8 @@ type EC2SDConfig struct {
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 	Port            int            `yaml:"port"`
 	Filters         []*EC2Filter   `yaml:"filters"`
+
+	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 }
 
 // Name returns the name of the EC2 Config.
@@ -161,7 +164,7 @@ func NewEC2Discovery(conf *EC2SDConfig, logger log.Logger) *EC2Discovery {
 	return d
 }
 
-func (d *EC2Discovery) ec2Client(ctx context.Context) (*ec2.EC2, error) {
+func (d *EC2Discovery) ec2Client(context.Context) (*ec2.EC2, error) {
 	if d.ec2 != nil {
 		return d.ec2, nil
 	}
@@ -171,11 +174,17 @@ func (d *EC2Discovery) ec2Client(ctx context.Context) (*ec2.EC2, error) {
 		creds = nil
 	}
 
+	client, err := config.NewClientFromConfig(d.cfg.HTTPClientConfig, "ec2_sd")
+	if err != nil {
+		return nil, err
+	}
+
 	sess, err := session.NewSessionWithOptions(session.Options{
 		Config: aws.Config{
 			Endpoint:    &d.cfg.Endpoint,
 			Region:      &d.cfg.Region,
 			Credentials: creds,
+			HTTPClient:  client,
 		},
 		Profile: d.cfg.Profile,
 	})

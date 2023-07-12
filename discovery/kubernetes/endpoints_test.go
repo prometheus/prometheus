@@ -69,6 +69,24 @@ func makeEndpoints() *v1.Endpoints {
 					},
 				},
 			},
+			{
+				Addresses: []v1.EndpointAddress{
+					{
+						IP: "6.7.8.9",
+						TargetRef: &v1.ObjectReference{
+							Kind: "Node",
+							Name: "barbaz",
+						},
+					},
+				},
+				Ports: []v1.EndpointPort{
+					{
+						Name:     "testport",
+						Port:     9002,
+						Protocol: v1.ProtocolTCP,
+					},
+				},
+			},
 		},
 	}
 }
@@ -105,6 +123,14 @@ func TestEndpointsDiscoveryBeforeRun(t *testing.T) {
 						"__meta_kubernetes_endpoint_port_name":     "testport",
 						"__meta_kubernetes_endpoint_port_protocol": "TCP",
 						"__meta_kubernetes_endpoint_ready":         "false",
+					},
+					{
+						"__address__": "6.7.8.9:9002",
+						"__meta_kubernetes_endpoint_address_target_kind": "Node",
+						"__meta_kubernetes_endpoint_address_target_name": "barbaz",
+						"__meta_kubernetes_endpoint_port_name":           "testport",
+						"__meta_kubernetes_endpoint_port_protocol":       "TCP",
+						"__meta_kubernetes_endpoint_ready":               "true",
 					},
 				},
 				Labels: model.LabelSet{
@@ -398,6 +424,14 @@ func TestEndpointsDiscoveryWithService(t *testing.T) {
 						"__meta_kubernetes_endpoint_port_protocol": "TCP",
 						"__meta_kubernetes_endpoint_ready":         "false",
 					},
+					{
+						"__address__": "6.7.8.9:9002",
+						"__meta_kubernetes_endpoint_address_target_kind": "Node",
+						"__meta_kubernetes_endpoint_address_target_name": "barbaz",
+						"__meta_kubernetes_endpoint_port_name":           "testport",
+						"__meta_kubernetes_endpoint_port_protocol":       "TCP",
+						"__meta_kubernetes_endpoint_ready":               "true",
+					},
 				},
 				Labels: model.LabelSet{
 					"__meta_kubernetes_namespace":                     "default",
@@ -466,6 +500,14 @@ func TestEndpointsDiscoveryWithServiceUpdate(t *testing.T) {
 						"__meta_kubernetes_endpoint_port_protocol": "TCP",
 						"__meta_kubernetes_endpoint_ready":         "false",
 					},
+					{
+						"__address__": "6.7.8.9:9002",
+						"__meta_kubernetes_endpoint_address_target_kind": "Node",
+						"__meta_kubernetes_endpoint_address_target_name": "barbaz",
+						"__meta_kubernetes_endpoint_port_name":           "testport",
+						"__meta_kubernetes_endpoint_port_protocol":       "TCP",
+						"__meta_kubernetes_endpoint_ready":               "true",
+					},
 				},
 				Labels: model.LabelSet{
 					"__meta_kubernetes_namespace":                      "default",
@@ -484,8 +526,10 @@ func TestEndpointsDiscoveryWithServiceUpdate(t *testing.T) {
 
 func TestEndpointsDiscoveryWithNodeMetadata(t *testing.T) {
 	metadataConfig := AttachMetadataConfig{Node: true}
-	nodeLabels := map[string]string{"az": "us-east1"}
-	node := makeNode("foobar", "", "", nodeLabels, nil)
+	nodeLabels1 := map[string]string{"az": "us-east1"}
+	nodeLabels2 := map[string]string{"az": "us-west2"}
+	node1 := makeNode("foobar", "", "", nodeLabels1, nil)
+	node2 := makeNode("barbaz", "", "", nodeLabels2, nil)
 	svc := &v1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "testendpoints",
@@ -495,7 +539,7 @@ func TestEndpointsDiscoveryWithNodeMetadata(t *testing.T) {
 			},
 		},
 	}
-	n, _ := makeDiscoveryWithMetadata(RoleEndpoint, NamespaceDiscovery{}, metadataConfig, makeEndpoints(), svc, node)
+	n, _ := makeDiscoveryWithMetadata(RoleEndpoint, NamespaceDiscovery{}, metadataConfig, makeEndpoints(), svc, node1, node2)
 
 	k8sDiscoveryTest{
 		discovery:        n,
@@ -526,6 +570,17 @@ func TestEndpointsDiscoveryWithNodeMetadata(t *testing.T) {
 						"__meta_kubernetes_endpoint_port_protocol": "TCP",
 						"__meta_kubernetes_endpoint_ready":         "false",
 					},
+					{
+						"__address__": "6.7.8.9:9002",
+						"__meta_kubernetes_endpoint_address_target_kind": "Node",
+						"__meta_kubernetes_endpoint_address_target_name": "barbaz",
+						"__meta_kubernetes_endpoint_port_name":           "testport",
+						"__meta_kubernetes_endpoint_port_protocol":       "TCP",
+						"__meta_kubernetes_endpoint_ready":               "true",
+						"__meta_kubernetes_node_label_az":                "us-west2",
+						"__meta_kubernetes_node_labelpresent_az":         "true",
+						"__meta_kubernetes_node_name":                    "barbaz",
+					},
 				},
 				Labels: model.LabelSet{
 					"__meta_kubernetes_namespace":                     "default",
@@ -541,8 +596,10 @@ func TestEndpointsDiscoveryWithNodeMetadata(t *testing.T) {
 }
 
 func TestEndpointsDiscoveryWithUpdatedNodeMetadata(t *testing.T) {
-	nodeLabels := map[string]string{"az": "us-east1"}
-	nodes := makeNode("foobar", "", "", nodeLabels, nil)
+	nodeLabels1 := map[string]string{"az": "us-east1"}
+	nodeLabels2 := map[string]string{"az": "us-west2"}
+	node1 := makeNode("foobar", "", "", nodeLabels1, nil)
+	node2 := makeNode("barbaz", "", "", nodeLabels2, nil)
 	metadataConfig := AttachMetadataConfig{Node: true}
 	svc := &v1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -553,13 +610,13 @@ func TestEndpointsDiscoveryWithUpdatedNodeMetadata(t *testing.T) {
 			},
 		},
 	}
-	n, c := makeDiscoveryWithMetadata(RoleEndpoint, NamespaceDiscovery{}, metadataConfig, makeEndpoints(), nodes, svc)
+	n, c := makeDiscoveryWithMetadata(RoleEndpoint, NamespaceDiscovery{}, metadataConfig, makeEndpoints(), node1, node2, svc)
 
 	k8sDiscoveryTest{
 		discovery: n,
 		afterStart: func() {
-			nodes.Labels["az"] = "eu-central1"
-			c.CoreV1().Nodes().Update(context.Background(), nodes, metav1.UpdateOptions{})
+			node1.Labels["az"] = "eu-central1"
+			c.CoreV1().Nodes().Update(context.Background(), node1, metav1.UpdateOptions{})
 		},
 		expectedMaxItems: 2,
 		expectedRes: map[string]*targetgroup.Group{
@@ -572,7 +629,7 @@ func TestEndpointsDiscoveryWithUpdatedNodeMetadata(t *testing.T) {
 						"__meta_kubernetes_endpoint_port_name":     "testport",
 						"__meta_kubernetes_endpoint_port_protocol": "TCP",
 						"__meta_kubernetes_endpoint_ready":         "true",
-						"__meta_kubernetes_node_label_az":          "eu-central1",
+						"__meta_kubernetes_node_label_az":          "us-east1",
 						"__meta_kubernetes_node_labelpresent_az":   "true",
 						"__meta_kubernetes_node_name":              "foobar",
 					},
@@ -587,6 +644,17 @@ func TestEndpointsDiscoveryWithUpdatedNodeMetadata(t *testing.T) {
 						"__meta_kubernetes_endpoint_port_name":     "testport",
 						"__meta_kubernetes_endpoint_port_protocol": "TCP",
 						"__meta_kubernetes_endpoint_ready":         "false",
+					},
+					{
+						"__address__": "6.7.8.9:9002",
+						"__meta_kubernetes_endpoint_address_target_kind": "Node",
+						"__meta_kubernetes_endpoint_address_target_name": "barbaz",
+						"__meta_kubernetes_endpoint_port_name":           "testport",
+						"__meta_kubernetes_endpoint_port_protocol":       "TCP",
+						"__meta_kubernetes_endpoint_ready":               "true",
+						"__meta_kubernetes_node_label_az":                "us-west2",
+						"__meta_kubernetes_node_labelpresent_az":         "true",
+						"__meta_kubernetes_node_name":                    "barbaz",
 					},
 				},
 				Labels: model.LabelSet{
@@ -698,6 +766,14 @@ func TestEndpointsDiscoveryNamespaces(t *testing.T) {
 						"__meta_kubernetes_endpoint_port_name":     "testport",
 						"__meta_kubernetes_endpoint_port_protocol": "TCP",
 						"__meta_kubernetes_endpoint_ready":         "false",
+					},
+					{
+						"__address__": "6.7.8.9:9002",
+						"__meta_kubernetes_endpoint_address_target_kind": "Node",
+						"__meta_kubernetes_endpoint_address_target_name": "barbaz",
+						"__meta_kubernetes_endpoint_port_name":           "testport",
+						"__meta_kubernetes_endpoint_port_protocol":       "TCP",
+						"__meta_kubernetes_endpoint_ready":               "true",
 					},
 				},
 				Labels: model.LabelSet{
@@ -815,6 +891,14 @@ func TestEndpointsDiscoveryOwnNamespace(t *testing.T) {
 						"__meta_kubernetes_endpoint_port_protocol": "TCP",
 						"__meta_kubernetes_endpoint_ready":         "false",
 					},
+					{
+						"__address__": "6.7.8.9:9002",
+						"__meta_kubernetes_endpoint_address_target_kind": "Node",
+						"__meta_kubernetes_endpoint_address_target_name": "barbaz",
+						"__meta_kubernetes_endpoint_port_name":           "testport",
+						"__meta_kubernetes_endpoint_port_protocol":       "TCP",
+						"__meta_kubernetes_endpoint_ready":               "true",
+					},
 				},
 				Labels: model.LabelSet{
 					"__meta_kubernetes_namespace":      "own-ns",
@@ -823,5 +907,48 @@ func TestEndpointsDiscoveryOwnNamespace(t *testing.T) {
 				Source: "endpoints/own-ns/testendpoints",
 			},
 		},
+	}.Run(t)
+}
+
+func TestEndpointsDiscoveryEmptyPodStatus(t *testing.T) {
+	ep := makeEndpoints()
+	ep.Namespace = "ns"
+
+	pod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "testpod",
+			Namespace: "ns",
+			UID:       types.UID("deadbeef"),
+		},
+		Spec: v1.PodSpec{
+			NodeName: "testnode",
+			Containers: []v1.Container{
+				{
+					Name:  "p1",
+					Image: "p1:latest",
+					Ports: []v1.ContainerPort{
+						{
+							Name:          "mainport",
+							ContainerPort: 9000,
+							Protocol:      v1.ProtocolTCP,
+						},
+					},
+				},
+			},
+		},
+		Status: v1.PodStatus{},
+	}
+
+	objs := []runtime.Object{
+		ep,
+		pod,
+	}
+
+	n, _ := makeDiscovery(RoleEndpoint, NamespaceDiscovery{IncludeOwnNamespace: true}, objs...)
+
+	k8sDiscoveryTest{
+		discovery:        n,
+		expectedMaxItems: 0,
+		expectedRes:      map[string]*targetgroup.Group{},
 	}.Run(t)
 }

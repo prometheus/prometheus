@@ -47,9 +47,15 @@ func CheckSD(sdConfigFiles, sdJobName string, sdTimeout time.Duration, noDefault
 	}
 
 	var scrapeConfig *config.ScrapeConfig
+	scfgs, err := cfg.GetScrapeConfigs()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Cannot load scrape configs", err)
+		return failureExitCode
+	}
+
 	jobs := []string{}
 	jobMatched := false
-	for _, v := range cfg.ScrapeConfigs {
+	for _, v := range scfgs {
 		jobs = append(jobs, v.JobName)
 		if v.JobName == sdJobName {
 			jobMatched = true
@@ -109,22 +115,22 @@ outerLoop:
 
 func getSDCheckResult(targetGroups []*targetgroup.Group, scrapeConfig *config.ScrapeConfig, noDefaultScrapePort bool) []sdCheckResult {
 	sdCheckResults := []sdCheckResult{}
+	lb := labels.NewBuilder(labels.EmptyLabels())
 	for _, targetGroup := range targetGroups {
 		for _, target := range targetGroup.Targets {
-			labelSlice := make([]labels.Label, 0, len(target)+len(targetGroup.Labels))
+			lb.Reset(labels.EmptyLabels())
 
 			for name, value := range target {
-				labelSlice = append(labelSlice, labels.Label{Name: string(name), Value: string(value)})
+				lb.Set(string(name), string(value))
 			}
 
 			for name, value := range targetGroup.Labels {
 				if _, ok := target[name]; !ok {
-					labelSlice = append(labelSlice, labels.Label{Name: string(name), Value: string(value)})
+					lb.Set(string(name), string(value))
 				}
 			}
 
-			targetLabels := labels.New(labelSlice...)
-			res, orig, err := scrape.PopulateLabels(targetLabels, scrapeConfig, noDefaultScrapePort)
+			res, orig, err := scrape.PopulateLabels(lb, scrapeConfig, noDefaultScrapePort)
 			result := sdCheckResult{
 				DiscoveredLabels: orig,
 				Labels:           res,

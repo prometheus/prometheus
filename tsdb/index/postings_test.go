@@ -54,7 +54,7 @@ func TestMemPostings_ensureOrder(t *testing.T) {
 		p.m["a"][v] = l
 	}
 
-	p.EnsureOrder()
+	p.EnsureOrder(0)
 
 	for _, e := range p.m {
 		for _, l := range e {
@@ -114,7 +114,7 @@ func BenchmarkMemPostings_ensureOrder(b *testing.B) {
 			b.ResetTimer()
 
 			for n := 0; n < b.N; n++ {
-				p.EnsureOrder()
+				p.EnsureOrder(0)
 				p.ordered = false
 			}
 		})
@@ -280,6 +280,13 @@ func TestMultiIntersect(t *testing.T) {
 	}
 }
 
+func consumePostings(p Postings) error {
+	for p.Next() {
+		p.At()
+	}
+	return p.Err()
+}
+
 func BenchmarkIntersect(t *testing.B) {
 	t.Run("LongPostings1", func(bench *testing.B) {
 		var a, b, c, d []storage.SeriesRef
@@ -300,15 +307,14 @@ func BenchmarkIntersect(t *testing.B) {
 			d = append(d, storage.SeriesRef(i))
 		}
 
-		i1 := newListPostings(a...)
-		i2 := newListPostings(b...)
-		i3 := newListPostings(c...)
-		i4 := newListPostings(d...)
-
 		bench.ResetTimer()
 		bench.ReportAllocs()
 		for i := 0; i < bench.N; i++ {
-			if _, err := ExpandPostings(Intersect(i1, i2, i3, i4)); err != nil {
+			i1 := newListPostings(a...)
+			i2 := newListPostings(b...)
+			i3 := newListPostings(c...)
+			i4 := newListPostings(d...)
+			if err := consumePostings(Intersect(i1, i2, i3, i4)); err != nil {
 				bench.Fatal(err)
 			}
 		}
@@ -330,15 +336,14 @@ func BenchmarkIntersect(t *testing.B) {
 			d = append(d, storage.SeriesRef(i))
 		}
 
-		i1 := newListPostings(a...)
-		i2 := newListPostings(b...)
-		i3 := newListPostings(c...)
-		i4 := newListPostings(d...)
-
 		bench.ResetTimer()
 		bench.ReportAllocs()
 		for i := 0; i < bench.N; i++ {
-			if _, err := ExpandPostings(Intersect(i1, i2, i3, i4)); err != nil {
+			i1 := newListPostings(a...)
+			i2 := newListPostings(b...)
+			i3 := newListPostings(c...)
+			i4 := newListPostings(d...)
+			if err := consumePostings(Intersect(i1, i2, i3, i4)); err != nil {
 				bench.Fatal(err)
 			}
 		}
@@ -346,21 +351,29 @@ func BenchmarkIntersect(t *testing.B) {
 
 	// Many matchers(k >> n).
 	t.Run("ManyPostings", func(bench *testing.B) {
-		var its []Postings
+		var lps []*ListPostings
+		var refs [][]storage.SeriesRef
 
-		// 100000 matchers(k=100000).
+		// Create 100000 matchers(k=100000), making sure all memory allocation is done before starting the loop.
 		for i := 0; i < 100000; i++ {
 			var temp []storage.SeriesRef
 			for j := storage.SeriesRef(1); j < 100; j++ {
 				temp = append(temp, j)
 			}
-			its = append(its, newListPostings(temp...))
+			lps = append(lps, newListPostings(temp...))
+			refs = append(refs, temp)
 		}
 
+		its := make([]Postings, len(refs))
 		bench.ResetTimer()
 		bench.ReportAllocs()
 		for i := 0; i < bench.N; i++ {
-			if _, err := ExpandPostings(Intersect(its...)); err != nil {
+			// Reset the ListPostings to their original values each time round the loop.
+			for j := range refs {
+				lps[j].list = refs[j]
+				its[j] = lps[j]
+			}
+			if err := consumePostings(Intersect(its...)); err != nil {
 				bench.Fatal(err)
 			}
 		}
@@ -899,8 +912,37 @@ func BenchmarkPostings_Stats(b *testing.B) {
 	}
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
-		p.Stats("__name__")
+		p.Stats("__name__", 10)
 	}
+}
+
+func TestMemPostingsStats(t *testing.T) {
+	// create a new MemPostings
+	p := NewMemPostings()
+
+	// add some postings to the MemPostings
+	p.Add(1, labels.FromStrings("label", "value1"))
+	p.Add(1, labels.FromStrings("label", "value2"))
+	p.Add(1, labels.FromStrings("label", "value3"))
+	p.Add(2, labels.FromStrings("label", "value1"))
+
+	// call the Stats method to calculate the cardinality statistics
+	stats := p.Stats("label", 10)
+
+	// assert that the expected statistics were calculated
+	require.Equal(t, uint64(2), stats.CardinalityMetricsStats[0].Count)
+	require.Equal(t, "value1", stats.CardinalityMetricsStats[0].Name)
+
+	require.Equal(t, uint64(3), stats.CardinalityLabelStats[0].Count)
+	require.Equal(t, "label", stats.CardinalityLabelStats[0].Name)
+
+	require.Equal(t, uint64(24), stats.LabelValueStats[0].Count)
+	require.Equal(t, "label", stats.LabelValueStats[0].Name)
+
+	require.Equal(t, uint64(2), stats.LabelValuePairsStats[0].Count)
+	require.Equal(t, "label=value1", stats.LabelValuePairsStats[0].Name)
+
+	require.Equal(t, 3, stats.NumLabelPairs)
 }
 
 func TestMemPostings_Delete(t *testing.T) {

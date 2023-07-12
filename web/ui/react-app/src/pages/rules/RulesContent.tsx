@@ -96,6 +96,11 @@ export const RulesContent: FC<RulesContentProps> = ({ response }) => {
                             <strong>for:</strong> {formatDuration(r.duration * 1000)}
                           </div>
                         )}
+                        {r.keepFiringFor > 0 && (
+                          <div>
+                            <strong>keep_firing_for:</strong> {formatDuration(r.keepFiringFor * 1000)}
+                          </div>
+                        )}
                         {r.labels && Object.keys(r.labels).length > 0 && (
                           <div>
                             <strong>labels:</strong>

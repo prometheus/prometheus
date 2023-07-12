@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"math"
 	"net/url"
-	"sort"
 	"sync"
 	"time"
 
@@ -30,14 +29,18 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
+	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/util/strutil"
 )
 
 // RuleHealth describes the health state of a rule.
@@ -186,7 +189,7 @@ type QueryFunc func(ctx context.Context, q string, t time.Time) (promql.Vector, 
 // It converts scalar into vector results.
 func EngineQueryFunc(engine *promql.Engine, q storage.Queryable) QueryFunc {
 	return func(ctx context.Context, qs string, t time.Time) (promql.Vector, error) {
-		q, err := engine.NewInstantQuery(q, nil, qs, t)
+		q, err := engine.NewInstantQuery(ctx, q, nil, qs, t)
 		if err != nil {
 			return nil, err
 		}
@@ -199,7 +202,8 @@ func EngineQueryFunc(engine *promql.Engine, q storage.Queryable) QueryFunc {
 			return v, nil
 		case promql.Scalar:
 			return promql.Vector{promql.Sample{
-				Point:  promql.Point(v),
+				T:      v.T,
+				F:      v.V,
 				Metric: labels.Labels{},
 			}}, nil
 		default:
@@ -250,7 +254,8 @@ type Group struct {
 	opts                 *ManagerOptions
 	mtx                  sync.Mutex
 	evaluationTime       time.Duration
-	lastEvaluation       time.Time
+	lastEvaluation       time.Time // Wall-clock time of most recent evaluation.
+	lastEvalTimestamp    time.Time // Time slot used for most recent evaluation.
 
 	shouldRestore bool
 
@@ -263,22 +268,27 @@ type Group struct {
 
 	metrics *Metrics
 
-	ruleGroupPostProcessFunc RuleGroupPostProcessFunc
+	// Rule group evaluation iteration function,
+	// defaults to DefaultEvalIterationFunc.
+	evalIterationFunc GroupEvalIterationFunc
 }
 
-// This function will be used before each rule group evaluation if not nil.
-// Use this function type if the rule group post processing is needed.
-type RuleGroupPostProcessFunc func(g *Group, lastEvalTimestamp time.Time, log log.Logger) error
+// GroupEvalIterationFunc is used to implement and extend rule group
+// evaluation iteration logic. It is configured in Group.evalIterationFunc,
+// and periodically invoked at each group evaluation interval to
+// evaluate the rules in the group at that point in time.
+// DefaultEvalIterationFunc is the default implementation.
+type GroupEvalIterationFunc func(ctx context.Context, g *Group, evalTimestamp time.Time)
 
 type GroupOptions struct {
-	Name, File               string
-	Interval                 time.Duration
-	Limit                    int
-	Rules                    []Rule
-	ShouldRestore            bool
-	Opts                     *ManagerOptions
-	done                     chan struct{}
-	RuleGroupPostProcessFunc RuleGroupPostProcessFunc
+	Name, File        string
+	Interval          time.Duration
+	Limit             int
+	Rules             []Rule
+	ShouldRestore     bool
+	Opts              *ManagerOptions
+	done              chan struct{}
+	EvalIterationFunc GroupEvalIterationFunc
 }
 
 // NewGroup makes a new Group with the given name, options, and rules.
@@ -299,21 +309,26 @@ func NewGroup(o GroupOptions) *Group {
 	metrics.GroupSamples.WithLabelValues(key)
 	metrics.GroupInterval.WithLabelValues(key).Set(o.Interval.Seconds())
 
+	evalIterationFunc := o.EvalIterationFunc
+	if evalIterationFunc == nil {
+		evalIterationFunc = DefaultEvalIterationFunc
+	}
+
 	return &Group{
-		name:                     o.Name,
-		file:                     o.File,
-		interval:                 o.Interval,
-		limit:                    o.Limit,
-		rules:                    o.Rules,
-		shouldRestore:            o.ShouldRestore,
-		opts:                     o.Opts,
-		seriesInPreviousEval:     make([]map[string]labels.Labels, len(o.Rules)),
-		done:                     make(chan struct{}),
-		managerDone:              o.done,
-		terminated:               make(chan struct{}),
-		logger:                   log.With(o.Opts.Logger, "file", o.File, "group", o.Name),
-		metrics:                  metrics,
-		ruleGroupPostProcessFunc: o.RuleGroupPostProcessFunc,
+		name:                 o.Name,
+		file:                 o.File,
+		interval:             o.Interval,
+		limit:                o.Limit,
+		rules:                o.Rules,
+		shouldRestore:        o.ShouldRestore,
+		opts:                 o.Opts,
+		seriesInPreviousEval: make([]map[string]labels.Labels, len(o.Rules)),
+		done:                 make(chan struct{}),
+		managerDone:          o.done,
+		terminated:           make(chan struct{}),
+		logger:               log.With(o.Opts.Logger, "file", o.File, "group", o.Name),
+		metrics:              metrics,
+		evalIterationFunc:    evalIterationFunc,
 	}
 }
 
@@ -338,6 +353,8 @@ func (g *Group) Interval() time.Duration { return g.interval }
 // Limit returns the group's limit.
 func (g *Group) Limit() int { return g.limit }
 
+func (g *Group) Logger() log.Logger { return g.logger }
+
 func (g *Group) run(ctx context.Context) {
 	defer close(g.terminated)
 
@@ -355,18 +372,6 @@ func (g *Group) run(ctx context.Context) {
 			"name": g.Name(),
 		},
 	})
-
-	iter := func() {
-		g.metrics.IterationsScheduled.WithLabelValues(GroupKey(g.file, g.name)).Inc()
-
-		start := time.Now()
-		g.Eval(ctx, evalTimestamp)
-		timeSinceStart := time.Since(start)
-
-		g.metrics.IterationDuration.Observe(timeSinceStart.Seconds())
-		g.setEvaluationTime(timeSinceStart)
-		g.setLastEvaluation(start)
-	}
 
 	// The assumption here is that since the ticker was started after having
 	// waited for `evalTimestamp` to pass, the ticks will trigger soon
@@ -397,7 +402,7 @@ func (g *Group) run(ctx context.Context) {
 		}(time.Now())
 	}()
 
-	iter()
+	g.evalIterationFunc(ctx, g, evalTimestamp)
 	if g.shouldRestore {
 		// If we have to restore, we wait for another Eval to finish.
 		// The reason behind this is, during first eval (or before it)
@@ -413,7 +418,7 @@ func (g *Group) run(ctx context.Context) {
 				g.metrics.IterationsScheduled.WithLabelValues(GroupKey(g.file, g.name)).Add(float64(missed))
 			}
 			evalTimestamp = evalTimestamp.Add((missed + 1) * g.interval)
-			iter()
+			g.evalIterationFunc(ctx, g, evalTimestamp)
 		}
 
 		g.RestoreForState(time.Now())
@@ -436,21 +441,29 @@ func (g *Group) run(ctx context.Context) {
 				}
 				evalTimestamp = evalTimestamp.Add((missed + 1) * g.interval)
 
-				useRuleGroupPostProcessFunc(g, evalTimestamp.Add(-(missed+1)*g.interval))
-
-				iter()
+				g.evalIterationFunc(ctx, g, evalTimestamp)
 			}
 		}
 	}
 }
 
-func useRuleGroupPostProcessFunc(g *Group, lastEvalTimestamp time.Time) {
-	if g.ruleGroupPostProcessFunc != nil {
-		err := g.ruleGroupPostProcessFunc(g, lastEvalTimestamp, g.logger)
-		if err != nil {
-			level.Warn(g.logger).Log("msg", "ruleGroupPostProcessFunc failed", "err", err)
-		}
-	}
+// DefaultEvalIterationFunc is the default implementation of
+// GroupEvalIterationFunc that is periodically invoked to evaluate the rules
+// in a group at a given point in time and updates Group state and metrics
+// accordingly. Custom GroupEvalIterationFunc implementations are recommended
+// to invoke this function as well, to ensure correct Group state and metrics
+// are maintained.
+func DefaultEvalIterationFunc(ctx context.Context, g *Group, evalTimestamp time.Time) {
+	g.metrics.IterationsScheduled.WithLabelValues(GroupKey(g.file, g.name)).Inc()
+
+	start := time.Now()
+	g.Eval(ctx, evalTimestamp)
+	timeSinceStart := time.Since(start)
+
+	g.metrics.IterationDuration.Observe(timeSinceStart.Seconds())
+	g.setEvaluationTime(timeSinceStart)
+	g.setLastEvaluation(start)
+	g.setLastEvalTimestamp(evalTimestamp)
 }
 
 func (g *Group) stop() {
@@ -477,10 +490,9 @@ func (g *Group) AlertingRules() []*AlertingRule {
 			alerts = append(alerts, alertingRule)
 		}
 	}
-	sort.Slice(alerts, func(i, j int) bool {
-		return alerts[i].State() > alerts[j].State() ||
-			(alerts[i].State() == alerts[j].State() &&
-				alerts[i].Name() < alerts[j].Name())
+	slices.SortFunc(alerts, func(a, b *AlertingRule) bool {
+		return a.State() > b.State() ||
+			(a.State() == b.State() && a.Name() < b.Name())
 	})
 	return alerts
 }
@@ -528,6 +540,20 @@ func (g *Group) setLastEvaluation(ts time.Time) {
 	g.mtx.Lock()
 	defer g.mtx.Unlock()
 	g.lastEvaluation = ts
+}
+
+// GetLastEvalTimestamp returns the timestamp of the last evaluation.
+func (g *Group) GetLastEvalTimestamp() time.Time {
+	g.mtx.Lock()
+	defer g.mtx.Unlock()
+	return g.lastEvalTimestamp
+}
+
+// setLastEvalTimestamp updates lastEvalTimestamp to the timestamp of the last evaluation.
+func (g *Group) setLastEvalTimestamp(ts time.Time) {
+	g.mtx.Lock()
+	defer g.mtx.Unlock()
+	g.lastEvalTimestamp = ts
 }
 
 // EvalTimestamp returns the immediately preceding consistently slotted evaluation time.
@@ -646,6 +672,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			}
 			var (
 				numOutOfOrder = 0
+				numTooOld     = 0
 				numDuplicates = 0
 			)
 
@@ -665,14 +692,26 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			}()
 
 			for _, s := range vector {
-				if _, err := app.Append(0, s.Metric, s.T, s.V); err != nil {
+				if s.H != nil {
+					_, err = app.AppendHistogram(0, s.Metric, s.T, nil, s.H)
+				} else {
+					_, err = app.Append(0, s.Metric, s.T, s.F)
+				}
+
+				if err != nil {
 					rule.SetHealth(HealthBad)
 					rule.SetLastError(err)
 					sp.SetStatus(codes.Error, err.Error())
 					unwrappedErr := errors.Unwrap(err)
+					if unwrappedErr == nil {
+						unwrappedErr = err
+					}
 					switch {
 					case errors.Is(unwrappedErr, storage.ErrOutOfOrderSample):
 						numOutOfOrder++
+						level.Debug(g.logger).Log("name", rule.Name(), "index", i, "msg", "Rule evaluation result discarded", "err", err, "sample", s)
+					case errors.Is(unwrappedErr, storage.ErrTooOldSample):
+						numTooOld++
 						level.Debug(g.logger).Log("name", rule.Name(), "index", i, "msg", "Rule evaluation result discarded", "err", err, "sample", s)
 					case errors.Is(unwrappedErr, storage.ErrDuplicateSampleForTimestamp):
 						numDuplicates++
@@ -688,6 +727,9 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			if numOutOfOrder > 0 {
 				level.Warn(g.logger).Log("name", rule.Name(), "index", i, "msg", "Error on ingesting out-of-order result from rule evaluation", "numDropped", numOutOfOrder)
 			}
+			if numTooOld > 0 {
+				level.Warn(g.logger).Log("name", rule.Name(), "index", i, "msg", "Error on ingesting too old result from rule evaluation", "numDropped", numTooOld)
+			}
 			if numDuplicates > 0 {
 				level.Warn(g.logger).Log("name", rule.Name(), "index", i, "msg", "Error on ingesting results from rule evaluation with different value but same timestamp", "numDropped", numDuplicates)
 			}
@@ -697,9 +739,14 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 					// Series no longer exposed, mark it stale.
 					_, err = app.Append(0, lset, timestamp.FromTime(ts), math.Float64frombits(value.StaleNaN))
 					unwrappedErr := errors.Unwrap(err)
+					if unwrappedErr == nil {
+						unwrappedErr = err
+					}
 					switch {
 					case unwrappedErr == nil:
-					case errors.Is(unwrappedErr, storage.ErrOutOfOrderSample), errors.Is(unwrappedErr, storage.ErrDuplicateSampleForTimestamp):
+					case errors.Is(unwrappedErr, storage.ErrOutOfOrderSample),
+						errors.Is(unwrappedErr, storage.ErrTooOldSample),
+						errors.Is(unwrappedErr, storage.ErrDuplicateSampleForTimestamp):
 						// Do not count these in logging, as this is expected if series
 						// is exposed from a different rule.
 					default:
@@ -724,9 +771,14 @@ func (g *Group) cleanupStaleSeries(ctx context.Context, ts time.Time) {
 		// Rule that produced series no longer configured, mark it stale.
 		_, err := app.Append(0, s, timestamp.FromTime(ts), math.Float64frombits(value.StaleNaN))
 		unwrappedErr := errors.Unwrap(err)
+		if unwrappedErr == nil {
+			unwrappedErr = err
+		}
 		switch {
 		case unwrappedErr == nil:
-		case errors.Is(unwrappedErr, storage.ErrOutOfOrderSample), errors.Is(unwrappedErr, storage.ErrDuplicateSampleForTimestamp):
+		case errors.Is(unwrappedErr, storage.ErrOutOfOrderSample),
+			errors.Is(unwrappedErr, storage.ErrTooOldSample),
+			errors.Is(unwrappedErr, storage.ErrDuplicateSampleForTimestamp):
 			// Do not count these in logging, as this is expected if series
 			// is exposed from a different rule.
 		default:
@@ -795,8 +847,8 @@ func (g *Group) RestoreForState(ts time.Time) {
 			// Series found for the 'for' state.
 			var t int64
 			var v float64
-			it := s.Iterator()
-			for it.Next() {
+			it := s.Iterator(nil)
+			for it.Next() == chunkenc.ValFloat {
 				t, v = it.At()
 			}
 			if it.Err() != nil {
@@ -813,12 +865,13 @@ func (g *Group) RestoreForState(ts time.Time) {
 			timeSpentPending := downAt.Sub(restoredActiveAt)
 			timeRemainingPending := alertHoldDuration - timeSpentPending
 
-			if timeRemainingPending <= 0 {
+			switch {
+			case timeRemainingPending <= 0:
 				// It means that alert was firing when prometheus went down.
 				// In the next Eval, the state of this alert will be set back to
 				// firing again if it's still firing in that Eval.
 				// Nothing to be done in this case.
-			} else if timeRemainingPending < g.opts.ForGracePeriod {
+			case timeRemainingPending < g.opts.ForGracePeriod:
 				// (new) restoredActiveAt = (ts + m.opts.ForGracePeriod) - alertHoldDuration
 				//                            /* new firing time */      /* moving back by hold duration */
 				//
@@ -831,7 +884,7 @@ func (g *Group) RestoreForState(ts time.Time) {
 				//                        = (ts + m.opts.ForGracePeriod) - ts
 				//                        = m.opts.ForGracePeriod
 				restoredActiveAt = ts.Add(g.opts.ForGracePeriod).Add(-alertHoldDuration)
-			} else {
+			default:
 				// By shifting ActiveAt to the future (ActiveAt + some_duration),
 				// the total pending time from the original ActiveAt
 				// would be `alertHoldDuration + some_duration`.
@@ -967,11 +1020,11 @@ func (m *Manager) Stop() {
 
 // Update the rule manager's state as the config requires. If
 // loading the new rules failed the old rule set is restored.
-func (m *Manager) Update(interval time.Duration, files []string, externalLabels labels.Labels, externalURL string, ruleGroupPostProcessFunc RuleGroupPostProcessFunc) error {
+func (m *Manager) Update(interval time.Duration, files []string, externalLabels labels.Labels, externalURL string, groupEvalIterationFunc GroupEvalIterationFunc) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
-	groups, errs := m.LoadGroups(interval, externalLabels, externalURL, ruleGroupPostProcessFunc, files...)
+	groups, errs := m.LoadGroups(interval, externalLabels, externalURL, groupEvalIterationFunc, files...)
 
 	if errs != nil {
 		for _, e := range errs {
@@ -1056,7 +1109,7 @@ func (FileLoader) Parse(query string) (parser.Expr, error) { return parser.Parse
 
 // LoadGroups reads groups from a list of files.
 func (m *Manager) LoadGroups(
-	interval time.Duration, externalLabels labels.Labels, externalURL string, ruleGroupPostProcessFunc RuleGroupPostProcessFunc, filenames ...string,
+	interval time.Duration, externalLabels labels.Labels, externalURL string, groupEvalIterationFunc GroupEvalIterationFunc, filenames ...string,
 ) (map[string]*Group, []error) {
 	groups := make(map[string]*Group)
 
@@ -1086,6 +1139,7 @@ func (m *Manager) LoadGroups(
 						r.Alert.Value,
 						expr,
 						time.Duration(r.For),
+						time.Duration(r.KeepFiringFor),
 						labels.FromMap(r.Labels),
 						labels.FromMap(r.Annotations),
 						externalLabels,
@@ -1103,15 +1157,15 @@ func (m *Manager) LoadGroups(
 			}
 
 			groups[GroupKey(fn, rg.Name)] = NewGroup(GroupOptions{
-				Name:                     rg.Name,
-				File:                     fn,
-				Interval:                 itv,
-				Limit:                    rg.Limit,
-				Rules:                    rules,
-				ShouldRestore:            shouldRestore,
-				Opts:                     m.opts,
-				done:                     m.done,
-				RuleGroupPostProcessFunc: ruleGroupPostProcessFunc,
+				Name:              rg.Name,
+				File:              fn,
+				Interval:          itv,
+				Limit:             rg.Limit,
+				Rules:             rules,
+				ShouldRestore:     shouldRestore,
+				Opts:              m.opts,
+				done:              m.done,
+				EvalIterationFunc: groupEvalIterationFunc,
 			})
 		}
 	}
@@ -1134,11 +1188,11 @@ func (m *Manager) RuleGroups() []*Group {
 		rgs = append(rgs, g)
 	}
 
-	sort.Slice(rgs, func(i, j int) bool {
-		if rgs[i].file != rgs[j].file {
-			return rgs[i].file < rgs[j].file
+	slices.SortFunc(rgs, func(a, b *Group) bool {
+		if a.file != b.file {
+			return a.file < b.file
 		}
-		return rgs[i].name < rgs[j].name
+		return a.name < b.name
 	})
 
 	return rgs
@@ -1167,4 +1221,34 @@ func (m *Manager) AlertingRules() []*AlertingRule {
 	}
 
 	return alerts
+}
+
+type Sender interface {
+	Send(alerts ...*notifier.Alert)
+}
+
+// SendAlerts implements the rules.NotifyFunc for a Notifier.
+func SendAlerts(s Sender, externalURL string) NotifyFunc {
+	return func(ctx context.Context, expr string, alerts ...*Alert) {
+		var res []*notifier.Alert
+
+		for _, alert := range alerts {
+			a := &notifier.Alert{
+				StartsAt:     alert.FiredAt,
+				Labels:       alert.Labels,
+				Annotations:  alert.Annotations,
+				GeneratorURL: externalURL + strutil.TableLinkForExpression(expr),
+			}
+			if !alert.ResolvedAt.IsZero() {
+				a.EndsAt = alert.ResolvedAt
+			} else {
+				a.EndsAt = alert.ValidUntil
+			}
+			res = append(res, a)
+		}
+
+		if len(alerts) > 0 {
+			s.Send(res...)
+		}
+	}
 }

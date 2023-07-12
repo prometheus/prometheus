@@ -407,7 +407,7 @@ $ curl -g 'http://localhost:9090/api/v1/query_exemplars?query=test_exemplar_metr
                         "traceID": "EpTxMJ40fUus7aGY"
                     },
                     "value": "6",
-                    "timestamp": 1600096945.479,
+                    "timestamp": 1600096945.479
                 }
             ]
         },
@@ -424,15 +424,15 @@ $ curl -g 'http://localhost:9090/api/v1/query_exemplars?query=test_exemplar_metr
                         "traceID": "Olp9XHlq763ccsfa"
                     },
                     "value": "19",
-                    "timestamp": 1600096955.479,
+                    "timestamp": 1600096955.479
                 },
                 {
                     "labels": {
                         "traceID": "hCtjygkIHwAN9vs4"
                     },
                     "value": "20",
-                    "timestamp": 1600096965.489,
-                },
+                    "timestamp": 1600096965.489
+                }
             ]
         }
     ]
@@ -447,6 +447,10 @@ sample values. JSON does not support special float values such as `NaN`, `Inf`,
 and `-Inf`, so sample values are transferred as quoted JSON strings rather than
 raw numbers.
 
+The keys `"histogram"` and `"histograms"` only show up if the experimental
+native histograms are present in the response. Their placeholder `<histogram>`
+is explained in detail in its own section below. 
+
 ### Range vectors
 
 Range vectors are returned as result type `matrix`. The corresponding
@@ -456,11 +460,15 @@ Range vectors are returned as result type `matrix`. The corresponding
 [
   {
     "metric": { "<label_name>": "<label_value>", ... },
-    "values": [ [ <unix_time>, "<sample_value>" ], ... ]
+    "values": [ [ <unix_time>, "<sample_value>" ], ... ],
+    "histograms": [ [ <unix_time>, <histogram> ], ... ]
   },
   ...
 ]
 ```
+
+Each series could have the `"values"` key, or the `"histograms"` key, or both. 
+For a given timestamp, there will only be one sample of either float or histogram type.
 
 ### Instant vectors
 
@@ -471,11 +479,14 @@ Instant vectors are returned as result type `vector`. The corresponding
 [
   {
     "metric": { "<label_name>": "<label_value>", ... },
-    "value": [ <unix_time>, "<sample_value>" ]
+    "value": [ <unix_time>, "<sample_value>" ],
+    "histogram": [ <unix_time>, <histogram> ]
   },
   ...
 ]
 ```
+
+Each series could have the `"value"` key, or the `"histogram"` key, but not both.
 
 ### Scalars
 
@@ -494,6 +505,33 @@ String results are returned as result type `string`. The corresponding
 ```
 [ <unix_time>, "<string_value>" ]
 ```
+
+### Native histograms
+
+The `<histogram>` placeholder used above is formatted as follows.
+
+_Note that native histograms are an experimental feature, and the format below
+might still change._
+
+```
+{
+  "count": "<count_of_observations>",
+  "sum": "<sum_of_observations>",
+  "buckets": [ [ <boundary_rule>, "<left_boundary>", "<right_boundary>", "<count_in_bucket>" ], ... ]
+}
+```
+
+The `<boundary_rule>` placeholder is an integer between 0 and 3 with the
+following meaning:
+
+* 0: “open left” (left boundary is exclusive, right boundary in inclusive)
+* 1: “open right” (left boundary is inclusive, right boundary in exclusive)
+* 2: “open both” (both boundaries are exclusive)
+* 3: “closed both” (both boundaries are inclusive)
+
+Note that with the currently implemented bucket schemas, positive buckets are
+“open left”, negative buckets are “open right”, and the zero bucket (with a
+negative left boundary and a positive right boundary) is “closed both”.
 
 ## Targets
 
@@ -588,6 +626,38 @@ $ curl 'http://localhost:9090/api/v1/targets?state=active'
 }
 ```
 
+The `scrapePool` query parameter allows the caller to filter by scrape pool name.
+
+```json
+$ curl 'http://localhost:9090/api/v1/targets?scrapePool=node_exporter'
+{
+  "status": "success",
+  "data": {
+    "activeTargets": [
+      {
+        "discoveredLabels": {
+          "__address__": "127.0.0.1:9091",
+          "__metrics_path__": "/metrics",
+          "__scheme__": "http",
+          "job": "node_exporter"
+        },
+        "labels": {
+          "instance": "127.0.0.1:9091",
+          "job": "node_exporter"
+        },
+        "scrapePool": "node_exporter",
+        "scrapeUrl": "http://127.0.0.1:9091/metrics",
+        "globalUrl": "http://example-prometheus:9091/metrics",
+        "lastError": "",
+        "lastScrape": "2017-01-17T15:07:44.723715405+01:00",
+        "lastScrapeDuration": 50688943,
+        "health": "up"
+      }
+    ],
+    "droppedTargets": []
+  }
+}
+```
 
 ## Rules
 
@@ -603,7 +673,11 @@ GET /api/v1/rules
 ```
 
 URL query parameters:
+
 - `type=alert|record`: return only the alerting rules (e.g. `type=alert`) or the recording rules (e.g. `type=record`). When the parameter is absent or empty, no filtering is done.
+- `rule_name[]=<string>`: only return rules with the given rule name. If the parameter is repeated, rules with any of the provided names are returned. If we've filtered out all the rules of a group, the group is not returned. When the parameter is absent or empty, no filtering is done.
+- `rule_group[]=<string>`: only return rules with the given rule group name. If the parameter is repeated, rules with any of the provided rule group names are returned. When the parameter is absent or empty, no filtering is done.
+- `file[]=<string>`: only return rules with the given filepath. If the parameter is repeated, rules with any of the provided filepaths are returned. When the parameter is absent or empty, no filtering is done.
 
 ```json
 $ curl http://localhost:9090/api/v1/rules
@@ -789,6 +863,7 @@ GET /api/v1/metadata
 URL query parameters:
 
 - `limit=<number>`: Maximum number of metrics to return.
+- `limit_per_metric=<number>`: Maximum number of metadata to return per metric.
 - `metric=<string>`: A metric name to filter metadata for. All metric metadata is retrieved if left empty.
 
 The `data` section of the query result consists of an object where each key is a metric name and each value is a list of unique metadata objects, as exposed for that metric name across all targets.
@@ -817,6 +892,32 @@ curl -G http://localhost:9090/api/v1/metadata?limit=2
       {
         "type": "counter",
         "help": "Amount of HTTP requests",
+        "unit": ""
+      }
+    ]
+  }
+}
+```
+
+The following example returns only one metadata entry for each metric.
+
+```json
+curl -G http://localhost:9090/api/v1/metadata?limit_per_metric=1
+
+{
+  "status": "success",
+  "data": {
+    "cortex_ring_tokens": [
+      {
+        "type": "gauge",
+        "help": "Number of tokens in the ring",
+        "unit": ""
+      }
+    ],
+    "http_requests_total": [
+      {
+        "type": "counter",
+        "help": "Number of HTTP requests",
         "unit": ""
       }
     ]
@@ -1000,6 +1101,10 @@ The following endpoint returns various cardinality statistics about the Promethe
 ```
 GET /api/v1/status/tsdb
 ```
+URL query parameters:
+- `limit=<number>`: Limit the number of returned items to a given number for each set of statistics. By default, 10 items are returned.
+
+The `data` section of the query result consists of
 - **headStats**: This provides the following data about the head block of the TSDB:
   - **numSeries**: The number of series.
   - **chunkCount**: The number of chunks.

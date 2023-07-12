@@ -73,7 +73,7 @@ func NewEndpointSlice(l log.Logger, eps cache.SharedIndexInformer, svc, pod, nod
 		queue:              workqueue.NewNamed("endpointSlice"),
 	}
 
-	e.endpointSliceInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
+	_, err := e.endpointSliceInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
 			epslAddCount.Inc()
 			e.enqueue(o)
@@ -87,6 +87,9 @@ func NewEndpointSlice(l log.Logger, eps cache.SharedIndexInformer, svc, pod, nod
 			e.enqueue(o)
 		},
 	})
+	if err != nil {
+		level.Error(l).Log("msg", "Error adding endpoint slices event handler.", "err", err)
+	}
 
 	serviceUpdate := func(o interface{}) {
 		svc, err := convertToService(o)
@@ -109,7 +112,7 @@ func NewEndpointSlice(l log.Logger, eps cache.SharedIndexInformer, svc, pod, nod
 			}
 		}
 	}
-	e.serviceInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
+	_, err = e.serviceInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
 			svcAddCount.Inc()
 			serviceUpdate(o)
@@ -123,9 +126,12 @@ func NewEndpointSlice(l log.Logger, eps cache.SharedIndexInformer, svc, pod, nod
 			serviceUpdate(o)
 		},
 	})
+	if err != nil {
+		level.Error(l).Log("msg", "Error adding services event handler.", "err", err)
+	}
 
 	if e.withNodeMetadata {
-		e.nodeInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		_, err = e.nodeInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 			AddFunc: func(o interface{}) {
 				node := o.(*apiv1.Node)
 				e.enqueueNode(node.Name)
@@ -139,6 +145,9 @@ func NewEndpointSlice(l log.Logger, eps cache.SharedIndexInformer, svc, pod, nod
 				e.enqueueNode(node.Name)
 			},
 		})
+		if err != nil {
+			level.Error(l).Log("msg", "Error adding nodes event handler.", "err", err)
+		}
 	}
 
 	return e
@@ -181,7 +190,7 @@ func (e *EndpointSlice) Run(ctx context.Context, ch chan<- []*targetgroup.Group)
 	}
 
 	go func() {
-		for e.process(ctx, ch) {
+		for e.process(ctx, ch) { // nolint:revive
 		}
 	}()
 
@@ -250,6 +259,8 @@ const (
 	endpointSlicePortLabel                          = metaLabelPrefix + "endpointslice_port"
 	endpointSlicePortAppProtocol                    = metaLabelPrefix + "endpointslice_port_app_protocol"
 	endpointSliceEndpointConditionsReadyLabel       = metaLabelPrefix + "endpointslice_endpoint_conditions_ready"
+	endpointSliceEndpointConditionsServingLabel     = metaLabelPrefix + "endpointslice_endpoint_conditions_serving"
+	endpointSliceEndpointConditionsTerminatingLabel = metaLabelPrefix + "endpointslice_endpoint_conditions_terminating"
 	endpointSliceEndpointHostnameLabel              = metaLabelPrefix + "endpointslice_endpoint_hostname"
 	endpointSliceAddressTargetKindLabel             = metaLabelPrefix + "endpointslice_address_target_kind"
 	endpointSliceAddressTargetNameLabel             = metaLabelPrefix + "endpointslice_address_target_name"
@@ -289,7 +300,7 @@ func (e *EndpointSlice) buildEndpointSlice(eps endpointSliceAdaptor) *targetgrou
 		}
 
 		if port.protocol() != nil {
-			target[endpointSlicePortProtocolLabel] = lv(string(*port.protocol()))
+			target[endpointSlicePortProtocolLabel] = lv(*port.protocol())
 		}
 
 		if port.port() != nil {
@@ -302,6 +313,14 @@ func (e *EndpointSlice) buildEndpointSlice(eps endpointSliceAdaptor) *targetgrou
 
 		if ep.conditions().ready() != nil {
 			target[endpointSliceEndpointConditionsReadyLabel] = lv(strconv.FormatBool(*ep.conditions().ready()))
+		}
+
+		if ep.conditions().serving() != nil {
+			target[endpointSliceEndpointConditionsServingLabel] = lv(strconv.FormatBool(*ep.conditions().serving()))
+		}
+
+		if ep.conditions().terminating() != nil {
+			target[endpointSliceEndpointConditionsTerminatingLabel] = lv(strconv.FormatBool(*ep.conditions().terminating()))
 		}
 
 		if ep.hostname() != nil {
@@ -320,7 +339,11 @@ func (e *EndpointSlice) buildEndpointSlice(eps endpointSliceAdaptor) *targetgrou
 		}
 
 		if e.withNodeMetadata {
-			target = addNodeLabels(target, e.nodeInf, e.logger, ep.nodename())
+			if ep.targetRef() != nil && ep.targetRef().Kind == "Node" {
+				target = addNodeLabels(target, e.nodeInf, e.logger, &ep.targetRef().Name)
+			} else {
+				target = addNodeLabels(target, e.nodeInf, e.logger, ep.nodename())
+			}
 		}
 
 		pod := e.resolvePodRef(ep.targetRef())
@@ -393,18 +416,21 @@ func (e *EndpointSlice) buildEndpointSlice(eps endpointSliceAdaptor) *targetgrou
 					continue
 				}
 
-				a := net.JoinHostPort(pe.pod.Status.PodIP, strconv.FormatUint(uint64(cport.ContainerPort), 10))
-				ports := strconv.FormatUint(uint64(cport.ContainerPort), 10)
+				// PodIP can be empty when a pod is starting or has been evicted.
+				if len(pe.pod.Status.PodIP) != 0 {
+					a := net.JoinHostPort(pe.pod.Status.PodIP, strconv.FormatUint(uint64(cport.ContainerPort), 10))
+					ports := strconv.FormatUint(uint64(cport.ContainerPort), 10)
 
-				target := model.LabelSet{
-					model.AddressLabel:            lv(a),
-					podContainerNameLabel:         lv(c.Name),
-					podContainerImageLabel:        lv(c.Image),
-					podContainerPortNameLabel:     lv(cport.Name),
-					podContainerPortNumberLabel:   lv(ports),
-					podContainerPortProtocolLabel: lv(string(cport.Protocol)),
+					target := model.LabelSet{
+						model.AddressLabel:            lv(a),
+						podContainerNameLabel:         lv(c.Name),
+						podContainerImageLabel:        lv(c.Image),
+						podContainerPortNameLabel:     lv(cport.Name),
+						podContainerPortNumberLabel:   lv(ports),
+						podContainerPortProtocolLabel: lv(string(cport.Protocol)),
+					}
+					tg.Targets = append(tg.Targets, target.Merge(podLabels(pe.pod)))
 				}
-				tg.Targets = append(tg.Targets, target.Merge(podLabels(pe.pod)))
 			}
 		}
 	}

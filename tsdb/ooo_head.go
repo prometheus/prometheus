@@ -36,15 +36,25 @@ func NewOOOChunk() *OOOChunk {
 // Insert inserts the sample such that order is maintained.
 // Returns false if insert was not possible due to the same timestamp already existing.
 func (o *OOOChunk) Insert(t int64, v float64) bool {
+	// Although out-of-order samples can be out-of-order amongst themselves, we
+	// are opinionated and expect them to be usually in-order meaning we could
+	// try to append at the end first if the new timestamp is higher than the
+	// last known timestamp.
+	if len(o.samples) == 0 || t > o.samples[len(o.samples)-1].t {
+		o.samples = append(o.samples, sample{t, v, nil, nil})
+		return true
+	}
+
 	// Find index of sample we should replace.
 	i := sort.Search(len(o.samples), func(i int) bool { return o.samples[i].t >= t })
 
 	if i >= len(o.samples) {
 		// none found. append it at the end
-		o.samples = append(o.samples, sample{t, v})
+		o.samples = append(o.samples, sample{t, v, nil, nil})
 		return true
 	}
 
+	// Duplicate sample for timestamp is not allowed.
 	if o.samples[i].t == t {
 		return false
 	}
@@ -52,7 +62,7 @@ func (o *OOOChunk) Insert(t int64, v float64) bool {
 	// Expand length by 1 to make room. use a zero sample, we will overwrite it anyway.
 	o.samples = append(o.samples, sample{})
 	copy(o.samples[i+1:], o.samples[i:])
-	o.samples[i] = sample{t, v}
+	o.samples[i] = sample{t, v, nil, nil}
 
 	return true
 }
@@ -68,7 +78,7 @@ func (o *OOOChunk) ToXOR() (*chunkenc.XORChunk, error) {
 		return nil, err
 	}
 	for _, s := range o.samples {
-		app.Append(s.t, s.v)
+		app.Append(s.t, s.f)
 	}
 	return x, nil
 }
@@ -86,7 +96,7 @@ func (o *OOOChunk) ToXORBetweenTimestamps(mint, maxt int64) (*chunkenc.XORChunk,
 		if s.t > maxt {
 			break
 		}
-		app.Append(s.t, s.v)
+		app.Append(s.t, s.f)
 	}
 	return x, nil
 }

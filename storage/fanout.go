@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
@@ -173,6 +174,20 @@ func (f *fanoutAppender) AppendExemplar(ref SeriesRef, l labels.Labels, e exempl
 	return ref, nil
 }
 
+func (f *fanoutAppender) AppendHistogram(ref SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (SeriesRef, error) {
+	ref, err := f.primary.AppendHistogram(ref, l, t, h, fh)
+	if err != nil {
+		return ref, err
+	}
+
+	for _, appender := range f.secondaries {
+		if _, err := appender.AppendHistogram(ref, l, t, h, fh); err != nil {
+			return 0, err
+		}
+	}
+	return ref, nil
+}
+
 func (f *fanoutAppender) UpdateMetadata(ref SeriesRef, l labels.Labels, m metadata.Metadata) (SeriesRef, error) {
 	ref, err := f.primary.UpdateMetadata(ref, l, m)
 	if err != nil {
@@ -207,9 +222,10 @@ func (f *fanoutAppender) Rollback() (err error) {
 
 	for _, appender := range f.secondaries {
 		rollbackErr := appender.Rollback()
-		if err == nil {
+		switch {
+		case err == nil:
 			err = rollbackErr
-		} else if rollbackErr != nil {
+		case rollbackErr != nil:
 			level.Error(f.logger).Log("msg", "Squashed rollback error on rollback", "err", rollbackErr)
 		}
 	}

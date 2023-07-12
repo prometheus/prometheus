@@ -11,6 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// nolint:revive // Many legitimately empty blocks in this file.
 package kubernetes
 
 import (
@@ -72,7 +73,7 @@ func NewEndpoints(l log.Logger, eps cache.SharedIndexInformer, svc, pod, node ca
 		queue:            workqueue.NewNamed("endpoints"),
 	}
 
-	e.endpointsInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
+	_, err := e.endpointsInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
 			epAddCount.Inc()
 			e.enqueue(o)
@@ -86,6 +87,9 @@ func NewEndpoints(l log.Logger, eps cache.SharedIndexInformer, svc, pod, node ca
 			e.enqueue(o)
 		},
 	})
+	if err != nil {
+		level.Error(l).Log("msg", "Error adding endpoints event handler.", "err", err)
+	}
 
 	serviceUpdate := func(o interface{}) {
 		svc, err := convertToService(o)
@@ -106,7 +110,7 @@ func NewEndpoints(l log.Logger, eps cache.SharedIndexInformer, svc, pod, node ca
 			level.Error(e.logger).Log("msg", "retrieving endpoints failed", "err", err)
 		}
 	}
-	e.serviceInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
+	_, err = e.serviceInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		// TODO(fabxc): potentially remove add and delete event handlers. Those should
 		// be triggered via the endpoint handlers already.
 		AddFunc: func(o interface{}) {
@@ -122,8 +126,11 @@ func NewEndpoints(l log.Logger, eps cache.SharedIndexInformer, svc, pod, node ca
 			serviceUpdate(o)
 		},
 	})
+	if err != nil {
+		level.Error(l).Log("msg", "Error adding services event handler.", "err", err)
+	}
 	if e.withNodeMetadata {
-		e.nodeInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		_, err = e.nodeInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 			AddFunc: func(o interface{}) {
 				node := o.(*apiv1.Node)
 				e.enqueueNode(node.Name)
@@ -137,6 +144,9 @@ func NewEndpoints(l log.Logger, eps cache.SharedIndexInformer, svc, pod, node ca
 				e.enqueueNode(node.Name)
 			},
 		})
+		if err != nil {
+			level.Error(l).Log("msg", "Error adding nodes event handler.", "err", err)
+		}
 	}
 
 	return e
@@ -295,7 +305,11 @@ func (e *Endpoints) buildEndpoints(eps *apiv1.Endpoints) *targetgroup.Group {
 		}
 
 		if e.withNodeMetadata {
-			target = addNodeLabels(target, e.nodeInf, e.logger, addr.NodeName)
+			if addr.NodeName != nil {
+				target = addNodeLabels(target, e.nodeInf, e.logger, addr.NodeName)
+			} else if addr.TargetRef != nil && addr.TargetRef.Kind == "Node" {
+				target = addNodeLabels(target, e.nodeInf, e.logger, &addr.TargetRef.Name)
+			}
 		}
 
 		pod := e.resolvePodRef(addr.TargetRef)
@@ -375,18 +389,21 @@ func (e *Endpoints) buildEndpoints(eps *apiv1.Endpoints) *targetgroup.Group {
 					continue
 				}
 
-				a := net.JoinHostPort(pe.pod.Status.PodIP, strconv.FormatUint(uint64(cport.ContainerPort), 10))
-				ports := strconv.FormatUint(uint64(cport.ContainerPort), 10)
+				// PodIP can be empty when a pod is starting or has been evicted.
+				if len(pe.pod.Status.PodIP) != 0 {
+					a := net.JoinHostPort(pe.pod.Status.PodIP, strconv.FormatUint(uint64(cport.ContainerPort), 10))
+					ports := strconv.FormatUint(uint64(cport.ContainerPort), 10)
 
-				target := model.LabelSet{
-					model.AddressLabel:            lv(a),
-					podContainerNameLabel:         lv(c.Name),
-					podContainerImageLabel:        lv(c.Image),
-					podContainerPortNameLabel:     lv(cport.Name),
-					podContainerPortNumberLabel:   lv(ports),
-					podContainerPortProtocolLabel: lv(string(cport.Protocol)),
+					target := model.LabelSet{
+						model.AddressLabel:            lv(a),
+						podContainerNameLabel:         lv(c.Name),
+						podContainerImageLabel:        lv(c.Image),
+						podContainerPortNameLabel:     lv(cport.Name),
+						podContainerPortNumberLabel:   lv(ports),
+						podContainerPortProtocolLabel: lv(string(cport.Protocol)),
+					}
+					tg.Targets = append(tg.Targets, target.Merge(podLabels(pe.pod)))
 				}
-				tg.Targets = append(tg.Targets, target.Merge(podLabels(pe.pod)))
 			}
 		}
 	}
@@ -456,5 +473,6 @@ func addNodeLabels(tg model.LabelSet, nodeInf cache.SharedInformer, logger log.L
 		nodeLabelset[model.LabelName(nodeLabelPrefix+ln)] = lv(v)
 		nodeLabelset[model.LabelName(nodeLabelPresentPrefix+ln)] = presentValue
 	}
+
 	return tg.Merge(nodeLabelset)
 }

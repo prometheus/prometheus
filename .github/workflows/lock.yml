@@ -1,6 +1,6 @@
 name: 'Lock Threads'
 
-on:  # yamllint disable-line rule:truthy
+on:
   schedule:
     - cron: '13 23 * * *'
   workflow_dispatch:
@@ -14,8 +14,9 @@ concurrency:
 jobs:
   action:
     runs-on: ubuntu-latest
+    if: github.repository_owner == 'prometheus'
     steps:
-      - uses: dessant/lock-threads@v3
+      - uses: dessant/lock-threads@v4
         with:
           process-only: 'issues'
           issue-inactive-days: '180'

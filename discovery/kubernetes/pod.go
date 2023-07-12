@@ -65,7 +65,7 @@ func NewPod(l log.Logger, pods cache.SharedIndexInformer, nodes cache.SharedInfo
 		logger:           l,
 		queue:            workqueue.NewNamed("pod"),
 	}
-	p.podInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
+	_, err := p.podInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
 			podAddCount.Inc()
 			p.enqueue(o)
@@ -79,9 +79,12 @@ func NewPod(l log.Logger, pods cache.SharedIndexInformer, nodes cache.SharedInfo
 			p.enqueue(o)
 		},
 	})
+	if err != nil {
+		level.Error(l).Log("msg", "Error adding pods event handler.", "err", err)
+	}
 
 	if p.withNodeMetadata {
-		p.nodeInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		_, err = p.nodeInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 			AddFunc: func(o interface{}) {
 				node := o.(*apiv1.Node)
 				p.enqueuePodsForNode(node.Name)
@@ -95,6 +98,9 @@ func NewPod(l log.Logger, pods cache.SharedIndexInformer, nodes cache.SharedInfo
 				p.enqueuePodsForNode(node.Name)
 			},
 		})
+		if err != nil {
+			level.Error(l).Log("msg", "Error adding pods event handler.", "err", err)
+		}
 	}
 
 	return p
@@ -126,7 +132,7 @@ func (p *Pod) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	}
 
 	go func() {
-		for p.process(ctx, ch) {
+		for p.process(ctx, ch) { // nolint:revive
 		}
 	}()
 
@@ -177,6 +183,7 @@ const (
 	podNameLabel                  = metaLabelPrefix + "pod_name"
 	podIPLabel                    = metaLabelPrefix + "pod_ip"
 	podContainerNameLabel         = metaLabelPrefix + "pod_container_name"
+	podContainerIDLabel           = metaLabelPrefix + "pod_container_id"
 	podContainerImageLabel        = metaLabelPrefix + "pod_container_image"
 	podContainerPortNameLabel     = metaLabelPrefix + "pod_container_port_name"
 	podContainerPortNumberLabel   = metaLabelPrefix + "pod_container_port_number"
@@ -242,6 +249,24 @@ func podLabels(pod *apiv1.Pod) model.LabelSet {
 	return ls
 }
 
+func (p *Pod) findPodContainerStatus(statuses *[]apiv1.ContainerStatus, containerName string) (*apiv1.ContainerStatus, error) {
+	for _, s := range *statuses {
+		if s.Name == containerName {
+			return &s, nil
+		}
+	}
+	return nil, fmt.Errorf("cannot find container with name %v", containerName)
+}
+
+func (p *Pod) findPodContainerID(statuses *[]apiv1.ContainerStatus, containerName string) string {
+	cStatus, err := p.findPodContainerStatus(statuses, containerName)
+	if err != nil {
+		level.Debug(p.logger).Log("msg", "cannot find container ID", "err", err)
+		return ""
+	}
+	return cStatus.ContainerID
+}
+
 func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
 	tg := &targetgroup.Group{
 		Source: podSource(pod),
@@ -261,6 +286,12 @@ func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
 	for i, c := range containers {
 		isInit := i >= len(pod.Spec.Containers)
 
+		cStatuses := &pod.Status.ContainerStatuses
+		if isInit {
+			cStatuses = &pod.Status.InitContainerStatuses
+		}
+		cID := p.findPodContainerID(cStatuses, c.Name)
+
 		// If no ports are defined for the container, create an anonymous
 		// target per container.
 		if len(c.Ports) == 0 {
@@ -269,6 +300,7 @@ func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
 			tg.Targets = append(tg.Targets, model.LabelSet{
 				model.AddressLabel:     lv(pod.Status.PodIP),
 				podContainerNameLabel:  lv(c.Name),
+				podContainerIDLabel:    lv(cID),
 				podContainerImageLabel: lv(c.Image),
 				podContainerIsInit:     lv(strconv.FormatBool(isInit)),
 			})
@@ -282,6 +314,7 @@ func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
 			tg.Targets = append(tg.Targets, model.LabelSet{
 				model.AddressLabel:            lv(addr),
 				podContainerNameLabel:         lv(c.Name),
+				podContainerIDLabel:           lv(cID),
 				podContainerImageLabel:        lv(c.Image),
 				podContainerPortNumberLabel:   lv(ports),
 				podContainerPortNameLabel:     lv(port.Name),

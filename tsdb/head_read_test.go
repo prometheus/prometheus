@@ -41,7 +41,7 @@ func TestBoundedChunk(t *testing.T) {
 			name:       "bounds represent a single sample",
 			inputChunk: newTestChunk(10),
 			expSamples: []sample{
-				{0, 0},
+				{0, 0, nil, nil},
 			},
 		},
 		{
@@ -50,14 +50,14 @@ func TestBoundedChunk(t *testing.T) {
 			inputMinT:  1,
 			inputMaxT:  8,
 			expSamples: []sample{
-				{1, 1},
-				{2, 2},
-				{3, 3},
-				{4, 4},
-				{5, 5},
-				{6, 6},
-				{7, 7},
-				{8, 8},
+				{1, 1, nil, nil},
+				{2, 2, nil, nil},
+				{3, 3, nil, nil},
+				{4, 4, nil, nil},
+				{5, 5, nil, nil},
+				{6, 6, nil, nil},
+				{7, 7, nil, nil},
+				{8, 8, nil, nil},
 			},
 		},
 		{
@@ -66,12 +66,12 @@ func TestBoundedChunk(t *testing.T) {
 			inputMinT:  0,
 			inputMaxT:  5,
 			expSamples: []sample{
-				{0, 0},
-				{1, 1},
-				{2, 2},
-				{3, 3},
-				{4, 4},
-				{5, 5},
+				{0, 0, nil, nil},
+				{1, 1, nil, nil},
+				{2, 2, nil, nil},
+				{3, 3, nil, nil},
+				{4, 4, nil, nil},
+				{5, 5, nil, nil},
 			},
 		},
 		{
@@ -80,11 +80,11 @@ func TestBoundedChunk(t *testing.T) {
 			inputMinT:  5,
 			inputMaxT:  9,
 			expSamples: []sample{
-				{5, 5},
-				{6, 6},
-				{7, 7},
-				{8, 8},
-				{9, 9},
+				{5, 5, nil, nil},
+				{6, 6, nil, nil},
+				{7, 7, nil, nil},
+				{8, 8, nil, nil},
+				{9, 9, nil, nil},
 			},
 		},
 		{
@@ -95,11 +95,11 @@ func TestBoundedChunk(t *testing.T) {
 			initialSeek:    1,
 			seekIsASuccess: true,
 			expSamples: []sample{
-				{3, 3},
-				{4, 4},
-				{5, 5},
-				{6, 6},
-				{7, 7},
+				{3, 3, nil, nil},
+				{4, 4, nil, nil},
+				{5, 5, nil, nil},
+				{6, 6, nil, nil},
+				{7, 7, nil, nil},
 			},
 		},
 		{
@@ -110,9 +110,9 @@ func TestBoundedChunk(t *testing.T) {
 			initialSeek:    5,
 			seekIsASuccess: true,
 			expSamples: []sample{
-				{5, 5},
-				{6, 6},
-				{7, 7},
+				{5, 5, nil, nil},
+				{6, 6, nil, nil},
+				{7, 7, nil, nil},
 			},
 		},
 		{
@@ -144,23 +144,23 @@ func TestBoundedChunk(t *testing.T) {
 
 			if tc.initialSeek != 0 {
 				// Testing Seek()
-				ok := it.Seek(tc.initialSeek)
-				require.Equal(t, tc.seekIsASuccess, ok)
-				if ok {
+				val := it.Seek(tc.initialSeek)
+				require.Equal(t, tc.seekIsASuccess, val == chunkenc.ValFloat)
+				if val == chunkenc.ValFloat {
 					t, v := it.At()
-					samples = append(samples, sample{t, v})
+					samples = append(samples, sample{t, v, nil, nil})
 				}
 			}
 
 			// Testing Next()
-			for it.Next() {
+			for it.Next() == chunkenc.ValFloat {
 				t, v := it.At()
-				samples = append(samples, sample{t, v})
+				samples = append(samples, sample{t, v, nil, nil})
 			}
 
-			// it.Next() should keep returning false.
+			// it.Next() should keep returning no  value.
 			for i := 0; i < 10; i++ {
-				require.False(t, it.Next())
+				require.True(t, it.Next() == chunkenc.ValNone)
 			}
 
 			require.Equal(t, tc.expSamples, samples)

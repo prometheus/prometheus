@@ -202,7 +202,7 @@ func (t *Test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 			break
 		}
 		if f, err := parseNumber(defLine); err == nil {
-			cmd.expect(0, nil, parser.SequenceValue{Value: f})
+			cmd.expect(0, parser.SequenceValue{Value: f})
 			break
 		}
 		metric, vals, err := parser.ParseSeriesDesc(defLine)
@@ -218,7 +218,7 @@ func (t *Test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 		if len(vals) > 1 {
 			return i, nil, raise(i, "expecting multiple values in instant evaluation not allowed")
 		}
-		cmd.expect(j, metric, vals...)
+		cmd.expectMetric(j, metric, vals...)
 	}
 	return i, cmd, nil
 }
@@ -281,7 +281,7 @@ func (*evalCmd) testCmd()  {}
 type loadCmd struct {
 	gap       time.Duration
 	metrics   map[uint64]labels.Labels
-	defs      map[uint64][]Point
+	defs      map[uint64][]FPoint
 	exemplars map[uint64][]exemplar.Exemplar
 }
 
@@ -289,7 +289,7 @@ func newLoadCmd(gap time.Duration) *loadCmd {
 	return &loadCmd{
 		gap:       gap,
 		metrics:   map[uint64]labels.Labels{},
-		defs:      map[uint64][]Point{},
+		defs:      map[uint64][]FPoint{},
 		exemplars: map[uint64][]exemplar.Exemplar{},
 	}
 }
@@ -302,13 +302,13 @@ func (cmd loadCmd) String() string {
 func (cmd *loadCmd) set(m labels.Labels, vals ...parser.SequenceValue) {
 	h := m.Hash()
 
-	samples := make([]Point, 0, len(vals))
+	samples := make([]FPoint, 0, len(vals))
 	ts := testStartTime
 	for _, v := range vals {
 		if !v.Omitted {
-			samples = append(samples, Point{
+			samples = append(samples, FPoint{
 				T: ts.UnixNano() / int64(time.Millisecond/time.Nanosecond),
-				V: v.Value,
+				F: v.Value,
 			})
 		}
 		ts = ts.Add(cmd.gap)
@@ -323,7 +323,7 @@ func (cmd *loadCmd) append(a storage.Appender) error {
 		m := cmd.metrics[h]
 
 		for _, s := range smpls {
-			if _, err := a.Append(0, m, s.T, s.V); err != nil {
+			if _, err := a.Append(0, m, s.T, s.F); err != nil {
 				return err
 			}
 		}
@@ -368,13 +368,15 @@ func (ev *evalCmd) String() string {
 	return "eval"
 }
 
-// expect adds a new metric with a sequence of values to the set of expected
+// expect adds a sequence of values to the set of expected
 // results for the query.
-func (ev *evalCmd) expect(pos int, m labels.Labels, vals ...parser.SequenceValue) {
-	if m == nil {
-		ev.expected[0] = entry{pos: pos, vals: vals}
-		return
-	}
+func (ev *evalCmd) expect(pos int, vals ...parser.SequenceValue) {
+	ev.expected[0] = entry{pos: pos, vals: vals}
+}
+
+// expectMetric adds a new metric with a sequence of values to the set of expected
+// results for the query.
+func (ev *evalCmd) expectMetric(pos int, m labels.Labels, vals ...parser.SequenceValue) {
 	h := m.Hash()
 	ev.metrics[h] = m
 	ev.expected[h] = entry{pos: pos, vals: vals}
@@ -397,8 +399,8 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 			if ev.ordered && exp.pos != pos+1 {
 				return fmt.Errorf("expected metric %s with %v at position %d but was at %d", v.Metric, exp.vals, exp.pos, pos+1)
 			}
-			if !almostEqual(exp.vals[0].Value, v.V) {
-				return fmt.Errorf("expected %v for %s but got %v", exp.vals[0].Value, v.Metric, v.V)
+			if !almostEqual(exp.vals[0].Value, v.F) {
+				return fmt.Errorf("expected %v for %s but got %v", exp.vals[0].Value, v.Metric, v.F)
 			}
 
 			seen[fp] = true
@@ -407,7 +409,7 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 			if !seen[fp] {
 				fmt.Println("vector result", len(val), ev.expr)
 				for _, ss := range val {
-					fmt.Println("    ", ss.Metric, ss.Point)
+					fmt.Println("    ", ss.Metric, ss.T, ss.F)
 				}
 				return fmt.Errorf("expected metric %s with %v not found", ev.metrics[fp], expVals)
 			}
@@ -491,8 +493,8 @@ func atModifierTestCases(exprStr string, evalTime time.Time) ([]atModifierTestCa
 	})
 
 	if containsNonStepInvariant {
-		// Since there is a step invariant function, we cannot automatically
-		// generate step invariant test cases for it sanely.
+		// Expression contains a function whose result can vary with evaluation
+		// time, even though its arguments are step invariant: skip it.
 		return nil, nil
 	}
 
@@ -536,7 +538,7 @@ func (t *Test) exec(tc testCommand) error {
 		}
 		queries = append([]atModifierTestCase{{expr: cmd.expr, evalTime: cmd.start}}, queries...)
 		for _, iq := range queries {
-			q, err := t.QueryEngine().NewInstantQuery(t.storage, nil, iq.expr, iq.evalTime)
+			q, err := t.QueryEngine().NewInstantQuery(t.context, t.storage, nil, iq.expr, iq.evalTime)
 			if err != nil {
 				return err
 			}
@@ -558,7 +560,7 @@ func (t *Test) exec(tc testCommand) error {
 
 			// Check query returns same result in range mode,
 			// by checking against the middle step.
-			q, err = t.queryEngine.NewRangeQuery(t.storage, nil, iq.expr, iq.evalTime.Add(-time.Minute), iq.evalTime.Add(time.Minute), time.Minute)
+			q, err = t.queryEngine.NewRangeQuery(t.context, t.storage, nil, iq.expr, iq.evalTime.Add(-time.Minute), iq.evalTime.Add(time.Minute), time.Minute)
 			if err != nil {
 				return err
 			}
@@ -574,15 +576,15 @@ func (t *Test) exec(tc testCommand) error {
 			mat := rangeRes.Value.(Matrix)
 			vec := make(Vector, 0, len(mat))
 			for _, series := range mat {
-				for _, point := range series.Points {
+				for _, point := range series.Floats {
 					if point.T == timeMilliseconds(iq.evalTime) {
-						vec = append(vec, Sample{Metric: series.Metric, Point: point})
+						vec = append(vec, Sample{Metric: series.Metric, T: point.T, F: point.F})
 						break
 					}
 				}
 			}
 			if _, ok := res.Value.(Scalar); ok {
-				err = cmd.compareResult(Scalar{V: vec[0].Point.V})
+				err = cmd.compareResult(Scalar{V: vec[0].F})
 			} else {
 				err = cmd.compareResult(vec)
 			}
@@ -761,7 +763,7 @@ func (ll *LazyLoader) appendTill(ts int64) error {
 				ll.loadCmd.defs[h] = smpls[i:]
 				break
 			}
-			if _, err := app.Append(0, m, s.T, s.V); err != nil {
+			if _, err := app.Append(0, m, s.T, s.F); err != nil {
 				return err
 			}
 			if i == len(smpls)-1 {
