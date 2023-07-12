@@ -412,12 +412,13 @@ func (g *Group) run(ctx context.Context) {
 		case <-g.done:
 			return
 		case <-tick.C:
-			missed := (time.Since(evalTimestamp) / g.interval) - 1
+			missed := int(time.Since(evalTimestamp)/g.interval) - 1
 			if missed > 0 {
-				g.metrics.IterationsMissed.WithLabelValues(GroupKey(g.file, g.name)).Add(float64(missed))
-				g.metrics.IterationsScheduled.WithLabelValues(GroupKey(g.file, g.name)).Add(float64(missed))
+				missedDuration := time.Duration(missed) * g.interval
+				g.metrics.IterationsMissed.WithLabelValues(GroupKey(g.file, g.name)).Add(missedDuration.Seconds())
+				g.metrics.IterationsScheduled.WithLabelValues(GroupKey(g.file, g.name)).Add(missedDuration.Seconds())
 			}
-			evalTimestamp = evalTimestamp.Add((missed + 1) * g.interval)
+			evalTimestamp = evalTimestamp.Add(time.Duration(missed+1) * g.interval)
 			g.evalIterationFunc(ctx, g, evalTimestamp)
 		}
 
@@ -434,12 +435,13 @@ func (g *Group) run(ctx context.Context) {
 			case <-g.done:
 				return
 			case <-tick.C:
-				missed := (time.Since(evalTimestamp) / g.interval) - 1
+				missed := int(time.Since(evalTimestamp)/g.interval) - 1
 				if missed > 0 {
-					g.metrics.IterationsMissed.WithLabelValues(GroupKey(g.file, g.name)).Add(float64(missed))
-					g.metrics.IterationsScheduled.WithLabelValues(GroupKey(g.file, g.name)).Add(float64(missed))
+					missedDuration := time.Duration(missed) * g.interval
+					g.metrics.IterationsMissed.WithLabelValues(GroupKey(g.file, g.name)).Add(missedDuration.Seconds())
+					g.metrics.IterationsScheduled.WithLabelValues(GroupKey(g.file, g.name)).Add(missedDuration.Seconds())
 				}
-				evalTimestamp = evalTimestamp.Add((missed + 1) * g.interval)
+				evalTimestamp = evalTimestamp.Add(time.Duration(missed+1) * g.interval)
 
 				g.evalIterationFunc(ctx, g, evalTimestamp)
 			}
