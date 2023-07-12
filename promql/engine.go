@@ -130,11 +130,35 @@ type Query interface {
 	String() string
 }
 
-type QueryOpts struct {
+type PrometheusQueryOpts struct {
 	// Enables recording per-step statistics if the engine has it enabled as well. Disabled by default.
-	EnablePerStepStats bool
+	enablePerStepStats bool
 	// Lookback delta duration for this query.
-	LookbackDelta time.Duration
+	lookbackDelta time.Duration
+}
+
+var _ QueryOpts = &PrometheusQueryOpts{}
+
+func NewPrometheusQueryOpts(enablePerStepStats bool, lookbackDelta time.Duration) QueryOpts {
+	return &PrometheusQueryOpts{
+		enablePerStepStats: enablePerStepStats,
+		lookbackDelta:      lookbackDelta,
+	}
+}
+
+func (p *PrometheusQueryOpts) EnablePerStepStats() bool {
+	return p.enablePerStepStats
+}
+
+func (p *PrometheusQueryOpts) LookbackDelta() time.Duration {
+	return p.lookbackDelta
+}
+
+type QueryOpts interface {
+	// Enables recording per-step statistics if the engine has it enabled as well. Disabled by default.
+	EnablePerStepStats() bool
+	// Lookback delta duration for this query.
+	LookbackDelta() time.Duration
 }
 
 // query implements the Query interface.
@@ -408,7 +432,7 @@ func (ng *Engine) SetQueryLogger(l QueryLogger) {
 }
 
 // NewInstantQuery returns an evaluation query for the given expression at the given time.
-func (ng *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts *QueryOpts, qs string, ts time.Time) (Query, error) {
+func (ng *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts QueryOpts, qs string, ts time.Time) (Query, error) {
 	pExpr, qry := ng.newQuery(q, qs, opts, ts, ts, 0)
 	finishQueue, err := ng.queueActive(ctx, qry)
 	if err != nil {
@@ -429,7 +453,7 @@ func (ng *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts
 
 // NewRangeQuery returns an evaluation query for the given time range and with
 // the resolution set by the interval.
-func (ng *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts *QueryOpts, qs string, start, end time.Time, interval time.Duration) (Query, error) {
+func (ng *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts QueryOpts, qs string, start, end time.Time, interval time.Duration) (Query, error) {
 	pExpr, qry := ng.newQuery(q, qs, opts, start, end, interval)
 	finishQueue, err := ng.queueActive(ctx, qry)
 	if err != nil {
@@ -451,13 +475,12 @@ func (ng *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts *
 	return qry, nil
 }
 
-func (ng *Engine) newQuery(q storage.Queryable, qs string, opts *QueryOpts, start, end time.Time, interval time.Duration) (*parser.Expr, *query) {
-	// Default to empty QueryOpts if not provided.
+func (ng *Engine) newQuery(q storage.Queryable, qs string, opts QueryOpts, start, end time.Time, interval time.Duration) (*parser.Expr, *query) {
 	if opts == nil {
-		opts = &QueryOpts{}
+		opts = NewPrometheusQueryOpts(false, 0)
 	}
 
-	lookbackDelta := opts.LookbackDelta
+	lookbackDelta := opts.LookbackDelta()
 	if lookbackDelta <= 0 {
 		lookbackDelta = ng.lookbackDelta
 	}
@@ -473,7 +496,7 @@ func (ng *Engine) newQuery(q storage.Queryable, qs string, opts *QueryOpts, star
 		stmt:        es,
 		ng:          ng,
 		stats:       stats.NewQueryTimers(),
-		sampleStats: stats.NewQuerySamples(ng.enablePerStepStats && opts.EnablePerStepStats),
+		sampleStats: stats.NewQuerySamples(ng.enablePerStepStats && opts.EnablePerStepStats()),
 		queryable:   q,
 	}
 	return &es.Expr, qry

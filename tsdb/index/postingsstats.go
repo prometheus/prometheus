@@ -15,7 +15,8 @@ package index
 
 import (
 	"math"
-	"sort"
+
+	"golang.org/x/exp/slices"
 )
 
 // Stat holds values for a single cardinality statistic.
@@ -62,8 +63,8 @@ func (m *maxHeap) push(item Stat) {
 }
 
 func (m *maxHeap) get() []Stat {
-	sort.Slice(m.Items, func(i, j int) bool {
-		return m.Items[i].Count > m.Items[j].Count
+	slices.SortFunc(m.Items, func(a, b Stat) bool {
+		return a.Count > b.Count
 	})
 	return m.Items
 }

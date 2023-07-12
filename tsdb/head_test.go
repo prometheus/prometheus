@@ -52,7 +52,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/wlog"
 )
 
-func newTestHead(t testing.TB, chunkRange int64, compressWAL, oooEnabled bool) (*Head, *wlog.WL) {
+func newTestHead(t testing.TB, chunkRange int64, compressWAL wlog.CompressionType, oooEnabled bool) (*Head, *wlog.WL) {
 	dir := t.TempDir()
 	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, compressWAL)
 	require.NoError(t, err)
@@ -79,7 +79,7 @@ func newTestHead(t testing.TB, chunkRange int64, compressWAL, oooEnabled bool) (
 
 func BenchmarkCreateSeries(b *testing.B) {
 	series := genSeries(b.N, 10, 0, 0)
-	h, _ := newTestHead(b, 10000, false, false)
+	h, _ := newTestHead(b, 10000, wlog.CompressionNone, false)
 	b.Cleanup(func() {
 		require.NoError(b, h.Close())
 	})
@@ -100,7 +100,7 @@ func BenchmarkHeadAppender_Append_Commit_ExistingSeries(b *testing.B) {
 		b.Run(fmt.Sprintf("%d series", seriesCount), func(b *testing.B) {
 			for _, samplesPerAppend := range []int64{1, 2, 5, 100} {
 				b.Run(fmt.Sprintf("%d samples per append", samplesPerAppend), func(b *testing.B) {
-					h, _ := newTestHead(b, 10000, false, false)
+					h, _ := newTestHead(b, 10000, wlog.CompressionNone, false)
 					b.Cleanup(func() { require.NoError(b, h.Close()) })
 
 					ts := int64(1000)
@@ -245,7 +245,7 @@ func BenchmarkLoadWAL(b *testing.B) {
 				func(b *testing.B) {
 					dir := b.TempDir()
 
-					w, err := wlog.New(nil, nil, dir, false)
+					w, err := wlog.New(nil, nil, dir, wlog.CompressionNone)
 					require.NoError(b, err)
 
 					// Write series.
@@ -337,7 +337,7 @@ func BenchmarkLoadWAL(b *testing.B) {
 // While appending the samples to the head it concurrently queries them from multiple go routines and verifies that the
 // returned results are correct.
 func TestHead_HighConcurrencyReadAndWrite(t *testing.T) {
-	head, _ := newTestHead(t, DefaultBlockDuration, false, false)
+	head, _ := newTestHead(t, DefaultBlockDuration, wlog.CompressionNone, false)
 	defer func() {
 		require.NoError(t, head.Close())
 	}()
@@ -527,8 +527,8 @@ func TestHead_HighConcurrencyReadAndWrite(t *testing.T) {
 }
 
 func TestHead_ReadWAL(t *testing.T) {
-	for _, compress := range []bool{false, true} {
-		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
+	for _, compress := range []wlog.CompressionType{wlog.CompressionNone, wlog.CompressionSnappy, wlog.CompressionZstd} {
+		t.Run(fmt.Sprintf("compress=%s", compress), func(t *testing.T) {
 			entries := []interface{}{
 				[]record.RefSeries{
 					{Ref: 10, Labels: labels.FromStrings("a", "1")},
@@ -609,7 +609,7 @@ func TestHead_ReadWAL(t *testing.T) {
 }
 
 func TestHead_WALMultiRef(t *testing.T) {
-	head, w := newTestHead(t, 1000, false, false)
+	head, w := newTestHead(t, 1000, wlog.CompressionNone, false)
 
 	require.NoError(t, head.Init(0))
 
@@ -644,7 +644,7 @@ func TestHead_WALMultiRef(t *testing.T) {
 	require.NotEqual(t, ref1, ref2, "Refs are the same")
 	require.NoError(t, head.Close())
 
-	w, err = wlog.New(nil, nil, w.Dir(), false)
+	w, err = wlog.New(nil, nil, w.Dir(), wlog.CompressionNone)
 	require.NoError(t, err)
 
 	opts := DefaultHeadOptions()
@@ -669,7 +669,7 @@ func TestHead_WALMultiRef(t *testing.T) {
 }
 
 func TestHead_ActiveAppenders(t *testing.T) {
-	head, _ := newTestHead(t, 1000, false, false)
+	head, _ := newTestHead(t, 1000, wlog.CompressionNone, false)
 	defer head.Close()
 
 	require.NoError(t, head.Init(0))
@@ -702,14 +702,14 @@ func TestHead_ActiveAppenders(t *testing.T) {
 }
 
 func TestHead_UnknownWALRecord(t *testing.T) {
-	head, w := newTestHead(t, 1000, false, false)
+	head, w := newTestHead(t, 1000, wlog.CompressionNone, false)
 	w.Log([]byte{255, 42})
 	require.NoError(t, head.Init(0))
 	require.NoError(t, head.Close())
 }
 
 func TestHead_Truncate(t *testing.T) {
-	h, _ := newTestHead(t, 1000, false, false)
+	h, _ := newTestHead(t, 1000, wlog.CompressionNone, false)
 	defer func() {
 		require.NoError(t, h.Close())
 	}()
@@ -847,8 +847,8 @@ func TestMemSeries_truncateChunks(t *testing.T) {
 }
 
 func TestHeadDeleteSeriesWithoutSamples(t *testing.T) {
-	for _, compress := range []bool{false, true} {
-		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
+	for _, compress := range []wlog.CompressionType{wlog.CompressionNone, wlog.CompressionSnappy, wlog.CompressionZstd} {
+		t.Run(fmt.Sprintf("compress=%s", compress), func(t *testing.T) {
 			entries := []interface{}{
 				[]record.RefSeries{
 					{Ref: 10, Labels: labels.FromStrings("a", "1")},
@@ -927,8 +927,8 @@ func TestHeadDeleteSimple(t *testing.T) {
 		},
 	}
 
-	for _, compress := range []bool{false, true} {
-		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
+	for _, compress := range []wlog.CompressionType{wlog.CompressionNone, wlog.CompressionSnappy, wlog.CompressionZstd} {
+		t.Run(fmt.Sprintf("compress=%s", compress), func(t *testing.T) {
 			for _, c := range cases {
 				head, w := newTestHead(t, 1000, compress, false)
 				require.NoError(t, head.Init(0))
@@ -1011,7 +1011,7 @@ func TestHeadDeleteSimple(t *testing.T) {
 }
 
 func TestDeleteUntilCurMax(t *testing.T) {
-	hb, _ := newTestHead(t, 1000000, false, false)
+	hb, _ := newTestHead(t, 1000000, wlog.CompressionNone, false)
 	defer func() {
 		require.NoError(t, hb.Close())
 	}()
@@ -1064,7 +1064,7 @@ func TestDeletedSamplesAndSeriesStillInWALAfterCheckpoint(t *testing.T) {
 	numSamples := 10000
 
 	// Enough samples to cause a checkpoint.
-	hb, w := newTestHead(t, int64(numSamples)*10, false, false)
+	hb, w := newTestHead(t, int64(numSamples)*10, wlog.CompressionNone, false)
 
 	for i := 0; i < numSamples; i++ {
 		app := hb.Appender(context.Background())
@@ -1156,7 +1156,7 @@ func TestDelete_e2e(t *testing.T) {
 		seriesMap[labels.New(l...).String()] = []tsdbutil.Sample{}
 	}
 
-	hb, _ := newTestHead(t, 100000, false, false)
+	hb, _ := newTestHead(t, 100000, wlog.CompressionNone, false)
 	defer func() {
 		require.NoError(t, hb.Close())
 	}()
@@ -1506,7 +1506,7 @@ func TestMemSeries_append_atVariableRate(t *testing.T) {
 func TestGCChunkAccess(t *testing.T) {
 	// Put a chunk, select it. GC it and then access it.
 	const chunkRange = 1000
-	h, _ := newTestHead(t, chunkRange, false, false)
+	h, _ := newTestHead(t, chunkRange, wlog.CompressionNone, false)
 	defer func() {
 		require.NoError(t, h.Close())
 	}()
@@ -1565,7 +1565,7 @@ func TestGCChunkAccess(t *testing.T) {
 func TestGCSeriesAccess(t *testing.T) {
 	// Put a series, select it. GC it and then access it.
 	const chunkRange = 1000
-	h, _ := newTestHead(t, chunkRange, false, false)
+	h, _ := newTestHead(t, chunkRange, wlog.CompressionNone, false)
 	defer func() {
 		require.NoError(t, h.Close())
 	}()
@@ -1624,7 +1624,7 @@ func TestGCSeriesAccess(t *testing.T) {
 }
 
 func TestUncommittedSamplesNotLostOnTruncate(t *testing.T) {
-	h, _ := newTestHead(t, 1000, false, false)
+	h, _ := newTestHead(t, 1000, wlog.CompressionNone, false)
 	defer func() {
 		require.NoError(t, h.Close())
 	}()
@@ -1654,7 +1654,7 @@ func TestUncommittedSamplesNotLostOnTruncate(t *testing.T) {
 }
 
 func TestRemoveSeriesAfterRollbackAndTruncate(t *testing.T) {
-	h, _ := newTestHead(t, 1000, false, false)
+	h, _ := newTestHead(t, 1000, wlog.CompressionNone, false)
 	defer func() {
 		require.NoError(t, h.Close())
 	}()
@@ -1685,8 +1685,8 @@ func TestRemoveSeriesAfterRollbackAndTruncate(t *testing.T) {
 }
 
 func TestHead_LogRollback(t *testing.T) {
-	for _, compress := range []bool{false, true} {
-		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
+	for _, compress := range []wlog.CompressionType{wlog.CompressionNone, wlog.CompressionSnappy, wlog.CompressionZstd} {
+		t.Run(fmt.Sprintf("compress=%s", compress), func(t *testing.T) {
 			h, w := newTestHead(t, 1000, compress, false)
 			defer func() {
 				require.NoError(t, h.Close())
@@ -1743,8 +1743,8 @@ func TestWalRepair_DecodingError(t *testing.T) {
 			5,
 		},
 	} {
-		for _, compress := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s,compress=%t", name, compress), func(t *testing.T) {
+		for _, compress := range []wlog.CompressionType{wlog.CompressionNone, wlog.CompressionSnappy, wlog.CompressionZstd} {
+			t.Run(fmt.Sprintf("%s,compress=%s", name, compress), func(t *testing.T) {
 				dir := t.TempDir()
 
 				// Fill the wal and corrupt it.
@@ -1812,7 +1812,7 @@ func TestHeadReadWriterRepair(t *testing.T) {
 	walDir := filepath.Join(dir, "wal")
 	// Fill the chunk segments and corrupt it.
 	{
-		w, err := wlog.New(nil, nil, walDir, false)
+		w, err := wlog.New(nil, nil, walDir, wlog.CompressionNone)
 		require.NoError(t, err)
 
 		opts := DefaultHeadOptions()
@@ -1880,7 +1880,7 @@ func TestHeadReadWriterRepair(t *testing.T) {
 }
 
 func TestNewWalSegmentOnTruncate(t *testing.T) {
-	h, wal := newTestHead(t, 1000, false, false)
+	h, wal := newTestHead(t, 1000, wlog.CompressionNone, false)
 	defer func() {
 		require.NoError(t, h.Close())
 	}()
@@ -1910,7 +1910,7 @@ func TestNewWalSegmentOnTruncate(t *testing.T) {
 }
 
 func TestAddDuplicateLabelName(t *testing.T) {
-	h, _ := newTestHead(t, 1000, false, false)
+	h, _ := newTestHead(t, 1000, wlog.CompressionNone, false)
 	defer func() {
 		require.NoError(t, h.Close())
 	}()
@@ -1993,7 +1993,7 @@ func TestMemSeriesIsolation(t *testing.T) {
 	}
 
 	// Test isolation without restart of Head.
-	hb, _ := newTestHead(t, 1000, false, false)
+	hb, _ := newTestHead(t, 1000, wlog.CompressionNone, false)
 	i := addSamples(hb)
 	testIsolation(hb, i)
 
@@ -2055,11 +2055,11 @@ func TestMemSeriesIsolation(t *testing.T) {
 	require.NoError(t, hb.Close())
 
 	// Test isolation with restart of Head. This is to verify the num samples of chunks after m-map chunk replay.
-	hb, w := newTestHead(t, 1000, false, false)
+	hb, w := newTestHead(t, 1000, wlog.CompressionNone, false)
 	i = addSamples(hb)
 	require.NoError(t, hb.Close())
 
-	wal, err := wlog.NewSize(nil, nil, w.Dir(), 32768, false)
+	wal, err := wlog.NewSize(nil, nil, w.Dir(), 32768, wlog.CompressionNone)
 	require.NoError(t, err)
 	opts := DefaultHeadOptions()
 	opts.ChunkRange = 1000
@@ -2108,7 +2108,7 @@ func TestIsolationRollback(t *testing.T) {
 	}
 
 	// Rollback after a failed append and test if the low watermark has progressed anyway.
-	hb, _ := newTestHead(t, 1000, false, false)
+	hb, _ := newTestHead(t, 1000, wlog.CompressionNone, false)
 	defer func() {
 		require.NoError(t, hb.Close())
 	}()
@@ -2139,7 +2139,7 @@ func TestIsolationLowWatermarkMonotonous(t *testing.T) {
 		t.Skip("skipping test since tsdb isolation is disabled")
 	}
 
-	hb, _ := newTestHead(t, 1000, false, false)
+	hb, _ := newTestHead(t, 1000, wlog.CompressionNone, false)
 	defer func() {
 		require.NoError(t, hb.Close())
 	}()
@@ -2176,7 +2176,7 @@ func TestIsolationAppendIDZeroIsNoop(t *testing.T) {
 		t.Skip("skipping test since tsdb isolation is disabled")
 	}
 
-	h, _ := newTestHead(t, 1000, false, false)
+	h, _ := newTestHead(t, 1000, wlog.CompressionNone, false)
 	defer func() {
 		require.NoError(t, h.Close())
 	}()
@@ -2207,7 +2207,7 @@ func TestIsolationWithoutAdd(t *testing.T) {
 		t.Skip("skipping test since tsdb isolation is disabled")
 	}
 
-	hb, _ := newTestHead(t, 1000, false, false)
+	hb, _ := newTestHead(t, 1000, wlog.CompressionNone, false)
 	defer func() {
 		require.NoError(t, hb.Close())
 	}()
@@ -2302,7 +2302,7 @@ func TestOutOfOrderSamplesMetric(t *testing.T) {
 }
 
 func testHeadSeriesChunkRace(t *testing.T) {
-	h, _ := newTestHead(t, 1000, false, false)
+	h, _ := newTestHead(t, 1000, wlog.CompressionNone, false)
 	defer func() {
 		require.NoError(t, h.Close())
 	}()
@@ -2337,7 +2337,7 @@ func testHeadSeriesChunkRace(t *testing.T) {
 }
 
 func TestHeadLabelNamesValuesWithMinMaxRange(t *testing.T) {
-	head, _ := newTestHead(t, 1000, false, false)
+	head, _ := newTestHead(t, 1000, wlog.CompressionNone, false)
 	defer func() {
 		require.NoError(t, head.Close())
 	}()
@@ -2397,7 +2397,7 @@ func TestHeadLabelNamesValuesWithMinMaxRange(t *testing.T) {
 }
 
 func TestHeadLabelValuesWithMatchers(t *testing.T) {
-	head, _ := newTestHead(t, 1000, false, false)
+	head, _ := newTestHead(t, 1000, wlog.CompressionNone, false)
 	t.Cleanup(func() { require.NoError(t, head.Close()) })
 
 	app := head.Appender(context.Background())
@@ -2456,7 +2456,7 @@ func TestHeadLabelValuesWithMatchers(t *testing.T) {
 }
 
 func TestHeadLabelNamesWithMatchers(t *testing.T) {
-	head, _ := newTestHead(t, 1000, false, false)
+	head, _ := newTestHead(t, 1000, wlog.CompressionNone, false)
 	defer func() {
 		require.NoError(t, head.Close())
 	}()
@@ -2524,7 +2524,7 @@ func TestHeadLabelNamesWithMatchers(t *testing.T) {
 }
 
 func TestErrReuseAppender(t *testing.T) {
-	head, _ := newTestHead(t, 1000, false, false)
+	head, _ := newTestHead(t, 1000, wlog.CompressionNone, false)
 	defer func() {
 		require.NoError(t, head.Close())
 	}()
@@ -2560,7 +2560,7 @@ func TestErrReuseAppender(t *testing.T) {
 
 func TestHeadMintAfterTruncation(t *testing.T) {
 	chunkRange := int64(2000)
-	head, _ := newTestHead(t, chunkRange, false, false)
+	head, _ := newTestHead(t, chunkRange, wlog.CompressionNone, false)
 
 	app := head.Appender(context.Background())
 	_, err := app.Append(0, labels.FromStrings("a", "b"), 100, 100)
@@ -2594,7 +2594,7 @@ func TestHeadMintAfterTruncation(t *testing.T) {
 
 func TestHeadExemplars(t *testing.T) {
 	chunkRange := int64(2000)
-	head, _ := newTestHead(t, chunkRange, false, false)
+	head, _ := newTestHead(t, chunkRange, wlog.CompressionNone, false)
 	app := head.Appender(context.Background())
 
 	l := labels.FromStrings("traceId", "123")
@@ -2616,7 +2616,7 @@ func TestHeadExemplars(t *testing.T) {
 
 func BenchmarkHeadLabelValuesWithMatchers(b *testing.B) {
 	chunkRange := int64(2000)
-	head, _ := newTestHead(b, chunkRange, false, false)
+	head, _ := newTestHead(b, chunkRange, wlog.CompressionNone, false)
 	b.Cleanup(func() { require.NoError(b, head.Close()) })
 
 	app := head.Appender(context.Background())
@@ -2930,7 +2930,7 @@ func TestAppendHistogram(t *testing.T) {
 	l := labels.FromStrings("a", "b")
 	for _, numHistograms := range []int{1, 10, 150, 200, 250, 300} {
 		t.Run(fmt.Sprintf("%d", numHistograms), func(t *testing.T) {
-			head, _ := newTestHead(t, 1000, false, false)
+			head, _ := newTestHead(t, 1000, wlog.CompressionNone, false)
 			t.Cleanup(func() {
 				require.NoError(t, head.Close())
 			})
@@ -3034,7 +3034,7 @@ func TestAppendHistogram(t *testing.T) {
 }
 
 func TestHistogramInWALAndMmapChunk(t *testing.T) {
-	head, _ := newTestHead(t, 3000, false, false)
+	head, _ := newTestHead(t, 3000, wlog.CompressionNone, false)
 	t.Cleanup(func() {
 		require.NoError(t, head.Close())
 	})
@@ -3188,7 +3188,7 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 	// Restart head.
 	require.NoError(t, head.Close())
 	startHead := func() {
-		w, err := wlog.NewSize(nil, nil, head.wal.Dir(), 32768, false)
+		w, err := wlog.NewSize(nil, nil, head.wal.Dir(), 32768, wlog.CompressionNone)
 		require.NoError(t, err)
 		head, err = NewHead(nil, nil, w, nil, head.opts, nil)
 		require.NoError(t, err)
@@ -3217,7 +3217,7 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 }
 
 func TestChunkSnapshot(t *testing.T) {
-	head, _ := newTestHead(t, 120*4, false, false)
+	head, _ := newTestHead(t, 120*4, wlog.CompressionNone, false)
 	defer func() {
 		head.opts.EnableMemorySnapshotOnShutdown = false
 		require.NoError(t, head.Close())
@@ -3230,8 +3230,12 @@ func TestChunkSnapshot(t *testing.T) {
 
 	numSeries := 10
 	expSeries := make(map[string][]tsdbutil.Sample)
+	expHist := make(map[string][]tsdbutil.Sample)
+	expFloatHist := make(map[string][]tsdbutil.Sample)
 	expTombstones := make(map[storage.SeriesRef]tombstones.Intervals)
 	expExemplars := make([]ex, 0)
+	histograms := tsdbutil.GenerateTestGaugeHistograms(481)
+	floatHistogram := tsdbutil.GenerateTestGaugeFloatHistograms(481)
 
 	addExemplar := func(app storage.Appender, ref storage.SeriesRef, lbls labels.Labels, ts int64) {
 		e := ex{
@@ -3250,8 +3254,20 @@ func TestChunkSnapshot(t *testing.T) {
 	checkSamples := func() {
 		q, err := NewBlockQuerier(head, math.MinInt64, math.MaxInt64)
 		require.NoError(t, err)
-		series := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"))
+		series := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
 		require.Equal(t, expSeries, series)
+	}
+	checkHistograms := func() {
+		q, err := NewBlockQuerier(head, math.MinInt64, math.MaxInt64)
+		require.NoError(t, err)
+		series := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "hist", "baz.*"))
+		require.Equal(t, expHist, series)
+	}
+	checkFloatHistograms := func() {
+		q, err := NewBlockQuerier(head, math.MinInt64, math.MaxInt64)
+		require.NoError(t, err)
+		series := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "floathist", "bat.*"))
+		require.Equal(t, expFloatHist, series)
 	}
 	checkTombstones := func() {
 		tr, err := head.Tombstones()
@@ -3294,13 +3310,15 @@ func TestChunkSnapshot(t *testing.T) {
 	}
 
 	openHeadAndCheckReplay := func() {
-		w, err := wlog.NewSize(nil, nil, head.wal.Dir(), 32768, false)
+		w, err := wlog.NewSize(nil, nil, head.wal.Dir(), 32768, wlog.CompressionNone)
 		require.NoError(t, err)
 		head, err = NewHead(nil, nil, w, nil, head.opts, nil)
 		require.NoError(t, err)
 		require.NoError(t, head.Init(math.MinInt64))
 
 		checkSamples()
+		checkHistograms()
+		checkFloatHistograms()
 		checkTombstones()
 		checkExemplars()
 	}
@@ -3311,11 +3329,26 @@ func TestChunkSnapshot(t *testing.T) {
 		for i := 1; i <= numSeries; i++ {
 			lbls := labels.FromStrings("foo", fmt.Sprintf("bar%d", i))
 			lblStr := lbls.String()
+			lblsHist := labels.FromStrings("hist", fmt.Sprintf("baz%d", i))
+			lblsHistStr := lblsHist.String()
+			lblsFloatHist := labels.FromStrings("floathist", fmt.Sprintf("bat%d", i))
+			lblsFloatHistStr := lblsFloatHist.String()
+
 			// 240 samples should m-map at least 1 chunk.
 			for ts := int64(1); ts <= 240; ts++ {
 				val := rand.Float64()
 				expSeries[lblStr] = append(expSeries[lblStr], sample{ts, val, nil, nil})
 				ref, err := app.Append(0, lbls, ts, val)
+				require.NoError(t, err)
+
+				hist := histograms[int(ts)]
+				expHist[lblsHistStr] = append(expHist[lblsHistStr], sample{ts, 0, hist, nil})
+				_, err = app.AppendHistogram(0, lblsHist, ts, hist, nil)
+				require.NoError(t, err)
+
+				floatHist := floatHistogram[int(ts)]
+				expFloatHist[lblsFloatHistStr] = append(expFloatHist[lblsFloatHistStr], sample{ts, 0, nil, floatHist})
+				_, err = app.AppendHistogram(0, lblsFloatHist, ts, nil, floatHist)
 				require.NoError(t, err)
 
 				// Add an exemplar and to create multiple WAL records.
@@ -3371,11 +3404,26 @@ func TestChunkSnapshot(t *testing.T) {
 		for i := 1; i <= numSeries; i++ {
 			lbls := labels.FromStrings("foo", fmt.Sprintf("bar%d", i))
 			lblStr := lbls.String()
+			lblsHist := labels.FromStrings("hist", fmt.Sprintf("baz%d", i))
+			lblsHistStr := lblsHist.String()
+			lblsFloatHist := labels.FromStrings("floathist", fmt.Sprintf("bat%d", i))
+			lblsFloatHistStr := lblsFloatHist.String()
+
 			// 240 samples should m-map at least 1 chunk.
 			for ts := int64(241); ts <= 480; ts++ {
 				val := rand.Float64()
 				expSeries[lblStr] = append(expSeries[lblStr], sample{ts, val, nil, nil})
 				ref, err := app.Append(0, lbls, ts, val)
+				require.NoError(t, err)
+
+				hist := histograms[int(ts)]
+				expHist[lblsHistStr] = append(expHist[lblsHistStr], sample{ts, 0, hist, nil})
+				_, err = app.AppendHistogram(0, lblsHist, ts, hist, nil)
+				require.NoError(t, err)
+
+				floatHist := floatHistogram[int(ts)]
+				expFloatHist[lblsFloatHistStr] = append(expFloatHist[lblsFloatHistStr], sample{ts, 0, nil, floatHist})
+				_, err = app.AppendHistogram(0, lblsFloatHist, ts, nil, floatHist)
 				require.NoError(t, err)
 
 				// Add an exemplar and to create multiple WAL records.
@@ -3457,7 +3505,7 @@ func TestChunkSnapshot(t *testing.T) {
 }
 
 func TestSnapshotError(t *testing.T) {
-	head, _ := newTestHead(t, 120*4, false, false)
+	head, _ := newTestHead(t, 120*4, wlog.CompressionNone, false)
 	defer func() {
 		head.opts.EnableMemorySnapshotOnShutdown = false
 		require.NoError(t, head.Close())
@@ -3468,6 +3516,19 @@ func TestSnapshotError(t *testing.T) {
 	lbls := labels.FromStrings("foo", "bar")
 	_, err := app.Append(0, lbls, 99, 99)
 	require.NoError(t, err)
+
+	// Add histograms
+	hist := tsdbutil.GenerateTestGaugeHistograms(1)[0]
+	floatHist := tsdbutil.GenerateTestGaugeFloatHistograms(1)[0]
+	lblsHist := labels.FromStrings("hist", "bar")
+	lblsFloatHist := labels.FromStrings("floathist", "bar")
+
+	_, err = app.AppendHistogram(0, lblsHist, 99, hist, nil)
+	require.NoError(t, err)
+
+	_, err = app.AppendHistogram(0, lblsFloatHist, 99, nil, floatHist)
+	require.NoError(t, err)
+
 	require.NoError(t, app.Commit())
 
 	// Add some tombstones.
@@ -3501,7 +3562,7 @@ func TestSnapshotError(t *testing.T) {
 	require.NoError(t, f.Close())
 
 	// Create new Head which should replay this snapshot.
-	w, err := wlog.NewSize(nil, nil, head.wal.Dir(), 32768, false)
+	w, err := wlog.NewSize(nil, nil, head.wal.Dir(), 32768, wlog.CompressionNone)
 	require.NoError(t, err)
 	// Testing https://github.com/prometheus/prometheus/issues/9437 with the registry.
 	head, err = NewHead(prometheus.NewRegistry(), nil, w, nil, head.opts, nil)
@@ -3518,7 +3579,7 @@ func TestSnapshotError(t *testing.T) {
 
 func TestHistogramMetrics(t *testing.T) {
 	numHistograms := 10
-	head, _ := newTestHead(t, 1000, false, false)
+	head, _ := newTestHead(t, 1000, wlog.CompressionNone, false)
 	t.Cleanup(func() {
 		require.NoError(t, head.Close())
 	})
@@ -3548,7 +3609,7 @@ func TestHistogramMetrics(t *testing.T) {
 	require.Equal(t, float64(expHSamples), prom_testutil.ToFloat64(head.metrics.samplesAppended.WithLabelValues(sampleMetricTypeHistogram)))
 
 	require.NoError(t, head.Close())
-	w, err := wlog.NewSize(nil, nil, head.wal.Dir(), 32768, false)
+	w, err := wlog.NewSize(nil, nil, head.wal.Dir(), 32768, wlog.CompressionNone)
 	require.NoError(t, err)
 	head, err = NewHead(nil, nil, w, nil, head.opts, nil)
 	require.NoError(t, err)
@@ -3570,7 +3631,7 @@ func testHistogramStaleSampleHelper(t *testing.T, floatHistogram bool) {
 	t.Helper()
 	l := labels.FromStrings("a", "b")
 	numHistograms := 20
-	head, _ := newTestHead(t, 100000, false, false)
+	head, _ := newTestHead(t, 100000, wlog.CompressionNone, false)
 	t.Cleanup(func() {
 		require.NoError(t, head.Close())
 	})
@@ -3717,7 +3778,7 @@ func TestHistogramCounterResetHeader(t *testing.T) {
 	for _, floatHisto := range []bool{true, false} {
 		t.Run(fmt.Sprintf("floatHistogram=%t", floatHisto), func(t *testing.T) {
 			l := labels.FromStrings("a", "b")
-			head, _ := newTestHead(t, 1000, false, false)
+			head, _ := newTestHead(t, 1000, wlog.CompressionNone, false)
 			t.Cleanup(func() {
 				require.NoError(t, head.Close())
 			})
@@ -3980,7 +4041,7 @@ func TestAppendingDifferentEncodingToSameSeries(t *testing.T) {
 // Tests https://github.com/prometheus/prometheus/issues/9725.
 func TestChunkSnapshotReplayBug(t *testing.T) {
 	dir := t.TempDir()
-	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, true)
+	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, wlog.CompressionSnappy)
 	require.NoError(t, err)
 
 	// Write few series records and samples such that the series references are not in order in the WAL
@@ -4047,7 +4108,7 @@ func TestChunkSnapshotReplayBug(t *testing.T) {
 
 func TestChunkSnapshotTakenAfterIncompleteSnapshot(t *testing.T) {
 	dir := t.TempDir()
-	wlTemp, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, true)
+	wlTemp, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, wlog.CompressionSnappy)
 	require.NoError(t, err)
 
 	// Write a snapshot with .tmp suffix. This used to fail taking any further snapshots or replay of snapshots.
@@ -4085,9 +4146,9 @@ func TestChunkSnapshotTakenAfterIncompleteSnapshot(t *testing.T) {
 // TODO(codesome): Needs test for ooo WAL repair.
 func TestOOOWalReplay(t *testing.T) {
 	dir := t.TempDir()
-	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, true)
+	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, wlog.CompressionSnappy)
 	require.NoError(t, err)
-	oooWlog, err := wlog.NewSize(nil, nil, filepath.Join(dir, wlog.WblDirName), 32768, true)
+	oooWlog, err := wlog.NewSize(nil, nil, filepath.Join(dir, wlog.WblDirName), 32768, wlog.CompressionSnappy)
 	require.NoError(t, err)
 
 	opts := DefaultHeadOptions()
@@ -4132,9 +4193,9 @@ func TestOOOWalReplay(t *testing.T) {
 
 	// Restart head.
 	require.NoError(t, h.Close())
-	wal, err = wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, true)
+	wal, err = wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, wlog.CompressionSnappy)
 	require.NoError(t, err)
-	oooWlog, err = wlog.NewSize(nil, nil, filepath.Join(dir, wlog.WblDirName), 32768, true)
+	oooWlog, err = wlog.NewSize(nil, nil, filepath.Join(dir, wlog.WblDirName), 32768, wlog.CompressionSnappy)
 	require.NoError(t, err)
 	h, err = NewHead(nil, nil, wal, oooWlog, opts, nil)
 	require.NoError(t, err)
@@ -4169,9 +4230,9 @@ func TestOOOWalReplay(t *testing.T) {
 // TestOOOMmapReplay checks the replay at a low level.
 func TestOOOMmapReplay(t *testing.T) {
 	dir := t.TempDir()
-	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, true)
+	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, wlog.CompressionSnappy)
 	require.NoError(t, err)
-	oooWlog, err := wlog.NewSize(nil, nil, filepath.Join(dir, wlog.WblDirName), 32768, true)
+	oooWlog, err := wlog.NewSize(nil, nil, filepath.Join(dir, wlog.WblDirName), 32768, wlog.CompressionSnappy)
 	require.NoError(t, err)
 
 	opts := DefaultHeadOptions()
@@ -4220,9 +4281,9 @@ func TestOOOMmapReplay(t *testing.T) {
 	// Restart head.
 	require.NoError(t, h.Close())
 
-	wal, err = wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, true)
+	wal, err = wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, wlog.CompressionSnappy)
 	require.NoError(t, err)
-	oooWlog, err = wlog.NewSize(nil, nil, filepath.Join(dir, wlog.WblDirName), 32768, true)
+	oooWlog, err = wlog.NewSize(nil, nil, filepath.Join(dir, wlog.WblDirName), 32768, wlog.CompressionSnappy)
 	require.NoError(t, err)
 	h, err = NewHead(nil, nil, wal, oooWlog, opts, nil)
 	require.NoError(t, err)
@@ -4251,7 +4312,7 @@ func TestOOOMmapReplay(t *testing.T) {
 }
 
 func TestHeadInit_DiscardChunksWithUnsupportedEncoding(t *testing.T) {
-	h, _ := newTestHead(t, 1000, false, false)
+	h, _ := newTestHead(t, 1000, wlog.CompressionNone, false)
 	defer func() {
 		require.NoError(t, h.Close())
 	}()
@@ -4294,7 +4355,7 @@ func TestHeadInit_DiscardChunksWithUnsupportedEncoding(t *testing.T) {
 
 	require.NoError(t, h.Close())
 
-	wal, err := wlog.NewSize(nil, nil, filepath.Join(h.opts.ChunkDirRoot, "wal"), 32768, false)
+	wal, err := wlog.NewSize(nil, nil, filepath.Join(h.opts.ChunkDirRoot, "wal"), 32768, wlog.CompressionNone)
 	require.NoError(t, err)
 	h, err = NewHead(nil, nil, wal, nil, h.opts, nil)
 	require.NoError(t, err)
@@ -4329,7 +4390,7 @@ func (c *unsupportedChunk) Encoding() chunkenc.Encoding {
 // Tests https://github.com/prometheus/prometheus/issues/10277.
 func TestMmapPanicAfterMmapReplayCorruption(t *testing.T) {
 	dir := t.TempDir()
-	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, false)
+	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, wlog.CompressionNone)
 	require.NoError(t, err)
 
 	opts := DefaultHeadOptions()
@@ -4362,7 +4423,7 @@ func TestMmapPanicAfterMmapReplayCorruption(t *testing.T) {
 	addChunks()
 
 	require.NoError(t, h.Close())
-	wal, err = wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, false)
+	wal, err = wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, wlog.CompressionNone)
 	require.NoError(t, err)
 
 	mmapFilePath := filepath.Join(dir, "chunks_head", "000001")
@@ -4388,7 +4449,7 @@ func TestReplayAfterMmapReplayError(t *testing.T) {
 	var err error
 
 	openHead := func() {
-		wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, false)
+		wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, wlog.CompressionNone)
 		require.NoError(t, err)
 
 		opts := DefaultHeadOptions()
@@ -4606,9 +4667,9 @@ func generateBigTestHistograms(n int) []*histogram.Histogram {
 
 func TestOOOAppendWithNoSeries(t *testing.T) {
 	dir := t.TempDir()
-	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, true)
+	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, wlog.CompressionSnappy)
 	require.NoError(t, err)
-	oooWlog, err := wlog.NewSize(nil, nil, filepath.Join(dir, wlog.WblDirName), 32768, true)
+	oooWlog, err := wlog.NewSize(nil, nil, filepath.Join(dir, wlog.WblDirName), 32768, wlog.CompressionSnappy)
 	require.NoError(t, err)
 
 	opts := DefaultHeadOptions()
@@ -4687,9 +4748,9 @@ func TestOOOAppendWithNoSeries(t *testing.T) {
 
 func TestHeadMinOOOTimeUpdate(t *testing.T) {
 	dir := t.TempDir()
-	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, true)
+	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, wlog.CompressionSnappy)
 	require.NoError(t, err)
-	oooWlog, err := wlog.NewSize(nil, nil, filepath.Join(dir, wlog.WblDirName), 32768, true)
+	oooWlog, err := wlog.NewSize(nil, nil, filepath.Join(dir, wlog.WblDirName), 32768, wlog.CompressionSnappy)
 	require.NoError(t, err)
 
 	opts := DefaultHeadOptions()
@@ -4734,7 +4795,7 @@ func TestHeadMinOOOTimeUpdate(t *testing.T) {
 
 func TestGaugeHistogramWALAndChunkHeader(t *testing.T) {
 	l := labels.FromStrings("a", "b")
-	head, _ := newTestHead(t, 1000, false, false)
+	head, _ := newTestHead(t, 1000, wlog.CompressionNone, false)
 	t.Cleanup(func() {
 		require.NoError(t, head.Close())
 	})
@@ -4798,7 +4859,7 @@ func TestGaugeHistogramWALAndChunkHeader(t *testing.T) {
 	require.NoError(t, head.Close())
 	require.NoError(t, os.RemoveAll(mmappedChunksDir(head.opts.ChunkDirRoot)))
 
-	w, err := wlog.NewSize(nil, nil, head.wal.Dir(), 32768, false)
+	w, err := wlog.NewSize(nil, nil, head.wal.Dir(), 32768, wlog.CompressionNone)
 	require.NoError(t, err)
 	head, err = NewHead(nil, nil, w, nil, head.opts, nil)
 	require.NoError(t, err)
@@ -4809,7 +4870,7 @@ func TestGaugeHistogramWALAndChunkHeader(t *testing.T) {
 
 func TestGaugeFloatHistogramWALAndChunkHeader(t *testing.T) {
 	l := labels.FromStrings("a", "b")
-	head, _ := newTestHead(t, 1000, false, false)
+	head, _ := newTestHead(t, 1000, wlog.CompressionNone, false)
 	t.Cleanup(func() {
 		require.NoError(t, head.Close())
 	})
@@ -4873,7 +4934,7 @@ func TestGaugeFloatHistogramWALAndChunkHeader(t *testing.T) {
 	require.NoError(t, head.Close())
 	require.NoError(t, os.RemoveAll(mmappedChunksDir(head.opts.ChunkDirRoot)))
 
-	w, err := wlog.NewSize(nil, nil, head.wal.Dir(), 32768, false)
+	w, err := wlog.NewSize(nil, nil, head.wal.Dir(), 32768, wlog.CompressionNone)
 	require.NoError(t, err)
 	head, err = NewHead(nil, nil, w, nil, head.opts, nil)
 	require.NoError(t, err)
@@ -4883,7 +4944,7 @@ func TestGaugeFloatHistogramWALAndChunkHeader(t *testing.T) {
 }
 
 func TestSnapshotAheadOfWALError(t *testing.T) {
-	head, _ := newTestHead(t, 120*4, false, false)
+	head, _ := newTestHead(t, 120*4, wlog.CompressionNone, false)
 	head.opts.EnableMemorySnapshotOnShutdown = true
 	// Add a sample to fill WAL.
 	app := head.Appender(context.Background())
@@ -4906,7 +4967,7 @@ func TestSnapshotAheadOfWALError(t *testing.T) {
 	// to keep using the same snapshot directory instead of a random one.
 	require.NoError(t, os.RemoveAll(head.wal.Dir()))
 	head.opts.EnableMemorySnapshotOnShutdown = false
-	w, _ := wlog.NewSize(nil, nil, head.wal.Dir(), 32768, false)
+	w, _ := wlog.NewSize(nil, nil, head.wal.Dir(), 32768, wlog.CompressionNone)
 	head, err = NewHead(nil, nil, w, nil, head.opts, nil)
 	require.NoError(t, err)
 	// Add a sample to fill WAL.
@@ -4925,7 +4986,7 @@ func TestSnapshotAheadOfWALError(t *testing.T) {
 
 	// Create new Head which should detect the incorrect index and delete the snapshot.
 	head.opts.EnableMemorySnapshotOnShutdown = true
-	w, _ = wlog.NewSize(nil, nil, head.wal.Dir(), 32768, false)
+	w, _ = wlog.NewSize(nil, nil, head.wal.Dir(), 32768, wlog.CompressionNone)
 	head, err = NewHead(nil, nil, w, nil, head.opts, nil)
 	require.NoError(t, err)
 	require.NoError(t, head.Init(math.MinInt64))
