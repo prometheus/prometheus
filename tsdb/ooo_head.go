@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 )
@@ -35,13 +36,13 @@ func NewOOOChunk() *OOOChunk {
 
 // Insert inserts the sample such that order is maintained.
 // Returns false if insert was not possible due to the same timestamp already existing.
-func (o *OOOChunk) Insert(t int64, v float64) bool {
+func (o *OOOChunk) Insert(t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) bool {
 	// Although out-of-order samples can be out-of-order amongst themselves, we
 	// are opinionated and expect them to be usually in-order meaning we could
 	// try to append at the end first if the new timestamp is higher than the
 	// last known timestamp.
 	if len(o.samples) == 0 || t > o.samples[len(o.samples)-1].t {
-		o.samples = append(o.samples, sample{t, v, nil, nil})
+		o.samples = append(o.samples, sample{t, v, h, fh})
 		return true
 	}
 
@@ -50,7 +51,7 @@ func (o *OOOChunk) Insert(t int64, v float64) bool {
 
 	if i >= len(o.samples) {
 		// none found. append it at the end
-		o.samples = append(o.samples, sample{t, v, nil, nil})
+		o.samples = append(o.samples, sample{t, v, h, fh})
 		return true
 	}
 
@@ -62,7 +63,7 @@ func (o *OOOChunk) Insert(t int64, v float64) bool {
 	// Expand length by 1 to make room. use a zero sample, we will overwrite it anyway.
 	o.samples = append(o.samples, sample{})
 	copy(o.samples[i+1:], o.samples[i:])
-	o.samples[i] = sample{t, v, nil, nil}
+	o.samples[i] = sample{t, v, h, fh}
 
 	return true
 }
@@ -99,6 +100,66 @@ func (o *OOOChunk) ToXORBetweenTimestamps(mint, maxt int64) (*chunkenc.XORChunk,
 		app.Append(s.t, s.f)
 	}
 	return x, nil
+}
+
+func (o *OOOChunk) ToHistogram() (*chunkenc.HistogramChunk, error) {
+	ch := chunkenc.NewHistogramChunk()
+	app, err := ch.Appender()
+	if err != nil {
+		return nil, err
+	}
+	for _, s := range o.samples {
+		app.AppendHistogram(s.t, s.h)
+	}
+	return ch, nil
+}
+
+func (o *OOOChunk) ToHistogramBetweenTimestamps(mint, maxt int64) (*chunkenc.HistogramChunk, error) {
+	ch := chunkenc.NewHistogramChunk()
+	app, err := ch.Appender()
+	if err != nil {
+		return nil, err
+	}
+	for _, s := range o.samples {
+		if s.t < mint {
+			continue
+		}
+		if s.t > maxt {
+			break
+		}
+		app.AppendHistogram(s.t, s.h)
+	}
+	return ch, nil
+}
+
+func (o *OOOChunk) ToFloatHistogram() (*chunkenc.FloatHistogramChunk, error) {
+	ch := chunkenc.NewFloatHistogramChunk()
+	app, err := ch.Appender()
+	if err != nil {
+		return nil, err
+	}
+	for _, s := range o.samples {
+		app.AppendFloatHistogram(s.t, s.fh)
+	}
+	return ch, nil
+}
+
+func (o *OOOChunk) ToFloatHistogramBetweenTimestamps(mint, maxt int64) (*chunkenc.FloatHistogramChunk, error) {
+	ch := chunkenc.NewFloatHistogramChunk()
+	app, err := ch.Appender()
+	if err != nil {
+		return nil, err
+	}
+	for _, s := range o.samples {
+		if s.t < mint {
+			continue
+		}
+		if s.t > maxt {
+			break
+		}
+		app.AppendFloatHistogram(s.t, s.fh)
+	}
+	return ch, nil
 }
 
 var _ BlockReader = &OOORangeHead{}
