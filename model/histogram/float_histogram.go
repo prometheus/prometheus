@@ -421,7 +421,7 @@ func addBucket(
 // receiving histogram, but a pointer to it is returned for convenience.
 //
 // The ideal value for maxEmptyBuckets depends on circumstances. The motivation
-// to set maxEmptyBuckets > 0 is the assumption that is is less overhead to
+// to set maxEmptyBuckets > 0 is the assumption that is less overhead to
 // represent very few empty buckets explicitly within one span than cutting the
 // one span into two to treat the empty buckets as a gap between the two spans,
 // both in terms of storage requirement as well as in terms of encoding and
