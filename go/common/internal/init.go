@@ -119,10 +119,12 @@ func CHashdexCtor() CHashdex {
 	return CHashdex(C.okdb_wal_c_hashdex_ctor())
 }
 
-func CHashdexPresharding(hashdex CHashdex, protoData []byte) {
+func CHashdexPresharding(hashdex CHashdex, protoData []byte, cluster, replica *CSlice) {
 	C.okdb_wal_c_hashdex_presharding(
 		C.c_hashdex(hashdex),
 		C.size_t(uintptr(unsafe.Pointer(&protoData))),
+		C.size_t(uintptr(unsafe.Pointer(cluster))),
+		C.size_t(uintptr(unsafe.Pointer(replica))),
 	)
 }
 
