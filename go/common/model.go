@@ -13,6 +13,8 @@ import (
 
 // ShardedData - array of structures with (*LabelSet, timestamp, value, LSHash)
 type ShardedData interface {
+	Cluster() string
+	Replica() string
 	Destroy()
 }
 
@@ -74,6 +76,8 @@ func (key SegmentKey) String() string {
 type Hashdex struct {
 	hashdex internal.CHashdex
 	data    []byte
+	cluster *internal.CSlice
+	replica *internal.CSlice
 }
 
 //
@@ -81,14 +85,33 @@ type Hashdex struct {
 //
 
 // NewHashdex - init new Hashdex.
-func NewHashdex(protoData []byte) *Hashdex {
+func NewHashdex(protoData []byte) ShardedData {
+	// cluster and replica - in memory GO(protoData)
 	h := &Hashdex{
 		hashdex: internal.CHashdexCtor(),
 		data:    protoData,
+		cluster: &internal.CSlice{},
+		replica: &internal.CSlice{},
 	}
-	internal.CHashdexPresharding(h.hashdex, h.data)
+	internal.CHashdexPresharding(h.hashdex, h.data, h.cluster, h.replica)
 	runtime.KeepAlive(h.data)
 	return h
+}
+
+// Cluster - get Cluster name.
+func (h *Hashdex) Cluster() string {
+	data := *(*[]byte)((unsafe.Pointer(h.cluster)))
+	copyData := make([]byte, len(data))
+	copy(copyData, data)
+	return string(copyData)
+}
+
+// Replica - get Replica name.
+func (h *Hashdex) Replica() string {
+	data := *(*[]byte)((unsafe.Pointer(h.replica)))
+	copyData := make([]byte, len(data))
+	copy(copyData, data)
+	return string(copyData)
 }
 
 // Destroy - clear memory in C/C++.

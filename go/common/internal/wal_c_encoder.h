@@ -44,7 +44,7 @@ void okdb_wal_c_redundant_destroy(c_redundant* c_rt);
 // okdb_wal_c_hashdex_ctor - constructor, C wrapper C++, init C++ class Hashdex.
 c_hashdex okdb_wal_c_hashdex_ctor();
 // okdb_wal_c_hashdex_presharding - C wrapper C++, calls C++ class Hashdex methods.
-void okdb_wal_c_hashdex_presharding(c_hashdex c_hx, c_slice_from_go_ptr proto_data);
+void okdb_wal_c_hashdex_presharding(c_hashdex c_hx, c_slice_from_go_ptr proto_data, c_slice_from_go_ptr cluster, c_slice_from_go_ptr replica);
 // okdb_wal_c_hashdex_dtor - calls the destructor, C wrapper C++ for clear memory.
 void okdb_wal_c_hashdex_dtor(c_hashdex c_hx);
 

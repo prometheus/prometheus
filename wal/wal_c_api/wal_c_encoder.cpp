@@ -14,16 +14,37 @@ namespace Wrapper {
 class Hashdex {
  private:
   BareBones::Vector<PromPP::Prometheus::RemoteWrite::TimeseriesProtobufHashdexRecord> hashdex_;
+  std::string_view replica_;
+  std::string_view cluster_;
 
  public:
   inline __attribute__((always_inline)) Hashdex() noexcept {}
 
   // presharding - from protobuf make presharding slice with hash end proto.
-  inline __attribute__((always_inline)) void presharding(c_slice proto_data) {
+  inline __attribute__((always_inline)) void presharding(c_slice proto_data, c_slice* cluster, c_slice* replica) {
     protozero::pbf_reader pb(std::string_view{static_cast<const char*>(proto_data.array), proto_data.len});
     PromPP::Prometheus::RemoteWrite::read_many_timeseries_in_hashdex<PromPP::Primitives::TimeseriesSemiview,
                                                                    BareBones::Vector<PromPP::Prometheus::RemoteWrite::TimeseriesProtobufHashdexRecord>>(pb,
                                                                                                                                                       hashdex_);
+    if (!hashdex_.empty()) {
+      PromPP::Primitives::TimeseriesSemiview timeseries;
+      PromPP::Prometheus::RemoteWrite::read_timeseries_without_samples(protozero::pbf_reader{hashdex_.begin()->timeseries_protobuf_message}, timeseries);
+      for (const auto& [name, value] : timeseries.label_set()) {
+        if (name == "__replica__") {
+          replica_ = value;
+        }
+        if (name == "cluster") {
+          cluster_ = value;
+        }
+      }
+      timeseries.clear();
+      cluster->array = cluster_.begin();
+      cluster->len = cluster_.size();
+      cluster->cap = cluster_.size();
+      replica->array = replica_.begin();
+      replica->len = replica_.size();
+      replica->cap = replica_.size();
+    }
   };
   inline __attribute__((always_inline)) BareBones::Vector<PromPP::Prometheus::RemoteWrite::TimeseriesProtobufHashdexRecord> data() { return hashdex_; };
   inline __attribute__((always_inline)) ~Hashdex(){};
@@ -100,8 +121,8 @@ c_hashdex OKDB_WAL_PREFIXED_NAME(okdb_wal_c_hashdex_ctor)() {
 }
 
 // okdb_wal_c_hashdex_presharding - C wrapper C++, calls C++ class Hashdex methods.
-void OKDB_WAL_PREFIXED_NAME(okdb_wal_c_hashdex_presharding)(c_hashdex c_hx, c_slice_ptr proto_data) {
-  return static_cast<Wrapper::Hashdex*>(c_hx)->presharding(*proto_data);
+void OKDB_WAL_PREFIXED_NAME(okdb_wal_c_hashdex_presharding)(c_hashdex c_hx, c_slice_ptr proto_data, c_slice_ptr cluster, c_slice_ptr replica) {
+  return static_cast<Wrapper::Hashdex*>(c_hx)->presharding(*proto_data, cluster, replica);
 }
 
 // okdb_wal_c_hashdex_dtor - calls the destructor, C wrapper C++ for clear memory.

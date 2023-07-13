@@ -128,10 +128,12 @@ func CHashdexCtor() CHashdex {
 	return CHashdex(hashdex)
 }
 
-func CHashdexPresharding(hashdex CHashdex, protoData []byte) {
-	fastcgo.UnsafeCall2(C.okdb_wal_c_hashdex_presharding,
+func CHashdexPresharding(hashdex CHashdex, protoData []byte, cluster, replica *CSlice) {
+	fastcgo.UnsafeCall4(C.okdb_wal_c_hashdex_presharding,
 		uintptr(hashdex),
 		uintptr(unsafe.Pointer(&protoData)),
+		uintptr(unsafe.Pointer(cluster)),
+		uintptr(unsafe.Pointer(replica)),
 	)
 }
 

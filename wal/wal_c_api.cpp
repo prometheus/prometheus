@@ -183,8 +183,8 @@ c_hashdex okdb_wal_c_hashdex_ctor() {
 }
 
 // okdb_wal_c_hashdex_presharding - C wrapper C++, calls C++ class Hashdex methods.
-void okdb_wal_c_hashdex_presharding(c_hashdex c_hx, c_slice_ptr proto_data) {
-  return std::visit([&](auto& vtbl) { return vtbl.template call<"okdb_wal_c_hashdex_presharding">(c_hx, proto_data); }, encoder_vtbl);
+void okdb_wal_c_hashdex_presharding(c_hashdex c_hx, c_slice_ptr proto_data, c_slice_ptr cluster, c_slice_ptr replica) {
+  return std::visit([&](auto& vtbl) { return vtbl.template call<"okdb_wal_c_hashdex_presharding">(c_hx, proto_data, cluster, replica); }, encoder_vtbl);
 }
 
 // okdb_wal_c_hashdex_dtor - calls the destructor, C wrapper C++ for clear memory.
