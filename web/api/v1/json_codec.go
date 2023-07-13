@@ -70,12 +70,7 @@ func marshalSeriesJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 	s := *((*promql.Series)(ptr))
 	stream.WriteObjectStart()
 	stream.WriteObjectField(`metric`)
-	m, err := s.Metric.MarshalJSON()
-	if err != nil {
-		stream.Error = err
-		return
-	}
-	stream.SetBuffer(append(stream.Buffer(), m...))
+	marshalLabelsJSON(s.Metric, stream)
 
 	for i, p := range s.Floats {
 		stream.WriteMore()
@@ -131,12 +126,7 @@ func marshalSampleJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 	s := *((*promql.Sample)(ptr))
 	stream.WriteObjectStart()
 	stream.WriteObjectField(`metric`)
-	m, err := s.Metric.MarshalJSON()
-	if err != nil {
-		stream.Error = err
-		return
-	}
-	stream.SetBuffer(append(stream.Buffer(), m...))
+	marshalLabelsJSON(s.Metric, stream)
 	stream.WriteMore()
 	if s.H == nil {
 		stream.WriteObjectField(`value`)
@@ -196,12 +186,7 @@ func marshalExemplarJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 
 	// "labels" key.
 	stream.WriteObjectField(`labels`)
-	lbls, err := p.Labels.MarshalJSON()
-	if err != nil {
-		stream.Error = err
-		return
-	}
-	stream.SetBuffer(append(stream.Buffer(), lbls...))
+	marshalLabelsJSON(p.Labels, stream)
 
 	// "value" key.
 	stream.WriteMore()
