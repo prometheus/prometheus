@@ -137,7 +137,7 @@ func (oh *OOOHeadIndexReader) series(ref storage.SeriesRef, builder *labels.Scra
 	// chunks Meta the first chunk that overlaps with others.
 	// Example chunks of a series: 5:(100, 200) 6:(500, 600) 7:(150, 250) 8:(550, 650)
 	// In the example 5 overlaps with 7 and 6 overlaps with 8 so we only want to
-	// to return chunk Metas for chunk 5 and chunk 6e
+	// return chunk Metas for chunk 5 and chunk 6e
 	*chks = append(*chks, tmpChks[0])
 	maxTime := tmpChks[0].MaxTime // Tracks the maxTime of the previous "to be merged chunk".
 	for _, c := range tmpChks[1:] {

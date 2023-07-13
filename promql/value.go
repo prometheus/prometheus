@@ -214,7 +214,7 @@ func (s Sample) MarshalJSON() ([]byte, error) {
 	return json.Marshal(h)
 }
 
-// Vector is basically only an an alias for []Sample, but the contract is that
+// Vector is basically only an alias for []Sample, but the contract is that
 // in a Vector, all Samples have the same timestamp.
 type Vector []Sample
 
