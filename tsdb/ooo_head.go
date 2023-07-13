@@ -159,7 +159,6 @@ func (o *OOOChunk) ToHistogram() ([]*chunkenc.HistogramChunk, []int64, []int64, 
 				ch = chunkenc.NewHistogramChunk()
 				minT = s.t
 				maxT = s.t
-				//c = s.cutNewHeadChunk(t, chunkenc.EncHistogram, o.chunkDiskMapper, o.chunkRange)
 				chunkCreated = true
 			case len(pForwardInserts) > 0 || len(nForwardInserts) > 0:
 				// New buckets have appeared. We need to recode all
