@@ -1460,13 +1460,15 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, s
 		s.qm.metrics.failedSamplesTotal.Add(float64(sampleCount))
 		s.qm.metrics.failedExemplarsTotal.Add(float64(exemplarCount))
 		s.qm.metrics.failedHistogramsTotal.Add(float64(histogramCount))
+	} else {
+		s.qm.lastSendTimestamp.Store(time.Now().Unix())
 	}
 
 	// These counters are used to calculate the dynamic sharding, and as such
 	// should be maintained irrespective of success or failure.
 	s.qm.dataOut.incr(int64(len(samples)))
 	s.qm.dataOutDuration.incr(int64(time.Since(begin)))
-	s.qm.lastSendTimestamp.Store(time.Now().Unix())
+
 	// Pending samples/exemplars/histograms also should be subtracted as an error means
 	// they will not be retried.
 	s.qm.metrics.pendingSamples.Sub(float64(sampleCount))
