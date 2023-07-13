@@ -615,7 +615,7 @@ Create blocks of data for new recording rules.
 
 ### `promtool promql`
 
-PromQL formatting and editing. Requires the --experimental flag.
+PromQL formatting and editing. Requires the `--experimental` flag.
 
 
 
