@@ -930,21 +930,23 @@ func (a *headAppender) Commit() (err error) {
 	defer a.head.iso.closeAppend(a.appendID)
 
 	var (
-		samplesAppended = len(a.samples)
-		oooAccepted     int   // number of samples out of order but accepted: with ooo enabled and within time window
-		oooRejected     int   // number of samples rejected due to: out of order but OOO support disabled.
-		tooOldRejected  int   // number of samples rejected due to: that are out of order but too old (OOO support enabled, but outside time window)
-		oobRejected     int   // number of samples rejected due to: out of bounds: with t < minValidTime (OOO support disabled)
-		inOrderMint     int64 = math.MaxInt64
-		inOrderMaxt     int64 = math.MinInt64
-		ooomint         int64 = math.MaxInt64
-		ooomaxt         int64 = math.MinInt64
-		wblSamples      []record.RefSample
-		oooMmapMarkers  map[chunks.HeadSeriesRef]chunks.ChunkDiskMapperRef
-		oooRecords      [][]byte
-		oooCapMax       = a.head.opts.OutOfOrderCapMax.Load()
-		series          *memSeries
-		appendChunkOpts = chunkOpts{
+		samplesAppended     = len(a.samples)
+		oooAccepted         int   // number of samples out of order but accepted: with ooo enabled and within time window
+		oooRejected         int   // number of samples rejected due to: out of order but OOO support disabled.
+		tooOldRejected      int   // number of samples rejected due to: that are out of order but too old (OOO support enabled, but outside time window)
+		oobRejected         int   // number of samples rejected due to: out of bounds: with t < minValidTime (OOO support disabled)
+		inOrderMint         int64 = math.MaxInt64
+		inOrderMaxt         int64 = math.MinInt64
+		ooomint             int64 = math.MaxInt64
+		ooomaxt             int64 = math.MinInt64
+		wblSamples          []record.RefSample
+		wblHistograms       []record.RefHistogramSample
+		oooMmapMarkers      map[chunks.HeadSeriesRef][]chunks.ChunkDiskMapperRef
+		oooMmapMarkersCount int
+		oooRecords          [][]byte
+		oooCapMax           = a.head.opts.OutOfOrderCapMax.Load()
+		series              *memSeries
+		appendChunkOpts     = chunkOpts{
 			chunkDiskMapper: a.head.chunkDiskMapper,
 			chunkRange:      a.head.chunkRange.Load(),
 			samplesPerChunk: a.head.opts.SamplesPerChunk,
@@ -961,6 +963,7 @@ func (a *headAppender) Commit() (err error) {
 			// WBL is not enabled. So no need to collect.
 			wblSamples = nil
 			oooMmapMarkers = nil
+			oooMmapMarkersCount = 0
 			return
 		}
 		// The m-map happens before adding a new sample. So we collect
@@ -969,12 +972,14 @@ func (a *headAppender) Commit() (err error) {
 		//   WBL Before this Commit(): [old samples before this commit for chunk 1]
 		//   WBL After this Commit():  [old samples before this commit for chunk 1][new samples in this commit for chunk 1]mmapmarker1[samples for chunk 2]mmapmarker2[samples for chunk 3]
 		if oooMmapMarkers != nil {
-			markers := make([]record.RefMmapMarker, 0, len(oooMmapMarkers))
-			for ref, mmapRef := range oooMmapMarkers {
-				markers = append(markers, record.RefMmapMarker{
-					Ref:     ref,
-					MmapRef: mmapRef,
-				})
+			markers := make([]record.RefMmapMarker, 0, oooMmapMarkersCount)
+			for ref, mmapRefs := range oooMmapMarkers {
+				for _, mmapRef := range mmapRefs {
+					markers = append(markers, record.RefMmapMarker{
+						Ref:     ref,
+						MmapRef: mmapRef,
+					})
+				}
 			}
 			r := enc.MmapMarkers(markers, a.head.getBytesBuffer())
 			oooRecords = append(oooRecords, r)
@@ -984,8 +989,13 @@ func (a *headAppender) Commit() (err error) {
 			r := enc.Samples(wblSamples, a.head.getBytesBuffer())
 			oooRecords = append(oooRecords, r)
 		}
+		if len(wblHistograms) > 0 {
+			r := enc.HistogramSamples(wblHistograms, a.head.getBytesBuffer())
+			oooRecords = append(oooRecords, r)
+		}
 
 		wblSamples = nil
+		wblHistograms = nil
 		oooMmapMarkers = nil
 	}
 	for i, s := range a.samples {
@@ -1017,11 +1027,11 @@ func (a *headAppender) Commit() (err error) {
 		case oooSample:
 			// Sample is OOO and OOO handling is enabled
 			// and the delta is within the OOO tolerance.
-			var mmapRef chunks.ChunkDiskMapperRef
-			ok, chunkCreated, mmapRef = series.insert(s.T, s.V, nil, nil, a.head.chunkDiskMapper, oooCapMax)
+			var mmapRefs []chunks.ChunkDiskMapperRef
+			ok, chunkCreated, mmapRefs = series.insert(s.T, s.V, nil, nil, a.head.chunkDiskMapper, oooCapMax)
 			if chunkCreated {
 				r, ok := oooMmapMarkers[series.ref]
-				if !ok || r != 0 {
+				if !ok || r != nil {
 					// !ok means there are no markers collected for these samples yet. So we first flush the samples
 					// before setting this m-map marker.
 
@@ -1032,9 +1042,10 @@ func (a *headAppender) Commit() (err error) {
 				}
 
 				if oooMmapMarkers == nil {
-					oooMmapMarkers = make(map[chunks.HeadSeriesRef]chunks.ChunkDiskMapperRef)
+					oooMmapMarkers = make(map[chunks.HeadSeriesRef][]chunks.ChunkDiskMapperRef)
 				}
-				oooMmapMarkers[series.ref] = mmapRef
+				oooMmapMarkers[series.ref] = mmapRefs
+				oooMmapMarkersCount += len(mmapRefs)
 			}
 			if ok {
 				wblSamples = append(wblSamples, s)
@@ -1082,27 +1093,91 @@ func (a *headAppender) Commit() (err error) {
 	for i, s := range a.histograms {
 		series = a.histogramSeries[i]
 		series.Lock()
-		// TODO(histograms): Add appendable check first like floats and then insert
-		ok, chunkCreated := series.appendHistogram(s.T, s.H, a.appendID, appendChunkOpts)
-		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
-		series.pendingCommit = false
-		series.Unlock()
 
-		if ok {
-			if s.T < inOrderMint {
-				inOrderMint = s.T
-			}
-			if s.T > inOrderMaxt {
-				inOrderMaxt = s.T
-			}
-		} else {
+		oooSample, _, err := series.appendableHistogram(s.T, s.H, a.headMaxt, a.minValidTime, a.oooTimeWindow)
+		switch err {
+		case storage.ErrOutOfOrderSample:
 			histogramsTotal--
-			histoOOORejected++
+			oooRejected++
+		case storage.ErrOutOfBounds:
+			histogramsTotal--
+			oobRejected++
+		case storage.ErrTooOldSample:
+			histogramsTotal--
+			tooOldRejected++
+		case nil:
+			// Do nothing.
+		default:
+			histogramsTotal--
 		}
+
+		var ok, chunkCreated bool
+
+		switch {
+		case err != nil:
+			// Do nothing here.
+		case oooSample:
+			// Sample is OOO and OOO handling is enabled
+			// and the delta is within the OOO tolerance.
+			var mmapRefs []chunks.ChunkDiskMapperRef
+			ok, chunkCreated, mmapRefs = series.insert(s.T, 0, s.H, nil, a.head.chunkDiskMapper, oooCapMax)
+			if chunkCreated {
+				r, ok := oooMmapMarkers[series.ref]
+				if !ok || r != nil {
+					// !ok means there are no markers collected for these samples yet. So we first flush the samples
+					// before setting this m-map marker.
+
+					// r != 0 means we have already m-mapped a chunk for this series in the same Commit().
+					// Hence, before we m-map again, we should add the samples and m-map markers
+					// seen till now to the WBL records.
+					collectOOORecords()
+				}
+
+				if oooMmapMarkers == nil {
+					oooMmapMarkers = make(map[chunks.HeadSeriesRef][]chunks.ChunkDiskMapperRef)
+				}
+				oooMmapMarkers[series.ref] = mmapRefs
+				oooMmapMarkersCount += len(mmapRefs)
+			}
+			if ok {
+				wblHistograms = append(wblHistograms, s)
+				if s.T < ooomint {
+					ooomint = s.T
+				}
+				if s.T > ooomaxt {
+					ooomaxt = s.T
+				}
+				oooAccepted++
+			} else {
+				// Sample is an exact duplicate of the last sample.
+				// NOTE: We can only detect updates if they clash with a sample in the OOOHeadChunk,
+				// not with samples in already flushed OOO chunks.
+				// TODO(codesome): Add error reporting? It depends on addressing https://github.com/prometheus/prometheus/discussions/10305.
+				histogramsTotal--
+			}
+		default:
+			ok, chunkCreated = series.appendHistogram(s.T, s.H, a.appendID, appendChunkOpts)
+			if ok {
+				if s.T < inOrderMint {
+					inOrderMint = s.T
+				}
+				if s.T > inOrderMaxt {
+					inOrderMaxt = s.T
+				}
+			} else {
+				histogramsTotal--
+				histoOOORejected++
+			}
+		}
+
 		if chunkCreated {
 			a.head.metrics.chunks.Inc()
 			a.head.metrics.chunksCreated.Inc()
 		}
+
+		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
+		series.pendingCommit = false
+		series.Unlock()
 	}
 
 	histogramsTotal += len(a.floatHistograms)
@@ -1163,14 +1238,14 @@ func (a *headAppender) Commit() (err error) {
 }
 
 // insert is like append, except it inserts. Used for OOO samples.
-func (s *memSeries) insert(t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, chunkDiskMapper *chunks.ChunkDiskMapper, oooCapMax int64) (inserted, chunkCreated bool, mmapRef chunks.ChunkDiskMapperRef) {
+func (s *memSeries) insert(t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, chunkDiskMapper *chunks.ChunkDiskMapper, oooCapMax int64) (inserted, chunkCreated bool, mmapRefs []chunks.ChunkDiskMapperRef) {
 	if s.ooo == nil {
 		s.ooo = &memSeriesOOOFields{}
 	}
 	c := s.ooo.oooHeadChunk
 	if c == nil || c.chunk.NumSamples() == int(oooCapMax) {
 		// Note: If no new samples come in then we rely on compaction to clean up stale in-memory OOO chunks.
-		c, mmapRef = s.cutNewOOOHeadChunk(t, chunkDiskMapper)
+		c, mmapRefs = s.cutNewOOOHeadChunk(t, chunkDiskMapper)
 		chunkCreated = true
 	}
 
@@ -1183,7 +1258,7 @@ func (s *memSeries) insert(t int64, v float64, h *histogram.Histogram, fh *histo
 			c.maxTime = t
 		}
 	}
-	return ok, chunkCreated, mmapRef
+	return ok, chunkCreated, mmapRefs
 }
 
 // chunkOpts are chunk-level options that are passed when appending to a memSeries.
@@ -1508,7 +1583,7 @@ func (s *memSeries) cutNewHeadChunk(
 
 // cutNewOOOHeadChunk cuts a new OOO chunk and m-maps the old chunk.
 // The caller must ensure that s.ooo is not nil.
-func (s *memSeries) cutNewOOOHeadChunk(mint int64, chunkDiskMapper *chunks.ChunkDiskMapper) (*oooHeadChunk, chunks.ChunkDiskMapperRef) {
+func (s *memSeries) cutNewOOOHeadChunk(mint int64, chunkDiskMapper *chunks.ChunkDiskMapper) (*oooHeadChunk, []chunks.ChunkDiskMapperRef) {
 	ref := s.mmapCurrentOOOHeadChunk(chunkDiskMapper)
 
 	s.ooo.oooHeadChunk = &oooHeadChunk{
@@ -1520,21 +1595,49 @@ func (s *memSeries) cutNewOOOHeadChunk(mint int64, chunkDiskMapper *chunks.Chunk
 	return s.ooo.oooHeadChunk, ref
 }
 
-func (s *memSeries) mmapCurrentOOOHeadChunk(chunkDiskMapper *chunks.ChunkDiskMapper) chunks.ChunkDiskMapperRef {
-	if s.ooo == nil || s.ooo.oooHeadChunk == nil {
+func (s *memSeries) mmapCurrentOOOHeadChunk(chunkDiskMapper *chunks.ChunkDiskMapper) []chunks.ChunkDiskMapperRef {
+	switch {
+	case s.ooo == nil:
+		// OOO is not enabled.
+		return []chunks.ChunkDiskMapperRef{0}
+	case s.ooo.oooHeadChunk == nil:
 		// There is no head chunk, so nothing to m-map here.
-		return 0
+		return []chunks.ChunkDiskMapperRef{0}
+	case s.ooo.oooHeadChunk.chunk.samples[0].fh != nil:
+		// We have float histogram samples
+		// TODO(histograms): implement
+		return nil
+	case s.ooo.oooHeadChunk.chunk.samples[0].h != nil:
+		// We have histogram samples
+		histogramChunks, minTimes, maxTimes, err := s.ooo.oooHeadChunk.chunk.ToHistogram()
+		if err != nil {
+			handleChunkWriteError(err)
+		}
+		var chunkRefs []chunks.ChunkDiskMapperRef
+		for i, chunk := range histogramChunks {
+			chunkRef := chunkDiskMapper.WriteChunk(s.ref, s.ooo.oooHeadChunk.minTime, s.ooo.oooHeadChunk.maxTime, chunk, true, handleChunkWriteError)
+			chunkRefs = append(chunkRefs, chunkRef)
+			s.ooo.oooMmappedChunks = append(s.ooo.oooMmappedChunks, &mmappedChunk{
+				ref:        chunkRef,
+				numSamples: uint16(chunk.NumSamples()),
+				minTime:    minTimes[i],
+				maxTime:    maxTimes[i],
+			})
+		}
+		return chunkRefs
+	default:
+		//  Float samples
+		xor, _ := s.ooo.oooHeadChunk.chunk.ToXOR() // Encode to XorChunk which is more compact and implements all of the needed functionality.
+		chunkRef := chunkDiskMapper.WriteChunk(s.ref, s.ooo.oooHeadChunk.minTime, s.ooo.oooHeadChunk.maxTime, xor, true, handleChunkWriteError)
+		s.ooo.oooMmappedChunks = append(s.ooo.oooMmappedChunks, &mmappedChunk{
+			ref:        chunkRef,
+			numSamples: uint16(xor.NumSamples()),
+			minTime:    s.ooo.oooHeadChunk.minTime,
+			maxTime:    s.ooo.oooHeadChunk.maxTime,
+		})
+		s.ooo.oooHeadChunk = nil
+		return []chunks.ChunkDiskMapperRef{chunkRef}
 	}
-	xor, _ := s.ooo.oooHeadChunk.chunk.ToXOR() // Encode to XorChunk which is more compact and implements all of the needed functionality.
-	chunkRef := chunkDiskMapper.WriteChunk(s.ref, s.ooo.oooHeadChunk.minTime, s.ooo.oooHeadChunk.maxTime, xor, true, handleChunkWriteError)
-	s.ooo.oooMmappedChunks = append(s.ooo.oooMmappedChunks, &mmappedChunk{
-		ref:        chunkRef,
-		numSamples: uint16(xor.NumSamples()),
-		minTime:    s.ooo.oooHeadChunk.minTime,
-		maxTime:    s.ooo.oooHeadChunk.maxTime,
-	})
-	s.ooo.oooHeadChunk = nil
-	return chunkRef
 }
 
 func (s *memSeries) mmapCurrentHeadChunk(chunkDiskMapper *chunks.ChunkDiskMapper) {

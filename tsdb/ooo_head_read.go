@@ -320,14 +320,15 @@ func NewOOOCompactionHead(head *Head) (*OOOCompactionHead, error) {
 			continue
 		}
 
-		mmapRef := ms.mmapCurrentOOOHeadChunk(head.chunkDiskMapper)
-		if mmapRef == 0 && len(ms.ooo.oooMmappedChunks) > 0 {
+		mmapRefs := ms.mmapCurrentOOOHeadChunk(head.chunkDiskMapper)
+		if mmapRefs == nil && len(ms.ooo.oooMmappedChunks) > 0 {
 			// Nothing was m-mapped. So take the mmapRef from the existing slice if it exists.
-			mmapRef = ms.ooo.oooMmappedChunks[len(ms.ooo.oooMmappedChunks)-1].ref
+			mmapRefs = []chunks.ChunkDiskMapperRef{ms.ooo.oooMmappedChunks[len(ms.ooo.oooMmappedChunks)-1].ref}
 		}
-		seq, off := mmapRef.Unpack()
+		lastMmapRef := mmapRefs[len(mmapRefs)-1]
+		seq, off := lastMmapRef.Unpack()
 		if seq > lastSeq || (seq == lastSeq && off > lastOff) {
-			ch.lastMmapRef, lastSeq, lastOff = mmapRef, seq, off
+			ch.lastMmapRef, lastSeq, lastOff = lastMmapRef, seq, off
 		}
 		if len(ms.ooo.oooMmappedChunks) > 0 {
 			ch.postings = append(ch.postings, seriesRef)

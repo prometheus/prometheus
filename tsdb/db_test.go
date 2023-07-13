@@ -3591,17 +3591,14 @@ func newTestDB(t *testing.T) *DB {
 	return db
 }
 
-type recordRefTime struct {
-	Ref chunks.HeadSeriesRef
-	T   int64
-}
-
 func TestOOOWALWrite(t *testing.T) {
 	minutes := func(m int64) int64 { return m * time.Minute.Milliseconds() }
+	s1, s2 := labels.FromStrings("l", "v1"), labels.FromStrings("l", "v2")
 	scenarios := map[string]struct {
-		name            string
-		appendSample    func(app storage.Appender, l labels.Labels, mins int64) (storage.SeriesRef, error)
-		recordsFromTime func(rt []recordRefTime) []interface{}
+		name               string
+		appendSample       func(app storage.Appender, l labels.Labels, mins int64) (storage.SeriesRef, error)
+		expectedOOORecords []interface{}
+		expectedInORecords []interface{}
 	}{
 		"float": {
 			name: "float",
@@ -3610,12 +3607,89 @@ func TestOOOWALWrite(t *testing.T) {
 				require.NoError(t, err)
 				return seriesRef, nil
 			},
-			recordsFromTime: func(rt []recordRefTime) []interface{} {
-				var records []interface{}
-				for _, r := range rt {
-					records = append(records, record.RefSample{Ref: r.Ref, T: minutes(r.T), V: float64(r.T)})
-				}
-				return records
+			expectedOOORecords: []interface{}{
+				// The MmapRef in this are not hand calculated, and instead taken from the test run.
+				// What is important here is the order of records, and that MmapRef increases for each record.
+				[]record.RefMmapMarker{
+					{Ref: 1},
+				},
+				[]record.RefSample{
+					{Ref: 1, T: minutes(40), V: 40},
+				},
+
+				[]record.RefMmapMarker{
+					{Ref: 2},
+				},
+				[]record.RefSample{
+					{Ref: 2, T: minutes(42), V: 42},
+				},
+
+				[]record.RefSample{
+					{Ref: 2, T: minutes(45), V: 45},
+					{Ref: 1, T: minutes(35), V: 35},
+				},
+				[]record.RefMmapMarker{ // 3rd sample, hence m-mapped.
+					{Ref: 1, MmapRef: 4294967304},
+				},
+				[]record.RefSample{
+					{Ref: 1, T: minutes(36), V: 36},
+					{Ref: 1, T: minutes(37), V: 37},
+				},
+
+				[]record.RefMmapMarker{ // 3rd sample, hence m-mapped.
+					{Ref: 1, MmapRef: 4294967354},
+				},
+				[]record.RefSample{ // Does not contain the in-order sample here.
+					{Ref: 1, T: minutes(50), V: 50},
+				},
+
+				// Single commit but multiple OOO records.
+				[]record.RefMmapMarker{
+					{Ref: 2, MmapRef: 4294967403},
+				},
+				[]record.RefSample{
+					{Ref: 2, T: minutes(50), V: 50},
+					{Ref: 2, T: minutes(51), V: 51},
+				},
+				[]record.RefMmapMarker{
+					{Ref: 2, MmapRef: 4294967452},
+				},
+				[]record.RefSample{
+					{Ref: 2, T: minutes(52), V: 52},
+					{Ref: 2, T: minutes(53), V: 53},
+				},
+			},
+			expectedInORecords: []interface{}{
+				[]record.RefSeries{
+					{Ref: 1, Labels: s1},
+					{Ref: 2, Labels: s2},
+				},
+				[]record.RefSample{
+					{Ref: 1, T: minutes(60), V: 60},
+					{Ref: 2, T: minutes(60), V: 60},
+				},
+				[]record.RefSample{
+					{Ref: 1, T: minutes(40), V: 40},
+				},
+				[]record.RefSample{
+					{Ref: 2, T: minutes(42), V: 42},
+				},
+				[]record.RefSample{
+					{Ref: 2, T: minutes(45), V: 45},
+					{Ref: 1, T: minutes(35), V: 35},
+					{Ref: 1, T: minutes(36), V: 36},
+					{Ref: 1, T: minutes(37), V: 37},
+				},
+				[]record.RefSample{ // Contains both in-order and ooo sample.
+					{Ref: 1, T: minutes(50), V: 50},
+					{Ref: 2, T: minutes(65), V: 65},
+				},
+				[]record.RefSample{
+					{Ref: 2, T: minutes(50), V: 50},
+					{Ref: 2, T: minutes(51), V: 51},
+					{Ref: 2, T: minutes(52), V: 52},
+					{Ref: 2, T: minutes(53), V: 53},
+				},
 			},
 		},
 		"integer histogram": {
@@ -3625,25 +3699,103 @@ func TestOOOWALWrite(t *testing.T) {
 				require.NoError(t, err)
 				return seriesRef, nil
 			},
-			recordsFromTime: func(rt []recordRefTime) []interface{} {
-				var records []interface{}
-				for _, r := range rt {
-					records = append(records, record.RefHistogramSample{Ref: r.Ref, T: minutes(r.T), H: tsdbutil.GenerateTestHistogram(int(r.T))})
-				}
-				return records
+			expectedOOORecords: []interface{}{
+				// The MmapRef in this are not hand calculated, and instead taken from the test run.
+				// What is important here is the order of records, and that MmapRef increases for each record.
+				[]record.RefMmapMarker{
+					{Ref: 1},
+				},
+				[]record.RefHistogramSample{
+					{Ref: 1, T: minutes(40), H: tsdbutil.GenerateTestHistogram(40)},
+				},
+
+				[]record.RefMmapMarker{
+					{Ref: 2},
+				},
+				[]record.RefHistogramSample{
+					{Ref: 2, T: minutes(42), H: tsdbutil.GenerateTestHistogram(42)},
+				},
+
+				[]record.RefHistogramSample{
+					{Ref: 2, T: minutes(45), H: tsdbutil.GenerateTestHistogram(45)},
+					{Ref: 1, T: minutes(35), H: tsdbutil.GenerateTestHistogram(35)},
+				},
+				[]record.RefMmapMarker{ // 3rd sample, hence m-mapped.
+					{Ref: 1, MmapRef: 4294967304},
+				},
+				[]record.RefHistogramSample{
+					{Ref: 1, T: minutes(36), H: tsdbutil.GenerateTestHistogram(36)},
+					{Ref: 1, T: minutes(37), H: tsdbutil.GenerateTestHistogram(37)},
+				},
+
+				[]record.RefMmapMarker{ // 3rd sample, hence m-mapped.
+					{Ref: 1, MmapRef: 4294967354 + 31},
+				},
+				[]record.RefHistogramSample{ // Does not contain the in-order sample here.
+					{Ref: 1, T: minutes(50), H: tsdbutil.GenerateTestHistogram(50)},
+				},
+
+				// Single commit but multiple OOO records.
+				[]record.RefMmapMarker{
+					{Ref: 2, MmapRef: 4294967403 + 65},
+				},
+				[]record.RefHistogramSample{
+					{Ref: 2, T: minutes(50), H: tsdbutil.GenerateTestHistogram(50)},
+					{Ref: 2, T: minutes(51), H: tsdbutil.GenerateTestHistogram(51)},
+				},
+				[]record.RefMmapMarker{
+					{Ref: 2, MmapRef: 4294967452 + 101},
+				},
+				[]record.RefHistogramSample{
+					{Ref: 2, T: minutes(52), H: tsdbutil.GenerateTestHistogram(52)},
+					{Ref: 2, T: minutes(53), H: tsdbutil.GenerateTestHistogram(53)},
+				},
+			},
+			expectedInORecords: []interface{}{
+				[]record.RefSeries{
+					{Ref: 1, Labels: s1},
+					{Ref: 2, Labels: s2},
+				},
+				[]record.RefHistogramSample{
+					{Ref: 1, T: minutes(60), H: tsdbutil.GenerateTestHistogram(60)},
+					{Ref: 2, T: minutes(60), H: tsdbutil.GenerateTestHistogram(60)},
+				},
+				[]record.RefHistogramSample{
+					{Ref: 1, T: minutes(40), H: tsdbutil.GenerateTestHistogram(40)},
+				},
+				[]record.RefHistogramSample{
+					{Ref: 2, T: minutes(42), H: tsdbutil.GenerateTestHistogram(42)},
+				},
+				[]record.RefHistogramSample{
+					{Ref: 2, T: minutes(45), H: tsdbutil.GenerateTestHistogram(45)},
+					{Ref: 1, T: minutes(35), H: tsdbutil.GenerateTestHistogram(35)},
+					{Ref: 1, T: minutes(36), H: tsdbutil.GenerateTestHistogram(36)},
+					{Ref: 1, T: minutes(37), H: tsdbutil.GenerateTestHistogram(37)},
+				},
+				[]record.RefHistogramSample{ // Contains both in-order and ooo sample.
+					{Ref: 1, T: minutes(50), H: tsdbutil.GenerateTestHistogram(50)},
+					{Ref: 2, T: minutes(65), H: tsdbutil.GenerateTestHistogram(65)},
+				},
+				[]record.RefHistogramSample{
+					{Ref: 2, T: minutes(50), H: tsdbutil.GenerateTestHistogram(50)},
+					{Ref: 2, T: minutes(51), H: tsdbutil.GenerateTestHistogram(51)},
+					{Ref: 2, T: minutes(52), H: tsdbutil.GenerateTestHistogram(52)},
+					{Ref: 2, T: minutes(53), H: tsdbutil.GenerateTestHistogram(53)},
+				},
 			},
 		},
 	}
 	for name, scenario := range scenarios {
 		t.Run(name, func(t *testing.T) {
-			testOOOWALWrite(t, scenario.appendSample, scenario.recordsFromTime)
+			testOOOWALWrite(t, scenario.appendSample, scenario.expectedOOORecords, scenario.expectedInORecords)
 		})
 	}
 }
 
 func testOOOWALWrite(t *testing.T,
 	appendSample func(app storage.Appender, l labels.Labels, mins int64) (storage.SeriesRef, error),
-	recordsFromTime func(rt []recordRefTime) []interface{},
+	expectedOOORecords []interface{},
+	expectedInORecords []interface{},
 ) {
 	dir := t.TempDir()
 
@@ -3699,54 +3851,6 @@ func testOOOWALWrite(t *testing.T,
 	appendSample(app, s2, 53)
 	require.NoError(t, app.Commit())
 
-	// The MmapRef in this are not hand calculated, and instead taken from the test run.
-	// What is important here is the order of records, and that MmapRef increases for each record.
-	oooRecords := []interface{}{
-		[]record.RefMmapMarker{
-			{Ref: 1},
-		},
-		recordsFromTime([]recordRefTime{{1, 40}}),
-
-		[]record.RefMmapMarker{
-			{Ref: 2},
-		},
-		recordsFromTime([]recordRefTime{{2, 42}}),
-
-		recordsFromTime([]recordRefTime{{2, 45}, {1, 35}}),
-		[]record.RefMmapMarker{ // 3rd sample, hence m-mapped.
-			{Ref: 1, MmapRef: 4294967304},
-		},
-		recordsFromTime([]recordRefTime{{1, 36}, {1, 37}}),
-
-		[]record.RefMmapMarker{ // 3rd sample, hence m-mapped.
-			{Ref: 1, MmapRef: 4294967354},
-		},
-		recordsFromTime([]recordRefTime{{1, 50}}), // Does not contain the in-order sample here.
-
-		// Single commit but multiple OOO records.
-		[]record.RefMmapMarker{
-			{Ref: 2, MmapRef: 4294967403},
-		},
-		recordsFromTime([]recordRefTime{{2, 50}, {2, 51}}),
-		[]record.RefMmapMarker{
-			{Ref: 2, MmapRef: 4294967452},
-		},
-		recordsFromTime([]recordRefTime{{2, 52}, {2, 53}}),
-	}
-
-	inOrderRecords := []interface{}{
-		[]record.RefSeries{
-			{Ref: 1, Labels: s1},
-			{Ref: 2, Labels: s2},
-		},
-		recordsFromTime([]recordRefTime{{1, 60}, {2, 60}}),
-		recordsFromTime([]recordRefTime{{1, 40}}),
-		recordsFromTime([]recordRefTime{{2, 42}}),
-		recordsFromTime([]recordRefTime{{2, 45}, {1, 35}, {1, 36}, {1, 37}}),
-		recordsFromTime([]recordRefTime{{1, 50}, {2, 65}}), // Contains both in-order and ooo sample.
-		recordsFromTime([]recordRefTime{{2, 50}, {2, 51}, {2, 52}, {2, 53}}),
-	}
-
 	getRecords := func(walDir string) []interface{} {
 		sr, err := wlog.NewSegmentsReader(walDir)
 		require.NoError(t, err)
@@ -3786,32 +3890,13 @@ func testOOOWALWrite(t *testing.T,
 		return records
 	}
 
-	assertEqualRecords := func(t *testing.T, expectedRecords, actRecs []interface{}) {
-		require.Equal(t, len(expectedRecords), len(actRecs))
-		for i, expected := range expectedRecords {
-			actual := actRecs[i]
-			switch v := actual.(type) {
-			case []record.RefMmapMarker:
-				require.Equal(t, expected, actual, "record %d", i)
-			case []record.RefSeries:
-				require.Equal(t, expected, actual, "record %d", i)
-			case []record.RefSample:
-				require.Equal(t, v, actual, "record %d", i)
-			case []record.RefHistogramSample:
-				require.Equal(t, v, actual, "record %d", i)
-			default:
-				require.Fail(t, "unexpected record type", "record %d", i)
-			}
-		}
-	}
-
 	// The normal WAL.
 	actRecs := getRecords(path.Join(dir, "wal"))
-	assertEqualRecords(t, inOrderRecords, actRecs)
+	require.Equal(t, expectedInORecords, actRecs)
 
 	// The OOO WAL.
 	actRecs = getRecords(path.Join(dir, wlog.WblDirName))
-	assertEqualRecords(t, oooRecords, actRecs)
+	require.Equal(t, expectedOOORecords, actRecs)
 }
 
 // Tests https://github.com/prometheus/prometheus/issues/10291#issuecomment-1044373110.
