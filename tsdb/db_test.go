@@ -3595,13 +3595,11 @@ func TestOOOWALWrite(t *testing.T) {
 	minutes := func(m int64) int64 { return m * time.Minute.Milliseconds() }
 	s1, s2 := labels.FromStrings("l", "v1"), labels.FromStrings("l", "v2")
 	scenarios := map[string]struct {
-		name               string
 		appendSample       func(app storage.Appender, l labels.Labels, mins int64) (storage.SeriesRef, error)
 		expectedOOORecords []interface{}
 		expectedInORecords []interface{}
 	}{
 		"float": {
-			name: "float",
 			appendSample: func(app storage.Appender, l labels.Labels, mins int64) (storage.SeriesRef, error) {
 				seriesRef, err := app.Append(0, l, minutes(mins), float64(mins))
 				require.NoError(t, err)
@@ -3629,7 +3627,7 @@ func TestOOOWALWrite(t *testing.T) {
 					{Ref: 1, T: minutes(35), V: 35},
 				},
 				[]record.RefMmapMarker{ // 3rd sample, hence m-mapped.
-					{Ref: 1, MmapRef: 4294967304},
+					{Ref: 1, MmapRef: 0x100000000 + 8},
 				},
 				[]record.RefSample{
 					{Ref: 1, T: minutes(36), V: 36},
@@ -3637,7 +3635,7 @@ func TestOOOWALWrite(t *testing.T) {
 				},
 
 				[]record.RefMmapMarker{ // 3rd sample, hence m-mapped.
-					{Ref: 1, MmapRef: 4294967354},
+					{Ref: 1, MmapRef: 0x100000000 + 58},
 				},
 				[]record.RefSample{ // Does not contain the in-order sample here.
 					{Ref: 1, T: minutes(50), V: 50},
@@ -3645,14 +3643,14 @@ func TestOOOWALWrite(t *testing.T) {
 
 				// Single commit but multiple OOO records.
 				[]record.RefMmapMarker{
-					{Ref: 2, MmapRef: 4294967403},
+					{Ref: 2, MmapRef: 0x100000000 + 107},
 				},
 				[]record.RefSample{
 					{Ref: 2, T: minutes(50), V: 50},
 					{Ref: 2, T: minutes(51), V: 51},
 				},
 				[]record.RefMmapMarker{
-					{Ref: 2, MmapRef: 4294967452},
+					{Ref: 2, MmapRef: 0x100000000 + 156},
 				},
 				[]record.RefSample{
 					{Ref: 2, T: minutes(52), V: 52},
@@ -3693,7 +3691,6 @@ func TestOOOWALWrite(t *testing.T) {
 			},
 		},
 		"integer histogram": {
-			name: "integer histogram",
 			appendSample: func(app storage.Appender, l labels.Labels, mins int64) (storage.SeriesRef, error) {
 				seriesRef, err := app.AppendHistogram(0, l, minutes(mins), tsdbutil.GenerateTestHistogram(int(mins)), nil)
 				require.NoError(t, err)
@@ -3721,7 +3718,7 @@ func TestOOOWALWrite(t *testing.T) {
 					{Ref: 1, T: minutes(35), H: tsdbutil.GenerateTestHistogram(35)},
 				},
 				[]record.RefMmapMarker{ // 3rd sample, hence m-mapped.
-					{Ref: 1, MmapRef: 4294967304},
+					{Ref: 1, MmapRef: 0x100000000 + 8},
 				},
 				[]record.RefHistogramSample{
 					{Ref: 1, T: minutes(36), H: tsdbutil.GenerateTestHistogram(36)},
@@ -3729,7 +3726,7 @@ func TestOOOWALWrite(t *testing.T) {
 				},
 
 				[]record.RefMmapMarker{ // 3rd sample, hence m-mapped.
-					{Ref: 1, MmapRef: 4294967354 + 31},
+					{Ref: 1, MmapRef: 0x100000000 + 89},
 				},
 				[]record.RefHistogramSample{ // Does not contain the in-order sample here.
 					{Ref: 1, T: minutes(50), H: tsdbutil.GenerateTestHistogram(50)},
@@ -3737,14 +3734,14 @@ func TestOOOWALWrite(t *testing.T) {
 
 				// Single commit but multiple OOO records.
 				[]record.RefMmapMarker{
-					{Ref: 2, MmapRef: 4294967403 + 65},
+					{Ref: 2, MmapRef: 0x100000000 + 172},
 				},
 				[]record.RefHistogramSample{
 					{Ref: 2, T: minutes(50), H: tsdbutil.GenerateTestHistogram(50)},
 					{Ref: 2, T: minutes(51), H: tsdbutil.GenerateTestHistogram(51)},
 				},
 				[]record.RefMmapMarker{
-					{Ref: 2, MmapRef: 4294967452 + 101},
+					{Ref: 2, MmapRef: 0x100000000 + 257},
 				},
 				[]record.RefHistogramSample{
 					{Ref: 2, T: minutes(52), H: tsdbutil.GenerateTestHistogram(52)},
@@ -3781,6 +3778,97 @@ func TestOOOWALWrite(t *testing.T) {
 					{Ref: 2, T: minutes(51), H: tsdbutil.GenerateTestHistogram(51)},
 					{Ref: 2, T: minutes(52), H: tsdbutil.GenerateTestHistogram(52)},
 					{Ref: 2, T: minutes(53), H: tsdbutil.GenerateTestHistogram(53)},
+				},
+			},
+		},
+		"float histogram": {
+			appendSample: func(app storage.Appender, l labels.Labels, mins int64) (storage.SeriesRef, error) {
+				seriesRef, err := app.AppendHistogram(0, l, minutes(mins), nil, tsdbutil.GenerateTestFloatHistogram(int(mins)))
+				require.NoError(t, err)
+				return seriesRef, nil
+			},
+			expectedOOORecords: []interface{}{
+				// The MmapRef in this are not hand calculated, and instead taken from the test run.
+				// What is important here is the order of records, and that MmapRef increases for each record.
+				[]record.RefMmapMarker{
+					{Ref: 1},
+				},
+				[]record.RefFloatHistogramSample{
+					{Ref: 1, T: minutes(40), FH: tsdbutil.GenerateTestFloatHistogram(40)},
+				},
+
+				[]record.RefMmapMarker{
+					{Ref: 2},
+				},
+				[]record.RefFloatHistogramSample{
+					{Ref: 2, T: minutes(42), FH: tsdbutil.GenerateTestFloatHistogram(42)},
+				},
+
+				[]record.RefFloatHistogramSample{
+					{Ref: 2, T: minutes(45), FH: tsdbutil.GenerateTestFloatHistogram(45)},
+					{Ref: 1, T: minutes(35), FH: tsdbutil.GenerateTestFloatHistogram(35)},
+				},
+				[]record.RefMmapMarker{ // 3rd sample, hence m-mapped.
+					{Ref: 1, MmapRef: 0x100000000 + 8},
+				},
+				[]record.RefFloatHistogramSample{
+					{Ref: 1, T: minutes(36), FH: tsdbutil.GenerateTestFloatHistogram(36)},
+					{Ref: 1, T: minutes(37), FH: tsdbutil.GenerateTestFloatHistogram(37)},
+				},
+
+				[]record.RefMmapMarker{ // 3rd sample, hence m-mapped.
+					{Ref: 1, MmapRef: 0x100000000 + 177},
+				},
+				[]record.RefFloatHistogramSample{ // Does not contain the in-order sample here.
+					{Ref: 1, T: minutes(50), FH: tsdbutil.GenerateTestFloatHistogram(50)},
+				},
+
+				// Single commit but multiple OOO records.
+				[]record.RefMmapMarker{
+					{Ref: 2, MmapRef: 0x100000000 + 347},
+				},
+				[]record.RefFloatHistogramSample{
+					{Ref: 2, T: minutes(50), FH: tsdbutil.GenerateTestFloatHistogram(50)},
+					{Ref: 2, T: minutes(51), FH: tsdbutil.GenerateTestFloatHistogram(51)},
+				},
+				[]record.RefMmapMarker{
+					{Ref: 2, MmapRef: 0x100000000 + 520},
+				},
+				[]record.RefFloatHistogramSample{
+					{Ref: 2, T: minutes(52), FH: tsdbutil.GenerateTestFloatHistogram(52)},
+					{Ref: 2, T: minutes(53), FH: tsdbutil.GenerateTestFloatHistogram(53)},
+				},
+			},
+			expectedInORecords: []interface{}{
+				[]record.RefSeries{
+					{Ref: 1, Labels: s1},
+					{Ref: 2, Labels: s2},
+				},
+				[]record.RefFloatHistogramSample{
+					{Ref: 1, T: minutes(60), FH: tsdbutil.GenerateTestFloatHistogram(60)},
+					{Ref: 2, T: minutes(60), FH: tsdbutil.GenerateTestFloatHistogram(60)},
+				},
+				[]record.RefFloatHistogramSample{
+					{Ref: 1, T: minutes(40), FH: tsdbutil.GenerateTestFloatHistogram(40)},
+				},
+				[]record.RefFloatHistogramSample{
+					{Ref: 2, T: minutes(42), FH: tsdbutil.GenerateTestFloatHistogram(42)},
+				},
+				[]record.RefFloatHistogramSample{
+					{Ref: 2, T: minutes(45), FH: tsdbutil.GenerateTestFloatHistogram(45)},
+					{Ref: 1, T: minutes(35), FH: tsdbutil.GenerateTestFloatHistogram(35)},
+					{Ref: 1, T: minutes(36), FH: tsdbutil.GenerateTestFloatHistogram(36)},
+					{Ref: 1, T: minutes(37), FH: tsdbutil.GenerateTestFloatHistogram(37)},
+				},
+				[]record.RefFloatHistogramSample{ // Contains both in-order and ooo sample.
+					{Ref: 1, T: minutes(50), FH: tsdbutil.GenerateTestFloatHistogram(50)},
+					{Ref: 2, T: minutes(65), FH: tsdbutil.GenerateTestFloatHistogram(65)},
+				},
+				[]record.RefFloatHistogramSample{
+					{Ref: 2, T: minutes(50), FH: tsdbutil.GenerateTestFloatHistogram(50)},
+					{Ref: 2, T: minutes(51), FH: tsdbutil.GenerateTestFloatHistogram(51)},
+					{Ref: 2, T: minutes(52), FH: tsdbutil.GenerateTestFloatHistogram(52)},
+					{Ref: 2, T: minutes(53), FH: tsdbutil.GenerateTestFloatHistogram(53)},
 				},
 			},
 		},
@@ -3882,6 +3970,10 @@ func testOOOWALWrite(t *testing.T,
 				histogramSamples, err := dec.HistogramSamples(rec, nil)
 				require.NoError(t, err)
 				records = append(records, histogramSamples)
+			case record.FloatHistogramSamples:
+				floatHistogramSamples, err := dec.FloatHistogramSamples(rec, nil)
+				require.NoError(t, err)
+				records = append(records, floatHistogramSamples)
 			default:
 				t.Fatalf("got a WAL record that is not series or samples: %v", typ)
 			}

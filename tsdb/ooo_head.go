@@ -127,13 +127,12 @@ func (o *OOOChunk) ToHistogram() ([]*chunkenc.HistogramChunk, []int64, []int64, 
 	for _, s := range o.samples {
 		switch {
 		case s.h == nil:
-			return nil, nil, nil, fmt.Errorf("mixing histograms and non-histograms in OOO is not allowed")
+			return nil, nil, nil, fmt.Errorf("mixing integer histograms and other types in OOO is not allowed")
 		case s.h.CounterResetHint == histogram.GaugeType:
 			pForwardInserts, nForwardInserts,
 				pBackwardInserts, nBackwardInserts,
 				pMergedSpans, nMergedSpans,
 				okToAppend = app.AppendableGauge(s.h)
-			app.AppendHistogram(s.t, s.h)
 		case s.h.CounterResetHint == histogram.CounterReset:
 			counterReset = true
 		default:
@@ -215,16 +214,98 @@ func (o *OOOChunk) ToHistogramBetweenTimestamps(mint, maxt int64) ([]*chunkenc.H
 	return nil, nil // TODO Fix
 }
 
-func (o *OOOChunk) ToFloatHistogram() ([]*chunkenc.FloatHistogramChunk, error) {
-	ch := chunkenc.NewFloatHistogramChunk()
-	app, err := ch.Appender()
+func (o *OOOChunk) ToFloatHistogram() ([]*chunkenc.FloatHistogramChunk, []int64, []int64, error) {
+	ch, err := chunkenc.NewEmptyChunk(chunkenc.EncFloatHistogram)
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
+	chunkCreated := true
+	chunks := []*chunkenc.FloatHistogramChunk{}
+	minTimes := []int64{}
+	minT := int64(0)
+	maxTimes := []int64{}
+	maxT := int64(0)
+	appender, err := ch.Appender()
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	app := appender.(*chunkenc.FloatHistogramAppender)
+	var (
+		pForwardInserts, nForwardInserts   []chunkenc.Insert
+		pBackwardInserts, nBackwardInserts []chunkenc.Insert
+		pMergedSpans, nMergedSpans         []histogram.Span
+		okToAppend, counterReset, gauge    bool
+	)
 	for _, s := range o.samples {
+		switch {
+		case s.fh == nil:
+			return nil, nil, nil, fmt.Errorf("mixing float histograms and other types in OOO is not allowed")
+		case s.fh.CounterResetHint == histogram.GaugeType:
+			pForwardInserts, nForwardInserts,
+				pBackwardInserts, nBackwardInserts,
+				pMergedSpans, nMergedSpans,
+				okToAppend = app.AppendableGauge(s.fh)
+		case s.fh.CounterResetHint == histogram.CounterReset:
+			counterReset = true
+		default:
+			pForwardInserts, nForwardInserts, okToAppend, counterReset = app.Appendable(s.fh)
+		}
+
+		if !chunkCreated {
+			if len(pBackwardInserts)+len(nBackwardInserts) > 0 {
+				s.fh.PositiveSpans = pMergedSpans
+				s.fh.NegativeSpans = nMergedSpans
+				app.RecodeHistogramm(s.fh, pBackwardInserts, nBackwardInserts)
+			}
+			// We have 3 cases here
+			// - !okToAppend or counterReset -> We need to cut a new chunk.
+			// - okToAppend but we have inserts → Existing chunk needs
+			//   recoding before we can append our histogram.
+			// - okToAppend and no inserts → Chunk is ready to support our histogram.
+			switch {
+			case !okToAppend || counterReset:
+				chunks = append(chunks, ch.(*chunkenc.FloatHistogramChunk))
+				minTimes = append(minTimes, minT)
+				maxTimes = append(maxTimes, maxT)
+				ch = chunkenc.NewFloatHistogramChunk()
+				minT = s.t
+				maxT = s.t
+				chunkCreated = true
+			case len(pForwardInserts) > 0 || len(nForwardInserts) > 0:
+				// New buckets have appeared. We need to recode all
+				// prior histogram samples within the chunk before we
+				// can process this one.
+				var newApp chunkenc.Appender
+				ch, newApp = app.Recode(
+					pForwardInserts, nForwardInserts,
+					s.fh.PositiveSpans, s.fh.NegativeSpans,
+				)
+				app = newApp.(*chunkenc.FloatHistogramAppender)
+			}
+		}
+
+		if chunkCreated {
+			minT = s.t
+			maxT = s.t
+			hc := ch.(*chunkenc.FloatHistogramChunk)
+			header := chunkenc.UnknownCounterReset
+			switch {
+			case gauge:
+				header = chunkenc.GaugeType
+			case counterReset:
+				header = chunkenc.CounterReset
+			case okToAppend:
+				header = chunkenc.NotCounterReset
+			}
+			hc.SetCounterResetHeader(header)
+		}
+
 		app.AppendFloatHistogram(s.t, s.fh)
 	}
-	return nil, nil // TODO Ffix
+	chunks = append(chunks, ch.(*chunkenc.FloatHistogramChunk))
+	minTimes = append(minTimes, minT)
+	maxTimes = append(maxTimes, maxT)
+	return chunks, minTimes, maxTimes, nil
 }
 
 func (o *OOOChunk) ToFloatHistogramBetweenTimestamps(mint, maxt int64) ([]*chunkenc.FloatHistogramChunk, error) {
