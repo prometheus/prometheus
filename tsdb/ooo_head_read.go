@@ -321,7 +321,7 @@ func NewOOOCompactionHead(head *Head) (*OOOCompactionHead, error) {
 		}
 
 		mmapRefs := ms.mmapCurrentOOOHeadChunk(head.chunkDiskMapper)
-		if mmapRefs == nil && len(ms.ooo.oooMmappedChunks) > 0 {
+		if len(mmapRefs) == 0 && len(ms.ooo.oooMmappedChunks) > 0 {
 			// Nothing was m-mapped. So take the mmapRef from the existing slice if it exists.
 			mmapRefs = []chunks.ChunkDiskMapperRef{ms.ooo.oooMmappedChunks[len(ms.ooo.oooMmappedChunks)-1].ref}
 		}
