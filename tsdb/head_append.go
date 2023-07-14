@@ -1047,6 +1047,10 @@ func (a *headAppender) Commit() (err error) {
 				if len(mmapRefs) > 0 {
 					oooMmapMarkers[series.ref] = mmapRefs
 					oooMmapMarkersCount += len(mmapRefs)
+				} else {
+					// No chunk was written to disk, so we need to set an initial marker for this series.
+					oooMmapMarkers[series.ref] = []chunks.ChunkDiskMapperRef{0}
+					oooMmapMarkersCount++
 				}
 			}
 			if ok {
@@ -1141,6 +1145,10 @@ func (a *headAppender) Commit() (err error) {
 				if len(mmapRefs) > 0 {
 					oooMmapMarkers[series.ref] = mmapRefs
 					oooMmapMarkersCount += len(mmapRefs)
+				} else {
+					// No chunk was written to disk, so we need to set an initial marker for this series.
+					oooMmapMarkers[series.ref] = []chunks.ChunkDiskMapperRef{0}
+					oooMmapMarkersCount++
 				}
 			}
 			if ok {
