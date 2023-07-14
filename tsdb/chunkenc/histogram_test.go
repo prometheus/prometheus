@@ -293,13 +293,7 @@ func TestHistogramChunkAppendable(t *testing.T) {
 		_, _, ok, _ := hApp.Appendable(h2)
 		require.False(t, ok)
 
-		newc, recoded, _, err := hApp.AppendOrCreateHistogram(nil, ts+1, h2, false)
-		require.NoError(t, err)
-		require.NotNil(t, newc)
-		require.False(t, recoded)
-		require.NotEqual(t, c, newc)
-		require.Equal(t, UnknownCounterReset, c.(*HistogramChunk).GetCounterResetHeader())
-		require.Equal(t, UnknownCounterReset, newc.(*HistogramChunk).GetCounterResetHeader())
+		assertNewHistogramChunkOnAppend(t, c, hApp, ts+1, h2, UnknownCounterReset)
 	}
 
 	{ // Zero threshold change.
@@ -309,13 +303,7 @@ func TestHistogramChunkAppendable(t *testing.T) {
 		_, _, ok, _ := hApp.Appendable(h2)
 		require.False(t, ok)
 
-		newc, recoded, _, err := hApp.AppendOrCreateHistogram(nil, ts+1, h2, false)
-		require.NoError(t, err)
-		require.NotNil(t, newc)
-		require.False(t, recoded)
-		require.NotEqual(t, c, newc)
-		require.Equal(t, UnknownCounterReset, c.(*HistogramChunk).GetCounterResetHeader())
-		require.Equal(t, UnknownCounterReset, newc.(*HistogramChunk).GetCounterResetHeader())
+		assertNewHistogramChunkOnAppend(t, c, hApp, ts+1, h2, UnknownCounterReset)
 	}
 
 	{ // New histogram that has more buckets.
@@ -341,11 +329,7 @@ func TestHistogramChunkAppendable(t *testing.T) {
 		require.True(t, ok) // Only new buckets came in.
 		require.False(t, cr)
 
-		newc, recoded, _, err := hApp.AppendOrCreateHistogram(nil, ts+1, h2, false)
-		require.NoError(t, err)
-		require.NotNil(t, newc)
-		require.True(t, recoded)
-		require.Equal(t, UnknownCounterReset, c.(*HistogramChunk).GetCounterResetHeader())
+		assertRecodedHistogramChunkOnAppend(t, c, hApp, ts+1, h2, UnknownCounterReset)
 	}
 
 	{ // New histogram that has a bucket missing.
@@ -366,13 +350,7 @@ func TestHistogramChunkAppendable(t *testing.T) {
 		require.False(t, ok) // Need to cut a new chunk.
 		require.True(t, cr)
 
-		newc, recoded, _, err := hApp.AppendOrCreateHistogram(nil, ts+1, h2, false)
-		require.NoError(t, err)
-		require.NotNil(t, newc)
-		require.False(t, recoded)
-		require.NotEqual(t, c, newc)
-		require.Equal(t, UnknownCounterReset, c.(*HistogramChunk).GetCounterResetHeader())
-		require.Equal(t, CounterReset, newc.(*HistogramChunk).GetCounterResetHeader())
+		assertNewHistogramChunkOnAppend(t, c, hApp, ts+1, h2, CounterReset)
 	}
 
 	{ // New histogram that has a counter reset while buckets are same.
@@ -387,13 +365,7 @@ func TestHistogramChunkAppendable(t *testing.T) {
 		require.False(t, ok) // Need to cut a new chunk.
 		require.True(t, cr)
 
-		newc, recoded, _, err := hApp.AppendOrCreateHistogram(nil, ts+1, h2, false)
-		require.NoError(t, err)
-		require.NotNil(t, newc)
-		require.False(t, recoded)
-		require.NotEqual(t, c, newc)
-		require.Equal(t, UnknownCounterReset, c.(*HistogramChunk).GetCounterResetHeader())
-		require.Equal(t, CounterReset, newc.(*HistogramChunk).GetCounterResetHeader())
+		assertNewHistogramChunkOnAppend(t, c, hApp, ts+1, h2, CounterReset)
 	}
 
 	{ // New histogram that has a counter reset while new buckets were added.
@@ -417,13 +389,7 @@ func TestHistogramChunkAppendable(t *testing.T) {
 		require.False(t, ok) // Need to cut a new chunk.
 		require.True(t, cr)
 
-		newc, recoded, _, err := hApp.AppendOrCreateHistogram(nil, ts+1, h2, false)
-		require.NoError(t, err)
-		require.NotNil(t, newc)
-		require.False(t, recoded)
-		require.NotEqual(t, c, newc)
-		require.Equal(t, UnknownCounterReset, c.(*HistogramChunk).GetCounterResetHeader())
-		require.Equal(t, CounterReset, newc.(*HistogramChunk).GetCounterResetHeader())
+		assertNewHistogramChunkOnAppend(t, c, hApp, ts+1, h2, CounterReset)
 	}
 
 	{
@@ -453,14 +419,47 @@ func TestHistogramChunkAppendable(t *testing.T) {
 		require.False(t, ok) // Need to cut a new chunk.
 		require.True(t, cr)
 
-		newc, recoded, _, err := hApp.AppendOrCreateHistogram(nil, ts+1, h2, false)
-		require.NoError(t, err)
-		require.NotNil(t, newc)
-		require.False(t, recoded)
-		require.NotEqual(t, c, newc)
-		require.Equal(t, UnknownCounterReset, c.(*HistogramChunk).GetCounterResetHeader())
-		require.Equal(t, CounterReset, newc.(*HistogramChunk).GetCounterResetHeader())
+		assertNewHistogramChunkOnAppend(t, c, hApp, ts+1, h2, CounterReset)
 	}
+}
+
+func assertNewHistogramChunkOnAppend(t *testing.T, oldChunk Chunk, hApp *HistogramAppender, ts int64, h *histogram.Histogram, expectHeader CounterResetHeader) {
+	oldChunkBytes := oldChunk.Bytes()
+	newChunk, recoded, newAppender, err := hApp.AppendOrCreateHistogram(nil, ts, h, false)
+	require.Equal(t, oldChunkBytes, oldChunk.Bytes()) // Sanity check that previous chunk is untouched.
+	require.NoError(t, err)
+	require.NotNil(t, newChunk)
+	require.False(t, recoded)
+	require.NotEqual(t, oldChunk, newChunk)
+	require.Equal(t, expectHeader, newChunk.(*HistogramChunk).GetCounterResetHeader())
+	require.NotNil(t, newAppender)
+	require.NotEqual(t, hApp, newAppender)
+	assertSampleCount(t, newChunk, 1, ValHistogram)
+}
+
+func assertRecodedHistogramChunkOnAppend(t *testing.T, prevChunk Chunk, hApp *HistogramAppender, ts int64, h *histogram.Histogram, expectHeader CounterResetHeader) {
+	prevChunkBytes := prevChunk.Bytes()
+	newChunk, recoded, newAppender, err := hApp.AppendOrCreateHistogram(nil, ts, h, false)
+	require.Equal(t, prevChunkBytes, prevChunk.Bytes()) // Sanity check that previous chunk is untouched. This may change in the future if we implement in-place recoding.
+	require.NoError(t, err)
+	require.NotNil(t, newChunk)
+	require.True(t, recoded)
+	require.NotEqual(t, prevChunk, newChunk)
+	require.Equal(t, expectHeader, newChunk.(*HistogramChunk).GetCounterResetHeader())
+	require.NotNil(t, newAppender)
+	require.NotEqual(t, hApp, newAppender)
+	assertSampleCount(t, newChunk, 2, ValHistogram)
+}
+
+func assertSampleCount(t *testing.T, c Chunk, exp int64, vtype ValueType) {
+	count := int64(0)
+	it := c.Iterator(nil)
+	require.NoError(t, it.Err())
+	for it.Next() == vtype {
+		count++
+	}
+	require.NoError(t, it.Err())
+	require.Equal(t, exp, count)
 }
 
 func TestHistogramChunkAppendableWithEmptySpan(t *testing.T) {
