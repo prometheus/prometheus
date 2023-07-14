@@ -68,6 +68,7 @@ import (
 var reactRouterPaths = []string{
 	"/config",
 	"/flags",
+	"/explore",
 	"/service-discovery",
 	"/status",
 	"/targets",

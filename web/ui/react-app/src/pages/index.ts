@@ -2,6 +2,7 @@ import Agent from './agent/Agent';
 import Alerts from './alerts/Alerts';
 import Config from './config/Config';
 import Flags from './flags/Flags';
+import Explore from './explore/Explore';
 import Rules from './rules/Rules';
 import ServiceDiscovery from './serviceDiscovery/Services';
 import Status from './status/Status';
@@ -14,6 +15,7 @@ const AgentPage = withStartingIndicator(Agent);
 const AlertsPage = withStartingIndicator(Alerts);
 const ConfigPage = withStartingIndicator(Config);
 const FlagsPage = withStartingIndicator(Flags);
+const ExplorePage = withStartingIndicator(Explore);
 const RulesPage = withStartingIndicator(Rules);
 const ServiceDiscoveryPage = withStartingIndicator(ServiceDiscovery);
 const StatusPage = withStartingIndicator(Status);
@@ -27,6 +29,7 @@ export {
   AlertsPage,
   ConfigPage,
   FlagsPage,
+  ExplorePage,
   RulesPage,
   ServiceDiscoveryPage,
   StatusPage,
