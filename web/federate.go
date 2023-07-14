@@ -25,6 +25,7 @@ import (
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -166,7 +167,11 @@ Loop:
 		return
 	}
 
-	sort.Sort(byName(vec))
+	slices.SortFunc(vec, func(a, b promql.Sample) bool {
+		ni := a.Metric.Get(labels.MetricName)
+		nj := b.Metric.Get(labels.MetricName)
+		return ni < nj
+	})
 
 	externalLabels := h.config.GlobalConfig.ExternalLabels.Map()
 	if _, ok := externalLabels[model.InstanceLabel]; !ok {
@@ -312,16 +317,4 @@ Loop:
 			level.Error(h.logger).Log("msg", "federation failed", "err", err)
 		}
 	}
-}
-
-// byName makes a model.Vector sortable by metric name.
-type byName promql.Vector
-
-func (vec byName) Len() int      { return len(vec) }
-func (vec byName) Swap(i, j int) { vec[i], vec[j] = vec[j], vec[i] }
-
-func (vec byName) Less(i, j int) bool {
-	ni := vec[i].Metric.Get(labels.MetricName)
-	nj := vec[j].Metric.Get(labels.MetricName)
-	return ni < nj
 }

@@ -387,6 +387,7 @@ metric_relabel_configs:
 # This is an experimental feature, this behaviour could
 # change or be removed in the future.
 [ body_size_limit: <size> | default = 0 ]
+
 # Per-scrape limit on number of scraped samples that will be accepted.
 # If more than this number of samples are present after metric relabeling
 # the entire scrape will be treated as failed. 0 means no limit.
@@ -427,11 +428,16 @@ Where `<job_name>` must be unique across all scrape configurations.
 A `tls_config` allows configuring TLS connections.
 
 ```yaml
-# CA certificate to validate API server certificate with.
+# CA certificate to validate API server certificate with. At most one of ca and ca_file is allowed.
+[ ca: <string> ]
 [ ca_file: <filename> ]
 
-# Certificate and key files for client cert authentication to the server.
+# Certificate and key for client cert authentication to the server.
+# At most one of cert and cert_file is allowed.
+# At most one of key and key_file is allowed.
+[ cert: <string> ]
 [ cert_file: <filename> ]
+[ key: <secret> ]
 [ key_file: <filename> ]
 
 # ServerName extension to indicate the name of the server.
@@ -1270,6 +1276,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_openstack_address_pool`: the pool of the private IP.
 * `__meta_openstack_instance_flavor`: the flavor of the OpenStack instance.
 * `__meta_openstack_instance_id`: the OpenStack instance ID.
+* `__meta_openstack_instance_image`: the ID of the image the OpenStack instance is using.
 * `__meta_openstack_instance_name`: the OpenStack instance name.
 * `__meta_openstack_instance_status`: the status of the OpenStack instance.
 * `__meta_openstack_private_ip`: the private IP of the OpenStack instance.
@@ -2160,7 +2167,7 @@ attach_metadata:
 See [this example Prometheus configuration file](/documentation/examples/prometheus-kubernetes.yml)
 for a detailed example of configuring Prometheus for Kubernetes.
 
-You may wish to check out the 3rd party [Prometheus Operator](https://github.com/coreos/prometheus-operator),
+You may wish to check out the 3rd party [Prometheus Operator](https://github.com/prometheus-operator/prometheus-operator),
 which automates the Prometheus setup on top of Kubernetes.
 
 ### `<kuma_sd_config>`

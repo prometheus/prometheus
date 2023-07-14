@@ -20,13 +20,13 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
@@ -134,7 +134,7 @@ func Checkpoint(logger log.Logger, w *WL, from, to int, keep func(id chunks.Head
 	if err := os.MkdirAll(cpdirtmp, 0o777); err != nil {
 		return nil, errors.Wrap(err, "create checkpoint dir")
 	}
-	cp, err := New(nil, nil, cpdirtmp, w.CompressionEnabled())
+	cp, err := New(nil, nil, cpdirtmp, w.CompressionType())
 	if err != nil {
 		return nil, errors.Wrap(err, "open checkpoint")
 	}
@@ -374,8 +374,8 @@ func listCheckpoints(dir string) (refs []checkpointRef, err error) {
 		refs = append(refs, checkpointRef{name: fi.Name(), index: idx})
 	}
 
-	sort.Slice(refs, func(i, j int) bool {
-		return refs[i].index < refs[j].index
+	slices.SortFunc(refs, func(a, b checkpointRef) bool {
+		return a.index < b.index
 	})
 
 	return refs, nil

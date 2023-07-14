@@ -363,6 +363,18 @@ func TestLabels_Compare(t *testing.T) {
 		},
 		{
 			compared: FromStrings(
+				"aaa", "111",
+				"bb", "222"),
+			expected: 1,
+		},
+		{
+			compared: FromStrings(
+				"aaa", "111",
+				"bbbb", "222"),
+			expected: -1,
+		},
+		{
+			compared: FromStrings(
 				"aaa", "111"),
 			expected: 1,
 		},
@@ -380,6 +392,10 @@ func TestLabels_Compare(t *testing.T) {
 				"bbb", "222"),
 			expected: 0,
 		},
+		{
+			compared: EmptyLabels(),
+			expected: 1,
+		},
 	}
 
 	sign := func(a int) int {
@@ -395,6 +411,8 @@ func TestLabels_Compare(t *testing.T) {
 	for i, test := range tests {
 		got := Compare(labels, test.compared)
 		require.Equal(t, sign(test.expected), sign(got), "unexpected comparison result for test case %d", i)
+		got = Compare(test.compared, labels)
+		require.Equal(t, -sign(test.expected), sign(got), "unexpected comparison result for reverse test case %d", i)
 	}
 }
 
@@ -425,7 +443,8 @@ func TestLabels_Has(t *testing.T) {
 
 func TestLabels_Get(t *testing.T) {
 	require.Equal(t, "", FromStrings("aaa", "111", "bbb", "222").Get("foo"))
-	require.Equal(t, "111", FromStrings("aaa", "111", "bbb", "222").Get("aaa"))
+	require.Equal(t, "111", FromStrings("aaaa", "111", "bbb", "222").Get("aaaa"))
+	require.Equal(t, "222", FromStrings("aaaa", "111", "bbb", "222").Get("bbb"))
 }
 
 // BenchmarkLabels_Get was written to check whether a binary search can improve the performance vs the linear search implementation
@@ -445,7 +464,7 @@ func BenchmarkLabels_Get(b *testing.B) {
 	maxLabels := 30
 	allLabels := make([]Label, maxLabels)
 	for i := 0; i < maxLabels; i++ {
-		allLabels[i] = Label{Name: strings.Repeat(string('a'+byte(i)), 5)}
+		allLabels[i] = Label{Name: strings.Repeat(string('a'+byte(i)), 5+(i%5))}
 	}
 	for _, size := range []int{5, 10, maxLabels} {
 		b.Run(fmt.Sprintf("with %d labels", size), func(b *testing.B) {
@@ -456,6 +475,7 @@ func BenchmarkLabels_Get(b *testing.B) {
 				{"get first label", allLabels[0].Name},
 				{"get middle label", allLabels[size/2].Name},
 				{"get last label", allLabels[size-1].Name},
+				{"get not-found label", "benchmark"},
 			} {
 				b.Run(scenario.desc, func(b *testing.B) {
 					b.ResetTimer()
@@ -468,31 +488,49 @@ func BenchmarkLabels_Get(b *testing.B) {
 	}
 }
 
+var comparisonBenchmarkScenarios = []struct {
+	desc        string
+	base, other Labels
+}{
+	{
+		"equal",
+		FromStrings("a_label_name", "a_label_value", "another_label_name", "another_label_value"),
+		FromStrings("a_label_name", "a_label_value", "another_label_name", "another_label_value"),
+	},
+	{
+		"not equal",
+		FromStrings("a_label_name", "a_label_value", "another_label_name", "another_label_value"),
+		FromStrings("a_label_name", "a_label_value", "another_label_name", "a_different_label_value"),
+	},
+	{
+		"different sizes",
+		FromStrings("a_label_name", "a_label_value", "another_label_name", "another_label_value"),
+		FromStrings("a_label_name", "a_label_value"),
+	},
+	{
+		"lots",
+		FromStrings("aaa", "bbb", "ccc", "ddd", "eee", "fff", "ggg", "hhh", "iii", "jjj", "kkk", "lll", "mmm", "nnn", "ooo", "ppp", "qqq", "rrz"),
+		FromStrings("aaa", "bbb", "ccc", "ddd", "eee", "fff", "ggg", "hhh", "iii", "jjj", "kkk", "lll", "mmm", "nnn", "ooo", "ppp", "qqq", "rrr"),
+	},
+}
+
 func BenchmarkLabels_Equals(b *testing.B) {
-	for _, scenario := range []struct {
-		desc        string
-		base, other Labels
-	}{
-		{
-			"equal",
-			FromStrings("a_label_name", "a_label_value", "another_label_name", "another_label_value"),
-			FromStrings("a_label_name", "a_label_value", "another_label_name", "another_label_value"),
-		},
-		{
-			"not equal",
-			FromStrings("a_label_name", "a_label_value", "another_label_name", "another_label_value"),
-			FromStrings("a_label_name", "a_label_value", "another_label_name", "a_different_label_value"),
-		},
-		{
-			"different sizes",
-			FromStrings("a_label_name", "a_label_value", "another_label_name", "another_label_value"),
-			FromStrings("a_label_name", "a_label_value"),
-		},
-	} {
+	for _, scenario := range comparisonBenchmarkScenarios {
 		b.Run(scenario.desc, func(b *testing.B) {
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				_ = Equal(scenario.base, scenario.other)
+			}
+		})
+	}
+}
+
+func BenchmarkLabels_Compare(b *testing.B) {
+	for _, scenario := range comparisonBenchmarkScenarios {
+		b.Run(scenario.desc, func(b *testing.B) {
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				_ = Compare(scenario.base, scenario.other)
 			}
 		})
 	}

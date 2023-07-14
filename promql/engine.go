@@ -130,11 +130,35 @@ type Query interface {
 	String() string
 }
 
-type QueryOpts struct {
+type PrometheusQueryOpts struct {
 	// Enables recording per-step statistics if the engine has it enabled as well. Disabled by default.
-	EnablePerStepStats bool
+	enablePerStepStats bool
 	// Lookback delta duration for this query.
-	LookbackDelta time.Duration
+	lookbackDelta time.Duration
+}
+
+var _ QueryOpts = &PrometheusQueryOpts{}
+
+func NewPrometheusQueryOpts(enablePerStepStats bool, lookbackDelta time.Duration) QueryOpts {
+	return &PrometheusQueryOpts{
+		enablePerStepStats: enablePerStepStats,
+		lookbackDelta:      lookbackDelta,
+	}
+}
+
+func (p *PrometheusQueryOpts) EnablePerStepStats() bool {
+	return p.enablePerStepStats
+}
+
+func (p *PrometheusQueryOpts) LookbackDelta() time.Duration {
+	return p.lookbackDelta
+}
+
+type QueryOpts interface {
+	// Enables recording per-step statistics if the engine has it enabled as well. Disabled by default.
+	EnablePerStepStats() bool
+	// Lookback delta duration for this query.
+	LookbackDelta() time.Duration
 }
 
 // query implements the Query interface.
@@ -408,69 +432,74 @@ func (ng *Engine) SetQueryLogger(l QueryLogger) {
 }
 
 // NewInstantQuery returns an evaluation query for the given expression at the given time.
-func (ng *Engine) NewInstantQuery(_ context.Context, q storage.Queryable, opts *QueryOpts, qs string, ts time.Time) (Query, error) {
+func (ng *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts QueryOpts, qs string, ts time.Time) (Query, error) {
+	pExpr, qry := ng.newQuery(q, qs, opts, ts, ts, 0)
+	finishQueue, err := ng.queueActive(ctx, qry)
+	if err != nil {
+		return nil, err
+	}
+	defer finishQueue()
 	expr, err := parser.ParseExpr(qs)
 	if err != nil {
 		return nil, err
 	}
-	qry, err := ng.newQuery(q, opts, expr, ts, ts, 0)
-	if err != nil {
+	if err := ng.validateOpts(expr); err != nil {
 		return nil, err
 	}
-	qry.q = qs
+	*pExpr = PreprocessExpr(expr, ts, ts)
 
 	return qry, nil
 }
 
 // NewRangeQuery returns an evaluation query for the given time range and with
 // the resolution set by the interval.
-func (ng *Engine) NewRangeQuery(_ context.Context, q storage.Queryable, opts *QueryOpts, qs string, start, end time.Time, interval time.Duration) (Query, error) {
+func (ng *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts QueryOpts, qs string, start, end time.Time, interval time.Duration) (Query, error) {
+	pExpr, qry := ng.newQuery(q, qs, opts, start, end, interval)
+	finishQueue, err := ng.queueActive(ctx, qry)
+	if err != nil {
+		return nil, err
+	}
+	defer finishQueue()
 	expr, err := parser.ParseExpr(qs)
 	if err != nil {
+		return nil, err
+	}
+	if err := ng.validateOpts(expr); err != nil {
 		return nil, err
 	}
 	if expr.Type() != parser.ValueTypeVector && expr.Type() != parser.ValueTypeScalar {
 		return nil, fmt.Errorf("invalid expression type %q for range query, must be Scalar or instant Vector", parser.DocumentedType(expr.Type()))
 	}
-	qry, err := ng.newQuery(q, opts, expr, start, end, interval)
-	if err != nil {
-		return nil, err
-	}
-	qry.q = qs
+	*pExpr = PreprocessExpr(expr, start, end)
 
 	return qry, nil
 }
 
-func (ng *Engine) newQuery(q storage.Queryable, opts *QueryOpts, expr parser.Expr, start, end time.Time, interval time.Duration) (*query, error) {
-	if err := ng.validateOpts(expr); err != nil {
-		return nil, err
-	}
-
-	// Default to empty QueryOpts if not provided.
+func (ng *Engine) newQuery(q storage.Queryable, qs string, opts QueryOpts, start, end time.Time, interval time.Duration) (*parser.Expr, *query) {
 	if opts == nil {
-		opts = &QueryOpts{}
+		opts = NewPrometheusQueryOpts(false, 0)
 	}
 
-	lookbackDelta := opts.LookbackDelta
+	lookbackDelta := opts.LookbackDelta()
 	if lookbackDelta <= 0 {
 		lookbackDelta = ng.lookbackDelta
 	}
 
 	es := &parser.EvalStmt{
-		Expr:          PreprocessExpr(expr, start, end),
 		Start:         start,
 		End:           end,
 		Interval:      interval,
 		LookbackDelta: lookbackDelta,
 	}
 	qry := &query{
+		q:           qs,
 		stmt:        es,
 		ng:          ng,
 		stats:       stats.NewQueryTimers(),
-		sampleStats: stats.NewQuerySamples(ng.enablePerStepStats && opts.EnablePerStepStats),
+		sampleStats: stats.NewQuerySamples(ng.enablePerStepStats && opts.EnablePerStepStats()),
 		queryable:   q,
 	}
-	return qry, nil
+	return &es.Expr, qry
 }
 
 var (
@@ -589,18 +618,11 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, ws storag
 	execSpanTimer, ctx := q.stats.GetSpanTimer(ctx, stats.ExecTotalTime)
 	defer execSpanTimer.Finish()
 
-	queueSpanTimer, _ := q.stats.GetSpanTimer(ctx, stats.ExecQueueTime, ng.metrics.queryQueueTime)
-	// Log query in active log. The active log guarantees that we don't run over
-	// MaxConcurrent queries.
-	if ng.activeQueryTracker != nil {
-		queryIndex, err := ng.activeQueryTracker.Insert(ctx, q.q)
-		if err != nil {
-			queueSpanTimer.Finish()
-			return nil, nil, contextErr(err, "query queue")
-		}
-		defer ng.activeQueryTracker.Delete(queryIndex)
+	finishQueue, err := ng.queueActive(ctx, q)
+	if err != nil {
+		return nil, nil, err
 	}
-	queueSpanTimer.Finish()
+	defer finishQueue()
 
 	// Cancel when execution is done or an error was raised.
 	defer q.cancel()
@@ -621,6 +643,18 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, ws storag
 	}
 
 	panic(fmt.Errorf("promql.Engine.exec: unhandled statement of type %T", q.Statement()))
+}
+
+// Log query in active log. The active log guarantees that we don't run over
+// MaxConcurrent queries.
+func (ng *Engine) queueActive(ctx context.Context, q *query) (func(), error) {
+	if ng.activeQueryTracker == nil {
+		return func() {}, nil
+	}
+	queueSpanTimer, _ := q.stats.GetSpanTimer(ctx, stats.ExecQueueTime, ng.metrics.queryQueueTime)
+	queryIndex, err := ng.activeQueryTracker.Insert(ctx, q.q)
+	queueSpanTimer.Finish()
+	return func() { ng.activeQueryTracker.Delete(queryIndex) }, err
 }
 
 func timeMilliseconds(t time.Time) int64 {

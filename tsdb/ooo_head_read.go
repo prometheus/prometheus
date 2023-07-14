@@ -17,7 +17,8 @@ package tsdb
 import (
 	"errors"
 	"math"
-	"sort"
+
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -130,13 +131,13 @@ func (oh *OOOHeadIndexReader) series(ref storage.SeriesRef, builder *labels.Scra
 
 	// Next we want to sort all the collected chunks by min time so we can find
 	// those that overlap.
-	sort.Sort(metaByMinTimeAndMinRef(tmpChks))
+	slices.SortFunc(tmpChks, lessByMinTimeAndMinRef)
 
 	// Next we want to iterate the sorted collected chunks and only return the
 	// chunks Meta the first chunk that overlaps with others.
 	// Example chunks of a series: 5:(100, 200) 6:(500, 600) 7:(150, 250) 8:(550, 650)
 	// In the example 5 overlaps with 7 and 6 overlaps with 8 so we only want to
-	// to return chunk Metas for chunk 5 and chunk 6e
+	// return chunk Metas for chunk 5 and chunk 6e
 	*chks = append(*chks, tmpChks[0])
 	maxTime := tmpChks[0].MaxTime // Tracks the maxTime of the previous "to be merged chunk".
 	for _, c := range tmpChks[1:] {
@@ -175,29 +176,19 @@ type chunkMetaAndChunkDiskMapperRef struct {
 	origMaxT int64
 }
 
-type byMinTimeAndMinRef []chunkMetaAndChunkDiskMapperRef
-
-func (b byMinTimeAndMinRef) Len() int { return len(b) }
-func (b byMinTimeAndMinRef) Less(i, j int) bool {
-	if b[i].meta.MinTime == b[j].meta.MinTime {
-		return b[i].meta.Ref < b[j].meta.Ref
+func refLessByMinTimeAndMinRef(a, b chunkMetaAndChunkDiskMapperRef) bool {
+	if a.meta.MinTime == b.meta.MinTime {
+		return a.meta.Ref < b.meta.Ref
 	}
-	return b[i].meta.MinTime < b[j].meta.MinTime
+	return a.meta.MinTime < b.meta.MinTime
 }
 
-func (b byMinTimeAndMinRef) Swap(i, j int) { b[i], b[j] = b[j], b[i] }
-
-type metaByMinTimeAndMinRef []chunks.Meta
-
-func (b metaByMinTimeAndMinRef) Len() int { return len(b) }
-func (b metaByMinTimeAndMinRef) Less(i, j int) bool {
-	if b[i].MinTime == b[j].MinTime {
-		return b[i].Ref < b[j].Ref
+func lessByMinTimeAndMinRef(a, b chunks.Meta) bool {
+	if a.MinTime == b.MinTime {
+		return a.Ref < b.Ref
 	}
-	return b[i].MinTime < b[j].MinTime
+	return a.MinTime < b.MinTime
 }
-
-func (b metaByMinTimeAndMinRef) Swap(i, j int) { b[i], b[j] = b[j], b[i] }
 
 func (oh *OOOHeadIndexReader) Postings(name string, values ...string) (index.Postings, error) {
 	switch len(values) {

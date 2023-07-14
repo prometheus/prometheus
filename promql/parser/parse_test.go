@@ -3714,7 +3714,7 @@ func TestParseSeries(t *testing.T) {
 }
 
 func TestRecoverParserRuntime(t *testing.T) {
-	p := newParser("foo bar")
+	p := NewParser("foo bar")
 	var err error
 
 	defer func() {
@@ -3728,7 +3728,7 @@ func TestRecoverParserRuntime(t *testing.T) {
 }
 
 func TestRecoverParserError(t *testing.T) {
-	p := newParser("foo bar")
+	p := NewParser("foo bar")
 	var err error
 
 	e := errors.New("custom error")
@@ -3775,4 +3775,21 @@ func TestExtractSelectors(t *testing.T) {
 
 		require.Equal(t, expected, ExtractSelectors(expr))
 	}
+}
+
+func TestParseCustomFunctions(t *testing.T) {
+	funcs := Functions
+	funcs["custom_func"] = &Function{
+		Name:       "custom_func",
+		ArgTypes:   []ValueType{ValueTypeMatrix},
+		ReturnType: ValueTypeVector,
+	}
+	input := "custom_func(metric[1m])"
+	p := NewParser(input, WithFunctions(funcs))
+	expr, err := p.ParseExpr()
+	require.NoError(t, err)
+
+	call, ok := expr.(*Call)
+	require.True(t, ok)
+	require.Equal(t, "custom_func", call.Func.Name)
 }

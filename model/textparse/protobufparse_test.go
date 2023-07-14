@@ -409,6 +409,61 @@ metric: <
 >
 
 `,
+		`name: "test_histogram_family"
+help: "Test histogram metric family with two very simple histograms."
+type: HISTOGRAM
+metric: <
+  label: <
+    name: "foo"
+    value: "bar"
+  >
+  histogram: <
+    sample_count: 5
+    sample_sum: 12.1
+    bucket: <
+      cumulative_count: 2
+      upper_bound: 1.1
+    >
+    bucket: <
+      cumulative_count: 3
+      upper_bound: 2.2
+    >
+    schema: 3
+    positive_span: <
+      offset: 8
+      length: 2
+    >
+    positive_delta: 2
+    positive_delta: 1
+  >
+>
+metric: <
+  label: <
+    name: "foo"
+    value: "baz"
+  >
+  histogram: <
+    sample_count: 6
+    sample_sum: 13.1
+    bucket: <
+      cumulative_count: 1
+      upper_bound: 1.1
+    >
+    bucket: <
+      cumulative_count: 5
+      upper_bound: 2.2
+    >
+    schema: 3
+    positive_span: <
+      offset: 8
+      length: 2
+    >
+    positive_delta: 1
+    positive_delta: 4
+  >
+>
+
+`,
 		`name: "rpc_durations_seconds"
 help: "RPC latency distributions."
 type: SUMMARY
@@ -749,6 +804,50 @@ func TestProtobufParse(t *testing.T) {
 					lset: labels.FromStrings(
 						"__name__", "test_histogram2_bucket",
 						"le", "+Inf",
+					),
+				},
+				{
+					m:    "test_histogram_family",
+					help: "Test histogram metric family with two very simple histograms.",
+				},
+				{
+					m:   "test_histogram_family",
+					typ: MetricTypeHistogram,
+				},
+				{
+					m: "test_histogram_family\xfffoo\xffbar",
+					shs: &histogram.Histogram{
+						CounterResetHint: histogram.UnknownCounterReset,
+						Count:            5,
+						Sum:              12.1,
+						Schema:           3,
+						PositiveSpans: []histogram.Span{
+							{Offset: 8, Length: 2},
+						},
+						NegativeSpans:   []histogram.Span{},
+						PositiveBuckets: []int64{2, 1},
+					},
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_family",
+						"foo", "bar",
+					),
+				},
+				{
+					m: "test_histogram_family\xfffoo\xffbaz",
+					shs: &histogram.Histogram{
+						CounterResetHint: histogram.UnknownCounterReset,
+						Count:            6,
+						Sum:              13.1,
+						Schema:           3,
+						PositiveSpans: []histogram.Span{
+							{Offset: 8, Length: 2},
+						},
+						NegativeSpans:   []histogram.Span{},
+						PositiveBuckets: []int64{1, 4},
+					},
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_family",
+						"foo", "baz",
 					),
 				},
 				{
@@ -1321,14 +1420,144 @@ func TestProtobufParse(t *testing.T) {
 					),
 				},
 				{ // 53
+					m:    "test_histogram_family",
+					help: "Test histogram metric family with two very simple histograms.",
+				},
+				{ // 54
+					m:   "test_histogram_family",
+					typ: MetricTypeHistogram,
+				},
+				{ // 55
+					m: "test_histogram_family\xfffoo\xffbar",
+					shs: &histogram.Histogram{
+						CounterResetHint: histogram.UnknownCounterReset,
+						Count:            5,
+						Sum:              12.1,
+						Schema:           3,
+						PositiveSpans: []histogram.Span{
+							{Offset: 8, Length: 2},
+						},
+						NegativeSpans:   []histogram.Span{},
+						PositiveBuckets: []int64{2, 1},
+					},
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_family",
+						"foo", "bar",
+					),
+				},
+				{ // 56
+					m: "test_histogram_family_count\xfffoo\xffbar",
+					v: 5,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_family_count",
+						"foo", "bar",
+					),
+				},
+				{ // 57
+					m: "test_histogram_family_sum\xfffoo\xffbar",
+					v: 12.1,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_family_sum",
+						"foo", "bar",
+					),
+				},
+				{ // 58
+					m: "test_histogram_family_bucket\xfffoo\xffbar\xffle\xff1.1",
+					v: 2,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_family_bucket",
+						"foo", "bar",
+						"le", "1.1",
+					),
+				},
+				{ // 59
+					m: "test_histogram_family_bucket\xfffoo\xffbar\xffle\xff2.2",
+					v: 3,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_family_bucket",
+						"foo", "bar",
+						"le", "2.2",
+					),
+				},
+				{ // 60
+					m: "test_histogram_family_bucket\xfffoo\xffbar\xffle\xff+Inf",
+					v: 5,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_family_bucket",
+						"foo", "bar",
+						"le", "+Inf",
+					),
+				},
+				{ // 61
+					m: "test_histogram_family\xfffoo\xffbaz",
+					shs: &histogram.Histogram{
+						CounterResetHint: histogram.UnknownCounterReset,
+						Count:            6,
+						Sum:              13.1,
+						Schema:           3,
+						PositiveSpans: []histogram.Span{
+							{Offset: 8, Length: 2},
+						},
+						NegativeSpans:   []histogram.Span{},
+						PositiveBuckets: []int64{1, 4},
+					},
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_family",
+						"foo", "baz",
+					),
+				},
+				{ // 62
+					m: "test_histogram_family_count\xfffoo\xffbaz",
+					v: 6,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_family_count",
+						"foo", "baz",
+					),
+				},
+				{ // 63
+					m: "test_histogram_family_sum\xfffoo\xffbaz",
+					v: 13.1,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_family_sum",
+						"foo", "baz",
+					),
+				},
+				{ // 64
+					m: "test_histogram_family_bucket\xfffoo\xffbaz\xffle\xff1.1",
+					v: 1,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_family_bucket",
+						"foo", "baz",
+						"le", "1.1",
+					),
+				},
+				{ // 65
+					m: "test_histogram_family_bucket\xfffoo\xffbaz\xffle\xff2.2",
+					v: 5,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_family_bucket",
+						"foo", "baz",
+						"le", "2.2",
+					),
+				},
+				{ // 66
+					m: "test_histogram_family_bucket\xfffoo\xffbaz\xffle\xff+Inf",
+					v: 6,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_family_bucket",
+						"foo", "baz",
+						"le", "+Inf",
+					),
+				},
+				{ // 67
 					m:    "rpc_durations_seconds",
 					help: "RPC latency distributions.",
 				},
-				{ // 54
+				{ // 68
 					m:   "rpc_durations_seconds",
 					typ: MetricTypeSummary,
 				},
-				{ // 55
+				{ // 69
 					m: "rpc_durations_seconds_count\xffservice\xffexponential",
 					v: 262,
 					lset: labels.FromStrings(
@@ -1336,7 +1565,7 @@ func TestProtobufParse(t *testing.T) {
 						"service", "exponential",
 					),
 				},
-				{ // 56
+				{ // 70
 					m: "rpc_durations_seconds_sum\xffservice\xffexponential",
 					v: 0.00025551262820703587,
 					lset: labels.FromStrings(
@@ -1344,7 +1573,7 @@ func TestProtobufParse(t *testing.T) {
 						"service", "exponential",
 					),
 				},
-				{ // 57
+				{ // 71
 					m: "rpc_durations_seconds\xffservice\xffexponential\xffquantile\xff0.5",
 					v: 6.442786329648548e-07,
 					lset: labels.FromStrings(
@@ -1353,7 +1582,7 @@ func TestProtobufParse(t *testing.T) {
 						"service", "exponential",
 					),
 				},
-				{ // 58
+				{ // 72
 					m: "rpc_durations_seconds\xffservice\xffexponential\xffquantile\xff0.9",
 					v: 1.9435742936658396e-06,
 					lset: labels.FromStrings(
@@ -1362,7 +1591,7 @@ func TestProtobufParse(t *testing.T) {
 						"service", "exponential",
 					),
 				},
-				{ // 59
+				{ // 73
 					m: "rpc_durations_seconds\xffservice\xffexponential\xffquantile\xff0.99",
 					v: 4.0471608667037015e-06,
 					lset: labels.FromStrings(
@@ -1371,22 +1600,22 @@ func TestProtobufParse(t *testing.T) {
 						"service", "exponential",
 					),
 				},
-				{ // 60
+				{ // 74
 					m:    "without_quantiles",
 					help: "A summary without quantiles.",
 				},
-				{ // 61
+				{ // 75
 					m:   "without_quantiles",
 					typ: MetricTypeSummary,
 				},
-				{ // 62
+				{ // 76
 					m: "without_quantiles_count",
 					v: 42,
 					lset: labels.FromStrings(
 						"__name__", "without_quantiles_count",
 					),
 				},
-				{ // 63
+				{ // 77
 					m: "without_quantiles_sum",
 					v: 1.234,
 					lset: labels.FromStrings(
@@ -1420,61 +1649,61 @@ func TestProtobufParse(t *testing.T) {
 					var e exemplar.Exemplar
 					p.Metric(&res)
 					found := p.Exemplar(&e)
-					require.Equal(t, exp[i].m, string(m))
+					require.Equal(t, exp[i].m, string(m), "i: %d", i)
 					if ts != nil {
-						require.Equal(t, exp[i].t, *ts)
+						require.Equal(t, exp[i].t, *ts, "i: %d", i)
 					} else {
-						require.Equal(t, exp[i].t, int64(0))
+						require.Equal(t, exp[i].t, int64(0), "i: %d", i)
 					}
-					require.Equal(t, exp[i].v, v)
-					require.Equal(t, exp[i].lset, res)
+					require.Equal(t, exp[i].v, v, "i: %d", i)
+					require.Equal(t, exp[i].lset, res, "i: %d", i)
 					if len(exp[i].e) == 0 {
-						require.Equal(t, false, found)
+						require.Equal(t, false, found, "i: %d", i)
 					} else {
-						require.Equal(t, true, found)
-						require.Equal(t, exp[i].e[0], e)
+						require.Equal(t, true, found, "i: %d", i)
+						require.Equal(t, exp[i].e[0], e, "i: %d", i)
 					}
 
 				case EntryHistogram:
 					m, ts, shs, fhs := p.Histogram()
 					p.Metric(&res)
-					require.Equal(t, exp[i].m, string(m))
+					require.Equal(t, exp[i].m, string(m), "i: %d", i)
 					if ts != nil {
-						require.Equal(t, exp[i].t, *ts)
+						require.Equal(t, exp[i].t, *ts, "i: %d", i)
 					} else {
-						require.Equal(t, exp[i].t, int64(0))
+						require.Equal(t, exp[i].t, int64(0), "i: %d", i)
 					}
-					require.Equal(t, exp[i].lset, res)
-					require.Equal(t, exp[i].m, string(m))
+					require.Equal(t, exp[i].lset, res, "i: %d", i)
+					require.Equal(t, exp[i].m, string(m), "i: %d", i)
 					if shs != nil {
-						require.Equal(t, exp[i].shs, shs)
+						require.Equal(t, exp[i].shs, shs, "i: %d", i)
 					} else {
-						require.Equal(t, exp[i].fhs, fhs)
+						require.Equal(t, exp[i].fhs, fhs, "i: %d", i)
 					}
 					j := 0
 					for e := (exemplar.Exemplar{}); p.Exemplar(&e); j++ {
-						require.Equal(t, exp[i].e[j], e)
+						require.Equal(t, exp[i].e[j], e, "i: %d", i)
 						e = exemplar.Exemplar{}
 					}
-					require.Equal(t, len(exp[i].e), j, "not enough exemplars found")
+					require.Equal(t, len(exp[i].e), j, "not enough exemplars found, i: %d", i)
 
 				case EntryType:
 					m, typ := p.Type()
-					require.Equal(t, exp[i].m, string(m))
-					require.Equal(t, exp[i].typ, typ)
+					require.Equal(t, exp[i].m, string(m), "i: %d", i)
+					require.Equal(t, exp[i].typ, typ, "i: %d", i)
 
 				case EntryHelp:
 					m, h := p.Help()
-					require.Equal(t, exp[i].m, string(m))
-					require.Equal(t, exp[i].help, string(h))
+					require.Equal(t, exp[i].m, string(m), "i: %d", i)
+					require.Equal(t, exp[i].help, string(h), "i: %d", i)
 
 				case EntryUnit:
 					m, u := p.Unit()
-					require.Equal(t, exp[i].m, string(m))
-					require.Equal(t, exp[i].unit, string(u))
+					require.Equal(t, exp[i].m, string(m), "i: %d", i)
+					require.Equal(t, exp[i].unit, string(u), "i: %d", i)
 
 				case EntryComment:
-					require.Equal(t, exp[i].comment, string(p.Comment()))
+					require.Equal(t, exp[i].comment, string(p.Comment()), "i: %d", i)
 				}
 
 				i++

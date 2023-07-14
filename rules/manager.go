@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"math"
 	"net/url"
-	"sort"
 	"sync"
 	"time"
 
@@ -30,6 +29,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
@@ -490,10 +490,9 @@ func (g *Group) AlertingRules() []*AlertingRule {
 			alerts = append(alerts, alertingRule)
 		}
 	}
-	sort.Slice(alerts, func(i, j int) bool {
-		return alerts[i].State() > alerts[j].State() ||
-			(alerts[i].State() == alerts[j].State() &&
-				alerts[i].Name() < alerts[j].Name())
+	slices.SortFunc(alerts, func(a, b *AlertingRule) bool {
+		return a.State() > b.State() ||
+			(a.State() == b.State() && a.Name() < b.Name())
 	})
 	return alerts
 }
@@ -1189,11 +1188,11 @@ func (m *Manager) RuleGroups() []*Group {
 		rgs = append(rgs, g)
 	}
 
-	sort.Slice(rgs, func(i, j int) bool {
-		if rgs[i].file != rgs[j].file {
-			return rgs[i].file < rgs[j].file
+	slices.SortFunc(rgs, func(a, b *Group) bool {
+		if a.file != b.file {
+			return a.file < b.file
 		}
-		return rgs[i].name < rgs[j].name
+		return a.name < b.name
 	})
 
 	return rgs

@@ -71,6 +71,7 @@ import (
 	"github.com/prometheus/prometheus/tracing"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/agent"
+	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/documentcli"
 	"github.com/prometheus/prometheus/util/logging"
 	prom_runtime "github.com/prometheus/prometheus/util/runtime"
@@ -334,6 +335,9 @@ func main() {
 	serverOnlyFlag(a, "storage.tsdb.wal-compression", "Compress the tsdb WAL.").
 		Hidden().Default("true").BoolVar(&cfg.tsdb.WALCompression)
 
+	serverOnlyFlag(a, "storage.tsdb.wal-compression-type", "Compression algorithm for the tsdb WAL.").
+		Hidden().Default(string(wlog.CompressionSnappy)).EnumVar(&cfg.tsdb.WALCompressionType, string(wlog.CompressionSnappy), string(wlog.CompressionZstd))
+
 	serverOnlyFlag(a, "storage.tsdb.head-chunks-write-queue-size", "Size of the queue through which head chunks are written to the disk to be m-mapped, 0 disables the queue completely. Experimental.").
 		Default("0").IntVar(&cfg.tsdb.HeadChunksWriteQueueSize)
 
@@ -349,6 +353,9 @@ func main() {
 
 	agentOnlyFlag(a, "storage.agent.wal-compression", "Compress the agent WAL.").
 		Default("true").BoolVar(&cfg.agent.WALCompression)
+
+	agentOnlyFlag(a, "storage.agent.wal-compression-type", "Compression algorithm for the agent WAL.").
+		Hidden().Default(string(wlog.CompressionSnappy)).EnumVar(&cfg.agent.WALCompressionType, string(wlog.CompressionSnappy), string(wlog.CompressionZstd))
 
 	agentOnlyFlag(a, "storage.agent.wal-truncate-frequency",
 		"The frequency at which to truncate the WAL and remove old data.").
@@ -429,7 +436,7 @@ func main() {
 
 	_, err := a.Parse(os.Args[1:])
 	if err != nil {
-		fmt.Fprintln(os.Stderr, fmt.Errorf("Error parsing commandline arguments: %w", err))
+		fmt.Fprintln(os.Stderr, fmt.Errorf("Error parsing command line arguments: %w", err))
 		a.Usage(os.Args[1:])
 		os.Exit(2)
 	}
@@ -1546,6 +1553,7 @@ type tsdbOptions struct {
 	MaxBytes                       units.Base2Bytes
 	NoLockfile                     bool
 	WALCompression                 bool
+	WALCompressionType             string
 	HeadChunksWriteQueueSize       int
 	SamplesPerChunk                int
 	StripeSize                     int
@@ -1566,7 +1574,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		MaxBytes:                       int64(opts.MaxBytes),
 		NoLockfile:                     opts.NoLockfile,
 		AllowOverlappingCompaction:     true,
-		WALCompression:                 opts.WALCompression,
+		WALCompression:                 wlog.ParseCompressionType(opts.WALCompression, opts.WALCompressionType),
 		HeadChunksWriteQueueSize:       opts.HeadChunksWriteQueueSize,
 		SamplesPerChunk:                opts.SamplesPerChunk,
 		StripeSize:                     opts.StripeSize,
@@ -1585,6 +1593,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 type agentOptions struct {
 	WALSegmentSize         units.Base2Bytes
 	WALCompression         bool
+	WALCompressionType     string
 	StripeSize             int
 	TruncateFrequency      model.Duration
 	MinWALTime, MaxWALTime model.Duration
@@ -1594,7 +1603,7 @@ type agentOptions struct {
 func (opts agentOptions) ToAgentOptions() agent.Options {
 	return agent.Options{
 		WALSegmentSize:    int(opts.WALSegmentSize),
-		WALCompression:    opts.WALCompression,
+		WALCompression:    wlog.ParseCompressionType(opts.WALCompression, opts.WALCompressionType),
 		StripeSize:        opts.StripeSize,
 		TruncateFrequency: time.Duration(opts.TruncateFrequency),
 		MinWALTime:        durationToInt64Millis(time.Duration(opts.MinWALTime)),

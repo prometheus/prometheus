@@ -7,9 +7,10 @@ jobs:
   buf:
     name: lint and publish
     runs-on: ubuntu-latest
+    if: github.repository_owner == 'prometheus'
     steps:
       - uses: actions/checkout@v3
-      - uses: bufbuild/buf-setup-action@v1.17.0
+      - uses: bufbuild/buf-setup-action@v1.23.1
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
       - uses: bufbuild/buf-lint-action@v1

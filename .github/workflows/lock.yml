@@ -14,6 +14,7 @@ concurrency:
 jobs:
   action:
     runs-on: ubuntu-latest
+    if: github.repository_owner == 'prometheus'
     steps:
       - uses: dessant/lock-threads@v4
         with:

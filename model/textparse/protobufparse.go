@@ -54,7 +54,7 @@ type ProtobufParser struct {
 	// quantiles/buckets.
 	fieldPos    int
 	fieldsDone  bool // true if no more fields of a Summary or (legacy) Histogram to be processed.
-	redoClassic bool // true after parsing a native histogram if we need to parse it again as a classit histogram.
+	redoClassic bool // true after parsing a native histogram if we need to parse it again as a classic histogram.
 
 	// state is marked by the entry we are processing. EntryInvalid implies
 	// that we have to decode the next MetricFamily.
@@ -411,6 +411,14 @@ func (p *ProtobufParser) Next() (Entry, error) {
 			p.metricPos++
 			p.fieldPos = -2
 			p.fieldsDone = false
+			// If this is a metric family containing native
+			// histograms, we have to switch back to native
+			// histograms after parsing a classic histogram.
+			if p.state == EntrySeries &&
+				(t == dto.MetricType_HISTOGRAM || t == dto.MetricType_GAUGE_HISTOGRAM) &&
+				isNativeHistogram(p.mf.GetMetric()[0].GetHistogram()) {
+				p.state = EntryHistogram
+			}
 		}
 		if p.metricPos >= len(p.mf.GetMetric()) {
 			p.state = EntryInvalid

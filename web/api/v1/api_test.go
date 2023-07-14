@@ -1023,15 +1023,16 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 	}
 
 	type test struct {
-		endpoint    apiFunc
-		params      map[string]string
-		query       url.Values
-		response    interface{}
-		responseLen int
-		errType     errorType
-		sorter      func(interface{})
-		metadata    []targetMetadata
-		exemplars   []exemplar.QueryResult
+		endpoint              apiFunc
+		params                map[string]string
+		query                 url.Values
+		response              interface{}
+		responseLen           int
+		responseMetadataTotal int
+		errType               errorType
+		sorter                func(interface{})
+		metadata              []targetMetadata
+		exemplars             []exemplar.QueryResult
 	}
 
 	tests := []test{
@@ -1775,6 +1776,126 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				},
 			},
 			responseLen: 2,
+		},
+		// With a limit for the number of metadata per metric.
+		{
+			endpoint: api.metricMetadata,
+			query:    url.Values{"limit_per_metric": []string{"1"}},
+			metadata: []targetMetadata{
+				{
+					identifier: "test",
+					metadata: []scrape.MetricMetadata{
+						{
+							Metric: "go_threads",
+							Type:   textparse.MetricTypeGauge,
+							Help:   "Number of OS threads created",
+							Unit:   "",
+						},
+						{
+							Metric: "go_threads",
+							Type:   textparse.MetricTypeGauge,
+							Help:   "Repeated metadata",
+							Unit:   "",
+						},
+						{
+							Metric: "go_gc_duration_seconds",
+							Type:   textparse.MetricTypeSummary,
+							Help:   "A summary of the GC invocation durations.",
+							Unit:   "",
+						},
+					},
+				},
+			},
+			response: map[string][]metadata{
+				"go_threads": {
+					{textparse.MetricTypeGauge, "Number of OS threads created", ""},
+				},
+				"go_gc_duration_seconds": {
+					{textparse.MetricTypeSummary, "A summary of the GC invocation durations.", ""},
+				},
+			},
+		},
+		// With a limit for the number of metadata per metric and per metric.
+		{
+			endpoint: api.metricMetadata,
+			query:    url.Values{"limit_per_metric": []string{"1"}, "limit": []string{"1"}},
+			metadata: []targetMetadata{
+				{
+					identifier: "test",
+					metadata: []scrape.MetricMetadata{
+						{
+							Metric: "go_threads",
+							Type:   textparse.MetricTypeGauge,
+							Help:   "Number of OS threads created",
+							Unit:   "",
+						},
+						{
+							Metric: "go_threads",
+							Type:   textparse.MetricTypeGauge,
+							Help:   "Repeated metadata",
+							Unit:   "",
+						},
+						{
+							Metric: "go_gc_duration_seconds",
+							Type:   textparse.MetricTypeSummary,
+							Help:   "A summary of the GC invocation durations.",
+							Unit:   "",
+						},
+					},
+				},
+			},
+			responseLen:           1,
+			responseMetadataTotal: 1,
+		},
+
+		// With a limit for the number of metadata per metric and per metric, while having multiple targets.
+		{
+			endpoint: api.metricMetadata,
+			query:    url.Values{"limit_per_metric": []string{"1"}, "limit": []string{"1"}},
+			metadata: []targetMetadata{
+				{
+					identifier: "test",
+					metadata: []scrape.MetricMetadata{
+						{
+							Metric: "go_threads",
+							Type:   textparse.MetricTypeGauge,
+							Help:   "Number of OS threads created",
+							Unit:   "",
+						},
+						{
+							Metric: "go_threads",
+							Type:   textparse.MetricTypeGauge,
+							Help:   "Repeated metadata",
+							Unit:   "",
+						},
+						{
+							Metric: "go_gc_duration_seconds",
+							Type:   textparse.MetricTypeSummary,
+							Help:   "A summary of the GC invocation durations.",
+							Unit:   "",
+						},
+					},
+				},
+				{
+					identifier: "secondTarget",
+					metadata: []scrape.MetricMetadata{
+						{
+							Metric: "go_threads",
+							Type:   textparse.MetricTypeGauge,
+							Help:   "Number of OS threads created, but from a different target",
+							Unit:   "",
+						},
+						{
+							Metric: "go_gc_duration_seconds",
+							Type:   textparse.MetricTypeSummary,
+							Help:   "A summary of the GC invocation durations, but from a different target.",
+							Unit:   "",
+						},
+					},
+				},
+			},
+			responseLen:           1,
+			responseMetadataTotal: 1,
 		},
 		// When requesting a specific metric that is present.
 		{
@@ -2565,6 +2686,9 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 
 					if test.responseLen != 0 {
 						assertAPIResponseLength(t, res.data, test.responseLen)
+						if test.responseMetadataTotal != 0 {
+							assertAPIResponseMetadataLen(t, res.data, test.responseMetadataTotal)
+						}
 					} else {
 						assertAPIResponse(t, res.data, test.response)
 					}
@@ -2609,6 +2733,24 @@ func assertAPIResponseLength(t *testing.T, got interface{}, expLen int) {
 	if gotLen != expLen {
 		t.Fatalf(
 			"Response length does not match, expected:\n%d\ngot:\n%d",
+			expLen,
+			gotLen,
+		)
+	}
+}
+
+func assertAPIResponseMetadataLen(t *testing.T, got interface{}, expLen int) {
+	t.Helper()
+
+	var gotLen int
+	response := got.(map[string][]metadata)
+	for _, m := range response {
+		gotLen += len(m)
+	}
+
+	if gotLen != expLen {
+		t.Fatalf(
+			"Amount of metadata in the response does not match, expected:\n%d\ngot:\n%d",
 			expLen,
 			gotLen,
 		)
@@ -2917,7 +3059,7 @@ func TestParseTimeParam(t *testing.T) {
 		{ // When data is valid.
 			paramName:    "start",
 			paramValue:   "1582468023986",
-			defaultValue: minTime,
+			defaultValue: MinTime,
 			result: resultType{
 				asTime:  ts,
 				asError: nil,
@@ -2926,16 +3068,16 @@ func TestParseTimeParam(t *testing.T) {
 		{ // When data is empty string.
 			paramName:    "end",
 			paramValue:   "",
-			defaultValue: maxTime,
+			defaultValue: MaxTime,
 			result: resultType{
-				asTime:  maxTime,
+				asTime:  MaxTime,
 				asError: nil,
 			},
 		},
 		{ // When data is not valid.
 			paramName:    "foo",
 			paramValue:   "baz",
-			defaultValue: maxTime,
+			defaultValue: MaxTime,
 			result: resultType{
 				asTime: time.Time{},
 				asError: func() error {
@@ -3006,12 +3148,12 @@ func TestParseTime(t *testing.T) {
 			result: time.Unix(1543578564, 705*1e6),
 		},
 		{
-			input:  minTime.Format(time.RFC3339Nano),
-			result: minTime,
+			input:  MinTime.Format(time.RFC3339Nano),
+			result: MinTime,
 		},
 		{
-			input:  maxTime.Format(time.RFC3339Nano),
-			result: maxTime,
+			input:  MaxTime.Format(time.RFC3339Nano),
+			result: MaxTime,
 		},
 	}
 
@@ -3485,7 +3627,7 @@ func TestExtractQueryOpts(t *testing.T) {
 	tests := []struct {
 		name   string
 		form   url.Values
-		expect *promql.QueryOpts
+		expect promql.QueryOpts
 		err    error
 	}{
 		{
@@ -3493,9 +3635,8 @@ func TestExtractQueryOpts(t *testing.T) {
 			form: url.Values{
 				"stats": []string{"all"},
 			},
-			expect: &promql.QueryOpts{
-				EnablePerStepStats: true,
-			},
+			expect: promql.NewPrometheusQueryOpts(true, 0),
+
 			err: nil,
 		},
 		{
@@ -3503,10 +3644,8 @@ func TestExtractQueryOpts(t *testing.T) {
 			form: url.Values{
 				"stats": []string{"none"},
 			},
-			expect: &promql.QueryOpts{
-				EnablePerStepStats: false,
-			},
-			err: nil,
+			expect: promql.NewPrometheusQueryOpts(false, 0),
+			err:    nil,
 		},
 		{
 			name: "with lookback delta",
@@ -3514,11 +3653,8 @@ func TestExtractQueryOpts(t *testing.T) {
 				"stats":          []string{"all"},
 				"lookback_delta": []string{"30s"},
 			},
-			expect: &promql.QueryOpts{
-				EnablePerStepStats: true,
-				LookbackDelta:      30 * time.Second,
-			},
-			err: nil,
+			expect: promql.NewPrometheusQueryOpts(true, 30*time.Second),
+			err:    nil,
 		},
 		{
 			name: "with invalid lookback delta",

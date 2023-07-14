@@ -881,9 +881,13 @@ func (a *headAppender) Commit() (err error) {
 		oooMmapMarkers  map[chunks.HeadSeriesRef]chunks.ChunkDiskMapperRef
 		oooRecords      [][]byte
 		oooCapMax       = a.head.opts.OutOfOrderCapMax.Load()
-		chunkRange      = a.head.chunkRange.Load()
 		series          *memSeries
-		enc             record.Encoder
+		appendChunkOpts = chunkOpts{
+			chunkDiskMapper: a.head.chunkDiskMapper,
+			chunkRange:      a.head.chunkRange.Load(),
+			samplesPerChunk: a.head.opts.SamplesPerChunk,
+		}
+		enc record.Encoder
 	)
 	defer func() {
 		for i := range oooRecords {
@@ -987,7 +991,7 @@ func (a *headAppender) Commit() (err error) {
 				samplesAppended--
 			}
 		default:
-			ok, chunkCreated = series.append(s.T, s.V, a.appendID, a.head.chunkDiskMapper, chunkRange, a.head.opts.SamplesPerChunk)
+			ok, chunkCreated = series.append(s.T, s.V, a.appendID, appendChunkOpts)
 			if ok {
 				if s.T < inOrderMint {
 					inOrderMint = s.T
@@ -1016,7 +1020,7 @@ func (a *headAppender) Commit() (err error) {
 	for i, s := range a.histograms {
 		series = a.histogramSeries[i]
 		series.Lock()
-		ok, chunkCreated := series.appendHistogram(s.T, s.H, a.appendID, a.head.chunkDiskMapper, chunkRange, a.head.opts.SamplesPerChunk)
+		ok, chunkCreated := series.appendHistogram(s.T, s.H, a.appendID, appendChunkOpts)
 		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
 		series.pendingCommit = false
 		series.Unlock()
@@ -1042,7 +1046,7 @@ func (a *headAppender) Commit() (err error) {
 	for i, s := range a.floatHistograms {
 		series = a.floatHistogramSeries[i]
 		series.Lock()
-		ok, chunkCreated := series.appendFloatHistogram(s.T, s.FH, a.appendID, a.head.chunkDiskMapper, chunkRange, a.head.opts.SamplesPerChunk)
+		ok, chunkCreated := series.appendFloatHistogram(s.T, s.FH, a.appendID, appendChunkOpts)
 		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
 		series.pendingCommit = false
 		series.Unlock()
@@ -1118,12 +1122,19 @@ func (s *memSeries) insert(t int64, v float64, chunkDiskMapper *chunks.ChunkDisk
 	return ok, chunkCreated, mmapRef
 }
 
+// chunkOpts are chunk-level options that are passed when appending to a memSeries.
+type chunkOpts struct {
+	chunkDiskMapper *chunks.ChunkDiskMapper
+	chunkRange      int64
+	samplesPerChunk int
+}
+
 // append adds the sample (t, v) to the series. The caller also has to provide
 // the appendID for isolation. (The appendID can be zero, which results in no
 // isolation for this append.)
 // It is unsafe to call this concurrently with s.iterator(...) without holding the series lock.
-func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper *chunks.ChunkDiskMapper, chunkRange int64, samplesPerChunk int) (sampleInOrder, chunkCreated bool) {
-	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.EncXOR, chunkDiskMapper, chunkRange, samplesPerChunk)
+func (s *memSeries) append(t int64, v float64, appendID uint64, o chunkOpts) (sampleInOrder, chunkCreated bool) {
+	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.EncXOR, o)
 	if !sampleInOrder {
 		return sampleInOrder, chunkCreated
 	}
@@ -1144,14 +1155,14 @@ func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper 
 
 // appendHistogram adds the histogram.
 // It is unsafe to call this concurrently with s.iterator(...) without holding the series lock.
-func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID uint64, chunkDiskMapper *chunks.ChunkDiskMapper, chunkRange int64, samplesPerChunk int) (sampleInOrder, chunkCreated bool) {
+func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID uint64, o chunkOpts) (sampleInOrder, chunkCreated bool) {
 	// Head controls the execution of recoding, so that we own the proper
 	// chunk reference afterwards and mmap used up chunks.
 
 	// ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway
 	prevApp, _ := s.app.(*chunkenc.HistogramAppender)
 
-	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.EncHistogram, chunkDiskMapper, chunkRange, samplesPerChunk)
+	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.EncHistogram, o)
 	if !sampleInOrder {
 		return sampleInOrder, chunkCreated
 	}
@@ -1192,26 +1203,26 @@ func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID ui
 	}
 
 	// brand new chunk, switch out the head chunk (based on cutNewHeadChunk)
-	s.mmapCurrentHeadChunk(chunkDiskMapper)
+	s.mmapCurrentHeadChunk(o.chunkDiskMapper)
 	s.headChunk = &memChunk{
 		chunk:   nc,
 		minTime: t,
 		maxTime: t,
 	}
-	s.nextAt = rangeForTimestamp(t, chunkRange)
+	s.nextAt = rangeForTimestamp(t, o.chunkRange)
 	return true, true
 }
 
 // appendFloatHistogram adds the float histogram.
 // It is unsafe to call this concurrently with s.iterator(...) without holding the series lock.
-func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, appendID uint64, chunkDiskMapper *chunks.ChunkDiskMapper, chunkRange int64, samplesPerChunk int) (sampleInOrder, chunkCreated bool) {
+func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, appendID uint64, o chunkOpts) (sampleInOrder, chunkCreated bool) {
 	// Head controls the execution of recoding, so that we own the proper
 	// chunk reference afterwards and mmap used up chunks.
 
 	// ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway
 	prevApp, _ := s.app.(*chunkenc.FloatHistogramAppender)
 
-	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.EncFloatHistogram, chunkDiskMapper, chunkRange, samplesPerChunk)
+	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.EncFloatHistogram, o)
 	if !sampleInOrder {
 		return sampleInOrder, chunkCreated
 	}
@@ -1252,22 +1263,20 @@ func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, 
 	}
 
 	// brand new chunk, switch out the head chunk (based on cutNewHeadChunk)
-	s.mmapCurrentHeadChunk(chunkDiskMapper)
+	s.mmapCurrentHeadChunk(o.chunkDiskMapper)
 	s.headChunk = &memChunk{
 		chunk:   nc,
 		minTime: t,
 		maxTime: t,
 	}
-	s.nextAt = rangeForTimestamp(t, chunkRange)
+	s.nextAt = rangeForTimestamp(t, o.chunkRange)
 	return true, true
 }
 
 // appendPreprocessor takes care of cutting new chunks and m-mapping old chunks.
 // It is unsafe to call this concurrently with s.iterator(...) without holding the series lock.
 // This should be called only when appending data.
-func (s *memSeries) appendPreprocessor(
-	t int64, e chunkenc.Encoding, chunkDiskMapper *chunks.ChunkDiskMapper, chunkRange int64, samplesPerChunk int,
-) (c *memChunk, sampleInOrder, chunkCreated bool) {
+func (s *memSeries) appendPreprocessor(t int64, e chunkenc.Encoding, o chunkOpts) (c *memChunk, sampleInOrder, chunkCreated bool) {
 	c = s.head()
 
 	if c == nil {
@@ -1276,7 +1285,7 @@ func (s *memSeries) appendPreprocessor(
 			return c, false, false
 		}
 		// There is no head chunk in this series yet, create the first chunk for the sample.
-		c = s.cutNewHeadChunk(t, e, chunkDiskMapper, chunkRange)
+		c = s.cutNewHeadChunk(t, e, o.chunkDiskMapper, o.chunkRange)
 		chunkCreated = true
 	}
 
@@ -1288,7 +1297,7 @@ func (s *memSeries) appendPreprocessor(
 	if c.chunk.Encoding() != e {
 		// The chunk encoding expected by this append is different than the head chunk's
 		// encoding. So we cut a new chunk with the expected encoding.
-		c = s.cutNewHeadChunk(t, e, chunkDiskMapper, chunkRange)
+		c = s.cutNewHeadChunk(t, e, o.chunkDiskMapper, o.chunkRange)
 		chunkCreated = true
 	}
 
@@ -1297,14 +1306,14 @@ func (s *memSeries) appendPreprocessor(
 		// It could be the new chunk created after reading the chunk snapshot,
 		// hence we fix the minTime of the chunk here.
 		c.minTime = t
-		s.nextAt = rangeForTimestamp(c.minTime, chunkRange)
+		s.nextAt = rangeForTimestamp(c.minTime, o.chunkRange)
 	}
 
 	// If we reach 25% of a chunk's desired sample count, predict an end time
 	// for this chunk that will try to make samples equally distributed within
 	// the remaining chunks in the current chunk range.
 	// At latest it must happen at the timestamp set when the chunk was cut.
-	if numSamples == samplesPerChunk/4 {
+	if numSamples == o.samplesPerChunk/4 {
 		s.nextAt = computeChunkEndTime(c.minTime, c.maxTime, s.nextAt)
 	}
 	// If numSamples > samplesPerChunk*2 then our previous prediction was invalid,
@@ -1312,8 +1321,8 @@ func (s *memSeries) appendPreprocessor(
 	// Since we assume that the rate is higher, we're being conservative and cutting at 2*samplesPerChunk
 	// as we expect more chunks to come.
 	// Note that next chunk will have its nextAt recalculated for the new rate.
-	if t >= s.nextAt || numSamples >= samplesPerChunk*2 {
-		c = s.cutNewHeadChunk(t, e, chunkDiskMapper, chunkRange)
+	if t >= s.nextAt || numSamples >= o.samplesPerChunk*2 {
+		c = s.cutNewHeadChunk(t, e, o.chunkDiskMapper, o.chunkRange)
 		chunkCreated = true
 	}
 

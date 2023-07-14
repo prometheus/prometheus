@@ -414,6 +414,26 @@ func labelValuesWithMatchers(r IndexReader, name string, matchers ...*labels.Mat
 	if err != nil {
 		return nil, errors.Wrapf(err, "fetching values of label %s", name)
 	}
+
+	// If we have a matcher for the label name, we can filter out values that don't match
+	// before we fetch postings. This is especially useful for labels with many values.
+	// e.g. __name__ with a selector like {__name__="xyz"}
+	for _, m := range matchers {
+		if m.Name != name {
+			continue
+		}
+
+		// re-use the allValues slice to avoid allocations
+		// this is safe because the iteration is always ahead of the append
+		filteredValues := allValues[:0]
+		for _, v := range allValues {
+			if m.Matches(v) {
+				filteredValues = append(filteredValues, v)
+			}
+		}
+		allValues = filteredValues
+	}
+
 	valuesPostings := make([]index.Postings, len(allValues))
 	for i, value := range allValues {
 		valuesPostings[i], err = r.Postings(name, value)
