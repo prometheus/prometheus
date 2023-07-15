@@ -55,6 +55,14 @@ func (mh *markerHandler) Start() {
 	go mh.updatePendingData()
 }
 
+func (mh *markerHandler) Stop() {
+	// Firstly stop the Marker Handler, because it might want to use the Marker File Handler.
+	mh.quit <- struct{}{}
+
+	// Finally, stop the File Handler.
+	mh.markerFileHandler.Stop()
+}
+
 func (mh *markerHandler) LastMarkedSegment() int {
 	return mh.markerFileHandler.LastMarkedSegment()
 }
@@ -73,14 +81,6 @@ func (mh *markerHandler) UpdateSentData(segmentId, dataCount int) {
 	}
 }
 
-func (mh *markerHandler) Stop() {
-	// Firstly stop the Marker Handler, because it might want to use the Marker File Handler.
-	mh.quit <- struct{}{}
-
-	// Finally, stop the File Handler.
-	mh.markerFileHandler.Stop()
-}
-
 // updatePendingData updates a counter for how much data is yet to be sent from each segment.
 // "dataCount" will be added to the segment with ID "dataSegment".
 func (mh *markerHandler) updatePendingData() {
@@ -91,30 +91,34 @@ func (mh *markerHandler) updatePendingData() {
 		case <-mh.quit:
 			return
 		case dataUpdate := <-mh.dataIOUpdate:
+			//TODO: If count is less than 0, then log an error and remove the entry from the map?
 			batchSegmentCount[dataUpdate.segmentId] += dataUpdate.dataCount
 		}
 
 		markableSegment := -1
 		for segment, count := range batchSegmentCount {
-			//TODO: If count is less than 0, then log an error and remove the entry from the map?
-			if count != 0 {
+			if count > 0 {
 				continue
 			}
 
-			//TODO: Is it save to assume that just because a segment is 0 inside the map,
-			//      all samples from it have been processed?
-			if segment > markableSegment {
+			// TODO: should we just track the lowest segment ID with samples and the highest segment ID with samples?
+			// then we can just check if the current segment was not the highest segment ID, ie is there any higher segment id with samples currently
+			// in reality the % of the time that there will be samples for more than 1 segment is almost 0
+			if segment > markableSegment && batchSegmentCount[segment+1] > 0 {
 				markableSegment = segment
+				// Clean up the pending map: the current segment has been completely
+				// consumed and doesn't need to be considered for marking again.
+				// we probably need to have a smarter cleanup either on a time ticker
+				// or here we delete all keys that are a segment ID lower than us
+				delete(batchSegmentCount, segment)
 			}
-
-			// Clean up the pending map: the current segment has been completely
-			// consumed and doesn't need to be considered for marking again.
-			delete(batchSegmentCount, segment)
 		}
 
 		if markableSegment > mh.lastMarkedSegment {
-			mh.markerFileHandler.MarkSegment(markableSegment)
-			mh.lastMarkedSegment = markableSegment
+			// how to handle error here?
+			if err := mh.markerFileHandler.MarkSegment(markableSegment); err == nil {
+				mh.lastMarkedSegment = markableSegment
+			}
 		}
 	}
 }

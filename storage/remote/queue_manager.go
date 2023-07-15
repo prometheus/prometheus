@@ -16,7 +16,9 @@ package remote
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
+	"os"
 	"strconv"
 	"sync"
 	"time"
@@ -493,12 +495,16 @@ func NewQueueManager(
 		interner:             interner,
 		highestRecvTimestamp: highestRecvTimestamp,
 	}
-
 	t.watcher = wlog.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, t.markerHandler, dir, enableExemplarRemoteWrite, enableNativeHistogramRemoteWrite)
 	if t.mcfg.Send {
 		t.metadataWatcher = NewMetadataWatcher(logger, sm, client.Name(), t, t.mcfg.SendInterval, flushDeadline)
 	}
 	t.shards = t.newShards()
+	// IMO we need to ensure the dir exists in another piece of the code, and handle the error there
+	err := os.MkdirAll(markerDir+client.Name(), 0o777)
+	if err != nil {
+		fmt.Println("error mkdir: ", err)
+	}
 	markerFileHandler := NewMarkerFileHandler(logger, markerDir, client.Name())
 	t.markerHandler = NewMarkerHandler(logger, client.Name(), markerFileHandler)
 
@@ -612,7 +618,7 @@ outer:
 				sType:        tSample,
 				segment:      segment,
 			}) {
-				t.markerHandler.UpdateReceivedData(segment, len(samples))
+				t.markerHandler.UpdateReceivedData(segment, 1)
 				continue outer
 			}
 

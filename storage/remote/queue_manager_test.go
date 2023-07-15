@@ -79,7 +79,7 @@ func TestSampleDelivery(t *testing.T) {
 	n := 3
 
 	dir := t.TempDir()
-
+	fmt.Println("creating storage, dir is: ", dir)
 	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil)
 	defer s.Close()
 
@@ -313,6 +313,106 @@ func TestSampleDeliveryOrder(t *testing.T) {
 	// These should be received by the client.
 	m.Append(samples, 0)
 	c.waitForExpectedData(t)
+}
+
+func TestSegmentMarker(t *testing.T) {
+	testcases := []struct {
+		name            string
+		samples         bool
+		exemplars       bool
+		histograms      bool
+		floatHistograms bool
+	}{
+		// todo: test with multiple data types
+		{samples: true, exemplars: false, histograms: false, floatHistograms: false, name: "samples only"},
+		//{samples: true, exemplars: true, histograms: true, floatHistograms: true, name: "samples, exemplars, and histograms"},
+		//{samples: false, exemplars: true, histograms: false, floatHistograms: false, name: "exemplars only"},
+		//{samples: false, exemplars: false, histograms: true, floatHistograms: false, name: "histograms only"},
+		//{samples: false, exemplars: false, histograms: false, floatHistograms: true, name: "float histograms only"},
+	}
+
+	// Let's create an even number of send batches so we don't run into the
+	// batch timeout case.
+	n := 3
+
+	dir := t.TempDir()
+	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil)
+	defer s.Close()
+
+	queueConfig := config.DefaultQueueConfig
+	queueConfig.BatchSendDeadline = model.Duration(100 * time.Millisecond)
+	queueConfig.MaxShards = 1
+
+	// We need to set URL's so that metric creation doesn't panic.
+	writeConfig := baseRemoteWriteConfig("http://test-storage.com")
+	writeConfig.QueueConfig = queueConfig
+	writeConfig.SendExemplars = true
+	writeConfig.SendNativeHistograms = true
+
+	conf := &config.Config{
+		GlobalConfig: config.DefaultGlobalConfig,
+		RemoteWriteConfigs: []*config.RemoteWriteConfig{
+			writeConfig,
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			var (
+				series  []record.RefSeries
+				samples []record.RefSample
+				//exemplars       []record.RefExemplar
+				//histograms      []record.RefHistogramSample
+				//floatHistograms []record.RefFloatHistogramSample
+			)
+
+			// Generates same series in both cases.
+			if tc.samples {
+				samples, series = createTimeseries(n, n)
+			}
+			//if tc.exemplars {
+			//	exemplars, series = createExemplars(n, n)
+			//}
+			//if tc.histograms {
+			//	histograms, _, series = createHistograms(n, n, false)
+			//}
+			//if tc.floatHistograms {
+			//	_, floatHistograms, series = createHistograms(n, n, true)
+			//}
+
+			// Apply new config.
+			queueConfig.Capacity = len(samples)
+			queueConfig.MaxSamplesPerSend = len(samples) / 2
+			require.NoError(t, s.ApplyConfig(conf))
+			hash, err := toHash(writeConfig)
+			require.NoError(t, err)
+			qm := s.rws.queues[hash]
+
+			c := NewTestWriteClient()
+			qm.SetClient(c)
+
+			qm.StoreSeries(series, 0)
+
+			// Send first half of data.
+			c.expectSamples(samples[:len(samples)/2], series)
+			qm.Append(samples[:len(samples)/4], 0)
+			qm.Append(samples[len(samples)/4:len(samples)/2], 1)
+			c.waitForExpectedData(t)
+			// last marked segment should be 0, since we can't know for sure that we won't get more data in segment 1
+			require.Eventually(t, func() bool { return qm.markerHandler.LastMarkedSegment() == 0 }, 2*time.Second, 100*time.Millisecond, "LastMarkedSegment was never updated to the expected value: %d", 0)
+
+			// Send second half of data.
+			c.expectSamples(samples[len(samples)/2:], series)
+			//c.expectExemplars(exemplars[len(exemplars)/2:], series)
+			//c.expectHistograms(histograms[len(histograms)/2:], series)
+			//c.expectFloatHistograms(floatHistograms[len(floatHistograms)/2:], series)
+			//qm.Append(samples[len(samples)/2:], 0)
+			//qm.AppendExemplars(exemplars[len(exemplars)/2:], 0)
+			//qm.AppendHistograms(histograms[len(histograms)/2:], 0)
+			//qm.AppendFloatHistograms(floatHistograms[len(floatHistograms)/2:], 0)
+			//c.waitForExpectedData(t)
+		})
+	}
 }
 
 func TestShutdown(t *testing.T) {
