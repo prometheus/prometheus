@@ -55,16 +55,15 @@ func IsValidEncoding(e Encoding) bool {
 const (
 	// MaxBytesPerXORChunk is the maximum size an XOR chunk can be.
 	MaxBytesPerXORChunk = 1024
-	// TargetBytesPerNativeHistogramChunk sets a size target for each native histogram chunk.
-	TargetBytesPerNativeHistogramChunk = 1024
-	// MinSamplesPerNativeHistogramChunk sets a minimum sample count for native histogram chunks. This is
-	// desirable because a single native histogram sample can be larger than TargetBytesPerNativeHistogramChunk
-	// but we want to avoid too-small sample count chunks so we can achieve some measure of compression advantage
-	// even while dealing with really large histograms.
+	// TargetBytesPerHistogramChunk sets a size target for each histogram chunk.
+	TargetBytesPerHistogramChunk = 1024
+	// MinSamplesPerHistogramChunk sets a minimum sample count for histogram chunks. This is desirable because a single
+	// histogram sample can be larger than TargetBytesPerHistogramChunk but we want to avoid too-small sample count
+	// chunks so we can achieve some measure of compression advantage even while dealing with really large histograms.
 	// Note that this minimum sample count is not enforced across chunk range boundaries (for example, if the chunk
 	// range is 100 and the first sample in the chunk range is 99, the next sample will be included in a new chunk
 	// resulting in the old chunk containing only a single sample).
-	MinSamplesPerNativeHistogramChunk = 10
+	MinSamplesPerHistogramChunk = 10
 )
 
 // Chunk holds a sequence of sample pairs that can be iterated over and appended to.

@@ -202,9 +202,9 @@ func BenchmarkStreamReadEndpoint(b *testing.B) {
 }
 
 func TestStreamReadEndpoint(t *testing.T) {
-	// First with 120 samples. We expect 1 frame with 1 chunk.
-	// Second with 121 samples, We expect 1 frame with 2 chunks.
-	// Third with 241 samples. We expect 1 frame with 2 chunks, and 1 frame with 1 chunk for the same series due to bytes limit.
+	// First with 120 float samples. We expect 1 frame with 1 chunk.
+	// Second with 121 float samples, We expect 1 frame with 2 chunks.
+	// Third with 241 float samples. We expect 1 frame with 2 chunks, and 1 frame with 1 chunk for the same series due to bytes limit.
 	// Fourth with 25 histogram samples. We expect 1 frame with 1 chunk.
 	suite, err := promql.NewTest(t, `
 		load 1m
