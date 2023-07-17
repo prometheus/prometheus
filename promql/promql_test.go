@@ -73,19 +73,23 @@ func TestConcurrentRangeQueries(t *testing.T) {
 		if strings.Contains(c.expr, "count_values") && c.steps > 10 {
 			continue // This test is too big to run with -race.
 		}
+		if strings.Contains(c.expr, "[1d]") && c.steps > 100 {
+			continue // This test is too slow.
+		}
 		<-sem
 		g.Go(func() error {
 			defer func() {
 				sem <- struct{}{}
 			}()
+			ctx := context.Background()
 			qry, err := engine.NewRangeQuery(
-				stor, nil, c.expr,
+				ctx, stor, nil, c.expr,
 				time.Unix(int64((numIntervals-c.steps)*10), 0),
 				time.Unix(int64(numIntervals*10), 0), time.Second*10)
 			if err != nil {
 				return err
 			}
-			res := qry.Exec(context.Background())
+			res := qry.Exec(ctx)
 			if res.Err != nil {
 				t.Logf("Query: %q, steps: %d, result: %s", c.expr, c.steps, res.Err)
 				return res.Err

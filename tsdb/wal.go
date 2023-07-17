@@ -11,6 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// nolint:revive // Many unsued function arguments in this file by design.
 package tsdb
 
 import (
@@ -38,6 +39,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/wlog"
+	"github.com/prometheus/prometheus/util/zeropool"
 )
 
 // WALEntryType indicates what data a WAL entry contains.
@@ -89,7 +91,7 @@ func newWalMetrics(r prometheus.Registerer) *walMetrics {
 // WAL is a write ahead log that can log new series labels and samples.
 // It must be completely read before new entries are logged.
 //
-// DEPRECATED: use wlog pkg combined with the record codex instead.
+// Deprecated: use wlog pkg combined with the record codex instead.
 type WAL interface {
 	Reader() WALReader
 	LogSeries([]record.RefSeries) error
@@ -146,7 +148,7 @@ func newCRC32() hash.Hash32 {
 
 // SegmentWAL is a write ahead log for series data.
 //
-// DEPRECATED: use wlog pkg combined with the record coders instead.
+// Deprecated: use wlog pkg combined with the record coders instead.
 type SegmentWAL struct {
 	mtx     sync.Mutex
 	metrics *walMetrics
@@ -520,9 +522,10 @@ func (w *SegmentWAL) openSegmentFile(name string) (*os.File, error) {
 		}
 	}()
 
-	if n, err := f.Read(metab); err != nil {
+	switch n, err := f.Read(metab); {
+	case err != nil:
 		return nil, errors.Wrapf(err, "validate meta %q", f.Name())
-	} else if n != 8 {
+	case n != 8:
 		return nil, errors.Errorf("invalid header size %d in %q", n, f.Name())
 	}
 
@@ -870,9 +873,9 @@ func (r *walReader) Read(
 	// Historically, the processing is the bottleneck with reading and decoding using only
 	// 15% of the CPU.
 	var (
-		seriesPool sync.Pool
-		samplePool sync.Pool
-		deletePool sync.Pool
+		seriesPool zeropool.Pool[[]record.RefSeries]
+		samplePool zeropool.Pool[[]record.RefSample]
+		deletePool zeropool.Pool[[]tombstones.Stone]
 	)
 	donec := make(chan struct{})
 	datac := make(chan interface{}, 100)
@@ -886,19 +889,16 @@ func (r *walReader) Read(
 				if seriesf != nil {
 					seriesf(v)
 				}
-				//nolint:staticcheck // Ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
 				seriesPool.Put(v[:0])
 			case []record.RefSample:
 				if samplesf != nil {
 					samplesf(v)
 				}
-				//nolint:staticcheck // Ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
 				samplePool.Put(v[:0])
 			case []tombstones.Stone:
 				if deletesf != nil {
 					deletesf(v)
 				}
-				//nolint:staticcheck // Ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
 				deletePool.Put(v[:0])
 			default:
 				level.Error(r.logger).Log("msg", "unexpected data type")
@@ -915,11 +915,9 @@ func (r *walReader) Read(
 		// Those should generally be caught by entry decoding before.
 		switch et {
 		case WALEntrySeries:
-			var series []record.RefSeries
-			if v := seriesPool.Get(); v == nil {
+			series := seriesPool.Get()
+			if series == nil {
 				series = make([]record.RefSeries, 0, 512)
-			} else {
-				series = v.([]record.RefSeries)
 			}
 
 			err = r.decodeSeries(flag, b, &series)
@@ -936,11 +934,9 @@ func (r *walReader) Read(
 				}
 			}
 		case WALEntrySamples:
-			var samples []record.RefSample
-			if v := samplePool.Get(); v == nil {
+			samples := samplePool.Get()
+			if samples == nil {
 				samples = make([]record.RefSample, 0, 512)
-			} else {
-				samples = v.([]record.RefSample)
 			}
 
 			err = r.decodeSamples(flag, b, &samples)
@@ -958,11 +954,9 @@ func (r *walReader) Read(
 				}
 			}
 		case WALEntryDeletes:
-			var deletes []tombstones.Stone
-			if v := deletePool.Get(); v == nil {
+			deletes := deletePool.Get()
+			if deletes == nil {
 				deletes = make([]tombstones.Stone, 0, 512)
-			} else {
-				deletes = v.([]tombstones.Stone)
 			}
 
 			err = r.decodeDeletes(flag, b, &deletes)
@@ -1070,9 +1064,10 @@ func (r *walReader) entry(cr io.Reader) (WALEntryType, byte, []byte, error) {
 	tr := io.TeeReader(cr, r.crc32)
 
 	b := make([]byte, 6)
-	if n, err := tr.Read(b); err != nil {
+	switch n, err := tr.Read(b); {
+	case err != nil:
 		return 0, 0, nil, err
-	} else if n != 6 {
+	case n != 6:
 		return 0, 0, nil, r.corruptionErr("invalid entry header size %d", n)
 	}
 
@@ -1094,15 +1089,17 @@ func (r *walReader) entry(cr io.Reader) (WALEntryType, byte, []byte, error) {
 	}
 	buf := r.buf[:length]
 
-	if n, err := tr.Read(buf); err != nil {
+	switch n, err := tr.Read(buf); {
+	case err != nil:
 		return 0, 0, nil, err
-	} else if n != length {
+	case n != length:
 		return 0, 0, nil, r.corruptionErr("invalid entry body size %d", n)
 	}
 
-	if n, err := cr.Read(b[:4]); err != nil {
+	switch n, err := cr.Read(b[:4]); {
+	case err != nil:
 		return 0, 0, nil, err
-	} else if n != 4 {
+	case n != 4:
 		return 0, 0, nil, r.corruptionErr("invalid checksum length %d", n)
 	}
 	if exp, has := binary.BigEndian.Uint32(b[:4]), r.crc32.Sum32(); has != exp {
@@ -1229,7 +1226,7 @@ func MigrateWAL(logger log.Logger, dir string) (err error) {
 	if err := os.RemoveAll(tmpdir); err != nil {
 		return errors.Wrap(err, "cleanup replacement dir")
 	}
-	repl, err := wlog.New(logger, nil, tmpdir, false)
+	repl, err := wlog.New(logger, nil, tmpdir, wlog.CompressionNone)
 	if err != nil {
 		return errors.Wrap(err, "open new WAL")
 	}

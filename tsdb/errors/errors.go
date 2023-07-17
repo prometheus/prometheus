@@ -16,6 +16,7 @@ package errors
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 )
@@ -77,6 +78,19 @@ func (es nonNilMultiError) Error() string {
 	}
 
 	return buf.String()
+}
+
+// Is attempts to match the provided error against errors in the error list.
+//
+// This function allows errors.Is to traverse the values stored in the MultiError.
+// It returns true if any of the errors in the list match the target.
+func (es nonNilMultiError) Is(target error) bool {
+	for _, err := range es.errs {
+		if errors.Is(err, target) {
+			return true
+		}
+	}
+	return false
 }
 
 // CloseAll closes all given closers while recording error in MultiError.

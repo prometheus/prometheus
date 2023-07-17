@@ -104,7 +104,7 @@ func (wtm *writeToMock) SeriesReset(index int) {
 	}
 }
 
-func (wtm *writeToMock) checkNumLabels() int {
+func (wtm *writeToMock) checkNumSeries() int {
 	wtm.seriesLock.Lock()
 	defer wtm.seriesLock.Unlock()
 	return len(wtm.seriesSegmentIndexes)
@@ -122,8 +122,8 @@ func TestTailSamples(t *testing.T) {
 	const samplesCount = 250
 	const exemplarsCount = 25
 	const histogramsCount = 50
-	for _, compress := range []bool{false, true} {
-		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
+	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
+		t.Run(fmt.Sprintf("compress=%s", compress), func(t *testing.T) {
 			now := time.Now()
 
 			dir := t.TempDir()
@@ -230,9 +230,9 @@ func TestTailSamples(t *testing.T) {
 			expectedExemplars := seriesCount * exemplarsCount
 			expectedHistograms := seriesCount * histogramsCount
 			retry(t, defaultRetryInterval, defaultRetries, func() bool {
-				return wt.checkNumLabels() >= expectedSeries
+				return wt.checkNumSeries() >= expectedSeries
 			})
-			require.Equal(t, expectedSeries, wt.checkNumLabels(), "did not receive the expected number of series")
+			require.Equal(t, expectedSeries, wt.checkNumSeries(), "did not receive the expected number of series")
 			require.Equal(t, expectedSamples, wt.samplesAppended, "did not receive the expected number of samples")
 			require.Equal(t, expectedExemplars, wt.exemplarsAppended, "did not receive the expected number of exemplars")
 			require.Equal(t, expectedHistograms, wt.histogramsAppended, "did not receive the expected number of histograms")
@@ -246,8 +246,8 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 	const seriesCount = 10
 	const samplesCount = 250
 
-	for _, compress := range []bool{false, true} {
-		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
+	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
+		t.Run(fmt.Sprintf("compress=%s", compress), func(t *testing.T) {
 			dir := t.TempDir()
 			wdir := path.Join(dir, "wal")
 			err := os.Mkdir(wdir, 0o777)
@@ -290,7 +290,7 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 				}
 			}
 			require.NoError(t, w.Log(recs...))
-
+			readTimeout = time.Second
 			_, _, err = Segments(w.Dir())
 			require.NoError(t, err)
 
@@ -299,11 +299,10 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 			go watcher.Start()
 
 			expected := seriesCount
-			retry(t, defaultRetryInterval, defaultRetries, func() bool {
-				return wt.checkNumLabels() >= expected
-			})
+			require.Eventually(t, func() bool {
+				return wt.checkNumSeries() == expected
+			}, 20*time.Second, 1*time.Second)
 			watcher.Stop()
-			require.Equal(t, expected, wt.checkNumLabels())
 		})
 	}
 }
@@ -315,8 +314,8 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 	const seriesCount = 10
 	const samplesCount = 250
 
-	for _, compress := range []bool{false, true} {
-		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
+	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
+		t.Run(fmt.Sprintf("compress=%s", compress), func(t *testing.T) {
 			dir := t.TempDir()
 
 			wdir := path.Join(dir, "wal")
@@ -383,16 +382,17 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 
 			_, _, err = Segments(w.Dir())
 			require.NoError(t, err)
+			readTimeout = time.Second
 			wt := newWriteToMock()
 			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false)
 			go watcher.Start()
 
 			expected := seriesCount * 2
-			retry(t, defaultRetryInterval, defaultRetries, func() bool {
-				return wt.checkNumLabels() >= expected
-			})
+
+			require.Eventually(t, func() bool {
+				return wt.checkNumSeries() == expected
+			}, 10*time.Second, 1*time.Second)
 			watcher.Stop()
-			require.Equal(t, expected, wt.checkNumLabels())
 		})
 	}
 }
@@ -402,8 +402,8 @@ func TestReadCheckpoint(t *testing.T) {
 	const seriesCount = 10
 	const samplesCount = 250
 
-	for _, compress := range []bool{false, true} {
-		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
+	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
+		t.Run(fmt.Sprintf("compress=%s", compress), func(t *testing.T) {
 			dir := t.TempDir()
 
 			wdir := path.Join(dir, "wal")
@@ -460,10 +460,10 @@ func TestReadCheckpoint(t *testing.T) {
 
 			expectedSeries := seriesCount
 			retry(t, defaultRetryInterval, defaultRetries, func() bool {
-				return wt.checkNumLabels() >= expectedSeries
+				return wt.checkNumSeries() >= expectedSeries
 			})
 			watcher.Stop()
-			require.Equal(t, expectedSeries, wt.checkNumLabels())
+			require.Equal(t, expectedSeries, wt.checkNumSeries())
 		})
 	}
 }
@@ -475,8 +475,8 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 	const seriesCount = 20
 	const samplesCount = 300
 
-	for _, compress := range []bool{false, true} {
-		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
+	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
+		t.Run(fmt.Sprintf("compress=%s", compress), func(t *testing.T) {
 			dir := t.TempDir()
 
 			wdir := path.Join(dir, "wal")
@@ -546,15 +546,15 @@ func TestCheckpointSeriesReset(t *testing.T) {
 	const seriesCount = 20
 	const samplesCount = 350
 	testCases := []struct {
-		compress bool
+		compress CompressionType
 		segments int
 	}{
-		{compress: false, segments: 14},
-		{compress: true, segments: 13},
+		{compress: CompressionNone, segments: 14},
+		{compress: CompressionSnappy, segments: 13},
 	}
 
 	for _, tc := range testCases {
-		t.Run(fmt.Sprintf("compress=%t", tc.compress), func(t *testing.T) {
+		t.Run(fmt.Sprintf("compress=%s", tc.compress), func(t *testing.T) {
 			dir := t.TempDir()
 
 			wdir := path.Join(dir, "wal")
@@ -595,6 +595,7 @@ func TestCheckpointSeriesReset(t *testing.T) {
 			_, _, err = Segments(w.Dir())
 			require.NoError(t, err)
 
+			readTimeout = time.Second
 			wt := newWriteToMock()
 			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false)
 			watcher.MaxSegment = -1
@@ -602,9 +603,11 @@ func TestCheckpointSeriesReset(t *testing.T) {
 
 			expected := seriesCount
 			retry(t, defaultRetryInterval, defaultRetries, func() bool {
-				return wt.checkNumLabels() >= expected
+				return wt.checkNumSeries() >= expected
 			})
-			require.Equal(t, seriesCount, wt.checkNumLabels())
+			require.Eventually(t, func() bool {
+				return wt.checkNumSeries() == seriesCount
+			}, 10*time.Second, 1*time.Second)
 
 			_, err = Checkpoint(log.NewNopLogger(), w, 2, 4, func(x chunks.HeadSeriesRef) bool { return true }, 0)
 			require.NoError(t, err)
@@ -621,7 +624,9 @@ func TestCheckpointSeriesReset(t *testing.T) {
 			// If you modify the checkpoint and truncate segment #'s run the test to see how
 			// many series records you end up with and change the last Equals check accordingly
 			// or modify the Equals to Assert(len(wt.seriesLabels) < seriesCount*10)
-			require.Equal(t, tc.segments, wt.checkNumLabels())
+			require.Eventually(t, func() bool {
+				return wt.checkNumSeries() == tc.segments
+			}, 20*time.Second, 1*time.Second)
 		})
 	}
 }

@@ -536,7 +536,7 @@ func (w *Writer) finishSymbols() error {
 	// Write out the length and symbol count.
 	w.buf1.Reset()
 	w.buf1.PutBE32int(int(symbolTableSize))
-	w.buf1.PutBE32int(int(w.numSymbols))
+	w.buf1.PutBE32int(w.numSymbols)
 	if err := w.writeAt(w.buf1.Get(), w.toc.Symbols); err != nil {
 		return err
 	}
@@ -864,7 +864,10 @@ func (w *Writer) writePostingsToTmpFiles() error {
 		// using more memory than a single label name can.
 		for len(names) > 0 {
 			if w.labelNames[names[0]]+c > maxPostings {
-				break
+				if c > 0 {
+					break
+				}
+				return fmt.Errorf("corruption detected when writing postings to index: label %q has %d uses, but maxPostings is %d", names[0], w.labelNames[names[0]], maxPostings)
 			}
 			batchNames = append(batchNames, names[0])
 			c += w.labelNames[names[0]]
@@ -921,7 +924,7 @@ func (w *Writer) writePostingsToTmpFiles() error {
 				values = append(values, v)
 			}
 			// Symbol numbers are in order, so the strings will also be in order.
-			sort.Sort(uint32slice(values))
+			slices.Sort(values)
 			for _, v := range values {
 				value, err := w.symbols.Lookup(v)
 				if err != nil {
@@ -1013,12 +1016,6 @@ func (w *Writer) writePostings() error {
 	w.fP = nil
 	return nil
 }
-
-type uint32slice []uint32
-
-func (s uint32slice) Len() int           { return len(s) }
-func (s uint32slice) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
-func (s uint32slice) Less(i, j int) bool { return s[i] < s[j] }
 
 type labelIndexHashEntry struct {
 	keys   []string

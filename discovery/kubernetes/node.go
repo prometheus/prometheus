@@ -96,7 +96,7 @@ func (n *Node) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	}
 
 	go func() {
-		for n.process(ctx, ch) {
+		for n.process(ctx, ch) { // nolint:revive
 		}
 	}()
 
@@ -209,7 +209,7 @@ func (n *Node) buildNode(node *apiv1.Node) *targetgroup.Group {
 	return tg
 }
 
-// nodeAddresses returns the provided node's address, based on the priority:
+// nodeAddress returns the provided node's address, based on the priority:
 // 1. NodeInternalIP
 // 2. NodeInternalDNS
 // 3. NodeExternalIP

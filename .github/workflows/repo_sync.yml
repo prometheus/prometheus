@@ -6,6 +6,7 @@ on:
 jobs:
   repo_sync:
     runs-on: ubuntu-latest
+    if: github.repository_owner == 'prometheus'
     container:
       image: quay.io/prometheus/golang-builder
     steps:

@@ -74,16 +74,16 @@ func createTestHTTPServer(t *testing.T, responder discoveryResponder) *httptest.
 
 		discoveryRes, err := responder(discoveryReq)
 		if err != nil {
-			w.WriteHeader(500)
+			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 
 		if discoveryRes == nil {
-			w.WriteHeader(304)
+			w.WriteHeader(http.StatusNotModified)
 			return
 		}
 
-		w.WriteHeader(200)
+		w.WriteHeader(http.StatusOK)
 		data, err := protoJSONMarshalOptions.Marshal(discoveryRes)
 		require.NoError(t, err)
 

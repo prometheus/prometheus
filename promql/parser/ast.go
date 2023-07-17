@@ -349,7 +349,7 @@ func (f inspector) Visit(node Node, path []Node) (Visitor, error) {
 // for all the non-nil children of node, recursively.
 func Inspect(node Node, f inspector) {
 	//nolint: errcheck
-	Walk(inspector(f), node, nil)
+	Walk(f, node, nil)
 }
 
 // Children returns a list of all child nodes of a syntax tree node.
@@ -368,13 +368,14 @@ func Children(node Node) []Node {
 	case *AggregateExpr:
 		// While this does not look nice, it should avoid unnecessary allocations
 		// caused by slice resizing
-		if n.Expr == nil && n.Param == nil {
+		switch {
+		case n.Expr == nil && n.Param == nil:
 			return nil
-		} else if n.Expr == nil {
+		case n.Expr == nil:
 			return []Node{n.Param}
-		} else if n.Param == nil {
+		case n.Param == nil:
 			return []Node{n.Expr}
-		} else {
+		default:
 			return []Node{n.Expr, n.Param}
 		}
 	case *BinaryExpr:

@@ -84,7 +84,7 @@ func MockDedicatedAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	if string(r.URL.Path) == "/dedicated/server" {
+	if r.URL.Path == "/dedicated/server" {
 		dedicatedServersList, err := os.ReadFile("testdata/dedicated_server/dedicated_servers.json")
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -96,7 +96,7 @@ func MockDedicatedAPI(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if string(r.URL.Path) == "/dedicated/server/abcde" {
+	if r.URL.Path == "/dedicated/server/abcde" {
 		dedicatedServer, err := os.ReadFile("testdata/dedicated_server/dedicated_servers_details.json")
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -108,7 +108,7 @@ func MockDedicatedAPI(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if string(r.URL.Path) == "/dedicated/server/abcde/ips" {
+	if r.URL.Path == "/dedicated/server/abcde/ips" {
 		dedicatedServerIPs, err := os.ReadFile("testdata/dedicated_server/dedicated_servers_abcde_ips.json")
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)

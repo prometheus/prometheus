@@ -1,7 +1,7 @@
 go:
     # Whenever the Go version is updated here,
     # .circle/config.yml should also be updated.
-    version: 1.19
+    version: 1.20
 repository:
     path: github.com/prometheus/prometheus
 build:
@@ -14,8 +14,10 @@ build:
         all:
             - netgo
             - builtinassets
+            - stringlabels
         windows:
             - builtinassets
+            - stringlabels
     flags: -a
     ldflags: |
         -X github.com/prometheus/common/version.Version={{.Version}}

@@ -159,12 +159,12 @@ func (h *FloatHistogram) ZeroBucket() Bucket[float64] {
 	}
 }
 
-// Scale scales the FloatHistogram by the provided factor, i.e. it scales all
+// Mul multiplies the FloatHistogram by the provided factor, i.e. it scales all
 // bucket counts including the zero bucket and the count and the sum of
 // observations. The bucket layout stays the same. This method changes the
 // receiving histogram directly (rather than acting on a copy). It returns a
 // pointer to the receiving histogram for convenience.
-func (h *FloatHistogram) Scale(factor float64) *FloatHistogram {
+func (h *FloatHistogram) Mul(factor float64) *FloatHistogram {
 	h.ZeroCount *= factor
 	h.Count *= factor
 	h.Sum *= factor
@@ -173,6 +173,21 @@ func (h *FloatHistogram) Scale(factor float64) *FloatHistogram {
 	}
 	for i := range h.NegativeBuckets {
 		h.NegativeBuckets[i] *= factor
+	}
+	return h
+}
+
+// Div works like Scale but divides instead of multiplies.
+// When dividing by 0, everything will be set to Inf.
+func (h *FloatHistogram) Div(scalar float64) *FloatHistogram {
+	h.ZeroCount /= scalar
+	h.Count /= scalar
+	h.Sum /= scalar
+	for i := range h.PositiveBuckets {
+		h.PositiveBuckets[i] /= scalar
+	}
+	for i := range h.NegativeBuckets {
+		h.NegativeBuckets[i] /= scalar
 	}
 	return h
 }
@@ -192,6 +207,30 @@ func (h *FloatHistogram) Scale(factor float64) *FloatHistogram {
 //
 // This method returns a pointer to the receiving histogram for convenience.
 func (h *FloatHistogram) Add(other *FloatHistogram) *FloatHistogram {
+	switch {
+	case other.CounterResetHint == h.CounterResetHint:
+		// Adding apples to apples, all good. No need to change anything.
+	case h.CounterResetHint == GaugeType:
+		// Adding something else to a gauge. That's probably OK. Outcome is a gauge.
+		// Nothing to do since the receiver is already marked as gauge.
+	case other.CounterResetHint == GaugeType:
+		// Similar to before, but this time the receiver is "something else" and we have to change it to gauge.
+		h.CounterResetHint = GaugeType
+	case h.CounterResetHint == UnknownCounterReset:
+		// With the receiver's CounterResetHint being "unknown", this could still be legitimate
+		// if the caller knows what they are doing. Outcome is then again "unknown".
+		// No need to do anything since the receiver's CounterResetHint is already "unknown".
+	case other.CounterResetHint == UnknownCounterReset:
+		// Similar to before, but now we have to set the receiver's CounterResetHint to "unknown".
+		h.CounterResetHint = UnknownCounterReset
+	default:
+		// All other cases shouldn't actually happen.
+		// They are a direct collision of CounterReset and NotCounterReset.
+		// Conservatively set the CounterResetHint to "unknown" and isse a warning.
+		h.CounterResetHint = UnknownCounterReset
+		// TODO(trevorwhitney): Actually issue the warning as soon as the plumbing for it is in place
+	}
+
 	otherZeroCount := h.reconcileZeroBuckets(other)
 	h.ZeroCount += otherZeroCount
 	h.Count += other.Count
@@ -382,7 +421,7 @@ func addBucket(
 // receiving histogram, but a pointer to it is returned for convenience.
 //
 // The ideal value for maxEmptyBuckets depends on circumstances. The motivation
-// to set maxEmptyBuckets > 0 is the assumption that is is less overhead to
+// to set maxEmptyBuckets > 0 is the assumption that is less overhead to
 // represent very few empty buckets explicitly within one span than cutting the
 // one span into two to treat the empty buckets as a gap between the two spans,
 // both in terms of storage requirement as well as in terms of encoding and
@@ -414,6 +453,10 @@ func (h *FloatHistogram) Compact(maxEmptyBuckets int) *FloatHistogram {
 // of observations, but NOT the sum of observations) is smaller in the receiving
 // histogram compared to the previous histogram. Otherwise, it returns false.
 //
+// This method will shortcut to true if a CounterReset is detected, and shortcut
+// to false if NotCounterReset is detected. Otherwise it will do the work to detect
+// a reset.
+//
 // Special behavior in case the Schema or the ZeroThreshold are not the same in
 // both histograms:
 //
@@ -432,12 +475,23 @@ func (h *FloatHistogram) Compact(maxEmptyBuckets int) *FloatHistogram {
 //   - Upon a decrease of the Schema, the buckets of the previous histogram are
 //     merged so that they match the new, lower-resolution schema (again without
 //     mutating the provided previous histogram).
-//
-// Note that this kind of reset detection is quite expensive. Ideally, resets
-// are detected at ingest time and stored in the TSDB, so that the reset
-// information can be read directly from there rather than be detected each time
-// again.
 func (h *FloatHistogram) DetectReset(previous *FloatHistogram) bool {
+	if h.CounterResetHint == CounterReset {
+		return true
+	}
+	if h.CounterResetHint == NotCounterReset {
+		return false
+	}
+	// In all other cases of CounterResetHint (UnknownCounterReset and GaugeType),
+	// we go on as we would otherwise, for reasons explained below.
+	//
+	// If the CounterResetHint is UnknownCounterReset, we do not know yet if this histogram comes
+	// with a counter reset. Therefore, we have to do all the detailed work to find out if there
+	// is a counter reset or not.
+	// We do the same if the CounterResetHint is GaugeType, which should not happen, but PromQL still
+	// allows the user to apply functions to gauge histograms that are only meant for counter histograms.
+	// In this case, we treat the gauge histograms as a counter histograms
+	// (and we plan to return a warning about it to the user).
 	if h.Count < previous.Count {
 		return true
 	}
@@ -561,10 +615,24 @@ func (h *FloatHistogram) NegativeReverseBucketIterator() BucketIterator[float64]
 // set to the zero threshold.
 func (h *FloatHistogram) AllBucketIterator() BucketIterator[float64] {
 	return &allFloatBucketIterator{
-		h:       h,
-		negIter: h.NegativeReverseBucketIterator(),
-		posIter: h.PositiveBucketIterator(),
-		state:   -1,
+		h:         h,
+		leftIter:  h.NegativeReverseBucketIterator(),
+		rightIter: h.PositiveBucketIterator(),
+		state:     -1,
+	}
+}
+
+// AllReverseBucketIterator returns a BucketIterator to iterate over all negative,
+// zero, and positive buckets in descending order (starting at the lowest bucket
+// and going up). If the highest negative bucket or the lowest positive bucket
+// overlap with the zero bucket, their upper or lower boundary, respectively, is
+// set to the zero threshold.
+func (h *FloatHistogram) AllReverseBucketIterator() BucketIterator[float64] {
+	return &allFloatBucketIterator{
+		h:         h,
+		leftIter:  h.PositiveReverseBucketIterator(),
+		rightIter: h.NegativeBucketIterator(),
+		state:     -1,
 	}
 }
 
@@ -785,10 +853,11 @@ mergeLoop: // Merge together all buckets from the original schema that fall into
 			origIdx += span.Offset
 		}
 		currIdx := i.targetIdx(origIdx)
-		if firstPass {
+		switch {
+		case firstPass:
 			i.currIdx = currIdx
 			firstPass = false
-		} else if currIdx != i.currIdx {
+		case currIdx != i.currIdx:
 			// Reached next bucket in targetSchema.
 			// Do not actually forward to the next bucket, but break out.
 			break mergeLoop
@@ -848,8 +917,8 @@ func (i *reverseFloatBucketIterator) Next() bool {
 }
 
 type allFloatBucketIterator struct {
-	h                *FloatHistogram
-	negIter, posIter BucketIterator[float64]
+	h                   *FloatHistogram
+	leftIter, rightIter BucketIterator[float64]
 	// -1 means we are iterating negative buckets.
 	// 0 means it is time for the zero bucket.
 	// 1 means we are iterating positive buckets.
@@ -861,10 +930,13 @@ type allFloatBucketIterator struct {
 func (i *allFloatBucketIterator) Next() bool {
 	switch i.state {
 	case -1:
-		if i.negIter.Next() {
-			i.currBucket = i.negIter.At()
-			if i.currBucket.Upper > -i.h.ZeroThreshold {
+		if i.leftIter.Next() {
+			i.currBucket = i.leftIter.At()
+			switch {
+			case i.currBucket.Upper < 0 && i.currBucket.Upper > -i.h.ZeroThreshold:
 				i.currBucket.Upper = -i.h.ZeroThreshold
+			case i.currBucket.Lower > 0 && i.currBucket.Lower < i.h.ZeroThreshold:
+				i.currBucket.Lower = i.h.ZeroThreshold
 			}
 			return true
 		}
@@ -885,10 +957,13 @@ func (i *allFloatBucketIterator) Next() bool {
 		}
 		return i.Next()
 	case 1:
-		if i.posIter.Next() {
-			i.currBucket = i.posIter.At()
-			if i.currBucket.Lower < i.h.ZeroThreshold {
+		if i.rightIter.Next() {
+			i.currBucket = i.rightIter.At()
+			switch {
+			case i.currBucket.Lower > 0 && i.currBucket.Lower < i.h.ZeroThreshold:
 				i.currBucket.Lower = i.h.ZeroThreshold
+			case i.currBucket.Upper < 0 && i.currBucket.Upper > -i.h.ZeroThreshold:
+				i.currBucket.Upper = -i.h.ZeroThreshold
 			}
 			return true
 		}
