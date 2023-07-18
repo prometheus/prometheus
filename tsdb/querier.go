@@ -830,6 +830,8 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 			} else {
 				err = fmt.Errorf("internal error, could not unwrap safeHeadChunk to histogram chunk: %T", hc.Chunk)
 			}
+		case *mergedOOOChunks:
+			// TODO(histograms): implement
 		default:
 			err = fmt.Errorf("internal error, unknown chunk type %T when expecting histogram", p.currChkMeta.Chunk)
 		}
@@ -922,6 +924,8 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 			} else {
 				err = fmt.Errorf("internal error, could not unwrap safeHeadChunk to float histogram chunk: %T", hc.Chunk)
 			}
+		case *mergedOOOChunks:
+			// TODO(histograms): implement
 		default:
 			err = fmt.Errorf("internal error, unknown chunk type %T when expecting float histogram", p.currChkMeta.Chunk)
 		}
