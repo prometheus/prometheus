@@ -472,7 +472,7 @@ func (s *memSeries) oooMergedChunk(meta chunks.Meta, cdm *chunks.ChunkDiskMapper
 			if err != nil {
 				return nil, errors.Wrap(err, "failed to convert ooo head chunk to xor chunk")
 			}
-			c.meta.Chunk = chks[0].chunk
+			c.meta.Chunk = chks[0].chunk // TODO(histogram) handle multi chunk case.
 		} else {
 			chk, err := cdm.Chunk(c.ref)
 			if err != nil {
