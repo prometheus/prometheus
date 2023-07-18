@@ -100,7 +100,7 @@ var (
 			Namespace:                       namespace,
 			Subsystem:                       subsystem,
 			Name:                            "read_request_duration_seconds",
-			Help:                            "Histogram of the latency for remote read requests.",
+			Help:                            "Histogram of the latency for remote read requests. Note that for streamed responses this is only the duration of the initial call and does not include the processing of the stream.",
 			Buckets:                         append(prometheus.DefBuckets, 25, 60),
 			NativeHistogramBucketFactor:     1.1,
 			NativeHistogramMaxBucketNumber:  100,
@@ -387,9 +387,19 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query, sortSeries bool)
 		return c.handleSampledResponse(req, httpResp, sortSeries)
 	case strings.HasPrefix(contentType, "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse"):
 		c.readQueriesDuration.WithLabelValues("chunked").Observe(time.Since(start).Seconds())
-		c.readQueriesTotal.WithLabelValues("chunked", strconv.Itoa(httpResp.StatusCode)).Inc()
-		ss := c.handleChunkedResponse(httpResp, query.StartTimestampMs, query.EndTimestampMs, cancel)
+		// We copy cancel here so we can nil out the original and prevent the context from being cancelled as soon as
+		// Read returns.
+		cancelCopy := cancel
 		cancel = nil
+
+		ss := c.handleChunkedResponse(httpResp, query.StartTimestampMs, query.EndTimestampMs, func(err error) {
+			code := strconv.Itoa(httpResp.StatusCode)
+			if err != io.EOF {
+				code = "aborted_stream"
+			}
+			c.readQueriesTotal.WithLabelValues("chunked", code).Inc()
+			cancelCopy()
+		})
 		return ss, nil
 	default:
 		c.readQueriesDuration.WithLabelValues("unsupported").Observe(time.Since(start).Seconds())
@@ -429,7 +439,7 @@ func (c *Client) handleSampledResponse(req *prompb.ReadRequest, httpResp *http.R
 	return FromQueryResult(sortSeries, res), nil
 }
 
-func (c *Client) handleChunkedResponse(httpResp *http.Response, mint, maxt int64, cancel context.CancelFunc) storage.SeriesSet {
+func (c *Client) handleChunkedResponse(httpResp *http.Response, mint, maxt int64, cancel func(error)) storage.SeriesSet {
 	s := NewChunkedReader(httpResp.Body, c.chunkedReadLimit, nil)
 	return NewChunkedSeriesSet(s, httpResp.Body, mint, maxt, cancel)
 }
