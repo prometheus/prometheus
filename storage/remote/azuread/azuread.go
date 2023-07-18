@@ -225,7 +225,8 @@ func newManagedIdentityTokenCredential(clientOpts *azcore.ClientOptions, managed
 	return azidentity.NewManagedIdentityCredential(opts)
 }
 
-func newOAuthTokenCredential(clientOpts *azcore.ClientOptions, tenantID string, clientID string, clientSecret string) (azcore.TokenCredential, error) {
+// newOAuthTokenCredential returns new OAuth token credential
+func newOAuthTokenCredential(clientOpts *azcore.ClientOptions, tenantID, clientID, clientSecret string) (azcore.TokenCredential, error) {
 	opts := &azidentity.ClientSecretCredentialOptions{ClientOptions: *clientOpts}
 	return azidentity.NewClientSecretCredential(tenantID, clientID, clientSecret, opts)
 }
