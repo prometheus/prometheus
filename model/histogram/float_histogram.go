@@ -818,6 +818,11 @@ type floatBucketIterator struct {
 	absoluteStartValue float64 // Never return buckets with an upper bound ≤ this value.
 }
 
+func (i *floatBucketIterator) At() Bucket[float64] {
+	// Need to use i.targetSchema rather than i.baseBucketIterator.schema.
+	return i.baseBucketIterator.at(i.targetSchema)
+}
+
 func (i *floatBucketIterator) Next() bool {
 	if i.spansIdx >= len(i.spans) {
 		return false
