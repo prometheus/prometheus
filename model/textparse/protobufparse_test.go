@@ -464,6 +464,24 @@ metric: <
 >
 
 `,
+		`name: "test_float_histogram_with_zerothreshold_zero"
+help: "Test float histogram with a zero threshold of zero."
+type: HISTOGRAM
+metric: <
+  histogram: <
+    sample_count_float: 5.0
+    sample_sum: 12.1
+    schema: 3
+    positive_span: <
+      offset: 8
+      length: 2
+    >
+    positive_count: 2.0
+    positive_count: 3.0
+  >
+>
+
+`,
 		`name: "rpc_durations_seconds"
 help: "RPC latency distributions."
 type: SUMMARY
@@ -848,6 +866,30 @@ func TestProtobufParse(t *testing.T) {
 					lset: labels.FromStrings(
 						"__name__", "test_histogram_family",
 						"foo", "baz",
+					),
+				},
+				{
+					m:    "test_float_histogram_with_zerothreshold_zero",
+					help: "Test float histogram with a zero threshold of zero.",
+				},
+				{
+					m:   "test_float_histogram_with_zerothreshold_zero",
+					typ: MetricTypeHistogram,
+				},
+				{
+					m: "test_float_histogram_with_zerothreshold_zero",
+					fhs: &histogram.FloatHistogram{
+						Count:  5.0,
+						Sum:    12.1,
+						Schema: 3,
+						PositiveSpans: []histogram.Span{
+							{Offset: 8, Length: 2},
+						},
+						PositiveBuckets: []float64{2.0, 3.0},
+						NegativeSpans:   []histogram.Span{},
+					},
+					lset: labels.FromStrings(
+						"__name__", "test_float_histogram_with_zerothreshold_zero",
 					),
 				},
 				{
@@ -1550,14 +1592,38 @@ func TestProtobufParse(t *testing.T) {
 					),
 				},
 				{ // 67
+					m:    "test_float_histogram_with_zerothreshold_zero",
+					help: "Test float histogram with a zero threshold of zero.",
+				},
+				{ // 68
+					m:   "test_float_histogram_with_zerothreshold_zero",
+					typ: MetricTypeHistogram,
+				},
+				{ // 69
+					m: "test_float_histogram_with_zerothreshold_zero",
+					fhs: &histogram.FloatHistogram{
+						Count:  5.0,
+						Sum:    12.1,
+						Schema: 3,
+						PositiveSpans: []histogram.Span{
+							{Offset: 8, Length: 2},
+						},
+						PositiveBuckets: []float64{2.0, 3.0},
+						NegativeSpans:   []histogram.Span{},
+					},
+					lset: labels.FromStrings(
+						"__name__", "test_float_histogram_with_zerothreshold_zero",
+					),
+				},
+				{ // 70
 					m:    "rpc_durations_seconds",
 					help: "RPC latency distributions.",
 				},
-				{ // 68
+				{ // 71
 					m:   "rpc_durations_seconds",
 					typ: MetricTypeSummary,
 				},
-				{ // 69
+				{ // 72
 					m: "rpc_durations_seconds_count\xffservice\xffexponential",
 					v: 262,
 					lset: labels.FromStrings(
@@ -1565,7 +1631,7 @@ func TestProtobufParse(t *testing.T) {
 						"service", "exponential",
 					),
 				},
-				{ // 70
+				{ // 73
 					m: "rpc_durations_seconds_sum\xffservice\xffexponential",
 					v: 0.00025551262820703587,
 					lset: labels.FromStrings(
@@ -1573,7 +1639,7 @@ func TestProtobufParse(t *testing.T) {
 						"service", "exponential",
 					),
 				},
-				{ // 71
+				{ // 74
 					m: "rpc_durations_seconds\xffservice\xffexponential\xffquantile\xff0.5",
 					v: 6.442786329648548e-07,
 					lset: labels.FromStrings(
@@ -1582,7 +1648,7 @@ func TestProtobufParse(t *testing.T) {
 						"service", "exponential",
 					),
 				},
-				{ // 72
+				{ // 75
 					m: "rpc_durations_seconds\xffservice\xffexponential\xffquantile\xff0.9",
 					v: 1.9435742936658396e-06,
 					lset: labels.FromStrings(
@@ -1591,7 +1657,7 @@ func TestProtobufParse(t *testing.T) {
 						"service", "exponential",
 					),
 				},
-				{ // 73
+				{ // 76
 					m: "rpc_durations_seconds\xffservice\xffexponential\xffquantile\xff0.99",
 					v: 4.0471608667037015e-06,
 					lset: labels.FromStrings(
@@ -1600,22 +1666,22 @@ func TestProtobufParse(t *testing.T) {
 						"service", "exponential",
 					),
 				},
-				{ // 74
+				{ // 77
 					m:    "without_quantiles",
 					help: "A summary without quantiles.",
 				},
-				{ // 75
+				{ // 78
 					m:   "without_quantiles",
 					typ: MetricTypeSummary,
 				},
-				{ // 76
+				{ // 79
 					m: "without_quantiles_count",
 					v: 42,
 					lset: labels.FromStrings(
 						"__name__", "without_quantiles_count",
 					),
 				},
-				{ // 77
+				{ // 80
 					m: "without_quantiles_sum",
 					v: 1.234,
 					lset: labels.FromStrings(

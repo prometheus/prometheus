@@ -335,18 +335,41 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 		},
 		NegativeBuckets: []int64{1, 1, -1, 0},
 	}
+	histWithoutZeroBucket := &histogram.Histogram{
+		Count:  20,
+		Sum:    99.23,
+		Schema: 1,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 1, Length: 2},
+		},
+		PositiveBuckets: []int64{2, 2, -2, 0},
+		NegativeSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 1, Length: 2},
+		},
+		NegativeBuckets: []int64{2, 2, -2, 0},
+	}
 	app := db.Appender(context.Background())
 	for i := 0; i < 6; i++ {
 		l := labels.FromStrings("__name__", "test_metric", "foo", fmt.Sprintf("%d", i))
 		expL := labels.FromStrings("__name__", "test_metric", "instance", "", "foo", fmt.Sprintf("%d", i))
-		if i%3 == 0 {
+		switch i {
+		case 0, 3:
 			_, err = app.Append(0, l, 100*60*1000, float64(i*100))
 			expVec = append(expVec, promql.Sample{
 				T:      100 * 60 * 1000,
 				F:      float64(i * 100),
 				Metric: expL,
 			})
-		} else {
+		case 4:
+			_, err = app.AppendHistogram(0, l, 100*60*1000, histWithoutZeroBucket.Copy(), nil)
+			expVec = append(expVec, promql.Sample{
+				T:      100 * 60 * 1000,
+				H:      histWithoutZeroBucket.ToFloat(),
+				Metric: expL,
+			})
+		default:
 			hist.ZeroCount++
 			_, err = app.AppendHistogram(0, l, 100*60*1000, hist.Copy(), nil)
 			expVec = append(expVec, promql.Sample{
