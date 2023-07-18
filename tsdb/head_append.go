@@ -1684,64 +1684,28 @@ func (s *memSeries) cutNewOOOHeadChunk(mint int64, chunkDiskMapper *chunks.Chunk
 }
 
 func (s *memSeries) mmapCurrentOOOHeadChunk(chunkDiskMapper *chunks.ChunkDiskMapper) []chunks.ChunkDiskMapperRef {
-	switch {
-	case s.ooo == nil:
-		// OOO is not enabled.
+	if s.ooo == nil || s.ooo.oooHeadChunk == nil {
+		// OOO is not enabled or there is no head chunk, so nothing to m-map here.
 		return nil
-	case s.ooo.oooHeadChunk == nil:
-		// There is no head chunk, so nothing to m-map here.
+	}
+	chks, err := s.ooo.oooHeadChunk.chunk.ToEncodedChunks(math.MinInt64, math.MaxInt64)
+	if err != nil {
+		handleChunkWriteError(err)
 		return nil
-	case s.ooo.oooHeadChunk.chunk.samples[0].fh != nil:
-		// We have float histogram samples
-		histogramChunks, minTimes, maxTimes, err := s.ooo.oooHeadChunk.chunk.ToFloatHistogram()
-		if err != nil {
-			handleChunkWriteError(err)
-		}
-		var chunkRefs []chunks.ChunkDiskMapperRef
-		for i, chunk := range histogramChunks {
-			chunkRef := chunkDiskMapper.WriteChunk(s.ref, s.ooo.oooHeadChunk.minTime, s.ooo.oooHeadChunk.maxTime, chunk, true, handleChunkWriteError)
-			chunkRefs = append(chunkRefs, chunkRef)
-			s.ooo.oooMmappedChunks = append(s.ooo.oooMmappedChunks, &mmappedChunk{
-				ref:        chunkRef,
-				numSamples: uint16(chunk.NumSamples()),
-				minTime:    minTimes[i],
-				maxTime:    maxTimes[i],
-			})
-		}
-		s.ooo.oooHeadChunk = nil
-		return chunkRefs
-	case s.ooo.oooHeadChunk.chunk.samples[0].h != nil:
-		// We have histogram samples
-		histogramChunks, minTimes, maxTimes, err := s.ooo.oooHeadChunk.chunk.ToHistogram()
-		if err != nil {
-			handleChunkWriteError(err)
-		}
-		var chunkRefs []chunks.ChunkDiskMapperRef
-		for i, chunk := range histogramChunks {
-			chunkRef := chunkDiskMapper.WriteChunk(s.ref, s.ooo.oooHeadChunk.minTime, s.ooo.oooHeadChunk.maxTime, chunk, true, handleChunkWriteError)
-			chunkRefs = append(chunkRefs, chunkRef)
-			s.ooo.oooMmappedChunks = append(s.ooo.oooMmappedChunks, &mmappedChunk{
-				ref:        chunkRef,
-				numSamples: uint16(chunk.NumSamples()),
-				minTime:    minTimes[i],
-				maxTime:    maxTimes[i],
-			})
-		}
-		s.ooo.oooHeadChunk = nil
-		return chunkRefs
-	default:
-		//  Float samples
-		xor, _ := s.ooo.oooHeadChunk.chunk.ToXOR() // Encode to XorChunk which is more compact and implements all of the needed functionality.
-		chunkRef := chunkDiskMapper.WriteChunk(s.ref, s.ooo.oooHeadChunk.minTime, s.ooo.oooHeadChunk.maxTime, xor, true, handleChunkWriteError)
+	}
+	chunkRefs := make([]chunks.ChunkDiskMapperRef, 0, 1)
+	for _, memchunk := range chks {
+		chunkRef := chunkDiskMapper.WriteChunk(s.ref, s.ooo.oooHeadChunk.minTime, s.ooo.oooHeadChunk.maxTime, memchunk.chunk, true, handleChunkWriteError)
+		chunkRefs = append(chunkRefs, chunkRef)
 		s.ooo.oooMmappedChunks = append(s.ooo.oooMmappedChunks, &mmappedChunk{
 			ref:        chunkRef,
-			numSamples: uint16(xor.NumSamples()),
-			minTime:    s.ooo.oooHeadChunk.minTime,
-			maxTime:    s.ooo.oooHeadChunk.maxTime,
+			numSamples: uint16(memchunk.chunk.NumSamples()),
+			minTime:    memchunk.minTime,
+			maxTime:    memchunk.maxTime,
 		})
-		s.ooo.oooHeadChunk = nil
-		return []chunks.ChunkDiskMapperRef{chunkRef}
 	}
+	s.ooo.oooHeadChunk = nil
+	return chunkRefs
 }
 
 func (s *memSeries) mmapCurrentHeadChunk(chunkDiskMapper *chunks.ChunkDiskMapper) {

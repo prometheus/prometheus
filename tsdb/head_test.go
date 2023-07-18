@@ -4243,9 +4243,10 @@ func TestOOOWalReplay(t *testing.T) {
 	require.False(t, ok)
 	require.NotNil(t, ms)
 
-	xor, err := ms.ooo.oooHeadChunk.chunk.ToXOR()
+	chks, err := ms.ooo.oooHeadChunk.chunk.ToEncodedChunks(math.MinInt64, math.MaxInt64)
 	require.NoError(t, err)
-
+	require.Len(t, chks, 1)
+	xor := chks[0].chunk.(*chunkenc.XORChunk)
 	it := xor.Iterator(nil)
 	actOOOSamples := make([]sample, 0, len(expOOOSamples))
 	for it.Next() == chunkenc.ValFloat {
