@@ -72,7 +72,7 @@ func (o *OOOChunk) NumSamples() int {
 	return len(o.samples)
 }
 
-// ToChunk returns chunks with the samples in the OOOChunk.
+// ToEncodedChunks returns chunks with the samples in the OOOChunk.
 func (o *OOOChunk) ToEncodedChunks(mint, maxt int64) (chks []memChunk, err error) {
 	if len(o.samples) == 0 {
 		return nil, nil
