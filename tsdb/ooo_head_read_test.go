@@ -22,12 +22,14 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
+	"github.com/prometheus/prometheus/tsdb/wlog"
 )
 
 type chunkInterval struct {
@@ -294,7 +296,7 @@ func TestOOOHeadIndexReader_Series(t *testing.T) {
 		for perm, intervals := range permutations {
 			for _, headChunk := range []bool{false, true} {
 				t.Run(fmt.Sprintf("name=%s, permutation=%d, headChunk=%t", tc.name, perm, headChunk), func(t *testing.T) {
-					h, _ := newTestHead(t, 1000, false, true)
+					h, _ := newTestHead(t, 1000, wlog.CompressionNone, true)
 					defer func() {
 						require.NoError(t, h.Close())
 					}()
@@ -337,7 +339,7 @@ func TestOOOHeadIndexReader_Series(t *testing.T) {
 						}
 						expChunks = append(expChunks, meta)
 					}
-					sort.Sort(metaByMinTimeAndMinRef(expChunks)) // we always want the chunks to come back sorted by minTime asc
+					slices.SortFunc(expChunks, lessByMinTimeAndMinRef) // We always want the chunks to come back sorted by minTime asc.
 
 					if headChunk && len(intervals) > 0 {
 						// Put the last interval in the head chunk
@@ -374,7 +376,7 @@ func TestOOOHeadIndexReader_Series(t *testing.T) {
 
 func TestOOOHeadChunkReader_LabelValues(t *testing.T) {
 	chunkRange := int64(2000)
-	head, _ := newTestHead(t, chunkRange, false, true)
+	head, _ := newTestHead(t, chunkRange, wlog.CompressionNone, true)
 	t.Cleanup(func() { require.NoError(t, head.Close()) })
 
 	app := head.Appender(context.Background())
@@ -1116,7 +1118,7 @@ func TestSortByMinTimeAndMinRef(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(fmt.Sprintf("name=%s", tc.name), func(t *testing.T) {
-			sort.Sort(byMinTimeAndMinRef(tc.input))
+			slices.SortFunc(tc.input, refLessByMinTimeAndMinRef)
 			require.Equal(t, tc.exp, tc.input)
 		})
 	}
@@ -1180,7 +1182,7 @@ func TestSortMetaByMinTimeAndMinRef(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(fmt.Sprintf("name=%s", tc.name), func(t *testing.T) {
-			sort.Sort(metaByMinTimeAndMinRef(tc.inputMetas))
+			slices.SortFunc(tc.inputMetas, lessByMinTimeAndMinRef)
 			require.Equal(t, tc.expMetas, tc.inputMetas)
 		})
 	}

@@ -107,11 +107,11 @@ func (p *MemPostings) SortedKeys() []labels.Label {
 	}
 	p.mtx.RUnlock()
 
-	sort.Slice(keys, func(i, j int) bool {
-		if keys[i].Name != keys[j].Name {
-			return keys[i].Name < keys[j].Name
+	slices.SortFunc(keys, func(a, b labels.Label) bool {
+		if a.Name != b.Name {
+			return a.Name < b.Name
 		}
-		return keys[i].Value < keys[j].Value
+		return a.Value < b.Value
 	})
 	return keys
 }
