@@ -304,6 +304,7 @@ This second example has the same effect than the first example, and illustrates 
 ```
 label_replace(up{job="api-server",service="a:c"}, "foo", "$name", "service", "(?P<name>.*):(?P<version>.*)")
 ```
+
 ## `ln()`
 
 `ln(v instant-vector)` calculates the natural logarithm for all elements in `v`.
