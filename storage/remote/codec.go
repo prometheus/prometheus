@@ -26,6 +26,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/prometheus/common/model"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -178,7 +179,9 @@ func FromQueryResult(sortSeries bool, res *prompb.QueryResult) storage.SeriesSet
 	}
 
 	if sortSeries {
-		sort.Sort(byLabel(series))
+		slices.SortFunc(series, func(a, b storage.Series) bool {
+			return labels.Compare(a.Labels(), b.Labels()) < 0
+		})
 	}
 	return &concreteSeriesSet{
 		series: series,
@@ -312,12 +315,6 @@ func MergeLabels(primary, secondary []prompb.Label) []prompb.Label {
 	}
 	return result
 }
-
-type byLabel []storage.Series
-
-func (a byLabel) Len() int           { return len(a) }
-func (a byLabel) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a byLabel) Less(i, j int) bool { return labels.Compare(a[i].Labels(), a[j].Labels()) < 0 }
 
 // errSeriesSet implements storage.SeriesSet, just returning an error.
 type errSeriesSet struct {

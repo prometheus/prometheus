@@ -65,8 +65,8 @@ type Options struct {
 	// WALSegmentSize > 0, segment size is WALSegmentSize.
 	WALSegmentSize int
 
-	// WALCompression will turn on Snappy compression for records on the WAL.
-	WALCompression bool
+	// WALCompression configures the compression type to use on records in the WAL.
+	WALCompression wlog.CompressionType
 
 	// StripeSize is the size (power of 2) in entries of the series hash map. Reducing the size will save memory but impact performance.
 	StripeSize int
@@ -87,7 +87,7 @@ type Options struct {
 func DefaultOptions() *Options {
 	return &Options{
 		WALSegmentSize:    wlog.DefaultSegmentSize,
-		WALCompression:    false,
+		WALCompression:    wlog.CompressionNone,
 		StripeSize:        tsdb.DefaultStripeSize,
 		TruncateFrequency: DefaultTruncateFrequency,
 		MinWALTime:        DefaultMinWALTime,
@@ -316,6 +316,10 @@ func validateOptions(opts *Options) *Options {
 	}
 	if opts.WALSegmentSize <= 0 {
 		opts.WALSegmentSize = wlog.DefaultSegmentSize
+	}
+
+	if opts.WALCompression == "" {
+		opts.WALCompression = wlog.CompressionNone
 	}
 
 	// Revert Stripesize to DefaultStripsize if Stripsize is either 0 or not a power of 2.

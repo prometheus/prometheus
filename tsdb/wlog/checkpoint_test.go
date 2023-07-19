@@ -126,8 +126,8 @@ func TestCheckpoint(t *testing.T) {
 		}
 	}
 
-	for _, compress := range []bool{false, true} {
-		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
+	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
+		t.Run(fmt.Sprintf("compress=%s", compress), func(t *testing.T) {
 			dir := t.TempDir()
 
 			var enc record.Encoder
@@ -303,7 +303,7 @@ func TestCheckpoint(t *testing.T) {
 func TestCheckpointNoTmpFolderAfterError(t *testing.T) {
 	// Create a new wlog with invalid data.
 	dir := t.TempDir()
-	w, err := NewSize(nil, nil, dir, 64*1024, false)
+	w, err := NewSize(nil, nil, dir, 64*1024, CompressionNone)
 	require.NoError(t, err)
 	var enc record.Encoder
 	require.NoError(t, w.Log(enc.Series([]record.RefSeries{

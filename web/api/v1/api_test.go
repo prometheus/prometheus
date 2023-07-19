@@ -3141,7 +3141,7 @@ func TestParseTimeParam(t *testing.T) {
 		{ // When data is valid.
 			paramName:    "start",
 			paramValue:   "1582468023986",
-			defaultValue: minTime,
+			defaultValue: MinTime,
 			result: resultType{
 				asTime:  ts,
 				asError: nil,
@@ -3150,16 +3150,16 @@ func TestParseTimeParam(t *testing.T) {
 		{ // When data is empty string.
 			paramName:    "end",
 			paramValue:   "",
-			defaultValue: maxTime,
+			defaultValue: MaxTime,
 			result: resultType{
-				asTime:  maxTime,
+				asTime:  MaxTime,
 				asError: nil,
 			},
 		},
 		{ // When data is not valid.
 			paramName:    "foo",
 			paramValue:   "baz",
-			defaultValue: maxTime,
+			defaultValue: MaxTime,
 			result: resultType{
 				asTime: time.Time{},
 				asError: func() error {
@@ -3230,12 +3230,12 @@ func TestParseTime(t *testing.T) {
 			result: time.Unix(1543578564, 705*1e6),
 		},
 		{
-			input:  minTime.Format(time.RFC3339Nano),
-			result: minTime,
+			input:  MinTime.Format(time.RFC3339Nano),
+			result: MinTime,
 		},
 		{
-			input:  maxTime.Format(time.RFC3339Nano),
-			result: maxTime,
+			input:  MaxTime.Format(time.RFC3339Nano),
+			result: MaxTime,
 		},
 	}
 

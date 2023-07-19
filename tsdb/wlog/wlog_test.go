@@ -123,7 +123,7 @@ func TestWALRepair_ReadingError(t *testing.T) {
 			// then corrupt a given record in a given segment.
 			// As a result we want a repaired WAL with given intact records.
 			segSize := 3 * pageSize
-			w, err := NewSize(nil, nil, dir, segSize, false)
+			w, err := NewSize(nil, nil, dir, segSize, CompressionNone)
 			require.NoError(t, err)
 
 			var records [][]byte
@@ -148,7 +148,7 @@ func TestWALRepair_ReadingError(t *testing.T) {
 
 			require.NoError(t, f.Close())
 
-			w, err = NewSize(nil, nil, dir, segSize, false)
+			w, err = NewSize(nil, nil, dir, segSize, CompressionNone)
 			require.NoError(t, err)
 			defer w.Close()
 
@@ -222,7 +222,7 @@ func TestCorruptAndCarryOn(t *testing.T) {
 	// Produce a WAL with a two segments of 3 pages with 3 records each,
 	// so when we truncate the file we're guaranteed to split a record.
 	{
-		w, err := NewSize(logger, nil, dir, segmentSize, false)
+		w, err := NewSize(logger, nil, dir, segmentSize, CompressionNone)
 		require.NoError(t, err)
 
 		for i := 0; i < 18; i++ {
@@ -293,7 +293,7 @@ func TestCorruptAndCarryOn(t *testing.T) {
 		err = sr.Close()
 		require.NoError(t, err)
 
-		w, err := NewSize(logger, nil, dir, segmentSize, false)
+		w, err := NewSize(logger, nil, dir, segmentSize, CompressionNone)
 		require.NoError(t, err)
 
 		err = w.Repair(corruptionErr)
@@ -336,7 +336,7 @@ func TestCorruptAndCarryOn(t *testing.T) {
 // TestClose ensures that calling Close more than once doesn't panic and doesn't block.
 func TestClose(t *testing.T) {
 	dir := t.TempDir()
-	w, err := NewSize(nil, nil, dir, pageSize, false)
+	w, err := NewSize(nil, nil, dir, pageSize, CompressionNone)
 	require.NoError(t, err)
 	require.NoError(t, w.Close())
 	require.Error(t, w.Close())
@@ -349,7 +349,7 @@ func TestSegmentMetric(t *testing.T) {
 	)
 
 	dir := t.TempDir()
-	w, err := NewSize(nil, nil, dir, segmentSize, false)
+	w, err := NewSize(nil, nil, dir, segmentSize, CompressionNone)
 	require.NoError(t, err)
 
 	initialSegment := client_testutil.ToFloat64(w.metrics.currentSegment)
@@ -368,7 +368,7 @@ func TestSegmentMetric(t *testing.T) {
 }
 
 func TestCompression(t *testing.T) {
-	bootstrap := func(compressed bool) string {
+	bootstrap := func(compressed CompressionType) string {
 		const (
 			segmentSize = pageSize
 			recordSize  = (pageSize / 2) - recordHeaderSize
@@ -389,21 +389,27 @@ func TestCompression(t *testing.T) {
 		return dirPath
 	}
 
-	dirCompressed := bootstrap(true)
+	tmpDirs := make([]string, 0, 3)
 	defer func() {
-		require.NoError(t, os.RemoveAll(dirCompressed))
-	}()
-	dirUnCompressed := bootstrap(false)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dirUnCompressed))
+		for _, dir := range tmpDirs {
+			require.NoError(t, os.RemoveAll(dir))
+		}
 	}()
 
-	uncompressedSize, err := fileutil.DirSize(dirUnCompressed)
-	require.NoError(t, err)
-	compressedSize, err := fileutil.DirSize(dirCompressed)
-	require.NoError(t, err)
+	dirUnCompressed := bootstrap(CompressionNone)
+	tmpDirs = append(tmpDirs, dirUnCompressed)
 
-	require.Greater(t, float64(uncompressedSize)*0.75, float64(compressedSize), "Compressing zeroes should save at least 25%% space - uncompressedSize: %d, compressedSize: %d", uncompressedSize, compressedSize)
+	for _, compressionType := range []CompressionType{CompressionSnappy, CompressionZstd} {
+		dirCompressed := bootstrap(compressionType)
+		tmpDirs = append(tmpDirs, dirCompressed)
+
+		uncompressedSize, err := fileutil.DirSize(dirUnCompressed)
+		require.NoError(t, err)
+		compressedSize, err := fileutil.DirSize(dirCompressed)
+		require.NoError(t, err)
+
+		require.Greater(t, float64(uncompressedSize)*0.75, float64(compressedSize), "Compressing zeroes should save at least 25%% space - uncompressedSize: %d, compressedSize: %d", uncompressedSize, compressedSize)
+	}
 }
 
 func TestLogPartialWrite(t *testing.T) {
@@ -437,7 +443,7 @@ func TestLogPartialWrite(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			dirPath := t.TempDir()
 
-			w, err := NewSize(nil, nil, dirPath, segmentSize, false)
+			w, err := NewSize(nil, nil, dirPath, segmentSize, CompressionNone)
 			require.NoError(t, err)
 
 			// Replace the underlying segment file with a mocked one that injects a failure.
@@ -504,8 +510,8 @@ func (f *faultySegmentFile) Write(p []byte) (int, error) {
 }
 
 func BenchmarkWAL_LogBatched(b *testing.B) {
-	for _, compress := range []bool{true, false} {
-		b.Run(fmt.Sprintf("compress=%t", compress), func(b *testing.B) {
+	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
+		b.Run(fmt.Sprintf("compress=%s", compress), func(b *testing.B) {
 			dir := b.TempDir()
 
 			w, err := New(nil, nil, dir, compress)
@@ -534,8 +540,8 @@ func BenchmarkWAL_LogBatched(b *testing.B) {
 }
 
 func BenchmarkWAL_Log(b *testing.B) {
-	for _, compress := range []bool{true, false} {
-		b.Run(fmt.Sprintf("compress=%t", compress), func(b *testing.B) {
+	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
+		b.Run(fmt.Sprintf("compress=%s", compress), func(b *testing.B) {
 			dir := b.TempDir()
 
 			w, err := New(nil, nil, dir, compress)

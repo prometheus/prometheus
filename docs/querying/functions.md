@@ -317,6 +317,12 @@ bound of that bucket is greater than
 bucket. Otherwise, the upper bound of the lowest bucket is returned for
 quantiles located in the lowest bucket. 
 
+You can use `histogram_quantile(0, v instant-vector)` to get the estimated minimum value stored in
+a histogram.
+
+You can use `histogram_quantile(1, v instant-vector)` to get the estimated maximum value stored in
+a histogram.
+
 
 ## `holt_winters()`
 

@@ -14,6 +14,7 @@ Tooling for the Prometheus monitoring system.
 | --- | --- |
 | <code class="text-nowrap">-h</code>, <code class="text-nowrap">--help</code> | Show context-sensitive help (also try --help-long and --help-man). |
 | <code class="text-nowrap">--version</code> | Show application version. |
+| <code class="text-nowrap">--experimental</code> | Enable experimental commands. |
 | <code class="text-nowrap">--enable-feature</code> | Comma separated feature names to enable (only PromQL related and no-default-scrape-port). See https://prometheus.io/docs/prometheus/latest/feature_flags/ for the options and more details. |
 
 
@@ -30,6 +31,7 @@ Tooling for the Prometheus monitoring system.
 | push | Push to a Prometheus server. |
 | test | Unit testing. |
 | tsdb | Run tsdb commands. |
+| promql | PromQL formatting and editing. Requires the --experimental flag. |
 
 
 
@@ -607,5 +609,74 @@ Create blocks of data for new recording rules.
 | Argument | Description | Required |
 | --- | --- | --- |
 | rule-files | A list of one or more files containing recording rules to be backfilled. All recording rules listed in the files will be backfilled. Alerting rules are not evaluated. | Yes |
+
+
+
+
+### `promtool promql`
+
+PromQL formatting and editing. Requires the `--experimental` flag.
+
+
+
+##### `promtool promql format`
+
+Format PromQL query to pretty printed form.
+
+
+
+###### Arguments
+
+| Argument | Description | Required |
+| --- | --- | --- |
+| query | PromQL query. | Yes |
+
+
+
+
+##### `promtool promql label-matchers`
+
+Edit label matchers contained within an existing PromQL query.
+
+
+
+##### `promtool promql label-matchers set`
+
+Set a label matcher in the query.
+
+
+
+###### Flags
+
+| Flag | Description | Default |
+| --- | --- | --- |
+| <code class="text-nowrap">-t</code>, <code class="text-nowrap">--type</code> | Type of the label matcher to set. | `=` |
+
+
+
+
+###### Arguments
+
+| Argument | Description | Required |
+| --- | --- | --- |
+| query | PromQL query. | Yes |
+| name | Name of the label matcher to set. | Yes |
+| value | Value of the label matcher to set. | Yes |
+
+
+
+
+##### `promtool promql label-matchers delete`
+
+Delete a label from the query.
+
+
+
+###### Arguments
+
+| Argument | Description | Required |
+| --- | --- | --- |
+| query | PromQL query. | Yes |
+| name | Name of the label to delete. | Yes |
 
 

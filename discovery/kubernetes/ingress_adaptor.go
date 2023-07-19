@@ -16,10 +16,12 @@ package kubernetes
 import (
 	v1 "k8s.io/api/networking/v1"
 	"k8s.io/api/networking/v1beta1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // ingressAdaptor is an adaptor for the different Ingress versions
 type ingressAdaptor interface {
+	getObjectMeta() metav1.ObjectMeta
 	name() string
 	namespace() string
 	labels() map[string]string
@@ -43,11 +45,12 @@ func newIngressAdaptorFromV1(ingress *v1.Ingress) ingressAdaptor {
 	return &ingressAdaptorV1{ingress: ingress}
 }
 
-func (i *ingressAdaptorV1) name() string                   { return i.ingress.Name }
-func (i *ingressAdaptorV1) namespace() string              { return i.ingress.Namespace }
-func (i *ingressAdaptorV1) labels() map[string]string      { return i.ingress.Labels }
-func (i *ingressAdaptorV1) annotations() map[string]string { return i.ingress.Annotations }
-func (i *ingressAdaptorV1) ingressClassName() *string      { return i.ingress.Spec.IngressClassName }
+func (i *ingressAdaptorV1) getObjectMeta() metav1.ObjectMeta { return i.ingress.ObjectMeta }
+func (i *ingressAdaptorV1) name() string                     { return i.ingress.Name }
+func (i *ingressAdaptorV1) namespace() string                { return i.ingress.Namespace }
+func (i *ingressAdaptorV1) labels() map[string]string        { return i.ingress.Labels }
+func (i *ingressAdaptorV1) annotations() map[string]string   { return i.ingress.Annotations }
+func (i *ingressAdaptorV1) ingressClassName() *string        { return i.ingress.Spec.IngressClassName }
 
 func (i *ingressAdaptorV1) tlsHosts() []string {
 	var hosts []string
@@ -95,12 +98,12 @@ type ingressAdaptorV1Beta1 struct {
 func newIngressAdaptorFromV1beta1(ingress *v1beta1.Ingress) ingressAdaptor {
 	return &ingressAdaptorV1Beta1{ingress: ingress}
 }
-
-func (i *ingressAdaptorV1Beta1) name() string                   { return i.ingress.Name }
-func (i *ingressAdaptorV1Beta1) namespace() string              { return i.ingress.Namespace }
-func (i *ingressAdaptorV1Beta1) labels() map[string]string      { return i.ingress.Labels }
-func (i *ingressAdaptorV1Beta1) annotations() map[string]string { return i.ingress.Annotations }
-func (i *ingressAdaptorV1Beta1) ingressClassName() *string      { return i.ingress.Spec.IngressClassName }
+func (i *ingressAdaptorV1Beta1) getObjectMeta() metav1.ObjectMeta { return i.ingress.ObjectMeta }
+func (i *ingressAdaptorV1Beta1) name() string                     { return i.ingress.Name }
+func (i *ingressAdaptorV1Beta1) namespace() string                { return i.ingress.Namespace }
+func (i *ingressAdaptorV1Beta1) labels() map[string]string        { return i.ingress.Labels }
+func (i *ingressAdaptorV1Beta1) annotations() map[string]string   { return i.ingress.Annotations }
+func (i *ingressAdaptorV1Beta1) ingressClassName() *string        { return i.ingress.Spec.IngressClassName }
 
 func (i *ingressAdaptorV1Beta1) tlsHosts() []string {
 	var hosts []string

@@ -42,6 +42,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
+	"github.com/prometheus/prometheus/tsdb/wlog"
 )
 
 func TestSplitByRange(t *testing.T) {
@@ -1624,7 +1625,7 @@ func checkBlocks(t *testing.T, blocks []*Block, dirs ...string) {
 func TestHeadCompactionWithHistograms(t *testing.T) {
 	for _, floatTest := range []bool{true, false} {
 		t.Run(fmt.Sprintf("float=%t", floatTest), func(t *testing.T) {
-			head, _ := newTestHead(t, DefaultBlockDuration, false, false)
+			head, _ := newTestHead(t, DefaultBlockDuration, wlog.CompressionNone, false)
 			require.NoError(t, head.Init(0))
 			t.Cleanup(func() {
 				require.NoError(t, head.Close())
@@ -1803,11 +1804,11 @@ func TestSparseHistogramSpaceSavings(t *testing.T) {
 				c.numBuckets,
 			),
 			func(t *testing.T) {
-				oldHead, _ := newTestHead(t, DefaultBlockDuration, false, false)
+				oldHead, _ := newTestHead(t, DefaultBlockDuration, wlog.CompressionNone, false)
 				t.Cleanup(func() {
 					require.NoError(t, oldHead.Close())
 				})
-				sparseHead, _ := newTestHead(t, DefaultBlockDuration, false, false)
+				sparseHead, _ := newTestHead(t, DefaultBlockDuration, wlog.CompressionNone, false)
 				t.Cleanup(func() {
 					require.NoError(t, sparseHead.Close())
 				})
