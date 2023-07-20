@@ -1168,9 +1168,9 @@ func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID ui
 	}
 
 	var (
-		nc      chunkenc.Chunk
-		recoded bool
-		err     error
+		newChunk chunkenc.Chunk
+		recoded  bool
+		err      error
 	)
 
 	if !chunkCreated {
@@ -1178,7 +1178,7 @@ func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID ui
 		prevApp = nil
 	}
 
-	nc, recoded, s.app, err = s.app.AppendHistogram(prevApp, t, h, false) // false=request a new chunk if needed
+	newChunk, recoded, s.app, err = s.app.AppendHistogram(prevApp, t, h, false) // false=request a new chunk if needed
 
 	if err != nil {
 		panic("appendOrCreateHistogram failed") // TODO: handle error
@@ -1191,21 +1191,21 @@ func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID ui
 		s.txs.add(appendID)
 	}
 
-	if nc == nil { // Sample was appended to existing chunk or is the first sample in a new chunk.
+	if newChunk == nil { // Sample was appended to existing chunk or is the first sample in a new chunk.
 		c.maxTime = t
 		return true, chunkCreated
 	}
 
 	if recoded { // The appender needed to recode the chunk.
 		c.maxTime = t
-		c.chunk = nc
+		c.chunk = newChunk
 		return true, false // @krajorama I think technically this is lying to the caller, since we do allocate a new chunk in memory currently, but it's what the original code did
 	}
 
 	// This is a brand new chunk, switch out the head chunk (based on cutNewHeadChunk).
 	s.mmapCurrentHeadChunk(o.chunkDiskMapper)
 	s.headChunk = &memChunk{
-		chunk:   nc,
+		chunk:   newChunk,
 		minTime: t,
 		maxTime: t,
 	}
@@ -1228,9 +1228,9 @@ func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, 
 	}
 
 	var (
-		nc      chunkenc.Chunk
-		recoded bool
-		err     error
+		newChunk chunkenc.Chunk
+		recoded  bool
+		err      error
 	)
 
 	if !chunkCreated {
@@ -1238,7 +1238,7 @@ func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, 
 		prevApp = nil
 	}
 
-	nc, recoded, s.app, err = s.app.AppendFloatHistogram(prevApp, t, fh, false) // False means request a new chunk if needed.
+	newChunk, recoded, s.app, err = s.app.AppendFloatHistogram(prevApp, t, fh, false) // False means request a new chunk if needed.
 
 	if err != nil {
 		panic("appendOrCreateFloatHistogram failed") // TODO: handle error
@@ -1251,21 +1251,21 @@ func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, 
 		s.txs.add(appendID)
 	}
 
-	if nc == nil { // Sample was appended to existing chunk or is the first sample in a new chunk.
+	if newChunk == nil { // Sample was appended to existing chunk or is the first sample in a new chunk.
 		c.maxTime = t
 		return true, chunkCreated
 	}
 
 	if recoded { // The appender needed to recode the chunk.
 		c.maxTime = t
-		c.chunk = nc
+		c.chunk = newChunk
 		return true, false // @krajorama I think technically this is lying to the caller, since we do allocate a new chunk in memory currently, but it's what the original code did
 	}
 
 	// This is a brand new chunk, switch out the head chunk (based on cutNewHeadChunk).
 	s.mmapCurrentHeadChunk(o.chunkDiskMapper)
 	s.headChunk = &memChunk{
-		chunk:   nc,
+		chunk:   newChunk,
 		minTime: t,
 		maxTime: t,
 	}
