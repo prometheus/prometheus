@@ -554,20 +554,17 @@ func formatOpenMetricsFloat(f float64) string {
 	return s + ".0"
 }
 
-// isNativeHistogram returns false iff the provided histograms has no sparse
-// buckets and a zero threshold of 0 and a zero count of 0. In principle, this
-// could still be meant to be a native histogram (with a zero threshold of 0 and
-// no observations yet), but for now, we'll treat this case as a conventional
-// histogram.
-//
-// TODO(beorn7): In the final format, there should be an unambiguous way of
-// deciding if a histogram should be ingested as a conventional one or a native
-// one.
+// isNativeHistogram returns false iff the provided histograms has no spans at
+// all (neither positive nor negative) and a zero threshold of 0 and a zero
+// count of 0. In principle, this could still be meant to be a native histogram
+// with a zero threshold of 0 and no observations yet. In that case,
+// instrumentation libraries should add a "no-op" span (e.g. length zero, offset
+// zero) to signal that the histogram is meant to be parsed as a native
+// histogram. Failing to do so will cause Prometheus to parse it as a classic
+// histogram as long as no observations have happened.
 func isNativeHistogram(h *dto.Histogram) bool {
-	return h.GetZeroThreshold() > 0 ||
-		h.GetZeroCount() > 0 ||
-		len(h.GetNegativeDelta()) > 0 ||
-		len(h.GetPositiveDelta()) > 0 ||
-		len(h.GetNegativeCount()) > 0 ||
-		len(h.GetPositiveCount()) > 0
+	return len(h.GetPositiveSpan()) > 0 ||
+		len(h.GetNegativeSpan()) > 0 ||
+		h.GetZeroThreshold() > 0 ||
+		h.GetZeroCount() > 0
 }

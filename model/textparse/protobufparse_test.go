@@ -518,6 +518,19 @@ metric: <
   >
 >
 `,
+		`name: "empty_histogram"
+help: "A histogram without observations and with a zero threshold of zero but with a no-op span to identify it as a native histogram."
+type: HISTOGRAM
+metric: <
+  histogram: <
+    positive_span: <
+      offset: 0
+      length: 0
+    >
+  >
+>
+
+`,
 	}
 
 	varintBuf := make([]byte, binary.MaxVarintLen32)
@@ -963,6 +976,25 @@ func TestProtobufParse(t *testing.T) {
 					v: 1.234,
 					lset: labels.FromStrings(
 						"__name__", "without_quantiles_sum",
+					),
+				},
+				{
+					m:    "empty_histogram",
+					help: "A histogram without observations and with a zero threshold of zero but with a no-op span to identify it as a native histogram.",
+				},
+				{
+					m:   "empty_histogram",
+					typ: MetricTypeHistogram,
+				},
+				{
+					m: "empty_histogram",
+					shs: &histogram.Histogram{
+						CounterResetHint: histogram.UnknownCounterReset,
+						PositiveSpans:    []histogram.Span{},
+						NegativeSpans:    []histogram.Span{},
+					},
+					lset: labels.FromStrings(
+						"__name__", "empty_histogram",
 					),
 				},
 			},
@@ -1686,6 +1718,25 @@ func TestProtobufParse(t *testing.T) {
 					v: 1.234,
 					lset: labels.FromStrings(
 						"__name__", "without_quantiles_sum",
+					),
+				},
+				{ // 78
+					m:    "empty_histogram",
+					help: "A histogram without observations and with a zero threshold of zero but with a no-op span to identify it as a native histogram.",
+				},
+				{ // 79
+					m:   "empty_histogram",
+					typ: MetricTypeHistogram,
+				},
+				{ // 80
+					m: "empty_histogram",
+					shs: &histogram.Histogram{
+						CounterResetHint: histogram.UnknownCounterReset,
+						PositiveSpans:    []histogram.Span{},
+						NegativeSpans:    []histogram.Span{},
+					},
+					lset: labels.FromStrings(
+						"__name__", "empty_histogram",
 					),
 				},
 			},
