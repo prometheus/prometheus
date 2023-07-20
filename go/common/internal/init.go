@@ -1,6 +1,5 @@
-//go:build (WITHOUT_FASTCGO || arm64) && !WITH_FASTCGO
-// +build WITHOUT_FASTCGO arm64
-// +build !WITH_FASTCGO
+//go:build WITHOUT_FASTCGO && !WITH_FASTCGO
+// +build WITHOUT_FASTCGO,!WITH_FASTCGO
 
 // package internal is a Go counterpart of C bindings. It contains the bridged decoder/encoder API.
 

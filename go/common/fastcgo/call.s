@@ -12,6 +12,8 @@
 // - R_SP  is a Register alias for Stack Pointer (SP for x86, RSP for ARM).
 // - RTMP0, RTMP1 are Register aliases for temporary Generic Registers
 //                (to avoid using the reserved registries' names).
+// - RTMPSP is the temporary register for storing SP across the calls.
+//   It must be one of so-called "Callee-saved Registers". (See [SO-Callee-saved])
 // - CALL_REG is a Register reserved by us for indirect (through function pointer) call.
 // - RRET is an alias for Register reserved for returning values from calls.
 
@@ -22,8 +24,14 @@
 //
 // https://github.com/golang/go/blob/master/src/runtime/cgo/asm_arm64.s
 //
-// ARM ABI: https://developer.arm.com/documentation/den0024/a/The-ABI-for-ARM-64-bit-Architecture/Register-use-in-the-AArch64-Procedure-Call-Standard/Parameters-in-general-purpose-registers
 // Plan 9 Assembly Reference: https://9p.io/sys/doc/asm.html
+//
+// Info about registers:
+//
+// ARM ABI: https://developer.arm.com/documentation/den0024/a/The-ABI-for-ARM-64-bit-Architecture/Register-use-in-the-AArch64-Procedure-Call-Standard/Parameters-in-general-purpose-registers
+// [SO-Callee-saved]: https://stackoverflow.com/questions/9268586/what-are-callee-and-caller-saved-registers
+// x86-64 callee-saved regs: https://stackoverflow.com/questions/18024672/what-registers-are-preserved-through-a-linux-x86-64-function-call
+// Work with ARM stack (push/pop analogue for ARM): https://stackoverflow.com/questions/27941220/push-lr-and-pop-lr-in-arm-arch64
 //
 // More interesting links to dive into:
 // https://github.com/akutz/go-interface-values/blob/main/docs/02-interface-values/09-on-the-stack.md
@@ -42,7 +50,7 @@
 #define RTMP0  R9
 #define RTMP1  R10
 #define RTMP2  R11
-#define RTMPSP R12
+#define RTMPSP R19
 #define RRET   R0 // same as arg0
 
 /* CALL_REG is a temporary register for storing an actual pointer to called function. */
@@ -103,29 +111,12 @@ TEXT ·UnsafeCall0(SB), NOSPLIT, $0-0
 	UNSAFE_CALL
 	RET
 
-// func UnsafeCall0WithRet(fn unsafe.Pointer) uintptr
-// Switches SP to g0 stack, calls fn and return value as uintptr
-TEXT ·UnsafeCall0WithRet(SB), NOSPLIT, $0-0
-	PREPARE_CALL
-	UNSAFE_CALL
-	MOV_64bit RRET, ret+8(FP)
-	RET
-
 // func UnsafeCall1(fn unsafe.Pointer, arg0 uintptr)
 // Switches SP to g0 stack and calls fn with one arg.
 TEXT ·UnsafeCall1(SB), NOSPLIT, $0-0
 	PREPARE_CALL
 	MOV_64bit arg0+8(FP), RARG0
 	UNSAFE_CALL
-	RET
-
-// func UnsafeCall1WithRet(fn unsafe.Pointer, arg0 uintptr) uintptr
-// Switches SP to g0 stack and calls fn with one arg.
-TEXT ·UnsafeCall1WithRet(SB), NOSPLIT, $0-0
-	PREPARE_CALL
-	MOV_64bit arg0+8(FP), RARG0
-	UNSAFE_CALL
-	MOV_64bit RRET, ret+16(FP)
 	RET
 
 // func UnsafeCall2(fn unsafe.Pointer, arg0, arg1 uintptr)
@@ -137,16 +128,6 @@ TEXT ·UnsafeCall2(SB), NOSPLIT, $0-0
 	UNSAFE_CALL
 	RET
 
-// func UnsafeCall2WithRet(fn unsafe.Pointer, arg0, arg1 uintptr) uintptr
-// Switches SP to g0 stack and calls fn with two args.
-TEXT ·UnsafeCall2WithRet(SB), NOSPLIT, $0-0
-	PREPARE_CALL
-	MOV_64bit arg0+8(FP),  RARG0
-	MOV_64bit arg1+16(FP), RARG1
-	UNSAFE_CALL
-	MOV_64bit RRET, ret+24(FP)
-	RET
-
 // func UnsafeCall3(fn unsafe.Pointer, arg0, arg1, arg2 uintptr)
 // Switches SP to g0 stack and calls fn with two args.
 TEXT ·UnsafeCall3(SB), NOSPLIT, $0-0
@@ -155,17 +136,6 @@ TEXT ·UnsafeCall3(SB), NOSPLIT, $0-0
 	MOV_64bit arg1+16(FP), RARG1
 	MOV_64bit arg2+24(FP), RARG2
 	UNSAFE_CALL
-	RET
-
-// func UnsafeCall3WithRet(fn unsafe.Pointer, arg0, arg1, arg2 uintptr)
-// Switches SP to g0 stack and calls fn with two args.
-TEXT ·UnsafeCall3WithRet(SB), NOSPLIT, $0-0
-	PREPARE_CALL
-	MOV_64bit arg0+8(FP),  RARG0
-	MOV_64bit arg1+16(FP), RARG1
-	MOV_64bit arg2+24(FP), RARG2
-	UNSAFE_CALL
-	MOV_64bit RRET, ret+32(FP)
 	RET
 
 // func UnsafeCall4(fn unsafe.Pointer, arg0, arg1, arg2, arg3 uintptr)

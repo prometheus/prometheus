@@ -7,16 +7,48 @@
 #include <stdint.h>
 
 #ifdef __cplusplus
+#include <string>
+#include <string_view>
+#include <utility>
+
 extern "C" {
 #endif
 
 typedef void* stringstream_ptr;
 typedef void* string_ptr;
 
+// std::string C bindings
+const char* std_string_c_str(const string_ptr str);
+size_t std_string_length(const string_ptr str);
+
 // go_ptr is the analogue of void * for forwarding Go's uintptr.
 typedef size_t go_ptr;
 
 typedef go_ptr c_slice_from_go_ptr;
+
+// c_api_error_info is the helper type with potential error and stacktrace (if avail).
+// If API call failed, then the "error" string will be not empty.
+#ifndef __cplusplus
+typedef struct c_api_error_info c_api_error_info;
+#else
+class c_api_error_info {
+  std::string error_;
+  std::string stacktrace_;
+
+ public:
+  c_api_error_info(std::string&& error, std::string&& stacktrace) : error_(std::move(error)), stacktrace_(std::move(stacktrace)) {}
+
+  constexpr std::string_view Error() const noexcept { return error_; }
+
+  constexpr std::string_view Stacktrace() const noexcept { return stacktrace_; }
+};
+#endif
+
+// C wrappers for error_info.
+c_api_error_info* make_c_api_error_info(const char* message, const char* stacktrace);
+const char* c_api_error_info_get_error();
+const char* c_api_error_info_get_stacktrace();
+void destroy_c_api_error_info(c_api_error_info* err_info);
 
 // c_slice - C wrapper C++ Slice for exchange memory between C++ and Go.
 typedef struct {
