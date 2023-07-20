@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.46.0-rc.0 / 2023-07-20
+
+* [FEATURE] Promtool: Add PromQL format and label matcher set/delete commands to promtool. #11411
+* [FEATURE] Promtool: Add push metrics command. #12299
+* [ENHANCEMENT] Promtool: Read from stdin if no filenames are provided in check rules. #12225
+* [ENHANCEMENT] Hetzner SD: Support larger ID's that will be used by Hetzner in September. #12569
+* [ENHANCEMENT] Kubernetes SD: Add more labels for endpointslice and endpoints role. #10914
+* [ENHANCEMENT] Kubernetes SD: Do not add pods to target group if the PodIP status is not set. #11642
+* [ENHANCEMENT] Openstack SD: Include instance image ID in labels. #12502
+* [ENHANCEMENT] Remote Write receiver: Validate the metric names and labels. #11688
+* [ENHANCEMENT] Web: Initialize requestCounter metrics to 0 with handler and 200 labels. #12472
+* [ENHANCEMENT] TSDB: Add Zstandard compression option for wlog. #11666
+* [ENHANCEMENT] TSDB: Support native histograms in snapshot on shutdown. #12258
+* [BUGFIX] Histograms: Fix parsing of float histograms without zero bucket. #12577
+* [BUGFIX] Histograms: Fix scraping native and classic histograms missing some histograms. #12554
+* [BUGFIX] Histograms: Enable ingestion of multiple exemplars per sample. 12557
+* [BUGFIX] File SD: Fix path handling in File-SD watcher to allow directory monitoring on windows. #12488
+* [BUGFIX] Linode SD: cast InstanceSpec values to int64 to avoid overflows on 386 architecture. #12568
+* [BUGFIX] TSDB: Handle TOC parsing failures. #10623
 
 ## 2.45.0 / 2023-06-23
 
