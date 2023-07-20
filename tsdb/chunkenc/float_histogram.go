@@ -552,9 +552,9 @@ func (a *FloatHistogramAppender) recode(
 	return hc, app
 }
 
-// recodeHistogramm converts the current histogram (in-place) to accommodate an expansion of the set of
+// recodeHistogram converts the current histogram (in-place) to accommodate an expansion of the set of
 // (positive and/or negative) buckets used.
-func (a *FloatHistogramAppender) recodeHistogramm(
+func (a *FloatHistogramAppender) recodeHistogram(
 	fh *histogram.FloatHistogram,
 	pBackwardInter, nBackwardInter []Insert,
 ) {
@@ -659,7 +659,7 @@ func (a *FloatHistogramAppender) AppendFloatHistogram(prev *FloatHistogramAppend
 		}
 		h.PositiveSpans = pMergedSpans
 		h.NegativeSpans = nMergedSpans
-		a.recodeHistogramm(h, pBackwardInserts, nBackwardInserts)
+		a.recodeHistogram(h, pBackwardInserts, nBackwardInserts)
 	}
 
 	if len(pForwardInserts) > 0 || len(nForwardInserts) > 0 {
