@@ -4874,9 +4874,8 @@ func Test_Querier_OOOQuery(t *testing.T) {
 
 func Test_ChunkQuerier_OOOQuery(t *testing.T) {
 	scenarios := map[string]struct {
-		appendFunc     func(app storage.Appender, ts int64) (storage.SeriesRef, error)
-		sampleFunc     func(ts int64) tsdbutil.Sample
-		extractSamples func(it chunkenc.Iterator) []tsdbutil.Sample
+		appendFunc func(app storage.Appender, ts int64) (storage.SeriesRef, error)
+		sampleFunc func(ts int64) tsdbutil.Sample
 	}{
 		"float": {
 			appendFunc: func(app storage.Appender, ts int64) (storage.SeriesRef, error) {
@@ -4884,14 +4883,6 @@ func Test_ChunkQuerier_OOOQuery(t *testing.T) {
 			},
 			sampleFunc: func(ts int64) tsdbutil.Sample {
 				return sample{t: ts, f: float64(ts)}
-			},
-			extractSamples: func(it chunkenc.Iterator) []tsdbutil.Sample {
-				var samples []tsdbutil.Sample
-				for it.Next() == chunkenc.ValFloat {
-					t, v := it.At()
-					samples = append(samples, sample{t: t, f: v})
-				}
-				return samples
 			},
 		},
 		"integer histogram": {
@@ -4901,15 +4892,6 @@ func Test_ChunkQuerier_OOOQuery(t *testing.T) {
 			sampleFunc: func(ts int64) tsdbutil.Sample {
 				return sample{t: ts, h: tsdbutil.GenerateTestHistogram(int(ts))}
 			},
-			extractSamples: func(it chunkenc.Iterator) []tsdbutil.Sample {
-				var samples []tsdbutil.Sample
-				for it.Next() == chunkenc.ValHistogram {
-					t, v := it.AtHistogram()
-					v.CounterResetHint = histogram.UnknownCounterReset
-					samples = append(samples, sample{t: t, h: v})
-				}
-				return samples
-			},
 		},
 		"float histogram": {
 			appendFunc: func(app storage.Appender, ts int64) (storage.SeriesRef, error) {
@@ -4918,28 +4900,18 @@ func Test_ChunkQuerier_OOOQuery(t *testing.T) {
 			sampleFunc: func(ts int64) tsdbutil.Sample {
 				return sample{t: ts, fh: tsdbutil.GenerateTestFloatHistogram(int(ts))}
 			},
-			extractSamples: func(it chunkenc.Iterator) []tsdbutil.Sample {
-				var samples []tsdbutil.Sample
-				for it.Next() == chunkenc.ValFloatHistogram {
-					t, v := it.AtFloatHistogram()
-					v.CounterResetHint = histogram.UnknownCounterReset
-					samples = append(samples, sample{t: t, fh: v})
-				}
-				return samples
-			},
 		},
 	}
 	for name, scenario := range scenarios {
 		t.Run(name, func(t *testing.T) {
-			test_ChunkQuerier_OOOQuery(t, scenario.appendFunc, scenario.sampleFunc, scenario.extractSamples)
+			test_ChunkQuerier_OOOQuery(t, scenario.appendFunc, scenario.sampleFunc)
 		})
 	}
 }
 
 func test_ChunkQuerier_OOOQuery(t *testing.T,
 	appendFunc func(app storage.Appender, ts int64) (storage.SeriesRef, error),
-	sampleFunc func(ts int64) tsdbutil.Sample,
-	extractSamples func(it chunkenc.Iterator) []tsdbutil.Sample) {
+	sampleFunc func(ts int64) tsdbutil.Sample) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 24 * time.Hour.Milliseconds()
@@ -4961,6 +4933,26 @@ func test_ChunkQuerier_OOOQuery(t *testing.T,
 		}
 		require.NoError(t, app.Commit())
 		return expSamples, totalAppended
+	}
+
+	extractSamples := func(it chunkenc.Iterator) []tsdbutil.Sample {
+		var samples []tsdbutil.Sample
+		for t := it.Next(); t != chunkenc.ValNone; t = it.Next() {
+			switch t {
+			case chunkenc.ValFloat:
+				t, v := it.At()
+				samples = append(samples, sample{t: t, f: v})
+			case chunkenc.ValHistogram:
+				t, v := it.AtHistogram()
+				v.CounterResetHint = histogram.UnknownCounterReset
+				samples = append(samples, sample{t: t, h: v})
+			case chunkenc.ValFloatHistogram:
+				t, v := it.AtFloatHistogram()
+				v.CounterResetHint = histogram.UnknownCounterReset
+				samples = append(samples, sample{t: t, fh: v})
+			}
+		}
+		return samples
 	}
 
 	tests := []struct {
