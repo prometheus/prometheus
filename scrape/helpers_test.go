@@ -53,10 +53,10 @@ func (a nopAppender) UpdateMetadata(storage.SeriesRef, labels.Labels, metadata.M
 func (a nopAppender) Commit() error   { return nil }
 func (a nopAppender) Rollback() error { return nil }
 
-type sample struct {
+type floatSample struct {
 	metric labels.Labels
 	t      int64
-	v      float64
+	f      float64
 }
 
 type histogramSample struct {
@@ -69,23 +69,23 @@ type histogramSample struct {
 // It can be used as its zero value or be backed by another appender it writes samples through.
 type collectResultAppender struct {
 	next                 storage.Appender
-	result               []sample
-	pendingResult        []sample
-	rolledbackResult     []sample
-	pendingExemplars     []exemplar.Exemplar
-	resultExemplars      []exemplar.Exemplar
+	resultFloats         []floatSample
+	pendingFloats        []floatSample
+	rolledbackFloats     []floatSample
 	resultHistograms     []histogramSample
 	pendingHistograms    []histogramSample
 	rolledbackHistograms []histogramSample
-	pendingMetadata      []metadata.Metadata
+	resultExemplars      []exemplar.Exemplar
+	pendingExemplars     []exemplar.Exemplar
 	resultMetadata       []metadata.Metadata
+	pendingMetadata      []metadata.Metadata
 }
 
 func (a *collectResultAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
-	a.pendingResult = append(a.pendingResult, sample{
+	a.pendingFloats = append(a.pendingFloats, floatSample{
 		metric: lset,
 		t:      t,
-		v:      v,
+		f:      v,
 	})
 
 	if ref == 0 {
@@ -133,11 +133,11 @@ func (a *collectResultAppender) UpdateMetadata(ref storage.SeriesRef, l labels.L
 }
 
 func (a *collectResultAppender) Commit() error {
-	a.result = append(a.result, a.pendingResult...)
+	a.resultFloats = append(a.resultFloats, a.pendingFloats...)
 	a.resultExemplars = append(a.resultExemplars, a.pendingExemplars...)
 	a.resultHistograms = append(a.resultHistograms, a.pendingHistograms...)
 	a.resultMetadata = append(a.resultMetadata, a.pendingMetadata...)
-	a.pendingResult = nil
+	a.pendingFloats = nil
 	a.pendingExemplars = nil
 	a.pendingHistograms = nil
 	a.pendingMetadata = nil
@@ -148,9 +148,9 @@ func (a *collectResultAppender) Commit() error {
 }
 
 func (a *collectResultAppender) Rollback() error {
-	a.rolledbackResult = a.pendingResult
+	a.rolledbackFloats = a.pendingFloats
 	a.rolledbackHistograms = a.pendingHistograms
-	a.pendingResult = nil
+	a.pendingFloats = nil
 	a.pendingHistograms = nil
 	if a.next == nil {
 		return nil
@@ -160,14 +160,14 @@ func (a *collectResultAppender) Rollback() error {
 
 func (a *collectResultAppender) String() string {
 	var sb strings.Builder
-	for _, s := range a.result {
-		sb.WriteString(fmt.Sprintf("committed: %s %f %d\n", s.metric, s.v, s.t))
+	for _, s := range a.resultFloats {
+		sb.WriteString(fmt.Sprintf("committed: %s %f %d\n", s.metric, s.f, s.t))
 	}
-	for _, s := range a.pendingResult {
-		sb.WriteString(fmt.Sprintf("pending: %s %f %d\n", s.metric, s.v, s.t))
+	for _, s := range a.pendingFloats {
+		sb.WriteString(fmt.Sprintf("pending: %s %f %d\n", s.metric, s.f, s.t))
 	}
-	for _, s := range a.rolledbackResult {
-		sb.WriteString(fmt.Sprintf("rolledback: %s %f %d\n", s.metric, s.v, s.t))
+	for _, s := range a.rolledbackFloats {
+		sb.WriteString(fmt.Sprintf("rolledback: %s %f %d\n", s.metric, s.f, s.t))
 	}
 	return sb.String()
 }

@@ -365,8 +365,8 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 	if prev := ce.exemplars[ce.nextIndex]; prev == nil {
 		ce.exemplars[ce.nextIndex] = &circularBufferEntry{}
 	} else {
-		// There exists exemplar already on this ce.nextIndex entry, drop it, to make place
-		// for others.
+		// There exists an exemplar already on this ce.nextIndex entry,
+		// drop it, to make place for others.
 		var buf [1024]byte
 		prevLabels := prev.ref.seriesLabels.Bytes(buf[:])
 		if prev.next == noExemplar {
