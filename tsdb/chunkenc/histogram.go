@@ -89,22 +89,6 @@ const (
 	UnknownCounterReset CounterResetHeader = 0b00000000
 )
 
-// setCounterResetHeader sets the counter reset header of the chunk
-// The third byte of the chunk is the counter reset header.
-func setCounterResetHeader(h CounterResetHeader, bytes []byte) {
-	switch h {
-	case CounterReset, NotCounterReset, GaugeType, UnknownCounterReset:
-		bytes[2] = (bytes[2] & 0b00111111) | byte(h)
-	default:
-		panic("invalid CounterResetHeader type")
-	}
-}
-
-// setCounterResetHeader sets the counter reset header.
-func (c *HistogramChunk) setCounterResetHeader(h CounterResetHeader) {
-	setCounterResetHeader(h, c.Bytes())
-}
-
 // GetCounterResetHeader returns the info about the first 2 bits of the chunk
 // header.
 func (c *HistogramChunk) GetCounterResetHeader() CounterResetHeader {
@@ -559,6 +543,7 @@ func (a *HistogramAppender) recode(
 	if err != nil {
 		panic(err)
 	}
+	happ := app.(*HistogramAppender)
 	numPositiveBuckets, numNegativeBuckets := countSpans(positiveSpans), countSpans(negativeSpans)
 
 	for it.Next() == ValHistogram {
@@ -584,10 +569,10 @@ func (a *HistogramAppender) recode(
 		if len(negativeInserts) > 0 {
 			hOld.NegativeBuckets = insert(hOld.NegativeBuckets, negativeBuckets, negativeInserts, true)
 		}
-		app.(*HistogramAppender).appendHistogram(tOld, hOld)
+		happ.appendHistogram(tOld, hOld)
 	}
 
-	hc.setCounterResetHeader(CounterResetHeader(byts[2] & 0b11000000))
+	happ.setCounterResetHeader(CounterResetHeader(byts[2] & 0b11000000))
 	return hc, app
 }
 
@@ -656,14 +641,15 @@ func (a *HistogramAppender) AppendHistogram(prev *HistogramAppender, t int64, h 
 				return nil, false, a, fmt.Errorf("histogram counter reset")
 			}
 			newChunk := NewHistogramChunk()
-			if counterReset {
-				newChunk.setCounterResetHeader(CounterReset)
-			}
 			app, err := newChunk.Appender()
 			if err != nil {
 				return nil, false, a, err
 			}
-			app.(*HistogramAppender).appendHistogram(t, h)
+			happ := app.(*HistogramAppender)
+			if counterReset {
+				happ.setCounterResetHeader(CounterReset)
+			}
+			happ.appendHistogram(t, h)
 			return newChunk, false, app, nil
 		}
 		if len(pForwardInserts) > 0 || len(nForwardInserts) > 0 {
@@ -687,12 +673,13 @@ func (a *HistogramAppender) AppendHistogram(prev *HistogramAppender, t int64, h 
 			return nil, false, a, fmt.Errorf("gauge histogram schema change")
 		}
 		newChunk := NewHistogramChunk()
-		newChunk.setCounterResetHeader(GaugeType)
 		app, err := newChunk.Appender()
 		if err != nil {
 			return nil, false, a, err
 		}
-		app.(*HistogramAppender).appendHistogram(t, h)
+		happ := app.(*HistogramAppender)
+		happ.setCounterResetHeader(GaugeType)
+		happ.appendHistogram(t, h)
 		return newChunk, false, app, nil
 	}
 

@@ -81,11 +81,6 @@ func (c *FloatHistogramChunk) Layout() (
 	return readHistogramChunkLayout(&b)
 }
 
-// setCounterResetHeader sets the counter reset header.
-func (c *FloatHistogramChunk) setCounterResetHeader(h CounterResetHeader) {
-	setCounterResetHeader(h, c.Bytes())
-}
-
 // GetCounterResetHeader returns the info about the first 2 bits of the chunk
 // header.
 func (c *FloatHistogramChunk) GetCounterResetHeader() CounterResetHeader {
@@ -520,6 +515,7 @@ func (a *FloatHistogramAppender) recode(
 	if err != nil {
 		panic(err)
 	}
+	happ := app.(*FloatHistogramAppender)
 	numPositiveBuckets, numNegativeBuckets := countSpans(positiveSpans), countSpans(negativeSpans)
 
 	for it.Next() == ValFloatHistogram {
@@ -545,10 +541,10 @@ func (a *FloatHistogramAppender) recode(
 		if len(negativeInserts) > 0 {
 			hOld.NegativeBuckets = insert(hOld.NegativeBuckets, negativeBuckets, negativeInserts, false)
 		}
-		app.(*FloatHistogramAppender).appendFloatHistogram(tOld, hOld)
+		happ.appendFloatHistogram(tOld, hOld)
 	}
 
-	hc.setCounterResetHeader(CounterResetHeader(byts[2] & 0b11000000))
+	happ.setCounterResetHeader(CounterResetHeader(byts[2] & 0b11000000))
 	return hc, app
 }
 
@@ -613,14 +609,15 @@ func (a *FloatHistogramAppender) AppendFloatHistogram(prev *FloatHistogramAppend
 				return nil, false, a, fmt.Errorf("float histogram counter reset")
 			}
 			newChunk := NewFloatHistogramChunk()
-			if counterReset {
-				newChunk.setCounterResetHeader(CounterReset)
-			}
 			app, err := newChunk.Appender()
 			if err != nil {
 				return nil, false, a, err
 			}
-			app.(*FloatHistogramAppender).appendFloatHistogram(t, h)
+			happ := app.(*FloatHistogramAppender)
+			if counterReset {
+				happ.setCounterResetHeader(CounterReset)
+			}
+			happ.appendFloatHistogram(t, h)
 			return newChunk, false, app, nil
 		}
 		if len(pForwardInserts) > 0 || len(nForwardInserts) > 0 {
@@ -644,12 +641,13 @@ func (a *FloatHistogramAppender) AppendFloatHistogram(prev *FloatHistogramAppend
 			return nil, false, a, fmt.Errorf("float gauge histogram schema change")
 		}
 		newChunk := NewFloatHistogramChunk()
-		newChunk.setCounterResetHeader(GaugeType)
 		app, err := newChunk.Appender()
 		if err != nil {
 			return nil, false, a, err
 		}
-		app.(*FloatHistogramAppender).appendFloatHistogram(t, h)
+		happ := app.(*FloatHistogramAppender)
+		happ.setCounterResetHeader(GaugeType)
+		happ.appendFloatHistogram(t, h)
 		return newChunk, false, app, nil
 	}
 
