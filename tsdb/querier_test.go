@@ -670,7 +670,7 @@ func createFakeReaderAndNotPopulatedChunks(s ...[]tsdbutil.Sample) (*fakeChunksR
 	chks := make([]chunks.Meta, 0, len(s))
 
 	for ref, samples := range s {
-		chk := tsdbutil.ChunkFromSamples(samples)
+		chk, _ := tsdbutil.ChunkFromSamples(samples)
 		f.chks[chunks.ChunkRef(ref)] = chk.Chunk
 
 		chks = append(chks, chunks.Meta{
@@ -713,7 +713,7 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 			chks: [][]tsdbutil.Sample{{}},
 
 			expectedChks: []chunks.Meta{
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{}),
+				assureChunkFromSamples(t, []tsdbutil.Sample{}),
 			},
 		},
 		{
@@ -721,9 +721,9 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 			chks: [][]tsdbutil.Sample{{}, {}, {}},
 
 			expectedChks: []chunks.Meta{
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{}),
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{}),
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{}),
+				assureChunkFromSamples(t, []tsdbutil.Sample{}),
+				assureChunkFromSamples(t, []tsdbutil.Sample{}),
+				assureChunkFromSamples(t, []tsdbutil.Sample{}),
 			},
 		},
 		{
@@ -736,7 +736,7 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 				sample{1, 2, nil, nil}, sample{2, 3, nil, nil}, sample{3, 5, nil, nil}, sample{6, 1, nil, nil},
 			},
 			expectedChks: []chunks.Meta{
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+				assureChunkFromSamples(t, []tsdbutil.Sample{
 					sample{1, 2, nil, nil}, sample{2, 3, nil, nil}, sample{3, 5, nil, nil}, sample{6, 1, nil, nil},
 				}),
 			},
@@ -752,10 +752,10 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 				sample{1, 2, nil, nil}, sample{2, 3, nil, nil}, sample{3, 5, nil, nil}, sample{6, 1, nil, nil}, sample{7, 89, nil, nil}, sample{9, 8, nil, nil},
 			},
 			expectedChks: []chunks.Meta{
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+				assureChunkFromSamples(t, []tsdbutil.Sample{
 					sample{1, 2, nil, nil}, sample{2, 3, nil, nil}, sample{3, 5, nil, nil}, sample{6, 1, nil, nil},
 				}),
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+				assureChunkFromSamples(t, []tsdbutil.Sample{
 					sample{7, 89, nil, nil}, sample{9, 8, nil, nil},
 				}),
 			},
@@ -772,13 +772,13 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 				sample{1, 2, nil, nil}, sample{2, 3, nil, nil}, sample{3, 5, nil, nil}, sample{6, 1, nil, nil}, sample{7, 89, nil, nil}, sample{9, 8, nil, nil}, sample{10, 22, nil, nil}, sample{203, 3493, nil, nil},
 			},
 			expectedChks: []chunks.Meta{
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+				assureChunkFromSamples(t, []tsdbutil.Sample{
 					sample{1, 2, nil, nil}, sample{2, 3, nil, nil}, sample{3, 5, nil, nil}, sample{6, 1, nil, nil},
 				}),
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+				assureChunkFromSamples(t, []tsdbutil.Sample{
 					sample{7, 89, nil, nil}, sample{9, 8, nil, nil},
 				}),
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+				assureChunkFromSamples(t, []tsdbutil.Sample{
 					sample{10, 22, nil, nil}, sample{203, 3493, nil, nil},
 				}),
 			},
@@ -845,10 +845,10 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 				sample{3, 5, nil, nil}, sample{6, 1, nil, nil}, sample{7, 89, nil, nil},
 			},
 			expectedChks: []chunks.Meta{
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+				assureChunkFromSamples(t, []tsdbutil.Sample{
 					sample{3, 5, nil, nil}, sample{6, 1, nil, nil},
 				}),
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+				assureChunkFromSamples(t, []tsdbutil.Sample{
 					sample{7, 89, nil, nil},
 				}),
 			},
@@ -865,10 +865,10 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 				sample{1, 2, nil, nil}, sample{6, 1, nil, nil}, sample{7, 89, nil, nil}, sample{9, 8, nil, nil},
 			},
 			expectedChks: []chunks.Meta{
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+				assureChunkFromSamples(t, []tsdbutil.Sample{
 					sample{1, 2, nil, nil}, sample{6, 1, nil, nil},
 				}),
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+				assureChunkFromSamples(t, []tsdbutil.Sample{
 					sample{7, 89, nil, nil}, sample{9, 8, nil, nil},
 				}),
 			},
@@ -885,10 +885,10 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 				sample{1, 2, nil, nil}, sample{2, 3, nil, nil}, sample{3, 5, nil, nil}, sample{9, 8, nil, nil},
 			},
 			expectedChks: []chunks.Meta{
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+				assureChunkFromSamples(t, []tsdbutil.Sample{
 					sample{1, 2, nil, nil}, sample{2, 3, nil, nil}, sample{3, 5, nil, nil},
 				}),
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+				assureChunkFromSamples(t, []tsdbutil.Sample{
 					sample{9, 8, nil, nil},
 				}),
 			},
@@ -925,7 +925,7 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 				sample{6, 0, tsdbutil.SetHistogramNotCounterReset(tsdbutil.GenerateTestHistogram(6)), nil},
 			},
 			expectedChks: []chunks.Meta{
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+				assureChunkFromSamples(t, []tsdbutil.Sample{
 					sample{1, 0, tsdbutil.GenerateTestHistogram(1), nil},
 					sample{2, 0, tsdbutil.SetHistogramNotCounterReset(tsdbutil.GenerateTestHistogram(2)), nil},
 					sample{3, 0, tsdbutil.SetHistogramNotCounterReset(tsdbutil.GenerateTestHistogram(3)), nil},
@@ -950,7 +950,7 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 				sample{3, 0, tsdbutil.SetHistogramNotCounterReset(tsdbutil.GenerateTestHistogram(3)), nil},
 			},
 			expectedChks: []chunks.Meta{
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+				assureChunkFromSamples(t, []tsdbutil.Sample{
 					sample{1, 0, tsdbutil.GenerateTestHistogram(1), nil},
 					sample{2, 0, tsdbutil.SetHistogramNotCounterReset(tsdbutil.GenerateTestHistogram(2)), nil},
 					sample{3, 0, tsdbutil.SetHistogramNotCounterReset(tsdbutil.GenerateTestHistogram(3)), nil},
@@ -974,7 +974,7 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 				sample{6, 0, nil, tsdbutil.SetFloatHistogramNotCounterReset(tsdbutil.GenerateTestFloatHistogram(6))},
 			},
 			expectedChks: []chunks.Meta{
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+				assureChunkFromSamples(t, []tsdbutil.Sample{
 					sample{1, 0, nil, tsdbutil.GenerateTestFloatHistogram(1)},
 					sample{2, 0, nil, tsdbutil.SetFloatHistogramNotCounterReset(tsdbutil.GenerateTestFloatHistogram(2))},
 					sample{3, 0, nil, tsdbutil.SetFloatHistogramNotCounterReset(tsdbutil.GenerateTestFloatHistogram(3))},
@@ -999,7 +999,7 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 				sample{3, 0, nil, tsdbutil.SetFloatHistogramNotCounterReset(tsdbutil.GenerateTestFloatHistogram(3))},
 			},
 			expectedChks: []chunks.Meta{
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+				assureChunkFromSamples(t, []tsdbutil.Sample{
 					sample{1, 0, nil, tsdbutil.GenerateTestFloatHistogram(1)},
 					sample{2, 0, nil, tsdbutil.SetFloatHistogramNotCounterReset(tsdbutil.GenerateTestFloatHistogram(2))},
 					sample{3, 0, nil, tsdbutil.SetFloatHistogramNotCounterReset(tsdbutil.GenerateTestFloatHistogram(3))},
@@ -1023,7 +1023,7 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 				sample{6, 0, tsdbutil.GenerateTestGaugeHistogram(6), nil},
 			},
 			expectedChks: []chunks.Meta{
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+				assureChunkFromSamples(t, []tsdbutil.Sample{
 					sample{1, 0, tsdbutil.GenerateTestGaugeHistogram(1), nil},
 					sample{2, 0, tsdbutil.GenerateTestGaugeHistogram(2), nil},
 					sample{3, 0, tsdbutil.GenerateTestGaugeHistogram(3), nil},
@@ -1048,7 +1048,7 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 				sample{3, 0, tsdbutil.GenerateTestGaugeHistogram(3), nil},
 			},
 			expectedChks: []chunks.Meta{
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+				assureChunkFromSamples(t, []tsdbutil.Sample{
 					sample{1, 0, tsdbutil.GenerateTestGaugeHistogram(1), nil},
 					sample{2, 0, tsdbutil.GenerateTestGaugeHistogram(2), nil},
 					sample{3, 0, tsdbutil.GenerateTestGaugeHistogram(3), nil},
@@ -1072,7 +1072,7 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 				sample{6, 0, nil, tsdbutil.GenerateTestGaugeFloatHistogram(6)},
 			},
 			expectedChks: []chunks.Meta{
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+				assureChunkFromSamples(t, []tsdbutil.Sample{
 					sample{1, 0, nil, tsdbutil.GenerateTestGaugeFloatHistogram(1)},
 					sample{2, 0, nil, tsdbutil.GenerateTestGaugeFloatHistogram(2)},
 					sample{3, 0, nil, tsdbutil.GenerateTestGaugeFloatHistogram(3)},
@@ -1097,7 +1097,7 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 				sample{3, 0, nil, tsdbutil.GenerateTestGaugeFloatHistogram(3)},
 			},
 			expectedChks: []chunks.Meta{
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+				assureChunkFromSamples(t, []tsdbutil.Sample{
 					sample{1, 0, nil, tsdbutil.GenerateTestGaugeFloatHistogram(1)},
 					sample{2, 0, nil, tsdbutil.GenerateTestGaugeFloatHistogram(2)},
 					sample{3, 0, nil, tsdbutil.GenerateTestGaugeFloatHistogram(3)},

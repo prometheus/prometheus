@@ -40,12 +40,12 @@ func (s SampleSlice) Get(i int) Sample { return s[i] }
 func (s SampleSlice) Len() int         { return len(s) }
 
 // ChunkFromSamples requires all samples to have the same type.
-func ChunkFromSamples(s []Sample) chunks.Meta {
+func ChunkFromSamples(s []Sample) (chunks.Meta, error) {
 	return ChunkFromSamplesGeneric(SampleSlice(s))
 }
 
 // ChunkFromSamplesGeneric requires all samples to have the same type.
-func ChunkFromSamplesGeneric(s Samples) chunks.Meta {
+func ChunkFromSamplesGeneric(s Samples) (chunks.Meta, error) {
 	mint, maxt := int64(0), int64(0)
 
 	if s.Len() > 0 {
@@ -55,13 +55,13 @@ func ChunkFromSamplesGeneric(s Samples) chunks.Meta {
 	if s.Len() == 0 {
 		return chunks.Meta{
 			Chunk: chunkenc.NewXORChunk(),
-		}
+		}, nil
 	}
 
 	sampleType := s.Get(0).Type()
 	c, err := chunkenc.NewEmptyChunk(sampleType.ChunkEncoding())
 	if err != nil {
-		panic(err) // TODO(codesome): dont panic.
+		return chunks.Meta{}, err
 	}
 
 	ca, _ := c.Appender()
@@ -92,7 +92,7 @@ func ChunkFromSamplesGeneric(s Samples) chunks.Meta {
 		MinTime: mint,
 		MaxTime: maxt,
 		Chunk:   c,
-	}
+	}, nil
 }
 
 type sample struct {
@@ -130,7 +130,7 @@ func (s sample) Type() chunkenc.ValueType {
 }
 
 // PopulatedChunk creates a chunk populated with samples every second starting at minTime
-func PopulatedChunk(numSamples int, minTime int64) chunks.Meta {
+func PopulatedChunk(numSamples int, minTime int64) (chunks.Meta, error) {
 	samples := make([]Sample, numSamples)
 	for i := 0; i < numSamples; i++ {
 		samples[i] = sample{t: minTime + int64(i*1000), f: 1.0}
