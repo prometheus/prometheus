@@ -166,6 +166,10 @@ func (o *OOOChunk) ToEncodedChunks(mint, maxt int64) (chks []memChunk, err error
 				case !okToAppend || counterReset:
 					chks = append(chks, memChunk{chunk, cmint, cmaxt})
 					chunk = chunkenc.NewHistogramChunk()
+					app, err = chunk.Appender()
+					if err != nil {
+						return
+					}
 					cmint = s.t
 					created = true
 				case len(pForwardInserts) > 0 || len(nForwardInserts) > 0:
@@ -236,6 +240,10 @@ func (o *OOOChunk) ToEncodedChunks(mint, maxt int64) (chks []memChunk, err error
 				case !okToAppend || counterReset:
 					chks = append(chks, memChunk{chunk, cmint, cmaxt})
 					chunk = chunkenc.NewFloatHistogramChunk()
+					app, err = chunk.Appender()
+					if err != nil {
+						return
+					}
 					cmint = s.t
 					created = true
 				case len(pForwardInserts) > 0 || len(nForwardInserts) > 0:
