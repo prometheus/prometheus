@@ -280,7 +280,7 @@ func NewSeriesToChunkEncoder(series Series) ChunkSeries {
 
 func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 	var (
-		chk, newchk chunkenc.Chunk
+		chk, newChk chunkenc.Chunk
 		app         chunkenc.Appender
 		err         error
 		recoded     bool
@@ -327,33 +327,33 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 			app.Append(t, v)
 		case chunkenc.ValHistogram:
 			t, h = seriesIter.AtHistogram()
-			newchk, recoded, app, err = app.AppendOrCreateHistogram(nil, t, h, false)
+			newChk, recoded, app, err = app.AppendOrCreateHistogram(nil, t, h, false)
 			if err != nil {
 				return errChunksIterator{err: err}
 			}
-			if newchk != nil {
+			if newChk != nil {
 				if !recoded {
 					chks = appendChunk(chks, mint, maxt, chk)
 					mint = int64(math.MaxInt64)
 					// maxt is immediately overwritten below which is why setting it here won't make a difference.
 					i = 0
 				}
-				chk = newchk
+				chk = newChk
 			}
 		case chunkenc.ValFloatHistogram:
 			t, fh = seriesIter.AtFloatHistogram()
-			newchk, recoded, app, err = app.AppendOrCreateFloatHistogram(nil, t, fh, false)
+			newChk, recoded, app, err = app.AppendOrCreateFloatHistogram(nil, t, fh, false)
 			if err != nil {
 				return errChunksIterator{err: err}
 			}
-			if newchk != nil {
+			if newChk != nil {
 				if !recoded {
 					chks = appendChunk(chks, mint, maxt, chk)
 					mint = int64(math.MaxInt64)
 					// maxt is immediately overwritten below which is why setting it here won't make a difference.
 					i = 0
 				}
-				chk = newchk
+				chk = newChk
 			}
 		default:
 			return errChunksIterator{err: fmt.Errorf("unknown sample type %s", typ.String())}
