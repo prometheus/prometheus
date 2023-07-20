@@ -426,11 +426,11 @@ func counterResetInAnyBucket(oldBuckets, newBuckets []int64, oldSpans, newSpans 
 	return false
 }
 
-// AppendHistogram appends a histogram to the chunk. The caller must ensure that
+// appendHistogram appends a histogram to the chunk. The caller must ensure that
 // the histogram is properly structured, e.g. the number of buckets used
 // corresponds to the number conveyed by the span structures. First call
 // Appendable() and act accordingly!
-func (a *HistogramAppender) AppendHistogram(t int64, h *histogram.Histogram) {
+func (a *HistogramAppender) appendHistogram(t int64, h *histogram.Histogram) {
 	var tDelta, cntDelta, zCntDelta int64
 	num := binary.BigEndian.Uint16(a.b.bytes())
 
@@ -584,7 +584,7 @@ func (a *HistogramAppender) Recode(
 		if len(negativeInserts) > 0 {
 			hOld.NegativeBuckets = insert(hOld.NegativeBuckets, negativeBuckets, negativeInserts, true)
 		}
-		app.(*HistogramAppender).AppendHistogram(tOld, hOld)
+		app.(*HistogramAppender).appendHistogram(tOld, hOld)
 	}
 
 	hc.setCounterResetHeader(CounterResetHeader(byts[2] & 0b11000000))
@@ -617,7 +617,7 @@ func (a *HistogramAppender) AppendOrCreateFloatHistogram(*FloatHistogramAppender
 
 func (a *HistogramAppender) AppendOrCreateHistogram(prev *HistogramAppender, t int64, h *histogram.Histogram, appendOnly bool) (Chunk, bool, Appender, error) {
 	if a.NumSamples() == 0 {
-		a.AppendHistogram(t, h)
+		a.appendHistogram(t, h)
 		if h.CounterResetHint == histogram.GaugeType {
 			a.setCounterResetHeader(GaugeType)
 			return nil, false, a, nil
@@ -663,7 +663,7 @@ func (a *HistogramAppender) AppendOrCreateHistogram(prev *HistogramAppender, t i
 			if err != nil {
 				return nil, false, a, err
 			}
-			app.(*HistogramAppender).AppendHistogram(t, h)
+			app.(*HistogramAppender).appendHistogram(t, h)
 			return newChunk, false, app, nil
 		}
 		if len(pForwardInserts) > 0 || len(nForwardInserts) > 0 {
@@ -674,10 +674,10 @@ func (a *HistogramAppender) AppendOrCreateHistogram(prev *HistogramAppender, t i
 				pForwardInserts, nForwardInserts,
 				h.PositiveSpans, h.NegativeSpans,
 			)
-			app.(*HistogramAppender).AppendHistogram(t, h)
+			app.(*HistogramAppender).appendHistogram(t, h)
 			return chk, true, app, nil
 		}
-		a.AppendHistogram(t, h)
+		a.appendHistogram(t, h)
 		return nil, false, a, nil
 	}
 	// Adding gauge histogram
@@ -692,7 +692,7 @@ func (a *HistogramAppender) AppendOrCreateHistogram(prev *HistogramAppender, t i
 		if err != nil {
 			return nil, false, a, err
 		}
-		app.(*HistogramAppender).AppendHistogram(t, h)
+		app.(*HistogramAppender).appendHistogram(t, h)
 		return newChunk, false, app, nil
 	}
 
@@ -713,11 +713,11 @@ func (a *HistogramAppender) AppendOrCreateHistogram(prev *HistogramAppender, t i
 			pForwardInserts, nForwardInserts,
 			h.PositiveSpans, h.NegativeSpans,
 		)
-		app.(*HistogramAppender).AppendHistogram(t, h)
+		app.(*HistogramAppender).appendHistogram(t, h)
 		return chk, true, app, nil
 	}
 
-	a.AppendHistogram(t, h)
+	a.appendHistogram(t, h)
 	return nil, false, a, nil
 }
 
