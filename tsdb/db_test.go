@@ -4922,7 +4922,8 @@ func Test_ChunkQuerier_OOOQuery(t *testing.T) {
 
 func test_ChunkQuerier_OOOQuery(t *testing.T,
 	appendFunc func(app storage.Appender, ts int64) (storage.SeriesRef, error),
-	sampleFunc func(ts int64) tsdbutil.Sample) {
+	sampleFunc func(ts int64) tsdbutil.Sample,
+) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 24 * time.Hour.Milliseconds()
