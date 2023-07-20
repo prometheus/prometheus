@@ -598,7 +598,7 @@ func (a *FloatHistogramAppender) AppendFloatHistogram(prev *FloatHistogramAppend
 		return nil, false, a, nil
 	}
 
-	// Adding non gauge histogram.
+	// Adding counter-like histogram.
 	if h.CounterResetHint != histogram.GaugeType {
 		pForwardInserts, nForwardInserts, okToAppend, counterReset := a.appendable(h)
 		if !okToAppend || counterReset {
@@ -634,7 +634,7 @@ func (a *FloatHistogramAppender) AppendFloatHistogram(prev *FloatHistogramAppend
 		a.appendFloatHistogram(t, h)
 		return nil, false, a, nil
 	}
-	// Adding gauge histogram
+	// Adding gauge histogram.
 	pForwardInserts, nForwardInserts, pBackwardInserts, nBackwardInserts, pMergedSpans, nMergedSpans, okToAppend := a.appendableGauge(h)
 	if !okToAppend {
 		if appendOnly {

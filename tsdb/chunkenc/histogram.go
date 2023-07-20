@@ -630,7 +630,7 @@ func (a *HistogramAppender) AppendHistogram(prev *HistogramAppender, t int64, h 
 		return nil, false, a, nil
 	}
 
-	// Adding non gauge histogram.
+	// Adding counter-like histogram.
 	if h.CounterResetHint != histogram.GaugeType {
 		pForwardInserts, nForwardInserts, okToAppend, counterReset := a.appendable(h)
 		if !okToAppend || counterReset {
@@ -666,7 +666,7 @@ func (a *HistogramAppender) AppendHistogram(prev *HistogramAppender, t int64, h 
 		a.appendHistogram(t, h)
 		return nil, false, a, nil
 	}
-	// Adding gauge histogram
+	// Adding gauge histogram.
 	pForwardInserts, nForwardInserts, pBackwardInserts, nBackwardInserts, pMergedSpans, nMergedSpans, okToAppend := a.appendableGauge(h)
 	if !okToAppend {
 		if appendOnly {

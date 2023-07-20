@@ -1159,7 +1159,7 @@ func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID ui
 	// Head controls the execution of recoding, so that we own the proper
 	// chunk reference afterwards and mmap used up chunks.
 
-	// ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway
+	// Ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway.
 	prevApp, _ := s.app.(*chunkenc.HistogramAppender)
 
 	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.EncHistogram, o)
@@ -1174,7 +1174,7 @@ func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID ui
 	)
 
 	if !chunkCreated {
-		// ignore the previous appender if we continue the current chunk
+		// Ignore the previous appender if we continue the current chunk.
 		prevApp = nil
 	}
 
@@ -1191,18 +1191,18 @@ func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID ui
 		s.txs.add(appendID)
 	}
 
-	if nc == nil { // sample was appeneded to existing chunk or is the first sample in a new chunk
+	if nc == nil { // Sample was appended to existing chunk or is the first sample in a new chunk.
 		c.maxTime = t
 		return true, chunkCreated
 	}
 
-	if recoded { // needed to recode the chunk
+	if recoded { // The appender needed to recode the chunk.
 		c.maxTime = t
 		c.chunk = nc
 		return true, false // @krajorama I think technically this is lying to the caller, since we do allocate a new chunk in memory currently, but it's what the original code did
 	}
 
-	// brand new chunk, switch out the head chunk (based on cutNewHeadChunk)
+	// This is a brand new chunk, switch out the head chunk (based on cutNewHeadChunk).
 	s.mmapCurrentHeadChunk(o.chunkDiskMapper)
 	s.headChunk = &memChunk{
 		chunk:   nc,
@@ -1219,7 +1219,7 @@ func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, 
 	// Head controls the execution of recoding, so that we own the proper
 	// chunk reference afterwards and mmap used up chunks.
 
-	// ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway
+	// Ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway.
 	prevApp, _ := s.app.(*chunkenc.FloatHistogramAppender)
 
 	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.EncFloatHistogram, o)
@@ -1234,11 +1234,11 @@ func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, 
 	)
 
 	if !chunkCreated {
-		// ignore the previous appender if we continue the current chunk
+		// Ignore the previous appender if we continue the current chunk.
 		prevApp = nil
 	}
 
-	nc, recoded, s.app, err = s.app.AppendFloatHistogram(prevApp, t, fh, false) // false=request a new chunk if needed
+	nc, recoded, s.app, err = s.app.AppendFloatHistogram(prevApp, t, fh, false) // False means request a new chunk if needed.
 
 	if err != nil {
 		panic("appendOrCreateFloatHistogram failed") // TODO: handle error
@@ -1251,18 +1251,18 @@ func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, 
 		s.txs.add(appendID)
 	}
 
-	if nc == nil { // sample was appeneded to existing chunk or is the first sample in a new chunk
+	if nc == nil { // Sample was appended to existing chunk or is the first sample in a new chunk.
 		c.maxTime = t
 		return true, chunkCreated
 	}
 
-	if recoded { // needed to recode the chunk
+	if recoded { // The appender needed to recode the chunk.
 		c.maxTime = t
 		c.chunk = nc
 		return true, false // @krajorama I think technically this is lying to the caller, since we do allocate a new chunk in memory currently, but it's what the original code did
 	}
 
-	// brand new chunk, switch out the head chunk (based on cutNewHeadChunk)
+	// This is a brand new chunk, switch out the head chunk (based on cutNewHeadChunk).
 	s.mmapCurrentHeadChunk(o.chunkDiskMapper)
 	s.headChunk = &memChunk{
 		chunk:   nc,
