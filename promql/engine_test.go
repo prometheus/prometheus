@@ -78,7 +78,6 @@ func TestQueryConcurrency(t *testing.T) {
 
 	for i := 0; i < maxConcurrency; i++ {
 		q := engine.newTestQuery(f)
-
 		go q.Exec(ctx)
 		select {
 		case <-processing:
