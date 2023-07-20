@@ -828,7 +828,7 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 			}
 			var h *histogram.Histogram
 			t, h = p.currDelIter.AtHistogram()
-			_, _, app, err = app.AppendOrCreateHistogram(nil, t, h, true)
+			_, _, app, err = app.AppendHistogram(nil, t, h, true)
 			if err != nil {
 				break
 			}
@@ -863,7 +863,7 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 			}
 			var h *histogram.FloatHistogram
 			t, h = p.currDelIter.AtFloatHistogram()
-			_, _, app, err = app.AppendOrCreateFloatHistogram(nil, t, h, true)
+			_, _, app, err = app.AppendFloatHistogram(nil, t, h, true)
 			if err != nil {
 				break
 			}

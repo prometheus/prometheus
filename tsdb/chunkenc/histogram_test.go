@@ -54,7 +54,7 @@ func TestHistogramChunkSameBuckets(t *testing.T) {
 		},
 		NegativeBuckets: []int64{2, 1, -1, -1}, // counts: 2, 3, 2, 1 (total 8)
 	}
-	chk, _, app, err := app.AppendOrCreateHistogram(nil, ts, h, false)
+	chk, _, app, err := app.AppendHistogram(nil, ts, h, false)
 	require.NoError(t, err)
 	require.Nil(t, chk)
 	exp = append(exp, result{t: ts, h: h, fh: h.ToFloat()})
@@ -68,7 +68,7 @@ func TestHistogramChunkSameBuckets(t *testing.T) {
 	h.Sum = 24.4
 	h.PositiveBuckets = []int64{5, -2, 1, -2} // counts: 5, 3, 4, 2 (total 14)
 	h.NegativeBuckets = []int64{4, -1, 1, -1} // counts: 4, 3, 4, 4 (total 15)
-	chk, _, _, err = app.AppendOrCreateHistogram(nil, ts, h, false)
+	chk, _, _, err = app.AppendHistogram(nil, ts, h, false)
 	require.NoError(t, err)
 	require.Nil(t, chk)
 	hExp := h.Copy()
@@ -87,7 +87,7 @@ func TestHistogramChunkSameBuckets(t *testing.T) {
 	h.Sum = 24.4
 	h.PositiveBuckets = []int64{6, 1, -3, 6} // counts: 6, 7, 4, 10 (total 27)
 	h.NegativeBuckets = []int64{5, 1, -2, 3} // counts: 5, 6, 4, 7 (total 22)
-	chk, _, _, err = app.AppendOrCreateHistogram(nil, ts, h, false)
+	chk, _, _, err = app.AppendHistogram(nil, ts, h, false)
 	require.NoError(t, err)
 	require.Nil(t, chk)
 	hExp = h.Copy()
@@ -187,7 +187,7 @@ func TestHistogramChunkBucketChanges(t *testing.T) {
 		NegativeBuckets: []int64{1},
 	}
 
-	chk, _, app, err := app.AppendOrCreateHistogram(nil, ts1, h1, false)
+	chk, _, app, err := app.AppendHistogram(nil, ts1, h1, false)
 	require.NoError(t, err)
 	require.Nil(t, chk)
 	require.Equal(t, 1, c.NumSamples())
@@ -221,7 +221,7 @@ func TestHistogramChunkBucketChanges(t *testing.T) {
 	require.True(t, ok) // Only new buckets came in.
 	require.False(t, cr)
 	c, app = hApp.recode(posInterjections, negInterjections, h2.PositiveSpans, h2.NegativeSpans)
-	chk, _, _, err = app.AppendOrCreateHistogram(nil, ts2, h2, false)
+	chk, _, _, err = app.AppendHistogram(nil, ts2, h2, false)
 	require.NoError(t, err)
 	require.Nil(t, chk)
 
@@ -278,7 +278,7 @@ func TestHistogramChunkAppendable(t *testing.T) {
 			PositiveBuckets: []int64{6, -3, 0, -1, 2, 1, -4}, // counts: 6, 3, 3, 2, 4, 5, 1 (total 24)
 		}
 
-		chk, _, app, err := app.AppendOrCreateHistogram(nil, ts, h1.Copy(), false)
+		chk, _, app, err := app.AppendHistogram(nil, ts, h1.Copy(), false)
 		require.NoError(t, err)
 		require.Nil(t, chk)
 		require.Equal(t, 1, c.NumSamples())
@@ -425,7 +425,7 @@ func TestHistogramChunkAppendable(t *testing.T) {
 
 func assertNewHistogramChunkOnAppend(t *testing.T, oldChunk Chunk, hApp *HistogramAppender, ts int64, h *histogram.Histogram, expectHeader CounterResetHeader) {
 	oldChunkBytes := oldChunk.Bytes()
-	newChunk, recoded, newAppender, err := hApp.AppendOrCreateHistogram(nil, ts, h, false)
+	newChunk, recoded, newAppender, err := hApp.AppendHistogram(nil, ts, h, false)
 	require.Equal(t, oldChunkBytes, oldChunk.Bytes()) // Sanity check that previous chunk is untouched.
 	require.NoError(t, err)
 	require.NotNil(t, newChunk)
@@ -439,7 +439,7 @@ func assertNewHistogramChunkOnAppend(t *testing.T, oldChunk Chunk, hApp *Histogr
 
 func assertRecodedHistogramChunkOnAppend(t *testing.T, prevChunk Chunk, hApp *HistogramAppender, ts int64, h *histogram.Histogram, expectHeader CounterResetHeader) {
 	prevChunkBytes := prevChunk.Bytes()
-	newChunk, recoded, newAppender, err := hApp.AppendOrCreateHistogram(nil, ts, h, false)
+	newChunk, recoded, newAppender, err := hApp.AppendHistogram(nil, ts, h, false)
 	require.Equal(t, prevChunkBytes, prevChunk.Bytes()) // Sanity check that previous chunk is untouched. This may change in the future if we implement in-place recoding.
 	require.NoError(t, err)
 	require.NotNil(t, newChunk)
@@ -509,7 +509,7 @@ func TestHistogramChunkAppendableWithEmptySpan(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0, c.NumSamples())
 
-	_, _, _, err = app.AppendOrCreateHistogram(nil, 1, h1, true)
+	_, _, _, err = app.AppendHistogram(nil, 1, h1, true)
 	require.NoError(t, err)
 	require.Equal(t, 1, c.NumSamples())
 	hApp, _ := app.(*HistogramAppender)
@@ -648,7 +648,7 @@ func TestAtFloatHistogram(t *testing.T) {
 	app, err := chk.Appender()
 	require.NoError(t, err)
 	for i := range input {
-		newc, _, _, err := app.AppendOrCreateHistogram(nil, int64(i), &input[i], false)
+		newc, _, _, err := app.AppendHistogram(nil, int64(i), &input[i], false)
 		require.NoError(t, err)
 		require.Nil(t, newc)
 	}
@@ -689,7 +689,7 @@ func TestHistogramChunkAppendableGauge(t *testing.T) {
 			PositiveBuckets: []int64{6, -3, 0, -1, 2, 1, -4}, // {6, 3, 3, 2, 4, 5, 1}
 		}
 
-		chk, _, app, err := app.AppendOrCreateHistogram(nil, ts, h1.Copy(), false)
+		chk, _, app, err := app.AppendHistogram(nil, ts, h1.Copy(), false)
 		require.NoError(t, err)
 		require.Nil(t, chk)
 		require.Equal(t, 1, c.NumSamples())
@@ -705,7 +705,7 @@ func TestHistogramChunkAppendableGauge(t *testing.T) {
 		_, _, _, _, _, _, ok := hApp.appendableGauge(h2)
 		require.False(t, ok)
 
-		newc, recoded, _, err := hApp.AppendOrCreateHistogram(nil, ts+1, h2, false)
+		newc, recoded, _, err := hApp.AppendHistogram(nil, ts+1, h2, false)
 		require.NoError(t, err)
 		require.NotNil(t, newc)
 		require.False(t, recoded)
@@ -721,7 +721,7 @@ func TestHistogramChunkAppendableGauge(t *testing.T) {
 		_, _, _, _, _, _, ok := hApp.appendableGauge(h2)
 		require.False(t, ok)
 
-		newc, recoded, _, err := hApp.AppendOrCreateHistogram(nil, ts+1, h2, false)
+		newc, recoded, _, err := hApp.AppendHistogram(nil, ts+1, h2, false)
 		require.NoError(t, err)
 		require.NotNil(t, newc)
 		require.False(t, recoded)
@@ -751,7 +751,7 @@ func TestHistogramChunkAppendableGauge(t *testing.T) {
 		require.Len(t, nBackwardI, 0)
 		require.True(t, ok)
 
-		newc, recoded, _, err := hApp.AppendOrCreateHistogram(nil, ts+1, h2, false)
+		newc, recoded, _, err := hApp.AppendHistogram(nil, ts+1, h2, false)
 		require.NoError(t, err)
 		require.NotNil(t, newc)
 		require.True(t, recoded)
@@ -779,7 +779,7 @@ func TestHistogramChunkAppendableGauge(t *testing.T) {
 		require.Len(t, nBackwardI, 0)
 		require.True(t, ok)
 
-		newc, recoded, _, err := hApp.AppendOrCreateHistogram(nil, ts+1, h2, false)
+		newc, recoded, _, err := hApp.AppendHistogram(nil, ts+1, h2, false)
 		require.NoError(t, err)
 		require.Nil(t, newc)
 		require.False(t, recoded)
@@ -805,7 +805,7 @@ func TestHistogramChunkAppendableGauge(t *testing.T) {
 		require.Len(t, nBackwardI, 0)
 		require.True(t, ok)
 
-		newc, recoded, _, err := hApp.AppendOrCreateHistogram(nil, ts+1, h2, false)
+		newc, recoded, _, err := hApp.AppendHistogram(nil, ts+1, h2, false)
 		require.NoError(t, err)
 		require.NotNil(t, newc)
 		require.True(t, recoded)
@@ -825,7 +825,7 @@ func TestHistogramChunkAppendableGauge(t *testing.T) {
 		require.Len(t, nBackwardI, 0)
 		require.True(t, ok)
 
-		newc, recoded, _, err := hApp.AppendOrCreateHistogram(nil, ts+1, h2, false)
+		newc, recoded, _, err := hApp.AppendHistogram(nil, ts+1, h2, false)
 		require.NoError(t, err)
 		require.Nil(t, newc)
 		require.False(t, recoded)
@@ -851,7 +851,7 @@ func TestHistogramChunkAppendableGauge(t *testing.T) {
 		require.Len(t, nBackwardI, 0)
 		require.True(t, ok)
 
-		newc, recoded, _, err := hApp.AppendOrCreateHistogram(nil, ts+1, h2, false)
+		newc, recoded, _, err := hApp.AppendHistogram(nil, ts+1, h2, false)
 		require.NoError(t, err)
 		require.NotNil(t, newc)
 		require.True(t, recoded)
@@ -881,7 +881,7 @@ func TestHistogramChunkAppendableGauge(t *testing.T) {
 		require.Len(t, nBackwardI, 0)
 		require.True(t, ok)
 
-		newc, recoded, _, err := hApp.AppendOrCreateHistogram(nil, ts+1, h2, false)
+		newc, recoded, _, err := hApp.AppendHistogram(nil, ts+1, h2, false)
 		require.NoError(t, err)
 		require.NotNil(t, newc)
 		require.True(t, recoded)

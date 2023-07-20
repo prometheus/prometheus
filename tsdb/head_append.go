@@ -1178,7 +1178,7 @@ func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID ui
 		prevApp = nil
 	}
 
-	nc, recoded, s.app, err = s.app.AppendOrCreateHistogram(prevApp, t, h, false) // false=request a new chunk if needed
+	nc, recoded, s.app, err = s.app.AppendHistogram(prevApp, t, h, false) // false=request a new chunk if needed
 
 	if err != nil {
 		panic("appendOrCreateHistogram failed") // TODO: handle error
@@ -1238,7 +1238,7 @@ func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, 
 		prevApp = nil
 	}
 
-	nc, recoded, s.app, err = s.app.AppendOrCreateFloatHistogram(prevApp, t, fh, false) // false=request a new chunk if needed
+	nc, recoded, s.app, err = s.app.AppendFloatHistogram(prevApp, t, fh, false) // false=request a new chunk if needed
 
 	if err != nil {
 		panic("appendOrCreateFloatHistogram failed") // TODO: handle error
