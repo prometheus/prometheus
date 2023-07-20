@@ -4901,6 +4901,17 @@ func Test_ChunkQuerier_OOOQuery(t *testing.T) {
 				return sample{t: ts, fh: tsdbutil.GenerateTestFloatHistogram(int(ts))}
 			},
 		},
+		"integer histogram counter resets": {
+			// Adding counter reset to all histograms means each histogram will have its own chunk.
+			appendFunc: func(app storage.Appender, ts int64) (storage.SeriesRef, error) {
+				h := tsdbutil.GenerateTestHistogram(int(ts))
+				h.CounterResetHint = histogram.CounterReset
+				return app.AppendHistogram(0, labels.FromStrings("foo", "bar1"), ts, h, nil)
+			},
+			sampleFunc: func(ts int64) tsdbutil.Sample {
+				return sample{t: ts, h: tsdbutil.GenerateTestHistogram(int(ts))}
+			},
+		},
 	}
 	for name, scenario := range scenarios {
 		t.Run(name, func(t *testing.T) {

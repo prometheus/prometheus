@@ -459,20 +459,18 @@ func (s *memSeries) oooMergedChunk(meta chunks.Meta, cdm *chunks.ChunkDiskMapper
 			continue
 		}
 		if c.meta.Ref == oooHeadRef {
-			// If head chunk min and max time match the meta OOO markers
-			// that means that the chunk has not expanded so we can append
-			// it as it is.
 			chks, err := s.ooo.oooHeadChunk.chunk.ToEncodedChunks(meta.OOOLastMinTime, meta.OOOLastMaxTime)
-			// if s.ooo.oooHeadChunk.minTime == meta.OOOLastMinTime && s.ooo.oooHeadChunk.maxTime == meta.OOOLastMaxTime {
-			// 	xor, err = s.ooo.oooHeadChunk.chunk.ToXOR() // TODO(jesus.vazquez) (This is an optimization idea that has no priority and might not be that useful) See if we could use a copy of the underlying slice. That would leave the more expensive ToXOR() function only for the usecase where Bytes() is called.
-			// } else {
-			// 	// We need to remove samples that are outside of the markers
-			// 	xor, err = s.ooo.oooHeadChunk.chunk.ToXORBetweenTimestamps(meta.OOOLastMinTime, meta.OOOLastMaxTime)
-			// }
 			if err != nil {
 				return nil, errors.Wrap(err, "failed to convert ooo head chunk to xor chunk")
 			}
-			c.meta.Chunk = chks[0].chunk // TODO(histogram) handle multi chunk case.
+			// If the head results in multiple chunks, the chunks will share the same reference as the head chunk,
+			// which is technically true, but if some code does not check against the head, could lead to unexpected results.
+			for _, chk := range chks {
+				c.meta.Chunk = chk.chunk
+				c.meta.MinTime = chk.minTime
+				c.meta.MaxTime = chk.maxTime // Samples in the head are guaranteed to be ordered on time so this works out fine for absoluteMax.
+				mc.chunks = append(mc.chunks, c.meta)
+			}
 		} else {
 			chk, err := cdm.Chunk(c.ref)
 			if err != nil {
@@ -491,8 +489,8 @@ func (s *memSeries) oooMergedChunk(meta chunks.Meta, cdm *chunks.ChunkDiskMapper
 			} else {
 				c.meta.Chunk = chk
 			}
+			mc.chunks = append(mc.chunks, c.meta)
 		}
-		mc.chunks = append(mc.chunks, c.meta)
 		if c.meta.MaxTime > absoluteMax {
 			absoluteMax = c.meta.MaxTime
 		}
