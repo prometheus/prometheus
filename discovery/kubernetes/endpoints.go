@@ -29,7 +29,6 @@ import (
 	"k8s.io/client-go/util/workqueue"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/prometheus/prometheus/util/strutil"
 )
 
 var (
@@ -248,9 +247,6 @@ func endpointsSourceFromNamespaceAndName(namespace, name string) string {
 }
 
 const (
-	endpointsLabelPrefix           = metaLabelPrefix + "endpoints_label_"
-	endpointsLabelPresentPrefix    = metaLabelPrefix + "endpoints_labelpresent_"
-	endpointsNameLabel             = metaLabelPrefix + "endpoints_name"
 	endpointNodeName               = metaLabelPrefix + "endpoint_node_name"
 	endpointHostname               = metaLabelPrefix + "endpoint_hostname"
 	endpointReadyLabel             = metaLabelPrefix + "endpoint_ready"
@@ -265,16 +261,11 @@ func (e *Endpoints) buildEndpoints(eps *apiv1.Endpoints) *targetgroup.Group {
 		Source: endpointsSource(eps),
 	}
 	tg.Labels = model.LabelSet{
-		namespaceLabel:     lv(eps.Namespace),
-		endpointsNameLabel: lv(eps.Name),
+		namespaceLabel: lv(eps.Namespace),
 	}
 	e.addServiceLabels(eps.Namespace, eps.Name, tg)
 	// Add endpoints labels metadata.
-	for k, v := range eps.Labels {
-		ln := strutil.SanitizeLabelName(k)
-		tg.Labels[model.LabelName(endpointsLabelPrefix+ln)] = lv(v)
-		tg.Labels[model.LabelName(endpointsLabelPresentPrefix+ln)] = presentValue
-	}
+	addObjectMetaLabels(tg.Labels, eps.ObjectMeta, RoleEndpoint)
 
 	type podEntry struct {
 		pod          *apiv1.Pod
@@ -465,14 +456,7 @@ func addNodeLabels(tg model.LabelSet, nodeInf cache.SharedInformer, logger log.L
 
 	node := obj.(*apiv1.Node)
 	// Allocate one target label for the node name,
-	// and two target labels for each node label.
-	nodeLabelset := make(model.LabelSet, 1+2*len(node.GetLabels()))
-	nodeLabelset[nodeNameLabel] = lv(*nodeName)
-	for k, v := range node.GetLabels() {
-		ln := strutil.SanitizeLabelName(k)
-		nodeLabelset[model.LabelName(nodeLabelPrefix+ln)] = lv(v)
-		nodeLabelset[model.LabelName(nodeLabelPresentPrefix+ln)] = presentValue
-	}
-
+	nodeLabelset := make(model.LabelSet)
+	addObjectMetaLabels(nodeLabelset, node.ObjectMeta, RoleNode)
 	return tg.Merge(nodeLabelset)
 }

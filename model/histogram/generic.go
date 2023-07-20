@@ -102,16 +102,22 @@ type baseBucketIterator[BC BucketCount, IBC InternalBucketCount] struct {
 }
 
 func (b baseBucketIterator[BC, IBC]) At() Bucket[BC] {
+	return b.at(b.schema)
+}
+
+// at is an internal version of the exported At to enable using a different
+// schema.
+func (b baseBucketIterator[BC, IBC]) at(schema int32) Bucket[BC] {
 	bucket := Bucket[BC]{
 		Count: BC(b.currCount),
 		Index: b.currIdx,
 	}
 	if b.positive {
-		bucket.Upper = getBound(b.currIdx, b.schema)
-		bucket.Lower = getBound(b.currIdx-1, b.schema)
+		bucket.Upper = getBound(b.currIdx, schema)
+		bucket.Lower = getBound(b.currIdx-1, schema)
 	} else {
-		bucket.Lower = -getBound(b.currIdx, b.schema)
-		bucket.Upper = -getBound(b.currIdx-1, b.schema)
+		bucket.Lower = -getBound(b.currIdx, schema)
+		bucket.Upper = -getBound(b.currIdx-1, schema)
 	}
 	bucket.LowerInclusive = bucket.Lower < 0
 	bucket.UpperInclusive = bucket.Upper > 0

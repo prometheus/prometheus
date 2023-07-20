@@ -26,6 +26,7 @@ import (
 	"strings"
 
 	"github.com/alecthomas/kingpin/v2"
+	"github.com/grafana/regexp"
 )
 
 // GenerateMarkdown generates the markdown documentation for an application from
@@ -230,6 +231,7 @@ func writeSubcommands(writer io.Writer, level int, modelName string, commands []
 		if cmd.HelpLong != "" {
 			help = cmd.HelpLong
 		}
+		help = formatHyphenatedWords(help)
 		if _, err := writer.Write([]byte(fmt.Sprintf("\n\n%s `%s %s`\n\n%s\n\n", strings.Repeat("#", level+1), modelName, cmd.FullCommand, help))); err != nil {
 			return err
 		}
@@ -249,4 +251,12 @@ func writeSubcommands(writer io.Writer, level int, modelName string, commands []
 		}
 	}
 	return nil
+}
+
+func formatHyphenatedWords(input string) string {
+	hyphenRegex := regexp.MustCompile(`\B--\w+\b`)
+	replacer := func(s string) string {
+		return fmt.Sprintf("`%s`", s)
+	}
+	return hyphenRegex.ReplaceAllStringFunc(input, replacer)
 }
