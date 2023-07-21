@@ -1421,20 +1421,20 @@ func TestMemSeries_appendHistogram(t *testing.T) {
 	// Add first two samples at the very end of a chunk range and the next two
 	// on and after it.
 	// New chunk must correctly be cut at 1000.
-	ok, chunkCreated := s.appendHistogram(998, histograms[0], 0, cOpts)
-	require.True(t, ok, "append failed")
+	err, chunkCreated := s.appendHistogram(998, histograms[0], 0, cOpts)
+	require.NoError(t, err, "append failed")
 	require.True(t, chunkCreated, "first sample created chunk")
 
-	ok, chunkCreated = s.appendHistogram(999, histograms[1], 0, cOpts)
-	require.True(t, ok, "append failed")
+	err, chunkCreated = s.appendHistogram(999, histograms[1], 0, cOpts)
+	require.NoError(t, err, "append failed")
 	require.False(t, chunkCreated, "second sample should use same chunk")
 
-	ok, chunkCreated = s.appendHistogram(1000, histograms[2], 0, cOpts)
-	require.True(t, ok, "append failed")
+	err, chunkCreated = s.appendHistogram(1000, histograms[2], 0, cOpts)
+	require.NoError(t, err, "append failed")
 	require.True(t, chunkCreated, "expected new chunk on boundary")
 
-	ok, chunkCreated = s.appendHistogram(1001, histograms[3], 0, cOpts)
-	require.True(t, ok, "append failed")
+	err, chunkCreated = s.appendHistogram(1001, histograms[3], 0, cOpts)
+	require.NoError(t, err, "append failed")
 	require.False(t, chunkCreated, "second sample should use same chunk")
 
 	require.Equal(t, 1, len(s.mmappedChunks), "there should be only 1 mmapped chunk")
@@ -1443,8 +1443,8 @@ func TestMemSeries_appendHistogram(t *testing.T) {
 	require.Equal(t, int64(1000), s.headChunk.minTime, "wrong chunk range")
 	require.Equal(t, int64(1001), s.headChunk.maxTime, "wrong chunk range")
 
-	ok, chunkCreated = s.appendHistogram(1002, histogramWithOneMoreBucket, 0, cOpts)
-	require.True(t, ok, "append failed")
+	err, chunkCreated = s.appendHistogram(1002, histogramWithOneMoreBucket, 0, cOpts)
+	require.NoError(t, err, "append failed")
 	require.False(t, chunkCreated, "third sample should trigger a re-encoded chunk")
 
 	require.Equal(t, 1, len(s.mmappedChunks), "there should be only 1 mmapped chunk")

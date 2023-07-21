@@ -1020,12 +1020,12 @@ func (a *headAppender) Commit() (err error) {
 	for i, s := range a.histograms {
 		series = a.histogramSeries[i]
 		series.Lock()
-		ok, chunkCreated := series.appendHistogram(s.T, s.H, a.appendID, appendChunkOpts)
+		err, chunkCreated := series.appendHistogram(s.T, s.H, a.appendID, appendChunkOpts)
 		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
 		series.pendingCommit = false
 		series.Unlock()
 
-		if ok {
+		if err == nil {
 			if s.T < inOrderMint {
 				inOrderMint = s.T
 			}
@@ -1034,7 +1034,12 @@ func (a *headAppender) Commit() (err error) {
 			}
 		} else {
 			histogramsTotal--
-			histoOOORejected++
+			switch err {
+			case storage.ErrOutOfOrderSample:
+				histoOOORejected++
+			default:
+				// Do nothing.
+			}
 		}
 		if chunkCreated {
 			a.head.metrics.chunks.Inc()
@@ -1046,12 +1051,12 @@ func (a *headAppender) Commit() (err error) {
 	for i, s := range a.floatHistograms {
 		series = a.floatHistogramSeries[i]
 		series.Lock()
-		ok, chunkCreated := series.appendFloatHistogram(s.T, s.FH, a.appendID, appendChunkOpts)
+		err, chunkCreated := series.appendFloatHistogram(s.T, s.FH, a.appendID, appendChunkOpts)
 		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
 		series.pendingCommit = false
 		series.Unlock()
 
-		if ok {
+		if err == nil {
 			if s.T < inOrderMint {
 				inOrderMint = s.T
 			}
@@ -1060,7 +1065,12 @@ func (a *headAppender) Commit() (err error) {
 			}
 		} else {
 			histogramsTotal--
-			histoOOORejected++
+			switch err {
+			case storage.ErrOutOfOrderSample:
+				histoOOORejected++
+			default:
+				// Do nothing.
+			}
 		}
 		if chunkCreated {
 			a.head.metrics.chunks.Inc()
@@ -1155,7 +1165,7 @@ func (s *memSeries) append(t int64, v float64, appendID uint64, o chunkOpts) (sa
 
 // appendHistogram adds the histogram.
 // It is unsafe to call this concurrently with s.iterator(...) without holding the series lock.
-func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID uint64, o chunkOpts) (sampleInOrder, chunkCreated bool) {
+func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID uint64, o chunkOpts) (err error, chunkCreated bool) {
 	// Head controls the execution of recoding, so that we own the proper
 	// chunk reference afterwards. We check for Appendable from appender before
 	// appendPreprocessor because in case it ends up creating a new chunk,
@@ -1170,7 +1180,7 @@ func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID ui
 	)
 	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.EncHistogram, o)
 	if !sampleInOrder {
-		return sampleInOrder, chunkCreated
+		return storage.ErrOutOfOrderSample, chunkCreated
 	}
 	switch h.CounterResetHint {
 	case histogram.GaugeType:
@@ -1244,12 +1254,12 @@ func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID ui
 		s.txs.add(appendID)
 	}
 
-	return true, chunkCreated
+	return nil, chunkCreated
 }
 
 // appendFloatHistogram adds the float histogram.
 // It is unsafe to call this concurrently with s.iterator(...) without holding the series lock.
-func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, appendID uint64, o chunkOpts) (sampleInOrder, chunkCreated bool) {
+func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, appendID uint64, o chunkOpts) (err error, chunkCreated bool) {
 	// Head controls the execution of recoding, so that we own the proper
 	// chunk reference afterwards.  We check for Appendable from appender before
 	// appendPreprocessor because in case it ends up creating a new chunk,
@@ -1264,7 +1274,7 @@ func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, 
 	)
 	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.EncFloatHistogram, o)
 	if !sampleInOrder {
-		return sampleInOrder, chunkCreated
+		return storage.ErrOutOfOrderSample, chunkCreated
 	}
 	switch fh.CounterResetHint {
 	case histogram.GaugeType:
@@ -1338,7 +1348,7 @@ func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, 
 		s.txs.add(appendID)
 	}
 
-	return true, chunkCreated
+	return nil, chunkCreated
 }
 
 // appendPreprocessor takes care of cutting new chunks and m-mapping old chunks.
