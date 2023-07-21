@@ -1155,6 +1155,9 @@ func (s *memSeries) append(t int64, v float64, appendID uint64, o chunkOpts) (sa
 
 // appendHistogram adds the histogram.
 // It is unsafe to call this concurrently with s.iterator(...) without holding the series lock.
+// In case of recoding the existing chunk, a new chunk is allocated and the old chunk is dropped.
+// To keep the meaning of prometheus_tsdb_head_chunks and prometheus_tsdb_head_chunks_created_total
+// consistent, we return chunkCreated=false in this case.
 func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID uint64, o chunkOpts) (sampleInOrder, chunkCreated bool) {
 	// Head controls the execution of recoding, so that we own the proper
 	// chunk reference afterwards and mmap used up chunks.
@@ -1199,7 +1202,7 @@ func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID ui
 	if recoded { // The appender needed to recode the chunk.
 		c.maxTime = t
 		c.chunk = newChunk
-		return true, false // @krajorama I think technically this is lying to the caller, since we do allocate a new chunk in memory currently, but it's what the original code did
+		return true, false
 	}
 
 	// This is a brand new chunk, switch out the head chunk (based on cutNewHeadChunk).
@@ -1215,6 +1218,9 @@ func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID ui
 
 // appendFloatHistogram adds the float histogram.
 // It is unsafe to call this concurrently with s.iterator(...) without holding the series lock.
+// In case of recoding the existing chunk, a new chunk is allocated and the old chunk is dropped.
+// To keep the meaning of prometheus_tsdb_head_chunks and prometheus_tsdb_head_chunks_created_total
+// consistent, we return chunkCreated=false in this case.
 func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, appendID uint64, o chunkOpts) (sampleInOrder, chunkCreated bool) {
 	// Head controls the execution of recoding, so that we own the proper
 	// chunk reference afterwards and mmap used up chunks.
@@ -1259,7 +1265,7 @@ func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, 
 	if recoded { // The appender needed to recode the chunk.
 		c.maxTime = t
 		c.chunk = newChunk
-		return true, false // @krajorama I think technically this is lying to the caller, since we do allocate a new chunk in memory currently, but it's what the original code did
+		return true, false
 	}
 
 	// This is a brand new chunk, switch out the head chunk (based on cutNewHeadChunk).
