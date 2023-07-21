@@ -39,6 +39,8 @@ var (
 // Action is the action to be performed on relabeling.
 type Action string
 
+type ActionFun func(lb *labels.Builder, cfg *Config, val string) (bool, bool)
+
 const (
 	// Replace performs a regex replacement.
 	Replace Action = "replace"
@@ -64,7 +66,7 @@ const (
 	Uppercase Action = "uppercase"
 )
 
-var CustomerActions map[Action]func(lb *labels.Builder, cfg *Config, val string) (bool, bool) = make(map[Action]func(lb *labels.Builder, cfg *Config, val string) (bool, bool))
+var CustomerActions = make(map[Action]ActionFun)
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (a *Action) UnmarshalYAML(unmarshal func(interface{}) error) error {
