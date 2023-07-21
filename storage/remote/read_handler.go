@@ -16,12 +16,12 @@ package remote
 import (
 	"context"
 	"net/http"
-	"sort"
 	"sync"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
@@ -92,8 +92,8 @@ func (h *readHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Value: value,
 		})
 	}
-	sort.Slice(sortedExternalLabels, func(i, j int) bool {
-		return sortedExternalLabels[i].Name < sortedExternalLabels[j].Name
+	slices.SortFunc(sortedExternalLabels, func(a, b prompb.Label) bool {
+		return a.Name < b.Name
 	})
 
 	responseType, err := NegotiateResponseType(req.AcceptedResponseTypes)

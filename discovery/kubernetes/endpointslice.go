@@ -252,7 +252,6 @@ func endpointSliceSourceFromNamespaceAndName(namespace, name string) string {
 }
 
 const (
-	endpointSliceNameLabel                          = metaLabelPrefix + "endpointslice_name"
 	endpointSliceAddressTypeLabel                   = metaLabelPrefix + "endpointslice_address_type"
 	endpointSlicePortNameLabel                      = metaLabelPrefix + "endpointslice_port_name"
 	endpointSlicePortProtocolLabel                  = metaLabelPrefix + "endpointslice_port_protocol"
@@ -274,9 +273,11 @@ func (e *EndpointSlice) buildEndpointSlice(eps endpointSliceAdaptor) *targetgrou
 	}
 	tg.Labels = model.LabelSet{
 		namespaceLabel:                lv(eps.namespace()),
-		endpointSliceNameLabel:        lv(eps.name()),
 		endpointSliceAddressTypeLabel: lv(eps.addressType()),
 	}
+
+	addObjectMetaLabels(tg.Labels, eps.getObjectMeta(), RoleEndpointSlice)
+
 	e.addServiceLabels(eps, tg)
 
 	type podEntry struct {

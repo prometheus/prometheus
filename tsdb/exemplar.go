@@ -15,11 +15,11 @@ package tsdb
 
 import (
 	"context"
-	"sort"
 	"sync"
 	"unicode/utf8"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -185,8 +185,8 @@ func (ce *CircularExemplarStorage) Select(start, end int64, matchers ...[]*label
 		}
 	}
 
-	sort.Slice(ret, func(i, j int) bool {
-		return labels.Compare(ret[i].SeriesLabels, ret[j].SeriesLabels) < 0
+	slices.SortFunc(ret, func(a, b exemplar.QueryResult) bool {
+		return labels.Compare(a.SeriesLabels, b.SeriesLabels) < 0
 	})
 
 	return ret, nil
@@ -365,8 +365,8 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 	if prev := ce.exemplars[ce.nextIndex]; prev == nil {
 		ce.exemplars[ce.nextIndex] = &circularBufferEntry{}
 	} else {
-		// There exists exemplar already on this ce.nextIndex entry, drop it, to make place
-		// for others.
+		// There exists an exemplar already on this ce.nextIndex entry,
+		// drop it, to make place for others.
 		var buf [1024]byte
 		prevLabels := prev.ref.seriesLabels.Bytes(buf[:])
 		if prev.next == noExemplar {

@@ -1226,7 +1226,7 @@ func MigrateWAL(logger log.Logger, dir string) (err error) {
 	if err := os.RemoveAll(tmpdir); err != nil {
 		return errors.Wrap(err, "cleanup replacement dir")
 	}
-	repl, err := wlog.New(logger, nil, tmpdir, false)
+	repl, err := wlog.New(logger, nil, tmpdir, wlog.CompressionNone)
 	if err != nil {
 		return errors.Wrap(err, "open new WAL")
 	}

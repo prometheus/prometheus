@@ -58,7 +58,21 @@ func NewListSeries(lset labels.Labels, s []tsdbutil.Sample) *SeriesEntry {
 
 // NewListChunkSeriesFromSamples returns chunk series entry that allows to iterate over provided samples.
 // NOTE: It uses inefficient chunks encoding implementation, not caring about chunk size.
+// Use only for testing.
 func NewListChunkSeriesFromSamples(lset labels.Labels, samples ...[]tsdbutil.Sample) *ChunkSeriesEntry {
+	chksFromSamples := make([]chunks.Meta, 0, len(samples))
+	for _, s := range samples {
+		cfs, err := tsdbutil.ChunkFromSamples(s)
+		if err != nil {
+			return &ChunkSeriesEntry{
+				Lset: lset,
+				ChunkIteratorFn: func(it chunks.Iterator) chunks.Iterator {
+					return errChunksIterator{err: err}
+				},
+			}
+		}
+		chksFromSamples = append(chksFromSamples, cfs)
+	}
 	return &ChunkSeriesEntry{
 		Lset: lset,
 		ChunkIteratorFn: func(it chunks.Iterator) chunks.Iterator {
@@ -69,9 +83,7 @@ func NewListChunkSeriesFromSamples(lset labels.Labels, samples ...[]tsdbutil.Sam
 			} else {
 				chks = make([]chunks.Meta, 0, len(samples))
 			}
-			for _, s := range samples {
-				chks = append(chks, tsdbutil.ChunkFromSamples(s))
-			}
+			chks = append(chks, chksFromSamples...)
 			if existing {
 				lcsi.Reset(chks...)
 				return lcsi

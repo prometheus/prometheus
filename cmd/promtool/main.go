@@ -58,6 +58,7 @@ import (
 	"github.com/prometheus/prometheus/notifier"
 	_ "github.com/prometheus/prometheus/plugins" // Register plugins.
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/util/documentcli"
 )
@@ -90,6 +91,8 @@ func main() {
 	app.HelpFlag.Short('h')
 
 	checkCmd := app.Command("check", "Check the resources for validity.")
+
+	experimental := app.Flag("experimental", "Enable experimental commands.").Bool()
 
 	sdCheckCmd := checkCmd.Command("service-discovery", "Perform service discovery for the given job name and report the results, including relabeling.")
 	sdConfigFile := sdCheckCmd.Arg("config-file", "The prometheus config file.").Required().ExistingFile()
@@ -245,6 +248,22 @@ func main() {
 		"A list of one or more files containing recording rules to be backfilled. All recording rules listed in the files will be backfilled. Alerting rules are not evaluated.",
 	).Required().ExistingFiles()
 
+	promQLCmd := app.Command("promql", "PromQL formatting and editing. Requires the --experimental flag.")
+
+	promQLFormatCmd := promQLCmd.Command("format", "Format PromQL query to pretty printed form.")
+	promQLFormatQuery := promQLFormatCmd.Arg("query", "PromQL query.").Required().String()
+
+	promQLLabelsCmd := promQLCmd.Command("label-matchers", "Edit label matchers contained within an existing PromQL query.")
+	promQLLabelsSetCmd := promQLLabelsCmd.Command("set", "Set a label matcher in the query.")
+	promQLLabelsSetType := promQLLabelsSetCmd.Flag("type", "Type of the label matcher to set.").Short('t').Default("=").Enum("=", "!=", "=~", "!~")
+	promQLLabelsSetQuery := promQLLabelsSetCmd.Arg("query", "PromQL query.").Required().String()
+	promQLLabelsSetName := promQLLabelsSetCmd.Arg("name", "Name of the label matcher to set.").Required().String()
+	promQLLabelsSetValue := promQLLabelsSetCmd.Arg("value", "Value of the label matcher to set.").Required().String()
+
+	promQLLabelsDeleteCmd := promQLLabelsCmd.Command("delete", "Delete a label from the query.")
+	promQLLabelsDeleteQuery := promQLLabelsDeleteCmd.Arg("query", "PromQL query.").Required().String()
+	promQLLabelsDeleteName := promQLLabelsDeleteCmd.Arg("name", "Name of the label to delete.").Required().String()
+
 	featureList := app.Flag("enable-feature", "Comma separated feature names to enable (only PromQL related and no-default-scrape-port). See https://prometheus.io/docs/prometheus/latest/feature_flags/ for the options and more details.").Default("").Strings()
 
 	documentationCmd := app.Command("write-documentation", "Generate command line documentation. Internal use.").Hidden()
@@ -364,8 +383,28 @@ func main() {
 
 	case importRulesCmd.FullCommand():
 		os.Exit(checkErr(importRules(serverURL, httpRoundTripper, *importRulesStart, *importRulesEnd, *importRulesOutputDir, *importRulesEvalInterval, *maxBlockDuration, *importRulesFiles...)))
+
 	case documentationCmd.FullCommand():
 		os.Exit(checkErr(documentcli.GenerateMarkdown(app.Model(), os.Stdout)))
+
+	case promQLFormatCmd.FullCommand():
+		checkExperimental(*experimental)
+		os.Exit(checkErr(formatPromQL(*promQLFormatQuery)))
+
+	case promQLLabelsSetCmd.FullCommand():
+		checkExperimental(*experimental)
+		os.Exit(checkErr(labelsSetPromQL(*promQLLabelsSetQuery, *promQLLabelsSetType, *promQLLabelsSetName, *promQLLabelsSetValue)))
+
+	case promQLLabelsDeleteCmd.FullCommand():
+		checkExperimental(*experimental)
+		os.Exit(checkErr(labelsDeletePromQL(*promQLLabelsDeleteQuery, *promQLLabelsDeleteName)))
+	}
+}
+
+func checkExperimental(f bool) {
+	if !f {
+		fmt.Fprintln(os.Stderr, "This command is experimental and requires the --experimental flag to be set.")
+		os.Exit(1)
 	}
 }
 
@@ -1373,5 +1412,81 @@ func checkTargetGroupsForScrapeConfig(targetGroups []*targetgroup.Group, scfg *c
 		}
 	}
 
+	return nil
+}
+
+func formatPromQL(query string) error {
+	expr, err := parser.ParseExpr(query)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println(expr.Pretty(0))
+	return nil
+}
+
+func labelsSetPromQL(query, labelMatchType, name, value string) error {
+	expr, err := parser.ParseExpr(query)
+	if err != nil {
+		return err
+	}
+
+	var matchType labels.MatchType
+	switch labelMatchType {
+	case parser.ItemType(parser.EQL).String():
+		matchType = labels.MatchEqual
+	case parser.ItemType(parser.NEQ).String():
+		matchType = labels.MatchNotEqual
+	case parser.ItemType(parser.EQL_REGEX).String():
+		matchType = labels.MatchRegexp
+	case parser.ItemType(parser.NEQ_REGEX).String():
+		matchType = labels.MatchNotRegexp
+	default:
+		return fmt.Errorf("invalid label match type: %s", labelMatchType)
+	}
+
+	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
+		if n, ok := node.(*parser.VectorSelector); ok {
+			var found bool
+			for i, l := range n.LabelMatchers {
+				if l.Name == name {
+					n.LabelMatchers[i].Type = matchType
+					n.LabelMatchers[i].Value = value
+					found = true
+				}
+			}
+			if !found {
+				n.LabelMatchers = append(n.LabelMatchers, &labels.Matcher{
+					Type:  matchType,
+					Name:  name,
+					Value: value,
+				})
+			}
+		}
+		return nil
+	})
+
+	fmt.Println(expr.Pretty(0))
+	return nil
+}
+
+func labelsDeletePromQL(query, name string) error {
+	expr, err := parser.ParseExpr(query)
+	if err != nil {
+		return err
+	}
+
+	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
+		if n, ok := node.(*parser.VectorSelector); ok {
+			for i, l := range n.LabelMatchers {
+				if l.Name == name {
+					n.LabelMatchers = append(n.LabelMatchers[:i], n.LabelMatchers[i+1:]...)
+				}
+			}
+		}
+		return nil
+	})
+
+	fmt.Println(expr.Pretty(0))
 	return nil
 }
