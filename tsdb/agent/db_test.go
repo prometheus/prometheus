@@ -333,8 +333,8 @@ func TestRollback(t *testing.T) {
 		}
 	}
 
-	// Check that the rollback ensured nothing got stored.
-	require.Equal(t, 0, walSeriesCount, "series should not have been written to WAL")
+	// Check that only series get stored after calling Rollback.
+	require.Equal(t, numSeries*3, walSeriesCount, "series should have been written to WAL")
 	require.Equal(t, 0, walSamplesCount, "samples should not have been written to WAL")
 	require.Equal(t, 0, walExemplarsCount, "exemplars should not have been written to WAL")
 	require.Equal(t, 0, walHistogramCount, "histograms should not have been written to WAL")
