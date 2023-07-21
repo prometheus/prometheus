@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"math"
 	"net/url"
-	"sort"
 	"sync"
 	"time"
 
@@ -30,6 +29,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
@@ -490,10 +490,9 @@ func (g *Group) AlertingRules() []*AlertingRule {
 			alerts = append(alerts, alertingRule)
 		}
 	}
-	sort.Slice(alerts, func(i, j int) bool {
-		return alerts[i].State() > alerts[j].State() ||
-			(alerts[i].State() == alerts[j].State() &&
-				alerts[i].Name() < alerts[j].Name())
+	slices.SortFunc(alerts, func(a, b *AlertingRule) bool {
+		return a.State() > b.State() ||
+			(a.State() == b.State() && a.Name() < b.Name())
 	})
 	return alerts
 }
@@ -561,11 +560,26 @@ func (g *Group) setLastEvalTimestamp(ts time.Time) {
 func (g *Group) EvalTimestamp(startTime int64) time.Time {
 	var (
 		offset = int64(g.hash() % uint64(g.interval))
+
+		// This group's evaluation times differ from the perfect time intervals by `offset` nanoseconds.
+		// But we can only use `% interval` to align with the interval. And `% interval` will always
+		// align with the perfect time intervals, instead of this group's. Because of this we add
+		// `offset` _after_ aligning with the perfect time interval.
+		//
+		// There can be cases where adding `offset` to the perfect evaluation time can yield a
+		// timestamp in the future, which is not what EvalTimestamp should do.
+		// So we subtract one `offset` to make sure that `now - (now % interval) + offset` gives an
+		// evaluation time in the past.
 		adjNow = startTime - offset
-		base   = adjNow - (adjNow % int64(g.interval))
+
+		// Adjust to perfect evaluation intervals.
+		base = adjNow - (adjNow % int64(g.interval))
+
+		// Add one offset to randomize the evaluation times of this group.
+		next = base + offset
 	)
 
-	return time.Unix(0, base+offset).UTC()
+	return time.Unix(0, next).UTC()
 }
 
 func nameAndLabels(rule Rule) string {
@@ -1189,11 +1203,11 @@ func (m *Manager) RuleGroups() []*Group {
 		rgs = append(rgs, g)
 	}
 
-	sort.Slice(rgs, func(i, j int) bool {
-		if rgs[i].file != rgs[j].file {
-			return rgs[i].file < rgs[j].file
+	slices.SortFunc(rgs, func(a, b *Group) bool {
+		if a.file != b.file {
+			return a.file < b.file
 		}
-		return rgs[i].name < rgs[j].name
+		return a.name < b.name
 	})
 
 	return rgs

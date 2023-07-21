@@ -1119,7 +1119,7 @@ func (h *Head) ChunkSnapshot() (*ChunkSnapshotStats, error) {
 	if err := os.MkdirAll(cpdirtmp, 0o777); err != nil {
 		return stats, errors.Wrap(err, "create chunk snapshot dir")
 	}
-	cp, err := wlog.New(nil, nil, cpdirtmp, h.wal.CompressionEnabled())
+	cp, err := wlog.New(nil, nil, cpdirtmp, h.wal.CompressionType())
 	if err != nil {
 		return stats, errors.Wrap(err, "open chunk snapshot")
 	}

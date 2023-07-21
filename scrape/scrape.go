@@ -23,7 +23,6 @@ import (
 	"math"
 	"net/http"
 	"reflect"
-	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -35,6 +34,7 @@ import (
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -720,8 +720,8 @@ func mutateSampleLabels(lset labels.Labels, target *Target, honor bool, rc []*re
 }
 
 func resolveConflictingExposedLabels(lb *labels.Builder, conflictingExposedLabels []labels.Label) {
-	sort.SliceStable(conflictingExposedLabels, func(i, j int) bool {
-		return len(conflictingExposedLabels[i].Name) < len(conflictingExposedLabels[j].Name)
+	slices.SortStableFunc(conflictingExposedLabels, func(a, b labels.Label) bool {
+		return len(a.Name) < len(b.Name)
 	})
 
 	for _, l := range conflictingExposedLabels {
@@ -1685,7 +1685,7 @@ loop:
 		// number of samples remaining after relabeling.
 		added++
 
-		if hasExemplar := p.Exemplar(&e); hasExemplar {
+		for hasExemplar := p.Exemplar(&e); hasExemplar; hasExemplar = p.Exemplar(&e) {
 			if !e.HasTs {
 				e.Ts = t
 			}

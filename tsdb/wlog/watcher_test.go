@@ -122,8 +122,8 @@ func TestTailSamples(t *testing.T) {
 	const samplesCount = 250
 	const exemplarsCount = 25
 	const histogramsCount = 50
-	for _, compress := range []bool{false, true} {
-		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
+	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
+		t.Run(fmt.Sprintf("compress=%s", compress), func(t *testing.T) {
 			now := time.Now()
 
 			dir := t.TempDir()
@@ -246,8 +246,8 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 	const seriesCount = 10
 	const samplesCount = 250
 
-	for _, compress := range []bool{false, true} {
-		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
+	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
+		t.Run(fmt.Sprintf("compress=%s", compress), func(t *testing.T) {
 			dir := t.TempDir()
 			wdir := path.Join(dir, "wal")
 			err := os.Mkdir(wdir, 0o777)
@@ -314,8 +314,8 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 	const seriesCount = 10
 	const samplesCount = 250
 
-	for _, compress := range []bool{false, true} {
-		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
+	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
+		t.Run(fmt.Sprintf("compress=%s", compress), func(t *testing.T) {
 			dir := t.TempDir()
 
 			wdir := path.Join(dir, "wal")
@@ -402,8 +402,8 @@ func TestReadCheckpoint(t *testing.T) {
 	const seriesCount = 10
 	const samplesCount = 250
 
-	for _, compress := range []bool{false, true} {
-		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
+	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
+		t.Run(fmt.Sprintf("compress=%s", compress), func(t *testing.T) {
 			dir := t.TempDir()
 
 			wdir := path.Join(dir, "wal")
@@ -475,8 +475,8 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 	const seriesCount = 20
 	const samplesCount = 300
 
-	for _, compress := range []bool{false, true} {
-		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
+	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
+		t.Run(fmt.Sprintf("compress=%s", compress), func(t *testing.T) {
 			dir := t.TempDir()
 
 			wdir := path.Join(dir, "wal")
@@ -546,15 +546,15 @@ func TestCheckpointSeriesReset(t *testing.T) {
 	const seriesCount = 20
 	const samplesCount = 350
 	testCases := []struct {
-		compress bool
+		compress CompressionType
 		segments int
 	}{
-		{compress: false, segments: 14},
-		{compress: true, segments: 13},
+		{compress: CompressionNone, segments: 14},
+		{compress: CompressionSnappy, segments: 13},
 	}
 
 	for _, tc := range testCases {
-		t.Run(fmt.Sprintf("compress=%t", tc.compress), func(t *testing.T) {
+		t.Run(fmt.Sprintf("compress=%s", tc.compress), func(t *testing.T) {
 			dir := t.TempDir()
 
 			wdir := path.Join(dir, "wal")
