@@ -64,6 +64,8 @@ const (
 	Uppercase Action = "uppercase"
 )
 
+var CustomerActions map[Action]func(lb *labels.Builder, cfg *Config, val string) (bool, bool) = make(map[Action]func(lb *labels.Builder, cfg *Config, val string) (bool, bool))
+
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (a *Action) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	var s string
@@ -75,6 +77,12 @@ func (a *Action) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		*a = act
 		return nil
 	}
+
+	if act := Action(strings.ToLower(s)); CustomerActions[act] != nil {
+		*a = act
+		return nil
+	}
+
 	return fmt.Errorf("unknown relabel action %q", s)
 }
 
@@ -300,7 +308,13 @@ func relabel(cfg *Config, lb *labels.Builder) (keep bool) {
 			}
 		})
 	default:
-		panic(fmt.Errorf("relabel: unknown relabel action type %q", cfg.Action))
+		if caf := CustomerActions[cfg.Action]; caf != nil {
+			if needReturn, result := caf(lb, cfg, val); needReturn {
+				return result
+			}
+		} else {
+			panic(fmt.Errorf("relabel: unknown relabel action type %q", cfg.Action))
+		}
 	}
 
 	return true
