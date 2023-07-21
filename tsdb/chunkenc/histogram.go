@@ -87,12 +87,14 @@ const (
 	// UnknownCounterReset means we cannot say if this chunk was created due to a counter reset or not.
 	// An explicit counter reset detection needs to happen during query time.
 	UnknownCounterReset CounterResetHeader = 0b00000000
+	// CounterResetHeaderMask is a mask to get the counter reset bits.
+	CounterResetHeaderMask byte = 0b11000000
 )
 
 // GetCounterResetHeader returns the info about the first 2 bits of the chunk
 // header.
 func (c *HistogramChunk) GetCounterResetHeader() CounterResetHeader {
-	return CounterResetHeader(c.Bytes()[2] & 0b11000000)
+	return CounterResetHeader(c.Bytes()[2] & CounterResetHeaderMask)
 }
 
 // Compact implements the Chunk interface.
@@ -162,7 +164,7 @@ func newHistogramIterator(b []byte) *histogramIterator {
 	// The first 3 bytes contain chunk headers.
 	// We skip that for actual samples.
 	_, _ = it.br.readBits(24)
-	it.counterResetHeader = CounterResetHeader(b[2] & 0b11000000)
+	it.counterResetHeader = CounterResetHeader(b[2] & CounterResetHeaderMask)
 	return it
 }
 
@@ -209,11 +211,11 @@ type HistogramAppender struct {
 }
 
 func (a *HistogramAppender) GetCounterResetHeader() CounterResetHeader {
-	return CounterResetHeader(a.b.bytes()[2] & 0b11000000)
+	return CounterResetHeader(a.b.bytes()[2] & CounterResetHeaderMask)
 }
 
 func (a *HistogramAppender) setCounterResetHeader(cr CounterResetHeader) {
-	a.b.bytes()[2] = (a.b.bytes()[2] & 0b00111111) | (byte(cr) & 0b11000000)
+	a.b.bytes()[2] = (a.b.bytes()[2] & (^CounterResetHeaderMask)) | (byte(cr) & CounterResetHeaderMask)
 }
 
 func (a *HistogramAppender) NumSamples() int {
@@ -572,7 +574,7 @@ func (a *HistogramAppender) recode(
 		happ.appendHistogram(tOld, hOld)
 	}
 
-	happ.setCounterResetHeader(CounterResetHeader(byts[2] & 0b11000000))
+	happ.setCounterResetHeader(CounterResetHeader(byts[2] & CounterResetHeaderMask))
 	return hc, app
 }
 
@@ -811,7 +813,7 @@ func (it *histogramIterator) Reset(b []byte) {
 	it.numTotal = binary.BigEndian.Uint16(b)
 	it.numRead = 0
 
-	it.counterResetHeader = CounterResetHeader(b[2] & 0b11000000)
+	it.counterResetHeader = CounterResetHeader(b[2] & CounterResetHeaderMask)
 
 	it.t, it.cnt, it.zCnt = 0, 0, 0
 	it.tDelta, it.cntDelta, it.zCntDelta = 0, 0, 0

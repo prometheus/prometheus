@@ -84,7 +84,7 @@ func (c *FloatHistogramChunk) Layout() (
 // GetCounterResetHeader returns the info about the first 2 bits of the chunk
 // header.
 func (c *FloatHistogramChunk) GetCounterResetHeader() CounterResetHeader {
-	return CounterResetHeader(c.Bytes()[2] & 0b11000000)
+	return CounterResetHeader(c.Bytes()[2] & CounterResetHeaderMask)
 }
 
 // Compact implements the Chunk interface.
@@ -170,7 +170,7 @@ func newFloatHistogramIterator(b []byte) *floatHistogramIterator {
 	// The first 3 bytes contain chunk headers.
 	// We skip that for actual samples.
 	_, _ = it.br.readBits(24)
-	it.counterResetHeader = CounterResetHeader(b[2] & 0b11000000)
+	it.counterResetHeader = CounterResetHeader(b[2] & CounterResetHeaderMask)
 	return it
 }
 
@@ -194,11 +194,11 @@ type FloatHistogramAppender struct {
 }
 
 func (a *FloatHistogramAppender) GetCounterResetHeader() CounterResetHeader {
-	return CounterResetHeader(a.b.bytes()[2] & 0b11000000)
+	return CounterResetHeader(a.b.bytes()[2] & CounterResetHeaderMask)
 }
 
 func (a *FloatHistogramAppender) setCounterResetHeader(cr CounterResetHeader) {
-	a.b.bytes()[2] = (a.b.bytes()[2] & 0b00111111) | (byte(cr) & 0b11000000)
+	a.b.bytes()[2] = (a.b.bytes()[2] & (^CounterResetHeaderMask)) | (byte(cr) & CounterResetHeaderMask)
 }
 
 func (a *FloatHistogramAppender) NumSamples() int {
@@ -544,7 +544,7 @@ func (a *FloatHistogramAppender) recode(
 		happ.appendFloatHistogram(tOld, hOld)
 	}
 
-	happ.setCounterResetHeader(CounterResetHeader(byts[2] & 0b11000000))
+	happ.setCounterResetHeader(CounterResetHeader(byts[2] & CounterResetHeaderMask))
 	return hc, app
 }
 
@@ -764,7 +764,7 @@ func (it *floatHistogramIterator) Reset(b []byte) {
 	it.numTotal = binary.BigEndian.Uint16(b)
 	it.numRead = 0
 
-	it.counterResetHeader = CounterResetHeader(b[2] & 0b11000000)
+	it.counterResetHeader = CounterResetHeader(b[2] & CounterResetHeaderMask)
 
 	it.t, it.tDelta = 0, 0
 	it.cnt, it.zCnt, it.sum = xorValue{}, xorValue{}, xorValue{}
