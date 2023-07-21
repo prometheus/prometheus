@@ -620,14 +620,7 @@ func (a *HistogramAppender) AppendHistogram(prev *HistogramAppender, t int64, h 
 			}
 		} else {
 			// Honor the explicit counter reset hint.
-			switch h.CounterResetHint {
-			case histogram.CounterReset:
-				a.setCounterResetHeader(CounterReset)
-			case histogram.NotCounterReset:
-				a.setCounterResetHeader(NotCounterReset)
-			default:
-				a.setCounterResetHeader(UnknownCounterReset)
-			}
+			a.setCounterResetHeader(CounterResetHeader(h.CounterResetHint))
 		}
 		return nil, false, a, nil
 	}
@@ -708,6 +701,19 @@ func (a *HistogramAppender) AppendHistogram(prev *HistogramAppender, t int64, h 
 
 	a.appendHistogram(t, h)
 	return nil, false, a, nil
+}
+
+func CounterResetHintToHeader(hint histogram.CounterResetHint) CounterResetHeader {
+	switch hint {
+	case histogram.CounterReset:
+		return CounterReset
+	case histogram.NotCounterReset:
+		return NotCounterReset
+	case histogram.GaugeType:
+		return GaugeType
+	default:
+		return UnknownCounterReset
+	}
 }
 
 type histogramIterator struct {

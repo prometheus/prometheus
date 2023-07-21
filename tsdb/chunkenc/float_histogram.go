@@ -586,14 +586,7 @@ func (a *FloatHistogramAppender) AppendFloatHistogram(prev *FloatHistogramAppend
 			}
 		} else {
 			// Honor the explicit counter reset hint.
-			switch h.CounterResetHint {
-			case histogram.CounterReset:
-				a.setCounterResetHeader(CounterReset)
-			case histogram.NotCounterReset:
-				a.setCounterResetHeader(NotCounterReset)
-			default:
-				a.setCounterResetHeader(UnknownCounterReset)
-			}
+			a.setCounterResetHeader(CounterResetHeader(h.CounterResetHint))
 		}
 		return nil, false, a, nil
 	}
