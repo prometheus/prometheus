@@ -1438,7 +1438,11 @@ func (r *Reader) lookupSymbol(o uint32) (string, error) {
 	if s, ok := r.nameSymbols[o]; ok {
 		return s, nil
 	}
-	return r.symbols.Lookup(o)
+	s, err := r.symbols.Lookup(o)
+	if err == nil {
+		r.nameSymbols[o] = s
+	}
+	return s, err
 }
 
 // Symbols returns an iterator over the symbols that exist within the index.
