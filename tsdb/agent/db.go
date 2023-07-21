@@ -985,11 +985,32 @@ func (a *appender) UpdateMetadata(storage.SeriesRef, labels.Labels, metadata.Met
 
 // Commit submits the collected samples and purges the batch.
 func (a *appender) Commit() error {
+	if err := a.log(); err != nil {
+		return err
+	}
+
+	a.pendingSeries = a.pendingSeries[:0]
+	a.pendingSamples = a.pendingSamples[:0]
+	a.pendingHistograms = a.pendingHistograms[:0]
+	a.pendingFloatHistograms = a.pendingFloatHistograms[:0]
+	a.pendingExamplars = a.pendingExamplars[:0]
+	a.sampleSeries = a.sampleSeries[:0]
+	a.histogramSeries = a.histogramSeries[:0]
+	a.floatHistogramSeries = a.floatHistogramSeries[:0]
+
+	a.appenderPool.Put(a)
+	return nil
+}
+
+func (a *appender) log() error {
 	a.mtx.RLock()
 	defer a.mtx.RUnlock()
 
 	var encoder record.Encoder
 	buf := a.bufPool.Get().([]byte)
+	defer func() {
+		a.bufPool.Put(buf) //nolint:staticcheck
+	}()
 
 	if len(a.pendingSeries) > 0 {
 		buf = encoder.Series(a.pendingSeries, buf)
@@ -1051,13 +1072,17 @@ func (a *appender) Commit() error {
 		}
 	}
 
-	//nolint:staticcheck
-	a.bufPool.Put(buf)
-	return a.Rollback()
+	return nil
 }
 
 func (a *appender) Rollback() error {
-	a.pendingSeries = a.pendingSeries[:0]
+	defer func() {
+		// Clear remaining data after log is called at the bottom.
+		a.pendingSeries = a.pendingSeries[:0]
+
+		a.appenderPool.Put(a)
+	}()
+
 	a.pendingSamples = a.pendingSamples[:0]
 	a.pendingHistograms = a.pendingHistograms[:0]
 	a.pendingFloatHistograms = a.pendingFloatHistograms[:0]
@@ -1065,6 +1090,9 @@ func (a *appender) Rollback() error {
 	a.sampleSeries = a.sampleSeries[:0]
 	a.histogramSeries = a.histogramSeries[:0]
 	a.floatHistogramSeries = a.floatHistogramSeries[:0]
-	a.appenderPool.Put(a)
-	return nil
+
+	// Series are created in-memory regardless of rollback. This means we must
+	// log them to the WAL, otherwise subsequent commits may reference a series
+	// which was never written to the WAL.
+	return a.log()
 }
