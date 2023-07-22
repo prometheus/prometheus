@@ -989,19 +989,12 @@ func (a *appender) Commit() error {
 		return err
 	}
 
-	a.pendingSeries = a.pendingSeries[:0]
-	a.pendingSamples = a.pendingSamples[:0]
-	a.pendingHistograms = a.pendingHistograms[:0]
-	a.pendingFloatHistograms = a.pendingFloatHistograms[:0]
-	a.pendingExamplars = a.pendingExamplars[:0]
-	a.sampleSeries = a.sampleSeries[:0]
-	a.histogramSeries = a.histogramSeries[:0]
-	a.floatHistogramSeries = a.floatHistogramSeries[:0]
-
+	a.clearData()
 	a.appenderPool.Put(a)
 	return nil
 }
 
+// log logs all pending data to the WAL.
 func (a *appender) log() error {
 	a.mtx.RLock()
 	defer a.mtx.RUnlock()
@@ -1075,14 +1068,9 @@ func (a *appender) log() error {
 	return nil
 }
 
-func (a *appender) Rollback() error {
-	defer func() {
-		// Clear remaining data after log is called at the bottom.
-		a.pendingSeries = a.pendingSeries[:0]
-
-		a.appenderPool.Put(a)
-	}()
-
+// clearData clears all pending data.
+func (a *appender) clearData() {
+	a.pendingSeries = a.pendingSeries[:0]
 	a.pendingSamples = a.pendingSamples[:0]
 	a.pendingHistograms = a.pendingHistograms[:0]
 	a.pendingFloatHistograms = a.pendingFloatHistograms[:0]
@@ -1090,9 +1078,39 @@ func (a *appender) Rollback() error {
 	a.sampleSeries = a.sampleSeries[:0]
 	a.histogramSeries = a.histogramSeries[:0]
 	a.floatHistogramSeries = a.floatHistogramSeries[:0]
+}
 
+func (a *appender) Rollback() error {
 	// Series are created in-memory regardless of rollback. This means we must
 	// log them to the WAL, otherwise subsequent commits may reference a series
 	// which was never written to the WAL.
-	return a.log()
+	if err := a.logSeries(); err != nil {
+		return err
+	}
+
+	a.clearData()
+	a.appenderPool.Put(a)
+	return nil
+}
+
+// logSeries logs only pending series records to the WAL.
+func (a *appender) logSeries() error {
+	a.mtx.RLock()
+	defer a.mtx.RUnlock()
+
+	var encoder record.Encoder
+	buf := a.bufPool.Get().([]byte)
+	defer func() {
+		a.bufPool.Put(buf) //nolint:staticcheck
+	}()
+
+	if len(a.pendingSeries) > 0 {
+		buf = encoder.Series(a.pendingSeries, buf)
+		if err := a.wal.Log(buf); err != nil {
+			return err
+		}
+		buf = buf[:0]
+	}
+
+	return nil
 }
