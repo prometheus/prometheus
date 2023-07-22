@@ -383,13 +383,11 @@ func relabelAlerts(relabelConfigs []*relabel.Config, externalLabels labels.Label
 
 	for _, a := range alerts {
 		lb.Reset(a.Labels)
-		if externalLabels.Len() > 0 {
-			externalLabels.Range(func(l labels.Label) {
-				if a.Labels.Get(l.Name) == "" {
-					lb.Set(l.Name, l.Value)
-				}
-			})
-		}
+		externalLabels.Range(func(l labels.Label) {
+			if a.Labels.Get(l.Name) == "" {
+				lb.Set(l.Name, l.Value)
+			}
+		})
 
 		keep := relabel.ProcessBuilder(lb, relabelConfigs...)
 		if !keep {
