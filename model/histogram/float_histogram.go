@@ -93,26 +93,8 @@ func (h *FloatHistogram) CopyToSchema(targetSchema int32) *FloatHistogram {
 		Sum:           h.Sum,
 	}
 
-	// TODO(beorn7): This is a straight-forward implementation using merging
-	// iterators for the original buckets and then adding one merged bucket
-	// after another to the newly created FloatHistogram. It's well possible
-	// that a more involved implementation performs much better, which we
-	// could do if this code path turns out to be performance-critical.
-	var iInSpan, index int32
-	for iSpan, iBucket, it := -1, -1, h.floatBucketIterator(true, 0, targetSchema); it.Next(); {
-		b := it.At()
-		c.PositiveSpans, c.PositiveBuckets, iSpan, iBucket, iInSpan = addBucket(
-			b, c.PositiveSpans, c.PositiveBuckets, iSpan, iBucket, iInSpan, index,
-		)
-		index = b.Index
-	}
-	for iSpan, iBucket, it := -1, -1, h.floatBucketIterator(false, 0, targetSchema); it.Next(); {
-		b := it.At()
-		c.NegativeSpans, c.NegativeBuckets, iSpan, iBucket, iInSpan = addBucket(
-			b, c.NegativeSpans, c.NegativeBuckets, iSpan, iBucket, iInSpan, index,
-		)
-		index = b.Index
-	}
+	c.PositiveSpans, c.PositiveBuckets = convertSpanToSchema(h.PositiveSpans, h.PositiveBuckets, h.Schema, targetSchema)
+	c.NegativeSpans, c.NegativeBuckets = convertSpanToSchema(h.NegativeSpans, h.NegativeBuckets, h.Schema, targetSchema)
 
 	return &c
 }
@@ -981,4 +963,73 @@ func (i *allFloatBucketIterator) Next() bool {
 
 func (i *allFloatBucketIterator) At() Bucket[float64] {
 	return i.currBucket
+}
+
+func targetIdx(idx, schema, targetSchema int32) int32 {
+	return ((idx - 1) >> (schema - targetSchema)) + 1
+}
+
+func convertSpanToSchema(spans []Span, counts []float64, schema, targetSchema int32) ([]Span, []float64) {
+	targetSpans := make([]Span, 0)
+	targetCounts := make([]float64, 0)
+	// the index of bucket for origin schema
+	var bucketIdx int32 = 0
+	var lastTargetBucketIdx int32 = 0
+	// the index of bucket in a span
+	spanBucketIdx := 0
+
+	for i, span := range spans {
+		// determine the boundary of first bucket in this span
+		if i == 0 {
+			bucketIdx = spans[0].Offset
+		} else {
+			bucketIdx += span.Offset
+		}
+		// iterate over each span
+		for j := 0; j < int(span.Length); j, bucketIdx = j+1, bucketIdx+1 {
+			// calculate the target start index
+			targetBucketIdx := targetIdx(bucketIdx, schema, targetSchema)
+
+			switch {
+			case len(targetSpans) == 0:
+				// this is the first span
+				span := Span{
+					Offset: targetBucketIdx,
+					Length: 1,
+				}
+				targetSpans = append(targetSpans, span)
+				targetCounts = append(targetCounts, counts[spanBucketIdx])
+				lastTargetBucketIdx = targetBucketIdx
+
+			case lastTargetBucketIdx == targetBucketIdx:
+				// the target bucket just locates current last span,
+				// then increase counter of last span
+				targetCounts[len(targetCounts)-1] += counts[spanBucketIdx]
+
+			case (lastTargetBucketIdx + 1) == targetBucketIdx:
+				// the target bucket just locates next to current last span,
+				// extend last span
+				targetSpans[len(targetSpans)-1].Length++
+				targetCounts = append(targetCounts, counts[spanBucketIdx])
+				lastTargetBucketIdx++
+
+			case (lastTargetBucketIdx + 1) < targetBucketIdx:
+				// the target bucket just locates outside of last span,
+				// create new span
+				span := Span{
+					Offset: targetBucketIdx - lastTargetBucketIdx - 1,
+					Length: 1,
+				}
+				targetSpans = append(targetSpans, span)
+				targetCounts = append(targetCounts, counts[spanBucketIdx])
+				lastTargetBucketIdx = targetBucketIdx
+
+			default:
+			}
+
+			spanBucketIdx++
+		}
+	}
+
+	return targetSpans, targetCounts
 }
