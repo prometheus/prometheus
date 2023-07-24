@@ -39,6 +39,7 @@ var (
 // Action is the action to be performed on relabeling.
 type Action string
 
+type Predicate func(cfg *Config) bool
 type ActionFun func(lb *labels.Builder, cfg *Config, val string) (bool, bool)
 
 const (
@@ -67,6 +68,7 @@ const (
 )
 
 var CustomerActions = make(map[Action]ActionFun)
+var Predicates = make(map[Action]Predicate)
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (a *Action) UnmarshalYAML(unmarshal func(interface{}) error) error {
@@ -157,6 +159,16 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 			c.Separator != DefaultRelabelConfig.Separator ||
 			c.Replacement != DefaultRelabelConfig.Replacement {
 			return fmt.Errorf("%s action requires only 'regex', and no other fields", c.Action)
+		}
+	}
+
+	if c.Action == "" {
+		return fmt.Errorf("relabel action cannot be empty")
+	}
+
+	if p := Predicates[c.Action]; p != nil {
+		if !p(c) {
+			return fmt.Errorf("relabel action check fail action=%s ", c.Action)
 		}
 	}
 
