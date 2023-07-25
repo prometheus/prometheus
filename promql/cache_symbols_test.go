@@ -15,12 +15,12 @@ package promql
 
 import (
 	"context"
-	"fmt"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/prometheus/tsdb"
 	"go.opentelemetry.io/otel"
 	"os"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -51,16 +51,16 @@ func benchmarkQuery(query string, b *testing.B) {
 
 	// Create engine for querying
 	otel.Tracer("name").Start(context.Background(), "Run")
-	eng := NewEngine(EngineOpts{
-		Logger:             l,
-		Reg:                nil,
-		MaxSamples:         50000000,
-		Timeout:            60 * time.Second,
-		EnablePerStepStats: true,
-	})
-	noErr(err)
 
 	for n := 0; n < b.N; n++ {
+		eng := NewEngine(EngineOpts{
+			Logger:             l,
+			Reg:                nil,
+			MaxSamples:         50000000,
+			Timeout:            60 * time.Second,
+			EnablePerStepStats: true,
+		})
+		noErr(err)
 		q, err := eng.NewInstantQuery(context.Background(), db, &PrometheusQueryOpts{}, query, time.UnixMilli(1688922000001))
 		noErr(err)
 		q.Stats().Samples.EnablePerStepStats = true
@@ -69,10 +69,15 @@ func benchmarkQuery(query string, b *testing.B) {
 		b.StopTimer()
 
 		if n == 0 {
-			fmt.Printf("Peak samples: %v, Total samples: %v", q.Stats().Samples.PeakSamples, q.Stats().Samples.TotalSamples)
-			fmt.Println()
+			b.ReportMetric(float64(q.Stats().Samples.PeakSamples), "peak_samples")
+			b.ReportMetric(float64(q.Stats().Samples.TotalSamples), "total_samples")
 		}
 	}
+
+	var memstats runtime.MemStats
+	runtime.ReadMemStats(&memstats)
+	memstats.Sys
+	b.ReportMetric(float64(memstats.Sys), "sys_memory")
 
 	// Clean up any last resources when done.
 	err = db.Close()
