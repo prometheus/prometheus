@@ -397,7 +397,7 @@ func TestOTLPWriteHandler(t *testing.T) {
 	handler.ServeHTTP(recorder, req)
 
 	resp := recorder.Result()
-	require.Equal(t, http.StatusNoContent, resp.StatusCode)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	require.Equal(t, 12, len(appendable.samples))   // 1 (counter) + 1 (gauge) + 1 (target_info) + 7 (hist_bucket) + 2 (hist_sum, hist_count)
 	require.Equal(t, 1, len(appendable.histograms)) // 1 (exponential histogram)
