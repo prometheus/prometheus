@@ -64,26 +64,26 @@ func ChunkFromSamplesGeneric(s Samples) (chunks.Meta, error) {
 	}
 
 	ca, _ := c.Appender()
-	var newc chunkenc.Chunk
+	var newChunk chunkenc.Chunk
 
 	for i := 0; i < s.Len(); i++ {
 		switch sampleType {
 		case chunkenc.ValFloat:
 			ca.Append(s.Get(i).T(), s.Get(i).F())
 		case chunkenc.ValHistogram:
-			newc, _, ca, err = ca.AppendHistogram(nil, s.Get(i).T(), s.Get(i).H(), false)
+			newChunk, _, ca, err = ca.AppendHistogram(nil, s.Get(i).T(), s.Get(i).H(), false)
 			if err != nil {
 				return emptyChunk, err
 			}
-			if newc != nil {
+			if newChunk != nil {
 				return emptyChunk, fmt.Errorf("did not expect to start a second chunk")
 			}
 		case chunkenc.ValFloatHistogram:
-			newc, _, ca, err = ca.AppendFloatHistogram(nil, s.Get(i).T(), s.Get(i).FH(), false)
+			newChunk, _, ca, err = ca.AppendFloatHistogram(nil, s.Get(i).T(), s.Get(i).FH(), false)
 			if err != nil {
 				return emptyChunk, err
 			}
-			if newc != nil {
+			if newChunk != nil {
 				return emptyChunk, fmt.Errorf("did not expect to start a second chunk")
 			}
 		default:

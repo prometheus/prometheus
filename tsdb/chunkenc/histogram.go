@@ -87,9 +87,10 @@ const (
 	// UnknownCounterReset means we cannot say if this chunk was created due to a counter reset or not.
 	// An explicit counter reset detection needs to happen during query time.
 	UnknownCounterReset CounterResetHeader = 0b00000000
-	// CounterResetHeaderMask is a mask to get the counter reset bits.
-	CounterResetHeaderMask byte = 0b11000000
 )
+
+// CounterResetHeaderMask is the mask to get the counter reset header bits.
+const CounterResetHeaderMask byte = 0b11000000
 
 // GetCounterResetHeader returns the info about the first 2 bits of the chunk
 // header.

@@ -83,7 +83,7 @@ type Chunk interface {
 type Appender interface {
 	Append(int64, float64)
 
-	// AppendHistogram and AppendFloatHistogram appends a histogram sample to a histogram or float histogram chunk.
+	// AppendHistogram and AppendFloatHistogram append a histogram sample to a histogram or float histogram chunk.
 	// Appending a histogram may require creating a completely new chunk or recoding (changing) the current chunk.
 	// The Appender prev is used to determine if there is a counter reset between the previous Appender and the current Appender.
 	// The Appender prev is optional and only taken into account when the first sample is being appended.
@@ -93,7 +93,7 @@ type Appender interface {
 	// The returned Chunk c is nil if sample could be appended to the current Chunk, otherwise c is the new Chunk.
 	// The returned bool isRecoded can be used to distinguish between the new Chunk c being a completely new Chunk
 	// or the current Chunk recoded to a new Chunk.
-	// The Appender app which can be used for the next append is always returned.
+	// The Appender app that can be used for the next append is always returned.
 	AppendHistogram(prev *HistogramAppender, t int64, h *histogram.Histogram, appendOny bool) (c Chunk, isRecoded bool, app Appender, err error)
 	AppendFloatHistogram(prev *FloatHistogramAppender, t int64, h *histogram.FloatHistogram, appendOnly bool) (c Chunk, isRecoded bool, app Appender, err error)
 }
