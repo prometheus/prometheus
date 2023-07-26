@@ -97,6 +97,9 @@ message Histogram {
   repeated double negative_count = 11; // Absolute count of each bucket.
 
   // Positive buckets for the native histogram.
+  // Use a no-op span (offset 0, length 0) for a native histogram without any
+  // observations yet and with a zero_threshold of 0. Otherwise, it would be
+  // indistinguishable from a classic histogram.
   repeated BucketSpan positive_span = 12 [(gogoproto.nullable) = false];
   // Use either "positive_delta" or "positive_count", the former for
   // regular histograms with integer counts, the latter for float

@@ -414,6 +414,9 @@ type Histogram struct {
 	NegativeDelta []int64   `protobuf:"zigzag64,10,rep,packed,name=negative_delta,json=negativeDelta,proto3" json:"negative_delta,omitempty"`
 	NegativeCount []float64 `protobuf:"fixed64,11,rep,packed,name=negative_count,json=negativeCount,proto3" json:"negative_count,omitempty"`
 	// Positive buckets for the native histogram.
+	// Use a no-op span (offset 0, length 0) for a native histogram without any
+	// observations yet and with a zero_threshold of 0. Otherwise, it would be
+	// indistinguishable from a classic histogram.
 	PositiveSpan []BucketSpan `protobuf:"bytes,12,rep,name=positive_span,json=positiveSpan,proto3" json:"positive_span"`
 	// Use either "positive_delta" or "positive_count", the former for
 	// regular histograms with integer counts, the latter for float
