@@ -20,6 +20,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 )
 
 type pair struct {
@@ -210,4 +212,48 @@ func benchmarkAppender(b *testing.B, newChunk func() Chunk) {
 	}
 
 	fmt.Println("num", b.N, "created chunks", len(chunks))
+}
+
+func TestFromDataHistogramChunk(t *testing.T) {
+	const numSamples = 10000
+
+	chk := NewHistogramChunk()
+	hists := tsdbutil.GenerateTestGaugeHistograms(numSamples)
+
+	app, err := chk.Appender()
+	require.NoError(t, err)
+
+	for i := int64(0); i < numSamples; i++ {
+		app.AppendHistogram(i, hists[i])
+
+		reconstructedChk, err := FromData(chk.Encoding(), chk.Bytes())
+		require.NoError(t, err)
+
+		actual, ok := reconstructedChk.(*HistogramChunk)
+		require.True(t, ok)
+
+		require.Equal(t, chk.b.count, actual.b.count)
+	}
+}
+
+func TestFromDataFloatHistogramChunk(t *testing.T) {
+	const numSamples = 10000
+
+	chk := NewFloatHistogramChunk()
+	hists := tsdbutil.GenerateTestGaugeFloatHistograms(numSamples)
+
+	app, err := chk.Appender()
+	require.NoError(t, err)
+
+	for i := int64(0); i < numSamples; i++ {
+		app.AppendFloatHistogram(i, hists[i])
+
+		reconstructedChk, err := FromData(chk.Encoding(), chk.Bytes())
+		require.NoError(t, err)
+
+		actual, ok := reconstructedChk.(*FloatHistogramChunk)
+		require.True(t, ok)
+
+		require.Equal(t, chk.b.count, actual.b.count)
+	}
 }
