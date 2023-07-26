@@ -224,7 +224,8 @@ func TestFromDataHistogramChunk(t *testing.T) {
 	require.NoError(t, err)
 
 	for i := int64(0); i < numSamples; i++ {
-		app.AppendHistogram(i, hists[i])
+		_, _, app, err = app.AppendHistogram(nil, i, hists[i], false)
+		require.NoError(t, err)
 
 		reconstructedChk, err := FromData(chk.Encoding(), chk.Bytes())
 		require.NoError(t, err)
@@ -246,7 +247,8 @@ func TestFromDataFloatHistogramChunk(t *testing.T) {
 	require.NoError(t, err)
 
 	for i := int64(0); i < numSamples; i++ {
-		app.AppendFloatHistogram(i, hists[i])
+		_, _, app, err = app.AppendFloatHistogram(nil, i, hists[i], false)
+		require.NoError(t, err)
 
 		reconstructedChk, err := FromData(chk.Encoding(), chk.Bytes())
 		require.NoError(t, err)

@@ -416,7 +416,7 @@ func TestHead_HighConcurrencyReadAndWrite(t *testing.T) {
 	}
 
 	// queryHead is a helper to query the head for a given time range and labelset.
-	queryHead := func(mint, maxt uint64, label labels.Label) (map[string][]tsdbutil.Sample, error) {
+	queryHead := func(mint, maxt uint64, label labels.Label) (map[string][]chunks.Sample, error) {
 		q, err := NewBlockQuerier(head, int64(mint), int64(maxt))
 		if err != nil {
 			return nil, err
@@ -662,7 +662,7 @@ func TestHead_WALMultiRef(t *testing.T) {
 	series := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 	// The samples before the new ref should be discarded since Head truncation
 	// happens only after compacting the Head.
-	require.Equal(t, map[string][]tsdbutil.Sample{`{foo="bar"}`: {
+	require.Equal(t, map[string][]chunks.Sample{`{foo="bar"}`: {
 		sample{1700, 3, nil, nil},
 		sample{2000, 4, nil, nil},
 	}}, series)
@@ -1143,8 +1143,8 @@ func TestHeadDeleteSimple(t *testing.T) {
 					actSeriesSet := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, lblDefault.Name, lblDefault.Value))
 					require.NoError(t, q.Close())
 					expSeriesSet := newMockSeriesSet([]storage.Series{
-						storage.NewListSeries(lblsDefault, func() []tsdbutil.Sample {
-							ss := make([]tsdbutil.Sample, 0, len(c.smplsExp))
+						storage.NewListSeries(lblsDefault, func() []chunks.Sample {
+							ss := make([]chunks.Sample, 0, len(c.smplsExp))
 							for _, s := range c.smplsExp {
 								ss = append(ss, s)
 							}
@@ -1223,7 +1223,7 @@ func TestDeleteUntilCurMax(t *testing.T) {
 	it = exps.Iterator(nil)
 	resSamples, err := storage.ExpandSamples(it, newSample)
 	require.NoError(t, err)
-	require.Equal(t, []tsdbutil.Sample{sample{11, 1, nil, nil}}, resSamples)
+	require.Equal(t, []chunks.Sample{sample{11, 1, nil, nil}}, resSamples)
 	for res.Next() {
 	}
 	require.NoError(t, res.Err())
@@ -1321,9 +1321,9 @@ func TestDelete_e2e(t *testing.T) {
 			{Name: "job", Value: "prom-k8s"},
 		},
 	}
-	seriesMap := map[string][]tsdbutil.Sample{}
+	seriesMap := map[string][]chunks.Sample{}
 	for _, l := range lbls {
-		seriesMap[labels.New(l...).String()] = []tsdbutil.Sample{}
+		seriesMap[labels.New(l...).String()] = []chunks.Sample{}
 	}
 
 	hb, _ := newTestHead(t, 100000, wlog.CompressionNone, false)
@@ -1334,7 +1334,7 @@ func TestDelete_e2e(t *testing.T) {
 	app := hb.Appender(context.Background())
 	for _, l := range lbls {
 		ls := labels.New(l...)
-		series := []tsdbutil.Sample{}
+		series := []chunks.Sample{}
 		ts := rand.Int63n(300)
 		for i := 0; i < numDatapoints; i++ {
 			v := rand.Float64()
@@ -1433,7 +1433,7 @@ func TestDelete_e2e(t *testing.T) {
 	}
 }
 
-func boundedSamples(full []tsdbutil.Sample, mint, maxt int64) []tsdbutil.Sample {
+func boundedSamples(full []chunks.Sample, mint, maxt int64) []chunks.Sample {
 	for len(full) > 0 {
 		if full[0].T() >= mint {
 			break
@@ -1450,8 +1450,8 @@ func boundedSamples(full []tsdbutil.Sample, mint, maxt int64) []tsdbutil.Sample 
 	return full
 }
 
-func deletedSamples(full []tsdbutil.Sample, dranges tombstones.Intervals) []tsdbutil.Sample {
-	ds := make([]tsdbutil.Sample, 0, len(full))
+func deletedSamples(full []chunks.Sample, dranges tombstones.Intervals) []chunks.Sample {
+	ds := make([]chunks.Sample, 0, len(full))
 Outer:
 	for _, s := range full {
 		for _, r := range dranges {
@@ -2981,7 +2981,7 @@ func TestDataMissingOnQueryDuringCompaction(t *testing.T) {
 	)
 
 	// Appends samples to span over 1.5 block ranges.
-	expSamples := make([]tsdbutil.Sample, 0)
+	expSamples := make([]chunks.Sample, 0)
 	// 7 chunks with 15s scrape interval.
 	for i := int64(0); i <= 120*7; i++ {
 		ts := i * DefaultBlockDuration / (4 * 120)
@@ -3011,7 +3011,7 @@ func TestDataMissingOnQueryDuringCompaction(t *testing.T) {
 
 	// Querying the querier that was got before compaction.
 	series := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
-	require.Equal(t, map[string][]tsdbutil.Sample{`{a="b"}`: expSamples}, series)
+	require.Equal(t, map[string][]chunks.Sample{`{a="b"}`: expSamples}, series)
 
 	wg.Wait()
 }
@@ -3131,7 +3131,7 @@ func TestAppendHistogram(t *testing.T) {
 			ingestTs := int64(0)
 			app := head.Appender(context.Background())
 
-			expHistograms := make([]tsdbutil.Sample, 0, 2*numHistograms)
+			expHistograms := make([]chunks.Sample, 0, 2*numHistograms)
 
 			// Counter integer histograms.
 			for _, h := range tsdbutil.GenerateTestHistograms(numHistograms) {
@@ -3157,7 +3157,7 @@ func TestAppendHistogram(t *testing.T) {
 				}
 			}
 
-			expFloatHistograms := make([]tsdbutil.Sample, 0, 2*numHistograms)
+			expFloatHistograms := make([]chunks.Sample, 0, 2*numHistograms)
 
 			// Counter float histograms.
 			for _, fh := range tsdbutil.GenerateTestFloatHistograms(numHistograms) {
@@ -3198,8 +3198,8 @@ func TestAppendHistogram(t *testing.T) {
 			require.False(t, ss.Next())
 
 			it := s.Iterator(nil)
-			actHistograms := make([]tsdbutil.Sample, 0, len(expHistograms))
-			actFloatHistograms := make([]tsdbutil.Sample, 0, len(expFloatHistograms))
+			actHistograms := make([]chunks.Sample, 0, len(expHistograms))
+			actFloatHistograms := make([]chunks.Sample, 0, len(expFloatHistograms))
 			for typ := it.Next(); typ != chunkenc.ValNone; typ = it.Next() {
 				switch typ {
 				case chunkenc.ValHistogram:
@@ -3213,13 +3213,13 @@ func TestAppendHistogram(t *testing.T) {
 
 			compareSeries(
 				t,
-				map[string][]tsdbutil.Sample{"dummy": expHistograms},
-				map[string][]tsdbutil.Sample{"dummy": actHistograms},
+				map[string][]chunks.Sample{"dummy": expHistograms},
+				map[string][]chunks.Sample{"dummy": actHistograms},
 			)
 			compareSeries(
 				t,
-				map[string][]tsdbutil.Sample{"dummy": expFloatHistograms},
-				map[string][]tsdbutil.Sample{"dummy": actFloatHistograms},
+				map[string][]chunks.Sample{"dummy": expFloatHistograms},
+				map[string][]chunks.Sample{"dummy": actFloatHistograms},
 			)
 		})
 	}
@@ -3236,7 +3236,7 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 	s1 := labels.FromStrings("a", "b1")
 	k1 := s1.String()
 	numHistograms := 300
-	exp := map[string][]tsdbutil.Sample{}
+	exp := map[string][]chunks.Sample{}
 	ts := int64(0)
 	var app storage.Appender
 	for _, gauge := range []bool{true, false} {
@@ -3422,9 +3422,9 @@ func TestChunkSnapshot(t *testing.T) {
 	}
 
 	numSeries := 10
-	expSeries := make(map[string][]tsdbutil.Sample)
-	expHist := make(map[string][]tsdbutil.Sample)
-	expFloatHist := make(map[string][]tsdbutil.Sample)
+	expSeries := make(map[string][]chunks.Sample)
+	expHist := make(map[string][]chunks.Sample)
+	expFloatHist := make(map[string][]chunks.Sample)
 	expTombstones := make(map[storage.SeriesRef]tombstones.Intervals)
 	expExemplars := make([]ex, 0)
 	histograms := tsdbutil.GenerateTestGaugeHistograms(481)
@@ -4108,7 +4108,7 @@ func TestAppendingDifferentEncodingToSameSeries(t *testing.T) {
 	floatHists := tsdbutil.GenerateTestFloatHistograms(10)
 	lbls := labels.FromStrings("a", "b")
 
-	var expResult []tsdbutil.Sample
+	var expResult []chunks.Sample
 	checkExpChunks := func(count int) {
 		ms, created, err := db.Head().getOrCreate(lbls.Hash(), lbls)
 		require.NoError(t, err)
@@ -4118,59 +4118,59 @@ func TestAppendingDifferentEncodingToSameSeries(t *testing.T) {
 	}
 
 	appends := []struct {
-		samples   []tsdbutil.Sample
+		samples   []chunks.Sample
 		expChunks int
 		err       error
 		// If this is empty, samples above will be taken instead of this.
-		addToExp []tsdbutil.Sample
+		addToExp []chunks.Sample
 	}{
 		// Histograms that end up in the expected samples are copied here so that we
 		// can independently set the CounterResetHint later.
 		{
-			samples:   []tsdbutil.Sample{sample{t: 100, h: hists[0].Copy()}},
+			samples:   []chunks.Sample{sample{t: 100, h: hists[0].Copy()}},
 			expChunks: 1,
 		},
 		{
-			samples:   []tsdbutil.Sample{sample{t: 200, f: 2}},
+			samples:   []chunks.Sample{sample{t: 200, f: 2}},
 			expChunks: 2,
 		},
 		{
-			samples:   []tsdbutil.Sample{sample{t: 210, fh: floatHists[0].Copy()}},
+			samples:   []chunks.Sample{sample{t: 210, fh: floatHists[0].Copy()}},
 			expChunks: 3,
 		},
 		{
-			samples:   []tsdbutil.Sample{sample{t: 220, h: hists[1].Copy()}},
+			samples:   []chunks.Sample{sample{t: 220, h: hists[1].Copy()}},
 			expChunks: 4,
 		},
 		{
-			samples:   []tsdbutil.Sample{sample{t: 230, fh: floatHists[3].Copy()}},
+			samples:   []chunks.Sample{sample{t: 230, fh: floatHists[3].Copy()}},
 			expChunks: 5,
 		},
 		{
-			samples: []tsdbutil.Sample{sample{t: 100, h: hists[2].Copy()}},
+			samples: []chunks.Sample{sample{t: 100, h: hists[2].Copy()}},
 			err:     storage.ErrOutOfOrderSample,
 		},
 		{
-			samples:   []tsdbutil.Sample{sample{t: 300, h: hists[3].Copy()}},
+			samples:   []chunks.Sample{sample{t: 300, h: hists[3].Copy()}},
 			expChunks: 6,
 		},
 		{
-			samples: []tsdbutil.Sample{sample{t: 100, f: 2}},
+			samples: []chunks.Sample{sample{t: 100, f: 2}},
 			err:     storage.ErrOutOfOrderSample,
 		},
 		{
-			samples: []tsdbutil.Sample{sample{t: 100, fh: floatHists[4].Copy()}},
+			samples: []chunks.Sample{sample{t: 100, fh: floatHists[4].Copy()}},
 			err:     storage.ErrOutOfOrderSample,
 		},
 		{
 			// Combination of histograms and float64 in the same commit. The behaviour is undefined, but we want to also
 			// verify how TSDB would behave. Here the histogram is appended at the end, hence will be considered as out of order.
-			samples: []tsdbutil.Sample{
+			samples: []chunks.Sample{
 				sample{t: 400, f: 4},
 				sample{t: 500, h: hists[5]}, // This won't be committed.
 				sample{t: 600, f: 6},
 			},
-			addToExp: []tsdbutil.Sample{
+			addToExp: []chunks.Sample{
 				sample{t: 400, f: 4},
 				sample{t: 600, f: 6},
 			},
@@ -4178,12 +4178,12 @@ func TestAppendingDifferentEncodingToSameSeries(t *testing.T) {
 		},
 		{
 			// Here the histogram is appended at the end, hence the first histogram is out of order.
-			samples: []tsdbutil.Sample{
+			samples: []chunks.Sample{
 				sample{t: 700, h: hists[7]}, // Out of order w.r.t. the next float64 sample that is appended first.
 				sample{t: 800, f: 8},
 				sample{t: 900, h: hists[9]},
 			},
-			addToExp: []tsdbutil.Sample{
+			addToExp: []chunks.Sample{
 				sample{t: 800, f: 8},
 				sample{t: 900, h: hists[9].Copy()},
 			},
@@ -4191,11 +4191,11 @@ func TestAppendingDifferentEncodingToSameSeries(t *testing.T) {
 		},
 		{
 			// Float histogram is appended at the end.
-			samples: []tsdbutil.Sample{
+			samples: []chunks.Sample{
 				sample{t: 1000, fh: floatHists[7]}, // Out of order w.r.t. the next histogram.
 				sample{t: 1100, h: hists[9]},
 			},
-			addToExp: []tsdbutil.Sample{
+			addToExp: []chunks.Sample{
 				sample{t: 1100, h: hists[9].Copy()},
 			},
 			expChunks: 8,
@@ -4240,7 +4240,7 @@ func TestAppendingDifferentEncodingToSameSeries(t *testing.T) {
 	require.NoError(t, err)
 
 	series := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
-	require.Equal(t, map[string][]tsdbutil.Sample{lbls.String(): expResult}, series)
+	require.Equal(t, map[string][]chunks.Sample{lbls.String(): expResult}, series)
 }
 
 // Tests https://github.com/prometheus/prometheus/issues/9725.
@@ -4674,7 +4674,7 @@ func TestReplayAfterMmapReplayError(t *testing.T) {
 	itvl := int64(15 * time.Second / time.Millisecond)
 	lastTs := int64(0)
 	lbls := labels.FromStrings("__name__", "testing", "foo", "bar")
-	var expSamples []tsdbutil.Sample
+	var expSamples []chunks.Sample
 	addSamples := func(numSamples int) {
 		app := h.Appender(context.Background())
 		var ref storage.SeriesRef
@@ -4723,7 +4723,7 @@ func TestReplayAfterMmapReplayError(t *testing.T) {
 	q, err := NewBlockQuerier(h, 0, lastTs)
 	require.NoError(t, err)
 	res := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "__name__", "testing"))
-	require.Equal(t, map[string][]tsdbutil.Sample{lbls.String(): expSamples}, res)
+	require.Equal(t, map[string][]chunks.Sample{lbls.String(): expSamples}, res)
 
 	require.NoError(t, h.Close())
 }
