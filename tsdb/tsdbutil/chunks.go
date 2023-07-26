@@ -46,6 +46,7 @@ func ChunkFromSamples(s []Sample) (chunks.Meta, error) {
 
 // ChunkFromSamplesGeneric requires all samples to have the same type.
 func ChunkFromSamplesGeneric(s Samples) (chunks.Meta, error) {
+	emptyChunk := chunks.Meta{Chunk: chunkenc.NewXORChunk()}
 	mint, maxt := int64(0), int64(0)
 
 	if s.Len() > 0 {
@@ -53,9 +54,7 @@ func ChunkFromSamplesGeneric(s Samples) (chunks.Meta, error) {
 	}
 
 	if s.Len() == 0 {
-		return chunks.Meta{
-			Chunk: chunkenc.NewXORChunk(),
-		}, nil
+		return emptyChunk, nil
 	}
 
 	sampleType := s.Get(0).Type()
@@ -65,24 +64,27 @@ func ChunkFromSamplesGeneric(s Samples) (chunks.Meta, error) {
 	}
 
 	ca, _ := c.Appender()
+	var newChunk chunkenc.Chunk
 
 	for i := 0; i < s.Len(); i++ {
 		switch sampleType {
 		case chunkenc.ValFloat:
 			ca.Append(s.Get(i).T(), s.Get(i).F())
 		case chunkenc.ValHistogram:
-			h := s.Get(i).H()
-			ca.AppendHistogram(s.Get(i).T(), h)
-			if i == 0 && h.CounterResetHint == histogram.GaugeType {
-				hc := c.(*chunkenc.HistogramChunk)
-				hc.SetCounterResetHeader(chunkenc.GaugeType)
+			newChunk, _, ca, err = ca.AppendHistogram(nil, s.Get(i).T(), s.Get(i).H(), false)
+			if err != nil {
+				return emptyChunk, err
+			}
+			if newChunk != nil {
+				return emptyChunk, fmt.Errorf("did not expect to start a second chunk")
 			}
 		case chunkenc.ValFloatHistogram:
-			fh := s.Get(i).FH()
-			ca.AppendFloatHistogram(s.Get(i).T(), fh)
-			if i == 0 && fh.CounterResetHint == histogram.GaugeType {
-				hc := c.(*chunkenc.FloatHistogramChunk)
-				hc.SetCounterResetHeader(chunkenc.GaugeType)
+			newChunk, _, ca, err = ca.AppendFloatHistogram(nil, s.Get(i).T(), s.Get(i).FH(), false)
+			if err != nil {
+				return emptyChunk, err
+			}
+			if newChunk != nil {
+				return emptyChunk, fmt.Errorf("did not expect to start a second chunk")
 			}
 		default:
 			panic(fmt.Sprintf("unknown sample type %s", sampleType.String()))
