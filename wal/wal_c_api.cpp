@@ -203,6 +203,12 @@ c_encoder okdb_wal_c_encoder_ctor(uint16_t shard_id, uint16_t number_of_shards) 
 void okdb_wal_c_encoder_encode(c_encoder c_enc, c_hashdex c_hx, c_segment* c_seg, c_redundant* c_rt) {
   return std::visit([&](auto& vtbl) { return vtbl.template call<"okdb_wal_c_encoder_encode">(c_enc, c_hx, c_seg, c_rt); }, encoder_vtbl);
 }
+void okdb_wal_c_encoder_add(c_encoder c_enc, c_hashdex c_hx, c_segment* c_seg) {
+  return std::visit([&](auto& vtbl) { return vtbl.template call<"okdb_wal_c_encoder_add">(c_enc, c_hx, c_seg); }, encoder_vtbl);
+}
+void okdb_wal_c_encoder_finalize(c_encoder c_enc, c_segment* c_seg, c_redundant* c_rt) {
+  return std::visit([&](auto& vtbl) { return vtbl.template call<"okdb_wal_c_encoder_finalize">(c_enc, c_seg, c_rt); }, encoder_vtbl);
+}
 
 // okdb_wal_c_encoder_snapshot - C wrapper C++, calls C++ class Encoder methods.
 void okdb_wal_c_encoder_snapshot(c_encoder c_enc, c_slice_ptr c_rts, c_snapshot* c_snap) {

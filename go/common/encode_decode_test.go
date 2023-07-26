@@ -375,3 +375,55 @@ func (eds *EncoderDecoderSuite) TestEncodeDecodeBenchmark() {
 		eds.EncodeDecodeBench(int64(i))
 	}
 }
+
+func (eds *EncoderDecoderSuite) TestEncodeDecodeOpenHead() {
+	createdAt := time.Now()
+	for i := 1; i < 21; i++ {
+		eds.T().Log("generate protobuf")
+		expectedWr := eds.makeData(10, int64(i))
+		data, err := expectedWr.Marshal()
+		eds.Require().NoError(err)
+
+		eds.T().Log("sharding protobuf")
+		h := common.NewHashdex(data)
+
+		eds.T().Log("encoding protobuf")
+		gosF, err := eds.enc.Add(eds.ctx, h)
+		eds.T().Log("destroy hashdex")
+		h.Destroy()
+		eds.Require().NoError(err)
+
+		eds.EqualValues(10, gosF.Series())
+		eds.EqualValues(30*i, gosF.Samples())
+		gosF.Destroy()
+	}
+
+	_, gos, gor, err := eds.enc.Finalize(eds.ctx)
+	eds.Require().NoError(err)
+
+	eds.T().Log("destroy redundant")
+	gor.Destroy()
+
+	eds.T().Log("transferring segment")
+	segByte := eds.transferringData(gos.Bytes())
+
+	eds.T().Log("destroy encoding segment")
+	eds.T().Log("Series", gos.Series())
+	eds.T().Log("Samples", gos.Samples())
+	gos.Destroy()
+
+	eds.T().Log("decoding protobuf")
+	protob, _, err := eds.dec.Decode(eds.ctx, segByte)
+	eds.Require().NoError(err)
+
+	eds.T().Log("compare income and outcome protobuf")
+	actualWr := &prompb.WriteRequest{}
+	err = actualWr.Unmarshal(protob.Bytes())
+	eds.Require().NoError(err)
+	eds.T().Log("SeriesB", len(actualWr.Timeseries))
+
+	eds.InDelta(createdAt.UnixNano(), protob.CreatedAt(), float64(time.Second))
+
+	eds.T().Log("destroy decoding proto")
+	protob.Destroy()
+}

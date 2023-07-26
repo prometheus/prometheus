@@ -197,6 +197,26 @@ func CEncoderEncode(encoder CEncoder, hashdex CHashdex, segment *GoSegment, redu
 	)
 }
 
+// CEncoderAdd - add to encode incoming data(ShardedData) through C++ encoder.
+func CEncoderAdd(encoder CEncoder, hashdex CHashdex, segment *GoSegment) {
+	fastcgo.UnsafeCall3(
+		C.okdb_wal_c_encoder_add,
+		uintptr(encoder),
+		uintptr(hashdex),
+		uintptr(unsafe.Pointer(segment)),
+	)
+}
+
+// CEncoderFinalize - finalize the encoded data in the C++ encoder to Segment.
+func CEncoderFinalize(encoder CEncoder, segment *GoSegment, redundant *GoRedundant) {
+	fastcgo.UnsafeCall3(
+		C.okdb_wal_c_encoder_finalize,
+		uintptr(encoder),
+		uintptr(unsafe.Pointer(segment)),
+		uintptr(unsafe.Pointer(redundant)),
+	)
+}
+
 func CEncoderSnapshot(encoder CEncoder, redundants []unsafe.Pointer, snapshot *GoSnapshot) {
 	var args = CEncoderSnapshotArgs{
 		redundants: &redundants,

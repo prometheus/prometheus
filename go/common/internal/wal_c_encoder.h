@@ -72,6 +72,10 @@ typedef struct {
 
 void okdb_wal_uni_c_encoder_encode(go_ptr c_enc, go_ptr encode_params, go_ptr err);
 
+// okdb_wal_c_encoder_add - C wrapper C++, calls C++ class Encoder methods.
+void okdb_wal_c_encoder_add(c_encoder c_enc, c_hashdex c_hx, c_segment* c_seg);
+// okdb_wal_c_encoder_finalize - C wrapper C++, calls C++ class Encoder methods.
+void okdb_wal_c_encoder_finalize(c_encoder c_enc, c_segment* c_seg, c_redundant* c_rt);
 // okdb_wal_c_encoder_snapshot - C wrapper C++, calls C++ class Encoder methods.
 void okdb_wal_c_encoder_snapshot(c_encoder c_enc, c_slice_from_go_ptr c_rts, c_snapshot* c_snap);
 
