@@ -86,6 +86,40 @@ class Encoder {
     c_seg->buf = segment_buffer;
   }
 
+  // add - add to encode incoming data(ShardedData) through C++ encoder.
+  inline __attribute__((always_inline)) void add(c_hashdex c_hx, c_segment* c_seg) {
+    auto hashdex_data = static_cast<Hashdex*>(c_hx)->data();
+    for (const auto& [chksm, pb_view] : hashdex_data) {
+      if ((chksm % number_of_shards_) == shard_id_) {
+        PromPP::Prometheus::RemoteWrite::read_timeseries(protozero::pbf_reader{pb_view}, timeseries_);
+        writer_.add(timeseries_, chksm);
+        timeseries_.clear();
+      }
+    }
+
+    c_seg->samples = writer_.buffer().samples_count();
+    c_seg->series = writer_.buffer().series_count();
+    c_seg->earliest_timestamp = writer_.buffer().earliest_sample();
+    c_seg->latest_timestamp = writer_.buffer().latest_sample();
+  }
+
+  // finalize - finalize the encoded data in the C++ encoder to Segment.
+  inline __attribute__((always_inline)) void finalize(c_segment* c_seg, c_redundant* c_rt) {
+    c_seg->samples = writer_.buffer().samples_count();
+    c_seg->series = writer_.buffer().series_count();
+    c_seg->earliest_timestamp = writer_.buffer().earliest_sample();
+    c_seg->latest_timestamp = writer_.buffer().latest_sample();
+
+    auto segment_buffer = new std::stringstream;
+    c_rt->data = writer_.write(*segment_buffer);
+
+    std::string_view outcome = segment_buffer->view();
+    c_seg->data.array = outcome.begin();
+    c_seg->data.len = outcome.size();
+    c_seg->data.cap = outcome.size();
+    c_seg->buf = segment_buffer;
+  }
+
   // snapshot - from redundants make snapshot.
   inline __attribute__((always_inline)) void snapshot(c_slice c_rts, c_snapshot* c_snap) {
     std::span<PromPP::WAL::Writer::Redundant*> span_redundants{(PromPP::WAL::Writer::Redundant**)(c_rts.array), c_rts.len};
@@ -139,6 +173,16 @@ c_encoder OKDB_WAL_PREFIXED_NAME(okdb_wal_c_encoder_ctor)(uint16_t shard_id, uin
 // okdb_wal_c_encoder_encode - C wrapper C++, calls C++ class Encoder methods.
 void OKDB_WAL_PREFIXED_NAME(okdb_wal_c_encoder_encode)(c_encoder c_enc, c_hashdex c_hx, c_segment* c_seg, c_redundant* c_rt) {
   return static_cast<Wrapper::Encoder*>(c_enc)->encode(c_hx, c_seg, c_rt);
+}
+
+// okdb_wal_c_encoder_add - C wrapper C++, calls C++ class Encoder methods.
+void OKDB_WAL_PREFIXED_NAME(okdb_wal_c_encoder_add)(c_encoder c_enc, c_hashdex c_hx, c_segment* c_seg) {
+  return static_cast<Wrapper::Encoder*>(c_enc)->add(c_hx, c_seg);
+}
+
+// okdb_wal_c_encoder_finalize - C wrapper C++, calls C++ class Encoder methods.
+void OKDB_WAL_PREFIXED_NAME(okdb_wal_c_encoder_finalize)(c_encoder c_enc, c_segment* c_seg, c_redundant* c_rt) {
+  return static_cast<Wrapper::Encoder*>(c_enc)->finalize(c_seg, c_rt);
 }
 
 // okdb_wal_c_encoder_snapshot - C wrapper C++, calls C++ class Encoder methods.

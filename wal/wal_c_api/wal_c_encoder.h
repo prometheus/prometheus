@@ -63,6 +63,10 @@ void OKDB_WAL_PREFIXED_NAME(okdb_wal_c_hashdex_dtor)(c_hashdex c_hx);
 c_encoder OKDB_WAL_PREFIXED_NAME(okdb_wal_c_encoder_ctor)(uint16_t shard_id, uint16_t number_of_shards);
 // okdb_wal_c_encoder_encode - C wrapper C++, calls C++ class Encoder methods.
 void OKDB_WAL_PREFIXED_NAME(okdb_wal_c_encoder_encode)(c_encoder c_enc, c_hashdex c_hx, c_segment* c_seg, c_redundant* c_rt);
+// okdb_wal_c_encoder_add - C wrapper C++, calls C++ class Encoder methods.
+void OKDB_WAL_PREFIXED_NAME(okdb_wal_c_encoder_add)(c_encoder c_enc, c_hashdex c_hx, c_segment* c_seg);
+// okdb_wal_c_encoder_finalize - C wrapper C++, calls C++ class Encoder methods.
+void OKDB_WAL_PREFIXED_NAME(okdb_wal_c_encoder_finalize)(c_encoder c_enc, c_segment* c_seg, c_redundant* c_rt);
 // okdb_wal_c_encoder_snapshot - C wrapper C++, calls C++ class Encoder methods.
 void OKDB_WAL_PREFIXED_NAME(okdb_wal_c_encoder_snapshot)(c_encoder c_enc, c_slice_ptr c_rts, c_snapshot* c_snap);
 // okdb_wal_c_encoder_dtor - calls the destructor, C wrapper C++ for clear memory.
@@ -78,6 +82,8 @@ OKDB_WAL_EXPORT_API(okdb_wal_c_hashdex_presharding)
 OKDB_WAL_EXPORT_API(okdb_wal_c_hashdex_dtor)
 OKDB_WAL_EXPORT_API(okdb_wal_c_encoder_ctor)
 OKDB_WAL_EXPORT_API(okdb_wal_c_encoder_encode)
+OKDB_WAL_EXPORT_API(okdb_wal_c_encoder_add)
+OKDB_WAL_EXPORT_API(okdb_wal_c_encoder_finalize)
 OKDB_WAL_EXPORT_API(okdb_wal_c_encoder_snapshot)
 OKDB_WAL_EXPORT_API(okdb_wal_c_encoder_dtor)
 OKDB_WAL_EXPORT_API_END
