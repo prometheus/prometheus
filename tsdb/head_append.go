@@ -1173,7 +1173,6 @@ func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID ui
 	var (
 		newChunk chunkenc.Chunk
 		recoded  bool
-		err      error
 	)
 
 	if !chunkCreated {
@@ -1181,11 +1180,7 @@ func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID ui
 		prevApp = nil
 	}
 
-	newChunk, recoded, s.app, err = s.app.AppendHistogram(prevApp, t, h, false) // false=request a new chunk if needed
-
-	if err != nil {
-		panic("appendOrCreateHistogram failed") // TODO: handle error
-	}
+	newChunk, recoded, s.app, _ = s.app.AppendHistogram(prevApp, t, h, false) // false=request a new chunk if needed
 
 	s.lastHistogramValue = h
 	s.lastFloatHistogramValue = nil
@@ -1236,7 +1231,6 @@ func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, 
 	var (
 		newChunk chunkenc.Chunk
 		recoded  bool
-		err      error
 	)
 
 	if !chunkCreated {
@@ -1244,11 +1238,7 @@ func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, 
 		prevApp = nil
 	}
 
-	newChunk, recoded, s.app, err = s.app.AppendFloatHistogram(prevApp, t, fh, false) // False means request a new chunk if needed.
-
-	if err != nil {
-		panic("appendOrCreateFloatHistogram failed") // TODO: handle error
-	}
+	newChunk, recoded, s.app, _ = s.app.AppendFloatHistogram(prevApp, t, fh, false) // False means request a new chunk if needed.
 
 	s.lastHistogramValue = nil
 	s.lastFloatHistogramValue = fh

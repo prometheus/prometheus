@@ -544,7 +544,7 @@ func (a *HistogramAppender) recode(
 	hc := NewHistogramChunk()
 	app, err := hc.Appender()
 	if err != nil {
-		panic(err)
+		panic(err) // This should never happen for an empty histogram chunk.
 	}
 	happ := app.(*HistogramAppender)
 	numPositiveBuckets, numNegativeBuckets := countSpans(positiveSpans), countSpans(negativeSpans)
@@ -639,7 +639,7 @@ func (a *HistogramAppender) AppendHistogram(prev *HistogramAppender, t int64, h 
 			newChunk := NewHistogramChunk()
 			app, err := newChunk.Appender()
 			if err != nil {
-				return nil, false, a, err
+				panic(err) // This should never happen for an empty histogram chunk.
 			}
 			happ := app.(*HistogramAppender)
 			if counterReset {
@@ -671,7 +671,7 @@ func (a *HistogramAppender) AppendHistogram(prev *HistogramAppender, t int64, h 
 		newChunk := NewHistogramChunk()
 		app, err := newChunk.Appender()
 		if err != nil {
-			return nil, false, a, err
+			panic(err) // This should never happen for an empty histogram chunk.
 		}
 		happ := app.(*HistogramAppender)
 		happ.setCounterResetHeader(GaugeType)
