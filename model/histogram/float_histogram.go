@@ -979,7 +979,7 @@ func mergeToSchema(originSpans []Span, originBuckets []float64, originSchema, ta
 		targetSpans         []Span    // The spans in the target schema.
 		targetBuckets       []float64 // The buckets in the target schema.
 		bucketIdx           int32     // The index of bucket in the origin schema.
-		lastTargetBucketIdx int32     // The index of bucket which is the last bucket for current targetSpans and targetBuckets.
+		lastTargetBucketIdx int32     // The index of the last added target bucket.
 		origBucketIdx       int       // The position of a bucket in originBuckets slice.
 	)
 
