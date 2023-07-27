@@ -1098,13 +1098,13 @@ func (a *appender) logSeries() error {
 	a.mtx.RLock()
 	defer a.mtx.RUnlock()
 
-	var encoder record.Encoder
-	buf := a.bufPool.Get().([]byte)
-	defer func() {
-		a.bufPool.Put(buf) //nolint:staticcheck
-	}()
-
 	if len(a.pendingSeries) > 0 {
+		buf := a.bufPool.Get().([]byte)
+		defer func() {
+			a.bufPool.Put(buf) //nolint:staticcheck
+		}()
+
+		var encoder record.Encoder
 		buf = encoder.Series(a.pendingSeries, buf)
 		if err := a.wal.Log(buf); err != nil {
 			return err
