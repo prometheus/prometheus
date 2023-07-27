@@ -2733,3 +2733,115 @@ func TestQueryWithDeletedHistograms(t *testing.T) {
 		})
 	}
 }
+
+func TestPrependPostings(t *testing.T) {
+	t.Run("empty", func(t *testing.T) {
+		p := newPrependPostings(nil, index.NewListPostings(nil))
+		require.False(t, p.Next())
+	})
+
+	t.Run("next+At", func(t *testing.T) {
+		p := newPrependPostings([]storage.SeriesRef{10, 20, 30}, index.NewListPostings([]storage.SeriesRef{200, 300, 500}))
+
+		for _, s := range []storage.SeriesRef{10, 20, 30, 200, 300, 500} {
+			require.True(t, p.Next())
+			require.Equal(t, s, p.At())
+			require.Equal(t, s, p.At()) // Multiple calls return same value.
+		}
+		require.False(t, p.Next())
+	})
+
+	t.Run("seek+At", func(t *testing.T) {
+		p := newPrependPostings([]storage.SeriesRef{10, 20, 30}, index.NewListPostings([]storage.SeriesRef{200, 300, 500}))
+
+		require.True(t, p.Seek(5))
+		require.Equal(t, storage.SeriesRef(10), p.At())
+		require.Equal(t, storage.SeriesRef(10), p.At())
+
+		require.True(t, p.Seek(15))
+		require.Equal(t, storage.SeriesRef(20), p.At())
+		require.Equal(t, storage.SeriesRef(20), p.At())
+
+		require.True(t, p.Seek(20)) // Seeking to "current" value doesn't move postings iterator.
+		require.Equal(t, storage.SeriesRef(20), p.At())
+		require.Equal(t, storage.SeriesRef(20), p.At())
+
+		require.True(t, p.Seek(50))
+		require.Equal(t, storage.SeriesRef(200), p.At())
+		require.Equal(t, storage.SeriesRef(200), p.At())
+
+		require.False(t, p.Seek(1000))
+		require.False(t, p.Next())
+	})
+
+	t.Run("err", func(t *testing.T) {
+		err := fmt.Errorf("error")
+		p := newPrependPostings([]storage.SeriesRef{10, 20, 30}, index.ErrPostings(err))
+
+		for _, s := range []storage.SeriesRef{10, 20, 30} {
+			require.True(t, p.Next())
+			require.Equal(t, s, p.At())
+			require.NoError(t, p.Err())
+		}
+		// Advancing after prepended values returns false, and gives us access to error.
+		require.False(t, p.Next())
+		require.Equal(t, err, p.Err())
+	})
+}
+
+func TestLabelsValuesWithMatchersOptimization(t *testing.T) {
+	dir := t.TempDir()
+	opts := DefaultHeadOptions()
+	opts.ChunkRange = 1000
+	opts.ChunkDirRoot = dir
+	h, err := NewHead(nil, nil, nil, nil, opts, nil)
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, h.Close())
+	}()
+
+	app := h.Appender(context.Background())
+	addSeries := func(l labels.Labels) {
+		app.Append(0, l, 0, 0)
+	}
+
+	const maxI = 10 * maxExpandedPostingsFactor
+
+	allValuesOfI := make([]string, 0, maxI)
+	for i := 0; i < maxI; i++ {
+		allValuesOfI = append(allValuesOfI, strconv.Itoa(i))
+	}
+
+	for n := 0; n < 10; n++ {
+		for i := 0; i < maxI; i++ {
+			addSeries(labels.FromStrings("i", allValuesOfI[i], "n", strconv.Itoa(n), "j", "foo", "i_times_n", strconv.Itoa(i*n)))
+		}
+	}
+	require.NoError(t, app.Commit())
+
+	ir, err := h.Index()
+	require.NoError(t, err)
+
+	primesTimes := labels.MustNewMatcher(labels.MatchEqual, "i_times_n", "23") // It will match single i*n combination (n < 10)
+	nonPrimesTimes := labels.MustNewMatcher(labels.MatchEqual, "i_times_n", "20")
+	n3 := labels.MustNewMatcher(labels.MatchEqual, "n", "3")
+
+	cases := []struct {
+		name            string
+		labelName       string
+		matchers        []*labels.Matcher
+		expectedResults []string
+	}{
+		{name: `i with i_times_n=23`, labelName: "i", matchers: []*labels.Matcher{primesTimes}, expectedResults: []string{"23"}},
+		{name: `i with i_times_n=20`, labelName: "i", matchers: []*labels.Matcher{nonPrimesTimes}, expectedResults: []string{"4", "5", "10", "20"}},
+		{name: `n with n="3"`, labelName: "i", matchers: []*labels.Matcher{n3}, expectedResults: allValuesOfI},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			values, err := labelValuesWithMatchers(ir, c.labelName, c.matchers...)
+			require.NoError(t, err)
+			require.ElementsMatch(t, c.expectedResults, values)
+		})
+	}
+}

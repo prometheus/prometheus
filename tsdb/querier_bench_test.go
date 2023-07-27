@@ -50,7 +50,7 @@ func BenchmarkQuerier(b *testing.B) {
 
 	for n := 0; n < 10; n++ {
 		for i := 0; i < 100000; i++ {
-			addSeries(labels.FromStrings("i", strconv.Itoa(i)+postingsBenchSuffix, "n", strconv.Itoa(n)+postingsBenchSuffix, "j", "foo"))
+			addSeries(labels.FromStrings("i", strconv.Itoa(i)+postingsBenchSuffix, "n", strconv.Itoa(n)+postingsBenchSuffix, "j", "foo", "i_times_n", strconv.Itoa(i*n)))
 			// Have some series that won't be matched, to properly test inverted matches.
 			addSeries(labels.FromStrings("i", strconv.Itoa(i)+postingsBenchSuffix, "n", strconv.Itoa(n)+postingsBenchSuffix, "j", "bar"))
 			addSeries(labels.FromStrings("i", strconv.Itoa(i)+postingsBenchSuffix, "n", "0_"+strconv.Itoa(n)+postingsBenchSuffix, "j", "bar"))
@@ -184,6 +184,9 @@ func benchmarkLabelValuesWithMatchers(b *testing.B, ir IndexReader) {
 	n1 := labels.MustNewMatcher(labels.MatchEqual, "n", "1"+postingsBenchSuffix)
 	nX := labels.MustNewMatcher(labels.MatchNotEqual, "n", "X"+postingsBenchSuffix)
 	nPlus := labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")
+	primesTimes := labels.MustNewMatcher(labels.MatchEqual, "i_times_n", "533701") // = 76243*7, ie. multiplication of primes. It will match single i*n combination.
+	nonPrimesTimes := labels.MustNewMatcher(labels.MatchEqual, "i_times_n", "20")  // 1*20, 2*10, 4*5, 5*4
+	times12 := labels.MustNewMatcher(labels.MatchRegexp, "i_times_n", "12.*")
 
 	cases := []struct {
 		name      string
@@ -199,6 +202,9 @@ func benchmarkLabelValuesWithMatchers(b *testing.B, ir IndexReader) {
 		{`i with n="1",j=~"XXX|YYY"`, "i", []*labels.Matcher{n1, jXXXYYY}},
 		{`i with n="X",j!="foo"`, "i", []*labels.Matcher{nX, jNotFoo}},
 		{`i with n="1",i=~"^.*$",j!="foo"`, "i", []*labels.Matcher{n1, iStar, jNotFoo}},
+		{`i with i_times_n=533701`, "i", []*labels.Matcher{primesTimes}},
+		{`i with i_times_n=20`, "i", []*labels.Matcher{nonPrimesTimes}},
+		{`i with i_times_n=~"12.*""`, "i", []*labels.Matcher{times12}},
 		// n has 10 values.
 		{`n with j!="foo"`, "n", []*labels.Matcher{jNotFoo}},
 		{`n with i="1"`, "n", []*labels.Matcher{i1}},
