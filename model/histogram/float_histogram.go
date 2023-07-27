@@ -971,7 +971,7 @@ func targetIdx(idx, originSchema, targetSchema int32) int32 {
 	return ((idx - 1) >> (originSchema - targetSchema)) + 1
 }
 
-// mergeToSchema is used to merge a FloatHistogram's Spans and Buckets (no matter if 
+// mergeToSchema is used to merge a FloatHistogram's Spans and Buckets (no matter if
 // positive or negative) from the original schema to the target schema.
 // The target schema must be smaller than the original schema.
 func mergeToSchema(originSpans []Span, originBuckets []float64, originSchema, targetSchema int32) ([]Span, []float64) {
