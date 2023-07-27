@@ -93,8 +93,8 @@ func (h *FloatHistogram) CopyToSchema(targetSchema int32) *FloatHistogram {
 		Sum:           h.Sum,
 	}
 
-	c.PositiveSpans, c.PositiveBuckets = convertSpanToSchema(h.PositiveSpans, h.PositiveBuckets, h.Schema, targetSchema)
-	c.NegativeSpans, c.NegativeBuckets = convertSpanToSchema(h.NegativeSpans, h.NegativeBuckets, h.Schema, targetSchema)
+	c.PositiveSpans, c.PositiveBuckets = mergeToSchema(h.PositiveSpans, h.PositiveBuckets, h.Schema, targetSchema)
+	c.NegativeSpans, c.NegativeBuckets = mergeToSchema(h.NegativeSpans, h.NegativeBuckets, h.Schema, targetSchema)
 
 	return &c
 }
@@ -965,71 +965,70 @@ func (i *allFloatBucketIterator) At() Bucket[float64] {
 	return i.currBucket
 }
 
-func targetIdx(idx, schema, targetSchema int32) int32 {
-	return ((idx - 1) >> (schema - targetSchema)) + 1
+// targetIdx returns the bucket index in the target schema for the given bucket
+// index idx in the original schema.
+func targetIdx(idx, originSchema, targetSchema int32) int32 {
+	return ((idx - 1) >> (originSchema - targetSchema)) + 1
 }
 
-func convertSpanToSchema(spans []Span, counts []float64, schema, targetSchema int32) ([]Span, []float64) {
-	targetSpans := make([]Span, 0)
-	targetCounts := make([]float64, 0)
-	// the index of bucket for origin schema
-	var bucketIdx int32 = 0
-	var lastTargetBucketIdx int32 = 0
-	// the index of bucket in a span
-	spanBucketIdx := 0
+// mergeToSchema is used to merge a FloatHistogram's Spans and Buckets (no matter positive or negative) from original schema to target schema
+// the target schema must smaller than original schema
+func mergeToSchema(originSpans []Span, originBuckets []float64, originSchema, targetSchema int32) ([]Span, []float64) {
+	var (
+		targetSpans         []Span    // The spans in the target schema.
+		targetBuckets       []float64 // The buckets in the target schema.
+		bucketIdx           int32     // The index of bucket in the origin schema.
+		lastTargetBucketIdx int32     // The index of bucket which is the last bucket for current targetSpans and targetBuckets.
+		origBucketIdx       int       // The position of a bucket in originBuckets slice.
+	)
 
-	for i, span := range spans {
-		// determine the boundary of first bucket in this span
-		if i == 0 {
-			bucketIdx = spans[0].Offset
-		} else {
-			bucketIdx += span.Offset
-		}
-		// iterate over each span
-		for j := 0; j < int(span.Length); j, bucketIdx = j+1, bucketIdx+1 {
-			// calculate the target start index
-			targetBucketIdx := targetIdx(bucketIdx, schema, targetSchema)
+	for _, span := range originSpans {
+		// Determine the index of the first bucket in this span.
+		bucketIdx += span.Offset
+		for j := 0; j < int(span.Length); j++ {
+			// Determine the index of the bucket in the target schema from the index in the original schema.
+			targetBucketIdx := targetIdx(bucketIdx, originSchema, targetSchema)
 
 			switch {
 			case len(targetSpans) == 0:
-				// this is the first span
+				// This is the first span in the targetSpans.
 				span := Span{
 					Offset: targetBucketIdx,
 					Length: 1,
 				}
 				targetSpans = append(targetSpans, span)
-				targetCounts = append(targetCounts, counts[spanBucketIdx])
+				targetBuckets = append(targetBuckets, originBuckets[0])
 				lastTargetBucketIdx = targetBucketIdx
 
 			case lastTargetBucketIdx == targetBucketIdx:
-				// the target bucket just locates current last span,
-				// then increase counter of last span
-				targetCounts[len(targetCounts)-1] += counts[spanBucketIdx]
+				// The current bucket has to be merged into the same target bucket as the previous bucket.
+				targetBuckets[len(targetBuckets)-1] += originBuckets[origBucketIdx]
 
 			case (lastTargetBucketIdx + 1) == targetBucketIdx:
-				// the target bucket just locates next to current last span,
-				// extend last span
+				// The current bucket has to go into a new target bucket,
+				// and that bucket is next to the previous target bucket,
+				// so we add it to the current target span.
 				targetSpans[len(targetSpans)-1].Length++
-				targetCounts = append(targetCounts, counts[spanBucketIdx])
+				targetBuckets = append(targetBuckets, originBuckets[origBucketIdx])
 				lastTargetBucketIdx++
 
 			case (lastTargetBucketIdx + 1) < targetBucketIdx:
-				// the target bucket just locates outside of last span,
-				// create new span
+				// The current bucket has to go into a new target bucket,
+				// and that bucket is separated by a gap from the previous target bucket,
+				// so we need to add a new target span.
 				span := Span{
 					Offset: targetBucketIdx - lastTargetBucketIdx - 1,
 					Length: 1,
 				}
 				targetSpans = append(targetSpans, span)
-				targetCounts = append(targetCounts, counts[spanBucketIdx])
+				targetBuckets = append(targetBuckets, originBuckets[origBucketIdx])
 				lastTargetBucketIdx = targetBucketIdx
-
-			default:
 			}
 
-			spanBucketIdx++
+			bucketIdx++
+			origBucketIdx++
 		}
 	}
 
-	return targetSpans, targetCounts
+	return targetSpans, targetBuckets
 }
