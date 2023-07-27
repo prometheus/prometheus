@@ -172,7 +172,7 @@ jobs:
           quay_io_login: ${{ secrets.quay_io_login }}
           quay_io_password: ${{ secrets.quay_io_password }}
   publish_release:
-    name: Publish release arfefacts
+    name: Publish release artefacts
     runs-on: ubuntu-latest
     needs: [test_ui, test_go, test_windows, golangci, codeql, build_all]
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v2.')

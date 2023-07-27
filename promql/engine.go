@@ -2874,7 +2874,7 @@ func btos(b bool) float64 {
 // result of the op operation.
 func shouldDropMetricName(op parser.ItemType) bool {
 	switch op {
-	case parser.ADD, parser.SUB, parser.DIV, parser.MUL, parser.POW, parser.MOD:
+	case parser.ADD, parser.SUB, parser.DIV, parser.MUL, parser.POW, parser.MOD, parser.ATAN2:
 		return true
 	default:
 		return false
