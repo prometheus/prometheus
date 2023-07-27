@@ -460,7 +460,7 @@ func (s *memSeries) oooMergedChunk(meta chunks.Meta, cdm *chunks.ChunkDiskMapper
 		if c.meta.Ref == oooHeadRef {
 			chks, err := s.ooo.oooHeadChunk.chunk.ToEncodedChunks(meta.OOOLastMinTime, meta.OOOLastMaxTime)
 			if err != nil {
-				return nil, errors.Wrap(err, "failed to convert ooo head chunk to xor chunk")
+				return nil, errors.Wrap(err, "failed to convert ooo head chunk to encoded chunk(s)")
 			}
 			// If the head results in multiple chunks, the chunks will share the same reference as the head chunk,
 			// which is technically true, but if some code does not check against the head, could lead to unexpected results.

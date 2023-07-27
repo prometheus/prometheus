@@ -119,8 +119,9 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 			samplesWithInvalidLabels++
 			continue
 		}
+		var ref storage.SeriesRef
 		for _, s := range ts.Samples {
-			_, err = app.Append(0, labels, s.Timestamp, s.Value)
+			ref, err = app.Append(ref, labels, s.Timestamp, s.Value)
 			if err != nil {
 				unwrappedErr := errors.Unwrap(err)
 				if unwrappedErr == nil {
