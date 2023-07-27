@@ -99,7 +99,6 @@ func (o *OOOChunk) ToEncodedChunks(mint, maxt int64) (chks []memChunk, err error
 		} else if s.fh != nil {
 			encoding = chunkenc.EncFloatHistogram
 		}
-		created := false
 		if encoding != prevEncoding { // For the first sample, this will always be true as EncNone != EncXOR | EncHistogram | EncFloatHistogram
 			if prevEncoding != chunkenc.EncNone {
 				chks = append(chks, memChunk{chunk, cmint, cmaxt})
@@ -112,165 +111,43 @@ func (o *OOOChunk) ToEncodedChunks(mint, maxt int64) (chks []memChunk, err error
 				chunk = chunkenc.NewHistogramChunk()
 			case chunkenc.EncFloatHistogram:
 				chunk = chunkenc.NewFloatHistogramChunk()
+			default:
+				chunk = chunkenc.NewXORChunk()
 			}
 			app, err = chunk.Appender()
 			if err != nil {
 				return
 			}
-			created = true
 		}
 		switch encoding {
 		case chunkenc.EncXOR:
-			// shortcut for XOR
 			app.Append(s.t, s.f)
 		case chunkenc.EncHistogram:
-			var okToAppend, counterReset, gauge bool
-			if created {
-				okToAppend = true
-				switch s.h.CounterResetHint {
-				case histogram.GaugeType:
-					gauge = true
-				case histogram.CounterReset:
-					counterReset = true
-				}
-			} else { // Not a new chunk, must check for appendable.
-				happ := app.(*chunkenc.HistogramAppender)
-				var (
-					pForwardInserts, nForwardInserts   []chunkenc.Insert
-					pBackwardInserts, nBackwardInserts []chunkenc.Insert
-					pMergedSpans, nMergedSpans         []histogram.Span
-				)
-				switch s.h.CounterResetHint {
-				case histogram.GaugeType:
-					pForwardInserts, nForwardInserts,
-						pBackwardInserts, nBackwardInserts,
-						pMergedSpans, nMergedSpans,
-						okToAppend = happ.AppendableGauge(s.h)
-				case histogram.CounterReset:
-					counterReset = true
-				default:
-					pForwardInserts, nForwardInserts, okToAppend, counterReset = happ.Appendable(s.h)
-				}
-
-				if len(pBackwardInserts)+len(nBackwardInserts) > 0 {
-					s.h.PositiveSpans = pMergedSpans
-					s.h.NegativeSpans = nMergedSpans
-					happ.RecodeHistogram(s.h, pBackwardInserts, nBackwardInserts)
-				}
-				// We have 3 cases here
-				// - !okToAppend or counterReset -> We need to cut a new chunk.
-				// - okToAppend but we have inserts → Existing chunk needs
-				//   recoding before we can append our histogram.
-				// - okToAppend and no inserts → Chunk is ready to support our histogram.
-				switch {
-				case !okToAppend || counterReset:
+			prevHApp, _ := app.(*chunkenc.HistogramAppender)
+			var (
+				newChunk chunkenc.Chunk
+				recoded  bool
+			)
+			newChunk, recoded, app, _ = app.AppendHistogram(prevHApp, s.t, s.h, false)
+			if newChunk != nil { // A new chunk was allocated.
+				if !recoded {
 					chks = append(chks, memChunk{chunk, cmint, cmaxt})
-					chunk = chunkenc.NewHistogramChunk()
-					app, err = chunk.Appender()
-					if err != nil {
-						return
-					}
-					cmint = s.t
-					created = true
-				case len(pForwardInserts) > 0 || len(nForwardInserts) > 0:
-					// New buckets have appeared. We need to recode all
-					// prior histogram samples within the chunk before we
-					// can process this one.
-					chunk, app = happ.Recode(
-						pForwardInserts, nForwardInserts,
-						s.h.PositiveSpans, s.h.NegativeSpans,
-					)
 				}
+				chunk = newChunk
 			}
-
-			if created {
-				hc := chunk.(*chunkenc.HistogramChunk)
-				header := chunkenc.UnknownCounterReset
-				switch {
-				case gauge:
-					header = chunkenc.GaugeType
-				case counterReset:
-					header = chunkenc.CounterReset
-				case okToAppend:
-					header = chunkenc.NotCounterReset
-				}
-				hc.SetCounterResetHeader(header)
-			}
-			app.AppendHistogram(s.t, s.h)
 		case chunkenc.EncFloatHistogram:
-			var okToAppend, counterReset, gauge bool
-			if created {
-				okToAppend = true
-				switch s.fh.CounterResetHint {
-				case histogram.GaugeType:
-					gauge = true
-				case histogram.CounterReset:
-					counterReset = true
-				}
-			} else { // Not a new chunk, must check for appendable.
-				happ := app.(*chunkenc.FloatHistogramAppender)
-				var (
-					pForwardInserts, nForwardInserts   []chunkenc.Insert
-					pBackwardInserts, nBackwardInserts []chunkenc.Insert
-					pMergedSpans, nMergedSpans         []histogram.Span
-				)
-				switch s.fh.CounterResetHint {
-				case histogram.GaugeType:
-					pForwardInserts, nForwardInserts,
-						pBackwardInserts, nBackwardInserts,
-						pMergedSpans, nMergedSpans,
-						okToAppend = happ.AppendableGauge(s.fh)
-				case histogram.CounterReset:
-					counterReset = true
-				default:
-					pForwardInserts, nForwardInserts, okToAppend, counterReset = happ.Appendable(s.fh)
-				}
-
-				if len(pBackwardInserts)+len(nBackwardInserts) > 0 {
-					s.fh.PositiveSpans = pMergedSpans
-					s.fh.NegativeSpans = nMergedSpans
-					happ.RecodeHistogramm(s.fh, pBackwardInserts, nBackwardInserts)
-				}
-				// We have 3 cases here
-				// - !okToAppend or counterReset -> We need to cut a new chunk.
-				// - okToAppend but we have inserts → Existing chunk needs
-				//   recoding before we can append our histogram.
-				// - okToAppend and no inserts → Chunk is ready to support our histogram.
-				switch {
-				case !okToAppend || counterReset:
+			prevHApp, _ := app.(*chunkenc.FloatHistogramAppender)
+			var (
+				newChunk chunkenc.Chunk
+				recoded  bool
+			)
+			newChunk, recoded, app, _ = app.AppendFloatHistogram(prevHApp, s.t, s.fh, false)
+			if newChunk != nil { // A new chunk was allocated.
+				if !recoded {
 					chks = append(chks, memChunk{chunk, cmint, cmaxt})
-					chunk = chunkenc.NewFloatHistogramChunk()
-					app, err = chunk.Appender()
-					if err != nil {
-						return
-					}
-					cmint = s.t
-					created = true
-				case len(pForwardInserts) > 0 || len(nForwardInserts) > 0:
-					// New buckets have appeared. We need to recode all
-					// prior histogram samples within the chunk before we
-					// can process this one.
-					chunk, app = happ.Recode(
-						pForwardInserts, nForwardInserts,
-						s.fh.PositiveSpans, s.fh.NegativeSpans,
-					)
 				}
+				chunk = newChunk
 			}
-
-			if created {
-				hc := chunk.(*chunkenc.FloatHistogramChunk)
-				header := chunkenc.UnknownCounterReset
-				switch {
-				case gauge:
-					header = chunkenc.GaugeType
-				case counterReset:
-					header = chunkenc.CounterReset
-				case okToAppend:
-					header = chunkenc.NotCounterReset
-				}
-				hc.SetCounterResetHeader(header)
-			}
-			app.AppendFloatHistogram(s.t, s.fh)
 		}
 		cmaxt = s.t
 		prevEncoding = encoding
