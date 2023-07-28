@@ -52,6 +52,9 @@ const (
 	// Default duration of a block in milliseconds.
 	DefaultBlockDuration = int64(2 * time.Hour / time.Millisecond)
 
+	// Default interval duration for out-of-order head compaction.
+	DefaultOutOfOrderCompactInterval = 2 * time.Hour
+
 	// Block dir suffixes to make deletion and creation operations atomic.
 	// We decided to do suffixes instead of creating meta.json as last (or delete as first) one,
 	// because in error case you still can recover meta.json from the block content within local TSDB dir.
@@ -84,6 +87,7 @@ func DefaultOptions() *Options {
 		IsolationDisabled:          defaultIsolationDisabled,
 		HeadChunksWriteQueueSize:   chunks.DefaultWriteQueueSize,
 		OutOfOrderCapMax:           DefaultOutOfOrderCapMax,
+		OutOfOrderCompactInterval:  DefaultOutOfOrderCompactInterval,
 	}
 }
 
@@ -183,6 +187,10 @@ type Options struct {
 	// while initialising.
 	OutOfOrderTimeWindow int64
 
+	// OutOfOrderCompactInterval specifies the interval for automatic compaction of
+	// out-of-order head block.
+	OutOfOrderCompactInterval time.Duration
+
 	// OutOfOrderCapMax is maximum capacity for OOO chunks (in samples).
 	// If it is <=0, the default value is assumed.
 	OutOfOrderCapMax int64
@@ -235,19 +243,22 @@ type DB struct {
 }
 
 type dbMetrics struct {
-	loadedBlocks         prometheus.GaugeFunc
-	symbolTableSize      prometheus.GaugeFunc
-	reloads              prometheus.Counter
-	reloadsFailed        prometheus.Counter
-	compactionsFailed    prometheus.Counter
-	compactionsTriggered prometheus.Counter
-	compactionsSkipped   prometheus.Counter
-	sizeRetentionCount   prometheus.Counter
-	timeRetentionCount   prometheus.Counter
-	startTime            prometheus.GaugeFunc
-	tombCleanTimer       prometheus.Histogram
-	blocksBytes          prometheus.Gauge
-	maxBytes             prometheus.Gauge
+	loadedBlocks             prometheus.GaugeFunc
+	symbolTableSize          prometheus.GaugeFunc
+	reloads                  prometheus.Counter
+	reloadsFailed            prometheus.Counter
+	headCompactionsFailed    prometheus.Counter
+	headCompactionsTriggered prometheus.Counter
+	headCompactionsSkipped   prometheus.Counter
+	oooCompactionsFailed     prometheus.Counter
+	oooCompactionsTriggered  prometheus.Counter
+	oooCompactionsSkipped    prometheus.Counter
+	sizeRetentionCount       prometheus.Counter
+	timeRetentionCount       prometheus.Counter
+	startTime                prometheus.GaugeFunc
+	tombCleanTimer           prometheus.Histogram
+	blocksBytes              prometheus.Gauge
+	maxBytes                 prometheus.Gauge
 }
 
 func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
@@ -282,21 +293,39 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 		Name: "prometheus_tsdb_reloads_failures_total",
 		Help: "Number of times the database failed to reloadBlocks block data from disk.",
 	})
-	m.compactionsTriggered = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_tsdb_compactions_triggered_total",
-		Help: "Total number of triggered compactions for the partition.",
+	m.headCompactionsTriggered = prometheus.NewCounter(prometheus.CounterOpts{
+		Name:        "prometheus_tsdb_head_compactions_triggered_total",
+		Help:        "Total number of triggered compactions for the partition.",
+		ConstLabels: prometheus.Labels{"type": "head"},
 	})
-	m.compactionsFailed = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_tsdb_compactions_failed_total",
-		Help: "Total number of compactions that failed for the partition.",
+	m.headCompactionsFailed = prometheus.NewCounter(prometheus.CounterOpts{
+		Name:        "prometheus_tsdb_compactions_failed_total",
+		Help:        "Total number of compactions that failed for the partition.",
+		ConstLabels: prometheus.Labels{"type": "head"},
+	})
+	m.headCompactionsSkipped = prometheus.NewCounter(prometheus.CounterOpts{
+		Name:        "prometheus_tsdb_compactions_skipped_total",
+		Help:        "Total number of skipped compactions due to disabled auto compaction.",
+		ConstLabels: prometheus.Labels{"type": "head"},
+	})
+	m.oooCompactionsTriggered = prometheus.NewCounter(prometheus.CounterOpts{
+		Name:        "prometheus_tsdb_compactions_triggered_total",
+		Help:        "Total number of triggered compactions for the partition.",
+		ConstLabels: prometheus.Labels{"type": "ooo"},
+	})
+	m.oooCompactionsFailed = prometheus.NewCounter(prometheus.CounterOpts{
+		Name:        "prometheus_tsdb_compactions_failed_total",
+		Help:        "Total number of compactions that failed for the partition.",
+		ConstLabels: prometheus.Labels{"type": "ooo"},
+	})
+	m.oooCompactionsSkipped = prometheus.NewCounter(prometheus.CounterOpts{
+		Name:        "prometheus_tsdb_compactions_skipped_total",
+		Help:        "Total number of skipped compactions due to disabled auto compaction.",
+		ConstLabels: prometheus.Labels{"type": "ooo"},
 	})
 	m.timeRetentionCount = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_time_retentions_total",
 		Help: "The number of times that blocks were deleted because the maximum time limit was exceeded.",
-	})
-	m.compactionsSkipped = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_tsdb_compactions_skipped_total",
-		Help: "Total number of skipped compactions due to disabled auto compaction.",
 	})
 	m.startTime = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "prometheus_tsdb_lowest_timestamp",
@@ -332,9 +361,9 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 			m.symbolTableSize,
 			m.reloads,
 			m.reloadsFailed,
-			m.compactionsFailed,
-			m.compactionsTriggered,
-			m.compactionsSkipped,
+			m.headCompactionsFailed,
+			m.headCompactionsTriggered,
+			m.headCompactionsSkipped,
 			m.sizeRetentionCount,
 			m.timeRetentionCount,
 			m.startTime,
@@ -712,6 +741,9 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64) {
 	if opts.OutOfOrderTimeWindow < 0 {
 		opts.OutOfOrderTimeWindow = 0
 	}
+	if opts.OutOfOrderCompactInterval.Milliseconds() == 0 {
+		opts.OutOfOrderCompactInterval = DefaultOutOfOrderCompactInterval
+	}
 
 	if len(rngs) == 0 {
 		// Start with smallest block duration and create exponential buckets until the exceed the
@@ -954,6 +986,19 @@ func (db *DB) run() {
 
 	backoff := time.Duration(0)
 
+	// We align the compactions to happen with in-order compaction, which happens midway
+	// between aligned intervals of time.
+	nowUnix := time.Now().Unix()
+	oooCompactionIntvSec := int64(db.opts.OutOfOrderCompactInterval / time.Second)
+	nextCompaction := (nowUnix / oooCompactionIntvSec) * oooCompactionIntvSec
+	nextCompaction += oooCompactionIntvSec / 2
+	if nextCompaction < nowUnix {
+		nextCompaction += oooCompactionIntvSec
+	}
+	timeUntilNextCompaction := time.Duration(nextCompaction-nowUnix) * time.Second
+
+	oooScheduledCompact := time.NewTimer(timeUntilNextCompaction)
+
 	for {
 		select {
 		case <-db.stopc:
@@ -973,8 +1018,22 @@ func (db *DB) run() {
 			case db.compactc <- struct{}{}:
 			default:
 			}
+		case <-oooScheduledCompact.C:
+			oooScheduledCompact.Reset(db.opts.OutOfOrderCompactInterval)
+
+			db.metrics.oooCompactionsTriggered.Inc()
+
+			db.autoCompactMtx.Lock()
+			if db.autoCompact {
+				if err := db.CompactOOOHead(); err != nil {
+					level.Error(db.logger).Log("msg", "compaction failed", "err", "compact ooo head")
+				}
+			} else {
+				db.metrics.oooCompactionsSkipped.Inc()
+			}
+			db.autoCompactMtx.Unlock()
 		case <-db.compactc:
-			db.metrics.compactionsTriggered.Inc()
+			db.metrics.headCompactionsTriggered.Inc()
 
 			db.autoCompactMtx.Lock()
 			if db.autoCompact {
@@ -985,7 +1044,7 @@ func (db *DB) run() {
 					backoff = 0
 				}
 			} else {
-				db.metrics.compactionsSkipped.Inc()
+				db.metrics.headCompactionsSkipped.Inc()
 			}
 			db.autoCompactMtx.Unlock()
 		case <-db.stopc:
@@ -1105,7 +1164,7 @@ func (db *DB) Compact() (returnErr error) {
 		if returnErr != nil && !errors.Is(returnErr, context.Canceled) {
 			// If we got an error because context was canceled then we're most likely
 			// shutting down TSDB and we don't need to report this on metrics
-			db.metrics.compactionsFailed.Inc()
+			db.metrics.headCompactionsFailed.Inc()
 		}
 	}()
 
@@ -1169,13 +1228,6 @@ func (db *DB) Compact() (returnErr error) {
 		)
 	}
 
-	if lastBlockMaxt != math.MinInt64 {
-		// The head was compacted, so we compact OOO head as well.
-		if err := db.compactOOOHead(); err != nil {
-			return errors.Wrap(err, "compact ooo head")
-		}
-	}
-
 	return db.compactBlocks()
 }
 
@@ -1195,9 +1247,14 @@ func (db *DB) CompactHead(head *RangeHead) error {
 }
 
 // CompactOOOHead compacts the OOO Head.
-func (db *DB) CompactOOOHead() error {
+func (db *DB) CompactOOOHead() (returnErr error) {
 	db.cmtx.Lock()
 	defer db.cmtx.Unlock()
+	defer func() {
+		if returnErr != nil {
+			db.metrics.oooCompactionsFailed.Inc()
+		}
+	}()
 
 	return db.compactOOOHead()
 }

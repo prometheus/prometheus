@@ -1138,13 +1138,13 @@ func TestDisableAutoCompactions(t *testing.T) {
 	}
 
 	for x := 0; x < 10; x++ {
-		if prom_testutil.ToFloat64(db.metrics.compactionsSkipped) > 0.0 {
+		if prom_testutil.ToFloat64(db.metrics.headCompactionsSkipped) > 0.0 {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	require.Greater(t, prom_testutil.ToFloat64(db.metrics.compactionsSkipped), 0.0, "No compaction was skipped after the set timeout.")
+	require.Greater(t, prom_testutil.ToFloat64(db.metrics.headCompactionsSkipped), 0.0, "No compaction was skipped after the set timeout.")
 	require.Equal(t, 0, len(db.blocks))
 
 	// Enable the compaction, trigger it and check that the block is persisted.
@@ -1287,7 +1287,7 @@ func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 
 			require.Equal(t, 0.0, prom_testutil.ToFloat64(db.metrics.reloadsFailed), "initial 'failed db reloadBlocks' count metrics mismatch")
 			require.Equal(t, 0.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.Ran), "initial `compactions` count metric mismatch")
-			require.Equal(t, 0.0, prom_testutil.ToFloat64(db.metrics.compactionsFailed), "initial `compactions failed` count metric mismatch")
+			require.Equal(t, 0.0, prom_testutil.ToFloat64(db.metrics.headCompactionsFailed), "initial `compactions failed` count metric mismatch")
 
 			// Do the compaction and check the metrics.
 			// Compaction should succeed, but the reloadBlocks should fail and
@@ -1295,7 +1295,7 @@ func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 			require.Error(t, db.Compact())
 			require.Equal(t, 1.0, prom_testutil.ToFloat64(db.metrics.reloadsFailed), "'failed db reloadBlocks' count metrics mismatch")
 			require.Equal(t, 1.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.Ran), "`compaction` count metric mismatch")
-			require.Equal(t, 1.0, prom_testutil.ToFloat64(db.metrics.compactionsFailed), "`compactions failed` count metric mismatch")
+			require.Equal(t, 1.0, prom_testutil.ToFloat64(db.metrics.headCompactionsFailed), "`compactions failed` count metric mismatch")
 
 			actBlocks, err = blockDirs(db.Dir())
 			require.NoError(t, err)

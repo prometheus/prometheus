@@ -4276,313 +4276,6 @@ func TestOOOCompaction(t *testing.T) {
 	verifyDBSamples() // Final state. Blocks from normal and OOO head are merged.
 }
 
-// TestOOOCompactionWithNormalCompaction tests if OOO compaction is performed
-// when the normal head's compaction is done.
-func TestOOOCompactionWithNormalCompaction(t *testing.T) {
-	dir := t.TempDir()
-
-	opts := DefaultOptions()
-	opts.OutOfOrderCapMax = 30
-	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
-
-	db, err := Open(dir, nil, nil, opts, nil)
-	require.NoError(t, err)
-	db.DisableCompactions() // We want to manually call it.
-	t.Cleanup(func() {
-		require.NoError(t, db.Close())
-	})
-
-	series1 := labels.FromStrings("foo", "bar1")
-	series2 := labels.FromStrings("foo", "bar2")
-
-	addSamples := func(fromMins, toMins int64) {
-		app := db.Appender(context.Background())
-		for min := fromMins; min <= toMins; min++ {
-			ts := min * time.Minute.Milliseconds()
-			_, err := app.Append(0, series1, ts, float64(ts))
-			require.NoError(t, err)
-			_, err = app.Append(0, series2, ts, float64(2*ts))
-			require.NoError(t, err)
-		}
-		require.NoError(t, app.Commit())
-	}
-
-	// Add an in-order samples.
-	addSamples(250, 350)
-
-	// Add ooo samples that will result into a single block.
-	addSamples(90, 110)
-
-	// Checking that ooo chunk is not empty.
-	for _, lbls := range []labels.Labels{series1, series2} {
-		ms, created, err := db.head.getOrCreate(lbls.Hash(), lbls)
-		require.NoError(t, err)
-		require.False(t, created)
-		require.Greater(t, ms.ooo.oooHeadChunk.chunk.NumSamples(), 0)
-	}
-
-	// If the normal Head is not compacted, the OOO head compaction does not take place.
-	require.NoError(t, db.Compact())
-	require.Equal(t, len(db.Blocks()), 0)
-
-	// Add more in-order samples in future that would trigger the compaction.
-	addSamples(400, 450)
-
-	// No blocks before compaction.
-	require.Equal(t, len(db.Blocks()), 0)
-
-	// Compacts normal and OOO head.
-	require.NoError(t, db.Compact())
-
-	// 2 blocks exist now. [0, 120), [250, 360)
-	require.Equal(t, len(db.Blocks()), 2)
-	require.Equal(t, int64(0), db.Blocks()[0].MinTime())
-	require.Equal(t, 120*time.Minute.Milliseconds(), db.Blocks()[0].MaxTime())
-	require.Equal(t, 250*time.Minute.Milliseconds(), db.Blocks()[1].MinTime())
-	require.Equal(t, 360*time.Minute.Milliseconds(), db.Blocks()[1].MaxTime())
-
-	// Checking that ooo chunk is empty.
-	for _, lbls := range []labels.Labels{series1, series2} {
-		ms, created, err := db.head.getOrCreate(lbls.Hash(), lbls)
-		require.NoError(t, err)
-		require.False(t, created)
-		require.Nil(t, ms.ooo)
-	}
-
-	verifySamples := func(block *Block, fromMins, toMins int64) {
-		series1Samples := make([]tsdbutil.Sample, 0, toMins-fromMins+1)
-		series2Samples := make([]tsdbutil.Sample, 0, toMins-fromMins+1)
-		for min := fromMins; min <= toMins; min++ {
-			ts := min * time.Minute.Milliseconds()
-			series1Samples = append(series1Samples, sample{ts, float64(ts), nil, nil})
-			series2Samples = append(series2Samples, sample{ts, float64(2 * ts), nil, nil})
-		}
-		expRes := map[string][]tsdbutil.Sample{
-			series1.String(): series1Samples,
-			series2.String(): series2Samples,
-		}
-
-		q, err := NewBlockQuerier(block, math.MinInt64, math.MaxInt64)
-		require.NoError(t, err)
-
-		actRes := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
-		require.Equal(t, expRes, actRes)
-	}
-
-	// Checking for expected data in the blocks.
-	verifySamples(db.Blocks()[0], 90, 110)
-	verifySamples(db.Blocks()[1], 250, 350)
-}
-
-// TestOOOCompactionWithDisabledWriteLog tests the scenario where the TSDB is
-// configured to not have wal and wbl but its able to compact both the in-order
-// and out-of-order head
-func TestOOOCompactionWithDisabledWriteLog(t *testing.T) {
-	dir := t.TempDir()
-
-	opts := DefaultOptions()
-	opts.OutOfOrderCapMax = 30
-	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
-	opts.WALSegmentSize = -1 // disabled WAL and WBL
-
-	db, err := Open(dir, nil, nil, opts, nil)
-	require.NoError(t, err)
-	db.DisableCompactions() // We want to manually call it.
-	t.Cleanup(func() {
-		require.NoError(t, db.Close())
-	})
-
-	series1 := labels.FromStrings("foo", "bar1")
-	series2 := labels.FromStrings("foo", "bar2")
-
-	addSamples := func(fromMins, toMins int64) {
-		app := db.Appender(context.Background())
-		for min := fromMins; min <= toMins; min++ {
-			ts := min * time.Minute.Milliseconds()
-			_, err := app.Append(0, series1, ts, float64(ts))
-			require.NoError(t, err)
-			_, err = app.Append(0, series2, ts, float64(2*ts))
-			require.NoError(t, err)
-		}
-		require.NoError(t, app.Commit())
-	}
-
-	// Add an in-order samples.
-	addSamples(250, 350)
-
-	// Add ooo samples that will result into a single block.
-	addSamples(90, 110)
-
-	// Checking that ooo chunk is not empty.
-	for _, lbls := range []labels.Labels{series1, series2} {
-		ms, created, err := db.head.getOrCreate(lbls.Hash(), lbls)
-		require.NoError(t, err)
-		require.False(t, created)
-		require.Greater(t, ms.ooo.oooHeadChunk.chunk.NumSamples(), 0)
-	}
-
-	// If the normal Head is not compacted, the OOO head compaction does not take place.
-	require.NoError(t, db.Compact())
-	require.Equal(t, len(db.Blocks()), 0)
-
-	// Add more in-order samples in future that would trigger the compaction.
-	addSamples(400, 450)
-
-	// No blocks before compaction.
-	require.Equal(t, len(db.Blocks()), 0)
-
-	// Compacts normal and OOO head.
-	require.NoError(t, db.Compact())
-
-	// 2 blocks exist now. [0, 120), [250, 360)
-	require.Equal(t, len(db.Blocks()), 2)
-	require.Equal(t, int64(0), db.Blocks()[0].MinTime())
-	require.Equal(t, 120*time.Minute.Milliseconds(), db.Blocks()[0].MaxTime())
-	require.Equal(t, 250*time.Minute.Milliseconds(), db.Blocks()[1].MinTime())
-	require.Equal(t, 360*time.Minute.Milliseconds(), db.Blocks()[1].MaxTime())
-
-	// Checking that ooo chunk is empty.
-	for _, lbls := range []labels.Labels{series1, series2} {
-		ms, created, err := db.head.getOrCreate(lbls.Hash(), lbls)
-		require.NoError(t, err)
-		require.False(t, created)
-		require.Nil(t, ms.ooo)
-	}
-
-	verifySamples := func(block *Block, fromMins, toMins int64) {
-		series1Samples := make([]tsdbutil.Sample, 0, toMins-fromMins+1)
-		series2Samples := make([]tsdbutil.Sample, 0, toMins-fromMins+1)
-		for min := fromMins; min <= toMins; min++ {
-			ts := min * time.Minute.Milliseconds()
-			series1Samples = append(series1Samples, sample{ts, float64(ts), nil, nil})
-			series2Samples = append(series2Samples, sample{ts, float64(2 * ts), nil, nil})
-		}
-		expRes := map[string][]tsdbutil.Sample{
-			series1.String(): series1Samples,
-			series2.String(): series2Samples,
-		}
-
-		q, err := NewBlockQuerier(block, math.MinInt64, math.MaxInt64)
-		require.NoError(t, err)
-
-		actRes := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
-		require.Equal(t, expRes, actRes)
-	}
-
-	// Checking for expected data in the blocks.
-	verifySamples(db.Blocks()[0], 90, 110)
-	verifySamples(db.Blocks()[1], 250, 350)
-}
-
-// TestOOOQueryAfterRestartWithSnapshotAndRemovedWBL tests the scenario where the WBL goes
-// missing after a restart while snapshot was enabled, but the query still returns the right
-// data from the mmap chunks.
-func TestOOOQueryAfterRestartWithSnapshotAndRemovedWBL(t *testing.T) {
-	dir := t.TempDir()
-
-	opts := DefaultOptions()
-	opts.OutOfOrderCapMax = 10
-	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
-	opts.EnableMemorySnapshotOnShutdown = true
-
-	db, err := Open(dir, nil, nil, opts, nil)
-	require.NoError(t, err)
-	db.DisableCompactions() // We want to manually call it.
-	t.Cleanup(func() {
-		require.NoError(t, db.Close())
-	})
-
-	series1 := labels.FromStrings("foo", "bar1")
-	series2 := labels.FromStrings("foo", "bar2")
-
-	addSamples := func(fromMins, toMins int64) {
-		app := db.Appender(context.Background())
-		for min := fromMins; min <= toMins; min++ {
-			ts := min * time.Minute.Milliseconds()
-			_, err := app.Append(0, series1, ts, float64(ts))
-			require.NoError(t, err)
-			_, err = app.Append(0, series2, ts, float64(2*ts))
-			require.NoError(t, err)
-		}
-		require.NoError(t, app.Commit())
-	}
-
-	// Add an in-order samples.
-	addSamples(250, 350)
-
-	// Add ooo samples that will result into a single block.
-	addSamples(90, 110) // The sample 110 will not be in m-map chunks.
-
-	// Checking that there are some ooo m-map chunks.
-	for _, lbls := range []labels.Labels{series1, series2} {
-		ms, created, err := db.head.getOrCreate(lbls.Hash(), lbls)
-		require.NoError(t, err)
-		require.False(t, created)
-		require.Equal(t, 2, len(ms.ooo.oooMmappedChunks))
-		require.NotNil(t, ms.ooo.oooHeadChunk)
-	}
-
-	// Restart DB.
-	require.NoError(t, db.Close())
-
-	// For some reason wbl goes missing.
-	require.NoError(t, os.RemoveAll(path.Join(dir, "wbl")))
-
-	db, err = Open(dir, nil, nil, opts, nil)
-	require.NoError(t, err)
-	db.DisableCompactions() // We want to manually call it.
-
-	// Check ooo m-map chunks again.
-	for _, lbls := range []labels.Labels{series1, series2} {
-		ms, created, err := db.head.getOrCreate(lbls.Hash(), lbls)
-		require.NoError(t, err)
-		require.False(t, created)
-		require.Equal(t, 2, len(ms.ooo.oooMmappedChunks))
-		require.Equal(t, 109*time.Minute.Milliseconds(), ms.ooo.oooMmappedChunks[1].maxTime)
-		require.Nil(t, ms.ooo.oooHeadChunk) // Because of missing wbl.
-	}
-
-	verifySamples := func(fromMins, toMins int64) {
-		series1Samples := make([]tsdbutil.Sample, 0, toMins-fromMins+1)
-		series2Samples := make([]tsdbutil.Sample, 0, toMins-fromMins+1)
-		for min := fromMins; min <= toMins; min++ {
-			ts := min * time.Minute.Milliseconds()
-			series1Samples = append(series1Samples, sample{ts, float64(ts), nil, nil})
-			series2Samples = append(series2Samples, sample{ts, float64(2 * ts), nil, nil})
-		}
-		expRes := map[string][]tsdbutil.Sample{
-			series1.String(): series1Samples,
-			series2.String(): series2Samples,
-		}
-
-		q, err := db.Querier(context.Background(), fromMins*time.Minute.Milliseconds(), toMins*time.Minute.Milliseconds())
-		require.NoError(t, err)
-
-		actRes := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
-		require.Equal(t, expRes, actRes)
-	}
-
-	// Checking for expected ooo data from mmap chunks.
-	verifySamples(90, 109)
-
-	// Compaction should also work fine.
-	require.Equal(t, len(db.Blocks()), 0)
-	require.NoError(t, db.CompactOOOHead())
-	require.Equal(t, len(db.Blocks()), 1) // One block from OOO data.
-	require.Equal(t, int64(0), db.Blocks()[0].MinTime())
-	require.Equal(t, 120*time.Minute.Milliseconds(), db.Blocks()[0].MaxTime())
-
-	// Checking that ooo chunk is empty in Head.
-	for _, lbls := range []labels.Labels{series1, series2} {
-		ms, created, err := db.head.getOrCreate(lbls.Hash(), lbls)
-		require.NoError(t, err)
-		require.False(t, created)
-		require.Nil(t, ms.ooo)
-	}
-
-	verifySamples(90, 109)
-}
-
 func Test_Querier_OOOQuery(t *testing.T) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 30
@@ -4949,6 +4642,49 @@ func TestOOODisabled(t *testing.T) {
 	require.False(t, created)
 	require.NotNil(t, ms)
 	require.Nil(t, ms.ooo)
+}
+
+func TestOOOScheduledCompact(t *testing.T) {
+	// Verify the OOO compact happens at the right time.
+	opts := DefaultOptions()
+	opts.OutOfOrderTimeWindow = 30 * time.Minute.Milliseconds()
+	// OOO compact should happen every 2 seconds aligned with half of the interval
+	// (1 second) in wall time.
+	opts.OutOfOrderCompactInterval = 2 * time.Second
+	db := openTestDB(t, opts, nil)
+	t.Cleanup(func() {
+		require.NoError(t, db.Close())
+	})
+
+	s1 := labels.FromStrings("foo", "bar1")
+	addSamples := func(t *testing.T, db *DB, fromMins, toMins int64) {
+		app := db.Appender(context.Background())
+		for min := fromMins; min <= toMins; min++ {
+			ts := min * time.Minute.Milliseconds()
+			_, err := app.Append(0, s1, ts, float64(ts))
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+	}
+
+	// Wait until the start of the odd seconds (t = 1).
+	nextOddSec := time.Now().Truncate(2 * time.Second).Add(time.Second)
+	if nextOddSec.Before(time.Now()) {
+		nextOddSec = nextOddSec.Add(2 * time.Second)
+	}
+	time.Sleep(time.Until(nextOddSec))
+
+	// Add in-order samples.
+	addSamples(t, db, 450, 490)
+	require.Equal(t, 0, len(db.Blocks()))
+
+	// Add out-of-order samples.
+	addSamples(t, db, 480, 480)
+	require.Equal(t, 0, len(db.Blocks()))
+
+	// Wait until the start of the next seconds + 100 millisecond for buffer (t = 2.1).
+	time.Sleep(1100 * time.Millisecond)
+	require.Equal(t, 1, len(db.Blocks()))
 }
 
 func TestWBLAndMmapReplay(t *testing.T) {
@@ -5851,6 +5587,7 @@ func TestNoGapAfterRestartWithOOO(t *testing.T) {
 
 			// We get 2 blocks. 1 from OOO, 1 from in-order.
 			require.NoError(t, db.Compact())
+			require.NoError(t, db.CompactOOOHead())
 			verifyBlockRanges := func() {
 				blocks := db.Blocks()
 				require.Equal(t, len(c.blockRanges), len(blocks))
@@ -6051,12 +5788,14 @@ func TestDiskFillingUpAfterDisablingOOO(t *testing.T) {
 
 	checkMmapFileContents([]string{"000001", "000002"}, nil)
 	require.NoError(t, db.Compact())
+	require.NoError(t, db.CompactOOOHead())
 	checkMmapFileContents([]string{"000002"}, []string{"000001"})
 	require.Nil(t, ms.ooo, "OOO mmap chunk was not compacted")
 
 	addSamples(501, 650)
 	checkMmapFileContents([]string{"000002", "000003"}, []string{"000001"})
 	require.NoError(t, db.Compact())
+	require.NoError(t, db.CompactOOOHead())
 	checkMmapFileContents(nil, []string{"000001", "000002", "000003"})
 
 	// Verify that WBL is empty.
