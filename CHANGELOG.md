@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.37.9 / 2023-07-28
+
+This update includes an update to the Go toolchain. It is the final release in
+the 2.37 LTS release cycle.
+
 ## 2.37.8 / 2023-05-04
 
 This update includes an update to the Go toolchain and an update to the Docker
