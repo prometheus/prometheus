@@ -298,7 +298,7 @@ func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSi
 		return nil, errors.New("invalid segment size")
 	}
 	if err := os.MkdirAll(dir, 0o777); err != nil {
-		return nil, errors.Wrap(err, "create dir")
+		return nil, fmt.Errorf("create dir: %w", err)
 	}
 	if logger == nil {
 		logger = log.NewNopLogger()
@@ -331,7 +331,7 @@ func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSi
 
 	_, last, err := Segments(w.Dir())
 	if err != nil {
-		return nil, errors.Wrap(err, "get segment range")
+		return nil, fmt.Errorf("get segment range: %w", err)
 	}
 
 	// Index of the Segment we want to open and write to.
@@ -429,7 +429,7 @@ func (w *WL) Repair(origErr error) error {
 	// All segments behind the corruption can no longer be used.
 	segs, err := listSegments(w.Dir())
 	if err != nil {
-		return errors.Wrap(err, "list segments")
+		return fmt.Errorf("list segments: %w", err)
 	}
 	level.Warn(w.logger).Log("msg", "Deleting all segments newer than corrupted segment", "segment", cerr.Segment)
 
@@ -440,7 +440,7 @@ func (w *WL) Repair(origErr error) error {
 			// as we set the current segment to repaired file
 			// below.
 			if err := w.segment.Close(); err != nil {
-				return errors.Wrap(err, "close active segment")
+				return fmt.Errorf("close active segment: %w", err)
 			}
 		}
 		if s.index <= cerr.Segment {
@@ -472,7 +472,7 @@ func (w *WL) Repair(origErr error) error {
 
 	f, err := os.Open(tmpfn)
 	if err != nil {
-		return errors.Wrap(err, "open segment")
+		return fmt.Errorf("open segment: %w", err)
 	}
 	defer f.Close()
 
@@ -484,24 +484,24 @@ func (w *WL) Repair(origErr error) error {
 			break
 		}
 		if err := w.Log(r.Record()); err != nil {
-			return errors.Wrap(err, "insert record")
+			return fmt.Errorf("insert record: %w", err)
 		}
 	}
 	// We expect an error here from r.Err(), so nothing to handle.
 
 	// We need to pad to the end of the last page in the repaired segment
 	if err := w.flushPage(true); err != nil {
-		return errors.Wrap(err, "flush page in repair")
+		return fmt.Errorf("flush page in repair: %w", err)
 	}
 
 	// We explicitly close even when there is a defer for Windows to be
 	// able to delete it. The defer is in place to close it in-case there
 	// are errors above.
 	if err := f.Close(); err != nil {
-		return errors.Wrap(err, "close corrupted file")
+		return fmt.Errorf("close corrupted file: %w", err)
 	}
 	if err := os.Remove(tmpfn); err != nil {
-		return errors.Wrap(err, "delete corrupted segment")
+		return fmt.Errorf("delete corrupted segment: %w", err)
 	}
 
 	// Explicitly close the segment we just repaired to avoid issues with Windows.
@@ -553,7 +553,7 @@ func (w *WL) nextSegment(async bool) (int, error) {
 	}
 	next, err := CreateSegment(w.Dir(), w.segment.Index()+1)
 	if err != nil {
-		return 0, errors.Wrap(err, "create new segment file")
+		return 0, fmt.Errorf("create new segment file: %w", err)
 	}
 	prev := w.segment
 	if err := w.setSegment(next); err != nil {

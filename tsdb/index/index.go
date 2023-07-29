@@ -197,7 +197,7 @@ func NewWriter(ctx context.Context, fn string) (*Writer, error) {
 	defer df.Close() // Close for platform windows.
 
 	if err := os.RemoveAll(fn); err != nil {
-		return nil, errors.Wrap(err, "remove any existing index at path")
+		return nil, fmt.Errorf("remove any existing index at path: %w", err)
 	}
 
 	// Main index file we are building.
@@ -216,7 +216,7 @@ func NewWriter(ctx context.Context, fn string) (*Writer, error) {
 		return nil, err
 	}
 	if err := df.Sync(); err != nil {
-		return nil, errors.Wrap(err, "sync dir")
+		return nil, fmt.Errorf("sync dir: %w", err)
 	}
 
 	iw := &Writer{
@@ -315,7 +315,7 @@ func (fw *FileWriter) AddPadding(size int) error {
 	p = uint64(size) - p
 
 	if err := fw.Write(make([]byte, p)); err != nil {
-		return errors.Wrap(err, "add padding")
+		return fmt.Errorf("add padding: %w", err)
 	}
 	return nil
 }
@@ -493,7 +493,7 @@ func (w *Writer) AddSeries(ref storage.SeriesRef, lset labels.Labels, chunks ...
 	w.buf2.PutHash(w.crc32)
 
 	if err := w.write(w.buf1.Get(), w.buf2.Get()); err != nil {
-		return errors.Wrap(err, "write series data")
+		return fmt.Errorf("write series data: %w", err)
 	}
 
 	w.lastSeries.CopyFrom(lset)
@@ -563,7 +563,7 @@ func (w *Writer) finishSymbols() error {
 	// Load in the symbol table efficiently for the rest of the index writing.
 	w.symbols, err = NewSymbols(realByteSlice(w.symbolFile.Bytes()), FormatV2, int(w.toc.Symbols))
 	if err != nil {
-		return errors.Wrap(err, "read symbols")
+		return fmt.Errorf("read symbols: %w", err)
 	}
 	return nil
 }
@@ -1149,12 +1149,12 @@ func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 	var err error
 	r.toc, err = NewTOCFromByteSlice(b)
 	if err != nil {
-		return nil, errors.Wrap(err, "read TOC")
+		return nil, fmt.Errorf("read TOC: %w", err)
 	}
 
 	r.symbols, err = NewSymbols(r.b, r.version, int(r.toc.Symbols))
 	if err != nil {
-		return nil, errors.Wrap(err, "read symbols")
+		return nil, fmt.Errorf("read symbols: %w", err)
 	}
 
 	if r.version == FormatV1 {
@@ -1169,7 +1169,7 @@ func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 			r.postingsV1[string(name)][string(value)] = off
 			return nil
 		}); err != nil {
-			return nil, errors.Wrap(err, "read postings table")
+			return nil, fmt.Errorf("read postings table: %w", err)
 		}
 	} else {
 		var lastName, lastValue []byte
@@ -1197,7 +1197,7 @@ func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 			valueCount++
 			return nil
 		}); err != nil {
-			return nil, errors.Wrap(err, "read postings table")
+			return nil, fmt.Errorf("read postings table: %w", err)
 		}
 		if lastName != nil {
 			r.postings[string(lastName)] = append(r.postings[string(lastName)], postingOffset{value: string(lastValue), off: lastOff})
@@ -1217,7 +1217,7 @@ func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 		}
 		off, err := r.symbols.ReverseLookup(k)
 		if err != nil {
-			return nil, errors.Wrap(err, "reverse symbol lookup")
+			return nil, fmt.Errorf("reverse symbol lookup: %w", err)
 		}
 		r.nameSymbols[off] = k
 	}
@@ -1252,7 +1252,7 @@ func (r *Reader) PostingsRanges() (map[labels.Label]Range, error) {
 		}
 		return nil
 	}); err != nil {
-		return nil, errors.Wrap(err, "read postings table")
+		return nil, fmt.Errorf("read postings table: %w", err)
 	}
 	return m, nil
 }
@@ -1542,7 +1542,7 @@ func (r *Reader) LabelNamesFor(ids ...storage.SeriesRef) ([]string, error) {
 
 		offsets, err := r.dec.LabelNamesOffsetsFor(buf)
 		if err != nil {
-			return nil, errors.Wrap(err, "get label name offsets")
+			return nil, fmt.Errorf("get label name offsets: %w", err)
 		}
 		for _, off := range offsets {
 			offsetsMap[off] = struct{}{}
@@ -1554,7 +1554,7 @@ func (r *Reader) LabelNamesFor(ids ...storage.SeriesRef) ([]string, error) {
 	for off := range offsetsMap {
 		name, err := r.lookupSymbol(off)
 		if err != nil {
-			return nil, errors.Wrap(err, "lookup symbol in LabelNamesFor")
+			return nil, fmt.Errorf("lookup symbol in LabelNamesFor: %w", err)
 		}
 		names = append(names, name)
 	}
@@ -1621,7 +1621,7 @@ func (r *Reader) Postings(name string, values ...string) (Postings, error) {
 			d := encoding.NewDecbufAt(r.b, int(postingsOff), castagnoliTable)
 			_, p, err := r.dec.Postings(d.Get())
 			if err != nil {
-				return nil, errors.Wrap(err, "decode postings")
+				return nil, fmt.Errorf("decode postings: %w", err)
 			}
 			res = append(res, p)
 		}
@@ -1683,7 +1683,7 @@ func (r *Reader) Postings(name string, values ...string) (Postings, error) {
 					d2 := encoding.NewDecbufAt(r.b, int(postingsOff), castagnoliTable)
 					_, p, err := r.dec.Postings(d2.Get())
 					if err != nil {
-						return nil, errors.Wrap(err, "decode postings")
+						return nil, fmt.Errorf("decode postings: %w", err)
 					}
 					res = append(res, p)
 				}
@@ -1814,13 +1814,13 @@ func (dec *Decoder) LabelValueFor(b []byte, label string) (string, error) {
 
 		ln, err := dec.LookupSymbol(lno)
 		if err != nil {
-			return "", errors.Wrap(err, "lookup label name")
+			return "", fmt.Errorf("lookup label name: %w", err)
 		}
 
 		if ln == label {
 			lv, err := dec.LookupSymbol(lvo)
 			if err != nil {
-				return "", errors.Wrap(err, "lookup label value")
+				return "", fmt.Errorf("lookup label value: %w", err)
 			}
 
 			return lv, nil
@@ -1850,11 +1850,11 @@ func (dec *Decoder) Series(b []byte, builder *labels.ScratchBuilder, chks *[]chu
 
 		ln, err := dec.LookupSymbol(lno)
 		if err != nil {
-			return errors.Wrap(err, "lookup label name")
+			return fmt.Errorf("lookup label name: %w", err)
 		}
 		lv, err := dec.LookupSymbol(lvo)
 		if err != nil {
-			return errors.Wrap(err, "lookup label value")
+			return fmt.Errorf("lookup label value: %w", err)
 		}
 
 		builder.Add(ln, lv)

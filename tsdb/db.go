@@ -376,7 +376,7 @@ type DBReadOnly struct {
 // OpenDBReadOnly opens DB in the given directory for read only operations.
 func OpenDBReadOnly(dir string, l log.Logger) (*DBReadOnly, error) {
 	if _, err := os.Stat(dir); err != nil {
-		return nil, errors.Wrap(err, "opening the db dir")
+		return nil, fmt.Errorf("opening the db dir: %w", err)
 	}
 
 	if l == nil {
@@ -397,7 +397,7 @@ func OpenDBReadOnly(dir string, l log.Logger) (*DBReadOnly, error) {
 func (db *DBReadOnly) FlushWAL(dir string) (returnErr error) {
 	blockReaders, err := db.Blocks()
 	if err != nil {
-		return errors.Wrap(err, "read blocks")
+		return fmt.Errorf("read blocks: %w", err)
 	}
 	maxBlockTime := int64(math.MinInt64)
 	if len(blockReaders) > 0 {
@@ -430,7 +430,7 @@ func (db *DBReadOnly) FlushWAL(dir string) (returnErr error) {
 	// Set the min valid time for the ingested wal samples
 	// to be no lower than the maxt of the last block.
 	if err := head.Init(maxBlockTime); err != nil {
-		return errors.Wrap(err, "read WAL")
+		return fmt.Errorf("read WAL: %w", err)
 	}
 	mint := head.MinTime()
 	maxt := head.MaxTime()
@@ -444,12 +444,12 @@ func (db *DBReadOnly) FlushWAL(dir string) (returnErr error) {
 		nil,
 	)
 	if err != nil {
-		return errors.Wrap(err, "create leveled compactor")
+		return fmt.Errorf("create leveled compactor: %w", err)
 	}
 	// Add +1 millisecond to block maxt because block intervals are half-open: [b.MinTime, b.MaxTime).
 	// Because of this block intervals are always +1 than the total samples it includes.
 	_, err = compactor.Write(dir, rh, mint, maxt+1, nil)
-	return errors.Wrap(err, "writing WAL")
+	return fmt.Errorf("writing WAL: %w", err)
 }
 
 func (db *DBReadOnly) loadDataAsQueryable(maxt int64) (storage.SampleAndChunkQueryable, error) {
@@ -508,7 +508,7 @@ func (db *DBReadOnly) loadDataAsQueryable(maxt int64) (storage.SampleAndChunkQue
 		// Set the min valid time for the ingested wal samples
 		// to be no lower than the maxt of the last block.
 		if err := head.Init(maxBlockTime); err != nil {
-			return nil, errors.Wrap(err, "read WAL")
+			return nil, fmt.Errorf("read WAL: %w", err)
 		}
 		// Set the wal to nil to disable all wal operations.
 		// This is mainly to avoid blocking when closing the head.
@@ -744,7 +744,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 
 	// Fixup bad format written by Prometheus 2.1.
 	if err := repairBadIndexVersion(l, dir); err != nil {
-		return nil, errors.Wrap(err, "repair bad index version")
+		return nil, fmt.Errorf("repair bad index version: %w", err)
 	}
 
 	walDir := filepath.Join(dir, "wal")
@@ -752,12 +752,12 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 
 	// Migrate old WAL if one exists.
 	if err := MigrateWAL(l, walDir); err != nil {
-		return nil, errors.Wrap(err, "migrate WAL")
+		return nil, fmt.Errorf("migrate WAL: %w", err)
 	}
 	for _, tmpDir := range []string{walDir, dir} {
 		// Remove tmp dirs.
 		if err := removeBestEffortTmpDirs(l, tmpDir); err != nil {
-			return nil, errors.Wrap(err, "remove tmp dirs")
+			return nil, fmt.Errorf("remove tmp dirs: %w", err)
 		}
 	}
 
@@ -806,7 +806,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	db.compactor, err = NewLeveledCompactorWithChunkSize(ctx, r, l, rngs, db.chunkPool, opts.MaxBlockChunkSegmentSize, nil)
 	if err != nil {
 		cancel()
-		return nil, errors.Wrap(err, "create leveled compactor")
+		return nil, fmt.Errorf("create leveled compactor: %w", err)
 	}
 	db.compactCancel = cancel
 
@@ -891,13 +891,13 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 		if isOOOErr {
 			level.Warn(db.logger).Log("msg", "Encountered OOO WAL read error, attempting repair", "err", initErr)
 			if err := wbl.Repair(initErr); err != nil {
-				return nil, errors.Wrap(err, "repair corrupted OOO WAL")
+				return nil, fmt.Errorf("repair corrupted OOO WAL: %w", err)
 			}
 			level.Info(db.logger).Log("msg", "Successfully repaired OOO WAL")
 		} else {
 			level.Warn(db.logger).Log("msg", "Encountered WAL read error, attempting repair", "err", initErr)
 			if err := wal.Repair(initErr); err != nil {
-				return nil, errors.Wrap(err, "repair corrupted WAL")
+				return nil, fmt.Errorf("repair corrupted WAL: %w", err)
 			}
 			level.Info(db.logger).Log("msg", "Successfully repaired WAL")
 		}
@@ -1148,7 +1148,7 @@ func (db *DB) Compact() (returnErr error) {
 		db.head.WaitForAppendersOverlapping(rh.MaxTime())
 
 		if err := db.compactHead(rh); err != nil {
-			return errors.Wrap(err, "compact head")
+			return fmt.Errorf("compact head: %w", err)
 		}
 		// Consider only successful compactions for WAL truncation.
 		lastBlockMaxt = maxt
@@ -1157,7 +1157,7 @@ func (db *DB) Compact() (returnErr error) {
 	// Clear some disk space before compacting blocks, especially important
 	// when Head compaction happened over a long time range.
 	if err := db.head.truncateWAL(lastBlockMaxt); err != nil {
-		return errors.Wrap(err, "WAL truncation in Compact")
+		return fmt.Errorf("WAL truncation in Compact: %w", err)
 	}
 
 	compactionDuration := time.Since(start)
@@ -1172,7 +1172,7 @@ func (db *DB) Compact() (returnErr error) {
 	if lastBlockMaxt != math.MinInt64 {
 		// The head was compacted, so we compact OOO head as well.
 		if err := db.compactOOOHead(); err != nil {
-			return errors.Wrap(err, "compact ooo head")
+			return fmt.Errorf("compact ooo head: %w", err)
 		}
 	}
 
@@ -1185,11 +1185,11 @@ func (db *DB) CompactHead(head *RangeHead) error {
 	defer db.cmtx.Unlock()
 
 	if err := db.compactHead(head); err != nil {
-		return errors.Wrap(err, "compact head")
+		return fmt.Errorf("compact head: %w", err)
 	}
 
 	if err := db.head.truncateWAL(head.BlockMaxTime()); err != nil {
-		return errors.Wrap(err, "WAL truncation")
+		return fmt.Errorf("WAL truncation: %w", err)
 	}
 	return nil
 }
@@ -1208,12 +1208,12 @@ func (db *DB) compactOOOHead() error {
 	}
 	oooHead, err := NewOOOCompactionHead(db.head)
 	if err != nil {
-		return errors.Wrap(err, "get ooo compaction head")
+		return fmt.Errorf("get ooo compaction head: %w", err)
 	}
 
 	ulids, err := db.compactOOO(db.dir, oooHead)
 	if err != nil {
-		return errors.Wrap(err, "compact ooo head")
+		return fmt.Errorf("compact ooo head: %w", err)
 	}
 	if err := db.reloadBlocks(); err != nil {
 		errs := tsdb_errors.NewMulti(err)
@@ -1228,7 +1228,7 @@ func (db *DB) compactOOOHead() error {
 	lastWBLFile, minOOOMmapRef := oooHead.LastWBLFile(), oooHead.LastMmapRef()
 	if lastWBLFile != 0 || minOOOMmapRef != 0 {
 		if err := db.head.truncateOOO(lastWBLFile, minOOOMmapRef); err != nil {
-			return errors.Wrap(err, "truncate ooo wbl")
+			return fmt.Errorf("truncate ooo wbl: %w", err)
 		}
 	}
 
@@ -1264,12 +1264,12 @@ func (db *DB) compactOOO(dest string, oooHead *OOOCompactionHead) (_ []ulid.ULID
 			blockDir := filepath.Join(dest, uid.String())
 			meta, _, err := readMetaFile(blockDir)
 			if err != nil {
-				return ulids, errors.Wrap(err, "read meta")
+				return ulids, fmt.Errorf("read meta: %w", err)
 			}
 			meta.Compaction.SetOutOfOrder()
 			_, err = writeMetaFile(db.logger, blockDir, meta)
 			if err != nil {
-				return ulids, errors.Wrap(err, "write meta")
+				return ulids, fmt.Errorf("write meta: %w", err)
 			}
 		}
 	}
@@ -1295,20 +1295,20 @@ func (db *DB) compactOOO(dest string, oooHead *OOOCompactionHead) (_ []ulid.ULID
 func (db *DB) compactHead(head *RangeHead) error {
 	uid, err := db.compactor.Write(db.dir, head, head.MinTime(), head.BlockMaxTime(), nil)
 	if err != nil {
-		return errors.Wrap(err, "persist head block")
+		return fmt.Errorf("persist head block: %w", err)
 	}
 
 	if err := db.reloadBlocks(); err != nil {
 		if errRemoveAll := os.RemoveAll(filepath.Join(db.dir, uid.String())); errRemoveAll != nil {
 			return tsdb_errors.NewMulti(
-				errors.Wrap(err, "reloadBlocks blocks"),
+				fmt.Errorf("reloadBlocks blocks: %w", err),
 				errors.Wrapf(errRemoveAll, "delete persisted head block after failed db reloadBlocks:%s", uid),
 			).Err()
 		}
-		return errors.Wrap(err, "reloadBlocks blocks")
+		return fmt.Errorf("reloadBlocks blocks: %w", err)
 	}
 	if err = db.head.truncateMemory(head.BlockMaxTime()); err != nil {
-		return errors.Wrap(err, "head memory truncate")
+		return fmt.Errorf("head memory truncate: %w", err)
 	}
 	return nil
 }
@@ -1320,7 +1320,7 @@ func (db *DB) compactBlocks() (err error) {
 	for {
 		plan, err := db.compactor.Plan(db.dir)
 		if err != nil {
-			return errors.Wrap(err, "plan compaction")
+			return fmt.Errorf("plan compaction: %w", err)
 		}
 		if len(plan) == 0 {
 			break
@@ -1341,7 +1341,7 @@ func (db *DB) compactBlocks() (err error) {
 			if err := os.RemoveAll(filepath.Join(db.dir, uid.String())); err != nil {
 				return errors.Wrapf(err, "delete compacted block after failed db reloadBlocks:%s", uid)
 			}
-			return errors.Wrap(err, "reloadBlocks blocks")
+			return fmt.Errorf("reloadBlocks blocks: %w", err)
 		}
 	}
 
@@ -1362,14 +1362,14 @@ func getBlock(allBlocks []*Block, id ulid.ULID) (*Block, bool) {
 // reload reloads blocks and truncates the head and its WAL.
 func (db *DB) reload() error {
 	if err := db.reloadBlocks(); err != nil {
-		return errors.Wrap(err, "reloadBlocks")
+		return fmt.Errorf("reloadBlocks: %w", err)
 	}
 	maxt, ok := db.inOrderBlocksMaxTime()
 	if !ok {
 		return nil
 	}
 	if err := db.head.Truncate(maxt); err != nil {
-		return errors.Wrap(err, "head truncate")
+		return fmt.Errorf("head truncate: %w", err)
 	}
 	return nil
 }
@@ -1476,7 +1476,7 @@ func (db *DB) reloadBlocks() (err error) {
 func openBlocks(l log.Logger, dir string, loaded []*Block, chunkPool chunkenc.Pool) (blocks []*Block, corrupted map[ulid.ULID]error, err error) {
 	bDirs, err := blockDirs(dir)
 	if err != nil {
-		return nil, nil, errors.Wrap(err, "find blocks")
+		return nil, nil, fmt.Errorf("find blocks: %w", err)
 	}
 
 	corrupted = make(map[ulid.ULID]error)
@@ -1828,7 +1828,7 @@ func (db *DB) Snapshot(dir string, withHead bool) error {
 	// Add +1 millisecond to block maxt because block intervals are half-open: [b.MinTime, b.MaxTime).
 	// Because of this block intervals are always +1 than the total samples it includes.
 	if _, err := db.compactor.Write(dir, head, mint, maxt+1, nil); err != nil {
-		return errors.Wrap(err, "snapshot head block")
+		return fmt.Errorf("snapshot head block: %w", err)
 	}
 	return nil
 }
@@ -2070,7 +2070,7 @@ func (db *DB) CleanTombstones() (err error) {
 					level.Error(db.logger).Log("msg", "failed to delete block after failed `CleanTombstones`", "dir", dir, "err", err)
 				}
 			}
-			return errors.Wrap(err, "reload blocks")
+			return fmt.Errorf("reload blocks: %w", err)
 		}
 	}
 	return nil

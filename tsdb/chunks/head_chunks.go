@@ -17,6 +17,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"hash"
 	"io"
 	"os"
@@ -394,16 +395,16 @@ func repairLastChunkFile(files map[int]string) (_ map[int]string, returnErr erro
 
 	f, err := os.Open(files[lastFile])
 	if err != nil {
-		return files, errors.Wrap(err, "open file during last head chunk file repair")
+		return files, fmt.Errorf("open file during last head chunk file repair: %w", err)
 	}
 
 	buf := make([]byte, MagicChunksSize)
 	size, err := f.Read(buf)
 	if err != nil && err != io.EOF {
-		return files, errors.Wrap(err, "failed to read magic number during last head chunk file repair")
+		return files, fmt.Errorf("failed to read magic number during last head chunk file repair: %w", err)
 	}
 	if err := f.Close(); err != nil {
-		return files, errors.Wrap(err, "close file during last head chunk file repair")
+		return files, fmt.Errorf("close file during last head chunk file repair: %w", err)
 	}
 
 	// We either don't have enough bytes for the magic number or the magic number is 0.

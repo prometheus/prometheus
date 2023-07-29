@@ -60,18 +60,18 @@ type blockBaseQuerier struct {
 func newBlockBaseQuerier(b BlockReader, mint, maxt int64) (*blockBaseQuerier, error) {
 	indexr, err := b.Index()
 	if err != nil {
-		return nil, errors.Wrap(err, "open index reader")
+		return nil, fmt.Errorf("open index reader: %w", err)
 	}
 	chunkr, err := b.Chunks()
 	if err != nil {
 		indexr.Close()
-		return nil, errors.Wrap(err, "open chunk reader")
+		return nil, fmt.Errorf("open chunk reader: %w", err)
 	}
 	tombsr, err := b.Tombstones()
 	if err != nil {
 		indexr.Close()
 		chunkr.Close()
-		return nil, errors.Wrap(err, "open tombstone reader")
+		return nil, fmt.Errorf("open tombstone reader: %w", err)
 	}
 
 	if tombsr == nil {
@@ -407,7 +407,7 @@ func inversePostingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Posting
 func labelValuesWithMatchers(r IndexReader, name string, matchers ...*labels.Matcher) ([]string, error) {
 	p, err := PostingsForMatchers(r, matchers...)
 	if err != nil {
-		return nil, errors.Wrap(err, "fetching postings for matchers")
+		return nil, fmt.Errorf("fetching postings for matchers: %w", err)
 	}
 
 	allValues, err := r.LabelValues(name)
@@ -443,7 +443,7 @@ func labelValuesWithMatchers(r IndexReader, name string, matchers ...*labels.Mat
 	}
 	indexes, err := index.FindIntersectingPostings(p, valuesPostings)
 	if err != nil {
-		return nil, errors.Wrap(err, "intersecting postings")
+		return nil, fmt.Errorf("intersecting postings: %w", err)
 	}
 
 	values := make([]string, 0, len(indexes))
@@ -517,7 +517,7 @@ func (b *blockBaseSeriesSet) Next() bool {
 
 		intervals, err := b.tombstones.Get(b.p.At())
 		if err != nil {
-			b.err = errors.Wrap(err, "get tombstones")
+			b.err = fmt.Errorf("get tombstones: %w", err)
 			return false
 		}
 

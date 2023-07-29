@@ -288,7 +288,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, cfg.JobName, options.HTTPClientOptions...)
 	if err != nil {
 		targetScrapePoolsFailed.Inc()
-		return nil, errors.Wrap(err, "error creating HTTP client")
+		return nil, fmt.Errorf("error creating HTTP client: %w", err)
 	}
 
 	buffers := pool.New(1e3, 100e6, 3, func(sz int) interface{} { return make([]byte, 0, sz) })
@@ -407,7 +407,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, cfg.JobName, sp.httpOpts...)
 	if err != nil {
 		targetScrapePoolReloadsFailed.Inc()
-		return errors.Wrap(err, "error creating HTTP client")
+		return fmt.Errorf("error creating HTTP client: %w", err)
 	}
 
 	reuseCache := reusableCache(sp.config, cfg)

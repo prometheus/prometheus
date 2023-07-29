@@ -16,6 +16,8 @@ package tsdb
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -24,7 +26,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/oklog/ulid"
-	"github.com/pkg/errors"
 	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -237,7 +238,7 @@ func readMetaFile(dir string) (*BlockMeta, int64, error) {
 		return nil, 0, err
 	}
 	if m.Version != metaVersion1 {
-		return nil, 0, errors.Errorf("unexpected meta file version %d", m.Version)
+		return nil, 0, fmt.Errorf("unexpected meta file version %d", m.Version)
 	}
 
 	return &m, int64(len(b)), nil
@@ -467,13 +468,13 @@ func (r blockIndexReader) SortedLabelValues(name string, matchers ...*labels.Mat
 		}
 	}
 
-	return st, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
+	return st, fmt.Errorf("block: %s: %w", r.b.Meta().ULID, err)
 }
 
 func (r blockIndexReader) LabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
 	if len(matchers) == 0 {
 		st, err := r.ir.LabelValues(name)
-		return st, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
+		return st, fmt.Errorf("block: %s: %w", r.b.Meta().ULID, err)
 	}
 
 	return labelValuesWithMatchers(r.ir, name, matchers...)
@@ -490,7 +491,7 @@ func (r blockIndexReader) LabelNames(matchers ...*labels.Matcher) ([]string, err
 func (r blockIndexReader) Postings(name string, values ...string) (index.Postings, error) {
 	p, err := r.ir.Postings(name, values...)
 	if err != nil {
-		return p, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
+		return p, fmt.Errorf("block: %s: %w", r.b.Meta().ULID, err)
 	}
 	return p, nil
 }
@@ -501,7 +502,7 @@ func (r blockIndexReader) SortedPostings(p index.Postings) index.Postings {
 
 func (r blockIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
 	if err := r.ir.Series(ref, builder, chks); err != nil {
-		return errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
+		return fmt.Errorf("block: %s: %w", r.b.Meta().ULID, err)
 	}
 	return nil
 }
@@ -553,7 +554,7 @@ func (pb *Block) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
 
 	p, err := PostingsForMatchers(pb.indexr, ms...)
 	if err != nil {
-		return errors.Wrap(err, "select series")
+		return fmt.Errorf("select series: %w", err)
 	}
 
 	ir := pb.indexr
@@ -641,12 +642,12 @@ func (pb *Block) CleanTombstones(dest string, c Compactor) (*ulid.ULID, bool, er
 func (pb *Block) Snapshot(dir string) error {
 	blockDir := filepath.Join(dir, pb.meta.ULID.String())
 	if err := os.MkdirAll(blockDir, 0o777); err != nil {
-		return errors.Wrap(err, "create snapshot block dir")
+		return fmt.Errorf("create snapshot block dir: %w", err)
 	}
 
 	chunksDir := chunkDir(blockDir)
 	if err := os.MkdirAll(chunksDir, 0o777); err != nil {
-		return errors.Wrap(err, "create snapshot chunk dir")
+		return fmt.Errorf("create snapshot chunk dir: %w", err)
 	}
 
 	// Hardlink meta, index and tombstones
@@ -656,7 +657,7 @@ func (pb *Block) Snapshot(dir string) error {
 		tombstones.TombstonesFilename,
 	} {
 		if err := os.Link(filepath.Join(pb.dir, fname), filepath.Join(blockDir, fname)); err != nil {
-			return errors.Wrapf(err, "create snapshot %s", fname)
+			return fmt.Errorf("create snapshot %s: %w", fname, err)
 		}
 	}
 
@@ -664,13 +665,13 @@ func (pb *Block) Snapshot(dir string) error {
 	curChunkDir := chunkDir(pb.dir)
 	files, err := os.ReadDir(curChunkDir)
 	if err != nil {
-		return errors.Wrap(err, "ReadDir the current chunk dir")
+		return fmt.Errorf("ReadDir the current chunk dir: %w", err)
 	}
 
 	for _, f := range files {
 		err := os.Link(filepath.Join(curChunkDir, f.Name()), filepath.Join(chunksDir, f.Name()))
 		if err != nil {
-			return errors.Wrap(err, "hardlink a chunk")
+			return fmt.Errorf("hardlink a chunk: %w", err)
 		}
 	}
 

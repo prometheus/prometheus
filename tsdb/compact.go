@@ -579,7 +579,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blockPopulator Bl
 
 	chunkw, err = chunks.NewWriterWithSegSize(chunkDir(tmp), c.maxBlockChunkSegmentSize)
 	if err != nil {
-		return errors.Wrap(err, "open chunk writer")
+		return fmt.Errorf("open chunk writer: %w", err)
 	}
 	closers = append(closers, chunkw)
 	// Record written chunk sizes on level 1 compactions.
@@ -594,12 +594,12 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blockPopulator Bl
 
 	indexw, err := index.NewWriter(c.ctx, filepath.Join(tmp, indexFilename))
 	if err != nil {
-		return errors.Wrap(err, "open index writer")
+		return fmt.Errorf("open index writer: %w", err)
 	}
 	closers = append(closers, indexw)
 
 	if err := blockPopulator.PopulateBlock(c.ctx, c.metrics, c.logger, c.chunkPool, c.mergeFunc, blocks, meta, indexw, chunkw); err != nil {
-		return errors.Wrap(err, "populate block")
+		return fmt.Errorf("populate block: %w", err)
 	}
 
 	select {
@@ -627,17 +627,17 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blockPopulator Bl
 	}
 
 	if _, err = writeMetaFile(c.logger, tmp, meta); err != nil {
-		return errors.Wrap(err, "write merged meta")
+		return fmt.Errorf("write merged meta: %w", err)
 	}
 
 	// Create an empty tombstones file.
 	if _, err := tombstones.WriteFile(c.logger, tmp, tombstones.NewMemTombstones()); err != nil {
-		return errors.Wrap(err, "write new tombstones file")
+		return fmt.Errorf("write new tombstones file: %w", err)
 	}
 
 	df, err := fileutil.OpenDir(tmp)
 	if err != nil {
-		return errors.Wrap(err, "open temporary block dir")
+		return fmt.Errorf("open temporary block dir: %w", err)
 	}
 	defer func() {
 		if df != nil {
@@ -646,18 +646,18 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blockPopulator Bl
 	}()
 
 	if err := df.Sync(); err != nil {
-		return errors.Wrap(err, "sync temporary dir file")
+		return fmt.Errorf("sync temporary dir file: %w", err)
 	}
 
 	// Close temp dir before rename block dir (for windows platform).
 	if err = df.Close(); err != nil {
-		return errors.Wrap(err, "close temporary dir")
+		return fmt.Errorf("close temporary dir: %w", err)
 	}
 	df = nil
 
 	// Block successfully written, make it visible in destination dir by moving it from tmp one.
 	if err := fileutil.Replace(tmp, dir); err != nil {
-		return errors.Wrap(err, "rename block dir")
+		return fmt.Errorf("rename block dir: %w", err)
 	}
 
 	return nil
@@ -748,7 +748,7 @@ func (c DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *Compa
 
 	for symbols.Next() {
 		if err := indexw.AddSymbol(symbols.At()); err != nil {
-			return errors.Wrap(err, "add symbol")
+			return fmt.Errorf("add symbol: %w", err)
 		}
 	}
 	if symbols.Err() != nil {
@@ -794,10 +794,10 @@ func (c DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *Compa
 		}
 
 		if err := chunkw.WriteChunks(chks...); err != nil {
-			return errors.Wrap(err, "write chunks")
+			return fmt.Errorf("write chunks: %w", err)
 		}
 		if err := indexw.AddSeries(ref, s.Labels(), chks...); err != nil {
-			return errors.Wrap(err, "add series")
+			return fmt.Errorf("add series: %w", err)
 		}
 
 		meta.Stats.NumChunks += uint64(len(chks))
@@ -808,7 +808,7 @@ func (c DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *Compa
 
 		for _, chk := range chks {
 			if err := chunkPool.Put(chk.Chunk); err != nil {
-				return errors.Wrap(err, "put chunk")
+				return fmt.Errorf("put chunk: %w", err)
 			}
 		}
 		ref++

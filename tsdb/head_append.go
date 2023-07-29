@@ -646,19 +646,19 @@ func (a *headAppender) UpdateMetadata(ref storage.SeriesRef, lset labels.Labels,
 
 func ValidateHistogram(h *histogram.Histogram) error {
 	if err := checkHistogramSpans(h.NegativeSpans, len(h.NegativeBuckets)); err != nil {
-		return errors.Wrap(err, "negative side")
+		return fmt.Errorf("negative side: %w", err)
 	}
 	if err := checkHistogramSpans(h.PositiveSpans, len(h.PositiveBuckets)); err != nil {
-		return errors.Wrap(err, "positive side")
+		return fmt.Errorf("positive side: %w", err)
 	}
 	var nCount, pCount uint64
 	err := checkHistogramBuckets(h.NegativeBuckets, &nCount, true)
 	if err != nil {
-		return errors.Wrap(err, "negative side")
+		return fmt.Errorf("negative side: %w", err)
 	}
 	err = checkHistogramBuckets(h.PositiveBuckets, &pCount, true)
 	if err != nil {
-		return errors.Wrap(err, "positive side")
+		return fmt.Errorf("positive side: %w", err)
 	}
 
 	if c := nCount + pCount; c > h.Count {
@@ -673,19 +673,19 @@ func ValidateHistogram(h *histogram.Histogram) error {
 
 func ValidateFloatHistogram(h *histogram.FloatHistogram) error {
 	if err := checkHistogramSpans(h.NegativeSpans, len(h.NegativeBuckets)); err != nil {
-		return errors.Wrap(err, "negative side")
+		return fmt.Errorf("negative side: %w", err)
 	}
 	if err := checkHistogramSpans(h.PositiveSpans, len(h.PositiveBuckets)); err != nil {
-		return errors.Wrap(err, "positive side")
+		return fmt.Errorf("positive side: %w", err)
 	}
 	var nCount, pCount float64
 	err := checkHistogramBuckets(h.NegativeBuckets, &nCount, false)
 	if err != nil {
-		return errors.Wrap(err, "negative side")
+		return fmt.Errorf("negative side: %w", err)
 	}
 	err = checkHistogramBuckets(h.PositiveBuckets, &pCount, false)
 	if err != nil {
-		return errors.Wrap(err, "positive side")
+		return fmt.Errorf("positive side: %w", err)
 	}
 
 	if c := nCount + pCount; c > h.Count {
@@ -772,7 +772,7 @@ func (a *headAppender) log() error {
 		buf = rec[:0]
 
 		if err := a.head.wal.Log(rec); err != nil {
-			return errors.Wrap(err, "log series")
+			return fmt.Errorf("log series: %w", err)
 		}
 	}
 	if len(a.metadata) > 0 {
@@ -780,7 +780,7 @@ func (a *headAppender) log() error {
 		buf = rec[:0]
 
 		if err := a.head.wal.Log(rec); err != nil {
-			return errors.Wrap(err, "log metadata")
+			return fmt.Errorf("log metadata: %w", err)
 		}
 	}
 	if len(a.samples) > 0 {
@@ -788,7 +788,7 @@ func (a *headAppender) log() error {
 		buf = rec[:0]
 
 		if err := a.head.wal.Log(rec); err != nil {
-			return errors.Wrap(err, "log samples")
+			return fmt.Errorf("log samples: %w", err)
 		}
 	}
 	if len(a.exemplars) > 0 {
@@ -796,21 +796,21 @@ func (a *headAppender) log() error {
 		buf = rec[:0]
 
 		if err := a.head.wal.Log(rec); err != nil {
-			return errors.Wrap(err, "log exemplars")
+			return fmt.Errorf("log exemplars: %w", err)
 		}
 	}
 	if len(a.histograms) > 0 {
 		rec = enc.HistogramSamples(a.histograms, buf)
 		buf = rec[:0]
 		if err := a.head.wal.Log(rec); err != nil {
-			return errors.Wrap(err, "log histograms")
+			return fmt.Errorf("log histograms: %w", err)
 		}
 	}
 	if len(a.floatHistograms) > 0 {
 		rec = enc.FloatHistogramSamples(a.floatHistograms, buf)
 		buf = rec[:0]
 		if err := a.head.wal.Log(rec); err != nil {
-			return errors.Wrap(err, "log float histograms")
+			return fmt.Errorf("log float histograms: %w", err)
 		}
 	}
 	return nil
@@ -839,7 +839,7 @@ func (a *headAppender) Commit() (err error) {
 
 	if err := a.log(); err != nil {
 		_ = a.Rollback() // Most likely the same error will happen again.
-		return errors.Wrap(err, "write to WAL")
+		return fmt.Errorf("write to WAL: %w", err)
 	}
 
 	if a.head.writeNotified != nil {
