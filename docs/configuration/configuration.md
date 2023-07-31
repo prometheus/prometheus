@@ -803,6 +803,9 @@ tls_config:
 
 # The time after which the droplets are refreshed.
 [ refresh_interval: <duration> | default = 60s ]
+
+# Filter for droplet tags using regex
+[ tag_filter: <str> ]
 ```
 
 ### `<docker_sd_config>`
