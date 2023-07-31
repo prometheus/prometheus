@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -56,6 +57,7 @@ var DefaultSDConfig = SDConfig{
 	Port:             80,
 	RefreshInterval:  model.Duration(60 * time.Second),
 	HTTPClientConfig: config.DefaultHTTPClientConfig,
+	TagFilter:        "",
 }
 
 func init() {
@@ -68,6 +70,7 @@ type SDConfig struct {
 
 	RefreshInterval model.Duration `yaml:"refresh_interval"`
 	Port            int            `yaml:"port"`
+	TagFilter       string         `yaml:"tag_filter"`
 }
 
 // Name returns the name of the Config.
@@ -100,12 +103,14 @@ type Discovery struct {
 	*refresh.Discovery
 	client *godo.Client
 	port   int
+	cfg    *SDConfig
 }
 
 // NewDiscovery returns a new Discovery which periodically refreshes its targets.
 func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 	d := &Discovery{
 		port: conf.Port,
+		cfg:  conf,
 	}
 
 	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "digitalocean_sd")
@@ -183,6 +188,21 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 			features := separator + strings.Join(droplet.Features, separator) + separator
 			labels[doLabelFeatures] = model.LabelValue(features)
 		}
+		// Filter tags based on regex.
+		if d.cfg.TagFilter != "" && len(droplet.Tags) > 0 {
+			var match bool = false
+			regex := regexp.MustCompile(d.cfg.TagFilter)
+			for _, tag := range droplet.Tags {
+				if regex.MatchString(tag) {
+					match = true
+				}
+			}
+			if !match {
+				continue
+			}
+		} else if d.cfg.TagFilter == "" && len(droplet.Tags) == 0 {
+			continue
+		}
 
 		if len(droplet.Tags) > 0 {
 			// We surround the separated list with the separator as well. This way regular expressions
@@ -192,6 +212,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		}
 
 		tg.Targets = append(tg.Targets, labels)
+
 	}
 	return []*targetgroup.Group{tg}, nil
 }
