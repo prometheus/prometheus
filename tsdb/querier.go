@@ -251,16 +251,16 @@ func PostingsForMatchers(ix IndexReader, ms ...*labels.Matcher) (index.Postings,
 		}
 		return (m.Type == labels.MatchNotEqual || m.Type == labels.MatchNotRegexp) && m.Matches("")
 	}
-	someSubtractingMatchers, someIntersectingMatchers := false, false
+	hasSubtractingMatchers, hasIntersectingMatchers := false, false
 	for _, m := range ms {
 		if isSubtractingMatcher(m) {
-			someSubtractingMatchers = true
+			hasSubtractingMatchers = true
 		} else {
-			someIntersectingMatchers = true
+			hasIntersectingMatchers = true
 		}
 	}
 
-	if someSubtractingMatchers && !someIntersectingMatchers {
+	if hasSubtractingMatchers && !hasIntersectingMatchers {
 		// If there's nothing to subtract from, add in everything and remove the notIts later.
 		// We prefer to get AllPostings so that the base of subtraction (i.e. allPostings)
 		// doesn't include series that may be added to the index reader during this function call.
