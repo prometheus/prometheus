@@ -145,11 +145,6 @@ func newSymbolsBatcher(limit int, dir string, flushers *symbolFlushers) *symbols
 	}
 }
 
-func (sw *symbolsBatcher) addSymbol(sym string) error {
-	sw.buffer[sym] = struct{}{}
-	return sw.flushSymbols(false)
-}
-
 func (sw *symbolsBatcher) flushSymbols(force bool) error {
 	if !force && len(sw.buffer) < sw.limit {
 		return nil
