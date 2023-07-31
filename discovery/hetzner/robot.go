@@ -105,7 +105,7 @@ func (d *robotDiscovery) refresh(context.Context) ([]*targetgroup.Group, error) 
 	targets := make([]model.LabelSet, len(servers))
 	for i, server := range servers {
 		labels := model.LabelSet{
-			hetznerLabelRole:           model.LabelValue(hetznerRoleRobot),
+			hetznerLabelRole:           model.LabelValue(HetznerRoleRobot),
 			hetznerLabelServerID:       model.LabelValue(strconv.Itoa(server.Server.ServerNumber)),
 			hetznerLabelServerName:     model.LabelValue(server.Server.ServerName),
 			hetznerLabelDatacenter:     model.LabelValue(strings.ToLower(server.Server.Dc)),
