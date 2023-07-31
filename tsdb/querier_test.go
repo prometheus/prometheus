@@ -2255,10 +2255,8 @@ func appendSeries(t *testing.T, ctx context.Context, wg *sync.WaitGroup, h *Head
 		err = app.Commit()
 		require.NoError(t, err)
 
-		if i%10 == 0 {
-			// Throttle down the appends to keep the test somewhat nimble.
-			time.Sleep(10 * time.Millisecond)
-		}
+		// Throttle down the appends to keep the test somewhat nimble.
+		time.Sleep(time.Millisecond)
 	}
 }
 
