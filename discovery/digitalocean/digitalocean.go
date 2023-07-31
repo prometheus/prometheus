@@ -200,7 +200,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 			if !match {
 				continue
 			}
-		} else if d.cfg.TagFilter == "" && len(droplet.Tags) == 0 {
+		} else if d.cfg.TagFilter != "" && len(droplet.Tags) == 0 {
 			continue
 		}
 
