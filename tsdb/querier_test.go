@@ -2210,9 +2210,9 @@ func TestQuerierIndexQueriesRace(t *testing.T) {
 		},
 		{
 			matchers: []*labels.Matcher{
-				// The first matcher should be effectively the same as AllPostings, because all series have m=0
-				// If it is evaluated first, then __name__=metric will contain more series than m=0.
-				labels.MustNewMatcher(labels.MatchNotEqual, "m", "0"),
+				// The first matcher should be effectively the same as AllPostings, because all series have always_0=0
+				// If it is evaluated first, then __name__=metric will contain more series than always_0=0.
+				labels.MustNewMatcher(labels.MatchNotEqual, "always_0", "0"),
 				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric"),
 			},
 		},
@@ -2237,9 +2237,9 @@ func TestQuerierIndexQueriesRace(t *testing.T) {
 				q, err := db.Querier(ctx, math.MinInt64, math.MaxInt64)
 				require.NoError(t, err)
 
-				values, _, err := q.LabelValues("n", c.matchers...)
+				values, _, err := q.LabelValues("seq", c.matchers...)
 				require.NoError(t, err)
-				require.Emptyf(t, values, `label values for label "n" should be empty`)
+				require.Emptyf(t, values, `label values for label "seq" should be empty`)
 			}
 		})
 	}
@@ -2250,7 +2250,7 @@ func appendSeries(t *testing.T, ctx context.Context, wg *sync.WaitGroup, h *Head
 
 	for i := 0; ctx.Err() != nil; i++ {
 		app := h.Appender(context.Background())
-		_, err := app.Append(0, labels.FromStrings(labels.MetricName, "metric", "n", strconv.Itoa(i), "m", "0"), 0, 0)
+		_, err := app.Append(0, labels.FromStrings(labels.MetricName, "metric", "seq", strconv.Itoa(i), "always_0", "0"), 0, 0)
 		require.NoError(t, err)
 		err = app.Commit()
 		require.NoError(t, err)
