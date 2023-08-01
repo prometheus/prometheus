@@ -83,7 +83,7 @@ var (
 		})
 	cacheHitCount = prometheus.NewCounter(
 		prometheus.CounterOpts{
-			Name: "prometheus_sd_azure_cache_hist_total",
+			Name: "prometheus_sd_azure_cache_hit_total",
 			Help: "Number of cache hit during refresh.",
 		})
 )
