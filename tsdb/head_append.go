@@ -930,6 +930,8 @@ func (a *headAppender) Commit() (err error) {
 
 		oooSample, _, err := series.appendable(s.T, s.V, a.headMaxt, a.minValidTime, a.oooTimeWindow)
 		switch err {
+		case nil:
+			// Do nothing.
 		case storage.ErrOutOfOrderSample:
 			samplesAppended--
 			oooRejected++
@@ -939,8 +941,6 @@ func (a *headAppender) Commit() (err error) {
 		case storage.ErrTooOldSample:
 			samplesAppended--
 			tooOldRejected++
-		case nil:
-			// Do nothing.
 		default:
 			samplesAppended--
 		}
