@@ -6,6 +6,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/prometheus/prometheus/pp/go/frames"
 	"github.com/prometheus/prometheus/pp/go/server"
 	"github.com/prometheus/prometheus/pp/go/transport"
 )
@@ -13,8 +14,8 @@ import (
 func ExampleTCPReader() {
 	ctx := context.Background()
 
-	handleStream := func(ctx context.Context, msg *transport.RawMessage, tcpReader *server.TCPReader) {
-		reader := server.NewProtocolReader(server.StartWith(tcpReader, msg))
+	handleStream := func(ctx context.Context, fe *frames.Frame, tcpReader *server.TCPReader) {
+		reader := server.NewProtocolReader(server.StartWith(tcpReader, fe))
 		defer reader.Destroy()
 		for {
 			rq, err := reader.Next(ctx)
@@ -23,7 +24,7 @@ func ExampleTCPReader() {
 				return
 			}
 			_ = rq // process data
-			if err := tcpReader.SendResponse(ctx, &transport.ResponseMsg{
+			if err := tcpReader.SendResponse(ctx, &frames.ResponseMsg{
 				Text:      "OK",
 				Code:      200,
 				SegmentID: rq.SegmentID,
@@ -35,7 +36,7 @@ func ExampleTCPReader() {
 		}
 	}
 
-	handleRefill := func(ctx context.Context, msg *transport.RawMessage, tcpReader *server.TCPReader) {
+	handleRefill := func(ctx context.Context, fe *frames.Frame, tcpReader *server.TCPReader) {
 		// write in file until all segments have been read
 		// make FileReader
 		// make ProtocolReader over FileReader
@@ -43,7 +44,7 @@ func ExampleTCPReader() {
 		// read until EOF from ProtocolReader and append to BlockWriter
 		// save BlockWriter
 		// send block to S3
-		if err := tcpReader.SendResponse(ctx, &transport.ResponseMsg{
+		if err := tcpReader.SendResponse(ctx, &frames.ResponseMsg{
 			Text: "OK",
 			Code: 200,
 		}); err != nil {
@@ -82,7 +83,7 @@ func ExampleTCPReader() {
 				log.Printf("fail to read next message: %s", err)
 				return
 			}
-			if msg.Header.Type == transport.MsgRefill {
+			if msg.GetType() == frames.RefillType {
 				handleRefill(ctx, msg, tcpReader)
 			} else {
 				handleStream(ctx, msg, tcpReader)

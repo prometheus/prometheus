@@ -10,6 +10,7 @@ import (
 	"github.com/prometheus/prometheus/prompb"
 
 	"github.com/prometheus/prometheus/pp/go/common"
+	"github.com/prometheus/prometheus/pp/go/frames"
 	"github.com/prometheus/prometheus/pp/go/transport"
 )
 
@@ -17,7 +18,7 @@ const protocolVersion uint8 = 3
 
 // Reader - implementation of the reader with the Next iterator function.
 type Reader interface {
-	Next(ctx context.Context) (*transport.RawMessage, error)
+	Next(ctx context.Context) (*frames.Frame, error)
 }
 
 // ProtocolReader - reader that reads raw messages and decodes them into WriteRequest.
@@ -36,24 +37,24 @@ func NewProtocolReader(r Reader) *ProtocolReader {
 // Next - func-iterator, read from reader raw message and return WriteRequest.
 func (pr *ProtocolReader) Next(ctx context.Context) (*Request, error) {
 	for {
-		raw, err := pr.reader.Next(ctx)
+		fe, err := pr.reader.Next(ctx)
 		if err != nil {
 			return nil, err
 		}
 
-		switch raw.Header.Type {
-		case transport.MsgSnapshot:
-			if err := pr.handleSnapshot(ctx, raw.Payload); err != nil {
+		switch fe.GetType() {
+		case frames.SnapshotType:
+			if err := pr.handleSnapshot(ctx, fe); err != nil {
 				return nil, fmt.Errorf("decode snapshot: %w", err)
 			}
-		case transport.MsgDryPut:
-			if err := pr.handleDryPut(ctx, raw.Payload); err != nil {
+		case frames.DrySegmentType:
+			if err := pr.handleDryPut(ctx, fe); err != nil {
 				return nil, fmt.Errorf("decode dry segment: %w", err)
 			}
-		case transport.MsgPut:
-			return pr.handlePut(ctx, raw)
+		case frames.SegmentType:
+			return pr.handlePut(ctx, fe)
 		default:
-			return nil, fmt.Errorf("unexpected msg type %d", raw.Header.Type)
+			return nil, fmt.Errorf("unexpected msg type %d", fe.GetType())
 		}
 	}
 }
@@ -66,28 +67,42 @@ func (pr *ProtocolReader) Destroy() {
 }
 
 // handleSnapshot - process the snapshot using the decoder.
-func (pr *ProtocolReader) handleSnapshot(ctx context.Context, snapshot []byte) error {
+func (pr *ProtocolReader) handleSnapshot(ctx context.Context, fe *frames.Frame) error {
 	if pr.decoder != nil {
 		pr.decoder.Destroy()
 	}
 	pr.decoder = common.NewDecoder()
-	return pr.decoder.Snapshot(ctx, snapshot)
+	bb := frames.NewBinaryBodyEmpty()
+	if err := bb.UnmarshalBinary(fe.GetBody()); err != nil {
+		return err
+	}
+	return pr.decoder.Snapshot(ctx, bb.Bytes())
 }
 
 // handleDryPut - process the dry put using the decoder.
-func (pr *ProtocolReader) handleDryPut(ctx context.Context, segment []byte) error {
+func (pr *ProtocolReader) handleDryPut(ctx context.Context, fe *frames.Frame) error {
 	if pr.decoder == nil {
 		pr.decoder = common.NewDecoder()
 	}
-	return pr.decoder.DecodeDry(ctx, segment)
+	bb := frames.NewBinaryBodyEmpty()
+	if err := bb.UnmarshalBinary(fe.GetBody()); err != nil {
+		return err
+	}
+	return pr.decoder.DecodeDry(ctx, bb.Bytes())
 }
 
 // handlePut - process the put using the decoder.
-func (pr *ProtocolReader) handlePut(ctx context.Context, raw *transport.RawMessage) (*Request, error) {
+func (pr *ProtocolReader) handlePut(ctx context.Context, fe *frames.Frame) (*Request, error) {
 	if pr.decoder == nil {
 		pr.decoder = common.NewDecoder()
 	}
-	blob, segmentID, err := pr.decoder.Decode(ctx, raw.Payload)
+
+	bb := frames.NewBinaryBodyEmpty()
+	if err := bb.UnmarshalBinary(fe.GetBody()); err != nil {
+		return nil, err
+	}
+
+	blob, segmentID, err := pr.decoder.Decode(ctx, bb.Bytes())
 	if err != nil {
 		return nil, fmt.Errorf("decode segment: %w", err)
 	}
@@ -96,7 +111,7 @@ func (pr *ProtocolReader) handlePut(ctx context.Context, raw *transport.RawMessa
 	rq := &Request{
 		SegmentID: segmentID,
 		Message:   new(prompb.WriteRequest),
-		SentAt:    raw.Header.CreatedAt,
+		SentAt:    fe.GetCreatedAt(),
 		CreatedAt: blob.CreatedAt(),
 		EncodedAt: blob.EncodedAt(),
 	}
@@ -123,55 +138,57 @@ func NewTCPReader(
 }
 
 // Authorization - incoming connection authorization.
-func (r *TCPReader) Authorization(ctx context.Context) (*transport.AuthMsg, error) {
-	raw, err := r.t.Read(ctx)
+func (r *TCPReader) Authorization(ctx context.Context) (*frames.AuthMsg, error) {
+	fe, err := r.t.Read(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if raw.Header.Type != transport.MsgAuth {
-		return nil, fmt.Errorf("unexpected msg type %d", raw.Header.Type)
+	if fe.GetType() != frames.AuthType {
+		return nil, fmt.Errorf("unexpected msg type %d", fe.GetType())
 	}
 
-	am := new(transport.AuthMsg)
-	am.DecodeBinary(raw.Payload)
+	am := frames.NewAuthMsgEmpty()
+	if err := am.UnmarshalBinary(fe.GetBody()); err != nil {
+		return nil, err
+	}
 	return am, am.Validate()
 }
 
 // Next - func-iterator, read from conn and return raw message.
-func (r *TCPReader) Next(ctx context.Context) (*transport.RawMessage, error) {
+func (r *TCPReader) Next(ctx context.Context) (*frames.Frame, error) {
 	return r.t.Read(ctx)
 }
 
 // SendResponse - send response to client.
-func (r *TCPReader) SendResponse(ctx context.Context, msg *transport.ResponseMsg) error {
-	return r.t.Write(ctx, transport.NewRawMessage(
-		protocolVersion,
-		transport.MsgResponse,
-		msg.EncodeBinary(),
-	))
+func (r *TCPReader) SendResponse(ctx context.Context, msg *frames.ResponseMsg) error {
+	fr, err := frames.NewResponseFrameWithMsg(protocolVersion, msg)
+	if err != nil {
+		return err
+	}
+	return r.t.Write(ctx, fr)
 }
 
 // StartWithReader - special reader for read with start message.
 type StartWithReader struct {
 	Reader
-	firstMsg *transport.RawMessage
+	firstFrame *frames.Frame
 }
 
 var _ Reader = &StartWithReader{}
 
 // StartWith - init new StartWith Reader.
-func StartWith(r Reader, msg *transport.RawMessage) *StartWithReader {
+func StartWith(r Reader, fe *frames.Frame) *StartWithReader {
 	return &StartWithReader{
-		Reader:   r,
-		firstMsg: msg,
+		Reader:     r,
+		firstFrame: fe,
 	}
 }
 
 // Next - func-iterator, read raw message from reader with start message.
-func (swr *StartWithReader) Next(ctx context.Context) (*transport.RawMessage, error) {
-	if swr.firstMsg != nil {
-		res := swr.firstMsg
-		swr.firstMsg = nil
+func (swr *StartWithReader) Next(ctx context.Context) (*frames.Frame, error) {
+	if swr.firstFrame != nil {
+		res := swr.firstFrame
+		swr.firstFrame = nil
 		return res, nil
 	}
 	return swr.Reader.Next(ctx)
@@ -201,17 +218,17 @@ func NewFileReader(filePath string) (*FileReader, error) {
 }
 
 // Next - func-iterator, read from file and return raw message.
-func (fr *FileReader) Next(ctx context.Context) (*transport.RawMessage, error) {
+func (fr *FileReader) Next(ctx context.Context) (*frames.Frame, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
 
-	raw, err := transport.ReadRawMessage(fr.file)
-	if err != nil {
+	fe := frames.NewFrameEmpty()
+	if err := fe.Read(ctx, fr.file); err != nil {
 		return nil, fmt.Errorf("read file %s: %w", fr.file.Name(), err)
 	}
 
-	return raw, nil
+	return fe, nil
 }
 
 // Close - close the file reader.

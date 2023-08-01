@@ -64,12 +64,12 @@ def _impl(ctx):
     ]
 
     features = [
-	feature(
-	    name = "dbg",
-	),
-	feature(
-	    name = "opt",
-	),
+        feature(
+            name = "dbg",
+        ),
+        feature(
+            name = "opt",
+        ),
         feature(
             name = "default_compiler_flags",
             enabled = True,
@@ -79,37 +79,38 @@ def _impl(ctx):
                     flag_groups = [
                         flag_group(
                             flags = [
-				# Common compile flags here
-				"-Wall",
+                                # Common compile flags here
+                                "-fPIC",
+                                "-Wall",
                                 "-std=c++2b",
                             ],
                         ),
                     ],
                 ),
-		flag_set(
-		    actions = all_compile_actions,
-		    flag_groups = [
-		        flag_group(
-			    flags = [
-				# Additional flags for "-c dbg"
-			        "-g"
-			    ],
-			),
-		    ],
-                    with_features = [
-		        with_feature_set(
-			    features = [
-			        "dbg"
-			    ],
-			),
-		    ],
-		),
                 flag_set(
                     actions = all_compile_actions,
                     flag_groups = [
                         flag_group(
                             flags = [
-				# Additional flags for "-c opt"
+                                # Additional flags for "-c dbg"
+                                "-g",
+                            ],
+                        ),
+                    ],
+                    with_features = [
+                        with_feature_set(
+                            features = [
+                                "dbg",
+                            ],
+                        ),
+                    ],
+                ),
+                flag_set(
+                    actions = all_compile_actions,
+                    flag_groups = [
+                        flag_group(
+                            flags = [
+                                # Additional flags for "-c opt"
                                 "-O3",
                                 "-fconcepts-diagnostics-depth=4",
                                 "-finline-limit=10000",
@@ -121,7 +122,7 @@ def _impl(ctx):
                     with_features = [
                         with_feature_set(
                             features = [
-                                "opt"
+                                "opt",
                             ],
                         ),
                     ],
@@ -155,8 +156,8 @@ def _impl(ctx):
         compiler = "g++",
         abi_version = "unknown",
         abi_libc_version = "unknown",
-	tool_paths = tool_paths,
-	features = features,
+        tool_paths = tool_paths,
+        features = features,
         cxx_builtin_include_directories = ctx.attr.builtin_include_directories,
     )
 
@@ -164,7 +165,7 @@ cc_toolchain_config = rule(
     implementation = _impl,
     attrs = {
         "builtin_include_directories": attr.string_list(),
-	"cpu_compiler_options": attr.string_list(),
+        "cpu_compiler_options": attr.string_list(),
     },
     provides = [CcToolchainConfigInfo],
 )
