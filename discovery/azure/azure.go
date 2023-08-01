@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand"
 	"net"
 	"net/http"
 	"strings"
@@ -35,6 +36,8 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
 
+	cache "github.com/Code-Hex/go-generics-cache"
+	"github.com/Code-Hex/go-generics-cache/policy/lru"
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -78,11 +81,17 @@ var (
 			Name: "prometheus_sd_azure_failures_total",
 			Help: "Number of Azure service discovery refresh failures.",
 		})
+	cacheHitCount = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "prometheus_sd_azure_cache_hist_total",
+			Help: "Number of cache hit during refresh.",
+		})
 )
 
 func init() {
 	discovery.RegisterConfig(&SDConfig{})
 	prometheus.MustRegister(failuresCount)
+	prometheus.MustRegister(cacheHitCount)
 }
 
 // SDConfig is the configuration for Azure based service discovery.
@@ -96,6 +105,7 @@ type SDConfig struct {
 	RefreshInterval      model.Duration     `yaml:"refresh_interval,omitempty"`
 	AuthenticationMethod string             `yaml:"authentication_method,omitempty"`
 	ResourceGroup        string             `yaml:"resource_group,omitempty"`
+	RefreshCacheInterval model.Duration     `yaml:"cache_refresh_interval,omitempty"`
 
 	HTTPClientConfig config_util.HTTPClientConfig `yaml:",inline"`
 }
@@ -105,7 +115,7 @@ func (*SDConfig) Name() string { return "azure" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(c, opts.Logger), nil
+	return NewDiscovery(c, opts.Logger)
 }
 
 func validateAuthParam(param, name string) error {
@@ -113,6 +123,15 @@ func validateAuthParam(param, name string) error {
 		return fmt.Errorf("azure SD configuration requires a %s", name)
 	}
 	return nil
+}
+
+func setCacheParam(param model.Duration, name string) (*cache.Cache[string, *network.Interface], error) {
+	if param.String() == "0s" {
+		return nil, nil
+	}
+
+	l := cache.New(cache.AsLRU[string, *network.Interface](lru.WithCapacity(10000)))
+	return l, nil
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -123,7 +142,6 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
-
 	if err = validateAuthParam(c.SubscriptionID, "subscription_id"); err != nil {
 		return err
 	}
@@ -152,25 +170,33 @@ type Discovery struct {
 	logger log.Logger
 	cfg    *SDConfig
 	port   int
+	cache  *cache.Cache[string, *network.Interface]
 }
 
 // NewDiscovery returns a new AzureDiscovery which periodically refreshes its targets.
-func NewDiscovery(cfg *SDConfig, logger log.Logger) *Discovery {
+func NewDiscovery(cfg *SDConfig, logger log.Logger) (*Discovery, error) {
 	if logger == nil {
 		logger = log.NewNopLogger()
+	}
+	l, err := setCacheParam(cfg.RefreshCacheInterval, "cache_refresh_interval")
+	if err != nil {
+		return nil, err
 	}
 	d := &Discovery{
 		cfg:    cfg,
 		port:   cfg.Port,
 		logger: logger,
+		cache:  l,
 	}
+
 	d.Discovery = refresh.NewDiscovery(
 		logger,
 		"azure",
 		time.Duration(cfg.RefreshInterval),
 		d.refresh,
 	)
-	return d
+
+	return d, nil
 }
 
 // azureClient represents multiple Azure Resource Manager providers.
@@ -359,15 +385,22 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 			// Get the IP address information via separate call to the network provider.
 			for _, nicID := range vm.NetworkInterfaces {
-				networkInterface, err := client.getNetworkInterfaceByID(ctx, nicID)
-				if err != nil {
-					if errors.Is(err, errorNotFound) {
-						level.Warn(d.logger).Log("msg", "Network interface does not exist", "name", nicID, "err", err)
-					} else {
-						ch <- target{labelSet: nil, err: err}
+				var networkInterface *network.Interface
+				if v, ok := d.getFromCache(nicID); ok {
+					networkInterface = v
+					cacheHitCount.Add(1)
+				} else {
+					networkInterface, err = client.getNetworkInterfaceByID(ctx, nicID)
+					if err != nil {
+						if errors.Is(err, errorNotFound) {
+							level.Warn(d.logger).Log("msg", "Network interface does not exist", "name", nicID, "err", err)
+						} else {
+							ch <- target{labelSet: nil, err: err}
+						}
+						// Get out of this routine because we cannot continue without a network interface.
+						return
 					}
-					// Get out of this routine because we cannot continue without a network interface.
-					return
+					d.addToCache(nicID, networkInterface)
 				}
 
 				if networkInterface.InterfacePropertiesFormat == nil {
@@ -628,4 +661,27 @@ func (client *azureClient) getNetworkInterfaceByID(ctx context.Context, networkI
 	}
 
 	return &result, nil
+}
+
+// addToCache will add the network interface information for the specified nicID
+// If the cache is disable we do nothing
+func (d *Discovery) addToCache(nicID string, netInt *network.Interface) {
+	if d.cache == nil {
+		return
+	}
+	rand.Seed(time.Now().UnixNano())
+	random := time.Duration(rand.Intn(20)) * time.Second
+	exptime := time.Duration(d.cfg.RefreshCacheInterval) + time.Duration(d.cfg.RefreshInterval) + random
+	d.cache.Set(nicID, netInt, cache.WithExpiration(exptime))
+	level.Debug(d.logger).Log("msg", "Adding nic", "nic", nicID, "time", exptime.Seconds())
+}
+
+// getFromCache will get the network Interface for the specified nicID
+// If the cache is disabled nothing will happen
+func (d *Discovery) getFromCache(nicID string) (*network.Interface, bool) {
+	if d.cache == nil {
+		return nil, false
+	}
+	net, found := d.cache.Get(nicID)
+	return net, found
 }

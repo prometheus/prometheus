@@ -558,6 +558,12 @@ subscription_id: <string>
 # instead be specified in the relabeling rule.
 [ port: <int> | default = 80 ]
 
+# If greater than 0s we will cache the Network Interace information 
+# Cache will be refresh every (cache_refresh_interval + refresh_interval + random(20s)).
+# For example for cache_refresh_interval = 20s , refresh_interval = 30s then cache will be refresh every between (50s - 70s).
+# By default the cache is disabled
+[ cache_refresh_interval: <duration> | default = 0s ]
+
 # Authentication information used to authenticate to the Azure API.
 # Note that `basic_auth`, `authorization` and `oauth2` options are
 # mutually exclusive.

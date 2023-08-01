@@ -723,6 +723,7 @@ var expectedConf = &Config{
 					RefreshInterval:      model.Duration(5 * time.Minute),
 					Port:                 9100,
 					HTTPClientConfig:     config.DefaultHTTPClientConfig,
+					RefreshCacheInterval: model.Duration(10 * time.Second),
 				},
 			},
 		},
