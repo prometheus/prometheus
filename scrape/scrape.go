@@ -520,7 +520,9 @@ func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 			case nonEmpty:
 				all = append(all, t)
 			case !t.discoveredLabels.IsEmpty():
-				sp.droppedTargets = append(sp.droppedTargets, t)
+				if uint(len(sp.droppedTargets)) < sp.config.KeepDroppedTargets {
+					sp.droppedTargets = append(sp.droppedTargets, t)
+				}
 			}
 		}
 	}
