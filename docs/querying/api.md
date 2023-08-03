@@ -1299,8 +1299,8 @@ endpoint is `/api/v1/write`. Find more details [here](../storage.md#overview).
 
 Prometheus can be configured as a receiver for the OTLP Metrics protocol. This 
 is not considered an efficient way of ingesting samples. Use it
-with caution for specific low-volume use cases. It is not yet suitable for
-replacing the ingestion via scraping yet.
+with caution for specific low-volume use cases. It is not suitable for
+replacing the ingestion via scraping.
 
 Enable the OTLP receiver by the feature flag
 `--enable-feature=otlp-write-receiver`. When enabled, the OTLP receiver
