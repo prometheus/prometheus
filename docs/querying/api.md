@@ -1304,6 +1304,6 @@ replacing the ingestion via scraping.
 
 Enable the OTLP receiver by the feature flag
 `--enable-feature=otlp-write-receiver`. When enabled, the OTLP receiver
-endpoint is `/otlp/v1/metrics`.
+endpoint is `/api/v1/otlp/v1/metrics`.
 
 *New in v2.47*
