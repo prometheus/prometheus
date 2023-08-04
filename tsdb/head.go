@@ -20,6 +20,7 @@ import (
 	"math"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"sync"
 	"time"
 
@@ -110,7 +111,8 @@ type Head struct {
 
 	cardinalityMutex      sync.Mutex
 	cardinalityCache      *index.PostingsStats // Posting stats cache which will expire after 30sec.
-	lastPostingsStatsCall time.Duration        // Last posting stats call (PostingsCardinalityStats()) time for caching.
+	cardinalityCacheKey   string
+	lastPostingsStatsCall time.Duration // Last posting stats call (PostingsCardinalityStats()) time for caching.
 
 	// chunkDiskMapper is used to write and read Head chunks to/from disk.
 	chunkDiskMapper *chunks.ChunkDiskMapper
@@ -988,16 +990,23 @@ func (h *Head) DisableNativeHistograms() {
 
 // PostingsCardinalityStats returns highest cardinality stats by label and value names.
 func (h *Head) PostingsCardinalityStats(statsByLabelName string, limit int) *index.PostingsStats {
+	cacheKey := statsByLabelName + ";" + strconv.Itoa(limit)
+
 	h.cardinalityMutex.Lock()
 	defer h.cardinalityMutex.Unlock()
-	currentTime := time.Duration(time.Now().Unix()) * time.Second
-	seconds := currentTime - h.lastPostingsStatsCall
-	if seconds > cardinalityCacheExpirationTime {
+	if h.cardinalityCacheKey != cacheKey {
 		h.cardinalityCache = nil
+	} else {
+		currentTime := time.Duration(time.Now().Unix()) * time.Second
+		seconds := currentTime - h.lastPostingsStatsCall
+		if seconds > cardinalityCacheExpirationTime {
+			h.cardinalityCache = nil
+		}
 	}
 	if h.cardinalityCache != nil {
 		return h.cardinalityCache
 	}
+	h.cardinalityCacheKey = cacheKey
 	h.cardinalityCache = h.postings.Stats(statsByLabelName, limit)
 	h.lastPostingsStatsCall = time.Duration(time.Now().Unix()) * time.Second
 
