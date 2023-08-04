@@ -2205,3 +2205,50 @@ func TestAllReverseFloatBucketIterator(t *testing.T) {
 		})
 	}
 }
+
+func TestFloatBucketIteratorTargetSchema(t *testing.T) {
+	h := FloatHistogram{
+		Count:  405,
+		Sum:    1008.4,
+		Schema: 1,
+		PositiveSpans: []Span{
+			{Offset: 0, Length: 4},
+			{Offset: 1, Length: 3},
+			{Offset: 2, Length: 3},
+		},
+		PositiveBuckets: []float64{100, 344, 123, 55, 3, 63, 2, 54, 235, 33},
+		NegativeSpans: []Span{
+			{Offset: 0, Length: 3},
+			{Offset: 7, Length: 4},
+			{Offset: 1, Length: 3},
+		},
+		NegativeBuckets: []float64{10, 34, 1230, 54, 67, 63, 2, 554, 235, 33},
+	}
+	expPositiveBuckets := []Bucket[float64]{
+		{Lower: 0.25, Upper: 1, LowerInclusive: false, UpperInclusive: true, Count: 100, Index: 0},
+		{Lower: 1, Upper: 4, LowerInclusive: false, UpperInclusive: true, Count: 522, Index: 1},
+		{Lower: 4, Upper: 16, LowerInclusive: false, UpperInclusive: true, Count: 68, Index: 2},
+		{Lower: 16, Upper: 64, LowerInclusive: false, UpperInclusive: true, Count: 322, Index: 3},
+	}
+	expNegativeBuckets := []Bucket[float64]{
+		{Lower: -1, Upper: -0.25, LowerInclusive: true, UpperInclusive: false, Count: 10, Index: 0},
+		{Lower: -4, Upper: -1, LowerInclusive: true, UpperInclusive: false, Count: 1264, Index: 1},
+		{Lower: -64, Upper: -16, LowerInclusive: true, UpperInclusive: false, Count: 184, Index: 3},
+		{Lower: -256, Upper: -64, LowerInclusive: true, UpperInclusive: false, Count: 791, Index: 4},
+		{Lower: -1024, Upper: -256, LowerInclusive: true, UpperInclusive: false, Count: 33, Index: 5},
+	}
+
+	it := h.floatBucketIterator(true, 0, -1)
+	for i, b := range expPositiveBuckets {
+		require.True(t, it.Next(), "positive iterator exhausted too early")
+		require.Equal(t, b, it.At(), "bucket %d", i)
+	}
+	require.False(t, it.Next(), "positive iterator not exhausted")
+
+	it = h.floatBucketIterator(false, 0, -1)
+	for i, b := range expNegativeBuckets {
+		require.True(t, it.Next(), "negative iterator exhausted too early")
+		require.Equal(t, b, it.At(), "bucket %d", i)
+	}
+	require.False(t, it.Next(), "negative iterator not exhausted")
+}

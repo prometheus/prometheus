@@ -3908,7 +3908,7 @@ func TestHistogramCounterResetHeader(t *testing.T) {
 			appendHistogram(h)
 			checkExpCounterResetHeader(chunkenc.CounterReset)
 
-			// Add 2 non-counter reset histograms.
+			// Add 2 non-counter reset histogram chunks.
 			for i := 0; i < 250; i++ {
 				appendHistogram(h)
 			}
