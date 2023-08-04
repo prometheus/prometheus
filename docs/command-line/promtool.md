@@ -25,6 +25,7 @@ Tooling for the Prometheus monitoring system.
 | --- | --- |
 | help | Show help. |
 | check | Check the resources for validity. |
+| format | Rewrite the resources to canonical format. |
 | query | Run query against a Prometheus server. |
 | debug | Fetch debug information. |
 | push | Push to a Prometheus server. |
@@ -197,6 +198,39 @@ examples:
 $ cat metrics.prom | promtool check metrics
 
 $ curl -s http://localhost:9090/metrics | promtool check metrics
+
+
+
+### `promtool format`
+
+Rewrite the resources to canonical format.
+
+
+
+##### `promtool format metrics`
+
+Rewrites prometheus metrics files to a canonical format.
+
+
+
+###### Flags
+
+| Flag | Description |
+| --- | --- |
+| <code class="text-nowrap">--check</code> | Check if the input is formatted. Exit status will be 0 if all input is properly formatted and non-zero otherwise. |
+| <code class="text-nowrap">--diff</code> | Display diffs of formatting changes. |
+| <code class="text-nowrap">--list</code> | List files whose formatting differs (always disabled if using standard input) |
+| <code class="text-nowrap">--write</code> | Write to source files (always disabled if using standard input or --check) |
+
+
+
+
+###### Arguments
+
+| Argument | Description |
+| --- | --- |
+| metric-files | The metric files to format, default is read from standard input. |
+
 
 
 

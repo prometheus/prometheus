@@ -60,6 +60,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/util/documentcli"
+	"github.com/prometheus/prometheus/util/fmtutil"
 )
 
 const (
@@ -139,6 +140,18 @@ func main() {
 
 	checkMetricsCmd := checkCmd.Command("metrics", checkMetricsUsage)
 	checkMetricsExtended := checkCmd.Flag("extended", "Print extended information related to the cardinality of the metrics.").Bool()
+
+	formatCmd := app.Command("format", "Rewrite the resources to canonical format.")
+	formatMetricsCmd := formatCmd.Command("metrics", "Rewrites prometheus metrics files to a canonical format.")
+	formatMetricsCheck := formatMetricsCmd.Flag("check", "Check if the input is formatted. Exit status will be 0 if all input is properly formatted and non-zero otherwise.").Bool()
+	formatMetricsDiff := formatMetricsCmd.Flag("diff", "Display diffs of formatting changes.").Bool()
+	formatMetricsList := formatMetricsCmd.Flag("list", "List files whose formatting differs (always disabled if using standard input)").Bool()
+	formatMetricsWrite := formatMetricsCmd.Flag("write", "Write to source files (always disabled if using standard input or --check)").Bool()
+	formatMetricFiles := formatMetricsCmd.Arg(
+		"metric-files",
+		"The metric files to format, default is read from standard input.",
+	).ExistingFiles()
+
 	agentMode := checkConfigCmd.Flag("agent", "Check config file for Prometheus in Agent mode.").Bool()
 
 	queryCmd := app.Command("query", "Run query against a Prometheus server.")
@@ -183,7 +196,7 @@ func main() {
 	pushCmd.Flag("http.config.file", "HTTP client configuration file for promtool to connect to Prometheus.").PlaceHolder("<filename>").ExistingFileVar(&httpConfigFilePath)
 	pushMetricsCmd := pushCmd.Command("metrics", "Push metrics to a prometheus remote write (for testing purpose only).")
 	pushMetricsCmd.Arg("remote-write-url", "Prometheus remote write url to push metrics.").Required().URLVar(&remoteWriteURL)
-	metricFiles := pushMetricsCmd.Arg(
+	pushMetricFiles := pushMetricsCmd.Arg(
 		"metric-files",
 		"The metric files to push, default is read from standard input.",
 	).ExistingFiles()
@@ -314,8 +327,11 @@ func main() {
 	case checkMetricsCmd.FullCommand():
 		os.Exit(CheckMetrics(*checkMetricsExtended))
 
+	case formatMetricsCmd.FullCommand():
+		os.Exit(FormatMetrics(*formatMetricsCheck, *formatMetricsList, *formatMetricsDiff, *formatMetricsWrite, *formatMetricFiles...))
+
 	case pushMetricsCmd.FullCommand():
-		os.Exit(PushMetrics(remoteWriteURL, httpRoundTripper, *pushMetricsHeaders, *pushMetricsTimeout, *pushMetricsLabels, *metricFiles...))
+		os.Exit(PushMetrics(remoteWriteURL, httpRoundTripper, *pushMetricsHeaders, *pushMetricsTimeout, *pushMetricsLabels, *pushMetricFiles...))
 
 	case queryInstantCmd.FullCommand():
 		os.Exit(QueryInstant(serverURL, httpRoundTripper, *queryInstantExpr, *queryInstantTime, p))
@@ -858,15 +874,113 @@ func CheckMetrics(extended bool) int {
 	return successExitCode
 }
 
+func FormatMetrics(check, list, showDiff, write bool, files ...string) int {
+	failed := false
+	if len(files) == 0 {
+		data, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "  FAILED:", err)
+			return failureExitCode
+		}
+		failed = formatMetrics(data, "", check, false, showDiff, false)
+	}
+
+	for _, file := range files {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "  FAILED:", err)
+			failed = true
+			continue
+		}
+		hasError := formatMetrics(data, file, check, list, showDiff, write)
+		failed = failed || hasError
+	}
+
+	if failed {
+		return failureExitCode
+	}
+	return successExitCode
+}
+
+func formatMetrics(content []byte, file string, check, list, showDiff, write bool) bool {
+	// remove duplicates lines
+	strSlice := fmtutil.UniqueStringSlice(strings.Split(string(content), "\n"))
+	data := []byte(strings.Join(strSlice, "\n"))
+
+	metricFamilies, err := checkMetricsParseText(bytes.NewBuffer(data))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, file, "\n  FAILED:", err)
+		return true
+	}
+	metricsFmt, err := checkMetricsParseMetricFamily(metricFamilies)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, file, "\n  FAILED:", err)
+		return true
+	}
+
+	if !bytes.Equal(content, []byte(metricsFmt)) {
+		if check && list {
+			fmt.Println(file)
+			return true
+		}
+		if check {
+			return true
+		}
+		if showDiff {
+			diff, err := fmtutil.BytesDiff(content, []byte(metricsFmt), file)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "  FAILED:", err)
+				os.Exit(1)
+			}
+			fmt.Println(string(diff))
+			return false
+		}
+		if write {
+			f, err := os.Create(file)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "  FAILED:", err)
+			}
+			defer f.Close()
+
+			_, err = f.WriteString(metricsFmt)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "  FAILED:", err)
+				return true
+			}
+		}
+		fmt.Println(metricsFmt)
+	}
+	return false
+}
+
 type metricStat struct {
 	name        string
 	cardinality int
 	percentage  float64
 }
 
+func checkMetricsParseText(input io.Reader) (map[string]*dto.MetricFamily, error) {
+	var parser expfmt.TextParser
+	mf, err := parser.TextToMetricFamilies(input)
+	if err != nil {
+		return nil, err
+	}
+	return mf, nil
+}
+
+func checkMetricsParseMetricFamily(mfs map[string]*dto.MetricFamily) (string, error) {
+	var buf bytes.Buffer
+	for _, mf := range mfs {
+		_, err := expfmt.MetricFamilyToText(&buf, mf)
+		if err != nil {
+			return "", err
+		}
+	}
+	return buf.String(), nil
+}
+
 func checkMetricsExtended(r io.Reader) ([]metricStat, int, error) {
-	p := expfmt.TextParser{}
-	metricFamilies, err := p.TextToMetricFamilies(r)
+	metricFamilies, err := checkMetricsParseText(r)
 	if err != nil {
 		return nil, 0, fmt.Errorf("error while parsing text to metric families: %w", err)
 	}

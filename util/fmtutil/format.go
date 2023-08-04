@@ -17,6 +17,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"os/exec"
 	"sort"
 	"time"
 
@@ -200,4 +202,44 @@ func makeLabelsMap(m *dto.Metric, metricName string, extraLabels map[string]stri
 	}
 
 	return labels
+}
+
+func BytesDiff(b1, b2 []byte, path string) (data []byte, err error) {
+	f1, err := os.CreateTemp("", "")
+	if err != nil {
+		return
+	}
+	defer os.Remove(f1.Name())
+	defer f1.Close()
+
+	f2, err := os.CreateTemp("", "")
+	if err != nil {
+		return
+	}
+	defer os.Remove(f2.Name())
+	defer f2.Close()
+
+	_, _ = f1.Write(b1)
+	_, _ = f2.Write(b2)
+
+	data, err = exec.Command("diff", "--label=old/"+path, "--label=new/"+path, "-u", f1.Name(), f2.Name()).CombinedOutput()
+	if len(data) > 0 {
+		// diff exits with a non-zero status when the files don't match.
+		// Ignore that failure as long as we get output.
+		err = nil
+	}
+	return
+}
+
+// UniqueStringSlice returns unique items in a slice
+func UniqueStringSlice(s []string) []string {
+	inResult := make(map[string]bool)
+	var result []string
+	for _, str := range s {
+		if _, ok := inResult[str]; !ok {
+			inResult[str] = true
+			result = append(result, str)
+		}
+	}
+	return result
 }
