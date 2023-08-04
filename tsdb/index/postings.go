@@ -18,6 +18,7 @@ import (
 	"encoding/binary"
 	"runtime"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/pkg/errors"
@@ -107,11 +108,11 @@ func (p *MemPostings) SortedKeys() []labels.Label {
 	}
 	p.mtx.RUnlock()
 
-	slices.SortFunc(keys, func(a, b labels.Label) bool {
+	slices.SortFunc(keys, func(a, b labels.Label) int {
 		if a.Name != b.Name {
-			return a.Name < b.Name
+			return strings.Compare(a.Name, b.Name)
 		}
-		return a.Value < b.Value
+		return strings.Compare(a.Value, b.Value)
 	})
 	return keys
 }
