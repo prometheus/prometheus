@@ -230,7 +230,7 @@ type SeriesLifecycleCallback interface {
 	// PostCreation is called after creating a series to indicate a creation of series.
 	PostCreation(labels.Labels)
 	// PostDeletion is called after deletion of series.
-	PostDeletion(...labels.Labels)
+	PostDeletion(map[chunks.HeadSeriesRef]labels.Labels)
 }
 
 // NewHead opens the head block in dir.
@@ -1748,16 +1748,17 @@ func newStripeSeries(stripeSize int, seriesCallback SeriesLifecycleCallback) *st
 // minMmapFile is the min mmap file number seen in the series (in-order and out-of-order) after gc'ing the series.
 func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (_ map[storage.SeriesRef]struct{}, _ int, _, _ int64, minMmapFile int) {
 	var (
-		deleted                  = map[storage.SeriesRef]struct{}{}
-		deletedForCallback       = []labels.Labels{}
-		rmChunks                 = 0
-		actualMint         int64 = math.MaxInt64
-		minOOOTime         int64 = math.MaxInt64
+		deleted                     = map[storage.SeriesRef]struct{}{}
+		rmChunks                    = 0
+		actualMint            int64 = math.MaxInt64
+		minOOOTime            int64 = math.MaxInt64
+		deletedFromPrevStripe       = 0
 	)
 	minMmapFile = math.MaxInt32
 	// Run through all series and truncate old chunks. Mark those with no
 	// chunks left as deleted and store their ID.
 	for i := 0; i < s.size; i++ {
+		deletedForCallback := make(map[chunks.HeadSeriesRef]labels.Labels, deletedFromPrevStripe)
 		s.locks[i].Lock()
 
 		for hash, all := range s.hashes[i] {
@@ -1811,7 +1812,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 				deleted[storage.SeriesRef(series.ref)] = struct{}{}
 				s.hashes[i].del(hash, series.lset)
 				delete(s.series[j], series.ref)
-				deletedForCallback = append(deletedForCallback, series.lset)
+				deletedForCallback[series.ref] = series.lset
 
 				if i != j {
 					s.locks[j].Unlock()
@@ -1823,8 +1824,8 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 
 		s.locks[i].Unlock()
 
-		s.seriesLifecycleCallback.PostDeletion(deletedForCallback...)
-		deletedForCallback = deletedForCallback[:0]
+		s.seriesLifecycleCallback.PostDeletion(deletedForCallback)
+		deletedFromPrevStripe = len(deletedForCallback)
 	}
 
 	if actualMint == math.MaxInt64 {
@@ -2112,9 +2113,9 @@ func (mc *mmappedChunk) OverlapsClosedInterval(mint, maxt int64) bool {
 
 type noopSeriesLifecycleCallback struct{}
 
-func (noopSeriesLifecycleCallback) PreCreation(labels.Labels) error { return nil }
-func (noopSeriesLifecycleCallback) PostCreation(labels.Labels)      {}
-func (noopSeriesLifecycleCallback) PostDeletion(...labels.Labels)   {}
+func (noopSeriesLifecycleCallback) PreCreation(labels.Labels) error                     { return nil }
+func (noopSeriesLifecycleCallback) PostCreation(labels.Labels)                          {}
+func (noopSeriesLifecycleCallback) PostDeletion(map[chunks.HeadSeriesRef]labels.Labels) {}
 
 func (h *Head) Size() int64 {
 	var walSize, wblSize int64
