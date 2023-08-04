@@ -118,3 +118,30 @@ func (m *Matcher) GetRegexString() string {
 	}
 	return m.re.GetRegexString()
 }
+
+// SetMatches returns a set of equality matchers for the current regex matchers if possible.
+// For examples the regexp `a(b|f)` will returns "ab" and "af".
+// Returns nil if we can't replace the regexp by only equality matchers.
+func (m *Matcher) SetMatches() []string {
+	if m.re == nil {
+		return nil
+	}
+	return m.re.SetMatches()
+}
+
+// Prefix returns the required prefix of the value to match, if possible.
+// It will be empty if it's an equality matcher or if the prefix can't be determined.
+func (m *Matcher) Prefix() string {
+	if m.re == nil {
+		return ""
+	}
+	return m.re.prefix
+}
+
+// IsRegexOptimized returns whether regex is optimized.
+func (m *Matcher) IsRegexOptimized() bool {
+	if m.re == nil {
+		return false
+	}
+	return m.re.IsOptimized()
+}

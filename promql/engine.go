@@ -476,6 +476,7 @@ func (ng *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts Q
 }
 
 func (ng *Engine) newQuery(q storage.Queryable, qs string, opts QueryOpts, start, end time.Time, interval time.Duration) (*parser.Expr, *query) {
+	// Default to empty QueryOpts if not provided.
 	if opts == nil {
 		opts = NewPrometheusQueryOpts(false, 0)
 	}
@@ -1387,15 +1388,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 			unwrapParenExpr(&arg)
 			vs, ok := arg.(*parser.VectorSelector)
 			if ok {
-				return ev.rangeEval(nil, func(v []parser.Value, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, storage.Warnings) {
-					if vs.Timestamp != nil {
-						// This is a special case only for "timestamp" since the offset
-						// needs to be adjusted for every point.
-						vs.Offset = time.Duration(enh.Ts-*vs.Timestamp) * time.Millisecond
-					}
-					val, ws := ev.vectorSelector(vs, enh.Ts)
-					return call([]parser.Value{val}, e.Args, enh), ws
-				})
+				return ev.evalTimestampFunctionOverVectorSelector(vs, call, e)
 			}
 		}
 
@@ -1833,38 +1826,47 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 	panic(fmt.Errorf("unhandled expression of type: %T", expr))
 }
 
-// vectorSelector evaluates a *parser.VectorSelector expression.
-func (ev *evaluator) vectorSelector(node *parser.VectorSelector, ts int64) (Vector, storage.Warnings) {
-	ws, err := checkAndExpandSeriesSet(ev.ctx, node)
+func (ev *evaluator) evalTimestampFunctionOverVectorSelector(vs *parser.VectorSelector, call FunctionCall, e *parser.Call) (parser.Value, storage.Warnings) {
+	ws, err := checkAndExpandSeriesSet(ev.ctx, vs)
 	if err != nil {
 		ev.error(errWithWarnings{fmt.Errorf("expanding series: %w", err), ws})
 	}
-	vec := make(Vector, 0, len(node.Series))
-	it := storage.NewMemoizedEmptyIterator(durationMilliseconds(ev.lookbackDelta))
-	var chkIter chunkenc.Iterator
-	for i, s := range node.Series {
-		chkIter = s.Iterator(chkIter)
-		it.Reset(chkIter)
 
-		t, f, h, ok := ev.vectorSelectorSingle(it, node, ts)
-		if ok {
-			vec = append(vec, Sample{
-				Metric: node.Series[i].Labels(),
-				T:      t,
-				F:      f,
-				H:      h,
-			})
+	seriesIterators := make([]*storage.MemoizedSeriesIterator, len(vs.Series))
+	for i, s := range vs.Series {
+		it := s.Iterator(nil)
+		seriesIterators[i] = storage.NewMemoizedIterator(it, durationMilliseconds(ev.lookbackDelta))
+	}
 
-			ev.currentSamples++
-			ev.samplesStats.IncrementSamplesAtTimestamp(ts, 1)
-			if ev.currentSamples > ev.maxSamples {
-				ev.error(ErrTooManySamples(env))
-			}
+	return ev.rangeEval(nil, func(v []parser.Value, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, storage.Warnings) {
+		if vs.Timestamp != nil {
+			// This is a special case only for "timestamp" since the offset
+			// needs to be adjusted for every point.
+			vs.Offset = time.Duration(enh.Ts-*vs.Timestamp) * time.Millisecond
 		}
 
-	}
-	ev.samplesStats.UpdatePeak(ev.currentSamples)
-	return vec, ws
+		vec := make(Vector, 0, len(vs.Series))
+		for i, s := range vs.Series {
+			it := seriesIterators[i]
+			t, f, h, ok := ev.vectorSelectorSingle(it, vs, enh.Ts)
+			if ok {
+				vec = append(vec, Sample{
+					Metric: s.Labels(),
+					T:      t,
+					F:      f,
+					H:      h,
+				})
+
+				ev.currentSamples++
+				ev.samplesStats.IncrementSamplesAtTimestamp(enh.Ts, 1)
+				if ev.currentSamples > ev.maxSamples {
+					ev.error(ErrTooManySamples(env))
+				}
+			}
+		}
+		ev.samplesStats.UpdatePeak(ev.currentSamples)
+		return call([]parser.Value{vec}, e.Args, enh), ws
+	})
 }
 
 // vectorSelectorSingle evaluates an instant vector for the iterator of one time series.

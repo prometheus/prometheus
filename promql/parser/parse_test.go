@@ -3565,7 +3565,32 @@ func TestParseExpressions(t *testing.T) {
 
 			if !test.fail {
 				require.NoError(t, err)
-				require.Equal(t, test.expected, expr, "error on input '%s'", test.input)
+				expected := test.expected
+
+				// The FastRegexMatcher introduced in mimir-prometheus is not comparable with
+				// a deep equal, so only compare its String() version.
+				if actualVector, ok := expr.(*VectorSelector); ok {
+					require.IsType(t, &VectorSelector{}, test.expected, "error on input '%s'", test.input)
+					expectedVector := test.expected.(*VectorSelector)
+
+					require.Len(t, actualVector.LabelMatchers, len(expectedVector.LabelMatchers), "error on input '%s'", test.input)
+
+					for i := 0; i < len(actualVector.LabelMatchers); i++ {
+						expectedMatcher := expectedVector.LabelMatchers[i].String()
+						actualMatcher := actualVector.LabelMatchers[i].String()
+
+						require.Equal(t, expectedMatcher, actualMatcher, "unexpected label matcher '%s' on input '%s'", actualMatcher, test.input)
+					}
+
+					// Make a shallow copy of the expected expr (because the test cases are defined in a global variable)
+					// and then reset the LabelMatcher to not compared them with the following deep equal.
+					expectedCopy := *expectedVector
+					expectedCopy.LabelMatchers = nil
+					expected = &expectedCopy
+					actualVector.LabelMatchers = nil
+				}
+
+				require.Equal(t, expected, expr, "error on input '%s'", test.input)
 			} else {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), test.errMsg, "unexpected error on input '%s', expected '%s', got '%s'", test.input, test.errMsg, err.Error())

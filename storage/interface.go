@@ -193,6 +193,9 @@ type SelectHints struct {
 	By       bool     // Indicate whether it is without or by.
 	Range    int64    // Range vector selector range in milliseconds.
 
+	ShardIndex uint64 // Current shard index (starts from 0 and up to ShardCount-1).
+	ShardCount uint64 // Total number of shards (0 means sharding is disabled).
+
 	// DisableTrimming allows to disable trimming of matching series chunks based on query Start and End time.
 	// When disabled, the result may contain samples outside the queried time range but Select() performances
 	// may be improved.
@@ -412,6 +415,12 @@ type ChunkSeriesSet interface {
 type ChunkSeries interface {
 	Labels
 	ChunkIterable
+
+	// ChunkCount returns the number of chunks available from this ChunkSeries.
+	//
+	// This value is used by Mimir's ingesters to report the number of chunks expected to be returned by a query,
+	// which is used by queriers to enforce the 'max chunks per query' limit.
+	ChunkCount() (int, error)
 }
 
 // Labels represents an item that has labels e.g. time series.

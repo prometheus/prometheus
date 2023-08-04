@@ -323,10 +323,10 @@ const resolvedRetention = 15 * time.Minute
 
 // Eval evaluates the rule expression and then creates pending alerts and fires
 // or removes previously pending alerts accordingly.
-func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, externalURL *url.URL, limit int) (promql.Vector, error) {
+func (r *AlertingRule) Eval(ctx context.Context, evalDelay time.Duration, ts time.Time, query QueryFunc, externalURL *url.URL, limit int) (promql.Vector, error) {
 	ctx = NewOriginContext(ctx, NewRuleDetail(r))
 
-	res, err := query(ctx, r.vector.String(), ts)
+	res, err := query(ctx, r.vector.String(), ts.Add(-evalDelay))
 	if err != nil {
 		return nil, err
 	}
@@ -458,8 +458,8 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 		}
 
 		if r.restored.Load() {
-			vec = append(vec, r.sample(a, ts))
-			vec = append(vec, r.forStateSample(a, ts, float64(a.ActiveAt.Unix())))
+			vec = append(vec, r.sample(a, ts.Add(-evalDelay)))
+			vec = append(vec, r.forStateSample(a, ts.Add(-evalDelay), float64(a.ActiveAt.Unix())))
 		}
 	}
 
@@ -535,7 +535,7 @@ func (r *AlertingRule) sendAlerts(ctx context.Context, ts time.Time, resendDelay
 			if interval > resendDelay {
 				delta = interval
 			}
-			alert.ValidUntil = ts.Add(4 * delta)
+			alert.ValidUntil = ts.Add(5 * delta)
 			anew := *alert
 			// The notifier re-uses the labels slice, hence make a copy.
 			anew.Labels = alert.Labels.Copy()

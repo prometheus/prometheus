@@ -19,10 +19,12 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/tsdb/index"
-
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/hashcache"
+	"github.com/prometheus/prometheus/tsdb/index"
 )
 
 // Make entries ~50B in size, to emulate real-world high cardinality.
@@ -48,7 +50,7 @@ func BenchmarkQuerier(b *testing.B) {
 
 	for n := 0; n < 10; n++ {
 		for i := 0; i < 100000; i++ {
-			addSeries(labels.FromStrings("i", strconv.Itoa(i)+postingsBenchSuffix, "n", strconv.Itoa(n)+postingsBenchSuffix, "j", "foo"))
+			addSeries(labels.FromStrings("i", strconv.Itoa(i)+postingsBenchSuffix, "n", strconv.Itoa(n)+postingsBenchSuffix, "j", "foo", "i_times_n", strconv.Itoa(i*n)))
 			// Have some series that won't be matched, to properly test inverted matches.
 			addSeries(labels.FromStrings("i", strconv.Itoa(i)+postingsBenchSuffix, "n", strconv.Itoa(n)+postingsBenchSuffix, "j", "bar"))
 			addSeries(labels.FromStrings("i", strconv.Itoa(i)+postingsBenchSuffix, "n", "0_"+strconv.Itoa(n)+postingsBenchSuffix, "j", "bar"))
@@ -182,6 +184,9 @@ func benchmarkLabelValuesWithMatchers(b *testing.B, ir IndexReader) {
 	n1 := labels.MustNewMatcher(labels.MatchEqual, "n", "1"+postingsBenchSuffix)
 	nX := labels.MustNewMatcher(labels.MatchNotEqual, "n", "X"+postingsBenchSuffix)
 	nPlus := labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")
+	primesTimes := labels.MustNewMatcher(labels.MatchEqual, "i_times_n", "533701") // = 76243*7, ie. multiplication of primes. It will match single i*n combination.
+	nonPrimesTimes := labels.MustNewMatcher(labels.MatchEqual, "i_times_n", "20")  // 1*20, 2*10, 4*5, 5*4
+	times12 := labels.MustNewMatcher(labels.MatchRegexp, "i_times_n", "12.*")
 
 	cases := []struct {
 		name      string
@@ -197,6 +202,9 @@ func benchmarkLabelValuesWithMatchers(b *testing.B, ir IndexReader) {
 		{`i with n="1",j=~"XXX|YYY"`, "i", []*labels.Matcher{n1, jXXXYYY}},
 		{`i with n="X",j!="foo"`, "i", []*labels.Matcher{nX, jNotFoo}},
 		{`i with n="1",i=~"^.*$",j!="foo"`, "i", []*labels.Matcher{n1, iStar, jNotFoo}},
+		{`i with i_times_n=533701`, "i", []*labels.Matcher{primesTimes}},
+		{`i with i_times_n=20`, "i", []*labels.Matcher{nonPrimesTimes}},
+		{`i with i_times_n=~"12.*""`, "i", []*labels.Matcher{times12}},
 		// n has 10 values.
 		{`n with j!="foo"`, "n", []*labels.Matcher{jNotFoo}},
 		{`n with i="1"`, "n", []*labels.Matcher{i1}},
@@ -249,16 +257,28 @@ func BenchmarkQuerierSelect(b *testing.B) {
 	}
 	require.NoError(b, app.Commit())
 
-	bench := func(b *testing.B, br BlockReader, sorted bool) {
+	bench := func(b *testing.B, br BlockReader, sorted, sharding bool) {
 		matcher := labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")
 		for s := 1; s <= numSeries; s *= 10 {
 			b.Run(fmt.Sprintf("%dof%d", s, numSeries), func(b *testing.B) {
-				q, err := NewBlockQuerier(br, 0, int64(s-1))
+				mint := int64(0)
+				maxt := int64(s - 1)
+				q, err := NewBlockQuerier(br, mint, maxt)
 				require.NoError(b, err)
 
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
-					ss := q.Select(sorted, nil, matcher)
+					var hints *storage.SelectHints
+					if sharding {
+						hints = &storage.SelectHints{
+							Start:      mint,
+							End:        maxt,
+							ShardIndex: uint64(i % 16),
+							ShardCount: 16,
+						}
+					}
+
+					ss := q.Select(sorted, hints, matcher)
 					for ss.Next() { // nolint:revive
 					}
 					require.NoError(b, ss.Err())
@@ -269,22 +289,38 @@ func BenchmarkQuerierSelect(b *testing.B) {
 	}
 
 	b.Run("Head", func(b *testing.B) {
-		bench(b, h, false)
+		b.Run("without sharding", func(b *testing.B) {
+			bench(b, h, false, false)
+		})
+		b.Run("with sharding", func(b *testing.B) {
+			bench(b, h, false, true)
+		})
 	})
 	b.Run("SortedHead", func(b *testing.B) {
-		bench(b, h, true)
+		b.Run("without sharding", func(b *testing.B) {
+			bench(b, h, true, false)
+		})
+		b.Run("with sharding", func(b *testing.B) {
+			bench(b, h, true, true)
+		})
 	})
 
 	tmpdir := b.TempDir()
 
+	seriesHashCache := hashcache.NewSeriesHashCache(1024 * 1024 * 1024)
 	blockdir := createBlockFromHead(b, tmpdir, h)
-	block, err := OpenBlock(nil, blockdir, nil)
+	block, err := OpenBlockWithOptions(nil, blockdir, nil, seriesHashCache.GetBlockCacheProvider("test"), defaultPostingsForMatchersCacheTTL, defaultPostingsForMatchersCacheSize, false)
 	require.NoError(b, err)
 	defer func() {
 		require.NoError(b, block.Close())
 	}()
 
 	b.Run("Block", func(b *testing.B) {
-		bench(b, block, false)
+		b.Run("without sharding", func(b *testing.B) {
+			bench(b, block, false, false)
+		})
+		b.Run("with sharding", func(b *testing.B) {
+			bench(b, block, false, true)
+		})
 	})
 }

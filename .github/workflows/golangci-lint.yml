@@ -1,0 +1,30 @@
+name: golangci-lint
+on:
+  push:
+    paths:
+      - "go.sum"
+      - "go.mod"
+      - "**.go"
+      - "scripts/errcheck_excludes.txt"
+      - ".github/workflows/golangci-lint.yml"
+      - ".golangci.yml"
+  pull_request:
+
+jobs:
+  golangci:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: install Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: '>=1.20 <1.21'
+      - name: Install snmp_exporter/generator dependencies
+        run: sudo apt-get update && sudo apt-get -y install libsnmp-dev
+        if: github.repository == 'prometheus/snmp_exporter'
+      - name: Lint
+        uses: golangci/golangci-lint-action@v3.3.1
+        with:
+          version: v1.52.2

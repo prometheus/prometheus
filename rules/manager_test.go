@@ -16,8 +16,10 @@ package rules
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"math"
 	"os"
+	"path"
 	"sort"
 	"testing"
 	"time"
@@ -27,7 +29,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
-	"go.uber.org/goleak"
 	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -40,10 +41,11 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/teststorage"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestMain(m *testing.M) {
-	goleak.VerifyTestMain(m)
+	testutil.TolerantVerifyLeak(m)
 }
 
 func TestAlertingRule(t *testing.T) {
@@ -161,7 +163,7 @@ func TestAlertingRule(t *testing.T) {
 
 		evalTime := baseTime.Add(test.time)
 
-		res, err := rule.Eval(suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil, 0)
+		res, err := rule.Eval(suite.Context(), 0, evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil, 0)
 		require.NoError(t, err)
 
 		var filteredRes promql.Vector // After removing 'ALERTS_FOR_STATE' samples.
@@ -191,157 +193,161 @@ func TestAlertingRule(t *testing.T) {
 }
 
 func TestForStateAddSamples(t *testing.T) {
-	suite, err := promql.NewTest(t, `
+	for _, evalDelay := range []time.Duration{0, time.Minute} {
+		t.Run(fmt.Sprintf("evalDelay %s", evalDelay.String()), func(t *testing.T) {
+			suite, err := promql.NewTest(t, `
 		load 5m
 			http_requests{job="app-server", instance="0", group="canary", severity="overwrite-me"}	75 85  95 105 105  95  85
 			http_requests{job="app-server", instance="1", group="canary", severity="overwrite-me"}	80 90 100 110 120 130 140
 	`)
-	require.NoError(t, err)
-	defer suite.Close()
+			require.NoError(t, err)
+			defer suite.Close()
 
-	err = suite.Run()
-	require.NoError(t, err)
+			err = suite.Run()
+			require.NoError(t, err)
 
-	expr, err := parser.ParseExpr(`http_requests{group="canary", job="app-server"} < 100`)
-	require.NoError(t, err)
+			expr, err := parser.ParseExpr(`http_requests{group="canary", job="app-server"} < 100`)
+			require.NoError(t, err)
 
-	rule := NewAlertingRule(
-		"HTTPRequestRateLow",
-		expr,
-		time.Minute,
-		0,
-		labels.FromStrings("severity", "{{\"c\"}}ritical"),
-		labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
-	)
-	result := promql.Vector{
-		promql.Sample{
-			Metric: labels.FromStrings(
-				"__name__", "ALERTS_FOR_STATE",
-				"alertname", "HTTPRequestRateLow",
-				"group", "canary",
-				"instance", "0",
-				"job", "app-server",
-				"severity", "critical",
-			),
-			F: 1,
-		},
-		promql.Sample{
-			Metric: labels.FromStrings(
-				"__name__", "ALERTS_FOR_STATE",
-				"alertname", "HTTPRequestRateLow",
-				"group", "canary",
-				"instance", "1",
-				"job", "app-server",
-				"severity", "critical",
-			),
-			F: 1,
-		},
-		promql.Sample{
-			Metric: labels.FromStrings(
-				"__name__", "ALERTS_FOR_STATE",
-				"alertname", "HTTPRequestRateLow",
-				"group", "canary",
-				"instance", "0",
-				"job", "app-server",
-				"severity", "critical",
-			),
-			F: 1,
-		},
-		promql.Sample{
-			Metric: labels.FromStrings(
-				"__name__", "ALERTS_FOR_STATE",
-				"alertname", "HTTPRequestRateLow",
-				"group", "canary",
-				"instance", "1",
-				"job", "app-server",
-				"severity", "critical",
-			),
-			F: 1,
-		},
-	}
-
-	baseTime := time.Unix(0, 0)
-
-	tests := []struct {
-		time            time.Duration
-		result          promql.Vector
-		persistThisTime bool // If true, it means this 'time' is persisted for 'for'.
-	}{
-		{
-			time:            0,
-			result:          append(promql.Vector{}, result[:2]...),
-			persistThisTime: true,
-		},
-		{
-			time:   5 * time.Minute,
-			result: append(promql.Vector{}, result[2:]...),
-		},
-		{
-			time:   10 * time.Minute,
-			result: append(promql.Vector{}, result[2:3]...),
-		},
-		{
-			time:   15 * time.Minute,
-			result: nil,
-		},
-		{
-			time:   20 * time.Minute,
-			result: nil,
-		},
-		{
-			time:            25 * time.Minute,
-			result:          append(promql.Vector{}, result[:1]...),
-			persistThisTime: true,
-		},
-		{
-			time:   30 * time.Minute,
-			result: append(promql.Vector{}, result[2:3]...),
-		},
-	}
-
-	var forState float64
-	for i, test := range tests {
-		t.Logf("case %d", i)
-		evalTime := baseTime.Add(test.time)
-
-		if test.persistThisTime {
-			forState = float64(evalTime.Unix())
-		}
-		if test.result == nil {
-			forState = float64(value.StaleNaN)
-		}
-
-		res, err := rule.Eval(suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil, 0)
-		require.NoError(t, err)
-
-		var filteredRes promql.Vector // After removing 'ALERTS' samples.
-		for _, smpl := range res {
-			smplName := smpl.Metric.Get("__name__")
-			if smplName == "ALERTS_FOR_STATE" {
-				filteredRes = append(filteredRes, smpl)
-			} else {
-				// If not 'ALERTS_FOR_STATE', it has to be 'ALERTS'.
-				require.Equal(t, smplName, "ALERTS")
+			rule := NewAlertingRule(
+				"HTTPRequestRateLow",
+				expr,
+				time.Minute,
+				0,
+				labels.FromStrings("severity", "{{\"c\"}}ritical"),
+				labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
+			)
+			result := promql.Vector{
+				promql.Sample{
+					Metric: labels.FromStrings(
+						"__name__", "ALERTS_FOR_STATE",
+						"alertname", "HTTPRequestRateLow",
+						"group", "canary",
+						"instance", "0",
+						"job", "app-server",
+						"severity", "critical",
+					),
+					F: 1,
+				},
+				promql.Sample{
+					Metric: labels.FromStrings(
+						"__name__", "ALERTS_FOR_STATE",
+						"alertname", "HTTPRequestRateLow",
+						"group", "canary",
+						"instance", "1",
+						"job", "app-server",
+						"severity", "critical",
+					),
+					F: 1,
+				},
+				promql.Sample{
+					Metric: labels.FromStrings(
+						"__name__", "ALERTS_FOR_STATE",
+						"alertname", "HTTPRequestRateLow",
+						"group", "canary",
+						"instance", "0",
+						"job", "app-server",
+						"severity", "critical",
+					),
+					F: 1,
+				},
+				promql.Sample{
+					Metric: labels.FromStrings(
+						"__name__", "ALERTS_FOR_STATE",
+						"alertname", "HTTPRequestRateLow",
+						"group", "canary",
+						"instance", "1",
+						"job", "app-server",
+						"severity", "critical",
+					),
+					F: 1,
+				},
 			}
-		}
-		for i := range test.result {
-			test.result[i].T = timestamp.FromTime(evalTime)
-			// Updating the expected 'for' state.
-			if test.result[i].F >= 0 {
-				test.result[i].F = forState
-			}
-		}
-		require.Equal(t, len(test.result), len(filteredRes), "%d. Number of samples in expected and actual output don't match (%d vs. %d)", i, len(test.result), len(res))
 
-		sort.Slice(filteredRes, func(i, j int) bool {
-			return labels.Compare(filteredRes[i].Metric, filteredRes[j].Metric) < 0
+			baseTime := time.Unix(0, 0)
+
+			tests := []struct {
+				time            time.Duration
+				result          promql.Vector
+				persistThisTime bool // If true, it means this 'time' is persisted for 'for'.
+			}{
+				{
+					time:            0,
+					result:          append(promql.Vector{}, result[:2]...),
+					persistThisTime: true,
+				},
+				{
+					time:   5 * time.Minute,
+					result: append(promql.Vector{}, result[2:]...),
+				},
+				{
+					time:   10 * time.Minute,
+					result: append(promql.Vector{}, result[2:3]...),
+				},
+				{
+					time:   15 * time.Minute,
+					result: nil,
+				},
+				{
+					time:   20 * time.Minute,
+					result: nil,
+				},
+				{
+					time:            25 * time.Minute,
+					result:          append(promql.Vector{}, result[:1]...),
+					persistThisTime: true,
+				},
+				{
+					time:   30 * time.Minute,
+					result: append(promql.Vector{}, result[2:3]...),
+				},
+			}
+
+			var forState float64
+			for i, test := range tests {
+				t.Logf("case %d", i)
+				evalTime := baseTime.Add(test.time).Add(evalDelay)
+
+				if test.persistThisTime {
+					forState = float64(evalTime.Unix())
+				}
+				if test.result == nil {
+					forState = float64(value.StaleNaN)
+				}
+
+				res, err := rule.Eval(suite.Context(), evalDelay, evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil, 0)
+				require.NoError(t, err)
+
+				var filteredRes promql.Vector // After removing 'ALERTS' samples.
+				for _, smpl := range res {
+					smplName := smpl.Metric.Get("__name__")
+					if smplName == "ALERTS_FOR_STATE" {
+						filteredRes = append(filteredRes, smpl)
+					} else {
+						// If not 'ALERTS_FOR_STATE', it has to be 'ALERTS'.
+						require.Equal(t, smplName, "ALERTS")
+					}
+				}
+				for i := range test.result {
+					test.result[i].T = timestamp.FromTime(evalTime.Add(-evalDelay))
+					// Updating the expected 'for' state.
+					if test.result[i].F >= 0 {
+						test.result[i].F = forState
+					}
+				}
+				require.Equal(t, len(test.result), len(filteredRes), "%d. Number of samples in expected and actual output don't match (%d vs. %d)", i, len(test.result), len(res))
+
+				sort.Slice(filteredRes, func(i, j int) bool {
+					return labels.Compare(filteredRes[i].Metric, filteredRes[j].Metric) < 0
+				})
+				require.Equal(t, test.result, filteredRes)
+
+				for _, aa := range rule.ActiveAlerts() {
+					require.Zero(t, aa.Labels.Get(model.MetricNameLabel), "%s label set on active alert: %s", model.MetricNameLabel, aa.Labels)
+				}
+
+			}
 		})
-		require.Equal(t, test.result, filteredRes)
-
-		for _, aa := range rule.ActiveAlerts() {
-			require.Zero(t, aa.Labels.Get(model.MetricNameLabel), "%s label set on active alert: %s", model.MetricNameLabel, aa.Labels)
-		}
-
 	}
 }
 
@@ -446,7 +452,7 @@ func TestForStateRestore(t *testing.T) {
 		},
 	}
 
-	testFunc := func(tst testInput) {
+	testFunc := func(tst testInput, evalDelay time.Duration) {
 		newRule := NewAlertingRule(
 			"HTTPRequestRateLow",
 			expr,
@@ -456,17 +462,18 @@ func TestForStateRestore(t *testing.T) {
 			labels.EmptyLabels(), labels.EmptyLabels(), "", false, nil,
 		)
 		newGroup := NewGroup(GroupOptions{
-			Name:          "default",
-			Interval:      time.Second,
-			Rules:         []Rule{newRule},
-			ShouldRestore: true,
-			Opts:          opts,
+			Name:            "default",
+			Interval:        time.Second,
+			Rules:           []Rule{newRule},
+			ShouldRestore:   true,
+			Opts:            opts,
+			EvaluationDelay: &evalDelay,
 		})
 
 		newGroups := make(map[string]*Group)
 		newGroups["default;"] = newGroup
 
-		restoreTime := baseTime.Add(tst.restoreDuration)
+		restoreTime := baseTime.Add(tst.restoreDuration).Add(evalDelay)
 		// First eval before restoration.
 		newGroup.Eval(suite.Context(), restoreTime)
 		// Restore happens here.
@@ -502,14 +509,16 @@ func TestForStateRestore(t *testing.T) {
 
 				// Difference in time should be within 1e6 ns, i.e. 1ms
 				// (due to conversion between ns & ms, float64 & int64).
-				activeAtDiff := float64(e.ActiveAt.Unix() + int64(tst.downDuration/time.Second) - got[i].ActiveAt.Unix())
+				activeAtDiff := evalDelay.Seconds() + float64(e.ActiveAt.Unix()+int64(tst.downDuration/time.Second)-got[i].ActiveAt.Unix())
 				require.Equal(t, 0.0, math.Abs(activeAtDiff), "'for' state restored time is wrong")
 			}
 		}
 	}
 
-	for _, tst := range tests {
-		testFunc(tst)
+	for _, evalDelay := range []time.Duration{0, time.Minute} {
+		for _, tst := range tests {
+			testFunc(tst, evalDelay)
+		}
 	}
 
 	// Testing the grace period.
@@ -517,82 +526,88 @@ func TestForStateRestore(t *testing.T) {
 		evalTime := baseTime.Add(duration)
 		group.Eval(suite.Context(), evalTime)
 	}
-	testFunc(testInput{
-		restoreDuration: 25 * time.Minute,
-		alerts:          []*Alert{},
-		gracePeriod:     true,
-		num:             2,
-	})
+
+	for _, evalDelay := range []time.Duration{0, time.Minute} {
+		testFunc(testInput{
+			restoreDuration: 25 * time.Minute,
+			alerts:          []*Alert{},
+			gracePeriod:     true,
+			num:             2,
+		}, evalDelay)
+	}
 }
 
 func TestStaleness(t *testing.T) {
-	st := teststorage.New(t)
-	defer st.Close()
-	engineOpts := promql.EngineOpts{
-		Logger:     nil,
-		Reg:        nil,
-		MaxSamples: 10,
-		Timeout:    10 * time.Second,
+	for _, evalDelay := range []time.Duration{0, time.Minute} {
+		st := teststorage.New(t)
+		defer st.Close()
+		engineOpts := promql.EngineOpts{
+			Logger:     nil,
+			Reg:        nil,
+			MaxSamples: 10,
+			Timeout:    10 * time.Second,
+		}
+		engine := promql.NewEngine(engineOpts)
+		opts := &ManagerOptions{
+			QueryFunc:  EngineQueryFunc(engine, st),
+			Appendable: st,
+			Queryable:  st,
+			Context:    context.Background(),
+			Logger:     log.NewNopLogger(),
+		}
+
+		expr, err := parser.ParseExpr("a + 1")
+		require.NoError(t, err)
+		rule := NewRecordingRule("a_plus_one", expr, labels.Labels{})
+		group := NewGroup(GroupOptions{
+			Name:            "default",
+			Interval:        time.Second,
+			Rules:           []Rule{rule},
+			ShouldRestore:   true,
+			Opts:            opts,
+			EvaluationDelay: &evalDelay,
+		})
+
+		// A time series that has two samples and then goes stale.
+		app := st.Appender(context.Background())
+		app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 1)
+		app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2)
+		app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 2000, math.Float64frombits(value.StaleNaN))
+
+		err = app.Commit()
+		require.NoError(t, err)
+
+		ctx := context.Background()
+
+		// Execute 3 times, 1 second apart.
+		group.Eval(ctx, time.Unix(0, 0).Add(evalDelay))
+		group.Eval(ctx, time.Unix(1, 0).Add(evalDelay))
+		group.Eval(ctx, time.Unix(2, 0).Add(evalDelay))
+
+		querier, err := st.Querier(context.Background(), 0, 2000)
+		require.NoError(t, err)
+		defer querier.Close()
+
+		matcher, err := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "a_plus_one")
+		require.NoError(t, err)
+
+		set := querier.Select(false, nil, matcher)
+		samples, err := readSeriesSet(set)
+		require.NoError(t, err)
+
+		metric := labels.FromStrings(model.MetricNameLabel, "a_plus_one").String()
+		metricSample, ok := samples[metric]
+
+		require.True(t, ok, "Series %s not returned.", metric)
+		require.True(t, value.IsStaleNaN(metricSample[2].F), "Appended second sample not as expected. Wanted: stale NaN Got: %x", math.Float64bits(metricSample[2].F))
+		metricSample[2].F = 42 // require.Equal cannot handle NaN.
+
+		want := map[string][]promql.FPoint{
+			metric: {{T: 0, F: 2}, {T: 1000, F: 3}, {T: 2000, F: 42}},
+		}
+
+		require.Equal(t, want, samples)
 	}
-	engine := promql.NewEngine(engineOpts)
-	opts := &ManagerOptions{
-		QueryFunc:  EngineQueryFunc(engine, st),
-		Appendable: st,
-		Queryable:  st,
-		Context:    context.Background(),
-		Logger:     log.NewNopLogger(),
-	}
-
-	expr, err := parser.ParseExpr("a + 1")
-	require.NoError(t, err)
-	rule := NewRecordingRule("a_plus_one", expr, labels.Labels{})
-	group := NewGroup(GroupOptions{
-		Name:          "default",
-		Interval:      time.Second,
-		Rules:         []Rule{rule},
-		ShouldRestore: true,
-		Opts:          opts,
-	})
-
-	// A time series that has two samples and then goes stale.
-	app := st.Appender(context.Background())
-	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 1)
-	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2)
-	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 2000, math.Float64frombits(value.StaleNaN))
-
-	err = app.Commit()
-	require.NoError(t, err)
-
-	ctx := context.Background()
-
-	// Execute 3 times, 1 second apart.
-	group.Eval(ctx, time.Unix(0, 0))
-	group.Eval(ctx, time.Unix(1, 0))
-	group.Eval(ctx, time.Unix(2, 0))
-
-	querier, err := st.Querier(context.Background(), 0, 2000)
-	require.NoError(t, err)
-	defer querier.Close()
-
-	matcher, err := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "a_plus_one")
-	require.NoError(t, err)
-
-	set := querier.Select(false, nil, matcher)
-	samples, err := readSeriesSet(set)
-	require.NoError(t, err)
-
-	metric := labels.FromStrings(model.MetricNameLabel, "a_plus_one").String()
-	metricSample, ok := samples[metric]
-
-	require.True(t, ok, "Series %s not returned.", metric)
-	require.True(t, value.IsStaleNaN(metricSample[2].F), "Appended second sample not as expected. Wanted: stale NaN Got: %x", math.Float64bits(metricSample[2].F))
-	metricSample[2].F = 42 // require.Equal cannot handle NaN.
-
-	want := map[string][]promql.FPoint{
-		metric: {{T: 0, F: 2}, {T: 1000, F: 3}, {T: 2000, F: 42}},
-	}
-
-	require.Equal(t, want, samples)
 }
 
 // Convert a SeriesSet into a form usable with require.Equal.
@@ -795,6 +810,231 @@ func TestUpdate(t *testing.T) {
 		}
 	}
 	reloadAndValidate(rgs, t, tmpFile, ruleManager, ogs)
+
+	// Change group source tenants and reload.
+	for i := range rgs.Groups {
+		rgs.Groups[i].SourceTenants = []string{"tenant-2"}
+	}
+	reloadAndValidate(rgs, t, tmpFile, ruleManager, ogs)
+}
+
+func TestUpdate_AlwaysRestore(t *testing.T) {
+	st := teststorage.New(t)
+	defer st.Close()
+
+	ruleManager := NewManager(&ManagerOptions{
+		Appendable:              st,
+		Queryable:               st,
+		Context:                 context.Background(),
+		Logger:                  log.NewNopLogger(),
+		AlwaysRestoreAlertState: true,
+	})
+	ruleManager.start()
+	defer ruleManager.Stop()
+
+	err := ruleManager.Update(10*time.Second, []string{"fixtures/rules_alerts.yaml"}, labels.EmptyLabels(), "", nil)
+	require.NoError(t, err)
+
+	for _, g := range ruleManager.groups {
+		require.True(t, g.shouldRestore)
+		g.shouldRestore = false // set to false to check if Update will set it to true again
+	}
+
+	// Use different file, so groups haven't changed, therefore, we expect state restoration
+	err = ruleManager.Update(10*time.Second, []string{"fixtures/rules_alerts2.yaml"}, labels.EmptyLabels(), "", nil)
+	for _, g := range ruleManager.groups {
+		require.True(t, g.shouldRestore)
+	}
+
+	require.NoError(t, err)
+}
+
+func TestUpdate_AlwaysRestoreDoesntAffectUnchangedGroups(t *testing.T) {
+	files := []string{"fixtures/rules_alerts.yaml"}
+	st := teststorage.New(t)
+	defer st.Close()
+
+	ruleManager := NewManager(&ManagerOptions{
+		Appendable:              st,
+		Queryable:               st,
+		Context:                 context.Background(),
+		Logger:                  log.NewNopLogger(),
+		AlwaysRestoreAlertState: true,
+	})
+	ruleManager.start()
+	defer ruleManager.Stop()
+
+	err := ruleManager.Update(10*time.Second, files, labels.EmptyLabels(), "", nil)
+	require.NoError(t, err)
+
+	for _, g := range ruleManager.groups {
+		require.True(t, g.shouldRestore)
+		g.shouldRestore = false // set to false to check if Update will set it to true again
+	}
+
+	// Use the same file, so groups haven't changed, therefore, we don't expect state restoration
+	err = ruleManager.Update(10*time.Second, files, labels.EmptyLabels(), "", nil)
+	for _, g := range ruleManager.groups {
+		require.False(t, g.shouldRestore)
+	}
+
+	require.NoError(t, err)
+}
+
+func TestUpdateSetsSourceTenants(t *testing.T) {
+	st := teststorage.New(t)
+	defer st.Close()
+
+	opts := promql.EngineOpts{
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 10,
+		Timeout:    10 * time.Second,
+	}
+	engine := promql.NewEngine(opts)
+	ruleManager := NewManager(&ManagerOptions{
+		Appendable: st,
+		Queryable:  st,
+		QueryFunc:  EngineQueryFunc(engine, st),
+		Context:    context.Background(),
+		Logger:     log.NewNopLogger(),
+	})
+	ruleManager.start()
+	defer ruleManager.Stop()
+
+	rgs, errs := rulefmt.ParseFile("fixtures/rules_with_source_tenants.yaml")
+	require.Empty(t, errs, "file parsing failures")
+
+	tmpFile, err := os.CreateTemp("", "rules.test.*.yaml")
+	require.NoError(t, err)
+	defer os.Remove(tmpFile.Name())
+	defer tmpFile.Close()
+
+	reloadRules(rgs, t, tmpFile, ruleManager, 0)
+
+	// check that all source tenants were actually set
+	require.Len(t, ruleManager.groups, len(rgs.Groups))
+
+	for _, expectedGroup := range rgs.Groups {
+		actualGroup, ok := ruleManager.groups[GroupKey(tmpFile.Name(), expectedGroup.Name)]
+
+		require.True(t, ok, "actual groups don't contain at one of the expected groups")
+		require.ElementsMatch(t, expectedGroup.SourceTenants, actualGroup.SourceTenants())
+	}
+}
+
+func TestAlignEvaluationTimeOnInterval(t *testing.T) {
+	st := teststorage.New(t)
+	defer st.Close()
+
+	opts := promql.EngineOpts{
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 10,
+		Timeout:    10 * time.Second,
+	}
+	engine := promql.NewEngine(opts)
+	ruleManager := NewManager(&ManagerOptions{
+		Appendable: st,
+		Queryable:  st,
+		QueryFunc:  EngineQueryFunc(engine, st),
+		Context:    context.Background(),
+		Logger:     log.NewNopLogger(),
+	})
+	ruleManager.start()
+	defer ruleManager.Stop()
+
+	rgs, errs := rulefmt.ParseFile("fixtures/rules_with_alignment.yaml")
+	require.Empty(t, errs, "file parsing failures")
+
+	tmpFile, err := os.CreateTemp("", "rules.test.*.yaml")
+	require.NoError(t, err)
+	defer os.Remove(tmpFile.Name())
+	defer tmpFile.Close()
+
+	reloadRules(rgs, t, tmpFile, ruleManager, 0)
+
+	// Verify that all groups are loaded, and let's check their evaluation times.
+	loadedGroups := ruleManager.RuleGroups()
+	require.Len(t, loadedGroups, len(rgs.Groups))
+
+	assertGroupEvalTimeAlignedOnIntervalIsHonored := func(groupName string, expectedAligned bool) {
+		g := (*Group)(nil)
+		for _, lg := range loadedGroups {
+			if lg.name == groupName {
+				g = lg
+				break
+			}
+		}
+		require.NotNil(t, g, "group not found: %s", groupName)
+
+		// When "g.hash() % g.interval == 0" alignment cannot be checked, because aligned and unaligned eval timestamps
+		// would be the same. This can happen because g.hash() depends on path passed to ruleManager.Update function,
+		// and this test uses temporary directory for storing rule group files.
+		if g.hash()%uint64(g.interval) == 0 {
+			t.Skip("skipping test, because rule group hash is divisible by interval, which makes eval timestamp always aligned to the interval")
+		}
+
+		now := time.Now()
+		ts := g.EvalTimestamp(now.UnixNano())
+
+		aligned := ts.UnixNano()%g.interval.Nanoseconds() == 0
+		require.Equal(t, expectedAligned, aligned, "group: %s, hash: %d, now: %d", groupName, g.hash(), now.UnixNano())
+	}
+
+	assertGroupEvalTimeAlignedOnIntervalIsHonored("aligned", true)
+	assertGroupEvalTimeAlignedOnIntervalIsHonored("aligned_with_crazy_interval", true)
+	assertGroupEvalTimeAlignedOnIntervalIsHonored("unaligned_default", false)
+	assertGroupEvalTimeAlignedOnIntervalIsHonored("unaligned_explicit", false)
+}
+
+func TestGroupEvaluationContextFuncIsCalledWhenSupplied(t *testing.T) {
+	type testContextKeyType string
+	var testContextKey testContextKeyType = "TestGroupEvaluationContextFuncIsCalledWhenSupplied"
+	oldContextTestValue := context.Background().Value(testContextKey)
+
+	contextTestValueChannel := make(chan interface{})
+	mockQueryFunc := func(ctx context.Context, qs string, t time.Time) (promql.Vector, error) {
+		contextTestValueChannel <- ctx.Value(testContextKey)
+		return promql.Vector{}, nil
+	}
+
+	mockContextWrapFunc := func(ctx context.Context, g *Group) context.Context {
+		return context.WithValue(ctx, testContextKey, 42)
+	}
+
+	st := teststorage.New(t)
+	defer st.Close()
+
+	ruleManager := NewManager(&ManagerOptions{
+		Appendable:                 st,
+		Queryable:                  st,
+		QueryFunc:                  mockQueryFunc,
+		Context:                    context.Background(),
+		Logger:                     log.NewNopLogger(),
+		GroupEvaluationContextFunc: mockContextWrapFunc,
+	})
+
+	rgs, errs := rulefmt.ParseFile("fixtures/rules_with_source_tenants.yaml")
+	require.Empty(t, errs, "file parsing failures")
+
+	tmpFile, err := os.CreateTemp("", "rules.test.*.yaml")
+	require.NoError(t, err)
+	defer os.Remove(tmpFile.Name())
+	defer tmpFile.Close()
+
+	// no filesystem is harmed when running this test, set the interval low
+	reloadRules(rgs, t, tmpFile, ruleManager, 10*time.Millisecond)
+
+	ruleManager.start()
+	defer ruleManager.Stop()
+
+	// check that all source tenants were actually set
+	require.Len(t, ruleManager.groups, len(rgs.Groups))
+
+	require.Nil(t, oldContextTestValue, "Context contained test key before the test, impossible")
+	newContextTestValue := <-contextTestValueChannel
+	require.Equal(t, 42, newContextTestValue, "Context does not contain the correct value that should be injected")
 }
 
 // ruleGroupsTest for running tests over rules.
@@ -804,10 +1044,12 @@ type ruleGroupsTest struct {
 
 // ruleGroupTest forms a testing struct for running tests over rules.
 type ruleGroupTest struct {
-	Name     string         `yaml:"name"`
-	Interval model.Duration `yaml:"interval,omitempty"`
-	Limit    int            `yaml:"limit,omitempty"`
-	Rules    []rulefmt.Rule `yaml:"rules"`
+	Name                          string         `yaml:"name"`
+	Interval                      model.Duration `yaml:"interval,omitempty"`
+	Limit                         int            `yaml:"limit,omitempty"`
+	Rules                         []rulefmt.Rule `yaml:"rules"`
+	SourceTenants                 []string       `yaml:"source_tenants,omitempty"`
+	AlignEvaluationTimeOnInterval bool           `yaml:"align_evaluation_time_on_interval,omitempty"`
 }
 
 func formatRules(r *rulefmt.RuleGroups) ruleGroupsTest {
@@ -826,10 +1068,12 @@ func formatRules(r *rulefmt.RuleGroups) ruleGroupsTest {
 			})
 		}
 		tmp = append(tmp, ruleGroupTest{
-			Name:     g.Name,
-			Interval: g.Interval,
-			Limit:    g.Limit,
-			Rules:    rtmp,
+			Name:                          g.Name,
+			Interval:                      g.Interval,
+			Limit:                         g.Limit,
+			Rules:                         rtmp,
+			SourceTenants:                 g.SourceTenants,
+			AlignEvaluationTimeOnInterval: g.AlignEvaluationTimeOnInterval,
 		})
 	}
 	return ruleGroupsTest{
@@ -837,14 +1081,22 @@ func formatRules(r *rulefmt.RuleGroups) ruleGroupsTest {
 	}
 }
 
-func reloadAndValidate(rgs *rulefmt.RuleGroups, t *testing.T, tmpFile *os.File, ruleManager *Manager, ogs map[string]*Group) {
+func reloadRules(rgs *rulefmt.RuleGroups, t *testing.T, tmpFile *os.File, ruleManager *Manager, interval time.Duration) {
+	if interval == 0 {
+		interval = 10 * time.Second
+	}
+
 	bs, err := yaml.Marshal(formatRules(rgs))
 	require.NoError(t, err)
-	tmpFile.Seek(0, 0)
+	_, _ = tmpFile.Seek(0, 0)
 	_, err = tmpFile.Write(bs)
 	require.NoError(t, err)
-	err = ruleManager.Update(10*time.Second, []string{tmpFile.Name()}, labels.EmptyLabels(), "", nil)
+	err = ruleManager.Update(interval, []string{tmpFile.Name()}, labels.EmptyLabels(), "", nil)
 	require.NoError(t, err)
+}
+
+func reloadAndValidate(rgs *rulefmt.RuleGroups, t *testing.T, tmpFile *os.File, ruleManager *Manager, ogs map[string]*Group) {
+	reloadRules(rgs, t, tmpFile, ruleManager, 0)
 	for h, g := range ruleManager.groups {
 		if ogs[h] == g {
 			t.Fail()
@@ -1236,6 +1488,221 @@ func TestRuleHealthUpdates(t *testing.T) {
 	rules = group.Rules()[0]
 	require.EqualError(t, rules.LastError(), storage.ErrOutOfOrderSample.Error())
 	require.Equal(t, HealthBad, rules.Health())
+}
+
+func TestGroup_Equals(t *testing.T) {
+	testExpression, err := parser.ParseExpr("up")
+	require.NoError(t, err)
+
+	tests := []struct {
+		name     string
+		groupOne *Group
+		groupTwo *Group
+		areEqual bool
+	}{
+		{
+			name: "identical configs",
+			groupOne: &Group{
+				name: "example_group",
+				rules: []Rule{
+					&RecordingRule{
+						name:   "one",
+						vector: testExpression,
+						labels: labels.FromMap(map[string]string{"a": "b", "c": "d"}),
+					},
+				},
+			},
+			groupTwo: &Group{
+				name: "example_group",
+				rules: []Rule{
+					&RecordingRule{
+						name:   "one",
+						vector: testExpression,
+						labels: labels.FromMap(map[string]string{"a": "b", "c": "d"}),
+					},
+				},
+			},
+			areEqual: true,
+		},
+		{
+			name: "differently ordered source tenants (should still be equivalent)",
+			groupOne: &Group{
+				name:          "example_group",
+				sourceTenants: []string{"tenant-2", "tenant-1"},
+				rules: []Rule{
+					&RecordingRule{
+						name:   "one",
+						vector: testExpression,
+						labels: labels.FromMap(map[string]string{"a": "b", "c": "d"}),
+					},
+				},
+			},
+			groupTwo: &Group{
+				name:          "example_group",
+				sourceTenants: []string{"tenant-1", "tenant-2"},
+				rules: []Rule{
+					&RecordingRule{
+						name:   "one",
+						vector: testExpression,
+						labels: labels.FromMap(map[string]string{"a": "b", "c": "d"}),
+					},
+				},
+			},
+			areEqual: true,
+		},
+		{
+			name: "different rule length",
+			groupOne: &Group{
+				name: "example_group",
+				rules: []Rule{
+					&RecordingRule{
+						name:   "one",
+						vector: testExpression,
+						labels: labels.FromMap(map[string]string{"a": "b", "c": "d"}),
+					},
+				},
+			},
+			groupTwo: &Group{
+				name: "example_group",
+				rules: []Rule{
+					&RecordingRule{
+						name:   "one",
+						vector: testExpression,
+						labels: labels.FromMap(map[string]string{"a": "b", "c": "d"}),
+					},
+					&RecordingRule{
+						name:   "one",
+						vector: testExpression,
+						labels: labels.FromMap(map[string]string{"a": "b", "c": "d"}),
+					},
+				},
+			},
+			areEqual: false,
+		},
+		{
+			name: "different rule labels",
+			groupOne: &Group{
+				name: "example_group",
+				rules: []Rule{
+					&RecordingRule{
+						name:   "one",
+						vector: testExpression,
+						labels: labels.FromMap(map[string]string{"a": "b", "c": "d"}),
+					},
+				},
+			},
+			groupTwo: &Group{
+				name: "example_group",
+				rules: []Rule{
+					&RecordingRule{
+						name:   "one",
+						vector: testExpression,
+						labels: labels.FromMap(map[string]string{"1": "2", "3": "4"}),
+					},
+				},
+			},
+			areEqual: false,
+		},
+		{
+			name: "different source tenants",
+			groupOne: &Group{
+				name:          "example_group",
+				sourceTenants: []string{"tenant-1", "tenant-3"},
+				rules: []Rule{
+					&RecordingRule{
+						name:   "one",
+						vector: testExpression,
+						labels: labels.FromMap(map[string]string{"a": "b", "c": "d"}),
+					},
+				},
+			},
+			groupTwo: &Group{
+				name:          "example_group",
+				sourceTenants: []string{"tenant-1", "tenant-2"},
+				rules: []Rule{
+					&RecordingRule{
+						name:   "one",
+						vector: testExpression,
+						labels: labels.FromMap(map[string]string{"a": "b", "c": "d"}),
+					},
+				},
+			},
+			areEqual: false,
+		},
+		{
+			name: "repeating source tenants",
+			groupOne: &Group{
+				name:          "example_group",
+				sourceTenants: []string{"tenant-1", "tenant-2"},
+				rules: []Rule{
+					&RecordingRule{
+						name:   "one",
+						vector: testExpression,
+						labels: labels.FromMap(map[string]string{"a": "b", "c": "d"}),
+					},
+				},
+			},
+			groupTwo: &Group{
+				name:          "example_group",
+				sourceTenants: []string{"tenant-1", "tenant-1"},
+				rules: []Rule{
+					&RecordingRule{
+						name:   "one",
+						vector: testExpression,
+						labels: labels.FromMap(map[string]string{"a": "b", "c": "d"}),
+					},
+				},
+			},
+			areEqual: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.areEqual, tt.groupOne.Equals(tt.groupTwo))
+			require.Equal(t, tt.areEqual, tt.groupTwo.Equals(tt.groupOne))
+		})
+	}
+}
+
+func TestGroup_EvaluationDelay(t *testing.T) {
+	config := `
+groups:
+  - name: group1
+    evaluation_delay: 2m
+  - name: group2
+    evaluation_delay: 0s
+  - name: group3
+`
+
+	dir := t.TempDir()
+	fname := path.Join(dir, "rules.yaml")
+	err := os.WriteFile(fname, []byte(config), fs.ModePerm)
+	require.NoError(t, err)
+
+	m := NewManager(&ManagerOptions{
+		Logger: log.NewNopLogger(),
+		DefaultEvaluationDelay: func() time.Duration {
+			return time.Minute
+		},
+	})
+	m.start()
+	err = m.Update(time.Second, []string{fname}, labels.EmptyLabels(), "", nil)
+	require.NoError(t, err)
+
+	rgs := m.RuleGroups()
+	sort.Slice(rgs, func(i, j int) bool {
+		return rgs[i].Name() < rgs[j].Name()
+	})
+
+	// From config.
+	require.Equal(t, 2*time.Minute, rgs[0].EvaluationDelay())
+	// Setting 0 in config is detected.
+	require.Equal(t, time.Duration(0), rgs[1].EvaluationDelay())
+	// Default when nothing is set.
+	require.Equal(t, time.Minute, rgs[2].EvaluationDelay())
+
+	m.Stop()
 }
 
 func TestRuleGroupEvalIterationFunc(t *testing.T) {

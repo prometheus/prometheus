@@ -187,6 +187,13 @@ func (h *Head) AppendableMinValidTime() (int64, bool) {
 	return h.appendableMinValidTime(), true
 }
 
+func min(a, b int64) int64 {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 func max(a, b int64) int64 {
 	if a > b {
 		return a
@@ -1099,7 +1106,7 @@ func (a *headAppender) Commit() (err error) {
 }
 
 // insert is like append, except it inserts. Used for OOO samples.
-func (s *memSeries) insert(t int64, v float64, chunkDiskMapper *chunks.ChunkDiskMapper, oooCapMax int64) (inserted, chunkCreated bool, mmapRef chunks.ChunkDiskMapperRef) {
+func (s *memSeries) insert(t int64, v float64, chunkDiskMapper chunkDiskMapper, oooCapMax int64) (inserted, chunkCreated bool, mmapRef chunks.ChunkDiskMapperRef) {
 	if s.ooo == nil {
 		s.ooo = &memSeriesOOOFields{}
 	}
@@ -1124,7 +1131,7 @@ func (s *memSeries) insert(t int64, v float64, chunkDiskMapper *chunks.ChunkDisk
 
 // chunkOpts are chunk-level options that are passed when appending to a memSeries.
 type chunkOpts struct {
-	chunkDiskMapper *chunks.ChunkDiskMapper
+	chunkDiskMapper chunkDiskMapper
 	chunkRange      int64
 	samplesPerChunk int
 }
@@ -1310,7 +1317,10 @@ func (s *memSeries) appendPreprocessor(t int64, e chunkenc.Encoding, o chunkOpts
 	// the remaining chunks in the current chunk range.
 	// At latest it must happen at the timestamp set when the chunk was cut.
 	if numSamples == o.samplesPerChunk/4 {
-		s.nextAt = computeChunkEndTime(c.minTime, c.maxTime, s.nextAt)
+		maxNextAt := s.nextAt
+
+		s.nextAt = computeChunkEndTime(c.minTime, c.maxTime, maxNextAt)
+		s.nextAt = addJitterToChunkEndTime(s.shardHash, c.minTime, s.nextAt, maxNextAt, s.chunkEndTimeVariance)
 	}
 	// If numSamples > samplesPerChunk*2 then our previous prediction was invalid,
 	// most likely because samples rate has changed and now they are arriving more frequently.
@@ -1338,8 +1348,32 @@ func computeChunkEndTime(start, cur, max int64) int64 {
 	return start + (max-start)/n
 }
 
+// addJitterToChunkEndTime return chunk's nextAt applying a jitter based on the provided expected variance.
+// The variance is applied to the estimated chunk duration (nextAt - chunkMinTime); the returned updated chunk
+// end time is guaranteed to be between "chunkDuration - (chunkDuration*(variance/2))" to
+// "chunkDuration + chunkDuration*(variance/2)", and never greater than maxNextAt.
+func addJitterToChunkEndTime(seriesHash uint64, chunkMinTime, nextAt, maxNextAt int64, variance float64) int64 {
+	if variance <= 0 {
+		return nextAt
+	}
+
+	// Do not apply the jitter if the chunk is expected to be the last one of the chunk range.
+	if nextAt >= maxNextAt {
+		return nextAt
+	}
+
+	// Compute the variance to apply to the chunk end time. The variance is based on the series hash so that
+	// different TSDBs ingesting the same exact samples (e.g. in a distributed system like Mimir) will have
+	// the same chunks for a given period.
+	chunkDuration := nextAt - chunkMinTime
+	chunkDurationMaxVariance := int64(float64(chunkDuration) * variance)
+	chunkDurationVariance := int64(seriesHash % uint64(chunkDurationMaxVariance))
+
+	return min(maxNextAt, nextAt+chunkDurationVariance-(chunkDurationMaxVariance/2))
+}
+
 func (s *memSeries) cutNewHeadChunk(
-	mint int64, e chunkenc.Encoding, chunkDiskMapper *chunks.ChunkDiskMapper, chunkRange int64,
+	mint int64, e chunkenc.Encoding, chunkDiskMapper chunkDiskMapper, chunkRange int64,
 ) *memChunk {
 	s.mmapCurrentHeadChunk(chunkDiskMapper)
 
@@ -1372,7 +1406,7 @@ func (s *memSeries) cutNewHeadChunk(
 
 // cutNewOOOHeadChunk cuts a new OOO chunk and m-maps the old chunk.
 // The caller must ensure that s.ooo is not nil.
-func (s *memSeries) cutNewOOOHeadChunk(mint int64, chunkDiskMapper *chunks.ChunkDiskMapper) (*oooHeadChunk, chunks.ChunkDiskMapperRef) {
+func (s *memSeries) cutNewOOOHeadChunk(mint int64, chunkDiskMapper chunkDiskMapper) (*oooHeadChunk, chunks.ChunkDiskMapperRef) {
 	ref := s.mmapCurrentOOOHeadChunk(chunkDiskMapper)
 
 	s.ooo.oooHeadChunk = &oooHeadChunk{
@@ -1384,7 +1418,7 @@ func (s *memSeries) cutNewOOOHeadChunk(mint int64, chunkDiskMapper *chunks.Chunk
 	return s.ooo.oooHeadChunk, ref
 }
 
-func (s *memSeries) mmapCurrentOOOHeadChunk(chunkDiskMapper *chunks.ChunkDiskMapper) chunks.ChunkDiskMapperRef {
+func (s *memSeries) mmapCurrentOOOHeadChunk(chunkDiskMapper chunkDiskMapper) chunks.ChunkDiskMapperRef {
 	if s.ooo == nil || s.ooo.oooHeadChunk == nil {
 		// There is no head chunk, so nothing to m-map here.
 		return 0
@@ -1401,7 +1435,7 @@ func (s *memSeries) mmapCurrentOOOHeadChunk(chunkDiskMapper *chunks.ChunkDiskMap
 	return chunkRef
 }
 
-func (s *memSeries) mmapCurrentHeadChunk(chunkDiskMapper *chunks.ChunkDiskMapper) {
+func (s *memSeries) mmapCurrentHeadChunk(chunkDiskMapper chunkDiskMapper) {
 	if s.headChunk == nil || s.headChunk.chunk.NumSamples() == 0 {
 		// There is no head chunk, so nothing to m-map here.
 		return

@@ -16,8 +16,6 @@ package tsdb
 import (
 	"fmt"
 	"math"
-	"strings"
-	"unicode/utf8"
 
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
@@ -31,20 +29,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 )
-
-// Bitmap used by func isRegexMetaCharacter to check whether a character needs to be escaped.
-var regexMetaCharacterBytes [16]byte
-
-// isRegexMetaCharacter reports whether byte b needs to be escaped.
-func isRegexMetaCharacter(b byte) bool {
-	return b < utf8.RuneSelf && regexMetaCharacterBytes[b%16]&(1<<(b/16)) != 0
-}
-
-func init() {
-	for _, b := range []byte(`.+*?()|[]{}^$`) {
-		regexMetaCharacterBytes[b%16] |= 1 << (b / 16)
-	}
-}
 
 type blockBaseQuerier struct {
 	blockID    ulid.ULID
@@ -128,10 +112,13 @@ func (q *blockQuerier) Select(sortSeries bool, hints *storage.SelectHints, ms ..
 	mint := q.mint
 	maxt := q.maxt
 	disableTrimming := false
-
-	p, err := PostingsForMatchers(q.index, ms...)
+	sharded := hints != nil && hints.ShardCount > 0
+	p, err := q.index.PostingsForMatchers(sharded, ms...)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
+	}
+	if sharded {
+		p = q.index.ShardedPostings(p, hints.ShardIndex, hints.ShardCount)
 	}
 	if sortSeries {
 		p = q.index.SortedPostings(p)
@@ -173,9 +160,13 @@ func (q *blockChunkQuerier) Select(sortSeries bool, hints *storage.SelectHints, 
 		maxt = hints.End
 		disableTrimming = hints.DisableTrimming
 	}
-	p, err := PostingsForMatchers(q.index, ms...)
+	sharded := hints != nil && hints.ShardCount > 0
+	p, err := q.index.PostingsForMatchers(sharded, ms...)
 	if err != nil {
 		return storage.ErrChunkSeriesSet(err)
+	}
+	if sharded {
+		p = q.index.ShardedPostings(p, hints.ShardIndex, hints.ShardCount)
 	}
 	if sortSeries {
 		p = q.index.SortedPostings(p)
@@ -183,58 +174,9 @@ func (q *blockChunkQuerier) Select(sortSeries bool, hints *storage.SelectHints, 
 	return NewBlockChunkSeriesSet(q.blockID, q.index, q.chunks, q.tombstones, p, mint, maxt, disableTrimming)
 }
 
-func findSetMatches(pattern string) []string {
-	// Return empty matches if the wrapper from Prometheus is missing.
-	if len(pattern) < 6 || pattern[:4] != "^(?:" || pattern[len(pattern)-2:] != ")$" {
-		return nil
-	}
-	escaped := false
-	sets := []*strings.Builder{{}}
-	init := 4
-	end := len(pattern) - 2
-	// If the regex is wrapped in a group we can remove the first and last parentheses
-	if pattern[init] == '(' && pattern[end-1] == ')' {
-		init++
-		end--
-	}
-	for i := init; i < end; i++ {
-		if escaped {
-			switch {
-			case isRegexMetaCharacter(pattern[i]):
-				sets[len(sets)-1].WriteByte(pattern[i])
-			case pattern[i] == '\\':
-				sets[len(sets)-1].WriteByte('\\')
-			default:
-				return nil
-			}
-			escaped = false
-		} else {
-			switch {
-			case isRegexMetaCharacter(pattern[i]):
-				if pattern[i] == '|' {
-					sets = append(sets, &strings.Builder{})
-				} else {
-					return nil
-				}
-			case pattern[i] == '\\':
-				escaped = true
-			default:
-				sets[len(sets)-1].WriteByte(pattern[i])
-			}
-		}
-	}
-	matches := make([]string, 0, len(sets))
-	for _, s := range sets {
-		if s.Len() > 0 {
-			matches = append(matches, s.String())
-		}
-	}
-	return matches
-}
-
 // PostingsForMatchers assembles a single postings iterator against the index reader
 // based on the given matchers. The resulting postings are not ordered by series.
-func PostingsForMatchers(ix IndexReader, ms ...*labels.Matcher) (index.Postings, error) {
+func PostingsForMatchers(ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
 	var its, notIts []index.Postings
 	// See which label must be non-empty.
 	// Optimization for case like {l=~".", l!="1"}.
@@ -331,7 +273,7 @@ func PostingsForMatchers(ix IndexReader, ms ...*labels.Matcher) (index.Postings,
 	return it, nil
 }
 
-func postingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Postings, error) {
+func postingsForMatcher(ix IndexPostingsReader, m *labels.Matcher) (index.Postings, error) {
 	// This method will not return postings for missing labels.
 
 	// Fast-path for equal matching.
@@ -341,7 +283,7 @@ func postingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Postings, erro
 
 	// Fast-path for set matching.
 	if m.Type == labels.MatchRegexp {
-		setMatches := findSetMatches(m.GetRegexString())
+		setMatches := m.SetMatches()
 		if len(setMatches) > 0 {
 			return ix.Postings(m.Name, setMatches...)
 		}
@@ -367,12 +309,12 @@ func postingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Postings, erro
 }
 
 // inversePostingsForMatcher returns the postings for the series with the label name set but not matching the matcher.
-func inversePostingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Postings, error) {
+func inversePostingsForMatcher(ix IndexPostingsReader, m *labels.Matcher) (index.Postings, error) {
 	// Fast-path for MatchNotRegexp matching.
 	// Inverse of a MatchNotRegexp is MatchRegexp (double negation).
 	// Fast-path for set matching.
 	if m.Type == labels.MatchNotRegexp {
-		setMatches := findSetMatches(m.GetRegexString())
+		setMatches := m.SetMatches()
 		if len(setMatches) > 0 {
 			return ix.Postings(m.Name, setMatches...)
 		}
@@ -404,6 +346,8 @@ func inversePostingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Posting
 	return ix.Postings(m.Name, res...)
 }
 
+const maxExpandedPostingsFactor = 100 // Division factor for maximum number of matched series.
+
 func labelValuesWithMatchers(r IndexReader, name string, matchers ...*labels.Matcher) ([]string, error) {
 	p, err := PostingsForMatchers(r, matchers...)
 	if err != nil {
@@ -434,6 +378,34 @@ func labelValuesWithMatchers(r IndexReader, name string, matchers ...*labels.Mat
 		allValues = filteredValues
 	}
 
+	// Let's see if expanded postings for matchers have smaller cardinality than label values.
+	// Since computing label values from series is expensive, we apply a limit on number of expanded
+	// postings (and series).
+	maxExpandedPostings := len(allValues) / maxExpandedPostingsFactor
+	if maxExpandedPostings > 0 {
+		// Add space for one extra posting when checking if we expanded all postings.
+		expanded := make([]storage.SeriesRef, 0, maxExpandedPostings+1)
+
+		// Call p.Next() even if len(expanded) == maxExpandedPostings. This tells us if there are more postings or not.
+		for len(expanded) <= maxExpandedPostings && p.Next() {
+			expanded = append(expanded, p.At())
+		}
+
+		if len(expanded) <= maxExpandedPostings {
+			// When we're here, p.Next() must have returned false, so we need to check for errors.
+			if err := p.Err(); err != nil {
+				return nil, errors.Wrap(err, "expanding postings for matchers")
+			}
+
+			// We have expanded all the postings -- all returned label values will be from these series only.
+			// (We supply allValues as a buffer for storing results. It should be big enough already, since it holds all possible label values.)
+			return labelValuesFromSeries(r, name, expanded, allValues)
+		}
+
+		// If we haven't reached end of postings, we prepend our expanded postings to "p", and continue.
+		p = newPrependPostings(expanded, p)
+	}
+
 	valuesPostings := make([]index.Postings, len(allValues))
 	for i, value := range allValues {
 		valuesPostings[i], err = r.Postings(name, value)
@@ -454,8 +426,85 @@ func labelValuesWithMatchers(r IndexReader, name string, matchers ...*labels.Mat
 	return values, nil
 }
 
+// labelValuesFromSeries returns all unique label values from for given label name from supplied series. Values are not sorted.
+// buf is space for holding result (if it isn't big enough, it will be ignored), may be nil.
+func labelValuesFromSeries(r IndexReader, labelName string, refs []storage.SeriesRef, buf []string) ([]string, error) {
+	values := map[string]struct{}{}
+
+	var builder labels.ScratchBuilder
+	for _, ref := range refs {
+		err := r.Series(ref, &builder, nil)
+		if err != nil {
+			return nil, errors.Wrapf(err, "label values for label %s", labelName)
+		}
+
+		v := builder.Labels().Get(labelName)
+		if v != "" {
+			values[v] = struct{}{}
+		}
+	}
+
+	if cap(buf) >= len(values) {
+		buf = buf[:0]
+	} else {
+		buf = make([]string, 0, len(values))
+	}
+	for v := range values {
+		buf = append(buf, v)
+	}
+	return buf, nil
+}
+
+func newPrependPostings(a []storage.SeriesRef, b index.Postings) index.Postings {
+	return &prependPostings{
+		ix:     -1,
+		prefix: a,
+		rest:   b,
+	}
+}
+
+// prependPostings returns series references from "prefix" before using "rest" postings.
+type prependPostings struct {
+	ix     int
+	prefix []storage.SeriesRef
+	rest   index.Postings
+}
+
+func (p *prependPostings) Next() bool {
+	p.ix++
+	if p.ix < len(p.prefix) {
+		return true
+	}
+	return p.rest.Next()
+}
+
+func (p *prependPostings) Seek(v storage.SeriesRef) bool {
+	for p.ix < len(p.prefix) {
+		if p.ix >= 0 && p.prefix[p.ix] >= v {
+			return true
+		}
+		p.ix++
+	}
+
+	return p.rest.Seek(v)
+}
+
+func (p *prependPostings) At() storage.SeriesRef {
+	if p.ix >= 0 && p.ix < len(p.prefix) {
+		return p.prefix[p.ix]
+	}
+	return p.rest.At()
+}
+
+func (p *prependPostings) Err() error {
+	if p.ix >= 0 && p.ix < len(p.prefix) {
+		return nil
+	}
+	return p.rest.Err()
+}
+
 func labelNamesWithMatchers(r IndexReader, matchers ...*labels.Matcher) ([]string, error) {
-	p, err := PostingsForMatchers(r, matchers...)
+	p, err := r.PostingsForMatchers(false, matchers...)
 	if err != nil {
 		return nil, err
 	}
@@ -705,6 +754,10 @@ func (s *chunkSeriesEntry) Iterator(it chunks.Iterator) chunks.Iterator {
 	}
 	pi.reset(s.blockID, s.chunks, s.chks, s.intervals)
 	return pi
+}
+
+func (s *chunkSeriesEntry) ChunkCount() (int, error) {
+	return len(s.chks), nil
 }
 
 // populateWithDelSeriesIterator allows to iterate over samples for the single series.

@@ -383,6 +383,46 @@ func TestBlockQuerier(t *testing.T) {
 				),
 			}),
 		},
+		{
+			// This tests query sharding. The label sets involved both hash into this test's result set. The test
+			// following this is companion to this test (same test but with a different ShardIndex) and should find that
+			// the label sets involved do not hash to that test's result set.
+			mint:  math.MinInt64,
+			maxt:  math.MaxInt64,
+			hints: &storage.SelectHints{Start: math.MinInt64, End: math.MaxInt64, ShardIndex: 0, ShardCount: 2},
+			ms:    []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "a", ".*")},
+			exp: newMockSeriesSet([]storage.Series{
+				storage.NewListSeries(labels.FromStrings("a", "a"),
+					[]tsdbutil.Sample{sample{1, 2, nil, nil}, sample{2, 3, nil, nil}, sample{3, 4, nil, nil}, sample{5, 2, nil, nil}, sample{6, 3, nil, nil}, sample{7, 4, nil, nil}},
+				),
+				storage.NewListSeries(labels.FromStrings("a", "a", "b", "b"),
+					[]tsdbutil.Sample{sample{1, 1, nil, nil}, sample{2, 2, nil, nil}, sample{3, 3, nil, nil}, sample{5, 3, nil, nil}, sample{6, 6, nil, nil}},
+				),
+				storage.NewListSeries(labels.FromStrings("b", "b"),
+					[]tsdbutil.Sample{sample{1, 3, nil, nil}, sample{2, 2, nil, nil}, sample{3, 6, nil, nil}, sample{5, 1, nil, nil}, sample{6, 7, nil, nil}, sample{7, 2, nil, nil}},
+				),
+			}),
+			expChks: newMockChunkSeriesSet([]storage.ChunkSeries{
+				storage.NewListChunkSeriesFromSamples(labels.FromStrings("a", "a"),
+					[]tsdbutil.Sample{sample{1, 2, nil, nil}, sample{2, 3, nil, nil}, sample{3, 4, nil, nil}}, []tsdbutil.Sample{sample{5, 2, nil, nil}, sample{6, 3, nil, nil}, sample{7, 4, nil, nil}},
+				),
+				storage.NewListChunkSeriesFromSamples(labels.FromStrings("a", "a", "b", "b"),
+					[]tsdbutil.Sample{sample{1, 1, nil, nil}, sample{2, 2, nil, nil}, sample{3, 3, nil, nil}}, []tsdbutil.Sample{sample{5, 3, nil, nil}, sample{6, 6, nil, nil}},
+				),
+				storage.NewListChunkSeriesFromSamples(labels.FromStrings("b", "b"),
+					[]tsdbutil.Sample{sample{1, 3, nil, nil}, sample{2, 2, nil, nil}, sample{3, 6, nil, nil}}, []tsdbutil.Sample{sample{5, 1, nil, nil}, sample{6, 7, nil, nil}, sample{7, 2, nil, nil}},
+				),
+			}),
+		},
+		{
+			// This is a companion to the test above.
+			mint:    math.MinInt64,
+			maxt:    math.MaxInt64,
+			hints:   &storage.SelectHints{Start: math.MinInt64, End: math.MaxInt64, ShardIndex: 1, ShardCount: 2},
+			ms:      []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "a", ".*")},
+			exp:     newMockSeriesSet([]storage.Series{}),
+			expChks: newMockChunkSeriesSet([]storage.ChunkSeries{}),
+		},
 	} {
 		t.Run("", func(t *testing.T) {
 			ir, cr, _, _ := createIdxChkReaders(t, testData)
@@ -1520,6 +1560,48 @@ func (m mockIndex) SortedPostings(p index.Postings) index.Postings {
 	return index.NewListPostings(ep)
 }
 
+func (m mockIndex) PostingsForMatchers(concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
+	var ps []storage.SeriesRef
+	for p, s := range m.series {
+		if matches(ms, s.l) {
+			ps = append(ps, p)
+		}
+	}
+	sort.Slice(ps, func(i, j int) bool { return ps[i] < ps[j] })
+	return index.NewListPostings(ps), nil
+}
+
+func matches(ms []*labels.Matcher, lbls labels.Labels) bool {
+	lm := lbls.Map()
+	for _, m := range ms {
+		if !m.Matches(lm[m.Name]) {
+			return false
+		}
+	}
+	return true
+}
+
+func (m mockIndex) ShardedPostings(p index.Postings, shardIndex, shardCount uint64) index.Postings {
+	out := make([]storage.SeriesRef, 0, 128)
+
+	for p.Next() {
+		ref := p.At()
+		s, ok := m.series[ref]
+		if !ok {
+			continue
+		}
+
+		// Check if the series belong to the shard.
+		if s.l.Hash()%shardCount != shardIndex {
+			continue
+		}
+
+		out = append(out, ref)
+	}
+
+	return index.NewListPostings(out)
+}
+
 func (m mockIndex) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
 	s, ok := m.series[ref]
 	if !ok {
@@ -1828,69 +1910,6 @@ func BenchmarkSetMatcher(b *testing.B) {
 				require.Equal(b, 0, len(ss.Warnings()))
 			}
 		})
-	}
-}
-
-// Refer to https://github.com/prometheus/prometheus/issues/2651.
-func TestFindSetMatches(t *testing.T) {
-	cases := []struct {
-		pattern string
-		exp     []string
-	}{
-		// Single value, coming from a `bar=~"foo"` selector.
-		{
-			pattern: "^(?:foo)$",
-			exp: []string{
-				"foo",
-			},
-		},
-		// Simple sets.
-		{
-			pattern: "^(?:foo|bar|baz)$",
-			exp: []string{
-				"foo",
-				"bar",
-				"baz",
-			},
-		},
-		// Simple sets containing escaped characters.
-		{
-			pattern: "^(?:fo\\.o|bar\\?|\\^baz)$",
-			exp: []string{
-				"fo.o",
-				"bar?",
-				"^baz",
-			},
-		},
-		// Simple sets containing special characters without escaping.
-		{
-			pattern: "^(?:fo.o|bar?|^baz)$",
-			exp:     nil,
-		},
-		// Missing wrapper.
-		{
-			pattern: "foo|bar|baz",
-			exp:     nil,
-		},
-	}
-
-	for _, c := range cases {
-		matches := findSetMatches(c.pattern)
-		if len(c.exp) == 0 {
-			if len(matches) != 0 {
-				t.Errorf("Evaluating %s, unexpected result %v", c.pattern, matches)
-			}
-		} else {
-			if len(matches) != len(c.exp) {
-				t.Errorf("Evaluating %s, length of result not equal to exp", c.pattern)
-			} else {
-				for i := 0; i < len(c.exp); i++ {
-					if c.exp[i] != matches[i] {
-						t.Errorf("Evaluating %s, unexpected result %s", c.pattern, matches[i])
-					}
-				}
-			}
-		}
 	}
 }
 
@@ -2390,8 +2409,16 @@ func (m mockMatcherIndex) Postings(name string, values ...string) (index.Posting
 	return index.EmptyPostings(), nil
 }
 
+func (m mockMatcherIndex) PostingsForMatchers(bool, ...*labels.Matcher) (index.Postings, error) {
+	return index.EmptyPostings(), nil
+}
+
 func (m mockMatcherIndex) SortedPostings(p index.Postings) index.Postings {
 	return index.EmptyPostings()
+}
+
+func (m mockMatcherIndex) ShardedPostings(ps index.Postings, shardIndex, shardCount uint64) index.Postings {
+	return ps
 }
 
 func (m mockMatcherIndex) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
@@ -2424,7 +2451,7 @@ func TestPostingsForMatcher(t *testing.T) {
 		{
 			// Test case for double quoted regex matcher
 			matcher:  labels.MustNewMatcher(labels.MatchRegexp, "test", "^(?:a|b)$"),
-			hasError: true,
+			hasError: false,
 		},
 	}
 
@@ -2703,6 +2730,118 @@ func TestQueryWithDeletedHistograms(t *testing.T) {
 			}
 			require.NoError(t, css.Err())
 			require.Equal(t, 1, seriesCount)
+		})
+	}
+}
+
+func TestPrependPostings(t *testing.T) {
+	t.Run("empty", func(t *testing.T) {
+		p := newPrependPostings(nil, index.NewListPostings(nil))
+		require.False(t, p.Next())
+	})
+
+	t.Run("next+At", func(t *testing.T) {
+		p := newPrependPostings([]storage.SeriesRef{10, 20, 30}, index.NewListPostings([]storage.SeriesRef{200, 300, 500}))
+
+		for _, s := range []storage.SeriesRef{10, 20, 30, 200, 300, 500} {
+			require.True(t, p.Next())
+			require.Equal(t, s, p.At())
+			require.Equal(t, s, p.At()) // Multiple calls return same value.
+		}
+		require.False(t, p.Next())
+	})
+
+	t.Run("seek+At", func(t *testing.T) {
+		p := newPrependPostings([]storage.SeriesRef{10, 20, 30}, index.NewListPostings([]storage.SeriesRef{200, 300, 500}))
+
+		require.True(t, p.Seek(5))
+		require.Equal(t, storage.SeriesRef(10), p.At())
+		require.Equal(t, storage.SeriesRef(10), p.At())
+
+		require.True(t, p.Seek(15))
+		require.Equal(t, storage.SeriesRef(20), p.At())
+		require.Equal(t, storage.SeriesRef(20), p.At())
+
+		require.True(t, p.Seek(20)) // Seeking to "current" value doesn't move postings iterator.
+		require.Equal(t, storage.SeriesRef(20), p.At())
+		require.Equal(t, storage.SeriesRef(20), p.At())
+
+		require.True(t, p.Seek(50))
+		require.Equal(t, storage.SeriesRef(200), p.At())
+		require.Equal(t, storage.SeriesRef(200), p.At())
+
+		require.False(t, p.Seek(1000))
+		require.False(t, p.Next())
+	})
+
+	t.Run("err", func(t *testing.T) {
+		err := fmt.Errorf("error")
+		p := newPrependPostings([]storage.SeriesRef{10, 20, 30}, index.ErrPostings(err))
+
+		for _, s := range []storage.SeriesRef{10, 20, 30} {
+			require.True(t, p.Next())
+			require.Equal(t, s, p.At())
+			require.NoError(t, p.Err())
+		}
+		// Advancing after prepended values returns false, and gives us access to error.
+		require.False(t, p.Next())
+		require.Equal(t, err, p.Err())
+	})
+}
+
+func TestLabelsValuesWithMatchersOptimization(t *testing.T) {
+	dir := t.TempDir()
+	opts := DefaultHeadOptions()
+	opts.ChunkRange = 1000
+	opts.ChunkDirRoot = dir
+	h, err := NewHead(nil, nil, nil, nil, opts, nil)
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, h.Close())
+	}()
+
+	app := h.Appender(context.Background())
+	addSeries := func(l labels.Labels) {
+		app.Append(0, l, 0, 0)
+	}
+
+	const maxI = 10 * maxExpandedPostingsFactor
+
+	allValuesOfI := make([]string, 0, maxI)
+	for i := 0; i < maxI; i++ {
+		allValuesOfI = append(allValuesOfI, strconv.Itoa(i))
+	}
+
+	for n := 0; n < 10; n++ {
+		for i := 0; i < maxI; i++ {
+			addSeries(labels.FromStrings("i", allValuesOfI[i], "n", strconv.Itoa(n), "j", "foo", "i_times_n", strconv.Itoa(i*n)))
+		}
+	}
+	require.NoError(t, app.Commit())
+
+	ir, err := h.Index()
+	require.NoError(t, err)
+
+	primesTimes := labels.MustNewMatcher(labels.MatchEqual, "i_times_n", "23") // It will match single i*n combination (n < 10)
+	nonPrimesTimes := labels.MustNewMatcher(labels.MatchEqual, "i_times_n", "20")
+	n3 := labels.MustNewMatcher(labels.MatchEqual, "n", "3")
+
+	cases := []struct {
+		name            string
+		labelName       string
+		matchers        []*labels.Matcher
+		expectedResults []string
+	}{
+		{name: `i with i_times_n=23`, labelName: "i", matchers: []*labels.Matcher{primesTimes}, expectedResults: []string{"23"}},
+		{name: `i with i_times_n=20`, labelName: "i", matchers: []*labels.Matcher{nonPrimesTimes}, expectedResults: []string{"4", "5", "10", "20"}},
+		{name: `n with n="3"`, labelName: "i", matchers: []*labels.Matcher{n3}, expectedResults: allValuesOfI},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			values, err := labelValuesWithMatchers(ir, c.labelName, c.matchers...)
+			require.NoError(t, err)
+			require.ElementsMatch(t, c.expectedResults, values)
 		})
 	}
 }

@@ -35,11 +35,13 @@ func (s *SeriesEntry) Iterator(it chunkenc.Iterator) chunkenc.Iterator { return 
 
 type ChunkSeriesEntry struct {
 	Lset            labels.Labels
+	ChunkCountFn    func() (int, error)
 	ChunkIteratorFn func(chunks.Iterator) chunks.Iterator
 }
 
 func (s *ChunkSeriesEntry) Labels() labels.Labels                       { return s.Lset }
 func (s *ChunkSeriesEntry) Iterator(it chunks.Iterator) chunks.Iterator { return s.ChunkIteratorFn(it) }
+func (s *ChunkSeriesEntry) ChunkCount() (int, error)                    { return s.ChunkCountFn() }
 
 // NewListSeries returns series entry with iterator that allows to iterate over provided samples.
 func NewListSeries(lset labels.Labels, s []tsdbutil.Sample) *SeriesEntry {
@@ -90,6 +92,7 @@ func NewListChunkSeriesFromSamples(lset labels.Labels, samples ...[]tsdbutil.Sam
 			}
 			return NewListChunkSeriesIterator(chks...)
 		},
+		ChunkCountFn: func() (int, error) { return len(samples), nil }, // We create one chunk per slice of samples.
 	}
 }
 
@@ -388,6 +391,20 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 		return lcsi
 	}
 	return NewListChunkSeriesIterator(chks...)
+}
+
+func (s *seriesToChunkEncoder) ChunkCount() (int, error) {
+	// This method is expensive, but we don't expect to ever actually use this on the ingester query path in Mimir -
+	// it's just here to ensure things don't break if this assumption ever changes.
+
+	chunkCount := 0
+	it := s.Iterator(nil)
+
+	for it.Next() {
+		chunkCount++
+	}
+
+	return chunkCount, it.Err()
 }
 
 func appendChunk(chks []chunks.Meta, mint, maxt int64, chk chunkenc.Chunk) []chunks.Meta {

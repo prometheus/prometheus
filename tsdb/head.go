@@ -64,6 +64,20 @@ var (
 	defaultWALReplayConcurrency = runtime.GOMAXPROCS(0)
 )
 
+// chunkDiskMapper is a temporary interface while we transition from
+// 0 size queue to queue based chunk disk mapper.
+type chunkDiskMapper interface {
+	CutNewFile() (returnErr error)
+	IterateAllChunks(f func(seriesRef chunks.HeadSeriesRef, chunkRef chunks.ChunkDiskMapperRef, mint, maxt int64, numSamples uint16, encoding chunkenc.Encoding, isOOO bool) error) (err error)
+	Truncate(fileNo uint32) error
+	DeleteCorrupted(originalErr error) error
+	Size() (int64, error)
+	Close() error
+	Chunk(ref chunks.ChunkDiskMapperRef) (chunkenc.Chunk, error)
+	WriteChunk(seriesRef chunks.HeadSeriesRef, mint, maxt int64, chk chunkenc.Chunk, isOOO bool, callback func(err error)) (chkRef chunks.ChunkDiskMapperRef)
+	IsQueueEmpty() bool
+}
+
 // Head handles reads and writes of time series data within a time window.
 type Head struct {
 	chunkRange               atomic.Int64
@@ -101,6 +115,7 @@ type Head struct {
 
 	// TODO(codesome): Extend MemPostings to return only OOOPostings, Set OOOStatus, ... Like an additional map of ooo postings.
 	postings *index.MemPostings // Postings lists for terms.
+	pfmc     *PostingsForMatchersCache
 
 	tombstones *tombstones.MemTombstones
 
@@ -111,7 +126,7 @@ type Head struct {
 	lastPostingsStatsCall time.Duration        // Last posting stats call (PostingsCardinalityStats()) time for caching.
 
 	// chunkDiskMapper is used to write and read Head chunks to/from disk.
-	chunkDiskMapper *chunks.ChunkDiskMapper
+	chunkDiskMapper chunkDiskMapper
 
 	chunkSnapshotMtx sync.Mutex
 
@@ -150,6 +165,7 @@ type HeadOptions struct {
 	ChunkDirRoot         string
 	ChunkPool            chunkenc.Pool
 	ChunkWriteBufferSize int
+	ChunkEndTimeVariance float64
 	ChunkWriteQueueSize  int
 
 	SamplesPerChunk int
@@ -163,6 +179,10 @@ type HeadOptions struct {
 	EnableMemorySnapshotOnShutdown bool
 
 	IsolationDisabled bool
+
+	PostingsForMatchersCacheTTL   time.Duration
+	PostingsForMatchersCacheSize  int
+	PostingsForMatchersCacheForce bool
 
 	// Maximum number of CPUs that can simultaneously processes WAL replay.
 	// The default value is GOMAXPROCS.
@@ -179,16 +199,20 @@ const (
 
 func DefaultHeadOptions() *HeadOptions {
 	ho := &HeadOptions{
-		ChunkRange:           DefaultBlockDuration,
-		ChunkDirRoot:         "",
-		ChunkPool:            chunkenc.NewPool(),
-		ChunkWriteBufferSize: chunks.DefaultWriteBufferSize,
-		ChunkWriteQueueSize:  chunks.DefaultWriteQueueSize,
-		SamplesPerChunk:      DefaultSamplesPerChunk,
-		StripeSize:           DefaultStripeSize,
-		SeriesCallback:       &noopSeriesLifecycleCallback{},
-		IsolationDisabled:    defaultIsolationDisabled,
-		WALReplayConcurrency: defaultWALReplayConcurrency,
+		ChunkRange:                    DefaultBlockDuration,
+		ChunkDirRoot:                  "",
+		ChunkPool:                     chunkenc.NewPool(),
+		ChunkWriteBufferSize:          chunks.DefaultWriteBufferSize,
+		ChunkEndTimeVariance:          0,
+		ChunkWriteQueueSize:           chunks.DefaultWriteQueueSize,
+		SamplesPerChunk:               DefaultSamplesPerChunk,
+		StripeSize:                    DefaultStripeSize,
+		SeriesCallback:                &noopSeriesLifecycleCallback{},
+		IsolationDisabled:             defaultIsolationDisabled,
+		PostingsForMatchersCacheTTL:   defaultPostingsForMatchersCacheTTL,
+		PostingsForMatchersCacheSize:  defaultPostingsForMatchersCacheSize,
+		PostingsForMatchersCacheForce: false,
+		WALReplayConcurrency:          defaultWALReplayConcurrency,
 	}
 	ho.OutOfOrderCapMax.Store(DefaultOutOfOrderCapMax)
 	return ho
@@ -254,6 +278,8 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal, wbl *wlog.WL, opts *Hea
 		},
 		stats: stats,
 		reg:   r,
+
+		pfmc: NewPostingsForMatchersCache(opts.PostingsForMatchersCacheTTL, opts.PostingsForMatchersCacheSize, opts.PostingsForMatchersCacheForce),
 	}
 	if err := h.resetInMemoryState(); err != nil {
 		return nil, err
@@ -497,6 +523,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.checkpointCreationTotal,
 			m.mmapChunkCorruptionTotal,
 			m.snapshotReplayErrorTotal,
+			m.oooHistogram,
 			// Metrics bound to functions and not needed in tests
 			// can be created and registered on the spot.
 			prometheus.NewGaugeFunc(prometheus.GaugeOpts{
@@ -1427,7 +1454,7 @@ func (h *Head) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
 
 	ir := h.indexRange(mint, maxt)
 
-	p, err := PostingsForMatchers(ir, ms...)
+	p, err := ir.PostingsForMatchers(false, ms...)
 	if err != nil {
 		return errors.Wrap(err, "select series")
 	}
@@ -1614,7 +1641,7 @@ func (h *Head) getOrCreate(hash uint64, lset labels.Labels) (*memSeries, bool, e
 
 func (h *Head) getOrCreateWithID(id chunks.HeadSeriesRef, hash uint64, lset labels.Labels) (*memSeries, bool, error) {
 	s, created, err := h.series.getOrSet(hash, lset, func() *memSeries {
-		return newMemSeries(lset, id, h.opts.IsolationDisabled)
+		return newMemSeries(lset, id, labels.StableHash(lset), h.opts.ChunkEndTimeVariance, h.opts.IsolationDisabled)
 	})
 	if err != nil {
 		return nil, false, err
@@ -1905,6 +1932,9 @@ type memSeries struct {
 	lset labels.Labels
 	meta *metadata.Metadata
 
+	// Series labels hash to use for sharding purposes.
+	shardHash uint64
+
 	// Immutable chunks on disk that have not yet gone into a block, in order of ascending time stamps.
 	// When compaction runs, chunks get moved into a block and all pointers are shifted like so:
 	//
@@ -1921,6 +1951,10 @@ type memSeries struct {
 	ooo *memSeriesOOOFields
 
 	mmMaxTime int64 // Max time of any mmapped chunk, only used during WAL replay.
+
+	// chunkEndTimeVariance is how much variance (between 0 and 1) should be applied to the chunk end time,
+	// to spread chunks writing across time. Doesn't apply to the last chunk of the chunk range. 0 to disable variance.
+	chunkEndTimeVariance float64
 
 	nextAt int64 // Timestamp at which to cut the next chunk.
 
@@ -1950,11 +1984,13 @@ type memSeriesOOOFields struct {
 	firstOOOChunkID  chunks.HeadChunkID // HeadOOOChunkID for oooMmappedChunks[0].
 }
 
-func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, isolationDisabled bool) *memSeries {
+func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, shardHash uint64, chunkEndTimeVariance float64, isolationDisabled bool) *memSeries {
 	s := &memSeries{
-		lset:   lset,
-		ref:    id,
-		nextAt: math.MinInt64,
+		lset:                 lset,
+		ref:                  id,
+		nextAt:               math.MinInt64,
+		chunkEndTimeVariance: chunkEndTimeVariance,
+		shardHash:            shardHash,
 	}
 	if !isolationDisabled {
 		s.txs = newTxRing(4)

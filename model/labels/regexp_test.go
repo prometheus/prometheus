@@ -14,49 +14,197 @@
 package labels
 
 import (
+	"bufio"
+	"fmt"
+	"math/rand"
+	"os"
+	"sort"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/DmitriyVTitov/size"
+	"github.com/grafana/regexp"
 	"github.com/grafana/regexp/syntax"
 	"github.com/stretchr/testify/require"
 )
 
+var (
+	asciiRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_")
+	regexes    = []string{
+		"",
+		"foo",
+		"^foo",
+		"(foo|bar)",
+		"foo.*",
+		".*foo",
+		"^.*foo$",
+		"^.+foo$",
+		".*",
+		".+",
+		"foo.+",
+		".+foo",
+		"foo\n.+",
+		"foo\n.*",
+		".*foo.*",
+		".+foo.+",
+		"(?s:.*)",
+		"(?s:.+)",
+		"(?s:^.*foo$)",
+		"(?i:foo)",
+		"(?i:(foo|bar))",
+		"(?i:(foo1|foo2|bar))",
+		"^(?i:foo|oo)|(bar)$",
+		"(?i:(foo1|foo2|aaa|bbb|ccc|ddd|eee|fff|ggg|hhh|iii|lll|mmm|nnn|ooo|ppp|qqq|rrr|sss|ttt|uuu|vvv|www|xxx|yyy|zzz))",
+		"((.*)(bar|b|buzz)(.+)|foo)$",
+		"^$",
+		"(prometheus|api_prom)_api_v1_.+",
+		"10\\.0\\.(1|2)\\.+",
+		"10\\.0\\.(1|2).+",
+		"((fo(bar))|.+foo)",
+		// A long case sensitive alternation.
+		"zQPbMkNO|NNSPdvMi|iWuuSoAl|qbvKMimS|IecrXtPa|seTckYqt|NxnyHkgB|fIDlOgKb|UhlWIygH|OtNoJxHG|cUTkFVIV|mTgFIHjr|jQkoIDtE|PPMKxRXl|AwMfwVkQ|CQyMrTQJ|BzrqxVSi|nTpcWuhF|PertdywG|ZZDgCtXN|WWdDPyyE|uVtNQsKk|BdeCHvPZ|wshRnFlH|aOUIitIp|RxZeCdXT|CFZMslCj|AVBZRDxl|IzIGCnhw|ythYuWiz|oztXVXhl|VbLkwqQx|qvaUgyVC|VawUjPWC|ecloYJuj|boCLTdSU|uPrKeAZx|hrMWLWBq|JOnUNHRM|rYnujkPq|dDEdZhIj|DRrfvugG|yEGfDxVV|YMYdJWuP|PHUQZNWM|AmKNrLis|zTxndVfn|FPsHoJnc|EIulZTua|KlAPhdzg|ScHJJCLt|NtTfMzME|eMCwuFdo|SEpJVJbR|cdhXZeCx|sAVtBwRh|kVFEVcMI|jzJrxraA|tGLHTell|NNWoeSaw|DcOKSetX|UXZAJyka|THpMphDP|rizheevl|kDCBRidd|pCZZRqyu|pSygkitl|SwZGkAaW|wILOrfNX|QkwVOerj|kHOMxPDr|EwOVycJv|AJvtzQFS|yEOjKYYB|LizIINLL|JBRSsfcG|YPiUqqNl|IsdEbvee|MjEpGcBm|OxXZVgEQ|xClXGuxa|UzRCGFEb|buJbvfvA|IPZQxRet|oFYShsMc|oBHffuHO|bzzKrcBR|KAjzrGCl|IPUsAVls|OGMUMbIU|gyDccHuR|bjlalnDd|ZLWjeMna|fdsuIlxQ|dVXtiomV|XxedTjNg|XWMHlNoA|nnyqArQX|opfkWGhb|wYtnhdYb",
+		// An extremely long case sensitive alternation. This is a special
+		// case because the values share common prefixes rather than being
+		// entirely random. This is common in the real world. For example, the
+		// values of a label like kubernetes pod will often include the
+		// deployment name as a prefix.
+		"jyyfj00j0061|jyyfj00j0062|jyyfj94j0093|jyyfj99j0093|jyyfm01j0021|jyyfm02j0021|jyefj00j0192|jyefj00j0193|jyefj00j0194|jyefj00j0195|jyefj00j0196|jyefj00j0197|jyefj00j0290|jyefj00j0291|jyefj00j0292|jyefj00j0293|jyefj00j0294|jyefj00j0295|jyefj00j0296|jyefj00j0297|jyefj89j0394|jyefj90j0394|jyefj91j0394|jyefj95j0347|jyefj96j0322|jyefj96j0347|jyefj97j0322|jyefj97j0347|jyefj98j0322|jyefj98j0347|jyefj99j0320|jyefj99j0322|jyefj99j0323|jyefj99j0335|jyefj99j0336|jyefj99j0344|jyefj99j0347|jyefj99j0349|jyefj99j0351|jyeff00j0117|lyyfm01j0025|lyyfm01j0028|lyyfm01j0041|lyyfm01j0133|lyyfm01j0701|lyyfm02j0025|lyyfm02j0028|lyyfm02j0041|lyyfm02j0133|lyyfm02j0701|lyyfm03j0701|lyefj00j0775|lyefj00j0776|lyefj00j0777|lyefj00j0778|lyefj00j0779|lyefj00j0780|lyefj00j0781|lyefj00j0782|lyefj50j3807|lyefj50j3852|lyefj51j3807|lyefj51j3852|lyefj52j3807|lyefj52j3852|lyefj53j3807|lyefj53j3852|lyefj54j3807|lyefj54j3852|lyefj54j3886|lyefj55j3807|lyefj55j3852|lyefj55j3886|lyefj56j3807|lyefj56j3852|lyefj56j3886|lyefj57j3807|lyefj57j3852|lyefj57j3886|lyefj58j3807|lyefj58j3852|lyefj58j3886|lyefj59j3807|lyefj59j3852|lyefj59j3886|lyefj60j3807|lyefj60j3852|lyefj60j3886|lyefj61j3807|lyefj61j3852|lyefj61j3886|lyefj62j3807|lyefj62j3852|lyefj62j3886|lyefj63j3807|lyefj63j3852|lyefj63j3886|lyefj64j3807|lyefj64j3852|lyefj64j3886|lyefj65j3807|lyefj65j3852|lyefj65j3886|lyefj66j3807|lyefj66j3852|lyefj66j3886|lyefj67j3807|lyefj67j3852|lyefj67j3886|lyefj68j3807|lyefj68j3852|lyefj68j3886|lyefj69j3807|lyefj69j3846|lyefj69j3852|lyefj69j3886|lyefj70j3807|lyefj70j3846|lyefj70j3852|lyefj70j3886|lyefj71j3807|lyefj71j3846|lyefj71j3852|lyefj71j3886|lyefj72j3807|lyefj72j3846|lyefj72j3852|lyefj72j3886|lyefj73j3807|lyefj73j3846|lyefj73j3852|lyefj73j3886|lyefj74j3807|lyefj74j3846|lyefj74j3852|lyefj74j3886|lyefj75j3807|lyefj75j3808|lyefj75j3846|lyefj75j3852|lyefj75j3886|lyefj76j3732|lyefj76j3807|lyefj76j3808|lyefj76j3846|lyefj76j3852|lyefj76j3886|lyefj77j3732|lyefj77j3807|lyefj77j3808|lyefj77j3846|lyefj77j3852|lyefj77j3886|lyefj78j3278|lyefj78j3732|lyefj78j3807|lyefj78j3808|lyefj78j3846|lyefj78j3852|lyefj78j3886|lyefj79j3732|lyefj79j3807|lyefj79j3808|lyefj79j3846|lyefj79j3852|lyefj79j3886|lyefj80j3732|lyefj80j3807|lyefj80j3808|lyefj80j3846|lyefj80j3852|lyefj80j3886|lyefj81j3732|lyefj81j3807|lyefj81j3808|lyefj81j3846|lyefj81j3852|lyefj81j3886|lyefj82j3732|lyefj82j3807|lyefj82j3808|lyefj82j3846|lyefj82j3852|lyefj82j3886|lyefj83j3732|lyefj83j3807|lyefj83j3808|lyefj83j3846|lyefj83j3852|lyefj83j3886|lyefj84j3732|lyefj84j3807|lyefj84j3808|lyefj84j3846|lyefj84j3852|lyefj84j3886|lyefj85j3732|lyefj85j3807|lyefj85j3808|lyefj85j3846|lyefj85j3852|lyefj85j3886|lyefj86j3278|lyefj86j3732|lyefj86j3807|lyefj86j3808|lyefj86j3846|lyefj86j3852|lyefj86j3886|lyefj87j3278|lyefj87j3732|lyefj87j3807|lyefj87j3808|lyefj87j3846|lyefj87j3852|lyefj87j3886|lyefj88j3732|lyefj88j3807|lyefj88j3808|lyefj88j3846|lyefj88j3852|lyefj88j3886|lyefj89j3732|lyefj89j3807|lyefj89j3808|lyefj89j3846|lyefj89j3852|lyefj89j3886|lyefj90j3732|lyefj90j3807|lyefj90j3808|lyefj90j3846|lyefj90j3852|lyefj90j3886|lyefj91j3732|lyefj91j3807|lyefj91j3808|lyefj91j3846|lyefj91j3852|lyefj91j3886|lyefj92j3732|lyefj92j3807|lyefj92j3808|lyefj92j3846|lyefj92j3852|lyefj92j3886|lyefj93j3732|lyefj93j3807|lyefj93j3808|lyefj93j3846|lyefj93j3852|lyefj93j3885|lyefj93j3886|lyefj94j3525|lyefj94j3732|lyefj94j3807|lyefj94j3808|lyefj94j3846|lyefj94j3852|lyefj94j3885|lyefj94j3886|lyefj95j3525|lyefj95j3732|lyefj95j3807|lyefj95j3808|lyefj95j3846|lyefj95j3852|lyefj95j3886|lyefj96j3732|lyefj96j3803|lyefj96j3807|lyefj96j3808|lyefj96j3846|lyefj96j3852|lyefj96j3886|lyefj97j3333|lyefj97j3732|lyefj97j3792|lyefj97j3803|lyefj97j3807|lyefj97j3808|lyefj97j3838|lyefj97j3843|lyefj97j3846|lyefj97j3852|lyefj97j3886|lyefj98j3083|lyefj98j3333|lyefj98j3732|lyefj98j3807|lyefj98j3808|lyefj98j3838|lyefj98j3843|lyefj98j3846|lyefj98j3852|lyefj98j3873|lyefj98j3877|lyefj98j3882|lyefj98j3886|lyefj99j2984|lyefj99j3083|lyefj99j3333|lyefj99j3732|lyefj99j3807|lyefj99j3808|lyefj99j3846|lyefj99j3849|lyefj99j3852|lyefj99j3873|lyefj99j3877|lyefj99j3882|lyefj99j3884|lyefj99j3886|lyeff00j0106|lyeff00j0107|lyeff00j0108|lyeff00j0129|lyeff00j0130|lyeff00j0131|lyeff00j0132|lyeff00j0133|lyeff00j0134|lyeff00j0444|lyeff00j0445|lyeff91j0473|lyeff92j0473|lyeff92j3877|lyeff93j3877|lyeff94j0501|lyeff94j3525|lyeff94j3877|lyeff95j0501|lyeff95j3525|lyeff95j3877|lyeff96j0503|lyeff96j3877|lyeff97j3877|lyeff98j3333|lyeff98j3877|lyeff99j2984|lyeff99j3333|lyeff99j3877|mfyr9149ej|mfyr9149ek|mfyr9156ej|mfyr9156ek|mfyr9157ej|mfyr9157ek|mfyr9159ej|mfyr9159ek|mfyr9203ej|mfyr9204ej|mfyr9205ej|mfyr9206ej|mfyr9207ej|mfyr9207ek|mfyr9217ej|mfyr9217ek|mfyr9222ej|mfyr9222ek|mfyu0185ej|mfye9187ej|mfye9187ek|mfye9188ej|mfye9188ek|mfye9189ej|mfye9189ek|mfyf0185ej|oyefj87j0007|oyefj88j0007|oyefj89j0007|oyefj90j0007|oyefj91j0007|oyefj95j0001|oyefj96j0001|oyefj98j0004|oyefj99j0004|oyeff91j0004|oyeff92j0004|oyeff93j0004|oyeff94j0004|oyeff95j0004|oyeff96j0004|rklvyaxmany|ryefj93j0001|ryefj94j0001|tyyfj00a0001|tyyfj84j0005|tyyfj85j0005|tyyfj86j0005|tyyfj87j0005|tyyfj88j0005|tyyfj89j0005|tyyfj90j0005|tyyfj91j0005|tyyfj92j0005|tyyfj93j0005|tyyfj94j0005|tyyfj95j0005|tyyfj96j0005|tyyfj97j0005|tyyfj98j0005|tyyfj99j0005|tyefj50j0015|tyefj50j0017|tyefj50j0019|tyefj50j0020|tyefj50j0021|tyefj51j0015|tyefj51j0017|tyefj51j0019|tyefj51j0020|tyefj51j0021|tyefj52j0015|tyefj52j0017|tyefj52j0019|tyefj52j0020|tyefj52j0021|tyefj53j0015|tyefj53j0017|tyefj53j0019|tyefj53j0020|tyefj53j0021|tyefj54j0015|tyefj54j0017|tyefj54j0019|tyefj54j0020|tyefj54j0021|tyefj55j0015|tyefj55j0017|tyefj55j0019|tyefj55j0020|tyefj55j0021|tyefj56j0015|tyefj56j0017|tyefj56j0019|tyefj56j0020|tyefj56j0021|tyefj57j0015|tyefj57j0017|tyefj57j0019|tyefj57j0020|tyefj57j0021|tyefj58j0015|tyefj58j0017|tyefj58j0019|tyefj58j0020|tyefj58j0021|tyefj59j0015|tyefj59j0017|tyefj59j0019|tyefj59j0020|tyefj59j0021|tyefj60j0015|tyefj60j0017|tyefj60j0019|tyefj60j0020|tyefj60j0021|tyefj61j0015|tyefj61j0017|tyefj61j0019|tyefj61j0020|tyefj61j0021|tyefj62j0015|tyefj62j0017|tyefj62j0019|tyefj62j0020|tyefj62j0021|tyefj63j0015|tyefj63j0017|tyefj63j0019|tyefj63j0020|tyefj63j0021|tyefj64j0015|tyefj64j0017|tyefj64j0019|tyefj64j0020|tyefj64j0021|tyefj65j0015|tyefj65j0017|tyefj65j0019|tyefj65j0020|tyefj65j0021|tyefj66j0015|tyefj66j0017|tyefj66j0019|tyefj66j0020|tyefj66j0021|tyefj67j0015|tyefj67j0017|tyefj67j0019|tyefj67j0020|tyefj67j0021|tyefj68j0015|tyefj68j0017|tyefj68j0019|tyefj68j0020|tyefj68j0021|tyefj69j0015|tyefj69j0017|tyefj69j0019|tyefj69j0020|tyefj69j0021|tyefj70j0015|tyefj70j0017|tyefj70j0019|tyefj70j0020|tyefj70j0021|tyefj71j0015|tyefj71j0017|tyefj71j0019|tyefj71j0020|tyefj71j0021|tyefj72j0015|tyefj72j0017|tyefj72j0019|tyefj72j0020|tyefj72j0021|tyefj72j0022|tyefj73j0015|tyefj73j0017|tyefj73j0019|tyefj73j0020|tyefj73j0021|tyefj73j0022|tyefj74j0015|tyefj74j0017|tyefj74j0019|tyefj74j0020|tyefj74j0021|tyefj74j0022|tyefj75j0015|tyefj75j0017|tyefj75j0019|tyefj75j0020|tyefj75j0021|tyefj75j0022|tyefj76j0015|tyefj76j0017|tyefj76j0019|tyefj76j0020|tyefj76j0021|tyefj76j0022|tyefj76j0119|tyefj77j0015|tyefj77j0017|tyefj77j0019|tyefj77j0020|tyefj77j0021|tyefj77j0022|tyefj77j0119|tyefj78j0015|tyefj78j0017|tyefj78j0019|tyefj78j0020|tyefj78j0021|tyefj78j0022|tyefj78j0119|tyefj79j0015|tyefj79j0017|tyefj79j0019|tyefj79j0020|tyefj79j0021|tyefj79j0022|tyefj79j0119|tyefj80j0015|tyefj80j0017|tyefj80j0019|tyefj80j0020|tyefj80j0021|tyefj80j0022|tyefj80j0114|tyefj80j0119|tyefj81j0015|tyefj81j0017|tyefj81j0019|tyefj81j0020|tyefj81j0021|tyefj81j0022|tyefj81j0114|tyefj81j0119|tyefj82j0015|tyefj82j0017|tyefj82j0019|tyefj82j0020|tyefj82j0021|tyefj82j0022|tyefj82j0119|tyefj83j0015|tyefj83j0017|tyefj83j0019|tyefj83j0020|tyefj83j0021|tyefj83j0022|tyefj83j0119|tyefj84j0014|tyefj84j0015|tyefj84j0017|tyefj84j0019|tyefj84j0020|tyefj84j0021|tyefj84j0022|tyefj84j0119|tyefj85j0014|tyefj85j0015|tyefj85j0017|tyefj85j0019|tyefj85j0020|tyefj85j0021|tyefj85j0022|tyefj85j0119|tyefj86j0014|tyefj86j0015|tyefj86j0017|tyefj86j0019|tyefj86j0020|tyefj86j0021|tyefj86j0022|tyefj87j0014|tyefj87j0015|tyefj87j0017|tyefj87j0019|tyefj87j0020|tyefj87j0021|tyefj87j0022|tyefj88j0014|tyefj88j0015|tyefj88j0017|tyefj88j0019|tyefj88j0020|tyefj88j0021|tyefj88j0022|tyefj88j0100|tyefj88j0115|tyefj89j0003|tyefj89j0014|tyefj89j0015|tyefj89j0017|tyefj89j0019|tyefj89j0020|tyefj89j0021|tyefj89j0022|tyefj89j0100|tyefj89j0115|tyefj90j0014|tyefj90j0015|tyefj90j0016|tyefj90j0017|tyefj90j0018|tyefj90j0019|tyefj90j0020|tyefj90j0021|tyefj90j0022|tyefj90j0100|tyefj90j0111|tyefj90j0115|tyefj91j0014|tyefj91j0015|tyefj91j0016|tyefj91j0017|tyefj91j0018|tyefj91j0019|tyefj91j0020|tyefj91j0021|tyefj91j0022|tyefj91j0100|tyefj91j0111|tyefj91j0115|tyefj92j0014|tyefj92j0015|tyefj92j0016|tyefj92j0017|tyefj92j0018|tyefj92j0019|tyefj92j0020|tyefj92j0021|tyefj92j0022|tyefj92j0100|tyefj92j0105|tyefj92j0115|tyefj92j0121|tyefj93j0004|tyefj93j0014|tyefj93j0015|tyefj93j0017|tyefj93j0018|tyefj93j0019|tyefj93j0020|tyefj93j0021|tyefj93j0022|tyefj93j0100|tyefj93j0105|tyefj93j0115|tyefj93j0121|tyefj94j0002|tyefj94j0004|tyefj94j0008|tyefj94j0014|tyefj94j0015|tyefj94j0017|tyefj94j0019|tyefj94j0020|tyefj94j0021|tyefj94j0022|tyefj94j0084|tyefj94j0088|tyefj94j0100|tyefj94j0106|tyefj94j0116|tyefj94j0121|tyefj94j0123|tyefj95j0002|tyefj95j0004|tyefj95j0008|tyefj95j0014|tyefj95j0015|tyefj95j0017|tyefj95j0019|tyefj95j0020|tyefj95j0021|tyefj95j0022|tyefj95j0084|tyefj95j0088|tyefj95j0100|tyefj95j0101|tyefj95j0106|tyefj95j0112|tyefj95j0116|tyefj95j0121|tyefj95j0123|tyefj96j0014|tyefj96j0015|tyefj96j0017|tyefj96j0019|tyefj96j0020|tyefj96j0021|tyefj96j0022|tyefj96j0082|tyefj96j0084|tyefj96j0100|tyefj96j0101|tyefj96j0112|tyefj96j0117|tyefj96j0121|tyefj96j0124|tyefj97j0014|tyefj97j0015|tyefj97j0017|tyefj97j0019|tyefj97j0020|tyefj97j0021|tyefj97j0022|tyefj97j0081|tyefj97j0087|tyefj97j0098|tyefj97j0100|tyefj97j0107|tyefj97j0109|tyefj97j0113|tyefj97j0117|tyefj97j0118|tyefj97j0121|tyefj98j0003|tyefj98j0006|tyefj98j0014|tyefj98j0015|tyefj98j0017|tyefj98j0019|tyefj98j0020|tyefj98j0021|tyefj98j0022|tyefj98j0083|tyefj98j0085|tyefj98j0086|tyefj98j0100|tyefj98j0104|tyefj98j0118|tyefj98j0121|tyefj99j0003|tyefj99j0006|tyefj99j0007|tyefj99j0014|tyefj99j0015|tyefj99j0017|tyefj99j0019|tyefj99j0020|tyefj99j0021|tyefj99j0022|tyefj99j0023|tyefj99j0100|tyefj99j0108|tyefj99j0110|tyefj99j0121|tyefj99j0125|tyeff94j0002|tyeff94j0008|tyeff94j0010|tyeff94j0011|tyeff94j0035|tyeff95j0002|tyeff95j0006|tyeff95j0008|tyeff95j0010|tyeff95j0011|tyeff95j0035|tyeff96j0003|tyeff96j0006|tyeff96j0009|tyeff96j0010|tyeff97j0004|tyeff97j0009|tyeff97j0116|tyeff98j0007|tyeff99j0007|tyeff99j0125|uyyfj00j0484|uyyfj00j0485|uyyfj00j0486|uyyfj00j0487|uyyfj00j0488|uyyfj00j0489|uyyfj00j0490|uyyfj00j0491|uyyfj00j0492|uyyfj00j0493|uyyfj00j0494|uyyfj00j0495|uyyfj00j0496|uyyfj00j0497|uyyfj00j0498|uyyfj00j0499|uyyfj00j0500|uyyfj00j0501|uyyfj00j0502|uyyfj00j0503|uyyfj00j0504|uyyfj00j0505|uyyfj00j0506|uyyfj00j0507|uyyfj00j0508|uyyfj00j0509|uyyfj00j0510|uyyfj00j0511|uyyfj00j0512|uyyfj00j0513|uyyfj00j0514|uyyfj00j0515|uyyfj00j0516|uyyfj00j0517|uyyfj00j0518|uyyfj00j0519|uyyfj00j0520|uyyfj00j0521|uyyfj00j0522|uyyfj00j0523|uyyfj00j0524|uyyfj00j0525|uyyfj00j0526|uyyfj00j0527|uyyfj00j0528|uyyfj00j0529|uyyfj00j0530|uyyfj00j0531|uyyfj00j0532|uyyfj00j0533|uyyfj00j0534|uyyfj00j0535|uyyfj00j0536|uyyfj00j0537|uyyfj00j0538|uyyfj00j0539|uyyfj00j0540|uyyfj00j0541|uyyfj00j0542|uyyfj00j0543|uyyfj00j0544|uyyfj00j0545|uyyfj00j0546|uyyfj00j0547|uyyfj00j0548|uyyfj00j0549|uyyfj00j0550|uyyfj00j0551|uyyfj00j0553|uyyfj00j0554|uyyfj00j0555|uyyfj00j0556|uyyfj00j0557|uyyfj00j0558|uyyfj00j0559|uyyfj00j0560|uyyfj00j0561|uyyfj00j0562|uyyfj00j0563|uyyfj00j0564|uyyfj00j0565|uyyfj00j0566|uyyfj00j0614|uyyfj00j0615|uyyfj00j0616|uyyfj00j0617|uyyfj00j0618|uyyfj00j0619|uyyfj00j0620|uyyfj00j0621|uyyfj00j0622|uyyfj00j0623|uyyfj00j0624|uyyfj00j0625|uyyfj00j0626|uyyfj00j0627|uyyfj00j0628|uyyfj00j0629|uyyfj00j0630|uyyfj00j0631|uyyfj00j0632|uyyfj00j0633|uyyfj00j0634|uyyfj00j0635|uyyfj00j0636|uyyfj00j0637|uyyfj00j0638|uyyfj00j0639|uyyfj00j0640|uyyfj00j0641|uyyfj00j0642|uyyfj00j0643|uyyfj00j0644|uyyfj00j0645|uyyfj00j0646|uyyfj00j0647|uyyfj00j0648|uyyfj00j0649|uyyfj00j0650|uyyfj00j0651|uyyfj00j0652|uyyfj00j0653|uyyfj00j0654|uyyfj00j0655|uyyfj00j0656|uyyfj00j0657|uyyfj00j0658|uyyfj00j0659|uyyfj00j0660|uyyfj00j0661|uyyfj00j0662|uyyfj00j0663|uyyfj00j0664|uyyfj00j0665|uyyfj00j0666|uyyfj00j0667|uyyfj00j0668|uyyfj00j0669|uyyfj00j0670|uyyfj00j0671|uyyfj00j0672|uyyfj00j0673|uyyfj00j0674|uyyfj00j0675|uyyfj00j0676|uyyfj00j0677|uyyfj00j0678|uyyfj00j0679|uyyfj00j0680|uyyfj00j0681|uyyfj00j0682|uyyfj00j0683|uyyfj00j0684|uyyfj00j0685|uyyfj00j0686|uyyfj00j0687|uyyfj00j0688|uyyfj00j0689|uyyfj00j0690|uyyfj00j0691|uyyfj00j0692|uyyfj00j0693|uyyfj00j0694|uyyfj00j0695|uyyfj00j0696|uyyfj00j0697|uyyfj00j0698|uyyfj00j0699|uyyfj00j0700|uyyfj00j0701|uyyfj00j0702|uyyfj00j0703|uyyfj00j0704|uyyfj00j0705|uyyfj00j0706|uyyfj00j0707|uyyfj00j0708|uyyfj00j0709|uyyfj00j0710|uyyfj00j0711|uyyfj00j0712|uyyfj00j0713|uyyfj00j0714|uyyfj00j0715|uyyfj00j0716|uyyfj00j0717|uyyfj00j0718|uyyfj00j0719|uyyfj00j0720|uyyfj00j0721|uyyfj00j0722|uyyfj00j0723|uyyfj00j0724|uyyfj00j0725|uyyfj00j0726|uyyfj00j0727|uyyfj00j0728|uyyfj00j0729|uyyfj00j0730|uyyfj00j0731|uyyfj00j0732|uyyfj00j0733|uyyfj00j0734|uyyfj00j0735|uyyfj00j0736|uyyfj00j0737|uyyfj00j0738|uyyfj00j0739|uyyfj00j0740|uyyfj00j0741|uyyfj00j0742|uyyfj00j0743|uyyfj00j0744|uyyfj00j0745|uyyfj00j0746|uyyfj00j0747|uyyfj00j0748|uyyfj00j0749|uyyfj00j0750|uyyfj00j0751|uyyfj00j0752|uyyfj00j0753|uyyfj00j0754|uyyfj00j0755|uyyfj00j0756|uyyfj00j0757|uyyfj00j0758|uyyfj00j0759|uyyfj00j0760|uyyfj00j0761|uyyfj00j0762|uyyfj00j0763|uyyfj00j0764|uyyfj00j0765|uyyfj00j0766|uyyfj00j0767|uyyfj00j0768|uyyfj00j0769|uyyfj00j0770|uyyfj00j0771|uyyfj00j0772|uyyfj00j0773|uyyfj00j0774|uyyfj00j0775|uyyfj00j0776|uyyfj00j0777|uyyfj00j0778|uyyfj00j0779|uyyfj00j0780|uyyfj00j0781|uyyfj00j0782|uyyff00j0011|uyyff00j0031|uyyff00j0032|uyyff00j0033|uyyff00j0034|uyyff99j0012|uyefj00j0071|uyefj00j0455|uyefj00j0456|uyefj00j0582|uyefj00j0583|uyefj00j0584|uyefj00j0585|uyefj00j0586|uyefj00j0590|uyeff00j0188|xyrly-f-jyy-y01|xyrly-f-jyy-y02|xyrly-f-jyy-y03|xyrly-f-jyy-y04|xyrly-f-jyy-y05|xyrly-f-jyy-y06|xyrly-f-jyy-y07|xyrly-f-jyy-y08|xyrly-f-jyy-y09|xyrly-f-jyy-y10|xyrly-f-jyy-y11|xyrly-f-jyy-y12|xyrly-f-jyy-y13|xyrly-f-jyy-y14|xyrly-f-jyy-y15|xyrly-f-jyy-y16|xyrly-f-url-y01|xyrly-f-url-y02|yyefj97j0005|ybyfcy4000|ybyfcy4001|ayefj99j0035|by-b-y-bzu-l01|by-b-y-bzu-l02|by-b-e-079|by-b-e-080|by-b-e-082|by-b-e-083|byefj72j0002|byefj73j0002|byefj74j0002|byefj75j0002|byefj76j0002|byefj77j0002|byefj78j0002|byefj79j0002|byefj91j0007|byefj92j0007|byefj98j0003|byefj99j0003|byefj99j0005|byefj99j0006|byeff88j0002|byeff89j0002|byeff90j0002|byeff91j0002|byeff92j0002|byeff93j0002|byeff96j0003|byeff97j0003|byeff98j0003|byeff99j0003|fymfj98j0001|fymfj99j0001|fyyaj98k0297|fyyaj99k0297|fyyfj00j0109|fyyfj00j0110|fyyfj00j0122|fyyfj00j0123|fyyfj00j0201|fyyfj00j0202|fyyfj00j0207|fyyfj00j0208|fyyfj00j0227|fyyfj00j0228|fyyfj00j0229|fyyfj00j0230|fyyfj00j0231|fyyfj00j0232|fyyfj00j0233|fyyfj00j0234|fyyfj00j0235|fyyfj00j0236|fyyfj00j0237|fyyfj00j0238|fyyfj00j0239|fyyfj00j0240|fyyfj00j0241|fyyfj00j0242|fyyfj00j0243|fyyfj00j0244|fyyfj00j0245|fyyfj00j0246|fyyfj00j0247|fyyfj00j0248|fyyfj00j0249|fyyfj00j0250|fyyfj00j0251|fyyfj00j0252|fyyfj00j0253|fyyfj00j0254|fyyfj00j0255|fyyfj00j0256|fyyfj00j0257|fyyfj00j0258|fyyfj00j0259|fyyfj00j0260|fyyfj00j0261|fyyfj00j0262|fyyfj00j0263|fyyfj00j0264|fyyfj00j0265|fyyfj00j0266|fyyfj00j0267|fyyfj00j0268|fyyfj00j0290|fyyfj00j0291|fyyfj00j0292|fyyfj00j0293|fyyfj00j0294|fyyfj00j0295|fyyfj00j0296|fyyfj00j0297|fyyfj00j0298|fyyfj00j0299|fyyfj00j0300|fyyfj00j0301|fyyfj00j0302|fyyfj00j0303|fyyfj00j0304|fyyfj00j0305|fyyfj00j0306|fyyfj00j0307|fyyfj00j0308|fyyfj00j0309|fyyfj00j0310|fyyfj00j0311|fyyfj00j0312|fyyfj00j0313|fyyfj00j0314|fyyfj00j0315|fyyfj00j0316|fyyfj00j0317|fyyfj00j0318|fyyfj00j0319|fyyfj00j0320|fyyfj00j0321|fyyfj00j0322|fyyfj00j0323|fyyfj00j0324|fyyfj00j0325|fyyfj00j0326|fyyfj00j0327|fyyfj00j0328|fyyfj00j0329|fyyfj00j0330|fyyfj00j0331|fyyfj00j0332|fyyfj00j0333|fyyfj00j0334|fyyfj00j0335|fyyfj00j0340|fyyfj00j0341|fyyfj00j0342|fyyfj00j0343|fyyfj00j0344|fyyfj00j0345|fyyfj00j0346|fyyfj00j0347|fyyfj00j0348|fyyfj00j0349|fyyfj00j0367|fyyfj00j0368|fyyfj00j0369|fyyfj00j0370|fyyfj00j0371|fyyfj00j0372|fyyfj00j0373|fyyfj00j0374|fyyfj00j0375|fyyfj00j0376|fyyfj00j0377|fyyfj00j0378|fyyfj00j0379|fyyfj00j0380|fyyfj00j0381|fyyfj00j0382|fyyfj00j0383|fyyfj00j0384|fyyfj00j0385|fyyfj00j0386|fyyfj00j0387|fyyfj00j0388|fyyfj00j0415|fyyfj00j0416|fyyfj00j0417|fyyfj00j0418|fyyfj00j0419|fyyfj00j0420|fyyfj00j0421|fyyfj00j0422|fyyfj00j0423|fyyfj00j0424|fyyfj00j0425|fyyfj00j0426|fyyfj00j0427|fyyfj00j0428|fyyfj00j0429|fyyfj00j0430|fyyfj00j0431|fyyfj00j0432|fyyfj00j0433|fyyfj00j0434|fyyfj00j0435|fyyfj00j0436|fyyfj00j0437|fyyfj00j0438|fyyfj00j0439|fyyfj00j0440|fyyfj00j0441|fyyfj00j0446|fyyfj00j0447|fyyfj00j0448|fyyfj00j0449|fyyfj00j0451|fyyfj00j0452|fyyfj00j0453|fyyfj00j0454|fyyfj00j0455|fyyfj00j0456|fyyfj00j0457|fyyfj00j0459|fyyfj00j0460|fyyfj00j0461|fyyfj00j0462|fyyfj00j0463|fyyfj00j0464|fyyfj00j0465|fyyfj00j0466|fyyfj00j0467|fyyfj00j0468|fyyfj00j0469|fyyfj00j0470|fyyfj00j0471|fyyfj00j0474|fyyfj00j0475|fyyfj00j0476|fyyfj00j0477|fyyfj00j0478|fyyfj00j0479|fyyfj00j0480|fyyfj00j0481|fyyfj00j0482|fyyfj00j0483|fyyfj00j0484|fyyfj00j0485|fyyfj00j0486|fyyfj00j0487|fyyfj00j0488|fyyfj00j0489|fyyfj00j0490|fyyfj00j0491|fyyfj00j0492|fyyfj00j0493|fyyfj00j0494|fyyfj00j0495|fyyfj00j0496|fyyfj00j0497|fyyfj00j0498|fyyfj00j0499|fyyfj00j0500|fyyfj00j0501|fyyfj00j0502|fyyfj00j0503|fyyfj00j0504|fyyfj00j0505|fyyfj00j0506|fyyfj00j0507|fyyfj00j0508|fyyfj00j0509|fyyfj00j0510|fyyfj00j0511|fyyfj00j0512|fyyfj00j0513|fyyfj00j0514|fyyfj00j0515|fyyfj00j0516|fyyfj00j0517|fyyfj00j0518|fyyfj00j0521|fyyfj00j0522|fyyfj00j0523|fyyfj00j0524|fyyfj00j0526|fyyfj00j0527|fyyfj00j0528|fyyfj00j0529|fyyfj00j0530|fyyfj00j0531|fyyfj00j0532|fyyfj00j0533|fyyfj00j0534|fyyfj00j0535|fyyfj00j0536|fyyfj00j0537|fyyfj00j0538|fyyfj00j0539|fyyfj00j0540|fyyfj00j0541|fyyfj00j0542|fyyfj00j0543|fyyfj00j0544|fyyfj00j0545|fyyfj00j0546|fyyfj00j0564|fyyfj00j0565|fyyfj00j0566|fyyfj00j0567|fyyfj00j0568|fyyfj00j0569|fyyfj00j0570|fyyfj00j0571|fyyfj00j0572|fyyfj00j0574|fyyfj00j0575|fyyfj00j0576|fyyfj00j0577|fyyfj00j0578|fyyfj00j0579|fyyfj00j0580|fyyfj01j0473|fyyfj02j0473|fyyfj36j0289|fyyfj37j0209|fyyfj37j0289|fyyfj38j0209|fyyfj38j0289|fyyfj39j0209|fyyfj39j0289|fyyfj40j0209|fyyfj40j0289|fyyfj41j0209|fyyfj41j0289|fyyfj42j0209|fyyfj42j0289|fyyfj43j0209|fyyfj43j0289|fyyfj44j0209|fyyfj44j0289|fyyfj45j0104|fyyfj45j0209|fyyfj45j0289|fyyfj46j0104|fyyfj46j0209|fyyfj46j0289|fyyfj47j0104|fyyfj47j0209|fyyfj47j0289|fyyfj48j0104|fyyfj48j0209|fyyfj48j0289|fyyfj49j0104|fyyfj49j0209|fyyfj49j0289|fyyfj50j0104|fyyfj50j0209|fyyfj50j0289|fyyfj50j0500|fyyfj51j0104|fyyfj51j0209|fyyfj51j0289|fyyfj51j0500|fyyfj52j0104|fyyfj52j0209|fyyfj52j0289|fyyfj52j0500|fyyfj53j0104|fyyfj53j0209|fyyfj53j0289|fyyfj53j0500|fyyfj54j0104|fyyfj54j0209|fyyfj54j0289|fyyfj54j0500|fyyfj55j0104|fyyfj55j0209|fyyfj55j0289|fyyfj55j0500|fyyfj56j0104|fyyfj56j0209|fyyfj56j0289|fyyfj56j0500|fyyfj57j0104|fyyfj57j0209|fyyfj57j0289|fyyfj57j0500|fyyfj58j0104|fyyfj58j0209|fyyfj58j0289|fyyfj58j0500|fyyfj59j0104|fyyfj59j0209|fyyfj59j0289|fyyfj59j0500|fyyfj60j0104|fyyfj60j0209|fyyfj60j0289|fyyfj60j0500|fyyfj61j0104|fyyfj61j0209|fyyfj61j0289|fyyfj61j0500|fyyfj62j0104|fyyfj62j0209|fyyfj62j0289|fyyfj62j0500|fyyfj63j0104|fyyfj63j0209|fyyfj63j0289|fyyfj63j0500|fyyfj64j0104|fyyfj64j0107|fyyfj64j0209|fyyfj64j0289|fyyfj64j0500|fyyfj64j0573|fyyfj65j0104|fyyfj65j0107|fyyfj65j0209|fyyfj65j0289|fyyfj65j0500|fyyfj65j0573|fyyfj66j0104|fyyfj66j0107|fyyfj66j0209|fyyfj66j0289|fyyfj66j0500|fyyfj66j0573|fyyfj67j0104|fyyfj67j0107|fyyfj67j0209|fyyfj67j0289|fyyfj67j0500|fyyfj67j0573|fyyfj68j0104|fyyfj68j0107|fyyfj68j0209|fyyfj68j0289|fyyfj68j0500|fyyfj68j0573|fyyfj69j0104|fyyfj69j0107|fyyfj69j0209|fyyfj69j0289|fyyfj69j0500|fyyfj69j0573|fyyfj70j0104|fyyfj70j0107|fyyfj70j0209|fyyfj70j0289|fyyfj70j0472|fyyfj70j0500|fyyfj70j0573|fyyfj71j0104|fyyfj71j0107|fyyfj71j0209|fyyfj71j0289|fyyfj71j0472|fyyfj71j0500|fyyfj71j0573|fyyfj72j0104|fyyfj72j0107|fyyfj72j0209|fyyfj72j0289|fyyfj72j0472|fyyfj72j0500|fyyfj72j0573|fyyfj73j0104|fyyfj73j0107|fyyfj73j0209|fyyfj73j0289|fyyfj73j0472|fyyfj73j0500|fyyfj73j0573|fyyfj74j0104|fyyfj74j0107|fyyfj74j0209|fyyfj74j0289|fyyfj74j0472|fyyfj74j0500|fyyfj74j0573|fyyfj75j0104|fyyfj75j0107|fyyfj75j0108|fyyfj75j0209|fyyfj75j0289|fyyfj75j0472|fyyfj75j0500|fyyfj75j0573|fyyfj76j0104|fyyfj76j0107|fyyfj76j0108|fyyfj76j0209|fyyfj76j0289|fyyfj76j0472|fyyfj76j0500|fyyfj76j0573|fyyfj77j0104|fyyfj77j0107|fyyfj77j0108|fyyfj77j0209|fyyfj77j0289|fyyfj77j0472|fyyfj77j0500|fyyfj77j0573|fyyfj78j0104|fyyfj78j0107|fyyfj78j0108|fyyfj78j0209|fyyfj78j0289|fyyfj78j0472|fyyfj78j0500|fyyfj78j0573|fyyfj79j0104|fyyfj79j0107|fyyfj79j0108|fyyfj79j0209|fyyfj79j0289|fyyfj79j0339|fyyfj79j0472|fyyfj79j0500|fyyfj79j0573|fyyfj80j0104|fyyfj80j0107|fyyfj80j0108|fyyfj80j0209|fyyfj80j0289|fyyfj80j0339|fyyfj80j0352|fyyfj80j0472|fyyfj80j0500|fyyfj80j0573|fyyfj81j0104|fyyfj81j0107|fyyfj81j0108|fyyfj81j0209|fyyfj81j0289|fyyfj81j0339|fyyfj81j0352|fyyfj81j0472|fyyfj81j0500|fyyfj81j0573|fyyfj82j0104|fyyfj82j0107|fyyfj82j0108|fyyfj82j0209|fyyfj82j0289|fyyfj82j0339|fyyfj82j0352|fyyfj82j0472|fyyfj82j0500|fyyfj82j0573|fyyfj83j0104|fyyfj83j0107|fyyfj83j0108|fyyfj83j0209|fyyfj83j0289|fyyfj83j0339|fyyfj83j0352|fyyfj83j0472|fyyfj83j0500|fyyfj83j0573|fyyfj84j0104|fyyfj84j0107|fyyfj84j0108|fyyfj84j0209|fyyfj84j0289|fyyfj84j0339|fyyfj84j0352|fyyfj84j0472|fyyfj84j0500|fyyfj84j0573|fyyfj85j0104|fyyfj85j0107|fyyfj85j0108|fyyfj85j0209|fyyfj85j0289|fyyfj85j0301|fyyfj85j0339|fyyfj85j0352|fyyfj85j0472|fyyfj85j0500|fyyfj85j0573|fyyfj86j0104|fyyfj86j0107|fyyfj86j0108|fyyfj86j0209|fyyfj86j0289|fyyfj86j0301|fyyfj86j0339|fyyfj86j0352|fyyfj86j0472|fyyfj86j0500|fyyfj86j0573|fyyfj87j0067|fyyfj87j0104|fyyfj87j0107|fyyfj87j0108|fyyfj87j0209|fyyfj87j0289|fyyfj87j0301|fyyfj87j0339|fyyfj87j0352|fyyfj87j0472|fyyfj87j0500|fyyfj87j0573|fyyfj88j0067|fyyfj88j0104|fyyfj88j0107|fyyfj88j0108|fyyfj88j0209|fyyfj88j0289|fyyfj88j0301|fyyfj88j0339|fyyfj88j0352|fyyfj88j0472|fyyfj88j0500|fyyfj88j0573|fyyfj89j0067|fyyfj89j0104|fyyfj89j0107|fyyfj89j0108|fyyfj89j0209|fyyfj89j0289|fyyfj89j0301|fyyfj89j0339|fyyfj89j0352|fyyfj89j0358|fyyfj89j0472|fyyfj89j0500|fyyfj89j0573|fyyfj90j0067|fyyfj90j0104|fyyfj90j0107|fyyfj90j0108|fyyfj90j0209|fyyfj90j0289|fyyfj90j0301|fyyfj90j0321|fyyfj90j0339|fyyfj90j0352|fyyfj90j0358|fyyfj90j0452|fyyfj90j0472|fyyfj90j0500|fyyfj90j0573|fyyfj91j0067|fyyfj91j0104|fyyfj91j0107|fyyfj91j0108|fyyfj91j0209|fyyfj91j0289|fyyfj91j0301|fyyfj91j0321|fyyfj91j0339|fyyfj91j0352|fyyfj91j0358|fyyfj91j0452|fyyfj91j0472|fyyfj91j0500|fyyfj91j0573|fyyfj92j0067|fyyfj92j0104|fyyfj92j0107|fyyfj92j0108|fyyfj92j0209|fyyfj92j0289|fyyfj92j0301|fyyfj92j0321|fyyfj92j0339|fyyfj92j0352|fyyfj92j0358|fyyfj92j0452|fyyfj92j0472|fyyfj92j0500|fyyfj92j0573|fyyfj93j0067|fyyfj93j0099|fyyfj93j0104|fyyfj93j0107|fyyfj93j0108|fyyfj93j0209|fyyfj93j0289|fyyfj93j0301|fyyfj93j0321|fyyfj93j0352|fyyfj93j0358|fyyfj93j0452|fyyfj93j0472|fyyfj93j0500|fyyfj93j0573|fyyfj94j0067|fyyfj94j0099|fyyfj94j0104|fyyfj94j0107|fyyfj94j0108|fyyfj94j0209|fyyfj94j0211|fyyfj94j0289|fyyfj94j0301|fyyfj94j0321|fyyfj94j0352|fyyfj94j0358|fyyfj94j0359|fyyfj94j0452|fyyfj94j0472|fyyfj94j0500|fyyfj94j0573|fyyfj95j0067|fyyfj95j0099|fyyfj95j0104|fyyfj95j0107|fyyfj95j0108|fyyfj95j0209|fyyfj95j0211|fyyfj95j0289|fyyfj95j0298|fyyfj95j0301|fyyfj95j0321|fyyfj95j0339|fyyfj95j0352|fyyfj95j0358|fyyfj95j0359|fyyfj95j0414|fyyfj95j0452|fyyfj95j0472|fyyfj95j0500|fyyfj95j0573|fyyfj96j0067|fyyfj96j0099|fyyfj96j0104|fyyfj96j0107|fyyfj96j0108|fyyfj96j0209|fyyfj96j0211|fyyfj96j0289|fyyfj96j0298|fyyfj96j0301|fyyfj96j0321|fyyfj96j0339|fyyfj96j0352|fyyfj96j0358|fyyfj96j0359|fyyfj96j0414|fyyfj96j0452|fyyfj96j0472|fyyfj96j0500|fyyfj96j0573|fyyfj97j0067|fyyfj97j0099|fyyfj97j0100|fyyfj97j0104|fyyfj97j0107|fyyfj97j0108|fyyfj97j0209|fyyfj97j0211|fyyfj97j0289|fyyfj97j0298|fyyfj97j0301|fyyfj97j0321|fyyfj97j0339|fyyfj97j0352|fyyfj97j0358|fyyfj97j0359|fyyfj97j0414|fyyfj97j0445|fyyfj97j0452|fyyfj97j0472|fyyfj97j0500|fyyfj97j0573|fyyfj98j0067|fyyfj98j0099|fyyfj98j0100|fyyfj98j0104|fyyfj98j0107|fyyfj98j0108|fyyfj98j0178|fyyfj98j0209|fyyfj98j0211|fyyfj98j0289|fyyfj98j0298|fyyfj98j0301|fyyfj98j0303|fyyfj98j0321|fyyfj98j0339|fyyfj98j0352|fyyfj98j0358|fyyfj98j0359|fyyfj98j0413|fyyfj98j0414|fyyfj98j0445|fyyfj98j0452|fyyfj98j0472|fyyfj98j0500|fyyfj98j0573|fyyfj99j0067|fyyfj99j0099|fyyfj99j0100|fyyfj99j0104|fyyfj99j0107|fyyfj99j0108|fyyfj99j0131|fyyfj99j0209|fyyfj99j0211|fyyfj99j0285|fyyfj99j0289|fyyfj99j0298|fyyfj99j0301|fyyfj99j0303|fyyfj99j0321|fyyfj99j0339|fyyfj99j0352|fyyfj99j0358|fyyfj99j0359|fyyfj99j0413|fyyfj99j0414|fyyfj99j0445|fyyfj99j0452|fyyfj99j0472|fyyfj99j0500|fyyfj99j0573|fyyfm01j0064|fyyfm01j0070|fyyfm01j0071|fyyfm01j0088|fyyfm01j0091|fyyfm01j0108|fyyfm01j0111|fyyfm01j0112|fyyfm01j0114|fyyfm01j0115|fyyfm01j0133|fyyfm01j0140|fyyfm01j0141|fyyfm01j0142|fyyfm01j0143|fyyfm01j0148|fyyfm01j0149|fyyfm01j0152|fyyfm01j0153|fyyfm01j0155|fyyfm01j0159|fyyfm01j0160|fyyfm01j0163|fyyfm01j0165|fyyfm01j0168|fyyfm01j0169|fyyfm01j0221|fyyfm01j0223|fyyfm01j0268|fyyfm01j0271|fyyfm01j0285|fyyfm01j0299|fyyfm01j0320|fyyfm01j0321|fyyfm01j0360|fyyfm01j0369|fyyfm01j0400|fyyfm01j0401|fyyfm01j0411|fyyfm01j0572|fyyfm01j0765|fyyfm02j0064|fyyfm02j0069|fyyfm02j0070|fyyfm02j0071|fyyfm02j0088|fyyfm02j0091|fyyfm02j0108|fyyfm02j0111|fyyfm02j0112|fyyfm02j0114|fyyfm02j0115|fyyfm02j0133|fyyfm02j0140|fyyfm02j0141|fyyfm02j0142|fyyfm02j0143|fyyfm02j0148|fyyfm02j0149|fyyfm02j0152|fyyfm02j0153|fyyfm02j0155|fyyfm02j0159|fyyfm02j0160|fyyfm02j0163|fyyfm02j0165|fyyfm02j0168|fyyfm02j0169|fyyfm02j0221|fyyfm02j0223|fyyfm02j0268|fyyfm02j0271|fyyfm02j0285|fyyfm02j0299|fyyfm02j0320|fyyfm02j0321|fyyfm02j0360|fyyfm02j0369|fyyfm02j0400|fyyfm02j0572|fyyfm02j0765|fyyfm03j0064|fyyfm03j0070|fyyfm03j0091|fyyfm03j0108|fyyfm03j0111|fyyfm03j0115|fyyfm03j0160|fyyfm03j0165|fyyfm03j0299|fyyfm03j0400|fyyfm03j0572|fyyfm04j0111|fyyfm51j0064|fyyfm51j0369|fyyfm52j0064|fyyfm52j0369|fyyfr88j0003|fyyfr89j0003|fyyff98j0071|fyyff98j0303|fyyff99j0029|fyyff99j0303|fyefj00j0112|fyefj00j0545|fyefj00j0546|fyefj00j0633|fyefj00j0634|fyefj00j0635|fyefj00j0636|fyefj00j0637|fyefj00j0649|fyefj00j0651|fyefj00j0652|fyefj00j0656|fyefj00j0657|fyefj00j0658|fyefj00j0659|fyefj00j0660|fyefj00j0685|fyefj00j0686|fyefj00j0688|fyefj00j0701|fyefj00j0702|fyefj00j0703|fyefj00j0715|fyefj00j0720|fyefj00j0721|fyefj00j0722|fyefj00j0724|fyefj00j0725|fyefj00j0726|fyefj00j0731|fyefj00j0751|fyefj00j0752|fyefj00j0756|fyefj00j0757|fyefj00j0758|fyefj00j0759|fyefj00j0761|fyefj00j0762|fyefj00j0763|fyefj00j0764|fyefj00j0768|fyefj00j0769|fyefj00j0785|fyefj00j0786|fyefj00j0789|fyefj00j0790|fyefj00j0793|fyefj00j0794|fyefj00j0803|fyefj00j0811|fyefj00j0821|fyefj00j0822|fyefj00j0823|fyefj00j0824|fyefj00j0825|fyefj00j0826|fyefj00j0827|fyefj00j0828|fyefj00j0829|fyefj00j0831|fyefj00j0832|fyefj00j0833|fyefj00j0838|fyefj00j0839|fyefj00j0840|fyefj00j0854|fyefj00j0855|fyefj00j0856|fyefj00j0859|fyefj00j0860|fyefj00j0861|fyefj00j0869|fyefj00j0870|fyefj00j0879|fyefj00j0887|fyefj00j0888|fyefj00j0889|fyefj00j0900|fyefj00j0901|fyefj00j0903|fyefj00j0904|fyefj00j0905|fyefj00j0959|fyefj00j0960|fyefj00j0961|fyefj00j1004|fyefj00j1005|fyefj00j1012|fyefj00j1013|fyefj00j1014|fyefj00j1015|fyefj00j1016|fyefj00j1017|fyefj00j1018|fyefj00j1019|fyefj00j1020|fyefj00j1021|fyefj00j1218|fyefj00j1219|fyefj00j1220|fyefj00j1221|fyefj00j1222|fyefj00j1811|fyefj00j1854|fyefj00j1855|fyefj00j1856|fyefj01j0707|fyefj02j0707|fyefj03j0707|fyefj66j0001|fyefj67j0001|fyefj68j0001|fyefj68j1064|fyefj69j0001|fyefj69j1064|fyefj70j0001|fyefj70j0859|fyefj70j1064|fyefj71j0001|fyefj71j1064|fyefj72j0001|fyefj72j1064|fyefj73j0001|fyefj73j1064|fyefj74j0001|fyefj74j1064|fyefj75j0001|fyefj75j1064|fyefj75j1092|fyefj76j0001|fyefj76j1064|fyefj76j1092|fyefj77j0001|fyefj77j1064|fyefj77j1092|fyefj78j0001|fyefj78j1064|fyefj78j1092|fyefj79j0001|fyefj79j1064|fyefj79j1092|fyefj80j0001|fyefj80j0859|fyefj80j1064|fyefj80j1077|fyefj80j1092|fyefj81j0001|fyefj81j1064|fyefj81j1077|fyefj81j1092|fyefj82j0001|fyefj82j1064|fyefj82j1092|fyefj83j0001|fyefj83j1064|fyefj83j1092|fyefj84j0001|fyefj84j1064|fyefj84j1092|fyefj85j0001|fyefj85j0356|fyefj85j1064|fyefj85j1092|fyefj86j0001|fyefj86j0356|fyefj86j1064|fyefj87j0001|fyefj87j0356|fyefj87j1064|fyefj88j0001|fyefj88j0356|fyefj88j1064|fyefj89j0001|fyefj89j0356|fyefj89j1064|fyefj89j1067|fyefj90j0001|fyefj90j0758|fyefj90j1021|fyefj90j1064|fyefj90j1067|fyefj91j0001|fyefj91j0758|fyefj91j0791|fyefj91j1021|fyefj91j1064|fyefj91j1067|fyefj91j1077|fyefj92j0001|fyefj92j0359|fyefj92j0678|fyefj92j0758|fyefj92j0791|fyefj92j0867|fyefj92j1021|fyefj92j1064|fyefj92j1077|fyefj93j0001|fyefj93j0359|fyefj93j0678|fyefj93j0758|fyefj93j0791|fyefj93j0867|fyefj93j1010|fyefj93j1021|fyefj93j1049|fyefj93j1064|fyefj93j1077|fyefj94j0001|fyefj94j0678|fyefj94j0758|fyefj94j0791|fyefj94j0867|fyefj94j1010|fyefj94j1021|fyefj94j1049|fyefj94j1064|fyefj94j1070|fyefj94j1077|fyefj94j1085|fyefj95j0001|fyefj95j0678|fyefj95j0758|fyefj95j0791|fyefj95j0867|fyefj95j0965|fyefj95j0966|fyefj95j1010|fyefj95j1011|fyefj95j1021|fyefj95j1055|fyefj95j1064|fyefj95j1069|fyefj95j1077|fyefj95j1085|fyefj95j1089|fyefj96j0001|fyefj96j0106|fyefj96j0671|fyefj96j0678|fyefj96j0758|fyefj96j0791|fyefj96j0814|fyefj96j0836|fyefj96j0867|fyefj96j0931|fyefj96j0965|fyefj96j0966|fyefj96j0976|fyefj96j1010|fyefj96j1021|fyefj96j1051|fyefj96j1055|fyefj96j1064|fyefj96j1068|fyefj96j1070|fyefj96j1077|fyefj96j1079|fyefj96j1081|fyefj96j1086|fyefj96j1088|fyefj96j1091|fyefj96j1093|fyefj96j1094|fyefj97j0001|fyefj97j0106|fyefj97j0584|fyefj97j0586|fyefj97j0671|fyefj97j0678|fyefj97j0758|fyefj97j0791|fyefj97j0814|fyefj97j0825|fyefj97j0836|fyefj97j0863|fyefj97j0865|fyefj97j0867|fyefj97j0914|fyefj97j0931|fyefj97j0952|fyefj97j0965|fyefj97j0966|fyefj97j0969|fyefj97j0971|fyefj97j0972|fyefj97j0976|fyefj97j0985|fyefj97j1010|fyefj97j1021|fyefj97j1051|fyefj97j1052|fyefj97j1055|fyefj97j1058|fyefj97j1059|fyefj97j1064|fyefj97j1068|fyefj97j1077|fyefj97j1079|fyefj97j1081|fyefj97j1086|fyefj97j1088|fyefj97j1095|fyefj98j0001|fyefj98j0243|fyefj98j0326|fyefj98j0329|fyefj98j0343|fyefj98j0344|fyefj98j0380|fyefj98j0472|fyefj98j0584|fyefj98j0586|fyefj98j0604|fyefj98j0671|fyefj98j0673|fyefj98j0676|fyefj98j0677|fyefj98j0678|fyefj98j0694|fyefj98j0758|fyefj98j0814|fyefj98j0825|fyefj98j0836|fyefj98j0863|fyefj98j0865|fyefj98j0867|fyefj98j0896|fyefj98j0898|fyefj98j0901|fyefj98j0906|fyefj98j0910|fyefj98j0913|fyefj98j0914|fyefj98j0922|fyefj98j0931|fyefj98j0934|fyefj98j0936|fyefj98j0951|fyefj98j0952|fyefj98j0963|fyefj98j0965|fyefj98j0966|fyefj98j0969|fyefj98j0971|fyefj98j0972|fyefj98j0974|fyefj98j0975|fyefj98j0976|fyefj98j0977|fyefj98j0978|fyefj98j0985|fyefj98j0992|fyefj98j1008|fyefj98j1009|fyefj98j1010|fyefj98j1011|fyefj98j1012|fyefj98j1019|fyefj98j1021|fyefj98j1028|fyefj98j1034|fyefj98j1039|fyefj98j1046|fyefj98j1047|fyefj98j1048|fyefj98j1054|fyefj98j1055|fyefj98j1064|fyefj98j1068|fyefj98j1077|fyefj98j1079|fyefj98j1080|fyefj98j1081|fyefj98j1082|fyefj98j1084|fyefj98j1087|fyefj98j1088|fyefj98j1090|fyefj99j0010|fyefj99j0188|fyefj99j0243|fyefj99j0268|fyefj99j0280|fyefj99j0301|fyefj99j0329|fyefj99j0343|fyefj99j0344|fyefj99j0380|fyefj99j0552|fyefj99j0573|fyefj99j0584|fyefj99j0586|fyefj99j0604|fyefj99j0671|fyefj99j0673|fyefj99j0676|fyefj99j0677|fyefj99j0678|fyefj99j0694|fyefj99j0722|fyefj99j0757|fyefj99j0758|fyefj99j0771|fyefj99j0772|fyefj99j0804|fyefj99j0806|fyefj99j0809|fyefj99j0814|fyefj99j0825|fyefj99j0836|fyefj99j0862|fyefj99j0863|fyefj99j0865|fyefj99j0866|fyefj99j0867|fyefj99j0875|fyefj99j0896|fyefj99j0898|fyefj99j0901|fyefj99j0906|fyefj99j0907|fyefj99j0908|fyefj99j0910|fyefj99j0912|fyefj99j0913|fyefj99j0914|fyefj99j0921|fyefj99j0922|fyefj99j0923|fyefj99j0931|fyefj99j0934|fyefj99j0936|fyefj99j0937|fyefj99j0949|fyefj99j0951|fyefj99j0952|fyefj99j0962|fyefj99j0963|fyefj99j0965|fyefj99j0966|fyefj99j0969|fyefj99j0971|fyefj99j0972|fyefj99j0974|fyefj99j0975|fyefj99j0976|fyefj99j0977|fyefj99j0978|fyefj99j0982|fyefj99j0985|fyefj99j0986|fyefj99j0988|fyefj99j0991|fyefj99j0992|fyefj99j0995|fyefj99j0997|fyefj99j0999|fyefj99j1003|fyefj99j1006|fyefj99j1008|fyefj99j1009|fyefj99j1010|fyefj99j1011|fyefj99j1016|fyefj99j1019|fyefj99j1020|fyefj99j1021|fyefj99j1024|fyefj99j1026|fyefj99j1028|fyefj99j1031|fyefj99j1033|fyefj99j1034|fyefj99j1036|fyefj99j1039|fyefj99j1042|fyefj99j1045|fyefj99j1046|fyefj99j1048|fyefj99j1053|fyefj99j1054|fyefj99j1055|fyefj99j1061|fyefj99j1062|fyefj99j1063|fyefj99j1064|fyefj99j1068|fyefj99j1072|fyefj99j1076|fyefj99j1077|fyefj99j1079|fyefj99j1080|fyefj99j1081|fyefj99j1083|fyefj99j1084|fyefj99j1087|fyefj99j1088|fyefm00j0113|fyefm01j0057|fyefm01j0088|fyefm01j0091|fyefm01j0101|fyefm01j0104|fyefm01j0107|fyefm01j0112|fyefm01j0379|fyefm02j0057|fyefm02j0101|fyefm02j0104|fyefm02j0107|fyefm02j0112|fyefm02j0379|fyefm98j0066|fyefm99j0066|fyefm99j0090|fyefm99j0093|fyefm99j0110|fyefm99j0165|fyefm99j0208|fyefm99j0209|fyefm99j0295|fyefm99j0401|fyefm99j0402|fyefm99j0907|fyefm99j1054|fyefn98j0015|fyefn98j0024|fyefn98j0030|fyefn99j0015|fyefn99j0024|fyefn99j0030|fyefr94j0559|fyefr95j0559|fyefr96j0559|fyefr97j0559|fyefr98j0559|fyefr99j0012|fyefr99j0559|fyefb01305|fyeff00j0170|fyeff00j0224|fyeff00j0227|fyeff00j0228|fyeff00j0229|fyeff00j0280|fyeff00j0281|fyeff00j0282|fyeff00j0283|fyeff00j0288|fyeff00j0289|fyeff00j0331|fyeff00j0332|fyeff00j0333|fyeff00j0334|fyeff00j0335|fyeff00j0336|fyeff00j0337|fyeff00j0338|fyeff00j0346|fyeff00j0347|fyeff00j0348|fyeff00j0349|fyeff00j0350|fyeff00j0351|fyeff00j0357|fyeff00j0358|fyeff00j0371|fyeff00j0372|fyeff00j0396|fyeff00j0397|fyeff00j0424|fyeff00j0425|fyeff01j0416|fyeff02j0416|fyeff78j0418|fyeff79j0418|fyeff79j1051|fyeff80j1051|fyeff81j1051|fyeff82j1051|fyeff83j1051|fyeff84j1051|fyeff85j1051|fyeff86j1051|fyeff87j1051|fyeff88j0422|fyeff89j0422|fyeff90j0422|fyeff90j0434|fyeff90j0440|fyeff91j0422|fyeff91j0434|fyeff91j0440|fyeff92j0440|fyeff93j0440|fyeff93j1045|fyeff93j1067|fyeff94j0392|fyeff94j0440|fyeff94j0443|fyeff94j1045|fyeff94j1067|fyeff95j0219|fyeff95j0392|fyeff95j0439|fyeff95j0440|fyeff95j0443|fyeff96j0053|fyeff96j0219|fyeff96j0392|fyeff96j0429|fyeff96j0434|fyeff96j0950|fyeff96j1019|fyeff96j1028|fyeff97j0053|fyeff97j0178|fyeff97j0191|fyeff97j0219|fyeff97j0221|fyeff97j0258|fyeff97j0324|fyeff97j0355|fyeff97j0370|fyeff97j0377|fyeff97j0392|fyeff97j0429|fyeff97j0434|fyeff97j0950|fyeff97j1019|fyeff98j0053|fyeff98j0065|fyeff98j0101|fyeff98j0144|fyeff98j0156|fyeff98j0178|fyeff98j0191|fyeff98j0193|fyeff98j0196|fyeff98j0197|fyeff98j0209|fyeff98j0210|fyeff98j0211|fyeff98j0214|fyeff98j0215|fyeff98j0218|fyeff98j0219|fyeff98j0221|fyeff98j0258|fyeff98j0260|fyeff98j0279|fyeff98j0284|fyeff98j0295|fyeff98j0296|fyeff98j0298|fyeff98j0324|fyeff98j0355|fyeff98j0370|fyeff98j0376|fyeff98j0379|fyeff98j0381|fyeff98j0392|fyeff98j0401|fyeff98j0404|fyeff98j0405|fyeff98j0407|fyeff98j0411|fyeff98j0418|fyeff98j0421|fyeff98j0423|fyeff98j0433|fyeff98j0436|fyeff98j0673|fyeff98j0896|fyeff98j0950|fyeff98j0985|fyeff98j1012|fyeff99j0053|fyeff99j0065|fyeff99j0152|fyeff99j0156|fyeff99j0159|fyeff99j0178|fyeff99j0191|fyeff99j0193|fyeff99j0196|fyeff99j0197|fyeff99j0209|fyeff99j0210|fyeff99j0211|fyeff99j0214|fyeff99j0215|fyeff99j0218|fyeff99j0219|fyeff99j0220|fyeff99j0221|fyeff99j0260|fyeff99j0279|fyeff99j0284|fyeff99j0291|fyeff99j0295|fyeff99j0296|fyeff99j0297|fyeff99j0298|fyeff99j0324|fyeff99j0339|fyeff99j0355|fyeff99j0370|fyeff99j0376|fyeff99j0379|fyeff99j0381|fyeff99j0392|fyeff99j0401|fyeff99j0404|fyeff99j0405|fyeff99j0407|fyeff99j0410|fyeff99j0411|fyeff99j0413|fyeff99j0414|fyeff99j0415|fyeff99j0418|fyeff99j0421|fyeff99j0423|fyeff99j0436|fyeff99j0673|fyeff99j0896|fyeff99j0950|fyeff99j0962|fyeff99j0985|fyeff99j1010|fyeff99j1012|fyeff99j1028|fyeff99j1090|fyeff99j1370|fayfm01j0148|fayfm01j0149|fayfm01j0155|fayfm02j0148|fayfm02j0149|fayfm02j0155|faefj00j0594|faefj00j0595|faefj00j0596|faefj00j0597|faefj01j0707|faefj02j0707|faefj03j0707|faefj90j1023|faefj91j1023|faefj92j1023|faefj94j1056|faefj95j1023|faefj95j1056|faefj96j1056|faefj98j1038|faefj99j1078|fdeff99j9001|fdeff99j9002|gyefj99j0005",
+		// A long case insensitive alternation.
+		"(?i:(zQPbMkNO|NNSPdvMi|iWuuSoAl|qbvKMimS|IecrXtPa|seTckYqt|NxnyHkgB|fIDlOgKb|UhlWIygH|OtNoJxHG|cUTkFVIV|mTgFIHjr|jQkoIDtE|PPMKxRXl|AwMfwVkQ|CQyMrTQJ|BzrqxVSi|nTpcWuhF|PertdywG|ZZDgCtXN|WWdDPyyE|uVtNQsKk|BdeCHvPZ|wshRnFlH|aOUIitIp|RxZeCdXT|CFZMslCj|AVBZRDxl|IzIGCnhw|ythYuWiz|oztXVXhl|VbLkwqQx|qvaUgyVC|VawUjPWC|ecloYJuj|boCLTdSU|uPrKeAZx|hrMWLWBq|JOnUNHRM|rYnujkPq|dDEdZhIj|DRrfvugG|yEGfDxVV|YMYdJWuP|PHUQZNWM|AmKNrLis|zTxndVfn|FPsHoJnc|EIulZTua|KlAPhdzg|ScHJJCLt|NtTfMzME|eMCwuFdo|SEpJVJbR|cdhXZeCx|sAVtBwRh|kVFEVcMI|jzJrxraA|tGLHTell|NNWoeSaw|DcOKSetX|UXZAJyka|THpMphDP|rizheevl|kDCBRidd|pCZZRqyu|pSygkitl|SwZGkAaW|wILOrfNX|QkwVOerj|kHOMxPDr|EwOVycJv|AJvtzQFS|yEOjKYYB|LizIINLL|JBRSsfcG|YPiUqqNl|IsdEbvee|MjEpGcBm|OxXZVgEQ|xClXGuxa|UzRCGFEb|buJbvfvA|IPZQxRet|oFYShsMc|oBHffuHO|bzzKrcBR|KAjzrGCl|IPUsAVls|OGMUMbIU|gyDccHuR|bjlalnDd|ZLWjeMna|fdsuIlxQ|dVXtiomV|XxedTjNg|XWMHlNoA|nnyqArQX|opfkWGhb|wYtnhdYb))",
+	}
+	values = []string{
+		"foo", " foo bar", "bar", "buzz\nbar", "bar foo", "bfoo", "\n", "\nfoo", "foo\n", "hello foo world", "hello foo\n world", "",
+		"FOO", "Foo", "OO", "Oo", "\nfoo\n", strings.Repeat("f", 20), "prometheus", "prometheus_api_v1", "prometheus_api_v1_foo",
+		"10.0.1.20", "10.0.2.10", "10.0.3.30", "10.0.4.40",
+		"foofoo0", "foofoo",
+	}
+)
+
 func TestNewFastRegexMatcher(t *testing.T) {
-	cases := []struct {
-		regex    string
-		value    string
-		expected bool
-	}{
-		{regex: "(foo|bar)", value: "foo", expected: true},
-		{regex: "(foo|bar)", value: "foo bar", expected: false},
-		{regex: "(foo|bar)", value: "bar", expected: true},
-		{regex: "foo.*", value: "foo bar", expected: true},
-		{regex: "foo.*", value: "bar foo", expected: false},
-		{regex: ".*foo", value: "foo bar", expected: false},
-		{regex: ".*foo", value: "bar foo", expected: true},
-		{regex: ".*foo", value: "foo", expected: true},
-		{regex: "^.*foo$", value: "foo", expected: true},
-		{regex: "^.+foo$", value: "foo", expected: false},
-		{regex: "^.+foo$", value: "bfoo", expected: true},
-		{regex: ".*", value: "\n", expected: false},
-		{regex: ".*", value: "\nfoo", expected: false},
-		{regex: ".*foo", value: "\nfoo", expected: false},
-		{regex: "foo.*", value: "foo\n", expected: false},
-		{regex: "foo\n.*", value: "foo\n", expected: true},
-		{regex: ".*foo.*", value: "foo", expected: true},
-		{regex: ".*foo.*", value: "foo bar", expected: true},
-		{regex: ".*foo.*", value: "hello foo world", expected: true},
-		{regex: ".*foo.*", value: "hello foo\n world", expected: false},
-		{regex: ".*foo\n.*", value: "hello foo\n world", expected: true},
-		{regex: ".*", value: "foo", expected: true},
-		{regex: "", value: "foo", expected: false},
-		{regex: "", value: "", expected: true},
+	for _, r := range regexes {
+		r := r
+		for _, v := range values {
+			v := v
+			t.Run(r+` on "`+v+`"`, func(t *testing.T) {
+				t.Parallel()
+				m, err := NewFastRegexMatcher(r)
+				require.NoError(t, err)
+				re := regexp.MustCompile("^(?:" + r + ")$")
+				require.Equal(t, re.MatchString(v), m.MatchString(v))
+			})
+		}
+
+	}
+}
+
+func TestNewFastRegexMatcher_CacheSizeLimit(t *testing.T) {
+	// Start with an empty cache.
+	fastRegexMatcherCache.Clear()
+
+	// Init the random seed with a constant, so that it doesn't change between runs.
+	randGenerator := rand.New(rand.NewSource(1))
+
+	// Generate a very expensive regex.
+	alternates := make([]string, 1000)
+	for i := 0; i < len(alternates); i++ {
+		alternates[i] = randString(randGenerator, 100) + fmt.Sprintf(".%d", i)
+	}
+	expensiveRegexp := strings.Join(alternates, "|")
+
+	// Utility function to get a unique expensive regexp.
+	getExpensiveRegexp := func(id int) string {
+		return expensiveRegexp + fmt.Sprintf("%d", id)
 	}
 
-	for _, c := range cases {
-		m, err := NewFastRegexMatcher(c.regex)
+	// Estimate the size of the matcher with the expensive regexp.
+	m, err := newFastRegexMatcherWithoutCache(expensiveRegexp)
+	require.NoError(t, err)
+	expensiveRegexpSizeBytes := size.Of(m)
+	t.Logf("expensive regexp estimated size (bytes): %d", expensiveRegexpSizeBytes)
+
+	// Estimate the max number of items in the cache.
+	estimatedMaxItemsInCache := fastRegexMatcherCacheMaxSizeBytes / expensiveRegexpSizeBytes
+
+	// Fill the cache.
+	for i := 0; i < estimatedMaxItemsInCache; i++ {
+		_, err := NewFastRegexMatcher(getExpensiveRegexp(i))
 		require.NoError(t, err)
-		require.Equal(t, c.expected, m.MatchString(c.value))
+	}
+
+	// Ensure all regexp matchers are still in the cache.
+	fastRegexMatcherCache.Wait()
+
+	for i := 0; i < estimatedMaxItemsInCache; i++ {
+		_, ok := fastRegexMatcherCache.Get(getExpensiveRegexp(i))
+		require.True(t, ok, "checking if regexp matcher #%d is still in the cache", i)
+	}
+
+	// Add one more regexp matcher to the cache.
+	_, err = NewFastRegexMatcher(getExpensiveRegexp(estimatedMaxItemsInCache + 1))
+	require.NoError(t, err)
+
+	// Ensure one item has been evicted from the cache to make room for the new entry.
+	fastRegexMatcherCache.Wait()
+
+	numEvicted := 0
+	for i := 0; i < estimatedMaxItemsInCache; i++ {
+		if _, ok := fastRegexMatcherCache.Get(getExpensiveRegexp(i)); !ok {
+			t.Logf("the regexp matcher #%d has been evicted from the cache", i)
+			numEvicted++
+		}
+	}
+
+	require.Equal(t, 1, numEvicted)
+}
+
+func BenchmarkNewFastRegexMatcher(b *testing.B) {
+	runBenchmark := func(newFunc func(v string) (*FastRegexMatcher, error)) func(b *testing.B) {
+		return func(b *testing.B) {
+			for _, r := range regexes {
+				b.Run(getTestNameFromRegexp(r), func(b *testing.B) {
+					for n := 0; n < b.N; n++ {
+						_, err := newFunc(r)
+						if err != nil {
+							b.Fatal(err)
+						}
+					}
+				})
+			}
+		}
+	}
+
+	b.Run("with cache", runBenchmark(NewFastRegexMatcher))
+	b.Run("without cache", runBenchmark(newFastRegexMatcherWithoutCache))
+}
+
+func BenchmarkNewFastRegexMatcher_CacheMisses(b *testing.B) {
+	// Init the random seed with a constant, so that it doesn't change between runs.
+	randGenerator := rand.New(rand.NewSource(1))
+
+	tests := map[string]string{
+		"simple regexp":  randString(randGenerator, 10),
+		"complex regexp": strings.Join(randStrings(randGenerator, 100, 10), "|"),
+	}
+
+	for testName, regexpPrefix := range tests {
+		b.Run(testName, func(b *testing.B) {
+			// Ensure the cache is empty.
+			fastRegexMatcherCache.Clear()
+
+			b.ResetTimer()
+
+			for n := 0; n < b.N; n++ {
+				// Unique regexp to emulate 100% cache misses.
+				regexp := regexpPrefix + strconv.Itoa(n)
+
+				_, err := NewFastRegexMatcher(regexp)
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
 	}
 }
 
@@ -85,6 +233,9 @@ func TestOptimizeConcatRegex(t *testing.T) {
 		{regex: "(?i).*(?-i:abc)def", prefix: "", suffix: "", contains: "abc"},
 		{regex: ".*(?msU:abc).*", prefix: "", suffix: "", contains: "abc"},
 		{regex: "[aA]bc.*", prefix: "", suffix: "", contains: "bc"},
+		{regex: "^5..$", prefix: "5", suffix: "", contains: ""},
+		{regex: "^release.*", prefix: "release", suffix: "", contains: ""},
+		{regex: "^env-[0-9]+laio[1]?[^0-9].*", prefix: "env-", suffix: "", contains: "laio"},
 	}
 
 	for _, c := range cases {
@@ -98,41 +249,636 @@ func TestOptimizeConcatRegex(t *testing.T) {
 	}
 }
 
-func BenchmarkFastRegexMatcher(b *testing.B) {
-	var (
-		x = strings.Repeat("x", 50)
-		y = "foo" + x
-		z = x + "foo"
-	)
-	regexes := []string{
-		"foo",
-		"^foo",
-		"(foo|bar)",
-		"foo.*",
-		".*foo",
-		"^.*foo$",
-		"^.+foo$",
-		".*",
-		".+",
-		"foo.+",
-		".+foo",
-		".*foo.*",
-		"(?i:foo)",
-		"(prometheus|api_prom)_api_v1_.+",
-		"((fo(bar))|.+foo)",
+// Refer to https://github.com/prometheus/prometheus/issues/2651.
+func TestFindSetMatches(t *testing.T) {
+	for _, c := range []struct {
+		pattern          string
+		expMatches       []string
+		expCaseSensitive bool
+	}{
+		// Single value, coming from a `bar=~"foo"` selector.
+		{"foo", []string{"foo"}, true},
+		{"^foo", []string{"foo"}, true},
+		{"^foo$", []string{"foo"}, true},
+		// Simple sets alternates.
+		{"foo|bar|zz", []string{"foo", "bar", "zz"}, true},
+		// Simple sets alternate and concat (bar|baz is parsed as "ba[rz]").
+		{"foo|bar|baz", []string{"foo", "bar", "baz"}, true},
+		// Simple sets alternate and concat and capture
+		{"foo|bar|baz|(zz)", []string{"foo", "bar", "baz", "zz"}, true},
+		// Simple sets alternate and concat and alternates with empty matches
+		// parsed as  b(ar|(?:)|uzz) where b(?:) means literal b.
+		{"bar|b|buzz", []string{"bar", "b", "buzz"}, true},
+		// Skip outer anchors (it's enforced anyway at the root).
+		{"^(bar|b|buzz)$", []string{"bar", "b", "buzz"}, true},
+		{"^(?:prod|production)$", []string{"prod", "production"}, true},
+		// Do not optimize regexp with inner anchors.
+		{"(bar|b|b^uz$z)", nil, false},
+		// Do not optimize regexp with empty string matcher.
+		{"^$|Running", nil, false},
+		// Simple sets containing escaped characters.
+		{"fo\\.o|bar\\?|\\^baz", []string{"fo.o", "bar?", "^baz"}, true},
+		// using charclass
+		{"[abc]d", []string{"ad", "bd", "cd"}, true},
+		// high low charset different => A(B[CD]|EF)|BC[XY]
+		{"ABC|ABD|AEF|BCX|BCY", []string{"ABC", "ABD", "AEF", "BCX", "BCY"}, true},
+		// triple concat
+		{"api_(v1|prom)_push", []string{"api_v1_push", "api_prom_push"}, true},
+		// triple concat with multiple alternates
+		{"(api|rpc)_(v1|prom)_push", []string{"api_v1_push", "api_prom_push", "rpc_v1_push", "rpc_prom_push"}, true},
+		{"(api|rpc)_(v1|prom)_(push|query)", []string{"api_v1_push", "api_v1_query", "api_prom_push", "api_prom_query", "rpc_v1_push", "rpc_v1_query", "rpc_prom_push", "rpc_prom_query"}, true},
+		// class starting with "-"
+		{"[-1-2][a-c]", []string{"-a", "-b", "-c", "1a", "1b", "1c", "2a", "2b", "2c"}, true},
+		{"[1^3]", []string{"1", "3", "^"}, true},
+		// OpPlus with concat
+		{"(.+)/(foo|bar)", nil, false},
+		// Simple sets containing special characters without escaping.
+		{"fo.o|bar?|^baz", nil, false},
+		// case sensitive wrapper.
+		{"(?i)foo", []string{"FOO"}, false},
+		// case sensitive wrapper on alternate.
+		{"(?i)foo|bar|baz", []string{"FOO", "BAR", "BAZ", "BAr", "BAz"}, false},
+		// mixed case sensitivity.
+		{"(api|rpc)_(v1|prom)_((?i)push|query)", nil, false},
+		// mixed case sensitivity concatenation only without capture group.
+		{"api_v1_(?i)push", nil, false},
+		// mixed case sensitivity alternation only without capture group.
+		{"api|(?i)rpc", nil, false},
+		// case sensitive after unsetting insensitivity.
+		{"rpc|(?i)(?-i)api", []string{"rpc", "api"}, true},
+		// case sensitive after unsetting insensitivity in all alternation options.
+		{"(?i)((?-i)api|(?-i)rpc)", []string{"api", "rpc"}, true},
+		// mixed case sensitivity after unsetting insensitivity.
+		{"(?i)rpc|(?-i)api", nil, false},
+		// too high charset combination
+		{"(api|rpc)_[^0-9]", nil, false},
+		// too many combinations
+		{"[a-z][a-z]", nil, false},
+	} {
+		c := c
+		t.Run(c.pattern, func(t *testing.T) {
+			t.Parallel()
+			parsed, err := syntax.Parse(c.pattern, syntax.Perl)
+			require.NoError(t, err)
+			matches, actualCaseSensitive := findSetMatches(parsed)
+			require.Equal(t, c.expMatches, matches)
+			require.Equal(t, c.expCaseSensitive, actualCaseSensitive)
+		})
 	}
+}
+
+func BenchmarkFastRegexMatcher(b *testing.B) {
+	// Init the random seed with a constant, so that it doesn't change between runs.
+	randGenerator := rand.New(rand.NewSource(1))
+
+	// Generate variable lengths random texts to match against.
+	texts := append([]string{}, randStrings(randGenerator, 10, 10)...)
+	texts = append(texts, randStrings(randGenerator, 5, 30)...)
+	texts = append(texts, randStrings(randGenerator, 1, 100)...)
+	texts = append(texts, "foo"+randString(randGenerator, 50))
+	texts = append(texts, randString(randGenerator, 50)+"foo")
+
 	for _, r := range regexes {
-		r := r
-		b.Run(r, func(b *testing.B) {
+		b.Run(getTestNameFromRegexp(r), func(b *testing.B) {
 			m, err := NewFastRegexMatcher(r)
 			require.NoError(b, err)
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				_ = m.MatchString(x)
-				_ = m.MatchString(y)
-				_ = m.MatchString(z)
+				for _, text := range texts {
+					_ = m.MatchString(text)
+				}
 			}
 		})
-
 	}
+}
+
+func Test_OptimizeRegex(t *testing.T) {
+	for _, c := range []struct {
+		pattern string
+		exp     StringMatcher
+	}{
+		{".*", anyStringWithoutNewlineMatcher{}},
+		{".*?", anyStringWithoutNewlineMatcher{}},
+		{"(?s:.*)", trueMatcher{}},
+		{"(.*)", anyStringWithoutNewlineMatcher{}},
+		{"^.*$", anyStringWithoutNewlineMatcher{}},
+		{".+", &anyNonEmptyStringMatcher{matchNL: false}},
+		{"(?s:.+)", &anyNonEmptyStringMatcher{matchNL: true}},
+		{"^.+$", &anyNonEmptyStringMatcher{matchNL: false}},
+		{"(.+)", &anyNonEmptyStringMatcher{matchNL: false}},
+		{"", emptyStringMatcher{}},
+		{"^$", emptyStringMatcher{}},
+		{"^foo$", &equalStringMatcher{s: "foo", caseSensitive: true}},
+		{"^(?i:foo)$", &equalStringMatcher{s: "FOO", caseSensitive: false}},
+		{"^((?i:foo)|(bar))$", orStringMatcher([]StringMatcher{&equalStringMatcher{s: "FOO", caseSensitive: false}, &equalStringMatcher{s: "bar", caseSensitive: true}})},
+		{"^((?i:foo|oo)|(bar))$", orStringMatcher([]StringMatcher{&equalStringMatcher{s: "FOO", caseSensitive: false}, &equalStringMatcher{s: "OO", caseSensitive: false}, &equalStringMatcher{s: "bar", caseSensitive: true}})},
+		{"(?i:(foo1|foo2|bar))", orStringMatcher([]StringMatcher{orStringMatcher([]StringMatcher{&equalStringMatcher{s: "FOO1", caseSensitive: false}, &equalStringMatcher{s: "FOO2", caseSensitive: false}}), &equalStringMatcher{s: "BAR", caseSensitive: false}})},
+		{".*foo.*", &containsStringMatcher{substrings: []string{"foo"}, left: anyStringWithoutNewlineMatcher{}, right: anyStringWithoutNewlineMatcher{}}},
+		{"(.*)foo.*", &containsStringMatcher{substrings: []string{"foo"}, left: anyStringWithoutNewlineMatcher{}, right: anyStringWithoutNewlineMatcher{}}},
+		{"(.*)foo(.*)", &containsStringMatcher{substrings: []string{"foo"}, left: anyStringWithoutNewlineMatcher{}, right: anyStringWithoutNewlineMatcher{}}},
+		{"(.+)foo(.*)", &containsStringMatcher{substrings: []string{"foo"}, left: &anyNonEmptyStringMatcher{matchNL: false}, right: anyStringWithoutNewlineMatcher{}}},
+		{"^.+foo.+", &containsStringMatcher{substrings: []string{"foo"}, left: &anyNonEmptyStringMatcher{matchNL: false}, right: &anyNonEmptyStringMatcher{matchNL: false}}},
+		{"^(.*)(foo)(.*)$", &containsStringMatcher{substrings: []string{"foo"}, left: anyStringWithoutNewlineMatcher{}, right: anyStringWithoutNewlineMatcher{}}},
+		{"^(.*)(foo|foobar)(.*)$", &containsStringMatcher{substrings: []string{"foo", "foobar"}, left: anyStringWithoutNewlineMatcher{}, right: anyStringWithoutNewlineMatcher{}}},
+		{"^(.*)(foo|foobar)(.+)$", &containsStringMatcher{substrings: []string{"foo", "foobar"}, left: anyStringWithoutNewlineMatcher{}, right: &anyNonEmptyStringMatcher{matchNL: false}}},
+		{"^(.*)(bar|b|buzz)(.+)$", &containsStringMatcher{substrings: []string{"bar", "b", "buzz"}, left: anyStringWithoutNewlineMatcher{}, right: &anyNonEmptyStringMatcher{matchNL: false}}},
+		{"10\\.0\\.(1|2)\\.+", nil},
+		{"10\\.0\\.(1|2).+", &containsStringMatcher{substrings: []string{"10.0.1", "10.0.2"}, left: nil, right: &anyNonEmptyStringMatcher{matchNL: false}}},
+		{"^.+foo", &containsStringMatcher{substrings: []string{"foo"}, left: &anyNonEmptyStringMatcher{matchNL: false}, right: nil}},
+		{"foo-.*$", &containsStringMatcher{substrings: []string{"foo-"}, left: nil, right: anyStringWithoutNewlineMatcher{}}},
+		{"(prometheus|api_prom)_api_v1_.+", &containsStringMatcher{substrings: []string{"prometheus_api_v1_", "api_prom_api_v1_"}, left: nil, right: &anyNonEmptyStringMatcher{matchNL: false}}},
+		{"^((.*)(bar|b|buzz)(.+)|foo)$", orStringMatcher([]StringMatcher{&containsStringMatcher{substrings: []string{"bar", "b", "buzz"}, left: anyStringWithoutNewlineMatcher{}, right: &anyNonEmptyStringMatcher{matchNL: false}}, &equalStringMatcher{s: "foo", caseSensitive: true}})},
+		{"((fo(bar))|.+foo)", orStringMatcher([]StringMatcher{orStringMatcher([]StringMatcher{&equalStringMatcher{s: "fobar", caseSensitive: true}}), &containsStringMatcher{substrings: []string{"foo"}, left: &anyNonEmptyStringMatcher{matchNL: false}, right: nil}})},
+		{"(.+)/(gateway|cortex-gw|cortex-gw-internal)", &containsStringMatcher{substrings: []string{"/gateway", "/cortex-gw", "/cortex-gw-internal"}, left: &anyNonEmptyStringMatcher{matchNL: false}, right: nil}},
+		// we don't support case insensitive matching for contains.
+		// This is because there's no strings.IndexOfFold function.
+		// We can revisit later if this is really popular by using strings.ToUpper.
+		{"^(.*)((?i)foo|foobar)(.*)$", nil},
+		{"(api|rpc)_(v1|prom)_((?i)push|query)", nil},
+		{"[a-z][a-z]", nil},
+		{"[1^3]", nil},
+		{".*foo.*bar.*", nil},
+		{`\d*`, nil},
+		{".", nil},
+		// This one is not supported because  `stringMatcherFromRegexp` is not reentrant for syntax.OpConcat.
+		// It would make the code too complex to handle it.
+		{"/|/bar.*", nil},
+		{"(.+)/(foo.*|bar$)", nil},
+	} {
+		c := c
+		t.Run(c.pattern, func(t *testing.T) {
+			t.Parallel()
+			parsed, err := syntax.Parse(c.pattern, syntax.Perl)
+			require.NoError(t, err)
+			matches := stringMatcherFromRegexp(parsed)
+			require.Equal(t, c.exp, matches)
+		})
+	}
+}
+
+func randString(randGenerator *rand.Rand, length int) string {
+	b := make([]rune, length)
+	for i := range b {
+		b[i] = asciiRunes[randGenerator.Intn(len(asciiRunes))]
+	}
+	return string(b)
+}
+
+func randStrings(randGenerator *rand.Rand, many, length int) []string {
+	out := make([]string, 0, many)
+	for i := 0; i < many; i++ {
+		out = append(out, randString(randGenerator, length))
+	}
+	return out
+}
+
+func FuzzFastRegexMatcher_WithStaticallyDefinedRegularExpressions(f *testing.F) {
+	// Create all matchers.
+	matchers := make([]*FastRegexMatcher, 0, len(regexes))
+	res := make([]*regexp.Regexp, 0, len(regexes))
+	for _, re := range regexes {
+		m, err := NewFastRegexMatcher(re)
+		require.NoError(f, err)
+		r := regexp.MustCompile("^(?:" + re + ")$")
+		matchers = append(matchers, m)
+		res = append(res, r)
+	}
+
+	// Add known values to seed corpus.
+	for _, v := range values {
+		f.Add(v)
+	}
+
+	f.Fuzz(func(t *testing.T, text string) {
+		for i, m := range matchers {
+			require.Equalf(t, res[i].MatchString(text), m.MatchString(text), "regexp: %s text: %s", res[i].String(), text)
+		}
+	})
+}
+
+func FuzzFastRegexMatcher_WithFuzzyRegularExpressions(f *testing.F) {
+	for _, re := range regexes {
+		for _, text := range values {
+			f.Add(re, text)
+		}
+	}
+
+	f.Fuzz(func(t *testing.T, re, text string) {
+		m, err := NewFastRegexMatcher(re)
+		if err != nil {
+			// Ignore invalid regexes.
+			return
+		}
+
+		reg, err := regexp.Compile("^(?:" + re + ")$")
+		if err != nil {
+			// Ignore invalid regexes.
+			return
+		}
+
+		require.Equalf(t, reg.MatchString(text), m.MatchString(text), "regexp: %s text: %s", reg.String(), text)
+	})
+}
+
+// This test can be used to analyze real queries from Mimir logs. You can extract real queries with a regexp matcher
+// running the following command:
+//
+// logcli --addr=XXX --username=YYY --password=ZZZ query '{namespace=~"(cortex|mimir).*",name="query-frontend"} |= "query stats" |= "=~" --limit=100000 > logs.txt
+func TestAnalyzeRealQueries(t *testing.T) {
+	t.Skip("Decomment this test only to manually analyze real queries")
+
+	type labelValueInfo struct {
+		numMatchingQueries       int     //nolint:unused
+		numShardedQueries        int     //nolint:unused
+		numSplitQueries          int     //nolint:unused
+		optimized                bool    //nolint:unused
+		averageParsingTimeMillis float64 //nolint:unused
+
+		// Sorted list of timestamps when the queries have been received.
+		queryStartTimes []time.Time
+	}
+
+	labelValueRE := regexp.MustCompile(`=~\\"([^"]+)\\"`)
+	tsRE := regexp.MustCompile(`ts=([^ ]+)`)
+	shardedQueriesRE := regexp.MustCompile(`sharded_queries=(\d+)`)
+	splitQueriesRE := regexp.MustCompile(`split_queries=(\d+)`)
+
+	labelValues := make(map[string]*labelValueInfo)
+
+	// Read the logs file line-by-line, and find all values for regex label matchers.
+	readFile, err := os.Open("logs.txt")
+	require.NoError(t, err)
+
+	fileScanner := bufio.NewScanner(readFile)
+	fileScanner.Split(bufio.ScanLines)
+
+	numQueries := 0
+
+	for fileScanner.Scan() {
+		line := fileScanner.Text()
+		matches := labelValueRE.FindAllStringSubmatch(line, -1)
+		if len(matches) == 0 {
+			continue
+		}
+
+		// Look up query stats.
+		tsRaw := tsRE.FindStringSubmatch(line)
+		shardedQueriesRaw := shardedQueriesRE.FindStringSubmatch(line)
+		splitQueriesRaw := splitQueriesRE.FindStringSubmatch(line)
+		shardedQueries := 0
+		splitQueries := 0
+		var ts time.Time
+
+		if len(tsRaw) > 0 {
+			ts, _ = time.Parse(time.RFC3339Nano, tsRaw[1])
+		}
+		if len(shardedQueriesRaw) > 0 {
+			shardedQueries, _ = strconv.Atoi(shardedQueriesRaw[1])
+		}
+		if len(splitQueriesRaw) > 0 {
+			splitQueries, _ = strconv.Atoi(splitQueriesRaw[1])
+		}
+
+		numQueries++
+
+		for _, match := range matches {
+			info := labelValues[match[1]]
+			if info == nil {
+				info = &labelValueInfo{}
+				labelValues[match[1]] = info
+			}
+
+			info.numMatchingQueries++
+			info.numShardedQueries += shardedQueries
+			info.numSplitQueries += splitQueries
+
+			if !ts.IsZero() {
+				info.queryStartTimes = append(info.queryStartTimes, ts)
+			}
+		}
+	}
+
+	// Sort query start times.
+	for _, info := range labelValues {
+		sort.Slice(info.queryStartTimes, func(i, j int) bool {
+			return info.queryStartTimes[i].Before(info.queryStartTimes[j])
+		})
+	}
+
+	require.NoError(t, readFile.Close())
+	t.Logf("Found %d unique regexp matchers out of %d queries", len(labelValues), numQueries)
+
+	// Analyze each regexp matcher found.
+	numChecked := 0
+	numOptimized := 0
+
+	for re, info := range labelValues {
+		m, err := NewFastRegexMatcher(re)
+		if err != nil {
+			// Ignore it, because we may have failed to extract the label matcher.
+			continue
+		}
+
+		numChecked++
+
+		// Check if each regexp matcher is supported by our optimization.
+		if m.IsOptimized() {
+			numOptimized++
+			info.optimized = true
+		}
+
+		// Estimate the parsing complexity.
+		startTime := time.Now()
+		const numParsingRuns = 1000
+
+		for i := 0; i < numParsingRuns; i++ {
+			NewFastRegexMatcher(re)
+		}
+
+		info.averageParsingTimeMillis = float64(time.Since(startTime).Milliseconds()) / float64(numParsingRuns)
+	}
+
+	t.Logf("Found %d out of %d (%.2f%%) regexp matchers optimized by FastRegexMatcher", numOptimized, numChecked, (float64(numOptimized)/float64(numChecked))*100)
+
+	// Print some statistics.
+	for labelValue, info := range labelValues {
+		// Find the min/avg/max difference between query start times.
+		var (
+			minQueryStartTimeDiff time.Duration
+			maxQueryStartTimeDiff time.Duration
+			avgQueryStartTimeDiff time.Duration
+			sumQueryStartTime     time.Duration
+			countQueryStartTime   int
+		)
+
+		for i := 1; i < len(info.queryStartTimes); i++ {
+			diff := info.queryStartTimes[i].Sub(info.queryStartTimes[i-1])
+
+			sumQueryStartTime += diff
+			countQueryStartTime++
+
+			if minQueryStartTimeDiff == 0 || diff < minQueryStartTimeDiff {
+				minQueryStartTimeDiff = diff
+			}
+			if diff > maxQueryStartTimeDiff {
+				maxQueryStartTimeDiff = diff
+			}
+		}
+
+		if countQueryStartTime > 0 {
+			avgQueryStartTimeDiff = sumQueryStartTime / time.Duration(countQueryStartTime)
+		}
+
+		t.Logf("num queries: %d\t num split queries: %d\t num sharded queries: %d\t optimized: %t\t parsing time: %.0fms\t min/avg/max query start time diff (sec): %.2f/%.2f/%.2f regexp: %s",
+			info.numMatchingQueries, info.numSplitQueries, info.numShardedQueries, info.optimized, info.averageParsingTimeMillis,
+			minQueryStartTimeDiff.Seconds(), avgQueryStartTimeDiff.Seconds(), maxQueryStartTimeDiff.Seconds(), labelValue)
+	}
+}
+
+func TestOptimizeEqualStringMatchers(t *testing.T) {
+	tests := map[string]struct {
+		input                 StringMatcher
+		expectedValues        []string
+		expectedCaseSensitive bool
+	}{
+		"should skip optimization on orStringMatcher with containsStringMatcher": {
+			input: orStringMatcher{
+				&equalStringMatcher{s: "FOO", caseSensitive: true},
+				&containsStringMatcher{substrings: []string{"a", "b", "c"}},
+			},
+			expectedValues: nil,
+		},
+		"should run optimization on orStringMatcher with equalStringMatcher and same case sensitivity": {
+			input: orStringMatcher{
+				&equalStringMatcher{s: "FOO", caseSensitive: true},
+				&equalStringMatcher{s: "bar", caseSensitive: true},
+				&equalStringMatcher{s: "baz", caseSensitive: true},
+			},
+			expectedValues:        []string{"FOO", "bar", "baz"},
+			expectedCaseSensitive: true,
+		},
+		"should skip optimization on orStringMatcher with equalStringMatcher but different case sensitivity": {
+			input: orStringMatcher{
+				&equalStringMatcher{s: "FOO", caseSensitive: true},
+				&equalStringMatcher{s: "bar", caseSensitive: false},
+				&equalStringMatcher{s: "baz", caseSensitive: true},
+			},
+			expectedValues: nil,
+		},
+		"should run optimization on orStringMatcher with nested orStringMatcher and equalStringMatcher, and same case sensitivity": {
+			input: orStringMatcher{
+				&equalStringMatcher{s: "FOO", caseSensitive: true},
+				orStringMatcher{
+					&equalStringMatcher{s: "bar", caseSensitive: true},
+					&equalStringMatcher{s: "xxx", caseSensitive: true},
+				},
+				&equalStringMatcher{s: "baz", caseSensitive: true},
+			},
+			expectedValues:        []string{"FOO", "bar", "xxx", "baz"},
+			expectedCaseSensitive: true,
+		},
+		"should skip optimization on orStringMatcher with nested orStringMatcher and equalStringMatcher, but different case sensitivity": {
+			input: orStringMatcher{
+				&equalStringMatcher{s: "FOO", caseSensitive: true},
+				orStringMatcher{
+					// Case sensitivity is different within items at the same level.
+					&equalStringMatcher{s: "bar", caseSensitive: true},
+					&equalStringMatcher{s: "xxx", caseSensitive: false},
+				},
+				&equalStringMatcher{s: "baz", caseSensitive: true},
+			},
+			expectedValues: nil,
+		},
+		"should skip optimization on orStringMatcher with nested orStringMatcher and equalStringMatcher, but different case sensitivity in the nested one": {
+			input: orStringMatcher{
+				&equalStringMatcher{s: "FOO", caseSensitive: true},
+				// Case sensitivity is different between the parent and child.
+				orStringMatcher{
+					&equalStringMatcher{s: "bar", caseSensitive: false},
+					&equalStringMatcher{s: "xxx", caseSensitive: false},
+				},
+				&equalStringMatcher{s: "baz", caseSensitive: true},
+			},
+			expectedValues: nil,
+		},
+		"should return unchanged values on few case insensitive matchers": {
+			input: orStringMatcher{
+				&equalStringMatcher{s: "FOO", caseSensitive: false},
+				orStringMatcher{
+					&equalStringMatcher{s: "bAr", caseSensitive: false},
+				},
+				&equalStringMatcher{s: "baZ", caseSensitive: false},
+			},
+			expectedValues:        []string{"FOO", "bAr", "baZ"},
+			expectedCaseSensitive: false,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			actualMatcher := optimizeEqualStringMatchers(testData.input, 0)
+
+			if testData.expectedValues == nil {
+				require.IsType(t, testData.input, actualMatcher)
+			} else {
+				require.IsType(t, &equalMultiStringSliceMatcher{}, actualMatcher)
+				require.Equal(t, testData.expectedValues, actualMatcher.(*equalMultiStringSliceMatcher).values)
+				require.Equal(t, testData.expectedCaseSensitive, actualMatcher.(*equalMultiStringSliceMatcher).caseSensitive)
+			}
+		})
+	}
+}
+
+func TestNewEqualMultiStringMatcher(t *testing.T) {
+	tests := map[string]struct {
+		values             []string
+		caseSensitive      bool
+		expectedValuesMap  map[string]struct{}
+		expectedValuesList []string
+	}{
+		"few case sensitive values": {
+			values:             []string{"a", "B"},
+			caseSensitive:      true,
+			expectedValuesList: []string{"a", "B"},
+		},
+		"few case insensitive values": {
+			values:             []string{"a", "B"},
+			caseSensitive:      false,
+			expectedValuesList: []string{"a", "B"},
+		},
+		"many case sensitive values": {
+			values:            []string{"a", "B", "c", "D", "e", "F", "g", "H", "i", "L", "m", "N", "o", "P", "q", "r"},
+			caseSensitive:     true,
+			expectedValuesMap: map[string]struct{}{"a": {}, "B": {}, "c": {}, "D": {}, "e": {}, "F": {}, "g": {}, "H": {}, "i": {}, "L": {}, "m": {}, "N": {}, "o": {}, "P": {}, "q": {}, "r": {}},
+		},
+		"many case insensitive values": {
+			values:            []string{"a", "B", "c", "D", "e", "F", "g", "H", "i", "L", "m", "N", "o", "P", "q", "r"},
+			caseSensitive:     false,
+			expectedValuesMap: map[string]struct{}{"a": {}, "b": {}, "c": {}, "d": {}, "e": {}, "f": {}, "g": {}, "h": {}, "i": {}, "l": {}, "m": {}, "n": {}, "o": {}, "p": {}, "q": {}, "r": {}},
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			matcher := newEqualMultiStringMatcher(testData.caseSensitive, len(testData.values))
+			for _, v := range testData.values {
+				matcher.add(v)
+			}
+			if testData.expectedValuesMap != nil {
+				require.IsType(t, &equalMultiStringMapMatcher{}, matcher)
+				require.Equal(t, testData.expectedValuesMap, matcher.(*equalMultiStringMapMatcher).values)
+				require.Equal(t, testData.caseSensitive, matcher.(*equalMultiStringMapMatcher).caseSensitive)
+			}
+			if testData.expectedValuesList != nil {
+				require.IsType(t, &equalMultiStringSliceMatcher{}, matcher)
+				require.Equal(t, testData.expectedValuesList, matcher.(*equalMultiStringSliceMatcher).values)
+				require.Equal(t, testData.caseSensitive, matcher.(*equalMultiStringSliceMatcher).caseSensitive)
+			}
+		})
+	}
+}
+
+func TestEqualMultiStringMatcher_Matches(t *testing.T) {
+	tests := map[string]struct {
+		values             []string
+		caseSensitive      bool
+		expectedMatches    []string
+		expectedNotMatches []string
+	}{
+		"few case sensitive values": {
+			values:             []string{"a", "B"},
+			caseSensitive:      true,
+			expectedMatches:    []string{"a", "B"},
+			expectedNotMatches: []string{"A", "b"},
+		},
+		"few case insensitive values": {
+			values:             []string{"a", "B"},
+			caseSensitive:      false,
+			expectedMatches:    []string{"a", "A", "b", "B"},
+			expectedNotMatches: []string{"c", "C"},
+		},
+		"many case sensitive values": {
+			values:             []string{"a", "B", "c", "D", "e", "F", "g", "H", "i", "L", "m", "N", "o", "P", "q", "r"},
+			caseSensitive:      true,
+			expectedMatches:    []string{"a", "B"},
+			expectedNotMatches: []string{"A", "b"},
+		},
+		"many case insensitive values": {
+			values:             []string{"a", "B", "c", "D", "e", "F", "g", "H", "i", "L", "m", "N", "o", "P", "q", "r"},
+			caseSensitive:      false,
+			expectedMatches:    []string{"a", "A", "b", "B"},
+			expectedNotMatches: []string{"x", "X"},
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			matcher := newEqualMultiStringMatcher(testData.caseSensitive, len(testData.values))
+			for _, v := range testData.values {
+				matcher.add(v)
+			}
+
+			for _, v := range testData.expectedMatches {
+				require.True(t, matcher.Matches(v), "value: %s", v)
+			}
+			for _, v := range testData.expectedNotMatches {
+				require.False(t, matcher.Matches(v), "value: %s", v)
+			}
+		})
+	}
+}
+
+// This benchmark is used to find a good threshold to use to apply the optimization
+// done by optimizeEqualStringMatchers()
+func BenchmarkOptimizeEqualStringMatchers(b *testing.B) {
+	randGenerator := rand.New(rand.NewSource(time.Now().UnixNano()))
+
+	// Generate variable lengths random texts to match against.
+	texts := append([]string{}, randStrings(randGenerator, 10, 10)...)
+	texts = append(texts, randStrings(randGenerator, 5, 30)...)
+	texts = append(texts, randStrings(randGenerator, 1, 100)...)
+
+	for numAlternations := 2; numAlternations <= 256; numAlternations *= 2 {
+		for _, caseSensitive := range []bool{true, false} {
+			b.Run(fmt.Sprintf("alternations: %d case sensitive: %t", numAlternations, caseSensitive), func(b *testing.B) {
+				// Generate a regex with the expected number of alternations.
+				re := strings.Join(randStrings(randGenerator, numAlternations, 10), "|")
+				if !caseSensitive {
+					re = "(?i:(" + re + "))"
+				}
+
+				parsed, err := syntax.Parse(re, syntax.Perl)
+				require.NoError(b, err)
+
+				unoptimized := stringMatcherFromRegexpInternal(parsed)
+				require.IsType(b, orStringMatcher{}, unoptimized)
+
+				optimized := optimizeEqualStringMatchers(unoptimized, 0)
+				require.IsType(b, &equalMultiStringMapMatcher{}, optimized)
+
+				b.Run("without optimizeEqualStringMatchers()", func(b *testing.B) {
+					for n := 0; n < b.N; n++ {
+						for _, t := range texts {
+							unoptimized.Matches(t)
+						}
+					}
+				})
+
+				b.Run("with optimizeEqualStringMatchers()", func(b *testing.B) {
+					for n := 0; n < b.N; n++ {
+						for _, t := range texts {
+							optimized.Matches(t)
+						}
+					}
+				})
+			})
+		}
+	}
+}
+
+func getTestNameFromRegexp(re string) string {
+	if len(re) > 32 {
+		return re[:32]
+	}
+	return re
 }

@@ -502,6 +502,8 @@ func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc, oooMmc []*m
 	}
 
 	// Any samples replayed till now would already be compacted. Resetting the head chunk.
+	// We do not reset oooHeadChunk because that is being replayed from a different WAL
+	// and has not been replayed here.
 	mSeries.nextAt = 0
 	mSeries.headChunk = nil
 	mSeries.app = nil

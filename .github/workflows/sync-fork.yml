@@ -1,0 +1,17 @@
+name: sync fork with upstream
+
+on:
+  schedule:
+    - cron: '11 8 * * 1' # 8:11 UTC on Monday
+
+  workflow_dispatch: # for manual testing
+
+jobs:
+  sync-fork-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: tgymnich/fork-sync@v1.7
+        with:
+          owner: grafana
+          base: main
+          head: main

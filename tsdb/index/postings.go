@@ -839,6 +839,28 @@ func (it *bigEndianPostings) Err() error {
 	return nil
 }
 
+// PostingsCloner takes an existing Postings and allows independently clone them.
+type PostingsCloner struct {
+	ids []storage.SeriesRef
+	err error
+}
+
+// NewPostingsCloner takes an existing Postings and allows independently clone them.
+// The instance provided shouldn't have been used before (no Next() calls should have been done)
+// and it shouldn't be used once provided to the PostingsCloner.
+func NewPostingsCloner(p Postings) *PostingsCloner {
+	ids, err := ExpandPostings(p)
+	return &PostingsCloner{ids: ids, err: err}
+}
+
+// Clone returns another independent Postings instance.
+func (c *PostingsCloner) Clone() Postings {
+	if c.err != nil {
+		return ErrPostings(c.err)
+	}
+	return newListPostings(c.ids...)
+}
+
 // FindIntersectingPostings checks the intersection of p and candidates[i] for each i in candidates,
 // if intersection is non empty, then i is added to the indexes returned.
 // Returned indexes are not sorted.

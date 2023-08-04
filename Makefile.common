@@ -100,6 +100,8 @@ ifeq ($(GOHOSTARCH),amd64)
         endif
 endif
 
+test-flags += -timeout 20m
+
 # This rule is used to forward a target like "build" to "common-build".  This
 # allows a new "build" target to be defined in a Makefile which includes this
 # one and override "common-build" without override warnings.
