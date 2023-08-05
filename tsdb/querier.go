@@ -255,24 +255,8 @@ func PostingsForMatchers(ix IndexReader, ms ...*labels.Matcher) (index.Postings,
 			}
 			its = append(its, allPostings)
 		case labelMustBeSet[m.Name]:
-			// If this matcher must be non-empty, we can be smarter.
-			matchesEmpty := m.Matches("")
-			isNot := m.Type == labels.MatchNotEqual || m.Type == labels.MatchNotRegexp
-			switch {
-			case isNot && matchesEmpty: // l!="foo"
-				// If the label can't be empty and is a Not and the inner matcher
-				// doesn't match empty, then subtract it out at the end.
-				inverse, err := m.Inverse()
-				if err != nil {
-					return nil, err
-				}
-
-				it, err := postingsForMatcher(ix, inverse)
-				if err != nil {
-					return nil, err
-				}
-				notIts = append(notIts, it)
-			case isNot && !matchesEmpty: // l!=""
+			if m.Type == labels.MatchNotEqual || m.Type == labels.MatchNotRegexp {
+				// l!=""
 				// If the label can't be empty and is a Not, but the inner matcher can
 				// be empty we need to use inversePostingsForMatcher.
 				inverse, err := m.Inverse()
@@ -288,7 +272,8 @@ func PostingsForMatchers(ix IndexReader, ms ...*labels.Matcher) (index.Postings,
 					return index.EmptyPostings(), nil
 				}
 				its = append(its, it)
-			default: // l="a"
+			} else {
+				// l="a"
 				// Non-Not matcher, use normal postingsForMatcher.
 				it, err := postingsForMatcher(ix, m)
 				if err != nil {
@@ -299,7 +284,7 @@ func PostingsForMatchers(ix IndexReader, ms ...*labels.Matcher) (index.Postings,
 				}
 				its = append(its, it)
 			}
-		default: // l=""
+		default: // l="" or l!="foo"
 			// If the matchers for a labelname selects an empty value, it selects all
 			// the series which don't have the label name set too. See:
 			// https://github.com/prometheus/prometheus/issues/3575 and
