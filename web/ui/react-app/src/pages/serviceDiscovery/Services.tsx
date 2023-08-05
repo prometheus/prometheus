@@ -10,10 +10,12 @@ import { API_PATH } from '../../constants/constants';
 import { KVSearch } from '@nexucis/kvsearch';
 import { Container } from 'reactstrap';
 import SearchBar from '../../components/SearchBar';
+import internal from 'stream';
 
 interface ServiceMap {
   activeTargets: Target[];
   droppedTargets: DroppedTarget[];
+  droppedTargetCounts: Record<string, number>;
 }
 
 export interface TargetLabels {
@@ -34,7 +36,7 @@ const droppedTargetKVSearch = new KVSearch<DroppedTarget>({
 
 export const processSummary = (
   activeTargets: Target[],
-  droppedTargets: DroppedTarget[]
+  droppedTargetCounts: Record<string, number>
 ): Record<string, { active: number; total: number }> => {
   const targets: Record<string, { active: number; total: number }> = {};
 
@@ -50,15 +52,15 @@ export const processSummary = (
     targets[name].total++;
     targets[name].active++;
   }
-  for (const target of droppedTargets) {
-    const { job: name } = target.discoveredLabels;
+  for (const name in targets) {
     if (!targets[name]) {
       targets[name] = {
-        total: 0,
+        total: droppedTargetCounts[name],
         active: 0,
       };
+    } else {
+      targets[name].total += droppedTargetCounts[name];
     }
-    targets[name].total++;
   }
 
   return targets;
@@ -94,10 +96,10 @@ export const processTargets = (activeTargets: Target[], droppedTargets: DroppedT
   return labels;
 };
 
-export const ServiceDiscoveryContent: FC<ServiceMap> = ({ activeTargets, droppedTargets }) => {
+export const ServiceDiscoveryContent: FC<ServiceMap> = ({ activeTargets, droppedTargets, droppedTargetCounts }) => {
   const [activeTargetList, setActiveTargetList] = useState(activeTargets);
   const [droppedTargetList, setDroppedTargetList] = useState(droppedTargets);
-  const [targetList, setTargetList] = useState(processSummary(activeTargets, droppedTargets));
+  const [targetList, setTargetList] = useState(processSummary(activeTargets, droppedTargetCounts));
   const [labelList, setLabelList] = useState(processTargets(activeTargets, droppedTargets));
 
   const handleSearchChange = useCallback(
@@ -118,9 +120,9 @@ export const ServiceDiscoveryContent: FC<ServiceMap> = ({ activeTargets, dropped
   const defaultValue = useMemo(getQuerySearchFilter, []);
 
   useEffect(() => {
-    setTargetList(processSummary(activeTargetList, droppedTargetList));
+    setTargetList(processSummary(activeTargetList, droppedTargetCounts));
     setLabelList(processTargets(activeTargetList, droppedTargetList));
-  }, [activeTargetList, droppedTargetList]);
+  }, [activeTargetList, droppedTargetList, droppedTargetCounts]);
 
   return (
     <>

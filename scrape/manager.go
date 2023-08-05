@@ -368,3 +368,14 @@ func (m *Manager) TargetsDropped() map[string][]*Target {
 	}
 	return targets
 }
+
+func (m *Manager) TargetsDroppedCounts() map[string]int {
+	m.mtxScrape.Lock()
+	defer m.mtxScrape.Unlock()
+
+	counts := make(map[string]int, len(m.scrapePools))
+	for tset, sp := range m.scrapePools {
+		counts[tset] = sp.droppedTargetsCount
+	}
+	return counts
+}
