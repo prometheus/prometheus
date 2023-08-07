@@ -5593,3 +5593,26 @@ func TestStripeSeries_getOrSet(t *testing.T) {
 	got = s.getByHash(hash, lbls2)
 	require.Same(t, &ms2, got)
 }
+
+func TestPostingsCardinalityStats(t *testing.T) {
+	head := &Head{postings: index.NewMemPostings()}
+	head.postings.Add(1, labels.FromStrings(labels.MetricName, "t", "n", "v1"))
+	head.postings.Add(2, labels.FromStrings(labels.MetricName, "t", "n", "v2"))
+
+	statsForMetricName := head.PostingsCardinalityStats(labels.MetricName, 10)
+	// Using cache.
+	head.postings.Add(3, labels.FromStrings(labels.MetricName, "t", "n", "v3"))
+	require.Equal(t, statsForMetricName, head.PostingsCardinalityStats(labels.MetricName, 10))
+
+	statsForSomeLabel := head.PostingsCardinalityStats("n", 10)
+	// Cache should be evicted because of the change of label name.
+	require.NotEqual(t, statsForMetricName, statsForSomeLabel)
+	// Using cache.
+	head.postings.Add(4, labels.FromStrings(labels.MetricName, "t", "n", "v4"))
+	require.Equal(t, statsForSomeLabel, head.PostingsCardinalityStats("n", 10))
+	// Cache should be evicted because of the change of limit parameter.
+	statsForSomeLabel1 := head.PostingsCardinalityStats("n", 1)
+	require.NotEqual(t, statsForSomeLabel1, statsForSomeLabel)
+	// Using cache.
+	require.Equal(t, statsForSomeLabel1, head.PostingsCardinalityStats("n", 1))
+}
