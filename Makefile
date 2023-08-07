@@ -23,6 +23,8 @@ TSDB_BENCHMARK_NUM_METRICS ?= 1000
 TSDB_BENCHMARK_DATASET ?= ./tsdb/testdata/20kseries.json
 TSDB_BENCHMARK_OUTPUT_DIR ?= ./benchout
 
+BUILD_LOCAL_DOCKER_ARCHS = $(addprefix local-docker-image-,$(DOCKER_ARCHS))
+
 GOLANGCI_LINT_OPTS ?= --timeout 4m
 
 include Makefile.common
@@ -111,6 +113,16 @@ tarball: npm_licenses common-tarball
 
 .PHONY: docker
 docker: npm_licenses common-docker
+
+.PHONY: local-docker-image $(BUILD_LOCAL_DOCKER_ARCHS)
+local-docker-image: $(BUILD_LOCAL_DOCKER_ARCHS)
+$(BUILD_LOCAL_DOCKER_ARCHS): local-docker-image-%: 
+	promu crossbuild-natively common-docker-$* npm_licenses 
+
+.PHONY: crossbuild-natively
+crossbuild-natively:
+	$(eval ARCH := $(subst local-docker-image-,,$*))
+	promu crossbuild -p linux/$(ARCH)
 
 plugins/plugins.go: plugins.yml plugins/generate.go
 	@echo ">> creating plugins list"
