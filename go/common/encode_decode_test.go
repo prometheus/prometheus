@@ -25,9 +25,11 @@ func TestEncoderDecoderSuite(t *testing.T) {
 }
 
 func (eds *EncoderDecoderSuite) SetupTest() {
+	var err error
 	eds.ctx = context.Background()
 	eds.enc = common.NewEncoder(0, 1)
-	eds.dec = common.NewDecoder()
+	eds.dec, err = common.NewDecoder()
+	eds.NoError(err)
 }
 
 func (eds *EncoderDecoderSuite) TearDownTest() {
@@ -108,7 +110,8 @@ func (eds *EncoderDecoderSuite) TestEncodeDecode() {
 		eds.Require().NoError(err)
 
 		eds.T().Log("sharding protobuf")
-		h := common.NewHashdex(data)
+		h, err := common.NewHashdex(data)
+		eds.Require().NoError(err)
 
 		eds.T().Log("encoding protobuf")
 		createdAt := time.Now()
@@ -157,7 +160,8 @@ func (eds *EncoderDecoderSuite) TestEncodeDecodeSnapshot() {
 		eds.Require().NoError(err)
 
 		eds.T().Log("sharding protobuf")
-		h := common.NewHashdex(data)
+		h, err := common.NewHashdex(data)
+		eds.Require().NoError(err)
 
 		eds.T().Log("encoding protobuf")
 		_, gos, rt, err := eds.enc.Encode(eds.ctx, h)
@@ -202,7 +206,8 @@ func (eds *EncoderDecoderSuite) TestEncodeDecodeSnapshot() {
 	}
 
 	eds.T().Log("init new decoder")
-	resDec := common.NewDecoder()
+	resDec, err := common.NewDecoder()
+	eds.Require().NoError(err)
 
 	eds.T().Log("restore new decoder")
 	err = resDec.Snapshot(eds.ctx, gsnapshot.Bytes())
@@ -247,7 +252,8 @@ func (eds *EncoderDecoderSuite) TestEncodeDecodeSnapshotWithDrySegment() {
 		eds.Require().NoError(err)
 
 		eds.T().Log("sharding protobuf")
-		h := common.NewHashdex(data)
+		h, err := common.NewHashdex(data)
+		eds.Require().NoError(err)
 
 		eds.T().Log("encoding protobuf")
 		_, gos, rt, err := eds.enc.Encode(eds.ctx, h)
@@ -292,7 +298,8 @@ func (eds *EncoderDecoderSuite) TestEncodeDecodeSnapshotWithDrySegment() {
 	}
 
 	eds.T().Log("init new decoder")
-	resDec := common.NewDecoder()
+	resDec, err := common.NewDecoder()
+	eds.Require().NoError(err)
 
 	eds.T().Log("restore new decoder")
 	err = resDec.Snapshot(eds.ctx, gsnapshot.Bytes())
@@ -311,7 +318,8 @@ func (eds *EncoderDecoderSuite) TestEncodeDecodeSnapshotWithDrySegment() {
 	eds.Require().NoError(err)
 
 	eds.T().Log("after restore sharding protobuf")
-	h := common.NewHashdex(data)
+	h, err := common.NewHashdex(data)
+	eds.Require().NoError(err)
 
 	eds.T().Log("after restore encoding protobuf")
 	_, gos, rt, err := eds.enc.Encode(eds.ctx, h)
@@ -355,7 +363,9 @@ func (eds *EncoderDecoderSuite) EncodeDecodeBench(i int64) {
 	expectedWr := eds.makeData(100, i)
 	data, err := expectedWr.Marshal()
 	eds.Require().NoError(err)
-	h := common.NewHashdex(data)
+	h, err := common.NewHashdex(data)
+	eds.Require().NoError(err)
+
 	_, gos, gor, err := eds.enc.Encode(eds.ctx, h)
 	h.Destroy()
 	gor.Destroy()
@@ -385,7 +395,8 @@ func (eds *EncoderDecoderSuite) TestEncodeDecodeOpenHead() {
 		eds.Require().NoError(err)
 
 		eds.T().Log("sharding protobuf")
-		h := common.NewHashdex(data)
+		h, err := common.NewHashdex(data)
+		eds.Require().NoError(err)
 
 		eds.T().Log("encoding protobuf")
 		gosF, err := eds.enc.Add(eds.ctx, h)

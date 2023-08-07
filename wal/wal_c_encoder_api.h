@@ -58,8 +58,24 @@ void okdb_wal_uni_c_encoder_encode(c_encoder c_enc, c_encoder_encode_params* enc
 
 // okdb_wal_c_encoder_add - C wrapper C++, calls C++ class Encoder methods.
 void okdb_wal_c_encoder_add(c_encoder c_enc, c_hashdex c_hx, c_segment* c_seg);
+
+typedef struct {
+  c_hashdex hashdex;
+  c_segment* segment;
+} c_encoder_add_params;
+
+void okdb_wal_uni_c_encoder_add(c_encoder c_enc, c_encoder_add_params* add_params, c_api_error_info** err);
+
 // okdb_wal_c_encoder_finalize - C wrapper C++, calls C++ class Encoder methods.
 void okdb_wal_c_encoder_finalize(c_encoder c_enc, c_segment* c_seg, c_redundant* c_rt);
+
+typedef struct {
+  c_segment* segment;
+  c_redundant* redundant;
+} c_encoder_finalize_params;
+
+void okdb_wal_uni_c_encoder_finalize(c_encoder c_enc, c_encoder_finalize_params* finalize_params, c_api_error_info** err);
+
 // okdb_wal_c_encoder_snapshot - C wrapper C++, calls C++ class Encoder methods.
 void okdb_wal_c_encoder_snapshot(c_encoder c_enc, c_slice_ptr c_rts, c_snapshot* c_snap);
 

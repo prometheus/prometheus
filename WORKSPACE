@@ -57,3 +57,11 @@ http_archive(
     build_file = "//third_party:lz4stream.BUILD",
     strip_prefix = "lz4_stream-6b015cbe786291733b6f3aa03e45d307bc4ae527/include",
 )
+
+http_archive(
+    name = "backward_cpp",
+    url = "https://github.com/bombela/backward-cpp/archive/refs/heads/master.zip",
+    sha256 = "7c93aba757cdbf835ee29e65e6e50df7a9ceabb7bdb21dc7ad9a42058220afa8",
+    build_file = "//third_party:backward_cpp.BUILD",
+    strip_prefix = "backward-cpp-master/",
+)

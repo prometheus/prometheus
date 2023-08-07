@@ -15,7 +15,10 @@
 #include <exception>
 #include <sstream>
 #include <string>
-#if __has_include(<stacktrace>)  // sanity checks..
+#if __has_include("bare_bones/stacktrace.h")
+#include "bare_bones/stacktrace.h"
+#define CURRENT_STACKTRACE BareBones::StackTrace::Current().ToString()
+#elif __has_include(<stacktrace>)  // sanity checks..
 #if __cplusplus <= 202002L
 #error "Please set -std="c++2b" or similar flag for C++23 for your compiler."
 #endif
@@ -46,16 +49,29 @@ static c_api_error_info* handle_current_exception(std::string_view func_name, st
   try {
     std::rethrow_exception(ep);
   } catch (const std::exception& e) {
-    ss << func_name << "(): caught a std::exception, what: " << e.what();
+    ss << "caught a std::exception, what: " << e.what();
   } catch (...) {
-    ss << func_name << "(): caught an unknown exception";
+    ss << "caught an unknown exception";
   }
   return make_c_api_error_info_with_func_name(func_name, ss.str(), std::move(stacktrace));
 }
 
-// Errors public API.
+// c_api_error_info public API.
+
 extern "C" c_api_error_info* make_c_api_error_info(const char* message, const char* stacktrace) {
   return new c_api_error_info(std::string(message ? message : ""), std::string(stacktrace ? stacktrace : ""));
+}
+
+extern "C" void destroy_c_api_error_info(c_api_error_info* err_info) {
+  delete err_info;
+}
+
+extern "C" const char* c_api_error_info_get_error(c_api_error_info* err) {
+  return err->Error().data();
+}
+
+extern "C" const char* c_api_error_info_get_stacktrace(c_api_error_info* err) {
+  return err->Stacktrace().data();
 }
 
 // BasicEncoder unified API
@@ -79,6 +95,22 @@ extern "C" void okdb_wal_uni_c_encoder_ctor(c_encoder_ctor_params* in_ctor_args,
 extern "C" void okdb_wal_uni_c_encoder_encode(c_encoder c_enc, c_encoder_encode_params* encode_params, c_api_error_info** err) {
   try {
     okdb_wal_c_encoder_encode(c_enc, encode_params->hashdex, encode_params->segment, encode_params->redundant);
+  } catch (...) {
+    *err = handle_current_exception(__func__, CURRENT_STACKTRACE, std::current_exception());
+  }
+}
+
+extern "C" void okdb_wal_uni_c_encoder_add(c_encoder c_enc, c_encoder_add_params* add_params, c_api_error_info** err) {
+  try {
+    okdb_wal_c_encoder_add(c_enc, add_params->hashdex, add_params->segment);
+  } catch (...) {
+    *err = handle_current_exception(__func__, CURRENT_STACKTRACE, std::current_exception());
+  }
+}
+
+extern "C" void okdb_wal_uni_c_encoder_finalize(c_encoder c_enc, c_encoder_finalize_params* finalize_params, c_api_error_info** err) {
+  try {
+    okdb_wal_c_encoder_finalize(c_enc, finalize_params->segment, finalize_params->redundant);
   } catch (...) {
     *err = handle_current_exception(__func__, CURRENT_STACKTRACE, std::current_exception());
   }
