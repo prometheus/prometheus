@@ -1,5 +1,6 @@
 #pragma once
 
+#include <sstream>
 #include <string_view>
 
 #define PROTOZERO_USE_VIEW std::string_view
@@ -104,7 +105,7 @@ inline __attribute__((always_inline)) void read_label(ProtobufReader& pb_label, 
   }
 
   if (__builtin_expect(parsed != 0b11, false)) {
-    throw std::runtime_error("AOC3: Meaningful message supposed to be here!");
+    throw std::invalid_argument("read_label: Protobuf message has Incomplete key-value pair in label");
   }
 }
 
@@ -118,7 +119,7 @@ inline __attribute__((always_inline)) void read_only_label_set(ProtobufReader& p
   }
 
   if (__builtin_expect(!label_set.size(), false)) {
-    throw std::runtime_error("AOB3: Meaningful message supposed to be here!");
+    throw std::runtime_error("read_only_label_set: Protobuf message has an empty label set");
   }
 }
 
@@ -151,7 +152,7 @@ inline __attribute__((always_inline)) void read_timeseries(ProtobufReader&& pb_t
   }
 
   if (__builtin_expect(!timeseries.label_set().size() || !timeseries.samples().size(), false)) {
-    throw std::runtime_error("AOA3: Meaningful message supposed to be here!");
+    throw std::runtime_error("read_timeseries: Protobuf message has an empty label set");
   }
 }
 
@@ -168,7 +169,9 @@ __attribute__((flatten)) void read_many_timeseries(ProtobufReader& pb, Callback 
       timeseries.clear();
     }
   } catch (protozero::exception& e) {
-    throw std::runtime_error("AOE1: Meaningful message supposed to be here!");
+    std::stringstream ss;
+    ss << "read_many_timeseries: protobuf exception: protozero exception: " << e.what();
+    throw std::runtime_error(ss.str());
   }
 }
 
@@ -182,7 +185,7 @@ inline __attribute__((always_inline)) void read_timeseries_without_samples(Proto
   }
 
   if (__builtin_expect(!timeseries.label_set().size(), false)) {
-    throw std::runtime_error("read_timeseries_without_samples: Meaningful message supposed to be here!");
+    throw std::runtime_error("read_timeseries_without_samples: Protobuf message has an empty label set");
   }
 }
 
@@ -199,7 +202,9 @@ __attribute__((flatten)) void read_many_timeseries_in_hashdex(ProtobufReader& pb
       timeseries.clear();
     }
   } catch (protozero::exception& e) {
-    throw std::runtime_error("read_many_timeseries_with_sharding: Meaningful message supposed to be here!");
+    std::stringstream ss;
+    ss << "read_many_timeseries_with_sharding: protobuf message read exception: protozero::exception: " << e.what();
+    throw std::runtime_error(ss.str());
   }
 }
 }  // namespace RemoteWrite
