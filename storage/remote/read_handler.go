@@ -131,7 +131,7 @@ func (h *readHandler) remoteReadSamples(
 				return err
 			}
 
-			querier, err := h.queryable.Querier(ctx, query.StartTimestampMs, query.EndTimestampMs)
+			querier, err := h.queryable.Querier(query.StartTimestampMs, query.EndTimestampMs)
 			if err != nil {
 				return err
 			}
@@ -155,7 +155,7 @@ func (h *readHandler) remoteReadSamples(
 			}
 
 			var ws storage.Warnings
-			resp.Results[i], ws, err = ToQueryResult(querier.Select(false, hints, filteredMatchers...), h.remoteReadSampleLimit)
+			resp.Results[i], ws, err = ToQueryResult(querier.Select(ctx, false, hints, filteredMatchers...), h.remoteReadSampleLimit)
 			if err != nil {
 				return err
 			}
@@ -198,7 +198,7 @@ func (h *readHandler) remoteReadStreamedXORChunks(ctx context.Context, w http.Re
 				return err
 			}
 
-			querier, err := h.queryable.ChunkQuerier(ctx, query.StartTimestampMs, query.EndTimestampMs)
+			querier, err := h.queryable.ChunkQuerier(query.StartTimestampMs, query.EndTimestampMs)
 			if err != nil {
 				return err
 			}
@@ -225,7 +225,7 @@ func (h *readHandler) remoteReadStreamedXORChunks(ctx context.Context, w http.Re
 				NewChunkedWriter(w, f),
 				int64(i),
 				// The streaming API has to provide the series sorted.
-				querier.Select(true, hints, filteredMatchers...),
+				querier.Select(ctx, true, hints, filteredMatchers...),
 				sortedExternalLabels,
 				h.remoteReadMaxBytesInFrame,
 				h.marshalPool,

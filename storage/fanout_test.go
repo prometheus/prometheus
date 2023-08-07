@@ -75,14 +75,14 @@ func TestFanout_SelectSorted(t *testing.T) {
 	fanoutStorage := storage.NewFanout(nil, priStorage, remoteStorage1, remoteStorage2)
 
 	t.Run("querier", func(t *testing.T) {
-		querier, err := fanoutStorage.Querier(context.Background(), 0, 8000)
+		querier, err := fanoutStorage.Querier(0, 8000)
 		require.NoError(t, err)
 		defer querier.Close()
 
 		matcher, err := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "a")
 		require.NoError(t, err)
 
-		seriesSet := querier.Select(true, nil, matcher)
+		seriesSet := querier.Select(ctx, true, nil, matcher)
 
 		result := make(map[int64]float64)
 		var labelsResult labels.Labels
@@ -102,14 +102,14 @@ func TestFanout_SelectSorted(t *testing.T) {
 		require.Equal(t, inputTotalSize, len(result))
 	})
 	t.Run("chunk querier", func(t *testing.T) {
-		querier, err := fanoutStorage.ChunkQuerier(ctx, 0, 8000)
+		querier, err := fanoutStorage.ChunkQuerier(0, 8000)
 		require.NoError(t, err)
 		defer querier.Close()
 
 		matcher, err := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "a")
 		require.NoError(t, err)
 
-		seriesSet := storage.NewSeriesSetFromChunkSeriesSet(querier.Select(true, nil, matcher))
+		seriesSet := storage.NewSeriesSetFromChunkSeriesSet(querier.Select(ctx, true, nil, matcher))
 
 		result := make(map[int64]float64)
 		var labelsResult labels.Labels
@@ -159,12 +159,12 @@ func TestFanoutErrors(t *testing.T) {
 		fanoutStorage := storage.NewFanout(nil, tc.primary, tc.secondary)
 
 		t.Run("samples", func(t *testing.T) {
-			querier, err := fanoutStorage.Querier(context.Background(), 0, 8000)
+			querier, err := fanoutStorage.Querier(0, 8000)
 			require.NoError(t, err)
 			defer querier.Close()
 
 			matcher := labels.MustNewMatcher(labels.MatchEqual, "a", "b")
-			ss := querier.Select(true, nil, matcher)
+			ss := querier.Select(context.Background(), true, nil, matcher)
 
 			// Exhaust.
 			for ss.Next() {
@@ -184,12 +184,12 @@ func TestFanoutErrors(t *testing.T) {
 		})
 		t.Run("chunks", func(t *testing.T) {
 			t.Skip("enable once TestStorage and TSDB implements ChunkQuerier")
-			querier, err := fanoutStorage.ChunkQuerier(context.Background(), 0, 8000)
+			querier, err := fanoutStorage.ChunkQuerier(0, 8000)
 			require.NoError(t, err)
 			defer querier.Close()
 
 			matcher := labels.MustNewMatcher(labels.MatchEqual, "a", "b")
-			ss := querier.Select(true, nil, matcher)
+			ss := querier.Select(context.Background(), true, nil, matcher)
 
 			// Exhaust.
 			for ss.Next() {
@@ -216,20 +216,20 @@ type errStorage struct{}
 
 type errQuerier struct{}
 
-func (errStorage) Querier(_ context.Context, _, _ int64) (storage.Querier, error) {
+func (errStorage) Querier(_, _ int64) (storage.Querier, error) {
 	return errQuerier{}, nil
 }
 
 type errChunkQuerier struct{ errQuerier }
 
-func (errStorage) ChunkQuerier(_ context.Context, _, _ int64) (storage.ChunkQuerier, error) {
+func (errStorage) ChunkQuerier(_, _ int64) (storage.ChunkQuerier, error) {
 	return errChunkQuerier{}, nil
 }
 func (errStorage) Appender(_ context.Context) storage.Appender { return nil }
 func (errStorage) StartTime() (int64, error)                   { return 0, nil }
 func (errStorage) Close() error                                { return nil }
 
-func (errQuerier) Select(bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
+func (errQuerier) Select(context.Context, bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
 	return storage.ErrSeriesSet(errSelect)
 }
 
@@ -243,6 +243,6 @@ func (errQuerier) LabelNames(...*labels.Matcher) ([]string, storage.Warnings, er
 
 func (errQuerier) Close() error { return nil }
 
-func (errChunkQuerier) Select(bool, *storage.SelectHints, ...*labels.Matcher) storage.ChunkSeriesSet {
+func (errChunkQuerier) Select(context.Context, bool, *storage.SelectHints, ...*labels.Matcher) storage.ChunkSeriesSet {
 	return storage.ErrChunkSeriesSet(errSelect)
 }

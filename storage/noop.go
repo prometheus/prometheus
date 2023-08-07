@@ -14,6 +14,8 @@
 package storage
 
 import (
+	"context"
+
 	"github.com/prometheus/prometheus/model/labels"
 )
 
@@ -24,7 +26,7 @@ func NoopQuerier() Querier {
 	return noopQuerier{}
 }
 
-func (noopQuerier) Select(bool, *SelectHints, ...*labels.Matcher) SeriesSet {
+func (noopQuerier) Select(context.Context, bool, *SelectHints, ...*labels.Matcher) SeriesSet {
 	return NoopSeriesSet()
 }
 
@@ -47,7 +49,7 @@ func NoopChunkedQuerier() ChunkQuerier {
 	return noopChunkQuerier{}
 }
 
-func (noopChunkQuerier) Select(bool, *SelectHints, ...*labels.Matcher) ChunkSeriesSet {
+func (noopChunkQuerier) Select(context.Context, bool, *SelectHints, ...*labels.Matcher) ChunkSeriesSet {
 	return NoopChunkedSeriesSet()
 }
 

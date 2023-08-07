@@ -570,14 +570,14 @@ func TestStaleness(t *testing.T) {
 	group.Eval(ctx, time.Unix(1, 0))
 	group.Eval(ctx, time.Unix(2, 0))
 
-	querier, err := st.Querier(context.Background(), 0, 2000)
+	querier, err := st.Querier(0, 2000)
 	require.NoError(t, err)
 	defer querier.Close()
 
 	matcher, err := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "a_plus_one")
 	require.NoError(t, err)
 
-	set := querier.Select(false, nil, matcher)
+	set := querier.Select(ctx, false, nil, matcher)
 	samples, err := readSeriesSet(set)
 	require.NoError(t, err)
 
@@ -693,14 +693,14 @@ func TestDeletedRuleMarkedStale(t *testing.T) {
 
 	newGroup.Eval(context.Background(), time.Unix(0, 0))
 
-	querier, err := st.Querier(context.Background(), 0, 2000)
+	querier, err := st.Querier(0, 2000)
 	require.NoError(t, err)
 	defer querier.Close()
 
 	matcher, err := labels.NewMatcher(labels.MatchEqual, "l1", "v1")
 	require.NoError(t, err)
 
-	set := querier.Select(false, nil, matcher)
+	set := querier.Select(context.Background(), false, nil, matcher)
 	samples, err := readSeriesSet(set)
 	require.NoError(t, err)
 
@@ -1119,14 +1119,14 @@ func TestMetricsStalenessOnManagerShutdown(t *testing.T) {
 
 func countStaleNaN(t *testing.T, st storage.Storage) int {
 	var c int
-	querier, err := st.Querier(context.Background(), 0, time.Now().Unix()*1000)
+	querier, err := st.Querier(0, time.Now().Unix()*1000)
 	require.NoError(t, err)
 	defer querier.Close()
 
 	matcher, err := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_2")
 	require.NoError(t, err)
 
-	set := querier.Select(false, nil, matcher)
+	set := querier.Select(context.Background(), false, nil, matcher)
 	samples, err := readSeriesSet(set)
 	require.NoError(t, err)
 
@@ -1402,9 +1402,9 @@ func TestNativeHistogramsInRecordingRules(t *testing.T) {
 
 	group.Eval(context.Background(), ts.Add(10*time.Second))
 
-	q, err := db.Querier(context.Background(), ts.UnixMilli(), ts.Add(20*time.Second).UnixMilli())
+	q, err := db.Querier(ts.UnixMilli(), ts.Add(20*time.Second).UnixMilli())
 	require.NoError(t, err)
-	ss := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "__name__", "sum:histogram_metric"))
+	ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "__name__", "sum:histogram_metric"))
 	require.True(t, ss.Next())
 	s := ss.At()
 	require.False(t, ss.Next())

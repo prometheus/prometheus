@@ -2809,9 +2809,9 @@ func TestScrapeLoopDiscardDuplicateLabels(t *testing.T) {
 	require.Error(t, err)
 	require.NoError(t, slApp.Rollback())
 
-	q, err := s.Querier(ctx, time.Time{}.UnixNano(), 0)
+	q, err := s.Querier(time.Time{}.UnixNano(), 0)
 	require.NoError(t, err)
-	series := q.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
+	series := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
 	require.Equal(t, false, series.Next(), "series found in tsdb")
 	require.NoError(t, series.Err())
 
@@ -2821,9 +2821,9 @@ func TestScrapeLoopDiscardDuplicateLabels(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, slApp.Commit())
 
-	q, err = s.Querier(ctx, time.Time{}.UnixNano(), 0)
+	q, err = s.Querier(time.Time{}.UnixNano(), 0)
 	require.NoError(t, err)
-	series = q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "le", "500"))
+	series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchEqual, "le", "500"))
 	require.Equal(t, true, series.Next(), "series not found in tsdb")
 	require.NoError(t, series.Err())
 	require.Equal(t, false, series.Next(), "more than one series found in tsdb")
@@ -2868,9 +2868,9 @@ func TestScrapeLoopDiscardUnnamedMetrics(t *testing.T) {
 	require.NoError(t, slApp.Rollback())
 	require.Equal(t, errNameLabelMandatory, err)
 
-	q, err := s.Querier(ctx, time.Time{}.UnixNano(), 0)
+	q, err := s.Querier(time.Time{}.UnixNano(), 0)
 	require.NoError(t, err)
-	series := q.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
+	series := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
 	require.Equal(t, false, series.Next(), "series found in tsdb")
 	require.NoError(t, series.Err())
 }
@@ -3230,9 +3230,9 @@ func TestScrapeReportSingleAppender(t *testing.T) {
 
 	start := time.Now()
 	for time.Since(start) < 3*time.Second {
-		q, err := s.Querier(ctx, time.Time{}.UnixNano(), time.Now().UnixNano())
+		q, err := s.Querier(time.Time{}.UnixNano(), time.Now().UnixNano())
 		require.NoError(t, err)
-		series := q.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".+"))
+		series := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".+"))
 
 		c := 0
 		for series.Next() {
@@ -3302,10 +3302,10 @@ func TestScrapeReportLimit(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	q, err := s.Querier(ctx, time.Time{}.UnixNano(), time.Now().UnixNano())
+	q, err := s.Querier(time.Time{}.UnixNano(), time.Now().UnixNano())
 	require.NoError(t, err)
 	defer q.Close()
-	series := q.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "up"))
+	series := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "up"))
 
 	var found bool
 	for series.Next() {

@@ -194,7 +194,7 @@ type errQuerier struct {
 	err error
 }
 
-func (q *errQuerier) Select(bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
+func (q *errQuerier) Select(context.Context, bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
 	return errSeriesSet{err: q.err}
 }
 
@@ -226,7 +226,7 @@ func TestQueryError(t *testing.T) {
 	}
 	engine := NewEngine(opts)
 	errStorage := ErrStorage{errors.New("storage error")}
-	queryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+	queryable := storage.QueryableFunc(func(mint, maxt int64) (storage.Querier, error) {
 		return &errQuerier{err: errStorage}, nil
 	})
 	ctx, cancelCtx := context.WithCancel(context.Background())
@@ -251,7 +251,7 @@ type noopHintRecordingQueryable struct {
 	hints []*storage.SelectHints
 }
 
-func (h *noopHintRecordingQueryable) Querier(context.Context, int64, int64) (storage.Querier, error) {
+func (h *noopHintRecordingQueryable) Querier(int64, int64) (storage.Querier, error) {
 	return &hintRecordingQuerier{Querier: &errQuerier{}, h: h}, nil
 }
 
@@ -261,9 +261,9 @@ type hintRecordingQuerier struct {
 	h *noopHintRecordingQueryable
 }
 
-func (h *hintRecordingQuerier) Select(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+func (h *hintRecordingQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	h.h.hints = append(h.h.hints, hints)
-	return h.Querier.Select(sortSeries, hints, matchers...)
+	return h.Querier.Select(ctx, sortSeries, hints, matchers...)
 }
 
 func TestSelectHintsSetCorrectly(t *testing.T) {

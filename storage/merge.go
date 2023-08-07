@@ -16,6 +16,7 @@ package storage
 import (
 	"bytes"
 	"container/heap"
+	"context"
 	"fmt"
 	"math"
 	"sync"
@@ -97,19 +98,19 @@ func NewMergeChunkQuerier(primaries, secondaries []ChunkQuerier, mergeFn Vertica
 }
 
 // Select returns a set of series that matches the given label matchers.
-func (q *mergeGenericQuerier) Select(sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) genericSeriesSet {
+func (q *mergeGenericQuerier) Select(ctx context.Context, sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) genericSeriesSet {
 	if len(q.queriers) == 0 {
 		return noopGenericSeriesSet{}
 	}
 	if len(q.queriers) == 1 {
-		return q.queriers[0].Select(sortSeries, hints, matchers...)
+		return q.queriers[0].Select(ctx, sortSeries, hints, matchers...)
 	}
 
 	seriesSets := make([]genericSeriesSet, 0, len(q.queriers))
 	if !q.concurrentSelect {
 		for _, querier := range q.queriers {
 			// We need to sort for merge  to work.
-			seriesSets = append(seriesSets, querier.Select(true, hints, matchers...))
+			seriesSets = append(seriesSets, querier.Select(ctx, true, hints, matchers...))
 		}
 		return &lazyGenericSeriesSet{init: func() (genericSeriesSet, bool) {
 			s := newGenericMergeSeriesSet(seriesSets, q.mergeFn)
@@ -128,7 +129,7 @@ func (q *mergeGenericQuerier) Select(sortSeries bool, hints *SelectHints, matche
 			defer wg.Done()
 
 			// We need to sort for NewMergeSeriesSet to work.
-			seriesSetChan <- qr.Select(true, hints, matchers...)
+			seriesSetChan <- qr.Select(ctx, true, hints, matchers...)
 		}(querier)
 	}
 	go func() {

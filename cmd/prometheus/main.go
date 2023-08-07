@@ -1383,17 +1383,17 @@ func (s *readyStorage) StartTime() (int64, error) {
 }
 
 // Querier implements the Storage interface.
-func (s *readyStorage) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+func (s *readyStorage) Querier(mint, maxt int64) (storage.Querier, error) {
 	if x := s.get(); x != nil {
-		return x.Querier(ctx, mint, maxt)
+		return x.Querier(mint, maxt)
 	}
 	return nil, tsdb.ErrNotReady
 }
 
 // ChunkQuerier implements the Storage interface.
-func (s *readyStorage) ChunkQuerier(ctx context.Context, mint, maxt int64) (storage.ChunkQuerier, error) {
+func (s *readyStorage) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
 	if x := s.get(); x != nil {
-		return x.ChunkQuerier(ctx, mint, maxt)
+		return x.ChunkQuerier(mint, maxt)
 	}
 	return nil, tsdb.ErrNotReady
 }
