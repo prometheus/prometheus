@@ -37,6 +37,7 @@ cc_library(
         "//third_party",
         "@parallel_hashmap",
         "@scope_exit",
+        "@backward_cpp//:backward_cpp_header_only", # stacktrace lib
     ],
 )
 
@@ -229,7 +230,7 @@ cc_library(
     hdrs = ["wal/wal_c_api.h", "wal/wal_c_types_api.h"],
     srcs = ["wal/wal_c_api.cpp", "wal/wal_c_types.cpp", "wal/wal_c_go_uni_api.cpp"],
 
-    deps = [":arch_detector"] + 
+    deps = [":arch_detector"] +
     select({
         ":aarch64_build": ["aarch64_wal_c_api"],
         ":x86_build": ["x86_wal_c_api"],

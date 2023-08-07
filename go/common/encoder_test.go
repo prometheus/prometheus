@@ -80,7 +80,8 @@ func (es *EncoderSuite) TestEncode() {
 	es.T().Log("encode data and accumulate segment and redundant")
 	for i := 0; i < es.encodeCount; i++ {
 		data := es.makeData()
-		h := common.NewHashdex(data)
+		h, err := common.NewHashdex(data)
+		es.NoError(err)
 
 		segKey, gos, gor, err := es.enc.Encode(es.ctx, h)
 		es.NoError(err)
@@ -110,11 +111,13 @@ func (es *EncoderSuite) TestEncodeError() {
 	ctx, cancel := context.WithCancel(es.ctx)
 	cancel()
 
-	h := common.NewHashdex(es.makeData())
+	h, err := common.NewHashdex(es.makeData())
+	es.NoError(err)
+
 	defer h.Destroy()
 
-	_, _, _, err := es.enc.Encode(ctx, h)
-	es.Error(err)
+	_, _, _, err2 := es.enc.Encode(ctx, h)
+	es.Error(err2)
 }
 
 func (es *EncoderSuite) TestSnapshotError() {
@@ -122,6 +125,15 @@ func (es *EncoderSuite) TestSnapshotError() {
 	cancel()
 	_, err := es.enc.Snapshot(ctx, es.bufRed)
 	es.Error(err)
+}
+
+func (es *EncoderSuite) TestCppInvalidDataForHashdex() {
+	es.T().Skipf("Skipped until next MR with handling invalid data exceptions.")
+	invalidPbData := []byte("1111")
+	h, err := common.NewHashdex(invalidPbData)
+	es.Error(err)
+	es.T().Logf("Got an error (it's OK): %s", err.Error())
+	_ = h
 }
 
 func BenchmarkEncoder(b *testing.B) {
@@ -161,7 +173,8 @@ func BenchmarkEncoder(b *testing.B) {
 	require.NoError(b, err)
 
 	for i := 0; i < b.N; i++ {
-		h := common.NewHashdex(data)
+		h, err := common.NewHashdex(data)
+		require.NoError(b, err)
 		_, gos, gor, _ := enc.Encode(ctx, h)
 		h.Destroy()
 		gos.Destroy()

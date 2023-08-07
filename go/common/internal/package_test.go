@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/prometheus/pp/go/common"
+	"github.com/stretchr/testify/require"
 )
 
 func TestCBindingsInitCleanEncoderSmoke(t *testing.T) {
@@ -14,6 +15,7 @@ func TestCBindingsInitCleanEncoderSmoke(t *testing.T) {
 }
 
 func TestCBindingsInitCleanDecodeSmoke(t *testing.T) {
-	var decoder = common.NewDecoder()
+	var decoder, err = common.NewDecoder()
+	require.NoError(t, err)
 	decoder.Destroy()
 }

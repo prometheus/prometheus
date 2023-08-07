@@ -2,9 +2,9 @@
  * \file wal_c_encoder.h
  *  Wrapper C API for BasicEncoder<> class.
  */
-#include <stdint.h>
-
 #include "wal_c_types.h"
+
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -43,6 +43,12 @@ c_hashdex okdb_wal_c_hashdex_ctor();
 
 void okdb_wal_uni_c_hashdex_ctor(c_hashdex* out_hashdex_ptr, c_api_error_info** err);
 
+typedef struct {
+  c_slice_ptr proto_data;
+  c_slice_ptr cluster;
+  c_slice_ptr replica;
+} c_hashdex_presharding_params;
+
 // okdb_wal_c_hashdex_presharding - C wrapper C++, calls C++ class Hashdex methods.
 void okdb_wal_c_hashdex_presharding(c_hashdex c_hx, c_slice_from_go_ptr proto_data, c_slice_from_go_ptr cluster, c_slice_from_go_ptr replica);
 
@@ -74,8 +80,24 @@ void okdb_wal_uni_c_encoder_encode(go_ptr c_enc, go_ptr encode_params, go_ptr er
 
 // okdb_wal_c_encoder_add - C wrapper C++, calls C++ class Encoder methods.
 void okdb_wal_c_encoder_add(c_encoder c_enc, c_hashdex c_hx, c_segment* c_seg);
+
+typedef struct {
+  c_hashdex hashdex;
+  c_segment* segment;
+} c_encoder_add_params;
+
+void okdb_wal_uni_c_encoder_add(c_encoder c_enc, go_ptr add_params, go_ptr err);
+
 // okdb_wal_c_encoder_finalize - C wrapper C++, calls C++ class Encoder methods.
 void okdb_wal_c_encoder_finalize(c_encoder c_enc, c_segment* c_seg, c_redundant* c_rt);
+
+typedef struct {
+  c_segment* segment;
+  c_redundant* redundant;
+} c_encoder_finalize_params;
+
+void okdb_wal_uni_c_encoder_finalize(c_encoder c_enc, go_ptr finalize_params, go_ptr err);
+
 // okdb_wal_c_encoder_snapshot - C wrapper C++, calls C++ class Encoder methods.
 void okdb_wal_c_encoder_snapshot(c_encoder c_enc, c_slice_from_go_ptr c_rts, c_snapshot* c_snap);
 

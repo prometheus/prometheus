@@ -16,6 +16,7 @@ package internal
 // #include <stdlib.h>
 import "C"
 import (
+	"errors"
 	"unsafe"
 
 	"github.com/prometheus/prometheus/pp/go/common/fastcgo"
@@ -75,18 +76,17 @@ type CDecoderSnapshotArgs struct {
 	snapshot *[]byte
 }
 
-func CDecoderCtor() CDecoder {
+func CDecoderCtor(cerr *GoErrorInfo) CDecoder {
 	var decoder uintptr = 0
-	var error CErrorInfo = nil
 	fastcgo.UnsafeCall2(
 		C.okdb_wal_uni_c_decoder_ctor,
 		uintptr(unsafe.Pointer(&decoder)),
-		uintptr(unsafe.Pointer(&error)),
+		uintptr(unsafe.Pointer(&cerr)),
 	)
 	return CDecoder(unsafe.Pointer(decoder))
 }
 
-func CDecoderDecode(decoder CDecoder, segment []byte, protobufResult *GoDecodedSegment) uint32 {
+func CDecoderDecode(decoder CDecoder, segment []byte, protobufResult *GoDecodedSegment, cerr *GoErrorInfo) uint32 {
 	var args = CDecoderDecodeArgs{
 		segment:  &segment,
 		protobuf: protobufResult,
@@ -96,20 +96,18 @@ func CDecoderDecode(decoder CDecoder, segment []byte, protobufResult *GoDecodedS
 		result: 0,
 	}
 
-	var error CErrorInfo = nil
-
 	fastcgo.UnsafeCall4(
 		C.okdb_wal_uni_c_decoder_decode,
 		uintptr(unsafe.Pointer(decoder)),
 		uintptr(unsafe.Pointer(&args)),
 		uintptr(unsafe.Pointer(&result)),
-		uintptr(unsafe.Pointer(&error)),
+		uintptr(unsafe.Pointer(&cerr)),
 	)
 
 	return result.result
 }
 
-func CDecoderDecodeDry(decoder CDecoder, segment []byte) uint32 {
+func CDecoderDecodeDry(decoder CDecoder, segment []byte, cerr *GoErrorInfo) uint32 {
 	var args = CDecoderDecodeDryArgs{
 		segment: &segment,
 	}
@@ -118,28 +116,25 @@ func CDecoderDecodeDry(decoder CDecoder, segment []byte) uint32 {
 		result: 0,
 	}
 
-	var error CErrorInfo = nil
-
 	fastcgo.UnsafeCall4(C.okdb_wal_uni_c_decoder_decode_dry,
 		uintptr(unsafe.Pointer(decoder)),
 		uintptr(unsafe.Pointer(&args)),
 		uintptr(unsafe.Pointer(&result)),
-		uintptr(unsafe.Pointer(&error)),
+		uintptr(unsafe.Pointer(&cerr)),
 	)
 
 	return result.result
 }
 
-func CDecoderDecodeSnapshot(decoder CDecoder, snapshot []byte) {
+func CDecoderDecodeSnapshot(decoder CDecoder, snapshot []byte, cerr *GoErrorInfo) {
 	var args = CDecoderSnapshotArgs{
 		snapshot: &snapshot,
 	}
-	var error CErrorInfo = nil
 
 	fastcgo.UnsafeCall3(C.okdb_wal_uni_c_decoder_snapshot,
 		uintptr(decoder),
 		uintptr(unsafe.Pointer(&args)),
-		uintptr(unsafe.Pointer(&error)),
+		uintptr(unsafe.Pointer(&cerr)),
 	)
 }
 
@@ -161,72 +156,90 @@ type CEncoderEncodeArgs struct {
 	redundant *GoRedundant
 }
 
+type CEncoderAddArgs struct {
+	hashdex CHashdex
+	segment *GoSegment
+}
+
+type CEncoderFinalizeArgs struct {
+	segment   *GoSegment
+	redundant *GoRedundant
+}
+
 type CEncoderSnapshotArgs struct {
 	redundants *[]unsafe.Pointer
 	snapshot   *GoSnapshot
 }
 
-func CEncoderCtor(shardID, numberOfShards uint16) CEncoder {
+func CEncoderCtor(shardID, numberOfShards uint16, cerr *GoErrorInfo) CEncoder {
 	var encoder uintptr = 0
 	var args = CEncoderCtorArgs{
 		shardID:        shardID,
 		numberOfShards: numberOfShards,
 	}
-	var error CErrorInfo = nil
+
 	fastcgo.UnsafeCall3(
 		C.okdb_wal_uni_c_encoder_ctor,
 		uintptr(unsafe.Pointer(&args)),
 		uintptr(unsafe.Pointer(&encoder)),
-		uintptr(unsafe.Pointer(&error)),
+		uintptr(unsafe.Pointer(&cerr)),
 	)
 	return CEncoder(unsafe.Pointer(encoder))
 }
 
-func CEncoderEncode(encoder CEncoder, hashdex CHashdex, segment *GoSegment, redundant *GoRedundant) {
+func CEncoderEncode(encoder CEncoder, hashdex CHashdex, segment *GoSegment, redundant *GoRedundant, cerr *GoErrorInfo) {
 	var args = CEncoderEncodeArgs{
 		hashdex:   hashdex,
 		segment:   segment,
 		redundant: redundant,
 	}
-	var error CErrorInfo = nil
+
 	fastcgo.UnsafeCall3(
 		C.okdb_wal_uni_c_encoder_encode,
 		uintptr(encoder),
 		uintptr(unsafe.Pointer(&args)),
-		uintptr(unsafe.Pointer(&error)),
+		uintptr(unsafe.Pointer(&cerr)),
 	)
 }
 
 // CEncoderAdd - add to encode incoming data(ShardedData) through C++ encoder.
-func CEncoderAdd(encoder CEncoder, hashdex CHashdex, segment *GoSegment) {
+func CEncoderAdd(encoder CEncoder, hashdex CHashdex, segment *GoSegment, cerr *GoErrorInfo) {
+	var args = CEncoderAddArgs{
+		hashdex: hashdex,
+		segment: segment,
+	}
 	fastcgo.UnsafeCall3(
-		C.okdb_wal_c_encoder_add,
+		C.okdb_wal_uni_c_encoder_add,
 		uintptr(encoder),
-		uintptr(hashdex),
-		uintptr(unsafe.Pointer(segment)),
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&cerr)),
 	)
 }
 
 // CEncoderFinalize - finalize the encoded data in the C++ encoder to Segment.
-func CEncoderFinalize(encoder CEncoder, segment *GoSegment, redundant *GoRedundant) {
+func CEncoderFinalize(encoder CEncoder, segment *GoSegment, redundant *GoRedundant, cerr *GoErrorInfo) {
+	var args = CEncoderFinalizeArgs{
+		segment:   segment,
+		redundant: redundant,
+	}
 	fastcgo.UnsafeCall3(
-		C.okdb_wal_c_encoder_finalize,
+		C.okdb_wal_uni_c_encoder_finalize,
 		uintptr(encoder),
-		uintptr(unsafe.Pointer(segment)),
-		uintptr(unsafe.Pointer(redundant)),
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&cerr)),
 	)
 }
 
-func CEncoderSnapshot(encoder CEncoder, redundants []unsafe.Pointer, snapshot *GoSnapshot) {
+func CEncoderSnapshot(encoder CEncoder, redundants []unsafe.Pointer, snapshot *GoSnapshot, cerr *GoErrorInfo) {
 	var args = CEncoderSnapshotArgs{
 		redundants: &redundants,
 		snapshot:   snapshot,
 	}
-	var error CErrorInfo = nil
+
 	fastcgo.UnsafeCall3(C.okdb_wal_uni_c_encoder_snapshot,
 		uintptr(encoder),
 		uintptr(unsafe.Pointer(&args)),
-		uintptr(unsafe.Pointer(&error)),
+		uintptr(unsafe.Pointer(&cerr)),
 	)
 }
 
@@ -239,6 +252,12 @@ func CEncoderDtor(encoder CEncoder) {
 //
 // CHashdex API.
 //
+
+type CHashdexPreshardingParams struct {
+	protoData *[]byte
+	cluster   *CSlice
+	replica   *CSlice
+}
 
 func CHashdexCtor() CHashdex {
 	var hashdex uintptr = 0
@@ -253,12 +272,17 @@ func CHashdexCtor() CHashdex {
 	return CHashdex(uintptr(unsafe.Pointer(hashdex)))
 }
 
-func CHashdexPresharding(hashdex CHashdex, protoData []byte, cluster, replica *CSlice) {
-	fastcgo.UnsafeCall4(C.okdb_wal_c_hashdex_presharding,
+func CHashdexPresharding(hashdex CHashdex, protoData []byte, cluster, replica *CSlice, cerr *GoErrorInfo) {
+	var args = CHashdexPreshardingParams{
+		protoData: &protoData,
+		cluster:   cluster,
+		replica:   replica,
+	}
+
+	fastcgo.UnsafeCall3(C.okdb_wal_uni_c_hashdex_presharding,
 		uintptr(hashdex),
-		uintptr(unsafe.Pointer(&protoData)),
-		uintptr(unsafe.Pointer(cluster)),
-		uintptr(unsafe.Pointer(replica)),
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(cerr)),
 	)
 }
 
@@ -286,4 +310,17 @@ func CRedundantDestroy(p unsafe.Pointer) {
 func CDecodedSegmentDestroy(p unsafe.Pointer) {
 	fastcgo.UnsafeCall1(C.okdb_wal_c_decoded_segment_destroy,
 		uintptr(p))
+}
+
+// CErrorInfo API
+func CErrorInfoGetError(errinfo CErrorInfo) error {
+	return errors.New(C.GoString(C.c_api_error_info_get_error(errinfo)))
+}
+
+func CErrorInfoGetStacktrace(errinfo CErrorInfo) string {
+	return C.GoString(C.c_api_error_info_get_stacktrace(errinfo))
+}
+
+func CErrorInfoDestroy(errinfo CErrorInfo) {
+	C.destroy_c_api_error_info(errinfo)
 }

@@ -85,7 +85,7 @@ type Hashdex struct {
 //
 
 // NewHashdex - init new Hashdex.
-func NewHashdex(protoData []byte) ShardedData {
+func NewHashdex(protoData []byte) (ShardedData, error) {
 	// cluster and replica - in memory GO(protoData)
 	h := &Hashdex{
 		hashdex: internal.CHashdexCtor(),
@@ -93,9 +93,10 @@ func NewHashdex(protoData []byte) ShardedData {
 		cluster: &internal.CSlice{},
 		replica: &internal.CSlice{},
 	}
-	internal.CHashdexPresharding(h.hashdex, h.data, h.cluster, h.replica)
+	cerr := internal.GoErrorInfo{}
+	internal.CHashdexPresharding(h.hashdex, h.data, h.cluster, h.replica, &cerr)
 	runtime.KeepAlive(h.data)
-	return h
+	return h, cerr.GetError()
 }
 
 // Cluster - get Cluster name.

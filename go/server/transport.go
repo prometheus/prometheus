@@ -71,7 +71,11 @@ func (pr *ProtocolReader) handleSnapshot(ctx context.Context, fe *frames.Frame) 
 	if pr.decoder != nil {
 		pr.decoder.Destroy()
 	}
-	pr.decoder = common.NewDecoder()
+	var err error
+	pr.decoder, err = common.NewDecoder()
+	if err != nil {
+		return err
+	}
 	bb := frames.NewBinaryBodyEmpty()
 	if err := bb.UnmarshalBinary(fe.GetBody()); err != nil {
 		return err
@@ -82,7 +86,11 @@ func (pr *ProtocolReader) handleSnapshot(ctx context.Context, fe *frames.Frame) 
 // handleDryPut - process the dry put using the decoder.
 func (pr *ProtocolReader) handleDryPut(ctx context.Context, fe *frames.Frame) error {
 	if pr.decoder == nil {
-		pr.decoder = common.NewDecoder()
+		var err error
+		pr.decoder, err = common.NewDecoder()
+		if err != nil {
+			return err
+		}
 	}
 	bb := frames.NewBinaryBodyEmpty()
 	if err := bb.UnmarshalBinary(fe.GetBody()); err != nil {
@@ -94,7 +102,11 @@ func (pr *ProtocolReader) handleDryPut(ctx context.Context, fe *frames.Frame) er
 // handlePut - process the put using the decoder.
 func (pr *ProtocolReader) handlePut(ctx context.Context, fe *frames.Frame) (*Request, error) {
 	if pr.decoder == nil {
-		pr.decoder = common.NewDecoder()
+		var err error
+		pr.decoder, err = common.NewDecoder()
+		if err != nil {
+			return nil, fmt.Errorf("create new decoder for segment: %w", err)
+		}
 	}
 
 	bb := frames.NewBinaryBodyEmpty()

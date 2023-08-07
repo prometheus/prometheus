@@ -31,8 +31,8 @@ typedef c_api_error_info* c_api_error_info_ptr;
 
 // C wrappers for error_info.
 c_api_error_info* make_c_api_error_info(const char* message, const char* stacktrace);
-const char* c_api_error_info_get_error();
-const char* c_api_error_info_get_stacktrace();
+const char* c_api_error_info_get_error(c_api_error_info*);
+const char* c_api_error_info_get_stacktrace(c_api_error_info*);
 void destroy_c_api_error_info(c_api_error_info* err_info);
 
 // c_slice - C wrapper C++ Slice for exchange memory between C++ and Go.

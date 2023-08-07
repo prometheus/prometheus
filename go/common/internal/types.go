@@ -143,3 +143,26 @@ func (gs *GoSnapshot) Bytes() []byte {
 func (gs *GoSnapshot) Destroy() {
 	CSnapshotDestroy(unsafe.Pointer(gs))
 }
+
+// GoErrorInfo is the Go-side wrapper for storing the error info from C/C++ APIs.
+type GoErrorInfo struct {
+	err CErrorInfo
+}
+
+func (goerr *GoErrorInfo) GetError() error {
+	if goerr.err == nil {
+		return nil
+	}
+	return CErrorInfoGetError(goerr.err)
+}
+
+func (goerr *GoErrorInfo) GetStacktrace() string {
+	if goerr.err == nil {
+		return ""
+	}
+	return CErrorInfoGetStacktrace(goerr.err)
+}
+
+func (goerr *GoErrorInfo) Destroy() {
+	CErrorInfoDestroy(goerr.err)
+}

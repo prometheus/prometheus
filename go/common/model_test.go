@@ -59,7 +59,8 @@ func TestHashdex(t *testing.T) {
 
 	data, err := wr.Marshal()
 	require.NoError(t, err)
-	hx := common.NewHashdex(data)
+	hx, err := common.NewHashdex(data)
+	require.NoError(t, err)
 
 	cr := hx.Cluster()
 	ra := hx.Replica()
