@@ -299,7 +299,7 @@ func (*evalCmd) testCmd()  {}
 type loadCmd struct {
 	gap       time.Duration
 	metrics   map[uint64]labels.Labels
-	defs      map[uint64][]FPoint
+	defs      map[uint64][]Sample
 	exemplars map[uint64][]exemplar.Exemplar
 }
 
@@ -307,7 +307,7 @@ func newLoadCmd(gap time.Duration) *loadCmd {
 	return &loadCmd{
 		gap:       gap,
 		metrics:   map[uint64]labels.Labels{},
-		defs:      map[uint64][]FPoint{},
+		defs:      map[uint64][]Sample{},
 		exemplars: map[uint64][]exemplar.Exemplar{},
 	}
 }
@@ -320,13 +320,14 @@ func (cmd loadCmd) String() string {
 func (cmd *loadCmd) set(m labels.Labels, vals ...parser.SequenceValue) {
 	h := m.Hash()
 
-	samples := make([]FPoint, 0, len(vals))
+	samples := make([]Sample, 0, len(vals))
 	ts := testStartTime
 	for _, v := range vals {
 		if !v.Omitted {
-			samples = append(samples, FPoint{
+			samples = append(samples, Sample{
 				T: ts.UnixNano() / int64(time.Millisecond/time.Nanosecond),
 				F: v.Value,
+				H: v.Histogram,
 			})
 		}
 		ts = ts.Add(cmd.gap)
@@ -341,8 +342,14 @@ func (cmd *loadCmd) append(a storage.Appender) error {
 		m := cmd.metrics[h]
 
 		for _, s := range smpls {
-			if _, err := a.Append(0, m, s.T, s.F); err != nil {
-				return err
+			if s.H != nil {
+				if _, err := a.AppendHistogram(0, m, s.T, nil, s.H); err != nil {
+					return err
+				}
+			} else {
+				if _, err := a.Append(0, m, s.T, s.F); err != nil {
+					return err
+				}
 			}
 		}
 	}
