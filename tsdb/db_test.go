@@ -3147,6 +3147,9 @@ func TestOpen_VariousBlockStates(t *testing.T) {
 	tmpCheckpointDir := path.Join(tmpDir, "wal/checkpoint.00000001.tmp")
 	err := os.MkdirAll(tmpCheckpointDir, 0o777)
 	require.NoError(t, err)
+	tmpChunkSnapshotDir := path.Join(tmpDir, chunkSnapshotPrefix+"0000.00000001.tmp")
+	err = os.MkdirAll(tmpChunkSnapshotDir, 0o777)
+	require.NoError(t, err)
 
 	opts := DefaultOptions()
 	opts.RetentionDuration = 0
@@ -3179,6 +3182,8 @@ func TestOpen_VariousBlockStates(t *testing.T) {
 	}
 	require.Equal(t, len(expectedIgnoredDirs), ignored)
 	_, err = os.Stat(tmpCheckpointDir)
+	require.True(t, os.IsNotExist(err))
+	_, err = os.Stat(tmpChunkSnapshotDir)
 	require.True(t, os.IsNotExist(err))
 }
 
