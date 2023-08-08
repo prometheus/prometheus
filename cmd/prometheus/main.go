@@ -47,6 +47,7 @@ import (
 	promlogflag "github.com/prometheus/common/promlog/flag"
 	"github.com/prometheus/common/version"
 	toolkit_web "github.com/prometheus/exporter-toolkit/web"
+	"github.com/prometheus/prometheus/util/fswatch"
 	"go.uber.org/atomic"
 	"go.uber.org/automaxprocs/maxprocs"
 	"k8s.io/klog"
@@ -128,7 +129,9 @@ func agentOnlyFlag(app *kingpin.Application, name, help string) *kingpin.FlagCla
 }
 
 type flagConfig struct {
-	configFile string
+	configFile          string
+	configWatchInterval model.Duration
+	configWatchDelay    model.Duration
 
 	agentStoragePath    string
 	serverStoragePath   string
@@ -252,6 +255,19 @@ func main() {
 
 	a.Flag("config.file", "Prometheus configuration file path.").
 		Default("prometheus.yml").StringVar(&cfg.configFile)
+
+	a.Flag("config.watch-interval", "For non-zero duration, Prometheus will watch for configuration file changes, "+
+		"as well as, previously specified rule changes and scrape config file changes. Once changes are noticed,"+
+		"and after delay specified in --config.watch-delay, Prometheus will self-reload. "+
+		"Change detection is done through filesystem inotify with the regular interval specified in the flag, as well as, checksum validation."+
+		"With this flag, there is no need to reload Prometheus on configuration changes from the outside.").
+		Default("0").SetValue(&cfg.configWatchInterval)
+
+	a.Flag("config.watch-delay", "The duration between noticing the configuration changes "+
+		"and Prometheus self-reloading. Needed for throttling reloads which can be expensive."+
+		"For automation that updates configuration it's common to update file one by one within seconds."+
+		"Delay allows waiting some time to perform one reload for multiple small changes within short period").
+		Default("30s").SetValue(&cfg.configWatchDelay)
 
 	a.Flag("web.listen-address", "Address to listen on for UI, API, and telemetry.").
 		Default("0.0.0.0:9090").StringVar(&cfg.web.ListenAddress)
@@ -723,6 +739,18 @@ func main() {
 	// This is passed to ruleManager.Update().
 	externalURL := cfg.web.ExternalURL.String()
 
+	var configWatcher *fswatch.Watch
+	if cfg.configWatchInterval > 0 {
+		configWatcher = fswatch.New(
+			prometheus.DefaultRegisterer,
+			"config",
+			logger,
+			time.Duration(cfg.configWatchInterval),
+			time.Duration(cfg.configWatchDelay),
+		)
+		configWatcher.AddFiles(context.TODO(), cfg.configFile)
+	}
+
 	reloaders := []reloader{
 		{
 			name:     "db_storage",
@@ -813,6 +841,44 @@ func main() {
 			name:     "tracing",
 			reloader: tracingManager.ApplyConfig,
 		},
+	}
+
+	if configWatcher != nil {
+		reloaders = append(reloaders, reloader{
+			name: configWatcher.Name(),
+			reloader: func(c *config.Config) error {
+				if agentMode {
+					// No-op in Agent mode
+					return nil
+				}
+
+				ctx := context.TODO()
+				if err := configWatcher.Reset(ctx); err != nil {
+					return err
+				}
+				if err := configWatcher.AddFiles(ctx, cfg.configFile); err != nil {
+					return err
+				}
+
+				// Get all rule files matching the configuration paths.
+				var files []string
+				for _, pat := range c.RuleFiles {
+					fs, err := filepath.Glob(pat)
+					if err != nil {
+						// The only error can be a bad pattern.
+						return fmt.Errorf("error retrieving rule files for %s: %w", pat, err)
+					}
+					files = append(files, fs...)
+				}
+
+				if err := configWatcher.AddFiles(ctx, files...); err != nil {
+					return err
+				}
+
+				// TODO: Add scrape config files
+				return nil
+			},
+		})
 	}
 
 	prometheus.MustRegister(configSuccess)
@@ -941,6 +1007,20 @@ func main() {
 			},
 		)
 	}
+	// Optional configuration file watcher.
+	if configWatcher != nil {
+		ctx, cancel := context.WithCancel(context.Background())
+		g.Add(
+			func() error {
+				<-reloadReady.C
+				configWatcher.Run(ctx)
+				return nil
+			},
+			func(err error) {
+				cancel()
+			},
+		)
+	}
 	{
 		// Tracing manager.
 		g.Add(
@@ -971,6 +1051,7 @@ func main() {
 					case <-hup:
 						if err := reloadConfig(cfg.configFile, cfg.enableExpandExternalLabels, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, reloaders...); err != nil {
 							level.Error(logger).Log("msg", "Error reloading config", "err", err)
+							// TODO: metric?
 						}
 					case rc := <-webHandler.Reload():
 						if err := reloadConfig(cfg.configFile, cfg.enableExpandExternalLabels, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, reloaders...); err != nil {
@@ -978,6 +1059,11 @@ func main() {
 							rc <- err
 						} else {
 							rc <- nil
+						}
+					case <-configWatcher.FilesChanged():
+						if err := reloadConfig(cfg.configFile, cfg.enableExpandExternalLabels, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, reloaders...); err != nil {
+							level.Error(logger).Log("msg", "Error reloading config after watcher notification", "err", err)
+							// TODO: metric?
 						}
 					case <-cancel:
 						return nil
