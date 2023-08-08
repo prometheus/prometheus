@@ -521,49 +521,44 @@ func (p *parser) buildHistogramFromMap(desc *map[string]interface{}) (ret *histo
 		}
 	}
 
-	bucketCount := 0
-	val, ok = (*desc)["buckets"]
-	if ok {
-		buckets, ok := val.([]float64)
-		if ok {
-			output.PositiveBuckets = buckets
-			bucketCount = len(buckets)
-		} else {
-			p.addParseErrf(p.yyParser.lval.item.PositionRange(), "error parsing buckets float array: %v", val)
-		}
-	}
-	val, ok = (*desc)["offset"]
-	if ok {
-		offset, ok := val.(int64)
-		if ok {
-			output.PositiveSpans = []histogram.Span{{Offset: int32(offset), Length: uint32(bucketCount)}}
-		} else {
-			p.addParseErrf(p.yyParser.lval.item.PositionRange(), "error parsing offset number: %v", val)
-		}
-	}
+	buckets, spans := p.buildHistogramBucketsAndSpans(desc, "buckets", "offset")
+	output.PositiveBuckets = buckets
+	output.PositiveSpans = spans
 
-	negativeBucketCount := 0
-	val, ok = (*desc)["n_buckets"]
-	if ok {
-		buckets, ok := val.([]float64)
-		if ok {
-			output.NegativeBuckets = buckets
-			negativeBucketCount = len(buckets)
-		} else {
-			p.addParseErrf(p.yyParser.lval.item.PositionRange(), "error parsing n_buckets float array: %v", val)
-		}
-	}
-	val, ok = (*desc)["n_offset"]
-	if ok {
-		offset, ok := val.(int64)
-		if ok {
-			output.NegativeSpans = []histogram.Span{{Offset: int32(offset), Length: uint32(negativeBucketCount)}}
-		} else {
-			p.addParseErrf(p.yyParser.lval.item.PositionRange(), "error parsing n_offset number: %v", val)
-		}
-	}
+	buckets, spans = p.buildHistogramBucketsAndSpans(desc, "n_buckets", "n_offset")
+	output.NegativeBuckets = buckets
+	output.NegativeSpans = spans
 
 	return output
+}
+
+func (p *parser) buildHistogramBucketsAndSpans(desc *map[string]interface{}, bucketsKey string, offsetKey string,
+) (buckets []float64, spans []histogram.Span) {
+	bucketCount := 0
+	val, ok := (*desc)[bucketsKey]
+	if ok {
+		val, ok := val.([]float64)
+		if ok {
+			buckets = val
+			bucketCount = len(buckets)
+		} else {
+			p.addParseErrf(p.yyParser.lval.item.PositionRange(), "error parsing %s float array: %v", bucketsKey, val)
+		}
+	}
+	offset := int32(0)
+	val, ok = (*desc)[offsetKey]
+	if ok {
+		val, ok := val.(int64)
+		if ok {
+			offset = int32(val)
+		} else {
+			p.addParseErrf(p.yyParser.lval.item.PositionRange(), "error parsing %s number: %v", offsetKey, val)
+		}
+	}
+	if bucketCount > 0 {
+		spans = []histogram.Span{{Offset: offset, Length: uint32(bucketCount)}}
+	}
+	return
 }
 
 // parses an integer for histogram unit tests

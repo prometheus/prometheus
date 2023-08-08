@@ -166,7 +166,7 @@ START_METRIC_SELECTOR
 %type <label> label_set_item
 %type <strings> grouping_label_list grouping_labels maybe_grouping_labels
 %type <series> series_item series_values
-%type <histogram> histogram_desc_set
+%type <histogram> histogram_desc_sum histogram_desc_set
 %type <descriptors> histogram_desc_map histogram_desc_item
 %type <bucket_set> bucket_set bucket_set_list
 %type <int> int
@@ -678,11 +678,11 @@ series_item     : BLANK
                                 $1 += $2
                         }
                         }
-                | histogram_desc_set
+                | histogram_desc_sum
                         {
                         $$ = []SequenceValue{{Histogram:$1}}
                         }
-                | histogram_desc_set TIMES uint
+                | histogram_desc_sum TIMES uint
                         {
                         $$ = []SequenceValue{}
                         for i:=uint64(0); i < $3; i++{
@@ -707,6 +707,21 @@ series_value    : IDENTIFIER
 /*
  * Histogram descriptions (part of unit testing)
  */
+histogram_desc_sum
+                : histogram_desc_sum ADD histogram_desc_set
+		{
+		  $$ = $1.Add($3)
+		}
+		|
+		histogram_desc_set
+		{
+		  $$ = $1
+		}
+		|
+		histogram_desc_sum error
+		{
+		  yylex.(*parser).unexpected("histogram description", "histogram description key, e.g. buckets:[5 10 7]")
+		}
 histogram_desc_set
                 : OPEN_HIST histogram_desc_map SPACE CLOSE_HIST
                 {

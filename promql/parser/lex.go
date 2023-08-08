@@ -505,11 +505,11 @@ func lexHistogram(l *Lexer) stateFn {
 		l.next()
 		l.emit(TIMES)
 		return lexNumber
-		//todo check for +
-		//l.histogramState = histogramStateNone
-		//return lexStatements
 	case histogramStateAdd:
-		//todo
+		l.histogramState = histogramStateNone
+		l.next()
+		l.emit(ADD)
+		return lexValueSequence
 	}
 
 	if l.bracketOpen {
@@ -545,11 +545,9 @@ func lexHistogram(l *Lexer) stateFn {
 		case 'x':
 			l.histogramState = histogramStateMul
 			return lexHistogram
-		case '+': //todo
-			l.next()
-			l.emit(ADD)
+		case '+':
 			l.histogramState = histogramStateAdd
-			fallthrough
+			return lexHistogram
 		default:
 			l.histogramState = histogramStateNone
 			return lexStatements
@@ -588,7 +586,7 @@ Loop:
 }
 
 func lexBuckets(l *Lexer) stateFn {
-	lexPrintln("Entering lexInsideBraces", string(l.peek()))
+	lexPrintln("Entering lexBuckets", string(l.peek()))
 	switch r := l.next(); {
 	case isSpace(r):
 		l.emit(SPACE) // TODO: Maybe remove this emission as we don't care if the spaces are there, just that there's a sequence of numbers.

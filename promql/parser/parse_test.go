@@ -3700,6 +3700,7 @@ func newSeq(vals ...float64) (res []SequenceValue) {
 
 func TestParseHistogramSeries(t *testing.T) {
 	//todo error test cases
+	//schema has to match for addition
 	for _, test := range []struct {
 		name          string
 		input         string
@@ -3741,10 +3742,50 @@ func TestParseHistogramSeries(t *testing.T) {
 				{
 					Schema:          1,
 					PositiveBuckets: []float64{5, 10, 7},
+					PositiveSpans: []histogram.Span{{
+						Offset: 0,
+						Length: 3,
+					}},
 				},
 				{
 					Schema:          1,
 					PositiveBuckets: []float64{5, 10, 7},
+					PositiveSpans: []histogram.Span{{
+						Offset: 0,
+						Length: 3,
+					}},
+				},
+			},
+		}, {
+			name:  "addition",
+			input: `{} {{buckets:[5 10 7] schema:1}}+{{buckets:[1 2 3] schema:1}}`,
+			expected: []histogram.FloatHistogram{{
+				Schema:          1,
+				PositiveBuckets: []float64{6, 12, 10},
+				PositiveSpans: []histogram.Span{{
+					Offset: 0,
+					Length: 3,
+				}},
+			}},
+		}, {
+			name:  "addition and multiplication",
+			input: `{} {{buckets:[5 10 7] schema:1}}+{{buckets:[1 2 3] schema:1}}x2`,
+			expected: []histogram.FloatHistogram{
+				{
+					Schema:          1,
+					PositiveBuckets: []float64{6, 12, 10},
+					PositiveSpans: []histogram.Span{{
+						Offset: 0,
+						Length: 3,
+					}},
+				},
+				{
+					Schema:          1,
+					PositiveBuckets: []float64{6, 12, 10},
+					PositiveSpans: []histogram.Span{{
+						Offset: 0,
+						Length: 3,
+					}},
 				},
 			},
 		}, {
@@ -3753,6 +3794,10 @@ func TestParseHistogramSeries(t *testing.T) {
 			expected: []histogram.FloatHistogram{{
 				Schema:          1,
 				PositiveBuckets: []float64{5, 10, 7},
+				PositiveSpans: []histogram.Span{{
+					Offset: 0,
+					Length: 3,
+				}},
 			}},
 		},
 	} {
