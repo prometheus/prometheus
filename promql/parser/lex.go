@@ -588,7 +588,7 @@ func lexBuckets(l *Lexer) stateFn {
 	lexPrintln("Entering lexBuckets", string(l.peek()))
 	switch r := l.next(); {
 	case isSpace(r):
-		l.emit(SPACE) // TODO: Maybe remove this emission as we don't care if the spaces are there, just that there's a sequence of numbers.
+		l.emit(SPACE)
 		return lexSpace
 	case isDigit(r):
 		l.backup()

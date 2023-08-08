@@ -666,14 +666,16 @@ series_item     : BLANK
                 | series_value TIMES uint
                         {
                         $$ = []SequenceValue{}
-                        for i:=uint64(0); i <= $3; i++{   //todo should be <
+                        // add an additional value for time 0, which we ignore in tests
+                        for i:=uint64(0); i <= $3; i++{
                                 $$ = append($$, SequenceValue{Value: $1})
                         }
                         }
                 | series_value signed_number TIMES uint
                         {
                         $$ = []SequenceValue{}
-                        for i:=uint64(0); i <= $4; i++{    //todo should be <
+                        // add an additional value for time 0, which we ignore in tests
+                        for i:=uint64(0); i <= $4; i++{
                                 $$ = append($$, SequenceValue{Value: $1})
                                 $1 += $2
                         }
