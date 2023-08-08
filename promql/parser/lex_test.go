@@ -512,7 +512,8 @@ var tests = []struct {
 					{CLOSE_HIST, 16, `}}`},
 				},
 				seriesDesc: true,
-			}, {
+			},
+			{
 				input: `{} {{buckets: [5 10 7]}}`,
 				expected: []Item{
 					{LEFT_BRACE, 0, `{`},

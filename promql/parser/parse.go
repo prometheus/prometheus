@@ -537,7 +537,7 @@ func (p *parser) buildHistogramFromMap(desc *map[string]interface{}) *histogram.
 	return output
 }
 
-func (p *parser) buildHistogramBucketsAndSpans(desc *map[string]interface{}, bucketsKey string, offsetKey string,
+func (p *parser) buildHistogramBucketsAndSpans(desc *map[string]interface{}, bucketsKey, offsetKey string,
 ) (buckets []float64, spans []histogram.Span) {
 	bucketCount := 0
 	val, ok := (*desc)[bucketsKey]
