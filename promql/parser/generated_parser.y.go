@@ -1685,7 +1685,7 @@ yydefault:
 //line promql/parser/generated_parser.y:665
 		{
 			yyVAL.series = []SequenceValue{}
-			for i := uint64(0); i <= yyDollar[3].uint; i++ {
+			for i := uint64(0); i <= yyDollar[3].uint; i++ { //todo should be <
 				yyVAL.series = append(yyVAL.series, SequenceValue{Value: yyDollar[1].float})
 			}
 		}
@@ -1694,7 +1694,7 @@ yydefault:
 //line promql/parser/generated_parser.y:672
 		{
 			yyVAL.series = []SequenceValue{}
-			for i := uint64(0); i <= yyDollar[4].uint; i++ {
+			for i := uint64(0); i <= yyDollar[4].uint; i++ { //todo should be <
 				yyVAL.series = append(yyVAL.series, SequenceValue{Value: yyDollar[1].float})
 				yyDollar[1].float += yyDollar[2].float
 			}
@@ -1710,7 +1710,7 @@ yydefault:
 //line promql/parser/generated_parser.y:684
 		{
 			yyVAL.series = []SequenceValue{}
-			for i := uint64(0); i <= yyDollar[3].uint; i++ {
+			for i := uint64(0); i < yyDollar[3].uint; i++ {
 				yyVAL.series = append(yyVAL.series, SequenceValue{Histogram: yyDollar[1].histogram})
 				//$1 += $2
 			}

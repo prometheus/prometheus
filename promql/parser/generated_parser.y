@@ -666,14 +666,14 @@ series_item     : BLANK
                 | series_value TIMES uint
                         {
                         $$ = []SequenceValue{}
-                        for i:=uint64(0); i <= $3; i++{
+                        for i:=uint64(0); i <= $3; i++{   //todo should be <
                                 $$ = append($$, SequenceValue{Value: $1})
                         }
                         }
                 | series_value signed_number TIMES uint
                         {
                         $$ = []SequenceValue{}
-                        for i:=uint64(0); i <= $4; i++{
+                        for i:=uint64(0); i <= $4; i++{    //todo should be <
                                 $$ = append($$, SequenceValue{Value: $1})
                                 $1 += $2
                         }
@@ -685,7 +685,7 @@ series_item     : BLANK
                 | histogram_desc_set TIMES uint
                         {
                         $$ = []SequenceValue{}
-                        for i:=uint64(0); i <= $3; i++{
+                        for i:=uint64(0); i < $3; i++{
                                 $$ = append($$, SequenceValue{Histogram:$1})
                                 //$1 += $2
                         }

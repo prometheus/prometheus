@@ -244,6 +244,15 @@ type stateFn func(*Lexer) stateFn
 // Negative numbers indicate undefined positions.
 type Pos int
 
+type histogramState int
+
+const (
+	histogramStateNone histogramState = iota
+	histogramStateOpen
+	histogramStateMul
+	histogramStateAdd
+)
+
 // Lexer holds the state of the scanner.
 type Lexer struct {
 	input       string  // The string being scanned.
@@ -255,12 +264,12 @@ type Lexer struct {
 	itemp       *Item   // Pointer to where the next scanned item should be placed.
 	scannedItem bool    // Set to true every time an item is scanned.
 
-	parenDepth        int  // Nesting depth of ( ) exprs.
-	braceOpen         bool // Whether a { is opened.
-	bracketOpen       bool // Whether a [ is opened.
-	gotColon          bool // Whether we got a ':' after [ was opened.
-	stringOpen        rune // Quote rune of the string currently being read.
-	histogramDescOpen bool // (Unit Tests Only) Determines whether or not inside of a histogram description.
+	parenDepth     int            // Nesting depth of ( ) exprs.
+	braceOpen      bool           // Whether a { is opened.
+	bracketOpen    bool           // Whether a [ is opened.
+	gotColon       bool           // Whether we got a ':' after [ was opened.
+	stringOpen     rune           // Quote rune of the string currently being read.
+	histogramState histogramState // (Unit Tests Only) Determines whether or not inside of a histogram description.
 	// seriesDesc is set when a series description for the testing
 	// language is lexed.
 	seriesDesc bool
@@ -361,7 +370,7 @@ const lineComment = "#"
 // lexStatements is the top-level state for lexing.
 func lexStatements(l *Lexer) stateFn {
 	lexPrintln("Entering lexStatements:", string(l.peek()))
-	if l.histogramDescOpen {
+	if l.histogramState != histogramStateNone {
 		return lexHistogram
 	}
 	if l.braceOpen {
@@ -490,6 +499,19 @@ func lexStatements(l *Lexer) stateFn {
 
 func lexHistogram(l *Lexer) stateFn {
 	lexPrintln("Entering lexHistogram", string(l.peek()))
+	switch l.histogramState {
+	case histogramStateMul:
+		l.histogramState = histogramStateNone
+		l.next()
+		l.emit(TIMES)
+		return lexNumber
+		//todo check for +
+		//l.histogramState = histogramStateNone
+		//return lexStatements
+	case histogramStateAdd:
+		//todo
+	}
+
 	if l.bracketOpen {
 		return lexBuckets
 	}
@@ -506,6 +528,9 @@ func lexHistogram(l *Lexer) stateFn {
 	case r == '-':
 		l.emit(SUB)
 		return lexNumber
+	case r == 'x':
+		l.emit(TIMES)
+		return lexNumber
 	case isDigit(r):
 		l.backup()
 		return lexNumber
@@ -514,10 +539,21 @@ func lexHistogram(l *Lexer) stateFn {
 		l.emit(LEFT_BRACKET)
 		return lexBuckets
 	case r == '}' && l.peek() == '}':
-		l.histogramDescOpen = false
 		l.next()
 		l.emit(CLOSE_HIST)
-		return lexStatements
+		switch l.peek() {
+		case 'x':
+			l.histogramState = histogramStateMul
+			return lexHistogram
+		case '+': //todo
+			l.next()
+			l.emit(ADD)
+			l.histogramState = histogramStateAdd
+			fallthrough
+		default:
+			l.histogramState = histogramStateNone
+			return lexStatements
+		}
 	default:
 		return l.errorf("histogram description incomplete unexpected: %q", r)
 	}
@@ -628,17 +664,17 @@ func lexInsideBraces(l *Lexer) stateFn {
 // lexValueSequence scans a value sequence of a series description.
 func lexValueSequence(l *Lexer) stateFn {
 	lexPrintln("Entering lexValueSequence", string(l.peek()))
-	if l.histogramDescOpen {
+	if l.histogramState != histogramStateNone {
 		return lexHistogram
 	}
 	switch r := l.next(); {
 	case r == eof:
 		return lexStatements
 	case r == '{' && l.peek() == '{':
-		if l.histogramDescOpen {
+		if l.histogramState != histogramStateNone {
 			return l.errorf("unexpected histogram opening {{")
 		}
-		l.histogramDescOpen = true
+		l.histogramState = histogramStateOpen
 		l.next()
 		l.emit(OPEN_HIST)
 		return lexHistogram

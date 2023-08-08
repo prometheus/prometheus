@@ -3703,27 +3703,27 @@ func TestParseHistogramSeries(t *testing.T) {
 	for _, test := range []struct {
 		name          string
 		input         string
-		expected      *histogram.FloatHistogram
+		expected      []histogram.FloatHistogram
 		expectedError string
 	}{
 		{
 			name:  "all properties used",
-			input: `{} {{schema:1 sum:0.3 count:3 z_bucket:7 z_bucket_w:5 buckets:[5 10 7] offset:-3 n_buckets:[4 5] n_offset:5}}`,
-			expected: &histogram.FloatHistogram{
+			input: `{} {{schema:1 sum:-0.3 count:3 z_bucket:7 z_bucket_w:5 buckets:[5 10 7] offset:-3 n_buckets:[4 5] n_offset:-5}}`,
+			expected: []histogram.FloatHistogram{{
 				Schema:          1,
-				Sum:             0.3,
+				Sum:             -0.3,
 				Count:           3,
 				ZeroCount:       7,
 				ZeroThreshold:   5,
 				PositiveBuckets: []float64{5, 10, 7},
 				PositiveSpans:   []histogram.Span{{Offset: -3, Length: 3}},
 				NegativeBuckets: []float64{4, 5},
-				NegativeSpans:   []histogram.Span{{Offset: 5, Length: 2}},
-			},
+				NegativeSpans:   []histogram.Span{{Offset: -5, Length: 2}},
+			}},
 		}, {
 			name:  "all properties used - with spaces",
 			input: `{} {{schema:1  sum:0.3  count:3  z_bucket:7 z_bucket_w:5 buckets:[5 10  7  ] offset:-3  n_buckets:[4 5]  n_offset:5  }}`,
-			expected: &histogram.FloatHistogram{
+			expected: []histogram.FloatHistogram{{
 				Schema:          1,
 				Sum:             0.3,
 				Count:           3,
@@ -3733,20 +3733,27 @@ func TestParseHistogramSeries(t *testing.T) {
 				PositiveSpans:   []histogram.Span{{Offset: -3, Length: 3}},
 				NegativeBuckets: []float64{4, 5},
 				NegativeSpans:   []histogram.Span{{Offset: 5, Length: 2}},
-			},
+			}},
 		}, {
-			name:  "negative number",
-			input: `{} {{schema:-1}}`,
-			expected: &histogram.FloatHistogram{
-				Schema: -1,
+			name:  "multiplication",
+			input: `{} {{buckets:[5 10 7] schema:1}}x2`,
+			expected: []histogram.FloatHistogram{
+				{
+					Schema:          1,
+					PositiveBuckets: []float64{5, 10, 7},
+				},
+				{
+					Schema:          1,
+					PositiveBuckets: []float64{5, 10, 7},
+				},
 			},
 		}, {
 			name:  "different order",
 			input: `{} {{buckets:[5 10 7] schema:1}}`,
-			expected: &histogram.FloatHistogram{
+			expected: []histogram.FloatHistogram{{
 				Schema:          1,
 				PositiveBuckets: []float64{5, 10, 7},
-			},
+			}},
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -3756,8 +3763,11 @@ func TestParseHistogramSeries(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			require.Lenf(t, vals, 1, "expected 1 value, got %d", len(vals))
-			require.Equal(t, test.expected, vals[0].Histogram)
+			var got []histogram.FloatHistogram
+			for _, v := range vals {
+				got = append(got, *v.Histogram)
+			}
+			require.Equal(t, test.expected, got)
 		})
 	}
 }
