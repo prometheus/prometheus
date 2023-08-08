@@ -6,6 +6,7 @@
 #define XXH_INLINE_ALL
 #include "third_party/xxhash/xxhash.h"
 
+#include "bare_bones/exception.h"
 #include "bare_bones/snug_composite.h"
 #include "bare_bones/stream_v_byte.h"
 #include "bare_bones/vector.h"
@@ -94,8 +95,11 @@ class Symbol {
     void load(InputStream& in) {
       // read version
       uint8_t version = in.get();
-      if (version != 1)
-        throw std::runtime_error("Q: Meaningful message supposed to be here!");
+      if (version != 1) {
+        std::stringstream ss;
+        ss << "Invalid stream data version (" << version << ") for loading into data vector (Symbol::data_type), only version 1 is supported";
+        throw BareBones::Exception(0x67c010edbd64e272, ss.str());
+      }
 
       // read mode
       BareBones::SnugComposite::SerializationMode mode = static_cast<BareBones::SnugComposite::SerializationMode>(in.get());
@@ -108,11 +112,13 @@ class Symbol {
 
       if (first_to_load_i != size()) {
         if (mode == BareBones::SnugComposite::SerializationMode::SNAPSHOT) {
-          throw std::runtime_error("S: Meaningful message supposed to be here!");
+          throw BareBones::Exception(0x4c0ca0586da6da3f, "Attempt to load snapshot into non-empty data vector");
         } else if (first_to_load_i < size()) {
-          throw std::runtime_error("T: Meaningful message supposed to be here!");
+          throw BareBones::Exception(0x55cb9b02c23f7bbc, "Attempt to load segment over existing data");
         } else {
-          throw std::runtime_error("U: Meaningful message supposed to be here!");
+          std::stringstream ss;
+          ss << "Attempt to load incomplete data from segment, data vector length (" << size() << ") is less than segment size (" << first_to_load_i << ")";
+          throw BareBones::Exception(0x55cb9b02c23f7bbc, ss.str());
         }
       }
 
@@ -137,8 +143,9 @@ class Symbol {
   inline __attribute__((always_inline)) composite_type composite(const data_type& data) const noexcept { return std::string_view(data.data() + pos_, length_); }
 
   inline __attribute__((always_inline)) void validate(const data_type& data) const {
-    if (pos_ + length_ > data.size())
-      throw std::runtime_error("V: Meaningful message supposed to be here!");
+    if (pos_ + length_ > data.size()) {
+      throw BareBones::Exception(0x75555f55ebe357a3, "Data Symbol validation error: expected Symbol length is out of data vector range");
+    }
   }
 
   inline __attribute__((always_inline)) const uint32_t length() const noexcept { return length_; }
@@ -258,8 +265,11 @@ class LabelNameSet {
     void load(InputStream& in) {
       // read version
       uint8_t version = in.get();
-      if (version != 1)
-        throw std::runtime_error("W: Meaningful message supposed to be here!");
+      if (version != 1) {
+        std::stringstream ss;
+        ss << "Invalid stream data version (" << version << ") for loading into LabelSetNames::data_type vector, only version 1 is supported";
+        throw BareBones::Exception(0xe7b943f626c40350, ss.str());
+      }
 
       // read mode
       BareBones::SnugComposite::SerializationMode mode = static_cast<BareBones::SnugComposite::SerializationMode>(in.get());
@@ -271,11 +281,14 @@ class LabelNameSet {
       }
       if (first_to_load_i != symbols_ids_sequences.size()) {
         if (mode == BareBones::SnugComposite::SerializationMode::SNAPSHOT) {
-          throw std::runtime_error("X: Meaningful message supposed to be here!");
+          throw BareBones::Exception(0x484607065485b4ab, "Attempt to load snapshot into non-empty LabelSetNames data vector");
         } else if (first_to_load_i < symbols_ids_sequences.size()) {
-          throw std::runtime_error("Y: Meaningful message supposed to be here!");
+          throw BareBones::Exception(0xc042fdcb4b149d95, "Attempt to load segment over existing LabelSetNames data");
         } else {
-          throw std::runtime_error("Z: Meaningful message supposed to be here!");
+          std::stringstream ss;
+          ss << "Attempt to load incomplete data from segment, LabelSetNames data vector length (" << symbols_ids_sequences.size()
+             << ") is less than segment size (" << first_to_load_i << ")";
+          throw BareBones::Exception(0x79995816e0a9690b, ss.str());
         }
       }
 
@@ -338,12 +351,14 @@ class LabelNameSet {
   }
 
   inline __attribute__((always_inline)) void validate(const data_type& data) const {
-    if (pos_ + size_ > data.symbols_ids_sequences.size())
-      throw std::runtime_error("AA: Meaningful message supposed to be here!");
+    if (pos_ + size_ > data.symbols_ids_sequences.size()) {
+      throw BareBones::Exception(0x45e8bdc1455fd8e4, "LabelSetNames data validation error: expected LabelSetNames length is out of data vector range");
+    }
 
     for (auto i = data.symbols_ids_sequences.begin() + pos_; i != data.symbols_ids_sequences.begin() + pos_ + size_; ++i) {
-      if (*i >= data.symbols_table.size())
-        throw std::runtime_error("AB: Meaningful message supposed to be here!");
+      if (*i >= data.symbols_table.size()) {
+        throw BareBones::Exception(0x218410dde097cc6b, "LabelSetNames data validation error: expected LabelSetNames length is out of data symbols table range");
+      }
     }
   }
 };
@@ -553,8 +568,11 @@ class LabelSet {
     void load(InputStream& in) {
       // read version
       uint8_t version = in.get();
-      if (version != 1)
-        throw std::runtime_error("AC: Meaningful message supposed to be here!");
+      if (version != 1) {
+        std::stringstream ss;
+        ss << "Invalid stream data version (" << version << ") for loading LabelSets into data vector, only version 1 is supported";
+        throw BareBones::Exception(0x7524f0b0ab963554, ss.str());
+      }
 
       // read mode
       BareBones::SnugComposite::SerializationMode mode = static_cast<BareBones::SnugComposite::SerializationMode>(in.get());
@@ -566,11 +584,14 @@ class LabelSet {
       }
       if (first_to_load_i != symbols_ids_sequences.size()) {
         if (mode == BareBones::SnugComposite::SerializationMode::SNAPSHOT) {
-          throw std::runtime_error("AE: Meaningful message supposed to be here!");
+          throw BareBones::Exception(0xefdd57cef4b89243, "Attempt to load snapshot into non-empty LabelSets data vector");
         } else if (first_to_load_i < symbols_ids_sequences.size()) {
-          throw std::runtime_error("AF: Meaningful message supposed to be here!");
+          throw BareBones::Exception(0xfead3117c5a549bd, "Attempt to load segment over existing LabelSets data");
         } else {
-          throw std::runtime_error("AG: Meaningful message supposed to be here!");
+          std::stringstream ss;
+          ss << "Attempt to load incomplete data from segment, LabelSets data vector length (" << symbols_ids_sequences.size()
+             << ") is less than segment size (" << first_to_load_i << ")";
+          throw BareBones::Exception(0xbb996a8ffbcbb53b, ss.str());
         }
       }
 
@@ -765,26 +786,31 @@ class LabelSet {
   }
 
   inline __attribute__((always_inline)) void validate(const data_type& data) const {
-    if (lns_id_ >= data.label_name_sets_table.size())
-      throw std::runtime_error("AH: Meaningful message supposed to be here!");
+    if (lns_id_ >= data.label_name_sets_table.size()) {
+      throw BareBones::Exception(0x48dd6c9d357d3a7e, "LabelSets data validation error: expected LabelSets length is out of label name sets table vector range");
+    }
 
     const auto& lns = data.label_name_sets_table[lns_id_];
 
     // check that streamvbyte keys are in range
     auto keys_size = BareBones::StreamVByte::keys_size(lns.size());
-    if (pos_ + keys_size > data.symbols_ids_sequences.size())
-      throw std::runtime_error("AI: Meaningful message supposed to be here!");
+    if (pos_ + keys_size > data.symbols_ids_sequences.size()) {
+      throw BareBones::Exception(0x22f5a82dd120e0e7, "LabelSets data validation error: expected LabelSets keys length is out of data symbols vector range");
+    }
 
     // check that streamvbyte data is in range
     auto data_size = BareBones::StreamVByte::decode_data_size<BareBones::StreamVByte::Codec1234>(lns.size(), data.symbols_ids_sequences.begin() + pos_);
-    if (pos_ + keys_size + data_size > data.symbols_ids_sequences.size())
-      throw std::runtime_error("AJ: Meaningful message supposed to be here!");
+    if (pos_ + keys_size + data_size > data.symbols_ids_sequences.size()) {
+      throw BareBones::Exception(0xd02e54dac8e1d328, "LabelSets data validation error: expected LabelSets values length is out of data symbols vector range");
+    }
 
     // check that all symbols are in range
     auto [values_begin, _] = BareBones::StreamVByte::decoder<BareBones::StreamVByte::Codec1234>(data.symbols_ids_sequences.begin() + pos_, lns.size());
     for (auto i = lns.begin(); i != lns.end(); ++i) {
-      if (*values_begin++ >= data.symbols_tables[i.id()]->size())
-        throw std::runtime_error("AK: Meaningful message supposed to be here!");
+      if (*values_begin++ >= data.symbols_tables[i.id()]->size()) {
+        throw BareBones::Exception(0x0f0c520ad6285f15,
+                                   "LabelSets data validation error: expected LabelSets symbols length is out of data symbols vector range");
+      }
     }
   }
 };
