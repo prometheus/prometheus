@@ -463,14 +463,28 @@ func (p *parser) newMap() (ret map[string]interface{}) {
 // This will merge the right map into the left map.
 func (p *parser) mergeMaps(left, right *map[string]interface{}) (ret *map[string]interface{}) {
 	for key, value := range *right {
+		if _, ok := (*left)[key]; ok {
+			p.addParseErrf(PositionRange{}, "duplicate key \"%s\" in histogram", key)
+			continue
+		}
 		(*left)[key] = value
 	}
 	return left
 }
 
+func (p *parser) mergeHistograms(left, right *histogram.FloatHistogram) (*histogram.FloatHistogram, error) {
+	if left.Schema != right.Schema {
+		return nil, fmt.Errorf("histogram schemas do not match: %d != %d", left.Schema, right.Schema)
+	}
+	if left.ZeroThreshold != right.ZeroThreshold {
+		return nil, fmt.Errorf("histogram z_bucket_w do not match: %d != %d", int(left.ZeroThreshold), int(right.ZeroThreshold))
+	}
+	return left.Add(right), nil
+}
+
 // This is used in the grammar to take then individual
 // parts of the histogram and complete it.
-func (p *parser) buildHistogramFromMap(desc *map[string]interface{}) (ret *histogram.FloatHistogram) {
+func (p *parser) buildHistogramFromMap(desc *map[string]interface{}) *histogram.FloatHistogram {
 	output := &histogram.FloatHistogram{}
 
 	val, ok := (*desc)["schema"]

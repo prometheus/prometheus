@@ -333,7 +333,6 @@ func (l *Lexer) acceptRun(valid string) {
 // back a nil pointer that will be the next state, terminating l.NextItem.
 func (l *Lexer) errorf(format string, args ...interface{}) stateFn {
 	*l.itemp = Item{ERROR, l.start, fmt.Sprintf(format, args...)}
-	fmt.Printf(format, args...)
 	l.scannedItem = true
 
 	return nil

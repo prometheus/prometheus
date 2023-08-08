@@ -710,7 +710,11 @@ series_value    : IDENTIFIER
 histogram_desc_sum
                 : histogram_desc_sum ADD histogram_desc_set
 		{
-		  $$ = $1.Add($3)
+		  val, err := yylex.(*parser).mergeHistograms($1,$3)
+		  if err != nil {
+		    yylex.(*parser).unexpected("histogram addition", err.Error())
+		  }
+		  $$ = val
 		}
 		|
 		histogram_desc_set

@@ -3699,8 +3699,6 @@ func newSeq(vals ...float64) (res []SequenceValue) {
 }
 
 func TestParseHistogramSeries(t *testing.T) {
-	//todo error test cases
-	//schema has to match for addition
 	for _, test := range []struct {
 		name          string
 		input         string
@@ -3768,6 +3766,14 @@ func TestParseHistogramSeries(t *testing.T) {
 				}},
 			}},
 		}, {
+			name:          "addition with different schemas",
+			input:         `{} {{buckets:[5 10 7] schema:1}}+{{buckets:[1 2 3] schema:2}}`,
+			expectedError: "1:60: parse error: unexpected \"}}\" in histogram addition, expected histogram schemas do not match: 1 != 2",
+		}, {
+			name:          "addition with different zero bucket widths",
+			input:         `{} {{buckets:[5 10 7] z_bucket_w:1}}+{{buckets:[1 2 3] z_bucket_w:2}}`,
+			expectedError: "1:68: parse error: unexpected \"}}\" in histogram addition, expected histogram z_bucket_w do not match: 1 != 2",
+		}, {
 			name:  "addition and multiplication",
 			input: `{} {{buckets:[5 10 7] schema:1}}+{{buckets:[1 2 3] schema:1}}x2`,
 			expected: []histogram.FloatHistogram{
@@ -3799,6 +3805,30 @@ func TestParseHistogramSeries(t *testing.T) {
 					Length: 3,
 				}},
 			}},
+		}, {
+			name:          "double property",
+			input:         `{} {{schema:1 schema:1}}`,
+			expectedError: "1:1: parse error: duplicate key \"schema\" in histogram",
+		}, {
+			name:          "unknown property",
+			input:         `{} {{foo:1}}`,
+			expectedError: "1:6: parse error: bad histogram descriptor found: \"foo\"",
+		}, {
+			name:          "space before :",
+			input:         `{} {{schema :1}}`,
+			expectedError: "1:6: parse error: missing `:` for histogram descriptor",
+		}, {
+			name:          "space after :",
+			input:         `{} {{schema: 1}}`,
+			expectedError: "1:13: parse error: unexpected \" \" in series values",
+		}, {
+			name:          "space after [",
+			input:         `{} {{buckets:[ 1]}}`,
+			expectedError: "1:15: parse error: unexpected \" \" in series values",
+		}, {
+			name:          "space after {{",
+			input:         `{} {{ schema:1}}`,
+			expectedError: "1:6: parse error: unexpected \" \" in series values",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
