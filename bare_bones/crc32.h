@@ -14,6 +14,7 @@
 
 #include <scope_exit.h>
 
+#include "bare_bones/exception.h"
 #include "bare_bones/streams.h"
 #include "bare_bones/type_traits.h"
 
@@ -133,8 +134,9 @@ class CRC32 {
       return in;
 
     // check version
-    if (version != 1)
-      throw std::runtime_error("G: Meaningful message supposed to be here!");
+    if (version != 1) {
+      throw BareBones::Exception(0x9eeec7c6c1b5a5ed, "Invalid version for CRC32 container, only version 1 is supported");
+    }
 
     auto original_exceptions = in.exceptions();
     auto sg2 = std::experimental::scope_exit([&]() { in.exceptions(original_exceptions); });

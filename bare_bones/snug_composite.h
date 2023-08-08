@@ -1,12 +1,15 @@
 #pragma once
 
 #include <fstream>
+#include <sstream>
+#include <string_view>
 
 #include <parallel_hashmap/btree.h>
 #include <parallel_hashmap/phmap.h>
 
 #include <scope_exit.h>
 
+#include "bare_bones/exception.h"
 #include "bare_bones/streams.h"
 #include "bare_bones/vector.h"
 
@@ -261,8 +264,8 @@ class DecodingTable {
     // check version
     if (version != 1) {
       char buf[100];
-      std::snprintf(buf, sizeof(buf), "unknown version %d", version);
-      throw std::logic_error(buf);
+      size_t l = std::snprintf(buf, sizeof(buf), "Invalid EncodingSequence version %d got from input stream, only version 1 is supported", version);
+      throw BareBones::Exception(0x343b7bcc6814f2d5, std::string_view(buf, l));
     }
 
     auto original_exceptions = in.exceptions();
@@ -279,11 +282,14 @@ class DecodingTable {
     }
     if (first_to_load_i != items_.size()) {
       if (mode == SerializationMode::SNAPSHOT) {
-        throw std::runtime_error("M: Meaningful message supposed to be here!");
+        throw BareBones::Exception(0x7bcd6011e39bbabc, "Attempt to load snapshot into non-empty DecodingTable");
       } else if (first_to_load_i < items_.size()) {
-        throw std::runtime_error("N: Meaningful message supposed to be here!");
+        throw BareBones::Exception(0x3387739a7b4f574a, "Attempt to load segment over existing DecodingTable data");
       } else {
-        throw std::runtime_error("O: Meaningful message supposed to be here!");
+        std::stringstream ss;
+        ss << "Attempt to load incomplete data from segment, DecodingTable data vector length (" << items_.size() << ") is less than segment size ("
+           << first_to_load_i << ")";
+        throw BareBones::Exception(0x4ece66e098927bc6, ss.str());
       }
     }
 
@@ -661,8 +667,9 @@ class OrderedDecodingTable : public DecodingTable<Filament> {
   inline __attribute__((always_inline)) uint32_t emplace_back(const Class& c) {
     uint32_t id = Base::items_.size();
 
-    if (id != 0 && c < back())
-      throw std::runtime_error("P: Meaningful message supposed to be here!");
+    if (id != 0 && c < back()) {
+      throw BareBones::Exception(0xf677f03159e75ee7, "Broken order of OrderedDecodingTable item emplacement");
+    }
 
     Base::items_.emplace_back(Base::data_, c);
 

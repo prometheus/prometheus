@@ -5,9 +5,11 @@
 #include <bit>
 #include <cstring>
 #include <fstream>
+#include <string_view>
 
 #include <scope_exit.h>
 
+#include "exception.h"
 #include "memory.h"
 #include "streams.h"
 #include "type_traits.h"
@@ -270,8 +272,8 @@ class Vector {
     // check version
     if (version != 1) {
       char buf[100];
-      std::snprintf(buf, sizeof(buf), "unknown version %d", version);
-      throw std::logic_error(buf);
+      size_t l = std::snprintf(buf, sizeof(buf), "Invalid vector format version %d while reading from stream, only version 1 is supported", version);
+      throw BareBones::Exception(0xe637da228c04829d, std::string_view(buf, l));
     }
 
     auto original_exceptions = in.exceptions();

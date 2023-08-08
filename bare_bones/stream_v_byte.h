@@ -1,10 +1,13 @@
 #pragma once
 
 #include <fstream>
+#include <sstream>
+#include <string_view>
 #include <utility>
 
 #include <scope_exit.h>
 
+#include "exception.h"
 #include "streams.h"
 #include "type_traits.h"
 #include "vector.h"
@@ -736,8 +739,8 @@ class Sequence {
     // check version
     if (version != 1) {
       char buf[100];
-      std::snprintf(buf, sizeof(buf), "unknown version %d", version);
-      throw std::logic_error(buf);
+      size_t l = std::snprintf(buf, sizeof(buf), "Invalid Sequence version %d while reading from stream, only version 1 is supported", version);
+      throw BareBones::Exception(0x0baacae87c11b49a, std::string_view(buf, l));
     }
 
     auto original_exceptions = in.exceptions();
@@ -760,8 +763,12 @@ class Sequence {
 
     // calculate data size
     auto actual_data_size = Codec::decode_data_size(seq.size_, static_cast<const uint8_t*>(seq.keys_));
-    if (actual_data_size > std::numeric_limits<uint32_t>::max())
-      throw std::runtime_error("G-1: Meaningful message supposed to be here!");
+    if (actual_data_size > std::numeric_limits<uint32_t>::max()) {
+      std::stringstream ss;
+      ss << "The calculated size " << actual_data_size << " of Sequence exceeds uint32_t max value";
+
+      throw BareBones::Exception(0xe2421936fe194169, ss.str());
+    }
 
     // read data
     seq.reserve_data(new_size, actual_data_size);
