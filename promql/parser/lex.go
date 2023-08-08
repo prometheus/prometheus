@@ -140,11 +140,15 @@ var key = map[string]ItemType{
 }
 
 var histogramDesc = map[string]ItemType{
-	"sum":     SUM_DESC,
-	"count":   COUNT_DESC,
-	"schema":  SCHEMA_DESC,
-	"offset":  OFFSET_DESC,
-	"buckets": BUCKETS_DESC,
+	"sum":        SUM_DESC,
+	"count":      COUNT_DESC,
+	"schema":     SCHEMA_DESC,
+	"offset":     OFFSET_DESC,
+	"n_offset":   NEGATIVE_OFFSET_DESC,
+	"buckets":    BUCKETS_DESC,
+	"n_buckets":  NEGATIVE_BUCKETS_DESC,
+	"z_bucket":   ZERO_BUCKET_DESC,
+	"z_bucket_w": ZERO_BUCKET_WIDTH_DESC,
 }
 
 // ItemTypeStr is the default string representations for common Items. It does not
@@ -499,6 +503,9 @@ func lexHistogram(l *Lexer) stateFn {
 	case r == ':':
 		l.emit(COLON)
 		return lexHistogram
+	case r == '-':
+		l.emit(SUB)
+		return lexNumber
 	case isDigit(r):
 		l.backup()
 		return lexNumber

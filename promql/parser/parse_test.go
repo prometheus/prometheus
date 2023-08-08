@@ -21,6 +21,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/prometheus/model/histogram"
+
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
@@ -3595,19 +3597,6 @@ func TestNaNExpression(t *testing.T) {
 	require.True(t, math.IsNaN(nl.Val), "expected 'NaN' in number literal but got %v", nl.Val)
 }
 
-var testHistogramSeries = []struct {
-	input          string
-	expectedMetric labels.Labels
-	fail           bool
-}{
-	{input: `{} {{buckets:[5 10 7] schema:1}}`,
-		expectedMetric: labels.EmptyLabels(),
-		fail:           false,
-	}, {input: `{} {{schema:1 buckets:[5 10 7]}}`,
-		expectedMetric: labels.EmptyLabels(),
-		fail:           false,
-	},
-}
 var testSeries = []struct {
 	input          string
 	expectedMetric labels.Labels
@@ -3709,32 +3698,72 @@ func newSeq(vals ...float64) (res []SequenceValue) {
 	return res
 }
 
-//func newHistogramSequence(TBD) (TBD) {
-//    // TODO: Fill out this functon to create histogram series.
-//}
-
 func TestParseHistogramSeries(t *testing.T) {
-	for _, test := range testHistogramSeries {
-		_, vals, err := ParseSeriesDesc(test.input)
-		if len(vals) > 0 {
-			fmt.Printf("PositiveBuckets: %v\n", vals[0].Histogram.PositiveBuckets)
-			println("Schema:", vals[0].Histogram.Schema)
-		}
-		// Unexpected errors are always caused by a bug.
-		require.NotEqual(t, err, errUnexpected, "unexpected error occurred")
-
-		if !test.fail {
+	//todo error test cases
+	for _, test := range []struct {
+		name          string
+		input         string
+		expected      *histogram.FloatHistogram
+		expectedError string
+	}{
+		{
+			name:  "all properties used",
+			input: `{} {{schema:1 sum:0.3 count:3 z_bucket:7 z_bucket_w:5 buckets:[5 10 7] offset:-3 n_buckets:[4 5] n_offset:5}}`,
+			expected: &histogram.FloatHistogram{
+				Schema:          1,
+				Sum:             0.3,
+				Count:           3,
+				ZeroCount:       7,
+				ZeroThreshold:   5,
+				PositiveBuckets: []float64{5, 10, 7},
+				PositiveSpans:   []histogram.Span{{Offset: -3, Length: 3}},
+				NegativeBuckets: []float64{4, 5},
+				NegativeSpans:   []histogram.Span{{Offset: 5, Length: 2}},
+			},
+		}, {
+			name:  "all properties used - with spaces",
+			input: `{} {{schema:1  sum:0.3  count:3  z_bucket:7 z_bucket_w:5 buckets:[5 10  7  ] offset:-3  n_buckets:[4 5]  n_offset:5  }}`,
+			expected: &histogram.FloatHistogram{
+				Schema:          1,
+				Sum:             0.3,
+				Count:           3,
+				ZeroCount:       7,
+				ZeroThreshold:   5,
+				PositiveBuckets: []float64{5, 10, 7},
+				PositiveSpans:   []histogram.Span{{Offset: -3, Length: 3}},
+				NegativeBuckets: []float64{4, 5},
+				NegativeSpans:   []histogram.Span{{Offset: 5, Length: 2}},
+			},
+		}, {
+			name:  "negative number",
+			input: `{} {{schema:-1}}`,
+			expected: &histogram.FloatHistogram{
+				Schema: -1,
+			},
+		}, {
+			name:  "different order",
+			input: `{} {{buckets:[5 10 7] schema:1}}`,
+			expected: &histogram.FloatHistogram{
+				Schema:          1,
+				PositiveBuckets: []float64{5, 10, 7},
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, vals, err := ParseSeriesDesc(test.input)
+			if test.expectedError != "" {
+				require.EqualError(t, err, test.expectedError)
+				return
+			}
 			require.NoError(t, err)
-		} else {
-			require.Error(t, err)
-		}
+			require.Lenf(t, vals, 1, "expected 1 value, got %d", len(vals))
+			require.Equal(t, test.expected, vals[0].Histogram)
+		})
 	}
 }
+
 func TestParseSeries(t *testing.T) {
 	for _, test := range testSeries {
-		if !test.fail {
-			println("Test Input:", test.input)
-		}
 		metric, vals, err := ParseSeriesDesc(test.input)
 
 		// Unexpected errors are always caused by a bug.

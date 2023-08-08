@@ -39,6 +39,7 @@ import (
     histogram *histogram.FloatHistogram
     descriptors map[string]interface{}
     bucket_set []float64
+    int       int64
     uint      uint64
     float     float64
     duration  time.Duration
@@ -77,7 +78,11 @@ SUM_DESC
 COUNT_DESC
 SCHEMA_DESC
 OFFSET_DESC
+NEGATIVE_OFFSET_DESC
 BUCKETS_DESC
+NEGATIVE_BUCKETS_DESC
+ZERO_BUCKET_DESC
+ZERO_BUCKET_WIDTH_DESC
 %token histogramDescEnd
 
 // Operators.
@@ -164,6 +169,7 @@ START_METRIC_SELECTOR
 %type <histogram> histogram_desc_set
 %type <descriptors> histogram_desc_map histogram_desc_item
 %type <bucket_set> bucket_set bucket_set_list
+%type <int> int
 %type <uint> uint
 %type <float> number series_value signed_number signed_or_unsigned_number
 %type <node> step_invariant_expr aggregate_expr aggregate_modifier bin_modifier binary_expr bool_modifier expr function_call function_call_args function_call_body group_modifiers label_matchers matrix_selector number_literal offset_expr on_or_ignoring paren_expr string_literal subquery_expr unary_expr vector_selector
@@ -701,62 +707,99 @@ series_value    : IDENTIFIER
 /*
  * Histogram descriptions (part of unit testing)
  */
-histogram_desc_set: OPEN_HIST histogram_desc_map SPACE CLOSE_HIST
-                  {
-                    $$ = yylex.(*parser).buildHistogramFromMap(&$2)
-                  }
-                  | OPEN_HIST histogram_desc_map CLOSE_HIST
-                  {
-                    $$ = yylex.(*parser).buildHistogramFromMap(&$2)
-                  }
-                  ;
+histogram_desc_set
+                : OPEN_HIST histogram_desc_map SPACE CLOSE_HIST
+                {
+                  $$ = yylex.(*parser).buildHistogramFromMap(&$2)
+                }
+                | OPEN_HIST histogram_desc_map CLOSE_HIST
+                {
+                  $$ = yylex.(*parser).buildHistogramFromMap(&$2)
+                }
+                ;
 
-histogram_desc_map:
-                   histogram_desc_map SPACE histogram_desc_item
-                   {
-                     $$ = *(yylex.(*parser).mergeMaps(&$1,&$3))
-                   }
-                   | histogram_desc_item
-                   {
-                     $$ = $1
-                   }
-                   | histogram_desc_map error {
-                     yylex.(*parser).unexpected("series values", "number or \"stale\"")
-                   }
-                   ;
+histogram_desc_map
+                : histogram_desc_map SPACE histogram_desc_item
+                {
+                  $$ = *(yylex.(*parser).mergeMaps(&$1,&$3))
+                }
+                | histogram_desc_item
+                {
+                  $$ = $1
+                }
+                | histogram_desc_map error {
+                  yylex.(*parser).unexpected("histogram description", "histogram description key, e.g. buckets:[5 10 7]")
+                }
+                ;
 
-histogram_desc_item: BUCKETS_DESC COLON bucket_set
-                   {
-                      $$ = yylex.(*parser).newMap()
-                      $$["buckets"] = $3
-                   }
-                   | SCHEMA_DESC COLON NUMBER
-                   {
-                      $$ = yylex.(*parser).newMap()
-                      $$["schema"] = yylex.(*parser).integer($3.Val)
-                   }
-                   ;
+histogram_desc_item
+                : SCHEMA_DESC COLON int
+                {
+                   $$ = yylex.(*parser).newMap()
+                   $$["schema"] = $3
+                }
+                | SUM_DESC COLON signed_or_unsigned_number
+                {
+                   $$ = yylex.(*parser).newMap()
+                   $$["sum"] = $3
+                }
+                | COUNT_DESC COLON uint
+                {
+                   $$ = yylex.(*parser).newMap()
+                   $$["count"] = $3
+                }
+                | ZERO_BUCKET_DESC COLON uint
+                {
+                   $$ = yylex.(*parser).newMap()
+                   $$["z_bucket"] = $3
+                }
+                | ZERO_BUCKET_WIDTH_DESC COLON uint
+                {
+                   $$ = yylex.(*parser).newMap()
+                   $$["z_bucket_w"] = $3
+                }
+                | BUCKETS_DESC COLON bucket_set
+                {
+                   $$ = yylex.(*parser).newMap()
+                   $$["buckets"] = $3
+                }
+                | OFFSET_DESC COLON int
+                {
+                   $$ = yylex.(*parser).newMap()
+                   $$["offset"] = $3
+                }
+                | NEGATIVE_BUCKETS_DESC COLON bucket_set
+                {
+                   $$ = yylex.(*parser).newMap()
+                   $$["n_buckets"] = $3
+                }
+                | NEGATIVE_OFFSET_DESC COLON int
+                {
+                   $$ = yylex.(*parser).newMap()
+                   $$["n_offset"] = $3
+                }
+                ;
 
-bucket_set: LEFT_BRACKET bucket_set_list SPACE RIGHT_BRACKET
-          {
-            $$ = $2
-          }
-          | LEFT_BRACKET bucket_set_list RIGHT_BRACKET
-          {
-            $$ = $2
-          }
-          ;
+bucket_set      : LEFT_BRACKET bucket_set_list SPACE RIGHT_BRACKET
+                {
+                  $$ = $2
+                }
+                | LEFT_BRACKET bucket_set_list RIGHT_BRACKET
+                {
+                  $$ = $2
+                }
+                ;
 
-bucket_set_list: bucket_set_list SPACE NUMBER
-               {
-                 $$ = append($1, yylex.(*parser).number($3.Val))
-               }
-               | NUMBER
-               {
-                 $$ = []float64{yylex.(*parser).number($1.Val)}
-               }
-               | bucket_set_list error
-               ;
+bucket_set_list : bucket_set_list SPACE NUMBER
+                {
+                  $$ = append($1, yylex.(*parser).number($3.Val))
+                }
+                | NUMBER
+                {
+                  $$ = []float64{yylex.(*parser).number($1.Val)}
+                }
+                | bucket_set_list error
+                ;
 
 
 /*
@@ -801,6 +844,10 @@ uint            : NUMBER
                                 yylex.(*parser).addParseErrf($1.PositionRange(), "invalid repetition in series values: %s", err)
                         }
                         }
+                ;
+
+int             : SUB uint { $$ = -int64($2) }
+                | uint { $$ = int64($1) }
                 ;
 
 duration        : DURATION

@@ -472,18 +472,94 @@ func (p *parser) mergeMaps(left, right *map[string]interface{}) (ret *map[string
 // parts of the histogram and complete it.
 func (p *parser) buildHistogramFromMap(desc *map[string]interface{}) (ret *histogram.FloatHistogram) {
 	output := &histogram.FloatHistogram{}
-	val, ok := (*desc)["buckets"]
+
+	val, ok := (*desc)["schema"]
+	if ok {
+		schema, ok := val.(int64)
+		if ok {
+			output.Schema = int32(schema)
+		} else {
+			p.addParseErrf(p.yyParser.lval.item.PositionRange(), "error parsing schema number: %v", val)
+		}
+	}
+
+	val, ok = (*desc)["sum"]
+	if ok {
+		sum, ok := val.(float64)
+		if ok {
+			output.Sum = sum
+		} else {
+			p.addParseErrf(p.yyParser.lval.item.PositionRange(), "error parsing sum number: %v", val)
+		}
+	}
+	val, ok = (*desc)["count"]
+	if ok {
+		count, ok := val.(uint64)
+		if ok {
+			output.Count = float64(count)
+		} else {
+			p.addParseErrf(p.yyParser.lval.item.PositionRange(), "error parsing count number: %v", val)
+		}
+	}
+
+	val, ok = (*desc)["z_bucket"]
+	if ok {
+		bucket, ok := val.(uint64)
+		if ok {
+			output.ZeroCount = float64(bucket)
+		} else {
+			p.addParseErrf(p.yyParser.lval.item.PositionRange(), "error parsing z_bucket number: %v", val)
+		}
+	}
+	val, ok = (*desc)["z_bucket_w"]
+	if ok {
+		bucketWidth, ok := val.(uint64)
+		if ok {
+			output.ZeroThreshold = float64(bucketWidth)
+		} else {
+			p.addParseErrf(p.yyParser.lval.item.PositionRange(), "error parsing z_bucket_w number: %v", val)
+		}
+	}
+
+	bucketCount := 0
+	val, ok = (*desc)["buckets"]
 	if ok {
 		buckets, ok := val.([]float64)
 		if ok {
 			output.PositiveBuckets = buckets
+			bucketCount = len(buckets)
+		} else {
+			p.addParseErrf(p.yyParser.lval.item.PositionRange(), "error parsing buckets float array: %v", val)
 		}
 	}
-	val, ok = (*desc)["schema"]
+	val, ok = (*desc)["offset"]
 	if ok {
-		schema, ok := val.(int32)
+		offset, ok := val.(int64)
 		if ok {
-			output.Schema = schema
+			output.PositiveSpans = []histogram.Span{{Offset: int32(offset), Length: uint32(bucketCount)}}
+		} else {
+			p.addParseErrf(p.yyParser.lval.item.PositionRange(), "error parsing offset number: %v", val)
+		}
+	}
+
+	negativeBucketCount := 0
+	val, ok = (*desc)["n_buckets"]
+	if ok {
+		buckets, ok := val.([]float64)
+		if ok {
+			output.NegativeBuckets = buckets
+			negativeBucketCount = len(buckets)
+		} else {
+			p.addParseErrf(p.yyParser.lval.item.PositionRange(), "error parsing n_buckets float array: %v", val)
+		}
+	}
+	val, ok = (*desc)["n_offset"]
+	if ok {
+		offset, ok := val.(int64)
+		if ok {
+			output.NegativeSpans = []histogram.Span{{Offset: int32(offset), Length: uint32(negativeBucketCount)}}
+		} else {
+			p.addParseErrf(p.yyParser.lval.item.PositionRange(), "error parsing n_offset number: %v", val)
 		}
 	}
 
