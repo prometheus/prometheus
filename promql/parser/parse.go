@@ -227,15 +227,6 @@ func (v SequenceValue) String() string {
 	return fmt.Sprintf("%f", v.Value)
 }
 
-type seriesDescriptionBuilder struct {
-	labels labels.Labels
-	values []SequenceValue
-}
-
-func newSeriesDescriptionBuilder() *seriesDescriptionBuilder {
-	return &seriesDescriptionBuilder{}
-}
-
 type seriesDescription struct {
 	labels labels.Labels
 	values []SequenceValue
@@ -575,16 +566,6 @@ func (p *parser) buildHistogramBucketsAndSpans(desc *map[string]interface{}, buc
 	return
 }
 
-// parses an integer for histogram unit tests
-func (p *parser) integer(val string) int32 {
-	n, err := strconv.ParseInt(val, 0, 32)
-	o := int32(n)
-	if err != nil {
-		p.addParseErrf(p.yyParser.lval.item.PositionRange(), "error parsing number: %s", err)
-	}
-	return o
-}
-
 // number parses a number.
 func (p *parser) number(val string) float64 {
 	n, err := strconv.ParseInt(val, 0, 64)
@@ -889,29 +870,6 @@ func (p *parser) addOffset(e Node, offset time.Duration) {
 	}
 
 	*endPosp = p.lastClosing
-}
-
-// setSchema is used to populate the histogram
-func (p *parser) setSchema(h histogram.FloatHistogram, schema int32) {
-	// TODO(h.dost): Determine if we need this.
-	h.Schema = schema
-}
-
-// setSpanArray is used to populate the histogram
-func (p *parser) setBucketArray(h histogram.FloatHistogram, buckets []float64) {
-	// TODO(h.dost): Determine if we need this.
-	h.PositiveBuckets = buckets
-}
-
-// setSpanArray is used to populate the histogram
-func (p *parser) setSpanArray(h histogram.FloatHistogram, spans []histogram.Span) {
-	// TODO(h.dost): Determine if we need this.
-	h.PositiveSpans = spans
-}
-
-// createSpanArray is used to populate the
-func (p *parser) makeSpanArray() []histogram.Span {
-	return []histogram.Span{}
 }
 
 // setTimestamp is used to set the timestamp from the @ modifier in the generated parser.

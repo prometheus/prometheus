@@ -595,19 +595,17 @@ metric          : metric_identifier label_set
                         { b := labels.NewBuilder($2); b.Set(labels.MetricName, $1.Val); $$ = b.Labels() }
                 | label_set
                         {$$ = $1}
-                | metric_identifier label_set
-                        { b := labels.NewBuilder($2); b.Set(labels.MetricName, $1.Val); $$ = b.Labels(labels.EmptyLabels()) }
                 ;
 
 
 metric_identifier: AVG | BOTTOMK | BY | COUNT | COUNT_VALUES | GROUP | IDENTIFIER |  LAND | LOR | LUNLESS | MAX | METRIC_IDENTIFIER | MIN | OFFSET | QUANTILE | STDDEV | STDVAR | SUM | TOPK | WITHOUT | START | END;
 
-label_set       :LEFT_BRACE RIGHT_BRACE
-                        { $$ = labels.New() }
-                |LEFT_BRACE label_set_list RIGHT_BRACE
+label_set       : LEFT_BRACE label_set_list RIGHT_BRACE
                         { $$ = labels.New($2...) }
                 | LEFT_BRACE label_set_list COMMA RIGHT_BRACE
                         { $$ = labels.New($2...) }
+                | LEFT_BRACE RIGHT_BRACE
+                        { $$ = labels.New() }
                 | /* empty */
                         { $$ = labels.New() }
                 ;
@@ -634,11 +632,13 @@ label_set_item  : IDENTIFIER EQL STRING
 /*
  * Series descriptions (only used by unit tests).
  */
-                /*TODO: Add code sequence*/
 
 series_description: metric series_values
                         {
-                        yylex.(*parser).generatedParserResult = &seriesDescription{labels:$1, values: $2} // TODO
+                        yylex.(*parser).generatedParserResult = &seriesDescription{
+                                labels: $1,
+                                values: $2,
+                        }
                         }
                 ;
 

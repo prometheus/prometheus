@@ -645,8 +645,8 @@ func lexInsideBraces(l *Lexer) stateFn {
 	case r == '{':
 		return l.errorf("unexpected left brace %q", r)
 	case r == '}':
-		l.braceOpen = false
 		l.emit(RIGHT_BRACE)
+		l.braceOpen = false
 
 		if l.seriesDesc {
 			return lexValueSequence
