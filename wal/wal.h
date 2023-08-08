@@ -12,6 +12,7 @@
 
 #include "bare_bones/crc32.h"
 #include "bare_bones/encoding.h"
+#include "bare_bones/exception.h"
 #include "bare_bones/gorilla.h"
 #include "bare_bones/snug_composite.h"
 #include "bare_bones/sparse_vector.h"
@@ -180,8 +181,12 @@ class BasicEncoder {
       ts_delta_rle_is_worth_trying = false;
 
     // gorilla requires delta to fit in int64
-    if (buffer_.latest_sample() > std::numeric_limits<int64_t>::max() - ts_base_)
-      throw std::runtime_error("AKA: Meaningful message supposed to be here!");
+    if (buffer_.latest_sample() > std::numeric_limits<int64_t>::max() - ts_base_) {
+      std::stringstream ss;
+      ss << "The latest segment's sample timestamp (" << buffer_.latest_sample() << ") is greater than max_int64 for timestamp ("
+         << std::numeric_limits<int64_t>::max() - ts_base_ << ")";
+      throw BareBones::Exception(0x546e143d302c4860, ss.str());
+    }
 
     gorilla_.resize(label_sets_.size());
 
@@ -364,7 +369,10 @@ class BasicEncoder {
 
     auto encoders_count = segment == next_encoded_segment_ ? gorilla_.size() : (*it.begin())->encoders_count;
     if (encoders_count > gorilla_.size()) {
-      throw std::runtime_error("A41: Meaningful message supposed to be here!");
+      std::stringstream ss;
+      ss << "Encoder's Snapshot " << segment << " has more encoders in first redundant (" << encoders_count << ") than already on the Writer ("
+         << gorilla_.size() << ")";
+      throw BareBones::Exception(0xfd921d184ca372ee, ss.str());
     }
 
     decltype(gorilla_) encoders;
@@ -381,7 +389,10 @@ class BasicEncoder {
         has_any_redundant_segment_id = true;
       } else {
         if (not(redundant->segment == redundant_segment_id + 1)) {
-          throw std::runtime_error("A42: Meaningful message supposed to be here!");
+          std::stringstream ss;
+          ss << "The next redundant in encoders' snapshot (segment_id=" << redundant->segment
+             << ") must be in order with previous redundant (segment_id=" << redundant_segment_id + 1 << ")";
+          throw BareBones::Exception(0xcddf21b039fe5a18, ss.str());
         }
         redundant_segment_id = redundant->segment;
       }
@@ -401,7 +412,10 @@ class BasicEncoder {
     // if have any redundants check that it not equals current redundant_segment_id and next_encoded_segment_ - 1,
     // redundants must be consistent
     if (has_any_redundant_segment_id && redundant_segment_id != next_encoded_segment_ - 1) {
-      throw std::runtime_error("A43: Meaningful message supposed to be here!");
+      std::stringstream ss;
+      ss << "The encoder's snapshot doesn't have the latest redundant with expected segment_id=" << (next_encoded_segment_ - 1)
+         << ", the last redundant has segment_id=" << redundant_segment_id;
+      throw BareBones::Exception(0xc318a18809c8167e, ss.str());
     }
 
     BareBones::Vector<BareBones::Encoding::Gorilla::StreamDecoder> decoders;
@@ -490,12 +504,19 @@ class BasicDecoder {
     auto uuid = uuids::uuid(uuid_bytes.begin(), uuid_bytes.end());
 
     // validate uuid
-    if (uuid.is_nil())
-      throw std::runtime_error("A11: Meaningful message supposed to be here!");
-    if (uuid.version() != uuids::uuid_version::random_number_based)
-      throw std::runtime_error("A12: Meaningful message supposed to be here!");
-    if (uuid.variant() != uuids::uuid_variant::rfc)
-      throw std::runtime_error("A13: Meaningful message supposed to be here!");
+    if (uuid.is_nil()) {
+      throw BareBones::Exception(0xec5e9e3ea3edec11, "Segment has an invalid UUID");
+    }
+    if (uuid.version() != uuids::uuid_version::random_number_based) {
+      // TODO: add enum-to-string for more verbose error (e.g., which version is expected)
+      // N.B.: UUID version is determined by 6th byte.
+      throw BareBones::Exception(0x06b621cb184ad541, "Segment's UUID version is not supported");
+    }
+    if (uuid.variant() != uuids::uuid_variant::rfc) {
+      // TODO: add enum-to-string for more verbose error (e.g., which UUID variant is actual)
+      // N.B.: UUID variant is determined by 8th byte.
+      throw BareBones::Exception(0x5dc8c27e17e55060, "Segment's UUID variant is not supported, only RFC-4412 UUIDs are supported");
+    }
 
     return uuid;
   }
@@ -512,14 +533,19 @@ class BasicDecoder {
       return;
 
     // check version
-    if (version != 1)
-      throw std::runtime_error("A8: Meaningful message supposed to be here!");
+    if (version != 1) {
+      std::stringstream ss;
+      ss << "Invalid segment version (" << version << "), only version 1 is supported";
+      throw BareBones::Exception(0x3449dc095f9e2f31, ss.str());
+    }
 
     auto original_exceptions = in.exceptions();
     auto sg1 = std::experimental::scope_exit([&]() { in.exceptions(original_exceptions); });
     in.exceptions(std::ifstream::failbit | std::ifstream::badbit | std::ifstream::eofbit);
 
     // read uuid
+    // TODO: More context related to segment is available here. It may be worth to add it
+    //       into exception messages.
     auto uuid = read_uuid(in);
 
     // associate uuid if it's a first segment
@@ -527,8 +553,11 @@ class BasicDecoder {
       uuid_ = uuid;
 
     // check uuid
-    if (uuid_ != uuid)
-      throw std::runtime_error("A10: Meaningful message supposed to be here!");
+    if (uuid_ != uuid) {
+      std::stringstream ss;
+      ss << "Input segment's UUID (" << uuid << ") doesn't match with Decoder's UUID (" << uuid_ << ")";
+      throw BareBones::Exception(0x4050da9e13900f11, ss.str());
+    }
 
     {
       uint16_t shard_id = 0;
@@ -543,7 +572,9 @@ class BasicDecoder {
       }
 
       if (shard_id != shard_id_) {
-        throw std::runtime_error("A14: Meaningful message supposed to be here!");
+        std::stringstream ss;
+        ss << "Input segment's shard id (" << shard_id << ") doesn't match with Decoder's shard id (" << shard_id_ << ")";
+        throw BareBones::Exception(0xcf388325297850a4, ss.str());
       }
 
       // read pow of two of total shards
@@ -555,7 +586,9 @@ class BasicDecoder {
       }
 
       if (pow_two_of_total_shards != pow_two_of_total_shards_) {
-        throw std::runtime_error("A15: Meaningful message supposed to be here!");
+        std::stringstream ss;
+        ss << "Input segment's shards count (" << pow_two_of_total_shards << ") doesn't match with Decoder's shards count (" << pow_two_of_total_shards_ << ")";
+        throw BareBones::Exception(0x85a8f764e17983db, ss.str());
       }
     }
 
@@ -563,8 +596,11 @@ class BasicDecoder {
     uint32_t segment;
     in.read(reinterpret_cast<char*>(&segment), sizeof(segment));
 
-    if (segment != last_processed_segment_ + 1)
-      throw std::runtime_error("A9: Meaningful message supposed to be here!");
+    if (segment != last_processed_segment_ + 1) {
+      std::stringstream ss;
+      ss << "Unexpected input segment id " << segment << ", expected " << (last_processed_segment_ + 1);
+      throw BareBones::Exception(0xfb9b62e957a1ac39, ss.str());
+    }
 
     in.read(reinterpret_cast<char*>(&created_at_tsns_), sizeof(created_at_tsns_));
     in.read(reinterpret_cast<char*>(&encoded_at_tsns_), sizeof(encoded_at_tsns_));
@@ -612,7 +648,7 @@ class BasicDecoder {
     // the snapshot must be loaded from first segment! (from review)
     // !155#note_241482
     if (last_processed_segment_ + 1 != 0) {
-      throw std::runtime_error("A7: Meaningful message supposed to be here!");
+      throw BareBones::Exception(0x25fa0d279a79b3f6, "Can't load Snapshot into non-empty Decoder");
     }
 
     // read version
@@ -623,8 +659,11 @@ class BasicDecoder {
       return;
 
     // check version
-    if (version != 1)
-      throw std::runtime_error("A8: Meaningful message supposed to be here!");
+    if (version != 1) {
+      std::stringstream ss;
+      ss << "Invalid snapshot version (" << version << "), only version 1 is supported";
+      throw BareBones::Exception(0xccd8f4f87758ca2f, ss.str());
+    }
 
     auto original_exceptions = in.exceptions();
     auto sg1 = std::experimental::scope_exit([&]() { in.exceptions(original_exceptions); });
@@ -698,11 +737,17 @@ class BasicDecoder {
       auto g_v_bitseq_reader = segment_gorilla_v_bitseq_.reader();
 
       for (Primitives::LabelSetID ls_id : segment_ls_id_delta_rle_seq_) {
-        if (__builtin_expect(ls_id >= gorilla_.size(), false))
-          throw std::runtime_error("A9A: Meaningful message supposed to be here!");
+        if (__builtin_expect(ls_id >= gorilla_.size(), false)) {
+          std::stringstream ss;
+          ss << "Decoder " << uuid_ << " got an error while processing segment LabelSets: Unknown segment's LabelSet's id " << ls_id;
+          throw BareBones::Exception(0xf0e57d2a0e5ce7ed, ss.str());
+        }
 
-        if (__builtin_expect(g_v_bitseq_reader.left() == 0, false))
-          throw std::runtime_error("AAAAAA1: Meaningful message supposed to be here!");
+        if (__builtin_expect(g_v_bitseq_reader.left() == 0, false)) {
+          std::stringstream ss;
+          ss << "Decoder " << uuid_ << " exhausted label set values data prematurely, but segment processing expects more LabelSets' values";
+          throw BareBones::Exception(0xa5cc1f527d80b20f, ss.str());
+        }
 
         auto& g = gorilla_[ls_id];
 
@@ -718,24 +763,58 @@ class BasicDecoder {
         func(ls_id, g.last_timestamp() + ts_base_, g.last_value());
       }
 
-      if (ts_i != segment_ts_delta_rle_seq_.end())
-        throw std::runtime_error("AL: Meaningful message supposed to be here!");
+      // there are remaining timestamps in Decoder/segment (ls_id), which is unexpected.
+      if (ts_i != segment_ts_delta_rle_seq_.end()) {
+        std::stringstream ss;
 
-      if (g_v_bitseq_reader.left() != 0)
-        throw std::runtime_error("AL2: meaningful message supposed to be here!");
+        // TODO: support std::distance with Iterator and IteratorSentinel ???
+        // size_t ls_id_ts_items_count = std::distance(segment_ts_delta_rle_seq_.begin(), ts_i);
+        // size_t decoder_ts_items_count = std::distance(segment_ts_delta_rle_seq_.begin(), segment_ts_delta_rle_seq_.end());
+
+        // TODO: make it work
+        // ss << "Decoder " << uuid_ << " got an error after processing segment LabelSets: segment ls_id timestamps (" << ls_id_ts_items_count
+        //    << ") and Decoder's ts (" << decoder_ts_items_count
+        //    << ") counts mismatch, there are "
+        //       "remaining timestamp data";
+        ss << "Decoder " << uuid_
+           << " got an error after processing segment LabelSets: segment ls_id timestamps counts mismatch, there are "
+              "remaining timestamp data";
+        throw BareBones::Exception(0x6b534297844a47c9, ss.str());
+      }
+
+      if (g_v_bitseq_reader.left() != 0) {
+        std::stringstream ss;
+
+        ss << "Decoder" << uuid_ << " got an error after processing segment LabelSets: segment ls_id values (" << g_v_bitseq_reader.left()
+           << ") and Decoder's values (" << segment_gorilla_v_bitseq_.size() << ") counts mismatch, there are remaining values data";
+
+        throw BareBones::Exception(0x934f6048d089ae64, ss.str());
+      }
     } else {
+      // process non-empty ts
       auto g_ts_bitseq_reader = segment_gorilla_ts_bitseq_.reader();
       auto g_v_bitseq_reader = segment_gorilla_v_bitseq_.reader();
 
       for (Primitives::LabelSetID ls_id : segment_ls_id_delta_rle_seq_) {
-        if (__builtin_expect(ls_id >= gorilla_.size(), false))
-          throw std::runtime_error("A9B: Meaningful message supposed to be here!");
+        // same checks as in prev. ls_id parsing.
+        // TODO: Merge it?
+        if (__builtin_expect(ls_id >= gorilla_.size(), false)) {
+          std::stringstream ss;
+          ss << "Decoder " << uuid_ << " got an error while processing segment LabelSets: Unknown segment's LabelSet's id " << ls_id;
+          throw BareBones::Exception(0x19884e9893440316, ss.str());
+        }
 
-        if (__builtin_expect(g_ts_bitseq_reader.left() == 0, false))
-          throw std::runtime_error("AAAAAA2: Meaningful message supposed to be here!");
+        if (__builtin_expect(g_ts_bitseq_reader.left() == 0, false)) {
+          std::stringstream ss;
+          ss << "Decoder " << uuid_ << " exhausted label set values data prematurely, but segment processing expects more LabelSets' timestamps";
+          throw BareBones::Exception(0xf837b80ba182e441, ss.str());
+        }
 
-        if (__builtin_expect(g_v_bitseq_reader.left() == 0, false))
-          throw std::runtime_error("AAAAAA3: Meaningful message supposed to be here!");
+        if (__builtin_expect(g_v_bitseq_reader.left() == 0, false)) {
+          std::stringstream ss;
+          ss << "Decoder " << uuid_ << " exhausted label set values data prematurely, but segment processing expects more LabelSets' values";
+          throw BareBones::Exception(0xe667122e5d11ba4c, ss.str());
+        }
 
         auto& g = gorilla_[ls_id];
 
@@ -750,19 +829,35 @@ class BasicDecoder {
         func(ls_id, g.last_timestamp() + ts_base_, g.last_value());
       }
 
-      if (g_ts_bitseq_reader.left() != 0)
-        throw std::runtime_error("AL3: Meaningful message supposed to be here!");
+      if (g_ts_bitseq_reader.left() != 0) {
+        std::stringstream ss;
+        ss << "Decoder " << uuid_ << "got error after parsing LabelSets: there are more remaining timestamps data";
+        throw BareBones::Exception(0x5352e912e73554c1, ss.str());
+      }
 
-      if (g_v_bitseq_reader.left() != 0)
-        throw std::runtime_error("AL4: Meaningful message supposed to be here!");
+      if (g_v_bitseq_reader.left() != 0) {
+        std::stringstream ss;
+        ss << "Decoder " << uuid_ << "got error after parsing LabelSets: there are more remaining values data";
+        throw BareBones::Exception(0x71811aa3dc793602, ss.str());
+      }
     }
 
-    if (ls_id_crc != segment_ls_id_crc_)
-      throw std::runtime_error("AM: Meaningful message supposed to be here!");
-    if (ts_crc != segment_ts_crc_)
-      throw std::runtime_error("AN: Meaningful message supposed to be here!");
-    if (v_crc != segment_v_crc_)
-      throw std::runtime_error("AO: Meaningful message supposed to be here!");
+    if (ls_id_crc != segment_ls_id_crc_) {
+      std::stringstream ss;
+      ss << "Decoder " << uuid_ << "got error: CRC for LabelSet's ids mismatch: Decoder ls_id CRC: " << segment_ls_id_crc_
+         << ", segment ls_id CRC: " << ls_id_crc;
+      throw BareBones::Exception(0x6ea4e8b039aea0e8, ss.str());
+    }
+    if (ts_crc != segment_ts_crc_) {
+      std::stringstream ss;
+      ss << "Decoder " << uuid_ << "got error: CRC for LabelSet's timestamps mismatch: Decoder ts CRC: " << segment_ts_crc_ << ", segment ts CRC: " << ts_crc;
+      throw BareBones::Exception(0x0fd1fbf569f6c3c5, ss.str());
+    }
+    if (v_crc != segment_v_crc_) {
+      std::stringstream ss;
+      ss << "Decoder " << uuid_ << "got error: CRC for LabelSet's values mismatch: Decoder v CRC: " << segment_v_crc_ << ", segment v CRC: " << v_crc;
+      throw BareBones::Exception(0x0ee2b199218aaf7d, ss.str());
+    }
 
     clear_segment();
   }
