@@ -126,3 +126,11 @@ still ingest those conventional histograms that do not come with a
 corresponding native histogram. However, if a native histogram is present,
 Prometheus will ignore the corresponding conventional histogram, with the
 notable exception of exemplars, which are always ingested.
+
+## OTLP Receiver
+
+`--enable-feature=otlp-write-receiver`
+
+The OTLP receiver allows Prometheus to accept [OpenTelemetry](https://opentelemetry.io/) metrics writes.
+Prometheus is best used as a Pull based system, and staleness, `up` metric, and other Pull enabled features 
+won't work when you push OTLP metrics.
