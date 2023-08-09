@@ -475,18 +475,7 @@ func (p *parser) histogramsSeries(base, inc *histogram.FloatHistogram, times uin
 	ret[0] = SequenceValue{Histogram: base}
 	cur := base
 	for i := uint64(1); i <= times; i++ {
-		next := *cur
-		l := len(cur.PositiveBuckets)
-		if l > 0 {
-			next.PositiveBuckets = make([]float64, l)
-			copy(next.PositiveBuckets, cur.PositiveBuckets)
-		}
-		l = len(cur.NegativeBuckets)
-		if l > 0 {
-			next.NegativeBuckets = make([]float64, l)
-			copy(next.NegativeBuckets, cur.NegativeBuckets)
-		}
-		cur = &next
+		cur = cur.Copy()
 		cur = cur.Add(inc)
 		ret[i] = SequenceValue{Histogram: cur}
 	}
@@ -520,9 +509,9 @@ func (p *parser) buildHistogramFromMap(desc *map[string]interface{}) *histogram.
 	}
 	val, ok = (*desc)["count"]
 	if ok {
-		count, ok := val.(uint64)
+		count, ok := val.(float64)
 		if ok {
-			output.Count = float64(count)
+			output.Count = count
 		} else {
 			p.addParseErrf(p.yyParser.lval.item.PositionRange(), "error parsing count number: %v", val)
 		}
@@ -530,18 +519,18 @@ func (p *parser) buildHistogramFromMap(desc *map[string]interface{}) *histogram.
 
 	val, ok = (*desc)["z_bucket"]
 	if ok {
-		bucket, ok := val.(uint64)
+		bucket, ok := val.(float64)
 		if ok {
-			output.ZeroCount = float64(bucket)
+			output.ZeroCount = bucket
 		} else {
 			p.addParseErrf(p.yyParser.lval.item.PositionRange(), "error parsing z_bucket number: %v", val)
 		}
 	}
 	val, ok = (*desc)["z_bucket_w"]
 	if ok {
-		bucketWidth, ok := val.(uint64)
+		bucketWidth, ok := val.(float64)
 		if ok {
-			output.ZeroThreshold = float64(bucketWidth)
+			output.ZeroThreshold = bucketWidth
 		} else {
 			p.addParseErrf(p.yyParser.lval.item.PositionRange(), "error parsing z_bucket_w number: %v", val)
 		}

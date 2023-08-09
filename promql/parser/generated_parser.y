@@ -751,17 +751,17 @@ histogram_desc_item
                    $$ = yylex.(*parser).newMap()
                    $$["sum"] = $3
                 }
-                | COUNT_DESC COLON uint
+                | COUNT_DESC COLON number
                 {
                    $$ = yylex.(*parser).newMap()
                    $$["count"] = $3
                 }
-                | ZERO_BUCKET_DESC COLON uint
+                | ZERO_BUCKET_DESC COLON number
                 {
                    $$ = yylex.(*parser).newMap()
                    $$["z_bucket"] = $3
                 }
-                | ZERO_BUCKET_WIDTH_DESC COLON uint
+                | ZERO_BUCKET_WIDTH_DESC COLON number
                 {
                    $$ = yylex.(*parser).newMap()
                    $$["z_bucket_w"] = $3
@@ -798,13 +798,13 @@ bucket_set      : LEFT_BRACKET bucket_set_list SPACE RIGHT_BRACKET
                 }
                 ;
 
-bucket_set_list : bucket_set_list SPACE NUMBER
+bucket_set_list : bucket_set_list SPACE number
                 {
-                  $$ = append($1, yylex.(*parser).number($3.Val))
+                  $$ = append($1, $3)
                 }
-                | NUMBER
+                | number
                 {
-                  $$ = []float64{yylex.(*parser).number($1.Val)}
+                  $$ = []float64{$1}
                 }
                 | bucket_set_list error
                 ;
