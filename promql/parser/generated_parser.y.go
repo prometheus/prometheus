@@ -1689,7 +1689,7 @@ yydefault:
 //line promql/parser/generated_parser.y:667
 		{
 			yyVAL.series = []SequenceValue{}
-			// add an additional value for time 0, which we ignore in tests
+			// Add an additional value for time 0, which we ignore in tests.
 			for i := uint64(0); i <= yyDollar[3].uint; i++ {
 				yyVAL.series = append(yyVAL.series, SequenceValue{Value: yyDollar[1].float})
 			}
@@ -1699,7 +1699,7 @@ yydefault:
 //line promql/parser/generated_parser.y:675
 		{
 			yyVAL.series = []SequenceValue{}
-			// add an additional value for time 0, which we ignore in tests
+			// Add an additional value for time 0, which we ignore in tests.
 			for i := uint64(0); i <= yyDollar[4].uint; i++ {
 				yyVAL.series = append(yyVAL.series, SequenceValue{Value: yyDollar[1].float})
 				yyDollar[1].float += yyDollar[2].float
@@ -1716,7 +1716,7 @@ yydefault:
 //line promql/parser/generated_parser.y:689
 		{
 			yyVAL.series = []SequenceValue{}
-			// add an additional value for time 0, which we ignore in tests
+			// Add an additional value for time 0, which we ignore in tests.
 			for i := uint64(0); i <= yyDollar[3].uint; i++ {
 				yyVAL.series = append(yyVAL.series, SequenceValue{Histogram: yyDollar[1].histogram})
 				//$1 += $2

@@ -27,22 +27,22 @@ import (
 %}
 
 %union {
-    node      Node
-    item      Item
-    matchers  []*labels.Matcher
-    matcher   *labels.Matcher
-    label     labels.Label
-    labels    labels.Labels
-    lblList   []labels.Label
-    strings   []string
-    series    []SequenceValue
-    histogram *histogram.FloatHistogram
+    node        Node
+    item        Item
+    matchers    []*labels.Matcher
+    matcher     *labels.Matcher
+    label       labels.Label
+    labels      labels.Labels
+    lblList     []labels.Label
+    strings     []string
+    series      []SequenceValue
+    histogram   *histogram.FloatHistogram
     descriptors map[string]interface{}
-    bucket_set []float64
-    int       int64
-    uint      uint64
-    float     float64
-    duration  time.Duration
+    bucket_set  []float64
+    int         int64
+    uint        uint64
+    float       float64
+    duration    time.Duration
 }
 
 
@@ -71,7 +71,7 @@ SPACE
 STRING
 TIMES
 
-// Histogram Descriptors
+// Histogram Descriptors.
 %token histogramDescStart
 %token <item>
 SUM_DESC
@@ -166,7 +166,7 @@ START_METRIC_SELECTOR
 %type <label> label_set_item
 %type <strings> grouping_label_list grouping_labels maybe_grouping_labels
 %type <series> series_item series_values
-%type <histogram> histogram_desc_set
+%type <histogram> histogram_series_value
 %type <descriptors> histogram_desc_map histogram_desc_item
 %type <bucket_set> bucket_set bucket_set_list
 %type <int> int
@@ -281,7 +281,7 @@ binary_expr     : expr ADD     bin_modifier expr { $$ = yylex.(*parser).newBinar
                 ;
 
 // Using left recursion for the modifier rules, helps to keep the parser stack small and
-// reduces allocations
+// reduces allocations.
 bin_modifier    : group_modifiers;
 
 bool_modifier   : /* empty */
@@ -495,7 +495,7 @@ subquery_expr   : expr LEFT_BRACKET duration COLON maybe_duration RIGHT_BRACKET
  */
 
 unary_expr      :
-                /* gives the rule the same precedence as MUL. This aligns with mathematical conventions */
+                /* Gives the rule the same precedence as MUL. This aligns with mathematical conventions. */
                 unary_op expr %prec MUL
                         {
                         if nl, ok := $2.(*NumberLiteral); ok {
@@ -666,7 +666,7 @@ series_item     : BLANK
                 | series_value TIMES uint
                         {
                         $$ = []SequenceValue{}
-                        // add an additional value for time 0, which we ignore in tests
+                        // Add an additional value for time 0, which we ignore in tests.
                         for i:=uint64(0); i <= $3; i++{
                                 $$ = append($$, SequenceValue{Value: $1})
                         }
@@ -674,27 +674,27 @@ series_item     : BLANK
                 | series_value signed_number TIMES uint
                         {
                         $$ = []SequenceValue{}
-                        // add an additional value for time 0, which we ignore in tests
+                        // Add an additional value for time 0, which we ignore in tests.
                         for i:=uint64(0); i <= $4; i++{
                                 $$ = append($$, SequenceValue{Value: $1})
                                 $1 += $2
                         }
                         }
-                // Histogram descriptions (part of unit testing)
-                | histogram_desc_set
+                // Histogram descriptions (part of unit testing).
+                | histogram_series_value
                         {
                         $$ = []SequenceValue{{Histogram:$1}}
                         }
-                | histogram_desc_set TIMES uint
+                | histogram_series_value TIMES uint
                         {
                         $$ = []SequenceValue{}
-                        // add an additional value for time 0, which we ignore in tests
+                        // Add an additional value for time 0, which we ignore in tests.
                         for i:=uint64(0); i <= $3; i++{
                                 $$ = append($$, SequenceValue{Histogram:$1})
                                 //$1 += $2
                         }
                         }
-                | histogram_desc_set ADD histogram_desc_set TIMES uint
+                | histogram_series_value ADD histogram_series_value TIMES uint
                         {
                         val, err := yylex.(*parser).histogramsSeries($1,$3,$5)
                         if err != nil {
@@ -715,7 +715,7 @@ series_value    : IDENTIFIER
                 | signed_number
                 ;
 
-histogram_desc_set
+histogram_series_value
                 : OPEN_HIST histogram_desc_map SPACE CLOSE_HIST
                 {
                   $$ = yylex.(*parser).buildHistogramFromMap(&$2)
@@ -816,7 +816,7 @@ bucket_set_list : bucket_set_list SPACE number
 
 aggregate_op    : AVG | BOTTOMK | COUNT | COUNT_VALUES | GROUP | MAX | MIN | QUANTILE | STDDEV | STDVAR | SUM | TOPK ;
 
-// inside of grouping options label names can be recognized as keywords by the lexer. This is a list of keywords that could also be a label name.
+// Inside of grouping options label names can be recognized as keywords by the lexer. This is a list of keywords that could also be a label name.
 maybe_label     : AVG | BOOL | BOTTOMK | BY | COUNT | COUNT_VALUES | GROUP | GROUP_LEFT | GROUP_RIGHT | IDENTIFIER | IGNORING | LAND | LOR | LUNLESS | MAX | METRIC_IDENTIFIER | MIN | OFFSET | ON | QUANTILE | STDDEV | STDVAR | SUM | TOPK | START | END | ATAN2;
 
 unary_op        : ADD | SUB;
