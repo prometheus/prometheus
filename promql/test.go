@@ -342,15 +342,22 @@ func (cmd *loadCmd) append(a storage.Appender) error {
 		m := cmd.metrics[h]
 
 		for _, s := range smpls {
-			if s.H != nil {
-				if _, err := a.AppendHistogram(0, m, s.T, nil, s.H); err != nil {
-					return err
-				}
-			} else {
-				if _, err := a.Append(0, m, s.T, s.F); err != nil {
-					return err
-				}
+			if err := appendSample(a, s, m); err != nil {
+				return err
 			}
+		}
+	}
+	return nil
+}
+
+func appendSample(a storage.Appender, s Sample, m labels.Labels) error {
+	if s.H != nil {
+		if _, err := a.AppendHistogram(0, m, s.T, nil, s.H); err != nil {
+			return err
+		}
+	} else {
+		if _, err := a.Append(0, m, s.T, s.F); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -754,7 +761,7 @@ func (ll *LazyLoader) appendTill(ts int64) error {
 				ll.loadCmd.defs[h] = smpls[i:]
 				break
 			}
-			if _, err := app.Append(0, m, s.T, s.F); err != nil {
+			if err := appendSample(app, s, m); err != nil {
 				return err
 			}
 			if i == len(smpls)-1 {

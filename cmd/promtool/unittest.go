@@ -25,6 +25,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/prometheus/prometheus/model/histogram"
+
 	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
 	"gopkg.in/yaml.v2"
@@ -346,8 +348,9 @@ Outer:
 		var gotSamples []parsedSample
 		for _, s := range got {
 			gotSamples = append(gotSamples, parsedSample{
-				Labels: s.Metric.Copy(),
-				Value:  s.F,
+				Labels:    s.Metric.Copy(),
+				Value:     s.F,
+				Histogram: s.H,
 			})
 		}
 
@@ -361,8 +364,9 @@ Outer:
 				continue Outer
 			}
 			expSamples = append(expSamples, parsedSample{
-				Labels: lb,
-				Value:  s.Value,
+				Labels:    lb,
+				Value:     s.Value,
+				Histogram: s.Histogram,
 			})
 		}
 
@@ -530,14 +534,16 @@ type promqlTestCase struct {
 }
 
 type sample struct {
-	Labels string  `yaml:"labels"`
-	Value  float64 `yaml:"value"`
+	Labels    string                    `yaml:"labels"`
+	Value     float64                   `yaml:"value"`
+	Histogram *histogram.FloatHistogram `yaml:"histogram"`
 }
 
 // parsedSample is a sample with parsed Labels.
 type parsedSample struct {
-	Labels labels.Labels
-	Value  float64
+	Labels    labels.Labels
+	Value     float64
+	Histogram *histogram.FloatHistogram
 }
 
 func parsedSamplesString(pss []parsedSample) string {
@@ -552,5 +558,12 @@ func parsedSamplesString(pss []parsedSample) string {
 }
 
 func (ps *parsedSample) String() string {
+	if ps.Histogram != nil {
+		out, err := yaml.Marshal(ps.Histogram)
+		if err != nil {
+			panic(err)
+		}
+		return ps.Labels.String() + " " + string(out)
+	}
 	return ps.Labels.String() + " " + strconv.FormatFloat(ps.Value, 'E', -1, 64)
 }
