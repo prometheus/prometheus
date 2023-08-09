@@ -463,14 +463,35 @@ func (p *parser) mergeMaps(left, right *map[string]interface{}) (ret *map[string
 	return left
 }
 
-func (p *parser) mergeHistograms(left, right *histogram.FloatHistogram) (*histogram.FloatHistogram, error) {
-	if left.Schema != right.Schema {
-		return nil, fmt.Errorf("histogram schemas do not match: %d != %d", left.Schema, right.Schema)
+func (p *parser) histogramsSeries(base, inc *histogram.FloatHistogram, times uint64) ([]SequenceValue, error) {
+	if base.Schema != inc.Schema {
+		return nil, fmt.Errorf("histogram schemas do not match: %d != %d", base.Schema, inc.Schema)
 	}
-	if left.ZeroThreshold != right.ZeroThreshold {
-		return nil, fmt.Errorf("histogram z_bucket_w do not match: %d != %d", int(left.ZeroThreshold), int(right.ZeroThreshold))
+	if base.ZeroThreshold != inc.ZeroThreshold {
+		return nil, fmt.Errorf("histogram z_bucket_w do not match: %d != %d", int(base.ZeroThreshold), int(inc.ZeroThreshold))
 	}
-	return left.Add(right), nil
+	ret := make([]SequenceValue, times+1)
+	// add an additional value (the base) for time 0, which we ignore in tests
+	ret[0] = SequenceValue{Histogram: base}
+	cur := base
+	for i := uint64(1); i <= times; i++ {
+		next := *cur
+		l := len(cur.PositiveBuckets)
+		if l > 0 {
+			next.PositiveBuckets = make([]float64, l)
+			copy(next.PositiveBuckets, cur.PositiveBuckets)
+		}
+		l = len(cur.NegativeBuckets)
+		if l > 0 {
+			next.NegativeBuckets = make([]float64, l)
+			copy(next.NegativeBuckets, cur.NegativeBuckets)
+		}
+		cur = &next
+		cur = cur.Add(inc)
+		ret[i] = SequenceValue{Histogram: cur}
+	}
+
+	return ret, nil
 }
 
 // This is used in the grammar to take then individual

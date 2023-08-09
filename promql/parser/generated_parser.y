@@ -166,7 +166,7 @@ START_METRIC_SELECTOR
 %type <label> label_set_item
 %type <strings> grouping_label_list grouping_labels maybe_grouping_labels
 %type <series> series_item series_values
-%type <histogram> histogram_desc_sum histogram_desc_set
+%type <histogram> histogram_desc_set
 %type <descriptors> histogram_desc_map histogram_desc_item
 %type <bucket_set> bucket_set bucket_set_list
 %type <int> int
@@ -680,17 +680,27 @@ series_item     : BLANK
                                 $1 += $2
                         }
                         }
-                | histogram_desc_sum
+                // Histogram descriptions (part of unit testing)
+                | histogram_desc_set
                         {
                         $$ = []SequenceValue{{Histogram:$1}}
                         }
-                | histogram_desc_sum TIMES uint
+                | histogram_desc_set TIMES uint
                         {
                         $$ = []SequenceValue{}
-                        for i:=uint64(0); i < $3; i++{
+                        // add an additional value for time 0, which we ignore in tests
+                        for i:=uint64(0); i <= $3; i++{
                                 $$ = append($$, SequenceValue{Histogram:$1})
                                 //$1 += $2
                         }
+                        }
+                | histogram_desc_set ADD histogram_desc_set TIMES uint
+                        {
+                        val, err := yylex.(*parser).histogramsSeries($1,$3,$5)
+                        if err != nil {
+                          yylex.(*parser).unexpected("histogram series", err.Error())
+                        }
+                        $$ = val
                         }
                 ;
 
@@ -705,29 +715,6 @@ series_value    : IDENTIFIER
                 | signed_number
                 ;
 
-
-/*
- * Histogram descriptions (part of unit testing)
- */
-histogram_desc_sum
-                : histogram_desc_sum ADD histogram_desc_set
-		{
-		  val, err := yylex.(*parser).mergeHistograms($1,$3)
-		  if err != nil {
-		    yylex.(*parser).unexpected("histogram addition", err.Error())
-		  }
-		  $$ = val
-		}
-		|
-		histogram_desc_set
-		{
-		  $$ = $1
-		}
-		|
-		histogram_desc_sum error
-		{
-		  yylex.(*parser).unexpected("histogram description", "histogram description key, e.g. buckets:[5 10 7]")
-		}
 histogram_desc_set
                 : OPEN_HIST histogram_desc_map SPACE CLOSE_HIST
                 {

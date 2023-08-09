@@ -3753,33 +3753,22 @@ func TestParseHistogramSeries(t *testing.T) {
 						Length: 3,
 					}},
 				},
+				{
+					Schema:          1,
+					PositiveBuckets: []float64{5, 10, 7},
+					PositiveSpans: []histogram.Span{{
+						Offset: 0,
+						Length: 3,
+					}},
+				},
 			},
 		}, {
-			name:  "addition",
-			input: `{} {{buckets:[5 10 7] schema:1}}+{{buckets:[1 2 3] schema:1}}`,
-			expected: []histogram.FloatHistogram{{
-				Schema:          1,
-				PositiveBuckets: []float64{6, 12, 10},
-				PositiveSpans: []histogram.Span{{
-					Offset: 0,
-					Length: 3,
-				}},
-			}},
-		}, {
-			name:          "addition with different schemas",
-			input:         `{} {{buckets:[5 10 7] schema:1}}+{{buckets:[1 2 3] schema:2}}`,
-			expectedError: "1:60: parse error: unexpected \"}}\" in histogram addition, expected histogram schemas do not match: 1 != 2",
-		}, {
-			name:          "addition with different zero bucket widths",
-			input:         `{} {{buckets:[5 10 7] z_bucket_w:1}}+{{buckets:[1 2 3] z_bucket_w:2}}`,
-			expectedError: "1:68: parse error: unexpected \"}}\" in histogram addition, expected histogram z_bucket_w do not match: 1 != 2",
-		}, {
-			name:  "addition and multiplication",
+			name:  "series",
 			input: `{} {{buckets:[5 10 7] schema:1}}+{{buckets:[1 2 3] schema:1}}x2`,
 			expected: []histogram.FloatHistogram{
 				{
 					Schema:          1,
-					PositiveBuckets: []float64{6, 12, 10},
+					PositiveBuckets: []float64{5, 10, 7},
 					PositiveSpans: []histogram.Span{{
 						Offset: 0,
 						Length: 3,
@@ -3793,7 +3782,23 @@ func TestParseHistogramSeries(t *testing.T) {
 						Length: 3,
 					}},
 				},
+				{
+					Schema:          1,
+					PositiveBuckets: []float64{7, 14, 13},
+					PositiveSpans: []histogram.Span{{
+						Offset: 0,
+						Length: 3,
+					}},
+				},
 			},
+		}, {
+			name:          "series with different schemas",
+			input:         `{} {{buckets:[5 10 7] schema:1}}+{{buckets:[1 2 3] schema:2}}x2`,
+			expectedError: `1:63: parse error: unexpected number "2" in histogram series, expected histogram schemas do not match: 1 != 2`,
+		}, {
+			name:          "series with different zero bucket widths",
+			input:         `{} {{buckets:[5 10 7] z_bucket_w:1}}+{{buckets:[1 2 3] z_bucket_w:2}}x2`,
+			expectedError: `1:71: parse error: unexpected number "2" in histogram series, expected histogram z_bucket_w do not match: 1 != 2`,
 		}, {
 			name:  "different order",
 			input: `{} {{buckets:[5 10 7] schema:1}}`,
