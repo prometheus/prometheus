@@ -3632,6 +3632,17 @@ var testSeries = []struct {
 		expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", "b"),
 		expectedValues: newSeq(1, 2, 3, 3, 3, 3, 3),
 	}, {
+		input: `{} 1+1`,
+		fail:  true,
+	}, {
+		input:          `{} 1x0`,
+		expectedMetric: labels.EmptyLabels(),
+		expectedValues: newSeq(1),
+	}, {
+		input:          `{} 1+1x0`,
+		expectedMetric: labels.EmptyLabels(),
+		expectedValues: newSeq(1),
+	}, {
 		input:          `my_metric{a="b"} 1 3 _ 5 _x4`,
 		expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", "b"),
 		expectedValues: newSeq(1, 3, none, 5, none, none, none, none),
@@ -3734,7 +3745,7 @@ func TestParseHistogramSeries(t *testing.T) {
 				NegativeSpans:   []histogram.Span{{Offset: 5, Length: 2}},
 			}},
 		}, {
-			name:  "multiplication",
+			name:  "static series",
 			input: `{} {{buckets:[5 10 7] schema:1}}x2`,
 			expected: []histogram.FloatHistogram{
 				{
@@ -3763,7 +3774,20 @@ func TestParseHistogramSeries(t *testing.T) {
 				},
 			},
 		}, {
-			name:  "series",
+			name:  "static series - x0",
+			input: `{} {{buckets:[5 10 7] schema:1}}x0`,
+			expected: []histogram.FloatHistogram{
+				{
+					Schema:          1,
+					PositiveBuckets: []float64{5, 10, 7},
+					PositiveSpans: []histogram.Span{{
+						Offset: 0,
+						Length: 3,
+					}},
+				},
+			},
+		}, {
+			name:  "series with increment",
 			input: `{} {{buckets:[5 10 7] schema:1}}+{{buckets:[1 2 3] schema:1}}x2`,
 			expected: []histogram.FloatHistogram{
 				{
@@ -3785,6 +3809,19 @@ func TestParseHistogramSeries(t *testing.T) {
 				{
 					Schema:          1,
 					PositiveBuckets: []float64{7, 14, 13},
+					PositiveSpans: []histogram.Span{{
+						Offset: 0,
+						Length: 3,
+					}},
+				},
+			},
+		}, {
+			name:  "series with increment - 0x",
+			input: `{} {{buckets:[5 10 7] schema:1}}+{{buckets:[1 2 3] schema:1}}x0`,
+			expected: []histogram.FloatHistogram{
+				{
+					Schema:          1,
+					PositiveBuckets: []float64{5, 10, 7},
 					PositiveSpans: []histogram.Span{{
 						Offset: 0,
 						Length: 3,
