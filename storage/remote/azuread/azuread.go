@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -64,7 +65,7 @@ type AzureADConfig struct { // nolint:revive
 	// ManagedIdentity is the managed identity that is being used to authenticate.
 	ManagedIdentity *ManagedIdentityConfig `yaml:"managed_identity,omitempty"`
 
-	// OAuth is the oauth config that is being used to authenicate.
+	// OAuth is the oauth config that is being used to authenticate.
 	OAuth *OAuthConfig `yaml:"oauth,omitempty"`
 
 	// Cloud is the Azure cloud in which the service is running. Example: AzurePublic/AzureGovernment/AzureChina.
@@ -115,7 +116,7 @@ func (c *AzureADConfig) Validate() error {
 
 		_, err := uuid.Parse(c.ManagedIdentity.ClientID)
 		if err != nil {
-			return fmt.Errorf("the provided Azure Managed Identity client_id provided is invalid")
+			return fmt.Errorf("the provided Azure Managed Identity client_id is invalid")
 		}
 	}
 
@@ -133,11 +134,11 @@ func (c *AzureADConfig) Validate() error {
 		var err error
 		_, err = uuid.Parse(c.OAuth.ClientID)
 		if err != nil {
-			return fmt.Errorf("the provided Azure OAuth client_id provided is invalid")
+			return fmt.Errorf("the provided Azure OAuth client_id is invalid")
 		}
-		_, err = uuid.Parse(c.OAuth.TenantID)
+		_, err = regexp.MatchString("^[0-9a-zA-Z-.]+$", c.OAuth.TenantID)
 		if err != nil {
-			return fmt.Errorf("the provided Azure OAuth tenant_id provided is invalid")
+			return fmt.Errorf("the provided Azure OAuth tenant_id is invalid")
 		}
 	}
 
