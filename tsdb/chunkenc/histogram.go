@@ -45,28 +45,6 @@ func NewHistogramChunk() *HistogramChunk {
 	return &HistogramChunk{b: bstream{stream: b, count: 0}}
 }
 
-func NewPrepopulatedHistogramChunk(b []byte) (*HistogramChunk, error) {
-	chk := &HistogramChunk{b: bstream{stream: b}}
-	it, ok := chk.Iterator(nil).(*histogramIterator)
-	if !ok {
-		panic("unexpected iterator type") // This should never happen.
-	}
-
-	for valType := it.Next(); valType != ValNone; valType = it.Next() {
-	}
-	if err := it.Err(); err != nil {
-		return nil, err
-	}
-
-	if it.br.valid%8 == 0 && (it.br.valid != 0 || it.br.streamOffset < len(it.br.stream)) {
-		chk.b.count = 8
-	} else {
-		chk.b.count = it.br.valid % 8
-	}
-
-	return chk, nil
-}
-
 // Encoding returns the encoding type.
 func (c *HistogramChunk) Encoding() Encoding {
 	return EncHistogram
@@ -140,6 +118,12 @@ func (c *HistogramChunk) Appender() (Appender, error) {
 	}
 	if err := it.Err(); err != nil {
 		return nil, err
+	}
+
+	if it.br.valid%8 == 0 && (it.br.valid != 0 || it.br.streamOffset < len(it.br.stream)) {
+		c.b.count = 8
+	} else {
+		c.b.count = it.br.valid % 8
 	}
 
 	a := &HistogramAppender{
