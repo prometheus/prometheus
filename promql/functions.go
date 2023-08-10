@@ -202,20 +202,14 @@ func histogramRate(points []HPoint, isCounter bool) *histogram.FloatHistogram {
 	}
 
 	h := last.CopyToSchema(minSchema)
-	_, err := h.Sub(prev)
-	if err != nil {
-		panic(err)
-	}
+	h.Sub(prev)
 
 	if isCounter {
 		// Second iteration to deal with counter resets.
 		for _, currPoint := range points[1:] {
 			curr := currPoint.H
 			if curr.DetectReset(prev) {
-				_, err := h.Add(prev)
-				if err != nil {
-					panic(err)
-				}
+				h.Add(prev)
 			}
 			prev = curr
 		}
@@ -473,23 +467,11 @@ func funcAvgOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 				// The histogram being added/subtracted must have
 				// an equal or larger schema.
 				if h.H.Schema >= mean.Schema {
-					toAdd, err := right.Mul(-1).Add(left)
-					if err != nil {
-						panic(err)
-					}
-					_, err = mean.Add(toAdd)
-					if err != nil {
-						panic(err)
-					}
+					toAdd := right.Mul(-1).Add(left)
+					mean.Add(toAdd)
 				} else {
-					toAdd, err := left.Sub(right)
-					if err != nil {
-						panic(err)
-					}
-					mean, err = toAdd.Add(mean)
-					if err != nil {
-						panic(err)
-					}
+					toAdd := left.Sub(right)
+					mean = toAdd.Add(mean)
 				}
 			}
 			return mean
@@ -613,16 +595,9 @@ func funcSumOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 				// The histogram being added must have
 				// an equal or larger schema.
 				if h.H.Schema >= sum.Schema {
-					_, err := sum.Add(h.H)
-					if err != nil {
-						panic(err)
-					}
+					sum.Add(h.H)
 				} else {
-					var err error
-					sum, err = h.H.Copy().Add(sum)
-					if err != nil {
-						panic(err)
-					}
+					sum = h.H.Copy().Add(sum)
 				}
 			}
 			return sum

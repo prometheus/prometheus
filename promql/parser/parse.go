@@ -486,34 +486,39 @@ func (p *parser) mergeMaps(left, right *map[string]interface{}) (ret *map[string
 }
 
 func (p *parser) histogramsIncreaseSeries(base, inc *histogram.FloatHistogram, times uint64) ([]SequenceValue, error) {
-	return p.histogramsSeries(base, inc, times, func(a, b *histogram.FloatHistogram) (*histogram.FloatHistogram, error) {
+	return p.histogramsSeries(base, inc, times, func(a, b *histogram.FloatHistogram) *histogram.FloatHistogram {
 		return a.Add(b)
 	})
 }
 
 func (p *parser) histogramsDecreaseSeries(base, inc *histogram.FloatHistogram, times uint64) ([]SequenceValue, error) {
-	return p.histogramsSeries(base, inc, times, func(a, b *histogram.FloatHistogram) (*histogram.FloatHistogram, error) {
+	return p.histogramsSeries(base, inc, times, func(a, b *histogram.FloatHistogram) *histogram.FloatHistogram {
 		return a.Sub(b)
 	})
 }
 
 func (p *parser) histogramsSeries(base, inc *histogram.FloatHistogram, times uint64,
-	combine func(*histogram.FloatHistogram, *histogram.FloatHistogram) (*histogram.FloatHistogram, error),
-) ([]SequenceValue, error) {
-	ret := make([]SequenceValue, times+1)
+	combine func(*histogram.FloatHistogram, *histogram.FloatHistogram) *histogram.FloatHistogram,
+) (ret []SequenceValue, err error) {
+	ret = make([]SequenceValue, times+1)
 	// Add an additional value (the base) for time 0, which we ignore in tests
 	ret[0] = SequenceValue{Histogram: base}
 	cur := base
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Println("recovered:", r)
+			err = fmt.Errorf("error combining histograms: %v", r)
+		}
+	}()
 	for i := uint64(1); i <= times; i++ {
-		var err error
-		cur, err = combine(cur.Copy(), inc)
+		cur = combine(cur.Copy(), inc)
 		if err != nil {
-			return nil, fmt.Errorf("error combining histograms: %w", err)
+			return
 		}
 		ret[i] = SequenceValue{Histogram: cur}
 	}
 
-	return ret, nil
+	return
 }
 
 // This is used in the grammar to take then individual
