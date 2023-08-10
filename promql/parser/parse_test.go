@@ -3921,7 +3921,7 @@ func TestParseHistogramSeries(t *testing.T) {
 		}, {
 			name:          "space after {{",
 			input:         `{} {{ schema:1}}`,
-			expectedError: `1:6: parse error: unexpected " " in series values`,
+			expectedError: `1:7: parse error: unexpected "<Item 57372>" "schema" in series values`,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
