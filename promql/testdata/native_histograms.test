@@ -171,9 +171,37 @@ eval instant at 5m histogram_quantile(0.5, negative_histogram{})
 
 
 
-# Two histograms with negated data: single_histogram{} followed by negative_histogram{}.
-load 10m
-	balanced_histogram{} {{schema:0 sum:4 count:4 buckets:[1 2 1]}} {{schema:0 sum:-4 count:4 n_buckets:[1 2 1]}}
+# Two histogram samples.
+load 5m
+	two_samples_histogram{} {{schema:0 sum:4 count:4 buckets:[1 2 1]}} {{schema:0 sum:-4 count:4 n_buckets:[1 2 1]}}
+
+# We expect to see the newest sample.
+eval instant at 10m histogram_count(two_samples_histogram{})
+	{} 4
+
+eval instant at 10m histogram_sum(two_samples_histogram{})
+	{} -4
+
+eval instant at 10m histogram_fraction(-2, -1, two_samples_histogram{})
+	{} 0.5
+
+eval instant at 10m histogram_quantile(0.5, two_samples_histogram{})
+	{} -1.5
+
+
+
+# Add two histograms with negated data: single_histogram{} followed by negative_histogram{}.
+load 5m
+	balanced_histogram{} {{schema:0 sum:4 count:4 buckets:[1 2 1]}}+{{schema:0 sum:-4 count:4 n_buckets:[1 2 1]}}x1
 
 eval instant at 5m histogram_count(balanced_histogram{})
 	{} 8
+
+eval instant at 5m histogram_sum(balanced_histogram{})
+	{} 0
+
+eval instant at 5m histogram_fraction(0, 4, balanced_histogram{})
+	{} 0.5
+
+eval instant at 5m histogram_quantile(0.5, balanced_histogram{})
+	{} 0
