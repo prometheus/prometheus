@@ -2460,9 +2460,17 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 			// The histogram being added must have the larger schema
 			// code (i.e. the higher resolution).
 			if hrhs.Schema >= hlhs.Schema {
-				return 0, hlhs.Copy().Add(hrhs).Compact(0), true
+				_, err := hlhs.Copy().Add(hrhs)
+				if err != nil {
+					panic(err)
+				}
+				return 0, hlhs.Compact(0), true
 			}
-			return 0, hrhs.Copy().Add(hlhs).Compact(0), true
+			_, err := hrhs.Copy().Add(hlhs)
+			if err != nil {
+				panic(err)
+			}
+			return 0, hrhs.Compact(0), true
 		}
 		return lhs + rhs, nil, true
 	case parser.SUB:
@@ -2470,9 +2478,17 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 			// The histogram being subtracted must have the larger schema
 			// code (i.e. the higher resolution).
 			if hrhs.Schema >= hlhs.Schema {
-				return 0, hlhs.Copy().Sub(hrhs).Compact(0), true
+				_, err := hlhs.Copy().Sub(hrhs)
+				if err != nil {
+					panic(err)
+				}
+				return 0, hlhs.Compact(0), true
 			}
-			return 0, hrhs.Copy().Mul(-1).Add(hlhs).Compact(0), true
+			_, err := hrhs.Copy().Mul(-1).Add(hlhs)
+			if err != nil {
+				panic(err)
+			}
+			return 0, hrhs.Compact(0), true
 		}
 		return lhs - rhs, nil, true
 	case parser.MUL:
@@ -2657,9 +2673,16 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 					// The histogram being added must have
 					// an equal or larger schema.
 					if s.H.Schema >= group.histogramValue.Schema {
-						group.histogramValue.Add(s.H)
+						_, err := group.histogramValue.Add(s.H)
+						if err != nil {
+							panic(err)
+						}
 					} else {
-						group.histogramValue = s.H.Copy().Add(group.histogramValue)
+						var err error
+						group.histogramValue, err = s.H.Copy().Add(group.histogramValue)
+						if err != nil {
+							panic(err)
+						}
 					}
 				}
 				// Otherwise the aggregation contained floats
@@ -2680,11 +2703,23 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 					// The histogram being added/subtracted must have
 					// an equal or larger schema.
 					if s.H.Schema >= group.histogramMean.Schema {
-						toAdd := right.Mul(-1).Add(left)
-						group.histogramMean.Add(toAdd)
+						toAdd, err := right.Mul(-1).Add(left)
+						if err != nil {
+							panic(err)
+						}
+						_, err = group.histogramMean.Add(toAdd)
+						if err != nil {
+							panic(err)
+						}
 					} else {
-						toAdd := left.Sub(right)
-						group.histogramMean = toAdd.Add(group.histogramMean)
+						toAdd, err := left.Sub(right)
+						if err != nil {
+							panic(err)
+						}
+						group.histogramMean, err = toAdd.Add(group.histogramMean)
+						if err != nil {
+							panic(err)
+						}
 					}
 				}
 				// Otherwise the aggregation contained floats
