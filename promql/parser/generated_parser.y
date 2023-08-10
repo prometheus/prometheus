@@ -732,6 +732,16 @@ histogram_series_value
                 {
                   $$ = yylex.(*parser).buildHistogramFromMap(&$2)
                 }
+                | OPEN_HIST SPACE CLOSE_HIST
+                {
+                  m := yylex.(*parser).newMap()
+                  $$ = yylex.(*parser).buildHistogramFromMap(&m)
+                }
+                | OPEN_HIST CLOSE_HIST
+                {
+                  m := yylex.(*parser).newMap()
+                  $$ = yylex.(*parser).buildHistogramFromMap(&m)
+                }
                 ;
 
 histogram_desc_map

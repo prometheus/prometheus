@@ -3717,6 +3717,14 @@ func TestParseHistogramSeries(t *testing.T) {
 		expectedError string
 	}{
 		{
+			name:     "empty histogram",
+			input:    "{} {{}}",
+			expected: []histogram.FloatHistogram{{}},
+		}, {
+			name:     "empty histogram with space",
+			input:    "{} {{ }}",
+			expected: []histogram.FloatHistogram{{}},
+		}, {
 			name:  "all properties used",
 			input: `{} {{schema:1 sum:-0.3 count:3.1 z_bucket:7.1 z_bucket_w:0.05 buckets:[5.1 10 7] offset:-3 n_buckets:[4.1 5] n_offset:-5}}`,
 			expected: []histogram.FloatHistogram{{
