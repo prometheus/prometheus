@@ -169,6 +169,21 @@ func (errs ParseErrors) Error() string {
 	return "error contains no error message"
 }
 
+// EnrichParseError enriches a single or list of parse errors.
+func EnrichParseError(err error, enrich func(parseErr *ParseErr)) {
+	var parseErr *ParseErr
+	if errors.As(err, &parseErr) {
+		enrich(parseErr)
+	}
+	var parseErrors ParseErrors
+	if errors.As(err, &parseErrors) {
+		for i, e := range parseErrors {
+			enrich(&e)
+			parseErrors[i] = e
+		}
+	}
+}
+
 // ParseExpr returns the expression parsed from the input.
 func ParseExpr(input string) (expr Expr, err error) {
 	p := NewParser(input)
@@ -223,6 +238,9 @@ type SequenceValue struct {
 func (v SequenceValue) String() string {
 	if v.Omitted {
 		return "_"
+	}
+	if v.Histogram != nil {
+		return v.Histogram.String()
 	}
 	return fmt.Sprintf("%f", v.Value)
 }

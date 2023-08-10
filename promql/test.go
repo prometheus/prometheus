@@ -174,26 +174,12 @@ func parseLoad(lines []string, i int) (int, *loadCmd, error) {
 func parseSeries(defLine string, line int) (labels.Labels, []parser.SequenceValue, error) {
 	metric, vals, err := parser.ParseSeriesDesc(defLine)
 	if err != nil {
-		enrichParseError(err, func(parseErr *parser.ParseErr) {
+		parser.EnrichParseError(err, func(parseErr *parser.ParseErr) {
 			parseErr.LineOffset = line
 		})
 		return nil, nil, err
 	}
 	return metric, vals, nil
-}
-
-func enrichParseError(err error, enrich func(parseErr *parser.ParseErr)) {
-	var perr *parser.ParseErr
-	if errors.As(err, &perr) {
-		enrich(perr)
-	}
-	var perrs parser.ParseErrors
-	if errors.As(err, &perrs) {
-		for i, e := range perrs {
-			enrich(&e)
-			perrs[i] = e
-		}
-	}
 }
 
 func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
@@ -208,7 +194,7 @@ func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 	)
 	_, err := parser.ParseExpr(expr)
 	if err != nil {
-		enrichParseError(err, func(parseErr *parser.ParseErr) {
+		parser.EnrichParseError(err, func(parseErr *parser.ParseErr) {
 			parseErr.LineOffset = i
 			posOffset := parser.Pos(strings.Index(lines[i], expr))
 			parseErr.PositionRange.Start += posOffset
@@ -447,8 +433,13 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 			if ev.ordered && exp.pos != pos+1 {
 				return fmt.Errorf("expected metric %s with %v at position %d but was at %d", v.Metric, exp.vals, exp.pos, pos+1)
 			}
-			if !almostEqual(exp.vals[0].Value, v.F) {
-				return fmt.Errorf("expected %v for %s but got %v", exp.vals[0].Value, v.Metric, v.F)
+			exp0 := exp.vals[0]
+			expH := exp0.Histogram
+			if (expH == nil) != (v.H == nil) || (expH != nil && !expH.Equals(v.H)) {
+				return fmt.Errorf("expected %v for %s but got %v", expH, v.Metric, v.H)
+			}
+			if !almostEqual(exp0.Value, v.F) {
+				return fmt.Errorf("expected %v for %s but got %v", exp0.Value, v.Metric, v.F)
 			}
 
 			seen[fp] = true
@@ -464,8 +455,15 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 		}
 
 	case Scalar:
-		if !almostEqual(ev.expected[0].vals[0].Value, val.V) {
-			return fmt.Errorf("expected Scalar %v but got %v", val.V, ev.expected[0].vals[0].Value)
+		if len(ev.expected) != 1 {
+			return fmt.Errorf("expected vector result, but got scalar %s", val.String())
+		}
+		exp0 := ev.expected[0].vals[0]
+		if exp0.Histogram != nil {
+			return fmt.Errorf("expected Histogram %v but got scalar %s", exp0.Histogram, val.String())
+		}
+		if !almostEqual(exp0.Value, val.V) {
+			return fmt.Errorf("expected Scalar %v but got %v", val.V, exp0.Value)
 		}
 
 	default:
