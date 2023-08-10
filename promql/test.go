@@ -162,17 +162,38 @@ func parseLoad(lines []string, i int) (int, *loadCmd, error) {
 			i--
 			break
 		}
-		metric, vals, err := parser.ParseSeriesDesc(defLine)
+		metric, vals, err := parseSeries(defLine, i)
 		if err != nil {
-			var perr *parser.ParseErr
-			if errors.As(err, &perr) {
-				perr.LineOffset = i
-			}
 			return i, nil, err
 		}
 		cmd.set(metric, vals...)
 	}
 	return i, cmd, nil
+}
+
+func parseSeries(defLine string, line int) (labels.Labels, []parser.SequenceValue, error) {
+	metric, vals, err := parser.ParseSeriesDesc(defLine)
+	if err != nil {
+		enrichParseError(err, func(parseErr *parser.ParseErr) {
+			parseErr.LineOffset = line
+		})
+		return nil, nil, err
+	}
+	return metric, vals, nil
+}
+
+func enrichParseError(err error, enrich func(parseErr *parser.ParseErr)) {
+	var perr *parser.ParseErr
+	if errors.As(err, &perr) {
+		enrich(perr)
+	}
+	var perrs parser.ParseErrors
+	if errors.As(err, &perrs) {
+		for i, e := range perrs {
+			enrich(&e)
+			perrs[i] = e
+		}
+	}
 }
 
 func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
@@ -187,14 +208,13 @@ func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 	)
 	_, err := parser.ParseExpr(expr)
 	if err != nil {
-		var perr *parser.ParseErr
-		if errors.As(err, &perr) {
-			perr.LineOffset = i
+		enrichParseError(err, func(parseErr *parser.ParseErr) {
+			parseErr.LineOffset = i
 			posOffset := parser.Pos(strings.Index(lines[i], expr))
-			perr.PositionRange.Start += posOffset
-			perr.PositionRange.End += posOffset
-			perr.Query = lines[i]
-		}
+			parseErr.PositionRange.Start += posOffset
+			parseErr.PositionRange.End += posOffset
+			parseErr.Query = lines[i]
+		})
 		return i, nil, err
 	}
 
@@ -223,12 +243,8 @@ func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 			cmd.expect(0, parser.SequenceValue{Value: f})
 			break
 		}
-		metric, vals, err := parser.ParseSeriesDesc(defLine)
+		metric, vals, err := parseSeries(defLine, i)
 		if err != nil {
-			var perr *parser.ParseErr
-			if errors.As(err, &perr) {
-				perr.LineOffset = i
-			}
 			return i, nil, err
 		}
 
