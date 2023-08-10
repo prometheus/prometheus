@@ -347,6 +347,10 @@ Outer:
 
 		var gotSamples []parsedSample
 		for _, s := range got {
+			if s.H != nil {
+				// this is an implementation detail
+				s.H.CounterResetHint = histogram.UnknownCounterReset
+			}
 			gotSamples = append(gotSamples, parsedSample{
 				Labels:    s.Metric.Copy(),
 				Value:     s.F,
@@ -357,6 +361,19 @@ Outer:
 		var expSamples []parsedSample
 		for _, s := range testCase.ExpSamples {
 			lb, err := parser.ParseMetric(s.Labels)
+			var hist *histogram.FloatHistogram
+			if err == nil && s.Histogram != "" {
+				_, values, parseErr := parser.ParseSeriesDesc("{} " + s.Histogram)
+				if parseErr != nil {
+					err = parseErr
+				} else if len(values) != 1 {
+					err = fmt.Errorf("expected 1 value, got %d", len(values))
+				} else if values[0].Histogram == nil {
+					err = fmt.Errorf("expected histogram, got %v", values[0])
+				} else {
+					hist = values[0].Histogram
+				}
+			}
 			if err != nil {
 				err = fmt.Errorf("labels %q: %w", s.Labels, err)
 				errs = append(errs, fmt.Errorf("    expr: %q, time: %s, err: %w", testCase.Expr,
@@ -366,7 +383,7 @@ Outer:
 			expSamples = append(expSamples, parsedSample{
 				Labels:    lb,
 				Value:     s.Value,
-				Histogram: s.Histogram,
+				Histogram: hist,
 			})
 		}
 
@@ -534,9 +551,9 @@ type promqlTestCase struct {
 }
 
 type sample struct {
-	Labels    string                    `yaml:"labels"`
-	Value     float64                   `yaml:"value"`
-	Histogram *histogram.FloatHistogram `yaml:"histogram"`
+	Labels    string  `yaml:"labels"`
+	Value     float64 `yaml:"value"`
+	Histogram string  `yaml:"histogram"`
 }
 
 // parsedSample is a sample with parsed Labels.
@@ -559,11 +576,7 @@ func parsedSamplesString(pss []parsedSample) string {
 
 func (ps *parsedSample) String() string {
 	if ps.Histogram != nil {
-		out, err := yaml.Marshal(ps.Histogram)
-		if err != nil {
-			panic(err)
-		}
-		return ps.Labels.String() + " " + string(out)
+		return ps.Labels.String() + " " + ps.Histogram.PromQlExpression()
 	}
 	return ps.Labels.String() + " " + strconv.FormatFloat(ps.Value, 'E', -1, 64)
 }

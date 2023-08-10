@@ -130,6 +130,60 @@ func (h *FloatHistogram) String() string {
 	return sb.String()
 }
 
+// PromQlExpression returns a PromQL expression that evaluates to this histogram when used in promtool.
+func (h *FloatHistogram) PromQlExpression() string {
+	trim := func(s string) string {
+		for {
+			found := false
+			s, found = strings.CutSuffix(s, "0")
+			if !found {
+				break
+			}
+		}
+		return strings.TrimSuffix(s, ".")
+	}
+	var res []string
+	if h.Schema != 0 {
+		res = append(res, fmt.Sprintf("schema:%d", h.Schema))
+	}
+	if h.Count != 0 {
+		res = append(res, trim(fmt.Sprintf("count:%f", h.Count)))
+	}
+	if h.Sum != 0 {
+		res = append(res, trim(fmt.Sprintf("sum:%f", h.Sum)))
+	}
+	if h.ZeroCount != 0 {
+		res = append(res, trim(fmt.Sprintf("z_bucket:%f", h.ZeroCount)))
+	}
+	if h.ZeroThreshold != 0 {
+		res = append(res, trim(fmt.Sprintf("z_bucket_w:%f", h.ZeroThreshold)))
+	}
+
+	addBuckets := func(kind, bucketsKey, offsetKey string, buckets []float64, spans []Span) []string {
+		if len(spans) > 1 {
+			panic(fmt.Sprintf("histogram with multiple %s spans not supported", kind))
+		}
+		for _, span := range spans {
+			if span.Offset != 0 {
+				res = append(res, fmt.Sprintf("%s:%d", offsetKey, span.Offset))
+			}
+		}
+
+		var bucketStr []string
+		for _, bucket := range buckets {
+			bucketStr = append(bucketStr, trim(fmt.Sprintf("%f", bucket)))
+		}
+		if len(bucketStr) > 0 {
+			res = append(res, fmt.Sprintf("%s:[%s]", bucketsKey, strings.Join(bucketStr, " ")))
+		}
+		return res
+	}
+
+	res = addBuckets("positive", "buckets", "offset", h.PositiveBuckets, h.PositiveSpans)
+	res = addBuckets("negative", "n_buckets", "n_offset", h.NegativeBuckets, h.NegativeSpans)
+	return "{{" + strings.Join(res, " ") + "}}"
+}
+
 // ZeroBucket returns the zero bucket.
 func (h *FloatHistogram) ZeroBucket() Bucket[float64] {
 	return Bucket[float64]{

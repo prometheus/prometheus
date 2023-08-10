@@ -63,51 +63,19 @@ tests:
         eval_time: 1m
         exp_samples:
           - labels: "test_histogram"
-            histogram:
-              schema: 1
-              zerothreshold: 0.05
-              zerocount: 7.1
-              count: 32.1
-              sum: -0.3
-              positivespans:
-              - offset: -3
-                length: 3
-              negativespans:
-              - offset: -5
-                length: 2
-              positivebuckets:
-              - 5.1
-              - 10
-              - 7
-              negativebuckets:
-              - 4.1
-              - 5
+            histogram: "{{schema:1 sum:-0.3 count:32.1 z_bucket:7.1 z_bucket_w:0.05 buckets:[5.1 10 7] offset:-3 n_buckets:[4.1 5] n_offset:-5}}"
 
       - expr: test_histogram_repeat
         eval_time: 2m
         exp_samples:
           - labels: "test_histogram_repeat"
-            histogram:
-              counterresethint: 2
-              count: 2
-              sum: 3
-              positivespans:
-              - length: 1
-              positivebuckets:
-              - 2
+            histogram: "{{count:2 sum:3 buckets:[2]}}"
 
       - expr: test_histogram_increase
         eval_time: 2m
         exp_samples:
           - labels: "test_histogram_increase"
-            histogram:
-              counterresethint: 2
-              count: 4
-              sum: 5.6
-              positivespans:
-              - length: 1
-              positivebuckets:
-              - 4
+            histogram: "{{count:4 sum:5.6 buckets:[4]}}"
 
       # Ensure a value is stale as soon as it is marked as such.
       - expr: test_stale
