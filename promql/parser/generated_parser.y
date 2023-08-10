@@ -698,7 +698,7 @@ series_item     : BLANK
                         {
                         val, err := yylex.(*parser).histogramsIncreaseSeries($1,$3,$5)
                         if err != nil {
-                          yylex.(*parser).unexpected("histogram increase series", err.Error())
+                          yylex.(*parser).addSemanticError(err)
                         }
                         $$ = val
                         }
@@ -706,7 +706,7 @@ series_item     : BLANK
                         {
                         val, err := yylex.(*parser).histogramsDecreaseSeries($1,$3,$5)
                         if err != nil {
-                          yylex.(*parser).unexpected("histogram decrease series", err.Error())
+                          yylex.(*parser).addSemanticError(err)
                         }
                         $$ = val
                         }

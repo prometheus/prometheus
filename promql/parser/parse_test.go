@@ -3808,31 +3808,28 @@ func TestParseHistogramSeries(t *testing.T) {
 				},
 			},
 		}, {
-			name:  "series with increment",
-			input: `{} {{buckets:[5 10 7] schema:1}}+{{buckets:[1 2 3] schema:1}}x2`,
+			name:  "series with increment - with different schemas",
+			input: `{} {{buckets:[5] schema:0}}+{{buckets:[1 2] schema:1}}x2`,
 			expected: []histogram.FloatHistogram{
 				{
-					Schema:          1,
-					PositiveBuckets: []float64{5, 10, 7},
+					PositiveBuckets: []float64{5},
 					PositiveSpans: []histogram.Span{{
 						Offset: 0,
-						Length: 3,
+						Length: 1,
 					}},
 				},
 				{
-					Schema:          1,
-					PositiveBuckets: []float64{6, 12, 10},
+					PositiveBuckets: []float64{6, 2},
 					PositiveSpans: []histogram.Span{{
 						Offset: 0,
-						Length: 3,
+						Length: 2,
 					}},
 				},
 				{
-					Schema:          1,
-					PositiveBuckets: []float64{7, 14, 13},
+					PositiveBuckets: []float64{7, 4},
 					PositiveSpans: []histogram.Span{{
 						Offset: 0,
-						Length: 3,
+						Length: 2,
 					}},
 				},
 			},
@@ -3879,13 +3876,9 @@ func TestParseHistogramSeries(t *testing.T) {
 				},
 			},
 		}, {
-			name:          "series with different schemas",
-			input:         `{} {{buckets:[5 10 7] schema:1}}+{{buckets:[1 2 3] schema:2}}x2`,
-			expectedError: `1:63: parse error: unexpected number "2" in histogram increase series, expected histogram schemas do not match: 1 != 2`,
-		}, {
-			name:          "series with different zero bucket widths",
-			input:         `{} {{buckets:[5 10 7] z_bucket_w:1}}+{{buckets:[1 2 3] z_bucket_w:2}}x2`,
-			expectedError: `1:71: parse error: unexpected number "2" in histogram increase series, expected histogram z_bucket_w do not match: 1 != 2`,
+			name:          "series with different schemas - second one is smaller",
+			input:         `{} {{buckets:[5 10 7] schema:1}}+{{buckets:[1 2 3] schema:0}}x2`,
+			expectedError: `1:63: parse error: error combining histograms: cannot merge from schema 0 to 1`,
 		}, {
 			name:  "different order",
 			input: `{} {{buckets:[5 10 7] schema:1}}`,

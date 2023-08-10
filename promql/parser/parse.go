@@ -290,6 +290,10 @@ func (p *parser) addParseErr(positionRange PositionRange, err error) {
 	p.parseErrors = append(p.parseErrors, perr)
 }
 
+func (p *parser) addSemanticError(err error) {
+	p.addParseErr(p.yyParser.lval.item.PositionRange(), err)
+}
+
 // unexpected creates a parser error complaining about an unexpected lexer item.
 // The item that is presented as unexpected is always the last item produced
 // by the lexer.
@@ -495,23 +499,26 @@ func (p *parser) histogramsDecreaseSeries(base, inc *histogram.FloatHistogram, t
 
 func (p *parser) histogramsSeries(base, inc *histogram.FloatHistogram, times uint64,
 	combine func(*histogram.FloatHistogram, *histogram.FloatHistogram) *histogram.FloatHistogram,
-) ([]SequenceValue, error) {
-	if base.Schema != inc.Schema {
-		return nil, fmt.Errorf("histogram schemas do not match: %d != %d", base.Schema, inc.Schema)
-	}
-	if base.ZeroThreshold != inc.ZeroThreshold {
-		return nil, fmt.Errorf("histogram z_bucket_w do not match: %d != %d", int(base.ZeroThreshold), int(inc.ZeroThreshold))
-	}
-	ret := make([]SequenceValue, times+1)
+) (ret []SequenceValue, err error) {
+	ret = make([]SequenceValue, times+1)
 	// Add an additional value (the base) for time 0, which we ignore in tests
 	ret[0] = SequenceValue{Histogram: base}
 	cur := base
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Println("recovered:", r)
+			err = fmt.Errorf("error combining histograms: %v", r)
+		}
+	}()
 	for i := uint64(1); i <= times; i++ {
 		cur = combine(cur.Copy(), inc)
+		if err != nil {
+			return
+		}
 		ret[i] = SequenceValue{Histogram: cur}
 	}
 
-	return ret, nil
+	return
 }
 
 // This is used in the grammar to take then individual

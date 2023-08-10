@@ -1731,7 +1731,7 @@ yydefault:
 		{
 			val, err := yylex.(*parser).histogramsIncreaseSeries(yyDollar[1].histogram, yyDollar[3].histogram, yyDollar[5].uint)
 			if err != nil {
-				yylex.(*parser).unexpected("histogram increase series", err.Error())
+				yylex.(*parser).addSemanticError(err)
 			}
 			yyVAL.series = val
 		}
@@ -1741,7 +1741,7 @@ yydefault:
 		{
 			val, err := yylex.(*parser).histogramsDecreaseSeries(yyDollar[1].histogram, yyDollar[3].histogram, yyDollar[5].uint)
 			if err != nil {
-				yylex.(*parser).unexpected("histogram decrease series", err.Error())
+				yylex.(*parser).addSemanticError(err)
 			}
 			yyVAL.series = val
 		}
