@@ -499,13 +499,13 @@ func (p *parser) histogramsDecreaseSeries(base, inc *histogram.FloatHistogram, t
 
 func (p *parser) histogramsSeries(base, inc *histogram.FloatHistogram, times uint64,
 	combine func(*histogram.FloatHistogram, *histogram.FloatHistogram) (*histogram.FloatHistogram, error),
-) ([]SequenceValue, error) {
-	ret := make([]SequenceValue, times+1)
+) (ret []SequenceValue, err error) {
+	ret = make([]SequenceValue, times+1)
 	// Add an additional value (the base) for time 0, which we ignore in tests
 	ret[0] = SequenceValue{Histogram: base}
 	cur := base
 	for i := uint64(1); i <= times; i++ {
-		cur, err := combine(cur.Copy(), inc)
+		cur, err = combine(cur.Copy(), inc)
 		if err != nil {
 			return nil, err
 		}
