@@ -364,13 +364,14 @@ Outer:
 			var hist *histogram.FloatHistogram
 			if err == nil && s.Histogram != "" {
 				_, values, parseErr := parser.ParseSeriesDesc("{} " + s.Histogram)
-				if parseErr != nil {
+				switch {
+				case parseErr != nil:
 					err = parseErr
-				} else if len(values) != 1 {
+				case len(values) != 1:
 					err = fmt.Errorf("expected 1 value, got %d", len(values))
-				} else if values[0].Histogram == nil {
+				case values[0].Histogram == nil:
 					err = fmt.Errorf("expected histogram, got %v", values[0])
-				} else {
+				default:
 					hist = values[0].Histogram
 				}
 			}

@@ -177,7 +177,7 @@ func parseSeries(defLine string, line int) (labels.Labels, []parser.SequenceValu
 		parser.EnrichParseError(err, func(parseErr *parser.ParseErr) {
 			parseErr.LineOffset = line
 		})
-		return nil, nil, err
+		return labels.Labels{}, nil, err
 	}
 	return metric, vals, nil
 }
