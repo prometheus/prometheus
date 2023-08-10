@@ -10,7 +10,6 @@ import { API_PATH } from '../../constants/constants';
 import { KVSearch } from '@nexucis/kvsearch';
 import { Container } from 'reactstrap';
 import SearchBar from '../../components/SearchBar';
-import internal from 'stream';
 
 interface ServiceMap {
   activeTargets: Target[];
