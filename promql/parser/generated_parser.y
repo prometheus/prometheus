@@ -696,9 +696,17 @@ series_item     : BLANK
                         }
                 | histogram_series_value ADD histogram_series_value TIMES uint
                         {
-                        val, err := yylex.(*parser).histogramsSeries($1,$3,$5)
+                        val, err := yylex.(*parser).histogramsIncreaseSeries($1,$3,$5)
                         if err != nil {
-                          yylex.(*parser).unexpected("histogram series", err.Error())
+                          yylex.(*parser).unexpected("histogram increase series", err.Error())
+                        }
+                        $$ = val
+                        }
+                | histogram_series_value SUB histogram_series_value TIMES uint
+                        {
+                        val, err := yylex.(*parser).histogramsDecreaseSeries($1,$3,$5)
+                        if err != nil {
+                          yylex.(*parser).unexpected("histogram decrease series", err.Error())
                         }
                         $$ = val
                         }

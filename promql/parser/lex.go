@@ -251,6 +251,7 @@ const (
 	histogramStateOpen
 	histogramStateMul
 	histogramStateAdd
+	histogramStateSub
 )
 
 // Lexer holds the state of the scanner.
@@ -509,6 +510,11 @@ func lexHistogram(l *Lexer) stateFn {
 		l.next()
 		l.emit(ADD)
 		return lexValueSequence
+	case histogramStateSub:
+		l.histogramState = histogramStateNone
+		l.next()
+		l.emit(SUB)
+		return lexValueSequence
 	}
 
 	if l.bracketOpen {
@@ -547,9 +553,12 @@ func lexHistogram(l *Lexer) stateFn {
 		case '+':
 			l.histogramState = histogramStateAdd
 			return lexHistogram
+		case '-':
+			l.histogramState = histogramStateSub
+			return lexHistogram
 		default:
 			l.histogramState = histogramStateNone
-			return lexStatements
+			return lexValueSequence
 		}
 	default:
 		return l.errorf("histogram description incomplete unexpected: %q", r)

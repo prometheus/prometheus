@@ -481,7 +481,21 @@ func (p *parser) mergeMaps(left, right *map[string]interface{}) (ret *map[string
 	return left
 }
 
-func (p *parser) histogramsSeries(base, inc *histogram.FloatHistogram, times uint64) ([]SequenceValue, error) {
+func (p *parser) histogramsIncreaseSeries(base, inc *histogram.FloatHistogram, times uint64) ([]SequenceValue, error) {
+	return p.histogramsSeries(base, inc, times, func(a, b *histogram.FloatHistogram) *histogram.FloatHistogram {
+		return a.Add(b)
+	})
+}
+
+func (p *parser) histogramsDecreaseSeries(base, inc *histogram.FloatHistogram, times uint64) ([]SequenceValue, error) {
+	return p.histogramsSeries(base, inc, times, func(a, b *histogram.FloatHistogram) *histogram.FloatHistogram {
+		return a.Sub(b)
+	})
+}
+
+func (p *parser) histogramsSeries(base, inc *histogram.FloatHistogram, times uint64,
+	combine func(*histogram.FloatHistogram, *histogram.FloatHistogram) *histogram.FloatHistogram,
+) ([]SequenceValue, error) {
 	if base.Schema != inc.Schema {
 		return nil, fmt.Errorf("histogram schemas do not match: %d != %d", base.Schema, inc.Schema)
 	}
@@ -489,12 +503,11 @@ func (p *parser) histogramsSeries(base, inc *histogram.FloatHistogram, times uin
 		return nil, fmt.Errorf("histogram z_bucket_w do not match: %d != %d", int(base.ZeroThreshold), int(inc.ZeroThreshold))
 	}
 	ret := make([]SequenceValue, times+1)
-	// add an additional value (the base) for time 0, which we ignore in tests
+	// Add an additional value (the base) for time 0, which we ignore in tests
 	ret[0] = SequenceValue{Histogram: base}
 	cur := base
 	for i := uint64(1); i <= times; i++ {
-		cur = cur.Copy()
-		cur = cur.Add(inc)
+		cur = combine(cur.Copy(), inc)
 		ret[i] = SequenceValue{Histogram: cur}
 	}
 
