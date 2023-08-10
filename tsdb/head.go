@@ -870,21 +870,22 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 			return nil
 		}
 
-		if len(ms.mmappedChunks) > 0 && ms.mmappedChunks[len(ms.mmappedChunks)-1].maxTime >= mint {
+		if ms.mmappedChunks != nil && ms.mmappedChunks.maxTime >= mint {
 			h.metrics.mmapChunkCorruptionTotal.Inc()
 			return errors.Errorf("out of sequence m-mapped chunk for series ref %d, last chunk: [%d, %d], new: [%d, %d]",
-				seriesRef, ms.mmappedChunks[len(ms.mmappedChunks)-1].minTime, ms.mmappedChunks[len(ms.mmappedChunks)-1].maxTime,
+				seriesRef, ms.mmappedChunks.minTime, ms.mmappedChunks.maxTime,
 				mint, maxt)
 		}
 
 		h.metrics.chunks.Inc()
 		h.metrics.chunksCreated.Inc()
-		ms.mmappedChunks = append(ms.mmappedChunks, &mmappedChunk{
+		ms.mmappedChunks = &mmappedChunk{
 			ref:        chunkRef,
 			minTime:    mint,
 			maxTime:    maxt,
 			numSamples: numSamples,
-		})
+			prev:       ms.mmappedChunks,
+		}
 		h.updateMinMaxTime(mint, maxt)
 		if ms.headChunks != nil && maxt >= ms.headChunks.minTime {
 			// The head chunk was completed and was m-mapped after taking the snapshot.
@@ -1780,8 +1781,8 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 				series.Lock()
 				rmChunks += series.truncateChunksBefore(mint, minOOOMmapRef)
 
-				if len(series.mmappedChunks) > 0 {
-					seq, _ := series.mmappedChunks[0].ref.Unpack()
+				if series.mmappedChunks != nil {
+					seq, _ := series.mmappedChunks.oldest().ref.Unpack()
 					if seq < minMmapFile {
 						minMmapFile = seq
 					}
@@ -1802,7 +1803,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 						minOOOTime = series.ooo.oooHeadChunk.minTime
 					}
 				}
-				if len(series.mmappedChunks) > 0 || series.headChunks != nil || series.pendingCommit ||
+				if series.mmappedChunks != nil || series.headChunks != nil || series.pendingCommit ||
 					(series.ooo != nil && (len(series.ooo.oooMmappedChunks) > 0 || series.ooo.oooHeadChunk != nil)) {
 					seriesMint := series.minTime()
 					if seriesMint < actualMint {
@@ -1956,9 +1957,10 @@ type memSeries struct {
 	//  after compaction: mmappedChunks=[p7,p8,p9]       firstChunkID=7
 	//
 	// pN is the pointer to the mmappedChunk referered to by HeadChunkID=N
-	mmappedChunks []*mmappedChunk
+	// FIXME update this doc
+	mmappedChunks *mmappedChunk
 	// Most recent chunks in memory that are still being built or waiting to be mmapped.
-	// This is a linked list, headChunks points to the most recent chunk, headChunks.next points
+	// This is a linked list, headChunks points to the most recent chunk, headChunks.prev points
 	// to older chunk and so on.
 	headChunks   *memChunk
 	firstChunkID chunks.HeadChunkID // HeadChunkID for mmappedChunks[0]
@@ -2008,8 +2010,8 @@ func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, isolationDisabled
 }
 
 func (s *memSeries) minTime() int64 {
-	if len(s.mmappedChunks) > 0 {
-		return s.mmappedChunks[0].minTime
+	if s.mmappedChunks != nil {
+		return s.mmappedChunks.oldest().minTime
 	}
 	if s.headChunks != nil {
 		return s.headChunks.oldest().minTime
@@ -2022,8 +2024,8 @@ func (s *memSeries) maxTime() int64 {
 	if s.headChunks != nil {
 		return s.headChunks.maxTime
 	}
-	if len(s.mmappedChunks) > 0 {
-		return s.mmappedChunks[len(s.mmappedChunks)-1].maxTime
+	if s.mmappedChunks != nil {
+		return s.mmappedChunks.maxTime
 	}
 	return math.MinInt64
 }
@@ -2034,38 +2036,50 @@ func (s *memSeries) maxTime() int64 {
 func (s *memSeries) truncateChunksBefore(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) int {
 	var removedInOrder int
 	if s.headChunks != nil {
-		var i int
 		var nextChk *memChunk
 		chk := s.headChunks
 		for chk != nil {
 			if chk.maxTime < mint {
+				removedInOrder = chk.len()
 				// If any head chunk is truncated, we can truncate all mmapped chunks.
-				removedInOrder = chk.len() + len(s.mmappedChunks)
+				if s.mmappedChunks != nil {
+					removedInOrder += s.mmappedChunks.len()
+					s.mmappedChunks = nil
+				}
 				s.firstChunkID += chunks.HeadChunkID(removedInOrder)
-				if i == 0 {
+				if nextChk == nil {
 					// This is the first chunk on the list so we need to remove the entire list.
 					s.headChunks = nil
 				} else {
 					// This is NOT the first chunk, unlink it from parent.
 					nextChk.prev = nil
 				}
-				s.mmappedChunks = nil
 				break
 			}
 			nextChk = chk
 			chk = chk.prev
-			i++
 		}
 	}
-	if len(s.mmappedChunks) > 0 {
-		for i, c := range s.mmappedChunks {
-			if c.maxTime >= mint {
+
+	if s.mmappedChunks != nil {
+		var nextChk *mmappedChunk
+		chk := s.mmappedChunks
+		for chk != nil {
+			if chk.maxTime < mint {
+				removedInOrder = chk.len()
+				s.firstChunkID += chunks.HeadChunkID(removedInOrder)
+				if nextChk == nil {
+					// This is the first chunk on the list so we need to remove the entire list.
+					s.mmappedChunks = nil
+				} else {
+					// This is NOT the first chunk, unlink it from parent.
+					nextChk.prev = nil
+				}
 				break
 			}
-			removedInOrder = i + 1
+			nextChk = chk
+			chk = chk.prev
 		}
-		s.mmappedChunks = append(s.mmappedChunks[:0], s.mmappedChunks[removedInOrder:]...)
-		s.firstChunkID += chunks.HeadChunkID(removedInOrder)
 	}
 
 	var removedOOO int
@@ -2103,6 +2117,9 @@ type memChunk struct {
 
 // len returns the length of memChunk list, including the element it was called on.
 func (mc *memChunk) len() (count int) {
+	if mc == nil {
+		return 0
+	}
 	if mc.prev == nil {
 		return 1
 	}
@@ -2176,6 +2193,61 @@ type mmappedChunk struct {
 	ref              chunks.ChunkDiskMapperRef
 	numSamples       uint16
 	minTime, maxTime int64
+	prev             *mmappedChunk
+}
+
+// len returns the length of mmappedChunk list, including the element it was called on.
+func (mc *mmappedChunk) len() (count int) {
+	if mc == nil {
+		return 0
+	}
+	if mc.prev == nil {
+		return 1
+	}
+
+	elem := mc
+	for elem != nil {
+		count++
+		elem = elem.prev
+	}
+	return count
+}
+
+// oldest returns the oldest element on the list.
+// For single element list this will be the same mmappedChunk oldest() was called on.
+func (mc *mmappedChunk) oldest() (elem *mmappedChunk) {
+	if mc.prev == nil {
+		return mc
+	}
+	elem = mc
+	for elem.prev != nil {
+		elem = elem.prev
+	}
+	return elem
+}
+
+// atOffset returns a mmappedChunk that's Nth element on the linked list.
+func (mc *mmappedChunk) atOffset(offset int) (elem *mmappedChunk) {
+	if offset == 0 {
+		return mc
+	}
+	if offset == 1 {
+		return mc.prev
+	}
+	if offset < 0 {
+		return nil
+	}
+
+	var i int
+	elem = mc
+	for i < offset {
+		i++
+		elem = elem.prev
+		if elem == nil {
+			break
+		}
+	}
+	return elem
 }
 
 // Returns true if the chunk overlaps [mint, maxt].
