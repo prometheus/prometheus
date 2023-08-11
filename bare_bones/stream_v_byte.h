@@ -760,7 +760,7 @@ class Sequence {
     // calculate data size
     auto actual_data_size = Codec::decode_data_size(seq.size_, static_cast<const uint8_t*>(seq.keys_));
     if (actual_data_size > std::numeric_limits<uint32_t>::max()) {
-      throw BareBones::Exception(0xe2421936fe194169, "The calculated size (%d) of Sequence exceeds uint32_t max value", actual_data_size);
+      throw BareBones::Exception(0xe2421936fe194169, "The calculated size (%ld) of Sequence exceeds uint32_t max value", actual_data_size);
     }
 
     // read data

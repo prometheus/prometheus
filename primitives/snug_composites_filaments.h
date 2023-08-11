@@ -282,10 +282,9 @@ class LabelNameSet {
         } else if (first_to_load_i < symbols_ids_sequences.size()) {
           throw BareBones::Exception(0xc042fdcb4b149d95, "Attempt to load segment over existing LabelSetNames data");
         } else {
-          throw BareBones::Exception(
-              0x79995816e0a9690b,
-              "Attempt to load incomplete data from segment, LabelSetNames data vector length (%d) is less than segment size (%d)" symbols_ids_sequences.size(),
-              first_to_load_i);
+          throw BareBones::Exception(0x79995816e0a9690b,
+                                     "Attempt to load incomplete data from segment, LabelSetNames data vector length (%zd) is less than segment size (%d)",
+                                     symbols_ids_sequences.size(), first_to_load_i);
         }
       }
 
