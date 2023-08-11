@@ -734,9 +734,7 @@ class BasicDecoder {
 
       for (Primitives::LabelSetID ls_id : segment_ls_id_delta_rle_seq_) {
         if (__builtin_expect(ls_id >= gorilla_.size(), false)) {
-          std::stringstream ss;
-          ss << "Decoder " << uuid_ << " got an error while processing segment LabelSets: Unknown segment's LabelSet's id " << ls_id;
-          throw BareBones::Exception(0xf0e57d2a0e5ce7ed, ss.str());
+          throw BareBones::Exception(0xf0e57d2a0e5ce7ed, "Error while processing segment LabelSets: Unknown segment's LabelSet's id %d", ls_id);
         }
 
         if (__builtin_expect(g_v_bitseq_reader.left() == 0, false)) {
