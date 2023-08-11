@@ -10,26 +10,24 @@
 #include <cstdint>
 #include <exception>
 #include <sstream>
-#include <string>
+#include <string_view>
 
 namespace BareBones {
 
-
 class Exception : public std::exception {
-public:
+ public:
   using Code = uint64_t;
-private:
-  std::string msg_;
+
+ private:
+  std::string_view msg_;
   Code code_;
 
  public:
-  Exception(Code exc_code, std::string_view message) : code_(exc_code) {
-    std::stringstream ss;
-    ss << "Exception " << std::hex << exc_code << ": " << message;
-    msg_ = std::move(ss.str());
-  }
+  Exception(Code exc_code, const char* message, ...) __attribute__((format(printf, 3, 4)));
 
-  const char* what() const noexcept override { return msg_.c_str(); }
+  const char* what() const noexcept override {
+    return msg_.data();
+  }
   Code code() const noexcept { return code_; }
 };
 
