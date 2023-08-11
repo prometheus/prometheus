@@ -2,9 +2,8 @@
 load 5m
 	empty_histogram	{{}}
 
-# TODO: syntax for parsing corrected
-#eval instant at 5m empty_histogram
-#	{__name__="empty_histogram"} {{count:0 sum:0}}
+eval instant at 5m empty_histogram
+	{__name__="empty_histogram"} {{}}
 
 eval instant at 5m histogram_count(empty_histogram)
 	{} 0
@@ -98,9 +97,8 @@ eval instant at 5m histogram_quantile(0.5, incr_histogram)
 	{} 1.5
 
 
-# TODO: parser doesn't allow this yet
-#eval instant at 50m incr_histogram
-#	{__name__="incr_histogram"} {count:14, sum:24, (0.5,1]:1, (1,2]:12, (2,4]:1}
+eval instant at 50m incr_histogram
+	{__name__="incr_histogram"} {{count:14 sum:24 buckets:[1 12 1]}}
 
 eval instant at 50m histogram_count(incr_histogram)
 	{} 14
@@ -125,9 +123,8 @@ eval instant at 50m histogram_quantile(0.5, incr_histogram)
 load 5m
 	low_res_histogram	{{schema:-1 sum:4 count:1 buckets:[1] offset:1}}+{{schema:0 sum:4 count:4 buckets:[2 2] offset:1}}x1
 
-# TODO: parser doesn't allow this yet
-#eval instant at 5m low_res_histogram
-#	{__name__="low_res_histogram"} {count:5, sum:8, (1,4]:5}
+eval instant at 5m low_res_histogram
+	{__name__="low_res_histogram"} {{schema:-1 count:5 sum:8 offset:1 buckets:[5]}}
 
 eval instant at 5m histogram_count(low_res_histogram)
 	{} 5
@@ -215,6 +212,6 @@ eval instant at 5m histogram_sum(balanced_histogram)
 eval instant at 5m histogram_fraction(0, 4, balanced_histogram)
 	{} 0.5
 
-# TODO: still fails
+# TODO: still fails with expected 0 for {} but got 0.5
 #eval instant at 5m histogram_quantile(0.5, balanced_histogram)
 #	{} 0

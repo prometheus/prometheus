@@ -617,9 +617,16 @@ func (t *test) exec(tc testCommand, engine engineQuerier) error {
 			mat := rangeRes.Value.(Matrix)
 			vec := make(Vector, 0, len(mat))
 			for _, series := range mat {
+				// We expect either Floats or Histograms.
 				for _, point := range series.Floats {
 					if point.T == timeMilliseconds(iq.evalTime) {
 						vec = append(vec, Sample{Metric: series.Metric, T: point.T, F: point.F})
+						break
+					}
+				}
+				for _, point := range series.Histograms {
+					if point.T == timeMilliseconds(iq.evalTime) {
+						vec = append(vec, Sample{Metric: series.Metric, T: point.T, H: point.H})
 						break
 					}
 				}
