@@ -169,7 +169,7 @@ func (errs ParseErrors) Error() string {
 	return "error contains no error message"
 }
 
-// EnrichParseError enriches a single or list of parse errors.
+// EnrichParseError enriches a single or list of parse errors (used for unit tests and promtool).
 func EnrichParseError(err error, enrich func(parseErr *ParseErr)) {
 	var parseErr *ParseErr
 	if errors.As(err, &parseErr) {
@@ -501,7 +501,7 @@ func (p *parser) histogramsSeries(base, inc *histogram.FloatHistogram, times uin
 	combine func(*histogram.FloatHistogram, *histogram.FloatHistogram) (*histogram.FloatHistogram, error),
 ) (ret []SequenceValue, err error) {
 	ret = make([]SequenceValue, times+1)
-	// Add an additional value (the base) for time 0, which we ignore in tests
+	// Add an additional value (the base) for time 0, which we ignore in tests.
 	ret[0] = SequenceValue{Histogram: base}
 	cur := base
 	for i := uint64(1); i <= times; i++ {
@@ -515,8 +515,7 @@ func (p *parser) histogramsSeries(base, inc *histogram.FloatHistogram, times uin
 	return ret, nil
 }
 
-// This is used in the grammar to take then individual
-// parts of the histogram and complete it.
+// buildHistogramFromMap is used in the grammar to take then individual parts of the histogram and complete it.
 func (p *parser) buildHistogramFromMap(desc *map[string]interface{}) *histogram.FloatHistogram {
 	output := &histogram.FloatHistogram{}
 

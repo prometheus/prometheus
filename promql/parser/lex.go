@@ -259,15 +259,16 @@ type Lexer struct {
 	itemp       *Item   // Pointer to where the next scanned item should be placed.
 	scannedItem bool    // Set to true every time an item is scanned.
 
-	parenDepth     int            // Nesting depth of ( ) exprs.
-	braceOpen      bool           // Whether a { is opened.
-	bracketOpen    bool           // Whether a [ is opened.
-	gotColon       bool           // Whether we got a ':' after [ was opened.
-	stringOpen     rune           // Quote rune of the string currently being read.
-	histogramState histogramState // (Unit Tests Only) Determines whether or not inside of a histogram description.
-	// seriesDesc is set when a series description for the testing
-	// language is lexed.
-	seriesDesc bool
+	parenDepth  int  // Nesting depth of ( ) exprs.
+	braceOpen   bool // Whether a { is opened.
+	bracketOpen bool // Whether a [ is opened.
+	gotColon    bool // Whether we got a ':' after [ was opened.
+	stringOpen  rune // Quote rune of the string currently being read.
+
+	// series description variables for internal PromQL testing framework as well as in promtool rules unit tests.
+	// see https://prometheus.io/docs/prometheus/latest/configuration/unit_testing_rules/#series
+	seriesDesc     bool           // Whether we are lexing a series description.
+	histogramState histogramState // Determines whether or not inside of a histogram description.
 }
 
 // next returns the next rune in the input.
