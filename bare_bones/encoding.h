@@ -368,9 +368,7 @@ class EncodedSequence {
 
     // check version
     if (version != 1) {
-      char buf[100];
-      size_t l = std::snprintf(buf, sizeof(buf), "Invalid EncodingSequence version %d got from input, only version 1 is supported", version);
-      throw BareBones::Exception(0xa506b0dd57836363, std::string_view(buf, l));
+      throw BareBones::Exception(0xa506b0dd57836363, "Invalid EncodingSequence version %d got from input, only version 1 is supported", version);
     }
 
     auto original_exceptions = in.exceptions();
