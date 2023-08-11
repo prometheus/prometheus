@@ -10,8 +10,16 @@ package internal
 
 // #cgo CFLAGS: -I.
 // #cgo LDFLAGS: -L.
-// #cgo arm64 LDFLAGS: -l:aarch64_wal_c_api.a
-// #cgo amd64 LDFLAGS: -l:x86_wal_c_api.a
+// #cgo sanitize LDFLAGS: -fsanitize=address
+// #cgo sanitize CFLAGS: -fsanitize=address
+// #cgo arm64,!sanitize,!dbg LDFLAGS: -l:aarch64_wal_c_api.a
+// #cgo arm64,!sanitize,dbg LDFLAGS: -l:aarch64_wal_c_api_dbg.a
+// #cgo arm64,sanitize,!dbg LDFLAGS: -l:aarch64_wal_c_api_asan.a
+// #cgo arm64,sanitize,dbg LDFLAGS: -l:aarch64_wal_c_api_dbg_asan.a
+// #cgo amd64,!sanitize,!dbg LDFLAGS: -l:x86_wal_c_api.a
+// #cgo amd64,!sanitize,dbg LDFLAGS: -l:x86_wal_c_api_dbg.a
+// #cgo amd64,sanitize,!dbg LDFLAGS: -l:x86_wal_c_api_asan.a
+// #cgo amd64,sanitize,dbg LDFLAGS: -l:x86_wal_c_api_dbg_asan.a
 // #cgo LDFLAGS: -lstdc++
 // #include "wal_c_encoder.h"
 // #include "wal_c_decoder.h"

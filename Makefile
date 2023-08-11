@@ -17,11 +17,16 @@ block_converter_sources := $(absolute_project_dir)/tools/block_converter
 sort_type := $(shell echo $(word 2, $(subst ., ,$(test_data_file_name))) | tr a-z A-Z)
 
 BUILD_DIR := $(absolute_project_dir)bazel-bin/
-go_bindings_arch ?= $(shell ./r --arch-from-uname)
+
+# arch default value is a intentionally incorrect as bash doesn't like empty arguments.
+# In the default case, the go_bindings_arch (if not defined) would be initialized with
+# buildsystem arch name converted from uname.
+ARCH ?= uname-defined
+
+go_bindings_arch ?= $(shell ./r --arch-from-arg $(ARCH) || ./r --arch-from-uname)
 go_in_wal_h_file := wal/wal_c_api.h
 wal_c_api_static_filename := $(go_bindings_arch)_wal_c_api_static.a
-go_out_filename := $(go_bindings_arch)_wal_c_api.a
-go_out_filename_asan := $(go_bindings_arch)_wal_c_api_asan.a
+go_out_filename := $(go_bindings_arch)_wal_c_api
 
 go_out_bindings_dir := go/common/internal/
 
@@ -29,17 +34,32 @@ go_out_bindings_dir := go/common/internal/
 wal_bindings: $(go_in_wal_h_file)
 	./r --static-c-api --arch $(go_bindings_arch)
 	mkdir -p $(go_out_bindings_dir)
-	cp -f $(BUILD_DIR)$(wal_c_api_static_filename) $(go_out_bindings_dir)$(go_out_filename)
+	cp -f $(BUILD_DIR)$(wal_c_api_static_filename) $(go_out_bindings_dir)$(go_out_filename).a
 
 
 asan wal_bindings_asan: $(go_in_wal_h_file)
-	./r --static-c-api --arch $(go_bindings_arch)
+	./r --static-c-api --asan --arch $(go_bindings_arch)
 	mkdir -p $(go_out_bindings_dir)
-	cp -f $(BUILD_DIR)$(wal_c_api_static_filename) $(go_out_bindings_dir)$(go_out_filename_asan)
+	cp -f $(BUILD_DIR)$(wal_c_api_static_filename) $(go_out_bindings_dir)$(go_out_filename)_asan.a
+
+
+dbg wal_bindings_dbg: $(go_in_wal_h_file)
+	./r --static-c-api --dbg --arch $(go_bindings_arch)
+	mkdir -p $(go_out_bindings_dir)
+	cp -f $(BUILD_DIR)$(wal_c_api_static_filename) $(go_out_bindings_dir)$(go_out_filename)_dbg.a
+
+
+dbg_asan wal_bindings_dbg_asan: $(go_in_wal_h_file)
+	./r --static-c-api --dbg --asan --arch $(go_bindings_arch)
+	mkdir -p $(go_out_bindings_dir)
+	cp -f $(BUILD_DIR)$(wal_c_api_static_filename) $(go_out_bindings_dir)$(go_out_filename)_dbg_asan.a
+
 
 clean:
-	rm -f $(go_out_bindings_dir)$(go_out_filename)
-	rm -f $(go_out_bindings_dir)$(go_out_filename_asan)
+	rm -f $(go_out_bindings_dir)$(go_out_filename).a
+	rm -f $(go_out_bindings_dir)$(go_out_filename)_asan.a
+	rm -f $(go_out_bindings_dir)$(go_out_filename)_dbg.a
+	rm -f $(go_out_bindings_dir)$(go_out_filename)_dbg_asan.a
 
 test_data_file_name_prefix := $(findstring dummy_wal, $(test_data_file_name))
 ifeq "$(test_data_file_name_prefix)" "dummy_wal"

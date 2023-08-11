@@ -161,6 +161,8 @@ class BasicEncoder {
   uint16_t shard_id_ = 0;
   uint8_t pow_two_of_total_shards_ = 0;
 
+  // TODO: refactor this function to avoid the new-allocated Redundant*
+  // in favour of std::unique_ptr<> or another.
   template <class OutputStream>
   Redundant* encode_segment(OutputStream& out) {
     BareBones::BitSequence gorilla_ts_bitseq, gorilla_v_bitseq;
@@ -343,7 +345,8 @@ class BasicEncoder {
 
   template <class OutputStream>
   friend OutputStream& operator<<(OutputStream& out, BasicEncoder& wal) {
-    wal.encode_segment(out);
+    auto redundant = wal.encode_segment(out);
+    delete redundant;  // to avoid memory leak // TODO: std::unique_ptr?
     return out;
   }
 

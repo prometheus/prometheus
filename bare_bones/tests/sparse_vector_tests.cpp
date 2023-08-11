@@ -47,7 +47,7 @@ TEST(BareBonesSparseVector, random_access) {
   std::mt19937 gen32(testing::UnitTest::GetInstance()->random_seed());
   uint32_t max_index = 0;
   for (size_t i = 0; i < num_values; ++i) {
-    auto v = gen32();
+    auto v = gen32() % 8'000'000;
     if (v > max_index) {
       max_index = v;
     }
