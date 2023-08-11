@@ -5,6 +5,8 @@
 /// Execute this from the root folder.
 /// Every exception thrown must have a unique hexadecimal code
 /// (without delimiters) for easy grep searches.
+/// Every user message must be less than 255 characters (without '\0'),
+/// the longer messages would be clamped.
 #pragma once
 
 #include <cstdint>
