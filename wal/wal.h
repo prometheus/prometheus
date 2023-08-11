@@ -585,9 +585,7 @@ class BasicDecoder {
     in.read(reinterpret_cast<char*>(&segment), sizeof(segment));
 
     if (segment != last_processed_segment_ + 1) {
-      std::stringstream ss;
-      ss << "Unexpected input segment id " << segment << ", expected " << (last_processed_segment_ + 1);
-      throw BareBones::Exception(0xfb9b62e957a1ac39, ss.str());
+      throw BareBones::Exception(0xfb9b62e957a1ac39, "Unexpected input segment id %d, expected %d", segment, (last_processed_segment_ + 1));
     }
 
     in.read(reinterpret_cast<char*>(&created_at_tsns_), sizeof(created_at_tsns_));
@@ -749,21 +747,17 @@ class BasicDecoder {
 
       // there are remaining timestamps in Decoder/segment (ls_id), which is unexpected.
       if (ts_i != segment_ts_delta_rle_seq_.end()) {
-        std::stringstream ss;
-
-        ss << "Decoder " << uuid_
-           << " got an error after processing segment LabelSets: segment ls_id timestamps counts mismatch, there are "
-              "remaining timestamp data";
-        throw BareBones::Exception(0x6b534297844a47c9, ss.str());
+        throw BareBones::Exception(0x6b534297844a47c9,
+                                   "Decoder %s got an error after processing segment LabelSets: segment ls_id timestamps counts mismatch, there are "
+                                   "remaining timestamp data",
+                                   uuids::to_string(uuid_).c_str());
       }
 
       if (g_v_bitseq_reader.left() != 0) {
-        std::stringstream ss;
-
-        ss << "Decoder" << uuid_ << " got an error after processing segment LabelSets: segment ls_id values (" << g_v_bitseq_reader.left()
-           << ") and Decoder's values (" << segment_gorilla_v_bitseq_.size() << ") counts mismatch, there are remaining values data";
-
-        throw BareBones::Exception(0x934f6048d089ae64, ss.str());
+        throw BareBones::Exception(0x934f6048d089ae64,
+                                   "Decoder %s got an error after processing segment LabelSets: segment ls_id values (%zd) and Decoder's values (%zd) counts "
+                                   "mismatch, there are remaining values data",
+                                   uuids::to_string(uuid_).c_str(), g_v_bitseq_reader.left(), segment_gorilla_v_bitseq_.size());
       }
     } else {
       // process non-empty ts
@@ -774,21 +768,19 @@ class BasicDecoder {
         // same checks as in prev. ls_id parsing.
         // TODO: Merge it?
         if (__builtin_expect(ls_id >= gorilla_.size(), false)) {
-          std::stringstream ss;
-          ss << "Decoder " << uuid_ << " got an error while processing segment LabelSets: Unknown segment's LabelSet's id " << ls_id;
-          throw BareBones::Exception(0x19884e9893440316, ss.str());
+          throw BareBones::Exception(0x19884e9893440316, "Error while processing segment LabelSets: Unknown segment's LabelSet's id %d", ls_id);
         }
 
         if (__builtin_expect(g_ts_bitseq_reader.left() == 0, false)) {
-          std::stringstream ss;
-          ss << "Decoder " << uuid_ << " exhausted label set values data prematurely, but segment processing expects more LabelSets' timestamps";
-          throw BareBones::Exception(0xf837b80ba182e441, ss.str());
+          throw BareBones::Exception(0xf837b80ba182e441,
+                                     "Decoder %s exhausted label set values data prematurely, but segment processing expects more LabelSets' timestamps",
+                                     uuids::to_string(uuid_).c_str());
         }
 
         if (__builtin_expect(g_v_bitseq_reader.left() == 0, false)) {
-          std::stringstream ss;
-          ss << "Decoder " << uuid_ << " exhausted label set values data prematurely, but segment processing expects more LabelSets' values";
-          throw BareBones::Exception(0xe667122e5d11ba4c, ss.str());
+          throw BareBones::Exception(0xe667122e5d11ba4c,
+                                     "Decoder %s exhausted label set values data prematurely, but segment processing expects more LabelSets' values",
+                                     uuids::to_string(uuid_).c_str());
         }
 
         auto& g = gorilla_[ls_id];
@@ -805,33 +797,27 @@ class BasicDecoder {
       }
 
       if (g_ts_bitseq_reader.left() != 0) {
-        std::stringstream ss;
-        ss << "Decoder " << uuid_ << "got error after parsing LabelSets: there are more remaining timestamps data";
-        throw BareBones::Exception(0x5352e912e73554c1, ss.str());
+        throw BareBones::Exception(0x5352e912e73554c1, "Decoder %s got error after parsing LabelSets: there are more remaining timestamps data",
+                                   uuids::to_string(uuid_).c_str());
       }
 
       if (g_v_bitseq_reader.left() != 0) {
-        std::stringstream ss;
-        ss << "Decoder " << uuid_ << "got error after parsing LabelSets: there are more remaining values data";
-        throw BareBones::Exception(0x71811aa3dc793602, ss.str());
+        throw BareBones::Exception(0x71811aa3dc793602, "Decoder %s got error after parsing LabelSets: there are more remaining values data",
+                                   uuids::to_string(uuid_).c_str());
       }
     }
 
     if (ls_id_crc != segment_ls_id_crc_) {
-      std::stringstream ss;
-      ss << "Decoder " << uuid_ << "got error: CRC for LabelSet's ids mismatch: Decoder ls_id CRC: " << segment_ls_id_crc_
-         << ", segment ls_id CRC: " << ls_id_crc;
-      throw BareBones::Exception(0x6ea4e8b039aea0e8, ss.str());
+      throw BareBones::Exception(0x6ea4e8b039aea0e8, "Decoder %s got error: CRC for LabelSet's ids mismatch: Decoder ls_id CRC: %u, segment ls_id CRC: %u",
+                                 uuids::to_string(uuid_).c_str(), (uint32_t)segment_ls_id_crc_, (uint32_t)ls_id_crc);
     }
     if (ts_crc != segment_ts_crc_) {
-      std::stringstream ss;
-      ss << "Decoder " << uuid_ << "got error: CRC for LabelSet's timestamps mismatch: Decoder ts CRC: " << segment_ts_crc_ << ", segment ts CRC: " << ts_crc;
-      throw BareBones::Exception(0x0fd1fbf569f6c3c5, ss.str());
+      throw BareBones::Exception(0x0fd1fbf569f6c3c5, "Decoder %s got error: CRC for LabelSet's timestamps mismatch: Decoder ts CRC: %u, segment ts CRC: %u",
+                                 uuids::to_string(uuid_).c_str(), (uint32_t)segment_ts_crc_, (uint32_t)ts_crc);
     }
     if (v_crc != segment_v_crc_) {
-      std::stringstream ss;
-      ss << "Decoder " << uuid_ << "got error: CRC for LabelSet's values mismatch: Decoder v CRC: " << segment_v_crc_ << ", segment v CRC: " << v_crc;
-      throw BareBones::Exception(0x0ee2b199218aaf7d, ss.str());
+      throw BareBones::Exception(0x0ee2b199218aaf7d, "Decoder %s got error: CRC for LabelSet's timestamps mismatch: Decoder ts CRC: %u, segment ts CRC: %u",
+                                 uuids::to_string(uuid_).c_str(), (uint32_t)segment_v_crc_, (uint32_t)v_crc);
     }
 
     clear_segment();
