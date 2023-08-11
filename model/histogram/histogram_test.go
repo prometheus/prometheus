@@ -672,8 +672,8 @@ func TestHistogramCompact(t *testing.T) {
 			&Histogram{
 				PositiveSpans:   []Span{{-2, 10}},
 				PositiveBuckets: []int64{1, 3, -4, 0, 0, 0, 0, 1, 42, 3},
-				NegativeSpans:   []Span{{0, 9}},
-				NegativeBuckets: []int64{5, 3, -8, 0, 0, 4, -2, 3, 4},
+				NegativeSpans:   []Span{{0, 7}},
+				NegativeBuckets: []int64{5, 3, -8, 4, -2, 3, 4},
 			},
 		},
 		{
@@ -686,9 +686,9 @@ func TestHistogramCompact(t *testing.T) {
 			},
 			0,
 			&Histogram{
-				PositiveSpans:   []Span{{-2, 1}, {2, 1}, {3, 3}},
+				PositiveSpans:   []Span{{-2, 1}, {1, 1}, {3, 3}},
 				PositiveBuckets: []int64{1, 2, -2, 42, 3},
-				NegativeSpans:   []Span{{0, 2}, {3, 2}, {1, 2}},
+				NegativeSpans:   []Span{{0, 2}, {3, 2}, {6, 2}},
 				NegativeBuckets: []int64{5, 3, -4, -2, 1, 4},
 			},
 		},
@@ -714,10 +714,10 @@ func TestHistogramCompact(t *testing.T) {
 			},
 			1,
 			&Histogram{
-				PositiveSpans:   []Span{{-2, 1}, {2, 1}, {3, 3}},
-				PositiveBuckets: []int64{1, 2, -2, 42, 3},
-				NegativeSpans:   []Span{{0, 2}, {3, 5}},
-				NegativeBuckets: []int64{5, 3, -4, -2, -2, 3, 4},
+				PositiveSpans:   []Span{{-2, 1}, {1, 5}},
+				PositiveBuckets: []int64{1, 2, -3, 1, 42, 3},
+				NegativeSpans:   []Span{{0, 8}},
+				NegativeBuckets: []int64{5, 3, -8, 4, -2, -2, 3, 4},
 			},
 		},
 		{
@@ -730,10 +730,10 @@ func TestHistogramCompact(t *testing.T) {
 			},
 			2,
 			&Histogram{
-				PositiveSpans:   []Span{{-2, 4}, {3, 3}},
-				PositiveBuckets: []int64{1, -1, 0, 3, -2, 42, 3},
-				NegativeSpans:   []Span{{0, 2}, {3, 5}},
-				NegativeBuckets: []int64{5, 3, -4, -2, -2, 3, 4},
+				PositiveSpans:   []Span{{-2, 8}},
+				PositiveBuckets: []int64{1, -1, 0, 3, -3, 1, 42, 3},
+				NegativeSpans:   []Span{{0, 8}},
+				NegativeBuckets: []int64{5, 3, -8, 4, -2, -2, 3, 4},
 			},
 		},
 		{
@@ -746,10 +746,10 @@ func TestHistogramCompact(t *testing.T) {
 			},
 			3,
 			&Histogram{
-				PositiveSpans:   []Span{{-2, 10}},
-				PositiveBuckets: []int64{1, -1, 0, 3, -3, 0, 0, 1, 42, 3},
-				NegativeSpans:   []Span{{0, 10}},
-				NegativeBuckets: []int64{5, 3, -8, 0, 0, 4, -2, -2, 3, 4},
+				PositiveSpans:   []Span{{-2, 8}},
+				PositiveBuckets: []int64{1, -1, 0, 3, -3, 1, 42, 3},
+				NegativeSpans:   []Span{{0, 8}},
+				NegativeBuckets: []int64{5, 3, -8, 4, -2, -2, 3, 4},
 			},
 		},
 		{
