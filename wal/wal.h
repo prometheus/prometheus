@@ -182,10 +182,8 @@ class BasicEncoder {
 
     // gorilla requires delta to fit in int64
     if (buffer_.latest_sample() > std::numeric_limits<int64_t>::max() - ts_base_) {
-      std::stringstream ss;
-      ss << "The latest segment's sample timestamp (" << buffer_.latest_sample() << ") is greater than max_int64 for timestamp ("
-         << std::numeric_limits<int64_t>::max() - ts_base_ << ")";
-      throw BareBones::Exception(0x546e143d302c4860, ss.str());
+      throw BareBones::Exception(0x546e143d302c4860, "The latest segment's sample timestamp (%zd) is greater than max_int64 for timestamp(%zd)",
+                                 buffer_.latest_sample(), (std::numeric_limits<int64_t>::max() - ts_base_));
     }
 
     gorilla_.resize(label_sets_.size());
@@ -508,14 +506,12 @@ class BasicDecoder {
       throw BareBones::Exception(0xec5e9e3ea3edec11, "Segment has an invalid UUID");
     }
     if (uuid.version() != uuids::uuid_version::random_number_based) {
-      // TODO: add enum-to-string for more verbose error (e.g., which version is expected)
       // N.B.: UUID version is determined by 6th byte.
-      throw BareBones::Exception(0x06b621cb184ad541, "Segment's UUID version is not supported");
+      throw BareBones::Exception(0x06b621cb184ad541, "Segment's UUID (%s) version is not supported, only RFC's random_number_based version (0x40) is supported", uuids::to_string(uuid).c_str());
     }
     if (uuid.variant() != uuids::uuid_variant::rfc) {
-      // TODO: add enum-to-string for more verbose error (e.g., which UUID variant is actual)
       // N.B.: UUID variant is determined by 8th byte.
-      throw BareBones::Exception(0x5dc8c27e17e55060, "Segment's UUID variant is not supported, only RFC-4412 UUIDs are supported");
+      throw BareBones::Exception(0x5dc8c27e17e55060, "Segment's UUID (%s) variant is not supported, only RFC-4412 UUIDs are supported", uuids::to_string(uuid).c_str());
     }
 
     return uuid;
