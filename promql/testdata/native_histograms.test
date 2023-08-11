@@ -2,9 +2,9 @@
 load 5m
 	empty_histogram	{{}}
 
-# TODO: parser doesn't allow this yet
+# TODO: syntax for parsing corrected
 #eval instant at 5m empty_histogram
-#	{__name__="empty_histogram"} {count:0, sum:0}
+#	{__name__="empty_histogram"} {{count:0 sum:0}}
 
 eval instant at 5m histogram_count(empty_histogram)
 	{} 0

@@ -507,7 +507,7 @@ func (p *parser) histogramsSeries(base, inc *histogram.FloatHistogram, times uin
 	for i := uint64(1); i <= times; i++ {
 		cur, err = combine(cur.Copy(), inc)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("error combining histograms: %w", err)
 		}
 		ret[i] = SequenceValue{Histogram: cur}
 	}
