@@ -939,6 +939,21 @@ func TestFloatHistogramCompact(t *testing.T) {
 			},
 		},
 		{
+			"cut empty buckets in the middle",
+			&FloatHistogram{
+				PositiveSpans:   []Span{{5, 4}},
+				PositiveBuckets: []float64{1, 3, 0, 2},
+			},
+			0,
+			&FloatHistogram{
+				PositiveSpans: []Span{
+					{Offset: 5, Length: 2},
+					{Offset: 8, Length: 1},
+				},
+				PositiveBuckets: []float64{1, 3, 2},
+			},
+		},
+		{
 			"cut empty buckets at start or end of spans, even in the middle",
 			&FloatHistogram{
 				PositiveSpans:   []Span{{-4, 6}, {3, 6}},
@@ -955,7 +970,7 @@ func TestFloatHistogramCompact(t *testing.T) {
 			},
 		},
 		{
-			"cut empty buckets at start or end but merge spans due to maxEmptyBuckets",
+			"cut empty buckets at start and end - also merge spans due to maxEmptyBuckets",
 			&FloatHistogram{
 				PositiveSpans:   []Span{{-4, 4}, {5, 3}},
 				PositiveBuckets: []float64{0, 0, 1, 3.3, 4.2, 0.1, 3.3},
@@ -966,8 +981,8 @@ func TestFloatHistogramCompact(t *testing.T) {
 			&FloatHistogram{
 				PositiveSpans:   []Span{{-2, 10}},
 				PositiveBuckets: []float64{1, 3.3, 0, 0, 0, 0, 0, 4.2, 0.1, 3.3},
-				NegativeSpans:   []Span{{0, 9}},
-				NegativeBuckets: []float64{3.1, 3, 0, 0, 0, 1.234e5, 1000, 3, 4},
+				NegativeSpans:   []Span{{0, 7}},
+				NegativeBuckets: []float64{3.1, 3, 0, 1.234e5, 1000, 3, 4},
 			},
 		},
 		{
@@ -980,9 +995,9 @@ func TestFloatHistogramCompact(t *testing.T) {
 			},
 			0,
 			&FloatHistogram{
-				PositiveSpans:   []Span{{-2, 1}, {2, 1}, {3, 3}},
+				PositiveSpans:   []Span{{-2, 1}, {1, 1}, {3, 3}},
 				PositiveBuckets: []float64{1, 3.3, 4.2, 0.1, 3.3},
-				NegativeSpans:   []Span{{0, 2}, {3, 2}, {1, 2}},
+				NegativeSpans:   []Span{{0, 2}, {3, 2}, {6, 2}},
 				NegativeBuckets: []float64{3.1, 3, 1.234e5, 1000, 3, 4},
 			},
 		},
@@ -999,19 +1014,43 @@ func TestFloatHistogramCompact(t *testing.T) {
 			},
 		},
 		{
+			"cut empty buckets from the middle of a span, avoiding none due to maxEmptyBuckets",
+			&FloatHistogram{
+				PositiveSpans:   []Span{{-2, 4}},
+				PositiveBuckets: []float64{1, 0, 0, 3.3},
+			},
+			1,
+			&FloatHistogram{
+				PositiveSpans:   []Span{{-2, 1}, {1, 1}},
+				PositiveBuckets: []float64{1, 3.3},
+			},
+		},
+		{
+			"cut empty buckets and merge spans due to maxEmptyBuckets",
+			&FloatHistogram{
+				PositiveSpans:   []Span{{-2, 4}, {3, 1}},
+				PositiveBuckets: []float64{1, 0, 0, 3.3, 4.2},
+			},
+			1,
+			&FloatHistogram{
+				PositiveSpans:   []Span{{-2, 1}, {1, 3}},
+				PositiveBuckets: []float64{1, 3.3, 0, 4.2},
+			},
+		},
+		{
 			"cut empty buckets from the middle of a span, avoiding some due to maxEmptyBuckets",
 			&FloatHistogram{
-				PositiveSpans:   []Span{{-4, 6}, {3, 3}},
-				PositiveBuckets: []float64{0, 0, 1, 0, 0, 3.3, 4.2, 0.1, 3.3},
+				PositiveSpans:   []Span{{-4, 6}, {3, 3}, {10, 2}},
+				PositiveBuckets: []float64{0, 0, 1, 0, 0, 3.3, 4.2, 0.1, 3.3, 2, 3},
 				NegativeSpans:   []Span{{0, 2}, {3, 5}},
 				NegativeBuckets: []float64{3.1, 3, 1.234e5, 1000, 0, 3, 4},
 			},
 			1,
 			&FloatHistogram{
-				PositiveSpans:   []Span{{-2, 1}, {2, 1}, {3, 3}},
-				PositiveBuckets: []float64{1, 3.3, 4.2, 0.1, 3.3},
-				NegativeSpans:   []Span{{0, 2}, {3, 5}},
-				NegativeBuckets: []float64{3.1, 3, 1.234e5, 1000, 0, 3, 4},
+				PositiveSpans:   []Span{{-2, 1}, {1, 5}, {10, 2}},
+				PositiveBuckets: []float64{1, 3.3, 0, 4.2, 0.1, 3.3, 2, 3},
+				NegativeSpans:   []Span{{0, 8}},
+				NegativeBuckets: []float64{3.1, 3, 0, 1.234e5, 1000, 0, 3, 4},
 			},
 		},
 		{
@@ -1024,10 +1063,10 @@ func TestFloatHistogramCompact(t *testing.T) {
 			},
 			2,
 			&FloatHistogram{
-				PositiveSpans:   []Span{{-2, 4}, {3, 3}},
-				PositiveBuckets: []float64{1, 0, 0, 3.3, 4.2, 0.1, 3.3},
-				NegativeSpans:   []Span{{0, 2}, {3, 5}},
-				NegativeBuckets: []float64{3.1, 3, 1.234e5, 1000, 0, 3, 4},
+				PositiveSpans:   []Span{{-2, 8}},
+				PositiveBuckets: []float64{1, 0, 0, 3.3, 0, 4.2, 0.1, 3.3},
+				NegativeSpans:   []Span{{0, 8}},
+				NegativeBuckets: []float64{3.1, 3, 0, 1.234e5, 1000, 0, 3, 4},
 			},
 		},
 		{
@@ -1040,10 +1079,10 @@ func TestFloatHistogramCompact(t *testing.T) {
 			},
 			3,
 			&FloatHistogram{
-				PositiveSpans:   []Span{{-2, 10}},
-				PositiveBuckets: []float64{1, 0, 0, 3.3, 0, 0, 0, 4.2, 0.1, 3.3},
-				NegativeSpans:   []Span{{0, 10}},
-				NegativeBuckets: []float64{3.1, 3, 0, 0, 0, 1.234e5, 1000, 0, 3, 4},
+				PositiveSpans:   []Span{{-2, 8}},
+				PositiveBuckets: []float64{1, 0, 0, 3.3, 0, 4.2, 0.1, 3.3},
+				NegativeSpans:   []Span{{0, 8}},
+				NegativeBuckets: []float64{3.1, 3, 0, 1.234e5, 1000, 0, 3, 4},
 			},
 		},
 		{
