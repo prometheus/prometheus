@@ -109,17 +109,9 @@ inline __attribute__((always_inline)) void read_label(ProtobufReader& pb_label, 
   if (__builtin_expect(parsed != 0b11, false)) {
     std::stringstream ss;
     ss << "Protobuf message has incomplete key(";
-    if (parsed & 0b01) {
-      ss << std::get<0>(label);
-    } else {
-      ss << "<incomplete>";
-    }
+    ss << (parsed & 0b01) ? std::get<0>(label) : "<incomplete>";
     ss << ")-value(";
-    if (parsed & 0b10) {
-      ss << std::get<1>(label);
-    } else {
-      ss << "<incomplete>";
-    }
+    ss << (parsed & 0b10) ? std::get<1>(label) : "<incomplete>";
     ss << ") pair";
     throw BareBones::Exception(0xf355fc833ca6be64, ss.str());
   }
@@ -168,7 +160,7 @@ inline __attribute__((always_inline)) void read_timeseries(ProtobufReader&& pb_t
   }
 
   if (__builtin_expect(!timeseries.label_set().size() || !timeseries.samples().size(), false)) {
-    throw BareBones::Exception(0x75a82db7eb2779f1, "Protobuf message has an empty label set, can't read samples");
+    throw BareBones::Exception(0x75a82db7eb2779f1, "Protobuf message has no samples for label set ...");
   }
 }
 

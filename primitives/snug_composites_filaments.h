@@ -144,7 +144,7 @@ class Symbol {
 
   inline __attribute__((always_inline)) void validate(const data_type& data) const {
     if (pos_ + length_ > data.size()) {
-      throw BareBones::Exception(0x75555f55ebe357a3, "Data Symbol validation error: expected Symbol length is out of data vector range");
+      throw BareBones::Exception(0x75555f55ebe357a3, "Symbol validation error: length is out of data vector range");
     }
   }
 
