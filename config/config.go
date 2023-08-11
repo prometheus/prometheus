@@ -409,6 +409,9 @@ type GlobalConfig struct {
 	// More than this label value length post metric-relabeling will cause the
 	// scrape to fail. 0 means no limit.
 	LabelValueLengthLimit uint `yaml:"label_value_length_limit,omitempty"`
+	// Keep no more than this many dropped targets per job.
+	// 0 means no limit.
+	KeepDroppedTargets uint `yaml:"keep_dropped_targets,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -610,6 +613,9 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 	}
 	if c.LabelValueLengthLimit == 0 {
 		c.LabelValueLengthLimit = globalConfig.LabelValueLengthLimit
+	}
+	if c.KeepDroppedTargets == 0 {
+		c.KeepDroppedTargets = globalConfig.KeepDroppedTargets
 	}
 
 	return nil
