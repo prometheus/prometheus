@@ -113,6 +113,14 @@ eval instant at 50m histogram_fraction(1, 2, incr_histogram)
 eval instant at 50m histogram_quantile(0.5, incr_histogram)
 	{} 1.5
 
+# Per-second average rate of increase should be 1/(5*60) for count and buckets, then 2/(5*60) for sum.
+eval instant at 50m rate(incr_histogram[5m])
+	{} {{count:0.0033333333333333335 sum:0.006666666666666667 offset:1 buckets:[0.0033333333333333335]}}
+
+# Calculate the 50th percentile of observations over the last 10m.
+eval instant at 50m histogram_quantile(0.5, rate(incr_histogram[10m]))
+	{} 1.5
+
 
 
 # Schema represents the histogram resolution, different schema have compatible bucket boundaries, e.g.:
