@@ -630,7 +630,10 @@ label_set_item  : IDENTIFIER EQL STRING
                 ;
 
 /*
- * Series descriptions (only used by unit tests).
+ * Series descriptions:
+ * A separate language that is used to generate series values promtool.
+ * It is included in the promQL parser, because it shares common functionality, such as parsing a metric.
+ * The syntax is described in https://prometheus.io/docs/prometheus/latest/configuration/unit_testing_rules/#series
  */
 
 series_description: metric series_values

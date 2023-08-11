@@ -131,32 +131,23 @@ func (h *FloatHistogram) String() string {
 }
 
 // PromQlExpression returns a PromQL expression that evaluates to this histogram when used in promtool.
+// The syntax is described in https://prometheus.io/docs/prometheus/latest/configuration/unit_testing_rules/#series
 func (h *FloatHistogram) PromQlExpression() string {
-	trim := func(s string) string {
-		for {
-			found := false
-			s, found = strings.CutSuffix(s, "0")
-			if !found {
-				break
-			}
-		}
-		return strings.TrimSuffix(s, ".")
-	}
 	var res []string
 	if h.Schema != 0 {
 		res = append(res, fmt.Sprintf("schema:%d", h.Schema))
 	}
 	if h.Count != 0 {
-		res = append(res, trim(fmt.Sprintf("count:%f", h.Count)))
+		res = append(res, fmt.Sprintf("count:%g", h.Count))
 	}
 	if h.Sum != 0 {
-		res = append(res, trim(fmt.Sprintf("sum:%f", h.Sum)))
+		res = append(res, fmt.Sprintf("sum:%g", h.Sum))
 	}
 	if h.ZeroCount != 0 {
-		res = append(res, trim(fmt.Sprintf("z_bucket:%f", h.ZeroCount)))
+		res = append(res, fmt.Sprintf("z_bucket:%g", h.ZeroCount))
 	}
 	if h.ZeroThreshold != 0 {
-		res = append(res, trim(fmt.Sprintf("z_bucket_w:%f", h.ZeroThreshold)))
+		res = append(res, fmt.Sprintf("z_bucket_w:%g", h.ZeroThreshold))
 	}
 
 	addBuckets := func(kind, bucketsKey, offsetKey string, buckets []float64, spans []Span) []string {
@@ -171,7 +162,7 @@ func (h *FloatHistogram) PromQlExpression() string {
 
 		var bucketStr []string
 		for _, bucket := range buckets {
-			bucketStr = append(bucketStr, trim(fmt.Sprintf("%f", bucket)))
+			bucketStr = append(bucketStr, fmt.Sprintf("%g", bucket))
 		}
 		if len(bucketStr) > 0 {
 			res = append(res, fmt.Sprintf("%s:[%s]", bucketsKey, strings.Join(bucketStr, " ")))

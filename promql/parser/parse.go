@@ -467,12 +467,12 @@ func (p *parser) newAggregateExpr(op Item, modifier, args Node) (ret *AggregateE
 	return ret
 }
 
-// Used when building the FloatHistogram from a map.
+// newMap is used when building the FloatHistogram from a map.
 func (p *parser) newMap() (ret map[string]interface{}) {
 	return map[string]interface{}{}
 }
 
-// This function is used to combine maps as they're used to later build the Float histogram.
+// mergeMaps is used to combine maps as they're used to later build the Float histogram.
 // This will merge the right map into the left map.
 func (p *parser) mergeMaps(left, right *map[string]interface{}) (ret *map[string]interface{}) {
 	for key, value := range *right {
