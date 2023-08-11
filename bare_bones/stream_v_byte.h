@@ -1,7 +1,6 @@
 #pragma once
 
 #include <fstream>
-#include <string_view>
 #include <utility>
 
 #include <scope_exit.h>
