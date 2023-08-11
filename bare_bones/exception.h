@@ -14,16 +14,18 @@
 
 namespace BareBones {
 
-using Code = uint64_t;
 
 class Exception : public std::exception {
+public:
+  using Code = uint64_t;
+private:
   std::string msg_;
   Code code_;
 
  public:
   Exception(Code exc_code, std::string_view message) : code_(exc_code) {
     std::stringstream ss;
-    ss << "Exception " << exc_code << ": " << message;
+    ss << "Exception " << std::hex << exc_code << ": " << message;
     msg_ = std::move(ss.str());
   }
 
