@@ -284,7 +284,7 @@ class DecodingTable {
         throw BareBones::Exception(0x3387739a7b4f574a, "Attempt to load segment over existing DecodingTable data");
       } else {
         throw BareBones::Exception(0x4ece66e098927bc6,
-                                   "Attempt to load incomplete data from segment, DecodingTable data vector length (%d) is less than segment size(%d)",
+                                   "Attempt to load incomplete data from segment, DecodingTable data vector length (%zd) is less than segment size(%d)",
                                    items_.size(), first_to_load_i);
       }
     }

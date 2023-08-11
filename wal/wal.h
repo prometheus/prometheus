@@ -367,10 +367,8 @@ class BasicEncoder {
 
     auto encoders_count = segment == next_encoded_segment_ ? gorilla_.size() : (*it.begin())->encoders_count;
     if (encoders_count > gorilla_.size()) {
-      std::stringstream ss;
-      ss << "Encoder's Snapshot " << segment << " has more encoders in first redundant (" << encoders_count << ") than already on the Writer ("
-         << gorilla_.size() << ")";
-      throw BareBones::Exception(0xfd921d184ca372ee, ss.str());
+      throw BareBones::Exception(0xfd921d184ca372ee, "Encoder's Snapshot %d has more encoders in first redundant (%zd) than already on the Writer (%zd)",
+                                 segment, encoders_count, gorilla_.size());
     }
 
     decltype(gorilla_) encoders;
@@ -387,10 +385,9 @@ class BasicEncoder {
         has_any_redundant_segment_id = true;
       } else {
         if (not(redundant->segment == redundant_segment_id + 1)) {
-          std::stringstream ss;
-          ss << "The next redundant in encoders' snapshot (segment_id=" << redundant->segment
-             << ") must be in order with previous redundant (segment_id=" << redundant_segment_id + 1 << ")";
-          throw BareBones::Exception(0xcddf21b039fe5a18, ss.str());
+          throw BareBones::Exception(0xcddf21b039fe5a18,
+                                     "The next redundant in encoders' snapshot (segment_id=%d) must be in order with previous redundant (segment_id=%d)",
+                                     redundant->segment, redundant_segment_id + 1);
         }
         redundant_segment_id = redundant->segment;
       }
@@ -410,10 +407,9 @@ class BasicEncoder {
     // if have any redundants check that it not equals current redundant_segment_id and next_encoded_segment_ - 1,
     // redundants must be consistent
     if (has_any_redundant_segment_id && redundant_segment_id != next_encoded_segment_ - 1) {
-      std::stringstream ss;
-      ss << "The encoder's snapshot doesn't have the latest redundant with expected segment_id=" << (next_encoded_segment_ - 1)
-         << ", the last redundant has segment_id=" << redundant_segment_id;
-      throw BareBones::Exception(0xc318a18809c8167e, ss.str());
+      throw BareBones::Exception(0xc318a18809c8167e,
+                                 "The encoder's snapshot doesn't have the latest redundant with expected segment_id=%d, the last redundant has segment_id=%d",
+                                 (next_encoded_segment_ - 1), redundant_segment_id);
     }
 
     BareBones::Vector<BareBones::Encoding::Gorilla::StreamDecoder> decoders;
@@ -507,11 +503,13 @@ class BasicDecoder {
     }
     if (uuid.version() != uuids::uuid_version::random_number_based) {
       // N.B.: UUID version is determined by 6th byte.
-      throw BareBones::Exception(0x06b621cb184ad541, "Segment's UUID (%s) version is not supported, only RFC's random_number_based version (0x40) is supported", uuids::to_string(uuid).c_str());
+      throw BareBones::Exception(0x06b621cb184ad541, "Segment's UUID (%s) version is not supported, only RFC's random_number_based version (0x40) is supported",
+                                 uuids::to_string(uuid).c_str());
     }
     if (uuid.variant() != uuids::uuid_variant::rfc) {
       // N.B.: UUID variant is determined by 8th byte.
-      throw BareBones::Exception(0x5dc8c27e17e55060, "Segment's UUID (%s) variant is not supported, only RFC-4412 UUIDs are supported", uuids::to_string(uuid).c_str());
+      throw BareBones::Exception(0x5dc8c27e17e55060, "Segment's UUID (%s) variant is not supported, only RFC-4412 UUIDs are supported",
+                                 uuids::to_string(uuid).c_str());
     }
 
     return uuid;
@@ -530,9 +528,7 @@ class BasicDecoder {
 
     // check version
     if (version != 1) {
-      std::stringstream ss;
-      ss << "Invalid segment version (" << version << "), only version 1 is supported";
-      throw BareBones::Exception(0x3449dc095f9e2f31, ss.str());
+      throw BareBones::Exception(0x3449dc095f9e2f31, "Invalid segment version (%d), only version 1 is supported", version);
     }
 
     auto original_exceptions = in.exceptions();
@@ -550,9 +546,8 @@ class BasicDecoder {
 
     // check uuid
     if (uuid_ != uuid) {
-      std::stringstream ss;
-      ss << "Input segment's UUID (" << uuid << ") doesn't match with Decoder's UUID (" << uuid_ << ")";
-      throw BareBones::Exception(0x4050da9e13900f11, ss.str());
+      throw BareBones::Exception(0x4050da9e13900f11, "Input segment's UUID (%s) doesn't match with Decoder's UUID (%s)", uuids::to_string(uuid).c_str(),
+                                 uuids::to_string(uuid_).c_str());
     }
 
     {
@@ -568,9 +563,7 @@ class BasicDecoder {
       }
 
       if (shard_id != shard_id_) {
-        std::stringstream ss;
-        ss << "Input segment's shard id (" << shard_id << ") doesn't match with Decoder's shard id (" << shard_id_ << ")";
-        throw BareBones::Exception(0xcf388325297850a4, ss.str());
+        throw BareBones::Exception(0xcf388325297850a4, "Input segment's shard id (%d) doesn't match with Decoder's shard id (%d)", shard_id, shard_id_);
       }
 
       // read pow of two of total shards
@@ -582,9 +575,8 @@ class BasicDecoder {
       }
 
       if (pow_two_of_total_shards != pow_two_of_total_shards_) {
-        std::stringstream ss;
-        ss << "Input segment's shards count (" << pow_two_of_total_shards << ") doesn't match with Decoder's shards count (" << pow_two_of_total_shards_ << ")";
-        throw BareBones::Exception(0x85a8f764e17983db, ss.str());
+        throw BareBones::Exception(0x85a8f764e17983db, "Input segment's shards count (%d) doesn't match with Decoder's shards count (%d)",
+                                   pow_two_of_total_shards, pow_two_of_total_shards_);
       }
     }
 
@@ -656,9 +648,7 @@ class BasicDecoder {
 
     // check version
     if (version != 1) {
-      std::stringstream ss;
-      ss << "Invalid snapshot version (" << version << "), only version 1 is supported";
-      throw BareBones::Exception(0xccd8f4f87758ca2f, ss.str());
+      throw BareBones::Exception(0xccd8f4f87758ca2f, "Invalid snapshot version (%d), only version 1 is supported", version);
     }
 
     auto original_exceptions = in.exceptions();
@@ -738,9 +728,9 @@ class BasicDecoder {
         }
 
         if (__builtin_expect(g_v_bitseq_reader.left() == 0, false)) {
-          std::stringstream ss;
-          ss << "Decoder " << uuid_ << " exhausted label set values data prematurely, but segment processing expects more LabelSets' values";
-          throw BareBones::Exception(0xa5cc1f527d80b20f, ss.str());
+          throw BareBones::Exception(0xa5cc1f527d80b20f,
+                                     "Decoder %s exhausted label set values data prematurely, but segment processing expects more LabelSets' values",
+                                     uuids::to_string(uuid_).c_str());
         }
 
         auto& g = gorilla_[ls_id];

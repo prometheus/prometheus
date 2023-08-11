@@ -115,8 +115,9 @@ class Symbol {
         } else if (first_to_load_i < size()) {
           throw BareBones::Exception(0x55cb9b02c23f7bbc, "Attempt to load segment over existing data");
         } else {
-          throw BareBones::Exception(0x55cb9b02c23f7bbc, "Attempt to load incomplete data from segment, data vector length (%d) is less than segment size (%d)",
-                                     size(), first_to_load_i);
+          throw BareBones::Exception(0x55cb9b02c23f7bbc,
+                                     "Attempt to load incomplete data from segment, data vector length (%zd) is less than segment size (%d)", size(),
+                                     first_to_load_i);
         }
       }
 
@@ -584,7 +585,7 @@ class LabelSet {
           throw BareBones::Exception(0xfead3117c5a549bd, "Attempt to load segment over existing LabelSets data");
         } else {
           throw BareBones::Exception(0xbb996a8ffbcbb53b,
-                                     "Attempt to load incomplete data from segment, LabelSets data vector length (%d) is less than segment size (%d)",
+                                     "Attempt to load incomplete data from segment, LabelSets data vector length (%zd) is less than segment size (%d)",
                                      symbols_ids_sequences.size(), first_to_load_i);
         }
       }
