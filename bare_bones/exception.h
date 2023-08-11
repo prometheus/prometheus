@@ -3,7 +3,7 @@
 /// When adding a new object, generate a new exception code using:
 /// ./scripts/err_code_gen <filename> <line>
 /// Execute this from the root folder.
-/// Every exception thrown must have a unique hexadecimal code 
+/// Every exception thrown must have a unique hexadecimal code
 /// (without delimiters) for easy grep searches.
 #pragma once
 
@@ -25,9 +25,7 @@ class Exception : public std::exception {
  public:
   Exception(Code exc_code, const char* message, ...) __attribute__((format(printf, 3, 4)));
 
-  const char* what() const noexcept override {
-    return msg_.data();
-  }
+  const char* what() const noexcept override { return msg_.data(); }
   Code code() const noexcept { return code_; }
 };
 
