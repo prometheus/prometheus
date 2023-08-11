@@ -96,9 +96,8 @@ class Symbol {
       // read version
       uint8_t version = in.get();
       if (version != 1) {
-        std::stringstream ss;
-        ss << "Invalid stream data version (" << version << ") for loading into data vector (Symbol::data_type), only version 1 is supported";
-        throw BareBones::Exception(0x67c010edbd64e272, ss.str());
+        throw BareBones::Exception(0x67c010edbd64e272,
+                                   "Invalid stream data version (%d) for loading into data vector (Symbol::data_type), only version 1 is supported", version);
       }
 
       // read mode
@@ -116,9 +115,8 @@ class Symbol {
         } else if (first_to_load_i < size()) {
           throw BareBones::Exception(0x55cb9b02c23f7bbc, "Attempt to load segment over existing data");
         } else {
-          std::stringstream ss;
-          ss << "Attempt to load incomplete data from segment, data vector length (" << size() << ") is less than segment size (" << first_to_load_i << ")";
-          throw BareBones::Exception(0x55cb9b02c23f7bbc, ss.str());
+          throw BareBones::Exception(0x55cb9b02c23f7bbc, "Attempt to load incomplete data from segment, data vector length (%d) is less than segment size (%d)",
+                                     size(), first_to_load_i);
         }
       }
 
@@ -266,9 +264,8 @@ class LabelNameSet {
       // read version
       uint8_t version = in.get();
       if (version != 1) {
-        std::stringstream ss;
-        ss << "Invalid stream data version (" << version << ") for loading into LabelSetNames::data_type vector, only version 1 is supported";
-        throw BareBones::Exception(0xe7b943f626c40350, ss.str());
+        throw BareBones::Exception(0xe7b943f626c40350,
+                                   "Invalid stream data version (%d) for loading into LabelSetNames::data_type vector, only version 1 is supported", version);
       }
 
       // read mode
@@ -285,10 +282,10 @@ class LabelNameSet {
         } else if (first_to_load_i < symbols_ids_sequences.size()) {
           throw BareBones::Exception(0xc042fdcb4b149d95, "Attempt to load segment over existing LabelSetNames data");
         } else {
-          std::stringstream ss;
-          ss << "Attempt to load incomplete data from segment, LabelSetNames data vector length (" << symbols_ids_sequences.size()
-             << ") is less than segment size (" << first_to_load_i << ")";
-          throw BareBones::Exception(0x79995816e0a9690b, ss.str());
+          throw BareBones::Exception(
+              0x79995816e0a9690b,
+              "Attempt to load incomplete data from segment, LabelSetNames data vector length (%d) is less than segment size (%d)" symbols_ids_sequences.size(),
+              first_to_load_i);
         }
       }
 
@@ -569,9 +566,8 @@ class LabelSet {
       // read version
       uint8_t version = in.get();
       if (version != 1) {
-        std::stringstream ss;
-        ss << "Invalid stream data version (" << version << ") for loading LabelSets into data vector, only version 1 is supported";
-        throw BareBones::Exception(0x7524f0b0ab963554, ss.str());
+        throw BareBones::Exception(0x7524f0b0ab963554, "Invalid stream data version (%d) for loading LabelSets into data vector, only version 1 is supported",
+                                   version);
       }
 
       // read mode
@@ -588,10 +584,9 @@ class LabelSet {
         } else if (first_to_load_i < symbols_ids_sequences.size()) {
           throw BareBones::Exception(0xfead3117c5a549bd, "Attempt to load segment over existing LabelSets data");
         } else {
-          std::stringstream ss;
-          ss << "Attempt to load incomplete data from segment, LabelSets data vector length (" << symbols_ids_sequences.size()
-             << ") is less than segment size (" << first_to_load_i << ")";
-          throw BareBones::Exception(0xbb996a8ffbcbb53b, ss.str());
+          throw BareBones::Exception(0xbb996a8ffbcbb53b,
+                                     "Attempt to load incomplete data from segment, LabelSets data vector length (%d) is less than segment size (%d)",
+                                     symbols_ids_sequences.size(), first_to_load_i);
         }
       }
 
