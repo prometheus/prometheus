@@ -236,10 +236,8 @@ func (c *Client) Store(ctx context.Context, req []byte, attempt int) error {
 		}
 		err = fmt.Errorf("server returned HTTP status %s: %s", httpResp.Status, line)
 	}
-	if httpResp.StatusCode/100 == 5 {
-		return RecoverableError{err, defaultBackoff}
-	}
-	if c.retryOnRateLimit && httpResp.StatusCode == http.StatusTooManyRequests {
+	if httpResp.StatusCode/100 == 5 ||
+		(c.retryOnRateLimit && httpResp.StatusCode == http.StatusTooManyRequests) {
 		return RecoverableError{err, retryAfterDuration(httpResp.Header.Get("Retry-After"))}
 	}
 	return err
