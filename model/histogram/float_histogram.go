@@ -15,6 +15,7 @@ package histogram
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -130,9 +131,10 @@ func (h *FloatHistogram) String() string {
 	return sb.String()
 }
 
-// PromQlExpression returns a PromQL expression that evaluates to this histogram when used in promtool.
+// TestExpression returns the string representation of this histogram as it is used in the internal PromQL testing
+// framework as well as in promtool rules unit tests.
 // The syntax is described in https://prometheus.io/docs/prometheus/latest/configuration/unit_testing_rules/#series
-func (h *FloatHistogram) PromQlExpression() string {
+func (h *FloatHistogram) TestExpression() string {
 	var res []string
 	if h.Schema != 0 {
 		res = append(res, fmt.Sprintf("schema:%d", h.Schema))
@@ -151,19 +153,30 @@ func (h *FloatHistogram) PromQlExpression() string {
 	}
 
 	addBuckets := func(kind, bucketsKey, offsetKey string, buckets []float64, spans []Span) []string {
-		if len(spans) > 1 {
-			panic(fmt.Sprintf("histogram with multiple %s spans not supported", kind))
-		}
-		for _, span := range spans {
-			if span.Offset != 0 {
-				res = append(res, fmt.Sprintf("%s:%d", offsetKey, span.Offset))
-			}
-		}
+		sort.Slice(spans, func(i, j int) bool {
+			return spans[i].Offset < spans[j].Offset
+		})
 
 		var bucketStr []string
-		for _, bucket := range buckets {
-			bucketStr = append(bucketStr, fmt.Sprintf("%g", bucket))
+		bucketOffset := uint32(0)
+		for i, span := range spans {
+			if i == 0 {
+				if span.Offset != 0 {
+					res = append(res, fmt.Sprintf("%s:%d", offsetKey, span.Offset))
+				}
+			} else {
+				lastEnd := spans[i-1].Offset + int32(spans[i-1].Length)
+				fill := span.Offset - lastEnd
+				for j := int32(0); j < fill; j++ {
+					bucketStr = append(bucketStr, "0")
+				}
+			}
+			for j := uint32(0); j < span.Length; j++ {
+				bucketStr = append(bucketStr, fmt.Sprintf("%g", buckets[bucketOffset+j]))
+			}
+			bucketOffset += span.Length
 		}
+
 		if len(bucketStr) > 0 {
 			res = append(res, fmt.Sprintf("%s:[%s]", bucketsKey, strings.Join(bucketStr, " ")))
 		}

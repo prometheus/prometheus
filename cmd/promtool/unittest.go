@@ -577,7 +577,7 @@ func parsedSamplesString(pss []parsedSample) string {
 
 func (ps *parsedSample) String() string {
 	if ps.Histogram != nil {
-		return ps.Labels.String() + " " + ps.Histogram.PromQlExpression()
+		return ps.Labels.String() + " " + ps.Histogram.TestExpression()
 	}
 	return ps.Labels.String() + " " + strconv.FormatFloat(ps.Value, 'E', -1, 64)
 }
