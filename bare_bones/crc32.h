@@ -135,7 +135,7 @@ class CRC32 {
 
     // check version
     if (version != 1) {
-      throw BareBones::Exception(0x9eeec7c6c1b5a5ed, "Invalid version for CRC32 container, only version 1 is supported");
+      throw BareBones::Exception(0x9eeec7c6c1b5a5ed, "Invalid version %d for CRC32 container, only version 1 is supported", version);
     }
 
     auto original_exceptions = in.exceptions();

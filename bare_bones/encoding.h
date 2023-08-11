@@ -3,7 +3,6 @@
 #include <fstream>
 #include <iterator>
 #include <limits>
-#include <sstream>
 #include <type_traits>
 #include <utility>
 
@@ -382,9 +381,8 @@ class EncodedSequence {
     typename std::remove_const<decltype(Encoding::id<E>::value)>::type encoding_id;
     in.read(reinterpret_cast<char*>(&encoding_id), sizeof(encoding_id));
     if (encoding_id != Encoding::id<E>::value) {
-      std::stringstream ss;
-      ss << "Invalid encoder id " << encoding_id << "while reading from input stream, expected id " << Encoding::id<E>::value;
-      throw BareBones::Exception(0x1e1b301b2eb969ca, ss.str());
+      throw BareBones::Exception(0x1e1b301b2eb969ca, "Invalid encoder id %d while reading from input stream, expected id %d", encoding_id,
+                                 Encoding::id<E>::value);
     }
 
     // read data

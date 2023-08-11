@@ -1,7 +1,6 @@
 #pragma once
 
 #include <fstream>
-#include <sstream>
 #include <string_view>
 
 #include <parallel_hashmap/btree.h>
@@ -263,9 +262,7 @@ class DecodingTable {
 
     // check version
     if (version != 1) {
-      char buf[100];
-      size_t l = std::snprintf(buf, sizeof(buf), "Invalid EncodingSequence version %d got from input stream, only version 1 is supported", version);
-      throw BareBones::Exception(0x343b7bcc6814f2d5, std::string_view(buf, l));
+      throw BareBones::Exception(0x343b7bcc6814f2d5, "Invalid EncodingSequence version %d got from input stream, only version 1 is supported", version);
     }
 
     auto original_exceptions = in.exceptions();
@@ -286,10 +283,9 @@ class DecodingTable {
       } else if (first_to_load_i < items_.size()) {
         throw BareBones::Exception(0x3387739a7b4f574a, "Attempt to load segment over existing DecodingTable data");
       } else {
-        std::stringstream ss;
-        ss << "Attempt to load incomplete data from segment, DecodingTable data vector length (" << items_.size() << ") is less than segment size ("
-           << first_to_load_i << ")";
-        throw BareBones::Exception(0x4ece66e098927bc6, ss.str());
+        throw BareBones::Exception(0x4ece66e098927bc6,
+                                   "Attempt to load incomplete data from segment, DecodingTable data vector length (%d) is less than segment size(%d)",
+                                   items_.size(), first_to_load_i);
       }
     }
 

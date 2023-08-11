@@ -1,7 +1,6 @@
 #pragma once
 
 #include <fstream>
-#include <sstream>
 #include <string_view>
 #include <utility>
 
@@ -738,9 +737,7 @@ class Sequence {
 
     // check version
     if (version != 1) {
-      char buf[100];
-      size_t l = std::snprintf(buf, sizeof(buf), "Invalid Sequence version %d while reading from stream, only version 1 is supported", version);
-      throw BareBones::Exception(0x0baacae87c11b49a, std::string_view(buf, l));
+      throw BareBones::Exception(0x0baacae87c11b49a, "Invalid Sequence version %d while reading from stream, only version 1 is supported", version);
     }
 
     auto original_exceptions = in.exceptions();
@@ -764,10 +761,7 @@ class Sequence {
     // calculate data size
     auto actual_data_size = Codec::decode_data_size(seq.size_, static_cast<const uint8_t*>(seq.keys_));
     if (actual_data_size > std::numeric_limits<uint32_t>::max()) {
-      std::stringstream ss;
-      ss << "The calculated size " << actual_data_size << " of Sequence exceeds uint32_t max value";
-
-      throw BareBones::Exception(0xe2421936fe194169, ss.str());
+      throw BareBones::Exception(0xe2421936fe194169, "The calculated size (%d) of Sequence exceeds uint32_t max value", actual_data_size);
     }
 
     // read data
