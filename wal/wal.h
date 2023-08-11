@@ -767,15 +767,6 @@ class BasicDecoder {
       if (ts_i != segment_ts_delta_rle_seq_.end()) {
         std::stringstream ss;
 
-        // TODO: support std::distance with Iterator and IteratorSentinel ???
-        // size_t ls_id_ts_items_count = std::distance(segment_ts_delta_rle_seq_.begin(), ts_i);
-        // size_t decoder_ts_items_count = std::distance(segment_ts_delta_rle_seq_.begin(), segment_ts_delta_rle_seq_.end());
-
-        // TODO: make it work
-        // ss << "Decoder " << uuid_ << " got an error after processing segment LabelSets: segment ls_id timestamps (" << ls_id_ts_items_count
-        //    << ") and Decoder's ts (" << decoder_ts_items_count
-        //    << ") counts mismatch, there are "
-        //       "remaining timestamp data";
         ss << "Decoder " << uuid_
            << " got an error after processing segment LabelSets: segment ls_id timestamps counts mismatch, there are "
               "remaining timestamp data";
