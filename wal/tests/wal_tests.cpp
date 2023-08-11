@@ -292,5 +292,10 @@ TEST_F(Wal, Snapshots) {
   reader_sbuf2 << decoder2.label_sets().checkpoint();
   EXPECT_EQ(reader_sbuf1.view(), reader_sbuf2.view());
   EXPECT_EQ(decoder.decoders(), decoder2.decoders());
+
+  // FIXME: use smart ptrs(?)
+  for (auto redundant : redundants) {
+    delete redundant;
+  }
 }
 }  // namespace
