@@ -15,11 +15,16 @@ package scrape
 
 import (
 	"context"
+	"errors"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"os"
 	"strconv"
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
@@ -29,6 +34,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/prometheus/prometheus/util/runutil"
 )
 
 func TestPopulateLabels(t *testing.T) {
@@ -512,6 +518,7 @@ scrape_configs:
 		logger:  nil,
 		config:  cfg1.ScrapeConfigs[0],
 		client:  http.DefaultClient,
+		opts:    &opts,
 	}
 	scrapeManager.scrapePools = map[string]*scrapePool{
 		"job1": sp,
@@ -694,12 +701,135 @@ scrape_configs:
 		}
 	}
 
-	opts := Options{}
-	scrapeManager := NewManager(&opts, nil, nil)
+	scrapeManager := NewManager(&Options{}, nil, nil)
 
 	reload(scrapeManager, cfg1)
 	require.ElementsMatch(t, []string{"job1", "job2"}, scrapeManager.ScrapePools())
 
 	reload(scrapeManager, cfg2)
 	require.ElementsMatch(t, []string{"job1", "job3"}, scrapeManager.ScrapePools())
+}
+
+func TestManagerStopAfterScrapeAttempt(t *testing.T) {
+	for _, tcase := range []struct {
+		name            string
+		noJitter        bool
+		stop            func(m *Manager)
+		expectedSamples int
+	}{
+		{
+			name:            "no scrape stop, no jitter",
+			noJitter:        true,
+			stop:            func(m *Manager) { m.Stop() },
+			expectedSamples: 1,
+		},
+		{
+			name:            "no scrape on stop, with jitter",
+			stop:            func(m *Manager) { m.Stop() },
+			expectedSamples: 0,
+		},
+		{
+			name:            "scrape on stop, no jitter",
+			noJitter:        true,
+			stop:            func(m *Manager) { m.StopAfterScrapeAttempt(time.Now()) },
+			expectedSamples: 2,
+		},
+		{
+			name:            "scrape on stop, but initial sample is fresh enough, no jitter",
+			noJitter:        true,
+			stop:            func(m *Manager) { m.StopAfterScrapeAttempt(time.Now().Add(-1 * time.Hour)) },
+			expectedSamples: 1,
+		},
+		{
+			name:            "scrape on stop, with jitter",
+			stop:            func(m *Manager) { m.StopAfterScrapeAttempt(time.Now()) },
+			expectedSamples: 1,
+		},
+	} {
+		t.Run(tcase.name, func(t *testing.T) {
+			app := &collectResultAppender{}
+
+			// Setup scrape manager.
+			scrapeManager := NewManager(&Options{
+				IgnoreJitter: tcase.noJitter,
+
+				// Extremely high value to turn it off. We don't want to wait minimum 5s, so
+				// we reload manually.
+				// TODO(bwplotka): Make scrape manager more testable.
+				DiscoveryReloadInterval: model.Duration(99 * time.Hour),
+			}, log.NewLogfmtLogger(os.Stderr), &collectResultAppendable{app})
+
+			require.NoError(t, scrapeManager.ApplyConfig(&config.Config{
+				GlobalConfig: config.GlobalConfig{
+					// Extremely high scrape interval, to ensure the only chance to see the
+					// sample is on start and stopAfterScrapeAttempt.
+					ScrapeInterval: model.Duration(99 * time.Hour),
+					ScrapeTimeout:  model.Duration(10 * time.Second),
+				},
+				ScrapeConfigs: []*config.ScrapeConfig{{JobName: "test"}},
+			}))
+
+			// Start fake HTTP target to scrape returning a single metric.
+			server := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
+					w.Write([]byte("expected_metric 1\n"))
+				}),
+			)
+			defer server.Close()
+
+			serverURL, err := url.Parse(server.URL)
+			require.NoError(t, err)
+
+			// Add fake target directly into tsets + reload. Normally users would use
+			// Manager.Run and wait for minimum 5s refresh interval.
+			scrapeManager.updateTsets(map[string][]*targetgroup.Group{
+				"test": {
+					{
+						Targets: []model.LabelSet{{
+							model.SchemeLabel:  model.LabelValue(serverURL.Scheme),
+							model.AddressLabel: model.LabelValue(serverURL.Host),
+						}},
+					},
+				},
+			})
+			scrapeManager.reload()
+
+			// At this point the first sample is scheduled to be scraped after the initial
+			// jitter in the background scrape loop go-routine
+			//
+			// With jitter the first sample will appear after long time,
+			// given the extremely long scrape interval configured. We stop right
+			// away and expect only the last sample due to stop.
+			//
+			// With no jitter setting, we expect the first to be added straight away--wait
+			// for it, before stopping.
+			if tcase.noJitter {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				require.NoError(t, runutil.Retry(100*time.Millisecond, ctx.Done(), func() error {
+					if countFloatSamples(app, "expected_metric") < 1 {
+						return errors.New("expected more then one expected_metric sample")
+					}
+					return nil
+				}), "after 5 seconds")
+			}
+
+			tcase.stop(scrapeManager)
+
+			require.Equal(t, tcase.expectedSamples, countFloatSamples(app, "expected_metric"))
+		})
+	}
+}
+
+func countFloatSamples(a *collectResultAppender, expectedMetricName string) (count int) {
+	a.mtx.Lock()
+	defer a.mtx.Unlock()
+
+	for _, f := range a.resultFloats {
+		if f.metric.Get(model.MetricNameLabel) == expectedMetricName {
+			count++
+		}
+	}
+	return count
 }

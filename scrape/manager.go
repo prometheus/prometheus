@@ -140,6 +140,13 @@ type Options struct {
 
 	// Optional HTTP client options to use when scraping.
 	HTTPClientOptions []config_util.HTTPClientOption
+
+	// IgnoreJitter causes all targets managed by this manager to be scraped
+	// as soon as they are discovered. By default, all targets have offset,
+	// so we spread the scraping load evenly within Prometheus server.
+	// NOTE(bwplotka): This option is experimental and not used by Prometheus.
+	// It was created for serverless flavors of OpenTelemetry contrib's prometheusreceiver.
+	IgnoreJitter bool
 }
 
 // Manager maintains a set of scrape pools and manages start/stop cycles
@@ -161,7 +168,7 @@ type Manager struct {
 
 // Run receives and saves target set updates and triggers the scraping loops reloading.
 // Reloading happens in the background so that it doesn't block receiving targets updates.
-func (m *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) error {
+func (m *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) {
 	go m.reloader()
 	for {
 		select {
@@ -174,7 +181,7 @@ func (m *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) error {
 			}
 
 		case <-m.graceShut:
-			return nil
+			return
 		}
 	}
 }
@@ -252,6 +259,40 @@ func (m *Manager) setOffsetSeed(labels labels.Labels) error {
 func (m *Manager) Stop() {
 	m.mtxScrape.Lock()
 	defer m.mtxScrape.Unlock()
+
+	for _, sp := range m.scrapePools {
+		sp.stop()
+	}
+	close(m.graceShut)
+}
+
+// StopAfterScrapeAttempt stops manager after ensuring all targets' last scrape
+// attempt happened after minScrapeTime. It cancels all running scrape pools and
+// blocks until all have exited.
+//
+// It is likely that such shutdown scrape will cause irregular scrape interval and
+// sudden efficiency (memory, CPU) spikes. However, it can be a fair tradeoff for
+// short-lived and small number of targets, where at least one or two samples could be
+// preserved (and ideally aggregated further by separate processes).
+//
+// NOTE(bwplotka): This method is experimental and not used by Prometheus.
+// It was created for serverless flavors of OpenTelemetry contrib's prometheusreceiver.
+func (m *Manager) StopAfterScrapeAttempt(minScrapeTime time.Time) {
+	m.mtxScrape.Lock()
+	defer m.mtxScrape.Unlock()
+
+	var wg sync.WaitGroup
+	for _, p := range m.scrapePools {
+		for _, l := range p.loops {
+			l := l
+			wg.Add(1)
+			go func() {
+				l.stopAfterScrapeAttempt(minScrapeTime)
+				wg.Done()
+			}()
+		}
+	}
+	wg.Wait()
 
 	for _, sp := range m.scrapePools {
 		sp.stop()

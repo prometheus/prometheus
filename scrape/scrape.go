@@ -231,7 +231,6 @@ type scrapePool struct {
 	appendable storage.Appendable
 	logger     log.Logger
 	cancel     context.CancelFunc
-	httpOpts   []config_util.HTTPClientOption
 
 	// mtx must not be taken after targetMtx.
 	mtx    sync.Mutex
@@ -248,9 +247,7 @@ type scrapePool struct {
 	// Constructor for new scrape loops. This is settable for testing convenience.
 	newLoop func(scrapeLoopOptions) loop
 
-	noDefaultPort bool
-
-	enableProtobufNegotiation bool
+	opts *Options
 }
 
 type labelLimits struct {
@@ -295,16 +292,14 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 
 	ctx, cancel := context.WithCancel(context.Background())
 	sp := &scrapePool{
-		cancel:                    cancel,
-		appendable:                app,
-		config:                    cfg,
-		client:                    client,
-		activeTargets:             map[uint64]*Target{},
-		loops:                     map[uint64]loop{},
-		logger:                    logger,
-		httpOpts:                  options.HTTPClientOptions,
-		noDefaultPort:             options.NoDefaultPort,
-		enableProtobufNegotiation: options.EnableProtobufNegotiation,
+		cancel:        cancel,
+		appendable:    app,
+		config:        cfg,
+		client:        client,
+		activeTargets: map[uint64]*Target{},
+		loops:         map[uint64]loop{},
+		logger:        logger,
+		opts:          options,
 	}
 	sp.newLoop = func(opts scrapeLoopOptions) loop {
 		// Update the targets retrieval function for metadata to a new scrape cache.
@@ -333,10 +328,8 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 			opts.interval,
 			opts.timeout,
 			opts.scrapeClassicHistograms,
-			options.ExtraMetrics,
-			options.EnableMetadataStorage,
 			opts.target,
-			options.PassMetadataInContext,
+			options,
 		)
 	}
 	targetScrapePoolTargetLimit.WithLabelValues(sp.config.JobName).Set(float64(sp.config.TargetLimit))
@@ -404,7 +397,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 	targetScrapePoolReloads.Inc()
 	start := time.Now()
 
-	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, cfg.JobName, sp.httpOpts...)
+	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, cfg.JobName, sp.opts.HTTPClientOptions...)
 	if err != nil {
 		targetScrapePoolReloadsFailed.Inc()
 		return errors.Wrap(err, "error creating HTTP client")
@@ -449,7 +442,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 		t := sp.activeTargets[fp]
 		interval, timeout, err := t.intervalAndTimeout(interval, timeout)
 		acceptHeader := scrapeAcceptHeader
-		if sp.enableProtobufNegotiation {
+		if sp.opts.EnableProtobufNegotiation {
 			acceptHeader = scrapeAcceptHeaderWithProtobuf
 		}
 		var (
@@ -507,7 +500,7 @@ func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 	lb := labels.NewBuilder(labels.EmptyLabels())
 	sp.droppedTargets = []*Target{}
 	for _, tg := range tgs {
-		targets, failures := TargetsFromGroup(tg, sp.config, sp.noDefaultPort, targets, lb)
+		targets, failures := TargetsFromGroup(tg, sp.config, sp.opts.NoDefaultPort, targets, lb)
 		for _, err := range failures {
 			level.Error(sp.logger).Log("msg", "Creating target failed", "err", err)
 		}
@@ -566,7 +559,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 			var err error
 			interval, timeout, err = t.intervalAndTimeout(interval, timeout)
 			acceptHeader := scrapeAcceptHeader
-			if sp.enableProtobufNegotiation {
+			if sp.opts.EnableProtobufNegotiation {
 				acceptHeader = scrapeAcceptHeaderWithProtobuf
 			}
 			s := &targetScraper{Target: t, client: sp.client, timeout: timeout, bodySizeLimit: bodySizeLimit, acceptHeader: acceptHeader}
@@ -869,11 +862,15 @@ func (s *targetScraper) scrape(ctx context.Context, w io.Writer) (string, error)
 	return resp.Header.Get("Content-Type"), nil
 }
 
-// A loop can run and be stopped again. It must not be reused after it was stopped.
+// A loop can run and be stopped. The same loop instance must not be reused
+// after it was stopped.
+// stop and stopAfterScrapeAttempt can be invoked multiple times, but after first
+// stop, other invocations do nothing.
 type loop interface {
 	run(errc chan<- error)
 	setForcedError(err error)
 	stop()
+	stopAfterScrapeAttempt(minScrapeTime time.Time)
 	getCache() *scrapeCache
 	disableEndOfRunStalenessMarkers()
 }
@@ -913,9 +910,9 @@ type scrapeLoop struct {
 	stopped     chan struct{}
 
 	disabledEndOfRunStalenessMarkers bool
+	stopAfterScrapeAttemptCh         chan time.Time
 
-	reportExtraMetrics  bool
-	appendMetadataToWAL bool
+	opts *Options
 }
 
 // scrapeCache tracks mappings of exposed metric strings to label sets and
@@ -1148,7 +1145,7 @@ func (c *scrapeCache) ListMetadata() []MetricMetadata {
 	return res
 }
 
-// MetadataSize returns the size of the metadata cache.
+// SizeMetadata returns the size of the metadata cache.
 func (c *scrapeCache) SizeMetadata() (s int) {
 	c.metaMtx.Lock()
 	defer c.metaMtx.Unlock()
@@ -1159,7 +1156,7 @@ func (c *scrapeCache) SizeMetadata() (s int) {
 	return s
 }
 
-// MetadataLen returns the number of metadata entries in the cache.
+// LengthMetadata returns the number of metadata entries in the cache.
 func (c *scrapeCache) LengthMetadata() int {
 	c.metaMtx.Lock()
 	defer c.metaMtx.Unlock()
@@ -1167,7 +1164,8 @@ func (c *scrapeCache) LengthMetadata() int {
 	return len(c.metadata)
 }
 
-func newScrapeLoop(ctx context.Context,
+func newScrapeLoop(
+	ctx context.Context,
 	sc scraper,
 	l log.Logger,
 	buffers *pool.Pool,
@@ -1183,10 +1181,8 @@ func newScrapeLoop(ctx context.Context,
 	interval time.Duration,
 	timeout time.Duration,
 	scrapeClassicHistograms bool,
-	reportExtraMetrics bool,
-	appendMetadataToWAL bool,
 	target *Target,
-	passMetadataInContext bool,
+	opts *Options,
 ) *scrapeLoop {
 	if l == nil {
 		l = log.NewNopLogger()
@@ -1197,10 +1193,13 @@ func newScrapeLoop(ctx context.Context,
 	if cache == nil {
 		cache = newScrapeCache()
 	}
+	if opts == nil {
+		opts = &Options{}
+	}
 
 	appenderCtx := ctx
 
-	if passMetadataInContext {
+	if opts.PassMetadataInContext {
 		// Store the cache and target in the context. This is then used by downstream OTel Collector
 		// to lookup the metadata required to process the samples. Not used by Prometheus itself.
 		// TODO(gouthamve) We're using a dedicated context because using the parentCtx caused a memory
@@ -1210,26 +1209,26 @@ func newScrapeLoop(ctx context.Context,
 	}
 
 	sl := &scrapeLoop{
-		scraper:                 sc,
-		buffers:                 buffers,
-		cache:                   cache,
-		appender:                appender,
-		sampleMutator:           sampleMutator,
-		reportSampleMutator:     reportSampleMutator,
-		stopped:                 make(chan struct{}),
-		offsetSeed:              offsetSeed,
-		l:                       l,
-		parentCtx:               ctx,
-		appenderCtx:             appenderCtx,
-		honorTimestamps:         honorTimestamps,
-		sampleLimit:             sampleLimit,
-		bucketLimit:             bucketLimit,
-		labelLimits:             labelLimits,
-		interval:                interval,
-		timeout:                 timeout,
-		scrapeClassicHistograms: scrapeClassicHistograms,
-		reportExtraMetrics:      reportExtraMetrics,
-		appendMetadataToWAL:     appendMetadataToWAL,
+		scraper:                  sc,
+		buffers:                  buffers,
+		cache:                    cache,
+		appender:                 appender,
+		sampleMutator:            sampleMutator,
+		reportSampleMutator:      reportSampleMutator,
+		stopped:                  make(chan struct{}),
+		offsetSeed:               offsetSeed,
+		l:                        l,
+		parentCtx:                ctx,
+		appenderCtx:              appenderCtx,
+		honorTimestamps:          honorTimestamps,
+		sampleLimit:              sampleLimit,
+		bucketLimit:              bucketLimit,
+		labelLimits:              labelLimits,
+		interval:                 interval,
+		timeout:                  timeout,
+		scrapeClassicHistograms:  scrapeClassicHistograms,
+		opts:                     opts,
+		stopAfterScrapeAttemptCh: make(chan time.Time, 1),
 	}
 	sl.ctx, sl.cancel = context.WithCancel(ctx)
 
@@ -1237,31 +1236,32 @@ func newScrapeLoop(ctx context.Context,
 }
 
 func (sl *scrapeLoop) run(errc chan<- error) {
+	defer close(sl.stopAfterScrapeAttemptCh)
+
+	jitterDelayTime := sl.scraper.offset(sl.interval, sl.offsetSeed)
+	if sl.opts.IgnoreJitter {
+		jitterDelayTime = 0 * time.Second
+	}
+
 	select {
-	case <-time.After(sl.scraper.offset(sl.interval, sl.offsetSeed)):
-		// Continue after a scraping offset.
+	case <-sl.parentCtx.Done():
+		close(sl.stopped)
+		return
 	case <-sl.ctx.Done():
 		close(sl.stopped)
 		return
+	case <-sl.stopAfterScrapeAttemptCh:
+		sl.cancel()
+	case <-time.After(jitterDelayTime):
 	}
 
 	var last time.Time
-
 	alignedScrapeTime := time.Now().Round(0)
 	ticker := time.NewTicker(sl.interval)
 	defer ticker.Stop()
 
 mainLoop:
 	for {
-		select {
-		case <-sl.parentCtx.Done():
-			close(sl.stopped)
-			return
-		case <-sl.ctx.Done():
-			break mainLoop
-		default:
-		}
-
 		// Temporary workaround for a jitter in go timers that causes disk space
 		// increase in TSDB.
 		// See https://github.com/prometheus/prometheus/issues/7846
@@ -1288,6 +1288,11 @@ mainLoop:
 			return
 		case <-sl.ctx.Done():
 			break mainLoop
+		case minScrapeTime := <-sl.stopAfterScrapeAttemptCh:
+			sl.cancel()
+			if minScrapeTime.Before(last) {
+				break mainLoop
+			}
 		case <-ticker.C:
 		}
 	}
@@ -1476,11 +1481,39 @@ func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, int
 	}
 }
 
-// Stop the scraping. May still write data and stale markers after it has
-// returned. Cancel the context to stop all writes.
+// stop stops the scraping. The loop may still write data and stale markers after
+// stop has returned. Cancel the context (e.g. via Manager.Stop()) to stop all
+// writes or if stop takes too much time.
 func (sl *scrapeLoop) stop() {
+	if sl.cancel == nil {
+		return
+	}
+
 	sl.cancel()
 	<-sl.stopped
+	sl.cancel = nil
+}
+
+// stopAfterScrapeAttempt stops scraping after ensuring the last scrape attempt
+// happened after minScrapeTime. minScrapeTime can't be larger than time.Now.
+//
+// Similar to stop, the loop may still write data and stale markers after
+// stopAfterScrapeAttempt has returned. Cancel the context (e.g. via
+// Manager.Stop()) to stop all writes or if stopAfterScrapeAttempt takes too much
+// time.
+func (sl *scrapeLoop) stopAfterScrapeAttempt(minScrapeTime time.Time) {
+	if sl.cancel == nil {
+		return
+	}
+
+	now := time.Now()
+	if minScrapeTime.After(now) {
+		minScrapeTime = now
+	}
+
+	sl.stopAfterScrapeAttemptCh <- minScrapeTime
+	<-sl.stopped
+	sl.cancel = nil
 }
 
 func (sl *scrapeLoop) disableEndOfRunStalenessMarkers() {
@@ -1523,7 +1556,7 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 	// labelset is for a new series or the metadata for this series has just
 	// changed. It returns a boolean based on whether the metadata was updated.
 	updateMetadata := func(lset labels.Labels, isNewSeries bool) bool {
-		if !sl.appendMetadataToWAL {
+		if !sl.opts.EnableMetadataStorage {
 			return false
 		}
 
@@ -1698,7 +1731,7 @@ loop:
 			e = exemplar.Exemplar{} // reset for next time round loop
 		}
 
-		if sl.appendMetadataToWAL && metadataChanged {
+		if sl.opts.EnableMetadataStorage && metadataChanged {
 			if _, merr := app.UpdateMetadata(ref, lset, meta); merr != nil {
 				// No need to fail the scrape on errors appending metadata.
 				level.Debug(sl.l).Log("msg", "Error when appending metadata in scrape loop", "ref", fmt.Sprintf("%d", ref), "metadata", fmt.Sprintf("%+v", meta), "err", merr)
@@ -1840,7 +1873,7 @@ func (sl *scrapeLoop) report(app storage.Appender, start time.Time, duration tim
 	if err = sl.addReportSample(app, scrapeSeriesAddedMetricName, ts, float64(seriesAdded)); err != nil {
 		return
 	}
-	if sl.reportExtraMetrics {
+	if sl.opts.ExtraMetrics {
 		if err = sl.addReportSample(app, scrapeTimeoutMetricName, ts, sl.timeout.Seconds()); err != nil {
 			return
 		}
@@ -1874,7 +1907,7 @@ func (sl *scrapeLoop) reportStale(app storage.Appender, start time.Time) (err er
 	if err = sl.addReportSample(app, scrapeSeriesAddedMetricName, ts, stale); err != nil {
 		return
 	}
-	if sl.reportExtraMetrics {
+	if sl.opts.ExtraMetrics {
 		if err = sl.addReportSample(app, scrapeTimeoutMetricName, ts, stale); err != nil {
 			return
 		}

@@ -927,9 +927,9 @@ func main() {
 				// we wait until the config is fully loaded.
 				<-reloadReady.C
 
-				err := scrapeManager.Run(discoveryManagerScrape.SyncCh())
+				scrapeManager.Run(discoveryManagerScrape.SyncCh())
 				level.Info(logger).Log("msg", "Scrape manager stopped")
-				return err
+				return nil
 			},
 			func(err error) {
 				// Scrape manager needs to be stopped before closing the local TSDB
