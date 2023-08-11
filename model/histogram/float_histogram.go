@@ -15,6 +15,7 @@ package histogram
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 )
@@ -136,55 +137,55 @@ func (h *FloatHistogram) String() string {
 // The syntax is described in https://prometheus.io/docs/prometheus/latest/configuration/unit_testing_rules/#series
 func (h *FloatHistogram) TestExpression() string {
 	var res []string
-	if h.Schema != 0 {
-		res = append(res, fmt.Sprintf("schema:%d", h.Schema))
-	}
-	if h.Count != 0 {
-		res = append(res, fmt.Sprintf("count:%g", h.Count))
-	}
-	if h.Sum != 0 {
-		res = append(res, fmt.Sprintf("sum:%g", h.Sum))
-	}
-	if h.ZeroCount != 0 {
-		res = append(res, fmt.Sprintf("z_bucket:%g", h.ZeroCount))
-	}
-	if h.ZeroThreshold != 0 {
-		res = append(res, fmt.Sprintf("z_bucket_w:%g", h.ZeroThreshold))
-	}
+	m := h.Copy()
 
-	addBuckets := func(kind, bucketsKey, offsetKey string, buckets []float64, spans []Span) []string {
+	sortSpans := func(spans []Span) {
 		sort.Slice(spans, func(i, j int) bool {
 			return spans[i].Offset < spans[j].Offset
 		})
+	}
+	sortSpans(m.PositiveSpans)
+	sortSpans(m.NegativeSpans)
 
-		var bucketStr []string
-		bucketOffset := uint32(0)
-		for i, span := range spans {
-			if i == 0 {
-				if span.Offset != 0 {
-					res = append(res, fmt.Sprintf("%s:%d", offsetKey, span.Offset))
-				}
-			} else {
-				lastEnd := spans[i-1].Offset + int32(spans[i-1].Length)
-				fill := span.Offset - lastEnd
-				for j := int32(0); j < fill; j++ {
-					bucketStr = append(bucketStr, "0")
-				}
+	m.Compact(math.MaxInt)
+
+	if m.Schema != 0 {
+		res = append(res, fmt.Sprintf("schema:%d", m.Schema))
+	}
+	if m.Count != 0 {
+		res = append(res, fmt.Sprintf("count:%g", m.Count))
+	}
+	if m.Sum != 0 {
+		res = append(res, fmt.Sprintf("sum:%g", m.Sum))
+	}
+	if m.ZeroCount != 0 {
+		res = append(res, fmt.Sprintf("z_bucket:%g", m.ZeroCount))
+	}
+	if m.ZeroThreshold != 0 {
+		res = append(res, fmt.Sprintf("z_bucket_w:%g", m.ZeroThreshold))
+	}
+
+	addBuckets := func(kind, bucketsKey, offsetKey string, buckets []float64, spans []Span) []string {
+		if len(spans) > 1 {
+			panic(fmt.Sprintf("histogram with multiple %s spans not supported", kind))
+		}
+		for _, span := range spans {
+			if span.Offset != 0 {
+				res = append(res, fmt.Sprintf("%s:%d", offsetKey, span.Offset))
 			}
-			for j := uint32(0); j < span.Length; j++ {
-				bucketStr = append(bucketStr, fmt.Sprintf("%g", buckets[bucketOffset+j]))
-			}
-			bucketOffset += span.Length
 		}
 
+		var bucketStr []string
+		for _, bucket := range buckets {
+			bucketStr = append(bucketStr, fmt.Sprintf("%g", bucket))
+		}
 		if len(bucketStr) > 0 {
 			res = append(res, fmt.Sprintf("%s:[%s]", bucketsKey, strings.Join(bucketStr, " ")))
 		}
 		return res
 	}
-
-	res = addBuckets("positive", "buckets", "offset", h.PositiveBuckets, h.PositiveSpans)
-	res = addBuckets("negative", "n_buckets", "n_offset", h.NegativeBuckets, h.NegativeSpans)
+	res = addBuckets("positive", "buckets", "offset", m.PositiveBuckets, m.PositiveSpans)
+	res = addBuckets("negative", "n_buckets", "n_offset", m.NegativeBuckets, m.NegativeSpans)
 	return "{{" + strings.Join(res, " ") + "}}"
 }
 

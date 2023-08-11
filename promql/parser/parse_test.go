@@ -4001,9 +4001,9 @@ func TestHistogramTestExpression(t *testing.T) {
 			_, vals, err := ParseSeriesDesc("{} " + expression)
 			require.NoError(t, err)
 			require.Len(t, vals, 1)
-			parsed := vals[0].Histogram
-			require.NotNil(t, parsed)
-			require.Equal(t, &test.input, parsed.Compact(0))
+			canonical := vals[0].Histogram
+			require.NotNil(t, canonical)
+			require.Equal(t, test.expected, canonical.TestExpression())
 		})
 	}
 }
