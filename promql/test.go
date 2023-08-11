@@ -436,7 +436,15 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 			exp0 := exp.vals[0]
 			expH := exp0.Histogram
 			if (expH == nil) != (v.H == nil) || (expH != nil && !expH.Equals(v.H)) {
-				return fmt.Errorf("expected %v for %s but got %v", expH, v.Metric, v.H)
+				expS := "<nil>"
+				if expH != nil {
+					expS = expH.TestExpression()
+				}
+				gotS := "<nil>"
+				if v.H != nil {
+					gotS = v.H.TestExpression()
+				}
+				return fmt.Errorf("expected %v for %s but got %s", expS, v.Metric, gotS)
 			}
 			if !almostEqual(exp0.Value, v.F) {
 				return fmt.Errorf("expected %v for %s but got %v", exp0.Value, v.Metric, v.F)
@@ -460,7 +468,7 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 		}
 		exp0 := ev.expected[0].vals[0]
 		if exp0.Histogram != nil {
-			return fmt.Errorf("expected Histogram %v but got scalar %s", exp0.Histogram, val.String())
+			return fmt.Errorf("expected Histogram %v but got scalar %s", exp0.Histogram.TestExpression(), val.String())
 		}
 		if !almostEqual(exp0.Value, val.V) {
 			return fmt.Errorf("expected Scalar %v but got %v", val.V, exp0.Value)
