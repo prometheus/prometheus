@@ -4230,12 +4230,12 @@ func TestNativeHistogram_SubOperator(t *testing.T) {
 				ZeroCount:     2,
 				PositiveSpans: []histogram.Span{
 					{Offset: 0, Length: 2},
-					{Offset: 1, Length: 4},
+					{Offset: 3, Length: 4},
 				},
 				PositiveBuckets: []float64{1, 1, 2, 1, 1, 1},
 				NegativeSpans: []histogram.Span{
 					{Offset: 1, Length: 2},
-					{Offset: 1, Length: 1},
+					{Offset: 4, Length: 1},
 					{Offset: 4, Length: 3},
 				},
 				NegativeBuckets: []float64{1, 1, 7, 5, 5, 2},
@@ -4286,7 +4286,7 @@ func TestNativeHistogram_SubOperator(t *testing.T) {
 				ZeroCount:     2,
 				PositiveSpans: []histogram.Span{
 					{Offset: 0, Length: 1},
-					{Offset: 1, Length: 5},
+					{Offset: 2, Length: 5},
 				},
 				PositiveBuckets: []float64{1, 1, 2, 1, 1, 1},
 				NegativeSpans: []histogram.Span{
@@ -4341,7 +4341,7 @@ func TestNativeHistogram_SubOperator(t *testing.T) {
 				ZeroCount:     -2,
 				PositiveSpans: []histogram.Span{
 					{Offset: 0, Length: 1},
-					{Offset: 1, Length: 5},
+					{Offset: 2, Length: 5},
 				},
 				PositiveBuckets: []float64{-1, -1, -2, -1, -1, -1},
 				NegativeSpans: []histogram.Span{
@@ -4388,6 +4388,17 @@ func TestNativeHistogram_SubOperator(t *testing.T) {
 					vector, err := res.Vector()
 					require.NoError(t, err)
 
+					if len(vector) == len(exp) {
+						for i, e := range exp {
+							got := vector[i].H
+							if got != e.H {
+								// for better error messages
+								require.Equal(t, *e.H, *got)
+							}
+						}
+
+					}
+
 					require.Equal(t, exp, vector)
 				}
 
@@ -4398,8 +4409,8 @@ func TestNativeHistogram_SubOperator(t *testing.T) {
 				}
 				queryAndCheck(queryString, []Sample{{T: ts, H: &c.expected, Metric: labels.EmptyLabels()}})
 			})
-			idx0++
 		}
+		idx0++
 	}
 }
 
