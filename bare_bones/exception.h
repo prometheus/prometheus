@@ -1,10 +1,10 @@
 /// @file exception.h
-/// Use this exception for wrapping any third-party libraries exceptions.
-/// If you add any new object, please, generate new exception code via
-/// ./scripts/err_code_gen <filename> <line>, [<git_commit_hash>]
-/// from root folder.
-/// Any exception throw point must contains the unique code
-/// as hexadecimal digit (without delimiters, for ease of grep'ping).
+/// Use this exception to wrap third-party library exceptions.
+/// When adding a new object, generate a new exception code using:
+/// ./scripts/err_code_gen <filename> <line>
+/// Execute this from the root folder.
+/// Every exception thrown must have a unique hexadecimal code 
+/// (without delimiters) for easy grep searches.
 #pragma once
 
 #include <cstdint>
