@@ -107,13 +107,14 @@ inline __attribute__((always_inline)) void read_label(ProtobufReader& pb_label, 
   }
 
   if (__builtin_expect(parsed != 0b11, false)) {
-    std::stringstream ss;
-    ss << "Protobuf message has incomplete key(";
-    ss << (parsed & 0b01) ? std::get<0>(label) : "<incomplete>";
-    ss << ")-value(";
-    ss << (parsed & 0b10) ? std::get<1>(label) : "<incomplete>";
-    ss << ") pair";
-    throw BareBones::Exception(0xf355fc833ca6be64, ss.str());
+    // helper for extracting string representation from label, to avoid the
+    // complicated logic in printf-like call.
+    auto get_str_if_parsed = [&]<size_t N>(size_t test_mask) -> std::string {
+      std::stringstream ss;
+      return (parsed & test_mask) ? (ss << std::get<N>()).str() : std::string("<incomplete>");
+    };
+    throw BareBones::Exception(0xf355fc833ca6be64, "Protobuf message has incomplete key(%s)-value(%s) pair", get_str_if_parsed<0>(0b01).c_str(),
+                               get_str_if_parsed<1>(0b10).c_str());
   }
 }
 
@@ -160,7 +161,8 @@ inline __attribute__((always_inline)) void read_timeseries(ProtobufReader&& pb_t
   }
 
   if (__builtin_expect(!timeseries.label_set().size() || !timeseries.samples().size(), false)) {
-    throw BareBones::Exception(0x75a82db7eb2779f1, "Protobuf message has no samples for label set ...");
+    // TODO: we need to think how to add more context here...
+    throw BareBones::Exception(0x75a82db7eb2779f1, "Protobuf message has no samples for label set");
   }
 }
 
@@ -177,10 +179,7 @@ __attribute__((flatten)) void read_many_timeseries(ProtobufReader& pb, Callback 
       timeseries.clear();
     }
   } catch (protozero::exception& e) {
-    std::stringstream ss;
-    ss << "Protobuf parsing timeseries exception: " << e.what();
-
-    throw BareBones::Exception(0xf5386714f93eb11f, ss.str());
+    throw BareBones::Exception(0xf5386714f93eb11f, "Protobuf parsing timeseries exception: %s", e.what());
   }
 }
 
@@ -211,10 +210,7 @@ __attribute__((flatten)) void read_many_timeseries_in_hashdex(ProtobufReader& pb
       timeseries.clear();
     }
   } catch (protozero::exception& e) {
-    std::stringstream ss;
-
-    ss << "Protobuf parsing timeseries exception: " << e.what();
-    throw BareBones::Exception(0xbe40bda82f01b869, ss.str());
+    throw BareBones::Exception(0xbe40bda82f01b869, "Protobuf parsing timeseries exception: %s", e.what());
   }
 }
 }  // namespace RemoteWrite
