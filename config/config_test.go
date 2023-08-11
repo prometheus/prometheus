@@ -75,7 +75,6 @@ const (
 	globLabelLimit            = 30
 	globLabelNameLengthLimit  = 200
 	globLabelValueLengthLimit = 200
-	globKeepDroppedTargets    = 100
 )
 
 var expectedConf = &Config{
@@ -192,7 +191,6 @@ var expectedConf = &Config{
 			LabelLimit:            globLabelLimit,
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
-			KeepDroppedTargets:    globKeepDroppedTargets,
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
@@ -294,7 +292,6 @@ var expectedConf = &Config{
 			LabelLimit:            35,
 			LabelNameLengthLimit:  210,
 			LabelValueLengthLimit: 210,
-			KeepDroppedTargets:    globKeepDroppedTargets,
 
 			HTTPClientConfig: config.HTTPClientConfig{
 				BasicAuth: &config.BasicAuth{
@@ -390,7 +387,6 @@ var expectedConf = &Config{
 			LabelLimit:            globLabelLimit,
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
-			KeepDroppedTargets:    globKeepDroppedTargets,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -444,7 +440,6 @@ var expectedConf = &Config{
 			LabelLimit:            globLabelLimit,
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
-			KeepDroppedTargets:    globKeepDroppedTargets,
 
 			MetricsPath: "/metrics",
 			Scheme:      "http",
@@ -476,7 +471,6 @@ var expectedConf = &Config{
 			LabelLimit:            globLabelLimit,
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
-			KeepDroppedTargets:    globKeepDroppedTargets,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -514,7 +508,6 @@ var expectedConf = &Config{
 			LabelLimit:            globLabelLimit,
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
-			KeepDroppedTargets:    globKeepDroppedTargets,
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
@@ -552,7 +545,6 @@ var expectedConf = &Config{
 			LabelLimit:            globLabelLimit,
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
-			KeepDroppedTargets:    globKeepDroppedTargets,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -579,7 +571,6 @@ var expectedConf = &Config{
 			LabelLimit:            globLabelLimit,
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
-			KeepDroppedTargets:    globKeepDroppedTargets,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -615,7 +606,6 @@ var expectedConf = &Config{
 			LabelLimit:            globLabelLimit,
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
-			KeepDroppedTargets:    globKeepDroppedTargets,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -648,7 +638,6 @@ var expectedConf = &Config{
 			LabelLimit:            globLabelLimit,
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
-			KeepDroppedTargets:    globKeepDroppedTargets,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -688,7 +677,6 @@ var expectedConf = &Config{
 			LabelLimit:            globLabelLimit,
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
-			KeepDroppedTargets:    globKeepDroppedTargets,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -718,7 +706,6 @@ var expectedConf = &Config{
 			LabelLimit:            globLabelLimit,
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
-			KeepDroppedTargets:    globKeepDroppedTargets,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -751,7 +738,6 @@ var expectedConf = &Config{
 			LabelLimit:            globLabelLimit,
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
-			KeepDroppedTargets:    globKeepDroppedTargets,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -777,7 +763,6 @@ var expectedConf = &Config{
 			LabelLimit:            globLabelLimit,
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
-			KeepDroppedTargets:    globKeepDroppedTargets,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -806,7 +791,6 @@ var expectedConf = &Config{
 			LabelLimit:            globLabelLimit,
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
-			KeepDroppedTargets:    globKeepDroppedTargets,
 
 			MetricsPath:      "/federate",
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -835,7 +819,6 @@ var expectedConf = &Config{
 			LabelLimit:            globLabelLimit,
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
-			KeepDroppedTargets:    globKeepDroppedTargets,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -864,7 +847,6 @@ var expectedConf = &Config{
 			LabelLimit:            globLabelLimit,
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
-			KeepDroppedTargets:    globKeepDroppedTargets,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -890,7 +872,6 @@ var expectedConf = &Config{
 			LabelLimit:            globLabelLimit,
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
-			KeepDroppedTargets:    globKeepDroppedTargets,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -924,7 +905,6 @@ var expectedConf = &Config{
 			LabelLimit:            globLabelLimit,
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
-			KeepDroppedTargets:    globKeepDroppedTargets,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -957,7 +937,6 @@ var expectedConf = &Config{
 			LabelLimit:            globLabelLimit,
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
-			KeepDroppedTargets:    globKeepDroppedTargets,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -986,7 +965,6 @@ var expectedConf = &Config{
 			LabelLimit:            globLabelLimit,
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
-			KeepDroppedTargets:    globKeepDroppedTargets,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1015,7 +993,6 @@ var expectedConf = &Config{
 			LabelLimit:            globLabelLimit,
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
-			KeepDroppedTargets:    globKeepDroppedTargets,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1048,7 +1025,6 @@ var expectedConf = &Config{
 			LabelLimit:            globLabelLimit,
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
-			KeepDroppedTargets:    globKeepDroppedTargets,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1084,7 +1060,6 @@ var expectedConf = &Config{
 			LabelLimit:            globLabelLimit,
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
-			KeepDroppedTargets:    globKeepDroppedTargets,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1139,7 +1114,6 @@ var expectedConf = &Config{
 			LabelLimit:            globLabelLimit,
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
-			KeepDroppedTargets:    globKeepDroppedTargets,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1165,7 +1139,6 @@ var expectedConf = &Config{
 			LabelLimit:            globLabelLimit,
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
-			KeepDroppedTargets:    globKeepDroppedTargets,
 
 			HTTPClientConfig: config.DefaultHTTPClientConfig,
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
@@ -1202,7 +1175,6 @@ var expectedConf = &Config{
 			LabelLimit:            globLabelLimit,
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
-			KeepDroppedTargets:    globKeepDroppedTargets,
 
 			HTTPClientConfig: config.DefaultHTTPClientConfig,
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
@@ -1245,7 +1217,6 @@ var expectedConf = &Config{
 			LabelLimit:            globLabelLimit,
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
-			KeepDroppedTargets:    globKeepDroppedTargets,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1279,7 +1250,6 @@ var expectedConf = &Config{
 			LabelLimit:            globLabelLimit,
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
-			KeepDroppedTargets:    globKeepDroppedTargets,
 
 			HTTPClientConfig: config.DefaultHTTPClientConfig,
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
@@ -1307,7 +1277,6 @@ var expectedConf = &Config{
 			LabelLimit:            globLabelLimit,
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
-			KeepDroppedTargets:    globKeepDroppedTargets,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1338,7 +1307,6 @@ var expectedConf = &Config{
 			LabelLimit:            globLabelLimit,
 			LabelNameLengthLimit:  globLabelNameLengthLimit,
 			LabelValueLengthLimit: globLabelValueLengthLimit,
-			KeepDroppedTargets:    globKeepDroppedTargets,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -2041,7 +2009,6 @@ func TestGetScrapeConfigs(t *testing.T) {
 					},
 				},
 			},
-			KeepDroppedTargets: globKeepDroppedTargets,
 		}
 	}
 
@@ -2103,7 +2070,6 @@ func TestGetScrapeConfigs(t *testing.T) {
 							},
 						},
 					},
-					KeepDroppedTargets: globKeepDroppedTargets,
 				},
 				{
 					JobName: "node",
@@ -2137,7 +2103,6 @@ func TestGetScrapeConfigs(t *testing.T) {
 							RefreshInterval: model.Duration(60 * time.Second),
 						},
 					},
-					KeepDroppedTargets: globKeepDroppedTargets,
 				},
 			},
 		},

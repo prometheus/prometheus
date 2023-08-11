@@ -155,7 +155,6 @@ var (
 		HonorLabels:             false,
 		HonorTimestamps:         true,
 		HTTPClientConfig:        config.DefaultHTTPClientConfig,
-		KeepDroppedTargets:      100,
 	}
 
 	// DefaultAlertmanagerConfig is the default alertmanager configuration.
@@ -516,6 +515,7 @@ type ScrapeConfig struct {
 	// fail.
 	NativeHistogramBucketLimit uint `yaml:"native_histogram_bucket_limit,omitempty"`
 	// Keep no more than this many dropped targets per job.
+	// 0 means no limit.
 	KeepDroppedTargets uint `yaml:"keep_dropped_targets,omitempty"`
 
 	// We cannot do proper Go type embedding below as the parser will then parse
