@@ -30,6 +30,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -436,15 +437,7 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 			exp0 := exp.vals[0]
 			expH := exp0.Histogram
 			if (expH == nil) != (v.H == nil) || (expH != nil && !expH.Equals(v.H)) {
-				expS := "<nil>"
-				if expH != nil {
-					expS = expH.TestExpression()
-				}
-				gotS := "<nil>"
-				if v.H != nil {
-					gotS = v.H.TestExpression()
-				}
-				return fmt.Errorf("expected %v for %s but got %s", expS, v.Metric, gotS)
+				return fmt.Errorf("expected %v for %s but got %s", HistogramTestExpression(expH), v.Metric, HistogramTestExpression(v.H))
 			}
 			if !almostEqual(exp0.Value, v.F) {
 				return fmt.Errorf("expected %v for %s but got %v", exp0.Value, v.Metric, v.F)
@@ -478,6 +471,14 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 		panic(fmt.Errorf("promql.Test.compareResult: unexpected result type %T", result))
 	}
 	return nil
+}
+
+// HistogramTestExpression returns TestExpression() for the given histogram or "" if the histogram is nil.
+func HistogramTestExpression(h *histogram.FloatHistogram) string {
+	if h != nil {
+		return h.TestExpression()
+	}
+	return ""
 }
 
 // clearCmd is a command that wipes the test's storage state.

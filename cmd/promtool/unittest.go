@@ -349,7 +349,7 @@ Outer:
 			gotSamples = append(gotSamples, parsedSample{
 				Labels:    s.Metric.Copy(),
 				Value:     s.F,
-				Histogram: s.H,
+				Histogram: promql.HistogramTestExpression(s.H),
 			})
 		}
 
@@ -379,7 +379,7 @@ Outer:
 			expSamples = append(expSamples, parsedSample{
 				Labels:    lb,
 				Value:     s.Value,
-				Histogram: hist,
+				Histogram: promql.HistogramTestExpression(hist),
 			})
 		}
 
@@ -556,7 +556,7 @@ type sample struct {
 type parsedSample struct {
 	Labels    labels.Labels
 	Value     float64
-	Histogram *histogram.FloatHistogram
+	Histogram string // TestExpression() of histogram.FloatHistogram
 }
 
 func parsedSamplesString(pss []parsedSample) string {
@@ -571,8 +571,8 @@ func parsedSamplesString(pss []parsedSample) string {
 }
 
 func (ps *parsedSample) String() string {
-	if ps.Histogram != nil {
-		return ps.Labels.String() + " " + ps.Histogram.TestExpression()
+	if ps.Histogram != "" {
+		return ps.Labels.String() + " " + ps.Histogram
 	}
 	return ps.Labels.String() + " " + strconv.FormatFloat(ps.Value, 'E', -1, 64)
 }
