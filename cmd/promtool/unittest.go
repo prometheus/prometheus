@@ -346,10 +346,6 @@ Outer:
 
 		var gotSamples []parsedSample
 		for _, s := range got {
-			if s.H != nil {
-				// this is an implementation detail
-				s.H.CounterResetHint = histogram.UnknownCounterReset
-			}
 			gotSamples = append(gotSamples, parsedSample{
 				Labels:    s.Metric.Copy(),
 				Value:     s.F,
