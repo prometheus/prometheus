@@ -25,12 +25,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/prometheus/prometheus/model/histogram"
-
 	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
 	"gopkg.in/yaml.v2"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
