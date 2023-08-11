@@ -4396,7 +4396,6 @@ func TestNativeHistogram_SubOperator(t *testing.T) {
 								require.Equal(t, *e.H, *got)
 							}
 						}
-
 					}
 
 					require.Equal(t, exp, vector)
