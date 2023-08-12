@@ -133,25 +133,23 @@ func makeTimeseries(wr *prompb.WriteRequest, labels map[string]string, m *dto.Me
 		toTimeseries(wr, labels, timestamp, float64(m.GetSummary().GetSampleCount()))
 
 	case m.Histogram != nil:
-		metricName := labels[model.MetricNameLabel]
-		// Preserve metric name order with first bucket suffix timeseries then sum suffix timeserie and finally count suffix timeserie
-		// Add Histogram bucket timeseries
-		bucketLabels := make(map[string]string, len(labels)+1)
-		for key, value := range labels {
-			bucketLabels[key] = value
+		h := m.GetHistogram()
+
+		if isNativeHistogram(h) {
+			addNativeHistogramToWriteRequest(wr, h, labels, timestamp)
 		}
-		for _, b := range m.GetHistogram().Bucket {
-			bucketLabels[model.MetricNameLabel] = metricName + bucketStr
-			bucketLabels[model.BucketLabel] = fmt.Sprint(b.GetUpperBound())
-			toTimeseries(wr, bucketLabels, timestamp, float64(b.GetCumulativeCount()))
+
+		// While a quantile-less summary is preferred over a bucket-less histogram, the
+		// latter could happen in principle. The other two properties of a classic histogram
+		// (sum and count) are also set for native histograms, so the only signal we have to
+		// decide whether the classic histogram should be included in the request is having
+		// a list of buckets.
+		//
+		// Note that this comes _after_ native histogams because calling
+		// addClassicHistogramToWriteRequest modifies the labels map.
+		if len(h.Bucket) > 0 {
+			addClassicHistogramToWriteRequest(wr, h, labels, timestamp)
 		}
-		// Overwrite label model.MetricNameLabel for count and sum metrics
-		// Add Histogram sum timeserie
-		labels[model.MetricNameLabel] = metricName + sumStr
-		toTimeseries(wr, labels, timestamp, m.GetHistogram().GetSampleSum())
-		// Add Histogram count timeserie
-		labels[model.MetricNameLabel] = metricName + countStr
-		toTimeseries(wr, labels, timestamp, float64(m.GetHistogram().GetSampleCount()))
 
 	case m.Untyped != nil:
 		toTimeseries(wr, labels, timestamp, m.GetUntyped().GetValue())
@@ -200,4 +198,103 @@ func makeLabelsMap(m *dto.Metric, metricName string, extraLabels map[string]stri
 	}
 
 	return labels
+}
+
+func makeBucketSpans(spans []*dto.BucketSpan) []prompb.BucketSpan {
+	out := make([]prompb.BucketSpan, 0, len(spans))
+	for _, span := range spans {
+		out = append(out, prompb.BucketSpan{Offset: span.GetOffset(), Length: span.GetLength()})
+	}
+	return out
+}
+
+func addClassicHistogramToWriteRequest(wr *prompb.WriteRequest, h *dto.Histogram, labels map[string]string, timestamp int64) {
+	metricName := labels[model.MetricNameLabel]
+
+	// Preserve metric name order with first bucket suffix timeseries then
+	// count suffix timeseries and finally sum suffix timeserie
+
+	// Add histogram bucket timeseries.
+	bucketLabels := make(map[string]string, len(labels)+1)
+	for key, value := range labels {
+		bucketLabels[key] = value
+	}
+	for _, b := range h.Bucket {
+		bucketLabels[model.MetricNameLabel] = metricName + bucketStr
+		bucketLabels[model.BucketLabel] = fmt.Sprint(b.GetUpperBound())
+		toTimeseries(wr, bucketLabels, timestamp, float64(b.GetCumulativeCount()))
+	}
+
+	// Overwrite label model.MetricNameLabel for count and sum metrics.
+
+	// Add histogram count timeseries.
+	labels[model.MetricNameLabel] = metricName + countStr
+	toTimeseries(wr, labels, timestamp, float64(h.GetSampleCount()))
+
+	// Add histogram sum timeseries.
+	labels[model.MetricNameLabel] = metricName + sumStr
+	toTimeseries(wr, labels, timestamp, h.GetSampleSum())
+}
+
+func addNativeHistogramToWriteRequest(wr *prompb.WriteRequest, h *dto.Histogram, labels map[string]string, timestamp int64) {
+	// Note that for float histograms:
+	// - Count should use CountFloat
+	// - NegativeCounts should bet used instead of NegativeDeltas
+	// - PositiveCounts should bet used instead of PositiveDeltas
+	//
+	// For float histograms:
+	// - Count should use CountInt
+	// - NegativeDeltas should bet used instead of NegativeCounts
+	// - PositiveDeltas should bet used instead of PositiveCounts
+	//
+	// *Counts and *Deltas are fine because the functions return nil if
+	// these are not set.
+	//
+	// The necessary interfaces for Count and ZeroCount are impossible to
+	// implement because they require a private method, this means it's not
+	// possible to create makeCount function that returns an instance of
+	// that interface.
+
+	hist := prompb.Histogram{
+		Sum:            h.GetSampleSum(),
+		Schema:         h.GetSchema(),
+		ZeroThreshold:  h.GetZeroThreshold(),
+		NegativeSpans:  makeBucketSpans(h.GetNegativeSpan()),
+		NegativeDeltas: h.GetNegativeDelta(),
+		NegativeCounts: h.GetNegativeCount(),
+		PositiveSpans:  makeBucketSpans(h.GetPositiveSpan()),
+		PositiveDeltas: h.GetPositiveDelta(),
+		PositiveCounts: h.GetPositiveCount(),
+		Timestamp:      timestamp,
+		// ResetHint: what is this?
+	}
+
+	if h.SampleCountFloat != nil {
+		// Assume float histogram
+		hist.Count = &prompb.Histogram_CountFloat{CountFloat: h.GetSampleCountFloat()}
+		hist.ZeroCount = &prompb.Histogram_ZeroCountFloat{ZeroCountFloat: h.GetZeroCountFloat()}
+	} else {
+		hist.Count = &prompb.Histogram_CountInt{CountInt: h.GetSampleCount()}
+		hist.ZeroCount = &prompb.Histogram_ZeroCountInt{ZeroCountInt: h.GetZeroCount()}
+	}
+
+	wr.Timeseries = append(wr.Timeseries, prompb.TimeSeries{
+		Labels:     makeLabels(labels),
+		Histograms: []prompb.Histogram{hist},
+	})
+}
+
+// isNativeHistogram returns false iff the provided histograms has no spans at
+// all (neither positive nor negative) and a zero threshold of 0 and a zero
+// count of 0. In principle, this could still be meant to be a native histogram
+// with a zero threshold of 0 and no observations yet. In that case,
+// instrumentation libraries should add a "no-op" span (e.g. length zero, offset
+// zero) to signal that the histogram is meant to be parsed as a native
+// histogram. Failing to do so will cause Prometheus to parse it as a classic
+// histogram as long as no observations have happened.
+func isNativeHistogram(h *dto.Histogram) bool {
+	return len(h.GetPositiveSpan()) > 0 ||
+		len(h.GetNegativeSpan()) > 0 ||
+		h.GetZeroThreshold() > 0 ||
+		h.GetZeroCount() > 0
 }
