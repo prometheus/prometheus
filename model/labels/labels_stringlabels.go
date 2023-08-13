@@ -49,12 +49,6 @@ type Labels struct {
 	data string
 }
 
-type labelSlice []Label
-
-func (ls labelSlice) Len() int           { return len(ls) }
-func (ls labelSlice) Swap(i, j int)      { ls[i], ls[j] = ls[j], ls[i] }
-func (ls labelSlice) Less(i, j int) bool { return ls[i].Name < ls[j].Name }
-
 func decodeSize(data string, index int) (int, int) {
 	// Fast-path for common case of a single byte, value 0..127.
 	b := data[index]
