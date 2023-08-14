@@ -249,7 +249,7 @@ TEST_F(Wal, Snapshots) {
   WALEncoder encoder(2, 3);
   WALDecoder decoder;
   std::stringstream writer_stream;
-  std::vector<WALEncoder::Redundant*> redundants;
+  std::vector<std::unique_ptr<WALEncoder::Redundant>> redundants;
   std::ofstream devnull("/dev/null");
   for (int i = 0; i < 10; ++i) {     // segments
     for (int j = 0; j < 100; ++j) {  // samples
@@ -292,10 +292,5 @@ TEST_F(Wal, Snapshots) {
   reader_sbuf2 << decoder2.label_sets().checkpoint();
   EXPECT_EQ(reader_sbuf1.view(), reader_sbuf2.view());
   EXPECT_EQ(decoder.decoders(), decoder2.decoders());
-
-  // FIXME: use smart ptrs(?)
-  for (auto redundant : redundants) {
-    delete redundant;
-  }
 }
 }  // namespace
