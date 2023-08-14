@@ -106,9 +106,9 @@ global:
   # change in the future.
   [ target_limit: <int> | default = 0 ]
 
-  # Per-job limit on the number of targets dropped by relabeling
+  # Limit per scrape config on the number of targets dropped by relabeling
   # that will be kept in memory. 0 means no limit.
-	[ keep_dropped_targets: <int> | default = 0 ]
+  [ keep_dropped_targets: <int> | default = 0 ]
 
 # Rule files specifies a list of globs. Rules and alerts are read from
 # all matching files.
