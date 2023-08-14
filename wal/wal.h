@@ -536,8 +536,6 @@ class BasicDecoder {
     in.exceptions(std::ifstream::failbit | std::ifstream::badbit | std::ifstream::eofbit);
 
     // read uuid
-    // TODO: More context related to segment is available here. It may be worth to add it
-    //       into exception messages.
     auto uuid = read_uuid(in);
 
     // associate uuid if it's a first segment

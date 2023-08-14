@@ -161,7 +161,6 @@ inline __attribute__((always_inline)) void read_timeseries(ProtobufReader&& pb_t
   }
 
   if (__builtin_expect(!timeseries.label_set().size() || !timeseries.samples().size(), false)) {
-    // TODO: we need to think how to add more context here...
     throw BareBones::Exception(0x75a82db7eb2779f1, "Protobuf message has no samples for label set");
   }
 }
