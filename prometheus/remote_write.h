@@ -1,10 +1,13 @@
 #pragma once
 
+#include <sstream>
 #include <string_view>
 
 #define PROTOZERO_USE_VIEW std::string_view
 #include "third_party/protozero/pbf_reader.hpp"
 #include "third_party/protozero/pbf_writer.hpp"
+
+#include "bare_bones/exception.h"
 
 namespace PromPP {
 namespace Prometheus {
@@ -104,7 +107,14 @@ inline __attribute__((always_inline)) void read_label(ProtobufReader& pb_label, 
   }
 
   if (__builtin_expect(parsed != 0b11, false)) {
-    throw std::runtime_error("AOC3: Meaningful message supposed to be here!");
+    // helper for extracting string representation from label, to avoid the
+    // complicated logic in printf-like call.
+    auto get_str_if_parsed = [&]<size_t N>(size_t test_mask) -> std::string {
+      std::stringstream ss;
+      return (parsed & test_mask) ? static_cast<std::stringstream&>((ss << std::get<N>(label))).str() : std::string("<incomplete>");
+    };
+    throw BareBones::Exception(0xf355fc833ca6be64, "Protobuf message has incomplete key(%s)-value(%s) pair",
+                               get_str_if_parsed.template operator()<0>(0b01).c_str(), get_str_if_parsed.template operator()<1>(0b10).c_str());
   }
 }
 
@@ -118,7 +128,7 @@ inline __attribute__((always_inline)) void read_only_label_set(ProtobufReader& p
   }
 
   if (__builtin_expect(!label_set.size(), false)) {
-    throw std::runtime_error("AOB3: Meaningful message supposed to be here!");
+    throw BareBones::Exception(0xea6db0e3b0bc6feb, "Protobuf message has an empty label set, can't read labels");
   }
 }
 
@@ -151,7 +161,7 @@ inline __attribute__((always_inline)) void read_timeseries(ProtobufReader&& pb_t
   }
 
   if (__builtin_expect(!timeseries.label_set().size() || !timeseries.samples().size(), false)) {
-    throw std::runtime_error("AOA3: Meaningful message supposed to be here!");
+    throw BareBones::Exception(0x75a82db7eb2779f1, "Protobuf message has no samples for label set");
   }
 }
 
@@ -168,7 +178,7 @@ __attribute__((flatten)) void read_many_timeseries(ProtobufReader& pb, Callback 
       timeseries.clear();
     }
   } catch (protozero::exception& e) {
-    throw std::runtime_error("AOE1: Meaningful message supposed to be here!");
+    throw BareBones::Exception(0xf5386714f93eb11f, "Protobuf parsing timeseries exception: %s", e.what());
   }
 }
 
@@ -182,7 +192,7 @@ inline __attribute__((always_inline)) void read_timeseries_without_samples(Proto
   }
 
   if (__builtin_expect(!timeseries.label_set().size(), false)) {
-    throw std::runtime_error("read_timeseries_without_samples: Meaningful message supposed to be here!");
+    throw BareBones::Exception(0x68997b7d2e49de1e, "Protobuf message has an empty label set, can't read timeseries");
   }
 }
 
@@ -199,7 +209,7 @@ __attribute__((flatten)) void read_many_timeseries_in_hashdex(ProtobufReader& pb
       timeseries.clear();
     }
   } catch (protozero::exception& e) {
-    throw std::runtime_error("read_many_timeseries_with_sharding: Meaningful message supposed to be here!");
+    throw BareBones::Exception(0xbe40bda82f01b869, "Protobuf parsing timeseries exception: %s", e.what());
   }
 }
 }  // namespace RemoteWrite

@@ -15,6 +15,9 @@
 #include <exception>
 #include <sstream>
 #include <string>
+
+#include "bare_bones/exception.h"
+
 #if __has_include("bare_bones/stacktrace.h")
 #include "bare_bones/stacktrace.h"
 #define CURRENT_STACKTRACE BareBones::StackTrace::Current().ToString()
@@ -48,6 +51,8 @@ static c_api_error_info* handle_current_exception(std::string_view func_name, st
   std::stringstream ss;
   try {
     std::rethrow_exception(ep);
+  } catch (const BareBones::Exception& e) {
+    return make_c_api_error_info_with_func_name(func_name, e.what(), std::move(stacktrace));
   } catch (const std::exception& e) {
     ss << "caught a std::exception, what: " << e.what();
   } catch (...) {

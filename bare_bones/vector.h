@@ -8,6 +8,7 @@
 
 #include <scope_exit.h>
 
+#include "exception.h"
 #include "memory.h"
 #include "streams.h"
 #include "type_traits.h"
@@ -269,9 +270,7 @@ class Vector {
 
     // check version
     if (version != 1) {
-      char buf[100];
-      std::snprintf(buf, sizeof(buf), "unknown version %d", version);
-      throw std::logic_error(buf);
+      throw BareBones::Exception(0xe637da228c04829d, "Invalid vector format version %d while reading from stream, only version 1 is supported", version);
     }
 
     auto original_exceptions = in.exceptions();

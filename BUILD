@@ -31,13 +31,29 @@ cc_test(
 )
 
 cc_library(
-    name = "bare_bones",
+    name = "bare_bones_headers",
     hdrs = glob(["bare_bones/*.h"]),
     deps = [
         "//third_party",
         "@parallel_hashmap",
         "@scope_exit",
         "@backward_cpp//:backward_cpp_header_only", # stacktrace lib
+    ],
+)
+
+cc_library(
+    name  = "bare_bones_exceptions",
+    srcs = ["bare_bones/exception.cpp"],
+    deps = [
+        ":bare_bones_headers",
+    ],
+)
+
+cc_library(
+    name = "bare_bones",
+    deps = [
+        ":bare_bones_headers",
+        ":bare_bones_exceptions",
     ],
 )
 

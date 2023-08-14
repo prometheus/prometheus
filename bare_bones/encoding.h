@@ -9,6 +9,7 @@
 #include <scope_exit.h>
 
 #include "bit_sequence.h"
+#include "exception.h"
 #include "stream_v_byte.h"
 #include "streams.h"
 #include "zigzag.h"
@@ -367,9 +368,7 @@ class EncodedSequence {
 
     // check version
     if (version != 1) {
-      char buf[100];
-      std::snprintf(buf, sizeof(buf), "unknown version %d", version);
-      throw std::logic_error(buf);
+      throw BareBones::Exception(0xa506b0dd57836363, "Invalid EncodingSequence version %d got from input, only version 1 is supported", version);
     }
 
     auto original_exceptions = in.exceptions();
@@ -379,8 +378,10 @@ class EncodedSequence {
     // read encoding id
     typename std::remove_const<decltype(Encoding::id<E>::value)>::type encoding_id;
     in.read(reinterpret_cast<char*>(&encoding_id), sizeof(encoding_id));
-    if (encoding_id != Encoding::id<E>::value)
-      throw std::runtime_error("J: Meaningful message supposed to be here!");
+    if (encoding_id != Encoding::id<E>::value) {
+      throw BareBones::Exception(0x1e1b301b2eb969ca, "Invalid encoder id %d while reading from input stream, expected id %d", encoding_id,
+                                 Encoding::id<E>::value);
+    }
 
     // read data
     in >> seq.data_;
