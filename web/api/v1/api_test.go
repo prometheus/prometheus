@@ -137,6 +137,14 @@ func (t testTargetRetriever) TargetsDropped() map[string][]*scrape.Target {
 	return t.droppedTargets
 }
 
+func (t testTargetRetriever) TargetsDroppedCounts() map[string]int {
+	r := make(map[string]int)
+	for k, v := range t.droppedTargets {
+		r[k] = len(v)
+	}
+	return r
+}
+
 func (t *testTargetRetriever) SetMetadataStoreForTargets(identifier string, metadata scrape.MetricMetadataStore) error {
 	targets, ok := t.activeTargets[identifier]
 
@@ -1384,6 +1392,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 						},
 					},
 				},
+				DroppedTargetCounts: map[string]int{"blackbox": 1},
 			},
 		},
 		{
@@ -1436,6 +1445,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 						},
 					},
 				},
+				DroppedTargetCounts: map[string]int{"blackbox": 1},
 			},
 		},
 		{
@@ -1498,6 +1508,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 						},
 					},
 				},
+				DroppedTargetCounts: map[string]int{"blackbox": 1},
 			},
 		},
 		// With a matching metric.
