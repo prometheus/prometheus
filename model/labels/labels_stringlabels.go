@@ -300,13 +300,26 @@ func (ls Labels) Get(name string) string {
 
 // Has returns true if the label with the given name is present.
 func (ls Labels) Has(name string) bool {
+	if name == "" { // Avoid crash in loop if someone asks for "".
+		return false // Prometheus does not store blank label names.
+	}
 	for i := 0; i < len(ls.data); {
-		var lName string
-		lName, i = decodeString(ls.data, i)
-		_, i = decodeString(ls.data, i)
-		if lName == name {
-			return true
+		var size int
+		size, i = decodeSize(ls.data, i)
+		if ls.data[i] == name[0] {
+			lName := ls.data[i : i+size]
+			i += size
+			if lName == name {
+				return true
+			}
+		} else {
+			if ls.data[i] > name[0] { // Stop looking if we've gone past.
+				break
+			}
+			i += size
 		}
+		size, i = decodeSize(ls.data, i)
+		i += size
 	}
 	return false
 }
