@@ -77,7 +77,7 @@ class Encoder {
     c_seg->latest_timestamp = writer_.buffer().latest_sample();
 
     auto segment_buffer = new std::stringstream;
-    c_rt->data = writer_.write(*segment_buffer);
+    c_rt->data = writer_.write(*segment_buffer).release();
 
     std::string_view outcome = segment_buffer->view();
     c_seg->data.array = outcome.begin();
@@ -111,7 +111,7 @@ class Encoder {
     c_seg->latest_timestamp = writer_.buffer().latest_sample();
 
     auto segment_buffer = new std::stringstream;
-    c_rt->data = writer_.write(*segment_buffer);
+    c_rt->data = writer_.write(*segment_buffer).release();
 
     std::string_view outcome = segment_buffer->view();
     c_seg->data.array = outcome.begin();

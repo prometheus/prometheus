@@ -161,10 +161,8 @@ class BasicEncoder {
   uint16_t shard_id_ = 0;
   uint8_t pow_two_of_total_shards_ = 0;
 
-  // TODO: refactor this function to avoid the new-allocated Redundant*
-  // in favour of std::unique_ptr<> or another.
   template <class OutputStream>
-  Redundant* encode_segment(OutputStream& out) {
+  std::unique_ptr<Redundant> encode_segment(OutputStream& out) {
     BareBones::BitSequence gorilla_ts_bitseq, gorilla_v_bitseq;
     BareBones::EncodedSequence<BareBones::Encoding::DeltaRLE<>> ls_id_delta_rle_seq;
     BareBones::EncodedSequence<BareBones::Encoding::DeltaZigZagRLE<>> ts_delta_rle_seq;
@@ -185,7 +183,7 @@ class BasicEncoder {
 
     gorilla_.resize(label_sets_.size());
 
-    Redundant* redundant = new Redundant(next_encoded_segment_, label_sets_checkpoint_, label_sets_.size());
+    auto redundant = std::make_unique<Redundant>(next_encoded_segment_, label_sets_checkpoint_, label_sets_.size());
     Primitives::LabelSetID last_id = std::numeric_limits<Primitives::LabelSetID>::max();
     if (ts_delta_rle_is_worth_trying) {
       buffer_.for_each([&](Primitives::LabelSetID ls_id, Primitives::Timestamp ts, Primitives::Sample::value_type v) {
@@ -345,18 +343,18 @@ class BasicEncoder {
 
   template <class OutputStream>
   friend OutputStream& operator<<(OutputStream& out, BasicEncoder& wal) {
-    auto redundant = wal.encode_segment(out);
-    delete redundant;  // to avoid memory leak // TODO: std::unique_ptr?
+    wal.encode_segment(out);
     return out;
   }
 
   template <class OutputStream>
-  inline __attribute__((always_inline)) Redundant* write(OutputStream& out) {
+  inline __attribute__((always_inline)) std::unique_ptr<Redundant> write(OutputStream& out) {
     return encode_segment(out);
   }
 
   template <std::ranges::bidirectional_range Iterator, typename OutputStream>
-    requires std::is_same_v<typename std::iterator_traits<typename Iterator::iterator>::value_type, Redundant*>
+    requires std::is_same_v<typename std::iterator_traits<typename Iterator::iterator>::value_type, Redundant*> ||
+             std::is_same_v<typename std::iterator_traits<typename Iterator::iterator>::value_type, std::unique_ptr<Redundant>>
   inline __attribute__((always_inline)) void snapshot(Iterator& it, OutputStream& out) {
     assert(next_encoded_segment_ > 0);
     uint32_t segment = (std::begin(it) != std::end(it)) ? (*std::begin(it))->segment : next_encoded_segment_;
