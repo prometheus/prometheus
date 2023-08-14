@@ -1044,19 +1044,8 @@ func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
 	if !ok {
 		t.Fatalf("'%v' should be present in target groups", p)
 	}
-	group, ok := targetGroups[""]
-	if !ok {
-		t.Fatalf("missing '' key in target groups %v", targetGroups)
-	}
-
-	if len(group.Targets) != 0 {
-		t.Fatalf("Invalid number of targets: expected 0, got %d", len(group.Targets))
-	}
-	require.Equal(t, 1, len(syncedTargets))
-	require.Equal(t, 1, len(syncedTargets["prometheus"]))
-	if lbls := syncedTargets["prometheus"][0].Labels; lbls != nil {
-		t.Fatalf("Unexpected Group: expected nil Labels, got %v", lbls)
-	}
+	require.Equal(t, 0, len(targetGroups))
+	require.Equal(t, 0, len(syncedTargets))
 }
 
 func TestIdenticalConfigurationsAreCoalesced(t *testing.T) {
