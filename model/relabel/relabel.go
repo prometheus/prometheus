@@ -39,6 +39,9 @@ var (
 // Action is the action to be performed on relabeling.
 type Action string
 
+type Predicate func(cfg *Config) bool
+type ActionFun func(lb *labels.Builder, cfg *Config, val string) (bool, bool)
+
 const (
 	// Replace performs a regex replacement.
 	Replace Action = "replace"
@@ -64,6 +67,9 @@ const (
 	Uppercase Action = "uppercase"
 )
 
+var CustomerActions = make(map[Action]ActionFun)
+var Predicates = make(map[Action]Predicate)
+
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (a *Action) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	var s string
@@ -75,6 +81,12 @@ func (a *Action) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		*a = act
 		return nil
 	}
+
+	if act := Action(strings.ToLower(s)); CustomerActions[act] != nil {
+		*a = act
+		return nil
+	}
+
 	return fmt.Errorf("unknown relabel action %q", s)
 }
 
@@ -96,6 +108,7 @@ type Config struct {
 	Replacement string `yaml:"replacement,omitempty"`
 	// Action is the action to be performed for the relabeling.
 	Action Action `yaml:"action,omitempty"`
+	Ext    string `yaml:"ext,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -146,6 +159,16 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 			c.Separator != DefaultRelabelConfig.Separator ||
 			c.Replacement != DefaultRelabelConfig.Replacement {
 			return fmt.Errorf("%s action requires only 'regex', and no other fields", c.Action)
+		}
+	}
+
+	if c.Action == "" {
+		return fmt.Errorf("relabel action cannot be empty")
+	}
+
+	if p := Predicates[c.Action]; p != nil {
+		if !p(c) {
+			return fmt.Errorf("relabel action check fail action=%s ", c.Action)
 		}
 	}
 
@@ -302,7 +325,13 @@ func relabel(cfg *Config, lb *labels.Builder) (keep bool) {
 			}
 		})
 	default:
-		panic(fmt.Errorf("relabel: unknown relabel action type %q", cfg.Action))
+		if caf := CustomerActions[cfg.Action]; caf != nil {
+			if needReturn, result := caf(lb, cfg, val); needReturn {
+				return result
+			}
+		} else {
+			panic(fmt.Errorf("relabel: unknown relabel action type %q", cfg.Action))
+		}
 	}
 
 	return true
