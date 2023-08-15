@@ -2225,26 +2225,22 @@ func TestIsolationWithoutAdd(t *testing.T) {
 
 func TestOutOfOrderSamplesMetric(t *testing.T) {
 	scenarios := map[string]struct {
-		name       string
 		sampleType string
 		appendFunc func(appender storage.Appender, i int64) (storage.SeriesRef, error)
 	}{
 		"float": {
-			name:       "float",
 			sampleType: sampleMetricTypeFloat,
 			appendFunc: func(appender storage.Appender, i int64) (storage.SeriesRef, error) {
 				return appender.Append(0, labels.FromStrings("a", "b"), i, 99.0)
 			},
 		},
 		"integer histogram": {
-			name:       "integer histogram",
 			sampleType: sampleMetricTypeHistogram,
 			appendFunc: func(appender storage.Appender, i int64) (storage.SeriesRef, error) {
 				return appender.AppendHistogram(0, labels.FromStrings("a", "b"), i, tsdbutil.GenerateTestHistogram(99), nil)
 			},
 		},
 		"float histogram": {
-			name:       "float histogram",
 			sampleType: sampleMetricTypeHistogram,
 			appendFunc: func(appender storage.Appender, i int64) (storage.SeriesRef, error) {
 				return appender.AppendHistogram(0, labels.FromStrings("a", "b"), i, nil, tsdbutil.GenerateTestFloatHistogram(99))

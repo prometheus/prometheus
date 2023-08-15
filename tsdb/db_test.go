@@ -4880,11 +4880,11 @@ func Test_Querier_OOOQuery(t *testing.T) {
 
 func Test_ChunkQuerier_OOOQuery(t *testing.T) {
 	scenarios := map[string]struct {
-		appendFunc func(app storage.Appender, ts int64) (storage.SeriesRef, error)
+		appendFunc func(app storage.Appender, ts int64, counterReset bool) (storage.SeriesRef, error)
 		sampleFunc func(ts int64) tsdbutil.Sample
 	}{
 		"float": {
-			appendFunc: func(app storage.Appender, ts int64) (storage.SeriesRef, error) {
+			appendFunc: func(app storage.Appender, ts int64, counterReset bool) (storage.SeriesRef, error) {
 				return app.Append(0, labels.FromStrings("foo", "bar1"), ts, float64(ts))
 			},
 			sampleFunc: func(ts int64) tsdbutil.Sample {
@@ -4892,16 +4892,24 @@ func Test_ChunkQuerier_OOOQuery(t *testing.T) {
 			},
 		},
 		"integer histogram": {
-			appendFunc: func(app storage.Appender, ts int64) (storage.SeriesRef, error) {
-				return app.AppendHistogram(0, labels.FromStrings("foo", "bar1"), ts, tsdbutil.GenerateTestHistogram(int(ts)), nil)
+			appendFunc: func(app storage.Appender, ts int64, counterReset bool) (storage.SeriesRef, error) {
+				h := tsdbutil.GenerateTestHistogram(int(ts))
+				if counterReset {
+					h.CounterResetHint = histogram.CounterReset
+				}
+				return app.AppendHistogram(0, labels.FromStrings("foo", "bar1"), ts, h, nil)
 			},
 			sampleFunc: func(ts int64) tsdbutil.Sample {
 				return sample{t: ts, h: tsdbutil.GenerateTestHistogram(int(ts))}
 			},
 		},
 		"float histogram": {
-			appendFunc: func(app storage.Appender, ts int64) (storage.SeriesRef, error) {
-				return app.AppendHistogram(0, labels.FromStrings("foo", "bar1"), ts, nil, tsdbutil.GenerateTestFloatHistogram(int(ts)))
+			appendFunc: func(app storage.Appender, ts int64, counterReset bool) (storage.SeriesRef, error) {
+				fh := tsdbutil.GenerateTestFloatHistogram(int(ts))
+				if counterReset {
+					fh.CounterResetHint = histogram.CounterReset
+				}
+				return app.AppendHistogram(0, labels.FromStrings("foo", "bar1"), ts, nil, fh)
 			},
 			sampleFunc: func(ts int64) tsdbutil.Sample {
 				return sample{t: ts, fh: tsdbutil.GenerateTestFloatHistogram(int(ts))}
@@ -4909,9 +4917,9 @@ func Test_ChunkQuerier_OOOQuery(t *testing.T) {
 		},
 		"integer histogram counter resets": {
 			// Adding counter reset to all histograms means each histogram will have its own chunk.
-			appendFunc: func(app storage.Appender, ts int64) (storage.SeriesRef, error) {
+			appendFunc: func(app storage.Appender, ts int64, counterReset bool) (storage.SeriesRef, error) {
 				h := tsdbutil.GenerateTestHistogram(int(ts))
-				h.CounterResetHint = histogram.CounterReset
+				h.CounterResetHint = histogram.CounterReset // for this scenario, ignore the counterReset argument
 				return app.AppendHistogram(0, labels.FromStrings("foo", "bar1"), ts, h, nil)
 			},
 			sampleFunc: func(ts int64) tsdbutil.Sample {
@@ -4927,7 +4935,7 @@ func Test_ChunkQuerier_OOOQuery(t *testing.T) {
 }
 
 func test_ChunkQuerier_OOOQuery(t *testing.T,
-	appendFunc func(app storage.Appender, ts int64) (storage.SeriesRef, error),
+	appendFunc func(app storage.Appender, ts int64, counterReset bool) (storage.SeriesRef, error),
 	sampleFunc func(ts int64) tsdbutil.Sample,
 ) {
 	opts := DefaultOptions()
@@ -4937,12 +4945,18 @@ func test_ChunkQuerier_OOOQuery(t *testing.T,
 
 	series1 := labels.FromStrings("foo", "bar1")
 
+	type filterFunc func(t int64) bool
+	defaultFilterFunc := func(t int64) bool { return true }
+
 	minutes := func(m int64) int64 { return m * time.Minute.Milliseconds() }
-	addSample := func(db *DB, fromMins, toMins, queryMinT, queryMaxT int64, expSamples []tsdbutil.Sample) ([]tsdbutil.Sample, int) {
+	addSample := func(db *DB, fromMins, toMins, queryMinT, queryMaxT int64, expSamples []tsdbutil.Sample, filter filterFunc, counterReset bool) ([]tsdbutil.Sample, int) {
 		app := db.Appender(context.Background())
 		totalAppended := 0
 		for min := fromMins; min <= toMins; min += time.Minute.Milliseconds() {
-			_, err := appendFunc(app, min)
+			if !filter(min) {
+				continue
+			}
+			_, err := appendFunc(app, min, counterReset)
 			if min >= queryMinT && min <= queryMaxT {
 				expSamples = append(expSamples, sampleFunc(min))
 			}
@@ -4973,32 +4987,80 @@ func test_ChunkQuerier_OOOQuery(t *testing.T,
 		return samples
 	}
 
+	type sampleBatch struct {
+		minT         int64
+		maxT         int64
+		filter       filterFunc
+		counterReset bool
+		isOOO        bool
+	}
+
 	tests := []struct {
-		name        string
-		queryMinT   int64
-		queryMaxT   int64
-		inOrderMinT int64
-		inOrderMaxT int64
-		oooMinT     int64
-		oooMaxT     int64
+		name      string
+		queryMinT int64
+		queryMaxT int64
+		batches   []sampleBatch
 	}{
 		{
-			name:        "query interval covering ooomint and inordermaxt returns all ingested samples",
-			queryMinT:   minutes(0),
-			queryMaxT:   minutes(200),
-			inOrderMinT: minutes(100),
-			inOrderMaxT: minutes(200),
-			oooMinT:     minutes(0),
-			oooMaxT:     minutes(99),
+			name:      "query interval covering ooomint and inordermaxt returns all ingested samples",
+			queryMinT: minutes(0),
+			queryMaxT: minutes(200),
+			batches: []sampleBatch{
+				{
+					minT:   minutes(100),
+					maxT:   minutes(200),
+					filter: defaultFilterFunc,
+				},
+				{
+					minT:   minutes(0),
+					maxT:   minutes(99),
+					filter: defaultFilterFunc,
+					isOOO:  true,
+				},
+			},
 		},
 		{
-			name:        "partial query interval returns only samples within interval",
-			queryMinT:   minutes(20),
-			queryMaxT:   minutes(180),
-			inOrderMinT: minutes(100),
-			inOrderMaxT: minutes(200),
-			oooMinT:     minutes(0),
-			oooMaxT:     minutes(99),
+			name:      "partial query interval returns only samples within interval",
+			queryMinT: minutes(20),
+			queryMaxT: minutes(180),
+			batches: []sampleBatch{
+				{
+					minT:   minutes(100),
+					maxT:   minutes(200),
+					filter: defaultFilterFunc,
+				},
+				{
+					minT:   minutes(0),
+					maxT:   minutes(99),
+					filter: defaultFilterFunc,
+					isOOO:  true,
+				},
+			},
+		},
+		{
+			name:      "alternating OOO batches", // in order: 100-200 normal. out of order first path: 0, 2, 4, ... 98 (no counter reset), second pass: 1, 3, 5, ... 99 (with counter reset)
+			queryMinT: minutes(0),
+			queryMaxT: minutes(200),
+			batches: []sampleBatch{
+				{
+					minT:   minutes(100),
+					maxT:   minutes(200),
+					filter: defaultFilterFunc,
+				},
+				{
+					minT:   minutes(0),
+					maxT:   minutes(99),
+					filter: func(t int64) bool { return t%2 == 0 },
+					isOOO:  true,
+				},
+				{
+					minT:         minutes(0),
+					maxT:         minutes(99),
+					filter:       func(t int64) bool { return t%2 == 1 },
+					counterReset: true,
+					isOOO:        true,
+				},
+			},
 		},
 	}
 	for _, tc := range tests {
@@ -5010,12 +5072,14 @@ func test_ChunkQuerier_OOOQuery(t *testing.T,
 			}()
 
 			var expSamples []tsdbutil.Sample
+			var oooSamples, appendedCount int
 
-			// Add in-order samples.
-			expSamples, _ = addSample(db, tc.inOrderMinT, tc.inOrderMaxT, tc.queryMinT, tc.queryMaxT, expSamples)
-
-			// Add out-of-order samples.
-			expSamples, oooSamples := addSample(db, tc.oooMinT, tc.oooMaxT, tc.queryMinT, tc.queryMaxT, expSamples)
+			for _, batch := range tc.batches {
+				expSamples, appendedCount = addSample(db, batch.minT, batch.maxT, tc.queryMinT, tc.queryMaxT, expSamples, batch.filter, batch.counterReset)
+				if batch.isOOO {
+					oooSamples += appendedCount
+				}
+			}
 
 			sort.Slice(expSamples, func(i, j int) bool {
 				return expSamples[i].T() < expSamples[j].T()
