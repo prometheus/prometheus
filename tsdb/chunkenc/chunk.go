@@ -82,8 +82,20 @@ type Chunk interface {
 // Appender adds sample pairs to a chunk.
 type Appender interface {
 	Append(int64, float64)
-	AppendHistogram(t int64, h *histogram.Histogram)
-	AppendFloatHistogram(t int64, h *histogram.FloatHistogram)
+
+	// AppendHistogram and AppendFloatHistogram append a histogram sample to a histogram or float histogram chunk.
+	// Appending a histogram may require creating a completely new chunk or recoding (changing) the current chunk.
+	// The Appender prev is used to determine if there is a counter reset between the previous Appender and the current Appender.
+	// The Appender prev is optional and only taken into account when the first sample is being appended.
+	// The bool appendOnly governs what happens when a sample cannot be appended to the current chunk. If appendOnly is true, then
+	// in such case an error is returned without modifying the chunk. If appendOnly is false, then a new chunk is created or the
+	// current chunk is recoded to accommodate the sample.
+	// The returned Chunk c is nil if sample could be appended to the current Chunk, otherwise c is the new Chunk.
+	// The returned bool isRecoded can be used to distinguish between the new Chunk c being a completely new Chunk
+	// or the current Chunk recoded to a new Chunk.
+	// The Appender app that can be used for the next append is always returned.
+	AppendHistogram(prev *HistogramAppender, t int64, h *histogram.Histogram, appendOnly bool) (c Chunk, isRecoded bool, app Appender, err error)
+	AppendFloatHistogram(prev *FloatHistogramAppender, t int64, h *histogram.FloatHistogram, appendOnly bool) (c Chunk, isRecoded bool, app Appender, err error)
 }
 
 // Iterator is a simple iterator that can only get the next value.
@@ -96,7 +108,7 @@ type Iterator interface {
 	// timestamp equal or greater than t. If the current sample found by a
 	// previous `Next` or `Seek` operation already has this property, Seek
 	// has no effect. If a sample has been found, Seek returns the type of
-	// its value. Otherwise, it returns ValNone, after with the iterator is
+	// its value. Otherwise, it returns ValNone, after which the iterator is
 	// exhausted.
 	Seek(t int64) ValueType
 	// At returns the current timestamp/value pair if the value is a float.

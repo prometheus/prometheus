@@ -314,7 +314,7 @@ local template = grafana.template;
         template.new(
           'cluster',
           '$datasource',
-          'label_values(kube_pod_container_info{image=~".*prometheus.*"}, cluster)' % $._config,
+          'label_values(prometheus_build_info, cluster)' % $._config,
           refresh='time',
           current={
             selected: true,

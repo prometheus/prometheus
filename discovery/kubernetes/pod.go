@@ -30,7 +30,6 @@ import (
 	"k8s.io/client-go/util/workqueue"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/prometheus/prometheus/util/strutil"
 )
 
 const nodeIndex = "node"
@@ -132,7 +131,7 @@ func (p *Pod) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	}
 
 	go func() {
-		for p.process(ctx, ch) {
+		for p.process(ctx, ch) { // nolint:revive
 		}
 	}()
 
@@ -180,7 +179,6 @@ func convertToPod(o interface{}) (*apiv1.Pod, error) {
 }
 
 const (
-	podNameLabel                  = metaLabelPrefix + "pod_name"
 	podIPLabel                    = metaLabelPrefix + "pod_ip"
 	podContainerNameLabel         = metaLabelPrefix + "pod_container_name"
 	podContainerIDLabel           = metaLabelPrefix + "pod_container_id"
@@ -191,10 +189,6 @@ const (
 	podContainerIsInit            = metaLabelPrefix + "pod_container_init"
 	podReadyLabel                 = metaLabelPrefix + "pod_ready"
 	podPhaseLabel                 = metaLabelPrefix + "pod_phase"
-	podLabelPrefix                = metaLabelPrefix + "pod_label_"
-	podLabelPresentPrefix         = metaLabelPrefix + "pod_labelpresent_"
-	podAnnotationPrefix           = metaLabelPrefix + "pod_annotation_"
-	podAnnotationPresentPrefix    = metaLabelPrefix + "pod_annotationpresent_"
 	podNodeNameLabel              = metaLabelPrefix + "pod_node_name"
 	podHostIPLabel                = metaLabelPrefix + "pod_host_ip"
 	podUID                        = metaLabelPrefix + "pod_uid"
@@ -215,7 +209,6 @@ func GetControllerOf(controllee metav1.Object) *metav1.OwnerReference {
 
 func podLabels(pod *apiv1.Pod) model.LabelSet {
 	ls := model.LabelSet{
-		podNameLabel:     lv(pod.ObjectMeta.Name),
 		podIPLabel:       lv(pod.Status.PodIP),
 		podReadyLabel:    podReady(pod),
 		podPhaseLabel:    lv(string(pod.Status.Phase)),
@@ -223,6 +216,8 @@ func podLabels(pod *apiv1.Pod) model.LabelSet {
 		podHostIPLabel:   lv(pod.Status.HostIP),
 		podUID:           lv(string(pod.ObjectMeta.UID)),
 	}
+
+	addObjectMetaLabels(ls, pod.ObjectMeta, RolePod)
 
 	createdBy := GetControllerOf(pod)
 	if createdBy != nil {
@@ -232,18 +227,6 @@ func podLabels(pod *apiv1.Pod) model.LabelSet {
 		if createdBy.Name != "" {
 			ls[podControllerName] = lv(createdBy.Name)
 		}
-	}
-
-	for k, v := range pod.Labels {
-		ln := strutil.SanitizeLabelName(k)
-		ls[model.LabelName(podLabelPrefix+ln)] = lv(v)
-		ls[model.LabelName(podLabelPresentPrefix+ln)] = presentValue
-	}
-
-	for k, v := range pod.Annotations {
-		ln := strutil.SanitizeLabelName(k)
-		ls[model.LabelName(podAnnotationPrefix+ln)] = lv(v)
-		ls[model.LabelName(podAnnotationPresentPrefix+ln)] = presentValue
 	}
 
 	return ls

@@ -25,6 +25,7 @@ import (
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -115,37 +116,45 @@ Loop:
 
 		var (
 			t  int64
-			v  float64
-			h  *histogram.Histogram
+			f  float64
 			fh *histogram.FloatHistogram
-			ok bool
 		)
 		valueType := it.Seek(maxt)
 		switch valueType {
 		case chunkenc.ValFloat:
-			t, v = it.At()
+			t, f = it.At()
 		case chunkenc.ValFloatHistogram, chunkenc.ValHistogram:
 			t, fh = it.AtFloatHistogram()
 		default:
-			t, v, h, fh, ok = it.PeekBack(1)
+			sample, ok := it.PeekBack(1)
 			if !ok {
 				continue Loop
 			}
-			if h != nil {
-				fh = h.ToFloat()
+			t = sample.T()
+			switch sample.Type() {
+			case chunkenc.ValFloat:
+				f = sample.F()
+			case chunkenc.ValHistogram:
+				fh = sample.H().ToFloat()
+			case chunkenc.ValFloatHistogram:
+				fh = sample.FH()
+			default:
+				continue Loop
 			}
 		}
 		// The exposition formats do not support stale markers, so drop them. This
 		// is good enough for staleness handling of federated data, as the
 		// interval-based limits on staleness will do the right thing for supported
 		// use cases (which is to say federating aggregated time series).
-		if value.IsStaleNaN(v) {
+		if value.IsStaleNaN(f) || (fh != nil && value.IsStaleNaN(fh.Sum)) {
 			continue
 		}
 
 		vec = append(vec, promql.Sample{
 			Metric: s.Labels(),
-			Point:  promql.Point{T: t, V: v, H: fh},
+			T:      t,
+			F:      f,
+			H:      fh,
 		})
 	}
 	if ws := set.Warnings(); len(ws) > 0 {
@@ -158,7 +167,11 @@ Loop:
 		return
 	}
 
-	sort.Sort(byName(vec))
+	slices.SortFunc(vec, func(a, b promql.Sample) bool {
+		ni := a.Metric.Get(labels.MetricName)
+		nj := b.Metric.Get(labels.MetricName)
+		return ni < nj
+	})
 
 	externalLabels := h.config.GlobalConfig.ExternalLabels.Map()
 	if _, ok := externalLabels[model.InstanceLabel]; !ok {
@@ -262,7 +275,7 @@ Loop:
 		if !isHistogram {
 			lastHistogramWasGauge = false
 			protMetric.Untyped = &dto.Untyped{
-				Value: proto.Float64(s.V),
+				Value: proto.Float64(s.F),
 			}
 		} else {
 			lastHistogramWasGauge = s.H.CounterResetHint == histogram.GaugeType
@@ -304,16 +317,4 @@ Loop:
 			level.Error(h.logger).Log("msg", "federation failed", "err", err)
 		}
 	}
-}
-
-// byName makes a model.Vector sortable by metric name.
-type byName promql.Vector
-
-func (vec byName) Len() int      { return len(vec) }
-func (vec byName) Swap(i, j int) { vec[i], vec[j] = vec[j], vec[i] }
-
-func (vec byName) Less(i, j int) bool {
-	ni := vec[i].Metric.Get(labels.MetricName)
-	nj := vec[j].Metric.Get(labels.MetricName)
-	return ni < nj
 }

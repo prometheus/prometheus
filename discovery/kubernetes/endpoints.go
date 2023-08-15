@@ -11,6 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// nolint:revive // Many legitimately empty blocks in this file.
 package kubernetes
 
 import (
@@ -28,7 +29,6 @@ import (
 	"k8s.io/client-go/util/workqueue"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/prometheus/prometheus/util/strutil"
 )
 
 var (
@@ -247,9 +247,6 @@ func endpointsSourceFromNamespaceAndName(namespace, name string) string {
 }
 
 const (
-	endpointsLabelPrefix           = metaLabelPrefix + "endpoints_label_"
-	endpointsLabelPresentPrefix    = metaLabelPrefix + "endpoints_labelpresent_"
-	endpointsNameLabel             = metaLabelPrefix + "endpoints_name"
 	endpointNodeName               = metaLabelPrefix + "endpoint_node_name"
 	endpointHostname               = metaLabelPrefix + "endpoint_hostname"
 	endpointReadyLabel             = metaLabelPrefix + "endpoint_ready"
@@ -264,16 +261,11 @@ func (e *Endpoints) buildEndpoints(eps *apiv1.Endpoints) *targetgroup.Group {
 		Source: endpointsSource(eps),
 	}
 	tg.Labels = model.LabelSet{
-		namespaceLabel:     lv(eps.Namespace),
-		endpointsNameLabel: lv(eps.Name),
+		namespaceLabel: lv(eps.Namespace),
 	}
 	e.addServiceLabels(eps.Namespace, eps.Name, tg)
 	// Add endpoints labels metadata.
-	for k, v := range eps.Labels {
-		ln := strutil.SanitizeLabelName(k)
-		tg.Labels[model.LabelName(endpointsLabelPrefix+ln)] = lv(v)
-		tg.Labels[model.LabelName(endpointsLabelPresentPrefix+ln)] = presentValue
-	}
+	addObjectMetaLabels(tg.Labels, eps.ObjectMeta, RoleEndpoint)
 
 	type podEntry struct {
 		pod          *apiv1.Pod
@@ -304,7 +296,11 @@ func (e *Endpoints) buildEndpoints(eps *apiv1.Endpoints) *targetgroup.Group {
 		}
 
 		if e.withNodeMetadata {
-			target = addNodeLabels(target, e.nodeInf, e.logger, addr.NodeName)
+			if addr.NodeName != nil {
+				target = addNodeLabels(target, e.nodeInf, e.logger, addr.NodeName)
+			} else if addr.TargetRef != nil && addr.TargetRef.Kind == "Node" {
+				target = addNodeLabels(target, e.nodeInf, e.logger, &addr.TargetRef.Name)
+			}
 		}
 
 		pod := e.resolvePodRef(addr.TargetRef)
@@ -384,18 +380,21 @@ func (e *Endpoints) buildEndpoints(eps *apiv1.Endpoints) *targetgroup.Group {
 					continue
 				}
 
-				a := net.JoinHostPort(pe.pod.Status.PodIP, strconv.FormatUint(uint64(cport.ContainerPort), 10))
-				ports := strconv.FormatUint(uint64(cport.ContainerPort), 10)
+				// PodIP can be empty when a pod is starting or has been evicted.
+				if len(pe.pod.Status.PodIP) != 0 {
+					a := net.JoinHostPort(pe.pod.Status.PodIP, strconv.FormatUint(uint64(cport.ContainerPort), 10))
+					ports := strconv.FormatUint(uint64(cport.ContainerPort), 10)
 
-				target := model.LabelSet{
-					model.AddressLabel:            lv(a),
-					podContainerNameLabel:         lv(c.Name),
-					podContainerImageLabel:        lv(c.Image),
-					podContainerPortNameLabel:     lv(cport.Name),
-					podContainerPortNumberLabel:   lv(ports),
-					podContainerPortProtocolLabel: lv(string(cport.Protocol)),
+					target := model.LabelSet{
+						model.AddressLabel:            lv(a),
+						podContainerNameLabel:         lv(c.Name),
+						podContainerImageLabel:        lv(c.Image),
+						podContainerPortNameLabel:     lv(cport.Name),
+						podContainerPortNumberLabel:   lv(ports),
+						podContainerPortProtocolLabel: lv(string(cport.Protocol)),
+					}
+					tg.Targets = append(tg.Targets, target.Merge(podLabels(pe.pod)))
 				}
-				tg.Targets = append(tg.Targets, target.Merge(podLabels(pe.pod)))
 			}
 		}
 	}
@@ -457,13 +456,7 @@ func addNodeLabels(tg model.LabelSet, nodeInf cache.SharedInformer, logger log.L
 
 	node := obj.(*apiv1.Node)
 	// Allocate one target label for the node name,
-	// and two target labels for each node label.
-	nodeLabelset := make(model.LabelSet, 1+2*len(node.GetLabels()))
-	nodeLabelset[nodeNameLabel] = lv(*nodeName)
-	for k, v := range node.GetLabels() {
-		ln := strutil.SanitizeLabelName(k)
-		nodeLabelset[model.LabelName(nodeLabelPrefix+ln)] = lv(v)
-		nodeLabelset[model.LabelName(nodeLabelPresentPrefix+ln)] = presentValue
-	}
+	nodeLabelset := make(model.LabelSet)
+	addObjectMetaLabels(nodeLabelset, node.ObjectMeta, RoleNode)
 	return tg.Merge(nodeLabelset)
 }

@@ -190,7 +190,7 @@ func (e *EndpointSlice) Run(ctx context.Context, ch chan<- []*targetgroup.Group)
 	}
 
 	go func() {
-		for e.process(ctx, ch) {
+		for e.process(ctx, ch) { // nolint:revive
 		}
 	}()
 
@@ -252,7 +252,6 @@ func endpointSliceSourceFromNamespaceAndName(namespace, name string) string {
 }
 
 const (
-	endpointSliceNameLabel                          = metaLabelPrefix + "endpointslice_name"
 	endpointSliceAddressTypeLabel                   = metaLabelPrefix + "endpointslice_address_type"
 	endpointSlicePortNameLabel                      = metaLabelPrefix + "endpointslice_port_name"
 	endpointSlicePortProtocolLabel                  = metaLabelPrefix + "endpointslice_port_protocol"
@@ -274,9 +273,11 @@ func (e *EndpointSlice) buildEndpointSlice(eps endpointSliceAdaptor) *targetgrou
 	}
 	tg.Labels = model.LabelSet{
 		namespaceLabel:                lv(eps.namespace()),
-		endpointSliceNameLabel:        lv(eps.name()),
 		endpointSliceAddressTypeLabel: lv(eps.addressType()),
 	}
+
+	addObjectMetaLabels(tg.Labels, eps.getObjectMeta(), RoleEndpointSlice)
+
 	e.addServiceLabels(eps, tg)
 
 	type podEntry struct {
@@ -300,7 +301,7 @@ func (e *EndpointSlice) buildEndpointSlice(eps endpointSliceAdaptor) *targetgrou
 		}
 
 		if port.protocol() != nil {
-			target[endpointSlicePortProtocolLabel] = lv(string(*port.protocol()))
+			target[endpointSlicePortProtocolLabel] = lv(*port.protocol())
 		}
 
 		if port.port() != nil {
@@ -339,7 +340,11 @@ func (e *EndpointSlice) buildEndpointSlice(eps endpointSliceAdaptor) *targetgrou
 		}
 
 		if e.withNodeMetadata {
-			target = addNodeLabels(target, e.nodeInf, e.logger, ep.nodename())
+			if ep.targetRef() != nil && ep.targetRef().Kind == "Node" {
+				target = addNodeLabels(target, e.nodeInf, e.logger, &ep.targetRef().Name)
+			} else {
+				target = addNodeLabels(target, e.nodeInf, e.logger, ep.nodename())
+			}
 		}
 
 		pod := e.resolvePodRef(ep.targetRef())
@@ -412,18 +417,21 @@ func (e *EndpointSlice) buildEndpointSlice(eps endpointSliceAdaptor) *targetgrou
 					continue
 				}
 
-				a := net.JoinHostPort(pe.pod.Status.PodIP, strconv.FormatUint(uint64(cport.ContainerPort), 10))
-				ports := strconv.FormatUint(uint64(cport.ContainerPort), 10)
+				// PodIP can be empty when a pod is starting or has been evicted.
+				if len(pe.pod.Status.PodIP) != 0 {
+					a := net.JoinHostPort(pe.pod.Status.PodIP, strconv.FormatUint(uint64(cport.ContainerPort), 10))
+					ports := strconv.FormatUint(uint64(cport.ContainerPort), 10)
 
-				target := model.LabelSet{
-					model.AddressLabel:            lv(a),
-					podContainerNameLabel:         lv(c.Name),
-					podContainerImageLabel:        lv(c.Image),
-					podContainerPortNameLabel:     lv(cport.Name),
-					podContainerPortNumberLabel:   lv(ports),
-					podContainerPortProtocolLabel: lv(string(cport.Protocol)),
+					target := model.LabelSet{
+						model.AddressLabel:            lv(a),
+						podContainerNameLabel:         lv(c.Name),
+						podContainerImageLabel:        lv(c.Image),
+						podContainerPortNameLabel:     lv(cport.Name),
+						podContainerPortNumberLabel:   lv(ports),
+						podContainerPortProtocolLabel: lv(string(cport.Protocol)),
+					}
+					tg.Targets = append(tg.Targets, target.Merge(podLabels(pe.pod)))
 				}
-				tg.Targets = append(tg.Targets, target.Merge(podLabels(pe.pod)))
 			}
 		}
 	}

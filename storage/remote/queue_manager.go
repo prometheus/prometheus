@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/common/model"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
 	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/config"
@@ -545,6 +546,10 @@ func (t *QueueManager) sendMetadataWithBackoff(ctx context.Context, metadata []p
 			attribute.String("remote_name", t.storeClient.Name()),
 			attribute.String("remote_url", t.storeClient.Endpoint()),
 		)
+		// Attributes defined by OpenTelemetry semantic conventions.
+		if try > 0 {
+			span.SetAttributes(semconv.HTTPResendCount(try))
+		}
 
 		begin := time.Now()
 		err := t.storeClient.Store(ctx, req)
@@ -609,7 +614,7 @@ outer:
 
 			t.metrics.enqueueRetriesTotal.Inc()
 			time.Sleep(time.Duration(backoff))
-			backoff = backoff * 2
+			backoff *= 2
 			// It is reasonable to use t.cfg.MaxBackoff here, as if we have hit
 			// the full backoff we are likely waiting for external resources.
 			if backoff > t.cfg.MaxBackoff {
@@ -660,7 +665,7 @@ outer:
 
 			t.metrics.enqueueRetriesTotal.Inc()
 			time.Sleep(time.Duration(backoff))
-			backoff = backoff * 2
+			backoff *= 2
 			if backoff > t.cfg.MaxBackoff {
 				backoff = t.cfg.MaxBackoff
 			}
@@ -707,7 +712,7 @@ outer:
 
 			t.metrics.enqueueRetriesTotal.Inc()
 			time.Sleep(time.Duration(backoff))
-			backoff = backoff * 2
+			backoff *= 2
 			if backoff > t.cfg.MaxBackoff {
 				backoff = t.cfg.MaxBackoff
 			}
@@ -754,7 +759,7 @@ outer:
 
 			t.metrics.enqueueRetriesTotal.Inc()
 			time.Sleep(time.Duration(backoff))
-			backoff = backoff * 2
+			backoff *= 2
 			if backoff > t.cfg.MaxBackoff {
 				backoff = t.cfg.MaxBackoff
 			}
@@ -1030,9 +1035,10 @@ func (t *QueueManager) calculateDesiredShards() int {
 		return t.numShards
 	}
 
-	if numShards > t.cfg.MaxShards {
+	switch {
+	case numShards > t.cfg.MaxShards:
 		numShards = t.cfg.MaxShards
-	} else if numShards < t.cfg.MinShards {
+	case numShards < t.cfg.MinShards:
 		numShards = t.cfg.MinShards
 	}
 	return numShards
@@ -1575,10 +1581,11 @@ func sendWriteRequestWithBackoff(ctx context.Context, cfg config.QueueConfig, l 
 		}
 
 		sleepDuration = backoff
-		if backoffErr.retryAfter > 0 {
+		switch {
+		case backoffErr.retryAfter > 0:
 			sleepDuration = backoffErr.retryAfter
 			level.Info(l).Log("msg", "Retrying after duration specified by Retry-After header", "duration", sleepDuration)
-		} else if backoffErr.retryAfter < 0 {
+		case backoffErr.retryAfter < 0:
 			level.Debug(l).Log("msg", "retry-after cannot be in past, retrying using default backoff mechanism")
 		}
 

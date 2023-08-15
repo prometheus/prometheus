@@ -1,5 +1,74 @@
 # Changelog
 
+## 2.46.0 / 2023-07-25
+
+* [FEATURE] Promtool: Add PromQL format and label matcher set/delete commands to promtool. #11411
+* [FEATURE] Promtool: Add push metrics command. #12299
+* [ENHANCEMENT] Promtool: Read from stdin if no filenames are provided in check rules. #12225
+* [ENHANCEMENT] Hetzner SD: Support larger ID's that will be used by Hetzner in September. #12569
+* [ENHANCEMENT] Kubernetes SD: Add more labels for endpointslice and endpoints role. #10914
+* [ENHANCEMENT] Kubernetes SD: Do not add pods to target group if the PodIP status is not set. #11642
+* [ENHANCEMENT] OpenStack SD: Include instance image ID in labels. #12502
+* [ENHANCEMENT] Remote Write receiver: Validate the metric names and labels. #11688
+* [ENHANCEMENT] Web: Initialize `prometheus_http_requests_total` metrics with `code` label set to `200`. #12472
+* [ENHANCEMENT] TSDB: Add Zstandard compression option for wlog. #11666
+* [ENHANCEMENT] TSDB: Support native histograms in snapshot on shutdown. #12258
+* [ENHANCEMENT] Labels: Avoid compiling regexes that are literal. #12434
+* [BUGFIX] Histograms: Fix parsing of float histograms without zero bucket. #12577
+* [BUGFIX] Histograms: Fix scraping native and classic histograms missing some histograms. #12554
+* [BUGFIX] Histograms: Enable ingestion of multiple exemplars per sample. 12557
+* [BUGFIX] File SD: Fix path handling in File-SD watcher to allow directory monitoring on Windows. #12488
+* [BUGFIX] Linode SD: Cast `InstanceSpec` values to `int64` to avoid overflows on 386 architecture. #12568
+* [BUGFIX] PromQL Engine: Include query parsing in active-query tracking. #12418
+* [BUGFIX] TSDB: Handle TOC parsing failures. #10623
+
+## 2.45.0 / 2023-06-23
+
+This release is a LTS (Long-Term Support) release of Prometheus and will
+receive security, documentation and bugfix patches for at least 12 months.
+Please read more about our LTS release cycle at
+<https://prometheus.io/docs/introduction/release-cycle/>.
+
+* [FEATURE] API: New limit parameter to limit the number of items returned by `/api/v1/status/tsdb` endpoint. #12336
+* [FEATURE] Config: Add limits to global config. #12126
+* [FEATURE] Consul SD: Added support for `path_prefix`. #12372
+* [FEATURE] Native histograms: Add option to scrape both classic and native histograms. #12350
+* [FEATURE] Native histograms: Added support for two more arithmetic operators `avg_over_time` and `sum_over_time`. #12262
+* [FEATURE] Promtool: When providing the block id, only one block will be loaded and analyzed. #12031
+* [FEATURE] Remote-write: New Azure ad configuration to support remote writing directly to Azure Monitor workspace. #11944
+* [FEATURE] TSDB: Samples per chunk are now configurable with flag `storage.tsdb.samples-per-chunk`. By default set to its former value 120. #12055
+* [ENHANCEMENT] Native histograms: bucket size can now be limited to avoid scrape fails. #12254
+* [ENHANCEMENT] TSDB: Dropped series are now deleted from the WAL sooner. #12297
+* [BUGFIX] Native histograms: ChunkSeries iterator now checks if a new sample can be appended to the open chunk. #12185
+* [BUGFIX] Native histograms: Fix Histogram Appender `Appendable()` segfault. #12357
+* [BUGFIX] Native histograms: Fix setting reset header to gauge histograms in seriesToChunkEncoder. #12329
+* [BUGFIX] TSDB: Tombstone intervals are not modified after Get() call. #12245
+* [BUGFIX] TSDB: Use path/filepath to set the WAL directory. #12349
+
+## 2.44.0 / 2023-05-13
+
+This version is built with Go tag `stringlabels`, to use the smaller data
+structure for Labels that was optional in the previous release. For more
+details about this code change see #10991.
+
+* [CHANGE] Remote-write: Raise default samples per send to 2,000. #12203
+* [FEATURE] Remote-read: Handle native histograms. #12085, #12192
+* [FEATURE] Promtool: Health and readiness check of prometheus server in CLI. #12096
+* [FEATURE] PromQL: Add `query_samples_total` metric, the total number of samples loaded by all queries. #12251
+* [ENHANCEMENT] Storage: Optimise buffer used to iterate through samples. #12326
+* [ENHANCEMENT] Scrape: Reduce memory allocations on target labels. #12084
+* [ENHANCEMENT] PromQL: Use faster heap method for `topk()` / `bottomk()`. #12190
+* [ENHANCEMENT] Rules API: Allow filtering by rule name. #12270
+* [ENHANCEMENT] Native Histograms: Various fixes and improvements. #11687, #12264, #12272
+* [ENHANCEMENT] UI: Search of scraping pools is now case-insensitive. #12207
+* [ENHANCEMENT] TSDB: Add an affirmative log message for successful WAL repair. #12135
+* [BUGFIX] TSDB: Block compaction failed when shutting down. #12179
+* [BUGFIX] TSDB: Out-of-order chunks could be ignored if the write-behind log was deleted. #12127
+
+## 2.43.1 / 2023-05-03
+
+* [BUGFIX] Labels: `Set()` after `Del()` would be ignored, which broke some relabeling rules. #12322
+
 ## 2.43.0 / 2023-03-21
 
 We are working on some performance improvements in Prometheus, which are only
@@ -13,9 +82,9 @@ the gains on their production architecture. We are providing release artefacts
 improvements for testing. #10991
 
 * [FEATURE] Promtool: Add HTTP client configuration to query commands. #11487
-* [FEATURE] Scrape: Add `include_scrape_configs` to include scrape configs from different files. #12019
+* [FEATURE] Scrape: Add `scrape_config_files` to include scrape configs from different files. #12019
 * [FEATURE] HTTP client: Add `no_proxy` to exclude URLs from proxied requests. #12098
-* [FEATURE] HTTP client: Add `proxy_from_enviroment` to read proxies from env variables. #12098
+* [FEATURE] HTTP client: Add `proxy_from_environment` to read proxies from env variables. #12098
 * [ENHANCEMENT] API: Add support for setting lookback delta per query via the API. #12088
 * [ENHANCEMENT] API: Change HTTP status code from 503/422 to 499 if a request is canceled. #11897
 * [ENHANCEMENT] Scrape: Allow exemplars for all metric types. #11984

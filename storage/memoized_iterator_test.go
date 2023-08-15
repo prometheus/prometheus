@@ -18,59 +18,89 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 )
 
 func TestMemoizedSeriesIterator(t *testing.T) {
-	// TODO(beorn7): Include histograms in testing.
 	var it *MemoizedSeriesIterator
 
-	sampleEq := func(ets int64, ev float64) {
-		ts, v := it.At()
-		require.Equal(t, ets, ts, "timestamp mismatch")
-		require.Equal(t, ev, v, "value mismatch")
+	sampleEq := func(ets int64, ev float64, efh *histogram.FloatHistogram) {
+		if efh == nil {
+			ts, v := it.At()
+			require.Equal(t, ets, ts, "timestamp mismatch")
+			require.Equal(t, ev, v, "value mismatch")
+		} else {
+			ts, fh := it.AtFloatHistogram()
+			require.Equal(t, ets, ts, "timestamp mismatch")
+			require.Equal(t, efh, fh, "histogram mismatch")
+		}
 	}
-	prevSampleEq := func(ets int64, ev float64, eok bool) {
-		ts, v, _, _, ok := it.PeekPrev()
+	prevSampleEq := func(ets int64, ev float64, efh *histogram.FloatHistogram, eok bool) {
+		ts, v, fh, ok := it.PeekPrev()
 		require.Equal(t, eok, ok, "exist mismatch")
 		require.Equal(t, ets, ts, "timestamp mismatch")
-		require.Equal(t, ev, v, "value mismatch")
+		if efh == nil {
+			require.Equal(t, ev, v, "value mismatch")
+		} else {
+			require.Equal(t, efh, fh, "histogram mismatch")
+		}
 	}
 
 	it = NewMemoizedIterator(NewListSeriesIterator(samples{
-		sample{t: 1, v: 2},
-		sample{t: 2, v: 3},
-		sample{t: 3, v: 4},
-		sample{t: 4, v: 5},
-		sample{t: 5, v: 6},
-		sample{t: 99, v: 8},
-		sample{t: 100, v: 9},
-		sample{t: 101, v: 10},
+		fSample{t: 1, f: 2},
+		fSample{t: 2, f: 3},
+		fSample{t: 3, f: 4},
+		fSample{t: 4, f: 5},
+		fSample{t: 5, f: 6},
+		fSample{t: 99, f: 8},
+		fSample{t: 100, f: 9},
+		fSample{t: 101, f: 10},
+		hSample{t: 102, h: tsdbutil.GenerateTestHistogram(0)},
+		hSample{t: 103, h: tsdbutil.GenerateTestHistogram(1)},
+		fhSample{t: 104, fh: tsdbutil.GenerateTestFloatHistogram(2)},
+		fhSample{t: 199, fh: tsdbutil.GenerateTestFloatHistogram(3)},
+		hSample{t: 200, h: tsdbutil.GenerateTestHistogram(4)},
+		fhSample{t: 299, fh: tsdbutil.GenerateTestFloatHistogram(5)},
+		fSample{t: 300, f: 11},
+		hSample{t: 399, h: tsdbutil.GenerateTestHistogram(6)},
+		fSample{t: 400, f: 12},
 	}), 2)
 
 	require.Equal(t, it.Seek(-123), chunkenc.ValFloat, "seek failed")
-	sampleEq(1, 2)
-	prevSampleEq(0, 0, false)
-
-	require.Equal(t, it.Next(), chunkenc.ValFloat, "next failed")
-	sampleEq(2, 3)
-	prevSampleEq(1, 2, true)
-
-	require.Equal(t, it.Next(), chunkenc.ValFloat, "next failed")
-	require.Equal(t, it.Next(), chunkenc.ValFloat, "next failed")
-	require.Equal(t, it.Next(), chunkenc.ValFloat, "next failed")
-	sampleEq(5, 6)
-	prevSampleEq(4, 5, true)
+	sampleEq(1, 2, nil)
+	prevSampleEq(0, 0, nil, false)
 
 	require.Equal(t, it.Seek(5), chunkenc.ValFloat, "seek failed")
-	sampleEq(5, 6)
-	prevSampleEq(4, 5, true)
+	sampleEq(5, 6, nil)
+	prevSampleEq(4, 5, nil, true)
 
-	require.Equal(t, it.Seek(101), chunkenc.ValFloat, "seek failed")
-	sampleEq(101, 10)
-	prevSampleEq(100, 9, true)
+	// Seek to a histogram sample with a previous float sample.
+	require.Equal(t, it.Seek(102), chunkenc.ValFloatHistogram, "seek failed")
+	sampleEq(102, 10, tsdbutil.GenerateTestFloatHistogram(0))
+	prevSampleEq(101, 10, nil, true)
 
-	require.Equal(t, it.Next(), chunkenc.ValNone, "next succeeded unexpectedly")
+	// Attempt to seek backwards (no-op).
+	require.Equal(t, it.Seek(50), chunkenc.ValFloatHistogram, "seek failed")
+	sampleEq(102, 10, tsdbutil.GenerateTestFloatHistogram(0))
+	prevSampleEq(101, 10, nil, true)
+
+	// Seek to a float histogram sample with a previous histogram sample.
+	require.Equal(t, it.Seek(104), chunkenc.ValFloatHistogram, "seek failed")
+	sampleEq(104, 0, tsdbutil.GenerateTestFloatHistogram(2))
+	prevSampleEq(103, 0, tsdbutil.GenerateTestFloatHistogram(1), true)
+
+	// Seek to a float sample with a previous float histogram sample.
+	require.Equal(t, chunkenc.ValFloat, it.Seek(300), "seek failed")
+	sampleEq(300, 11, nil)
+	prevSampleEq(299, 0, tsdbutil.GenerateTestFloatHistogram(5), true)
+
+	// Seek to a float sample with a previous histogram sample.
+	require.Equal(t, chunkenc.ValFloat, it.Seek(400), "seek failed")
+	sampleEq(400, 12, nil)
+	prevSampleEq(399, 0, tsdbutil.GenerateTestFloatHistogram(6), true)
+
 	require.Equal(t, it.Seek(1024), chunkenc.ValNone, "seek succeeded unexpectedly")
 }
 
@@ -82,8 +112,8 @@ func BenchmarkMemoizedSeriesIterator(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for it.Next() != chunkenc.ValNone {
-		// scan everything
+	for it.Next() != chunkenc.ValNone { // nolint:revive
+		// Scan everything.
 	}
 	require.NoError(b, it.Err())
 }

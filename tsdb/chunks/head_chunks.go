@@ -948,12 +948,22 @@ func (cdm *ChunkDiskMapper) Truncate(fileNo uint32) error {
 	if len(chkFileIndices) == len(removedFiles) {
 		// All files were deleted. Reset the current sequence.
 		cdm.evtlPosMtx.Lock()
-		if err == nil {
-			cdm.evtlPos.setSeq(0)
-		} else {
-			// In case of error, set it to the last file number on the disk that was not deleted.
-			cdm.evtlPos.setSeq(uint64(pendingDeletes[len(pendingDeletes)-1]))
+
+		// We can safely reset the sequence only if the write queue is empty. If it's not empty,
+		// then there may be a job in the queue that will create a new segment file with an ID
+		// generated before the sequence reset.
+		//
+		// The queueIsEmpty() function must be called while holding the cdm.evtlPosMtx to avoid
+		// a race condition with WriteChunk().
+		if cdm.writeQueue == nil || cdm.writeQueue.queueIsEmpty() {
+			if err == nil {
+				cdm.evtlPos.setSeq(0)
+			} else {
+				// In case of error, set it to the last file number on the disk that was not deleted.
+				cdm.evtlPos.setSeq(uint64(pendingDeletes[len(pendingDeletes)-1]))
+			}
 		}
+
 		cdm.evtlPosMtx.Unlock()
 	}
 
@@ -999,9 +1009,10 @@ func (cdm *ChunkDiskMapper) DeleteCorrupted(originalErr error) error {
 	cdm.readPathMtx.RLock()
 	lastSeq := 0
 	for seg := range cdm.mmappedChunkFiles {
-		if seg >= cerr.FileIndex {
+		switch {
+		case seg >= cerr.FileIndex:
 			segs = append(segs, seg)
-		} else if seg > lastSeq {
+		case seg > lastSeq:
 			lastSeq = seg
 		}
 	}

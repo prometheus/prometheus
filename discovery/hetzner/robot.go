@@ -51,7 +51,7 @@ type robotDiscovery struct {
 }
 
 // newRobotDiscovery returns a new robotDiscovery which periodically refreshes its targets.
-func newRobotDiscovery(conf *SDConfig, logger log.Logger) (*robotDiscovery, error) {
+func newRobotDiscovery(conf *SDConfig, _ log.Logger) (*robotDiscovery, error) {
 	d := &robotDiscovery{
 		port:     conf.Port,
 		endpoint: conf.robotEndpoint,
@@ -69,7 +69,7 @@ func newRobotDiscovery(conf *SDConfig, logger log.Logger) (*robotDiscovery, erro
 	return d, nil
 }
 
-func (d *robotDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
+func (d *robotDiscovery) refresh(context.Context) ([]*targetgroup.Group, error) {
 	req, err := http.NewRequest("GET", d.endpoint+"/server", nil)
 	if err != nil {
 		return nil, err
@@ -105,7 +105,7 @@ func (d *robotDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, err
 	targets := make([]model.LabelSet, len(servers))
 	for i, server := range servers {
 		labels := model.LabelSet{
-			hetznerLabelRole:           model.LabelValue(hetznerRoleRobot),
+			hetznerLabelRole:           model.LabelValue(HetznerRoleRobot),
 			hetznerLabelServerID:       model.LabelValue(strconv.Itoa(server.Server.ServerNumber)),
 			hetznerLabelServerName:     model.LabelValue(server.Server.ServerName),
 			hetznerLabelDatacenter:     model.LabelValue(strings.ToLower(server.Server.Dc)),

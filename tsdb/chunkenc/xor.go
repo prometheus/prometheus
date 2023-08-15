@@ -99,7 +99,7 @@ func (c *XORChunk) Appender() (Appender, error) {
 	// To get an appender we must know the state it would have if we had
 	// appended all existing data from scratch.
 	// We iterate through the end and populate via the iterator's state.
-	for it.Next() != ValNone {
+	for it.Next() != ValNone { // nolint:revive
 	}
 	if err := it.Err(); err != nil {
 		return nil, err
@@ -152,26 +152,17 @@ type xorAppender struct {
 	trailing uint8
 }
 
-func (a *xorAppender) AppendHistogram(t int64, h *histogram.Histogram) {
-	panic("appended a histogram to an xor chunk")
-}
-
-func (a *xorAppender) AppendFloatHistogram(t int64, h *histogram.FloatHistogram) {
-	panic("appended a float histogram to an xor chunk")
-}
-
 func (a *xorAppender) Append(t int64, v float64) {
 	var tDelta uint64
 	num := binary.BigEndian.Uint16(a.b.bytes())
-
-	if num == 0 {
+	switch num {
+	case 0:
 		buf := make([]byte, binary.MaxVarintLen64)
 		for _, b := range buf[:binary.PutVarint(buf, t)] {
 			a.b.writeByte(b)
 		}
 		a.b.writeBits(math.Float64bits(v), 64)
-
-	} else if num == 1 {
+	case 1:
 		tDelta = uint64(t - a.t)
 
 		buf := make([]byte, binary.MaxVarintLen64)
@@ -181,7 +172,7 @@ func (a *xorAppender) Append(t int64, v float64) {
 
 		a.writeVDelta(v)
 
-	} else {
+	default:
 		tDelta = uint64(t - a.t)
 		dod := int64(tDelta - a.tDelta)
 
@@ -227,6 +218,14 @@ func bitRange(x int64, nbits uint8) bool {
 
 func (a *xorAppender) writeVDelta(v float64) {
 	xorWrite(a.b, v, a.v, &a.leading, &a.trailing)
+}
+
+func (a *xorAppender) AppendHistogram(*HistogramAppender, int64, *histogram.Histogram, bool) (Chunk, bool, Appender, error) {
+	panic("appended a histogram sample to a float chunk")
+}
+
+func (a *xorAppender) AppendFloatHistogram(*FloatHistogramAppender, int64, *histogram.FloatHistogram, bool) (Chunk, bool, Appender, error) {
+	panic("appended a float histogram sample to a float chunk")
 }
 
 type xorIterator struct {
@@ -321,7 +320,7 @@ func (it *xorIterator) Next() ValueType {
 			return ValNone
 		}
 		it.tDelta = tDelta
-		it.t = it.t + int64(it.tDelta)
+		it.t += int64(it.tDelta)
 
 		return it.readValue()
 	}
@@ -384,7 +383,7 @@ func (it *xorIterator) Next() ValueType {
 	}
 
 	it.tDelta = uint64(int64(it.tDelta) + dod)
-	it.t = it.t + int64(it.tDelta)
+	it.t += int64(it.tDelta)
 
 	return it.readValue()
 }

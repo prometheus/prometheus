@@ -23,26 +23,25 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/pprof"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"text/tabwriter"
 	"time"
 
-	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"github.com/prometheus/prometheus/tsdb/index"
-
 	"github.com/alecthomas/units"
 	"github.com/go-kit/log"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
+	"github.com/prometheus/prometheus/tsdb/index"
 )
 
 const timeDelta = 30000
@@ -398,25 +397,20 @@ func openBlock(path, blockID string) (*tsdb.DBReadOnly, tsdb.BlockReader, error)
 	if err != nil {
 		return nil, nil, err
 	}
-	blocks, err := db.Blocks()
+
+	if blockID == "" {
+		blockID, err = db.LastBlockID()
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	b, err := db.Block(blockID)
 	if err != nil {
 		return nil, nil, err
 	}
-	var block tsdb.BlockReader
-	if blockID != "" {
-		for _, b := range blocks {
-			if b.Meta().ULID.String() == blockID {
-				block = b
-				break
-			}
-		}
-	} else if len(blocks) > 0 {
-		block = blocks[len(blocks)-1]
-	}
-	if block == nil {
-		return nil, nil, fmt.Errorf("block %s not found", blockID)
-	}
-	return db, block, nil
+
+	return db, b, nil
 }
 
 func analyzeBlock(path, blockID string, limit int, runExtended bool) error {
@@ -452,7 +446,7 @@ func analyzeBlock(path, blockID string, limit int, runExtended bool) error {
 	postingInfos := []postingInfo{}
 
 	printInfo := func(postingInfos []postingInfo) {
-		sort.Slice(postingInfos, func(i, j int) bool { return postingInfos[i].metric > postingInfos[j].metric })
+		slices.SortFunc(postingInfos, func(a, b postingInfo) bool { return a.metric > b.metric })
 
 		for i, pc := range postingInfos {
 			if i >= limit {
