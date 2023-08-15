@@ -24,6 +24,19 @@ import (
 )
 
 func TestRelabel(t *testing.T) {
+
+	testPreFixAction := Action("testprefixaction")
+	Predicates[testPreFixAction] = func(cfg *Config) bool {
+		return true
+	}
+	CustomerActions[testPreFixAction] = func(lb *labels.Builder, cfg *Config, val string) (bool, bool) {
+		prefix := cfg.Ext
+		lb.Range(func(l labels.Label) {
+			lb.Set(l.Name, prefix+l.Value)
+		})
+		return true, true
+	}
+
 	tests := []struct {
 		input   labels.Labels
 		relabel []*Config
@@ -547,6 +560,24 @@ func TestRelabel(t *testing.T) {
 				},
 			},
 			drop: true,
+		},
+		{
+			input: labels.FromMap(map[string]string{
+				"a": "foo",
+				"b": "bar",
+				"c": "baz",
+			}),
+			relabel: []*Config{
+				{
+					Action: "testprefixaction",
+					Ext:    "test-",
+				},
+			},
+			output: labels.FromMap(map[string]string{
+				"a": "test-foo",
+				"b": "test-bar",
+				"c": "test-baz",
+			}),
 		},
 	}
 
