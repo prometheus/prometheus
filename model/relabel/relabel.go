@@ -106,7 +106,8 @@ type Config struct {
 	Replacement string `yaml:"replacement,omitempty"`
 	// Action is the action to be performed for the relabeling.
 	Action Action `yaml:"action,omitempty"`
-	Ext    string `yaml:"ext,omitempty"`
+	// Ext is the ext config to be used for the custom actions.
+	Ext string `yaml:"ext,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
