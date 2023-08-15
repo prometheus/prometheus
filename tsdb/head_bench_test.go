@@ -22,6 +22,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 )
 
 func BenchmarkHeadStripeSeriesCreate(b *testing.B) {
@@ -80,6 +81,6 @@ func BenchmarkHeadStripeSeriesCreate_PreCreationFailure(b *testing.B) {
 
 type failingSeriesLifecycleCallback struct{}
 
-func (failingSeriesLifecycleCallback) PreCreation(labels.Labels) error { return errors.New("failed") }
-func (failingSeriesLifecycleCallback) PostCreation(labels.Labels)      {}
-func (failingSeriesLifecycleCallback) PostDeletion(...labels.Labels)   {}
+func (failingSeriesLifecycleCallback) PreCreation(labels.Labels) error                     { return errors.New("failed") }
+func (failingSeriesLifecycleCallback) PostCreation(labels.Labels)                          {}
+func (failingSeriesLifecycleCallback) PostDeletion(map[chunks.HeadSeriesRef]labels.Labels) {}

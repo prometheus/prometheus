@@ -106,6 +106,10 @@ global:
   # change in the future.
   [ target_limit: <int> | default = 0 ]
 
+  # Limit per scrape config on the number of targets dropped by relabeling
+  # that will be kept in memory. 0 means no limit.
+  [ keep_dropped_targets: <int> | default = 0 ]
+
 # Rule files specifies a list of globs. Rules and alerts are read from
 # all matching files.
 rule_files:
@@ -414,6 +418,10 @@ metric_relabel_configs:
 # 0 means no limit. This is an experimental feature, this behaviour could
 # change in the future.
 [ target_limit: <int> | default = 0 ]
+
+# Per-job limit on the number of targets dropped by relabeling
+# that will be kept in memory. 0 means no limit.
+[ keep_dropped_targets: <int> | default = 0 ]
 
 # Limit on total number of positive and negative buckets allowed in a single
 # native histogram. If this is exceeded, the entire scrape will be treated as

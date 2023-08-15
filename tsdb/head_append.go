@@ -395,7 +395,7 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 func (s *memSeries) appendable(t int64, v float64, headMaxt, minValidTime, oooTimeWindow int64) (isOOO bool, oooDelta int64, err error) {
 	// Check if we can append in the in-order chunk.
 	if t >= minValidTime {
-		if s.head() == nil {
+		if s.headChunks == nil {
 			// The series has no sample and was freshly created.
 			return false, 0, nil
 		}
@@ -437,7 +437,7 @@ func (s *memSeries) appendable(t int64, v float64, headMaxt, minValidTime, oooTi
 func (s *memSeries) appendableHistogram(t int64, h *histogram.Histogram, headMaxt, minValidTime, oooTimeWindow int64) (isOOO bool, oooDelta int64, err error) {
 	// Check if we can append in the in-order chunk.
 	if t >= minValidTime {
-		if s.head() == nil {
+		if s.headChunks == nil {
 			// The series has no sample and was freshly created.
 			return false, 0, nil
 		}
@@ -479,7 +479,7 @@ func (s *memSeries) appendableHistogram(t int64, h *histogram.Histogram, headMax
 func (s *memSeries) appendableFloatHistogram(t int64, fh *histogram.FloatHistogram, headMaxt, minValidTime, oooTimeWindow int64) (isOOO bool, oooDelta int64, err error) {
 	// Check if we can append in the in-order chunk.
 	if t >= minValidTime {
-		if s.head() == nil {
+		if s.headChunks == nil {
 			// The series has no sample and was freshly created.
 			return false, 0, nil
 		}
@@ -1010,6 +1010,8 @@ func (a *headAppender) Commit() (err error) {
 
 		oooSample, _, err := series.appendable(s.T, s.V, a.headMaxt, a.minValidTime, a.oooTimeWindow)
 		switch err {
+		case nil:
+			// Do nothing.
 		case storage.ErrOutOfOrderSample:
 			samplesAppended--
 			oooRejected++
@@ -1019,8 +1021,6 @@ func (a *headAppender) Commit() (err error) {
 		case storage.ErrTooOldSample:
 			samplesAppended--
 			tooOldRejected++
-		case nil:
-			// Do nothing.
 		default:
 			samplesAppended--
 		}
@@ -1427,12 +1427,11 @@ func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID ui
 		return true, false
 	}
 
-	// This is a brand new chunk, switch out the head chunk (based on cutNewHeadChunk).
-	s.mmapCurrentHeadChunk(o.chunkDiskMapper)
-	s.headChunk = &memChunk{
+	s.headChunks = &memChunk{
 		chunk:   newChunk,
 		minTime: t,
 		maxTime: t,
+		prev:    s.headChunks,
 	}
 	s.nextAt = rangeForTimestamp(t, o.chunkRange)
 	return true, true
@@ -1485,12 +1484,11 @@ func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, 
 		return true, false
 	}
 
-	// This is a brand new chunk, switch out the head chunk (based on cutNewHeadChunk).
-	s.mmapCurrentHeadChunk(o.chunkDiskMapper)
-	s.headChunk = &memChunk{
+	s.headChunks = &memChunk{
 		chunk:   newChunk,
 		minTime: t,
 		maxTime: t,
+		prev:    s.headChunks,
 	}
 	s.nextAt = rangeForTimestamp(t, o.chunkRange)
 	return true, true
@@ -1500,7 +1498,7 @@ func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, 
 // It is unsafe to call this concurrently with s.iterator(...) without holding the series lock.
 // This should be called only when appending data.
 func (s *memSeries) appendPreprocessor(t int64, e chunkenc.Encoding, o chunkOpts) (c *memChunk, sampleInOrder, chunkCreated bool) {
-	c = s.head()
+	c = s.headChunks
 
 	if c == nil {
 		if len(s.mmappedChunks) > 0 && s.mmappedChunks[len(s.mmappedChunks)-1].maxTime >= t {
@@ -1508,7 +1506,7 @@ func (s *memSeries) appendPreprocessor(t int64, e chunkenc.Encoding, o chunkOpts
 			return c, false, false
 		}
 		// There is no head chunk in this series yet, create the first chunk for the sample.
-		c = s.cutNewHeadChunk(t, e, o.chunkDiskMapper, o.chunkRange)
+		c = s.cutNewHeadChunk(t, e, o.chunkRange)
 		chunkCreated = true
 	}
 
@@ -1520,8 +1518,9 @@ func (s *memSeries) appendPreprocessor(t int64, e chunkenc.Encoding, o chunkOpts
 	if c.chunk.Encoding() != e {
 		// The chunk encoding expected by this append is different than the head chunk's
 		// encoding. So we cut a new chunk with the expected encoding.
-		c = s.cutNewHeadChunk(t, e, o.chunkDiskMapper, o.chunkRange)
+		c = s.cutNewHeadChunk(t, e, o.chunkRange)
 		chunkCreated = true
+
 	}
 
 	numSamples := c.chunk.NumSamples()
@@ -1545,7 +1544,7 @@ func (s *memSeries) appendPreprocessor(t int64, e chunkenc.Encoding, o chunkOpts
 	// as we expect more chunks to come.
 	// Note that next chunk will have its nextAt recalculated for the new rate.
 	if t >= s.nextAt || numSamples >= o.samplesPerChunk*2 {
-		c = s.cutNewHeadChunk(t, e, o.chunkDiskMapper, o.chunkRange)
+		c = s.cutNewHeadChunk(t, e, o.chunkRange)
 		chunkCreated = true
 	}
 
@@ -1565,36 +1564,37 @@ func computeChunkEndTime(start, cur, max int64) int64 {
 	return start + (max-start)/n
 }
 
-func (s *memSeries) cutNewHeadChunk(
-	mint int64, e chunkenc.Encoding, chunkDiskMapper *chunks.ChunkDiskMapper, chunkRange int64,
-) *memChunk {
-	s.mmapCurrentHeadChunk(chunkDiskMapper)
-
-	s.headChunk = &memChunk{
+func (s *memSeries) cutNewHeadChunk(mint int64, e chunkenc.Encoding, chunkRange int64) *memChunk {
+	// When cutting a new head chunk we create a new memChunk instance with .prev
+	// pointing at the current .headChunks, so it forms a linked list.
+	// All but first headChunks list elements will be m-mapped as soon as possible
+	// so this is a single element list most of the time.
+	s.headChunks = &memChunk{
 		minTime: mint,
 		maxTime: math.MinInt64,
+		prev:    s.headChunks,
 	}
 
 	if chunkenc.IsValidEncoding(e) {
 		var err error
-		s.headChunk.chunk, err = chunkenc.NewEmptyChunk(e)
+		s.headChunks.chunk, err = chunkenc.NewEmptyChunk(e)
 		if err != nil {
 			panic(err) // This should never happen.
 		}
 	} else {
-		s.headChunk.chunk = chunkenc.NewXORChunk()
+		s.headChunks.chunk = chunkenc.NewXORChunk()
 	}
 
 	// Set upper bound on when the next chunk must be started. An earlier timestamp
 	// may be chosen dynamically at a later point.
 	s.nextAt = rangeForTimestamp(mint, chunkRange)
 
-	app, err := s.headChunk.chunk.Appender()
+	app, err := s.headChunks.chunk.Appender()
 	if err != nil {
 		panic(err)
 	}
 	s.app = app
-	return s.headChunk
+	return s.headChunks
 }
 
 // cutNewOOOHeadChunk cuts a new OOO chunk and m-maps the old chunk.
@@ -1636,19 +1636,32 @@ func (s *memSeries) mmapCurrentOOOHeadChunk(chunkDiskMapper *chunks.ChunkDiskMap
 	return chunkRefs
 }
 
-func (s *memSeries) mmapCurrentHeadChunk(chunkDiskMapper *chunks.ChunkDiskMapper) {
-	if s.headChunk == nil || s.headChunk.chunk.NumSamples() == 0 {
-		// There is no head chunk, so nothing to m-map here.
+// mmapChunks will m-map all but first chunk on s.headChunks list.
+func (s *memSeries) mmapChunks(chunkDiskMapper *chunks.ChunkDiskMapper) (count int) {
+	if s.headChunks == nil || s.headChunks.prev == nil {
+		// There is none or only one head chunk, so nothing to m-map here.
 		return
 	}
 
-	chunkRef := chunkDiskMapper.WriteChunk(s.ref, s.headChunk.minTime, s.headChunk.maxTime, s.headChunk.chunk, false, handleChunkWriteError)
-	s.mmappedChunks = append(s.mmappedChunks, &mmappedChunk{
-		ref:        chunkRef,
-		numSamples: uint16(s.headChunk.chunk.NumSamples()),
-		minTime:    s.headChunk.minTime,
-		maxTime:    s.headChunk.maxTime,
-	})
+	// Write chunks starting from the oldest one and stop before we get to current s.headChunk.
+	// If we have this chain: s.headChunk{t4} -> t3 -> t2 -> t1 -> t0
+	// then we need to write chunks t0 to t3, but skip s.headChunks.
+	for i := s.headChunks.len() - 1; i > 0; i-- {
+		chk := s.headChunks.atOffset(i)
+		chunkRef := chunkDiskMapper.WriteChunk(s.ref, chk.minTime, chk.maxTime, chk.chunk, false, handleChunkWriteError)
+		s.mmappedChunks = append(s.mmappedChunks, &mmappedChunk{
+			ref:        chunkRef,
+			numSamples: uint16(chk.chunk.NumSamples()),
+			minTime:    chk.minTime,
+			maxTime:    chk.maxTime,
+		})
+		count++
+	}
+
+	// Once we've written out all chunks except s.headChunks we need to unlink these from s.headChunk.
+	s.headChunks.prev = nil
+
+	return count
 }
 
 func handleChunkWriteError(err error) {

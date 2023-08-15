@@ -100,6 +100,7 @@ type ScrapePoolsRetriever interface {
 type TargetRetriever interface {
 	TargetsActive() map[string][]*scrape.Target
 	TargetsDropped() map[string][]*scrape.Target
+	TargetsDroppedCounts() map[string]int
 }
 
 // AlertmanagerRetriever provides a list of all/dropped AlertManager URLs.
@@ -217,6 +218,7 @@ type API struct {
 
 	remoteWriteHandler http.Handler
 	remoteReadHandler  http.Handler
+	otlpWriteHandler   http.Handler
 
 	codecs []Codec
 }
@@ -249,6 +251,8 @@ func NewAPI(
 	gatherer prometheus.Gatherer,
 	registerer prometheus.Registerer,
 	statsRenderer StatsRenderer,
+	rwEnabled bool,
+	otlpEnabled bool,
 ) *API {
 	a := &API{
 		QueryEngine:       qe,
@@ -285,8 +289,15 @@ func NewAPI(
 		a.statsRenderer = statsRenderer
 	}
 
-	if ap != nil {
+	if ap == nil && (rwEnabled || otlpEnabled) {
+		panic("remote write or otlp write enabled, but no appender passed in.")
+	}
+
+	if rwEnabled {
 		a.remoteWriteHandler = remote.NewWriteHandler(logger, registerer, ap)
+	}
+	if otlpEnabled {
+		a.otlpWriteHandler = remote.NewOTLPWriteHandler(logger, ap)
 	}
 
 	return a
@@ -380,6 +391,7 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/status/walreplay", api.serveWALReplayStatus)
 	r.Post("/read", api.ready(api.remoteRead))
 	r.Post("/write", api.ready(api.remoteWrite))
+	r.Post("/otlp/v1/metrics", api.ready(api.otlpWrite))
 
 	r.Get("/alerts", wrapAgent(api.alerts))
 	r.Get("/rules", wrapAgent(api.rules))
@@ -887,8 +899,9 @@ type DroppedTarget struct {
 
 // TargetDiscovery has all the active targets.
 type TargetDiscovery struct {
-	ActiveTargets  []*Target        `json:"activeTargets"`
-	DroppedTargets []*DroppedTarget `json:"droppedTargets"`
+	ActiveTargets       []*Target        `json:"activeTargets"`
+	DroppedTargets      []*DroppedTarget `json:"droppedTargets"`
+	DroppedTargetCounts map[string]int   `json:"droppedTargetCounts"`
 }
 
 // GlobalURLOptions contains fields used for deriving the global URL for local targets.
@@ -1027,6 +1040,9 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 		}
 	} else {
 		res.ActiveTargets = []*Target{}
+	}
+	if showDropped {
+		res.DroppedTargetCounts = api.targetRetriever(r.Context()).TargetsDroppedCounts()
 	}
 	if showDropped {
 		targetsDropped := api.targetRetriever(r.Context()).TargetsDropped()
@@ -1578,6 +1594,14 @@ func (api *API) remoteWrite(w http.ResponseWriter, r *http.Request) {
 		api.remoteWriteHandler.ServeHTTP(w, r)
 	} else {
 		http.Error(w, "remote write receiver needs to be enabled with --web.enable-remote-write-receiver", http.StatusNotFound)
+	}
+}
+
+func (api *API) otlpWrite(w http.ResponseWriter, r *http.Request) {
+	if api.otlpWriteHandler != nil {
+		api.otlpWriteHandler.ServeHTTP(w, r)
+	} else {
+		http.Error(w, "otlp write receiver needs to be enabled with --enable-feature=otlp-write-receiver", http.StatusNotFound)
 	}
 }
 

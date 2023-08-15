@@ -137,6 +137,14 @@ func (t testTargetRetriever) TargetsDropped() map[string][]*scrape.Target {
 	return t.droppedTargets
 }
 
+func (t testTargetRetriever) TargetsDroppedCounts() map[string]int {
+	r := make(map[string]int)
+	for k, v := range t.droppedTargets {
+		r[k] = len(v)
+	}
+	return r
+}
+
 func (t *testTargetRetriever) SetMetadataStoreForTargets(identifier string, metadata scrape.MetricMetadataStore) error {
 	targets, ok := t.activeTargets[identifier]
 
@@ -1384,6 +1392,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 						},
 					},
 				},
+				DroppedTargetCounts: map[string]int{"blackbox": 1},
 			},
 		},
 		{
@@ -1436,6 +1445,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 						},
 					},
 				},
+				DroppedTargetCounts: map[string]int{"blackbox": 1},
 			},
 		},
 		{
@@ -1498,6 +1508,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 						},
 					},
 				},
+				DroppedTargetCounts: map[string]int{"blackbox": 1},
 			},
 		},
 		// With a matching metric.
@@ -3417,27 +3428,57 @@ func TestReturnAPIError(t *testing.T) {
 var testResponseWriter = httptest.ResponseRecorder{}
 
 func BenchmarkRespond(b *testing.B) {
-	b.ReportAllocs()
-	request, err := http.NewRequest(http.MethodGet, "/does-not-matter", nil)
-	require.NoError(b, err)
 	points := []promql.FPoint{}
 	for i := 0; i < 10000; i++ {
 		points = append(points, promql.FPoint{F: float64(i * 1000000), T: int64(i)})
 	}
-	response := &QueryData{
-		ResultType: parser.ValueTypeMatrix,
-		Result: promql.Matrix{
-			promql.Series{
-				Floats: points,
-				Metric: labels.EmptyLabels(),
-			},
-		},
+	matrix := promql.Matrix{}
+	for i := 0; i < 1000; i++ {
+		matrix = append(matrix, promql.Series{
+			Metric: labels.FromStrings("__name__", fmt.Sprintf("series%v", i),
+				"label", fmt.Sprintf("series%v", i),
+				"label2", fmt.Sprintf("series%v", i)),
+			Floats: points[:10],
+		})
 	}
-	b.ResetTimer()
-	api := API{}
-	api.InstallCodec(JSONCodec{})
-	for n := 0; n < b.N; n++ {
-		api.respond(&testResponseWriter, request, response, nil)
+	series := []labels.Labels{}
+	for i := 0; i < 1000; i++ {
+		series = append(series, labels.FromStrings("__name__", fmt.Sprintf("series%v", i),
+			"label", fmt.Sprintf("series%v", i),
+			"label2", fmt.Sprintf("series%v", i)))
+	}
+
+	cases := []struct {
+		name     string
+		response interface{}
+	}{
+		{name: "10000 points no labels", response: &QueryData{
+			ResultType: parser.ValueTypeMatrix,
+			Result: promql.Matrix{
+				promql.Series{
+					Floats: points,
+					Metric: labels.EmptyLabels(),
+				},
+			},
+		}},
+		{name: "1000 labels", response: series},
+		{name: "1000 series 10 points", response: &QueryData{
+			ResultType: parser.ValueTypeMatrix,
+			Result:     matrix,
+		}},
+	}
+	for _, c := range cases {
+		b.Run(c.name, func(b *testing.B) {
+			b.ReportAllocs()
+			request, err := http.NewRequest(http.MethodGet, "/does-not-matter", nil)
+			require.NoError(b, err)
+			b.ResetTimer()
+			api := API{}
+			api.InstallCodec(JSONCodec{})
+			for n := 0; n < b.N; n++ {
+				api.respond(&testResponseWriter, request, c.response, nil)
+			}
+		})
 	}
 }
 

@@ -824,13 +824,9 @@ func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
 	if !ok {
 		t.Fatalf("'%v' should be present in target groups", pkey)
 	}
-	group, ok := targetGroups[""]
-	if !ok {
-		t.Fatalf("missing '' key in target groups %v", targetGroups)
-	}
-
-	if len(group.Targets) != 0 {
-		t.Fatalf("Invalid number of targets: expected 0, got %d", len(group.Targets))
+	_, ok = targetGroups[""]
+	if ok {
+		t.Fatalf("Target groups should be empty, got %v", targetGroups)
 	}
 }
 

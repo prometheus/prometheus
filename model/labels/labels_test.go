@@ -472,16 +472,22 @@ func BenchmarkLabels_Get(b *testing.B) {
 			for _, scenario := range []struct {
 				desc, label string
 			}{
-				{"get first label", allLabels[0].Name},
-				{"get middle label", allLabels[size/2].Name},
-				{"get last label", allLabels[size-1].Name},
-				{"get not-found label", "benchmark"},
+				{"first label", allLabels[0].Name},
+				{"middle label", allLabels[size/2].Name},
+				{"last label", allLabels[size-1].Name},
+				{"not-found label", "benchmark"},
 			} {
 				b.Run(scenario.desc, func(b *testing.B) {
-					b.ResetTimer()
-					for i := 0; i < b.N; i++ {
-						_ = labels.Get(scenario.label)
-					}
+					b.Run("get", func(b *testing.B) {
+						for i := 0; i < b.N; i++ {
+							_ = labels.Get(scenario.label)
+						}
+					})
+					b.Run("has", func(b *testing.B) {
+						for i := 0; i < b.N; i++ {
+							_ = labels.Has(scenario.label)
+						}
+					})
 				})
 			}
 		})

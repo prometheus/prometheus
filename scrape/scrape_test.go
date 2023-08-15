@@ -88,6 +88,7 @@ func TestDroppedTargetsList(t *testing.T) {
 					SourceLabels: model.LabelNames{"job"},
 				},
 			},
+			KeepDroppedTargets: 1,
 		}
 		tgs = []*targetgroup.Group{
 			{
