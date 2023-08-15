@@ -11,6 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// nolint:revive // Many unsued function arguments in this file by design.
 package v1
 
 import (
@@ -133,6 +134,8 @@ func createPrometheusAPI(q storage.SampleAndChunkQueryable) *route.Router {
 		prometheus.DefaultGatherer,
 		nil,
 		nil,
+		false,
+		false,
 	)
 
 	promRouter := route.New().WithPrefix("/api/v1")
@@ -224,6 +227,11 @@ func (DummyTargetRetriever) TargetsActive() map[string][]*scrape.Target {
 // TargetsDropped implements targetRetriever.
 func (DummyTargetRetriever) TargetsDropped() map[string][]*scrape.Target {
 	return map[string][]*scrape.Target{}
+}
+
+// TargetsDroppedCounts implements targetRetriever.
+func (DummyTargetRetriever) TargetsDroppedCounts() map[string]int {
+	return nil
 }
 
 // DummyAlertmanagerRetriever implements AlertmanagerRetriever.

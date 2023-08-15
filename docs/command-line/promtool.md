@@ -14,6 +14,7 @@ Tooling for the Prometheus monitoring system.
 | --- | --- |
 | <code class="text-nowrap">-h</code>, <code class="text-nowrap">--help</code> | Show context-sensitive help (also try --help-long and --help-man). |
 | <code class="text-nowrap">--version</code> | Show application version. |
+| <code class="text-nowrap">--experimental</code> | Enable experimental commands. |
 | <code class="text-nowrap">--enable-feature</code> | Comma separated feature names to enable (only PromQL related and no-default-scrape-port). See https://prometheus.io/docs/prometheus/latest/feature_flags/ for the options and more details. |
 
 
@@ -27,8 +28,10 @@ Tooling for the Prometheus monitoring system.
 | check | Check the resources for validity. |
 | query | Run query against a Prometheus server. |
 | debug | Fetch debug information. |
+| push | Push to a Prometheus server. |
 | test | Unit testing. |
 | tsdb | Run tsdb commands. |
+| promql | PromQL formatting and editing. Requires the --experimental flag. |
 
 
 
@@ -130,6 +133,38 @@ Check if the web config files are valid or not.
 
 
 
+##### `promtool check healthy`
+
+Check if the Prometheus server is healthy.
+
+
+
+###### Flags
+
+| Flag | Description | Default |
+| --- | --- | --- |
+| <code class="text-nowrap">--http.config.file</code> | HTTP client configuration file for promtool to connect to Prometheus. |  |
+| <code class="text-nowrap">--url</code> | The URL for the Prometheus server. | `http://localhost:9090` |
+
+
+
+
+##### `promtool check ready`
+
+Check if the Prometheus server is ready.
+
+
+
+###### Flags
+
+| Flag | Description | Default |
+| --- | --- | --- |
+| <code class="text-nowrap">--http.config.file</code> | HTTP client configuration file for promtool to connect to Prometheus. |  |
+| <code class="text-nowrap">--url</code> | The URL for the Prometheus server. | `http://localhost:9090` |
+
+
+
+
 ##### `promtool check rules`
 
 Check if the rule files are valid or not.
@@ -148,9 +183,9 @@ Check if the rule files are valid or not.
 
 ###### Arguments
 
-| Argument | Description | Required |
-| --- | --- | --- |
-| rule-files | The rule files to check. | Yes |
+| Argument | Description |
+| --- | --- |
+| rule-files | The rule files to check, default is read from standard input. |
 
 
 
@@ -336,6 +371,48 @@ Fetch all debug information.
 | Argument | Description | Required |
 | --- | --- | --- |
 | server | Prometheus server to get all debug information from. | Yes |
+
+
+
+
+### `promtool push`
+
+Push to a Prometheus server.
+
+
+
+#### Flags
+
+| Flag | Description |
+| --- | --- |
+| <code class="text-nowrap">--http.config.file</code> | HTTP client configuration file for promtool to connect to Prometheus. |
+
+
+
+
+##### `promtool push metrics`
+
+Push metrics to a prometheus remote write (for testing purpose only).
+
+
+
+###### Flags
+
+| Flag | Description | Default |
+| --- | --- | --- |
+| <code class="text-nowrap">--label</code> | Label to attach to metrics. Can be specified multiple times. | `job=promtool` |
+| <code class="text-nowrap">--timeout</code> | The time to wait for pushing metrics. | `30s` |
+| <code class="text-nowrap">--header</code> | Prometheus remote write header. |  |
+
+
+
+
+###### Arguments
+
+| Argument | Description | Required |
+| --- | --- | --- |
+| remote-write-url | Prometheus remote write url to push metrics. | Yes |
+| metric-files | The metric files to push, default is read from standard input. |  |
 
 
 
@@ -532,5 +609,74 @@ Create blocks of data for new recording rules.
 | Argument | Description | Required |
 | --- | --- | --- |
 | rule-files | A list of one or more files containing recording rules to be backfilled. All recording rules listed in the files will be backfilled. Alerting rules are not evaluated. | Yes |
+
+
+
+
+### `promtool promql`
+
+PromQL formatting and editing. Requires the `--experimental` flag.
+
+
+
+##### `promtool promql format`
+
+Format PromQL query to pretty printed form.
+
+
+
+###### Arguments
+
+| Argument | Description | Required |
+| --- | --- | --- |
+| query | PromQL query. | Yes |
+
+
+
+
+##### `promtool promql label-matchers`
+
+Edit label matchers contained within an existing PromQL query.
+
+
+
+##### `promtool promql label-matchers set`
+
+Set a label matcher in the query.
+
+
+
+###### Flags
+
+| Flag | Description | Default |
+| --- | --- | --- |
+| <code class="text-nowrap">-t</code>, <code class="text-nowrap">--type</code> | Type of the label matcher to set. | `=` |
+
+
+
+
+###### Arguments
+
+| Argument | Description | Required |
+| --- | --- | --- |
+| query | PromQL query. | Yes |
+| name | Name of the label matcher to set. | Yes |
+| value | Value of the label matcher to set. | Yes |
+
+
+
+
+##### `promtool promql label-matchers delete`
+
+Delete a label from the query.
+
+
+
+###### Arguments
+
+| Argument | Description | Required |
+| --- | --- | --- |
+| query | PromQL query. | Yes |
+| name | Name of the label to delete. | Yes |
 
 

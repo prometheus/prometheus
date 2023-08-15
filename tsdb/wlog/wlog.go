@@ -22,7 +22,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -30,8 +29,10 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/golang/snappy"
+	"github.com/klauspost/compress/zstd"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 )
@@ -164,6 +165,26 @@ func OpenReadSegment(fn string) (*Segment, error) {
 	return &Segment{SegmentFile: f, i: k, dir: filepath.Dir(fn)}, nil
 }
 
+type CompressionType string
+
+const (
+	CompressionNone   CompressionType = "none"
+	CompressionSnappy CompressionType = "snappy"
+	CompressionZstd   CompressionType = "zstd"
+)
+
+// ParseCompressionType parses the two compression-related configuration values and returns the CompressionType. If
+// compression is enabled but the compressType is unrecognized, we default to Snappy compression.
+func ParseCompressionType(compress bool, compressType string) CompressionType {
+	if compress {
+		if compressType == "zstd" {
+			return CompressionZstd
+		}
+		return CompressionSnappy
+	}
+	return CompressionNone
+}
+
 // WL is a write log that stores records in segment files.
 // It must be read from start to end once before logging new data.
 // If an error occurs during read, the repair procedure must be called
@@ -185,8 +206,11 @@ type WL struct {
 	stopc       chan chan struct{}
 	actorc      chan func()
 	closed      bool // To allow calling Close() more than once without blocking.
-	compress    bool
-	snappyBuf   []byte
+	compress    CompressionType
+	compressBuf []byte
+	zstdWriter  *zstd.Encoder
+
+	WriteNotified WriteNotified
 
 	metrics *wlMetrics
 }
@@ -263,13 +287,13 @@ func newWLMetrics(w *WL, r prometheus.Registerer) *wlMetrics {
 }
 
 // New returns a new WAL over the given directory.
-func New(logger log.Logger, reg prometheus.Registerer, dir string, compress bool) (*WL, error) {
+func New(logger log.Logger, reg prometheus.Registerer, dir string, compress CompressionType) (*WL, error) {
 	return NewSize(logger, reg, dir, DefaultSegmentSize, compress)
 }
 
 // NewSize returns a new write log over the given directory.
 // New segments are created with the specified size.
-func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSize int, compress bool) (*WL, error) {
+func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSize int, compress CompressionType) (*WL, error) {
 	if segmentSize%pageSize != 0 {
 		return nil, errors.New("invalid segment size")
 	}
@@ -279,6 +303,16 @@ func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSi
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
+
+	var zstdWriter *zstd.Encoder
+	if compress == CompressionZstd {
+		var err error
+		zstdWriter, err = zstd.NewWriter(nil)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	w := &WL{
 		dir:         dir,
 		logger:      logger,
@@ -287,6 +321,7 @@ func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSi
 		actorc:      make(chan func(), 100),
 		stopc:       make(chan chan struct{}),
 		compress:    compress,
+		zstdWriter:  zstdWriter,
 	}
 	prefix := "prometheus_tsdb_wal_"
 	if filepath.Base(dir) == WblDirName {
@@ -325,22 +360,32 @@ func Open(logger log.Logger, dir string) (*WL, error) {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
+	zstdWriter, err := zstd.NewWriter(nil)
+	if err != nil {
+		return nil, err
+	}
+
 	w := &WL{
-		dir:    dir,
-		logger: logger,
+		dir:        dir,
+		logger:     logger,
+		zstdWriter: zstdWriter,
 	}
 
 	return w, nil
 }
 
-// CompressionEnabled returns if compression is enabled on this WAL.
-func (w *WL) CompressionEnabled() bool {
+// CompressionType returns if compression is enabled on this WAL.
+func (w *WL) CompressionType() CompressionType {
 	return w.compress
 }
 
 // Dir returns the directory of the WAL.
 func (w *WL) Dir() string {
 	return w.dir
+}
+
+func (w *WL) SetWriteNotified(wn WriteNotified) {
+	w.WriteNotified = wn
 }
 
 func (w *WL) run() {
@@ -577,9 +622,10 @@ func (w *WL) flushPage(clear bool) error {
 }
 
 // First Byte of header format:
-// [ 4 bits unallocated] [1 bit snappy compression flag] [ 3 bit record type ]
+// [3 bits unallocated] [1 bit zstd compression flag] [1 bit snappy compression flag] [3 bit record type ]
 const (
 	snappyMask  = 1 << 3
+	zstdMask    = 1 << 4
 	recTypeMask = snappyMask - 1
 )
 
@@ -649,17 +695,23 @@ func (w *WL) log(rec []byte, final bool) error {
 
 	// Compress the record before calculating if a new segment is needed.
 	compressed := false
-	if w.compress &&
-		len(rec) > 0 &&
+	if w.compress == CompressionSnappy && len(rec) > 0 {
 		// If MaxEncodedLen is less than 0 the record is too large to be compressed.
-		snappy.MaxEncodedLen(len(rec)) >= 0 {
-		// The snappy library uses `len` to calculate if we need a new buffer.
-		// In order to allocate as few buffers as possible make the length
-		// equal to the capacity.
-		w.snappyBuf = w.snappyBuf[:cap(w.snappyBuf)]
-		w.snappyBuf = snappy.Encode(w.snappyBuf, rec)
-		if len(w.snappyBuf) < len(rec) {
-			rec = w.snappyBuf
+		if len(rec) > 0 && snappy.MaxEncodedLen(len(rec)) >= 0 {
+			// The snappy library uses `len` to calculate if we need a new buffer.
+			// In order to allocate as few buffers as possible make the length
+			// equal to the capacity.
+			w.compressBuf = w.compressBuf[:cap(w.compressBuf)]
+			w.compressBuf = snappy.Encode(w.compressBuf, rec)
+			if len(w.compressBuf) < len(rec) {
+				rec = w.compressBuf
+				compressed = true
+			}
+		}
+	} else if w.compress == CompressionZstd && len(rec) > 0 {
+		w.compressBuf = w.zstdWriter.EncodeAll(rec, w.compressBuf[:0])
+		if len(w.compressBuf) < len(rec) {
+			rec = w.compressBuf
 			compressed = true
 		}
 	}
@@ -700,7 +752,11 @@ func (w *WL) log(rec []byte, final bool) error {
 			typ = recMiddle
 		}
 		if compressed {
-			typ |= snappyMask
+			if w.compress == CompressionSnappy {
+				typ |= snappyMask
+			} else if w.compress == CompressionZstd {
+				typ |= zstdMask
+			}
 		}
 
 		buf[0] = byte(typ)
@@ -853,8 +909,8 @@ func listSegments(dir string) (refs []segmentRef, err error) {
 		}
 		refs = append(refs, segmentRef{name: fn, index: k})
 	}
-	sort.Slice(refs, func(i, j int) bool {
-		return refs[i].index < refs[j].index
+	slices.SortFunc(refs, func(a, b segmentRef) bool {
+		return a.index < b.index
 	})
 	for i := 0; i < len(refs)-1; i++ {
 		if refs[i].index+1 != refs[i+1].index {

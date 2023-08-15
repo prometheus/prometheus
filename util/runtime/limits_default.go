@@ -18,16 +18,18 @@ package runtime
 
 import (
 	"fmt"
+	"math"
 	"syscall"
 )
 
-// syscall.RLIM_INFINITY is a constant and its default type is int.
-// It needs to be converted to an int64 variable to be compared with uint64 values.
-// See https://golang.org/ref/spec#Conversions
-var unlimited int64 = syscall.RLIM_INFINITY
+// syscall.RLIM_INFINITY is a constant.
+// Its type is int on most architectures but there are exceptions such as loong64.
+// Uniform it to uint accorind to the standard.
+// https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/sys_resource.h.html
+var unlimited uint64 = syscall.RLIM_INFINITY & math.MaxUint64
 
 func limitToString(v uint64, unit string) string {
-	if v == uint64(unlimited) {
+	if v == unlimited {
 		return "unlimited"
 	}
 	return fmt.Sprintf("%d%s", v, unit)
@@ -39,7 +41,9 @@ func getLimits(resource int, unit string) string {
 	if err != nil {
 		panic("syscall.Getrlimit failed: " + err.Error())
 	}
-	return fmt.Sprintf("(soft=%s, hard=%s)", limitToString(uint64(rlimit.Cur), unit), limitToString(uint64(rlimit.Max), unit))
+	// rlimit.Cur and rlimit.Max are int64 on some platforms, such as dragonfly.
+	// We need to cast them explicitly to uint64.
+	return fmt.Sprintf("(soft=%s, hard=%s)", limitToString(uint64(rlimit.Cur), unit), limitToString(uint64(rlimit.Max), unit)) //nolint:unconvert
 }
 
 // FdLimits returns the soft and hard limits for file descriptors.

@@ -22,23 +22,39 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
+	otlptranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite"
 )
 
 type writeHandler struct {
 	logger     log.Logger
 	appendable storage.Appendable
+
+	samplesWithInvalidLabelsTotal prometheus.Counter
 }
 
 // NewWriteHandler creates a http.Handler that accepts remote write requests and
 // writes them to the provided appendable.
-func NewWriteHandler(logger log.Logger, appendable storage.Appendable) http.Handler {
-	return &writeHandler{
+func NewWriteHandler(logger log.Logger, reg prometheus.Registerer, appendable storage.Appendable) http.Handler {
+	h := &writeHandler{
 		logger:     logger,
 		appendable: appendable,
+
+		samplesWithInvalidLabelsTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: "prometheus",
+			Subsystem: "api",
+			Name:      "remote_write_invalid_labels_samples_total",
+			Help:      "The total number of remote write samples which contains invalid labels.",
+		}),
 	}
+	if reg != nil {
+		reg.MustRegister(h.samplesWithInvalidLabelsTotal)
+	}
+	return h
 }
 
 func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -85,6 +101,7 @@ func (h *writeHandler) checkAppendExemplarError(err error, e exemplar.Exemplar, 
 
 func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err error) {
 	outOfOrderExemplarErrs := 0
+	samplesWithInvalidLabels := 0
 
 	app := h.appendable.Appender(ctx)
 	defer func() {
@@ -98,8 +115,14 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 	var exemplarErr error
 	for _, ts := range req.Timeseries {
 		labels := labelProtosToLabels(ts.Labels)
+		if !labels.IsValid() {
+			level.Warn(h.logger).Log("msg", "Invalid metric names or labels", "got", labels.String())
+			samplesWithInvalidLabels++
+			continue
+		}
+		var ref storage.SeriesRef
 		for _, s := range ts.Samples {
-			_, err = app.Append(0, labels, s.Timestamp, s.Value)
+			ref, err = app.Append(ref, labels, s.Timestamp, s.Value)
 			if err != nil {
 				unwrappedErr := errors.Unwrap(err)
 				if unwrappedErr == nil {
@@ -125,8 +148,8 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 		}
 
 		for _, hp := range ts.Histograms {
-			if hp.GetCountFloat() > 0 || hp.GetZeroCountFloat() > 0 { // It is a float histogram.
-				fhs := HistogramProtoToFloatHistogram(hp)
+			if hp.IsFloatHistogram() {
+				fhs := FloatHistogramProtoToFloatHistogram(hp)
 				_, err = app.AppendHistogram(0, labels, hp.Timestamp, nil, fhs)
 			} else {
 				hs := HistogramProtoToHistogram(hp)
@@ -150,6 +173,66 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 	if outOfOrderExemplarErrs > 0 {
 		_ = level.Warn(h.logger).Log("msg", "Error on ingesting out-of-order exemplars", "num_dropped", outOfOrderExemplarErrs)
 	}
+	if samplesWithInvalidLabels > 0 {
+		h.samplesWithInvalidLabelsTotal.Add(float64(samplesWithInvalidLabels))
+	}
 
 	return nil
+}
+
+// NewOTLPWriteHandler creates a http.Handler that accepts OTLP write requests and
+// writes them to the provided appendable.
+func NewOTLPWriteHandler(logger log.Logger, appendable storage.Appendable) http.Handler {
+	rwHandler := &writeHandler{
+		logger:     logger,
+		appendable: appendable,
+	}
+
+	return &otlpWriteHandler{
+		logger:    logger,
+		rwHandler: rwHandler,
+	}
+}
+
+type otlpWriteHandler struct {
+	logger    log.Logger
+	rwHandler *writeHandler
+}
+
+func (h *otlpWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	req, err := DecodeOTLPWriteRequest(r)
+	if err != nil {
+		level.Error(h.logger).Log("msg", "Error decoding remote write request", "err", err.Error())
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	prwMetricsMap, errs := otlptranslator.FromMetrics(req.Metrics(), otlptranslator.Settings{})
+	if errs != nil {
+		level.Warn(h.logger).Log("msg", "Error translating OTLP metrics to Prometheus write request", "err", errs)
+	}
+
+	prwMetrics := make([]prompb.TimeSeries, 0, len(prwMetricsMap))
+
+	for _, ts := range prwMetricsMap {
+		prwMetrics = append(prwMetrics, *ts)
+	}
+
+	err = h.rwHandler.write(r.Context(), &prompb.WriteRequest{
+		Timeseries: prwMetrics,
+	})
+
+	switch err {
+	case nil:
+	case storage.ErrOutOfOrderSample, storage.ErrOutOfBounds, storage.ErrDuplicateSampleForTimestamp:
+		// Indicated an out of order sample is a bad request to prevent retries.
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	default:
+		level.Error(h.logger).Log("msg", "Error appending remote write", "err", err.Error())
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
 }

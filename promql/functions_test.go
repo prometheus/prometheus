@@ -51,20 +51,21 @@ func TestDeriv(t *testing.T) {
 	// https://github.com/prometheus/prometheus/issues/7180
 	for i = 0; i < 15; i++ {
 		jitter := 12 * i % 2
-		a.Append(0, metric, int64(start+interval*i+jitter), 1)
+		a.Append(0, metric, start+interval*i+jitter, 1)
 	}
 
 	require.NoError(t, a.Commit())
 
-	query, err := engine.NewInstantQuery(storage, nil, "deriv(foo[30m])", timestamp.Time(1493712846939))
+	ctx := context.Background()
+	query, err := engine.NewInstantQuery(ctx, storage, nil, "deriv(foo[30m])", timestamp.Time(1493712846939))
 	require.NoError(t, err)
 
-	result := query.Exec(context.Background())
+	result := query.Exec(ctx)
 	require.NoError(t, result.Err)
 
 	vec, _ := result.Vector()
 	require.Equal(t, 1, len(vec), "Expected 1 result, got %d", len(vec))
-	require.Equal(t, 0.0, vec[0].V, "Expected 0.0 as value, got %f", vec[0].V)
+	require.Equal(t, 0.0, vec[0].F, "Expected 0.0 as value, got %f", vec[0].F)
 }
 
 func TestFunctionList(t *testing.T) {

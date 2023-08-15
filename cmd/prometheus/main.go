@@ -12,6 +12,7 @@
 // limitations under the License.
 
 // The main package for the Prometheus server executable.
+// nolint:revive // Many unsued function arguments in this file by design.
 package main
 
 import (
@@ -70,6 +71,7 @@ import (
 	"github.com/prometheus/prometheus/tracing"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/agent"
+	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/documentcli"
 	"github.com/prometheus/prometheus/util/logging"
 	prom_runtime "github.com/prometheus/prometheus/util/runtime"
@@ -168,6 +170,9 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 			case "remote-write-receiver":
 				c.web.EnableRemoteWriteReceiver = true
 				level.Warn(logger).Log("msg", "Remote write receiver enabled via feature flag remote-write-receiver. This is DEPRECATED. Use --web.enable-remote-write-receiver.")
+			case "otlp-write-receiver":
+				c.web.EnableOTLPWriteReceiver = true
+				level.Info(logger).Log("msg", "Experimental OTLP write receiver enabled")
 			case "expand-external-labels":
 				c.enableExpandExternalLabels = true
 				level.Info(logger).Log("msg", "Experimental expand-external-labels enabled")
@@ -333,8 +338,14 @@ func main() {
 	serverOnlyFlag(a, "storage.tsdb.wal-compression", "Compress the tsdb WAL.").
 		Hidden().Default("true").BoolVar(&cfg.tsdb.WALCompression)
 
+	serverOnlyFlag(a, "storage.tsdb.wal-compression-type", "Compression algorithm for the tsdb WAL.").
+		Hidden().Default(string(wlog.CompressionSnappy)).EnumVar(&cfg.tsdb.WALCompressionType, string(wlog.CompressionSnappy), string(wlog.CompressionZstd))
+
 	serverOnlyFlag(a, "storage.tsdb.head-chunks-write-queue-size", "Size of the queue through which head chunks are written to the disk to be m-mapped, 0 disables the queue completely. Experimental.").
 		Default("0").IntVar(&cfg.tsdb.HeadChunksWriteQueueSize)
+
+	serverOnlyFlag(a, "storage.tsdb.samples-per-chunk", "Target number of samples per chunk.").
+		Default("120").Hidden().IntVar(&cfg.tsdb.SamplesPerChunk)
 
 	agentOnlyFlag(a, "storage.agent.path", "Base path for metrics storage.").
 		Default("data-agent/").StringVar(&cfg.agentStoragePath)
@@ -345,6 +356,9 @@ func main() {
 
 	agentOnlyFlag(a, "storage.agent.wal-compression", "Compress the agent WAL.").
 		Default("true").BoolVar(&cfg.agent.WALCompression)
+
+	agentOnlyFlag(a, "storage.agent.wal-compression-type", "Compression algorithm for the agent WAL.").
+		Hidden().Default(string(wlog.CompressionSnappy)).EnumVar(&cfg.agent.WALCompressionType, string(wlog.CompressionSnappy), string(wlog.CompressionZstd))
 
 	agentOnlyFlag(a, "storage.agent.wal-truncate-frequency",
 		"The frequency at which to truncate the WAL and remove old data.").
@@ -409,7 +423,7 @@ func main() {
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: agent, exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-at-modifier, promql-negative-offset, promql-per-step-stats, remote-write-receiver (DEPRECATED), extra-scrape-metrics, new-service-discovery-manager, auto-gomaxprocs, no-default-scrape-port, native-histograms. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: agent, exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-at-modifier, promql-negative-offset, promql-per-step-stats, remote-write-receiver (DEPRECATED), extra-scrape-metrics, new-service-discovery-manager, auto-gomaxprocs, no-default-scrape-port, native-histograms, otlp-write-receiver. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		Default("").StringsVar(&cfg.featureList)
 
 	promlogflag.AddFlags(a, &cfg.promlogConfig)
@@ -425,7 +439,7 @@ func main() {
 
 	_, err := a.Parse(os.Args[1:])
 	if err != nil {
-		fmt.Fprintln(os.Stderr, fmt.Errorf("Error parsing commandline arguments: %w", err))
+		fmt.Fprintln(os.Stderr, fmt.Errorf("Error parsing command line arguments: %w", err))
 		a.Usage(os.Args[1:])
 		os.Exit(2)
 	}
@@ -490,7 +504,7 @@ func main() {
 		if cfgFile.StorageConfig.ExemplarsConfig == nil {
 			cfgFile.StorageConfig.ExemplarsConfig = &config.DefaultExemplarsConfig
 		}
-		cfg.tsdb.MaxExemplars = int64(cfgFile.StorageConfig.ExemplarsConfig.MaxExemplars)
+		cfg.tsdb.MaxExemplars = cfgFile.StorageConfig.ExemplarsConfig.MaxExemplars
 	}
 	if cfgFile.StorageConfig.TSDBConfig != nil {
 		cfg.tsdb.OutOfOrderTimeWindow = cfgFile.StorageConfig.TSDBConfig.OutOfOrderTimeWindow
@@ -1049,6 +1063,7 @@ func main() {
 
 				startTimeMargin := int64(2 * time.Duration(cfg.tsdb.MinBlockDuration).Seconds() * 1000)
 				localStorage.Set(db, startTimeMargin)
+				db.SetWriteNotified(remoteStorage)
 				close(dbOpen)
 				<-cancel
 				return nil
@@ -1481,11 +1496,11 @@ func (s *readyStorage) Snapshot(dir string, withHead bool) error {
 }
 
 // Stats implements the api_v1.TSDBAdminStats interface.
-func (s *readyStorage) Stats(statsByLabelName string) (*tsdb.Stats, error) {
+func (s *readyStorage) Stats(statsByLabelName string, limit int) (*tsdb.Stats, error) {
 	if x := s.get(); x != nil {
 		switch db := x.(type) {
 		case *tsdb.DB:
-			return db.Head().Stats(statsByLabelName), nil
+			return db.Head().Stats(statsByLabelName, limit), nil
 		case *agent.DB:
 			return nil, agent.ErrUnsupported
 		default:
@@ -1541,7 +1556,9 @@ type tsdbOptions struct {
 	MaxBytes                       units.Base2Bytes
 	NoLockfile                     bool
 	WALCompression                 bool
+	WALCompressionType             string
 	HeadChunksWriteQueueSize       int
+	SamplesPerChunk                int
 	StripeSize                     int
 	MinBlockDuration               model.Duration
 	MaxBlockDuration               model.Duration
@@ -1560,8 +1577,9 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		MaxBytes:                       int64(opts.MaxBytes),
 		NoLockfile:                     opts.NoLockfile,
 		AllowOverlappingCompaction:     true,
-		WALCompression:                 opts.WALCompression,
+		WALCompression:                 wlog.ParseCompressionType(opts.WALCompression, opts.WALCompressionType),
 		HeadChunksWriteQueueSize:       opts.HeadChunksWriteQueueSize,
+		SamplesPerChunk:                opts.SamplesPerChunk,
 		StripeSize:                     opts.StripeSize,
 		MinBlockDuration:               int64(time.Duration(opts.MinBlockDuration) / time.Millisecond),
 		MaxBlockDuration:               int64(time.Duration(opts.MaxBlockDuration) / time.Millisecond),
@@ -1578,6 +1596,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 type agentOptions struct {
 	WALSegmentSize         units.Base2Bytes
 	WALCompression         bool
+	WALCompressionType     string
 	StripeSize             int
 	TruncateFrequency      model.Duration
 	MinWALTime, MaxWALTime model.Duration
@@ -1587,7 +1606,7 @@ type agentOptions struct {
 func (opts agentOptions) ToAgentOptions() agent.Options {
 	return agent.Options{
 		WALSegmentSize:    int(opts.WALSegmentSize),
-		WALCompression:    opts.WALCompression,
+		WALCompression:    wlog.ParseCompressionType(opts.WALCompression, opts.WALCompressionType),
 		StripeSize:        opts.StripeSize,
 		TruncateFrequency: time.Duration(opts.TruncateFrequency),
 		MinWALTime:        durationToInt64Millis(time.Duration(opts.MinWALTime)),

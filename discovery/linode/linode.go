@@ -249,20 +249,20 @@ func (d *Discovery) refreshData(ctx context.Context) ([]*targetgroup.Group, erro
 				if detailedIP.Address != ip.String() {
 					continue
 				}
-
-				if detailedIP.Public && publicIPv4 == "" {
+				switch {
+				case detailedIP.Public && publicIPv4 == "":
 					publicIPv4 = detailedIP.Address
 
 					if detailedIP.RDNS != "" && detailedIP.RDNS != "null" {
 						publicIPv4RDNS = detailedIP.RDNS
 					}
-				} else if !detailedIP.Public && privateIPv4 == "" {
+				case !detailedIP.Public && privateIPv4 == "":
 					privateIPv4 = detailedIP.Address
 
 					if detailedIP.RDNS != "" && detailedIP.RDNS != "null" {
 						privateIPv4RDNS = detailedIP.RDNS
 					}
-				} else {
+				default:
 					extraIPs = append(extraIPs, detailedIP.Address)
 				}
 			}
@@ -304,10 +304,10 @@ func (d *Discovery) refreshData(ctx context.Context) ([]*targetgroup.Group, erro
 			linodeLabelGroup:              model.LabelValue(instance.Group),
 			linodeLabelHypervisor:         model.LabelValue(instance.Hypervisor),
 			linodeLabelBackups:            model.LabelValue(backupsStatus),
-			linodeLabelSpecsDiskBytes:     model.LabelValue(fmt.Sprintf("%d", instance.Specs.Disk<<20)),
-			linodeLabelSpecsMemoryBytes:   model.LabelValue(fmt.Sprintf("%d", instance.Specs.Memory<<20)),
+			linodeLabelSpecsDiskBytes:     model.LabelValue(fmt.Sprintf("%d", int64(instance.Specs.Disk)<<20)),
+			linodeLabelSpecsMemoryBytes:   model.LabelValue(fmt.Sprintf("%d", int64(instance.Specs.Memory)<<20)),
 			linodeLabelSpecsVCPUs:         model.LabelValue(fmt.Sprintf("%d", instance.Specs.VCPUs)),
-			linodeLabelSpecsTransferBytes: model.LabelValue(fmt.Sprintf("%d", instance.Specs.Transfer<<20)),
+			linodeLabelSpecsTransferBytes: model.LabelValue(fmt.Sprintf("%d", int64(instance.Specs.Transfer)<<20)),
 		}
 
 		addr := net.JoinHostPort(publicIPv4, strconv.FormatUint(uint64(d.port), 10))

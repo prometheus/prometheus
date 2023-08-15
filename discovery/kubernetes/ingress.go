@@ -28,7 +28,6 @@ import (
 	"k8s.io/client-go/util/workqueue"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/prometheus/prometheus/util/strutil"
 )
 
 var (
@@ -89,7 +88,7 @@ func (i *Ingress) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	}
 
 	go func() {
-		for i.process(ctx, ch) {
+		for i.process(ctx, ch) { // nolint:revive
 		}
 	}()
 
@@ -143,37 +142,22 @@ func ingressSourceFromNamespaceAndName(namespace, name string) string {
 }
 
 const (
-	ingressNameLabel               = metaLabelPrefix + "ingress_name"
-	ingressLabelPrefix             = metaLabelPrefix + "ingress_label_"
-	ingressLabelPresentPrefix      = metaLabelPrefix + "ingress_labelpresent_"
-	ingressAnnotationPrefix        = metaLabelPrefix + "ingress_annotation_"
-	ingressAnnotationPresentPrefix = metaLabelPrefix + "ingress_annotationpresent_"
-	ingressSchemeLabel             = metaLabelPrefix + "ingress_scheme"
-	ingressHostLabel               = metaLabelPrefix + "ingress_host"
-	ingressPathLabel               = metaLabelPrefix + "ingress_path"
-	ingressClassNameLabel          = metaLabelPrefix + "ingress_class_name"
+	ingressSchemeLabel    = metaLabelPrefix + "ingress_scheme"
+	ingressHostLabel      = metaLabelPrefix + "ingress_host"
+	ingressPathLabel      = metaLabelPrefix + "ingress_path"
+	ingressClassNameLabel = metaLabelPrefix + "ingress_class_name"
 )
 
 func ingressLabels(ingress ingressAdaptor) model.LabelSet {
 	// Each label and annotation will create two key-value pairs in the map.
-	ls := make(model.LabelSet, 2*(len(ingress.labels())+len(ingress.annotations()))+2)
-	ls[ingressNameLabel] = lv(ingress.name())
+	ls := make(model.LabelSet)
 	ls[namespaceLabel] = lv(ingress.namespace())
 	if cls := ingress.ingressClassName(); cls != nil {
 		ls[ingressClassNameLabel] = lv(*cls)
 	}
 
-	for k, v := range ingress.labels() {
-		ln := strutil.SanitizeLabelName(k)
-		ls[model.LabelName(ingressLabelPrefix+ln)] = lv(v)
-		ls[model.LabelName(ingressLabelPresentPrefix+ln)] = presentValue
-	}
+	addObjectMetaLabels(ls, ingress.getObjectMeta(), RoleIngress)
 
-	for k, v := range ingress.annotations() {
-		ln := strutil.SanitizeLabelName(k)
-		ls[model.LabelName(ingressAnnotationPrefix+ln)] = lv(v)
-		ls[model.LabelName(ingressAnnotationPresentPrefix+ln)] = presentValue
-	}
 	return ls
 }
 

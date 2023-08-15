@@ -450,7 +450,7 @@ func TestMigrateWAL_Empty(t *testing.T) {
 	wdir := path.Join(dir, "wal")
 
 	// Initialize empty WAL.
-	w, err := wlog.New(nil, nil, wdir, false)
+	w, err := wlog.New(nil, nil, wdir, wlog.CompressionNone)
 	require.NoError(t, err)
 	require.NoError(t, w.Close())
 
@@ -493,7 +493,7 @@ func TestMigrateWAL_Fuzz(t *testing.T) {
 	// Perform migration.
 	require.NoError(t, MigrateWAL(nil, wdir))
 
-	w, err := wlog.New(nil, nil, wdir, false)
+	w, err := wlog.New(nil, nil, wdir, wlog.CompressionNone)
 	require.NoError(t, err)
 
 	// We can properly write some new data after migration.

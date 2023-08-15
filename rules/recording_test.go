@@ -46,11 +46,13 @@ var ruleEvalTestScenarios = []struct {
 		expected: promql.Vector{
 			promql.Sample{
 				Metric: labels.FromStrings("__name__", "test_rule", "label_a", "1", "label_b", "3"),
-				Point:  promql.Point{V: 1, T: timestamp.FromTime(ruleEvaluationTime)},
+				F:      1,
+				T:      timestamp.FromTime(ruleEvaluationTime),
 			},
 			promql.Sample{
 				Metric: labels.FromStrings("__name__", "test_rule", "label_a", "2", "label_b", "4"),
-				Point:  promql.Point{V: 10, T: timestamp.FromTime(ruleEvaluationTime)},
+				F:      10,
+				T:      timestamp.FromTime(ruleEvaluationTime),
 			},
 		},
 	},
@@ -61,11 +63,13 @@ var ruleEvalTestScenarios = []struct {
 		expected: promql.Vector{
 			promql.Sample{
 				Metric: labels.FromStrings("__name__", "test_rule", "label_a", "1", "label_b", "3", "extra_from_rule", "foo"),
-				Point:  promql.Point{V: 1, T: timestamp.FromTime(ruleEvaluationTime)},
+				F:      1,
+				T:      timestamp.FromTime(ruleEvaluationTime),
 			},
 			promql.Sample{
 				Metric: labels.FromStrings("__name__", "test_rule", "label_a", "2", "label_b", "4", "extra_from_rule", "foo"),
-				Point:  promql.Point{V: 10, T: timestamp.FromTime(ruleEvaluationTime)},
+				F:      10,
+				T:      timestamp.FromTime(ruleEvaluationTime),
 			},
 		},
 	},
@@ -76,11 +80,13 @@ var ruleEvalTestScenarios = []struct {
 		expected: promql.Vector{
 			promql.Sample{
 				Metric: labels.FromStrings("__name__", "test_rule", "label_a", "from_rule", "label_b", "3"),
-				Point:  promql.Point{V: 1, T: timestamp.FromTime(ruleEvaluationTime)},
+				F:      1,
+				T:      timestamp.FromTime(ruleEvaluationTime),
 			},
 			promql.Sample{
 				Metric: labels.FromStrings("__name__", "test_rule", "label_a", "from_rule", "label_b", "4"),
-				Point:  promql.Point{V: 10, T: timestamp.FromTime(ruleEvaluationTime)},
+				F:      10,
+				T:      timestamp.FromTime(ruleEvaluationTime),
 			},
 		},
 	},
@@ -91,11 +97,13 @@ var ruleEvalTestScenarios = []struct {
 		expected: promql.Vector{
 			promql.Sample{
 				Metric: labels.FromStrings("__name__", "test_rule", "label_a", "1", "label_b", "3"),
-				Point:  promql.Point{V: 2, T: timestamp.FromTime(ruleEvaluationTime)},
+				F:      2,
+				T:      timestamp.FromTime(ruleEvaluationTime),
 			},
 			promql.Sample{
 				Metric: labels.FromStrings("__name__", "test_rule", "label_a", "2", "label_b", "4"),
-				Point:  promql.Point{V: 20, T: timestamp.FromTime(ruleEvaluationTime)},
+				F:      20,
+				T:      timestamp.FromTime(ruleEvaluationTime),
 			},
 		},
 	},
@@ -215,10 +223,10 @@ func TestRecordingRuleLimit(t *testing.T) {
 	evalTime := time.Unix(0, 0)
 
 	for _, test := range tests {
-		_, err := rule.Eval(suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil, test.limit)
-		if err != nil {
+		switch _, err := rule.Eval(suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil, test.limit); {
+		case err != nil:
 			require.EqualError(t, err, test.err)
-		} else if test.err != "" {
+		case test.err != "":
 			t.Errorf("Expected error %s, got none", test.err)
 		}
 	}

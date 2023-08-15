@@ -68,6 +68,15 @@ func mustParseURL(u string) *config.URL {
 	return &config.URL{URL: parsed}
 }
 
+const (
+	globBodySizeLimit         = 15 * units.MiB
+	globSampleLimit           = 1500
+	globTargetLimit           = 30
+	globLabelLimit            = 30
+	globLabelNameLengthLimit  = 200
+	globLabelValueLengthLimit = 200
+)
+
 var expectedConf = &Config{
 	GlobalConfig: GlobalConfig{
 		ScrapeInterval:     model.Duration(15 * time.Second),
@@ -76,6 +85,13 @@ var expectedConf = &Config{
 		QueryLogFile:       "",
 
 		ExternalLabels: labels.FromStrings("foo", "bar", "monitor", "codelab"),
+
+		BodySizeLimit:         globBodySizeLimit,
+		SampleLimit:           globSampleLimit,
+		TargetLimit:           globTargetLimit,
+		LabelLimit:            globLabelLimit,
+		LabelNameLengthLimit:  globLabelNameLengthLimit,
+		LabelValueLengthLimit: globLabelValueLengthLimit,
 	},
 
 	RuleFiles: []string{
@@ -165,10 +181,16 @@ var expectedConf = &Config{
 		{
 			JobName: "prometheus",
 
-			HonorLabels:     true,
-			HonorTimestamps: true,
-			ScrapeInterval:  model.Duration(15 * time.Second),
-			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+			HonorLabels:           true,
+			HonorTimestamps:       true,
+			ScrapeInterval:        model.Duration(15 * time.Second),
+			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			BodySizeLimit:         globBodySizeLimit,
+			SampleLimit:           globSampleLimit,
+			TargetLimit:           globTargetLimit,
+			LabelLimit:            globLabelLimit,
+			LabelNameLengthLimit:  globLabelNameLengthLimit,
+			LabelValueLengthLimit: globLabelValueLengthLimit,
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
@@ -261,11 +283,15 @@ var expectedConf = &Config{
 		{
 			JobName: "service-x",
 
-			HonorTimestamps: true,
-			ScrapeInterval:  model.Duration(50 * time.Second),
-			ScrapeTimeout:   model.Duration(5 * time.Second),
-			BodySizeLimit:   10 * units.MiB,
-			SampleLimit:     1000,
+			HonorTimestamps:       true,
+			ScrapeInterval:        model.Duration(50 * time.Second),
+			ScrapeTimeout:         model.Duration(5 * time.Second),
+			BodySizeLimit:         10 * units.MiB,
+			SampleLimit:           1000,
+			TargetLimit:           35,
+			LabelLimit:            35,
+			LabelNameLengthLimit:  210,
+			LabelValueLengthLimit: 210,
 
 			HTTPClientConfig: config.HTTPClientConfig{
 				BasicAuth: &config.BasicAuth{
@@ -352,9 +378,15 @@ var expectedConf = &Config{
 		{
 			JobName: "service-y",
 
-			HonorTimestamps: true,
-			ScrapeInterval:  model.Duration(15 * time.Second),
-			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps:       true,
+			ScrapeInterval:        model.Duration(15 * time.Second),
+			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			BodySizeLimit:         globBodySizeLimit,
+			SampleLimit:           globSampleLimit,
+			TargetLimit:           globTargetLimit,
+			LabelLimit:            globLabelLimit,
+			LabelNameLengthLimit:  globLabelNameLengthLimit,
+			LabelValueLengthLimit: globLabelValueLengthLimit,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -363,6 +395,7 @@ var expectedConf = &Config{
 			ServiceDiscoveryConfigs: discovery.Configs{
 				&consul.SDConfig{
 					Server:          "localhost:1234",
+					PathPrefix:      "/consul",
 					Token:           "mysecret",
 					Services:        []string{"nginx", "cache", "mysql"},
 					ServiceTags:     []string{"canary", "v1"},
@@ -398,9 +431,15 @@ var expectedConf = &Config{
 		{
 			JobName: "service-z",
 
-			HonorTimestamps: true,
-			ScrapeInterval:  model.Duration(15 * time.Second),
-			ScrapeTimeout:   model.Duration(10 * time.Second),
+			HonorTimestamps:       true,
+			ScrapeInterval:        model.Duration(15 * time.Second),
+			ScrapeTimeout:         model.Duration(10 * time.Second),
+			BodySizeLimit:         globBodySizeLimit,
+			SampleLimit:           globSampleLimit,
+			TargetLimit:           globTargetLimit,
+			LabelLimit:            globLabelLimit,
+			LabelNameLengthLimit:  globLabelNameLengthLimit,
+			LabelValueLengthLimit: globLabelValueLengthLimit,
 
 			MetricsPath: "/metrics",
 			Scheme:      "http",
@@ -423,9 +462,15 @@ var expectedConf = &Config{
 		{
 			JobName: "service-kubernetes",
 
-			HonorTimestamps: true,
-			ScrapeInterval:  model.Duration(15 * time.Second),
-			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps:       true,
+			ScrapeInterval:        model.Duration(15 * time.Second),
+			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			BodySizeLimit:         globBodySizeLimit,
+			SampleLimit:           globSampleLimit,
+			TargetLimit:           globTargetLimit,
+			LabelLimit:            globLabelLimit,
+			LabelNameLengthLimit:  globLabelNameLengthLimit,
+			LabelValueLengthLimit: globLabelValueLengthLimit,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -454,9 +499,15 @@ var expectedConf = &Config{
 		{
 			JobName: "service-kubernetes-namespaces",
 
-			HonorTimestamps: true,
-			ScrapeInterval:  model.Duration(15 * time.Second),
-			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps:       true,
+			ScrapeInterval:        model.Duration(15 * time.Second),
+			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			BodySizeLimit:         globBodySizeLimit,
+			SampleLimit:           globSampleLimit,
+			TargetLimit:           globTargetLimit,
+			LabelLimit:            globLabelLimit,
+			LabelNameLengthLimit:  globLabelNameLengthLimit,
+			LabelValueLengthLimit: globLabelValueLengthLimit,
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
@@ -485,9 +536,15 @@ var expectedConf = &Config{
 		{
 			JobName: "service-kuma",
 
-			HonorTimestamps: true,
-			ScrapeInterval:  model.Duration(15 * time.Second),
-			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps:       true,
+			ScrapeInterval:        model.Duration(15 * time.Second),
+			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			BodySizeLimit:         globBodySizeLimit,
+			SampleLimit:           globSampleLimit,
+			TargetLimit:           globTargetLimit,
+			LabelLimit:            globLabelLimit,
+			LabelNameLengthLimit:  globLabelNameLengthLimit,
+			LabelValueLengthLimit: globLabelValueLengthLimit,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -505,9 +562,15 @@ var expectedConf = &Config{
 		{
 			JobName: "service-marathon",
 
-			HonorTimestamps: true,
-			ScrapeInterval:  model.Duration(15 * time.Second),
-			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps:       true,
+			ScrapeInterval:        model.Duration(15 * time.Second),
+			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			BodySizeLimit:         globBodySizeLimit,
+			SampleLimit:           globSampleLimit,
+			TargetLimit:           globTargetLimit,
+			LabelLimit:            globLabelLimit,
+			LabelNameLengthLimit:  globLabelNameLengthLimit,
+			LabelValueLengthLimit: globLabelValueLengthLimit,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -534,9 +597,15 @@ var expectedConf = &Config{
 		{
 			JobName: "service-nomad",
 
-			HonorTimestamps: true,
-			ScrapeInterval:  model.Duration(15 * time.Second),
-			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps:       true,
+			ScrapeInterval:        model.Duration(15 * time.Second),
+			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			BodySizeLimit:         globBodySizeLimit,
+			SampleLimit:           globSampleLimit,
+			TargetLimit:           globTargetLimit,
+			LabelLimit:            globLabelLimit,
+			LabelNameLengthLimit:  globLabelNameLengthLimit,
+			LabelValueLengthLimit: globLabelValueLengthLimit,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -560,9 +629,15 @@ var expectedConf = &Config{
 		{
 			JobName: "service-ec2",
 
-			HonorTimestamps: true,
-			ScrapeInterval:  model.Duration(15 * time.Second),
-			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps:       true,
+			ScrapeInterval:        model.Duration(15 * time.Second),
+			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			BodySizeLimit:         globBodySizeLimit,
+			SampleLimit:           globSampleLimit,
+			TargetLimit:           globTargetLimit,
+			LabelLimit:            globLabelLimit,
+			LabelNameLengthLimit:  globLabelNameLengthLimit,
+			LabelValueLengthLimit: globLabelValueLengthLimit,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -593,9 +668,15 @@ var expectedConf = &Config{
 		{
 			JobName: "service-lightsail",
 
-			HonorTimestamps: true,
-			ScrapeInterval:  model.Duration(15 * time.Second),
-			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps:       true,
+			ScrapeInterval:        model.Duration(15 * time.Second),
+			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			BodySizeLimit:         globBodySizeLimit,
+			SampleLimit:           globSampleLimit,
+			TargetLimit:           globTargetLimit,
+			LabelLimit:            globLabelLimit,
+			LabelNameLengthLimit:  globLabelNameLengthLimit,
+			LabelValueLengthLimit: globLabelValueLengthLimit,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -616,9 +697,15 @@ var expectedConf = &Config{
 		{
 			JobName: "service-azure",
 
-			HonorTimestamps: true,
-			ScrapeInterval:  model.Duration(15 * time.Second),
-			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps:       true,
+			ScrapeInterval:        model.Duration(15 * time.Second),
+			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			BodySizeLimit:         globBodySizeLimit,
+			SampleLimit:           globSampleLimit,
+			TargetLimit:           globTargetLimit,
+			LabelLimit:            globLabelLimit,
+			LabelNameLengthLimit:  globLabelNameLengthLimit,
+			LabelValueLengthLimit: globLabelValueLengthLimit,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -642,9 +729,15 @@ var expectedConf = &Config{
 		{
 			JobName: "service-nerve",
 
-			HonorTimestamps: true,
-			ScrapeInterval:  model.Duration(15 * time.Second),
-			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps:       true,
+			ScrapeInterval:        model.Duration(15 * time.Second),
+			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			BodySizeLimit:         globBodySizeLimit,
+			SampleLimit:           globSampleLimit,
+			TargetLimit:           globTargetLimit,
+			LabelLimit:            globLabelLimit,
+			LabelNameLengthLimit:  globLabelNameLengthLimit,
+			LabelValueLengthLimit: globLabelValueLengthLimit,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -661,9 +754,15 @@ var expectedConf = &Config{
 		{
 			JobName: "0123service-xxx",
 
-			HonorTimestamps: true,
-			ScrapeInterval:  model.Duration(15 * time.Second),
-			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps:       true,
+			ScrapeInterval:        model.Duration(15 * time.Second),
+			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			BodySizeLimit:         globBodySizeLimit,
+			SampleLimit:           globSampleLimit,
+			TargetLimit:           globTargetLimit,
+			LabelLimit:            globLabelLimit,
+			LabelNameLengthLimit:  globLabelNameLengthLimit,
+			LabelValueLengthLimit: globLabelValueLengthLimit,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -683,9 +782,15 @@ var expectedConf = &Config{
 		{
 			JobName: "badfederation",
 
-			HonorTimestamps: false,
-			ScrapeInterval:  model.Duration(15 * time.Second),
-			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps:       false,
+			ScrapeInterval:        model.Duration(15 * time.Second),
+			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			BodySizeLimit:         globBodySizeLimit,
+			SampleLimit:           globSampleLimit,
+			TargetLimit:           globTargetLimit,
+			LabelLimit:            globLabelLimit,
+			LabelNameLengthLimit:  globLabelNameLengthLimit,
+			LabelValueLengthLimit: globLabelValueLengthLimit,
 
 			MetricsPath:      "/federate",
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -705,9 +810,15 @@ var expectedConf = &Config{
 		{
 			JobName: "測試",
 
-			HonorTimestamps: true,
-			ScrapeInterval:  model.Duration(15 * time.Second),
-			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps:       true,
+			ScrapeInterval:        model.Duration(15 * time.Second),
+			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			BodySizeLimit:         globBodySizeLimit,
+			SampleLimit:           globSampleLimit,
+			TargetLimit:           globTargetLimit,
+			LabelLimit:            globLabelLimit,
+			LabelNameLengthLimit:  globLabelNameLengthLimit,
+			LabelValueLengthLimit: globLabelValueLengthLimit,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -727,9 +838,15 @@ var expectedConf = &Config{
 		{
 			JobName: "httpsd",
 
-			HonorTimestamps: true,
-			ScrapeInterval:  model.Duration(15 * time.Second),
-			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps:       true,
+			ScrapeInterval:        model.Duration(15 * time.Second),
+			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			BodySizeLimit:         globBodySizeLimit,
+			SampleLimit:           globSampleLimit,
+			TargetLimit:           globTargetLimit,
+			LabelLimit:            globLabelLimit,
+			LabelNameLengthLimit:  globLabelNameLengthLimit,
+			LabelValueLengthLimit: globLabelValueLengthLimit,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -746,9 +863,15 @@ var expectedConf = &Config{
 		{
 			JobName: "service-triton",
 
-			HonorTimestamps: true,
-			ScrapeInterval:  model.Duration(15 * time.Second),
-			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps:       true,
+			ScrapeInterval:        model.Duration(15 * time.Second),
+			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			BodySizeLimit:         globBodySizeLimit,
+			SampleLimit:           globSampleLimit,
+			TargetLimit:           globTargetLimit,
+			LabelLimit:            globLabelLimit,
+			LabelNameLengthLimit:  globLabelNameLengthLimit,
+			LabelValueLengthLimit: globLabelValueLengthLimit,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -773,9 +896,15 @@ var expectedConf = &Config{
 		{
 			JobName: "digitalocean-droplets",
 
-			HonorTimestamps: true,
-			ScrapeInterval:  model.Duration(15 * time.Second),
-			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps:       true,
+			ScrapeInterval:        model.Duration(15 * time.Second),
+			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			BodySizeLimit:         globBodySizeLimit,
+			SampleLimit:           globSampleLimit,
+			TargetLimit:           globTargetLimit,
+			LabelLimit:            globLabelLimit,
+			LabelNameLengthLimit:  globLabelNameLengthLimit,
+			LabelValueLengthLimit: globLabelValueLengthLimit,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -799,9 +928,15 @@ var expectedConf = &Config{
 		{
 			JobName: "docker",
 
-			HonorTimestamps: true,
-			ScrapeInterval:  model.Duration(15 * time.Second),
-			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps:       true,
+			ScrapeInterval:        model.Duration(15 * time.Second),
+			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			BodySizeLimit:         globBodySizeLimit,
+			SampleLimit:           globSampleLimit,
+			TargetLimit:           globTargetLimit,
+			LabelLimit:            globLabelLimit,
+			LabelNameLengthLimit:  globLabelNameLengthLimit,
+			LabelValueLengthLimit: globLabelValueLengthLimit,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -821,9 +956,15 @@ var expectedConf = &Config{
 		{
 			JobName: "dockerswarm",
 
-			HonorTimestamps: true,
-			ScrapeInterval:  model.Duration(15 * time.Second),
-			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps:       true,
+			ScrapeInterval:        model.Duration(15 * time.Second),
+			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			BodySizeLimit:         globBodySizeLimit,
+			SampleLimit:           globSampleLimit,
+			TargetLimit:           globTargetLimit,
+			LabelLimit:            globLabelLimit,
+			LabelNameLengthLimit:  globLabelNameLengthLimit,
+			LabelValueLengthLimit: globLabelValueLengthLimit,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -843,9 +984,15 @@ var expectedConf = &Config{
 		{
 			JobName: "service-openstack",
 
-			HonorTimestamps: true,
-			ScrapeInterval:  model.Duration(15 * time.Second),
-			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps:       true,
+			ScrapeInterval:        model.Duration(15 * time.Second),
+			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			BodySizeLimit:         globBodySizeLimit,
+			SampleLimit:           globSampleLimit,
+			TargetLimit:           globTargetLimit,
+			LabelLimit:            globLabelLimit,
+			LabelNameLengthLimit:  globLabelNameLengthLimit,
+			LabelValueLengthLimit: globLabelValueLengthLimit,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -869,9 +1016,15 @@ var expectedConf = &Config{
 		{
 			JobName: "service-puppetdb",
 
-			HonorTimestamps: true,
-			ScrapeInterval:  model.Duration(15 * time.Second),
-			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps:       true,
+			ScrapeInterval:        model.Duration(15 * time.Second),
+			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			BodySizeLimit:         globBodySizeLimit,
+			SampleLimit:           globSampleLimit,
+			TargetLimit:           globTargetLimit,
+			LabelLimit:            globLabelLimit,
+			LabelNameLengthLimit:  globLabelNameLengthLimit,
+			LabelValueLengthLimit: globLabelValueLengthLimit,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -897,10 +1050,16 @@ var expectedConf = &Config{
 			},
 		},
 		{
-			JobName:         "hetzner",
-			HonorTimestamps: true,
-			ScrapeInterval:  model.Duration(15 * time.Second),
-			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+			JobName:               "hetzner",
+			HonorTimestamps:       true,
+			ScrapeInterval:        model.Duration(15 * time.Second),
+			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			BodySizeLimit:         globBodySizeLimit,
+			SampleLimit:           globSampleLimit,
+			TargetLimit:           globTargetLimit,
+			LabelLimit:            globLabelLimit,
+			LabelNameLengthLimit:  globLabelNameLengthLimit,
+			LabelValueLengthLimit: globLabelValueLengthLimit,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -946,9 +1105,15 @@ var expectedConf = &Config{
 		{
 			JobName: "service-eureka",
 
-			HonorTimestamps: true,
-			ScrapeInterval:  model.Duration(15 * time.Second),
-			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps:       true,
+			ScrapeInterval:        model.Duration(15 * time.Second),
+			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			BodySizeLimit:         globBodySizeLimit,
+			SampleLimit:           globSampleLimit,
+			TargetLimit:           globTargetLimit,
+			LabelLimit:            globLabelLimit,
+			LabelNameLengthLimit:  globLabelNameLengthLimit,
+			LabelValueLengthLimit: globLabelValueLengthLimit,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -965,9 +1130,16 @@ var expectedConf = &Config{
 		{
 			JobName: "ovhcloud",
 
-			HonorTimestamps:  true,
-			ScrapeInterval:   model.Duration(15 * time.Second),
-			ScrapeTimeout:    DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps:       true,
+			ScrapeInterval:        model.Duration(15 * time.Second),
+			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			BodySizeLimit:         globBodySizeLimit,
+			SampleLimit:           globSampleLimit,
+			TargetLimit:           globTargetLimit,
+			LabelLimit:            globLabelLimit,
+			LabelNameLengthLimit:  globLabelNameLengthLimit,
+			LabelValueLengthLimit: globLabelValueLengthLimit,
+
 			HTTPClientConfig: config.DefaultHTTPClientConfig,
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -994,9 +1166,16 @@ var expectedConf = &Config{
 		{
 			JobName: "scaleway",
 
-			HonorTimestamps:  true,
-			ScrapeInterval:   model.Duration(15 * time.Second),
-			ScrapeTimeout:    DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps:       true,
+			ScrapeInterval:        model.Duration(15 * time.Second),
+			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			BodySizeLimit:         globBodySizeLimit,
+			SampleLimit:           globSampleLimit,
+			TargetLimit:           globTargetLimit,
+			LabelLimit:            globLabelLimit,
+			LabelNameLengthLimit:  globLabelNameLengthLimit,
+			LabelValueLengthLimit: globLabelValueLengthLimit,
+
 			HTTPClientConfig: config.DefaultHTTPClientConfig,
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1029,9 +1208,15 @@ var expectedConf = &Config{
 		{
 			JobName: "linode-instances",
 
-			HonorTimestamps: true,
-			ScrapeInterval:  model.Duration(15 * time.Second),
-			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps:       true,
+			ScrapeInterval:        model.Duration(15 * time.Second),
+			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			BodySizeLimit:         globBodySizeLimit,
+			SampleLimit:           globSampleLimit,
+			TargetLimit:           globTargetLimit,
+			LabelLimit:            globLabelLimit,
+			LabelNameLengthLimit:  globLabelNameLengthLimit,
+			LabelValueLengthLimit: globLabelValueLengthLimit,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1056,9 +1241,16 @@ var expectedConf = &Config{
 		{
 			JobName: "uyuni",
 
-			HonorTimestamps:  true,
-			ScrapeInterval:   model.Duration(15 * time.Second),
-			ScrapeTimeout:    DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps:       true,
+			ScrapeInterval:        model.Duration(15 * time.Second),
+			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			BodySizeLimit:         globBodySizeLimit,
+			SampleLimit:           globSampleLimit,
+			TargetLimit:           globTargetLimit,
+			LabelLimit:            globLabelLimit,
+			LabelNameLengthLimit:  globLabelNameLengthLimit,
+			LabelValueLengthLimit: globLabelValueLengthLimit,
+
 			HTTPClientConfig: config.DefaultHTTPClientConfig,
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1075,10 +1267,16 @@ var expectedConf = &Config{
 			},
 		},
 		{
-			JobName:         "ionos",
-			HonorTimestamps: true,
-			ScrapeInterval:  model.Duration(15 * time.Second),
-			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+			JobName:               "ionos",
+			HonorTimestamps:       true,
+			ScrapeInterval:        model.Duration(15 * time.Second),
+			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			BodySizeLimit:         globBodySizeLimit,
+			SampleLimit:           globSampleLimit,
+			TargetLimit:           globTargetLimit,
+			LabelLimit:            globLabelLimit,
+			LabelNameLengthLimit:  globLabelNameLengthLimit,
+			LabelValueLengthLimit: globLabelValueLengthLimit,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1100,9 +1298,15 @@ var expectedConf = &Config{
 		{
 			JobName: "vultr",
 
-			HonorTimestamps: true,
-			ScrapeInterval:  model.Duration(15 * time.Second),
-			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+			HonorTimestamps:       true,
+			ScrapeInterval:        model.Duration(15 * time.Second),
+			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			BodySizeLimit:         globBodySizeLimit,
+			SampleLimit:           globSampleLimit,
+			TargetLimit:           globTargetLimit,
+			LabelLimit:            globLabelLimit,
+			LabelNameLengthLimit:  globLabelNameLengthLimit,
+			LabelValueLengthLimit: globLabelValueLengthLimit,
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1523,7 +1727,7 @@ var expectedErrors = []struct {
 	},
 	{
 		filename: "remote_write_authorization_header.bad.yml",
-		errMsg:   `authorization header must be changed via the basic_auth, authorization, oauth2, or sigv4 parameter`,
+		errMsg:   `authorization header must be changed via the basic_auth, authorization, oauth2, sigv4, or azuread parameter`,
 	},
 	{
 		filename: "remote_write_url_missing.bad.yml",

@@ -344,9 +344,10 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	}
 
 	if value.IsStaleNaN(v) {
-		if s.lastHistogramValue != nil {
+		switch {
+		case s.lastHistogramValue != nil:
 			return a.AppendHistogram(ref, lset, t, &histogram.Histogram{Sum: v}, nil)
-		} else if s.lastFloatHistogramValue != nil {
+		case s.lastFloatHistogramValue != nil:
 			return a.AppendHistogram(ref, lset, t, nil, &histogram.FloatHistogram{Sum: v})
 		}
 	}
@@ -394,7 +395,7 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 func (s *memSeries) appendable(t int64, v float64, headMaxt, minValidTime, oooTimeWindow int64) (isOOO bool, oooDelta int64, err error) {
 	// Check if we can append in the in-order chunk.
 	if t >= minValidTime {
-		if s.head() == nil {
+		if s.headChunks == nil {
 			// The series has no sample and was freshly created.
 			return false, 0, nil
 		}
@@ -430,17 +431,16 @@ func (s *memSeries) appendable(t int64, v float64, headMaxt, minValidTime, oooTi
 	return false, headMaxt - t, storage.ErrOutOfOrderSample
 }
 
-// appendableHistogram checks whether the given sample is valid for appending to the series.
+// appendableHistogram checks whether the given histogram is valid for appending to the series.
 func (s *memSeries) appendableHistogram(t int64, h *histogram.Histogram) error {
-	c := s.head()
-	if c == nil {
+	if s.headChunks == nil {
 		return nil
 	}
 
-	if t > c.maxTime {
+	if t > s.headChunks.maxTime {
 		return nil
 	}
-	if t < c.maxTime {
+	if t < s.headChunks.maxTime {
 		return storage.ErrOutOfOrderSample
 	}
 
@@ -452,17 +452,16 @@ func (s *memSeries) appendableHistogram(t int64, h *histogram.Histogram) error {
 	return nil
 }
 
-// appendableFloatHistogram checks whether the given sample is valid for appending to the series.
+// appendableFloatHistogram checks whether the given float histogram is valid for appending to the series.
 func (s *memSeries) appendableFloatHistogram(t int64, fh *histogram.FloatHistogram) error {
-	c := s.head()
-	if c == nil {
+	if s.headChunks == nil {
 		return nil
 	}
 
-	if t > c.maxTime {
+	if t > s.headChunks.maxTime {
 		return nil
 	}
-	if t < c.maxTime {
+	if t < s.headChunks.maxTime {
 		return storage.ErrOutOfOrderSample
 	}
 
@@ -552,9 +551,10 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 			return 0, err
 		}
 		if created {
-			if h != nil {
+			switch {
+			case h != nil:
 				s.lastHistogramValue = &histogram.Histogram{}
-			} else if fh != nil {
+			case fh != nil:
 				s.lastFloatHistogramValue = &histogram.FloatHistogram{}
 			}
 			a.series = append(a.series, record.RefSeries{
@@ -564,7 +564,8 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		}
 	}
 
-	if h != nil {
+	switch {
+	case h != nil:
 		s.Lock()
 		if err := s.appendableHistogram(t, h); err != nil {
 			s.Unlock()
@@ -581,7 +582,7 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 			H:   h,
 		})
 		a.histogramSeries = append(a.histogramSeries, s)
-	} else if fh != nil {
+	case fh != nil:
 		s.Lock()
 		if err := s.appendableFloatHistogram(t, fh); err != nil {
 			s.Unlock()
@@ -839,6 +840,10 @@ func (a *headAppender) Commit() (err error) {
 		return errors.Wrap(err, "write to WAL")
 	}
 
+	if a.head.writeNotified != nil {
+		a.head.writeNotified.Notify()
+	}
+
 	// No errors logging to WAL, so pass the exemplars along to the in memory storage.
 	for _, e := range a.exemplars {
 		s := a.head.series.getByID(chunks.HeadSeriesRef(e.ref))
@@ -874,9 +879,13 @@ func (a *headAppender) Commit() (err error) {
 		oooMmapMarkers  map[chunks.HeadSeriesRef]chunks.ChunkDiskMapperRef
 		oooRecords      [][]byte
 		oooCapMax       = a.head.opts.OutOfOrderCapMax.Load()
-		chunkRange      = a.head.chunkRange.Load()
 		series          *memSeries
-		enc             record.Encoder
+		appendChunkOpts = chunkOpts{
+			chunkDiskMapper: a.head.chunkDiskMapper,
+			chunkRange:      a.head.chunkRange.Load(),
+			samplesPerChunk: a.head.opts.SamplesPerChunk,
+		}
+		enc record.Encoder
 	)
 	defer func() {
 		for i := range oooRecords {
@@ -921,6 +930,8 @@ func (a *headAppender) Commit() (err error) {
 
 		oooSample, _, err := series.appendable(s.T, s.V, a.headMaxt, a.minValidTime, a.oooTimeWindow)
 		switch err {
+		case nil:
+			// Do nothing.
 		case storage.ErrOutOfOrderSample:
 			samplesAppended--
 			oooRejected++
@@ -930,15 +941,16 @@ func (a *headAppender) Commit() (err error) {
 		case storage.ErrTooOldSample:
 			samplesAppended--
 			tooOldRejected++
-		case nil:
-			// Do nothing.
 		default:
 			samplesAppended--
 		}
 
 		var ok, chunkCreated bool
 
-		if err == nil && oooSample {
+		switch {
+		case err != nil:
+			// Do nothing here.
+		case oooSample:
 			// Sample is OOO and OOO handling is enabled
 			// and the delta is within the OOO tolerance.
 			var mmapRef chunks.ChunkDiskMapperRef
@@ -976,8 +988,8 @@ func (a *headAppender) Commit() (err error) {
 				// TODO(codesome): Add error reporting? It depends on addressing https://github.com/prometheus/prometheus/discussions/10305.
 				samplesAppended--
 			}
-		} else if err == nil {
-			ok, chunkCreated = series.append(s.T, s.V, a.appendID, a.head.chunkDiskMapper, chunkRange)
+		default:
+			ok, chunkCreated = series.append(s.T, s.V, a.appendID, appendChunkOpts)
 			if ok {
 				if s.T < inOrderMint {
 					inOrderMint = s.T
@@ -1006,7 +1018,7 @@ func (a *headAppender) Commit() (err error) {
 	for i, s := range a.histograms {
 		series = a.histogramSeries[i]
 		series.Lock()
-		ok, chunkCreated := series.appendHistogram(s.T, s.H, a.appendID, a.head.chunkDiskMapper, chunkRange)
+		ok, chunkCreated := series.appendHistogram(s.T, s.H, a.appendID, appendChunkOpts)
 		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
 		series.pendingCommit = false
 		series.Unlock()
@@ -1032,7 +1044,7 @@ func (a *headAppender) Commit() (err error) {
 	for i, s := range a.floatHistograms {
 		series = a.floatHistogramSeries[i]
 		series.Lock()
-		ok, chunkCreated := series.appendFloatHistogram(s.T, s.FH, a.appendID, a.head.chunkDiskMapper, chunkRange)
+		ok, chunkCreated := series.appendFloatHistogram(s.T, s.FH, a.appendID, appendChunkOpts)
 		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
 		series.pendingCommit = false
 		series.Unlock()
@@ -1108,12 +1120,19 @@ func (s *memSeries) insert(t int64, v float64, chunkDiskMapper *chunks.ChunkDisk
 	return ok, chunkCreated, mmapRef
 }
 
+// chunkOpts are chunk-level options that are passed when appending to a memSeries.
+type chunkOpts struct {
+	chunkDiskMapper *chunks.ChunkDiskMapper
+	chunkRange      int64
+	samplesPerChunk int
+}
+
 // append adds the sample (t, v) to the series. The caller also has to provide
 // the appendID for isolation. (The appendID can be zero, which results in no
 // isolation for this append.)
 // It is unsafe to call this concurrently with s.iterator(...) without holding the series lock.
-func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper *chunks.ChunkDiskMapper, chunkRange int64) (sampleInOrder, chunkCreated bool) {
-	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.EncXOR, chunkDiskMapper, chunkRange)
+func (s *memSeries) append(t int64, v float64, appendID uint64, o chunkOpts) (sampleInOrder, chunkCreated bool) {
+	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.EncXOR, o)
 	if !sampleInOrder {
 		return sampleInOrder, chunkCreated
 	}
@@ -1134,86 +1153,32 @@ func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper 
 
 // appendHistogram adds the histogram.
 // It is unsafe to call this concurrently with s.iterator(...) without holding the series lock.
-func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID uint64, chunkDiskMapper *chunks.ChunkDiskMapper, chunkRange int64) (sampleInOrder, chunkCreated bool) {
+// In case of recoding the existing chunk, a new chunk is allocated and the old chunk is dropped.
+// To keep the meaning of prometheus_tsdb_head_chunks and prometheus_tsdb_head_chunks_created_total
+// consistent, we return chunkCreated=false in this case.
+func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID uint64, o chunkOpts) (sampleInOrder, chunkCreated bool) {
 	// Head controls the execution of recoding, so that we own the proper
-	// chunk reference afterwards. We check for Appendable from appender before
-	// appendPreprocessor because in case it ends up creating a new chunk,
-	// we need to know if there was also a counter reset or not to set the
-	// meta properly.
-	app, _ := s.app.(*chunkenc.HistogramAppender)
-	var (
-		pForwardInserts, nForwardInserts   []chunkenc.Insert
-		pBackwardInserts, nBackwardInserts []chunkenc.Insert
-		pMergedSpans, nMergedSpans         []histogram.Span
-		okToAppend, counterReset, gauge    bool
-	)
-	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.EncHistogram, chunkDiskMapper, chunkRange)
+	// chunk reference afterwards and mmap used up chunks.
+
+	// Ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway.
+	prevApp, _ := s.app.(*chunkenc.HistogramAppender)
+
+	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.EncHistogram, o)
 	if !sampleInOrder {
 		return sampleInOrder, chunkCreated
 	}
-	switch h.CounterResetHint {
-	case histogram.GaugeType:
-		gauge = true
-		if app != nil {
-			pForwardInserts, nForwardInserts,
-				pBackwardInserts, nBackwardInserts,
-				pMergedSpans, nMergedSpans,
-				okToAppend = app.AppendableGauge(h)
-		}
-	case histogram.CounterReset:
-		// The caller tells us this is a counter reset, even if it
-		// doesn't look like one.
-		counterReset = true
-	default:
-		if app != nil {
-			pForwardInserts, nForwardInserts, okToAppend, counterReset = app.Appendable(h)
-		}
-	}
+
+	var (
+		newChunk chunkenc.Chunk
+		recoded  bool
+	)
 
 	if !chunkCreated {
-		if len(pBackwardInserts)+len(nBackwardInserts) > 0 {
-			h.PositiveSpans = pMergedSpans
-			h.NegativeSpans = nMergedSpans
-			app.RecodeHistogram(h, pBackwardInserts, nBackwardInserts)
-		}
-		// We have 3 cases here
-		// - !okToAppend -> We need to cut a new chunk.
-		// - okToAppend but we have inserts → Existing chunk needs
-		//   recoding before we can append our histogram.
-		// - okToAppend and no inserts → Chunk is ready to support our histogram.
-		if !okToAppend || counterReset {
-			c = s.cutNewHeadChunk(t, chunkenc.EncHistogram, chunkDiskMapper, chunkRange)
-			chunkCreated = true
-		} else if len(pForwardInserts) > 0 || len(nForwardInserts) > 0 {
-			// New buckets have appeared. We need to recode all
-			// prior histogram samples within the chunk before we
-			// can process this one.
-			chunk, app := app.Recode(
-				pForwardInserts, nForwardInserts,
-				h.PositiveSpans, h.NegativeSpans,
-			)
-			c.chunk = chunk
-			s.app = app
-		}
+		// Ignore the previous appender if we continue the current chunk.
+		prevApp = nil
 	}
 
-	if chunkCreated {
-		hc := s.headChunk.chunk.(*chunkenc.HistogramChunk)
-		header := chunkenc.UnknownCounterReset
-		switch {
-		case gauge:
-			header = chunkenc.GaugeType
-		case counterReset:
-			header = chunkenc.CounterReset
-		case okToAppend:
-			header = chunkenc.NotCounterReset
-		}
-		hc.SetCounterResetHeader(header)
-	}
-
-	s.app.AppendHistogram(t, h)
-
-	c.maxTime = t
+	newChunk, recoded, s.app, _ = s.app.AppendHistogram(prevApp, t, h, false) // false=request a new chunk if needed
 
 	s.lastHistogramValue = h
 	s.lastFloatHistogramValue = nil
@@ -1222,114 +1187,89 @@ func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID ui
 		s.txs.add(appendID)
 	}
 
-	return true, chunkCreated
+	if newChunk == nil { // Sample was appended to existing chunk or is the first sample in a new chunk.
+		c.maxTime = t
+		return true, chunkCreated
+	}
+
+	if recoded { // The appender needed to recode the chunk.
+		c.maxTime = t
+		c.chunk = newChunk
+		return true, false
+	}
+
+	s.headChunks = &memChunk{
+		chunk:   newChunk,
+		minTime: t,
+		maxTime: t,
+		prev:    s.headChunks,
+	}
+	s.nextAt = rangeForTimestamp(t, o.chunkRange)
+	return true, true
 }
 
 // appendFloatHistogram adds the float histogram.
 // It is unsafe to call this concurrently with s.iterator(...) without holding the series lock.
-func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, appendID uint64, chunkDiskMapper *chunks.ChunkDiskMapper, chunkRange int64) (sampleInOrder, chunkCreated bool) {
+// In case of recoding the existing chunk, a new chunk is allocated and the old chunk is dropped.
+// To keep the meaning of prometheus_tsdb_head_chunks and prometheus_tsdb_head_chunks_created_total
+// consistent, we return chunkCreated=false in this case.
+func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, appendID uint64, o chunkOpts) (sampleInOrder, chunkCreated bool) {
 	// Head controls the execution of recoding, so that we own the proper
-	// chunk reference afterwards.  We check for Appendable from appender before
-	// appendPreprocessor because in case it ends up creating a new chunk,
-	// we need to know if there was also a counter reset or not to set the
-	// meta properly.
-	app, _ := s.app.(*chunkenc.FloatHistogramAppender)
-	var (
-		pForwardInserts, nForwardInserts   []chunkenc.Insert
-		pBackwardInserts, nBackwardInserts []chunkenc.Insert
-		pMergedSpans, nMergedSpans         []histogram.Span
-		okToAppend, counterReset, gauge    bool
-	)
-	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.EncFloatHistogram, chunkDiskMapper, chunkRange)
+	// chunk reference afterwards and mmap used up chunks.
+
+	// Ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway.
+	prevApp, _ := s.app.(*chunkenc.FloatHistogramAppender)
+
+	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.EncFloatHistogram, o)
 	if !sampleInOrder {
 		return sampleInOrder, chunkCreated
 	}
-	switch fh.CounterResetHint {
-	case histogram.GaugeType:
-		gauge = true
-		if app != nil {
-			pForwardInserts, nForwardInserts,
-				pBackwardInserts, nBackwardInserts,
-				pMergedSpans, nMergedSpans,
-				okToAppend = app.AppendableGauge(fh)
-		}
-	case histogram.CounterReset:
-		// The caller tells us this is a counter reset, even if it
-		// doesn't look like one.
-		counterReset = true
-	default:
-		if app != nil {
-			pForwardInserts, nForwardInserts, okToAppend, counterReset = app.Appendable(fh)
-		}
-	}
+
+	var (
+		newChunk chunkenc.Chunk
+		recoded  bool
+	)
 
 	if !chunkCreated {
-		if len(pBackwardInserts)+len(nBackwardInserts) > 0 {
-			fh.PositiveSpans = pMergedSpans
-			fh.NegativeSpans = nMergedSpans
-			app.RecodeHistogramm(fh, pBackwardInserts, nBackwardInserts)
-		}
-		// We have 3 cases here
-		// - !okToAppend -> We need to cut a new chunk.
-		// - okToAppend but we have inserts → Existing chunk needs
-		//   recoding before we can append our histogram.
-		// - okToAppend and no inserts → Chunk is ready to support our histogram.
-		if !okToAppend || counterReset {
-			c = s.cutNewHeadChunk(t, chunkenc.EncFloatHistogram, chunkDiskMapper, chunkRange)
-			chunkCreated = true
-		} else if len(pForwardInserts) > 0 || len(nForwardInserts) > 0 {
-			// New buckets have appeared. We need to recode all
-			// prior histogram samples within the chunk before we
-			// can process this one.
-			chunk, app := app.Recode(
-				pForwardInserts, nForwardInserts,
-				fh.PositiveSpans, fh.NegativeSpans,
-			)
-			c.chunk = chunk
-			s.app = app
-		}
+		// Ignore the previous appender if we continue the current chunk.
+		prevApp = nil
 	}
 
-	if chunkCreated {
-		hc := s.headChunk.chunk.(*chunkenc.FloatHistogramChunk)
-		header := chunkenc.UnknownCounterReset
-		switch {
-		case gauge:
-			header = chunkenc.GaugeType
-		case counterReset:
-			header = chunkenc.CounterReset
-		case okToAppend:
-			header = chunkenc.NotCounterReset
-		}
-		hc.SetCounterResetHeader(header)
-	}
+	newChunk, recoded, s.app, _ = s.app.AppendFloatHistogram(prevApp, t, fh, false) // False means request a new chunk if needed.
 
-	s.app.AppendFloatHistogram(t, fh)
-
-	c.maxTime = t
-
-	s.lastFloatHistogramValue = fh
 	s.lastHistogramValue = nil
+	s.lastFloatHistogramValue = fh
 
 	if appendID > 0 {
 		s.txs.add(appendID)
 	}
 
-	return true, chunkCreated
+	if newChunk == nil { // Sample was appended to existing chunk or is the first sample in a new chunk.
+		c.maxTime = t
+		return true, chunkCreated
+	}
+
+	if recoded { // The appender needed to recode the chunk.
+		c.maxTime = t
+		c.chunk = newChunk
+		return true, false
+	}
+
+	s.headChunks = &memChunk{
+		chunk:   newChunk,
+		minTime: t,
+		maxTime: t,
+		prev:    s.headChunks,
+	}
+	s.nextAt = rangeForTimestamp(t, o.chunkRange)
+	return true, true
 }
 
 // appendPreprocessor takes care of cutting new chunks and m-mapping old chunks.
 // It is unsafe to call this concurrently with s.iterator(...) without holding the series lock.
 // This should be called only when appending data.
-func (s *memSeries) appendPreprocessor(
-	t int64, e chunkenc.Encoding, chunkDiskMapper *chunks.ChunkDiskMapper, chunkRange int64,
-) (c *memChunk, sampleInOrder, chunkCreated bool) {
-	// Based on Gorilla white papers this offers near-optimal compression ratio
-	// so anything bigger that this has diminishing returns and increases
-	// the time range within which we have to decompress all samples.
-	const samplesPerChunk = 120
-
-	c = s.head()
+func (s *memSeries) appendPreprocessor(t int64, e chunkenc.Encoding, o chunkOpts) (c *memChunk, sampleInOrder, chunkCreated bool) {
+	c = s.headChunks
 
 	if c == nil {
 		if len(s.mmappedChunks) > 0 && s.mmappedChunks[len(s.mmappedChunks)-1].maxTime >= t {
@@ -1337,7 +1277,7 @@ func (s *memSeries) appendPreprocessor(
 			return c, false, false
 		}
 		// There is no head chunk in this series yet, create the first chunk for the sample.
-		c = s.cutNewHeadChunk(t, e, chunkDiskMapper, chunkRange)
+		c = s.cutNewHeadChunk(t, e, o.chunkRange)
 		chunkCreated = true
 	}
 
@@ -1349,8 +1289,9 @@ func (s *memSeries) appendPreprocessor(
 	if c.chunk.Encoding() != e {
 		// The chunk encoding expected by this append is different than the head chunk's
 		// encoding. So we cut a new chunk with the expected encoding.
-		c = s.cutNewHeadChunk(t, e, chunkDiskMapper, chunkRange)
+		c = s.cutNewHeadChunk(t, e, o.chunkRange)
 		chunkCreated = true
+
 	}
 
 	numSamples := c.chunk.NumSamples()
@@ -1358,14 +1299,14 @@ func (s *memSeries) appendPreprocessor(
 		// It could be the new chunk created after reading the chunk snapshot,
 		// hence we fix the minTime of the chunk here.
 		c.minTime = t
-		s.nextAt = rangeForTimestamp(c.minTime, chunkRange)
+		s.nextAt = rangeForTimestamp(c.minTime, o.chunkRange)
 	}
 
 	// If we reach 25% of a chunk's desired sample count, predict an end time
 	// for this chunk that will try to make samples equally distributed within
 	// the remaining chunks in the current chunk range.
 	// At latest it must happen at the timestamp set when the chunk was cut.
-	if numSamples == samplesPerChunk/4 {
+	if numSamples == o.samplesPerChunk/4 {
 		s.nextAt = computeChunkEndTime(c.minTime, c.maxTime, s.nextAt)
 	}
 	// If numSamples > samplesPerChunk*2 then our previous prediction was invalid,
@@ -1373,8 +1314,8 @@ func (s *memSeries) appendPreprocessor(
 	// Since we assume that the rate is higher, we're being conservative and cutting at 2*samplesPerChunk
 	// as we expect more chunks to come.
 	// Note that next chunk will have its nextAt recalculated for the new rate.
-	if t >= s.nextAt || numSamples >= samplesPerChunk*2 {
-		c = s.cutNewHeadChunk(t, e, chunkDiskMapper, chunkRange)
+	if t >= s.nextAt || numSamples >= o.samplesPerChunk*2 {
+		c = s.cutNewHeadChunk(t, e, o.chunkRange)
 		chunkCreated = true
 	}
 
@@ -1394,36 +1335,37 @@ func computeChunkEndTime(start, cur, max int64) int64 {
 	return start + (max-start)/n
 }
 
-func (s *memSeries) cutNewHeadChunk(
-	mint int64, e chunkenc.Encoding, chunkDiskMapper *chunks.ChunkDiskMapper, chunkRange int64,
-) *memChunk {
-	s.mmapCurrentHeadChunk(chunkDiskMapper)
-
-	s.headChunk = &memChunk{
+func (s *memSeries) cutNewHeadChunk(mint int64, e chunkenc.Encoding, chunkRange int64) *memChunk {
+	// When cutting a new head chunk we create a new memChunk instance with .prev
+	// pointing at the current .headChunks, so it forms a linked list.
+	// All but first headChunks list elements will be m-mapped as soon as possible
+	// so this is a single element list most of the time.
+	s.headChunks = &memChunk{
 		minTime: mint,
 		maxTime: math.MinInt64,
+		prev:    s.headChunks,
 	}
 
 	if chunkenc.IsValidEncoding(e) {
 		var err error
-		s.headChunk.chunk, err = chunkenc.NewEmptyChunk(e)
+		s.headChunks.chunk, err = chunkenc.NewEmptyChunk(e)
 		if err != nil {
 			panic(err) // This should never happen.
 		}
 	} else {
-		s.headChunk.chunk = chunkenc.NewXORChunk()
+		s.headChunks.chunk = chunkenc.NewXORChunk()
 	}
 
 	// Set upper bound on when the next chunk must be started. An earlier timestamp
 	// may be chosen dynamically at a later point.
 	s.nextAt = rangeForTimestamp(mint, chunkRange)
 
-	app, err := s.headChunk.chunk.Appender()
+	app, err := s.headChunks.chunk.Appender()
 	if err != nil {
 		panic(err)
 	}
 	s.app = app
-	return s.headChunk
+	return s.headChunks
 }
 
 // cutNewOOOHeadChunk cuts a new OOO chunk and m-maps the old chunk.
@@ -1457,19 +1399,32 @@ func (s *memSeries) mmapCurrentOOOHeadChunk(chunkDiskMapper *chunks.ChunkDiskMap
 	return chunkRef
 }
 
-func (s *memSeries) mmapCurrentHeadChunk(chunkDiskMapper *chunks.ChunkDiskMapper) {
-	if s.headChunk == nil || s.headChunk.chunk.NumSamples() == 0 {
-		// There is no head chunk, so nothing to m-map here.
+// mmapChunks will m-map all but first chunk on s.headChunks list.
+func (s *memSeries) mmapChunks(chunkDiskMapper *chunks.ChunkDiskMapper) (count int) {
+	if s.headChunks == nil || s.headChunks.prev == nil {
+		// There is none or only one head chunk, so nothing to m-map here.
 		return
 	}
 
-	chunkRef := chunkDiskMapper.WriteChunk(s.ref, s.headChunk.minTime, s.headChunk.maxTime, s.headChunk.chunk, false, handleChunkWriteError)
-	s.mmappedChunks = append(s.mmappedChunks, &mmappedChunk{
-		ref:        chunkRef,
-		numSamples: uint16(s.headChunk.chunk.NumSamples()),
-		minTime:    s.headChunk.minTime,
-		maxTime:    s.headChunk.maxTime,
-	})
+	// Write chunks starting from the oldest one and stop before we get to current s.headChunk.
+	// If we have this chain: s.headChunk{t4} -> t3 -> t2 -> t1 -> t0
+	// then we need to write chunks t0 to t3, but skip s.headChunks.
+	for i := s.headChunks.len() - 1; i > 0; i-- {
+		chk := s.headChunks.atOffset(i)
+		chunkRef := chunkDiskMapper.WriteChunk(s.ref, chk.minTime, chk.maxTime, chk.chunk, false, handleChunkWriteError)
+		s.mmappedChunks = append(s.mmappedChunks, &mmappedChunk{
+			ref:        chunkRef,
+			numSamples: uint16(chk.chunk.NumSamples()),
+			minTime:    chk.minTime,
+			maxTime:    chk.maxTime,
+		})
+		count++
+	}
+
+	// Once we've written out all chunks except s.headChunks we need to unlink these from s.headChunk.
+	s.headChunks.prev = nil
+
+	return count
 }
 
 func handleChunkWriteError(err error) {

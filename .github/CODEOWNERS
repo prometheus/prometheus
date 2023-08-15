@@ -1,7 +1,8 @@
 /web/ui @juliusv
 /web/ui/module @juliusv @nexucis
 /storage/remote @csmarchbanks @cstyan @bwplotka @tomwilkie
+/storage/remote/otlptranslator @gouthamve @jesusvazquez
 /discovery/kubernetes @brancz
-/tsdb @codesome
+/tsdb @jesusvazquez
 /promql @roidelapluie
 /cmd/promtool @dgl

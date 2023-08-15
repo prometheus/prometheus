@@ -133,13 +133,13 @@ func TestCommit(t *testing.T) {
 
 		for i := 0; i < numDatapoints; i++ {
 			sample := tsdbutil.GenerateSamples(0, 1)
-			ref, err := app.Append(0, lset, sample[0].T(), sample[0].V())
+			ref, err := app.Append(0, lset, sample[0].T(), sample[0].F())
 			require.NoError(t, err)
 
 			e := exemplar.Exemplar{
 				Labels: lset,
 				Ts:     sample[0].T() + int64(i),
-				Value:  sample[0].V(),
+				Value:  sample[0].F(),
 				HasTs:  true,
 			}
 			_, err = app.AppendExemplar(ref, lset, e)
@@ -248,7 +248,7 @@ func TestRollback(t *testing.T) {
 
 		for i := 0; i < numDatapoints; i++ {
 			sample := tsdbutil.GenerateSamples(0, 1)
-			_, err := app.Append(0, lset, sample[0].T(), sample[0].V())
+			_, err := app.Append(0, lset, sample[0].T(), sample[0].F())
 			require.NoError(t, err)
 		}
 	}
@@ -333,8 +333,8 @@ func TestRollback(t *testing.T) {
 		}
 	}
 
-	// Check that the rollback ensured nothing got stored.
-	require.Equal(t, 0, walSeriesCount, "series should not have been written to WAL")
+	// Check that only series get stored after calling Rollback.
+	require.Equal(t, numSeries*3, walSeriesCount, "series should have been written to WAL")
 	require.Equal(t, 0, walSamplesCount, "samples should not have been written to WAL")
 	require.Equal(t, 0, walExemplarsCount, "exemplars should not have been written to WAL")
 	require.Equal(t, 0, walHistogramCount, "histograms should not have been written to WAL")
@@ -739,8 +739,7 @@ func TestStorage_DuplicateExemplarsIgnored(t *testing.T) {
 	var dec record.Decoder
 	for r.Next() {
 		rec := r.Record()
-		switch dec.Type(rec) {
-		case record.Exemplars:
+		if dec.Type(rec) == record.Exemplars {
 			var exemplars []record.RefExemplar
 			exemplars, err = dec.Exemplars(rec, exemplars)
 			require.NoError(t, err)

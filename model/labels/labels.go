@@ -169,11 +169,12 @@ func (ls Labels) HashForLabels(b []byte, names ...string) (uint64, []byte) {
 	b = b[:0]
 	i, j := 0, 0
 	for i < len(ls) && j < len(names) {
-		if names[j] < ls[i].Name {
+		switch {
+		case names[j] < ls[i].Name:
 			j++
-		} else if ls[i].Name < names[j] {
+		case ls[i].Name < names[j]:
 			i++
-		} else {
+		default:
 			b = append(b, ls[i].Name...)
 			b = append(b, seps[0])
 			b = append(b, ls[i].Value...)
@@ -213,11 +214,12 @@ func (ls Labels) BytesWithLabels(buf []byte, names ...string) []byte {
 	b.WriteByte(labelSep)
 	i, j := 0, 0
 	for i < len(ls) && j < len(names) {
-		if names[j] < ls[i].Name {
+		switch {
+		case names[j] < ls[i].Name:
 			j++
-		} else if ls[i].Name < names[j] {
+		case ls[i].Name < names[j]:
 			i++
-		} else {
+		default:
 			if b.Len() > 1 {
 				b.WriteByte(seps[0])
 			}
@@ -531,15 +533,14 @@ func (b *Builder) Set(n, v string) *Builder {
 }
 
 func (b *Builder) Get(n string) string {
-	for _, d := range b.del {
-		if d == n {
-			return ""
-		}
-	}
+	// Del() removes entries from .add but Set() does not remove from .del, so check .add first.
 	for _, a := range b.add {
 		if a.Name == n {
 			return a.Value
 		}
+	}
+	if slices.Contains(b.del, n) {
+		return ""
 	}
 	return b.base.Get(n)
 }
@@ -570,24 +571,18 @@ func contains(s []Label, n string) bool {
 	return false
 }
 
-// Labels returns the labels from the builder, adding them to res if non-nil.
-// Argument res can be the same as b.base, if caller wants to overwrite that slice.
+// Labels returns the labels from the builder.
 // If no modifications were made, the original labels are returned.
-func (b *Builder) Labels(res Labels) Labels {
+func (b *Builder) Labels() Labels {
 	if len(b.del) == 0 && len(b.add) == 0 {
 		return b.base
 	}
 
-	if res == nil {
-		// In the general case, labels are removed, modified or moved
-		// rather than added.
-		res = make(Labels, 0, len(b.base))
-	} else {
-		res = res[:0]
+	expectedSize := len(b.base) + len(b.add) - len(b.del)
+	if expectedSize < 1 {
+		expectedSize = 1
 	}
-	// Justification that res can be the same slice as base: in this loop
-	// we move forward through base, and either skip an element or assign
-	// it to res at its current position or an earlier position.
+	res := make(Labels, 0, expectedSize)
 	for _, l := range b.base {
 		if slices.Contains(b.del, l.Name) || contains(b.add, l.Name) {
 			continue
@@ -626,7 +621,7 @@ func (b *ScratchBuilder) Sort() {
 	slices.SortFunc(b.add, func(a, b Label) bool { return a.Name < b.Name })
 }
 
-// Asssign is for when you already have a Labels which you want this ScratchBuilder to return.
+// Assign is for when you already have a Labels which you want this ScratchBuilder to return.
 func (b *ScratchBuilder) Assign(ls Labels) {
 	b.add = append(b.add[:0], ls...) // Copy on top of our slice, so we don't retain the input slice.
 }
@@ -636,4 +631,10 @@ func (b *ScratchBuilder) Assign(ls Labels) {
 func (b *ScratchBuilder) Labels() Labels {
 	// Copy the slice, so the next use of ScratchBuilder doesn't overwrite.
 	return append([]Label{}, b.add...)
+}
+
+// Write the newly-built Labels out to ls.
+// Callers must ensure that there are no other references to ls, or any strings fetched from it.
+func (b *ScratchBuilder) Overwrite(ls *Labels) {
+	*ls = append((*ls)[:0], b.add...)
 }

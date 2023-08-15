@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -64,76 +65,72 @@ func (s Scalar) MarshalJSON() ([]byte, error) {
 
 // Series is a stream of data points belonging to a metric.
 type Series struct {
-	Metric labels.Labels
-	Points []Point
+	Metric     labels.Labels `json:"metric"`
+	Floats     []FPoint      `json:"values,omitempty"`
+	Histograms []HPoint      `json:"histograms,omitempty"`
 }
 
 func (s Series) String() string {
-	vals := make([]string, len(s.Points))
-	for i, v := range s.Points {
-		vals[i] = v.String()
+	// TODO(beorn7): This currently renders floats first and then
+	// histograms, each sorted by timestamp. Maybe, in mixed series, that's
+	// fine. Maybe, however, primary sorting by timestamp is preferred, in
+	// which case this has to be changed.
+	vals := make([]string, 0, len(s.Floats)+len(s.Histograms))
+	for _, f := range s.Floats {
+		vals = append(vals, f.String())
+	}
+	for _, h := range s.Histograms {
+		vals = append(vals, h.String())
 	}
 	return fmt.Sprintf("%s =>\n%s", s.Metric, strings.Join(vals, "\n"))
 }
 
-// MarshalJSON is mirrored in web/api/v1/api.go for efficiency reasons.
-// This implementation is still provided for debug purposes and usage
-// without jsoniter.
-func (s Series) MarshalJSON() ([]byte, error) {
-	// Note that this is rather inefficient because it re-creates the whole
-	// series, just separated by Histogram Points and Value Points. For API
-	// purposes, there is a more efficient jsoniter implementation in
-	// web/api/v1/api.go.
-	series := struct {
-		M labels.Labels `json:"metric"`
-		V []Point       `json:"values,omitempty"`
-		H []Point       `json:"histograms,omitempty"`
-	}{
-		M: s.Metric,
-	}
-	for _, p := range s.Points {
-		if p.H == nil {
-			series.V = append(series.V, p)
-			continue
-		}
-		series.H = append(series.H, p)
-	}
-	return json.Marshal(series)
-}
-
-// Point represents a single data point for a given timestamp.
-// If H is not nil, then this is a histogram point and only (T, H) is valid.
-// If H is nil, then only (T, V) is valid.
-type Point struct {
+// FPoint represents a single float data point for a given timestamp.
+type FPoint struct {
 	T int64
-	V float64
-	H *histogram.FloatHistogram
+	F float64
 }
 
-func (p Point) String() string {
-	var s string
-	if p.H != nil {
-		s = p.H.String()
-	} else {
-		s = strconv.FormatFloat(p.V, 'f', -1, 64)
-	}
+func (p FPoint) String() string {
+	s := strconv.FormatFloat(p.F, 'f', -1, 64)
 	return fmt.Sprintf("%s @[%v]", s, p.T)
 }
 
 // MarshalJSON implements json.Marshaler.
 //
-// JSON marshaling is only needed for the HTTP API. Since Point is such a
+// JSON marshaling is only needed for the HTTP API. Since FPoint is such a
 // frequently marshaled type, it gets an optimized treatment directly in
 // web/api/v1/api.go. Therefore, this method is unused within Prometheus. It is
 // still provided here as convenience for debugging and for other users of this
 // code. Also note that the different marshaling implementations might lead to
 // slightly different results in terms of formatting and rounding of the
 // timestamp.
-func (p Point) MarshalJSON() ([]byte, error) {
-	if p.H == nil {
-		v := strconv.FormatFloat(p.V, 'f', -1, 64)
-		return json.Marshal([...]interface{}{float64(p.T) / 1000, v})
-	}
+func (p FPoint) MarshalJSON() ([]byte, error) {
+	v := strconv.FormatFloat(p.F, 'f', -1, 64)
+	return json.Marshal([...]interface{}{float64(p.T) / 1000, v})
+}
+
+// HPoint represents a single histogram data point for a given timestamp.
+// H must never be nil.
+type HPoint struct {
+	T int64
+	H *histogram.FloatHistogram
+}
+
+func (p HPoint) String() string {
+	return fmt.Sprintf("%s @[%v]", p.H.String(), p.T)
+}
+
+// MarshalJSON implements json.Marshaler.
+//
+// JSON marshaling is only needed for the HTTP API. Since HPoint is such a
+// frequently marshaled type, it gets an optimized treatment directly in
+// web/api/v1/api.go. Therefore, this method is unused within Prometheus. It is
+// still provided here as convenience for debugging and for other users of this
+// code. Also note that the different marshaling implementations might lead to
+// slightly different results in terms of formatting and rounding of the
+// timestamp.
+func (p HPoint) MarshalJSON() ([]byte, error) {
 	h := struct {
 		Count   string          `json:"count"`
 		Sum     string          `json:"sum"`
@@ -171,42 +168,54 @@ func (p Point) MarshalJSON() ([]byte, error) {
 	return json.Marshal([...]interface{}{float64(p.T) / 1000, h})
 }
 
-// Sample is a single sample belonging to a metric.
+// Sample is a single sample belonging to a metric. It represents either a float
+// sample or a histogram sample. If H is nil, it is a float sample. Otherwise,
+// it is a histogram sample.
 type Sample struct {
-	Point
+	T int64
+	F float64
+	H *histogram.FloatHistogram
 
 	Metric labels.Labels
 }
 
 func (s Sample) String() string {
-	return fmt.Sprintf("%s => %s", s.Metric, s.Point)
+	var str string
+	if s.H == nil {
+		p := FPoint{T: s.T, F: s.F}
+		str = p.String()
+	} else {
+		p := HPoint{T: s.T, H: s.H}
+		str = p.String()
+	}
+	return fmt.Sprintf("%s => %s", s.Metric, str)
 }
 
-// MarshalJSON is mirrored in web/api/v1/api.go with jsoniter because Point
-// wouldn't be marshaled with jsoniter in all cases otherwise.
+// MarshalJSON is mirrored in web/api/v1/api.go with jsoniter because FPoint and
+// HPoint wouldn't be marshaled with jsoniter otherwise.
 func (s Sample) MarshalJSON() ([]byte, error) {
-	if s.Point.H == nil {
-		v := struct {
+	if s.H == nil {
+		f := struct {
 			M labels.Labels `json:"metric"`
-			V Point         `json:"value"`
+			F FPoint        `json:"value"`
 		}{
 			M: s.Metric,
-			V: s.Point,
+			F: FPoint{T: s.T, F: s.F},
 		}
-		return json.Marshal(v)
+		return json.Marshal(f)
 	}
 	h := struct {
 		M labels.Labels `json:"metric"`
-		H Point         `json:"histogram"`
+		H HPoint        `json:"histogram"`
 	}{
 		M: s.Metric,
-		H: s.Point,
+		H: HPoint{T: s.T, H: s.H},
 	}
 	return json.Marshal(h)
 }
 
-// Vector is basically only an alias for model.Samples, but the
-// contract is that in a Vector, all Samples have the same timestamp.
+// Vector is basically only an alias for []Sample, but the contract is that
+// in a Vector, all Samples have the same timestamp.
 type Vector []Sample
 
 func (vec Vector) String() string {
@@ -258,7 +267,7 @@ func (m Matrix) String() string {
 func (m Matrix) TotalSamples() int {
 	numSamples := 0
 	for _, series := range m {
-		numSamples += len(series.Points)
+		numSamples += len(series.Floats) + len(series.Histograms)
 	}
 	return numSamples
 }
@@ -362,7 +371,8 @@ func (ss *StorageSeries) Labels() labels.Labels {
 	return ss.series.Metric
 }
 
-// Iterator returns a new iterator of the data of the series.
+// Iterator returns a new iterator of the data of the series. In case of
+// multiple samples with the same timestamp, it returns the float samples first.
 func (ss *StorageSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
 	if ssi, ok := it.(*storageSeriesIterator); ok {
 		ssi.reset(ss.series)
@@ -372,44 +382,51 @@ func (ss *StorageSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
 }
 
 type storageSeriesIterator struct {
-	points []Point
-	curr   int
+	floats               []FPoint
+	histograms           []HPoint
+	iFloats, iHistograms int
+	currT                int64
+	currF                float64
+	currH                *histogram.FloatHistogram
 }
 
 func newStorageSeriesIterator(series Series) *storageSeriesIterator {
 	return &storageSeriesIterator{
-		points: series.Points,
-		curr:   -1,
+		floats:      series.Floats,
+		histograms:  series.Histograms,
+		iFloats:     -1,
+		iHistograms: 0,
+		currT:       math.MinInt64,
 	}
 }
 
 func (ssi *storageSeriesIterator) reset(series Series) {
-	ssi.points = series.Points
-	ssi.curr = -1
+	ssi.floats = series.Floats
+	ssi.histograms = series.Histograms
+	ssi.iFloats = -1
+	ssi.iHistograms = 0
+	ssi.currT = math.MinInt64
+	ssi.currF = 0
+	ssi.currH = nil
 }
 
 func (ssi *storageSeriesIterator) Seek(t int64) chunkenc.ValueType {
-	i := ssi.curr
-	if i < 0 {
-		i = 0
+	if ssi.iFloats >= len(ssi.floats) && ssi.iHistograms >= len(ssi.histograms) {
+		return chunkenc.ValNone
 	}
-	for ; i < len(ssi.points); i++ {
-		p := ssi.points[i]
-		if p.T >= t {
-			ssi.curr = i
-			if p.H != nil {
-				return chunkenc.ValFloatHistogram
-			}
-			return chunkenc.ValFloat
+	for ssi.currT < t {
+		if ssi.Next() == chunkenc.ValNone {
+			return chunkenc.ValNone
 		}
 	}
-	ssi.curr = len(ssi.points) - 1
-	return chunkenc.ValNone
+	if ssi.currH != nil {
+		return chunkenc.ValFloatHistogram
+	}
+	return chunkenc.ValFloat
 }
 
 func (ssi *storageSeriesIterator) At() (t int64, v float64) {
-	p := ssi.points[ssi.curr]
-	return p.T, p.V
+	return ssi.currT, ssi.currF
 }
 
 func (ssi *storageSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
@@ -417,25 +434,59 @@ func (ssi *storageSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
 }
 
 func (ssi *storageSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
-	p := ssi.points[ssi.curr]
-	return p.T, p.H
+	return ssi.currT, ssi.currH
 }
 
 func (ssi *storageSeriesIterator) AtT() int64 {
-	p := ssi.points[ssi.curr]
-	return p.T
+	return ssi.currT
 }
 
 func (ssi *storageSeriesIterator) Next() chunkenc.ValueType {
-	ssi.curr++
-	if ssi.curr >= len(ssi.points) {
-		return chunkenc.ValNone
+	if ssi.currH != nil {
+		ssi.iHistograms++
+	} else {
+		ssi.iFloats++
 	}
-	p := ssi.points[ssi.curr]
-	if p.H != nil {
+	var (
+		pickH, pickF        = false, false
+		floatsExhausted     = ssi.iFloats >= len(ssi.floats)
+		histogramsExhausted = ssi.iHistograms >= len(ssi.histograms)
+	)
+
+	switch {
+	case floatsExhausted:
+		if histogramsExhausted { // Both exhausted!
+			return chunkenc.ValNone
+		}
+		pickH = true
+	case histogramsExhausted: // and floats not exhausted.
+		pickF = true
+	// From here on, we have to look at timestamps.
+	case ssi.histograms[ssi.iHistograms].T < ssi.floats[ssi.iFloats].T:
+		// Next histogram comes before next float.
+		pickH = true
+	default:
+		// In all other cases, we pick float so that we first iterate
+		// through floats if the timestamp is the same.
+		pickF = true
+	}
+
+	switch {
+	case pickF:
+		p := ssi.floats[ssi.iFloats]
+		ssi.currT = p.T
+		ssi.currF = p.F
+		ssi.currH = nil
+		return chunkenc.ValFloat
+	case pickH:
+		p := ssi.histograms[ssi.iHistograms]
+		ssi.currT = p.T
+		ssi.currF = 0
+		ssi.currH = p.H
 		return chunkenc.ValFloatHistogram
+	default:
+		panic("storageSeriesIterater.Next failed to pick value type")
 	}
-	return chunkenc.ValFloat
 }
 
 func (ssi *storageSeriesIterator) Err() error {

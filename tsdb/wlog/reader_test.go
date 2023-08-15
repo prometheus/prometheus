@@ -310,8 +310,8 @@ func allSegments(dir string) (io.ReadCloser, error) {
 
 func TestReaderFuzz(t *testing.T) {
 	for name, fn := range readerConstructors {
-		for _, compress := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s,compress=%t", name, compress), func(t *testing.T) {
+		for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
+			t.Run(fmt.Sprintf("%s,compress=%s", name, compress), func(t *testing.T) {
 				dir := t.TempDir()
 
 				w, err := NewSize(nil, nil, dir, 128*pageSize, compress)
@@ -349,8 +349,8 @@ func TestReaderFuzz(t *testing.T) {
 
 func TestReaderFuzz_Live(t *testing.T) {
 	logger := testutil.NewLogger(t)
-	for _, compress := range []bool{false, true} {
-		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
+	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
+		t.Run(fmt.Sprintf("compress=%s", compress), func(t *testing.T) {
 			dir := t.TempDir()
 
 			w, err := NewSize(nil, nil, dir, 128*pageSize, compress)
@@ -439,7 +439,7 @@ func TestLiveReaderCorrupt_ShortFile(t *testing.T) {
 	logger := testutil.NewLogger(t)
 	dir := t.TempDir()
 
-	w, err := NewSize(nil, nil, dir, pageSize, false)
+	w, err := NewSize(nil, nil, dir, pageSize, CompressionNone)
 	require.NoError(t, err)
 
 	rec := make([]byte, pageSize-recordHeaderSize)
@@ -479,7 +479,7 @@ func TestLiveReaderCorrupt_RecordTooLongAndShort(t *testing.T) {
 	logger := testutil.NewLogger(t)
 	dir := t.TempDir()
 
-	w, err := NewSize(nil, nil, dir, pageSize*2, false)
+	w, err := NewSize(nil, nil, dir, pageSize*2, CompressionNone)
 	require.NoError(t, err)
 
 	rec := make([]byte, pageSize-recordHeaderSize)
@@ -526,14 +526,14 @@ func TestReaderData(t *testing.T) {
 
 	for name, fn := range readerConstructors {
 		t.Run(name, func(t *testing.T) {
-			w, err := New(nil, nil, dir, true)
+			w, err := New(nil, nil, dir, CompressionSnappy)
 			require.NoError(t, err)
 
 			sr, err := allSegments(dir)
 			require.NoError(t, err)
 
 			reader := fn(sr)
-			for reader.Next() {
+			for reader.Next() { // nolint:revive
 			}
 			require.NoError(t, reader.Err())
 

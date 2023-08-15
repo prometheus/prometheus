@@ -21,6 +21,20 @@
             },
           },
           {
+            alert: 'PrometheusSDRefreshFailure',
+            expr: |||
+              increase(prometheus_sd_refresh_failures_total{%(prometheusSelector)s}[10m]) > 0
+            ||| % $._config,
+            'for': '20m',
+            labels: {
+              severity: 'warning',
+            },
+            annotations: {
+              summary: 'Failed Prometheus SD refresh.',
+              description: 'Prometheus %(prometheusName)s has failed to refresh SD with mechanism {{$labels.mechanism}}.' % $._config,
+            },
+          },
+          {
             alert: 'PrometheusNotificationQueueRunningFull',
             expr: |||
               # Without min_over_time, failed scrapes could create false negatives, see

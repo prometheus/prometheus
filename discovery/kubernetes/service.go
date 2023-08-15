@@ -28,7 +28,6 @@ import (
 	"k8s.io/client-go/util/workqueue"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/prometheus/prometheus/util/strutil"
 )
 
 var (
@@ -92,7 +91,7 @@ func (s *Service) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	}
 
 	go func() {
-		for s.process(ctx, ch) {
+		for s.process(ctx, ch) { // nolint:revive
 		}
 	}()
 
@@ -147,38 +146,20 @@ func serviceSourceFromNamespaceAndName(namespace, name string) string {
 }
 
 const (
-	serviceNameLabel               = metaLabelPrefix + "service_name"
-	serviceLabelPrefix             = metaLabelPrefix + "service_label_"
-	serviceLabelPresentPrefix      = metaLabelPrefix + "service_labelpresent_"
-	serviceAnnotationPrefix        = metaLabelPrefix + "service_annotation_"
-	serviceAnnotationPresentPrefix = metaLabelPrefix + "service_annotationpresent_"
-	servicePortNameLabel           = metaLabelPrefix + "service_port_name"
-	servicePortNumberLabel         = metaLabelPrefix + "service_port_number"
-	servicePortProtocolLabel       = metaLabelPrefix + "service_port_protocol"
-	serviceClusterIPLabel          = metaLabelPrefix + "service_cluster_ip"
-	serviceLoadBalancerIP          = metaLabelPrefix + "service_loadbalancer_ip"
-	serviceExternalNameLabel       = metaLabelPrefix + "service_external_name"
-	serviceType                    = metaLabelPrefix + "service_type"
+	servicePortNameLabel     = metaLabelPrefix + "service_port_name"
+	servicePortNumberLabel   = metaLabelPrefix + "service_port_number"
+	servicePortProtocolLabel = metaLabelPrefix + "service_port_protocol"
+	serviceClusterIPLabel    = metaLabelPrefix + "service_cluster_ip"
+	serviceLoadBalancerIP    = metaLabelPrefix + "service_loadbalancer_ip"
+	serviceExternalNameLabel = metaLabelPrefix + "service_external_name"
+	serviceType              = metaLabelPrefix + "service_type"
 )
 
 func serviceLabels(svc *apiv1.Service) model.LabelSet {
-	// Each label and annotation will create two key-value pairs in the map.
-	ls := make(model.LabelSet, 2*(len(svc.Labels)+len(svc.Annotations))+2)
-
-	ls[serviceNameLabel] = lv(svc.Name)
+	ls := make(model.LabelSet)
 	ls[namespaceLabel] = lv(svc.Namespace)
+	addObjectMetaLabels(ls, svc.ObjectMeta, RoleService)
 
-	for k, v := range svc.Labels {
-		ln := strutil.SanitizeLabelName(k)
-		ls[model.LabelName(serviceLabelPrefix+ln)] = lv(v)
-		ls[model.LabelName(serviceLabelPresentPrefix+ln)] = presentValue
-	}
-
-	for k, v := range svc.Annotations {
-		ln := strutil.SanitizeLabelName(k)
-		ls[model.LabelName(serviceAnnotationPrefix+ln)] = lv(v)
-		ls[model.LabelName(serviceAnnotationPresentPrefix+ln)] = presentValue
-	}
 	return ls
 }
 
