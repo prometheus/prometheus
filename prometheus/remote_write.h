@@ -107,14 +107,7 @@ inline __attribute__((always_inline)) void read_label(ProtobufReader& pb_label, 
   }
 
   if (__builtin_expect(parsed != 0b11, false)) {
-    // helper for extracting string representation from label, to avoid the
-    // complicated logic in printf-like call.
-    auto get_str_if_parsed = [&]<size_t N>(size_t test_mask) -> std::string {
-      std::stringstream ss;
-      return (parsed & test_mask) ? static_cast<std::stringstream&>((ss << std::get<N>(label))).str() : std::string("<incomplete>");
-    };
-    throw BareBones::Exception(0xf355fc833ca6be64, "Protobuf message has incomplete key(%s)-value(%s) pair",
-                               get_str_if_parsed.template operator()<0>(0b01).c_str(), get_str_if_parsed.template operator()<1>(0b10).c_str());
+    throw BareBones::Exception(0xf355fc833ca6be64, "Protobuf message has incomplete key-value pair");
   }
 }
 
