@@ -1097,9 +1097,6 @@ func (m *Manager) LoadGroups(
 			return nil, errs
 		}
 
-		//
-		replaceLabelValue(rgs)
-
 		for _, rg := range rgs.Groups {
 			itv := interval
 			if rg.Interval != 0 {
