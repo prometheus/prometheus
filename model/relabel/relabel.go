@@ -302,7 +302,7 @@ func relabel(cfg *Config, lb *labels.Builder) (keep bool) {
 			}
 		})
 	default:
-		panic(fmt.Errorf("relabel: unknown relabel action type %q", cfg.Action))
+		panic(fmt.Errorf("relabel: unknown relabel test action type %q", cfg.Action))
 	}
 
 	return true
