@@ -24,7 +24,6 @@ import (
 )
 
 func TestRelabel(t *testing.T) {
-
 	testPreFixAction := Action("testprefixaction")
 	Predicates[testPreFixAction] = func(cfg *Config) bool {
 		return true

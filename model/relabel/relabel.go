@@ -41,9 +41,11 @@ var (
 )
 
 // Action is the action to be performed on relabeling.
-type Action string
-type Predicate func(cfg *Config) bool
-type ActionFun func(lb *labels.Builder, cfg *Config, val string) (bool, bool)
+type (
+	Action    string
+	Predicate func(cfg *Config) bool
+	ActionFun func(lb *labels.Builder, cfg *Config, val string) (bool, bool)
+)
 
 const (
 	// Replace performs a regex replacement.
