@@ -19,10 +19,10 @@ type Encoder struct {
 
 // NewEncoder - init new Encoder.
 func NewEncoder(shardID, numberOfShards uint16) *Encoder {
-	cerr := internal.GoErrorInfo{}
+	cerr := internal.NewGoErrorInfo()
 
 	return &Encoder{
-		encoder:            internal.CEncoderCtor(shardID, numberOfShards, &cerr),
+		encoder:            internal.CEncoderCtor(shardID, numberOfShards, cerr),
 		shardID:            shardID,
 		lastEncodedSegment: math.MaxUint32,
 	}
@@ -41,7 +41,7 @@ func (e *Encoder) Encode(ctx context.Context, shardedData ShardedData) (SegmentK
 		return SegmentKey{}, nil, nil, ctx.Err()
 	}
 
-	cerr := internal.GoErrorInfo{}
+	cerr := internal.NewGoErrorInfo()
 
 	// init memory in GO
 	csegment := internal.NewGoSegment()
@@ -52,7 +52,7 @@ func (e *Encoder) Encode(ctx context.Context, shardedData ShardedData) (SegmentK
 	// shardedData.hashdex - Hashdex, struct(init from GO), filling in C/C++
 	// *(*C.c_slice_with_stream_buffer)(unsafe.Pointer(csegment)) - C-Segment struct(init from GO)
 	// (*C.c_redundant)(unsafe.Pointer(credundant)) - C-Redundant struct(init from GO)
-	internal.CEncoderEncode(e.encoder, hashdex.hashdex, csegment, credundant, &cerr)
+	internal.CEncoderEncode(e.encoder, hashdex.hashdex, csegment, credundant, cerr)
 	e.lastEncodedSegment++
 	segKey := SegmentKey{
 		ShardID: e.shardID,
@@ -73,7 +73,7 @@ func (e *Encoder) Add(ctx context.Context, shardedData ShardedData) (Segment, er
 		return nil, ctx.Err()
 	}
 
-	cerr := internal.GoErrorInfo{}
+	cerr := internal.NewGoErrorInfo()
 
 	// init memory in GO
 	csegment := internal.NewGoSegment()
@@ -82,7 +82,7 @@ func (e *Encoder) Add(ctx context.Context, shardedData ShardedData) (Segment, er
 	// e.encoder - C-Encoder
 	// shardedData.hashdex - Hashdex, struct(init from GO), filling in C/C++
 	// *(*C.c_slice_with_stream_buffer)(unsafe.Pointer(csegment)) - C-Segment struct(init from GO)
-	internal.CEncoderAdd(e.encoder, hashdex.hashdex, csegment, &cerr)
+	internal.CEncoderAdd(e.encoder, hashdex.hashdex, csegment, cerr)
 
 	return csegment, cerr.GetError()
 }
@@ -95,7 +95,7 @@ func (e *Encoder) Finalize(ctx context.Context) (SegmentKey, Segment, Redundant,
 		return SegmentKey{}, nil, nil, ctx.Err()
 	}
 
-	cerr := internal.GoErrorInfo{}
+	cerr := internal.NewGoErrorInfo()
 
 	// init memory in GO
 	csegment := internal.NewGoSegment()
@@ -105,7 +105,7 @@ func (e *Encoder) Finalize(ctx context.Context) (SegmentKey, Segment, Redundant,
 	// e.encoder - C-Encoder
 	// *(*C.c_slice_with_stream_buffer)(unsafe.Pointer(csegment)) - C-Segment struct(init from GO)
 	// (*C.c_redundant)(unsafe.Pointer(credundant)) - C-Redundant struct(init from GO)
-	internal.CEncoderFinalize(e.encoder, csegment, credundant, &cerr)
+	internal.CEncoderFinalize(e.encoder, csegment, credundant, cerr)
 	e.lastEncodedSegment++
 	segKey := SegmentKey{
 		ShardID: e.shardID,
@@ -127,9 +127,9 @@ func (e *Encoder) Snapshot(ctx context.Context, rds []Redundant) (Snapshot, erro
 		return gosnapshot, ctx.Err()
 	}
 
-	cerr := internal.GoErrorInfo{}
+	cerr := internal.NewGoErrorInfo()
 
-	internal.CEncoderSnapshot(e.encoder, crs, gosnapshot, &cerr)
+	internal.CEncoderSnapshot(e.encoder, crs, gosnapshot, cerr)
 
 	return gosnapshot, cerr.GetError()
 }

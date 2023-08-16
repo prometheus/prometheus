@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/prometheus/prometheus/pp/go/frames"
+	"github.com/prometheus/prometheus/pp/go/util"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -137,7 +138,7 @@ func (s *FrameSuite) TestHeaderEncodeDecodeBinaryAt() {
 	s.Require().NoError(err)
 
 	rh := frames.NewHeaderEmpty()
-	err = rh.DecodeBinaryAt(s.rw, 0)
+	err = rh.DecodeBinary(util.NewOffsetReader(s.rw, 0))
 	s.Require().NoError(err)
 
 	s.Equal(wh.String(), rh.String())
@@ -229,7 +230,7 @@ func (s *FrameSuite) TestAuthMsgFrameAt() {
 	s.Require().NoError(err)
 
 	var off int64
-	h, err := frames.ReadAtHeader(ctx, s.rw, off)
+	h, err := frames.ReadHeader(ctx, util.NewOffsetReader(s.rw, off))
 	s.Require().NoError(err)
 	off += int64(h.SizeOf())
 	s.Require().Equal(frames.AuthType, h.GetType())
@@ -279,7 +280,7 @@ func (s *FrameSuite) TestAuthMsgFrameAtWithMsg() {
 	s.Require().NoError(err)
 
 	var off int64
-	h, err := frames.ReadAtHeader(ctx, s.rw, off)
+	h, err := frames.ReadHeader(ctx, util.NewOffsetReader(s.rw, off))
 	s.Require().NoError(err)
 	off += int64(h.SizeOf())
 	s.Require().Equal(frames.AuthType, h.GetType())
@@ -362,7 +363,7 @@ func (s *FrameSuite) TestResponseMsgFrameAt() {
 	s.Require().NoError(err)
 
 	var off int64
-	h, err := frames.ReadAtHeader(ctx, s.rw, off)
+	h, err := frames.ReadHeader(ctx, util.NewOffsetReader(s.rw, off))
 	s.Require().NoError(err)
 	off += int64(h.SizeOf())
 	s.Require().Equal(frames.ResponseType, h.GetType())
@@ -424,7 +425,7 @@ func (s *FrameSuite) TestResponseMsgFrameWithMsgAt() {
 	s.Require().NoError(err)
 
 	var off int64
-	h, err := frames.ReadAtHeader(ctx, s.rw, off)
+	h, err := frames.ReadHeader(ctx, util.NewOffsetReader(s.rw, off))
 	s.Require().NoError(err)
 	off += int64(h.SizeOf())
 	s.Require().Equal(frames.ResponseType, h.GetType())
@@ -543,7 +544,7 @@ func (s *FrameSuite) TestRefillMsgFrameAt() {
 	s.Require().NoError(err)
 
 	var off int64
-	h, err := frames.ReadAtHeader(ctx, s.rw, off)
+	h, err := frames.ReadHeader(ctx, util.NewOffsetReader(s.rw, off))
 	s.Require().NoError(err)
 	off += int64(h.SizeOf())
 	s.Require().Equal(frames.RefillType, h.GetType())
@@ -606,7 +607,7 @@ func (s *FrameSuite) TestRefillMsgFrameAtWithMsg() {
 	s.Require().NoError(err)
 
 	var off int64
-	h, err := frames.ReadAtHeader(ctx, s.rw, off)
+	h, err := frames.ReadHeader(ctx, util.NewOffsetReader(s.rw, off))
 	s.Require().NoError(err)
 	off += int64(h.SizeOf())
 	s.Require().Equal(frames.RefillType, h.GetType())
@@ -692,7 +693,7 @@ func (s *FrameSuite) TestTitleFrameAt() {
 	s.Require().NoError(err)
 
 	var off int64
-	h, err := frames.ReadAtHeader(ctx, s.rw, off)
+	h, err := frames.ReadHeader(ctx, util.NewOffsetReader(s.rw, off))
 	s.Require().NoError(err)
 	off += int64(h.SizeOf())
 	s.Require().Equal(frames.TitleType, h.GetType())
@@ -790,7 +791,7 @@ func (s *FrameSuite) TestDestinationsNamesFrameAt() {
 	s.Require().NoError(err)
 
 	var off int64
-	h, err := frames.ReadAtHeader(ctx, s.rw, off)
+	h, err := frames.ReadHeader(ctx, util.NewOffsetReader(s.rw, off))
 	s.Require().NoError(err)
 	off += int64(h.SizeOf())
 	s.Require().Equal(frames.DestinationNamesType, h.GetType())
@@ -840,7 +841,7 @@ func (s *FrameSuite) TestDestinationsNamesFrameAtWithMsg() {
 	s.Require().NoError(err)
 
 	var off int64
-	h, err := frames.ReadAtHeader(ctx, s.rw, off)
+	h, err := frames.ReadHeader(ctx, util.NewOffsetReader(s.rw, off))
 	s.Require().NoError(err)
 	off += int64(h.SizeOf())
 	s.Require().Equal(frames.DestinationNamesType, h.GetType())
@@ -877,33 +878,6 @@ func (s *FrameSuite) TestDestinationsNamesFrameWithMsg() {
 	s.Require().Equal(names, rm.ToString())
 }
 
-func (s *FrameSuite) TestBinaryBody() {
-	wm := frames.NewBinaryBody([]byte("testdata1"))
-	b, err := wm.MarshalBinary()
-	s.Require().NoError(err)
-
-	rm := frames.NewBinaryBodyEmpty()
-	err = rm.UnmarshalBinary(b)
-	s.Require().NoError(err)
-	s.Require().Equal(wm.Bytes(), rm.Bytes())
-}
-
-func (s *FrameSuite) TestBinaryBodyQuick() {
-	f := func(data string) bool {
-		wm := frames.NewBinaryBody([]byte(data))
-		b, err := wm.MarshalBinary()
-		s.Require().NoError(err)
-
-		rm := frames.NewBinaryBodyEmpty()
-		err = rm.UnmarshalBinary(b)
-		s.Require().NoError(err)
-		return s.Equal(wm.Bytes(), rm.Bytes())
-	}
-
-	err := quick.Check(f, nil)
-	s.NoError(err)
-}
-
 func (s *FrameSuite) TestSegmentFrameAt() {
 	ctx := context.Background()
 	var (
@@ -911,22 +885,25 @@ func (s *FrameSuite) TestSegmentFrameAt() {
 		shardID   uint16 = 1
 		segmentID uint32 = 5
 	)
-	wm, err := frames.NewSegmentFrame(s.version, shardID, segmentID, []byte(data))
-	s.Require().NoError(err)
-	b := wm.EncodeBinary()
-
-	_, err = s.rw.Write(b)
+	wm := frames.NewWriteFrame(
+		s.version,
+		frames.SegmentType,
+		shardID,
+		segmentID,
+		frames.NewBinaryBody([]byte(data)),
+	)
+	_, err := wm.WriteTo(s.rw)
 	s.Require().NoError(err)
 
 	var off int64
-	h, err := frames.ReadAtHeader(ctx, s.rw, off)
+	h, err := frames.ReadHeader(ctx, util.NewOffsetReader(s.rw, off))
 	s.Require().NoError(err)
 	off += int64(h.SizeOf())
 	s.Require().Equal(frames.SegmentType, h.GetType())
 	s.Require().Equal(shardID, h.GetShardID())
 	s.Require().Equal(segmentID, h.GetSegmentID())
 
-	rm, err := frames.ReadAtBinaryBody(ctx, s.rw, off, int(h.GetSize()))
+	rm, err := frames.ReadBinaryBody(ctx, util.NewOffsetReader(s.rw, off), int(h.GetSize()))
 	s.Require().NoError(err)
 
 	s.Require().Equal(data, string(rm.Bytes()))
@@ -939,11 +916,14 @@ func (s *FrameSuite) TestSegmentFrame() {
 		shardID   uint16 = 1
 		segmentID uint32 = 5
 	)
-	wm, err := frames.NewSegmentFrame(s.version, shardID, segmentID, []byte(data))
-	s.Require().NoError(err)
-	b := wm.EncodeBinary()
-
-	_, err = s.rw.Write(b)
+	wm := frames.NewWriteFrame(
+		s.version,
+		frames.SegmentType,
+		shardID,
+		segmentID,
+		frames.NewBinaryBody([]byte(data)),
+	)
+	_, err := wm.WriteTo(s.rw)
 	s.Require().NoError(err)
 
 	_, err = s.rw.Seek(0, 0)
@@ -1001,7 +981,7 @@ func (s *FrameSuite) TestStatusesFrameAt() {
 	s.Require().NoError(err)
 
 	var off int64
-	h, err := frames.ReadAtHeader(ctx, s.rw, off)
+	h, err := frames.ReadHeader(ctx, util.NewOffsetReader(s.rw, off))
 	s.Require().NoError(err)
 	off += int64(h.SizeOf())
 	s.Require().Equal(frames.StatusType, h.GetType())
@@ -1095,7 +1075,7 @@ func (s *FrameSuite) TestRejectStatusesFrameAt() {
 	s.Require().NoError(err)
 
 	var off int64
-	h, err := frames.ReadAtHeader(ctx, s.rw, off)
+	h, err := frames.ReadHeader(ctx, util.NewOffsetReader(s.rw, off))
 	s.Require().NoError(err)
 	off += int64(h.SizeOf())
 	s.Require().Equal(frames.RejectStatusType, h.GetType())
@@ -1178,7 +1158,7 @@ func (s *FrameSuite) TestRefillShardEOFFrameAt() {
 	s.Require().NoError(err)
 
 	var off int64
-	h, err := frames.ReadAtHeader(ctx, s.rw, off)
+	h, err := frames.ReadHeader(ctx, util.NewOffsetReader(s.rw, off))
 	s.Require().NoError(err)
 	off += int64(h.SizeOf())
 	s.Require().Equal(frames.RefillShardEOFType, h.GetType())
@@ -1215,25 +1195,4 @@ func (s *FrameSuite) TestRefillShardEOFFrame() {
 
 	s.Require().Equal(nameID, rm.NameID)
 	s.Require().Equal(shardID, rm.ShardID)
-}
-
-func (s *FrameSuite) TestFrame() {
-	ctx := context.Background()
-	wh := frames.NewHeader(3, 1, 0, 1, 10)
-	fe := frames.NewFrameWithHeader(wh)
-	err := fe.Write(ctx, s.rw)
-	s.Require().NoError(err)
-
-	_, err = s.rw.Seek(0, 0)
-	s.Require().NoError(err)
-
-	rfe := frames.NewFrameEmpty()
-	rfe.Read(ctx, s.rw)
-
-	s.Equal(*wh, rfe.GetHeader())
-	s.Equal(wh.GetVersion(), rfe.GetVersion())
-	s.Equal(wh.GetType(), rfe.GetType())
-	s.Equal(wh.GetCreatedAt(), rfe.GetCreatedAt())
-	// in header size 10
-	s.Equal([]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, rfe.GetBody())
 }

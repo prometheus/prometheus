@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/prometheus/pp/go/common"
+	"github.com/prometheus/prometheus/pp/go/frames/framestest"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -43,13 +44,14 @@ func TestDecoderSuite(t *testing.T) {
 	protob, _, err := dec.Decode(ctx, segment[:])
 	require.NoError(t, err)
 
-	defer protob.Destroy()
-
 	t.Log("compare income and outcome protobuf")
-	assert.Equal(t, expectedProtob[:], protob.Bytes())
-	actualWr := &prompb.WriteRequest{}
-	err = actualWr.Unmarshal(protob.Bytes())
+
+	buf, err := framestest.ReadPayload(protob)
 	require.NoError(t, err)
+	assert.Equal(t, expectedProtob[:], buf)
+
+	actualWr := &prompb.WriteRequest{}
+	assert.NoError(t, protob.UnmarshalTo(actualWr))
 	assert.Equal(t, expectedString, actualWr.String())
 }
 
@@ -80,7 +82,7 @@ func BenchmarkDecoder(b *testing.B) {
 		dec, err := common.NewDecoder()
 		require.NoError(b, err)
 		protob, _, _ := dec.Decode(ctx, segment[:])
-		protob.Destroy()
+		_ = protob
 		dec.Destroy()
 	}
 }

@@ -13,10 +13,10 @@ type Decoder struct {
 
 // NewDecoder - init new Decoder.
 func NewDecoder() (*Decoder, error) {
-	cerr := internal.GoErrorInfo{}
+	cerr := internal.NewGoErrorInfo()
 
 	return &Decoder{
-		decoder: internal.CDecoderCtor(&cerr),
+		decoder: internal.CDecoderCtor(cerr),
 	}, cerr.GetError()
 }
 
@@ -26,10 +26,10 @@ func (d *Decoder) Decode(ctx context.Context, segment []byte) (DecodedSegment, u
 		return nil, 0, ctx.Err()
 	}
 
-	cerr := internal.GoErrorInfo{}
+	cerr := internal.NewGoErrorInfo()
 
 	result := internal.NewGoDecodedSegment()
-	segmentID := internal.CDecoderDecode(d.decoder, segment, result, &cerr)
+	segmentID := internal.CDecoderDecode(d.decoder, segment, result, cerr)
 
 	return result, segmentID, cerr.GetError()
 }
@@ -40,12 +40,12 @@ func (d *Decoder) DecodeDry(ctx context.Context, segment []byte) error {
 		return ctx.Err()
 	}
 
-	cerr := internal.GoErrorInfo{}
+	cerr := internal.NewGoErrorInfo()
 
 	segmentID := internal.CDecoderDecodeDry(
 		d.decoder,
 		segment,
-		&cerr,
+		cerr,
 	)
 
 	// TODO  return segmentID
@@ -60,9 +60,9 @@ func (d *Decoder) Snapshot(ctx context.Context, snapshot []byte) error {
 		return ctx.Err()
 	}
 
-	cerr := internal.GoErrorInfo{}
+	cerr := internal.NewGoErrorInfo()
 
-	internal.CDecoderDecodeSnapshot(d.decoder, snapshot, &cerr)
+	internal.CDecoderDecodeSnapshot(d.decoder, snapshot, cerr)
 
 	return cerr.GetError()
 }

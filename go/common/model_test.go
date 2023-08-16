@@ -67,7 +67,6 @@ func TestHashdex(t *testing.T) {
 	assert.Equal(t, expectedCluster, cr)
 	assert.Equal(t, expectedReplica, ra)
 
-	hx.Destroy()
 	for i := range data {
 		data[i] = 1
 	}

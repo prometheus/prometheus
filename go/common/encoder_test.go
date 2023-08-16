@@ -85,7 +85,6 @@ func (es *EncoderSuite) TestEncode() {
 
 		segKey, gos, gor, err := es.enc.Encode(es.ctx, h)
 		es.NoError(err)
-		h.Destroy()
 
 		es.Equal(segKey.Segment, es.enc.LastEncodedSegment())
 		es.bufSeg = append(es.bufSeg, gos)
@@ -95,16 +94,8 @@ func (es *EncoderSuite) TestEncode() {
 	}
 
 	es.T().Log("get snapshot")
-	snapshot, err := es.enc.Snapshot(es.ctx, es.bufRed)
+	_, err := es.enc.Snapshot(es.ctx, es.bufRed)
 	es.NoError(err)
-	es.T().Log("destroy snapshot")
-	snapshot.Destroy()
-
-	es.T().Log("destroy segments and redundants")
-	for i, gos := range es.bufSeg {
-		gos.Destroy()
-		es.bufRed[i].Destroy()
-	}
 }
 
 func (es *EncoderSuite) TestEncodeError() {
@@ -114,10 +105,69 @@ func (es *EncoderSuite) TestEncodeError() {
 	h, err := common.NewHashdex(es.makeData())
 	es.NoError(err)
 
-	defer h.Destroy()
-
 	_, _, _, err2 := es.enc.Encode(ctx, h)
 	es.Error(err2)
+}
+
+func (es *EncoderSuite) TestEncodeErrorCPPExceptions() {
+	wr := &prompb.WriteRequest{
+		Timeseries: []prompb.TimeSeries{
+			{
+				Labels: []prompb.Label{
+					{
+						Name:  "__name__",
+						Value: "test",
+					},
+				},
+				Samples: []prompb.Sample{
+					{
+						Timestamp: -1654608420000,
+						Value:     4444,
+					},
+				},
+			},
+		},
+	}
+	b, err := wr.Marshal()
+	es.Require().NoError(err)
+
+	h, err := common.NewHashdex(b)
+	es.Require().NoError(err)
+
+	_, _, _, err = es.enc.Encode(es.ctx, h)
+	es.Require().Error(err)
+}
+
+func (es *EncoderSuite) TestFinalizeErrorCPPExceptions() {
+	wr := &prompb.WriteRequest{
+		Timeseries: []prompb.TimeSeries{
+			{
+				Labels: []prompb.Label{
+					{
+						Name:  "__name__",
+						Value: "test",
+					},
+				},
+				Samples: []prompb.Sample{
+					{
+						Timestamp: -1654608420000,
+						Value:     4444,
+					},
+				},
+			},
+		},
+	}
+	b, err := wr.Marshal()
+	es.Require().NoError(err)
+
+	h, err := common.NewHashdex(b)
+	es.Require().NoError(err)
+
+	_, err = es.enc.Add(es.ctx, h)
+	es.Require().NoError(err)
+
+	_, _, _, err = es.enc.Finalize(es.ctx)
+	es.Require().Error(err)
 }
 
 func (es *EncoderSuite) TestSnapshotError() {
@@ -173,11 +223,8 @@ func BenchmarkEncoder(b *testing.B) {
 	require.NoError(b, err)
 
 	for i := 0; i < b.N; i++ {
-		h, err := common.NewHashdex(data)
-		require.NoError(b, err)
-		_, gos, gor, _ := enc.Encode(ctx, h)
-		h.Destroy()
-		gos.Destroy()
-		gor.Destroy()
+		h, _ := common.NewHashdex(data)
+		id, gos, gor, err := enc.Encode(ctx, h)
+		_, _, _, _ = id, gos, gor, err
 	}
 }

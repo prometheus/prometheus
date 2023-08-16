@@ -3,10 +3,12 @@ package transport
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"time"
 
 	"github.com/prometheus/prometheus/pp/go/frames"
+	"github.com/prometheus/prometheus/pp/go/util"
 )
 
 // Config - config for Transport.
@@ -30,7 +32,7 @@ func New(cfg *Config, conn net.Conn) *Transport {
 }
 
 // Read - read msg from connection.
-func (nt *Transport) Read(ctx context.Context) (*frames.Frame, error) {
+func (nt *Transport) Read(ctx context.Context) (*frames.ReadFrame, error) {
 	if nt.conn == nil {
 		return nil, net.ErrClosed
 	}
@@ -60,7 +62,7 @@ func (nt *Transport) Read(ctx context.Context) (*frames.Frame, error) {
 }
 
 // write - write msg in connection.
-func (nt *Transport) Write(ctx context.Context, fe *frames.Frame) error {
+func (nt *Transport) Write(ctx context.Context, fe *frames.ReadFrame) error {
 	if nt.conn == nil {
 		return net.ErrClosed
 	}
@@ -79,11 +81,36 @@ func (nt *Transport) Write(ctx context.Context, fe *frames.Frame) error {
 		_ = nt.conn.SetWriteDeadline(time.Time{})
 	}()
 
-	if err := fe.Write(ctx, nt.conn); err != nil {
+	if _, err := fe.WriteTo(nt.conn); err != nil {
 		return fmt.Errorf("write frame: %w", err)
 	}
 
 	return nil
+}
+
+// Writer returns new io.Writer with given context canceling
+func (nt *Transport) Writer(ctx context.Context) io.Writer {
+	return util.FnWriter(func(data []byte) (int, error) {
+		if nt.conn == nil {
+			return 0, net.ErrClosed
+		}
+
+		if nt.cfg.WriteTimeout != 0 {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, nt.cfg.WriteTimeout)
+			defer cancel()
+		}
+
+		deadline, _ := ctx.Deadline()
+		if err := nt.conn.SetWriteDeadline(deadline); err != nil {
+			return 0, fmt.Errorf("set write deadline: %w", err)
+		}
+		defer func() {
+			_ = nt.conn.SetWriteDeadline(time.Time{})
+		}()
+
+		return nt.conn.Write(data)
+	})
 }
 
 // Close - close connection.
