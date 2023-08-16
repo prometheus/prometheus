@@ -29,7 +29,7 @@ require (
 	github.com/gophercloud/gophercloud v1.5.0
 	github.com/grafana/regexp v0.0.0-20221122212121-6b5c0a4cb7fd
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0
-	github.com/hashicorp/consul/api v1.22.0
+	github.com/hashicorp/consul/api v1.24.0
 	github.com/hashicorp/nomad/api v0.0.0-20230718173136-3a687930bd3e
 	github.com/hetznercloud/hcloud-go/v2 v2.0.0
 	github.com/ionos-cloud/sdk-go/v6 v6.1.8
@@ -67,7 +67,7 @@ require (
 	go.uber.org/automaxprocs v1.5.2
 	go.uber.org/goleak v1.2.1
 	go.uber.org/multierr v1.11.0
-	golang.org/x/net v0.12.0
+	golang.org/x/net v0.13.0
 	golang.org/x/oauth2 v0.10.0
 	golang.org/x/sync v0.3.0
 	golang.org/x/sys v0.10.0
