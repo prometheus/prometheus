@@ -14,7 +14,7 @@ import (
 func ExampleTCPReader() {
 	ctx := context.Background()
 
-	handleStream := func(ctx context.Context, fe *frames.Frame, tcpReader *server.TCPReader) {
+	handleStream := func(ctx context.Context, fe *frames.ReadFrame, tcpReader *server.TCPReader) {
 		reader := server.NewProtocolReader(server.StartWith(tcpReader, fe))
 		defer reader.Destroy()
 		for {
@@ -36,7 +36,7 @@ func ExampleTCPReader() {
 		}
 	}
 
-	handleRefill := func(ctx context.Context, fe *frames.Frame, tcpReader *server.TCPReader) {
+	handleRefill := func(ctx context.Context, fe *frames.ReadFrame, tcpReader *server.TCPReader) {
 		// write in file until all segments have been read
 		// make FileReader
 		// make ProtocolReader over FileReader

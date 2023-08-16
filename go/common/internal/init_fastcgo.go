@@ -89,7 +89,7 @@ func CDecoderCtor(cerr *GoErrorInfo) CDecoder {
 	fastcgo.UnsafeCall2(
 		C.okdb_wal_uni_c_decoder_ctor,
 		uintptr(unsafe.Pointer(&decoder)),
-		uintptr(unsafe.Pointer(&cerr)),
+		uintptr(unsafe.Pointer(cerr)),
 	)
 	return CDecoder(unsafe.Pointer(decoder))
 }
@@ -109,7 +109,7 @@ func CDecoderDecode(decoder CDecoder, segment []byte, protobufResult *GoDecodedS
 		uintptr(unsafe.Pointer(decoder)),
 		uintptr(unsafe.Pointer(&args)),
 		uintptr(unsafe.Pointer(&result)),
-		uintptr(unsafe.Pointer(&cerr)),
+		uintptr(unsafe.Pointer(cerr)),
 	)
 
 	return result.result
@@ -128,7 +128,7 @@ func CDecoderDecodeDry(decoder CDecoder, segment []byte, cerr *GoErrorInfo) uint
 		uintptr(unsafe.Pointer(decoder)),
 		uintptr(unsafe.Pointer(&args)),
 		uintptr(unsafe.Pointer(&result)),
-		uintptr(unsafe.Pointer(&cerr)),
+		uintptr(unsafe.Pointer(cerr)),
 	)
 
 	return result.result
@@ -142,7 +142,7 @@ func CDecoderDecodeSnapshot(decoder CDecoder, snapshot []byte, cerr *GoErrorInfo
 	fastcgo.UnsafeCall3(C.okdb_wal_uni_c_decoder_snapshot,
 		uintptr(decoder),
 		uintptr(unsafe.Pointer(&args)),
-		uintptr(unsafe.Pointer(&cerr)),
+		uintptr(unsafe.Pointer(cerr)),
 	)
 }
 
@@ -190,7 +190,7 @@ func CEncoderCtor(shardID, numberOfShards uint16, cerr *GoErrorInfo) CEncoder {
 		C.okdb_wal_uni_c_encoder_ctor,
 		uintptr(unsafe.Pointer(&args)),
 		uintptr(unsafe.Pointer(&encoder)),
-		uintptr(unsafe.Pointer(&cerr)),
+		uintptr(unsafe.Pointer(cerr)),
 	)
 	return CEncoder(unsafe.Pointer(encoder))
 }
@@ -206,7 +206,7 @@ func CEncoderEncode(encoder CEncoder, hashdex CHashdex, segment *GoSegment, redu
 		C.okdb_wal_uni_c_encoder_encode,
 		uintptr(encoder),
 		uintptr(unsafe.Pointer(&args)),
-		uintptr(unsafe.Pointer(&cerr)),
+		uintptr(unsafe.Pointer(cerr)),
 	)
 }
 
@@ -220,7 +220,7 @@ func CEncoderAdd(encoder CEncoder, hashdex CHashdex, segment *GoSegment, cerr *G
 		C.okdb_wal_uni_c_encoder_add,
 		uintptr(encoder),
 		uintptr(unsafe.Pointer(&args)),
-		uintptr(unsafe.Pointer(&cerr)),
+		uintptr(unsafe.Pointer(cerr)),
 	)
 }
 
@@ -234,7 +234,7 @@ func CEncoderFinalize(encoder CEncoder, segment *GoSegment, redundant *GoRedunda
 		C.okdb_wal_uni_c_encoder_finalize,
 		uintptr(encoder),
 		uintptr(unsafe.Pointer(&args)),
-		uintptr(unsafe.Pointer(&cerr)),
+		uintptr(unsafe.Pointer(cerr)),
 	)
 }
 
@@ -247,7 +247,7 @@ func CEncoderSnapshot(encoder CEncoder, redundants []unsafe.Pointer, snapshot *G
 	fastcgo.UnsafeCall3(C.okdb_wal_uni_c_encoder_snapshot,
 		uintptr(encoder),
 		uintptr(unsafe.Pointer(&args)),
-		uintptr(unsafe.Pointer(&cerr)),
+		uintptr(unsafe.Pointer(cerr)),
 	)
 }
 

@@ -10,6 +10,8 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/prometheus/prometheus/pp/go/common"
+	"github.com/prometheus/prometheus/pp/go/frames"
+	"github.com/prometheus/prometheus/pp/go/frames/framestest"
 )
 
 type EncoderDecoderSuite struct {
@@ -96,10 +98,9 @@ func (*EncoderDecoderSuite) makeData(count int, sid int64) *prompb.WriteRequest 
 	return wr
 }
 
-func (*EncoderDecoderSuite) transferringData(income []byte) []byte {
-	outcome := make([]byte, len(income))
-	copy(outcome, income)
-	return outcome
+func (*EncoderDecoderSuite) transferringData(income frames.WritePayload) []byte {
+	buf, _ := framestest.ReadPayload(income)
+	return buf
 }
 
 func (eds *EncoderDecoderSuite) TestEncodeDecode() {
@@ -115,22 +116,14 @@ func (eds *EncoderDecoderSuite) TestEncodeDecode() {
 
 		eds.T().Log("encoding protobuf")
 		createdAt := time.Now()
-		_, gos, gor, err := eds.enc.Encode(eds.ctx, h)
-		eds.T().Log("destroy hashdex")
-		h.Destroy()
+		_, gos, _, err := eds.enc.Encode(eds.ctx, h)
 		eds.Require().NoError(err)
 
 		eds.EqualValues(10, gos.Series())
 		eds.EqualValues(30, gos.Samples())
 
-		eds.T().Log("destroy redundant")
-		gor.Destroy()
-
 		eds.T().Log("transferring segment")
-		segByte := eds.transferringData(gos.Bytes())
-
-		eds.T().Log("destroy encoding segment")
-		gos.Destroy()
+		segByte := eds.transferringData(gos)
 
 		eds.T().Log("decoding protobuf")
 		protob, _, err := eds.dec.Decode(eds.ctx, segByte)
@@ -138,14 +131,10 @@ func (eds *EncoderDecoderSuite) TestEncodeDecode() {
 
 		eds.T().Log("compare income and outcome protobuf")
 		actualWr := &prompb.WriteRequest{}
-		err = actualWr.Unmarshal(protob.Bytes())
-		eds.Require().NoError(err)
+		eds.Require().NoError(protob.UnmarshalTo(actualWr))
 		eds.Equal(expectedWr.String(), actualWr.String())
 
 		eds.InDelta(createdAt.UnixNano(), protob.CreatedAt(), float64(time.Second))
-
-		eds.T().Log("destroy decoding proto")
-		protob.Destroy()
 	}
 }
 
@@ -165,22 +154,16 @@ func (eds *EncoderDecoderSuite) TestEncodeDecodeSnapshot() {
 
 		eds.T().Log("encoding protobuf")
 		_, gos, rt, err := eds.enc.Encode(eds.ctx, h)
-		eds.T().Log("destroy hashdex")
-		h.Destroy()
 		eds.Require().NoError(err)
 
 		eds.T().Log("transferring segment")
-		segByte := eds.transferringData(gos.Bytes())
-
-		eds.T().Log("destroy encoding segment")
-		gos.Destroy()
+		segByte := eds.transferringData(gos)
 
 		if i >= 5 {
 			rts[i-5] = rt
 			segmentsBuffer[i-5] = segByte
 			continue
 		}
-		rt.Destroy()
 
 		eds.T().Log("decoding protobuf")
 		protob, _, err := eds.dec.Decode(eds.ctx, segByte)
@@ -188,31 +171,24 @@ func (eds *EncoderDecoderSuite) TestEncodeDecodeSnapshot() {
 
 		eds.T().Log("compare income and outcome protobuf")
 		actualWr := &prompb.WriteRequest{}
-		err = actualWr.Unmarshal(protob.Bytes())
-		eds.Require().NoError(err)
-		eds.Equal(expectedWr.String(), actualWr.String())
-
-		eds.T().Log("destroy decoding proto")
-		protob.Destroy()
+		if eds.NoError(protob.UnmarshalTo(actualWr)) {
+			eds.Equal(expectedWr.String(), actualWr.String())
+		}
 	}
 
 	eds.T().Log("get snapshot")
 	gsnapshot, err := eds.enc.Snapshot(eds.ctx, rts)
 	eds.Require().NoError(err)
 
-	eds.T().Log("destroy redundants")
-	for i := range rts {
-		rts[i].Destroy()
-	}
-
 	eds.T().Log("init new decoder")
 	resDec, err := common.NewDecoder()
 	eds.Require().NoError(err)
 
 	eds.T().Log("restore new decoder")
-	err = resDec.Snapshot(eds.ctx, gsnapshot.Bytes())
+	buf, err := framestest.ReadPayload(gsnapshot)
 	eds.Require().NoError(err)
-	gsnapshot.Destroy()
+	err = resDec.Snapshot(eds.ctx, buf)
+	eds.Require().NoError(err)
 
 	eds.T().Log("send buffer segments")
 	for _, segByte := range segmentsBuffer {
@@ -226,18 +202,12 @@ func (eds *EncoderDecoderSuite) TestEncodeDecodeSnapshot() {
 
 		eds.T().Log("after restore compare income and outcome and restored protobuf")
 		actualWr := &prompb.WriteRequest{}
-		err = actualWr.Unmarshal(protob.Bytes())
-		eds.Require().NoError(err)
+		eds.NoError(protob.UnmarshalTo(actualWr))
 
 		resActualWr := &prompb.WriteRequest{}
-		err = resActualWr.Unmarshal(resProtob.Bytes())
-		eds.Require().NoError(err)
+		eds.NoError(resProtob.UnmarshalTo(resActualWr))
 
 		eds.Equal(actualWr.String(), resActualWr.String())
-
-		eds.T().Log("after restore destroy decoding proto")
-		protob.Destroy()
-		resProtob.Destroy()
 	}
 }
 
@@ -257,21 +227,14 @@ func (eds *EncoderDecoderSuite) TestEncodeDecodeSnapshotWithDrySegment() {
 
 		eds.T().Log("encoding protobuf")
 		_, gos, rt, err := eds.enc.Encode(eds.ctx, h)
-		eds.T().Log("destroy hashdex")
-		h.Destroy()
 		eds.Require().NoError(err)
 
 		eds.T().Log("transferring segment")
-		segByte := eds.transferringData(gos.Bytes())
-
-		eds.T().Log("destroy encoding segment")
-		gos.Destroy()
+		segByte := eds.transferringData(gos)
 
 		if i >= 5 {
 			rts[i-5] = rt
 			segmentsDry[i-5] = segByte
-		} else {
-			rt.Destroy()
 		}
 
 		eds.T().Log("decoding protobuf")
@@ -280,31 +243,23 @@ func (eds *EncoderDecoderSuite) TestEncodeDecodeSnapshotWithDrySegment() {
 
 		eds.T().Log("compare income and outcome protobuf")
 		actualWr := &prompb.WriteRequest{}
-		err = actualWr.Unmarshal(protob.Bytes())
-		eds.Require().NoError(err)
+		eds.Require().NoError(protob.UnmarshalTo(actualWr))
 		eds.Equal(expectedWr.String(), actualWr.String())
-
-		eds.T().Log("destroy decoding proto")
-		protob.Destroy()
 	}
 
 	eds.T().Log("get snapshot")
 	gsnapshot, err := eds.enc.Snapshot(eds.ctx, rts)
 	eds.Require().NoError(err)
 
-	eds.T().Log("destroy redundants")
-	for i := range rts {
-		rts[i].Destroy()
-	}
-
 	eds.T().Log("init new decoder")
 	resDec, err := common.NewDecoder()
 	eds.Require().NoError(err)
 
 	eds.T().Log("restore new decoder")
-	err = resDec.Snapshot(eds.ctx, gsnapshot.Bytes())
+	buf, err := framestest.ReadPayload(gsnapshot)
 	eds.Require().NoError(err)
-	gsnapshot.Destroy()
+	err = resDec.Snapshot(eds.ctx, buf)
+	eds.Require().NoError(err)
 
 	eds.T().Log("restore segmentsDry")
 	for i := range segmentsDry {
@@ -322,17 +277,11 @@ func (eds *EncoderDecoderSuite) TestEncodeDecodeSnapshotWithDrySegment() {
 	eds.Require().NoError(err)
 
 	eds.T().Log("after restore encoding protobuf")
-	_, gos, rt, err := eds.enc.Encode(eds.ctx, h)
-	eds.T().Log("after restore destroy hashdex")
-	h.Destroy()
+	_, gos, _, err := eds.enc.Encode(eds.ctx, h)
 	eds.Require().NoError(err)
-	rt.Destroy()
 
 	eds.T().Log("after restore transferring segment")
-	segByte := eds.transferringData(gos.Bytes())
-
-	eds.T().Log("after restore destroy encoding segment")
-	gos.Destroy()
+	segByte := eds.transferringData(gos)
 
 	eds.T().Log("after restore decoding protobuf")
 	protob, _, err := eds.dec.Decode(eds.ctx, segByte)
@@ -344,18 +293,12 @@ func (eds *EncoderDecoderSuite) TestEncodeDecodeSnapshotWithDrySegment() {
 
 	eds.T().Log("after restore compare income and outcome and restored protobuf")
 	actualWr := &prompb.WriteRequest{}
-	err = actualWr.Unmarshal(protob.Bytes())
-	eds.Require().NoError(err)
+	eds.Require().NoError(protob.UnmarshalTo(actualWr))
 	eds.Equal(expectedWr.String(), actualWr.String())
 
 	resActualWr := &prompb.WriteRequest{}
-	err = resActualWr.Unmarshal(resProtob.Bytes())
-	eds.Require().NoError(err)
+	eds.Require().NoError(resProtob.UnmarshalTo(resActualWr))
 	eds.Equal(expectedWr.String(), resActualWr.String())
-
-	eds.T().Log("after restore destroy decoding proto")
-	protob.Destroy()
-	resProtob.Destroy()
 }
 
 // this test run for local  benchmark test
@@ -366,17 +309,14 @@ func (eds *EncoderDecoderSuite) EncodeDecodeBench(i int64) {
 	h, err := common.NewHashdex(data)
 	eds.Require().NoError(err)
 
-	_, gos, gor, err := eds.enc.Encode(eds.ctx, h)
-	h.Destroy()
-	gor.Destroy()
+	_, gos, _, err := eds.enc.Encode(eds.ctx, h)
 	eds.Require().NoError(err)
 
-	segByte := eds.transferringData(gos.Bytes())
-	gos.Destroy()
+	segByte := eds.transferringData(gos)
 
 	protob, _, err := eds.dec.Decode(eds.ctx, segByte)
 	eds.Require().NoError(err)
-	protob.Destroy()
+	_ = protob
 }
 
 // this test run for local  benchmark test
@@ -400,28 +340,20 @@ func (eds *EncoderDecoderSuite) TestEncodeDecodeOpenHead() {
 
 		eds.T().Log("encoding protobuf")
 		gosF, err := eds.enc.Add(eds.ctx, h)
-		eds.T().Log("destroy hashdex")
-		h.Destroy()
 		eds.Require().NoError(err)
 
 		eds.EqualValues(10, gosF.Series())
 		eds.EqualValues(30*i, gosF.Samples())
-		gosF.Destroy()
 	}
 
-	_, gos, gor, err := eds.enc.Finalize(eds.ctx)
+	_, gos, _, err := eds.enc.Finalize(eds.ctx)
 	eds.Require().NoError(err)
 
-	eds.T().Log("destroy redundant")
-	gor.Destroy()
-
 	eds.T().Log("transferring segment")
-	segByte := eds.transferringData(gos.Bytes())
+	segByte := eds.transferringData(gos)
 
-	eds.T().Log("destroy encoding segment")
 	eds.T().Log("Series", gos.Series())
 	eds.T().Log("Samples", gos.Samples())
-	gos.Destroy()
 
 	eds.T().Log("decoding protobuf")
 	protob, _, err := eds.dec.Decode(eds.ctx, segByte)
@@ -429,12 +361,8 @@ func (eds *EncoderDecoderSuite) TestEncodeDecodeOpenHead() {
 
 	eds.T().Log("compare income and outcome protobuf")
 	actualWr := &prompb.WriteRequest{}
-	err = actualWr.Unmarshal(protob.Bytes())
-	eds.Require().NoError(err)
+	eds.Require().NoError(protob.UnmarshalTo(actualWr))
 	eds.T().Log("SeriesB", len(actualWr.Timeseries))
 
 	eds.InDelta(createdAt.UnixNano(), protob.CreatedAt(), float64(time.Second))
-
-	eds.T().Log("destroy decoding proto")
-	protob.Destroy()
 }

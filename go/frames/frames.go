@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding"
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"hash/crc32"
 	"io"
@@ -16,6 +15,7 @@ import (
 	"unsafe"
 
 	"github.com/google/uuid"
+	"github.com/prometheus/prometheus/pp/go/util"
 )
 
 /*
@@ -57,136 +57,56 @@ import (
 +-------------------------------------------+
 */
 
-var (
-	// ErrUnknownFrameType - error for unknown type frame.
-	ErrUnknownFrameType = errors.New("unknown frame type")
-	// ErrHeaderIsCorrupted - error for corrupted header in frame(not equal magic byte).
-	ErrHeaderIsCorrupted = errors.New("header is corrupted")
-	// ErrHeaderIsNil - error for nil header in frame.
-	ErrHeaderIsNil = errors.New("header is nil")
-	// ErrFrameTypeNotMatch - error for frame type does not match the requested one.
-	ErrFrameTypeNotMatch = errors.New("frame type does not match")
-	// ErrBodyLarge - error for large body.
-	ErrBodyLarge = errors.New("body size is too large")
-	// ErrBodyNull - error for null message.
-	ErrBodyNull = errors.New("body size is null")
-	// ErrTokenEmpty - error for empty token.
-	ErrTokenEmpty = errors.New("auth token is empty")
-	// ErrUUIDEmpty - error for empty UUID.
-	ErrUUIDEmpty = errors.New("agent uuid is empty")
-)
-
-// TypeFrame - type of frame.
-type TypeFrame uint8
-
-// Validate - validate type frame.
-func (tf TypeFrame) Validate() error {
-	if tf < AuthType || tf > RefillShardEOFType {
-		return fmt.Errorf("%w: %d", ErrUnknownFrameType, tf)
-	}
-
-	return nil
-}
-
-const (
-	// constant size of type
-	sizeOfTypeFrame = 1
-	sizeOfUint8     = 1
-	sizeOfUint16    = 2
-	sizeOfUint32    = 4
-	sizeOfUint64    = 8
-	sizeOfUUID      = 16
-
-	// default version
-	defaultVersion uint8 = 3
-	// magic byte for header
-	magicByte byte = 165
-)
-
-const (
-	// UnknownType - unknown type frame.
-	UnknownType TypeFrame = iota
-	// AuthType - authentication type frame.
-	AuthType
-	// ResponseType - refill type frame.
-	ResponseType
-	// RefillType - response type frame.
-	RefillType
-	// TitleType - title type frame.
-	TitleType
-	// DestinationNamesType - destination names type frame.
-	DestinationNamesType
-	// SnapshotType - snapshot type frame.
-	SnapshotType
-	// SegmentType - segment type frame.
-	SegmentType
-	// DrySegmentType - dry segment type frame.
-	DrySegmentType
-	// StatusType - destinations states type frame.
-	StatusType
-	// RejectStatusType - reject statuses type frame.
-	RejectStatusType
-	// RefillShardEOFType - refill shard EOF type frame.
-	RefillShardEOFType
-)
-
-// Frame - frame for write file.
-type Frame struct {
+// ReadFrame - frame readed from file or something.
+type ReadFrame struct {
 	Header *Header
 	Body   []byte
 }
 
 // NewFrame - init new Frame.
-func NewFrame(version uint8, typeFrame TypeFrame, b []byte, shardID uint16, segmentID uint32) *Frame {
+func NewFrame(version uint8, typeFrame TypeFrame, b []byte, shardID uint16, segmentID uint32) *ReadFrame {
 	h := NewHeader(version, typeFrame, shardID, segmentID, uint32(len(b)))
 	h.SetChksum(crc32.ChecksumIEEE(b))
 	h.SetCreatedAt(time.Now().UnixNano())
 
-	return &Frame{
+	return &ReadFrame{
 		Header: h,
 		Body:   b,
 	}
 }
 
 // NewFrameEmpty - init new Frame for read.
-func NewFrameEmpty() *Frame {
-	return new(Frame)
-}
-
-// NewFrameWithHeader - init new Frame with header.
-func NewFrameWithHeader(header *Header) *Frame {
-	return &Frame{
-		Header: header,
-	}
+func NewFrameEmpty() *ReadFrame {
+	return new(ReadFrame)
 }
 
 // GetHeader - return header frame.
-func (fr *Frame) GetHeader() Header {
+func (fr *ReadFrame) GetHeader() Header {
 	return *fr.Header
 }
 
 // GetVersion - return version.
-func (fr *Frame) GetVersion() uint8 {
+func (fr *ReadFrame) GetVersion() uint8 {
 	return fr.Header.version
 }
 
 // GetType - return type frame.
-func (fr *Frame) GetType() TypeFrame {
+func (fr *ReadFrame) GetType() TypeFrame {
 	return fr.Header.typeFrame
 }
 
 // GetCreatedAt - return created time unix nano.
-func (fr *Frame) GetCreatedAt() int64 {
+func (fr *ReadFrame) GetCreatedAt() int64 {
 	return fr.Header.createdAt
 }
 
 // GetBody - return body frame.
-func (fr *Frame) GetBody() []byte {
+func (fr *ReadFrame) GetBody() []byte {
 	return fr.Body
 }
 
 // SizeOf - get size frame.
-func (fr *Frame) SizeOf() int {
+func (fr *ReadFrame) SizeOf() int {
 	size := fr.Header.SizeOf()
 
 	if fr.Body != nil {
@@ -197,7 +117,7 @@ func (fr *Frame) SizeOf() int {
 }
 
 // EncodeBinary - encoding to byte.
-func (fr *Frame) EncodeBinary() []byte {
+func (fr *ReadFrame) EncodeBinary() []byte {
 	buf := make([]byte, 0, fr.SizeOf())
 	buf = append(buf, fr.Header.EncodeBinary()...)
 	if fr.Body != nil {
@@ -208,7 +128,7 @@ func (fr *Frame) EncodeBinary() []byte {
 }
 
 // Read - read frame from io.Reader.
-func (fr *Frame) Read(ctx context.Context, r io.Reader) error {
+func (fr *ReadFrame) Read(ctx context.Context, r io.Reader) error {
 	h, err := ReadHeader(ctx, r)
 	if err != nil {
 		return err
@@ -226,326 +146,11 @@ func (fr *Frame) Read(ctx context.Context, r io.Reader) error {
 	return nil
 }
 
-// Write - write frame to io.Writer.
-func (fr *Frame) Write(ctx context.Context, w io.Writer) error {
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
+// WriteTo implements io.WriterTo interface
+func (fr *ReadFrame) WriteTo(w io.Writer) (int64, error) {
+	n, err := w.Write(fr.EncodeBinary())
 
-	if _, err := w.Write(fr.EncodeBinary()); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-const (
-	// headerSize -constant size.
-	//
-	// sum
-	//
-	//	1(magic=byte)+
-	//	1(Version=uint8)+
-	//	1(Type=uint8)+
-	//	2(ShardID=uint16)+
-	//	4(SegmentID=uint32)+
-	//	4(Size=uint32)+
-	//	4(Chksum=uint64)+
-	//	8(CreatedAt=int64)
-	headerSize int = 25
-	// maxBodySize - maximum allowed message size.
-	maxBodySize uint32 = 120 << 20 // 120 MB
-)
-
-// ReadAtHeader - read and return only header and skip body.
-func ReadAtHeader(ctx context.Context, r io.ReaderAt, off int64) (*Header, error) {
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
-
-	h := NewHeaderEmpty()
-	if err := h.DecodeBinaryAt(r, off); err != nil {
-		return nil, err
-	}
-
-	return h, nil
-}
-
-// ReadHeader - read and return only header and skip body.
-func ReadHeader(ctx context.Context, r io.Reader) (*Header, error) {
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
-
-	h := NewHeaderEmpty()
-	if err := h.DecodeBinary(r); err != nil {
-		return nil, err
-	}
-
-	return h, nil
-}
-
-// Header - header frame.
-type Header struct {
-	magic     byte
-	version   uint8
-	typeFrame TypeFrame
-	shardID   uint16
-	segmentID uint32
-	size      uint32
-	chksum    uint32
-	createdAt int64
-}
-
-// NewHeader - init Header with parameter.
-func NewHeader(version uint8, typeFrame TypeFrame, shardID uint16, segmentID, size uint32) *Header {
-	return &Header{
-		magic:     magicByte,
-		version:   version,
-		typeFrame: typeFrame,
-		shardID:   shardID,
-		segmentID: segmentID,
-		size:      size,
-	}
-}
-
-// NewHeaderEmpty - init Header for read.
-func NewHeaderEmpty() *Header {
-	return &Header{}
-}
-
-// String - serialize to string.
-func (h Header) String() string {
-	return fmt.Sprintf(
-		"Header{version: %d, type: %d, shardID: %d, segmentID: %d, size: %d, createdAt: %d, chksum: %d}",
-		h.version,
-		h.typeFrame,
-		h.shardID,
-		h.segmentID,
-		h.size,
-		h.createdAt,
-		h.chksum,
-	)
-}
-
-// Validate - validate header.
-func (h Header) Validate() error {
-	if h.magic != magicByte {
-		return ErrHeaderIsCorrupted
-	}
-
-	if h.size > maxBodySize {
-		return ErrBodyLarge
-	}
-
-	if h.size < 1 {
-		return ErrBodyNull
-	}
-
-	return h.typeFrame.Validate()
-}
-
-// GetVersion - return version.
-func (h Header) GetVersion() uint8 {
-	return h.version
-}
-
-// GetType - return type frame.
-func (h Header) GetType() TypeFrame {
-	return h.typeFrame
-}
-
-// GetShardID - return shardID.
-func (h Header) GetShardID() uint16 {
-	return h.shardID
-}
-
-// GetSegmentID - return segmentID.
-func (h Header) GetSegmentID() uint32 {
-	return h.segmentID
-}
-
-// GetSize - return size body.
-func (h Header) GetSize() uint32 {
-	return h.size
-}
-
-// GetChksum - return checksum.
-func (h Header) GetChksum() uint32 {
-	return h.chksum
-}
-
-// GetCreatedAt - return created time unix nano.
-func (h Header) GetCreatedAt() int64 {
-	return h.createdAt
-}
-
-// SizeOf - size of Header.
-func (Header) SizeOf() int {
-	return headerSize
-}
-
-// FullSize - size of Header + size body.
-func (h Header) FullSize() int32 {
-	return int32(h.size) + int32(headerSize)
-}
-
-// SetChksum - set checksum.
-func (h *Header) SetChksum(chs uint32) {
-	h.chksum = chs
-}
-
-// SetCreatedAt - set createdAt.
-func (h *Header) SetCreatedAt(createdAt int64) {
-	h.createdAt = createdAt
-}
-
-// EncodeBinary - encoding to byte.
-func (h Header) EncodeBinary() []byte {
-	var offset int
-	buf := make([]byte, h.SizeOf())
-
-	// write magic and move offset
-	buf[0] = h.magic
-	offset += sizeOfUint8
-
-	// write version and move offset
-	buf[1] = h.version
-	offset += sizeOfUint8
-
-	// write typeFrame and move offset
-	//revive:disable-next-line:add-constant this not constant
-	buf[2] = byte(h.typeFrame)
-	offset += sizeOfTypeFrame
-
-	// write shardID and move offset
-	binary.LittleEndian.PutUint16(buf[offset:offset+sizeOfUint16], h.shardID)
-	offset += sizeOfUint16
-
-	// write segmentID and move offset
-	binary.LittleEndian.PutUint32(buf[offset:offset+sizeOfUint32], h.segmentID)
-	offset += sizeOfUint32
-
-	// write size frame and move offset
-	binary.LittleEndian.PutUint32(buf[offset:offset+sizeOfUint32], h.size)
-	offset += sizeOfUint32
-
-	// write chksum and move offset
-	binary.LittleEndian.PutUint32(buf[offset:offset+sizeOfUint32], h.chksum)
-	offset += sizeOfUint32
-
-	// write createdAt and move offset
-	binary.LittleEndian.PutUint64(buf[offset:offset+sizeOfUint64], uint64(h.createdAt))
-
-	return buf
-}
-
-// DecodeBinaryAt - decoding from byte with ReaderAt.
-//
-//revive:disable-next-line:function-length long but readable
-//revive:disable-next-line:cyclomatic is readable
-func (h *Header) DecodeBinaryAt(r io.ReaderAt, pos int64) error {
-	// read magic
-	buf := make([]byte, sizeOfUint8)
-	if _, err := r.ReadAt(buf, pos); err != nil {
-		return err
-	}
-	h.magic = buf[0]
-	pos += sizeOfUint8
-	// validate magic byte
-	if h.magic != magicByte {
-		return fmt.Errorf("%w: pos: %d", ErrHeaderIsCorrupted, pos)
-	}
-
-	// read version
-	if _, err := r.ReadAt(buf, pos); err != nil {
-		return err
-	}
-	h.version = buf[0]
-	pos += sizeOfUint8
-
-	// read typeFrame
-	if _, err := r.ReadAt(buf, pos); err != nil {
-		return err
-	}
-	h.typeFrame = TypeFrame(buf[0])
-	pos += sizeOfTypeFrame
-
-	// validate type frame
-	if err := h.typeFrame.Validate(); err != nil {
-		return err
-	}
-
-	// read shardID
-	buf = append(buf[:0], make([]byte, sizeOfUint16)...)
-	if _, err := r.ReadAt(buf, pos); err != nil {
-		return err
-	}
-	h.shardID = binary.LittleEndian.Uint16(buf)
-	pos += sizeOfUint16
-
-	// read segmentID
-	buf = append(buf[:0], make([]byte, sizeOfUint32)...)
-	if _, err := r.ReadAt(buf, pos); err != nil {
-		return err
-	}
-	h.segmentID = binary.LittleEndian.Uint32(buf)
-	pos += sizeOfUint32
-
-	// read size frame
-	if _, err := r.ReadAt(buf, pos); err != nil {
-		return err
-	}
-	h.size = binary.LittleEndian.Uint32(buf)
-	pos += sizeOfUint32
-
-	// read chksum
-	if _, err := r.ReadAt(buf, pos); err != nil {
-		return err
-	}
-	h.chksum = binary.LittleEndian.Uint32(buf)
-	pos += sizeOfUint32
-
-	// read createdAt
-	buf = append(buf[:0], make([]byte, sizeOfUint64)...)
-	if _, err := r.ReadAt(buf, pos); err != nil {
-		return err
-	}
-	h.createdAt = int64(binary.LittleEndian.Uint64(buf))
-
-	return h.Validate()
-}
-
-// DecodeBinary - decoding from byte with Reader.
-func (h *Header) DecodeBinary(r io.Reader) error {
-	buf := make([]byte, h.SizeOf())
-	if _, err := io.ReadFull(r, buf); err != nil {
-		return err
-	}
-	var pos int64
-	// read magic
-	h.magic = buf[0]
-	// read version
-	h.version = buf[1]
-	// read typeFrame
-	h.typeFrame = TypeFrame(buf[2])
-	pos += sizeOfUint8 + sizeOfUint8 + sizeOfTypeFrame
-	// read shardID sizeOfUint16
-	h.shardID = binary.LittleEndian.Uint16(buf[pos : pos+sizeOfUint16])
-	pos += sizeOfUint16
-	// read segmentID
-	h.segmentID = binary.LittleEndian.Uint32(buf[pos : pos+sizeOfUint32])
-	pos += sizeOfUint32
-	// read size frame
-	h.size = binary.LittleEndian.Uint32(buf[pos : pos+sizeOfUint32])
-	pos += sizeOfUint32
-	// read chksum
-	h.chksum = binary.LittleEndian.Uint32(buf[pos : pos+sizeOfUint32])
-	pos += sizeOfUint32
-	// read createdAt
-	h.createdAt = int64(binary.LittleEndian.Uint64(buf[pos : pos+sizeOfUint64]))
-
-	return h.Validate()
+	return int64(n), err
 }
 
 //
@@ -581,7 +186,7 @@ func ReadAuthMsg(ctx context.Context, r io.Reader, size int) (*AuthMsg, error) {
 }
 
 // NewAuthFrame - init new frame.
-func NewAuthFrame(version uint8, token, agentUUID string) (*Frame, error) {
+func NewAuthFrame(version uint8, token, agentUUID string) (*ReadFrame, error) {
 	body, err := NewAuthMsg(token, agentUUID).MarshalBinary()
 	if err != nil {
 		return nil, err
@@ -591,7 +196,7 @@ func NewAuthFrame(version uint8, token, agentUUID string) (*Frame, error) {
 }
 
 // NewAuthFrameWithMsg - init new frame with msg.
-func NewAuthFrameWithMsg(version uint8, msg *AuthMsg) (*Frame, error) {
+func NewAuthFrameWithMsg(version uint8, msg *AuthMsg) (*ReadFrame, error) {
 	body, err := msg.MarshalBinary()
 	if err != nil {
 		return nil, err
@@ -718,7 +323,7 @@ func ReadResponseMsg(ctx context.Context, r io.Reader, size int) (*ResponseMsg, 
 }
 
 // NewResponseFrame - init new frame.
-func NewResponseFrame(version uint8, text string, code, segmentID uint32, sendAt int64) (*Frame, error) {
+func NewResponseFrame(version uint8, text string, code, segmentID uint32, sendAt int64) (*ReadFrame, error) {
 	body, err := NewResponseMsg(text, code, segmentID, sendAt).MarshalBinary()
 	if err != nil {
 		return nil, err
@@ -728,7 +333,7 @@ func NewResponseFrame(version uint8, text string, code, segmentID uint32, sendAt
 }
 
 // NewResponseFrameWithMsg - init new frame with msg.
-func NewResponseFrameWithMsg(version uint8, msg *ResponseMsg) (*Frame, error) {
+func NewResponseFrameWithMsg(version uint8, msg *ResponseMsg) (*ReadFrame, error) {
 	body, err := msg.MarshalBinary()
 	if err != nil {
 		return nil, err
@@ -854,7 +459,7 @@ func ReadRefillMsg(ctx context.Context, r io.Reader, size int) (*RefillMsg, erro
 }
 
 // NewRefillFrame - init new frame.
-func NewRefillFrame(version uint8, msgs []MessageData) (*Frame, error) {
+func NewRefillFrame(version uint8, msgs []MessageData) (*ReadFrame, error) {
 	body, err := NewRefillMsg(msgs).MarshalBinary()
 	if err != nil {
 		return nil, err
@@ -864,7 +469,7 @@ func NewRefillFrame(version uint8, msgs []MessageData) (*Frame, error) {
 }
 
 // NewRefillFrameWithMsg - init new frame with msg.
-func NewRefillFrameWithMsg(version uint8, msg *RefillMsg) (*Frame, error) {
+func NewRefillFrameWithMsg(version uint8, msg *RefillMsg) (*ReadFrame, error) {
 	body, err := msg.MarshalBinary()
 	if err != nil {
 		return nil, err
@@ -895,6 +500,35 @@ func NewRefillMsg(msgs []MessageData) *RefillMsg {
 // NewRefillMsgEmpty - init RefillMsg for read.
 func NewRefillMsgEmpty() *RefillMsg {
 	return new(RefillMsg)
+}
+
+// Size returns bytes length of message after encoding
+func (rm *RefillMsg) Size() int64 {
+	var n int64
+	n += util.VarintLen(uint64(len(rm.Messages)))
+	for i := range rm.Messages {
+		n += util.VarintLen(uint64(rm.Messages[i].ID))
+		n += util.VarintLen(uint64(rm.Messages[i].Size))
+		n += util.VarintLen(uint64(rm.Messages[i].Typemsg))
+	}
+	return n
+}
+
+// WriteTo implements io.WriterTo interface
+func (rm *RefillMsg) WriteTo(w io.Writer) (int64, error) {
+	buf := make([]byte, 0, rm.Size())
+
+	// write length statuses on destinations and move offset
+	buf = binary.AppendUvarint(buf, uint64(len(rm.Messages)))
+
+	for i := range rm.Messages {
+		buf = binary.AppendUvarint(buf, uint64(rm.Messages[i].ID))
+		buf = binary.AppendUvarint(buf, uint64(rm.Messages[i].Size))
+		buf = binary.AppendUvarint(buf, uint64(rm.Messages[i].Typemsg))
+	}
+
+	n, err := w.Write(buf)
+	return int64(n), err
 }
 
 // MarshalBinary - encoding to byte.
@@ -1020,7 +654,7 @@ func ReadTitle(ctx context.Context, r io.Reader, size int) (*Title, error) {
 }
 
 // NewTitleFrame - init new frame.
-func NewTitleFrame(snp uint8, blockID uuid.UUID) (*Frame, error) {
+func NewTitleFrame(snp uint8, blockID uuid.UUID) (*ReadFrame, error) {
 	body, err := NewTitle(snp, blockID).MarshalBinary()
 	if err != nil {
 		return nil, err
@@ -1150,7 +784,7 @@ func ReadDestinationsNames(ctx context.Context, r io.Reader, size int) (*Destina
 }
 
 // NewDestinationsNamesFrame - init new frame.
-func NewDestinationsNamesFrame(version uint8, names ...string) (*Frame, error) {
+func NewDestinationsNamesFrame(version uint8, names ...string) (*ReadFrame, error) {
 	body, err := NewDestinationsNames(names...).MarshalBinary()
 	if err != nil {
 		return nil, err
@@ -1160,7 +794,7 @@ func NewDestinationsNamesFrame(version uint8, names ...string) (*Frame, error) {
 }
 
 // NewDestinationsNamesFrameWithMsg - init new frame with msg.
-func NewDestinationsNamesFrameWithMsg(version uint8, msg *DestinationsNames) (*Frame, error) {
+func NewDestinationsNamesFrameWithMsg(version uint8, msg *DestinationsNames) (*ReadFrame, error) {
 	body, err := msg.MarshalBinary()
 	if err != nil {
 		return nil, err
@@ -1367,181 +1001,6 @@ func (dn *DestinationsNames) Read(ctx context.Context, r io.Reader, size int) er
 	return dn.UnmarshalBinary(buf)
 }
 
-// ReadAtBinaryBody - read body to BinaryBody with ReaderAt.
-func ReadAtBinaryBody(ctx context.Context, r io.ReaderAt, off int64, size int) (*BinaryBody, error) {
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
-
-	binaryBody := NewBinaryBodyEmpty()
-	if err := binaryBody.ReadAt(ctx, r, off, size); err != nil {
-		return nil, err
-	}
-
-	return binaryBody, nil
-}
-
-// ReadFrameSnapshot - read frame from position pos and return BinaryBody.
-func ReadAtFrameSnapshot(ctx context.Context, r io.ReaderAt, off int64) (*BinaryBody, error) {
-	h, err := ReadAtHeader(ctx, r, off)
-	if err != nil {
-		return nil, err
-	}
-	off += int64(h.SizeOf())
-
-	if h.typeFrame != SnapshotType {
-		return nil, ErrFrameTypeNotMatch
-	}
-
-	return ReadAtBinaryBody(ctx, r, off, int(h.GetSize()))
-}
-
-// ReadFrameSegment - read frame from position pos and return BinaryBody.
-func ReadAtFrameSegment(ctx context.Context, r io.ReaderAt, off int64) (*BinaryBody, error) {
-	h, err := ReadAtHeader(ctx, r, off)
-	if err != nil {
-		return nil, err
-	}
-	off += int64(h.SizeOf())
-
-	if h.typeFrame != SegmentType {
-		return nil, ErrFrameTypeNotMatch
-	}
-
-	return ReadAtBinaryBody(ctx, r, off, int(h.GetSize()))
-}
-
-// ReadBinaryBody - read body to BinaryBody with Reader.
-func ReadBinaryBody(ctx context.Context, r io.Reader, size int) (*BinaryBody, error) {
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
-
-	binaryBody := NewBinaryBodyEmpty()
-	if err := binaryBody.Read(ctx, r, size); err != nil {
-		return nil, err
-	}
-
-	return binaryBody, nil
-}
-
-// NewSnapshotFrame - init new frame.
-func NewSnapshotFrame(version uint8, shardID uint16, segmentID uint32, snapshotData []byte) (*Frame, error) {
-	body, err := NewBinaryBody(snapshotData).MarshalBinary()
-	if err != nil {
-		return nil, err
-	}
-
-	return NewFrame(version, SnapshotType, body, shardID, segmentID), nil
-}
-
-// NewSegmentFrame - init new frame.
-func NewSegmentFrame(version uint8, shardID uint16, segmentID uint32, segmentData []byte) (*Frame, error) {
-	body, err := NewBinaryBody(segmentData).MarshalBinary()
-	if err != nil {
-		return nil, err
-	}
-
-	return NewFrame(version, SegmentType, body, shardID, segmentID), nil
-}
-
-// NewDrySegmentFrame - init new frame.
-func NewDrySegmentFrame(version uint8, shardID uint16, segmentID uint32, drySegmentData []byte) (*Frame, error) {
-	body, err := NewBinaryBody(drySegmentData).MarshalBinary()
-	if err != nil {
-		return nil, err
-	}
-
-	return NewFrame(version, DrySegmentType, body, shardID, segmentID), nil
-}
-
-// BinaryBody - unsent segment/snapshot for save refill.
-type BinaryBody struct {
-	data []byte
-}
-
-// NewBinaryBody - init BinaryBody with data segment/snapshot.
-func NewBinaryBody(binaryData []byte) *BinaryBody {
-	return &BinaryBody{data: binaryData}
-}
-
-// NewBinaryBodyEmpty - init SegmentBody for read.
-func NewBinaryBodyEmpty() *BinaryBody {
-	return new(BinaryBody)
-}
-
-// Bytes - get body data in bytes.
-func (sb *BinaryBody) Bytes() []byte {
-	return sb.data
-}
-
-// SizeOf - get size body.
-func (sb *BinaryBody) SizeOf() int {
-	return sizeOfUint32 + len(sb.data)
-}
-
-// MarshalBinary - encoding to byte.
-func (sb *BinaryBody) MarshalBinary() ([]byte, error) {
-	var offset int
-	buf := make([]byte, sb.SizeOf())
-
-	// write len data and move offset
-	binary.LittleEndian.PutUint32(buf[offset:offset+4], uint32(len(sb.data)))
-	offset += sizeOfUint32
-
-	// write data
-	buf = append(buf[:offset], sb.data...)
-
-	return buf, nil
-}
-
-// UnmarshalBinary - decoding from byte.
-func (sb *BinaryBody) UnmarshalBinary(data []byte) error {
-	// read len data
-	var off int
-	lenSLice := binary.LittleEndian.Uint32(data[off:sizeOfUint32])
-	off += sizeOfUint32
-
-	// read data
-	sb.data = make([]byte, lenSLice)
-	copy(sb.data, data[off:])
-
-	return nil
-}
-
-// ReadAt - read BinaryBody with ReaderAt.
-func (sb *BinaryBody) ReadAt(ctx context.Context, r io.ReaderAt, off int64, size int) error {
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
-
-	buf := make([]byte, size)
-	if _, err := r.ReadAt(buf, off); err != nil {
-		return err
-	}
-
-	return sb.UnmarshalBinary(buf)
-}
-
-// Read - read BinaryBody with Reader.
-func (sb *BinaryBody) Read(ctx context.Context, r io.Reader, size int) error {
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
-
-	buf := make([]byte, size)
-	if _, err := io.ReadFull(r, buf); err != nil {
-		return err
-	}
-
-	return sb.UnmarshalBinary(buf)
-}
-
-// Destroy - clear memory, for implements.
-func (sb *BinaryBody) Destroy() {
-	sb.data = nil
-}
-
 // ReadAtFrameStatuses - read body to Statuses with ReaderAt.
 func ReadAtFrameStatuses(ctx context.Context, r io.ReaderAt, off int64, size int) (Statuses, error) {
 	if ctx.Err() != nil {
@@ -1571,7 +1030,7 @@ func ReadFrameStatuses(ctx context.Context, r io.Reader, size int) (Statuses, er
 }
 
 // NewStatusesFrame - init new frame.
-func NewStatusesFrame(ss encoding.BinaryMarshaler) (*Frame, error) {
+func NewStatusesFrame(ss encoding.BinaryMarshaler) (*ReadFrame, error) {
 	body, err := ss.MarshalBinary()
 	if err != nil {
 		return nil, err
@@ -1709,7 +1168,7 @@ func ReadFrameRejectStatuses(ctx context.Context, r io.Reader, size int) (Reject
 }
 
 // NewRejectStatusesFrame - init new frame.
-func NewRejectStatusesFrame(rs encoding.BinaryMarshaler) (*Frame, error) {
+func NewRejectStatusesFrame(rs encoding.BinaryMarshaler) (*ReadFrame, error) {
 	body, err := rs.MarshalBinary()
 	if err != nil {
 		return nil, err
@@ -1844,7 +1303,7 @@ func ReadFrameRefillShardEOF(ctx context.Context, r io.Reader, size int) (*Refil
 }
 
 // NewRefillShardEOFFrame - init new frame.
-func NewRefillShardEOFFrame(nameID uint32, shardID uint16) (*Frame, error) {
+func NewRefillShardEOFFrame(nameID uint32, shardID uint16) (*ReadFrame, error) {
 	body, err := NewRefillShardEOF(nameID, shardID).MarshalBinary()
 	if err != nil {
 		return nil, err

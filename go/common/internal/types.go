@@ -8,7 +8,11 @@
 package internal
 
 import (
+	"io"
+	"runtime"
 	"unsafe"
+
+	"github.com/gogo/protobuf/proto"
 )
 
 // GoSegment is GO wrapper for Segment. This wrapper is initialized from GO and is processed in C/C++ code.
@@ -26,14 +30,25 @@ type GoSegment struct {
 
 // NewGoSegment - init GoSegment.
 func NewGoSegment() *GoSegment {
-	return &GoSegment{
+	gs := &GoSegment{
 		data: CSlice{},
 	}
+	runtime.SetFinalizer(gs, func(gs *GoSegment) {
+		CSegmentDestroy(unsafe.Pointer(gs))
+	})
+	return gs
 }
 
-// Bytes returns raw go-slice bytes from struct.
-func (gs *GoSegment) Bytes() []byte {
-	return *(*[]byte)((unsafe.Pointer(&gs.data)))
+// Size returns len of bytes
+func (gs *GoSegment) Size() int64 {
+	return int64(len(*(*[]byte)(unsafe.Pointer(&gs.data))))
+}
+
+// WriteTo implements io.WriterTo inerface
+func (gs *GoSegment) WriteTo(w io.Writer) (int64, error) {
+	n, err := w.Write(*(*[]byte)(unsafe.Pointer(&gs.data)))
+	runtime.KeepAlive(gs)
+	return int64(n), err
 }
 
 // Samples returns count of samples in segment
@@ -56,11 +71,6 @@ func (gs *GoSegment) Latest() int64 {
 	return gs.latest
 }
 
-// Destroy - Frees C/C++ allocated memory.
-func (gs *GoSegment) Destroy() {
-	CSegmentDestroy(unsafe.Pointer(gs))
-}
-
 // GoDecodedSegment is the GO wrapper for decoded segment into remote write protobuf
 type GoDecodedSegment struct {
 	data          CSlice
@@ -71,14 +81,25 @@ type GoDecodedSegment struct {
 
 // NewGoDecodedSegment - init GoDecodedSegment.
 func NewGoDecodedSegment() *GoDecodedSegment {
-	return &GoDecodedSegment{
+	ds := &GoDecodedSegment{
 		data: CSlice{},
 	}
+	runtime.SetFinalizer(ds, func(ds *GoDecodedSegment) {
+		CDecodedSegmentDestroy(unsafe.Pointer(ds))
+	})
+	return ds
 }
 
-// Bytes - convert in go-slice byte from struct.
-func (ds *GoDecodedSegment) Bytes() []byte {
-	return *(*[]byte)((unsafe.Pointer(&ds.data)))
+// Size returns len of bytes
+func (ds *GoDecodedSegment) Size() int64 {
+	return int64(len(*(*[]byte)(unsafe.Pointer(&ds.data))))
+}
+
+// WriteTo implements io.WriterTo interface
+func (ds *GoDecodedSegment) WriteTo(w io.Writer) (int64, error) {
+	n, err := w.Write(*(*[]byte)(unsafe.Pointer(&ds.data)))
+	runtime.KeepAlive(ds)
+	return int64(n), err
 }
 
 // CreatedAt returns timestamp in nanoseconds when source segment was created
@@ -91,9 +112,11 @@ func (ds *GoDecodedSegment) EncodedAt() int64 {
 	return ds.encodedAtTSNS
 }
 
-// Destroy - clear memory in C/C++.
-func (ds *GoDecodedSegment) Destroy() {
-	CDecodedSegmentDestroy(unsafe.Pointer(ds))
+// UnmarshalTo unmarshals data to given protobuf message
+func (ds *GoDecodedSegment) UnmarshalTo(v proto.Unmarshaler) error {
+	err := v.Unmarshal(*(*[]byte)(unsafe.Pointer(&ds.data)))
+	runtime.KeepAlive(ds)
+	return err
 }
 
 // GoRedundant is GO wrapper for Redundant. This wrapper is initialized from GO and is processed in C/C++ code.
@@ -106,17 +129,16 @@ type GoRedundant struct {
 
 // NewGoRedundant - init GoRedundant.
 func NewGoRedundant() *GoRedundant {
-	return &GoRedundant{}
+	gr := &GoRedundant{}
+	runtime.SetFinalizer(gr, func(gr *GoRedundant) {
+		CRedundantDestroy(unsafe.Pointer(gr))
+	})
+	return gr
 }
 
 // PointerData - get contained data, ONLY FOR TESTING PURPOSES.
 func (gr *GoRedundant) PointerData() unsafe.Pointer {
 	return gr.data
-}
-
-// Destroy - clear memory in C/C++.
-func (gr *GoRedundant) Destroy() {
-	CRedundantDestroy(unsafe.Pointer(gr))
 }
 
 // GoSnapshot - GO wrapper for snapshot, init from GO and filling from C/C++.
@@ -129,19 +151,25 @@ type GoSnapshot struct {
 
 // NewGoSnapshot - init GoSnapshot.
 func NewGoSnapshot() *GoSnapshot {
-	return &GoSnapshot{
+	gs := &GoSnapshot{
 		data: CSlice{},
 	}
+	runtime.SetFinalizer(gs, func(gs *GoSnapshot) {
+		CSnapshotDestroy(unsafe.Pointer(gs))
+	})
+	return gs
 }
 
-// Bytes - convert in go-slice byte from struct.
-func (gs *GoSnapshot) Bytes() []byte {
-	return *(*[]byte)((unsafe.Pointer(&gs.data)))
+// Size returns count of bytes in snapshot
+func (gs *GoSnapshot) Size() int64 {
+	return int64(len(*(*[]byte)(unsafe.Pointer(&gs.data))))
 }
 
-// Destroy - clear memory in C/C++.
-func (gs *GoSnapshot) Destroy() {
-	CSnapshotDestroy(unsafe.Pointer(gs))
+// WriteTo implements io.WriterTo interface
+func (gs *GoSnapshot) WriteTo(w io.Writer) (int64, error) {
+	n, err := w.Write(*(*[]byte)(unsafe.Pointer(&gs.data)))
+	runtime.KeepAlive(gs)
+	return int64(n), err
 }
 
 // GoErrorInfo is the Go-side wrapper for storing the error info from C/C++ APIs.
@@ -149,20 +177,37 @@ type GoErrorInfo struct {
 	err CErrorInfo
 }
 
+// NewGoErrorInfo - init GoErrorInfo.
+func NewGoErrorInfo() *GoErrorInfo {
+	goerr := &GoErrorInfo{}
+	runtime.SetFinalizer(goerr, func(goerr *GoErrorInfo) {
+		CErrorInfoDestroy(goerr.err)
+	})
+	return goerr
+}
+
+// GetError - return error info from C++.
 func (goerr *GoErrorInfo) GetError() error {
 	if goerr.err == nil {
 		return nil
 	}
-	return CErrorInfoGetError(goerr.err)
+	err := CErrorInfoGetError(goerr.err)
+	runtime.KeepAlive(goerr)
+	return err
 }
 
+// GetStacktrace - return stacktrace info from C++.
 func (goerr *GoErrorInfo) GetStacktrace() string {
 	if goerr.err == nil {
 		return ""
 	}
-	return CErrorInfoGetStacktrace(goerr.err)
+	st := CErrorInfoGetStacktrace(goerr.err)
+	runtime.KeepAlive(goerr)
+	return st
+
 }
 
+// Destroy - destroy error C++.
 func (goerr *GoErrorInfo) Destroy() {
 	CErrorInfoDestroy(goerr.err)
 }

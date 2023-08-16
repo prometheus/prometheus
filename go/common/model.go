@@ -8,44 +8,42 @@ import (
 	"runtime"
 	"unsafe"
 
+	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/pp/go/common/internal"
+	"github.com/prometheus/prometheus/pp/go/frames"
 )
 
 // ShardedData - array of structures with (*LabelSet, timestamp, value, LSHash)
 type ShardedData interface {
 	Cluster() string
 	Replica() string
-	Destroy()
 }
 
 // Segment - encoded data segment
 type Segment interface {
-	Bytes() []byte
+	frames.WritePayload
 	Samples() uint32
 	Series() uint32
 	Earliest() int64
 	Latest() int64
-	Destroy()
 }
 
 // DecodedSegment - decoded to RemoteWrite protobuf segment
 type DecodedSegment interface {
-	Bytes() []byte
+	frames.WritePayload
 	CreatedAt() int64
 	EncodedAt() int64
-	Destroy()
+	UnmarshalTo(proto.Unmarshaler) error
 }
 
 // Redundant - information to create a Snapshot
 type Redundant interface {
 	PointerData() unsafe.Pointer
-	Destroy()
 }
 
 // Snapshot - snapshot of encoder/decoder
 type Snapshot interface {
-	Bytes() []byte
-	Destroy()
+	frames.WritePayload
 }
 
 // SegmentKey is a key to store segment data in Exchange and Refill
@@ -93,9 +91,12 @@ func NewHashdex(protoData []byte) (ShardedData, error) {
 		cluster: &internal.CSlice{},
 		replica: &internal.CSlice{},
 	}
-	cerr := internal.GoErrorInfo{}
-	internal.CHashdexPresharding(h.hashdex, h.data, h.cluster, h.replica, &cerr)
-	runtime.KeepAlive(h.data)
+	runtime.SetFinalizer(h, func(h *Hashdex) {
+		runtime.KeepAlive(h.data)
+		internal.CHashdexDtor(h.hashdex)
+	})
+	cerr := internal.NewGoErrorInfo()
+	internal.CHashdexPresharding(h.hashdex, h.data, h.cluster, h.replica, cerr)
 	return h, cerr.GetError()
 }
 
@@ -113,12 +114,4 @@ func (h *Hashdex) Replica() string {
 	copyData := make([]byte, len(data))
 	copy(copyData, data)
 	return string(copyData)
-}
-
-// Destroy - clear memory in C/C++.
-func (h *Hashdex) Destroy() {
-	// so that the Garbage Collector does not clear the memory
-	// associated with the slice, we hold it through KeepAlive
-	runtime.KeepAlive(h.data)
-	internal.CHashdexDtor(h.hashdex)
 }
