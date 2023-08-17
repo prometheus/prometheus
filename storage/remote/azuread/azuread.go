@@ -204,14 +204,22 @@ func newTokenCredential(cfg *AzureADConfig) (azcore.TokenCredential, error) {
 	}
 
 	if cfg.ManagedIdentity != nil {
-		cred, err = newManagedIdentityTokenCredential(clientOpts, cfg.ManagedIdentity.ClientID)
+		managedIdentityConfig := &ManagedIdentityConfig{
+			ClientID: cfg.ManagedIdentity.ClientID,
+		}
+		cred, err = newManagedIdentityTokenCredential(clientOpts, managedIdentityConfig)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	if cfg.OAuth != nil {
-		cred, err = newOAuthTokenCredential(clientOpts, cfg.OAuth.TenantID, cfg.OAuth.ClientID, cfg.OAuth.ClientSecret)
+		oAuthConfig := &OAuthConfig{
+			ClientID:     cfg.OAuth.ClientID,
+			ClientSecret: cfg.OAuth.ClientSecret,
+			TenantID:     cfg.OAuth.TenantID,
+		}
+		cred, err = newOAuthTokenCredential(clientOpts, oAuthConfig)
 		if err != nil {
 			return nil, err
 		}
@@ -221,16 +229,16 @@ func newTokenCredential(cfg *AzureADConfig) (azcore.TokenCredential, error) {
 }
 
 // newManagedIdentityTokenCredential returns new Managed Identity token credential.
-func newManagedIdentityTokenCredential(clientOpts *azcore.ClientOptions, managedIdentityClientID string) (azcore.TokenCredential, error) {
-	clientID := azidentity.ClientID(managedIdentityClientID)
+func newManagedIdentityTokenCredential(clientOpts *azcore.ClientOptions, managedIdentityConfig *ManagedIdentityConfig) (azcore.TokenCredential, error) {
+	clientID := azidentity.ClientID(managedIdentityConfig.ClientID)
 	opts := &azidentity.ManagedIdentityCredentialOptions{ClientOptions: *clientOpts, ID: clientID}
 	return azidentity.NewManagedIdentityCredential(opts)
 }
 
 // newOAuthTokenCredential returns new OAuth token credential
-func newOAuthTokenCredential(clientOpts *azcore.ClientOptions, tenantID, clientID, clientSecret string) (azcore.TokenCredential, error) {
+func newOAuthTokenCredential(clientOpts *azcore.ClientOptions, oAuthConfig *OAuthConfig) (azcore.TokenCredential, error) {
 	opts := &azidentity.ClientSecretCredentialOptions{ClientOptions: *clientOpts}
-	return azidentity.NewClientSecretCredential(tenantID, clientID, clientSecret, opts)
+	return azidentity.NewClientSecretCredential(oAuthConfig.TenantID, oAuthConfig.ClientID, oAuthConfig.ClientSecret, opts)
 }
 
 // newTokenProvider helps to fetch accessToken for different types of credential. This also takes care of
