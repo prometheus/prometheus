@@ -82,11 +82,35 @@ type Hashdex struct {
 // Hashdex API.
 //
 
+type HashdexMemoryLimits struct {
+	MaxLabelNameLength         uint32
+	MaxLabelValueLength        uint32
+	MaxLabelNamesPerTimeseries uint32
+	MaxTimeseriesCount         uint64
+	MaxPbSizeInBytes           uint64
+}
+
+// Default memory limits for Hashdex.
+func HashdexDefaultLimits() HashdexMemoryLimits {
+	return HashdexMemoryLimits{
+		MaxLabelNameLength:         4096,
+		MaxLabelValueLength:        65536,
+		MaxLabelNamesPerTimeseries: 320,
+		MaxTimeseriesCount:         0,
+		MaxPbSizeInBytes:           100 << 20,
+	}
+}
+
 // NewHashdex - init new Hashdex.
 func NewHashdex(protoData []byte) (ShardedData, error) {
+	args := HashdexDefaultLimits()
+	return NewHashdexWithLimits(protoData, &args)
+}
+
+func NewHashdexWithLimits(protoData []byte, limits *HashdexMemoryLimits) (ShardedData, error) {
 	// cluster and replica - in memory GO(protoData)
 	h := &Hashdex{
-		hashdex: internal.CHashdexCtor(),
+		hashdex: internal.CHashdexCtor(uintptr(unsafe.Pointer(limits))),
 		data:    protoData,
 		cluster: &internal.CSlice{},
 		replica: &internal.CSlice{},
@@ -97,6 +121,7 @@ func NewHashdex(protoData []byte) (ShardedData, error) {
 	})
 	cerr := internal.NewGoErrorInfo()
 	internal.CHashdexPresharding(h.hashdex, h.data, h.cluster, h.replica, cerr)
+	runtime.KeepAlive(limits)
 	return h, cerr.GetError()
 }
 

@@ -35,6 +35,16 @@ const char* c_api_error_info_get_error(c_api_error_info*);
 const char* c_api_error_info_get_stacktrace(c_api_error_info*);
 void destroy_c_api_error_info(c_api_error_info* err_info);
 
+/// Determines the sharded en/decoding constraints for label_sets and protobufs.
+/// Use it to limit the hashdex's memory consumption for sharding protobufs.
+typedef struct {
+  uint32_t max_label_name_length;
+  uint32_t max_label_value_length;
+  uint32_t max_label_names_per_timeseries;
+  size_t max_timeseries_count;
+  size_t max_pb_size_in_bytes;
+} hashdex_label_set_limits;
+
 // c_slice - C wrapper C++ Slice for exchange memory between C++ and Go.
 typedef struct {
   const void* array;

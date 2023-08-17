@@ -178,8 +178,8 @@ void okdb_wal_c_redundant_destroy(c_redundant* c_rt) {
 //
 // Hashdex
 // okdb_wal_c_hashdex_ctor - constructor, C wrapper C++, init C++ class Hashdex.
-c_hashdex okdb_wal_c_hashdex_ctor() {
-  return std::visit([&](auto& vtbl) { return vtbl.template call<"okdb_wal_c_hashdex_ctor">(); }, encoder_vtbl);
+c_hashdex okdb_wal_c_hashdex_ctor(hashdex_label_set_limits* limits) {
+  return std::visit([&](auto& vtbl) { return vtbl.template call<"okdb_wal_c_hashdex_ctor">(limits); }, encoder_vtbl);
 }
 
 // okdb_wal_c_hashdex_presharding - C wrapper C++, calls C++ class Hashdex methods.

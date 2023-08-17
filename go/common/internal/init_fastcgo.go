@@ -267,12 +267,13 @@ type CHashdexPreshardingParams struct {
 	replica   *CSlice
 }
 
-func CHashdexCtor() CHashdex {
+func CHashdexCtor(args uintptr) CHashdex {
 	var hashdex uintptr = 0
 	var error CErrorInfo = nil
 
-	fastcgo.UnsafeCall2(
+	fastcgo.UnsafeCall3(
 		C.okdb_wal_uni_c_hashdex_ctor,
+		args,
 		uintptr(unsafe.Pointer(&hashdex)),
 		uintptr(unsafe.Pointer(&error)),
 	)
