@@ -16,19 +16,39 @@ class Hashdex {
   BareBones::Vector<PromPP::Prometheus::RemoteWrite::TimeseriesProtobufHashdexRecord> hashdex_;
   std::string_view replica_;
   std::string_view cluster_;
+  const hashdex_label_set_limits limits_{};  // no limits on default.
 
  public:
   inline __attribute__((always_inline)) Hashdex() noexcept {}
+  inline __attribute__((always_inline)) Hashdex(const hashdex_label_set_limits& limits) noexcept : limits_(limits) {}
+
+  constexpr const hashdex_label_set_limits& get_limits() const noexcept { return limits_; }
+  PromPP::Prometheus::RemoteWrite::PbLabelSetMemoryLimits get_pb_limits() const noexcept {
+    return {
+        limits_.max_label_name_length,
+        limits_.max_label_value_length,
+        limits_.max_label_names_per_timeseries,
+        limits_.max_timeseries_count,
+    };
+  };
 
   // presharding - from protobuf make presharding slice with hash end proto.
   inline __attribute__((always_inline)) void presharding(c_slice proto_data, c_slice* cluster, c_slice* replica) {
+    if (limits_.max_pb_size_in_bytes && proto_data.len > limits_.max_pb_size_in_bytes) {
+      throw BareBones::Exception(0x1d979f3023b86c48, "Protobuf message's size (%zd) exceeds the maximum protobuf message size (%zd)", proto_data.len,
+                                 limits_.max_pb_size_in_bytes);
+    }
+
+    auto pb_limits = get_pb_limits();
+
     protozero::pbf_reader pb(std::string_view{static_cast<const char*>(proto_data.array), proto_data.len});
     PromPP::Prometheus::RemoteWrite::read_many_timeseries_in_hashdex<PromPP::Primitives::TimeseriesSemiview,
-                                                                   BareBones::Vector<PromPP::Prometheus::RemoteWrite::TimeseriesProtobufHashdexRecord>>(pb,
-                                                                                                                                                      hashdex_);
+                                                                   BareBones::Vector<PromPP::Prometheus::RemoteWrite::TimeseriesProtobufHashdexRecord>>(
+        pb, hashdex_, pb_limits);
     if (!hashdex_.empty()) {
       PromPP::Primitives::TimeseriesSemiview timeseries;
-      PromPP::Prometheus::RemoteWrite::read_timeseries_without_samples(protozero::pbf_reader{hashdex_.begin()->timeseries_protobuf_message}, timeseries);
+      PromPP::Prometheus::RemoteWrite::read_timeseries_without_samples(protozero::pbf_reader{hashdex_.begin()->timeseries_protobuf_message}, timeseries,
+                                                                     pb_limits);
       for (const auto& [name, value] : timeseries.label_set()) {
         if (name == "__replica__") {
           replica_ = value;
@@ -150,8 +170,8 @@ void OKDB_WAL_PREFIXED_NAME(okdb_wal_c_redundant_destroy)(c_redundant* c_rt) {
 
 // Hashdex
 // okdb_wal_c_hashdex_ctor - constructor, C wrapper C++, init C++ class Hashdex.
-c_hashdex OKDB_WAL_PREFIXED_NAME(okdb_wal_c_hashdex_ctor)() {
-  return new (std::nothrow) Wrapper::Hashdex();
+c_hashdex OKDB_WAL_PREFIXED_NAME(okdb_wal_c_hashdex_ctor)(hashdex_label_set_limits* limits) {
+  return new (std::nothrow) Wrapper::Hashdex(*limits);
 }
 
 // okdb_wal_c_hashdex_presharding - C wrapper C++, calls C++ class Hashdex methods.

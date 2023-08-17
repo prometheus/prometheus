@@ -37,11 +37,15 @@ typedef c_encoder_ptr c_encoder;
 // okdb_wal_c_redundant_destroy - calls the destructor, C wrapper C++ for clear memory.
 void okdb_wal_c_redundant_destroy(c_redundant* c_rt);
 
+//
 // Hashdex
-// okdb_wal_c_hashdex_ctor - constructor, C wrapper C++, init C++ class Hashdex.
-c_hashdex okdb_wal_c_hashdex_ctor();
 
-void okdb_wal_uni_c_hashdex_ctor(c_hashdex* out_hashdex_ptr, c_api_error_info** err);
+typedef hashdex_label_set_limits c_hashdex_ctor_params;
+
+// okdb_wal_c_hashdex_ctor - constructor, C wrapper C++, init C++ class Hashdex.
+c_hashdex okdb_wal_c_hashdex_ctor(/*c_hashdex_ctor_params* */ go_ptr in_ctor_args);
+
+void okdb_wal_uni_c_hashdex_ctor(go_ptr in_ctor_args, c_hashdex* out_hashdex_ptr, c_api_error_info** err);
 
 typedef struct {
   c_slice_ptr proto_data;

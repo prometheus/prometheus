@@ -13,6 +13,15 @@ namespace PromPP {
 namespace Prometheus {
 namespace RemoteWrite {
 
+// Use for setting the limits on pb message properties to avoid memory DoS.
+// 0 means no limits.
+struct PbLabelSetMemoryLimits {
+  uint32_t max_label_name_length;
+  uint32_t max_label_value_length;
+  uint32_t max_label_names_per_timeseries;
+  size_t max_timeseries_count;
+};
+
 struct TimeseriesProtobufHashdexRecord {
   size_t labelset_hashval;
   std::string_view timeseries_protobuf_message;
@@ -176,12 +185,27 @@ __attribute__((flatten)) void read_many_timeseries(ProtobufReader& pb, Callback 
 }
 
 template <class ProtobufReader, class Timeseries>
-inline __attribute__((always_inline)) void read_timeseries_without_samples(ProtobufReader&& pb_timeseries, Timeseries& timeseries) {
+inline __attribute__((always_inline)) void read_timeseries_without_samples(ProtobufReader&& pb_timeseries,
+                                                                           Timeseries& timeseries,
+                                                                           const PbLabelSetMemoryLimits& limits) {
+  size_t current_message_n = 0;
   while (pb_timeseries.next(1)) {
+    if (limits.max_label_names_per_timeseries && current_message_n >= limits.max_label_names_per_timeseries) {
+      throw BareBones::Exception(0xf666cea4f74038c7, "Max Label Names count per Timeseries limit exceeded");
+    }
+
     auto pb_label = pb_timeseries.get_message();
     typename Timeseries::label_set_type::label_type label;
     read_label(pb_label, label);
+    if (size_t label_name_sz = std::size(std::get<0>(label)); limits.max_label_name_length && label_name_sz > limits.max_label_name_length) {
+      throw BareBones::Exception(0x01102a3321345745, "Label name size (%zd) exceeds the maximum name size limit", label_name_sz);
+    }
+    if (size_t label_value_sz = std::size(std::get<1>(label)); limits.max_label_value_length && label_value_sz > limits.max_label_value_length) {
+      throw BareBones::Exception(0x32b5ff9563758da8, "Label value size (%zd) exceeds the maximum value size limit", label_value_sz);
+    }
     timeseries.label_set().add(label);
+
+    current_message_n++;
   }
 
   if (__builtin_expect(!timeseries.label_set().size(), false)) {
@@ -191,20 +215,26 @@ inline __attribute__((always_inline)) void read_timeseries_without_samples(Proto
 
 template <class Timeseries, class Hashdex, class ProtobufReader>
   requires std::is_same<typename Hashdex::value_type, TimeseriesProtobufHashdexRecord>::value
-__attribute__((flatten)) void read_many_timeseries_in_hashdex(ProtobufReader& pb, Hashdex& hdx) {
+__attribute__((flatten)) void read_many_timeseries_in_hashdex(ProtobufReader& pb, Hashdex& hdx, const PbLabelSetMemoryLimits& limits) {
   Timeseries timeseries;
-
+  size_t current_timeseries_n = 0;
   try {
     while (pb.next(1)) {
+      if (limits.max_timeseries_count && current_timeseries_n >= limits.max_timeseries_count) {
+        throw BareBones::Exception(0xdedb5b24d946cc4d, "Max Timeseries count limit exceeded");
+        break;
+      }
       auto pb_view = pb.get_view();
-      read_timeseries_without_samples(protozero::pbf_reader{pb_view}, timeseries);
+      read_timeseries_without_samples(protozero::pbf_reader{pb_view}, timeseries, limits);
       hdx.emplace_back(hash_value(timeseries.label_set()), pb_view);
       timeseries.clear();
+      current_timeseries_n++;
     }
   } catch (protozero::exception& e) {
     throw BareBones::Exception(0xbe40bda82f01b869, "Protobuf parsing timeseries exception: %s", e.what());
   }
 }
+
 }  // namespace RemoteWrite
 }  // namespace Prometheus
 }  // namespace PromPP

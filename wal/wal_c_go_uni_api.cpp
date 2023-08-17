@@ -171,9 +171,17 @@ extern "C" void okdb_wal_uni_c_decoder_snapshot(c_decoder c_dec, c_decoder_snaps
 
 // CHashdex API.
 
-extern "C" void okdb_wal_uni_c_hashdex_ctor(c_hashdex* out_hashdex_ptr, c_api_error_info** err) {
+extern "C" void okdb_wal_uni_c_hashdex_ctor(c_hashdex_ctor_params* in_ctor_args, c_hashdex* out_hashdex_ptr, c_api_error_info** err) {
+  if (!in_ctor_args) {
+    *err = MAKE_C_API_ERROR("null pointer to in_ctor_args");
+    return;
+  }
+  if (!out_hashdex_ptr) {
+    *err = MAKE_C_API_ERROR("null pointer to return value (out_hashdex_ptr)");
+    return;
+  }
   try {
-    *out_hashdex_ptr = okdb_wal_c_hashdex_ctor();
+    *out_hashdex_ptr = okdb_wal_c_hashdex_ctor(in_ctor_args);
   } catch (...) {
     *err = handle_current_exception(__func__, CURRENT_STACKTRACE, std::current_exception());
   }

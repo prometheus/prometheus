@@ -76,6 +76,61 @@ func (es *EncoderSuite) makeData() []byte {
 	return b
 }
 
+func (es *EncoderSuite) makeDataWithTwoTimeseries() []byte {
+	wr := &prompb.WriteRequest{
+		Timeseries: []prompb.TimeSeries{
+			{
+				Labels: []prompb.Label{
+					{
+						Name:  "__name__",
+						Value: "test",
+					},
+					{
+						Name:  "job",
+						Value: "tester",
+					},
+					{
+						Name:  "instance",
+						Value: "blablabla",
+					},
+				},
+				Samples: []prompb.Sample{
+					{
+						Timestamp: 1654608420000,
+						Value:     4444,
+					},
+				},
+			},
+			{
+				Labels: []prompb.Label{
+					{
+						Name:  "__name__",
+						Value: "test",
+					},
+					{
+						Name:  "job",
+						Value: "tester",
+					},
+					{
+						Name:  "instance",
+						Value: "blablabla",
+					},
+				},
+				Samples: []prompb.Sample{
+					{
+						Timestamp: 1654608420666,
+						Value:     4666,
+					},
+				},
+			},
+		},
+	}
+
+	b, err := wr.Marshal()
+	es.NoError(err)
+	return b
+}
+
 func (es *EncoderSuite) TestEncode() {
 	es.T().Log("encode data and accumulate segment and redundant")
 	for i := 0; i < es.encodeCount; i++ {
@@ -178,13 +233,78 @@ func (es *EncoderSuite) TestSnapshotError() {
 }
 
 func (es *EncoderSuite) TestCppInvalidDataForHashdex() {
-	es.T().Skipf("Skipped until next MR with handling invalid data exceptions.")
 	invalidPbData := []byte("1111")
 	h, err := common.NewHashdex(invalidPbData)
 	es.Error(err)
 	es.T().Logf("Got an error (it's OK): %s", err.Error())
 	_ = h
 }
+
+//
+// Test shards for memory limits
+//
+
+func (es *EncoderSuite) TestHashdexWithHardLimitsOnPbMessage() {
+	limits := common.HashdexMemoryLimits{
+		MaxPbSizeInBytes: 20,
+	}
+	data := es.makeData()
+	h, err := common.NewHashdexWithLimits(data, &limits)
+	es.Error(err)
+	es.T().Logf("Got an error (it's OK): %s", err.Error())
+	_ = h
+}
+
+func (es *EncoderSuite) TestHashdexWithHardLimitsOnLabelNameLength() {
+	limits := common.HashdexMemoryLimits{
+		MaxLabelNameLength: 2,
+	}
+	data := es.makeData()
+	h, err := common.NewHashdexWithLimits(data, &limits)
+
+	es.Error(err)
+	es.T().Logf("Got an error (it's OK): %s", err.Error())
+	_ = h
+}
+
+func (es *EncoderSuite) TestHashdexWithHardLimitsOnLabelValueLength() {
+	limits := common.HashdexMemoryLimits{
+		MaxLabelValueLength: 2,
+	}
+	data := es.makeData()
+	h, err := common.NewHashdexWithLimits(data, &limits)
+
+	es.Error(err)
+	es.T().Logf("Got an error (it's OK): %s", err.Error())
+	_ = h
+}
+
+func (es *EncoderSuite) TestHashdexWithHardLimitsOnLabelsInTimeseries() {
+	limits := common.HashdexMemoryLimits{
+		MaxLabelNamesPerTimeseries: 1,
+	}
+	data := es.makeData()
+	h, err := common.NewHashdexWithLimits(data, &limits)
+
+	es.Error(err)
+	es.T().Logf("Got an error (it's OK): %s", err.Error())
+	_ = h
+}
+
+func (es *EncoderSuite) TestHashdexWithVeryHardLimitsOnTimeseries() {
+	limits := common.HashdexMemoryLimits{
+		MaxTimeseriesCount: 1,
+	}
+	data := es.makeDataWithTwoTimeseries()
+	h, err := common.NewHashdexWithLimits(data, &limits)
+
+	es.Error(err)
+	es.T().Logf("Got an error (it's OK): %s", err.Error())
+	_ = h
+}
+
+//
+// Benchmarks
 
 func BenchmarkEncoder(b *testing.B) {
 	ctx := context.Background()

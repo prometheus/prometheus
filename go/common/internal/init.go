@@ -26,7 +26,10 @@ package internal
 // #include "wal_c_types.h"
 // #include <stdlib.h>
 import "C"
-import "unsafe"
+import (
+	"errors"
+	"unsafe"
+)
 
 // CDecoder is the internal raw C/C++ decoder wrapper.
 // It is intended to be used inside common.Decoder API
@@ -44,6 +47,11 @@ type CSlice C.c_slice
 // Go's Hashdex dynamic data and C/C++ presharding algo.
 type CHashdex C.c_hashdex
 
+// CErrorInfo is the bridge type containing the catched
+// exception as the (function name: exception type and message)
+// and stacktrace (if available)
+type CErrorInfo C.c_api_error_info_ptr
+
 // Init is intended to run C/C++ FFI initialize() function. In our case this function should
 // call multiarch init function.
 func Init() {
@@ -59,11 +67,12 @@ func CSegmentDestroy(p unsafe.Pointer) {
 // CDecoder API
 //
 
-func CDecoderCtor() CDecoder {
+func CDecoderCtor(*GoErrorInfo) CDecoder {
 	return CDecoder(C.okdb_wal_c_decoder_ctor())
 }
 
-func CDecoderDecode(decoder CDecoder, segment []byte, result *GoDecodedSegment) uint32 {
+func CDecoderDecode(decoder CDecoder, segment []byte, result *GoDecodedSegment, err *GoErrorInfo) uint32 {
+	_ = err
 	return uint32(C.okdb_wal_c_decoder_decode(
 		C.c_decoder(decoder),
 		C.size_t(uintptr((unsafe.Pointer(&segment)))),
@@ -71,14 +80,16 @@ func CDecoderDecode(decoder CDecoder, segment []byte, result *GoDecodedSegment) 
 	))
 }
 
-func CDecoderDecodeDry(decoder CDecoder, segment []byte) uint32 {
+func CDecoderDecodeDry(decoder CDecoder, segment []byte, err *GoErrorInfo) uint32 {
+	_ = err
 	return uint32(C.okdb_wal_c_decoder_decode_dry(
 		C.c_decoder(decoder),
 		C.size_t(uintptr((unsafe.Pointer(&segment)))),
 	))
 }
 
-func CDecoderDecodeSnapshot(decoder CDecoder, snapshot []byte) {
+func CDecoderDecodeSnapshot(decoder CDecoder, snapshot []byte, err *GoErrorInfo) {
+	_ = err
 	C.okdb_wal_c_decoder_snapshot(
 		C.c_decoder(decoder),
 		C.size_t(uintptr((unsafe.Pointer(&snapshot)))),
@@ -93,11 +104,13 @@ func CDecoderDtor(decoder CDecoder) {
 // CEncoder API
 //
 
-func CEncoderCtor(shardID, numberOfShards uint16) CEncoder {
+func CEncoderCtor(shardID, numberOfShards uint16, err *GoErrorInfo) CEncoder {
+	_ = err
 	return CEncoder(C.okdb_wal_c_encoder_ctor(C.uint16_t(shardID), C.uint16_t(numberOfShards)))
 }
 
-func CEncoderEncode(encoder CEncoder, hashdex CHashdex, segment *GoSegment, redundant *GoRedundant) {
+func CEncoderEncode(encoder CEncoder, hashdex CHashdex, segment *GoSegment, redundant *GoRedundant, err *GoErrorInfo) {
+	_ = err
 	C.okdb_wal_c_encoder_encode(
 		C.c_encoder(encoder),
 		C.c_hashdex(hashdex),
@@ -107,7 +120,8 @@ func CEncoderEncode(encoder CEncoder, hashdex CHashdex, segment *GoSegment, redu
 }
 
 // CEncoderAdd - add to encode incoming data(ShardedData) through C++ encoder.
-func CEncoderAdd(encoder CEncoder, hashdex CHashdex, segment *GoSegment) {
+func CEncoderAdd(encoder CEncoder, hashdex CHashdex, segment *GoSegment, err *GoErrorInfo) {
+	_ = err
 	C.okdb_wal_c_encoder_add(
 		C.c_encoder(encoder),
 		C.c_hashdex(hashdex),
@@ -116,7 +130,8 @@ func CEncoderAdd(encoder CEncoder, hashdex CHashdex, segment *GoSegment) {
 }
 
 // CEncoderFinalize - finalize the encoded data in the C++ encoder to Segment.
-func CEncoderFinalize(encoder CEncoder, segment *GoSegment, redundant *GoRedundant) {
+func CEncoderFinalize(encoder CEncoder, segment *GoSegment, redundant *GoRedundant, err *GoErrorInfo) {
+	_ = err
 	C.okdb_wal_c_encoder_finalize(
 		C.c_encoder(encoder),
 		(*C.c_segment)(unsafe.Pointer(segment)),
@@ -124,7 +139,8 @@ func CEncoderFinalize(encoder CEncoder, segment *GoSegment, redundant *GoRedunda
 	)
 }
 
-func CEncoderSnapshot(encoder CEncoder, redundants []unsafe.Pointer, snapshot *GoSnapshot) {
+func CEncoderSnapshot(encoder CEncoder, redundants []unsafe.Pointer, snapshot *GoSnapshot, err *GoErrorInfo) {
+	_ = err
 	C.okdb_wal_c_encoder_snapshot(
 		C.c_encoder(encoder),
 		C.size_t(uintptr((unsafe.Pointer(&redundants)))),
@@ -140,11 +156,11 @@ func CEncoderDtor(encoder CEncoder) {
 // CHashdex API.
 //
 
-func CHashdexCtor() CHashdex {
-	return CHashdex(C.okdb_wal_c_hashdex_ctor())
+func CHashdexCtor(args uintptr) CHashdex {
+	return CHashdex(C.okdb_wal_c_hashdex_ctor(C.ulong(args)))
 }
 
-func CHashdexPresharding(hashdex CHashdex, protoData []byte, cluster, replica *CSlice) {
+func CHashdexPresharding(hashdex CHashdex, protoData []byte, cluster, replica *CSlice, err *GoErrorInfo) {
 	C.okdb_wal_c_hashdex_presharding(
 		C.c_hashdex(hashdex),
 		C.size_t(uintptr(unsafe.Pointer(&protoData))),
@@ -173,4 +189,17 @@ func CRedundantDestroy(p unsafe.Pointer) {
 // CDecodedSegmentDestroy calls C API for destroying GoDecodedSegment's C API.
 func CDecodedSegmentDestroy(p unsafe.Pointer) {
 	C.okdb_wal_c_decoded_segment_destroy((*C.c_decoded_segment)(p))
+}
+
+// CErrorInfo API
+func CErrorInfoGetError(errinfo CErrorInfo) error {
+	return errors.New(C.GoString(C.c_api_error_info_get_error(errinfo)))
+}
+
+func CErrorInfoGetStacktrace(errinfo CErrorInfo) string {
+	return C.GoString(C.c_api_error_info_get_stacktrace(errinfo))
+}
+
+func CErrorInfoDestroy(errinfo CErrorInfo) {
+	C.destroy_c_api_error_info(errinfo)
 }
