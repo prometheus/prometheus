@@ -220,6 +220,7 @@ eval instant at 5m histogram_sum(balanced_histogram)
 eval instant at 5m histogram_fraction(0, 4, balanced_histogram)
 	{} 0.5
 
-# TODO: still fails with expected 0 for {} but got 0.5
-#eval instant at 5m histogram_quantile(0.5, balanced_histogram)
-#	{} 0
+# If the quantile happens to be located in a span of empty buckets, the actually returned value is the lower bound of
+# the first populated bucket after the span of empty buckets.
+eval instant at 5m histogram_quantile(0.5, balanced_histogram)
+	{} 0.5
