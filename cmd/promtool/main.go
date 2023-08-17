@@ -730,30 +730,7 @@ func CheckRules(ls lintConfig, files ...string) int {
 	failed := false
 	hasErrors := false
 	if len(files) == 0 {
-		fmt.Println("Checking standard input")
-		data, err := io.ReadAll(os.Stdin)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "  FAILED:", err)
-			return failureExitCode
-		}
-		rgs, errs := rulefmt.Parse(data)
-		for _, e := range errs {
-			fmt.Fprintln(os.Stderr, e.Error())
-			return failureExitCode
-		}
-		if n, errs := checkRuleGroups(rgs, ls); errs != nil {
-			fmt.Fprintln(os.Stderr, "  FAILED:")
-			for _, e := range errs {
-				fmt.Fprintln(os.Stderr, e.Error())
-			}
-			failed = true
-			for _, err := range errs {
-				hasErrors = hasErrors || !errors.Is(err, lintError)
-			}
-		} else {
-			fmt.Printf("  SUCCESS: %d rules found\n", n)
-		}
-		fmt.Println()
+		failed, hasErrors = checkRulesFromStdin(ls)
 	} else {
 		failed, hasErrors = checkRules(files, ls)
 	}
@@ -768,6 +745,44 @@ func CheckRules(ls lintConfig, files ...string) int {
 	return successExitCode
 }
 
+// checkRulesFromStdin validates rule from stdin.
+func checkRulesFromStdin(ls lintConfig) (bool, bool) {
+	failed := false
+	hasErrors := false
+	fmt.Println("Checking standard input")
+	data, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "  FAILED:", err)
+		return true, true
+	}
+	rgs, errs := rulefmt.Parse(data)
+	if errs != nil {
+		failed = true
+		fmt.Fprintln(os.Stderr, "  FAILED:")
+		for _, e := range errs {
+			fmt.Fprintln(os.Stderr, e.Error())
+			hasErrors = hasErrors || !errors.Is(e, lintError)
+		}
+		if hasErrors {
+			return failed, hasErrors
+		}
+	}
+	if n, errs := checkRuleGroups(rgs, ls); errs != nil {
+		fmt.Fprintln(os.Stderr, "  FAILED:")
+		for _, e := range errs {
+			fmt.Fprintln(os.Stderr, e.Error())
+		}
+		failed = true
+		for _, err := range errs {
+			hasErrors = hasErrors || !errors.Is(err, lintError)
+		}
+	} else {
+		fmt.Printf("  SUCCESS: %d rules found\n", n)
+	}
+	fmt.Println()
+	return failed, hasErrors
+}
+
 // checkRules validates rule files.
 func checkRules(files []string, ls lintConfig) (bool, bool) {
 	failed := false
@@ -777,7 +792,14 @@ func checkRules(files []string, ls lintConfig) (bool, bool) {
 		rgs, errs := rulefmt.ParseFile(f)
 		if errs != nil {
 			failed = true
-			continue
+			fmt.Fprintln(os.Stderr, "  FAILED:")
+			for _, e := range errs {
+				fmt.Fprintln(os.Stderr, e.Error())
+				hasErrors = hasErrors || !errors.Is(e, lintError)
+			}
+			if hasErrors {
+				continue
+			}
 		}
 		if n, errs := checkRuleGroups(rgs, ls); errs != nil {
 			fmt.Fprintln(os.Stderr, "  FAILED:")
