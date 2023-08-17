@@ -4230,12 +4230,12 @@ func TestNativeHistogram_SubOperator(t *testing.T) {
 				ZeroCount:     2,
 				PositiveSpans: []histogram.Span{
 					{Offset: 0, Length: 2},
-					{Offset: 3, Length: 4},
+					{Offset: 1, Length: 4},
 				},
 				PositiveBuckets: []float64{1, 1, 2, 1, 1, 1},
 				NegativeSpans: []histogram.Span{
 					{Offset: 1, Length: 2},
-					{Offset: 4, Length: 1},
+					{Offset: 1, Length: 1},
 					{Offset: 4, Length: 3},
 				},
 				NegativeBuckets: []float64{1, 1, 7, 5, 5, 2},
@@ -4286,7 +4286,7 @@ func TestNativeHistogram_SubOperator(t *testing.T) {
 				ZeroCount:     2,
 				PositiveSpans: []histogram.Span{
 					{Offset: 0, Length: 1},
-					{Offset: 2, Length: 5},
+					{Offset: 1, Length: 5},
 				},
 				PositiveBuckets: []float64{1, 1, 2, 1, 1, 1},
 				NegativeSpans: []histogram.Span{
@@ -4341,7 +4341,7 @@ func TestNativeHistogram_SubOperator(t *testing.T) {
 				ZeroCount:     -2,
 				PositiveSpans: []histogram.Span{
 					{Offset: 0, Length: 1},
-					{Offset: 2, Length: 5},
+					{Offset: 1, Length: 5},
 				},
 				PositiveBuckets: []float64{-1, -1, -2, -1, -1, -1},
 				NegativeSpans: []histogram.Span{

@@ -253,10 +253,9 @@ func compactBuckets[IBC InternalBucketCount](buckets []IBC, spans []Span, maxEmp
 			}
 			// It's in the middle or in the end of the span.
 			// Split the current span.
-			cut := posInSpan + uint32(nEmpty)
 			newSpan := Span{
-				Offset: spans[iSpan].Offset + int32(cut),
-				Length: spans[iSpan].Length - cut,
+				Offset: int32(nEmpty),
+				Length: spans[iSpan].Length - posInSpan - uint32(nEmpty),
 			}
 			spans[iSpan].Length = posInSpan
 			// In any case, we have to split to the next span.
@@ -301,9 +300,7 @@ func compactBuckets[IBC InternalBucketCount](buckets []IBC, spans []Span, maxEmp
 	}
 	iSpan = 1
 	for iSpan < len(spans) {
-		prevSpan := spans[iSpan-1]
-		gap := int(spans[iSpan].Offset) - int(prevSpan.Offset) - int(prevSpan.Length)
-		if gap > maxEmptyBuckets {
+		if int(spans[iSpan].Offset) > maxEmptyBuckets {
 			l := int(spans[iSpan].Length)
 			if deltaBuckets {
 				for _, bucket := range buckets[iBucket : iBucket+l] {
@@ -315,16 +312,17 @@ func compactBuckets[IBC InternalBucketCount](buckets []IBC, spans []Span, maxEmp
 			continue
 		}
 		// Merge span with previous one and insert empty buckets.
-		spans[iSpan-1].Length += uint32(gap) + spans[iSpan].Length
+		offset := int(spans[iSpan].Offset)
+		spans[iSpan-1].Length += uint32(offset) + spans[iSpan].Length
 		spans = append(spans[:iSpan], spans[iSpan+1:]...)
-		newBuckets := make([]IBC, len(buckets)+gap)
+		newBuckets := make([]IBC, len(buckets)+offset)
 		copy(newBuckets, buckets[:iBucket])
-		copy(newBuckets[iBucket+gap:], buckets[iBucket:])
+		copy(newBuckets[iBucket+offset:], buckets[iBucket:])
 		if deltaBuckets {
 			newBuckets[iBucket] = -currentBucketAbsolute
-			newBuckets[iBucket+gap] += currentBucketAbsolute
+			newBuckets[iBucket+offset] += currentBucketAbsolute
 		}
-		iBucket += gap
+		iBucket += offset
 		buckets = newBuckets
 		currentBucketAbsolute = buckets[iBucket]
 		// Note that with many merges, it would be more efficient to

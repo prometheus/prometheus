@@ -3991,7 +3991,7 @@ func TestHistogramTestExpression(t *testing.T) {
 					{Offset: 2, Length: 3},
 				},
 			},
-			expected: `{{offset:-3 buckets:[5.1 0 0 0 0 0 0 10 7] n_offset:-1 n_buckets:[4.1 5 0 7 8 9]}}`,
+			expected: `{{offset:-3 buckets:[5.1 0 0 0 0 10 7] n_offset:-1 n_buckets:[4.1 5 0 0 7 8 9]}}`,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
