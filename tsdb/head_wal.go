@@ -1517,7 +1517,7 @@ Outer:
 		default:
 			// This is a record type we don't understand. It is either and old format from earlier versions,
 			// or a new format and the code was rolled back to old version.
-			loopErr = errors.Errorf("unsuported snapshot record type 0b%b", rec[0])
+			loopErr = errors.Errorf("unsupported snapshot record type 0b%b", rec[0])
 			break Outer
 		}
 	}
