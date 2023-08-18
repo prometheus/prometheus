@@ -33,22 +33,19 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
+	"github.com/prometheus/prometheus/util/teststorage"
 )
 
 func TestSampledReadEndpoint(t *testing.T) {
-	suite, err := promql.NewTest(t, `
+	store := promql.LoadedStorage(t, `
 		load 1m
 			test_metric1{foo="bar",baz="qux"} 1
 	`)
-	require.NoError(t, err)
-	defer suite.Close()
+	defer store.Close()
 
-	addNativeHistogramsToTestSuite(t, suite, 1)
+	addNativeHistogramsToTestSuite(t, store, 1)
 
-	err = suite.Run()
-	require.NoError(t, err)
-
-	h := NewReadHandler(nil, nil, suite.Storage(), func() config.Config {
+	h := NewReadHandler(nil, nil, store, func() config.Config {
 		return config.Config{
 			GlobalConfig: config.GlobalConfig{
 				// We expect external labels to be added, with the source labels honored.
@@ -135,19 +132,16 @@ func TestSampledReadEndpoint(t *testing.T) {
 }
 
 func BenchmarkStreamReadEndpoint(b *testing.B) {
-	suite, err := promql.NewTest(b, `
+	store := promql.LoadedStorage(b, `
 	load 1m
 		test_metric1{foo="bar1",baz="qux"} 0+100x119
 		test_metric1{foo="bar2",baz="qux"} 0+100x120
 		test_metric1{foo="bar3",baz="qux"} 0+100x240
 	`)
-	require.NoError(b, err)
 
-	defer suite.Close()
+	b.Cleanup(func() { store.Close() })
 
-	require.NoError(b, suite.Run())
-
-	api := NewReadHandler(nil, nil, suite.Storage(), func() config.Config {
+	api := NewReadHandler(nil, nil, store, func() config.Config {
 		return config.Config{}
 	},
 		0, 1, 0,
@@ -206,20 +200,17 @@ func TestStreamReadEndpoint(t *testing.T) {
 	// Second with 121 samples, We expect 1 frame with 2 chunks.
 	// Third with 241 samples. We expect 1 frame with 2 chunks, and 1 frame with 1 chunk for the same series due to bytes limit.
 	// Fourth with 120 histogram samples. We expect 1 frame with 1 chunk.
-	suite, err := promql.NewTest(t, `
+	store := promql.LoadedStorage(t, `
 		load 1m
 			test_metric1{foo="bar1",baz="qux"} 0+100x119
 			test_metric1{foo="bar2",baz="qux"} 0+100x120
 			test_metric1{foo="bar3",baz="qux"} 0+100x240
 	`)
-	require.NoError(t, err)
-	defer suite.Close()
+	defer store.Close()
 
-	addNativeHistogramsToTestSuite(t, suite, 120)
+	addNativeHistogramsToTestSuite(t, store, 120)
 
-	require.NoError(t, suite.Run())
-
-	api := NewReadHandler(nil, nil, suite.Storage(), func() config.Config {
+	api := NewReadHandler(nil, nil, store, func() config.Config {
 		return config.Config{
 			GlobalConfig: config.GlobalConfig{
 				// We expect external labels to be added, with the source labels honored.
@@ -440,10 +431,10 @@ func TestStreamReadEndpoint(t *testing.T) {
 	}, results)
 }
 
-func addNativeHistogramsToTestSuite(t *testing.T, pqlTest *promql.Test, n int) {
+func addNativeHistogramsToTestSuite(t *testing.T, storage *teststorage.TestStorage, n int) {
 	lbls := labels.FromStrings("__name__", "test_histogram_metric1", "baz", "qux")
 
-	app := pqlTest.Storage().Appender(context.TODO())
+	app := storage.Appender(context.TODO())
 	for i, fh := range tsdbutil.GenerateTestFloatHistograms(n) {
 		_, err := app.AppendHistogram(0, lbls, int64(i)*int64(60*time.Second/time.Millisecond), nil, fh)
 		require.NoError(t, err)

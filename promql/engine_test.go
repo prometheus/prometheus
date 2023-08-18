@@ -25,8 +25,6 @@ import (
 
 	"github.com/go-kit/log"
 
-	"github.com/prometheus/prometheus/tsdb/tsdbutil"
-
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 
@@ -35,7 +33,9 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/stats"
+	"github.com/prometheus/prometheus/util/teststorage"
 )
 
 func TestMain(m *testing.M) {
@@ -566,6 +566,7 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 				err   error
 			)
 			ctx := context.Background()
+
 			if tc.end == 0 {
 				query, err = engine.NewInstantQuery(ctx, hintsRecorder, nil, tc.query, timestamp.Time(tc.start))
 			} else {
@@ -573,7 +574,7 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 			}
 			require.NoError(t, err)
 
-			res := query.Exec(ctx)
+			res := query.Exec(context.Background())
 			require.NoError(t, res.Err)
 
 			require.Equal(t, tc.expected, hintsRecorder.hints)
@@ -636,15 +637,11 @@ func TestEngineShutdown(t *testing.T) {
 }
 
 func TestEngineEvalStmtTimestamps(t *testing.T) {
-	test, err := NewTest(t, `
+	storage := LoadedStorage(t, `
 load 10s
   metric 1 2
 `)
-	require.NoError(t, err)
-	defer test.Close()
-
-	err = test.Run()
-	require.NoError(t, err)
+	t.Cleanup(func() { storage.Close() })
 
 	cases := []struct {
 		Query       string
@@ -728,14 +725,15 @@ load 10s
 		t.Run(fmt.Sprintf("%d query=%s", i, c.Query), func(t *testing.T) {
 			var err error
 			var qry Query
+			engine := newTestEngine()
 			if c.Interval == 0 {
-				qry, err = test.QueryEngine().NewInstantQuery(test.context, test.Queryable(), nil, c.Query, c.Start)
+				qry, err = engine.NewInstantQuery(context.Background(), storage, nil, c.Query, c.Start)
 			} else {
-				qry, err = test.QueryEngine().NewRangeQuery(test.context, test.Queryable(), nil, c.Query, c.Start, c.End, c.Interval)
+				qry, err = engine.NewRangeQuery(context.Background(), storage, nil, c.Query, c.Start, c.End, c.Interval)
 			}
 			require.NoError(t, err)
 
-			res := qry.Exec(test.Context())
+			res := qry.Exec(context.Background())
 			if c.ShouldError {
 				require.Error(t, res.Err, "expected error for the query %q", c.Query)
 				return
@@ -748,18 +746,14 @@ load 10s
 }
 
 func TestQueryStatistics(t *testing.T) {
-	test, err := NewTest(t, `
+	storage := LoadedStorage(t, `
 load 10s
   metricWith1SampleEvery10Seconds 1+1x100
   metricWith3SampleEvery10Seconds{a="1",b="1"} 1+1x100
   metricWith3SampleEvery10Seconds{a="2",b="2"} 1+1x100
   metricWith3SampleEvery10Seconds{a="3",b="2"} 1+1x100
 `)
-	require.NoError(t, err)
-	defer test.Close()
-
-	err = test.Run()
-	require.NoError(t, err)
+	t.Cleanup(func() { storage.Close() })
 
 	cases := []struct {
 		Query               string
@@ -1194,7 +1188,7 @@ load 10s
 		},
 	}
 
-	engine := test.QueryEngine()
+	engine := newTestEngine()
 	engine.enablePerStepStats = true
 	origMaxSamples := engine.maxSamplesPerQuery
 	for _, c := range cases {
@@ -1206,13 +1200,13 @@ load 10s
 				var err error
 				var qry Query
 				if c.Interval == 0 {
-					qry, err = engine.NewInstantQuery(test.context, test.Queryable(), opts, c.Query, c.Start)
+					qry, err = engine.NewInstantQuery(context.Background(), storage, opts, c.Query, c.Start)
 				} else {
-					qry, err = engine.NewRangeQuery(test.context, test.Queryable(), opts, c.Query, c.Start, c.End, c.Interval)
+					qry, err = engine.NewRangeQuery(context.Background(), storage, opts, c.Query, c.Start, c.End, c.Interval)
 				}
 				require.NoError(t, err)
 
-				res := qry.Exec(test.Context())
+				res := qry.Exec(context.Background())
 				require.Equal(t, expErr, res.Err)
 
 				return qry.Stats()
@@ -1234,17 +1228,13 @@ load 10s
 }
 
 func TestMaxQuerySamples(t *testing.T) {
-	test, err := NewTest(t, `
+	storage := LoadedStorage(t, `
 load 10s
   metric 1+1x100
   bigmetric{a="1"} 1+1x100
   bigmetric{a="2"} 1+1x100
 `)
-	require.NoError(t, err)
-	defer test.Close()
-
-	err = test.Run()
-	require.NoError(t, err)
+	t.Cleanup(func() { storage.Close() })
 
 	// These test cases should be touching the limit exactly (hence no exceeding).
 	// Exceeding the limit will be tested by doing -1 to the MaxSamples.
@@ -1382,20 +1372,20 @@ load 10s
 		},
 	}
 
-	engine := test.QueryEngine()
 	for _, c := range cases {
 		t.Run(c.Query, func(t *testing.T) {
+			engine := newTestEngine()
 			testFunc := func(expError error) {
 				var err error
 				var qry Query
 				if c.Interval == 0 {
-					qry, err = engine.NewInstantQuery(test.context, test.Queryable(), nil, c.Query, c.Start)
+					qry, err = engine.NewInstantQuery(context.Background(), storage, nil, c.Query, c.Start)
 				} else {
-					qry, err = engine.NewRangeQuery(test.context, test.Queryable(), nil, c.Query, c.Start, c.End, c.Interval)
+					qry, err = engine.NewRangeQuery(context.Background(), storage, nil, c.Query, c.Start, c.End, c.Interval)
 				}
 				require.NoError(t, err)
 
-				res := qry.Exec(test.Context())
+				res := qry.Exec(context.Background())
 				stats := qry.Stats()
 				require.Equal(t, expError, res.Err)
 				require.NotNil(t, stats)
@@ -1416,7 +1406,8 @@ load 10s
 }
 
 func TestAtModifier(t *testing.T) {
-	test, err := NewTest(t, `
+	engine := newTestEngine()
+	storage := LoadedStorage(t, `
 load 10s
   metric{job="1"} 0+1x1000
   metric{job="2"} 0+2x1000
@@ -1427,11 +1418,7 @@ load 10s
 load 1ms
   metric_ms 0+1x10000
 `)
-	require.NoError(t, err)
-	defer test.Close()
-
-	err = test.Run()
-	require.NoError(t, err)
+	t.Cleanup(func() { storage.Close() })
 
 	lbls1 := labels.FromStrings("__name__", "metric", "job", "1")
 	lbls2 := labels.FromStrings("__name__", "metric", "job", "2")
@@ -1441,7 +1428,7 @@ load 1ms
 	lblsneg := labels.FromStrings("__name__", "metric_neg")
 
 	// Add some samples with negative timestamp.
-	db := test.TSDB()
+	db := storage.DB
 	app := db.Appender(context.Background())
 	ref, err := app.Append(0, lblsneg, -1000000, 1000)
 	require.NoError(t, err)
@@ -1630,13 +1617,13 @@ load 1ms
 			var err error
 			var qry Query
 			if c.end == 0 {
-				qry, err = test.QueryEngine().NewInstantQuery(test.context, test.Queryable(), nil, c.query, start)
+				qry, err = engine.NewInstantQuery(context.Background(), storage, nil, c.query, start)
 			} else {
-				qry, err = test.QueryEngine().NewRangeQuery(test.context, test.Queryable(), nil, c.query, start, end, interval)
+				qry, err = engine.NewRangeQuery(context.Background(), storage, nil, c.query, start, end, interval)
 			}
 			require.NoError(t, err)
 
-			res := qry.Exec(test.Context())
+			res := qry.Exec(context.Background())
 			require.NoError(t, res.Err)
 			if expMat, ok := c.result.(Matrix); ok {
 				sort.Sort(expMat)
@@ -1955,18 +1942,16 @@ func TestSubquerySelector(t *testing.T) {
 		},
 	} {
 		t.Run("", func(t *testing.T) {
-			test, err := NewTest(t, tst.loadString)
-			require.NoError(t, err)
-			defer test.Close()
+			engine := newTestEngine()
+			storage := LoadedStorage(t, tst.loadString)
+			t.Cleanup(func() { storage.Close() })
 
-			require.NoError(t, test.Run())
-			engine := test.QueryEngine()
 			for _, c := range tst.cases {
 				t.Run(c.Query, func(t *testing.T) {
-					qry, err := engine.NewInstantQuery(test.context, test.Queryable(), nil, c.Query, c.Start)
+					qry, err := engine.NewInstantQuery(context.Background(), storage, nil, c.Query, c.Start)
 					require.NoError(t, err)
 
-					res := qry.Exec(test.Context())
+					res := qry.Exec(context.Background())
 					require.Equal(t, c.Result.Err, res.Err)
 					mat := res.Value.(Matrix)
 					sort.Sort(mat)
@@ -1978,15 +1963,12 @@ func TestSubquerySelector(t *testing.T) {
 }
 
 func TestTimestampFunction_StepsMoreOftenThanSamples(t *testing.T) {
-	test, err := NewTest(t, `
+	engine := newTestEngine()
+	storage := LoadedStorage(t, `
 load 1m
   metric 0+1x1000
 `)
-	require.NoError(t, err)
-	defer test.Close()
-
-	err = test.Run()
-	require.NoError(t, err)
+	t.Cleanup(func() { storage.Close() })
 
 	query := "timestamp(metric)"
 	start := time.Unix(0, 0)
@@ -2013,10 +1995,10 @@ load 1m
 		},
 	}
 
-	qry, err := test.QueryEngine().NewRangeQuery(test.context, test.Queryable(), nil, query, start, end, interval)
+	qry, err := engine.NewRangeQuery(context.Background(), storage, nil, query, start, end, interval)
 	require.NoError(t, err)
 
-	res := qry.Exec(test.Context())
+	res := qry.Exec(context.Background())
 	require.NoError(t, res.Err)
 	require.Equal(t, expectedResult, res.Value)
 }
@@ -2955,7 +2937,6 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 }
 
 func TestEngineOptsValidation(t *testing.T) {
-	ctx := context.Background()
 	cases := []struct {
 		opts     EngineOpts
 		query    string
@@ -3015,8 +2996,8 @@ func TestEngineOptsValidation(t *testing.T) {
 
 	for _, c := range cases {
 		eng := NewEngine(c.opts)
-		_, err1 := eng.NewInstantQuery(ctx, nil, nil, c.query, time.Unix(10, 0))
-		_, err2 := eng.NewRangeQuery(ctx, nil, nil, c.query, time.Unix(0, 0), time.Unix(10, 0), time.Second)
+		_, err1 := eng.NewInstantQuery(context.Background(), nil, nil, c.query, time.Unix(10, 0))
+		_, err2 := eng.NewRangeQuery(context.Background(), nil, nil, c.query, time.Unix(0, 0), time.Unix(10, 0), time.Second)
 		if c.fail {
 			require.Equal(t, c.expError, err1)
 			require.Equal(t, c.expError, err2)
@@ -3156,17 +3137,14 @@ func TestRangeQuery(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.Name, func(t *testing.T) {
-			test, err := NewTest(t, c.Load)
-			require.NoError(t, err)
-			defer test.Close()
+			engine := newTestEngine()
+			storage := LoadedStorage(t, c.Load)
+			t.Cleanup(func() { storage.Close() })
 
-			err = test.Run()
-			require.NoError(t, err)
-
-			qry, err := test.QueryEngine().NewRangeQuery(test.context, test.Queryable(), nil, c.Query, c.Start, c.End, c.Interval)
+			qry, err := engine.NewRangeQuery(context.Background(), storage, nil, c.Query, c.Start, c.End, c.Interval)
 			require.NoError(t, err)
 
-			res := qry.Exec(test.Context())
+			res := qry.Exec(context.Background())
 			require.NoError(t, res.Err)
 			require.Equal(t, c.Result, res.Value)
 		})
@@ -3176,27 +3154,24 @@ func TestRangeQuery(t *testing.T) {
 func TestNativeHistogramRate(t *testing.T) {
 	// TODO(beorn7): Integrate histograms into the PromQL testing framework
 	// and write more tests there.
-	test, err := NewTest(t, "")
-	require.NoError(t, err)
-	defer test.Close()
+	engine := newTestEngine()
+	storage := teststorage.New(t)
+	t.Cleanup(func() { storage.Close() })
 
 	seriesName := "sparse_histogram_series"
 	lbls := labels.FromStrings("__name__", seriesName)
 
-	app := test.Storage().Appender(context.TODO())
+	app := storage.Appender(context.Background())
 	for i, h := range tsdbutil.GenerateTestHistograms(100) {
 		_, err := app.AppendHistogram(0, lbls, int64(i)*int64(15*time.Second/time.Millisecond), h, nil)
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
 
-	require.NoError(t, test.Run())
-	engine := test.QueryEngine()
-
 	queryString := fmt.Sprintf("rate(%s[1m])", seriesName)
-	qry, err := engine.NewInstantQuery(test.context, test.Queryable(), nil, queryString, timestamp.Time(int64(5*time.Minute/time.Millisecond)))
+	qry, err := engine.NewInstantQuery(context.Background(), storage, nil, queryString, timestamp.Time(int64(5*time.Minute/time.Millisecond)))
 	require.NoError(t, err)
-	res := qry.Exec(test.Context())
+	res := qry.Exec(context.Background())
 	require.NoError(t, res.Err)
 	vector, err := res.Vector()
 	require.NoError(t, err)
@@ -3220,27 +3195,24 @@ func TestNativeHistogramRate(t *testing.T) {
 func TestNativeFloatHistogramRate(t *testing.T) {
 	// TODO(beorn7): Integrate histograms into the PromQL testing framework
 	// and write more tests there.
-	test, err := NewTest(t, "")
-	require.NoError(t, err)
-	defer test.Close()
+	engine := newTestEngine()
+	storage := teststorage.New(t)
+	t.Cleanup(func() { storage.Close() })
 
 	seriesName := "sparse_histogram_series"
 	lbls := labels.FromStrings("__name__", seriesName)
 
-	app := test.Storage().Appender(context.TODO())
+	app := storage.Appender(context.Background())
 	for i, fh := range tsdbutil.GenerateTestFloatHistograms(100) {
 		_, err := app.AppendHistogram(0, lbls, int64(i)*int64(15*time.Second/time.Millisecond), nil, fh)
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
 
-	require.NoError(t, test.Run())
-	engine := test.QueryEngine()
-
 	queryString := fmt.Sprintf("rate(%s[1m])", seriesName)
-	qry, err := engine.NewInstantQuery(test.context, test.Queryable(), nil, queryString, timestamp.Time(int64(5*time.Minute/time.Millisecond)))
+	qry, err := engine.NewInstantQuery(context.Background(), storage, nil, queryString, timestamp.Time(int64(5*time.Minute/time.Millisecond)))
 	require.NoError(t, err)
-	res := qry.Exec(test.Context())
+	res := qry.Exec(context.Background())
 	require.NoError(t, res.Err)
 	vector, err := res.Vector()
 	require.NoError(t, err)
@@ -3283,16 +3255,16 @@ func TestNativeHistogram_HistogramCountAndSum(t *testing.T) {
 	}
 	for _, floatHisto := range []bool{true, false} {
 		t.Run(fmt.Sprintf("floatHistogram=%t", floatHisto), func(t *testing.T) {
-			test, err := NewTest(t, "")
-			require.NoError(t, err)
-			t.Cleanup(test.Close)
+			engine := newTestEngine()
+			storage := teststorage.New(t)
+			t.Cleanup(func() { storage.Close() })
 
 			seriesName := "sparse_histogram_series"
 			lbls := labels.FromStrings("__name__", seriesName)
-			engine := test.QueryEngine()
 
 			ts := int64(10 * time.Minute / time.Millisecond)
-			app := test.Storage().Appender(context.TODO())
+			app := storage.Appender(context.Background())
+			var err error
 			if floatHisto {
 				_, err = app.AppendHistogram(0, lbls, ts, nil, h.ToFloat())
 			} else {
@@ -3302,10 +3274,10 @@ func TestNativeHistogram_HistogramCountAndSum(t *testing.T) {
 			require.NoError(t, app.Commit())
 
 			queryString := fmt.Sprintf("histogram_count(%s)", seriesName)
-			qry, err := engine.NewInstantQuery(test.context, test.Queryable(), nil, queryString, timestamp.Time(ts))
+			qry, err := engine.NewInstantQuery(context.Background(), storage, nil, queryString, timestamp.Time(ts))
 			require.NoError(t, err)
 
-			res := qry.Exec(test.Context())
+			res := qry.Exec(context.Background())
 			require.NoError(t, res.Err)
 
 			vector, err := res.Vector()
@@ -3320,10 +3292,10 @@ func TestNativeHistogram_HistogramCountAndSum(t *testing.T) {
 			}
 
 			queryString = fmt.Sprintf("histogram_sum(%s)", seriesName)
-			qry, err = engine.NewInstantQuery(test.context, test.Queryable(), nil, queryString, timestamp.Time(ts))
+			qry, err = engine.NewInstantQuery(context.Background(), storage, nil, queryString, timestamp.Time(ts))
 			require.NoError(t, err)
 
-			res = qry.Exec(test.Context())
+			res = qry.Exec(context.Background())
 			require.NoError(t, res.Err)
 
 			vector, err = res.Vector()
@@ -3533,18 +3505,18 @@ func TestNativeHistogram_HistogramQuantile(t *testing.T) {
 		},
 	}
 
-	test, err := NewTest(t, "")
-	require.NoError(t, err)
-	t.Cleanup(test.Close)
+	engine := newTestEngine()
+	storage := teststorage.New(t)
+	t.Cleanup(func() { storage.Close() })
 	idx := int64(0)
 	for _, floatHisto := range []bool{true, false} {
 		for _, c := range cases {
 			t.Run(fmt.Sprintf("%s floatHistogram=%t", c.text, floatHisto), func(t *testing.T) {
 				seriesName := "sparse_histogram_series"
 				lbls := labels.FromStrings("__name__", seriesName)
-				engine := test.QueryEngine()
 				ts := idx * int64(10*time.Minute/time.Millisecond)
-				app := test.Storage().Appender(context.TODO())
+				app := storage.Appender(context.Background())
+				var err error
 				if floatHisto {
 					_, err = app.AppendHistogram(0, lbls, ts, nil, c.h.ToFloat())
 				} else {
@@ -3556,10 +3528,10 @@ func TestNativeHistogram_HistogramQuantile(t *testing.T) {
 				for j, sc := range c.subCases {
 					t.Run(fmt.Sprintf("%d %s", j, sc.quantile), func(t *testing.T) {
 						queryString := fmt.Sprintf("histogram_quantile(%s, %s)", sc.quantile, seriesName)
-						qry, err := engine.NewInstantQuery(test.context, test.Queryable(), nil, queryString, timestamp.Time(ts))
+						qry, err := engine.NewInstantQuery(context.Background(), storage, nil, queryString, timestamp.Time(ts))
 						require.NoError(t, err)
 
-						res := qry.Exec(test.Context())
+						res := qry.Exec(context.Background())
 						require.NoError(t, res.Err)
 
 						vector, err := res.Vector()
@@ -3966,16 +3938,16 @@ func TestNativeHistogram_HistogramFraction(t *testing.T) {
 	for _, floatHisto := range []bool{true, false} {
 		for _, c := range cases {
 			t.Run(fmt.Sprintf("%s floatHistogram=%t", c.text, floatHisto), func(t *testing.T) {
-				test, err := NewTest(t, "")
-				require.NoError(t, err)
-				t.Cleanup(test.Close)
+				engine := newTestEngine()
+				storage := teststorage.New(t)
+				t.Cleanup(func() { storage.Close() })
 
 				seriesName := "sparse_histogram_series"
 				lbls := labels.FromStrings("__name__", seriesName)
-				engine := test.QueryEngine()
 
 				ts := idx * int64(10*time.Minute/time.Millisecond)
-				app := test.Storage().Appender(context.TODO())
+				app := storage.Appender(context.Background())
+				var err error
 				if floatHisto {
 					_, err = app.AppendHistogram(0, lbls, ts, nil, c.h.ToFloat())
 				} else {
@@ -3987,10 +3959,10 @@ func TestNativeHistogram_HistogramFraction(t *testing.T) {
 				for j, sc := range c.subCases {
 					t.Run(fmt.Sprintf("%d %s %s", j, sc.lower, sc.upper), func(t *testing.T) {
 						queryString := fmt.Sprintf("histogram_fraction(%s, %s, %s)", sc.lower, sc.upper, seriesName)
-						qry, err := engine.NewInstantQuery(test.context, test.Queryable(), nil, queryString, timestamp.Time(ts))
+						qry, err := engine.NewInstantQuery(context.Background(), storage, nil, queryString, timestamp.Time(ts))
 						require.NoError(t, err)
 
-						res := qry.Exec(test.Context())
+						res := qry.Exec(context.Background())
 						require.NoError(t, res.Err)
 
 						vector, err := res.Vector()
@@ -4125,20 +4097,20 @@ func TestNativeHistogram_Sum_Count_Add_AvgOperator(t *testing.T) {
 	for _, c := range cases {
 		for _, floatHisto := range []bool{true, false} {
 			t.Run(fmt.Sprintf("floatHistogram=%t %d", floatHisto, idx0), func(t *testing.T) {
-				test, err := NewTest(t, "")
-				require.NoError(t, err)
-				t.Cleanup(test.Close)
+				storage := teststorage.New(t)
+				t.Cleanup(func() { storage.Close() })
 
 				seriesName := "sparse_histogram_series"
 				seriesNameOverTime := "sparse_histogram_series_over_time"
 
-				engine := test.QueryEngine()
+				engine := newTestEngine()
 
 				ts := idx0 * int64(10*time.Minute/time.Millisecond)
-				app := test.Storage().Appender(context.TODO())
+				app := storage.Appender(context.Background())
 				for idx1, h := range c.histograms {
 					lbls := labels.FromStrings("__name__", seriesName, "idx", fmt.Sprintf("%d", idx1))
 					// Since we mutate h later, we need to create a copy here.
+					var err error
 					if floatHisto {
 						_, err = app.AppendHistogram(0, lbls, ts, nil, h.Copy().ToFloat())
 					} else {
@@ -4159,10 +4131,10 @@ func TestNativeHistogram_Sum_Count_Add_AvgOperator(t *testing.T) {
 				require.NoError(t, app.Commit())
 
 				queryAndCheck := func(queryString string, ts int64, exp Vector) {
-					qry, err := engine.NewInstantQuery(test.context, test.Queryable(), nil, queryString, timestamp.Time(ts))
+					qry, err := engine.NewInstantQuery(context.Background(), storage, nil, queryString, timestamp.Time(ts))
 					require.NoError(t, err)
 
-					res := qry.Exec(test.Context())
+					res := qry.Exec(context.Background())
 					require.NoError(t, res.Err)
 
 					vector, err := res.Vector()
@@ -4385,19 +4357,18 @@ func TestNativeHistogram_SubOperator(t *testing.T) {
 	for _, c := range cases {
 		for _, floatHisto := range []bool{true, false} {
 			t.Run(fmt.Sprintf("floatHistogram=%t %d", floatHisto, idx0), func(t *testing.T) {
-				test, err := NewTest(t, "")
-				require.NoError(t, err)
-				t.Cleanup(test.Close)
+				engine := newTestEngine()
+				storage := teststorage.New(t)
+				t.Cleanup(func() { storage.Close() })
 
 				seriesName := "sparse_histogram_series"
 
-				engine := test.QueryEngine()
-
 				ts := idx0 * int64(10*time.Minute/time.Millisecond)
-				app := test.Storage().Appender(context.TODO())
+				app := storage.Appender(context.Background())
 				for idx1, h := range c.histograms {
 					lbls := labels.FromStrings("__name__", seriesName, "idx", fmt.Sprintf("%d", idx1))
 					// Since we mutate h later, we need to create a copy here.
+					var err error
 					if floatHisto {
 						_, err = app.AppendHistogram(0, lbls, ts, nil, h.Copy().ToFloat())
 					} else {
@@ -4408,10 +4379,10 @@ func TestNativeHistogram_SubOperator(t *testing.T) {
 				require.NoError(t, app.Commit())
 
 				queryAndCheck := func(queryString string, exp Vector) {
-					qry, err := engine.NewInstantQuery(test.context, test.Queryable(), nil, queryString, timestamp.Time(ts))
+					qry, err := engine.NewInstantQuery(context.Background(), storage, nil, queryString, timestamp.Time(ts))
 					require.NoError(t, err)
 
-					res := qry.Exec(test.Context())
+					res := qry.Exec(context.Background())
 					require.NoError(t, res.Err)
 
 					vector, err := res.Vector()
@@ -4531,20 +4502,20 @@ func TestNativeHistogram_MulDivOperator(t *testing.T) {
 	for _, c := range cases {
 		for _, floatHisto := range []bool{true, false} {
 			t.Run(fmt.Sprintf("floatHistogram=%t %d", floatHisto, idx0), func(t *testing.T) {
-				test, err := NewTest(t, "")
-				require.NoError(t, err)
-				t.Cleanup(test.Close)
+				storage := teststorage.New(t)
+				t.Cleanup(func() { storage.Close() })
 
 				seriesName := "sparse_histogram_series"
 				floatSeriesName := "float_series"
 
-				engine := test.QueryEngine()
+				engine := newTestEngine()
 
 				ts := idx0 * int64(10*time.Minute/time.Millisecond)
-				app := test.Storage().Appender(context.TODO())
+				app := storage.Appender(context.Background())
 				h := c.histogram
 				lbls := labels.FromStrings("__name__", seriesName)
 				// Since we mutate h later, we need to create a copy here.
+				var err error
 				if floatHisto {
 					_, err = app.AppendHistogram(0, lbls, ts, nil, h.Copy().ToFloat())
 				} else {
@@ -4556,10 +4527,10 @@ func TestNativeHistogram_MulDivOperator(t *testing.T) {
 				require.NoError(t, app.Commit())
 
 				queryAndCheck := func(queryString string, exp Vector) {
-					qry, err := engine.NewInstantQuery(test.context, test.Queryable(), nil, queryString, timestamp.Time(ts))
+					qry, err := engine.NewInstantQuery(context.Background(), storage, nil, queryString, timestamp.Time(ts))
 					require.NoError(t, err)
 
-					res := qry.Exec(test.Context())
+					res := qry.Exec(context.Background())
 					require.NoError(t, res.Err)
 
 					vector, err := res.Vector()
@@ -4660,22 +4631,18 @@ metric 0 1 2
 	for _, c := range cases {
 		c := c
 		t.Run(c.name, func(t *testing.T) {
-			test, err := NewTest(t, load)
-			require.NoError(t, err)
-			defer test.Close()
+			engine := newTestEngine()
+			storage := LoadedStorage(t, load)
+			t.Cleanup(func() { storage.Close() })
 
-			err = test.Run()
-			require.NoError(t, err)
-
-			eng := test.QueryEngine()
 			if c.engineLookback != 0 {
-				eng.lookbackDelta = c.engineLookback
+				engine.lookbackDelta = c.engineLookback
 			}
 			opts := NewPrometheusQueryOpts(false, c.queryLookback)
-			qry, err := eng.NewInstantQuery(test.context, test.Queryable(), opts, query, c.ts)
+			qry, err := engine.NewInstantQuery(context.Background(), storage, opts, query, c.ts)
 			require.NoError(t, err)
 
-			res := qry.Exec(test.Context())
+			res := qry.Exec(context.Background())
 			require.NoError(t, res.Err)
 			vec, ok := res.Value.(Vector)
 			require.True(t, ok)
