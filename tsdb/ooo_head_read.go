@@ -206,6 +206,10 @@ func (oh *OOOHeadIndexReader) Postings(name string, values ...string) (index.Pos
 	}
 }
 
+func (oh *OOOHeadIndexReader) PostingsWithLabel(name string) (index.Postings, error) {
+	return oh.head.postings.GetWithLabel(name), nil
+}
+
 type OOOHeadChunkReader struct {
 	head       *Head
 	mint, maxt int64
@@ -402,6 +406,10 @@ func (ir *OOOCompactionHeadIndexReader) Postings(name string, values ...string) 
 		return nil, errors.New("only AllPostingsKey is supported")
 	}
 	return index.NewListPostings(ir.ch.postings), nil
+}
+
+func (ir *OOOCompactionHeadIndexReader) PostingsWithLabel(name string) (index.Postings, error) {
+	return nil, errors.New("not implemented")
 }
 
 func (ir *OOOCompactionHeadIndexReader) SortedPostings(p index.Postings) index.Postings {

@@ -120,6 +120,10 @@ func (h *headIndexReader) Postings(name string, values ...string) (index.Posting
 	}
 }
 
+func (h *headIndexReader) PostingsWithLabel(name string) (index.Postings, error) {
+	return h.head.postings.GetWithLabel(name), nil
+}
+
 func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {
 	series := make([]*memSeries, 0, 128)
 

@@ -135,13 +135,24 @@ func (p *MemPostings) LabelNames() []string {
 }
 
 // LabelValues returns label values for the given name.
-func (p *MemPostings) LabelValues(name string) []string {
+func (p *MemPostings) LabelValues(name string, matchers ...*labels.Matcher) []string {
 	p.mtx.RLock()
 	defer p.mtx.RUnlock()
 
 	values := make([]string, 0, len(p.m[name]))
 	for v := range p.m[name] {
-		values = append(values, v)
+		isMatch := true
+		// Try to exclude this value through corresponding matchers
+		for _, m := range matchers {
+			if m.Name == name && !m.Matches(v) {
+				isMatch = false
+				break
+			}
+		}
+
+		if isMatch {
+			values = append(values, v)
+		}
 	}
 	return values
 }
@@ -214,6 +225,18 @@ func (p *MemPostings) Get(name, value string) Postings {
 		return EmptyPostings()
 	}
 	return newListPostings(lp...)
+}
+
+// GetWithLabel returns a postings list for the given label name.
+func (p *MemPostings) GetWithLabel(name string) Postings {
+	p.mtx.RLock()
+	var ps []Postings
+	for _, srs := range p.m[name] {
+		ps = append(ps, newListPostings(srs...))
+	}
+	p.mtx.RUnlock()
+
+	return Merge(ps...)
 }
 
 // All returns a postings list over all documents ever added.

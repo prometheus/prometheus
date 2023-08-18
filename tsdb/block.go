@@ -75,6 +75,12 @@ type IndexReader interface {
 	// during background garbage collections.
 	Postings(name string, values ...string) (index.Postings, error)
 
+	// PostingsWithLabel returns the postings list iterator for the label name.
+	// The Postings here contain the offsets to the series inside the index.
+	// Found IDs are not strictly required to point to a valid Series, e.g.
+	// during background garbage collections.
+	PostingsWithLabel(name string) (index.Postings, error)
+
 	// SortedPostings returns a postings list that is reordered to be sorted
 	// by the label set of the underlying series.
 	SortedPostings(index.Postings) index.Postings
@@ -477,6 +483,10 @@ func (r blockIndexReader) LabelValues(name string, matchers ...*labels.Matcher) 
 	}
 
 	return labelValuesWithMatchers(r.ir, name, matchers...)
+}
+
+func (r blockIndexReader) PostingsWithLabel(name string) (index.Postings, error) {
+	return r.ir.PostingsWithLabel(name)
 }
 
 func (r blockIndexReader) LabelNames(matchers ...*labels.Matcher) ([]string, error) {

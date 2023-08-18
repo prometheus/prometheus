@@ -1465,12 +1465,7 @@ func (r *Reader) SortedLabelValues(name string, matchers ...*labels.Matcher) ([]
 // LabelValues returns value tuples that exist for the given label name.
 // It is not safe to use the return value beyond the lifetime of the byte slice
 // passed into the Reader.
-// TODO(replay): Support filtering by matchers
 func (r *Reader) LabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
-	if len(matchers) > 0 {
-		return nil, errors.Errorf("matchers parameter is not implemented: %+v", matchers)
-	}
-
 	if r.version == FormatV1 {
 		e, ok := r.postingsV1[name]
 		if !ok {
@@ -1478,18 +1473,27 @@ func (r *Reader) LabelValues(name string, matchers ...*labels.Matcher) ([]string
 		}
 		values := make([]string, 0, len(e))
 		for k := range e {
-			values = append(values, k)
+			isMatch := true
+			for _, m := range matchers {
+				if m.Name == name && !m.Matches(k) {
+					isMatch = false
+					break
+				}
+			}
+
+			if isMatch {
+				values = append(values, k)
+			}
 		}
 		return values, nil
 
 	}
-	e, ok := r.postings[name]
-	if !ok {
-		return nil, nil
-	}
+
+	e := r.postings[name]
 	if len(e) == 0 {
 		return nil, nil
 	}
+
 	values := make([]string, 0, len(e)*symbolFactor)
 
 	d := encoding.NewDecbufAt(r.b, int(r.toc.PostingsTable), nil)
@@ -1509,7 +1513,19 @@ func (r *Reader) LabelValues(name string, matchers ...*labels.Matcher) ([]string
 			d.Skip(skip)
 		}
 		s := yoloString(d.UvarintBytes()) // Label value.
-		values = append(values, s)
+
+		isMatch := true
+		// Try to exclude via matchers for the label name
+		for _, m := range matchers {
+			if m.Name == name && !m.Matches(s) {
+				isMatch = false
+				break
+			}
+		}
+
+		if isMatch {
+			values = append(values, s)
+		}
 		if s == lastVal {
 			break
 		}
@@ -1628,8 +1644,8 @@ func (r *Reader) Postings(name string, values ...string) (Postings, error) {
 		return Merge(res...), nil
 	}
 
-	e, ok := r.postings[name]
-	if !ok {
+	e := r.postings[name]
+	if len(e) == 0 {
 		return EmptyPostings(), nil
 	}
 
@@ -1701,6 +1717,71 @@ func (r *Reader) Postings(name string, values ...string) (Postings, error) {
 		if d.Err() != nil {
 			return nil, errors.Wrap(d.Err(), "get postings offset entry")
 		}
+	}
+
+	return Merge(res...), nil
+}
+
+func (r *Reader) PostingsWithLabel(name string) (Postings, error) {
+	if r.version == FormatV1 {
+		e := r.postingsV1[name]
+		if len(e) == 0 {
+			return EmptyPostings(), nil
+		}
+
+		var res []Postings
+		for _, off := range e {
+			// Read from the postings table.
+			d := encoding.NewDecbufAt(r.b, int(off), castagnoliTable)
+			_, p, err := r.dec.Postings(d.Get())
+			if err != nil {
+				return nil, errors.Wrap(err, "decode postings")
+			}
+			res = append(res, p)
+		}
+		return Merge(res...), nil
+	}
+
+	e := r.postings[name]
+	if len(e) == 0 {
+		return EmptyPostings(), nil
+	}
+
+	d := encoding.NewDecbufAt(r.b, int(r.toc.PostingsTable), nil)
+	// Skip to start
+	d.Skip(e[0].off)
+	lastVal := e[len(e)-1].value
+
+	skip := 0
+	var res []Postings
+	for d.Err() == nil {
+		if skip == 0 {
+			// These are always the same number of bytes,
+			// and it's faster to skip than to parse.
+			skip = d.Len()
+			d.Uvarint()      // Keycount.
+			d.UvarintBytes() // Label name.
+			skip -= d.Len()
+		} else {
+			d.Skip(skip)
+		}
+		v := yoloString(d.UvarintBytes()) // Label value.
+
+		postingsOff := d.Uvarint64()
+		// Read from the postings table
+		d2 := encoding.NewDecbufAt(r.b, int(postingsOff), castagnoliTable)
+		_, p, err := r.dec.Postings(d2.Get())
+		if err != nil {
+			return nil, errors.Wrap(err, "decode postings")
+		}
+		res = append(res, p)
+
+		if v == lastVal {
+			break
+		}
+	}
+	if d.Err() != nil {
+		return nil, errors.Wrap(d.Err(), "get postings offset entry")
 	}
 
 	return Merge(res...), nil

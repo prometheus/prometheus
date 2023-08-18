@@ -26,6 +26,7 @@ const (
 	MatchNotEqual
 	MatchRegexp
 	MatchNotRegexp
+	MatchSet
 )
 
 var matchTypeToStr = [...]string{
@@ -33,10 +34,11 @@ var matchTypeToStr = [...]string{
 	MatchNotEqual:  "!=",
 	MatchRegexp:    "=~",
 	MatchNotRegexp: "!~",
+	MatchSet:       "[isSet]",
 }
 
 func (m MatchType) String() string {
-	if m < MatchEqual || m > MatchNotRegexp {
+	if m < MatchEqual || m > MatchSet {
 		panic("unknown match type")
 	}
 	return matchTypeToStr[m]
@@ -92,8 +94,11 @@ func (m *Matcher) Matches(s string) bool {
 		return m.re.MatchString(s)
 	case MatchNotRegexp:
 		return !m.re.MatchString(s)
+	case MatchSet:
+		return true
+	default:
+		panic("labels.Matcher.Matches: invalid match type")
 	}
-	panic("labels.Matcher.Matches: invalid match type")
 }
 
 // Inverse returns a matcher that matches the opposite.
@@ -107,8 +112,9 @@ func (m *Matcher) Inverse() (*Matcher, error) {
 		return NewMatcher(MatchNotRegexp, m.Name, m.Value)
 	case MatchNotRegexp:
 		return NewMatcher(MatchRegexp, m.Name, m.Value)
+	default:
+		panic("labels.Matcher.Matches: invalid match type")
 	}
-	panic("labels.Matcher.Matches: invalid match type")
 }
 
 // GetRegexString returns the regex string.

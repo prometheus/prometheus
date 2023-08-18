@@ -21,6 +21,7 @@ import (
 
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
+	"golang.org/x/exp/maps"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -254,6 +255,16 @@ func PostingsForMatchers(ix IndexReader, ms ...*labels.Matcher) (index.Postings,
 				return nil, err
 			}
 			its = append(its, allPostings)
+		case m.Type == labels.MatchSet:
+			// This is the special case of a label that must be set for the posting
+			it, err := ix.PostingsWithLabel(m.Name)
+			if err != nil {
+				return nil, err
+			}
+			if index.IsEmptyPostingsType(it) {
+				return index.EmptyPostings(), nil
+			}
+			its = append(its, it)
 		case labelMustBeSet[m.Name]:
 			// If this matcher must be non-empty, we can be smarter.
 			matchesEmpty := m.Matches("")
@@ -300,7 +311,7 @@ func PostingsForMatchers(ix IndexReader, ms ...*labels.Matcher) (index.Postings,
 				its = append(its, it)
 			}
 		default: // l=""
-			// If the matchers for a labelname selects an empty value, it selects all
+			// If a matcher for a labelname selects an empty value, it selects all
 			// the series which don't have the label name set too. See:
 			// https://github.com/prometheus/prometheus/issues/3575 and
 			// https://github.com/prometheus/prometheus/pull/3578#issuecomment-351653555
@@ -405,53 +416,23 @@ func inversePostingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Posting
 }
 
 func labelValuesWithMatchers(r IndexReader, name string, matchers ...*labels.Matcher) ([]string, error) {
+	// Make sure to intersect with series containing the label name
+	matchers = append(matchers, labels.MustNewMatcher(labels.MatchSet, name, ""))
 	p, err := PostingsForMatchers(r, matchers...)
 	if err != nil {
 		return nil, errors.Wrap(err, "fetching postings for matchers")
 	}
 
-	allValues, err := r.LabelValues(name)
-	if err != nil {
-		return nil, errors.Wrapf(err, "fetching values of label %s", name)
-	}
-
-	// If we have a matcher for the label name, we can filter out values that don't match
-	// before we fetch postings. This is especially useful for labels with many values.
-	// e.g. __name__ with a selector like {__name__="xyz"}
-	for _, m := range matchers {
-		if m.Name != name {
-			continue
-		}
-
-		// re-use the allValues slice to avoid allocations
-		// this is safe because the iteration is always ahead of the append
-		filteredValues := allValues[:0]
-		for _, v := range allValues {
-			if m.Matches(v) {
-				filteredValues = append(filteredValues, v)
-			}
-		}
-		allValues = filteredValues
-	}
-
-	valuesPostings := make([]index.Postings, len(allValues))
-	for i, value := range allValues {
-		valuesPostings[i], err = r.Postings(name, value)
+	values := map[string]struct{}{}
+	for p.Next() {
+		v, err := r.LabelValueFor(p.At(), name)
 		if err != nil {
-			return nil, errors.Wrapf(err, "fetching postings for %s=%q", name, value)
+			return nil, errors.Wrapf(err, "getting value for label %s from series %d", name, p.At())
 		}
-	}
-	indexes, err := index.FindIntersectingPostings(p, valuesPostings)
-	if err != nil {
-		return nil, errors.Wrap(err, "intersecting postings")
+		values[v] = struct{}{}
 	}
 
-	values := make([]string, 0, len(indexes))
-	for _, idx := range indexes {
-		values = append(values, allValues[idx])
-	}
-
-	return values, nil
+	return maps.Keys(values), nil
 }
 
 func labelNamesWithMatchers(r IndexReader, matchers ...*labels.Matcher) ([]string, error) {
