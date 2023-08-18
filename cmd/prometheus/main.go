@@ -619,8 +619,13 @@ func main() {
 		discoveryManagerNotify = legacymanager.NewManager(ctxNotify, log.With(logger, "component", "discovery manager notify"), legacymanager.Name("notify"))
 	}
 
+	scrapeManager, err := scrape.NewManager(&cfg.scrape, log.With(logger, "component", "scrape manager"), fanoutStorage, prometheus.DefaultRegisterer)
+	if err != nil {
+		level.Error(logger).Log("msg", "failed to create a scrape manager", "err", err)
+		os.Exit(1)
+	}
+
 	var (
-		scrapeManager  = scrape.NewManager(&cfg.scrape, log.With(logger, "component", "scrape manager"), fanoutStorage)
 		tracingManager = tracing.NewManager(logger)
 
 		queryEngine *promql.Engine
