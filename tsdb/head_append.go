@@ -1371,6 +1371,19 @@ func (s *memSeries) histogramsAppendPreprocessor(t int64, e chunkenc.Encoding, o
 		s.nextAt = rangeForTimestamp(c.minTime, o.chunkRange)
 	}
 
+	// Below, we will enforce chunkenc.MinSamplesPerHistogramChunk. There are, however, two cases that supersede it:
+	//  - The current chunk range is ending before chunkenc.MinSamplesPerHistogramChunk will be satisfied.
+	//  - s.nextAt was set while loading a chunk snapshot with the intent that a new chunk be cut on the next append.
+	var nextChunkRangeStart int64
+	if s.histogramChunkHasComputedEndTime {
+		nextChunkRangeStart = rangeForTimestamp(c.minTime, o.chunkRange)
+	} else {
+		// If we haven't yet computed an end time yet, s.nextAt is either set to
+		// rangeForTimestamp(c.minTime, o.chunkRange) or was set while loading a chunk snapshot. Either way, we want to
+		// skip enforcing chunkenc.MinSamplesPerHistogramChunk.
+		nextChunkRangeStart = s.nextAt
+	}
+
 	// If we reach 25% of a chunk's desired maximum size, predict an end time
 	// for this chunk that will try to make samples equally distributed within
 	// the remaining chunks in the current chunk range.
@@ -1382,9 +1395,7 @@ func (s *memSeries) histogramsAppendPreprocessor(t int64, e chunkenc.Encoding, o
 	}
 	// If numBytes > targetBytes*2 then our previous prediction was invalid. This could happen if the sample rate has
 	// increased or if the bucket/span count has increased.
-	// We also enforce a minimum sample count per chunk here.
 	// Note that next chunk will have its nextAt recalculated for the new rate.
-	nextChunkRangeStart := (o.chunkRange - (c.maxTime % o.chunkRange)) + c.maxTime
 	if (t >= s.nextAt || numBytes >= targetBytes*2) && (numSamples >= chunkenc.MinSamplesPerHistogramChunk || t >= nextChunkRangeStart) {
 		c = s.cutNewHeadChunk(t, e, o.chunkRange)
 		chunkCreated = true

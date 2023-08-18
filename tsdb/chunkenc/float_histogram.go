@@ -109,12 +109,6 @@ func (c *FloatHistogramChunk) Appender() (Appender, error) {
 		return nil, err
 	}
 
-	if it.br.valid%8 == 0 && (it.br.valid != 0 || it.br.streamOffset < len(it.br.stream)) {
-		c.b.count = 8
-	} else {
-		c.b.count = it.br.valid % 8
-	}
-
 	pBuckets := make([]xorValue, len(it.pBuckets))
 	for i := 0; i < len(it.pBuckets); i++ {
 		pBuckets[i] = xorValue{
