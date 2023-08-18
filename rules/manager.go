@@ -31,6 +31,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"golang.org/x/exp/slices"
 
+	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -184,6 +185,8 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 // QueryFunc processes PromQL queries.
 type QueryFunc func(ctx context.Context, q string, t time.Time) (promql.Vector, error)
 
+type ExemplarQueryFunc func(ctx context.Context, expr parser.Expr, ts time.Time, interval time.Duration) ([]exemplar.QueryResult, error)
+
 // EngineQueryFunc returns a new query function that executes instant queries against
 // the given engine.
 // It converts scalar into vector results.
@@ -212,21 +215,45 @@ func EngineQueryFunc(engine *promql.Engine, q storage.Queryable) QueryFunc {
 	}
 }
 
+func ExemplarQuerierQueryFunc(q storage.ExemplarQueryable) ExemplarQueryFunc {
+	return func(ctx context.Context, expr parser.Expr, ts time.Time, interval time.Duration) ([]exemplar.QueryResult, error) {
+		selectors := parser.ExtractSelectors(expr)
+		if len(selectors) < 1 {
+			return nil, fmt.Errorf("no selectors found on exemplar query")
+		}
+
+		eq, err := q.ExemplarQuerier(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		// Query all the raw exemplars that match the query
+		ex, err := eq.Select(timestamp.FromTime(ts.Add(-1*interval)), timestamp.FromTime(ts), selectors...)
+		if err != nil {
+			return nil, err
+		}
+
+		return ex, nil
+	}
+}
+
 // A Rule encapsulates a vector expression which is evaluated at a specified
 // interval and acted upon (currently either recorded or used for alerting).
 type Rule interface {
 	Name() string
 	// Labels of the rule.
 	Labels() labels.Labels
-	// eval evaluates the rule, including any associated recording or alerting actions.
+	// Eval evaluates the rule, including any associated recording or alerting actions.
 	Eval(context.Context, time.Time, QueryFunc, *url.URL, int) (promql.Vector, error)
+	// EvalWithExemplars evaluates the rule, including any associated recording or alerting actions and emit exemplars.
+	EvalWithExemplars(context.Context, time.Time, time.Duration, QueryFunc, ExemplarQueryFunc, *url.URL, int) (promql.Vector, []exemplar.QueryResult, error)
 	// String returns a human-readable string representation of the rule.
 	String() string
 	// Query returns the rule query expression.
 	Query() parser.Expr
-	// SetLastErr sets the current error experienced by the rule.
+	// SetLastError sets the current error experienced by the rule.
 	SetLastError(error)
-	// LastErr returns the last error experienced by the rule.
+	// LastError returns the last error experienced by the rule.
 	LastError() error
 	// SetHealth sets the current health of the rule.
 	SetHealth(RuleHealth)
@@ -663,7 +690,16 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 
 			g.metrics.EvalTotal.WithLabelValues(GroupKey(g.File(), g.Name())).Inc()
 
-			vector, err := rule.Eval(ctx, ts, g.opts.QueryFunc, g.opts.ExternalURL, g.Limit())
+			var (
+				vector promql.Vector
+				eqr    []exemplar.QueryResult
+				err    error
+			)
+			if g.opts.ExemplarQueryFunc != nil {
+				vector, eqr, err = rule.EvalWithExemplars(ctx, ts, g.Interval(), g.opts.QueryFunc, g.opts.ExemplarQueryFunc, g.opts.ExternalURL, g.Limit())
+			} else {
+				vector, err = rule.Eval(ctx, ts, g.opts.QueryFunc, g.opts.ExternalURL, g.Limit())
+			}
 			if err != nil {
 				rule.SetHealth(HealthBad)
 				rule.SetLastError(err)
@@ -739,6 +775,18 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 					seriesReturned[string(s.Metric.Bytes(buf[:]))] = s.Metric
 				}
 			}
+
+			// For each series, append exemplars. Reuse the ref for faster appends.
+			for _, eq := range eqr {
+				var ref storage.SeriesRef
+				for _, e := range eq.Exemplars {
+					ref, err = app.AppendExemplar(ref, eq.SeriesLabels, e)
+					if err != nil {
+						level.Warn(g.logger).Log("name", rule.Name(), "index", i, "msg", "Rule evaluation exemplar discarded", "err", err, "exemplar", fmt.Sprint(e))
+					}
+				}
+			}
+
 			if numOutOfOrder > 0 {
 				level.Warn(g.logger).Log("name", rule.Name(), "index", i, "msg", "Error on ingesting out-of-order result from rule evaluation", "numDropped", numOutOfOrder)
 			}
@@ -966,18 +1014,19 @@ type NotifyFunc func(ctx context.Context, expr string, alerts ...*Alert)
 
 // ManagerOptions bundles options for the Manager.
 type ManagerOptions struct {
-	ExternalURL     *url.URL
-	QueryFunc       QueryFunc
-	NotifyFunc      NotifyFunc
-	Context         context.Context
-	Appendable      storage.Appendable
-	Queryable       storage.Queryable
-	Logger          log.Logger
-	Registerer      prometheus.Registerer
-	OutageTolerance time.Duration
-	ForGracePeriod  time.Duration
-	ResendDelay     time.Duration
-	GroupLoader     GroupLoader
+	ExternalURL       *url.URL
+	QueryFunc         QueryFunc
+	NotifyFunc        NotifyFunc
+	Context           context.Context
+	Appendable        storage.Appendable
+	Queryable         storage.Queryable
+	ExemplarQueryFunc ExemplarQueryFunc
+	Logger            log.Logger
+	Registerer        prometheus.Registerer
+	OutageTolerance   time.Duration
+	ForGracePeriod    time.Duration
+	ResendDelay       time.Duration
+	GroupLoader       GroupLoader
 
 	Metrics *Metrics
 }

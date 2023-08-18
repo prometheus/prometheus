@@ -22,6 +22,7 @@ import (
 	"go.uber.org/atomic"
 	"gopkg.in/yaml.v2"
 
+	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/promql"
@@ -71,45 +72,137 @@ func (rule *RecordingRule) Labels() labels.Labels {
 	return rule.labels
 }
 
-// Eval evaluates the rule and then overrides the metric names and labels accordingly.
+// Eval evaluates the rule.
 func (rule *RecordingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, _ *url.URL, limit int) (promql.Vector, error) {
-	ctx = NewOriginContext(ctx, NewRuleDetail(rule))
-
-	vector, err := query(ctx, rule.vector.String(), ts)
+	vector, err := rule.eval(ctx, ts, query)
 	if err != nil {
 		return nil, err
 	}
 
-	// Override the metric name and labels.
-	lb := labels.NewBuilder(labels.EmptyLabels())
-
-	for i := range vector {
-		sample := &vector[i]
-
-		lb.Reset(sample.Metric)
-		lb.Set(labels.MetricName, rule.name)
-
-		rule.labels.Range(func(l labels.Label) {
-			lb.Set(l.Name, l.Value)
-		})
-
-		sample.Metric = lb.Labels()
+	if err = rule.applyVectorLabels(vector); err != nil {
+		return nil, err
 	}
 
-	// Check that the rule does not produce identical metrics after applying
-	// labels.
-	if vector.ContainsSameLabelset() {
-		return nil, fmt.Errorf("vector contains metrics with the same labelset after applying rule labels")
-	}
-
-	numSeries := len(vector)
-	if limit > 0 && numSeries > limit {
-		return nil, fmt.Errorf("exceeded limit of %d with %d series", limit, numSeries)
+	if err = rule.limit(vector, limit); err != nil {
+		return nil, err
 	}
 
 	rule.SetHealth(HealthGood)
 	rule.SetLastError(err)
 	return vector, nil
+}
+
+// EvalWithExemplars evaluates the rule along with emitting exemplars.
+func (rule *RecordingRule) EvalWithExemplars(ctx context.Context, ts time.Time, interval time.Duration,
+	query QueryFunc, eq ExemplarQueryFunc, _ *url.URL, limit int,
+) (promql.Vector, []exemplar.QueryResult, error) {
+	vector, err := rule.eval(ctx, ts, query)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	selectors := parser.ExtractSelectors(rule.vector)
+	if len(selectors) < 1 {
+		return nil, nil, err
+	}
+
+	// Query all the raw exemplars that match the query
+	ex, err := eq(ctx, rule.vector, ts, interval)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Loop through each of the new series and try matching the new series labels against the exemplar series labels.
+	// If they match, replace the exemplar series labels with the incoming series labels. This is to ensure that the
+	// exemplars are stored against the refID of the new series. If there is no match then drop the exemplar on the
+	// floor.
+	var exemplars []exemplar.QueryResult
+	for _, v := range vector {
+		matchers := make([]*labels.Matcher, 0, v.Metric.Len())
+		v.Metric.Range(func(l labels.Label) {
+			matchers = append(matchers, labels.MustNewMatcher(labels.MatchEqual, l.Name, l.Value))
+		})
+
+		for i := range ex {
+			if ok := matches(ex[i].SeriesLabels, matchers); ok {
+				ex[i].SeriesLabels = v.Metric
+				exemplars = append(exemplars, ex[i])
+			}
+		}
+	}
+
+	if err = rule.applyVectorLabels(vector); err != nil {
+		return nil, nil, err
+	}
+
+	if err = rule.limit(vector, limit); err != nil {
+		return nil, nil, err
+	}
+
+	rule.applyExemplarLabels(exemplars)
+	rule.SetHealth(HealthGood)
+	rule.SetLastError(err)
+	return vector, exemplars, nil
+}
+
+// eval executes the query and returns a promql.Vector.
+func (rule *RecordingRule) eval(ctx context.Context, ts time.Time, query QueryFunc) (promql.Vector, error) {
+	ctx = NewOriginContext(ctx, NewRuleDetail(rule))
+	vector, err := query(ctx, rule.vector.String(), ts)
+	if err != nil {
+		return nil, err
+	}
+
+	return vector, nil
+}
+
+// applyVectorLabels applies labels from the rule and sets the metric name for the vector.
+func (rule *RecordingRule) applyVectorLabels(vector promql.Vector) error {
+	lb := labels.NewBuilder(labels.EmptyLabels())
+
+	for i := range vector {
+		sample := &vector[i]
+		sample.Metric = rule.applyLabels(lb, sample.Metric)
+	}
+
+	// Check that the rule does not produce identical metrics after applying
+	// labels.
+	if vector.ContainsSameLabelset() {
+		return fmt.Errorf("vector contains metrics with the same labelset after applying rule labels")
+	}
+
+	return nil
+}
+
+// applyExemplarLabels applies labels from the rule and sets the metric name for the exemplar result.
+func (rule *RecordingRule) applyExemplarLabels(ex []exemplar.QueryResult) {
+	// Override the metric name and labels.
+	lb := labels.NewBuilder(labels.EmptyLabels())
+
+	for i := range ex {
+		e := &ex[i]
+		e.SeriesLabels = rule.applyLabels(lb, e.SeriesLabels)
+	}
+}
+
+func (rule *RecordingRule) applyLabels(lb *labels.Builder, ls labels.Labels) labels.Labels {
+	lb.Reset(ls)
+	lb.Set(labels.MetricName, rule.name)
+
+	rule.labels.Range(func(l labels.Label) {
+		lb.Set(l.Name, l.Value)
+	})
+	return lb.Labels()
+}
+
+// limit ensures that any limits being set on the rules for series limit are enforced.
+func (rule *RecordingRule) limit(vector promql.Vector, limit int) error {
+	numSeries := len(vector)
+	if limit > 0 && numSeries > limit {
+		return fmt.Errorf("exceeded limit of %d with %d series", limit, numSeries)
+	}
+
+	return nil
 }
 
 func (rule *RecordingRule) String() string {
@@ -165,4 +258,13 @@ func (rule *RecordingRule) SetEvaluationTimestamp(ts time.Time) {
 // GetEvaluationTimestamp returns the time the evaluation took place.
 func (rule *RecordingRule) GetEvaluationTimestamp() time.Time {
 	return rule.evaluationTimestamp.Load()
+}
+
+func matches(lbls labels.Labels, matchers []*labels.Matcher) bool {
+	for _, m := range matchers {
+		if !m.Matches(lbls.Get(m.Name)) {
+			return false
+		}
+	}
+	return true
 }

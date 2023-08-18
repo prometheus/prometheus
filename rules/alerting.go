@@ -27,6 +27,7 @@ import (
 	"go.uber.org/atomic"
 	"gopkg.in/yaml.v2"
 
+	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -469,6 +470,17 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 	}
 
 	return vec, nil
+}
+
+// EvalWithExemplars is currently a pass through to Eval
+func (r *AlertingRule) EvalWithExemplars(ctx context.Context, ts time.Time, _ time.Duration, query QueryFunc, _ ExemplarQueryFunc, url *url.URL, limit int) (promql.Vector, []exemplar.QueryResult, error) {
+	// TODO: Right now EvalWithExemplars doesn't emit exemplars given the fact that alert state label isn't as straight forward to handle.
+	vector, err := r.Eval(ctx, ts, query, url, limit)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return vector, nil, err
 }
 
 // State returns the maximum state of alert instances for this rule.
