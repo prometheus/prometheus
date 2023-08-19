@@ -197,6 +197,18 @@ var (
 			Help: "Total number of scrapes that hit the native histogram bucket limit and were rejected.",
 		},
 	)
+	targetScrapeAppendAttemptsTotal = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "prometheus_target_scrape_append_attempts_total",
+			Help: "Total number of append attempts",
+		},
+	)
+	targetScrapeAppendErrorsTotal = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "prometheus_target_scrape_append_errors_total",
+			Help: "Total number of errors during append attempts",
+		},
+	)
 )
 
 func init() {
@@ -223,6 +235,8 @@ func init() {
 		targetScrapePoolExceededLabelLimits,
 		targetSyncFailed,
 		targetScrapeNativeHistogramBucketLimit,
+		targetScrapeAppendAttemptsTotal,
+		targetScrapeAppendErrorsTotal,
 	)
 }
 
@@ -1392,6 +1406,7 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 
 	// A failed scrape is the same as an empty scrape,
 	// we still call sl.append to trigger stale markers.
+	targetScrapeAppendAttemptsTotal.Inc()
 	total, added, seriesAdded, appErr = sl.append(app, b, contentType, appendTime)
 	if appErr != nil {
 		app.Rollback()
@@ -1400,6 +1415,7 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 		// The append failed, probably due to a parse error or sample limit.
 		// Call sl.append again with an empty scrape to trigger stale markers.
 		if _, _, _, err := sl.append(app, []byte{}, "", appendTime); err != nil {
+			targetScrapeAppendErrorsTotal.Inc()
 			app.Rollback()
 			app = sl.appender(sl.appenderCtx)
 			level.Warn(sl.l).Log("msg", "Append failed", "err", err)
