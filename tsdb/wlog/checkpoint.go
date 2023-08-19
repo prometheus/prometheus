@@ -374,8 +374,14 @@ func listCheckpoints(dir string) (refs []checkpointRef, err error) {
 		refs = append(refs, checkpointRef{name: fi.Name(), index: idx})
 	}
 
-	slices.SortFunc(refs, func(a, b checkpointRef) bool {
-		return a.index < b.index
+	slices.SortFunc(refs, func(a, b checkpointRef) int {
+		if a.index < b.index {
+			return -1
+		}
+		if a.index > b.index {
+			return 1
+		}
+		return 0
 	})
 
 	return refs, nil

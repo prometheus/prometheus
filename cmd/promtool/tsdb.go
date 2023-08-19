@@ -446,7 +446,15 @@ func analyzeBlock(path, blockID string, limit int, runExtended bool) error {
 	postingInfos := []postingInfo{}
 
 	printInfo := func(postingInfos []postingInfo) {
-		slices.SortFunc(postingInfos, func(a, b postingInfo) bool { return a.metric > b.metric })
+		slices.SortFunc(postingInfos, func(a, b postingInfo) int {
+			if a.metric > b.metric {
+				return -1
+			}
+			if a.metric < b.metric {
+				return 1
+			}
+			return 0
+		})
 
 		for i, pc := range postingInfos {
 			if i >= limit {

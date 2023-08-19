@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"math"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -490,9 +491,15 @@ func (g *Group) AlertingRules() []*AlertingRule {
 			alerts = append(alerts, alertingRule)
 		}
 	}
-	slices.SortFunc(alerts, func(a, b *AlertingRule) bool {
-		return a.State() > b.State() ||
-			(a.State() == b.State() && a.Name() < b.Name())
+	slices.SortFunc(alerts, func(a, b *AlertingRule) int {
+		if a.State() == b.State() {
+			return strings.Compare(a.Name(), b.Name())
+		}
+
+		if a.State() > b.State() {
+			return -1
+		}
+		return 1
 	})
 	return alerts
 }
@@ -1203,11 +1210,11 @@ func (m *Manager) RuleGroups() []*Group {
 		rgs = append(rgs, g)
 	}
 
-	slices.SortFunc(rgs, func(a, b *Group) bool {
+	slices.SortFunc(rgs, func(a, b *Group) int {
 		if a.file != b.file {
-			return a.file < b.file
+			return strings.Compare(a.file, b.file)
 		}
-		return a.name < b.name
+		return strings.Compare(a.name, b.name)
 	})
 
 	return rgs
