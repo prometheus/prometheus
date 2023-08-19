@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"reflect"
 	"strconv"
+	"strings"
 	"unsafe"
 
 	"github.com/cespare/xxhash/v2"
@@ -854,4 +855,12 @@ func (b *ScratchBuilder) Overwrite(ls *Labels) {
 	}
 	marshalLabelsToSizedBuffer(b.add, b.overwriteBuffer)
 	ls.data = yoloString(b.overwriteBuffer)
+}
+
+// ComparePair compares two labels by name, then by value.
+func ComparePair(a, b Label) int {
+	if a.Name == b.Name {
+		return strings.Compare(a.Value, b.Value)
+	}
+	return strings.Compare(a.Name, b.Name)
 }
