@@ -641,7 +641,7 @@ func (b *ScratchBuilder) Overwrite(ls *Labels) {
 }
 
 // ComparePair compares two labels by name, then by value.
-func ComparePair(a Label, b Label) int {
+func ComparePair(a, b Label) int {
 	if a.Name == b.Name {
 		return strings.Compare(a.Value, b.Value)
 	}
