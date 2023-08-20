@@ -88,27 +88,30 @@ func TestDroppedTargetsList(t *testing.T) {
 					SourceLabels: model.LabelNames{"job"},
 				},
 			},
-			KeepDroppedTargets: 1,
 		}
 		tgs = []*targetgroup.Group{
 			{
 				Targets: []model.LabelSet{
 					{model.AddressLabel: "127.0.0.1:9090"},
+					{model.AddressLabel: "127.0.0.1:9091"},
 				},
 			},
 		}
 		sp, _                  = newScrapePool(cfg, app, 0, nil, &Options{})
 		expectedLabelSetString = "{__address__=\"127.0.0.1:9090\", __scrape_interval__=\"0s\", __scrape_timeout__=\"0s\", job=\"dropMe\"}"
-		expectedLength         = 1
+		expectedLength         = 2
 	)
 	sp.Sync(tgs)
 	sp.Sync(tgs)
-	if len(sp.droppedTargets) != expectedLength {
-		t.Fatalf("Length of dropped targets exceeded expected length, expected %v, got %v", expectedLength, len(sp.droppedTargets))
-	}
-	if sp.droppedTargets[0].DiscoveredLabels().String() != expectedLabelSetString {
-		t.Fatalf("Got %v, expected %v", sp.droppedTargets[0].DiscoveredLabels().String(), expectedLabelSetString)
-	}
+	require.Equal(t, expectedLength, len(sp.droppedTargets))
+	require.Equal(t, expectedLength, sp.droppedTargetsCount)
+	require.Equal(t, expectedLabelSetString, sp.droppedTargets[0].DiscoveredLabels().String())
+
+	// Check that count is still correct when we don't retain all dropped targets.
+	sp.config.KeepDroppedTargets = 1
+	sp.Sync(tgs)
+	require.Equal(t, 1, len(sp.droppedTargets))
+	require.Equal(t, expectedLength, sp.droppedTargetsCount)
 }
 
 // TestDiscoveredLabelsUpdate checks that DiscoveredLabels are updated
