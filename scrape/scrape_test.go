@@ -2217,6 +2217,14 @@ metric: <
 `,
 			scrapeClassicHistograms: true,
 			contentType:             "application/vnd.google.protobuf",
+			floats: []floatSample{
+				{metric: labels.FromStrings("__name__", "test_histogram_count"), t: 1234568, f: 175},
+				{metric: labels.FromStrings("__name__", "test_histogram_sum"), t: 1234568, f: 0.0008280461746287094},
+				{metric: labels.FromStrings("__name__", "test_histogram_bucket", "le", "-0.0004899999999999998"), t: 1234568, f: 2},
+				// {metric: labels.FromStrings("__name__", "test_histogram_bucket", "le", "-0.0003899999999999998"), t: 1234568, f: 4},
+				// {metric: labels.FromStrings("__name__", "test_histogram_bucket", "le", "-0.0002899999999999998"), t: 1234568, f: 16},
+				{metric: labels.FromStrings("__name__", "test_histogram_bucket", "le", "+Inf"), t: 1234568, f: 175},
+			},
 			histograms: []histogramSample{{
 				t: 1234568,
 				h: &histogram.Histogram{
@@ -2238,6 +2246,8 @@ metric: <
 				},
 			}},
 			exemplars: []exemplar.Exemplar{
+				{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00039, Ts: 1625851155146, HasTs: true},
+				{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.00029, Ts: 1234568, HasTs: false},
 				{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00039, Ts: 1625851155146, HasTs: true},
 				{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.00029, Ts: 1234568, HasTs: false},
 			},
@@ -2278,6 +2288,9 @@ metric: <
 			now := time.Now()
 
 			for i := range test.floats {
+				if test.floats[i].t != 0 {
+					continue
+				}
 				test.floats[i].t = timestamp.FromTime(now)
 			}
 
