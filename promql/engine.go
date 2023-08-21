@@ -1173,7 +1173,8 @@ func (ev *evaluator) rangeEval(prepSeries func(labels.Labels, *EvalSeriesHelper)
 		}
 	}
 
-	for ts := ev.startTimestamp; ts <= ev.endTimestamp; ts += ev.interval {
+	for ts, step := ev.startTimestamp, -1; ts <= ev.endTimestamp; ts += ev.interval {
+		step++
 		if err := contextDone(ev.ctx, "expression evaluation"); err != nil {
 			ev.error(err)
 		}
@@ -1278,12 +1279,12 @@ func (ev *evaluator) rangeEval(prepSeries func(labels.Labels, *EvalSeriesHelper)
 			}
 			if sample.H == nil {
 				if ss.Floats == nil {
-					ss.Floats = getFPointSlice(numSteps)
+					ss.Floats = getFPointSlice(pointsSliceSize(numSteps, step, ev.currentSamples, ev.maxSamples, biggestLen))
 				}
 				ss.Floats = append(ss.Floats, FPoint{T: ts, F: sample.F})
 			} else {
 				if ss.Histograms == nil {
-					ss.Histograms = getHPointSlice(numSteps)
+					ss.Histograms = getHPointSlice(pointsSliceSize(numSteps, step, ev.currentSamples, ev.maxSamples, biggestLen))
 				}
 				ss.Histograms = append(ss.Histograms, HPoint{T: ts, H: sample.H})
 			}
@@ -1528,12 +1529,12 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 				if len(outVec) > 0 {
 					if outVec[0].H == nil {
 						if ss.Floats == nil {
-							ss.Floats = getFPointSlice(numSteps)
+							ss.Floats = getFPointSlice(pointsSliceSize(numSteps, step, ev.currentSamples, ev.maxSamples, len(selVS.Series)))
 						}
 						ss.Floats = append(ss.Floats, FPoint{F: outVec[0].F, T: ts})
 					} else {
 						if ss.Histograms == nil {
-							ss.Histograms = getHPointSlice(numSteps)
+							ss.Histograms = getHPointSlice(pointsSliceSize(numSteps, step, ev.currentSamples, ev.maxSamples, len(selVS.Series)))
 						}
 						ss.Histograms = append(ss.Histograms, HPoint{H: outVec[0].H, T: ts})
 					}
@@ -1697,12 +1698,12 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 					if ev.currentSamples < ev.maxSamples {
 						if h == nil {
 							if ss.Floats == nil {
-								ss.Floats = getFPointSlice(numSteps)
+								ss.Floats = getFPointSlice(pointsSliceSize(numSteps, step, ev.currentSamples, ev.maxSamples, len(e.Series)))
 							}
 							ss.Floats = append(ss.Floats, FPoint{F: f, T: ts})
 						} else {
 							if ss.Histograms == nil {
-								ss.Histograms = getHPointSlice(numSteps)
+								ss.Histograms = getHPointSlice(pointsSliceSize(numSteps, step, ev.currentSamples, ev.maxSamples, len(e.Series)))
 							}
 							ss.Histograms = append(ss.Histograms, HPoint{H: h, T: ts})
 						}
@@ -1917,6 +1918,19 @@ var (
 	fPointPool zeropool.Pool[[]FPoint]
 	hPointPool zeropool.Pool[[]HPoint]
 )
+
+// pointsSliceSize calculates a reasonable initial capacity for the point slices when running a query
+// taking in consideration the remaining number of steps, maxSamples and number of series in the result
+func pointsSliceSize(numSteps, step, currentSamples, maxSamples, numberOfSeries int) int {
+	// Subtract the current step from the numSteps as at this point we know the given series does not have data before this step
+	remainingSteps := numSteps - step
+	// spread the remaining allowed samples across all the series in the result.
+	allowedSamples := (maxSamples - currentSamples) / numberOfSeries
+	if remainingSteps > allowedSamples {
+		return allowedSamples
+	}
+	return remainingSteps
+}
 
 func getFPointSlice(sz int) []FPoint {
 	if p := fPointPool.Get(); p != nil {
