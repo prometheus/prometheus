@@ -864,10 +864,10 @@ func (c *TestBlockingWriteClient) Endpoint() string {
 // For benchmarking the send and not the receive side.
 type NopWriteClient struct{}
 
-func NewNopWriteClient() *NopWriteClient                      { return &NopWriteClient{} }
+func NewNopWriteClient() *NopWriteClient                           { return &NopWriteClient{} }
 func (c *NopWriteClient) Store(context.Context, []byte, int) error { return nil }
-func (c *NopWriteClient) Name() string                        { return "nopwriteclient" }
-func (c *NopWriteClient) Endpoint() string                    { return "http://test-remote.com/1234" }
+func (c *NopWriteClient) Name() string                             { return "nopwriteclient" }
+func (c *NopWriteClient) Endpoint() string                         { return "http://test-remote.com/1234" }
 
 func BenchmarkSampleSend(b *testing.B) {
 	// Send one sample per series, which is the typical remote_write case
