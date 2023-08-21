@@ -294,7 +294,7 @@ func (p *ProtobufParser) Metric(l *labels.Labels) string {
 // exemplar. It returns if an exemplar exists or not. In case of a native
 // histogram, the legacy bucket section is still used for exemplars. To ingest
 // all exemplars, call the Exemplar method repeatedly until it returns false.
-func (p *ProtobufParser) Exemplar(ex *exemplar.Exemplar) bool {
+func (p *ProtobufParser) Exemplar(ex *exemplar.Exemplar, index *int) bool {
 	m := p.mf.GetMetric()[p.metricPos]
 	var exProto *dto.Exemplar
 	switch p.mf.GetType() {
@@ -302,22 +302,23 @@ func (p *ProtobufParser) Exemplar(ex *exemplar.Exemplar) bool {
 		exProto = m.GetCounter().GetExemplar()
 	case dto.MetricType_HISTOGRAM, dto.MetricType_GAUGE_HISTOGRAM:
 		bb := m.GetHistogram().GetBucket()
-		if p.fieldPos < 0 {
-			if p.state == EntrySeries {
-				return false // At _count or _sum.
+		if p.state == EntrySeries {
+			// Getting exemplars for classic histogram bucket, there can only be one per bucket pointed out by fieldPos.
+			// We ignore negative fieldPos as that is the count and sum, not a bucket.
+			if *index > 0 || p.fieldPos < 0 || p.fieldPos >= len(bb) {
+				return false
 			}
-			p.fieldPos = 0 // Start at 1st bucket for native histograms.
-		}
-		for p.fieldPos < len(bb) {
 			exProto = bb[p.fieldPos].GetExemplar()
-			if p.state == EntrySeries {
-				break
-			}
-			p.fieldPos++
-			if exProto != nil {
-				break
+		} else {
+			// Getting exemplars for native histogram bucket, there can be multiple.
+			for ; *index < len(bb); *index++ {
+				exProto = bb[*index].GetExemplar()
+				if exProto != nil {
+					break
+				}
 			}
 		}
+		*index++
 	default:
 		return false
 	}

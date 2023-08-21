@@ -241,7 +241,7 @@ func (p *PromParser) Metric(l *labels.Labels) string {
 // Exemplar implements the Parser interface. However, since the classic
 // Prometheus text format does not support exemplars, this implementation simply
 // returns false and does nothing else.
-func (p *PromParser) Exemplar(*exemplar.Exemplar) bool {
+func (p *PromParser) Exemplar(*exemplar.Exemplar, *int) bool {
 	return false
 }
 

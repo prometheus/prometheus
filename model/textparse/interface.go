@@ -62,7 +62,9 @@ type Parser interface {
 	// exemplar. It can be called repeatedly to retrieve multiple exemplars
 	// for the same sample. It returns false once all exemplars are
 	// retrieved (including the case where no exemplars exist at all).
-	Exemplar(l *exemplar.Exemplar) bool
+	// The caller should pass index as 0 on the first call and let the method
+	// update it. This is short of implementing full on iterators for this task.
+	Exemplar(l *exemplar.Exemplar, index *int) bool
 
 	// Next advances the parser to the next sample. It returns false if no
 	// more samples were read or an error occurred.

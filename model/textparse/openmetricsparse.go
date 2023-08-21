@@ -178,7 +178,7 @@ func (p *OpenMetricsParser) Metric(l *labels.Labels) string {
 // It returns whether an exemplar exists. As OpenMetrics only ever has one
 // exemplar per sample, every call after the first (for the same sample) will
 // always return false.
-func (p *OpenMetricsParser) Exemplar(e *exemplar.Exemplar) bool {
+func (p *OpenMetricsParser) Exemplar(e *exemplar.Exemplar, _ *int) bool {
 	if len(p.exemplar) == 0 {
 		return false
 	}

@@ -261,9 +261,12 @@ foo_total 17.0 1520879607.789 # {id="counter-test"} 5`
 		case EntrySeries:
 			m, ts, v := p.Series()
 
-			var e exemplar.Exemplar
+			var (
+				e   exemplar.Exemplar
+				idx int
+			)
 			p.Metric(&res)
-			found := p.Exemplar(&e)
+			found := p.Exemplar(&e, &idx)
 			require.Equal(t, exp[i].m, string(m))
 			require.Equal(t, exp[i].t, ts)
 			require.Equal(t, exp[i].v, v)

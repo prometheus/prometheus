@@ -1697,7 +1697,8 @@ loop:
 		// number of samples remaining after relabeling.
 		added++
 
-		for hasExemplar := p.Exemplar(&e); hasExemplar; hasExemplar = p.Exemplar(&e) {
+		var idx int
+		for hasExemplar := p.Exemplar(&e, &idx); hasExemplar; hasExemplar = p.Exemplar(&e, &idx) {
 			if !e.HasTs {
 				e.Ts = t
 			}

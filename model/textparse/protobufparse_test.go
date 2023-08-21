@@ -1763,9 +1763,12 @@ func TestProtobufParse(t *testing.T) {
 				case EntrySeries:
 					m, ts, v := p.Series()
 
-					var e exemplar.Exemplar
+					var (
+						e   exemplar.Exemplar
+						idx int
+					)
 					p.Metric(&res)
-					found := p.Exemplar(&e)
+					found := p.Exemplar(&e, &idx)
 					require.Equal(t, exp[i].m, string(m), "i: %d", i)
 					if ts != nil {
 						require.Equal(t, exp[i].t, *ts, "i: %d", i)
@@ -1798,7 +1801,8 @@ func TestProtobufParse(t *testing.T) {
 						require.Equal(t, exp[i].fhs, fhs, "i: %d", i)
 					}
 					j := 0
-					for e := (exemplar.Exemplar{}); p.Exemplar(&e); j++ {
+					var idx int
+					for e := (exemplar.Exemplar{}); p.Exemplar(&e, &idx); j++ {
 						require.Equal(t, exp[i].e[j], e, "i: %d", i)
 						e = exemplar.Exemplar{}
 					}
