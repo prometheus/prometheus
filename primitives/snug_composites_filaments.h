@@ -129,6 +129,12 @@ class Symbol {
       resize(size() + size_to_load);
       in.read(begin() + first_to_load_i, size_to_load);
     }
+
+    inline __attribute__((always_inline)) size_t remainder_size() const noexcept {
+      constexpr size_t max_ui32 = std::numeric_limits<uint32_t>::max();
+      assert(size() <= max_ui32);
+      return max_ui32 - size();
+    }
   };
 
   using composite_type = std::string_view;
@@ -301,6 +307,15 @@ class LabelNameSet {
 
       // read symbols table
       symbols_table.load(in);
+    }
+
+    inline __attribute__((always_inline)) size_t remainder_size() const noexcept {
+      constexpr size_t max_ui32 = std::numeric_limits<uint32_t>::max();
+      assert(this->symbols_ids_sequences.size() <= max_ui32);
+
+      size_t remainder_for_symbols = max_ui32 - this->symbols_ids_sequences.size();
+
+      return std::min(this->symbols_table.remainder_size(), remainder_for_symbols);
     }
   };
 
@@ -545,6 +560,7 @@ class LabelSet {
     data_type& operator=(data_type&&) = delete;
 
     using checkpoint_type = Checkpoint;
+
     inline __attribute__((always_inline)) auto checkpoint() const noexcept { return Checkpoint(*this); }
 
     inline __attribute__((always_inline)) void rollback(const checkpoint_type& s) noexcept {
@@ -650,6 +666,23 @@ class LabelSet {
 
       // just to be 100% sure
       assert(label_name_sets_table.data().symbols_table.size() == symbols_tables.size());
+    }
+
+    // it drains before the maximum available symbols count would be exceeded.
+    inline __attribute__((always_inline)) size_t remainder_size() const noexcept {
+      constexpr size_t max_ui32 = std::numeric_limits<uint32_t>::max();
+
+      assert(this->symbols_ids_sequences.size() <= max_ui32);
+
+      size_t remainder_for_label_sets_table = this->label_name_sets_table.remainder_size();
+      size_t remainder_for_symbols_ids_sequences = max_ui32 - this->symbols_ids_sequences.size();
+      size_t remainder_for_symbol_table = std::numeric_limits<uint32_t>::max();
+      for (const auto& table : this->symbols_tables) {
+        if (size_t n = table->remainder_size(); n < remainder_for_symbol_table) {
+          remainder_for_symbol_table = n;
+        }
+      }
+      return std::min({remainder_for_label_sets_table, remainder_for_symbols_ids_sequences, remainder_for_symbol_table});
     }
   };
 

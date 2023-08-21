@@ -20,12 +20,13 @@ import (
 // buf - unsafe.Pointer for C++'s std::stringstream, is needed for retaining data from C++'s Redundant
 // and must be deallocated using GoSegment's Destroy() function (to avoid memory leaks in C/C++ memory).
 type GoSegment struct {
-	data     CSlice
-	buf      unsafe.Pointer
-	samples  uint32
-	series   uint32
-	earliest int64
-	latest   int64
+	data               CSlice
+	buf                unsafe.Pointer
+	samples            uint32
+	series             uint32
+	earliest           int64
+	latest             int64
+	remainingTableSize uint32
 }
 
 // NewGoSegment - init GoSegment.
@@ -69,6 +70,10 @@ func (gs *GoSegment) Earliest() int64 {
 // Latest returns timestamp in ms of latest sample in segment
 func (gs *GoSegment) Latest() int64 {
 	return gs.latest
+}
+
+func (gs *GoSegment) RemainingTableSize() uint32 {
+	return gs.remainingTableSize
 }
 
 // GoDecodedSegment is the GO wrapper for decoded segment into remote write protobuf

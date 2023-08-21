@@ -2,6 +2,7 @@ package common_test
 
 import (
 	"context"
+	"math"
 	"testing"
 
 	"github.com/prometheus/prometheus/prompb"
@@ -133,6 +134,7 @@ func (es *EncoderSuite) makeDataWithTwoTimeseries() []byte {
 
 func (es *EncoderSuite) TestEncode() {
 	es.T().Log("encode data and accumulate segment and redundant")
+
 	for i := 0; i < es.encodeCount; i++ {
 		data := es.makeData()
 		h, err := common.NewHashdex(data)
@@ -238,6 +240,20 @@ func (es *EncoderSuite) TestCppInvalidDataForHashdex() {
 	es.Error(err)
 	es.T().Logf("Got an error (it's OK): %s", err.Error())
 	_ = h
+}
+
+// Test encode remaining table size.
+//
+
+func (es *EncoderSuite) TestEncodeRemainingSize() {
+	var remainingTableSize uint32 = math.MaxUint32
+	h, err := common.NewHashdex(es.makeData())
+	es.NoError(err)
+	seg, err := es.enc.Add(es.ctx, h)
+	es.NoError(err)
+
+	var prevRemainingTableSize = seg.RemainingTableSize()
+	es.Less(prevRemainingTableSize, remainingTableSize)
 }
 
 //

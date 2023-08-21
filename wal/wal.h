@@ -328,6 +328,8 @@ class BasicEncoder {
 
   inline __attribute__((always_inline)) uint64_t total_bytes() const { return metadata_bytes_ + label_sets_bytes_ + ls_id_bytes_ + ts_bytes_ + v_bytes_; }
 
+  inline __attribute__((always_inline)) size_t remainder_size() const noexcept { return label_sets_.data().remainder_size(); }
+
   template <typename T>
   inline __attribute__((always_inline)) void add(const T& tmsr) {
     Primitives::LabelSetID ls_id = label_sets_.find_or_emplace(tmsr.label_set());
