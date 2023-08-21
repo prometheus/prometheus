@@ -73,7 +73,7 @@ func TestStoreHTTPErrorHandling(t *testing.T) {
 		c, err := NewWriteClient(hash, conf)
 		require.NoError(t, err)
 
-		err = c.Store(context.Background(), []byte{})
+		err = c.Store(context.Background(), []byte{}, 0)
 		if test.err != nil {
 			require.EqualError(t, err, test.err.Error())
 		} else {
@@ -112,7 +112,7 @@ func TestClientRetryAfter(t *testing.T) {
 	var recErr RecoverableError
 
 	c := getClient(conf)
-	err = c.Store(context.Background(), []byte{})
+	err = c.Store(context.Background(), []byte{}, 0)
 	require.False(t, errors.As(err, &recErr), "Recoverable error not expected.")
 
 	conf = &ClientConfig{
@@ -122,7 +122,7 @@ func TestClientRetryAfter(t *testing.T) {
 	}
 
 	c = getClient(conf)
-	err = c.Store(context.Background(), []byte{})
+	err = c.Store(context.Background(), []byte{}, 0)
 	require.True(t, errors.As(err, &recErr), "Recoverable error was expected.")
 }
 

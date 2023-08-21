@@ -769,7 +769,7 @@ func (c *TestWriteClient) waitForExpectedData(tb testing.TB) {
 	}
 }
 
-func (c *TestWriteClient) Store(_ context.Context, req []byte) error {
+func (c *TestWriteClient) Store(_ context.Context, req []byte, _ int) error {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 	// nil buffers are ok for snappy, ignore cast error.
@@ -843,7 +843,7 @@ func NewTestBlockedWriteClient() *TestBlockingWriteClient {
 	return &TestBlockingWriteClient{}
 }
 
-func (c *TestBlockingWriteClient) Store(ctx context.Context, _ []byte) error {
+func (c *TestBlockingWriteClient) Store(ctx context.Context, _ []byte, _ int) error {
 	c.numCalls.Inc()
 	<-ctx.Done()
 	return nil
@@ -865,7 +865,7 @@ func (c *TestBlockingWriteClient) Endpoint() string {
 type NopWriteClient struct{}
 
 func NewNopWriteClient() *NopWriteClient                      { return &NopWriteClient{} }
-func (c *NopWriteClient) Store(context.Context, []byte) error { return nil }
+func (c *NopWriteClient) Store(context.Context, []byte, int) error { return nil }
 func (c *NopWriteClient) Name() string                        { return "nopwriteclient" }
 func (c *NopWriteClient) Endpoint() string                    { return "http://test-remote.com/1234" }
 
