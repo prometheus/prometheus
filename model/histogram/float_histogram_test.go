@@ -16,6 +16,7 @@ package histogram
 import (
 	"fmt"
 	"math"
+	"math/rand"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -2705,67 +2706,42 @@ func TestFloatHistogramAddNew(t *testing.T) {
 }
 
 func BenchmarkAddOld(b *testing.B) {
-	// run the Fib function b.N times
-
-	f1 := &FloatHistogram{
-		ZeroThreshold:   0.01,
-		ZeroCount:       8,
-		Count:           21,
-		Sum:             1.234,
-		Schema:          0,
-		PositiveSpans:   []Span{{-1, 4}, {0, 3}},
-		PositiveBuckets: []float64{5, 4, 2, 3, 6, 2, 5},
-		NegativeSpans:   []Span{{4, 2}, {1, 2}},
-		NegativeBuckets: []float64{1, 1, 4, 4},
-	}
-
-	f2 := &FloatHistogram{
-		ZeroThreshold:   0.01,
-		ZeroCount:       11,
-		Count:           30,
-		Sum:             2.345,
-		Schema:          1,
-		PositiveSpans:   []Span{{-4, 3}, {5, 5}},
-		PositiveBuckets: []float64{1, 0, 0, 3, 2, 2, 3, 4},
-		NegativeSpans:   []Span{{6, 3}, {6, 4}},
-		NegativeBuckets: []float64{3, 0.5, 0.5, 2, 3, 2, 4},
-	}
-
 	for n := 0; n < b.N; n++ {
+		b.StopTimer()
+		f1 := createRandomFloatHistogram(50)
+		f2 := createRandomFloatHistogram(50)
+		b.StartTimer()
 		f1.Add(f2)
 	}
 
 }
 
 func BenchmarkAddNew(b *testing.B) {
-	// run the Fib function b.N times
-
-	f1 := &FloatHistogram{
-		ZeroThreshold:   0.01,
-		ZeroCount:       8,
-		Count:           21,
-		Sum:             1.234,
-		Schema:          0,
-		PositiveSpans:   []Span{{-1, 4}, {0, 3}},
-		PositiveBuckets: []float64{5, 4, 2, 3, 6, 2, 5},
-		NegativeSpans:   []Span{{4, 2}, {1, 2}},
-		NegativeBuckets: []float64{1, 1, 4, 4},
-	}
-
-	f2 := &FloatHistogram{
-		ZeroThreshold:   0.01,
-		ZeroCount:       11,
-		Count:           30,
-		Sum:             2.345,
-		Schema:          1,
-		PositiveSpans:   []Span{{-4, 3}, {5, 5}},
-		PositiveBuckets: []float64{1, 0, 0, 3, 2, 2, 3, 4},
-		NegativeSpans:   []Span{{6, 3}, {6, 4}},
-		NegativeBuckets: []float64{3, 0.5, 0.5, 2, 3, 2, 4},
-	}
-
 	for n := 0; n < b.N; n++ {
+		b.StopTimer()
+		f1 := createRandomFloatHistogram(50)
+		f2 := createRandomFloatHistogram(50)
+		b.StartTimer()
 		f1.AddNew(f2)
 	}
+}
 
+func createRandomFloatHistogram(spanNum int32) *FloatHistogram {
+	f := &FloatHistogram{}
+	f.PositiveSpans, f.PositiveBuckets = createRandomSpans(spanNum)
+	f.NegativeSpans, f.NegativeBuckets = createRandomSpans(spanNum)
+	return f
+}
+
+func createRandomSpans(spanNum int32) ([]Span, []float64) {
+	Spans := make([]Span, spanNum)
+	Buckets := make([]float64, 0)
+	for i := 0; i < int(spanNum); i++ {
+		Spans[i].Offset = rand.Int31n(spanNum) + 1
+		Spans[i].Length = uint32(rand.Int31n(spanNum) + 1)
+		for j := 0; j < int(Spans[i].Length); j++ {
+			Buckets = append(Buckets, float64(rand.Int31n(spanNum)+1))
+		}
+	}
+	return Spans, Buckets
 }

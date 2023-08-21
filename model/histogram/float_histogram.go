@@ -279,8 +279,8 @@ func (h *FloatHistogram) AddNew(other *FloatHistogram) *FloatHistogram {
 
 	// TODO(beorn7): If needed, this can be optimized by inspecting the
 	// spans in other and create missing buckets in h in batches.
-	h.PositiveSpans, h.PositiveBuckets = mergeTwoSpans(h.Schema, h.ZeroThreshold, h.PositiveSpans, h.PositiveBuckets, otherPositiveSpans, otherPositiveBuckets)
-	h.NegativeSpans, h.NegativeBuckets = mergeTwoSpans(h.Schema, h.ZeroThreshold, h.NegativeSpans, h.NegativeBuckets, otherNegativeSpans, otherNegativeBuckets)
+	h.PositiveSpans, h.PositiveBuckets = addBuckets(h.Schema, h.ZeroThreshold, h.PositiveSpans, h.PositiveBuckets, otherPositiveSpans, otherPositiveBuckets)
+	h.NegativeSpans, h.NegativeBuckets = addBuckets(h.Schema, h.ZeroThreshold, h.NegativeSpans, h.NegativeBuckets, otherNegativeSpans, otherNegativeBuckets)
 	return h
 }
 
@@ -1080,7 +1080,7 @@ func mergeToSchema(originSpans []Span, originBuckets []float64, originSchema, ta
 	return targetSpans, targetBuckets
 }
 
-func mergeTwoSpans(schema int32, threshold float64, spansA []Span, bucketsA []float64, spansB []Span, bucketsB []float64) ([]Span, []float64) {
+func addBuckets(schema int32, threshold float64, spansA []Span, bucketsA []float64, spansB []Span, bucketsB []float64) ([]Span, []float64) {
 	var (
 		iSpan              int = -1
 		iBucket            int = -1
