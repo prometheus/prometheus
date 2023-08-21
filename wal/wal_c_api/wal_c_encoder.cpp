@@ -6,6 +6,7 @@
 
 #include "wal_c_encoder.h"
 
+#include <limits>
 #include <new>
 #include <span>
 #include <sstream>
@@ -84,6 +85,7 @@ class Encoder {
   // encode - encoding data from Hashdex and make segment, redundant.
   inline __attribute__((always_inline)) void encode(c_hashdex c_hx, c_segment* c_seg, c_redundant* c_rt) {
     auto hashdex_data = static_cast<Hashdex*>(c_hx)->data();
+
     for (const auto& [chksm, pb_view] : hashdex_data) {
       if ((chksm % number_of_shards_) == shard_id_) {
         PromPP::Prometheus::RemoteWrite::read_timeseries(protozero::pbf_reader{pb_view}, timeseries_);
@@ -91,10 +93,8 @@ class Encoder {
         timeseries_.clear();
       }
     }
-    c_seg->samples = writer_.buffer().samples_count();
-    c_seg->series = writer_.buffer().series_count();
-    c_seg->earliest_timestamp = writer_.buffer().earliest_sample();
-    c_seg->latest_timestamp = writer_.buffer().latest_sample();
+
+    fill_in_segment_with_stats(c_seg);
 
     auto segment_buffer = new std::stringstream;
     c_rt->data = writer_.write(*segment_buffer).release();
@@ -117,18 +117,12 @@ class Encoder {
       }
     }
 
-    c_seg->samples = writer_.buffer().samples_count();
-    c_seg->series = writer_.buffer().series_count();
-    c_seg->earliest_timestamp = writer_.buffer().earliest_sample();
-    c_seg->latest_timestamp = writer_.buffer().latest_sample();
+    fill_in_segment_with_stats(c_seg);
   }
 
   // finalize - finalize the encoded data in the C++ encoder to Segment.
   inline __attribute__((always_inline)) void finalize(c_segment* c_seg, c_redundant* c_rt) {
-    c_seg->samples = writer_.buffer().samples_count();
-    c_seg->series = writer_.buffer().series_count();
-    c_seg->earliest_timestamp = writer_.buffer().earliest_sample();
-    c_seg->latest_timestamp = writer_.buffer().latest_sample();
+    fill_in_segment_with_stats(c_seg);
 
     auto segment_buffer = new std::stringstream;
     c_rt->data = writer_.write(*segment_buffer).release();
@@ -154,6 +148,17 @@ class Encoder {
   }
 
   inline __attribute__((always_inline)) ~Encoder() = default;
+
+ private:
+  void fill_in_segment_with_stats(c_segment* c_seg) const {
+    size_t remaining_cap = std::numeric_limits<uint32_t>::max();
+
+    c_seg->samples = writer_.buffer().samples_count();
+    c_seg->series = writer_.buffer().series_count();
+    c_seg->earliest_timestamp = writer_.buffer().earliest_sample();
+    c_seg->latest_timestamp = writer_.buffer().latest_sample();
+    c_seg->remainder_size = std::min(remaining_cap, writer_.remainder_size());
+  }
 };
 }  // namespace Wrapper
 

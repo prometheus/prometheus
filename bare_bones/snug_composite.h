@@ -447,6 +447,8 @@ class DecodingTable {
   inline __attribute__((always_inline)) auto begin() const noexcept { return ItemIterator<decltype(items_.begin())>(this, items_.begin()); }
   inline __attribute__((always_inline)) auto end() const noexcept { return IteratorSentinel<decltype(items_.end())>(items_.end()); }
 
+  inline __attribute__((always_inline)) auto remainder_size() const noexcept { return this->data_.remainder_size(); }
+
   virtual ~DecodingTable() = default;
 };
 

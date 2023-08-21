@@ -83,6 +83,7 @@ typedef struct {
   uint32_t series;
   int64_t earliest_timestamp;
   int64_t latest_timestamp;
+  uint32_t remainder_size;
 } c_segment;
 
 typedef struct {

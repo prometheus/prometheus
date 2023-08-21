@@ -26,6 +26,7 @@ type Segment interface {
 	Series() uint32
 	Earliest() int64
 	Latest() int64
+	RemainingTableSize() uint32
 }
 
 // DecodedSegment - decoded to RemoteWrite protobuf segment
