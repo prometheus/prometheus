@@ -23,6 +23,8 @@ import (
 
 	"github.com/go-kit/log"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -77,7 +79,7 @@ func CheckSD(sdConfigFiles, sdJobName string, sdTimeout time.Duration, noDefault
 	defer cancel()
 
 	for _, cfg := range scrapeConfig.ServiceDiscoveryConfigs {
-		d, err := cfg.NewDiscoverer(discovery.DiscovererOptions{Logger: logger})
+		d, err := cfg.NewDiscoverer(discovery.DiscovererOptions{Logger: logger, Registerer: prometheus.DefaultRegisterer})
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Could not create new discoverer", err)
 			return failureExitCode

@@ -22,6 +22,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/miekg/dns"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
@@ -245,7 +246,8 @@ func TestDNS(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			sd := NewDiscovery(tc.config, nil)
+			sd, err := NewDiscovery(tc.config, nil, prometheus.NewRegistry())
+			require.NoError(t, err)
 			sd.lookupFn = tc.lookup
 
 			tgs, err := sd.refresh(context.Background())
