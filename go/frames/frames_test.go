@@ -179,7 +179,7 @@ func (s *FrameSuite) TestHeaderEncodeDecodeBinaryWithError() {
 }
 
 func (s *FrameSuite) TestAuthMsg() {
-	wm := frames.NewAuthMsg(uuid.NewString(), uuid.NewString())
+	wm := frames.NewAuthMsg(uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString())
 
 	b, _ := wm.MarshalBinary()
 	rm := new(frames.AuthMsg)
@@ -193,8 +193,8 @@ func (s *FrameSuite) TestAuthMsg() {
 }
 
 func (s *FrameSuite) TestAuthMsgQuick() {
-	f := func(token, agentUUID string) bool {
-		wm := frames.NewAuthMsg(token, agentUUID)
+	f := func(token, agentUUID, productName, agentHostname string) bool {
+		wm := frames.NewAuthMsg(token, agentUUID, productName, agentHostname)
 
 		b, _ := wm.MarshalBinary()
 		rm := new(frames.AuthMsg)
@@ -209,11 +209,11 @@ func (s *FrameSuite) TestAuthMsgQuick() {
 }
 
 func (s *FrameSuite) TestAuthMsgError() {
-	wm := frames.NewAuthMsg("", uuid.NewString())
+	wm := frames.NewAuthMsg("", uuid.NewString(), "", "")
 	err := wm.Validate()
 	s.Require().ErrorIs(err, frames.ErrTokenEmpty)
 
-	wm = frames.NewAuthMsg(uuid.NewString(), "")
+	wm = frames.NewAuthMsg(uuid.NewString(), "", "", "")
 	err = wm.Validate()
 	s.Require().ErrorIs(err, frames.ErrUUIDEmpty)
 }
@@ -222,7 +222,9 @@ func (s *FrameSuite) TestAuthMsgFrameAt() {
 	ctx := context.Background()
 	token := uuid.NewString()
 	agentUUID := uuid.NewString()
-	wm, err := frames.NewAuthFrame(s.version, token, agentUUID)
+	productName := uuid.NewString()
+	agentHostname := uuid.NewString()
+	wm, err := frames.NewAuthFrame(s.version, token, agentUUID, productName, agentHostname)
 	s.Require().NoError(err)
 	b := wm.EncodeBinary()
 
@@ -240,13 +242,17 @@ func (s *FrameSuite) TestAuthMsgFrameAt() {
 
 	s.Require().Equal(token, rm.Token)
 	s.Require().Equal(agentUUID, rm.AgentUUID)
+	s.Require().Equal(productName, rm.ProductName)
+	s.Require().Equal(agentHostname, rm.AgentHostname)
 }
 
 func (s *FrameSuite) TestAuthMsgFrame() {
 	ctx := context.Background()
 	token := uuid.NewString()
 	agentUUID := uuid.NewString()
-	wm, err := frames.NewAuthFrame(s.version, token, agentUUID)
+	productName := uuid.NewString()
+	agentHostname := uuid.NewString()
+	wm, err := frames.NewAuthFrame(s.version, token, agentUUID, productName, agentHostname)
 	s.Require().NoError(err)
 	b := wm.EncodeBinary()
 
@@ -265,13 +271,17 @@ func (s *FrameSuite) TestAuthMsgFrame() {
 
 	s.Require().Equal(token, rm.Token)
 	s.Require().Equal(agentUUID, rm.AgentUUID)
+	s.Require().Equal(productName, rm.ProductName)
+	s.Require().Equal(agentHostname, rm.AgentHostname)
 }
 
 func (s *FrameSuite) TestAuthMsgFrameAtWithMsg() {
 	ctx := context.Background()
 	token := uuid.NewString()
 	agentUUID := uuid.NewString()
-	msg := frames.NewAuthMsg(token, agentUUID)
+	productName := uuid.NewString()
+	agentHostname := uuid.NewString()
+	msg := frames.NewAuthMsg(token, agentUUID, productName, agentHostname)
 	wm, err := frames.NewAuthFrameWithMsg(s.version, msg)
 	s.Require().NoError(err)
 	b := wm.EncodeBinary()
@@ -290,13 +300,17 @@ func (s *FrameSuite) TestAuthMsgFrameAtWithMsg() {
 
 	s.Require().Equal(token, rm.Token)
 	s.Require().Equal(agentUUID, rm.AgentUUID)
+	s.Require().Equal(productName, rm.ProductName)
+	s.Require().Equal(agentHostname, rm.AgentHostname)
 }
 
 func (s *FrameSuite) TestAuthMsgFrameWithMsg() {
 	ctx := context.Background()
 	token := uuid.NewString()
 	agentUUID := uuid.NewString()
-	msg := frames.NewAuthMsg(token, agentUUID)
+	productName := uuid.NewString()
+	agentHostname := uuid.NewString()
+	msg := frames.NewAuthMsg(token, agentUUID, productName, agentHostname)
 	wm, err := frames.NewAuthFrameWithMsg(s.version, msg)
 	s.Require().NoError(err)
 	b := wm.EncodeBinary()
@@ -316,6 +330,8 @@ func (s *FrameSuite) TestAuthMsgFrameWithMsg() {
 
 	s.Require().Equal(token, rm.Token)
 	s.Require().Equal(agentUUID, rm.AgentUUID)
+	s.Require().Equal(productName, rm.ProductName)
+	s.Require().Equal(agentHostname, rm.AgentHostname)
 }
 
 func (s *FrameSuite) TestResponseMsg() {

@@ -216,13 +216,19 @@ class Vector {
 
   inline __attribute__((always_inline)) const_iterator end() const noexcept { return data_ + size_; }
 
-  inline __attribute__((always_inline)) const T& operator[](uint32_t i) const noexcept {
-    assert(i < size_);
+  inline __attribute__((always_inline)) const T& operator[](uint32_t i) const {
+    // assert(i < size_);
+    if (i > size_) {
+      throw BareBones::Exception(0xfd921d184ca372ef, "BareBones::Vector: index out of range [%d] with length %d", i, size_);
+    }
     return data_[i];
   }
 
-  inline __attribute__((always_inline)) T& operator[](uint32_t i) noexcept {
-    assert(i < size_);
+  inline __attribute__((always_inline)) T& operator[](uint32_t i) {
+    // assert(i < size_);
+    if (i > size_) {
+      throw BareBones::Exception(0xfd921d184ca372ff, "BareBones::Vector: index out of range [%d] with length %d", i, size_);
+    }
     return data_[i];
   }
 
