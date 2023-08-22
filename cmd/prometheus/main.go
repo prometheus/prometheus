@@ -202,8 +202,14 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 				level.Info(logger).Log("msg", "No default port will be appended to scrape targets' addresses.")
 			case "native-histograms":
 				c.tsdb.EnableNativeHistograms = true
-				c.scrape.EnableProtobufNegotiation = true
-				level.Info(logger).Log("msg", "Experimental native histogram support enabled.")
+				// Change global variable. Hacky, but it's hard to pass new option or default to unmarshaller.
+				config.DefaultConfig.GlobalConfig.ScrapeProtocols = []config.ScrapeProtocol{
+					config.PrometheusProto,
+					config.OpenMetricsText1_0_0,
+					config.OpenMetricsText0_0_1,
+					config.PrometheusText0_0_4,
+				}
+				level.Info(logger).Log("msg", "Experimental native histogram support enabled. Changed default scrape_protocols to PrometheusProto, OpenMetricsText1.0.0, OpenMetrics0.0.1 and PrometheusText")
 			case "":
 				continue
 			case "promql-at-modifier", "promql-negative-offset":
