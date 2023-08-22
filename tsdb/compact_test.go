@@ -1364,7 +1364,7 @@ func TestHeadCompactionWithHistograms(t *testing.T) {
 				exp1, exp2, exp3, exp4 []tsdbutil.Sample
 			)
 			h := &histogram.Histogram{
-				Count:         11,
+				Count:         15,
 				ZeroCount:     4,
 				ZeroThreshold: 0.001,
 				Sum:           35.5,

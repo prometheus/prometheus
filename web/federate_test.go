@@ -306,7 +306,7 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 
 	db := storage.DB
 	hist := &histogram.Histogram{
-		Count:         10,
+		Count:         12,
 		ZeroCount:     2,
 		ZeroThreshold: 0.001,
 		Sum:           39.4,
@@ -359,6 +359,7 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 			})
 		default:
 			hist.ZeroCount++
+			hist.Count++
 			_, err = app.AppendHistogram(0, l, 100*60*1000, hist.Copy(), nil)
 			expVec = append(expVec, promql.Sample{
 				T:      100 * 60 * 1000,
