@@ -186,8 +186,8 @@ func ReadAuthMsg(ctx context.Context, r io.Reader, size int) (*AuthMsg, error) {
 }
 
 // NewAuthFrame - init new frame.
-func NewAuthFrame(version uint8, token, agentUUID string) (*ReadFrame, error) {
-	body, err := NewAuthMsg(token, agentUUID).MarshalBinary()
+func NewAuthFrame(version uint8, token, agentUUID, productName, agentHostname string) (*ReadFrame, error) {
+	body, err := NewAuthMsg(token, agentUUID, productName, agentHostname).MarshalBinary()
 	if err != nil {
 		return nil, err
 	}
@@ -207,15 +207,19 @@ func NewAuthFrameWithMsg(version uint8, msg *AuthMsg) (*ReadFrame, error) {
 
 // AuthMsg - message for authorization.
 type AuthMsg struct {
-	Token     string
-	AgentUUID string
+	Token         string
+	AgentUUID     string
+	ProductName   string
+	AgentHostname string
 }
 
 // NewAuthMsg - init new AuthMsg.
-func NewAuthMsg(token, agentUUID string) *AuthMsg {
+func NewAuthMsg(token, agentUUID, productName, agentHostname string) *AuthMsg {
 	return &AuthMsg{
-		Token:     token,
-		AgentUUID: agentUUID,
+		Token:         token,
+		AgentUUID:     agentUUID,
+		ProductName:   productName,
+		AgentHostname: agentHostname,
 	}
 }
 
@@ -226,13 +230,21 @@ func NewAuthMsgEmpty() *AuthMsg {
 
 // MarshalBinary - encoding to byte.
 func (am *AuthMsg) MarshalBinary() ([]byte, error) {
-	buf := make([]byte, 0, 2+len(am.Token)+len(am.AgentUUID))
+	//revive:disable-next-line:add-constant this not constant
+	length := 4 + len(am.Token) + len(am.AgentUUID) + len(am.ProductName) + len(am.AgentHostname)
+	buf := make([]byte, 0, length)
 
 	buf = binary.AppendUvarint(buf, uint64(len(am.Token)))
 	buf = append(buf, am.Token...)
 
 	buf = binary.AppendUvarint(buf, uint64(len(am.AgentUUID)))
 	buf = append(buf, am.AgentUUID...)
+
+	buf = binary.AppendUvarint(buf, uint64(len(am.ProductName)))
+	buf = append(buf, am.ProductName...)
+
+	buf = binary.AppendUvarint(buf, uint64(len(am.AgentHostname)))
+	buf = append(buf, am.AgentHostname...)
 	return buf, nil
 }
 
@@ -241,15 +253,22 @@ func (am *AuthMsg) UnmarshalBinary(data []byte) error {
 	var offset int
 	lenStr, n := binary.Uvarint(data)
 	offset += n
-
 	am.Token = string(data[offset : offset+int(lenStr)])
 	offset += int(lenStr)
 
 	lenStr, n = binary.Uvarint(data[offset:])
 	offset += n
-
 	am.AgentUUID = string(data[offset : offset+int(lenStr)])
+	offset += int(lenStr)
 
+	lenStr, n = binary.Uvarint(data[offset:])
+	offset += n
+	am.ProductName = string(data[offset : offset+int(lenStr)])
+	offset += int(lenStr)
+
+	lenStr, n = binary.Uvarint(data[offset:])
+	offset += n
+	am.AgentHostname = string(data[offset : offset+int(lenStr)])
 	return nil
 }
 
