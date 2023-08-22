@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
+	otlptranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite"
 )
 
 type writeHandler struct {
@@ -119,8 +120,9 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 			samplesWithInvalidLabels++
 			continue
 		}
+		var ref storage.SeriesRef
 		for _, s := range ts.Samples {
-			_, err = app.Append(0, labels, s.Timestamp, s.Value)
+			ref, err = app.Append(ref, labels, s.Timestamp, s.Value)
 			if err != nil {
 				unwrappedErr := errors.Unwrap(err)
 				if unwrappedErr == nil {
@@ -176,4 +178,61 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 	}
 
 	return nil
+}
+
+// NewOTLPWriteHandler creates a http.Handler that accepts OTLP write requests and
+// writes them to the provided appendable.
+func NewOTLPWriteHandler(logger log.Logger, appendable storage.Appendable) http.Handler {
+	rwHandler := &writeHandler{
+		logger:     logger,
+		appendable: appendable,
+	}
+
+	return &otlpWriteHandler{
+		logger:    logger,
+		rwHandler: rwHandler,
+	}
+}
+
+type otlpWriteHandler struct {
+	logger    log.Logger
+	rwHandler *writeHandler
+}
+
+func (h *otlpWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	req, err := DecodeOTLPWriteRequest(r)
+	if err != nil {
+		level.Error(h.logger).Log("msg", "Error decoding remote write request", "err", err.Error())
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	prwMetricsMap, errs := otlptranslator.FromMetrics(req.Metrics(), otlptranslator.Settings{})
+	if errs != nil {
+		level.Warn(h.logger).Log("msg", "Error translating OTLP metrics to Prometheus write request", "err", errs)
+	}
+
+	prwMetrics := make([]prompb.TimeSeries, 0, len(prwMetricsMap))
+
+	for _, ts := range prwMetricsMap {
+		prwMetrics = append(prwMetrics, *ts)
+	}
+
+	err = h.rwHandler.write(r.Context(), &prompb.WriteRequest{
+		Timeseries: prwMetrics,
+	})
+
+	switch err {
+	case nil:
+	case storage.ErrOutOfOrderSample, storage.ErrOutOfBounds, storage.ErrDuplicateSampleForTimestamp:
+		// Indicated an out of order sample is a bad request to prevent retries.
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	default:
+		level.Error(h.logger).Log("msg", "Error appending remote write", "err", err.Error())
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
 }

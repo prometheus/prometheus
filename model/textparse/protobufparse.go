@@ -54,7 +54,7 @@ type ProtobufParser struct {
 	// quantiles/buckets.
 	fieldPos    int
 	fieldsDone  bool // true if no more fields of a Summary or (legacy) Histogram to be processed.
-	redoClassic bool // true after parsing a native histogram if we need to parse it again as a classit histogram.
+	redoClassic bool // true after parsing a native histogram if we need to parse it again as a classic histogram.
 
 	// state is marked by the entry we are processing. EntryInvalid implies
 	// that we have to decode the next MetricFamily.
@@ -105,7 +105,7 @@ func (p *ProtobufParser) Series() ([]byte, *int64, float64) {
 			v = float64(s.GetSampleCount())
 		case -1:
 			v = s.GetSampleSum()
-			// Need to detect a summaries without quantile here.
+			// Need to detect summaries without quantile here.
 			if len(s.GetQuantile()) == 0 {
 				p.fieldsDone = true
 			}
@@ -411,6 +411,14 @@ func (p *ProtobufParser) Next() (Entry, error) {
 			p.metricPos++
 			p.fieldPos = -2
 			p.fieldsDone = false
+			// If this is a metric family containing native
+			// histograms, we have to switch back to native
+			// histograms after parsing a classic histogram.
+			if p.state == EntrySeries &&
+				(t == dto.MetricType_HISTOGRAM || t == dto.MetricType_GAUGE_HISTOGRAM) &&
+				isNativeHistogram(p.mf.GetMetric()[0].GetHistogram()) {
+				p.state = EntryHistogram
+			}
 		}
 		if p.metricPos >= len(p.mf.GetMetric()) {
 			p.state = EntryInvalid
@@ -546,18 +554,17 @@ func formatOpenMetricsFloat(f float64) string {
 	return s + ".0"
 }
 
-// isNativeHistogram returns false iff the provided histograms has no sparse
-// buckets and a zero threshold of 0 and a zero count of 0. In principle, this
-// could still be meant to be a native histogram (with a zero threshold of 0 and
-// no observations yet), but for now, we'll treat this case as a conventional
-// histogram.
-//
-// TODO(beorn7): In the final format, there should be an unambiguous way of
-// deciding if a histogram should be ingested as a conventional one or a native
-// one.
+// isNativeHistogram returns false iff the provided histograms has no spans at
+// all (neither positive nor negative) and a zero threshold of 0 and a zero
+// count of 0. In principle, this could still be meant to be a native histogram
+// with a zero threshold of 0 and no observations yet. In that case,
+// instrumentation libraries should add a "no-op" span (e.g. length zero, offset
+// zero) to signal that the histogram is meant to be parsed as a native
+// histogram. Failing to do so will cause Prometheus to parse it as a classic
+// histogram as long as no observations have happened.
 func isNativeHistogram(h *dto.Histogram) bool {
-	return len(h.GetNegativeDelta()) > 0 ||
-		len(h.GetPositiveDelta()) > 0 ||
-		h.GetZeroCount() > 0 ||
-		h.GetZeroThreshold() > 0
+	return len(h.GetPositiveSpan()) > 0 ||
+		len(h.GetNegativeSpan()) > 0 ||
+		h.GetZeroThreshold() > 0 ||
+		h.GetZeroCount() > 0
 }

@@ -49,12 +49,6 @@ type Labels struct {
 	data string
 }
 
-type labelSlice []Label
-
-func (ls labelSlice) Len() int           { return len(ls) }
-func (ls labelSlice) Swap(i, j int)      { ls[i], ls[j] = ls[j], ls[i] }
-func (ls labelSlice) Less(i, j int) bool { return ls[i].Name < ls[j].Name }
-
 func decodeSize(data string, index int) (int, int) {
 	// Fast-path for common case of a single byte, value 0..127.
 	b := data[index]
@@ -300,13 +294,26 @@ func (ls Labels) Get(name string) string {
 
 // Has returns true if the label with the given name is present.
 func (ls Labels) Has(name string) bool {
+	if name == "" { // Avoid crash in loop if someone asks for "".
+		return false // Prometheus does not store blank label names.
+	}
 	for i := 0; i < len(ls.data); {
-		var lName string
-		lName, i = decodeString(ls.data, i)
-		_, i = decodeString(ls.data, i)
-		if lName == name {
-			return true
+		var size int
+		size, i = decodeSize(ls.data, i)
+		if ls.data[i] == name[0] {
+			lName := ls.data[i : i+size]
+			i += size
+			if lName == name {
+				return true
+			}
+		} else {
+			if ls.data[i] > name[0] { // Stop looking if we've gone past.
+				break
+			}
+			i += size
 		}
+		size, i = decodeSize(ls.data, i)
+		i += size
 	}
 	return false
 }

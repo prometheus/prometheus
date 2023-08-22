@@ -1535,6 +1535,7 @@ func TestSizeRetention(t *testing.T) {
 		}
 	}
 	require.NoError(t, headApp.Commit())
+	db.Head().mmapHeadChunks()
 
 	require.Eventually(t, func() bool {
 		return db.Head().chunkDiskMapper.IsQueueEmpty()
@@ -2713,14 +2714,20 @@ func TestDBQueryDoesntSeeAppendsAfterCreation(t *testing.T) {
 	require.Equal(t, map[string][]sample{`{foo="bar"}`: {{t: 0, f: 0}}}, seriesSet)
 }
 
+func assureChunkFromSamples(t *testing.T, samples []tsdbutil.Sample) chunks.Meta {
+	chks, err := tsdbutil.ChunkFromSamples(samples)
+	require.NoError(t, err)
+	return chks
+}
+
 // TestChunkWriter_ReadAfterWrite ensures that chunk segment are cut at the set segment size and
 // that the resulted segments includes the expected chunks data.
 func TestChunkWriter_ReadAfterWrite(t *testing.T) {
-	chk1 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 1, nil, nil}})
-	chk2 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 2, nil, nil}})
-	chk3 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 3, nil, nil}})
-	chk4 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 4, nil, nil}})
-	chk5 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 5, nil, nil}})
+	chk1 := assureChunkFromSamples(t, []tsdbutil.Sample{sample{1, 1, nil, nil}})
+	chk2 := assureChunkFromSamples(t, []tsdbutil.Sample{sample{1, 2, nil, nil}})
+	chk3 := assureChunkFromSamples(t, []tsdbutil.Sample{sample{1, 3, nil, nil}})
+	chk4 := assureChunkFromSamples(t, []tsdbutil.Sample{sample{1, 4, nil, nil}})
+	chk5 := assureChunkFromSamples(t, []tsdbutil.Sample{sample{1, 5, nil, nil}})
 	chunkSize := len(chk1.Chunk.Bytes()) + chunks.MaxChunkLengthFieldSize + chunks.ChunkEncodingSize + crc32.Size
 
 	tests := []struct {
@@ -2920,11 +2927,11 @@ func TestRangeForTimestamp(t *testing.T) {
 // Regression test for https://github.com/prometheus/prometheus/pull/6514.
 func TestChunkReader_ConcurrentReads(t *testing.T) {
 	chks := []chunks.Meta{
-		tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 1, nil, nil}}),
-		tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 2, nil, nil}}),
-		tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 3, nil, nil}}),
-		tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 4, nil, nil}}),
-		tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 5, nil, nil}}),
+		assureChunkFromSamples(t, []tsdbutil.Sample{sample{1, 1, nil, nil}}),
+		assureChunkFromSamples(t, []tsdbutil.Sample{sample{1, 2, nil, nil}}),
+		assureChunkFromSamples(t, []tsdbutil.Sample{sample{1, 3, nil, nil}}),
+		assureChunkFromSamples(t, []tsdbutil.Sample{sample{1, 4, nil, nil}}),
+		assureChunkFromSamples(t, []tsdbutil.Sample{sample{1, 5, nil, nil}}),
 	}
 
 	tempDir := t.TempDir()
@@ -3140,6 +3147,9 @@ func TestOpen_VariousBlockStates(t *testing.T) {
 	tmpCheckpointDir := path.Join(tmpDir, "wal/checkpoint.00000001.tmp")
 	err := os.MkdirAll(tmpCheckpointDir, 0o777)
 	require.NoError(t, err)
+	tmpChunkSnapshotDir := path.Join(tmpDir, chunkSnapshotPrefix+"0000.00000001.tmp")
+	err = os.MkdirAll(tmpChunkSnapshotDir, 0o777)
+	require.NoError(t, err)
 
 	opts := DefaultOptions()
 	opts.RetentionDuration = 0
@@ -3172,6 +3182,8 @@ func TestOpen_VariousBlockStates(t *testing.T) {
 	}
 	require.Equal(t, len(expectedIgnoredDirs), ignored)
 	_, err = os.Stat(tmpCheckpointDir)
+	require.True(t, os.IsNotExist(err))
+	_, err = os.Stat(tmpChunkSnapshotDir)
 	require.True(t, os.IsNotExist(err))
 }
 
@@ -6043,12 +6055,14 @@ func TestDiskFillingUpAfterDisablingOOO(t *testing.T) {
 
 	// Check that m-map files gets deleted properly after compactions.
 
+	db.head.mmapHeadChunks()
 	checkMmapFileContents([]string{"000001", "000002"}, nil)
 	require.NoError(t, db.Compact())
 	checkMmapFileContents([]string{"000002"}, []string{"000001"})
 	require.Nil(t, ms.ooo, "OOO mmap chunk was not compacted")
 
 	addSamples(501, 650)
+	db.head.mmapHeadChunks()
 	checkMmapFileContents([]string{"000002", "000003"}, []string{"000001"})
 	require.NoError(t, db.Compact())
 	checkMmapFileContents(nil, []string{"000001", "000002", "000003"})
