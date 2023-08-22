@@ -1635,7 +1635,8 @@ load 1ms
 }
 
 func TestSample(t *testing.T) {
-	test, err := NewTest(t, `
+	engine := newTestEngine()
+	storage := LoadedStorage(t, `
 load 10s
   metric{job="1"} 0+1x1000
   metric{job="2"} 0+2x1000
@@ -1643,11 +1644,7 @@ load 10s
   metric{job="4"} 0+4x1000
   metric{job="5"} 0+5x1000
 `)
-	require.NoError(t, err)
-	defer test.Close()
-
-	err = test.Run()
-	require.NoError(t, err)
+	t.Cleanup(func() { storage.Close() })
 
 	// Convenience function that returns a "full matrix" that matches test NewTest()
 	// for an specified number of jobs and time range.
@@ -1765,13 +1762,13 @@ load 10s
 			var err error
 			var qry Query
 			if c.end == 0 {
-				qry, err = test.QueryEngine().NewInstantQuery(test.context, test.Queryable(), nil, c.query, start)
+				qry, err = engine.NewInstantQuery(context.Background(), storage, nil, c.query, start)
 			} else {
-				qry, err = test.QueryEngine().NewRangeQuery(test.context, test.Queryable(), nil, c.query, start, end, interval)
+				qry, err = engine.NewRangeQuery(context.Background(), storage, nil, c.query, start, end, interval)
 			}
 			require.NoError(t, err)
 
-			res := qry.Exec(test.Context())
+			res := qry.Exec(context.Background())
 			require.NoError(t, res.Err)
 			switch {
 			case c.result != nil:
@@ -1831,13 +1828,13 @@ load 10s
 			var err error
 			var qry Query
 			if c.end == 0 {
-				qry, err = test.QueryEngine().NewInstantQuery(test.context, test.Queryable(), nil, c.query, start)
+				qry, err = engine.NewInstantQuery(context.Background(), storage, nil, c.query, start)
 			} else {
-				qry, err = test.QueryEngine().NewRangeQuery(test.context, test.Queryable(), nil, c.query, start, end, interval)
+				qry, err = engine.NewRangeQuery(context.Background(), storage, nil, c.query, start, end, interval)
 			}
 			require.NoError(t, err)
 
-			res := qry.Exec(test.Context())
+			res := qry.Exec(context.Background())
 			require.NoError(t, res.Err)
 			if expMat, ok := c.result.(Matrix); ok {
 				sort.Sort(expMat)
