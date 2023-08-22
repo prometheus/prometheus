@@ -163,16 +163,20 @@ func (h *headIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchB
 
 	*chks = (*chks)[:0]
 
-	for i, c := range s.mmappedChunks {
-		// Do not expose chunks that are outside of the specified range.
-		if !c.OverlapsClosedInterval(h.mint, h.maxt) {
-			continue
+	mmappedChunksLen := s.mmappedChunks.len()
+	if s.mmappedChunks != nil {
+		var i, j int
+		for i = mmappedChunksLen - 1; i >= 0; i-- {
+			chk := s.mmappedChunks.atOffset(i)
+			if chk.OverlapsClosedInterval(h.mint, h.maxt) {
+				*chks = append(*chks, chunks.Meta{
+					MinTime: chk.minTime,
+					MaxTime: chk.maxTime,
+					Ref:     chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.headChunkID(j))),
+				})
+			}
+			j++
 		}
-		*chks = append(*chks, chunks.Meta{
-			MinTime: c.minTime,
-			MaxTime: c.maxTime,
-			Ref:     chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.headChunkID(i))),
-		})
 	}
 
 	if s.headChunks != nil {
@@ -190,7 +194,7 @@ func (h *headIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchB
 				*chks = append(*chks, chunks.Meta{
 					MinTime: chk.minTime,
 					MaxTime: maxTime,
-					Ref:     chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.headChunkID(len(s.mmappedChunks)+j))),
+					Ref:     chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.headChunkID(mmappedChunksLen+j))),
 				})
 			}
 			j++
@@ -373,17 +377,16 @@ func (s *memSeries) chunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDi
 	// }
 	ix := int(id) - int(s.firstChunkID)
 
-	var headChunksLen int
-	if s.headChunks != nil {
-		headChunksLen = s.headChunks.len()
-	}
+	headChunksLen := s.headChunks.len()
+	mmappedChunksLen := s.mmappedChunks.len()
 
-	if ix < 0 || ix > len(s.mmappedChunks)+headChunksLen-1 {
+	if ix < 0 || ix > mmappedChunksLen+headChunksLen-1 {
 		return nil, false, false, storage.ErrNotFound
 	}
 
-	if ix < len(s.mmappedChunks) {
-		chk, err := chunkDiskMapper.Chunk(s.mmappedChunks[ix].ref)
+	if ix < mmappedChunksLen {
+		c := s.mmappedChunks.atOffset(mmappedChunksLen - ix - 1)
+		chk, err := chunkDiskMapper.Chunk(c.ref)
 		if err != nil {
 			if _, ok := err.(*chunks.CorruptionErr); ok {
 				panic(err)
@@ -392,12 +395,12 @@ func (s *memSeries) chunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDi
 		}
 		mc := memChunkPool.Get().(*memChunk)
 		mc.chunk = chk
-		mc.minTime = s.mmappedChunks[ix].minTime
-		mc.maxTime = s.mmappedChunks[ix].maxTime
+		mc.minTime = c.minTime
+		mc.maxTime = c.maxTime
 		return mc, false, false, nil
 	}
 
-	ix -= len(s.mmappedChunks)
+	ix -= mmappedChunksLen
 
 	offset := headChunksLen - ix - 1
 	// headChunks is a linked list where first element is the most recent one and the last one is the oldest.
@@ -695,14 +698,18 @@ func (s *memSeries) iterator(id chunks.HeadChunkID, c chunkenc.Chunk, isoState *
 		totalSamples := 0    // Total samples in this series.
 		previousSamples := 0 // Samples before this chunk.
 
-		for j, d := range s.mmappedChunks {
-			totalSamples += int(d.numSamples)
-			if j < ix {
-				previousSamples += int(d.numSamples)
+		mmappedChunksLen := s.mmappedChunks.len()
+		if s.mmappedChunks != nil {
+			for j := mmappedChunksLen - 1; j >= 0; j-- {
+				chk := s.mmappedChunks.atOffset(j)
+				totalSamples += int(chk.numSamples)
+				if mmappedChunksLen-1-j < ix {
+					previousSamples += int(chk.numSamples)
+				}
 			}
 		}
 
-		ix -= len(s.mmappedChunks)
+		ix -= mmappedChunksLen
 		if s.headChunks != nil {
 			// Iterate all head chunks from the oldest to the newest.
 			headChunksLen := s.headChunks.len()
@@ -710,7 +717,7 @@ func (s *memSeries) iterator(id chunks.HeadChunkID, c chunkenc.Chunk, isoState *
 				chk := s.headChunks.atOffset(j)
 				chkSamples := chk.chunk.NumSamples()
 				totalSamples += chkSamples
-				// Chunk ID is len(s.mmappedChunks) + $(headChunks list position).
+				// Chunk ID is s.mmappedChunks.len() + $(headChunks list position).
 				// Where $(headChunks list position) is zero for the oldest chunk and $(s.headChunks.len() - 1)
 				// for the newest (open) chunk.
 				if headChunksLen-1-j < ix {

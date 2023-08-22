@@ -82,24 +82,29 @@ func (p HeadChunkRef) Unpack() (HeadSeriesRef, HeadChunkID) {
 // Each memSeries has its own monotonically increasing number to refer to its chunks.
 // If the HeadChunkID value is...
 //   - memSeries.firstChunkID+len(memSeries.mmappedChunks), it's the head chunk.
-//   - less than the above, but >= memSeries.firstID, then it's
-//     memSeries.mmappedChunks[i] where i = HeadChunkID - memSeries.firstID.
+//   - less than the above, but >= memSeries.firstID, then it's on the memSeries.mmappedChunks
+//     linked list. memSeries.mmappedChunks is the most recent chunk on the list, older
+//     chunk is linked via memSeries.mmappedChunks.prev pointer.
 //
 // If memSeries.headChunks is non-nil it points to a *memChunk that holds the current
-// "open" (accepting appends) instance. *memChunk is a linked list and memChunk.next pointer
+// "open" (accepting appends) instance. *memChunk is a linked list and memChunk.prev pointer
 // might link to the older *memChunk instance.
 // If there are multiple *memChunk instances linked to each other from memSeries.headChunks
 // they will be m-mapped as soon as possible leaving only "open" *memChunk instance.
 //
 // Example:
-// assume a memSeries.firstChunkID=7 and memSeries.mmappedChunks=[p5,p6,p7,p8,p9].
-// | HeadChunkID value | refers to ...                                                                          |
-// |-------------------|----------------------------------------------------------------------------------------|
-// |               0-6 | chunks that have been compacted to blocks, these won't return data for queries in Head |
-// |              7-11 | memSeries.mmappedChunks[i] where i is 0 to 4.                                          |
-// |                12 |                                                         *memChunk{next: nil}
-// |                13 |                                         *memChunk{next: ^}
-// |                14 | memSeries.headChunks -> *memChunk{next: ^}
+// assume a memSeries.firstChunkID=7 and 5 mmapped chunks.
+// | HeadChunkID value | refers to ...                                                                            |
+// |-------------------|------------------------------------------------------------------------------------------|
+// |               0-6 | chunks that have been compacted to blocks, these won't return data for queries in Head   |
+// |                 7 |                                                                             *{prev: nil} |
+// |                 8 |                                                                     *{prev: ^}           |
+// |                 9 |                                                             *{prev: ^}                   |
+// |                10 |                                         *mmappedChunk{prev: ^}                           |
+// |                11 | ms.mmappedChunks -> *mmappedChunk{prev: ^}                                               |
+// |                12 |                                                  *{prev: nil}                            |
+// |                13 |                                  *memChunk{prev: ^}                                      |
+// |                14 | ms.headChunks -> *memChunk{prev: ^}                                                      |
 type HeadChunkID uint64
 
 // BlockChunkRef refers to a chunk within a persisted block.

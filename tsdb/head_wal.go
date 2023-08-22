@@ -440,10 +440,10 @@ Outer:
 func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc, oooMmc []*mmappedChunk, walSeriesRef chunks.HeadSeriesRef) (overlapped bool) {
 	if mSeries.ref != walSeriesRef {
 		// Checking if the new m-mapped chunks overlap with the already existing ones.
-		if len(mSeries.mmappedChunks) > 0 && len(mmc) > 0 {
+		if mSeries.mmappedChunks != nil && len(mmc) > 0 {
 			if overlapsClosedInterval(
-				mSeries.mmappedChunks[0].minTime,
-				mSeries.mmappedChunks[len(mSeries.mmappedChunks)-1].maxTime,
+				mSeries.mmappedChunks.oldest().minTime,
+				mSeries.mmappedChunks.maxTime,
 				mmc[0].minTime,
 				mmc[len(mmc)-1].maxTime,
 			) {
@@ -451,8 +451,8 @@ func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc, oooMmc []*m
 					"msg", "M-mapped chunks overlap on a duplicate series record",
 					"series", mSeries.lset.String(),
 					"oldref", mSeries.ref,
-					"oldmint", mSeries.mmappedChunks[0].minTime,
-					"oldmaxt", mSeries.mmappedChunks[len(mSeries.mmappedChunks)-1].maxTime,
+					"oldmint", mSeries.mmappedChunks.oldest().minTime,
+					"oldmaxt", mSeries.mmappedChunks.maxTime,
 					"newref", walSeriesRef,
 					"newmint", mmc[0].minTime,
 					"newmaxt", mmc[len(mmc)-1].maxTime,
@@ -463,15 +463,25 @@ func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc, oooMmc []*m
 	}
 
 	h.metrics.chunksCreated.Add(float64(len(mmc) + len(oooMmc)))
-	h.metrics.chunksRemoved.Add(float64(len(mSeries.mmappedChunks)))
-	h.metrics.chunks.Add(float64(len(mmc) + len(oooMmc) - len(mSeries.mmappedChunks)))
+	mmappedChunksLen := mSeries.mmappedChunks.len()
+	h.metrics.chunksRemoved.Add(float64(mmappedChunksLen))
+	h.metrics.chunks.Add(float64(len(mmc) + len(oooMmc) - mmappedChunksLen))
 
 	if mSeries.ooo != nil {
 		h.metrics.chunksRemoved.Add(float64(len(mSeries.ooo.oooMmappedChunks)))
 		h.metrics.chunks.Sub(float64(len(mSeries.ooo.oooMmappedChunks)))
 	}
 
-	mSeries.mmappedChunks = mmc
+	mSeries.mmappedChunks = nil
+	for _, mc := range mmc {
+		mSeries.mmappedChunks = &mmappedChunk{
+			ref:        mc.ref,
+			numSamples: mc.numSamples,
+			minTime:    mc.minTime,
+			maxTime:    mc.maxTime,
+			prev:       mSeries.mmappedChunks,
+		}
+	}
 	if len(oooMmc) == 0 {
 		mSeries.ooo = nil
 	} else {
