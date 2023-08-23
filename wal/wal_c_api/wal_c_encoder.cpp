@@ -117,11 +117,6 @@ class Encoder {
       }
     }
 
-    auto vec = BareBones::Vector<uint64_t>();
-    vec.emplace_back(1);
-    const auto& vec2 = vec;
-    std::cout << vec2[2] << std::endl;
-
     fill_in_segment_with_stats(c_seg);
   }
 
