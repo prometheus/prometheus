@@ -33,7 +33,7 @@ func GenerateTestHistograms(n int) (r []*histogram.Histogram) {
 // GenerateTestHistogram but it is up to the user to set any known counter reset hint.
 func GenerateTestHistogram(i int) *histogram.Histogram {
 	return &histogram.Histogram{
-		Count:         10 + uint64(i*8),
+		Count:         12 + uint64(i*9),
 		ZeroCount:     2 + uint64(i),
 		ZeroThreshold: 0.001,
 		Sum:           18.4 * float64(i+1),
@@ -78,7 +78,7 @@ func GenerateTestFloatHistograms(n int) (r []*histogram.FloatHistogram) {
 // GenerateTestFloatHistogram but it is up to the user to set any known counter reset hint.
 func GenerateTestFloatHistogram(i int) *histogram.FloatHistogram {
 	return &histogram.FloatHistogram{
-		Count:         10 + float64(i*8),
+		Count:         12 + float64(i*9),
 		ZeroCount:     2 + float64(i),
 		ZeroThreshold: 0.001,
 		Sum:           18.4 * float64(i+1),

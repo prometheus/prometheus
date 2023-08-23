@@ -3182,7 +3182,7 @@ func TestNativeHistogramRate(t *testing.T) {
 		Schema:           1,
 		ZeroThreshold:    0.001,
 		ZeroCount:        1. / 15.,
-		Count:            8. / 15.,
+		Count:            9. / 15.,
 		Sum:              1.226666666666667,
 		PositiveSpans:    []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
 		PositiveBuckets:  []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
@@ -3223,7 +3223,7 @@ func TestNativeFloatHistogramRate(t *testing.T) {
 		Schema:           1,
 		ZeroThreshold:    0.001,
 		ZeroCount:        1. / 15.,
-		Count:            8. / 15.,
+		Count:            9. / 15.,
 		Sum:              1.226666666666667,
 		PositiveSpans:    []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
 		PositiveBuckets:  []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
@@ -3996,7 +3996,7 @@ func TestNativeHistogram_Sum_Count_Add_AvgOperator(t *testing.T) {
 				{
 					CounterResetHint: histogram.GaugeType,
 					Schema:           0,
-					Count:            21,
+					Count:            25,
 					Sum:              1234.5,
 					ZeroThreshold:    0.001,
 					ZeroCount:        4,
@@ -4014,7 +4014,7 @@ func TestNativeHistogram_Sum_Count_Add_AvgOperator(t *testing.T) {
 				{
 					CounterResetHint: histogram.GaugeType,
 					Schema:           0,
-					Count:            36,
+					Count:            41,
 					Sum:              2345.6,
 					ZeroThreshold:    0.001,
 					ZeroCount:        5,
@@ -4034,7 +4034,7 @@ func TestNativeHistogram_Sum_Count_Add_AvgOperator(t *testing.T) {
 				{
 					CounterResetHint: histogram.GaugeType,
 					Schema:           0,
-					Count:            36,
+					Count:            41,
 					Sum:              1111.1,
 					ZeroThreshold:    0.001,
 					ZeroCount:        5,
@@ -4061,7 +4061,7 @@ func TestNativeHistogram_Sum_Count_Add_AvgOperator(t *testing.T) {
 				Schema:           0,
 				ZeroThreshold:    0.001,
 				ZeroCount:        14,
-				Count:            93,
+				Count:            107,
 				Sum:              4691.2,
 				PositiveSpans: []histogram.Span{
 					{Offset: 0, Length: 7},
@@ -4078,7 +4078,7 @@ func TestNativeHistogram_Sum_Count_Add_AvgOperator(t *testing.T) {
 				Schema:           0,
 				ZeroThreshold:    0.001,
 				ZeroCount:        3.5,
-				Count:            23.25,
+				Count:            26.75,
 				Sum:              1172.8,
 				PositiveSpans: []histogram.Span{
 					{Offset: 0, Length: 7},
@@ -4189,7 +4189,7 @@ func TestNativeHistogram_SubOperator(t *testing.T) {
 			histograms: []histogram.Histogram{
 				{
 					Schema:        0,
-					Count:         36,
+					Count:         41,
 					Sum:           2345.6,
 					ZeroThreshold: 0.001,
 					ZeroCount:     5,
@@ -4224,7 +4224,7 @@ func TestNativeHistogram_SubOperator(t *testing.T) {
 			},
 			expected: histogram.FloatHistogram{
 				Schema:        0,
-				Count:         25,
+				Count:         30,
 				Sum:           1111.1,
 				ZeroThreshold: 0.001,
 				ZeroCount:     2,
@@ -4245,7 +4245,7 @@ func TestNativeHistogram_SubOperator(t *testing.T) {
 			histograms: []histogram.Histogram{
 				{
 					Schema:        0,
-					Count:         36,
+					Count:         41,
 					Sum:           2345.6,
 					ZeroThreshold: 0.001,
 					ZeroCount:     5,
@@ -4280,7 +4280,7 @@ func TestNativeHistogram_SubOperator(t *testing.T) {
 			},
 			expected: histogram.FloatHistogram{
 				Schema:        0,
-				Count:         25,
+				Count:         30,
 				Sum:           1111.1,
 				ZeroThreshold: 0.001,
 				ZeroCount:     2,
@@ -4315,7 +4315,7 @@ func TestNativeHistogram_SubOperator(t *testing.T) {
 				},
 				{
 					Schema:        0,
-					Count:         36,
+					Count:         41,
 					Sum:           2345.6,
 					ZeroThreshold: 0.001,
 					ZeroCount:     5,
@@ -4335,7 +4335,7 @@ func TestNativeHistogram_SubOperator(t *testing.T) {
 			},
 			expected: histogram.FloatHistogram{
 				Schema:        0,
-				Count:         -25,
+				Count:         -30,
 				Sum:           -1111.1,
 				ZeroThreshold: 0.001,
 				ZeroCount:     -2,

@@ -621,7 +621,7 @@ func genSeries(totalSeries, labelCount int, mint, maxt int64) []storage.Series {
 func genHistogramSeries(totalSeries, labelCount int, mint, maxt, step int64, floatHistogram bool) []storage.Series {
 	return genSeriesFromSampleGenerator(totalSeries, labelCount, mint, maxt, step, func(ts int64) tsdbutil.Sample {
 		h := &histogram.Histogram{
-			Count:         5 + uint64(ts*4),
+			Count:         7 + uint64(ts*5),
 			ZeroCount:     2 + uint64(ts),
 			ZeroThreshold: 0.001,
 			Sum:           18.4 * rand.Float64(),
@@ -660,7 +660,7 @@ func genHistogramAndFloatSeries(totalSeries, labelCount int, mint, maxt, step in
 			s = sample{t: ts, f: rand.Float64()}
 		} else {
 			h := &histogram.Histogram{
-				Count:         5 + uint64(ts*4),
+				Count:         7 + uint64(ts*5),
 				ZeroCount:     2 + uint64(ts),
 				ZeroThreshold: 0.001,
 				Sum:           18.4 * rand.Float64(),
