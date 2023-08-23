@@ -982,6 +982,10 @@ func newScrapeCache() *scrapeCache {
 }
 
 func (c *scrapeCache) free() {
+	if c == nil {
+		return
+	}
+
 	for k := range c.series {
 		delete(c.series, k)
 	}
