@@ -5,11 +5,13 @@
 #include <bit>
 #include <cstring>
 #include <fstream>
+#include <iostream>
 
 #include <scope_exit.h>
 
 #include "exception.h"
 #include "memory.h"
+#include "stacktrace.h"
 #include "streams.h"
 #include "type_traits.h"
 
@@ -218,7 +220,10 @@ class Vector {
 
   inline __attribute__((always_inline)) const T& operator[](uint32_t i) const {
     // assert(i < size_);
+
     if (i > size_) {
+      auto exc = BareBones::StackTrace::Current(64);
+      std::cout << __func__ << "(): stacktrace: " << exc << std::endl;
       throw BareBones::Exception(0xfd921d184ca372ef, "BareBones::Vector: index out of range [%d] with length %d", i, size_);
     }
     return data_[i];
@@ -226,7 +231,10 @@ class Vector {
 
   inline __attribute__((always_inline)) T& operator[](uint32_t i) {
     // assert(i < size_);
+
     if (i > size_) {
+      auto exc = BareBones::StackTrace::Current(64);
+      std::cout << __func__ << "(): stacktrace: " << exc << std::endl;
       throw BareBones::Exception(0xfd921d184ca372ff, "BareBones::Vector: index out of range [%d] with length %d", i, size_);
     }
     return data_[i];
