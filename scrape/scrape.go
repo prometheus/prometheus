@@ -622,6 +622,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 			wg.Add(1)
 			go func(l loop) {
 				l.stop()
+				l.getCache().free()
 				wg.Done()
 			}(sp.loops[hash])
 
@@ -977,6 +978,24 @@ func newScrapeCache() *scrapeCache {
 		seriesCur:     map[uint64]labels.Labels{},
 		seriesPrev:    map[uint64]labels.Labels{},
 		metadata:      map[string]*metaEntry{},
+	}
+}
+
+func (c *scrapeCache) free() {
+	for k := range c.series {
+		delete(c.series, k)
+	}
+
+	for k := range c.droppedSeries {
+		delete(c.droppedSeries, k)
+	}
+
+	for k := range c.seriesCur {
+		delete(c.seriesCur, k)
+	}
+
+	for k := range c.metadata {
+		delete(c.metadata, k)
 	}
 }
 

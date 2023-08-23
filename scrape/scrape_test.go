@@ -3291,6 +3291,81 @@ func TestReuseCacheRace(*testing.T) {
 	}
 }
 
+type cacheTestLoop struct {
+	cache *scrapeCache
+}
+
+func (c *cacheTestLoop) run(errc chan<- error) {}
+
+func (c *cacheTestLoop) disableEndOfRunStalenessMarkers() {}
+
+func (c *cacheTestLoop) setForcedError(err error) {}
+
+func (c *cacheTestLoop) getForcedError() error {
+	return nil
+}
+
+func (c *cacheTestLoop) stop() {}
+
+func (c *cacheTestLoop) getCache() *scrapeCache {
+	return c.cache
+}
+
+func TestScrapePoolCacheFree(t *testing.T) {
+	sl := &cacheTestLoop{
+		cache: newScrapeCache(),
+	}
+
+	newLoop := func(opts scrapeLoopOptions) loop {
+		return sl
+	}
+
+	sp := &scrapePool{
+		appendable:    &nopAppendable{},
+		activeTargets: map[uint64]*Target{},
+		loops:         map[uint64]loop{},
+		newLoop:       newLoop,
+		cancel:        func() {},
+		client:        http.DefaultClient,
+		logger:        nil,
+	}
+
+	sp.config = &config.ScrapeConfig{
+		ScrapeInterval: model.Duration(1),
+		ScrapeTimeout:  model.Duration(1),
+	}
+
+	t1 := &Target{
+		labels: labels.FromStrings(model.AddressLabel, "hello:9090"),
+	}
+	sp.sync([]*Target{t1})
+
+	ref := storage.SeriesRef(1)
+	met := []byte("metric")
+	lset := labels.FromStrings("t1", "t1", "t2", "t2")
+	hash := uint64(123)
+
+	l1 := sp.loops[t1.hash()]
+	fmt.Printf("hash at test: %v", t1.hash())
+	l1.getCache().addRef(met, ref, lset, hash)
+	for k := range l1.getCache().series {
+		fmt.Println(k)
+	}
+	if _, ok := l1.getCache().series["metric"]; !ok {
+		t.Errorf("metric is missing from the cache")
+	}
+
+	t2 := &Target{
+		labels: labels.FromStrings(model.AddressLabel, "hello:9091"),
+	}
+	sp.sync([]*Target{t2})
+
+	// t1 target is gone from the scrapePool, now test if its cache is freed up or not
+	if _, ok := l1.getCache().series["metric"]; ok {
+		t.Errorf("metric still exists in cache after the target is gone")
+	}
+}
+
 func TestCheckAddError(t *testing.T) {
 	var appErrs appendErrors
 	sl := scrapeLoop{l: log.NewNopLogger()}
