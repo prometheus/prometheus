@@ -923,9 +923,18 @@ func mergeToSchema(originSpans []Span, originBuckets []float64, originSchema, ta
 	return targetSpans, targetBuckets
 }
 
-// addBuckets add two groups of Spans by inspecting the
-// spans in other and create missing buckets in origin in batches.
-func addBuckets(schema int32, threshold float64, negative bool, spansA []Span, bucketsA []float64, spansB []Span, bucketsB []float64) ([]Span, []float64) {
+// addBuckets adds the buckets described by spansB/bucketsB to the buckets described by spansA/bucketsA,
+// creating missing buckets in spansA/bucketsA as needed.
+// It returns the resulting spans/buckets (which must be used instead of the original spansA/bucketsA,
+// although spansA/bucketsA might get modified by this function).
+// All buckets must use the same provided schema.
+// Buckets in spansB/bucketsB with an absolute upper limit ≤ threshold are ignored.
+// If negative is true, the buckets in spansB/bucketsB are subtracted rather than added.
+func addBuckets(
+	schema int32, threshold float64, negative bool, 
+	spansA []Span, bucketsA []float64, 
+	spansB []Span, bucketsB []float64,
+) ([]Span, []float64) {
 	var (
 		iSpan              int = -1
 		iBucket            int = -1
