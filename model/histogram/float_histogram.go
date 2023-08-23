@@ -931,8 +931,8 @@ func mergeToSchema(originSpans []Span, originBuckets []float64, originSchema, ta
 // Buckets in spansB/bucketsB with an absolute upper limit ≤ threshold are ignored.
 // If negative is true, the buckets in spansB/bucketsB are subtracted rather than added.
 func addBuckets(
-	schema int32, threshold float64, negative bool, 
-	spansA []Span, bucketsA []float64, 
+	schema int32, threshold float64, negative bool,
+	spansA []Span, bucketsA []float64,
 	spansB []Span, bucketsB []float64,
 ) ([]Span, []float64) {
 	var (
