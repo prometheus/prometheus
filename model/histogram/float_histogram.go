@@ -218,56 +218,6 @@ func (h *FloatHistogram) Add(other *FloatHistogram) *FloatHistogram {
 	h.Count += other.Count
 	h.Sum += other.Sum
 
-	// TODO(beorn7): If needed, this can be optimized by inspecting the
-	// spans in other and create missing buckets in h in batches.
-	var iInSpan, index int32
-	for iSpan, iBucket, it := -1, -1, other.floatBucketIterator(true, h.ZeroThreshold, h.Schema); it.Next(); {
-		b := it.At()
-		h.PositiveSpans, h.PositiveBuckets, iSpan, iBucket, iInSpan = addBucket(
-			b, h.PositiveSpans, h.PositiveBuckets, iSpan, iBucket, iInSpan, index,
-		)
-		index = b.Index
-	}
-	for iSpan, iBucket, it := -1, -1, other.floatBucketIterator(false, h.ZeroThreshold, h.Schema); it.Next(); {
-		b := it.At()
-		h.NegativeSpans, h.NegativeBuckets, iSpan, iBucket, iInSpan = addBucket(
-			b, h.NegativeSpans, h.NegativeBuckets, iSpan, iBucket, iInSpan, index,
-		)
-		index = b.Index
-	}
-	return h
-}
-
-func (h *FloatHistogram) AddNew(other *FloatHistogram) *FloatHistogram {
-	switch {
-	case other.CounterResetHint == h.CounterResetHint:
-		// Adding apples to apples, all good. No need to change anything.
-	case h.CounterResetHint == GaugeType:
-		// Adding something else to a gauge. That's probably OK. Outcome is a gauge.
-		// Nothing to do since the receiver is already marked as gauge.
-	case other.CounterResetHint == GaugeType:
-		// Similar to before, but this time the receiver is "something else" and we have to change it to gauge.
-		h.CounterResetHint = GaugeType
-	case h.CounterResetHint == UnknownCounterReset:
-		// With the receiver's CounterResetHint being "unknown", this could still be legitimate
-		// if the caller knows what they are doing. Outcome is then again "unknown".
-		// No need to do anything since the receiver's CounterResetHint is already "unknown".
-	case other.CounterResetHint == UnknownCounterReset:
-		// Similar to before, but now we have to set the receiver's CounterResetHint to "unknown".
-		h.CounterResetHint = UnknownCounterReset
-	default:
-		// All other cases shouldn't actually happen.
-		// They are a direct collision of CounterReset and NotCounterReset.
-		// Conservatively set the CounterResetHint to "unknown" and isse a warning.
-		h.CounterResetHint = UnknownCounterReset
-		// TODO(trevorwhitney): Actually issue the warning as soon as the plumbing for it is in place
-	}
-
-	otherZeroCount := h.reconcileZeroBuckets(other)
-	h.ZeroCount += otherZeroCount
-	h.Count += other.Count
-	h.Sum += other.Sum
-
 	otherPositiveSpans := other.PositiveSpans
 	otherPositiveBuckets := other.PositiveBuckets
 	otherNegativeSpans := other.NegativeSpans
@@ -277,10 +227,8 @@ func (h *FloatHistogram) AddNew(other *FloatHistogram) *FloatHistogram {
 		otherNegativeSpans, otherNegativeBuckets = mergeToSchema(other.NegativeSpans, other.NegativeBuckets, other.Schema, h.Schema)
 	}
 
-	// TODO(beorn7): If needed, this can be optimized by inspecting the
-	// spans in other and create missing buckets in h in batches.
-	h.PositiveSpans, h.PositiveBuckets = addBuckets(h.Schema, h.ZeroThreshold, h.PositiveSpans, h.PositiveBuckets, otherPositiveSpans, otherPositiveBuckets)
-	h.NegativeSpans, h.NegativeBuckets = addBuckets(h.Schema, h.ZeroThreshold, h.NegativeSpans, h.NegativeBuckets, otherNegativeSpans, otherNegativeBuckets)
+	h.PositiveSpans, h.PositiveBuckets = addBuckets(h.Schema, h.ZeroThreshold, false, h.PositiveSpans, h.PositiveBuckets, otherPositiveSpans, otherPositiveBuckets)
+	h.NegativeSpans, h.NegativeBuckets = addBuckets(h.Schema, h.ZeroThreshold, false, h.NegativeSpans, h.NegativeBuckets, otherNegativeSpans, otherNegativeBuckets)
 	return h
 }
 
@@ -291,25 +239,17 @@ func (h *FloatHistogram) Sub(other *FloatHistogram) *FloatHistogram {
 	h.Count -= other.Count
 	h.Sum -= other.Sum
 
-	// TODO(beorn7): If needed, this can be optimized by inspecting the
-	// spans in other and create missing buckets in h in batches.
-	var iInSpan, index int32
-	for iSpan, iBucket, it := -1, -1, other.floatBucketIterator(true, h.ZeroThreshold, h.Schema); it.Next(); {
-		b := it.At()
-		b.Count *= -1
-		h.PositiveSpans, h.PositiveBuckets, iSpan, iBucket, iInSpan = addBucket(
-			b, h.PositiveSpans, h.PositiveBuckets, iSpan, iBucket, iInSpan, index,
-		)
-		index = b.Index
+	otherPositiveSpans := other.PositiveSpans
+	otherPositiveBuckets := other.PositiveBuckets
+	otherNegativeSpans := other.NegativeSpans
+	otherNegativeBuckets := other.NegativeBuckets
+	if other.Schema != h.Schema {
+		otherPositiveSpans, otherPositiveBuckets = mergeToSchema(other.PositiveSpans, other.PositiveBuckets, other.Schema, h.Schema)
+		otherNegativeSpans, otherNegativeBuckets = mergeToSchema(other.NegativeSpans, other.NegativeBuckets, other.Schema, h.Schema)
 	}
-	for iSpan, iBucket, it := -1, -1, other.floatBucketIterator(false, h.ZeroThreshold, h.Schema); it.Next(); {
-		b := it.At()
-		b.Count *= -1
-		h.NegativeSpans, h.NegativeBuckets, iSpan, iBucket, iInSpan = addBucket(
-			b, h.NegativeSpans, h.NegativeBuckets, iSpan, iBucket, iInSpan, index,
-		)
-		index = b.Index
-	}
+
+	h.PositiveSpans, h.PositiveBuckets = addBuckets(h.Schema, h.ZeroThreshold, true, h.PositiveSpans, h.PositiveBuckets, otherPositiveSpans, otherPositiveBuckets)
+	h.NegativeSpans, h.NegativeBuckets = addBuckets(h.Schema, h.ZeroThreshold, true, h.NegativeSpans, h.NegativeBuckets, otherNegativeSpans, otherNegativeBuckets)
 	return h
 }
 
@@ -1080,16 +1020,19 @@ func mergeToSchema(originSpans []Span, originBuckets []float64, originSchema, ta
 	return targetSpans, targetBuckets
 }
 
-func addBuckets(schema int32, threshold float64, spansA []Span, bucketsA []float64, spansB []Span, bucketsB []float64) ([]Span, []float64) {
+// addBuckets add two groups of Spans by inspecting the
+// spans in other and create missing buckets in origin in batches.
+func addBuckets(schema int32, threshold float64, negative bool, spansA []Span, bucketsA []float64, spansB []Span, bucketsB []float64) ([]Span, []float64) {
 	var (
 		iSpan              int = -1
 		iBucket            int = -1
 		iInSpan            int32
 		indexA             int32
-		indexB             int32 = 0
-		bIdxB              int   = 0
-		lowerThanThreshold       = true
+		indexB             int32
+		bIdxB              int
+		bucketB            float64
 		deltaIndex         int32
+		lowerThanThreshold = true
 	)
 
 	for _, spanB := range spansB {
@@ -1100,17 +1043,22 @@ func addBuckets(schema int32, threshold float64, spansA []Span, bucketsA []float
 			}
 			lowerThanThreshold = false
 
+			bucketB = bucketsB[bIdxB]
+			if negative {
+				bucketB *= -1
+			}
+
 			if iSpan == -1 {
 				if len(spansA) == 0 || spansA[0].Offset > indexB {
 					// Add bucket before all others.
 					bucketsA = append(bucketsA, 0)
 					copy(bucketsA[1:], bucketsA)
-					bucketsA[0] = bucketsB[bIdxB]
-					if len(spansA) > 0 && spansA[0].Offset == indexB+1 { // bIndex just preceed spansA[0] by one step
+					bucketsA[0] = bucketB
+					if len(spansA) > 0 && spansA[0].Offset == indexB+1 {
 						spansA[0].Length++
 						spansA[0].Offset--
 						goto nextLoop
-					} else { // if not create new span
+					} else {
 						spansA = append(spansA, Span{})
 						copy(spansA[1:], spansA)
 						spansA[0] = Span{Offset: indexB, Length: 1}
@@ -1123,7 +1071,7 @@ func addBuckets(schema int32, threshold float64, spansA []Span, bucketsA []float
 					}
 				} else if spansA[0].Offset == indexB {
 					// Just add to first bucket.
-					bucketsA[0] += bucketsB[bIdxB]
+					bucketsA[0] += bucketB
 					goto nextLoop
 				}
 				iSpan, iBucket, iInSpan = 0, 0, 0
@@ -1136,7 +1084,7 @@ func addBuckets(schema int32, threshold float64, spansA []Span, bucketsA []float
 					// Bucket is in current span.
 					iBucket += int(deltaIndex)
 					iInSpan += deltaIndex
-					bucketsA[iBucket] += bucketsB[bIdxB]
+					bucketsA[iBucket] += bucketB
 					break
 				} else {
 					deltaIndex -= remainingInSpan
@@ -1146,7 +1094,7 @@ func addBuckets(schema int32, threshold float64, spansA []Span, bucketsA []float
 						// Bucket is in gap behind previous span (or there are no further spans).
 						bucketsA = append(bucketsA, 0)
 						copy(bucketsA[iBucket+1:], bucketsA[iBucket:])
-						bucketsA[iBucket] = bucketsB[bIdxB]
+						bucketsA[iBucket] = bucketB
 						if deltaIndex == 0 {
 							// Directly after previous span, extend previous span.
 							if iSpan < len(spansA) {
