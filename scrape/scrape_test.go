@@ -3348,11 +3348,7 @@ func TestScrapePoolCacheFree(t *testing.T) {
 	hash := uint64(123)
 
 	l1 := sp.loops[t1.hash()]
-	fmt.Printf("hash at test: %v", t1.hash())
 	l1.getCache().addRef(met, ref, lset, hash)
-	for k := range l1.getCache().series {
-		fmt.Println(k)
-	}
 	if _, ok := l1.getCache().series["metric"]; !ok {
 		t.Errorf("metric is missing from the cache")
 	}
