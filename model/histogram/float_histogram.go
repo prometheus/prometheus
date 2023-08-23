@@ -998,7 +998,8 @@ func addBuckets(schema int32, threshold float64, negative bool, spansA []Span, b
 						bucketsA = append(bucketsA, 0)
 						copy(bucketsA[iBucket+1:], bucketsA[iBucket:])
 						bucketsA[iBucket] = bucketB
-						if deltaIndex == 0 {
+						switch {
+						case deltaIndex == 0:
 							// Directly after previous span, extend previous span.
 							if iSpan < len(spansA) {
 								spansA[iSpan].Offset--
@@ -1006,14 +1007,14 @@ func addBuckets(schema int32, threshold float64, negative bool, spansA []Span, b
 							iSpan--
 							iInSpan = int32(spansA[iSpan].Length)
 							spansA[iSpan].Length++
-							break
-						} else if iSpan < len(spansA) && deltaIndex == spansA[iSpan].Offset-1 {
+							goto nextLoop
+						case iSpan < len(spansA) && deltaIndex == spansA[iSpan].Offset-1:
 							// Directly before next span, extend next span.
 							iInSpan = 0
 							spansA[iSpan].Offset--
 							spansA[iSpan].Length++
-							break
-						} else {
+							goto nextLoop
+						default:
 							// No next span, or next span is not directly adjacent to new bucket.
 							// Add new span.
 							iInSpan = 0
@@ -1023,7 +1024,7 @@ func addBuckets(schema int32, threshold float64, negative bool, spansA []Span, b
 							spansA = append(spansA, Span{})
 							copy(spansA[iSpan+1:], spansA[iSpan:])
 							spansA[iSpan] = Span{Length: 1, Offset: deltaIndex}
-							break
+							goto nextLoop
 						}
 					} else {
 						// Try start of next span.
