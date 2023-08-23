@@ -3316,6 +3316,8 @@ func TestScrapePoolCacheFree(t *testing.T) {
 		cache: newScrapeCache(),
 	}
 
+	// To bypass golangci-lint `Error: func `(*cacheTestLoop).getForcedError` is unused (unused)`
+	sl.getForcedError()
 	newLoop := func(opts scrapeLoopOptions) loop {
 		return sl
 	}
