@@ -6133,7 +6133,7 @@ func testHistogramAppendAndQueryHelper(t *testing.T, floatHistogram bool) {
 	}
 
 	baseH := &histogram.Histogram{
-		Count:         11,
+		Count:         15,
 		ZeroCount:     4,
 		ZeroThreshold: 0.001,
 		Sum:           35.5,
@@ -6506,7 +6506,7 @@ func TestNativeHistogramFlag(t *testing.T) {
 		require.NoError(t, db.Close())
 	})
 	h := &histogram.Histogram{
-		Count:         6,
+		Count:         10,
 		ZeroCount:     4,
 		ZeroThreshold: 0.001,
 		Sum:           35.5,

@@ -242,8 +242,9 @@ type scrapePool struct {
 	targetMtx sync.Mutex
 	// activeTargets and loops must always be synchronized to have the same
 	// set of hashes.
-	activeTargets  map[uint64]*Target
-	droppedTargets []*Target
+	activeTargets       map[uint64]*Target
+	droppedTargets      []*Target // Subject to KeepDroppedTargets limit.
+	droppedTargetsCount int       // Count of all dropped targets.
 
 	// Constructor for new scrape loops. This is settable for testing convenience.
 	newLoop func(scrapeLoopOptions) loop
@@ -354,10 +355,17 @@ func (sp *scrapePool) ActiveTargets() []*Target {
 	return tActive
 }
 
+// Return dropped targets, subject to KeepDroppedTargets limit.
 func (sp *scrapePool) DroppedTargets() []*Target {
 	sp.targetMtx.Lock()
 	defer sp.targetMtx.Unlock()
 	return sp.droppedTargets
+}
+
+func (sp *scrapePool) DroppedTargetsCount() int {
+	sp.targetMtx.Lock()
+	defer sp.targetMtx.Unlock()
+	return sp.droppedTargetsCount
 }
 
 // stop terminates all scrape loops and returns after they all terminated.
@@ -506,6 +514,7 @@ func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 	var targets []*Target
 	lb := labels.NewBuilder(labels.EmptyLabels())
 	sp.droppedTargets = []*Target{}
+	sp.droppedTargetsCount = 0
 	for _, tg := range tgs {
 		targets, failures := TargetsFromGroup(tg, sp.config, sp.noDefaultPort, targets, lb)
 		for _, err := range failures {
@@ -520,7 +529,10 @@ func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 			case nonEmpty:
 				all = append(all, t)
 			case !t.discoveredLabels.IsEmpty():
-				sp.droppedTargets = append(sp.droppedTargets, t)
+				if sp.config.KeepDroppedTargets == 0 || uint(len(sp.droppedTargets)) < sp.config.KeepDroppedTargets {
+					sp.droppedTargets = append(sp.droppedTargets, t)
+				}
+				sp.droppedTargetsCount++
 			}
 		}
 	}

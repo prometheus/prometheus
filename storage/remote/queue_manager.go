@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/common/model"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
 	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/config"
@@ -545,6 +546,10 @@ func (t *QueueManager) sendMetadataWithBackoff(ctx context.Context, metadata []p
 			attribute.String("remote_name", t.storeClient.Name()),
 			attribute.String("remote_url", t.storeClient.Endpoint()),
 		)
+		// Attributes defined by OpenTelemetry semantic conventions.
+		if try > 0 {
+			span.SetAttributes(semconv.HTTPResendCount(try))
+		}
 
 		begin := time.Now()
 		err := t.storeClient.Store(ctx, req)

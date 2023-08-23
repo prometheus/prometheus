@@ -659,7 +659,7 @@ func ValidateHistogram(h *histogram.Histogram) error {
 		return errors.Wrap(err, "positive side")
 	}
 
-	if c := nCount + pCount; c > h.Count {
+	if c := nCount + pCount + h.ZeroCount; c > h.Count {
 		return errors.Wrap(
 			storage.ErrHistogramCountNotBigEnough,
 			fmt.Sprintf("%d observations found in buckets, but the Count field is %d", c, h.Count),
@@ -686,12 +686,9 @@ func ValidateFloatHistogram(h *histogram.FloatHistogram) error {
 		return errors.Wrap(err, "positive side")
 	}
 
-	if c := nCount + pCount; c > h.Count {
-		return errors.Wrap(
-			storage.ErrHistogramCountNotBigEnough,
-			fmt.Sprintf("%f observations found in buckets, but the Count field is %f", c, h.Count),
-		)
-	}
+	// We do not check for h.Count being at least as large as the sum of the
+	// counts in the buckets because floating point precision issues can
+	// create false positives here.
 
 	return nil
 }

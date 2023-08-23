@@ -357,7 +357,7 @@ func (m *Manager) TargetsActive() map[string][]*Target {
 	return targets
 }
 
-// TargetsDropped returns the dropped targets during relabelling.
+// TargetsDropped returns the dropped targets during relabelling, subject to KeepDroppedTargets limit.
 func (m *Manager) TargetsDropped() map[string][]*Target {
 	m.mtxScrape.Lock()
 	defer m.mtxScrape.Unlock()
@@ -367,4 +367,15 @@ func (m *Manager) TargetsDropped() map[string][]*Target {
 		targets[tset] = sp.DroppedTargets()
 	}
 	return targets
+}
+
+func (m *Manager) TargetsDroppedCounts() map[string]int {
+	m.mtxScrape.Lock()
+	defer m.mtxScrape.Unlock()
+
+	counts := make(map[string]int, len(m.scrapePools))
+	for tset, sp := range m.scrapePools {
+		counts[tset] = sp.droppedTargetsCount
+	}
+	return counts
 }

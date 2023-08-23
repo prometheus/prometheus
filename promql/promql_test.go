@@ -15,7 +15,6 @@ package promql
 
 import (
 	"context"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -26,19 +25,21 @@ import (
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
+func newTestEngine() *Engine {
+	return NewEngine(EngineOpts{
+		Logger:                   nil,
+		Reg:                      nil,
+		MaxSamples:               10000,
+		Timeout:                  100 * time.Second,
+		NoStepSubqueryIntervalFn: func(int64) int64 { return durationMilliseconds(1 * time.Minute) },
+		EnableAtModifier:         true,
+		EnableNegativeOffset:     true,
+		EnablePerStepStats:       true,
+	})
+}
+
 func TestEvaluations(t *testing.T) {
-	files, err := filepath.Glob("testdata/*.test")
-	require.NoError(t, err)
-
-	for _, fn := range files {
-		t.Run(fn, func(t *testing.T) {
-			test, err := newTestFromFile(t, fn)
-			require.NoError(t, err)
-			require.NoError(t, test.Run())
-
-			test.Close()
-		})
-	}
+	RunBuiltinTests(t, newTestEngine())
 }
 
 // Run a lot of queries at the same time, to check for race conditions.

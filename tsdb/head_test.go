@@ -3289,7 +3289,7 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 
 	// There should be 20 mmap chunks in s1.
 	ms := head.series.getByHash(s1.Hash(), s1)
-	require.Len(t, ms.mmappedChunks, 27)
+	require.Len(t, ms.mmappedChunks, 25)
 	expMmapChunks := make([]*mmappedChunk, 0, 20)
 	for _, mmap := range ms.mmappedChunks {
 		require.Greater(t, mmap.numSamples, uint16(0))
@@ -4730,42 +4730,42 @@ func TestReplayAfterMmapReplayError(t *testing.T) {
 
 func TestHistogramValidation(t *testing.T) {
 	tests := map[string]struct {
-		h           *histogram.Histogram
-		errMsg      string
-		errMsgFloat string // To be considered for float histogram only if it is non-empty.
+		h         *histogram.Histogram
+		errMsg    string
+		skipFloat bool
 	}{
 		"valid histogram": {
 			h: tsdbutil.GenerateTestHistograms(1)[0],
 		},
-		"rejects histogram who has too few negative buckets": {
+		"rejects histogram that has too few negative buckets": {
 			h: &histogram.Histogram{
 				NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
 				NegativeBuckets: []int64{},
 			},
 			errMsg: `negative side: spans need 1 buckets, have 0 buckets`,
 		},
-		"rejects histogram who has too few positive buckets": {
+		"rejects histogram that has too few positive buckets": {
 			h: &histogram.Histogram{
 				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
 				PositiveBuckets: []int64{},
 			},
 			errMsg: `positive side: spans need 1 buckets, have 0 buckets`,
 		},
-		"rejects histogram who has too many negative buckets": {
+		"rejects histogram that has too many negative buckets": {
 			h: &histogram.Histogram{
 				NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
 				NegativeBuckets: []int64{1, 2},
 			},
 			errMsg: `negative side: spans need 1 buckets, have 2 buckets`,
 		},
-		"rejects histogram who has too many positive buckets": {
+		"rejects histogram that has too many positive buckets": {
 			h: &histogram.Histogram{
 				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
 				PositiveBuckets: []int64{1, 2},
 			},
 			errMsg: `positive side: spans need 1 buckets, have 2 buckets`,
 		},
-		"rejects a histogram which has a negative span with a negative offset": {
+		"rejects a histogram that has a negative span with a negative offset": {
 			h: &histogram.Histogram{
 				NegativeSpans:   []histogram.Span{{Offset: -1, Length: 1}, {Offset: -1, Length: 1}},
 				NegativeBuckets: []int64{1, 2},
@@ -4779,21 +4779,21 @@ func TestHistogramValidation(t *testing.T) {
 			},
 			errMsg: `positive side: span number 2 with offset -1`,
 		},
-		"rejects a histogram which has a negative bucket with a negative count": {
+		"rejects a histogram that has a negative bucket with a negative count": {
 			h: &histogram.Histogram{
 				NegativeSpans:   []histogram.Span{{Offset: -1, Length: 1}},
 				NegativeBuckets: []int64{-1},
 			},
 			errMsg: `negative side: bucket number 1 has observation count of -1`,
 		},
-		"rejects a histogram which has a positive bucket with a negative count": {
+		"rejects a histogram that has a positive bucket with a negative count": {
 			h: &histogram.Histogram{
 				PositiveSpans:   []histogram.Span{{Offset: -1, Length: 1}},
 				PositiveBuckets: []int64{-1},
 			},
 			errMsg: `positive side: bucket number 1 has observation count of -1`,
 		},
-		"rejects a histogram which which has a lower count than count in buckets": {
+		"rejects a histogram that has a lower count than count in buckets": {
 			h: &histogram.Histogram{
 				Count:           0,
 				NegativeSpans:   []histogram.Span{{Offset: -1, Length: 1}},
@@ -4801,25 +4801,36 @@ func TestHistogramValidation(t *testing.T) {
 				NegativeBuckets: []int64{1},
 				PositiveBuckets: []int64{1},
 			},
-			errMsg:      `2 observations found in buckets, but the Count field is 0`,
-			errMsgFloat: `2.000000 observations found in buckets, but the Count field is 0.000000`,
+			errMsg:    `2 observations found in buckets, but the Count field is 0`,
+			skipFloat: true,
+		},
+		"rejects a histogram that doesn't count the zero bucket in its count": {
+			h: &histogram.Histogram{
+				Count:           2,
+				ZeroCount:       1,
+				NegativeSpans:   []histogram.Span{{Offset: -1, Length: 1}},
+				PositiveSpans:   []histogram.Span{{Offset: -1, Length: 1}},
+				NegativeBuckets: []int64{1},
+				PositiveBuckets: []int64{1},
+			},
+			errMsg:    `3 observations found in buckets, but the Count field is 2`,
+			skipFloat: true,
 		},
 	}
 
 	for testName, tc := range tests {
 		t.Run(testName, func(t *testing.T) {
-			switch err := ValidateHistogram(tc.h); {
-			case tc.errMsg != "":
+			if err := ValidateHistogram(tc.h); tc.errMsg != "" {
 				require.ErrorContains(t, err, tc.errMsg)
-			default:
+			} else {
 				require.NoError(t, err)
 			}
-			switch err := ValidateFloatHistogram(tc.h.ToFloat()); {
-			case tc.errMsgFloat != "":
-				require.ErrorContains(t, err, tc.errMsgFloat)
-			case tc.errMsg != "":
+			if tc.skipFloat {
+				return
+			}
+			if err := ValidateFloatHistogram(tc.h.ToFloat()); tc.errMsg != "" {
 				require.ErrorContains(t, err, tc.errMsg)
-			default:
+			} else {
 				require.NoError(t, err)
 			}
 		})
