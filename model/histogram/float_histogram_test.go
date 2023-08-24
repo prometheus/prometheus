@@ -1572,9 +1572,7 @@ func TestFloatHistogramAdd(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			h, err := c.in1.Add(c.in2)
-			require.NoError(t, err)
-			require.Equal(t, c.expected, h)
+			require.Equal(t, c.expected, c.in1.Add(c.in2))
 			// Has it also happened in-place?
 			require.Equal(t, c.expected, c.in1)
 		})
@@ -1660,9 +1658,7 @@ func TestFloatHistogramSub(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			h, err := c.in1.Sub(c.in2)
-			require.NoError(t, err)
-			require.Equal(t, c.expected, h)
+			require.Equal(t, c.expected, c.in1.Sub(c.in2))
 			// Has it also happened in-place?
 			require.Equal(t, c.expected, c.in1)
 		})
@@ -2281,16 +2277,14 @@ func TestFloatBucketIteratorTargetSchema(t *testing.T) {
 		{Lower: -1024, Upper: -256, LowerInclusive: true, UpperInclusive: false, Count: 33, Index: 5},
 	}
 
-	it, err := h.floatBucketIterator(true, 0, -1)
-	require.NoError(t, err)
+	it := h.floatBucketIterator(true, 0, -1)
 	for i, b := range expPositiveBuckets {
 		require.True(t, it.Next(), "positive iterator exhausted too early")
 		require.Equal(t, b, it.At(), "bucket %d", i)
 	}
 	require.False(t, it.Next(), "positive iterator not exhausted")
 
-	it, err = h.floatBucketIterator(false, 0, -1)
-	require.NoError(t, err)
+	it = h.floatBucketIterator(false, 0, -1)
 	for i, b := range expNegativeBuckets {
 		require.True(t, it.Next(), "negative iterator exhausted too early")
 		require.Equal(t, b, it.At(), "bucket %d", i)
