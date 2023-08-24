@@ -242,13 +242,13 @@ export const functionIdentifierTerms = [
   {
     label: 'histogram_stddev',
     detail: 'function',
-    info: 'Return the standard deviation of observations from a native histogram (experimental feature)',
+    info: 'Estimate the standard deviation of observations from a native histogram (experimental feature)',
     type: 'function',
   },
   {
     label: 'histogram_stdvar',
     detail: 'function',
-    info: 'Return the standard variance of observations from a native histogram (experimental feature)',
+    info: 'Estimate the standard variance of observations from a native histogram (experimental feature)',
     type: 'function',
   },
   {

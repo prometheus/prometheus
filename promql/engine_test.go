@@ -3321,7 +3321,7 @@ func TestNativeHistogram_HistogramStdDevVar(t *testing.T) {
 		stdVar float64
 	}{
 		{
-			name: "1234 low-res",
+			name: "1, 2, 3, 4 low-res",
 			h: &histogram.Histogram{
 				Count:  4,
 				Sum:    10,
@@ -3333,10 +3333,10 @@ func TestNativeHistogram_HistogramStdDevVar(t *testing.T) {
 				},
 				PositiveBuckets: []int64{1, 0, 0, 0},
 			},
-			stdVar: 1.163807968526718, // actual stdev: 1.25
+			stdVar: 1.163807968526718, // actual variance: 1.25
 		},
 		{
-			name: "1234 hi-res",
+			name: "1, 2, 3, 4 hi-res",
 			h: &histogram.Histogram{
 				Count:  4,
 				Sum:    10,
@@ -3349,7 +3349,7 @@ func TestNativeHistogram_HistogramStdDevVar(t *testing.T) {
 				},
 				PositiveBuckets: []int64{1, 0, 0, 0},
 			},
-			stdVar: 1.2471347737158793, // actual stdev: 1.25
+			stdVar: 1.2471347737158793, // actual variance: 1.25
 		},
 		{
 			name: "-50, -8, 0, 3, 8, 9, 100",
@@ -3371,7 +3371,7 @@ func TestNativeHistogram_HistogramStdDevVar(t *testing.T) {
 				},
 				NegativeBuckets: []int64{1, 0},
 			},
-			stdVar: 1544.8582535368798, // actual stdev: 1738.4082
+			stdVar: 1544.8582535368798, // actual variance: 1738.4082
 		},
 		{
 			name: "-50, -8, 0, 3, 8, 9, 100, NaN",
