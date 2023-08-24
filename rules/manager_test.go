@@ -1392,8 +1392,9 @@ func TestNativeHistogramsInRecordingRules(t *testing.T) {
 
 	expHist := hists[0].ToFloat()
 	for _, h := range hists[1:] {
-		expHist, err = expHist.Add(h.ToFloat())
+		h, err := expHist.Add(h.ToFloat())
 		require.NoError(t, err)
+		expHist = h
 	}
 
 	it := s.Iterator(nil)

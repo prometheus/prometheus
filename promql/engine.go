@@ -2460,17 +2460,17 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 			// The histogram being added must have the larger schema
 			// code (i.e. the higher resolution).
 			if hrhs.Schema >= hlhs.Schema {
-				c, err := hlhs.Copy().Add(hrhs)
+				_, err := hlhs.Copy().Add(hrhs)
 				if err != nil {
 					panic(err)
 				}
-				return 0, c.Compact(0), true
+				return 0, hlhs.Compact(0), true
 			}
-			c, err := hrhs.Copy().Add(hlhs)
+			_, err := hrhs.Copy().Add(hlhs)
 			if err != nil {
 				panic(err)
 			}
-			return 0, c.Compact(0), true
+			return 0, hrhs.Compact(0), true
 		}
 		return lhs + rhs, nil, true
 	case parser.SUB:
@@ -2478,17 +2478,17 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 			// The histogram being subtracted must have the larger schema
 			// code (i.e. the higher resolution).
 			if hrhs.Schema >= hlhs.Schema {
-				c, err := hlhs.Copy().Sub(hrhs)
+				_, err := hlhs.Copy().Sub(hrhs)
 				if err != nil {
 					panic(err)
 				}
-				return 0, c.Compact(0), true
+				return 0, hlhs.Compact(0), true
 			}
-			c, err := hrhs.Copy().Mul(-1).Add(hlhs)
+			_, err := hrhs.Copy().Mul(-1).Add(hlhs)
 			if err != nil {
 				panic(err)
 			}
-			return 0, c.Compact(0), true
+			return 0, hrhs.Compact(0), true
 		}
 		return lhs - rhs, nil, true
 	case parser.MUL:
