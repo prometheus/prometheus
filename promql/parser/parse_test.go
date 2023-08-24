@@ -3982,8 +3982,8 @@ func TestHistogramTestExpression(t *testing.T) {
 			input: histogram.FloatHistogram{
 				PositiveBuckets: []float64{5.1, 10, 7},
 				PositiveSpans: []histogram.Span{
-					{Offset: 4, Length: 2},
 					{Offset: -3, Length: 1},
+					{Offset: 4, Length: 2},
 				},
 				NegativeBuckets: []float64{4.1, 5, 7, 8, 9},
 				NegativeSpans: []histogram.Span{

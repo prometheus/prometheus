@@ -499,26 +499,21 @@ func (p *parser) histogramsDecreaseSeries(base, inc *histogram.FloatHistogram, t
 
 func (p *parser) histogramsSeries(base, inc *histogram.FloatHistogram, times uint64,
 	combine func(*histogram.FloatHistogram, *histogram.FloatHistogram) *histogram.FloatHistogram,
-) (ret []SequenceValue, err error) {
-	ret = make([]SequenceValue, times+1)
+) ([]SequenceValue, error) {
+	ret := make([]SequenceValue, times+1)
 	// Add an additional value (the base) for time 0, which we ignore in tests.
 	ret[0] = SequenceValue{Histogram: base}
 	cur := base
-	defer func() {
-		if r := recover(); r != nil {
-			fmt.Println("recovered:", r)
-			err = fmt.Errorf("error combining histograms: %v", r)
-		}
-	}()
 	for i := uint64(1); i <= times; i++ {
-		cur = combine(cur.Copy(), inc)
-		if err != nil {
-			return nil, fmt.Errorf("error combining histograms: %w", err)
+		if cur.Schema > inc.Schema {
+			return nil, fmt.Errorf("error combining histograms: cannot merge from schema %d to %d", inc.Schema, cur.Schema)
 		}
+
+		cur = combine(cur.Copy(), inc)
 		ret[i] = SequenceValue{Histogram: cur}
 	}
 
-	return
+	return ret, nil
 }
 
 // buildHistogramFromMap is used in the grammar to take then individual parts of the histogram and complete it.
