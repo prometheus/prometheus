@@ -1006,13 +1006,14 @@ func funcHistogramStdVar(vals []parser.Value, args parser.Expressions, enh *Eval
 			continue
 		}
 		mean := sample.H.Sum / sample.H.Count
-		var variance float64
+		var variance, cVariance float64
 		it := sample.H.AllBucketIterator()
 		for it.Next() {
 			bucket := it.At()
 			mid := (bucket.Upper + bucket.Lower) / 2
-			variance += bucket.Count * math.Pow(mid-mean, 2)
+			variance, cVariance = kahanSumInc(bucket.Count*math.Pow(mid-mean, 2), variance, cVariance)
 		}
+		variance += cVariance
 		variance /= sample.H.Count
 		enh.Out = append(enh.Out, Sample{
 			Metric: enh.DropMetricName(sample.Metric),

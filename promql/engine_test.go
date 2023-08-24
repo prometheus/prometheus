@@ -3349,7 +3349,7 @@ func TestNativeHistogram_HistogramStdVar(t *testing.T) {
 				},
 				PositiveBuckets: []int64{1, 0, 0, 0},
 			},
-			stdVar: 1.247137046272563, // 1.25
+			stdVar: 1.2471370462725633, // 1.25
 		},
 		{
 			name: "-50, -8, 0, 3, 8, 9, 100",
