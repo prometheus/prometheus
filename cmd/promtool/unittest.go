@@ -549,7 +549,7 @@ type promqlTestCase struct {
 type sample struct {
 	Labels    string  `yaml:"labels"`
 	Value     float64 `yaml:"value"`
-	Histogram string  `yaml:"histogram"`
+	Histogram string  `yaml:"histogram"` // A non-empty string means Value is ignored.
 }
 
 // parsedSample is a sample with parsed Labels.

@@ -16,7 +16,6 @@ package histogram
 import (
 	"fmt"
 	"math"
-	"sort"
 	"strings"
 )
 
@@ -138,14 +137,6 @@ func (h *FloatHistogram) String() string {
 func (h *FloatHistogram) TestExpression() string {
 	var res []string
 	m := h.Copy()
-
-	sortSpans := func(spans []Span) {
-		sort.Slice(spans, func(i, j int) bool {
-			return spans[i].Offset < spans[j].Offset
-		})
-	}
-	sortSpans(m.PositiveSpans)
-	sortSpans(m.NegativeSpans)
 
 	m.Compact(math.MaxInt)
 

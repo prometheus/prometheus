@@ -102,14 +102,15 @@ series: <string>
 #         in other words, each bucket boundary is the previous boundary times
 #         2^(2^-n).
 #     - sum (float): 
-#         The sum of all observations, including the zero bucket, if it exists.
+#         The sum of all observations, including the zero bucket.
 #     - count (non-negative float): 
-#         The number of observations, including those that are NaN and including the zero bucket if it exists.
+#         The number of observations, including those that are NaN and including the zero bucket.
 #     - z_bucket (non-negative float): 
-#         The sum of all observations in the zero bucket, if it exists.
+#         The sum of all observations in the zero bucket.
 #     - z_bucket_w (non-negative float): 
-#         The width of the zero bucket, if it exists. 
-#         If it exists, the zero bucket contains all observations -z_bucket_w <= x <= z_bucket_w 
+#         The width of the zero bucket. 
+#         If z_bucket_w > 0, the zero bucket contains all observations -z_bucket_w <= x <= z_bucket_w.
+#         Otherwise, the zero bucket only contains observations that are exactly 0.
 #     - buckets (list of non-negative floats):
 #         Observation counts in positive buckets. Each represents an absolute count.
 #     - offset (int):
