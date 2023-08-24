@@ -3312,6 +3312,165 @@ func TestNativeHistogram_HistogramCountAndSum(t *testing.T) {
 	}
 }
 
+func TestNativeHistogram_HistogramStdDevVar(t *testing.T) {
+	// TODO(codesome): Integrate histograms into the PromQL testing framework
+	// and write more tests there.
+	testCases := []struct {
+		name   string
+		h      *histogram.Histogram
+		stdVar float64
+	}{
+		{
+			name: "1, 2, 3, 4 low-res",
+			h: &histogram.Histogram{
+				Count:  4,
+				Sum:    10,
+				Schema: 2,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 1},
+					{Offset: 3, Length: 1},
+					{Offset: 2, Length: 2},
+				},
+				PositiveBuckets: []int64{1, 0, 0, 0},
+			},
+			stdVar: 1.163807968526718, // actual variance: 1.25
+		},
+		{
+			name: "1, 2, 3, 4 hi-res",
+			h: &histogram.Histogram{
+				Count:  4,
+				Sum:    10,
+				Schema: 8,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 1},
+					{Offset: 255, Length: 1},
+					{Offset: 149, Length: 1},
+					{Offset: 105, Length: 1},
+				},
+				PositiveBuckets: []int64{1, 0, 0, 0},
+			},
+			stdVar: 1.2471347737158793, // actual variance: 1.25
+		},
+		{
+			name: "-50, -8, 0, 3, 8, 9, 100",
+			h: &histogram.Histogram{
+				Count:     7,
+				ZeroCount: 1,
+				Sum:       62,
+				Schema:    3,
+				PositiveSpans: []histogram.Span{
+					{Offset: 13, Length: 1},
+					{Offset: 10, Length: 1},
+					{Offset: 1, Length: 1},
+					{Offset: 27, Length: 1},
+				},
+				PositiveBuckets: []int64{1, 0, 0, 0},
+				NegativeSpans: []histogram.Span{
+					{Offset: 24, Length: 1},
+					{Offset: 21, Length: 1},
+				},
+				NegativeBuckets: []int64{1, 0},
+			},
+			stdVar: 1544.8582535368798, // actual variance: 1738.4082
+		},
+		{
+			name: "-50, -8, 0, 3, 8, 9, 100, NaN",
+			h: &histogram.Histogram{
+				Count:     8,
+				ZeroCount: 1,
+				Sum:       math.NaN(),
+				Schema:    3,
+				PositiveSpans: []histogram.Span{
+					{Offset: 13, Length: 1},
+					{Offset: 10, Length: 1},
+					{Offset: 1, Length: 1},
+					{Offset: 27, Length: 1},
+				},
+				PositiveBuckets: []int64{1, 0, 0, 0},
+				NegativeSpans: []histogram.Span{
+					{Offset: 24, Length: 1},
+					{Offset: 21, Length: 1},
+				},
+				NegativeBuckets: []int64{1, 0},
+			},
+			stdVar: math.NaN(),
+		},
+		{
+			name: "-50, -8, 0, 3, 8, 9, 100, +Inf",
+			h: &histogram.Histogram{
+				Count:     8,
+				ZeroCount: 1,
+				Sum:       math.Inf(1),
+				Schema:    3,
+				PositiveSpans: []histogram.Span{
+					{Offset: 13, Length: 1},
+					{Offset: 10, Length: 1},
+					{Offset: 1, Length: 1},
+					{Offset: 27, Length: 1},
+				},
+				PositiveBuckets: []int64{1, 0, 0, 0},
+				NegativeSpans: []histogram.Span{
+					{Offset: 24, Length: 1},
+					{Offset: 21, Length: 1},
+				},
+				NegativeBuckets: []int64{1, 0},
+			},
+			stdVar: math.NaN(),
+		},
+	}
+	for _, tc := range testCases {
+		for _, floatHisto := range []bool{true, false} {
+			t.Run(fmt.Sprintf("%s floatHistogram=%t", tc.name, floatHisto), func(t *testing.T) {
+				engine := newTestEngine()
+				storage := teststorage.New(t)
+				t.Cleanup(func() { storage.Close() })
+
+				seriesName := "sparse_histogram_series"
+				lbls := labels.FromStrings("__name__", seriesName)
+
+				ts := int64(10 * time.Minute / time.Millisecond)
+				app := storage.Appender(context.Background())
+				var err error
+				if floatHisto {
+					_, err = app.AppendHistogram(0, lbls, ts, nil, tc.h.ToFloat())
+				} else {
+					_, err = app.AppendHistogram(0, lbls, ts, tc.h, nil)
+				}
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+
+				queryString := fmt.Sprintf("histogram_stdvar(%s)", seriesName)
+				qry, err := engine.NewInstantQuery(context.Background(), storage, nil, queryString, timestamp.Time(ts))
+				require.NoError(t, err)
+
+				res := qry.Exec(context.Background())
+				require.NoError(t, res.Err)
+
+				vector, err := res.Vector()
+				require.NoError(t, err)
+
+				require.Len(t, vector, 1)
+				require.Nil(t, vector[0].H)
+				require.InEpsilon(t, tc.stdVar, vector[0].F, 1e-12)
+
+				queryString = fmt.Sprintf("histogram_stddev(%s)", seriesName)
+				qry, err = engine.NewInstantQuery(context.Background(), storage, nil, queryString, timestamp.Time(ts))
+				require.NoError(t, err)
+
+				res = qry.Exec(context.Background())
+				require.NoError(t, res.Err)
+
+				vector, err = res.Vector()
+				require.NoError(t, err)
+
+				require.Len(t, vector, 1)
+				require.Nil(t, vector[0].H)
+				require.InEpsilon(t, math.Sqrt(tc.stdVar), vector[0].F, 1e-12)
+			})
+		}
+	}
+}
+
 func TestNativeHistogram_HistogramQuantile(t *testing.T) {
 	// TODO(codesome): Integrate histograms into the PromQL testing framework
 	// and write more tests there.

@@ -145,7 +145,7 @@ delta(cpu_temp_celsius{host="zeus"}[2h])
 ```
 
 `delta` acts on native histograms by calculating a new histogram where each
-compononent (sum and count of observations, buckets) is the difference between
+component (sum and count of observations, buckets) is the difference between
 the respective component in the first and last native histogram in
 `v`. However, each element in `v` that contains a mix of float and native
 histogram samples within the range, will be missing from the result vector.
@@ -323,6 +323,19 @@ a histogram.
 You can use `histogram_quantile(1, v instant-vector)` to get the estimated maximum value stored in
 a histogram.
 
+## `histogram_stddev()` and `histogram_stdvar()`
+
+_Both functions only act on native histograms, which are an experimental
+feature. The behavior of these functions may change in future versions of
+Prometheus, including their removal from PromQL._
+
+`histogram_stddev(v instant-vector)` returns the estimated standard deviation
+of observations in a native histogram, based on the geometric mean of the buckets
+where the observations lie. Samples that are not native histograms are ignored and
+do not show up in the returned vector.
+
+Similarly, `histogram_stdvar(v instant-vector)` returns the estimated standard
+variance of observations in a native histogram.
 
 ## `holt_winters()`
 
@@ -495,7 +508,7 @@ rate(http_requests_total{job="api-server"}[5m])
 ```
 
 `rate` acts on native histograms by calculating a new histogram where each
-compononent (sum and count of observations, buckets) is the rate of increase
+component (sum and count of observations, buckets) is the rate of increase
 between the respective component in the first and last native histogram in
 `v`. However, each element in `v` that contains a mix of float and native
 histogram samples within the range, will be missing from the result vector.
