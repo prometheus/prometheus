@@ -323,6 +323,19 @@ a histogram.
 You can use `histogram_quantile(1, v instant-vector)` to get the estimated maximum value stored in
 a histogram.
 
+## `histogram_stddev()` and `histogram_stdvar()`
+
+_Both functions only act on native histograms, which are an experimental
+feature. The behavior of these functions may change in future versions of
+Prometheus, including their removal from PromQL._
+
+`histogram_stddev(v instant-vector)` returns the estimated standard deviation
+of observations in a native histogram, based on the geometric mean of the buckets
+where the observations lie. Samples that are not native histograms are ignored and
+do not show up in the returned vector.
+
+Similarly, `histogram_stdvar(v instant-vector)` returns the estimated standard
+variance of observations in a native histogram.
 
 ## `holt_winters()`
 

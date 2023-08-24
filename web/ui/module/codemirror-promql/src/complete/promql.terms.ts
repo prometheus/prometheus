@@ -240,9 +240,15 @@ export const functionIdentifierTerms = [
     type: 'function',
   },
   {
+    label: 'histogram_stddev',
+    detail: 'function',
+    info: 'Return the standard deviation of observations from a native histogram (experimental feature)',
+    type: 'function',
+  },
+  {
     label: 'histogram_stdvar',
     detail: 'function',
-    info: 'Return the variance of observations from a native histogram (experimental feature)',
+    info: 'Return the standard variance of observations from a native histogram (experimental feature)',
     type: 'function',
   },
   {
@@ -436,7 +442,7 @@ export const functionIdentifierTerms = [
   {
     label: 'stdvar_over_time',
     detail: 'function',
-    info: 'Calculate the standard variation within input series over time',
+    info: 'Calculate the standard variance within input series over time',
     type: 'function',
   },
   {

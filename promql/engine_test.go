@@ -3312,7 +3312,7 @@ func TestNativeHistogram_HistogramCountAndSum(t *testing.T) {
 	}
 }
 
-func TestNativeHistogram_HistogramStdVar(t *testing.T) {
+func TestNativeHistogram_HistogramStdDevVar(t *testing.T) {
 	// TODO(codesome): Integrate histograms into the PromQL testing framework
 	// and write more tests there.
 	testCases := []struct {
@@ -3333,7 +3333,7 @@ func TestNativeHistogram_HistogramStdVar(t *testing.T) {
 				},
 				PositiveBuckets: []int64{1, 0, 0, 0},
 			},
-			stdVar: 1.1703148287019565, // 1.25
+			stdVar: 1.163807968526718, // actual stdev: 1.25
 		},
 		{
 			name: "1234 hi-res",
@@ -3349,7 +3349,7 @@ func TestNativeHistogram_HistogramStdVar(t *testing.T) {
 				},
 				PositiveBuckets: []int64{1, 0, 0, 0},
 			},
-			stdVar: 1.2471370462725633, // 1.25
+			stdVar: 1.2471347737158793, // actual stdev: 1.25
 		},
 		{
 			name: "-50, -8, 0, 3, 8, 9, 100",
@@ -3371,7 +3371,51 @@ func TestNativeHistogram_HistogramStdVar(t *testing.T) {
 				},
 				NegativeBuckets: []int64{1, 0},
 			},
-			stdVar: 1847.932788489952, // 1738.4082
+			stdVar: 1544.8582535368798, // actual stdev: 1738.4082
+		},
+		{
+			name: "-50, -8, 0, 3, 8, 9, 100, NaN",
+			h: &histogram.Histogram{
+				Count:     8,
+				ZeroCount: 1,
+				Sum:       math.NaN(),
+				Schema:    3,
+				PositiveSpans: []histogram.Span{
+					{Offset: 13, Length: 1},
+					{Offset: 10, Length: 1},
+					{Offset: 1, Length: 1},
+					{Offset: 27, Length: 1},
+				},
+				PositiveBuckets: []int64{1, 0, 0, 0},
+				NegativeSpans: []histogram.Span{
+					{Offset: 24, Length: 1},
+					{Offset: 21, Length: 1},
+				},
+				NegativeBuckets: []int64{1, 0},
+			},
+			stdVar: math.NaN(),
+		},
+		{
+			name: "-50, -8, 0, 3, 8, 9, 100, +Inf",
+			h: &histogram.Histogram{
+				Count:     8,
+				ZeroCount: 1,
+				Sum:       math.Inf(1),
+				Schema:    3,
+				PositiveSpans: []histogram.Span{
+					{Offset: 13, Length: 1},
+					{Offset: 10, Length: 1},
+					{Offset: 1, Length: 1},
+					{Offset: 27, Length: 1},
+				},
+				PositiveBuckets: []int64{1, 0, 0, 0},
+				NegativeSpans: []histogram.Span{
+					{Offset: 24, Length: 1},
+					{Offset: 21, Length: 1},
+				},
+				NegativeBuckets: []int64{1, 0},
+			},
+			stdVar: math.NaN(),
 		},
 	}
 	for _, tc := range testCases {
@@ -3408,6 +3452,20 @@ func TestNativeHistogram_HistogramStdVar(t *testing.T) {
 				require.Len(t, vector, 1)
 				require.Nil(t, vector[0].H)
 				require.InEpsilon(t, tc.stdVar, vector[0].F, 1e-12)
+
+				queryString = fmt.Sprintf("histogram_stddev(%s)", seriesName)
+				qry, err = engine.NewInstantQuery(context.Background(), storage, nil, queryString, timestamp.Time(ts))
+				require.NoError(t, err)
+
+				res = qry.Exec(context.Background())
+				require.NoError(t, res.Err)
+
+				vector, err = res.Vector()
+				require.NoError(t, err)
+
+				require.Len(t, vector, 1)
+				require.Nil(t, vector[0].H)
+				require.InEpsilon(t, math.Sqrt(tc.stdVar), vector[0].F, 1e-12)
 			})
 		}
 	}

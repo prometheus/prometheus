@@ -996,6 +996,39 @@ func funcHistogramSum(vals []parser.Value, args parser.Expressions, enh *EvalNod
 	return enh.Out
 }
 
+// === histogram_stddev(Vector parser.ValueTypeVector) Vector ===
+func funcHistogramStdDev(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	inVec := vals[0].(Vector)
+
+	for _, sample := range inVec {
+		// Skip non-histogram samples.
+		if sample.H == nil {
+			continue
+		}
+		mean := sample.H.Sum / sample.H.Count
+		var variance, cVariance float64
+		it := sample.H.AllBucketIterator()
+		for it.Next() {
+			bucket := it.At()
+			var val float64
+			if bucket.Lower <= 0 && 0 <= bucket.Upper {
+				val = 0
+			} else {
+				val = math.Sqrt(bucket.Upper * bucket.Lower)
+			}
+			delta := val - mean
+			variance, cVariance = kahanSumInc(bucket.Count*delta*delta, variance, cVariance)
+		}
+		variance += cVariance
+		variance /= sample.H.Count
+		enh.Out = append(enh.Out, Sample{
+			Metric: enh.DropMetricName(sample.Metric),
+			F:      math.Sqrt(variance),
+		})
+	}
+	return enh.Out
+}
+
 // === histogram_stdvar(Vector parser.ValueTypeVector) Vector ===
 func funcHistogramStdVar(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	inVec := vals[0].(Vector)
@@ -1010,8 +1043,14 @@ func funcHistogramStdVar(vals []parser.Value, args parser.Expressions, enh *Eval
 		it := sample.H.AllBucketIterator()
 		for it.Next() {
 			bucket := it.At()
-			mid := (bucket.Upper + bucket.Lower) / 2
-			variance, cVariance = kahanSumInc(bucket.Count*math.Pow(mid-mean, 2), variance, cVariance)
+			var val float64
+			if bucket.Lower <= 0 && 0 <= bucket.Upper {
+				val = 0
+			} else {
+				val = math.Sqrt(bucket.Upper * bucket.Lower)
+			}
+			delta := val - mean
+			variance, cVariance = kahanSumInc(bucket.Count*delta*delta, variance, cVariance)
 		}
 		variance += cVariance
 		variance /= sample.H.Count
@@ -1404,6 +1443,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"histogram_fraction": funcHistogramFraction,
 	"histogram_quantile": funcHistogramQuantile,
 	"histogram_sum":      funcHistogramSum,
+	"histogram_stddev":   funcHistogramStdDev,
 	"histogram_stdvar":   funcHistogramStdVar,
 	"holt_winters":       funcHoltWinters,
 	"hour":               funcHour,
