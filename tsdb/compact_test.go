@@ -38,7 +38,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
-	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 )
 
@@ -1316,7 +1315,7 @@ func TestHeadCompactionWithHistograms(t *testing.T) {
 			minute := func(m int) int64 { return int64(m) * time.Minute.Milliseconds() }
 			ctx := context.Background()
 			appendHistogram := func(
-				lbls labels.Labels, from, to int, h *histogram.Histogram, exp *[]tsdbutil.Sample,
+				lbls labels.Labels, from, to int, h *histogram.Histogram, exp *[]chunks.Sample,
 			) {
 				t.Helper()
 				app := head.Appender(ctx)
@@ -1345,7 +1344,7 @@ func TestHeadCompactionWithHistograms(t *testing.T) {
 				}
 				require.NoError(t, app.Commit())
 			}
-			appendFloat := func(lbls labels.Labels, from, to int, exp *[]tsdbutil.Sample) {
+			appendFloat := func(lbls labels.Labels, from, to int, exp *[]chunks.Sample) {
 				t.Helper()
 				app := head.Appender(ctx)
 				for tsMinute := from; tsMinute <= to; tsMinute++ {
@@ -1361,7 +1360,7 @@ func TestHeadCompactionWithHistograms(t *testing.T) {
 				series2                = labels.FromStrings("foo", "bar2")
 				series3                = labels.FromStrings("foo", "bar3")
 				series4                = labels.FromStrings("foo", "bar4")
-				exp1, exp2, exp3, exp4 []tsdbutil.Sample
+				exp1, exp2, exp3, exp4 []chunks.Sample
 			)
 			h := &histogram.Histogram{
 				Count:         15,
@@ -1419,7 +1418,7 @@ func TestHeadCompactionWithHistograms(t *testing.T) {
 			require.NoError(t, err)
 
 			actHists := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
-			require.Equal(t, map[string][]tsdbutil.Sample{
+			require.Equal(t, map[string][]chunks.Sample{
 				series1.String(): exp1,
 				series2.String(): exp2,
 				series3.String(): exp3,
