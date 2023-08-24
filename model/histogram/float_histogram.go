@@ -138,7 +138,7 @@ func (h *FloatHistogram) TestExpression() string {
 	var res []string
 	m := h.Copy()
 
-	m.Compact(math.MaxInt)
+	m.Compact(math.MaxInt) // Compact to reduce the number of positive and negative spans to 1.
 
 	if m.Schema != 0 {
 		res = append(res, fmt.Sprintf("schema:%d", m.Schema))
