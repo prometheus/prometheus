@@ -1927,6 +1927,12 @@ func (ev *evaluator) pointsSliceSize(numSteps, step, numberOfSeries int) int {
 	remainingSteps := numSteps - step
 	// spread the remaining allowed samples across all the series in the result.
 	allowedSamples := (ev.maxSamples - ev.currentSamples) / numberOfSeries
+
+	// This is here just to prevent potential negative values (and panic)
+	if allowedSamples < 0 {
+		allowedSamples = 0
+	}
+
 	if remainingSteps > allowedSamples {
 		return allowedSamples
 	}
