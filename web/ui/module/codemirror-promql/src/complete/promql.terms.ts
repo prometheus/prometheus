@@ -240,6 +240,12 @@ export const functionIdentifierTerms = [
     type: 'function',
   },
   {
+    label: 'histogram_stdvar',
+    detail: 'function',
+    info: 'Return the variance of observations from a native histogram (experimental feature)',
+    type: 'function',
+  },
+  {
     label: 'holt_winters',
     detail: 'function',
     info: 'Calculate smoothed value of input series',

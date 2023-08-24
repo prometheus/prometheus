@@ -996,6 +996,32 @@ func funcHistogramSum(vals []parser.Value, args parser.Expressions, enh *EvalNod
 	return enh.Out
 }
 
+// === histogram_stdvar(Vector parser.ValueTypeVector) Vector ===
+func funcHistogramStdVar(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	inVec := vals[0].(Vector)
+
+	for _, sample := range inVec {
+		// Skip non-histogram samples.
+		if sample.H == nil {
+			continue
+		}
+		mean := sample.H.Sum / sample.H.Count
+		var variance float64
+		it := sample.H.AllBucketIterator()
+		for it.Next() {
+			bucket := it.At()
+			mid := (bucket.Upper + bucket.Lower) / 2
+			variance += bucket.Count * math.Pow(mid-mean, 2)
+		}
+		variance /= sample.H.Count
+		enh.Out = append(enh.Out, Sample{
+			Metric: enh.DropMetricName(sample.Metric),
+			F:      variance,
+		})
+	}
+	return enh.Out
+}
+
 // === histogram_fraction(lower, upper parser.ValueTypeScalar, Vector parser.ValueTypeVector) Vector ===
 func funcHistogramFraction(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	lower := vals[0].(Vector)[0].F
@@ -1377,6 +1403,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"histogram_fraction": funcHistogramFraction,
 	"histogram_quantile": funcHistogramQuantile,
 	"histogram_sum":      funcHistogramSum,
+	"histogram_stdvar":   funcHistogramStdVar,
 	"holt_winters":       funcHoltWinters,
 	"hour":               funcHour,
 	"idelta":             funcIdelta,
