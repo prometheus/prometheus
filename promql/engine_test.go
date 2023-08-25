@@ -1675,6 +1675,7 @@ load 10s
 	cases := []struct {
 		query                string
 		start, end, interval int64 // Time in seconds.
+		expectError          bool
 		result               parser.Value
 		resultIn             parser.Value
 		resultLen            int // Required if resultIn is set
@@ -1699,6 +1700,23 @@ load 10s
 			start: 0, end: 20, interval: 10,
 			result: fullMatrix20,
 		},
+		{
+			// Limit==10 (>5 timeseries) -> still return full matrix (5 timeseries)
+			query: `sample_limit(10, metric)`,
+			start: 0, end: 20, interval: 10,
+			result: fullMatrix20,
+		},
+		{
+			// Limit <0 -> return empty matrix
+			query: `sample_limit(10, metric)`,
+			start: 0, end: 20, interval: 10,
+		},
+		{
+			// Limit==<over maxInt64> -> error
+			query: fmt.Sprintf(`sample_limit(%d, metric)`, maxInt64+1000),
+			start: 0, end: 20, interval: 10,
+			expectError: true,
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.query, func(t *testing.T) {
@@ -1708,14 +1726,14 @@ load 10s
 			start, end, interval := time.Unix(c.start, 0), time.Unix(c.end, 0), time.Duration(c.interval)*time.Second
 			var err error
 			var qry Query
-			if c.end == 0 {
-				qry, err = engine.NewInstantQuery(context.Background(), storage, nil, c.query, start)
-			} else {
-				qry, err = engine.NewRangeQuery(context.Background(), storage, nil, c.query, start, end, interval)
-			}
+			qry, err = engine.NewRangeQuery(context.Background(), storage, nil, c.query, start, end, interval)
 			require.NoError(t, err)
 
 			res := qry.Exec(context.Background())
+			if c.expectError {
+				require.Error(t, res.Err)
+				return
+			}
 			require.NoError(t, res.Err)
 			switch {
 			case c.result != nil:
@@ -1755,6 +1773,7 @@ load 10s
 		query                string
 		start, end, interval int64 // Time in seconds.
 		result               parser.Value
+		expectError          bool
 	}{
 		{
 			// ratioLimit=0 -> empty matrix
@@ -1809,6 +1828,18 @@ load 10s
 			start: 0, end: 20, interval: 10,
 			result: fullMatrix20,
 		},
+		{
+			// ratioLimit > 1.0 -> error
+			query: `sample_ratio(1.01, metric)`,
+			start: 0, end: 20, interval: 10,
+			expectError: true,
+		},
+		{
+			// ratioLimit < -1.0 -> error
+			query: `sample_ratio(-1.01, metric)`,
+			start: 0, end: 20, interval: 10,
+			expectError: true,
+		},
 	}
 
 	for _, c := range cases {
@@ -1819,14 +1850,14 @@ load 10s
 			start, end, interval := time.Unix(c.start, 0), time.Unix(c.end, 0), time.Duration(c.interval)*time.Second
 			var err error
 			var qry Query
-			if c.end == 0 {
-				qry, err = engine.NewInstantQuery(context.Background(), storage, nil, c.query, start)
-			} else {
-				qry, err = engine.NewRangeQuery(context.Background(), storage, nil, c.query, start, end, interval)
-			}
+			qry, err = engine.NewRangeQuery(context.Background(), storage, nil, c.query, start, end, interval)
 			require.NoError(t, err)
 
 			res := qry.Exec(context.Background())
+			if c.expectError {
+				require.Error(t, res.Err)
+				return
+			}
 			require.NoError(t, res.Err)
 			if expMat, ok := c.result.(Matrix); ok {
 				sort.Sort(expMat)
@@ -1888,11 +1919,7 @@ load 10s
 			start, end, interval := time.Unix(c.start, 0), time.Unix(c.end, 0), time.Duration(c.interval)*time.Second
 			var err error
 			var qry Query
-			if c.end == 0 {
-				qry, err = engine.NewInstantQuery(context.Background(), storage, nil, c.query, start)
-			} else {
-				qry, err = engine.NewRangeQuery(context.Background(), storage, nil, c.query, start, end, interval)
-			}
+			qry, err = engine.NewRangeQuery(context.Background(), storage, nil, c.query, start, end, interval)
 			require.NoError(t, err)
 
 			res := qry.Exec(context.Background())
