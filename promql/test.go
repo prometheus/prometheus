@@ -597,7 +597,7 @@ func (t *test) exec(tc testCommand, engine engineQuerier) error {
 			}
 			err = cmd.compareResult(res.Value)
 			if err != nil {
-				return fmt.Errorf("error in %s %s: %w", cmd, iq.expr, err)
+				return fmt.Errorf("error in %s %s (line %d): %w", cmd, iq.expr, cmd.line, err)
 			}
 
 			// Check query returns same result in range mode,
