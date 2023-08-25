@@ -1925,7 +1925,7 @@ var (
 func (ev *evaluator) pointsSliceSize(numSteps, step, numberOfSeries int) int {
 	// Subtract the current step from the numSteps as at this point we know the given series does not have data before this step
 	remainingSteps := numSteps - step
-	// spread the remaining allowed samples across all the series in the result.
+	// Spread the remaining allowed samples across all the series in the result.
 	allowedSamples := (ev.maxSamples - ev.currentSamples) / numberOfSeries
 
 	if allowedSamples < 0 {
