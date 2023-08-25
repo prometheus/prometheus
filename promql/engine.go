@@ -1920,8 +1920,9 @@ var (
 	hPointPool zeropool.Pool[[]HPoint]
 )
 
-// pointsSliceSize calculates a reasonable initial capacity for the point slices when running a query
-// taking in consideration the remaining number of steps, maxSamples and number of series in the result
+// pointsSliceSize calculates a reasonable initial capacity for the point slices when running a query.
+// It takes in consideration the remaining number of steps, maxSamples and number of series in the result.
+// It allows preventing OOMs caused by unexpected pre-allocation before we hit ErrTooManySamples.
 func (ev *evaluator) pointsSliceSize(numSteps, step, numberOfSeries int) int {
 	// Subtract the current step from the numSteps as at this point we know the given series does not have data before this step.
 	remainingSteps := numSteps - step
