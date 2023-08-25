@@ -4392,7 +4392,7 @@ func TestNativeHistogram_SubOperator(t *testing.T) {
 						for i, e := range exp {
 							got := vector[i].H
 							if got != e.H {
-								// for better error messages
+								// Error messages are better if we compare structs, not pointers.
 								require.Equal(t, *e.H, *got)
 							}
 						}
