@@ -1636,7 +1636,30 @@ load 1ms
 	}
 }
 
-func TestSample(t *testing.T) {
+// Convenience function that returns a "full matrix" for the specified number
+// of jobs and time range.
+func fullMatrix(jobs, start, end, interval, increase int) (Matrix, []labels.Labels) {
+	var mat Matrix
+	var lbls []labels.Labels
+	for job := 1; job <= jobs; job++ {
+		lbls = append(lbls, labels.FromStrings("__name__", "metric", "job", fmt.Sprintf("%d", job)))
+		series := func(start, end, interval int) Series {
+			var points []FPoint
+			for i := start; i <= end; i += interval {
+				t := int64(increase) * int64(i)
+				points = append(points, FPoint{F: float64(job * i / interval), T: t})
+			}
+			return Series{
+				Floats: points,
+				Metric: labels.FromStrings("__name__", "metric", "job", fmt.Sprintf("%d", job)),
+			}
+		}(start, end, interval)
+		mat = append(mat, series)
+	}
+	return mat, lbls
+}
+
+func TestSampleLimit(t *testing.T) {
 	engine := newTestEngine()
 	storage := LoadedStorage(t, `
 load 10s
@@ -1648,31 +1671,7 @@ load 10s
 `)
 	t.Cleanup(func() { storage.Close() })
 
-	// Convenience function that returns a "full matrix" that matches test NewTest()
-	// for an specified number of jobs and time range.
-	fullMatrix := func(jobs, start, end, interval int) (Matrix, []labels.Labels) {
-		var mat Matrix
-		var lbls []labels.Labels
-		for job := 1; job <= jobs; job++ {
-			lbls = append(lbls, labels.FromStrings("__name__", "metric", "job", fmt.Sprintf("%d", job)))
-			series := func(start, end, interval int) Series {
-				var points []FPoint
-				for i := start; i <= end; i += interval {
-					t := 1000 * int64(i)
-					points = append(points, FPoint{F: float64(job * i / interval), T: t})
-				}
-				return Series{
-					Floats: points,
-					Metric: labels.FromStrings("__name__", "metric", "job", fmt.Sprintf("%d", job)),
-				}
-			}(start, end, interval)
-			mat = append(mat, series)
-		}
-		return mat, lbls
-	}
-
-	fullMatrix20, lbls := fullMatrix(5, 0, 20, 10)
-
+	fullMatrix20, _ := fullMatrix(5, 0, 20, 10, 1000)
 	cases := []struct {
 		query                string
 		start, end, interval int64 // Time in seconds.
@@ -1700,6 +1699,63 @@ load 10s
 			start: 0, end: 20, interval: 10,
 			result: fullMatrix20,
 		},
+	}
+	for _, c := range cases {
+		t.Run(c.query, func(t *testing.T) {
+			if c.interval == 0 {
+				c.interval = 1
+			}
+			start, end, interval := time.Unix(c.start, 0), time.Unix(c.end, 0), time.Duration(c.interval)*time.Second
+			var err error
+			var qry Query
+			if c.end == 0 {
+				qry, err = engine.NewInstantQuery(context.Background(), storage, nil, c.query, start)
+			} else {
+				qry, err = engine.NewRangeQuery(context.Background(), storage, nil, c.query, start, end, interval)
+			}
+			require.NoError(t, err)
+
+			res := qry.Exec(context.Background())
+			require.NoError(t, res.Err)
+			switch {
+			case c.result != nil:
+				if expMat, ok := c.result.(Matrix); ok {
+					sort.Sort(expMat)
+					sort.Sort(res.Value.(Matrix))
+				}
+				require.Equal(t, c.result, res.Value, "query %q failed for require.Equal()", c.query)
+			case c.resultIn != nil:
+				require.Equal(t, c.resultLen, len(res.Value.(Matrix)), "query %q failed", c.query)
+				if expMat, ok := c.resultIn.(Matrix); ok {
+					sort.Sort(expMat)
+					sort.Sort(res.Value.(Matrix))
+					for _, e := range res.Value.(Matrix) {
+						require.Contains(t, c.resultIn, e, "query %q failed for require.Contains()", c.query)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestSampleRatio(t *testing.T) {
+	engine := newTestEngine()
+	storage := LoadedStorage(t, `
+load 10s
+  metric{job="1"} 0+1x1000
+  metric{job="2"} 0+2x1000
+  metric{job="3"} 0+3x1000
+  metric{job="4"} 0+4x1000
+  metric{job="5"} 0+5x1000
+`)
+	t.Cleanup(func() { storage.Close() })
+
+	fullMatrix20, lbls := fullMatrix(5, 0, 20, 10, 1000)
+	cases := []struct {
+		query                string
+		start, end, interval int64 // Time in seconds.
+		result               parser.Value
+	}{
 		{
 			// ratioLimit=0 -> empty matrix
 			query: `sample_ratio(0, metric)`,
@@ -1772,25 +1828,28 @@ load 10s
 
 			res := qry.Exec(context.Background())
 			require.NoError(t, res.Err)
-			switch {
-			case c.result != nil:
-				if expMat, ok := c.result.(Matrix); ok {
-					sort.Sort(expMat)
-					sort.Sort(res.Value.(Matrix))
-				}
-				require.Equal(t, c.result, res.Value, "query %q failed for require.Equal()", c.query)
-			case c.resultIn != nil:
-				require.Equal(t, c.resultLen, len(res.Value.(Matrix)), "query %q failed", c.query)
-				if expMat, ok := c.resultIn.(Matrix); ok {
-					sort.Sort(expMat)
-					sort.Sort(res.Value.(Matrix))
-					for _, e := range res.Value.(Matrix) {
-						require.Contains(t, c.resultIn, e, "query %q failed for require.Contains()", c.query)
-					}
-				}
+			if expMat, ok := c.result.(Matrix); ok {
+				sort.Sort(expMat)
+				sort.Sort(res.Value.(Matrix))
 			}
+			require.Equal(t, c.result, res.Value, "query %q failed for require.Equal()", c.query)
 		})
 	}
+}
+
+func TestSampleRatioDynamic(t *testing.T) {
+	engine := newTestEngine()
+	storage := LoadedStorage(t, `
+load 10s
+  metric{job="1"} 0+1x1000
+  metric{job="2"} 0+2x1000
+  metric{job="3"} 0+3x1000
+  metric{job="4"} 0+4x1000
+  metric{job="5"} 0+5x1000
+`)
+	t.Cleanup(func() { storage.Close() })
+
+	fullMatrix20, _ := fullMatrix(5, 0, 20, 10, 1000)
 
 	// Dynamically build sample_ratio() cases, to verify that
 	//   sample_ratio(v, metric)
