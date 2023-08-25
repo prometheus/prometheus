@@ -1923,7 +1923,7 @@ var (
 // pointsSliceSize calculates a reasonable initial capacity for the point slices when running a query
 // taking in consideration the remaining number of steps, maxSamples and number of series in the result
 func (ev *evaluator) pointsSliceSize(numSteps, step, numberOfSeries int) int {
-	// Subtract the current step from the numSteps as at this point we know the given series does not have data before this step
+	// Subtract the current step from the numSteps as at this point we know the given series does not have data before this step.
 	remainingSteps := numSteps - step
 	// Spread the remaining allowed samples across all the series in the result.
 	allowedSamples := (ev.maxSamples - ev.currentSamples) / numberOfSeries
