@@ -4547,6 +4547,16 @@ func TestNativeHistogram_SubOperator(t *testing.T) {
 					vector, err := res.Vector()
 					require.NoError(t, err)
 
+					if len(vector) == len(exp) {
+						for i, e := range exp {
+							got := vector[i].H
+							if got != e.H {
+								// Error messages are better if we compare structs, not pointers.
+								require.Equal(t, *e.H, *got)
+							}
+						}
+					}
+
 					require.Equal(t, exp, vector)
 				}
 
@@ -4557,8 +4567,8 @@ func TestNativeHistogram_SubOperator(t *testing.T) {
 				}
 				queryAndCheck(queryString, []Sample{{T: ts, H: &c.expected, Metric: labels.EmptyLabels()}})
 			})
-			idx0++
 		}
+		idx0++
 	}
 }
 
