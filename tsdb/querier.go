@@ -622,7 +622,7 @@ func (p *populateWithDelGenericSeriesIterator) reset(blockID ulid.ULID, cr Chunk
 	p.chks = chks
 	p.i = -1
 	p.err = nil
-	p.bufIter.Iter = nil
+	// Note we don't touch p.bufIter.Iter; it is holding on to an iterator we might reuse in next().
 	p.bufIter.Intervals = p.bufIter.Intervals[:0]
 	p.intervals = intervals
 	p.currDelIter = nil
