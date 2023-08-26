@@ -1797,6 +1797,11 @@ func (db *DB) EnableCompactions() {
 	level.Info(db.logger).Log("msg", "Compactions enabled")
 }
 
+// ForceHeadMMap is intended for use only in tests and benchmarks.
+func (db *DB) ForceHeadMMap() {
+	db.head.mmapHeadChunks()
+}
+
 // Snapshot writes the current data to the directory. If withHead is set to true it
 // will create a new block containing all data that's currently in the memory buffer/WAL.
 func (db *DB) Snapshot(dir string, withHead bool) error {
