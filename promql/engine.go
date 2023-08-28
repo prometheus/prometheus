@@ -1188,15 +1188,16 @@ func (ev *evaluator) rangeEval(prepSeries func(labels.Labels, *EvalSeriesHelper)
 			}
 
 			for si, series := range matrixes[i] {
-				if len(series.Floats) > 0 && series.Floats[0].T == ts {
+				switch {
+				case len(series.Floats) > 0 && series.Floats[0].T == ts:
 					vectors[i] = append(vectors[i], Sample{Metric: series.Metric, F: series.Floats[0].F, T: ts})
 					// Move input vectors forward so we don't have to re-scan the same
 					// past points at the next step.
 					matrixes[i][si].Floats = series.Floats[1:]
-				} else if len(series.Histograms) > 0 && series.Histograms[0].T == ts {
+				case len(series.Histograms) > 0 && series.Histograms[0].T == ts:
 					vectors[i] = append(vectors[i], Sample{Metric: series.Metric, H: series.Histograms[0].H, T: ts})
 					matrixes[i][si].Histograms = series.Histograms[1:]
-				} else {
+				default:
 					continue
 				}
 				if prepSeries != nil {
