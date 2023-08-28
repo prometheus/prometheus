@@ -76,18 +76,49 @@ series: <string>
 
 # This uses expanding notation.
 # Expanding notation:
-#     'a+bxc' becomes 'a a+b a+(2*b) a+(3*b) … a+(c*b)'
-#     Read this as series starts at a, then c further samples incrementing by b.
-#     'a-bxc' becomes 'a a-b a-(2*b) a-(3*b) … a-(c*b)'
-#     Read this as series starts at a, then c further samples decrementing by b (or incrementing by negative b).
+#     'a+bxn' becomes 'a a+b a+(2*b) a+(3*b) … a+(n*b)'
+#     Read this as series starts at a, then n further samples incrementing by b.
+#     'a-bxn' becomes 'a a-b a-(2*b) a-(3*b) … a-(n*b)'
+#     Read this as series starts at a, then n further samples decrementing by b (or incrementing by negative b).
+#     'axn' becomes 'a a a … a' (n times) - it's a shorthand for 'a+0xn'
 # There are special values to indicate missing and stale samples:
-#    '_' represents a missing sample from scrape
-#    'stale' indicates a stale sample
+#     '_' represents a missing sample from scrape
+#     'stale' indicates a stale sample
 # Examples:
 #     1. '-2+4x3' becomes '-2 2 6 10' - series starts at -2, then 3 further samples incrementing by 4.
 #     2. ' 1-2x4' becomes '1 -1 -3 -5 -7' - series starts at 1, then 4 further samples decrementing by 2.
 #     3. ' 1x4' becomes '1 1 1 1 1' - shorthand for '1+0x4', series starts at 1, then 4 further samples incrementing by 0.
 #     4. ' 1 _x3 stale' becomes '1 _ _ _ stale' - the missing sample cannot increment, so 3 missing samples are produced by the '_x3' expression.
+#
+# Native histogram notation:
+#     Native histograms can be used instead of floating point numbers using the following notation:
+#     {{schema:1 sum:-0.3 count:3.1 z_bucket:7.1 z_bucket_w:0.05 buckets:[5.1 10 7] offset:-3 n_buckets:[4.1 5] n_offset:-5}}
+#     Native histograms support the same expanding notation as floating point numbers, i.e. 'axn', 'a+bxn' and 'a-bxn'.
+#     All properties are optional and default to 0. The order is not important. The following properties are supported:
+#     - schema (int): 
+#         Currently valid schema numbers are -4 <= n <= 8. They are all for
+#         base-2 bucket schemas, where 1 is a bucket boundary in each case, and
+#         then each power of two is divided into 2^n logarithmic buckets.  Or
+#         in other words, each bucket boundary is the previous boundary times
+#         2^(2^-n).
+#     - sum (float): 
+#         The sum of all observations, including the zero bucket.
+#     - count (non-negative float): 
+#         The number of observations, including those that are NaN and including the zero bucket.
+#     - z_bucket (non-negative float): 
+#         The sum of all observations in the zero bucket.
+#     - z_bucket_w (non-negative float): 
+#         The width of the zero bucket. 
+#         If z_bucket_w > 0, the zero bucket contains all observations -z_bucket_w <= x <= z_bucket_w.
+#         Otherwise, the zero bucket only contains observations that are exactly 0.
+#     - buckets (list of non-negative floats):
+#         Observation counts in positive buckets. Each represents an absolute count.
+#     - offset (int):
+#         The starting index of the first entry in the positive buckets.
+#     - n_buckets (list of non-negative floats):
+#         Observation counts in negative buckets. Each represents an absolute count.
+#     - n_offset (int):
+#         The starting index of the first entry in the negative buckets.
 values: <string>
 ```
 

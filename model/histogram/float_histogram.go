@@ -15,6 +15,7 @@ package histogram
 
 import (
 	"fmt"
+	"math"
 	"strings"
 )
 
@@ -128,6 +129,55 @@ func (h *FloatHistogram) String() string {
 
 	sb.WriteRune('}')
 	return sb.String()
+}
+
+// TestExpression returns the string representation of this histogram as it is used in the internal PromQL testing
+// framework as well as in promtool rules unit tests.
+// The syntax is described in https://prometheus.io/docs/prometheus/latest/configuration/unit_testing_rules/#series
+func (h *FloatHistogram) TestExpression() string {
+	var res []string
+	m := h.Copy()
+
+	m.Compact(math.MaxInt) // Compact to reduce the number of positive and negative spans to 1.
+
+	if m.Schema != 0 {
+		res = append(res, fmt.Sprintf("schema:%d", m.Schema))
+	}
+	if m.Count != 0 {
+		res = append(res, fmt.Sprintf("count:%g", m.Count))
+	}
+	if m.Sum != 0 {
+		res = append(res, fmt.Sprintf("sum:%g", m.Sum))
+	}
+	if m.ZeroCount != 0 {
+		res = append(res, fmt.Sprintf("z_bucket:%g", m.ZeroCount))
+	}
+	if m.ZeroThreshold != 0 {
+		res = append(res, fmt.Sprintf("z_bucket_w:%g", m.ZeroThreshold))
+	}
+
+	addBuckets := func(kind, bucketsKey, offsetKey string, buckets []float64, spans []Span) []string {
+		if len(spans) > 1 {
+			panic(fmt.Sprintf("histogram with multiple %s spans not supported", kind))
+		}
+		for _, span := range spans {
+			if span.Offset != 0 {
+				res = append(res, fmt.Sprintf("%s:%d", offsetKey, span.Offset))
+			}
+		}
+
+		var bucketStr []string
+		for _, bucket := range buckets {
+			bucketStr = append(bucketStr, fmt.Sprintf("%g", bucket))
+		}
+		if len(bucketStr) > 0 {
+			res = append(res, fmt.Sprintf("%s:[%s]", bucketsKey, strings.Join(bucketStr, " ")))
+		}
+		return res
+	}
+	res = addBuckets("positive", "buckets", "offset", m.PositiveBuckets, m.PositiveSpans)
+	res = addBuckets("negative", "n_buckets", "n_offset", m.NegativeBuckets, m.NegativeSpans)
+	return "{{" + strings.Join(res, " ") + "}}"
 }
 
 // ZeroBucket returns the zero bucket.
