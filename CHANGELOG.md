@@ -2,6 +2,11 @@
 
 ## 2.47.0-rc.0 / 2023-08-25
 
+This release adds an experimental OpenTelemetry (OTLP) Ingestion feature,
+and also new setting `keep_dropped_targets` to limit the amount of dropped
+targets held in memory. This defaults to 0 meaning 'no limit', so we encourage
+users with large Prometheus to try setting a limit such as 100.
+
 * [FEATURE] Web: Add OpenTelemetry (OTLP) Ingestion endpoint. #12571 #12643
 * [FEATURE] Scraping: Optionally limit detail on dropped targets, to save memory. #12647
 * [ENHANCEMENT] TSDB: Write head chunks to disk in the background to reduce blocking. #11818
