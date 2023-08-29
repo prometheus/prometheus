@@ -212,6 +212,125 @@ testmetric{label="\"bar\""} 1`
 	require.Len(t, exp, i)
 }
 
+func TestUTF8PromParse(t *testing.T) {
+	model.NameValidationScheme = model.UTF8Validation
+	defer func() {
+		model.NameValidationScheme = model.LegacyValidation
+	}()
+
+	input := `# HELP "go.gc_duration_seconds" A summary of the GC invocation durations.
+# 	TYPE "go.gc_duration_seconds" summary
+{"go.gc_duration_seconds",quantile="0"} 4.9351e-05
+{"go.gc_duration_seconds",quantile="0.25",} 7.424100000000001e-05
+{"go.gc_duration_seconds",quantile="0.5",a="b"} 8.3835e-05
+{"go.gc_duration_seconds",quantile="0.8", a="b"} 8.3835e-05
+{"go.gc_duration_seconds", quantile="0.9", a="b"} 8.3835e-05
+{"go.gc_duration_seconds", quantile="1.0", a="b" } 8.3835e-05
+{ "go.gc_duration_seconds", quantile="1.0", a="b" } 8.3835e-05
+{ "go.gc_duration_seconds", quantile= "1.0", a= "b", } 8.3835e-05
+{ "go.gc_duration_seconds", quantile = "1.0", a = "b" } 8.3835e-05
+{"go.gc_duration_seconds_count"} 99`
+
+	exp := []struct {
+		lset    labels.Labels
+		m       string
+		t       *int64
+		v       float64
+		typ     MetricType
+		help    string
+		comment string
+	}{
+		{
+			m:    "go.gc_duration_seconds",
+			help: "A summary of the GC invocation durations.",
+		}, {
+			m:   "go.gc_duration_seconds",
+			typ: MetricTypeSummary,
+		}, {
+			m:    `{"go.gc_duration_seconds",quantile="0"}`,
+			v:    4.9351e-05,
+			lset: labels.FromStrings("__name__", "go.gc_duration_seconds", "quantile", "0"),
+		}, {
+			m:    `{"go.gc_duration_seconds",quantile="0.25",}`,
+			v:    7.424100000000001e-05,
+			lset: labels.FromStrings("__name__", "go.gc_duration_seconds", "quantile", "0.25"),
+		}, {
+			m:    `{"go.gc_duration_seconds",quantile="0.5",a="b"}`,
+			v:    8.3835e-05,
+			lset: labels.FromStrings("__name__", "go.gc_duration_seconds", "quantile", "0.5", "a", "b"),
+		}, {
+			m:    `{"go.gc_duration_seconds",quantile="0.8", a="b"}`,
+			v:    8.3835e-05,
+			lset: labels.FromStrings("__name__", "go.gc_duration_seconds", "quantile", "0.8", "a", "b"),
+		}, {
+			m:    `{"go.gc_duration_seconds", quantile="0.9", a="b"}`,
+			v:    8.3835e-05,
+			lset: labels.FromStrings("__name__", "go.gc_duration_seconds", "quantile", "0.9", "a", "b"),
+		}, {
+			m:    `{"go.gc_duration_seconds", quantile="1.0", a="b" }`,
+			v:    8.3835e-05,
+			lset: labels.FromStrings("__name__", "go.gc_duration_seconds", "quantile", "1.0", "a", "b"),
+		}, {
+			m:    `{ "go.gc_duration_seconds", quantile="1.0", a="b" }`,
+			v:    8.3835e-05,
+			lset: labels.FromStrings("__name__", "go.gc_duration_seconds", "quantile", "1.0", "a", "b"),
+		}, {
+			m:    `{ "go.gc_duration_seconds", quantile= "1.0", a= "b", }`,
+			v:    8.3835e-05,
+			lset: labels.FromStrings("__name__", "go.gc_duration_seconds", "quantile", "1.0", "a", "b"),
+		}, {
+			m:    `{ "go.gc_duration_seconds", quantile = "1.0", a = "b" }`,
+			v:    8.3835e-05,
+			lset: labels.FromStrings("__name__", "go.gc_duration_seconds", "quantile", "1.0", "a", "b"),
+		}, {
+			m:    `{"go.gc_duration_seconds_count"}`,
+			v:    99,
+			lset: labels.FromStrings("__name__", "go.gc_duration_seconds_count"),
+		},
+	}
+
+	p := NewPromParser([]byte(input))
+	i := 0
+
+	var res labels.Labels
+
+	for {
+		et, err := p.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		require.NoError(t, err)
+
+		switch et {
+		case EntrySeries:
+			m, ts, v := p.Series()
+
+			p.Metric(&res)
+
+			require.Equal(t, exp[i].m, string(m))
+			require.Equal(t, exp[i].t, ts)
+			require.Equal(t, exp[i].v, v)
+			require.Equal(t, exp[i].lset, res)
+
+		case EntryType:
+			m, typ := p.Type()
+			require.Equal(t, exp[i].m, string(m))
+			require.Equal(t, exp[i].typ, typ)
+
+		case EntryHelp:
+			m, h := p.Help()
+			require.Equal(t, exp[i].m, string(m))
+			require.Equal(t, exp[i].help, string(h))
+
+		case EntryComment:
+			require.Equal(t, exp[i].comment, string(p.Comment()))
+		}
+
+		i++
+	}
+	require.Len(t, exp, i)
+}
+
 func TestPromParseErrors(t *testing.T) {
 	cases := []struct {
 		input string
@@ -267,7 +386,7 @@ func TestPromParseErrors(t *testing.T) {
 		},
 		{
 			input: `{a="ok"} 1`,
-			err:   "expected a valid start token, got \"{\" (\"INVALID\") while parsing: \"{\"",
+			err:   "metric name not set while parsing: \"{a=\\\"ok\\\"} 1\\n\"",
 		},
 		{
 			input: "# TYPE #\n#EOF\n",
