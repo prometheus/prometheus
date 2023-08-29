@@ -2993,8 +2993,8 @@ password: <secret>
 # Optional HTTP basic authentication information, currently not supported by Uyuni.
 basic_auth:
   [ username: <string> ]
-    [ password: <secret> ]
-    [ password_file: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
 
 # Optional `Authorization` header configuration, currently not supported by Uyuni.
 authorization:
