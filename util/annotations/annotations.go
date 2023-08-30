@@ -13,6 +13,12 @@
 
 package annotations
 
+// Annotations is a general wrapper for text that is shown in the
+// Prometheus/Grafana UI along with the query results.
+// Currently there are only 2 types, warnings and info.
+// For now, info are visually identical with warnings as we have not updated
+// the API spec or the frontend to show a different kind of warning. But we
+// make the distinction here to prepare for adding them in future.
 type Annotations struct {
 	Warnings Warnings
 	Info     Info

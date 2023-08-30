@@ -18,6 +18,9 @@ import (
 	"fmt"
 )
 
+// Warnings are shown in the Prometheus/Grafana UI along with the query results.
+// They are not errors per se as the query does not fail, but they are meant to
+// warn the end user of possible problems with the query.
 type Warnings []error
 
 func (ws Warnings) Merge(a Annotations) Warnings {

@@ -13,4 +13,7 @@
 
 package annotations
 
+// Info are shown in the Prometheus/Grafana UI along with the query results.
+// They are not warnings as there are no problems with the query, but they are
+// meant to provide helpful information that the user might want to know.
 type Info []string
