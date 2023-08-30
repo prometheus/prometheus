@@ -281,7 +281,7 @@ class Cache {
   private flags: Record<string, string>;
 
   constructor(config?: CacheConfig) {
-    const maxAge = config && config.maxAge ? config.maxAge : 5 * 60 * 1000;
+    const maxAge: LRUCache.LimitedByTTL = { ttl: config && config.maxAge ? config.maxAge : 5 * 60 * 1000 };
     this.completeAssociation = new LRUCache<string, Map<string, Set<string>>>(maxAge);
     this.metricMetadata = {};
     this.labelValues = new LRUCache<string, string[]>(maxAge);
