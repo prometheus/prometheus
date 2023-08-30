@@ -96,12 +96,11 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 		numSamplesMinusOne = len(samples.Histograms) - 1
 		firstT = samples.Histograms[0].T
 		lastT = samples.Histograms[numSamplesMinusOne].T
-		var newNs annotations.Annotations
-		resultHistogram, newNs = histogramRate(samples.Histograms, isCounter, metricName)
+		var newAnnos annotations.Annotations
+		resultHistogram, newAnnos = histogramRate(samples.Histograms, isCounter, metricName)
 		if resultHistogram == nil {
 			// The histograms are not compatible with each other.
-			// TODO(beorn7): Communicate this failure reason.
-			return enh.Out, annos.Merge(newNs)
+			return enh.Out, annos.Merge(newAnnos)
 		}
 	case len(samples.Floats) > 1:
 		numSamplesMinusOne = len(samples.Floats) - 1
@@ -177,7 +176,8 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 
 // histogramRate is a helper function for extrapolatedRate. It requires
 // points[0] to be a histogram. It returns nil if any other Point in points is
-// not a histogram.
+// not a histogram, and a warning wrapped in an annotation in that case.
+// Otherwise, it returns the calculated histogram and an empty annotation.
 func histogramRate(points []HPoint, isCounter bool, metricName string) (*histogram.FloatHistogram, annotations.Annotations) {
 	prev := points[0].H
 	last := points[len(points)-1].H
@@ -1154,7 +1154,7 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 			// At this data point, we have conventional histogram
 			// buckets and a native histogram with the same name and
 			// labels. Do not evaluate anything.
-			annos.Add(annotations.NewMixedOldNewHistogramsWarning(sample.Metric.Get(labels.MetricName)))
+			annos.Add(annotations.NewMixedClassicNativeHistogramsWarning(sample.Metric.Get(labels.MetricName)))
 			delete(enh.signatureToMetricWithBuckets, string(enh.lblBuf))
 			continue
 		}
