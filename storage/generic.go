@@ -18,6 +18,7 @@ package storage
 
 import (
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/util/notes"
 )
 
 type genericQuerier interface {
@@ -29,7 +30,7 @@ type genericSeriesSet interface {
 	Next() bool
 	At() Labels
 	Err() error
-	Warnings() Warnings
+	Warnings() notes.Warnings
 }
 
 type genericSeriesMergeFunc func(...Labels) Labels
@@ -137,4 +138,4 @@ func (noopGenericSeriesSet) At() Labels { return nil }
 
 func (noopGenericSeriesSet) Err() error { return nil }
 
-func (noopGenericSeriesSet) Warnings() Warnings { return nil }
+func (noopGenericSeriesSet) Warnings() notes.Warnings { return nil }

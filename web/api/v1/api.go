@@ -52,6 +52,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/util/httputil"
+	"github.com/prometheus/prometheus/util/notes"
 	"github.com/prometheus/prometheus/util/stats"
 )
 
@@ -161,7 +162,7 @@ type Response struct {
 type apiFuncResult struct {
 	data      interface{}
 	err       *apiError
-	warnings  storage.Warnings
+	warnings  notes.Warnings
 	finalizer func()
 }
 
@@ -667,7 +668,7 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 
 	var (
 		names    []string
-		warnings storage.Warnings
+		warnings notes.Warnings
 	)
 	if len(matcherSets) > 0 {
 		labelNamesSet := make(map[string]struct{})
@@ -743,10 +744,10 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 
 	var (
 		vals     []string
-		warnings storage.Warnings
+		warnings notes.Warnings
 	)
 	if len(matcherSets) > 0 {
-		var callWarnings storage.Warnings
+		var callWarnings notes.Warnings
 		labelValuesSet := make(map[string]struct{})
 		for _, matchers := range matcherSets {
 			vals, callWarnings, err = q.LabelValues(name, matchers...)
@@ -1683,7 +1684,7 @@ func (api *API) cleanTombstones(*http.Request) apiFuncResult {
 	return apiFuncResult{nil, nil, nil, nil}
 }
 
-func (api *API) respond(w http.ResponseWriter, req *http.Request, data interface{}, warnings storage.Warnings) {
+func (api *API) respond(w http.ResponseWriter, req *http.Request, data interface{}, warnings notes.Warnings) {
 	statusMessage := statusSuccess
 	var warningStrings []string
 	for _, warning := range warnings {

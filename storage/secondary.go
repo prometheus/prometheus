@@ -17,6 +17,7 @@ import (
 	"sync"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/util/notes"
 )
 
 // secondaryQuerier is a wrapper that allows a querier to be treated in a best effort manner.
@@ -47,7 +48,7 @@ func newSecondaryQuerierFromChunk(cq ChunkQuerier) genericQuerier {
 	return &secondaryQuerier{genericQuerier: newGenericQuerierFromChunk(cq)}
 }
 
-func (s *secondaryQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, Warnings, error) {
+func (s *secondaryQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, notes.Warnings, error) {
 	vals, w, err := s.genericQuerier.LabelValues(name, matchers...)
 	if err != nil {
 		return nil, append([]error{err}, w...), nil
@@ -55,7 +56,7 @@ func (s *secondaryQuerier) LabelValues(name string, matchers ...*labels.Matcher)
 	return vals, w, nil
 }
 
-func (s *secondaryQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, Warnings, error) {
+func (s *secondaryQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, notes.Warnings, error) {
 	names, w, err := s.genericQuerier.LabelNames(matchers...)
 	if err != nil {
 		return nil, append([]error{err}, w...), nil

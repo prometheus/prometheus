@@ -13,6 +13,10 @@
 
 package storage
 
+import (
+	"github.com/prometheus/prometheus/util/notes"
+)
+
 // lazyGenericSeriesSet is a wrapped series set that is initialised on first call to Next().
 type lazyGenericSeriesSet struct {
 	init func() (genericSeriesSet, bool)
@@ -43,25 +47,25 @@ func (c *lazyGenericSeriesSet) At() Labels {
 	return nil
 }
 
-func (c *lazyGenericSeriesSet) Warnings() Warnings {
+func (c *lazyGenericSeriesSet) Warnings() notes.Warnings {
 	if c.set != nil {
 		return c.set.Warnings()
 	}
 	return nil
 }
 
-type warningsOnlySeriesSet Warnings
+type warningsOnlySeriesSet notes.Warnings
 
-func (warningsOnlySeriesSet) Next() bool           { return false }
-func (warningsOnlySeriesSet) Err() error           { return nil }
-func (warningsOnlySeriesSet) At() Labels           { return nil }
-func (c warningsOnlySeriesSet) Warnings() Warnings { return Warnings(c) }
+func (warningsOnlySeriesSet) Next() bool                 { return false }
+func (warningsOnlySeriesSet) Err() error                 { return nil }
+func (warningsOnlySeriesSet) At() Labels                 { return nil }
+func (c warningsOnlySeriesSet) Warnings() notes.Warnings { return notes.Warnings(c) }
 
 type errorOnlySeriesSet struct {
 	err error
 }
 
-func (errorOnlySeriesSet) Next() bool         { return false }
-func (errorOnlySeriesSet) At() Labels         { return nil }
-func (s errorOnlySeriesSet) Err() error       { return s.err }
-func (errorOnlySeriesSet) Warnings() Warnings { return nil }
+func (errorOnlySeriesSet) Next() bool               { return false }
+func (errorOnlySeriesSet) At() Labels               { return nil }
+func (s errorOnlySeriesSet) Err() error             { return s.err }
+func (errorOnlySeriesSet) Warnings() notes.Warnings { return nil }

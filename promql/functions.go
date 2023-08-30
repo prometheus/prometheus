@@ -30,24 +30,6 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
-type Notes struct {
-	warnings []error
-}
-
-func (n *Notes) AddWarning(txt string) {
-	n.warnings = append(n.warnings, fmt.Errorf(txt))
-}
-
-func (n *Notes) AddWarningErr(err error) {
-	n.warnings = append(n.warnings, err)
-}
-
-func CreateNotesWithWarning(txt string) Notes {
-	notes := Notes{}
-	notes.AddWarning(txt)
-	return notes
-}
-
 // FunctionCall is the type of a PromQL function implementation
 //
 // vals is a list of the evaluated arguments for the function call.
