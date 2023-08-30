@@ -28,6 +28,7 @@ func (ws Warnings) Merge(notes Notes) Warnings {
 	return nws
 }
 
+//nolint:revive // Ignore ST1012
 var (
 	RangeTooSmallWarning         = errors.New("Need at least 2 points to compute, perhaps time range is too small")
 	MixedFloatsHistogramsWarning = errors.New("Range contains a mix of histograms and floats")
