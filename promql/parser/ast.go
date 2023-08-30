@@ -411,6 +411,10 @@ type PositionRange struct {
 	End   Pos
 }
 
+func (p PositionRange) String() string {
+	return fmt.Sprintf("%d:%d", p.Start, p.End)
+}
+
 // mergeRanges is a helper function to merge the PositionRanges of two Nodes.
 // Note that the arguments must be in the same order as they
 // occur in the input string.

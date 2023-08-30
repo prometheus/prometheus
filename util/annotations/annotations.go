@@ -91,10 +91,17 @@ var (
 	PossibleNonCounterInfo = fmt.Errorf("%w: metric might not be a counter (name does not end in _total/_sum/_count)", PromQLInfo)
 )
 
+func printPositionRange(pos interface{}) string {
+	if pos == nil {
+		return ""
+	}
+	return fmt.Sprintf(" (at %v)", pos)
+}
+
 // NewInvalidQuantileWarning is used when the user specifies an invalid quantile
 // value, i.e. a float that is outside the range [0, 1] or NaN.
-func NewInvalidQuantileWarning(q float64) error {
-	return fmt.Errorf("%w not %.02f", InvalidQuantileWarning, q)
+func NewInvalidQuantileWarning(q float64, pos interface{}) error {
+	return fmt.Errorf("%w, not %.02f%s", InvalidQuantileWarning, q, printPositionRange(pos))
 }
 
 // NewBadBucketLabelWarning is used when there is an error parsing the bucket label

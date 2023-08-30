@@ -639,7 +639,7 @@ func funcQuantileOverTime(vals []parser.Value, args parser.Expressions, enh *Eva
 
 	annos := annotations.Annotations{}
 	if math.IsNaN(q) || q < 0 || q > 1 {
-		annos.Add(annotations.NewInvalidQuantileWarning(q))
+		annos.Add(annotations.NewInvalidQuantileWarning(q, args[0].PositionRange()))
 	}
 
 	values := make(vectorByValueHeap, 0, len(el.Floats))
@@ -1103,7 +1103,7 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 	annos := annotations.Annotations{}
 
 	if math.IsNaN(q) || q < 0 || q > 1 {
-		annos.Add(annotations.NewInvalidQuantileWarning(q))
+		annos.Add(annotations.NewInvalidQuantileWarning(q, args[0].PositionRange()))
 	}
 
 	if enh.signatureToMetricWithBuckets == nil {

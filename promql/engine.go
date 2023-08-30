@@ -1374,7 +1374,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 		unwrapParenExpr(&param)
 		if s, ok := param.(*parser.StringLiteral); ok {
 			return ev.rangeEval(initSeries, func(v []parser.Value, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-				return ev.aggregation(e.Op, sortedGrouping, e.Without, s.Val, v[0].(Vector), sh[0], enh)
+				return ev.aggregation(e, sortedGrouping, s.Val, v[0].(Vector), sh[0], enh)
 			}, e.Expr)
 		}
 
@@ -1383,7 +1383,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 			if e.Param != nil {
 				param = v[0].(Vector)[0].F
 			}
-			return ev.aggregation(e.Op, sortedGrouping, e.Without, param, v[1].(Vector), sh[1], enh)
+			return ev.aggregation(e, sortedGrouping, param, v[1].(Vector), sh[1], enh)
 		}, e.Param, e.Expr)
 
 	case *parser.Call:
@@ -2530,7 +2530,9 @@ type groupedAggregation struct {
 
 // aggregation evaluates an aggregation operation on a Vector. The provided grouping labels
 // must be sorted.
-func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without bool, param interface{}, vec Vector, seriesHelper []EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func (ev *evaluator) aggregation(e *parser.AggregateExpr, grouping []string, param interface{}, vec Vector, seriesHelper []EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	op := e.Op
+	without := e.Without
 	annos := annotations.Annotations{}
 	result := map[uint64]*groupedAggregation{}
 	orderedResult := []*groupedAggregation{}
@@ -2842,7 +2844,7 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 
 		case parser.QUANTILE:
 			if math.IsNaN(q) || q < 0 || q > 1 {
-				annos.Add(annotations.NewInvalidQuantileWarning(q))
+				annos.Add(annotations.NewInvalidQuantileWarning(q, e.Param.PositionRange()))
 			}
 			aggr.floatValue = quantile(q, aggr.heap)
 
