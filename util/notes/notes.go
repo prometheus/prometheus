@@ -11,22 +11,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package promql
-
-import (
-	"github.com/prometheus/prometheus/util/notes"
-)
+package notes
 
 type Notes struct {
-	warnings notes.Warnings
+	Warnings Warnings
 }
 
 // func (n *Notes) AddWarning(txt string) {
-// 	n.warnings = append(n.warnings, fmt.Errorf(txt))
+// 	n.Warnings = append(n.Warnings, fmt.Errorf(txt))
 // }
 
 func (n *Notes) AddWarningErr(err error) {
-	n.warnings = append(n.warnings, err)
+	n.Warnings = append(n.Warnings, err)
 }
 
 // func CreateNotesWithWarning(txt string) Notes {
@@ -42,5 +38,5 @@ func CreateNotesWithWarningErr(err error) Notes {
 }
 
 func (n *Notes) Merge(nn Notes) {
-	n.warnings = append(n.warnings, nn.warnings...)
+	n.Warnings = append(n.Warnings, nn.Warnings...)
 }

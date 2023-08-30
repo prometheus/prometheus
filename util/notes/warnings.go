@@ -20,6 +20,10 @@ import (
 
 type Warnings []error
 
+func (ws Warnings) Merge(notes Notes) Warnings {
+	return append(ws, notes.Warnings...)
+}
+
 var (
 	RangeTooSmallWarning         = errors.New("Need at least 2 points to compute, perhaps time range is too small")
 	MixedFloatsHistogramsWarning = errors.New("Range contains a mix of histograms and floats")
@@ -27,7 +31,7 @@ var (
 
 	InvalidQuantileWarning    = errors.New("Quantile value should be between 0 and 1")
 	BadBucketLabelWarning     = errors.New("No bucket label or malformed label value")
-	PossibleNonCounterWarning = errors.New("Metric might not be a counter (does not end in _total/_sum/_count)")
+	PossibleNonCounterWarning = errors.New("Metric might not be a counter (name does not end in _total/_sum/_count)")
 )
 
 func IsForEmptyResultOnly(err error) bool {

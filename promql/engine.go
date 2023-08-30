@@ -1374,8 +1374,8 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, notes.Warnings) {
 		unwrapParenExpr(&param)
 		if s, ok := param.(*parser.StringLiteral); ok {
 			return ev.rangeEval(initSeries, func(v []parser.Value, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, notes.Warnings) {
-				vec, notes := ev.aggregation(e.Op, sortedGrouping, e.Without, s.Val, v[0].(Vector), sh[0], enh)
-				return vec, notes.warnings
+				vec, ns := ev.aggregation(e.Op, sortedGrouping, e.Without, s.Val, v[0].(Vector), sh[0], enh)
+				return vec, ns.Warnings
 			}, e.Expr)
 		}
 
@@ -1384,8 +1384,8 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, notes.Warnings) {
 			if e.Param != nil {
 				param = v[0].(Vector)[0].F
 			}
-			vec, notes := ev.aggregation(e.Op, sortedGrouping, e.Without, param, v[1].(Vector), sh[1], enh)
-			return vec, notes.warnings
+			vec, ns := ev.aggregation(e.Op, sortedGrouping, e.Without, param, v[1].(Vector), sh[1], enh)
+			return vec, ns.Warnings
 		}, e.Param, e.Expr)
 
 	case *parser.Call:
@@ -1438,7 +1438,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, notes.Warnings) {
 			// Does not have a matrix argument.
 			return ev.rangeEval(nil, func(v []parser.Value, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, notes.Warnings) {
 				vec, notes := call(v, e.Args, enh)
-				return vec, append(warnings, notes.warnings...)
+				return vec, warnings.Merge(notes)
 			}, e.Args...)
 		}
 
@@ -1527,7 +1527,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, notes.Warnings) {
 				enh.Ts = ts
 				// Make the function call.
 				outVec, notes := call(inArgs, e.Args, enh)
-				warnings = append(warnings, notes.warnings...)
+				warnings = warnings.Merge(notes)
 				ev.samplesStats.IncrementSamplesAtStep(step, int64(len(floats)+len(histograms)))
 
 				enh.Out = outVec[:0]
@@ -1881,7 +1881,7 @@ func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(vs *parser.Vec
 		}
 		ev.samplesStats.UpdatePeak(ev.currentSamples)
 		vec, notes := call([]parser.Value{vec}, e.Args, enh)
-		return vec, append(ws, notes.warnings...)
+		return vec, ws.Merge(notes)
 	})
 }
 
@@ -2532,8 +2532,8 @@ type groupedAggregation struct {
 
 // aggregation evaluates an aggregation operation on a Vector. The provided grouping labels
 // must be sorted.
-func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without bool, param interface{}, vec Vector, seriesHelper []EvalSeriesHelper, enh *EvalNodeHelper) (Vector, Notes) {
-	ns := Notes{}
+func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without bool, param interface{}, vec Vector, seriesHelper []EvalSeriesHelper, enh *EvalNodeHelper) (Vector, notes.Notes) {
+	ns := notes.Notes{}
 	result := map[uint64]*groupedAggregation{}
 	orderedResult := []*groupedAggregation{}
 	var k int64
