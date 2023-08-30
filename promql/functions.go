@@ -98,7 +98,7 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 		firstT = samples.Histograms[0].T
 		lastT = samples.Histograms[numSamplesMinusOne].T
 		var newNs annotations.Annotations
-		resultHistogram, newNs = histogramRate(samples.Histograms, isCounter)
+		resultHistogram, newNs = histogramRate(samples.Histograms, isCounter, metricName)
 		if resultHistogram == nil {
 			// The histograms are not compatible with each other.
 			// TODO(beorn7): Communicate this failure reason.
@@ -180,11 +180,11 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 // histogramRate is a helper function for extrapolatedRate. It requires
 // points[0] to be a histogram. It returns nil if any other Point in points is
 // not a histogram.
-func histogramRate(points []HPoint, isCounter bool) (*histogram.FloatHistogram, annotations.Annotations) {
+func histogramRate(points []HPoint, isCounter bool, metricName string) (*histogram.FloatHistogram, annotations.Annotations) {
 	prev := points[0].H
 	last := points[len(points)-1].H
 	if last == nil {
-		return nil, annotations.CreateAnnotationsWithWarning(annotations.MixedFloatsHistogramsWarning)
+		return nil, annotations.CreateAnnotationsWithWarning(annotations.NewMixedFloatsHistogramsWarning(metricName))
 	}
 	minSchema := prev.Schema
 	if last.Schema < minSchema {
@@ -199,7 +199,7 @@ func histogramRate(points []HPoint, isCounter bool) (*histogram.FloatHistogram, 
 	for _, currPoint := range points[1 : len(points)-1] {
 		curr := currPoint.H
 		if curr == nil {
-			return nil, annotations.CreateAnnotationsWithWarning(annotations.MixedFloatsHistogramsWarning)
+			return nil, annotations.CreateAnnotationsWithWarning(annotations.NewMixedFloatsHistogramsWarning(metricName))
 		}
 		// TODO(trevorwhitney): Check if isCounter is consistent with curr.CounterResetHint.
 		if !isCounter {
@@ -1127,7 +1127,7 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 			sample.Metric.Get(model.BucketLabel), 64,
 		)
 		if err != nil {
-			annos.AddWarning(annotations.NewBadBucketLabelWarning(sample.Metric.Get(model.BucketLabel)))
+			annos.AddWarning(annotations.NewBadBucketLabelWarning(sample.Metric.Get(labels.MetricName), sample.Metric.Get(model.BucketLabel)))
 			continue
 		}
 		enh.lblBuf = sample.Metric.BytesWithoutLabels(enh.lblBuf, labels.BucketLabel)
@@ -1153,7 +1153,7 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 			// At this data point, we have conventional histogram
 			// buckets and a native histogram with the same name and
 			// labels. Do not evaluate anything.
-			annos.AddWarning(annotations.MixedOldNewHistogramsWarning)
+			annos.AddWarning(annotations.NewMixedOldNewHistogramsWarning(sample.Metric.Get(labels.MetricName)))
 			delete(enh.signatureToMetricWithBuckets, string(enh.lblBuf))
 			continue
 		}
