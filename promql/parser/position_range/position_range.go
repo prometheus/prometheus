@@ -28,3 +28,27 @@ type PositionRange struct {
 func (p PositionRange) String() string {
 	return fmt.Sprintf("%d:%d", p.Start, p.End)
 }
+
+func (p PositionRange) FullInfo(query string, lineOffset int) string {
+	pos := int(p.Start)
+	lastLineBreak := -1
+	line := lineOffset + 1
+
+	var positionStr string
+
+	if pos < 0 || pos > len(query) {
+		positionStr = "invalid position"
+	} else {
+
+		for i, c := range query[:pos] {
+			if c == '\n' {
+				lastLineBreak = i
+				line++
+			}
+		}
+
+		col := pos - lastLineBreak
+		positionStr = fmt.Sprintf("%d:%d", line, col)
+	}
+	return positionStr
+}

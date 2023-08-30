@@ -131,27 +131,7 @@ type ParseErr struct {
 }
 
 func (e *ParseErr) Error() string {
-	pos := int(e.PositionRange.Start)
-	lastLineBreak := -1
-	line := e.LineOffset + 1
-
-	var positionStr string
-
-	if pos < 0 || pos > len(e.Query) {
-		positionStr = "invalid position:"
-	} else {
-
-		for i, c := range e.Query[:pos] {
-			if c == '\n' {
-				lastLineBreak = i
-				line++
-			}
-		}
-
-		col := pos - lastLineBreak
-		positionStr = fmt.Sprintf("%d:%d:", line, col)
-	}
-	return fmt.Sprintf("%s parse error: %s", positionStr, e.Err)
+	return fmt.Sprintf("%s: parse error: %s", e.PositionRange.FullInfo(e.Query, e.LineOffset), e.Err)
 }
 
 type ParseErrors []ParseErr
