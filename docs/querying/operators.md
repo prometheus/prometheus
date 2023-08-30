@@ -310,7 +310,7 @@ so `2 ^ 3 ^ 2` is equivalent to `2 ^ (3 ^ 2)`.
 ## Operators for native histograms
 
 Native histograms are an experimental feature. Ingesting native histograms has
-to be enabled via a [feature flag](../feature_flags.md#native-histograms). Once
+to be enabled via a [feature flag](../../feature_flags.md#native-histograms). Once
 native histograms have been ingested, they can be queried (even after the
 feature flag has been disabled again). However, the operator support for native
 histograms is still very limited.

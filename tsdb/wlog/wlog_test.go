@@ -16,9 +16,9 @@ package wlog
 
 import (
 	"bytes"
+	"crypto/rand"
 	"fmt"
 	"io"
-	"math/rand"
 	"os"
 	"path/filepath"
 	"testing"

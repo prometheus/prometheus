@@ -42,7 +42,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
-	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/zeropool"
 )
@@ -1918,7 +1917,7 @@ type sample struct {
 	fh *histogram.FloatHistogram
 }
 
-func newSample(t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) tsdbutil.Sample {
+func newSample(t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) chunks.Sample {
 	return sample{t, v, h, fh}
 }
 
@@ -1967,7 +1966,8 @@ type memSeries struct {
 
 	mmMaxTime int64 // Max time of any mmapped chunk, only used during WAL replay.
 
-	nextAt int64 // Timestamp at which to cut the next chunk.
+	nextAt                           int64 // Timestamp at which to cut the next chunk.
+	histogramChunkHasComputedEndTime bool  // True if nextAt has been predicted for the current histograms chunk; false otherwise.
 
 	// We keep the last value here (in addition to appending it to the chunk) so we can check for duplicates.
 	lastValue float64

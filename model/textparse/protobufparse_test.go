@@ -1779,6 +1779,7 @@ func TestProtobufParse(t *testing.T) {
 					} else {
 						require.Equal(t, true, found, "i: %d", i)
 						require.Equal(t, exp[i].e[0], e, "i: %d", i)
+						require.False(t, p.Exemplar(&e), "too many exemplars returned, i: %d", i)
 					}
 
 				case EntryHistogram:
