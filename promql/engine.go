@@ -1434,7 +1434,8 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		if !matrixArg {
 			// Does not have a matrix argument.
 			return ev.rangeEval(nil, func(v []parser.Value, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, storage.Warnings) {
-				return call(v, e.Args, enh), warnings
+				vec, notes := call(v, e.Args, enh)
+				return vec, append(warnings, notes.warnings...)
 			}, e.Args...)
 		}
 
@@ -1522,8 +1523,10 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 				inMatrix[0].Histograms = histograms
 				enh.Ts = ts
 				// Make the function call.
-				outVec := call(inArgs, e.Args, enh)
+				outVec, notes := call(inArgs, e.Args, enh)
+				warnings = append(warnings, notes.warnings...)
 				ev.samplesStats.IncrementSamplesAtStep(step, int64(len(floats)+len(histograms)))
+
 				enh.Out = outVec[:0]
 				if len(outVec) > 0 {
 					if outVec[0].H == nil {
@@ -1874,7 +1877,8 @@ func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(vs *parser.Vec
 			}
 		}
 		ev.samplesStats.UpdatePeak(ev.currentSamples)
-		return call([]parser.Value{vec}, e.Args, enh), ws
+		vec, notes := call([]parser.Value{vec}, e.Args, enh)
+		return vec, append(ws, notes.warnings...)
 	})
 }
 
