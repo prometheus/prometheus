@@ -47,25 +47,25 @@ func (c *lazyGenericSeriesSet) At() Labels {
 	return nil
 }
 
-func (c *lazyGenericSeriesSet) Warnings() annotations.Warnings {
+func (c *lazyGenericSeriesSet) Warnings() annotations.Annotations {
 	if c.set != nil {
 		return c.set.Warnings()
 	}
 	return nil
 }
 
-type warningsOnlySeriesSet annotations.Warnings
+type warningsOnlySeriesSet annotations.Annotations
 
-func (warningsOnlySeriesSet) Next() bool                       { return false }
-func (warningsOnlySeriesSet) Err() error                       { return nil }
-func (warningsOnlySeriesSet) At() Labels                       { return nil }
-func (c warningsOnlySeriesSet) Warnings() annotations.Warnings { return annotations.Warnings(c) }
+func (warningsOnlySeriesSet) Next() bool                          { return false }
+func (warningsOnlySeriesSet) Err() error                          { return nil }
+func (warningsOnlySeriesSet) At() Labels                          { return nil }
+func (c warningsOnlySeriesSet) Warnings() annotations.Annotations { return annotations.Annotations(c) }
 
 type errorOnlySeriesSet struct {
 	err error
 }
 
-func (errorOnlySeriesSet) Next() bool                     { return false }
-func (errorOnlySeriesSet) At() Labels                     { return nil }
-func (s errorOnlySeriesSet) Err() error                   { return s.err }
-func (errorOnlySeriesSet) Warnings() annotations.Warnings { return nil }
+func (errorOnlySeriesSet) Next() bool                        { return false }
+func (errorOnlySeriesSet) At() Labels                        { return nil }
+func (s errorOnlySeriesSet) Err() error                      { return s.err }
+func (errorOnlySeriesSet) Warnings() annotations.Annotations { return nil }

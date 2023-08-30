@@ -30,7 +30,7 @@ type genericSeriesSet interface {
 	Next() bool
 	At() Labels
 	Err() error
-	Warnings() annotations.Warnings
+	Warnings() annotations.Annotations
 }
 
 type genericSeriesMergeFunc func(...Labels) Labels
@@ -138,4 +138,4 @@ func (noopGenericSeriesSet) At() Labels { return nil }
 
 func (noopGenericSeriesSet) Err() error { return nil }
 
-func (noopGenericSeriesSet) Warnings() annotations.Warnings { return nil }
+func (noopGenericSeriesSet) Warnings() annotations.Annotations { return nil }

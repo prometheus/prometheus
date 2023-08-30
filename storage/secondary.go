@@ -48,18 +48,18 @@ func newSecondaryQuerierFromChunk(cq ChunkQuerier) genericQuerier {
 	return &secondaryQuerier{genericQuerier: newGenericQuerierFromChunk(cq)}
 }
 
-func (s *secondaryQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, annotations.Warnings, error) {
+func (s *secondaryQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	vals, w, err := s.genericQuerier.LabelValues(name, matchers...)
 	if err != nil {
-		return nil, append([]error{err}, w...), nil
+		return nil, annotations.InitAnnotationsAndMerge(err, w), nil
 	}
 	return vals, w, nil
 }
 
-func (s *secondaryQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, annotations.Warnings, error) {
+func (s *secondaryQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	names, w, err := s.genericQuerier.LabelNames(matchers...)
 	if err != nil {
-		return nil, append([]error{err}, w...), nil
+		return nil, annotations.InitAnnotationsAndMerge(err, w), nil
 	}
 	return names, w, nil
 }
@@ -83,7 +83,7 @@ func (s *secondaryQuerier) Select(sortSeries bool, hints *SelectHints, matchers 
 				if err := set.Err(); err != nil {
 					// One of the sets failed, ensure current one returning errors as warnings, and rest of the sets return nothing.
 					// (All or nothing logic).
-					s.asyncSets[curr] = warningsOnlySeriesSet(append([]error{err}, ws...))
+					s.asyncSets[curr] = warningsOnlySeriesSet(annotations.InitAnnotationsAndMerge(err, ws))
 					for i := range s.asyncSets {
 						if curr == i {
 							continue

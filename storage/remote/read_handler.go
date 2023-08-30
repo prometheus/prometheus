@@ -155,7 +155,7 @@ func (h *readHandler) remoteReadSamples(
 				}
 			}
 
-			var ws annotations.Warnings
+			var ws annotations.Annotations
 			resp.Results[i], ws, err = ToQueryResult(querier.Select(false, hints, filteredMatchers...), h.remoteReadSampleLimit)
 			if err != nil {
 				return err

@@ -89,7 +89,7 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 
 	metricName := samples.Metric.Get(labels.MetricName)
 	if isCounter && !strings.HasSuffix(metricName, "_total") && !strings.HasSuffix(metricName, "_sum") && !strings.HasSuffix(metricName, "_count") {
-		annos.AddWarning(annotations.NewPossibleNonCounterWarning(metricName))
+		annos.AddAnnotation(annotations.NewPossibleNonCounterInfo(metricName))
 	}
 
 	switch {
@@ -184,7 +184,7 @@ func histogramRate(points []HPoint, isCounter bool, metricName string) (*histogr
 	prev := points[0].H
 	last := points[len(points)-1].H
 	if last == nil {
-		return nil, annotations.CreateAnnotationsWithWarning(annotations.NewMixedFloatsHistogramsWarning(metricName))
+		return nil, annotations.InitAnnotations(annotations.NewMixedFloatsHistogramsWarning(metricName))
 	}
 	minSchema := prev.Schema
 	if last.Schema < minSchema {
@@ -199,7 +199,7 @@ func histogramRate(points []HPoint, isCounter bool, metricName string) (*histogr
 	for _, currPoint := range points[1 : len(points)-1] {
 		curr := currPoint.H
 		if curr == nil {
-			return nil, annotations.CreateAnnotationsWithWarning(annotations.NewMixedFloatsHistogramsWarning(metricName))
+			return nil, annotations.InitAnnotations(annotations.NewMixedFloatsHistogramsWarning(metricName))
 		}
 		// TODO(trevorwhitney): Check if isCounter is consistent with curr.CounterResetHint.
 		if !isCounter {
@@ -464,7 +464,7 @@ func funcAvgOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 	firstSeries := vals[0].(Matrix)[0]
 	if len(firstSeries.Floats) > 0 && len(firstSeries.Histograms) > 0 {
 		metricName := firstSeries.Metric.Get(labels.MetricName)
-		return enh.Out, annotations.CreateAnnotationsWithWarning(annotations.NewMixedFloatsHistogramsWarning(metricName))
+		return enh.Out, annotations.InitAnnotations(annotations.NewMixedFloatsHistogramsWarning(metricName))
 	}
 	if len(firstSeries.Floats) == 0 {
 		// The passed values only contain histograms.
@@ -597,7 +597,7 @@ func funcSumOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 	firstSeries := vals[0].(Matrix)[0]
 	if len(firstSeries.Floats) > 0 && len(firstSeries.Histograms) > 0 {
 		metricName := firstSeries.Metric.Get(labels.MetricName)
-		return enh.Out, annotations.CreateAnnotationsWithWarning(annotations.NewMixedFloatsHistogramsWarning(metricName))
+		return enh.Out, annotations.InitAnnotations(annotations.NewMixedFloatsHistogramsWarning(metricName))
 	}
 	if len(firstSeries.Floats) == 0 {
 		// The passed values only contain histograms.
@@ -641,7 +641,7 @@ func funcQuantileOverTime(vals []parser.Value, args parser.Expressions, enh *Eva
 
 	annos := annotations.Annotations{}
 	if math.IsNaN(q) || q < 0 || q > 1 {
-		annos.AddWarning(annotations.NewInvalidQuantileWarning(q))
+		annos.AddAnnotation(annotations.NewInvalidQuantileWarning(q))
 	}
 
 	values := make(vectorByValueHeap, 0, len(el.Floats))
@@ -1105,7 +1105,7 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 	annos := annotations.Annotations{}
 
 	if math.IsNaN(q) || q < 0 || q > 1 {
-		annos.AddWarning(annotations.NewInvalidQuantileWarning(q))
+		annos.AddAnnotation(annotations.NewInvalidQuantileWarning(q))
 	}
 
 	if enh.signatureToMetricWithBuckets == nil {
@@ -1130,7 +1130,7 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 			sample.Metric.Get(model.BucketLabel), 64,
 		)
 		if err != nil {
-			annos.AddWarning(annotations.NewBadBucketLabelWarning(sample.Metric.Get(labels.MetricName), sample.Metric.Get(model.BucketLabel)))
+			annos.AddAnnotation(annotations.NewBadBucketLabelWarning(sample.Metric.Get(labels.MetricName), sample.Metric.Get(model.BucketLabel)))
 			continue
 		}
 		enh.lblBuf = sample.Metric.BytesWithoutLabels(enh.lblBuf, labels.BucketLabel)
@@ -1156,7 +1156,7 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 			// At this data point, we have conventional histogram
 			// buckets and a native histogram with the same name and
 			// labels. Do not evaluate anything.
-			annos.AddWarning(annotations.NewMixedOldNewHistogramsWarning(sample.Metric.Get(labels.MetricName)))
+			annos.AddAnnotation(annotations.NewMixedOldNewHistogramsWarning(sample.Metric.Get(labels.MetricName)))
 			delete(enh.signatureToMetricWithBuckets, string(enh.lblBuf))
 			continue
 		}

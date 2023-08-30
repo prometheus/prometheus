@@ -35,7 +35,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/annotations"
-	"github.com/prometheus/prometheus/util/notes"
 	"github.com/prometheus/prometheus/util/stats"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
@@ -200,11 +199,11 @@ func (q *errQuerier) Select(bool, *storage.SelectHints, ...*labels.Matcher) stor
 	return errSeriesSet{err: q.err}
 }
 
-func (*errQuerier) LabelValues(string, ...*labels.Matcher) ([]string, annotations.Warnings, error) {
+func (*errQuerier) LabelValues(string, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }
 
-func (*errQuerier) LabelNames(...*labels.Matcher) ([]string, annotations.Warnings, error) {
+func (*errQuerier) LabelNames(...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }
 func (*errQuerier) Close() error { return nil }
@@ -214,10 +213,10 @@ type errSeriesSet struct {
 	err error
 }
 
-func (errSeriesSet) Next() bool                       { return false }
-func (errSeriesSet) At() storage.Series               { return nil }
-func (e errSeriesSet) Err() error                     { return e.err }
-func (e errSeriesSet) Warnings() annotations.Warnings { return nil }
+func (errSeriesSet) Next() bool                          { return false }
+func (errSeriesSet) At() storage.Series                  { return nil }
+func (e errSeriesSet) Err() error                        { return e.err }
+func (e errSeriesSet) Warnings() annotations.Annotations { return nil }
 
 func TestQueryError(t *testing.T) {
 	opts := EngineOpts{
@@ -1677,9 +1676,9 @@ func TestRecoverEvaluatorError(t *testing.T) {
 func TestRecoverEvaluatorErrorWithWarnings(t *testing.T) {
 	ev := &evaluator{logger: log.NewNopLogger()}
 	var err error
-	var ws annotations.Warnings
+	var ws annotations.Annotations
 
-	warnings := annotations.Warnings{errors.New("custom warning")}
+	warnings := annotations.InitAnnotations(errors.New("custom warning"))
 	e := errWithWarnings{
 		err:      errors.New("custom error"),
 		warnings: warnings,

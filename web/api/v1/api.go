@@ -162,7 +162,7 @@ type Response struct {
 type apiFuncResult struct {
 	data      interface{}
 	err       *apiError
-	warnings  annotations.Warnings
+	warnings  annotations.Annotations
 	finalizer func()
 }
 
@@ -668,7 +668,7 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 
 	var (
 		names    []string
-		warnings annotations.Warnings
+		warnings annotations.Annotations
 	)
 	if len(matcherSets) > 0 {
 		labelNamesSet := make(map[string]struct{})
@@ -679,7 +679,7 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 				return apiFuncResult{nil, returnAPIError(err), warnings, nil}
 			}
 
-			warnings = append(warnings, callWarnings...)
+			warnings.Merge(callWarnings)
 			for _, val := range vals {
 				labelNamesSet[val] = struct{}{}
 			}
@@ -744,17 +744,17 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 
 	var (
 		vals     []string
-		warnings annotations.Warnings
+		warnings annotations.Annotations
 	)
 	if len(matcherSets) > 0 {
-		var callWarnings annotations.Warnings
+		var callWarnings annotations.Annotations
 		labelValuesSet := make(map[string]struct{})
 		for _, matchers := range matcherSets {
 			vals, callWarnings, err = q.LabelValues(name, matchers...)
 			if err != nil {
 				return apiFuncResult{nil, &apiError{errorExec, err}, warnings, closer}
 			}
-			warnings = append(warnings, callWarnings...)
+			warnings.Merge(callWarnings)
 			for _, val := range vals {
 				labelValuesSet[val] = struct{}{}
 			}
@@ -1684,23 +1684,13 @@ func (api *API) cleanTombstones(*http.Request) apiFuncResult {
 	return apiFuncResult{nil, nil, nil, nil}
 }
 
-func (api *API) respond(w http.ResponseWriter, req *http.Request, data interface{}, warnings annotations.Warnings) {
+func (api *API) respond(w http.ResponseWriter, req *http.Request, data interface{}, warnings annotations.Annotations) {
 	statusMessage := statusSuccess
-	var warningStrings []string
-	warningStringsMap := make(map[string]struct{})
-	for _, warning := range warnings {
-		warningStr := warning.Error()
-		_, ok := warningStringsMap[warningStr]
-		if !ok {
-			warningStrings = append(warningStrings, warningStr)
-			warningStringsMap[warningStr] = struct{}{}
-		}
-	}
 
 	resp := &Response{
 		Status:   statusMessage,
 		Data:     data,
-		Warnings: warningStrings,
+		Warnings: warnings.AsStrArray(),
 	}
 
 	codec, err := api.negotiateCodec(req, resp)

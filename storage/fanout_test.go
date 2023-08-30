@@ -234,11 +234,11 @@ func (errQuerier) Select(bool, *storage.SelectHints, ...*labels.Matcher) storage
 	return storage.ErrSeriesSet(errSelect)
 }
 
-func (errQuerier) LabelValues(string, ...*labels.Matcher) ([]string, annotations.Warnings, error) {
+func (errQuerier) LabelValues(string, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, errors.New("label values error")
 }
 
-func (errQuerier) LabelNames(...*labels.Matcher) ([]string, annotations.Warnings, error) {
+func (errQuerier) LabelNames(...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, errors.New("label names error")
 }
 

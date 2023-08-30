@@ -475,7 +475,7 @@ func TestSampleAndChunkQueryableClient(t *testing.T) {
 
 			ss := q.Select(true, nil, tc.matchers...)
 			require.NoError(t, err)
-			require.Equal(t, annotations.Warnings(nil), ss.Warnings())
+			require.Equal(t, annotations.Annotations(nil), ss.Warnings())
 
 			require.Equal(t, tc.expectedQuery, m.got)
 

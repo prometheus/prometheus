@@ -777,7 +777,7 @@ func (m *mockSeriesSet) At() Series { return m.series[m.idx] }
 
 func (m *mockSeriesSet) Err() error { return nil }
 
-func (m *mockSeriesSet) Warnings() annotations.Warnings { return nil }
+func (m *mockSeriesSet) Warnings() annotations.Annotations { return nil }
 
 type mockChunkSeriesSet struct {
 	idx    int
@@ -800,7 +800,7 @@ func (m *mockChunkSeriesSet) At() ChunkSeries { return m.series[m.idx] }
 
 func (m *mockChunkSeriesSet) Err() error { return nil }
 
-func (m *mockChunkSeriesSet) Warnings() annotations.Warnings { return nil }
+func (m *mockChunkSeriesSet) Warnings() annotations.Annotations { return nil }
 
 func TestChainSampleIterator(t *testing.T) {
 	for _, tc := range []struct {
@@ -974,7 +974,7 @@ type mockGenericQuerier struct {
 	sortedSeriesRequested []bool
 
 	resp     []string
-	warnings annotations.Warnings
+	warnings annotations.Annotations
 	err      error
 }
 
@@ -990,7 +990,7 @@ func (m *mockGenericQuerier) Select(b bool, _ *SelectHints, _ ...*labels.Matcher
 	return &mockGenericSeriesSet{resp: m.resp, warnings: m.warnings, err: m.err}
 }
 
-func (m *mockGenericQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, annotations.Warnings, error) {
+func (m *mockGenericQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	m.mtx.Lock()
 	m.labelNamesRequested = append(m.labelNamesRequested, labelNameRequest{
 		name:     name,
@@ -1000,7 +1000,7 @@ func (m *mockGenericQuerier) LabelValues(name string, matchers ...*labels.Matche
 	return m.resp, m.warnings, m.err
 }
 
-func (m *mockGenericQuerier) LabelNames(...*labels.Matcher) ([]string, annotations.Warnings, error) {
+func (m *mockGenericQuerier) LabelNames(...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	m.mtx.Lock()
 	m.labelNamesCalls++
 	m.mtx.Unlock()
@@ -1014,7 +1014,7 @@ func (m *mockGenericQuerier) Close() error {
 
 type mockGenericSeriesSet struct {
 	resp     []string
-	warnings annotations.Warnings
+	warnings annotations.Annotations
 	err      error
 
 	curr int
@@ -1031,8 +1031,8 @@ func (m *mockGenericSeriesSet) Next() bool {
 	return true
 }
 
-func (m *mockGenericSeriesSet) Err() error                     { return m.err }
-func (m *mockGenericSeriesSet) Warnings() annotations.Warnings { return m.warnings }
+func (m *mockGenericSeriesSet) Err() error                        { return m.err }
+func (m *mockGenericSeriesSet) Warnings() annotations.Annotations { return m.warnings }
 
 func (m *mockGenericSeriesSet) At() Labels {
 	return mockLabels(m.resp[m.curr-1])
@@ -1067,7 +1067,7 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 		expectedSelectsSeries []labels.Labels
 		expectedLabels        []string
 
-		expectedWarnings [4]annotations.Warnings
+		expectedWarnings [4]annotations.Annotations
 		expectedErrs     [4]error
 	}{
 		{},
@@ -1145,7 +1145,7 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 				labels.FromStrings("test", "a"),
 			},
 			expectedLabels: []string{"a"},
-			expectedWarnings: [4]annotations.Warnings{
+			expectedWarnings: [4]annotations.Annotations{
 				[]error{errStorage, errStorage},
 				[]error{errStorage, errStorage},
 				[]error{errStorage, errStorage},
@@ -1163,7 +1163,7 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 				labels.FromStrings("test", "b"),
 			},
 			expectedLabels: []string{"a", "b"},
-			expectedWarnings: [4]annotations.Warnings{
+			expectedWarnings: [4]annotations.Annotations{
 				[]error{warnStorage, warnStorage},
 				[]error{warnStorage, warnStorage},
 				[]error{warnStorage, warnStorage},

@@ -811,7 +811,7 @@ func (c *mockChunkSeriesSet) At() storage.ChunkSeries {
 	}
 }
 
-func (c *mockChunkSeriesSet) Warnings() annotations.Warnings { return nil }
+func (c *mockChunkSeriesSet) Warnings() annotations.Annotations { return nil }
 
 func (c *mockChunkSeriesSet) Err() error {
 	return nil

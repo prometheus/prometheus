@@ -158,7 +158,7 @@ func (l labelGenericQueriers) SplitByHalf() (labelGenericQueriers, labelGenericQ
 // LabelValues returns all potential values for a label name.
 // If matchers are specified the returned result set is reduced
 // to label values of metrics matching the matchers.
-func (q *mergeGenericQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, annotations.Warnings, error) {
+func (q *mergeGenericQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	res, ws, err := q.lvals(q.queriers, name, matchers...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("LabelValues() from merge generic querier for label %s: %w", name, err)
@@ -167,7 +167,7 @@ func (q *mergeGenericQuerier) LabelValues(name string, matchers ...*labels.Match
 }
 
 // lvals performs merge sort for LabelValues from multiple queriers.
-func (q *mergeGenericQuerier) lvals(lq labelGenericQueriers, n string, matchers ...*labels.Matcher) ([]string, annotations.Warnings, error) {
+func (q *mergeGenericQuerier) lvals(lq labelGenericQueriers, n string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	if lq.Len() == 0 {
 		return nil, nil, nil
 	}
@@ -176,14 +176,14 @@ func (q *mergeGenericQuerier) lvals(lq labelGenericQueriers, n string, matchers 
 	}
 	a, b := lq.SplitByHalf()
 
-	var ws annotations.Warnings
+	var ws annotations.Annotations
 	s1, w, err := q.lvals(a, n, matchers...)
-	ws = append(ws, w...)
+	ws.Merge(w)
 	if err != nil {
 		return nil, ws, err
 	}
 	s2, ws, err := q.lvals(b, n, matchers...)
-	ws = append(ws, w...)
+	ws.Merge(w)
 	if err != nil {
 		return nil, ws, err
 	}
@@ -218,16 +218,16 @@ func mergeStrings(a, b []string) []string {
 }
 
 // LabelNames returns all the unique label names present in all queriers in sorted order.
-func (q *mergeGenericQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, annotations.Warnings, error) {
+func (q *mergeGenericQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	var (
 		labelNamesMap = make(map[string]struct{})
-		warnings      annotations.Warnings
+		warnings      annotations.Annotations
 	)
 	for _, querier := range q.queriers {
 		names, wrn, err := querier.LabelNames(matchers...)
 		if wrn != nil {
 			// TODO(bwplotka): We could potentially wrap warnings.
-			warnings = append(warnings, wrn...)
+			warnings.Merge(wrn)
 		}
 		if err != nil {
 			return nil, nil, fmt.Errorf("LabelNames() from merge generic querier: %w", err)
@@ -382,10 +382,10 @@ func (c *genericMergeSeriesSet) Err() error {
 	return nil
 }
 
-func (c *genericMergeSeriesSet) Warnings() annotations.Warnings {
-	var ws annotations.Warnings
+func (c *genericMergeSeriesSet) Warnings() annotations.Annotations {
+	var ws annotations.Annotations
 	for _, set := range c.sets {
-		ws = append(ws, set.Warnings()...)
+		ws.Merge(set.Warnings())
 	}
 	return ws
 }

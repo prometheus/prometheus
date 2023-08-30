@@ -303,7 +303,7 @@ func (m Matrix) ContainsSameLabelset() bool {
 type Result struct {
 	Err      error
 	Value    parser.Value
-	Warnings annotations.Warnings
+	Warnings annotations.Annotations
 }
 
 // Vector returns a Vector if the result value is one. An error is returned if
