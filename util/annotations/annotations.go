@@ -16,6 +16,8 @@ package annotations
 import (
 	"errors"
 	"fmt"
+
+	"github.com/prometheus/prometheus/promql/parser/position_range"
 )
 
 // Annotations is a general wrapper for warnings and other information
@@ -91,16 +93,13 @@ var (
 	PossibleNonCounterInfo = fmt.Errorf("%w: metric might not be a counter (name does not end in _total/_sum/_count)", PromQLInfo)
 )
 
-func printPositionRange(pos interface{}) string {
-	if pos == nil {
-		return ""
-	}
+func printPositionRange(pos position_range.PositionRange) string {
 	return fmt.Sprintf(" (at %v)", pos)
 }
 
 // NewInvalidQuantileWarning is used when the user specifies an invalid quantile
 // value, i.e. a float that is outside the range [0, 1] or NaN.
-func NewInvalidQuantileWarning(q string, pos interface{}) error {
+func NewInvalidQuantileWarning(q string, pos position_range.PositionRange) error {
 	return fmt.Errorf("%w, not %s%s", InvalidQuantileWarning, q, printPositionRange(pos))
 }
 

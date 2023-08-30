@@ -16,6 +16,7 @@ package parser
 import (
 	"testing"
 
+	"github.com/prometheus/prometheus/promql/parser/position_range"
 	"github.com/stretchr/testify/require"
 )
 
@@ -824,7 +825,7 @@ func TestLexer(t *testing.T) {
 					require.Fail(t, "unexpected lexing error at position %d: %s", lastItem.Pos, lastItem)
 				}
 
-				eofItem := Item{EOF, Pos(len(test.input)), ""}
+				eofItem := Item{EOF, position_range.Pos(len(test.input)), ""}
 				require.Equal(t, lastItem, eofItem, "%d: input %q", i, test.input)
 
 				out = out[:len(out)-1]
