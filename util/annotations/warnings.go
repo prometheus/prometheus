@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package notes
+package annotations
 
 import (
 	"errors"
@@ -20,9 +20,9 @@ import (
 
 type Warnings []error
 
-func (ws Warnings) Merge(notes Notes) Warnings {
-	nws := append(ws, notes.Warnings...)
-	for _, a := range notes.Annotations {
+func (ws Warnings) Merge(a Annotations) Warnings {
+	nws := append(ws, a.Warnings...)
+	for _, a := range a.Info {
 		nws = append(nws, errors.New(a))
 	}
 	return nws

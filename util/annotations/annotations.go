@@ -11,28 +11,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package notes
+package annotations
 
-type Notes struct {
-	Warnings    Warnings
-	Annotations Annotations
+type Annotations struct {
+	Warnings Warnings
+	Info     Info
 }
 
-func (n *Notes) AddWarning(err error) {
-	n.Warnings = append(n.Warnings, err)
+func (a *Annotations) AddWarning(err error) {
+	a.Warnings = append(a.Warnings, err)
 }
 
-func CreateNotesWithWarning(err error) Notes {
-	notes := Notes{}
-	notes.AddWarning(err)
-	return notes
+func CreateAnnotationsWithWarning(err error) Annotations {
+	a := Annotations{}
+	a.AddWarning(err)
+	return a
 }
 
-func (n *Notes) AddAnnotation(txt string) {
-	n.Annotations = append(n.Annotations, txt)
+func (a *Annotations) AddInfo(txt string) {
+	a.Info = append(a.Info, txt)
 }
 
-func (n *Notes) Merge(nn Notes) {
-	n.Warnings = append(n.Warnings, nn.Warnings...)
-	n.Annotations = append(n.Annotations, nn.Annotations...)
+func (a *Annotations) Merge(aa Annotations) {
+	a.Warnings = append(a.Warnings, aa.Warnings...)
+	a.Info = append(a.Info, aa.Info...)
 }

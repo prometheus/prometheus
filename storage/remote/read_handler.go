@@ -27,8 +27,8 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/gate"
-	"github.com/prometheus/prometheus/util/notes"
 )
 
 type readHandler struct {
@@ -155,7 +155,7 @@ func (h *readHandler) remoteReadSamples(
 				}
 			}
 
-			var ws notes.Warnings
+			var ws annotations.Warnings
 			resp.Results[i], ws, err = ToQueryResult(querier.Select(false, hints, filteredMatchers...), h.remoteReadSampleLimit)
 			if err != nil {
 				return err

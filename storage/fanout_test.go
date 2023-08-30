@@ -24,7 +24,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"github.com/prometheus/prometheus/util/notes"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
@@ -234,11 +234,11 @@ func (errQuerier) Select(bool, *storage.SelectHints, ...*labels.Matcher) storage
 	return storage.ErrSeriesSet(errSelect)
 }
 
-func (errQuerier) LabelValues(string, ...*labels.Matcher) ([]string, notes.Warnings, error) {
+func (errQuerier) LabelValues(string, ...*labels.Matcher) ([]string, annotations.Warnings, error) {
 	return nil, nil, errors.New("label values error")
 }
 
-func (errQuerier) LabelNames(...*labels.Matcher) ([]string, notes.Warnings, error) {
+func (errQuerier) LabelNames(...*labels.Matcher) ([]string, annotations.Warnings, error) {
 	return nil, nil, errors.New("label names error")
 }
 

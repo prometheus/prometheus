@@ -36,7 +36,7 @@ import (
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/util/notes"
+	"github.com/prometheus/prometheus/util/annotations"
 )
 
 func TestApiStatusCodes(t *testing.T) {
@@ -171,11 +171,11 @@ type errorTestQuerier struct {
 	err error
 }
 
-func (t errorTestQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, notes.Warnings, error) {
+func (t errorTestQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, annotations.Warnings, error) {
 	return nil, nil, t.err
 }
 
-func (t errorTestQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, notes.Warnings, error) {
+func (t errorTestQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, annotations.Warnings, error) {
 	return nil, nil, t.err
 }
 
@@ -206,7 +206,7 @@ func (t errorTestSeriesSet) Err() error {
 	return t.err
 }
 
-func (t errorTestSeriesSet) Warnings() notes.Warnings {
+func (t errorTestSeriesSet) Warnings() annotations.Warnings {
 	return nil
 }
 

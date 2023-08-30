@@ -24,7 +24,7 @@ import (
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/prometheus/prometheus/util/notes"
+	"github.com/prometheus/prometheus/util/annotations"
 )
 
 // The errors exposed.
@@ -119,11 +119,11 @@ type MockQuerier struct {
 	SelectMockFunction func(sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) SeriesSet
 }
 
-func (q *MockQuerier) LabelValues(string, ...*labels.Matcher) ([]string, notes.Warnings, error) {
+func (q *MockQuerier) LabelValues(string, ...*labels.Matcher) ([]string, annotations.Warnings, error) {
 	return nil, nil, nil
 }
 
-func (q *MockQuerier) LabelNames(...*labels.Matcher) ([]string, notes.Warnings, error) {
+func (q *MockQuerier) LabelNames(...*labels.Matcher) ([]string, annotations.Warnings, error) {
 	return nil, nil, nil
 }
 
@@ -158,12 +158,12 @@ type LabelQuerier interface {
 	// It is not safe to use the strings beyond the lifetime of the querier.
 	// If matchers are specified the returned result set is reduced
 	// to label values of metrics matching the matchers.
-	LabelValues(name string, matchers ...*labels.Matcher) ([]string, notes.Warnings, error)
+	LabelValues(name string, matchers ...*labels.Matcher) ([]string, annotations.Warnings, error)
 
 	// LabelNames returns all the unique label names present in the block in sorted order.
 	// If matchers are specified the returned result set is reduced
 	// to label names of metrics matching the matchers.
-	LabelNames(matchers ...*labels.Matcher) ([]string, notes.Warnings, error)
+	LabelNames(matchers ...*labels.Matcher) ([]string, annotations.Warnings, error)
 
 	// Close releases the resources of the Querier.
 	Close() error
@@ -308,7 +308,7 @@ type SeriesSet interface {
 	Err() error
 	// A collection of warnings for the whole set.
 	// Warnings could be return even iteration has not failed with error.
-	Warnings() notes.Warnings
+	Warnings() annotations.Warnings
 }
 
 var emptySeriesSet = errSeriesSet{}
@@ -322,10 +322,10 @@ type testSeriesSet struct {
 	series Series
 }
 
-func (s testSeriesSet) Next() bool               { return true }
-func (s testSeriesSet) At() Series               { return s.series }
-func (s testSeriesSet) Err() error               { return nil }
-func (s testSeriesSet) Warnings() notes.Warnings { return nil }
+func (s testSeriesSet) Next() bool                     { return true }
+func (s testSeriesSet) At() Series                     { return s.series }
+func (s testSeriesSet) Err() error                     { return nil }
+func (s testSeriesSet) Warnings() annotations.Warnings { return nil }
 
 // TestSeriesSet returns a mock series set
 func TestSeriesSet(series Series) SeriesSet {
@@ -336,10 +336,10 @@ type errSeriesSet struct {
 	err error
 }
 
-func (s errSeriesSet) Next() bool               { return false }
-func (s errSeriesSet) At() Series               { return nil }
-func (s errSeriesSet) Err() error               { return s.err }
-func (s errSeriesSet) Warnings() notes.Warnings { return nil }
+func (s errSeriesSet) Next() bool                     { return false }
+func (s errSeriesSet) At() Series                     { return nil }
+func (s errSeriesSet) Err() error                     { return s.err }
+func (s errSeriesSet) Warnings() annotations.Warnings { return nil }
 
 // ErrSeriesSet returns a series set that wraps an error.
 func ErrSeriesSet(err error) SeriesSet {
@@ -357,10 +357,10 @@ type errChunkSeriesSet struct {
 	err error
 }
 
-func (s errChunkSeriesSet) Next() bool               { return false }
-func (s errChunkSeriesSet) At() ChunkSeries          { return nil }
-func (s errChunkSeriesSet) Err() error               { return s.err }
-func (s errChunkSeriesSet) Warnings() notes.Warnings { return nil }
+func (s errChunkSeriesSet) Next() bool                     { return false }
+func (s errChunkSeriesSet) At() ChunkSeries                { return nil }
+func (s errChunkSeriesSet) Err() error                     { return s.err }
+func (s errChunkSeriesSet) Warnings() annotations.Warnings { return nil }
 
 // ErrChunkSeriesSet returns a chunk series set that wraps an error.
 func ErrChunkSeriesSet(err error) ChunkSeriesSet {
@@ -406,7 +406,7 @@ type ChunkSeriesSet interface {
 	Err() error
 	// A collection of warnings for the whole set.
 	// Warnings could be return even iteration has not failed with error.
-	Warnings() notes.Warnings
+	Warnings() annotations.Warnings
 }
 
 // ChunkSeries exposes a single time series and allows iterating over chunks.

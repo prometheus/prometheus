@@ -15,7 +15,7 @@ package storage
 
 import (
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/util/notes"
+	"github.com/prometheus/prometheus/util/annotations"
 )
 
 type noopQuerier struct{}
@@ -29,11 +29,11 @@ func (noopQuerier) Select(bool, *SelectHints, ...*labels.Matcher) SeriesSet {
 	return NoopSeriesSet()
 }
 
-func (noopQuerier) LabelValues(string, ...*labels.Matcher) ([]string, notes.Warnings, error) {
+func (noopQuerier) LabelValues(string, ...*labels.Matcher) ([]string, annotations.Warnings, error) {
 	return nil, nil, nil
 }
 
-func (noopQuerier) LabelNames(...*labels.Matcher) ([]string, notes.Warnings, error) {
+func (noopQuerier) LabelNames(...*labels.Matcher) ([]string, annotations.Warnings, error) {
 	return nil, nil, nil
 }
 
@@ -52,11 +52,11 @@ func (noopChunkQuerier) Select(bool, *SelectHints, ...*labels.Matcher) ChunkSeri
 	return NoopChunkedSeriesSet()
 }
 
-func (noopChunkQuerier) LabelValues(string, ...*labels.Matcher) ([]string, notes.Warnings, error) {
+func (noopChunkQuerier) LabelValues(string, ...*labels.Matcher) ([]string, annotations.Warnings, error) {
 	return nil, nil, nil
 }
 
-func (noopChunkQuerier) LabelNames(...*labels.Matcher) ([]string, notes.Warnings, error) {
+func (noopChunkQuerier) LabelNames(...*labels.Matcher) ([]string, annotations.Warnings, error) {
 	return nil, nil, nil
 }
 
@@ -77,7 +77,7 @@ func (noopSeriesSet) At() Series { return nil }
 
 func (noopSeriesSet) Err() error { return nil }
 
-func (noopSeriesSet) Warnings() notes.Warnings { return nil }
+func (noopSeriesSet) Warnings() annotations.Warnings { return nil }
 
 type noopChunkedSeriesSet struct{}
 
@@ -92,4 +92,4 @@ func (noopChunkedSeriesSet) At() ChunkSeries { return nil }
 
 func (noopChunkedSeriesSet) Err() error { return nil }
 
-func (noopChunkedSeriesSet) Warnings() notes.Warnings { return nil }
+func (noopChunkedSeriesSet) Warnings() annotations.Warnings { return nil }

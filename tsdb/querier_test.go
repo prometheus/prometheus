@@ -38,21 +38,21 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
-	"github.com/prometheus/prometheus/util/notes"
+	"github.com/prometheus/prometheus/util/annotations"
 )
 
 // TODO(bwplotka): Replace those mocks with remote.concreteSeriesSet.
 type mockSeriesSet struct {
 	next   func() bool
 	series func() storage.Series
-	ws     func() notes.Warnings
+	ws     func() annotations.Warnings
 	err    func() error
 }
 
-func (m *mockSeriesSet) Next() bool               { return m.next() }
-func (m *mockSeriesSet) At() storage.Series       { return m.series() }
-func (m *mockSeriesSet) Err() error               { return m.err() }
-func (m *mockSeriesSet) Warnings() notes.Warnings { return m.ws() }
+func (m *mockSeriesSet) Next() bool                     { return m.next() }
+func (m *mockSeriesSet) At() storage.Series             { return m.series() }
+func (m *mockSeriesSet) Err() error                     { return m.err() }
+func (m *mockSeriesSet) Warnings() annotations.Warnings { return m.ws() }
 
 func newMockSeriesSet(list []storage.Series) *mockSeriesSet {
 	i := -1
@@ -65,21 +65,21 @@ func newMockSeriesSet(list []storage.Series) *mockSeriesSet {
 			return list[i]
 		},
 		err: func() error { return nil },
-		ws:  func() notes.Warnings { return nil },
+		ws:  func() annotations.Warnings { return nil },
 	}
 }
 
 type mockChunkSeriesSet struct {
 	next   func() bool
 	series func() storage.ChunkSeries
-	ws     func() notes.Warnings
+	ws     func() annotations.Warnings
 	err    func() error
 }
 
-func (m *mockChunkSeriesSet) Next() bool               { return m.next() }
-func (m *mockChunkSeriesSet) At() storage.ChunkSeries  { return m.series() }
-func (m *mockChunkSeriesSet) Err() error               { return m.err() }
-func (m *mockChunkSeriesSet) Warnings() notes.Warnings { return m.ws() }
+func (m *mockChunkSeriesSet) Next() bool                     { return m.next() }
+func (m *mockChunkSeriesSet) At() storage.ChunkSeries        { return m.series() }
+func (m *mockChunkSeriesSet) Err() error                     { return m.err() }
+func (m *mockChunkSeriesSet) Warnings() annotations.Warnings { return m.ws() }
 
 func newMockChunkSeriesSet(list []storage.ChunkSeries) *mockChunkSeriesSet {
 	i := -1
@@ -92,7 +92,7 @@ func newMockChunkSeriesSet(list []storage.ChunkSeries) *mockChunkSeriesSet {
 			return list[i]
 		},
 		err: func() error { return nil },
-		ws:  func() notes.Warnings { return nil },
+		ws:  func() annotations.Warnings { return nil },
 	}
 }
 

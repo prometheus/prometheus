@@ -51,8 +51,8 @@ import (
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/httputil"
-	"github.com/prometheus/prometheus/util/notes"
 	"github.com/prometheus/prometheus/util/stats"
 )
 
@@ -162,7 +162,7 @@ type Response struct {
 type apiFuncResult struct {
 	data      interface{}
 	err       *apiError
-	warnings  notes.Warnings
+	warnings  annotations.Warnings
 	finalizer func()
 }
 
@@ -668,7 +668,7 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 
 	var (
 		names    []string
-		warnings notes.Warnings
+		warnings annotations.Warnings
 	)
 	if len(matcherSets) > 0 {
 		labelNamesSet := make(map[string]struct{})
@@ -744,10 +744,10 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 
 	var (
 		vals     []string
-		warnings notes.Warnings
+		warnings annotations.Warnings
 	)
 	if len(matcherSets) > 0 {
-		var callWarnings notes.Warnings
+		var callWarnings annotations.Warnings
 		labelValuesSet := make(map[string]struct{})
 		for _, matchers := range matcherSets {
 			vals, callWarnings, err = q.LabelValues(name, matchers...)
@@ -1684,7 +1684,7 @@ func (api *API) cleanTombstones(*http.Request) apiFuncResult {
 	return apiFuncResult{nil, nil, nil, nil}
 }
 
-func (api *API) respond(w http.ResponseWriter, req *http.Request, data interface{}, warnings notes.Warnings) {
+func (api *API) respond(w http.ResponseWriter, req *http.Request, data interface{}, warnings annotations.Warnings) {
 	statusMessage := statusSuccess
 	isEmptyResult := false
 	structData, ok := data.(*QueryData)
@@ -1697,7 +1697,7 @@ func (api *API) respond(w http.ResponseWriter, req *http.Request, data interface
 		warningStr := warning.Error()
 		_, ok := warningStringsMap[warningStr]
 		if !ok {
-			if isEmptyResult || !notes.IsForEmptyResultOnly(warning) {
+			if isEmptyResult || !annotations.IsForEmptyResultOnly(warning) {
 				// Hide warnings like RangeTooShortWarning when result is not empty.
 				warningStrings = append(warningStrings, warningStr)
 			}
