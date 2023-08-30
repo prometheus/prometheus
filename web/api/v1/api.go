@@ -1686,21 +1686,13 @@ func (api *API) cleanTombstones(*http.Request) apiFuncResult {
 
 func (api *API) respond(w http.ResponseWriter, req *http.Request, data interface{}, warnings annotations.Warnings) {
 	statusMessage := statusSuccess
-	isEmptyResult := false
-	structData, ok := data.(*QueryData)
-	if ok {
-		isEmptyResult = structData.Result.String() == ""
-	}
 	var warningStrings []string
 	warningStringsMap := make(map[string]struct{})
 	for _, warning := range warnings {
 		warningStr := warning.Error()
 		_, ok := warningStringsMap[warningStr]
 		if !ok {
-			if isEmptyResult || !annotations.IsForEmptyResultOnly(warning) {
-				// Hide warnings like RangeTooShortWarning when result is not empty.
-				warningStrings = append(warningStrings, warningStr)
-			}
+			warningStrings = append(warningStrings, warningStr)
 			warningStringsMap[warningStr] = struct{}{}
 		}
 	}

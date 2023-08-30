@@ -30,18 +30,12 @@ func (ws Warnings) Merge(a Annotations) Warnings {
 
 //nolint:revive // Ignore ST1012
 var (
-	RangeTooShortWarning = errors.New("need at least 2 points to compute, perhaps time range is too short")
-
 	InvalidQuantileWarning       = errors.New("quantile value should be between 0 and 1")
 	BadBucketLabelWarning        = errors.New("no bucket label or malformed label value")
 	PossibleNonCounterWarning    = errors.New("metric might not be a counter (name does not end in _total/_sum/_count)")
 	MixedFloatsHistogramsWarning = errors.New("range contains a mix of histograms and floats")
 	MixedOldNewHistogramsWarning = errors.New("range contains a mix of conventional and native histograms")
 )
-
-func IsForEmptyResultOnly(err error) bool {
-	return errors.Is(err, RangeTooShortWarning)
-}
 
 func NewInvalidQuantileWarning(q float64) error {
 	return fmt.Errorf("%w not %.02f", InvalidQuantileWarning, q)

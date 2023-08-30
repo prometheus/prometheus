@@ -122,7 +122,7 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 			prevValue = currPoint.F
 		}
 	default:
-		annos.AddWarning(annotations.RangeTooShortWarning)
+		// TODO: add RangeTooShortWarning
 		return enh.Out, annos
 	}
 
@@ -257,8 +257,9 @@ func instantValue(vals []parser.Value, out Vector, isRate bool) (Vector, annotat
 	samples := vals[0].(Matrix)[0]
 	// No sense in trying to compute a rate without at least two points. Drop
 	// this Vector element.
+	// TODO: add RangeTooShortWarning
 	if len(samples.Floats) < 2 {
-		return out, annotations.CreateAnnotationsWithWarning(annotations.RangeTooShortWarning)
+		return out, annotations.Annotations{}
 	}
 
 	lastSample := samples.Floats[len(samples.Floats)-1]
