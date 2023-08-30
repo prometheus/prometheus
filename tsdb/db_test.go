@@ -1933,7 +1933,7 @@ func TestQuerierWithBoundaryChunks(t *testing.T) {
 	// The requested interval covers 2 blocks, so the querier's label values for blockID should give us 2 values, one from each block.
 	b, ws, err := q.LabelValues("blockID")
 	require.NoError(t, err)
-	require.Equal(t, annotations.Annotations(nil), ws)
+	require.Equal(t, annotations.Annotations{}, ws)
 	require.Equal(t, []string{"1", "2"}, b)
 }
 

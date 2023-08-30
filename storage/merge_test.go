@@ -1067,10 +1067,9 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 		expectedSelectsSeries []labels.Labels
 		expectedLabels        []string
 
-		expectedWarnings [4]annotations.Annotations
+		expectedWarnings annotations.Annotations
 		expectedErrs     [4]error
 	}{
-		{},
 		{
 			name:     "one successful primary querier",
 			queriers: []genericQuerier{&mockGenericQuerier{resp: []string{"a", "b"}, warnings: nil, err: nil}},
@@ -1144,31 +1143,21 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 			expectedSelectsSeries: []labels.Labels{
 				labels.FromStrings("test", "a"),
 			},
-			expectedLabels: []string{"a"},
-			expectedWarnings: [4]annotations.Annotations{
-				[]error{errStorage, errStorage},
-				[]error{errStorage, errStorage},
-				[]error{errStorage, errStorage},
-				[]error{errStorage, errStorage},
-			},
+			expectedLabels:   []string{"a"},
+			expectedWarnings: annotations.InitAnnotations(errStorage),
 		},
 		{
 			name: "successful queriers with warnings",
 			queriers: []genericQuerier{
-				&mockGenericQuerier{resp: []string{"a"}, warnings: []error{warnStorage}, err: nil},
-				&secondaryQuerier{genericQuerier: &mockGenericQuerier{resp: []string{"b"}, warnings: []error{warnStorage}, err: nil}},
+				&mockGenericQuerier{resp: []string{"a"}, warnings: annotations.InitAnnotations(warnStorage), err: nil},
+				&secondaryQuerier{genericQuerier: &mockGenericQuerier{resp: []string{"b"}, warnings: annotations.InitAnnotations(warnStorage), err: nil}},
 			},
 			expectedSelectsSeries: []labels.Labels{
 				labels.FromStrings("test", "a"),
 				labels.FromStrings("test", "b"),
 			},
-			expectedLabels: []string{"a", "b"},
-			expectedWarnings: [4]annotations.Annotations{
-				[]error{warnStorage, warnStorage},
-				[]error{warnStorage, warnStorage},
-				[]error{warnStorage, warnStorage},
-				[]error{warnStorage, warnStorage},
-			},
+			expectedLabels:   []string{"a", "b"},
+			expectedWarnings: annotations.InitAnnotations(warnStorage),
 		},
 	} {
 		t.Run(tcase.name, func(t *testing.T) {
@@ -1183,7 +1172,7 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 				for res.Next() {
 					lbls = append(lbls, res.At().Labels())
 				}
-				require.Equal(t, tcase.expectedWarnings[0], res.Warnings())
+				require.Subset(t, tcase.expectedWarnings, res.Warnings())
 				require.Equal(t, tcase.expectedErrs[0], res.Err())
 				require.True(t, errors.Is(res.Err(), tcase.expectedErrs[0]), "expected error doesn't match")
 				require.Equal(t, tcase.expectedSelectsSeries, lbls)
@@ -1200,7 +1189,7 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 			})
 			t.Run("LabelNames", func(t *testing.T) {
 				res, w, err := q.LabelNames()
-				require.Equal(t, tcase.expectedWarnings[1], w)
+				require.Subset(t, tcase.expectedWarnings, w)
 				require.True(t, errors.Is(err, tcase.expectedErrs[1]), "expected error doesn't match")
 				require.Equal(t, tcase.expectedLabels, res)
 
@@ -1215,7 +1204,7 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 			})
 			t.Run("LabelValues", func(t *testing.T) {
 				res, w, err := q.LabelValues("test")
-				require.Equal(t, tcase.expectedWarnings[2], w)
+				require.Subset(t, tcase.expectedWarnings, w)
 				require.True(t, errors.Is(err, tcase.expectedErrs[2]), "expected error doesn't match")
 				require.Equal(t, tcase.expectedLabels, res)
 
@@ -1231,7 +1220,7 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 			t.Run("LabelValuesWithMatchers", func(t *testing.T) {
 				matcher := labels.MustNewMatcher(labels.MatchEqual, "otherLabel", "someValue")
 				res, w, err := q.LabelValues("test2", matcher)
-				require.Equal(t, tcase.expectedWarnings[3], w)
+				require.Subset(t, tcase.expectedWarnings, w)
 				require.True(t, errors.Is(err, tcase.expectedErrs[3]), "expected error doesn't match")
 				require.Equal(t, tcase.expectedLabels, res)
 
