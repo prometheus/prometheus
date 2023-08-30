@@ -1690,7 +1690,7 @@ func (api *API) respond(w http.ResponseWriter, req *http.Request, data interface
 	resp := &Response{
 		Status:   statusMessage,
 		Data:     data,
-		Warnings: warnings.AsStrArray(),
+		Warnings: warnings.AsStrings(),
 	}
 
 	codec, err := api.negotiateCodec(req, resp)

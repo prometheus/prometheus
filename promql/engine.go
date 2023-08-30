@@ -1436,8 +1436,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 			// Does not have a matrix argument.
 			return ev.rangeEval(nil, func(v []parser.Value, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 				vec, annos := call(v, e.Args, enh)
-				warnings.Merge(annos)
-				return vec, warnings
+				return vec, warnings.Merge(annos)
 			}, e.Args...)
 		}
 
@@ -1880,8 +1879,7 @@ func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(vs *parser.Vec
 		}
 		ev.samplesStats.UpdatePeak(ev.currentSamples)
 		vec, annos := call([]parser.Value{vec}, e.Args, enh)
-		ws.Merge(annos)
-		return vec, ws
+		return vec, ws.Merge(annos)
 	})
 }
 
@@ -2798,7 +2796,7 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 			if aggr.hasFloat && aggr.hasHistogram {
 				// We cannot aggregate histogram sample with a float64 sample.
 				metricName := aggr.labels.Get(labels.MetricName)
-				annos.AddAnnotation(annotations.NewMixedFloatsHistogramsWarning(metricName))
+				annos.Add(annotations.NewMixedFloatsHistogramsWarning(metricName))
 				continue
 			}
 			if aggr.hasHistogram {
@@ -2844,7 +2842,7 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 
 		case parser.QUANTILE:
 			if math.IsNaN(q) || q < 0 || q > 1 {
-				annos.AddAnnotation(annotations.NewInvalidQuantileWarning(q))
+				annos.Add(annotations.NewInvalidQuantileWarning(q))
 			}
 			aggr.floatValue = quantile(q, aggr.heap)
 
@@ -2852,7 +2850,7 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 			if aggr.hasFloat && aggr.hasHistogram {
 				// We cannot aggregate histogram sample with a float64 sample.
 				metricName := aggr.labels.Get(labels.MetricName)
-				annos.AddAnnotation(annotations.NewMixedFloatsHistogramsWarning(metricName))
+				annos.Add(annotations.NewMixedFloatsHistogramsWarning(metricName))
 				continue
 			}
 			if aggr.hasHistogram {

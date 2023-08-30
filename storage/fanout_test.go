@@ -180,8 +180,8 @@ func TestFanoutErrors(t *testing.T) {
 			if tc.warning != nil {
 				require.Greater(t, len(ss.Warnings()), 0, "warnings expected")
 				w := ss.Warnings()
-				require.Error(t, w.AsErrArray()[0])
-				require.Equal(t, tc.warning.Error(), w.AsStrArray()[0])
+				require.Error(t, w.AsErrors()[0])
+				require.Equal(t, tc.warning.Error(), w.AsStrings()[0])
 			}
 		})
 		t.Run("chunks", func(t *testing.T) {
@@ -206,8 +206,8 @@ func TestFanoutErrors(t *testing.T) {
 			if tc.warning != nil {
 				require.Greater(t, len(ss.Warnings()), 0, "warnings expected")
 				w := ss.Warnings()
-				require.Error(t, w.AsErrArray()[0])
-				require.Equal(t, tc.warning.Error(), w.AsStrArray()[0])
+				require.Error(t, w.AsErrors()[0])
+				require.Equal(t, tc.warning.Error(), w.AsStrings()[0])
 			}
 		})
 	}

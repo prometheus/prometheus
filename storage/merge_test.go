@@ -1144,20 +1144,20 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 				labels.FromStrings("test", "a"),
 			},
 			expectedLabels:   []string{"a"},
-			expectedWarnings: annotations.InitAnnotations(errStorage),
+			expectedWarnings: annotations.New().Add(errStorage),
 		},
 		{
 			name: "successful queriers with warnings",
 			queriers: []genericQuerier{
-				&mockGenericQuerier{resp: []string{"a"}, warnings: annotations.InitAnnotations(warnStorage), err: nil},
-				&secondaryQuerier{genericQuerier: &mockGenericQuerier{resp: []string{"b"}, warnings: annotations.InitAnnotations(warnStorage), err: nil}},
+				&mockGenericQuerier{resp: []string{"a"}, warnings: annotations.New().Add(warnStorage), err: nil},
+				&secondaryQuerier{genericQuerier: &mockGenericQuerier{resp: []string{"b"}, warnings: annotations.New().Add(warnStorage), err: nil}},
 			},
 			expectedSelectsSeries: []labels.Labels{
 				labels.FromStrings("test", "a"),
 				labels.FromStrings("test", "b"),
 			},
 			expectedLabels:   []string{"a", "b"},
-			expectedWarnings: annotations.InitAnnotations(warnStorage),
+			expectedWarnings: annotations.New().Add(warnStorage),
 		},
 	} {
 		t.Run(tcase.name, func(t *testing.T) {

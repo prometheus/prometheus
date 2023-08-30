@@ -18,47 +18,46 @@ import (
 	"fmt"
 )
 
-// Annotations is a general wrapper for text that is shown in the
-// Prometheus/Grafana UI along with the query results.
+// Annotations is a general wrapper for warnings and other information
+// that is returned by the query API along with the results.
+// Each individual annotation is modeled by a Go error.
+// They are deduplicated based on the string returned by error.Error().
 type Annotations map[string]error
 
-func (a *Annotations) AddAnnotation(err error) {
-	(*a)[err.Error()] = err
+func New() *Annotations {
+	return &Annotations{}
 }
 
-func InitAnnotations(err error) Annotations {
-	a := make(Annotations)
-	a.AddAnnotation(err)
-	return a
-}
-
-func (a *Annotations) Merge(aa Annotations) {
+func (a *Annotations) Add(err error) Annotations {
 	if *a == nil {
-		*a = make(Annotations)
+		*a = Annotations{}
+	}
+	(*a)[err.Error()] = err
+	return *a
+}
+
+func (a *Annotations) Merge(aa Annotations) Annotations {
+	if *a == nil {
+		*a = Annotations{}
 	}
 	for key, val := range aa {
 		(*a)[key] = val
 	}
+	return *a
 }
 
-func InitAnnotationsAndMerge(err error, aa Annotations) Annotations {
-	a := InitAnnotations(err)
-	a.Merge(aa)
-	return a
-}
-
-func (a *Annotations) AsErrArray() []error {
-	arr := make([]error, 0, len(*a))
-	for _, err := range *a {
+func (a Annotations) AsErrors() []error {
+	arr := make([]error, 0, len(a))
+	for _, err := range a {
 		arr = append(arr, err)
 	}
 	return arr
 }
 
-func (a *Annotations) AsStrArray() []string {
-	arr := make([]string, 0, len(*a))
-	for _, err := range *a {
-		arr = append(arr, err.Error())
+func (a Annotations) AsStrings() []string {
+	arr := make([]string, 0, len(a))
+	for err := range a {
+		arr = append(arr, err)
 	}
 	return arr
 }
@@ -75,7 +74,7 @@ var (
 	InvalidQuantileWarning       = fmt.Errorf("%w: quantile value should be between 0 and 1", PromQLWarning)
 	BadBucketLabelWarning        = fmt.Errorf("%w: no bucket label or malformed label value", PromQLWarning)
 	MixedFloatsHistogramsWarning = fmt.Errorf("%w: range contains a mix of histograms and floats", PromQLWarning)
-	MixedOldNewHistogramsWarning = fmt.Errorf("%w: range contains a mix of conventional and native histograms", PromQLWarning)
+	MixedOldNewHistogramsWarning = fmt.Errorf("%w: range contains a mix of classic and native histograms", PromQLWarning)
 
 	PossibleNonCounterInfo = fmt.Errorf("%w: metric might not be a counter (name does not end in _total/_sum/_count)", PromQLInfo)
 )

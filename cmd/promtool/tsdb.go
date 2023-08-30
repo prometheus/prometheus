@@ -653,7 +653,7 @@ func dumpSamples(path string, mint, maxt int64, match string) (err error) {
 	}
 
 	if ws := ss.Warnings(); len(ws) > 0 {
-		return tsdb_errors.NewMulti(ws.AsErrArray()...).Err()
+		return tsdb_errors.NewMulti(ws.AsErrors()...).Err()
 	}
 
 	if ss.Err() != nil {
