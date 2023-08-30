@@ -461,11 +461,12 @@ func aggrHistOverTime(vals []parser.Value, enh *EvalNodeHelper, aggrFn func(Seri
 
 // === avg_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations)  ===
 func funcAvgOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	if len(vals[0].(Matrix)[0].Floats) > 0 && len(vals[0].(Matrix)[0].Histograms) > 0 {
-		// TODO(zenador): Add warning for mixed floats and histograms.
-		return enh.Out, annotations.Annotations{}
+	firstSeries := vals[0].(Matrix)[0]
+	if len(firstSeries.Floats) > 0 && len(firstSeries.Histograms) > 0 {
+		metricName := firstSeries.Metric.Get(labels.MetricName)
+		return enh.Out, annotations.CreateAnnotationsWithWarning(annotations.NewMixedFloatsHistogramsWarning(metricName))
 	}
-	if len(vals[0].(Matrix)[0].Floats) == 0 {
+	if len(firstSeries.Floats) == 0 {
 		// The passed values only contain histograms.
 		return aggrHistOverTime(vals, enh, func(s Series) *histogram.FloatHistogram {
 			count := 1
@@ -593,11 +594,12 @@ func funcMinOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 
 // === sum_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcSumOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	if len(vals[0].(Matrix)[0].Floats) > 0 && len(vals[0].(Matrix)[0].Histograms) > 0 {
-		// TODO(zenador): Add warning for mixed floats and histograms.
-		return enh.Out, annotations.Annotations{}
+	firstSeries := vals[0].(Matrix)[0]
+	if len(firstSeries.Floats) > 0 && len(firstSeries.Histograms) > 0 {
+		metricName := firstSeries.Metric.Get(labels.MetricName)
+		return enh.Out, annotations.CreateAnnotationsWithWarning(annotations.NewMixedFloatsHistogramsWarning(metricName))
 	}
-	if len(vals[0].(Matrix)[0].Floats) == 0 {
+	if len(firstSeries.Floats) == 0 {
 		// The passed values only contain histograms.
 		return aggrHistOverTime(vals, enh, func(s Series) *histogram.FloatHistogram {
 			sum := s.Histograms[0].H.Copy()

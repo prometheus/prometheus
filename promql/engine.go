@@ -2797,7 +2797,8 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 		case parser.AVG:
 			if aggr.hasFloat && aggr.hasHistogram {
 				// We cannot aggregate histogram sample with a float64 sample.
-				// TODO(zenador): Issue warning when plumbing is in place.
+				metricName := aggr.labels.Get(labels.MetricName)
+				annos.AddWarning(annotations.NewMixedFloatsHistogramsWarning(metricName))
 				continue
 			}
 			if aggr.hasHistogram {
@@ -2850,7 +2851,8 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 		case parser.SUM:
 			if aggr.hasFloat && aggr.hasHistogram {
 				// We cannot aggregate histogram sample with a float64 sample.
-				// TODO(zenador): Issue warning when plumbing is in place.
+				metricName := aggr.labels.Get(labels.MetricName)
+				annos.AddWarning(annotations.NewMixedFloatsHistogramsWarning(metricName))
 				continue
 			}
 			if aggr.hasHistogram {
