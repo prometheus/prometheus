@@ -13,26 +13,4 @@
 
 package notes
 
-type Notes struct {
-	Warnings    Warnings
-	Annotations Annotations
-}
-
-func (n *Notes) AddWarning(err error) {
-	n.Warnings = append(n.Warnings, err)
-}
-
-func CreateNotesWithWarning(err error) Notes {
-	notes := Notes{}
-	notes.AddWarning(err)
-	return notes
-}
-
-func (n *Notes) AddAnnotation(txt string) {
-	n.Annotations = append(n.Annotations, txt)
-}
-
-func (n *Notes) Merge(nn Notes) {
-	n.Warnings = append(n.Warnings, nn.Warnings...)
-	n.Annotations = append(n.Annotations, nn.Annotations...)
-}
+type Annotations []string

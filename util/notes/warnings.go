@@ -21,7 +21,11 @@ import (
 type Warnings []error
 
 func (ws Warnings) Merge(notes Notes) Warnings {
-	return append(ws, notes.Warnings...)
+	nws := append(ws, notes.Warnings...)
+	for _, a := range notes.Annotations {
+		nws = append(nws, errors.New(a))
+	}
+	return nws
 }
 
 var (
