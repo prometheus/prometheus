@@ -82,12 +82,11 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 	// We need either at least two Histograms and no Floats, or at least two
 	// Floats and no Histograms to calculate a rate. Otherwise, drop this
 	// Vector element.
+	metricName := samples.Metric.Get(labels.MetricName)
 	if len(samples.Histograms) > 0 && len(samples.Floats) > 0 {
-		// Mix of histograms and floats. TODO(beorn7): Communicate this failure reason.
-		return enh.Out, annos
+		return enh.Out, annos.Add(annotations.NewMixedFloatsHistogramsWarning(metricName))
 	}
 
-	metricName := samples.Metric.Get(labels.MetricName)
 	if isCounter && !strings.HasSuffix(metricName, "_total") && !strings.HasSuffix(metricName, "_sum") && !strings.HasSuffix(metricName, "_count") {
 		annos.Add(annotations.NewPossibleNonCounterInfo(metricName))
 	}
