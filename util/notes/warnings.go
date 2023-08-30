@@ -13,4 +13,42 @@
 
 package notes
 
+import (
+	"fmt"
+)
+
 type Warnings []error
+
+type RangeTooSmallWarning struct{}
+
+func (e RangeTooSmallWarning) Error() string {
+	return "Need at least 2 points to compute, perhaps time range is too small"
+}
+
+type InvalidQuantileWarning struct {
+	Q float64
+}
+
+func (e InvalidQuantileWarning) Error() string {
+	return fmt.Sprintf("Quantile value should be between 0 and 1 not %.02f", e.Q)
+}
+
+type MixedFloatsHistogramsWarning struct{}
+
+func (e MixedFloatsHistogramsWarning) Error() string {
+	return "Range contains a mix of histograms and floats"
+}
+
+type MixedOldNewHistogramsWarning struct{}
+
+func (e MixedOldNewHistogramsWarning) Error() string {
+	return "Range contains a mix of conventional and native histograms"
+}
+
+type BadBucketLabelWarning struct {
+	Label string
+}
+
+func (e BadBucketLabelWarning) Error() string {
+	return fmt.Sprintf("No bucket label or malformed label value: %s", e.Label)
+}

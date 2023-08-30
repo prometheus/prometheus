@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/util/notes"
 )
 
 // FunctionCall is the type of a PromQL function implementation
@@ -114,7 +115,7 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 			prevValue = currPoint.F
 		}
 	default:
-		return enh.Out, CreateNotesWithWarning("Need at least 2 points to compute a rate, perhaps time range is too small")
+		return enh.Out, CreateNotesWithWarningErr(notes.RangeTooSmallWarning{})
 	}
 
 	// Duration between first/last samples and boundary of range.
@@ -175,7 +176,7 @@ func histogramRate(points []HPoint, isCounter bool) (*histogram.FloatHistogram, 
 	prev := points[0].H
 	last := points[len(points)-1].H
 	if last == nil {
-		return nil, CreateNotesWithWarning("Range contains a mix of histograms and floats")
+		return nil, CreateNotesWithWarningErr(notes.MixedFloatsHistogramsWarning{})
 	}
 	minSchema := prev.Schema
 	if last.Schema < minSchema {
@@ -190,7 +191,7 @@ func histogramRate(points []HPoint, isCounter bool) (*histogram.FloatHistogram, 
 	for _, currPoint := range points[1 : len(points)-1] {
 		curr := currPoint.H
 		if curr == nil {
-			return nil, CreateNotesWithWarning("Range contains a mix of histograms and floats")
+			return nil, CreateNotesWithWarningErr(notes.MixedFloatsHistogramsWarning{})
 		}
 		// TODO(trevorwhitney): Check if isCounter is consistent with curr.CounterResetHint.
 		if !isCounter {
@@ -249,7 +250,7 @@ func instantValue(vals []parser.Value, out Vector, isRate bool) (Vector, Notes) 
 	// No sense in trying to compute a rate without at least two points. Drop
 	// this Vector element.
 	if len(samples.Floats) < 2 {
-		return out, CreateNotesWithWarning("Need at least 2 points to compute a rate, perhaps time range is too small")
+		return out, CreateNotesWithWarningErr(notes.RangeTooSmallWarning{})
 	}
 
 	lastSample := samples.Floats[len(samples.Floats)-1]
@@ -627,16 +628,16 @@ func funcQuantileOverTime(vals []parser.Value, args parser.Expressions, enh *Eva
 		return enh.Out, Notes{}
 	}
 
-	notes := Notes{}
+	ns := Notes{}
 	if math.IsNaN(q) || q < 0 || q > 1 {
-		notes.AddWarning("Quantile value should be between 0 and 1")
+		ns.AddWarningErr(notes.InvalidQuantileWarning{Q: q})
 	}
 
 	values := make(vectorByValueHeap, 0, len(el.Floats))
 	for _, f := range el.Floats {
 		values = append(values, Sample{F: f.F})
 	}
-	return append(enh.Out, Sample{F: quantile(q, values)}), notes
+	return append(enh.Out, Sample{F: quantile(q, values)}), ns
 }
 
 // === stddev_over_time(Matrix parser.ValueTypeMatrix) (Vector, Notes) ===
@@ -1090,10 +1091,10 @@ func funcHistogramFraction(vals []parser.Value, args parser.Expressions, enh *Ev
 func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, Notes) {
 	q := vals[0].(Vector)[0].F
 	inVec := vals[1].(Vector)
-	notes := Notes{}
+	ns := Notes{}
 
 	if math.IsNaN(q) || q < 0 || q > 1 {
-		notes.AddWarning("Quantile value should be between 0 and 1")
+		ns.AddWarningErr(notes.InvalidQuantileWarning{Q: q})
 	}
 
 	if enh.signatureToMetricWithBuckets == nil {
@@ -1118,7 +1119,7 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 			sample.Metric.Get(model.BucketLabel), 64,
 		)
 		if err != nil {
-			notes.AddWarning("No bucket label or malformed label value")
+			ns.AddWarningErr(notes.BadBucketLabelWarning{Label: sample.Metric.Get(model.BucketLabel)})
 			continue
 		}
 		enh.lblBuf = sample.Metric.BytesWithoutLabels(enh.lblBuf, labels.BucketLabel)
@@ -1144,7 +1145,7 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 			// At this data point, we have conventional histogram
 			// buckets and a native histogram with the same name and
 			// labels. Do not evaluate anything.
-			notes.AddWarning("Skipping evaluation because of mixed conventional and native histograms in the same metric")
+			ns.AddWarningErr(notes.MixedOldNewHistogramsWarning{})
 			delete(enh.signatureToMetricWithBuckets, string(enh.lblBuf))
 			continue
 		}
@@ -1164,7 +1165,7 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 		}
 	}
 
-	return enh.Out, notes
+	return enh.Out, ns
 }
 
 // === resets(Matrix parser.ValueTypeMatrix) (Vector, Notes) ===

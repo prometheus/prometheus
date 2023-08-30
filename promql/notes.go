@@ -14,8 +14,6 @@
 package promql
 
 import (
-	"fmt"
-
 	"github.com/prometheus/prometheus/util/notes"
 )
 
@@ -23,16 +21,22 @@ type Notes struct {
 	warnings notes.Warnings
 }
 
-func (n *Notes) AddWarning(txt string) {
-	n.warnings = append(n.warnings, fmt.Errorf(txt))
-}
-
-// func (n *Notes) AddWarningErr(err error) {
-// 	n.warnings = append(n.warnings, err)
+// func (n *Notes) AddWarning(txt string) {
+// 	n.warnings = append(n.warnings, fmt.Errorf(txt))
 // }
 
-func CreateNotesWithWarning(txt string) Notes {
+func (n *Notes) AddWarningErr(err error) {
+	n.warnings = append(n.warnings, err)
+}
+
+// func CreateNotesWithWarning(txt string) Notes {
+// 	notes := Notes{}
+// 	notes.AddWarning(txt)
+// 	return notes
+// }
+
+func CreateNotesWithWarningErr(err error) Notes {
 	notes := Notes{}
-	notes.AddWarning(txt)
+	notes.AddWarningErr(err)
 	return notes
 }
