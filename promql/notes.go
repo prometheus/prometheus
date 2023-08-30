@@ -27,9 +27,9 @@ func (n *Notes) AddWarning(txt string) {
 	n.warnings = append(n.warnings, fmt.Errorf(txt))
 }
 
-func (n *Notes) AddWarningErr(err error) {
-	n.warnings = append(n.warnings, err)
-}
+// func (n *Notes) AddWarningErr(err error) {
+// 	n.warnings = append(n.warnings, err)
+// }
 
 func CreateNotesWithWarning(txt string) Notes {
 	notes := Notes{}
