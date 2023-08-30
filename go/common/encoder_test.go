@@ -193,6 +193,12 @@ func (es *EncoderSuite) TestEncodeErrorCPPExceptions() {
 
 	_, _, _, err = es.enc.Encode(es.ctx, h)
 	es.Require().Error(err)
+	es.True(
+		common.IsExceptionCodeFromErrorAnyOf(err, 0x546e143d302c4860),
+		"Exception code is %x: %+v",
+		common.GetExceptionCodeFromError(err),
+		err,
+	)
 }
 
 func (es *EncoderSuite) TestFinalizeErrorCPPExceptions() {

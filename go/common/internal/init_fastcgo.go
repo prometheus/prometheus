@@ -24,7 +24,6 @@ package internal
 // #include <stdlib.h>
 import "C"
 import (
-	"errors"
 	"unsafe"
 
 	"github.com/prometheus/prometheus/pp/go/common/fastcgo"
@@ -322,8 +321,8 @@ func CDecodedSegmentDestroy(p unsafe.Pointer) {
 }
 
 // CErrorInfo API
-func CErrorInfoGetError(errinfo CErrorInfo) error {
-	return errors.New(C.GoString(C.c_api_error_info_get_error(errinfo)))
+func CErrorInfoGetError(errinfo CErrorInfo) string {
+	return C.GoString(C.c_api_error_info_get_error(errinfo))
 }
 
 func CErrorInfoGetStacktrace(errinfo CErrorInfo) string {

@@ -8,8 +8,11 @@
 package internal
 
 import (
+	"fmt"
 	"io"
 	"runtime"
+	"strconv"
+	"strings"
 	"unsafe"
 
 	"github.com/gogo/protobuf/proto"
@@ -191,28 +194,61 @@ func NewGoErrorInfo() *GoErrorInfo {
 	return goerr
 }
 
+type copiedErr struct {
+	code uint64
+	msg  string
+	st   string
+}
+
+func (err *copiedErr) Error() string {
+	return err.msg
+}
+
+func (err *copiedErr) Code() uint64 {
+	return err.code
+}
+
+func (err *copiedErr) Stacktrace() string {
+	return err.st
+}
+
+// Format implements fmt.Formatter interface
+func (err *copiedErr) Format(s fmt.State, verb rune) {
+	switch verb {
+	case 'v':
+		if s.Flag('+') {
+			_, _ = fmt.Fprintf(s, "%s\n\n%s", err.Error(), err.Stacktrace())
+			return
+		}
+		fallthrough
+	case 's':
+		_, _ = io.WriteString(s, err.Error())
+	case 'q':
+		_, _ = fmt.Fprintf(s, "%q", err.Error())
+	}
+}
+
 // GetError - return error info from C++.
 func (goerr *GoErrorInfo) GetError() error {
 	if goerr.err == nil {
 		return nil
 	}
-	err := CErrorInfoGetError(goerr.err)
-	runtime.KeepAlive(goerr)
-	return err
-}
-
-// GetStacktrace - return stacktrace info from C++.
-func (goerr *GoErrorInfo) GetStacktrace() string {
-	if goerr.err == nil {
-		return ""
-	}
+	msg := CErrorInfoGetError(goerr.err)
 	st := CErrorInfoGetStacktrace(goerr.err)
 	runtime.KeepAlive(goerr)
-	return st
-
+	return &copiedErr{
+		code: getCodeFromMsg(msg),
+		msg:  msg,
+		st:   st,
+	}
 }
 
-// Destroy - destroy error C++.
-func (goerr *GoErrorInfo) Destroy() {
-	CErrorInfoDestroy(goerr.err)
+func getCodeFromMsg(msg string) uint64 {
+	_, msgStartedWithCode, ok := strings.Cut(msg, "(): Exception ")
+	if !ok {
+		return 0
+	}
+	codeStr, _, _ := strings.Cut(msgStartedWithCode, ":")
+	code, _ := strconv.ParseUint(codeStr, 16, 64)
+	return code
 }
