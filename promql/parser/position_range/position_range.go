@@ -25,10 +25,6 @@ type PositionRange struct {
 	End   Pos
 }
 
-func (p PositionRange) String() string {
-	return fmt.Sprintf("%d:%d", p.Start, p.End)
-}
-
 func (p PositionRange) FullInfo(query string, lineOffset int) string {
 	pos := int(p.Start)
 	lastLineBreak := -1

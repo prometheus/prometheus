@@ -68,10 +68,15 @@ func (a Annotations) AsErrors() []error {
 
 // AsStrings is a convenience function to return the annotations map as a slice
 // of strings.
-func (a Annotations) AsStrings() []string {
+func (a Annotations) AsStrings(query string) []string {
 	arr := make([]string, 0, len(a))
-	for err := range a {
-		arr = append(arr, err)
+	for _, err := range a {
+		anErr, ok := err.(annoErr)
+		if ok {
+			anErr.Query = query
+			err = anErr
+		}
+		arr = append(arr, err.Error())
 	}
 	return arr
 }
@@ -93,37 +98,58 @@ var (
 	PossibleNonCounterInfo = fmt.Errorf("%w: metric might not be a counter (name does not end in _total/_sum/_count)", PromQLInfo)
 )
 
-func printPositionRange(pos position_range.PositionRange) string {
-	return fmt.Sprintf(" (at %v)", pos)
+type annoErr struct {
+	PositionRange position_range.PositionRange
+	Err           error
+	Query         string
+}
+
+func (e annoErr) Error() string {
+	return fmt.Sprintf("%s (%s)", e.Err, e.PositionRange.FullInfo(e.Query, 0))
 }
 
 // NewInvalidQuantileWarning is used when the user specifies an invalid quantile
 // value, i.e. a float that is outside the range [0, 1] or NaN.
-func NewInvalidQuantileWarning(q string, pos position_range.PositionRange) error {
-	return fmt.Errorf("%w, not %s%s", InvalidQuantileWarning, q, printPositionRange(pos))
+func NewInvalidQuantileWarning(q string, pos position_range.PositionRange) annoErr {
+	return annoErr{
+		PositionRange: pos,
+		Err:           fmt.Errorf("%w, not %s", InvalidQuantileWarning, q),
+	}
 }
 
 // NewBadBucketLabelWarning is used when there is an error parsing the bucket label
 // of a classic histogram.
-func NewBadBucketLabelWarning(metricName, label string) error {
-	return fmt.Errorf("%w: %s %s", BadBucketLabelWarning, metricName, label)
+func NewBadBucketLabelWarning(metricName, label string, pos position_range.PositionRange) annoErr {
+	return annoErr{
+		PositionRange: pos,
+		Err:           fmt.Errorf("%w: %s %s", BadBucketLabelWarning, metricName, label),
+	}
 }
 
 // NewMixedFloatsHistogramsWarning is used when the queried series includes both
 // float samples and histogram samples for functions that do not support mixed
 // samples.
-func NewMixedFloatsHistogramsWarning(metricName string) error {
-	return fmt.Errorf("%w: %s", MixedFloatsHistogramsWarning, metricName)
+func NewMixedFloatsHistogramsWarning(metricName string, pos position_range.PositionRange) annoErr {
+	return annoErr{
+		PositionRange: pos,
+		Err:           fmt.Errorf("%w: %s", MixedFloatsHistogramsWarning, metricName),
+	}
 }
 
 // NewMixedClassicNativeHistogramsWarning is used when the queried series includes
 // both classic and native histograms.
-func NewMixedClassicNativeHistogramsWarning(metricName string) error {
-	return fmt.Errorf("%w: %s", MixedClassicNativeHistogramsWarning, metricName)
+func NewMixedClassicNativeHistogramsWarning(metricName string, pos position_range.PositionRange) annoErr {
+	return annoErr{
+		PositionRange: pos,
+		Err:           fmt.Errorf("%w: %s", MixedClassicNativeHistogramsWarning, metricName),
+	}
 }
 
 // NewPossibleNonCounterInfo is used when a counter metric does not have the suffixes
 // _total, _sum or _count.
-func NewPossibleNonCounterInfo(metricName string) error {
-	return fmt.Errorf("%w: %s", PossibleNonCounterInfo, metricName)
+func NewPossibleNonCounterInfo(metricName string, pos position_range.PositionRange) annoErr {
+	return annoErr{
+		PositionRange: pos,
+		Err:           fmt.Errorf("%w: %s", PossibleNonCounterInfo, metricName),
+	}
 }

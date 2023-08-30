@@ -2798,7 +2798,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, grouping []string, par
 			if aggr.hasFloat && aggr.hasHistogram {
 				// We cannot aggregate histogram sample with a float64 sample.
 				metricName := aggr.labels.Get(labels.MetricName)
-				annos.Add(annotations.NewMixedFloatsHistogramsWarning(metricName))
+				annos.Add(annotations.NewMixedFloatsHistogramsWarning(metricName, e.Expr.PositionRange()))
 				continue
 			}
 			if aggr.hasHistogram {
@@ -2852,7 +2852,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, grouping []string, par
 			if aggr.hasFloat && aggr.hasHistogram {
 				// We cannot aggregate histogram sample with a float64 sample.
 				metricName := aggr.labels.Get(labels.MetricName)
-				annos.Add(annotations.NewMixedFloatsHistogramsWarning(metricName))
+				annos.Add(annotations.NewMixedFloatsHistogramsWarning(metricName, e.Expr.PositionRange()))
 				continue
 			}
 			if aggr.hasHistogram {

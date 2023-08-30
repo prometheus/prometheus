@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/position_range"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
@@ -84,11 +85,11 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 	// Vector element.
 	metricName := samples.Metric.Get(labels.MetricName)
 	if len(samples.Histograms) > 0 && len(samples.Floats) > 0 {
-		return enh.Out, annos.Add(annotations.NewMixedFloatsHistogramsWarning(metricName))
+		return enh.Out, annos.Add(annotations.NewMixedFloatsHistogramsWarning(metricName, args[0].PositionRange()))
 	}
 
 	if isCounter && !strings.HasSuffix(metricName, "_total") && !strings.HasSuffix(metricName, "_sum") && !strings.HasSuffix(metricName, "_count") {
-		annos.Add(annotations.NewPossibleNonCounterInfo(metricName))
+		annos.Add(annotations.NewPossibleNonCounterInfo(metricName, args[0].PositionRange()))
 	}
 
 	switch {
@@ -97,7 +98,7 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 		firstT = samples.Histograms[0].T
 		lastT = samples.Histograms[numSamplesMinusOne].T
 		var newAnnos annotations.Annotations
-		resultHistogram, newAnnos = histogramRate(samples.Histograms, isCounter, metricName)
+		resultHistogram, newAnnos = histogramRate(samples.Histograms, isCounter, metricName, args[0].PositionRange())
 		if resultHistogram == nil {
 			// The histograms are not compatible with each other.
 			return enh.Out, annos.Merge(newAnnos)
@@ -178,11 +179,11 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 // points[0] to be a histogram. It returns nil if any other Point in points is
 // not a histogram, and a warning wrapped in an annotation in that case.
 // Otherwise, it returns the calculated histogram and an empty annotation.
-func histogramRate(points []HPoint, isCounter bool, metricName string) (*histogram.FloatHistogram, annotations.Annotations) {
+func histogramRate(points []HPoint, isCounter bool, metricName string, pos position_range.PositionRange) (*histogram.FloatHistogram, annotations.Annotations) {
 	prev := points[0].H
 	last := points[len(points)-1].H
 	if last == nil {
-		return nil, annotations.New().Add(annotations.NewMixedFloatsHistogramsWarning(metricName))
+		return nil, annotations.New().Add(annotations.NewMixedFloatsHistogramsWarning(metricName, pos))
 	}
 	minSchema := prev.Schema
 	if last.Schema < minSchema {
@@ -197,7 +198,7 @@ func histogramRate(points []HPoint, isCounter bool, metricName string) (*histogr
 	for _, currPoint := range points[1 : len(points)-1] {
 		curr := currPoint.H
 		if curr == nil {
-			return nil, annotations.New().Add(annotations.NewMixedFloatsHistogramsWarning(metricName))
+			return nil, annotations.New().Add(annotations.NewMixedFloatsHistogramsWarning(metricName, pos))
 		}
 		// TODO(trevorwhitney): Check if isCounter is consistent with curr.CounterResetHint.
 		if !isCounter {
@@ -462,7 +463,7 @@ func funcAvgOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 	firstSeries := vals[0].(Matrix)[0]
 	if len(firstSeries.Floats) > 0 && len(firstSeries.Histograms) > 0 {
 		metricName := firstSeries.Metric.Get(labels.MetricName)
-		return enh.Out, annotations.New().Add(annotations.NewMixedFloatsHistogramsWarning(metricName))
+		return enh.Out, annotations.New().Add(annotations.NewMixedFloatsHistogramsWarning(metricName, args[0].PositionRange()))
 	}
 	if len(firstSeries.Floats) == 0 {
 		// The passed values only contain histograms.
@@ -595,7 +596,7 @@ func funcSumOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 	firstSeries := vals[0].(Matrix)[0]
 	if len(firstSeries.Floats) > 0 && len(firstSeries.Histograms) > 0 {
 		metricName := firstSeries.Metric.Get(labels.MetricName)
-		return enh.Out, annotations.New().Add(annotations.NewMixedFloatsHistogramsWarning(metricName))
+		return enh.Out, annotations.New().Add(annotations.NewMixedFloatsHistogramsWarning(metricName, args[0].PositionRange()))
 	}
 	if len(firstSeries.Floats) == 0 {
 		// The passed values only contain histograms.
@@ -1128,7 +1129,7 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 			sample.Metric.Get(model.BucketLabel), 64,
 		)
 		if err != nil {
-			annos.Add(annotations.NewBadBucketLabelWarning(sample.Metric.Get(labels.MetricName), sample.Metric.Get(model.BucketLabel)))
+			annos.Add(annotations.NewBadBucketLabelWarning(sample.Metric.Get(labels.MetricName), sample.Metric.Get(model.BucketLabel), args[1].PositionRange()))
 			continue
 		}
 		enh.lblBuf = sample.Metric.BytesWithoutLabels(enh.lblBuf, labels.BucketLabel)
@@ -1154,7 +1155,7 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 			// At this data point, we have conventional histogram
 			// buckets and a native histogram with the same name and
 			// labels. Do not evaluate anything.
-			annos.Add(annotations.NewMixedClassicNativeHistogramsWarning(sample.Metric.Get(labels.MetricName)))
+			annos.Add(annotations.NewMixedClassicNativeHistogramsWarning(sample.Metric.Get(labels.MetricName), args[1].PositionRange()))
 			delete(enh.signatureToMetricWithBuckets, string(enh.lblBuf))
 			continue
 		}

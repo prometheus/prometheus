@@ -338,7 +338,7 @@ func (api *API) Register(r *route.Router) {
 			}
 
 			if result.data != nil {
-				api.respond(w, r, result.data, result.warnings)
+				api.respond(w, r, result.data, result.warnings, r.FormValue("query"))
 				return
 			}
 			w.WriteHeader(http.StatusNoContent)
@@ -1578,7 +1578,7 @@ func (api *API) serveWALReplayStatus(w http.ResponseWriter, r *http.Request) {
 		Min:     status.Min,
 		Max:     status.Max,
 		Current: status.Current,
-	}, nil)
+	}, nil, "")
 }
 
 func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
@@ -1684,13 +1684,13 @@ func (api *API) cleanTombstones(*http.Request) apiFuncResult {
 	return apiFuncResult{nil, nil, nil, nil}
 }
 
-func (api *API) respond(w http.ResponseWriter, req *http.Request, data interface{}, warnings annotations.Annotations) {
+func (api *API) respond(w http.ResponseWriter, req *http.Request, data interface{}, warnings annotations.Annotations, query string) {
 	statusMessage := statusSuccess
 
 	resp := &Response{
 		Status:   statusMessage,
 		Data:     data,
-		Warnings: warnings.AsStrings(),
+		Warnings: warnings.AsStrings(query),
 	}
 
 	codec, err := api.negotiateCodec(req, resp)
