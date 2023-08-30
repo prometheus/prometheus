@@ -14,49 +14,34 @@
 package notes
 
 import (
+	"errors"
 	"fmt"
 )
 
 type Warnings []error
 
-type RangeTooSmallWarning struct{}
+var (
+	RangeTooSmallWarning         = errors.New("Need at least 2 points to compute, perhaps time range is too small")
+	MixedFloatsHistogramsWarning = errors.New("Range contains a mix of histograms and floats")
+	MixedOldNewHistogramsWarning = errors.New("Range contains a mix of conventional and native histograms")
 
-func (e RangeTooSmallWarning) Error() string {
-	return "Need at least 2 points to compute, perhaps time range is too small"
+	InvalidQuantileWarning    = errors.New("Quantile value should be between 0 and 1")
+	BadBucketLabelWarning     = errors.New("No bucket label or malformed label value")
+	PossibleNonCounterWarning = errors.New("Metric might not be a counter (does not end in _total/_sum/_count)")
+)
+
+func IsForEmptyResultOnly(err error) bool {
+	return errors.Is(err, RangeTooSmallWarning)
 }
 
-type InvalidQuantileWarning struct {
-	Q float64
+func NewInvalidQuantileWarning(q float64) error {
+	return fmt.Errorf("%w not %.02f", InvalidQuantileWarning, q)
 }
 
-func (e InvalidQuantileWarning) Error() string {
-	return fmt.Sprintf("Quantile value should be between 0 and 1 not %.02f", e.Q)
+func NewBadBucketLabelWarning(label string) error {
+	return fmt.Errorf("%w: %s", BadBucketLabelWarning, label)
 }
 
-type MixedFloatsHistogramsWarning struct{}
-
-func (e MixedFloatsHistogramsWarning) Error() string {
-	return "Range contains a mix of histograms and floats"
-}
-
-type MixedOldNewHistogramsWarning struct{}
-
-func (e MixedOldNewHistogramsWarning) Error() string {
-	return "Range contains a mix of conventional and native histograms"
-}
-
-type BadBucketLabelWarning struct {
-	Label string
-}
-
-func (e BadBucketLabelWarning) Error() string {
-	return fmt.Sprintf("No bucket label or malformed label value: %s", e.Label)
-}
-
-type PossibleNonCounterWarning struct {
-	MetricName string
-}
-
-func (e PossibleNonCounterWarning) Error() string {
-	return fmt.Sprintf("Metric might not be a counter (does not end in _total/_sum/_count): %s", e.MetricName)
+func NewPossibleNonCounterWarning(metricName string) error {
+	return fmt.Errorf("%w: %s", PossibleNonCounterWarning, metricName)
 }

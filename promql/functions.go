@@ -89,7 +89,7 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 
 	metricName := samples.Metric.Get(labels.MetricName)
 	if isCounter && !strings.HasSuffix(metricName, "_total") && !strings.HasSuffix(metricName, "_sum") && !strings.HasSuffix(metricName, "_count") {
-		ns.AddWarningErr(notes.PossibleNonCounterWarning{MetricName: metricName})
+		ns.AddWarningErr(notes.NewPossibleNonCounterWarning(metricName))
 	}
 
 	switch {
@@ -122,7 +122,7 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 			prevValue = currPoint.F
 		}
 	default:
-		ns.AddWarningErr(notes.RangeTooSmallWarning{})
+		ns.AddWarningErr(notes.RangeTooSmallWarning)
 		return enh.Out, ns
 	}
 
@@ -184,7 +184,7 @@ func histogramRate(points []HPoint, isCounter bool) (*histogram.FloatHistogram, 
 	prev := points[0].H
 	last := points[len(points)-1].H
 	if last == nil {
-		return nil, CreateNotesWithWarningErr(notes.MixedFloatsHistogramsWarning{})
+		return nil, CreateNotesWithWarningErr(notes.MixedFloatsHistogramsWarning)
 	}
 	minSchema := prev.Schema
 	if last.Schema < minSchema {
@@ -199,7 +199,7 @@ func histogramRate(points []HPoint, isCounter bool) (*histogram.FloatHistogram, 
 	for _, currPoint := range points[1 : len(points)-1] {
 		curr := currPoint.H
 		if curr == nil {
-			return nil, CreateNotesWithWarningErr(notes.MixedFloatsHistogramsWarning{})
+			return nil, CreateNotesWithWarningErr(notes.MixedFloatsHistogramsWarning)
 		}
 		// TODO(trevorwhitney): Check if isCounter is consistent with curr.CounterResetHint.
 		if !isCounter {
@@ -258,7 +258,7 @@ func instantValue(vals []parser.Value, out Vector, isRate bool) (Vector, Notes) 
 	// No sense in trying to compute a rate without at least two points. Drop
 	// this Vector element.
 	if len(samples.Floats) < 2 {
-		return out, CreateNotesWithWarningErr(notes.RangeTooSmallWarning{})
+		return out, CreateNotesWithWarningErr(notes.RangeTooSmallWarning)
 	}
 
 	lastSample := samples.Floats[len(samples.Floats)-1]
@@ -638,7 +638,7 @@ func funcQuantileOverTime(vals []parser.Value, args parser.Expressions, enh *Eva
 
 	ns := Notes{}
 	if math.IsNaN(q) || q < 0 || q > 1 {
-		ns.AddWarningErr(notes.InvalidQuantileWarning{Q: q})
+		ns.AddWarningErr(notes.NewInvalidQuantileWarning(q))
 	}
 
 	values := make(vectorByValueHeap, 0, len(el.Floats))
@@ -1102,7 +1102,7 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 	ns := Notes{}
 
 	if math.IsNaN(q) || q < 0 || q > 1 {
-		ns.AddWarningErr(notes.InvalidQuantileWarning{Q: q})
+		ns.AddWarningErr(notes.NewInvalidQuantileWarning(q))
 	}
 
 	if enh.signatureToMetricWithBuckets == nil {
@@ -1127,7 +1127,7 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 			sample.Metric.Get(model.BucketLabel), 64,
 		)
 		if err != nil {
-			ns.AddWarningErr(notes.BadBucketLabelWarning{Label: sample.Metric.Get(model.BucketLabel)})
+			ns.AddWarningErr(notes.NewBadBucketLabelWarning(sample.Metric.Get(model.BucketLabel)))
 			continue
 		}
 		enh.lblBuf = sample.Metric.BytesWithoutLabels(enh.lblBuf, labels.BucketLabel)
@@ -1153,7 +1153,7 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 			// At this data point, we have conventional histogram
 			// buckets and a native histogram with the same name and
 			// labels. Do not evaluate anything.
-			ns.AddWarningErr(notes.MixedOldNewHistogramsWarning{})
+			ns.AddWarningErr(notes.MixedOldNewHistogramsWarning)
 			delete(enh.signatureToMetricWithBuckets, string(enh.lblBuf))
 			continue
 		}
