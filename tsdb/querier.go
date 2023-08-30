@@ -21,6 +21,7 @@ import (
 
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -244,6 +245,41 @@ func PostingsForMatchers(ix IndexReader, ms ...*labels.Matcher) (index.Postings,
 			labelMustBeSet[m.Name] = true
 		}
 	}
+	isSubtractingMatcher := func(m *labels.Matcher) bool {
+		if !labelMustBeSet[m.Name] {
+			return true
+		}
+		return (m.Type == labels.MatchNotEqual || m.Type == labels.MatchNotRegexp) && m.Matches("")
+	}
+	hasSubtractingMatchers, hasIntersectingMatchers := false, false
+	for _, m := range ms {
+		if isSubtractingMatcher(m) {
+			hasSubtractingMatchers = true
+		} else {
+			hasIntersectingMatchers = true
+		}
+	}
+
+	if hasSubtractingMatchers && !hasIntersectingMatchers {
+		// If there's nothing to subtract from, add in everything and remove the notIts later.
+		// We prefer to get AllPostings so that the base of subtraction (i.e. allPostings)
+		// doesn't include series that may be added to the index reader during this function call.
+		k, v := index.AllPostingsKey()
+		allPostings, err := ix.Postings(k, v)
+		if err != nil {
+			return nil, err
+		}
+		its = append(its, allPostings)
+	}
+
+	// Sort matchers to have the intersecting matchers first.
+	// This way the base for subtraction is smaller and
+	// there is no chance that the set we subtract from
+	// contains postings of series that didn't exist when
+	// we constructed the set we subtract by.
+	slices.SortStableFunc(ms, func(i, j *labels.Matcher) bool {
+		return !isSubtractingMatcher(i) && isSubtractingMatcher(j)
+	})
 
 	for _, m := range ms {
 		switch {
@@ -310,16 +346,6 @@ func PostingsForMatchers(ix IndexReader, ms ...*labels.Matcher) (index.Postings,
 			}
 			notIts = append(notIts, it)
 		}
-	}
-
-	// If there's nothing to subtract from, add in everything and remove the notIts later.
-	if len(its) == 0 && len(notIts) != 0 {
-		k, v := index.AllPostingsKey()
-		allPostings, err := ix.Postings(k, v)
-		if err != nil {
-			return nil, err
-		}
-		its = append(its, allPostings)
 	}
 
 	it := index.Intersect(its...)
