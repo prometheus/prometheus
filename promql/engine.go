@@ -2843,7 +2843,7 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 
 		case parser.QUANTILE:
 			if math.IsNaN(q) || q < 0 || q > 1 {
-				ns.AddWarningErr(notes.NewInvalidQuantileWarning(q))
+				ns.AddWarning(notes.NewInvalidQuantileWarning(q))
 			}
 			aggr.floatValue = quantile(q, aggr.heap)
 

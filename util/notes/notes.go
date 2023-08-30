@@ -17,23 +17,13 @@ type Notes struct {
 	Warnings Warnings
 }
 
-// func (n *Notes) AddWarning(txt string) {
-// 	n.Warnings = append(n.Warnings, fmt.Errorf(txt))
-// }
-
-func (n *Notes) AddWarningErr(err error) {
+func (n *Notes) AddWarning(err error) {
 	n.Warnings = append(n.Warnings, err)
 }
 
-// func CreateNotesWithWarning(txt string) Notes {
-// 	notes := Notes{}
-// 	notes.AddWarning(txt)
-// 	return notes
-// }
-
-func CreateNotesWithWarningErr(err error) Notes {
+func CreateNotesWithWarning(err error) Notes {
 	notes := Notes{}
-	notes.AddWarningErr(err)
+	notes.AddWarning(err)
 	return notes
 }
 
