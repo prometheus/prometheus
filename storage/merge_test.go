@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
+	"github.com/prometheus/prometheus/util/notes"
 )
 
 func TestMergeQuerierWithChainMerger(t *testing.T) {
@@ -776,7 +777,7 @@ func (m *mockSeriesSet) At() Series { return m.series[m.idx] }
 
 func (m *mockSeriesSet) Err() error { return nil }
 
-func (m *mockSeriesSet) Warnings() Warnings { return nil }
+func (m *mockSeriesSet) Warnings() notes.Warnings { return nil }
 
 type mockChunkSeriesSet struct {
 	idx    int
@@ -799,7 +800,7 @@ func (m *mockChunkSeriesSet) At() ChunkSeries { return m.series[m.idx] }
 
 func (m *mockChunkSeriesSet) Err() error { return nil }
 
-func (m *mockChunkSeriesSet) Warnings() Warnings { return nil }
+func (m *mockChunkSeriesSet) Warnings() notes.Warnings { return nil }
 
 func TestChainSampleIterator(t *testing.T) {
 	for _, tc := range []struct {
@@ -973,7 +974,7 @@ type mockGenericQuerier struct {
 	sortedSeriesRequested []bool
 
 	resp     []string
-	warnings Warnings
+	warnings notes.Warnings
 	err      error
 }
 
@@ -989,7 +990,7 @@ func (m *mockGenericQuerier) Select(b bool, _ *SelectHints, _ ...*labels.Matcher
 	return &mockGenericSeriesSet{resp: m.resp, warnings: m.warnings, err: m.err}
 }
 
-func (m *mockGenericQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, Warnings, error) {
+func (m *mockGenericQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, notes.Warnings, error) {
 	m.mtx.Lock()
 	m.labelNamesRequested = append(m.labelNamesRequested, labelNameRequest{
 		name:     name,
@@ -999,7 +1000,7 @@ func (m *mockGenericQuerier) LabelValues(name string, matchers ...*labels.Matche
 	return m.resp, m.warnings, m.err
 }
 
-func (m *mockGenericQuerier) LabelNames(...*labels.Matcher) ([]string, Warnings, error) {
+func (m *mockGenericQuerier) LabelNames(...*labels.Matcher) ([]string, notes.Warnings, error) {
 	m.mtx.Lock()
 	m.labelNamesCalls++
 	m.mtx.Unlock()
@@ -1013,7 +1014,7 @@ func (m *mockGenericQuerier) Close() error {
 
 type mockGenericSeriesSet struct {
 	resp     []string
-	warnings Warnings
+	warnings notes.Warnings
 	err      error
 
 	curr int
@@ -1030,8 +1031,8 @@ func (m *mockGenericSeriesSet) Next() bool {
 	return true
 }
 
-func (m *mockGenericSeriesSet) Err() error         { return m.err }
-func (m *mockGenericSeriesSet) Warnings() Warnings { return m.warnings }
+func (m *mockGenericSeriesSet) Err() error               { return m.err }
+func (m *mockGenericSeriesSet) Warnings() notes.Warnings { return m.warnings }
 
 func (m *mockGenericSeriesSet) At() Labels {
 	return mockLabels(m.resp[m.curr-1])
@@ -1066,7 +1067,7 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 		expectedSelectsSeries []labels.Labels
 		expectedLabels        []string
 
-		expectedWarnings [4]Warnings
+		expectedWarnings [4]notes.Warnings
 		expectedErrs     [4]error
 	}{
 		{},
@@ -1144,7 +1145,7 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 				labels.FromStrings("test", "a"),
 			},
 			expectedLabels: []string{"a"},
-			expectedWarnings: [4]Warnings{
+			expectedWarnings: [4]notes.Warnings{
 				[]error{errStorage, errStorage},
 				[]error{errStorage, errStorage},
 				[]error{errStorage, errStorage},
@@ -1162,7 +1163,7 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 				labels.FromStrings("test", "b"),
 			},
 			expectedLabels: []string{"a", "b"},
-			expectedWarnings: [4]Warnings{
+			expectedWarnings: [4]notes.Warnings{
 				[]error{warnStorage, warnStorage},
 				[]error{warnStorage, warnStorage},
 				[]error{warnStorage, warnStorage},

@@ -53,6 +53,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wlog"
+	"github.com/prometheus/prometheus/util/notes"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -1731,7 +1732,7 @@ func TestNotMatcherSelectsLabelsUnsetSeries(t *testing.T) {
 
 // expandSeriesSet returns the raw labels in the order they are retrieved from
 // the series set and the samples keyed by Labels().String().
-func expandSeriesSet(ss storage.SeriesSet) ([]labels.Labels, map[string][]sample, storage.Warnings, error) {
+func expandSeriesSet(ss storage.SeriesSet) ([]labels.Labels, map[string][]sample, notes.Warnings, error) {
 	resultLabels := []labels.Labels{}
 	resultSamples := map[string][]sample{}
 	var it chunkenc.Iterator
@@ -1932,7 +1933,7 @@ func TestQuerierWithBoundaryChunks(t *testing.T) {
 	// The requested interval covers 2 blocks, so the querier's label values for blockID should give us 2 values, one from each block.
 	b, ws, err := q.LabelValues("blockID")
 	require.NoError(t, err)
-	require.Equal(t, storage.Warnings(nil), ws)
+	require.Equal(t, notes.Warnings(nil), ws)
 	require.Equal(t, []string{"1", "2"}, b)
 }
 
@@ -2234,7 +2235,7 @@ func TestDB_LabelNames(t *testing.T) {
 		// Testing DB (union).
 		q, err := db.Querier(context.TODO(), math.MinInt64, math.MaxInt64)
 		require.NoError(t, err)
-		var ws storage.Warnings
+		var ws notes.Warnings
 		labelNames, ws, err = q.LabelNames()
 		require.NoError(t, err)
 		require.Equal(t, 0, len(ws))
