@@ -52,3 +52,11 @@ type BadBucketLabelWarning struct {
 func (e BadBucketLabelWarning) Error() string {
 	return fmt.Sprintf("No bucket label or malformed label value: %s", e.Label)
 }
+
+type PossibleNonCounterWarning struct {
+	MetricName string
+}
+
+func (e PossibleNonCounterWarning) Error() string {
+	return fmt.Sprintf("Metric might not be a counter (does not end in _total/_sum/_count): %s", e.MetricName)
+}

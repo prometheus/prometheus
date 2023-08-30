@@ -40,3 +40,7 @@ func CreateNotesWithWarningErr(err error) Notes {
 	notes.AddWarningErr(err)
 	return notes
 }
+
+func (n *Notes) Merge(nn Notes) {
+	n.warnings = append(n.warnings, nn.warnings...)
+}

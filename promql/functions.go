@@ -76,6 +76,7 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 		resultHistogram    *histogram.FloatHistogram
 		firstT, lastT      int64
 		numSamplesMinusOne int
+		ns                 = Notes{}
 	)
 
 	// We need either at least two Histograms and no Floats, or at least two
@@ -83,7 +84,12 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 	// Vector element.
 	if len(samples.Histograms) > 0 && len(samples.Floats) > 0 {
 		// Mix of histograms and floats. TODO(beorn7): Communicate this failure reason.
-		return enh.Out, Notes{}
+		return enh.Out, ns
+	}
+
+	metricName := samples.Metric.Get(labels.MetricName)
+	if isCounter && !strings.HasSuffix(metricName, "_total") && !strings.HasSuffix(metricName, "_sum") && !strings.HasSuffix(metricName, "_count") {
+		ns.AddWarningErr(notes.PossibleNonCounterWarning{MetricName: metricName})
 	}
 
 	switch {
@@ -96,7 +102,8 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 		if resultHistogram == nil {
 			// The histograms are not compatible with each other.
 			// TODO(beorn7): Communicate this failure reason.
-			return enh.Out, newNs
+			ns.Merge(newNs)
+			return enh.Out, ns
 		}
 	case len(samples.Floats) > 1:
 		numSamplesMinusOne = len(samples.Floats) - 1
@@ -115,7 +122,8 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 			prevValue = currPoint.F
 		}
 	default:
-		return enh.Out, CreateNotesWithWarningErr(notes.RangeTooSmallWarning{})
+		ns.AddWarningErr(notes.RangeTooSmallWarning{})
+		return enh.Out, ns
 	}
 
 	// Duration between first/last samples and boundary of range.
@@ -166,7 +174,7 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 		resultHistogram.Mul(factor)
 	}
 
-	return append(enh.Out, Sample{F: resultFloat, H: resultHistogram}), Notes{}
+	return append(enh.Out, Sample{F: resultFloat, H: resultHistogram}), ns
 }
 
 // histogramRate is a helper function for extrapolatedRate. It requires
