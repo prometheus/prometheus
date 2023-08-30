@@ -1698,7 +1698,7 @@ func (api *API) respond(w http.ResponseWriter, req *http.Request, data interface
 		_, ok := warningStringsMap[warningStr]
 		if !ok {
 			if isEmptyResult || !notes.IsForEmptyResultOnly(warning) {
-				// Hide warnings like RangeTooSmallWarning when result is not empty
+				// Hide warnings like RangeTooShortWarning when result is not empty.
 				warningStrings = append(warningStrings, warningStr)
 			}
 			warningStringsMap[warningStr] = struct{}{}

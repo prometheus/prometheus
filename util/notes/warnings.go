@@ -1,4 +1,4 @@
-// Copyright 2015 The Prometheus Authors
+// Copyright 2023 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -30,17 +30,17 @@ func (ws Warnings) Merge(notes Notes) Warnings {
 
 //nolint:revive // Ignore ST1012
 var (
-	RangeTooSmallWarning         = errors.New("Need at least 2 points to compute, perhaps time range is too small")
-	MixedFloatsHistogramsWarning = errors.New("Range contains a mix of histograms and floats")
-	MixedOldNewHistogramsWarning = errors.New("Range contains a mix of conventional and native histograms")
+	RangeTooShortWarning         = errors.New("need at least 2 points to compute, perhaps time range is too short")
+	MixedFloatsHistogramsWarning = errors.New("range contains a mix of histograms and floats")
+	MixedOldNewHistogramsWarning = errors.New("range contains a mix of conventional and native histograms")
 
-	InvalidQuantileWarning    = errors.New("Quantile value should be between 0 and 1")
-	BadBucketLabelWarning     = errors.New("No bucket label or malformed label value")
-	PossibleNonCounterWarning = errors.New("Metric might not be a counter (name does not end in _total/_sum/_count)")
+	InvalidQuantileWarning    = errors.New("quantile value should be between 0 and 1")
+	BadBucketLabelWarning     = errors.New("no bucket label or malformed label value")
+	PossibleNonCounterWarning = errors.New("metric might not be a counter (name does not end in _total/_sum/_count)")
 )
 
 func IsForEmptyResultOnly(err error) bool {
-	return errors.Is(err, RangeTooSmallWarning)
+	return errors.Is(err, RangeTooShortWarning)
 }
 
 func NewInvalidQuantileWarning(q float64) error {
