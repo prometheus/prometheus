@@ -100,8 +100,8 @@ func printPositionRange(pos interface{}) string {
 
 // NewInvalidQuantileWarning is used when the user specifies an invalid quantile
 // value, i.e. a float that is outside the range [0, 1] or NaN.
-func NewInvalidQuantileWarning(q float64, pos interface{}) error {
-	return fmt.Errorf("%w, not %.02f%s", InvalidQuantileWarning, q, printPositionRange(pos))
+func NewInvalidQuantileWarning(q string, pos interface{}) error {
+	return fmt.Errorf("%w, not %s%s", InvalidQuantileWarning, q, printPositionRange(pos))
 }
 
 // NewBadBucketLabelWarning is used when there is an error parsing the bucket label
