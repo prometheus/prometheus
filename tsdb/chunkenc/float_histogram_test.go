@@ -447,6 +447,65 @@ func TestFloatHistogramChunkAppendable(t *testing.T) {
 
 		assertNewFloatHistogramChunkOnAppend(t, c, hApp, ts+1, h2, CounterReset)
 	}
+
+	{ // Start new chunk explicitly, and append a new histogram that is considered appendable to the previous chunk.
+		_, hApp, ts, h1 := setup()
+		h2 := h1.Copy() // Identity is appendable.
+
+		nextChunk := NewFloatHistogramChunk()
+		app, err := nextChunk.Appender()
+		require.NoError(t, err)
+		newChunk, recoded, newApp, err := app.AppendFloatHistogram(hApp, ts+1, h2, false)
+		require.NoError(t, err)
+		require.Nil(t, newChunk)
+		require.False(t, recoded)
+		require.Equal(t, app, newApp)
+		assertSampleCount(t, nextChunk, 1, ValFloatHistogram)
+		require.Equal(t, NotCounterReset, nextChunk.GetCounterResetHeader())
+	}
+
+	{ // Start new chunk explicitly, and append a new histogram that is not considered appendable to the previous chunk.
+		_, hApp, ts, h1 := setup()
+		h2 := h1.Copy()
+		h2.Count = h2.Count - 1 // Make this not appendable due to counter reset.
+
+		nextChunk := NewFloatHistogramChunk()
+		app, err := nextChunk.Appender()
+		require.NoError(t, err)
+		newChunk, recoded, newApp, err := app.AppendFloatHistogram(hApp, ts+1, h2, false)
+		require.NoError(t, err)
+		require.Nil(t, newChunk)
+		require.False(t, recoded)
+		require.Equal(t, app, newApp)
+		assertSampleCount(t, nextChunk, 1, ValFloatHistogram)
+		require.Equal(t, CounterReset, nextChunk.GetCounterResetHeader())
+	}
+
+	{ // Start new chunk explicitly, and append a new histogram that would need recoding if we added it to the chunk.
+		_, hApp, ts, h1 := setup()
+		h2 := h1.Copy()
+		h2.PositiveSpans = []histogram.Span{
+			{Offset: 0, Length: 3},
+			{Offset: 1, Length: 1},
+			{Offset: 1, Length: 4},
+			{Offset: 3, Length: 3},
+		}
+		h2.Count += 9
+		h2.ZeroCount++
+		h2.Sum = 30
+		h2.PositiveBuckets = []float64{7, 5, 1, 3, 1, 0, 2, 5, 5, 0, 1}
+
+		nextChunk := NewFloatHistogramChunk()
+		app, err := nextChunk.Appender()
+		require.NoError(t, err)
+		newChunk, recoded, newApp, err := app.AppendFloatHistogram(hApp, ts+1, h2, false)
+		require.NoError(t, err)
+		require.Nil(t, newChunk)
+		require.False(t, recoded)
+		require.Equal(t, app, newApp)
+		assertSampleCount(t, nextChunk, 1, ValFloatHistogram)
+		require.Equal(t, NotCounterReset, nextChunk.GetCounterResetHeader())
+	}
 }
 
 func assertNewFloatHistogramChunkOnAppend(t *testing.T, oldChunk Chunk, hApp *FloatHistogramAppender, ts int64, h *histogram.FloatHistogram, expectHeader CounterResetHeader) {
