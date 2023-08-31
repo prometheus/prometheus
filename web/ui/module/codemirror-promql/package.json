@@ -30,7 +30,7 @@
   "homepage": "https://github.com/prometheus/prometheus/blob/main/web/ui/module/codemirror-promql/README.md",
   "dependencies": {
     "@prometheus-io/lezer-promql": "0.46.0",
-    "lru-cache": "^7.6.1"
+    "lru-cache": "^7.18.3"
   },
   "devDependencies": {
     "@codemirror/autocomplete": "^6.7.1",
