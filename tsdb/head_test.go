@@ -5600,15 +5600,15 @@ func TestPostingsCardinalityStats(t *testing.T) {
 	head.postings.Add(2, labels.FromStrings(labels.MetricName, "t", "n", "v2"))
 
 	statsForMetricName := head.PostingsCardinalityStats(labels.MetricName, 10)
-	// Using cache.
 	head.postings.Add(3, labels.FromStrings(labels.MetricName, "t", "n", "v3"))
+	// Using cache.
 	require.Equal(t, statsForMetricName, head.PostingsCardinalityStats(labels.MetricName, 10))
 
 	statsForSomeLabel := head.PostingsCardinalityStats("n", 10)
 	// Cache should be evicted because of the change of label name.
 	require.NotEqual(t, statsForMetricName, statsForSomeLabel)
-	// Using cache.
 	head.postings.Add(4, labels.FromStrings(labels.MetricName, "t", "n", "v4"))
+	// Using cache.
 	require.Equal(t, statsForSomeLabel, head.PostingsCardinalityStats("n", 10))
 	// Cache should be evicted because of the change of limit parameter.
 	statsForSomeLabel1 := head.PostingsCardinalityStats("n", 1)
