@@ -1,9 +1,9 @@
 ## Overview
 The `ui` directory contains static files and templates used in the web UI. For
-easier distribution they are compressed (c.f. Makefile) and statically compiled 
+easier distribution they are compressed (c.f. Makefile) and statically compiled
 into the Prometheus binary using the embed package.
 
-During development it is more convenient to always use the files on disk to 
+During development it is more convenient to always use the files on disk to
 directly see changes without recompiling.
 To make this work, remove the `builtinassets` build tag in the `flags` entry
 in `.promu.yml`, and then `make build` (or build Prometheus using
