@@ -489,7 +489,7 @@ func TestHistogramChunkAppendable(t *testing.T) {
 	{ // Start new chunk explicitly, and append a new histogram that is not considered appendable to the previous chunk.
 		_, hApp, ts, h1 := setup()
 		h2 := h1.Copy()
-		h2.Count = h2.Count - 1 // Make this not appendable due to counter reset.
+		h2.Count-- // Make this not appendable due to counter reset.
 
 		nextChunk := NewHistogramChunk()
 		app, err := nextChunk.Appender()
