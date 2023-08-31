@@ -39,8 +39,8 @@
     "@codemirror/state": "^6.2.1",
     "@codemirror/view": "^6.13.0",
     "@lezer/common": "^1.0.3",
-    "@lezer/lr": "^1.3.6",
     "@lezer/highlight": "^1.1.6",
+    "@lezer/lr": "^1.3.6",
     "isomorphic-fetch": "^3.0.0",
     "nock": "^13.3.1"
   },
