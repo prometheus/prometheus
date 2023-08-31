@@ -27,6 +27,46 @@ type result struct {
 	fh *histogram.FloatHistogram
 }
 
+func TestFirstHistogramExplicitCounterReset(t *testing.T) {
+	tests := map[string]struct {
+		hint      histogram.CounterResetHint
+		expHeader CounterResetHeader
+	}{
+		"CounterReset": {
+			hint:      histogram.CounterReset,
+			expHeader: CounterReset,
+		},
+		"NotCounterReset": {
+			hint:      histogram.NotCounterReset,
+			expHeader: UnknownCounterReset,
+		},
+		"UnknownCounterReset": {
+			hint:      histogram.UnknownCounterReset,
+			expHeader: UnknownCounterReset,
+		},
+		"Gauge": {
+			hint:      histogram.GaugeType,
+			expHeader: GaugeType,
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			h := &histogram.Histogram{
+				CounterResetHint: test.hint,
+			}
+			chk := NewHistogramChunk()
+			app, err := chk.Appender()
+			require.NoError(t, err)
+			newChk, recoded, newApp, err := app.AppendHistogram(nil, 0, h, false)
+			require.NoError(t, err)
+			require.Nil(t, newChk)
+			require.False(t, recoded)
+			require.Equal(t, app, newApp)
+			require.Equal(t, test.expHeader, chk.GetCounterResetHeader())
+		})
+	}
+}
+
 func TestHistogramChunkSameBuckets(t *testing.T) {
 	c := NewHistogramChunk()
 	var exp []result
@@ -418,6 +458,14 @@ func TestHistogramChunkAppendable(t *testing.T) {
 		require.Equal(t, 0, len(negInterjections))
 		require.False(t, ok) // Need to cut a new chunk.
 		require.True(t, cr)
+
+		assertNewHistogramChunkOnAppend(t, c, hApp, ts+1, h2, CounterReset)
+	}
+
+	{ // New histogram that has an explicit counter reset.
+		c, hApp, ts, h1 := setup()
+		h2 := h1.Copy()
+		h2.CounterResetHint = histogram.CounterReset
 
 		assertNewHistogramChunkOnAppend(t, c, hApp, ts+1, h2, CounterReset)
 	}
