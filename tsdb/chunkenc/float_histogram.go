@@ -581,10 +581,11 @@ func (a *FloatHistogramAppender) AppendFloatHistogram(prev *FloatHistogramAppend
 			return nil, false, a, nil
 		}
 
-		if h.CounterResetHint == histogram.CounterReset {
+		switch {
+		case h.CounterResetHint == histogram.CounterReset:
 			// Always honor the explicit counter reset hint.
 			a.setCounterResetHeader(CounterReset)
-		} else if prev != nil {
+		case prev != nil:
 			// This is a new chunk, but continued from a previous one. We need to calculate the reset header unless already set.
 			_, _, _, counterReset := prev.appendable(h)
 			if counterReset {
