@@ -60,7 +60,9 @@ func BenchmarkQuerier(b *testing.B) {
 	b.Run("Head", func(b *testing.B) {
 		ir, err := h.Index()
 		require.NoError(b, err)
-		defer ir.Close()
+		defer func() {
+			require.NoError(b, ir.Close())
+		}()
 
 		b.Run("PostingsForMatchers", func(b *testing.B) {
 			benchmarkPostingsForMatchers(b, ir)
@@ -80,7 +82,9 @@ func BenchmarkQuerier(b *testing.B) {
 
 		ir, err := block.Index()
 		require.NoError(b, err)
-		defer ir.Close()
+		defer func() {
+			require.NoError(b, ir.Close())
+		}()
 
 		b.Run("PostingsForMatchers", func(b *testing.B) {
 			benchmarkPostingsForMatchers(b, ir)
