@@ -430,35 +430,36 @@ func testHistogramsSeriesToChunks(t *testing.T, test histogramTest) {
 	require.Equal(t, len(test.expectedCounterResetHeaders), len(chks))
 
 	// Decode all encoded samples and assert they are equal to the original ones.
-	encodedSamples := expandHistogramSamples(chks)
+	encodedSamples := chunks.ChunkMetasToSamples(chks)
 	require.Equal(t, len(test.samples), len(encodedSamples))
 
 	for i, s := range test.samples {
+		encodedSample := encodedSamples[i]
 		switch expectedSample := s.(type) {
 		case hSample:
-			encodedSample, ok := encodedSamples[i].(hSample)
-			require.True(t, ok, "expect histogram", fmt.Sprintf("at idx %d", i))
+			require.Equal(t, chunkenc.ValHistogram, encodedSample.Type(), "expect histogram", fmt.Sprintf("at idx %d", i))
+			h := encodedSample.H()
 			// Ignore counter reset if not gauge here, will check on chunk level.
 			if expectedSample.h.CounterResetHint != histogram.GaugeType {
-				encodedSample.h.CounterResetHint = histogram.UnknownCounterReset
+				h.CounterResetHint = histogram.UnknownCounterReset
 			}
 			if value.IsStaleNaN(expectedSample.h.Sum) {
-				require.True(t, value.IsStaleNaN(encodedSample.h.Sum), fmt.Sprintf("at idx %d", i))
+				require.True(t, value.IsStaleNaN(h.Sum), fmt.Sprintf("at idx %d", i))
 				continue
 			}
-			require.Equal(t, *expectedSample.h, *encodedSample.h.Compact(0), fmt.Sprintf("at idx %d", i))
+			require.Equal(t, *expectedSample.h, *h.Compact(0), fmt.Sprintf("at idx %d", i))
 		case fhSample:
-			encodedSample, ok := encodedSamples[i].(fhSample)
-			require.True(t, ok, "expect float histogram", fmt.Sprintf("at idx %d", i))
+			require.Equal(t, chunkenc.ValFloatHistogram, encodedSample.Type(), "expect float histogram", fmt.Sprintf("at idx %d", i))
+			fh := encodedSample.FH()
 			// Ignore counter reset if not gauge here, will check on chunk level.
 			if expectedSample.fh.CounterResetHint != histogram.GaugeType {
-				encodedSample.fh.CounterResetHint = histogram.UnknownCounterReset
+				fh.CounterResetHint = histogram.UnknownCounterReset
 			}
 			if value.IsStaleNaN(expectedSample.fh.Sum) {
-				require.True(t, value.IsStaleNaN(encodedSample.fh.Sum), fmt.Sprintf("at idx %d", i))
+				require.True(t, value.IsStaleNaN(fh.Sum), fmt.Sprintf("at idx %d", i))
 				continue
 			}
-			require.Equal(t, *expectedSample.fh, *encodedSample.fh.Compact(0), fmt.Sprintf("at idx %d", i))
+			require.Equal(t, *expectedSample.fh, *fh.Compact(0), fmt.Sprintf("at idx %d", i))
 		default:
 			t.Error("internal error, unexpected type")
 		}
@@ -467,29 +468,6 @@ func testHistogramsSeriesToChunks(t *testing.T, test histogramTest) {
 	for i, expectedCounterResetHint := range test.expectedCounterResetHeaders {
 		require.Equal(t, expectedCounterResetHint, getCounterResetHint(chks[i]), fmt.Sprintf("chunk at index %d", i))
 	}
-}
-
-func expandHistogramSamples(chunks []chunks.Meta) (result []chunks.Sample) {
-	if len(chunks) == 0 {
-		return
-	}
-
-	for _, chunk := range chunks {
-		it := chunk.Chunk.Iterator(nil)
-		for vt := it.Next(); vt != chunkenc.ValNone; vt = it.Next() {
-			switch vt {
-			case chunkenc.ValHistogram:
-				t, h := it.AtHistogram()
-				result = append(result, hSample{t: t, h: h})
-			case chunkenc.ValFloatHistogram:
-				t, fh := it.AtFloatHistogram()
-				result = append(result, fhSample{t: t, fh: fh})
-			default:
-				panic("unexpected value type")
-			}
-		}
-	}
-	return
 }
 
 func getCounterResetHint(chunk chunks.Meta) chunkenc.CounterResetHeader {
