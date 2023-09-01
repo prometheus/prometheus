@@ -34,13 +34,16 @@ var (
 )
 
 var ruleEvalTestScenarios = []struct {
-	name       string
-	ruleLabels labels.Labels
-	expr       parser.Expr
-	expected   promql.Vector
+	name          string
+	ruleName      string
+	ruleNameLabel string
+	ruleLabels    labels.Labels
+	expr          parser.Expr
+	expected      promql.Vector
 }{
 	{
 		name:       "no labels in recording rule, metric name in query result",
+		ruleName:   "test_rule",
 		ruleLabels: labels.EmptyLabels(),
 		expr:       exprWithMetricName,
 		expected: promql.Vector{
@@ -58,6 +61,7 @@ var ruleEvalTestScenarios = []struct {
 	},
 	{
 		name:       "only new labels in recording rule, metric name in query result",
+		ruleName:   "test_rule",
 		ruleLabels: labels.FromStrings("extra_from_rule", "foo"),
 		expr:       exprWithMetricName,
 		expected: promql.Vector{
@@ -75,6 +79,7 @@ var ruleEvalTestScenarios = []struct {
 	},
 	{
 		name:       "some replacement labels in recording rule, metric name in query result",
+		ruleName:   "test_rule",
 		ruleLabels: labels.FromStrings("label_a", "from_rule"),
 		expr:       exprWithMetricName,
 		expected: promql.Vector{
@@ -92,6 +97,7 @@ var ruleEvalTestScenarios = []struct {
 	},
 	{
 		name:       "no labels in recording rule, no metric name in query result",
+		ruleName:   "test_rule",
 		ruleLabels: labels.EmptyLabels(),
 		expr:       exprWithoutMetricName,
 		expected: promql.Vector{
@@ -102,6 +108,25 @@ var ruleEvalTestScenarios = []struct {
 			},
 			promql.Sample{
 				Metric: labels.FromStrings("__name__", "test_rule", "label_a", "2", "label_b", "4"),
+				F:      20,
+				T:      timestamp.FromTime(ruleEvaluationTime),
+			},
+		},
+	},
+	{
+		name:          "new name label in recording rule",
+		ruleName:      "job:label_a",
+		ruleNameLabel: "label_a",
+		ruleLabels:    labels.EmptyLabels(),
+		expr:          exprWithoutMetricName,
+		expected: promql.Vector{
+			promql.Sample{
+				Metric: labels.FromStrings("__name__", "job:1", "label_a", "1", "label_b", "3"),
+				F:      2,
+				T:      timestamp.FromTime(ruleEvaluationTime),
+			},
+			promql.Sample{
+				Metric: labels.FromStrings("__name__", "job:2", "label_a", "2", "label_b", "4"),
 				F:      20,
 				T:      timestamp.FromTime(ruleEvaluationTime),
 			},
@@ -123,7 +148,7 @@ func TestRuleEval(t *testing.T) {
 
 	for _, scenario := range ruleEvalTestScenarios {
 		t.Run(scenario.name, func(t *testing.T) {
-			rule := NewRecordingRule("test_rule", scenario.expr, scenario.ruleLabels)
+			rule := NewRecordingRule(scenario.ruleName, scenario.ruleNameLabel, scenario.expr, scenario.ruleLabels)
 			result, err := rule.Eval(context.TODO(), ruleEvaluationTime, EngineQueryFunc(testEngine, storage), nil, 0)
 			require.NoError(t, err)
 			require.Equal(t, scenario.expected, result)
@@ -137,7 +162,7 @@ func BenchmarkRuleEval(b *testing.B) {
 
 	for _, scenario := range ruleEvalTestScenarios {
 		b.Run(scenario.name, func(b *testing.B) {
-			rule := NewRecordingRule("test_rule", scenario.expr, scenario.ruleLabels)
+			rule := NewRecordingRule(scenario.ruleName, scenario.ruleNameLabel, scenario.expr, scenario.ruleLabels)
 
 			b.ResetTimer()
 
@@ -170,7 +195,7 @@ func TestRuleEvalDuplicate(t *testing.T) {
 	now := time.Now()
 
 	expr, _ := parser.ParseExpr(`vector(0) or label_replace(vector(0),"test","x","","")`)
-	rule := NewRecordingRule("foo", expr, labels.FromStrings("test", "test"))
+	rule := NewRecordingRule("foo", "", expr, labels.FromStrings("test", "test"))
 	_, err := rule.Eval(ctx, now, EngineQueryFunc(engine, storage), nil, 0)
 	require.Error(t, err)
 	require.EqualError(t, err, "vector contains metrics with the same labelset after applying rule labels")
@@ -206,6 +231,7 @@ func TestRecordingRuleLimit(t *testing.T) {
 	expr, _ := parser.ParseExpr(`metric > 0`)
 	rule := NewRecordingRule(
 		"foo",
+		"",
 		expr,
 		labels.FromStrings("test", "test"),
 	)
@@ -240,7 +266,7 @@ func TestRecordingEvalWithOrigin(t *testing.T) {
 	expr, err := parser.ParseExpr(query)
 	require.NoError(t, err)
 
-	rule := NewRecordingRule(name, expr, lbs)
+	rule := NewRecordingRule(name, "", expr, lbs)
 	_, err = rule.Eval(ctx, now, func(ctx context.Context, qs string, _ time.Time) (promql.Vector, error) {
 		detail = FromOriginContext(ctx)
 		return nil, nil

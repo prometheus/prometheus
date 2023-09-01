@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"strings"
 	"time"
 
 	"go.uber.org/atomic"
@@ -30,9 +31,10 @@ import (
 
 // A RecordingRule records its vector expression into new timeseries.
 type RecordingRule struct {
-	name   string
-	vector parser.Expr
-	labels labels.Labels
+	name      string
+	nameLabel string
+	vector    parser.Expr
+	labels    labels.Labels
 	// The health of the recording rule.
 	health *atomic.String
 	// Timestamp of last evaluation of the recording rule.
@@ -44,9 +46,10 @@ type RecordingRule struct {
 }
 
 // NewRecordingRule returns a new recording rule.
-func NewRecordingRule(name string, vector parser.Expr, lset labels.Labels) *RecordingRule {
+func NewRecordingRule(name, nameLabel string, vector parser.Expr, lset labels.Labels) *RecordingRule {
 	return &RecordingRule{
 		name:                name,
+		nameLabel:           nameLabel,
 		vector:              vector,
 		labels:              lset,
 		health:              atomic.NewString(string(HealthUnknown)),
@@ -59,6 +62,11 @@ func NewRecordingRule(name string, vector parser.Expr, lset labels.Labels) *Reco
 // Name returns the rule name.
 func (rule *RecordingRule) Name() string {
 	return rule.name
+}
+
+// NameLabel returns the rule name.
+func (rule *RecordingRule) NameLabel() string {
+	return rule.nameLabel
 }
 
 // Query returns the rule query expression.
@@ -82,12 +90,18 @@ func (rule *RecordingRule) Eval(ctx context.Context, ts time.Time, query QueryFu
 
 	// Override the metric name and labels.
 	lb := labels.NewBuilder(labels.EmptyLabels())
+	hasNameLabel := len(rule.nameLabel) > 0 && strings.Contains(rule.name, rule.nameLabel)
 
 	for i := range vector {
 		sample := &vector[i]
 
+		ruleName := rule.name
+		if hasNameLabel {
+			ruleName = strings.ReplaceAll(ruleName, rule.nameLabel, sample.Metric.Get(rule.nameLabel))
+		}
+
 		lb.Reset(sample.Metric)
-		lb.Set(labels.MetricName, rule.name)
+		lb.Set(labels.MetricName, ruleName)
 
 		rule.labels.Range(func(l labels.Label) {
 			lb.Set(l.Name, l.Value)

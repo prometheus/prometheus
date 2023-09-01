@@ -91,6 +91,11 @@ export const RulesContent: FC<RulesContentProps> = ({ response }) => {
                           <GraphExpressionLink title="record" text={r.name} expr={r.name} />
                         )}
                         <GraphExpressionLink title="expr" text={r.query} expr={r.query} />
+                        {r.nameLabel && (
+                          <div>
+                            <strong>nameLabel:</strong> {r.nameLabel}
+                          </div>
+                        )}
                         {r.duration > 0 && (
                           <div>
                             <strong>for:</strong> {formatDuration(r.duration * 1000)}

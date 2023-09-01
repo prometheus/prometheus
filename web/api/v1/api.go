@@ -1332,6 +1332,7 @@ type AlertingRule struct {
 
 type RecordingRule struct {
 	Name           string           `json:"name"`
+	NameLabel      string           `json:"nameLabel,omitempty"`
 	Query          string           `json:"query"`
 	Labels         labels.Labels    `json:"labels,omitempty"`
 	Health         rules.RuleHealth `json:"health"`
@@ -1432,6 +1433,7 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 				}
 				enrichedRule = RecordingRule{
 					Name:           rule.Name(),
+					NameLabel:      rule.NameLabel(),
 					Query:          rule.Query().String(),
 					Labels:         rule.Labels(),
 					Health:         rule.Health(),

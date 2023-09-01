@@ -33,6 +33,7 @@ export type Rule = {
   lastError?: string;
   lastEvaluation: string;
   name: string;
+  nameLabel: string;
   query: string;
   state: RuleState;
   type: string;

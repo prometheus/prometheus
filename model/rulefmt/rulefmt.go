@@ -156,6 +156,7 @@ type Rule struct {
 type RuleNode struct {
 	Record        yaml.Node         `yaml:"record,omitempty"`
 	Alert         yaml.Node         `yaml:"alert,omitempty"`
+	NameLabel     yaml.Node         `yaml:"name_label,omitempty"`
 	Expr          yaml.Node         `yaml:"expr"`
 	For           model.Duration    `yaml:"for,omitempty"`
 	KeepFiringFor model.Duration    `yaml:"keep_firing_for,omitempty"`

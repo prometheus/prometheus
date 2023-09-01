@@ -1166,6 +1166,7 @@ func (m *Manager) LoadGroups(
 				}
 				rules = append(rules, NewRecordingRule(
 					r.Record.Value,
+					r.NameLabel.Value,
 					expr,
 					labels.FromMap(r.Labels),
 				))

@@ -283,7 +283,7 @@ func (m rulesRetrieverMock) RuleGroups() []*rules.Group {
 	if err != nil {
 		m.testing.Fatalf("unable to parse alert expression: %s", err)
 	}
-	recordingRule := rules.NewRecordingRule("recording-rule-1", recordingExpr, labels.Labels{})
+	recordingRule := rules.NewRecordingRule("recording-rule-1", "", recordingExpr, labels.Labels{})
 	r = append(r, recordingRule)
 
 	group := rules.NewGroup(rules.GroupOptions{

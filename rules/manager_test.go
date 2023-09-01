@@ -533,7 +533,7 @@ func TestStaleness(t *testing.T) {
 
 	expr, err := parser.ParseExpr("a + 1")
 	require.NoError(t, err)
-	rule := NewRecordingRule("a_plus_one", expr, labels.Labels{})
+	rule := NewRecordingRule("a_plus_one", "", expr, labels.Labels{})
 	group := NewGroup(GroupOptions{
 		Name:          "default",
 		Interval:      time.Second,
@@ -608,11 +608,11 @@ func TestCopyState(t *testing.T) {
 	oldGroup := &Group{
 		rules: []Rule{
 			NewAlertingRule("alert", nil, 0, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
-			NewRecordingRule("rule1", nil, labels.EmptyLabels()),
-			NewRecordingRule("rule2", nil, labels.EmptyLabels()),
-			NewRecordingRule("rule3", nil, labels.FromStrings("l1", "v1")),
-			NewRecordingRule("rule3", nil, labels.FromStrings("l1", "v2")),
-			NewRecordingRule("rule3", nil, labels.FromStrings("l1", "v3")),
+			NewRecordingRule("rule1", "", nil, labels.EmptyLabels()),
+			NewRecordingRule("rule2", "", nil, labels.EmptyLabels()),
+			NewRecordingRule("rule3", "", nil, labels.FromStrings("l1", "v1")),
+			NewRecordingRule("rule3", "", nil, labels.FromStrings("l1", "v2")),
+			NewRecordingRule("rule3", "", nil, labels.FromStrings("l1", "v3")),
 			NewAlertingRule("alert2", nil, 0, 0, labels.FromStrings("l2", "v1"), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
 		},
 		seriesInPreviousEval: []map[string]labels.Labels{
@@ -629,14 +629,14 @@ func TestCopyState(t *testing.T) {
 	oldGroup.rules[0].(*AlertingRule).active[42] = nil
 	newGroup := &Group{
 		rules: []Rule{
-			NewRecordingRule("rule3", nil, labels.FromStrings("l1", "v0")),
-			NewRecordingRule("rule3", nil, labels.FromStrings("l1", "v1")),
-			NewRecordingRule("rule3", nil, labels.FromStrings("l1", "v2")),
+			NewRecordingRule("rule3", "", nil, labels.FromStrings("l1", "v0")),
+			NewRecordingRule("rule3", "", nil, labels.FromStrings("l1", "v1")),
+			NewRecordingRule("rule3", "", nil, labels.FromStrings("l1", "v2")),
 			NewAlertingRule("alert", nil, 0, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
-			NewRecordingRule("rule1", nil, labels.EmptyLabels()),
+			NewRecordingRule("rule1", "", nil, labels.EmptyLabels()),
 			NewAlertingRule("alert2", nil, 0, 0, labels.FromStrings("l2", "v0"), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
 			NewAlertingRule("alert2", nil, 0, 0, labels.FromStrings("l2", "v1"), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
-			NewRecordingRule("rule4", nil, labels.EmptyLabels()),
+			NewRecordingRule("rule4", "", nil, labels.EmptyLabels()),
 		},
 		seriesInPreviousEval: make([]map[string]labels.Labels, 8),
 	}
@@ -664,7 +664,7 @@ func TestDeletedRuleMarkedStale(t *testing.T) {
 	defer st.Close()
 	oldGroup := &Group{
 		rules: []Rule{
-			NewRecordingRule("rule1", nil, labels.FromStrings("l1", "v1")),
+			NewRecordingRule("rule1", "", nil, labels.FromStrings("l1", "v1")),
 		},
 		seriesInPreviousEval: []map[string]labels.Labels{
 			{"r1": labels.FromStrings("l1", "v1")},
@@ -1140,7 +1140,7 @@ func TestGroupHasAlertingRules(t *testing.T) {
 				name: "HasAlertingRule",
 				rules: []Rule{
 					NewAlertingRule("alert", nil, 0, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
-					NewRecordingRule("record", nil, labels.EmptyLabels()),
+					NewRecordingRule("record", "", nil, labels.EmptyLabels()),
 				},
 			},
 			want: true,
@@ -1156,7 +1156,7 @@ func TestGroupHasAlertingRules(t *testing.T) {
 			group: &Group{
 				name: "HasOnlyRecordingRule",
 				rules: []Rule{
-					NewRecordingRule("record", nil, labels.EmptyLabels()),
+					NewRecordingRule("record", "", nil, labels.EmptyLabels()),
 				},
 			},
 			want: false,
@@ -1189,7 +1189,7 @@ func TestRuleHealthUpdates(t *testing.T) {
 
 	expr, err := parser.ParseExpr("a + 1")
 	require.NoError(t, err)
-	rule := NewRecordingRule("a_plus_one", expr, labels.Labels{})
+	rule := NewRecordingRule("a_plus_one", "", expr, labels.Labels{})
 	group := NewGroup(GroupOptions{
 		Name:          "default",
 		Interval:      time.Second,
@@ -1369,7 +1369,7 @@ func TestNativeHistogramsInRecordingRules(t *testing.T) {
 
 	expr, err := parser.ParseExpr("sum(histogram_metric)")
 	require.NoError(t, err)
-	rule := NewRecordingRule("sum:histogram_metric", expr, labels.Labels{})
+	rule := NewRecordingRule("sum:histogram_metric", "", expr, labels.Labels{})
 
 	group := NewGroup(GroupOptions{
 		Name:          "default",
