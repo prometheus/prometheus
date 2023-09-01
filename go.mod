@@ -1,6 +1,6 @@
 module github.com/prometheus/prometheus
 
-go 1.19
+go 1.20
 
 require (
 	github.com/Azure/azure-sdk-for-go v65.0.0+incompatible
@@ -10,7 +10,7 @@ require (
 	github.com/Azure/go-autorest/autorest/adal v0.9.23
 	github.com/alecthomas/kingpin/v2 v2.3.2
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
-	github.com/aws/aws-sdk-go v1.44.302
+	github.com/aws/aws-sdk-go v1.44.317
 	github.com/cespare/xxhash/v2 v2.2.0
 	github.com/dennwc/varint v1.0.0
 	github.com/digitalocean/godo v1.99.0
@@ -43,7 +43,7 @@ require (
 	github.com/oklog/ulid v1.3.1
 	github.com/ovh/go-ovh v1.4.1
 	github.com/pkg/errors v0.9.1
-	github.com/prometheus/alertmanager v0.25.0
+	github.com/prometheus/alertmanager v0.26.0
 	github.com/prometheus/client_golang v1.16.0
 	github.com/prometheus/client_model v0.4.0
 	github.com/prometheus/common v0.44.0
