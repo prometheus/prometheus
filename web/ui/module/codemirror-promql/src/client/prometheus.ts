@@ -285,9 +285,9 @@ class Cache {
       ttl: config && config.maxAge ? config.maxAge : 5 * 60 * 1000,
       ttlAutopurge: false,
     };
-    this.completeAssociation = new LRUCache<string, Map<string, Set<string>>, unknown>(maxAge);
+    this.completeAssociation = new LRUCache<string, Map<string, Set<string>>>(maxAge);
     this.metricMetadata = {};
-    this.labelValues = new LRUCache<string, string[], unknown>(maxAge);
+    this.labelValues = new LRUCache<string, string[]>(maxAge);
     this.labelNames = [];
     this.flags = {};
     if (config?.initialMetricList) {
