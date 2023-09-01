@@ -23,6 +23,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -571,6 +572,232 @@ func TestCompactingChunkSeriesMerger(t *testing.T) {
 
 			require.Equal(t, expErr, actErr)
 			require.Equal(t, expChks, actChks)
+
+			actSamples := chunks.ChunkMetasToSamples(actChks)
+			expSamples := chunks.ChunkMetasToSamples(expChks)
+			require.Equal(t, expSamples, actSamples)
+		})
+	}
+}
+
+func TestCompactingChunkSeriesMergerHistogramCounterResetHint(t *testing.T) {
+	m := NewCompactingChunkSeriesMerger(ChainedSeriesMerge)
+
+	// histogramSample returns a histogram that is unique to the ts.
+	histogramSample := func(ts int64, hint histogram.CounterResetHint) hSample {
+		h := tsdbutil.GenerateTestHistogram(int(ts + 1))
+		h.CounterResetHint = hint
+		return hSample{t: ts, h: h}
+	}
+
+	floatHistogramSample := func(ts int64, hint histogram.CounterResetHint) fhSample {
+		fh := tsdbutil.GenerateTestFloatHistogram(int(ts + 1))
+		fh.CounterResetHint = hint
+		return fhSample{t: ts, fh: fh}
+	}
+
+	// Shorthands for counter reset hints.
+	uk := histogram.UnknownCounterReset
+	cr := histogram.CounterReset
+	nr := histogram.NotCounterReset
+
+	for name, tc := range map[string]struct {
+		input    []ChunkSeries
+		expected ChunkSeries
+	}{
+		"histogram counter reset hint kept in single series": {
+			input: []ChunkSeries{
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+					[]chunks.Sample{histogramSample(0, cr), histogramSample(5, uk)},
+					[]chunks.Sample{histogramSample(10, cr), histogramSample(15, uk)},
+				),
+			},
+			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+				[]chunks.Sample{histogramSample(0, cr), histogramSample(5, uk)},
+				[]chunks.Sample{histogramSample(10, cr), histogramSample(15, uk)},
+			),
+		},
+		"float histogram counter reset hint kept in single series": {
+			input: []ChunkSeries{
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+					[]chunks.Sample{floatHistogramSample(0, cr), floatHistogramSample(5, uk)},
+					[]chunks.Sample{floatHistogramSample(10, cr), floatHistogramSample(15, uk)},
+				),
+			},
+			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+				[]chunks.Sample{floatHistogramSample(0, cr), floatHistogramSample(5, uk)},
+				[]chunks.Sample{floatHistogramSample(10, cr), floatHistogramSample(15, uk)},
+			),
+		},
+		"histogram not counter reset hint kept in single series": {
+			input: []ChunkSeries{
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+					[]chunks.Sample{histogramSample(0, nr), histogramSample(5, uk)},
+					[]chunks.Sample{histogramSample(10, nr), histogramSample(15, uk)},
+				),
+			},
+			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+				[]chunks.Sample{histogramSample(0, nr), histogramSample(5, uk)},
+				[]chunks.Sample{histogramSample(10, nr), histogramSample(15, uk)},
+			),
+		},
+		"float histogram not counter reset hint kept in single series": {
+			input: []ChunkSeries{
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+					[]chunks.Sample{floatHistogramSample(0, nr), floatHistogramSample(5, uk)},
+					[]chunks.Sample{floatHistogramSample(10, nr), floatHistogramSample(15, uk)},
+				),
+			},
+			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+				[]chunks.Sample{floatHistogramSample(0, nr), floatHistogramSample(5, uk)},
+				[]chunks.Sample{floatHistogramSample(10, nr), floatHistogramSample(15, uk)},
+			),
+		},
+		"histogram counter reset hint kept in multiple equal series": {
+			// Equal chunks are not processed, one is just dropped.
+			input: []ChunkSeries{
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+					[]chunks.Sample{histogramSample(0, cr), histogramSample(5, uk)},
+					[]chunks.Sample{histogramSample(10, cr), histogramSample(15, uk)},
+				),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+					[]chunks.Sample{histogramSample(0, cr), histogramSample(5, uk)},
+					[]chunks.Sample{histogramSample(10, cr), histogramSample(15, uk)},
+				),
+			},
+			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+				[]chunks.Sample{histogramSample(0, cr), histogramSample(5, uk)},
+				[]chunks.Sample{histogramSample(10, cr), histogramSample(15, uk)},
+			),
+		},
+		"float histogram counter reset hint kept in multiple equal series": {
+			// Equal chunks are not processed, one is just dropped.
+			input: []ChunkSeries{
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+					[]chunks.Sample{floatHistogramSample(0, cr), floatHistogramSample(5, uk)},
+					[]chunks.Sample{floatHistogramSample(10, cr), floatHistogramSample(15, uk)},
+				),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+					[]chunks.Sample{floatHistogramSample(0, cr), floatHistogramSample(5, uk)},
+					[]chunks.Sample{floatHistogramSample(10, cr), floatHistogramSample(15, uk)},
+				),
+			},
+			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+				[]chunks.Sample{floatHistogramSample(0, cr), floatHistogramSample(5, uk)},
+				[]chunks.Sample{floatHistogramSample(10, cr), floatHistogramSample(15, uk)},
+			),
+		},
+		"histogram not counter reset hint kept in multiple equal series": {
+			// Equal chunks are not processed, one is just dropped.
+			input: []ChunkSeries{
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+					[]chunks.Sample{histogramSample(0, nr), histogramSample(5, uk)},
+					[]chunks.Sample{histogramSample(10, nr), histogramSample(15, uk)},
+				),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+					[]chunks.Sample{histogramSample(0, nr), histogramSample(5, uk)},
+					[]chunks.Sample{histogramSample(10, nr), histogramSample(15, uk)},
+				),
+			},
+			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+				[]chunks.Sample{histogramSample(0, nr), histogramSample(5, uk)},
+				[]chunks.Sample{histogramSample(10, nr), histogramSample(15, uk)},
+			),
+		},
+		"float histogram not counter reset hint kept in multiple equal series": {
+			// Equal chunks are not processed, one is just dropped.
+			input: []ChunkSeries{
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+					[]chunks.Sample{floatHistogramSample(0, nr), floatHistogramSample(5, uk)},
+					[]chunks.Sample{floatHistogramSample(10, nr), floatHistogramSample(15, uk)},
+				),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+					[]chunks.Sample{floatHistogramSample(0, nr), floatHistogramSample(5, uk)},
+					[]chunks.Sample{floatHistogramSample(10, nr), floatHistogramSample(15, uk)},
+				),
+			},
+			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+				[]chunks.Sample{floatHistogramSample(0, nr), floatHistogramSample(5, uk)},
+				[]chunks.Sample{floatHistogramSample(10, nr), floatHistogramSample(15, uk)},
+			),
+		},
+		"histogram counter reset hint dropped from differing series": {
+			input: []ChunkSeries{
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+					[]chunks.Sample{histogramSample(0, cr), histogramSample(5, uk)},
+					[]chunks.Sample{histogramSample(10, cr), histogramSample(15, uk)},
+				),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+					[]chunks.Sample{histogramSample(0, cr), histogramSample(5, uk)},
+					[]chunks.Sample{histogramSample(10, cr), histogramSample(12, uk), histogramSample(15, uk)},
+				),
+			},
+			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+				[]chunks.Sample{histogramSample(0, cr), histogramSample(5, uk)},
+				[]chunks.Sample{histogramSample(10, uk), histogramSample(12, uk), histogramSample(15, uk)},
+			),
+		},
+		"float histogram counter reset hint dropped from differing series": {
+			input: []ChunkSeries{
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+					[]chunks.Sample{floatHistogramSample(0, cr), floatHistogramSample(5, uk)},
+					[]chunks.Sample{floatHistogramSample(10, cr), floatHistogramSample(15, uk)},
+				),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+					[]chunks.Sample{floatHistogramSample(0, cr), floatHistogramSample(5, uk)},
+					[]chunks.Sample{floatHistogramSample(10, cr), floatHistogramSample(12, uk), floatHistogramSample(15, uk)},
+				),
+			},
+			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+				[]chunks.Sample{floatHistogramSample(0, cr), floatHistogramSample(5, uk)},
+				[]chunks.Sample{floatHistogramSample(10, uk), floatHistogramSample(12, uk), floatHistogramSample(15, uk)},
+			),
+		},
+		"histogram counter not reset hint dropped from differing series": {
+			input: []ChunkSeries{
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+					[]chunks.Sample{histogramSample(0, nr), histogramSample(5, uk)},
+					[]chunks.Sample{histogramSample(10, nr), histogramSample(15, uk)},
+				),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+					[]chunks.Sample{histogramSample(0, nr), histogramSample(5, uk)},
+					[]chunks.Sample{histogramSample(10, nr), histogramSample(12, uk), histogramSample(15, uk)},
+				),
+			},
+			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+				[]chunks.Sample{histogramSample(0, nr), histogramSample(5, uk)},
+				[]chunks.Sample{histogramSample(10, uk), histogramSample(12, uk), histogramSample(15, uk)},
+			),
+		},
+		"float histogram counter not reset hint dropped from differing series": {
+			input: []ChunkSeries{
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+					[]chunks.Sample{floatHistogramSample(0, nr), floatHistogramSample(5, uk)},
+					[]chunks.Sample{floatHistogramSample(10, nr), floatHistogramSample(15, uk)},
+				),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+					[]chunks.Sample{floatHistogramSample(0, nr), floatHistogramSample(5, uk)},
+					[]chunks.Sample{floatHistogramSample(10, nr), floatHistogramSample(12, uk), floatHistogramSample(15, uk)},
+				),
+			},
+			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+				[]chunks.Sample{floatHistogramSample(0, nr), floatHistogramSample(5, uk)},
+				[]chunks.Sample{floatHistogramSample(10, uk), floatHistogramSample(12, uk), floatHistogramSample(15, uk)},
+			),
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			merged := m(tc.input...)
+			require.Equal(t, tc.expected.Labels(), merged.Labels())
+			actChks, actErr := ExpandChunks(merged.Iterator(nil))
+			expChks, expErr := ExpandChunks(tc.expected.Iterator(nil))
+
+			require.Equal(t, expErr, actErr)
+			require.Equal(t, expChks, actChks)
+
+			actSamples := chunks.ChunkMetasToSamples(actChks)
+			expSamples := chunks.ChunkMetasToSamples(expChks)
+			require.Equal(t, expSamples, actSamples)
 		})
 	}
 }
