@@ -430,6 +430,8 @@ func (m *Manager) registerProviders(cfgs Configs, setName string) int {
 		d, err := cfg.NewDiscoverer(DiscovererOptions{
 			Logger:            log.With(m.logger, "discovery", typ, "config", setName),
 			HTTPClientOptions: m.httpOpts,
+			// TODO(ptodev): Use a non-default Registerer.
+			Registerer: prometheus.DefaultRegisterer,
 		})
 		if err != nil {
 			level.Error(m.logger).Log("msg", "Cannot create service discovery", "err", err, "type", typ, "config", setName)

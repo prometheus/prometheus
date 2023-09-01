@@ -20,12 +20,12 @@ import (
 )
 
 type scrapeMetrics struct {
-	// Used by Manager
+	// Used by Manager.
 	targetMetadataCache     *MetadataMetricsCollector
 	targetScrapePools       prometheus.Counter
 	targetScrapePoolsFailed prometheus.Counter
 
-	// Used by scrapePool
+	// Used by scrapePool.
 	targetReloadIntervalLength          *prometheus.SummaryVec
 	targetScrapePoolReloads             prometheus.Counter
 	targetScrapePoolReloadsFailed       prometheus.Counter
@@ -36,13 +36,13 @@ type scrapeMetrics struct {
 	targetSyncIntervalLength            *prometheus.SummaryVec
 	targetSyncFailed                    *prometheus.CounterVec
 
-	// Used by targetScraper
+	// Used by targetScraper.
 	targetScrapeExceededBodySizeLimit prometheus.Counter
 
-	// Used by scrapeCache
+	// Used by scrapeCache.
 	targetScrapeCacheFlushForced prometheus.Counter
 
-	// Used by scrapeLoop
+	// Used by scrapeLoop.
 	targetIntervalLength                   *prometheus.SummaryVec
 	targetScrapeSampleLimit                prometheus.Counter
 	targetScrapeSampleDuplicate            prometheus.Counter
@@ -56,7 +56,7 @@ type scrapeMetrics struct {
 func newScrapeMetrics(reg prometheus.Registerer) (*scrapeMetrics, error) {
 	sm := &scrapeMetrics{}
 
-	// Manager metrics
+	// Manager metrics.
 	sm.targetMetadataCache = &MetadataMetricsCollector{
 		CacheEntries: prometheus.NewDesc(
 			"prometheus_target_metadata_cache_entries",
@@ -70,9 +70,8 @@ func newScrapeMetrics(reg prometheus.Registerer) (*scrapeMetrics, error) {
 			[]string{"scrape_job"},
 			nil,
 		),
-		// This should be filled in later because it's a circular dependency.
+		// TargetsGatherer should be set later, because it's a circular dependency.
 		// newScrapeMetrics() is called by NewManager(), while also TargetsGatherer is the new Manager.
-		TargetsGatherer: nil,
 	}
 
 	sm.targetScrapePools = prometheus.NewCounter(
@@ -88,7 +87,7 @@ func newScrapeMetrics(reg prometheus.Registerer) (*scrapeMetrics, error) {
 		},
 	)
 
-	// Used by scrapePool
+	// Used by scrapePool.
 	sm.targetReloadIntervalLength = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
 			Name:       "prometheus_target_reload_length_seconds",
@@ -152,7 +151,7 @@ func newScrapeMetrics(reg prometheus.Registerer) (*scrapeMetrics, error) {
 		[]string{"scrape_job"},
 	)
 
-	// Used by targetScraper
+	// Used by targetScraper.
 	sm.targetScrapeExceededBodySizeLimit = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "prometheus_target_scrapes_exceeded_body_size_limit_total",
@@ -160,7 +159,7 @@ func newScrapeMetrics(reg prometheus.Registerer) (*scrapeMetrics, error) {
 		},
 	)
 
-	// Used by scrapeCache
+	// Used by scrapeCache.
 	sm.targetScrapeCacheFlushForced = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "prometheus_target_scrapes_cache_flush_forced_total",
@@ -168,7 +167,7 @@ func newScrapeMetrics(reg prometheus.Registerer) (*scrapeMetrics, error) {
 		},
 	)
 
-	// Used by scrapeLoop
+	// Used by scrapeLoop.
 	sm.targetIntervalLength = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
 			Name:       "prometheus_target_interval_length_seconds",
@@ -221,11 +220,11 @@ func newScrapeMetrics(reg prometheus.Registerer) (*scrapeMetrics, error) {
 	)
 
 	for _, collector := range []prometheus.Collector{
-		// Used by Manager
+		// Used by Manager.
 		sm.targetMetadataCache,
 		sm.targetScrapePools,
 		sm.targetScrapePoolsFailed,
-		// Used by scrapePool
+		// Used by scrapePool.
 		sm.targetReloadIntervalLength,
 		sm.targetScrapePoolReloads,
 		sm.targetScrapePoolReloadsFailed,
@@ -235,11 +234,11 @@ func newScrapeMetrics(reg prometheus.Registerer) (*scrapeMetrics, error) {
 		sm.targetScrapePoolTargetLimit,
 		sm.targetScrapePoolTargetsAdded,
 		sm.targetSyncFailed,
-		// Used by targetScraper
+		// Used by targetScraper.
 		sm.targetScrapeExceededBodySizeLimit,
-		// Used by scrapeCache
+		// Used by scrapeCache.
 		sm.targetScrapeCacheFlushForced,
-		// Used by scrapeLoop
+		// Used by scrapeLoop.
 		sm.targetIntervalLength,
 		sm.targetScrapeSampleLimit,
 		sm.targetScrapeSampleDuplicate,

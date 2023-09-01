@@ -233,10 +233,6 @@ func NewDiscovery(conf *SDConfig, logger log.Logger, reg prometheus.Registerer) 
 			},
 			[]string{"endpoint", "call"},
 		),
-		// servicesRPCDuration and serviceRPCDuration are initialized later
-		// because they depend on rpcDuration.
-		servicesRPCDuration: nil,
-		serviceRPCDuration:  nil,
 	}
 
 	// Initialize metric vectors.

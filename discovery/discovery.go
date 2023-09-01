@@ -46,6 +46,10 @@ type DiscovererOptions struct {
 	// A registerer for the Discoverer's metrics.
 	// Some Discoverers may ignore this registerer and use the global one instead.
 	Registerer prometheus.Registerer
+	// TODO(ptodev): In the future, all Discoverer components will be updated to use this explicit registerer.
+	// The Prometheus `main` function may also be updated to not use the global registry.
+	// Hence, if a discoverer wants its metrics to be visible via the Prometheus executable's
+	// `/metrics` endpoint, it should use this explicit registerer.
 
 	// Extra HTTP client options to expose to Discoverers. This field may be
 	// ignored; Discoverer implementations must opt-in to reading it.

@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/prometheus/prometheus/config"
@@ -79,6 +78,7 @@ func CheckSD(sdConfigFiles, sdJobName string, sdTimeout time.Duration, noDefault
 	defer cancel()
 
 	for _, cfg := range scrapeConfig.ServiceDiscoveryConfigs {
+		// TODO(ptodev): Use a non-default Registerer.
 		d, err := cfg.NewDiscoverer(discovery.DiscovererOptions{Logger: logger, Registerer: prometheus.DefaultRegisterer})
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Could not create new discoverer", err)

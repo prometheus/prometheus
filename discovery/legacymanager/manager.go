@@ -312,6 +312,8 @@ func (m *Manager) registerProviders(cfgs discovery.Configs, setName string) int 
 		typ := cfg.Name()
 		d, err := cfg.NewDiscoverer(discovery.DiscovererOptions{
 			Logger: log.With(m.logger, "discovery", typ, "config", setName),
+			// TODO(ptodev): Use a non-default Registerer.
+			Registerer: prometheus.DefaultRegisterer,
 		})
 		if err != nil {
 			level.Error(m.logger).Log("msg", "Cannot create service discovery", "err", err, "type", typ, "config", setName)
