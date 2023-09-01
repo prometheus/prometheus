@@ -14,7 +14,7 @@
 import { FetchFn } from '.';
 import { Matcher } from '../types';
 import { labelMatchersToString } from '../parser';
-import LRUCache from 'lru-cache';
+import { LRUCache } from 'lru-cache';
 
 export interface MetricMetadata {
   type: string;
@@ -281,10 +281,13 @@ class Cache {
   private flags: Record<string, string>;
 
   constructor(config?: CacheConfig) {
-    const maxAge: LRUCache.LimitedByTTL = { ttl: config && config.maxAge ? config.maxAge : 5 * 60 * 1000 };
-    this.completeAssociation = new LRUCache<string, Map<string, Set<string>>>(maxAge);
+    const maxAge = {
+      ttl: config && config.maxAge ? config.maxAge : 5 * 60 * 1000,
+      ttlAutopurge: false,
+    };
+    this.completeAssociation = new LRUCache<string, Map<string, Set<string>>, unknown>(maxAge);
     this.metricMetadata = {};
-    this.labelValues = new LRUCache<string, string[]>(maxAge);
+    this.labelValues = new LRUCache<string, string[], unknown>(maxAge);
     this.labelNames = [];
     this.flags = {};
     if (config?.initialMetricList) {
