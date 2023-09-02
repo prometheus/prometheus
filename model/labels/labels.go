@@ -47,11 +47,9 @@ type Label struct {
 // instantiation.
 type Labels []Label
 
-func (ls Labels) Len() int      { return len(ls) }
-func (ls Labels) Swap(i, j int) { ls[i], ls[j] = ls[j], ls[i] }
-func (ls Labels) Less(i, j int) int {
-	return strings.Compare(ls[i].Name, ls[j].Name)
-}
+func (ls Labels) Len() int           { return len(ls) }
+func (ls Labels) Swap(i, j int)      { ls[i], ls[j] = ls[j], ls[i] }
+func (ls Labels) Less(i, j int) bool { return ls[i].Name < ls[j].Name }
 
 func (ls Labels) String() string {
 	var b bytes.Buffer

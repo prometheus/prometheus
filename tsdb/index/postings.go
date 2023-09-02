@@ -109,9 +109,12 @@ func (p *MemPostings) SortedKeys() []labels.Label {
 	p.mtx.RUnlock()
 
 	slices.SortFunc(keys, func(a, b labels.Label) int {
-		if a.Name != b.Name {
-			return strings.Compare(a.Name, b.Name)
+		nameCompare := strings.Compare(a.Name, b.Name)
+		// If names are the same, compare values.
+		if nameCompare == 0 {
+			return nameCompare
 		}
+
 		return strings.Compare(a.Value, b.Value)
 	})
 	return keys

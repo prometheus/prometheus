@@ -1207,8 +1207,12 @@ func (m *Manager) RuleGroups() []*Group {
 	}
 
 	slices.SortFunc(rgs, func(a, b *Group) int {
-		if a.file != b.file {
-			return strings.Compare(a.file, b.file)
+		fileCompare := strings.Compare(a.file, b.file)
+
+		// If its 0, then the file names are the same.
+		// Lets look at the group names in that case.
+		if fileCompare != 0 {
+			return fileCompare
 		}
 		return strings.Compare(a.name, b.name)
 	})
