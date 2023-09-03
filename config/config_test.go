@@ -1858,6 +1858,10 @@ var expectedErrors = []struct {
 		errMsg:   "host is missing in URL",
 	},
 	{
+		filename: "http_token_file.bad.yml",
+		errMsg:   "at most one of bearer_token & bearer_token_file must be configured",
+	},
+	{
 		filename: "http_url_bad_scheme.bad.yml",
 		errMsg:   "URL scheme must be 'http' or 'https'",
 	},
