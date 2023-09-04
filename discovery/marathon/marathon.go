@@ -106,14 +106,16 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if len(c.AuthToken) > 0 && len(c.AuthTokenFile) > 0 {
 		return errors.New("marathon_sd: at most one of auth_token & auth_token_file must be configured")
 	}
-	if c.HTTPClientConfig.BasicAuth != nil && (len(c.AuthToken) > 0 || len(c.AuthTokenFile) > 0) {
-		return errors.New("marathon_sd: at most one of basic_auth, auth_token & auth_token_file must be configured")
-	}
-	if (len(c.HTTPClientConfig.BearerToken) > 0 || len(c.HTTPClientConfig.BearerTokenFile) > 0) && (len(c.AuthToken) > 0 || len(c.AuthTokenFile) > 0) {
-		return errors.New("marathon_sd: at most one of bearer_token, bearer_token_file, auth_token & auth_token_file must be configured")
-	}
-	if c.HTTPClientConfig.Authorization != nil && (len(c.AuthToken) > 0 || len(c.AuthTokenFile) > 0) {
-		return errors.New("marathon_sd: at most one of auth_token, auth_token_file & authorization must be configured")
+
+	if len(c.AuthToken) > 0 || len(c.AuthTokenFile) > 0 {
+		switch {
+		case c.HTTPClientConfig.BasicAuth != nil:
+			return errors.New("marathon_sd: at most one of basic_auth, auth_token & auth_token_file must be configured")
+		case len(c.HTTPClientConfig.BearerToken) > 0 || len(c.HTTPClientConfig.BearerTokenFile) > 0:
+			return errors.New("marathon_sd: at most one of bearer_token, bearer_token_file, auth_token & auth_token_file must be configured")
+		case c.HTTPClientConfig.Authorization != nil:
+			return errors.New("marathon_sd: at most one of auth_token, auth_token_file & authorization must be configured")
+		}
 	}
 	return c.HTTPClientConfig.Validate()
 }

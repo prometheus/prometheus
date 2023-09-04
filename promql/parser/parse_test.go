@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 )
 
@@ -3655,6 +3656,17 @@ var testSeries = []struct {
 		expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", "b"),
 		expectedValues: newSeq(1, 2, 3, 3, 3, 3, 3),
 	}, {
+		input: `{} 1+1`,
+		fail:  true,
+	}, {
+		input:          `{} 1x0`,
+		expectedMetric: labels.EmptyLabels(),
+		expectedValues: newSeq(1),
+	}, {
+		input:          `{} 1+1x0`,
+		expectedMetric: labels.EmptyLabels(),
+		expectedValues: newSeq(1),
+	}, {
 		input:          `my_metric{a="b"} 1 3 _ 5 _x4`,
 		expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", "b"),
 		expectedValues: newSeq(1, 3, none, 5, none, none, none, none),
@@ -3719,6 +3731,305 @@ func newSeq(vals ...float64) (res []SequenceValue) {
 		}
 	}
 	return res
+}
+
+func TestParseHistogramSeries(t *testing.T) {
+	for _, test := range []struct {
+		name          string
+		input         string
+		expected      []histogram.FloatHistogram
+		expectedError string
+	}{
+		{
+			name:     "empty histogram",
+			input:    "{} {{}}",
+			expected: []histogram.FloatHistogram{{}},
+		},
+		{
+			name:     "empty histogram with space",
+			input:    "{} {{ }}",
+			expected: []histogram.FloatHistogram{{}},
+		},
+		{
+			name:  "all properties used",
+			input: `{} {{schema:1 sum:-0.3 count:3.1 z_bucket:7.1 z_bucket_w:0.05 buckets:[5.1 10 7] offset:-3 n_buckets:[4.1 5] n_offset:-5}}`,
+			expected: []histogram.FloatHistogram{{
+				Schema:          1,
+				Sum:             -0.3,
+				Count:           3.1,
+				ZeroCount:       7.1,
+				ZeroThreshold:   0.05,
+				PositiveBuckets: []float64{5.1, 10, 7},
+				PositiveSpans:   []histogram.Span{{Offset: -3, Length: 3}},
+				NegativeBuckets: []float64{4.1, 5},
+				NegativeSpans:   []histogram.Span{{Offset: -5, Length: 2}},
+			}},
+		},
+		{
+			name:  "all properties used - with spaces",
+			input: `{} {{schema:1  sum:0.3  count:3  z_bucket:7 z_bucket_w:5 buckets:[5 10  7  ] offset:-3  n_buckets:[4 5]  n_offset:5  }}`,
+			expected: []histogram.FloatHistogram{{
+				Schema:          1,
+				Sum:             0.3,
+				Count:           3,
+				ZeroCount:       7,
+				ZeroThreshold:   5,
+				PositiveBuckets: []float64{5, 10, 7},
+				PositiveSpans:   []histogram.Span{{Offset: -3, Length: 3}},
+				NegativeBuckets: []float64{4, 5},
+				NegativeSpans:   []histogram.Span{{Offset: 5, Length: 2}},
+			}},
+		},
+		{
+			name:  "static series",
+			input: `{} {{buckets:[5 10 7] schema:1}}x2`,
+			expected: []histogram.FloatHistogram{
+				{
+					Schema:          1,
+					PositiveBuckets: []float64{5, 10, 7},
+					PositiveSpans: []histogram.Span{{
+						Offset: 0,
+						Length: 3,
+					}},
+				},
+				{
+					Schema:          1,
+					PositiveBuckets: []float64{5, 10, 7},
+					PositiveSpans: []histogram.Span{{
+						Offset: 0,
+						Length: 3,
+					}},
+				},
+				{
+					Schema:          1,
+					PositiveBuckets: []float64{5, 10, 7},
+					PositiveSpans: []histogram.Span{{
+						Offset: 0,
+						Length: 3,
+					}},
+				},
+			},
+		},
+		{
+			name:  "static series - x0",
+			input: `{} {{buckets:[5 10 7] schema:1}}x0`,
+			expected: []histogram.FloatHistogram{
+				{
+					Schema:          1,
+					PositiveBuckets: []float64{5, 10, 7},
+					PositiveSpans: []histogram.Span{{
+						Offset: 0,
+						Length: 3,
+					}},
+				},
+			},
+		},
+		{
+			name:  "2 histograms stated explicitly",
+			input: `{} {{buckets:[5 10 7] schema:1}} {{buckets:[1 2 3] schema:1}}`,
+			expected: []histogram.FloatHistogram{
+				{
+					Schema:          1,
+					PositiveBuckets: []float64{5, 10, 7},
+					PositiveSpans: []histogram.Span{{
+						Offset: 0,
+						Length: 3,
+					}},
+				},
+				{
+					Schema:          1,
+					PositiveBuckets: []float64{1, 2, 3},
+					PositiveSpans: []histogram.Span{{
+						Offset: 0,
+						Length: 3,
+					}},
+				},
+			},
+		},
+		{
+			name:  "series with increment - with different schemas",
+			input: `{} {{buckets:[5] schema:0}}+{{buckets:[1 2] schema:1}}x2`,
+			expected: []histogram.FloatHistogram{
+				{
+					PositiveBuckets: []float64{5},
+					PositiveSpans: []histogram.Span{{
+						Offset: 0,
+						Length: 1,
+					}},
+				},
+				{
+					PositiveBuckets: []float64{6, 2},
+					PositiveSpans: []histogram.Span{{
+						Offset: 0,
+						Length: 2,
+					}},
+				},
+				{
+					PositiveBuckets: []float64{7, 4},
+					PositiveSpans: []histogram.Span{{
+						Offset: 0,
+						Length: 2,
+					}},
+				},
+			},
+		},
+		{
+			name:  "series with decrement",
+			input: `{} {{buckets:[5 10 7] schema:1}}-{{buckets:[1 2 3] schema:1}}x2`,
+			expected: []histogram.FloatHistogram{
+				{
+					Schema:          1,
+					PositiveBuckets: []float64{5, 10, 7},
+					PositiveSpans: []histogram.Span{{
+						Offset: 0,
+						Length: 3,
+					}},
+				},
+				{
+					Schema:          1,
+					PositiveBuckets: []float64{4, 8, 4},
+					PositiveSpans: []histogram.Span{{
+						Offset: 0,
+						Length: 3,
+					}},
+				},
+				{
+					Schema:          1,
+					PositiveBuckets: []float64{3, 6, 1},
+					PositiveSpans: []histogram.Span{{
+						Offset: 0,
+						Length: 3,
+					}},
+				},
+			},
+		},
+		{
+			name:  "series with increment - 0x",
+			input: `{} {{buckets:[5 10 7] schema:1}}+{{buckets:[1 2 3] schema:1}}x0`,
+			expected: []histogram.FloatHistogram{
+				{
+					Schema:          1,
+					PositiveBuckets: []float64{5, 10, 7},
+					PositiveSpans: []histogram.Span{{
+						Offset: 0,
+						Length: 3,
+					}},
+				},
+			},
+		},
+		{
+			name:          "series with different schemas - second one is smaller",
+			input:         `{} {{buckets:[5 10 7] schema:1}}+{{buckets:[1 2 3] schema:0}}x2`,
+			expectedError: `1:63: parse error: error combining histograms: cannot merge from schema 0 to 1`,
+		},
+		{
+			name:  "different order",
+			input: `{} {{buckets:[5 10 7] schema:1}}`,
+			expected: []histogram.FloatHistogram{{
+				Schema:          1,
+				PositiveBuckets: []float64{5, 10, 7},
+				PositiveSpans: []histogram.Span{{
+					Offset: 0,
+					Length: 3,
+				}},
+			}},
+		},
+		{
+			name:          "double property",
+			input:         `{} {{schema:1 schema:1}}`,
+			expectedError: `1:1: parse error: duplicate key "schema" in histogram`,
+		},
+		{
+			name:          "unknown property",
+			input:         `{} {{foo:1}}`,
+			expectedError: `1:6: parse error: bad histogram descriptor found: "foo"`,
+		},
+		{
+			name:          "space before :",
+			input:         `{} {{schema :1}}`,
+			expectedError: "1:6: parse error: missing `:` for histogram descriptor",
+		},
+		{
+			name:          "space after :",
+			input:         `{} {{schema: 1}}`,
+			expectedError: `1:13: parse error: unexpected " " in series values`,
+		},
+		{
+			name:          "space after [",
+			input:         `{} {{buckets:[ 1]}}`,
+			expectedError: `1:15: parse error: unexpected " " in series values`,
+		},
+		{
+			name:          "space after {{",
+			input:         `{} {{ schema:1}}`,
+			expectedError: `1:7: parse error: unexpected "<Item 57372>" "schema" in series values`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, vals, err := ParseSeriesDesc(test.input)
+			if test.expectedError != "" {
+				require.EqualError(t, err, test.expectedError)
+				return
+			}
+			require.NoError(t, err)
+			var got []histogram.FloatHistogram
+			for _, v := range vals {
+				got = append(got, *v.Histogram)
+			}
+			require.Equal(t, test.expected, got)
+		})
+	}
+}
+
+func TestHistogramTestExpression(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		input    histogram.FloatHistogram
+		expected string
+	}{
+		{
+			name: "single positive and negative span",
+			input: histogram.FloatHistogram{
+				Schema:          1,
+				Sum:             -0.3,
+				Count:           3.1,
+				ZeroCount:       7.1,
+				ZeroThreshold:   0.05,
+				PositiveBuckets: []float64{5.1, 10, 7},
+				PositiveSpans:   []histogram.Span{{Offset: -3, Length: 3}},
+				NegativeBuckets: []float64{4.1, 5},
+				NegativeSpans:   []histogram.Span{{Offset: -5, Length: 2}},
+			},
+			expected: `{{schema:1 count:3.1 sum:-0.3 z_bucket:7.1 z_bucket_w:0.05 offset:-3 buckets:[5.1 10 7] n_offset:-5 n_buckets:[4.1 5]}}`,
+		},
+		{
+			name: "multiple positive and negative spans",
+			input: histogram.FloatHistogram{
+				PositiveBuckets: []float64{5.1, 10, 7},
+				PositiveSpans: []histogram.Span{
+					{Offset: -3, Length: 1},
+					{Offset: 4, Length: 2},
+				},
+				NegativeBuckets: []float64{4.1, 5, 7, 8, 9},
+				NegativeSpans: []histogram.Span{
+					{Offset: -1, Length: 2},
+					{Offset: 2, Length: 3},
+				},
+			},
+			expected: `{{offset:-3 buckets:[5.1 0 0 0 0 10 7] n_offset:-1 n_buckets:[4.1 5 0 0 7 8 9]}}`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			expression := test.input.TestExpression()
+			require.Equal(t, test.expected, expression)
+			_, vals, err := ParseSeriesDesc("{} " + expression)
+			require.NoError(t, err)
+			require.Len(t, vals, 1)
+			canonical := vals[0].Histogram
+			require.NotNil(t, canonical)
+			require.Equal(t, test.expected, canonical.TestExpression())
+		})
+	}
 }
 
 func TestParseSeries(t *testing.T) {

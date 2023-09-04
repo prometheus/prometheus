@@ -253,6 +253,11 @@ func (a *HistogramAppender) appendable(h *histogram.Histogram) (
 	if a.NumSamples() > 0 && a.GetCounterResetHeader() == GaugeType {
 		return
 	}
+	if h.CounterResetHint == histogram.CounterReset {
+		// Always honor the explicit counter reset hint.
+		counterReset = true
+		return
+	}
 	if value.IsStaleNaN(h.Sum) {
 		// This is a stale sample whose buckets and spans don't matter.
 		okToAppend = true
@@ -611,7 +616,11 @@ func (a *HistogramAppender) AppendHistogram(prev *HistogramAppender, t int64, h 
 			return nil, false, a, nil
 		}
 
-		if prev != nil && h.CounterResetHint != histogram.CounterReset {
+		switch {
+		case h.CounterResetHint == histogram.CounterReset:
+			// Always honor the explicit counter reset hint.
+			a.setCounterResetHeader(CounterReset)
+		case prev != nil:
 			// This is a new chunk, but continued from a previous one. We need to calculate the reset header unless already set.
 			_, _, _, counterReset := prev.appendable(h)
 			if counterReset {
@@ -619,9 +628,6 @@ func (a *HistogramAppender) AppendHistogram(prev *HistogramAppender, t int64, h 
 			} else {
 				a.setCounterResetHeader(NotCounterReset)
 			}
-		} else {
-			// Honor the explicit counter reset hint.
-			a.setCounterResetHeader(CounterResetHeader(h.CounterResetHint))
 		}
 		return nil, false, a, nil
 	}

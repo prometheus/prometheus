@@ -52,6 +52,20 @@ func IsValidEncoding(e Encoding) bool {
 	return e == EncXOR || e == EncHistogram || e == EncFloatHistogram
 }
 
+const (
+	// MaxBytesPerXORChunk is the maximum size an XOR chunk can be.
+	MaxBytesPerXORChunk = 1024
+	// TargetBytesPerHistogramChunk sets a size target for each histogram chunk.
+	TargetBytesPerHistogramChunk = 1024
+	// MinSamplesPerHistogramChunk sets a minimum sample count for histogram chunks. This is desirable because a single
+	// histogram sample can be larger than TargetBytesPerHistogramChunk but we want to avoid too-small sample count
+	// chunks so we can achieve some measure of compression advantage even while dealing with really large histograms.
+	// Note that this minimum sample count is not enforced across chunk range boundaries (for example, if the chunk
+	// range is 100 and the first sample in the chunk range is 99, the next sample will be included in a new chunk
+	// resulting in the old chunk containing only a single sample).
+	MinSamplesPerHistogramChunk = 10
+)
+
 // Chunk holds a sequence of sample pairs that can be iterated over and appended to.
 type Chunk interface {
 	// Bytes returns the underlying byte slice of the chunk.
@@ -94,7 +108,7 @@ type Appender interface {
 	// The returned bool isRecoded can be used to distinguish between the new Chunk c being a completely new Chunk
 	// or the current Chunk recoded to a new Chunk.
 	// The Appender app that can be used for the next append is always returned.
-	AppendHistogram(prev *HistogramAppender, t int64, h *histogram.Histogram, appendOny bool) (c Chunk, isRecoded bool, app Appender, err error)
+	AppendHistogram(prev *HistogramAppender, t int64, h *histogram.Histogram, appendOnly bool) (c Chunk, isRecoded bool, app Appender, err error)
 	AppendFloatHistogram(prev *FloatHistogramAppender, t int64, h *histogram.FloatHistogram, appendOnly bool) (c Chunk, isRecoded bool, app Appender, err error)
 }
 

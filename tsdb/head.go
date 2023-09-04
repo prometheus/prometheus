@@ -42,7 +42,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
-	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/zeropool"
 )
@@ -370,6 +369,7 @@ type headMetrics struct {
 	mmapChunkCorruptionTotal  prometheus.Counter
 	snapshotReplayErrorTotal  prometheus.Counter // Will be either 0 or 1.
 	oooHistogram              prometheus.Histogram
+	mmapChunksTotal           prometheus.Counter
 }
 
 const (
@@ -494,6 +494,10 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 				60 * 60 * 12, // 12h
 			},
 		}),
+		mmapChunksTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_mmap_chunks_total",
+			Help: "Total number of chunks that were memory-mapped.",
+		}),
 	}
 
 	if r != nil {
@@ -521,6 +525,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.checkpointDeleteTotal,
 			m.checkpointCreationFail,
 			m.checkpointCreationTotal,
+			m.mmapChunksTotal,
 			m.mmapChunkCorruptionTotal,
 			m.snapshotReplayErrorTotal,
 			m.oooHistogram,
@@ -907,11 +912,11 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 			numSamples: numSamples,
 		})
 		h.updateMinMaxTime(mint, maxt)
-		if ms.headChunk != nil && maxt >= ms.headChunk.minTime {
+		if ms.headChunks != nil && maxt >= ms.headChunks.minTime {
 			// The head chunk was completed and was m-mapped after taking the snapshot.
 			// Hence remove this chunk.
 			ms.nextAt = 0
-			ms.headChunk = nil
+			ms.headChunks = nil
 			ms.app = nil
 		}
 		return nil
@@ -1601,6 +1606,10 @@ func (h *Head) Close() error {
 	defer h.closedMtx.Unlock()
 	h.closed = true
 
+	// mmap all but last chunk in case we're performing snapshot since that only
+	// takes samples from most recent head chunk.
+	h.mmapHeadChunks()
+
 	errs := tsdb_errors.NewMulti(h.chunkDiskMapper.Close())
 	if errs.Err() == nil && h.opts.EnableMemorySnapshotOnShutdown {
 		errs.Add(h.performChunkSnapshot())
@@ -1655,6 +1664,37 @@ func (h *Head) getOrCreateWithID(id chunks.HeadSeriesRef, hash uint64, lset labe
 
 	h.postings.Add(storage.SeriesRef(id), lset)
 	return s, true, nil
+}
+
+// mmapHeadChunks will iterate all memSeries stored on Head and call mmapHeadChunks() on each of them.
+//
+// There are two types of chunks that store samples for each memSeries:
+// A) Head chunk - stored on Go heap, when new samples are appended they go there.
+// B) M-mapped chunks - memory mapped chunks, kernel manages the memory for us on-demand, these chunks
+//
+//	are read-only.
+//
+// Calling mmapHeadChunks() will iterate all memSeries and m-mmap all chunks that should be m-mapped.
+// The m-mapping operation is needs to be serialised and so it goes via central lock.
+// If there are multiple concurrent memSeries that need to m-map some chunk then they can block each-other.
+//
+// To minimise the effect of locking on TSDB operations m-mapping is serialised and done away from
+// sample append path, since waiting on a lock inside an append would lock the entire memSeries for
+// (potentially) a long time, since that could eventually delay next scrape and/or cause query timeouts.
+func (h *Head) mmapHeadChunks() {
+	var count int
+	for i := 0; i < h.series.size; i++ {
+		h.series.locks[i].RLock()
+		for _, all := range h.series.hashes[i] {
+			for _, series := range all {
+				series.Lock()
+				count += series.mmapChunks(h.chunkDiskMapper)
+				series.Unlock()
+			}
+		}
+		h.series.locks[i].RUnlock()
+	}
+	h.metrics.mmapChunksTotal.Add(float64(count))
 }
 
 // seriesHashmap is a simple hashmap for memSeries by their label set. It is built
@@ -1788,7 +1828,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 						minOOOTime = series.ooo.oooHeadChunk.minTime
 					}
 				}
-				if len(series.mmappedChunks) > 0 || series.headChunk != nil || series.pendingCommit ||
+				if len(series.mmappedChunks) > 0 || series.headChunks != nil || series.pendingCommit ||
 					(series.ooo != nil && (len(series.ooo.oooMmappedChunks) > 0 || series.ooo.oooHeadChunk != nil)) {
 					seriesMint := series.minTime()
 					if seriesMint < actualMint {
@@ -1904,7 +1944,7 @@ type sample struct {
 	fh *histogram.FloatHistogram
 }
 
-func newSample(t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) tsdbutil.Sample {
+func newSample(t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) chunks.Sample {
 	return sample{t, v, h, fh}
 }
 
@@ -1946,8 +1986,11 @@ type memSeries struct {
 	//
 	// pN is the pointer to the mmappedChunk referered to by HeadChunkID=N
 	mmappedChunks []*mmappedChunk
-	headChunk     *memChunk          // Most recent chunk in memory that's still being built.
-	firstChunkID  chunks.HeadChunkID // HeadChunkID for mmappedChunks[0]
+	// Most recent chunks in memory that are still being built or waiting to be mmapped.
+	// This is a linked list, headChunks points to the most recent chunk, headChunks.next points
+	// to older chunk and so on.
+	headChunks   *memChunk
+	firstChunkID chunks.HeadChunkID // HeadChunkID for mmappedChunks[0]
 
 	ooo *memSeriesOOOFields
 
@@ -1957,7 +2000,8 @@ type memSeries struct {
 	// to spread chunks writing across time. Doesn't apply to the last chunk of the chunk range. 0 to disable variance.
 	chunkEndTimeVariance float64
 
-	nextAt int64 // Timestamp at which to cut the next chunk.
+	nextAt                           int64 // Timestamp at which to cut the next chunk.
+	histogramChunkHasComputedEndTime bool  // True if nextAt has been predicted for the current histograms chunk; false otherwise.
 
 	// We keep the last value here (in addition to appending it to the chunk) so we can check for duplicates.
 	lastValue float64
@@ -1967,7 +2011,7 @@ type memSeries struct {
 	lastFloatHistogramValue *histogram.FloatHistogram
 
 	// Current appender for the head chunk. Set when a new head chunk is cut.
-	// It is nil only if headChunk is nil. E.g. if there was an appender that created a new series, but rolled back the commit
+	// It is nil only if headChunks is nil. E.g. if there was an appender that created a new series, but rolled back the commit
 	// (the first sample would create a headChunk, hence appender, but rollback skipped it while the Append() call would create a series).
 	app chunkenc.Appender
 
@@ -2003,17 +2047,16 @@ func (s *memSeries) minTime() int64 {
 	if len(s.mmappedChunks) > 0 {
 		return s.mmappedChunks[0].minTime
 	}
-	if s.headChunk != nil {
-		return s.headChunk.minTime
+	if s.headChunks != nil {
+		return s.headChunks.oldest().minTime
 	}
 	return math.MinInt64
 }
 
 func (s *memSeries) maxTime() int64 {
 	// The highest timestamps will always be in the regular (non-OOO) chunks, even if OOO is enabled.
-	c := s.head()
-	if c != nil {
-		return c.maxTime
+	if s.headChunks != nil {
+		return s.headChunks.maxTime
 	}
 	if len(s.mmappedChunks) > 0 {
 		return s.mmappedChunks[len(s.mmappedChunks)-1].maxTime
@@ -2026,12 +2069,29 @@ func (s *memSeries) maxTime() int64 {
 // Chunk IDs remain unchanged.
 func (s *memSeries) truncateChunksBefore(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) int {
 	var removedInOrder int
-	if s.headChunk != nil && s.headChunk.maxTime < mint {
-		// If head chunk is truncated, we can truncate all mmapped chunks.
-		removedInOrder = 1 + len(s.mmappedChunks)
-		s.firstChunkID += chunks.HeadChunkID(removedInOrder)
-		s.headChunk = nil
-		s.mmappedChunks = nil
+	if s.headChunks != nil {
+		var i int
+		var nextChk *memChunk
+		chk := s.headChunks
+		for chk != nil {
+			if chk.maxTime < mint {
+				// If any head chunk is truncated, we can truncate all mmapped chunks.
+				removedInOrder = chk.len() + len(s.mmappedChunks)
+				s.firstChunkID += chunks.HeadChunkID(removedInOrder)
+				if i == 0 {
+					// This is the first chunk on the list so we need to remove the entire list.
+					s.headChunks = nil
+				} else {
+					// This is NOT the first chunk, unlink it from parent.
+					nextChk.prev = nil
+				}
+				s.mmappedChunks = nil
+				break
+			}
+			nextChk = chk
+			chk = chk.prev
+			i++
+		}
 	}
 	if len(s.mmappedChunks) > 0 {
 		for i, c := range s.mmappedChunks {
@@ -2071,13 +2131,52 @@ func (s *memSeries) cleanupAppendIDsBelow(bound uint64) {
 	}
 }
 
-func (s *memSeries) head() *memChunk {
-	return s.headChunk
-}
-
 type memChunk struct {
 	chunk            chunkenc.Chunk
 	minTime, maxTime int64
+	prev             *memChunk // Link to the previous element on the list.
+}
+
+// len returns the length of memChunk list, including the element it was called on.
+func (mc *memChunk) len() (count int) {
+	elem := mc
+	for elem != nil {
+		count++
+		elem = elem.prev
+	}
+	return count
+}
+
+// oldest returns the oldest element on the list.
+// For single element list this will be the same memChunk oldest() was called on.
+func (mc *memChunk) oldest() (elem *memChunk) {
+	elem = mc
+	for elem.prev != nil {
+		elem = elem.prev
+	}
+	return elem
+}
+
+// atOffset returns a memChunk that's Nth element on the linked list.
+func (mc *memChunk) atOffset(offset int) (elem *memChunk) {
+	if offset == 0 {
+		return mc
+	}
+	if offset < 0 {
+		return nil
+	}
+
+	var i int
+	elem = mc
+	for i < offset {
+		i++
+		elem = elem.prev
+		if elem == nil {
+			break
+		}
+	}
+
+	return elem
 }
 
 type oooHeadChunk struct {
@@ -2099,7 +2198,7 @@ func overlapsClosedInterval(mint1, maxt1, mint2, maxt2 int64) bool {
 	return mint1 <= maxt2 && mint2 <= maxt1
 }
 
-// mappedChunks describes a head chunk on disk that has been mmapped
+// mmappedChunk describes a head chunk on disk that has been mmapped
 type mmappedChunk struct {
 	ref              chunks.ChunkDiskMapperRef
 	numSamples       uint16

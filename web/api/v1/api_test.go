@@ -56,6 +56,17 @@ import (
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
+var testEngine = promql.NewEngine(promql.EngineOpts{
+	Logger:                   nil,
+	Reg:                      nil,
+	MaxSamples:               10000,
+	Timeout:                  100 * time.Second,
+	NoStepSubqueryIntervalFn: func(int64) int64 { return 60 * 1000 },
+	EnableAtModifier:         true,
+	EnableNegativeOffset:     true,
+	EnablePerStepStats:       true,
+})
+
 // testMetaStore satisfies the scrape.MetricMetadataStore interface.
 // It is used to inject specific metadata as part of a test case.
 type testMetaStore struct {
@@ -135,6 +146,14 @@ func (t testTargetRetriever) TargetsActive() map[string][]*scrape.Target {
 
 func (t testTargetRetriever) TargetsDropped() map[string][]*scrape.Target {
 	return t.droppedTargets
+}
+
+func (t testTargetRetriever) TargetsDroppedCounts() map[string]int {
+	r := make(map[string]int)
+	for k, v := range t.droppedTargets {
+		r[k] = len(v)
+	}
+	return r
 }
 
 func (t *testTargetRetriever) SetMetadataStoreForTargets(identifier string, metadata scrape.MetricMetadataStore) error {
@@ -297,7 +316,7 @@ var sampleFlagMap = map[string]string{
 }
 
 func TestEndpoints(t *testing.T) {
-	suite, err := promql.NewTest(t, `
+	storage := promql.LoadedStorage(t, `
 		load 1m
 			test_metric1{foo="bar"} 0+100x100
 			test_metric1{foo="boo"} 1+0x100
@@ -308,6 +327,7 @@ func TestEndpoints(t *testing.T) {
 			test_metric4{foo="boo", dup="1"} 1+0x100
 			test_metric4{foo="boo"} 1+0x100
 	`)
+	t.Cleanup(func() { storage.Close() })
 
 	start := time.Unix(0, 0)
 	exemplars := []exemplar.QueryResult{
@@ -353,14 +373,9 @@ func TestEndpoints(t *testing.T) {
 		},
 	}
 	for _, ed := range exemplars {
-		suite.ExemplarStorage().AppendExemplar(0, ed.SeriesLabels, ed.Exemplars[0])
+		_, err := storage.AppendExemplar(0, ed.SeriesLabels, ed.Exemplars[0])
 		require.NoError(t, err, "failed to add exemplar: %+v", ed.Exemplars[0])
 	}
-
-	require.NoError(t, err)
-	defer suite.Close()
-
-	require.NoError(t, suite.Run())
 
 	now := time.Now()
 
@@ -375,9 +390,9 @@ func TestEndpoints(t *testing.T) {
 		testTargetRetriever := setupTestTargetRetriever(t)
 
 		api := &API{
-			Queryable:             suite.Storage(),
-			QueryEngine:           suite.QueryEngine(),
-			ExemplarQueryable:     suite.ExemplarQueryable(),
+			Queryable:             storage,
+			QueryEngine:           testEngine,
+			ExemplarQueryable:     storage.ExemplarQueryable(),
 			targetRetriever:       testTargetRetriever.toFactory(),
 			alertmanagerRetriever: testAlertmanagerRetriever{}.toFactory(),
 			flagsMap:              sampleFlagMap,
@@ -386,14 +401,14 @@ func TestEndpoints(t *testing.T) {
 			ready:                 func(f http.HandlerFunc) http.HandlerFunc { return f },
 			rulesRetriever:        algr.toFactory(),
 		}
-		testEndpoints(t, api, testTargetRetriever, suite.ExemplarStorage(), true)
+		testEndpoints(t, api, testTargetRetriever, storage, true)
 	})
 
 	// Run all the API tests against a API that is wired to forward queries via
 	// the remote read client to a test server, which in turn sends them to the
-	// data from the test suite.
+	// data from the test storage.
 	t.Run("remote", func(t *testing.T) {
-		server := setupRemote(suite.Storage())
+		server := setupRemote(storage)
 		defer server.Close()
 
 		u, err := url.Parse(server.URL)
@@ -438,8 +453,8 @@ func TestEndpoints(t *testing.T) {
 
 		api := &API{
 			Queryable:             remote,
-			QueryEngine:           suite.QueryEngine(),
-			ExemplarQueryable:     suite.ExemplarQueryable(),
+			QueryEngine:           testEngine,
+			ExemplarQueryable:     storage.ExemplarQueryable(),
 			targetRetriever:       testTargetRetriever.toFactory(),
 			alertmanagerRetriever: testAlertmanagerRetriever{}.toFactory(),
 			flagsMap:              sampleFlagMap,
@@ -448,8 +463,7 @@ func TestEndpoints(t *testing.T) {
 			ready:                 func(f http.HandlerFunc) http.HandlerFunc { return f },
 			rulesRetriever:        algr.toFactory(),
 		}
-
-		testEndpoints(t, api, testTargetRetriever, suite.ExemplarStorage(), false)
+		testEndpoints(t, api, testTargetRetriever, storage, false)
 	})
 }
 
@@ -462,7 +476,7 @@ func (b byLabels) Less(i, j int) bool { return labels.Compare(b[i], b[j]) < 0 }
 func TestGetSeries(t *testing.T) {
 	// TestEndpoints doesn't have enough label names to test api.labelNames
 	// endpoint properly. Hence we test it separately.
-	suite, err := promql.NewTest(t, `
+	storage := promql.LoadedStorage(t, `
 		load 1m
 			test_metric1{foo1="bar", baz="abc"} 0+100x100
 			test_metric1{foo2="boo"} 1+0x100
@@ -470,11 +484,9 @@ func TestGetSeries(t *testing.T) {
 			test_metric2{foo="boo", xyz="qwerty"} 1+0x100
 			test_metric2{foo="baz", abc="qwerty"} 1+0x100
 	`)
-	require.NoError(t, err)
-	defer suite.Close()
-	require.NoError(t, suite.Run())
+	t.Cleanup(func() { storage.Close() })
 	api := &API{
-		Queryable: suite.Storage(),
+		Queryable: storage,
 	}
 	request := func(method string, matchers ...string) (*http.Request, error) {
 		u, err := url.Parse("http://example.com")
@@ -568,7 +580,7 @@ func TestGetSeries(t *testing.T) {
 
 func TestQueryExemplars(t *testing.T) {
 	start := time.Unix(0, 0)
-	suite, err := promql.NewTest(t, `
+	storage := promql.LoadedStorage(t, `
 		load 1m
 			test_metric1{foo="bar"} 0+100x100
 			test_metric1{foo="boo"} 1+0x100
@@ -579,15 +591,12 @@ func TestQueryExemplars(t *testing.T) {
 			test_metric4{foo="boo", dup="1"} 1+0x100
 			test_metric4{foo="boo"} 1+0x100
 	`)
-
-	require.NoError(t, err)
-	defer suite.Close()
-	require.NoError(t, suite.Run())
+	t.Cleanup(func() { storage.Close() })
 
 	api := &API{
-		Queryable:         suite.Storage(),
-		QueryEngine:       suite.QueryEngine(),
-		ExemplarQueryable: suite.ExemplarQueryable(),
+		Queryable:         storage,
+		QueryEngine:       testEngine,
+		ExemplarQueryable: storage.ExemplarQueryable(),
 	}
 
 	request := func(method string, qs url.Values) (*http.Request, error) {
@@ -665,7 +674,7 @@ func TestQueryExemplars(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			es := suite.ExemplarStorage()
+			es := storage
 			ctx := context.Background()
 
 			for _, te := range tc.exemplars {
@@ -692,7 +701,7 @@ func TestQueryExemplars(t *testing.T) {
 func TestLabelNames(t *testing.T) {
 	// TestEndpoints doesn't have enough label names to test api.labelNames
 	// endpoint properly. Hence we test it separately.
-	suite, err := promql.NewTest(t, `
+	storage := promql.LoadedStorage(t, `
 		load 1m
 			test_metric1{foo1="bar", baz="abc"} 0+100x100
 			test_metric1{foo2="boo"} 1+0x100
@@ -700,11 +709,9 @@ func TestLabelNames(t *testing.T) {
 			test_metric2{foo="boo", xyz="qwerty"} 1+0x100
 			test_metric2{foo="baz", abc="qwerty"} 1+0x100
 	`)
-	require.NoError(t, err)
-	defer suite.Close()
-	require.NoError(t, suite.Run())
+	t.Cleanup(func() { storage.Close() })
 	api := &API{
-		Queryable: suite.Storage(),
+		Queryable: storage,
 	}
 	request := func(method string, matchers ...string) (*http.Request, error) {
 		u, err := url.Parse("http://example.com")
@@ -793,14 +800,12 @@ func (testStats) Builtin() (_ stats.BuiltinStats) {
 }
 
 func TestStats(t *testing.T) {
-	suite, err := promql.NewTest(t, ``)
-	require.NoError(t, err)
-	defer suite.Close()
-	require.NoError(t, suite.Run())
+	storage := teststorage.New(t)
+	t.Cleanup(func() { storage.Close() })
 
 	api := &API{
-		Queryable:   suite.Storage(),
-		QueryEngine: suite.QueryEngine(),
+		Queryable:   storage,
+		QueryEngine: testEngine,
 		now: func() time.Time {
 			return time.Unix(123, 0)
 		},
@@ -1384,6 +1389,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 						},
 					},
 				},
+				DroppedTargetCounts: map[string]int{"blackbox": 1},
 			},
 		},
 		{
@@ -1436,6 +1442,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 						},
 					},
 				},
+				DroppedTargetCounts: map[string]int{"blackbox": 1},
 			},
 		},
 		{
@@ -1498,6 +1505,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 						},
 					},
 				},
+				DroppedTargetCounts: map[string]int{"blackbox": 1},
 			},
 		},
 		// With a matching metric.
@@ -3417,27 +3425,57 @@ func TestReturnAPIError(t *testing.T) {
 var testResponseWriter = httptest.ResponseRecorder{}
 
 func BenchmarkRespond(b *testing.B) {
-	b.ReportAllocs()
-	request, err := http.NewRequest(http.MethodGet, "/does-not-matter", nil)
-	require.NoError(b, err)
 	points := []promql.FPoint{}
 	for i := 0; i < 10000; i++ {
 		points = append(points, promql.FPoint{F: float64(i * 1000000), T: int64(i)})
 	}
-	response := &QueryData{
-		ResultType: parser.ValueTypeMatrix,
-		Result: promql.Matrix{
-			promql.Series{
-				Floats: points,
-				Metric: labels.EmptyLabels(),
-			},
-		},
+	matrix := promql.Matrix{}
+	for i := 0; i < 1000; i++ {
+		matrix = append(matrix, promql.Series{
+			Metric: labels.FromStrings("__name__", fmt.Sprintf("series%v", i),
+				"label", fmt.Sprintf("series%v", i),
+				"label2", fmt.Sprintf("series%v", i)),
+			Floats: points[:10],
+		})
 	}
-	b.ResetTimer()
-	api := API{}
-	api.InstallCodec(JSONCodec{})
-	for n := 0; n < b.N; n++ {
-		api.respond(&testResponseWriter, request, response, nil)
+	series := []labels.Labels{}
+	for i := 0; i < 1000; i++ {
+		series = append(series, labels.FromStrings("__name__", fmt.Sprintf("series%v", i),
+			"label", fmt.Sprintf("series%v", i),
+			"label2", fmt.Sprintf("series%v", i)))
+	}
+
+	cases := []struct {
+		name     string
+		response interface{}
+	}{
+		{name: "10000 points no labels", response: &QueryData{
+			ResultType: parser.ValueTypeMatrix,
+			Result: promql.Matrix{
+				promql.Series{
+					Floats: points,
+					Metric: labels.EmptyLabels(),
+				},
+			},
+		}},
+		{name: "1000 labels", response: series},
+		{name: "1000 series 10 points", response: &QueryData{
+			ResultType: parser.ValueTypeMatrix,
+			Result:     matrix,
+		}},
+	}
+	for _, c := range cases {
+		b.Run(c.name, func(b *testing.B) {
+			b.ReportAllocs()
+			request, err := http.NewRequest(http.MethodGet, "/does-not-matter", nil)
+			require.NoError(b, err)
+			b.ResetTimer()
+			api := API{}
+			api.InstallCodec(JSONCodec{})
+			for n := 0; n < b.N; n++ {
+				api.respond(&testResponseWriter, request, c.response, nil)
+			}
+		})
 	}
 }
 

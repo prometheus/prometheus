@@ -240,6 +240,18 @@ export const functionIdentifierTerms = [
     type: 'function',
   },
   {
+    label: 'histogram_stddev',
+    detail: 'function',
+    info: 'Estimate the standard deviation of observations from a native histogram (experimental feature)',
+    type: 'function',
+  },
+  {
+    label: 'histogram_stdvar',
+    detail: 'function',
+    info: 'Estimate the standard variance of observations from a native histogram (experimental feature)',
+    type: 'function',
+  },
+  {
     label: 'holt_winters',
     detail: 'function',
     info: 'Calculate smoothed value of input series',
@@ -430,7 +442,7 @@ export const functionIdentifierTerms = [
   {
     label: 'stdvar_over_time',
     detail: 'function',
-    info: 'Calculate the standard variation within input series over time',
+    info: 'Calculate the standard variance within input series over time',
     type: 'function',
   },
   {

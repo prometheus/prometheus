@@ -19,6 +19,7 @@ import (
 	jsoniter "github.com/json-iterator/go"
 
 	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/jsonutil"
 )
@@ -29,6 +30,7 @@ func init() {
 	jsoniter.RegisterTypeEncoderFunc("promql.FPoint", marshalFPointJSON, marshalPointJSONIsEmpty)
 	jsoniter.RegisterTypeEncoderFunc("promql.HPoint", marshalHPointJSON, marshalPointJSONIsEmpty)
 	jsoniter.RegisterTypeEncoderFunc("exemplar.Exemplar", marshalExemplarJSON, marshalExemplarJSONEmpty)
+	jsoniter.RegisterTypeEncoderFunc("labels.Labels", unsafeMarshalLabelsJSON, labelsIsEmpty)
 }
 
 // JSONCodec is a Codec that encodes API responses as JSON.
@@ -68,12 +70,7 @@ func marshalSeriesJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 	s := *((*promql.Series)(ptr))
 	stream.WriteObjectStart()
 	stream.WriteObjectField(`metric`)
-	m, err := s.Metric.MarshalJSON()
-	if err != nil {
-		stream.Error = err
-		return
-	}
-	stream.SetBuffer(append(stream.Buffer(), m...))
+	marshalLabelsJSON(s.Metric, stream)
 
 	for i, p := range s.Floats {
 		stream.WriteMore()
@@ -129,12 +126,7 @@ func marshalSampleJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 	s := *((*promql.Sample)(ptr))
 	stream.WriteObjectStart()
 	stream.WriteObjectField(`metric`)
-	m, err := s.Metric.MarshalJSON()
-	if err != nil {
-		stream.Error = err
-		return
-	}
-	stream.SetBuffer(append(stream.Buffer(), m...))
+	marshalLabelsJSON(s.Metric, stream)
 	stream.WriteMore()
 	if s.H == nil {
 		stream.WriteObjectField(`value`)
@@ -194,12 +186,7 @@ func marshalExemplarJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 
 	// "labels" key.
 	stream.WriteObjectField(`labels`)
-	lbls, err := p.Labels.MarshalJSON()
-	if err != nil {
-		stream.Error = err
-		return
-	}
-	stream.SetBuffer(append(stream.Buffer(), lbls...))
+	marshalLabelsJSON(p.Labels, stream)
 
 	// "value" key.
 	stream.WriteMore()
@@ -216,4 +203,29 @@ func marshalExemplarJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 
 func marshalExemplarJSONEmpty(unsafe.Pointer) bool {
 	return false
+}
+
+func unsafeMarshalLabelsJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
+	labelsPtr := (*labels.Labels)(ptr)
+	marshalLabelsJSON(*labelsPtr, stream)
+}
+
+func marshalLabelsJSON(lbls labels.Labels, stream *jsoniter.Stream) {
+	stream.WriteObjectStart()
+	i := 0
+	lbls.Range(func(v labels.Label) {
+		if i != 0 {
+			stream.WriteMore()
+		}
+		i++
+		stream.WriteString(v.Name)
+		stream.WriteRaw(`:`)
+		stream.WriteString(v.Value)
+	})
+	stream.WriteObjectEnd()
+}
+
+func labelsIsEmpty(ptr unsafe.Pointer) bool {
+	labelsPtr := (*labels.Labels)(ptr)
+	return labelsPtr.IsEmpty()
 }

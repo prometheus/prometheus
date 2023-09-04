@@ -93,21 +93,25 @@ func TestDroppedTargetsList(t *testing.T) {
 			{
 				Targets: []model.LabelSet{
 					{model.AddressLabel: "127.0.0.1:9090"},
+					{model.AddressLabel: "127.0.0.1:9091"},
 				},
 			},
 		}
 		sp, _                  = newScrapePool(cfg, app, 0, nil, &Options{})
 		expectedLabelSetString = "{__address__=\"127.0.0.1:9090\", __scrape_interval__=\"0s\", __scrape_timeout__=\"0s\", job=\"dropMe\"}"
-		expectedLength         = 1
+		expectedLength         = 2
 	)
 	sp.Sync(tgs)
 	sp.Sync(tgs)
-	if len(sp.droppedTargets) != expectedLength {
-		t.Fatalf("Length of dropped targets exceeded expected length, expected %v, got %v", expectedLength, len(sp.droppedTargets))
-	}
-	if sp.droppedTargets[0].DiscoveredLabels().String() != expectedLabelSetString {
-		t.Fatalf("Got %v, expected %v", sp.droppedTargets[0].DiscoveredLabels().String(), expectedLabelSetString)
-	}
+	require.Equal(t, expectedLength, len(sp.droppedTargets))
+	require.Equal(t, expectedLength, sp.droppedTargetsCount)
+	require.Equal(t, expectedLabelSetString, sp.droppedTargets[0].DiscoveredLabels().String())
+
+	// Check that count is still correct when we don't retain all dropped targets.
+	sp.config.KeepDroppedTargets = 1
+	sp.Sync(tgs)
+	require.Equal(t, 1, len(sp.droppedTargets))
+	require.Equal(t, expectedLength, sp.droppedTargetsCount)
 }
 
 // TestDiscoveredLabelsUpdate checks that DiscoveredLabels are updated
@@ -1981,13 +1985,14 @@ func TestScrapeLoopAppendNoStalenessIfTimestamp(t *testing.T) {
 
 func TestScrapeLoopAppendExemplar(t *testing.T) {
 	tests := []struct {
-		title           string
-		scrapeText      string
-		contentType     string
-		discoveryLabels []string
-		floats          []floatSample
-		histograms      []histogramSample
-		exemplars       []exemplar.Exemplar
+		title                   string
+		scrapeClassicHistograms bool
+		scrapeText              string
+		contentType             string
+		discoveryLabels         []string
+		floats                  []floatSample
+		histograms              []histogramSample
+		exemplars               []exemplar.Exemplar
 	}{
 		{
 			title:           "Metric without exemplars",
@@ -2141,6 +2146,115 @@ metric: <
 				{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.00029, Ts: 1234568, HasTs: false},
 			},
 		},
+		{
+			title: "Native histogram with two exemplars scraped as classic histogram",
+			scrapeText: `name: "test_histogram"
+help: "Test histogram with many buckets removed to keep it manageable in size."
+type: HISTOGRAM
+metric: <
+  histogram: <
+    sample_count: 175
+    sample_sum: 0.0008280461746287094
+    bucket: <
+      cumulative_count: 2
+      upper_bound: -0.0004899999999999998
+    >
+    bucket: <
+      cumulative_count: 4
+      upper_bound: -0.0003899999999999998
+      exemplar: <
+        label: <
+          name: "dummyID"
+          value: "59727"
+        >
+        value: -0.00039
+        timestamp: <
+          seconds: 1625851155
+          nanos: 146848499
+        >
+      >
+    >
+    bucket: <
+      cumulative_count: 16
+      upper_bound: -0.0002899999999999998
+      exemplar: <
+        label: <
+          name: "dummyID"
+          value: "5617"
+        >
+        value: -0.00029
+      >
+    >
+    schema: 3
+    zero_threshold: 2.938735877055719e-39
+    zero_count: 2
+    negative_span: <
+      offset: -162
+      length: 1
+    >
+    negative_span: <
+      offset: 23
+      length: 4
+    >
+    negative_delta: 1
+    negative_delta: 3
+    negative_delta: -2
+    negative_delta: -1
+    negative_delta: 1
+    positive_span: <
+      offset: -161
+      length: 1
+    >
+    positive_span: <
+      offset: 8
+      length: 3
+    >
+    positive_delta: 1
+    positive_delta: 2
+    positive_delta: -1
+    positive_delta: -1
+  >
+  timestamp_ms: 1234568
+>
+
+`,
+			scrapeClassicHistograms: true,
+			contentType:             "application/vnd.google.protobuf",
+			floats: []floatSample{
+				{metric: labels.FromStrings("__name__", "test_histogram_count"), t: 1234568, f: 175},
+				{metric: labels.FromStrings("__name__", "test_histogram_sum"), t: 1234568, f: 0.0008280461746287094},
+				{metric: labels.FromStrings("__name__", "test_histogram_bucket", "le", "-0.0004899999999999998"), t: 1234568, f: 2},
+				{metric: labels.FromStrings("__name__", "test_histogram_bucket", "le", "-0.0003899999999999998"), t: 1234568, f: 4},
+				{metric: labels.FromStrings("__name__", "test_histogram_bucket", "le", "-0.0002899999999999998"), t: 1234568, f: 16},
+				{metric: labels.FromStrings("__name__", "test_histogram_bucket", "le", "+Inf"), t: 1234568, f: 175},
+			},
+			histograms: []histogramSample{{
+				t: 1234568,
+				h: &histogram.Histogram{
+					Count:         175,
+					ZeroCount:     2,
+					Sum:           0.0008280461746287094,
+					ZeroThreshold: 2.938735877055719e-39,
+					Schema:        3,
+					PositiveSpans: []histogram.Span{
+						{Offset: -161, Length: 1},
+						{Offset: 8, Length: 3},
+					},
+					NegativeSpans: []histogram.Span{
+						{Offset: -162, Length: 1},
+						{Offset: 23, Length: 4},
+					},
+					PositiveBuckets: []int64{1, 2, -1, -1},
+					NegativeBuckets: []int64{1, 3, -2, -1, 1},
+				},
+			}},
+			exemplars: []exemplar.Exemplar{
+				{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00039, Ts: 1625851155146, HasTs: true},
+				{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.00029, Ts: 1234568, HasTs: false},
+				{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00039, Ts: 1625851155146, HasTs: true},
+				{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.00029, Ts: 1234568, HasTs: false},
+			},
+		},
 	}
 
 	for _, test := range tests {
@@ -2167,7 +2281,7 @@ metric: <
 				nil,
 				0,
 				0,
-				false,
+				test.scrapeClassicHistograms,
 				false,
 				false,
 				nil,
@@ -2177,6 +2291,9 @@ metric: <
 			now := time.Now()
 
 			for i := range test.floats {
+				if test.floats[i].t != 0 {
+					continue
+				}
 				test.floats[i].t = timestamp.FromTime(now)
 			}
 
