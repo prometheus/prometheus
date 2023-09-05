@@ -4,6 +4,7 @@
 package common
 
 import (
+	"encoding/binary"
 	"fmt"
 	"runtime"
 	"unsafe"
@@ -83,35 +84,77 @@ type Hashdex struct {
 // Hashdex API.
 //
 
-type HashdexMemoryLimits struct {
-	MaxLabelNameLength         uint32
-	MaxLabelValueLength        uint32
-	MaxLabelNamesPerTimeseries uint32
+// HashdexLimits - memory limits for Hashdex.
+type HashdexLimits struct {
+	MaxLabelNameLength         uint32 `validate:"required"`
+	MaxLabelValueLength        uint32 `validate:"required"`
+	MaxLabelNamesPerTimeseries uint32 `validate:"required"`
 	MaxTimeseriesCount         uint64
-	MaxPbSizeInBytes           uint64
+	MaxPbSizeInBytes           uint64 `validate:"required"`
 }
 
-// Default memory limits for Hashdex.
-func HashdexDefaultLimits() HashdexMemoryLimits {
-	return HashdexMemoryLimits{
-		MaxLabelNameLength:         4096,
-		MaxLabelValueLength:        65536,
-		MaxLabelNamesPerTimeseries: 320,
+const (
+	defaultMaxLabelNameLength         = 4096
+	defaultMaxLabelValueLength        = 65536
+	defaultMaxLabelNamesPerTimeseries = 320
+	defaultMaxPbSizeInBytes           = 100 << 20
+)
+
+// DefaultHashdexLimits - Default memory limits for Hashdex.
+func DefaultHashdexLimits() HashdexLimits {
+	return HashdexLimits{
+		MaxLabelNameLength:         defaultMaxLabelNameLength,
+		MaxLabelValueLength:        defaultMaxLabelValueLength,
+		MaxLabelNamesPerTimeseries: defaultMaxLabelNamesPerTimeseries,
 		MaxTimeseriesCount:         0,
-		MaxPbSizeInBytes:           100 << 20,
+		MaxPbSizeInBytes:           defaultMaxPbSizeInBytes,
 	}
 }
 
-// NewHashdex - init new Hashdex.
-func NewHashdex(protoData []byte) (ShardedData, error) {
-	args := HashdexDefaultLimits()
-	return NewHashdexWithLimits(protoData, &args)
+// MarshalBinary - encoding to byte.
+func (l *HashdexLimits) MarshalBinary() ([]byte, error) {
+	//revive:disable-next-line:add-constant sum 2+3+2+4
+	buf := make([]byte, 0, 11)
+
+	buf = binary.AppendUvarint(buf, uint64(l.MaxLabelNameLength))
+	buf = binary.AppendUvarint(buf, uint64(l.MaxLabelValueLength))
+	buf = binary.AppendUvarint(buf, uint64(l.MaxLabelNamesPerTimeseries))
+	buf = binary.AppendUvarint(buf, l.MaxTimeseriesCount)
+	buf = binary.AppendUvarint(buf, l.MaxPbSizeInBytes)
+	return buf, nil
 }
 
-func NewHashdexWithLimits(protoData []byte, limits *HashdexMemoryLimits) (ShardedData, error) {
+// UnmarshalBinary - decoding from byte.
+func (l *HashdexLimits) UnmarshalBinary(data []byte) error {
+	var offset int
+
+	maxLabelNameLength, n := binary.Uvarint(data[offset:])
+	l.MaxLabelNameLength = uint32(maxLabelNameLength)
+	offset += n
+
+	maxLabelValueLength, n := binary.Uvarint(data[offset:])
+	l.MaxLabelValueLength = uint32(maxLabelValueLength)
+	offset += n
+
+	maxLabelNamesPerTimeseries, n := binary.Uvarint(data[offset:])
+	l.MaxLabelNamesPerTimeseries = uint32(maxLabelNamesPerTimeseries)
+	offset += n
+
+	maxTimeseriesCount, n := binary.Uvarint(data[offset:])
+	l.MaxTimeseriesCount = maxTimeseriesCount
+	offset += n
+
+	maxPbSizeInBytes, _ := binary.Uvarint(data[offset:])
+	l.MaxPbSizeInBytes = maxPbSizeInBytes
+
+	return nil
+}
+
+// NewHashdex - init new Hashdex with limits.
+func NewHashdex(protoData []byte, limits HashdexLimits) (ShardedData, error) {
 	// cluster and replica - in memory GO(protoData)
 	h := &Hashdex{
-		hashdex: internal.CHashdexCtor(uintptr(unsafe.Pointer(limits))),
+		hashdex: internal.CHashdexCtor(uintptr(unsafe.Pointer(&limits))),
 		data:    protoData,
 		cluster: &internal.CSlice{},
 		replica: &internal.CSlice{},

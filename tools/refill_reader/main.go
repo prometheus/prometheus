@@ -12,6 +12,7 @@ import (
 
 	"github.com/prometheus/prometheus/pp/go/delivery"
 	"github.com/prometheus/prometheus/pp/go/frames"
+	"github.com/prometheus/prometheus/pp/go/util"
 	"go.uber.org/zap"
 )
 
@@ -105,7 +106,7 @@ func list(ctx context.Context, storage *delivery.FileStorage) error {
 	var off int64
 	for {
 		// read header frame
-		h, err := frames.ReadAtHeader(ctx, storage, off)
+		h, err := frames.ReadHeader(ctx, util.NewOffsetReader(storage, off))
 		if errors.Is(err, io.EOF) {
 			break
 		}
