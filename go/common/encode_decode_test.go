@@ -104,6 +104,7 @@ func (*EncoderDecoderSuite) transferringData(income frames.WritePayload) []byte 
 }
 
 func (eds *EncoderDecoderSuite) TestEncodeDecode() {
+	hlimits := common.DefaultHashdexLimits()
 	for i := 0; i < 10; i++ {
 		eds.T().Log("generate protobuf")
 		expectedWr := eds.makeData(10, int64(i))
@@ -111,7 +112,7 @@ func (eds *EncoderDecoderSuite) TestEncodeDecode() {
 		eds.Require().NoError(err)
 
 		eds.T().Log("sharding protobuf")
-		h, err := common.NewHashdex(data)
+		h, err := common.NewHashdex(data, hlimits)
 		eds.Require().NoError(err)
 
 		eds.T().Log("encoding protobuf")
@@ -141,6 +142,7 @@ func (eds *EncoderDecoderSuite) TestEncodeDecode() {
 func (eds *EncoderDecoderSuite) TestEncodeDecodeSnapshot() {
 	rts := make([]common.Redundant, 5)
 	segmentsBuffer := make([][]byte, 5)
+	hlimits := common.DefaultHashdexLimits()
 
 	for i := 0; i < 10; i++ {
 		eds.T().Log("generate protobuf")
@@ -149,7 +151,7 @@ func (eds *EncoderDecoderSuite) TestEncodeDecodeSnapshot() {
 		eds.Require().NoError(err)
 
 		eds.T().Log("sharding protobuf")
-		h, err := common.NewHashdex(data)
+		h, err := common.NewHashdex(data, hlimits)
 		eds.Require().NoError(err)
 
 		eds.T().Log("encoding protobuf")
@@ -214,6 +216,7 @@ func (eds *EncoderDecoderSuite) TestEncodeDecodeSnapshot() {
 func (eds *EncoderDecoderSuite) TestEncodeDecodeSnapshotWithDrySegment() {
 	rts := make([]common.Redundant, 5)
 	segmentsDry := make([][]byte, 5)
+	hlimits := common.DefaultHashdexLimits()
 
 	for i := 0; i < 10; i++ {
 		eds.T().Log("generate protobuf")
@@ -222,7 +225,7 @@ func (eds *EncoderDecoderSuite) TestEncodeDecodeSnapshotWithDrySegment() {
 		eds.Require().NoError(err)
 
 		eds.T().Log("sharding protobuf")
-		h, err := common.NewHashdex(data)
+		h, err := common.NewHashdex(data, hlimits)
 		eds.Require().NoError(err)
 
 		eds.T().Log("encoding protobuf")
@@ -273,7 +276,7 @@ func (eds *EncoderDecoderSuite) TestEncodeDecodeSnapshotWithDrySegment() {
 	eds.Require().NoError(err)
 
 	eds.T().Log("after restore sharding protobuf")
-	h, err := common.NewHashdex(data)
+	h, err := common.NewHashdex(data, hlimits)
 	eds.Require().NoError(err)
 
 	eds.T().Log("after restore encoding protobuf")
@@ -306,7 +309,8 @@ func (eds *EncoderDecoderSuite) EncodeDecodeBench(i int64) {
 	expectedWr := eds.makeData(100, i)
 	data, err := expectedWr.Marshal()
 	eds.Require().NoError(err)
-	h, err := common.NewHashdex(data)
+	hlimits := common.DefaultHashdexLimits()
+	h, err := common.NewHashdex(data, hlimits)
 	eds.Require().NoError(err)
 
 	_, gos, _, err := eds.enc.Encode(eds.ctx, h)
@@ -328,6 +332,7 @@ func (eds *EncoderDecoderSuite) TestEncodeDecodeBenchmark() {
 
 func (eds *EncoderDecoderSuite) TestEncodeDecodeOpenHead() {
 	createdAt := time.Now()
+	hlimits := common.DefaultHashdexLimits()
 	for i := 1; i < 21; i++ {
 		eds.T().Log("generate protobuf")
 		expectedWr := eds.makeData(10, int64(i))
@@ -335,7 +340,7 @@ func (eds *EncoderDecoderSuite) TestEncodeDecodeOpenHead() {
 		eds.Require().NoError(err)
 
 		eds.T().Log("sharding protobuf")
-		h, err := common.NewHashdex(data)
+		h, err := common.NewHashdex(data, hlimits)
 		eds.Require().NoError(err)
 
 		eds.T().Log("encoding protobuf")
