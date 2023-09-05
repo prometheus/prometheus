@@ -63,6 +63,7 @@ type SDConfig struct {
 	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 	RefreshInterval  model.Duration          `yaml:"refresh_interval,omitempty"`
 	URL              string                  `yaml:"url"`
+	Headers          map[string]string       `yaml:"headers"`
 }
 
 // Name returns the name of the Config.
@@ -112,6 +113,7 @@ type Discovery struct {
 	client          *http.Client
 	refreshInterval time.Duration
 	tgLastLength    int
+	headers         map[string]string
 }
 
 // NewDiscovery returns a new HTTP discovery for the given config.
@@ -130,6 +132,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger, clientOpts []config.HTTPCli
 		url:             conf.URL,
 		client:          client,
 		refreshInterval: time.Duration(conf.RefreshInterval), // Stored to be sent as headers.
+		headers:         conf.Headers,
 	}
 
 	d.Discovery = refresh.NewDiscovery(
@@ -149,6 +152,10 @@ func (d *Discovery) Refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-Prometheus-Refresh-Interval-Seconds", strconv.FormatFloat(d.refreshInterval.Seconds(), 'f', -1, 64))
+
+	for k, v := range d.headers {
+		req.Header.Set(k, v)
+	}
 
 	resp, err := d.client.Do(req.WithContext(ctx))
 	if err != nil {
