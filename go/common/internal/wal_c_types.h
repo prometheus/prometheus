@@ -90,6 +90,12 @@ void okdb_wal_c_decoded_segment_destroy(c_decoded_segment* decoded_segment);
 // okdb_wal_initialize - entry point for C bindings.
 int okdb_wal_initialize();
 
+// Core Debug API
+
+/// \brief Use it for enabling coredumps on any \ref BareBones::Exception.
+/// \param enable Enables if != 0, disables otherwise.
+void prompp_enable_coredumps_on_exception(int enable);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif

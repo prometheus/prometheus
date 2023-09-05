@@ -14,6 +14,8 @@
 #include <sstream>
 #include <string_view>
 
+#include <sys/types.h>  // pid_t
+
 namespace BareBones {
 
 class Exception : public std::exception {
@@ -32,3 +34,23 @@ class Exception : public std::exception {
 };
 
 }  // namespace BareBones
+
+// C API bindings
+#ifdef __cplusplus
+extern "C" {
+#endif  //__cplusplus
+
+// Core Debug API
+
+/// @brief Use it for enabling coredumps on any @ref BareBones::Exception.
+/// @param enable Enables if != 0, disables otherwise.
+void prompp_enable_coredumps_on_exception(int enable);
+
+/// @brief Use it for customizing the handling of fork() in coredump logic. It may be used
+///        to implement e.g., waiting logic for parsing coredumps, or extended error
+///        logging/handling, etc.
+void prompp_barebones_exception_set_on_fork_handler(void* state, void (*handler)(void* state, pid_t pid));
+
+#ifdef __cplusplus
+}
+#endif  //__cplusplus

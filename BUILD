@@ -67,6 +67,16 @@ cc_test(
     ],
 )
 
+cc_binary(
+    name = "bare_bones_coredump_test",
+    srcs = [
+        "bare_bones/tests/coredump_test_separate.cpp",
+    ],
+    deps = [
+        ":bare_bones",
+    ],
+)
+
 cc_library(
     name = "primitives",
     hdrs = glob(["primitives/*.h"]),
