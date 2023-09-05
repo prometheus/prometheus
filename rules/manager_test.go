@@ -196,9 +196,7 @@ func TestForStateAddSamples(t *testing.T) {
 			http_requests{job="app-server", instance="0", group="canary", severity="overwrite-me"}	75 85  95 105 105  95  85
 			http_requests{job="app-server", instance="1", group="canary", severity="overwrite-me"}	80 90 100 110 120 130 140
 	`)
-			t.Cleanup(func() { storage.Close()
-
-			})
+			t.Cleanup(func() { storage.Close() })
 
 			expr, err := parser.ParseExpr(`http_requests{group="canary", job="app-server"} < 100`)
 			require.NoError(t, err)
