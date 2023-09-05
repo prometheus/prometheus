@@ -16,8 +16,9 @@ package parser
 import (
 	"testing"
 
-	"github.com/prometheus/prometheus/promql/parser/position_range"
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/promql/parser/position_range"
 )
 
 type testCase struct {
