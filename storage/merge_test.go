@@ -408,11 +408,11 @@ func TestCompactingChunkSeriesMerger(t *testing.T) {
 
 	// histogramSample returns a histogram that is unique to the ts.
 	histogramSample := func(ts int64) hSample {
-		return histogramSample(ts, histogram.UnknownCounterReset)
+		return histogramSample(ts, uk)
 	}
 
 	floatHistogramSample := func(ts int64) fhSample {
-		return floatHistogramSample(ts, histogram.UnknownCounterReset)
+		return floatHistogramSample(ts, uk)
 	}
 
 	for _, tc := range []struct {
