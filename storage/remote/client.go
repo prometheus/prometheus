@@ -208,7 +208,7 @@ func (c *Client) Store(ctx context.Context, req []byte, attempt int) error {
 	httpReq.Header.Set("User-Agent", UserAgent)
 	httpReq.Header.Set("X-Prometheus-Remote-Write-Version", "0.1.0")
 	if attempt > 0 {
-		httpReq.Header.Set("X-Retry-Count", strconv.Itoa(attempt))
+		httpReq.Header.Set("X-Retry-Attempt", strconv.Itoa(attempt))
 	}
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
