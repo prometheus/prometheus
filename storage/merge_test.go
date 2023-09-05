@@ -656,7 +656,6 @@ func TestCompactingChunkSeriesMergerHistogramCounterResetHint(t *testing.T) {
 			),
 		},
 		"histogram counter reset hint kept in multiple equal series": {
-			// Equal chunks are not processed, one is just dropped.
 			input: []ChunkSeries{
 				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
 					[]chunks.Sample{histogramSample(0, cr), histogramSample(5, uk)},
@@ -673,7 +672,6 @@ func TestCompactingChunkSeriesMergerHistogramCounterResetHint(t *testing.T) {
 			),
 		},
 		"float histogram counter reset hint kept in multiple equal series": {
-			// Equal chunks are not processed, one is just dropped.
 			input: []ChunkSeries{
 				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
 					[]chunks.Sample{floatHistogramSample(0, cr), floatHistogramSample(5, uk)},
@@ -690,7 +688,6 @@ func TestCompactingChunkSeriesMergerHistogramCounterResetHint(t *testing.T) {
 			),
 		},
 		"histogram not counter reset hint kept in multiple equal series": {
-			// Equal chunks are not processed, one is just dropped.
 			input: []ChunkSeries{
 				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
 					[]chunks.Sample{histogramSample(0, nr), histogramSample(5, uk)},
@@ -707,7 +704,6 @@ func TestCompactingChunkSeriesMergerHistogramCounterResetHint(t *testing.T) {
 			),
 		},
 		"float histogram not counter reset hint kept in multiple equal series": {
-			// Equal chunks are not processed, one is just dropped.
 			input: []ChunkSeries{
 				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
 					[]chunks.Sample{floatHistogramSample(0, nr), floatHistogramSample(5, uk)},
