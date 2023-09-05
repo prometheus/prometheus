@@ -383,7 +383,6 @@ func TestMergeChunkQuerierWithNoVerticalChunkSeriesMerger(t *testing.T) {
 	}
 }
 
-// histogramSample returns a histogram that is unique to the ts.
 func histogramSample(ts int64, hint histogram.CounterResetHint) hSample {
 	h := tsdbutil.GenerateTestHistogram(int(ts + 1))
 	h.CounterResetHint = hint
@@ -407,6 +406,7 @@ const (
 func TestCompactingChunkSeriesMerger(t *testing.T) {
 	m := NewCompactingChunkSeriesMerger(ChainedSeriesMerge)
 
+	// histogramSample returns a histogram that is unique to the ts.
 	histogramSample := func(ts int64) hSample {
 		return histogramSample(ts, histogram.UnknownCounterReset)
 	}
