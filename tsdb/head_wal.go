@@ -910,7 +910,10 @@ func (wp *wblSubsetProcessor) processWBLSamples(h *Head) (unknownRefs uint64) {
 				}
 			}
 		}
-
+		select {
+		case wp.output <- in.samples:
+		default:
+		}
 	}
 
 	h.updateMinOOOMaxOOOTime(mint, maxt)
