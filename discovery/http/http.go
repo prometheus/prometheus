@@ -154,7 +154,12 @@ func (d *Discovery) Refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	req.Header.Set("X-Prometheus-Refresh-Interval-Seconds", strconv.FormatFloat(d.refreshInterval.Seconds(), 'f', -1, 64))
 
 	for k, v := range d.headers {
+		if k == "Host" || k == "host" {
+			req.Host = v
+		}
+
 		req.Header.Set(k, v)
+
 	}
 
 	resp, err := d.client.Do(req.WithContext(ctx))
