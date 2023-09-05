@@ -58,6 +58,18 @@ func Init() {
 	C.okdb_wal_initialize()
 }
 
+// EnableCoreDumps toggles generating coredumps from C++ Exceptions.
+// It requres GOTRACEBACK=core env variable for Go runtime.
+func EnableCoreDumps(enabled bool) {
+	var a int
+	if enabled {
+		a = 1
+	} else {
+		a = 0
+	}
+	C.prompp_enable_coredumps_on_exception(a)
+}
+
 // CByteSlice API
 func CSegmentDestroy(p unsafe.Pointer) {
 	C.okdb_wal_c_segment_destroy((*C.c_segment)(p))

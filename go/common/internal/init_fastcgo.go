@@ -56,6 +56,22 @@ func Init() {
 	fastcgo.UnsafeCall0(C.okdb_wal_initialize)
 }
 
+// EnableCoreDumps toggles generating coredumps from C++ Exceptions.
+// It requres GOTRACEBACK=core env variable for Go runtime.
+func EnableCoreDumps(enabled bool) {
+	var en uintptr
+	if enabled {
+		en = 1
+	} else {
+		en = 0
+	}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_enable_coredumps_on_exception,
+		en,
+	)
+}
+
 // CByteSlice API
 func CSegmentDestroy(p unsafe.Pointer) {
 	fastcgo.UnsafeCall1(C.okdb_wal_c_segment_destroy,
