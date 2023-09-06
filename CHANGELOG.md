@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.47.0-rc.0 / 2023-08-25
+## 2.47.0 / 2023-09-06
 
 This release adds an experimental OpenTelemetry (OTLP) Ingestion feature,
 and also new setting `keep_dropped_targets` to limit the amount of dropped
