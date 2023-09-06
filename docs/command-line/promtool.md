@@ -414,6 +414,8 @@ Push metrics to a prometheus remote write (for testing purpose only).
 | remote-write-url | Prometheus remote write url to push metrics. | Yes |
 | metric-files | The metric files to push, default is read from standard input. |  |
 
+examples:
+echo 'custom_metric_info{test="manual"} 1.' | ./promtool push metrics <remote_write url>
 
 
 
