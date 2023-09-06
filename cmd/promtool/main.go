@@ -200,6 +200,7 @@ func main() {
 		"test-rule-file",
 		"The unit test file.",
 	).Required().ExistingFiles()
+	testRulesDebug := testRulesCmd.Flag("debug", "Enable unit test debugging.").Bool()
 
 	defaultDBPath := "data/"
 	tsdbCmd := app.Command("tsdb", "Run tsdb commands.")
@@ -363,6 +364,7 @@ func main() {
 				EnableAtModifier:     true,
 				EnableNegativeOffset: true,
 			},
+			*testRulesDebug,
 			*testRulesFiles...),
 		)
 
