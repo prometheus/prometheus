@@ -20,6 +20,8 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/position_range"
 )
 
+var maxErrsInAPI = 10
+
 // Annotations is a general wrapper for warnings and other information
 // that is returned by the query API along with the results.
 // Each individual annotation is modeled by a Go error.
@@ -67,16 +69,23 @@ func (a Annotations) AsErrors() []error {
 }
 
 // AsStrings is a convenience function to return the annotations map as a slice
-// of strings.
+// of strings. This is only used in the API response, so we limit the number of
+// strings here.
 func (a Annotations) AsStrings(query string) []string {
 	arr := make([]string, 0, len(a))
 	for _, err := range a {
+		if len(arr) >= maxErrsInAPI {
+			break
+		}
 		anErr, ok := err.(annoErr)
 		if ok {
 			anErr.Query = query
 			err = anErr
 		}
 		arr = append(arr, err.Error())
+	}
+	if len(a) > maxErrsInAPI {
+		arr = append(arr, fmt.Sprintf("%d more PromQL warnings/annotations", len(a)-maxErrsInAPI))
 	}
 	return arr
 }
