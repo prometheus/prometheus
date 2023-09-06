@@ -434,6 +434,10 @@ func labelValuesFromSeries(r IndexReader, labelName string, refs []storage.Serie
 	var builder labels.ScratchBuilder
 	for _, ref := range refs {
 		err := r.Series(ref, &builder, nil)
+		// Postings may be stale. Skip if no underlying series exists.
+		if errors.Cause(err) == storage.ErrNotFound {
+			continue
+		}
 		if err != nil {
 			return nil, errors.Wrapf(err, "label values for label %s", labelName)
 		}
