@@ -111,8 +111,8 @@ class Bitset {
     using difference_type = std::ptrdiff_t;
 
     inline __attribute__((always_inline)) explicit Iterator(const uint64_t* data = nullptr, uint32_t size = 0, uint32_t i = 0) noexcept
-        : data_(data), last_block_n_(size >> 6), block_n_(i >> 6), j_(i & 0x3F) {
-      block_ = data_ ? data_[block_n_] : 0;
+        : data_(data), last_block_n_(size ? ((size - 1) >> 6) : 0), block_n_(i >> 6), j_(i & 0x3F) {
+      block_ = (data_ && size) ? data_[block_n_] : 0;
       next();
     }
 
