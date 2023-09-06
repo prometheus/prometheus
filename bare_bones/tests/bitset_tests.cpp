@@ -133,4 +133,18 @@ TEST(BareBonesBitset, should_iterate_over_resized_empty) {
 
   ASSERT_EQ(count, 0);
 }
+
+TEST(BareBonesTest, should_not_out_of_range_on_resize) {
+  BareBones::Bitset bs;
+  bs.resize(2048);
+  bs.set(2047);
+  bs.resize(4096);
+
+  uint32_t count = 0;
+  for (auto i : bs) {
+    count += i;
+  }
+
+  ASSERT_EQ(count, 2047);
+}
 }  // namespace
