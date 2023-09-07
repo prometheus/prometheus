@@ -749,7 +749,9 @@ func (h *Head) loadWBL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.
 					m = len(samples)
 				}
 				for i := 0; i < concurrency; i++ {
-					shards[i] = processors[i].reuseBuf()
+					if shards[i] == nil {
+						shards[i] = processors[i].reuseBuf()
+					}
 				}
 				for _, sam := range samples[:m] {
 					if r, ok := multiRef[sam.Ref]; ok {
@@ -759,7 +761,10 @@ func (h *Head) loadWBL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.
 					shards[mod] = append(shards[mod], sam)
 				}
 				for i := 0; i < concurrency; i++ {
-					processors[i].input <- shards[i]
+					if len(shards[i]) > 0 {
+						processors[i].input <- shards[i]
+						shards[i] = nil
+					}
 				}
 				samples = samples[m:]
 			}
