@@ -886,7 +886,6 @@ func (wp *wblSubsetProcessor) reuseBuf() []record.RefSample {
 
 // processWBLSamples adds the samples it receives to the head and passes
 // the buffer received to an output channel for reuse.
-// Samples before the minValidTime timestamp are discarded.
 func (wp *wblSubsetProcessor) processWBLSamples(h *Head) (unknownRefs uint64) {
 	defer close(wp.output)
 
