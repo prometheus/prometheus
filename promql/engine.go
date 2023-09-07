@@ -59,6 +59,9 @@ const (
 	maxInt64 = 9223372036854774784
 	// The smallest SampleValue that can be converted to an int64 without underflow.
 	minInt64 = -9223372036854775808
+
+	// Max initial size for the pooled points slices.
+	maxPointsSliceSize = 5000
 )
 
 type engineMetrics struct {
@@ -180,9 +183,6 @@ type query struct {
 
 	// The engine against which the query is executed.
 	ng *Engine
-
-	// root evaluator used to execute the query
-	ev *evaluator
 }
 
 type QueryOrigin struct{}
@@ -217,8 +217,8 @@ func (q *query) Cancel() {
 // Close implements the Query interface.
 func (q *query) Close() {
 	for _, s := range q.matrix {
-		q.ev.putFPointSlice(s.Floats)
-		q.ev.putHPointSlice(s.Histograms)
+		putFPointSlice(s.Floats)
+		putHPointSlice(s.Histograms)
 	}
 }
 
@@ -722,7 +722,6 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 		}
 
 		query.matrix = mat
-		query.ev = evaluator
 		switch s.Expr.Type() {
 		case parser.ValueTypeVector:
 			// Convert matrix with one value per series into vector.
@@ -772,7 +771,6 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 		panic(fmt.Errorf("promql.Engine.exec: invalid expression type %q", val.Type()))
 	}
 	query.matrix = mat
-	query.ev = evaluator
 
 	if err := contextDone(ctx, "expression evaluation"); err != nil {
 		return nil, warnings, err
@@ -1178,7 +1176,7 @@ func (ev *evaluator) rangeEval(prepSeries func(labels.Labels, *EvalSeriesHelper)
 		}
 	}
 
-	for ts, step := ev.startTimestamp, 0; ts <= ev.endTimestamp; ts, step = ts+ev.interval, step+1 {
+	for ts := ev.startTimestamp; ts <= ev.endTimestamp; ts += ev.interval {
 		if err := contextDone(ev.ctx, "expression evaluation"); err != nil {
 			ev.error(err)
 		}
@@ -1283,12 +1281,12 @@ func (ev *evaluator) rangeEval(prepSeries func(labels.Labels, *EvalSeriesHelper)
 			}
 			if sample.H == nil {
 				if ss.Floats == nil {
-					ss.Floats = ev.getFPointSlice(numSteps, step, biggestLen)
+					ss.Floats = getFPointSlice(numSteps)
 				}
 				ss.Floats = append(ss.Floats, FPoint{T: ts, F: sample.F})
 			} else {
 				if ss.Histograms == nil {
-					ss.Histograms = ev.getHPointSlice(numSteps, step, biggestLen)
+					ss.Histograms = getHPointSlice(numSteps)
 				}
 				ss.Histograms = append(ss.Histograms, HPoint{T: ts, H: sample.H})
 			}
@@ -1299,8 +1297,8 @@ func (ev *evaluator) rangeEval(prepSeries func(labels.Labels, *EvalSeriesHelper)
 	// Reuse the original point slices.
 	for _, m := range origMatrixes {
 		for _, s := range m {
-			ev.putFPointSlice(s.Floats)
-			ev.putHPointSlice(s.Histograms)
+			putFPointSlice(s.Floats)
+			putHPointSlice(s.Histograms)
 		}
 	}
 	// Assemble the output matrix. By the time we get here we know we don't have too many samples.
@@ -1506,7 +1504,8 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 				Metric: metric,
 			}
 			inMatrix[0].Metric = selVS.Series[i].Labels()
-			for ts, step := ev.startTimestamp, 0; ts <= ev.endTimestamp; ts, step = ts+ev.interval, step+1 {
+			for ts, step := ev.startTimestamp, -1; ts <= ev.endTimestamp; ts += ev.interval {
+				step++
 				// Set the non-matrix arguments.
 				// They are scalar, so it is safe to use the step number
 				// when looking up the argument, as there will be no gaps.
@@ -1532,12 +1531,12 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 				if len(outVec) > 0 {
 					if outVec[0].H == nil {
 						if ss.Floats == nil {
-							ss.Floats = ev.getFPointSlice(numSteps, step, len(selVS.Series))
+							ss.Floats = getFPointSlice(numSteps)
 						}
 						ss.Floats = append(ss.Floats, FPoint{F: outVec[0].F, T: ts})
 					} else {
 						if ss.Histograms == nil {
-							ss.Histograms = ev.getHPointSlice(numSteps, step, len(selVS.Series))
+							ss.Histograms = getHPointSlice(numSteps)
 						}
 						ss.Histograms = append(ss.Histograms, HPoint{H: outVec[0].H, T: ts})
 					}
@@ -1558,8 +1557,8 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		ev.samplesStats.UpdatePeak(ev.currentSamples)
 
 		ev.currentSamples -= len(floats) + len(histograms)
-		ev.putFPointSlice(floats)
-		ev.putHPointSlice(histograms)
+		putFPointSlice(floats)
+		putHPointSlice(histograms)
 
 		// The absent_over_time function returns 0 or 1 series. So far, the matrix
 		// contains multiple series. The following code will create a new series
@@ -1694,18 +1693,19 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 				Metric: e.Series[i].Labels(),
 			}
 
-			for ts, step := ev.startTimestamp, 0; ts <= ev.endTimestamp; ts, step = ts+ev.interval, step+1 {
+			for ts, step := ev.startTimestamp, -1; ts <= ev.endTimestamp; ts += ev.interval {
+				step++
 				_, f, h, ok := ev.vectorSelectorSingle(it, e, ts)
 				if ok {
 					if ev.currentSamples < ev.maxSamples {
 						if h == nil {
 							if ss.Floats == nil {
-								ss.Floats = ev.getFPointSlice(numSteps, step, len(e.Series))
+								ss.Floats = getFPointSlice(numSteps)
 							}
 							ss.Floats = append(ss.Floats, FPoint{F: f, T: ts})
 						} else {
 							if ss.Histograms == nil {
-								ss.Histograms = ev.getHPointSlice(numSteps, step, len(e.Series))
+								ss.Histograms = getHPointSlice(numSteps)
 							}
 							ss.Histograms = append(ss.Histograms, HPoint{H: h, T: ts})
 						}
@@ -1790,7 +1790,8 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		res, ws := newEv.eval(e.Expr)
 		ev.currentSamples = newEv.currentSamples
 		ev.samplesStats.UpdatePeakFromSubquery(newEv.samplesStats)
-		for ts, step := ev.startTimestamp, 0; ts <= ev.endTimestamp; ts, step = ts+ev.interval, step+1 {
+		for ts, step := ev.startTimestamp, -1; ts <= ev.endTimestamp; ts += ev.interval {
+			step++
 			ev.samplesStats.IncrementSamplesAtStep(step, newEv.samplesStats.TotalSamples)
 		}
 		switch e.Expr.(type) {
@@ -1920,46 +1921,37 @@ var (
 	hPointPool zeropool.Pool[[]HPoint]
 )
 
-// pointsSliceSize calculates a reasonable initial capacity for the point slices when running a query.
-// It takes in consideration the remaining number of steps, maxSamples and number of series in the result.
-// It allows preventing OOMs caused by unexpected pre-allocation before we hit ErrTooManySamples.
-func (ev *evaluator) pointsSliceSize(numSteps, step, numberOfSeries int) int {
-	// Subtract the current step from the numSteps as at this point we know the given series does not have data before this step.
-	remainingSteps := numSteps - step
-	// Spread the remaining allowed samples across all the series in the result.
-	allowedSamples := (ev.maxSamples - ev.currentSamples) / numberOfSeries
-
-	if allowedSamples < 0 {
-		allowedSamples = 0
-	}
-
-	if remainingSteps > allowedSamples {
-		return allowedSamples
-	}
-	return remainingSteps
-}
-
-func (ev *evaluator) getFPointSlice(numSteps, step, numberOfSeries int) []FPoint {
+func getFPointSlice(sz int) []FPoint {
 	if p := fPointPool.Get(); p != nil {
 		return p
 	}
-	return make([]FPoint, 0, ev.pointsSliceSize(numSteps, step, numberOfSeries))
+
+	if sz > maxPointsSliceSize {
+		sz = maxPointsSliceSize
+	}
+
+	return make([]FPoint, 0, sz)
 }
 
-func (ev *evaluator) putFPointSlice(p []FPoint) {
+func putFPointSlice(p []FPoint) {
 	if p != nil {
 		fPointPool.Put(p[:0])
 	}
 }
 
-func (ev *evaluator) getHPointSlice(numSteps, step, numberOfSeries int) []HPoint {
+func getHPointSlice(sz int) []HPoint {
 	if p := hPointPool.Get(); p != nil {
 		return p
 	}
-	return make([]HPoint, 0, ev.pointsSliceSize(numSteps, step, numberOfSeries))
+
+	if sz > maxPointsSliceSize {
+		sz = maxPointsSliceSize
+	}
+
+	return make([]HPoint, 0, sz)
 }
 
-func (ev *evaluator) putHPointSlice(p []HPoint) {
+func putHPointSlice(p []HPoint) {
 	if p != nil {
 		hPointPool.Put(p[:0])
 	}
@@ -2001,8 +1993,8 @@ func (ev *evaluator) matrixSelector(node *parser.MatrixSelector) (Matrix, storag
 		if totalLen > 0 {
 			matrix = append(matrix, ss)
 		} else {
-			ev.putFPointSlice(ss.Floats)
-			ev.putHPointSlice(ss.Histograms)
+			putFPointSlice(ss.Floats)
+			putHPointSlice(ss.Histograms)
 		}
 	}
 	return matrix, ws
@@ -2091,7 +2083,7 @@ loop:
 				}
 				ev.currentSamples++
 				if histograms == nil {
-					histograms = ev.getHPointSlice(16, 0, 1)
+					histograms = getHPointSlice(16)
 				}
 				histograms = append(histograms, HPoint{T: t, H: h})
 			}
@@ -2107,7 +2099,7 @@ loop:
 				}
 				ev.currentSamples++
 				if floats == nil {
-					floats = ev.getFPointSlice(16, 0, 1)
+					floats = getFPointSlice(16)
 				}
 				floats = append(floats, FPoint{T: t, F: f})
 			}
@@ -2122,7 +2114,7 @@ loop:
 				ev.error(ErrTooManySamples(env))
 			}
 			if histograms == nil {
-				histograms = ev.getHPointSlice(16, 0, 1)
+				histograms = getHPointSlice(16)
 			}
 			histograms = append(histograms, HPoint{T: t, H: h})
 			ev.currentSamples++
@@ -2134,7 +2126,7 @@ loop:
 				ev.error(ErrTooManySamples(env))
 			}
 			if floats == nil {
-				floats = ev.getFPointSlice(16, 0, 1)
+				floats = getFPointSlice(16)
 			}
 			floats = append(floats, FPoint{T: t, F: f})
 			ev.currentSamples++
