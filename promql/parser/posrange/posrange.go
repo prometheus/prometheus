@@ -11,7 +11,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package position_range
+// posrange is used to report a position in query strings for error
+// and warning messages.
+package posrange
 
 import "fmt"
 
@@ -25,26 +27,28 @@ type PositionRange struct {
 	End   Pos
 }
 
-func (p PositionRange) FullInfo(query string, lineOffset int) string {
+// StartPosInput uses the query string to convert the PositionRange into a
+// line:col string, indicating when this is not possible if the query is empty
+// or the position is invalid. When this is used to convert ParseErr to a string,
+// lineOffset is an additional line offset to be added, and is only used inside
+// unit tests.
+func (p PositionRange) StartPosInput(query string, lineOffset int) string {
+	if query == "" {
+		return "unknown position"
+	}
 	pos := int(p.Start)
+	if pos < 0 || pos > len(query) {
+		return "invalid position"
+	}
+
 	lastLineBreak := -1
 	line := lineOffset + 1
-
-	var positionStr string
-
-	if pos < 0 || pos > len(query) {
-		positionStr = "invalid position"
-	} else {
-
-		for i, c := range query[:pos] {
-			if c == '\n' {
-				lastLineBreak = i
-				line++
-			}
+	for i, c := range query[:pos] {
+		if c == '\n' {
+			lastLineBreak = i
+			line++
 		}
-
-		col := pos - lastLineBreak
-		positionStr = fmt.Sprintf("%d:%d", line, col)
 	}
-	return positionStr
+	col := pos - lastLineBreak
+	return fmt.Sprintf("%d:%d", line, col)
 }

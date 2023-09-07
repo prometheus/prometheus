@@ -1684,13 +1684,15 @@ func (api *API) cleanTombstones(*http.Request) apiFuncResult {
 	return apiFuncResult{nil, nil, nil, nil}
 }
 
+// Query string is needed to get the position information for the annotations, and it
+// can be empty if the position information isn't needed.
 func (api *API) respond(w http.ResponseWriter, req *http.Request, data interface{}, warnings annotations.Annotations, query string) {
 	statusMessage := statusSuccess
 
 	resp := &Response{
 		Status:   statusMessage,
 		Data:     data,
-		Warnings: warnings.AsStrings(query),
+		Warnings: warnings.AsStrings(query, 10),
 	}
 
 	codec, err := api.negotiateCodec(req, resp)

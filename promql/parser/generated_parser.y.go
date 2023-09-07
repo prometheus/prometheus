@@ -15,7 +15,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
-	"github.com/prometheus/prometheus/promql/parser/position_range"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 )
 
 //line promql/parser/generated_parser.y:30
@@ -1003,7 +1003,7 @@ yydefault:
 		yyDollar = yyS[yypt-2 : yypt+1]
 //line promql/parser/generated_parser.y:203
 		{
-			yylex.(*parser).addParseErrf(position_range.PositionRange{}, "no expression found in input")
+			yylex.(*parser).addParseErrf(posrange.PositionRange{}, "no expression found in input")
 		}
 	case 4:
 		yyDollar = yyS[yypt-2 : yypt+1]
@@ -1280,7 +1280,7 @@ yydefault:
 			yyVAL.node = &Call{
 				Func: fn,
 				Args: yyDollar[2].node.(Expressions),
-				PosRange: position_range.PositionRange{
+				PosRange: posrange.PositionRange{
 					Start: yyDollar[1].item.Pos,
 					End:   yylex.(*parser).lastClosing,
 				},

@@ -28,7 +28,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/prometheus/prometheus/promql/parser/position_range"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
@@ -179,7 +179,7 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 // points[0] to be a histogram. It returns nil if any other Point in points is
 // not a histogram, and a warning wrapped in an annotation in that case.
 // Otherwise, it returns the calculated histogram and an empty annotation.
-func histogramRate(points []HPoint, isCounter bool, metricName string, pos position_range.PositionRange) (*histogram.FloatHistogram, annotations.Annotations) {
+func histogramRate(points []HPoint, isCounter bool, metricName string, pos posrange.PositionRange) (*histogram.FloatHistogram, annotations.Annotations) {
 	prev := points[0].H
 	last := points[len(points)-1].H
 	if last == nil {
@@ -640,7 +640,7 @@ func funcQuantileOverTime(vals []parser.Value, args parser.Expressions, enh *Eva
 
 	annos := annotations.Annotations{}
 	if math.IsNaN(q) || q < 0 || q > 1 {
-		annos.Add(annotations.NewInvalidQuantileWarning(args[0].String(), args[0].PositionRange()))
+		annos.Add(annotations.NewInvalidQuantileWarning(q, args[0].PositionRange()))
 	}
 
 	values := make(vectorByValueHeap, 0, len(el.Floats))
@@ -1104,7 +1104,7 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 	annos := annotations.Annotations{}
 
 	if math.IsNaN(q) || q < 0 || q > 1 {
-		annos.Add(annotations.NewInvalidQuantileWarning(args[0].String(), args[0].PositionRange()))
+		annos.Add(annotations.NewInvalidQuantileWarning(q, args[0].PositionRange()))
 	}
 
 	if enh.signatureToMetricWithBuckets == nil {

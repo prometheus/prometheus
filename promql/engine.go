@@ -2844,7 +2844,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, grouping []string, par
 
 		case parser.QUANTILE:
 			if math.IsNaN(q) || q < 0 || q > 1 {
-				annos.Add(annotations.NewInvalidQuantileWarning(e.Param.String(), e.Param.PositionRange()))
+				annos.Add(annotations.NewInvalidQuantileWarning(q, e.Param.PositionRange()))
 			}
 			aggr.floatValue = quantile(q, aggr.heap)
 
