@@ -1750,6 +1750,10 @@ var expectedErrors = []struct {
 		errMsg:   `at most one of bearer_token & bearer_token_file must be configured`,
 	},
 	{
+		filename: "lightsail_token_file.bad.yml",
+		errMsg:   `at most one of bearer_token & bearer_token_file must be configured`,
+	},
+	{
 		filename: "section_key_dup.bad.yml",
 		errMsg:   "field scrape_configs already set in type config.plain",
 	},
