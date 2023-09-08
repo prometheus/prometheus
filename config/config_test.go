@@ -1826,6 +1826,10 @@ var expectedErrors = []struct {
 		errMsg:   "URL scheme must be 'http' or 'https'",
 	},
 	{
+		filename: "puppetdb_token_file.bad.yml",
+		errMsg:   "at most one of bearer_token & bearer_token_file must be configured",
+	},
+	{
 		filename: "hetzner_role.bad.yml",
 		errMsg:   "unknown role",
 	},
