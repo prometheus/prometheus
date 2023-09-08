@@ -1894,6 +1894,10 @@ var expectedErrors = []struct {
 		errMsg:   "Uyuni SD configuration requires server host",
 	},
 	{
+		filename: "uyuni_token_file.bad.yml",
+		errMsg:   "at most one of bearer_token & bearer_token_file must be configured",
+	},
+	{
 		filename: "ionos_datacenter.bad.yml",
 		errMsg:   "datacenter id can't be empty",
 	},
