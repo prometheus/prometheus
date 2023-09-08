@@ -1774,6 +1774,10 @@ var expectedErrors = []struct {
 		errMsg:   "unknown authentication_type \"invalid\". Supported types are \"OAuth\" or \"ManagedIdentity\"",
 	},
 	{
+		filename: "azure_bearertoken_basicauth.bad.yml",
+		errMsg:   "at most one of basic_auth, oauth2, bearer_token & bearer_token_file must be configured",
+	},
+	{
 		filename: "empty_scrape_config.bad.yml",
 		errMsg:   "empty or null scrape config section",
 	},
