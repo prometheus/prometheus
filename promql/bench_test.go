@@ -154,7 +154,8 @@ func rangeQueryCases() []benchCase {
 			expr: "sum by (le)(h_X)",
 		},
 		{
-			expr: "count_values('value', h_X)",
+			expr:  "count_values('value', h_X)",
+			steps: 100,
 		},
 		{
 			expr: "topk(1, a_X)",
@@ -214,7 +215,6 @@ func rangeQueryCases() []benchCase {
 			tmp = append(tmp, c)
 		} else {
 			tmp = append(tmp, benchCase{expr: c.expr, steps: 1})
-			tmp = append(tmp, benchCase{expr: c.expr, steps: 10})
 			tmp = append(tmp, benchCase{expr: c.expr, steps: 100})
 			tmp = append(tmp, benchCase{expr: c.expr, steps: 1000})
 		}
