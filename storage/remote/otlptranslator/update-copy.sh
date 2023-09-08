@@ -1,6 +1,6 @@
 #!/bin/bash
 
-OTEL_VERSION=v0.81.0
+OTEL_VERSION=75e29cea585c4f1014c37ce5a08fa49cb26aecb9
 
 git clone https://github.com/open-telemetry/opentelemetry-collector-contrib ./tmp
 cd ./tmp
