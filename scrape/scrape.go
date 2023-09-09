@@ -197,6 +197,18 @@ var (
 			Help: "Total number of scrapes that hit the native histogram bucket limit and were rejected.",
 		},
 	)
+	targetScrapeAppendsTotal = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "prometheus_target_scrape_appends_total",
+			Help: "Total number of append attempts",
+		},
+	)
+	targetScrapeAppendErrorsTotal = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "prometheus_target_scrape_append_errors_total",
+			Help: "Total number of errors during append attempts",
+		},
+	)
 )
 
 func init() {
@@ -223,6 +235,8 @@ func init() {
 		targetScrapePoolExceededLabelLimits,
 		targetSyncFailed,
 		targetScrapeNativeHistogramBucketLimit,
+		targetScrapeAppendsTotal,
+		targetScrapeAppendErrorsTotal,
 	)
 }
 
@@ -780,7 +794,9 @@ func appender(app storage.Appender, sampleLimit, bucketLimit int) storage.Append
 			limit:    bucketLimit,
 		}
 	}
-	return app
+	return &meteredAppender{
+		Appender: app,
+	}
 }
 
 // A scraper retrieves samples and accepts a status report at the end.
