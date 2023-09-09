@@ -313,6 +313,11 @@ func (l *Lexer) accept(valid string) bool {
 	return false
 }
 
+// is peeks and returns true if the next rune is contained in the provided string.
+func (l *Lexer) is(valid string) bool {
+	return strings.ContainsRune(valid, l.peek())
+}
+
 // acceptRun consumes a run of runes from the valid set.
 func (l *Lexer) acceptRun(valid string) {
 	for strings.ContainsRune(valid, l.next()) {
@@ -901,19 +906,78 @@ func acceptRemainingDuration(l *Lexer) bool {
 // scanNumber scans numbers of different formats. The scanned Item is
 // not necessarily a valid number. This case is caught by the parser.
 func (l *Lexer) scanNumber() bool {
-	digits := "0123456789"
+	// Modify the digit pattern if the number is hexadecimal.
+	digitPattern := "0123456789"
 	// Disallow hexadecimal in series descriptions as the syntax is ambiguous.
-	if !l.seriesDesc && l.accept("0") && l.accept("xX") {
-		digits = "0123456789abcdefABCDEF"
+	if !l.seriesDesc &&
+		l.accept("0") && l.accept("xX") {
+		l.accept("_") // eg., 0X_1FFFP-16 == 0.1249847412109375
+		digitPattern = "0123456789abcdefABCDEF"
 	}
-	l.acceptRun(digits)
-	if l.accept(".") {
-		l.acceptRun(digits)
+	const (
+		// Define dot, exponent, and underscore patterns.
+		dotPattern        = "."
+		exponentPattern   = "eE"
+		underscorePattern = "_"
+		// Anti-patterns are rune sets that cannot follow their respective rune.
+		dotAntiPattern        = "_."
+		exponentAntiPattern   = "._eE" // and EOL.
+		underscoreAntiPattern = "._eE" // and EOL.
+	)
+	// All numbers follow the prefix: [.][d][d._eE]*
+	l.accept(dotPattern)
+	l.accept(digitPattern)
+	// [d._eE]* hereon.
+	dotConsumed := false
+	exponentConsumed := false
+	for l.is(digitPattern + dotPattern + underscorePattern + exponentPattern) {
+		// "." cannot repeat.
+		if l.is(dotPattern) {
+			if dotConsumed {
+				l.accept(dotPattern)
+				return false
+			}
+		}
+		// "eE" cannot repeat.
+		if l.is(exponentPattern) {
+			if exponentConsumed {
+				l.accept(exponentPattern)
+				return false
+			}
+		}
+		// Handle dots.
+		if l.accept(dotPattern) {
+			dotConsumed = true
+			if l.accept(dotAntiPattern) {
+				return false
+			}
+			// Fractional hexadecimal literals are not allowed.
+			if len(digitPattern) > 10 /* 0x[\da-fA-F].[\d]+p[\d] */ {
+				return false
+			}
+			continue
+		}
+		// Handle exponents.
+		if l.accept(exponentPattern) {
+			exponentConsumed = true
+			l.accept("+-")
+			if l.accept(exponentAntiPattern) || l.peek() == eof {
+				return false
+			}
+			continue
+		}
+		// Handle underscores.
+		if l.accept(underscorePattern) {
+			if l.accept(underscoreAntiPattern) || l.peek() == eof {
+				return false
+			}
+
+			continue
+		}
+		// Handle digits at the end since we already consumed before this loop.
+		l.acceptRun(digitPattern)
 	}
-	if l.accept("eE") {
-		l.accept("+-")
-		l.acceptRun("0123456789")
-	}
+
 	// Next thing must not be alphanumeric unless it's the times token
 	// for series repetitions.
 	if r := l.peek(); (l.seriesDesc && r == 'x') || !isAlphaNumeric(r) {
