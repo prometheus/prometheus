@@ -899,18 +899,54 @@ func acceptRemainingDuration(l *Lexer) bool {
 // scanNumber scans numbers of different formats. The scanned Item is
 // not necessarily a valid number. This case is caught by the parser.
 func (l *Lexer) scanNumber() bool {
+	isHex := false
 	digits := "0123456789"
+	decimalDigits := digits
 	// Disallow hexadecimal in series descriptions as the syntax is ambiguous.
 	if !l.seriesDesc && l.accept("0") && l.accept("xX") {
+		isHex = true
+		l.accept("_") // eg., 0X_1FFFP-16 == 0.1249847412109375
 		digits = "0123456789abcdefABCDEF"
 	}
+	// _ are only allowed between two digits,
+	// NOTE: We assume _ is not the starting character, as lexStatements falls into the default case for that.
 	l.acceptRun(digits)
-	if l.accept(".") {
+	for l.accept("_") {
+		// _ cannot be followed by a dot or another _.
+		if l.accept("._") {
+			return false // 1[._]{2}+1 does not constitute a valid number.
+		}
 		l.acceptRun(digits)
+	}
+	if l.accept(".") {
+		// . cannot be followed by another _.
+		if l.accept("_") {
+			return false
+		}
+		// _ are only allowed between two digits,
+		l.acceptRun(digits)
+		for l.accept("_") {
+			// _ are not allowed in a hexadecimal numeral's fractional part ("0x1.1p1"-based formats are not supported yet).
+			if isHex {
+				return false
+			}
+			l.acceptRun(digits)
+		}
 	}
 	if l.accept("eE") {
 		l.accept("+-")
-		l.acceptRun("0123456789")
+		if l.accept("_") {
+			// {e,E} cannot be followed by _.
+			return false
+		}
+		l.acceptRun(decimalDigits)
+		for l.accept("_") {
+			// _ cannot be followed by another _, any other characters (dots, etc.) are handled below.
+			if l.accept("_") {
+				return false
+			}
+			l.acceptRun(decimalDigits)
+		}
 	}
 	// Next thing must not be alphanumeric unless it's the times token
 	// for series repetitions.

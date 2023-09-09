@@ -130,6 +130,42 @@ var tests = []struct {
 			}, {
 				input:    "0x123",
 				expected: []Item{{NUMBER, 0, "0x123"}},
+			}, {
+				input:    "00_1_23_4.56_7_8",
+				expected: []Item{{NUMBER, 0, "00_1_23_4.56_7_8"}},
+			}, {
+				input: "00_1_23__4.56_7_8",
+				fail:  true,
+			}, {
+				input: "00_1_23_4._56_7_8",
+				fail:  true,
+			}, {
+				input: "00_1_23_4_.56_7_8",
+				fail:  true,
+			}, {
+				input:    "0x1_2_34",
+				expected: []Item{{NUMBER, 0, "0x1_2_34"}},
+			}, {
+				input: "0x1_2__34",
+				fail:  true,
+			}, {
+				input: "0x1_2__34.5_6p1", // "0x1.1p1"-based formats are not supported yet.
+				fail:  true,
+			}, {
+				input:    "1e1_2_34",
+				expected: []Item{{NUMBER, 0, "1e1_2_34"}},
+			}, {
+				input: "1e_1_2_34",
+				fail:  true,
+			}, {
+				input: "1e1_2__34",
+				fail:  true,
+			}, {
+				input: "1e+_1_2_34",
+				fail:  true,
+			}, {
+				input: "1e-_1_2_34",
+				fail:  true,
 			},
 		},
 	},
@@ -821,7 +857,7 @@ func TestLexer(t *testing.T) {
 				}
 				if lastItem.Typ == ERROR {
 					t.Logf("%d: input %q", i, test.input)
-					require.Fail(t, "unexpected lexing error at position %d: %s", lastItem.Pos, lastItem)
+					require.Failf(t, "unexpected lexing error", "pos %d: %s", lastItem.Pos, lastItem.String())
 				}
 
 				eofItem := Item{EOF, Pos(len(test.input)), ""}
