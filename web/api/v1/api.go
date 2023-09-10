@@ -700,6 +700,16 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 	if names == nil {
 		names = []string{}
 	}
+
+	// Respect the "limit" parameter.
+	limit, err := parseLimitParam(r.FormValue("limit"))
+	if err != nil {
+		return invalidParamError(err, "limit")
+	}
+	if len(names) > limit {
+		names = names[:limit]
+	}
+
 	return apiFuncResult{names, nil, warnings, nil}
 }
 
@@ -776,6 +786,15 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 
 	slices.Sort(vals)
 
+	// Respect the "limit" parameter.
+	limit, err := parseLimitParam(r.FormValue("limit"))
+	if err != nil {
+		return invalidParamError(err, "limit")
+	}
+	if len(vals) > limit {
+		vals = vals[:limit]
+	}
+
 	return apiFuncResult{vals, nil, warnings, closer}
 }
 
@@ -851,8 +870,17 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 	}
 
 	metrics := []labels.Labels{}
+
+	// Respect the "limit" parameter.
+	limit, err := parseLimitParam(r.FormValue("limit"))
+	if err != nil {
+		return invalidParamError(err, "limit")
+	}
 	for set.Next() {
 		metrics = append(metrics, set.At().Labels())
+		if len(metrics) >= limit {
+			break
+		}
 	}
 
 	warnings := set.Warnings()
@@ -1772,6 +1800,20 @@ func (api *API) respondError(w http.ResponseWriter, apiErr *apiError, data inter
 	if n, err := w.Write(b); err != nil {
 		level.Error(api.logger).Log("msg", "error writing response", "bytesWritten", n, "err", err)
 	}
+}
+
+func parseLimitParam(limitStr string) (limit int, err error) {
+	limit = int(^uint(0) >> 1) // MaxInt
+	if limitStr != "" {
+		limit, err = strconv.Atoi(limitStr)
+		if err != nil {
+			return limit, err
+		}
+		if limit <= 0 {
+			return limit, errors.New("limit must be positive")
+		}
+	}
+	return limit, nil
 }
 
 func parseTimeParam(r *http.Request, paramName string, defaultValue time.Time) (time.Time, error) {

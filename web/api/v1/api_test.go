@@ -1338,6 +1338,17 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			endpoint: api.series,
 			errType:  errorBadData,
 		},
+		// Querying with the "limit" parameter to restrict response output size.
+		{
+			endpoint: api.series,
+			query: url.Values{
+				"match[]": []string{"test_metric1"},
+				"limit":   []string{"1"},
+			},
+			response: []labels.Labels{
+				labels.FromStrings("__name__", "test_metric1", "foo", "bar"),
+			},
+		},
 		{
 			endpoint: api.dropSeries,
 			errType:  errorInternal,
@@ -2492,6 +2503,20 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					"boo",
 				},
 			},
+			// Querying with the "limit" parameter to restrict response output size.
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "foo",
+				},
+				query: url.Values{
+					"match[]": []string{"test_metric4"},
+					"limit":   []string{"1"},
+				},
+				response: []string{
+					"bar",
+				},
+			},
 			// Label names.
 			{
 				endpoint: api.labelNames,
@@ -2630,6 +2655,15 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					"end":     []string{"100000000"},
 				},
 				response: []string{"__name__", "foo"},
+			},
+			// Querying with the "limit" parameter to restrict response output size.
+			{
+				endpoint: api.labelNames,
+				query: url.Values{
+					"match[]": []string{"test_metric2"},
+					"limit":   []string{"1"},
+				},
+				response: []string{"__name__"},
 			},
 		}...)
 	}
