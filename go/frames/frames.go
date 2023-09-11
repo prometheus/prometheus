@@ -186,8 +186,12 @@ func ReadAuthMsg(ctx context.Context, r io.Reader, size int) (*AuthMsg, error) {
 }
 
 // NewAuthFrame - init new frame.
-func NewAuthFrame(version uint8, token, agentUUID, productName, agentHostname string) (*ReadFrame, error) {
-	body, err := NewAuthMsg(token, agentUUID, productName, agentHostname).MarshalBinary()
+func NewAuthFrame(
+	version uint8,
+	token, agentUUID, productName, agentHostname, blockID string,
+	shardID uint16,
+) (*ReadFrame, error) {
+	body, err := NewAuthMsg(token, agentUUID, productName, agentHostname, blockID, shardID).MarshalBinary()
 	if err != nil {
 		return nil, err
 	}
@@ -211,15 +215,19 @@ type AuthMsg struct {
 	AgentUUID     string
 	ProductName   string
 	AgentHostname string
+	BlockID       string
+	ShardID       uint16
 }
 
 // NewAuthMsg - init new AuthMsg.
-func NewAuthMsg(token, agentUUID, productName, agentHostname string) *AuthMsg {
+func NewAuthMsg(token, agentUUID, productName, agentHostname, blockID string, shardID uint16) *AuthMsg {
 	return &AuthMsg{
 		Token:         token,
 		AgentUUID:     agentUUID,
 		ProductName:   productName,
 		AgentHostname: agentHostname,
+		BlockID:       blockID,
+		ShardID:       shardID,
 	}
 }
 
@@ -231,7 +239,7 @@ func NewAuthMsgEmpty() *AuthMsg {
 // MarshalBinary - encoding to byte.
 func (am *AuthMsg) MarshalBinary() ([]byte, error) {
 	//revive:disable-next-line:add-constant this not constant
-	length := 4 + len(am.Token) + len(am.AgentUUID) + len(am.ProductName) + len(am.AgentHostname)
+	length := 4 + len(am.Token) + len(am.AgentUUID) + len(am.ProductName) + len(am.AgentHostname) + len(am.BlockID) + 2
 	buf := make([]byte, 0, length)
 
 	buf = binary.AppendUvarint(buf, uint64(len(am.Token)))
@@ -245,6 +253,11 @@ func (am *AuthMsg) MarshalBinary() ([]byte, error) {
 
 	buf = binary.AppendUvarint(buf, uint64(len(am.AgentHostname)))
 	buf = append(buf, am.AgentHostname...)
+
+	buf = binary.AppendUvarint(buf, uint64(len(am.BlockID)))
+	buf = append(buf, am.BlockID...)
+
+	buf = binary.AppendUvarint(buf, uint64(am.ShardID))
 	return buf, nil
 }
 
@@ -269,6 +282,19 @@ func (am *AuthMsg) UnmarshalBinary(data []byte) error {
 	lenStr, n = binary.Uvarint(data[offset:])
 	offset += n
 	am.AgentHostname = string(data[offset : offset+int(lenStr)])
+	offset += int(lenStr)
+
+	if offset >= len(data) {
+		return nil
+	}
+
+	lenStr, n = binary.Uvarint(data[offset:])
+	offset += n
+	am.BlockID = string(data[offset : offset+int(lenStr)])
+	offset += int(lenStr)
+
+	shardID, _ := binary.Uvarint(data[offset:])
+	am.ShardID = uint16(shardID)
 	return nil
 }
 

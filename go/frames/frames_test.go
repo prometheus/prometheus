@@ -3,10 +3,12 @@ package frames_test
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"testing"
 	"testing/quick"
 
+	"github.com/go-faker/faker/v4"
 	"github.com/google/uuid"
 	"github.com/prometheus/prometheus/pp/go/frames"
 	"github.com/prometheus/prometheus/pp/go/util"
@@ -178,8 +180,45 @@ func (s *FrameSuite) TestHeaderEncodeDecodeBinaryWithError() {
 	s.Require().Error(err)
 }
 
+type authMsgTest struct {
+	Token         string
+	AgentUUID     string
+	ProductName   string
+	AgentHostname string
+}
+
+func newAuthMsgTest(token, agentUUID, productName, agentHostname string) *authMsgTest {
+	return &authMsgTest{
+		Token:         token,
+		AgentUUID:     agentUUID,
+		ProductName:   productName,
+		AgentHostname: agentHostname,
+	}
+}
+
+// MarshalBinary - encoding to byte.
+func (am *authMsgTest) MarshalBinary() ([]byte, error) {
+	//revive:disable-next-line:add-constant this not constant
+	length := 4 + len(am.Token) + len(am.AgentUUID) + len(am.ProductName) + len(am.AgentHostname)
+	buf := make([]byte, 0, length)
+
+	buf = binary.AppendUvarint(buf, uint64(len(am.Token)))
+	buf = append(buf, am.Token...)
+
+	buf = binary.AppendUvarint(buf, uint64(len(am.AgentUUID)))
+	buf = append(buf, am.AgentUUID...)
+
+	buf = binary.AppendUvarint(buf, uint64(len(am.ProductName)))
+	buf = append(buf, am.ProductName...)
+
+	buf = binary.AppendUvarint(buf, uint64(len(am.AgentHostname)))
+	buf = append(buf, am.AgentHostname...)
+
+	return buf, nil
+}
+
 func (s *FrameSuite) TestAuthMsg() {
-	wm := frames.NewAuthMsg(uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString())
+	wm := frames.NewAuthMsg(uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString(), 1)
 
 	b, _ := wm.MarshalBinary()
 	rm := new(frames.AuthMsg)
@@ -192,9 +231,30 @@ func (s *FrameSuite) TestAuthMsg() {
 	s.Require().Equal(*wm, *rm)
 }
 
+func (s *FrameSuite) TestAuthMsgOld() {
+	token := uuid.NewString()
+	agentUUID := uuid.NewString()
+	productName := uuid.NewString()
+	agentHostname := uuid.NewString()
+	wm := newAuthMsgTest(token, agentUUID, productName, agentHostname)
+
+	b, _ := wm.MarshalBinary()
+	rm := new(frames.AuthMsg)
+	err := rm.UnmarshalBinary(b)
+	s.Require().NoError(err)
+
+	err = rm.Validate()
+	s.Require().NoError(err)
+
+	s.Require().Equal(token, rm.Token)
+	s.Require().Equal(agentUUID, rm.AgentUUID)
+	s.Require().Equal(productName, rm.ProductName)
+	s.Require().Equal(agentHostname, rm.AgentHostname)
+}
+
 func (s *FrameSuite) TestAuthMsgQuick() {
-	f := func(token, agentUUID, productName, agentHostname string) bool {
-		wm := frames.NewAuthMsg(token, agentUUID, productName, agentHostname)
+	f := func(token, agentUUID, productName, agentHostname, blockID string, shardID uint16) bool {
+		wm := frames.NewAuthMsg(token, agentUUID, productName, agentHostname, blockID, shardID)
 
 		b, _ := wm.MarshalBinary()
 		rm := new(frames.AuthMsg)
@@ -209,11 +269,11 @@ func (s *FrameSuite) TestAuthMsgQuick() {
 }
 
 func (s *FrameSuite) TestAuthMsgError() {
-	wm := frames.NewAuthMsg("", uuid.NewString(), "", "")
+	wm := frames.NewAuthMsg("", uuid.NewString(), "", "", "", 0)
 	err := wm.Validate()
 	s.Require().ErrorIs(err, frames.ErrTokenEmpty)
 
-	wm = frames.NewAuthMsg(uuid.NewString(), "", "", "")
+	wm = frames.NewAuthMsg(uuid.NewString(), "", "", "", "", 0)
 	err = wm.Validate()
 	s.Require().ErrorIs(err, frames.ErrUUIDEmpty)
 }
@@ -224,7 +284,9 @@ func (s *FrameSuite) TestAuthMsgFrameAt() {
 	agentUUID := uuid.NewString()
 	productName := uuid.NewString()
 	agentHostname := uuid.NewString()
-	wm, err := frames.NewAuthFrame(s.version, token, agentUUID, productName, agentHostname)
+	blockID := uuid.NewString()
+	shardID := uint16(faker.Longitude())
+	wm, err := frames.NewAuthFrame(s.version, token, agentUUID, productName, agentHostname, blockID, shardID)
 	s.Require().NoError(err)
 	b := wm.EncodeBinary()
 
@@ -244,6 +306,8 @@ func (s *FrameSuite) TestAuthMsgFrameAt() {
 	s.Require().Equal(agentUUID, rm.AgentUUID)
 	s.Require().Equal(productName, rm.ProductName)
 	s.Require().Equal(agentHostname, rm.AgentHostname)
+	s.Require().Equal(blockID, rm.BlockID)
+	s.Require().Equal(shardID, rm.ShardID)
 }
 
 func (s *FrameSuite) TestAuthMsgFrame() {
@@ -252,7 +316,9 @@ func (s *FrameSuite) TestAuthMsgFrame() {
 	agentUUID := uuid.NewString()
 	productName := uuid.NewString()
 	agentHostname := uuid.NewString()
-	wm, err := frames.NewAuthFrame(s.version, token, agentUUID, productName, agentHostname)
+	blockID := uuid.NewString()
+	shardID := uint16(faker.Longitude())
+	wm, err := frames.NewAuthFrame(s.version, token, agentUUID, productName, agentHostname, blockID, shardID)
 	s.Require().NoError(err)
 	b := wm.EncodeBinary()
 
@@ -273,6 +339,8 @@ func (s *FrameSuite) TestAuthMsgFrame() {
 	s.Require().Equal(agentUUID, rm.AgentUUID)
 	s.Require().Equal(productName, rm.ProductName)
 	s.Require().Equal(agentHostname, rm.AgentHostname)
+	s.Require().Equal(blockID, rm.BlockID)
+	s.Require().Equal(shardID, rm.ShardID)
 }
 
 func (s *FrameSuite) TestAuthMsgFrameAtWithMsg() {
@@ -281,7 +349,9 @@ func (s *FrameSuite) TestAuthMsgFrameAtWithMsg() {
 	agentUUID := uuid.NewString()
 	productName := uuid.NewString()
 	agentHostname := uuid.NewString()
-	msg := frames.NewAuthMsg(token, agentUUID, productName, agentHostname)
+	blockID := uuid.NewString()
+	shardID := uint16(faker.Longitude())
+	msg := frames.NewAuthMsg(token, agentUUID, productName, agentHostname, blockID, shardID)
 	wm, err := frames.NewAuthFrameWithMsg(s.version, msg)
 	s.Require().NoError(err)
 	b := wm.EncodeBinary()
@@ -302,6 +372,8 @@ func (s *FrameSuite) TestAuthMsgFrameAtWithMsg() {
 	s.Require().Equal(agentUUID, rm.AgentUUID)
 	s.Require().Equal(productName, rm.ProductName)
 	s.Require().Equal(agentHostname, rm.AgentHostname)
+	s.Require().Equal(blockID, rm.BlockID)
+	s.Require().Equal(shardID, rm.ShardID)
 }
 
 func (s *FrameSuite) TestAuthMsgFrameWithMsg() {
@@ -310,7 +382,9 @@ func (s *FrameSuite) TestAuthMsgFrameWithMsg() {
 	agentUUID := uuid.NewString()
 	productName := uuid.NewString()
 	agentHostname := uuid.NewString()
-	msg := frames.NewAuthMsg(token, agentUUID, productName, agentHostname)
+	blockID := uuid.NewString()
+	shardID := uint16(faker.Longitude())
+	msg := frames.NewAuthMsg(token, agentUUID, productName, agentHostname, blockID, shardID)
 	wm, err := frames.NewAuthFrameWithMsg(s.version, msg)
 	s.Require().NoError(err)
 	b := wm.EncodeBinary()
@@ -332,6 +406,8 @@ func (s *FrameSuite) TestAuthMsgFrameWithMsg() {
 	s.Require().Equal(agentUUID, rm.AgentUUID)
 	s.Require().Equal(productName, rm.ProductName)
 	s.Require().Equal(agentHostname, rm.AgentHostname)
+	s.Require().Equal(blockID, rm.BlockID)
+	s.Require().Equal(shardID, rm.ShardID)
 }
 
 func (s *FrameSuite) TestResponseMsg() {

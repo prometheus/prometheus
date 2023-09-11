@@ -27,7 +27,7 @@ func main() {
 	}
 
 	// init storage
-	storage, err := delivery.NewFileStorage(cfg)
+	storage, err := delivery.NewFileStorage(*cfg)
 	if err != nil {
 		zap.L().Fatal("failed init file storage", zap.Error(err))
 	}
