@@ -121,6 +121,13 @@ var (
 		},
 		[]string{"scrape_job"},
 	)
+	targetScrapePoolTargetsDropped = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "prometheus_target_scrape_pool_targets_dropped",
+			Help: "Current number of targets dropped from this scrape pool.",
+		},
+		[]string{"scrape_job"},
+	)
 	targetSyncIntervalLength = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
 			Name:       "prometheus_target_sync_length_seconds",
@@ -217,6 +224,7 @@ func init() {
 		targetScrapePoolExceededTargetLimit,
 		targetScrapePoolTargetLimit,
 		targetScrapePoolTargetsAdded,
+		targetScrapePoolTargetsDropped,
 		targetScrapeCacheFlushForced,
 		targetMetadataCache,
 		targetScrapeExemplarOutOfOrder,
@@ -633,6 +641,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 	sp.targetMtx.Unlock()
 
 	targetScrapePoolTargetsAdded.WithLabelValues(sp.config.JobName).Set(float64(len(uniqueLoops)))
+	targetScrapePoolTargetsDropped.WithLabelValues(sp.config.JobName).Set(float64(sp.DroppedTargetsCount()))
 	forcedErr := sp.refreshTargetLimitErr()
 	for _, l := range sp.loops {
 		l.setForcedError(forcedErr)
