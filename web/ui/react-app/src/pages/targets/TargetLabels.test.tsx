@@ -17,15 +17,12 @@ describe('targetLabels', () => {
       job: 'node_exporter',
       foo: 'bar',
     },
-    idx: 1,
-    scrapePool: 'cortex/node-exporter_group/0',
   };
   const targetLabels = shallow(<TargetLabels {...defaultProps} />);
 
   it('renders a div of series labels', () => {
     const div = targetLabels.find('div').filterWhere((elem) => elem.hasClass('series-labels-container'));
     expect(div).toHaveLength(1);
-    expect(div.prop('id')).toEqual('series-labels-cortex/node-exporter_group/0-1');
   });
 
   it('wraps each label in a label badge', () => {
@@ -37,16 +34,5 @@ describe('targetLabels', () => {
       expect(badge).toHaveLength(1);
     });
     expect(targetLabels.find(Badge)).toHaveLength(3);
-  });
-
-  it('renders a tooltip for discovered labels', () => {
-    const tooltip = targetLabels.find(Tooltip);
-    expect(tooltip).toHaveLength(1);
-    expect(tooltip.prop('isOpen')).toBe(false);
-    expect(tooltip.prop('target')).toEqual('series-labels-cortex\\/node-exporter_group\\/0-1');
-  });
-
-  it('renders discovered labels', () => {
-    expect(toJson(targetLabels)).toMatchSnapshot();
   });
 });
