@@ -233,7 +233,7 @@ func (errQuerier) Select(context.Context, bool, *storage.SelectHints, ...*labels
 	return storage.ErrSeriesSet(errSelect)
 }
 
-func (errQuerier) LabelValues(string, ...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (errQuerier) LabelValues(context.Context, string, ...*labels.Matcher) ([]string, storage.Warnings, error) {
 	return nil, nil, errors.New("label values error")
 }
 

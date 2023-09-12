@@ -136,7 +136,7 @@ func (p *MemPostings) LabelNames() []string {
 }
 
 // LabelValues returns label values for the given name.
-func (p *MemPostings) LabelValues(name string) []string {
+func (p *MemPostings) LabelValues(_ context.Context, name string) []string {
 	p.mtx.RLock()
 	defer p.mtx.RUnlock()
 

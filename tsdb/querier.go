@@ -89,8 +89,8 @@ func newBlockBaseQuerier(b BlockReader, mint, maxt int64) (*blockBaseQuerier, er
 	}, nil
 }
 
-func (q *blockBaseQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	res, err := q.index.SortedLabelValues(name, matchers...)
+func (q *blockBaseQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
+	res, err := q.index.SortedLabelValues(ctx, name, matchers...)
 	return res, nil, err
 }
 
@@ -374,7 +374,7 @@ func postingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Postings, erro
 		}
 	}
 
-	vals, err := ix.LabelValues(m.Name)
+	vals, err := ix.LabelValues(context.TODO(), m.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -411,7 +411,7 @@ func inversePostingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Posting
 		return ix.Postings(context.TODO(), m.Name, m.Value)
 	}
 
-	vals, err := ix.LabelValues(m.Name)
+	vals, err := ix.LabelValues(context.TODO(), m.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -431,13 +431,13 @@ func inversePostingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Posting
 	return ix.Postings(context.TODO(), m.Name, res...)
 }
 
-func labelValuesWithMatchers(r IndexReader, name string, matchers ...*labels.Matcher) ([]string, error) {
+func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, matchers ...*labels.Matcher) ([]string, error) {
 	p, err := PostingsForMatchers(r, matchers...)
 	if err != nil {
 		return nil, errors.Wrap(err, "fetching postings for matchers")
 	}
 
-	allValues, err := r.LabelValues(name)
+	allValues, err := r.LabelValues(ctx, name)
 	if err != nil {
 		return nil, errors.Wrapf(err, "fetching values of label %s", name)
 	}
@@ -463,7 +463,7 @@ func labelValuesWithMatchers(r IndexReader, name string, matchers ...*labels.Mat
 
 	valuesPostings := make([]index.Postings, len(allValues))
 	for i, value := range allValues {
-		valuesPostings[i], err = r.Postings(context.TODO(), name, value)
+		valuesPostings[i], err = r.Postings(ctx, name, value)
 		if err != nil {
 			return nil, errors.Wrapf(err, "fetching postings for %s=%q", name, value)
 		}

@@ -1000,7 +1000,7 @@ func TestWALFlushedOnDBClose(t *testing.T) {
 	q, err := db.Querier(0, 1)
 	require.NoError(t, err)
 
-	values, ws, err := q.LabelValues("labelname")
+	values, ws, err := q.LabelValues(ctx, "labelname")
 	require.NoError(t, err)
 	require.Equal(t, 0, len(ws))
 	require.Equal(t, []string{"labelvalue"}, values)
@@ -1930,7 +1930,7 @@ func TestQuerierWithBoundaryChunks(t *testing.T) {
 	defer q.Close()
 
 	// The requested interval covers 2 blocks, so the querier's label values for blockID should give us 2 values, one from each block.
-	b, ws, err := q.LabelValues("blockID")
+	b, ws, err := q.LabelValues(ctx, "blockID")
 	require.NoError(t, err)
 	require.Equal(t, storage.Warnings(nil), ws)
 	require.Equal(t, []string{"1", "2"}, b)

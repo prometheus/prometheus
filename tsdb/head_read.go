@@ -62,8 +62,8 @@ func (h *headIndexReader) Symbols() index.StringIter {
 // specific label name that are within the time range mint to maxt.
 // If matchers are specified the returned result set is reduced
 // to label values of metrics matching the matchers.
-func (h *headIndexReader) SortedLabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
-	values, err := h.LabelValues(name, matchers...)
+func (h *headIndexReader) SortedLabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
+	values, err := h.LabelValues(ctx, name, matchers...)
 	if err == nil {
 		slices.Sort(values)
 	}
@@ -74,16 +74,16 @@ func (h *headIndexReader) SortedLabelValues(name string, matchers ...*labels.Mat
 // specific label name that are within the time range mint to maxt.
 // If matchers are specified the returned result set is reduced
 // to label values of metrics matching the matchers.
-func (h *headIndexReader) LabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
+func (h *headIndexReader) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
 	if h.maxt < h.head.MinTime() || h.mint > h.head.MaxTime() {
 		return []string{}, nil
 	}
 
 	if len(matchers) == 0 {
-		return h.head.postings.LabelValues(name), nil
+		return h.head.postings.LabelValues(ctx, name), nil
 	}
 
-	return labelValuesWithMatchers(h, name, matchers...)
+	return labelValuesWithMatchers(ctx, h, name, matchers...)
 }
 
 // LabelNames returns all the unique label names present in the head
@@ -216,7 +216,7 @@ func (s *memSeries) oooHeadChunkID(pos int) chunks.HeadChunkID {
 }
 
 // LabelValueFor returns label value for the given label name in the series referred to by ID.
-func (h *headIndexReader) LabelValueFor(id storage.SeriesRef, label string) (string, error) {
+func (h *headIndexReader) LabelValueFor(_ context.Context, id storage.SeriesRef, label string) (string, error) {
 	memSeries := h.head.series.getByID(chunks.HeadSeriesRef(id))
 	if memSeries == nil {
 		return "", storage.ErrNotFound

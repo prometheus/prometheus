@@ -209,7 +209,7 @@ func (q querier) addExternalLabels(ms []*labels.Matcher) ([]*labels.Matcher, []s
 }
 
 // LabelValues implements storage.Querier and is a noop.
-func (q *querier) LabelValues(string, ...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (q *querier) LabelValues(context.Context, string, ...*labels.Matcher) ([]string, storage.Warnings, error) {
 	// TODO: Implement: https://github.com/prometheus/prometheus/issues/3351
 	return nil, nil, errors.New("not implemented")
 }
