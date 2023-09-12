@@ -17,7 +17,7 @@ package internal
 // #cgo amd64,!sanitize,dbg LDFLAGS: -l:x86_wal_c_api_dbg.a
 // #cgo amd64,sanitize,!dbg LDFLAGS: -l:x86_wal_c_api_asan.a
 // #cgo amd64,sanitize,dbg LDFLAGS: -l:x86_wal_c_api_dbg_asan.a
-// #cgo LDFLAGS: -lstdc++
+// #cgo LDFLAGS: -static-libgcc -static-libstdc++ -l:libstdc++.a
 // #include "wal_c_encoder.h"
 // #include "wal_c_decoder.h"
 // #include "wal_c_types.h"
