@@ -1140,7 +1140,7 @@ func TestHeadDeleteSimple(t *testing.T) {
 				for _, h := range []*Head{head, reloadedHead} {
 					q, err := NewBlockQuerier(h, h.MinTime(), h.MaxTime())
 					require.NoError(t, err)
-					actSeriesSet := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, lblDefault.Name, lblDefault.Value))
+					actSeriesSet := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, lblDefault.Name, lblDefault.Value))
 					require.NoError(t, q.Close())
 					expSeriesSet := newMockSeriesSet([]storage.Series{
 						storage.NewListSeries(lblsDefault, func() []chunks.Sample {
@@ -1200,7 +1200,7 @@ func TestDeleteUntilCurMax(t *testing.T) {
 	// Test the series returns no samples. The series is cleared only after compaction.
 	q, err := NewBlockQuerier(hb, 0, 100000)
 	require.NoError(t, err)
-	res := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+	res := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 	require.True(t, res.Next(), "series is not present")
 	s := res.At()
 	it := s.Iterator(nil)
@@ -1217,7 +1217,7 @@ func TestDeleteUntilCurMax(t *testing.T) {
 	require.NoError(t, app.Commit())
 	q, err = NewBlockQuerier(hb, 0, 100000)
 	require.NoError(t, err)
-	res = q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+	res = q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 	require.True(t, res.Next(), "series don't exist")
 	exps := res.At()
 	it = exps.Iterator(nil)
@@ -1389,7 +1389,7 @@ func TestDelete_e2e(t *testing.T) {
 			q, err := NewBlockQuerier(hb, 0, 100000)
 			require.NoError(t, err)
 			defer q.Close()
-			ss := q.Select(true, nil, del.ms...)
+			ss := q.Select(context.Background(), true, nil, del.ms...)
 			// Build the mockSeriesSet.
 			matchedSeries := make([]storage.Series, 0, len(matched))
 			for _, m := range matched {
@@ -1835,7 +1835,7 @@ func TestUncommittedSamplesNotLostOnTruncate(t *testing.T) {
 	require.NoError(t, err)
 	defer q.Close()
 
-	ss := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "1"))
+	ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "1"))
 	require.Equal(t, true, ss.Next())
 	for ss.Next() {
 	}
@@ -1864,7 +1864,7 @@ func TestRemoveSeriesAfterRollbackAndTruncate(t *testing.T) {
 	q, err := NewBlockQuerier(h, 1500, 2500)
 	require.NoError(t, err)
 
-	ss := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "1"))
+	ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "1"))
 	require.Equal(t, false, ss.Next())
 	require.Equal(t, 0, len(ss.Warnings()))
 	require.NoError(t, q.Close())
@@ -2149,7 +2149,7 @@ func TestMemSeriesIsolation(t *testing.T) {
 		require.NoError(t, err)
 		defer querier.Close()
 
-		ss := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+		ss := querier.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 		_, seriesSet, ws, err := expandSeriesSet(ss)
 		require.NoError(t, err)
 		require.Equal(t, 0, len(ws))
@@ -2521,7 +2521,7 @@ func testHeadSeriesChunkRace(t *testing.T) {
 		h.gc()
 		wg.Done()
 	}()
-	ss := q.Select(false, nil, matcher)
+	ss := q.Select(context.Background(), false, nil, matcher)
 	for ss.Next() {
 	}
 	require.NoError(t, ss.Err())
@@ -2926,11 +2926,11 @@ func TestChunkNotFoundHeadGCRace(t *testing.T) {
 	require.NoError(t, app.Commit())
 
 	// Get a querier before compaction (or when compaction is about to begin).
-	q, err := db.Querier(context.Background(), mint, maxt)
+	q, err := db.Querier(mint, maxt)
 	require.NoError(t, err)
 
 	// Query the compacted range and get the first series before compaction.
-	ss := q.Select(true, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+	ss := q.Select(context.Background(), true, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 	require.True(t, ss.Next())
 	s := ss.At()
 
@@ -2993,7 +2993,7 @@ func TestDataMissingOnQueryDuringCompaction(t *testing.T) {
 	require.NoError(t, app.Commit())
 
 	// Get a querier before compaction (or when compaction is about to begin).
-	q, err := db.Querier(context.Background(), mint, maxt)
+	q, err := db.Querier(mint, maxt)
 	require.NoError(t, err)
 
 	var wg sync.WaitGroup
@@ -3107,11 +3107,11 @@ func TestWaitForPendingReadersInTimeRange(t *testing.T) {
 				require.True(t, waitOver.Load())
 			}
 
-			q, err := db.Querier(context.Background(), c.mint, c.maxt)
+			q, err := db.Querier(c.mint, c.maxt)
 			require.NoError(t, err)
 			checkWaiting(q)
 
-			cq, err := db.ChunkQuerier(context.Background(), c.mint, c.maxt)
+			cq, err := db.ChunkQuerier(c.mint, c.maxt)
 			require.NoError(t, err)
 			checkWaiting(cq)
 		})
@@ -3191,7 +3191,7 @@ func TestAppendHistogram(t *testing.T) {
 				require.NoError(t, q.Close())
 			})
 
-			ss := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+			ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 
 			require.True(t, ss.Next())
 			s := ss.At()
@@ -3844,7 +3844,7 @@ func testHistogramStaleSampleHelper(t *testing.T, floatHistogram bool) {
 			require.NoError(t, q.Close())
 		})
 
-		ss := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+		ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 
 		require.True(t, ss.Next())
 		s := ss.At()
@@ -4236,7 +4236,7 @@ func TestAppendingDifferentEncodingToSameSeries(t *testing.T) {
 	}
 
 	// Query back and expect same order of samples.
-	q, err := db.Querier(context.Background(), math.MinInt64, math.MaxInt64)
+	q, err := db.Querier(math.MinInt64, math.MaxInt64)
 	require.NoError(t, err)
 
 	series := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))

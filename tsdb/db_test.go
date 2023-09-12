@@ -88,7 +88,7 @@ func openTestDB(t testing.TB, opts *Options, rngs []int64) (db *DB) {
 
 // query runs a matcher query against the querier and fully expands its data.
 func query(t testing.TB, q storage.Querier, matchers ...*labels.Matcher) map[string][]chunks.Sample {
-	ss := q.Select(false, nil, matchers...)
+	ss := q.Select(context.Background(), false, nil, matchers...)
 	defer func() {
 		require.NoError(t, q.Close())
 	}()
@@ -150,7 +150,7 @@ func queryAndExpandChunks(t testing.TB, q storage.ChunkQuerier, matchers ...*lab
 
 // queryChunks runs a matcher query against the querier and expands its data.
 func queryChunks(t testing.TB, q storage.ChunkQuerier, matchers ...*labels.Matcher) map[string][]chunks.Meta {
-	ss := q.Select(false, nil, matchers...)
+	ss := q.Select(context.Background(), false, nil, matchers...)
 	defer func() {
 		require.NoError(t, q.Close())
 	}()
@@ -219,7 +219,7 @@ func TestDataAvailableOnlyAfterCommit(t *testing.T) {
 	_, err := app.Append(0, labels.FromStrings("foo", "bar"), 0, 0)
 	require.NoError(t, err)
 
-	querier, err := db.Querier(context.TODO(), 0, 1)
+	querier, err := db.Querier(0, 1)
 	require.NoError(t, err)
 	seriesSet := query(t, querier, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 	require.Equal(t, map[string][]chunks.Sample{}, seriesSet)
@@ -227,7 +227,7 @@ func TestDataAvailableOnlyAfterCommit(t *testing.T) {
 	err = app.Commit()
 	require.NoError(t, err)
 
-	querier, err = db.Querier(context.TODO(), 0, 1)
+	querier, err = db.Querier(0, 1)
 	require.NoError(t, err)
 	defer querier.Close()
 
@@ -285,7 +285,7 @@ func TestNoPanicAfterWALCorruption(t *testing.T) {
 		}()
 		require.Equal(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.walCorruptionsTotal), "WAL corruption count mismatch")
 
-		querier, err := db.Querier(context.TODO(), 0, maxt)
+		querier, err := db.Querier(0, maxt)
 		require.NoError(t, err)
 		seriesSet := query(t, querier, labels.MustNewMatcher(labels.MatchEqual, "", ""))
 		// The last sample should be missing as it was after the WAL segment corruption.
@@ -306,7 +306,7 @@ func TestDataNotAvailableAfterRollback(t *testing.T) {
 	err = app.Rollback()
 	require.NoError(t, err)
 
-	querier, err := db.Querier(context.TODO(), 0, 1)
+	querier, err := db.Querier(0, 1)
 	require.NoError(t, err)
 	defer querier.Close()
 
@@ -357,7 +357,7 @@ func TestDBAppenderAddRef(t *testing.T) {
 
 	require.NoError(t, app2.Commit())
 
-	q, err := db.Querier(context.TODO(), 0, 200)
+	q, err := db.Querier(0, 200)
 	require.NoError(t, err)
 
 	res := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
@@ -450,10 +450,10 @@ Outer:
 		}
 
 		// Compare the result.
-		q, err := db.Querier(context.TODO(), 0, numSamples)
+		q, err := db.Querier(0, numSamples)
 		require.NoError(t, err)
 
-		res := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+		res := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 
 		expSamples := make([]chunks.Sample, 0, len(c.remaint))
 		for _, ts := range c.remaint {
@@ -610,7 +610,7 @@ func TestSkippingInvalidValuesInSameTxn(t *testing.T) {
 	require.NoError(t, app.Commit())
 
 	// Make sure the right value is stored.
-	q, err := db.Querier(context.TODO(), 0, 10)
+	q, err := db.Querier(0, 10)
 	require.NoError(t, err)
 
 	ssMap := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
@@ -627,7 +627,7 @@ func TestSkippingInvalidValuesInSameTxn(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
-	q, err = db.Querier(context.TODO(), 0, 10)
+	q, err = db.Querier(0, 10)
 	require.NoError(t, err)
 
 	ssMap = query(t, q, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
@@ -660,12 +660,12 @@ func TestDB_Snapshot(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { require.NoError(t, db.Close()) }()
 
-	querier, err := db.Querier(context.TODO(), mint, mint+1000)
+	querier, err := db.Querier(mint, mint+1000)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, querier.Close()) }()
 
 	// sum values
-	seriesSet := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+	seriesSet := querier.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 	var series chunkenc.Iterator
 	sum := 0.0
 	for seriesSet.Next() {
@@ -709,12 +709,12 @@ func TestDB_Snapshot_ChunksOutsideOfCompactedRange(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { require.NoError(t, db.Close()) }()
 
-	querier, err := db.Querier(context.TODO(), mint, mint+1000)
+	querier, err := db.Querier(mint, mint+1000)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, querier.Close()) }()
 
 	// Sum values.
-	seriesSet := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+	seriesSet := querier.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 	var series chunkenc.Iterator
 	sum := 0.0
 	for seriesSet.Next() {
@@ -777,11 +777,11 @@ Outer:
 		defer func() { require.NoError(t, newDB.Close()) }()
 
 		// Compare the result.
-		q, err := newDB.Querier(context.TODO(), 0, numSamples)
+		q, err := newDB.Querier(0, numSamples)
 		require.NoError(t, err)
 		defer func() { require.NoError(t, q.Close()) }()
 
-		res := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+		res := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 
 		expSamples := make([]chunks.Sample, 0, len(c.remaint))
 		for _, ts := range c.remaint {
@@ -952,10 +952,10 @@ func TestDB_e2e(t *testing.T) {
 				}
 			}
 
-			q, err := db.Querier(context.TODO(), mint, maxt)
+			q, err := db.Querier(mint, maxt)
 			require.NoError(t, err)
 
-			ss := q.Select(false, nil, qry.ms...)
+			ss := q.Select(ctx, false, nil, qry.ms...)
 			result := map[string][]chunks.Sample{}
 
 			for ss.Next() {
@@ -997,7 +997,7 @@ func TestWALFlushedOnDBClose(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { require.NoError(t, db.Close()) }()
 
-	q, err := db.Querier(context.TODO(), 0, 1)
+	q, err := db.Querier(0, 1)
 	require.NoError(t, err)
 
 	values, ws, err := q.LabelValues("labelname")
@@ -1143,10 +1143,10 @@ func testWALReplayRaceOnSamplesLoggedBeforeSeries(t *testing.T, numSamplesBefore
 	})
 
 	// Query back chunks for all series.
-	q, err := reopenDB.ChunkQuerier(context.Background(), math.MinInt64, math.MaxInt64)
+	q, err := reopenDB.ChunkQuerier(math.MinInt64, math.MaxInt64)
 	require.NoError(t, err)
 
-	set := q.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "series_id", ".+"))
+	set := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchRegexp, "series_id", ".+"))
 	actualSeries := 0
 	var chunksIt chunks.Iterator
 
@@ -1214,11 +1214,11 @@ func TestTombstoneClean(t *testing.T) {
 		require.NoError(t, db.CleanTombstones())
 
 		// Compare the result.
-		q, err := db.Querier(context.TODO(), 0, numSamples)
+		q, err := db.Querier(0, numSamples)
 		require.NoError(t, err)
 		defer q.Close()
 
-		res := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+		res := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 
 		expSamples := make([]chunks.Sample, 0, len(c.remaint))
 		for _, ts := range c.remaint {
@@ -1716,12 +1716,12 @@ func TestNotMatcherSelectsLabelsUnsetSeries(t *testing.T) {
 		series: labelpairs[:1],
 	}}
 
-	q, err := db.Querier(context.TODO(), 0, 10)
+	q, err := db.Querier(0, 10)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, q.Close()) }()
 
 	for _, c := range cases {
-		ss := q.Select(false, nil, c.selector...)
+		ss := q.Select(ctx, false, nil, c.selector...)
 		lres, _, ws, err := expandSeriesSet(ss)
 		require.NoError(t, err)
 		require.Equal(t, 0, len(ws))
@@ -1925,7 +1925,7 @@ func TestQuerierWithBoundaryChunks(t *testing.T) {
 
 	require.GreaterOrEqual(t, len(db.blocks), 3, "invalid test, less than three blocks in DB")
 
-	q, err := db.Querier(context.TODO(), blockRange, 2*blockRange)
+	q, err := db.Querier(blockRange, 2*blockRange)
 	require.NoError(t, err)
 	defer q.Close()
 
@@ -2232,7 +2232,7 @@ func TestDB_LabelNames(t *testing.T) {
 		appendSamples(db, 5, 9, tst.sampleLabels2)
 
 		// Testing DB (union).
-		q, err := db.Querier(context.TODO(), math.MinInt64, math.MaxInt64)
+		q, err := db.Querier(math.MinInt64, math.MaxInt64)
 		require.NoError(t, err)
 		var ws storage.Warnings
 		labelNames, ws, err = q.LabelNames()
@@ -2434,10 +2434,10 @@ func TestDBReadOnly(t *testing.T) {
 		require.NoError(t, err)
 		require.Greater(t, expDbSize, dbSizeBeforeAppend, "db size didn't increase after an append")
 
-		q, err := dbWritable.Querier(context.TODO(), math.MinInt64, math.MaxInt64)
+		q, err := dbWritable.Querier(math.MinInt64, math.MaxInt64)
 		require.NoError(t, err)
 		expSeries = query(t, q, matchAll)
-		cq, err := dbWritable.ChunkQuerier(context.TODO(), math.MinInt64, math.MaxInt64)
+		cq, err := dbWritable.ChunkQuerier(math.MinInt64, math.MaxInt64)
 		require.NoError(t, err)
 		expChunks = queryAndExpandChunks(t, cq, matchAll)
 
@@ -2476,7 +2476,7 @@ func TestDBReadOnly(t *testing.T) {
 	})
 	t.Run("querier", func(t *testing.T) {
 		// Open a read only db and ensure that the API returns the same result as the normal DB.
-		q, err := dbReadOnly.Querier(context.TODO(), math.MinInt64, math.MaxInt64)
+		q, err := dbReadOnly.Querier(math.MinInt64, math.MaxInt64)
 		require.NoError(t, err)
 		readOnlySeries := query(t, q, matchAll)
 		readOnlyDBHash := testutil.DirHash(t, dbDir)
@@ -2486,7 +2486,7 @@ func TestDBReadOnly(t *testing.T) {
 		require.Equal(t, expDBHash, readOnlyDBHash, "after all read operations the db hash should remain the same")
 	})
 	t.Run("chunk querier", func(t *testing.T) {
-		cq, err := dbReadOnly.ChunkQuerier(context.TODO(), math.MinInt64, math.MaxInt64)
+		cq, err := dbReadOnly.ChunkQuerier(math.MinInt64, math.MaxInt64)
 		require.NoError(t, err)
 		readOnlySeries := queryAndExpandChunks(t, cq, matchAll)
 		readOnlyDBHash := testutil.DirHash(t, dbDir)
@@ -2507,7 +2507,7 @@ func TestDBReadOnlyClosing(t *testing.T) {
 	require.Equal(t, db.Close(), ErrClosed)
 	_, err = db.Blocks()
 	require.Equal(t, err, ErrClosed)
-	_, err = db.Querier(context.TODO(), 0, 1)
+	_, err = db.Querier(0, 1)
 	require.Equal(t, err, ErrClosed)
 }
 
@@ -2554,12 +2554,12 @@ func TestDBReadOnly_FlushWAL(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, len(blocks), 1)
 
-	querier, err := db.Querier(context.TODO(), 0, int64(maxt)-1)
+	querier, err := db.Querier(0, int64(maxt)-1)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, querier.Close()) }()
 
 	// Sum the values.
-	seriesSet := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, defaultLabelName, "flush"))
+	seriesSet := querier.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchEqual, defaultLabelName, "flush"))
 	var series chunkenc.Iterator
 
 	sum := 0.0
@@ -2624,11 +2624,11 @@ func TestDBCannotSeePartialCommits(t *testing.T) {
 	inconsistencies := 0
 	for i := 0; i < 10; i++ {
 		func() {
-			querier, err := db.Querier(context.Background(), 0, 1000000)
+			querier, err := db.Querier(0, 1000000)
 			require.NoError(t, err)
 			defer querier.Close()
 
-			ss := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+			ss := querier.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 			_, seriesSet, ws, err := expandSeriesSet(ss)
 			require.NoError(t, err)
 			require.Equal(t, 0, len(ws))
@@ -2658,7 +2658,7 @@ func TestDBQueryDoesntSeeAppendsAfterCreation(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 
-	querierBeforeAdd, err := db.Querier(context.Background(), 0, 1000000)
+	querierBeforeAdd, err := db.Querier(0, 1000000)
 	require.NoError(t, err)
 	defer querierBeforeAdd.Close()
 
@@ -2667,18 +2667,18 @@ func TestDBQueryDoesntSeeAppendsAfterCreation(t *testing.T) {
 	_, err = app.Append(0, labels.FromStrings("foo", "bar"), 0, 0)
 	require.NoError(t, err)
 
-	querierAfterAddButBeforeCommit, err := db.Querier(context.Background(), 0, 1000000)
+	querierAfterAddButBeforeCommit, err := db.Querier(0, 1000000)
 	require.NoError(t, err)
 	defer querierAfterAddButBeforeCommit.Close()
 
 	// None of the queriers should return anything after the Add but before the commit.
-	ss := querierBeforeAdd.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+	ss := querierBeforeAdd.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 	_, seriesSet, ws, err := expandSeriesSet(ss)
 	require.NoError(t, err)
 	require.Equal(t, 0, len(ws))
 	require.Equal(t, map[string][]sample{}, seriesSet)
 
-	ss = querierAfterAddButBeforeCommit.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+	ss = querierAfterAddButBeforeCommit.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 	_, seriesSet, ws, err = expandSeriesSet(ss)
 	require.NoError(t, err)
 	require.Equal(t, 0, len(ws))
@@ -2689,25 +2689,25 @@ func TestDBQueryDoesntSeeAppendsAfterCreation(t *testing.T) {
 	require.NoError(t, err)
 
 	// Nothing returned for querier created before the Add.
-	ss = querierBeforeAdd.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+	ss = querierBeforeAdd.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 	_, seriesSet, ws, err = expandSeriesSet(ss)
 	require.NoError(t, err)
 	require.Equal(t, 0, len(ws))
 	require.Equal(t, map[string][]sample{}, seriesSet)
 
 	// Series exists but has no samples for querier created after Add.
-	ss = querierAfterAddButBeforeCommit.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+	ss = querierAfterAddButBeforeCommit.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 	_, seriesSet, ws, err = expandSeriesSet(ss)
 	require.NoError(t, err)
 	require.Equal(t, 0, len(ws))
 	require.Equal(t, map[string][]sample{`{foo="bar"}`: {}}, seriesSet)
 
-	querierAfterCommit, err := db.Querier(context.Background(), 0, 1000000)
+	querierAfterCommit, err := db.Querier(0, 1000000)
 	require.NoError(t, err)
 	defer querierAfterCommit.Close()
 
 	// Samples are returned for querier created after Commit.
-	ss = querierAfterCommit.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+	ss = querierAfterCommit.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 	_, seriesSet, ws, err = expandSeriesSet(ss)
 	require.NoError(t, err)
 	require.Equal(t, 0, len(ws))
@@ -3008,11 +3008,11 @@ func TestCompactHead(t *testing.T) {
 	require.Equal(t, 1, len(db.Blocks()))
 	require.Equal(t, int64(maxt), db.Head().MinTime())
 	defer func() { require.NoError(t, db.Close()) }()
-	querier, err := db.Querier(context.Background(), 0, int64(maxt)-1)
+	querier, err := db.Querier(0, int64(maxt)-1)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, querier.Close()) }()
 
-	seriesSet := querier.Select(false, nil, &labels.Matcher{Type: labels.MatchEqual, Name: "a", Value: "b"})
+	seriesSet := querier.Select(ctx, false, nil, &labels.Matcher{Type: labels.MatchEqual, Name: "a", Value: "b"})
 	var series chunkenc.Iterator
 	var actSamples []sample
 
@@ -3403,7 +3403,7 @@ func testQuerierShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks(t 
 	// At this point we expect 2 mmap-ed head chunks.
 
 	// Get a querier and make sure it's closed only once the test is over.
-	querier, err := db.Querier(ctx, 0, math.MaxInt64)
+	querier, err := db.Querier(0, math.MaxInt64)
 	require.NoError(t, err)
 	defer func() {
 		require.NoError(t, querier.Close())
@@ -3411,7 +3411,7 @@ func testQuerierShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks(t 
 
 	// Query back all series.
 	hints := &storage.SelectHints{Start: 0, End: math.MaxInt64, Step: interval}
-	seriesSet := querier.Select(true, hints, labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, ".+"))
+	seriesSet := querier.Select(ctx, true, hints, labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, ".+"))
 
 	// Fetch samples iterators from all series.
 	var iterators []chunkenc.Iterator
@@ -3539,7 +3539,7 @@ func testChunkQuerierShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChun
 	// At this point we expect 2 mmap-ed head chunks.
 
 	// Get a querier and make sure it's closed only once the test is over.
-	querier, err := db.ChunkQuerier(ctx, 0, math.MaxInt64)
+	querier, err := db.ChunkQuerier(0, math.MaxInt64)
 	require.NoError(t, err)
 	defer func() {
 		require.NoError(t, querier.Close())
@@ -3547,7 +3547,7 @@ func testChunkQuerierShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChun
 
 	// Query back all series.
 	hints := &storage.SelectHints{Start: 0, End: math.MaxInt64, Step: interval}
-	seriesSet := querier.Select(true, hints, labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, ".+"))
+	seriesSet := querier.Select(ctx, true, hints, labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, ".+"))
 
 	// Iterate all series and get their chunks.
 	var it chunks.Iterator
@@ -4170,7 +4170,7 @@ func TestOOOCompaction(t *testing.T) {
 			series2.String(): series2Samples,
 		}
 
-		q, err := db.Querier(context.Background(), math.MinInt64, math.MaxInt64)
+		q, err := db.Querier(math.MinInt64, math.MaxInt64)
 		require.NoError(t, err)
 
 		actRes := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
@@ -4561,7 +4561,7 @@ func TestOOOQueryAfterRestartWithSnapshotAndRemovedWBL(t *testing.T) {
 			series2.String(): series2Samples,
 		}
 
-		q, err := db.Querier(context.Background(), fromMins*time.Minute.Milliseconds(), toMins*time.Minute.Milliseconds())
+		q, err := db.Querier(fromMins*time.Minute.Milliseconds(), toMins*time.Minute.Milliseconds())
 		require.NoError(t, err)
 
 		actRes := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
@@ -4661,7 +4661,7 @@ func Test_Querier_OOOQuery(t *testing.T) {
 				return expSamples[i].T() < expSamples[j].T()
 			})
 
-			querier, err := db.Querier(context.TODO(), tc.queryMinT, tc.queryMaxT)
+			querier, err := db.Querier(tc.queryMinT, tc.queryMaxT)
 			require.NoError(t, err)
 			defer querier.Close()
 
@@ -4746,7 +4746,7 @@ func Test_ChunkQuerier_OOOQuery(t *testing.T) {
 				return expSamples[i].T() < expSamples[j].T()
 			})
 
-			querier, err := db.ChunkQuerier(context.TODO(), tc.queryMinT, tc.queryMaxT)
+			querier, err := db.ChunkQuerier(tc.queryMinT, tc.queryMaxT)
 			require.NoError(t, err)
 			defer querier.Close()
 
@@ -4807,7 +4807,7 @@ func TestOOOAppendAndQuery(t *testing.T) {
 	}
 
 	testQuery := func(from, to int64) {
-		querier, err := db.Querier(context.TODO(), from, to)
+		querier, err := db.Querier(from, to)
 		require.NoError(t, err)
 
 		seriesSet := query(t, querier, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar."))
@@ -4936,7 +4936,7 @@ func TestOOODisabled(t *testing.T) {
 	addSample(s1, 59, 59, true)    // Out of time window again.
 	addSample(s1, 301, 310, false) // More in-order samples.
 
-	querier, err := db.Querier(context.TODO(), math.MinInt64, math.MaxInt64)
+	querier, err := db.Querier(math.MinInt64, math.MaxInt64)
 	require.NoError(t, err)
 
 	seriesSet := query(t, querier, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar."))
@@ -4988,7 +4988,7 @@ func TestWBLAndMmapReplay(t *testing.T) {
 	}
 
 	testQuery := func(exp map[string][]chunks.Sample) {
-		querier, err := db.Querier(context.TODO(), math.MinInt64, math.MaxInt64)
+		querier, err := db.Querier(math.MinInt64, math.MaxInt64)
 		require.NoError(t, err)
 
 		seriesSet := query(t, querier, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar."))
@@ -5376,7 +5376,7 @@ func TestWBLCorruption(t *testing.T) {
 			series1.String(): expSamples,
 		}
 
-		q, err := db.Querier(context.Background(), math.MinInt64, math.MaxInt64)
+		q, err := db.Querier(math.MinInt64, math.MaxInt64)
 		require.NoError(t, err)
 
 		actRes := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
@@ -5484,7 +5484,7 @@ func TestOOOMmapCorruption(t *testing.T) {
 			series1.String(): expSamples,
 		}
 
-		q, err := db.Querier(context.Background(), math.MinInt64, math.MaxInt64)
+		q, err := db.Querier(math.MinInt64, math.MaxInt64)
 		require.NoError(t, err)
 
 		actRes := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
@@ -5602,7 +5602,7 @@ func TestOutOfOrderRuntimeConfig(t *testing.T) {
 			series1.String(): expSamples,
 		}
 
-		q, err := db.Querier(context.Background(), math.MinInt64, math.MaxInt64)
+		q, err := db.Querier(math.MinInt64, math.MaxInt64)
 		require.NoError(t, err)
 
 		actRes := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
@@ -5805,7 +5805,7 @@ func TestNoGapAfterRestartWithOOO(t *testing.T) {
 			series1.String(): expSamples,
 		}
 
-		q, err := db.Querier(context.Background(), math.MinInt64, math.MaxInt64)
+		q, err := db.Querier(math.MinInt64, math.MaxInt64)
 		require.NoError(t, err)
 
 		actRes := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
@@ -5924,7 +5924,7 @@ func TestWblReplayAfterOOODisableAndRestart(t *testing.T) {
 			series1.String(): expSamples,
 		}
 
-		q, err := db.Querier(context.Background(), math.MinInt64, math.MaxInt64)
+		q, err := db.Querier(math.MinInt64, math.MaxInt64)
 		require.NoError(t, err)
 
 		actRes := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
@@ -6126,7 +6126,7 @@ func testHistogramAppendAndQueryHelper(t *testing.T, floatHistogram bool) {
 
 	testQuery := func(name, value string, exp map[string][]chunks.Sample) {
 		t.Helper()
-		q, err := db.Querier(ctx, math.MinInt64, math.MaxInt64)
+		q, err := db.Querier(math.MinInt64, math.MaxInt64)
 		require.NoError(t, err)
 		act := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, name, value))
 		require.Equal(t, exp, act)
@@ -6362,8 +6362,6 @@ func TestQueryHistogramFromBlocksWithCompaction(t *testing.T) {
 			require.NoError(t, db.Close())
 		})
 
-		ctx := context.Background()
-
 		var it chunkenc.Iterator
 		exp := make(map[string][]chunks.Sample)
 		for _, series := range blockSeries {
@@ -6399,7 +6397,7 @@ func TestQueryHistogramFromBlocksWithCompaction(t *testing.T) {
 		require.NoError(t, db.reload())
 		require.Len(t, db.Blocks(), len(blockSeries))
 
-		q, err := db.Querier(ctx, math.MinInt64, math.MaxInt64)
+		q, err := db.Querier(math.MinInt64, math.MaxInt64)
 		require.NoError(t, err)
 		res := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
 		compareSeries(t, exp, res)
@@ -6416,7 +6414,7 @@ func TestQueryHistogramFromBlocksWithCompaction(t *testing.T) {
 		require.NoError(t, db.reload())
 		require.Len(t, db.Blocks(), 1)
 
-		q, err = db.Querier(ctx, math.MinInt64, math.MaxInt64)
+		q, err = db.Querier(math.MinInt64, math.MaxInt64)
 		require.NoError(t, err)
 		res = query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
 
@@ -6543,7 +6541,7 @@ func TestNativeHistogramFlag(t *testing.T) {
 
 	require.NoError(t, app.Commit())
 
-	q, err := db.Querier(context.Background(), math.MinInt, math.MaxInt64)
+	q, err := db.Querier(math.MinInt, math.MaxInt64)
 	require.NoError(t, err)
 	act := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 	require.Equal(t, map[string][]chunks.Sample{
@@ -6627,12 +6625,12 @@ func TestChunkQuerierReadWriteRace(t *testing.T) {
 	}
 
 	reader := func() {
-		querier, err := db.ChunkQuerier(context.Background(), math.MinInt64, math.MaxInt64)
+		querier, err := db.ChunkQuerier(math.MinInt64, math.MaxInt64)
 		require.NoError(t, err)
 		defer func(q storage.ChunkQuerier) {
 			require.NoError(t, q.Close())
 		}(querier)
-		ss := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+		ss := querier.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 		for ss.Next() {
 			cs := ss.At()
 			it := cs.Iterator(nil)

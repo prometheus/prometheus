@@ -154,11 +154,11 @@ func (t errorTestQueryable) ExemplarQuerier(ctx context.Context) (storage.Exempl
 	return nil, t.err
 }
 
-func (t errorTestQueryable) ChunkQuerier(ctx context.Context, mint, maxt int64) (storage.ChunkQuerier, error) {
+func (t errorTestQueryable) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
 	return nil, t.err
 }
 
-func (t errorTestQueryable) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+func (t errorTestQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
 	if t.q != nil {
 		return t.q, nil
 	}
@@ -182,7 +182,7 @@ func (t errorTestQuerier) Close() error {
 	return nil
 }
 
-func (t errorTestQuerier) Select(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+func (t errorTestQuerier) Select(_ context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	if t.s != nil {
 		return t.s
 	}

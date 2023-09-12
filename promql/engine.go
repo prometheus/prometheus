@@ -669,14 +669,14 @@ func durationMilliseconds(d time.Duration) int64 {
 func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.EvalStmt) (parser.Value, storage.Warnings, error) {
 	prepareSpanTimer, ctxPrepare := query.stats.GetSpanTimer(ctx, stats.QueryPreparationTime, ng.metrics.queryPrepareTime)
 	mint, maxt := ng.findMinMaxTime(s)
-	querier, err := query.queryable.Querier(ctxPrepare, mint, maxt)
+	querier, err := query.queryable.Querier(mint, maxt)
 	if err != nil {
 		prepareSpanTimer.Finish()
 		return nil, nil, err
 	}
 	defer querier.Close()
 
-	ng.populateSeries(querier, s)
+	ng.populateSeries(ctxPrepare, querier, s)
 	prepareSpanTimer.Finish()
 
 	// Modify the offset of vector and matrix selectors for the @ modifier
@@ -890,7 +890,7 @@ func (ng *Engine) getLastSubqueryInterval(path []parser.Node) time.Duration {
 	return interval
 }
 
-func (ng *Engine) populateSeries(querier storage.Querier, s *parser.EvalStmt) {
+func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s *parser.EvalStmt) {
 	// Whenever a MatrixSelector is evaluated, evalRange is set to the corresponding range.
 	// The evaluation of the VectorSelector inside then evaluates the given range and unsets
 	// the variable.
@@ -913,7 +913,7 @@ func (ng *Engine) populateSeries(querier storage.Querier, s *parser.EvalStmt) {
 			}
 			evalRange = 0
 			hints.By, hints.Grouping = extractGroupsFromPath(path)
-			n.UnexpandedSeriesSet = querier.Select(false, hints, n.LabelMatchers...)
+			n.UnexpandedSeriesSet = querier.Select(ctx, false, hints, n.LabelMatchers...)
 
 		case *parser.MatrixSelector:
 			evalRange = n.Range

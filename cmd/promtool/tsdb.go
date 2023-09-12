@@ -619,7 +619,7 @@ func analyzeCompaction(block tsdb.BlockReader, indexr tsdb.IndexReader) (err err
 	return nil
 }
 
-func dumpSamples(path string, mint, maxt int64, match string) (err error) {
+func dumpSamples(ctx context.Context, path string, mint, maxt int64, match string) (err error) {
 	db, err := tsdb.OpenDBReadOnly(path, nil)
 	if err != nil {
 		return err
@@ -627,7 +627,7 @@ func dumpSamples(path string, mint, maxt int64, match string) (err error) {
 	defer func() {
 		err = tsdb_errors.NewMulti(err, db.Close()).Err()
 	}()
-	q, err := db.Querier(context.TODO(), mint, maxt)
+	q, err := db.Querier(mint, maxt)
 	if err != nil {
 		return err
 	}
@@ -637,7 +637,7 @@ func dumpSamples(path string, mint, maxt int64, match string) (err error) {
 	if err != nil {
 		return err
 	}
-	ss := q.Select(false, nil, matchers...)
+	ss := q.Select(ctx, false, nil, matchers...)
 
 	for ss.Next() {
 		series := ss.At()
