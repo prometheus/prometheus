@@ -39,7 +39,7 @@ static constexpr size_t get_exception_buffer_size() {
   return user_buffer_msg_size + sizeof(Exception::Code) * byte_size_in_printed_characters + std::size("Exception : ");
 }
 
-Exception::Exception(Code exc_code, const char* message, ...) : code_(exc_code) {
+Exception::Exception(Code exc_code, const char* message, ...) : trace_(StackTrace::Current()), code_(exc_code) {
   if (coredump_enabled) {
     auto pid = fork();
     // > 0 is the parent, == 0 is the child.

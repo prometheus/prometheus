@@ -1,5 +1,16 @@
 load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
-load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file")
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+http_archive(
+    name = "rules_foreign_cc",
+    sha256 = "2a4d07cd64b0719b39a7c12218a3e507672b82a97b98c6a89d38565894cf7c51",
+    strip_prefix = "rules_foreign_cc-0.9.0",
+    url = "https://github.com/bazelbuild/rules_foreign_cc/archive/0.9.0.tar.gz",
+)
+
+load("@rules_foreign_cc//foreign_cc:repositories.bzl", "rules_foreign_cc_dependencies")
+
+rules_foreign_cc_dependencies()
 
 git_repository(
     name = "gtest",
@@ -56,6 +67,30 @@ http_archive(
     sha256 = "885cee12f6c37608f6790b5fbd856e4b0fcfb8637eeba299e1d888ff2cdc9f31",
     build_file = "//third_party:lz4stream.BUILD",
     strip_prefix = "lz4_stream-6b015cbe786291733b6f3aa03e45d307bc4ae527/include",
+)
+
+http_archive(
+    name = "zlib",
+    url = "https://zlib.net/zlib-1.3.tar.gz",
+    sha256 = "ff0ba4c292013dbc27530b3a81e1f9a813cd39de01ca5e0f8bf355702efa593e",
+    build_file = "//third_party:zlib.BUILD",
+    strip_prefix = "zlib-1.3/",
+)
+
+http_archive(
+    name = "elf",
+    url = "https://sourceware.org/elfutils/ftp/0.189/elfutils-0.189.tar.bz2",
+    sha256 = "39bd8f1a338e2b7cd4abc3ff11a0eddc6e690f69578a57478d8179b4148708c8",
+    build_file = "//third_party:elf.BUILD",
+    strip_prefix = "elfutils-0.189/",
+)
+
+http_archive(
+    name = "dwarf",
+    url = "https://www.prevanders.net/libdwarf-20210528.tar.gz",
+    sha256 = "b8ba0ee9b70d2052d45272489d79bf456c4d342fc8c3bba45038afc50ec6e28b",
+    build_file = "//third_party:dwarf.BUILD",
+    strip_prefix = "libdwarf-20210528/",
 )
 
 http_archive(

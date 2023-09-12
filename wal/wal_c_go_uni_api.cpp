@@ -45,14 +45,18 @@ static c_api_error_info* make_c_api_error_info_with_func_name(std::string_view f
   return new c_api_error_info(ss.str(), std::move(stacktrace));
 }
 
+// use for std/unknown exceptions
 #define MAKE_C_API_ERROR(message) make_c_api_error_info_with_func_name(__func__, (message), CURRENT_STACKTRACE)
+// use for our exceptions
+#define MAKE_C_API_ERROR_FROM_EXCEPTION(exc) make_c_api_error_info_with_func_name(__func__, exc.what(), exc.stacktrace().ToString())
 
 static c_api_error_info* handle_current_exception(std::string_view func_name, std::string&& stacktrace, std::exception_ptr ep) {
   std::stringstream ss;
   try {
     std::rethrow_exception(ep);
   } catch (const BareBones::Exception& e) {
-    return make_c_api_error_info_with_func_name(func_name, e.what(), std::move(stacktrace));
+    // ignore the stacktrace from arg, now BareBones::Exception has the proper info.
+    return make_c_api_error_info_with_func_name(func_name, e.what(), e.stacktrace().ToString());
   } catch (const std::exception& e) {
     ss << "caught a std::exception, what: " << e.what();
   } catch (...) {

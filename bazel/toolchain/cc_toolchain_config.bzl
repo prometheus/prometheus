@@ -21,6 +21,13 @@ all_compile_actions = [
     ACTION_NAMES.preprocess_assemble,
 ]
 
+cpp_compile_actions = [
+    ACTION_NAMES.cpp_compile,
+    ACTION_NAMES.cpp_header_parsing,
+    ACTION_NAMES.cpp_module_codegen,
+    ACTION_NAMES.cpp_module_compile,
+]
+
 all_link_actions = [
     ACTION_NAMES.cpp_link_executable,
     ACTION_NAMES.cpp_link_dynamic_library,
@@ -31,6 +38,10 @@ def _impl(ctx):
     tool_paths = [
         tool_path(
             name = "gcc",
+            path = "/usr/bin/gcc-12",
+        ),
+        tool_path(
+            name = "g++",
             path = "/usr/bin/g++-12",
         ),
         tool_path(
@@ -82,6 +93,17 @@ def _impl(ctx):
                                 # Common compile flags here
                                 "-fPIC",
                                 "-Wall",
+                                "-gdwarf",
+                            ],
+                        ),
+                    ],
+                ),
+                flag_set(
+                    actions = cpp_compile_actions,
+                    flag_groups = [
+                        flag_group(
+                            flags = [
+                                # Common compile flags here
                                 "-std=c++2b",
                             ],
                         ),
@@ -112,6 +134,23 @@ def _impl(ctx):
                             flags = [
                                 # Additional flags for "-c opt"
                                 "-O3",
+                            ],
+                        ),
+                    ],
+                    with_features = [
+                        with_feature_set(
+                            features = [
+                                "opt",
+                            ],
+                        ),
+                    ],
+                ),
+                flag_set(
+                    actions = cpp_compile_actions,
+                    flag_groups = [
+                        flag_group(
+                            flags = [
+                                # Additional flags for "-c opt"
                                 "-fconcepts-diagnostics-depth=4",
                                 "-finline-limit=10000",
                                 "--param=large-function-insns=20000",
@@ -138,8 +177,10 @@ def _impl(ctx):
                     flag_groups = ([
                         flag_group(
                             flags = [
-                                "-lstdc++",
-                                "-rdynamic",
+                                "-static-libgcc",
+                                "-static-libstdc++",
+                                "-l:libstdc++.a",
+                                "-l:libm.a",
                             ],
                         ),
                     ]),

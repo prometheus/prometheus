@@ -9,6 +9,8 @@
 /// the longer messages would be clamped.
 #pragma once
 
+#include "bare_bones/stacktrace.h"
+
 #include <cstdint>
 #include <exception>
 #include <sstream>
@@ -24,6 +26,7 @@ class Exception : public std::exception {
 
  private:
   std::string_view msg_;
+  StackTrace trace_;
   Code code_;
 
  public:
@@ -31,6 +34,7 @@ class Exception : public std::exception {
 
   const char* what() const noexcept override { return msg_.data(); }
   Code code() const noexcept { return code_; }
+  const StackTrace& stacktrace() const noexcept { return trace_; }
 };
 
 }  // namespace BareBones
