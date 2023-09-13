@@ -170,7 +170,7 @@ type apiFunc func(r *http.Request) apiFuncResult
 // TSDBAdminStats defines the tsdb interfaces used by the v1 API for admin operations as well as statistics.
 type TSDBAdminStats interface {
 	CleanTombstones() error
-	Delete(mint, maxt int64, ms ...*labels.Matcher) error
+	Delete(ctx context.Context, mint, maxt int64, ms ...*labels.Matcher) error
 	Snapshot(dir string, withHead bool) error
 	Stats(statsByLabelName string, limit int) (*tsdb.Stats, error)
 	WALReplayStatus() (tsdb.WALReplayStatus, error)
@@ -1632,7 +1632,7 @@ func (api *API) deleteSeries(r *http.Request) apiFuncResult {
 		if err != nil {
 			return invalidParamError(err, "match[]")
 		}
-		if err := api.db.Delete(timestamp.FromTime(start), timestamp.FromTime(end), matchers...); err != nil {
+		if err := api.db.Delete(r.Context(), timestamp.FromTime(start), timestamp.FromTime(end), matchers...); err != nil {
 			return apiFuncResult{nil, &apiError{errorInternal, err}, nil, nil}
 		}
 	}

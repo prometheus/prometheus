@@ -1131,7 +1131,7 @@ func TestHeadDeleteSeriesWithoutSamples(t *testing.T) {
 
 			require.NoError(t, head.Init(math.MinInt64))
 
-			require.NoError(t, head.Delete(0, 100, labels.MustNewMatcher(labels.MatchEqual, "a", "1")))
+			require.NoError(t, head.Delete(context.Background(), 0, 100, labels.MustNewMatcher(labels.MatchEqual, "a", "1")))
 		})
 	}
 }
@@ -1203,7 +1203,7 @@ func TestHeadDeleteSimple(t *testing.T) {
 
 				// Delete the ranges.
 				for _, r := range c.dranges {
-					require.NoError(t, head.Delete(r.Mint, r.Maxt, labels.MustNewMatcher(labels.MatchEqual, lblDefault.Name, lblDefault.Value)))
+					require.NoError(t, head.Delete(context.Background(), r.Mint, r.Maxt, labels.MustNewMatcher(labels.MatchEqual, lblDefault.Name, lblDefault.Value)))
 				}
 
 				// Add more samples.
@@ -1285,7 +1285,7 @@ func TestDeleteUntilCurMax(t *testing.T) {
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
-	require.NoError(t, hb.Delete(0, 10000, labels.MustNewMatcher(labels.MatchEqual, "a", "b")))
+	require.NoError(t, hb.Delete(context.Background(), 0, 10000, labels.MustNewMatcher(labels.MatchEqual, "a", "b")))
 
 	// Test the series returns no samples. The series is cleared only after compaction.
 	q, err := NewBlockQuerier(hb, 0, 100000)
@@ -1332,7 +1332,7 @@ func TestDeletedSamplesAndSeriesStillInWALAfterCheckpoint(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 	}
-	require.NoError(t, hb.Delete(0, int64(numSamples), labels.MustNewMatcher(labels.MatchEqual, "a", "b")))
+	require.NoError(t, hb.Delete(context.Background(), 0, int64(numSamples), labels.MustNewMatcher(labels.MatchEqual, "a", "b")))
 	require.NoError(t, hb.Truncate(1))
 	require.NoError(t, hb.Close())
 
@@ -1464,7 +1464,7 @@ func TestDelete_e2e(t *testing.T) {
 	}
 	for _, del := range dels {
 		for _, r := range del.drange {
-			require.NoError(t, hb.Delete(r.Mint, r.Maxt, del.ms...))
+			require.NoError(t, hb.Delete(context.Background(), r.Mint, r.Maxt, del.ms...))
 		}
 		matched := labels.Slice{}
 		for _, l := range lbls {

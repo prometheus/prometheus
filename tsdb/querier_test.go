@@ -2699,6 +2699,7 @@ func BenchmarkHeadQuerier(b *testing.B) {
 // This is a regression test for the case where gauge histograms were not handled by
 // populateWithDelChunkSeriesIterator correctly.
 func TestQueryWithDeletedHistograms(t *testing.T) {
+	ctx := context.Background()
 	testcases := map[string]func(int) (*histogram.Histogram, *histogram.FloatHistogram){
 		"intCounter": func(i int) (*histogram.Histogram, *histogram.FloatHistogram) {
 			return tsdbutil.GenerateTestHistogram(i), nil
@@ -2743,7 +2744,7 @@ func TestQueryWithDeletedHistograms(t *testing.T) {
 			require.NoError(t, err)
 
 			// Delete the last 20.
-			err = db.Delete(80, 100, matcher)
+			err = db.Delete(ctx, 80, 100, matcher)
 			require.NoError(t, err)
 
 			chunkQuerier, err := db.ChunkQuerier(0, 100)

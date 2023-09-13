@@ -15,6 +15,7 @@
 package tsdb
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"os"
@@ -543,7 +544,7 @@ func (r blockChunkReader) Close() error {
 }
 
 // Delete matching series between mint and maxt in the block.
-func (pb *Block) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
+func (pb *Block) Delete(_ context.Context, mint, maxt int64, ms ...*labels.Matcher) error {
 	pb.mtx.Lock()
 	defer pb.mtx.Unlock()
 

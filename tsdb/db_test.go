@@ -397,7 +397,7 @@ func TestAppendEmptyLabelsIgnored(t *testing.T) {
 }
 
 func TestDeleteSimple(t *testing.T) {
-	numSamples := int64(10)
+	const numSamples int64 = 10
 
 	cases := []struct {
 		Intervals tombstones.Intervals
@@ -446,7 +446,7 @@ Outer:
 		// TODO(gouthamve): Reset the tombstones somehow.
 		// Delete the ranges.
 		for _, r := range c.Intervals {
-			require.NoError(t, db.Delete(r.Mint, r.Maxt, labels.MustNewMatcher(labels.MatchEqual, "a", "b")))
+			require.NoError(t, db.Delete(ctx, r.Mint, r.Maxt, labels.MustNewMatcher(labels.MatchEqual, "a", "b")))
 		}
 
 		// Compare the result.
@@ -733,7 +733,7 @@ func TestDB_Snapshot_ChunksOutsideOfCompactedRange(t *testing.T) {
 }
 
 func TestDB_SnapshotWithDelete(t *testing.T) {
-	numSamples := int64(10)
+	const numSamples int64 = 10
 
 	db := openTestDB(t, nil, nil)
 	defer func() { require.NoError(t, db.Close()) }()
@@ -763,7 +763,7 @@ Outer:
 		// TODO(gouthamve): Reset the tombstones somehow.
 		// Delete the ranges.
 		for _, r := range c.intervals {
-			require.NoError(t, db.Delete(r.Mint, r.Maxt, labels.MustNewMatcher(labels.MatchEqual, "a", "b")))
+			require.NoError(t, db.Delete(ctx, r.Mint, r.Maxt, labels.MustNewMatcher(labels.MatchEqual, "a", "b")))
 		}
 
 		// create snapshot
@@ -1169,7 +1169,7 @@ func testWALReplayRaceOnSamplesLoggedBeforeSeries(t *testing.T, numSamplesBefore
 }
 
 func TestTombstoneClean(t *testing.T) {
-	numSamples := int64(10)
+	const numSamples int64 = 10
 
 	db := openTestDB(t, nil, nil)
 
@@ -1207,7 +1207,7 @@ func TestTombstoneClean(t *testing.T) {
 		defer db.Close()
 
 		for _, r := range c.intervals {
-			require.NoError(t, db.Delete(r.Mint, r.Maxt, labels.MustNewMatcher(labels.MatchEqual, "a", "b")))
+			require.NoError(t, db.Delete(context.Background(), r.Mint, r.Maxt, labels.MustNewMatcher(labels.MatchEqual, "a", "b")))
 		}
 
 		// All of the setup for THIS line.
@@ -1292,7 +1292,7 @@ func TestTombstoneCleanResultEmptyBlock(t *testing.T) {
 
 	// Create tombstones by deleting all samples.
 	for _, r := range intervals {
-		require.NoError(t, db.Delete(r.Mint, r.Maxt, labels.MustNewMatcher(labels.MatchEqual, "a", "b")))
+		require.NoError(t, db.Delete(ctx, r.Mint, r.Maxt, labels.MustNewMatcher(labels.MatchEqual, "a", "b")))
 	}
 
 	require.NoError(t, db.CleanTombstones())
@@ -2068,7 +2068,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 		_, err = app.Append(0, defaultLabel, 3+rangeToTriggerCompaction, 0)
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
-		require.NoError(t, db.Delete(math.MinInt64, math.MaxInt64, defaultMatcher))
+		require.NoError(t, db.Delete(ctx, math.MinInt64, math.MaxInt64, defaultMatcher))
 		require.NoError(t, db.Compact())
 		require.Equal(t, 1, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.Ran)), "compaction should have been triggered here")
 
@@ -2111,7 +2111,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 		_, err = app.Append(0, defaultLabel, currentTime+rangeToTriggerCompaction, 0)
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
-		require.NoError(t, db.head.Delete(math.MinInt64, math.MaxInt64, defaultMatcher))
+		require.NoError(t, db.head.Delete(ctx, math.MinInt64, math.MaxInt64, defaultMatcher))
 		require.NoError(t, db.Compact())
 		require.Equal(t, 3, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.Ran)), "compaction should have been triggered here")
 		require.Equal(t, oldBlocks, db.Blocks())
@@ -2130,7 +2130,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 		oldBlocks := db.Blocks()
 		require.NoError(t, db.reloadBlocks())                          // Reload the db to register the new blocks.
 		require.Equal(t, len(blocks)+len(oldBlocks), len(db.Blocks())) // Ensure all blocks are registered.
-		require.NoError(t, db.Delete(math.MinInt64, math.MaxInt64, defaultMatcher))
+		require.NoError(t, db.Delete(ctx, math.MinInt64, math.MaxInt64, defaultMatcher))
 		require.NoError(t, db.Compact())
 		require.Equal(t, 5, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.Ran)), "compaction should have been triggered here once for each block that have tombstones")
 
@@ -2268,17 +2268,17 @@ func TestCorrectNumTombstones(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, len(db.blocks))
 
-	require.NoError(t, db.Delete(0, 1, defaultMatcher))
+	require.NoError(t, db.Delete(ctx, 0, 1, defaultMatcher))
 	require.Equal(t, uint64(1), db.blocks[0].meta.Stats.NumTombstones)
 
 	// {0, 1} and {2, 3} are merged to form 1 tombstone.
-	require.NoError(t, db.Delete(2, 3, defaultMatcher))
+	require.NoError(t, db.Delete(ctx, 2, 3, defaultMatcher))
 	require.Equal(t, uint64(1), db.blocks[0].meta.Stats.NumTombstones)
 
-	require.NoError(t, db.Delete(5, 6, defaultMatcher))
+	require.NoError(t, db.Delete(ctx, 5, 6, defaultMatcher))
 	require.Equal(t, uint64(2), db.blocks[0].meta.Stats.NumTombstones)
 
-	require.NoError(t, db.Delete(9, 11, defaultMatcher))
+	require.NoError(t, db.Delete(ctx, 9, 11, defaultMatcher))
 	require.Equal(t, uint64(3), db.blocks[0].meta.Stats.NumTombstones)
 }
 
@@ -3038,7 +3038,7 @@ func TestCompactHeadWithDeletion(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
-	err = db.Delete(0, 100, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+	err = db.Delete(context.Background(), 0, 100, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 	require.NoError(t, err)
 
 	// This recreates the bug.
