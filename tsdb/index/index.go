@@ -1605,7 +1605,7 @@ func (r *Reader) Series(id storage.SeriesRef, builder *labels.ScratchBuilder, ch
 	return errors.Wrap(r.dec.Series(d.Get(), builder, chks), "read series")
 }
 
-func (r *Reader) Postings(name string, values ...string) (Postings, error) {
+func (r *Reader) Postings(ctx context.Context, name string, values ...string) (Postings, error) {
 	if r.version == FormatV1 {
 		e, ok := r.postingsV1[name]
 		if !ok {
@@ -1625,7 +1625,7 @@ func (r *Reader) Postings(name string, values ...string) (Postings, error) {
 			}
 			res = append(res, p)
 		}
-		return Merge(res...), nil
+		return Merge(ctx, res...), nil
 	}
 
 	e, ok := r.postings[name]
@@ -1664,7 +1664,7 @@ func (r *Reader) Postings(name string, values ...string) (Postings, error) {
 
 		// Iterate on the offset table.
 		var postingsOff uint64 // The offset into the postings table.
-		for d.Err() == nil {
+		for d.Err() == nil && ctx.Err() == nil {
 			if skip == 0 {
 				// These are always the same number of bytes,
 				// and it's faster to skip than parse.
@@ -1701,9 +1701,12 @@ func (r *Reader) Postings(name string, values ...string) (Postings, error) {
 		if d.Err() != nil {
 			return nil, errors.Wrap(d.Err(), "get postings offset entry")
 		}
+		if ctx.Err() != nil {
+			return nil, errors.Wrap(ctx.Err(), "get postings offset entry")
+		}
 	}
 
-	return Merge(res...), nil
+	return Merge(ctx, res...), nil
 }
 
 // SortedPostings returns the given postings list reordered so that the backing series

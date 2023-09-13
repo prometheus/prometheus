@@ -413,7 +413,7 @@ func openBlock(path, blockID string) (*tsdb.DBReadOnly, tsdb.BlockReader, error)
 	return db, b, nil
 }
 
-func analyzeBlock(path, blockID string, limit int, runExtended bool) error {
+func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExtended bool) error {
 	db, block, err := openBlock(path, blockID)
 	if err != nil {
 		return err
@@ -460,7 +460,7 @@ func analyzeBlock(path, blockID string, limit int, runExtended bool) error {
 	labelpairsUncovered := map[string]uint64{}
 	labelpairsCount := map[string]uint64{}
 	entries := 0
-	p, err := ir.Postings("", "") // The special all key.
+	p, err := ir.Postings(ctx, "", "") // The special all key.
 	if err != nil {
 		return err
 	}
@@ -543,7 +543,7 @@ func analyzeBlock(path, blockID string, limit int, runExtended bool) error {
 		return err
 	}
 	for _, n := range lv {
-		postings, err := ir.Postings("__name__", n)
+		postings, err := ir.Postings(ctx, "__name__", n)
 		if err != nil {
 			return err
 		}
@@ -560,14 +560,15 @@ func analyzeBlock(path, blockID string, limit int, runExtended bool) error {
 	printInfo(postingInfos)
 
 	if runExtended {
-		return analyzeCompaction(block, ir)
+		return analyzeCompaction(ctx, block, ir)
 	}
 
 	return nil
 }
 
-func analyzeCompaction(block tsdb.BlockReader, indexr tsdb.IndexReader) (err error) {
-	postingsr, err := indexr.Postings(index.AllPostingsKey())
+func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.IndexReader) (err error) {
+	n, v := index.AllPostingsKey()
+	postingsr, err := indexr.Postings(ctx, n, v)
 	if err != nil {
 		return err
 	}

@@ -504,6 +504,7 @@ func TestBlockQuerier_AgainstHeadWithOpenChunks(t *testing.T) {
 }
 
 func TestBlockQuerier_TrimmingDoesNotModifyOriginalTombstoneIntervals(t *testing.T) {
+	ctx := context.Background()
 	c := blockQuerierTestCase{
 		mint: 2,
 		maxt: 6,
@@ -527,7 +528,7 @@ func TestBlockQuerier_TrimmingDoesNotModifyOriginalTombstoneIntervals(t *testing
 	}
 	ir, cr, _, _ := createIdxChkReaders(t, testData)
 	stones := tombstones.NewMemTombstones()
-	p, err := ir.Postings("a", "a")
+	p, err := ir.Postings(ctx, "a", "a")
 	require.NoError(t, err)
 	refs, err := index.ExpandPostings(p)
 	require.NoError(t, err)
@@ -1500,13 +1501,13 @@ func (m mockIndex) LabelNamesFor(ids ...storage.SeriesRef) ([]string, error) {
 	return names, nil
 }
 
-func (m mockIndex) Postings(name string, values ...string) (index.Postings, error) {
+func (m mockIndex) Postings(ctx context.Context, name string, values ...string) (index.Postings, error) {
 	res := make([]index.Postings, 0, len(values))
 	for _, value := range values {
 		l := labels.Label{Name: name, Value: value}
 		res = append(res, index.NewListPostings(m.postings[l]))
 	}
-	return index.Merge(res...), nil
+	return index.Merge(ctx, res...), nil
 }
 
 func (m mockIndex) SortedPostings(p index.Postings) index.Postings {
@@ -2452,7 +2453,7 @@ func (m mockMatcherIndex) LabelNamesFor(ids ...storage.SeriesRef) ([]string, err
 	return nil, errors.New("label names for for called")
 }
 
-func (m mockMatcherIndex) Postings(name string, values ...string) (index.Postings, error) {
+func (m mockMatcherIndex) Postings(context.Context, string, ...string) (index.Postings, error) {
 	return index.EmptyPostings(), nil
 }
 
