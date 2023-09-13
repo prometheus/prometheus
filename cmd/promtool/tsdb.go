@@ -413,7 +413,17 @@ func openBlock(path, blockID string) (*tsdb.DBReadOnly, tsdb.BlockReader, error)
 	return db, b, nil
 }
 
-func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExtended bool) error {
+func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExtended bool, matchers string) error {
+	var (
+		selectors []*labels.Matcher
+		err       error
+	)
+	if len(matchers) > 0 {
+		selectors, err = parser.ParseMetricSelector(matchers)
+		if err != nil {
+			return err
+		}
+	}
 	db, block, err := openBlock(path, blockID)
 	if err != nil {
 		return err
@@ -426,14 +436,17 @@ func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExten
 	fmt.Printf("Block ID: %s\n", meta.ULID)
 	// Presume 1ms resolution that Prometheus uses.
 	fmt.Printf("Duration: %s\n", (time.Duration(meta.MaxTime-meta.MinTime) * 1e6).String())
-	fmt.Printf("Series: %d\n", meta.Stats.NumSeries)
+	fmt.Printf("Total Series: %d\n", meta.Stats.NumSeries)
+	if len(matchers) > 0 {
+		fmt.Printf("Matcher: %s\n", matchers)
+	}
 	ir, err := block.Index()
 	if err != nil {
 		return err
 	}
 	defer ir.Close()
 
-	allLabelNames, err := ir.LabelNames(ctx)
+	allLabelNames, err := ir.LabelNames(ctx, selectors...)
 	if err != nil {
 		return err
 	}
@@ -460,10 +473,30 @@ func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExten
 	labelpairsUncovered := map[string]uint64{}
 	labelpairsCount := map[string]uint64{}
 	entries := 0
-	p, err := ir.Postings(ctx, "", "") // The special all key.
-	if err != nil {
-		return err
+	var (
+		p    index.Postings
+		refs []storage.SeriesRef
+	)
+	if len(matchers) > 0 {
+		p, err = tsdb.PostingsForMatchers(ir, selectors...)
+		if err != nil {
+			return err
+		}
+		// Expand refs first and cache in memory.
+		// So later we don't have to expand again.
+		refs, err = index.ExpandPostings(p)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Matched series: %d\n", len(refs))
+		p = index.NewListPostings(refs)
+	} else {
+		p, err = ir.Postings(ctx, "", "") // The special all key.
+		if err != nil {
+			return err
+		}
 	}
+
 	chks := []chunks.Meta{}
 	builder := labels.ScratchBuilder{}
 	for p.Next() {
@@ -512,7 +545,7 @@ func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExten
 
 	postingInfos = postingInfos[:0]
 	for _, n := range allLabelNames {
-		values, err := ir.SortedLabelValues(ctx, n)
+		values, err := ir.SortedLabelValues(ctx, n, selectors...)
 		if err != nil {
 			return err
 		}
@@ -528,7 +561,7 @@ func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExten
 
 	postingInfos = postingInfos[:0]
 	for _, n := range allLabelNames {
-		lv, err := ir.SortedLabelValues(ctx, n)
+		lv, err := ir.SortedLabelValues(ctx, n, selectors...)
 		if err != nil {
 			return err
 		}
@@ -538,7 +571,7 @@ func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExten
 	printInfo(postingInfos)
 
 	postingInfos = postingInfos[:0]
-	lv, err := ir.SortedLabelValues(ctx, "__name__")
+	lv, err := ir.SortedLabelValues(ctx, "__name__", selectors...)
 	if err != nil {
 		return err
 	}
@@ -547,6 +580,7 @@ func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExten
 		if err != nil {
 			return err
 		}
+		postings = index.Intersect(postings, index.NewListPostings(refs))
 		count := 0
 		for postings.Next() {
 			count++
@@ -560,18 +594,24 @@ func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExten
 	printInfo(postingInfos)
 
 	if runExtended {
-		return analyzeCompaction(ctx, block, ir)
+		return analyzeCompaction(ctx, block, ir, selectors)
 	}
 
 	return nil
 }
 
-func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.IndexReader) (err error) {
-	n, v := index.AllPostingsKey()
-	postingsr, err := indexr.Postings(ctx, n, v)
+func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.IndexReader, matchers []*labels.Matcher) (err error) {
+	var postingsr index.Postings
+	if len(matchers) > 0 {
+		postingsr, err = tsdb.PostingsForMatchers(indexr, matchers...)
+	} else {
+		n, v := index.AllPostingsKey()
+		postingsr, err = indexr.Postings(ctx, n, v)
+	}
 	if err != nil {
 		return err
 	}
+
 	chunkr, err := block.Chunks()
 	if err != nil {
 		return err
