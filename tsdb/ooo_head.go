@@ -19,6 +19,7 @@ import (
 
 	"github.com/oklog/ulid"
 
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 )
@@ -28,16 +29,28 @@ import (
 // Samples are stored uncompressed to allow easy sorting.
 // Perhaps we can be more efficient later.
 type OOOChunk struct {
-	samples []sample
+	samples    []sample
+	tombstones *tombstones.MemTombstones
+	seriesRef  storage.SeriesRef
 }
 
 func NewOOOChunk() *OOOChunk {
-	return &OOOChunk{samples: make([]sample, 0, 4)}
+	// return &OOOChunk{samples: make([]sample, 0, 4)}
+	return &OOOChunk{
+		samples:    make([]sample, 0, 4),
+		tombstones: tombstones.NewMemTombstones(),
+	}
 }
 
 // Insert inserts the sample such that order is maintained.
-// Returns false if insert was not possible due to the same timestamp already existing.
+// Returns false if insert was not possible due to the same timestamp already existing
+// or the timestamp falls within a tombstone interval.
 func (o *OOOChunk) Insert(t int64, v float64) bool {
+	// Check if the timestamp falls within any of the tombstone intervals.
+	if o.tombstones.IsDeletedAt(o.seriesRef, t) {
+		return false
+	}
+
 	// Although out-of-order samples can be out-of-order amongst themselves, we
 	// are opinionated and expect them to be usually in-order meaning we could
 	// try to append at the end first if the new timestamp is higher than the
@@ -168,4 +181,17 @@ func (oh *OOORangeHead) MinTime() int64 {
 
 func (oh *OOORangeHead) MaxTime() int64 {
 	return oh.maxt
+}
+
+func (o *OOOChunk) DeleteRange(mint, maxt int64, seriesRef storage.SeriesRef) {
+	var newSamples []sample
+	for _, s := range o.samples {
+		if s.t < mint || s.t > maxt {
+			newSamples = append(newSamples, s)
+		} else {
+			// Optionally, update the tombstones here if you are maintaining a tombstone list in OOOChunk
+			o.tombstones.AddInterval(seriesRef, tombstones.Interval{Mint: mint, Maxt: maxt})
+		}
+	}
+	o.samples = newSamples
 }
