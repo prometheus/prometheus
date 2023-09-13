@@ -15,6 +15,7 @@
 package tsdb
 
 import (
+	"context"
 	"errors"
 	"math"
 
@@ -425,7 +426,7 @@ func (ir *OOOCompactionHeadIndexReader) PostingsForMatchers(concurrent bool, ms 
 	return nil, errors.New("not implemented")
 }
 
-func (ir *OOOCompactionHeadIndexReader) LabelNames(matchers ...*labels.Matcher) ([]string, error) {
+func (ir *OOOCompactionHeadIndexReader) LabelNames(context.Context, ...*labels.Matcher) ([]string, error) {
 	return nil, errors.New("not implemented")
 }
 

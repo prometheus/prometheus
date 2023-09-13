@@ -86,7 +86,7 @@ type IndexReader interface {
 	Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error
 
 	// LabelNames returns all the unique label names present in the index in sorted order.
-	LabelNames(matchers ...*labels.Matcher) ([]string, error)
+	LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, error)
 
 	// LabelValueFor returns label value for the given label name in the series referred to by ID.
 	// If the series couldn't be found or the series doesn't have the requested label a
@@ -480,12 +480,12 @@ func (r blockIndexReader) LabelValues(name string, matchers ...*labels.Matcher) 
 	return labelValuesWithMatchers(r.ir, name, matchers...)
 }
 
-func (r blockIndexReader) LabelNames(matchers ...*labels.Matcher) ([]string, error) {
+func (r blockIndexReader) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, error) {
 	if len(matchers) == 0 {
-		return r.b.LabelNames()
+		return r.b.LabelNames(ctx)
 	}
 
-	return labelNamesWithMatchers(r.ir, matchers...)
+	return labelNamesWithMatchers(ctx, r.ir, matchers...)
 }
 
 func (r blockIndexReader) Postings(name string, values ...string) (index.Postings, error) {
@@ -686,8 +686,8 @@ func (pb *Block) OverlapsClosedInterval(mint, maxt int64) bool {
 }
 
 // LabelNames returns all the unique label names present in the Block in sorted order.
-func (pb *Block) LabelNames() ([]string, error) {
-	return pb.indexr.LabelNames()
+func (pb *Block) LabelNames(ctx context.Context) ([]string, error) {
+	return pb.indexr.LabelNames(ctx)
 }
 
 func clampInterval(a, b, mint, maxt int64) (int64, int64) {

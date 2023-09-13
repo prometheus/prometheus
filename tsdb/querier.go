@@ -94,8 +94,8 @@ func (q *blockBaseQuerier) LabelValues(name string, matchers ...*labels.Matcher)
 	return res, nil, err
 }
 
-func (q *blockBaseQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	res, err := q.index.LabelNames(matchers...)
+func (q *blockBaseQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
+	res, err := q.index.LabelNames(ctx, matchers...)
 	return res, nil, err
 }
 
@@ -481,7 +481,7 @@ func labelValuesWithMatchers(r IndexReader, name string, matchers ...*labels.Mat
 	return values, nil
 }
 
-func labelNamesWithMatchers(r IndexReader, matchers ...*labels.Matcher) ([]string, error) {
+func labelNamesWithMatchers(_ context.Context, r IndexReader, matchers ...*labels.Matcher) ([]string, error) {
 	p, err := PostingsForMatchers(r, matchers...)
 	if err != nil {
 		return nil, err

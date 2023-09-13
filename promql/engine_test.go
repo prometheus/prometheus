@@ -202,7 +202,7 @@ func (*errQuerier) LabelValues(string, ...*labels.Matcher) ([]string, storage.Wa
 	return nil, nil, nil
 }
 
-func (*errQuerier) LabelNames(...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (*errQuerier) LabelNames(context.Context, ...*labels.Matcher) ([]string, storage.Warnings, error) {
 	return nil, nil, nil
 }
 func (*errQuerier) Close() error { return nil }

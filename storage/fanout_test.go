@@ -237,7 +237,7 @@ func (errQuerier) LabelValues(string, ...*labels.Matcher) ([]string, storage.War
 	return nil, nil, errors.New("label values error")
 }
 
-func (errQuerier) LabelNames(...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (errQuerier) LabelNames(context.Context, ...*labels.Matcher) ([]string, storage.Warnings, error) {
 	return nil, nil, errors.New("label names error")
 }
 
