@@ -15,6 +15,7 @@
 package tsdb
 
 import (
+	"context"
 	"errors"
 	"math"
 
@@ -190,7 +191,7 @@ func lessByMinTimeAndMinRef(a, b chunks.Meta) bool {
 	return a.MinTime < b.MinTime
 }
 
-func (oh *OOOHeadIndexReader) Postings(name string, values ...string) (index.Postings, error) {
+func (oh *OOOHeadIndexReader) Postings(ctx context.Context, name string, values ...string) (index.Postings, error) {
 	switch len(values) {
 	case 0:
 		return index.EmptyPostings(), nil
@@ -202,7 +203,7 @@ func (oh *OOOHeadIndexReader) Postings(name string, values ...string) (index.Pos
 		for _, value := range values {
 			res = append(res, oh.head.postings.Get(name, value)) // TODO(ganesh) Also call GetOOOPostings
 		}
-		return index.Merge(res...), nil
+		return index.Merge(ctx, res...), nil
 	}
 }
 
@@ -268,7 +269,7 @@ type OOOCompactionHead struct {
 // 4. Cuts a new WBL file for the OOO WBL.
 // All the above together have a bit of CPU and memory overhead, and can have a bit of impact
 // on the sample append latency. So call NewOOOCompactionHead only right before compaction.
-func NewOOOCompactionHead(head *Head) (*OOOCompactionHead, error) {
+func NewOOOCompactionHead(ctx context.Context, head *Head) (*OOOCompactionHead, error) {
 	ch := &OOOCompactionHead{
 		chunkRange: head.chunkRange.Load(),
 		mint:       math.MaxInt64,
@@ -287,7 +288,7 @@ func NewOOOCompactionHead(head *Head) (*OOOCompactionHead, error) {
 	n, v := index.AllPostingsKey()
 
 	// TODO: verify this gets only ooo samples.
-	p, err := ch.oooIR.Postings(n, v)
+	p, err := ch.oooIR.Postings(ctx, n, v)
 	if err != nil {
 		return nil, err
 	}
@@ -396,7 +397,7 @@ func (ir *OOOCompactionHeadIndexReader) Symbols() index.StringIter {
 	return ir.ch.oooIR.Symbols()
 }
 
-func (ir *OOOCompactionHeadIndexReader) Postings(name string, values ...string) (index.Postings, error) {
+func (ir *OOOCompactionHeadIndexReader) Postings(_ context.Context, name string, values ...string) (index.Postings, error) {
 	n, v := index.AllPostingsKey()
 	if name != n || len(values) != 1 || values[0] != v {
 		return nil, errors.New("only AllPostingsKey is supported")

@@ -103,13 +103,13 @@ func (m mockIndex) LabelValues(name string) ([]string, error) {
 	return values, nil
 }
 
-func (m mockIndex) Postings(name string, values ...string) (Postings, error) {
+func (m mockIndex) Postings(ctx context.Context, name string, values ...string) (Postings, error) {
 	p := []Postings{}
 	for _, value := range values {
 		l := labels.Label{Name: name, Value: value}
 		p = append(p, m.SortedPostings(NewListPostings(m.postings[l])))
 	}
-	return Merge(p...), nil
+	return Merge(ctx, p...), nil
 }
 
 func (m mockIndex) SortedPostings(p Postings) Postings {
@@ -162,6 +162,7 @@ func TestIndexRW_Create_Open(t *testing.T) {
 
 func TestIndexRW_Postings(t *testing.T) {
 	dir := t.TempDir()
+	ctx := context.Background()
 
 	fn := filepath.Join(dir, indexFilename)
 
@@ -194,7 +195,7 @@ func TestIndexRW_Postings(t *testing.T) {
 	ir, err := NewFileReader(fn)
 	require.NoError(t, err)
 
-	p, err := ir.Postings("a", "1")
+	p, err := ir.Postings(ctx, "a", "1")
 	require.NoError(t, err)
 
 	var c []chunks.Meta
@@ -245,6 +246,7 @@ func TestIndexRW_Postings(t *testing.T) {
 
 func TestPostingsMany(t *testing.T) {
 	dir := t.TempDir()
+	ctx := context.Background()
 
 	fn := filepath.Join(dir, indexFilename)
 
@@ -313,7 +315,7 @@ func TestPostingsMany(t *testing.T) {
 
 	var builder labels.ScratchBuilder
 	for _, c := range cases {
-		it, err := ir.Postings("i", c.in...)
+		it, err := ir.Postings(ctx, "i", c.in...)
 		require.NoError(t, err)
 
 		got := []string{}
@@ -335,6 +337,7 @@ func TestPostingsMany(t *testing.T) {
 
 func TestPersistence_index_e2e(t *testing.T) {
 	dir := t.TempDir()
+	ctx := context.Background()
 
 	lbls, err := labels.ReadLabels(filepath.Join("..", "testdata", "20kseries.json"), 20000)
 	require.NoError(t, err)
@@ -413,10 +416,10 @@ func TestPersistence_index_e2e(t *testing.T) {
 	require.NoError(t, err)
 
 	for p := range mi.postings {
-		gotp, err := ir.Postings(p.Name, p.Value)
+		gotp, err := ir.Postings(ctx, p.Name, p.Value)
 		require.NoError(t, err)
 
-		expp, err := mi.Postings(p.Name, p.Value)
+		expp, err := mi.Postings(ctx, p.Name, p.Value)
 		require.NoError(t, err)
 
 		var chks, expchks []chunks.Meta

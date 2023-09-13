@@ -28,6 +28,8 @@ import (
 )
 
 func setupRangeQueryTestData(stor *teststorage.TestStorage, _ *Engine, interval, numIntervals int) error {
+	ctx := context.Background()
+
 	metrics := []labels.Labels{}
 	metrics = append(metrics, labels.FromStrings("__name__", "a_one"))
 	metrics = append(metrics, labels.FromStrings("__name__", "b_one"))
@@ -67,7 +69,7 @@ func setupRangeQueryTestData(stor *teststorage.TestStorage, _ *Engine, interval,
 		}
 	}
 	stor.DB.ForceHeadMMap() // Ensure we have at most one head chunk for every series.
-	stor.DB.Compact()
+	stor.DB.Compact(ctx)
 	return nil
 }
 
