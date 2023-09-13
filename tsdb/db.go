@@ -2006,7 +2006,7 @@ func rangeForTimestamp(t, width int64) (maxt int64) {
 }
 
 // Delete implements deletion of metrics. It only has atomicity guarantees on a per-block basis.
-func (db *DB) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
+func (db *DB) Delete(ctx context.Context, mint, maxt int64, ms ...*labels.Matcher) error {
 	db.cmtx.Lock()
 	defer db.cmtx.Unlock()
 
@@ -2018,13 +2018,13 @@ func (db *DB) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
 	for _, b := range db.blocks {
 		if b.OverlapsClosedInterval(mint, maxt) {
 			g.Go(func(b *Block) func() error {
-				return func() error { return b.Delete(mint, maxt, ms...) }
+				return func() error { return b.Delete(ctx, mint, maxt, ms...) }
 			}(b))
 		}
 	}
 	if db.head.OverlapsClosedInterval(mint, maxt) {
 		g.Go(func() error {
-			return db.head.Delete(mint, maxt, ms...)
+			return db.head.Delete(ctx, mint, maxt, ms...)
 		})
 	}
 
