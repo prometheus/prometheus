@@ -232,9 +232,12 @@ func (h *headIndexReader) LabelValueFor(id storage.SeriesRef, label string) (str
 
 // LabelNamesFor returns all the label names for the series referred to by IDs.
 // The names returned are sorted.
-func (h *headIndexReader) LabelNamesFor(ids ...storage.SeriesRef) ([]string, error) {
+func (h *headIndexReader) LabelNamesFor(ctx context.Context, ids ...storage.SeriesRef) ([]string, error) {
 	namesMap := make(map[string]struct{})
 	for _, id := range ids {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		memSeries := h.head.series.getByID(chunks.HeadSeriesRef(id))
 		if memSeries == nil {
 			return nil, storage.ErrNotFound

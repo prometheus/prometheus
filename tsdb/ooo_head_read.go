@@ -434,7 +434,7 @@ func (ir *OOOCompactionHeadIndexReader) LabelValueFor(id storage.SeriesRef, labe
 	return "", errors.New("not implemented")
 }
 
-func (ir *OOOCompactionHeadIndexReader) LabelNamesFor(ids ...storage.SeriesRef) ([]string, error) {
+func (ir *OOOCompactionHeadIndexReader) LabelNamesFor(ctx context.Context, ids ...storage.SeriesRef) ([]string, error) {
 	return nil, errors.New("not implemented")
 }
 

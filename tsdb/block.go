@@ -95,7 +95,7 @@ type IndexReader interface {
 
 	// LabelNamesFor returns all the label names for the series referred to by IDs.
 	// The names returned are sorted.
-	LabelNamesFor(ids ...storage.SeriesRef) ([]string, error)
+	LabelNamesFor(ctx context.Context, ids ...storage.SeriesRef) ([]string, error)
 
 	// Close releases the underlying resources of the reader.
 	Close() error
@@ -519,8 +519,8 @@ func (r blockIndexReader) LabelValueFor(id storage.SeriesRef, label string) (str
 
 // LabelNamesFor returns all the label names for the series referred to by IDs.
 // The names returned are sorted.
-func (r blockIndexReader) LabelNamesFor(ids ...storage.SeriesRef) ([]string, error) {
-	return r.ir.LabelNamesFor(ids...)
+func (r blockIndexReader) LabelNamesFor(ctx context.Context, ids ...storage.SeriesRef) ([]string, error) {
+	return r.ir.LabelNamesFor(ctx, ids...)
 }
 
 type blockTombstoneReader struct {

@@ -481,7 +481,7 @@ func labelValuesWithMatchers(r IndexReader, name string, matchers ...*labels.Mat
 	return values, nil
 }
 
-func labelNamesWithMatchers(_ context.Context, r IndexReader, matchers ...*labels.Matcher) ([]string, error) {
+func labelNamesWithMatchers(ctx context.Context, r IndexReader, matchers ...*labels.Matcher) ([]string, error) {
 	p, err := PostingsForMatchers(r, matchers...)
 	if err != nil {
 		return nil, err
@@ -495,7 +495,7 @@ func labelNamesWithMatchers(_ context.Context, r IndexReader, matchers ...*label
 		return nil, errors.Wrapf(p.Err(), "postings for label names with matchers")
 	}
 
-	return r.LabelNamesFor(postings...)
+	return r.LabelNamesFor(ctx, postings...)
 }
 
 // seriesData, used inside other iterators, are updated when we move from one series to another.
