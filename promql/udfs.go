@@ -15,7 +15,6 @@ package promql
 
 import (
 	"fmt"
-	"math"
 
 	"github.com/d5/tengo/v2"
 	"github.com/d5/tengo/v2/stdlib"
@@ -134,91 +133,7 @@ var (
 			median: median
 		}
 	`
-	srcMap = map[string]string{
-		"udf_mad_over_time": `
-			// fmt := import("fmt")
-			math := import("math")
-			util := import("util")
-
-			mad := func(seq) {
-				median := util.median(seq)
-				if is_error(median) {
-					return median
-				}
-				deltas := []
-				for x in seq {
-					deltas = append(deltas, math.abs(x-median))
-				}
-				// fmt.println(deltas)
-				return util.median(deltas)
-			}
-
-			output := mad(input0)
-		`,
-		"udf_std_dev_simple_over_time": `
-			math := import("math")
-
-			std := func(seq) {
-				n := len(seq)
-				if n == 0 {
-					return error("cannot calculate mean of empty array")
-				}
-				sum := 0
-				for x in seq {
-					sum += x
-				}
-				mean := sum / n
-				variance := 0
-				for x in seq {
-					variance += math.pow(x-mean, 2)
-				}
-				variance /= n
-				return math.sqrt(variance)
-			}
-
-			output := std(input0)
-		`,
-		"udf_std_dev_over_time": `
-			math := import("math")
-
-			std := func(seq) {
-				count := 0
-				mean := 0
-				aux := 0
-				for x in seq {
-					count++
-					delta := x - mean
-					mean += delta/count
-					aux += delta*(x-mean)
-				}
-				if count == 0 {
-					return error("cannot calculate mean of empty array")
-				}
-				return math.sqrt(aux / count)
-			}
-
-			output := std(input0)
-		`,
-	}
 )
-
-func init() {
-	for name, src := range srcMap {
-		inputTypes := []parser.ValueType{parser.ValueTypeMatrix}
-		if err := config.ValidateUDFInputTypes(inputTypes); err != nil {
-			panic(err)
-		}
-		err := addUDF(name, src, []string{"math", "rand"}, true, inputTypes)
-		if err != nil {
-			panic(err)
-		}
-	}
-	for _, name := range []string{"mad_over_time", "std_dev_over_time"} {
-		parser.AddFunction(name, []parser.ValueType{parser.ValueTypeMatrix})
-	}
-	FunctionCalls["mad_over_time"] = funcMadOverTime
-	FunctionCalls["std_dev_over_time"] = funcStdDevOverTime
-}
 
 func AddUDFfromConfig(cfg *config.UDFConfig) error {
 	return addUDF("udf_"+cfg.Name, cfg.Src, cfg.Modules, cfg.UseUtil, cfg.InputTypes)
@@ -317,53 +232,4 @@ func genFunctionCall(funcName string, c *tengo.Compiled, inputTypes []parser.Val
 		}
 		panic(fmt.Sprintf("unhandled value type for genFunctionCall: %s", inputTypes[0]))
 	}
-}
-
-// below is just for benchmark comparison, should be removed before PR is merged
-
-// duplicate of funcStddevOverTime that doesn't use kahan sum so it is comparable to funcUdfStdDevOverTime
-// === std_dev_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
-func funcStdDevOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	if len(vals[0].(Matrix)[0].Floats) == 0 {
-		// TODO(beorn7): The passed values only contain
-		// histograms. std_dev_over_time ignores histograms for now. If
-		// there are only histograms, we have to return without adding
-		// anything to enh.Out.
-		return enh.Out, nil
-	}
-	return aggrOverTime(vals, enh, func(s Series) float64 {
-		var count float64
-		var mean float64
-		var aux float64
-		for _, f := range s.Floats {
-			count++
-			delta := f.F - mean
-			mean += delta / count
-			aux += delta * (f.F - mean)
-		}
-		return math.Sqrt(aux / count)
-	}), nil
-}
-
-// === mad_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
-func funcMadOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	if len(vals[0].(Matrix)[0].Floats) == 0 {
-		// TODO(beorn7): The passed values only contain
-		// histograms. mad_over_time ignores histograms for now. If
-		// there are only histograms, we have to return without adding
-		// anything to enh.Out.
-		return enh.Out, nil
-	}
-	return aggrOverTime(vals, enh, func(s Series) float64 {
-		values := make(vectorByValueHeap, 0, len(s.Floats))
-		for _, f := range s.Floats {
-			values = append(values, Sample{F: f.F})
-		}
-		median := quantile(0.5, values)
-		values = make(vectorByValueHeap, 0, len(s.Floats))
-		for _, f := range s.Floats {
-			values = append(values, Sample{F: math.Abs(f.F - median)})
-		}
-		return quantile(0.5, values)
-	}), nil
 }
