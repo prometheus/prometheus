@@ -378,6 +378,8 @@ func TestOOOHeadChunkReader_LabelValues(t *testing.T) {
 	head, _ := newTestHead(t, chunkRange, wlog.CompressionNone, true)
 	t.Cleanup(func() { require.NoError(t, head.Close()) })
 
+	ctx := context.Background()
+
 	app := head.Appender(context.Background())
 
 	// Add in-order samples
@@ -437,24 +439,24 @@ func TestOOOHeadChunkReader_LabelValues(t *testing.T) {
 			// We first want to test using a head index reader that covers the biggest query interval
 			oh := NewOOOHeadIndexReader(head, tc.queryMinT, tc.queryMaxT)
 			matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "foo", "bar1")}
-			values, err := oh.LabelValues("foo", matchers...)
+			values, err := oh.LabelValues(ctx, "foo", matchers...)
 			sort.Strings(values)
 			require.NoError(t, err)
 			require.Equal(t, tc.expValues1, values)
 
 			matchers = []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotRegexp, "foo", "^bar.")}
-			values, err = oh.LabelValues("foo", matchers...)
+			values, err = oh.LabelValues(ctx, "foo", matchers...)
 			sort.Strings(values)
 			require.NoError(t, err)
 			require.Equal(t, tc.expValues2, values)
 
 			matchers = []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.")}
-			values, err = oh.LabelValues("foo", matchers...)
+			values, err = oh.LabelValues(ctx, "foo", matchers...)
 			sort.Strings(values)
 			require.NoError(t, err)
 			require.Equal(t, tc.expValues3, values)
 
-			values, err = oh.LabelValues("foo")
+			values, err = oh.LabelValues(ctx, "foo")
 			sort.Strings(values)
 			require.NoError(t, err)
 			require.Equal(t, tc.expValues4, values)

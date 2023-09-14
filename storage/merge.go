@@ -159,8 +159,8 @@ func (l labelGenericQueriers) SplitByHalf() (labelGenericQueriers, labelGenericQ
 // LabelValues returns all potential values for a label name.
 // If matchers are specified the returned result set is reduced
 // to label values of metrics matching the matchers.
-func (q *mergeGenericQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	res, ws, err := q.lvals(q.queriers, name, matchers...)
+func (q *mergeGenericQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	res, ws, err := q.lvals(ctx, q.queriers, name, matchers...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("LabelValues() from merge generic querier for label %s: %w", name, err)
 	}
@@ -168,22 +168,22 @@ func (q *mergeGenericQuerier) LabelValues(name string, matchers ...*labels.Match
 }
 
 // lvals performs merge sort for LabelValues from multiple queriers.
-func (q *mergeGenericQuerier) lvals(lq labelGenericQueriers, n string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (q *mergeGenericQuerier) lvals(ctx context.Context, lq labelGenericQueriers, n string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	if lq.Len() == 0 {
 		return nil, nil, nil
 	}
 	if lq.Len() == 1 {
-		return lq.Get(0).LabelValues(n, matchers...)
+		return lq.Get(0).LabelValues(ctx, n, matchers...)
 	}
 	a, b := lq.SplitByHalf()
 
 	var ws annotations.Annotations
-	s1, w, err := q.lvals(a, n, matchers...)
+	s1, w, err := q.lvals(ctx, a, n, matchers...)
 	ws.Merge(w)
 	if err != nil {
 		return nil, ws, err
 	}
-	s2, ws, err := q.lvals(b, n, matchers...)
+	s2, ws, err := q.lvals(ctx, b, n, matchers...)
 	ws.Merge(w)
 	if err != nil {
 		return nil, ws, err

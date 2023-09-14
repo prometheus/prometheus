@@ -1454,13 +1454,13 @@ func (m mockIndex) Close() error {
 	return nil
 }
 
-func (m mockIndex) SortedLabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
-	values, _ := m.LabelValues(name, matchers...)
+func (m mockIndex) SortedLabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
+	values, _ := m.LabelValues(ctx, name, matchers...)
 	sort.Strings(values)
 	return values, nil
 }
 
-func (m mockIndex) LabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
+func (m mockIndex) LabelValues(_ context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
 	var values []string
 
 	if len(matchers) == 0 {
@@ -1484,7 +1484,7 @@ func (m mockIndex) LabelValues(name string, matchers ...*labels.Matcher) ([]stri
 	return values, nil
 }
 
-func (m mockIndex) LabelValueFor(id storage.SeriesRef, label string) (string, error) {
+func (m mockIndex) LabelValueFor(_ context.Context, id storage.SeriesRef, label string) (string, error) {
 	return m.series[id].l.Get(label), nil
 }
 
@@ -2239,7 +2239,7 @@ func TestQuerierIndexQueriesRace(t *testing.T) {
 				q, err := db.Querier(math.MinInt64, math.MaxInt64)
 				require.NoError(t, err)
 
-				values, _, err := q.LabelValues("seq", c.matchers...)
+				values, _, err := q.LabelValues(ctx, "seq", c.matchers...)
 				require.NoError(t, err)
 				require.Emptyf(t, values, `label values for label "seq" should be empty`)
 			}
@@ -2437,16 +2437,16 @@ func (m mockMatcherIndex) Symbols() index.StringIter { return nil }
 func (m mockMatcherIndex) Close() error { return nil }
 
 // SortedLabelValues will return error if it is called.
-func (m mockMatcherIndex) SortedLabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
+func (m mockMatcherIndex) SortedLabelValues(context.Context, string, ...*labels.Matcher) ([]string, error) {
 	return []string{}, errors.New("sorted label values called")
 }
 
 // LabelValues will return error if it is called.
-func (m mockMatcherIndex) LabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
+func (m mockMatcherIndex) LabelValues(context.Context, string, ...*labels.Matcher) ([]string, error) {
 	return []string{}, errors.New("label values called")
 }
 
-func (m mockMatcherIndex) LabelValueFor(id storage.SeriesRef, label string) (string, error) {
+func (m mockMatcherIndex) LabelValueFor(context.Context, storage.SeriesRef, string) (string, error) {
 	return "", errors.New("label value for called")
 }
 

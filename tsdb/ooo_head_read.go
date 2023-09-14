@@ -158,16 +158,16 @@ func (oh *OOOHeadIndexReader) series(ref storage.SeriesRef, builder *labels.Scra
 // LabelValues needs to be overridden from the headIndexReader implementation due
 // to the check that happens at the beginning where we make sure that the query
 // interval overlaps with the head minooot and maxooot.
-func (oh *OOOHeadIndexReader) LabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
+func (oh *OOOHeadIndexReader) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
 	if oh.maxt < oh.head.MinOOOTime() || oh.mint > oh.head.MaxOOOTime() {
 		return []string{}, nil
 	}
 
 	if len(matchers) == 0 {
-		return oh.head.postings.LabelValues(name), nil
+		return oh.head.postings.LabelValues(ctx, name), nil
 	}
 
-	return labelValuesWithMatchers(oh, name, matchers...)
+	return labelValuesWithMatchers(ctx, oh, name, matchers...)
 }
 
 type chunkMetaAndChunkDiskMapperRef struct {
@@ -414,15 +414,15 @@ func (ir *OOOCompactionHeadIndexReader) Series(ref storage.SeriesRef, builder *l
 	return ir.ch.oooIR.series(ref, builder, chks, ir.ch.lastMmapRef)
 }
 
-func (ir *OOOCompactionHeadIndexReader) SortedLabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
+func (ir *OOOCompactionHeadIndexReader) SortedLabelValues(_ context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
 	return nil, errors.New("not implemented")
 }
 
-func (ir *OOOCompactionHeadIndexReader) LabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
+func (ir *OOOCompactionHeadIndexReader) LabelValues(_ context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
 	return nil, errors.New("not implemented")
 }
 
-func (ir *OOOCompactionHeadIndexReader) PostingsForMatchers(concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
+func (ir *OOOCompactionHeadIndexReader) PostingsForMatchers(_ context.Context, concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
 	return nil, errors.New("not implemented")
 }
 
@@ -430,7 +430,7 @@ func (ir *OOOCompactionHeadIndexReader) LabelNames(context.Context, ...*labels.M
 	return nil, errors.New("not implemented")
 }
 
-func (ir *OOOCompactionHeadIndexReader) LabelValueFor(id storage.SeriesRef, label string) (string, error) {
+func (ir *OOOCompactionHeadIndexReader) LabelValueFor(context.Context, storage.SeriesRef, string) (string, error) {
 	return "", errors.New("not implemented")
 }
 

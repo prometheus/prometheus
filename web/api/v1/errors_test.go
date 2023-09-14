@@ -171,7 +171,7 @@ type errorTestQuerier struct {
 	err error
 }
 
-func (t errorTestQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (t errorTestQuerier) LabelValues(context.Context, string, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, t.err
 }
 

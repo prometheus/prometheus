@@ -806,6 +806,8 @@ func TestHead_Truncate(t *testing.T) {
 
 	h.initTime(0)
 
+	ctx := context.Background()
+
 	s1, _, _ := h.getOrCreate(1, labels.FromStrings("a", "1", "b", "1"))
 	s2, _, _ := h.getOrCreate(2, labels.FromStrings("a", "2", "b", "1"))
 	s3, _, _ := h.getOrCreate(3, labels.FromStrings("a", "1", "b", "2"))
@@ -874,7 +876,7 @@ func TestHead_Truncate(t *testing.T) {
 			ss = map[string]struct{}{}
 			values[name] = ss
 		}
-		for _, value := range h.postings.LabelValues(name) {
+		for _, value := range h.postings.LabelValues(ctx, name) {
 			ss[value] = struct{}{}
 		}
 	}
@@ -2640,7 +2642,7 @@ func TestHeadLabelNamesValuesWithMinMaxRange(t *testing.T) {
 		ctx                 = context.Background()
 	)
 
-	app := head.Appender(context.Background())
+	app := head.Appender(ctx)
 	for i, name := range expectedLabelNames {
 		_, err := app.Append(0, labels.FromStrings(name, expectedLabelValues[i]), seriesTimestamps[i], 0)
 		require.NoError(t, err)
@@ -2670,7 +2672,7 @@ func TestHeadLabelNamesValuesWithMinMaxRange(t *testing.T) {
 			require.Equal(t, tt.expectedNames, actualLabelNames)
 			if len(tt.expectedValues) > 0 {
 				for i, name := range expectedLabelNames {
-					actualLabelValue, err := headIdxReader.SortedLabelValues(name)
+					actualLabelValue, err := headIdxReader.SortedLabelValues(ctx, name)
 					require.NoError(t, err)
 					require.Equal(t, []string{tt.expectedValues[i]}, actualLabelValue)
 				}
@@ -2682,6 +2684,8 @@ func TestHeadLabelNamesValuesWithMinMaxRange(t *testing.T) {
 func TestHeadLabelValuesWithMatchers(t *testing.T) {
 	head, _ := newTestHead(t, 1000, wlog.CompressionNone, false)
 	t.Cleanup(func() { require.NoError(t, head.Close()) })
+
+	ctx := context.Background()
 
 	app := head.Appender(context.Background())
 	for i := 0; i < 100; i++ {
@@ -2726,11 +2730,11 @@ func TestHeadLabelValuesWithMatchers(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			headIdxReader := head.indexRange(0, 200)
 
-			actualValues, err := headIdxReader.SortedLabelValues(tt.labelName, tt.matchers...)
+			actualValues, err := headIdxReader.SortedLabelValues(ctx, tt.labelName, tt.matchers...)
 			require.NoError(t, err)
 			require.Equal(t, tt.expectedValues, actualValues)
 
-			actualValues, err = headIdxReader.LabelValues(tt.labelName, tt.matchers...)
+			actualValues, err = headIdxReader.LabelValues(ctx, tt.labelName, tt.matchers...)
 			sort.Strings(actualValues)
 			require.NoError(t, err)
 			require.Equal(t, tt.expectedValues, actualValues)
@@ -2902,6 +2906,8 @@ func BenchmarkHeadLabelValuesWithMatchers(b *testing.B) {
 	head, _ := newTestHead(b, chunkRange, wlog.CompressionNone, false)
 	b.Cleanup(func() { require.NoError(b, head.Close()) })
 
+	ctx := context.Background()
+
 	app := head.Appender(context.Background())
 
 	metricCount := 1000000
@@ -2922,7 +2928,7 @@ func BenchmarkHeadLabelValuesWithMatchers(b *testing.B) {
 	b.ReportAllocs()
 
 	for benchIdx := 0; benchIdx < b.N; benchIdx++ {
-		actualValues, err := headIdxReader.LabelValues("b_tens", matchers...)
+		actualValues, err := headIdxReader.LabelValues(ctx, "b_tens", matchers...)
 		require.NoError(b, err)
 		require.Equal(b, 9, len(actualValues))
 	}

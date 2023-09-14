@@ -31,7 +31,7 @@ func (noopQuerier) Select(context.Context, bool, *SelectHints, ...*labels.Matche
 	return NoopSeriesSet()
 }
 
-func (noopQuerier) LabelValues(string, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (noopQuerier) LabelValues(context.Context, string, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }
 
@@ -54,7 +54,7 @@ func (noopChunkQuerier) Select(context.Context, bool, *SelectHints, ...*labels.M
 	return NoopChunkedSeriesSet()
 }
 
-func (noopChunkQuerier) LabelValues(string, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (noopChunkQuerier) LabelValues(context.Context, string, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }
 
