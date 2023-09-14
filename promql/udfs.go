@@ -19,6 +19,7 @@ import (
 	"github.com/d5/tengo/v2"
 	"github.com/d5/tengo/v2/stdlib"
 
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/util/annotations"
 )
@@ -212,6 +213,10 @@ func init() {
 	}
 	FunctionCalls["mad_over_time"] = funcMadOverTime
 	FunctionCalls["std_dev_over_time"] = funcStdDevOverTime
+}
+
+func AddUDFfromConfig(cfg *config.UDFConfig) error {
+	return addUDF("udf_"+cfg.Name, cfg.Src, cfg.Modules, cfg.UseUtil)
 }
 
 func addUDF(name, src string, modules []string, useUtil bool) error {

@@ -214,6 +214,9 @@ var (
 	DefaultExemplarsConfig = ExemplarsConfig{
 		MaxExemplars: 100000,
 	}
+
+	// DefaultUDFConfig is the default UDF configuration.
+	DefaultUDFConfig = UDFConfig{}
 )
 
 // Config is the top-level configuration for Prometheus's config files.
@@ -228,6 +231,8 @@ type Config struct {
 
 	RemoteWriteConfigs []*RemoteWriteConfig `yaml:"remote_write,omitempty"`
 	RemoteReadConfigs  []*RemoteReadConfig  `yaml:"remote_read,omitempty"`
+
+	UDFConfigs []*UDFConfig `yaml:"udfs,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -1075,6 +1080,30 @@ func (c *RemoteReadConfig) UnmarshalYAML(unmarshal func(interface{}) error) erro
 	// We cannot make it a pointer as the parser panics for inlined pointer structs.
 	// Thus we just do its validation here.
 	return c.HTTPClientConfig.Validate()
+}
+
+// UDFConfig is the configuration for user-defined functions (UDFs) in PromQL.
+type UDFConfig struct {
+	Name    string   `yaml:"name"`
+	Modules []string `yaml:"modules,omitempty"`
+	UseUtil bool     `yaml:"util,omitempty"`
+	Src     string   `yaml:"src"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *UDFConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultUDFConfig
+	type plain UDFConfig
+	if err := unmarshal((*plain)(c)); err != nil {
+		return err
+	}
+	if c.Name == "" {
+		return errors.New("name for UDF is empty")
+	}
+	if c.Src == "" {
+		return errors.New("source code for UDF is empty")
+	}
+	return nil
 }
 
 func filePath(filename string) string {

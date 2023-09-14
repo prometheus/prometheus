@@ -652,6 +652,12 @@ func main() {
 			EnablePerStepStats:   cfg.enablePerStepStats,
 		}
 
+		for _, udfCfg := range cfgFile.UDFConfigs {
+			if err := promql.AddUDFfromConfig(udfCfg); err != nil {
+				level.Error(logger).Log("msg", "Failed to register UDF", "err", err)
+				os.Exit(1)
+			}
+		}
 		queryEngine = promql.NewEngine(opts)
 
 		ruleManager = rules.NewManager(&rules.ManagerOptions{
