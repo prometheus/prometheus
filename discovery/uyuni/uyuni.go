@@ -146,7 +146,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if c.Password == "" {
 		return errors.New("Uyuni SD configuration requires a password")
 	}
-	return nil
+	return c.HTTPClientConfig.Validate()
 }
 
 func login(rpcclient *xmlrpc.Client, user, pass string, duration int) (string, error) {

@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"strings"
@@ -126,7 +127,7 @@ func NewBlockQuerier(b BlockReader, mint, maxt int64) (storage.Querier, error) {
 	return &blockQuerier{blockBaseQuerier: q}, nil
 }
 
-func (q *blockQuerier) Select(sortSeries bool, hints *storage.SelectHints, ms ...*labels.Matcher) storage.SeriesSet {
+func (q *blockQuerier) Select(_ context.Context, sortSeries bool, hints *storage.SelectHints, ms ...*labels.Matcher) storage.SeriesSet {
 	mint := q.mint
 	maxt := q.maxt
 	disableTrimming := false
@@ -166,7 +167,7 @@ func NewBlockChunkQuerier(b BlockReader, mint, maxt int64) (storage.ChunkQuerier
 	return &blockChunkQuerier{blockBaseQuerier: q}, nil
 }
 
-func (q *blockChunkQuerier) Select(sortSeries bool, hints *storage.SelectHints, ms ...*labels.Matcher) storage.ChunkSeriesSet {
+func (q *blockChunkQuerier) Select(_ context.Context, sortSeries bool, hints *storage.SelectHints, ms ...*labels.Matcher) storage.ChunkSeriesSet {
 	mint := q.mint
 	maxt := q.maxt
 	disableTrimming := false
@@ -266,7 +267,7 @@ func PostingsForMatchers(ix IndexReader, ms ...*labels.Matcher) (index.Postings,
 		// We prefer to get AllPostings so that the base of subtraction (i.e. allPostings)
 		// doesn't include series that may be added to the index reader during this function call.
 		k, v := index.AllPostingsKey()
-		allPostings, err := ix.Postings(k, v)
+		allPostings, err := ix.Postings(context.TODO(), k, v)
 		if err != nil {
 			return nil, err
 		}
@@ -286,7 +287,7 @@ func PostingsForMatchers(ix IndexReader, ms ...*labels.Matcher) (index.Postings,
 		switch {
 		case m.Name == "" && m.Value == "": // Special-case for AllPostings, used in tests at least.
 			k, v := index.AllPostingsKey()
-			allPostings, err := ix.Postings(k, v)
+			allPostings, err := ix.Postings(context.TODO(), k, v)
 			if err != nil {
 				return nil, err
 			}
@@ -363,14 +364,14 @@ func postingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Postings, erro
 
 	// Fast-path for equal matching.
 	if m.Type == labels.MatchEqual {
-		return ix.Postings(m.Name, m.Value)
+		return ix.Postings(context.TODO(), m.Name, m.Value)
 	}
 
 	// Fast-path for set matching.
 	if m.Type == labels.MatchRegexp {
 		setMatches := findSetMatches(m.GetRegexString())
 		if len(setMatches) > 0 {
-			return ix.Postings(m.Name, setMatches...)
+			return ix.Postings(context.TODO(), m.Name, setMatches...)
 		}
 	}
 
@@ -390,7 +391,7 @@ func postingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Postings, erro
 		return index.EmptyPostings(), nil
 	}
 
-	return ix.Postings(m.Name, res...)
+	return ix.Postings(context.TODO(), m.Name, res...)
 }
 
 // inversePostingsForMatcher returns the postings for the series with the label name set but not matching the matcher.
@@ -401,14 +402,14 @@ func inversePostingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Posting
 	if m.Type == labels.MatchNotRegexp {
 		setMatches := findSetMatches(m.GetRegexString())
 		if len(setMatches) > 0 {
-			return ix.Postings(m.Name, setMatches...)
+			return ix.Postings(context.TODO(), m.Name, setMatches...)
 		}
 	}
 
 	// Fast-path for MatchNotEqual matching.
 	// Inverse of a MatchNotEqual is MatchEqual (double negation).
 	if m.Type == labels.MatchNotEqual {
-		return ix.Postings(m.Name, m.Value)
+		return ix.Postings(context.TODO(), m.Name, m.Value)
 	}
 
 	vals, err := ix.LabelValues(m.Name)
@@ -428,7 +429,7 @@ func inversePostingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Posting
 		}
 	}
 
-	return ix.Postings(m.Name, res...)
+	return ix.Postings(context.TODO(), m.Name, res...)
 }
 
 func labelValuesWithMatchers(r IndexReader, name string, matchers ...*labels.Matcher) ([]string, error) {
@@ -463,7 +464,7 @@ func labelValuesWithMatchers(r IndexReader, name string, matchers ...*labels.Mat
 
 	valuesPostings := make([]index.Postings, len(allValues))
 	for i, value := range allValues {
-		valuesPostings[i], err = r.Postings(name, value)
+		valuesPostings[i], err = r.Postings(context.TODO(), name, value)
 		if err != nil {
 			return nil, errors.Wrapf(err, "fetching postings for %s=%q", name, value)
 		}

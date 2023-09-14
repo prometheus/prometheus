@@ -92,7 +92,7 @@ type ExemplarStorage interface {
 // Use it when you need to have access to all samples without chunk encoding abstraction e.g promQL.
 type Queryable interface {
 	// Querier returns a new Querier on the storage.
-	Querier(ctx context.Context, mint, maxt int64) (Querier, error)
+	Querier(mint, maxt int64) (Querier, error)
 }
 
 // A MockQueryable is used for testing purposes so that a mock Querier can be used.
@@ -100,7 +100,7 @@ type MockQueryable struct {
 	MockQuerier Querier
 }
 
-func (q *MockQueryable) Querier(context.Context, int64, int64) (Querier, error) {
+func (q *MockQueryable) Querier(int64, int64) (Querier, error) {
 	return q.MockQuerier, nil
 }
 
@@ -111,7 +111,7 @@ type Querier interface {
 	// Select returns a set of series that matches the given label matchers.
 	// Caller can specify if it requires returned series to be sorted. Prefer not requiring sorting for better performance.
 	// It allows passing hints that can help in optimising select, but it's up to implementation how this is used if used at all.
-	Select(sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) SeriesSet
+	Select(ctx context.Context, sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) SeriesSet
 }
 
 // MockQuerier is used for test purposes to mock the selected series that is returned.
@@ -131,7 +131,7 @@ func (q *MockQuerier) Close() error {
 	return nil
 }
 
-func (q *MockQuerier) Select(sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) SeriesSet {
+func (q *MockQuerier) Select(_ context.Context, sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) SeriesSet {
 	return q.SelectMockFunction(sortSeries, hints, matchers...)
 }
 
@@ -139,7 +139,7 @@ func (q *MockQuerier) Select(sortSeries bool, hints *SelectHints, matchers ...*l
 // Use it when you need to have access to samples in encoded format.
 type ChunkQueryable interface {
 	// ChunkQuerier returns a new ChunkQuerier on the storage.
-	ChunkQuerier(ctx context.Context, mint, maxt int64) (ChunkQuerier, error)
+	ChunkQuerier(mint, maxt int64) (ChunkQuerier, error)
 }
 
 // ChunkQuerier provides querying access over time series data of a fixed time range.
@@ -149,7 +149,7 @@ type ChunkQuerier interface {
 	// Select returns a set of series that matches the given label matchers.
 	// Caller can specify if it requires returned series to be sorted. Prefer not requiring sorting for better performance.
 	// It allows passing hints that can help in optimising select, but it's up to implementation how this is used if used at all.
-	Select(sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) ChunkSeriesSet
+	Select(ctx context.Context, sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) ChunkSeriesSet
 }
 
 // LabelQuerier provides querying access over labels.
@@ -203,11 +203,11 @@ type SelectHints struct {
 // TODO(bwplotka): Move to promql/engine_test.go?
 // QueryableFunc is an adapter to allow the use of ordinary functions as
 // Queryables. It follows the idea of http.HandlerFunc.
-type QueryableFunc func(ctx context.Context, mint, maxt int64) (Querier, error)
+type QueryableFunc func(mint, maxt int64) (Querier, error)
 
 // Querier calls f() with the given parameters.
-func (f QueryableFunc) Querier(ctx context.Context, mint, maxt int64) (Querier, error) {
-	return f(ctx, mint, maxt)
+func (f QueryableFunc) Querier(mint, maxt int64) (Querier, error) {
+	return f(mint, maxt)
 }
 
 // Appender provides batched appends against a storage.

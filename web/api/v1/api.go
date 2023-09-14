@@ -171,7 +171,7 @@ type apiFunc func(r *http.Request) apiFuncResult
 // TSDBAdminStats defines the tsdb interfaces used by the v1 API for admin operations as well as statistics.
 type TSDBAdminStats interface {
 	CleanTombstones() error
-	Delete(mint, maxt int64, ms ...*labels.Matcher) error
+	Delete(ctx context.Context, mint, maxt int64, ms ...*labels.Matcher) error
 	Snapshot(dir string, withHead bool) error
 	Stats(statsByLabelName string, limit int) (*tsdb.Stats, error)
 	WALReplayStatus() (tsdb.WALReplayStatus, error)
@@ -660,7 +660,7 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
 
-	q, err := api.Queryable.Querier(r.Context(), timestamp.FromTime(start), timestamp.FromTime(end))
+	q, err := api.Queryable.Querier(timestamp.FromTime(start), timestamp.FromTime(end))
 	if err != nil {
 		return apiFuncResult{nil, returnAPIError(err), nil, nil}
 	}
@@ -726,7 +726,7 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
 
-	q, err := api.Queryable.Querier(r.Context(), timestamp.FromTime(start), timestamp.FromTime(end))
+	q, err := api.Queryable.Querier(timestamp.FromTime(start), timestamp.FromTime(end))
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
 	}
@@ -794,6 +794,8 @@ var (
 )
 
 func (api *API) series(r *http.Request) (result apiFuncResult) {
+	ctx := r.Context()
+
 	if err := r.ParseForm(); err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, errors.Wrapf(err, "error parsing form values")}, nil, nil}
 	}
@@ -815,7 +817,7 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 		return invalidParamError(err, "match[]")
 	}
 
-	q, err := api.Queryable.Querier(r.Context(), timestamp.FromTime(start), timestamp.FromTime(end))
+	q, err := api.Queryable.Querier(timestamp.FromTime(start), timestamp.FromTime(end))
 	if err != nil {
 		return apiFuncResult{nil, returnAPIError(err), nil, nil}
 	}
@@ -842,13 +844,13 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 		var sets []storage.SeriesSet
 		for _, mset := range matcherSets {
 			// We need to sort this select results to merge (deduplicate) the series sets later.
-			s := q.Select(true, hints, mset...)
+			s := q.Select(ctx, true, hints, mset...)
 			sets = append(sets, s)
 		}
 		set = storage.NewMergeSeriesSet(sets, storage.ChainedSeriesMerge)
 	} else {
 		// At this point at least one match exists.
-		set = q.Select(false, hints, matcherSets[0]...)
+		set = q.Select(ctx, false, hints, matcherSets[0]...)
 	}
 
 	metrics := []labels.Labels{}
@@ -1631,7 +1633,7 @@ func (api *API) deleteSeries(r *http.Request) apiFuncResult {
 		if err != nil {
 			return invalidParamError(err, "match[]")
 		}
-		if err := api.db.Delete(timestamp.FromTime(start), timestamp.FromTime(end), matchers...); err != nil {
+		if err := api.db.Delete(r.Context(), timestamp.FromTime(start), timestamp.FromTime(end), matchers...); err != nil {
 			return apiFuncResult{nil, &apiError{errorInternal, err}, nil, nil}
 		}
 	}

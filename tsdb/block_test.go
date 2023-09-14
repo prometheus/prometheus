@@ -198,7 +198,7 @@ func TestCorruptedChunk(t *testing.T) {
 			querier, err := NewBlockQuerier(b, 0, 1)
 			require.NoError(t, err)
 			defer func() { require.NoError(t, querier.Close()) }()
-			set := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+			set := querier.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 
 			// Check chunk errors during iter time.
 			require.True(t, set.Next())
@@ -304,7 +304,7 @@ func TestBlockSize(t *testing.T) {
 
 	// Delete some series and check the sizes again.
 	{
-		require.NoError(t, blockInit.Delete(1, 10, labels.MustNewMatcher(labels.MatchRegexp, "", ".*")))
+		require.NoError(t, blockInit.Delete(context.Background(), 1, 10, labels.MustNewMatcher(labels.MatchRegexp, "", ".*")))
 		expAfterDelete := blockInit.Size()
 		require.Greater(t, expAfterDelete, expSizeInit, "after a delete the block size should be bigger as the tombstone file should grow %v > %v", expAfterDelete, expSizeInit)
 		actAfterDelete, err := fileutil.DirSize(blockDirInit)

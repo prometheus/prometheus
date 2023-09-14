@@ -589,9 +589,6 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 			if s.T <= ms.mmMaxTime {
 				continue
 			}
-			if s.T <= ms.mmMaxTime {
-				continue
-			}
 			if _, chunkCreated := ms.append(s.T, s.V, 0, appendChunkOpts); chunkCreated {
 				h.metrics.chunksCreated.Inc()
 				h.metrics.chunks.Inc()
@@ -752,7 +749,9 @@ func (h *Head) loadWBL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.
 					m = len(samples)
 				}
 				for i := 0; i < concurrency; i++ {
-					shards[i] = processors[i].reuseBuf()
+					if shards[i] == nil {
+						shards[i] = processors[i].reuseBuf()
+					}
 				}
 				for _, sam := range samples[:m] {
 					if r, ok := multiRef[sam.Ref]; ok {
@@ -762,7 +761,10 @@ func (h *Head) loadWBL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.
 					shards[mod] = append(shards[mod], sam)
 				}
 				for i := 0; i < concurrency; i++ {
-					processors[i].input <- shards[i]
+					if len(shards[i]) > 0 {
+						processors[i].input <- wblSubsetProcessorInputItem{samples: shards[i]}
+						shards[i] = nil
+					}
 				}
 				samples = samples[m:]
 			}
@@ -788,23 +790,7 @@ func (h *Head) loadWBL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.
 					continue
 				}
 				idx := uint64(ms.ref) % uint64(concurrency)
-				// It is possible that some old sample is being processed in processWALSamples that
-				// could cause race below. So we wait for the goroutine to empty input the buffer and finish
-				// processing all old samples after emptying the buffer.
-				processors[idx].waitUntilIdle()
-				// Lock the subset so we can modify the series object
-				processors[idx].mx.Lock()
-
-				// All samples till now have been m-mapped. Hence clear out the headChunk.
-				// In case some samples slipped through and went into m-map chunks because of changed
-				// chunk size parameters, we are not taking care of that here.
-				// TODO(codesome): see if there is a way to avoid duplicate m-map chunks if
-				// the size of ooo chunk was reduced between restart.
-				if ms.ooo != nil {
-					ms.ooo.oooHeadChunk = nil
-				}
-
-				processors[idx].mx.Unlock()
+				processors[idx].input <- wblSubsetProcessorInputItem{mmappedSeries: ms}
 			}
 		default:
 			panic(fmt.Errorf("unexpected decodedCh type: %T", d))
@@ -856,14 +842,18 @@ func isErrLoadOOOWal(err error) bool {
 }
 
 type wblSubsetProcessor struct {
-	mx     sync.Mutex // Take this lock while modifying series in the subset.
-	input  chan []record.RefSample
+	input  chan wblSubsetProcessorInputItem
 	output chan []record.RefSample
+}
+
+type wblSubsetProcessorInputItem struct {
+	mmappedSeries *memSeries
+	samples       []record.RefSample
 }
 
 func (wp *wblSubsetProcessor) setup() {
 	wp.output = make(chan []record.RefSample, 300)
-	wp.input = make(chan []record.RefSample, 300)
+	wp.input = make(chan wblSubsetProcessorInputItem, 300)
 }
 
 func (wp *wblSubsetProcessor) closeAndDrain() {
@@ -884,16 +874,23 @@ func (wp *wblSubsetProcessor) reuseBuf() []record.RefSample {
 
 // processWBLSamples adds the samples it receives to the head and passes
 // the buffer received to an output channel for reuse.
-// Samples before the minValidTime timestamp are discarded.
 func (wp *wblSubsetProcessor) processWBLSamples(h *Head) (unknownRefs uint64) {
 	defer close(wp.output)
 
 	oooCapMax := h.opts.OutOfOrderCapMax.Load()
 	// We don't check for minValidTime for ooo samples.
 	mint, maxt := int64(math.MaxInt64), int64(math.MinInt64)
-	for samples := range wp.input {
-		wp.mx.Lock()
-		for _, s := range samples {
+	for in := range wp.input {
+		if in.mmappedSeries != nil && in.mmappedSeries.ooo != nil {
+			// All samples till now have been m-mapped. Hence clear out the headChunk.
+			// In case some samples slipped through and went into m-map chunks because of changed
+			// chunk size parameters, we are not taking care of that here.
+			// TODO(codesome): see if there is a way to avoid duplicate m-map chunks if
+			// the size of ooo chunk was reduced between restart.
+			in.mmappedSeries.ooo.oooHeadChunk = nil
+			continue
+		}
+		for _, s := range in.samples {
 			ms := h.series.getByID(s.Ref)
 			if ms == nil {
 				unknownRefs++
@@ -913,28 +910,15 @@ func (wp *wblSubsetProcessor) processWBLSamples(h *Head) (unknownRefs uint64) {
 				}
 			}
 		}
-		wp.mx.Unlock()
-
+		select {
+		case wp.output <- in.samples:
+		default:
+		}
 	}
 
 	h.updateMinOOOMaxOOOTime(mint, maxt)
 
 	return unknownRefs
-}
-
-func (wp *wblSubsetProcessor) waitUntilIdle() {
-	select {
-	case <-wp.output: // Allow output side to drain to avoid deadlock.
-	default:
-	}
-	wp.input <- []record.RefSample{}
-	for len(wp.input) != 0 {
-		time.Sleep(10 * time.Microsecond)
-		select {
-		case <-wp.output: // Allow output side to drain to avoid deadlock.
-		default:
-		}
-	}
 }
 
 const (

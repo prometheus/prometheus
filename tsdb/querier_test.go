@@ -183,7 +183,7 @@ func testBlockQuerier(t *testing.T, c blockQuerierTestCase, ir IndexReader, cr C
 			},
 		}
 
-		res := q.Select(false, c.hints, c.ms...)
+		res := q.Select(context.Background(), false, c.hints, c.ms...)
 		defer func() { require.NoError(t, q.Close()) }()
 
 		for {
@@ -218,7 +218,7 @@ func testBlockQuerier(t *testing.T, c blockQuerierTestCase, ir IndexReader, cr C
 				maxt: c.maxt,
 			},
 		}
-		res := q.Select(false, c.hints, c.ms...)
+		res := q.Select(context.Background(), false, c.hints, c.ms...)
 		defer func() { require.NoError(t, q.Close()) }()
 
 		for {
@@ -505,6 +505,7 @@ func TestBlockQuerier_AgainstHeadWithOpenChunks(t *testing.T) {
 }
 
 func TestBlockQuerier_TrimmingDoesNotModifyOriginalTombstoneIntervals(t *testing.T) {
+	ctx := context.Background()
 	c := blockQuerierTestCase{
 		mint: 2,
 		maxt: 6,
@@ -528,7 +529,7 @@ func TestBlockQuerier_TrimmingDoesNotModifyOriginalTombstoneIntervals(t *testing
 	}
 	ir, cr, _, _ := createIdxChkReaders(t, testData)
 	stones := tombstones.NewMemTombstones()
-	p, err := ir.Postings("a", "a")
+	p, err := ir.Postings(ctx, "a", "a")
 	require.NoError(t, err)
 	refs, err := index.ExpandPostings(p)
 	require.NoError(t, err)
@@ -1501,13 +1502,13 @@ func (m mockIndex) LabelNamesFor(ids ...storage.SeriesRef) ([]string, error) {
 	return names, nil
 }
 
-func (m mockIndex) Postings(name string, values ...string) (index.Postings, error) {
+func (m mockIndex) Postings(ctx context.Context, name string, values ...string) (index.Postings, error) {
 	res := make([]index.Postings, 0, len(values))
 	for _, value := range values {
 		l := labels.Label{Name: name, Value: value}
 		res = append(res, index.NewListPostings(m.postings[l]))
 	}
-	return index.Merge(res...), nil
+	return index.Merge(ctx, res...), nil
 }
 
 func (m mockIndex) SortedPostings(p index.Postings) index.Postings {
@@ -1690,7 +1691,7 @@ func BenchmarkQuerySeek(b *testing.B) {
 				b.ReportAllocs()
 
 				var it chunkenc.Iterator
-				ss := sq.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
+				ss := sq.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
 				for ss.Next() {
 					it = ss.At().Iterator(it)
 					for t := mint; t <= maxt; t++ {
@@ -1823,7 +1824,7 @@ func BenchmarkSetMatcher(b *testing.B) {
 			b.ResetTimer()
 			b.ReportAllocs()
 			for n := 0; n < b.N; n++ {
-				ss := sq.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "test", c.pattern))
+				ss := sq.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchRegexp, "test", c.pattern))
 				for ss.Next() {
 				}
 				require.NoError(b, ss.Err())
@@ -2235,7 +2236,7 @@ func TestQuerierIndexQueriesRace(t *testing.T) {
 			t.Cleanup(cancel)
 
 			for i := 0; i < testRepeats; i++ {
-				q, err := db.Querier(ctx, math.MinInt64, math.MaxInt64)
+				q, err := db.Querier(math.MinInt64, math.MaxInt64)
 				require.NoError(t, err)
 
 				values, _, err := q.LabelValues("seq", c.matchers...)
@@ -2276,7 +2277,7 @@ func TestClose(t *testing.T) {
 		require.NoError(t, db.Close())
 	}()
 
-	q, err := db.Querier(context.TODO(), 0, 20)
+	q, err := db.Querier(0, 20)
 	require.NoError(t, err)
 	require.NoError(t, q.Close())
 	require.Error(t, q.Close())
@@ -2409,7 +2410,7 @@ func benchQuery(b *testing.B, expExpansions int, q storage.Querier, selectors la
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		ss := q.Select(false, nil, selectors...)
+		ss := q.Select(context.Background(), false, nil, selectors...)
 		var actualExpansions int
 		var it chunkenc.Iterator
 		for ss.Next() {
@@ -2453,7 +2454,7 @@ func (m mockMatcherIndex) LabelNamesFor(ids ...storage.SeriesRef) ([]string, err
 	return nil, errors.New("label names for for called")
 }
 
-func (m mockMatcherIndex) Postings(name string, values ...string) (index.Postings, error) {
+func (m mockMatcherIndex) Postings(context.Context, string, ...string) (index.Postings, error) {
 	return index.EmptyPostings(), nil
 }
 
@@ -2629,7 +2630,7 @@ func BenchmarkHeadChunkQuerier(b *testing.B) {
 	}
 	require.NoError(b, app.Commit())
 
-	querier, err := db.ChunkQuerier(context.Background(), math.MinInt64, math.MaxInt64)
+	querier, err := db.ChunkQuerier(math.MinInt64, math.MaxInt64)
 	require.NoError(b, err)
 	defer func(q storage.ChunkQuerier) {
 		require.NoError(b, q.Close())
@@ -2637,7 +2638,7 @@ func BenchmarkHeadChunkQuerier(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		ss := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
+		ss := querier.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
 		total := 0
 		for ss.Next() {
 			cs := ss.At()
@@ -2674,7 +2675,7 @@ func BenchmarkHeadQuerier(b *testing.B) {
 	}
 	require.NoError(b, app.Commit())
 
-	querier, err := db.Querier(context.Background(), math.MinInt64, math.MaxInt64)
+	querier, err := db.Querier(math.MinInt64, math.MaxInt64)
 	require.NoError(b, err)
 	defer func(q storage.Querier) {
 		require.NoError(b, q.Close())
@@ -2682,7 +2683,7 @@ func BenchmarkHeadQuerier(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		ss := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
+		ss := querier.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
 		total := int64(0)
 		for ss.Next() {
 			cs := ss.At()
@@ -2700,6 +2701,7 @@ func BenchmarkHeadQuerier(b *testing.B) {
 // This is a regression test for the case where gauge histograms were not handled by
 // populateWithDelChunkSeriesIterator correctly.
 func TestQueryWithDeletedHistograms(t *testing.T) {
+	ctx := context.Background()
 	testcases := map[string]func(int) (*histogram.Histogram, *histogram.FloatHistogram){
 		"intCounter": func(i int) (*histogram.Histogram, *histogram.FloatHistogram) {
 			return tsdbutil.GenerateTestHistogram(i), nil
@@ -2744,13 +2746,13 @@ func TestQueryWithDeletedHistograms(t *testing.T) {
 			require.NoError(t, err)
 
 			// Delete the last 20.
-			err = db.Delete(80, 100, matcher)
+			err = db.Delete(ctx, 80, 100, matcher)
 			require.NoError(t, err)
 
-			chunkQuerier, err := db.ChunkQuerier(context.Background(), 0, 100)
+			chunkQuerier, err := db.ChunkQuerier(0, 100)
 			require.NoError(t, err)
 
-			css := chunkQuerier.Select(false, nil, matcher)
+			css := chunkQuerier.Select(context.Background(), false, nil, matcher)
 
 			seriesCount := 0
 			for css.Next() {
