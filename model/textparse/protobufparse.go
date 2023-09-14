@@ -56,6 +56,10 @@ type ProtobufParser struct {
 	fieldsDone  bool // true if no more fields of a Summary or (legacy) Histogram to be processed.
 	redoClassic bool // true after parsing a native histogram if we need to parse it again as a classic histogram.
 
+	// exemplarReturned is set to true each time an exemplar has been
+	// returned, and set back to false upon each Next() call.
+	exemplarReturned bool
+
 	// state is marked by the entry we are processing. EntryInvalid implies
 	// that we have to decode the next MetricFamily.
 	state Entry
@@ -293,8 +297,12 @@ func (p *ProtobufParser) Metric(l *labels.Labels) string {
 // Exemplar writes the exemplar of the current sample into the passed
 // exemplar. It returns if an exemplar exists or not. In case of a native
 // histogram, the legacy bucket section is still used for exemplars. To ingest
-// all examplars, call the Exemplar method repeatedly until it returns false.
+// all exemplars, call the Exemplar method repeatedly until it returns false.
 func (p *ProtobufParser) Exemplar(ex *exemplar.Exemplar) bool {
+	if p.exemplarReturned && p.state == EntrySeries {
+		// We only ever return one exemplar per (non-native-histogram) series.
+		return false
+	}
 	m := p.mf.GetMetric()[p.metricPos]
 	var exProto *dto.Exemplar
 	switch p.mf.GetType() {
@@ -335,6 +343,7 @@ func (p *ProtobufParser) Exemplar(ex *exemplar.Exemplar) bool {
 	}
 	p.builder.Sort()
 	ex.Labels = p.builder.Labels()
+	p.exemplarReturned = true
 	return true
 }
 
@@ -342,6 +351,7 @@ func (p *ProtobufParser) Exemplar(ex *exemplar.Exemplar) bool {
 // text format parser). It returns (EntryInvalid, io.EOF) if no samples were
 // read.
 func (p *ProtobufParser) Next() (Entry, error) {
+	p.exemplarReturned = false
 	switch p.state {
 	case EntryInvalid:
 		p.metricPos = 0

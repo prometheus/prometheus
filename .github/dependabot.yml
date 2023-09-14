@@ -4,6 +4,13 @@ updates:
     directory: "/"
     schedule:
       interval: "monthly"
+    groups:
+      k8s.io:
+          patterns:
+            - "k8s.io/*"
+      go.opentelemetry.io:
+          patterns:
+            - "go.opentelemetry.io/*"
     # Disable version updates; we will get them when we update from upstream Prometheus.
     open-pull-requests-limit: 0
   - package-ecosystem: "gomod"

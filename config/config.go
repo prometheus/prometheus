@@ -409,6 +409,9 @@ type GlobalConfig struct {
 	// More than this label value length post metric-relabeling will cause the
 	// scrape to fail. 0 means no limit.
 	LabelValueLengthLimit uint `yaml:"label_value_length_limit,omitempty"`
+	// Keep no more than this many dropped targets per job.
+	// 0 means no limit.
+	KeepDroppedTargets uint `yaml:"keep_dropped_targets,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -514,6 +517,9 @@ type ScrapeConfig struct {
 	// More than this many buckets in a native histogram will cause the scrape to
 	// fail.
 	NativeHistogramBucketLimit uint `yaml:"native_histogram_bucket_limit,omitempty"`
+	// Keep no more than this many dropped targets per job.
+	// 0 means no limit.
+	KeepDroppedTargets uint `yaml:"keep_dropped_targets,omitempty"`
 
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
@@ -607,6 +613,9 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 	}
 	if c.LabelValueLengthLimit == 0 {
 		c.LabelValueLengthLimit = globalConfig.LabelValueLengthLimit
+	}
+	if c.KeepDroppedTargets == 0 {
+		c.KeepDroppedTargets = globalConfig.KeepDroppedTargets
 	}
 
 	return nil
@@ -810,6 +819,7 @@ type AlertmanagerConfig struct {
 
 	ServiceDiscoveryConfigs discovery.Configs       `yaml:"-"`
 	HTTPClientConfig        config.HTTPClientConfig `yaml:",inline"`
+	SigV4Config             *sigv4.SigV4Config      `yaml:"sigv4,omitempty"`
 
 	// The URL scheme to use when talking to Alertmanagers.
 	Scheme string `yaml:"scheme,omitempty"`
@@ -843,6 +853,13 @@ func (c *AlertmanagerConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 	// Thus we just do its validation here.
 	if err := c.HTTPClientConfig.Validate(); err != nil {
 		return err
+	}
+
+	httpClientConfigAuthEnabled := c.HTTPClientConfig.BasicAuth != nil ||
+		c.HTTPClientConfig.Authorization != nil || c.HTTPClientConfig.OAuth2 != nil
+
+	if httpClientConfigAuthEnabled && c.SigV4Config != nil {
+		return fmt.Errorf("at most one of basic_auth, authorization, oauth2, & sigv4 must be configured")
 	}
 
 	// Check for users putting URLs in target groups.

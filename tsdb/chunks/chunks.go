@@ -85,13 +85,21 @@ func (p HeadChunkRef) Unpack() (HeadSeriesRef, HeadChunkID) {
 //   - less than the above, but >= memSeries.firstID, then it's
 //     memSeries.mmappedChunks[i] where i = HeadChunkID - memSeries.firstID.
 //
+// If memSeries.headChunks is non-nil it points to a *memChunk that holds the current
+// "open" (accepting appends) instance. *memChunk is a linked list and memChunk.next pointer
+// might link to the older *memChunk instance.
+// If there are multiple *memChunk instances linked to each other from memSeries.headChunks
+// they will be m-mapped as soon as possible leaving only "open" *memChunk instance.
+//
 // Example:
 // assume a memSeries.firstChunkID=7 and memSeries.mmappedChunks=[p5,p6,p7,p8,p9].
 // | HeadChunkID value | refers to ...                                                                          |
 // |-------------------|----------------------------------------------------------------------------------------|
 // |               0-6 | chunks that have been compacted to blocks, these won't return data for queries in Head |
 // |              7-11 | memSeries.mmappedChunks[i] where i is 0 to 4.                                          |
-// |                12 | memSeries.headChunk                                                                    |
+// |                12 |                                                         *memChunk{next: nil}
+// |                13 |                                         *memChunk{next: ^}
+// |                14 | memSeries.headChunks -> *memChunk{next: ^}
 type HeadChunkID uint64
 
 // BlockChunkRef refers to a chunk within a persisted block.
@@ -130,6 +138,73 @@ type Meta struct {
 	// query even if new data is added in between the calls.
 	OOOLastRef                     ChunkRef
 	OOOLastMinTime, OOOLastMaxTime int64
+}
+
+// ChunkFromSamples requires all samples to have the same type.
+func ChunkFromSamples(s []Sample) (Meta, error) {
+	return ChunkFromSamplesGeneric(SampleSlice(s))
+}
+
+// ChunkFromSamplesGeneric requires all samples to have the same type.
+func ChunkFromSamplesGeneric(s Samples) (Meta, error) {
+	emptyChunk := Meta{Chunk: chunkenc.NewXORChunk()}
+	mint, maxt := int64(0), int64(0)
+
+	if s.Len() > 0 {
+		mint, maxt = s.Get(0).T(), s.Get(s.Len()-1).T()
+	}
+
+	if s.Len() == 0 {
+		return emptyChunk, nil
+	}
+
+	sampleType := s.Get(0).Type()
+	c, err := chunkenc.NewEmptyChunk(sampleType.ChunkEncoding())
+	if err != nil {
+		return Meta{}, err
+	}
+
+	ca, _ := c.Appender()
+	var newChunk chunkenc.Chunk
+
+	for i := 0; i < s.Len(); i++ {
+		switch sampleType {
+		case chunkenc.ValFloat:
+			ca.Append(s.Get(i).T(), s.Get(i).F())
+		case chunkenc.ValHistogram:
+			newChunk, _, ca, err = ca.AppendHistogram(nil, s.Get(i).T(), s.Get(i).H(), false)
+			if err != nil {
+				return emptyChunk, err
+			}
+			if newChunk != nil {
+				return emptyChunk, fmt.Errorf("did not expect to start a second chunk")
+			}
+		case chunkenc.ValFloatHistogram:
+			newChunk, _, ca, err = ca.AppendFloatHistogram(nil, s.Get(i).T(), s.Get(i).FH(), false)
+			if err != nil {
+				return emptyChunk, err
+			}
+			if newChunk != nil {
+				return emptyChunk, fmt.Errorf("did not expect to start a second chunk")
+			}
+		default:
+			panic(fmt.Sprintf("unknown sample type %s", sampleType.String()))
+		}
+	}
+	return Meta{
+		MinTime: mint,
+		MaxTime: maxt,
+		Chunk:   c,
+	}, nil
+}
+
+// PopulatedChunk creates a chunk populated with samples every second starting at minTime
+func PopulatedChunk(numSamples int, minTime int64) (Meta, error) {
+	samples := make([]Sample, numSamples)
+	for i := 0; i < numSamples; i++ {
+		samples[i] = sample{t: minTime + int64(i*1000), f: 1.0}
+	}
+	return ChunkFromSamples(samples)
 }
 
 // Iterator iterates over the chunks of a single time series.

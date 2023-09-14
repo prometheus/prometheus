@@ -135,6 +135,8 @@ FunctionIdentifier {
   HistogramCount |
   HistogramFraction |
   HistogramQuantile |
+  HistogramStdDev |
+  HistogramStdVar |
   HistogramSum |
   HoltWinters |
   Hour |
@@ -362,6 +364,8 @@ NumberLiteral  {
   HistogramCount { condFn<"histogram_count"> }
   HistogramFraction { condFn<"histogram_fraction"> }
   HistogramQuantile { condFn<"histogram_quantile"> }
+  HistogramStdDev { condFn<"histogram_stddev"> }
+  HistogramStdVar { condFn<"histogram_stdvar"> }
   HistogramSum { condFn<"histogram_sum"> }
   HoltWinters { condFn<"holt_winters"> }
   Hour { condFn<"hour"> }

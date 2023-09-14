@@ -66,6 +66,8 @@ func setupRangeQueryTestData(stor *teststorage.TestStorage, _ *Engine, interval,
 			return err
 		}
 	}
+	stor.DB.ForceHeadMMap() // Ensure we have at most one head chunk for every series.
+	stor.DB.Compact()
 	return nil
 }
 
@@ -186,7 +188,7 @@ func rangeQueryCases() []benchCase {
 			expr:  "count({__name__!=\"\",l=\"\"})",
 			steps: 1,
 		},
-		// timestamp() function
+		// Functions which have special handling inside eval()
 		{
 			expr: "timestamp(a_X)",
 		},
@@ -222,6 +224,7 @@ func rangeQueryCases() []benchCase {
 
 func BenchmarkRangeQuery(b *testing.B) {
 	stor := teststorage.New(b)
+	stor.DB.DisableCompactions() // Don't want auto-compaction disrupting timings.
 	defer stor.Close()
 	opts := EngineOpts{
 		Logger:     nil,

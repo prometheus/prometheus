@@ -49,16 +49,12 @@ func TestMain(m *testing.M) {
 }
 
 func TestAlertingRule(t *testing.T) {
-	suite, err := promql.NewTest(t, `
+	storage := promql.LoadedStorage(t, `
 		load 5m
 			http_requests{job="app-server", instance="0", group="canary", severity="overwrite-me"}	75 85  95 105 105  95  85
 			http_requests{job="app-server", instance="1", group="canary", severity="overwrite-me"}	80 90 100 110 120 130 140
 	`)
-	require.NoError(t, err)
-	defer suite.Close()
-
-	err = suite.Run()
-	require.NoError(t, err)
+	t.Cleanup(func() { storage.Close() })
 
 	expr, err := parser.ParseExpr(`http_requests{group="canary", job="app-server"} < 100`)
 	require.NoError(t, err)
@@ -163,7 +159,7 @@ func TestAlertingRule(t *testing.T) {
 
 		evalTime := baseTime.Add(test.time)
 
-		res, err := rule.Eval(suite.Context(), 0, evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil, 0)
+		res, err := rule.Eval(context.TODO(), 0, evalTime, EngineQueryFunc(testEngine, storage), nil, 0)
 		require.NoError(t, err)
 
 		var filteredRes promql.Vector // After removing 'ALERTS_FOR_STATE' samples.
@@ -195,16 +191,12 @@ func TestAlertingRule(t *testing.T) {
 func TestForStateAddSamples(t *testing.T) {
 	for _, evalDelay := range []time.Duration{0, time.Minute} {
 		t.Run(fmt.Sprintf("evalDelay %s", evalDelay.String()), func(t *testing.T) {
-			suite, err := promql.NewTest(t, `
+			storage := promql.LoadedStorage(t, `
 		load 5m
 			http_requests{job="app-server", instance="0", group="canary", severity="overwrite-me"}	75 85  95 105 105  95  85
 			http_requests{job="app-server", instance="1", group="canary", severity="overwrite-me"}	80 90 100 110 120 130 140
 	`)
-			require.NoError(t, err)
-			defer suite.Close()
-
-			err = suite.Run()
-			require.NoError(t, err)
+			t.Cleanup(func() { storage.Close() })
 
 			expr, err := parser.ParseExpr(`http_requests{group="canary", job="app-server"} < 100`)
 			require.NoError(t, err)
@@ -315,7 +307,7 @@ func TestForStateAddSamples(t *testing.T) {
 					forState = float64(value.StaleNaN)
 				}
 
-				res, err := rule.Eval(suite.Context(), evalDelay, evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil, 0)
+				res, err := rule.Eval(context.TODO(), evalDelay, evalTime, EngineQueryFunc(testEngine, storage), nil, 0)
 				require.NoError(t, err)
 
 				var filteredRes promql.Vector // After removing 'ALERTS' samples.
@@ -359,24 +351,20 @@ func sortAlerts(items []*Alert) {
 }
 
 func TestForStateRestore(t *testing.T) {
-	suite, err := promql.NewTest(t, `
+	storage := promql.LoadedStorage(t, `
 		load 5m
 		http_requests{job="app-server", instance="0", group="canary", severity="overwrite-me"}	75  85 50 0 0 25 0 0 40 0 120
 		http_requests{job="app-server", instance="1", group="canary", severity="overwrite-me"}	125 90 60 0 0 25 0 0 40 0 130
 	`)
-	require.NoError(t, err)
-	defer suite.Close()
-
-	err = suite.Run()
-	require.NoError(t, err)
+	t.Cleanup(func() { storage.Close() })
 
 	expr, err := parser.ParseExpr(`http_requests{group="canary", job="app-server"} < 100`)
 	require.NoError(t, err)
 
 	opts := &ManagerOptions{
-		QueryFunc:       EngineQueryFunc(suite.QueryEngine(), suite.Storage()),
-		Appendable:      suite.Storage(),
-		Queryable:       suite.Storage(),
+		QueryFunc:       EngineQueryFunc(testEngine, storage),
+		Appendable:      storage,
+		Queryable:       storage,
 		Context:         context.Background(),
 		Logger:          log.NewNopLogger(),
 		NotifyFunc:      func(ctx context.Context, expr string, alerts ...*Alert) {},
@@ -410,7 +398,7 @@ func TestForStateRestore(t *testing.T) {
 	baseTime := time.Unix(0, 0)
 	for _, duration := range initialRuns {
 		evalTime := baseTime.Add(duration)
-		group.Eval(suite.Context(), evalTime)
+		group.Eval(context.TODO(), evalTime)
 	}
 
 	exp := rule.ActiveAlerts()
@@ -475,7 +463,7 @@ func TestForStateRestore(t *testing.T) {
 
 		restoreTime := baseTime.Add(tst.restoreDuration).Add(evalDelay)
 		// First eval before restoration.
-		newGroup.Eval(suite.Context(), restoreTime)
+		newGroup.Eval(context.TODO(), restoreTime)
 		// Restore happens here.
 		newGroup.RestoreForState(restoreTime)
 
@@ -524,7 +512,7 @@ func TestForStateRestore(t *testing.T) {
 	// Testing the grace period.
 	for _, duration := range []time.Duration{10 * time.Minute, 15 * time.Minute, 20 * time.Minute} {
 		evalTime := baseTime.Add(duration)
-		group.Eval(suite.Context(), evalTime)
+		group.Eval(context.TODO(), evalTime)
 	}
 
 	for _, evalDelay := range []time.Duration{0, time.Minute} {
@@ -1706,16 +1694,11 @@ groups:
 }
 
 func TestRuleGroupEvalIterationFunc(t *testing.T) {
-	suite, err := promql.NewTest(t, `
+	storage := promql.LoadedStorage(t, `
 		load 5m
 		http_requests{instance="0"}	75  85 50 0 0 25 0 0 40 0 120
 	`)
-
-	require.NoError(t, err)
-	defer suite.Close()
-
-	err = suite.Run()
-	require.NoError(t, err)
+	t.Cleanup(func() { storage.Close() })
 
 	expr, err := parser.ParseExpr(`http_requests{group="canary", job="app-server"} < 100`)
 	require.NoError(t, err)
@@ -1761,9 +1744,9 @@ func TestRuleGroupEvalIterationFunc(t *testing.T) {
 
 	testFunc := func(tst testInput) {
 		opts := &ManagerOptions{
-			QueryFunc:       EngineQueryFunc(suite.QueryEngine(), suite.Storage()),
-			Appendable:      suite.Storage(),
-			Queryable:       suite.Storage(),
+			QueryFunc:       EngineQueryFunc(testEngine, storage),
+			Appendable:      storage,
+			Queryable:       storage,
 			Context:         context.Background(),
 			Logger:          log.NewNopLogger(),
 			NotifyFunc:      func(ctx context.Context, expr string, alerts ...*Alert) {},
@@ -1828,15 +1811,11 @@ func TestRuleGroupEvalIterationFunc(t *testing.T) {
 }
 
 func TestNativeHistogramsInRecordingRules(t *testing.T) {
-	suite, err := promql.NewTest(t, "")
-	require.NoError(t, err)
-	t.Cleanup(suite.Close)
-
-	err = suite.Run()
-	require.NoError(t, err)
+	storage := teststorage.New(t)
+	t.Cleanup(func() { storage.Close() })
 
 	// Add some histograms.
-	db := suite.TSDB()
+	db := storage.DB
 	hists := tsdbutil.GenerateTestHistograms(5)
 	ts := time.Now()
 	app := db.Appender(context.Background())
@@ -1848,9 +1827,9 @@ func TestNativeHistogramsInRecordingRules(t *testing.T) {
 	require.NoError(t, app.Commit())
 
 	opts := &ManagerOptions{
-		QueryFunc:  EngineQueryFunc(suite.QueryEngine(), suite.Storage()),
-		Appendable: suite.Storage(),
-		Queryable:  suite.Storage(),
+		QueryFunc:  EngineQueryFunc(testEngine, storage),
+		Appendable: storage,
+		Queryable:  storage,
 		Context:    context.Background(),
 		Logger:     log.NewNopLogger(),
 	}

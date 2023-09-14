@@ -28,7 +28,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 )
 
@@ -496,16 +495,16 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 		queryMinT            int64
 		queryMaxT            int64
 		firstInOrderSampleAt int64
-		inputSamples         tsdbutil.SampleSlice
+		inputSamples         chunks.SampleSlice
 		expChunkError        bool
-		expChunksSamples     []tsdbutil.SampleSlice
+		expChunksSamples     []chunks.SampleSlice
 	}{
 		{
 			name:                 "Getting the head when there are no overlapping chunks returns just the samples in the head",
 			queryMinT:            minutes(0),
 			queryMaxT:            minutes(100),
 			firstInOrderSampleAt: minutes(120),
-			inputSamples: tsdbutil.SampleSlice{
+			inputSamples: chunks.SampleSlice{
 				sample{t: minutes(30), f: float64(0)},
 				sample{t: minutes(40), f: float64(0)},
 			},
@@ -514,7 +513,7 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 			// Query Interval          [------------------------------------------------------------------------------------------]
 			// Chunk 0: Current Head                              [--------] (With 2 samples)
 			// Output Graphically                                 [--------] (With 2 samples)
-			expChunksSamples: []tsdbutil.SampleSlice{
+			expChunksSamples: []chunks.SampleSlice{
 				{
 					sample{t: minutes(30), f: float64(0)},
 					sample{t: minutes(40), f: float64(0)},
@@ -526,7 +525,7 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 			queryMinT:            minutes(0),
 			queryMaxT:            minutes(100),
 			firstInOrderSampleAt: minutes(120),
-			inputSamples: tsdbutil.SampleSlice{
+			inputSamples: chunks.SampleSlice{
 				// opts.OOOCapMax is 5 so these will be mmapped to the first mmapped chunk
 				sample{t: minutes(41), f: float64(0)},
 				sample{t: minutes(42), f: float64(0)},
@@ -544,7 +543,7 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 			// Chunk 0                                                     [---] (With 5 samples)
 			// Chunk 1: Current Head                              [-----------------] (With 2 samples)
 			// Output Graphically                                 [-----------------] (With 7 samples)
-			expChunksSamples: []tsdbutil.SampleSlice{
+			expChunksSamples: []chunks.SampleSlice{
 				{
 					sample{t: minutes(30), f: float64(1)},
 					sample{t: minutes(41), f: float64(0)},
@@ -561,7 +560,7 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 			queryMinT:            minutes(0),
 			queryMaxT:            minutes(100),
 			firstInOrderSampleAt: minutes(120),
-			inputSamples: tsdbutil.SampleSlice{
+			inputSamples: chunks.SampleSlice{
 				// Chunk 0
 				sample{t: minutes(10), f: float64(0)},
 				sample{t: minutes(12), f: float64(0)},
@@ -592,7 +591,7 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 			// Chunk 2                                            [--------]
 			// Chunk 3: Current Head                                       [--------]
 			// Output Graphically               [----------------][-----------------]
-			expChunksSamples: []tsdbutil.SampleSlice{
+			expChunksSamples: []chunks.SampleSlice{
 				{
 					sample{t: minutes(10), f: float64(0)},
 					sample{t: minutes(12), f: float64(0)},
@@ -619,7 +618,7 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 			queryMinT:            minutes(0),
 			queryMaxT:            minutes(100),
 			firstInOrderSampleAt: minutes(120),
-			inputSamples: tsdbutil.SampleSlice{
+			inputSamples: chunks.SampleSlice{
 				// Chunk 0
 				sample{t: minutes(40), f: float64(0)},
 				sample{t: minutes(42), f: float64(0)},
@@ -650,7 +649,7 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 			// Chunk 2                                   [-------]
 			// Chunk 3: Current Head            [--------]
 			// Output Graphically               [----------------][-----------------]
-			expChunksSamples: []tsdbutil.SampleSlice{
+			expChunksSamples: []chunks.SampleSlice{
 				{
 					sample{t: minutes(10), f: float64(3)},
 					sample{t: minutes(20), f: float64(2)},
@@ -677,7 +676,7 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 			queryMinT:            minutes(0),
 			queryMaxT:            minutes(100),
 			firstInOrderSampleAt: minutes(120),
-			inputSamples: tsdbutil.SampleSlice{
+			inputSamples: chunks.SampleSlice{
 				// Chunk 0
 				sample{t: minutes(10), f: float64(0)},
 				sample{t: minutes(12), f: float64(0)},
@@ -708,7 +707,7 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 			// Chunk 2                                            [-------]
 			// Chunk 3: Current Head                                       [-------]
 			// Output Graphically               [-------][-------][-------][--------]
-			expChunksSamples: []tsdbutil.SampleSlice{
+			expChunksSamples: []chunks.SampleSlice{
 				{
 					sample{t: minutes(10), f: float64(0)},
 					sample{t: minutes(12), f: float64(0)},
@@ -741,7 +740,7 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 			queryMinT:            minutes(0),
 			queryMaxT:            minutes(100),
 			firstInOrderSampleAt: minutes(120),
-			inputSamples: tsdbutil.SampleSlice{
+			inputSamples: chunks.SampleSlice{
 				// Chunk 0
 				sample{t: minutes(10), f: float64(0)},
 				sample{t: minutes(15), f: float64(0)},
@@ -765,7 +764,7 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 			// Chunk 1                                   [--------------------]
 			// Chunk 2 Current Head                                  [--------------]
 			// Output Graphically               [-----------------------------------]
-			expChunksSamples: []tsdbutil.SampleSlice{
+			expChunksSamples: []chunks.SampleSlice{
 				{
 					sample{t: minutes(10), f: float64(0)},
 					sample{t: minutes(15), f: float64(0)},
@@ -784,7 +783,7 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 			queryMinT:            minutes(12),
 			queryMaxT:            minutes(33),
 			firstInOrderSampleAt: minutes(120),
-			inputSamples: tsdbutil.SampleSlice{
+			inputSamples: chunks.SampleSlice{
 				// Chunk 0
 				sample{t: minutes(10), f: float64(0)},
 				sample{t: minutes(15), f: float64(0)},
@@ -808,7 +807,7 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 			// Chunk 1                                   [--------------------]
 			// Chunk 2 Current Head                                  [--------------]
 			// Output Graphically               [-----------------------------------]
-			expChunksSamples: []tsdbutil.SampleSlice{
+			expChunksSamples: []chunks.SampleSlice{
 				{
 					sample{t: minutes(10), f: float64(0)},
 					sample{t: minutes(15), f: float64(0)},
@@ -853,7 +852,7 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 				c, err := cr.Chunk(chks[i])
 				require.NoError(t, err)
 
-				var resultSamples tsdbutil.SampleSlice
+				var resultSamples chunks.SampleSlice
 				it := c.Iterator(nil)
 				for it.Next() == chunkenc.ValFloat {
 					t, v := it.At()
@@ -892,17 +891,17 @@ func TestOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 		queryMinT              int64
 		queryMaxT              int64
 		firstInOrderSampleAt   int64
-		initialSamples         tsdbutil.SampleSlice
-		samplesAfterSeriesCall tsdbutil.SampleSlice
+		initialSamples         chunks.SampleSlice
+		samplesAfterSeriesCall chunks.SampleSlice
 		expChunkError          bool
-		expChunksSamples       []tsdbutil.SampleSlice
+		expChunksSamples       []chunks.SampleSlice
 	}{
 		{
 			name:                 "Current head gets old, new and in between sample after Series call, they all should be omitted from the result",
 			queryMinT:            minutes(0),
 			queryMaxT:            minutes(100),
 			firstInOrderSampleAt: minutes(120),
-			initialSamples: tsdbutil.SampleSlice{
+			initialSamples: chunks.SampleSlice{
 				// Chunk 0
 				sample{t: minutes(20), f: float64(0)},
 				sample{t: minutes(22), f: float64(0)},
@@ -913,7 +912,7 @@ func TestOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 				sample{t: minutes(25), f: float64(1)},
 				sample{t: minutes(35), f: float64(1)},
 			},
-			samplesAfterSeriesCall: tsdbutil.SampleSlice{
+			samplesAfterSeriesCall: chunks.SampleSlice{
 				sample{t: minutes(10), f: float64(1)},
 				sample{t: minutes(32), f: float64(1)},
 				sample{t: minutes(50), f: float64(1)},
@@ -926,7 +925,7 @@ func TestOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 			// New samples added after Series()
 			// Chunk 1: Current Head            [-----------------------------------] (5 samples)
 			// Output Graphically                        [------------] (With 8 samples, samples newer than lastmint or older than lastmaxt are omitted but the ones in between are kept)
-			expChunksSamples: []tsdbutil.SampleSlice{
+			expChunksSamples: []chunks.SampleSlice{
 				{
 					sample{t: minutes(20), f: float64(0)},
 					sample{t: minutes(22), f: float64(0)},
@@ -944,7 +943,7 @@ func TestOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 			queryMinT:            minutes(0),
 			queryMaxT:            minutes(100),
 			firstInOrderSampleAt: minutes(120),
-			initialSamples: tsdbutil.SampleSlice{
+			initialSamples: chunks.SampleSlice{
 				// Chunk 0
 				sample{t: minutes(20), f: float64(0)},
 				sample{t: minutes(22), f: float64(0)},
@@ -955,7 +954,7 @@ func TestOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 				sample{t: minutes(25), f: float64(1)},
 				sample{t: minutes(35), f: float64(1)},
 			},
-			samplesAfterSeriesCall: tsdbutil.SampleSlice{
+			samplesAfterSeriesCall: chunks.SampleSlice{
 				sample{t: minutes(10), f: float64(1)},
 				sample{t: minutes(32), f: float64(1)},
 				sample{t: minutes(50), f: float64(1)},
@@ -972,7 +971,7 @@ func TestOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 			// Chunk 1 (mmapped)                     [-------------------------] (5 samples)
 			// Chunk 2: Current Head                    [-----------] (2 samples)
 			// Output Graphically                        [------------]  (8 samples) It has 5 from Chunk 0 and 3 from Chunk 1
-			expChunksSamples: []tsdbutil.SampleSlice{
+			expChunksSamples: []chunks.SampleSlice{
 				{
 					sample{t: minutes(20), f: float64(0)},
 					sample{t: minutes(22), f: float64(0)},
@@ -1024,7 +1023,7 @@ func TestOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 				c, err := cr.Chunk(chks[i])
 				require.NoError(t, err)
 
-				var resultSamples tsdbutil.SampleSlice
+				var resultSamples chunks.SampleSlice
 				it := c.Iterator(nil)
 				for it.Next() == chunkenc.ValFloat {
 					ts, v := it.At()

@@ -1021,6 +1021,8 @@ func (db *DB) run() {
 			case db.compactc <- struct{}{}:
 			default:
 			}
+			// We attempt mmapping of head chunks regularly.
+			db.head.mmapHeadChunks()
 		case <-db.compactc:
 			db.metrics.compactionsTriggered.Inc()
 
@@ -1848,6 +1850,11 @@ func (db *DB) EnableCompactions() {
 	level.Info(db.logger).Log("msg", "Compactions enabled")
 }
 
+// ForceHeadMMap is intended for use only in tests and benchmarks.
+func (db *DB) ForceHeadMMap() {
+	db.head.mmapHeadChunks()
+}
+
 // Snapshot writes the current data to the directory. If withHead is set to true it
 // will create a new block containing all data that's currently in the memory buffer/WAL.
 func (db *DB) Snapshot(dir string, withHead bool) error {
@@ -2153,7 +2160,8 @@ func isBlockDir(fi fs.DirEntry) bool {
 	return err == nil
 }
 
-// isTmpDir returns true if the given file-info contains a block ULID or checkpoint prefix and a tmp extension.
+// isTmpDir returns true if the given file-info contains a block ULID, a checkpoint prefix,
+// or a chunk snapshot prefix and a tmp extension.
 func isTmpDir(fi fs.DirEntry) bool {
 	if !fi.IsDir() {
 		return false
@@ -2163,6 +2171,9 @@ func isTmpDir(fi fs.DirEntry) bool {
 	ext := filepath.Ext(fn)
 	if ext == tmpForDeletionBlockDirSuffix || ext == tmpForCreationBlockDirSuffix || ext == tmpLegacy {
 		if strings.HasPrefix(fn, "checkpoint.") {
+			return true
+		}
+		if strings.HasPrefix(fn, chunkSnapshotPrefix) {
 			return true
 		}
 		if _, err := ulid.ParseStrict(fn[:len(fn)-len(ext)]); err == nil {

@@ -15,12 +15,14 @@ package promql
 
 import (
 	"context"
+	"embed"
 	"errors"
 	"fmt"
+	"io/fs"
 	"math"
-	"os"
 	"strconv"
 	"strings"
+	"testing"
 	"time"
 
 	"github.com/grafana/regexp"
@@ -28,11 +30,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -51,23 +53,74 @@ const (
 
 var testStartTime = time.Unix(0, 0).UTC()
 
-// Test is a sequence of read and write commands that are run
+// LoadedStorage returns storage with generated data using the provided load statements.
+// Non-load statements will cause test errors.
+func LoadedStorage(t testutil.T, input string) *teststorage.TestStorage {
+	test, err := newTest(t, input)
+	require.NoError(t, err)
+
+	for _, cmd := range test.cmds {
+		switch cmd.(type) {
+		case *loadCmd:
+			require.NoError(t, test.exec(cmd, nil))
+		default:
+			t.Errorf("only 'load' commands accepted, got '%s'", cmd)
+		}
+	}
+	return test.storage
+}
+
+// RunBuiltinTests runs an acceptance test suite against the provided engine.
+func RunBuiltinTests(t *testing.T, engine engineQuerier) {
+	files, err := fs.Glob(testsFs, "*/*.test")
+	require.NoError(t, err)
+
+	for _, fn := range files {
+		t.Run(fn, func(t *testing.T) {
+			content, err := fs.ReadFile(testsFs, fn)
+			require.NoError(t, err)
+			RunTest(t, string(content), engine)
+		})
+	}
+}
+
+// RunTest parses and runs the test against the provided engine.
+func RunTest(t testutil.T, input string, engine engineQuerier) {
+	test, err := newTest(t, input)
+	require.NoError(t, err)
+
+	defer func() {
+		if test.storage != nil {
+			test.storage.Close()
+		}
+		if test.cancelCtx != nil {
+			test.cancelCtx()
+		}
+	}()
+
+	for _, cmd := range test.cmds {
+		// TODO(fabxc): aggregate command errors, yield diffs for result
+		// comparison errors.
+		require.NoError(t, test.exec(cmd, engine))
+	}
+}
+
+// test is a sequence of read and write commands that are run
 // against a test storage.
-type Test struct {
+type test struct {
 	testutil.T
 
 	cmds []testCommand
 
 	storage *teststorage.TestStorage
 
-	queryEngine *Engine
-	context     context.Context
-	cancelCtx   context.CancelFunc
+	context   context.Context
+	cancelCtx context.CancelFunc
 }
 
-// NewTest returns an initialized empty Test.
-func NewTest(t testutil.T, input string) (*Test, error) {
-	test := &Test{
+// newTest returns an initialized empty Test.
+func newTest(t testutil.T, input string) (*test, error) {
+	test := &test{
 		T:    t,
 		cmds: []testCommand{},
 	}
@@ -77,46 +130,12 @@ func NewTest(t testutil.T, input string) (*Test, error) {
 	return test, err
 }
 
-func newTestFromFile(t testutil.T, filename string) (*Test, error) {
-	content, err := os.ReadFile(filename)
-	if err != nil {
-		return nil, err
-	}
-	return NewTest(t, string(content))
-}
+//go:embed testdata
+var testsFs embed.FS
 
-// QueryEngine returns the test's query engine.
-func (t *Test) QueryEngine() *Engine {
-	return t.queryEngine
-}
-
-// Queryable allows querying the test data.
-func (t *Test) Queryable() storage.Queryable {
-	return t.storage
-}
-
-// Context returns the test's context.
-func (t *Test) Context() context.Context {
-	return t.context
-}
-
-// Storage returns the test's storage.
-func (t *Test) Storage() storage.Storage {
-	return t.storage
-}
-
-// TSDB returns test's TSDB.
-func (t *Test) TSDB() *tsdb.DB {
-	return t.storage.DB
-}
-
-// ExemplarStorage returns the test's exemplar storage.
-func (t *Test) ExemplarStorage() storage.ExemplarStorage {
-	return t.storage
-}
-
-func (t *Test) ExemplarQueryable() storage.ExemplarQueryable {
-	return t.storage.ExemplarQueryable()
+type engineQuerier interface {
+	NewRangeQuery(ctx context.Context, q storage.Queryable, opts QueryOpts, qs string, start, end time.Time, interval time.Duration) (Query, error)
+	NewInstantQuery(ctx context.Context, q storage.Queryable, opts QueryOpts, qs string, ts time.Time) (Query, error)
 }
 
 func raise(line int, format string, v ...interface{}) error {
@@ -144,12 +163,8 @@ func parseLoad(lines []string, i int) (int, *loadCmd, error) {
 			i--
 			break
 		}
-		metric, vals, err := parser.ParseSeriesDesc(defLine)
+		metric, vals, err := parseSeries(defLine, i)
 		if err != nil {
-			var perr *parser.ParseErr
-			if errors.As(err, &perr) {
-				perr.LineOffset = i
-			}
 			return i, nil, err
 		}
 		cmd.set(metric, vals...)
@@ -157,7 +172,18 @@ func parseLoad(lines []string, i int) (int, *loadCmd, error) {
 	return i, cmd, nil
 }
 
-func (t *Test) parseEval(lines []string, i int) (int, *evalCmd, error) {
+func parseSeries(defLine string, line int) (labels.Labels, []parser.SequenceValue, error) {
+	metric, vals, err := parser.ParseSeriesDesc(defLine)
+	if err != nil {
+		parser.EnrichParseError(err, func(parseErr *parser.ParseErr) {
+			parseErr.LineOffset = line
+		})
+		return labels.Labels{}, nil, err
+	}
+	return metric, vals, nil
+}
+
+func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 	if !patEvalInstant.MatchString(lines[i]) {
 		return i, nil, raise(i, "invalid evaluation command. (eval[_fail|_ordered] instant [at <offset:duration>] <query>")
 	}
@@ -169,14 +195,13 @@ func (t *Test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 	)
 	_, err := parser.ParseExpr(expr)
 	if err != nil {
-		var perr *parser.ParseErr
-		if errors.As(err, &perr) {
-			perr.LineOffset = i
+		parser.EnrichParseError(err, func(parseErr *parser.ParseErr) {
+			parseErr.LineOffset = i
 			posOffset := parser.Pos(strings.Index(lines[i], expr))
-			perr.PositionRange.Start += posOffset
-			perr.PositionRange.End += posOffset
-			perr.Query = lines[i]
-		}
+			parseErr.PositionRange.Start += posOffset
+			parseErr.PositionRange.End += posOffset
+			parseErr.Query = lines[i]
+		})
 		return i, nil, err
 	}
 
@@ -205,12 +230,8 @@ func (t *Test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 			cmd.expect(0, parser.SequenceValue{Value: f})
 			break
 		}
-		metric, vals, err := parser.ParseSeriesDesc(defLine)
+		metric, vals, err := parseSeries(defLine, i)
 		if err != nil {
-			var perr *parser.ParseErr
-			if errors.As(err, &perr) {
-				perr.LineOffset = i
-			}
 			return i, nil, err
 		}
 
@@ -237,7 +258,7 @@ func getLines(input string) []string {
 }
 
 // parse the given command sequence and appends it to the test.
-func (t *Test) parse(input string) error {
+func (t *test) parse(input string) error {
 	lines := getLines(input)
 	var err error
 	// Scan for steps line by line.
@@ -281,7 +302,7 @@ func (*evalCmd) testCmd()  {}
 type loadCmd struct {
 	gap       time.Duration
 	metrics   map[uint64]labels.Labels
-	defs      map[uint64][]FPoint
+	defs      map[uint64][]Sample
 	exemplars map[uint64][]exemplar.Exemplar
 }
 
@@ -289,7 +310,7 @@ func newLoadCmd(gap time.Duration) *loadCmd {
 	return &loadCmd{
 		gap:       gap,
 		metrics:   map[uint64]labels.Labels{},
-		defs:      map[uint64][]FPoint{},
+		defs:      map[uint64][]Sample{},
 		exemplars: map[uint64][]exemplar.Exemplar{},
 	}
 }
@@ -302,13 +323,14 @@ func (cmd loadCmd) String() string {
 func (cmd *loadCmd) set(m labels.Labels, vals ...parser.SequenceValue) {
 	h := m.Hash()
 
-	samples := make([]FPoint, 0, len(vals))
+	samples := make([]Sample, 0, len(vals))
 	ts := testStartTime
 	for _, v := range vals {
 		if !v.Omitted {
-			samples = append(samples, FPoint{
+			samples = append(samples, Sample{
 				T: ts.UnixNano() / int64(time.Millisecond/time.Nanosecond),
 				F: v.Value,
+				H: v.Histogram,
 			})
 		}
 		ts = ts.Add(cmd.gap)
@@ -323,9 +345,22 @@ func (cmd *loadCmd) append(a storage.Appender) error {
 		m := cmd.metrics[h]
 
 		for _, s := range smpls {
-			if _, err := a.Append(0, m, s.T, s.F); err != nil {
+			if err := appendSample(a, s, m); err != nil {
 				return err
 			}
+		}
+	}
+	return nil
+}
+
+func appendSample(a storage.Appender, s Sample, m labels.Labels) error {
+	if s.H != nil {
+		if _, err := a.AppendHistogram(0, m, s.T, nil, s.H); err != nil {
+			return err
+		}
+	} else {
+		if _, err := a.Append(0, m, s.T, s.F); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -399,8 +434,13 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 			if ev.ordered && exp.pos != pos+1 {
 				return fmt.Errorf("expected metric %s with %v at position %d but was at %d", v.Metric, exp.vals, exp.pos, pos+1)
 			}
-			if !almostEqual(exp.vals[0].Value, v.F) {
-				return fmt.Errorf("expected %v for %s but got %v", exp.vals[0].Value, v.Metric, v.F)
+			exp0 := exp.vals[0]
+			expH := exp0.Histogram
+			if (expH == nil) != (v.H == nil) || (expH != nil && !expH.Equals(v.H)) {
+				return fmt.Errorf("expected %v for %s but got %s", HistogramTestExpression(expH), v.Metric, HistogramTestExpression(v.H))
+			}
+			if !almostEqual(exp0.Value, v.F) {
+				return fmt.Errorf("expected %v for %s but got %v", exp0.Value, v.Metric, v.F)
 			}
 
 			seen[fp] = true
@@ -416,8 +456,15 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 		}
 
 	case Scalar:
-		if !almostEqual(ev.expected[0].vals[0].Value, val.V) {
-			return fmt.Errorf("expected Scalar %v but got %v", val.V, ev.expected[0].vals[0].Value)
+		if len(ev.expected) != 1 {
+			return fmt.Errorf("expected vector result, but got scalar %s", val.String())
+		}
+		exp0 := ev.expected[0].vals[0]
+		if exp0.Histogram != nil {
+			return fmt.Errorf("expected Histogram %v but got scalar %s", exp0.Histogram.TestExpression(), val.String())
+		}
+		if !almostEqual(exp0.Value, val.V) {
+			return fmt.Errorf("expected Scalar %v but got %v", val.V, exp0.Value)
 		}
 
 	default:
@@ -426,24 +473,19 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 	return nil
 }
 
+// HistogramTestExpression returns TestExpression() for the given histogram or "" if the histogram is nil.
+func HistogramTestExpression(h *histogram.FloatHistogram) string {
+	if h != nil {
+		return h.TestExpression()
+	}
+	return ""
+}
+
 // clearCmd is a command that wipes the test's storage state.
 type clearCmd struct{}
 
 func (cmd clearCmd) String() string {
 	return "clear"
-}
-
-// Run executes the command sequence of the test. Until the maximum error number
-// is reached, evaluation errors do not terminate execution.
-func (t *Test) Run() error {
-	for _, cmd := range t.cmds {
-		// TODO(fabxc): aggregate command errors, yield diffs for result
-		// comparison errors.
-		if err := t.exec(cmd); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 type atModifierTestCase struct {
@@ -515,7 +557,7 @@ func atModifierTestCases(exprStr string, evalTime time.Time) ([]atModifierTestCa
 }
 
 // exec processes a single step of the test.
-func (t *Test) exec(tc testCommand) error {
+func (t *test) exec(tc testCommand, engine engineQuerier) error {
 	switch cmd := tc.(type) {
 	case *clearCmd:
 		t.clear()
@@ -538,7 +580,7 @@ func (t *Test) exec(tc testCommand) error {
 		}
 		queries = append([]atModifierTestCase{{expr: cmd.expr, evalTime: cmd.start}}, queries...)
 		for _, iq := range queries {
-			q, err := t.QueryEngine().NewInstantQuery(t.context, t.storage, nil, iq.expr, iq.evalTime)
+			q, err := engine.NewInstantQuery(t.context, t.storage, nil, iq.expr, iq.evalTime)
 			if err != nil {
 				return err
 			}
@@ -555,12 +597,12 @@ func (t *Test) exec(tc testCommand) error {
 			}
 			err = cmd.compareResult(res.Value)
 			if err != nil {
-				return fmt.Errorf("error in %s %s: %w", cmd, iq.expr, err)
+				return fmt.Errorf("error in %s %s (line %d): %w", cmd, iq.expr, cmd.line, err)
 			}
 
 			// Check query returns same result in range mode,
 			// by checking against the middle step.
-			q, err = t.queryEngine.NewRangeQuery(t.context, t.storage, nil, iq.expr, iq.evalTime.Add(-time.Minute), iq.evalTime.Add(time.Minute), time.Minute)
+			q, err = engine.NewRangeQuery(t.context, t.storage, nil, iq.expr, iq.evalTime.Add(-time.Minute), iq.evalTime.Add(time.Minute), time.Minute)
 			if err != nil {
 				return err
 			}
@@ -576,9 +618,16 @@ func (t *Test) exec(tc testCommand) error {
 			mat := rangeRes.Value.(Matrix)
 			vec := make(Vector, 0, len(mat))
 			for _, series := range mat {
+				// We expect either Floats or Histograms.
 				for _, point := range series.Floats {
 					if point.T == timeMilliseconds(iq.evalTime) {
 						vec = append(vec, Sample{Metric: series.Metric, T: point.T, F: point.F})
+						break
+					}
+				}
+				for _, point := range series.Histograms {
+					if point.T == timeMilliseconds(iq.evalTime) {
+						vec = append(vec, Sample{Metric: series.Metric, T: point.T, H: point.H})
 						break
 					}
 				}
@@ -601,7 +650,7 @@ func (t *Test) exec(tc testCommand) error {
 }
 
 // clear the current test storage of all inserted samples.
-func (t *Test) clear() {
+func (t *test) clear() {
 	if t.storage != nil {
 		err := t.storage.Close()
 		require.NoError(t.T, err, "Unexpected error while closing test storage.")
@@ -610,28 +659,7 @@ func (t *Test) clear() {
 		t.cancelCtx()
 	}
 	t.storage = teststorage.New(t)
-
-	opts := EngineOpts{
-		Logger:                   nil,
-		Reg:                      nil,
-		MaxSamples:               10000,
-		Timeout:                  100 * time.Second,
-		NoStepSubqueryIntervalFn: func(int64) int64 { return durationMilliseconds(1 * time.Minute) },
-		EnableAtModifier:         true,
-		EnableNegativeOffset:     true,
-		EnablePerStepStats:       true,
-	}
-
-	t.queryEngine = NewEngine(opts)
 	t.context, t.cancelCtx = context.WithCancel(context.Background())
-}
-
-// Close closes resources associated with the Test.
-func (t *Test) Close() {
-	t.cancelCtx()
-
-	err := t.storage.Close()
-	require.NoError(t.T, err, "Unexpected error while closing test storage.")
 }
 
 // samplesAlmostEqual returns true if the two sample lines only differ by a
@@ -763,7 +791,7 @@ func (ll *LazyLoader) appendTill(ts int64) error {
 				ll.loadCmd.defs[h] = smpls[i:]
 				break
 			}
-			if _, err := app.Append(0, m, s.T, s.F); err != nil {
+			if err := appendSample(app, s, m); err != nil {
 				return err
 			}
 			if i == len(smpls)-1 {

@@ -106,6 +106,10 @@ global:
   # change in the future.
   [ target_limit: <int> | default = 0 ]
 
+  # Limit per scrape config on the number of targets dropped by relabeling
+  # that will be kept in memory. 0 means no limit.
+  [ keep_dropped_targets: <int> | default = 0 ]
+
 # Rule files specifies a list of globs. Rules and alerts are read from
 # all matching files.
 rule_files:
@@ -414,6 +418,10 @@ metric_relabel_configs:
 # 0 means no limit. This is an experimental feature, this behaviour could
 # change in the future.
 [ target_limit: <int> | default = 0 ]
+
+# Per-job limit on the number of targets dropped by relabeling
+# that will be kept in memory. 0 means no limit.
+[ keep_dropped_targets: <int> | default = 0 ]
 
 # Limit on total number of positive and negative buckets allowed in a single
 # native histogram. If this is exceeded, the entire scrape will be treated as
@@ -2985,8 +2993,8 @@ password: <secret>
 # Optional HTTP basic authentication information, currently not supported by Uyuni.
 basic_auth:
   [ username: <string> ]
-    [ password: <secret> ]
-    [ password_file: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
 
 # Optional `Authorization` header configuration, currently not supported by Uyuni.
 authorization:
@@ -3278,6 +3286,25 @@ authorization:
   # Sets the credentials to the credentials read from the configured file.
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
+
+# Optionally configures AWS's Signature Verification 4 signing process to
+# sign requests. Cannot be set at the same time as basic_auth, authorization, or oauth2.
+# To use the default credentials from the AWS SDK, use `sigv4: {}`.
+sigv4:
+  # The AWS region. If blank, the region from the default credentials chain
+  # is used.
+  [ region: <string> ]
+
+  # The AWS API keys. If blank, the environment variables `AWS_ACCESS_KEY_ID`
+  # and `AWS_SECRET_ACCESS_KEY` are used.
+  [ access_key: <string> ]
+  [ secret_key: <secret> ]
+
+  # Named AWS profile used to authenticate.
+  [ profile: <string> ]
+
+  # AWS Role ARN, an alternative to using AWS API keys.
+  [ role_arn: <string> ]
 
 # Optional OAuth 2.0 configuration.
 # Cannot be used at the same time as basic_auth or authorization.

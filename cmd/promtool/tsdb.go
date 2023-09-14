@@ -647,6 +647,14 @@ func dumpSamples(path string, mint, maxt int64, match string) (err error) {
 			ts, val := it.At()
 			fmt.Printf("%s %g %d\n", lbs, val, ts)
 		}
+		for it.Next() == chunkenc.ValFloatHistogram {
+			ts, fh := it.AtFloatHistogram()
+			fmt.Printf("%s %s %d\n", lbs, fh.String(), ts)
+		}
+		for it.Next() == chunkenc.ValHistogram {
+			ts, h := it.AtHistogram()
+			fmt.Printf("%s %s %d\n", lbs, h.String(), ts)
+		}
 		if it.Err() != nil {
 			return ss.Err()
 		}
