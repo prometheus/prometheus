@@ -2142,6 +2142,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 }
 
 func TestDB_LabelNames(t *testing.T) {
+	ctx := context.Background()
 	tests := []struct {
 		// Add 'sampleLabels1' -> Test Head -> Compact -> Test Disk ->
 		// -> Add 'sampleLabels2' -> Test Head+Disk
@@ -2185,7 +2186,6 @@ func TestDB_LabelNames(t *testing.T) {
 	// Appends samples into the database.
 	appendSamples := func(db *DB, mint, maxt int64, sampleLabels [][2]string) {
 		t.Helper()
-		ctx := context.Background()
 		app := db.Appender(ctx)
 		for i := mint; i <= maxt; i++ {
 			for _, tuple := range sampleLabels {
@@ -2209,7 +2209,7 @@ func TestDB_LabelNames(t *testing.T) {
 		// Testing head.
 		headIndexr, err := db.head.Index()
 		require.NoError(t, err)
-		labelNames, err := headIndexr.LabelNames()
+		labelNames, err := headIndexr.LabelNames(ctx)
 		require.NoError(t, err)
 		require.Equal(t, tst.exp1, labelNames)
 		require.NoError(t, headIndexr.Close())
@@ -2222,21 +2222,21 @@ func TestDB_LabelNames(t *testing.T) {
 		for _, b := range db.Blocks() {
 			blockIndexr, err := b.Index()
 			require.NoError(t, err)
-			labelNames, err = blockIndexr.LabelNames()
+			labelNames, err = blockIndexr.LabelNames(ctx)
 			require.NoError(t, err)
 			require.Equal(t, tst.exp1, labelNames)
 			require.NoError(t, blockIndexr.Close())
 		}
 
 		// Adding more samples to head with new label names
-		// so that we can test (head+disk).LabelNames() (the union).
+		// so that we can test (head+disk).LabelNames(ctx) (the union).
 		appendSamples(db, 5, 9, tst.sampleLabels2)
 
 		// Testing DB (union).
 		q, err := db.Querier(math.MinInt64, math.MaxInt64)
 		require.NoError(t, err)
 		var ws storage.Warnings
-		labelNames, ws, err = q.LabelNames()
+		labelNames, ws, err = q.LabelNames(ctx)
 		require.NoError(t, err)
 		require.Equal(t, 0, len(ws))
 		require.NoError(t, q.Close())

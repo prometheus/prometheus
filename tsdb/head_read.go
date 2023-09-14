@@ -88,7 +88,7 @@ func (h *headIndexReader) LabelValues(name string, matchers ...*labels.Matcher) 
 
 // LabelNames returns all the unique label names present in the head
 // that are within the time range mint to maxt.
-func (h *headIndexReader) LabelNames(matchers ...*labels.Matcher) ([]string, error) {
+func (h *headIndexReader) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, error) {
 	if h.maxt < h.head.MinTime() || h.mint > h.head.MaxTime() {
 		return []string{}, nil
 	}
@@ -99,7 +99,7 @@ func (h *headIndexReader) LabelNames(matchers ...*labels.Matcher) ([]string, err
 		return labelNames, nil
 	}
 
-	return labelNamesWithMatchers(h, matchers...)
+	return labelNamesWithMatchers(ctx, h, matchers...)
 }
 
 // Postings returns the postings list iterator for the label pairs.
@@ -232,9 +232,12 @@ func (h *headIndexReader) LabelValueFor(id storage.SeriesRef, label string) (str
 
 // LabelNamesFor returns all the label names for the series referred to by IDs.
 // The names returned are sorted.
-func (h *headIndexReader) LabelNamesFor(ids ...storage.SeriesRef) ([]string, error) {
+func (h *headIndexReader) LabelNamesFor(ctx context.Context, ids ...storage.SeriesRef) ([]string, error) {
 	namesMap := make(map[string]struct{})
 	for _, id := range ids {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		memSeries := h.head.series.getByID(chunks.HeadSeriesRef(id))
 		if memSeries == nil {
 			return nil, storage.ErrNotFound
