@@ -1115,13 +1115,21 @@ func ValidateUDFInputTypes(inputTypes []parser.ValueType) error {
 	if len(inputTypes) == 0 {
 		return errors.New("must have at least 1 input type for UDF")
 	}
-	if inputTypes[0] != parser.ValueTypeMatrix && inputTypes[0] != parser.ValueTypeVector {
-		return fmt.Errorf("first input argument for UDF must be matrix or vector, but got %s", inputTypes[0])
-	}
-	for _, t := range inputTypes[1:] {
-		if t != parser.ValueTypeScalar && t != parser.ValueTypeString {
-			return fmt.Errorf("additional input arguments for UDF must be scalar or string, but got %s", t)
+	switch inputTypes[0] {
+	case parser.ValueTypeMatrix:
+		for _, t := range inputTypes[1:] {
+			if t != parser.ValueTypeScalar {
+				return fmt.Errorf("additional input arguments for matrix-based UDF must be scalar, but got %s", t)
+			}
 		}
+	case parser.ValueTypeVector:
+		for _, t := range inputTypes[1:] {
+			if t != parser.ValueTypeScalar && t != parser.ValueTypeString {
+				return fmt.Errorf("additional input arguments for vector-based UDF must be scalar or string, but got %s", t)
+			}
+		}
+	default:
+		return fmt.Errorf("first input argument for UDF must be matrix or vector, but got %s", inputTypes[0])
 	}
 	return nil
 }
