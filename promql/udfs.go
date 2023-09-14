@@ -208,6 +208,7 @@ func init() {
 		}
 		funcMap[name] = c
 		parser.AddFunction(name)
+		FunctionCalls[name] = genFunctionCall(name)
 	}
 	for _, name := range []string{"mad_over_time", "std_dev_over_time"} {
 		parser.AddFunction(name)
