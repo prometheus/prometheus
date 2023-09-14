@@ -197,7 +197,6 @@ var (
 			output := std(input)
 		`,
 	}
-	funcMap = make(map[string]*tengo.Compiled, len(srcMap))
 )
 
 func init() {
@@ -206,9 +205,8 @@ func init() {
 		if err != nil {
 			panic(err)
 		}
-		funcMap[name] = c
 		parser.AddFunction(name)
-		FunctionCalls[name] = genFunctionCall(name)
+		FunctionCalls[name] = genFunctionCall(name, c)
 	}
 	for _, name := range []string{"mad_over_time", "std_dev_over_time"} {
 		parser.AddFunction(name)
@@ -227,12 +225,12 @@ func compileSrc(src string) (*tengo.Compiled, error) {
 	return s.Compile()
 }
 
-func runCustomFunc(funcName string, input []FPoint) (float64, error) {
+func runCustomFunc(funcName string, input []FPoint, compiled *tengo.Compiled) (float64, error) {
 	inputInterface := make([]interface{}, len(input))
 	for i, f := range input {
 		inputInterface[i] = f.F
 	}
-	c := funcMap[funcName].Clone()
+	c := compiled.Clone()
 	if err := c.Set("input", inputInterface); err != nil {
 		return 0, err
 	}
@@ -246,7 +244,7 @@ func runCustomFunc(funcName string, input []FPoint) (float64, error) {
 	return output.Float(), nil
 }
 
-func genFunctionCall(funcName string) FunctionCall {
+func genFunctionCall(funcName string, c *tengo.Compiled) FunctionCall {
 	return func(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 		if len(vals[0].(Matrix)[0].Floats) == 0 {
 			// TODO(beorn7): The passed values only contain
@@ -256,7 +254,7 @@ func genFunctionCall(funcName string) FunctionCall {
 			return enh.Out, nil
 		}
 		return aggrOverTime(vals, enh, func(s Series) float64 {
-			res, err := runCustomFunc(funcName, s.Floats)
+			res, err := runCustomFunc(funcName, s.Floats, c)
 			if err != nil {
 				return 0
 			}
