@@ -2538,7 +2538,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, grouping []string, par
 		q = param.(float64)
 		switch {
 		case q == 0:
-			return Vector{}
+			return Vector{}, annos
 		case q > 1.0:
 			ev.errorf("Float value %v is greater than 1.0", q)
 		case q < -1.0:
