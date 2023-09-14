@@ -19,7 +19,7 @@ jobs:
       - uses: bufbuild/buf-lint-action@bd48f53224baaaf0fc55de9a913e7680ca6dbea4 # v1.0.3
         with:
           input: 'prompb'
-      - uses: bufbuild/buf-breaking-action@f47418c81c00bfd65394628385593542f64db477 # v1.1.2
+      - uses: bufbuild/buf-breaking-action@a074e988ee34efcd4927079e79c611f428354c01 # v1.1.3
         with:
           input: 'prompb'
           against: 'https://github.com/prometheus/prometheus.git#branch=main,ref=HEAD,subdir=prompb'
