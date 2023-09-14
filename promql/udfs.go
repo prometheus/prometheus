@@ -251,7 +251,9 @@ func compileSrc(src string, modules []string, useUtil bool, inputTypes []parser.
 	s.SetImports(mods)
 	for i := range inputTypes {
 		var interfaceType interface{}
-		s.Add(makeInputName(i), interfaceType)
+		if err := s.Add(makeInputName(i), interfaceType); err != nil {
+			return nil, err
+		}
 	}
 	return s.Compile()
 }
