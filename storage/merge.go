@@ -219,13 +219,13 @@ func mergeStrings(a, b []string) []string {
 }
 
 // LabelNames returns all the unique label names present in all queriers in sorted order.
-func (q *mergeGenericQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (q *mergeGenericQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	var (
 		labelNamesMap = make(map[string]struct{})
 		warnings      annotations.Annotations
 	)
 	for _, querier := range q.queriers {
-		names, wrn, err := querier.LabelNames(matchers...)
+		names, wrn, err := querier.LabelNames(ctx, matchers...)
 		if wrn != nil {
 			// TODO(bwplotka): We could potentially wrap warnings.
 			warnings.Merge(wrn)

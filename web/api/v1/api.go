@@ -674,7 +674,7 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 		labelNamesSet := make(map[string]struct{})
 
 		for _, matchers := range matcherSets {
-			vals, callWarnings, err := q.LabelNames(matchers...)
+			vals, callWarnings, err := q.LabelNames(r.Context(), matchers...)
 			if err != nil {
 				return apiFuncResult{nil, returnAPIError(err), warnings, nil}
 			}
@@ -692,7 +692,7 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 		}
 		slices.Sort(names)
 	} else {
-		names, warnings, err = q.LabelNames()
+		names, warnings, err = q.LabelNames(r.Context())
 		if err != nil {
 			return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}
 		}

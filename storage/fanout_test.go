@@ -240,7 +240,7 @@ func (errQuerier) LabelValues(string, ...*labels.Matcher) ([]string, annotations
 	return nil, nil, errors.New("label values error")
 }
 
-func (errQuerier) LabelNames(...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (errQuerier) LabelNames(context.Context, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, errors.New("label names error")
 }
 

@@ -57,8 +57,8 @@ func (s *secondaryQuerier) LabelValues(name string, matchers ...*labels.Matcher)
 	return vals, w, nil
 }
 
-func (s *secondaryQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	names, w, err := s.genericQuerier.LabelNames(matchers...)
+func (s *secondaryQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	names, w, err := s.genericQuerier.LabelNames(ctx, matchers...)
 	if err != nil {
 		return nil, w.Add(err), nil
 	}

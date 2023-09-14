@@ -204,7 +204,7 @@ func (*errQuerier) LabelValues(string, ...*labels.Matcher) ([]string, annotation
 	return nil, nil, nil
 }
 
-func (*errQuerier) LabelNames(...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (*errQuerier) LabelNames(context.Context, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }
 func (*errQuerier) Close() error { return nil }

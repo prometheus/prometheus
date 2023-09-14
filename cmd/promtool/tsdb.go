@@ -433,7 +433,7 @@ func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExten
 	}
 	defer ir.Close()
 
-	allLabelNames, err := ir.LabelNames()
+	allLabelNames, err := ir.LabelNames(ctx)
 	if err != nil {
 		return err
 	}

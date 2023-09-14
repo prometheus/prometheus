@@ -1488,7 +1488,7 @@ func (m mockIndex) LabelValueFor(id storage.SeriesRef, label string) (string, er
 	return m.series[id].l.Get(label), nil
 }
 
-func (m mockIndex) LabelNamesFor(ids ...storage.SeriesRef) ([]string, error) {
+func (m mockIndex) LabelNamesFor(ctx context.Context, ids ...storage.SeriesRef) ([]string, error) {
 	namesMap := make(map[string]bool)
 	for _, id := range ids {
 		m.series[id].l.Range(func(lbl labels.Label) {
@@ -1534,7 +1534,7 @@ func (m mockIndex) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder,
 	return nil
 }
 
-func (m mockIndex) LabelNames(matchers ...*labels.Matcher) ([]string, error) {
+func (m mockIndex) LabelNames(_ context.Context, matchers ...*labels.Matcher) ([]string, error) {
 	names := map[string]struct{}{}
 	if len(matchers) == 0 {
 		for l := range m.postings {
@@ -2450,7 +2450,7 @@ func (m mockMatcherIndex) LabelValueFor(id storage.SeriesRef, label string) (str
 	return "", errors.New("label value for called")
 }
 
-func (m mockMatcherIndex) LabelNamesFor(ids ...storage.SeriesRef) ([]string, error) {
+func (m mockMatcherIndex) LabelNamesFor(ctx context.Context, ids ...storage.SeriesRef) ([]string, error) {
 	return nil, errors.New("label names for for called")
 }
 
@@ -2466,7 +2466,7 @@ func (m mockMatcherIndex) Series(ref storage.SeriesRef, builder *labels.ScratchB
 	return nil
 }
 
-func (m mockMatcherIndex) LabelNames(...*labels.Matcher) ([]string, error) {
+func (m mockMatcherIndex) LabelNames(context.Context, ...*labels.Matcher) ([]string, error) {
 	return []string{}, nil
 }
 

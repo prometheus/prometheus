@@ -175,7 +175,7 @@ func (t errorTestQuerier) LabelValues(name string, matchers ...*labels.Matcher) 
 	return nil, nil, t.err
 }
 
-func (t errorTestQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (t errorTestQuerier) LabelNames(context.Context, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, t.err
 }
 

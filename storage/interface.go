@@ -123,7 +123,7 @@ func (q *MockQuerier) LabelValues(string, ...*labels.Matcher) ([]string, annotat
 	return nil, nil, nil
 }
 
-func (q *MockQuerier) LabelNames(...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (q *MockQuerier) LabelNames(context.Context, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }
 
@@ -163,7 +163,7 @@ type LabelQuerier interface {
 	// LabelNames returns all the unique label names present in the block in sorted order.
 	// If matchers are specified the returned result set is reduced
 	// to label names of metrics matching the matchers.
-	LabelNames(matchers ...*labels.Matcher) ([]string, annotations.Annotations, error)
+	LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error)
 
 	// Close releases the resources of the Querier.
 	Close() error

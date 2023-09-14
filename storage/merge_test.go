@@ -1001,7 +1001,7 @@ func (m *mockGenericQuerier) LabelValues(name string, matchers ...*labels.Matche
 	return m.resp, m.warnings, m.err
 }
 
-func (m *mockGenericQuerier) LabelNames(...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (m *mockGenericQuerier) LabelNames(context.Context, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	m.mtx.Lock()
 	m.labelNamesCalls++
 	m.mtx.Unlock()
@@ -1060,6 +1060,7 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 	var (
 		errStorage  = errors.New("storage error")
 		warnStorage = errors.New("storage warning")
+		ctx         = context.Background()
 	)
 	for _, tcase := range []struct {
 		name     string
@@ -1189,7 +1190,7 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 				}
 			})
 			t.Run("LabelNames", func(t *testing.T) {
-				res, w, err := q.LabelNames()
+				res, w, err := q.LabelNames(ctx)
 				require.Subset(t, tcase.expectedWarnings, w)
 				require.True(t, errors.Is(err, tcase.expectedErrs[1]), "expected error doesn't match")
 				require.Equal(t, tcase.expectedLabels, res)

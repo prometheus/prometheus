@@ -2637,6 +2637,7 @@ func TestHeadLabelNamesValuesWithMinMaxRange(t *testing.T) {
 		}
 		expectedLabelNames  = []string{"a", "b", "c"}
 		expectedLabelValues = []string{"d", "e", "f"}
+		ctx                 = context.Background()
 	)
 
 	app := head.Appender(context.Background())
@@ -2664,7 +2665,7 @@ func TestHeadLabelNamesValuesWithMinMaxRange(t *testing.T) {
 	for _, tt := range testCases {
 		t.Run(tt.name, func(t *testing.T) {
 			headIdxReader := head.indexRange(tt.mint, tt.maxt)
-			actualLabelNames, err := headIdxReader.LabelNames()
+			actualLabelNames, err := headIdxReader.LabelNames(ctx)
 			require.NoError(t, err)
 			require.Equal(t, tt.expectedNames, actualLabelNames)
 			if len(tt.expectedValues) > 0 {
@@ -2798,7 +2799,7 @@ func TestHeadLabelNamesWithMatchers(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			headIdxReader := head.indexRange(0, 200)
 
-			actualNames, err := headIdxReader.LabelNames(tt.matchers...)
+			actualNames, err := headIdxReader.LabelNames(context.Background(), tt.matchers...)
 			require.NoError(t, err)
 			require.Equal(t, tt.expectedNames, actualNames)
 		})
