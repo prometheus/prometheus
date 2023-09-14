@@ -24,6 +24,7 @@ import (
 	"runtime"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -1387,7 +1388,12 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 		}, e.Param, e.Expr)
 
 	case *parser.Call:
-		call := FunctionCalls[e.Func.Name]
+		call, ok := FunctionCalls[e.Func.Name]
+		if !ok && strings.HasPrefix(e.Func.Name, "udf_") {
+			call = genFunctionCall(e.Func.Name)
+			FunctionCalls[e.Func.Name] = call
+		}
+
 		if e.Func.Name == "timestamp" {
 			// Matrix evaluation always returns the evaluation time,
 			// so this function needs special handling when given

@@ -92,6 +92,7 @@ require (
 	github.com/AzureAD/microsoft-authentication-library-for-go v1.0.0 // indirect
 	github.com/coreos/go-systemd/v22 v22.5.0 // indirect
 	github.com/google/gnostic-models v0.6.8 // indirect
+	github.com/d5/tengo/v2 v2.16.1 // indirect
 	github.com/google/s2a-go v0.1.4 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
