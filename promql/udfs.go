@@ -24,7 +24,8 @@ import (
 )
 
 var (
-	utilSrc = `
+	utilModules = []string{"rand"}
+	utilSrc     = `
 		rand := import("rand")
 
 		_quicksort := func(arr, left, right, less) {
@@ -201,12 +202,10 @@ var (
 
 func init() {
 	for name, src := range srcMap {
-		c, err := compileSrc(src)
+		err := addUDF(name, src, []string{"math", "rand"}, true)
 		if err != nil {
 			panic(err)
 		}
-		parser.AddFunction(name)
-		FunctionCalls[name] = genFunctionCall(name, c)
 	}
 	for _, name := range []string{"mad_over_time", "std_dev_over_time"} {
 		parser.AddFunction(name)
@@ -215,11 +214,26 @@ func init() {
 	FunctionCalls["std_dev_over_time"] = funcStdDevOverTime
 }
 
-func compileSrc(src string) (*tengo.Compiled, error) {
+func addUDF(name, src string, modules []string, useUtil bool) error {
+	c, err := compileSrc(src, modules, useUtil)
+	if err != nil {
+		return err
+	}
+	parser.AddFunction(name)
+	FunctionCalls[name] = genFunctionCall(name, c)
+	return nil
+}
+
+func compileSrc(src string, modules []string, useUtil bool) (*tengo.Compiled, error) {
 	s := tengo.NewScript([]byte(src))
-	mods := stdlib.GetModuleMap("math", "rand") //, "fmt")
+	if useUtil {
+		modules = append(modules, utilModules...)
+	}
+	mods := stdlib.GetModuleMap(modules...)
 	// mods := stdlib.GetModuleMap(stdlib.AllModuleNames()...)
-	mods.AddSourceModule("util", []byte(utilSrc))
+	if useUtil {
+		mods.AddSourceModule("util", []byte(utilSrc))
+	}
 	s.SetImports(mods)
 	s.Add("input", []interface{}{})
 	return s.Compile()
