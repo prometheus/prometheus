@@ -12,6 +12,7 @@ require (
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
 	github.com/aws/aws-sdk-go v1.44.317
 	github.com/cespare/xxhash/v2 v2.2.0
+	github.com/d5/tengo/v2 v2.16.1
 	github.com/dennwc/varint v1.0.0
 	github.com/digitalocean/godo v1.99.0
 	github.com/docker/docker v24.0.4+incompatible
@@ -92,7 +93,6 @@ require (
 	github.com/AzureAD/microsoft-authentication-library-for-go v1.0.0 // indirect
 	github.com/coreos/go-systemd/v22 v22.5.0 // indirect
 	github.com/google/gnostic-models v0.6.8 // indirect
-	github.com/d5/tengo/v2 v2.16.1 // indirect
 	github.com/google/s2a-go v0.1.4 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
