@@ -14,6 +14,7 @@
 package promql
 
 import (
+	"fmt"
 	"math"
 
 	"github.com/d5/tengo/v2"
@@ -152,7 +153,7 @@ var (
 				return util.median(deltas)
 			}
 
-			output := mad(input)
+			output := mad(input0)
 		`,
 		"udf_std_dev_simple_over_time": `
 			math := import("math")
@@ -175,7 +176,7 @@ var (
 				return math.sqrt(variance)
 			}
 
-			output := std(input)
+			output := std(input0)
 		`,
 		"udf_std_dev_over_time": `
 			math := import("math")
@@ -196,40 +197,48 @@ var (
 				return math.sqrt(aux / count)
 			}
 
-			output := std(input)
+			output := std(input0)
 		`,
 	}
 )
 
 func init() {
 	for name, src := range srcMap {
-		err := addUDF(name, src, []string{"math", "rand"}, true)
+		inputTypes := []parser.ValueType{parser.ValueTypeMatrix}
+		if err := config.ValidateUDFInputTypes(inputTypes); err != nil {
+			panic(err)
+		}
+		err := addUDF(name, src, []string{"math", "rand"}, true, inputTypes)
 		if err != nil {
 			panic(err)
 		}
 	}
 	for _, name := range []string{"mad_over_time", "std_dev_over_time"} {
-		parser.AddFunction(name)
+		parser.AddFunction(name, []parser.ValueType{parser.ValueTypeMatrix})
 	}
 	FunctionCalls["mad_over_time"] = funcMadOverTime
 	FunctionCalls["std_dev_over_time"] = funcStdDevOverTime
 }
 
 func AddUDFfromConfig(cfg *config.UDFConfig) error {
-	return addUDF("udf_"+cfg.Name, cfg.Src, cfg.Modules, cfg.UseUtil)
+	return addUDF("udf_"+cfg.Name, cfg.Src, cfg.Modules, cfg.UseUtil, cfg.InputTypes)
 }
 
-func addUDF(name, src string, modules []string, useUtil bool) error {
-	c, err := compileSrc(src, modules, useUtil)
+func addUDF(name, src string, modules []string, useUtil bool, inputTypes []parser.ValueType) error {
+	c, err := compileSrc(src, modules, useUtil, inputTypes)
 	if err != nil {
 		return err
 	}
-	parser.AddFunction(name)
-	FunctionCalls[name] = genFunctionCall(name, c)
+	parser.AddFunction(name, inputTypes)
+	FunctionCalls[name] = genFunctionCall(name, c, inputTypes)
 	return nil
 }
 
-func compileSrc(src string, modules []string, useUtil bool) (*tengo.Compiled, error) {
+func makeInputName(i int) string {
+	return fmt.Sprintf("input%d", i)
+}
+
+func compileSrc(src string, modules []string, useUtil bool, inputTypes []parser.ValueType) (*tengo.Compiled, error) {
 	s := tengo.NewScript([]byte(src))
 	if useUtil {
 		modules = append(modules, utilModules...)
@@ -240,18 +249,19 @@ func compileSrc(src string, modules []string, useUtil bool) (*tengo.Compiled, er
 		mods.AddSourceModule("util", []byte(utilSrc))
 	}
 	s.SetImports(mods)
-	s.Add("input", []interface{}{})
+	for i := range inputTypes {
+		var interfaceType interface{}
+		s.Add(makeInputName(i), interfaceType)
+	}
 	return s.Compile()
 }
 
-func runCustomFunc(funcName string, input []FPoint, compiled *tengo.Compiled) (float64, error) {
-	inputInterface := make([]interface{}, len(input))
-	for i, f := range input {
-		inputInterface[i] = f.F
-	}
+func runCustomFunc(funcName string, compiled *tengo.Compiled, input []interface{}) (float64, error) {
 	c := compiled.Clone()
-	if err := c.Set("input", inputInterface); err != nil {
-		return 0, err
+	for i, v := range input {
+		if err := c.Set(makeInputName(i), v); err != nil {
+			return 0, err
+		}
 	}
 	if err := c.Run(); err != nil {
 		return 0, err
@@ -263,22 +273,47 @@ func runCustomFunc(funcName string, input []FPoint, compiled *tengo.Compiled) (f
 	return output.Float(), nil
 }
 
-func genFunctionCall(funcName string, c *tengo.Compiled) FunctionCall {
+func genFunctionCall(funcName string, c *tengo.Compiled, inputTypes []parser.ValueType) FunctionCall {
 	return func(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-		if len(vals[0].(Matrix)[0].Floats) == 0 {
-			// TODO(beorn7): The passed values only contain
-			// histograms. This ignores histograms for now. If
-			// there are only histograms, we have to return without adding
-			// anything to enh.Out.
-			return enh.Out, nil
-		}
-		return aggrOverTime(vals, enh, func(s Series) float64 {
-			res, err := runCustomFunc(funcName, s.Floats, c)
-			if err != nil {
-				return 0
+		inputTail := make([]interface{}, 0, len(inputTypes)-1)
+		for i, t := range inputTypes[1:] {
+			switch t {
+			case parser.ValueTypeScalar:
+				inputTail = append(inputTail, vals[1+i].(Vector)[0].F)
+			case parser.ValueTypeString:
+				inputTail = append(inputTail, stringFromArg(args[1+i]))
 			}
-			return res
-		}), nil
+		}
+		if inputTypes[0] == parser.ValueTypeMatrix {
+			series := vals[0].(Matrix)[0]
+			if len(series.Floats) == 0 { // Ignore histograms
+				return enh.Out, nil
+			}
+			aggrFn := func(s []FPoint) float64 {
+				arr := make([]interface{}, len(s))
+				for i, f := range s {
+					arr[i] = f.F
+				}
+				input := append([]interface{}{arr}, inputTail...)
+				res, err := runCustomFunc(funcName, c, input)
+				if err != nil {
+					panic(err)
+				}
+				return res
+			}
+			return append(enh.Out, Sample{F: aggrFn(series.Floats)}), nil
+		} else if inputTypes[0] == parser.ValueTypeVector {
+			tfFn := func(f float64) float64 {
+				input := append([]interface{}{f}, inputTail...)
+				res, err := runCustomFunc(funcName, c, input)
+				if err != nil {
+					panic(err)
+				}
+				return res
+			}
+			return simpleFunc(vals, enh, tfFn), nil
+		}
+		panic(fmt.Sprintf("unhandled value type for genFunctionCall: %s", inputTypes[0]))
 	}
 }
 

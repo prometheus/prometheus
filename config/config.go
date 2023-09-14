@@ -34,6 +34,7 @@ import (
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage/remote/azuread"
 )
 
@@ -1084,10 +1085,11 @@ func (c *RemoteReadConfig) UnmarshalYAML(unmarshal func(interface{}) error) erro
 
 // UDFConfig is the configuration for user-defined functions (UDFs) in PromQL.
 type UDFConfig struct {
-	Name    string   `yaml:"name"`
-	Modules []string `yaml:"modules,omitempty"`
-	UseUtil bool     `yaml:"util,omitempty"`
-	Src     string   `yaml:"src"`
+	Name       string             `yaml:"name"`
+	InputTypes []parser.ValueType `yaml:"input_types"`
+	Modules    []string           `yaml:"modules,omitempty"`
+	UseUtil    bool               `yaml:"util,omitempty"`
+	Src        string             `yaml:"src"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -1102,6 +1104,24 @@ func (c *UDFConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 	if c.Src == "" {
 		return errors.New("source code for UDF is empty")
+	}
+	if err := ValidateUDFInputTypes(c.InputTypes); err != nil {
+		return err
+	}
+	return nil
+}
+
+func ValidateUDFInputTypes(inputTypes []parser.ValueType) error {
+	if len(inputTypes) == 0 {
+		return errors.New("must have at least 1 input type for UDF")
+	}
+	if inputTypes[0] != parser.ValueTypeMatrix && inputTypes[0] != parser.ValueTypeVector {
+		return fmt.Errorf("first input argument for UDF must be matrix or vector, but got %s", inputTypes[0])
+	}
+	for _, t := range inputTypes[1:] {
+		if t != parser.ValueTypeScalar && t != parser.ValueTypeString {
+			return fmt.Errorf("additional input arguments for UDF must be scalar or string, but got %s", t)
+		}
 	}
 	return nil
 }

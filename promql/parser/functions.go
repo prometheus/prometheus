@@ -396,13 +396,13 @@ var Functions = map[string]*Function{
 	},
 }
 
-func AddFunction(name string) {
+func AddFunction(name string, inputTypes []ValueType) {
 	if _, ok := Functions[name]; ok {
 		return
 	}
 	Functions[name] = &Function{
 		Name:       name,
-		ArgTypes:   []ValueType{ValueTypeMatrix},
+		ArgTypes:   inputTypes,
 		ReturnType: ValueTypeVector,
 	}
 }
