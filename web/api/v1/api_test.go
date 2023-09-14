@@ -2985,7 +2985,7 @@ func TestRespondSuccess(t *testing.T) {
 	api.InstallCodec(&testCodec{contentType: MIMEType{"test", "can-encode-2"}, canEncode: true})
 
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		api.respond(w, r, "test", nil)
+		api.respond(w, r, "test", nil, "")
 	}))
 	defer s.Close()
 
@@ -3074,7 +3074,7 @@ func TestRespondSuccess_DefaultCodecCannotEncodeResponse(t *testing.T) {
 	api.InstallCodec(&testCodec{contentType: MIMEType{"application", "default-format"}, canEncode: false})
 
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		api.respond(w, r, "test", nil)
+		api.respond(w, r, "test", nil, "")
 	}))
 	defer s.Close()
 
@@ -3473,7 +3473,7 @@ func BenchmarkRespond(b *testing.B) {
 			api := API{}
 			api.InstallCodec(JSONCodec{})
 			for n := 0; n < b.N; n++ {
-				api.respond(&testResponseWriter, request, c.response, nil)
+				api.respond(&testResponseWriter, request, c.response, nil, "")
 			}
 		})
 	}

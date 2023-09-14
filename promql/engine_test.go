@@ -32,8 +32,10 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/stats"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
@@ -198,11 +200,11 @@ func (q *errQuerier) Select(context.Context, bool, *storage.SelectHints, ...*lab
 	return errSeriesSet{err: q.err}
 }
 
-func (*errQuerier) LabelValues(context.Context, string, ...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (*errQuerier) LabelValues(context.Context, string, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }
 
-func (*errQuerier) LabelNames(context.Context, ...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (*errQuerier) LabelNames(context.Context, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }
 func (*errQuerier) Close() error { return nil }
@@ -212,10 +214,10 @@ type errSeriesSet struct {
 	err error
 }
 
-func (errSeriesSet) Next() bool                   { return false }
-func (errSeriesSet) At() storage.Series           { return nil }
-func (e errSeriesSet) Err() error                 { return e.err }
-func (e errSeriesSet) Warnings() storage.Warnings { return nil }
+func (errSeriesSet) Next() bool                          { return false }
+func (errSeriesSet) At() storage.Series                  { return nil }
+func (e errSeriesSet) Err() error                        { return e.err }
+func (e errSeriesSet) Warnings() annotations.Annotations { return nil }
 
 func TestQueryError(t *testing.T) {
 	opts := EngineOpts{
@@ -1675,9 +1677,9 @@ func TestRecoverEvaluatorError(t *testing.T) {
 func TestRecoverEvaluatorErrorWithWarnings(t *testing.T) {
 	ev := &evaluator{logger: log.NewNopLogger()}
 	var err error
-	var ws storage.Warnings
+	var ws annotations.Annotations
 
-	warnings := storage.Warnings{errors.New("custom warning")}
+	warnings := annotations.New().Add(errors.New("custom warning"))
 	e := errWithWarnings{
 		err:      errors.New("custom error"),
 		warnings: warnings,
@@ -2146,7 +2148,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 			expected: &parser.StepInvariantExpr{
 				Expr: &parser.NumberLiteral{
 					Val:      123.4567,
-					PosRange: parser.PositionRange{Start: 0, End: 8},
+					PosRange: posrange.PositionRange{Start: 0, End: 8},
 				},
 			},
 		},
@@ -2155,7 +2157,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 			expected: &parser.StepInvariantExpr{
 				Expr: &parser.StringLiteral{
 					Val:      "foo",
-					PosRange: parser.PositionRange{Start: 0, End: 5},
+					PosRange: posrange.PositionRange{Start: 0, End: 5},
 				},
 			},
 		},
@@ -2168,7 +2170,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 					LabelMatchers: []*labels.Matcher{
 						parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
 					},
-					PosRange: parser.PositionRange{
+					PosRange: posrange.PositionRange{
 						Start: 0,
 						End:   3,
 					},
@@ -2178,7 +2180,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 					LabelMatchers: []*labels.Matcher{
 						parser.MustLabelMatcher(labels.MatchEqual, "__name__", "bar"),
 					},
-					PosRange: parser.PositionRange{
+					PosRange: posrange.PositionRange{
 						Start: 6,
 						End:   9,
 					},
@@ -2195,7 +2197,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 					LabelMatchers: []*labels.Matcher{
 						parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
 					},
-					PosRange: parser.PositionRange{
+					PosRange: posrange.PositionRange{
 						Start: 0,
 						End:   3,
 					},
@@ -2206,7 +2208,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 						LabelMatchers: []*labels.Matcher{
 							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "bar"),
 						},
-						PosRange: parser.PositionRange{
+						PosRange: posrange.PositionRange{
 							Start: 6,
 							End:   14,
 						},
@@ -2226,7 +2228,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 						LabelMatchers: []*labels.Matcher{
 							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
 						},
-						PosRange: parser.PositionRange{
+						PosRange: posrange.PositionRange{
 							Start: 0,
 							End:   8,
 						},
@@ -2237,7 +2239,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 						LabelMatchers: []*labels.Matcher{
 							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "bar"),
 						},
-						PosRange: parser.PositionRange{
+						PosRange: posrange.PositionRange{
 							Start: 11,
 							End:   19,
 						},
@@ -2255,7 +2257,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 					LabelMatchers: []*labels.Matcher{
 						parser.MustLabelMatcher(labels.MatchEqual, "__name__", "test"),
 					},
-					PosRange: parser.PositionRange{
+					PosRange: posrange.PositionRange{
 						Start: 0,
 						End:   4,
 					},
@@ -2275,7 +2277,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 							parser.MustLabelMatcher(labels.MatchEqual, "a", "b"),
 							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "test"),
 						},
-						PosRange: parser.PositionRange{
+						PosRange: posrange.PositionRange{
 							Start: 0,
 							End:   11,
 						},
@@ -2294,13 +2296,13 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 					LabelMatchers: []*labels.Matcher{
 						parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric"),
 					},
-					PosRange: parser.PositionRange{
+					PosRange: posrange.PositionRange{
 						Start: 13,
 						End:   24,
 					},
 				},
 				Grouping: []string{"foo"},
-				PosRange: parser.PositionRange{
+				PosRange: posrange.PositionRange{
 					Start: 0,
 					End:   25,
 				},
@@ -2316,14 +2318,14 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 						LabelMatchers: []*labels.Matcher{
 							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric"),
 						},
-						PosRange: parser.PositionRange{
+						PosRange: posrange.PositionRange{
 							Start: 13,
 							End:   29,
 						},
 						Timestamp: makeInt64Pointer(10000),
 					},
 					Grouping: []string{"foo"},
-					PosRange: parser.PositionRange{
+					PosRange: posrange.PositionRange{
 						Start: 0,
 						End:   30,
 					},
@@ -2343,13 +2345,13 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 							LabelMatchers: []*labels.Matcher{
 								parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric1"),
 							},
-							PosRange: parser.PositionRange{
+							PosRange: posrange.PositionRange{
 								Start: 4,
 								End:   21,
 							},
 							Timestamp: makeInt64Pointer(10000),
 						},
-						PosRange: parser.PositionRange{
+						PosRange: posrange.PositionRange{
 							Start: 0,
 							End:   22,
 						},
@@ -2361,13 +2363,13 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 							LabelMatchers: []*labels.Matcher{
 								parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric2"),
 							},
-							PosRange: parser.PositionRange{
+							PosRange: posrange.PositionRange{
 								Start: 29,
 								End:   46,
 							},
 							Timestamp: makeInt64Pointer(20000),
 						},
-						PosRange: parser.PositionRange{
+						PosRange: posrange.PositionRange{
 							Start: 25,
 							End:   47,
 						},
@@ -2387,7 +2389,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 					LabelMatchers: []*labels.Matcher{
 						parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric"),
 					},
-					PosRange: parser.PositionRange{
+					PosRange: posrange.PositionRange{
 						Start: 0,
 						End:   11,
 					},
@@ -2404,7 +2406,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 										LabelMatchers: []*labels.Matcher{
 											parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric"),
 										},
-										PosRange: parser.PositionRange{
+										PosRange: posrange.PositionRange{
 											Start: 29,
 											End:   40,
 										},
@@ -2414,19 +2416,19 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 									EndPos: 49,
 								},
 							},
-							PosRange: parser.PositionRange{
+							PosRange: posrange.PositionRange{
 								Start: 24,
 								End:   50,
 							},
 						},
 						Param: &parser.NumberLiteral{
 							Val: 5,
-							PosRange: parser.PositionRange{
+							PosRange: posrange.PositionRange{
 								Start: 21,
 								End:   22,
 							},
 						},
-						PosRange: parser.PositionRange{
+						PosRange: posrange.PositionRange{
 							Start: 16,
 							End:   51,
 						},
@@ -2439,7 +2441,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 			expected: &parser.Call{
 				Func: parser.MustGetFunction("time"),
 				Args: parser.Expressions{},
-				PosRange: parser.PositionRange{
+				PosRange: posrange.PositionRange{
 					Start: 0,
 					End:   6,
 				},
@@ -2454,7 +2456,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 						parser.MustLabelMatcher(labels.MatchEqual, "bar", "baz"),
 						parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
 					},
-					PosRange: parser.PositionRange{
+					PosRange: posrange.PositionRange{
 						Start: 0,
 						End:   14,
 					},
@@ -2474,7 +2476,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 							parser.MustLabelMatcher(labels.MatchEqual, "bar", "baz"),
 							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
 						},
-						PosRange: parser.PositionRange{
+						PosRange: posrange.PositionRange{
 							Start: 0,
 							End:   14,
 						},
@@ -2499,13 +2501,13 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 									parser.MustLabelMatcher(labels.MatchEqual, "bar", "baz"),
 									parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
 								},
-								PosRange: parser.PositionRange{
+								PosRange: posrange.PositionRange{
 									Start: 4,
 									End:   23,
 								},
 								Timestamp: makeInt64Pointer(20000),
 							},
-							PosRange: parser.PositionRange{
+							PosRange: posrange.PositionRange{
 								Start: 0,
 								End:   24,
 							},
@@ -2536,7 +2538,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 													parser.MustLabelMatcher(labels.MatchEqual, "bar", "baz"),
 													parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
 												},
-												PosRange: parser.PositionRange{
+												PosRange: posrange.PositionRange{
 													Start: 19,
 													End:   33,
 												},
@@ -2545,7 +2547,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 											EndPos: 37,
 										},
 									},
-									PosRange: parser.PositionRange{
+									PosRange: posrange.PositionRange{
 										Start: 14,
 										End:   38,
 									},
@@ -2555,7 +2557,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 								EndPos:    56,
 							},
 						},
-						PosRange: parser.PositionRange{
+						PosRange: posrange.PositionRange{
 							Start: 0,
 							End:   57,
 						},
@@ -2575,7 +2577,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 						LabelMatchers: []*labels.Matcher{
 							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric"),
 						},
-						PosRange: parser.PositionRange{
+						PosRange: posrange.PositionRange{
 							Start: 0,
 							End:   27,
 						},
@@ -2597,7 +2599,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 						LabelMatchers: []*labels.Matcher{
 							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric"),
 						},
-						PosRange: parser.PositionRange{
+						PosRange: posrange.PositionRange{
 							Start: 0,
 							End:   11,
 						},
@@ -2625,7 +2627,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 								LabelMatchers: []*labels.Matcher{
 									parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
 								},
-								PosRange: parser.PositionRange{
+								PosRange: posrange.PositionRange{
 									Start: 1,
 									End:   4,
 								},
@@ -2638,14 +2640,14 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 										parser.MustLabelMatcher(labels.MatchEqual, "__name__", "bar"),
 									},
 									Timestamp: makeInt64Pointer(1234000),
-									PosRange: parser.PositionRange{
+									PosRange: posrange.PositionRange{
 										Start: 7,
 										End:   27,
 									},
 								},
 							},
 						},
-						PosRange: parser.PositionRange{
+						PosRange: posrange.PositionRange{
 							Start: 0,
 							End:   28,
 						},
@@ -2676,18 +2678,18 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 							LabelMatchers: []*labels.Matcher{
 								parser.MustLabelMatcher(labels.MatchEqual, "__name__", "metric"),
 							},
-							PosRange: parser.PositionRange{
+							PosRange: posrange.PositionRange{
 								Start: 8,
 								End:   19,
 							},
 							Timestamp: makeInt64Pointer(10000),
 						}},
-						PosRange: parser.PositionRange{
+						PosRange: posrange.PositionRange{
 							Start: 4,
 							End:   20,
 						},
 					}},
-					PosRange: parser.PositionRange{
+					PosRange: posrange.PositionRange{
 						Start: 0,
 						End:   21,
 					},
@@ -2709,13 +2711,13 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 								LabelMatchers: []*labels.Matcher{
 									parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric1"),
 								},
-								PosRange: parser.PositionRange{
+								PosRange: posrange.PositionRange{
 									Start: 8,
 									End:   25,
 								},
 								Timestamp: makeInt64Pointer(10000),
 							},
-							PosRange: parser.PositionRange{
+							PosRange: posrange.PositionRange{
 								Start: 4,
 								End:   26,
 							},
@@ -2727,19 +2729,19 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 								LabelMatchers: []*labels.Matcher{
 									parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric2"),
 								},
-								PosRange: parser.PositionRange{
+								PosRange: posrange.PositionRange{
 									Start: 33,
 									End:   50,
 								},
 								Timestamp: makeInt64Pointer(20000),
 							},
-							PosRange: parser.PositionRange{
+							PosRange: posrange.PositionRange{
 								Start: 29,
 								End:   52,
 							},
 						},
 					},
-					PosRange: parser.PositionRange{
+					PosRange: posrange.PositionRange{
 						Start: 0,
 						End:   52,
 					},
@@ -2754,7 +2756,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 					LabelMatchers: []*labels.Matcher{
 						parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
 					},
-					PosRange: parser.PositionRange{
+					PosRange: posrange.PositionRange{
 						Start: 0,
 						End:   13,
 					},
@@ -2771,7 +2773,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 					LabelMatchers: []*labels.Matcher{
 						parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
 					},
-					PosRange: parser.PositionRange{
+					PosRange: posrange.PositionRange{
 						Start: 0,
 						End:   11,
 					},
@@ -2791,7 +2793,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 						LabelMatchers: []*labels.Matcher{
 							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "test"),
 						},
-						PosRange: parser.PositionRange{
+						PosRange: posrange.PositionRange{
 							Start: 0,
 							End:   4,
 						},
@@ -2812,7 +2814,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 						LabelMatchers: []*labels.Matcher{
 							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "test"),
 						},
-						PosRange: parser.PositionRange{
+						PosRange: posrange.PositionRange{
 							Start: 0,
 							End:   4,
 						},
@@ -2831,7 +2833,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 						LabelMatchers: []*labels.Matcher{
 							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric"),
 						},
-						PosRange: parser.PositionRange{
+						PosRange: posrange.PositionRange{
 							Start: 0,
 							End:   11,
 						},
@@ -2853,7 +2855,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 						LabelMatchers: []*labels.Matcher{
 							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric"),
 						},
-						PosRange: parser.PositionRange{
+						PosRange: posrange.PositionRange{
 							Start: 0,
 							End:   11,
 						},
@@ -2883,7 +2885,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 							LabelMatchers: []*labels.Matcher{
 								parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric"),
 							},
-							PosRange: parser.PositionRange{
+							PosRange: posrange.PositionRange{
 								Start: 6,
 								End:   17,
 							},
@@ -2894,20 +2896,20 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 									Op: parser.MUL,
 									LHS: &parser.NumberLiteral{
 										Val: 3,
-										PosRange: parser.PositionRange{
+										PosRange: posrange.PositionRange{
 											Start: 21,
 											End:   22,
 										},
 									},
 									RHS: &parser.NumberLiteral{
 										Val: 1024,
-										PosRange: parser.PositionRange{
+										PosRange: posrange.PositionRange{
 											Start: 25,
 											End:   29,
 										},
 									},
 								},
-								PosRange: parser.PositionRange{
+								PosRange: posrange.PositionRange{
 									Start: 20,
 									End:   30,
 								},
@@ -2915,7 +2917,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 						},
 					},
 				},
-				PosRange: parser.PositionRange{
+				PosRange: posrange.PositionRange{
 					Start: 0,
 					End:   31,
 				},

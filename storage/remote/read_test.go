@@ -27,7 +27,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
-	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 )
 
 func TestNoDuplicateReadConfigs(t *testing.T) {
@@ -475,7 +475,7 @@ func TestSampleAndChunkQueryableClient(t *testing.T) {
 
 			ss := q.Select(context.Background(), true, nil, tc.matchers...)
 			require.NoError(t, err)
-			require.Equal(t, storage.Warnings(nil), ss.Warnings())
+			require.Equal(t, annotations.Annotations(nil), ss.Warnings())
 
 			require.Equal(t, tc.expectedQuery, m.got)
 

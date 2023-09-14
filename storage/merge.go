@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
+	"github.com/prometheus/prometheus/util/annotations"
 )
 
 type mergeGenericQuerier struct {
@@ -158,7 +159,7 @@ func (l labelGenericQueriers) SplitByHalf() (labelGenericQueriers, labelGenericQ
 // LabelValues returns all potential values for a label name.
 // If matchers are specified the returned result set is reduced
 // to label values of metrics matching the matchers.
-func (q *mergeGenericQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, Warnings, error) {
+func (q *mergeGenericQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	res, ws, err := q.lvals(ctx, q.queriers, name, matchers...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("LabelValues() from merge generic querier for label %s: %w", name, err)
@@ -167,7 +168,7 @@ func (q *mergeGenericQuerier) LabelValues(ctx context.Context, name string, matc
 }
 
 // lvals performs merge sort for LabelValues from multiple queriers.
-func (q *mergeGenericQuerier) lvals(ctx context.Context, lq labelGenericQueriers, n string, matchers ...*labels.Matcher) ([]string, Warnings, error) {
+func (q *mergeGenericQuerier) lvals(ctx context.Context, lq labelGenericQueriers, n string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	if lq.Len() == 0 {
 		return nil, nil, nil
 	}
@@ -176,14 +177,14 @@ func (q *mergeGenericQuerier) lvals(ctx context.Context, lq labelGenericQueriers
 	}
 	a, b := lq.SplitByHalf()
 
-	var ws Warnings
+	var ws annotations.Annotations
 	s1, w, err := q.lvals(ctx, a, n, matchers...)
-	ws = append(ws, w...)
+	ws.Merge(w)
 	if err != nil {
 		return nil, ws, err
 	}
 	s2, ws, err := q.lvals(ctx, b, n, matchers...)
-	ws = append(ws, w...)
+	ws.Merge(w)
 	if err != nil {
 		return nil, ws, err
 	}
@@ -218,16 +219,16 @@ func mergeStrings(a, b []string) []string {
 }
 
 // LabelNames returns all the unique label names present in all queriers in sorted order.
-func (q *mergeGenericQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, Warnings, error) {
+func (q *mergeGenericQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	var (
 		labelNamesMap = make(map[string]struct{})
-		warnings      Warnings
+		warnings      annotations.Annotations
 	)
 	for _, querier := range q.queriers {
 		names, wrn, err := querier.LabelNames(ctx, matchers...)
 		if wrn != nil {
 			// TODO(bwplotka): We could potentially wrap warnings.
-			warnings = append(warnings, wrn...)
+			warnings.Merge(wrn)
 		}
 		if err != nil {
 			return nil, nil, fmt.Errorf("LabelNames() from merge generic querier: %w", err)
@@ -382,10 +383,10 @@ func (c *genericMergeSeriesSet) Err() error {
 	return nil
 }
 
-func (c *genericMergeSeriesSet) Warnings() Warnings {
-	var ws Warnings
+func (c *genericMergeSeriesSet) Warnings() annotations.Annotations {
+	var ws annotations.Annotations
 	for _, set := range c.sets {
-		ws = append(ws, set.Warnings()...)
+		ws.Merge(set.Warnings())
 	}
 	return ws
 }

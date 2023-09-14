@@ -51,6 +51,7 @@ import (
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/httputil"
 	"github.com/prometheus/prometheus/util/stats"
 )
@@ -161,7 +162,7 @@ type Response struct {
 type apiFuncResult struct {
 	data      interface{}
 	err       *apiError
-	warnings  storage.Warnings
+	warnings  annotations.Annotations
 	finalizer func()
 }
 
@@ -337,7 +338,7 @@ func (api *API) Register(r *route.Router) {
 			}
 
 			if result.data != nil {
-				api.respond(w, r, result.data, result.warnings)
+				api.respond(w, r, result.data, result.warnings, r.FormValue("query"))
 				return
 			}
 			w.WriteHeader(http.StatusNoContent)
@@ -667,7 +668,7 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 
 	var (
 		names    []string
-		warnings storage.Warnings
+		warnings annotations.Annotations
 	)
 	if len(matcherSets) > 0 {
 		labelNamesSet := make(map[string]struct{})
@@ -678,7 +679,7 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 				return apiFuncResult{nil, returnAPIError(err), warnings, nil}
 			}
 
-			warnings = append(warnings, callWarnings...)
+			warnings.Merge(callWarnings)
 			for _, val := range vals {
 				labelNamesSet[val] = struct{}{}
 			}
@@ -743,17 +744,17 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 
 	var (
 		vals     []string
-		warnings storage.Warnings
+		warnings annotations.Annotations
 	)
 	if len(matcherSets) > 0 {
-		var callWarnings storage.Warnings
+		var callWarnings annotations.Annotations
 		labelValuesSet := make(map[string]struct{})
 		for _, matchers := range matcherSets {
 			vals, callWarnings, err = q.LabelValues(ctx, name, matchers...)
 			if err != nil {
 				return apiFuncResult{nil, &apiError{errorExec, err}, warnings, closer}
 			}
-			warnings = append(warnings, callWarnings...)
+			warnings.Merge(callWarnings)
 			for _, val := range vals {
 				labelValuesSet[val] = struct{}{}
 			}
@@ -1579,7 +1580,7 @@ func (api *API) serveWALReplayStatus(w http.ResponseWriter, r *http.Request) {
 		Min:     status.Min,
 		Max:     status.Max,
 		Current: status.Current,
-	}, nil)
+	}, nil, "")
 }
 
 func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
@@ -1685,17 +1686,15 @@ func (api *API) cleanTombstones(*http.Request) apiFuncResult {
 	return apiFuncResult{nil, nil, nil, nil}
 }
 
-func (api *API) respond(w http.ResponseWriter, req *http.Request, data interface{}, warnings storage.Warnings) {
+// Query string is needed to get the position information for the annotations, and it
+// can be empty if the position information isn't needed.
+func (api *API) respond(w http.ResponseWriter, req *http.Request, data interface{}, warnings annotations.Annotations, query string) {
 	statusMessage := statusSuccess
-	var warningStrings []string
-	for _, warning := range warnings {
-		warningStrings = append(warningStrings, warning.Error())
-	}
 
 	resp := &Response{
 		Status:   statusMessage,
 		Data:     data,
-		Warnings: warningStrings,
+		Warnings: warnings.AsStrings(query, 10),
 	}
 
 	codec, err := api.negotiateCodec(req, resp)
