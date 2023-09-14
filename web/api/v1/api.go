@@ -749,7 +749,7 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 		var callWarnings storage.Warnings
 		labelValuesSet := make(map[string]struct{})
 		for _, matchers := range matcherSets {
-			vals, callWarnings, err = q.LabelValues(name, matchers...)
+			vals, callWarnings, err = q.LabelValues(ctx, name, matchers...)
 			if err != nil {
 				return apiFuncResult{nil, &apiError{errorExec, err}, warnings, closer}
 			}
@@ -764,7 +764,7 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 			vals = append(vals, val)
 		}
 	} else {
-		vals, warnings, err = q.LabelValues(name)
+		vals, warnings, err = q.LabelValues(ctx, name)
 		if err != nil {
 			return apiFuncResult{nil, &apiError{errorExec, err}, warnings, closer}
 		}

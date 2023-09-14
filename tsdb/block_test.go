@@ -211,6 +211,7 @@ func TestCorruptedChunk(t *testing.T) {
 
 func TestLabelValuesWithMatchers(t *testing.T) {
 	tmpdir := t.TempDir()
+	ctx := context.Background()
 
 	var seriesEntries []storage.Series
 	for i := 0; i < 100; i++ {
@@ -265,11 +266,11 @@ func TestLabelValuesWithMatchers(t *testing.T) {
 
 	for _, tt := range testCases {
 		t.Run(tt.name, func(t *testing.T) {
-			actualValues, err := indexReader.SortedLabelValues(tt.labelName, tt.matchers...)
+			actualValues, err := indexReader.SortedLabelValues(ctx, tt.labelName, tt.matchers...)
 			require.NoError(t, err)
 			require.Equal(t, tt.expectedValues, actualValues)
 
-			actualValues, err = indexReader.LabelValues(tt.labelName, tt.matchers...)
+			actualValues, err = indexReader.LabelValues(ctx, tt.labelName, tt.matchers...)
 			sort.Strings(actualValues)
 			require.NoError(t, err)
 			require.Equal(t, tt.expectedValues, actualValues)
@@ -365,6 +366,7 @@ func TestReadIndexFormatV1(t *testing.T) {
 
 func BenchmarkLabelValuesWithMatchers(b *testing.B) {
 	tmpdir := b.TempDir()
+	ctx := context.Background()
 
 	var seriesEntries []storage.Series
 	metricCount := 1000000
@@ -398,7 +400,7 @@ func BenchmarkLabelValuesWithMatchers(b *testing.B) {
 	b.ReportAllocs()
 
 	for benchIdx := 0; benchIdx < b.N; benchIdx++ {
-		actualValues, err := indexReader.LabelValues("b_tens", matchers...)
+		actualValues, err := indexReader.LabelValues(ctx, "b_tens", matchers...)
 		require.NoError(b, err)
 		require.Equal(b, 9, len(actualValues))
 	}

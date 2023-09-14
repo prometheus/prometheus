@@ -118,7 +118,7 @@ type MockQuerier struct {
 	SelectMockFunction func(sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) SeriesSet
 }
 
-func (q *MockQuerier) LabelValues(string, ...*labels.Matcher) ([]string, Warnings, error) {
+func (q *MockQuerier) LabelValues(context.Context, string, ...*labels.Matcher) ([]string, Warnings, error) {
 	return nil, nil, nil
 }
 
@@ -157,7 +157,7 @@ type LabelQuerier interface {
 	// It is not safe to use the strings beyond the lifetime of the querier.
 	// If matchers are specified the returned result set is reduced
 	// to label values of metrics matching the matchers.
-	LabelValues(name string, matchers ...*labels.Matcher) ([]string, Warnings, error)
+	LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, Warnings, error)
 
 	// LabelNames returns all the unique label names present in the block in sorted order.
 	// If matchers are specified the returned result set is reduced

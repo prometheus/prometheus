@@ -93,7 +93,7 @@ func (m mockIndex) Close() error {
 	return nil
 }
 
-func (m mockIndex) LabelValues(name string) ([]string, error) {
+func (m mockIndex) LabelValues(_ context.Context, name string) ([]string, error) {
 	values := []string{}
 	for l := range m.postings {
 		if l.Name == name {
@@ -449,7 +449,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 	for k, v := range labelPairs {
 		sort.Strings(v)
 
-		res, err := ir.SortedLabelValues(k)
+		res, err := ir.SortedLabelValues(ctx, k)
 		require.NoError(t, err)
 
 		require.Equal(t, len(v), len(res))

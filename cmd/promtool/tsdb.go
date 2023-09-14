@@ -512,7 +512,7 @@ func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExten
 
 	postingInfos = postingInfos[:0]
 	for _, n := range allLabelNames {
-		values, err := ir.SortedLabelValues(n)
+		values, err := ir.SortedLabelValues(ctx, n)
 		if err != nil {
 			return err
 		}
@@ -528,7 +528,7 @@ func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExten
 
 	postingInfos = postingInfos[:0]
 	for _, n := range allLabelNames {
-		lv, err := ir.SortedLabelValues(n)
+		lv, err := ir.SortedLabelValues(ctx, n)
 		if err != nil {
 			return err
 		}
@@ -538,7 +538,7 @@ func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExten
 	printInfo(postingInfos)
 
 	postingInfos = postingInfos[:0]
-	lv, err := ir.SortedLabelValues("__name__")
+	lv, err := ir.SortedLabelValues(ctx, "__name__")
 	if err != nil {
 		return err
 	}

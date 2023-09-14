@@ -183,6 +183,8 @@ func benchmarkLabelValuesWithMatchers(b *testing.B, ir IndexReader) {
 	nX := labels.MustNewMatcher(labels.MatchNotEqual, "n", "X"+postingsBenchSuffix)
 	nPlus := labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")
 
+	ctx := context.Background()
+
 	cases := []struct {
 		name      string
 		labelName string
@@ -205,7 +207,7 @@ func benchmarkLabelValuesWithMatchers(b *testing.B, ir IndexReader) {
 	for _, c := range cases {
 		b.Run(c.name, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
-				_, err := labelValuesWithMatchers(ir, c.labelName, c.matchers...)
+				_, err := labelValuesWithMatchers(ctx, ir, c.labelName, c.matchers...)
 				require.NoError(b, err)
 			}
 		})
