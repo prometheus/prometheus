@@ -46,8 +46,8 @@ func NewOOOChunk() *OOOChunk {
 // Returns false if insert was not possible due to the same timestamp already existing
 // or the timestamp falls within a tombstone interval.
 func (o *OOOChunk) Insert(t int64, v float64) bool {
-	// Check if the timestamp falls within any of the tombstone intervals.
-	if o.tombstones.IsDeletedAt(o.seriesRef, t) {
+	// Check if this timestamp is in a tombstone interval before inserting.
+	if o.tombstones.HasTimestamp(o.seriesRef, t) {
 		return false
 	}
 
@@ -126,13 +126,15 @@ type OOORangeHead struct {
 	// the timerange of the query and having preexisting pointers to the first
 	// and last timestamp help with that.
 	mint, maxt int64
+	tombstones tombstones.Reader
 }
 
 func NewOOORangeHead(head *Head, mint, maxt int64) *OOORangeHead {
 	return &OOORangeHead{
-		head: head,
-		mint: mint,
-		maxt: maxt,
+		head:       head,
+		mint:       mint,
+		maxt:       maxt,
+		tombstones: head.tombstones,
 	}
 }
 
@@ -145,9 +147,8 @@ func (oh *OOORangeHead) Chunks() (ChunkReader, error) {
 }
 
 func (oh *OOORangeHead) Tombstones() (tombstones.Reader, error) {
-	// As stated in the design doc https://docs.google.com/document/d/1Kppm7qL9C-BJB1j6yb6-9ObG3AbdZnFUBYPNNWwDBYM/edit?usp=sharing
-	// Tombstones are not supported for out of order metrics.
-	return tombstones.NewMemTombstones(), nil
+	// Return the tombstones from the main head.
+	return oh.tombstones, nil
 }
 
 var oooRangeHeadULID = ulid.MustParse("0000000000XXXX000RANGEHEAD")
@@ -181,17 +182,4 @@ func (oh *OOORangeHead) MinTime() int64 {
 
 func (oh *OOORangeHead) MaxTime() int64 {
 	return oh.maxt
-}
-
-func (o *OOOChunk) DeleteRange(mint, maxt int64, seriesRef storage.SeriesRef) {
-	var newSamples []sample
-	for _, s := range o.samples {
-		if s.t < mint || s.t > maxt {
-			newSamples = append(newSamples, s)
-		} else {
-			// Optionally, update the tombstones here if you are maintaining a tombstone list in OOOChunk
-			o.tombstones.AddInterval(seriesRef, tombstones.Interval{Mint: mint, Maxt: maxt})
-		}
-	}
-	o.samples = newSamples
 }

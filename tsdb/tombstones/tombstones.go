@@ -386,16 +386,18 @@ func (in Intervals) Add(n Interval) Intervals {
 	return append(in[:mini+1], in[maxi+mini:]...)
 }
 
-// IsDeletedAt checks if the given timestamp for the series reference is deleted.
-func (t *MemTombstones) IsDeletedAt(ref storage.SeriesRef, timestamp int64) bool {
+// Check if a given timestamp is within any of the tombstone intervals.
+func (t *MemTombstones) HasTimestamp(ref storage.SeriesRef, ts int64) bool {
 	t.mtx.RLock()
 	defer t.mtx.RUnlock()
-	intervals, ok := t.intvlGroups[ref]
-	if !ok {
+
+	intervals, exists := t.intvlGroups[ref]
+	if !exists {
 		return false
 	}
+
 	for _, interval := range intervals {
-		if interval.InBounds(timestamp) {
+		if ts >= interval.Mint && ts <= interval.Maxt {
 			return true
 		}
 	}

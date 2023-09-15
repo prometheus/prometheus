@@ -124,9 +124,6 @@ type Head struct {
 	writeNotified wlog.WriteNotified
 
 	memTruncationInProcess atomic.Bool
-
-	// Field to store OOO chunks
-	oooChunks []*OOOChunk // or use a map if that's more appropriate
 }
 
 type ExemplarStorage interface {
@@ -1480,15 +1477,6 @@ func (h *Head) Delete(ctx context.Context, mint, maxt int64, ms ...*labels.Match
 	}
 	for _, s := range stones {
 		h.tombstones.AddInterval(s.Ref, s.Intervals[0])
-	}
-
-	// New code for OOO data deletion
-	for _, oooChunk := range h.oooChunks {
-		oooChunk.DeleteRange(mint, maxt, oooChunk.seriesRef)
-		// If using WAL, log the deletion for OOO data
-		// if h.wal != nil {
-		// 	// TODO: Log the new tombstone for OOO data to WAL
-		// }
 	}
 
 	return nil
