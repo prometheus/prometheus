@@ -30,6 +30,7 @@ type GoSegment struct {
 	earliest           int64
 	latest             int64
 	remainingTableSize uint32
+	manyStateHandle    uint64
 }
 
 // NewGoSegment - init GoSegment.

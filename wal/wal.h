@@ -21,7 +21,76 @@
 #include "primitives/primitives.h"
 #include "primitives/snug_composites.h"
 
+#include "roaring/roaring.hh"
+
 namespace PromPP::WAL {
+
+// helpers for unifying bitmaps APIs.
+namespace detail {
+template <typename T, typename PosType = size_t>
+concept HasSetMethod = std::convertible_to<PosType, size_t> && requires(T t, PosType pos) {
+  { t.set(pos) };  // std::bitset, BareBones::Bitset
+};
+
+template <typename T, typename PosType = size_t>
+concept HasAddMethod = std::convertible_to<PosType, size_t> && requires(T t, PosType pos) {
+  { t.add(pos) };  // roaring::Bitmap[64]
+};
+
+template <typename T>
+concept HasClearMethod = requires(T t) {
+  { t.clear() };
+};
+
+template <typename T, typename PosType = size_t>
+concept HasSetOrAddMethod = HasSetMethod<T, PosType> || HasAddMethod<T, PosType>;
+
+}  // namespace detail
+
+template <typename T, typename PosType = size_t>
+concept Bitset = detail::HasSetOrAddMethod<T, PosType>;
+
+// stl-like API adaptor for distinct bitsets. Use it for generic work with any bitsets.
+// You may also create an specialization of this type for more refined operations.
+template <typename BitsetType>
+struct BitsetTraits {
+  /// Use it to set bit at position @ref pos_type in any compatible bitset (as static method).
+  template <typename PosType>
+    requires detail::HasSetOrAddMethod<BitsetType, PosType>
+  static void set(BitsetType& bitset, PosType pos_type) {
+    if constexpr (detail::HasAddMethod<BitsetType, PosType>) {
+      bitset.add(pos_type);
+    }
+    if constexpr (detail::HasSetMethod<BitsetType, PosType>) {
+      bitset.set(pos_type);
+    }
+  }
+  static void clear(BitsetType& bitset) {
+    if constexpr (detail::HasClearMethod<BitsetType>) {
+      bitset.clear();
+    } else {
+      using std::swap;
+      BitsetType empty_bt{};
+      std::swap(bitset, empty_bt);
+    }
+  }
+};
+
+template <typename Callable, typename AddCallable, typename Timeseries>
+concept TimeseriesWithoutHashValGenerator = requires(Callable c, AddCallable ac, const Timeseries& ts) {
+  { ac(ts) };
+  { c(ac) };
+};
+
+template <typename Callable, typename AddCallable, typename Timeseries>
+concept TimeseriesWithHashValGenerator = requires(Callable c, AddCallable ac, const Timeseries& ts) {
+  { ac(ts, size_t{}) };
+  { c(ac) };
+};
+
+template <typename Callable, typename AddCallable, typename Timeseries>
+concept TimeseriesGenerator =
+    TimeseriesWithoutHashValGenerator<Callable, AddCallable, Timeseries> || TimeseriesWithHashValGenerator<Callable, AddCallable, Timeseries>;
 
 template <class LabelSetsTable = Primitives::SnugComposites::LabelSet::EncodingBimap>
 class BasicEncoder {
@@ -140,6 +209,25 @@ class BasicEncoder {
     Redundant(uint32_t _segment, typename LabelSetsTable::checkpoint_type _label_sets_checkpoint, uint32_t _encoders_count)
         : segment(_segment), encoders_count(_encoders_count), label_sets_checkpoint(_label_sets_checkpoint) {}
   };
+
+  template <Bitset BitsetType = roaring::Roaring>
+  struct StaleNaNsState {
+    void* parent;
+    BitsetType prev_bitset;
+    BitsetType cur_bitset;
+
+    template <typename T>
+    StaleNaNsState(T* t) : parent(t) {}
+  };
+
+  // Opaque type for storing state between add_many() calls
+  using AddManyStateHandle = size_t;
+
+  static void DestroyAddManyStateHandle(AddManyStateHandle h) {
+    if (h) {
+      delete reinterpret_cast<StaleNaNsState<>*>(h);
+    }
+  }
 
  private:
   LabelSetsTable label_sets_;
@@ -331,19 +419,103 @@ class BasicEncoder {
   inline __attribute__((always_inline)) size_t remainder_size() const noexcept { return label_sets_.data().remainder_size(); }
 
   template <typename T>
-  inline __attribute__((always_inline)) void add(const T& tmsr) {
+  inline __attribute__((always_inline)) Primitives::LabelSetID add(const T& tmsr) {
     Primitives::LabelSetID ls_id = label_sets_.find_or_emplace(tmsr.label_set());
     for (const auto& smpl : tmsr.samples()) {
       buffer_.add(ls_id, smpl);
     }
+    return ls_id;
   }
 
   template <typename T>
-  inline __attribute__((always_inline)) void add(const T& tmsr, size_t hashval) {
+  inline __attribute__((always_inline)) Primitives::LabelSetID add(const T& tmsr, size_t hashval) {
     Primitives::LabelSetID ls_id = label_sets_.find_or_emplace(tmsr.label_set(), hashval);
     for (const auto& smpl : tmsr.samples()) {
       buffer_.add(ls_id, smpl);
     }
+    return ls_id;
+  }
+
+  /// @brief Use it for selecting the proper @ref add_many() function's callback type.
+  ///        It affects the forwarded `void add(const Timeseries&,...)` callback.
+  ///         - The `with_hash_value` will forward the `add(timeseries, hash_value)` callback,
+  ///         - The `without_hash_value` will forward the `add(timeseries)` only callback.
+  enum add_many_generator_callback_type {
+    with_hash_value,
+    without_hash_value,
+  };
+
+  /// Use this method for adding many timeseries with controlling label sets.
+  /// If any label from set would absent, it would be appended with
+  /// timeseries with one sample `{@ref stale_nan_timestamp, StaleNaN}` (aka "StaleNaN timeseries").
+  /// @tparam TimeseriesGeneratorT Any callable type which could accept another callable
+  ///         `void(const Timeseries& tmsr)`/`void(const Timeseries& tmsr, size_t hashval)`
+  ///         (depends on @ref GeneratorForwardedCallbackType).
+  /// @param add_many_state Opaque function state. It's used for
+  ///        checking new label sets for absence. All absent label sets would be
+  ///        filled with StaleNaN timeseries. If 0, then new state handle would be created,
+  ///        and you must use it for further add_many() operations for proper filling timeseries with stalenans.
+  /// @param stale_nan_timestamp Timestamp for new StaleNaN timeseries.
+  /// @param timeseries_generator_callback Generator for new timeseries. It should call the
+  ///        `void(const Timeseries& tmsr)`/`void(const Timeseries& tmsr, size_t hashval)` callback for
+  ///        actual addition of the timeseries (tmsr) with forwarded AddManyStateHandle state.
+  ///        The callback must return the BitsetType which would be used for searching absent label sets.
+  /// @return Opaque state with timeseries deltas. Use it in further add_many() calls for filling
+  ///         missing label_sets with stalenans.
+  template <add_many_generator_callback_type GeneratorForwardedCallbackType, typename Timeseries, typename Timestamp, typename TimeseriesGeneratorT>
+  //  requires(TimeseriesGenerator<TimeseriesGeneratorT, void(const Timeseries&), Timeseries>)
+  AddManyStateHandle add_many(AddManyStateHandle add_many_state, const Timestamp& stale_nan_timestamp, TimeseriesGeneratorT timeseries_generator_callback) {
+    StaleNaNsState<>* result = add_many_state ? reinterpret_cast<StaleNaNsState<>*>(add_many_state) : new StaleNaNsState<>(this);
+    if (result->parent != this) {
+      // this state is not our state, so cleaning up bits!
+      result->parent = this;
+      BitsetTraits<decltype(result->cur_bitset)>::clear(result->cur_bitset);
+      BitsetTraits<decltype(result->prev_bitset)>::clear(result->prev_bitset);
+    }
+    try {
+      auto add_one_timeseries_without_hashval = [&](const auto& tmsr) { result->cur_bitset.add(this->add(tmsr)); };
+      auto add_one_timeseries_with_hashval = [&](const auto& tmsr, size_t hashval) { result->cur_bitset.add(this->add(tmsr, hashval)); };
+
+      if constexpr (GeneratorForwardedCallbackType == without_hash_value) {
+        static_assert(TimeseriesWithoutHashValGenerator<TimeseriesGeneratorT, decltype(add_one_timeseries_without_hashval), Timeseries>,
+                      "The Timeseries generator of type `without_hash_value` must accept the `void add_timeseries_cb(const Timeseries& tmsr)` callback");
+        timeseries_generator_callback(add_one_timeseries_without_hashval);
+      } else {
+        static_assert(
+            TimeseriesWithHashValGenerator<TimeseriesGeneratorT, decltype(add_one_timeseries_with_hashval), Timeseries>,
+            "The Timeseries generator of type `with_hash_value` must accept the `void add_timeseries_cb(const Timeseries& tmsr, size_t hash_val)` callback");
+
+        timeseries_generator_callback(add_one_timeseries_with_hashval);
+      }
+
+      // Check availability of subtraction
+
+      static_assert(BareBones::Concepts::SubtractSemigroup<decltype(result->prev_bitset)>,
+                    "The bitset type should be capable to make an set_difference operation via `operator -()`"
+                    " in expression like `diff = prev - cur`. "
+                    "Define that `operator -()` if you want to use the `add_many()` method.");
+
+      auto diff = result->prev_bitset - result->cur_bitset;
+
+      // now create timeseries with stalenan and add it.
+      const Primitives::Sample smpl{stale_nan_timestamp, BareBones::Encoding::Gorilla::STALE_NAN};
+
+      for (const auto& item : diff) {
+        buffer_.add(item, smpl);
+      }
+
+      // drop old, store new..
+      result->prev_bitset = result->cur_bitset;
+      BitsetTraits<decltype(result->cur_bitset)>::clear(result->cur_bitset);
+
+    } catch (...) {
+      // avoid leaks on any exception, and pass-through it.
+      if (add_many_state == 0) {
+        delete result;
+      }
+      throw;
+    }
+    return reinterpret_cast<AddManyStateHandle>(result);
   }
 
   template <class OutputStream>

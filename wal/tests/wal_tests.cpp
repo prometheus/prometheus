@@ -294,3 +294,62 @@ TEST_F(Wal, Snapshots) {
   EXPECT_EQ(decoder.decoders(), decoder2.decoders());
 }
 }  // namespace
+
+TEST_F(Wal, BasicEncoderMany) {
+  using WALEncoder = PromPP::WAL::BasicEncoder<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap>;
+  using AddManyCallbackType = WALEncoder::add_many_generator_callback_type;
+  using enum AddManyCallbackType;
+  WALEncoder encoder(2, 3);
+
+  const LabelSetForTest ls1{{"LS", "1"}};
+  const LabelSetForTest ls2{{"LS", "2"}};
+  const LabelSetForTest ls3{{"LS", "3"}};
+  const LabelSetForTest ls4{{"LS", "4"}};
+
+  const PromPP::Primitives::Timestamp ts[]{1000, 2000};
+
+  auto generator = [&](auto add_cb) {
+    add_cb(TimeSeriesForTest(ls1, {{1000, 1}}));
+    add_cb(TimeSeriesForTest(ls2, {{1000, 0}}));
+    add_cb(TimeSeriesForTest(ls3, {{1000, 2}}));
+  };
+
+  auto generator_2 = [&](auto add_cb) {
+    add_cb(TimeSeriesForTest(ls1, {{2000, 2}}));
+    add_cb(TimeSeriesForTest(ls3, {{2000, 2}}));
+    add_cb(TimeSeriesForTest(ls4, {{2000, 2}}));
+  };
+
+  //
+  decltype(encoder)::AddManyStateHandle handle = encoder.add_many<without_hash_value, TimeSeriesForTest>(0, ts[0], generator);
+  handle = encoder.add_many<without_hash_value, TimeSeriesForTest>(handle, ts[1], generator_2);
+  decltype(encoder)::DestroyAddManyStateHandle(handle);
+
+  struct Item {
+    uint32_t ls_id;
+    SampleForTest sample;
+    Item(uint32_t id, PromPP::Primitives::Timestamp ts, double v) : ls_id(id), sample(ts, v) {}
+  };
+
+  // clang-format off
+  Item expected_items[]{
+      {0, 1000, 1.0},
+      {0, 2000, 2.0},
+      {1, 1000, 0},
+      {1, 2000, BareBones::Encoding::Gorilla::STALE_NAN},
+      {2, 1000, 2},
+      {2, 2000, 2},
+      {3, 2000, 2},
+  };
+  // clang-format on
+
+  size_t ind = 0;
+
+  encoder.buffer().for_each([&](auto ls_id, auto timestamp, double v) {
+    EXPECT_TRUE(ind < std::size(expected_items));
+    EXPECT_EQ(expected_items[ind].ls_id, ls_id);
+    EXPECT_EQ(expected_items[ind].sample.timestamp(), timestamp);
+    EXPECT_EQ(std::bit_cast<uint64_t>(expected_items[ind].sample.value()), std::bit_cast<uint64_t>(v));
+    ++ind;
+  });
+}

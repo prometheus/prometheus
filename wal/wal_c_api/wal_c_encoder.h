@@ -71,6 +71,8 @@ void OKDB_WAL_PREFIXED_NAME(okdb_wal_c_encoder_finalize)(c_encoder c_enc, c_segm
 void OKDB_WAL_PREFIXED_NAME(okdb_wal_c_encoder_snapshot)(c_encoder c_enc, c_slice_ptr c_rts, c_snapshot* c_snap);
 // okdb_wal_c_encoder_dtor - calls the destructor, C wrapper C++ for clear memory.
 void OKDB_WAL_PREFIXED_NAME(okdb_wal_c_encoder_dtor)(c_encoder c_enc);
+// okdb_wal_c_encoder_add_many_state_release - clean up state from add_many() call.
+void OKDB_WAL_PREFIXED_NAME(okdb_wal_c_encoder_add_many_state_destroy)(uint64_t handle);
 
 #ifdef __cplusplus
 }  // extern "C"
@@ -86,6 +88,7 @@ OKDB_WAL_EXPORT_API(okdb_wal_c_encoder_add)
 OKDB_WAL_EXPORT_API(okdb_wal_c_encoder_finalize)
 OKDB_WAL_EXPORT_API(okdb_wal_c_encoder_snapshot)
 OKDB_WAL_EXPORT_API(okdb_wal_c_encoder_dtor)
+OKDB_WAL_EXPORT_API(okdb_wal_c_encoder_add_many_state_destroy)
 OKDB_WAL_EXPORT_API_END
 
 #endif

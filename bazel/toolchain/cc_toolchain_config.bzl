@@ -134,7 +134,8 @@ def _impl(ctx):
                             flags = [
                                 # Additional flags for "-c opt"
                                 "-O3",
-                            ],
+                                "-DNDEBUG",
+                            ] + ctx.attr.cpu_compiler_options,
                         ),
                     ],
                     with_features = [
@@ -150,12 +151,11 @@ def _impl(ctx):
                     flag_groups = [
                         flag_group(
                             flags = [
-                                # Additional flags for "-c opt"
+                                # Additional flags for "-c opt" (C++ only)
                                 "-fconcepts-diagnostics-depth=4",
                                 "-finline-limit=10000",
                                 "--param=large-function-insns=20000",
-                                "-DNDEBUG",
-                            ] + ctx.attr.cpu_compiler_options,
+                            ],
                         ),
                     ],
                     with_features = [

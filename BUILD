@@ -121,6 +121,7 @@ cc_library(
     name = "wal",
     hdrs = glob(["wal/*.h"]),
     deps = [
+        "@roaring_bitmap",
         ":bare_bones",
         ":primitives",
         ":prometheus",

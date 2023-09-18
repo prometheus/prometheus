@@ -93,6 +93,8 @@ void okdb_wal_uni_c_encoder_snapshot(c_encoder c_enc, c_encoder_snapshot_params*
 // okdb_wal_c_encoder_dtor - calls the destructor, C wrapper C++ for clear memory.
 void okdb_wal_c_encoder_dtor(c_encoder c_enc);
 
+void okdb_wal_c_encoder_add_many_state_destroy(uint64_t state_handle);
+
 // Entry point
 
 /// \returns arch flavour ID.

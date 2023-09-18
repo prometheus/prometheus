@@ -6,6 +6,8 @@
 
 #include "wal_c_encoder.h"
 
+#include "roaring/roaring.hh"
+
 #include <limits>
 #include <new>
 #include <span>
@@ -84,31 +86,33 @@ class Encoder {
 
   // encode - encoding data from Hashdex and make segment, redundant.
   inline __attribute__((always_inline)) void encode(c_hashdex c_hx, c_segment* c_seg, c_redundant* c_rt) {
-    auto hashdex_data = static_cast<Hashdex*>(c_hx)->data();
-
-    for (const auto& [chksm, pb_view] : hashdex_data) {
-      if ((chksm % number_of_shards_) == shard_id_) {
-        PromPP::Prometheus::RemoteWrite::read_timeseries(protozero::pbf_reader{pb_view}, timeseries_);
-        writer_.add(timeseries_, chksm);
-        timeseries_.clear();
-      }
-    }
-
-    fill_in_segment_with_stats(c_seg);
-
-    auto segment_buffer = new std::stringstream;
-    c_rt->data = writer_.write(*segment_buffer).release();
-
-    std::string_view outcome = segment_buffer->view();
-    c_seg->data.array = outcome.begin();
-    c_seg->data.len = outcome.size();
-    c_seg->data.cap = outcome.size();
-    c_seg->buf = segment_buffer;
+    add(c_hx, c_seg);
+    finalize(c_seg, c_rt);
   }
 
   // add - add to encode incoming data(ShardedData) through C++ encoder.
+  inline __attribute__((always_inline)) void add_with_stalenans(c_hashdex c_hx, c_segment* c_seg) {
+    auto hashdex_data = static_cast<Hashdex*>(c_hx)->data();
+    auto add_many_state = c_seg->ls_add_many_state;
+
+    auto add_many_cb = [&](auto& add_cb) {
+      for (const auto& [chksm, pb_view] : hashdex_data) {
+        if ((chksm % number_of_shards_) == shard_id_) {
+          PromPP::Prometheus::RemoteWrite::read_timeseries(protozero::pbf_reader{pb_view}, timeseries_);
+          add_cb(timeseries_, chksm);
+          timeseries_.clear();
+        }
+      }
+    };
+    std::cout << __func__ << "(): add_many_state = " << add_many_state << std::endl;
+    c_seg->ls_add_many_state = writer_.add_many<decltype(writer_)::add_many_generator_callback_type::with_hash_value, decltype(timeseries_)>(
+        add_many_state, c_seg->latest_timestamp, add_many_cb);
+  }
+
+  // add_wo_stalenans - add (without any stalenans) to encode incoming data(ShardedData) through C++ encoder.
   inline __attribute__((always_inline)) void add(c_hashdex c_hx, c_segment* c_seg) {
     auto hashdex_data = static_cast<Hashdex*>(c_hx)->data();
+
     for (const auto& [chksm, pb_view] : hashdex_data) {
       if ((chksm % number_of_shards_) == shard_id_) {
         PromPP::Prometheus::RemoteWrite::read_timeseries(protozero::pbf_reader{pb_view}, timeseries_);
@@ -127,10 +131,7 @@ class Encoder {
     auto segment_buffer = new std::stringstream;
     c_rt->data = writer_.write(*segment_buffer).release();
 
-    std::string_view outcome = segment_buffer->view();
-    c_seg->data.array = outcome.begin();
-    c_seg->data.len = outcome.size();
-    c_seg->data.cap = outcome.size();
+    c_seg->data = segment_buffer->view();
     c_seg->buf = segment_buffer;
   }
 
@@ -140,10 +141,7 @@ class Encoder {
     auto snapshot_buffer = new std::stringstream;
     writer_.snapshot(span_redundants, *snapshot_buffer);
 
-    std::string_view outcome = snapshot_buffer->view();
-    c_snap->data.array = outcome.begin();
-    c_snap->data.len = outcome.size();
-    c_snap->data.cap = outcome.size();
+    c_snap->data = snapshot_buffer->view();
     c_snap->buf = snapshot_buffer;
   }
 
@@ -218,6 +216,10 @@ void OKDB_WAL_PREFIXED_NAME(okdb_wal_c_encoder_snapshot)(c_encoder c_enc, c_slic
 // okdb_wal_c_encoder_dtor - calls the destructor, C wrapper C++ for clear memory.
 void OKDB_WAL_PREFIXED_NAME(okdb_wal_c_encoder_dtor)(c_encoder c_enc) {
   delete static_cast<Wrapper::Encoder*>(c_enc);
+}
+
+void OKDB_WAL_PREFIXED_NAME(okdb_wal_c_encoder_add_many_state_destroy)(uint64_t handle) {
+  PromPP::WAL::Writer::DestroyAddManyStateHandle(handle);
 }
 
 }  // extern "C"

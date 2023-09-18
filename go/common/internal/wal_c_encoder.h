@@ -114,6 +114,9 @@ void okdb_wal_uni_c_encoder_snapshot(go_ptr c_enc, go_ptr snapshot_params, go_pt
 // okdb_wal_c_encoder_dtor - calls the destructor, C wrapper C++ for clear memory.
 void okdb_wal_c_encoder_dtor(c_encoder c_enc);
 
+// clean up the handle (from wal/wal.h)
+void okdb_wal_c_encoder_add_many_state_destroy(uint64_t handle);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif

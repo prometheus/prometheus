@@ -65,6 +65,16 @@ typedef struct {
   const void* array;
   size_t len;
   size_t cap;
+
+#ifdef __cplusplus
+  decltype(auto) operator=(const std::string_view& sv) noexcept {
+    this->array = sv.data();
+    this->cap = sv.size();
+    this->len = sv.size();
+    return *this;
+  }
+#endif  // __cplusplus
+
 } c_slice;
 
 typedef c_slice* c_slice_ptr;
@@ -84,6 +94,7 @@ typedef struct {
   int64_t earliest_timestamp;
   int64_t latest_timestamp;
   uint32_t remainder_size;
+  uint64_t ls_add_many_state;
 } c_segment;
 
 typedef struct {
