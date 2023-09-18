@@ -94,6 +94,8 @@ def _impl(ctx):
                                 "-fPIC",
                                 "-Wall",
                                 "-gdwarf",
+                                "-ggdb",
+                                "-g",
                             ],
                         ),
                     ],
