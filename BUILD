@@ -37,10 +37,10 @@ cc_library(
         "//third_party",
         "@parallel_hashmap",
         "@scope_exit",
-        "@backward_cpp//:backward_cpp_header_only", # stacktrace lib
-        "@elf//:elf",
         "@zlib//:zlib",
-        "@dwarf//:dwarf",
+        "@lzma//:lzma",
+        "@elf//:elf",
+        "@backward_cpp//:backward_cpp_header_only", # stacktrace lib
     ],
 )
 

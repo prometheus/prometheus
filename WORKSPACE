@@ -78,19 +78,19 @@ http_archive(
 )
 
 http_archive(
+    name = "lzma",
+    url = "https://tukaani.org/xz/xz-5.4.4.tar.xz",
+    sha256 = "705d0d96e94e1840e64dec75fc8d5832d34f6649833bec1ced9c3e08cf88132e",
+    build_file = "//third_party:lzma.BUILD",
+    strip_prefix = "xz-5.4.4/",
+)
+
+http_archive(
     name = "elf",
     url = "https://sourceware.org/elfutils/ftp/0.189/elfutils-0.189.tar.bz2",
     sha256 = "39bd8f1a338e2b7cd4abc3ff11a0eddc6e690f69578a57478d8179b4148708c8",
     build_file = "//third_party:elf.BUILD",
     strip_prefix = "elfutils-0.189/",
-)
-
-http_archive(
-    name = "dwarf",
-    url = "https://www.prevanders.net/libdwarf-20210528.tar.gz",
-    sha256 = "b8ba0ee9b70d2052d45272489d79bf456c4d342fc8c3bba45038afc50ec6e28b",
-    build_file = "//third_party:dwarf.BUILD",
-    strip_prefix = "libdwarf-20210528/",
 )
 
 http_archive(
