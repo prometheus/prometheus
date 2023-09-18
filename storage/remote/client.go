@@ -210,6 +210,7 @@ func (c *Client) Store(ctx context.Context, req []byte, attempt int) error {
 	if attempt > 0 {
 		httpReq.Header.Set("Retry-Attempt", strconv.Itoa(attempt))
 	}
+
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
