@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"math"
@@ -1453,19 +1454,23 @@ func (h *RangeHead) String() string {
 
 // Delete all samples in the range of [mint, maxt] for series that satisfy the given
 // label matchers.
-func (h *Head) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
+func (h *Head) Delete(ctx context.Context, mint, maxt int64, ms ...*labels.Matcher) error {
 	// Do not delete anything beyond the currently valid range.
 	mint, maxt = clampInterval(mint, maxt, h.MinTime(), h.MaxTime())
 
 	ir := h.indexRange(mint, maxt)
 
-	p, err := ir.PostingsForMatchers(false, ms...)
+	p, err := ir.PostingsForMatchers(ctx, false, ms...)
 	if err != nil {
 		return errors.Wrap(err, "select series")
 	}
 
 	var stones []tombstones.Stone
 	for p.Next() {
+		if err := ctx.Err(); err != nil {
+			return errors.Wrap(err, "select series")
+		}
+
 		series := h.series.getByID(chunks.HeadSeriesRef(p.At()))
 		if series == nil {
 			level.Debug(h.logger).Log("msg", "Series not found in Head.Delete")
@@ -1485,6 +1490,10 @@ func (h *Head) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
 	if p.Err() != nil {
 		return p.Err()
 	}
+	if ctx.Err() != nil {
+		return errors.Wrap(err, "select series")
+	}
+
 	if h.wal != nil {
 		var enc record.Encoder
 		if err := h.wal.Log(enc.Tombstones(stones, nil)); err != nil {

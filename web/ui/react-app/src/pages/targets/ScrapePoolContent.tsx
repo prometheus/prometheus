@@ -35,12 +35,7 @@ const ScrapePoolContentTable: FC<InfiniteScrollItemsProps<Target>> = ({ items })
               <Badge color={getColor(target.health)}>{target.health.toUpperCase()}</Badge>
             </td>
             <td className={styles.labels}>
-              <TargetLabels
-                discoveredLabels={target.discoveredLabels}
-                labels={target.labels}
-                scrapePool={target.scrapePool}
-                idx={index}
-              />
+              <TargetLabels discoveredLabels={target.discoveredLabels} labels={target.labels} />
             </td>
             <td className={styles['last-scrape']}>{formatRelative(target.lastScrape, now())}</td>
             <td className={styles['scrape-duration']}>

@@ -1009,7 +1009,7 @@ func (c DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *Compa
 		closers = append(closers, tombsr)
 
 		k, v := index.AllPostingsKey()
-		all, err := indexr.Postings(k, v)
+		all, err := indexr.Postings(ctx, k, v)
 		if err != nil {
 			return err
 		}
@@ -1021,7 +1021,7 @@ func (c DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *Compa
 			// To iterate series when populating symbols, we cannot reuse postings we just got, but need to get a new copy.
 			// Postings can only be iterated once.
 			k, v = index.AllPostingsKey()
-			all, err = indexr.Postings(k, v)
+			all, err = indexr.Postings(ctx, k, v)
 			if err != nil {
 				return err
 			}

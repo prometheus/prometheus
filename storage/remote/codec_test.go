@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
+	"github.com/prometheus/prometheus/util/annotations"
 )
 
 var testHistogram = histogram.Histogram{
@@ -810,7 +811,7 @@ func (c *mockChunkSeriesSet) At() storage.ChunkSeries {
 	}
 }
 
-func (c *mockChunkSeriesSet) Warnings() storage.Warnings { return nil }
+func (c *mockChunkSeriesSet) Warnings() annotations.Annotations { return nil }
 
 func (c *mockChunkSeriesSet) Err() error {
 	return nil

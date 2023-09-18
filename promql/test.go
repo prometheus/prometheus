@@ -34,6 +34,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -197,7 +198,7 @@ func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 	if err != nil {
 		parser.EnrichParseError(err, func(parseErr *parser.ParseErr) {
 			parseErr.LineOffset = i
-			posOffset := parser.Pos(strings.Index(lines[i], expr))
+			posOffset := posrange.Pos(strings.Index(lines[i], expr))
 			parseErr.PositionRange.Start += posOffset
 			parseErr.PositionRange.End += posOffset
 			parseErr.Query = lines[i]

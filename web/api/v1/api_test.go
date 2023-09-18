@@ -993,14 +993,14 @@ func setupRemote(s storage.Storage) *httptest.Server {
 				}
 			}
 
-			querier, err := s.Querier(r.Context(), query.StartTimestampMs, query.EndTimestampMs)
+			querier, err := s.Querier(query.StartTimestampMs, query.EndTimestampMs)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
 			defer querier.Close()
 
-			set := querier.Select(false, hints, matchers...)
+			set := querier.Select(r.Context(), false, hints, matchers...)
 			resp.Results[i], _, err = remote.ToQueryResult(set, 1e6)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -2767,9 +2767,9 @@ type fakeDB struct {
 	err error
 }
 
-func (f *fakeDB) CleanTombstones() error                        { return f.err }
-func (f *fakeDB) Delete(int64, int64, ...*labels.Matcher) error { return f.err }
-func (f *fakeDB) Snapshot(string, bool) error                   { return f.err }
+func (f *fakeDB) CleanTombstones() error                                         { return f.err }
+func (f *fakeDB) Delete(context.Context, int64, int64, ...*labels.Matcher) error { return f.err }
+func (f *fakeDB) Snapshot(string, bool) error                                    { return f.err }
 func (f *fakeDB) Stats(statsByLabelName string, limit int) (_ *tsdb.Stats, retErr error) {
 	dbDir, err := os.MkdirTemp("", "tsdb-api-ready")
 	if err != nil {
@@ -2985,7 +2985,7 @@ func TestRespondSuccess(t *testing.T) {
 	api.InstallCodec(&testCodec{contentType: MIMEType{"test", "can-encode-2"}, canEncode: true})
 
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		api.respond(w, r, "test", nil)
+		api.respond(w, r, "test", nil, "")
 	}))
 	defer s.Close()
 
@@ -3074,7 +3074,7 @@ func TestRespondSuccess_DefaultCodecCannotEncodeResponse(t *testing.T) {
 	api.InstallCodec(&testCodec{contentType: MIMEType{"application", "default-format"}, canEncode: false})
 
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		api.respond(w, r, "test", nil)
+		api.respond(w, r, "test", nil, "")
 	}))
 	defer s.Close()
 
@@ -3473,7 +3473,7 @@ func BenchmarkRespond(b *testing.B) {
 			api := API{}
 			api.InstallCodec(JSONCodec{})
 			for n := 0; n < b.N; n++ {
-				api.respond(&testResponseWriter, request, c.response, nil)
+				api.respond(&testResponseWriter, request, c.response, nil, "")
 			}
 		})
 	}

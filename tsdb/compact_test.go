@@ -506,6 +506,7 @@ func samplesForRange(minTime, maxTime int64, maxSamplesPerChunk int) (ret [][]sa
 func TestCompaction_CompactWithSplitting(t *testing.T) {
 	seriesCounts := []int{10, 1234}
 	shardCounts := []uint64{1, 13}
+	ctx := context.Background()
 
 	for _, series := range seriesCounts {
 		dir, err := os.MkdirTemp("", "compact")
@@ -533,7 +534,7 @@ func TestCompaction_CompactWithSplitting(t *testing.T) {
 
 		for _, shardCount := range shardCounts {
 			t.Run(fmt.Sprintf("series=%d, shards=%d", series, shardCount), func(t *testing.T) {
-				c, err := NewLeveledCompactorWithChunkSize(context.Background(), nil, log.NewNopLogger(), []int64{0}, nil, chunks.DefaultChunkSegmentSize, nil, true)
+				c, err := NewLeveledCompactorWithChunkSize(ctx, nil, log.NewNopLogger(), []int64{0}, nil, chunks.DefaultChunkSegmentSize, nil, true)
 				require.NoError(t, err)
 
 				blockIDs, err := c.CompactWithSplitting(dir, blockDirs, openBlocks, shardCount)
@@ -585,7 +586,7 @@ func TestCompaction_CompactWithSplitting(t *testing.T) {
 					}()
 
 					k, v := index.AllPostingsKey()
-					p, err := idxr.Postings(k, v)
+					p, err := idxr.Postings(ctx, k, v)
 					require.NoError(t, err)
 
 					var lbls labels.ScratchBuilder
@@ -1471,6 +1472,8 @@ func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 
 	for title, bootStrap := range tests {
 		t.Run(title, func(t *testing.T) {
+			ctx := context.Background()
+
 			db := openTestDB(t, nil, []int64{1, 100})
 			defer func() {
 				require.NoError(t, db.Close())
@@ -1494,7 +1497,7 @@ func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 			// Do the compaction and check the metrics.
 			// Compaction should succeed, but the reloadBlocks should fail and
 			// the new block created from the compaction should be deleted.
-			require.Error(t, db.Compact())
+			require.Error(t, db.Compact(ctx))
 			require.Equal(t, 1.0, prom_testutil.ToFloat64(db.metrics.reloadsFailed), "'failed db reloadBlocks' count metrics mismatch")
 			require.Equal(t, 1.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.Ran), "`compaction` count metric mismatch")
 			require.Equal(t, 1.0, prom_testutil.ToFloat64(db.metrics.compactionsFailed), "`compactions failed` count metric mismatch")

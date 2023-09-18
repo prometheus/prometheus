@@ -15,6 +15,7 @@
 package tsdb
 
 import (
+	"context"
 	"errors"
 	"math"
 
@@ -156,23 +157,23 @@ func (oh *OOOHeadIndexReader) series(ref storage.SeriesRef, builder *labels.Scra
 
 // PostingsForMatchers needs to be overridden so that the right IndexReader
 // implementation gets passed down to the PostingsForMatchers call.
-func (oh *OOOHeadIndexReader) PostingsForMatchers(concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
-	return oh.head.pfmc.PostingsForMatchers(oh, concurrent, ms...)
+func (oh *OOOHeadIndexReader) PostingsForMatchers(ctx context.Context, concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
+	return oh.head.pfmc.PostingsForMatchers(ctx, oh, concurrent, ms...)
 }
 
 // LabelValues needs to be overridden from the headIndexReader implementation due
 // to the check that happens at the beginning where we make sure that the query
 // interval overlaps with the head minooot and maxooot.
-func (oh *OOOHeadIndexReader) LabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
+func (oh *OOOHeadIndexReader) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
 	if oh.maxt < oh.head.MinOOOTime() || oh.mint > oh.head.MaxOOOTime() {
 		return []string{}, nil
 	}
 
 	if len(matchers) == 0 {
-		return oh.head.postings.LabelValues(name), nil
+		return oh.head.postings.LabelValues(ctx, name), nil
 	}
 
-	return labelValuesWithMatchers(oh, name, matchers...)
+	return labelValuesWithMatchers(ctx, oh, name, matchers...)
 }
 
 type chunkMetaAndChunkDiskMapperRef struct {
@@ -196,7 +197,7 @@ func lessByMinTimeAndMinRef(a, b chunks.Meta) bool {
 	return a.MinTime < b.MinTime
 }
 
-func (oh *OOOHeadIndexReader) Postings(name string, values ...string) (index.Postings, error) {
+func (oh *OOOHeadIndexReader) Postings(ctx context.Context, name string, values ...string) (index.Postings, error) {
 	switch len(values) {
 	case 0:
 		return index.EmptyPostings(), nil
@@ -208,7 +209,7 @@ func (oh *OOOHeadIndexReader) Postings(name string, values ...string) (index.Pos
 		for _, value := range values {
 			res = append(res, oh.head.postings.Get(name, value)) // TODO(ganesh) Also call GetOOOPostings
 		}
-		return index.Merge(res...), nil
+		return index.Merge(ctx, res...), nil
 	}
 }
 
@@ -274,7 +275,7 @@ type OOOCompactionHead struct {
 // 4. Cuts a new WBL file for the OOO WBL.
 // All the above together have a bit of CPU and memory overhead, and can have a bit of impact
 // on the sample append latency. So call NewOOOCompactionHead only right before compaction.
-func NewOOOCompactionHead(head *Head) (*OOOCompactionHead, error) {
+func NewOOOCompactionHead(ctx context.Context, head *Head) (*OOOCompactionHead, error) {
 	ch := &OOOCompactionHead{
 		chunkRange: head.chunkRange.Load(),
 		mint:       math.MaxInt64,
@@ -293,7 +294,7 @@ func NewOOOCompactionHead(head *Head) (*OOOCompactionHead, error) {
 	n, v := index.AllPostingsKey()
 
 	// TODO: verify this gets only ooo samples.
-	p, err := ch.oooIR.Postings(n, v)
+	p, err := ch.oooIR.Postings(ctx, n, v)
 	if err != nil {
 		return nil, err
 	}
@@ -402,7 +403,7 @@ func (ir *OOOCompactionHeadIndexReader) Symbols() index.StringIter {
 	return ir.ch.oooIR.Symbols()
 }
 
-func (ir *OOOCompactionHeadIndexReader) Postings(name string, values ...string) (index.Postings, error) {
+func (ir *OOOCompactionHeadIndexReader) Postings(_ context.Context, name string, values ...string) (index.Postings, error) {
 	n, v := index.AllPostingsKey()
 	if name != n || len(values) != 1 || values[0] != v {
 		return nil, errors.New("only AllPostingsKey is supported")
@@ -423,27 +424,27 @@ func (ir *OOOCompactionHeadIndexReader) Series(ref storage.SeriesRef, builder *l
 	return ir.ch.oooIR.series(ref, builder, chks, ir.ch.lastMmapRef)
 }
 
-func (ir *OOOCompactionHeadIndexReader) SortedLabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
+func (ir *OOOCompactionHeadIndexReader) SortedLabelValues(_ context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
 	return nil, errors.New("not implemented")
 }
 
-func (ir *OOOCompactionHeadIndexReader) LabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
+func (ir *OOOCompactionHeadIndexReader) LabelValues(_ context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
 	return nil, errors.New("not implemented")
 }
 
-func (ir *OOOCompactionHeadIndexReader) PostingsForMatchers(concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
+func (ir *OOOCompactionHeadIndexReader) PostingsForMatchers(_ context.Context, concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
 	return nil, errors.New("not implemented")
 }
 
-func (ir *OOOCompactionHeadIndexReader) LabelNames(matchers ...*labels.Matcher) ([]string, error) {
+func (ir *OOOCompactionHeadIndexReader) LabelNames(context.Context, ...*labels.Matcher) ([]string, error) {
 	return nil, errors.New("not implemented")
 }
 
-func (ir *OOOCompactionHeadIndexReader) LabelValueFor(id storage.SeriesRef, label string) (string, error) {
+func (ir *OOOCompactionHeadIndexReader) LabelValueFor(context.Context, storage.SeriesRef, string) (string, error) {
 	return "", errors.New("not implemented")
 }
 
-func (ir *OOOCompactionHeadIndexReader) LabelNamesFor(ids ...storage.SeriesRef) ([]string, error) {
+func (ir *OOOCompactionHeadIndexReader) LabelNamesFor(ctx context.Context, ids ...storage.SeriesRef) ([]string, error) {
 	return nil, errors.New("not implemented")
 }
 

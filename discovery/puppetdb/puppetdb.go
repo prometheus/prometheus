@@ -115,7 +115,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if c.Query == "" {
 		return fmt.Errorf("query missing")
 	}
-	return nil
+	return c.HTTPClientConfig.Validate()
 }
 
 // Discovery provides service discovery functionality based

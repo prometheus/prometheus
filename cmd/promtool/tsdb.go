@@ -413,7 +413,7 @@ func openBlock(path, blockID string) (*tsdb.DBReadOnly, tsdb.BlockReader, error)
 	return db, b, nil
 }
 
-func analyzeBlock(path, blockID string, limit int, runExtended bool) error {
+func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExtended bool) error {
 	db, block, err := openBlock(path, blockID)
 	if err != nil {
 		return err
@@ -433,7 +433,7 @@ func analyzeBlock(path, blockID string, limit int, runExtended bool) error {
 	}
 	defer ir.Close()
 
-	allLabelNames, err := ir.LabelNames()
+	allLabelNames, err := ir.LabelNames(ctx)
 	if err != nil {
 		return err
 	}
@@ -460,7 +460,7 @@ func analyzeBlock(path, blockID string, limit int, runExtended bool) error {
 	labelpairsUncovered := map[string]uint64{}
 	labelpairsCount := map[string]uint64{}
 	entries := 0
-	p, err := ir.Postings("", "") // The special all key.
+	p, err := ir.Postings(ctx, "", "") // The special all key.
 	if err != nil {
 		return err
 	}
@@ -512,7 +512,7 @@ func analyzeBlock(path, blockID string, limit int, runExtended bool) error {
 
 	postingInfos = postingInfos[:0]
 	for _, n := range allLabelNames {
-		values, err := ir.SortedLabelValues(n)
+		values, err := ir.SortedLabelValues(ctx, n)
 		if err != nil {
 			return err
 		}
@@ -528,7 +528,7 @@ func analyzeBlock(path, blockID string, limit int, runExtended bool) error {
 
 	postingInfos = postingInfos[:0]
 	for _, n := range allLabelNames {
-		lv, err := ir.SortedLabelValues(n)
+		lv, err := ir.SortedLabelValues(ctx, n)
 		if err != nil {
 			return err
 		}
@@ -538,12 +538,12 @@ func analyzeBlock(path, blockID string, limit int, runExtended bool) error {
 	printInfo(postingInfos)
 
 	postingInfos = postingInfos[:0]
-	lv, err := ir.SortedLabelValues("__name__")
+	lv, err := ir.SortedLabelValues(ctx, "__name__")
 	if err != nil {
 		return err
 	}
 	for _, n := range lv {
-		postings, err := ir.Postings("__name__", n)
+		postings, err := ir.Postings(ctx, "__name__", n)
 		if err != nil {
 			return err
 		}
@@ -560,14 +560,15 @@ func analyzeBlock(path, blockID string, limit int, runExtended bool) error {
 	printInfo(postingInfos)
 
 	if runExtended {
-		return analyzeCompaction(block, ir)
+		return analyzeCompaction(ctx, block, ir)
 	}
 
 	return nil
 }
 
-func analyzeCompaction(block tsdb.BlockReader, indexr tsdb.IndexReader) (err error) {
-	postingsr, err := indexr.Postings(index.AllPostingsKey())
+func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.IndexReader) (err error) {
+	n, v := index.AllPostingsKey()
+	postingsr, err := indexr.Postings(ctx, n, v)
 	if err != nil {
 		return err
 	}
@@ -619,7 +620,7 @@ func analyzeCompaction(block tsdb.BlockReader, indexr tsdb.IndexReader) (err err
 	return nil
 }
 
-func dumpSamples(path string, mint, maxt int64, match string) (err error) {
+func dumpSamples(ctx context.Context, path string, mint, maxt int64, match string) (err error) {
 	db, err := tsdb.OpenDBReadOnly(path, nil)
 	if err != nil {
 		return err
@@ -627,7 +628,7 @@ func dumpSamples(path string, mint, maxt int64, match string) (err error) {
 	defer func() {
 		err = tsdb_errors.NewMulti(err, db.Close()).Err()
 	}()
-	q, err := db.Querier(context.TODO(), mint, maxt)
+	q, err := db.Querier(mint, maxt)
 	if err != nil {
 		return err
 	}
@@ -637,7 +638,7 @@ func dumpSamples(path string, mint, maxt int64, match string) (err error) {
 	if err != nil {
 		return err
 	}
-	ss := q.Select(false, nil, matchers...)
+	ss := q.Select(ctx, false, nil, matchers...)
 
 	for ss.Next() {
 		series := ss.At()
@@ -661,7 +662,7 @@ func dumpSamples(path string, mint, maxt int64, match string) (err error) {
 	}
 
 	if ws := ss.Warnings(); len(ws) > 0 {
-		return tsdb_errors.NewMulti(ws...).Err()
+		return tsdb_errors.NewMulti(ws.AsErrors()...).Err()
 	}
 
 	if ss.Err() != nil {
