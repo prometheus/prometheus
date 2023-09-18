@@ -1,2 +1,2 @@
-build:address-sanitizer --crosstool_top=//bazel/toolchain:g++-12 --copt="-fno-omit-frame-pointer" --copt="-fsanitize=address" --linkopt="-fsanitize=address" --strip=never
+build:address-sanitizer --crosstool_top=//bazel/toolchain:g++-12 --copt="-fno-omit-frame-pointer" --copt="-fsanitize=address" --linkopt="-fsanitize=address" --strip=never --platform_suffix=asan
 build:g++-12 --crosstool_top=//bazel/toolchain:g++-12
