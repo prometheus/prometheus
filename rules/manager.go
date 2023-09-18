@@ -844,7 +844,7 @@ func (g *Group) RestoreForState(ts time.Time) {
 	// We allow restoration only if alerts were active before after certain time.
 	mint := ts.Add(-g.opts.OutageTolerance)
 	mintMS := int64(model.TimeFromUnixNano(mint.UnixNano()))
-	q, err := g.opts.Queryable.Querier(g.opts.Context, mintMS, maxtMS)
+	q, err := g.opts.Queryable.Querier(mintMS, maxtMS)
 	if err != nil {
 		level.Error(g.logger).Log("msg", "Failed to get Querier", "err", err)
 		return
@@ -873,7 +873,7 @@ func (g *Group) RestoreForState(ts time.Time) {
 		alertRule.ForEachActiveAlert(func(a *Alert) {
 			var s storage.Series
 
-			s, err := alertRule.QueryforStateSeries(a, q)
+			s, err := alertRule.QueryforStateSeries(g.opts.Context, a, q)
 			if err != nil {
 				// Querier Warnings are ignored. We do not care unless we have an error.
 				level.Error(g.logger).Log(

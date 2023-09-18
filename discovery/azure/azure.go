@@ -144,7 +144,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return fmt.Errorf("unknown authentication_type %q. Supported types are %q or %q", c.AuthenticationMethod, authMethodOAuth, authMethodManagedIdentity)
 	}
 
-	return nil
+	return c.HTTPClientConfig.Validate()
 }
 
 type Discovery struct {

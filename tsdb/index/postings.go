@@ -15,6 +15,7 @@ package index
 
 import (
 	"container/heap"
+	"context"
 	"encoding/binary"
 	"runtime"
 	"sort"
@@ -135,7 +136,7 @@ func (p *MemPostings) LabelNames() []string {
 }
 
 // LabelValues returns label values for the given name.
-func (p *MemPostings) LabelValues(name string) []string {
+func (p *MemPostings) LabelValues(_ context.Context, name string) []string {
 	p.mtx.RLock()
 	defer p.mtx.RUnlock()
 
@@ -519,7 +520,7 @@ func (it *intersectPostings) Err() error {
 }
 
 // Merge returns a new iterator over the union of the input iterators.
-func Merge(its ...Postings) Postings {
+func Merge(ctx context.Context, its ...Postings) Postings {
 	if len(its) == 0 {
 		return EmptyPostings()
 	}
@@ -527,7 +528,7 @@ func Merge(its ...Postings) Postings {
 		return its[0]
 	}
 
-	p, ok := newMergedPostings(its)
+	p, ok := newMergedPostings(ctx, its)
 	if !ok {
 		return EmptyPostings()
 	}
@@ -559,12 +560,14 @@ type mergedPostings struct {
 	err         error
 }
 
-func newMergedPostings(p []Postings) (m *mergedPostings, nonEmpty bool) {
+func newMergedPostings(ctx context.Context, p []Postings) (m *mergedPostings, nonEmpty bool) {
 	ph := make(postingsHeap, 0, len(p))
 
 	for _, it := range p {
 		// NOTE: mergedPostings struct requires the user to issue an initial Next.
 		switch {
+		case ctx.Err() != nil:
+			return &mergedPostings{err: ctx.Err()}, true
 		case it.Next():
 			ph = append(ph, it)
 		case it.Err() != nil:

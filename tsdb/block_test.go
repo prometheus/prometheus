@@ -198,7 +198,7 @@ func TestCorruptedChunk(t *testing.T) {
 			querier, err := NewBlockQuerier(b, 0, 1)
 			require.NoError(t, err)
 			defer func() { require.NoError(t, querier.Close()) }()
-			set := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+			set := querier.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 
 			// Check chunk errors during iter time.
 			require.True(t, set.Next())
@@ -211,6 +211,7 @@ func TestCorruptedChunk(t *testing.T) {
 
 func TestLabelValuesWithMatchers(t *testing.T) {
 	tmpdir := t.TempDir()
+	ctx := context.Background()
 
 	var seriesEntries []storage.Series
 	for i := 0; i < 100; i++ {
@@ -265,11 +266,11 @@ func TestLabelValuesWithMatchers(t *testing.T) {
 
 	for _, tt := range testCases {
 		t.Run(tt.name, func(t *testing.T) {
-			actualValues, err := indexReader.SortedLabelValues(tt.labelName, tt.matchers...)
+			actualValues, err := indexReader.SortedLabelValues(ctx, tt.labelName, tt.matchers...)
 			require.NoError(t, err)
 			require.Equal(t, tt.expectedValues, actualValues)
 
-			actualValues, err = indexReader.LabelValues(tt.labelName, tt.matchers...)
+			actualValues, err = indexReader.LabelValues(ctx, tt.labelName, tt.matchers...)
 			sort.Strings(actualValues)
 			require.NoError(t, err)
 			require.Equal(t, tt.expectedValues, actualValues)
@@ -304,7 +305,7 @@ func TestBlockSize(t *testing.T) {
 
 	// Delete some series and check the sizes again.
 	{
-		require.NoError(t, blockInit.Delete(1, 10, labels.MustNewMatcher(labels.MatchRegexp, "", ".*")))
+		require.NoError(t, blockInit.Delete(context.Background(), 1, 10, labels.MustNewMatcher(labels.MatchRegexp, "", ".*")))
 		expAfterDelete := blockInit.Size()
 		require.Greater(t, expAfterDelete, expSizeInit, "after a delete the block size should be bigger as the tombstone file should grow %v > %v", expAfterDelete, expSizeInit)
 		actAfterDelete, err := fileutil.DirSize(blockDirInit)
@@ -368,6 +369,7 @@ func TestReadIndexFormatV1(t *testing.T) {
 
 func BenchmarkLabelValuesWithMatchers(b *testing.B) {
 	tmpdir := b.TempDir()
+	ctx := context.Background()
 
 	var seriesEntries []storage.Series
 	metricCount := 1000000
@@ -401,7 +403,7 @@ func BenchmarkLabelValuesWithMatchers(b *testing.B) {
 	b.ReportAllocs()
 
 	for benchIdx := 0; benchIdx < b.N; benchIdx++ {
-		actualValues, err := indexReader.LabelValues("b_tens", matchers...)
+		actualValues, err := indexReader.LabelValues(ctx, "b_tens", matchers...)
 		require.NoError(b, err)
 		require.Equal(b, 9, len(actualValues))
 	}
@@ -409,6 +411,7 @@ func BenchmarkLabelValuesWithMatchers(b *testing.B) {
 
 func TestLabelNamesWithMatchers(t *testing.T) {
 	tmpdir := t.TempDir()
+	ctx := context.Background()
 
 	var seriesEntries []storage.Series
 	for i := 0; i < 100; i++ {
@@ -474,7 +477,7 @@ func TestLabelNamesWithMatchers(t *testing.T) {
 
 	for _, tt := range testCases {
 		t.Run(tt.name, func(t *testing.T) {
-			actualNames, err := indexReader.LabelNames(tt.matchers...)
+			actualNames, err := indexReader.LabelNames(ctx, tt.matchers...)
 			require.NoError(t, err)
 			require.Equal(t, tt.expectedNames, actualNames)
 		})

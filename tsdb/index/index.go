@@ -924,7 +924,7 @@ func (w *Writer) writePostingsToTmpFiles() error {
 			// Symbol numbers are in order, so the strings will also be in order.
 			slices.Sort(values)
 			for _, v := range values {
-				value, err := w.symbols.Lookup(v)
+				value, err := w.symbols.Lookup(w.ctx, v)
 				if err != nil {
 					return err
 				}
@@ -1314,7 +1314,7 @@ func NewSymbols(bs ByteSlice, version, off int) (*Symbols, error) {
 	return s, nil
 }
 
-func (s Symbols) Lookup(o uint32) (string, error) {
+func (s Symbols) Lookup(ctx context.Context, o uint32) (string, error) {
 	d := encoding.Decbuf{
 		B: s.bs.Range(0, s.bs.Len()),
 	}
@@ -1326,6 +1326,9 @@ func (s Symbols) Lookup(o uint32) (string, error) {
 		d.Skip(s.offsets[int(o/symbolFactor)])
 		// Walk until we find the one we want.
 		for i := o - (o / symbolFactor * symbolFactor); i > 0; i-- {
+			if ctx.Err() != nil {
+				return "", ctx.Err()
+			}
 			d.UvarintBytes()
 		}
 	} else {
@@ -1453,11 +1456,11 @@ func (r *Reader) Close() error {
 	return r.c.Close()
 }
 
-func (r *Reader) lookupSymbol(o uint32) (string, error) {
+func (r *Reader) lookupSymbol(ctx context.Context, o uint32) (string, error) {
 	if s, ok := r.nameSymbols[o]; ok {
 		return s, nil
 	}
-	return r.symbols.Lookup(o)
+	return r.symbols.Lookup(ctx, o)
 }
 
 // Symbols returns an iterator over the symbols that exist within the index.
@@ -1473,8 +1476,8 @@ func (r *Reader) SymbolTableSize() uint64 {
 // SortedLabelValues returns value tuples that exist for the given label name.
 // It is not safe to use the return value beyond the lifetime of the byte slice
 // passed into the Reader.
-func (r *Reader) SortedLabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
-	values, err := r.LabelValues(name, matchers...)
+func (r *Reader) SortedLabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
+	values, err := r.LabelValues(ctx, name, matchers...)
 	if err == nil && r.version == FormatV1 {
 		slices.Sort(values)
 	}
@@ -1485,7 +1488,7 @@ func (r *Reader) SortedLabelValues(name string, matchers ...*labels.Matcher) ([]
 // It is not safe to use the return value beyond the lifetime of the byte slice
 // passed into the Reader.
 // TODO(replay): Support filtering by matchers
-func (r *Reader) LabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
+func (r *Reader) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
 	if len(matchers) > 0 {
 		return nil, errors.Errorf("matchers parameter is not implemented: %+v", matchers)
 	}
@@ -1516,7 +1519,7 @@ func (r *Reader) LabelValues(name string, matchers ...*labels.Matcher) ([]string
 	lastVal := e[len(e)-1].value
 
 	skip := 0
-	for d.Err() == nil {
+	for d.Err() == nil && ctx.Err() == nil {
 		if skip == 0 {
 			// These are always the same number of bytes,
 			// and it's faster to skip than parse.
@@ -1537,15 +1540,20 @@ func (r *Reader) LabelValues(name string, matchers ...*labels.Matcher) ([]string
 	if d.Err() != nil {
 		return nil, errors.Wrap(d.Err(), "get postings offset entry")
 	}
-	return values, nil
+
+	return values, ctx.Err()
 }
 
 // LabelNamesFor returns all the label names for the series referred to by IDs.
 // The names returned are sorted.
-func (r *Reader) LabelNamesFor(ids ...storage.SeriesRef) ([]string, error) {
+func (r *Reader) LabelNamesFor(ctx context.Context, ids ...storage.SeriesRef) ([]string, error) {
 	// Gather offsetsMap the name offsetsMap in the symbol table first
 	offsetsMap := make(map[uint32]struct{})
 	for _, id := range ids {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+
 		offset := id
 		// In version 2 series IDs are no longer exact references but series are 16-byte padded
 		// and the ID is the multiple of 16 of the actual position.
@@ -1571,7 +1579,7 @@ func (r *Reader) LabelNamesFor(ids ...storage.SeriesRef) ([]string, error) {
 	// Lookup the unique symbols.
 	names := make([]string, 0, len(offsetsMap))
 	for off := range offsetsMap {
-		name, err := r.lookupSymbol(off)
+		name, err := r.lookupSymbol(ctx, off)
 		if err != nil {
 			return nil, errors.Wrap(err, "lookup symbol in LabelNamesFor")
 		}
@@ -1584,7 +1592,7 @@ func (r *Reader) LabelNamesFor(ids ...storage.SeriesRef) ([]string, error) {
 }
 
 // LabelValueFor returns label value for the given label name in the series referred to by ID.
-func (r *Reader) LabelValueFor(id storage.SeriesRef, label string) (string, error) {
+func (r *Reader) LabelValueFor(ctx context.Context, id storage.SeriesRef, label string) (string, error) {
 	offset := id
 	// In version 2 series IDs are no longer exact references but series are 16-byte padded
 	// and the ID is the multiple of 16 of the actual position.
@@ -1597,7 +1605,7 @@ func (r *Reader) LabelValueFor(id storage.SeriesRef, label string) (string, erro
 		return "", errors.Wrap(d.Err(), "label values for")
 	}
 
-	value, err := r.dec.LabelValueFor(buf, label)
+	value, err := r.dec.LabelValueFor(ctx, buf, label)
 	if err != nil {
 		return "", storage.ErrNotFound
 	}
@@ -1624,7 +1632,7 @@ func (r *Reader) Series(id storage.SeriesRef, builder *labels.ScratchBuilder, ch
 	return errors.Wrap(r.dec.Series(d.Get(), builder, chks), "read series")
 }
 
-func (r *Reader) Postings(name string, values ...string) (Postings, error) {
+func (r *Reader) Postings(ctx context.Context, name string, values ...string) (Postings, error) {
 	if r.version == FormatV1 {
 		e, ok := r.postingsV1[name]
 		if !ok {
@@ -1644,7 +1652,7 @@ func (r *Reader) Postings(name string, values ...string) (Postings, error) {
 			}
 			res = append(res, p)
 		}
-		return Merge(res...), nil
+		return Merge(ctx, res...), nil
 	}
 
 	e, ok := r.postings[name]
@@ -1683,7 +1691,7 @@ func (r *Reader) Postings(name string, values ...string) (Postings, error) {
 
 		// Iterate on the offset table.
 		var postingsOff uint64 // The offset into the postings table.
-		for d.Err() == nil {
+		for d.Err() == nil && ctx.Err() == nil {
 			if skip == 0 {
 				// These are always the same number of bytes,
 				// and it's faster to skip than parse.
@@ -1720,9 +1728,12 @@ func (r *Reader) Postings(name string, values ...string) (Postings, error) {
 		if d.Err() != nil {
 			return nil, errors.Wrap(d.Err(), "get postings offset entry")
 		}
+		if ctx.Err() != nil {
+			return nil, errors.Wrap(ctx.Err(), "get postings offset entry")
+		}
 	}
 
-	return Merge(res...), nil
+	return Merge(ctx, res...), nil
 }
 
 // SortedPostings returns the given postings list reordered so that the backing series
@@ -1789,7 +1800,7 @@ func (r *Reader) Size() int64 {
 
 // LabelNames returns all the unique label names present in the index.
 // TODO(twilkie) implement support for matchers
-func (r *Reader) LabelNames(matchers ...*labels.Matcher) ([]string, error) {
+func (r *Reader) LabelNames(_ context.Context, matchers ...*labels.Matcher) ([]string, error) {
 	if len(matchers) > 0 {
 		return nil, errors.Errorf("matchers parameter is not implemented: %+v", matchers)
 	}
@@ -1833,7 +1844,7 @@ func (s stringListIter) Err() error { return nil }
 // It currently does not contain decoding methods for all entry types but can be extended
 // by them if there's demand.
 type Decoder struct {
-	LookupSymbol func(uint32) (string, error)
+	LookupSymbol func(context.Context, uint32) (string, error)
 }
 
 // Postings returns a postings list for b and its number of elements.
@@ -1870,7 +1881,7 @@ func (dec *Decoder) LabelNamesOffsetsFor(b []byte) ([]uint32, error) {
 }
 
 // LabelValueFor decodes a label for a given series.
-func (dec *Decoder) LabelValueFor(b []byte, label string) (string, error) {
+func (dec *Decoder) LabelValueFor(ctx context.Context, b []byte, label string) (string, error) {
 	d := encoding.Decbuf{B: b}
 	k := d.Uvarint()
 
@@ -1882,13 +1893,13 @@ func (dec *Decoder) LabelValueFor(b []byte, label string) (string, error) {
 			return "", errors.Wrap(d.Err(), "read series label offsets")
 		}
 
-		ln, err := dec.LookupSymbol(lno)
+		ln, err := dec.LookupSymbol(ctx, lno)
 		if err != nil {
 			return "", errors.Wrap(err, "lookup label name")
 		}
 
 		if ln == label {
-			lv, err := dec.LookupSymbol(lvo)
+			lv, err := dec.LookupSymbol(ctx, lvo)
 			if err != nil {
 				return "", errors.Wrap(err, "lookup label value")
 			}
@@ -1920,11 +1931,11 @@ func (dec *Decoder) Series(b []byte, builder *labels.ScratchBuilder, chks *[]chu
 			return errors.Wrap(d.Err(), "read series label offsets")
 		}
 
-		ln, err := dec.LookupSymbol(lno)
+		ln, err := dec.LookupSymbol(context.TODO(), lno)
 		if err != nil {
 			return errors.Wrap(err, "lookup label name")
 		}
-		lv, err := dec.LookupSymbol(lvo)
+		lv, err := dec.LookupSymbol(context.TODO(), lvo)
 		if err != nil {
 			return errors.Wrap(err, "lookup label value")
 		}

@@ -15,6 +15,7 @@
 package tsdb
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"os"
@@ -65,22 +66,22 @@ type IndexReader interface {
 	Symbols() index.StringIter
 
 	// SortedLabelValues returns sorted possible label values.
-	SortedLabelValues(name string, matchers ...*labels.Matcher) ([]string, error)
+	SortedLabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error)
 
 	// LabelValues returns possible label values which may not be sorted.
-	LabelValues(name string, matchers ...*labels.Matcher) ([]string, error)
+	LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error)
 
 	// Postings returns the postings list iterator for the label pairs.
 	// The Postings here contain the offsets to the series inside the index.
 	// Found IDs are not strictly required to point to a valid Series, e.g.
 	// during background garbage collections.
-	Postings(name string, values ...string) (index.Postings, error)
+	Postings(ctx context.Context, name string, values ...string) (index.Postings, error)
 
 	// PostingsForMatchers assembles a single postings iterator based on the given matchers.
 	// The resulting postings are not ordered by series.
 	// If concurrent hint is set to true, call will be optimized for a (most likely) concurrent call with same matchers,
 	// avoiding same calculations twice, however this implementation may lead to a worse performance when called once.
-	PostingsForMatchers(concurrent bool, ms ...*labels.Matcher) (index.Postings, error)
+	PostingsForMatchers(ctx context.Context, concurrent bool, ms ...*labels.Matcher) (index.Postings, error)
 
 	// SortedPostings returns a postings list that is reordered to be sorted
 	// by the label set of the underlying series.
@@ -97,16 +98,16 @@ type IndexReader interface {
 	Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error
 
 	// LabelNames returns all the unique label names present in the index in sorted order.
-	LabelNames(matchers ...*labels.Matcher) ([]string, error)
+	LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, error)
 
 	// LabelValueFor returns label value for the given label name in the series referred to by ID.
 	// If the series couldn't be found or the series doesn't have the requested label a
 	// storage.ErrNotFound is returned as error.
-	LabelValueFor(id storage.SeriesRef, label string) (string, error)
+	LabelValueFor(ctx context.Context, id storage.SeriesRef, label string) (string, error)
 
 	// LabelNamesFor returns all the label names for the series referred to by IDs.
 	// The names returned are sorted.
-	LabelNamesFor(ids ...storage.SeriesRef) ([]string, error)
+	LabelNamesFor(ctx context.Context, ids ...storage.SeriesRef) ([]string, error)
 
 	// Close releases the underlying resources of the reader.
 	Close() error
@@ -476,14 +477,14 @@ func (r blockIndexReader) Symbols() index.StringIter {
 	return r.ir.Symbols()
 }
 
-func (r blockIndexReader) SortedLabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
+func (r blockIndexReader) SortedLabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
 	var st []string
 	var err error
 
 	if len(matchers) == 0 {
-		st, err = r.ir.SortedLabelValues(name)
+		st, err = r.ir.SortedLabelValues(ctx, name)
 	} else {
-		st, err = r.LabelValues(name, matchers...)
+		st, err = r.LabelValues(ctx, name, matchers...)
 		if err == nil {
 			slices.Sort(st)
 		}
@@ -492,33 +493,33 @@ func (r blockIndexReader) SortedLabelValues(name string, matchers ...*labels.Mat
 	return st, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
 }
 
-func (r blockIndexReader) LabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
+func (r blockIndexReader) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
 	if len(matchers) == 0 {
-		st, err := r.ir.LabelValues(name)
+		st, err := r.ir.LabelValues(ctx, name)
 		return st, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
 	}
 
-	return labelValuesWithMatchers(r.ir, name, matchers...)
+	return labelValuesWithMatchers(ctx, r.ir, name, matchers...)
 }
 
-func (r blockIndexReader) LabelNames(matchers ...*labels.Matcher) ([]string, error) {
+func (r blockIndexReader) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, error) {
 	if len(matchers) == 0 {
-		return r.b.LabelNames()
+		return r.b.LabelNames(ctx)
 	}
 
-	return labelNamesWithMatchers(r.ir, matchers...)
+	return labelNamesWithMatchers(ctx, r.ir, matchers...)
 }
 
-func (r blockIndexReader) Postings(name string, values ...string) (index.Postings, error) {
-	p, err := r.ir.Postings(name, values...)
+func (r blockIndexReader) Postings(ctx context.Context, name string, values ...string) (index.Postings, error) {
+	p, err := r.ir.Postings(ctx, name, values...)
 	if err != nil {
 		return p, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
 	}
 	return p, nil
 }
 
-func (r blockIndexReader) PostingsForMatchers(concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
-	return r.ir.PostingsForMatchers(concurrent, ms...)
+func (r blockIndexReader) PostingsForMatchers(ctx context.Context, concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
+	return r.ir.PostingsForMatchers(ctx, concurrent, ms...)
 }
 
 func (r blockIndexReader) SortedPostings(p index.Postings) index.Postings {
@@ -542,14 +543,14 @@ func (r blockIndexReader) Close() error {
 }
 
 // LabelValueFor returns label value for the given label name in the series referred to by ID.
-func (r blockIndexReader) LabelValueFor(id storage.SeriesRef, label string) (string, error) {
-	return r.ir.LabelValueFor(id, label)
+func (r blockIndexReader) LabelValueFor(ctx context.Context, id storage.SeriesRef, label string) (string, error) {
+	return r.ir.LabelValueFor(ctx, id, label)
 }
 
 // LabelNamesFor returns all the label names for the series referred to by IDs.
 // The names returned are sorted.
-func (r blockIndexReader) LabelNamesFor(ids ...storage.SeriesRef) ([]string, error) {
-	return r.ir.LabelNamesFor(ids...)
+func (r blockIndexReader) LabelNamesFor(ctx context.Context, ids ...storage.SeriesRef) ([]string, error) {
+	return r.ir.LabelNamesFor(ctx, ids...)
 }
 
 type blockTombstoneReader struct {
@@ -573,7 +574,7 @@ func (r blockChunkReader) Close() error {
 }
 
 // Delete matching series between mint and maxt in the block.
-func (pb *Block) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
+func (pb *Block) Delete(ctx context.Context, mint, maxt int64, ms ...*labels.Matcher) error {
 	pb.mtx.Lock()
 	defer pb.mtx.Unlock()
 
@@ -581,7 +582,7 @@ func (pb *Block) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
 		return ErrClosing
 	}
 
-	p, err := pb.indexr.PostingsForMatchers(false, ms...)
+	p, err := pb.indexr.PostingsForMatchers(ctx, false, ms...)
 	if err != nil {
 		return errors.Wrap(err, "select series")
 	}
@@ -715,8 +716,8 @@ func (pb *Block) OverlapsClosedInterval(mint, maxt int64) bool {
 }
 
 // LabelNames returns all the unique label names present in the Block in sorted order.
-func (pb *Block) LabelNames() ([]string, error) {
-	return pb.indexr.LabelNames()
+func (pb *Block) LabelNames(ctx context.Context) ([]string, error) {
+	return pb.indexr.LabelNames(ctx)
 }
 
 func clampInterval(a, b, mint, maxt int64) (int64, int64) {

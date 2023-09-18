@@ -51,6 +51,7 @@ import (
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/httputil"
 	"github.com/prometheus/prometheus/util/stats"
 )
@@ -161,7 +162,7 @@ type Response struct {
 type apiFuncResult struct {
 	data      interface{}
 	err       *apiError
-	warnings  storage.Warnings
+	warnings  annotations.Annotations
 	finalizer func()
 }
 
@@ -170,7 +171,7 @@ type apiFunc func(r *http.Request) apiFuncResult
 // TSDBAdminStats defines the tsdb interfaces used by the v1 API for admin operations as well as statistics.
 type TSDBAdminStats interface {
 	CleanTombstones() error
-	Delete(mint, maxt int64, ms ...*labels.Matcher) error
+	Delete(ctx context.Context, mint, maxt int64, ms ...*labels.Matcher) error
 	Snapshot(dir string, withHead bool) error
 	Stats(statsByLabelName string, limit int) (*tsdb.Stats, error)
 	WALReplayStatus() (tsdb.WALReplayStatus, error)
@@ -337,7 +338,7 @@ func (api *API) Register(r *route.Router) {
 			}
 
 			if result.data != nil {
-				api.respond(w, r, result.data, result.warnings)
+				api.respond(w, r, result.data, result.warnings, r.FormValue("query"))
 				return
 			}
 			w.WriteHeader(http.StatusNoContent)
@@ -659,7 +660,7 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
 
-	q, err := api.Queryable.Querier(r.Context(), timestamp.FromTime(start), timestamp.FromTime(end))
+	q, err := api.Queryable.Querier(timestamp.FromTime(start), timestamp.FromTime(end))
 	if err != nil {
 		return apiFuncResult{nil, returnAPIError(err), nil, nil}
 	}
@@ -667,18 +668,18 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 
 	var (
 		names    []string
-		warnings storage.Warnings
+		warnings annotations.Annotations
 	)
 	if len(matcherSets) > 0 {
 		labelNamesSet := make(map[string]struct{})
 
 		for _, matchers := range matcherSets {
-			vals, callWarnings, err := q.LabelNames(matchers...)
+			vals, callWarnings, err := q.LabelNames(r.Context(), matchers...)
 			if err != nil {
 				return apiFuncResult{nil, returnAPIError(err), warnings, nil}
 			}
 
-			warnings = append(warnings, callWarnings...)
+			warnings.Merge(callWarnings)
 			for _, val := range vals {
 				labelNamesSet[val] = struct{}{}
 			}
@@ -691,7 +692,7 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 		}
 		slices.Sort(names)
 	} else {
-		names, warnings, err = q.LabelNames()
+		names, warnings, err = q.LabelNames(r.Context())
 		if err != nil {
 			return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}
 		}
@@ -725,7 +726,7 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
 
-	q, err := api.Queryable.Querier(r.Context(), timestamp.FromTime(start), timestamp.FromTime(end))
+	q, err := api.Queryable.Querier(timestamp.FromTime(start), timestamp.FromTime(end))
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
 	}
@@ -743,17 +744,17 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 
 	var (
 		vals     []string
-		warnings storage.Warnings
+		warnings annotations.Annotations
 	)
 	if len(matcherSets) > 0 {
-		var callWarnings storage.Warnings
+		var callWarnings annotations.Annotations
 		labelValuesSet := make(map[string]struct{})
 		for _, matchers := range matcherSets {
-			vals, callWarnings, err = q.LabelValues(name, matchers...)
+			vals, callWarnings, err = q.LabelValues(ctx, name, matchers...)
 			if err != nil {
 				return apiFuncResult{nil, &apiError{errorExec, err}, warnings, closer}
 			}
-			warnings = append(warnings, callWarnings...)
+			warnings.Merge(callWarnings)
 			for _, val := range vals {
 				labelValuesSet[val] = struct{}{}
 			}
@@ -764,7 +765,7 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 			vals = append(vals, val)
 		}
 	} else {
-		vals, warnings, err = q.LabelValues(name)
+		vals, warnings, err = q.LabelValues(ctx, name)
 		if err != nil {
 			return apiFuncResult{nil, &apiError{errorExec, err}, warnings, closer}
 		}
@@ -793,6 +794,8 @@ var (
 )
 
 func (api *API) series(r *http.Request) (result apiFuncResult) {
+	ctx := r.Context()
+
 	if err := r.ParseForm(); err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, errors.Wrapf(err, "error parsing form values")}, nil, nil}
 	}
@@ -814,7 +817,7 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 		return invalidParamError(err, "match[]")
 	}
 
-	q, err := api.Queryable.Querier(r.Context(), timestamp.FromTime(start), timestamp.FromTime(end))
+	q, err := api.Queryable.Querier(timestamp.FromTime(start), timestamp.FromTime(end))
 	if err != nil {
 		return apiFuncResult{nil, returnAPIError(err), nil, nil}
 	}
@@ -841,13 +844,13 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 		var sets []storage.SeriesSet
 		for _, mset := range matcherSets {
 			// We need to sort this select results to merge (deduplicate) the series sets later.
-			s := q.Select(true, hints, mset...)
+			s := q.Select(ctx, true, hints, mset...)
 			sets = append(sets, s)
 		}
 		set = storage.NewMergeSeriesSet(sets, storage.ChainedSeriesMerge)
 	} else {
 		// At this point at least one match exists.
-		set = q.Select(false, hints, matcherSets[0]...)
+		set = q.Select(ctx, false, hints, matcherSets[0]...)
 	}
 
 	metrics := []labels.Labels{}
@@ -1577,7 +1580,7 @@ func (api *API) serveWALReplayStatus(w http.ResponseWriter, r *http.Request) {
 		Min:     status.Min,
 		Max:     status.Max,
 		Current: status.Current,
-	}, nil)
+	}, nil, "")
 }
 
 func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
@@ -1630,7 +1633,7 @@ func (api *API) deleteSeries(r *http.Request) apiFuncResult {
 		if err != nil {
 			return invalidParamError(err, "match[]")
 		}
-		if err := api.db.Delete(timestamp.FromTime(start), timestamp.FromTime(end), matchers...); err != nil {
+		if err := api.db.Delete(r.Context(), timestamp.FromTime(start), timestamp.FromTime(end), matchers...); err != nil {
 			return apiFuncResult{nil, &apiError{errorInternal, err}, nil, nil}
 		}
 	}
@@ -1683,17 +1686,15 @@ func (api *API) cleanTombstones(*http.Request) apiFuncResult {
 	return apiFuncResult{nil, nil, nil, nil}
 }
 
-func (api *API) respond(w http.ResponseWriter, req *http.Request, data interface{}, warnings storage.Warnings) {
+// Query string is needed to get the position information for the annotations, and it
+// can be empty if the position information isn't needed.
+func (api *API) respond(w http.ResponseWriter, req *http.Request, data interface{}, warnings annotations.Annotations, query string) {
 	statusMessage := statusSuccess
-	var warningStrings []string
-	for _, warning := range warnings {
-		warningStrings = append(warningStrings, warning.Error())
-	}
 
 	resp := &Response{
 		Status:   statusMessage,
 		Data:     data,
-		Warnings: warningStrings,
+		Warnings: warnings.AsStrings(query, 10),
 	}
 
 	codec, err := api.negotiateCodec(req, resp)

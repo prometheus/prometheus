@@ -123,7 +123,7 @@ func TestLazyLoader_WithSamplesTill(t *testing.T) {
 
 				// Check the series.
 				queryable := suite.Queryable()
-				querier, err := queryable.Querier(suite.Context(), math.MinInt64, math.MaxInt64)
+				querier, err := queryable.Querier(math.MinInt64, math.MaxInt64)
 				require.NoError(t, err)
 				for _, s := range tc.series {
 					var matchers []*labels.Matcher
@@ -134,7 +134,7 @@ func TestLazyLoader_WithSamplesTill(t *testing.T) {
 					})
 
 					// Get the series for the matcher.
-					ss := querier.Select(false, nil, matchers...)
+					ss := querier.Select(suite.Context(), false, nil, matchers...)
 					require.True(t, ss.Next())
 					storageSeries := ss.At()
 					require.False(t, ss.Next(), "Expecting only 1 series")

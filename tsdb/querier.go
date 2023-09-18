@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"context"
 	"fmt"
 	"math"
 
@@ -29,6 +30,7 @@ import (
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
+	"github.com/prometheus/prometheus/util/annotations"
 )
 
 type blockBaseQuerier struct {
@@ -72,13 +74,13 @@ func newBlockBaseQuerier(b BlockReader, mint, maxt int64) (*blockBaseQuerier, er
 	}, nil
 }
 
-func (q *blockBaseQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	res, err := q.index.SortedLabelValues(name, matchers...)
+func (q *blockBaseQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	res, err := q.index.SortedLabelValues(ctx, name, matchers...)
 	return res, nil, err
 }
 
-func (q *blockBaseQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	res, err := q.index.LabelNames(matchers...)
+func (q *blockBaseQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	res, err := q.index.LabelNames(ctx, matchers...)
 	return res, nil, err
 }
 
@@ -109,12 +111,12 @@ func NewBlockQuerier(b BlockReader, mint, maxt int64) (storage.Querier, error) {
 	return &blockQuerier{blockBaseQuerier: q}, nil
 }
 
-func (q *blockQuerier) Select(sortSeries bool, hints *storage.SelectHints, ms ...*labels.Matcher) storage.SeriesSet {
+func (q *blockQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, ms ...*labels.Matcher) storage.SeriesSet {
 	mint := q.mint
 	maxt := q.maxt
 	disableTrimming := false
 	sharded := hints != nil && hints.ShardCount > 0
-	p, err := q.index.PostingsForMatchers(sharded, ms...)
+	p, err := q.index.PostingsForMatchers(ctx, sharded, ms...)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
@@ -152,7 +154,7 @@ func NewBlockChunkQuerier(b BlockReader, mint, maxt int64) (storage.ChunkQuerier
 	return &blockChunkQuerier{blockBaseQuerier: q}, nil
 }
 
-func (q *blockChunkQuerier) Select(sortSeries bool, hints *storage.SelectHints, ms ...*labels.Matcher) storage.ChunkSeriesSet {
+func (q *blockChunkQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, ms ...*labels.Matcher) storage.ChunkSeriesSet {
 	mint := q.mint
 	maxt := q.maxt
 	disableTrimming := false
@@ -162,7 +164,7 @@ func (q *blockChunkQuerier) Select(sortSeries bool, hints *storage.SelectHints, 
 		disableTrimming = hints.DisableTrimming
 	}
 	sharded := hints != nil && hints.ShardCount > 0
-	p, err := q.index.PostingsForMatchers(sharded, ms...)
+	p, err := q.index.PostingsForMatchers(ctx, sharded, ms...)
 	if err != nil {
 		return storage.ErrChunkSeriesSet(err)
 	}
@@ -207,7 +209,7 @@ func PostingsForMatchers(ix IndexPostingsReader, ms ...*labels.Matcher) (index.P
 		// We prefer to get AllPostings so that the base of subtraction (i.e. allPostings)
 		// doesn't include series that may be added to the index reader during this function call.
 		k, v := index.AllPostingsKey()
-		allPostings, err := ix.Postings(k, v)
+		allPostings, err := ix.Postings(context.TODO(), k, v)
 		if err != nil {
 			return nil, err
 		}
@@ -227,7 +229,7 @@ func PostingsForMatchers(ix IndexPostingsReader, ms ...*labels.Matcher) (index.P
 		switch {
 		case m.Name == "" && m.Value == "": // Special-case for AllPostings, used in tests at least.
 			k, v := index.AllPostingsKey()
-			allPostings, err := ix.Postings(k, v)
+			allPostings, err := ix.Postings(context.TODO(), k, v)
 			if err != nil {
 				return nil, err
 			}
@@ -304,18 +306,18 @@ func postingsForMatcher(ix IndexPostingsReader, m *labels.Matcher) (index.Postin
 
 	// Fast-path for equal matching.
 	if m.Type == labels.MatchEqual {
-		return ix.Postings(m.Name, m.Value)
+		return ix.Postings(context.TODO(), m.Name, m.Value)
 	}
 
 	// Fast-path for set matching.
 	if m.Type == labels.MatchRegexp {
 		setMatches := m.SetMatches()
 		if len(setMatches) > 0 {
-			return ix.Postings(m.Name, setMatches...)
+			return ix.Postings(context.TODO(), m.Name, setMatches...)
 		}
 	}
 
-	vals, err := ix.LabelValues(m.Name)
+	vals, err := ix.LabelValues(context.TODO(), m.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -331,7 +333,7 @@ func postingsForMatcher(ix IndexPostingsReader, m *labels.Matcher) (index.Postin
 		return index.EmptyPostings(), nil
 	}
 
-	return ix.Postings(m.Name, res...)
+	return ix.Postings(context.TODO(), m.Name, res...)
 }
 
 // inversePostingsForMatcher returns the postings for the series with the label name set but not matching the matcher.
@@ -342,17 +344,17 @@ func inversePostingsForMatcher(ix IndexPostingsReader, m *labels.Matcher) (index
 	if m.Type == labels.MatchNotRegexp {
 		setMatches := m.SetMatches()
 		if len(setMatches) > 0 {
-			return ix.Postings(m.Name, setMatches...)
+			return ix.Postings(context.TODO(), m.Name, setMatches...)
 		}
 	}
 
 	// Fast-path for MatchNotEqual matching.
 	// Inverse of a MatchNotEqual is MatchEqual (double negation).
 	if m.Type == labels.MatchNotEqual {
-		return ix.Postings(m.Name, m.Value)
+		return ix.Postings(context.TODO(), m.Name, m.Value)
 	}
 
-	vals, err := ix.LabelValues(m.Name)
+	vals, err := ix.LabelValues(context.TODO(), m.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -369,18 +371,18 @@ func inversePostingsForMatcher(ix IndexPostingsReader, m *labels.Matcher) (index
 		}
 	}
 
-	return ix.Postings(m.Name, res...)
+	return ix.Postings(context.TODO(), m.Name, res...)
 }
 
 const maxExpandedPostingsFactor = 100 // Division factor for maximum number of matched series.
 
-func labelValuesWithMatchers(r IndexReader, name string, matchers ...*labels.Matcher) ([]string, error) {
+func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, matchers ...*labels.Matcher) ([]string, error) {
 	p, err := PostingsForMatchers(r, matchers...)
 	if err != nil {
 		return nil, errors.Wrap(err, "fetching postings for matchers")
 	}
 
-	allValues, err := r.LabelValues(name)
+	allValues, err := r.LabelValues(ctx, name)
 	if err != nil {
 		return nil, errors.Wrapf(err, "fetching values of label %s", name)
 	}
@@ -434,7 +436,7 @@ func labelValuesWithMatchers(r IndexReader, name string, matchers ...*labels.Mat
 
 	valuesPostings := make([]index.Postings, len(allValues))
 	for i, value := range allValues {
-		valuesPostings[i], err = r.Postings(name, value)
+		valuesPostings[i], err = r.Postings(ctx, name, value)
 		if err != nil {
 			return nil, errors.Wrapf(err, "fetching postings for %s=%q", name, value)
 		}
@@ -533,8 +535,8 @@ func (p *prependPostings) Err() error {
 	return p.rest.Err()
 }
 
-func labelNamesWithMatchers(r IndexReader, matchers ...*labels.Matcher) ([]string, error) {
-	p, err := r.PostingsForMatchers(false, matchers...)
+func labelNamesWithMatchers(ctx context.Context, r IndexReader, matchers ...*labels.Matcher) ([]string, error) {
+	p, err := r.PostingsForMatchers(ctx, false, matchers...)
 	if err != nil {
 		return nil, err
 	}
@@ -547,7 +549,7 @@ func labelNamesWithMatchers(r IndexReader, matchers ...*labels.Matcher) ([]strin
 		return nil, errors.Wrapf(p.Err(), "postings for label names with matchers")
 	}
 
-	return r.LabelNamesFor(postings...)
+	return r.LabelNamesFor(ctx, postings...)
 }
 
 // seriesData, used inside other iterators, are updated when we move from one series to another.
@@ -667,7 +669,7 @@ func (b *blockBaseSeriesSet) Err() error {
 	return b.p.Err()
 }
 
-func (b *blockBaseSeriesSet) Warnings() storage.Warnings { return nil }
+func (b *blockBaseSeriesSet) Warnings() annotations.Annotations { return nil }
 
 // populateWithDelGenericSeriesIterator allows to iterate over given chunk
 // metas. In each iteration it ensures that chunks are trimmed based on given

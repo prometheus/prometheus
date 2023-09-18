@@ -28,6 +28,8 @@ import (
 )
 
 func setupRangeQueryTestData(stor *teststorage.TestStorage, _ *Engine, interval, numIntervals int) error {
+	ctx := context.Background()
+
 	metrics := []labels.Labels{}
 	metrics = append(metrics, labels.FromStrings("__name__", "a_one"))
 	metrics = append(metrics, labels.FromStrings("__name__", "b_one"))
@@ -67,7 +69,7 @@ func setupRangeQueryTestData(stor *teststorage.TestStorage, _ *Engine, interval,
 		}
 	}
 	stor.DB.ForceHeadMMap() // Ensure we have at most one head chunk for every series.
-	stor.DB.Compact()
+	stor.DB.Compact(ctx)
 	return nil
 }
 
@@ -154,7 +156,8 @@ func rangeQueryCases() []benchCase {
 			expr: "sum by (le)(h_X)",
 		},
 		{
-			expr: "count_values('value', h_X)",
+			expr:  "count_values('value', h_X)",
+			steps: 100,
 		},
 		{
 			expr: "topk(1, a_X)",
@@ -214,7 +217,6 @@ func rangeQueryCases() []benchCase {
 			tmp = append(tmp, c)
 		} else {
 			tmp = append(tmp, benchCase{expr: c.expr, steps: 1})
-			tmp = append(tmp, benchCase{expr: c.expr, steps: 10})
 			tmp = append(tmp, benchCase{expr: c.expr, steps: 100})
 			tmp = append(tmp, benchCase{expr: c.expr, steps: 1000})
 		}

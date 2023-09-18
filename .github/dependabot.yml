@@ -27,7 +27,10 @@ updates:
     directory: "/"
     schedule:
       interval: "monthly"
-    open-pull-requests-limit: 0
+  - package-ecosystem: "github-actions"
+    directory: "/scripts"
+    schedule:
+      interval: "monthly"
   - package-ecosystem: "docker"
     directory: "/"
     schedule:

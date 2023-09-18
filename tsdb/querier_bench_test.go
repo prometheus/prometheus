@@ -188,6 +188,8 @@ func benchmarkLabelValuesWithMatchers(b *testing.B, ir IndexReader) {
 	nonPrimesTimes := labels.MustNewMatcher(labels.MatchEqual, "i_times_n", "20")  // 1*20, 2*10, 4*5, 5*4
 	times12 := labels.MustNewMatcher(labels.MatchRegexp, "i_times_n", "12.*")
 
+	ctx := context.Background()
+
 	cases := []struct {
 		name      string
 		labelName string
@@ -213,7 +215,7 @@ func benchmarkLabelValuesWithMatchers(b *testing.B, ir IndexReader) {
 	for _, c := range cases {
 		b.Run(c.name, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
-				_, err := labelValuesWithMatchers(ir, c.labelName, c.matchers...)
+				_, err := labelValuesWithMatchers(ctx, ir, c.labelName, c.matchers...)
 				require.NoError(b, err)
 			}
 		})
@@ -278,7 +280,7 @@ func BenchmarkQuerierSelect(b *testing.B) {
 						}
 					}
 
-					ss := q.Select(sorted, hints, matcher)
+					ss := q.Select(context.Background(), sorted, hints, matcher)
 					for ss.Next() { // nolint:revive
 					}
 					require.NoError(b, ss.Err())

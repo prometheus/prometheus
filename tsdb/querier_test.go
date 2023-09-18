@@ -38,20 +38,21 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
+	"github.com/prometheus/prometheus/util/annotations"
 )
 
 // TODO(bwplotka): Replace those mocks with remote.concreteSeriesSet.
 type mockSeriesSet struct {
 	next   func() bool
 	series func() storage.Series
-	ws     func() storage.Warnings
+	ws     func() annotations.Annotations
 	err    func() error
 }
 
-func (m *mockSeriesSet) Next() bool                 { return m.next() }
-func (m *mockSeriesSet) At() storage.Series         { return m.series() }
-func (m *mockSeriesSet) Err() error                 { return m.err() }
-func (m *mockSeriesSet) Warnings() storage.Warnings { return m.ws() }
+func (m *mockSeriesSet) Next() bool                        { return m.next() }
+func (m *mockSeriesSet) At() storage.Series                { return m.series() }
+func (m *mockSeriesSet) Err() error                        { return m.err() }
+func (m *mockSeriesSet) Warnings() annotations.Annotations { return m.ws() }
 
 func newMockSeriesSet(list []storage.Series) *mockSeriesSet {
 	i := -1
@@ -64,21 +65,21 @@ func newMockSeriesSet(list []storage.Series) *mockSeriesSet {
 			return list[i]
 		},
 		err: func() error { return nil },
-		ws:  func() storage.Warnings { return nil },
+		ws:  func() annotations.Annotations { return nil },
 	}
 }
 
 type mockChunkSeriesSet struct {
 	next   func() bool
 	series func() storage.ChunkSeries
-	ws     func() storage.Warnings
+	ws     func() annotations.Annotations
 	err    func() error
 }
 
-func (m *mockChunkSeriesSet) Next() bool                 { return m.next() }
-func (m *mockChunkSeriesSet) At() storage.ChunkSeries    { return m.series() }
-func (m *mockChunkSeriesSet) Err() error                 { return m.err() }
-func (m *mockChunkSeriesSet) Warnings() storage.Warnings { return m.ws() }
+func (m *mockChunkSeriesSet) Next() bool                        { return m.next() }
+func (m *mockChunkSeriesSet) At() storage.ChunkSeries           { return m.series() }
+func (m *mockChunkSeriesSet) Err() error                        { return m.err() }
+func (m *mockChunkSeriesSet) Warnings() annotations.Annotations { return m.ws() }
 
 func newMockChunkSeriesSet(list []storage.ChunkSeries) *mockChunkSeriesSet {
 	i := -1
@@ -91,7 +92,7 @@ func newMockChunkSeriesSet(list []storage.ChunkSeries) *mockChunkSeriesSet {
 			return list[i]
 		},
 		err: func() error { return nil },
-		ws:  func() storage.Warnings { return nil },
+		ws:  func() annotations.Annotations { return nil },
 	}
 }
 
@@ -182,7 +183,7 @@ func testBlockQuerier(t *testing.T, c blockQuerierTestCase, ir IndexReader, cr C
 			},
 		}
 
-		res := q.Select(false, c.hints, c.ms...)
+		res := q.Select(context.Background(), false, c.hints, c.ms...)
 		defer func() { require.NoError(t, q.Close()) }()
 
 		for {
@@ -217,7 +218,7 @@ func testBlockQuerier(t *testing.T, c blockQuerierTestCase, ir IndexReader, cr C
 				maxt: c.maxt,
 			},
 		}
-		res := q.Select(false, c.hints, c.ms...)
+		res := q.Select(context.Background(), false, c.hints, c.ms...)
 		defer func() { require.NoError(t, q.Close()) }()
 
 		for {
@@ -544,6 +545,7 @@ func TestBlockQuerier_AgainstHeadWithOpenChunks(t *testing.T) {
 }
 
 func TestBlockQuerier_TrimmingDoesNotModifyOriginalTombstoneIntervals(t *testing.T) {
+	ctx := context.Background()
 	c := blockQuerierTestCase{
 		mint: 2,
 		maxt: 6,
@@ -567,7 +569,7 @@ func TestBlockQuerier_TrimmingDoesNotModifyOriginalTombstoneIntervals(t *testing
 	}
 	ir, cr, _, _ := createIdxChkReaders(t, testData)
 	stones := tombstones.NewMemTombstones()
-	p, err := ir.Postings("a", "a")
+	p, err := ir.Postings(ctx, "a", "a")
 	require.NoError(t, err)
 	refs, err := index.ExpandPostings(p)
 	require.NoError(t, err)
@@ -1492,13 +1494,13 @@ func (m mockIndex) Close() error {
 	return nil
 }
 
-func (m mockIndex) SortedLabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
-	values, _ := m.LabelValues(name, matchers...)
+func (m mockIndex) SortedLabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
+	values, _ := m.LabelValues(ctx, name, matchers...)
 	sort.Strings(values)
 	return values, nil
 }
 
-func (m mockIndex) LabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
+func (m mockIndex) LabelValues(_ context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
 	var values []string
 
 	if len(matchers) == 0 {
@@ -1522,11 +1524,11 @@ func (m mockIndex) LabelValues(name string, matchers ...*labels.Matcher) ([]stri
 	return values, nil
 }
 
-func (m mockIndex) LabelValueFor(id storage.SeriesRef, label string) (string, error) {
+func (m mockIndex) LabelValueFor(_ context.Context, id storage.SeriesRef, label string) (string, error) {
 	return m.series[id].l.Get(label), nil
 }
 
-func (m mockIndex) LabelNamesFor(ids ...storage.SeriesRef) ([]string, error) {
+func (m mockIndex) LabelNamesFor(ctx context.Context, ids ...storage.SeriesRef) ([]string, error) {
 	namesMap := make(map[string]bool)
 	for _, id := range ids {
 		m.series[id].l.Range(func(lbl labels.Label) {
@@ -1540,13 +1542,13 @@ func (m mockIndex) LabelNamesFor(ids ...storage.SeriesRef) ([]string, error) {
 	return names, nil
 }
 
-func (m mockIndex) Postings(name string, values ...string) (index.Postings, error) {
+func (m mockIndex) Postings(ctx context.Context, name string, values ...string) (index.Postings, error) {
 	res := make([]index.Postings, 0, len(values))
 	for _, value := range values {
 		l := labels.Label{Name: name, Value: value}
 		res = append(res, index.NewListPostings(m.postings[l]))
 	}
-	return index.Merge(res...), nil
+	return index.Merge(ctx, res...), nil
 }
 
 func (m mockIndex) SortedPostings(p index.Postings) index.Postings {
@@ -1561,7 +1563,7 @@ func (m mockIndex) SortedPostings(p index.Postings) index.Postings {
 	return index.NewListPostings(ep)
 }
 
-func (m mockIndex) PostingsForMatchers(concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
+func (m mockIndex) PostingsForMatchers(_ context.Context, concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
 	var ps []storage.SeriesRef
 	for p, s := range m.series {
 		if matches(ms, s.l) {
@@ -1614,7 +1616,7 @@ func (m mockIndex) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder,
 	return nil
 }
 
-func (m mockIndex) LabelNames(matchers ...*labels.Matcher) ([]string, error) {
+func (m mockIndex) LabelNames(_ context.Context, matchers ...*labels.Matcher) ([]string, error) {
 	names := map[string]struct{}{}
 	if len(matchers) == 0 {
 		for l := range m.postings {
@@ -1771,7 +1773,7 @@ func BenchmarkQuerySeek(b *testing.B) {
 				b.ReportAllocs()
 
 				var it chunkenc.Iterator
-				ss := sq.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
+				ss := sq.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
 				for ss.Next() {
 					it = ss.At().Iterator(it)
 					for t := mint; t <= maxt; t++ {
@@ -1904,7 +1906,7 @@ func BenchmarkSetMatcher(b *testing.B) {
 			b.ResetTimer()
 			b.ReportAllocs()
 			for n := 0; n < b.N; n++ {
-				ss := sq.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "test", c.pattern))
+				ss := sq.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchRegexp, "test", c.pattern))
 				for ss.Next() {
 				}
 				require.NoError(b, ss.Err())
@@ -2253,10 +2255,10 @@ func TestQuerierIndexQueriesRace(t *testing.T) {
 			t.Cleanup(cancel)
 
 			for i := 0; i < testRepeats; i++ {
-				q, err := db.Querier(ctx, math.MinInt64, math.MaxInt64)
+				q, err := db.Querier(math.MinInt64, math.MaxInt64)
 				require.NoError(t, err)
 
-				values, _, err := q.LabelValues("seq", c.matchers...)
+				values, _, err := q.LabelValues(ctx, "seq", c.matchers...)
 				require.NoError(t, err)
 				require.Emptyf(t, values, `label values for label "seq" should be empty`)
 			}
@@ -2294,7 +2296,7 @@ func TestClose(t *testing.T) {
 		require.NoError(t, db.Close())
 	}()
 
-	q, err := db.Querier(context.TODO(), 0, 20)
+	q, err := db.Querier(0, 20)
 	require.NoError(t, err)
 	require.NoError(t, q.Close())
 	require.Error(t, q.Close())
@@ -2427,7 +2429,7 @@ func benchQuery(b *testing.B, expExpansions int, q storage.Querier, selectors la
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		ss := q.Select(false, nil, selectors...)
+		ss := q.Select(context.Background(), false, nil, selectors...)
 		var actualExpansions int
 		var it chunkenc.Iterator
 		for ss.Next() {
@@ -2454,24 +2456,24 @@ func (m mockMatcherIndex) Symbols() index.StringIter { return nil }
 func (m mockMatcherIndex) Close() error { return nil }
 
 // SortedLabelValues will return error if it is called.
-func (m mockMatcherIndex) SortedLabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
+func (m mockMatcherIndex) SortedLabelValues(context.Context, string, ...*labels.Matcher) ([]string, error) {
 	return []string{}, errors.New("sorted label values called")
 }
 
 // LabelValues will return error if it is called.
-func (m mockMatcherIndex) LabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
+func (m mockMatcherIndex) LabelValues(context.Context, string, ...*labels.Matcher) ([]string, error) {
 	return []string{}, errors.New("label values called")
 }
 
-func (m mockMatcherIndex) LabelValueFor(id storage.SeriesRef, label string) (string, error) {
+func (m mockMatcherIndex) LabelValueFor(context.Context, storage.SeriesRef, string) (string, error) {
 	return "", errors.New("label value for called")
 }
 
-func (m mockMatcherIndex) LabelNamesFor(ids ...storage.SeriesRef) ([]string, error) {
+func (m mockMatcherIndex) LabelNamesFor(ctx context.Context, ids ...storage.SeriesRef) ([]string, error) {
 	return nil, errors.New("label names for for called")
 }
 
-func (m mockMatcherIndex) Postings(name string, values ...string) (index.Postings, error) {
+func (m mockMatcherIndex) Postings(context.Context, string, ...string) (index.Postings, error) {
 	return index.EmptyPostings(), nil
 }
 
@@ -2491,7 +2493,7 @@ func (m mockMatcherIndex) Series(ref storage.SeriesRef, builder *labels.ScratchB
 	return nil
 }
 
-func (m mockMatcherIndex) LabelNames(...*labels.Matcher) ([]string, error) {
+func (m mockMatcherIndex) LabelNames(context.Context, ...*labels.Matcher) ([]string, error) {
 	return []string{}, nil
 }
 
@@ -2655,7 +2657,7 @@ func BenchmarkHeadChunkQuerier(b *testing.B) {
 	}
 	require.NoError(b, app.Commit())
 
-	querier, err := db.ChunkQuerier(context.Background(), math.MinInt64, math.MaxInt64)
+	querier, err := db.ChunkQuerier(math.MinInt64, math.MaxInt64)
 	require.NoError(b, err)
 	defer func(q storage.ChunkQuerier) {
 		require.NoError(b, q.Close())
@@ -2663,7 +2665,7 @@ func BenchmarkHeadChunkQuerier(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		ss := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
+		ss := querier.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
 		total := 0
 		for ss.Next() {
 			cs := ss.At()
@@ -2700,7 +2702,7 @@ func BenchmarkHeadQuerier(b *testing.B) {
 	}
 	require.NoError(b, app.Commit())
 
-	querier, err := db.Querier(context.Background(), math.MinInt64, math.MaxInt64)
+	querier, err := db.Querier(math.MinInt64, math.MaxInt64)
 	require.NoError(b, err)
 	defer func(q storage.Querier) {
 		require.NoError(b, q.Close())
@@ -2708,7 +2710,7 @@ func BenchmarkHeadQuerier(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		ss := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
+		ss := querier.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
 		total := int64(0)
 		for ss.Next() {
 			cs := ss.At()
@@ -2726,6 +2728,7 @@ func BenchmarkHeadQuerier(b *testing.B) {
 // This is a regression test for the case where gauge histograms were not handled by
 // populateWithDelChunkSeriesIterator correctly.
 func TestQueryWithDeletedHistograms(t *testing.T) {
+	ctx := context.Background()
 	testcases := map[string]func(int) (*histogram.Histogram, *histogram.FloatHistogram){
 		"intCounter": func(i int) (*histogram.Histogram, *histogram.FloatHistogram) {
 			return tsdbutil.GenerateTestHistogram(i), nil
@@ -2770,13 +2773,13 @@ func TestQueryWithDeletedHistograms(t *testing.T) {
 			require.NoError(t, err)
 
 			// Delete the last 20.
-			err = db.Delete(80, 100, matcher)
+			err = db.Delete(ctx, 80, 100, matcher)
 			require.NoError(t, err)
 
-			chunkQuerier, err := db.ChunkQuerier(context.Background(), 0, 100)
+			chunkQuerier, err := db.ChunkQuerier(0, 100)
 			require.NoError(t, err)
 
-			css := chunkQuerier.Select(false, nil, matcher)
+			css := chunkQuerier.Select(context.Background(), false, nil, matcher)
 
 			seriesCount := 0
 			for css.Next() {
@@ -2866,7 +2869,9 @@ func TestLabelsValuesWithMatchersOptimization(t *testing.T) {
 		require.NoError(t, h.Close())
 	}()
 
-	app := h.Appender(context.Background())
+	ctx := context.Background()
+
+	app := h.Appender(ctx)
 	addSeries := func(l labels.Labels) {
 		app.Append(0, l, 0, 0)
 	}
@@ -2905,7 +2910,7 @@ func TestLabelsValuesWithMatchersOptimization(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			values, err := labelValuesWithMatchers(ir, c.labelName, c.matchers...)
+			values, err := labelValuesWithMatchers(ctx, ir, c.labelName, c.matchers...)
 			require.NoError(t, err)
 			require.ElementsMatch(t, c.expectedResults, values)
 		})
