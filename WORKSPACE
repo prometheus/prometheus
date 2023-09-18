@@ -95,8 +95,16 @@ http_archive(
 
 http_archive(
     name = "backward_cpp",
-    url = "https://github.com/bombela/backward-cpp/archive/refs/heads/master.zip",
-    sha256 = "7c93aba757cdbf835ee29e65e6e50df7a9ceabb7bdb21dc7ad9a42058220afa8",
+    url = "https://github.com/bombela/backward-cpp/archive/65a769ffe77cf9d759d801bc792ac56af8e911a3.zip",
+    sha256 = "fa6e7d2919eca555772ceb9a946e58d95cb562cb01bb59d01f901f607656cd32",
     build_file = "//third_party:backward_cpp.BUILD",
-    strip_prefix = "backward-cpp-master/",
+    strip_prefix = "backward-cpp-65a769ffe77cf9d759d801bc792ac56af8e911a3/",
+)
+
+http_archive(
+    name = "roaring_bitmap",
+    url = "https://github.com/RoaringBitmap/CRoaring/archive/refs/tags/v1.3.0.zip",
+    sha256 = "a037e12a3f7c8c2abb3e81fc9669c23e274ffa2d8670d2034a2e05969e53689b",
+    build_file = "//third_party:roaring_bitmap.BUILD",
+    strip_prefix = "CRoaring-1.3.0/",
 )

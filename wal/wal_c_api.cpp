@@ -175,6 +175,11 @@ void okdb_wal_c_redundant_destroy(c_redundant* c_rt) {
   return std::visit([&](auto& vtbl) { return vtbl.template call<"okdb_wal_c_redundant_destroy">(c_rt); }, encoder_vtbl);
 }
 
+// okdb_wal_c_redundant_destroy - calls the destructor, C wrapper C++ for clear memory.
+void okdb_wal_c_encoder_add_many_state_destroy(uint64_t handle) {
+  return std::visit([&](auto& vtbl) { return vtbl.template call<"okdb_wal_c_encoder_add_many_state_destroy">(handle); }, encoder_vtbl);
+}
+
 //
 // Hashdex
 // okdb_wal_c_hashdex_ctor - constructor, C wrapper C++, init C++ class Hashdex.

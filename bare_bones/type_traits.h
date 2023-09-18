@@ -10,6 +10,16 @@
 
 namespace BareBones {
 
+namespace Concepts {
+
+// checks for subtract semigroup operations of one type.
+template <typename T>
+concept SubtractSemigroup = requires(T t1, T t2, T t3) {
+  { t3 = t2 - t1 };
+};
+
+}  // namespace Concepts
+
 // IsTriviallyReallocatable
 
 template <class T>

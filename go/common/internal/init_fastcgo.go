@@ -72,6 +72,12 @@ func EnableCoreDumps(enabled bool) {
 	)
 }
 
+// CEncoderAddManyStateHandle API
+func CEncoderAddManyStateHandleDestroy(handle uint64) {
+	fastcgo.UnsafeCall1(C.okdb_wal_c_encoder_add_many_state_destroy,
+		uintptr(handle))
+}
+
 // CByteSlice API
 func CSegmentDestroy(p unsafe.Pointer) {
 	fastcgo.UnsafeCall1(C.okdb_wal_c_segment_destroy,

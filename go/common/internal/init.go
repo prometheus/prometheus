@@ -75,6 +75,11 @@ func CSegmentDestroy(p unsafe.Pointer) {
 	C.okdb_wal_c_segment_destroy((*C.c_segment)(p))
 }
 
+// CEncoderAddManyStateHandle API
+func CEncoderAddManyStateHandleDestroy(handle uint64) {
+	C.okdb_wal_c_encoder_add_many_state_destroy(handle)
+}
+
 //
 // CDecoder API
 //
