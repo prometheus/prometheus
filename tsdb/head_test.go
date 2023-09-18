@@ -5542,3 +5542,85 @@ func TestHeadCompactionWhileAppendAndCommitExemplar(t *testing.T) {
 	app.Commit()
 	h.Close()
 }
+
+func TestHeadDeleteOOOSamples(t *testing.T) {
+	// Initialize a temporary directory and Write-Ahead Logs (WAL)
+	dir := t.TempDir()
+	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, wlog.CompressionSnappy)
+	require.NoError(t, err)
+	oooWlog, err := wlog.NewSize(nil, nil, filepath.Join(dir, wlog.WblDirName), 32768, wlog.CompressionSnappy)
+	require.NoError(t, err)
+
+	// Set up Head options
+	opts := DefaultHeadOptions()
+	opts.ChunkDirRoot = dir
+	opts.OutOfOrderCapMax.Store(30)
+	opts.OutOfOrderTimeWindow.Store(120 * time.Minute.Milliseconds())
+
+	// Create a new Head
+	head, err := NewHead(nil, nil, wal, oooWlog, opts, nil)
+	require.NoError(t, err)
+	require.NoError(t, head.Init(0))
+
+	// Label the samples
+	lbls := labels.FromStrings("foo", "bar")
+
+	// Append some initial in-order samples
+	app := head.Appender(context.Background())
+	_, err = app.Append(0, lbls, 10, 1)
+	require.NoError(t, err)
+	_, err = app.Append(0, lbls, 15, 2)
+	require.NoError(t, err)
+	_, err = app.Append(0, lbls, 5, 3) // This is actually out-of-order
+	require.NoError(t, err)
+	err = app.Commit()
+	require.NoError(t, err)
+
+	// Append a batch of out-of-order samples
+	for i := 0; i < 30; i++ {
+		app = head.Appender(context.Background())
+		_, err = app.Append(0, lbls, int64(9-i), float64(9-i)) // These will be out-of-order
+		require.NoError(t, err)
+		err = app.Commit()
+		require.NoError(t, err)
+	}
+
+	// Create a matcher to select samples by labels
+	matchers := []*labels.Matcher{
+		labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"),
+	}
+
+	var minInt int64 = -20
+	var maxInt int64 = 9
+
+	// Delete samples in a certain time range, including out-of-order ones
+	err = head.Delete(context.Background(), minInt, maxInt, matchers...)
+	require.NoError(t, err)
+
+	// Query to get the remaining samples
+	q, err := NewBlockQuerier(head, head.MinTime(), head.MaxTime())
+	require.NoError(t, err)
+	set := q.Select(context.Background(), false, nil, matchers...)
+	require.NoError(t, q.Close())
+
+	// Check that the remaining samples are as expected
+	valueType := set.Next()
+	require.NotEqual(t, chunkenc.ValNone, valueType)
+
+	series := set.At()
+	it := series.Iterator(nil)
+	remainT := []int64{}
+	remainV := []float64{}
+
+	for valueType := it.Next(); valueType != chunkenc.ValNone; valueType = it.Next() {
+		t, v := it.At()
+		remainT = append(remainT, t)
+		remainV = append(remainV, v)
+	}
+
+	require.Equal(t, []int64{10, 15}, remainT)
+	require.Equal(t, []float64{1, 2}, remainV)
+
+	// Close the head to clean up resources
+	require.NoError(t, head.Close())
+}
