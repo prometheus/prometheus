@@ -111,7 +111,7 @@ func (p *MemPostings) SortedKeys() []labels.Label {
 	slices.SortFunc(keys, func(a, b labels.Label) int {
 		nameCompare := strings.Compare(a.Name, b.Name)
 		// If names are the same, compare values.
-		if nameCompare == 0 {
+		if nameCompare != 0 {
 			return nameCompare
 		}
 
