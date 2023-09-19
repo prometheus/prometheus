@@ -188,6 +188,15 @@ func (oh *HeadAndOOOIndexReader) LabelValues(ctx context.Context, name string, h
 	return labelValuesWithMatchers(ctx, oh, name, hints, matchers...)
 }
 
+// LabelValuesFiltered returns values for which the filter function returns true.
+func (oh *HeadAndOOOIndexReader) LabelValuesFiltered(ctx context.Context, name string, hints *storage.LabelHints, filter func(string) bool) ([]string, error) {
+	if oh.maxt < oh.head.MinTime() && oh.maxt < oh.head.MinOOOTime() || oh.mint > oh.head.MaxTime() && oh.mint > oh.head.MaxOOOTime() {
+		return nil, nil
+	}
+
+	return oh.head.postings.LabelValuesFiltered(ctx, name, hints, filter)
+}
+
 func lessByMinTimeAndMinRef(a, b chunks.Meta) int {
 	switch {
 	case a.MinTime < b.MinTime:
@@ -489,6 +498,10 @@ func (*OOOCompactionHeadIndexReader) SortedLabelValues(_ context.Context, _ stri
 }
 
 func (*OOOCompactionHeadIndexReader) LabelValues(context.Context, string, *storage.LabelHints, ...*labels.Matcher) ([]string, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (*OOOCompactionHeadIndexReader) LabelValuesFiltered(context.Context, string, *storage.LabelHints, func(string) bool) ([]string, error) {
 	return nil, errors.New("not implemented")
 }
 

@@ -1519,3 +1519,19 @@ func TestMemPostings_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
 	require.Error(t, p.Err())
 	require.Equal(t, failAfter+1, ctx.Count()) // Plus one for the Err() call that puts the error in the result.
 }
+
+func TestMemPostings_LabelValuesFilteredHonorsContextCancel(t *testing.T) {
+	memP := NewMemPostings()
+	seriesCount := 10 * checkContextEveryNIterations
+	for i := 1; i <= seriesCount; i++ {
+		memP.Add(storage.SeriesRef(i), labels.FromStrings("__name__", fmt.Sprintf("%4d", i)))
+	}
+
+	failAfter := uint64(seriesCount / 2 / checkContextEveryNIterations)
+	ctx := &testutil.MockContextErrAfter{FailAfter: failAfter}
+
+	_, err := memP.LabelValuesFiltered(ctx, "__name__", nil, func(s string) bool { return true })
+
+	require.Error(t, err)
+	require.Equal(t, failAfter+1, ctx.Count()) // Plus one for the Err() call that puts the error in the result.
+}

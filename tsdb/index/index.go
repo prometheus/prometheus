@@ -1365,7 +1365,12 @@ func (r *Reader) LabelValues(ctx context.Context, name string, hints *storage.La
 	if len(matchers) > 0 {
 		return nil, fmt.Errorf("matchers parameter is not implemented: %+v", matchers)
 	}
+	return r.LabelValuesFiltered(ctx, name, hints, nil)
+}
 
+// LabelValues returns label values for which the filter function returns true.
+// Accepts filter==nil meaning all values, to avoid repeating all the code for LabelValues()
+func (r *Reader) LabelValuesFiltered(ctx context.Context, name string, hints *storage.LabelHints, filter func(string) bool) ([]string, error) {
 	if r.version == FormatV1 {
 		e, ok := r.postingsV1[name]
 		if !ok {
@@ -1373,10 +1378,12 @@ func (r *Reader) LabelValues(ctx context.Context, name string, hints *storage.La
 		}
 		values := make([]string, 0, len(e))
 		for k := range e {
-			if hints != nil && hints.Limit > 0 && len(values) >= hints.Limit {
-				break
+			if filter(k) {
+				if hints != nil && hints.Limit > 0 && len(values) >= hints.Limit {
+					break
+				}
+				values = append(values, k)
 			}
-			values = append(values, k)
 		}
 		return values, nil
 	}
@@ -1389,6 +1396,9 @@ func (r *Reader) LabelValues(ctx context.Context, name string, hints *storage.La
 	}
 
 	valuesLength := len(e) * symbolFactor
+	if filter != nil {
+		valuesLength = 0 // Don't know what proportion of values will match.
+	}
 	if hints != nil && hints.Limit > 0 && valuesLength > hints.Limit {
 		valuesLength = hints.Limit
 	}
@@ -1398,7 +1408,9 @@ func (r *Reader) LabelValues(ctx context.Context, name string, hints *storage.La
 		if hints != nil && hints.Limit > 0 && len(values) >= hints.Limit {
 			return false, nil
 		}
-		values = append(values, val)
+		if filter == nil || filter(val) {
+			values = append(values, val)
+		}
 		return val != lastVal, nil
 	})
 	return values, err
