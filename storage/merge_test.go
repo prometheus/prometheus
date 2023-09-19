@@ -24,6 +24,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -384,16 +385,36 @@ func TestMergeChunkQuerierWithNoVerticalChunkSeriesMerger(t *testing.T) {
 	}
 }
 
+func histogramSample(ts int64, hint histogram.CounterResetHint) hSample {
+	h := tsdbutil.GenerateTestHistogram(int(ts + 1))
+	h.CounterResetHint = hint
+	return hSample{t: ts, h: h}
+}
+
+func floatHistogramSample(ts int64, hint histogram.CounterResetHint) fhSample {
+	fh := tsdbutil.GenerateTestFloatHistogram(int(ts + 1))
+	fh.CounterResetHint = hint
+	return fhSample{t: ts, fh: fh}
+}
+
+// Shorthands for counter reset hints.
+const (
+	uk = histogram.UnknownCounterReset
+	cr = histogram.CounterReset
+	nr = histogram.NotCounterReset
+	ga = histogram.GaugeType
+)
+
 func TestCompactingChunkSeriesMerger(t *testing.T) {
 	m := NewCompactingChunkSeriesMerger(ChainedSeriesMerge)
 
 	// histogramSample returns a histogram that is unique to the ts.
 	histogramSample := func(ts int64) hSample {
-		return hSample{t: ts, h: tsdbutil.GenerateTestHistogram(int(ts + 1))}
+		return histogramSample(ts, uk)
 	}
 
 	floatHistogramSample := func(ts int64) fhSample {
-		return fhSample{t: ts, fh: tsdbutil.GenerateTestFloatHistogram(int(ts + 1))}
+		return floatHistogramSample(ts, uk)
 	}
 
 	for _, tc := range []struct {
@@ -585,7 +606,127 @@ func TestCompactingChunkSeriesMerger(t *testing.T) {
 			count, err := merged.ChunkCount()
 			require.NoError(t, err)
 			require.Len(t, actChks, count)
+			actSamples := chunks.ChunkMetasToSamples(actChks)
+			expSamples := chunks.ChunkMetasToSamples(expChks)
+			require.Equal(t, expSamples, actSamples)
 		})
+	}
+}
+
+func TestCompactingChunkSeriesMergerHistogramCounterResetHint(t *testing.T) {
+	m := NewCompactingChunkSeriesMerger(ChainedSeriesMerge)
+
+	for sampleType, sampleFunc := range map[string]func(int64, histogram.CounterResetHint) chunks.Sample{
+		"histogram":       func(ts int64, hint histogram.CounterResetHint) chunks.Sample { return histogramSample(ts, hint) },
+		"float histogram": func(ts int64, hint histogram.CounterResetHint) chunks.Sample { return floatHistogramSample(ts, hint) },
+	} {
+		for name, tc := range map[string]struct {
+			input    []ChunkSeries
+			expected ChunkSeries
+		}{
+			"histogram counter reset hint kept in single series": {
+				input: []ChunkSeries{
+					NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+						[]chunks.Sample{sampleFunc(0, cr), sampleFunc(5, uk)},
+						[]chunks.Sample{sampleFunc(10, cr), sampleFunc(15, uk)},
+					),
+				},
+				expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+					[]chunks.Sample{sampleFunc(0, cr), sampleFunc(5, uk)},
+					[]chunks.Sample{sampleFunc(10, cr), sampleFunc(15, uk)},
+				),
+			},
+			"histogram not counter reset hint kept in single series": {
+				input: []ChunkSeries{
+					NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+						[]chunks.Sample{sampleFunc(0, nr), sampleFunc(5, uk)},
+						[]chunks.Sample{sampleFunc(10, nr), sampleFunc(15, uk)},
+					),
+				},
+				expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+					[]chunks.Sample{sampleFunc(0, nr), sampleFunc(5, uk)},
+					[]chunks.Sample{sampleFunc(10, nr), sampleFunc(15, uk)},
+				),
+			},
+			"histogram counter reset hint kept in multiple equal series": {
+				input: []ChunkSeries{
+					NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+						[]chunks.Sample{sampleFunc(0, cr), sampleFunc(5, uk)},
+						[]chunks.Sample{sampleFunc(10, cr), sampleFunc(15, uk)},
+					),
+					NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+						[]chunks.Sample{sampleFunc(0, cr), sampleFunc(5, uk)},
+						[]chunks.Sample{sampleFunc(10, cr), sampleFunc(15, uk)},
+					),
+				},
+				expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+					[]chunks.Sample{sampleFunc(0, cr), sampleFunc(5, uk)},
+					[]chunks.Sample{sampleFunc(10, cr), sampleFunc(15, uk)},
+				),
+			},
+			"histogram not counter reset hint kept in multiple equal series": {
+				input: []ChunkSeries{
+					NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+						[]chunks.Sample{sampleFunc(0, nr), sampleFunc(5, uk)},
+						[]chunks.Sample{sampleFunc(10, nr), sampleFunc(15, uk)},
+					),
+					NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+						[]chunks.Sample{sampleFunc(0, nr), sampleFunc(5, uk)},
+						[]chunks.Sample{sampleFunc(10, nr), sampleFunc(15, uk)},
+					),
+				},
+				expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+					[]chunks.Sample{sampleFunc(0, nr), sampleFunc(5, uk)},
+					[]chunks.Sample{sampleFunc(10, nr), sampleFunc(15, uk)},
+				),
+			},
+			"histogram counter reset hint dropped from differing series": {
+				input: []ChunkSeries{
+					NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+						[]chunks.Sample{sampleFunc(0, cr), sampleFunc(5, uk)},
+						[]chunks.Sample{sampleFunc(10, cr), sampleFunc(15, uk)},
+					),
+					NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+						[]chunks.Sample{sampleFunc(0, cr), sampleFunc(5, uk)},
+						[]chunks.Sample{sampleFunc(10, cr), sampleFunc(12, uk), sampleFunc(15, uk)},
+					),
+				},
+				expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+					[]chunks.Sample{sampleFunc(0, cr), sampleFunc(5, uk)},
+					[]chunks.Sample{sampleFunc(10, uk), sampleFunc(12, uk), sampleFunc(15, uk)},
+				),
+			},
+			"histogram counter not reset hint dropped from differing series": {
+				input: []ChunkSeries{
+					NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+						[]chunks.Sample{sampleFunc(0, nr), sampleFunc(5, uk)},
+						[]chunks.Sample{sampleFunc(10, nr), sampleFunc(15, uk)},
+					),
+					NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+						[]chunks.Sample{sampleFunc(0, nr), sampleFunc(5, uk)},
+						[]chunks.Sample{sampleFunc(10, nr), sampleFunc(12, uk), sampleFunc(15, uk)},
+					),
+				},
+				expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+					[]chunks.Sample{sampleFunc(0, nr), sampleFunc(5, uk)},
+					[]chunks.Sample{sampleFunc(10, uk), sampleFunc(12, uk), sampleFunc(15, uk)},
+				),
+			},
+		} {
+			t.Run(sampleType+"/"+name, func(t *testing.T) {
+				merged := m(tc.input...)
+				require.Equal(t, tc.expected.Labels(), merged.Labels())
+				actChks, actErr := ExpandChunks(merged.Iterator(nil))
+				expChks, expErr := ExpandChunks(tc.expected.Iterator(nil))
+
+				require.Equal(t, expErr, actErr)
+				require.Equal(t, expChks, actChks)
+
+				actSamples := chunks.ChunkMetasToSamples(actChks)
+				expSamples := chunks.ChunkMetasToSamples(expChks)
+				require.Equal(t, expSamples, actSamples)
+			})
+		}
 	}
 }
 
@@ -820,102 +961,243 @@ func (m *mockChunkSeriesSet) Err() error { return nil }
 func (m *mockChunkSeriesSet) Warnings() annotations.Annotations { return nil }
 
 func TestChainSampleIterator(t *testing.T) {
-	for _, tc := range []struct {
-		input    []chunkenc.Iterator
-		expected []chunks.Sample
-	}{
-		{
-			input: []chunkenc.Iterator{
-				NewListSeriesIterator(samples{fSample{0, 0}, fSample{1, 1}}),
-			},
-			expected: []chunks.Sample{fSample{0, 0}, fSample{1, 1}},
-		},
-		{
-			input: []chunkenc.Iterator{
-				NewListSeriesIterator(samples{fSample{0, 0}, fSample{1, 1}}),
-				NewListSeriesIterator(samples{fSample{2, 2}, fSample{3, 3}}),
-			},
-			expected: []chunks.Sample{fSample{0, 0}, fSample{1, 1}, fSample{2, 2}, fSample{3, 3}},
-		},
-		{
-			input: []chunkenc.Iterator{
-				NewListSeriesIterator(samples{fSample{0, 0}, fSample{3, 3}}),
-				NewListSeriesIterator(samples{fSample{1, 1}, fSample{4, 4}}),
-				NewListSeriesIterator(samples{fSample{2, 2}, fSample{5, 5}}),
-			},
-			expected: []chunks.Sample{
-				fSample{0, 0}, fSample{1, 1}, fSample{2, 2}, fSample{3, 3}, fSample{4, 4}, fSample{5, 5},
-			},
-		},
-		// Overlap.
-		{
-			input: []chunkenc.Iterator{
-				NewListSeriesIterator(samples{fSample{0, 0}, fSample{1, 1}}),
-				NewListSeriesIterator(samples{fSample{0, 0}, fSample{2, 2}}),
-				NewListSeriesIterator(samples{fSample{2, 2}, fSample{3, 3}}),
-				NewListSeriesIterator(samples{}),
-				NewListSeriesIterator(samples{}),
-				NewListSeriesIterator(samples{}),
-			},
-			expected: []chunks.Sample{fSample{0, 0}, fSample{1, 1}, fSample{2, 2}, fSample{3, 3}},
-		},
+	for sampleType, sampleFunc := range map[string]func(int64) chunks.Sample{
+		"float":           func(ts int64) chunks.Sample { return fSample{ts, float64(ts)} },
+		"histogram":       func(ts int64) chunks.Sample { return histogramSample(ts, uk) },
+		"float histogram": func(ts int64) chunks.Sample { return floatHistogramSample(ts, uk) },
 	} {
-		merged := ChainSampleIteratorFromIterators(nil, tc.input)
-		actual, err := ExpandSamples(merged, nil)
-		require.NoError(t, err)
-		require.Equal(t, tc.expected, actual)
+		for name, tc := range map[string]struct {
+			input    []chunkenc.Iterator
+			expected []chunks.Sample
+		}{
+			"single iterator": {
+				input: []chunkenc.Iterator{
+					NewListSeriesIterator(samples{sampleFunc(0), sampleFunc(1)}),
+				},
+				expected: []chunks.Sample{sampleFunc(0), sampleFunc(1)},
+			},
+			"non overlapping iterators": {
+				input: []chunkenc.Iterator{
+					NewListSeriesIterator(samples{sampleFunc(0), sampleFunc(1)}),
+					NewListSeriesIterator(samples{sampleFunc(2), sampleFunc(3)}),
+				},
+				expected: []chunks.Sample{sampleFunc(0), sampleFunc(1), sampleFunc(2), sampleFunc(3)},
+			},
+			"overlapping but distinct iterators": {
+				input: []chunkenc.Iterator{
+					NewListSeriesIterator(samples{sampleFunc(0), sampleFunc(3)}),
+					NewListSeriesIterator(samples{sampleFunc(1), sampleFunc(4)}),
+					NewListSeriesIterator(samples{sampleFunc(2), sampleFunc(5)}),
+				},
+				expected: []chunks.Sample{
+					sampleFunc(0), sampleFunc(1), sampleFunc(2), sampleFunc(3), sampleFunc(4), sampleFunc(5),
+				},
+			},
+			"overlapping iterators": {
+				input: []chunkenc.Iterator{
+					NewListSeriesIterator(samples{sampleFunc(0), sampleFunc(1)}),
+					NewListSeriesIterator(samples{sampleFunc(0), sampleFunc(2)}),
+					NewListSeriesIterator(samples{sampleFunc(2), sampleFunc(3)}),
+					NewListSeriesIterator(samples{}),
+					NewListSeriesIterator(samples{}),
+					NewListSeriesIterator(samples{}),
+				},
+				expected: []chunks.Sample{sampleFunc(0), sampleFunc(1), sampleFunc(2), sampleFunc(3)},
+			},
+		} {
+			t.Run(sampleType+"/"+name, func(t *testing.T) {
+				merged := ChainSampleIteratorFromIterators(nil, tc.input)
+				actual, err := ExpandSamples(merged, nil)
+				require.NoError(t, err)
+				require.Equal(t, tc.expected, actual)
+			})
+		}
+	}
+}
+
+func TestChainSampleIteratorHistogramCounterResetHint(t *testing.T) {
+	for sampleType, sampleFunc := range map[string]func(int64, histogram.CounterResetHint) chunks.Sample{
+		"histogram":       func(ts int64, hint histogram.CounterResetHint) chunks.Sample { return histogramSample(ts, hint) },
+		"float histogram": func(ts int64, hint histogram.CounterResetHint) chunks.Sample { return floatHistogramSample(ts, hint) },
+	} {
+		for name, tc := range map[string]struct {
+			input    []chunkenc.Iterator
+			expected []chunks.Sample
+		}{
+			"single iterator": {
+				input: []chunkenc.Iterator{
+					NewListSeriesIterator(samples{sampleFunc(0, cr), sampleFunc(1, cr), sampleFunc(2, uk)}),
+				},
+				expected: []chunks.Sample{sampleFunc(0, uk), sampleFunc(1, cr), sampleFunc(2, uk)},
+			},
+			"single iterator gauge": {
+				input: []chunkenc.Iterator{
+					NewListSeriesIterator(samples{sampleFunc(0, ga), sampleFunc(1, ga), sampleFunc(2, ga)}),
+				},
+				expected: []chunks.Sample{sampleFunc(0, ga), sampleFunc(1, ga), sampleFunc(2, ga)},
+			},
+			"overlapping iterators gauge": {
+				input: []chunkenc.Iterator{
+					NewListSeriesIterator(samples{sampleFunc(0, ga), sampleFunc(1, ga), sampleFunc(2, ga), sampleFunc(4, ga)}),
+					NewListSeriesIterator(samples{sampleFunc(0, ga), sampleFunc(1, ga), sampleFunc(3, ga), sampleFunc(5, ga)}),
+				},
+				expected: []chunks.Sample{sampleFunc(0, ga), sampleFunc(1, ga), sampleFunc(2, ga), sampleFunc(3, ga), sampleFunc(4, ga), sampleFunc(5, ga)},
+			},
+			"non overlapping iterators": {
+				input: []chunkenc.Iterator{
+					NewListSeriesIterator(samples{sampleFunc(0, cr), sampleFunc(1, uk)}),
+					NewListSeriesIterator(samples{sampleFunc(2, cr), sampleFunc(3, cr)}),
+				},
+				expected: []chunks.Sample{sampleFunc(0, uk), sampleFunc(1, uk), sampleFunc(2, uk), sampleFunc(3, cr)},
+			},
+			"overlapping but distinct iterators": {
+				input: []chunkenc.Iterator{
+					NewListSeriesIterator(samples{sampleFunc(0, cr), sampleFunc(3, uk), sampleFunc(5, cr)}),
+					NewListSeriesIterator(samples{sampleFunc(1, uk), sampleFunc(2, cr), sampleFunc(4, cr)}),
+				},
+				expected: []chunks.Sample{
+					sampleFunc(0, uk), sampleFunc(1, uk), sampleFunc(2, cr), sampleFunc(3, uk), sampleFunc(4, uk), sampleFunc(5, uk),
+				},
+			},
+			"overlapping iterators": {
+				input: []chunkenc.Iterator{
+					NewListSeriesIterator(samples{sampleFunc(0, cr), sampleFunc(1, cr), sampleFunc(2, cr)}),
+					NewListSeriesIterator(samples{sampleFunc(0, cr), sampleFunc(1, cr), sampleFunc(2, cr)}),
+				},
+				expected: []chunks.Sample{sampleFunc(0, uk), sampleFunc(1, uk), sampleFunc(2, uk)},
+			},
+		} {
+			t.Run(sampleType+"/"+name, func(t *testing.T) {
+				merged := ChainSampleIteratorFromIterators(nil, tc.input)
+				actual, err := ExpandSamples(merged, nil)
+				require.NoError(t, err)
+				require.Equal(t, tc.expected, actual)
+			})
+		}
 	}
 }
 
 func TestChainSampleIteratorSeek(t *testing.T) {
-	for _, tc := range []struct {
-		input    []chunkenc.Iterator
-		seek     int64
-		expected []chunks.Sample
-	}{
-		{
-			input: []chunkenc.Iterator{
-				NewListSeriesIterator(samples{fSample{0, 0}, fSample{1, 1}, fSample{2, 2}}),
-			},
-			seek:     1,
-			expected: []chunks.Sample{fSample{1, 1}, fSample{2, 2}},
-		},
-		{
-			input: []chunkenc.Iterator{
-				NewListSeriesIterator(samples{fSample{0, 0}, fSample{1, 1}}),
-				NewListSeriesIterator(samples{fSample{2, 2}, fSample{3, 3}}),
-			},
-			seek:     2,
-			expected: []chunks.Sample{fSample{2, 2}, fSample{3, 3}},
-		},
-		{
-			input: []chunkenc.Iterator{
-				NewListSeriesIterator(samples{fSample{0, 0}, fSample{3, 3}}),
-				NewListSeriesIterator(samples{fSample{1, 1}, fSample{4, 4}}),
-				NewListSeriesIterator(samples{fSample{2, 2}, fSample{5, 5}}),
-			},
-			seek:     2,
-			expected: []chunks.Sample{fSample{2, 2}, fSample{3, 3}, fSample{4, 4}, fSample{5, 5}},
-		},
-		{
-			input: []chunkenc.Iterator{
-				NewListSeriesIterator(samples{fSample{0, 0}, fSample{2, 2}, fSample{3, 3}}),
-				NewListSeriesIterator(samples{fSample{0, 0}, fSample{1, 1}, fSample{2, 2}}),
-			},
-			seek:     0,
-			expected: []chunks.Sample{fSample{0, 0}, fSample{1, 1}, fSample{2, 2}, fSample{3, 3}},
-		},
+	for sampleType, sampleFunc := range map[string]func(int64) chunks.Sample{
+		"float":           func(ts int64) chunks.Sample { return fSample{ts, float64(ts)} },
+		"histogram":       func(ts int64) chunks.Sample { return histogramSample(ts, uk) },
+		"float histogram": func(ts int64) chunks.Sample { return floatHistogramSample(ts, uk) },
 	} {
-		merged := ChainSampleIteratorFromIterators(nil, tc.input)
-		actual := []chunks.Sample{}
-		if merged.Seek(tc.seek) == chunkenc.ValFloat {
-			t, f := merged.At()
-			actual = append(actual, fSample{t, f})
+		for name, tc := range map[string]struct {
+			input    []chunkenc.Iterator
+			seek     int64
+			expected []chunks.Sample
+		}{
+			"single iterator": {
+				input: []chunkenc.Iterator{
+					NewListSeriesIterator(samples{sampleFunc(0), sampleFunc(1), sampleFunc(2)}),
+				},
+				seek:     1,
+				expected: []chunks.Sample{sampleFunc(1), sampleFunc(2)},
+			},
+			"non overlapping iterators": {
+				input: []chunkenc.Iterator{
+					NewListSeriesIterator(samples{sampleFunc(0), sampleFunc(1)}),
+					NewListSeriesIterator(samples{sampleFunc(2), sampleFunc(3)}),
+				},
+				seek:     2,
+				expected: []chunks.Sample{sampleFunc(2), sampleFunc(3)},
+			},
+			"overlapping but distinct iterators": {
+				input: []chunkenc.Iterator{
+					NewListSeriesIterator(samples{sampleFunc(0), sampleFunc(3)}),
+					NewListSeriesIterator(samples{sampleFunc(1), sampleFunc(4)}),
+					NewListSeriesIterator(samples{sampleFunc(2), sampleFunc(5)}),
+				},
+				seek:     2,
+				expected: []chunks.Sample{sampleFunc(2), sampleFunc(3), sampleFunc(4), sampleFunc(5)},
+			},
+			"overlapping iterators": {
+				input: []chunkenc.Iterator{
+					NewListSeriesIterator(samples{sampleFunc(0), sampleFunc(2), sampleFunc(3)}),
+					NewListSeriesIterator(samples{sampleFunc(0), sampleFunc(1), sampleFunc(2)}),
+				},
+				seek:     0,
+				expected: []chunks.Sample{sampleFunc(0), sampleFunc(1), sampleFunc(2), sampleFunc(3)},
+			},
+		} {
+			t.Run(sampleType+"/"+name, func(t *testing.T) {
+				merged := ChainSampleIteratorFromIterators(nil, tc.input)
+				actual := []chunks.Sample{}
+				switch merged.Seek(tc.seek) {
+				case chunkenc.ValFloat:
+					t, f := merged.At()
+					actual = append(actual, fSample{t, f})
+				case chunkenc.ValHistogram:
+					t, h := merged.AtHistogram()
+					actual = append(actual, hSample{t, h})
+				case chunkenc.ValFloatHistogram:
+					t, fh := merged.AtFloatHistogram()
+					actual = append(actual, fhSample{t, fh})
+				}
+				s, err := ExpandSamples(merged, nil)
+				require.NoError(t, err)
+				actual = append(actual, s...)
+				require.Equal(t, tc.expected, actual)
+			})
 		}
-		s, err := ExpandSamples(merged, nil)
-		require.NoError(t, err)
-		actual = append(actual, s...)
-		require.Equal(t, tc.expected, actual)
+	}
+}
+
+func TestChainSampleIteratorSeekHistogramCounterResetHint(t *testing.T) {
+	for sampleType, sampleFunc := range map[string]func(int64, histogram.CounterResetHint) chunks.Sample{
+		"histogram":       func(ts int64, hint histogram.CounterResetHint) chunks.Sample { return histogramSample(ts, hint) },
+		"float histogram": func(ts int64, hint histogram.CounterResetHint) chunks.Sample { return floatHistogramSample(ts, hint) },
+	} {
+		for name, tc := range map[string]struct {
+			input    []chunkenc.Iterator
+			seek     int64
+			expected []chunks.Sample
+		}{
+			"single iterator": {
+				input: []chunkenc.Iterator{
+					NewListSeriesIterator(samples{sampleFunc(0, cr), sampleFunc(1, cr), sampleFunc(2, uk)}),
+				},
+				seek:     1,
+				expected: []chunks.Sample{sampleFunc(1, uk), sampleFunc(2, uk)},
+			},
+			"non overlapping iterators": {
+				input: []chunkenc.Iterator{
+					NewListSeriesIterator(samples{sampleFunc(0, cr), sampleFunc(1, uk)}),
+					NewListSeriesIterator(samples{sampleFunc(2, cr), sampleFunc(3, cr)}),
+				},
+				seek:     2,
+				expected: []chunks.Sample{sampleFunc(2, uk), sampleFunc(3, cr)},
+			},
+			"non overlapping iterators seek to internal reset": {
+				input: []chunkenc.Iterator{
+					NewListSeriesIterator(samples{sampleFunc(0, cr), sampleFunc(1, uk)}),
+					NewListSeriesIterator(samples{sampleFunc(2, cr), sampleFunc(3, cr)}),
+				},
+				seek:     3,
+				expected: []chunks.Sample{sampleFunc(3, uk)},
+			},
+		} {
+			t.Run(sampleType+"/"+name, func(t *testing.T) {
+				merged := ChainSampleIteratorFromIterators(nil, tc.input)
+				actual := []chunks.Sample{}
+				switch merged.Seek(tc.seek) {
+				case chunkenc.ValFloat:
+					t, f := merged.At()
+					actual = append(actual, fSample{t, f})
+				case chunkenc.ValHistogram:
+					t, h := merged.AtHistogram()
+					actual = append(actual, hSample{t, h})
+				case chunkenc.ValFloatHistogram:
+					t, fh := merged.AtFloatHistogram()
+					actual = append(actual, fhSample{t, fh})
+				}
+				s, err := ExpandSamples(merged, nil)
+				require.NoError(t, err)
+				actual = append(actual, s...)
+				require.Equal(t, tc.expected, actual)
+			})
+		}
 	}
 }
 

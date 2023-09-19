@@ -207,6 +207,34 @@ func PopulatedChunk(numSamples int, minTime int64) (Meta, error) {
 	return ChunkFromSamples(samples)
 }
 
+// ChunkMetasToSamples converts a slice of chunk meta data to a slice of samples.
+// Used in tests to compare the content of chunks.
+func ChunkMetasToSamples(chunks []Meta) (result []Sample) {
+	if len(chunks) == 0 {
+		return
+	}
+
+	for _, chunk := range chunks {
+		it := chunk.Chunk.Iterator(nil)
+		for vt := it.Next(); vt != chunkenc.ValNone; vt = it.Next() {
+			switch vt {
+			case chunkenc.ValFloat:
+				t, v := it.At()
+				result = append(result, sample{t: t, f: v})
+			case chunkenc.ValHistogram:
+				t, h := it.AtHistogram()
+				result = append(result, sample{t: t, h: h})
+			case chunkenc.ValFloatHistogram:
+				t, fh := it.AtFloatHistogram()
+				result = append(result, sample{t: t, fh: fh})
+			default:
+				panic("unexpected value type")
+			}
+		}
+	}
+	return
+}
+
 // Iterator iterates over the chunks of a single time series.
 type Iterator interface {
 	// At returns the current meta.

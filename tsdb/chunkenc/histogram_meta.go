@@ -489,8 +489,13 @@ func counterResetHint(crh CounterResetHeader, numRead uint16) histogram.CounterR
 }
 
 // Handle pathological case of empty span when advancing span idx.
-func nextNonEmptySpanSliceIdx(idx int, spans []histogram.Span) (newIdx int) {
-	for idx++; idx < len(spans) && spans[idx].Length == 0; idx++ { //nolint:revive // This "empty" block is intentional
+// Call it with idx==-1 to find the first non empty span.
+func nextNonEmptySpanSliceIdx(idx int, bucketIdx int32, spans []histogram.Span) (newIdx int, newBucketIdx int32) {
+	for idx++; idx < len(spans); idx++ {
+		if spans[idx].Length > 0 {
+			return idx, bucketIdx + spans[idx].Offset + 1
+		}
+		bucketIdx += spans[idx].Offset
 	}
-	return idx
+	return idx, 0
 }
