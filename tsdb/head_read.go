@@ -86,6 +86,15 @@ func (h *headIndexReader) LabelValues(ctx context.Context, name string, matchers
 	return labelValuesWithMatchers(ctx, h, name, matchers...)
 }
 
+// LabelValuesFiltered returns values for which the filter function returns true.
+func (h *headIndexReader) LabelValuesFiltered(ctx context.Context, name string, filter func(string) bool) ([]string, error) {
+	if h.maxt < h.head.MinTime() || h.mint > h.head.MaxTime() {
+		return []string{}, nil
+	}
+
+	return h.head.postings.LabelValuesFiltered(ctx, name, filter), nil
+}
+
 // LabelNames returns all the unique label names present in the head
 // that are within the time range mint to maxt.
 func (h *headIndexReader) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, error) {

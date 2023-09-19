@@ -1473,7 +1473,11 @@ func (r *Reader) LabelValues(ctx context.Context, name string, matchers ...*labe
 	if len(matchers) > 0 {
 		return nil, errors.Errorf("matchers parameter is not implemented: %+v", matchers)
 	}
+	return r.LabelValuesFiltered(ctx, name, func(_ string) bool { return true })
+}
 
+// LabelValues returns label values for which the filter function returns true.
+func (r *Reader) LabelValuesFiltered(ctx context.Context, name string, filter func(string) bool) ([]string, error) {
 	if r.version == FormatV1 {
 		e, ok := r.postingsV1[name]
 		if !ok {
@@ -1481,7 +1485,9 @@ func (r *Reader) LabelValues(ctx context.Context, name string, matchers ...*labe
 		}
 		values := make([]string, 0, len(e))
 		for k := range e {
-			values = append(values, k)
+			if filter(k) {
+				values = append(values, k)
+			}
 		}
 		return values, nil
 
@@ -1512,7 +1518,9 @@ func (r *Reader) LabelValues(ctx context.Context, name string, matchers ...*labe
 			d.Skip(skip)
 		}
 		s := yoloString(d.UvarintBytes()) // Label value.
-		values = append(values, s)
+		if filter(s) {
+			values = append(values, s)
+		}
 		if s == lastVal {
 			break
 		}

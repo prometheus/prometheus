@@ -1484,6 +1484,18 @@ func (m mockIndex) LabelValues(_ context.Context, name string, matchers ...*labe
 	return values, nil
 }
 
+func (m mockIndex) LabelValuesFiltered(_ context.Context, name string, filter func(string) bool) ([]string, error) {
+	var values []string
+
+	for l := range m.postings {
+		if l.Name == name && filter(l.Value) {
+			values = append(values, l.Value)
+		}
+	}
+
+	return values, nil
+}
+
 func (m mockIndex) LabelValueFor(_ context.Context, id storage.SeriesRef, label string) (string, error) {
 	return m.series[id].l.Get(label), nil
 }
@@ -2446,6 +2458,10 @@ func (m mockMatcherIndex) SortedLabelValues(context.Context, string, ...*labels.
 // LabelValues will return error if it is called.
 func (m mockMatcherIndex) LabelValues(context.Context, string, ...*labels.Matcher) ([]string, error) {
 	return []string{}, errors.New("label values called")
+}
+
+func (m mockMatcherIndex) LabelValuesFiltered(_ context.Context, name string, filter func(string) bool) ([]string, error) {
+	return []string{}, errors.New("label values filtered called")
 }
 
 func (m mockMatcherIndex) LabelValueFor(context.Context, storage.SeriesRef, string) (string, error) {

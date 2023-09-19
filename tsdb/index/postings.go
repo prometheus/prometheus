@@ -151,6 +151,20 @@ func (p *MemPostings) LabelValues(_ context.Context, name string) []string {
 	return values
 }
 
+// LabelValuesFiltered returns values for which the filter function returns true.
+func (p *MemPostings) LabelValuesFiltered(ctx context.Context, name string, filter func(string) bool) []string {
+	p.mtx.RLock()
+	defer p.mtx.RUnlock()
+
+	values := make([]string, 0) // Don't know what proportion of values will match.
+	for v := range p.m[name] {
+		if filter(v) {
+			values = append(values, v)
+		}
+	}
+	return values
+}
+
 // PostingsStats contains cardinality based statistics for postings.
 type PostingsStats struct {
 	CardinalityMetricsStats []Stat

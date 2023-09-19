@@ -382,16 +382,9 @@ func postingsForMatcher(ctx context.Context, ix IndexReader, m *labels.Matcher) 
 		}
 	}
 
-	vals, err := ix.LabelValues(ctx, m.Name)
+	res, err := ix.LabelValuesFiltered(ctx, m.Name, m.Matches)
 	if err != nil {
 		return nil, err
-	}
-
-	var res []string
-	for _, val := range vals {
-		if m.Matches(val) {
-			res = append(res, val)
-		}
 	}
 
 	if len(res) == 0 {
@@ -419,21 +412,17 @@ func inversePostingsForMatcher(ctx context.Context, ix IndexReader, m *labels.Ma
 		return ix.Postings(ctx, m.Name, m.Value)
 	}
 
-	vals, err := ix.LabelValues(ctx, m.Name)
-	if err != nil {
-		return nil, err
-	}
-
-	var res []string
+	var filter func(_ string) bool
 	// If the inverse match is ="", we just want all the values.
 	if m.Type == labels.MatchEqual && m.Value == "" {
-		res = vals
+		filter = func(_ string) bool { return true }
 	} else {
-		for _, val := range vals {
-			if !m.Matches(val) {
-				res = append(res, val)
-			}
-		}
+		filter = func(s string) bool { return !m.Matches(s) }
+	}
+
+	res, err := ix.LabelValuesFiltered(ctx, m.Name, filter)
+	if err != nil {
+		return nil, err
 	}
 
 	return ix.Postings(ctx, m.Name, res...)
@@ -445,28 +434,31 @@ func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, ma
 		return nil, errors.Wrap(err, "fetching postings for matchers")
 	}
 
-	allValues, err := r.LabelValues(ctx, name)
-	if err != nil {
-		return nil, errors.Wrapf(err, "fetching values of label %s", name)
-	}
-
 	// If we have a matcher for the label name, we can filter out values that don't match
 	// before we fetch postings. This is especially useful for labels with many values.
 	// e.g. __name__ with a selector like {__name__="xyz"}
+	var filter func(_ string) bool
 	for _, m := range matchers {
-		if m.Name != name {
-			continue
-		}
-
-		// re-use the allValues slice to avoid allocations
-		// this is safe because the iteration is always ahead of the append
-		filteredValues := allValues[:0]
-		for _, v := range allValues {
-			if m.Matches(v) {
-				filteredValues = append(filteredValues, v)
+		if m.Name == name {
+			if filter == nil {
+				filter = m.Matches
+			} else {
+				prevFilter := filter
+				filter = func(s string) bool {
+					// Chain together previous filter with this one.
+					return prevFilter(s) && m.Matches(s)
+				}
 			}
 		}
-		allValues = filteredValues
+	}
+
+	if filter == nil {
+		filter = func(_ string) bool { return true }
+	}
+
+	allValues, err := r.LabelValuesFiltered(ctx, name, filter)
+	if err != nil {
+		return nil, errors.Wrapf(err, "fetching values of label %s", name)
 	}
 
 	valuesPostings := make([]index.Postings, len(allValues))

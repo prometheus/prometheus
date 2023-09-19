@@ -170,6 +170,15 @@ func (oh *OOOHeadIndexReader) LabelValues(ctx context.Context, name string, matc
 	return labelValuesWithMatchers(ctx, oh, name, matchers...)
 }
 
+// LabelValuesFiltered returns values for which the filter function returns true.
+func (oh *OOOHeadIndexReader) LabelValuesFiltered(ctx context.Context, name string, filter func(string) bool) ([]string, error) {
+	if oh.maxt < oh.head.MinOOOTime() || oh.mint > oh.head.MaxOOOTime() {
+		return []string{}, nil
+	}
+
+	return oh.head.postings.LabelValuesFiltered(ctx, name, filter), nil
+}
+
 type chunkMetaAndChunkDiskMapperRef struct {
 	meta     chunks.Meta
 	ref      chunks.ChunkDiskMapperRef
@@ -419,6 +428,10 @@ func (ir *OOOCompactionHeadIndexReader) SortedLabelValues(_ context.Context, nam
 }
 
 func (ir *OOOCompactionHeadIndexReader) LabelValues(_ context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (ir *OOOCompactionHeadIndexReader) LabelValuesFiltered(ctx context.Context, name string, filter func(string) bool) ([]string, error) {
 	return nil, errors.New("not implemented")
 }
 
