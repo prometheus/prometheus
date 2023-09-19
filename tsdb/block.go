@@ -70,6 +70,9 @@ type IndexReader interface {
 	// LabelValues returns possible label values which may not be sorted.
 	LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error)
 
+	// LabelValuesFiltered returns values for which the filter function returns true.
+	LabelValuesFiltered(ctx context.Context, name string, hints *storage.LabelHints, filter func(string) bool) ([]string, error)
+
 	// Postings returns the postings list iterator for the label pairs.
 	// The Postings here contain the offsets to the series inside the index.
 	// Found IDs are not strictly required to point to a valid Series, e.g.
@@ -515,6 +518,11 @@ func (r blockIndexReader) LabelValues(ctx context.Context, name string, hints *s
 	}
 
 	return labelValuesWithMatchers(ctx, r.ir, name, hints, matchers...)
+}
+
+// LabelValuesFiltered returns values for which the filter function returns true.
+func (r blockIndexReader) LabelValuesFiltered(ctx context.Context, name string, hints *storage.LabelHints, filter func(string) bool) ([]string, error) {
+	return r.ir.LabelValuesFiltered(ctx, name, hints, filter)
 }
 
 func (r blockIndexReader) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, error) {

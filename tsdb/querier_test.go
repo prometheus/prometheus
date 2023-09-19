@@ -2534,6 +2534,25 @@ func (m mockIndex) LabelValues(_ context.Context, name string, hints *storage.La
 	return values, nil
 }
 
+func (m mockIndex) LabelValueFor(_ context.Context, id storage.SeriesRef, label string) (string, error) {
+	return m.series[id].l.Get(label), nil
+}
+
+func (m mockIndex) LabelValuesFiltered(_ context.Context, name string, hints *storage.LabelHints, filter func(string) bool) ([]string, error) {
+	var values []string
+
+	for l := range m.postings {
+		if l.Name == name && filter(l.Value) {
+			values = append(values, l.Value)
+			if hints != nil && hints.Limit > 0 && len(values) >= hints.Limit {
+				break
+			}
+		}
+	}
+
+	return values, nil
+}
+
 func (m mockIndex) LabelNamesFor(_ context.Context, postings index.Postings) ([]string, error) {
 	namesMap := make(map[string]bool)
 	for postings.Next() {
@@ -3555,6 +3574,10 @@ func (mockMatcherIndex) LabelNamesFor(context.Context, index.Postings) ([]string
 	return nil, errors.New("label names for called")
 }
 
+func (mockMatcherIndex) LabelValuesFiltered(context.Context, string, *storage.LabelHints, func(string) bool) ([]string, error) {
+	return []string{}, errors.New("label values filtered called")
+}
+
 func (mockMatcherIndex) Postings(context.Context, string, ...string) (index.Postings, error) {
 	return index.EmptyPostings(), nil
 }
@@ -4116,6 +4139,10 @@ func (mockReaderOfLabels) LabelNames(context.Context, ...*labels.Matcher) ([]str
 
 func (mockReaderOfLabels) LabelNamesFor(context.Context, index.Postings) ([]string, error) {
 	panic("LabelNamesFor called")
+}
+
+func (m mockReaderOfLabels) LabelValuesFiltered(_ context.Context, name string, hints *storage.LabelHints, filter func(string) bool) ([]string, error) {
+	return make([]string, mockReaderOfLabelsSeriesCount), nil
 }
 
 func (mockReaderOfLabels) PostingsForLabelMatching(context.Context, string, func(string) bool) index.Postings {
