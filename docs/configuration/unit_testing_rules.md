@@ -80,7 +80,7 @@ series: <string>
 #     Read this as series starts at a, then n further samples incrementing by b.
 #     'a-bxn' becomes 'a a-b a-(2*b) a-(3*b) … a-(n*b)'
 #     Read this as series starts at a, then n further samples decrementing by b (or incrementing by negative b).
-#     'axn' becomes 'a a a … a' (n times) - it's a shorthand for 'a+0xn'
+#     'axn' becomes 'a a a … a' (a n+1 times) - it's a shorthand for 'a+0xn'
 # There are special values to indicate missing and stale samples:
 #     '_' represents a missing sample from scrape
 #     'stale' indicates a stale sample
