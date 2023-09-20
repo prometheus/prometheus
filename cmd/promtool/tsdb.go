@@ -18,7 +18,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -580,10 +579,15 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 		err = tsdb_errors.NewMulti(err, chunkr.Close()).Err()
 	}()
 
-	const maxSamplesPerChunk = 120
-	nBuckets := 10
-	histogram := make([]int, nBuckets)
+	// 构造一个有序数组，数组第一个元素，最后一个元素分别是最大，最小值，然后均分创建 10 个元素的数据，分别统计每个数组内的值
+	// const maxSamplesPerChunk = 120
+	// nBuckets := 10
+	// histogram := make([]int, nBuckets)
 	totalChunks := 0
+	floatChunkSamplesCount := make([]int, 0)
+	floatChunkSize := make([]int, 0)
+	histogramChunkSamplesCount := make([]int, 0)
+	histogramChunkSize := make([]int, 0)
 	var builder labels.ScratchBuilder
 	for postingsr.Next() {
 		var chks []chunks.Meta
@@ -597,25 +601,96 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 			if err != nil {
 				return err
 			}
-			chunkSize := math.Min(float64(chk.NumSamples()), maxSamplesPerChunk)
-			// Calculate the bucket for the chunk and increment it in the histogram.
-			bucket := int(math.Ceil(float64(nBuckets)*chunkSize/maxSamplesPerChunk)) - 1
-			histogram[bucket]++
+			switch chk.Encoding() {
+			case chunkenc.EncXOR:
+				floatChunkSamplesCount = append(floatChunkSamplesCount, chk.NumSamples())
+				floatChunkSize = append(floatChunkSize, len(chk.Bytes()))
+			case chunkenc.EncFloatHistogram, chunkenc.EncHistogram:
+				histogramChunkSamplesCount = append(histogramChunkSamplesCount, chk.NumSamples())
+				histogramChunkSize = append(histogramChunkSize, len(chk.Bytes()))
+			}
 			totalChunks++
 		}
 	}
 
 	fmt.Printf("\nCompaction analysis:\n")
-	fmt.Println("Fullness: Amount of samples in chunks (100% is 120 samples)")
+	fmt.Println("Fullness: Amount of samples in float chunks")
 	// Normalize absolute counts to percentages and print them out.
-	for bucket, count := range histogram {
+	slices.Sort(floatChunkSamplesCount)
+	fmt.Printf("chunk sample num min: %v\n", floatChunkSamplesCount[0])
+	fmt.Printf("chunk sample num max: %v\n", floatChunkSamplesCount[len(floatChunkSamplesCount)-1])
+	start, end, step := generateBucket(floatChunkSamplesCount[0], floatChunkSamplesCount[len(floatChunkSamplesCount)-1])
+	buckets := make([]int, (end-start)/step+1)
+	for _, c := range floatChunkSamplesCount {
+		buckets[(c-start)/step]++
+	}
+	for bucket, count := range buckets {
 		percentage := 100.0 * count / totalChunks
-		fmt.Printf("%7d%%: ", (bucket+1)*10)
+		fmt.Printf("%7d: ", bucket*step+start)
 		for j := 0; j < percentage; j++ {
 			fmt.Printf("#")
 		}
 		fmt.Println()
 	}
+	fmt.Println()
+
+	fmt.Println("Size of float chunks")
+	slices.Sort(floatChunkSize)
+	fmt.Printf("chunk size min: %v\n", floatChunkSize[0])
+	fmt.Printf("chunk size max: %v\n", floatChunkSize[len(floatChunkSize)-1])
+	start, end, step = generateBucket(floatChunkSize[0], floatChunkSize[len(floatChunkSize)-1])
+	buckets = make([]int, (end-start)/step+1)
+	for _, c := range floatChunkSize {
+		buckets[(c-start)/step]++
+	}
+	for bucket, count := range buckets {
+		percentage := 100.0 * count / totalChunks
+		fmt.Printf("%7d: ", bucket*step+start)
+		for j := 0; j < percentage; j++ {
+			fmt.Printf("#")
+		}
+		fmt.Println()
+	}
+	fmt.Println()
+
+	fmt.Println("Fullness: Amount of samples in histogram chunks")
+	// Normalize absolute counts to percentages and print them out.
+	slices.Sort(histogramChunkSamplesCount)
+	fmt.Printf("chunk sample num min: %v\n", histogramChunkSamplesCount[0])
+	fmt.Printf("chunk sample num max: %v\n", histogramChunkSamplesCount[len(histogramChunkSamplesCount)-1])
+	start, end, step = generateBucket(histogramChunkSamplesCount[0], histogramChunkSamplesCount[len(histogramChunkSamplesCount)-1])
+	buckets = make([]int, (end-start)/step+1)
+	for _, c := range histogramChunkSamplesCount {
+		buckets[(c-start)/step]++
+	}
+	for bucket, count := range buckets {
+		percentage := 100.0 * count / totalChunks
+		fmt.Printf("%7d: ", bucket*step+start)
+		for j := 0; j < percentage; j++ {
+			fmt.Printf("#")
+		}
+		fmt.Println()
+	}
+	fmt.Println()
+
+	fmt.Println("Size of histogram chunks")
+	slices.Sort(histogramChunkSize)
+	fmt.Printf("chunk size min: %v\n", histogramChunkSize[0])
+	fmt.Printf("chunk size max: %v\n", histogramChunkSize[len(histogramChunkSize)-1])
+	start, end, step = generateBucket(histogramChunkSize[0], histogramChunkSize[len(histogramChunkSize)-1])
+	buckets = make([]int, (end-start)/step+1)
+	for _, c := range histogramChunkSize {
+		buckets[(c-start)/step]++
+	}
+	for bucket, count := range buckets {
+		percentage := 100.0 * count / totalChunks
+		fmt.Printf("%7d: ", bucket*step+start)
+		for j := 0; j < percentage; j++ {
+			fmt.Printf("#")
+		}
+		fmt.Println()
+	}
+	fmt.Println()
 
 	return nil
 }
@@ -691,4 +766,18 @@ func backfillOpenMetrics(path, outputDir string, humanReadable, quiet bool, maxB
 	}
 
 	return checkErr(backfill(5000, inputFile.Bytes(), outputDir, humanReadable, quiet, maxBlockDuration))
+}
+
+func generateBucket(min, max int) (start, end, step int) {
+	s := (max - min) / 10
+
+	step = 10
+	for step < s && step <= 10000 {
+		step *= 10
+	}
+
+	start = min - min%step
+	end = max - max%step + step
+
+	return
 }
