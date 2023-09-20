@@ -85,12 +85,22 @@ func TestStoreHTTPErrorHandling(t *testing.T) {
 }
 
 func TestClientRetryAfter(t *testing.T) {
-	server := httptest.NewServer(
-		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			http.Error(w, longErrMessage, http.StatusTooManyRequests)
-		}),
-	)
-	defer server.Close()
+	setupServer := func(statusCode int) *httptest.Server {
+		return httptest.NewServer(
+			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Retry-After", "5")
+				http.Error(w, longErrMessage, statusCode)
+			}),
+		)
+	}
+
+	getClientConfig := func(serverURL *url.URL, retryOnRateLimit bool) *ClientConfig {
+		return &ClientConfig{
+			URL:              &config_util.URL{URL: serverURL},
+			Timeout:          model.Duration(time.Second),
+			RetryOnRateLimit: retryOnRateLimit,
+		}
+	}
 
 	getClient := func(conf *ClientConfig) WriteClient {
 		hash, err := toHash(conf)
@@ -100,30 +110,36 @@ func TestClientRetryAfter(t *testing.T) {
 		return c
 	}
 
-	serverURL, err := url.Parse(server.URL)
-	require.NoError(t, err)
-
-	conf := &ClientConfig{
-		URL:              &config_util.URL{URL: serverURL},
-		Timeout:          model.Duration(time.Second),
-		RetryOnRateLimit: false,
+	testCases := []struct {
+		name                string
+		statusCode          int
+		retryOnRateLimit    bool
+		expectedRecoverable bool
+		expectedRetryAfter  model.Duration
+	}{
+		{"TooManyRequests - No Retry", http.StatusTooManyRequests, false, false, 0},
+		{"TooManyRequests - With Retry", http.StatusTooManyRequests, true, true, 5 * model.Duration(time.Second)},
+		{"InternalServerError", http.StatusInternalServerError, false, true, 5 * model.Duration(time.Second)}, // HTTP 5xx errors do not depend on retryOnRateLimit.
 	}
 
-	var recErr RecoverableError
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := setupServer(tc.statusCode)
+			defer server.Close()
 
-	c := getClient(conf)
-	err = c.Store(context.Background(), []byte{}, 0)
-	require.False(t, errors.As(err, &recErr), "Recoverable error not expected.")
+			serverURL, err := url.Parse(server.URL)
+			require.NoError(t, err)
 
-	conf = &ClientConfig{
-		URL:              &config_util.URL{URL: serverURL},
-		Timeout:          model.Duration(time.Second),
-		RetryOnRateLimit: true,
+			c := getClient(getClientConfig(serverURL, tc.retryOnRateLimit))
+
+			var recErr RecoverableError
+			err = c.Store(context.Background(), []byte{}, 0)
+			require.Equal(t, tc.expectedRecoverable, errors.As(err, &recErr), "Mismatch in expected recoverable error status.")
+			if tc.expectedRecoverable {
+				require.Equal(t, tc.expectedRetryAfter, err.(RecoverableError).retryAfter)
+			}
+		})
 	}
-
-	c = getClient(conf)
-	err = c.Store(context.Background(), []byte{}, 0)
-	require.True(t, errors.As(err, &recErr), "Recoverable error was expected.")
 }
 
 func TestRetryAfterDuration(t *testing.T) {
