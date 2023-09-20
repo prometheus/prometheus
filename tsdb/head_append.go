@@ -1283,6 +1283,9 @@ func (s *memSeries) appendPreprocessor(t int64, e chunkenc.Encoding, o chunkOpts
 		c = s.cutNewHeadChunk(t, e, o.chunkRange)
 		chunkCreated = true
 	} else if len(c.chunk.Bytes()) > maxBytesPerXORChunk {
+		if c.maxTime >= t {
+			return c, false, false
+		}
 		c = s.cutNewHeadChunk(t, e, o.chunkRange)
 		chunkCreated = true
 	}
