@@ -2252,7 +2252,7 @@ func TestQuerierIndexQueriesRace(t *testing.T) {
 func appendSeries(t *testing.T, ctx context.Context, wg *sync.WaitGroup, h *Head) {
 	defer wg.Done()
 
-	for i := 0; ctx.Err() != nil; i++ {
+	for i := 0; ctx.Err() == nil; i++ {
 		app := h.Appender(context.Background())
 		_, err := app.Append(0, labels.FromStrings(labels.MetricName, "metric", "seq", strconv.Itoa(i), "always_0", "0"), 0, 0)
 		require.NoError(t, err)
