@@ -488,6 +488,7 @@ Analyze churn, label pair cardinality and compaction efficiency.
 | --- | --- | --- |
 | <code class="text-nowrap">--limit</code> | How many items to show in each list. | `20` |
 | <code class="text-nowrap">--extended</code> | Run extended analysis. |  |
+| <code class="text-nowrap">--match</code> | Series selector to analyze. Only 1 set of matchers is supported now. |  |
 
 
 
