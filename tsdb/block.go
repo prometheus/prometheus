@@ -544,7 +544,7 @@ func (r blockChunkReader) Close() error {
 }
 
 // Delete matching series between mint and maxt in the block.
-func (pb *Block) Delete(_ context.Context, mint, maxt int64, ms ...*labels.Matcher) error {
+func (pb *Block) Delete(ctx context.Context, mint, maxt int64, ms ...*labels.Matcher) error {
 	pb.mtx.Lock()
 	defer pb.mtx.Unlock()
 
@@ -552,7 +552,7 @@ func (pb *Block) Delete(_ context.Context, mint, maxt int64, ms ...*labels.Match
 		return ErrClosing
 	}
 
-	p, err := PostingsForMatchers(pb.indexr, ms...)
+	p, err := PostingsForMatchers(ctx, pb.indexr, ms...)
 	if err != nil {
 		return errors.Wrap(err, "select series")
 	}
