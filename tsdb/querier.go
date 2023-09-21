@@ -179,7 +179,7 @@ func (q *blockChunkQuerier) Select(ctx context.Context, sortSeries bool, hints *
 
 // PostingsForMatchers assembles a single postings iterator against the index reader
 // based on the given matchers. The resulting postings are not ordered by series.
-func PostingsForMatchers(ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
+func PostingsForMatchers(ctx context.Context, ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
 	var its, notIts []index.Postings
 	// See which label must be non-empty.
 	// Optimization for case like {l=~".", l!="1"}.
@@ -209,7 +209,7 @@ func PostingsForMatchers(ix IndexPostingsReader, ms ...*labels.Matcher) (index.P
 		// We prefer to get AllPostings so that the base of subtraction (i.e. allPostings)
 		// doesn't include series that may be added to the index reader during this function call.
 		k, v := index.AllPostingsKey()
-		allPostings, err := ix.Postings(context.TODO(), k, v)
+		allPostings, err := ix.Postings(ctx, k, v)
 		if err != nil {
 			return nil, err
 		}
@@ -226,10 +226,13 @@ func PostingsForMatchers(ix IndexPostingsReader, ms ...*labels.Matcher) (index.P
 	})
 
 	for _, m := range ms {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		switch {
 		case m.Name == "" && m.Value == "": // Special-case for AllPostings, used in tests at least.
 			k, v := index.AllPostingsKey()
-			allPostings, err := ix.Postings(context.TODO(), k, v)
+			allPostings, err := ix.Postings(ctx, k, v)
 			if err != nil {
 				return nil, err
 			}
@@ -247,7 +250,7 @@ func PostingsForMatchers(ix IndexPostingsReader, ms ...*labels.Matcher) (index.P
 					return nil, err
 				}
 
-				it, err := postingsForMatcher(ix, inverse)
+				it, err := postingsForMatcher(ctx, ix, inverse)
 				if err != nil {
 					return nil, err
 				}
@@ -260,7 +263,7 @@ func PostingsForMatchers(ix IndexPostingsReader, ms ...*labels.Matcher) (index.P
 					return nil, err
 				}
 
-				it, err := inversePostingsForMatcher(ix, inverse)
+				it, err := inversePostingsForMatcher(ctx, ix, inverse)
 				if err != nil {
 					return nil, err
 				}
@@ -270,7 +273,7 @@ func PostingsForMatchers(ix IndexPostingsReader, ms ...*labels.Matcher) (index.P
 				its = append(its, it)
 			default: // l="a"
 				// Non-Not matcher, use normal postingsForMatcher.
-				it, err := postingsForMatcher(ix, m)
+				it, err := postingsForMatcher(ctx, ix, m)
 				if err != nil {
 					return nil, err
 				}
@@ -284,7 +287,7 @@ func PostingsForMatchers(ix IndexPostingsReader, ms ...*labels.Matcher) (index.P
 			// the series which don't have the label name set too. See:
 			// https://github.com/prometheus/prometheus/issues/3575 and
 			// https://github.com/prometheus/prometheus/pull/3578#issuecomment-351653555
-			it, err := inversePostingsForMatcher(ix, m)
+			it, err := inversePostingsForMatcher(ctx, ix, m)
 			if err != nil {
 				return nil, err
 			}
@@ -301,23 +304,23 @@ func PostingsForMatchers(ix IndexPostingsReader, ms ...*labels.Matcher) (index.P
 	return it, nil
 }
 
-func postingsForMatcher(ix IndexPostingsReader, m *labels.Matcher) (index.Postings, error) {
+func postingsForMatcher(ctx context.Context, ix IndexPostingsReader, m *labels.Matcher) (index.Postings, error) {
 	// This method will not return postings for missing labels.
 
 	// Fast-path for equal matching.
 	if m.Type == labels.MatchEqual {
-		return ix.Postings(context.TODO(), m.Name, m.Value)
+		return ix.Postings(ctx, m.Name, m.Value)
 	}
 
 	// Fast-path for set matching.
 	if m.Type == labels.MatchRegexp {
 		setMatches := m.SetMatches()
 		if len(setMatches) > 0 {
-			return ix.Postings(context.TODO(), m.Name, setMatches...)
+			return ix.Postings(ctx, m.Name, setMatches...)
 		}
 	}
 
-	vals, err := ix.LabelValues(context.TODO(), m.Name)
+	vals, err := ix.LabelValues(ctx, m.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -333,28 +336,28 @@ func postingsForMatcher(ix IndexPostingsReader, m *labels.Matcher) (index.Postin
 		return index.EmptyPostings(), nil
 	}
 
-	return ix.Postings(context.TODO(), m.Name, res...)
+	return ix.Postings(ctx, m.Name, res...)
 }
 
 // inversePostingsForMatcher returns the postings for the series with the label name set but not matching the matcher.
-func inversePostingsForMatcher(ix IndexPostingsReader, m *labels.Matcher) (index.Postings, error) {
+func inversePostingsForMatcher(ctx context.Context, ix IndexPostingsReader, m *labels.Matcher) (index.Postings, error) {
 	// Fast-path for MatchNotRegexp matching.
 	// Inverse of a MatchNotRegexp is MatchRegexp (double negation).
 	// Fast-path for set matching.
 	if m.Type == labels.MatchNotRegexp {
 		setMatches := m.SetMatches()
 		if len(setMatches) > 0 {
-			return ix.Postings(context.TODO(), m.Name, setMatches...)
+			return ix.Postings(ctx, m.Name, setMatches...)
 		}
 	}
 
 	// Fast-path for MatchNotEqual matching.
 	// Inverse of a MatchNotEqual is MatchEqual (double negation).
 	if m.Type == labels.MatchNotEqual {
-		return ix.Postings(context.TODO(), m.Name, m.Value)
+		return ix.Postings(ctx, m.Name, m.Value)
 	}
 
-	vals, err := ix.LabelValues(context.TODO(), m.Name)
+	vals, err := ix.LabelValues(ctx, m.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -371,13 +374,13 @@ func inversePostingsForMatcher(ix IndexPostingsReader, m *labels.Matcher) (index
 		}
 	}
 
-	return ix.Postings(context.TODO(), m.Name, res...)
+	return ix.Postings(ctx, m.Name, res...)
 }
 
 const maxExpandedPostingsFactor = 100 // Division factor for maximum number of matched series.
 
 func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, matchers ...*labels.Matcher) ([]string, error) {
-	p, err := PostingsForMatchers(r, matchers...)
+	p, err := PostingsForMatchers(ctx, r, matchers...)
 	if err != nil {
 		return nil, errors.Wrap(err, "fetching postings for matchers")
 	}

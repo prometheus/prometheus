@@ -61,18 +61,18 @@ type PostingsForMatchersCache struct {
 	// timeNow is the time.Now that can be replaced for testing purposes
 	timeNow func() time.Time
 	// postingsForMatchers can be replaced for testing purposes
-	postingsForMatchers func(ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error)
+	postingsForMatchers func(ctx context.Context, ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error)
 }
 
 func (c *PostingsForMatchersCache) PostingsForMatchers(ctx context.Context, ix IndexPostingsReader, concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
 	if !concurrent && !c.force {
-		return c.postingsForMatchers(ix, ms...)
+		return c.postingsForMatchers(ctx, ix, ms...)
 	}
 	c.expire()
 	return c.postingsForMatchersPromise(ctx, ix, ms)()
 }
 
-func (c *PostingsForMatchersCache) postingsForMatchersPromise(_ context.Context, ix IndexPostingsReader, ms []*labels.Matcher) func() (index.Postings, error) {
+func (c *PostingsForMatchersCache) postingsForMatchersPromise(ctx context.Context, ix IndexPostingsReader, ms []*labels.Matcher) func() (index.Postings, error) {
 	var (
 		wg       sync.WaitGroup
 		cloner   *index.PostingsCloner
@@ -95,7 +95,7 @@ func (c *PostingsForMatchersCache) postingsForMatchersPromise(_ context.Context,
 	}
 	defer wg.Done()
 
-	if postings, err := c.postingsForMatchers(ix, ms...); err != nil {
+	if postings, err := c.postingsForMatchers(ctx, ix, ms...); err != nil {
 		outerErr = err
 	} else {
 		cloner = index.NewPostingsCloner(postings)

@@ -1289,14 +1289,17 @@ func (s *memSeries) appendPreprocessor(t int64, e chunkenc.Encoding, o chunkOpts
 		// There is no head chunk in this series yet, create the first chunk for the sample.
 		c = s.cutNewHeadChunk(t, e, o.chunkRange)
 		chunkCreated = true
-	} else if len(c.chunk.Bytes()) > maxBytesPerXORChunk {
-		c = s.cutNewHeadChunk(t, e, o.chunkRange)
-		chunkCreated = true
 	}
 
 	// Out of order sample.
 	if c.maxTime >= t {
 		return c, false, chunkCreated
+	}
+
+	// Check the chunk size, unless we just created it and if the chunk is too large, cut a new one.
+	if !chunkCreated && len(c.chunk.Bytes()) > maxBytesPerXORChunk {
+		c = s.cutNewHeadChunk(t, e, o.chunkRange)
+		chunkCreated = true
 	}
 
 	if c.chunk.Encoding() != e {

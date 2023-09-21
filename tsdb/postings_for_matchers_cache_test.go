@@ -17,7 +17,7 @@ import (
 func TestPostingsForMatchersCache(t *testing.T) {
 	const testCacheSize = 5
 	// newPostingsForMatchersCache tests the NewPostingsForMatcherCache constructor, but overrides the postingsForMatchers func
-	newPostingsForMatchersCache := func(ttl time.Duration, pfm func(ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error), timeMock *timeNowMock, force bool) *PostingsForMatchersCache {
+	newPostingsForMatchersCache := func(ttl time.Duration, pfm func(_ context.Context, ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error), timeMock *timeNowMock, force bool) *PostingsForMatchersCache {
 		c := NewPostingsForMatchersCache(ttl, testCacheSize, force)
 		if c.postingsForMatchers == nil {
 			t.Fatalf("NewPostingsForMatchersCache() didn't assign postingsForMatchers func")
@@ -35,7 +35,7 @@ func TestPostingsForMatchersCache(t *testing.T) {
 				expectedMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")}
 				expectedPostingsErr := fmt.Errorf("failed successfully")
 
-				c := newPostingsForMatchersCache(defaultPostingsForMatchersCacheTTL, func(ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
+				c := newPostingsForMatchersCache(defaultPostingsForMatchersCacheTTL, func(_ context.Context, ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
 					require.IsType(t, indexForPostingsMock{}, ix, "Incorrect IndexPostingsReader was provided to PostingsForMatchers, expected the mock, was given %v (%T)", ix, ix)
 					require.Equal(t, expectedMatchers, ms, "Wrong label matchers provided, expected %v, got %v", expectedMatchers, ms)
 					return index.ErrPostings(expectedPostingsErr), nil
@@ -53,7 +53,7 @@ func TestPostingsForMatchersCache(t *testing.T) {
 		expectedMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")}
 		expectedErr := fmt.Errorf("failed successfully")
 
-		c := newPostingsForMatchersCache(defaultPostingsForMatchersCacheTTL, func(ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
+		c := newPostingsForMatchersCache(defaultPostingsForMatchersCacheTTL, func(_ context.Context, ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
 			return nil, expectedErr
 		}, &timeNowMock{}, false)
 
@@ -101,7 +101,7 @@ func TestPostingsForMatchersCache(t *testing.T) {
 						if cacheEnabled {
 							ttl = defaultPostingsForMatchersCacheTTL
 						}
-						c := newPostingsForMatchersCache(ttl, func(ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
+						c := newPostingsForMatchersCache(ttl, func(_ context.Context, ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
 							select {
 							case called <- struct{}{}:
 							default:
@@ -148,7 +148,7 @@ func TestPostingsForMatchersCache(t *testing.T) {
 		expectedMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")}
 
 		var call int
-		c := newPostingsForMatchersCache(defaultPostingsForMatchersCacheTTL, func(ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
+		c := newPostingsForMatchersCache(defaultPostingsForMatchersCacheTTL, func(_ context.Context, ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
 			call++
 			return index.ErrPostings(fmt.Errorf("result from call %d", call)), nil
 		}, &timeNowMock{}, false)
@@ -168,7 +168,7 @@ func TestPostingsForMatchersCache(t *testing.T) {
 		expectedMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")}
 
 		var call int
-		c := newPostingsForMatchersCache(0, func(ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
+		c := newPostingsForMatchersCache(0, func(_ context.Context, ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
 			call++
 			return index.ErrPostings(fmt.Errorf("result from call %d", call)), nil
 		}, &timeNowMock{}, false)
@@ -191,7 +191,7 @@ func TestPostingsForMatchersCache(t *testing.T) {
 		}
 
 		var call int
-		c := newPostingsForMatchersCache(defaultPostingsForMatchersCacheTTL, func(ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
+		c := newPostingsForMatchersCache(defaultPostingsForMatchersCacheTTL, func(_ context.Context, ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
 			call++
 			return index.ErrPostings(fmt.Errorf("result from call %d", call)), nil
 		}, timeNow, false)
@@ -224,7 +224,7 @@ func TestPostingsForMatchersCache(t *testing.T) {
 		}
 
 		callsPerMatchers := map[string]int{}
-		c := newPostingsForMatchersCache(defaultPostingsForMatchersCacheTTL, func(ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
+		c := newPostingsForMatchersCache(defaultPostingsForMatchersCacheTTL, func(_ context.Context, ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
 			k := matchersKey(ms)
 			callsPerMatchers[k]++
 			return index.ErrPostings(fmt.Errorf("result from call %d", callsPerMatchers[k])), nil
