@@ -156,7 +156,7 @@ func (p *MemPostings) LabelValuesFiltered(ctx context.Context, name string, filt
 	p.mtx.RLock()
 	defer p.mtx.RUnlock()
 
-	values := make([]string, 0) // Don't know what proportion of values will match.
+	var values []string // Not preallocated because we don't know what proportion of values will match.
 	for v := range p.m[name] {
 		if filter(v) {
 			values = append(values, v)
