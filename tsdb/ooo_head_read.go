@@ -173,7 +173,7 @@ func (oh *OOOHeadIndexReader) LabelValues(ctx context.Context, name string, matc
 // LabelValuesFiltered returns values for which the filter function returns true.
 func (oh *OOOHeadIndexReader) LabelValuesFiltered(ctx context.Context, name string, filter func(string) bool) ([]string, error) {
 	if oh.maxt < oh.head.MinOOOTime() || oh.mint > oh.head.MaxOOOTime() {
-		return []string{}, nil
+		return nil, nil
 	}
 
 	return oh.head.postings.LabelValuesFiltered(ctx, name, filter), nil

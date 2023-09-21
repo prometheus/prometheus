@@ -89,7 +89,7 @@ func (h *headIndexReader) LabelValues(ctx context.Context, name string, matchers
 // LabelValuesFiltered returns values for which the filter function returns true.
 func (h *headIndexReader) LabelValuesFiltered(ctx context.Context, name string, filter func(string) bool) ([]string, error) {
 	if h.maxt < h.head.MinTime() || h.mint > h.head.MaxTime() {
-		return []string{}, nil
+		return nil, nil
 	}
 
 	return h.head.postings.LabelValuesFiltered(ctx, name, filter), nil
