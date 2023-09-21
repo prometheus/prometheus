@@ -452,11 +452,12 @@ func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, ma
 		}
 	}
 
+	var allValues []string
 	if filter == nil {
-		filter = func(_ string) bool { return true }
+		allValues, err = r.LabelValues(ctx, name)
+	} else {
+		allValues, err = r.LabelValuesFiltered(ctx, name, filter)
 	}
-
-	allValues, err := r.LabelValuesFiltered(ctx, name, filter)
 	if err != nil {
 		return nil, errors.Wrapf(err, "fetching values of label %s", name)
 	}
