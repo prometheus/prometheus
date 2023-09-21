@@ -2225,6 +2225,7 @@ func TestQuerierIndexQueriesRace(t *testing.T) {
 	for _, c := range testCases {
 		c := c
 		t.Run(fmt.Sprintf("%v", c.matchers), func(t *testing.T) {
+			t.Parallel()
 			db := openTestDB(t, DefaultOptions(), nil)
 			h := db.Head()
 			t.Cleanup(func() {
@@ -2244,6 +2245,9 @@ func TestQuerierIndexQueriesRace(t *testing.T) {
 				values, _, err := q.LabelValues(ctx, "seq", c.matchers...)
 				require.NoError(t, err)
 				require.Emptyf(t, values, `label values for label "seq" should be empty`)
+
+				// Sleep to give the appends some change to run.
+				time.Sleep(time.Millisecond)
 			}
 		})
 	}
@@ -2260,6 +2264,7 @@ func appendSeries(t *testing.T, ctx context.Context, wg *sync.WaitGroup, h *Head
 		require.NoError(t, err)
 
 		// Throttle down the appends to keep the test somewhat nimble.
+		// Otherwise, we end up appending thousands or millions of samples.
 		time.Sleep(time.Millisecond)
 	}
 }
