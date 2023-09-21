@@ -732,8 +732,8 @@ func mutateSampleLabels(lset labels.Labels, target *Target, honor bool, rc []*re
 }
 
 func resolveConflictingExposedLabels(lb *labels.Builder, conflictingExposedLabels []labels.Label) {
-	slices.SortStableFunc(conflictingExposedLabels, func(a, b labels.Label) bool {
-		return len(a.Name) < len(b.Name)
+	slices.SortStableFunc(conflictingExposedLabels, func(a, b labels.Label) int {
+		return len(a.Name) - len(b.Name)
 	})
 
 	for _, l := range conflictingExposedLabels {

@@ -187,8 +187,8 @@ func FromQueryResult(sortSeries bool, res *prompb.QueryResult) storage.SeriesSet
 	}
 
 	if sortSeries {
-		slices.SortFunc(series, func(a, b storage.Series) bool {
-			return labels.Compare(a.Labels(), b.Labels()) < 0
+		slices.SortFunc(series, func(a, b storage.Series) int {
+			return labels.Compare(a.Labels(), b.Labels())
 		})
 	}
 	return &concreteSeriesSet{

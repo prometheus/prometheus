@@ -63,8 +63,6 @@ func (m *maxHeap) push(item Stat) {
 }
 
 func (m *maxHeap) get() []Stat {
-	slices.SortFunc(m.Items, func(a, b Stat) bool {
-		return a.Count > b.Count
-	})
+	slices.SortFunc(m.Items, func(a, b Stat) int { return int(b.Count - a.Count) })
 	return m.Items
 }
