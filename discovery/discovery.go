@@ -33,6 +33,11 @@ import (
 //
 // Discoverers should initially send a full set of all discoverable TargetGroups.
 type Discoverer interface {
+	// A slice of prometheus collectors which need to be registered and unregistered:
+	// * Registration should happen prior to calling Run().
+	// * Unregistration should happen after Run() returns.
+	GetCollectors() []prometheus.Collector
+
 	// Run hands a channel to the discovery provider (Consul, DNS, etc.) through which
 	// it can send updated target groups. It must return when the context is canceled.
 	// It should not close the update channel on returning.
@@ -127,4 +132,10 @@ func (c staticDiscoverer) Run(ctx context.Context, up chan<- []*targetgroup.Grou
 	case <-ctx.Done():
 	case up <- c:
 	}
+}
+
+// GetCollectors implements Discoverer.
+// Static discoverer does not have any collectors.
+func (c staticDiscoverer) GetCollectors() []prometheus.Collector {
+	return nil
 }

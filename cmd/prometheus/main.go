@@ -228,12 +228,18 @@ func main() {
 		newFlagRetentionDuration model.Duration
 	)
 
+	// TODO(ptodev): Use a non-default Registerer.
+	//               This can only be done when no parts of the code register metrics with the default registerer.
+	//               For example, there are still service discovery mechanisms which register their metrics using
+	//               prometheus.MustRegister() inside init() functions.
+	metricRegisterer := prometheus.DefaultRegisterer
+
 	cfg := flagConfig{
 		notifier: notifier.Options{
-			Registerer: prometheus.DefaultRegisterer,
+			Registerer: metricRegisterer,
 		},
 		web: web.Options{
-			Registerer: prometheus.DefaultRegisterer,
+			Registerer: metricRegisterer,
 			Gatherer:   prometheus.DefaultGatherer,
 		},
 		promlogConfig: promlog.Config{},
@@ -593,7 +599,7 @@ func main() {
 	var (
 		localStorage  = &readyStorage{stats: tsdb.NewDBStats()}
 		scraper       = &readyScrapeManager{}
-		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper)
+		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), metricRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper)
 		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
 	)
 
@@ -610,10 +616,20 @@ func main() {
 	)
 
 	if cfg.enableNewSDManager {
-		discovery.RegisterMetrics()
-		discoveryManagerScrape = discovery.NewManager(ctxScrape, log.With(logger, "component", "discovery manager scrape"), discovery.Name("scrape"))
-		discoveryManagerNotify = discovery.NewManager(ctxNotify, log.With(logger, "component", "discovery manager notify"), discovery.Name("notify"))
+		discoveryManagerScrape = discovery.NewManager(ctxScrape, log.With(logger, "component", "discovery manager scrape"), metricRegisterer, discovery.Name("scrape"))
+		//TODO: Why is there a linter error?
+		if discoveryManagerScrape == nil {
+			level.Error(logger).Log("msg", "failed to create a discovery manager scrape")
+			os.Exit(1)
+		}
+		discoveryManagerNotify = discovery.NewManager(ctxNotify, log.With(logger, "component", "discovery manager notify"), metricRegisterer, discovery.Name("notify"))
+		//TODO: Why is there a linter error?
+		if discoveryManagerNotify == nil {
+			level.Error(logger).Log("msg", "failed to create a discovery manager notify")
+			os.Exit(1)
+		}
 	} else {
+		//TODO: Do we need to do anything for the legacy manager?
 		legacymanager.RegisterMetrics()
 		discoveryManagerScrape = legacymanager.NewManager(ctxScrape, log.With(logger, "component", "discovery manager scrape"), legacymanager.Name("scrape"))
 		discoveryManagerNotify = legacymanager.NewManager(ctxNotify, log.With(logger, "component", "discovery manager notify"), legacymanager.Name("notify"))
@@ -623,8 +639,7 @@ func main() {
 		&cfg.scrape,
 		log.With(logger, "component", "scrape manager"),
 		fanoutStorage,
-		// TODO(ptodev): Use a non-default Registerer.
-		prometheus.DefaultRegisterer,
+		metricRegisterer,
 	)
 	if err != nil {
 		level.Error(logger).Log("msg", "failed to create a scrape manager", "err", err)
@@ -650,7 +665,7 @@ func main() {
 	if !agentMode {
 		opts := promql.EngineOpts{
 			Logger:                   log.With(logger, "component", "query engine"),
-			Reg:                      prometheus.DefaultRegisterer,
+			Reg:                      metricRegisterer,
 			MaxSamples:               cfg.queryMaxSamples,
 			Timeout:                  time.Duration(cfg.queryTimeout),
 			ActiveQueryTracker:       promql.NewActiveQueryTracker(localStoragePath, cfg.queryConcurrency, log.With(logger, "component", "activeQueryTracker")),
@@ -672,7 +687,7 @@ func main() {
 			NotifyFunc:      rules.SendAlerts(notifierManager, cfg.web.ExternalURL.String()),
 			Context:         ctxRule,
 			ExternalURL:     cfg.web.ExternalURL,
-			Registerer:      prometheus.DefaultRegisterer,
+			Registerer:      metricRegisterer,
 			Logger:          log.With(logger, "component", "rule manager"),
 			OutageTolerance: time.Duration(cfg.outageTolerance),
 			ForGracePeriod:  time.Duration(cfg.forGracePeriod),
@@ -1044,7 +1059,7 @@ func main() {
 					}
 				}
 
-				db, err := openDBWithMetrics(localStoragePath, logger, prometheus.DefaultRegisterer, &opts, localStorage.getStats())
+				db, err := openDBWithMetrics(localStoragePath, logger, metricRegisterer, &opts, localStorage.getStats())
 				if err != nil {
 					return fmt.Errorf("opening storage failed: %w", err)
 				}
@@ -1096,7 +1111,7 @@ func main() {
 				}
 				db, err := agent.Open(
 					logger,
-					prometheus.DefaultRegisterer,
+					metricRegisterer,
 					remoteStorage,
 					localStoragePath,
 					&opts,

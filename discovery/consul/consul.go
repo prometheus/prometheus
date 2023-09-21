@@ -239,16 +239,6 @@ func NewDiscovery(conf *SDConfig, logger log.Logger, reg prometheus.Registerer) 
 	cd.servicesRPCDuration = cd.rpcDuration.WithLabelValues("catalog", "services")
 	cd.serviceRPCDuration = cd.rpcDuration.WithLabelValues("catalog", "service")
 
-	for _, collector := range []prometheus.Collector{
-		cd.rpcFailuresCount,
-		cd.rpcDuration,
-	} {
-		err := reg.Register(collector)
-		if err != nil {
-			return nil, fmt.Errorf("failed to register metric: %w", err)
-		}
-	}
-
 	return cd, nil
 }
 
@@ -340,6 +330,14 @@ func (d *Discovery) initialize(ctx context.Context) {
 		}
 		// We are good to go.
 		return
+	}
+}
+
+// GetCollectors implements Discoverer.
+func (d *Discovery) GetCollectors() []prometheus.Collector {
+	return []prometheus.Collector{
+		d.rpcFailuresCount,
+		d.rpcDuration,
 	}
 }
 
