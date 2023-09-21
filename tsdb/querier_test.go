@@ -1917,6 +1917,8 @@ func BenchmarkSetMatcher(b *testing.B) {
 }
 
 func TestPostingsForMatchers(t *testing.T) {
+	ctx := context.Background()
+
 	chunkDir := t.TempDir()
 	opts := DefaultHeadOptions()
 	opts.ChunkRange = 1000
@@ -2195,7 +2197,7 @@ func TestPostingsForMatchers(t *testing.T) {
 			for _, l := range c.exp {
 				exp[l.String()] = struct{}{}
 			}
-			p, err := PostingsForMatchers(ir, c.matchers...)
+			p, err := PostingsForMatchers(ctx, ir, c.matchers...)
 			require.NoError(t, err)
 
 			var builder labels.ScratchBuilder
@@ -2269,7 +2271,7 @@ func TestQuerierIndexQueriesRace(t *testing.T) {
 func appendSeries(t *testing.T, ctx context.Context, wg *sync.WaitGroup, h *Head) {
 	defer wg.Done()
 
-	for i := 0; ctx.Err() != nil; i++ {
+	for i := 0; ctx.Err() == nil; i++ {
 		app := h.Appender(context.Background())
 		_, err := app.Append(0, labels.FromStrings(labels.MetricName, "metric", "seq", strconv.Itoa(i), "always_0", "0"), 0, 0)
 		require.NoError(t, err)
@@ -2498,6 +2500,8 @@ func (m mockMatcherIndex) LabelNames(context.Context, ...*labels.Matcher) ([]str
 }
 
 func TestPostingsForMatcher(t *testing.T) {
+	ctx := context.Background()
+
 	cases := []struct {
 		matcher  *labels.Matcher
 		hasError bool
@@ -2525,7 +2529,7 @@ func TestPostingsForMatcher(t *testing.T) {
 
 	for _, tc := range cases {
 		ir := &mockMatcherIndex{}
-		_, err := postingsForMatcher(ir, tc.matcher)
+		_, err := postingsForMatcher(ctx, ir, tc.matcher)
 		if tc.hasError {
 			require.Error(t, err)
 		} else {
