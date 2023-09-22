@@ -2922,15 +2922,29 @@ func BenchmarkHeadLabelValuesWithMatchers(b *testing.B) {
 	require.NoError(b, app.Commit())
 
 	headIdxReader := head.indexRange(0, 200)
-	matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "c_ninety", "value0")}
 
-	b.ResetTimer()
-	b.ReportAllocs()
+	cases := []struct {
+		label    string
+		matchers []*labels.Matcher
+		expected int
+	}{
+		{"a_unique", nil, 1000000},
+		{"a_unique", []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "a_unique", ".*000")}, 999},
+		{"b_tens", []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "c_ninety", "value0")}, 9},
+		{"b_tens", []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "c_ninety", "value0")}, 1},
+		{"b_tens", []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "c_ninety", ".*0")}, 9},
+		{"a_unique", []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "a_unique", ".*000"), labels.MustNewMatcher(labels.MatchRegexp, "b_tens", "value0")}, 99},
+		{"b_tens", []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "a_unique", ".*000"), labels.MustNewMatcher(labels.MatchRegexp, "b_tens", "value0")}, 1},
+	}
 
-	for benchIdx := 0; benchIdx < b.N; benchIdx++ {
-		actualValues, err := headIdxReader.LabelValues(ctx, "b_tens", matchers...)
-		require.NoError(b, err)
-		require.Equal(b, 9, len(actualValues))
+	for _, c := range cases {
+		b.Run(fmt.Sprintf("%s;%s", c.label, c.matchers), func(b *testing.B) {
+			for benchIdx := 0; benchIdx < b.N; benchIdx++ {
+				actualValues, err := headIdxReader.LabelValues(ctx, c.label, c.matchers...)
+				require.NoError(b, err)
+				require.Equal(b, c.expected, len(actualValues))
+			}
+		})
 	}
 }
 
