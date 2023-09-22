@@ -36,5 +36,9 @@ namespace {
 
 TEST(ArchDetector, SmokeTest) {
   auto arch_instr_sets = arch_detector::detect_supported_architectures();
+#if ARCH_DETECTOR_BUILD_FOR_X86_64
   EXPECT_EQ(arch_instr_sets & arch_detector::SSE42, arch_detector::SSE42);
+#else
+  EXPECT_EQ(arch_instr_sets & arch_detector::NEON, arch_detector::NEON);
+#endif
 }

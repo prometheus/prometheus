@@ -26,7 +26,7 @@ void load_protobuf_wal_and_save_gorilla_to_sharded_wal::execute(const Config& co
     }
 
     for (size_t shard = 0; shard < number_of_shards; ++shard) {
-      wal_shards.emplace_back(std::move(std::unique_ptr<WAL::Writer>(new WAL::Writer())));
+      wal_shards.emplace_back(std::make_unique<WAL::Writer>());
     }
 
     auto total_shards_time = 0.0;
@@ -46,7 +46,7 @@ void load_protobuf_wal_and_save_gorilla_to_sharded_wal::execute(const Config& co
 
       protozero::pbf_reader pb(buffer);
       Prometheus::RemoteWrite::read_many_timeseries_in_hashdex<Primitives::TimeseriesSemiview,
-                                                               std::vector<Prometheus::RemoteWrite::TimeseriesProtobufHashdexRecord>>(pb, hashdex);
+                                                               std::vector<Prometheus::RemoteWrite::TimeseriesProtobufHashdexRecord>>(pb, hashdex, {});
 
       auto start = std::chrono::steady_clock::now();
 

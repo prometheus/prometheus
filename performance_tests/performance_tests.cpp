@@ -53,6 +53,10 @@ static void print_help(const std::string& app_name) {
 }
 
 int main([[maybe_unused]] int argc, char* argv[]) {
+  if (argc == 1) {
+    print_help(argv[0]);
+    return 1;
+  }
   try {
     TestsDatabase test_db;
     test_db.add(std::make_unique<save_lss_to_wal>());

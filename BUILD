@@ -302,6 +302,7 @@ cc_library(
         ":wal",
         ":prometheus",
         "@lz4stream//:lz4stream",
+        "@gtest//:gtest_main",
         "//third_party:third_party",
     ],
 )
