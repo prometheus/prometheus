@@ -429,15 +429,11 @@ func inversePostingsForMatcher(ctx context.Context, ix IndexReader, m *labels.Ma
 }
 
 func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, matchers ...*labels.Matcher) ([]string, error) {
-	p, err := PostingsForMatchers(ctx, r, matchers...)
-	if err != nil {
-		return nil, errors.Wrap(err, "fetching postings for matchers")
-	}
-
 	// If we have a matcher for the label name, we can filter out values that don't match
 	// before we fetch postings. This is especially useful for labels with many values.
 	// e.g. __name__ with a selector like {__name__="xyz"}
 	var filter func(_ string) bool
+	var matchersOnOtherNames int
 	for _, m := range matchers {
 		if m.Name == name {
 			if filter == nil {
@@ -449,10 +445,13 @@ func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, ma
 					return prevFilter(s) && m.Matches(s)
 				}
 			}
+		} else {
+			matchersOnOtherNames++
 		}
 	}
 
 	var allValues []string
+	var err error
 	if filter == nil {
 		allValues, err = r.LabelValues(ctx, name)
 	} else {
@@ -460,6 +459,17 @@ func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, ma
 	}
 	if err != nil {
 		return nil, errors.Wrapf(err, "fetching values of label %s", name)
+	}
+
+	// If all the matchers are on the label name, we're done.
+	if matchersOnOtherNames == 0 {
+		return allValues, nil
+	}
+
+	// If there are matchers on other labels we need to intersect their postings.
+	p, err := PostingsForMatchers(ctx, r, matchers...)
+	if err != nil {
+		return nil, errors.Wrap(err, "fetching postings for matchers")
 	}
 
 	valuesPostings := make([]index.Postings, len(allValues))
