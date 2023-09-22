@@ -1010,9 +1010,9 @@ class BasicDecoder {
   template <class Callback>
     requires std::is_invocable_v<Callback, timeseries_type>
   __attribute__((flatten)) void process_segment(Callback func) {
-    Primitives::BasicTimeseries<typename LabelSetsTable::value_type::composite_type*> timeseries;
+    Primitives::BasicTimeseries<typename LabelSetsTable::value_type*> timeseries;
 
-    typename LabelSetsTable::value_type::composite_type last_ls;
+    typename LabelSetsTable::value_type last_ls;  // composite_type
     Primitives::LabelSetID last_ls_id = std::numeric_limits<Primitives::LabelSetID>::max();
 
     process_segment([&](Primitives::LabelSetID ls_id, Primitives::Timestamp ts, Primitives::Sample::value_type v) {

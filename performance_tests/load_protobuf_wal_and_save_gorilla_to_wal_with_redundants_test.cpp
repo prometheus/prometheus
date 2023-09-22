@@ -53,7 +53,7 @@ void load_protobuf_wal_and_save_gorilla_to_wal_with_redundants::execute(const Co
     }
 
     auto redundant = wal.write(out);
-    out << redundant.gorilla.size();
+    out << redundant->encoders.size();
     out.clear();
   }
 
