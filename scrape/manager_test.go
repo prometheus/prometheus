@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
@@ -492,10 +493,13 @@ scrape_configs:
 		cfg3 = loadConfiguration(t, cfgText3)
 
 		ch = make(chan struct{}, 1)
+
+		testRegistry = prometheus.NewRegistry()
 	)
 
 	opts := Options{}
-	scrapeManager := NewManager(&opts, nil, nil)
+	scrapeManager, err := NewManager(&opts, nil, nil, testRegistry)
+	require.NoError(t, err)
 	newLoop := func(scrapeLoopOptions) loop {
 		ch <- struct{}{}
 		return noopLoop()
@@ -512,6 +516,7 @@ scrape_configs:
 		logger:  nil,
 		config:  cfg1.ScrapeConfigs[0],
 		client:  http.DefaultClient,
+		metrics: scrapeManager.metrics,
 	}
 	scrapeManager.scrapePools = map[string]*scrapePool{
 		"job1": sp,
@@ -560,7 +565,9 @@ scrape_configs:
 
 func TestManagerTargetsUpdates(t *testing.T) {
 	opts := Options{}
-	m := NewManager(&opts, nil, nil)
+	testRegistry := prometheus.NewRegistry()
+	m, err := NewManager(&opts, nil, nil, testRegistry)
+	require.NoError(t, err)
 
 	ts := make(chan map[string][]*targetgroup.Group)
 	go m.Run(ts)
@@ -613,7 +620,9 @@ global:
 	}
 
 	opts := Options{}
-	scrapeManager := NewManager(&opts, nil, nil)
+	testRegistry := prometheus.NewRegistry()
+	scrapeManager, err := NewManager(&opts, nil, nil, testRegistry)
+	require.NoError(t, err)
 
 	// Load the first config.
 	cfg1 := getConfig("ha1")
@@ -658,8 +667,9 @@ scrape_configs:
   - targets: ["foo:9093"]
 `
 	var (
-		cfg1 = loadConfiguration(t, cfgText1)
-		cfg2 = loadConfiguration(t, cfgText2)
+		cfg1         = loadConfiguration(t, cfgText1)
+		cfg2         = loadConfiguration(t, cfgText2)
+		testRegistry = prometheus.NewRegistry()
 	)
 
 	reload := func(scrapeManager *Manager, cfg *config.Config) {
@@ -695,7 +705,8 @@ scrape_configs:
 	}
 
 	opts := Options{}
-	scrapeManager := NewManager(&opts, nil, nil)
+	scrapeManager, err := NewManager(&opts, nil, nil, testRegistry)
+	require.NoError(t, err)
 
 	reload(scrapeManager, cfg1)
 	require.ElementsMatch(t, []string{"job1", "job2"}, scrapeManager.ScrapePools())
