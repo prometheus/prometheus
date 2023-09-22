@@ -177,6 +177,7 @@ type Discovery struct {
 	rpcDuration         *prometheus.SummaryVec
 	servicesRPCDuration prometheus.Observer
 	serviceRPCDuration  prometheus.Observer
+	metricRegisterer    discovery.MetricRegisterer
 }
 
 // NewDiscovery returns a new Discovery for the given config.
@@ -233,6 +234,19 @@ func NewDiscovery(conf *SDConfig, logger log.Logger, reg prometheus.Registerer) 
 			},
 			[]string{"endpoint", "call"},
 		),
+	}
+
+	cd.metricRegisterer = discovery.NewMetricRegisterer(
+		reg,
+		[]prometheus.Collector{
+			cd.rpcFailuresCount,
+			cd.rpcDuration,
+		},
+	)
+
+	err = cd.metricRegisterer.RegisterMetrics()
+	if err != nil {
+		return nil, err
 	}
 
 	// Initialize metric vectors.
@@ -339,6 +353,11 @@ func (d *Discovery) GetCollectors() []prometheus.Collector {
 		d.rpcFailuresCount,
 		d.rpcDuration,
 	}
+}
+
+// Destroy implements Discoverer.
+func (d *Discovery) Destroy() {
+	d.metricRegisterer.UnregisterMetrics()
 }
 
 // Run implements the Discoverer interface.

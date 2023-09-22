@@ -329,42 +329,12 @@ func (m *Manager) startProvider(ctx context.Context, p *Provider) {
 
 	go func() {
 		p.d.Run(ctx, updates)
-		m.unregisterDiscovererCollectors(p.d)
+		p.d.Destroy()
 		//TODO: How does the manager know when Run() has returned?
 		//      Is there a chance that the config is reloaded, and the registration runs before the unregistration?
 	}()
 
 	go m.updater(ctx, p, updates)
-}
-
-func (m *Manager) registerDiscovererCollectors(d Discoverer) error {
-	metrics := d.GetCollectors()
-
-	// The discoverer does not have any metrics to register.
-	if metrics == nil {
-		return nil
-	}
-
-	for _, collector := range metrics {
-		err := m.registerer.Register(collector)
-		if err != nil {
-			return fmt.Errorf("failed to register metric: %w", err)
-		}
-	}
-	return nil
-}
-
-func (m *Manager) unregisterDiscovererCollectors(d Discoverer) {
-	metrics := d.GetCollectors()
-
-	// The discoverer does not have any metrics to unregister.
-	if metrics == nil {
-		return
-	}
-
-	for _, collector := range metrics {
-		m.registerer.Unregister(collector)
-	}
 }
 
 // cleaner cleans resources associated with provider.
@@ -506,12 +476,6 @@ func (m *Manager) registerProviders(cfgs Configs, setName string) int {
 		})
 		if err != nil {
 			level.Error(m.logger).Log("msg", "Cannot create service discovery", "err", err, "type", typ, "config", setName)
-			failed++
-			return
-		}
-		err = m.registerDiscovererCollectors(d)
-		if err != nil {
-			level.Error(m.logger).Log("msg", "Cannot register service discovery metrics", "err", err, "type", typ, "config", setName)
 			failed++
 			return
 		}

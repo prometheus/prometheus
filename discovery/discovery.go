@@ -33,10 +33,12 @@ import (
 //
 // Discoverers should initially send a full set of all discoverable TargetGroups.
 type Discoverer interface {
-	// A slice of prometheus collectors which need to be registered and unregistered:
-	// * Registration should happen prior to calling Run().
-	// * Unregistration should happen after Run() returns.
-	GetCollectors() []prometheus.Collector
+	// Destroy() must be called for any Discoverer instance at the end of its lifetime,
+	// even if a Run() function was never called on it. This is because the NewDiscoverer
+	// method of the Config interface may touch global resources such as registering metrics
+	// with a registry. Hence, each call to NewDiscoverer() must be paired with a call to Destroy().
+	// Run() should not be called after Destroy() has been called.
+	Destroy()
 
 	// Run hands a channel to the discovery provider (Consul, DNS, etc.) through which
 	// it can send updated target groups. It must return when the context is canceled.
@@ -66,8 +68,11 @@ type Config interface {
 	// Name returns the name of the discovery mechanism.
 	Name() string
 
-	// NewDiscoverer returns a Discoverer for the Config
-	// with the given DiscovererOptions.
+	// NewDiscoverer returns a Discoverer for the Config with the given DiscovererOptions.
+	// NewDiscoverer may acquire resources, such as registering metrics with a registry.
+	// Hence, each call to NewDiscoverer() must be paired with a call to Destroy()
+	// at the end of the Discoverer's lifetime so that the resources can be released
+	// (e.g. metrics will be unregistered).
 	NewDiscoverer(DiscovererOptions) (Discoverer, error)
 }
 
@@ -132,10 +137,4 @@ func (c staticDiscoverer) Run(ctx context.Context, up chan<- []*targetgroup.Grou
 	case <-ctx.Done():
 	case up <- c:
 	}
-}
-
-// GetCollectors implements Discoverer.
-// Static discoverer does not have any collectors.
-func (c staticDiscoverer) GetCollectors() []prometheus.Collector {
-	return nil
 }
