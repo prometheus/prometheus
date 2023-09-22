@@ -16,7 +16,7 @@ package main
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestGenerateBucket(t *testing.T) {
@@ -36,8 +36,8 @@ func TestGenerateBucket(t *testing.T) {
 	for _, tc := range tcs {
 		start, end, step := generateBucket(tc.min, tc.max)
 
-		assert.Equal(t, tc.start, start)
-		assert.Equal(t, tc.end, end)
-		assert.Equal(t, tc.step, step)
+		require.Equal(t, tc.start, start)
+		require.Equal(t, tc.end, end)
+		require.Equal(t, tc.step, step)
 	}
 }
