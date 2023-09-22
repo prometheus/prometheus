@@ -615,81 +615,19 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 
 	fmt.Printf("\nCompaction analysis:\n")
 	fmt.Println("Fullness: Amount of samples in float chunks")
-	// Normalize absolute counts to percentages and print them out.
-	slices.Sort(floatChunkSamplesCount)
-	fmt.Printf("chunk sample num min: %v\n", floatChunkSamplesCount[0])
-	fmt.Printf("chunk sample num max: %v\n", floatChunkSamplesCount[len(floatChunkSamplesCount)-1])
-	start, end, step := generateBucket(floatChunkSamplesCount[0], floatChunkSamplesCount[len(floatChunkSamplesCount)-1])
-	buckets := make([]int, (end-start)/step+1)
-	for _, c := range floatChunkSamplesCount {
-		buckets[(c-start)/step]++
-	}
-	for bucket, count := range buckets {
-		percentage := 100.0 * count / totalChunks
-		fmt.Printf("%7d: ", bucket*step+start)
-		for j := 0; j < percentage; j++ {
-			fmt.Printf("#")
-		}
-		fmt.Println()
-	}
+	displayHistogram("sample count per float chunk", floatChunkSamplesCount, totalChunks)
 	fmt.Println()
 
 	fmt.Println("Size of float chunks")
-	slices.Sort(floatChunkSize)
-	fmt.Printf("chunk size min: %v\n", floatChunkSize[0])
-	fmt.Printf("chunk size max: %v\n", floatChunkSize[len(floatChunkSize)-1])
-	start, end, step = generateBucket(floatChunkSize[0], floatChunkSize[len(floatChunkSize)-1])
-	buckets = make([]int, (end-start)/step+1)
-	for _, c := range floatChunkSize {
-		buckets[(c-start)/step]++
-	}
-	for bucket, count := range buckets {
-		percentage := 100.0 * count / totalChunks
-		fmt.Printf("%7d: ", bucket*step+start)
-		for j := 0; j < percentage; j++ {
-			fmt.Printf("#")
-		}
-		fmt.Println()
-	}
+	displayHistogram("bytes per float chunk", floatChunkSize, totalChunks)
 	fmt.Println()
 
 	fmt.Println("Fullness: Amount of samples in histogram chunks")
-	// Normalize absolute counts to percentages and print them out.
-	slices.Sort(histogramChunkSamplesCount)
-	fmt.Printf("chunk sample num min: %v\n", histogramChunkSamplesCount[0])
-	fmt.Printf("chunk sample num max: %v\n", histogramChunkSamplesCount[len(histogramChunkSamplesCount)-1])
-	start, end, step = generateBucket(histogramChunkSamplesCount[0], histogramChunkSamplesCount[len(histogramChunkSamplesCount)-1])
-	buckets = make([]int, (end-start)/step+1)
-	for _, c := range histogramChunkSamplesCount {
-		buckets[(c-start)/step]++
-	}
-	for bucket, count := range buckets {
-		percentage := 100.0 * count / totalChunks
-		fmt.Printf("%7d: ", bucket*step+start)
-		for j := 0; j < percentage; j++ {
-			fmt.Printf("#")
-		}
-		fmt.Println()
-	}
+	displayHistogram("sample count per histogram chunk", histogramChunkSamplesCount, totalChunks)
 	fmt.Println()
 
 	fmt.Println("Size of histogram chunks")
-	slices.Sort(histogramChunkSize)
-	fmt.Printf("chunk size min: %v\n", histogramChunkSize[0])
-	fmt.Printf("chunk size max: %v\n", histogramChunkSize[len(histogramChunkSize)-1])
-	start, end, step = generateBucket(histogramChunkSize[0], histogramChunkSize[len(histogramChunkSize)-1])
-	buckets = make([]int, (end-start)/step+1)
-	for _, c := range histogramChunkSize {
-		buckets[(c-start)/step]++
-	}
-	for bucket, count := range buckets {
-		percentage := 100.0 * count / totalChunks
-		fmt.Printf("%7d: ", bucket*step+start)
-		for j := 0; j < percentage; j++ {
-			fmt.Printf("#")
-		}
-		fmt.Println()
-	}
+	displayHistogram("bytes per histogram chunk", histogramChunkSize, totalChunks)
 	fmt.Println()
 
 	return nil
@@ -766,6 +704,28 @@ func backfillOpenMetrics(path, outputDir string, humanReadable, quiet bool, maxB
 	}
 
 	return checkErr(backfill(5000, inputFile.Bytes(), outputDir, humanReadable, quiet, maxBlockDuration))
+}
+
+func displayHistogram(dataType string, datas []int, total int) {
+	slices.Sort(datas)
+	start, end, step := generateBucket(datas[0], datas[len(datas)-1])
+	sum := 0
+	buckets := make([]int, (end-start)/step+1)
+	for _, c := range datas {
+		sum += c
+		buckets[(c-start)/step]++
+	}
+	avg := sum / len(datas)
+	fmt.Printf("%s (min/max/avg): %d/%d/%d\n", dataType, datas[0], datas[len(datas)-1], avg)
+	for bucket, count := range buckets {
+		percentage := 100.0 * count / total
+		fmt.Printf("[%d, %d]: %d ", bucket*step+start+1, (bucket+1)*step+start, count)
+		for j := 0; j < percentage; j++ {
+			fmt.Printf("#")
+		}
+		fmt.Println()
+	}
+	fmt.Println()
 }
 
 func generateBucket(min, max int) (start, end, step int) {
