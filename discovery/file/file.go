@@ -209,12 +209,16 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) *Discovery {
 func (d *Discovery) listFiles() []string {
 	var paths []string
 	for _, p := range d.paths {
-		files, err := filepath.Glob(p)
-		if err != nil {
-			level.Error(d.logger).Log("msg", "Error expanding glob", "glob", p, "err", err)
-			continue
+		if strings.ContainsAny(p, "^?*[") {
+			files, err := filepath.Glob(p)
+			if err != nil {
+				level.Error(d.logger).Log("msg", "Error expanding glob", "glob", p, "err", err)
+				continue
+			}
+			paths = append(paths, files...)
+		} else {
+			paths = append(paths, p)
 		}
-		paths = append(paths, files...)
 	}
 	return paths
 }

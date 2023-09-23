@@ -1578,8 +1578,9 @@ files:
 [ refresh_interval: <duration> | default = 5m ]
 ```
 
-Where `<filename_pattern>` may be a path ending in `.json`, `.yml` or `.yaml`. The last path segment
-may contain a single `*` that matches any character sequence, e.g. `my/path/tg_*.json`.
+Where `<filename_pattern>` may be a path ending in `.json`, `.yml` or `.yaml`.
+If the pattern contains any of `?`, `*`, `^` or `[`, it will be treated as a
+glob and expanded.
 
 ### `<gce_sd_config>`
 
