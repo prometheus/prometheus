@@ -2068,6 +2068,8 @@ The `ingress` role discovers a target for each path of each ingress.
 This is generally useful for blackbox monitoring of an ingress.
 The address will be set to the host specified in the ingress spec.
 
+Note: only the `networking.k8s.io/v1` version of the Ingress API is supported.
+
 Available meta labels:
 
 * `__meta_kubernetes_namespace`: The namespace of the ingress object.
