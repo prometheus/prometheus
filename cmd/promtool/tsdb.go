@@ -738,16 +738,21 @@ func displayHistogram(dataType string, datas []int, total int) {
 	start, end, step := generateBucket(datas[0], datas[len(datas)-1])
 	sum := 0
 	buckets := make([]int, (end-start)/step+1)
+	maxCount := 0
 	for _, c := range datas {
 		sum += c
 		buckets[(c-start)/step]++
+		if buckets[(c-start)/step] > maxCount {
+			maxCount = buckets[(c-start)/step]
+		}
 	}
 	avg := sum / len(datas)
 	fmt.Printf("%s (min/max/avg): %d/%d/%d\n", dataType, datas[0], datas[len(datas)-1], avg)
 	maxLen := strconv.Itoa(len(fmt.Sprintf("%d", end)))
+	maxCountLen := strconv.Itoa(len(fmt.Sprintf("%d", maxCount)))
 	for bucket, count := range buckets {
 		percentage := 100.0 * count / total
-		fmt.Printf("[%"+maxLen+"d, %"+maxLen+"d]: %d %s\n", bucket*step+start+1, (bucket+1)*step+start, count, strings.Repeat("#", percentage))
+		fmt.Printf("[%"+maxLen+"d, %"+maxLen+"d]: %"+maxCountLen+"d %s\n", bucket*step+start+1, (bucket+1)*step+start, count, strings.Repeat("#", percentage))
 	}
 	fmt.Println()
 }
