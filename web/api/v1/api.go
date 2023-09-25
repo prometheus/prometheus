@@ -670,7 +670,7 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 		names    []string
 		warnings annotations.Annotations
 	)
-	if len(matcherSets) > 0 {
+	if len(matcherSets) > 1 {
 		labelNamesSet := make(map[string]struct{})
 
 		for _, matchers := range matcherSets {
@@ -692,7 +692,11 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 		}
 		slices.Sort(names)
 	} else {
-		names, warnings, err = q.LabelNames(r.Context())
+		var matchers []*labels.Matcher
+		if len(matcherSets) == 1 {
+			matchers = matcherSets[0]
+		}
+		names, warnings, err = q.LabelNames(r.Context(), matchers...)
 		if err != nil {
 			return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}
 		}
@@ -765,7 +769,11 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 			vals = append(vals, val)
 		}
 	} else {
-		vals, warnings, err = q.LabelValues(ctx, name)
+		var matchers []*labels.Matcher
+		if len(matcherSets) == 1 {
+			matchers = matcherSets[0]
+		}
+		vals, warnings, err = q.LabelValues(ctx, name, matchers...)
 		if err != nil {
 			return apiFuncResult{nil, &apiError{errorExec, err}, warnings, closer}
 		}
