@@ -582,6 +582,107 @@ func TestMergedPostingsSeek(t *testing.T) {
 	}
 }
 
+func TestMergedPostings_Reset(t *testing.T) {
+	cases := []struct {
+		in  []Postings
+		res Postings
+	}{
+		{
+			in:  []Postings{},
+			res: EmptyPostings(),
+		},
+		{
+			in: []Postings{
+				newListPostings(),
+				newListPostings(),
+			},
+			res: EmptyPostings(),
+		},
+		{
+			in: []Postings{
+				newListPostings(),
+			},
+			res: newListPostings(),
+		},
+		{
+			in: []Postings{
+				EmptyPostings(),
+				EmptyPostings(),
+				EmptyPostings(),
+				EmptyPostings(),
+			},
+			res: EmptyPostings(),
+		},
+		{
+			in: []Postings{
+				newListPostings(1, 2, 3, 4, 5),
+				newListPostings(6, 7, 8, 9, 10),
+			},
+			res: newListPostings(1, 2, 3, 4, 5, 6, 7, 8, 9, 10),
+		},
+		{
+			in: []Postings{
+				newListPostings(1, 2, 3, 4, 5),
+				newListPostings(4, 5, 6, 7, 8),
+			},
+			res: newListPostings(1, 2, 3, 4, 5, 6, 7, 8),
+		},
+		{
+			in: []Postings{
+				newListPostings(1, 2, 3, 4, 9, 10),
+				newListPostings(1, 4, 5, 6, 7, 8, 10, 11),
+			},
+			res: newListPostings(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11),
+		},
+		{
+			in: []Postings{
+				newListPostings(1, 2, 3, 4, 9, 10),
+				EmptyPostings(),
+				newListPostings(1, 4, 5, 6, 7, 8, 10, 11),
+			},
+			res: newListPostings(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11),
+		},
+		{
+			in: []Postings{
+				newListPostings(1, 2),
+				newListPostings(),
+			},
+			res: newListPostings(1, 2),
+		},
+		{
+			in: []Postings{
+				newListPostings(1, 2),
+				EmptyPostings(),
+			},
+			res: newListPostings(1, 2),
+		},
+	}
+	for _, tc := range cases {
+		require.NotNil(t, tc.res)
+
+		expected, err := ExpandPostings(tc.res)
+		require.NoError(t, err)
+
+		m := Merge(context.Background(), tc.in...)
+
+		// Exhaust iterator before resetting
+		for m.Next() {
+		}
+		m.Reset()
+
+		if tc.res == EmptyPostings() {
+			require.Equal(t, EmptyPostings(), m)
+			return
+		}
+
+		require.NotEqual(t, EmptyPostings(), m)
+
+		res, err := ExpandPostings(m)
+		require.NoError(t, err)
+		require.Equal(t, expected, res)
+	}
+}
+
 func TestRemovedPostings(t *testing.T) {
 	cases := []struct {
 		a, b []storage.SeriesRef
