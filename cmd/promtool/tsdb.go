@@ -588,6 +588,7 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 	floatChunkSize := make([]int, 0)
 	histogramChunkSamplesCount := make([]int, 0)
 	histogramChunkSize := make([]int, 0)
+	histogramChunkBucketsCount := make([]int, 0)
 	var builder labels.ScratchBuilder
 	for postingsr.Next() {
 		var chks []chunks.Meta
@@ -605,9 +606,36 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 			case chunkenc.EncXOR:
 				floatChunkSamplesCount = append(floatChunkSamplesCount, chk.NumSamples())
 				floatChunkSize = append(floatChunkSize, len(chk.Bytes()))
-			case chunkenc.EncFloatHistogram, chunkenc.EncHistogram:
+			case chunkenc.EncFloatHistogram:
 				histogramChunkSamplesCount = append(histogramChunkSamplesCount, chk.NumSamples())
 				histogramChunkSize = append(histogramChunkSize, len(chk.Bytes()))
+				fhchk, ok := chk.(*chunkenc.FloatHistogramChunk)
+				if !ok {
+					return fmt.Errorf("chunk is not FloatHistogramChunk")
+				}
+				it := fhchk.Iterator(nil)
+				bucketCount := 0
+				for it.Next() == chunkenc.ValFloatHistogram {
+					_, f := it.AtFloatHistogram()
+					bucketCount += len(f.PositiveBuckets)
+					bucketCount += len(f.NegativeBuckets)
+				}
+				histogramChunkBucketsCount = append(histogramChunkBucketsCount, bucketCount)
+			case chunkenc.EncHistogram:
+				histogramChunkSamplesCount = append(histogramChunkSamplesCount, chk.NumSamples())
+				histogramChunkSize = append(histogramChunkSize, len(chk.Bytes()))
+				hchk, ok := chk.(*chunkenc.HistogramChunk)
+				if !ok {
+					return fmt.Errorf("chunk is not HistogramChunk")
+				}
+				it := hchk.Iterator(nil)
+				bucketCount := 0
+				for it.Next() == chunkenc.ValHistogram {
+					_, f := it.AtHistogram()
+					bucketCount += len(f.PositiveBuckets)
+					bucketCount += len(f.NegativeBuckets)
+				}
+				histogramChunkBucketsCount = append(histogramChunkBucketsCount, bucketCount)
 			}
 			totalChunks++
 		}
@@ -630,6 +658,9 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 	displayHistogram("bytes per histogram chunk", histogramChunkSize, totalChunks)
 	fmt.Println()
 
+	fmt.Println("Amount of buckets of histogram chunks")
+	displayHistogram("buckets per histogram chunk", histogramChunkBucketsCount, totalChunks)
+	fmt.Println()
 	return nil
 }
 
