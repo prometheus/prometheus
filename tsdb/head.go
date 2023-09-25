@@ -258,7 +258,6 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal, wbl *wlog.WL, opts *Hea
 	if err := h.resetInMemoryState(); err != nil {
 		return nil, err
 	}
-	h.metrics = newHeadMetrics(h, r)
 
 	if opts.ChunkPool == nil {
 		opts.ChunkPool = chunkenc.NewPool()
@@ -278,6 +277,7 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal, wbl *wlog.WL, opts *Hea
 	if err != nil {
 		return nil, err
 	}
+	h.metrics = newHeadMetrics(h, r)
 
 	return h, nil
 }
