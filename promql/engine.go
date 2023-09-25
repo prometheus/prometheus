@@ -61,6 +61,8 @@ const (
 	minInt64 = -9223372036854775808
 
 	// Max initial size for the pooled points slices.
+	// The getHPointSlice and getFPointSlice functions are called with an estimated size which often can be
+	// over-estimated.
 	maxPointsSliceSize = 5000
 )
 
@@ -1933,12 +1935,16 @@ func getFPointSlice(sz int) []FPoint {
 	return make([]FPoint, 0, sz)
 }
 
+// putFPointSlice will return a FPoint slice of size max(maxPointsSliceSize, sz).
+// This function is called with an estimated size which often can be over-estimated.
 func putFPointSlice(p []FPoint) {
 	if p != nil {
 		fPointPool.Put(p[:0])
 	}
 }
 
+// getHPointSlice will return a HPoint slice of size max(maxPointsSliceSize, sz).
+// This function is called with an estimated size which often can be over-estimated.
 func getHPointSlice(sz int) []HPoint {
 	if p := hPointPool.Get(); p != nil {
 		return p
