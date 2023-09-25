@@ -19,6 +19,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/model/value"
 )
 
 func TestHistogramString(t *testing.T) {
@@ -411,8 +413,8 @@ func TestHistogramToFloat(t *testing.T) {
 	require.Equal(t, h.String(), fh.String())
 }
 
-// TestHistogramMatches tests both Histogram and FloatHistogram.
-func TestHistogramMatches(t *testing.T) {
+// TestHistogramEquals tests both Histogram and FloatHistogram.
+func TestHistogramEquals(t *testing.T) {
 	h1 := Histogram{
 		Schema:        3,
 		Count:         61,
@@ -537,6 +539,12 @@ func TestHistogramMatches(t *testing.T) {
 	})
 	h2.NegativeBuckets = append(h2.NegativeBuckets, 1)
 	notEquals(h1, *h2)
+
+	// StaleNaN.
+	h2 = h1.Copy()
+	h2.Sum = math.Float64frombits(value.StaleNaN)
+	notEquals(h1, *h2)
+	equals(*h2, *h2)
 }
 
 func TestHistogramCompact(t *testing.T) {

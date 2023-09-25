@@ -313,7 +313,8 @@ func (h *FloatHistogram) Equals(h2 *FloatHistogram) bool {
 	}
 
 	if h.Schema != h2.Schema || h.ZeroThreshold != h2.ZeroThreshold ||
-		h.ZeroCount != h2.ZeroCount || h.Count != h2.Count || h.Sum != h2.Sum {
+		h.ZeroCount != h2.ZeroCount || h.Count != h2.Count ||
+		math.Float64bits(h.Sum) != math.Float64bits(h2.Sum) {
 		return false
 	}
 
