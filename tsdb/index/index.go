@@ -25,6 +25,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"sort"
 	"unsafe"
@@ -1529,6 +1530,7 @@ func (r *Reader) LabelValues(ctx context.Context, name string, matchers ...*labe
 		}
 		return values, nil
 	}
+
 	e, ok := r.postings[name]
 	if !ok {
 		return nil, nil
@@ -1544,6 +1546,27 @@ func (r *Reader) LabelValues(ctx context.Context, name string, matchers ...*labe
 		return val != lastVal, nil
 	})
 	return values, err
+}
+
+func (r *Reader) LabelValuesStream(name string, matchers ...*labels.Matcher) storage.LabelValues {
+	if r.version == FormatV1 {
+		p := r.postingsV1[name]
+		if len(p) == 0 {
+			return storage.EmptyLabelValues()
+		}
+		return &labelValuesV1{
+			matchers: matchers,
+			it:       reflect.ValueOf(p).MapRange(),
+			name:     name,
+		}
+	}
+
+	p := r.postings[name]
+	if len(p) == 0 {
+		return storage.EmptyLabelValues()
+	}
+
+	return r.newLabelValuesV2(name, matchers)
 }
 
 // LabelNamesFor returns all the label names for the series referred to by IDs.
@@ -1710,7 +1733,10 @@ func (r *Reader) Postings(ctx context.Context, name string, values ...string) (P
 		return EmptyPostings(), nil
 	}
 
-	slices.Sort(values) // Values must be in order so we can step through the table on disk.
+	if len(values) > 1 {
+		// Values must be in order so we can step through the table on disk.
+		slices.Sort(values)
+	}
 	res := make([]Postings, 0, len(values))
 	valueIndex := 0
 	for valueIndex < len(values) && values[valueIndex] < e[0].value {
@@ -1904,6 +1930,12 @@ type Decoder struct {
 
 // Postings returns a postings list for b and its number of elements.
 func (dec *Decoder) Postings(b []byte) (int, Postings, error) {
+	var p bigEndianPostings
+	n, err := dec.PostingsInPlace(b, &p)
+	return n, &p, err
+}
+
+func (dec *Decoder) PostingsInPlace(b []byte, p *bigEndianPostings) (int, error) {
 	d := encoding.Decbuf{B: b}
 	return dec.PostingsFromDecbuf(d)
 }
@@ -1913,12 +1945,14 @@ func (dec *Decoder) PostingsFromDecbuf(d encoding.Decbuf) (int, Postings, error)
 	n := d.Be32int()
 	l := d.Get()
 	if d.Err() != nil {
-		return 0, nil, d.Err()
+		return 0, d.Err()
 	}
 	if len(l) != 4*n {
-		return 0, nil, fmt.Errorf("unexpected postings length, should be %d bytes for %d postings, got %d bytes", 4*n, n, len(l))
+		return 0, fmt.Errorf("unexpected postings length, should be %d bytes for %d postings, got %d bytes", 4*n, n, len(l))
 	}
-	return n, newBigEndianPostings(l), nil
+	p.list = l
+	p.Reset()
+	return n, nil
 }
 
 // LabelNamesOffsetsFor decodes the offsets of the name symbols for a given series.

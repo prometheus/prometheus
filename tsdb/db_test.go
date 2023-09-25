@@ -6981,6 +6981,100 @@ Outer:
 	require.NoError(t, writerErr)
 }
 
+func TestQuerier_LabelValuesStream(t *testing.T) {
+	db := openTestDB(t, nil, nil)
+	t.Cleanup(func() {
+		require.NoError(t, db.Close())
+	})
+
+	var seriesEntries []storage.Series
+	// Add a block of 70 series with timestamp 1
+	for i := 0; i < 70; i++ {
+		seriesEntries = append(seriesEntries, storage.NewListSeries(labels.FromStrings(
+			"tens", fmt.Sprintf("value%d", i/10),
+			"unique", fmt.Sprintf("value%d", i),
+		), chunks.GenerateSamples(1, 1)))
+	}
+	createBlock(t, db.Dir(), seriesEntries)
+
+	// Add a block of 50 series with timestamp 2
+	// Since "tens" start at 50, two of the label values ("value5", "value6") will overlap with the
+	// previous block
+	seriesEntries = seriesEntries[:0]
+	for i := 50; i < 100; i++ {
+		seriesEntries = append(seriesEntries, storage.NewListSeries(labels.FromStrings(
+			"tens", fmt.Sprintf("value%d", i/10),
+			"unique", fmt.Sprintf("value%d", i),
+		), chunks.GenerateSamples(2, 1)))
+	}
+	createBlock(t, db.Dir(), seriesEntries)
+
+	require.NoError(t, db.reloadBlocks())
+
+	querier, err := db.Querier(1, 2)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, querier.Close()) })
+
+	t.Run("without matchers", func(t *testing.T) {
+		it := querier.LabelValuesStream("tens")
+		var values []string
+		for it.Next() {
+			values = append(values, it.At())
+		}
+		require.NoError(t, it.Err())
+
+		require.Equal(t, []string{
+			"value0", "value1", "value2", "value3", "value4", "value5", "value6", "value7", "value8", "value9",
+		}, values)
+	})
+
+	t.Run("with matchers", func(t *testing.T) {
+		testCases := []struct {
+			name      string
+			label     string
+			matchers  []*labels.Matcher
+			expLabels []string
+		}{
+			{
+				name:  "matching on requested label",
+				label: "tens",
+				matchers: []*labels.Matcher{
+					labels.MustNewMatcher(labels.MatchEqual, "tens", "value1"),
+				},
+				expLabels: []string{"value1"},
+			},
+			{
+				name:  "unsuccessful matching on requested label",
+				label: "tens",
+				matchers: []*labels.Matcher{
+					labels.MustNewMatcher(labels.MatchEqual, "tens", "value10"),
+				},
+				expLabels: nil,
+			},
+			{
+				name:  "matching on other label",
+				label: "tens",
+				matchers: []*labels.Matcher{
+					labels.MustNewMatcher(labels.MatchEqual, "unique", "value51"),
+				},
+				expLabels: []string{"value5"},
+			},
+		}
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				it := querier.LabelValuesStream(tc.label, tc.matchers...)
+				var values []string
+				for it.Next() {
+					values = append(values, it.At())
+				}
+				require.NoError(t, it.Err())
+
+				require.Equal(t, tc.expLabels, values)
+			})
+		}
+	})
+}
+
 func requireEqualOOOSamples(t *testing.T, expectedSamples int, db *DB) {
 	require.Equal(t, float64(expectedSamples),
 		prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamplesAppended.WithLabelValues(sampleMetricTypeFloat)),

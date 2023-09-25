@@ -54,9 +54,10 @@ var ensureOrderBatchPool = sync.Pool{
 // EnsureOrder() must be called once before any reads are done. This allows for quick
 // unordered batch fills on startup.
 type MemPostings struct {
-	mtx     sync.RWMutex
-	m       map[string]map[string][]storage.SeriesRef
-	ordered bool
+	mtx         sync.RWMutex
+	m           map[string]map[string][]storage.SeriesRef
+	ordered     bool
+	curPostings ListPostings
 }
 
 // NewMemPostings returns a memPostings that's ready for reads and writes.
@@ -151,6 +152,29 @@ func (p *MemPostings) LabelValues(_ context.Context, name string) []string {
 		values = append(values, v)
 	}
 	return values
+}
+
+// LabelValuesStream returns an iterator over label values for the given name.
+func (p *MemPostings) LabelValuesStream(name string, matchers ...*labels.Matcher) storage.LabelValues {
+	p.mtx.RLock()
+	defer p.mtx.RUnlock()
+
+	values := make([]string, 0, len(p.m[name]))
+loop:
+	for v := range p.m[name] {
+		for _, m := range matchers {
+			if m.Name != name {
+				// This should not happen
+				continue
+			}
+
+			if !m.Matches(v) {
+				continue loop
+			}
+		}
+		values = append(values, v)
+	}
+	return NewListLabelValues(values)
 }
 
 // PostingsStats contains cardinality based statistics for postings.
@@ -449,6 +473,9 @@ type Postings interface {
 
 	// Err returns the last error of the iterator.
 	Err() error
+
+	// Reset the iterator to its initial state.
+	Reset()
 }
 
 // errPostings is an empty iterator that always errors.
@@ -460,6 +487,7 @@ func (e errPostings) Next() bool                  { return false }
 func (e errPostings) Seek(storage.SeriesRef) bool { return false }
 func (e errPostings) At() storage.SeriesRef       { return 0 }
 func (e errPostings) Err() error                  { return e.err }
+func (e errPostings) Reset()                      {}
 
 var emptyPostings = errPostings{}
 
@@ -555,8 +583,15 @@ func (it *intersectPostings) Err() error {
 	return nil
 }
 
+func (it *intersectPostings) Reset() {
+	for _, p := range it.arr {
+		p.Reset()
+	}
+	it.cur = 0
+}
+
 // Merge returns a new iterator over the union of the input iterators.
-func Merge(_ context.Context, its ...Postings) Postings {
+func Merge(ctx context.Context, its ...Postings) Postings {
 	if len(its) == 0 {
 		return EmptyPostings()
 	}
@@ -571,16 +606,52 @@ func Merge(_ context.Context, its ...Postings) Postings {
 	return p
 }
 
-type mergedPostings struct {
-	p   []Postings
-	h   *loser.Tree[storage.SeriesRef, Postings]
-	cur storage.SeriesRef
+type postingsHeap []Postings
+
+func (h postingsHeap) Len() int           { return len(h) }
+func (h postingsHeap) Less(i, j int) bool { return h[i].At() < h[j].At() }
+func (h *postingsHeap) Swap(i, j int)     { (*h)[i], (*h)[j] = (*h)[j], (*h)[i] }
+
+func (h *postingsHeap) Push(x interface{}) {
+	*h = append(*h, x.(Postings))
 }
 
-func newMergedPostings(p []Postings) (m *mergedPostings, nonEmpty bool) {
-	const maxVal = storage.SeriesRef(math.MaxUint64) // This value must be higher than all real values used in the tree.
-	lt := loser.New(p, maxVal)
-	return &mergedPostings{p: p, h: lt}, true
+func (h *postingsHeap) Pop() interface{} {
+	old := *h
+	n := len(old)
+	x := old[n-1]
+	*h = old[0 : n-1]
+	return x
+}
+
+type mergedPostings struct {
+	h           postingsHeap
+	hCopy       postingsHeap
+	initialized bool
+	cur         storage.SeriesRef
+	err         error
+}
+
+func newMergedPostings(ctx context.Context, p []Postings) (m *mergedPostings, nonEmpty bool) {
+	ph := make(postingsHeap, 0, len(p))
+
+	for _, it := range p {
+		// NOTE: mergedPostings struct requires the user to issue an initial Next.
+		switch {
+		case ctx.Err() != nil:
+			return &mergedPostings{err: ctx.Err()}, true
+		case it.Next():
+			ph = append(ph, it)
+		case it.Err() != nil:
+			return &mergedPostings{err: it.Err()}, true
+		}
+	}
+
+	if len(ph) == 0 {
+		return nil, false
+	}
+
+	return &mergedPostings{h: ph, hCopy: ph}, true
 }
 
 func (it *mergedPostings) Next() bool {
@@ -614,12 +685,22 @@ func (it mergedPostings) At() storage.SeriesRef {
 }
 
 func (it mergedPostings) Err() error {
-	for _, p := range it.p {
-		if err := p.Err(); err != nil {
-			return err
+	return it.err
+}
+
+func (it *mergedPostings) Reset() {
+	// Reset the heap and its iterators
+	it.h = it.hCopy
+	for _, p := range it.h {
+		p.Reset()
+		// All iterators are expected to be initialized
+		if !p.Next() {
+			panic("couldn't issue initial Postings.Next()")
 		}
 	}
-	return nil
+	it.initialized = false
+	it.cur = 0
+	it.err = nil
 }
 
 // Without returns a new postings list that contains all elements from the full list that
@@ -707,10 +788,17 @@ func (rp *removedPostings) Err() error {
 	return rp.remove.Err()
 }
 
+func (rp *removedPostings) Reset() {
+	rp.full.Reset()
+	rp.remove.Reset()
+	rp.cur = 0
+	rp.initialized = false
+}
+
 // ListPostings implements the Postings interface over a plain list.
 type ListPostings struct {
 	list []storage.SeriesRef
-	cur  storage.SeriesRef
+	pos  int
 }
 
 func NewListPostings(list []storage.SeriesRef) Postings {
@@ -718,39 +806,52 @@ func NewListPostings(list []storage.SeriesRef) Postings {
 }
 
 func newListPostings(list ...storage.SeriesRef) *ListPostings {
-	return &ListPostings{list: list}
+	return &ListPostings{
+		list: list,
+		pos:  -1,
+	}
 }
 
 func (it *ListPostings) At() storage.SeriesRef {
-	return it.cur
+	if it.pos < 0 {
+		return 0
+	}
+
+	if it.pos >= len(it.list) {
+		// Not entirely sure why postingsWithIndexHeap needs to keep exhausted iterators around
+		return 0
+	}
+
+	return it.list[it.pos]
 }
 
 func (it *ListPostings) Next() bool {
-	if len(it.list) > 0 {
-		it.cur = it.list[0]
-		it.list = it.list[1:]
-		return true
+	if it.pos >= len(it.list)-1 {
+		return false
 	}
-	it.cur = 0
-	return false
+
+	it.pos++
+	return true
 }
 
 func (it *ListPostings) Seek(x storage.SeriesRef) bool {
 	// If the current value satisfies, then return.
-	if it.cur >= x {
+	if it.pos >= 0 && it.list[it.pos] >= x {
 		return true
 	}
-	if len(it.list) == 0 {
-		return false
+
+	start := it.pos
+	if start < 0 {
+		start = 0
 	}
 
 	// Do binary search between current position and end.
-	i := sort.Search(len(it.list), func(i int) bool {
-		return it.list[i] >= x
+	l := it.list[start:]
+	i := sort.Search(len(l), func(i int) bool {
+		return l[i] >= x
 	})
-	if i < len(it.list) {
-		it.cur = it.list[i]
-		it.list = it.list[i+1:]
+	if i < len(l) {
+		it.pos = start + i
 		return true
 	}
 	it.list = nil
@@ -761,15 +862,23 @@ func (it *ListPostings) Err() error {
 	return nil
 }
 
+func (it *ListPostings) Reset() {
+	it.pos = -1
+}
+
 // bigEndianPostings implements the Postings interface over a byte stream of
 // big endian numbers.
 type bigEndianPostings struct {
 	list []byte
+	i    int
 	cur  uint32
 }
 
 func newBigEndianPostings(list []byte) *bigEndianPostings {
-	return &bigEndianPostings{list: list}
+	return &bigEndianPostings{
+		list: list,
+		i:    -4,
+	}
 }
 
 func (it *bigEndianPostings) At() storage.SeriesRef {
@@ -777,12 +886,14 @@ func (it *bigEndianPostings) At() storage.SeriesRef {
 }
 
 func (it *bigEndianPostings) Next() bool {
-	if len(it.list) >= 4 {
-		it.cur = binary.BigEndian.Uint32(it.list)
-		it.list = it.list[4:]
-		return true
+	if it.i >= len(it.list)-4 {
+		it.i = len(it.list)
+		return false
 	}
-	return false
+
+	it.i += 4
+	it.cur = binary.BigEndian.Uint32(it.list[it.i:])
+	return true
 }
 
 func (it *bigEndianPostings) Seek(x storage.SeriesRef) bool {
@@ -790,23 +901,34 @@ func (it *bigEndianPostings) Seek(x storage.SeriesRef) bool {
 		return true
 	}
 
-	num := len(it.list) / 4
+	start := it.i
+	if start < 0 {
+		start = 0
+	}
+
+	l := it.list[start:]
+	num := len(l) / 4
 	// Do binary search between current position and end.
 	i := sort.Search(num, func(i int) bool {
-		return binary.BigEndian.Uint32(it.list[i*4:]) >= uint32(x)
+		return binary.BigEndian.Uint32(l[i*4:]) >= uint32(x)
 	})
 	if i < num {
 		j := i * 4
-		it.cur = binary.BigEndian.Uint32(it.list[j:])
-		it.list = it.list[j+4:]
+		it.cur = binary.BigEndian.Uint32(l[j:])
+		it.i = start + j
 		return true
 	}
-	it.list = nil
+
 	return false
 }
 
 func (it *bigEndianPostings) Err() error {
 	return nil
+}
+
+func (it *bigEndianPostings) Reset() {
+	it.i = -4
+	it.cur = 0
 }
 
 // FindIntersectingPostings checks the intersection of p and candidates[i] for each i in candidates,

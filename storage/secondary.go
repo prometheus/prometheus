@@ -57,6 +57,36 @@ func (s *secondaryQuerier) LabelValues(ctx context.Context, name string, matcher
 	return vals, w, nil
 }
 
+func (s *secondaryQuerier) LabelValuesStream(name string, matchers ...*labels.Matcher) LabelValues {
+	return &secondaryLabelValues{
+		it: s.genericQuerier.LabelValuesStream(name, matchers...),
+	}
+}
+
+type secondaryLabelValues struct {
+	it LabelValues
+}
+
+func (s *secondaryLabelValues) Next() bool {
+	return s.it.Next()
+}
+
+func (s *secondaryLabelValues) At() string {
+	return s.it.At()
+}
+
+func (s *secondaryLabelValues) Err() error {
+	return nil
+}
+
+func (s *secondaryLabelValues) Warnings() annotations.Annotations {
+	ws := s.it.Warnings()
+	if s.it.Err() != nil {
+		ws.Add(s.it.Err())
+	}
+	return ws
+}
+
 func (s *secondaryQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	names, w, err := s.genericQuerier.LabelNames(ctx, matchers...)
 	if err != nil {

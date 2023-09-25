@@ -240,6 +240,10 @@ func (errQuerier) LabelValues(context.Context, string, ...*labels.Matcher) ([]st
 	return nil, nil, errors.New("label values error")
 }
 
+func (errQuerier) LabelValuesStream(string, ...*labels.Matcher) storage.LabelValues {
+	return storage.ErrLabelValues(errors.New("label values stream error"))
+}
+
 func (errQuerier) LabelNames(context.Context, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, errors.New("label names error")
 }

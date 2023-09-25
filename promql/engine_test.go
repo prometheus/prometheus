@@ -227,6 +227,10 @@ func (*errQuerier) LabelValues(context.Context, string, ...*labels.Matcher) ([]s
 	return nil, nil, nil
 }
 
+func (*errQuerier) LabelValuesStream(string, ...*labels.Matcher) storage.LabelValues {
+	return nil
+}
+
 func (*errQuerier) LabelNames(context.Context, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }

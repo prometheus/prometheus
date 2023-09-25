@@ -71,6 +71,9 @@ type IndexReader interface {
 	// LabelValues returns possible label values which may not be sorted.
 	LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error)
 
+	// LabelValuesStream returns an iterator over matching label values.
+	LabelValuesStream(name string, matchers ...*labels.Matcher) storage.LabelValues
+
 	// Postings returns the postings list iterator for the label pairs.
 	// The Postings here contain the offsets to the series inside the index.
 	// Found IDs are not strictly required to point to a valid Series, e.g.
@@ -84,6 +87,10 @@ type IndexReader interface {
 	// SortedPostings returns a postings list that is reordered to be sorted
 	// by the label set of the underlying series.
 	SortedPostings(index.Postings) index.Postings
+
+	// LabelValuesIntersectingPostings returns a LabelValues iterator, for values of the label with the specified
+	// name, where the postings intersect with p.
+	LabelValuesIntersectingPostings(name string, p index.Postings) storage.LabelValues
 
 	// ShardedPostings returns a postings list filtered by the provided shardIndex
 	// out of shardCount. For a given posting, its shard MUST be computed hashing
@@ -506,6 +513,21 @@ func (r blockIndexReader) LabelValues(ctx context.Context, name string, matchers
 	return labelValuesWithMatchers(ctx, r.ir, name, matchers...)
 }
 
+func (r blockIndexReader) LabelValuesStream(name string, matchers ...*labels.Matcher) storage.LabelValues {
+	ownMatchers := 0
+	for _, m := range matchers {
+		if m.Name == name {
+			ownMatchers++
+		}
+	}
+	if ownMatchers == len(matchers) {
+		return r.ir.LabelValuesStream(name, matchers...)
+	}
+
+	// There are matchers on other label names than the requested one, so will need to intersect matching series
+	return labelValuesForMatchersStream(r.ir, name, matchers)
+}
+
 func (r blockIndexReader) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, error) {
 	if len(matchers) == 0 {
 		return r.b.LabelNames(ctx)
@@ -528,6 +550,10 @@ func (r blockIndexReader) PostingsForLabelMatching(ctx context.Context, name str
 
 func (r blockIndexReader) SortedPostings(p index.Postings) index.Postings {
 	return r.ir.SortedPostings(p)
+}
+
+func (r blockIndexReader) LabelValuesIntersectingPostings(name string, postings index.Postings) storage.LabelValues {
+	return r.ir.LabelValuesIntersectingPostings(name, postings)
 }
 
 func (r blockIndexReader) ShardedPostings(p index.Postings, shardIndex, shardCount uint64) index.Postings {

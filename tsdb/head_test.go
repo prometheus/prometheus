@@ -2840,6 +2840,82 @@ func TestHeadLabelValuesWithMatchers(t *testing.T) {
 	}
 }
 
+func TestHeadLabelValuesStream_WithMatchers(t *testing.T) {
+	head, _ := newTestHead(t, 1000, wlog.CompressionNone, false)
+	t.Cleanup(func() { require.NoError(t, head.Close()) })
+
+	app := head.Appender(context.Background())
+	for i := 0; i < 100; i++ {
+		_, err := app.Append(0, labels.FromStrings(
+			"tens", fmt.Sprintf("value%d", i/10),
+			"unique", fmt.Sprintf("value%d", i),
+		), 100, 0)
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	indexReader := head.indexRange(0, 200)
+	t.Cleanup(func() {
+		require.NoError(t, indexReader.Close())
+	})
+
+	var uniqueWithout30s []string
+	for i := 0; i < 100; i++ {
+		if i/10 != 3 {
+			uniqueWithout30s = append(uniqueWithout30s, fmt.Sprintf("value%d", i))
+		}
+	}
+	sort.Strings(uniqueWithout30s)
+	testCases := []struct {
+		name           string
+		labelName      string
+		matchers       []*labels.Matcher
+		expectedValues []string
+	}{
+		{
+			name:           "get tens based on unique ID",
+			labelName:      "tens",
+			matchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "unique", "value35")},
+			expectedValues: []string{"value3"},
+		}, {
+			name:           "get unique IDs based on a ten",
+			labelName:      "unique",
+			matchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "tens", "value1")},
+			expectedValues: []string{"value10", "value11", "value12", "value13", "value14", "value15", "value16", "value17", "value18", "value19"},
+		}, {
+			name:           "get tens by pattern matching on unique ID",
+			labelName:      "tens",
+			matchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "unique", "value[5-7]5")},
+			expectedValues: []string{"value5", "value6", "value7"},
+		}, {
+			name:           "get tens by matching for presence of unique label",
+			labelName:      "tens",
+			matchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "unique", "")},
+			expectedValues: []string{"value0", "value1", "value2", "value3", "value4", "value5", "value6", "value7", "value8", "value9"},
+		}, {
+			name:      "get unique IDs based on tens not being equal to a certain value, while not empty",
+			labelName: "unique",
+			matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchNotEqual, "tens", "value3"),
+				labels.MustNewMatcher(labels.MatchNotEqual, "tens", ""),
+			},
+			expectedValues: uniqueWithout30s,
+		},
+	}
+	for _, tt := range testCases {
+		t.Run(tt.name, func(t *testing.T) {
+			it := indexReader.LabelValuesStream(tt.labelName, tt.matchers...)
+			var values []string
+			for it.Next() {
+				values = append(values, it.At())
+			}
+			require.NoError(t, it.Err())
+			require.Empty(t, it.Warnings())
+			require.Equal(t, tt.expectedValues, values)
+		})
+	}
+}
+
 func TestHeadLabelNamesWithMatchers(t *testing.T) {
 	head, _ := newTestHead(t, 1000, wlog.CompressionNone, false)
 	defer func() {
