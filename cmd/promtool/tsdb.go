@@ -579,10 +579,6 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 		err = tsdb_errors.NewMulti(err, chunkr.Close()).Err()
 	}()
 
-	// 构造一个有序数组，数组第一个元素，最后一个元素分别是最大，最小值，然后均分创建 10 个元素的数据，分别统计每个数组内的值
-	// const maxSamplesPerChunk = 120
-	// nBuckets := 10
-	// histogram := make([]int, nBuckets)
 	totalChunks := 0
 	floatChunkSamplesCount := make([]int, 0)
 	floatChunkSize := make([]int, 0)
@@ -748,13 +744,10 @@ func displayHistogram(dataType string, datas []int, total int) {
 	}
 	avg := sum / len(datas)
 	fmt.Printf("%s (min/max/avg): %d/%d/%d\n", dataType, datas[0], datas[len(datas)-1], avg)
+	maxLen := strconv.Itoa(len(fmt.Sprintf("%d", end)))
 	for bucket, count := range buckets {
 		percentage := 100.0 * count / total
-		fmt.Printf("[%d, %d]: %d ", bucket*step+start+1, (bucket+1)*step+start, count)
-		for j := 0; j < percentage; j++ {
-			fmt.Printf("#")
-		}
-		fmt.Println()
+		fmt.Printf("[%"+maxLen+"d, %"+maxLen+"d]: %d %s\n", bucket*step+start+1, (bucket+1)*step+start, count, strings.Repeat("#", percentage))
 	}
 	fmt.Println()
 }
