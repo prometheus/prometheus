@@ -1,0 +1,23 @@
+name: 'Lock Threads'
+
+on:
+  schedule:
+    - cron: '13 23 * * *'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+concurrency:
+  group: lock
+
+jobs:
+  action:
+    runs-on: ubuntu-latest
+    if: github.repository_owner == 'prometheus'
+    steps:
+      - uses: dessant/lock-threads@be8aa5be94131386884a6da4189effda9b14aa21 # v4.0.1
+        with:
+          process-only: 'issues'
+          issue-inactive-days: '180'
+          github-token: ${{ secrets.PROMBOT_LOCKTHREADS_TOKEN }}

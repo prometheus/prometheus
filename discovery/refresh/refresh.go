@@ -15,10 +15,11 @@ package refresh
 
 import (
 	"context"
+	"errors"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -75,7 +76,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	// Get an initial set right away.
 	tgs, err := d.refresh(ctx)
 	if err != nil {
-		if ctx.Err() != context.Canceled {
+		if !errors.Is(ctx.Err(), context.Canceled) {
 			level.Error(d.logger).Log("msg", "Unable to refresh target groups", "err", err.Error())
 		}
 	} else {
@@ -94,7 +95,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		case <-ticker.C:
 			tgs, err := d.refresh(ctx)
 			if err != nil {
-				if ctx.Err() != context.Canceled {
+				if !errors.Is(ctx.Err(), context.Canceled) {
 					level.Error(d.logger).Log("msg", "Unable to refresh target groups", "err", err.Error())
 				}
 				continue
@@ -113,7 +114,10 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 
 func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	now := time.Now()
-	defer d.duration.Observe(time.Since(now).Seconds())
+	defer func() {
+		d.duration.Observe(time.Since(now).Seconds())
+	}()
+
 	tgs, err := d.refreshf(ctx)
 	if err != nil {
 		d.failures.Inc()

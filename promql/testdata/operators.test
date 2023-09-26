@@ -39,7 +39,7 @@ eval instant at 50m -2^---1*3
   -1.5
 
 eval instant at 50m 2/-2^---1*3+2
-  -10 
+  -10
 
 eval instant at 50m -10^3 * - SUM(http_requests) BY (job) ^ -1
 	{job="api-server"} 1
@@ -88,6 +88,18 @@ eval instant at 50m COUNT(http_requests) BY (job) ^ COUNT(http_requests) BY (job
 eval instant at 50m SUM(http_requests) BY (job) / 0
 	{job="api-server"} +Inf
 	{job="app-server"} +Inf
+
+eval instant at 50m http_requests{group="canary", instance="0", job="api-server"} / 0
+	{group="canary", instance="0", job="api-server"} +Inf
+
+eval instant at 50m -1 * http_requests{group="canary", instance="0", job="api-server"} / 0
+	{group="canary", instance="0", job="api-server"} -Inf
+
+eval instant at 50m 0 * http_requests{group="canary", instance="0", job="api-server"} / 0
+	{group="canary", instance="0", job="api-server"} NaN
+
+eval instant at 50m 0 * http_requests{group="canary", instance="0", job="api-server"} % 0
+	{group="canary", instance="0", job="api-server"} NaN
 
 eval instant at 50m SUM(http_requests) BY (job) + SUM(http_requests) BY (job)
 	{job="api-server"} 2000
@@ -438,3 +450,40 @@ load 5m
   testmetric2{src="a",dst="b"} 1
 
 eval_fail instant at 0m -{__name__=~'testmetric1|testmetric2'}
+
+clear
+
+load 5m
+    test_total{instance="localhost"} 50
+    test_smaller{instance="localhost"} 10
+
+eval instant at 5m test_total > bool test_smaller
+    {instance="localhost"} 1
+
+eval instant at 5m test_total > test_smaller
+    test_total{instance="localhost"} 50
+
+eval instant at 5m test_total < bool test_smaller
+    {instance="localhost"} 0
+
+eval instant at 5m test_total < test_smaller
+
+clear
+
+# Testing atan2.
+load 5m
+    trigy{} 10
+    trigx{} 20
+    trigNaN{} NaN
+
+eval instant at 5m trigy atan2 trigx
+    {} 0.4636476090008061
+
+eval instant at 5m trigy atan2 trigNaN
+    {} NaN
+
+eval instant at 5m 10 atan2 20
+    0.4636476090008061
+
+eval instant at 5m 10 atan2 NaN
+    NaN

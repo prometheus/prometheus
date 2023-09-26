@@ -18,17 +18,15 @@
 package fileutil
 
 import (
-	"io/ioutil"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 )
 
 // CopyDirs copies all directories, subdirectories and files recursively including the empty folders.
 // Source and destination must be full paths.
 func CopyDirs(src, dest string) error {
-	if err := os.MkdirAll(dest, 0777); err != nil {
+	if err := os.MkdirAll(dest, 0o777); err != nil {
 		return err
 	}
 	files, err := readDirs(src)
@@ -47,7 +45,7 @@ func CopyDirs(src, dest string) error {
 
 		// Empty directories are also created.
 		if stat.IsDir() {
-			if err := os.MkdirAll(dp, 0777); err != nil {
+			if err := os.MkdirAll(dp, 0o777); err != nil {
 				return err
 			}
 			continue
@@ -61,12 +59,12 @@ func CopyDirs(src, dest string) error {
 }
 
 func copyFile(src, dest string) error {
-	data, err := ioutil.ReadFile(src)
+	data, err := os.ReadFile(src)
 	if err != nil {
 		return err
 	}
 
-	err = ioutil.WriteFile(dest, data, 0644)
+	err = os.WriteFile(dest, data, 0o666)
 	if err != nil {
 		return err
 	}
@@ -89,21 +87,6 @@ func readDirs(src string) ([]string, error) {
 		return nil, err
 	}
 	return files, nil
-}
-
-// ReadDir returns the filenames in the given directory in sorted order.
-func ReadDir(dirpath string) ([]string, error) {
-	dir, err := os.Open(dirpath)
-	if err != nil {
-		return nil, err
-	}
-	defer dir.Close()
-	names, err := dir.Readdirnames(-1)
-	if err != nil {
-		return nil, err
-	}
-	sort.Strings(names)
-	return names, nil
 }
 
 // Rename safely renames a file.
@@ -141,19 +124,5 @@ func Replace(from, to string) error {
 		}
 	}
 
-	if err := os.Rename(from, to); err != nil {
-		return err
-	}
-
-	// Directory was renamed; sync parent dir to persist rename.
-	pdir, err := OpenDir(filepath.Dir(to))
-	if err != nil {
-		return err
-	}
-
-	if err = pdir.Sync(); err != nil {
-		pdir.Close()
-		return err
-	}
-	return pdir.Close()
+	return Rename(from, to)
 }

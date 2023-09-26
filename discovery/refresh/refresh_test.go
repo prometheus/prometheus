@@ -20,10 +20,15 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/prometheus/prometheus/util/testutil"
 )
+
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
+}
 
 func TestRefresh(t *testing.T) {
 	tg1 := []*targetgroup.Group{
@@ -68,10 +73,10 @@ func TestRefresh(t *testing.T) {
 	go d.Run(ctx, ch)
 
 	tg := <-ch
-	testutil.Equals(t, tg1, tg)
+	require.Equal(t, tg1, tg)
 
 	tg = <-ch
-	testutil.Equals(t, tg2, tg)
+	require.Equal(t, tg2, tg)
 
 	tick := time.NewTicker(2 * interval)
 	defer tick.Stop()

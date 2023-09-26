@@ -11,16 +11,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
+//go:build !windows
 // +build !windows
 
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
 	"testing"
 	"time"
+
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 // As soon as prometheus starts responding to http request it should be able to
@@ -30,14 +34,15 @@ func TestStartupInterrupt(t *testing.T) {
 		t.Skip("skipping test in short mode.")
 	}
 
-	prom := exec.Command(promPath, "-test.main", "--config.file="+promConfig, "--storage.tsdb.path="+promData)
+	port := fmt.Sprintf(":%d", testutil.RandomUnprivilegedPort(t))
+
+	prom := exec.Command(promPath, "-test.main", "--config.file="+promConfig, "--storage.tsdb.path="+t.TempDir(), "--web.listen-address=0.0.0.0"+port)
 	err := prom.Start()
 	if err != nil {
-		t.Errorf("execution error: %v", err)
-		return
+		t.Fatalf("execution error: %v", err)
 	}
 
-	done := make(chan error)
+	done := make(chan error, 1)
 	go func() {
 		done <- prom.Wait()
 	}()
@@ -45,11 +50,13 @@ func TestStartupInterrupt(t *testing.T) {
 	var startedOk bool
 	var stoppedErr error
 
+	url := "http://localhost" + port + "/graph"
+
 Loop:
 	for x := 0; x < 10; x++ {
-		// error=nil means prometheus has started so we can send the interrupt
+		// error=nil means prometheus has started, so we can send the interrupt
 		// signal and wait for the graceful shutdown.
-		if _, err := http.Get("http://localhost:9090/graph"); err == nil {
+		if _, err := http.Get(url); err == nil {
 			startedOk = true
 			prom.Process.Signal(os.Interrupt)
 			select {
@@ -63,12 +70,13 @@ Loop:
 	}
 
 	if !startedOk {
-		t.Errorf("prometheus didn't start in the specified timeout")
-		return
+		t.Fatal("prometheus didn't start in the specified timeout")
 	}
-	if err := prom.Process.Kill(); err == nil {
+	switch err := prom.Process.Kill(); {
+	case err == nil:
 		t.Errorf("prometheus didn't shutdown gracefully after sending the Interrupt signal")
-	} else if stoppedErr != nil && stoppedErr.Error() != "signal: interrupt" { // TODO - find a better way to detect when the process didn't exit as expected!
-		t.Errorf("prometheus exited with an unexpected error:%v", stoppedErr)
+	case stoppedErr != nil && stoppedErr.Error() != "signal: interrupt":
+		// TODO: find a better way to detect when the process didn't exit as expected!
+		t.Errorf("prometheus exited with an unexpected error: %v", stoppedErr)
 	}
 }

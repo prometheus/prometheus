@@ -1,0 +1,24 @@
+# This is a rules file with duplicate expressions
+
+groups:
+  - name: base
+    rules:
+      - record: job:test:count_over_time1m
+        expr: sum without(instance) (count_over_time(test[1m]))
+
+      # A recording rule that doesn't depend on input series.
+      - record: fixed_data
+        expr: 1
+
+      # Subquery with default resolution test.
+      - record: suquery_interval_test
+        expr: count_over_time(up[5m:])
+
+      # Duplicating
+      - record: job:test:count_over_time1m
+        expr: sum without(instance) (count_over_time(test[1m]))
+
+  - name: duplicate
+    rules:
+      - record: job:test:count_over_time1m
+        expr: sum without(instance) (count_over_time(test[1m]))

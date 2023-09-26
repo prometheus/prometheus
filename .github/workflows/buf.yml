@@ -1,0 +1,29 @@
+name: buf.build
+on:
+  push:
+    branches:
+      - main
+permissions:
+  contents: read
+
+jobs:
+  buf:
+    name: lint and publish
+    runs-on: ubuntu-latest
+    if: github.repository_owner == 'prometheus'
+    steps:
+      - uses: actions/checkout@3df4ab11eba7bda6032a0b82a6bb43b11571feac # v4.0.0
+      - uses: bufbuild/buf-setup-action@eb60cd0de4f14f1f57cf346916b8cd69a9e7ed0b # v1.26.1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: bufbuild/buf-lint-action@bd48f53224baaaf0fc55de9a913e7680ca6dbea4 # v1.0.3
+        with:
+          input: 'prompb'
+      - uses: bufbuild/buf-breaking-action@f47418c81c00bfd65394628385593542f64db477 # v1.1.2
+        with:
+          input: 'prompb'
+          against: 'https://github.com/prometheus/prometheus.git#branch=main,ref=HEAD~1,subdir=prompb'
+      - uses: bufbuild/buf-push-action@342fc4cdcf29115a01cf12a2c6dd6aac68dc51e1 # v1.1.1
+        with:
+          input: 'prompb'
+          buf_token: ${{ secrets.BUF_TOKEN }}

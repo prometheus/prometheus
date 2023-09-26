@@ -14,27 +14,40 @@
 package azure
 
 import (
-	"reflect"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2018-10-01/compute"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 )
+
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
+}
 
 func TestMapFromVMWithEmptyTags(t *testing.T) {
 	id := "test"
 	name := "name"
+	size := "size"
 	vmType := "type"
 	location := "westeurope"
+	computerName := "computer_name"
 	networkProfile := compute.NetworkProfile{
 		NetworkInterfaces: &[]compute.NetworkInterfaceReference{},
 	}
 	properties := &compute.VirtualMachineProperties{
+		OsProfile: &compute.OSProfile{
+			ComputerName: &computerName,
+		},
 		StorageProfile: &compute.StorageProfile{
 			OsDisk: &compute.OSDisk{
 				OsType: "Linux",
 			},
 		},
 		NetworkProfile: &networkProfile,
+		HardwareProfile: &compute.HardwareProfile{
+			VMSize: compute.VirtualMachineSizeTypes(size),
+		},
 	}
 
 	testVM := compute.VirtualMachine{
@@ -49,25 +62,27 @@ func TestMapFromVMWithEmptyTags(t *testing.T) {
 	expectedVM := virtualMachine{
 		ID:                id,
 		Name:              name,
+		ComputerName:      computerName,
 		Type:              vmType,
 		Location:          location,
 		OsType:            "Linux",
 		Tags:              map[string]*string{},
 		NetworkInterfaces: []string{},
+		Size:              size,
 	}
 
 	actualVM := mapFromVM(testVM)
 
-	if !reflect.DeepEqual(expectedVM, actualVM) {
-		t.Errorf("Expected %v got %v", expectedVM, actualVM)
-	}
+	require.Equal(t, expectedVM, actualVM)
 }
 
 func TestMapFromVMWithTags(t *testing.T) {
 	id := "test"
 	name := "name"
+	size := "size"
 	vmType := "type"
 	location := "westeurope"
+	computerName := "computer_name"
 	tags := map[string]*string{
 		"prometheus": new(string),
 	}
@@ -75,12 +90,18 @@ func TestMapFromVMWithTags(t *testing.T) {
 		NetworkInterfaces: &[]compute.NetworkInterfaceReference{},
 	}
 	properties := &compute.VirtualMachineProperties{
+		OsProfile: &compute.OSProfile{
+			ComputerName: &computerName,
+		},
 		StorageProfile: &compute.StorageProfile{
 			OsDisk: &compute.OSDisk{
 				OsType: "Linux",
 			},
 		},
 		NetworkProfile: &networkProfile,
+		HardwareProfile: &compute.HardwareProfile{
+			VMSize: compute.VirtualMachineSizeTypes(size),
+		},
 	}
 
 	testVM := compute.VirtualMachine{
@@ -95,35 +116,43 @@ func TestMapFromVMWithTags(t *testing.T) {
 	expectedVM := virtualMachine{
 		ID:                id,
 		Name:              name,
+		ComputerName:      computerName,
 		Type:              vmType,
 		Location:          location,
 		OsType:            "Linux",
 		Tags:              tags,
 		NetworkInterfaces: []string{},
+		Size:              size,
 	}
 
 	actualVM := mapFromVM(testVM)
 
-	if !reflect.DeepEqual(expectedVM, actualVM) {
-		t.Errorf("Expected %v got %v", expectedVM, actualVM)
-	}
+	require.Equal(t, expectedVM, actualVM)
 }
 
 func TestMapFromVMScaleSetVMWithEmptyTags(t *testing.T) {
 	id := "test"
 	name := "name"
+	size := "size"
 	vmType := "type"
 	location := "westeurope"
+	computerName := "computer_name"
 	networkProfile := compute.NetworkProfile{
 		NetworkInterfaces: &[]compute.NetworkInterfaceReference{},
 	}
 	properties := &compute.VirtualMachineScaleSetVMProperties{
+		OsProfile: &compute.OSProfile{
+			ComputerName: &computerName,
+		},
 		StorageProfile: &compute.StorageProfile{
 			OsDisk: &compute.OSDisk{
 				OsType: "Linux",
 			},
 		},
 		NetworkProfile: &networkProfile,
+		HardwareProfile: &compute.HardwareProfile{
+			VMSize: compute.VirtualMachineSizeTypes(size),
+		},
 	}
 
 	testVM := compute.VirtualMachineScaleSetVM{
@@ -139,26 +168,28 @@ func TestMapFromVMScaleSetVMWithEmptyTags(t *testing.T) {
 	expectedVM := virtualMachine{
 		ID:                id,
 		Name:              name,
+		ComputerName:      computerName,
 		Type:              vmType,
 		Location:          location,
 		OsType:            "Linux",
 		Tags:              map[string]*string{},
 		NetworkInterfaces: []string{},
 		ScaleSet:          scaleSet,
+		Size:              size,
 	}
 
 	actualVM := mapFromVMScaleSetVM(testVM, scaleSet)
 
-	if !reflect.DeepEqual(expectedVM, actualVM) {
-		t.Errorf("Expected %v got %v", expectedVM, actualVM)
-	}
+	require.Equal(t, expectedVM, actualVM)
 }
 
 func TestMapFromVMScaleSetVMWithTags(t *testing.T) {
 	id := "test"
 	name := "name"
+	size := "size"
 	vmType := "type"
 	location := "westeurope"
+	computerName := "computer_name"
 	tags := map[string]*string{
 		"prometheus": new(string),
 	}
@@ -166,12 +197,18 @@ func TestMapFromVMScaleSetVMWithTags(t *testing.T) {
 		NetworkInterfaces: &[]compute.NetworkInterfaceReference{},
 	}
 	properties := &compute.VirtualMachineScaleSetVMProperties{
+		OsProfile: &compute.OSProfile{
+			ComputerName: &computerName,
+		},
 		StorageProfile: &compute.StorageProfile{
 			OsDisk: &compute.OSDisk{
 				OsType: "Linux",
 			},
 		},
 		NetworkProfile: &networkProfile,
+		HardwareProfile: &compute.HardwareProfile{
+			VMSize: compute.VirtualMachineSizeTypes(size),
+		},
 	}
 
 	testVM := compute.VirtualMachineScaleSetVM{
@@ -187,17 +224,36 @@ func TestMapFromVMScaleSetVMWithTags(t *testing.T) {
 	expectedVM := virtualMachine{
 		ID:                id,
 		Name:              name,
+		ComputerName:      computerName,
 		Type:              vmType,
 		Location:          location,
 		OsType:            "Linux",
 		Tags:              tags,
 		NetworkInterfaces: []string{},
 		ScaleSet:          scaleSet,
+		Size:              size,
 	}
 
 	actualVM := mapFromVMScaleSetVM(testVM, scaleSet)
 
-	if !reflect.DeepEqual(expectedVM, actualVM) {
-		t.Errorf("Expected %v got %v", expectedVM, actualVM)
+	require.Equal(t, expectedVM, actualVM)
+}
+
+func TestNewAzureResourceFromID(t *testing.T) {
+	for _, tc := range []struct {
+		id       string
+		expected azureResource
+	}{
+		{
+			id:       "/a/b/c/group/d/e/f/name",
+			expected: azureResource{"name", "group"},
+		},
+		{
+			id:       "/a/b/c/group/d/e/f/name/g/h",
+			expected: azureResource{"name", "group"},
+		},
+	} {
+		actual, _ := newAzureResourceFromID(tc.id, nil)
+		require.Equal(t, tc.expected, actual)
 	}
 }

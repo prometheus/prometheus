@@ -15,13 +15,14 @@ package kubernetes
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net"
 	"strconv"
 	"strings"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
-	"github.com/pkg/errors"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/common/model"
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -29,42 +30,78 @@ import (
 	"k8s.io/client-go/util/workqueue"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/prometheus/prometheus/util/strutil"
+)
+
+const nodeIndex = "node"
+
+var (
+	podAddCount    = eventCount.WithLabelValues("pod", "add")
+	podUpdateCount = eventCount.WithLabelValues("pod", "update")
+	podDeleteCount = eventCount.WithLabelValues("pod", "delete")
 )
 
 // Pod discovers new pod targets.
 type Pod struct {
-	informer cache.SharedInformer
-	store    cache.Store
-	logger   log.Logger
-	queue    *workqueue.Type
+	podInf           cache.SharedIndexInformer
+	nodeInf          cache.SharedInformer
+	withNodeMetadata bool
+	store            cache.Store
+	logger           log.Logger
+	queue            *workqueue.Type
 }
 
 // NewPod creates a new pod discovery.
-func NewPod(l log.Logger, pods cache.SharedInformer) *Pod {
+func NewPod(l log.Logger, pods cache.SharedIndexInformer, nodes cache.SharedInformer) *Pod {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
+
 	p := &Pod{
-		informer: pods,
-		store:    pods.GetStore(),
-		logger:   l,
-		queue:    workqueue.NewNamed("pod"),
+		podInf:           pods,
+		nodeInf:          nodes,
+		withNodeMetadata: nodes != nil,
+		store:            pods.GetStore(),
+		logger:           l,
+		queue:            workqueue.NewNamed("pod"),
 	}
-	p.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+	_, err := p.podInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
-			eventCount.WithLabelValues("pod", "add").Inc()
+			podAddCount.Inc()
 			p.enqueue(o)
 		},
 		DeleteFunc: func(o interface{}) {
-			eventCount.WithLabelValues("pod", "delete").Inc()
+			podDeleteCount.Inc()
 			p.enqueue(o)
 		},
 		UpdateFunc: func(_, o interface{}) {
-			eventCount.WithLabelValues("pod", "update").Inc()
+			podUpdateCount.Inc()
 			p.enqueue(o)
 		},
 	})
+	if err != nil {
+		level.Error(l).Log("msg", "Error adding pods event handler.", "err", err)
+	}
+
+	if p.withNodeMetadata {
+		_, err = p.nodeInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc: func(o interface{}) {
+				node := o.(*apiv1.Node)
+				p.enqueuePodsForNode(node.Name)
+			},
+			UpdateFunc: func(_, o interface{}) {
+				node := o.(*apiv1.Node)
+				p.enqueuePodsForNode(node.Name)
+			},
+			DeleteFunc: func(o interface{}) {
+				node := o.(*apiv1.Node)
+				p.enqueuePodsForNode(node.Name)
+			},
+		})
+		if err != nil {
+			level.Error(l).Log("msg", "Error adding pods event handler.", "err", err)
+		}
+	}
+
 	return p
 }
 
@@ -81,15 +118,20 @@ func (p *Pod) enqueue(obj interface{}) {
 func (p *Pod) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	defer p.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(ctx.Done(), p.informer.HasSynced) {
-		if ctx.Err() != context.Canceled {
+	cacheSyncs := []cache.InformerSynced{p.podInf.HasSynced}
+	if p.withNodeMetadata {
+		cacheSyncs = append(cacheSyncs, p.nodeInf.HasSynced)
+	}
+
+	if !cache.WaitForCacheSync(ctx.Done(), cacheSyncs...) {
+		if !errors.Is(ctx.Err(), context.Canceled) {
 			level.Error(p.logger).Log("msg", "pod informer unable to sync cache")
 		}
 		return
 	}
 
 	go func() {
-		for p.process(ctx, ch) {
+		for p.process(ctx, ch) { // nolint:revive
 		}
 	}()
 
@@ -115,15 +157,15 @@ func (p *Pod) process(ctx context.Context, ch chan<- []*targetgroup.Group) bool 
 		return true
 	}
 	if !exists {
-		send(ctx, p.logger, RolePod, ch, &targetgroup.Group{Source: podSourceFromNamespaceAndName(namespace, name)})
+		send(ctx, ch, &targetgroup.Group{Source: podSourceFromNamespaceAndName(namespace, name)})
 		return true
 	}
-	eps, err := convertToPod(o)
+	pod, err := convertToPod(o)
 	if err != nil {
 		level.Error(p.logger).Log("msg", "converting to Pod object failed", "err", err)
 		return true
 	}
-	send(ctx, p.logger, RolePod, ch, p.buildPod(eps))
+	send(ctx, ch, p.buildPod(pod))
 	return true
 }
 
@@ -133,23 +175,20 @@ func convertToPod(o interface{}) (*apiv1.Pod, error) {
 		return pod, nil
 	}
 
-	return nil, errors.Errorf("received unexpected object: %v", o)
+	return nil, fmt.Errorf("received unexpected object: %v", o)
 }
 
 const (
-	podNameLabel                  = metaLabelPrefix + "pod_name"
 	podIPLabel                    = metaLabelPrefix + "pod_ip"
 	podContainerNameLabel         = metaLabelPrefix + "pod_container_name"
+	podContainerIDLabel           = metaLabelPrefix + "pod_container_id"
+	podContainerImageLabel        = metaLabelPrefix + "pod_container_image"
 	podContainerPortNameLabel     = metaLabelPrefix + "pod_container_port_name"
 	podContainerPortNumberLabel   = metaLabelPrefix + "pod_container_port_number"
 	podContainerPortProtocolLabel = metaLabelPrefix + "pod_container_port_protocol"
 	podContainerIsInit            = metaLabelPrefix + "pod_container_init"
 	podReadyLabel                 = metaLabelPrefix + "pod_ready"
 	podPhaseLabel                 = metaLabelPrefix + "pod_phase"
-	podLabelPrefix                = metaLabelPrefix + "pod_label_"
-	podLabelPresentPrefix         = metaLabelPrefix + "pod_labelpresent_"
-	podAnnotationPrefix           = metaLabelPrefix + "pod_annotation_"
-	podAnnotationPresentPrefix    = metaLabelPrefix + "pod_annotationpresent_"
 	podNodeNameLabel              = metaLabelPrefix + "pod_node_name"
 	podHostIPLabel                = metaLabelPrefix + "pod_host_ip"
 	podUID                        = metaLabelPrefix + "pod_uid"
@@ -170,7 +209,6 @@ func GetControllerOf(controllee metav1.Object) *metav1.OwnerReference {
 
 func podLabels(pod *apiv1.Pod) model.LabelSet {
 	ls := model.LabelSet{
-		podNameLabel:     lv(pod.ObjectMeta.Name),
 		podIPLabel:       lv(pod.Status.PodIP),
 		podReadyLabel:    podReady(pod),
 		podPhaseLabel:    lv(string(pod.Status.Phase)),
@@ -178,6 +216,8 @@ func podLabels(pod *apiv1.Pod) model.LabelSet {
 		podHostIPLabel:   lv(pod.Status.HostIP),
 		podUID:           lv(string(pod.ObjectMeta.UID)),
 	}
+
+	addObjectMetaLabels(ls, pod.ObjectMeta, RolePod)
 
 	createdBy := GetControllerOf(pod)
 	if createdBy != nil {
@@ -189,19 +229,25 @@ func podLabels(pod *apiv1.Pod) model.LabelSet {
 		}
 	}
 
-	for k, v := range pod.Labels {
-		ln := strutil.SanitizeLabelName(k)
-		ls[model.LabelName(podLabelPrefix+ln)] = lv(v)
-		ls[model.LabelName(podLabelPresentPrefix+ln)] = presentValue
-	}
-
-	for k, v := range pod.Annotations {
-		ln := strutil.SanitizeLabelName(k)
-		ls[model.LabelName(podAnnotationPrefix+ln)] = lv(v)
-		ls[model.LabelName(podAnnotationPresentPrefix+ln)] = presentValue
-	}
-
 	return ls
+}
+
+func (p *Pod) findPodContainerStatus(statuses *[]apiv1.ContainerStatus, containerName string) (*apiv1.ContainerStatus, error) {
+	for _, s := range *statuses {
+		if s.Name == containerName {
+			return &s, nil
+		}
+	}
+	return nil, fmt.Errorf("cannot find container with name %v", containerName)
+}
+
+func (p *Pod) findPodContainerID(statuses *[]apiv1.ContainerStatus, containerName string) string {
+	cStatus, err := p.findPodContainerStatus(statuses, containerName)
+	if err != nil {
+		level.Debug(p.logger).Log("msg", "cannot find container ID", "err", err)
+		return ""
+	}
+	return cStatus.ContainerID
 }
 
 func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
@@ -215,10 +261,19 @@ func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
 
 	tg.Labels = podLabels(pod)
 	tg.Labels[namespaceLabel] = lv(pod.Namespace)
+	if p.withNodeMetadata {
+		tg.Labels = addNodeLabels(tg.Labels, p.nodeInf, p.logger, &pod.Spec.NodeName)
+	}
 
 	containers := append(pod.Spec.Containers, pod.Spec.InitContainers...)
 	for i, c := range containers {
 		isInit := i >= len(pod.Spec.Containers)
+
+		cStatuses := &pod.Status.ContainerStatuses
+		if isInit {
+			cStatuses = &pod.Status.InitContainerStatuses
+		}
+		cID := p.findPodContainerID(cStatuses, c.Name)
 
 		// If no ports are defined for the container, create an anonymous
 		// target per container.
@@ -226,9 +281,11 @@ func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
 			// We don't have a port so we just set the address label to the pod IP.
 			// The user has to add a port manually.
 			tg.Targets = append(tg.Targets, model.LabelSet{
-				model.AddressLabel:    lv(pod.Status.PodIP),
-				podContainerNameLabel: lv(c.Name),
-				podContainerIsInit:    lv(strconv.FormatBool(isInit)),
+				model.AddressLabel:     lv(pod.Status.PodIP),
+				podContainerNameLabel:  lv(c.Name),
+				podContainerIDLabel:    lv(cID),
+				podContainerImageLabel: lv(c.Image),
+				podContainerIsInit:     lv(strconv.FormatBool(isInit)),
 			})
 			continue
 		}
@@ -240,6 +297,8 @@ func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
 			tg.Targets = append(tg.Targets, model.LabelSet{
 				model.AddressLabel:            lv(addr),
 				podContainerNameLabel:         lv(c.Name),
+				podContainerIDLabel:           lv(cID),
+				podContainerImageLabel:        lv(c.Image),
 				podContainerPortNumberLabel:   lv(ports),
 				podContainerPortNameLabel:     lv(port.Name),
 				podContainerPortProtocolLabel: lv(string(port.Protocol)),
@@ -249,6 +308,18 @@ func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
 	}
 
 	return tg
+}
+
+func (p *Pod) enqueuePodsForNode(nodeName string) {
+	pods, err := p.podInf.GetIndexer().ByIndex(nodeIndex, nodeName)
+	if err != nil {
+		level.Error(p.logger).Log("msg", "Error getting pods for node", "node", nodeName, "err", err)
+		return
+	}
+
+	for _, pod := range pods {
+		p.enqueue(pod.(*apiv1.Pod))
+	}
 }
 
 func podSource(pod *apiv1.Pod) string {

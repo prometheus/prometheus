@@ -11,6 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build !builtinassets
 // +build !builtinassets
 
 package ui
@@ -19,6 +20,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 
 	"github.com/shurcooL/httpfs/filter"
@@ -26,13 +28,13 @@ import (
 )
 
 // Assets contains the project's assets.
-var Assets http.FileSystem = func() http.FileSystem {
+var Assets = func() http.FileSystem {
 	wd, err := os.Getwd()
 	if err != nil {
 		panic(err)
 	}
 	var assetsPrefix string
-	switch path.Base(wd) {
+	switch filepath.Base(wd) {
 	case "prometheus":
 		// When running Prometheus (without built-in assets) from the repo root.
 		assetsPrefix = "./web/ui"
@@ -55,15 +57,7 @@ var Assets http.FileSystem = func() http.FileSystem {
 		},
 	)
 
-	templates := filter.Keep(
-		http.Dir(path.Join(assetsPrefix, "templates")),
-		func(path string, fi os.FileInfo) bool {
-			return fi.IsDir() || strings.HasSuffix(path, ".html")
-		},
-	)
-
 	return union.New(map[string]http.FileSystem{
-		"/templates": templates,
-		"/static":    static,
+		"/static": static,
 	})
 }()

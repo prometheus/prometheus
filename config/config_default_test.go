@@ -11,6 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build !windows
 // +build !windows
 
 package config
@@ -24,5 +25,4 @@ var ruleFilesExpectedConf = &Config{
 		"testdata/rules/second.rules",
 		"/absolute/third.rules",
 	},
-	original: "",
 }

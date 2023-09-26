@@ -18,35 +18,35 @@ import (
 	"testing"
 
 	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
-
-	"github.com/prometheus/prometheus/util/testutil"
 )
 
-func TestTargetGroupStrictJsonUnmarshal(t *testing.T) {
+func TestTargetGroupStrictJSONUnmarshal(t *testing.T) {
 	tests := []struct {
 		json          string
 		expectedReply error
 		expectedGroup Group
 	}{
 		{
-			json: `	{"labels": {},"targets": []}`,
+			json:          `{"labels": {},"targets": []}`,
 			expectedReply: nil,
 			expectedGroup: Group{Targets: []model.LabelSet{}, Labels: model.LabelSet{}},
 		},
 		{
-			json: `	{"labels": {"my":"label"},"targets": ["localhost:9090","localhost:9091"]}`,
+			json:          `{"labels": {"my":"label"},"targets": ["localhost:9090","localhost:9091"]}`,
 			expectedReply: nil,
 			expectedGroup: Group{Targets: []model.LabelSet{
-				model.LabelSet{"__address__": "localhost:9090"},
-				model.LabelSet{"__address__": "localhost:9091"}}, Labels: model.LabelSet{"my": "label"}},
+				{"__address__": "localhost:9090"},
+				{"__address__": "localhost:9091"},
+			}, Labels: model.LabelSet{"my": "label"}},
 		},
 		{
-			json: `	{"label": {},"targets": []}`,
+			json:          `{"label": {},"targets": []}`,
 			expectedReply: errors.New("json: unknown field \"label\""),
 		},
 		{
-			json: `	{"labels": {},"target": []}`,
+			json:          `{"labels": {},"target": []}`,
 			expectedReply: errors.New("json: unknown field \"target\""),
 		},
 	}
@@ -54,10 +54,42 @@ func TestTargetGroupStrictJsonUnmarshal(t *testing.T) {
 	for _, test := range tests {
 		tg := Group{}
 		actual := tg.UnmarshalJSON([]byte(test.json))
-		testutil.Equals(t, test.expectedReply, actual)
-		testutil.Equals(t, test.expectedGroup, tg)
+		require.Equal(t, test.expectedReply, actual)
+		require.Equal(t, test.expectedGroup, tg)
+	}
+}
+
+func TestTargetGroupJSONMarshal(t *testing.T) {
+	tests := []struct {
+		expectedJSON string
+		expectedErr  error
+		group        Group
+	}{
+		{
+			// labels should be omitted if empty.
+			group:        Group{},
+			expectedJSON: `{"targets": []}`,
+			expectedErr:  nil,
+		},
+		{
+			// targets only exposes addresses.
+			group: Group{
+				Targets: []model.LabelSet{
+					{"__address__": "localhost:9090"},
+					{"__address__": "localhost:9091"},
+				},
+				Labels: model.LabelSet{"foo": "bar", "bar": "baz"},
+			},
+			expectedJSON: `{"targets": ["localhost:9090", "localhost:9091"], "labels": {"bar": "baz", "foo": "bar"}}`,
+			expectedErr:  nil,
+		},
 	}
 
+	for _, test := range tests {
+		actual, err := test.group.MarshalJSON()
+		require.Equal(t, test.expectedErr, err)
+		require.JSONEq(t, test.expectedJSON, string(actual))
+	}
 }
 
 func TestTargetGroupYamlMarshal(t *testing.T) {
@@ -82,10 +114,13 @@ func TestTargetGroupYamlMarshal(t *testing.T) {
 		},
 		{
 			// targets only exposes addresses.
-			group: Group{Targets: []model.LabelSet{
-				model.LabelSet{"__address__": "localhost:9090"},
-				model.LabelSet{"__address__": "localhost:9091"}},
-				Labels: model.LabelSet{"foo": "bar", "bar": "baz"}},
+			group: Group{
+				Targets: []model.LabelSet{
+					{"__address__": "localhost:9090"},
+					{"__address__": "localhost:9091"},
+				},
+				Labels: model.LabelSet{"foo": "bar", "bar": "baz"},
+			},
 			expectedYaml: "targets:\n- localhost:9090\n- localhost:9091\nlabels:\n  bar: baz\n  foo: bar\n",
 			expectedErr:  nil,
 		},
@@ -93,8 +128,8 @@ func TestTargetGroupYamlMarshal(t *testing.T) {
 
 	for _, test := range tests {
 		actual, err := test.group.MarshalYAML()
-		testutil.Equals(t, test.expectedErr, err)
-		testutil.Equals(t, test.expectedYaml, string(marshal(actual)))
+		require.Equal(t, test.expectedErr, err)
+		require.Equal(t, test.expectedYaml, string(marshal(actual)))
 	}
 }
 
@@ -120,8 +155,9 @@ func TestTargetGroupYamlUnmarshal(t *testing.T) {
 			yaml:          "labels:\n  my:  label\ntargets:\n  ['localhost:9090', 'localhost:9191']",
 			expectedReply: nil,
 			expectedGroup: Group{Targets: []model.LabelSet{
-				model.LabelSet{"__address__": "localhost:9090"},
-				model.LabelSet{"__address__": "localhost:9191"}}, Labels: model.LabelSet{"my": "label"}},
+				{"__address__": "localhost:9090"},
+				{"__address__": "localhost:9191"},
+			}, Labels: model.LabelSet{"my": "label"}},
 		},
 		{
 			// incorrect syntax.
@@ -133,25 +169,27 @@ func TestTargetGroupYamlUnmarshal(t *testing.T) {
 	for _, test := range tests {
 		tg := Group{}
 		actual := tg.UnmarshalYAML(unmarshal([]byte(test.yaml)))
-		testutil.Equals(t, test.expectedReply, actual)
-		testutil.Equals(t, test.expectedGroup, tg)
+		require.Equal(t, test.expectedReply, actual)
+		require.Equal(t, test.expectedGroup, tg)
 	}
-
 }
 
 func TestString(t *testing.T) {
 	// String() should return only the source, regardless of other attributes.
-	group1 :=
-		Group{Targets: []model.LabelSet{
-			model.LabelSet{"__address__": "localhost:9090"},
-			model.LabelSet{"__address__": "localhost:9091"}},
-			Source: "<source>",
-			Labels: model.LabelSet{"foo": "bar", "bar": "baz"}}
-	group2 :=
-		Group{Targets: []model.LabelSet{},
-			Source: "<source>",
-			Labels: model.LabelSet{}}
-	testutil.Equals(t, "<source>", group1.String())
-	testutil.Equals(t, "<source>", group2.String())
-	testutil.Equals(t, group1.String(), group2.String())
+	group1 := Group{
+		Targets: []model.LabelSet{
+			{"__address__": "localhost:9090"},
+			{"__address__": "localhost:9091"},
+		},
+		Source: "<source>",
+		Labels: model.LabelSet{"foo": "bar", "bar": "baz"},
+	}
+	group2 := Group{
+		Targets: []model.LabelSet{},
+		Source:  "<source>",
+		Labels:  model.LabelSet{},
+	}
+	require.Equal(t, "<source>", group1.String())
+	require.Equal(t, "<source>", group2.String())
+	require.Equal(t, group1.String(), group2.String())
 }

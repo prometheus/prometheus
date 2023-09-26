@@ -1,0 +1,19 @@
+{
+  "status": "success",
+  "data": [
+    {
+      "__name__": "alertmanager_alerts",
+      "env": "demo",
+      "instance": "demo.do.prometheus.io:9093",
+      "job": "alertmanager",
+      "state": "active"
+    },
+    {
+      "__name__": "alertmanager_alerts",
+      "env": "demo",
+      "instance": "demo.do.prometheus.io:9093",
+      "job": "alertmanager",
+      "state": "suppressed"
+    }
+  ]
+}

@@ -1,5 +1,3 @@
-## master / unreleased
-
 ## 0.10.0
 
  - [FEATURE] Added `DBReadOnly` to allow opening a database in read only mode.
@@ -33,7 +31,7 @@
  - [BUGFIX] Don't panic and recover nicely when running out of disk space.
  - [BUGFIX] Correctly handle empty labels.
  - [BUGFIX] Don't crash on an unknown tombstone ref.
- - [ENHANCEMENT] Re-add FromData function to create a chunk from bytes. It is used by Cortex and Thanos.
+ - [ENHANCEMENT] Re-add `FromData` function to create a chunk from bytes. It is used by Cortex and Thanos.
  - [ENHANCEMENT] Simplify mergedPostings.Seek.
  - [FEATURE]  Added `currentSegment` metric for the current WAL segment it is being written to.
 

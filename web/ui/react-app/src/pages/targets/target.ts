@@ -2,16 +2,19 @@ export interface Labels {
   [key: string]: string;
 }
 
-export interface Target {
+export type Target = {
   discoveredLabels: Labels;
   labels: Labels;
   scrapePool: string;
   scrapeUrl: string;
+  globalUrl: string;
   lastError: string;
   lastScrape: string;
   lastScrapeDuration: number;
   health: string;
-}
+  scrapeInterval: string;
+  scrapeTimeout: string;
+};
 
 export interface DroppedTarget {
   discoveredLabels: Labels;
@@ -49,5 +52,22 @@ export const getColor = (health: string): string => {
       return 'danger';
     default:
       return 'warning';
+  }
+};
+
+export interface TargetHealthFilters {
+  healthy: boolean;
+  unhealthy: boolean;
+  unknown: boolean;
+}
+
+export const filterTargetsByHealth = (health: string, filters: TargetHealthFilters): boolean => {
+  switch (health.toLowerCase()) {
+    case 'up':
+      return filters.healthy;
+    case 'down':
+      return filters.unhealthy;
+    default:
+      return filters.unknown;
   }
 };

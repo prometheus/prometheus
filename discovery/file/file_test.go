@@ -17,7 +17,6 @@ import (
 	"context"
 	"encoding/json"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sort"
@@ -26,10 +25,15 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/prometheus/prometheus/util/testutil"
 )
+
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
+}
 
 const defaultWait = time.Second
 
@@ -48,12 +52,9 @@ type testRunner struct {
 func newTestRunner(t *testing.T) *testRunner {
 	t.Helper()
 
-	tmpDir, err := ioutil.TempDir("", "prometheus-file-sd")
-	testutil.Ok(t, err)
-
 	return &testRunner{
 		T:       t,
-		dir:     tmpDir,
+		dir:     t.TempDir(),
 		ch:      make(chan []*targetgroup.Group),
 		done:    make(chan struct{}),
 		stopped: make(chan struct{}),
@@ -68,40 +69,40 @@ func (t *testRunner) copyFile(src string) string {
 }
 
 // copyFileTo atomically copies a file with a different name to the runner's directory.
-func (t *testRunner) copyFileTo(src string, name string) string {
+func (t *testRunner) copyFileTo(src, name string) string {
 	t.Helper()
 
-	newf, err := ioutil.TempFile(t.dir, "")
-	testutil.Ok(t, err)
+	newf, err := os.CreateTemp(t.dir, "")
+	require.NoError(t, err)
 
 	f, err := os.Open(src)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	_, err = io.Copy(newf, f)
-	testutil.Ok(t, err)
-	testutil.Ok(t, f.Close())
-	testutil.Ok(t, newf.Close())
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+	require.NoError(t, newf.Close())
 
 	dst := filepath.Join(t.dir, name)
 	err = os.Rename(newf.Name(), dst)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	return dst
 }
 
 // writeString writes atomically a string to a file.
-func (t *testRunner) writeString(file string, data string) {
+func (t *testRunner) writeString(file, data string) {
 	t.Helper()
 
-	newf, err := ioutil.TempFile(t.dir, "")
-	testutil.Ok(t, err)
+	newf, err := os.CreateTemp(t.dir, "")
+	require.NoError(t, err)
 
 	_, err = newf.WriteString(data)
-	testutil.Ok(t, err)
-	testutil.Ok(t, newf.Close())
+	require.NoError(t, err)
+	require.NoError(t, newf.Close())
 
 	err = os.Rename(newf.Name(), file)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 }
 
 // appendString appends a string to a file.
@@ -109,11 +110,11 @@ func (t *testRunner) appendString(file, data string) {
 	t.Helper()
 
 	f, err := os.OpenFile(file, os.O_WRONLY|os.O_APPEND, 0)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 	defer f.Close()
 
 	_, err = f.WriteString(data)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 }
 
 // run starts the file SD and the loop receiving target groups updates.
@@ -225,13 +226,13 @@ func (t *testRunner) requireTargetGroups(expected, got []*targetgroup.Group) {
 		panic(err)
 	}
 
-	testutil.Equals(t, string(b1), string(b2))
+	require.Equal(t, string(b1), string(b2))
 }
 
 // validTg() maps to fixtures/valid.{json,yml}.
 func validTg(file string) []*targetgroup.Group {
 	return []*targetgroup.Group{
-		&targetgroup.Group{
+		{
 			Targets: []model.LabelSet{
 				{
 					model.AddressLabel: model.LabelValue("localhost:9090"),
@@ -246,7 +247,7 @@ func validTg(file string) []*targetgroup.Group {
 			},
 			Source: fileSource(file, 0),
 		},
-		&targetgroup.Group{
+		{
 			Targets: []model.LabelSet{
 				{
 					model.AddressLabel: model.LabelValue("my.domain"),
@@ -263,7 +264,7 @@ func validTg(file string) []*targetgroup.Group {
 // valid2Tg() maps to fixtures/valid2.{json,yml}.
 func valid2Tg(file string) []*targetgroup.Group {
 	return []*targetgroup.Group{
-		&targetgroup.Group{
+		{
 			Targets: []model.LabelSet{
 				{
 					model.AddressLabel: model.LabelValue("my.domain"),
@@ -274,7 +275,7 @@ func valid2Tg(file string) []*targetgroup.Group {
 			},
 			Source: fileSource(file, 0),
 		},
-		&targetgroup.Group{
+		{
 			Targets: []model.LabelSet{
 				{
 					model.AddressLabel: model.LabelValue("localhost:9090"),
@@ -287,7 +288,7 @@ func valid2Tg(file string) []*targetgroup.Group {
 			},
 			Source: fileSource(file, 1),
 		},
-		&targetgroup.Group{
+		{
 			Targets: []model.LabelSet{
 				{
 					model.AddressLabel: model.LabelValue("example.org:443"),
@@ -307,6 +308,7 @@ func TestInitialUpdate(t *testing.T) {
 		"fixtures/valid.yml",
 		"fixtures/valid.json",
 	} {
+		tc := tc
 		t.Run(tc, func(t *testing.T) {
 			t.Parallel()
 
@@ -431,7 +433,7 @@ func TestUpdateFileWithPartialWrites(t *testing.T) {
 	runner.appendString(sdFile, `: ["localhost:9091"]`)
 	runner.requireUpdate(ref,
 		[]*targetgroup.Group{
-			&targetgroup.Group{
+			{
 				Targets: []model.LabelSet{
 					{
 						model.AddressLabel: model.LabelValue("localhost:9091"),
@@ -442,7 +444,7 @@ func TestUpdateFileWithPartialWrites(t *testing.T) {
 				},
 				Source: fileSource(sdFile, 0),
 			},
-			&targetgroup.Group{
+			{
 				Source: fileSource(sdFile, 1),
 			},
 		},
@@ -463,15 +465,16 @@ func TestRemoveFile(t *testing.T) {
 
 	// Verify that we receive the update about the target groups being removed.
 	ref := runner.lastReceive()
-	testutil.Ok(t, os.Remove(sdFile))
+	require.NoError(t, os.Remove(sdFile))
 	runner.requireUpdate(
 		ref,
 		[]*targetgroup.Group{
-			&targetgroup.Group{
+			{
 				Source: fileSource(sdFile, 0),
 			},
-			&targetgroup.Group{
+			{
 				Source: fileSource(sdFile, 1),
-			}},
+			},
+		},
 	)
 }

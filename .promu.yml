@@ -1,7 +1,7 @@
 go:
     # Whenever the Go version is updated here,
     # .circle/config.yml should also be updated.
-    version: 1.13
+    version: 1.21
 repository:
     path: github.com/prometheus/prometheus
 build:
@@ -10,9 +10,15 @@ build:
           path: ./cmd/prometheus
         - name: promtool
           path: ./cmd/promtool
-        - name: tsdb
-          path: ./tsdb/cmd/tsdb
-    flags: -mod=vendor -a -tags netgo,builtinassets
+    tags:
+        all:
+            - netgo
+            - builtinassets
+            - stringlabels
+        windows:
+            - builtinassets
+            - stringlabels
+    flags: -a
     ldflags: |
         -X github.com/prometheus/common/version.Version={{.Version}}
         -X github.com/prometheus/common/version.Revision={{.Revision}}
@@ -20,6 +26,8 @@ build:
         -X github.com/prometheus/common/version.BuildUser={{user}}@{{host}}
         -X github.com/prometheus/common/version.BuildDate={{date "20060102-15:04:05"}}
 tarball:
+    # Whenever there are new files to include in the tarball,
+    # remember to make sure the new files will be generated after `make build`.
     files:
         - consoles
         - console_libraries
@@ -29,26 +37,10 @@ tarball:
         - npm_licenses.tar.bz2
 crossbuild:
     platforms:
-        - linux/amd64
-        - linux/386
-        - darwin/amd64
-        - darwin/386
-        - windows/amd64
-        - windows/386
-        - freebsd/amd64
-        - freebsd/386
-        - openbsd/amd64
-        - openbsd/386
-        - netbsd/amd64
-        - netbsd/386
-        - dragonfly/amd64
-        - linux/arm
-        - linux/arm64
-        - freebsd/arm
-        - openbsd/arm
-        - linux/mips64
-        - linux/mips64le
-        - netbsd/arm
-        - linux/ppc64
-        - linux/ppc64le
-        - linux/s390x
+        - darwin
+        - dragonfly
+        - freebsd
+        - illumos
+        - linux
+        - netbsd
+        - windows

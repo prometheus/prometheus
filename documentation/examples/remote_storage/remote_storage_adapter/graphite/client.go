@@ -21,8 +21,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/common/model"
 )
 
@@ -37,7 +37,7 @@ type Client struct {
 }
 
 // NewClient creates a new Client.
-func NewClient(logger log.Logger, address string, transport string, timeout time.Duration, prefix string) *Client {
+func NewClient(logger log.Logger, address, transport string, timeout time.Duration, prefix string) *Client {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -93,7 +93,7 @@ func (c *Client) Write(samples model.Samples) error {
 		t := float64(s.Timestamp.UnixNano()) / 1e9
 		v := float64(s.Value)
 		if math.IsNaN(v) || math.IsInf(v, 0) {
-			level.Debug(c.logger).Log("msg", "cannot send value to Graphite, skipping sample", "value", v, "sample", s)
+			level.Debug(c.logger).Log("msg", "Cannot send value to Graphite, skipping sample", "value", v, "sample", s)
 			continue
 		}
 		fmt.Fprintf(&buf, "%s %f %f\n", k, v, t)

@@ -16,19 +16,14 @@ package openstack
 import (
 	"context"
 	"fmt"
-	"strings"
 	"testing"
 
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/stretchr/testify/require"
 )
 
 type OpenstackSDInstanceTestSuite struct {
 	Mock *SDMock
-}
-
-func (s *OpenstackSDInstanceTestSuite) TearDownSuite() {
-	s.Mock.ShutdownServer()
 }
 
 func (s *OpenstackSDInstanceTestSuite) SetupTest(t *testing.T) {
@@ -56,29 +51,29 @@ func (s *OpenstackSDInstanceTestSuite) openstackAuthSuccess() (refresher, error)
 }
 
 func TestOpenstackSDInstanceRefresh(t *testing.T) {
-
 	mock := &OpenstackSDInstanceTestSuite{}
 	mock.SetupTest(t)
 
 	instance, err := mock.openstackAuthSuccess()
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	ctx := context.Background()
 	tgs, err := instance.refresh(ctx)
 
-	testutil.Ok(t, err)
-	testutil.Equals(t, 1, len(tgs))
+	require.NoError(t, err)
+	require.Equal(t, 1, len(tgs))
 
 	tg := tgs[0]
-	testutil.Assert(t, tg != nil, "")
-	testutil.Assert(t, tg.Targets != nil, "")
-	testutil.Equals(t, 4, len(tg.Targets))
+	require.NotNil(t, tg)
+	require.NotNil(t, tg.Targets)
+	require.Equal(t, 4, len(tg.Targets))
 
 	for i, lbls := range []model.LabelSet{
 		{
 			"__address__":                      model.LabelValue("10.0.0.32:0"),
 			"__meta_openstack_instance_flavor": model.LabelValue("1"),
 			"__meta_openstack_instance_id":     model.LabelValue("ef079b0c-e610-4dfb-b1aa-b49f07ac48e5"),
+			"__meta_openstack_instance_image":  model.LabelValue("f90f6034-2570-4974-8351-6b49732ef2eb"),
 			"__meta_openstack_instance_status": model.LabelValue("ACTIVE"),
 			"__meta_openstack_instance_name":   model.LabelValue("herp"),
 			"__meta_openstack_private_ip":      model.LabelValue("10.0.0.32"),
@@ -91,6 +86,7 @@ func TestOpenstackSDInstanceRefresh(t *testing.T) {
 			"__address__":                      model.LabelValue("10.0.0.31:0"),
 			"__meta_openstack_instance_flavor": model.LabelValue("1"),
 			"__meta_openstack_instance_id":     model.LabelValue("9e5476bd-a4ec-4653-93d6-72c93aa682ba"),
+			"__meta_openstack_instance_image":  model.LabelValue("f90f6034-2570-4974-8351-6b49732ef2eb"),
 			"__meta_openstack_instance_status": model.LabelValue("ACTIVE"),
 			"__meta_openstack_instance_name":   model.LabelValue("derp"),
 			"__meta_openstack_private_ip":      model.LabelValue("10.0.0.31"),
@@ -125,11 +121,9 @@ func TestOpenstackSDInstanceRefresh(t *testing.T) {
 		},
 	} {
 		t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
-			testutil.Equals(t, lbls, tg.Targets[i])
+			require.Equal(t, lbls, tg.Targets[i])
 		})
 	}
-
-	mock.TearDownSuite()
 }
 
 func TestOpenstackSDInstanceRefreshWithDoneContext(t *testing.T) {
@@ -140,8 +134,6 @@ func TestOpenstackSDInstanceRefreshWithDoneContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	_, err := hypervisor.refresh(ctx)
-	testutil.NotOk(t, err)
-	testutil.Assert(t, strings.Contains(err.Error(), context.Canceled.Error()), "%q doesn't contain %q", err, context.Canceled)
-
-	mock.TearDownSuite()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), context.Canceled.Error(), "%q doesn't contain %q", err, context.Canceled)
 }

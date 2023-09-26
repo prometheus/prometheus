@@ -1,0 +1,5 @@
+alerting:
+  alert_relabel_configs:
+    - action: uppercase
+      source_labels: [instance]
+      target_label: instance

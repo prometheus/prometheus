@@ -1,0 +1,24 @@
+# An example scrape configuration for running Prometheus with
+# Vultr.
+
+scrape_configs:
+  # Make Prometheus scrape itself for metrics.
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # Discover Node Exporter instances to scrape.
+  - job_name: "node"
+    vultr_sd_configs:
+      - authorization:
+          credentials: "<replace with a Personal Access Token>"
+    relabel_configs:
+      # Only scrape targets that have a tag 'monitoring'.
+      - source_labels: [__meta_vultr_instance_tags]
+        regex: ".*,monitoring,.*"
+        action: keep
+
+      # Use the public IPv6 address and port 9100 to scrape the target.
+      - source_labels: [__meta_vultr_instance_main_ipv6]
+        target_label: __address__
+        replacement: "[$1]:9100"

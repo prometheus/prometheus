@@ -3,13 +3,11 @@ import moment from 'moment-timezone';
 import { PanelOptions, PanelType, PanelDefaultOptions } from '../pages/graph/Panel';
 import { PanelMeta } from '../pages/graph/PanelList';
 
-export const generateID = () => {
-  return `_${Math.random()
-    .toString(36)
-    .substr(2, 9)}`;
+export const generateID = (): string => {
+  return `_${Math.random().toString(36).substr(2, 9)}`;
 };
 
-export const byEmptyString = (p: string) => p.length > 0;
+export const byEmptyString = (p: string): boolean => p.length > 0;
 
 export const isPresent = <T>(obj: T): obj is NonNullable<T> => obj !== null && obj !== undefined;
 
@@ -23,12 +21,12 @@ export const escapeHTML = (str: string): string => {
     '/': '&#x2F;',
   };
 
-  return String(str).replace(/[&<>"'/]/g, function(s) {
+  return String(str).replace(/[&<>"'/]/g, function (s) {
     return entityMap[s];
   });
 };
 
-export const metricToSeriesName = (labels: { [key: string]: string }) => {
+export const metricToSeriesName = (labels: { [key: string]: string }): string => {
   if (labels === null) {
     return 'scalar';
   }
@@ -43,34 +41,75 @@ export const metricToSeriesName = (labels: { [key: string]: string }) => {
   return tsName;
 };
 
-const rangeUnits: { [unit: string]: number } = {
-  y: 60 * 60 * 24 * 365,
-  w: 60 * 60 * 24 * 7,
-  d: 60 * 60 * 24,
-  h: 60 * 60,
-  m: 60,
-  s: 1,
-};
-
-export function parseRange(rangeText: string): number | null {
-  const rangeRE = new RegExp('^([0-9]+)([ywdhms]+)$');
-  const matches = rangeText.match(rangeRE);
-  if (!matches || matches.length !== 3) {
+export const parseDuration = (durationStr: string): number | null => {
+  if (durationStr === '') {
     return null;
   }
-  const value = parseInt(matches[1]);
-  const unit = matches[2];
-  return value * rangeUnits[unit];
-}
-
-export function formatRange(range: number): string {
-  for (const unit of Object.keys(rangeUnits)) {
-    if (range % rangeUnits[unit] === 0) {
-      return range / rangeUnits[unit] + unit;
-    }
+  if (durationStr === '0') {
+    // Allow 0 without a unit.
+    return 0;
   }
-  return range + 's';
-}
+
+  const durationRE = new RegExp('^(([0-9]+)y)?(([0-9]+)w)?(([0-9]+)d)?(([0-9]+)h)?(([0-9]+)m)?(([0-9]+)s)?(([0-9]+)ms)?$');
+  const matches = durationStr.match(durationRE);
+  if (!matches) {
+    return null;
+  }
+
+  let dur = 0;
+
+  // Parse the match at pos `pos` in the regex and use `mult` to turn that
+  // into ms, then add that value to the total parsed duration.
+  const m = (pos: number, mult: number) => {
+    if (matches[pos] === undefined) {
+      return;
+    }
+    const n = parseInt(matches[pos]);
+    dur += n * mult;
+  };
+
+  m(2, 1000 * 60 * 60 * 24 * 365); // y
+  m(4, 1000 * 60 * 60 * 24 * 7); // w
+  m(6, 1000 * 60 * 60 * 24); // d
+  m(8, 1000 * 60 * 60); // h
+  m(10, 1000 * 60); // m
+  m(12, 1000); // s
+  m(14, 1); // ms
+
+  return dur;
+};
+
+export const formatDuration = (d: number): string => {
+  let ms = d;
+  let r = '';
+  if (ms === 0) {
+    return '0s';
+  }
+
+  const f = (unit: string, mult: number, exact: boolean) => {
+    if (exact && ms % mult !== 0) {
+      return;
+    }
+    const v = Math.floor(ms / mult);
+    if (v > 0) {
+      r += `${v}${unit}`;
+      ms -= v * mult;
+    }
+  };
+
+  // Only format years and weeks if the remainder is zero, as it is often
+  // easier to read 90d than 12w6d.
+  f('y', 1000 * 60 * 60 * 24 * 365, true);
+  f('w', 1000 * 60 * 60 * 24 * 7, true);
+
+  f('d', 1000 * 60 * 60 * 24, false);
+  f('h', 1000 * 60 * 60, false);
+  f('m', 1000 * 60, false);
+  f('s', 1000, false);
+  f('ms', 1, false);
+
+  return r;
+};
 
 export function parseTime(timeText: string): number {
   return moment.utc(timeText).valueOf();
@@ -114,7 +153,7 @@ export const formatRelative = (startStr: string, end: number): string => {
   if (start < 0) {
     return 'Never';
   }
-  return humanizeDuration(end - start);
+  return humanizeDuration(end - start) + ' ago';
 };
 
 const paramFormat = /^g\d+\..+=.+$/;
@@ -160,8 +199,11 @@ export const parseOption = (param: string): Partial<PanelOptions> => {
     case 'stacked':
       return { stacked: decodedValue === '1' };
 
+    case 'show_exemplars':
+      return { showExemplars: decodedValue === '1' };
+
     case 'range_input':
-      const range = parseRange(decodedValue);
+      const range = parseDuration(decodedValue);
       return isPresent(range) ? { range } : {};
 
     case 'end_input':
@@ -175,29 +217,90 @@ export const parseOption = (param: string): Partial<PanelOptions> => {
   return {};
 };
 
-export const formatParam = (key: string) => (paramName: string, value: number | string | boolean) => {
-  return `g${key}.${paramName}=${encodeURIComponent(value)}`;
-};
+export const formatParam =
+  (key: string) =>
+  (paramName: string, value: number | string | boolean): string => {
+    return `g${key}.${paramName}=${encodeURIComponent(value)}`;
+  };
 
-export const toQueryString = ({ key, options }: PanelMeta) => {
+export const toQueryString = ({ key, options }: PanelMeta): string => {
   const formatWithKey = formatParam(key);
-  const { expr, type, stacked, range, endTime, resolution } = options;
+  const { expr, type, stacked, range, endTime, resolution, showExemplars } = options;
   const time = isPresent(endTime) ? formatTime(endTime) : false;
   const urlParams = [
     formatWithKey('expr', expr),
     formatWithKey('tab', type === PanelType.Graph ? 0 : 1),
     formatWithKey('stacked', stacked ? 1 : 0),
-    formatWithKey('range_input', formatRange(range)),
+    formatWithKey('show_exemplars', showExemplars ? 1 : 0),
+    formatWithKey('range_input', formatDuration(range)),
     time ? `${formatWithKey('end_input', time)}&${formatWithKey('moment_input', time)}` : '',
     isPresent(resolution) ? formatWithKey('step_input', resolution) : '',
   ];
   return urlParams.filter(byEmptyString).join('&');
 };
 
-export const encodePanelOptionsToQueryString = (panels: PanelMeta[]) => {
+export const encodePanelOptionsToQueryString = (panels: PanelMeta[]): string => {
   return `?${panels.map(toQueryString).join('&')}`;
 };
 
-export const createExpressionLink = (expr: string) => {
-  return `../graph?g0.expr=${encodeURIComponent(expr)}&g0.tab=1&g0.stacked=0&g0.range_input=1h`;
+export const setQuerySearchFilter = (search: string) => {
+  setQueryParam('search', search);
 };
+
+export const getQuerySearchFilter = (): string => {
+  return getQueryParam('search');
+};
+
+export const setQueryParam = (key: string, value: string) => {
+  const params = new URLSearchParams(window.location.search);
+  params.set(key, value);
+  window.history.pushState({}, '', '?' + params.toString());
+};
+
+export const getQueryParam = (key: string): string => {
+  const locationSearch = window.location.search;
+  const params = new URLSearchParams(locationSearch);
+  return params.get(key) || '';
+};
+
+export const createExpressionLink = (expr: string): string => {
+  return `../graph?g0.expr=${encodeURIComponent(expr)}&g0.tab=1&g0.stacked=0&g0.show_exemplars=0.g0.range_input=1h.`;
+};
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any,
+export const mapObjEntries = <T extends { [s: string]: any }, key extends keyof T, Z>(
+  o: T,
+  cb: ([k, v]: [string, T[key]], i: number, arr: [string, T[key]][]) => Z
+): Z[] => Object.entries(o).map(cb);
+
+export const callAll =
+  (
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ...fns: Array<(...args: any) => void>
+  ) =>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/explicit-module-boundary-types
+  (...args: any): void => {
+    // eslint-disable-next-line prefer-spread
+    fns.filter(Boolean).forEach((fn) => fn.apply(null, args));
+  };
+
+export const parsePrometheusFloat = (value: string): string | number => {
+  if (isNaN(Number(value))) {
+    return value;
+  } else {
+    return Number(value);
+  }
+};
+
+export function debounce<Params extends unknown[]>(
+  func: (...args: Params) => unknown,
+  timeout: number
+): (...args: Params) => void {
+  let timer: NodeJS.Timeout;
+  return (...args: Params) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      func(...args);
+    }, timeout);
+  };
+}

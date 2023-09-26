@@ -4,10 +4,6 @@ import toJson from 'enzyme-to-json';
 import { StatusContent } from './Status';
 
 describe('Status', () => {
-  it('should not fail with undefined data', () => {
-    const wrapper = shallow(<StatusContent data={[]} />);
-    expect(wrapper).toHaveLength(1);
-  });
   describe('Snapshot testing', () => {
     const response: any = [
       {
@@ -15,8 +11,6 @@ describe('Status', () => {
         CWD: '/home/boyskila/Desktop/prometheus',
         reloadConfigSuccess: true,
         lastConfigTime: '2019-10-30T22:03:23+02:00',
-        chunkCount: 1383,
-        timeSeriesCount: 461,
         corruptionCount: 0,
         goroutineCount: 37,
         GOMAXPROCS: 4,
@@ -45,7 +39,7 @@ describe('Status', () => {
       },
     ];
     it('should match table snapshot', () => {
-      const wrapper = shallow(<StatusContent data={response} />);
+      const wrapper = shallow(<StatusContent data={response} title="Foo" />);
       expect(toJson(wrapper)).toMatchSnapshot();
       jest.restoreAllMocks();
     });

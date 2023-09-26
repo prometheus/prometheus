@@ -18,9 +18,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
 func TestLazyLoader_WithSamplesTill(t *testing.T) {
@@ -46,7 +47,7 @@ func TestLazyLoader_WithSamplesTill(t *testing.T) {
 					series: []Series{
 						{
 							Metric: labels.FromStrings("__name__", "metric1"),
-							Points: []Point{
+							Floats: []FPoint{
 								{0, 1}, {10000, 2}, {20000, 3}, {30000, 4}, {40000, 5},
 							},
 						},
@@ -57,7 +58,7 @@ func TestLazyLoader_WithSamplesTill(t *testing.T) {
 					series: []Series{
 						{
 							Metric: labels.FromStrings("__name__", "metric1"),
-							Points: []Point{
+							Floats: []FPoint{
 								{0, 1}, {10000, 2}, {20000, 3}, {30000, 4}, {40000, 5},
 							},
 						},
@@ -68,7 +69,7 @@ func TestLazyLoader_WithSamplesTill(t *testing.T) {
 					series: []Series{
 						{
 							Metric: labels.FromStrings("__name__", "metric1"),
-							Points: []Point{
+							Floats: []FPoint{
 								{0, 1}, {10000, 2}, {20000, 3}, {30000, 4}, {40000, 5}, {50000, 6}, {60000, 7},
 							},
 						},
@@ -88,13 +89,13 @@ func TestLazyLoader_WithSamplesTill(t *testing.T) {
 					series: []Series{
 						{
 							Metric: labels.FromStrings("__name__", "metric1"),
-							Points: []Point{
+							Floats: []FPoint{
 								{0, 1}, {10000, 1}, {20000, 1}, {30000, 1}, {40000, 1}, {50000, 1},
 							},
 						},
 						{
 							Metric: labels.FromStrings("__name__", "metric2"),
-							Points: []Point{
+							Floats: []FPoint{
 								{0, 1}, {10000, 2}, {20000, 3}, {30000, 4}, {40000, 5}, {50000, 6}, {60000, 7}, {70000, 8},
 							},
 						},
@@ -109,48 +110,47 @@ func TestLazyLoader_WithSamplesTill(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		suite, err := NewLazyLoader(t, c.loadString)
-		testutil.Ok(t, err)
+		suite, err := NewLazyLoader(t, c.loadString, LazyLoaderOpts{})
+		require.NoError(t, err)
 		defer suite.Close()
 
 		for _, tc := range c.testCases {
 			suite.WithSamplesTill(tc.ts, func(err error) {
-				testutil.Ok(t, err)
+				require.NoError(t, err)
 				if tc.checkOnlyError {
 					return
 				}
 
 				// Check the series.
 				queryable := suite.Queryable()
-				querier, err := queryable.Querier(suite.Context(), math.MinInt64, math.MaxInt64)
-				testutil.Ok(t, err)
+				querier, err := queryable.Querier(math.MinInt64, math.MaxInt64)
+				require.NoError(t, err)
 				for _, s := range tc.series {
 					var matchers []*labels.Matcher
-					for _, label := range s.Metric {
+					s.Metric.Range(func(label labels.Label) {
 						m, err := labels.NewMatcher(labels.MatchEqual, label.Name, label.Value)
-						testutil.Ok(t, err)
+						require.NoError(t, err)
 						matchers = append(matchers, m)
-					}
+					})
 
 					// Get the series for the matcher.
-					ss, _, err := querier.Select(nil, matchers...)
-					testutil.Ok(t, err)
-					testutil.Assert(t, ss.Next(), "")
+					ss := querier.Select(suite.Context(), false, nil, matchers...)
+					require.True(t, ss.Next())
 					storageSeries := ss.At()
-					testutil.Assert(t, !ss.Next(), "Expecting only 1 series")
+					require.False(t, ss.Next(), "Expecting only 1 series")
 
 					// Convert `storage.Series` to `promql.Series`.
 					got := Series{
 						Metric: storageSeries.Labels(),
 					}
-					it := storageSeries.Iterator()
-					for it.Next() {
+					it := storageSeries.Iterator(nil)
+					for it.Next() == chunkenc.ValFloat {
 						t, v := it.At()
-						got.Points = append(got.Points, Point{T: t, V: v})
+						got.Floats = append(got.Floats, FPoint{T: t, F: v})
 					}
-					testutil.Ok(t, it.Err())
+					require.NoError(t, it.Err())
 
-					testutil.Equals(t, s, got)
+					require.Equal(t, s, got)
 				}
 			})
 		}

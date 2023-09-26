@@ -18,36 +18,38 @@ export class Legend extends PureComponent<LegendProps, LegendState> {
   state = {
     selectedIndexes: [] as number[],
   };
-  componentDidUpdate(prevProps: LegendProps) {
+  componentDidUpdate(prevProps: LegendProps): void {
     if (this.props.shouldReset && prevProps.shouldReset !== this.props.shouldReset) {
       this.setState({ selectedIndexes: [] });
     }
   }
-  handleSeriesSelect = (index: number) => (ev: any) => {
-    // TODO: add proper event type
-    const { selectedIndexes } = this.state;
+  handleSeriesSelect =
+    (index: number) =>
+    (ev: React.MouseEvent<HTMLDivElement, MouseEvent>): void => {
+      // TODO: add proper event type
+      const { selectedIndexes } = this.state;
 
-    let selected = [index];
-    if (ev.ctrlKey) {
-      const { chartData } = this.props;
-      if (selectedIndexes.includes(index)) {
-        selected = selectedIndexes.filter(idx => idx !== index);
-      } else {
-        selected =
-          // Flip the logic - In case none is selected ctrl + click should deselect clicked series.
-          selectedIndexes.length === 0
-            ? chartData.reduce<number[]>((acc, _, i) => (i === index ? acc : [...acc, i]), [])
-            : [...selectedIndexes, index]; // Select multiple.
+      let selected = [index];
+      if (ev.ctrlKey || ev.metaKey) {
+        const { chartData } = this.props;
+        if (selectedIndexes.includes(index)) {
+          selected = selectedIndexes.filter((idx) => idx !== index);
+        } else {
+          selected =
+            // Flip the logic - In case none is selected ctrl + click should deselect clicked series.
+            selectedIndexes.length === 0
+              ? chartData.reduce<number[]>((acc, _, i) => (i === index ? acc : [...acc, i]), [])
+              : [...selectedIndexes, index]; // Select multiple.
+        }
+      } else if (selectedIndexes.length === 1 && selectedIndexes.includes(index)) {
+        selected = [];
       }
-    } else if (selectedIndexes.length === 1 && selectedIndexes.includes(index)) {
-      selected = [];
-    }
 
-    this.setState({ selectedIndexes: selected });
-    this.props.onSeriesToggle(selected, index);
-  };
+      this.setState({ selectedIndexes: selected });
+      this.props.onSeriesToggle(selected, index);
+    };
 
-  render() {
+  render(): JSX.Element {
     const { chartData, onLegendMouseOut, onHover } = this.props;
     const { selectedIndexes } = this.state;
     const canUseHover = chartData.length > 1 && selectedIndexes.length === 0;
@@ -68,7 +70,7 @@ export class Legend extends PureComponent<LegendProps, LegendState> {
         ))}
         {chartData.length > 1 && (
           <div className="pl-1 mt-1 text-muted" style={{ fontSize: 13 }}>
-            Click: select series, CTRL + click: toggle multiple series
+            Click: select series, {navigator.platform.includes('Mac') ? 'CMD' : 'CTRL'} + click: toggle multiple series
           </div>
         )}
       </div>

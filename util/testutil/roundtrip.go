@@ -22,7 +22,7 @@ type roundTrip struct {
 	theError    error
 }
 
-func (rt *roundTrip) RoundTrip(r *http.Request) (*http.Response, error) {
+func (rt *roundTrip) RoundTrip(*http.Request) (*http.Response, error) {
 	return rt.theResponse, rt.theError
 }
 
@@ -43,5 +43,7 @@ func NewRoundTripCheckRequest(checkRequest func(*http.Request), theResponse *htt
 		checkRequest: checkRequest,
 		roundTrip: roundTrip{
 			theResponse: theResponse,
-			theError:    theError}}
+			theError:    theError,
+		},
+	}
 }

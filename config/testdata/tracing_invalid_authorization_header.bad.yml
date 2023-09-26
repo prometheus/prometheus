@@ -1,0 +1,5 @@
+tracing:
+  sampling_fraction: 1
+  endpoint: "localhost:4317"
+  headers:
+    "authorization": foo

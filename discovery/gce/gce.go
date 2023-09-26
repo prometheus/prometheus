@@ -15,19 +15,20 @@ package gce
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/pkg/errors"
+	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
 	"golang.org/x/oauth2/google"
-	compute "google.golang.org/api/compute/v1"
+	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/option"
 
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
@@ -57,6 +58,10 @@ var DefaultSDConfig = SDConfig{
 	RefreshInterval: model.Duration(60 * time.Second),
 }
 
+func init() {
+	discovery.RegisterConfig(&SDConfig{})
+}
+
 // SDConfig is the configuration for GCE based service discovery.
 type SDConfig struct {
 	// Project: The Google Cloud Project ID
@@ -74,6 +79,14 @@ type SDConfig struct {
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 	Port            int            `yaml:"port"`
 	TagSeparator    string         `yaml:"tag_separator,omitempty"`
+}
+
+// Name returns the name of the Config.
+func (*SDConfig) Name() string { return "gce" }
+
+// NewDiscoverer returns a Discoverer for the Config.
+func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
+	return NewDiscovery(*c, opts.Logger)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -119,11 +132,11 @@ func NewDiscovery(conf SDConfig, logger log.Logger) (*Discovery, error) {
 	var err error
 	d.client, err = google.DefaultClient(context.Background(), compute.ComputeReadonlyScope)
 	if err != nil {
-		return nil, errors.Wrap(err, "error setting up communication with GCE service")
+		return nil, fmt.Errorf("error setting up communication with GCE service: %w", err)
 	}
 	d.svc, err = compute.NewService(context.Background(), option.WithHTTPClient(d.client))
 	if err != nil {
-		return nil, errors.Wrap(err, "error setting up communication with GCE service")
+		return nil, fmt.Errorf("error setting up communication with GCE service: %w", err)
 	}
 	d.isvc = compute.NewInstancesService(d.svc)
 
@@ -165,6 +178,12 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 			addr := fmt.Sprintf("%s:%d", priIface.NetworkIP, d.port)
 			labels[model.AddressLabel] = model.LabelValue(addr)
 
+			// Append named interface metadata for all interfaces
+			for _, iface := range inst.NetworkInterfaces {
+				gceLabelNetAddress := model.LabelName(fmt.Sprintf("%sinterface_ipv4_%s", gceLabel, strutil.SanitizeLabelName(iface.Name)))
+				labels[gceLabelNetAddress] = model.LabelValue(iface.NetworkIP)
+			}
+
 			// Tags in GCE are usually only used for networking rules.
 			if inst.Tags != nil && len(inst.Tags.Items) > 0 {
 				// We surround the separated list with the separator as well. This way regular expressions
@@ -202,7 +221,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		return nil
 	})
 	if err != nil {
-		return nil, errors.Wrap(err, "error retrieving refresh targets from gce")
+		return nil, fmt.Errorf("error retrieving refresh targets from gce: %w", err)
 	}
 	return []*targetgroup.Group{tg}, nil
 }

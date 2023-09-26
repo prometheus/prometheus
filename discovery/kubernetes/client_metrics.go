@@ -14,11 +14,11 @@
 package kubernetes
 
 import (
+	"context"
 	"net/url"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-
 	"k8s.io/client-go/tools/metrics"
 	"k8s.io/client-go/util/workqueue"
 )
@@ -110,16 +110,23 @@ func (noopMetric) Set(float64)     {}
 type clientGoRequestMetricAdapter struct{}
 
 func (f *clientGoRequestMetricAdapter) Register(registerer prometheus.Registerer) {
-	metrics.Register(f, f)
+	metrics.Register(
+		metrics.RegisterOpts{
+			RequestLatency: f,
+			RequestResult:  f,
+		},
+	)
 	registerer.MustRegister(
 		clientGoRequestResultMetricVec,
 		clientGoRequestLatencyMetricVec,
 	)
 }
-func (clientGoRequestMetricAdapter) Increment(code string, method string, host string) {
+
+func (clientGoRequestMetricAdapter) Increment(_ context.Context, code, _, _ string) {
 	clientGoRequestResultMetricVec.WithLabelValues(code).Inc()
 }
-func (clientGoRequestMetricAdapter) Observe(verb string, u url.URL, latency time.Duration) {
+
+func (clientGoRequestMetricAdapter) Observe(_ context.Context, _ string, u url.URL, latency time.Duration) {
 	clientGoRequestLatencyMetricVec.WithLabelValues(u.EscapedPath()).Observe(latency.Seconds())
 }
 
@@ -141,43 +148,28 @@ func (f *clientGoWorkqueueMetricsProvider) Register(registerer prometheus.Regist
 func (f *clientGoWorkqueueMetricsProvider) NewDepthMetric(name string) workqueue.GaugeMetric {
 	return clientGoWorkqueueDepthMetricVec.WithLabelValues(name)
 }
+
 func (f *clientGoWorkqueueMetricsProvider) NewAddsMetric(name string) workqueue.CounterMetric {
 	return clientGoWorkqueueAddsMetricVec.WithLabelValues(name)
 }
+
 func (f *clientGoWorkqueueMetricsProvider) NewLatencyMetric(name string) workqueue.HistogramMetric {
 	return clientGoWorkqueueLatencyMetricVec.WithLabelValues(name)
 }
+
 func (f *clientGoWorkqueueMetricsProvider) NewWorkDurationMetric(name string) workqueue.HistogramMetric {
 	return clientGoWorkqueueWorkDurationMetricVec.WithLabelValues(name)
 }
+
 func (f *clientGoWorkqueueMetricsProvider) NewUnfinishedWorkSecondsMetric(name string) workqueue.SettableGaugeMetric {
 	return clientGoWorkqueueUnfinishedWorkSecondsMetricVec.WithLabelValues(name)
 }
+
 func (f *clientGoWorkqueueMetricsProvider) NewLongestRunningProcessorSecondsMetric(name string) workqueue.SettableGaugeMetric {
 	return clientGoWorkqueueLongestRunningProcessorMetricVec.WithLabelValues(name)
 }
-func (clientGoWorkqueueMetricsProvider) NewRetriesMetric(name string) workqueue.CounterMetric {
+
+func (clientGoWorkqueueMetricsProvider) NewRetriesMetric(string) workqueue.CounterMetric {
 	// Retries are not used so the metric is omitted.
-	return noopMetric{}
-}
-func (clientGoWorkqueueMetricsProvider) NewDeprecatedDepthMetric(name string) workqueue.GaugeMetric {
-	return noopMetric{}
-}
-func (clientGoWorkqueueMetricsProvider) NewDeprecatedAddsMetric(name string) workqueue.CounterMetric {
-	return noopMetric{}
-}
-func (clientGoWorkqueueMetricsProvider) NewDeprecatedLatencyMetric(name string) workqueue.SummaryMetric {
-	return noopMetric{}
-}
-func (f *clientGoWorkqueueMetricsProvider) NewDeprecatedWorkDurationMetric(name string) workqueue.SummaryMetric {
-	return noopMetric{}
-}
-func (f *clientGoWorkqueueMetricsProvider) NewDeprecatedUnfinishedWorkSecondsMetric(name string) workqueue.SettableGaugeMetric {
-	return noopMetric{}
-}
-func (f *clientGoWorkqueueMetricsProvider) NewDeprecatedLongestRunningProcessorMicrosecondsMetric(name string) workqueue.SettableGaugeMetric {
-	return noopMetric{}
-}
-func (clientGoWorkqueueMetricsProvider) NewDeprecatedRetriesMetric(name string) workqueue.CounterMetric {
 	return noopMetric{}
 }

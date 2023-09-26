@@ -1,0 +1,23 @@
+@import 'bootstrap_light';
+
+@import '~bootstrap/scss/functions';
+@import '~bootstrap/scss/variables';
+
+$alert-cell-color: inherit;
+$rule-cell-bg: #f5f5f5;
+
+$config-yaml-color: #333;
+$config-yaml-bg: #f5f5f5;
+$config-yaml-border: #ccc;
+
+$query-stats-color: #71808e;
+
+$metrics-explorer-bg: #efefef;
+
+$clear-time-btn-bg: $white;
+
+$checked-checkbox-color: #286090;
+
+.bootstrap {
+  @import './shared';
+}

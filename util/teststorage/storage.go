@@ -14,44 +14,63 @@
 package teststorage
 
 import (
-	"io/ioutil"
 	"os"
 	"time"
 
-	"github.com/prometheus/common/model"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/storage/tsdb"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
-// New returns a new storage for testing purposes
+// New returns a new TestStorage for testing purposes
 // that removes all associated files on closing.
-func New(t testutil.T) storage.Storage {
-	dir, err := ioutil.TempDir("", "test_storage")
-	if err != nil {
-		t.Fatalf("Opening test dir failed: %s", err)
-	}
+func New(t testutil.T) *TestStorage {
+	dir, err := os.MkdirTemp("", "test_storage")
+	require.NoError(t, err, "unexpected error while opening test directory")
 
 	// Tests just load data for a series sequentially. Thus we
 	// need a long appendable window.
-	db, err := tsdb.Open(dir, nil, nil, &tsdb.Options{
-		MinBlockDuration: model.Duration(24 * time.Hour),
-		MaxBlockDuration: model.Duration(24 * time.Hour),
-	})
-	if err != nil {
-		t.Fatalf("Opening test storage failed: %s", err)
-	}
-	return testStorage{Storage: tsdb.Adapter(db, int64(0)), dir: dir}
+	opts := tsdb.DefaultOptions()
+	opts.MinBlockDuration = int64(24 * time.Hour / time.Millisecond)
+	opts.MaxBlockDuration = int64(24 * time.Hour / time.Millisecond)
+	opts.RetentionDuration = 0
+	opts.EnableNativeHistograms = true
+	db, err := tsdb.Open(dir, nil, nil, opts, tsdb.NewDBStats())
+	require.NoError(t, err, "unexpected error while opening test storage")
+	reg := prometheus.NewRegistry()
+	eMetrics := tsdb.NewExemplarMetrics(reg)
+
+	es, err := tsdb.NewCircularExemplarStorage(10, eMetrics)
+	require.NoError(t, err, "unexpected error while opening test exemplar storage")
+	return &TestStorage{DB: db, exemplarStorage: es, dir: dir}
 }
 
-type testStorage struct {
-	storage.Storage
-	dir string
+type TestStorage struct {
+	*tsdb.DB
+	exemplarStorage tsdb.ExemplarStorage
+	dir             string
 }
 
-func (s testStorage) Close() error {
-	if err := s.Storage.Close(); err != nil {
+func (s TestStorage) Close() error {
+	if err := s.DB.Close(); err != nil {
 		return err
 	}
 	return os.RemoveAll(s.dir)
+}
+
+func (s TestStorage) ExemplarAppender() storage.ExemplarAppender {
+	return s
+}
+
+func (s TestStorage) ExemplarQueryable() storage.ExemplarQueryable {
+	return s.exemplarStorage
+}
+
+func (s TestStorage) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
+	return ref, s.exemplarStorage.AddExemplar(l, e)
 }

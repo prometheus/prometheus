@@ -20,14 +20,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/miekg/dns"
+	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 	"gopkg.in/yaml.v2"
 
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/prometheus/prometheus/util/testutil"
 )
+
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
+}
 
 func TestDNS(t *testing.T) {
 	testCases := []struct {
@@ -70,7 +75,13 @@ func TestDNS(t *testing.T) {
 				{
 					Source: "web.example.com.",
 					Targets: []model.LabelSet{
-						{"__address__": "192.0.2.2:80", "__meta_dns_name": "web.example.com."},
+						{
+							"__address__":                  "192.0.2.2:80",
+							"__meta_dns_name":              "web.example.com.",
+							"__meta_dns_srv_record_target": "",
+							"__meta_dns_srv_record_port":   "",
+							"__meta_dns_mx_record_target":  "",
+						},
 					},
 				},
 			},
@@ -95,7 +106,13 @@ func TestDNS(t *testing.T) {
 				{
 					Source: "web.example.com.",
 					Targets: []model.LabelSet{
-						{"__address__": "[::1]:80", "__meta_dns_name": "web.example.com."},
+						{
+							"__address__":                  "[::1]:80",
+							"__meta_dns_name":              "web.example.com.",
+							"__meta_dns_srv_record_target": "",
+							"__meta_dns_srv_record_port":   "",
+							"__meta_dns_mx_record_target":  "",
+						},
 					},
 				},
 			},
@@ -120,8 +137,20 @@ func TestDNS(t *testing.T) {
 				{
 					Source: "_mysql._tcp.db.example.com.",
 					Targets: []model.LabelSet{
-						{"__address__": "db1.example.com:3306", "__meta_dns_name": "_mysql._tcp.db.example.com."},
-						{"__address__": "db2.example.com:3306", "__meta_dns_name": "_mysql._tcp.db.example.com."},
+						{
+							"__address__":                  "db1.example.com:3306",
+							"__meta_dns_name":              "_mysql._tcp.db.example.com.",
+							"__meta_dns_srv_record_target": "db1.example.com.",
+							"__meta_dns_srv_record_port":   "3306",
+							"__meta_dns_mx_record_target":  "",
+						},
+						{
+							"__address__":                  "db2.example.com:3306",
+							"__meta_dns_name":              "_mysql._tcp.db.example.com.",
+							"__meta_dns_srv_record_target": "db2.example.com.",
+							"__meta_dns_srv_record_port":   "3306",
+							"__meta_dns_mx_record_target":  "",
+						},
 					},
 				},
 			},
@@ -145,7 +174,13 @@ func TestDNS(t *testing.T) {
 				{
 					Source: "_mysql._tcp.db.example.com.",
 					Targets: []model.LabelSet{
-						{"__address__": "db1.example.com:3306", "__meta_dns_name": "_mysql._tcp.db.example.com."},
+						{
+							"__address__":                  "db1.example.com:3306",
+							"__meta_dns_name":              "_mysql._tcp.db.example.com.",
+							"__meta_dns_srv_record_target": "db1.example.com.",
+							"__meta_dns_srv_record_port":   "3306",
+							"__meta_dns_mx_record_target":  "",
+						},
 					},
 				},
 			},
@@ -165,6 +200,45 @@ func TestDNS(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "MX record query",
+			config: SDConfig{
+				Names:           []string{"example.com."},
+				Type:            "MX",
+				Port:            25,
+				RefreshInterval: model.Duration(time.Minute),
+			},
+			lookup: func(name string, qtype uint16, logger log.Logger) (*dns.Msg, error) {
+				return &dns.Msg{
+						Answer: []dns.RR{
+							&dns.MX{Preference: 0, Mx: "smtp1.example.com."},
+							&dns.MX{Preference: 10, Mx: "smtp2.example.com."},
+						},
+					},
+					nil
+			},
+			expected: []*targetgroup.Group{
+				{
+					Source: "example.com.",
+					Targets: []model.LabelSet{
+						{
+							"__address__":                  "smtp1.example.com:25",
+							"__meta_dns_name":              "example.com.",
+							"__meta_dns_srv_record_target": "",
+							"__meta_dns_srv_record_port":   "",
+							"__meta_dns_mx_record_target":  "smtp1.example.com.",
+						},
+						{
+							"__address__":                  "smtp2.example.com:25",
+							"__meta_dns_name":              "example.com.",
+							"__meta_dns_srv_record_target": "",
+							"__meta_dns_srv_record_port":   "",
+							"__meta_dns_mx_record_target":  "smtp2.example.com.",
+						},
+					},
+				},
+			},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -175,8 +249,8 @@ func TestDNS(t *testing.T) {
 			sd.lookupFn = tc.lookup
 
 			tgs, err := sd.refresh(context.Background())
-			testutil.Ok(t, err)
-			testutil.Equals(t, tc.expected, tgs)
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, tgs)
 		})
 	}
 }
@@ -266,7 +340,7 @@ func TestSDConfigUnmarshalYAML(t *testing.T) {
 			var config SDConfig
 			d := marshal(c.input)
 			err := config.UnmarshalYAML(unmarshal(d))
-			testutil.Equals(t, c.expectErr, err != nil)
+			require.Equal(t, c.expectErr, err != nil)
 		})
 	}
 }

@@ -1,4 +1,4 @@
 scrape_configs:
-- job_name: "test"
-  static_configs:
-  -
+  - job_name: "test"
+    static_configs:
+      -

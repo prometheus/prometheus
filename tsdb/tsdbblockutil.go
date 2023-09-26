@@ -16,66 +16,95 @@ package tsdb
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 
-	"github.com/go-kit/kit/log"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/go-kit/log"
+
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
-var InvalidTimesError = fmt.Errorf("max time is lesser than min time")
-
-type MetricSample struct {
-	TimestampMs int64
-	Value       float64
-	Labels      labels.Labels
-}
-
-// CreateHead creates a TSDB writer head to write the sample data to.
-func CreateHead(samples []*MetricSample, chunkRange int64, logger log.Logger) (*Head, error) {
-	head, err := NewHead(nil, logger, nil, chunkRange, DefaultStripeSize)
-	if err != nil {
-		return nil, err
-	}
-	app := head.Appender()
-	for _, sample := range samples {
-		_, err = app.Add(sample.Labels, sample.TimestampMs, sample.Value)
-		if err != nil {
-			return nil, err
-		}
-	}
-	err = app.Commit()
-	if err != nil {
-		return nil, err
-	}
-	return head, nil
-}
+var ErrInvalidTimes = fmt.Errorf("max time is lesser than min time")
 
 // CreateBlock creates a chunkrange block from the samples passed to it, and writes it to disk.
-func CreateBlock(samples []*MetricSample, dir string, mint, maxt int64, logger log.Logger) (string, error) {
-	chunkRange := maxt - mint
+func CreateBlock(series []storage.Series, dir string, chunkRange int64, logger log.Logger) (string, error) {
 	if chunkRange == 0 {
 		chunkRange = DefaultBlockDuration
 	}
 	if chunkRange < 0 {
-		return "", InvalidTimesError
+		return "", ErrInvalidTimes
 	}
-	head, err := CreateHead(samples, chunkRange, logger)
+
+	w, err := NewBlockWriter(logger, dir, chunkRange)
 	if err != nil {
 		return "", err
 	}
+	defer func() {
+		if err := w.Close(); err != nil {
+			logger.Log("err closing blockwriter", err.Error())
+		}
+	}()
 
-	compactor, err := NewLeveledCompactor(context.Background(), nil, logger, DefaultOptions.BlockRanges, nil)
-	if err != nil {
+	sampleCount := 0
+	const commitAfter = 10000
+	ctx := context.Background()
+	app := w.Appender(ctx)
+	var it chunkenc.Iterator
+
+	for _, s := range series {
+		ref := storage.SeriesRef(0)
+		it = s.Iterator(it)
+		lset := s.Labels()
+		typ := it.Next()
+		lastTyp := typ
+		for ; typ != chunkenc.ValNone; typ = it.Next() {
+			if lastTyp != typ {
+				// The behaviour of appender is undefined if samples of different types
+				// are appended to the same series in a single Commit().
+				if err = app.Commit(); err != nil {
+					return "", err
+				}
+				app = w.Appender(ctx)
+				sampleCount = 0
+			}
+
+			switch typ {
+			case chunkenc.ValFloat:
+				t, v := it.At()
+				ref, err = app.Append(ref, lset, t, v)
+			case chunkenc.ValHistogram:
+				t, h := it.AtHistogram()
+				ref, err = app.AppendHistogram(ref, lset, t, h, nil)
+			case chunkenc.ValFloatHistogram:
+				t, fh := it.AtFloatHistogram()
+				ref, err = app.AppendHistogram(ref, lset, t, nil, fh)
+			default:
+				return "", fmt.Errorf("unknown sample type %s", typ.String())
+			}
+			if err != nil {
+				return "", err
+			}
+			sampleCount++
+			lastTyp = typ
+		}
+		if it.Err() != nil {
+			return "", it.Err()
+		}
+		// Commit and make a new appender periodically, to avoid building up data in memory.
+		if sampleCount > commitAfter {
+			if err = app.Commit(); err != nil {
+				return "", err
+			}
+			app = w.Appender(ctx)
+			sampleCount = 0
+		}
+	}
+
+	if err = app.Commit(); err != nil {
 		return "", err
 	}
 
-	err = os.MkdirAll(dir, 0777)
-	if err != nil {
-		return "", err
-	}
-
-	ulid, err := compactor.Write(dir, head, mint, maxt, nil)
+	ulid, err := w.Flush(ctx)
 	if err != nil {
 		return "", err
 	}

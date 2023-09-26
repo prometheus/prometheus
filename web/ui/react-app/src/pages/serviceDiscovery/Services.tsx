@@ -1,17 +1,20 @@
-import React, { FC } from 'react';
-import { RouteComponentProps } from '@reach/router';
-import PathPrefixProps from '../../types/PathPrefixProps';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faSpinner } from '@fortawesome/free-solid-svg-icons';
-import { Alert } from 'reactstrap';
+import React, { FC, useCallback, useEffect, useMemo, useState } from 'react';
 import { useFetch } from '../../hooks/useFetch';
 import { LabelsTable } from './LabelsTable';
-import { Target, Labels, DroppedTarget } from '../targets/target';
+import { DroppedTarget, Labels, Target } from '../targets/target';
 
-// TODO: Deduplicate with https://github.com/prometheus/prometheus/blob/213a8fe89a7308e73f22888a963cbf9375217cd6/web/ui/react-app/src/pages/targets/ScrapePoolList.tsx#L11-L14
+import { withStatusIndicator } from '../../components/withStatusIndicator';
+import { setQuerySearchFilter, mapObjEntries, getQuerySearchFilter } from '../../utils';
+import { usePathPrefix } from '../../contexts/PathPrefixContext';
+import { API_PATH } from '../../constants/constants';
+import { KVSearch } from '@nexucis/kvsearch';
+import { Container } from 'reactstrap';
+import SearchBar from '../../components/SearchBar';
+
 interface ServiceMap {
   activeTargets: Target[];
   droppedTargets: DroppedTarget[];
+  droppedTargetCounts: Record<string, number>;
 }
 
 export interface TargetLabels {
@@ -20,100 +23,143 @@ export interface TargetLabels {
   isDropped: boolean;
 }
 
-const Services: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
-  const { response, error } = useFetch<ServiceMap>(`${pathPrefix}/api/v1/targets`);
+const activeTargetKVSearch = new KVSearch<Target>({
+  shouldSort: true,
+  indexedKeys: ['labels', 'discoveredLabels', ['discoveredLabels', /.*/], ['labels', /.*/]],
+});
 
-  const processSummary = (response: ServiceMap) => {
-    const targets: any = {};
+const droppedTargetKVSearch = new KVSearch<DroppedTarget>({
+  shouldSort: true,
+  indexedKeys: ['discoveredLabels', ['discoveredLabels', /.*/]],
+});
 
-    // Get targets of each type along with the total and active end points
-    for (const target of response.activeTargets) {
-      const { scrapePool: name } = target;
-      if (!targets[name]) {
-        targets[name] = {
-          total: 0,
-          active: 0,
-        };
-      }
-      targets[name].total++;
-      targets[name].active++;
+export const processSummary = (
+  activeTargets: Target[],
+  droppedTargetCounts: Record<string, number>
+): Record<string, { active: number; total: number }> => {
+  const targets: Record<string, { active: number; total: number }> = {};
+
+  // Get targets of each type along with the total and active end points
+  for (const target of activeTargets) {
+    const { scrapePool: name } = target;
+    if (!targets[name]) {
+      targets[name] = {
+        total: 0,
+        active: 0,
+      };
     }
-    for (const target of response.droppedTargets) {
-      const { job: name } = target.discoveredLabels;
-      if (!targets[name]) {
-        targets[name] = {
-          total: 0,
-          active: 0,
-        };
-      }
-      targets[name].total++;
-    }
-
-    return targets;
-  };
-
-  const processTargets = (response: Target[], dropped: DroppedTarget[]) => {
-    const labels: Record<string, TargetLabels[]> = {};
-
-    for (const target of response) {
-      const name = target.scrapePool;
-      if (!labels[name]) {
-        labels[name] = [];
-      }
-      labels[name].push({
-        discoveredLabels: target.discoveredLabels,
-        labels: target.labels,
-        isDropped: false,
-      });
-    }
-
-    for (const target of dropped) {
-      const { job: name } = target.discoveredLabels;
-      if (!labels[name]) {
-        labels[name] = [];
-      }
-      labels[name].push({
-        discoveredLabels: target.discoveredLabels,
-        isDropped: true,
-        labels: {},
-      });
-    }
-
-    return labels;
-  };
-
-  if (error) {
-    return (
-      <Alert color="danger">
-        <strong>Error:</strong> Error fetching Service-Discovery: {error.message}
-      </Alert>
-    );
-  } else if (response.data) {
-    const targets = processSummary(response.data);
-    const labels = processTargets(response.data.activeTargets, response.data.droppedTargets);
-
-    return (
-      <>
-        <h2>Service Discovery</h2>
-        <ul>
-          {Object.keys(targets).map((val, i) => (
-            <li key={i}>
-              <a href={'#' + val}>
-                {' '}
-                {val} ({targets[val].active} / {targets[val].total} active targets){' '}
-              </a>
-            </li>
-          ))}
-        </ul>
-        <hr />
-        {Object.keys(labels).map((val: any, i) => {
-          const value = labels[val];
-          return <LabelsTable value={value} name={val} key={Object.keys(labels)[i]} />;
-        })}
-      </>
-    );
+    targets[name].total++;
+    targets[name].active++;
   }
-  return <FontAwesomeIcon icon={faSpinner} spin />;
+  for (const name in targets) {
+    if (!targets[name]) {
+      targets[name] = {
+        total: droppedTargetCounts[name],
+        active: 0,
+      };
+    } else {
+      targets[name].total += droppedTargetCounts[name];
+    }
+  }
+
+  return targets;
 };
 
-export default Services;
+export const processTargets = (activeTargets: Target[], droppedTargets: DroppedTarget[]): Record<string, TargetLabels[]> => {
+  const labels: Record<string, TargetLabels[]> = {};
+
+  for (const target of activeTargets) {
+    const name = target.scrapePool;
+    if (!labels[name]) {
+      labels[name] = [];
+    }
+    labels[name].push({
+      discoveredLabels: target.discoveredLabels,
+      labels: target.labels,
+      isDropped: false,
+    });
+  }
+
+  for (const target of droppedTargets) {
+    const { job: name } = target.discoveredLabels;
+    if (!labels[name]) {
+      labels[name] = [];
+    }
+    labels[name].push({
+      discoveredLabels: target.discoveredLabels,
+      isDropped: true,
+      labels: {},
+    });
+  }
+
+  return labels;
+};
+
+export const ServiceDiscoveryContent: FC<ServiceMap> = ({ activeTargets, droppedTargets, droppedTargetCounts }) => {
+  const [activeTargetList, setActiveTargetList] = useState(activeTargets);
+  const [droppedTargetList, setDroppedTargetList] = useState(droppedTargets);
+  const [targetList, setTargetList] = useState(processSummary(activeTargets, droppedTargetCounts));
+  const [labelList, setLabelList] = useState(processTargets(activeTargets, droppedTargets));
+
+  const handleSearchChange = useCallback(
+    (value: string) => {
+      setQuerySearchFilter(value);
+      if (value !== '') {
+        const activeTargetResult = activeTargetKVSearch.filter(value.trim(), activeTargets);
+        const droppedTargetResult = droppedTargetKVSearch.filter(value.trim(), droppedTargets);
+        setActiveTargetList(activeTargetResult.map((value) => value.original));
+        setDroppedTargetList(droppedTargetResult.map((value) => value.original));
+      } else {
+        setActiveTargetList(activeTargets);
+      }
+    },
+    [activeTargets, droppedTargets]
+  );
+
+  const defaultValue = useMemo(getQuerySearchFilter, []);
+
+  useEffect(() => {
+    setTargetList(processSummary(activeTargetList, droppedTargetCounts));
+    setLabelList(processTargets(activeTargetList, droppedTargetList));
+  }, [activeTargetList, droppedTargetList, droppedTargetCounts]);
+
+  return (
+    <>
+      <h2>Service Discovery</h2>
+      <Container>
+        <SearchBar defaultValue={defaultValue} handleChange={handleSearchChange} placeholder="Filter by labels" />
+      </Container>
+      <ul>
+        {mapObjEntries(targetList, ([k, v]) => (
+          <li key={k}>
+            <a href={'#' + k}>
+              {k} ({v.active} / {v.total} active targets)
+            </a>
+          </li>
+        ))}
+      </ul>
+      <hr />
+      {mapObjEntries(labelList, ([k, v]) => {
+        return <LabelsTable value={v} name={k} key={k} />;
+      })}
+    </>
+  );
+};
+ServiceDiscoveryContent.displayName = 'ServiceDiscoveryContent';
+
+const ServicesWithStatusIndicator = withStatusIndicator(ServiceDiscoveryContent);
+
+const ServiceDiscovery: FC = () => {
+  const pathPrefix = usePathPrefix();
+  const { response, error, isLoading } = useFetch<ServiceMap>(`${pathPrefix}/${API_PATH}/targets`);
+  return (
+    <ServicesWithStatusIndicator
+      {...response.data}
+      error={error}
+      isLoading={isLoading}
+      componentTitle="Service Discovery information"
+    />
+  );
+};
+
+export default ServiceDiscovery;

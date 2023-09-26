@@ -1,13 +1,7 @@
-/**
- *
- * THIS FILE WAS COPIED INTO PROMETHEUS FROM GRAFANA'S VENDORED FORK OF FLOT
- * (LIVING AT https://github.com/grafana/grafana/tree/master/public/vendor/flot),
- * WHICH CONTAINS FIXES FOR DISPLAYING NULL VALUES IN STACKED GRAPHS. THE ORIGINAL
- * FLOT CODE WAS LICENSED UNDER THE MIT LICENSE AS STATED BELOW. ADDITIONAL
- * CHANGES HAVE BEEN CONTRIBUTED TO THE GRAFANA FORK UNDER AN APACHE 2 LICENSE, SEE
- * https://github.com/grafana/grafana/blob/master/license.
- *
- */
+/*
+SPDX-License-Identifier: MIT
+Source: https://github.com/grafana/grafana/blob/main/public/vendor/flot/jquery.flot.stock.js
+*/
 
 /* eslint-disable prefer-spread */
 /* eslint-disable no-loop-func */
@@ -108,13 +102,11 @@ charts or filled areas).
         l = newpoints.length;
 
         if (i < points.length && points[i] == null) {
-          // copy gaps
-          for (m = 0; m < ps; ++m) newpoints.push(points[i + m]);
+          // take the points from the previous series
+          for (m = 0; m < ps; ++m) newpoints.push(otherpoints[i + m]);
+          if (withbottom) newpoints[l + 2] = otherpoints[i + accumulateOffset];
           i += ps;
         } else if (i >= points.length) {
-          // take the remaining points from the previous series
-          for (m = 0; m < ps; ++m) newpoints.push(otherpoints[j + m]);
-          if (withbottom) newpoints[l + 2] = otherpoints[j + accumulateOffset];
           j += otherps;
         } else if (j >= otherpoints.length) {
           // take the remaining points from the current series

@@ -1,0 +1,35 @@
+# HELP go_gc_duration_seconds A summary of the pause duration of garbage collection cycles.
+# TYPE go_gc_duration_seconds summary
+go_gc_duration_seconds{quantile="0"} 2.391e-05
+go_gc_duration_seconds{quantile="0.25"} 9.4402e-05
+go_gc_duration_seconds{quantile="0.5"} 0.000118953
+go_gc_duration_seconds{quantile="0.75"} 0.000145884
+go_gc_duration_seconds{quantile="1"} 0.005201208
+go_gc_duration_seconds_sum 0.036134048
+go_gc_duration_seconds_count 232
+# HELP prometheus_tsdb_compaction_chunk_size_bytes Final size of chunks on their first compaction
+# TYPE prometheus_tsdb_compaction_chunk_size_bytes histogram
+prometheus_tsdb_compaction_chunk_size_bytes_bucket{le="32"} 662
+prometheus_tsdb_compaction_chunk_size_bytes_bucket{le="48"} 1460
+prometheus_tsdb_compaction_chunk_size_bytes_bucket{le="72"} 2266
+prometheus_tsdb_compaction_chunk_size_bytes_bucket{le="108"} 3958
+prometheus_tsdb_compaction_chunk_size_bytes_bucket{le="162"} 4861
+prometheus_tsdb_compaction_chunk_size_bytes_bucket{le="243"} 5721
+prometheus_tsdb_compaction_chunk_size_bytes_bucket{le="364.5"} 10493
+prometheus_tsdb_compaction_chunk_size_bytes_bucket{le="546.75"} 12464
+prometheus_tsdb_compaction_chunk_size_bytes_bucket{le="820.125"} 13254
+prometheus_tsdb_compaction_chunk_size_bytes_bucket{le="1230.1875"} 13699
+prometheus_tsdb_compaction_chunk_size_bytes_bucket{le="1845.28125"} 13806
+prometheus_tsdb_compaction_chunk_size_bytes_bucket{le="2767.921875"} 13852
+prometheus_tsdb_compaction_chunk_size_bytes_bucket{le="+Inf"} 13867
+prometheus_tsdb_compaction_chunk_size_bytes_sum 3.886707e+06
+prometheus_tsdb_compaction_chunk_size_bytes_count 13867
+# HELP net_conntrack_dialer_conn_attempted_total Total number of connections attempted by the given dialer a given name.
+# TYPE net_conntrack_dialer_conn_attempted_total counter
+net_conntrack_dialer_conn_attempted_total{dialer_name="blackbox"} 5210
+net_conntrack_dialer_conn_attempted_total{dialer_name="default"} 0
+net_conntrack_dialer_conn_attempted_total{dialer_name="node"} 21
+net_conntrack_dialer_conn_attempted_total{dialer_name="prometheus"} 21
+# HELP go_info Information about the Go environment.
+# TYPE go_info gauge
+go_info{version="go1.17"} 1

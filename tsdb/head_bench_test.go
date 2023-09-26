@@ -15,17 +15,24 @@ package tsdb
 
 import (
 	"strconv"
-	"sync/atomic"
 	"testing"
 
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/pkg/errors"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
+
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 )
 
 func BenchmarkHeadStripeSeriesCreate(b *testing.B) {
+	chunkDir := b.TempDir()
 	// Put a series, select it. GC it and then access it.
-	h, err := NewHead(nil, nil, nil, 1000, DefaultStripeSize)
-	testutil.Ok(b, err)
+	opts := DefaultHeadOptions()
+	opts.ChunkRange = 1000
+	opts.ChunkDirRoot = chunkDir
+	h, err := NewHead(nil, nil, nil, nil, opts, nil)
+	require.NoError(b, err)
 	defer h.Close()
 
 	for i := 0; i < b.N; i++ {
@@ -34,17 +41,46 @@ func BenchmarkHeadStripeSeriesCreate(b *testing.B) {
 }
 
 func BenchmarkHeadStripeSeriesCreateParallel(b *testing.B) {
+	chunkDir := b.TempDir()
 	// Put a series, select it. GC it and then access it.
-	h, err := NewHead(nil, nil, nil, 1000, DefaultStripeSize)
-	testutil.Ok(b, err)
+	opts := DefaultHeadOptions()
+	opts.ChunkRange = 1000
+	opts.ChunkDirRoot = chunkDir
+	h, err := NewHead(nil, nil, nil, nil, opts, nil)
+	require.NoError(b, err)
 	defer h.Close()
 
-	var count int64
+	var count atomic.Int64
 
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			i := atomic.AddInt64(&count, 1)
+			i := count.Inc()
 			h.getOrCreate(uint64(i), labels.FromStrings("a", strconv.Itoa(int(i))))
 		}
 	})
 }
+
+func BenchmarkHeadStripeSeriesCreate_PreCreationFailure(b *testing.B) {
+	chunkDir := b.TempDir()
+	// Put a series, select it. GC it and then access it.
+	opts := DefaultHeadOptions()
+	opts.ChunkRange = 1000
+	opts.ChunkDirRoot = chunkDir
+
+	// Mock the PreCreation() callback to fail on each series.
+	opts.SeriesCallback = failingSeriesLifecycleCallback{}
+
+	h, err := NewHead(nil, nil, nil, nil, opts, nil)
+	require.NoError(b, err)
+	defer h.Close()
+
+	for i := 0; i < b.N; i++ {
+		h.getOrCreate(uint64(i), labels.FromStrings("a", strconv.Itoa(i)))
+	}
+}
+
+type failingSeriesLifecycleCallback struct{}
+
+func (failingSeriesLifecycleCallback) PreCreation(labels.Labels) error                     { return errors.New("failed") }
+func (failingSeriesLifecycleCallback) PostCreation(labels.Labels)                          {}
+func (failingSeriesLifecycleCallback) PostDeletion(map[chunks.HeadSeriesRef]labels.Labels) {}
