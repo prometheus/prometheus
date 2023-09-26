@@ -671,9 +671,9 @@ func (d *Discovery) addToCache(nicID string, netInt *network.Interface) {
 	if d.cache == nil {
 		return
 	}
-	rand.Seed(time.Now().UnixNano())
-	random := time.Duration(rand.Intn(20)) * time.Second
-	exptime := time.Duration(d.cfg.RefreshCacheInterval) + time.Duration(d.cfg.RefreshInterval) + random
+	random := time.Duration(d.cfg.RefreshInterval)
+	rs := time.Duration(rand.Int63n(int64(random.Seconds()))) * time.Second
+	exptime := time.Duration(d.cfg.RefreshCacheInterval) + rs
 	d.cache.Set(nicID, netInt, cache.WithExpiration(exptime))
 	level.Debug(d.logger).Log("msg", "Adding nic", "nic", nicID, "time", exptime.Seconds())
 }
