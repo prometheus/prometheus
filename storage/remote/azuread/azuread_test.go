@@ -260,7 +260,7 @@ func (s *TokenProviderTestSuite) TestNewTokenProvider() {
 
 			s.Assert().Nil(actualTokenProvider)
 			s.Assert().NotNil(actualErr)
-			s.Assert().Equal("Cloud is not specified or is incorrect: "+c.cfg.Cloud, actualErr.Error())
+			s.Assert().ErrorContains(actualErr, c.err)
 		} else {
 			testToken := &azcore.AccessToken{
 				Token:     testTokenString,
