@@ -888,3 +888,37 @@ func DecodeReducedWriteRequest(r io.Reader) (*prompb.WriteRequestWithRefs, error
 
 	return &req, nil
 }
+
+func ReducedWriteRequestToWriteRequest(redReq *prompb.WriteRequestWithRefs) (*prompb.WriteRequest, error) {
+	req := &prompb.WriteRequest{
+		Timeseries: make([]prompb.TimeSeries, len(redReq.Timeseries)),
+		Metadata:   redReq.Metadata,
+	}
+
+	for i, rts := range redReq.Timeseries {
+
+		lbls := make([]prompb.Label, len(rts.Labels))
+		for j, l := range rts.Labels {
+			lbls[j].Name = redReq.StringSymbolTable[l.NameRef]
+			lbls[j].Value = redReq.StringSymbolTable[l.ValueRef]
+		}
+
+		exemplars := make([]prompb.Exemplar, len(rts.Exemplars))
+		for j, e := range rts.Exemplars {
+			exemplars[j].Value = e.Value
+			exemplars[j].Timestamp = e.Timestamp
+			exemplars[j].Labels = make([]prompb.Label, len(e.Labels))
+			for k, l := range e.Labels {
+				exemplars[j].Labels[k].Name = redReq.StringSymbolTable[l.NameRef]
+				exemplars[j].Labels[k].Value = redReq.StringSymbolTable[l.ValueRef]
+			}
+		}
+
+		req.Timeseries[i].Labels = lbls
+		req.Timeseries[i].Samples = rts.Samples
+		req.Timeseries[i].Exemplars = exemplars
+		req.Timeseries[i].Histograms = rts.Histograms
+
+	}
+	return req, nil
+}
