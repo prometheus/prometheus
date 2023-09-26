@@ -242,26 +242,27 @@ type Options struct {
 	Version               *PrometheusVersion
 	Flags                 map[string]string
 
-	ListenAddress              string
-	CORSOrigin                 *regexp.Regexp
-	ReadTimeout                time.Duration
-	MaxConnections             int
-	ExternalURL                *url.URL
-	RoutePrefix                string
-	UseLocalAssets             bool
-	UserAssetsPath             string
-	ConsoleTemplatesPath       string
-	ConsoleLibrariesPath       string
-	EnableLifecycle            bool
-	EnableAdminAPI             bool
-	PageTitle                  string
-	RemoteReadSampleLimit      int
-	RemoteReadConcurrencyLimit int
-	RemoteReadBytesInFrame     int
-	EnableRemoteWriteReceiver  bool
-	EnableOTLPWriteReceiver    bool
-	IsAgent                    bool
-	AppName                    string
+	ListenAddress                   string
+	CORSOrigin                      *regexp.Regexp
+	ReadTimeout                     time.Duration
+	MaxConnections                  int
+	ExternalURL                     *url.URL
+	RoutePrefix                     string
+	UseLocalAssets                  bool
+	UserAssetsPath                  string
+	ConsoleTemplatesPath            string
+	ConsoleLibrariesPath            string
+	EnableLifecycle                 bool
+	EnableAdminAPI                  bool
+	PageTitle                       string
+	RemoteReadSampleLimit           int
+	RemoteReadConcurrencyLimit      int
+	RemoteReadBytesInFrame          int
+	EnableRemoteWriteReceiver       bool
+	EnableOTLPWriteReceiver         bool
+	IsAgent                         bool
+	AppName                         string
+	EnableReducedWriteProtoReceiver bool
 
 	Gatherer   prometheus.Gatherer
 	Registerer prometheus.Registerer
@@ -352,6 +353,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		nil,
 		o.EnableRemoteWriteReceiver,
 		o.EnableOTLPWriteReceiver,
+		o.EnableReducedWriteProtoReceiver,
 	)
 
 	if o.RoutePrefix != "/" {
