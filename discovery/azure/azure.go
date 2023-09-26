@@ -75,6 +75,7 @@ var (
 		Environment:          azure.PublicCloud.Name,
 		AuthenticationMethod: authMethodOAuth,
 		HTTPClientConfig:     config_util.DefaultHTTPClientConfig,
+		RefreshCacheInterval: model.Duration(25 * time.Minute),
 	}
 
 	failuresCount = prometheus.NewCounter(
@@ -127,7 +128,7 @@ func validateAuthParam(param, name string) error {
 }
 
 func setCacheParam(param model.Duration, name string) (*cache.Cache[string, *network.Interface], error) {
-	if param.String() == "0s" {
+	if param == 0 {
 		return nil, nil
 	}
 
