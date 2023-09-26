@@ -18,7 +18,7 @@ build:
         windows:
             - builtinassets
             - stringlabels
-    flags: -a
+    flags: -a -pgo=./cmd/prometheus/profile/prometheus-amd64.pprof
     ldflags: |
         -X github.com/prometheus/common/version.Version={{.Version}}
         -X github.com/prometheus/common/version.Revision={{.Revision}}
