@@ -214,6 +214,9 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 			case "reduced-rw-proto":
 				c.rwProto = true
 				level.Info(logger).Log("msg", "Reduced remote write proto format will be used, remote write receiver must be able to parse this new protobuf format.")
+			case "reduced-rw-proto-receiver":
+				c.web.EnableReducedWriteProtoReceiver = true
+				level.Info(logger).Log("msg", "Reduced proto format will be expected by the remote write receiver, client must send this new protobuf format.")
 			default:
 				level.Warn(logger).Log("msg", "Unknown option for --enable-feature", "option", o)
 			}
