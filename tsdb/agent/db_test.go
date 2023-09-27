@@ -751,3 +751,119 @@ func TestStorage_DuplicateExemplarsIgnored(t *testing.T) {
 	// We had 9 calls to AppendExemplar but only 4 of those should have gotten through.
 	require.Equal(t, 4, walExemplarsCount)
 }
+
+func TestDBAllowOOOSamples(t *testing.T) {
+	const (
+		numDatapoints = 5
+		numHistograms = 5
+		numSeries     = 4
+		offset        = 100
+	)
+
+	s := createTestAgentDB(t, nil, DefaultOptions())
+	app := s.Appender(context.TODO())
+
+	// Let's add some samples in the [offset, offset+numDatapoints) range.
+	lbls := labelsForTest(t.Name(), numSeries)
+	for _, l := range lbls {
+		lset := labels.New(l...)
+
+		for i := offset; i < numDatapoints+offset; i++ {
+			ref, err := app.Append(0, lset, int64(i), float64(i))
+			require.NoError(t, err)
+
+			e := exemplar.Exemplar{
+				Labels: lset,
+				Ts:     int64(i) * 2,
+				Value:  float64(i),
+				HasTs:  true,
+			}
+			_, err = app.AppendExemplar(ref, lset, e)
+			require.NoError(t, err)
+		}
+	}
+
+	lbls = labelsForTest(t.Name()+"_histogram", numSeries)
+	for _, l := range lbls {
+		lset := labels.New(l...)
+
+		histograms := tsdbutil.GenerateTestHistograms(numHistograms)
+
+		for i := offset; i < numDatapoints+offset; i++ {
+			_, err := app.AppendHistogram(0, lset, int64(i), histograms[i-offset], nil)
+			require.NoError(t, err)
+		}
+	}
+
+	lbls = labelsForTest(t.Name()+"_float_histogram", numSeries)
+	for _, l := range lbls {
+		lset := labels.New(l...)
+
+		floatHistograms := tsdbutil.GenerateTestFloatHistograms(numHistograms)
+
+		for i := offset; i < numDatapoints+offset; i++ {
+			_, err := app.AppendHistogram(0, lset, int64(i), nil, floatHistograms[i-offset])
+			require.NoError(t, err)
+		}
+	}
+
+	require.NoError(t, app.Commit())
+	require.NoError(t, s.Close())
+
+	// Hack: s.wal.Dir() is the /wal subdirectory of the original storage path.
+	// We need the original directory so we can recreate the storage for replay.
+	storageDir := filepath.Dir(s.wal.Dir())
+
+	// Replay the storage so that the lastTs for each series is recorded.
+	replayStorage, err := Open(s.logger, prometheus.NewRegistry(), nil, storageDir, s.opts)
+	if err != nil {
+		t.Fatalf("unable to create storage for the agent: %v", err)
+	}
+	defer func() {
+		require.NoError(t, replayStorage.Close())
+	}()
+
+	// Now the lastTs will have been recorded successfully.
+	// Let's try appending some OOO samples in the [0, numDatapoints) range.
+	for _, l := range lbls {
+		lset := labels.New(l...)
+
+		for i := 0; i < numDatapoints; i++ {
+			ref, err := app.Append(0, lset, int64(i), float64(i))
+			require.NoError(t, err)
+
+			e := exemplar.Exemplar{
+				Labels: lset,
+				Ts:     int64(i) * 2,
+				Value:  float64(i),
+				HasTs:  true,
+			}
+			_, err = app.AppendExemplar(ref, lset, e)
+			require.NoError(t, err)
+		}
+	}
+
+	lbls = labelsForTest(t.Name()+"_histogram", numSeries)
+	for _, l := range lbls {
+		lset := labels.New(l...)
+
+		histograms := tsdbutil.GenerateTestHistograms(numHistograms)
+
+		for i := 0; i < numDatapoints; i++ {
+			_, err := app.AppendHistogram(0, lset, int64(i), histograms[i], nil)
+			require.NoError(t, err)
+		}
+	}
+
+	lbls = labelsForTest(t.Name()+"_float_histogram", numSeries)
+	for _, l := range lbls {
+		lset := labels.New(l...)
+
+		floatHistograms := tsdbutil.GenerateTestFloatHistograms(numHistograms)
+
+		for i := 0; i < numDatapoints; i++ {
+			_, err := app.AppendHistogram(0, lset, int64(i), nil, floatHistograms[i])
+			require.NoError(t, err)
+		}
+	}
+}
