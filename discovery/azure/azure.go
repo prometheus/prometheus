@@ -115,7 +115,7 @@ func (*SDConfig) Name() string { return "azure" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(c, opts.Logger)
+	return NewDiscovery(c, opts.Logger), nil
 }
 
 func validateAuthParam(param, name string) error {
@@ -165,7 +165,7 @@ type Discovery struct {
 }
 
 // NewDiscovery returns a new AzureDiscovery which periodically refreshes its targets.
-func NewDiscovery(cfg *SDConfig, logger log.Logger) (*Discovery, error) {
+func NewDiscovery(cfg *SDConfig, logger log.Logger) *Discovery {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -184,7 +184,7 @@ func NewDiscovery(cfg *SDConfig, logger log.Logger) (*Discovery, error) {
 		d.refresh,
 	)
 
-	return d, nil
+	return d
 }
 
 // azureClient represents multiple Azure Resource Manager providers.
