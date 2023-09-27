@@ -14,6 +14,9 @@
 package remote
 
 import (
+	"bytes"
+	"compress/flate"
+	"compress/gzip"
 	"context"
 	"fmt"
 	"math"
@@ -30,6 +33,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	"github.com/klauspost/compress/zstd"
 	"github.com/prometheus/client_golang/prometheus"
 	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
@@ -1447,7 +1451,8 @@ func createDummyTimeSeries(instances int) []timeSeries {
 
 func BenchmarkBuildWriteRequest(b *testing.B) {
 	bench := func(b *testing.B, batch []timeSeries) {
-		buff := make([]byte, 0)
+
+		comp := &snappyCompression{}
 		seriesBuff := make([]prompb.TimeSeries, len(batch))
 		for i := range seriesBuff {
 			seriesBuff[i].Samples = []prompb.Sample{{}}
@@ -1458,14 +1463,14 @@ func BenchmarkBuildWriteRequest(b *testing.B) {
 		// Warmup buffers
 		for i := 0; i < 10; i++ {
 			populateTimeSeries(batch, seriesBuff, true, true)
-			buildWriteRequest(seriesBuff, nil, pBuf, &buff)
+			buildWriteRequest(seriesBuff, nil, pBuf, comp)
 		}
 
 		b.ResetTimer()
 		totalSize := 0
 		for i := 0; i < b.N; i++ {
 			populateTimeSeries(batch, seriesBuff, true, true)
-			req, _, err := buildWriteRequest(seriesBuff, nil, pBuf, &buff)
+			req, _, err := buildWriteRequest(seriesBuff, nil, pBuf, comp)
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -1492,6 +1497,7 @@ func BenchmarkBuildWriteRequest(b *testing.B) {
 }
 
 func BenchmarkBuildMinimizedWriteRequest(b *testing.B) {
+
 	type testcase struct {
 		batch []timeSeries
 	}
@@ -1502,7 +1508,6 @@ func BenchmarkBuildMinimizedWriteRequest(b *testing.B) {
 	}
 	for _, tc := range testCases {
 		symbolTable := newRwSymbolTable()
-		buff := make([]byte, 0)
 		seriesBuff := make([]prompb.MinimizedTimeSeries, len(tc.batch))
 		for i := range seriesBuff {
 			seriesBuff[i].Samples = []prompb.Sample{{}}
@@ -1532,3 +1537,154 @@ func BenchmarkBuildMinimizedWriteRequest(b *testing.B) {
 		})
 	}
 }
+func makeUncompressedReducedWriteRequestBenchData(b *testing.B) []byte {
+	data := createDummyTimeSeries(1000)
+	pool := newLookupPool()
+	pBuf := proto.NewBuffer(nil)
+	seriesBuff := make([]prompb.ReducedTimeSeries, len(data))
+	for i := range seriesBuff {
+		seriesBuff[i].Samples = []prompb.Sample{{}}
+		seriesBuff[i].Exemplars = []prompb.ExemplarRef{{}}
+	}
+
+	populateReducedTimeSeries(pool, data, seriesBuff, true, true)
+	res, _, err := buildReducedWriteRequestWithCompression(seriesBuff, pool.getTable(), pBuf, &noopCompression{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	return res
+}
+
+func makeUncompressedWriteRequestBenchData(b *testing.B) []byte {
+	data := createDummyTimeSeries(1000)
+	seriesBuff := make([]prompb.TimeSeries, len(data))
+	for i := range seriesBuff {
+		seriesBuff[i].Samples = []prompb.Sample{{}}
+		seriesBuff[i].Exemplars = []prompb.Exemplar{{}}
+	}
+	pBuf := proto.NewBuffer(nil)
+
+	populateTimeSeries(data, seriesBuff, true, true)
+	res, _, err := buildWriteRequestWithCompression(seriesBuff, nil, pBuf, &noopCompression{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	return res
+}
+
+func BenchmarkCompressWriteRequest(b *testing.B) {
+	uncompV1 := makeUncompressedWriteRequestBenchData(b)
+	uncompV11 := makeUncompressedReducedWriteRequestBenchData(b)
+	// buf := make([]byte, 0)
+
+	bench := func(b *testing.B, data []byte, comp Compression) {
+		b.ResetTimer()
+		totalSize := 0
+		var res []byte
+		var err error
+		for i := 0; i < b.N; i++ {
+			res, err = comp.Compress(data)
+			if err != nil {
+				b.Fatal(err)
+			}
+			totalSize += len(res)
+			b.ReportMetric(float64(totalSize)/float64(b.N), "compressedSize/op")
+		}
+		b.StopTimer()
+		// sanity check
+		res, err = comp.Decompress(res)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if !bytes.Equal(res, data) {
+			b.Fatalf("decompressed data doesn't match original")
+		}
+	}
+
+	cases := []struct {
+		name string
+		data []byte
+		comp Compression
+	}{
+		{"v1-go-snappy", uncompV1, &snappyCompression{}},
+		{"v1-snappy", uncompV1, &snappyAltCompression{}},
+		{"v1-s2", uncompV1, &s2Compression{}},
+		{"v1-ZstdFastest", uncompV1, &zstdCompression{level: zstd.SpeedFastest}},
+		{"v1-ZstdSpeedDef", uncompV1, &zstdCompression{level: zstd.SpeedDefault}},
+		{"v1-ZstdBestComp", uncompV1, &zstdCompression{level: zstd.SpeedBestCompression}},
+		{"v1-GzipBestComp", uncompV1, &gzipCompression{level: gzip.BestCompression}},
+		{"v1-GzipBestSpeed", uncompV1, &gzipCompression{level: gzip.BestSpeed}},
+		{"v1-GzipDefault", uncompV1, &gzipCompression{level: gzip.DefaultCompression}},
+		{"v1-Lzw", uncompV1, &lzwCompression{}},
+		{"v1-FlateBestComp", uncompV1, &flateCompression{level: flate.BestCompression}},
+		{"v1-FlateBestSpeed", uncompV1, &flateCompression{level: flate.BestSpeed}},
+		{"v1-Brotli-1", uncompV1, &brotliCompression{quality: 1}},
+		{"v1-Brotli-11", uncompV1, &brotliCompression{quality: 1}},
+		{"v1-Brotli-5", uncompV1, &brotliCompression{quality: 5}},
+
+		{"v1.1-go-snappy", uncompV11, &snappyCompression{}},
+		{"v1.1-snappy", uncompV11, &snappyAltCompression{}},
+		{"v1.1-s2", uncompV11, &s2Compression{}},
+		{"v1.1-ZstdFastest", uncompV11, &zstdCompression{level: zstd.SpeedFastest}},
+		{"v1.1-ZstdSpeedDef", uncompV11, &zstdCompression{level: zstd.SpeedDefault}},
+		{"v1.1-ZstdBestComp", uncompV11, &zstdCompression{level: zstd.SpeedBestCompression}},
+		{"v1.1-GzipBestComp", uncompV11, &gzipCompression{level: gzip.BestCompression}},
+		{"v1.1-GzipBestSpeed", uncompV11, &gzipCompression{level: gzip.BestSpeed}},
+		{"v1.1-GzipDefault", uncompV11, &gzipCompression{level: gzip.DefaultCompression}},
+		{"v1.1-Lzw", uncompV11, &lzwCompression{}},
+		{"v1.1-FlateBestComp", uncompV11, &flateCompression{level: flate.BestCompression}},
+		{"v1.1-FlateBestSpeed", uncompV11, &flateCompression{level: flate.BestSpeed}},
+		{"v1.1-Brotli-1", uncompV11, &brotliCompression{quality: 1}},
+		{"v1.1-Brotli-11", uncompV11, &brotliCompression{quality: 1}},
+		{"v1.1-Brotli-5", uncompV11, &brotliCompression{quality: 5}},
+	}
+
+	// Warmup buffers
+	for _, c := range cases {
+		bench(b, c.data, c.comp)
+	}
+
+	for _, c := range cases {
+		b.Run(c.name, func(b *testing.B) {
+			bench(b, c.data, c.comp)
+		})
+	}
+}
+
+// func BenchmarkDecompressWriteRequestGoSnappy(b *testing.B) {
+// 	uncomp := makeUncompressedWriteRequestBenchData(b)
+// 	buf, _ := compressSnappy(uncomp, &[]byte{})
+// 	b.ResetTimer()
+// 	totalSize := 0
+// 	for i := 0; i < b.N; i++ {
+// 		dbuf, _ := decompressSnappy(buf)
+// 		totalSize += len(dbuf)
+// 		b.ReportMetric(float64(totalSize)/float64(b.N), "decompressedSize/op")
+
+// 	}
+// }
+// func BenchmarkDecompressWriteRequestSnappy(b *testing.B) {
+// 	uncomp := makeUncompressedWriteRequestBenchData(b)
+// 	buf, _ := compressSnappyAlt(uncomp, &[]byte{})
+
+// 	b.ResetTimer()
+// 	totalSize := 0
+// 	for i := 0; i < b.N; i++ {
+// 		dbuf, _ := decompressSnappyAlt(buf)
+// 		totalSize += len(dbuf)
+// 		b.ReportMetric(float64(totalSize)/float64(b.N), "decompressedSize/op")
+
+// 	}
+// }
+// func BenchmarkDecompressWriteRequestS2(b *testing.B) {
+// 	uncomp := makeUncompressedWriteRequestBenchData(b)
+// 	buf, _ := compressSnappyAlt(uncomp, &[]byte{})
+// 	b.ResetTimer()
+// 	totalSize := 0
+// 	for i := 0; i < b.N; i++ {
+// 		dbuf, _ := decompressS2(buf)
+// 		totalSize += len(dbuf)
+// 		b.ReportMetric(float64(totalSize)/float64(b.N), "decompressedSize/op")
+
+// 	}
+// }

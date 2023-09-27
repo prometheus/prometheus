@@ -26,7 +26,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
-	"github.com/golang/snappy"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"go.opentelemetry.io/otel"
@@ -545,7 +545,9 @@ func (t *QueueManager) AppendMetadata(ctx context.Context, metadata []scrape.Met
 
 func (t *QueueManager) sendMetadataWithBackoff(ctx context.Context, metadata []prompb.MetricMetadata, pBuf *proto.Buffer) error {
 	// Build the WriteRequest with no samples.
-	req, _, err := buildWriteRequest(nil, metadata, pBuf, nil)
+	comp := createComp()
+	req, _, err := buildWriteRequest(nil, metadata, pBuf, comp)
+	comp.Close()
 	if err != nil {
 		return err
 	}
@@ -1367,7 +1369,9 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 		pBuf    = proto.NewBuffer(nil)
 		pBufRaw []byte
 		buf     []byte
+		comp    = createComp()
 	)
+	defer comp.Close()
 	if s.qm.sendExemplars {
 		max += int(float64(max) * 0.1)
 	}
@@ -1442,7 +1446,6 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 				s.sendMinLenSamples(ctx, pendingMinLenData[:n], symbolTable.LabelsData(), nPendingSamples, nPendingExemplars, nPendingHistograms, pBuf, &buf)
 				symbolTable.clear()
 			}
-
 			queue.ReturnForReuse(batch)
 
 			stop()
@@ -1455,7 +1458,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 				case Base1:
 					nPendingSamples, nPendingExemplars, nPendingHistograms := populateTimeSeries(batch, pendingData, s.qm.sendExemplars, s.qm.sendNativeHistograms)
 					n := nPendingSamples + nPendingExemplars + nPendingHistograms
-					s.sendSamples(ctx, pendingData[:n], nPendingSamples, nPendingExemplars, nPendingHistograms, pBuf, &buf)
+					s.sendSamples(ctx, pendingData[:n], nPendingSamples, nPendingExemplars, nPendingHistograms, pBuf, comp)
 					level.Debug(s.qm.logger).Log("msg", "runShard timer ticked, sending buffered data", "samples", nPendingSamples,
 						"exemplars", nPendingExemplars, "shard", shardNum, "histograms", nPendingHistograms)
 				case Min32Optimized:
@@ -1519,13 +1522,12 @@ func populateTimeSeries(batch []timeSeries, pendingData []prompb.TimeSeries, sen
 	}
 	return nPendingSamples, nPendingExemplars, nPendingHistograms
 }
-
-func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, sampleCount, exemplarCount, histogramCount int, pBuf *proto.Buffer, buf *[]byte) {
+func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, sampleCount, exemplarCount, histogramCount int, pBuf *proto.Buffer, comp Compression) {
 	begin := time.Now()
 	// Build the WriteRequest with no metadata.
 	// Failing to build the write request is non-recoverable, since it will
 	// only error if marshaling the proto to bytes fails.
-	req, highest, err := buildWriteRequest(samples, nil, pBuf, buf)
+	req, highest, err := buildWriteRequest(samples, nil, pBuf, comp)
 	if err == nil {
 		err = s.sendSamplesWithBackoff(ctx, req, sampleCount, exemplarCount, histogramCount, highest)
 	}
@@ -1768,7 +1770,15 @@ func sendWriteRequestWithBackoff(ctx context.Context, cfg config.QueueConfig, l 
 	}
 }
 
-func buildWriteRequest(samples []prompb.TimeSeries, metadata []prompb.MetricMetadata, pBuf *proto.Buffer, buf *[]byte) ([]byte, int64, error) {
+func buildWriteRequest(samples []prompb.TimeSeries, metadata []prompb.MetricMetadata, pBuf *proto.Buffer, comp Compression) ([]byte, int64, error) {
+	return buildWriteRequestWithCompression(samples, metadata, pBuf, comp)
+}
+
+func buildWriteRequestWithCompression(samples []prompb.TimeSeries,
+	metadata []prompb.MetricMetadata,
+	pBuf *proto.Buffer,
+	compressor Compression,
+) ([]byte, int64, error) {
 	var highest int64
 	for _, ts := range samples {
 		// At the moment we only ever append a TimeSeries with a single sample or exemplar in it.
@@ -1810,13 +1820,54 @@ func buildWriteRequest(samples []prompb.TimeSeries, metadata []prompb.MetricMeta
 		// grow the buffer for the next time
 		*buf = make([]byte, n)
 	}
-
-	return compressed, highest, nil
+	return compressed, highest, err
 }
 
 type offLenPair struct {
 	Off uint32
 	Len uint32
+}
+
+func buildReducedWriteRequest(samples []prompb.ReducedTimeSeries, labels map[uint64]string, pBuf *proto.Buffer, comp Compression) ([]byte, int64, error) {
+	return buildReducedWriteRequestWithCompression(samples, labels, pBuf, comp)
+}
+
+func buildReducedWriteRequestWithCompression(samples []prompb.ReducedTimeSeries,
+	labels map[uint64]string,
+	pBuf *proto.Buffer,
+	compress Compression,
+) ([]byte, int64, error) {
+	var highest int64
+	for _, ts := range samples {
+		// At the moment we only ever append a TimeSeries with a single sample or exemplar in it.
+		if len(ts.Samples) > 0 && ts.Samples[0].Timestamp > highest {
+			highest = ts.Samples[0].Timestamp
+		}
+		if len(ts.Exemplars) > 0 && ts.Exemplars[0].Timestamp > highest {
+			highest = ts.Exemplars[0].Timestamp
+		}
+		if len(ts.Histograms) > 0 && ts.Histograms[0].Timestamp > highest {
+			highest = ts.Histograms[0].Timestamp
+		}
+	}
+
+	req := &prompb.WriteRequestWithRefs{
+		StringSymbolTable: labels,
+		Timeseries:        samples,
+	}
+
+	if pBuf == nil {
+		pBuf = proto.NewBuffer(nil) // For convenience in tests. Not efficient.
+	} else {
+		pBuf.Reset()
+	}
+	err := pBuf.Marshal(req)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	compressed, err := compress.Compress(pBuf.Bytes())
+	return compressed, highest, err
 }
 
 type rwSymbolTable struct {
