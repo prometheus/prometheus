@@ -450,10 +450,9 @@ func TestDocumentation(t *testing.T) {
 	cmd.Stdout = &stdout
 
 	if err := cmd.Run(); err != nil {
-		if exitError, ok := err.(*exec.ExitError); ok {
-			if exitError.ExitCode() != 0 {
-				fmt.Println("Command failed with non-zero exit code")
-			}
+		var exitError *exec.ExitError
+		if errors.As(err, &exitError) && exitError.ExitCode() != 0 {
+			fmt.Println("Command failed with non-zero exit code")
 		}
 	}
 
