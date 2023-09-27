@@ -770,6 +770,29 @@ func labelProtosToLabels(labelPairs []prompb.Label) labels.Labels {
 	return b.Labels()
 }
 
+func labelRefProtosToLabels(st map[uint64]string, lbls []prompb.LabelRef) labels.Labels {
+	result := make(labels.Labels, 0, len(lbls))
+	for _, l := range lbls {
+		result = append(result, labels.Label{
+			Name:  st[l.NameRef],
+			Value: st[l.ValueRef],
+		})
+	}
+	sort.Sort(result)
+	return result
+}
+
+func exemplarRefProtoToExemplar(st map[uint64]string, ep prompb.ExemplarRef) exemplar.Exemplar {
+	timestamp := ep.Timestamp
+
+	return exemplar.Exemplar{
+		Labels: labelRefProtosToLabels(st, ep.Labels),
+		Value:  ep.Value,
+		Ts:     timestamp,
+		HasTs:  timestamp != 0,
+	}
+}
+
 // labelsToLabelsProto transforms labels into prompb labels. The buffer slice
 // will be used to avoid allocations if it is big enough to store the labels.
 func labelsToLabelsProto(lbls labels.Labels, buf []prompb.Label) []prompb.Label {
@@ -908,6 +931,7 @@ func ReducedWriteRequestToWriteRequest(redReq *prompb.WriteRequestWithRefs) (*pr
 			exemplars[j].Value = e.Value
 			exemplars[j].Timestamp = e.Timestamp
 			exemplars[j].Labels = make([]prompb.Label, len(e.Labels))
+
 			for k, l := range e.Labels {
 				exemplars[j].Labels[k].Name = redReq.StringSymbolTable[l.NameRef]
 				exemplars[j].Labels[k].Value = redReq.StringSymbolTable[l.ValueRef]
