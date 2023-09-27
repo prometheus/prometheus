@@ -267,7 +267,7 @@ func TestPostingsForMatchersCache(t *testing.T) {
 	t.Run("cached value is evicted because cache exceeds max bytes", func(t *testing.T) {
 		const (
 			maxItems         = 100 // Never hit it.
-			maxBytes         = 1000
+			maxBytes         = 1100
 			numMatchers      = 5
 			postingsListSize = 30 // 8 bytes per posting ref, so 30 x 8 = 240 bytes.
 		)
@@ -313,7 +313,7 @@ func TestPostingsForMatchersCache(t *testing.T) {
 
 		// At this point we expect that the postings have been computed only once for the 3 matchers.
 		for i := 0; i < 3; i++ {
-			assert.Equal(t, 1, callsPerMatchers[matchersKey(matchersLists[i])])
+			assert.Equalf(t, 1, callsPerMatchers[matchersKey(matchersLists[i])], "matcher %d", i)
 		}
 
 		// Call PostingsForMatchers() for a 4th matcher. We expect this will evict the oldest cached entry.
