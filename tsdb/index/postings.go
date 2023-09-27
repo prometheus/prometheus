@@ -858,9 +858,9 @@ func NewPostingsCloner(p Postings) *PostingsCloner {
 	// so the returned slice capacity may be well above the actual number of items.
 	// In such case, we shrink it.
 	if float64(len(ids)) < float64(cap(ids))*0.70 {
-		shrinked := make([]storage.SeriesRef, len(ids))
-		copy(shrinked, ids)
-		ids = shrinked
+		shrunk := make([]storage.SeriesRef, len(ids))
+		copy(shrunk, ids)
+		ids = shrunk
 	}
 
 	return &PostingsCloner{ids: ids, err: err}
