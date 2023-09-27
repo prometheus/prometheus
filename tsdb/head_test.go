@@ -4836,6 +4836,16 @@ func TestHistogramValidation(t *testing.T) {
 		"valid histogram": {
 			h: tsdbutil.GenerateTestHistograms(1)[0],
 		},
+		"valid histogram that has its Count (4) higher than the actual total of buckets (2 + 1)": {
+			// This case is possible if NaN values (which do not fall into any bucket) are observed.
+			h: &histogram.Histogram{
+				ZeroCount:       2,
+				Count:           4,
+				Sum:             math.NaN(),
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []int64{1},
+			},
+		},
 		"rejects histogram that has too few negative buckets": {
 			h: &histogram.Histogram{
 				NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
