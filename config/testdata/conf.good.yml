@@ -269,7 +269,6 @@ scrape_configs:
         client_id: 333333CC-3C33-3333-CCC3-33C3CCCCC33C
         client_secret: mysecret
         port: 9100
-        cache_refresh_interval: 10s
 
   - job_name: service-nerve
     nerve_sd_configs:

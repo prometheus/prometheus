@@ -75,7 +75,6 @@ var (
 		Environment:          azure.PublicCloud.Name,
 		AuthenticationMethod: authMethodOAuth,
 		HTTPClientConfig:     config_util.DefaultHTTPClientConfig,
-		RefreshCacheInterval: model.Duration(25 * time.Minute),
 	}
 
 	failuresCount = prometheus.NewCounter(
@@ -107,7 +106,6 @@ type SDConfig struct {
 	RefreshInterval      model.Duration     `yaml:"refresh_interval,omitempty"`
 	AuthenticationMethod string             `yaml:"authentication_method,omitempty"`
 	ResourceGroup        string             `yaml:"resource_group,omitempty"`
-	RefreshCacheInterval model.Duration     `yaml:"cache_refresh_interval,omitempty"`
 
 	HTTPClientConfig config_util.HTTPClientConfig `yaml:",inline"`
 }
@@ -125,15 +123,6 @@ func validateAuthParam(param, name string) error {
 		return fmt.Errorf("azure SD configuration requires a %s", name)
 	}
 	return nil
-}
-
-func setCacheParam(param model.Duration, name string) (*cache.Cache[string, *network.Interface], error) {
-	if param == 0 {
-		return nil, nil
-	}
-
-	l := cache.New(cache.AsLRU[string, *network.Interface](lru.WithCapacity(10000)))
-	return l, nil
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -180,10 +169,7 @@ func NewDiscovery(cfg *SDConfig, logger log.Logger) (*Discovery, error) {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
-	l, err := setCacheParam(cfg.RefreshCacheInterval, "cache_refresh_interval")
-	if err != nil {
-		return nil, err
-	}
+	l := cache.New(cache.AsLRU[string, *network.Interface](lru.WithCapacity(5000)))
 	d := &Discovery{
 		cfg:    cfg,
 		port:   cfg.Port,
@@ -666,14 +652,10 @@ func (client *azureClient) getNetworkInterfaceByID(ctx context.Context, networkI
 }
 
 // addToCache will add the network interface information for the specified nicID
-// If the cache is disable we do nothing
 func (d *Discovery) addToCache(nicID string, netInt *network.Interface) {
-	if d.cache == nil {
-		return
-	}
-	random := time.Duration(d.cfg.RefreshInterval)
-	rs := time.Duration(rand.Int63n(int64(random.Seconds()))) * time.Second
-	exptime := time.Duration(d.cfg.RefreshCacheInterval) + rs
+	random := rand.Int63n(int64(time.Duration(d.cfg.RefreshInterval * 3).Seconds()))
+	rs := time.Duration(random) * time.Second
+	exptime := time.Duration(d.cfg.RefreshInterval*10) + rs
 	d.cache.Set(nicID, netInt, cache.WithExpiration(exptime))
 	level.Debug(d.logger).Log("msg", "Adding nic", "nic", nicID, "time", exptime.Seconds())
 }
@@ -681,9 +663,6 @@ func (d *Discovery) addToCache(nicID string, netInt *network.Interface) {
 // getFromCache will get the network Interface for the specified nicID
 // If the cache is disabled nothing will happen
 func (d *Discovery) getFromCache(nicID string) (*network.Interface, bool) {
-	if d.cache == nil {
-		return nil, false
-	}
 	net, found := d.cache.Get(nicID)
 	return net, found
 }
