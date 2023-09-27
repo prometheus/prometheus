@@ -339,6 +339,55 @@ func TestPostingsForMatchersCache(t *testing.T) {
 	})
 }
 
+func BenchmarkPostingsForMatchersCache(b *testing.B) {
+	const numMatchers = 100
+
+	var (
+		ctx         = context.Background()
+		indexReader = indexForPostingsMock{}
+	)
+
+	// Create some matchers.
+	matchersLists := make([][]*labels.Matcher, numMatchers)
+	for i := range matchersLists {
+		matchersLists[i] = []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "matchers", fmt.Sprintf("%d", i))}
+	}
+
+	b.Run("no evictions", func(b *testing.B) {
+		// Configure the cache to never evict.
+		cache := NewPostingsForMatchersCache(time.Hour, 1000000, 1024*1024*1024, true)
+		cache.postingsForMatchers = func(ctx context.Context, ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
+			return index.NewListPostings(nil), nil
+		}
+
+		b.ResetTimer()
+
+		for n := 0; n < b.N; n++ {
+			_, err := cache.PostingsForMatchers(ctx, indexReader, true, matchersLists[n%len(matchersLists)]...)
+			if err != nil {
+				b.Fatalf("unexpected error: %v", err)
+			}
+		}
+	})
+
+	b.Run("high eviction rate", func(b *testing.B) {
+		// Configure the cache to evict continuously.
+		cache := NewPostingsForMatchersCache(time.Hour, 1, 1, true)
+		cache.postingsForMatchers = func(ctx context.Context, ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
+			return index.NewListPostings(nil), nil
+		}
+
+		b.ResetTimer()
+
+		for n := 0; n < b.N; n++ {
+			_, err := cache.PostingsForMatchers(ctx, indexReader, true, matchersLists[n%len(matchersLists)]...)
+			if err != nil {
+				b.Fatalf("unexpected error: %v", err)
+			}
+		}
+	})
+}
+
 type indexForPostingsMock struct{}
 
 func (idx indexForPostingsMock) LabelValues(context.Context, string, ...*labels.Matcher) ([]string, error) {
