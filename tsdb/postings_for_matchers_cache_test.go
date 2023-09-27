@@ -8,17 +8,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/index"
 )
 
 func TestPostingsForMatchersCache(t *testing.T) {
-	const testCacheSize = 5
 	// newPostingsForMatchersCache tests the NewPostingsForMatcherCache constructor, but overrides the postingsForMatchers func
-	newPostingsForMatchersCache := func(ttl time.Duration, pfm func(_ context.Context, ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error), timeMock *timeNowMock, force bool) *PostingsForMatchersCache {
-		c := NewPostingsForMatchersCache(ttl, testCacheSize, force)
+	newPostingsForMatchersCache := func(ttl time.Duration, maxItems int, maxBytes int64, pfm func(_ context.Context, ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error), timeMock *timeNowMock, force bool) *PostingsForMatchersCache {
+		c := NewPostingsForMatchersCache(ttl, maxItems, maxBytes, force)
 		if c.postingsForMatchers == nil {
 			t.Fatalf("NewPostingsForMatchersCache() didn't assign postingsForMatchers func")
 		}
@@ -35,7 +36,7 @@ func TestPostingsForMatchersCache(t *testing.T) {
 				expectedMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")}
 				expectedPostingsErr := fmt.Errorf("failed successfully")
 
-				c := newPostingsForMatchersCache(defaultPostingsForMatchersCacheTTL, func(_ context.Context, ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
+				c := newPostingsForMatchersCache(DefaultPostingsForMatchersCacheTTL, 5, 1000, func(_ context.Context, ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
 					require.IsType(t, indexForPostingsMock{}, ix, "Incorrect IndexPostingsReader was provided to PostingsForMatchers, expected the mock, was given %v (%T)", ix, ix)
 					require.Equal(t, expectedMatchers, ms, "Wrong label matchers provided, expected %v, got %v", expectedMatchers, ms)
 					return index.ErrPostings(expectedPostingsErr), nil
@@ -53,7 +54,7 @@ func TestPostingsForMatchersCache(t *testing.T) {
 		expectedMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")}
 		expectedErr := fmt.Errorf("failed successfully")
 
-		c := newPostingsForMatchersCache(defaultPostingsForMatchersCacheTTL, func(_ context.Context, ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
+		c := newPostingsForMatchersCache(DefaultPostingsForMatchersCacheTTL, 5, 1000, func(_ context.Context, ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
 			return nil, expectedErr
 		}, &timeNowMock{}, false)
 
@@ -99,9 +100,9 @@ func TestPostingsForMatchersCache(t *testing.T) {
 						release := make(chan struct{})
 						var ttl time.Duration
 						if cacheEnabled {
-							ttl = defaultPostingsForMatchersCacheTTL
+							ttl = DefaultPostingsForMatchersCacheTTL
 						}
-						c := newPostingsForMatchersCache(ttl, func(_ context.Context, ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
+						c := newPostingsForMatchersCache(ttl, 5, 1000, func(_ context.Context, ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
 							select {
 							case called <- struct{}{}:
 							default:
@@ -148,7 +149,7 @@ func TestPostingsForMatchersCache(t *testing.T) {
 		expectedMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")}
 
 		var call int
-		c := newPostingsForMatchersCache(defaultPostingsForMatchersCacheTTL, func(_ context.Context, ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
+		c := newPostingsForMatchersCache(DefaultPostingsForMatchersCacheTTL, 5, 1000, func(_ context.Context, ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
 			call++
 			return index.ErrPostings(fmt.Errorf("result from call %d", call)), nil
 		}, &timeNowMock{}, false)
@@ -168,7 +169,7 @@ func TestPostingsForMatchersCache(t *testing.T) {
 		expectedMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")}
 
 		var call int
-		c := newPostingsForMatchersCache(0, func(_ context.Context, ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
+		c := newPostingsForMatchersCache(0, 1000, 1000, func(_ context.Context, ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
 			call++
 			return index.ErrPostings(fmt.Errorf("result from call %d", call)), nil
 		}, &timeNowMock{}, false)
@@ -191,7 +192,7 @@ func TestPostingsForMatchersCache(t *testing.T) {
 		}
 
 		var call int
-		c := newPostingsForMatchersCache(defaultPostingsForMatchersCacheTTL, func(_ context.Context, ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
+		c := newPostingsForMatchersCache(DefaultPostingsForMatchersCacheTTL, 5, 1000, func(_ context.Context, ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
 			call++
 			return index.ErrPostings(fmt.Errorf("result from call %d", call)), nil
 		}, timeNow, false)
@@ -201,14 +202,14 @@ func TestPostingsForMatchersCache(t *testing.T) {
 		require.NoError(t, err)
 		require.EqualError(t, p.Err(), "result from call 1")
 
-		timeNow.advance(defaultPostingsForMatchersCacheTTL / 2)
+		timeNow.advance(DefaultPostingsForMatchersCacheTTL / 2)
 
 		// second call within the ttl, should use the cache
 		p, err = c.PostingsForMatchers(ctx, indexForPostingsMock{}, true, expectedMatchers...)
 		require.NoError(t, err)
 		require.EqualError(t, p.Err(), "result from call 1")
 
-		timeNow.advance(defaultPostingsForMatchersCacheTTL / 2)
+		timeNow.advance(DefaultPostingsForMatchersCacheTTL / 2)
 
 		// third call is after ttl (exactly), should call again
 		p, err = c.PostingsForMatchers(ctx, indexForPostingsMock{}, true, expectedMatchers...)
@@ -216,15 +217,17 @@ func TestPostingsForMatchersCache(t *testing.T) {
 		require.EqualError(t, p.Err(), "result from call 2")
 	})
 
-	t.Run("cached value is evicted because cache exceeds max size", func(t *testing.T) {
+	t.Run("cached value is evicted because cache exceeds max items", func(t *testing.T) {
+		const maxItems = 5
+
 		timeNow := &timeNowMock{}
-		calls := make([][]*labels.Matcher, testCacheSize)
+		calls := make([][]*labels.Matcher, maxItems)
 		for i := range calls {
 			calls[i] = []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "matchers", fmt.Sprintf("%d", i))}
 		}
 
 		callsPerMatchers := map[string]int{}
-		c := newPostingsForMatchersCache(defaultPostingsForMatchersCacheTTL, func(_ context.Context, ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
+		c := newPostingsForMatchersCache(DefaultPostingsForMatchersCacheTTL, maxItems, 1000, func(_ context.Context, ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
 			k := matchersKey(ms)
 			callsPerMatchers[k]++
 			return index.ErrPostings(fmt.Errorf("result from call %d", callsPerMatchers[k])), nil
@@ -259,6 +262,80 @@ func TestPostingsForMatchersCache(t *testing.T) {
 		p, err = c.PostingsForMatchers(ctx, indexForPostingsMock{}, true, calls[0]...)
 		require.NoError(t, err)
 		require.EqualError(t, p.Err(), "result from call 2")
+	})
+
+	t.Run("cached value is evicted because cache exceeds max bytes", func(t *testing.T) {
+		const (
+			maxItems         = 100 // Never hit it.
+			maxBytes         = 1000
+			numMatchers      = 5
+			postingsListSize = 30 // 8 bytes per posting ref, so 30 x 8 = 240 bytes.
+		)
+
+		// Generate some matchers.
+		matchersLists := make([][]*labels.Matcher, numMatchers)
+		for i := range matchersLists {
+			matchersLists[i] = []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "matchers", fmt.Sprintf("%d", i))}
+		}
+
+		// Generate some postings lists.
+		refsLists := make(map[string][]storage.SeriesRef, numMatchers)
+		for i := 0; i < numMatchers; i++ {
+			refs := make([]storage.SeriesRef, postingsListSize)
+			for r := range refs {
+				refs[r] = storage.SeriesRef(i * r)
+			}
+
+			refsLists[matchersKey(matchersLists[i])] = refs
+		}
+
+		callsPerMatchers := map[string]int{}
+		c := newPostingsForMatchersCache(DefaultPostingsForMatchersCacheTTL, maxItems, maxBytes, func(_ context.Context, ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
+			k := matchersKey(ms)
+			callsPerMatchers[k]++
+			return index.NewListPostings(refsLists[k]), nil
+		}, &timeNowMock{}, false)
+
+		// We expect to cache 3 items. So we're going to call PostingsForMatchers for 3 matchers
+		// and then double check they're all cached. To do it, we iterate twice.
+		for run := 0; run < 2; run++ {
+			for i := 0; i < 3; i++ {
+				matchers := matchersLists[i]
+
+				p, err := c.PostingsForMatchers(ctx, indexForPostingsMock{}, true, matchers...)
+				require.NoError(t, err)
+
+				actual, err := index.ExpandPostings(p)
+				require.NoError(t, err)
+				assert.Equal(t, refsLists[matchersKey(matchers)], actual)
+			}
+		}
+
+		// At this point we expect that the postings have been computed only once for the 3 matchers.
+		for i := 0; i < 3; i++ {
+			assert.Equal(t, 1, callsPerMatchers[matchersKey(matchersLists[i])])
+		}
+
+		// Call PostingsForMatchers() for a 4th matcher. We expect this will evict the oldest cached entry.
+		for run := 0; run < 2; run++ {
+			matchers := matchersLists[3]
+
+			p, err := c.PostingsForMatchers(ctx, indexForPostingsMock{}, true, matchers...)
+			require.NoError(t, err)
+
+			actual, err := index.ExpandPostings(p)
+			require.NoError(t, err)
+			assert.Equal(t, refsLists[matchersKey(matchers)], actual)
+		}
+
+		// To ensure the 1st (oldest) entry was removed, we call PostingsForMatchers() again on that matchers.
+		_, err := c.PostingsForMatchers(ctx, indexForPostingsMock{}, true, matchersLists[0]...)
+		require.NoError(t, err)
+
+		assert.Equal(t, 2, callsPerMatchers[matchersKey(matchersLists[0])])
+		assert.Equal(t, 1, callsPerMatchers[matchersKey(matchersLists[1])])
+		assert.Equal(t, 1, callsPerMatchers[matchersKey(matchersLists[2])])
+		assert.Equal(t, 1, callsPerMatchers[matchersKey(matchersLists[3])])
 	})
 }
 

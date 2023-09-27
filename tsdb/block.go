@@ -324,11 +324,11 @@ type Block struct {
 // OpenBlock opens the block in the directory. It can be passed a chunk pool, which is used
 // to instantiate chunk structs.
 func OpenBlock(logger log.Logger, dir string, pool chunkenc.Pool) (pb *Block, err error) {
-	return OpenBlockWithOptions(logger, dir, pool, nil, defaultPostingsForMatchersCacheTTL, defaultPostingsForMatchersCacheSize, false)
+	return OpenBlockWithOptions(logger, dir, pool, nil, DefaultPostingsForMatchersCacheTTL, DefaultPostingsForMatchersCacheMaxItems, DefaultPostingsForMatchersCacheMaxBytes, DefaultPostingsForMatchersCacheForce)
 }
 
 // OpenBlockWithOptions is like OpenBlock but allows to pass a cache provider and sharding function.
-func OpenBlockWithOptions(logger log.Logger, dir string, pool chunkenc.Pool, cache index.ReaderCacheProvider, postingsCacheTTL time.Duration, postingsCacheSize int, postingsCacheForce bool) (pb *Block, err error) {
+func OpenBlockWithOptions(logger log.Logger, dir string, pool chunkenc.Pool, cache index.ReaderCacheProvider, postingsCacheTTL time.Duration, postingsCacheMaxItems int, postingsCacheMaxBytes int64, postingsCacheForce bool) (pb *Block, err error) {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -353,7 +353,7 @@ func OpenBlockWithOptions(logger log.Logger, dir string, pool chunkenc.Pool, cac
 	if err != nil {
 		return nil, err
 	}
-	pfmc := NewPostingsForMatchersCache(postingsCacheTTL, postingsCacheSize, postingsCacheForce)
+	pfmc := NewPostingsForMatchersCache(postingsCacheTTL, postingsCacheMaxItems, postingsCacheMaxBytes, postingsCacheForce)
 	ir := indexReaderWithPostingsForMatchers{indexReader, pfmc}
 	closers = append(closers, ir)
 

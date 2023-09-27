@@ -7,13 +7,19 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DmitriyVTitov/size"
+
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/index"
 )
 
 const (
-	defaultPostingsForMatchersCacheTTL  = 10 * time.Second
-	defaultPostingsForMatchersCacheSize = 100
+	// NOTE: keep them exported to reference them in Mimir.
+
+	DefaultPostingsForMatchersCacheTTL      = 10 * time.Second
+	DefaultPostingsForMatchersCacheMaxItems = 100
+	DefaultPostingsForMatchersCacheMaxBytes = 10 * 1024 * 1024 // Based on the default max items, 10MB / 100 = 100KB per cached entry on average.
+	DefaultPostingsForMatchersCacheForce    = false
 )
 
 // IndexPostingsReader is a subset of IndexReader methods, the minimum required to evaluate PostingsForMatchers
@@ -31,14 +37,15 @@ type IndexPostingsReader interface {
 // NewPostingsForMatchersCache creates a new PostingsForMatchersCache.
 // If `ttl` is 0, then it only deduplicates in-flight requests.
 // If `force` is true, then all requests go through cache, regardless of the `concurrent` param provided.
-func NewPostingsForMatchersCache(ttl time.Duration, cacheSize int, force bool) *PostingsForMatchersCache {
+func NewPostingsForMatchersCache(ttl time.Duration, maxItems int, maxBytes int64, force bool) *PostingsForMatchersCache {
 	b := &PostingsForMatchersCache{
 		calls:  &sync.Map{},
 		cached: list.New(),
 
-		ttl:       ttl,
-		cacheSize: cacheSize,
-		force:     force,
+		ttl:      ttl,
+		maxItems: maxItems,
+		maxBytes: maxBytes,
+		force:    force,
 
 		timeNow:             time.Now,
 		postingsForMatchers: PostingsForMatchers,
@@ -51,12 +58,14 @@ func NewPostingsForMatchersCache(ttl time.Duration, cacheSize int, force bool) *
 type PostingsForMatchersCache struct {
 	calls *sync.Map
 
-	cachedMtx sync.RWMutex
-	cached    *list.List
+	cachedMtx   sync.RWMutex
+	cached      *list.List
+	cachedBytes int64
 
-	ttl       time.Duration
-	cacheSize int
-	force     bool
+	ttl      time.Duration
+	maxItems int
+	maxBytes int64
+	force    bool
 
 	// timeNow is the time.Now that can be replaced for testing purposes
 	timeNow func() time.Time
@@ -101,13 +110,20 @@ func (c *PostingsForMatchersCache) postingsForMatchersPromise(ctx context.Contex
 		cloner = index.NewPostingsCloner(postings)
 	}
 
-	c.created(key, c.timeNow())
+	// Estimate the size of the cache entry, in bytes. We use max() because
+	// size.Of() returns -1 if the value is nil.
+	estimatedSizeBytes := int64(len(key)) + max(0, int64(size.Of(wg))) + max(0, int64(size.Of(outerErr))) + max(0, int64(size.Of(cloner)))
+
+	c.created(key, c.timeNow(), estimatedSizeBytes)
 	return promise
 }
 
 type postingsForMatchersCachedCall struct {
 	key string
 	ts  time.Time
+
+	// Size of he cached entry, in bytes.
+	sizeBytes int64
 }
 
 func (c *PostingsForMatchersCache) expire() {
@@ -134,9 +150,11 @@ func (c *PostingsForMatchersCache) expire() {
 // or because the cache has too many elements
 // should be called while read lock is held on cachedMtx
 func (c *PostingsForMatchersCache) shouldEvictHead() bool {
-	if c.cached.Len() > c.cacheSize {
+	// The cache should be evicted for sure if the max size (either items or bytes) is reached.
+	if c.cached.Len() > c.maxItems || c.cachedBytes > c.maxBytes {
 		return true
 	}
+
 	h := c.cached.Front()
 	if h == nil {
 		return false
@@ -150,11 +168,12 @@ func (c *PostingsForMatchersCache) evictHead() {
 	oldest := front.Value.(*postingsForMatchersCachedCall)
 	c.calls.Delete(oldest.key)
 	c.cached.Remove(front)
+	c.cachedBytes -= oldest.sizeBytes
 }
 
 // created has to be called when returning from the PostingsForMatchers call that creates the promise.
 // the ts provided should be the call time.
-func (c *PostingsForMatchersCache) created(key string, ts time.Time) {
+func (c *PostingsForMatchersCache) created(key string, ts time.Time, sizeBytes int64) {
 	if c.ttl <= 0 {
 		c.calls.Delete(key)
 		return
@@ -164,9 +183,11 @@ func (c *PostingsForMatchersCache) created(key string, ts time.Time) {
 	defer c.cachedMtx.Unlock()
 
 	c.cached.PushBack(&postingsForMatchersCachedCall{
-		key: key,
-		ts:  ts,
+		key:       key,
+		ts:        ts,
+		sizeBytes: sizeBytes,
 	})
+	c.cachedBytes += sizeBytes
 }
 
 // matchersKey provides a unique string key for the given matchers slice

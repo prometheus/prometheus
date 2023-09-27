@@ -313,7 +313,7 @@ func BenchmarkQuerierSelect(b *testing.B) {
 
 	seriesHashCache := hashcache.NewSeriesHashCache(1024 * 1024 * 1024)
 	blockdir := createBlockFromHead(b, tmpdir, h)
-	block, err := OpenBlockWithOptions(nil, blockdir, nil, seriesHashCache.GetBlockCacheProvider("test"), defaultPostingsForMatchersCacheTTL, defaultPostingsForMatchersCacheSize, false)
+	block, err := OpenBlockWithOptions(nil, blockdir, nil, seriesHashCache.GetBlockCacheProvider("test"), DefaultPostingsForMatchersCacheTTL, DefaultPostingsForMatchersCacheMaxItems, DefaultPostingsForMatchersCacheMaxBytes, DefaultPostingsForMatchersCacheForce)
 	require.NoError(b, err)
 	defer func() {
 		require.NoError(b, block.Close())

@@ -72,27 +72,29 @@ var ErrNotReady = errors.New("TSDB not ready")
 // millisecond precision timestamps.
 func DefaultOptions() *Options {
 	return &Options{
-		WALSegmentSize:                     wlog.DefaultSegmentSize,
-		MaxBlockChunkSegmentSize:           chunks.DefaultChunkSegmentSize,
-		RetentionDuration:                  int64(15 * 24 * time.Hour / time.Millisecond),
-		MinBlockDuration:                   DefaultBlockDuration,
-		MaxBlockDuration:                   DefaultBlockDuration,
-		NoLockfile:                         false,
-		AllowOverlappingCompaction:         true,
-		SamplesPerChunk:                    DefaultSamplesPerChunk,
-		WALCompression:                     wlog.CompressionNone,
-		StripeSize:                         DefaultStripeSize,
-		HeadChunksWriteBufferSize:          chunks.DefaultWriteBufferSize,
-		IsolationDisabled:                  defaultIsolationDisabled,
-		HeadChunksEndTimeVariance:          0,
-		HeadChunksWriteQueueSize:           chunks.DefaultWriteQueueSize,
-		OutOfOrderCapMax:                   DefaultOutOfOrderCapMax,
-		HeadPostingsForMatchersCacheTTL:    defaultPostingsForMatchersCacheTTL,
-		HeadPostingsForMatchersCacheSize:   defaultPostingsForMatchersCacheSize,
-		HeadPostingsForMatchersCacheForce:  false,
-		BlockPostingsForMatchersCacheTTL:   defaultPostingsForMatchersCacheTTL,
-		BlockPostingsForMatchersCacheSize:  defaultPostingsForMatchersCacheSize,
-		BlockPostingsForMatchersCacheForce: false,
+		WALSegmentSize:                        wlog.DefaultSegmentSize,
+		MaxBlockChunkSegmentSize:              chunks.DefaultChunkSegmentSize,
+		RetentionDuration:                     int64(15 * 24 * time.Hour / time.Millisecond),
+		MinBlockDuration:                      DefaultBlockDuration,
+		MaxBlockDuration:                      DefaultBlockDuration,
+		NoLockfile:                            false,
+		AllowOverlappingCompaction:            true,
+		SamplesPerChunk:                       DefaultSamplesPerChunk,
+		WALCompression:                        wlog.CompressionNone,
+		StripeSize:                            DefaultStripeSize,
+		HeadChunksWriteBufferSize:             chunks.DefaultWriteBufferSize,
+		IsolationDisabled:                     defaultIsolationDisabled,
+		HeadChunksEndTimeVariance:             0,
+		HeadChunksWriteQueueSize:              chunks.DefaultWriteQueueSize,
+		OutOfOrderCapMax:                      DefaultOutOfOrderCapMax,
+		HeadPostingsForMatchersCacheTTL:       DefaultPostingsForMatchersCacheTTL,
+		HeadPostingsForMatchersCacheMaxItems:  DefaultPostingsForMatchersCacheMaxItems,
+		HeadPostingsForMatchersCacheMaxBytes:  DefaultPostingsForMatchersCacheMaxBytes,
+		HeadPostingsForMatchersCacheForce:     DefaultPostingsForMatchersCacheForce,
+		BlockPostingsForMatchersCacheTTL:      DefaultPostingsForMatchersCacheTTL,
+		BlockPostingsForMatchersCacheMaxItems: DefaultPostingsForMatchersCacheMaxItems,
+		BlockPostingsForMatchersCacheMaxBytes: DefaultPostingsForMatchersCacheMaxBytes,
+		BlockPostingsForMatchersCacheForce:    DefaultPostingsForMatchersCacheForce,
 	}
 }
 
@@ -208,9 +210,13 @@ type Options struct {
 	// If it's 0, the cache will only deduplicate in-flight requests, deleting the results once the first request has finished.
 	HeadPostingsForMatchersCacheTTL time.Duration
 
-	// HeadPostingsForMatchersCacheSize is the maximum size of cached postings for matchers elements in the Head.
+	// HeadPostingsForMatchersCacheMaxItems is the maximum size (in number of items) of cached postings for matchers elements in the Head.
 	// It's ignored when HeadPostingsForMatchersCacheTTL is 0.
-	HeadPostingsForMatchersCacheSize int
+	HeadPostingsForMatchersCacheMaxItems int
+
+	// HeadPostingsForMatchersCacheMaxBytes is the maximum size (in bytes) of cached postings for matchers elements in the Head.
+	// It's ignored when HeadPostingsForMatchersCacheTTL is 0.
+	HeadPostingsForMatchersCacheMaxBytes int64
 
 	// HeadPostingsForMatchersCacheForce forces the usage of postings for matchers cache for all calls on Head and OOOHead regardless of the `concurrent` param.
 	HeadPostingsForMatchersCacheForce bool
@@ -219,9 +225,13 @@ type Options struct {
 	// If it's 0, the cache will only deduplicate in-flight requests, deleting the results once the first request has finished.
 	BlockPostingsForMatchersCacheTTL time.Duration
 
-	// BlockPostingsForMatchersCacheSize is the maximum size of cached postings for matchers elements in each compacted block.
+	// BlockPostingsForMatchersCacheMaxItems is the maximum size (in number of items) of cached postings for matchers elements in each compacted block.
 	// It's ignored when BlockPostingsForMatchersCacheTTL is 0.
-	BlockPostingsForMatchersCacheSize int
+	BlockPostingsForMatchersCacheMaxItems int
+
+	// BlockPostingsForMatchersCacheMaxBytes is the maximum size (in bytes) of cached postings for matchers elements in each compacted block.
+	// It's ignored when BlockPostingsForMatchersCacheTTL is 0.
+	BlockPostingsForMatchersCacheMaxBytes int64
 
 	// BlockPostingsForMatchersCacheForce forces the usage of postings for matchers cache for all calls on compacted blocks
 	// regardless of the `concurrent` param.
@@ -592,7 +602,7 @@ func (db *DBReadOnly) Blocks() ([]BlockReader, error) {
 		return nil, ErrClosed
 	default:
 	}
-	loadable, corrupted, err := openBlocks(db.logger, db.dir, nil, nil, nil, defaultPostingsForMatchersCacheTTL, defaultPostingsForMatchersCacheSize, false)
+	loadable, corrupted, err := openBlocks(db.logger, db.dir, nil, nil, nil, DefaultPostingsForMatchersCacheTTL, DefaultPostingsForMatchersCacheMaxItems, DefaultPostingsForMatchersCacheMaxBytes, DefaultPostingsForMatchersCacheForce)
 	if err != nil {
 		return nil, err
 	}
@@ -896,7 +906,8 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	headOpts.OutOfOrderTimeWindow.Store(opts.OutOfOrderTimeWindow)
 	headOpts.OutOfOrderCapMax.Store(opts.OutOfOrderCapMax)
 	headOpts.PostingsForMatchersCacheTTL = opts.HeadPostingsForMatchersCacheTTL
-	headOpts.PostingsForMatchersCacheSize = opts.HeadPostingsForMatchersCacheSize
+	headOpts.PostingsForMatchersCacheMaxItems = opts.HeadPostingsForMatchersCacheMaxItems
+	headOpts.PostingsForMatchersCacheMaxBytes = opts.HeadPostingsForMatchersCacheMaxBytes
 	headOpts.PostingsForMatchersCacheForce = opts.HeadPostingsForMatchersCacheForce
 	if opts.WALReplayConcurrency > 0 {
 		headOpts.WALReplayConcurrency = opts.WALReplayConcurrency
@@ -1440,7 +1451,7 @@ func (db *DB) reloadBlocks() (err error) {
 	db.mtx.Lock()
 	defer db.mtx.Unlock()
 
-	loadable, corrupted, err := openBlocks(db.logger, db.dir, db.blocks, db.chunkPool, db.opts.SeriesHashCache, db.opts.BlockPostingsForMatchersCacheTTL, db.opts.BlockPostingsForMatchersCacheSize, db.opts.BlockPostingsForMatchersCacheForce)
+	loadable, corrupted, err := openBlocks(db.logger, db.dir, db.blocks, db.chunkPool, db.opts.SeriesHashCache, db.opts.BlockPostingsForMatchersCacheTTL, db.opts.BlockPostingsForMatchersCacheMaxItems, db.opts.BlockPostingsForMatchersCacheMaxBytes, db.opts.BlockPostingsForMatchersCacheForce)
 	if err != nil {
 		return err
 	}
@@ -1523,7 +1534,7 @@ func (db *DB) reloadBlocks() (err error) {
 	return nil
 }
 
-func openBlocks(l log.Logger, dir string, loaded []*Block, chunkPool chunkenc.Pool, cache *hashcache.SeriesHashCache, postingsCacheTTL time.Duration, postingsCacheSize int, postingsCacheForce bool) (blocks []*Block, corrupted map[ulid.ULID]error, err error) {
+func openBlocks(l log.Logger, dir string, loaded []*Block, chunkPool chunkenc.Pool, cache *hashcache.SeriesHashCache, postingsCacheTTL time.Duration, postingsCacheMaxItems int, postingsCacheMaxBytes int64, postingsCacheForce bool) (blocks []*Block, corrupted map[ulid.ULID]error, err error) {
 	bDirs, err := blockDirs(dir)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "find blocks")
@@ -1545,7 +1556,7 @@ func openBlocks(l log.Logger, dir string, loaded []*Block, chunkPool chunkenc.Po
 				cacheProvider = cache.GetBlockCacheProvider(meta.ULID.String())
 			}
 
-			block, err = OpenBlockWithOptions(l, bDir, chunkPool, cacheProvider, postingsCacheTTL, postingsCacheSize, postingsCacheForce)
+			block, err = OpenBlockWithOptions(l, bDir, chunkPool, cacheProvider, postingsCacheTTL, postingsCacheMaxItems, postingsCacheMaxBytes, postingsCacheForce)
 			if err != nil {
 				corrupted[meta.ULID] = err
 				continue
