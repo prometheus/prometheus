@@ -112,7 +112,7 @@ func (c *PostingsForMatchersCache) postingsForMatchersPromise(ctx context.Contex
 
 	// Estimate the size of the cache entry, in bytes. We use max() because
 	// size.Of() returns -1 if the value is nil.
-	estimatedSizeBytes := int64(len(key)) + max(0, int64(size.Of(wg))) + max(0, int64(size.Of(outerErr))) + max(0, int64(size.Of(cloner)))
+	estimatedSizeBytes := int64(len(key)) + max(0, int64(size.Of(outerErr))) + max(0, int64(size.Of(cloner)))
 
 	c.created(key, c.timeNow(), estimatedSizeBytes)
 	return promise
