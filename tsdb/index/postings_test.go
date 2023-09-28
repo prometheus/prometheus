@@ -24,7 +24,6 @@ import (
 	"testing"
 
 	"github.com/pkg/errors"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -1101,20 +1100,6 @@ func TestPostingsCloner(t *testing.T) {
 		p := pc.Clone()
 		require.False(t, p.Next())
 		require.Equal(t, expectedErr, p.Err())
-	})
-}
-
-func TestNewPostingsCloner_ShrinkExpandedPostingsSlice(t *testing.T) {
-	t.Run("should not shrink expanded postings if length is >= 70% capacity", func(t *testing.T) {
-		cloner := NewPostingsCloner(NewListPostings(make([]storage.SeriesRef, 60)))
-		assert.Equal(t, 60, len(cloner.ids))
-		assert.Equal(t, 64, cap(cloner.ids)) // Not shrunk.
-	})
-
-	t.Run("should shrink expanded postings if length is < 70% capacity", func(t *testing.T) {
-		cloner := NewPostingsCloner(NewListPostings(make([]storage.SeriesRef, 33)))
-		assert.Equal(t, 33, len(cloner.ids))
-		assert.Equal(t, 33, cap(cloner.ids)) // Shrunk.
 	})
 }
 

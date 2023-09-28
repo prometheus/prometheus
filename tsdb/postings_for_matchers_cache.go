@@ -36,7 +36,7 @@ type IndexPostingsReader interface {
 
 // NewPostingsForMatchersCache creates a new PostingsForMatchersCache.
 // If `ttl` is 0, then it only deduplicates in-flight requests.
-// If `force` is true, then all requests go through cache, regardless of the `concurrent` param provided.
+// If `force` is true, then all requests go through cache, regardless of the `concurrent` param provided to the PostingsForMatchers method.
 func NewPostingsForMatchersCache(ttl time.Duration, maxItems int, maxBytes int64, force bool) *PostingsForMatchersCache {
 	b := &PostingsForMatchersCache{
 		calls:  &sync.Map{},
@@ -112,9 +112,9 @@ func (c *PostingsForMatchersCache) postingsForMatchersPromise(ctx context.Contex
 
 	// Estimate the size of the cache entry, in bytes. We use max() because
 	// size.Of() returns -1 if the value is nil.
-	estimatedSizeBytes := int64(len(key)) + max(0, int64(size.Of(outerErr))) + max(0, int64(size.Of(cloner)))
+	sizeBytes := int64(len(key)) + max(0, int64(size.Of(outerErr))) + max(0, int64(size.Of(cloner)))
 
-	c.created(key, c.timeNow(), estimatedSizeBytes)
+	c.created(key, c.timeNow(), sizeBytes)
 	return promise
 }
 
@@ -122,7 +122,7 @@ type postingsForMatchersCachedCall struct {
 	key string
 	ts  time.Time
 
-	// Size of he cached entry, in bytes.
+	// Size of the cached entry, in bytes.
 	sizeBytes int64
 }
 

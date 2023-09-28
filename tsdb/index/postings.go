@@ -853,16 +853,6 @@ type PostingsCloner struct {
 // and it shouldn't be used once provided to the PostingsCloner.
 func NewPostingsCloner(p Postings) *PostingsCloner {
 	ids, err := ExpandPostings(p)
-
-	// The ExpandedPostings() doesn't know the total number of postings beforehand,
-	// so the returned slice capacity may be well above the actual number of items.
-	// In such case, we shrink it.
-	if float64(len(ids)) < float64(cap(ids))*0.70 {
-		shrunk := make([]storage.SeriesRef, len(ids))
-		copy(shrunk, ids)
-		ids = shrunk
-	}
-
 	return &PostingsCloner{ids: ids, err: err}
 }
 
