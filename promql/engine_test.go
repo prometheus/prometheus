@@ -28,16 +28,16 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 
-	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/timestamp"
-	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/prometheus/prometheus/promql/parser/posrange"
-	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/tsdb/tsdbutil"
-	"github.com/prometheus/prometheus/util/annotations"
-	"github.com/prometheus/prometheus/util/stats"
-	"github.com/prometheus/prometheus/util/teststorage"
+	"github.com/prometheus/prometheus/v2/model/histogram"
+	"github.com/prometheus/prometheus/v2/model/labels"
+	"github.com/prometheus/prometheus/v2/model/timestamp"
+	"github.com/prometheus/prometheus/v2/promql/parser"
+	"github.com/prometheus/prometheus/v2/promql/parser/posrange"
+	"github.com/prometheus/prometheus/v2/storage"
+	"github.com/prometheus/prometheus/v2/tsdb/tsdbutil"
+	"github.com/prometheus/prometheus/v2/util/annotations"
+	"github.com/prometheus/prometheus/v2/util/stats"
+	"github.com/prometheus/prometheus/v2/util/teststorage"
 )
 
 func TestMain(m *testing.M) {

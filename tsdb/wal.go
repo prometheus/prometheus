@@ -31,14 +31,14 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/prometheus/prometheus/tsdb/encoding"
-	"github.com/prometheus/prometheus/tsdb/fileutil"
-	"github.com/prometheus/prometheus/tsdb/record"
-	"github.com/prometheus/prometheus/tsdb/tombstones"
-	"github.com/prometheus/prometheus/tsdb/wlog"
-	"github.com/prometheus/prometheus/util/zeropool"
+	"github.com/prometheus/prometheus/v2/storage"
+	"github.com/prometheus/prometheus/v2/tsdb/chunks"
+	"github.com/prometheus/prometheus/v2/tsdb/encoding"
+	"github.com/prometheus/prometheus/v2/tsdb/fileutil"
+	"github.com/prometheus/prometheus/v2/tsdb/record"
+	"github.com/prometheus/prometheus/v2/tsdb/tombstones"
+	"github.com/prometheus/prometheus/v2/tsdb/wlog"
+	"github.com/prometheus/prometheus/v2/util/zeropool"
 )
 
 // WALEntryType indicates what data a WAL entry contains.

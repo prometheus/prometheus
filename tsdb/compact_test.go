@@ -31,15 +31,15 @@ import (
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/prometheus/prometheus/tsdb/fileutil"
-	"github.com/prometheus/prometheus/tsdb/tombstones"
-	"github.com/prometheus/prometheus/tsdb/tsdbutil"
-	"github.com/prometheus/prometheus/tsdb/wlog"
+	"github.com/prometheus/prometheus/v2/model/histogram"
+	"github.com/prometheus/prometheus/v2/model/labels"
+	"github.com/prometheus/prometheus/v2/storage"
+	"github.com/prometheus/prometheus/v2/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/v2/tsdb/chunks"
+	"github.com/prometheus/prometheus/v2/tsdb/fileutil"
+	"github.com/prometheus/prometheus/v2/tsdb/tombstones"
+	"github.com/prometheus/prometheus/v2/tsdb/tsdbutil"
+	"github.com/prometheus/prometheus/v2/tsdb/wlog"
 )
 
 func TestSplitByRange(t *testing.T) {

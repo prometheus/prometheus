@@ -20,8 +20,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/v2/model/labels"
+	"github.com/prometheus/prometheus/v2/tsdb/chunkenc"
 )
 
 func Example() {

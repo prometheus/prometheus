@@ -13,7 +13,7 @@
 
 package exemplar
 
-import "github.com/prometheus/prometheus/model/labels"
+import "github.com/prometheus/prometheus/v2/model/labels"
 
 // The combined length of the label names and values of an Exemplar's LabelSet MUST NOT exceed 128 UTF-8 characters
 // https://github.com/OpenObservability/OpenMetrics/blob/main/specification/OpenMetrics.md#exemplars

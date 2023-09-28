@@ -17,8 +17,8 @@ import (
 	"context"
 	"sync"
 
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/util/annotations"
+	"github.com/prometheus/prometheus/v2/model/labels"
+	"github.com/prometheus/prometheus/v2/util/annotations"
 )
 
 // secondaryQuerier is a wrapper that allows a querier to be treated in a best effort manner.

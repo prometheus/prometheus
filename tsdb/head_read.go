@@ -23,11 +23,11 @@ import (
 	"github.com/go-kit/log/level"
 	"golang.org/x/exp/slices"
 
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/prometheus/prometheus/v2/model/labels"
+	"github.com/prometheus/prometheus/v2/storage"
+	"github.com/prometheus/prometheus/v2/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/v2/tsdb/chunks"
+	"github.com/prometheus/prometheus/v2/tsdb/index"
 )
 
 func (h *Head) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, error) {

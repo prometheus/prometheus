@@ -32,16 +32,16 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
 	"go.uber.org/atomic"
 
-	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/relabel"
-	"github.com/prometheus/prometheus/model/timestamp"
-	"github.com/prometheus/prometheus/prompb"
-	"github.com/prometheus/prometheus/scrape"
-	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/prometheus/prometheus/tsdb/record"
-	"github.com/prometheus/prometheus/tsdb/wlog"
+	"github.com/prometheus/prometheus/v2/config"
+	"github.com/prometheus/prometheus/v2/model/histogram"
+	"github.com/prometheus/prometheus/v2/model/labels"
+	"github.com/prometheus/prometheus/v2/model/relabel"
+	"github.com/prometheus/prometheus/v2/model/timestamp"
+	"github.com/prometheus/prometheus/v2/prompb"
+	"github.com/prometheus/prometheus/v2/scrape"
+	"github.com/prometheus/prometheus/v2/tsdb/chunks"
+	"github.com/prometheus/prometheus/v2/tsdb/record"
+	"github.com/prometheus/prometheus/v2/tsdb/wlog"
 )
 
 const (

@@ -26,7 +26,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/discovery"
+	"github.com/prometheus/prometheus/v2/discovery"
 )
 
 type NomadSDTestSuite struct {

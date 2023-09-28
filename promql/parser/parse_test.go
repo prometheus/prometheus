@@ -24,10 +24,10 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/v2/model/histogram"
+	"github.com/prometheus/prometheus/v2/model/labels"
 
-	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/v2/promql/parser/posrange"
 )
 
 var testExpr = []struct {

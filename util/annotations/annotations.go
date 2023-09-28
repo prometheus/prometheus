@@ -19,7 +19,7 @@ import (
 
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/v2/promql/parser/posrange"
 )
 
 // Annotations is a general wrapper for warnings and other information

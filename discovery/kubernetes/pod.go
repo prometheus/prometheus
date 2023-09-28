@@ -30,7 +30,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 
-	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/v2/discovery/targetgroup"
 )
 
 const nodeIndex = "node"

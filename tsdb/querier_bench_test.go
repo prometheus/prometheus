@@ -19,8 +19,8 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/prometheus/prometheus/v2/model/labels"
+	"github.com/prometheus/prometheus/v2/tsdb/index"
 
 	"github.com/stretchr/testify/require"
 )

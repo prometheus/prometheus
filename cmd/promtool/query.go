@@ -29,7 +29,7 @@ import (
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	_ "github.com/prometheus/prometheus/plugins" // Register plugins.
+	_ "github.com/prometheus/prometheus/v2/plugins" // Register plugins.
 )
 
 func newAPI(url *url.URL, roundTripper http.RoundTripper, headers map[string]string) (v1.API, error) {

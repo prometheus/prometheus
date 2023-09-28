@@ -30,8 +30,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/prometheus/prompb"
-	"github.com/prometheus/prometheus/util/stats"
+	"github.com/prometheus/prometheus/v2/prompb"
+	"github.com/prometheus/prometheus/v2/util/stats"
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
@@ -41,19 +41,19 @@ import (
 	"github.com/prometheus/common/route"
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/model/exemplar"
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/metadata"
-	"github.com/prometheus/prometheus/model/timestamp"
-	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/prometheus/prometheus/rules"
-	"github.com/prometheus/prometheus/scrape"
-	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/storage/remote"
-	"github.com/prometheus/prometheus/tsdb"
-	"github.com/prometheus/prometheus/util/teststorage"
+	"github.com/prometheus/prometheus/v2/config"
+	"github.com/prometheus/prometheus/v2/model/exemplar"
+	"github.com/prometheus/prometheus/v2/model/labels"
+	"github.com/prometheus/prometheus/v2/model/metadata"
+	"github.com/prometheus/prometheus/v2/model/timestamp"
+	"github.com/prometheus/prometheus/v2/promql"
+	"github.com/prometheus/prometheus/v2/promql/parser"
+	"github.com/prometheus/prometheus/v2/rules"
+	"github.com/prometheus/prometheus/v2/scrape"
+	"github.com/prometheus/prometheus/v2/storage"
+	"github.com/prometheus/prometheus/v2/storage/remote"
+	"github.com/prometheus/prometheus/v2/tsdb"
+	"github.com/prometheus/prometheus/v2/util/teststorage"
 )
 
 var testEngine = promql.NewEngine(promql.EngineOpts{

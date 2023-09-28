@@ -38,16 +38,16 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/exp/slices"
 
-	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/timestamp"
-	"github.com/prometheus/prometheus/model/value"
-	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"github.com/prometheus/prometheus/util/annotations"
-	"github.com/prometheus/prometheus/util/stats"
-	"github.com/prometheus/prometheus/util/zeropool"
+	"github.com/prometheus/prometheus/v2/model/histogram"
+	"github.com/prometheus/prometheus/v2/model/labels"
+	"github.com/prometheus/prometheus/v2/model/timestamp"
+	"github.com/prometheus/prometheus/v2/model/value"
+	"github.com/prometheus/prometheus/v2/promql/parser"
+	"github.com/prometheus/prometheus/v2/storage"
+	"github.com/prometheus/prometheus/v2/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/v2/util/annotations"
+	"github.com/prometheus/prometheus/v2/util/stats"
+	"github.com/prometheus/prometheus/v2/util/zeropool"
 )
 
 const (

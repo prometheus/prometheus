@@ -16,8 +16,8 @@ package storage
 import (
 	"context"
 
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/util/annotations"
+	"github.com/prometheus/prometheus/v2/model/labels"
+	"github.com/prometheus/prometheus/v2/util/annotations"
 )
 
 type noopQuerier struct{}

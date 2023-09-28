@@ -32,10 +32,10 @@ import (
 	"github.com/prometheus/common/sigv4"
 	"gopkg.in/yaml.v2"
 
-	"github.com/prometheus/prometheus/discovery"
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/relabel"
-	"github.com/prometheus/prometheus/storage/remote/azuread"
+	"github.com/prometheus/prometheus/v2/discovery"
+	"github.com/prometheus/prometheus/v2/model/labels"
+	"github.com/prometheus/prometheus/v2/model/relabel"
+	"github.com/prometheus/prometheus/v2/storage/remote/azuread"
 )
 
 var (

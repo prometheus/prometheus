@@ -19,7 +19,7 @@ import (
 
 	jsoniter "github.com/json-iterator/go"
 
-	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/v2/model/histogram"
 )
 
 // MarshalTimestamp marshals a point timestamp using the passed jsoniter stream.

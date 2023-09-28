@@ -18,10 +18,10 @@ import (
 
 	jsoniter "github.com/json-iterator/go"
 
-	"github.com/prometheus/prometheus/model/exemplar"
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/util/jsonutil"
+	"github.com/prometheus/prometheus/v2/model/exemplar"
+	"github.com/prometheus/prometheus/v2/model/labels"
+	"github.com/prometheus/prometheus/v2/promql"
+	"github.com/prometheus/prometheus/v2/util/jsonutil"
 )
 
 func init() {

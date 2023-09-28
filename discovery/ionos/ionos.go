@@ -23,8 +23,8 @@ import (
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/prometheus/discovery"
-	"github.com/prometheus/prometheus/discovery/refresh"
+	"github.com/prometheus/prometheus/v2/discovery"
+	"github.com/prometheus/prometheus/v2/discovery/refresh"
 )
 
 const (

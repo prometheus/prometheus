@@ -16,29 +16,29 @@
 package install
 
 import (
-	_ "github.com/prometheus/prometheus/discovery/aws"          // register aws
-	_ "github.com/prometheus/prometheus/discovery/azure"        // register azure
-	_ "github.com/prometheus/prometheus/discovery/consul"       // register consul
-	_ "github.com/prometheus/prometheus/discovery/digitalocean" // register digitalocean
-	_ "github.com/prometheus/prometheus/discovery/dns"          // register dns
-	_ "github.com/prometheus/prometheus/discovery/eureka"       // register eureka
-	_ "github.com/prometheus/prometheus/discovery/file"         // register file
-	_ "github.com/prometheus/prometheus/discovery/gce"          // register gce
-	_ "github.com/prometheus/prometheus/discovery/hetzner"      // register hetzner
-	_ "github.com/prometheus/prometheus/discovery/http"         // register http
-	_ "github.com/prometheus/prometheus/discovery/ionos"        // register ionos
-	_ "github.com/prometheus/prometheus/discovery/kubernetes"   // register kubernetes
-	_ "github.com/prometheus/prometheus/discovery/linode"       // register linode
-	_ "github.com/prometheus/prometheus/discovery/marathon"     // register marathon
-	_ "github.com/prometheus/prometheus/discovery/moby"         // register moby
-	_ "github.com/prometheus/prometheus/discovery/nomad"        // register nomad
-	_ "github.com/prometheus/prometheus/discovery/openstack"    // register openstack
-	_ "github.com/prometheus/prometheus/discovery/ovhcloud"     // register ovhcloud
-	_ "github.com/prometheus/prometheus/discovery/puppetdb"     // register puppetdb
-	_ "github.com/prometheus/prometheus/discovery/scaleway"     // register scaleway
-	_ "github.com/prometheus/prometheus/discovery/triton"       // register triton
-	_ "github.com/prometheus/prometheus/discovery/uyuni"        // register uyuni
-	_ "github.com/prometheus/prometheus/discovery/vultr"        // register vultr
-	_ "github.com/prometheus/prometheus/discovery/xds"          // register xds
-	_ "github.com/prometheus/prometheus/discovery/zookeeper"    // register zookeeper
+	_ "github.com/prometheus/prometheus/v2/discovery/aws"          // register aws
+	_ "github.com/prometheus/prometheus/v2/discovery/azure"        // register azure
+	_ "github.com/prometheus/prometheus/v2/discovery/consul"       // register consul
+	_ "github.com/prometheus/prometheus/v2/discovery/digitalocean" // register digitalocean
+	_ "github.com/prometheus/prometheus/v2/discovery/dns"          // register dns
+	_ "github.com/prometheus/prometheus/v2/discovery/eureka"       // register eureka
+	_ "github.com/prometheus/prometheus/v2/discovery/file"         // register file
+	_ "github.com/prometheus/prometheus/v2/discovery/gce"          // register gce
+	_ "github.com/prometheus/prometheus/v2/discovery/hetzner"      // register hetzner
+	_ "github.com/prometheus/prometheus/v2/discovery/http"         // register http
+	_ "github.com/prometheus/prometheus/v2/discovery/ionos"        // register ionos
+	_ "github.com/prometheus/prometheus/v2/discovery/kubernetes"   // register kubernetes
+	_ "github.com/prometheus/prometheus/v2/discovery/linode"       // register linode
+	_ "github.com/prometheus/prometheus/v2/discovery/marathon"     // register marathon
+	_ "github.com/prometheus/prometheus/v2/discovery/moby"         // register moby
+	_ "github.com/prometheus/prometheus/v2/discovery/nomad"        // register nomad
+	_ "github.com/prometheus/prometheus/v2/discovery/openstack"    // register openstack
+	_ "github.com/prometheus/prometheus/v2/discovery/ovhcloud"     // register ovhcloud
+	_ "github.com/prometheus/prometheus/v2/discovery/puppetdb"     // register puppetdb
+	_ "github.com/prometheus/prometheus/v2/discovery/scaleway"     // register scaleway
+	_ "github.com/prometheus/prometheus/v2/discovery/triton"       // register triton
+	_ "github.com/prometheus/prometheus/v2/discovery/uyuni"        // register uyuni
+	_ "github.com/prometheus/prometheus/v2/discovery/vultr"        // register vultr
+	_ "github.com/prometheus/prometheus/v2/discovery/xds"          // register xds
+	_ "github.com/prometheus/prometheus/v2/discovery/zookeeper"    // register zookeeper
 )
