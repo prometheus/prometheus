@@ -39,6 +39,7 @@ import (
 	"github.com/prometheus/common/route"
 	"golang.org/x/exp/slices"
 
+	rule_label "github.com/prometheus/alertmanager/pkg/labels"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/textparse"
@@ -1361,6 +1362,10 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 	rnSet := queryFormToSet(r.Form["rule_name[]"])
 	rgSet := queryFormToSet(r.Form["rule_group[]"])
 	fSet := queryFormToSet(r.Form["file[]"])
+	rLabelMatcher, err := parseRulesLabelMatchersParam(r.Form["rule_label_match[]"])
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+	}
 
 	ruleGroups := api.rulesRetriever(r.Context()).RuleGroups()
 	res := &RuleDiscovery{RuleGroups: make([]*RuleGroup, 0, len(ruleGroups))}
@@ -1403,6 +1408,10 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 				if _, ok := rnSet[rr.Name()]; !ok {
 					continue
 				}
+			}
+
+			if !matchRuleFilterLabels(rr.Labels(), rLabelMatcher) {
+				continue
 			}
 
 			lastError := ""
@@ -1844,4 +1853,46 @@ OUTER:
 		return nil, errors.New("match[] must contain at least one non-empty matcher")
 	}
 	return matcherSets, nil
+}
+
+func parseRulesLabelMatchersParam(ruleMatch []string) ([]*rule_label.Matcher, error) {
+	matchers := make([]*rule_label.Matcher, 0, len(ruleMatch))
+	for _, matcherString := range ruleMatch {
+		matcher, err := rule_label.ParseMatcher(matcherString)
+		if err != nil {
+			return nil, err
+		}
+
+		matchers = append(matchers, matcher)
+	}
+	return matchers, nil
+}
+
+func matchRuleFilterLabels(ruleLabels labels.Labels, matchers []*rule_label.Matcher) bool {
+	sms := make(map[string]string)
+	for _, label := range ruleLabels {
+		sms[label.Name] = label.Value
+	}
+
+	for _, m := range matchers {
+		v, prs := sms[m.Name]
+		switch m.Type {
+		case rule_label.MatchNotRegexp, rule_label.MatchNotEqual:
+			if m.Value == "" && prs {
+				continue
+			}
+			if !m.Matches(v) {
+				return false
+			}
+		default:
+			if m.Value == "" && !prs {
+				continue
+			}
+			if !m.Matches(v) {
+				return false
+			}
+		}
+	}
+
+	return true
 }
