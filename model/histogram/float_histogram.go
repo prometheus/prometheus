@@ -307,6 +307,7 @@ func (h *FloatHistogram) Sub(other *FloatHistogram) *FloatHistogram {
 // Exact match is when there are no new buckets (even empty) and no missing buckets,
 // and all the bucket values match. Spans can have different empty length spans in between,
 // but they must represent the same bucket layout to match.
+// Non-metadata float fields (Sum, Count, ZeroCount) are compared as binary (using math.Float64bits).
 func (h *FloatHistogram) Equals(h2 *FloatHistogram) bool {
 	if h2 == nil {
 		return false
