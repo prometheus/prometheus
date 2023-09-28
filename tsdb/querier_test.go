@@ -2914,9 +2914,25 @@ func TestLabelsValuesWithMatchersOptimization(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			values, err := labelValuesWithMatchers(ctx, ir, c.labelName, c.matchers...)
+			cir := &indexReaderCountingPostingsForMatchersCalls{IndexReader: ir}
+			values, err := labelValuesWithMatchers(ctx, cir, c.labelName, c.matchers...)
 			require.NoError(t, err)
 			require.ElementsMatch(t, c.expectedResults, values)
+			require.Equal(t, 1, cir.postingsForMatchersCalls,
+				"expected PostingsForMatchers to be called once. "+
+					"labelValuesWithMatchers should call the IndexReader.PostingsForMatchers instead of calling the package function PostingsForMatchers "+
+					"because IndexReader may use the cached version of the PostingsForMatchers",
+			)
 		})
 	}
+}
+
+type indexReaderCountingPostingsForMatchersCalls struct {
+	IndexReader
+	postingsForMatchersCalls int
+}
+
+func (f *indexReaderCountingPostingsForMatchersCalls) PostingsForMatchers(ctx context.Context, concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
+	f.postingsForMatchersCalls++
+	return f.IndexReader.PostingsForMatchers(ctx, concurrent, ms...)
 }
