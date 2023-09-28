@@ -172,6 +172,7 @@ func (h *Histogram) CumulativeBucketIterator() BucketIterator[uint64] {
 // Exact match is when there are no new buckets (even empty) and no missing buckets,
 // and all the bucket values match. Spans can have different empty length spans in between,
 // but they must represent the same bucket layout to match.
+// Non-metadata float field (Sum) is compared as binary (using math.Float64bits).
 func (h *Histogram) Equals(h2 *Histogram) bool {
 	if h2 == nil {
 		return false
