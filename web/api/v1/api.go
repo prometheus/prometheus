@@ -1869,23 +1869,18 @@ func parseRulesLabelMatchersParam(ruleMatch []string) ([]*rule_label.Matcher, er
 }
 
 func matchRuleFilterLabels(ruleLabels labels.Labels, matchers []*rule_label.Matcher) bool {
-	sms := make(map[string]string)
-	for _, label := range ruleLabels {
-		sms[label.Name] = label.Value
-	}
-
 	for _, m := range matchers {
-		v, prs := sms[m.Name]
+		v := ruleLabels.Get(m.Name)
 		switch m.Type {
 		case rule_label.MatchNotRegexp, rule_label.MatchNotEqual:
-			if m.Value == "" && prs {
+			if m.Value == "" && v != "" {
 				continue
 			}
 			if !m.Matches(v) {
 				return false
 			}
 		default:
-			if m.Value == "" && !prs {
+			if m.Value == "" && v == "" {
 				continue
 			}
 			if !m.Matches(v) {
