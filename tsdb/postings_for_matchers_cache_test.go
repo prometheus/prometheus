@@ -340,7 +340,10 @@ func TestPostingsForMatchersCache(t *testing.T) {
 }
 
 func BenchmarkPostingsForMatchersCache(b *testing.B) {
-	const numMatchers = 100
+	const (
+		numMatchers = 100
+		numPostings = 100
+	)
 
 	var (
 		ctx         = context.Background()
@@ -353,11 +356,17 @@ func BenchmarkPostingsForMatchersCache(b *testing.B) {
 		matchersLists[i] = []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "matchers", fmt.Sprintf("%d", i))}
 	}
 
+	// Create a postings list.
+	refs := make([]storage.SeriesRef, numPostings)
+	for r := range refs {
+		refs[r] = storage.SeriesRef(r)
+	}
+
 	b.Run("no evictions", func(b *testing.B) {
 		// Configure the cache to never evict.
 		cache := NewPostingsForMatchersCache(time.Hour, 1000000, 1024*1024*1024, true)
 		cache.postingsForMatchers = func(ctx context.Context, ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
-			return index.NewListPostings(nil), nil
+			return index.NewListPostings(refs), nil
 		}
 
 		b.ResetTimer()
@@ -374,7 +383,7 @@ func BenchmarkPostingsForMatchersCache(b *testing.B) {
 		// Configure the cache to evict continuously.
 		cache := NewPostingsForMatchersCache(time.Hour, 1, 1, true)
 		cache.postingsForMatchers = func(ctx context.Context, ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
-			return index.NewListPostings(nil), nil
+			return index.NewListPostings(refs), nil
 		}
 
 		b.ResetTimer()
