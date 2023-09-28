@@ -180,9 +180,10 @@ type HeadOptions struct {
 
 	IsolationDisabled bool
 
-	PostingsForMatchersCacheTTL   time.Duration
-	PostingsForMatchersCacheSize  int
-	PostingsForMatchersCacheForce bool
+	PostingsForMatchersCacheTTL      time.Duration
+	PostingsForMatchersCacheMaxItems int
+	PostingsForMatchersCacheMaxBytes int64
+	PostingsForMatchersCacheForce    bool
 
 	// Maximum number of CPUs that can simultaneously processes WAL replay.
 	// The default value is GOMAXPROCS.
@@ -199,20 +200,21 @@ const (
 
 func DefaultHeadOptions() *HeadOptions {
 	ho := &HeadOptions{
-		ChunkRange:                    DefaultBlockDuration,
-		ChunkDirRoot:                  "",
-		ChunkPool:                     chunkenc.NewPool(),
-		ChunkWriteBufferSize:          chunks.DefaultWriteBufferSize,
-		ChunkEndTimeVariance:          0,
-		ChunkWriteQueueSize:           chunks.DefaultWriteQueueSize,
-		SamplesPerChunk:               DefaultSamplesPerChunk,
-		StripeSize:                    DefaultStripeSize,
-		SeriesCallback:                &noopSeriesLifecycleCallback{},
-		IsolationDisabled:             defaultIsolationDisabled,
-		PostingsForMatchersCacheTTL:   defaultPostingsForMatchersCacheTTL,
-		PostingsForMatchersCacheSize:  defaultPostingsForMatchersCacheSize,
-		PostingsForMatchersCacheForce: false,
-		WALReplayConcurrency:          defaultWALReplayConcurrency,
+		ChunkRange:                       DefaultBlockDuration,
+		ChunkDirRoot:                     "",
+		ChunkPool:                        chunkenc.NewPool(),
+		ChunkWriteBufferSize:             chunks.DefaultWriteBufferSize,
+		ChunkEndTimeVariance:             0,
+		ChunkWriteQueueSize:              chunks.DefaultWriteQueueSize,
+		SamplesPerChunk:                  DefaultSamplesPerChunk,
+		StripeSize:                       DefaultStripeSize,
+		SeriesCallback:                   &noopSeriesLifecycleCallback{},
+		IsolationDisabled:                defaultIsolationDisabled,
+		PostingsForMatchersCacheTTL:      DefaultPostingsForMatchersCacheTTL,
+		PostingsForMatchersCacheMaxItems: DefaultPostingsForMatchersCacheMaxItems,
+		PostingsForMatchersCacheMaxBytes: DefaultPostingsForMatchersCacheMaxBytes,
+		PostingsForMatchersCacheForce:    DefaultPostingsForMatchersCacheForce,
+		WALReplayConcurrency:             defaultWALReplayConcurrency,
 	}
 	ho.OutOfOrderCapMax.Store(DefaultOutOfOrderCapMax)
 	return ho
@@ -279,7 +281,7 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal, wbl *wlog.WL, opts *Hea
 		stats: stats,
 		reg:   r,
 
-		pfmc: NewPostingsForMatchersCache(opts.PostingsForMatchersCacheTTL, opts.PostingsForMatchersCacheSize, opts.PostingsForMatchersCacheForce),
+		pfmc: NewPostingsForMatchersCache(opts.PostingsForMatchersCacheTTL, opts.PostingsForMatchersCacheMaxItems, opts.PostingsForMatchersCacheMaxBytes, opts.PostingsForMatchersCacheForce),
 	}
 	if err := h.resetInMemoryState(); err != nil {
 		return nil, err
