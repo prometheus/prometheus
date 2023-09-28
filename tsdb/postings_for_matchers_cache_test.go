@@ -381,7 +381,7 @@ func BenchmarkPostingsForMatchersCache(b *testing.B) {
 
 	b.Run("high eviction rate", func(b *testing.B) {
 		// Configure the cache to evict continuously.
-		cache := NewPostingsForMatchersCache(time.Hour, 1, 1, true)
+		cache := NewPostingsForMatchersCache(time.Hour, 0, 0, true)
 		cache.postingsForMatchers = func(ctx context.Context, ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
 			return index.NewListPostings(refs), nil
 		}
