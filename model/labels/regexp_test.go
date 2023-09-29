@@ -652,7 +652,7 @@ func FuzzFastRegexMatcher_WithFuzzyRegularExpressions(f *testing.F) {
 //
 // logcli --addr=XXX --username=YYY --password=ZZZ query '{namespace=~"(cortex|mimir).*",name="query-frontend"} |= "query stats" |= "=~" --limit=100000 > logs.txt
 func TestAnalyzeRealQueries(t *testing.T) {
-	//t.Skip("Decomment this test only to manually analyze real queries")
+	t.Skip("Decomment this test only to manually analyze real queries")
 
 	type labelValueInfo struct {
 		numMatchingQueries       int     //nolint:unused
@@ -673,7 +673,7 @@ func TestAnalyzeRealQueries(t *testing.T) {
 	labelValues := make(map[string]*labelValueInfo)
 
 	// Read the logs file line-by-line, and find all values for regex label matchers.
-	readFile, err := os.Open("/Users/marco/workspace/src/github.com/grafana/mimir-prometheus/logs-with-regex.txt")
+	readFile, err := os.Open("logs.txt")
 	require.NoError(t, err)
 
 	fileScanner := bufio.NewScanner(readFile)
