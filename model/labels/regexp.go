@@ -500,13 +500,16 @@ func stringMatcherFromRegexpInternal(re *syntax.Regexp) StringMatcher {
 		return orStringMatcher(or)
 	case syntax.OpConcat:
 		clearCapture(re.Sub...)
+
 		if len(re.Sub) == 0 {
 			return emptyStringMatcher{}
 		}
 		if len(re.Sub) == 1 {
 			return stringMatcherFromRegexpInternal(re.Sub[0])
 		}
+
 		var left, right StringMatcher
+
 		// Let's try to find if there's a first and last any matchers.
 		if re.Sub[0].Op == syntax.OpPlus || re.Sub[0].Op == syntax.OpStar {
 			left = stringMatcherFromRegexpInternal(re.Sub[0])
@@ -524,11 +527,39 @@ func stringMatcherFromRegexpInternal(re *syntax.Regexp) StringMatcher {
 		}
 
 		matches, matchesCaseSensitive := findSetMatchesInternal(re, "")
+
+		if len(matches) == 0 && len(re.Sub) == 2 {
+			// We have not find fixed set matches. We look for other known cases that
+			// we can optimize.
+			switch {
+			// Prefix is literal.
+			case right == nil && re.Sub[0].Op == syntax.OpLiteral:
+				right = stringMatcherFromRegexpInternal(re.Sub[1])
+				if right != nil {
+					matches = []string{string(re.Sub[0].Rune)}
+					matchesCaseSensitive = !isCaseInsensitive(re.Sub[0])
+				}
+
+			// Suffix is literal.
+			case left == nil && re.Sub[1].Op == syntax.OpLiteral:
+				left = stringMatcherFromRegexpInternal(re.Sub[0])
+				if left != nil {
+					matches = []string{string(re.Sub[1].Rune)}
+					matchesCaseSensitive = !isCaseInsensitive(re.Sub[1])
+				}
+			}
+		}
+
+		// Ensure we've found some literals to match (optionally with a left and/or right matcher).
+		// If not, then this optimization doesn't trigger.
 		if len(matches) == 0 {
 			return nil
 		}
 
-		if left == nil && right == nil {
+		// Use the right (and best) matcher based on what we've found.
+		switch {
+		// No left and right matchers (only fixed set matches).
+		case left == nil && right == nil:
 			// if there's no any matchers on both side it's a concat of literals
 			or := make([]StringMatcher, 0, len(matches))
 			for _, match := range matches {
@@ -538,12 +569,27 @@ func stringMatcherFromRegexpInternal(re *syntax.Regexp) StringMatcher {
 				})
 			}
 			return orStringMatcher(or)
-		}
+
+		// Right matcher with 1 fixed set match.
+		case left == nil && len(matches) == 1:
+			return &literalPrefixStringMatcher{
+				prefix:              matches[0],
+				prefixCaseSensitive: matchesCaseSensitive,
+				right:               right,
+			}
+
+		// Left matcher with 1 fixed set match.
+		case right == nil && len(matches) == 1:
+			return &literalSuffixStringMatcher{
+				left:                left,
+				suffix:              matches[0],
+				suffixCaseSensitive: matchesCaseSensitive,
+			}
 
 		// We found literals in the middle. We can triggered the fast path only if
 		// the matches are case sensitive because containsStringMatcher doesn't
 		// support case insensitive.
-		if matchesCaseSensitive {
+		case matchesCaseSensitive:
 			return &containsStringMatcher{
 				substrings: matches,
 				left:       left,
@@ -559,9 +605,14 @@ func stringMatcherFromRegexpInternal(re *syntax.Regexp) StringMatcher {
 // If left is nil, it's a hasPrefix operation and right must match.
 // Finally if right is nil it's a hasSuffix operation and left must match.
 type containsStringMatcher struct {
+	// The matcher that must match the left side. Can be nil.
+	left StringMatcher
+
+	// At least one of these strings must match in the "middle", between left and right matchers.
 	substrings []string
-	left       StringMatcher
-	right      StringMatcher
+
+	// The matcher that must match the right side. Can be nil.
+	right StringMatcher
 }
 
 func (m *containsStringMatcher) Matches(s string) bool {
@@ -601,6 +652,50 @@ func (m *containsStringMatcher) Matches(s string) bool {
 		}
 	}
 	return false
+}
+
+// literalPrefixStringMatcher matches a string with the given literal prefix and right side matcher.
+type literalPrefixStringMatcher struct {
+	prefix              string
+	prefixCaseSensitive bool
+
+	// The matcher that must match the right side. Can be nil.
+	right StringMatcher
+}
+
+func (m *literalPrefixStringMatcher) Matches(s string) bool {
+	// Ensure the prefix matches.
+	if m.prefixCaseSensitive && !strings.HasPrefix(s, m.prefix) {
+		return false
+	}
+	if !m.prefixCaseSensitive && !hasPrefixCaseInsensitive(s, m.prefix) {
+		return false
+	}
+
+	// Ensure the right side matches.
+	return m.right.Matches(s[len(m.prefix):])
+}
+
+// literalSuffixStringMatcher matches a string with the given literal suffix and left side matcher.
+type literalSuffixStringMatcher struct {
+	// The matcher that must match the left side. Can be nil.
+	left StringMatcher
+
+	suffix              string
+	suffixCaseSensitive bool
+}
+
+func (m *literalSuffixStringMatcher) Matches(s string) bool {
+	// Ensure the suffix matches.
+	if m.suffixCaseSensitive && !strings.HasSuffix(s, m.suffix) {
+		return false
+	}
+	if !m.suffixCaseSensitive && !hasSuffixCaseInsensitive(s, m.suffix) {
+		return false
+	}
+
+	// Ensure the left side matches.
+	return m.left.Matches(s[:len(s)-len(m.suffix)])
 }
 
 // emptyStringMatcher matches an empty string.
@@ -836,4 +931,12 @@ func findEqualStringMatchers(input StringMatcher, callback func(matcher *equalSt
 	}
 
 	return true
+}
+
+func hasPrefixCaseInsensitive(s, prefix string) bool {
+	return len(s) >= len(prefix) && strings.EqualFold(s[0:len(prefix)], prefix)
+}
+
+func hasSuffixCaseInsensitive(s, suffix string) bool {
+	return len(s) >= len(suffix) && strings.EqualFold(s[len(s)-len(suffix):], suffix)
 }
