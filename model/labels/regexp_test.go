@@ -78,6 +78,13 @@ var (
 		"(?i:(zQPbMkNO.*|NNSPdvMi.*|iWuuSoAl.*|qbvKMimS.*|IecrXtPa.*|seTckYqt.*|NxnyHkgB.*|fIDlOgKb.*|UhlWIygH.*|OtNoJxHG.*|cUTkFVIV.*|mTgFIHjr.*|jQkoIDtE.*|PPMKxRXl.*|AwMfwVkQ.*|CQyMrTQJ.*|BzrqxVSi.*|nTpcWuhF.*|PertdywG.*|ZZDgCtXN.*|WWdDPyyE.*|uVtNQsKk.*|BdeCHvPZ.*|wshRnFlH.*|aOUIitIp.*|RxZeCdXT.*|CFZMslCj.*|AVBZRDxl.*|IzIGCnhw.*|ythYuWiz.*|oztXVXhl.*|VbLkwqQx.*|qvaUgyVC.*|VawUjPWC.*|ecloYJuj.*|boCLTdSU.*|uPrKeAZx.*|hrMWLWBq.*|JOnUNHRM.*|rYnujkPq.*|dDEdZhIj.*|DRrfvugG.*|yEGfDxVV.*|YMYdJWuP.*|PHUQZNWM.*|AmKNrLis.*|zTxndVfn.*|FPsHoJnc.*|EIulZTua.*|KlAPhdzg.*|ScHJJCLt.*|NtTfMzME.*|eMCwuFdo.*|SEpJVJbR.*|cdhXZeCx.*|sAVtBwRh.*|kVFEVcMI.*|jzJrxraA.*|tGLHTell.*|NNWoeSaw.*|DcOKSetX.*|UXZAJyka.*|THpMphDP.*|rizheevl.*|kDCBRidd.*|pCZZRqyu.*|pSygkitl.*|SwZGkAaW.*|wILOrfNX.*|QkwVOerj.*|kHOMxPDr.*|EwOVycJv.*|AJvtzQFS.*|yEOjKYYB.*|LizIINLL.*|JBRSsfcG.*|YPiUqqNl.*|IsdEbvee.*|MjEpGcBm.*|OxXZVgEQ.*|xClXGuxa.*|UzRCGFEb.*|buJbvfvA.*|IPZQxRet.*|oFYShsMc.*|oBHffuHO.*|bzzKrcBR.*|KAjzrGCl.*|IPUsAVls.*|OGMUMbIU.*|gyDccHuR.*|bjlalnDd.*|ZLWjeMna.*|fdsuIlxQ.*|dVXtiomV.*|XxedTjNg.*|XWMHlNoA.*|nnyqArQX.*|opfkWGhb.*|wYtnhdYb.*))",
 		// A long case insensitive alternation where each entry starts with ".*".
 		"(?i:(.*zQPbMkNO|.*NNSPdvMi|.*iWuuSoAl|.*qbvKMimS|.*IecrXtPa|.*seTckYqt|.*NxnyHkgB|.*fIDlOgKb|.*UhlWIygH|.*OtNoJxHG|.*cUTkFVIV|.*mTgFIHjr|.*jQkoIDtE|.*PPMKxRXl|.*AwMfwVkQ|.*CQyMrTQJ|.*BzrqxVSi|.*nTpcWuhF|.*PertdywG|.*ZZDgCtXN|.*WWdDPyyE|.*uVtNQsKk|.*BdeCHvPZ|.*wshRnFlH|.*aOUIitIp|.*RxZeCdXT|.*CFZMslCj|.*AVBZRDxl|.*IzIGCnhw|.*ythYuWiz|.*oztXVXhl|.*VbLkwqQx|.*qvaUgyVC|.*VawUjPWC|.*ecloYJuj|.*boCLTdSU|.*uPrKeAZx|.*hrMWLWBq|.*JOnUNHRM|.*rYnujkPq|.*dDEdZhIj|.*DRrfvugG|.*yEGfDxVV|.*YMYdJWuP|.*PHUQZNWM|.*AmKNrLis|.*zTxndVfn|.*FPsHoJnc|.*EIulZTua|.*KlAPhdzg|.*ScHJJCLt|.*NtTfMzME|.*eMCwuFdo|.*SEpJVJbR|.*cdhXZeCx|.*sAVtBwRh|.*kVFEVcMI|.*jzJrxraA|.*tGLHTell|.*NNWoeSaw|.*DcOKSetX|.*UXZAJyka|.*THpMphDP|.*rizheevl|.*kDCBRidd|.*pCZZRqyu|.*pSygkitl|.*SwZGkAaW|.*wILOrfNX|.*QkwVOerj|.*kHOMxPDr|.*EwOVycJv|.*AJvtzQFS|.*yEOjKYYB|.*LizIINLL|.*JBRSsfcG|.*YPiUqqNl|.*IsdEbvee|.*MjEpGcBm|.*OxXZVgEQ|.*xClXGuxa|.*UzRCGFEb|.*buJbvfvA|.*IPZQxRet|.*oFYShsMc|.*oBHffuHO|.*bzzKrcBR|.*KAjzrGCl|.*IPUsAVls|.*OGMUMbIU|.*gyDccHuR|.*bjlalnDd|.*ZLWjeMna|.*fdsuIlxQ|.*dVXtiomV|.*XxedTjNg|.*XWMHlNoA|.*nnyqArQX|.*opfkWGhb|.*wYtnhdYb))",
+		// Quest ".?".
+		"fo.?",
+		"foo.?",
+		"f.?o",
+		".*foo.?",
+		".?foo.+",
+		"foo.?|bar",
 	}
 	values = []string{
 		"foo", " foo bar", "bar", "buzz\nbar", "bar foo", "bfoo", "\n", "\nfoo", "foo\n", "hello foo world", "hello foo\n world", "",
@@ -418,6 +425,13 @@ func TestStringMatcherFromRegexp(t *testing.T) {
 		{"foo.+.+", nil},
 		{".*.*foo", nil},
 		{".+.+foo", nil},
+		{"aaa.?.?", nil},
+		{"aaa.?.*", nil},
+		// Regexps with ".?".
+		{"ext.?|xfs", orStringMatcher{&literalPrefixStringMatcher{prefix: "ext", prefixCaseSensitive: true, right: &zeroOrOneCharacterStringMatcher{matchNL: false}}, &equalStringMatcher{s: "xfs", caseSensitive: true}}},
+		{"(?s)(ext.?|xfs)", orStringMatcher{&literalPrefixStringMatcher{prefix: "ext", prefixCaseSensitive: true, right: &zeroOrOneCharacterStringMatcher{matchNL: true}}, &equalStringMatcher{s: "xfs", caseSensitive: true}}},
+		{"foo.?", &literalPrefixStringMatcher{prefix: "foo", prefixCaseSensitive: true, right: &zeroOrOneCharacterStringMatcher{matchNL: false}}},
+		{"f.?o", nil},
 	} {
 		c := c
 		t.Run(c.pattern, func(t *testing.T) {
@@ -570,6 +584,88 @@ func TestStringMatcherFromRegexp_LiteralSuffix(t *testing.T) {
 			})
 
 			require.Equal(t, c.expectedLiteralSuffixMatchers, numSuffixMatchers)
+
+			for _, value := range c.expectedMatches {
+				assert.Truef(t, matcher.Matches(value), "Value: %s", value)
+
+				// Ensure the golang regexp engine would return the same.
+				assert.Truef(t, re.MatchString(value), "Value: %s", value)
+			}
+
+			for _, value := range c.expectedNotMatches {
+				assert.Falsef(t, matcher.Matches(value), "Value: %s", value)
+
+				// Ensure the golang regexp engine would return the same.
+				assert.Falsef(t, re.MatchString(value), "Value: %s", value)
+			}
+		})
+	}
+}
+
+func TestStringMatcherFromRegexp_Quest(t *testing.T) {
+	for _, c := range []struct {
+		pattern                   string
+		expectedZeroOrOneMatchers int
+		expectedMatches           []string
+		expectedNotMatches        []string
+	}{
+		// Not match newline.
+		{
+			pattern:                   "test.?",
+			expectedZeroOrOneMatchers: 1,
+			expectedMatches:           []string{"test", "test!"},
+			expectedNotMatches:        []string{"test\n", "tes", "test!!"},
+		}, {
+			pattern:                   ".?test",
+			expectedZeroOrOneMatchers: 1,
+			expectedMatches:           []string{"test", "!test"},
+			expectedNotMatches:        []string{"\ntest", "tes", "test!"},
+		}, {
+			pattern:                   "(aaa.?|bbb.?)",
+			expectedZeroOrOneMatchers: 2,
+			expectedMatches:           []string{"aaa", "aaaX", "bbb", "bbbX"},
+			expectedNotMatches:        []string{"aa", "aaaXX", "aaa\n", "bb", "bbbXX", "bbb\n"},
+		}, {
+			pattern:                   ".*aaa.?",
+			expectedZeroOrOneMatchers: 1,
+			expectedMatches:           []string{"aaa", "Xaaa", "aaaX", "XXXaaa", "XXXaaaX"},
+			expectedNotMatches:        []string{"aa", "aaaXX", "XXXaaaXXX", "XXXaaa\n"},
+		},
+
+		// Match newline.
+		{
+			pattern:                   "(?s)test.?",
+			expectedZeroOrOneMatchers: 1,
+			expectedMatches:           []string{"test", "test!", "test\n"},
+			expectedNotMatches:        []string{"tes", "test!!", "test\n\n"},
+		},
+
+		// Mixed flags (a part matches newline another doesn't).
+		{
+			pattern:                   "(aaa.?|((?s).?bbb.+))",
+			expectedZeroOrOneMatchers: 2,
+			expectedMatches:           []string{"aaa", "aaaX", "bbbX", "XbbbX", "bbbXXX", "\nbbbX"},
+			expectedNotMatches:        []string{"aa", "aaa\n", "Xbbb", "\nbbb"},
+		},
+	} {
+		t.Run(c.pattern, func(t *testing.T) {
+			parsed, err := syntax.Parse(c.pattern, syntax.Perl)
+			require.NoError(t, err)
+
+			matcher := stringMatcherFromRegexp(parsed)
+			require.NotNil(t, matcher)
+
+			re := regexp.MustCompile("^" + c.pattern + "$")
+
+			// Pre-condition check: ensure it contains zeroOrOneCharacterStringMatcher.
+			numZeroOrOneMatchers := 0
+			visitStringMatcher(matcher, func(matcher StringMatcher) {
+				if _, ok := matcher.(*zeroOrOneCharacterStringMatcher); ok {
+					numZeroOrOneMatchers++
+				}
+			})
+
+			require.Equal(t, c.expectedZeroOrOneMatchers, numZeroOrOneMatchers)
 
 			for _, value := range c.expectedMatches {
 				assert.Truef(t, matcher.Matches(value), "Value: %s", value)
@@ -1104,6 +1200,22 @@ func BenchmarkOptimizeEqualStringMatchers(b *testing.B) {
 			})
 		}
 	}
+}
+
+func TestZeroOrOneCharacterStringMatcher(t *testing.T) {
+	matcher := &zeroOrOneCharacterStringMatcher{matchNL: true}
+	assert.True(t, matcher.Matches(""))
+	assert.True(t, matcher.Matches("x"))
+	assert.True(t, matcher.Matches("\n"))
+	assert.False(t, matcher.Matches("xx"))
+	assert.False(t, matcher.Matches("\n\n"))
+
+	matcher = &zeroOrOneCharacterStringMatcher{matchNL: false}
+	assert.True(t, matcher.Matches(""))
+	assert.True(t, matcher.Matches("x"))
+	assert.False(t, matcher.Matches("\n"))
+	assert.False(t, matcher.Matches("xx"))
+	assert.False(t, matcher.Matches("\n\n"))
 }
 
 func TestLiteralPrefixStringMatcher(t *testing.T) {

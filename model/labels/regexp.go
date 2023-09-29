@@ -480,6 +480,15 @@ func stringMatcherFromRegexpInternal(re *syntax.Regexp) StringMatcher {
 
 		// Any string is fine (including an empty one), as far as it doesn't contain any newline.
 		return anyStringWithoutNewlineMatcher{}
+	case syntax.OpQuest:
+		// Only optimize for ".?".
+		if len(re.Sub) != 1 || re.Sub[0].Op != syntax.OpAnyChar && re.Sub[0].Op != syntax.OpAnyCharNotNL {
+			return nil
+		}
+
+		return &zeroOrOneCharacterStringMatcher{
+			matchNL: re.Sub[0].Op == syntax.OpAnyChar,
+		}
 	case syntax.OpEmptyMatch:
 		return emptyStringMatcher{}
 
@@ -511,14 +520,14 @@ func stringMatcherFromRegexpInternal(re *syntax.Regexp) StringMatcher {
 		var left, right StringMatcher
 
 		// Let's try to find if there's a first and last any matchers.
-		if re.Sub[0].Op == syntax.OpPlus || re.Sub[0].Op == syntax.OpStar {
+		if re.Sub[0].Op == syntax.OpPlus || re.Sub[0].Op == syntax.OpStar || re.Sub[0].Op == syntax.OpQuest {
 			left = stringMatcherFromRegexpInternal(re.Sub[0])
 			if left == nil {
 				return nil
 			}
 			re.Sub = re.Sub[1:]
 		}
-		if re.Sub[len(re.Sub)-1].Op == syntax.OpPlus || re.Sub[len(re.Sub)-1].Op == syntax.OpStar {
+		if re.Sub[len(re.Sub)-1].Op == syntax.OpPlus || re.Sub[len(re.Sub)-1].Op == syntax.OpStar || re.Sub[len(re.Sub)-1].Op == syntax.OpQuest {
 			right = stringMatcherFromRegexpInternal(re.Sub[len(re.Sub)-1])
 			if right == nil {
 				return nil
@@ -843,6 +852,26 @@ func (m *anyNonEmptyStringMatcher) Matches(s string) bool {
 	// We need to make sure it non-empty and doesn't contain a newline.
 	// Since the newline is an ASCII character, we can use strings.IndexByte().
 	return len(s) > 0 && strings.IndexByte(s, '\n') == -1
+}
+
+// zeroOrOneCharacterStringMatcher is a StringMatcher which matches zero or one occurrence
+// of any character. The newline character is matches only if matchNL is set to true.
+type zeroOrOneCharacterStringMatcher struct {
+	matchNL bool
+}
+
+func (m *zeroOrOneCharacterStringMatcher) Matches(s string) bool {
+	// Zero or one.
+	if len(s) > 1 {
+		return false
+	}
+
+	// No need to check for the newline if the string is empty or matching a newline is OK.
+	if m.matchNL || len(s) == 0 {
+		return true
+	}
+
+	return s[0] != '\n'
 }
 
 // trueMatcher is a stringMatcher which matches any string (always returns true).
