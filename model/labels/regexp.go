@@ -533,7 +533,7 @@ func stringMatcherFromRegexpInternal(re *syntax.Regexp) StringMatcher {
 			// we can optimize.
 			switch {
 			// Literal as prefix.
-			case len(re.Sub) == 2 && re.Sub[0].Op == syntax.OpLiteral:
+			case right == nil && len(re.Sub) == 2 && re.Sub[0].Op == syntax.OpLiteral:
 				right = stringMatcherFromRegexpInternal(re.Sub[1])
 				if right != nil {
 					matches = []string{string(re.Sub[0].Rune)}
@@ -541,7 +541,7 @@ func stringMatcherFromRegexpInternal(re *syntax.Regexp) StringMatcher {
 				}
 
 			// Literal as suffix.
-			case len(re.Sub) == 2 && re.Sub[1].Op == syntax.OpLiteral:
+			case left == nil && len(re.Sub) == 2 && re.Sub[1].Op == syntax.OpLiteral:
 				left = stringMatcherFromRegexpInternal(re.Sub[0])
 				if left != nil {
 					matches = []string{string(re.Sub[1].Rune)}

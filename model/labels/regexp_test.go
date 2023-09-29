@@ -413,6 +413,11 @@ func TestStringMatcherFromRegexp(t *testing.T) {
 		// Case insensitive alternate with same literal prefix and .* suffix.
 		{"(?i:(xyz-016a-ixb-dp.*|xyz-016a-ixb-op.*))", &literalPrefixStringMatcher{prefix: "XYZ-016A-IXB-", prefixCaseSensitive: false, right: orStringMatcher{&literalPrefixStringMatcher{prefix: "DP", prefixCaseSensitive: false, right: anyStringWithoutNewlineMatcher{}}, &literalPrefixStringMatcher{prefix: "OP", prefixCaseSensitive: false, right: anyStringWithoutNewlineMatcher{}}}}},
 		{"(?i)(xyz-016a-ixb-dp.*|xyz-016a-ixb-op.*)", &literalPrefixStringMatcher{prefix: "XYZ-016A-IXB-", prefixCaseSensitive: false, right: orStringMatcher{&literalPrefixStringMatcher{prefix: "DP", prefixCaseSensitive: false, right: anyStringWithoutNewlineMatcher{}}, &literalPrefixStringMatcher{prefix: "OP", prefixCaseSensitive: false, right: anyStringWithoutNewlineMatcher{}}}}},
+		// Concatenated variable length selectors are not supported.
+		{"foo.*.*", nil},
+		{"foo.+.+", nil},
+		{".*.*foo", nil},
+		{".+.+foo", nil},
 	} {
 		c := c
 		t.Run(c.pattern, func(t *testing.T) {
