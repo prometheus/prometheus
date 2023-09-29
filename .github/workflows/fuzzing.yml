@@ -10,12 +10,12 @@ jobs:
     steps:
       - name: Build Fuzzers
         id: build
-        uses: google/oss-fuzz/infra/cifuzz/actions/build_fuzzers@master
+        uses: google/oss-fuzz/infra/cifuzz/actions/build_fuzzers@06d4dfd3ef1d58633d5a2a3afef5a50446c9c9d1 # master
         with:
           oss-fuzz-project-name: "prometheus"
           dry-run: false
       - name: Run Fuzzers
-        uses: google/oss-fuzz/infra/cifuzz/actions/run_fuzzers@master
+        uses: google/oss-fuzz/infra/cifuzz/actions/run_fuzzers@06d4dfd3ef1d58633d5a2a3afef5a50446c9c9d1 # master
         with:
           oss-fuzz-project-name: "prometheus"
           fuzz-seconds: 600

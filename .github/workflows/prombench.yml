@@ -31,7 +31,7 @@ jobs:
           "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$LAST_COMMIT_SHA"
       - name: Run make deploy to start test
         id: make_deploy
-        uses: docker://prominfra/prombench:master
+        uses: docker://prominfra/prombench:master@sha256:ef44d2d24d3d0c17ec534351eaae25f157c1fed83a19edfd4606e6e159c280e7
         with:
           args: >-
             until make all_nodes_deleted; do echo "waiting for nodepools to be deleted"; sleep 10; done;
@@ -66,7 +66,7 @@ jobs:
           "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$LAST_COMMIT_SHA"
       - name: Run make clean to stop test
         id: make_clean
-        uses: docker://prominfra/prombench:master
+        uses: docker://prominfra/prombench:master@sha256:ef44d2d24d3d0c17ec534351eaae25f157c1fed83a19edfd4606e6e159c280e7
         with:
           args: >-
             until make all_nodes_running; do echo "waiting for nodepools to be created"; sleep 10; done;
@@ -101,7 +101,7 @@ jobs:
           "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$LAST_COMMIT_SHA"
       - name: Run make clean then make deploy to restart test
         id: make_restart
-        uses: docker://prominfra/prombench:master
+        uses: docker://prominfra/prombench:master@sha256:ef44d2d24d3d0c17ec534351eaae25f157c1fed83a19edfd4606e6e159c280e7
         with:
           args: >-
             until make all_nodes_running; do echo "waiting for nodepools to be created"; sleep 10; done;
