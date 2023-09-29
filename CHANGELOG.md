@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.45.1 / 2023-09-29
+
+* [ENHANCEMENT] Hetzner SD: Support larger ID's that will be used by Hetzner in
+  September. #12619
+* [BUGFIX] Linode SD: Cast InstanceSpec values to int64 to avoid overflows on
+  386 architecture. #12644
+* [BUGFIX] TSDB: Handle TOC parsing failures. #12644
 
 ## 2.45.0 / 2023-06-23
 
