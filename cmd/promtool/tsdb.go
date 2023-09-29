@@ -638,25 +638,16 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 	}
 
 	fmt.Printf("\nCompaction analysis:\n")
-	fmt.Println("Fullness: Amount of samples in float chunks")
-	displayHistogram("sample count per float chunk", floatChunkSamplesCount, totalChunks)
 	fmt.Println()
+	displayHistogram("samples per float chunk", floatChunkSamplesCount, totalChunks)
 
-	fmt.Println("Size of float chunks")
 	displayHistogram("bytes per float chunk", floatChunkSize, totalChunks)
-	fmt.Println()
 
-	fmt.Println("Fullness: Amount of samples in histogram chunks")
-	displayHistogram("sample count per histogram chunk", histogramChunkSamplesCount, totalChunks)
-	fmt.Println()
+	displayHistogram("samples per histogram chunk", histogramChunkSamplesCount, totalChunks)
 
-	fmt.Println("Size of histogram chunks")
 	displayHistogram("bytes per histogram chunk", histogramChunkSize, totalChunks)
-	fmt.Println()
 
-	fmt.Println("Amount of buckets of histogram chunks")
 	displayHistogram("buckets per histogram chunk", histogramChunkBucketsCount, totalChunks)
-	fmt.Println()
 	return nil
 }
 
@@ -747,7 +738,7 @@ func displayHistogram(dataType string, datas []int, total int) {
 		}
 	}
 	avg := sum / len(datas)
-	fmt.Printf("%s (min/max/avg): %d/%d/%d\n", dataType, datas[0], datas[len(datas)-1], avg)
+	fmt.Printf("%s (min/avg/max): %d/%d/%d\n", dataType, datas[0], avg, datas[len(datas)-1])
 	maxLen := strconv.Itoa(len(fmt.Sprintf("%d", end)))
 	maxCountLen := strconv.Itoa(len(fmt.Sprintf("%d", maxCount)))
 	for bucket, count := range buckets {
