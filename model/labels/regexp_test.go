@@ -665,7 +665,7 @@ func TestAnalyzeRealQueries(t *testing.T) {
 		queryStartTimes []time.Time
 	}
 
-	labelValueRE := regexp.MustCompile(`=~\\"([^"]+)\\"`)
+	labelValueRE := regexp.MustCompile(`=~(?:\\"|')([^"']*)(?:\\"|')`)
 	tsRE := regexp.MustCompile(`ts=([^ ]+)`)
 	shardedQueriesRE := regexp.MustCompile(`sharded_queries=(\d+)`)
 	splitQueriesRE := regexp.MustCompile(`split_queries=(\d+)`)
