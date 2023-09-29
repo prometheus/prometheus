@@ -615,17 +615,20 @@ func TestStringMatcherFromRegexp_Quest(t *testing.T) {
 			expectedZeroOrOneMatchers: 1,
 			expectedMatches:           []string{"test", "test!"},
 			expectedNotMatches:        []string{"test\n", "tes", "test!!"},
-		}, {
+		},
+		{
 			pattern:                   ".?test",
 			expectedZeroOrOneMatchers: 1,
 			expectedMatches:           []string{"test", "!test"},
 			expectedNotMatches:        []string{"\ntest", "tes", "test!"},
-		}, {
+		},
+		{
 			pattern:                   "(aaa.?|bbb.?)",
 			expectedZeroOrOneMatchers: 2,
 			expectedMatches:           []string{"aaa", "aaaX", "bbb", "bbbX"},
 			expectedNotMatches:        []string{"aa", "aaaXX", "aaa\n", "bb", "bbbXX", "bbb\n"},
-		}, {
+		},
+		{
 			pattern:                   ".*aaa.?",
 			expectedZeroOrOneMatchers: 1,
 			expectedMatches:           []string{"aaa", "Xaaa", "aaaX", "XXXaaa", "XXXaaaX"},
