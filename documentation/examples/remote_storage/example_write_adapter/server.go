@@ -57,14 +57,12 @@ func main() {
 		}
 	})
 
-	http.HandleFunc("/receiveNew", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/receiveReduced", func(w http.ResponseWriter, r *http.Request) {
 		req, err := remote.DecodeReducedWriteRequest(r.Body)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		// req.StringSymbolTable
-		// fmt.Println("symbol table: ", req.StringSymbolTable)
 
 		for _, ts := range req.Timeseries {
 			m := make(model.Metric, len(ts.Labels))
