@@ -482,7 +482,7 @@ func stringMatcherFromRegexpInternal(re *syntax.Regexp) StringMatcher {
 		return anyStringWithoutNewlineMatcher{}
 	case syntax.OpQuest:
 		// Only optimize for ".?".
-		if len(re.Sub) != 1 || re.Sub[0].Op != syntax.OpAnyChar && re.Sub[0].Op != syntax.OpAnyCharNotNL {
+		if len(re.Sub) != 1 || (re.Sub[0].Op != syntax.OpAnyChar && re.Sub[0].Op != syntax.OpAnyCharNotNL) {
 			return nil
 		}
 
