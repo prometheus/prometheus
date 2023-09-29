@@ -2,10 +2,7 @@
 
 name: Scorecards supply-chain security
 on:
-  # Only the default branch is supported.
-  branch_protection_rule:
-  schedule:
-    - cron: '25 18 * * 5'
+  pull_request:
   push:
     branches: [ "main" ]
 
@@ -29,13 +26,13 @@ jobs:
           persist-credentials: false
 
       - name: "Run analysis"
-        uses: ossf/scorecard-action@865b4092859256271290c77adbd10a43f4779972 # tag=v2.0.3
+        uses: ossf/scorecard-action@08b4669551908b1024bb425080c797723083c031 # tag=v2.2.0
         with:
           results_file: results.sarif
           results_format: sarif
           # Publish the results for public repositories to enable scorecard badges. For more details, see
           # https://github.com/ossf/scorecard-action#publishing-results.
-          publish_results: true
+          publish_results: ${{ github.event_name != 'pull_request' }}
 
       # Upload the results as artifacts (optional). Commenting out will disable uploads of run results in SARIF
       # format to the repository Actions tab.
