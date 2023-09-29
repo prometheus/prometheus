@@ -528,20 +528,20 @@ func stringMatcherFromRegexpInternal(re *syntax.Regexp) StringMatcher {
 
 		matches, matchesCaseSensitive := findSetMatchesInternal(re, "")
 
-		if len(matches) == 0 {
+		if len(matches) == 0 && len(re.Sub) == 2 {
 			// We have not find fixed set matches. We look for other known cases that
 			// we can optimize.
 			switch {
-			// Literal as prefix.
-			case right == nil && len(re.Sub) == 2 && re.Sub[0].Op == syntax.OpLiteral:
+			// Prefix is literal.
+			case right == nil && re.Sub[0].Op == syntax.OpLiteral:
 				right = stringMatcherFromRegexpInternal(re.Sub[1])
 				if right != nil {
 					matches = []string{string(re.Sub[0].Rune)}
 					matchesCaseSensitive = !isCaseInsensitive(re.Sub[0])
 				}
 
-			// Literal as suffix.
-			case left == nil && len(re.Sub) == 2 && re.Sub[1].Op == syntax.OpLiteral:
+			// Suffix is literal.
+			case left == nil && re.Sub[1].Op == syntax.OpLiteral:
 				left = stringMatcherFromRegexpInternal(re.Sub[0])
 				if left != nil {
 					matches = []string{string(re.Sub[1].Rune)}
