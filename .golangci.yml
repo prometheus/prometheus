@@ -35,9 +35,6 @@ issues:
     - path: discovery/
       linters:
         - errorlint
-    - path: model/
-      linters:
-        - errorlint
     - path: scrape/
       linters:
         - errorlint
