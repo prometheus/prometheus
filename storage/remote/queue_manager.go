@@ -775,7 +775,6 @@ outer:
 // Start the queue manager sending samples to the remote storage.
 // Does not block.
 func (t *QueueManager) Start() {
-	// panic(1)
 	// Register and initialise some metrics.
 	t.metrics.register()
 	t.metrics.shardCapacity.Set(float64(t.cfg.Capacity))
