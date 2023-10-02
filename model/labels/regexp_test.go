@@ -1183,7 +1183,11 @@ func BenchmarkOptimizeEqualStringMatchers(b *testing.B) {
 				require.IsType(b, orStringMatcher{}, unoptimized)
 
 				optimized := optimizeEqualStringMatchers(unoptimized, 0)
-				require.IsType(b, &equalMultiStringMapMatcher{}, optimized)
+				if numAlternations < minEqualMultiStringMatcherMapThreshold {
+					require.IsType(b, &equalMultiStringSliceMatcher{}, optimized)
+				} else {
+					require.IsType(b, &equalMultiStringMapMatcher{}, optimized)
+				}
 
 				b.Run("without optimizeEqualStringMatchers()", func(b *testing.B) {
 					for n := 0; n < b.N; n++ {
