@@ -9,7 +9,7 @@ groups:
         labels:
           severity: page
         annotations:
-          summary: "Instance {{ $label.foo }} down"
+          summary: "Instance {{ $labels.foo }} down"
           description: "{{ $labels.instance }} of job {{ $labels.job }} has been down for more than 5 minutes."
       - alert: AlwaysFiring
         expr: 1
