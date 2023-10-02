@@ -15,6 +15,7 @@ package kubernetes
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"strconv"
@@ -183,7 +184,7 @@ func (e *EndpointSlice) Run(ctx context.Context, ch chan<- []*targetgroup.Group)
 		cacheSyncs = append(cacheSyncs, e.nodeInf.HasSynced)
 	}
 	if !cache.WaitForCacheSync(ctx.Done(), cacheSyncs...) {
-		if ctx.Err() != context.Canceled {
+		if !errors.Is(ctx.Err(), context.Canceled) {
 			level.Error(e.logger).Log("msg", "endpointslice informer unable to sync cache")
 		}
 		return
