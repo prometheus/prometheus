@@ -108,7 +108,7 @@ var writeRequestWithRefsFixture = &prompb.WriteRequestWithRefs{
 			Exemplars: []prompb.ExemplarRef{{Labels: []prompb.LabelRef{
 				{NameRef: 10, ValueRef: 11},
 			}, Value: 1, Timestamp: 0}},
-			Histograms: []prompb.Histogram{HistogramToHistogramProto(0, &testHistogram)},
+			Histograms: []prompb.Histogram{HistogramToHistogramProto(0, &testHistogram), FloatHistogramToHistogramProto(1, testHistogram.ToFloat())},
 		},
 		{
 			Labels: []prompb.LabelRef{
@@ -122,7 +122,7 @@ var writeRequestWithRefsFixture = &prompb.WriteRequestWithRefs{
 			Exemplars: []prompb.ExemplarRef{{Labels: []prompb.LabelRef{
 				{NameRef: 12, ValueRef: 13},
 			}, Value: 2, Timestamp: 1}},
-			Histograms: []prompb.Histogram{HistogramToHistogramProto(1, &testHistogram)},
+			Histograms: []prompb.Histogram{HistogramToHistogramProto(2, &testHistogram), FloatHistogramToHistogramProto(3, testHistogram.ToFloat())},
 		},
 	},
 }
