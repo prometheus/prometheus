@@ -352,7 +352,7 @@ func NewTestClient(name, url string) WriteClient {
 	return &TestClient{name: name, url: url}
 }
 
-func (c *TestClient) Store(_ context.Context, req []byte) error {
+func (c *TestClient) Store(_ context.Context, req []byte, _ int) error {
 	r := rand.Intn(200-100) + 100
 	time.Sleep(time.Duration(r) * time.Millisecond)
 	return nil
