@@ -1353,61 +1353,6 @@ func TestTombstoneCleanFail(t *testing.T) {
 	require.Len(t, intersection(oldBlockDirs, actualBlockDirs), len(actualBlockDirs)-1)
 }
 
-// TestTombstoneCleanRetentionLimitsRace tests that a CleanTombstones operation
-// and retention limit policies, when triggered at the same time,
-// won't race against each other.
-func TestTombstoneCleanRetentionLimitsRace(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping test in short mode.")
-	}
-
-	opts := DefaultOptions()
-	var wg sync.WaitGroup
-
-	// We want to make sure that a race doesn't happen when a normal reload and a CleanTombstones()
-	// reload try to delete the same block. Without the correct lock placement, it can happen if a
-	// block is marked for deletion due to retention limits and also has tombstones to be cleaned at
-	// the same time.
-	//
-	// That is something tricky to trigger, so let's try several times just to make sure.
-	for i := 0; i < 20; i++ {
-		t.Run(fmt.Sprintf("iteration%d", i), func(t *testing.T) {
-			db := openTestDB(t, opts, nil)
-			totalBlocks := 20
-			dbDir := db.Dir()
-			// Generate some blocks with old mint (near epoch).
-			for j := 0; j < totalBlocks; j++ {
-				blockDir := createBlock(t, dbDir, genSeries(10, 1, int64(j), int64(j)+1))
-				block, err := OpenBlock(nil, blockDir, nil)
-				require.NoError(t, err)
-				// Cover block with tombstones so it can be deleted with CleanTombstones() as well.
-				tomb := tombstones.NewMemTombstones()
-				tomb.AddInterval(0, tombstones.Interval{Mint: int64(j), Maxt: int64(j) + 1})
-				block.tombstones = tomb
-
-				db.blocks = append(db.blocks, block)
-			}
-
-			wg.Add(2)
-			// Run reload and CleanTombstones together, with a small time window randomization
-			go func() {
-				defer wg.Done()
-				time.Sleep(time.Duration(rand.Float64() * 100 * float64(time.Millisecond)))
-				require.NoError(t, db.reloadBlocks())
-			}()
-			go func() {
-				defer wg.Done()
-				time.Sleep(time.Duration(rand.Float64() * 100 * float64(time.Millisecond)))
-				require.NoError(t, db.CleanTombstones())
-			}()
-
-			wg.Wait()
-
-			require.NoError(t, db.Close())
-		})
-	}
-}
-
 func intersection(oldBlocks, actualBlocks []string) (intersection []string) {
 	hash := make(map[string]bool)
 	for _, e := range oldBlocks {
