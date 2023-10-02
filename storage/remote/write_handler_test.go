@@ -182,6 +182,36 @@ func BenchmarkRemoteWritehandler(b *testing.B) {
 	}
 }
 
+// TODO(npazosmendez): add benchmarks with realistc scenarios
+func BenchmarkReducedRemoteWriteHandler(b *testing.B) {
+	const labelValue = "abcdefg'hijlmn234!@#$%^&*()_+~`\"{}[],./<>?hello0123hiOlá你好Dzieńdobry9Zd8ra765v4stvuyte"
+	reqs := []*http.Request{}
+	for i := 0; i < b.N; i++ {
+		pool := newLookupPool()
+		num := strings.Repeat(strconv.Itoa(i), 16)
+		buf, _, err := buildReducedWriteRequest([]prompb.ReducedTimeSeries{{
+			Labels: []prompb.LabelRef{
+				{NameRef: pool.intern("__name__"), ValueRef: pool.intern("test_metric")},
+				{NameRef: pool.intern("test_label_name_" + num), ValueRef: pool.intern(labelValue + num)},
+			},
+			Histograms: []prompb.Histogram{HistogramToHistogramProto(0, &testHistogram)},
+		}}, pool.getTable(), nil, nil)
+		require.NoError(b, err)
+		req, err := http.NewRequest("", "", bytes.NewReader(buf))
+		require.NoError(b, err)
+		reqs = append(reqs, req)
+	}
+
+	appendable := &mockAppendable{}
+	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, true)
+	recorder := httptest.NewRecorder()
+
+	b.ResetTimer()
+	for _, req := range reqs {
+		handler.ServeHTTP(recorder, req)
+	}
+}
+
 func TestCommitErr(t *testing.T) {
 	buf, _, err := buildWriteRequest(writeRequestFixture.Timeseries, nil, nil, nil)
 	require.NoError(t, err)
