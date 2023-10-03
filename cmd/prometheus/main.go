@@ -12,7 +12,6 @@
 // limitations under the License.
 
 // The main package for the Prometheus server executable.
-// nolint:revive // Many unsued function arguments in this file by design.
 package main
 
 import (

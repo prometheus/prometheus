@@ -55,7 +55,6 @@ type Statement interface {
 	Node
 
 	// PromQLStmt ensures that no other type accidentally implements the interface
-	// nolint:unused
 	PromQLStmt()
 }
 

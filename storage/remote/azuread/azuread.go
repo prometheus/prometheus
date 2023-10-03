@@ -47,7 +47,7 @@ type ManagedIdentityConfig struct {
 }
 
 // AzureADConfig is used to store the config values.
-type AzureADConfig struct { // nolint:revive
+type AzureADConfig struct {
 	// ManagedIdentity is the managed identity that is being used to authenticate.
 	ManagedIdentity *ManagedIdentityConfig `yaml:"managed_identity,omitempty"`
 

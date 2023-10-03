@@ -88,7 +88,7 @@ func (i *Ingress) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	}
 
 	go func() {
-		for i.process(ctx, ch) { // nolint:revive
+		for i.process(ctx, ch) {
 		}
 	}()
 

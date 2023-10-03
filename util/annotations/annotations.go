@@ -91,7 +91,6 @@ func (a Annotations) AsStrings(query string, maxAnnos int) []string {
 	return arr
 }
 
-//nolint:revive // Ignore ST1012
 var (
 	// Currently there are only 2 types, warnings and info.
 	// For now, info are visually identical with warnings as we have not updated
