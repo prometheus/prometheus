@@ -1468,7 +1468,7 @@ func (r *Reader) SortedLabelValues(ctx context.Context, name string, matchers ..
 // LabelValues returns value tuples that exist for the given label name.
 // It is not safe to use the return value beyond the lifetime of the byte slice
 // passed into the Reader.
-// TODO(replay): Support filtering by matchers
+// TODO(replay): Support filtering by matchers.
 func (r *Reader) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
 	if len(matchers) > 0 {
 		return nil, errors.Errorf("matchers parameter is not implemented: %+v", matchers)
@@ -1729,7 +1729,7 @@ func (r *Reader) Size() int64 {
 }
 
 // LabelNames returns all the unique label names present in the index.
-// TODO(twilkie) implement support for matchers
+// TODO(twilkie) implement support for matchers.
 func (r *Reader) LabelNames(_ context.Context, matchers ...*labels.Matcher) ([]string, error) {
 	if len(matchers) > 0 {
 		return nil, errors.Errorf("matchers parameter is not implemented: %+v", matchers)

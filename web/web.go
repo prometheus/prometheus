@@ -179,7 +179,7 @@ type LocalStorage interface {
 	api_v1.TSDBAdminStats
 }
 
-// Handler serves various HTTP endpoints of the Prometheus server
+// Handler serves various HTTP endpoints of the Prometheus server.
 type Handler struct {
 	logger log.Logger
 
@@ -215,7 +215,7 @@ type Handler struct {
 	ready atomic.Uint32 // ready is uint32 rather than boolean to be able to use atomic functions.
 }
 
-// ApplyConfig updates the config field of the Handler struct
+// ApplyConfig updates the config field of the Handler struct.
 func (h *Handler) ApplyConfig(conf *config.Config) error {
 	h.mtx.Lock()
 	defer h.mtx.Unlock()
@@ -522,7 +522,7 @@ func serveDebug(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-// SetReady sets the ready status of our web Handler
+// SetReady sets the ready status of our web Handler.
 func (h *Handler) SetReady(v bool) {
 	if v {
 		h.ready.Store(1)

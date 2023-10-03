@@ -4403,7 +4403,7 @@ func TestOOOCompactionWithNormalCompaction(t *testing.T) {
 
 // TestOOOCompactionWithDisabledWriteLog tests the scenario where the TSDB is
 // configured to not have wal and wbl but its able to compact both the in-order
-// and out-of-order head
+// and out-of-order head.
 func TestOOOCompactionWithDisabledWriteLog(t *testing.T) {
 	dir := t.TempDir()
 	ctx := context.Background()

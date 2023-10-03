@@ -327,7 +327,7 @@ func (s testSeriesSet) At() Series                        { return s.series }
 func (s testSeriesSet) Err() error                        { return nil }
 func (s testSeriesSet) Warnings() annotations.Annotations { return nil }
 
-// TestSeriesSet returns a mock series set
+// TestSeriesSet returns a mock series set.
 func TestSeriesSet(series Series) SeriesSet {
 	return testSeriesSet{series: series}
 }

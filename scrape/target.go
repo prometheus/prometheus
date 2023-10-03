@@ -196,7 +196,7 @@ func (t *Target) DiscoveredLabels() labels.Labels {
 	return t.discoveredLabels.Copy()
 }
 
-// SetDiscoveredLabels sets new DiscoveredLabels
+// SetDiscoveredLabels sets new DiscoveredLabels.
 func (t *Target) SetDiscoveredLabels(l labels.Labels) {
 	t.mtx.Lock()
 	defer t.mtx.Unlock()

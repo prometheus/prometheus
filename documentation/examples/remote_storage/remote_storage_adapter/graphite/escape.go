@@ -69,16 +69,16 @@ const (
 //
 // Examples:
 //
-// "foo-bar-42" -> "foo-bar-42"
+//	"foo-bar-42" -> "foo-bar-42"
 //
-// "foo_bar%42" -> "foo_bar%2542"
+//	"foo_bar%42" -> "foo_bar%2542"
 //
-// "http://example.org:8080" -> "http:%2F%2Fexample%2Eorg:8080"
+//	"http://example.org:8080" -> "http:%2F%2Fexample%2Eorg:8080"
 //
-// "Björn's email: bjoern@soundcloud.com" ->
-// "Bj%C3%B6rn's%20email:%20bjoern%40soundcloud.com"
+//	"Björn's email: bjoern@soundcloud.com" ->
+//	"Bj%C3%B6rn's%20email:%20bjoern%40soundcloud.com"
 //
-// "日" -> "%E6%97%A5"
+//	"日" -> "%E6%97%A5"
 func escape(tv model.LabelValue) string {
 	length := len(tv)
 	result := bytes.NewBuffer(make([]byte, 0, length))

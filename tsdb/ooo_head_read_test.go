@@ -39,7 +39,7 @@ type chunkInterval struct {
 	maxt int64
 }
 
-// permutateChunkIntervals returns all possible orders of the given chunkIntervals
+// permutateChunkIntervals returns all possible orders of the given chunkIntervals.
 func permutateChunkIntervals(in []chunkInterval, out [][]chunkInterval, left, right int) [][]chunkInterval {
 	if left == right {
 		inCopy := make([]chunkInterval, len(in))
@@ -871,9 +871,9 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 // the response is consistent with the data seen by Series() even if the OOO
 // head receives more samples before Chunks() is called.
 // An example:
-// - Response A comes from: Series() then Chunk()
-// - Response B comes from : Series(), in parallel new samples added to the head, then Chunk()
-// - A == B
+//   - Response A comes from: Series() then Chunk()
+//   - Response B comes from : Series(), in parallel new samples added to the head, then Chunk()
+//   - A == B
 func TestOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(t *testing.T) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 5

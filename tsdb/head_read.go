@@ -202,7 +202,7 @@ func (h *headIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchB
 
 // headChunkID returns the HeadChunkID referred to by the given position.
 // * 0 <= pos < len(s.mmappedChunks) refer to s.mmappedChunks[pos]
-// * pos >= len(s.mmappedChunks) refers to s.headChunks linked list
+// * pos >= len(s.mmappedChunks) refers to s.headChunks linked list.
 func (s *memSeries) headChunkID(pos int) chunks.HeadChunkID {
 	return chunks.HeadChunkID(pos) + s.firstChunkID
 }
@@ -596,7 +596,7 @@ var _ chunkenc.Chunk = &boundedChunk{}
 
 // boundedChunk is an implementation of chunkenc.Chunk that uses a
 // boundedIterator that only iterates through samples which timestamps are
-// >= minT and <= maxT
+// >= minT and <= maxT.
 type boundedChunk struct {
 	chunkenc.Chunk
 	minT int64
@@ -625,7 +625,7 @@ func (b boundedChunk) Iterator(iterator chunkenc.Iterator) chunkenc.Iterator {
 var _ chunkenc.Iterator = &boundedIterator{}
 
 // boundedIterator is an implementation of Iterator that only iterates through
-// samples which timestamps are >= minT and <= maxT
+// samples which timestamps are >= minT and <= maxT.
 type boundedIterator struct {
 	chunkenc.Iterator
 	minT int64
@@ -671,7 +671,7 @@ func (b boundedIterator) Seek(t int64) chunkenc.ValueType {
 	return b.Iterator.Seek(t)
 }
 
-// safeHeadChunk makes sure that the chunk can be accessed without a race condition
+// safeHeadChunk makes sure that the chunk can be accessed without a race condition.
 type safeHeadChunk struct {
 	chunkenc.Chunk
 	s        *memSeries

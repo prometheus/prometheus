@@ -51,16 +51,16 @@ type TagValue model.LabelValue
 //
 // Examples:
 //
-// "foo-bar-42" -> "foo-bar-42"
+//	"foo-bar-42" -> "foo-bar-42"
 //
-// "foo_bar_42" -> "foo__bar__42"
+//	"foo_bar_42" -> "foo__bar__42"
 //
-// "http://example.org:8080" -> "http_.//example.org_.8080"
+//	"http://example.org:8080" -> "http_.//example.org_.8080"
 //
-// "Björn's email: bjoern@soundcloud.com" ->
-// "Bj_C3_B6rn_27s_20email_._20bjoern_40soundcloud.com"
+//	"Björn's email: bjoern@soundcloud.com" ->
+//	"Bj_C3_B6rn_27s_20email_._20bjoern_40soundcloud.com"
 //
-// "日" -> "_E6_97_A5"
+//	"日" -> "_E6_97_A5"
 func (tv TagValue) MarshalJSON() ([]byte, error) {
 	length := len(tv)
 	// Need at least two more bytes than in tv.

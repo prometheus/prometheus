@@ -202,7 +202,7 @@ func (n *Node) buildNode(node *apiv1.Node) *targetgroup.Group {
 // 5. NodeLegacyHostIP
 // 6. NodeHostName
 //
-// Derived from k8s.io/kubernetes/pkg/util/node/node.go
+// Derived from k8s.io/kubernetes/pkg/util/node/node.go.
 func nodeAddress(node *apiv1.Node) (string, map[apiv1.NodeAddressType][]string, error) {
 	m := map[apiv1.NodeAddressType][]string{}
 	for _, a := range node.Status.Addresses {

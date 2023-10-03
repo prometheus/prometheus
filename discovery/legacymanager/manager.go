@@ -137,7 +137,7 @@ type Manager struct {
 	triggerSend chan struct{}
 }
 
-// Run starts the background processing
+// Run starts the background processing.
 func (m *Manager) Run() error {
 	go m.sender()
 	<-m.ctx.Done()

@@ -45,7 +45,7 @@ var (
 		[]string{"endpoint"},
 	)
 
-	// Definition of metrics for client-go workflow metrics provider
+	// Definition of metrics for client-go workflow metrics provider.
 	clientGoWorkqueueDepthMetricVec = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: workqueueMetricsNamespace,
@@ -106,7 +106,7 @@ func (noopMetric) Dec()            {}
 func (noopMetric) Observe(float64) {}
 func (noopMetric) Set(float64)     {}
 
-// Definition of client-go metrics adapters for HTTP requests observation
+// Definition of client-go metrics adapters for HTTP requests observation.
 type clientGoRequestMetricAdapter struct{}
 
 func (f *clientGoRequestMetricAdapter) Register(registerer prometheus.Registerer) {
@@ -130,7 +130,7 @@ func (clientGoRequestMetricAdapter) Observe(_ context.Context, _ string, u url.U
 	clientGoRequestLatencyMetricVec.WithLabelValues(u.EscapedPath()).Observe(latency.Seconds())
 }
 
-// Definition of client-go workqueue metrics provider definition
+// Definition of client-go workqueue metrics provider definition.
 type clientGoWorkqueueMetricsProvider struct{}
 
 func (f *clientGoWorkqueueMetricsProvider) Register(registerer prometheus.Registerer) {

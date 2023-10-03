@@ -622,7 +622,8 @@ func (w *WL) flushPage(clear bool) error {
 }
 
 // First Byte of header format:
-// [3 bits unallocated] [1 bit zstd compression flag] [1 bit snappy compression flag] [3 bit record type ]
+//
+//	[3 bits unallocated] [1 bit zstd compression flag] [1 bit snappy compression flag] [3 bit record type ]
 const (
 	snappyMask  = 1 << 3
 	zstdMask    = 1 << 4
@@ -836,7 +837,7 @@ func (w *WL) fsync(f *Segment) error {
 
 // Sync forces a file sync on the current write log segment. This function is meant
 // to be used only on tests due to different behaviour on Operating Systems
-// like windows and linux
+// like windows and linux.
 func (w *WL) Sync() error {
 	return w.fsync(w.segment)
 }

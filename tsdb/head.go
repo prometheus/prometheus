@@ -1527,7 +1527,7 @@ func (h *Head) gc() (actualInOrderMint, minOOOTime int64, minMmapFile int) {
 	return actualInOrderMint, minOOOTime, minMmapFile
 }
 
-// Tombstones returns a new reader over the head's tombstones
+// Tombstones returns a new reader over the head's tombstones.
 func (h *Head) Tombstones() (tombstones.Reader, error) {
 	return h.tombstones, nil
 }
@@ -2171,7 +2171,7 @@ func overlapsClosedInterval(mint1, maxt1, mint2, maxt2 int64) bool {
 	return mint1 <= maxt2 && mint2 <= maxt1
 }
 
-// mmappedChunk describes a head chunk on disk that has been mmapped
+// mmappedChunk describes a head chunk on disk that has been mmapped.
 type mmappedChunk struct {
 	ref              chunks.ChunkDiskMapperRef
 	numSamples       uint16

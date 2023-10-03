@@ -111,7 +111,7 @@ type scrapeLoopOptions struct {
 
 const maxAheadTime = 10 * time.Minute
 
-// returning an empty label set is interpreted as "drop"
+// returning an empty label set is interpreted as "drop".
 type labelsMutator func(labels.Labels) labels.Labels
 
 func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed uint64, logger log.Logger, options *Options, metrics *scrapeMetrics) (*scrapePool, error) {
