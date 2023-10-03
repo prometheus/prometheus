@@ -1629,6 +1629,9 @@ func (s *shards) populateReducedTimeSeries(pool *lookupPool, batch []timeSeries,
 		case tHistogram:
 			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, HistogramToHistogramProto(d.timestamp, d.histogram))
 			nPendingHistograms++
+		case tFloatHistogram:
+			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, FloatHistogramToHistogramProto(d.timestamp, d.floatHistogram))
+			nPendingHistograms++
 		}
 	}
 	return nPendingSamples, nPendingExemplars, nPendingHistograms
