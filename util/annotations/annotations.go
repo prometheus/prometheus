@@ -100,10 +100,11 @@ var (
 	PromQLInfo    = errors.New("PromQL info")
 	PromQLWarning = errors.New("PromQL warning")
 
-	InvalidQuantileWarning              = fmt.Errorf("%w: quantile value should be between 0 and 1", PromQLWarning)
-	BadBucketLabelWarning               = fmt.Errorf("%w: bucket label %q is missing or has a malformed value", PromQLWarning, model.BucketLabel)
-	MixedFloatsHistogramsWarning        = fmt.Errorf("%w: encountered a mix of histograms and floats for metric name", PromQLWarning)
-	MixedClassicNativeHistogramsWarning = fmt.Errorf("%w: vector contains a mix of classic and native histograms for metric name", PromQLWarning)
+	InvalidQuantileWarning                     = fmt.Errorf("%w: quantile value should be between 0 and 1", PromQLWarning)
+	BadBucketLabelWarning                      = fmt.Errorf("%w: bucket label %q is missing or has a malformed value", PromQLWarning, model.BucketLabel)
+	MixedFloatsHistogramsWarning               = fmt.Errorf("%w: encountered a mix of histograms and floats for metric name", PromQLWarning)
+	MixedClassicNativeHistogramsWarning        = fmt.Errorf("%w: vector contains a mix of classic and native histograms for metric name", PromQLWarning)
+	HistogramQuantileForcedMonotonicityWarning = fmt.Errorf("%w: input to histogram_quantile needed to be fixed for monotonicity (and may give inaccurate results) for metric name", PromQLWarning)
 
 	PossibleNonCounterInfo = fmt.Errorf("%w: metric might not be a counter, name does not end in _total/_sum/_count:", PromQLInfo)
 )
@@ -152,6 +153,15 @@ func NewMixedClassicNativeHistogramsWarning(metricName string, pos posrange.Posi
 	return annoErr{
 		PositionRange: pos,
 		Err:           fmt.Errorf("%w %q", MixedClassicNativeHistogramsWarning, metricName),
+	}
+}
+
+// NewHistogramQuantileForcedMonotonicityWarning is used when the input (classic histograms) to
+// histogram_quantile needs to be forced to be monotonic.
+func NewHistogramQuantileForcedMonotonicityWarning(metricName string, pos posrange.PositionRange) annoErr {
+	return annoErr{
+		PositionRange: pos,
+		Err:           fmt.Errorf("%w %q", HistogramQuantileForcedMonotonicityWarning, metricName),
 	}
 }
 
