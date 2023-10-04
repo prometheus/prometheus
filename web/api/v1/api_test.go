@@ -2225,6 +2225,51 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 		{
 			endpoint: api.rules,
 			query: url.Values{
+				"match[]": []string{`{testlabel="abc"}`},
+			},
+			response: &RuleDiscovery{
+				RuleGroups: []*RuleGroup{},
+			},
+		},
+		{
+			endpoint: api.rules,
+			query: url.Values{
+				"match[]": []string{`{testlabel="abc"}`, `{testlabel="rule"}`},
+			},
+			response: &RuleDiscovery{
+				RuleGroups: []*RuleGroup{
+					{
+						Name:     "grp",
+						File:     "/path/to/file",
+						Interval: 1,
+						Limit:    0,
+						Rules: []Rule{
+							AlertingRule{
+								State:       "inactive",
+								Name:        "test_metric5",
+								Query:       "up == 1",
+								Duration:    1,
+								Labels:      labels.Labels{labels.Label{Name: "testlabel", Value: "rule"}},
+								Annotations: labels.Labels{},
+								Alerts:      []*Alert{},
+								Health:      "unknown",
+								Type:        "alerting",
+							},
+							RecordingRule{
+								Name:   "recording-rule-2",
+								Query:  "vector(1)",
+								Labels: labels.Labels{labels.Label{Name: "testlabel", Value: "rule"}},
+								Health: "unknown",
+								Type:   "recording",
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			endpoint: api.rules,
+			query: url.Values{
 				"type":    []string{"record"},
 				"match[]": []string{`{testlabel="rule"}`},
 			},
