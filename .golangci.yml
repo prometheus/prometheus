@@ -38,9 +38,6 @@ issues:
     - path: scrape/
       linters:
         - errorlint
-    - path: storage/
-      linters:
-        - errorlint
     - path: tsdb/
       linters:
         - errorlint
