@@ -159,18 +159,31 @@ func (g *Group) Rules(matcherSets ...[]*labels.Matcher) []Rule {
 	}
 	var rules []Rule
 	for _, rule := range g.rules {
-		if matches(matcherSets, rule.Labels()) {
+		if matchesMatcherSets(matcherSets, rule.Labels()) {
 			rules = append(rules, rule)
 		}
 	}
 	return rules
 }
 
-func matches(matcherSets [][]*labels.Matcher, l labels.Labels) bool {
+func matches(l labels.Labels, matchers ...*labels.Matcher) bool {
+Matcher:
+	for _, m := range matchers {
+		for _, lbl := range l {
+			if lbl.Name != m.Name || !m.Matches(lbl.Value) {
+				continue
+			}
+			continue Matcher
+		}
+		return false
+	}
+	return true
+}
+
+func matchesMatcherSets(matcherSets [][]*labels.Matcher, l labels.Labels) bool {
 	if len(matcherSets) == 0 {
 		return true
 	}
-
 	var nonTemplatedLabels labels.Labels
 	labelTemplate := text_template.New("label")
 	for _, label := range l {
@@ -181,15 +194,13 @@ func matches(matcherSets [][]*labels.Matcher, l labels.Labels) bool {
 		}
 	}
 
+	var ok bool
 	for _, matchers := range matcherSets {
-		for _, m := range matchers {
-			if v := nonTemplatedLabels.Get(m.Name); !m.Matches(v) {
-				return false
-
-			}
+		if matches(nonTemplatedLabels, matchers...) {
+			ok = true
 		}
 	}
-	return true
+	return ok
 }
 
 // Queryable returns the group's querable.
