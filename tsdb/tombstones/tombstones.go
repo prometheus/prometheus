@@ -385,21 +385,3 @@ func (in Intervals) Add(n Interval) Intervals {
 	}
 	return append(in[:mini+1], in[maxi+mini:]...)
 }
-
-// Check if a given timestamp is within any of the tombstone intervals.
-func (t *MemTombstones) HasTimestamp(ref storage.SeriesRef, ts int64) bool {
-	t.mtx.RLock()
-	defer t.mtx.RUnlock()
-
-	intervals, exists := t.intvlGroups[ref]
-	if !exists {
-		return false
-	}
-
-	for _, interval := range intervals {
-		if ts >= interval.Mint && ts <= interval.Maxt {
-			return true
-		}
-	}
-	return false
-}
