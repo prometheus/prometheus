@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.47.1 / 2023-10-04
+
+* [BUGFIX] Fix duplicate sample detection at chunk size limit #12874
+
 ## 2.47.0 / 2023-09-06
 
 This release adds an experimental OpenTelemetry (OTLP) Ingestion feature,
