@@ -3537,7 +3537,13 @@ azuread:
 
   # Azure User-assigned Managed identity.
   [ managed_identity:
-      [ client_id: <string> ]  
+      [ client_id: <string> ] ]  
+
+  # Azure OAuth.
+  [ oauth:
+      [ client_id: <string> ]
+      [ client_secret: <string> ]
+      [ tenant_id: <string> ] ]
 
 # Configures the remote write request's TLS settings.
 tls_config:
