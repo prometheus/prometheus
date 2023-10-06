@@ -1525,6 +1525,7 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 		appErrs         = appendErrors{}
 		sampleLimitErr  error
 		bucketLimitErr  error
+		lset            labels.Labels     // escapes to heap so hoisted out of loop
 		e               exemplar.Exemplar // escapes to heap so hoisted out of loop
 		meta            metadata.Metadata
 		metadataChanged bool
@@ -1622,7 +1623,6 @@ loop:
 		ce, ok := sl.cache.get(met)
 		var (
 			ref  storage.SeriesRef
-			lset labels.Labels
 			hash uint64
 		)
 
