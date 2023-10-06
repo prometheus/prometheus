@@ -1,5 +1,5 @@
-package(default_visibility = ["//visibility:public"])
 load("//:bazel/rules/cc_static_library.bzl", "cc_static_library")
+package(default_visibility = ["//visibility:public"])
 
 config_setting(
     name = "aarch64_build",
@@ -63,10 +63,13 @@ cc_library(
 cc_test(
     name = "bare_bones_test",
     srcs = glob(["bare_bones/tests/*_tests.cpp"]),
-    malloc = "@jemalloc",
+    # malloc = "@jemalloc",
     deps = [
         ":bare_bones",
         "@gtest//:gtest_main",
+    ],
+    linkopts = [
+        "-static",
     ],
 )
 
@@ -91,7 +94,7 @@ cc_library(
 cc_test(
     name = "primitives_test",
     srcs = glob(["primitives/tests/*_tests.cpp"]),
-    malloc = "@jemalloc",
+    # malloc = "@jemalloc",
     deps = [
         ":primitives",
         "@gtest//:gtest_main",
@@ -110,7 +113,7 @@ cc_library(
 cc_test(
     name = "prometheus_test",
     srcs = glob(["prometheus/tests/*_tests.cpp"]),
-    malloc = "@jemalloc",
+    # malloc = "@jemalloc",
     deps = [
         ":prometheus",
         "@gtest//:gtest_main",
@@ -131,7 +134,7 @@ cc_library(
 cc_test(
     name = "wal_test",
     srcs = glob(["wal/tests/*_tests.cpp"]),
-    malloc = "@jemalloc",
+    # malloc = "@jemalloc",
     deps = [
         ":wal",
         "@gtest//:gtest_main",
@@ -310,7 +313,7 @@ cc_library(
 cc_binary(
     name = "performance_tests",
     srcs = glob(["performance_tests/*.cpp"]),
-    malloc = "@jemalloc",
+    # malloc = "@jemalloc",
     deps = [
         ":performance_tests_headers"
     ],
@@ -329,7 +332,7 @@ cc_library(
 cc_binary(
     name = "integration_tests",
     srcs = glob(["integration_tests/*.cpp"]),
-    malloc = "@jemalloc",
+    # malloc = "@jemalloc",
     deps = [
         ":integration_tests_headers"
     ]
