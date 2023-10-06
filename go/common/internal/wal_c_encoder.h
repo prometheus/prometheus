@@ -110,7 +110,7 @@ typedef struct {
   c_snapshot c_snapshot;
 } c_encoder_snapshot_params;
 
-void okdb_wal_uni_c_encoder_snapshot(go_ptr c_enc, go_ptr snapshot_params, go_ptr err);
+void okdb_wal_uni_c_encoder_snapshot(c_encoder c_enc, go_ptr snapshot_params, go_ptr err);
 // okdb_wal_c_encoder_dtor - calls the destructor, C wrapper C++ for clear memory.
 void okdb_wal_c_encoder_dtor(c_encoder c_enc);
 
