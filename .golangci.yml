@@ -47,9 +47,6 @@ issues:
     - path: util/
       linters:
         - errorlint
-    - path: web/
-      linters:
-        - errorlint
 
 linters-settings:
   depguard:

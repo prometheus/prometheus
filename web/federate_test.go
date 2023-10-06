@@ -16,6 +16,7 @@ package web
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -25,7 +26,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
@@ -238,15 +238,15 @@ type notReadyReadStorage struct {
 }
 
 func (notReadyReadStorage) Querier(int64, int64) (storage.Querier, error) {
-	return nil, errors.Wrap(tsdb.ErrNotReady, "wrap")
+	return nil, fmt.Errorf("wrap: %w", tsdb.ErrNotReady)
 }
 
 func (notReadyReadStorage) StartTime() (int64, error) {
-	return 0, errors.Wrap(tsdb.ErrNotReady, "wrap")
+	return 0, fmt.Errorf("wrap: %w", tsdb.ErrNotReady)
 }
 
 func (notReadyReadStorage) Stats(string, int) (*tsdb.Stats, error) {
-	return nil, errors.Wrap(tsdb.ErrNotReady, "wrap")
+	return nil, fmt.Errorf("wrap: %w", tsdb.ErrNotReady)
 }
 
 // Regression test for https://github.com/prometheus/prometheus/issues/7181.
@@ -396,7 +396,7 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 	l := labels.Labels{}
 	for {
 		et, err := p.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		require.NoError(t, err)
