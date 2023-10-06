@@ -28,9 +28,7 @@ configure_make(
     out_static_libs = [
         "libjemalloc.a",
     ],
-    args = [
-        "-j20"
-    ],
+    args = ["-j `nproc`"],
     visibility = ["//visibility:public"],
 )
 
