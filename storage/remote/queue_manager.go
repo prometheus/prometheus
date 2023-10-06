@@ -1625,12 +1625,13 @@ func (s *shards) populateReducedTimeSeries(pool *lookupPool, batch []timeSeries,
 			})
 			nPendingSamples++
 		case tExemplar:
-			l := make([]prompb.LabelRef, len(d.exemplarLabels))
-			for i, el := range d.exemplarLabels {
+			// TODO(npazosmendez) optimize?
+			l := make([]prompb.LabelRef, 0, d.exemplarLabels.Len())
+			d.exemplarLabels.Range(func(el labels.Label) {
 				nRef := pool.intern(el.Name)
 				vRef := pool.intern(el.Value)
-				l[i] = prompb.LabelRef{NameRef: nRef, ValueRef: vRef}
-			}
+				l = append(l, prompb.LabelRef{NameRef: nRef, ValueRef: vRef})
+			})
 			pendingData[nPending].Exemplars = append(pendingData[nPending].Exemplars, prompb.ExemplarRef{
 				Labels:    l,
 				Value:     d.value,
