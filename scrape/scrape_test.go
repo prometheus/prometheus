@@ -1062,6 +1062,28 @@ func makeTestMetrics(n int) []byte {
 	return sb.Bytes()
 }
 
+func BenchmarkScrapeAndReport(b *testing.B) {
+	_, sl := simpleTestScrapeLoop(b)
+	metrics := makeTestMetrics(100)
+	sl.scraper.(*testScraper).scrapeFunc = func(ctx context.Context, w io.Writer) error {
+		w.Write(metrics)
+		return nil
+	}
+
+	for _, contentType := range []string{"text/plain", "application/openmetrics-text"} {
+		b.Run(contentType, func(b *testing.B) {
+			sl.scraper.(*testScraper).contentType = contentType
+			ts := time.Time{}
+
+			for i := 0; i < b.N; i++ {
+				last := ts
+				ts = ts.Add(time.Second)
+				_ = sl.scrapeAndReport(last, ts, nil)
+			}
+		})
+	}
+}
+
 func BenchmarkScrapeLoopAppend(b *testing.B) {
 	ctx, sl := simpleTestScrapeLoop(b)
 
@@ -2548,6 +2570,8 @@ type testScraper struct {
 
 	scrapeErr  error
 	scrapeFunc func(context.Context, io.Writer) error
+
+	contentType string
 }
 
 func (ts *testScraper) offset(time.Duration, uint64) time.Duration {
@@ -2566,7 +2590,7 @@ func (ts *testScraper) scrape(ctx context.Context) (*http.Response, error) {
 
 func (ts *testScraper) readResponse(ctx context.Context, resp *http.Response, w io.Writer) (string, error) {
 	if ts.scrapeFunc != nil {
-		return "", ts.scrapeFunc(ctx, w)
+		return ts.contentType, ts.scrapeFunc(ctx, w)
 	}
 	return "", ts.scrapeErr
 }
