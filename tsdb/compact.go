@@ -232,8 +232,8 @@ func (c *LeveledCompactor) Plan(dir string) ([]string, error) {
 }
 
 func (c *LeveledCompactor) plan(dms []dirMeta) ([]string, error) {
-	slices.SortFunc(dms, func(a, b dirMeta) bool {
-		return a.meta.MinTime < b.meta.MinTime
+	slices.SortFunc(dms, func(a, b dirMeta) int {
+		return int(a.meta.MinTime - b.meta.MinTime)
 	})
 
 	res := c.selectOverlappingDirs(dms)
@@ -415,8 +415,8 @@ func CompactBlockMetas(uid ulid.ULID, blocks ...*BlockMeta) *BlockMeta {
 	for s := range sources {
 		res.Compaction.Sources = append(res.Compaction.Sources, s)
 	}
-	slices.SortFunc(res.Compaction.Sources, func(a, b ulid.ULID) bool {
-		return a.Compare(b) < 0
+	slices.SortFunc(res.Compaction.Sources, func(a, b ulid.ULID) int {
+		return a.Compare(b)
 	})
 
 	res.MinTime = mint

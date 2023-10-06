@@ -81,8 +81,15 @@ func bucketQuantile(q float64, buckets buckets) float64 {
 	if q > 1 {
 		return math.Inf(+1)
 	}
-	slices.SortFunc(buckets, func(a, b bucket) bool {
-		return a.upperBound < b.upperBound
+	slices.SortFunc(buckets, func(a, b bucket) int {
+		// We don't expect the bucket boundary to be a NaN.
+		if a.upperBound < b.upperBound {
+			return -1
+		}
+		if a.upperBound > b.upperBound {
+			return +1
+		}
+		return 0
 	})
 	if !math.IsInf(buckets[len(buckets)-1].upperBound, +1) {
 		return math.NaN()

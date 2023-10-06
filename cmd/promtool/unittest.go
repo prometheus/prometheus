@@ -241,7 +241,7 @@ func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]i
 				g.Eval(suite.Context(), ts)
 				for _, r := range g.Rules() {
 					if r.LastError() != nil {
-						evalErrs = append(evalErrs, fmt.Errorf("    rule: %s, time: %s, err: %v",
+						evalErrs = append(evalErrs, fmt.Errorf("    rule: %s, time: %s, err: %w",
 							r.Name(), ts.Sub(time.Unix(0, 0).UTC()), r.LastError()))
 					}
 				}

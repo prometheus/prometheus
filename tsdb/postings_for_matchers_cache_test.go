@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -307,13 +306,13 @@ func TestPostingsForMatchersCache(t *testing.T) {
 
 				actual, err := index.ExpandPostings(p)
 				require.NoError(t, err)
-				assert.Equal(t, refsLists[matchersKey(matchers)], actual)
+				require.Equal(t, refsLists[matchersKey(matchers)], actual)
 			}
 		}
 
 		// At this point we expect that the postings have been computed only once for the 3 matchers.
 		for i := 0; i < 3; i++ {
-			assert.Equalf(t, 1, callsPerMatchers[matchersKey(matchersLists[i])], "matcher %d", i)
+			require.Equalf(t, 1, callsPerMatchers[matchersKey(matchersLists[i])], "matcher %d", i)
 		}
 
 		// Call PostingsForMatchers() for a 4th matcher. We expect this will evict the oldest cached entry.
@@ -325,17 +324,17 @@ func TestPostingsForMatchersCache(t *testing.T) {
 
 			actual, err := index.ExpandPostings(p)
 			require.NoError(t, err)
-			assert.Equal(t, refsLists[matchersKey(matchers)], actual)
+			require.Equal(t, refsLists[matchersKey(matchers)], actual)
 		}
 
 		// To ensure the 1st (oldest) entry was removed, we call PostingsForMatchers() again on that matchers.
 		_, err := c.PostingsForMatchers(ctx, indexForPostingsMock{}, true, matchersLists[0]...)
 		require.NoError(t, err)
 
-		assert.Equal(t, 2, callsPerMatchers[matchersKey(matchersLists[0])])
-		assert.Equal(t, 1, callsPerMatchers[matchersKey(matchersLists[1])])
-		assert.Equal(t, 1, callsPerMatchers[matchersKey(matchersLists[2])])
-		assert.Equal(t, 1, callsPerMatchers[matchersKey(matchersLists[3])])
+		require.Equal(t, 2, callsPerMatchers[matchersKey(matchersLists[0])])
+		require.Equal(t, 1, callsPerMatchers[matchersKey(matchersLists[1])])
+		require.Equal(t, 1, callsPerMatchers[matchersKey(matchersLists[2])])
+		require.Equal(t, 1, callsPerMatchers[matchersKey(matchersLists[3])])
 	})
 }
 

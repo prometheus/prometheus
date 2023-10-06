@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strings"
 
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
@@ -169,10 +170,10 @@ Loop:
 		return
 	}
 
-	slices.SortFunc(vec, func(a, b promql.Sample) bool {
+	slices.SortFunc(vec, func(a, b promql.Sample) int {
 		ni := a.Metric.Get(labels.MetricName)
 		nj := b.Metric.Get(labels.MetricName)
-		return ni < nj
+		return strings.Compare(ni, nj)
 	})
 
 	externalLabels := h.config.GlobalConfig.ExternalLabels.Map()

@@ -85,9 +85,7 @@ func (t *TimerGroup) String() string {
 	for _, timer := range t.timers {
 		timers = append(timers, timer)
 	}
-	slices.SortFunc(timers, func(a, b *Timer) bool {
-		return a.created < b.created
-	})
+	slices.SortFunc(timers, func(a, b *Timer) int { return a.created - b.created })
 	result := &bytes.Buffer{}
 	for _, timer := range timers {
 		fmt.Fprintf(result, "%s\n", timer)

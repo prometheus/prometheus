@@ -16,6 +16,7 @@ package remote
 import (
 	"context"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/go-kit/log"
@@ -93,8 +94,8 @@ func (h *readHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Value: value,
 		})
 	}
-	slices.SortFunc(sortedExternalLabels, func(a, b prompb.Label) bool {
-		return a.Name < b.Name
+	slices.SortFunc(sortedExternalLabels, func(a, b prompb.Label) int {
+		return strings.Compare(a.Name, b.Name)
 	})
 
 	responseType, err := NegotiateResponseType(req.AcceptedResponseTypes)

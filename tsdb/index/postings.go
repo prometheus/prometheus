@@ -19,6 +19,7 @@ import (
 	"encoding/binary"
 	"runtime"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/pkg/errors"
@@ -108,11 +109,14 @@ func (p *MemPostings) SortedKeys() []labels.Label {
 	}
 	p.mtx.RUnlock()
 
-	slices.SortFunc(keys, func(a, b labels.Label) bool {
-		if a.Name != b.Name {
-			return a.Name < b.Name
+	slices.SortFunc(keys, func(a, b labels.Label) int {
+		nameCompare := strings.Compare(a.Name, b.Name)
+		// If names are the same, compare values.
+		if nameCompare != 0 {
+			return nameCompare
 		}
-		return a.Value < b.Value
+
+		return strings.Compare(a.Value, b.Value)
 	})
 	return keys
 }
@@ -743,7 +747,7 @@ func (rp *removedPostings) Err() error {
 // ListPostings implements the Postings interface over a plain list.
 type ListPostings struct {
 	list []storage.SeriesRef
-	cur  storage.SeriesRef
+	pos  int
 }
 
 func NewListPostings(list []storage.SeriesRef) Postings {
@@ -755,39 +759,34 @@ func newListPostings(list ...storage.SeriesRef) *ListPostings {
 }
 
 func (it *ListPostings) At() storage.SeriesRef {
-	return it.cur
+	return it.list[it.pos-1]
 }
 
 func (it *ListPostings) Next() bool {
-	if len(it.list) > 0 {
-		it.cur = it.list[0]
-		it.list = it.list[1:]
+	if it.pos < len(it.list) {
+		it.pos++
 		return true
 	}
-	it.cur = 0
 	return false
 }
 
 func (it *ListPostings) Seek(x storage.SeriesRef) bool {
-	// If the current value satisfies, then return.
-	if it.cur >= x {
-		return true
+	if it.pos == 0 {
+		it.pos++
 	}
-	if len(it.list) == 0 {
+	if it.pos > len(it.list) {
 		return false
+	}
+	// If the current value satisfies, then return.
+	if it.list[it.pos-1] >= x {
+		return true
 	}
 
 	// Do binary search between current position and end.
-	i := sort.Search(len(it.list), func(i int) bool {
-		return it.list[i] >= x
-	})
-	if i < len(it.list) {
-		it.cur = it.list[i]
-		it.list = it.list[i+1:]
-		return true
-	}
-	it.list = nil
-	return false
+	it.pos = sort.Search(len(it.list[it.pos-1:]), func(i int) bool {
+		return it.list[i+it.pos-1] >= x
+	}) + it.pos
+	return it.pos-1 < len(it.list)
 }
 
 func (it *ListPostings) Err() error {

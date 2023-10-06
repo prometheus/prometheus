@@ -459,7 +459,7 @@ func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExten
 	postingInfos := []postingInfo{}
 
 	printInfo := func(postingInfos []postingInfo) {
-		slices.SortFunc(postingInfos, func(a, b postingInfo) bool { return a.metric > b.metric })
+		slices.SortFunc(postingInfos, func(a, b postingInfo) int { return int(b.metric) - int(a.metric) })
 
 		for i, pc := range postingInfos {
 			if i >= limit {

@@ -91,12 +91,8 @@ func (b *BufferedSeriesIterator) Seek(t int64) chunkenc.ValueType {
 		switch b.valueType {
 		case chunkenc.ValNone:
 			return chunkenc.ValNone
-		case chunkenc.ValFloat:
-			b.lastTime, _ = b.At()
-		case chunkenc.ValHistogram:
-			b.lastTime, _ = b.AtHistogram()
-		case chunkenc.ValFloatHistogram:
-			b.lastTime, _ = b.AtFloatHistogram()
+		case chunkenc.ValFloat, chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
+			b.lastTime = b.AtT()
 		default:
 			panic(fmt.Errorf("BufferedSeriesIterator: unknown value type %v", b.valueType))
 		}

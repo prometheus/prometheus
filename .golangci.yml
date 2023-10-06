@@ -13,6 +13,7 @@ output:
 linters:
   enable:
     - depguard
+    - errorlint
     - gocritic
     - gofumpt
     - goimports
@@ -31,6 +32,24 @@ issues:
     - path: _test.go
       linters:
         - errcheck
+    - path: discovery/
+      linters:
+        - errorlint
+    - path: scrape/
+      linters:
+        - errorlint
+    - path: storage/
+      linters:
+        - errorlint
+    - path: tsdb/
+      linters:
+        - errorlint
+    - path: util/
+      linters:
+        - errorlint
+    - path: web/
+      linters:
+        - errorlint
 
 linters-settings:
   depguard:
