@@ -19,12 +19,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func makeFunc(size int) interface{} {
-	return make([]int, 0, size)
-}
-
 func TestPool(t *testing.T) {
-	testPool := New(1, 8, 2, makeFunc)
+	testPool := New(1, 8, 2)
 	cases := []struct {
 		size        int
 		expectedCap int
@@ -44,7 +40,7 @@ func TestPool(t *testing.T) {
 	}
 	for _, c := range cases {
 		ret := testPool.Get(c.size)
-		require.Equal(t, c.expectedCap, cap(ret.([]int)))
+		require.Equal(t, c.expectedCap, cap(ret))
 		testPool.Put(ret)
 	}
 }

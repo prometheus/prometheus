@@ -1108,7 +1108,7 @@ func newScrapeLoop(ctx context.Context,
 		l = log.NewNopLogger()
 	}
 	if buffers == nil {
-		buffers = pool.New(1e3, 1e6, 3, func(sz int) interface{} { return make([]byte, 0, sz) })
+		buffers = pool.New(1e3, 1e6, 3)
 	}
 	if cache == nil {
 		cache = newScrapeCache(metrics)
@@ -1281,7 +1281,7 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 	scrapeCtx, cancel := context.WithTimeout(sl.parentCtx, sl.timeout)
 	resp, scrapeErr = sl.scraper.scrape(scrapeCtx)
 	if scrapeErr == nil {
-		b = sl.buffers.Get(sl.lastScrapeSize).([]byte)
+		b = sl.buffers.Get(sl.lastScrapeSize)
 		defer sl.buffers.Put(b)
 		buf = bytes.NewBuffer(b)
 		contentType, scrapeErr = sl.scraper.readResponse(scrapeCtx, resp, buf)

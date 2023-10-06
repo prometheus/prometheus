@@ -14,8 +14,6 @@
 package pool
 
 import (
-	"fmt"
-	"reflect"
 	"sync"
 )
 
@@ -23,13 +21,11 @@ import (
 type Pool struct {
 	buckets []sync.Pool
 	sizes   []int
-	// make is the function used to create an empty slice when none exist yet.
-	make func(int) interface{}
 }
 
 // New returns a new Pool with size buckets for minSize to maxSize
 // increasing by the given factor.
-func New(minSize, maxSize int, factor float64, makeFunc func(int) interface{}) *Pool {
+func New(minSize, maxSize int, factor float64) *Pool {
 	if minSize < 1 {
 		panic("invalid minimum pool size")
 	}
@@ -49,39 +45,33 @@ func New(minSize, maxSize int, factor float64, makeFunc func(int) interface{}) *
 	p := &Pool{
 		buckets: make([]sync.Pool, len(sizes)),
 		sizes:   sizes,
-		make:    makeFunc,
 	}
 
 	return p
 }
 
 // Get returns a new byte slices that fits the given size.
-func (p *Pool) Get(sz int) interface{} {
+func (p *Pool) Get(sz int) []byte {
 	for i, bktSize := range p.sizes {
 		if sz > bktSize {
 			continue
 		}
 		b := p.buckets[i].Get()
 		if b == nil {
-			b = p.make(bktSize)
+			return make([]byte, 0, bktSize)
 		}
-		return b
+		return b.([]byte)
 	}
-	return p.make(sz)
+	return make([]byte, 0, sz)
 }
 
 // Put adds a slice to the right bucket in the pool.
-func (p *Pool) Put(s interface{}) {
-	slice := reflect.ValueOf(s)
-
-	if slice.Kind() != reflect.Slice {
-		panic(fmt.Sprintf("%+v is not a slice", slice))
-	}
+func (p *Pool) Put(s []byte) {
 	for i, size := range p.sizes {
-		if slice.Cap() > size {
+		if cap(s) > size {
 			continue
 		}
-		p.buckets[i].Put(slice.Slice(0, 0).Interface())
+		p.buckets[i].Put(s)
 		return
 	}
 }
