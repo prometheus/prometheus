@@ -1174,7 +1174,7 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 				F:      res,
 			})
 			if forcedMonotonicity {
-				annos.Add(annotations.NewHistogramQuantileForcedMonotonicityWarning(mb.metric.Get(labels.MetricName), args[1].PositionRange()))
+				annos.Add(annotations.NewHistogramQuantileForcedMonotonicityInfo(mb.metric.Get(labels.MetricName), args[1].PositionRange()))
 			}
 		}
 	}
