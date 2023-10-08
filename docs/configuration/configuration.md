@@ -1962,7 +1962,7 @@ service port.
 
 Available meta labels:
 
-* `__meta_kubernetes_namespace`: The namespace of the service object.
+* `__meta_kubernetes_namespace`: keep name there for backport, or move to __meta_kubernetes_namespace_name.
 * `__meta_kubernetes_service_annotation_<annotationname>`: Each annotation from the service object.
 * `__meta_kubernetes_service_annotationpresent_<annotationname>`: "true" for each annotation of the service object.
 * `__meta_kubernetes_service_cluster_ip`: The cluster IP address of the service. (Does not apply to services of type ExternalName)
@@ -1975,6 +1975,11 @@ Available meta labels:
 * `__meta_kubernetes_service_port_number`: Number of the service port for the target.
 * `__meta_kubernetes_service_port_protocol`: Protocol of the service port for the target.
 * `__meta_kubernetes_service_type`: The type of the service.
+* `__meta_kubernetes_namespace_uid`: The UID of the namespace object.
+* `__meta_kubernetes_namespace_label_<labelname>`: Each label from the namespace object.
+* `__meta_kubernetes_namespace_labelpresent_<labelname>`: Each label from the namespace object.
+* `__meta_kubernetes_namespace_annotation_<annotationname>`:  Each annotation from the namespace object.
+* `__meta_kubernetes_namespace_annotationpresent_<annotationname>`: true for each annotation from the namespace object.
 
 #### `pod`
 
