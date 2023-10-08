@@ -105,7 +105,8 @@ var (
 	MixedFloatsHistogramsWarning        = fmt.Errorf("%w: encountered a mix of histograms and floats for metric name", PromQLWarning)
 	MixedClassicNativeHistogramsWarning = fmt.Errorf("%w: vector contains a mix of classic and native histograms for metric name", PromQLWarning)
 
-	PossibleNonCounterInfo = fmt.Errorf("%w: metric might not be a counter, name does not end in _total/_sum/_count:", PromQLInfo)
+	PossibleNonCounterInfo                  = fmt.Errorf("%w: metric might not be a counter, name does not end in _total/_sum/_count:", PromQLInfo)
+	HistogramQuantileForcedMonotonicityInfo = fmt.Errorf("%w: input to histogram_quantile needed to be fixed for monotonicity (and may give inaccurate results) for metric name", PromQLInfo)
 )
 
 type annoErr struct {
@@ -161,5 +162,14 @@ func NewPossibleNonCounterInfo(metricName string, pos posrange.PositionRange) an
 	return annoErr{
 		PositionRange: pos,
 		Err:           fmt.Errorf("%w %q", PossibleNonCounterInfo, metricName),
+	}
+}
+
+// NewHistogramQuantileForcedMonotonicityInfo is used when the input (classic histograms) to
+// histogram_quantile needs to be forced to be monotonic.
+func NewHistogramQuantileForcedMonotonicityInfo(metricName string, pos posrange.PositionRange) annoErr {
+	return annoErr{
+		PositionRange: pos,
+		Err:           fmt.Errorf("%w %q", HistogramQuantileForcedMonotonicityInfo, metricName),
 	}
 }
