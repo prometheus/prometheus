@@ -474,12 +474,13 @@ Prometheus fetches an access token from the specified endpoint with
 the given client access and secret keys.
 
 ```yaml
-client_id: <string>
+[ client_id: <string> ] 
 [ client_secret: <secret> ]
 
 # Read the client secret from a file.
-# It is mutually exclusive with `client_secret`.
+# It is mutually exclusive with `client_secret and client_id`.
 [ client_secret_file: <filename> ]
+[ client_id_file: <filename> ]
 
 # Scopes for the token request.
 scopes:
