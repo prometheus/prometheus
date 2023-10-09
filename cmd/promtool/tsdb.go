@@ -413,7 +413,17 @@ func openBlock(path, blockID string) (*tsdb.DBReadOnly, tsdb.BlockReader, error)
 	return db, b, nil
 }
 
-func analyzeBlock(path, blockID string, limit int, runExtended bool) error {
+func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExtended bool, matchers string) error {
+	var (
+		selectors []*labels.Matcher
+		err       error
+	)
+	if len(matchers) > 0 {
+		selectors, err = parser.ParseMetricSelector(matchers)
+		if err != nil {
+			return err
+		}
+	}
 	db, block, err := openBlock(path, blockID)
 	if err != nil {
 		return err
@@ -426,14 +436,17 @@ func analyzeBlock(path, blockID string, limit int, runExtended bool) error {
 	fmt.Printf("Block ID: %s\n", meta.ULID)
 	// Presume 1ms resolution that Prometheus uses.
 	fmt.Printf("Duration: %s\n", (time.Duration(meta.MaxTime-meta.MinTime) * 1e6).String())
-	fmt.Printf("Series: %d\n", meta.Stats.NumSeries)
+	fmt.Printf("Total Series: %d\n", meta.Stats.NumSeries)
+	if len(matchers) > 0 {
+		fmt.Printf("Matcher: %s\n", matchers)
+	}
 	ir, err := block.Index()
 	if err != nil {
 		return err
 	}
 	defer ir.Close()
 
-	allLabelNames, err := ir.LabelNames()
+	allLabelNames, err := ir.LabelNames(ctx, selectors...)
 	if err != nil {
 		return err
 	}
@@ -446,7 +459,7 @@ func analyzeBlock(path, blockID string, limit int, runExtended bool) error {
 	postingInfos := []postingInfo{}
 
 	printInfo := func(postingInfos []postingInfo) {
-		slices.SortFunc(postingInfos, func(a, b postingInfo) bool { return a.metric > b.metric })
+		slices.SortFunc(postingInfos, func(a, b postingInfo) int { return int(b.metric) - int(a.metric) })
 
 		for i, pc := range postingInfos {
 			if i >= limit {
@@ -460,10 +473,30 @@ func analyzeBlock(path, blockID string, limit int, runExtended bool) error {
 	labelpairsUncovered := map[string]uint64{}
 	labelpairsCount := map[string]uint64{}
 	entries := 0
-	p, err := ir.Postings("", "") // The special all key.
-	if err != nil {
-		return err
+	var (
+		p    index.Postings
+		refs []storage.SeriesRef
+	)
+	if len(matchers) > 0 {
+		p, err = tsdb.PostingsForMatchers(ctx, ir, selectors...)
+		if err != nil {
+			return err
+		}
+		// Expand refs first and cache in memory.
+		// So later we don't have to expand again.
+		refs, err = index.ExpandPostings(p)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Matched series: %d\n", len(refs))
+		p = index.NewListPostings(refs)
+	} else {
+		p, err = ir.Postings(ctx, "", "") // The special all key.
+		if err != nil {
+			return err
+		}
 	}
+
 	chks := []chunks.Meta{}
 	builder := labels.ScratchBuilder{}
 	for p.Next() {
@@ -512,7 +545,7 @@ func analyzeBlock(path, blockID string, limit int, runExtended bool) error {
 
 	postingInfos = postingInfos[:0]
 	for _, n := range allLabelNames {
-		values, err := ir.SortedLabelValues(n)
+		values, err := ir.SortedLabelValues(ctx, n, selectors...)
 		if err != nil {
 			return err
 		}
@@ -528,7 +561,7 @@ func analyzeBlock(path, blockID string, limit int, runExtended bool) error {
 
 	postingInfos = postingInfos[:0]
 	for _, n := range allLabelNames {
-		lv, err := ir.SortedLabelValues(n)
+		lv, err := ir.SortedLabelValues(ctx, n, selectors...)
 		if err != nil {
 			return err
 		}
@@ -538,15 +571,16 @@ func analyzeBlock(path, blockID string, limit int, runExtended bool) error {
 	printInfo(postingInfos)
 
 	postingInfos = postingInfos[:0]
-	lv, err := ir.SortedLabelValues("__name__")
+	lv, err := ir.SortedLabelValues(ctx, "__name__", selectors...)
 	if err != nil {
 		return err
 	}
 	for _, n := range lv {
-		postings, err := ir.Postings("__name__", n)
+		postings, err := ir.Postings(ctx, "__name__", n)
 		if err != nil {
 			return err
 		}
+		postings = index.Intersect(postings, index.NewListPostings(refs))
 		count := 0
 		for postings.Next() {
 			count++
@@ -560,17 +594,24 @@ func analyzeBlock(path, blockID string, limit int, runExtended bool) error {
 	printInfo(postingInfos)
 
 	if runExtended {
-		return analyzeCompaction(block, ir)
+		return analyzeCompaction(ctx, block, ir, selectors)
 	}
 
 	return nil
 }
 
-func analyzeCompaction(block tsdb.BlockReader, indexr tsdb.IndexReader) (err error) {
-	postingsr, err := indexr.Postings(index.AllPostingsKey())
+func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.IndexReader, matchers []*labels.Matcher) (err error) {
+	var postingsr index.Postings
+	if len(matchers) > 0 {
+		postingsr, err = tsdb.PostingsForMatchers(ctx, indexr, matchers...)
+	} else {
+		n, v := index.AllPostingsKey()
+		postingsr, err = indexr.Postings(ctx, n, v)
+	}
 	if err != nil {
 		return err
 	}
+
 	chunkr, err := block.Chunks()
 	if err != nil {
 		return err
@@ -619,7 +660,7 @@ func analyzeCompaction(block tsdb.BlockReader, indexr tsdb.IndexReader) (err err
 	return nil
 }
 
-func dumpSamples(path string, mint, maxt int64, match string) (err error) {
+func dumpSamples(ctx context.Context, path string, mint, maxt int64, match string) (err error) {
 	db, err := tsdb.OpenDBReadOnly(path, nil)
 	if err != nil {
 		return err
@@ -627,7 +668,7 @@ func dumpSamples(path string, mint, maxt int64, match string) (err error) {
 	defer func() {
 		err = tsdb_errors.NewMulti(err, db.Close()).Err()
 	}()
-	q, err := db.Querier(context.TODO(), mint, maxt)
+	q, err := db.Querier(mint, maxt)
 	if err != nil {
 		return err
 	}
@@ -637,7 +678,7 @@ func dumpSamples(path string, mint, maxt int64, match string) (err error) {
 	if err != nil {
 		return err
 	}
-	ss := q.Select(false, nil, matchers...)
+	ss := q.Select(ctx, false, nil, matchers...)
 
 	for ss.Next() {
 		series := ss.At()
@@ -647,13 +688,21 @@ func dumpSamples(path string, mint, maxt int64, match string) (err error) {
 			ts, val := it.At()
 			fmt.Printf("%s %g %d\n", lbs, val, ts)
 		}
+		for it.Next() == chunkenc.ValFloatHistogram {
+			ts, fh := it.AtFloatHistogram()
+			fmt.Printf("%s %s %d\n", lbs, fh.String(), ts)
+		}
+		for it.Next() == chunkenc.ValHistogram {
+			ts, h := it.AtHistogram()
+			fmt.Printf("%s %s %d\n", lbs, h.String(), ts)
+		}
 		if it.Err() != nil {
 			return ss.Err()
 		}
 	}
 
 	if ws := ss.Warnings(); len(ws) > 0 {
-		return tsdb_errors.NewMulti(ws...).Err()
+		return tsdb_errors.NewMulti(ws.AsErrors()...).Err()
 	}
 
 	if ss.Err() != nil {

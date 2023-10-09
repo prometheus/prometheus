@@ -129,7 +129,7 @@ func (c *EC2SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 			return errors.New("EC2 SD configuration filter values cannot be empty")
 		}
 	}
-	return nil
+	return c.HTTPClientConfig.Validate()
 }
 
 // EC2Discovery periodically performs EC2-SD requests. It implements

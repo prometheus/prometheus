@@ -1746,6 +1746,14 @@ var expectedErrors = []struct {
 		errMsg:   `EC2 SD configuration filter values cannot be empty`,
 	},
 	{
+		filename: "ec2_token_file.bad.yml",
+		errMsg:   `at most one of bearer_token & bearer_token_file must be configured`,
+	},
+	{
+		filename: "lightsail_token_file.bad.yml",
+		errMsg:   `at most one of bearer_token & bearer_token_file must be configured`,
+	},
+	{
 		filename: "section_key_dup.bad.yml",
 		errMsg:   "field scrape_configs already set in type config.plain",
 	},
@@ -1768,6 +1776,10 @@ var expectedErrors = []struct {
 	{
 		filename: "azure_authentication_method.bad.yml",
 		errMsg:   "unknown authentication_type \"invalid\". Supported types are \"OAuth\" or \"ManagedIdentity\"",
+	},
+	{
+		filename: "azure_bearertoken_basicauth.bad.yml",
+		errMsg:   "at most one of basic_auth, oauth2, bearer_token & bearer_token_file must be configured",
 	},
 	{
 		filename: "empty_scrape_config.bad.yml",
@@ -1822,6 +1834,10 @@ var expectedErrors = []struct {
 		errMsg:   "URL scheme must be 'http' or 'https'",
 	},
 	{
+		filename: "puppetdb_token_file.bad.yml",
+		errMsg:   "at most one of bearer_token & bearer_token_file must be configured",
+	},
+	{
 		filename: "hetzner_role.bad.yml",
 		errMsg:   "unknown role",
 	},
@@ -1858,6 +1874,10 @@ var expectedErrors = []struct {
 		errMsg:   "host is missing in URL",
 	},
 	{
+		filename: "http_token_file.bad.yml",
+		errMsg:   "at most one of bearer_token & bearer_token_file must be configured",
+	},
+	{
 		filename: "http_url_bad_scheme.bad.yml",
 		errMsg:   "URL scheme must be 'http' or 'https'",
 	},
@@ -1884,6 +1904,10 @@ var expectedErrors = []struct {
 	{
 		filename: "uyuni_no_server.bad.yml",
 		errMsg:   "Uyuni SD configuration requires server host",
+	},
+	{
+		filename: "uyuni_token_file.bad.yml",
+		errMsg:   "at most one of bearer_token & bearer_token_file must be configured",
 	},
 	{
 		filename: "ionos_datacenter.bad.yml",

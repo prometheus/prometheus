@@ -116,7 +116,7 @@ func parseAndPushMetrics(client *remote.Client, data []byte, labels map[string]s
 
 	// Encode the request body into snappy encoding.
 	compressed := snappy.Encode(nil, raw)
-	err = client.Store(context.Background(), compressed)
+	err = client.Store(context.Background(), compressed, 0)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "  FAILED:", err)
 		return false

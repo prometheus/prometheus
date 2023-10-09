@@ -14,6 +14,7 @@
 package storage
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -23,9 +24,12 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
+	"github.com/prometheus/prometheus/util/annotations"
 )
 
 func TestMergeQuerierWithChainMerger(t *testing.T) {
@@ -62,116 +66,116 @@ func TestMergeQuerierWithChainMerger(t *testing.T) {
 		{
 			name: "one querier, two series",
 			querierSeries: [][]Series{{
-				NewListSeries(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{1, 1}, fSample{2, 2}, fSample{3, 3}}),
-				NewListSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{fSample{0, 0}, fSample{1, 1}, fSample{2, 2}}),
+				NewListSeries(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{1, 1}, fSample{2, 2}, fSample{3, 3}}),
+				NewListSeries(labels.FromStrings("foo", "bar"), []chunks.Sample{fSample{0, 0}, fSample{1, 1}, fSample{2, 2}}),
 			}},
 			expected: NewMockSeriesSet(
-				NewListSeries(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{1, 1}, fSample{2, 2}, fSample{3, 3}}),
-				NewListSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{fSample{0, 0}, fSample{1, 1}, fSample{2, 2}}),
+				NewListSeries(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{1, 1}, fSample{2, 2}, fSample{3, 3}}),
+				NewListSeries(labels.FromStrings("foo", "bar"), []chunks.Sample{fSample{0, 0}, fSample{1, 1}, fSample{2, 2}}),
 			),
 		},
 		{
 			name: "two queriers, one different series each",
 			querierSeries: [][]Series{{
-				NewListSeries(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{1, 1}, fSample{2, 2}, fSample{3, 3}}),
+				NewListSeries(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{1, 1}, fSample{2, 2}, fSample{3, 3}}),
 			}, {
-				NewListSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{fSample{0, 0}, fSample{1, 1}, fSample{2, 2}}),
+				NewListSeries(labels.FromStrings("foo", "bar"), []chunks.Sample{fSample{0, 0}, fSample{1, 1}, fSample{2, 2}}),
 			}},
 			expected: NewMockSeriesSet(
-				NewListSeries(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{1, 1}, fSample{2, 2}, fSample{3, 3}}),
-				NewListSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{fSample{0, 0}, fSample{1, 1}, fSample{2, 2}}),
+				NewListSeries(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{1, 1}, fSample{2, 2}, fSample{3, 3}}),
+				NewListSeries(labels.FromStrings("foo", "bar"), []chunks.Sample{fSample{0, 0}, fSample{1, 1}, fSample{2, 2}}),
 			),
 		},
 		{
 			name: "two time unsorted queriers, two series each",
 			querierSeries: [][]Series{{
-				NewListSeries(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{5, 5}, fSample{6, 6}}),
-				NewListSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{fSample{0, 0}, fSample{1, 1}, fSample{2, 2}}),
+				NewListSeries(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{5, 5}, fSample{6, 6}}),
+				NewListSeries(labels.FromStrings("foo", "bar"), []chunks.Sample{fSample{0, 0}, fSample{1, 1}, fSample{2, 2}}),
 			}, {
-				NewListSeries(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{1, 1}, fSample{2, 2}, fSample{3, 3}}),
-				NewListSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{fSample{3, 3}, fSample{4, 4}}),
+				NewListSeries(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{1, 1}, fSample{2, 2}, fSample{3, 3}}),
+				NewListSeries(labels.FromStrings("foo", "bar"), []chunks.Sample{fSample{3, 3}, fSample{4, 4}}),
 			}},
 			expected: NewMockSeriesSet(
 				NewListSeries(
 					labels.FromStrings("bar", "baz"),
-					[]tsdbutil.Sample{fSample{1, 1}, fSample{2, 2}, fSample{3, 3}, fSample{5, 5}, fSample{6, 6}},
+					[]chunks.Sample{fSample{1, 1}, fSample{2, 2}, fSample{3, 3}, fSample{5, 5}, fSample{6, 6}},
 				),
 				NewListSeries(
 					labels.FromStrings("foo", "bar"),
-					[]tsdbutil.Sample{fSample{0, 0}, fSample{1, 1}, fSample{2, 2}, fSample{3, 3}, fSample{4, 4}},
+					[]chunks.Sample{fSample{0, 0}, fSample{1, 1}, fSample{2, 2}, fSample{3, 3}, fSample{4, 4}},
 				),
 			),
 		},
 		{
 			name: "five queriers, only two queriers have two time unsorted series each",
 			querierSeries: [][]Series{{}, {}, {
-				NewListSeries(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{5, 5}, fSample{6, 6}}),
-				NewListSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{fSample{0, 0}, fSample{1, 1}, fSample{2, 2}}),
+				NewListSeries(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{5, 5}, fSample{6, 6}}),
+				NewListSeries(labels.FromStrings("foo", "bar"), []chunks.Sample{fSample{0, 0}, fSample{1, 1}, fSample{2, 2}}),
 			}, {
-				NewListSeries(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{1, 1}, fSample{2, 2}, fSample{3, 3}}),
-				NewListSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{fSample{3, 3}, fSample{4, 4}}),
+				NewListSeries(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{1, 1}, fSample{2, 2}, fSample{3, 3}}),
+				NewListSeries(labels.FromStrings("foo", "bar"), []chunks.Sample{fSample{3, 3}, fSample{4, 4}}),
 			}, {}},
 			expected: NewMockSeriesSet(
 				NewListSeries(
 					labels.FromStrings("bar", "baz"),
-					[]tsdbutil.Sample{fSample{1, 1}, fSample{2, 2}, fSample{3, 3}, fSample{5, 5}, fSample{6, 6}},
+					[]chunks.Sample{fSample{1, 1}, fSample{2, 2}, fSample{3, 3}, fSample{5, 5}, fSample{6, 6}},
 				),
 				NewListSeries(
 					labels.FromStrings("foo", "bar"),
-					[]tsdbutil.Sample{fSample{0, 0}, fSample{1, 1}, fSample{2, 2}, fSample{3, 3}, fSample{4, 4}},
+					[]chunks.Sample{fSample{0, 0}, fSample{1, 1}, fSample{2, 2}, fSample{3, 3}, fSample{4, 4}},
 				),
 			),
 		},
 		{
 			name: "two queriers, only two queriers have two time unsorted series each, with 3 noop and one nil querier together",
 			querierSeries: [][]Series{{}, {}, {
-				NewListSeries(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{5, 5}, fSample{6, 6}}),
-				NewListSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{fSample{0, 0}, fSample{1, 1}, fSample{2, 2}}),
+				NewListSeries(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{5, 5}, fSample{6, 6}}),
+				NewListSeries(labels.FromStrings("foo", "bar"), []chunks.Sample{fSample{0, 0}, fSample{1, 1}, fSample{2, 2}}),
 			}, {
-				NewListSeries(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{1, 1}, fSample{2, 2}, fSample{3, 3}}),
-				NewListSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{fSample{3, 3}, fSample{4, 4}}),
+				NewListSeries(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{1, 1}, fSample{2, 2}, fSample{3, 3}}),
+				NewListSeries(labels.FromStrings("foo", "bar"), []chunks.Sample{fSample{3, 3}, fSample{4, 4}}),
 			}, {}},
 			extraQueriers: []Querier{NoopQuerier(), NoopQuerier(), nil, NoopQuerier()},
 			expected: NewMockSeriesSet(
 				NewListSeries(
 					labels.FromStrings("bar", "baz"),
-					[]tsdbutil.Sample{fSample{1, 1}, fSample{2, 2}, fSample{3, 3}, fSample{5, 5}, fSample{6, 6}},
+					[]chunks.Sample{fSample{1, 1}, fSample{2, 2}, fSample{3, 3}, fSample{5, 5}, fSample{6, 6}},
 				),
 				NewListSeries(
 					labels.FromStrings("foo", "bar"),
-					[]tsdbutil.Sample{fSample{0, 0}, fSample{1, 1}, fSample{2, 2}, fSample{3, 3}, fSample{4, 4}},
+					[]chunks.Sample{fSample{0, 0}, fSample{1, 1}, fSample{2, 2}, fSample{3, 3}, fSample{4, 4}},
 				),
 			),
 		},
 		{
 			name: "two queriers, with two series, one is overlapping",
 			querierSeries: [][]Series{{}, {}, {
-				NewListSeries(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{2, 21}, fSample{3, 31}, fSample{5, 5}, fSample{6, 6}}),
-				NewListSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{fSample{0, 0}, fSample{1, 1}, fSample{2, 2}}),
+				NewListSeries(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{2, 21}, fSample{3, 31}, fSample{5, 5}, fSample{6, 6}}),
+				NewListSeries(labels.FromStrings("foo", "bar"), []chunks.Sample{fSample{0, 0}, fSample{1, 1}, fSample{2, 2}}),
 			}, {
-				NewListSeries(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{1, 1}, fSample{2, 22}, fSample{3, 32}}),
-				NewListSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{fSample{3, 3}, fSample{4, 4}}),
+				NewListSeries(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{1, 1}, fSample{2, 22}, fSample{3, 32}}),
+				NewListSeries(labels.FromStrings("foo", "bar"), []chunks.Sample{fSample{3, 3}, fSample{4, 4}}),
 			}, {}},
 			expected: NewMockSeriesSet(
 				NewListSeries(
 					labels.FromStrings("bar", "baz"),
-					[]tsdbutil.Sample{fSample{1, 1}, fSample{2, 21}, fSample{3, 31}, fSample{5, 5}, fSample{6, 6}},
+					[]chunks.Sample{fSample{1, 1}, fSample{2, 21}, fSample{3, 31}, fSample{5, 5}, fSample{6, 6}},
 				),
 				NewListSeries(
 					labels.FromStrings("foo", "bar"),
-					[]tsdbutil.Sample{fSample{0, 0}, fSample{1, 1}, fSample{2, 2}, fSample{3, 3}, fSample{4, 4}},
+					[]chunks.Sample{fSample{0, 0}, fSample{1, 1}, fSample{2, 2}, fSample{3, 3}, fSample{4, 4}},
 				),
 			),
 		},
 		{
 			name: "two queries, one with NaN samples series",
 			querierSeries: [][]Series{{
-				NewListSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{fSample{0, math.NaN()}}),
+				NewListSeries(labels.FromStrings("foo", "bar"), []chunks.Sample{fSample{0, math.NaN()}}),
 			}, {
-				NewListSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{fSample{1, 1}}),
+				NewListSeries(labels.FromStrings("foo", "bar"), []chunks.Sample{fSample{1, 1}}),
 			}},
 			expected: NewMockSeriesSet(
-				NewListSeries(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{fSample{0, math.NaN()}, fSample{1, 1}}),
+				NewListSeries(labels.FromStrings("foo", "bar"), []chunks.Sample{fSample{0, math.NaN()}, fSample{1, 1}}),
 			),
 		},
 	} {
@@ -186,7 +190,7 @@ func TestMergeQuerierWithChainMerger(t *testing.T) {
 			}
 			qs = append(qs, tc.extraQueriers...)
 
-			mergedQuerier := NewMergeQuerier([]Querier{p}, qs, ChainedSeriesMerge).Select(false, nil)
+			mergedQuerier := NewMergeQuerier([]Querier{p}, qs, ChainedSeriesMerge).Select(context.Background(), false, nil)
 
 			// Get all merged series upfront to make sure there are no incorrectly retained shared
 			// buffers causing bugs.
@@ -245,108 +249,108 @@ func TestMergeChunkQuerierWithNoVerticalChunkSeriesMerger(t *testing.T) {
 		{
 			name: "one querier, two series",
 			chkQuerierSeries: [][]ChunkSeries{{
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{1, 1}, fSample{2, 2}}, []tsdbutil.Sample{fSample{3, 3}}),
-				NewListChunkSeriesFromSamples(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{fSample{0, 0}, fSample{1, 1}}, []tsdbutil.Sample{fSample{2, 2}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{1, 1}, fSample{2, 2}}, []chunks.Sample{fSample{3, 3}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("foo", "bar"), []chunks.Sample{fSample{0, 0}, fSample{1, 1}}, []chunks.Sample{fSample{2, 2}}),
 			}},
 			expected: NewMockChunkSeriesSet(
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{1, 1}, fSample{2, 2}}, []tsdbutil.Sample{fSample{3, 3}}),
-				NewListChunkSeriesFromSamples(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{fSample{0, 0}, fSample{1, 1}}, []tsdbutil.Sample{fSample{2, 2}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{1, 1}, fSample{2, 2}}, []chunks.Sample{fSample{3, 3}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("foo", "bar"), []chunks.Sample{fSample{0, 0}, fSample{1, 1}}, []chunks.Sample{fSample{2, 2}}),
 			),
 		},
 		{
 			name: "two secondaries, one different series each",
 			chkQuerierSeries: [][]ChunkSeries{{
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{1, 1}, fSample{2, 2}}, []tsdbutil.Sample{fSample{3, 3}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{1, 1}, fSample{2, 2}}, []chunks.Sample{fSample{3, 3}}),
 			}, {
-				NewListChunkSeriesFromSamples(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{fSample{0, 0}, fSample{1, 1}}, []tsdbutil.Sample{fSample{2, 2}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("foo", "bar"), []chunks.Sample{fSample{0, 0}, fSample{1, 1}}, []chunks.Sample{fSample{2, 2}}),
 			}},
 			expected: NewMockChunkSeriesSet(
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{1, 1}, fSample{2, 2}}, []tsdbutil.Sample{fSample{3, 3}}),
-				NewListChunkSeriesFromSamples(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{fSample{0, 0}, fSample{1, 1}}, []tsdbutil.Sample{fSample{2, 2}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{1, 1}, fSample{2, 2}}, []chunks.Sample{fSample{3, 3}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("foo", "bar"), []chunks.Sample{fSample{0, 0}, fSample{1, 1}}, []chunks.Sample{fSample{2, 2}}),
 			),
 		},
 		{
 			name: "two secondaries, two not in time order series each",
 			chkQuerierSeries: [][]ChunkSeries{{
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{5, 5}}, []tsdbutil.Sample{fSample{6, 6}}),
-				NewListChunkSeriesFromSamples(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{fSample{0, 0}, fSample{1, 1}}, []tsdbutil.Sample{fSample{2, 2}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{5, 5}}, []chunks.Sample{fSample{6, 6}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("foo", "bar"), []chunks.Sample{fSample{0, 0}, fSample{1, 1}}, []chunks.Sample{fSample{2, 2}}),
 			}, {
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{1, 1}, fSample{2, 2}}, []tsdbutil.Sample{fSample{3, 3}}),
-				NewListChunkSeriesFromSamples(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{fSample{3, 3}}, []tsdbutil.Sample{fSample{4, 4}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{1, 1}, fSample{2, 2}}, []chunks.Sample{fSample{3, 3}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("foo", "bar"), []chunks.Sample{fSample{3, 3}}, []chunks.Sample{fSample{4, 4}}),
 			}},
 			expected: NewMockChunkSeriesSet(
 				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
-					[]tsdbutil.Sample{fSample{1, 1}, fSample{2, 2}},
-					[]tsdbutil.Sample{fSample{3, 3}},
-					[]tsdbutil.Sample{fSample{5, 5}},
-					[]tsdbutil.Sample{fSample{6, 6}},
+					[]chunks.Sample{fSample{1, 1}, fSample{2, 2}},
+					[]chunks.Sample{fSample{3, 3}},
+					[]chunks.Sample{fSample{5, 5}},
+					[]chunks.Sample{fSample{6, 6}},
 				),
 				NewListChunkSeriesFromSamples(labels.FromStrings("foo", "bar"),
-					[]tsdbutil.Sample{fSample{0, 0}, fSample{1, 1}},
-					[]tsdbutil.Sample{fSample{2, 2}},
-					[]tsdbutil.Sample{fSample{3, 3}},
-					[]tsdbutil.Sample{fSample{4, 4}},
+					[]chunks.Sample{fSample{0, 0}, fSample{1, 1}},
+					[]chunks.Sample{fSample{2, 2}},
+					[]chunks.Sample{fSample{3, 3}},
+					[]chunks.Sample{fSample{4, 4}},
 				),
 			),
 		},
 		{
 			name: "five secondaries, only two have two not in time order series each",
 			chkQuerierSeries: [][]ChunkSeries{{}, {}, {
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{5, 5}}, []tsdbutil.Sample{fSample{6, 6}}),
-				NewListChunkSeriesFromSamples(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{fSample{0, 0}, fSample{1, 1}}, []tsdbutil.Sample{fSample{2, 2}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{5, 5}}, []chunks.Sample{fSample{6, 6}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("foo", "bar"), []chunks.Sample{fSample{0, 0}, fSample{1, 1}}, []chunks.Sample{fSample{2, 2}}),
 			}, {
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{1, 1}, fSample{2, 2}}, []tsdbutil.Sample{fSample{3, 3}}),
-				NewListChunkSeriesFromSamples(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{fSample{3, 3}}, []tsdbutil.Sample{fSample{4, 4}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{1, 1}, fSample{2, 2}}, []chunks.Sample{fSample{3, 3}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("foo", "bar"), []chunks.Sample{fSample{3, 3}}, []chunks.Sample{fSample{4, 4}}),
 			}, {}},
 			expected: NewMockChunkSeriesSet(
 				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
-					[]tsdbutil.Sample{fSample{1, 1}, fSample{2, 2}},
-					[]tsdbutil.Sample{fSample{3, 3}},
-					[]tsdbutil.Sample{fSample{5, 5}},
-					[]tsdbutil.Sample{fSample{6, 6}},
+					[]chunks.Sample{fSample{1, 1}, fSample{2, 2}},
+					[]chunks.Sample{fSample{3, 3}},
+					[]chunks.Sample{fSample{5, 5}},
+					[]chunks.Sample{fSample{6, 6}},
 				),
 				NewListChunkSeriesFromSamples(labels.FromStrings("foo", "bar"),
-					[]tsdbutil.Sample{fSample{0, 0}, fSample{1, 1}},
-					[]tsdbutil.Sample{fSample{2, 2}},
-					[]tsdbutil.Sample{fSample{3, 3}},
-					[]tsdbutil.Sample{fSample{4, 4}},
+					[]chunks.Sample{fSample{0, 0}, fSample{1, 1}},
+					[]chunks.Sample{fSample{2, 2}},
+					[]chunks.Sample{fSample{3, 3}},
+					[]chunks.Sample{fSample{4, 4}},
 				),
 			),
 		},
 		{
 			name: "two secondaries, with two not in time order series each, with 3 noop queries and one nil together",
 			chkQuerierSeries: [][]ChunkSeries{{
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{5, 5}}, []tsdbutil.Sample{fSample{6, 6}}),
-				NewListChunkSeriesFromSamples(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{fSample{0, 0}, fSample{1, 1}}, []tsdbutil.Sample{fSample{2, 2}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{5, 5}}, []chunks.Sample{fSample{6, 6}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("foo", "bar"), []chunks.Sample{fSample{0, 0}, fSample{1, 1}}, []chunks.Sample{fSample{2, 2}}),
 			}, {
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{1, 1}, fSample{2, 2}}, []tsdbutil.Sample{fSample{3, 3}}),
-				NewListChunkSeriesFromSamples(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{fSample{3, 3}}, []tsdbutil.Sample{fSample{4, 4}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{1, 1}, fSample{2, 2}}, []chunks.Sample{fSample{3, 3}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("foo", "bar"), []chunks.Sample{fSample{3, 3}}, []chunks.Sample{fSample{4, 4}}),
 			}},
 			extraQueriers: []ChunkQuerier{NoopChunkedQuerier(), NoopChunkedQuerier(), nil, NoopChunkedQuerier()},
 			expected: NewMockChunkSeriesSet(
 				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
-					[]tsdbutil.Sample{fSample{1, 1}, fSample{2, 2}},
-					[]tsdbutil.Sample{fSample{3, 3}},
-					[]tsdbutil.Sample{fSample{5, 5}},
-					[]tsdbutil.Sample{fSample{6, 6}},
+					[]chunks.Sample{fSample{1, 1}, fSample{2, 2}},
+					[]chunks.Sample{fSample{3, 3}},
+					[]chunks.Sample{fSample{5, 5}},
+					[]chunks.Sample{fSample{6, 6}},
 				),
 				NewListChunkSeriesFromSamples(labels.FromStrings("foo", "bar"),
-					[]tsdbutil.Sample{fSample{0, 0}, fSample{1, 1}},
-					[]tsdbutil.Sample{fSample{2, 2}},
-					[]tsdbutil.Sample{fSample{3, 3}},
-					[]tsdbutil.Sample{fSample{4, 4}},
+					[]chunks.Sample{fSample{0, 0}, fSample{1, 1}},
+					[]chunks.Sample{fSample{2, 2}},
+					[]chunks.Sample{fSample{3, 3}},
+					[]chunks.Sample{fSample{4, 4}},
 				),
 			),
 		},
 		{
 			name: "two queries, one with NaN samples series",
 			chkQuerierSeries: [][]ChunkSeries{{
-				NewListChunkSeriesFromSamples(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{fSample{0, math.NaN()}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("foo", "bar"), []chunks.Sample{fSample{0, math.NaN()}}),
 			}, {
-				NewListChunkSeriesFromSamples(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{fSample{1, 1}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("foo", "bar"), []chunks.Sample{fSample{1, 1}}),
 			}},
 			expected: NewMockChunkSeriesSet(
-				NewListChunkSeriesFromSamples(labels.FromStrings("foo", "bar"), []tsdbutil.Sample{fSample{0, math.NaN()}}, []tsdbutil.Sample{fSample{1, 1}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("foo", "bar"), []chunks.Sample{fSample{0, math.NaN()}}, []chunks.Sample{fSample{1, 1}}),
 			),
 		},
 	} {
@@ -362,7 +366,7 @@ func TestMergeChunkQuerierWithNoVerticalChunkSeriesMerger(t *testing.T) {
 			}
 			qs = append(qs, tc.extraQueriers...)
 
-			merged := NewMergeChunkQuerier([]ChunkQuerier{p}, qs, NewCompactingChunkSeriesMerger(nil)).Select(false, nil)
+			merged := NewMergeChunkQuerier([]ChunkQuerier{p}, qs, NewCompactingChunkSeriesMerger(nil)).Select(context.Background(), false, nil)
 			for merged.Next() {
 				require.True(t, tc.expected.Next(), "Expected Next() to be true")
 				actualSeries := merged.At()
@@ -381,16 +385,36 @@ func TestMergeChunkQuerierWithNoVerticalChunkSeriesMerger(t *testing.T) {
 	}
 }
 
+func histogramSample(ts int64, hint histogram.CounterResetHint) hSample {
+	h := tsdbutil.GenerateTestHistogram(int(ts + 1))
+	h.CounterResetHint = hint
+	return hSample{t: ts, h: h}
+}
+
+func floatHistogramSample(ts int64, hint histogram.CounterResetHint) fhSample {
+	fh := tsdbutil.GenerateTestFloatHistogram(int(ts + 1))
+	fh.CounterResetHint = hint
+	return fhSample{t: ts, fh: fh}
+}
+
+// Shorthands for counter reset hints.
+const (
+	uk = histogram.UnknownCounterReset
+	cr = histogram.CounterReset
+	nr = histogram.NotCounterReset
+	ga = histogram.GaugeType
+)
+
 func TestCompactingChunkSeriesMerger(t *testing.T) {
 	m := NewCompactingChunkSeriesMerger(ChainedSeriesMerge)
 
 	// histogramSample returns a histogram that is unique to the ts.
 	histogramSample := func(ts int64) hSample {
-		return hSample{t: ts, h: tsdbutil.GenerateTestHistogram(int(ts + 1))}
+		return histogramSample(ts, uk)
 	}
 
 	floatHistogramSample := func(ts int64) fhSample {
-		return fhSample{t: ts, fh: tsdbutil.GenerateTestFloatHistogram(int(ts + 1))}
+		return floatHistogramSample(ts, uk)
 	}
 
 	for _, tc := range []struct {
@@ -408,9 +432,9 @@ func TestCompactingChunkSeriesMerger(t *testing.T) {
 		{
 			name: "single series",
 			input: []ChunkSeries{
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{1, 1}, fSample{2, 2}}, []tsdbutil.Sample{fSample{3, 3}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{1, 1}, fSample{2, 2}}, []chunks.Sample{fSample{3, 3}}),
 			},
-			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{1, 1}, fSample{2, 2}}, []tsdbutil.Sample{fSample{3, 3}}),
+			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{1, 1}, fSample{2, 2}}, []chunks.Sample{fSample{3, 3}}),
 		},
 		{
 			name: "two empty series",
@@ -423,142 +447,142 @@ func TestCompactingChunkSeriesMerger(t *testing.T) {
 		{
 			name: "two non overlapping",
 			input: []ChunkSeries{
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{1, 1}, fSample{2, 2}}, []tsdbutil.Sample{fSample{3, 3}, fSample{5, 5}}),
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{7, 7}, fSample{9, 9}}, []tsdbutil.Sample{fSample{10, 10}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{1, 1}, fSample{2, 2}}, []chunks.Sample{fSample{3, 3}, fSample{5, 5}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{7, 7}, fSample{9, 9}}, []chunks.Sample{fSample{10, 10}}),
 			},
-			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{1, 1}, fSample{2, 2}}, []tsdbutil.Sample{fSample{3, 3}, fSample{5, 5}}, []tsdbutil.Sample{fSample{7, 7}, fSample{9, 9}}, []tsdbutil.Sample{fSample{10, 10}}),
+			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{1, 1}, fSample{2, 2}}, []chunks.Sample{fSample{3, 3}, fSample{5, 5}}, []chunks.Sample{fSample{7, 7}, fSample{9, 9}}, []chunks.Sample{fSample{10, 10}}),
 		},
 		{
 			name: "two overlapping",
 			input: []ChunkSeries{
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{1, 1}, fSample{2, 2}}, []tsdbutil.Sample{fSample{3, 3}, fSample{8, 8}}),
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{7, 7}, fSample{9, 9}}, []tsdbutil.Sample{fSample{10, 10}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{1, 1}, fSample{2, 2}}, []chunks.Sample{fSample{3, 3}, fSample{8, 8}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{7, 7}, fSample{9, 9}}, []chunks.Sample{fSample{10, 10}}),
 			},
-			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{1, 1}, fSample{2, 2}}, []tsdbutil.Sample{fSample{3, 3}, fSample{7, 7}, fSample{8, 8}, fSample{9, 9}}, []tsdbutil.Sample{fSample{10, 10}}),
+			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{1, 1}, fSample{2, 2}}, []chunks.Sample{fSample{3, 3}, fSample{7, 7}, fSample{8, 8}, fSample{9, 9}}, []chunks.Sample{fSample{10, 10}}),
 		},
 		{
 			name: "two duplicated",
 			input: []ChunkSeries{
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{1, 1}, fSample{2, 2}, fSample{3, 3}, fSample{5, 5}}),
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{2, 2}, fSample{3, 3}, fSample{5, 5}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{1, 1}, fSample{2, 2}, fSample{3, 3}, fSample{5, 5}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{2, 2}, fSample{3, 3}, fSample{5, 5}}),
 			},
-			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{1, 1}, fSample{2, 2}, fSample{3, 3}, fSample{5, 5}}),
+			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{1, 1}, fSample{2, 2}, fSample{3, 3}, fSample{5, 5}}),
 		},
 		{
 			name: "three overlapping",
 			input: []ChunkSeries{
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{1, 1}, fSample{2, 2}, fSample{3, 3}, fSample{5, 5}}),
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{2, 2}, fSample{3, 3}, fSample{6, 6}}),
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{0, 0}, fSample{4, 4}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{1, 1}, fSample{2, 2}, fSample{3, 3}, fSample{5, 5}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{2, 2}, fSample{3, 3}, fSample{6, 6}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{0, 0}, fSample{4, 4}}),
 			},
-			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{0, 0}, fSample{1, 1}, fSample{2, 2}, fSample{3, 3}, fSample{4, 4}, fSample{5, 5}, fSample{6, 6}}),
+			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{0, 0}, fSample{1, 1}, fSample{2, 2}, fSample{3, 3}, fSample{4, 4}, fSample{5, 5}, fSample{6, 6}}),
 		},
 		{
 			name: "three in chained overlap",
 			input: []ChunkSeries{
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{1, 1}, fSample{2, 2}, fSample{3, 3}, fSample{5, 5}}),
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{4, 4}, fSample{6, 66}}),
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{6, 6}, fSample{10, 10}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{1, 1}, fSample{2, 2}, fSample{3, 3}, fSample{5, 5}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{4, 4}, fSample{6, 66}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{6, 6}, fSample{10, 10}}),
 			},
-			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{1, 1}, fSample{2, 2}, fSample{3, 3}, fSample{4, 4}, fSample{5, 5}, fSample{6, 66}, fSample{10, 10}}),
+			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{1, 1}, fSample{2, 2}, fSample{3, 3}, fSample{4, 4}, fSample{5, 5}, fSample{6, 66}, fSample{10, 10}}),
 		},
 		{
 			name: "three in chained overlap complex",
 			input: []ChunkSeries{
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{0, 0}, fSample{5, 5}}, []tsdbutil.Sample{fSample{10, 10}, fSample{15, 15}}),
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{2, 2}, fSample{20, 20}}, []tsdbutil.Sample{fSample{25, 25}, fSample{30, 30}}),
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{18, 18}, fSample{26, 26}}, []tsdbutil.Sample{fSample{31, 31}, fSample{35, 35}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{0, 0}, fSample{5, 5}}, []chunks.Sample{fSample{10, 10}, fSample{15, 15}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{2, 2}, fSample{20, 20}}, []chunks.Sample{fSample{25, 25}, fSample{30, 30}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{18, 18}, fSample{26, 26}}, []chunks.Sample{fSample{31, 31}, fSample{35, 35}}),
 			},
 			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
-				[]tsdbutil.Sample{fSample{0, 0}, fSample{2, 2}, fSample{5, 5}, fSample{10, 10}, fSample{15, 15}, fSample{18, 18}, fSample{20, 20}, fSample{25, 25}, fSample{26, 26}, fSample{30, 30}},
-				[]tsdbutil.Sample{fSample{31, 31}, fSample{35, 35}},
+				[]chunks.Sample{fSample{0, 0}, fSample{2, 2}, fSample{5, 5}, fSample{10, 10}, fSample{15, 15}, fSample{18, 18}, fSample{20, 20}, fSample{25, 25}, fSample{26, 26}, fSample{30, 30}},
+				[]chunks.Sample{fSample{31, 31}, fSample{35, 35}},
 			),
 		},
 		{
 			name: "110 overlapping",
 			input: []ChunkSeries{
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), tsdbutil.GenerateSamples(0, 110)), // [0 - 110)
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), tsdbutil.GenerateSamples(60, 50)), // [60 - 110)
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), chunks.GenerateSamples(0, 110)), // [0 - 110)
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), chunks.GenerateSamples(60, 50)), // [60 - 110)
 			},
 			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
-				tsdbutil.GenerateSamples(0, 110),
+				chunks.GenerateSamples(0, 110),
 			),
 		},
 		{
 			name: "150 overlapping samples, split chunk",
 			input: []ChunkSeries{
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), tsdbutil.GenerateSamples(0, 90)),  // [0 - 90)
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), tsdbutil.GenerateSamples(60, 90)), // [90 - 150)
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), chunks.GenerateSamples(0, 90)),  // [0 - 90)
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), chunks.GenerateSamples(60, 90)), // [90 - 150)
 			},
 			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
-				tsdbutil.GenerateSamples(0, 120),
-				tsdbutil.GenerateSamples(120, 30),
+				chunks.GenerateSamples(0, 120),
+				chunks.GenerateSamples(120, 30),
 			),
 		},
 		{
 			name: "histogram chunks overlapping",
 			input: []ChunkSeries{
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{histogramSample(0), histogramSample(5)}, []tsdbutil.Sample{histogramSample(10), histogramSample(15)}),
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{histogramSample(2), histogramSample(20)}, []tsdbutil.Sample{histogramSample(25), histogramSample(30)}),
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{histogramSample(18), histogramSample(26)}, []tsdbutil.Sample{histogramSample(31), histogramSample(35)}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{histogramSample(0), histogramSample(5)}, []chunks.Sample{histogramSample(10), histogramSample(15)}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{histogramSample(2), histogramSample(20)}, []chunks.Sample{histogramSample(25), histogramSample(30)}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{histogramSample(18), histogramSample(26)}, []chunks.Sample{histogramSample(31), histogramSample(35)}),
 			},
 			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
-				[]tsdbutil.Sample{histogramSample(0), histogramSample(2), histogramSample(5), histogramSample(10), histogramSample(15), histogramSample(18), histogramSample(20), histogramSample(25), histogramSample(26), histogramSample(30)},
-				[]tsdbutil.Sample{histogramSample(31), histogramSample(35)},
+				[]chunks.Sample{histogramSample(0), histogramSample(2), histogramSample(5), histogramSample(10), histogramSample(15), histogramSample(18), histogramSample(20), histogramSample(25), histogramSample(26), histogramSample(30)},
+				[]chunks.Sample{histogramSample(31), histogramSample(35)},
 			),
 		},
 		{
 			name: "histogram chunks overlapping with float chunks",
 			input: []ChunkSeries{
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{histogramSample(0), histogramSample(5)}, []tsdbutil.Sample{histogramSample(10), histogramSample(15)}),
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{1, 1}, fSample{12, 12}}, []tsdbutil.Sample{fSample{14, 14}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{histogramSample(0), histogramSample(5)}, []chunks.Sample{histogramSample(10), histogramSample(15)}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{1, 1}, fSample{12, 12}}, []chunks.Sample{fSample{14, 14}}),
 			},
 			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
-				[]tsdbutil.Sample{histogramSample(0)},
-				[]tsdbutil.Sample{fSample{1, 1}},
-				[]tsdbutil.Sample{histogramSample(5), histogramSample(10)},
-				[]tsdbutil.Sample{fSample{12, 12}, fSample{14, 14}},
-				[]tsdbutil.Sample{histogramSample(15)},
+				[]chunks.Sample{histogramSample(0)},
+				[]chunks.Sample{fSample{1, 1}},
+				[]chunks.Sample{histogramSample(5), histogramSample(10)},
+				[]chunks.Sample{fSample{12, 12}, fSample{14, 14}},
+				[]chunks.Sample{histogramSample(15)},
 			),
 		},
 		{
 			name: "float histogram chunks overlapping",
 			input: []ChunkSeries{
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{floatHistogramSample(0), floatHistogramSample(5)}, []tsdbutil.Sample{floatHistogramSample(10), floatHistogramSample(15)}),
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{floatHistogramSample(2), floatHistogramSample(20)}, []tsdbutil.Sample{floatHistogramSample(25), floatHistogramSample(30)}),
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{floatHistogramSample(18), floatHistogramSample(26)}, []tsdbutil.Sample{floatHistogramSample(31), floatHistogramSample(35)}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{floatHistogramSample(0), floatHistogramSample(5)}, []chunks.Sample{floatHistogramSample(10), floatHistogramSample(15)}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{floatHistogramSample(2), floatHistogramSample(20)}, []chunks.Sample{floatHistogramSample(25), floatHistogramSample(30)}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{floatHistogramSample(18), floatHistogramSample(26)}, []chunks.Sample{floatHistogramSample(31), floatHistogramSample(35)}),
 			},
 			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
-				[]tsdbutil.Sample{floatHistogramSample(0), floatHistogramSample(2), floatHistogramSample(5), floatHistogramSample(10), floatHistogramSample(15), floatHistogramSample(18), floatHistogramSample(20), floatHistogramSample(25), floatHistogramSample(26), floatHistogramSample(30)},
-				[]tsdbutil.Sample{floatHistogramSample(31), floatHistogramSample(35)},
+				[]chunks.Sample{floatHistogramSample(0), floatHistogramSample(2), floatHistogramSample(5), floatHistogramSample(10), floatHistogramSample(15), floatHistogramSample(18), floatHistogramSample(20), floatHistogramSample(25), floatHistogramSample(26), floatHistogramSample(30)},
+				[]chunks.Sample{floatHistogramSample(31), floatHistogramSample(35)},
 			),
 		},
 		{
 			name: "float histogram chunks overlapping with float chunks",
 			input: []ChunkSeries{
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{floatHistogramSample(0), floatHistogramSample(5)}, []tsdbutil.Sample{floatHistogramSample(10), floatHistogramSample(15)}),
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{1, 1}, fSample{12, 12}}, []tsdbutil.Sample{fSample{14, 14}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{floatHistogramSample(0), floatHistogramSample(5)}, []chunks.Sample{floatHistogramSample(10), floatHistogramSample(15)}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{1, 1}, fSample{12, 12}}, []chunks.Sample{fSample{14, 14}}),
 			},
 			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
-				[]tsdbutil.Sample{floatHistogramSample(0)},
-				[]tsdbutil.Sample{fSample{1, 1}},
-				[]tsdbutil.Sample{floatHistogramSample(5), floatHistogramSample(10)},
-				[]tsdbutil.Sample{fSample{12, 12}, fSample{14, 14}},
-				[]tsdbutil.Sample{floatHistogramSample(15)},
+				[]chunks.Sample{floatHistogramSample(0)},
+				[]chunks.Sample{fSample{1, 1}},
+				[]chunks.Sample{floatHistogramSample(5), floatHistogramSample(10)},
+				[]chunks.Sample{fSample{12, 12}, fSample{14, 14}},
+				[]chunks.Sample{floatHistogramSample(15)},
 			),
 		},
 		{
 			name: "float histogram chunks overlapping with histogram chunks",
 			input: []ChunkSeries{
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{floatHistogramSample(0), floatHistogramSample(5)}, []tsdbutil.Sample{floatHistogramSample(10), floatHistogramSample(15)}),
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{histogramSample(1), histogramSample(12)}, []tsdbutil.Sample{histogramSample(14)}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{floatHistogramSample(0), floatHistogramSample(5)}, []chunks.Sample{floatHistogramSample(10), floatHistogramSample(15)}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{histogramSample(1), histogramSample(12)}, []chunks.Sample{histogramSample(14)}),
 			},
 			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
-				[]tsdbutil.Sample{floatHistogramSample(0)},
-				[]tsdbutil.Sample{histogramSample(1)},
-				[]tsdbutil.Sample{floatHistogramSample(5), floatHistogramSample(10)},
-				[]tsdbutil.Sample{histogramSample(12), histogramSample(14)},
-				[]tsdbutil.Sample{floatHistogramSample(15)},
+				[]chunks.Sample{floatHistogramSample(0)},
+				[]chunks.Sample{histogramSample(1)},
+				[]chunks.Sample{floatHistogramSample(5), floatHistogramSample(10)},
+				[]chunks.Sample{histogramSample(12), histogramSample(14)},
+				[]chunks.Sample{floatHistogramSample(15)},
 			),
 		},
 	} {
@@ -570,7 +594,128 @@ func TestCompactingChunkSeriesMerger(t *testing.T) {
 
 			require.Equal(t, expErr, actErr)
 			require.Equal(t, expChks, actChks)
+
+			actSamples := chunks.ChunkMetasToSamples(actChks)
+			expSamples := chunks.ChunkMetasToSamples(expChks)
+			require.Equal(t, expSamples, actSamples)
 		})
+	}
+}
+
+func TestCompactingChunkSeriesMergerHistogramCounterResetHint(t *testing.T) {
+	m := NewCompactingChunkSeriesMerger(ChainedSeriesMerge)
+
+	for sampleType, sampleFunc := range map[string]func(int64, histogram.CounterResetHint) chunks.Sample{
+		"histogram":       func(ts int64, hint histogram.CounterResetHint) chunks.Sample { return histogramSample(ts, hint) },
+		"float histogram": func(ts int64, hint histogram.CounterResetHint) chunks.Sample { return floatHistogramSample(ts, hint) },
+	} {
+		for name, tc := range map[string]struct {
+			input    []ChunkSeries
+			expected ChunkSeries
+		}{
+			"histogram counter reset hint kept in single series": {
+				input: []ChunkSeries{
+					NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+						[]chunks.Sample{sampleFunc(0, cr), sampleFunc(5, uk)},
+						[]chunks.Sample{sampleFunc(10, cr), sampleFunc(15, uk)},
+					),
+				},
+				expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+					[]chunks.Sample{sampleFunc(0, cr), sampleFunc(5, uk)},
+					[]chunks.Sample{sampleFunc(10, cr), sampleFunc(15, uk)},
+				),
+			},
+			"histogram not counter reset hint kept in single series": {
+				input: []ChunkSeries{
+					NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+						[]chunks.Sample{sampleFunc(0, nr), sampleFunc(5, uk)},
+						[]chunks.Sample{sampleFunc(10, nr), sampleFunc(15, uk)},
+					),
+				},
+				expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+					[]chunks.Sample{sampleFunc(0, nr), sampleFunc(5, uk)},
+					[]chunks.Sample{sampleFunc(10, nr), sampleFunc(15, uk)},
+				),
+			},
+			"histogram counter reset hint kept in multiple equal series": {
+				input: []ChunkSeries{
+					NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+						[]chunks.Sample{sampleFunc(0, cr), sampleFunc(5, uk)},
+						[]chunks.Sample{sampleFunc(10, cr), sampleFunc(15, uk)},
+					),
+					NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+						[]chunks.Sample{sampleFunc(0, cr), sampleFunc(5, uk)},
+						[]chunks.Sample{sampleFunc(10, cr), sampleFunc(15, uk)},
+					),
+				},
+				expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+					[]chunks.Sample{sampleFunc(0, cr), sampleFunc(5, uk)},
+					[]chunks.Sample{sampleFunc(10, cr), sampleFunc(15, uk)},
+				),
+			},
+			"histogram not counter reset hint kept in multiple equal series": {
+				input: []ChunkSeries{
+					NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+						[]chunks.Sample{sampleFunc(0, nr), sampleFunc(5, uk)},
+						[]chunks.Sample{sampleFunc(10, nr), sampleFunc(15, uk)},
+					),
+					NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+						[]chunks.Sample{sampleFunc(0, nr), sampleFunc(5, uk)},
+						[]chunks.Sample{sampleFunc(10, nr), sampleFunc(15, uk)},
+					),
+				},
+				expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+					[]chunks.Sample{sampleFunc(0, nr), sampleFunc(5, uk)},
+					[]chunks.Sample{sampleFunc(10, nr), sampleFunc(15, uk)},
+				),
+			},
+			"histogram counter reset hint dropped from differing series": {
+				input: []ChunkSeries{
+					NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+						[]chunks.Sample{sampleFunc(0, cr), sampleFunc(5, uk)},
+						[]chunks.Sample{sampleFunc(10, cr), sampleFunc(15, uk)},
+					),
+					NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+						[]chunks.Sample{sampleFunc(0, cr), sampleFunc(5, uk)},
+						[]chunks.Sample{sampleFunc(10, cr), sampleFunc(12, uk), sampleFunc(15, uk)},
+					),
+				},
+				expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+					[]chunks.Sample{sampleFunc(0, cr), sampleFunc(5, uk)},
+					[]chunks.Sample{sampleFunc(10, uk), sampleFunc(12, uk), sampleFunc(15, uk)},
+				),
+			},
+			"histogram counter not reset hint dropped from differing series": {
+				input: []ChunkSeries{
+					NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+						[]chunks.Sample{sampleFunc(0, nr), sampleFunc(5, uk)},
+						[]chunks.Sample{sampleFunc(10, nr), sampleFunc(15, uk)},
+					),
+					NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+						[]chunks.Sample{sampleFunc(0, nr), sampleFunc(5, uk)},
+						[]chunks.Sample{sampleFunc(10, nr), sampleFunc(12, uk), sampleFunc(15, uk)},
+					),
+				},
+				expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+					[]chunks.Sample{sampleFunc(0, nr), sampleFunc(5, uk)},
+					[]chunks.Sample{sampleFunc(10, uk), sampleFunc(12, uk), sampleFunc(15, uk)},
+				),
+			},
+		} {
+			t.Run(sampleType+"/"+name, func(t *testing.T) {
+				merged := m(tc.input...)
+				require.Equal(t, tc.expected.Labels(), merged.Labels())
+				actChks, actErr := ExpandChunks(merged.Iterator(nil))
+				expChks, expErr := ExpandChunks(tc.expected.Iterator(nil))
+
+				require.Equal(t, expErr, actErr)
+				require.Equal(t, expChks, actChks)
+
+				actSamples := chunks.ChunkMetasToSamples(actChks)
+				expSamples := chunks.ChunkMetasToSamples(expChks)
+				require.Equal(t, expSamples, actSamples)
+			})
+		}
 	}
 }
 
@@ -592,9 +737,9 @@ func TestConcatenatingChunkSeriesMerger(t *testing.T) {
 		{
 			name: "single series",
 			input: []ChunkSeries{
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{1, 1}, fSample{2, 2}}, []tsdbutil.Sample{fSample{3, 3}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{1, 1}, fSample{2, 2}}, []chunks.Sample{fSample{3, 3}}),
 			},
-			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{1, 1}, fSample{2, 2}}, []tsdbutil.Sample{fSample{3, 3}}),
+			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{1, 1}, fSample{2, 2}}, []chunks.Sample{fSample{3, 3}}),
 		},
 		{
 			name: "two empty series",
@@ -607,92 +752,92 @@ func TestConcatenatingChunkSeriesMerger(t *testing.T) {
 		{
 			name: "two non overlapping",
 			input: []ChunkSeries{
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{1, 1}, fSample{2, 2}}, []tsdbutil.Sample{fSample{3, 3}, fSample{5, 5}}),
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{7, 7}, fSample{9, 9}}, []tsdbutil.Sample{fSample{10, 10}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{1, 1}, fSample{2, 2}}, []chunks.Sample{fSample{3, 3}, fSample{5, 5}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{7, 7}, fSample{9, 9}}, []chunks.Sample{fSample{10, 10}}),
 			},
-			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{1, 1}, fSample{2, 2}}, []tsdbutil.Sample{fSample{3, 3}, fSample{5, 5}}, []tsdbutil.Sample{fSample{7, 7}, fSample{9, 9}}, []tsdbutil.Sample{fSample{10, 10}}),
+			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{1, 1}, fSample{2, 2}}, []chunks.Sample{fSample{3, 3}, fSample{5, 5}}, []chunks.Sample{fSample{7, 7}, fSample{9, 9}}, []chunks.Sample{fSample{10, 10}}),
 		},
 		{
 			name: "two overlapping",
 			input: []ChunkSeries{
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{1, 1}, fSample{2, 2}}, []tsdbutil.Sample{fSample{3, 3}, fSample{8, 8}}),
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{7, 7}, fSample{9, 9}}, []tsdbutil.Sample{fSample{10, 10}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{1, 1}, fSample{2, 2}}, []chunks.Sample{fSample{3, 3}, fSample{8, 8}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{7, 7}, fSample{9, 9}}, []chunks.Sample{fSample{10, 10}}),
 			},
 			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
-				[]tsdbutil.Sample{fSample{1, 1}, fSample{2, 2}}, []tsdbutil.Sample{fSample{3, 3}, fSample{8, 8}},
-				[]tsdbutil.Sample{fSample{7, 7}, fSample{9, 9}}, []tsdbutil.Sample{fSample{10, 10}},
+				[]chunks.Sample{fSample{1, 1}, fSample{2, 2}}, []chunks.Sample{fSample{3, 3}, fSample{8, 8}},
+				[]chunks.Sample{fSample{7, 7}, fSample{9, 9}}, []chunks.Sample{fSample{10, 10}},
 			),
 		},
 		{
 			name: "two duplicated",
 			input: []ChunkSeries{
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{1, 1}, fSample{2, 2}, fSample{3, 3}, fSample{5, 5}}),
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{2, 2}, fSample{3, 3}, fSample{5, 5}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{1, 1}, fSample{2, 2}, fSample{3, 3}, fSample{5, 5}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{2, 2}, fSample{3, 3}, fSample{5, 5}}),
 			},
 			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
-				[]tsdbutil.Sample{fSample{1, 1}, fSample{2, 2}, fSample{3, 3}, fSample{5, 5}},
-				[]tsdbutil.Sample{fSample{2, 2}, fSample{3, 3}, fSample{5, 5}},
+				[]chunks.Sample{fSample{1, 1}, fSample{2, 2}, fSample{3, 3}, fSample{5, 5}},
+				[]chunks.Sample{fSample{2, 2}, fSample{3, 3}, fSample{5, 5}},
 			),
 		},
 		{
 			name: "three overlapping",
 			input: []ChunkSeries{
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{1, 1}, fSample{2, 2}, fSample{3, 3}, fSample{5, 5}}),
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{2, 2}, fSample{3, 3}, fSample{6, 6}}),
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{0, 0}, fSample{4, 4}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{1, 1}, fSample{2, 2}, fSample{3, 3}, fSample{5, 5}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{2, 2}, fSample{3, 3}, fSample{6, 6}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{0, 0}, fSample{4, 4}}),
 			},
 			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
-				[]tsdbutil.Sample{fSample{1, 1}, fSample{2, 2}, fSample{3, 3}, fSample{5, 5}},
-				[]tsdbutil.Sample{fSample{2, 2}, fSample{3, 3}, fSample{6, 6}},
-				[]tsdbutil.Sample{fSample{0, 0}, fSample{4, 4}},
+				[]chunks.Sample{fSample{1, 1}, fSample{2, 2}, fSample{3, 3}, fSample{5, 5}},
+				[]chunks.Sample{fSample{2, 2}, fSample{3, 3}, fSample{6, 6}},
+				[]chunks.Sample{fSample{0, 0}, fSample{4, 4}},
 			),
 		},
 		{
 			name: "three in chained overlap",
 			input: []ChunkSeries{
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{1, 1}, fSample{2, 2}, fSample{3, 3}, fSample{5, 5}}),
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{4, 4}, fSample{6, 66}}),
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{6, 6}, fSample{10, 10}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{1, 1}, fSample{2, 2}, fSample{3, 3}, fSample{5, 5}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{4, 4}, fSample{6, 66}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{6, 6}, fSample{10, 10}}),
 			},
 			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
-				[]tsdbutil.Sample{fSample{1, 1}, fSample{2, 2}, fSample{3, 3}, fSample{5, 5}},
-				[]tsdbutil.Sample{fSample{4, 4}, fSample{6, 66}},
-				[]tsdbutil.Sample{fSample{6, 6}, fSample{10, 10}},
+				[]chunks.Sample{fSample{1, 1}, fSample{2, 2}, fSample{3, 3}, fSample{5, 5}},
+				[]chunks.Sample{fSample{4, 4}, fSample{6, 66}},
+				[]chunks.Sample{fSample{6, 6}, fSample{10, 10}},
 			),
 		},
 		{
 			name: "three in chained overlap complex",
 			input: []ChunkSeries{
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{0, 0}, fSample{5, 5}}, []tsdbutil.Sample{fSample{10, 10}, fSample{15, 15}}),
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{2, 2}, fSample{20, 20}}, []tsdbutil.Sample{fSample{25, 25}, fSample{30, 30}}),
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{fSample{18, 18}, fSample{26, 26}}, []tsdbutil.Sample{fSample{31, 31}, fSample{35, 35}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{0, 0}, fSample{5, 5}}, []chunks.Sample{fSample{10, 10}, fSample{15, 15}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{2, 2}, fSample{20, 20}}, []chunks.Sample{fSample{25, 25}, fSample{30, 30}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []chunks.Sample{fSample{18, 18}, fSample{26, 26}}, []chunks.Sample{fSample{31, 31}, fSample{35, 35}}),
 			},
 			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
-				[]tsdbutil.Sample{fSample{0, 0}, fSample{5, 5}}, []tsdbutil.Sample{fSample{10, 10}, fSample{15, 15}},
-				[]tsdbutil.Sample{fSample{2, 2}, fSample{20, 20}}, []tsdbutil.Sample{fSample{25, 25}, fSample{30, 30}},
-				[]tsdbutil.Sample{fSample{18, 18}, fSample{26, 26}}, []tsdbutil.Sample{fSample{31, 31}, fSample{35, 35}},
+				[]chunks.Sample{fSample{0, 0}, fSample{5, 5}}, []chunks.Sample{fSample{10, 10}, fSample{15, 15}},
+				[]chunks.Sample{fSample{2, 2}, fSample{20, 20}}, []chunks.Sample{fSample{25, 25}, fSample{30, 30}},
+				[]chunks.Sample{fSample{18, 18}, fSample{26, 26}}, []chunks.Sample{fSample{31, 31}, fSample{35, 35}},
 			),
 		},
 		{
 			name: "110 overlapping",
 			input: []ChunkSeries{
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), tsdbutil.GenerateSamples(0, 110)), // [0 - 110)
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), tsdbutil.GenerateSamples(60, 50)), // [60 - 110)
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), chunks.GenerateSamples(0, 110)), // [0 - 110)
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), chunks.GenerateSamples(60, 50)), // [60 - 110)
 			},
 			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
-				tsdbutil.GenerateSamples(0, 110),
-				tsdbutil.GenerateSamples(60, 50),
+				chunks.GenerateSamples(0, 110),
+				chunks.GenerateSamples(60, 50),
 			),
 		},
 		{
 			name: "150 overlapping samples, simply concatenated and no splits",
 			input: []ChunkSeries{
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), tsdbutil.GenerateSamples(0, 90)),  // [0 - 90)
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), tsdbutil.GenerateSamples(60, 90)), // [90 - 150)
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), chunks.GenerateSamples(0, 90)),  // [0 - 90)
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), chunks.GenerateSamples(60, 90)), // [90 - 150)
 			},
 			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
-				tsdbutil.GenerateSamples(0, 90),
-				tsdbutil.GenerateSamples(60, 90),
+				chunks.GenerateSamples(0, 90),
+				chunks.GenerateSamples(60, 90),
 			),
 		},
 	} {
@@ -720,7 +865,7 @@ func (a seriesByLabel) Len() int           { return len(a) }
 func (a seriesByLabel) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a seriesByLabel) Less(i, j int) bool { return labels.Compare(a[i].Labels(), a[j].Labels()) < 0 }
 
-func (m *mockQuerier) Select(sortSeries bool, _ *SelectHints, _ ...*labels.Matcher) SeriesSet {
+func (m *mockQuerier) Select(_ context.Context, sortSeries bool, _ *SelectHints, _ ...*labels.Matcher) SeriesSet {
 	cpy := make([]Series, len(m.toReturn))
 	copy(cpy, m.toReturn)
 	if sortSeries {
@@ -744,7 +889,7 @@ func (a chunkSeriesByLabel) Less(i, j int) bool {
 	return labels.Compare(a[i].Labels(), a[j].Labels()) < 0
 }
 
-func (m *mockChunkQurier) Select(sortSeries bool, _ *SelectHints, _ ...*labels.Matcher) ChunkSeriesSet {
+func (m *mockChunkQurier) Select(_ context.Context, sortSeries bool, _ *SelectHints, _ ...*labels.Matcher) ChunkSeriesSet {
 	cpy := make([]ChunkSeries, len(m.toReturn))
 	copy(cpy, m.toReturn)
 	if sortSeries {
@@ -775,7 +920,7 @@ func (m *mockSeriesSet) At() Series { return m.series[m.idx] }
 
 func (m *mockSeriesSet) Err() error { return nil }
 
-func (m *mockSeriesSet) Warnings() Warnings { return nil }
+func (m *mockSeriesSet) Warnings() annotations.Annotations { return nil }
 
 type mockChunkSeriesSet struct {
 	idx    int
@@ -798,105 +943,246 @@ func (m *mockChunkSeriesSet) At() ChunkSeries { return m.series[m.idx] }
 
 func (m *mockChunkSeriesSet) Err() error { return nil }
 
-func (m *mockChunkSeriesSet) Warnings() Warnings { return nil }
+func (m *mockChunkSeriesSet) Warnings() annotations.Annotations { return nil }
 
 func TestChainSampleIterator(t *testing.T) {
-	for _, tc := range []struct {
-		input    []chunkenc.Iterator
-		expected []tsdbutil.Sample
-	}{
-		{
-			input: []chunkenc.Iterator{
-				NewListSeriesIterator(samples{fSample{0, 0}, fSample{1, 1}}),
-			},
-			expected: []tsdbutil.Sample{fSample{0, 0}, fSample{1, 1}},
-		},
-		{
-			input: []chunkenc.Iterator{
-				NewListSeriesIterator(samples{fSample{0, 0}, fSample{1, 1}}),
-				NewListSeriesIterator(samples{fSample{2, 2}, fSample{3, 3}}),
-			},
-			expected: []tsdbutil.Sample{fSample{0, 0}, fSample{1, 1}, fSample{2, 2}, fSample{3, 3}},
-		},
-		{
-			input: []chunkenc.Iterator{
-				NewListSeriesIterator(samples{fSample{0, 0}, fSample{3, 3}}),
-				NewListSeriesIterator(samples{fSample{1, 1}, fSample{4, 4}}),
-				NewListSeriesIterator(samples{fSample{2, 2}, fSample{5, 5}}),
-			},
-			expected: []tsdbutil.Sample{
-				fSample{0, 0}, fSample{1, 1}, fSample{2, 2}, fSample{3, 3}, fSample{4, 4}, fSample{5, 5},
-			},
-		},
-		// Overlap.
-		{
-			input: []chunkenc.Iterator{
-				NewListSeriesIterator(samples{fSample{0, 0}, fSample{1, 1}}),
-				NewListSeriesIterator(samples{fSample{0, 0}, fSample{2, 2}}),
-				NewListSeriesIterator(samples{fSample{2, 2}, fSample{3, 3}}),
-				NewListSeriesIterator(samples{}),
-				NewListSeriesIterator(samples{}),
-				NewListSeriesIterator(samples{}),
-			},
-			expected: []tsdbutil.Sample{fSample{0, 0}, fSample{1, 1}, fSample{2, 2}, fSample{3, 3}},
-		},
+	for sampleType, sampleFunc := range map[string]func(int64) chunks.Sample{
+		"float":           func(ts int64) chunks.Sample { return fSample{ts, float64(ts)} },
+		"histogram":       func(ts int64) chunks.Sample { return histogramSample(ts, uk) },
+		"float histogram": func(ts int64) chunks.Sample { return floatHistogramSample(ts, uk) },
 	} {
-		merged := ChainSampleIteratorFromIterators(nil, tc.input)
-		actual, err := ExpandSamples(merged, nil)
-		require.NoError(t, err)
-		require.Equal(t, tc.expected, actual)
+		for name, tc := range map[string]struct {
+			input    []chunkenc.Iterator
+			expected []chunks.Sample
+		}{
+			"single iterator": {
+				input: []chunkenc.Iterator{
+					NewListSeriesIterator(samples{sampleFunc(0), sampleFunc(1)}),
+				},
+				expected: []chunks.Sample{sampleFunc(0), sampleFunc(1)},
+			},
+			"non overlapping iterators": {
+				input: []chunkenc.Iterator{
+					NewListSeriesIterator(samples{sampleFunc(0), sampleFunc(1)}),
+					NewListSeriesIterator(samples{sampleFunc(2), sampleFunc(3)}),
+				},
+				expected: []chunks.Sample{sampleFunc(0), sampleFunc(1), sampleFunc(2), sampleFunc(3)},
+			},
+			"overlapping but distinct iterators": {
+				input: []chunkenc.Iterator{
+					NewListSeriesIterator(samples{sampleFunc(0), sampleFunc(3)}),
+					NewListSeriesIterator(samples{sampleFunc(1), sampleFunc(4)}),
+					NewListSeriesIterator(samples{sampleFunc(2), sampleFunc(5)}),
+				},
+				expected: []chunks.Sample{
+					sampleFunc(0), sampleFunc(1), sampleFunc(2), sampleFunc(3), sampleFunc(4), sampleFunc(5),
+				},
+			},
+			"overlapping iterators": {
+				input: []chunkenc.Iterator{
+					NewListSeriesIterator(samples{sampleFunc(0), sampleFunc(1)}),
+					NewListSeriesIterator(samples{sampleFunc(0), sampleFunc(2)}),
+					NewListSeriesIterator(samples{sampleFunc(2), sampleFunc(3)}),
+					NewListSeriesIterator(samples{}),
+					NewListSeriesIterator(samples{}),
+					NewListSeriesIterator(samples{}),
+				},
+				expected: []chunks.Sample{sampleFunc(0), sampleFunc(1), sampleFunc(2), sampleFunc(3)},
+			},
+		} {
+			t.Run(sampleType+"/"+name, func(t *testing.T) {
+				merged := ChainSampleIteratorFromIterators(nil, tc.input)
+				actual, err := ExpandSamples(merged, nil)
+				require.NoError(t, err)
+				require.Equal(t, tc.expected, actual)
+			})
+		}
+	}
+}
+
+func TestChainSampleIteratorHistogramCounterResetHint(t *testing.T) {
+	for sampleType, sampleFunc := range map[string]func(int64, histogram.CounterResetHint) chunks.Sample{
+		"histogram":       func(ts int64, hint histogram.CounterResetHint) chunks.Sample { return histogramSample(ts, hint) },
+		"float histogram": func(ts int64, hint histogram.CounterResetHint) chunks.Sample { return floatHistogramSample(ts, hint) },
+	} {
+		for name, tc := range map[string]struct {
+			input    []chunkenc.Iterator
+			expected []chunks.Sample
+		}{
+			"single iterator": {
+				input: []chunkenc.Iterator{
+					NewListSeriesIterator(samples{sampleFunc(0, cr), sampleFunc(1, cr), sampleFunc(2, uk)}),
+				},
+				expected: []chunks.Sample{sampleFunc(0, uk), sampleFunc(1, cr), sampleFunc(2, uk)},
+			},
+			"single iterator gauge": {
+				input: []chunkenc.Iterator{
+					NewListSeriesIterator(samples{sampleFunc(0, ga), sampleFunc(1, ga), sampleFunc(2, ga)}),
+				},
+				expected: []chunks.Sample{sampleFunc(0, ga), sampleFunc(1, ga), sampleFunc(2, ga)},
+			},
+			"overlapping iterators gauge": {
+				input: []chunkenc.Iterator{
+					NewListSeriesIterator(samples{sampleFunc(0, ga), sampleFunc(1, ga), sampleFunc(2, ga), sampleFunc(4, ga)}),
+					NewListSeriesIterator(samples{sampleFunc(0, ga), sampleFunc(1, ga), sampleFunc(3, ga), sampleFunc(5, ga)}),
+				},
+				expected: []chunks.Sample{sampleFunc(0, ga), sampleFunc(1, ga), sampleFunc(2, ga), sampleFunc(3, ga), sampleFunc(4, ga), sampleFunc(5, ga)},
+			},
+			"non overlapping iterators": {
+				input: []chunkenc.Iterator{
+					NewListSeriesIterator(samples{sampleFunc(0, cr), sampleFunc(1, uk)}),
+					NewListSeriesIterator(samples{sampleFunc(2, cr), sampleFunc(3, cr)}),
+				},
+				expected: []chunks.Sample{sampleFunc(0, uk), sampleFunc(1, uk), sampleFunc(2, uk), sampleFunc(3, cr)},
+			},
+			"overlapping but distinct iterators": {
+				input: []chunkenc.Iterator{
+					NewListSeriesIterator(samples{sampleFunc(0, cr), sampleFunc(3, uk), sampleFunc(5, cr)}),
+					NewListSeriesIterator(samples{sampleFunc(1, uk), sampleFunc(2, cr), sampleFunc(4, cr)}),
+				},
+				expected: []chunks.Sample{
+					sampleFunc(0, uk), sampleFunc(1, uk), sampleFunc(2, cr), sampleFunc(3, uk), sampleFunc(4, uk), sampleFunc(5, uk),
+				},
+			},
+			"overlapping iterators": {
+				input: []chunkenc.Iterator{
+					NewListSeriesIterator(samples{sampleFunc(0, cr), sampleFunc(1, cr), sampleFunc(2, cr)}),
+					NewListSeriesIterator(samples{sampleFunc(0, cr), sampleFunc(1, cr), sampleFunc(2, cr)}),
+				},
+				expected: []chunks.Sample{sampleFunc(0, uk), sampleFunc(1, uk), sampleFunc(2, uk)},
+			},
+		} {
+			t.Run(sampleType+"/"+name, func(t *testing.T) {
+				merged := ChainSampleIteratorFromIterators(nil, tc.input)
+				actual, err := ExpandSamples(merged, nil)
+				require.NoError(t, err)
+				require.Equal(t, tc.expected, actual)
+			})
+		}
 	}
 }
 
 func TestChainSampleIteratorSeek(t *testing.T) {
-	for _, tc := range []struct {
-		input    []chunkenc.Iterator
-		seek     int64
-		expected []tsdbutil.Sample
-	}{
-		{
-			input: []chunkenc.Iterator{
-				NewListSeriesIterator(samples{fSample{0, 0}, fSample{1, 1}, fSample{2, 2}}),
-			},
-			seek:     1,
-			expected: []tsdbutil.Sample{fSample{1, 1}, fSample{2, 2}},
-		},
-		{
-			input: []chunkenc.Iterator{
-				NewListSeriesIterator(samples{fSample{0, 0}, fSample{1, 1}}),
-				NewListSeriesIterator(samples{fSample{2, 2}, fSample{3, 3}}),
-			},
-			seek:     2,
-			expected: []tsdbutil.Sample{fSample{2, 2}, fSample{3, 3}},
-		},
-		{
-			input: []chunkenc.Iterator{
-				NewListSeriesIterator(samples{fSample{0, 0}, fSample{3, 3}}),
-				NewListSeriesIterator(samples{fSample{1, 1}, fSample{4, 4}}),
-				NewListSeriesIterator(samples{fSample{2, 2}, fSample{5, 5}}),
-			},
-			seek:     2,
-			expected: []tsdbutil.Sample{fSample{2, 2}, fSample{3, 3}, fSample{4, 4}, fSample{5, 5}},
-		},
-		{
-			input: []chunkenc.Iterator{
-				NewListSeriesIterator(samples{fSample{0, 0}, fSample{2, 2}, fSample{3, 3}}),
-				NewListSeriesIterator(samples{fSample{0, 0}, fSample{1, 1}, fSample{2, 2}}),
-			},
-			seek:     0,
-			expected: []tsdbutil.Sample{fSample{0, 0}, fSample{1, 1}, fSample{2, 2}, fSample{3, 3}},
-		},
+	for sampleType, sampleFunc := range map[string]func(int64) chunks.Sample{
+		"float":           func(ts int64) chunks.Sample { return fSample{ts, float64(ts)} },
+		"histogram":       func(ts int64) chunks.Sample { return histogramSample(ts, uk) },
+		"float histogram": func(ts int64) chunks.Sample { return floatHistogramSample(ts, uk) },
 	} {
-		merged := ChainSampleIteratorFromIterators(nil, tc.input)
-		actual := []tsdbutil.Sample{}
-		if merged.Seek(tc.seek) == chunkenc.ValFloat {
-			t, f := merged.At()
-			actual = append(actual, fSample{t, f})
+		for name, tc := range map[string]struct {
+			input    []chunkenc.Iterator
+			seek     int64
+			expected []chunks.Sample
+		}{
+			"single iterator": {
+				input: []chunkenc.Iterator{
+					NewListSeriesIterator(samples{sampleFunc(0), sampleFunc(1), sampleFunc(2)}),
+				},
+				seek:     1,
+				expected: []chunks.Sample{sampleFunc(1), sampleFunc(2)},
+			},
+			"non overlapping iterators": {
+				input: []chunkenc.Iterator{
+					NewListSeriesIterator(samples{sampleFunc(0), sampleFunc(1)}),
+					NewListSeriesIterator(samples{sampleFunc(2), sampleFunc(3)}),
+				},
+				seek:     2,
+				expected: []chunks.Sample{sampleFunc(2), sampleFunc(3)},
+			},
+			"overlapping but distinct iterators": {
+				input: []chunkenc.Iterator{
+					NewListSeriesIterator(samples{sampleFunc(0), sampleFunc(3)}),
+					NewListSeriesIterator(samples{sampleFunc(1), sampleFunc(4)}),
+					NewListSeriesIterator(samples{sampleFunc(2), sampleFunc(5)}),
+				},
+				seek:     2,
+				expected: []chunks.Sample{sampleFunc(2), sampleFunc(3), sampleFunc(4), sampleFunc(5)},
+			},
+			"overlapping iterators": {
+				input: []chunkenc.Iterator{
+					NewListSeriesIterator(samples{sampleFunc(0), sampleFunc(2), sampleFunc(3)}),
+					NewListSeriesIterator(samples{sampleFunc(0), sampleFunc(1), sampleFunc(2)}),
+				},
+				seek:     0,
+				expected: []chunks.Sample{sampleFunc(0), sampleFunc(1), sampleFunc(2), sampleFunc(3)},
+			},
+		} {
+			t.Run(sampleType+"/"+name, func(t *testing.T) {
+				merged := ChainSampleIteratorFromIterators(nil, tc.input)
+				actual := []chunks.Sample{}
+				switch merged.Seek(tc.seek) {
+				case chunkenc.ValFloat:
+					t, f := merged.At()
+					actual = append(actual, fSample{t, f})
+				case chunkenc.ValHistogram:
+					t, h := merged.AtHistogram()
+					actual = append(actual, hSample{t, h})
+				case chunkenc.ValFloatHistogram:
+					t, fh := merged.AtFloatHistogram()
+					actual = append(actual, fhSample{t, fh})
+				}
+				s, err := ExpandSamples(merged, nil)
+				require.NoError(t, err)
+				actual = append(actual, s...)
+				require.Equal(t, tc.expected, actual)
+			})
 		}
-		s, err := ExpandSamples(merged, nil)
-		require.NoError(t, err)
-		actual = append(actual, s...)
-		require.Equal(t, tc.expected, actual)
+	}
+}
+
+func TestChainSampleIteratorSeekHistogramCounterResetHint(t *testing.T) {
+	for sampleType, sampleFunc := range map[string]func(int64, histogram.CounterResetHint) chunks.Sample{
+		"histogram":       func(ts int64, hint histogram.CounterResetHint) chunks.Sample { return histogramSample(ts, hint) },
+		"float histogram": func(ts int64, hint histogram.CounterResetHint) chunks.Sample { return floatHistogramSample(ts, hint) },
+	} {
+		for name, tc := range map[string]struct {
+			input    []chunkenc.Iterator
+			seek     int64
+			expected []chunks.Sample
+		}{
+			"single iterator": {
+				input: []chunkenc.Iterator{
+					NewListSeriesIterator(samples{sampleFunc(0, cr), sampleFunc(1, cr), sampleFunc(2, uk)}),
+				},
+				seek:     1,
+				expected: []chunks.Sample{sampleFunc(1, uk), sampleFunc(2, uk)},
+			},
+			"non overlapping iterators": {
+				input: []chunkenc.Iterator{
+					NewListSeriesIterator(samples{sampleFunc(0, cr), sampleFunc(1, uk)}),
+					NewListSeriesIterator(samples{sampleFunc(2, cr), sampleFunc(3, cr)}),
+				},
+				seek:     2,
+				expected: []chunks.Sample{sampleFunc(2, uk), sampleFunc(3, cr)},
+			},
+			"non overlapping iterators seek to internal reset": {
+				input: []chunkenc.Iterator{
+					NewListSeriesIterator(samples{sampleFunc(0, cr), sampleFunc(1, uk)}),
+					NewListSeriesIterator(samples{sampleFunc(2, cr), sampleFunc(3, cr)}),
+				},
+				seek:     3,
+				expected: []chunks.Sample{sampleFunc(3, uk)},
+			},
+		} {
+			t.Run(sampleType+"/"+name, func(t *testing.T) {
+				merged := ChainSampleIteratorFromIterators(nil, tc.input)
+				actual := []chunks.Sample{}
+				switch merged.Seek(tc.seek) {
+				case chunkenc.ValFloat:
+					t, f := merged.At()
+					actual = append(actual, fSample{t, f})
+				case chunkenc.ValHistogram:
+					t, h := merged.AtHistogram()
+					actual = append(actual, hSample{t, h})
+				case chunkenc.ValFloatHistogram:
+					t, fh := merged.AtFloatHistogram()
+					actual = append(actual, fhSample{t, fh})
+				}
+				s, err := ExpandSamples(merged, nil)
+				require.NoError(t, err)
+				actual = append(actual, s...)
+				require.Equal(t, tc.expected, actual)
+			})
+		}
 	}
 }
 
@@ -904,7 +1190,7 @@ func makeSeries(numSeries, numSamples int) []Series {
 	series := []Series{}
 	for j := 0; j < numSeries; j++ {
 		labels := labels.FromStrings("foo", fmt.Sprintf("bar%d", j))
-		samples := []tsdbutil.Sample{}
+		samples := []chunks.Sample{}
 		for k := 0; k < numSamples; k++ {
 			samples = append(samples, fSample{t: int64(k), f: float64(k)})
 		}
@@ -972,7 +1258,7 @@ type mockGenericQuerier struct {
 	sortedSeriesRequested []bool
 
 	resp     []string
-	warnings Warnings
+	warnings annotations.Annotations
 	err      error
 }
 
@@ -981,14 +1267,14 @@ type labelNameRequest struct {
 	matchers []*labels.Matcher
 }
 
-func (m *mockGenericQuerier) Select(b bool, _ *SelectHints, _ ...*labels.Matcher) genericSeriesSet {
+func (m *mockGenericQuerier) Select(_ context.Context, b bool, _ *SelectHints, _ ...*labels.Matcher) genericSeriesSet {
 	m.mtx.Lock()
 	m.sortedSeriesRequested = append(m.sortedSeriesRequested, b)
 	m.mtx.Unlock()
 	return &mockGenericSeriesSet{resp: m.resp, warnings: m.warnings, err: m.err}
 }
 
-func (m *mockGenericQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, Warnings, error) {
+func (m *mockGenericQuerier) LabelValues(_ context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	m.mtx.Lock()
 	m.labelNamesRequested = append(m.labelNamesRequested, labelNameRequest{
 		name:     name,
@@ -998,7 +1284,7 @@ func (m *mockGenericQuerier) LabelValues(name string, matchers ...*labels.Matche
 	return m.resp, m.warnings, m.err
 }
 
-func (m *mockGenericQuerier) LabelNames(...*labels.Matcher) ([]string, Warnings, error) {
+func (m *mockGenericQuerier) LabelNames(context.Context, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	m.mtx.Lock()
 	m.labelNamesCalls++
 	m.mtx.Unlock()
@@ -1012,7 +1298,7 @@ func (m *mockGenericQuerier) Close() error {
 
 type mockGenericSeriesSet struct {
 	resp     []string
-	warnings Warnings
+	warnings annotations.Annotations
 	err      error
 
 	curr int
@@ -1029,8 +1315,8 @@ func (m *mockGenericSeriesSet) Next() bool {
 	return true
 }
 
-func (m *mockGenericSeriesSet) Err() error         { return m.err }
-func (m *mockGenericSeriesSet) Warnings() Warnings { return m.warnings }
+func (m *mockGenericSeriesSet) Err() error                        { return m.err }
+func (m *mockGenericSeriesSet) Warnings() annotations.Annotations { return m.warnings }
 
 func (m *mockGenericSeriesSet) At() Labels {
 	return mockLabels(m.resp[m.curr-1])
@@ -1057,6 +1343,7 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 	var (
 		errStorage  = errors.New("storage error")
 		warnStorage = errors.New("storage warning")
+		ctx         = context.Background()
 	)
 	for _, tcase := range []struct {
 		name     string
@@ -1065,10 +1352,9 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 		expectedSelectsSeries []labels.Labels
 		expectedLabels        []string
 
-		expectedWarnings [4]Warnings
+		expectedWarnings annotations.Annotations
 		expectedErrs     [4]error
 	}{
-		{},
 		{
 			name:     "one successful primary querier",
 			queriers: []genericQuerier{&mockGenericQuerier{resp: []string{"a", "b"}, warnings: nil, err: nil}},
@@ -1142,31 +1428,21 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 			expectedSelectsSeries: []labels.Labels{
 				labels.FromStrings("test", "a"),
 			},
-			expectedLabels: []string{"a"},
-			expectedWarnings: [4]Warnings{
-				[]error{errStorage, errStorage},
-				[]error{errStorage, errStorage},
-				[]error{errStorage, errStorage},
-				[]error{errStorage, errStorage},
-			},
+			expectedLabels:   []string{"a"},
+			expectedWarnings: annotations.New().Add(errStorage),
 		},
 		{
 			name: "successful queriers with warnings",
 			queriers: []genericQuerier{
-				&mockGenericQuerier{resp: []string{"a"}, warnings: []error{warnStorage}, err: nil},
-				&secondaryQuerier{genericQuerier: &mockGenericQuerier{resp: []string{"b"}, warnings: []error{warnStorage}, err: nil}},
+				&mockGenericQuerier{resp: []string{"a"}, warnings: annotations.New().Add(warnStorage), err: nil},
+				&secondaryQuerier{genericQuerier: &mockGenericQuerier{resp: []string{"b"}, warnings: annotations.New().Add(warnStorage), err: nil}},
 			},
 			expectedSelectsSeries: []labels.Labels{
 				labels.FromStrings("test", "a"),
 				labels.FromStrings("test", "b"),
 			},
-			expectedLabels: []string{"a", "b"},
-			expectedWarnings: [4]Warnings{
-				[]error{warnStorage, warnStorage},
-				[]error{warnStorage, warnStorage},
-				[]error{warnStorage, warnStorage},
-				[]error{warnStorage, warnStorage},
-			},
+			expectedLabels:   []string{"a", "b"},
+			expectedWarnings: annotations.New().Add(warnStorage),
 		},
 	} {
 		t.Run(tcase.name, func(t *testing.T) {
@@ -1176,12 +1452,12 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 			}
 
 			t.Run("Select", func(t *testing.T) {
-				res := q.Select(false, nil)
+				res := q.Select(context.Background(), false, nil)
 				var lbls []labels.Labels
 				for res.Next() {
 					lbls = append(lbls, res.At().Labels())
 				}
-				require.Equal(t, tcase.expectedWarnings[0], res.Warnings())
+				require.Subset(t, tcase.expectedWarnings, res.Warnings())
 				require.Equal(t, tcase.expectedErrs[0], res.Err())
 				require.True(t, errors.Is(res.Err(), tcase.expectedErrs[0]), "expected error doesn't match")
 				require.Equal(t, tcase.expectedSelectsSeries, lbls)
@@ -1197,8 +1473,8 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 				}
 			})
 			t.Run("LabelNames", func(t *testing.T) {
-				res, w, err := q.LabelNames()
-				require.Equal(t, tcase.expectedWarnings[1], w)
+				res, w, err := q.LabelNames(ctx)
+				require.Subset(t, tcase.expectedWarnings, w)
 				require.True(t, errors.Is(err, tcase.expectedErrs[1]), "expected error doesn't match")
 				require.Equal(t, tcase.expectedLabels, res)
 
@@ -1212,8 +1488,8 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 				}
 			})
 			t.Run("LabelValues", func(t *testing.T) {
-				res, w, err := q.LabelValues("test")
-				require.Equal(t, tcase.expectedWarnings[2], w)
+				res, w, err := q.LabelValues(ctx, "test")
+				require.Subset(t, tcase.expectedWarnings, w)
 				require.True(t, errors.Is(err, tcase.expectedErrs[2]), "expected error doesn't match")
 				require.Equal(t, tcase.expectedLabels, res)
 
@@ -1228,8 +1504,8 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 			})
 			t.Run("LabelValuesWithMatchers", func(t *testing.T) {
 				matcher := labels.MustNewMatcher(labels.MatchEqual, "otherLabel", "someValue")
-				res, w, err := q.LabelValues("test2", matcher)
-				require.Equal(t, tcase.expectedWarnings[3], w)
+				res, w, err := q.LabelValues(ctx, "test2", matcher)
+				require.Subset(t, tcase.expectedWarnings, w)
 				require.True(t, errors.Is(err, tcase.expectedErrs[3]), "expected error doesn't match")
 				require.Equal(t, tcase.expectedLabels, res)
 

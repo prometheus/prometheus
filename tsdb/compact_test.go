@@ -38,7 +38,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
-	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 )
 
@@ -1269,6 +1268,8 @@ func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 
 	for title, bootStrap := range tests {
 		t.Run(title, func(t *testing.T) {
+			ctx := context.Background()
+
 			db := openTestDB(t, nil, []int64{1, 100})
 			defer func() {
 				require.NoError(t, db.Close())
@@ -1292,7 +1293,7 @@ func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 			// Do the compaction and check the metrics.
 			// Compaction should succeed, but the reloadBlocks should fail and
 			// the new block created from the compaction should be deleted.
-			require.Error(t, db.Compact())
+			require.Error(t, db.Compact(ctx))
 			require.Equal(t, 1.0, prom_testutil.ToFloat64(db.metrics.reloadsFailed), "'failed db reloadBlocks' count metrics mismatch")
 			require.Equal(t, 1.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.Ran), "`compaction` count metric mismatch")
 			require.Equal(t, 1.0, prom_testutil.ToFloat64(db.metrics.compactionsFailed), "`compactions failed` count metric mismatch")
@@ -1316,7 +1317,7 @@ func TestHeadCompactionWithHistograms(t *testing.T) {
 			minute := func(m int) int64 { return int64(m) * time.Minute.Milliseconds() }
 			ctx := context.Background()
 			appendHistogram := func(
-				lbls labels.Labels, from, to int, h *histogram.Histogram, exp *[]tsdbutil.Sample,
+				lbls labels.Labels, from, to int, h *histogram.Histogram, exp *[]chunks.Sample,
 			) {
 				t.Helper()
 				app := head.Appender(ctx)
@@ -1345,7 +1346,7 @@ func TestHeadCompactionWithHistograms(t *testing.T) {
 				}
 				require.NoError(t, app.Commit())
 			}
-			appendFloat := func(lbls labels.Labels, from, to int, exp *[]tsdbutil.Sample) {
+			appendFloat := func(lbls labels.Labels, from, to int, exp *[]chunks.Sample) {
 				t.Helper()
 				app := head.Appender(ctx)
 				for tsMinute := from; tsMinute <= to; tsMinute++ {
@@ -1361,10 +1362,10 @@ func TestHeadCompactionWithHistograms(t *testing.T) {
 				series2                = labels.FromStrings("foo", "bar2")
 				series3                = labels.FromStrings("foo", "bar3")
 				series4                = labels.FromStrings("foo", "bar4")
-				exp1, exp2, exp3, exp4 []tsdbutil.Sample
+				exp1, exp2, exp3, exp4 []chunks.Sample
 			)
 			h := &histogram.Histogram{
-				Count:         11,
+				Count:         15,
 				ZeroCount:     4,
 				ZeroThreshold: 0.001,
 				Sum:           35.5,
@@ -1419,7 +1420,7 @@ func TestHeadCompactionWithHistograms(t *testing.T) {
 			require.NoError(t, err)
 
 			actHists := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
-			require.Equal(t, map[string][]tsdbutil.Sample{
+			require.Equal(t, map[string][]chunks.Sample{
 				series1.String(): exp1,
 				series2.String(): exp2,
 				series3.String(): exp3,

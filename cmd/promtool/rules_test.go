@@ -124,10 +124,10 @@ func TestBackfillRuleIntegration(t *testing.T) {
 				blocks := db.Blocks()
 				require.Equal(t, (i+1)*tt.expectedBlockCount, len(blocks))
 
-				q, err := db.Querier(context.Background(), math.MinInt64, math.MaxInt64)
+				q, err := db.Querier(math.MinInt64, math.MaxInt64)
 				require.NoError(t, err)
 
-				selectedSeries := q.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
+				selectedSeries := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
 				var seriesCount, samplesCount int
 				for selectedSeries.Next() {
 					seriesCount++
@@ -248,11 +248,11 @@ func TestBackfillLabels(t *testing.T) {
 	db, err := tsdb.Open(tmpDir, nil, nil, opts, nil)
 	require.NoError(t, err)
 
-	q, err := db.Querier(context.Background(), math.MinInt64, math.MaxInt64)
+	q, err := db.Querier(math.MinInt64, math.MaxInt64)
 	require.NoError(t, err)
 
 	t.Run("correct-labels", func(t *testing.T) {
-		selectedSeries := q.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
+		selectedSeries := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
 		for selectedSeries.Next() {
 			series := selectedSeries.At()
 			expectedLabels := labels.FromStrings("__name__", "rulename", "name1", "value-from-rule")

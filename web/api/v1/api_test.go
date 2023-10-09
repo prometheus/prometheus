@@ -404,7 +404,7 @@ func TestEndpoints(t *testing.T) {
 		testEndpoints(t, api, testTargetRetriever, storage, true)
 	})
 
-	// Run all the API tests against a API that is wired to forward queries via
+	// Run all the API tests against an API that is wired to forward queries via
 	// the remote read client to a test server, which in turn sends them to the
 	// data from the test storage.
 	t.Run("remote", func(t *testing.T) {
@@ -993,14 +993,14 @@ func setupRemote(s storage.Storage) *httptest.Server {
 				}
 			}
 
-			querier, err := s.Querier(r.Context(), query.StartTimestampMs, query.EndTimestampMs)
+			querier, err := s.Querier(query.StartTimestampMs, query.EndTimestampMs)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
 			defer querier.Close()
 
-			set := querier.Select(false, hints, matchers...)
+			set := querier.Select(r.Context(), false, hints, matchers...)
 			resp.Results[i], _, err = remote.ToQueryResult(set, 1e6)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -2767,9 +2767,9 @@ type fakeDB struct {
 	err error
 }
 
-func (f *fakeDB) CleanTombstones() error                        { return f.err }
-func (f *fakeDB) Delete(int64, int64, ...*labels.Matcher) error { return f.err }
-func (f *fakeDB) Snapshot(string, bool) error                   { return f.err }
+func (f *fakeDB) CleanTombstones() error                                         { return f.err }
+func (f *fakeDB) Delete(context.Context, int64, int64, ...*labels.Matcher) error { return f.err }
+func (f *fakeDB) Snapshot(string, bool) error                                    { return f.err }
 func (f *fakeDB) Stats(statsByLabelName string, limit int) (_ *tsdb.Stats, retErr error) {
 	dbDir, err := os.MkdirTemp("", "tsdb-api-ready")
 	if err != nil {
@@ -2985,7 +2985,7 @@ func TestRespondSuccess(t *testing.T) {
 	api.InstallCodec(&testCodec{contentType: MIMEType{"test", "can-encode-2"}, canEncode: true})
 
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		api.respond(w, r, "test", nil)
+		api.respond(w, r, "test", nil, "")
 	}))
 	defer s.Close()
 
@@ -3074,7 +3074,7 @@ func TestRespondSuccess_DefaultCodecCannotEncodeResponse(t *testing.T) {
 	api.InstallCodec(&testCodec{contentType: MIMEType{"application", "default-format"}, canEncode: false})
 
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		api.respond(w, r, "test", nil)
+		api.respond(w, r, "test", nil, "")
 	}))
 	defer s.Close()
 
@@ -3473,7 +3473,7 @@ func BenchmarkRespond(b *testing.B) {
 			api := API{}
 			api.InstallCodec(JSONCodec{})
 			for n := 0; n < b.N; n++ {
-				api.respond(&testResponseWriter, request, c.response, nil)
+				api.respond(&testResponseWriter, request, c.response, nil, "")
 			}
 		})
 	}
@@ -3659,4 +3659,108 @@ func TestExtractQueryOpts(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Test query timeout parameter.
+func TestQueryTimeout(t *testing.T) {
+	storage := promql.LoadedStorage(t, `
+		load 1m
+			test_metric1{foo="bar"} 0+100x100
+	`)
+	t.Cleanup(func() {
+		_ = storage.Close()
+	})
+
+	now := time.Now()
+
+	for _, tc := range []struct {
+		name   string
+		method string
+	}{
+		{
+			name:   "GET method",
+			method: http.MethodGet,
+		},
+		{
+			name:   "POST method",
+			method: http.MethodPost,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			engine := &fakeEngine{}
+			api := &API{
+				Queryable:             storage,
+				QueryEngine:           engine,
+				ExemplarQueryable:     storage.ExemplarQueryable(),
+				alertmanagerRetriever: testAlertmanagerRetriever{}.toFactory(),
+				flagsMap:              sampleFlagMap,
+				now:                   func() time.Time { return now },
+				config:                func() config.Config { return samplePrometheusCfg },
+				ready:                 func(f http.HandlerFunc) http.HandlerFunc { return f },
+			}
+
+			query := url.Values{
+				"query":   []string{"2"},
+				"timeout": []string{"1s"},
+			}
+			ctx := context.Background()
+			req, err := http.NewRequest(tc.method, fmt.Sprintf("http://example.com?%s", query.Encode()), nil)
+			require.NoError(t, err)
+			req.RemoteAddr = "127.0.0.1:20201"
+
+			res := api.query(req.WithContext(ctx))
+			assertAPIError(t, res.err, errorNone)
+
+			require.Len(t, engine.query.execCalls, 1)
+			deadline, ok := engine.query.execCalls[0].Deadline()
+			require.True(t, ok)
+			require.Equal(t, now.Add(time.Second), deadline)
+		})
+	}
+}
+
+// fakeEngine is a fake QueryEngine implementation.
+type fakeEngine struct {
+	query fakeQuery
+}
+
+func (e *fakeEngine) SetQueryLogger(promql.QueryLogger) {}
+
+func (e *fakeEngine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
+	return &e.query, nil
+}
+
+func (e *fakeEngine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error) {
+	return &e.query, nil
+}
+
+// fakeQuery is a fake Query implementation.
+type fakeQuery struct {
+	query     string
+	execCalls []context.Context
+}
+
+func (q *fakeQuery) Exec(ctx context.Context) *promql.Result {
+	q.execCalls = append(q.execCalls, ctx)
+	return &promql.Result{
+		Value: &parser.StringLiteral{
+			Val: "test",
+		},
+	}
+}
+
+func (q *fakeQuery) Close() {}
+
+func (q *fakeQuery) Statement() parser.Statement {
+	return nil
+}
+
+func (q *fakeQuery) Stats() *stats.Statistics {
+	return nil
+}
+
+func (q *fakeQuery) Cancel() {}
+
+func (q *fakeQuery) String() string {
+	return q.query
 }

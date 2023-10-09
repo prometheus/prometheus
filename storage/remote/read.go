@@ -20,6 +20,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 )
 
 type sampleAndChunkQueryableClient struct {
@@ -48,9 +49,8 @@ func NewSampleAndChunkQueryableClient(
 	}
 }
 
-func (c *sampleAndChunkQueryableClient) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+func (c *sampleAndChunkQueryableClient) Querier(mint, maxt int64) (storage.Querier, error) {
 	q := &querier{
-		ctx:              ctx,
 		mint:             mint,
 		maxt:             maxt,
 		client:           c.client,
@@ -75,10 +75,9 @@ func (c *sampleAndChunkQueryableClient) Querier(ctx context.Context, mint, maxt 
 	return q, nil
 }
 
-func (c *sampleAndChunkQueryableClient) ChunkQuerier(ctx context.Context, mint, maxt int64) (storage.ChunkQuerier, error) {
+func (c *sampleAndChunkQueryableClient) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
 	cq := &chunkQuerier{
 		querier: querier{
-			ctx:              ctx,
 			mint:             mint,
 			maxt:             maxt,
 			client:           c.client,
@@ -125,7 +124,6 @@ func (c *sampleAndChunkQueryableClient) preferLocalStorage(mint, maxt int64) (cm
 }
 
 type querier struct {
-	ctx        context.Context
 	mint, maxt int64
 	client     ReadClient
 
@@ -140,7 +138,7 @@ type querier struct {
 //
 // If requiredMatchers are given, select returns a NoopSeriesSet if the given matchers don't match the label set of the
 // requiredMatchers. Otherwise it'll just call remote endpoint.
-func (q *querier) Select(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+func (q *querier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	if len(q.requiredMatchers) > 0 {
 		// Copy to not modify slice configured by user.
 		requiredMatchers := append([]*labels.Matcher{}, q.requiredMatchers...)
@@ -167,7 +165,7 @@ func (q *querier) Select(sortSeries bool, hints *storage.SelectHints, matchers .
 		return storage.ErrSeriesSet(fmt.Errorf("toQuery: %w", err))
 	}
 
-	res, err := q.client.Read(q.ctx, query)
+	res, err := q.client.Read(ctx, query)
 	if err != nil {
 		return storage.ErrSeriesSet(fmt.Errorf("remote_read: %w", err))
 	}
@@ -212,13 +210,13 @@ func (q querier) addExternalLabels(ms []*labels.Matcher) ([]*labels.Matcher, []s
 }
 
 // LabelValues implements storage.Querier and is a noop.
-func (q *querier) LabelValues(string, ...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (q *querier) LabelValues(context.Context, string, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	// TODO: Implement: https://github.com/prometheus/prometheus/issues/3351
 	return nil, nil, errors.New("not implemented")
 }
 
 // LabelNames implements storage.Querier and is a noop.
-func (q *querier) LabelNames(...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (q *querier) LabelNames(context.Context, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	// TODO: Implement: https://github.com/prometheus/prometheus/issues/3351
 	return nil, nil, errors.New("not implemented")
 }
@@ -235,9 +233,9 @@ type chunkQuerier struct {
 
 // Select implements storage.ChunkQuerier and uses the given matchers to read chunk series sets from the client.
 // It uses remote.querier.Select so it supports external labels and required matchers if specified.
-func (q *chunkQuerier) Select(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.ChunkSeriesSet {
+func (q *chunkQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.ChunkSeriesSet {
 	// TODO(bwplotka) Support remote read chunked and allow returning chunks directly (TODO ticket).
-	return storage.NewSeriesSetToChunkSet(q.querier.Select(sortSeries, hints, matchers...))
+	return storage.NewSeriesSetToChunkSet(q.querier.Select(ctx, sortSeries, hints, matchers...))
 }
 
 // Note strings in toFilter must be sorted.

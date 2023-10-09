@@ -1,5 +1,31 @@
 # Changelog
 
+## 2.47.1 / 2023-10-04
+
+* [BUGFIX] Fix duplicate sample detection at chunk size limit #12874
+
+## 2.47.0 / 2023-09-06
+
+This release adds an experimental OpenTelemetry (OTLP) Ingestion feature,
+and also new setting `keep_dropped_targets` to limit the amount of dropped
+targets held in memory. This defaults to 0 meaning 'no limit', so we encourage
+users with large Prometheus to try setting a limit such as 100.
+
+* [FEATURE] Web: Add OpenTelemetry (OTLP) Ingestion endpoint. #12571 #12643
+* [FEATURE] Scraping: Optionally limit detail on dropped targets, to save memory. #12647
+* [ENHANCEMENT] TSDB: Write head chunks to disk in the background to reduce blocking. #11818
+* [ENHANCEMENT] PromQL: Speed up aggregate and function queries. #12682
+* [ENHANCEMENT] PromQL: More efficient evaluation of query with `timestamp()`. #12579
+* [ENHANCEMENT] API: Faster streaming of Labels to JSON. #12598
+* [ENHANCEMENT] Agent: Memory pooling optimisation. #12651
+* [ENHANCEMENT] TSDB: Prevent storage space leaks due to terminated snapshots on shutdown. #12664
+* [ENHANCEMENT] Histograms: Refactoring and optimisations. #12352 #12584 #12596 #12711 #12054
+* [ENHANCEMENT] Histograms: Add `histogram_stdvar` and `histogram_stddev` functions. #12614
+* [ENHANCEMENT] Remote-write: add http.resend_count tracing attribute. #12676
+* [ENHANCEMENT] TSDB: Support native histograms in snapshot on shutdown. #12722
+* [BUGFIX] TSDB/Agent: ensure that new series get written to WAL on rollback. #12592
+* [BUGFIX] Scraping: fix infinite loop on exemplar in protobuf format. #12737
+
 ## 2.46.0 / 2023-07-25
 
 * [FEATURE] Promtool: Add PromQL format and label matcher set/delete commands to promtool. #11411

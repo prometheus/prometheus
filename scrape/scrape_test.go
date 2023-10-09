@@ -1985,13 +1985,14 @@ func TestScrapeLoopAppendNoStalenessIfTimestamp(t *testing.T) {
 
 func TestScrapeLoopAppendExemplar(t *testing.T) {
 	tests := []struct {
-		title           string
-		scrapeText      string
-		contentType     string
-		discoveryLabels []string
-		floats          []floatSample
-		histograms      []histogramSample
-		exemplars       []exemplar.Exemplar
+		title                   string
+		scrapeClassicHistograms bool
+		scrapeText              string
+		contentType             string
+		discoveryLabels         []string
+		floats                  []floatSample
+		histograms              []histogramSample
+		exemplars               []exemplar.Exemplar
 	}{
 		{
 			title:           "Metric without exemplars",
@@ -2145,6 +2146,115 @@ metric: <
 				{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.00029, Ts: 1234568, HasTs: false},
 			},
 		},
+		{
+			title: "Native histogram with two exemplars scraped as classic histogram",
+			scrapeText: `name: "test_histogram"
+help: "Test histogram with many buckets removed to keep it manageable in size."
+type: HISTOGRAM
+metric: <
+  histogram: <
+    sample_count: 175
+    sample_sum: 0.0008280461746287094
+    bucket: <
+      cumulative_count: 2
+      upper_bound: -0.0004899999999999998
+    >
+    bucket: <
+      cumulative_count: 4
+      upper_bound: -0.0003899999999999998
+      exemplar: <
+        label: <
+          name: "dummyID"
+          value: "59727"
+        >
+        value: -0.00039
+        timestamp: <
+          seconds: 1625851155
+          nanos: 146848499
+        >
+      >
+    >
+    bucket: <
+      cumulative_count: 16
+      upper_bound: -0.0002899999999999998
+      exemplar: <
+        label: <
+          name: "dummyID"
+          value: "5617"
+        >
+        value: -0.00029
+      >
+    >
+    schema: 3
+    zero_threshold: 2.938735877055719e-39
+    zero_count: 2
+    negative_span: <
+      offset: -162
+      length: 1
+    >
+    negative_span: <
+      offset: 23
+      length: 4
+    >
+    negative_delta: 1
+    negative_delta: 3
+    negative_delta: -2
+    negative_delta: -1
+    negative_delta: 1
+    positive_span: <
+      offset: -161
+      length: 1
+    >
+    positive_span: <
+      offset: 8
+      length: 3
+    >
+    positive_delta: 1
+    positive_delta: 2
+    positive_delta: -1
+    positive_delta: -1
+  >
+  timestamp_ms: 1234568
+>
+
+`,
+			scrapeClassicHistograms: true,
+			contentType:             "application/vnd.google.protobuf",
+			floats: []floatSample{
+				{metric: labels.FromStrings("__name__", "test_histogram_count"), t: 1234568, f: 175},
+				{metric: labels.FromStrings("__name__", "test_histogram_sum"), t: 1234568, f: 0.0008280461746287094},
+				{metric: labels.FromStrings("__name__", "test_histogram_bucket", "le", "-0.0004899999999999998"), t: 1234568, f: 2},
+				{metric: labels.FromStrings("__name__", "test_histogram_bucket", "le", "-0.0003899999999999998"), t: 1234568, f: 4},
+				{metric: labels.FromStrings("__name__", "test_histogram_bucket", "le", "-0.0002899999999999998"), t: 1234568, f: 16},
+				{metric: labels.FromStrings("__name__", "test_histogram_bucket", "le", "+Inf"), t: 1234568, f: 175},
+			},
+			histograms: []histogramSample{{
+				t: 1234568,
+				h: &histogram.Histogram{
+					Count:         175,
+					ZeroCount:     2,
+					Sum:           0.0008280461746287094,
+					ZeroThreshold: 2.938735877055719e-39,
+					Schema:        3,
+					PositiveSpans: []histogram.Span{
+						{Offset: -161, Length: 1},
+						{Offset: 8, Length: 3},
+					},
+					NegativeSpans: []histogram.Span{
+						{Offset: -162, Length: 1},
+						{Offset: 23, Length: 4},
+					},
+					PositiveBuckets: []int64{1, 2, -1, -1},
+					NegativeBuckets: []int64{1, 3, -2, -1, 1},
+				},
+			}},
+			exemplars: []exemplar.Exemplar{
+				{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00039, Ts: 1625851155146, HasTs: true},
+				{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.00029, Ts: 1234568, HasTs: false},
+				{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00039, Ts: 1625851155146, HasTs: true},
+				{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.00029, Ts: 1234568, HasTs: false},
+			},
+		},
 	}
 
 	for _, test := range tests {
@@ -2171,7 +2281,7 @@ metric: <
 				nil,
 				0,
 				0,
-				false,
+				test.scrapeClassicHistograms,
 				false,
 				false,
 				nil,
@@ -2181,6 +2291,9 @@ metric: <
 			now := time.Now()
 
 			for i := range test.floats {
+				if test.floats[i].t != 0 {
+					continue
+				}
 				test.floats[i].t = timestamp.FromTime(now)
 			}
 
@@ -2812,9 +2925,9 @@ func TestScrapeLoopDiscardDuplicateLabels(t *testing.T) {
 	require.Error(t, err)
 	require.NoError(t, slApp.Rollback())
 
-	q, err := s.Querier(ctx, time.Time{}.UnixNano(), 0)
+	q, err := s.Querier(time.Time{}.UnixNano(), 0)
 	require.NoError(t, err)
-	series := q.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
+	series := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
 	require.Equal(t, false, series.Next(), "series found in tsdb")
 	require.NoError(t, series.Err())
 
@@ -2824,9 +2937,9 @@ func TestScrapeLoopDiscardDuplicateLabels(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, slApp.Commit())
 
-	q, err = s.Querier(ctx, time.Time{}.UnixNano(), 0)
+	q, err = s.Querier(time.Time{}.UnixNano(), 0)
 	require.NoError(t, err)
-	series = q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "le", "500"))
+	series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchEqual, "le", "500"))
 	require.Equal(t, true, series.Next(), "series not found in tsdb")
 	require.NoError(t, series.Err())
 	require.Equal(t, false, series.Next(), "more than one series found in tsdb")
@@ -2871,9 +2984,9 @@ func TestScrapeLoopDiscardUnnamedMetrics(t *testing.T) {
 	require.NoError(t, slApp.Rollback())
 	require.Equal(t, errNameLabelMandatory, err)
 
-	q, err := s.Querier(ctx, time.Time{}.UnixNano(), 0)
+	q, err := s.Querier(time.Time{}.UnixNano(), 0)
 	require.NoError(t, err)
-	series := q.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
+	series := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
 	require.Equal(t, false, series.Next(), "series found in tsdb")
 	require.NoError(t, series.Err())
 }
@@ -3233,9 +3346,9 @@ func TestScrapeReportSingleAppender(t *testing.T) {
 
 	start := time.Now()
 	for time.Since(start) < 3*time.Second {
-		q, err := s.Querier(ctx, time.Time{}.UnixNano(), time.Now().UnixNano())
+		q, err := s.Querier(time.Time{}.UnixNano(), time.Now().UnixNano())
 		require.NoError(t, err)
-		series := q.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".+"))
+		series := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".+"))
 
 		c := 0
 		for series.Next() {
@@ -3305,10 +3418,10 @@ func TestScrapeReportLimit(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	q, err := s.Querier(ctx, time.Time{}.UnixNano(), time.Now().UnixNano())
+	q, err := s.Querier(time.Time{}.UnixNano(), time.Now().UnixNano())
 	require.NoError(t, err)
 	defer q.Close()
-	series := q.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "up"))
+	series := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "up"))
 
 	var found bool
 	for series.Next() {

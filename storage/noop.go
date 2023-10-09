@@ -14,7 +14,10 @@
 package storage
 
 import (
+	"context"
+
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/util/annotations"
 )
 
 type noopQuerier struct{}
@@ -24,15 +27,15 @@ func NoopQuerier() Querier {
 	return noopQuerier{}
 }
 
-func (noopQuerier) Select(bool, *SelectHints, ...*labels.Matcher) SeriesSet {
+func (noopQuerier) Select(context.Context, bool, *SelectHints, ...*labels.Matcher) SeriesSet {
 	return NoopSeriesSet()
 }
 
-func (noopQuerier) LabelValues(string, ...*labels.Matcher) ([]string, Warnings, error) {
+func (noopQuerier) LabelValues(context.Context, string, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }
 
-func (noopQuerier) LabelNames(...*labels.Matcher) ([]string, Warnings, error) {
+func (noopQuerier) LabelNames(context.Context, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }
 
@@ -47,15 +50,15 @@ func NoopChunkedQuerier() ChunkQuerier {
 	return noopChunkQuerier{}
 }
 
-func (noopChunkQuerier) Select(bool, *SelectHints, ...*labels.Matcher) ChunkSeriesSet {
+func (noopChunkQuerier) Select(context.Context, bool, *SelectHints, ...*labels.Matcher) ChunkSeriesSet {
 	return NoopChunkedSeriesSet()
 }
 
-func (noopChunkQuerier) LabelValues(string, ...*labels.Matcher) ([]string, Warnings, error) {
+func (noopChunkQuerier) LabelValues(context.Context, string, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }
 
-func (noopChunkQuerier) LabelNames(...*labels.Matcher) ([]string, Warnings, error) {
+func (noopChunkQuerier) LabelNames(context.Context, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }
 
@@ -76,7 +79,7 @@ func (noopSeriesSet) At() Series { return nil }
 
 func (noopSeriesSet) Err() error { return nil }
 
-func (noopSeriesSet) Warnings() Warnings { return nil }
+func (noopSeriesSet) Warnings() annotations.Annotations { return nil }
 
 type noopChunkedSeriesSet struct{}
 
@@ -91,4 +94,4 @@ func (noopChunkedSeriesSet) At() ChunkSeries { return nil }
 
 func (noopChunkedSeriesSet) Err() error { return nil }
 
-func (noopChunkedSeriesSet) Warnings() Warnings { return nil }
+func (noopChunkedSeriesSet) Warnings() annotations.Annotations { return nil }

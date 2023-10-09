@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/common/model"
 	"gopkg.in/yaml.v2"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -240,7 +241,7 @@ func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]i
 				g.Eval(suite.Context(), ts)
 				for _, r := range g.Rules() {
 					if r.LastError() != nil {
-						evalErrs = append(evalErrs, fmt.Errorf("    rule: %s, time: %s, err: %v",
+						evalErrs = append(evalErrs, fmt.Errorf("    rule: %s, time: %s, err: %w",
 							r.Name(), ts.Sub(time.Unix(0, 0).UTC()), r.LastError()))
 					}
 				}
@@ -346,14 +347,29 @@ Outer:
 		var gotSamples []parsedSample
 		for _, s := range got {
 			gotSamples = append(gotSamples, parsedSample{
-				Labels: s.Metric.Copy(),
-				Value:  s.F,
+				Labels:    s.Metric.Copy(),
+				Value:     s.F,
+				Histogram: promql.HistogramTestExpression(s.H),
 			})
 		}
 
 		var expSamples []parsedSample
 		for _, s := range testCase.ExpSamples {
 			lb, err := parser.ParseMetric(s.Labels)
+			var hist *histogram.FloatHistogram
+			if err == nil && s.Histogram != "" {
+				_, values, parseErr := parser.ParseSeriesDesc("{} " + s.Histogram)
+				switch {
+				case parseErr != nil:
+					err = parseErr
+				case len(values) != 1:
+					err = fmt.Errorf("expected 1 value, got %d", len(values))
+				case values[0].Histogram == nil:
+					err = fmt.Errorf("expected histogram, got %v", values[0])
+				default:
+					hist = values[0].Histogram
+				}
+			}
 			if err != nil {
 				err = fmt.Errorf("labels %q: %w", s.Labels, err)
 				errs = append(errs, fmt.Errorf("    expr: %q, time: %s, err: %w", testCase.Expr,
@@ -361,8 +377,9 @@ Outer:
 				continue Outer
 			}
 			expSamples = append(expSamples, parsedSample{
-				Labels: lb,
-				Value:  s.Value,
+				Labels:    lb,
+				Value:     s.Value,
+				Histogram: promql.HistogramTestExpression(hist),
 			})
 		}
 
@@ -530,14 +547,16 @@ type promqlTestCase struct {
 }
 
 type sample struct {
-	Labels string  `yaml:"labels"`
-	Value  float64 `yaml:"value"`
+	Labels    string  `yaml:"labels"`
+	Value     float64 `yaml:"value"`
+	Histogram string  `yaml:"histogram"` // A non-empty string means Value is ignored.
 }
 
 // parsedSample is a sample with parsed Labels.
 type parsedSample struct {
-	Labels labels.Labels
-	Value  float64
+	Labels    labels.Labels
+	Value     float64
+	Histogram string // TestExpression() of histogram.FloatHistogram
 }
 
 func parsedSamplesString(pss []parsedSample) string {
@@ -552,5 +571,8 @@ func parsedSamplesString(pss []parsedSample) string {
 }
 
 func (ps *parsedSample) String() string {
+	if ps.Histogram != "" {
+		return ps.Labels.String() + " " + ps.Histogram
+	}
 	return ps.Labels.String() + " " + strconv.FormatFloat(ps.Value, 'E', -1, 64)
 }

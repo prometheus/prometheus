@@ -253,6 +253,11 @@ func (a *HistogramAppender) appendable(h *histogram.Histogram) (
 	if a.NumSamples() > 0 && a.GetCounterResetHeader() == GaugeType {
 		return
 	}
+	if h.CounterResetHint == histogram.CounterReset {
+		// Always honor the explicit counter reset hint.
+		counterReset = true
+		return
+	}
 	if value.IsStaleNaN(h.Sum) {
 		// This is a stale sample whose buckets and spans don't matter.
 		okToAppend = true
@@ -354,11 +359,16 @@ func counterResetInAnyBucket(oldBuckets, newBuckets []int64, oldSpans, newSpans 
 		return false
 	}
 
-	oldSpanSliceIdx, newSpanSliceIdx := 0, 0                   // Index for the span slices.
-	oldInsideSpanIdx, newInsideSpanIdx := uint32(0), uint32(0) // Index inside a span.
-	oldIdx, newIdx := oldSpans[0].Offset, newSpans[0].Offset
+	var (
+		oldSpanSliceIdx, newSpanSliceIdx     int    = -1, -1 // Index for the span slices. Starts at -1 to indicate that the first non empty span is not yet found.
+		oldInsideSpanIdx, newInsideSpanIdx   uint32          // Index inside a span.
+		oldIdx, newIdx                       int32           // Index inside a bucket slice.
+		oldBucketSliceIdx, newBucketSliceIdx int             // Index inside bucket slice.
+	)
 
-	oldBucketSliceIdx, newBucketSliceIdx := 0, 0 // Index inside bucket slice.
+	// Find first non empty spans.
+	oldSpanSliceIdx, oldIdx = nextNonEmptySpanSliceIdx(oldSpanSliceIdx, oldIdx, oldSpans)
+	newSpanSliceIdx, newIdx = nextNonEmptySpanSliceIdx(newSpanSliceIdx, newIdx, newSpans)
 	oldVal, newVal := oldBuckets[0], newBuckets[0]
 
 	// Since we assume that new spans won't have missing buckets, there will never be a case
@@ -374,13 +384,12 @@ func counterResetInAnyBucket(oldBuckets, newBuckets []int64, oldSpans, newSpans 
 			// Moving ahead old bucket and span by 1 index.
 			if oldInsideSpanIdx+1 >= oldSpans[oldSpanSliceIdx].Length {
 				// Current span is over.
-				oldSpanSliceIdx = nextNonEmptySpanSliceIdx(oldSpanSliceIdx, oldSpans)
+				oldSpanSliceIdx, oldIdx = nextNonEmptySpanSliceIdx(oldSpanSliceIdx, oldIdx, oldSpans)
 				oldInsideSpanIdx = 0
 				if oldSpanSliceIdx >= len(oldSpans) {
 					// All old spans are over.
 					break
 				}
-				oldIdx += 1 + oldSpans[oldSpanSliceIdx].Offset
 			} else {
 				oldInsideSpanIdx++
 				oldIdx++
@@ -393,14 +402,13 @@ func counterResetInAnyBucket(oldBuckets, newBuckets []int64, oldSpans, newSpans 
 			// Moving ahead new bucket and span by 1 index.
 			if newInsideSpanIdx+1 >= newSpans[newSpanSliceIdx].Length {
 				// Current span is over.
-				newSpanSliceIdx = nextNonEmptySpanSliceIdx(newSpanSliceIdx, newSpans)
+				newSpanSliceIdx, newIdx = nextNonEmptySpanSliceIdx(newSpanSliceIdx, newIdx, newSpans)
 				newInsideSpanIdx = 0
 				if newSpanSliceIdx >= len(newSpans) {
 					// All new spans are over.
 					// This should not happen, old spans above should catch this first.
 					panic("new spans over before old spans in counterReset")
 				}
-				newIdx += 1 + newSpans[newSpanSliceIdx].Offset
 			} else {
 				newInsideSpanIdx++
 				newIdx++
@@ -611,7 +619,11 @@ func (a *HistogramAppender) AppendHistogram(prev *HistogramAppender, t int64, h 
 			return nil, false, a, nil
 		}
 
-		if prev != nil && h.CounterResetHint != histogram.CounterReset {
+		switch {
+		case h.CounterResetHint == histogram.CounterReset:
+			// Always honor the explicit counter reset hint.
+			a.setCounterResetHeader(CounterReset)
+		case prev != nil:
 			// This is a new chunk, but continued from a previous one. We need to calculate the reset header unless already set.
 			_, _, _, counterReset := prev.appendable(h)
 			if counterReset {
@@ -619,9 +631,6 @@ func (a *HistogramAppender) AppendHistogram(prev *HistogramAppender, t int64, h 
 			} else {
 				a.setCounterResetHeader(NotCounterReset)
 			}
-		} else {
-			// Honor the explicit counter reset hint.
-			a.setCounterResetHeader(CounterResetHeader(h.CounterResetHint))
 		}
 		return nil, false, a, nil
 	}

@@ -26,6 +26,46 @@ type floatResult struct {
 	h *histogram.FloatHistogram
 }
 
+func TestFirstFloatHistogramExplicitCounterReset(t *testing.T) {
+	tests := map[string]struct {
+		hint      histogram.CounterResetHint
+		expHeader CounterResetHeader
+	}{
+		"CounterReset": {
+			hint:      histogram.CounterReset,
+			expHeader: CounterReset,
+		},
+		"NotCounterReset": {
+			hint:      histogram.NotCounterReset,
+			expHeader: UnknownCounterReset,
+		},
+		"UnknownCounterReset": {
+			hint:      histogram.UnknownCounterReset,
+			expHeader: UnknownCounterReset,
+		},
+		"Gauge": {
+			hint:      histogram.GaugeType,
+			expHeader: GaugeType,
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			h := &histogram.FloatHistogram{
+				CounterResetHint: test.hint,
+			}
+			chk := NewFloatHistogramChunk()
+			app, err := chk.Appender()
+			require.NoError(t, err)
+			newChk, recoded, newApp, err := app.AppendFloatHistogram(nil, 0, h, false)
+			require.NoError(t, err)
+			require.Nil(t, newChk)
+			require.False(t, recoded)
+			require.Equal(t, app, newApp)
+			require.Equal(t, test.expHeader, chk.GetCounterResetHeader())
+		})
+	}
+}
+
 func TestFloatHistogramChunkSameBuckets(t *testing.T) {
 	c := NewFloatHistogramChunk()
 	var exp []floatResult
@@ -399,6 +439,73 @@ func TestFloatHistogramChunkAppendable(t *testing.T) {
 
 		assertNewFloatHistogramChunkOnAppend(t, c, hApp, ts+1, h2, CounterReset)
 	}
+
+	{ // New histogram that has an explicit counter reset.
+		c, hApp, ts, h1 := setup()
+		h2 := h1.Copy()
+		h2.CounterResetHint = histogram.CounterReset
+
+		assertNewFloatHistogramChunkOnAppend(t, c, hApp, ts+1, h2, CounterReset)
+	}
+
+	{ // Start new chunk explicitly, and append a new histogram that is considered appendable to the previous chunk.
+		_, hApp, ts, h1 := setup()
+		h2 := h1.Copy() // Identity is appendable.
+
+		nextChunk := NewFloatHistogramChunk()
+		app, err := nextChunk.Appender()
+		require.NoError(t, err)
+		newChunk, recoded, newApp, err := app.AppendFloatHistogram(hApp, ts+1, h2, false)
+		require.NoError(t, err)
+		require.Nil(t, newChunk)
+		require.False(t, recoded)
+		require.Equal(t, app, newApp)
+		assertSampleCount(t, nextChunk, 1, ValFloatHistogram)
+		require.Equal(t, NotCounterReset, nextChunk.GetCounterResetHeader())
+	}
+
+	{ // Start new chunk explicitly, and append a new histogram that is not considered appendable to the previous chunk.
+		_, hApp, ts, h1 := setup()
+		h2 := h1.Copy()
+		h2.Count-- // Make this not appendable due to counter reset.
+
+		nextChunk := NewFloatHistogramChunk()
+		app, err := nextChunk.Appender()
+		require.NoError(t, err)
+		newChunk, recoded, newApp, err := app.AppendFloatHistogram(hApp, ts+1, h2, false)
+		require.NoError(t, err)
+		require.Nil(t, newChunk)
+		require.False(t, recoded)
+		require.Equal(t, app, newApp)
+		assertSampleCount(t, nextChunk, 1, ValFloatHistogram)
+		require.Equal(t, CounterReset, nextChunk.GetCounterResetHeader())
+	}
+
+	{ // Start new chunk explicitly, and append a new histogram that would need recoding if we added it to the chunk.
+		_, hApp, ts, h1 := setup()
+		h2 := h1.Copy()
+		h2.PositiveSpans = []histogram.Span{
+			{Offset: 0, Length: 3},
+			{Offset: 1, Length: 1},
+			{Offset: 1, Length: 4},
+			{Offset: 3, Length: 3},
+		}
+		h2.Count += 9
+		h2.ZeroCount++
+		h2.Sum = 30
+		h2.PositiveBuckets = []float64{7, 5, 1, 3, 1, 0, 2, 5, 5, 0, 1}
+
+		nextChunk := NewFloatHistogramChunk()
+		app, err := nextChunk.Appender()
+		require.NoError(t, err)
+		newChunk, recoded, newApp, err := app.AppendFloatHistogram(hApp, ts+1, h2, false)
+		require.NoError(t, err)
+		require.Nil(t, newChunk)
+		require.False(t, recoded)
+		require.Equal(t, app, newApp)
+		assertSampleCount(t, nextChunk, 1, ValFloatHistogram)
+		require.Equal(t, NotCounterReset, nextChunk.GetCounterResetHeader())
+	}
 }
 
 func assertNewFloatHistogramChunkOnAppend(t *testing.T, oldChunk Chunk, hApp *FloatHistogramAppender, ts int64, h *histogram.FloatHistogram, expectHeader CounterResetHeader) {
@@ -443,62 +550,193 @@ func assertRecodedFloatHistogramChunkOnAppend(t *testing.T, prevChunk Chunk, hAp
 }
 
 func TestFloatHistogramChunkAppendableWithEmptySpan(t *testing.T) {
-	h1 := &histogram.FloatHistogram{
-		Schema:        0,
-		Count:         21,
-		Sum:           1234.5,
-		ZeroThreshold: 0.001,
-		ZeroCount:     4,
-		PositiveSpans: []histogram.Span{
-			{Offset: 0, Length: 4},
-			{Offset: 0, Length: 0},
-			{Offset: 0, Length: 3},
+	tests := map[string]struct {
+		h1 *histogram.FloatHistogram
+		h2 *histogram.FloatHistogram
+	}{
+		"empty span in old and new histogram": {
+			h1: &histogram.FloatHistogram{
+				Schema:        0,
+				Count:         21,
+				Sum:           1234.5,
+				ZeroThreshold: 0.001,
+				ZeroCount:     4,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 4},
+					{Offset: 0, Length: 0},
+					{Offset: 0, Length: 3},
+				},
+				PositiveBuckets: []float64{1, 2, 1, 1, 1, 1, 1},
+				NegativeSpans: []histogram.Span{
+					{Offset: 1, Length: 4},
+					{Offset: 2, Length: 0},
+					{Offset: 2, Length: 3},
+				},
+				NegativeBuckets: []float64{1, 2, 1, 2, 2, 2, 2},
+			},
+			h2: &histogram.FloatHistogram{
+				Schema:        0,
+				Count:         37,
+				Sum:           2345.6,
+				ZeroThreshold: 0.001,
+				ZeroCount:     5,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 4},
+					{Offset: 0, Length: 0},
+					{Offset: 0, Length: 3},
+				},
+				PositiveBuckets: []float64{1, 3, 1, 2, 1, 1, 1},
+				NegativeSpans: []histogram.Span{
+					{Offset: 1, Length: 4},
+					{Offset: 2, Length: 0},
+					{Offset: 2, Length: 3},
+				},
+				NegativeBuckets: []float64{1, 4, 2, 7, 5, 5, 2},
+			},
 		},
-		PositiveBuckets: []float64{1, 2, 1, 1, 1, 1, 1},
-		NegativeSpans: []histogram.Span{
-			{Offset: 1, Length: 4},
-			{Offset: 2, Length: 0},
-			{Offset: 2, Length: 3},
+		"empty span in old histogram": {
+			h1: &histogram.FloatHistogram{
+				Schema:        0,
+				Count:         21,
+				Sum:           1234.5,
+				ZeroThreshold: 0.001,
+				ZeroCount:     4,
+				PositiveSpans: []histogram.Span{
+					{Offset: 1, Length: 0}, // This span will disappear.
+					{Offset: 2, Length: 4},
+					{Offset: 0, Length: 3},
+				},
+				PositiveBuckets: []float64{1, 2, 1, 1, 1, 1, 1},
+				NegativeSpans: []histogram.Span{
+					{Offset: 1, Length: 4},
+					{Offset: 2, Length: 0},
+					{Offset: 2, Length: 3},
+				},
+				NegativeBuckets: []float64{1, 2, 1, 2, 2, 2, 2},
+			},
+			h2: &histogram.FloatHistogram{
+				Schema:        0,
+				Count:         37,
+				Sum:           2345.6,
+				ZeroThreshold: 0.001,
+				ZeroCount:     5,
+				PositiveSpans: []histogram.Span{
+					{Offset: 3, Length: 4},
+					{Offset: 0, Length: 3},
+				},
+				PositiveBuckets: []float64{1, 3, 1, 2, 1, 1, 1},
+				NegativeSpans: []histogram.Span{
+					{Offset: 1, Length: 4},
+					{Offset: 2, Length: 0},
+					{Offset: 2, Length: 3},
+				},
+				NegativeBuckets: []float64{1, 4, 2, 7, 5, 5, 2},
+			},
 		},
-		NegativeBuckets: []float64{1, 2, 1, 2, 2, 2, 2},
+		"empty span in new histogram": {
+			h1: &histogram.FloatHistogram{
+				Schema:        0,
+				Count:         21,
+				Sum:           1234.5,
+				ZeroThreshold: 0.001,
+				ZeroCount:     4,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 4},
+					{Offset: 3, Length: 3},
+				},
+				PositiveBuckets: []float64{1, 2, 1, 1, 1, 1, 1},
+				NegativeSpans: []histogram.Span{
+					{Offset: 1, Length: 4},
+					{Offset: 2, Length: 0},
+					{Offset: 2, Length: 3},
+				},
+				NegativeBuckets: []float64{1, 2, 1, 2, 2, 2, 2},
+			},
+			h2: &histogram.FloatHistogram{
+				Schema:        0,
+				Count:         37,
+				Sum:           2345.6,
+				ZeroThreshold: 0.001,
+				ZeroCount:     5,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 4},
+					{Offset: 1, Length: 0}, // This span is new.
+					{Offset: 2, Length: 3},
+				},
+				PositiveBuckets: []float64{1, 3, 1, 2, 1, 1, 1},
+				NegativeSpans: []histogram.Span{
+					{Offset: 1, Length: 4},
+					{Offset: 2, Length: 0},
+					{Offset: 2, Length: 3},
+				},
+				NegativeBuckets: []float64{1, 4, 2, 7, 5, 5, 2},
+			},
+		},
+		"two empty spans mixing offsets": {
+			h1: &histogram.FloatHistogram{
+				Schema:        0,
+				Count:         21,
+				Sum:           1234.5,
+				ZeroThreshold: 0.001,
+				ZeroCount:     4,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 4},
+					{Offset: 1, Length: 0},
+					{Offset: 3, Length: 0},
+					{Offset: 4, Length: 3},
+				},
+				PositiveBuckets: []float64{1, 2, 1, 1, 1, 1, 1},
+				NegativeSpans: []histogram.Span{
+					{Offset: 1, Length: 4},
+					{Offset: 2, Length: 0},
+					{Offset: 2, Length: 3},
+				},
+				NegativeBuckets: []float64{1, 2, 1, 2, 2, 2, 2},
+			},
+			h2: &histogram.FloatHistogram{
+				Schema:        0,
+				Count:         37,
+				Sum:           2345.6,
+				ZeroThreshold: 0.001,
+				ZeroCount:     5,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 4},
+					{Offset: 3, Length: 0},
+					{Offset: 1, Length: 0},
+					{Offset: 4, Length: 3},
+				},
+				PositiveBuckets: []float64{1, 3, 1, 2, 1, 1, 1},
+				NegativeSpans: []histogram.Span{
+					{Offset: 1, Length: 4},
+					{Offset: 2, Length: 0},
+					{Offset: 2, Length: 3},
+				},
+				NegativeBuckets: []float64{1, 4, 2, 7, 5, 5, 2},
+			},
+		},
 	}
-	h2 := &histogram.FloatHistogram{
-		Schema:        0,
-		Count:         37,
-		Sum:           2345.6,
-		ZeroThreshold: 0.001,
-		ZeroCount:     5,
-		PositiveSpans: []histogram.Span{
-			{Offset: 0, Length: 4},
-			{Offset: 0, Length: 0},
-			{Offset: 0, Length: 3},
-		},
-		PositiveBuckets: []float64{1, 3, 1, 2, 1, 1, 1},
-		NegativeSpans: []histogram.Span{
-			{Offset: 1, Length: 4},
-			{Offset: 2, Length: 0},
-			{Offset: 2, Length: 3},
-		},
-		NegativeBuckets: []float64{1, 4, 2, 7, 5, 5, 2},
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			c := Chunk(NewFloatHistogramChunk())
+
+			// Create fresh appender and add the first histogram.
+			app, err := c.Appender()
+			require.NoError(t, err)
+			require.Equal(t, 0, c.NumSamples())
+
+			_, _, _, err = app.AppendFloatHistogram(nil, 1, tc.h1, true)
+			require.NoError(t, err)
+			require.Equal(t, 1, c.NumSamples())
+			hApp, _ := app.(*FloatHistogramAppender)
+
+			pI, nI, okToAppend, counterReset := hApp.appendable(tc.h2)
+			require.Empty(t, pI)
+			require.Empty(t, nI)
+			require.True(t, okToAppend)
+			require.False(t, counterReset)
+		})
 	}
-
-	c := Chunk(NewFloatHistogramChunk())
-
-	// Create fresh appender and add the first histogram.
-	app, err := c.Appender()
-	require.NoError(t, err)
-	require.Equal(t, 0, c.NumSamples())
-
-	_, _, _, err = app.AppendFloatHistogram(nil, 1, h1, true)
-	require.NoError(t, err)
-	require.Equal(t, 1, c.NumSamples())
-	hApp, _ := app.(*FloatHistogramAppender)
-
-	pI, nI, okToAppend, counterReset := hApp.appendable(h2)
-	require.Empty(t, pI)
-	require.Empty(t, nI)
-	require.True(t, okToAppend)
-	require.False(t, counterReset)
 }
 
 func TestFloatHistogramChunkAppendableGauge(t *testing.T) {

@@ -99,7 +99,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if parsedURL.Host == "" {
 		return fmt.Errorf("host is missing in URL")
 	}
-	return nil
+	return c.HTTPClientConfig.Validate()
 }
 
 const httpSDURLLabel = model.MetaLabelPrefix + "url"

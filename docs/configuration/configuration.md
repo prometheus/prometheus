@@ -2993,8 +2993,8 @@ password: <secret>
 # Optional HTTP basic authentication information, currently not supported by Uyuni.
 basic_auth:
   [ username: <string> ]
-    [ password: <secret> ]
-    [ password_file: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
 
 # Optional `Authorization` header configuration, currently not supported by Uyuni.
 authorization:
@@ -3287,6 +3287,25 @@ authorization:
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
+# Optionally configures AWS's Signature Verification 4 signing process to
+# sign requests. Cannot be set at the same time as basic_auth, authorization, or oauth2.
+# To use the default credentials from the AWS SDK, use `sigv4: {}`.
+sigv4:
+  # The AWS region. If blank, the region from the default credentials chain
+  # is used.
+  [ region: <string> ]
+
+  # The AWS API keys. If blank, the environment variables `AWS_ACCESS_KEY_ID`
+  # and `AWS_SECRET_ACCESS_KEY` are used.
+  [ access_key: <string> ]
+  [ secret_key: <secret> ]
+
+  # Named AWS profile used to authenticate.
+  [ profile: <string> ]
+
+  # AWS Role ARN, an alternative to using AWS API keys.
+  [ role_arn: <string> ]
+
 # Optional OAuth 2.0 configuration.
 # Cannot be used at the same time as basic_auth or authorization.
 oauth2:
@@ -3518,7 +3537,13 @@ azuread:
 
   # Azure User-assigned Managed identity.
   [ managed_identity:
-      [ client_id: <string> ]  
+      [ client_id: <string> ] ]  
+
+  # Azure OAuth.
+  [ oauth:
+      [ client_id: <string> ]
+      [ client_secret: <string> ]
+      [ tenant_id: <string> ] ]
 
 # Configures the remote write request's TLS settings.
 tls_config:
