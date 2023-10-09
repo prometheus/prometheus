@@ -2619,7 +2619,9 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 		}
 		var buf bytes.Buffer
 
-		contentType, err := ts.scrape(context.Background(), &buf)
+		resp, err := ts.scrape(context.Background())
+		require.NoError(t, err)
+		contentType, err := ts.readResponse(context.Background(), resp, &buf)
 		require.NoError(t, err)
 		require.Equal(t, "text/plain; version=0.0.4", contentType)
 		require.Equal(t, "metric_a 1\nmetric_b 2\n", buf.String())
@@ -2665,7 +2667,7 @@ func TestTargetScrapeScrapeCancel(t *testing.T) {
 	}()
 
 	go func() {
-		_, err := ts.scrape(ctx, io.Discard)
+		_, err := ts.scrape(ctx)
 		switch {
 		case err == nil:
 			errc <- errors.New("Expected error but got nil")
@@ -2711,7 +2713,9 @@ func TestTargetScrapeScrapeNotFound(t *testing.T) {
 		acceptHeader: scrapeAcceptHeader,
 	}
 
-	_, err = ts.scrape(context.Background(), io.Discard)
+	resp, err := ts.scrape(context.Background())
+	require.NoError(t, err)
+	_, err = ts.readResponse(context.Background(), resp, io.Discard)
 	require.Contains(t, err.Error(), "404", "Expected \"404 NotFound\" error but got: %s", err)
 }
 
@@ -2755,26 +2759,34 @@ func TestTargetScraperBodySizeLimit(t *testing.T) {
 	var buf bytes.Buffer
 
 	// Target response uncompressed body, scrape with body size limit.
-	_, err = ts.scrape(context.Background(), &buf)
+	resp, err := ts.scrape(context.Background())
+	require.NoError(t, err)
+	_, err = ts.readResponse(context.Background(), resp, &buf)
 	require.ErrorIs(t, err, errBodySizeLimit)
 	require.Equal(t, bodySizeLimit, buf.Len())
 	// Target response gzip compressed body, scrape with body size limit.
 	gzipResponse = true
 	buf.Reset()
-	_, err = ts.scrape(context.Background(), &buf)
+	resp, err = ts.scrape(context.Background())
+	require.NoError(t, err)
+	_, err = ts.readResponse(context.Background(), resp, &buf)
 	require.ErrorIs(t, err, errBodySizeLimit)
 	require.Equal(t, bodySizeLimit, buf.Len())
 	// Target response uncompressed body, scrape without body size limit.
 	gzipResponse = false
 	buf.Reset()
 	ts.bodySizeLimit = 0
-	_, err = ts.scrape(context.Background(), &buf)
+	resp, err = ts.scrape(context.Background())
+	require.NoError(t, err)
+	_, err = ts.readResponse(context.Background(), resp, &buf)
 	require.NoError(t, err)
 	require.Equal(t, len(responseBody), buf.Len())
 	// Target response gzip compressed body, scrape without body size limit.
 	gzipResponse = true
 	buf.Reset()
-	_, err = ts.scrape(context.Background(), &buf)
+	resp, err = ts.scrape(context.Background())
+	require.NoError(t, err)
+	_, err = ts.readResponse(context.Background(), resp, &buf)
 	require.NoError(t, err)
 	require.Equal(t, len(responseBody), buf.Len())
 }
@@ -2802,7 +2814,11 @@ func (ts *testScraper) Report(start time.Time, duration time.Duration, err error
 	ts.lastError = err
 }
 
-func (ts *testScraper) scrape(ctx context.Context, w io.Writer) (string, error) {
+func (ts *testScraper) scrape(ctx context.Context) (*http.Response, error) {
+	return nil, ts.scrapeErr
+}
+
+func (ts *testScraper) readResponse(ctx context.Context, resp *http.Response, w io.Writer) (string, error) {
 	if ts.scrapeFunc != nil {
 		return "", ts.scrapeFunc(ctx, w)
 	}
