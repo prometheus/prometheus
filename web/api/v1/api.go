@@ -1375,7 +1375,7 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 
 	excludeAlerts, err := parseExcludeAlerts(r)
 	if err != nil {
-		return invalidParamError(err, "exclude_active_alerts")
+		return invalidParamError(err, "exclude_alerts")
 	}
 
 	rgs := make([]*RuleGroup, 0, len(ruleGroups))
@@ -1472,7 +1472,7 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 }
 
 func parseExcludeAlerts(r *http.Request) (bool, error) {
-	excludeAlertsParam := strings.ToLower(r.URL.Query().Get("exclude_active_alerts"))
+	excludeAlertsParam := strings.ToLower(r.URL.Query().Get("exclude_alerts"))
 
 	if excludeAlertsParam == "" {
 		return false, nil
@@ -1480,7 +1480,7 @@ func parseExcludeAlerts(r *http.Request) (bool, error) {
 
 	excludeAlerts, err := strconv.ParseBool(excludeAlertsParam)
 	if err != nil {
-		return false, fmt.Errorf("error converting exclude_active_alerts: %w", err)
+		return false, fmt.Errorf("error converting exclude_alerts: %w", err)
 	}
 	return excludeAlerts, nil
 }

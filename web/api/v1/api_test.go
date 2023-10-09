@@ -2136,7 +2136,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 		{
 			endpoint: api.rules,
 			query: url.Values{
-				"exclude_active_alerts": []string{"true"},
+				"exclude_alerts": []string{"true"},
 			},
 			response: &RuleDiscovery{
 				RuleGroups: []*RuleGroup{
