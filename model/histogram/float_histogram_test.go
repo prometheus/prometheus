@@ -2296,11 +2296,13 @@ func TestFloatBucketIteratorTargetSchema(t *testing.T) {
 // cannot be covered by TestHistogramEquals.
 func TestFloatHistogramEquals(t *testing.T) {
 	h1 := FloatHistogram{
-		Schema:        3,
-		Count:         2.2,
-		Sum:           9.7,
-		ZeroThreshold: 0.1,
-		ZeroCount:     1.1,
+		Schema:          3,
+		Count:           2.2,
+		Sum:             9.7,
+		ZeroThreshold:   0.1,
+		ZeroCount:       1.1,
+		PositiveBuckets: []float64{3},
+		NegativeBuckets: []float64{4},
 	}
 
 	equals := func(h1, h2 FloatHistogram) {
@@ -2326,4 +2328,16 @@ func TestFloatHistogramEquals(t *testing.T) {
 	hZeroCountNaN.ZeroCount = math.NaN()
 	notEquals(h1, *hZeroCountNaN)
 	equals(*hZeroCountNaN, *hZeroCountNaN)
+
+	// Positive bucket value is NaN.
+	hPosBucketNaN := h1.Copy()
+	hPosBucketNaN.PositiveBuckets[0] = math.NaN()
+	notEquals(h1, *hPosBucketNaN)
+	equals(*hPosBucketNaN, *hPosBucketNaN)
+
+	// Negative bucket value is NaN.
+	hNegBucketNaN := h1.Copy()
+	hNegBucketNaN.NegativeBuckets[0] = math.NaN()
+	notEquals(h1, *hNegBucketNaN)
+	equals(*hNegBucketNaN, *hNegBucketNaN)
 }
