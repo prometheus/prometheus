@@ -17,6 +17,8 @@ import (
 	"fmt"
 	"math"
 	"strings"
+
+	"golang.org/x/exp/slices"
 )
 
 // CounterResetHint contains the known information about a counter reset,
@@ -172,7 +174,8 @@ func (h *Histogram) CumulativeBucketIterator() BucketIterator[uint64] {
 // Exact match is when there are no new buckets (even empty) and no missing buckets,
 // and all the bucket values match. Spans can have different empty length spans in between,
 // but they must represent the same bucket layout to match.
-// Non-metadata float field (Sum) is compared as binary (using math.Float64bits).
+// Sum is compared based on its bit pattern because this method
+// is about data equality rather than mathematical equality.
 func (h *Histogram) Equals(h2 *Histogram) bool {
 	if h2 == nil {
 		return false
@@ -191,10 +194,10 @@ func (h *Histogram) Equals(h2 *Histogram) bool {
 		return false
 	}
 
-	if !bucketsMatch(h.PositiveBuckets, h2.PositiveBuckets) {
+	if !slices.Equal(h.PositiveBuckets, h2.PositiveBuckets) {
 		return false
 	}
-	if !bucketsMatch(h.NegativeBuckets, h2.NegativeBuckets) {
+	if !slices.Equal(h.NegativeBuckets, h2.NegativeBuckets) {
 		return false
 	}
 

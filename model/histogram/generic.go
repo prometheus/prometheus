@@ -333,18 +333,6 @@ func compactBuckets[IBC InternalBucketCount](buckets []IBC, spans []Span, maxEmp
 	return buckets, spans
 }
 
-func bucketsMatch[IBC InternalBucketCount](b1, b2 []IBC) bool {
-	if len(b1) != len(b2) {
-		return false
-	}
-	for i, b := range b1 {
-		if b != b2[i] {
-			return false
-		}
-	}
-	return true
-}
-
 func getBound(idx, schema int32) float64 {
 	// Here a bit of context about the behavior for the last bucket counting
 	// regular numbers (called simply "last bucket" below) and the bucket
