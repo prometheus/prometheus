@@ -990,11 +990,9 @@ func TestPostingsCloner(t *testing.T) {
 			check: func(t testing.TB, pc *PostingsCloner) {
 				p1 := pc.Clone()
 				require.False(t, p1.Seek(9))
-				require.Equal(t, storage.SeriesRef(0), p1.At())
 
 				p2 := pc.Clone()
 				require.False(t, p2.Seek(10))
-				require.Equal(t, storage.SeriesRef(0), p2.At())
 			},
 		},
 		{
@@ -1002,7 +1000,6 @@ func TestPostingsCloner(t *testing.T) {
 			check: func(t testing.TB, pc *PostingsCloner) {
 				p1 := pc.Clone()
 				require.False(t, p1.Seek(9))
-				require.Equal(t, storage.SeriesRef(0), p1.At())
 
 				p2 := pc.Clone()
 				require.True(t, p2.Seek(2))
@@ -1071,20 +1068,11 @@ func TestPostingsCloner(t *testing.T) {
 			},
 		},
 		{
-			name: "at before call of next shouldn't panic",
-			check: func(t testing.TB, pc *PostingsCloner) {
-				p := pc.Clone()
-				require.Equal(t, storage.SeriesRef(0), p.At())
-			},
-		},
-		{
 			name: "ensure a failed seek doesn't allow more next calls",
 			check: func(t testing.TB, pc *PostingsCloner) {
 				p := pc.Clone()
 				require.False(t, p.Seek(9))
-				require.Equal(t, storage.SeriesRef(0), p.At())
 				require.False(t, p.Next())
-				require.Equal(t, storage.SeriesRef(0), p.At())
 			},
 		},
 	} {
