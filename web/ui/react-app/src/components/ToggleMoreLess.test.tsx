@@ -23,11 +23,6 @@ describe('ToggleMoreLess', () => {
 
   it('renders a show less btn if clicked', () => {
     tggleBtn.find(Button).simulate('click');
-    expect(
-      tggleBtn
-        .find(Button)
-        .render()
-        .text()
-    ).toEqual('show less');
+    expect(tggleBtn.find(Button).render().text()).toEqual('show less');
   });
 });

@@ -16,9 +16,9 @@ package scaleway
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -122,12 +122,12 @@ func mockScalewayInstance(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad token id", http.StatusUnauthorized)
 		return
 	}
-	if r.RequestURI != "/instance/v1/zones/fr-par-1/servers?page=1" {
+	if r.URL.Path != "/instance/v1/zones/fr-par-1/servers" {
 		http.Error(w, "bad url", http.StatusNotFound)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	instance, err := ioutil.ReadFile("testdata/instance.json")
+	instance, err := os.ReadFile("testdata/instance.json")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

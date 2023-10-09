@@ -19,8 +19,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
-	"net"
 	"net/http"
 	"net/url"
 	"path"
@@ -28,21 +26,21 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/go-openapi/strfmt"
-	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/api/v2/models"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/sigv4"
 	"github.com/prometheus/common/version"
 	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/relabel"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/relabel"
 )
 
 const (
@@ -303,14 +301,23 @@ func (n *Manager) nextBatch() []*Alert {
 
 // Run dispatches notifications continuously.
 func (n *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) {
-
 	for {
+		// The select is split in two parts, such as we will first try to read
+		// new alertmanager targets if they are available, before sending new
+		// alerts.
 		select {
 		case <-n.ctx.Done():
 			return
 		case ts := <-tsets:
 			n.reload(ts)
-		case <-n.more:
+		default:
+			select {
+			case <-n.ctx.Done():
+				return
+			case ts := <-tsets:
+				n.reload(ts)
+			case <-n.more:
+			}
 		}
 		alerts := n.nextBatch()
 
@@ -344,19 +351,6 @@ func (n *Manager) Send(alerts ...*Alert) {
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
 
-	// Attach external labels before relabelling and sending.
-	for _, a := range alerts {
-		lb := labels.NewBuilder(a.Labels)
-
-		for _, l := range n.opts.ExternalLabels {
-			if a.Labels.Get(l.Name) == "" {
-				lb.Set(l.Name, l.Value)
-			}
-		}
-
-		a.Labels = lb.Labels()
-	}
-
 	alerts = n.relabelAlerts(alerts)
 	if len(alerts) == 0 {
 		return
@@ -385,15 +379,25 @@ func (n *Manager) Send(alerts ...*Alert) {
 	n.setMore()
 }
 
+// Attach external labels and process relabelling rules.
 func (n *Manager) relabelAlerts(alerts []*Alert) []*Alert {
+	lb := labels.NewBuilder(labels.EmptyLabels())
 	var relabeledAlerts []*Alert
 
-	for _, alert := range alerts {
-		labels := relabel.Process(alert.Labels, n.opts.RelabelConfigs...)
-		if labels != nil {
-			alert.Labels = labels
-			relabeledAlerts = append(relabeledAlerts, alert)
+	for _, a := range alerts {
+		lb.Reset(a.Labels)
+		n.opts.ExternalLabels.Range(func(l labels.Label) {
+			if a.Labels.Get(l.Name) == "" {
+				lb.Set(l.Name, l.Value)
+			}
+		})
+
+		keep := relabel.ProcessBuilder(lb, n.opts.RelabelConfigs...)
+		if !keep {
+			continue
 		}
+		a.Labels = lb.Labels()
+		relabeledAlerts = append(relabeledAlerts, a)
 	}
 	return relabeledAlerts
 }
@@ -564,9 +568,9 @@ func alertsToOpenAPIAlerts(alerts []*Alert) models.PostableAlerts {
 
 func labelsToOpenAPILabelSet(modelLabelSet labels.Labels) models.LabelSet {
 	apiLabelSet := models.LabelSet{}
-	for _, label := range modelLabelSet {
+	modelLabelSet.Range(func(label labels.Label) {
 		apiLabelSet[label.Name] = label.Value
-	}
+	})
 
 	return apiLabelSet
 }
@@ -583,13 +587,13 @@ func (n *Manager) sendOne(ctx context.Context, c *http.Client, url string, b []b
 		return err
 	}
 	defer func() {
-		io.Copy(ioutil.Discard, resp.Body)
+		io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
 	}()
 
 	// Any HTTP status 2xx is OK.
 	if resp.StatusCode/100 != 2 {
-		return errors.Errorf("bad response status %s", resp.Status)
+		return fmt.Errorf("bad response status %s", resp.Status)
 	}
 
 	return nil
@@ -601,7 +605,7 @@ func (n *Manager) Stop() {
 	n.cancel()
 }
 
-// alertmanager holds Alertmanager endpoint information.
+// Alertmanager holds Alertmanager endpoint information.
 type alertmanager interface {
 	url() *url.URL
 }
@@ -690,10 +694,21 @@ type alertmanagerSet struct {
 }
 
 func newAlertmanagerSet(cfg *config.AlertmanagerConfig, logger log.Logger, metrics *alertMetrics) (*alertmanagerSet, error) {
-	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, "alertmanager", false, false)
+	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, "alertmanager")
 	if err != nil {
 		return nil, err
 	}
+	t := client.Transport
+
+	if cfg.SigV4Config != nil {
+		t, err = sigv4.NewSigV4RoundTripper(cfg.SigV4Config, client.Transport)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	client.Transport = t
+
 	s := &alertmanagerSet{
 		client:  client,
 		cfg:     cfg,
@@ -710,7 +725,7 @@ func (s *alertmanagerSet) sync(tgs []*targetgroup.Group) {
 	allDroppedAms := []alertmanager{}
 
 	for _, tg := range tgs {
-		ams, droppedAms, err := alertmanagerFromGroup(tg, s.cfg)
+		ams, droppedAms, err := AlertmanagerFromGroup(tg, s.cfg)
 		if err != nil {
 			level.Error(s.logger).Log("msg", "Creating discovered Alertmanagers failed", "err", err)
 			continue
@@ -747,77 +762,43 @@ func postPath(pre string, v config.AlertmanagerAPIVersion) string {
 	return path.Join("/", pre, alertPushEndpoint)
 }
 
-// alertmanagerFromGroup extracts a list of alertmanagers from a target group
+// AlertmanagerFromGroup extracts a list of alertmanagers from a target group
 // and an associated AlertmanagerConfig.
-func alertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig) ([]alertmanager, []alertmanager, error) {
+func AlertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig) ([]alertmanager, []alertmanager, error) {
 	var res []alertmanager
 	var droppedAlertManagers []alertmanager
+	lb := labels.NewBuilder(labels.EmptyLabels())
 
 	for _, tlset := range tg.Targets {
-		lbls := make([]labels.Label, 0, len(tlset)+2+len(tg.Labels))
+		lb.Reset(labels.EmptyLabels())
 
 		for ln, lv := range tlset {
-			lbls = append(lbls, labels.Label{Name: string(ln), Value: string(lv)})
+			lb.Set(string(ln), string(lv))
 		}
 		// Set configured scheme as the initial scheme label for overwrite.
-		lbls = append(lbls, labels.Label{Name: model.SchemeLabel, Value: cfg.Scheme})
-		lbls = append(lbls, labels.Label{Name: pathLabel, Value: postPath(cfg.PathPrefix, cfg.APIVersion)})
+		lb.Set(model.SchemeLabel, cfg.Scheme)
+		lb.Set(pathLabel, postPath(cfg.PathPrefix, cfg.APIVersion))
 
 		// Combine target labels with target group labels.
 		for ln, lv := range tg.Labels {
 			if _, ok := tlset[ln]; !ok {
-				lbls = append(lbls, labels.Label{Name: string(ln), Value: string(lv)})
+				lb.Set(string(ln), string(lv))
 			}
 		}
 
-		lset := relabel.Process(labels.New(lbls...), cfg.RelabelConfigs...)
-		if lset == nil {
-			droppedAlertManagers = append(droppedAlertManagers, alertmanagerLabels{Labels: lbls, discoveredLabels: lbls})
+		preRelabel := lb.Labels()
+		keep := relabel.ProcessBuilder(lb, cfg.RelabelConfigs...)
+		if !keep {
+			droppedAlertManagers = append(droppedAlertManagers, alertmanagerLabels{Labels: preRelabel, discoveredLabels: preRelabel})
 			continue
 		}
 
-		lb := labels.NewBuilder(lset)
-
-		// addPort checks whether we should add a default port to the address.
-		// If the address is not valid, we don't append a port either.
-		addPort := func(s string) bool {
-			// If we can split, a port exists and we don't have to add one.
-			if _, _, err := net.SplitHostPort(s); err == nil {
-				return false
-			}
-			// If adding a port makes it valid, the previous error
-			// was not due to an invalid address and we can append a port.
-			_, _, err := net.SplitHostPort(s + ":1234")
-			return err == nil
-		}
-		addr := lset.Get(model.AddressLabel)
-		// If it's an address with no trailing port, infer it based on the used scheme.
-		if addPort(addr) {
-			// Addresses reaching this point are already wrapped in [] if necessary.
-			switch lset.Get(model.SchemeLabel) {
-			case "http", "":
-				addr = addr + ":80"
-			case "https":
-				addr = addr + ":443"
-			default:
-				return nil, nil, errors.Errorf("invalid scheme: %q", cfg.Scheme)
-			}
-			lb.Set(model.AddressLabel, addr)
-		}
-
+		addr := lb.Get(model.AddressLabel)
 		if err := config.CheckTargetAddress(model.LabelValue(addr)); err != nil {
 			return nil, nil, err
 		}
 
-		// Meta labels are deleted after relabelling. Other internal labels propagate to
-		// the target which decides whether they will be part of their label set.
-		for _, l := range lset {
-			if strings.HasPrefix(l.Name, model.MetaLabelPrefix) {
-				lb.Del(l.Name)
-			}
-		}
-
-		res = append(res, alertmanagerLabels{Labels: lset, discoveredLabels: lbls})
+		res = append(res, alertmanagerLabels{Labels: lb.Labels(), discoveredLabels: preRelabel})
 	}
 	return res, droppedAlertManagers, nil
 }

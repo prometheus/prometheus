@@ -14,6 +14,7 @@
 package kubernetes
 
 import (
+	"context"
 	"net/url"
 	"time"
 
@@ -120,10 +121,12 @@ func (f *clientGoRequestMetricAdapter) Register(registerer prometheus.Registerer
 		clientGoRequestLatencyMetricVec,
 	)
 }
-func (clientGoRequestMetricAdapter) Increment(code string, method string, host string) {
+
+func (clientGoRequestMetricAdapter) Increment(_ context.Context, code, _, _ string) {
 	clientGoRequestResultMetricVec.WithLabelValues(code).Inc()
 }
-func (clientGoRequestMetricAdapter) Observe(verb string, u url.URL, latency time.Duration) {
+
+func (clientGoRequestMetricAdapter) Observe(_ context.Context, _ string, u url.URL, latency time.Duration) {
 	clientGoRequestLatencyMetricVec.WithLabelValues(u.EscapedPath()).Observe(latency.Seconds())
 }
 
@@ -145,22 +148,28 @@ func (f *clientGoWorkqueueMetricsProvider) Register(registerer prometheus.Regist
 func (f *clientGoWorkqueueMetricsProvider) NewDepthMetric(name string) workqueue.GaugeMetric {
 	return clientGoWorkqueueDepthMetricVec.WithLabelValues(name)
 }
+
 func (f *clientGoWorkqueueMetricsProvider) NewAddsMetric(name string) workqueue.CounterMetric {
 	return clientGoWorkqueueAddsMetricVec.WithLabelValues(name)
 }
+
 func (f *clientGoWorkqueueMetricsProvider) NewLatencyMetric(name string) workqueue.HistogramMetric {
 	return clientGoWorkqueueLatencyMetricVec.WithLabelValues(name)
 }
+
 func (f *clientGoWorkqueueMetricsProvider) NewWorkDurationMetric(name string) workqueue.HistogramMetric {
 	return clientGoWorkqueueWorkDurationMetricVec.WithLabelValues(name)
 }
+
 func (f *clientGoWorkqueueMetricsProvider) NewUnfinishedWorkSecondsMetric(name string) workqueue.SettableGaugeMetric {
 	return clientGoWorkqueueUnfinishedWorkSecondsMetricVec.WithLabelValues(name)
 }
+
 func (f *clientGoWorkqueueMetricsProvider) NewLongestRunningProcessorSecondsMetric(name string) workqueue.SettableGaugeMetric {
 	return clientGoWorkqueueLongestRunningProcessorMetricVec.WithLabelValues(name)
 }
-func (clientGoWorkqueueMetricsProvider) NewRetriesMetric(name string) workqueue.CounterMetric {
+
+func (clientGoWorkqueueMetricsProvider) NewRetriesMetric(string) workqueue.CounterMetric {
 	// Retries are not used so the metric is omitted.
 	return noopMetric{}
 }

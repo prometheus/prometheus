@@ -320,6 +320,8 @@ PromConsole.graphDefaults = {
   yTitle: "",     // The title of the y axis.
   // Number formatter for y axis.
   yAxisFormatter: PromConsole.NumberFormatter.humanize,
+  // Number of ticks (horizontal lines) for the y axis
+  yAxisTicks: null,
   // Number formatter for y values hover detail.
   yHoverFormatter: PromConsole.NumberFormatter.humanizeExact,
   // Color scheme to be used by the plots. Can be either a list of hex color
@@ -529,7 +531,8 @@ PromConsole.Graph.prototype._render = function(data) {
   });
   var yAxis = new Rickshaw.Graph.Axis.Y({
       graph: graph,
-      tickFormat: this.params.yAxisFormatter
+      tickFormat: this.params.yAxisFormatter,
+      ticks: this.params.yAxisTicks
   });
   var xAxis = new Rickshaw.Graph.Axis.Time({
       graph: graph,

@@ -11,7 +11,6 @@ describe('PanelList', () => {
       { id: 'use-local-time-checkbox', label: 'Use local time', default: false },
       { id: 'query-history-checkbox', label: 'Enable query history', default: false },
       { id: 'autocomplete-checkbox', label: 'Enable autocomplete', default: true },
-      { id: 'use-experimental-editor-checkbox', label: 'Use experimental editor', default: false },
       { id: 'highlighting-checkbox', label: 'Enable highlighting', default: true },
       { id: 'linter-checkbox', label: 'Enable linter', default: true },
     ].forEach((cb, idx) => {

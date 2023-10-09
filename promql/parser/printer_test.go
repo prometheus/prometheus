@@ -17,6 +17,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/model/labels"
 )
 
 func TestExprString(t *testing.T) {
@@ -31,13 +33,16 @@ func TestExprString(t *testing.T) {
 			out: `sum(task:errors:rate10s{job="s"})`,
 		},
 		{
-			in: `sum by(code) (task:errors:rate10s{job="s"})`,
+			in:  `sum by(code) (task:errors:rate10s{job="s"})`,
+			out: `sum by (code) (task:errors:rate10s{job="s"})`,
 		},
 		{
-			in: `sum without() (task:errors:rate10s{job="s"})`,
+			in:  `sum without() (task:errors:rate10s{job="s"})`,
+			out: `sum without () (task:errors:rate10s{job="s"})`,
 		},
 		{
-			in: `sum without(instance) (task:errors:rate10s{job="s"})`,
+			in:  `sum without(instance) (task:errors:rate10s{job="s"})`,
+			out: `sum without (instance) (task:errors:rate10s{job="s"})`,
 		},
 		{
 			in: `topk(5, task:errors:rate10s{job="s"})`,
@@ -46,26 +51,32 @@ func TestExprString(t *testing.T) {
 			in: `count_values("value", task:errors:rate10s{job="s"})`,
 		},
 		{
-			in: `a - on() c`,
+			in:  `a - on() c`,
+			out: `a - on () c`,
 		},
 		{
-			in: `a - on(b) c`,
+			in:  `a - on(b) c`,
+			out: `a - on (b) c`,
 		},
 		{
-			in: `a - on(b) group_left(x) c`,
+			in:  `a - on(b) group_left(x) c`,
+			out: `a - on (b) group_left (x) c`,
 		},
 		{
-			in: `a - on(b) group_left(x, y) c`,
+			in:  `a - on(b) group_left(x, y) c`,
+			out: `a - on (b) group_left (x, y) c`,
 		},
 		{
 			in:  `a - on(b) group_left c`,
-			out: `a - on(b) group_left() c`,
+			out: `a - on (b) group_left () c`,
 		},
 		{
-			in: `a - on(b) group_left() (c)`,
+			in:  `a - on(b) group_left() (c)`,
+			out: `a - on (b) group_left () (c)`,
 		},
 		{
-			in: `a - ignoring(b) c`,
+			in:  `a - ignoring(b) c`,
+			out: `a - ignoring (b) c`,
 		},
 		{
 			in:  `a - ignoring() c`,
@@ -136,5 +147,78 @@ func TestExprString(t *testing.T) {
 		}
 
 		require.Equal(t, exp, expr.String())
+	}
+}
+
+func TestVectorSelector_String(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		vs       VectorSelector
+		expected string
+	}{
+		{
+			name:     "empty value",
+			vs:       VectorSelector{},
+			expected: ``,
+		},
+		{
+			name:     "no matchers with name",
+			vs:       VectorSelector{Name: "foobar"},
+			expected: `foobar`,
+		},
+		{
+			name: "one matcher with name",
+			vs: VectorSelector{
+				Name: "foobar",
+				LabelMatchers: []*labels.Matcher{
+					labels.MustNewMatcher(labels.MatchEqual, "a", "x"),
+				},
+			},
+			expected: `foobar{a="x"}`,
+		},
+		{
+			name: "two matchers with name",
+			vs: VectorSelector{
+				Name: "foobar",
+				LabelMatchers: []*labels.Matcher{
+					labels.MustNewMatcher(labels.MatchEqual, "a", "x"),
+					labels.MustNewMatcher(labels.MatchEqual, "b", "y"),
+				},
+			},
+			expected: `foobar{a="x",b="y"}`,
+		},
+		{
+			name: "two matchers without name",
+			vs: VectorSelector{
+				LabelMatchers: []*labels.Matcher{
+					labels.MustNewMatcher(labels.MatchEqual, "a", "x"),
+					labels.MustNewMatcher(labels.MatchEqual, "b", "y"),
+				},
+			},
+			expected: `{a="x",b="y"}`,
+		},
+		{
+			name: "name matcher and name",
+			vs: VectorSelector{
+				Name: "foobar",
+				LabelMatchers: []*labels.Matcher{
+					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "foobar"),
+				},
+			},
+			expected: `foobar`,
+		},
+		{
+			name: "name matcher only",
+			vs: VectorSelector{
+				LabelMatchers: []*labels.Matcher{
+					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "foobar"),
+				},
+			},
+			expected: `{__name__="foobar"}`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.expected, tc.vs.String())
+		})
 	}
 }

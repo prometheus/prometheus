@@ -1,24 +1,38 @@
 # my global config
 global:
-  scrape_interval:     15s
+  scrape_interval: 15s
   evaluation_interval: 30s
+  body_size_limit: 15MB
+  sample_limit: 1500
+  target_limit: 30
+  label_limit: 30
+  label_name_length_limit: 200
+  label_value_length_limit: 200
   # scrape_timeout is set to the global default (10s).
 
   external_labels:
     monitor: codelab
-    foo:     bar
+    foo: bar
 
 rule_files:
-- "first.rules"
-- "my/*.rules"
+  - "first.rules"
+  - "my/*.rules"
 
 remote_write:
   - url: http://remote1/push
     name: drop_expensive
     write_relabel_configs:
-    - source_labels: [__name__]
-      regex:         expensive.*
-      action:        drop
+      - source_labels: [__name__]
+        regex: expensive.*
+        action: drop
+    oauth2:
+      client_id: "123"
+      client_secret: "456"
+      token_url: "http://remote1/auth"
+      tls_config:
+        cert_file: valid_cert_file
+        key_file: valid_key_file
+
   - url: http://remote2/push
     name: rw_tls
     tls_config:
@@ -31,6 +45,7 @@ remote_read:
   - url: http://remote1/read
     read_recent: true
     name: default
+    enable_http2: false
   - url: http://remote3/read
     read_recent: false
     name: read_special
@@ -41,283 +56,386 @@ remote_read:
       key_file: valid_key_file
 
 scrape_configs:
-- job_name: prometheus
+  - job_name: prometheus
 
-  honor_labels: true
-  # scrape_interval is defined by the configured global (15s).
-  # scrape_timeout is defined by the global default (10s).
+    honor_labels: true
+    # scrape_interval is defined by the configured global (15s).
+    # scrape_timeout is defined by the global default (10s).
 
-  # metrics_path defaults to '/metrics'
-  # scheme defaults to 'http'.
+    # metrics_path defaults to '/metrics'
+    # scheme defaults to 'http'.
 
-  file_sd_configs:
-    - files:
-      - foo/*.slow.json
-      - foo/*.slow.yml
-      - single/file.yml
-      refresh_interval: 10m
-    - files:
-      - bar/*.yaml
+    file_sd_configs:
+      - files:
+          - foo/*.slow.json
+          - foo/*.slow.yml
+          - single/file.yml
+        refresh_interval: 10m
+      - files:
+          - bar/*.yaml
 
-  static_configs:
-  - targets: ['localhost:9090', 'localhost:9191']
-    labels:
-      my:   label
-      your: label
+    static_configs:
+      - targets: ["localhost:9090", "localhost:9191"]
+        labels:
+          my: label
+          your: label
 
-  relabel_configs:
-  - source_labels: [job, __meta_dns_name]
-    regex:         (.*)some-[regex]
-    target_label:  job
-    replacement:   foo-${1}
-    # action defaults to 'replace'
-  - source_labels: [abc]
-    target_label:  cde
-  - replacement:   static
-    target_label:  abc
-  - regex:
-    replacement:   static
-    target_label:  abc
+    relabel_configs:
+      - source_labels: [job, __meta_dns_name]
+        regex: (.*)some-[regex]
+        target_label: job
+        replacement: foo-${1}
+        # action defaults to 'replace'
+      - source_labels: [abc]
+        target_label: cde
+      - replacement: static
+        target_label: abc
+      - regex:
+        replacement: static
+        target_label: abc
+      - source_labels: [foo]
+        target_label: abc
+        action: keepequal
+      - source_labels: [foo]
+        target_label: abc
+        action: dropequal
 
-  authorization:
-    credentials_file: valid_token_file
+    authorization:
+      credentials_file: valid_token_file
 
-
-- job_name: service-x
-
-  basic_auth:
-    username: admin_name
-    password: "multiline\nmysecret\ntest"
-
-  scrape_interval: 50s
-  scrape_timeout:  5s
-
-  sample_limit: 1000
-
-  metrics_path: /my_path
-  scheme: https
-
-  dns_sd_configs:
-  - refresh_interval: 15s
-    names:
-    - first.dns.address.domain.com
-    - second.dns.address.domain.com
-  - names:
-    - first.dns.address.domain.com
-    # refresh_interval defaults to 30s.
-
-  relabel_configs:
-  - source_labels: [job]
-    regex:         (.*)some-[regex]
-    action:        drop
-  - source_labels: [__address__]
-    modulus:       8
-    target_label:  __tmp_hash
-    action:        hashmod
-  - source_labels: [__tmp_hash]
-    regex:         1
-    action:        keep
-  - action:        labelmap
-    regex:         1
-  - action:        labeldrop
-    regex:         d
-  - action:        labelkeep
-    regex:         k
-
-  metric_relabel_configs:
-  - source_labels: [__name__]
-    regex:         expensive_metric.*
-    action:        drop
-
-- job_name: service-y
-
-  consul_sd_configs:
-  - server: 'localhost:1234'
-    token: mysecret
-    services: ['nginx', 'cache', 'mysql']
-    tags: ["canary", "v1"]
-    node_meta:
-      rack: "123"
-    allow_stale: true
-    scheme: https
     tls_config:
-      ca_file: valid_ca_file
-      cert_file: valid_cert_file
-      key_file:  valid_key_file
-      insecure_skip_verify: false
+      min_version: TLS10
 
-  relabel_configs:
-  - source_labels: [__meta_sd_consul_tags]
-    separator:     ','
-    regex:         label:([^=]+)=([^,]+)
-    target_label:  ${1}
-    replacement:   ${2}
-
-- job_name: service-z
-
-  tls_config:
-    cert_file: valid_cert_file
-    key_file: valid_key_file
-
-  authorization:
-    credentials: mysecret
-
-- job_name: service-kubernetes
-
-  kubernetes_sd_configs:
-  - role: endpoints
-    api_server: 'https://localhost:1234'
-    tls_config:
-      cert_file: valid_cert_file
-      key_file: valid_key_file
+  - job_name: service-x
 
     basic_auth:
-      username: 'myusername'
-      password: 'mysecret'
+      username: admin_name
+      password: "multiline\nmysecret\ntest"
 
-- job_name: service-kubernetes-namespaces
+    scrape_interval: 50s
+    scrape_timeout: 5s
 
-  kubernetes_sd_configs:
-  - role: endpoints
-    api_server: 'https://localhost:1234'
-    namespaces:
-      names:
-        - default
-
-  basic_auth:
-    username: 'myusername'
-    password_file: valid_password_file
+    body_size_limit: 10MB
+    sample_limit: 1000
+    target_limit: 35
+    label_limit: 35
+    label_name_length_limit: 210
+    label_value_length_limit: 210
 
 
-- job_name: service-marathon
-  marathon_sd_configs:
-  - servers:
-    - 'https://marathon.example.com:443'
+    metrics_path: /my_path
+    scheme: https
 
-    auth_token: "mysecret"
+    dns_sd_configs:
+      - refresh_interval: 15s
+        names:
+          - first.dns.address.domain.com
+          - second.dns.address.domain.com
+      - names:
+          - first.dns.address.domain.com
+
+    relabel_configs:
+      - source_labels: [job]
+        regex: (.*)some-[regex]
+        action: drop
+      - source_labels: [__address__]
+        modulus: 8
+        target_label: __tmp_hash
+        action: hashmod
+      - source_labels: [__tmp_hash]
+        regex: 1
+        action: keep
+      - action: labelmap
+        regex: 1
+      - action: labeldrop
+        regex: d
+      - action: labelkeep
+        regex: k
+
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: expensive_metric.*
+        action: drop
+
+  - job_name: service-y
+
+    consul_sd_configs:
+      - server: "localhost:1234"
+        token: mysecret
+        path_prefix: /consul
+        services: ["nginx", "cache", "mysql"]
+        tags: ["canary", "v1"]
+        node_meta:
+          rack: "123"
+        allow_stale: true
+        scheme: https
+        tls_config:
+          ca_file: valid_ca_file
+          cert_file: valid_cert_file
+          key_file: valid_key_file
+          insecure_skip_verify: false
+
+    relabel_configs:
+      - source_labels: [__meta_sd_consul_tags]
+        separator: ","
+        regex: label:([^=]+)=([^,]+)
+        target_label: ${1}
+        replacement: ${2}
+
+  - job_name: service-z
+
     tls_config:
       cert_file: valid_cert_file
       key_file: valid_key_file
 
-- job_name: service-ec2
-  ec2_sd_configs:
-    - region: us-east-1
-      access_key: access
-      secret_key: mysecret
-      profile: profile
-      filters:
-        - name: tag:environment
-          values:
-            - prod
+    authorization:
+      credentials: mysecret
 
-        - name: tag:service
-          values:
-            - web
-            - db
+  - job_name: service-kubernetes
 
-- job_name: service-azure
-  azure_sd_configs:
-    - environment: AzurePublicCloud
-      authentication_method: OAuth
-      subscription_id: 11AAAA11-A11A-111A-A111-1111A1111A11
-      tenant_id: BBBB222B-B2B2-2B22-B222-2BB2222BB2B2
-      client_id: 333333CC-3C33-3333-CCC3-33C3CCCCC33C
-      client_secret: mysecret
-      port: 9100
+    kubernetes_sd_configs:
+      - role: endpoints
+        api_server: "https://localhost:1234"
+        tls_config:
+          cert_file: valid_cert_file
+          key_file: valid_key_file
 
-- job_name: service-nerve
-  nerve_sd_configs:
-    - servers:
-      - localhost
-      paths:
-      - /monitoring
+        basic_auth:
+          username: "myusername"
+          password: "mysecret"
 
-- job_name: 0123service-xxx
-  metrics_path: /metrics
-  static_configs:
-    - targets:
-      - localhost:9090
+  - job_name: service-kubernetes-namespaces
 
-- job_name: badfederation
-  honor_timestamps: false
-  metrics_path: /federate
-  static_configs:
-    - targets:
-      - localhost:9090
+    kubernetes_sd_configs:
+      - role: endpoints
+        api_server: "https://localhost:1234"
+        namespaces:
+          names:
+            - default
 
-- job_name: 測試
-  metrics_path: /metrics
-  static_configs:
-    - targets:
-      - localhost:9090
+    basic_auth:
+      username: "myusername"
+      password_file: valid_password_file
 
-- job_name: service-triton
-  triton_sd_configs:
-  - account: 'testAccount'
-    dns_suffix: 'triton.example.com'
-    endpoint: 'triton.example.com'
-    port: 9163
-    refresh_interval: 1m
-    version: 1
-    tls_config:
-      cert_file: valid_cert_file
-      key_file: valid_key_file
+  - job_name: service-kuma
 
-- job_name: digitalocean-droplets
-  digitalocean_sd_configs:
-    - authorization:
-        credentials: abcdef
+    kuma_sd_configs:
+      - server: http://kuma-control-plane.kuma-system.svc:5676
 
-- job_name: docker
-  docker_sd_configs:
-  - host: unix:///var/run/docker.sock
+  - job_name: service-marathon
+    marathon_sd_configs:
+      - servers:
+          - "https://marathon.example.com:443"
 
-- job_name: dockerswarm
-  dockerswarm_sd_configs:
-  - host: http://127.0.0.1:2375
-    role: nodes
+        auth_token: "mysecret"
+        tls_config:
+          cert_file: valid_cert_file
+          key_file: valid_key_file
 
-- job_name: service-openstack
-  openstack_sd_configs:
-  - role: instance
-    region: RegionOne
-    port: 80
-    refresh_interval: 1m
-    tls_config:
-      ca_file: valid_ca_file
-      cert_file: valid_cert_file
-      key_file:  valid_key_file
+  - job_name: service-nomad
+    nomad_sd_configs:
+      - server: 'http://localhost:4646'
 
-- job_name: hetzner
-  hetzner_sd_configs:
-    - role: hcloud
-      authorization:
-        credentials: abcdef
-    - role: robot
-      basic_auth:
-        username: abcdef
-        password: abcdef
+  - job_name: service-ec2
+    ec2_sd_configs:
+      - region: us-east-1
+        access_key: access
+        secret_key: mysecret
+        profile: profile
+        filters:
+          - name: tag:environment
+            values:
+              - prod
 
-- job_name: service-eureka
-  eureka_sd_configs:
-    - server: 'http://eureka.example.com:8761/eureka'
+          - name: tag:service
+            values:
+              - web
+              - db
 
-- job_name: scaleway
-  scaleway_sd_configs:
-    - role: instance
-      project_id: 11111111-1111-1111-1111-111111111112
-      access_key: SCWXXXXXXXXXXXXXXXXX
-      secret_key: 11111111-1111-1111-1111-111111111111
-    - role: baremetal
-      project_id: 11111111-1111-1111-1111-111111111112
-      access_key: SCWXXXXXXXXXXXXXXXXX
-      secret_key: 11111111-1111-1111-1111-111111111111
+  - job_name: service-lightsail
+    lightsail_sd_configs:
+      - region: us-east-1
+        access_key: access
+        secret_key: mysecret
+        profile: profile
+
+  - job_name: service-azure
+    azure_sd_configs:
+      - environment: AzurePublicCloud
+        authentication_method: OAuth
+        subscription_id: 11AAAA11-A11A-111A-A111-1111A1111A11
+        resource_group: my-resource-group
+        tenant_id: BBBB222B-B2B2-2B22-B222-2BB2222BB2B2
+        client_id: 333333CC-3C33-3333-CCC3-33C3CCCCC33C
+        client_secret: mysecret
+        port: 9100
+
+  - job_name: service-nerve
+    nerve_sd_configs:
+      - servers:
+          - localhost
+        paths:
+          - /monitoring
+
+  - job_name: 0123service-xxx
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - localhost:9090
+
+  - job_name: badfederation
+    honor_timestamps: false
+    metrics_path: /federate
+    static_configs:
+      - targets:
+          - localhost:9090
+
+  - job_name: 測試
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - localhost:9090
+
+  - job_name: httpsd
+    http_sd_configs:
+      - url: "http://example.com/prometheus"
+
+  - job_name: service-triton
+    triton_sd_configs:
+      - account: "testAccount"
+        dns_suffix: "triton.example.com"
+        endpoint: "triton.example.com"
+        port: 9163
+        refresh_interval: 1m
+        version: 1
+        tls_config:
+          cert_file: valid_cert_file
+          key_file: valid_key_file
+
+  - job_name: digitalocean-droplets
+    digitalocean_sd_configs:
+      - authorization:
+          credentials: abcdef
+
+  - job_name: docker
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+
+  - job_name: dockerswarm
+    dockerswarm_sd_configs:
+      - host: http://127.0.0.1:2375
+        role: nodes
+
+  - job_name: service-openstack
+    openstack_sd_configs:
+      - role: instance
+        region: RegionOne
+        port: 80
+        refresh_interval: 1m
+        tls_config:
+          ca_file: valid_ca_file
+          cert_file: valid_cert_file
+          key_file: valid_key_file
+
+  - job_name: service-puppetdb
+    puppetdb_sd_configs:
+      - url: https://puppetserver/
+        query: 'resources { type = "Package" and title = "httpd" }'
+        include_parameters: true
+        port: 80
+        refresh_interval: 1m
+        tls_config:
+          ca_file: valid_ca_file
+          cert_file: valid_cert_file
+          key_file: valid_key_file
+
+  - job_name: hetzner
+    relabel_configs:
+      - action: uppercase
+        source_labels: [instance]
+        target_label: instance
+    hetzner_sd_configs:
+      - role: hcloud
+        authorization:
+          credentials: abcdef
+      - role: robot
+        basic_auth:
+          username: abcdef
+          password: abcdef
+
+  - job_name: service-eureka
+    eureka_sd_configs:
+      - server: "http://eureka.example.com:8761/eureka"
+
+  - job_name: ovhcloud
+    ovhcloud_sd_configs:
+      - service: vps
+        endpoint: ovh-eu
+        application_key: testAppKey
+        application_secret: testAppSecret
+        consumer_key: testConsumerKey
+        refresh_interval: 1m
+      - service: dedicated_server
+        endpoint: ovh-eu
+        application_key: testAppKey
+        application_secret: testAppSecret
+        consumer_key: testConsumerKey
+        refresh_interval: 1m
+
+  - job_name: scaleway
+    scaleway_sd_configs:
+      - role: instance
+        project_id: 11111111-1111-1111-1111-111111111112
+        access_key: SCWXXXXXXXXXXXXXXXXX
+        secret_key: 11111111-1111-1111-1111-111111111111
+      - role: baremetal
+        project_id: 11111111-1111-1111-1111-111111111112
+        access_key: SCWXXXXXXXXXXXXXXXXX
+        secret_key: 11111111-1111-1111-1111-111111111111
+
+  - job_name: linode-instances
+    linode_sd_configs:
+      - authorization:
+          credentials: abcdef
+
+  - job_name: uyuni
+    uyuni_sd_configs:
+      - server: https://localhost:1234
+        username: gopher
+        password: hole
+
+  - job_name: ionos
+    ionos_sd_configs:
+      - datacenter_id: 8feda53f-15f0-447f-badf-ebe32dad2fc0
+        authorization:
+          credentials: abcdef
+
+  - job_name: vultr
+    vultr_sd_configs:
+      - authorization:
+          credentials: abcdef
 
 alerting:
   alertmanagers:
-  - scheme: https
-    static_configs:
-    - targets:
-      - "1.2.3.4:9093"
-      - "1.2.3.5:9093"
-      - "1.2.3.6:9093"
+    - scheme: https
+      static_configs:
+        - targets:
+            - "1.2.3.4:9093"
+            - "1.2.3.5:9093"
+            - "1.2.3.6:9093"
+
+storage:
+  tsdb:
+    out_of_order_time_window: 30m
+
+tracing:
+  endpoint: "localhost:4317"
+  client_type: "grpc"
+  headers:
+    foo: "bar"
+  timeout: 5s
+  compression: "gzip"
+  tls_config:
+    cert_file: valid_cert_file
+    key_file: valid_key_file
+    insecure_skip_verify: true

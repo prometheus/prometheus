@@ -14,25 +14,27 @@
 package config
 
 import (
+	"errors"
 	"fmt"
-	"io/ioutil"
 	"net/url"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
-	"github.com/pkg/errors"
+	"github.com/alecthomas/units"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
+	"github.com/grafana/regexp"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-	yaml "gopkg.in/yaml.v2"
+	"github.com/prometheus/common/sigv4"
+	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/discovery"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/relabel"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/prometheus/prometheus/storage/remote/azuread"
 )
 
 var (
@@ -79,8 +81,12 @@ func Load(s string, expandExternalLabels bool, logger log.Logger) (*Config, erro
 		return cfg, nil
 	}
 
-	for i, v := range cfg.GlobalConfig.ExternalLabels {
+	b := labels.ScratchBuilder{}
+	cfg.GlobalConfig.ExternalLabels.Range(func(v labels.Label) {
 		newV := os.Expand(v.Value, func(s string) string {
+			if s == "$" {
+				return "$"
+			}
 			if v := os.Getenv(s); v != "" {
 				return v
 			}
@@ -89,23 +95,38 @@ func Load(s string, expandExternalLabels bool, logger log.Logger) (*Config, erro
 		})
 		if newV != v.Value {
 			level.Debug(logger).Log("msg", "External label replaced", "label", v.Name, "input", v.Value, "output", newV)
-			v.Value = newV
-			cfg.GlobalConfig.ExternalLabels[i] = v
 		}
-	}
+		b.Add(v.Name, newV)
+	})
+	cfg.GlobalConfig.ExternalLabels = b.Labels()
 	return cfg, nil
 }
 
 // LoadFile parses the given YAML file into a Config.
-func LoadFile(filename string, expandExternalLabels bool, logger log.Logger) (*Config, error) {
-	content, err := ioutil.ReadFile(filename)
+func LoadFile(filename string, agentMode, expandExternalLabels bool, logger log.Logger) (*Config, error) {
+	content, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}
 	cfg, err := Load(string(content), expandExternalLabels, logger)
 	if err != nil {
-		return nil, errors.Wrapf(err, "parsing YAML file %s", filename)
+		return nil, fmt.Errorf("parsing YAML file %s: %w", filename, err)
 	}
+
+	if agentMode {
+		if len(cfg.AlertingConfig.AlertmanagerConfigs) > 0 || len(cfg.AlertingConfig.AlertRelabelConfigs) > 0 {
+			return nil, errors.New("field alerting is not allowed in agent mode")
+		}
+
+		if len(cfg.RuleFiles) > 0 {
+			return nil, errors.New("field rule_files is not allowed in agent mode")
+		}
+
+		if len(cfg.RemoteReadConfigs) > 0 {
+			return nil, errors.New("field remote_read is not allowed in agent mode")
+		}
+	}
+
 	cfg.SetDirectory(filepath.Dir(filename))
 	return cfg, nil
 }
@@ -126,13 +147,14 @@ var (
 
 	// DefaultScrapeConfig is the default scrape configuration.
 	DefaultScrapeConfig = ScrapeConfig{
-		// ScrapeTimeout and ScrapeInterval default to the
-		// configured globals.
-		MetricsPath:      "/metrics",
-		Scheme:           "http",
-		HonorLabels:      false,
-		HonorTimestamps:  true,
-		HTTPClientConfig: config.DefaultHTTPClientConfig,
+		// ScrapeTimeout and ScrapeInterval default to the configured
+		// globals.
+		ScrapeClassicHistograms: false,
+		MetricsPath:             "/metrics",
+		Scheme:                  "http",
+		HonorLabels:             false,
+		HonorTimestamps:         true,
+		HTTPClientConfig:        config.DefaultHTTPClientConfig,
 	}
 
 	// DefaultAlertmanagerConfig is the default alertmanager configuration.
@@ -153,42 +175,56 @@ var (
 
 	// DefaultQueueConfig is the default remote queue configuration.
 	DefaultQueueConfig = QueueConfig{
-		// With a maximum of 200 shards, assuming an average of 100ms remote write
-		// time and 500 samples per batch, we will be able to push 1M samples/s.
-		MaxShards:         200,
+		// With a maximum of 50 shards, assuming an average of 100ms remote write
+		// time and 2000 samples per batch, we will be able to push 1M samples/s.
+		MaxShards:         50,
 		MinShards:         1,
-		MaxSamplesPerSend: 500,
+		MaxSamplesPerSend: 2000,
 
-		// Each shard will have a max of 2500 samples pending in its channel, plus the pending
-		// samples that have been enqueued. Theoretically we should only ever have about 3000 samples
-		// per shard pending. At 200 shards that's 600k.
-		Capacity:          2500,
+		// Each shard will have a max of 10,000 samples pending in its channel, plus the pending
+		// samples that have been enqueued. Theoretically we should only ever have about 12,000 samples
+		// per shard pending. At 50 shards that's 600k.
+		Capacity:          10000,
 		BatchSendDeadline: model.Duration(5 * time.Second),
 
 		// Backoff times for retrying a batch of samples on recoverable errors.
 		MinBackoff: model.Duration(30 * time.Millisecond),
-		MaxBackoff: model.Duration(100 * time.Millisecond),
+		MaxBackoff: model.Duration(5 * time.Second),
 	}
 
 	// DefaultMetadataConfig is the default metadata configuration for a remote write endpoint.
 	DefaultMetadataConfig = MetadataConfig{
-		Send:         true,
-		SendInterval: model.Duration(1 * time.Minute),
+		Send:              true,
+		SendInterval:      model.Duration(1 * time.Minute),
+		MaxSamplesPerSend: 2000,
 	}
 
 	// DefaultRemoteReadConfig is the default remote read configuration.
 	DefaultRemoteReadConfig = RemoteReadConfig{
-		RemoteTimeout:    model.Duration(1 * time.Minute),
-		HTTPClientConfig: config.DefaultHTTPClientConfig,
+		RemoteTimeout:        model.Duration(1 * time.Minute),
+		HTTPClientConfig:     config.DefaultHTTPClientConfig,
+		FilterExternalLabels: true,
+	}
+
+	// DefaultStorageConfig is the default TSDB/Exemplar storage configuration.
+	DefaultStorageConfig = StorageConfig{
+		ExemplarsConfig: &DefaultExemplarsConfig,
+	}
+
+	DefaultExemplarsConfig = ExemplarsConfig{
+		MaxExemplars: 100000,
 	}
 )
 
 // Config is the top-level configuration for Prometheus's config files.
 type Config struct {
-	GlobalConfig   GlobalConfig    `yaml:"global"`
-	AlertingConfig AlertingConfig  `yaml:"alerting,omitempty"`
-	RuleFiles      []string        `yaml:"rule_files,omitempty"`
-	ScrapeConfigs  []*ScrapeConfig `yaml:"scrape_configs,omitempty"`
+	GlobalConfig      GlobalConfig    `yaml:"global"`
+	AlertingConfig    AlertingConfig  `yaml:"alerting,omitempty"`
+	RuleFiles         []string        `yaml:"rule_files,omitempty"`
+	ScrapeConfigFiles []string        `yaml:"scrape_config_files,omitempty"`
+	ScrapeConfigs     []*ScrapeConfig `yaml:"scrape_configs,omitempty"`
+	StorageConfig     StorageConfig   `yaml:"storage,omitempty"`
+	TracingConfig     TracingConfig   `yaml:"tracing,omitempty"`
 
 	RemoteWriteConfigs []*RemoteWriteConfig `yaml:"remote_write,omitempty"`
 	RemoteReadConfigs  []*RemoteReadConfig  `yaml:"remote_read,omitempty"`
@@ -198,8 +234,12 @@ type Config struct {
 func (c *Config) SetDirectory(dir string) {
 	c.GlobalConfig.SetDirectory(dir)
 	c.AlertingConfig.SetDirectory(dir)
+	c.TracingConfig.SetDirectory(dir)
 	for i, file := range c.RuleFiles {
 		c.RuleFiles[i] = config.JoinDir(dir, file)
+	}
+	for i, file := range c.ScrapeConfigFiles {
+		c.ScrapeConfigFiles[i] = config.JoinDir(dir, file)
 	}
 	for _, c := range c.ScrapeConfigs {
 		c.SetDirectory(dir)
@@ -218,6 +258,58 @@ func (c Config) String() string {
 		return fmt.Sprintf("<error creating config string: %s>", err)
 	}
 	return string(b)
+}
+
+// ScrapeConfigs returns the scrape configurations.
+func (c *Config) GetScrapeConfigs() ([]*ScrapeConfig, error) {
+	scfgs := make([]*ScrapeConfig, len(c.ScrapeConfigs))
+
+	jobNames := map[string]string{}
+	for i, scfg := range c.ScrapeConfigs {
+		// We do these checks for library users that would not call Validate in
+		// Unmarshal.
+		if err := scfg.Validate(c.GlobalConfig); err != nil {
+			return nil, err
+		}
+
+		if _, ok := jobNames[scfg.JobName]; ok {
+			return nil, fmt.Errorf("found multiple scrape configs with job name %q", scfg.JobName)
+		}
+		jobNames[scfg.JobName] = "main config file"
+		scfgs[i] = scfg
+	}
+	for _, pat := range c.ScrapeConfigFiles {
+		fs, err := filepath.Glob(pat)
+		if err != nil {
+			// The only error can be a bad pattern.
+			return nil, fmt.Errorf("error retrieving scrape config files for %q: %w", pat, err)
+		}
+		for _, filename := range fs {
+			cfg := ScrapeConfigs{}
+			content, err := os.ReadFile(filename)
+			if err != nil {
+				return nil, fileErr(filename, err)
+			}
+			err = yaml.UnmarshalStrict(content, &cfg)
+			if err != nil {
+				return nil, fileErr(filename, err)
+			}
+			for _, scfg := range cfg.ScrapeConfigs {
+				if err := scfg.Validate(c.GlobalConfig); err != nil {
+					return nil, fileErr(filename, err)
+				}
+
+				if f, ok := jobNames[scfg.JobName]; ok {
+					return nil, fileErr(filename, fmt.Errorf("found multiple scrape configs with job name %q, first found in %s", scfg.JobName, f))
+				}
+				jobNames[scfg.JobName] = fmt.Sprintf("%q", filePath(filename))
+
+				scfg.SetDirectory(filepath.Dir(filename))
+				scfgs = append(scfgs, scfg)
+			}
+		}
+	}
+	return scfgs, nil
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -239,33 +331,25 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 	for _, rf := range c.RuleFiles {
 		if !patRulePath.MatchString(rf) {
-			return errors.Errorf("invalid rule file path %q", rf)
+			return fmt.Errorf("invalid rule file path %q", rf)
 		}
 	}
+
+	for _, sf := range c.ScrapeConfigFiles {
+		if !patRulePath.MatchString(sf) {
+			return fmt.Errorf("invalid scrape config file path %q", sf)
+		}
+	}
+
 	// Do global overrides and validate unique names.
 	jobNames := map[string]struct{}{}
 	for _, scfg := range c.ScrapeConfigs {
-		if scfg == nil {
-			return errors.New("empty or null scrape config section")
-		}
-		// First set the correct scrape interval, then check that the timeout
-		// (inferred or explicit) is not greater than that.
-		if scfg.ScrapeInterval == 0 {
-			scfg.ScrapeInterval = c.GlobalConfig.ScrapeInterval
-		}
-		if scfg.ScrapeTimeout > scfg.ScrapeInterval {
-			return errors.Errorf("scrape timeout greater than scrape interval for scrape config with job name %q", scfg.JobName)
-		}
-		if scfg.ScrapeTimeout == 0 {
-			if c.GlobalConfig.ScrapeTimeout > scfg.ScrapeInterval {
-				scfg.ScrapeTimeout = scfg.ScrapeInterval
-			} else {
-				scfg.ScrapeTimeout = c.GlobalConfig.ScrapeTimeout
-			}
+		if err := scfg.Validate(c.GlobalConfig); err != nil {
+			return err
 		}
 
 		if _, ok := jobNames[scfg.JobName]; ok {
-			return errors.Errorf("found multiple scrape configs with job name %q", scfg.JobName)
+			return fmt.Errorf("found multiple scrape configs with job name %q", scfg.JobName)
 		}
 		jobNames[scfg.JobName] = struct{}{}
 	}
@@ -276,7 +360,7 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		}
 		// Skip empty names, we fill their name with their config hash in remote write code.
 		if _, ok := rwNames[rwcfg.Name]; ok && rwcfg.Name != "" {
-			return errors.Errorf("found multiple remote write configs with job name %q", rwcfg.Name)
+			return fmt.Errorf("found multiple remote write configs with job name %q", rwcfg.Name)
 		}
 		rwNames[rwcfg.Name] = struct{}{}
 	}
@@ -287,7 +371,7 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		}
 		// Skip empty names, we fill their name with their config hash in remote read code.
 		if _, ok := rrNames[rrcfg.Name]; ok && rrcfg.Name != "" {
-			return errors.Errorf("found multiple remote read configs with job name %q", rrcfg.Name)
+			return fmt.Errorf("found multiple remote read configs with job name %q", rrcfg.Name)
 		}
 		rrNames[rrcfg.Name] = struct{}{}
 	}
@@ -307,6 +391,27 @@ type GlobalConfig struct {
 	QueryLogFile string `yaml:"query_log_file,omitempty"`
 	// The labels to add to any timeseries that this Prometheus instance scrapes.
 	ExternalLabels labels.Labels `yaml:"external_labels,omitempty"`
+	// An uncompressed response body larger than this many bytes will cause the
+	// scrape to fail. 0 means no limit.
+	BodySizeLimit units.Base2Bytes `yaml:"body_size_limit,omitempty"`
+	// More than this many samples post metric-relabeling will cause the scrape to
+	// fail. 0 means no limit.
+	SampleLimit uint `yaml:"sample_limit,omitempty"`
+	// More than this many targets after the target relabeling will cause the
+	// scrapes to fail. 0 means no limit.
+	TargetLimit uint `yaml:"target_limit,omitempty"`
+	// More than this many labels post metric-relabeling will cause the scrape to
+	// fail. 0 means no limit.
+	LabelLimit uint `yaml:"label_limit,omitempty"`
+	// More than this label name length post metric-relabeling will cause the
+	// scrape to fail. 0 means no limit.
+	LabelNameLengthLimit uint `yaml:"label_name_length_limit,omitempty"`
+	// More than this label value length post metric-relabeling will cause the
+	// scrape to fail. 0 means no limit.
+	LabelValueLengthLimit uint `yaml:"label_value_length_limit,omitempty"`
+	// Keep no more than this many dropped targets per job.
+	// 0 means no limit.
+	KeepDroppedTargets uint `yaml:"keep_dropped_targets,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -324,13 +429,16 @@ func (c *GlobalConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 
-	for _, l := range gc.ExternalLabels {
+	if err := gc.ExternalLabels.Validate(func(l labels.Label) error {
 		if !model.LabelName(l.Name).IsValid() {
-			return errors.Errorf("%q is not a valid label name", l.Name)
+			return fmt.Errorf("%q is not a valid label name", l.Name)
 		}
 		if !model.LabelValue(l.Value).IsValid() {
-			return errors.Errorf("%q is not a valid label value", l.Value)
+			return fmt.Errorf("%q is not a valid label value", l.Value)
 		}
+		return nil
+	}); err != nil {
+		return err
 	}
 
 	// First set the correct scrape interval, then check that the timeout
@@ -357,11 +465,15 @@ func (c *GlobalConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 // isZero returns true iff the global config is the zero value.
 func (c *GlobalConfig) isZero() bool {
-	return c.ExternalLabels == nil &&
+	return c.ExternalLabels.IsEmpty() &&
 		c.ScrapeInterval == 0 &&
 		c.ScrapeTimeout == 0 &&
 		c.EvaluationInterval == 0 &&
 		c.QueryLogFile == ""
+}
+
+type ScrapeConfigs struct {
+	ScrapeConfigs []*ScrapeConfig `yaml:"scrape_configs,omitempty"`
 }
 
 // ScrapeConfig configures a scraping unit for Prometheus.
@@ -378,15 +490,36 @@ type ScrapeConfig struct {
 	ScrapeInterval model.Duration `yaml:"scrape_interval,omitempty"`
 	// The timeout for scraping targets of this config.
 	ScrapeTimeout model.Duration `yaml:"scrape_timeout,omitempty"`
+	// Whether to scrape a classic histogram that is also exposed as a native histogram.
+	ScrapeClassicHistograms bool `yaml:"scrape_classic_histograms,omitempty"`
 	// The HTTP resource path on which to fetch metrics from targets.
 	MetricsPath string `yaml:"metrics_path,omitempty"`
 	// The URL scheme with which to fetch metrics from targets.
 	Scheme string `yaml:"scheme,omitempty"`
-	// More than this many samples post metric-relabeling will cause the scrape to fail.
+	// An uncompressed response body larger than this many bytes will cause the
+	// scrape to fail. 0 means no limit.
+	BodySizeLimit units.Base2Bytes `yaml:"body_size_limit,omitempty"`
+	// More than this many samples post metric-relabeling will cause the scrape to
+	// fail. 0 means no limit.
 	SampleLimit uint `yaml:"sample_limit,omitempty"`
 	// More than this many targets after the target relabeling will cause the
-	// scrapes to fail.
+	// scrapes to fail. 0 means no limit.
 	TargetLimit uint `yaml:"target_limit,omitempty"`
+	// More than this many labels post metric-relabeling will cause the scrape to
+	// fail. 0 means no limit.
+	LabelLimit uint `yaml:"label_limit,omitempty"`
+	// More than this label name length post metric-relabeling will cause the
+	// scrape to fail. 0 means no limit.
+	LabelNameLengthLimit uint `yaml:"label_name_length_limit,omitempty"`
+	// More than this label value length post metric-relabeling will cause the
+	// scrape to fail. 0 means no limit.
+	LabelValueLengthLimit uint `yaml:"label_value_length_limit,omitempty"`
+	// More than this many buckets in a native histogram will cause the scrape to
+	// fail.
+	NativeHistogramBucketLimit uint `yaml:"native_histogram_bucket_limit,omitempty"`
+	// Keep no more than this many dropped targets per job.
+	// 0 means no limit.
+	KeepDroppedTargets uint `yaml:"keep_dropped_targets,omitempty"`
 
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
@@ -444,9 +577,162 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return nil
 }
 
+func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
+	if c == nil {
+		return errors.New("empty or null scrape config section")
+	}
+	// First set the correct scrape interval, then check that the timeout
+	// (inferred or explicit) is not greater than that.
+	if c.ScrapeInterval == 0 {
+		c.ScrapeInterval = globalConfig.ScrapeInterval
+	}
+	if c.ScrapeTimeout > c.ScrapeInterval {
+		return fmt.Errorf("scrape timeout greater than scrape interval for scrape config with job name %q", c.JobName)
+	}
+	if c.ScrapeTimeout == 0 {
+		if globalConfig.ScrapeTimeout > c.ScrapeInterval {
+			c.ScrapeTimeout = c.ScrapeInterval
+		} else {
+			c.ScrapeTimeout = globalConfig.ScrapeTimeout
+		}
+	}
+	if c.BodySizeLimit == 0 {
+		c.BodySizeLimit = globalConfig.BodySizeLimit
+	}
+	if c.SampleLimit == 0 {
+		c.SampleLimit = globalConfig.SampleLimit
+	}
+	if c.TargetLimit == 0 {
+		c.TargetLimit = globalConfig.TargetLimit
+	}
+	if c.LabelLimit == 0 {
+		c.LabelLimit = globalConfig.LabelLimit
+	}
+	if c.LabelNameLengthLimit == 0 {
+		c.LabelNameLengthLimit = globalConfig.LabelNameLengthLimit
+	}
+	if c.LabelValueLengthLimit == 0 {
+		c.LabelValueLengthLimit = globalConfig.LabelValueLengthLimit
+	}
+	if c.KeepDroppedTargets == 0 {
+		c.KeepDroppedTargets = globalConfig.KeepDroppedTargets
+	}
+
+	return nil
+}
+
 // MarshalYAML implements the yaml.Marshaler interface.
 func (c *ScrapeConfig) MarshalYAML() (interface{}, error) {
 	return discovery.MarshalYAMLWithInlineConfigs(c)
+}
+
+// StorageConfig configures runtime reloadable configuration options.
+type StorageConfig struct {
+	TSDBConfig      *TSDBConfig      `yaml:"tsdb,omitempty"`
+	ExemplarsConfig *ExemplarsConfig `yaml:"exemplars,omitempty"`
+}
+
+// TSDBConfig configures runtime reloadable configuration options.
+type TSDBConfig struct {
+	// OutOfOrderTimeWindow sets how long back in time an out-of-order sample can be inserted
+	// into the TSDB. This flag is typically set while unmarshaling the configuration file and translating
+	// OutOfOrderTimeWindowFlag's duration. The unit of this flag is expected to be the same as any
+	// other timestamp in the TSDB.
+	OutOfOrderTimeWindow int64
+
+	// OutOfOrderTimeWindowFlag holds the parsed duration from the config file.
+	// During unmarshall, this is converted into milliseconds and stored in OutOfOrderTimeWindow.
+	// This should not be used directly and must be converted into OutOfOrderTimeWindow.
+	OutOfOrderTimeWindowFlag model.Duration `yaml:"out_of_order_time_window,omitempty"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (t *TSDBConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*t = TSDBConfig{}
+	type plain TSDBConfig
+	if err := unmarshal((*plain)(t)); err != nil {
+		return err
+	}
+
+	t.OutOfOrderTimeWindow = time.Duration(t.OutOfOrderTimeWindowFlag).Milliseconds()
+
+	return nil
+}
+
+type TracingClientType string
+
+const (
+	TracingClientHTTP TracingClientType = "http"
+	TracingClientGRPC TracingClientType = "grpc"
+
+	GzipCompression = "gzip"
+)
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (t *TracingClientType) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*t = TracingClientType("")
+	type plain TracingClientType
+	if err := unmarshal((*plain)(t)); err != nil {
+		return err
+	}
+
+	if *t != TracingClientHTTP && *t != TracingClientGRPC {
+		return fmt.Errorf("expected tracing client type to be to be %s or %s, but got %s",
+			TracingClientHTTP, TracingClientGRPC, *t,
+		)
+	}
+
+	return nil
+}
+
+// TracingConfig configures the tracing options.
+type TracingConfig struct {
+	ClientType       TracingClientType `yaml:"client_type,omitempty"`
+	Endpoint         string            `yaml:"endpoint,omitempty"`
+	SamplingFraction float64           `yaml:"sampling_fraction,omitempty"`
+	Insecure         bool              `yaml:"insecure,omitempty"`
+	TLSConfig        config.TLSConfig  `yaml:"tls_config,omitempty"`
+	Headers          map[string]string `yaml:"headers,omitempty"`
+	Compression      string            `yaml:"compression,omitempty"`
+	Timeout          model.Duration    `yaml:"timeout,omitempty"`
+}
+
+// SetDirectory joins any relative file paths with dir.
+func (t *TracingConfig) SetDirectory(dir string) {
+	t.TLSConfig.SetDirectory(dir)
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (t *TracingConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*t = TracingConfig{
+		ClientType: TracingClientGRPC,
+	}
+	type plain TracingConfig
+	if err := unmarshal((*plain)(t)); err != nil {
+		return err
+	}
+
+	if err := validateHeadersForTracing(t.Headers); err != nil {
+		return err
+	}
+
+	if t.Endpoint == "" {
+		return errors.New("tracing endpoint must be set")
+	}
+
+	if t.Compression != "" && t.Compression != GzipCompression {
+		return fmt.Errorf("invalid compression type %s provided, valid options: %s",
+			t.Compression, GzipCompression)
+	}
+
+	return nil
+}
+
+// ExemplarsConfig configures runtime reloadable configuration options.
+type ExemplarsConfig struct {
+	// MaxExemplars sets the size, in # of exemplars stored, of the single circular buffer used to store exemplars in memory.
+	// Use a value of 0 or less than 0 to disable the storage without having to restart Prometheus.
+	MaxExemplars int64 `yaml:"max_exemplars,omitempty"`
 }
 
 // AlertingConfig configures alerting and alertmanager related configs.
@@ -533,6 +819,7 @@ type AlertmanagerConfig struct {
 
 	ServiceDiscoveryConfigs discovery.Configs       `yaml:"-"`
 	HTTPClientConfig        config.HTTPClientConfig `yaml:",inline"`
+	SigV4Config             *sigv4.SigV4Config      `yaml:"sigv4,omitempty"`
 
 	// The URL scheme to use when talking to Alertmanagers.
 	Scheme string `yaml:"scheme,omitempty"`
@@ -566,6 +853,13 @@ func (c *AlertmanagerConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 	// Thus we just do its validation here.
 	if err := c.HTTPClientConfig.Validate(); err != nil {
 		return err
+	}
+
+	httpClientConfigAuthEnabled := c.HTTPClientConfig.BasicAuth != nil ||
+		c.HTTPClientConfig.Authorization != nil || c.HTTPClientConfig.OAuth2 != nil
+
+	if httpClientConfigAuthEnabled && c.SigV4Config != nil {
+		return fmt.Errorf("at most one of basic_auth, authorization, oauth2, & sigv4 must be configured")
 	}
 
 	// Check for users putting URLs in target groups.
@@ -610,25 +904,28 @@ func checkStaticTargets(configs discovery.Configs) error {
 func CheckTargetAddress(address model.LabelValue) error {
 	// For now check for a URL, we may want to expand this later.
 	if strings.Contains(string(address), "/") {
-		return errors.Errorf("%q is not a valid hostname", address)
+		return fmt.Errorf("%q is not a valid hostname", address)
 	}
 	return nil
 }
 
 // RemoteWriteConfig is the configuration for writing to remote storage.
 type RemoteWriteConfig struct {
-	URL                 *config.URL       `yaml:"url"`
-	RemoteTimeout       model.Duration    `yaml:"remote_timeout,omitempty"`
-	Headers             map[string]string `yaml:"headers,omitempty"`
-	WriteRelabelConfigs []*relabel.Config `yaml:"write_relabel_configs,omitempty"`
-	Name                string            `yaml:"name,omitempty"`
+	URL                  *config.URL       `yaml:"url"`
+	RemoteTimeout        model.Duration    `yaml:"remote_timeout,omitempty"`
+	Headers              map[string]string `yaml:"headers,omitempty"`
+	WriteRelabelConfigs  []*relabel.Config `yaml:"write_relabel_configs,omitempty"`
+	Name                 string            `yaml:"name,omitempty"`
+	SendExemplars        bool              `yaml:"send_exemplars,omitempty"`
+	SendNativeHistograms bool              `yaml:"send_native_histograms,omitempty"`
 
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
 	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 	QueueConfig      QueueConfig             `yaml:"queue_config,omitempty"`
 	MetadataConfig   MetadataConfig          `yaml:"metadata_config,omitempty"`
-	SigV4Config      *SigV4Config            `yaml:"sigv4,omitempty"`
+	SigV4Config      *sigv4.SigV4Config      `yaml:"sigv4,omitempty"`
+	AzureADConfig    *azuread.AzureADConfig  `yaml:"azuread,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -663,22 +960,38 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 	}
 
 	httpClientConfigAuthEnabled := c.HTTPClientConfig.BasicAuth != nil ||
-		c.HTTPClientConfig.Authorization != nil
+		c.HTTPClientConfig.Authorization != nil || c.HTTPClientConfig.OAuth2 != nil
 
-	if httpClientConfigAuthEnabled && c.SigV4Config != nil {
-		return fmt.Errorf("at most one of basic_auth, authorization, & sigv4 must be configured")
+	if httpClientConfigAuthEnabled && (c.SigV4Config != nil || c.AzureADConfig != nil) {
+		return fmt.Errorf("at most one of basic_auth, authorization, oauth2, sigv4, & azuread must be configured")
 	}
 
+	if c.SigV4Config != nil && c.AzureADConfig != nil {
+		return fmt.Errorf("at most one of basic_auth, authorization, oauth2, sigv4, & azuread must be configured")
+	}
+
+	return nil
+}
+
+func validateHeadersForTracing(headers map[string]string) error {
+	for header := range headers {
+		if strings.ToLower(header) == "authorization" {
+			return errors.New("custom authorization header configuration is not yet supported")
+		}
+		if _, ok := reservedHeaders[strings.ToLower(header)]; ok {
+			return fmt.Errorf("%s is a reserved header. It must not be changed", header)
+		}
+	}
 	return nil
 }
 
 func validateHeaders(headers map[string]string) error {
 	for header := range headers {
 		if strings.ToLower(header) == "authorization" {
-			return errors.New("authorization header must be changed via the basic_auth or authorization parameter")
+			return errors.New("authorization header must be changed via the basic_auth, authorization, oauth2, sigv4, or azuread parameter")
 		}
 		if _, ok := reservedHeaders[strings.ToLower(header)]; ok {
-			return errors.Errorf("%s is a reserved header. It must not be changed", header)
+			return fmt.Errorf("%s is a reserved header. It must not be changed", header)
 		}
 	}
 	return nil
@@ -716,17 +1029,8 @@ type MetadataConfig struct {
 	Send bool `yaml:"send"`
 	// SendInterval controls how frequently we send metric metadata.
 	SendInterval model.Duration `yaml:"send_interval"`
-}
-
-// SigV4Config is the configuration for signing remote write requests with
-// AWS's SigV4 verification process. Empty values will be retrieved using the
-// AWS default credentials chain.
-type SigV4Config struct {
-	Region    string        `yaml:"region,omitempty"`
-	AccessKey string        `yaml:"access_key,omitempty"`
-	SecretKey config.Secret `yaml:"secret_key,omitempty"`
-	Profile   string        `yaml:"profile,omitempty"`
-	RoleARN   string        `yaml:"role_arn,omitempty"`
+	// Maximum number of samples per send.
+	MaxSamplesPerSend int `yaml:"max_samples_per_send,omitempty"`
 }
 
 // RemoteReadConfig is the configuration for reading from remote storage.
@@ -744,6 +1048,9 @@ type RemoteReadConfig struct {
 	// RequiredMatchers is an optional list of equality matchers which have to
 	// be present in a selector to query the remote read endpoint.
 	RequiredMatchers model.LabelSet `yaml:"required_matchers,omitempty"`
+
+	// Whether to use the external labels as selectors for the remote read endpoint.
+	FilterExternalLabels bool `yaml:"filter_external_labels,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -768,4 +1075,16 @@ func (c *RemoteReadConfig) UnmarshalYAML(unmarshal func(interface{}) error) erro
 	// We cannot make it a pointer as the parser panics for inlined pointer structs.
 	// Thus we just do its validation here.
 	return c.HTTPClientConfig.Validate()
+}
+
+func filePath(filename string) string {
+	absPath, err := filepath.Abs(filename)
+	if err != nil {
+		return filename
+	}
+	return absPath
+}
+
+func fileErr(filename string, err error) error {
+	return fmt.Errorf("%q: %w", filePath(filename), err)
 }

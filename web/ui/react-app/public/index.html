@@ -10,12 +10,20 @@
     <meta name="theme-color" content="#000000" />
 
     <!--
-      The GLOBAL_CONSOLES_LINK placeholder magic value is replaced during serving by Prometheus
-      and set to the consoles link if it exists. It will render a "Consoles" link in the navbar when
-      it is non-empty.
+      Placeholders replaced by Prometheus during serving:
+      - GLOBAL_CONSOLES_LINK is replaced and set to the consoles link if it exists.
+        It will render a "Consoles" link in the navbar when it is non-empty.
+      - PROMETHEUS_AGENT_MODE is replaced by a boolean indicating if Prometheus is running in agent mode.
+        It true, it will disable querying capacities in the UI and generally adapt the UI to the agent mode.
+        It has to be represented as a string, because booleans can be mangled to !1 in production builds.
+      - PROMETHEUS_READY is replaced by a boolean indicating whether Prometheus was ready at the time the
+        web app was served. It has to be represented as a string, because booleans can be mangled to !1 in
+        production builds.
     -->
     <script>
       const GLOBAL_CONSOLES_LINK='CONSOLES_LINK_PLACEHOLDER';
+      const GLOBAL_AGENT_MODE='AGENT_MODE_PLACEHOLDER';
+      const GLOBAL_READY='READY_PLACEHOLDER';
     </script>
 
     <!--
@@ -34,11 +42,11 @@
     -->
     <!--
         The TITLE_PLACEHOLDER magic value is replaced during serving by Prometheus.
-        We need it dynamic because it can be overriden by the command line flag `web.page-title`.
+        We need it dynamic because it can be overridden by the command line flag `web.page-title`.
     -->
     <title>TITLE_PLACEHOLDER</title>
   </head>
-  <body>
+  <body class="bootstrap">
     <noscript>You need to enable JavaScript to run this app.</noscript>
     <div id="root"></div>
     <!--

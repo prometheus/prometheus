@@ -16,6 +16,7 @@ package promql
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,14 +24,15 @@ import (
 	"unicode/utf8"
 
 	"github.com/edsrzf/mmap-go"
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 )
 
 type ActiveQueryTracker struct {
 	mmapedFile    []byte
 	getNextIndex  chan int
 	logger        log.Logger
+	closer        io.Closer
 	maxConcurrent int
 }
 
@@ -64,6 +66,7 @@ func logUnfinishedQueries(filename string, filesize int, logger log.Logger) {
 			level.Error(logger).Log("msg", "Failed to open query log file", "err", err)
 			return
 		}
+		defer fd.Close()
 
 		brokenJSON := make([]byte, filesize)
 		_, err = fd.Read(brokenJSON)
@@ -80,31 +83,34 @@ func logUnfinishedQueries(filename string, filesize int, logger log.Logger) {
 	}
 }
 
-func getMMapedFile(filename string, filesize int, logger log.Logger) ([]byte, error) {
-
-	file, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0666)
+func getMMapedFile(filename string, filesize int, logger log.Logger) ([]byte, io.Closer, error) {
+	file, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o666)
 	if err != nil {
-		level.Error(logger).Log("msg", "Error opening query log file", "file", filename, "err", err)
-		return nil, err
+		absPath, pathErr := filepath.Abs(filename)
+		if pathErr != nil {
+			absPath = filename
+		}
+		level.Error(logger).Log("msg", "Error opening query log file", "file", absPath, "err", err)
+		return nil, nil, err
 	}
 
 	err = file.Truncate(int64(filesize))
 	if err != nil {
 		level.Error(logger).Log("msg", "Error setting filesize.", "filesize", filesize, "err", err)
-		return nil, err
+		return nil, nil, err
 	}
 
 	fileAsBytes, err := mmap.Map(file, mmap.RDWR, 0)
 	if err != nil {
 		level.Error(logger).Log("msg", "Failed to mmap", "file", filename, "Attempted size", filesize, "err", err)
-		return nil, err
+		return nil, nil, err
 	}
 
-	return fileAsBytes, err
+	return fileAsBytes, file, err
 }
 
 func NewActiveQueryTracker(localStoragePath string, maxConcurrent int, logger log.Logger) *ActiveQueryTracker {
-	err := os.MkdirAll(localStoragePath, 0777)
+	err := os.MkdirAll(localStoragePath, 0o777)
 	if err != nil {
 		level.Error(logger).Log("msg", "Failed to create directory for logging active queries")
 	}
@@ -112,7 +118,7 @@ func NewActiveQueryTracker(localStoragePath string, maxConcurrent int, logger lo
 	filename, filesize := filepath.Join(localStoragePath, "queries.active"), 1+maxConcurrent*entrySize
 	logUnfinishedQueries(filename, filesize, logger)
 
-	fileAsBytes, err := getMMapedFile(filename, filesize, logger)
+	fileAsBytes, closer, err := getMMapedFile(filename, filesize, logger)
 	if err != nil {
 		panic("Unable to create mmap-ed active query log")
 	}
@@ -120,6 +126,7 @@ func NewActiveQueryTracker(localStoragePath string, maxConcurrent int, logger lo
 	copy(fileAsBytes, "[")
 	activeQueryTracker := ActiveQueryTracker{
 		mmapedFile:    fileAsBytes,
+		closer:        closer,
 		getNextIndex:  make(chan int, maxConcurrent),
 		logger:        logger,
 		maxConcurrent: maxConcurrent,
@@ -147,7 +154,6 @@ func trimStringByBytes(str string, size int) string {
 func _newJSONEntry(query string, timestamp int64, logger log.Logger) []byte {
 	entry := Entry{query, timestamp}
 	jsonEntry, err := json.Marshal(entry)
-
 	if err != nil {
 		level.Error(logger).Log("msg", "Cannot create json of query", "query", query)
 		return []byte{}
@@ -194,4 +200,11 @@ func (tracker ActiveQueryTracker) Insert(ctx context.Context, query string) (int
 	case <-ctx.Done():
 		return 0, ctx.Err()
 	}
+}
+
+func (tracker *ActiveQueryTracker) Close() {
+	if tracker == nil || tracker.closer == nil {
+		return
+	}
+	tracker.closer.Close()
 }

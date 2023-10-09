@@ -18,15 +18,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/pkg/errors"
+	"github.com/go-kit/log"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
@@ -53,13 +51,13 @@ type robotDiscovery struct {
 }
 
 // newRobotDiscovery returns a new robotDiscovery which periodically refreshes its targets.
-func newRobotDiscovery(conf *SDConfig, logger log.Logger) (*robotDiscovery, error) {
+func newRobotDiscovery(conf *SDConfig, _ log.Logger) (*robotDiscovery, error) {
 	d := &robotDiscovery{
 		port:     conf.Port,
 		endpoint: conf.robotEndpoint,
 	}
 
-	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "hetzner_sd", false, false)
+	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "hetzner_sd")
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +68,8 @@ func newRobotDiscovery(conf *SDConfig, logger log.Logger) (*robotDiscovery, erro
 
 	return d, nil
 }
-func (d *robotDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
+
+func (d *robotDiscovery) refresh(context.Context) ([]*targetgroup.Group, error) {
 	req, err := http.NewRequest("GET", d.endpoint+"/server", nil)
 	if err != nil {
 		return nil, err
@@ -84,16 +83,21 @@ func (d *robotDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, err
 	}
 
 	defer func() {
-		io.Copy(ioutil.Discard, resp.Body)
+		io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
 	}()
 
 	if resp.StatusCode/100 != 2 {
-		return nil, errors.Errorf("non 2xx status '%d' response during hetzner service discovery with role robot", resp.StatusCode)
+		return nil, fmt.Errorf("non 2xx status '%d' response during hetzner service discovery with role robot", resp.StatusCode)
+	}
+
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
 	}
 
 	var servers serversList
-	err = json.NewDecoder(resp.Body).Decode(&servers)
+	err = json.Unmarshal(b, &servers)
 	if err != nil {
 		return nil, err
 	}
@@ -101,7 +105,7 @@ func (d *robotDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, err
 	targets := make([]model.LabelSet, len(servers))
 	for i, server := range servers {
 		labels := model.LabelSet{
-			hetznerLabelRole:           model.LabelValue(hetznerRoleRobot),
+			hetznerLabelRole:           model.LabelValue(HetznerRoleRobot),
 			hetznerLabelServerID:       model.LabelValue(strconv.Itoa(server.Server.ServerNumber)),
 			hetznerLabelServerName:     model.LabelValue(server.Server.ServerName),
 			hetznerLabelDatacenter:     model.LabelValue(strings.ToLower(server.Server.Dc)),

@@ -1,6 +1,5 @@
 import React, { Dispatch, FC, SetStateAction } from 'react';
 import { Button, ButtonGroup } from 'reactstrap';
-import styles from './Filter.module.css';
 
 export interface FilterData {
   showHealthy: boolean;
@@ -32,25 +31,25 @@ const Filter: FC<FilterProps> = ({ filter, setFilter, expanded, setExpanded }) =
   const btnProps = {
     all: {
       active: showHealthy,
-      className: `all ${styles.btn}`,
+      className: 'all',
       color: 'primary',
       onClick: (): void => setFilter({ ...filter, showHealthy: true }),
     },
     unhealthy: {
       active: !showHealthy,
-      className: `unhealthy ${styles.btn}`,
+      className: 'unhealthy',
       color: 'primary',
       onClick: (): void => setFilter({ ...filter, showHealthy: false }),
     },
     expansionState: {
       active: false,
-      className: `expansion ${styles.btn}`,
+      className: 'expansion',
       color: 'primary',
       onClick: (): void => setExpanded(mapExpansion(!allExpanded)),
     },
   };
   return (
-    <ButtonGroup>
+    <ButtonGroup className="text-nowrap">
       <Button {...btnProps.all}>All</Button>
       <Button {...btnProps.unhealthy}>Unhealthy</Button>
       <Button {...btnProps.expansionState}>{allExpanded ? 'Collapse All' : 'Expand All'}</Button>

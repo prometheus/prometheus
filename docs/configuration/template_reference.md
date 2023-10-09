@@ -51,13 +51,14 @@ If functions are used in a pipeline, the pipeline value is passed as the last ar
 
 ### Numbers
 
-| Name          | Arguments     | Returns |  Notes    |
-| ------------- | --------------| --------| --------- |
-| humanize      | number        | string  | Converts a number to a more readable format, using [metric prefixes](https://en.wikipedia.org/wiki/Metric_prefix).
-| humanize1024  | number        | string  | Like `humanize`, but uses 1024 as the base rather than 1000. |
-| humanizeDuration | number     | string  | Converts a duration in seconds to a more readable format. |
-| humanizePercentage | number   | string  | Converts a ratio value to a fraction of 100. |
-| humanizeTimestamp | number    | string  | Converts a Unix timestamp in seconds to a more readable format. |
+| Name                | Arguments        | Returns |  Notes    |
+|---------------------| -----------------| --------| --------- |
+| humanize            | number or string | string  | Converts a number to a more readable format, using [metric prefixes](https://en.wikipedia.org/wiki/Metric_prefix).
+| humanize1024        | number or string | string  | Like `humanize`, but uses 1024 as the base rather than 1000. |
+| humanizeDuration    | number or string | string  | Converts a duration in seconds to a more readable format. |
+| humanizePercentage  | number or string | string  | Converts a ratio value to a fraction of 100. |
+| humanizeTimestamp   | number or string | string     | Converts a Unix timestamp in seconds to a more readable format. |
+| toTime              | number or string | *time.Time | Converts a Unix timestamp in seconds to a time.Time.            |
 
 Humanizing functions are intended to produce reasonable output for consumption
 by humans, and are not guaranteed to return the same results between Prometheus
@@ -70,10 +71,13 @@ versions.
 | title         | string        | string  | [strings.Title](https://golang.org/pkg/strings/#Title), capitalises first character of each word.|
 | toUpper       | string        | string  | [strings.ToUpper](https://golang.org/pkg/strings/#ToUpper), converts all characters to upper case.|
 | toLower       | string        | string  | [strings.ToLower](https://golang.org/pkg/strings/#ToLower), converts all characters to lower case.|
+| stripPort     | string        | string  | [net.SplitHostPort](https://pkg.go.dev/net#SplitHostPort), splits string into host and port, then returns only host.|
 | match         | pattern, text | boolean | [regexp.MatchString](https://golang.org/pkg/regexp/#MatchString) Tests for a unanchored regexp match. |
 | reReplaceAll  | pattern, replacement, text | string | [Regexp.ReplaceAllString](https://golang.org/pkg/regexp/#Regexp.ReplaceAllString) Regexp substitution, unanchored. |
 | graphLink  | expr | string | Returns path to graph view in the [expression browser](https://prometheus.io/docs/visualization/browser/) for the expression. |
 | tableLink  | expr | string | Returns path to tabular ("Table") view in the [expression browser](https://prometheus.io/docs/visualization/browser/) for the expression. |
+| parseDuration | string | float | Parses a duration string such as "1h" into the number of seconds it represents. |
+| stripDomain | string | string | Removes the domain part of a FQDN. Leaves port untouched. |
 
 ### Others
 
@@ -82,6 +86,8 @@ versions.
 | args          | []interface{} | map[string]interface{} | This converts a list of objects to a map with keys arg0, arg1 etc. This is intended to allow multiple arguments to be passed to templates. |
 | tmpl          | string, []interface{} | nothing  | Like the built-in `template`, but allows non-literals as the template name. Note that the result is assumed to be safe, and will not be auto-escaped. Only available in consoles. |
 | safeHtml      | string        | string  | Marks string as HTML not requiring auto-escaping. |
+| externalURL   | _none_        | string  | The external URL under which Prometheus is externally reachable. |
+| pathPrefix    | _none_        | string  | The external URL [path](https://pkg.go.dev/net/url#URL) for use in console templates. |
 
 ## Template type differences
 
@@ -90,9 +96,9 @@ parameterize templates, and have a few other differences.
 
 ### Alert field templates
 
-`.Value`, `.Labels`, and `.ExternalLabels` contain the alert value, the alert
-labels, and the globally configured external labels, respectively. They are
-also exposed as the `$value`, `$labels`, and `$externalLabels` variables for
+`.Value`, `.Labels`, `.ExternalLabels`, and `.ExternalURL` contain the alert value, the alert
+labels, the globally configured external labels, and the external URL (configured with `--web.external-url`) respectively. They are
+also exposed as the `$value`, `$labels`, `$externalLabels`, and `$externalURL` variables for
 convenience.
 
 ### Console templates

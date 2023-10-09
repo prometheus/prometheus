@@ -16,27 +16,34 @@ package parser
 
 import (
         "math"
-        "sort"
         "strconv"
         "time"
 
-        "github.com/prometheus/prometheus/pkg/labels"
-        "github.com/prometheus/prometheus/pkg/value"
+        "github.com/prometheus/prometheus/model/labels"
+        "github.com/prometheus/prometheus/model/value"
+        "github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 )
+
 %}
 
 %union {
-    node      Node
-    item      Item
-    matchers  []*labels.Matcher
-    matcher   *labels.Matcher
-    label     labels.Label
-    labels    labels.Labels
-    strings   []string
-    series    []SequenceValue
-    uint      uint64
-    float     float64
-    duration  time.Duration
+    node        Node
+    item        Item
+    matchers    []*labels.Matcher
+    matcher     *labels.Matcher
+    label       labels.Label
+    labels      labels.Labels
+    lblList     []labels.Label
+    strings     []string
+    series      []SequenceValue
+    histogram   *histogram.FloatHistogram
+    descriptors map[string]interface{}
+    bucket_set  []float64
+    int         int64
+    uint        uint64
+    float       float64
+    duration    time.Duration
 }
 
 
@@ -53,6 +60,8 @@ IDENTIFIER
 LEFT_BRACE
 LEFT_BRACKET
 LEFT_PAREN
+OPEN_HIST
+CLOSE_HIST
 METRIC_IDENTIFIER
 NUMBER
 RIGHT_BRACE
@@ -62,6 +71,20 @@ SEMICOLON
 SPACE
 STRING
 TIMES
+
+// Histogram Descriptors.
+%token histogramDescStart
+%token <item>
+SUM_DESC
+COUNT_DESC
+SCHEMA_DESC
+OFFSET_DESC
+NEGATIVE_OFFSET_DESC
+BUCKETS_DESC
+NEGATIVE_BUCKETS_DESC
+ZERO_BUCKET_DESC
+ZERO_BUCKET_WIDTH_DESC
+%token histogramDescEnd
 
 // Operators.
 %token	operatorsStart
@@ -84,6 +107,7 @@ NEQ_REGEX
 POW
 SUB
 AT
+ATAN2
 %token	operatorsEnd
 
 // Aggregators.
@@ -137,13 +161,16 @@ START_METRIC_SELECTOR
 // Type definitions for grammar rules.
 %type <matchers> label_match_list
 %type <matcher> label_matcher
-
 %type <item> aggregate_op grouping_label match_op maybe_label metric_identifier unary_op at_modifier_preprocessors
-
-%type <labels> label_set label_set_list metric
+%type <labels> label_set metric
+%type <lblList> label_set_list
 %type <label> label_set_item
 %type <strings> grouping_label_list grouping_labels maybe_grouping_labels
 %type <series> series_item series_values
+%type <histogram> histogram_series_value
+%type <descriptors> histogram_desc_map histogram_desc_item
+%type <bucket_set> bucket_set bucket_set_list
+%type <int> int
 %type <uint> uint
 %type <float> number series_value signed_number signed_or_unsigned_number
 %type <node> step_invariant_expr aggregate_expr aggregate_modifier bin_modifier binary_expr bool_modifier expr function_call function_call_args function_call_body group_modifiers label_matchers matrix_selector number_literal offset_expr on_or_ignoring paren_expr string_literal subquery_expr unary_expr vector_selector
@@ -156,7 +183,7 @@ START_METRIC_SELECTOR
 %left LAND LUNLESS
 %left EQLC GTE GTR LSS LTE NEQ
 %left ADD SUB
-%left MUL DIV MOD
+%left MUL DIV MOD ATAN2
 %right POW
 
 // Offset modifiers do not have associativity.
@@ -173,7 +200,7 @@ start           :
                         { yylex.(*parser).generatedParserResult = $2 }
                 | START_SERIES_DESCRIPTION series_description
                 | START_EXPRESSION /* empty */ EOF
-                        { yylex.(*parser).addParseErrf(PositionRange{}, "no expression found in input")}
+                        { yylex.(*parser).addParseErrf(posrange.PositionRange{}, "no expression found in input")}
                 | START_EXPRESSION expr
                         { yylex.(*parser).generatedParserResult = $2 }
                 | START_METRIC_SELECTOR vector_selector
@@ -237,6 +264,7 @@ aggregate_modifier:
 
 // Operator precedence only works if each of those is listed separately.
 binary_expr     : expr ADD     bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
+                | expr ATAN2   bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
                 | expr DIV     bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
                 | expr EQLC    bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
                 | expr GTE     bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
@@ -254,7 +282,7 @@ binary_expr     : expr ADD     bin_modifier expr { $$ = yylex.(*parser).newBinar
                 ;
 
 // Using left recursion for the modifier rules, helps to keep the parser stack small and
-// reduces allocations
+// reduces allocations.
 bin_modifier    : group_modifiers;
 
 bool_modifier   : /* empty */
@@ -337,14 +365,14 @@ grouping_label  : maybe_label
 
 function_call   : IDENTIFIER function_call_body
                         {
-                        fn, exist := getFunction($1.Val)
+                        fn, exist := getFunction($1.Val, yylex.(*parser).functions)
                         if !exist{
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"unknown function with name %q", $1.Val)
                         }
                         $$ = &Call{
                                 Func: fn,
                                 Args: $2.(Expressions),
-                                PosRange: PositionRange{
+                                PosRange: posrange.PositionRange{
                                         Start: $1.Pos,
                                         End:   yylex.(*parser).lastClosing,
                                 },
@@ -468,7 +496,7 @@ subquery_expr   : expr LEFT_BRACKET duration COLON maybe_duration RIGHT_BRACKET
  */
 
 unary_expr      :
-                /* gives the rule the same precedence as MUL. This aligns with mathematical conventions */
+                /* Gives the rule the same precedence as MUL. This aligns with mathematical conventions. */
                 unary_op expr %prec MUL
                         {
                         if nl, ok := $2.(*NumberLiteral); ok {
@@ -565,13 +593,13 @@ label_matcher   : IDENTIFIER match_op STRING
  */
 
 metric          : metric_identifier label_set
-                        { $$ = append($2, labels.Label{Name: labels.MetricName, Value: $1.Val}); sort.Sort($$) }
+                        { b := labels.NewBuilder($2); b.Set(labels.MetricName, $1.Val); $$ = b.Labels() }
                 | label_set
                         {$$ = $1}
                 ;
 
 
-metric_identifier: AVG | BOTTOMK | BY | COUNT | COUNT_VALUES | GROUP | IDENTIFIER |  LAND | LOR | LUNLESS | MAX | METRIC_IDENTIFIER | MIN | OFFSET | QUANTILE | STDDEV | STDVAR | SUM | TOPK | WITHOUT;
+metric_identifier: AVG | BOTTOMK | BY | COUNT | COUNT_VALUES | GROUP | IDENTIFIER |  LAND | LOR | LUNLESS | MAX | METRIC_IDENTIFIER | MIN | OFFSET | QUANTILE | STDDEV | STDVAR | SUM | TOPK | WITHOUT | START | END;
 
 label_set       : LEFT_BRACE label_set_list RIGHT_BRACE
                         { $$ = labels.New($2...) }
@@ -603,7 +631,10 @@ label_set_item  : IDENTIFIER EQL STRING
                 ;
 
 /*
- * Series descriptions (only used by unit tests).
+ * Series descriptions:
+ * A separate language that is used to generate series values promtool.
+ * It is included in the promQL parser, because it shares common functionality, such as parsing a metric.
+ * The syntax is described in https://prometheus.io/docs/prometheus/latest/configuration/unit_testing_rules/#series
  */
 
 series_description: metric series_values
@@ -639,6 +670,7 @@ series_item     : BLANK
                 | series_value TIMES uint
                         {
                         $$ = []SequenceValue{}
+                        // Add an additional value for time 0, which we ignore in tests.
                         for i:=uint64(0); i <= $3; i++{
                                 $$ = append($$, SequenceValue{Value: $1})
                         }
@@ -646,10 +678,41 @@ series_item     : BLANK
                 | series_value signed_number TIMES uint
                         {
                         $$ = []SequenceValue{}
+                        // Add an additional value for time 0, which we ignore in tests.
                         for i:=uint64(0); i <= $4; i++{
                                 $$ = append($$, SequenceValue{Value: $1})
                                 $1 += $2
                         }
+                        }
+                // Histogram descriptions (part of unit testing).
+                | histogram_series_value
+                        {
+                        $$ = []SequenceValue{{Histogram:$1}}
+                        }
+                | histogram_series_value TIMES uint
+                        {
+                        $$ = []SequenceValue{}
+                        // Add an additional value for time 0, which we ignore in tests.
+                        for i:=uint64(0); i <= $3; i++{
+                                $$ = append($$, SequenceValue{Histogram:$1})
+                                //$1 += $2
+                        }
+                        }
+                | histogram_series_value ADD histogram_series_value TIMES uint
+                        {
+                        val, err := yylex.(*parser).histogramsIncreaseSeries($1,$3,$5)
+                        if err != nil {
+                          yylex.(*parser).addSemanticError(err)
+                        }
+                        $$ = val
+                        }
+                | histogram_series_value SUB histogram_series_value TIMES uint
+                        {
+                        val, err := yylex.(*parser).histogramsDecreaseSeries($1,$3,$5)
+                        if err != nil {
+                          yylex.(*parser).addSemanticError(err)
+                        }
+                        $$ = val
                         }
                 ;
 
@@ -664,7 +727,109 @@ series_value    : IDENTIFIER
                 | signed_number
                 ;
 
+histogram_series_value
+                : OPEN_HIST histogram_desc_map SPACE CLOSE_HIST
+                {
+                  $$ = yylex.(*parser).buildHistogramFromMap(&$2)
+                }
+                | OPEN_HIST histogram_desc_map CLOSE_HIST
+                {
+                  $$ = yylex.(*parser).buildHistogramFromMap(&$2)
+                }
+                | OPEN_HIST SPACE CLOSE_HIST
+                {
+                  m := yylex.(*parser).newMap()
+                  $$ = yylex.(*parser).buildHistogramFromMap(&m)
+                }
+                | OPEN_HIST CLOSE_HIST
+                {
+                  m := yylex.(*parser).newMap()
+                  $$ = yylex.(*parser).buildHistogramFromMap(&m)
+                }
+                ;
 
+histogram_desc_map
+                : histogram_desc_map SPACE histogram_desc_item
+                {
+                  $$ = *(yylex.(*parser).mergeMaps(&$1,&$3))
+                }
+                | histogram_desc_item
+                {
+                  $$ = $1
+                }
+                | histogram_desc_map error {
+                  yylex.(*parser).unexpected("histogram description", "histogram description key, e.g. buckets:[5 10 7]")
+                }
+                ;
+
+histogram_desc_item
+                : SCHEMA_DESC COLON int
+                {
+                   $$ = yylex.(*parser).newMap()
+                   $$["schema"] = $3
+                }
+                | SUM_DESC COLON signed_or_unsigned_number
+                {
+                   $$ = yylex.(*parser).newMap()
+                   $$["sum"] = $3
+                }
+                | COUNT_DESC COLON number
+                {
+                   $$ = yylex.(*parser).newMap()
+                   $$["count"] = $3
+                }
+                | ZERO_BUCKET_DESC COLON number
+                {
+                   $$ = yylex.(*parser).newMap()
+                   $$["z_bucket"] = $3
+                }
+                | ZERO_BUCKET_WIDTH_DESC COLON number
+                {
+                   $$ = yylex.(*parser).newMap()
+                   $$["z_bucket_w"] = $3
+                }
+                | BUCKETS_DESC COLON bucket_set
+                {
+                   $$ = yylex.(*parser).newMap()
+                   $$["buckets"] = $3
+                }
+                | OFFSET_DESC COLON int
+                {
+                   $$ = yylex.(*parser).newMap()
+                   $$["offset"] = $3
+                }
+                | NEGATIVE_BUCKETS_DESC COLON bucket_set
+                {
+                   $$ = yylex.(*parser).newMap()
+                   $$["n_buckets"] = $3
+                }
+                | NEGATIVE_OFFSET_DESC COLON int
+                {
+                   $$ = yylex.(*parser).newMap()
+                   $$["n_offset"] = $3
+                }
+                ;
+
+bucket_set      : LEFT_BRACKET bucket_set_list SPACE RIGHT_BRACKET
+                {
+                  $$ = $2
+                }
+                | LEFT_BRACKET bucket_set_list RIGHT_BRACKET
+                {
+                  $$ = $2
+                }
+                ;
+
+bucket_set_list : bucket_set_list SPACE number
+                {
+                  $$ = append($1, $3)
+                }
+                | number
+                {
+                  $$ = []float64{$1}
+                }
+                | bucket_set_list error
+                ;
 
 
 /*
@@ -673,8 +838,8 @@ series_value    : IDENTIFIER
 
 aggregate_op    : AVG | BOTTOMK | COUNT | COUNT_VALUES | GROUP | MAX | MIN | QUANTILE | STDDEV | STDVAR | SUM | TOPK ;
 
-// inside of grouping options label names can be recognized as keywords by the lexer. This is a list of keywords that could also be a label name.
-maybe_label     : AVG | BOOL | BOTTOMK | BY | COUNT | COUNT_VALUES | GROUP | GROUP_LEFT | GROUP_RIGHT | IDENTIFIER | IGNORING | LAND | LOR | LUNLESS | MAX | METRIC_IDENTIFIER | MIN | OFFSET | ON | QUANTILE | STDDEV | STDVAR | SUM | TOPK;
+// Inside of grouping options label names can be recognized as keywords by the lexer. This is a list of keywords that could also be a label name.
+maybe_label     : AVG | BOOL | BOTTOMK | BY | COUNT | COUNT_VALUES | GROUP | GROUP_LEFT | GROUP_RIGHT | IDENTIFIER | IGNORING | LAND | LOR | LUNLESS | MAX | METRIC_IDENTIFIER | MIN | OFFSET | ON | QUANTILE | STDDEV | STDVAR | SUM | TOPK | START | END | ATAN2;
 
 unary_op        : ADD | SUB;
 
@@ -709,6 +874,10 @@ uint            : NUMBER
                                 yylex.(*parser).addParseErrf($1.PositionRange(), "invalid repetition in series values: %s", err)
                         }
                         }
+                ;
+
+int             : SUB uint { $$ = -int64($2) }
+                | uint { $$ = int64($1) }
                 ;
 
 duration        : DURATION

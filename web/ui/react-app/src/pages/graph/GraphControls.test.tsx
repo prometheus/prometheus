@@ -9,8 +9,10 @@ import TimeInput from './TimeInput';
 const defaultGraphControlProps = {
   range: 60 * 60 * 24 * 1000,
   endTime: 1572100217898,
+  useLocalTime: false,
   resolution: 10,
   stacked: false,
+  showExemplars: false,
 
   onChangeRange: (): void => {
     // Do nothing.
@@ -22,6 +24,9 @@ const defaultGraphControlProps = {
     // Do nothing.
   },
   onChangeStacking: (): void => {
+    // Do nothing.
+  },
+  onChangeShowExemplars: (): void => {
     // Do nothing.
   },
 };
@@ -55,9 +60,9 @@ describe('GraphControls', () => {
         title: 'Increase range',
         icon: faPlus,
       },
-    ].forEach(testCase => {
+    ].forEach((testCase) => {
       const controls = shallow(<GraphControls {...defaultGraphControlProps} />);
-      const addon = controls.find(InputGroupAddon).filterWhere(addon => addon.prop('addonType') === testCase.position);
+      const addon = controls.find(InputGroupAddon).filterWhere((addon) => addon.prop('addonType') === testCase.position);
       const button = addon.find(Button);
       const icon = button.find(FontAwesomeIcon);
       expect(button.prop('title')).toEqual(testCase.title);
@@ -105,18 +110,23 @@ describe('GraphControls', () => {
 
   it('renders a resolution Input with props', () => {
     const controls = shallow(<GraphControls {...defaultGraphControlProps} />);
-    const input = controls.find(Input).filterWhere(input => input.prop('className') === 'resolution-input');
+    const input = controls.find(Input).filterWhere((input) => input.prop('className') === 'resolution-input');
     expect(input.prop('placeholder')).toEqual('Res. (s)');
     expect(input.prop('defaultValue')).toEqual('10');
     expect(input.prop('innerRef')).toEqual({ current: null });
     expect(input.prop('bsSize')).toEqual('sm');
   });
 
-  it('renders a button group', () => {
-    const controls = shallow(<GraphControls {...defaultGraphControlProps} />);
-    const group = controls.find(ButtonGroup);
-    expect(group.prop('className')).toEqual('stacked-input');
-    expect(group.prop('size')).toEqual('sm');
+  it('renders button groups', () => {
+    [
+      { className: 'stacked-input', size: 'sm' },
+      { className: 'show-exemplars', size: 'sm' },
+    ].forEach((testCase, i) => {
+      const controls = shallow(<GraphControls {...defaultGraphControlProps} />);
+      const groups = controls.find(ButtonGroup);
+      expect(groups.get(i).props['className']).toEqual(testCase.className);
+      expect(groups.get(i).props['size']).toEqual(testCase.size);
+    });
   });
 
   it('renders buttons inside the button group', () => {
@@ -131,10 +141,10 @@ describe('GraphControls', () => {
         icon: faChartArea,
         active: false,
       },
-    ].forEach(testCase => {
+    ].forEach((testCase) => {
       const controls = shallow(<GraphControls {...defaultGraphControlProps} />);
       const group = controls.find(ButtonGroup);
-      const btn = group.find(Button).filterWhere(btn => btn.prop('title') === testCase.title);
+      const btn = group.find(Button).filterWhere((btn) => btn.prop('title') === testCase.title);
       expect(btn.prop('active')).toEqual(testCase.active);
       const icon = btn.find(FontAwesomeIcon);
       expect(icon.prop('icon')).toEqual(testCase.icon);
@@ -151,17 +161,17 @@ describe('GraphControls', () => {
         title: 'Show stacked graph',
         active: false,
       },
-    ].forEach(testCase => {
+    ].forEach((testCase) => {
       const results: boolean[] = [];
       const onChange = (stacked: boolean): void => {
         results.push(stacked);
       };
       const controls = shallow(<GraphControls {...defaultGraphControlProps} onChangeStacking={onChange} />);
       const group = controls.find(ButtonGroup);
-      const btn = group.find(Button).filterWhere(btn => btn.prop('title') === testCase.title);
+      const btn = group.find(Button).filterWhere((btn) => btn.prop('title') === testCase.title);
       const onClick = btn.prop('onClick');
       if (onClick) {
-        onClick({} as React.MouseEvent);
+        btn.simulate('click');
         expect(results).toHaveLength(1);
         expect(results[0]).toBe(!testCase.active);
         results.pop();

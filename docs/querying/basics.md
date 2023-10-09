@@ -32,6 +32,16 @@ expression), only some of these types are legal as the result from a
 user-specified expression. For example, an expression that returns an instant
 vector is the only type that can be directly graphed.
 
+_Notes about the experimental native histograms:_
+
+* Ingesting native histograms has to be enabled via a [feature
+  flag](../../feature_flags.md#native-histograms).
+* Once native histograms have been ingested into the TSDB (and even after
+  disabling the feature flag again), both instant vectors and range vectors may
+  now contain samples that aren't simple floating point numbers (float samples)
+  but complete histograms (histogram samples). A vector may contain a mix of
+  float samples and histogram samples.
+
 ## Literals
 
 ### String literals
@@ -104,14 +114,15 @@ against regular expressions. The following label matching operators exist:
 * `=~`: Select labels that regex-match the provided string.
 * `!~`: Select labels that do not regex-match the provided string.
 
+Regex matches are fully anchored. A match of `env=~"foo"` is treated as `env=~"^foo$"`.
+
 For example, this selects all `http_requests_total` time series for `staging`,
 `testing`, and `development` environments and HTTP methods other than `GET`.
 
     http_requests_total{environment=~"staging|testing|development",method!="GET"}
 
 Label matchers that match empty label values also select all time series that
-do not have the specific label set at all. Regex-matches are fully anchored. It
-is possible to have multiple matchers for the same label name.
+do not have the specific label set at all. It is possible to have multiple matchers for the same label name.
 
 Vector selectors must either specify a name or at least one label matcher
 that does not match the empty string. The following expression is illegal:
@@ -146,9 +157,11 @@ syntax](https://github.com/google/re2/wiki/Syntax).
 
 Range vector literals work like instant vector literals, except that they
 select a range of samples back from the current instant. Syntactically, a [time
-duration](#time-durations) is appended in square brackets (`[]`) at the end of a
-vector selector to specify how far back in time values should be fetched for
-each resulting range vector element.
+duration](#time-durations) is appended in square brackets (`[]`) at the end of
+a vector selector to specify how far back in time values should be fetched for
+each resulting range vector element. The range is a closed interval,
+i.e. samples with timestamps coinciding with either boundary of the range are
+still included in the selection.
 
 In this example, we select all the values we have recorded within the last 5
 minutes for all time series that have the metric name `http_requests_total` and
@@ -209,9 +222,7 @@ can be specified:
 
     rate(http_requests_total[5m] offset -1w)
 
-This feature is enabled by setting `--enable-feature=promql-negative-offset`
-flag. See [disabled features](../disabled_features.md) for more details about
-this flag.
+Note that this allows a query to look ahead of its evaluation time.
 
 ### @ modifier
 
@@ -249,10 +260,6 @@ These 2 queries will produce the same result.
     # offset before @
     http_requests_total offset 5m @ 1609746000
 
-This modifier is disabled by default since it breaks the invariant that PromQL
-does not look ahead of the evaluation time for samples. It can be enabled by setting
-`--enable-feature=promql-at-modifier` flag. See [disabled features](../disabled_features.md) for more details about this flag.
-
 Additionally, `start()` and `end()` can also be used as values for the `@` modifier as special values.
 
 For a range query, they resolve to the start and end of the range query respectively and remain the same for all steps.
@@ -261,6 +268,8 @@ For an instant query, `start()` and `end()` both resolve to the evaluation time.
 
     http_requests_total @ start()
     rate(http_requests_total[5m] @ end())
+
+Note that the `@` modifier allows a query to look ahead of its evaluation time.
 
 ## Subquery
 

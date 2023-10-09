@@ -1,5 +1,4 @@
 scrape_configs:
-
-- job_name: eureka
-  eureka_sd_configs:
-  - server: eureka.com
+  - job_name: eureka
+    eureka_sd_configs:
+      - server: eureka.com

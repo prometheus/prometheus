@@ -3,4 +3,3 @@ remote_write:
     name: queue1
   - url: localhost:9091
     name: queue1
-

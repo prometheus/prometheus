@@ -21,7 +21,7 @@ import (
 
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 )
 
 // Tree returns a string of the tree structure of the given node.
@@ -62,21 +62,25 @@ func (es Expressions) String() (s string) {
 }
 
 func (node *AggregateExpr) String() string {
-	aggrString := node.Op.String()
-
-	if node.Without {
-		aggrString += fmt.Sprintf(" without(%s) ", strings.Join(node.Grouping, ", "))
-	} else {
-		if len(node.Grouping) > 0 {
-			aggrString += fmt.Sprintf(" by(%s) ", strings.Join(node.Grouping, ", "))
-		}
-	}
-
+	aggrString := node.getAggOpStr()
 	aggrString += "("
 	if node.Op.IsAggregatorWithParam() {
 		aggrString += fmt.Sprintf("%s, ", node.Param)
 	}
 	aggrString += fmt.Sprintf("%s)", node.Expr)
+
+	return aggrString
+}
+
+func (node *AggregateExpr) getAggOpStr() string {
+	aggrString := node.Op.String()
+
+	switch {
+	case node.Without:
+		aggrString += fmt.Sprintf(" without (%s) ", strings.Join(node.Grouping, ", "))
+	case len(node.Grouping) > 0:
+		aggrString += fmt.Sprintf(" by (%s) ", strings.Join(node.Grouping, ", "))
+	}
 
 	return aggrString
 }
@@ -87,25 +91,29 @@ func (node *BinaryExpr) String() string {
 		returnBool = " bool"
 	}
 
+	matching := node.getMatchingStr()
+	return fmt.Sprintf("%s %s%s%s %s", node.LHS, node.Op, returnBool, matching, node.RHS)
+}
+
+func (node *BinaryExpr) getMatchingStr() string {
 	matching := ""
 	vm := node.VectorMatching
 	if vm != nil && (len(vm.MatchingLabels) > 0 || vm.On) {
+		vmTag := "ignoring"
 		if vm.On {
-			matching = fmt.Sprintf(" on(%s)", strings.Join(vm.MatchingLabels, ", "))
-		} else {
-			matching = fmt.Sprintf(" ignoring(%s)", strings.Join(vm.MatchingLabels, ", "))
+			vmTag = "on"
 		}
+		matching = fmt.Sprintf(" %s (%s)", vmTag, strings.Join(vm.MatchingLabels, ", "))
+
 		if vm.Card == CardManyToOne || vm.Card == CardOneToMany {
-			matching += " group_"
+			vmCard := "right"
 			if vm.Card == CardManyToOne {
-				matching += "left"
-			} else {
-				matching += "right"
+				vmCard = "left"
 			}
-			matching += fmt.Sprintf("(%s)", strings.Join(vm.Include, ", "))
+			matching += fmt.Sprintf(" group_%s (%s)", vmCard, strings.Join(vm.Include, ", "))
 		}
 	}
-	return fmt.Sprintf("%s %s%s%s %s", node.LHS, node.Op, returnBool, matching, node.RHS)
+	return matching
 }
 
 func (node *Call) String() string {
@@ -116,17 +124,19 @@ func (node *MatrixSelector) String() string {
 	// Copy the Vector selector before changing the offset
 	vecSelector := *node.VectorSelector.(*VectorSelector)
 	offset := ""
-	if vecSelector.OriginalOffset > time.Duration(0) {
+	switch {
+	case vecSelector.OriginalOffset > time.Duration(0):
 		offset = fmt.Sprintf(" offset %s", model.Duration(vecSelector.OriginalOffset))
-	} else if vecSelector.OriginalOffset < time.Duration(0) {
+	case vecSelector.OriginalOffset < time.Duration(0):
 		offset = fmt.Sprintf(" offset -%s", model.Duration(-vecSelector.OriginalOffset))
 	}
 	at := ""
-	if vecSelector.Timestamp != nil {
+	switch {
+	case vecSelector.Timestamp != nil:
 		at = fmt.Sprintf(" @ %.3f", float64(*vecSelector.Timestamp)/1000.0)
-	} else if vecSelector.StartOrEnd == START {
+	case vecSelector.StartOrEnd == START:
 		at = " @ start()"
-	} else if vecSelector.StartOrEnd == END {
+	case vecSelector.StartOrEnd == END:
 		at = " @ end()"
 	}
 
@@ -144,25 +154,32 @@ func (node *MatrixSelector) String() string {
 }
 
 func (node *SubqueryExpr) String() string {
+	return fmt.Sprintf("%s%s", node.Expr.String(), node.getSubqueryTimeSuffix())
+}
+
+// getSubqueryTimeSuffix returns the '[<range>:<step>] @ <timestamp> offset <offset>' suffix of the subquery.
+func (node *SubqueryExpr) getSubqueryTimeSuffix() string {
 	step := ""
 	if node.Step != 0 {
 		step = model.Duration(node.Step).String()
 	}
 	offset := ""
-	if node.OriginalOffset > time.Duration(0) {
+	switch {
+	case node.OriginalOffset > time.Duration(0):
 		offset = fmt.Sprintf(" offset %s", model.Duration(node.OriginalOffset))
-	} else if node.OriginalOffset < time.Duration(0) {
+	case node.OriginalOffset < time.Duration(0):
 		offset = fmt.Sprintf(" offset -%s", model.Duration(-node.OriginalOffset))
 	}
 	at := ""
-	if node.Timestamp != nil {
+	switch {
+	case node.Timestamp != nil:
 		at = fmt.Sprintf(" @ %.3f", float64(*node.Timestamp)/1000.0)
-	} else if node.StartOrEnd == START {
+	case node.StartOrEnd == START:
 		at = " @ start()"
-	} else if node.StartOrEnd == END {
+	case node.StartOrEnd == END:
 		at = " @ end()"
 	}
-	return fmt.Sprintf("%s[%s:%s]%s%s", node.Expr.String(), model.Duration(node.Range), step, at, offset)
+	return fmt.Sprintf("[%s:%s]%s%s", model.Duration(node.Range), step, at, offset)
 }
 
 func (node *NumberLiteral) String() string {
@@ -182,7 +199,10 @@ func (node *UnaryExpr) String() string {
 }
 
 func (node *VectorSelector) String() string {
-	labelStrings := make([]string, 0, len(node.LabelMatchers)-1)
+	var labelStrings []string
+	if len(node.LabelMatchers) > 1 {
+		labelStrings = make([]string, 0, len(node.LabelMatchers)-1)
+	}
 	for _, matcher := range node.LabelMatchers {
 		// Only include the __name__ label if its equality matching and matches the name.
 		if matcher.Name == labels.MetricName && matcher.Type == labels.MatchEqual && matcher.Value == node.Name {
@@ -191,17 +211,19 @@ func (node *VectorSelector) String() string {
 		labelStrings = append(labelStrings, matcher.String())
 	}
 	offset := ""
-	if node.OriginalOffset > time.Duration(0) {
+	switch {
+	case node.OriginalOffset > time.Duration(0):
 		offset = fmt.Sprintf(" offset %s", model.Duration(node.OriginalOffset))
-	} else if node.OriginalOffset < time.Duration(0) {
+	case node.OriginalOffset < time.Duration(0):
 		offset = fmt.Sprintf(" offset -%s", model.Duration(-node.OriginalOffset))
 	}
 	at := ""
-	if node.Timestamp != nil {
+	switch {
+	case node.Timestamp != nil:
 		at = fmt.Sprintf(" @ %.3f", float64(*node.Timestamp)/1000.0)
-	} else if node.StartOrEnd == START {
+	case node.StartOrEnd == START:
 		at = " @ start()"
-	} else if node.StartOrEnd == END {
+	case node.StartOrEnd == END:
 		at = " @ end()"
 	}
 

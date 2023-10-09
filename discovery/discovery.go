@@ -17,7 +17,7 @@ import (
 	"context"
 	"reflect"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/prometheus/common/config"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -41,6 +41,10 @@ type Discoverer interface {
 // DiscovererOptions provides options for a Discoverer.
 type DiscovererOptions struct {
 	Logger log.Logger
+
+	// Extra HTTP client options to expose to Discoverers. This field may be
+	// ignored; Discoverer implementations must opt-in to reading it.
+	HTTPClientOptions []config.HTTPClientOption
 }
 
 // A Config provides the configuration and constructor for a Discoverer.

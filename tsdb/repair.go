@@ -16,12 +16,11 @@ package tsdb
 import (
 	"encoding/json"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
 
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
@@ -115,7 +114,7 @@ func repairBadIndexVersion(logger log.Logger, dir string) error {
 }
 
 func readBogusMetaFile(dir string) (*BlockMeta, error) {
-	b, err := ioutil.ReadFile(filepath.Join(dir, metaFilename))
+	b, err := os.ReadFile(filepath.Join(dir, metaFilename))
 	if err != nil {
 		return nil, err
 	}

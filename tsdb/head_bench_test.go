@@ -14,8 +14,6 @@
 package tsdb
 
 import (
-	"io/ioutil"
-	"os"
 	"strconv"
 	"testing"
 
@@ -23,20 +21,17 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 )
 
 func BenchmarkHeadStripeSeriesCreate(b *testing.B) {
-	chunkDir, err := ioutil.TempDir("", "chunk_dir")
-	require.NoError(b, err)
-	defer func() {
-		require.NoError(b, os.RemoveAll(chunkDir))
-	}()
+	chunkDir := b.TempDir()
 	// Put a series, select it. GC it and then access it.
 	opts := DefaultHeadOptions()
 	opts.ChunkRange = 1000
 	opts.ChunkDirRoot = chunkDir
-	h, err := NewHead(nil, nil, nil, opts)
+	h, err := NewHead(nil, nil, nil, nil, opts, nil)
 	require.NoError(b, err)
 	defer h.Close()
 
@@ -46,16 +41,12 @@ func BenchmarkHeadStripeSeriesCreate(b *testing.B) {
 }
 
 func BenchmarkHeadStripeSeriesCreateParallel(b *testing.B) {
-	chunkDir, err := ioutil.TempDir("", "chunk_dir")
-	require.NoError(b, err)
-	defer func() {
-		require.NoError(b, os.RemoveAll(chunkDir))
-	}()
+	chunkDir := b.TempDir()
 	// Put a series, select it. GC it and then access it.
 	opts := DefaultHeadOptions()
 	opts.ChunkRange = 1000
 	opts.ChunkDirRoot = chunkDir
-	h, err := NewHead(nil, nil, nil, opts)
+	h, err := NewHead(nil, nil, nil, nil, opts, nil)
 	require.NoError(b, err)
 	defer h.Close()
 
@@ -70,11 +61,7 @@ func BenchmarkHeadStripeSeriesCreateParallel(b *testing.B) {
 }
 
 func BenchmarkHeadStripeSeriesCreate_PreCreationFailure(b *testing.B) {
-	chunkDir, err := ioutil.TempDir("", "chunk_dir")
-	require.NoError(b, err)
-	defer func() {
-		require.NoError(b, os.RemoveAll(chunkDir))
-	}()
+	chunkDir := b.TempDir()
 	// Put a series, select it. GC it and then access it.
 	opts := DefaultHeadOptions()
 	opts.ChunkRange = 1000
@@ -83,7 +70,7 @@ func BenchmarkHeadStripeSeriesCreate_PreCreationFailure(b *testing.B) {
 	// Mock the PreCreation() callback to fail on each series.
 	opts.SeriesCallback = failingSeriesLifecycleCallback{}
 
-	h, err := NewHead(nil, nil, nil, opts)
+	h, err := NewHead(nil, nil, nil, nil, opts, nil)
 	require.NoError(b, err)
 	defer h.Close()
 
@@ -94,6 +81,6 @@ func BenchmarkHeadStripeSeriesCreate_PreCreationFailure(b *testing.B) {
 
 type failingSeriesLifecycleCallback struct{}
 
-func (failingSeriesLifecycleCallback) PreCreation(labels.Labels) error { return errors.New("failed") }
-func (failingSeriesLifecycleCallback) PostCreation(labels.Labels)      {}
-func (failingSeriesLifecycleCallback) PostDeletion(...labels.Labels)   {}
+func (failingSeriesLifecycleCallback) PreCreation(labels.Labels) error                     { return errors.New("failed") }
+func (failingSeriesLifecycleCallback) PostCreation(labels.Labels)                          {}
+func (failingSeriesLifecycleCallback) PostDeletion(map[chunks.HeadSeriesRef]labels.Labels) {}

@@ -34,6 +34,7 @@ Generic placeholders are defined as follows:
 * `<boolean>`: a boolean that can take the values `true` or `false`
 * `<duration>`: a duration matching the regular expression `((([0-9]+)y)?(([0-9]+)w)?(([0-9]+)d)?(([0-9]+)h)?(([0-9]+)m)?(([0-9]+)s)?(([0-9]+)ms)?|0)`, e.g. `1d`, `1h30m`, `5m`, `10s`
 * `<filename>`: a valid path in the current working directory
+* `<float>`: a floating-point number
 * `<host>`: a valid string consisting of a hostname or IP followed by an optional port number
 * `<int>`: an integer value
 * `<labelname>`: a string matching the regular expression `[a-zA-Z_][a-zA-Z0-9_]*`
@@ -42,6 +43,7 @@ Generic placeholders are defined as follows:
 * `<scheme>`: a string that can take the values `http` or `https`
 * `<secret>`: a regular string that is a secret, such as a password
 * `<string>`: a regular string
+* `<size>`: a size in bytes, e.g. `512MB`. A unit is required. Supported units: B, KB, MB, GB, TB, PB, EB.
 * `<tmpl_string>`: a string which is template-expanded before usage
 
 The other placeholders are specified separately.
@@ -71,9 +73,51 @@ global:
   # Reloading the configuration will reopen the file.
   [ query_log_file: <string> ]
 
+  # An uncompressed response body larger than this many bytes will cause the
+  # scrape to fail. 0 means no limit. Example: 100MB.
+  # This is an experimental feature, this behaviour could
+  # change or be removed in the future.
+  [ body_size_limit: <size> | default = 0 ]
+
+  # Per-scrape limit on number of scraped samples that will be accepted.
+  # If more than this number of samples are present after metric relabeling
+  # the entire scrape will be treated as failed. 0 means no limit.
+  [ sample_limit: <int> | default = 0 ]
+
+  # Per-scrape limit on number of labels that will be accepted for a sample. If
+  # more than this number of labels are present post metric-relabeling, the
+  # entire scrape will be treated as failed. 0 means no limit.
+  [ label_limit: <int> | default = 0 ]
+
+  # Per-scrape limit on length of labels name that will be accepted for a sample.
+  # If a label name is longer than this number post metric-relabeling, the entire
+  # scrape will be treated as failed. 0 means no limit.
+  [ label_name_length_limit: <int> | default = 0 ]
+
+  # Per-scrape limit on length of labels value that will be accepted for a sample.
+  # If a label value is longer than this number post metric-relabeling, the
+  # entire scrape will be treated as failed. 0 means no limit.
+  [ label_value_length_limit: <int> | default = 0 ]
+
+  # Per-scrape config limit on number of unique targets that will be
+  # accepted. If more than this number of targets are present after target
+  # relabeling, Prometheus will mark the targets as failed without scraping them.
+  # 0 means no limit. This is an experimental feature, this behaviour could
+  # change in the future.
+  [ target_limit: <int> | default = 0 ]
+
+  # Limit per scrape config on the number of targets dropped by relabeling
+  # that will be kept in memory. 0 means no limit.
+  [ keep_dropped_targets: <int> | default = 0 ]
+
 # Rule files specifies a list of globs. Rules and alerts are read from
 # all matching files.
 rule_files:
+  [ - <filepath_glob> ... ]
+
+# Scrape config files specifies a list of globs. Scrape configs are read from
+# all matching files and appended to the list of scrape configs.
+scrape_config_files:
   [ - <filepath_glob> ... ]
 
 # A list of scrape configurations.
@@ -94,6 +138,15 @@ remote_write:
 # Settings related to the remote read feature.
 remote_read:
   [ - <remote_read> ... ]
+
+# Storage related settings that are runtime reloadable.
+storage:
+  [ tsdb: <tsdb> ]
+  [ exemplars: <exemplars> ]
+
+# Configures exporting traces.
+tracing:
+  [ <tracing_config> ]
 ```
 
 ### `<scrape_config>`
@@ -117,6 +170,10 @@ job_name: <job_name>
 
 # Per-scrape timeout when scraping this job.
 [ scrape_timeout: <duration> | default = <global_config.scrape_timeout> ]
+
+# Whether to scrape a classic histogram that is also exposed as a native
+# histogram (has no effect without --enable-feature=native-histograms).
+[ scrape_classic_histograms: <boolean> | default = false ]
 
 # The HTTP resource path on which to fetch metrics from targets.
 [ metrics_path: <path> | default = /metrics ]
@@ -180,8 +237,16 @@ authorization:
   # configured file. It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
+
 # Configure whether scrape requests follow HTTP 3xx redirects.
-[ follow_redirects: <bool> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <boolean> | default: true ]
 
 # Configures the scrape request's TLS settings.
 tls_config:
@@ -189,6 +254,16 @@ tls_config:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Comma-separated string that can contain IPs, CIDR notation, domain names
+# that should be excluded from proxying. IP and domain names can
+# contain port numbers.
+[ no_proxy: <string> ]
+# Use proxy URL indicated by environment variables (HTTP_PROXY, https_proxy, HTTPs_PROXY, https_proxy, and no_proxy)
+[ proxy_from_environment: <boolean> | default: false ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
+
 
 # List of Azure service discovery configurations.
 azure_sd_configs:
@@ -234,9 +309,30 @@ gce_sd_configs:
 hetzner_sd_configs:
   [ - <hetzner_sd_config> ... ]
 
+# List of HTTP service discovery configurations.
+http_sd_configs:
+  [ - <http_sd_config> ... ]
+
+
+# List of IONOS service discovery configurations.
+ionos_sd_configs:
+  [ - <ionos_sd_config> ... ]
+
 # List of Kubernetes service discovery configurations.
 kubernetes_sd_configs:
   [ - <kubernetes_sd_config> ... ]
+
+# List of Kuma service discovery configurations.
+kuma_sd_configs:
+  [ - <kuma_sd_config> ... ]
+
+# List of Lightsail service discovery configurations.
+lightsail_sd_configs:
+  [ - <lightsail_sd_config> ... ]
+
+# List of Linode service discovery configurations.
+linode_sd_configs:
+  [ - <linode_sd_config> ... ]
 
 # List of Marathon service discovery configurations.
 marathon_sd_configs:
@@ -246,9 +342,21 @@ marathon_sd_configs:
 nerve_sd_configs:
   [ - <nerve_sd_config> ... ]
 
+# List of Nomad service discovery configurations.
+nomad_sd_configs:
+  [ - <nomad_sd_config> ... ]
+
 # List of OpenStack service discovery configurations.
 openstack_sd_configs:
   [ - <openstack_sd_config> ... ]
+
+# List of OVHcloud service discovery configurations.
+ovhcloud_sd_configs:
+  [ - <ovhcloud_sd_config> ... ]
+
+# List of PuppetDB service discovery configurations.
+puppetdb_sd_configs:
+  [ - <puppetdb_sd_config> ... ]
 
 # List of Scaleway service discovery configurations.
 scaleway_sd_configs:
@@ -262,6 +370,10 @@ serverset_sd_configs:
 triton_sd_configs:
   [ - <triton_sd_config> ... ]
 
+# List of Uyuni service discovery configurations.
+uyuni_sd_configs:
+  [ - <uyuni_sd_config> ... ]
+
 # List of labeled statically configured targets for this job.
 static_configs:
   [ - <static_config> ... ]
@@ -274,10 +386,31 @@ relabel_configs:
 metric_relabel_configs:
   [ - <relabel_config> ... ]
 
+# An uncompressed response body larger than this many bytes will cause the
+# scrape to fail. 0 means no limit. Example: 100MB.
+# This is an experimental feature, this behaviour could
+# change or be removed in the future.
+[ body_size_limit: <size> | default = 0 ]
+
 # Per-scrape limit on number of scraped samples that will be accepted.
 # If more than this number of samples are present after metric relabeling
 # the entire scrape will be treated as failed. 0 means no limit.
 [ sample_limit: <int> | default = 0 ]
+
+# Per-scrape limit on number of labels that will be accepted for a sample. If
+# more than this number of labels are present post metric-relabeling, the
+# entire scrape will be treated as failed. 0 means no limit.
+[ label_limit: <int> | default = 0 ]
+
+# Per-scrape limit on length of labels name that will be accepted for a sample.
+# If a label name is longer than this number post metric-relabeling, the entire
+# scrape will be treated as failed. 0 means no limit.
+[ label_name_length_limit: <int> | default = 0 ]
+
+# Per-scrape limit on length of labels value that will be accepted for a sample.
+# If a label value is longer than this number post metric-relabeling, the
+# entire scrape will be treated as failed. 0 means no limit.
+[ label_value_length_limit: <int> | default = 0 ]
 
 # Per-scrape config limit on number of unique targets that will be
 # accepted. If more than this number of targets are present after target
@@ -285,6 +418,15 @@ metric_relabel_configs:
 # 0 means no limit. This is an experimental feature, this behaviour could
 # change in the future.
 [ target_limit: <int> | default = 0 ]
+
+# Per-job limit on the number of targets dropped by relabeling
+# that will be kept in memory. 0 means no limit.
+[ keep_dropped_targets: <int> | default = 0 ]
+
+# Limit on total number of positive and negative buckets allowed in a single
+# native histogram. If this is exceeded, the entire scrape will be treated as
+# failed. 0 means no limit.
+[ native_histogram_bucket_limit: <int> | default = 0 ]
 ```
 
 Where `<job_name>` must be unique across all scrape configurations.
@@ -294,11 +436,16 @@ Where `<job_name>` must be unique across all scrape configurations.
 A `tls_config` allows configuring TLS connections.
 
 ```yaml
-# CA certificate to validate API server certificate with.
+# CA certificate to validate API server certificate with. At most one of ca and ca_file is allowed.
+[ ca: <string> ]
 [ ca_file: <filename> ]
 
-# Certificate and key files for client cert authentication to the server.
+# Certificate and key for client cert authentication to the server.
+# At most one of cert and cert_file is allowed.
+# At most one of key and key_file is allowed.
+[ cert: <string> ]
 [ cert_file: <filename> ]
+[ key: <secret> ]
 [ key_file: <filename> ]
 
 # ServerName extension to indicate the name of the server.
@@ -307,6 +454,59 @@ A `tls_config` allows configuring TLS connections.
 
 # Disable validation of the server certificate.
 [ insecure_skip_verify: <boolean> ]
+
+# Minimum acceptable TLS version. Accepted values: TLS10 (TLS 1.0), TLS11 (TLS
+# 1.1), TLS12 (TLS 1.2), TLS13 (TLS 1.3).
+# If unset, Prometheus will use Go default minimum version, which is TLS 1.2.
+# See MinVersion in https://pkg.go.dev/crypto/tls#Config.
+[ min_version: <string> ]
+# Maximum acceptable TLS version. Accepted values: TLS10 (TLS 1.0), TLS11 (TLS
+# 1.1), TLS12 (TLS 1.2), TLS13 (TLS 1.3).
+# If unset, Prometheus will use Go default maximum version, which is TLS 1.3.
+# See MaxVersion in https://pkg.go.dev/crypto/tls#Config.
+[ max_version: <string> ]
+```
+
+### `<oauth2>`
+
+OAuth 2.0 authentication using the client credentials grant type.
+Prometheus fetches an access token from the specified endpoint with
+the given client access and secret keys.
+
+```yaml
+client_id: <string>
+[ client_secret: <secret> ]
+
+# Read the client secret from a file.
+# It is mutually exclusive with `client_secret`.
+[ client_secret_file: <filename> ]
+
+# Scopes for the token request.
+scopes:
+  [ - <string> ... ]
+
+# The URL to fetch the token from.
+token_url: <string>
+
+# Optional parameters to append to the token URL.
+endpoint_params:
+  [ <string>: <string> ... ]
+
+# Configures the token request's TLS settings.
+tls_config:
+  [ <tls_config> ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+# Comma-separated string that can contain IPs, CIDR notation, domain names
+# that should be excluded from proxying. IP and domain names can
+# contain port numbers.
+[ no_proxy: <string> ]
+# Use proxy URL indicated by environment variables (HTTP_PROXY, https_proxy, HTTPs_PROXY, https_proxy, and no_proxy)
+[ proxy_from_environment: <boolean> | default: false ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
 ```
 
 ### `<azure_sd_config>`
@@ -318,12 +518,14 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_azure_machine_id`: the machine ID
 * `__meta_azure_machine_location`: the location the machine runs in
 * `__meta_azure_machine_name`: the machine name
+* `__meta_azure_machine_computer_name`: the machine computer name
 * `__meta_azure_machine_os_type`: the machine operating system
 * `__meta_azure_machine_private_ip`: the machine's private IP
 * `__meta_azure_machine_public_ip`: the machine's public IP if it exists
 * `__meta_azure_machine_resource_group`: the machine's resource group
 * `__meta_azure_machine_tag_<tagname>`: each tag value of the machine
 * `__meta_azure_machine_scale_set`: the name of the scale set which the vm is part of (this value is only set if you are using a [scale set](https://docs.microsoft.com/en-us/azure/virtual-machine-scale-sets/))
+* `__meta_azure_machine_size`: the machine size
 * `__meta_azure_subscription_id`: the subscription ID
 * `__meta_azure_tenant_id`: the tenant ID
 
@@ -346,12 +548,63 @@ subscription_id: <string>
 # Optional client secret. Only required with authentication_method OAuth.
 [ client_secret: <secret> ]
 
+# Optional resource group name. Limits discovery to this resource group.
+[ resource_group: <string> ]
+
 # Refresh interval to re-read the instance list.
 [ refresh_interval: <duration> | default = 300s ]
 
 # The port to scrape metrics from. If using the public IP address, this must
 # instead be specified in the relabeling rule.
 [ port: <int> | default = 80 ]
+
+# Authentication information used to authenticate to the Azure API.
+# Note that `basic_auth`, `authorization` and `oauth2` options are
+# mutually exclusive.
+# `password` and `password_file` are mutually exclusive.
+
+# Optional HTTP basic authentication information, currently not support by Azure.
+basic_auth:
+  [ username: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
+
+# Optional `Authorization` header configuration, currently not supported by Azure.
+authorization:
+  # Sets the authentication type.
+  [ type: <string> | default: Bearer ]
+  # Sets the credentials. It is mutually exclusive with
+  # `credentials_file`.
+  [ credentials: <secret> ]
+  # Sets the credentials to the credentials read from the configured file.
+  # It is mutually exclusive with `credentials`.
+  [ credentials_file: <filename> ]
+
+# Optional OAuth 2.0 configuration, currently not supported by Azure.
+oauth2:
+  [ <oauth2> ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+# Comma-separated string that can contain IPs, CIDR notation, domain names
+# that should be excluded from proxying. IP and domain names can
+# contain port numbers.
+[ no_proxy: <string> ]
+# Use proxy URL indicated by environment variables (HTTP_PROXY, https_proxy, HTTPs_PROXY, https_proxy, and no_proxy)
+[ proxy_from_environment: <boolean> | default: false ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <boolean> | default: true ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
 ```
 
 ### `<consul_sd_config>`
@@ -364,6 +617,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_consul_address`: the address of the target
 * `__meta_consul_dc`: the datacenter name for the target
 * `__meta_consul_health`: the health status of the service
+* `__meta_consul_partition`: the admin partition name where the service is registered 
 * `__meta_consul_metadata_<key>`: each node metadata key value of the target
 * `__meta_consul_node`: the node name defined for the target
 * `__meta_consul_service_address`: the service address of the target
@@ -378,14 +632,18 @@ The following meta labels are available on targets during [relabeling](#relabel_
 # The information to access the Consul API. It is to be defined
 # as the Consul documentation requires.
 [ server: <host> | default = "localhost:8500" ]
+# Prefix for URIs for when consul is behind an API gateway (reverse proxy).
+[ path_prefix: <string> ]
 [ token: <secret> ]
 [ datacenter: <string> ]
+# Namespaces are only supported in Consul Enterprise.
+[ namespace: <string> ]
+# Admin Partitions are only supported in Consul Enterprise.
+[ partition: <string> ]
 [ scheme: <string> | default = "http" ]
+# The username and password fields are deprecated in favor of the basic_auth configuration.
 [ username: <string> ]
 [ password: <secret> ]
-
-tls_config:
-  [ <tls_config> ]
 
 # A list of services for which targets are retrieved. If omitted, all services
 # are scraped.
@@ -412,6 +670,54 @@ tags:
 # The time after which the provided names are refreshed.
 # On large setup it might be a good idea to increase this value because the catalog will change all the time.
 [ refresh_interval: <duration> | default = 30s ]
+
+# Authentication information used to authenticate to the consul server.
+# Note that `basic_auth`, `authorization` and `oauth2` options are
+# mutually exclusive.
+# `password` and `password_file` are mutually exclusive.
+
+# Optional HTTP basic authentication information.
+basic_auth:
+  [ username: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
+
+# Optional `Authorization` header configuration.
+authorization:
+  # Sets the authentication type.
+  [ type: <string> | default: Bearer ]
+  # Sets the credentials. It is mutually exclusive with
+  # `credentials_file`.
+  [ credentials: <secret> ]
+  # Sets the credentials to the credentials read from the configured file.
+  # It is mutually exclusive with `credentials`.
+  [ credentials_file: <filename> ]
+
+# Optional OAuth 2.0 configuration.
+oauth2:
+  [ <oauth2> ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+# Comma-separated string that can contain IPs, CIDR notation, domain names
+# that should be excluded from proxying. IP and domain names can
+# contain port numbers.
+[ no_proxy: <string> ]
+# Use proxy URL indicated by environment variables (HTTP_PROXY, https_proxy, HTTPs_PROXY, https_proxy, and no_proxy)
+[ proxy_from_environment: <boolean> | default: false ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <boolean> | default: true ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
 ```
 
 Note that the IP number and port used to scrape the targets is assembled as
@@ -431,7 +737,7 @@ metadata and a single tag).
 DigitalOcean SD configurations allow retrieving scrape targets from [DigitalOcean's](https://www.digitalocean.com/)
 Droplets API.
 This service discovery uses the public IPv4 address by default, by that can be
-changed with relabelling, as demonstrated in [the Prometheus digitalocean-sd
+changed with relabeling, as demonstrated in [the Prometheus digitalocean-sd
 configuration file](/documentation/examples/prometheus-digitalocean.yml).
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
@@ -462,22 +768,39 @@ basic_auth:
   [ password: <secret> ]
   [ password_file: <string> ]
 
-# Optional the `Authorization` header configuration.
+# Optional `Authorization` header configuration.
 authorization:
   # Sets the authentication type.
   [ type: <string> | default: Bearer ]
   # Sets the credentials. It is mutually exclusive with
   # `credentials_file`.
   [ credentials: <secret> ]
-  # Sets the credentials with the credentials read from the configured file.
+  # Sets the credentials to the credentials read from the configured file.
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
+
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Comma-separated string that can contain IPs, CIDR notation, domain names
+# that should be excluded from proxying. IP and domain names can
+# contain port numbers.
+[ no_proxy: <string> ]
+# Use proxy URL indicated by environment variables (HTTP_PROXY, https_proxy, HTTPs_PROXY, https_proxy, and no_proxy)
+[ proxy_from_environment: <boolean> | default: false ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <bool> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <boolean> | default: true ]
 
 # TLS configuration.
 tls_config:
@@ -521,6 +844,15 @@ host: <string>
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Comma-separated string that can contain IPs, CIDR notation, domain names
+# that should be excluded from proxying. IP and domain names can
+# contain port numbers.
+[ no_proxy: <string> ]
+# Use proxy URL indicated by environment variables (HTTP_PROXY, https_proxy, HTTPs_PROXY, https_proxy, and no_proxy)
+[ proxy_from_environment: <boolean> | default: false ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
 
 # TLS configuration.
 tls_config:
@@ -530,12 +862,13 @@ tls_config:
 # tasks and services that don't have published ports.
 [ port: <int> | default = 80 ]
 
+# The host to use if the container is in host networking mode.
+[ host_networking_host: <string> | default = "localhost" ]
+
 # Optional filters to limit the discovery process to a subset of available
 # resources.
 # The available filters are listed in the upstream documentation:
-# Services: https://docs.docker.com/engine/api/v1.40/#operation/ServiceList
-# Tasks: https://docs.docker.com/engine/api/v1.40/#operation/TaskList
-# Nodes: https://docs.docker.com/engine/api/v1.40/#operation/NodeList
+# https://docs.docker.com/engine/api/v1.40/#operation/ContainerList
 [ filters:
   [ - name: <string>
       values: <string>, [...] ]
@@ -554,19 +887,27 @@ basic_auth:
   [ password: <secret> ]
   [ password_file: <string> ]
 
-# Optional the `Authorization` header configuration.
+# Optional `Authorization` header configuration.
 authorization:
   # Sets the authentication type.
   [ type: <string> | default: Bearer ]
   # Sets the credentials. It is mutually exclusive with
   # `credentials_file`.
   [ credentials: <secret> ]
-  # Sets the credentials with the credentials read from the configured file.
+  # Sets the credentials to the credentials read from the configured file.
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
+
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <bool> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <boolean> | default: true ]
 
 ```
 
@@ -619,10 +960,10 @@ created using the `port` parameter defined in the SD configuration.
 
 Available meta labels:
 
+* `__meta_dockerswarm_container_label_<labelname>`: each label of the container
 * `__meta_dockerswarm_task_id`: the id of the task
 * `__meta_dockerswarm_task_container_id`: the container id of the task
 * `__meta_dockerswarm_task_desired_state`: the desired state of the task
-* `__meta_dockerswarm_task_label_<labelname>`: each label of the task
 * `__meta_dockerswarm_task_slot`: the slot of the task
 * `__meta_dockerswarm_task_state`: the state of the task
 * `__meta_dockerswarm_task_port_publish_mode`: the publish mode of the task port
@@ -678,6 +1019,15 @@ host: <string>
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Comma-separated string that can contain IPs, CIDR notation, domain names
+# that should be excluded from proxying. IP and domain names can
+# contain port numbers.
+[ no_proxy: <string> ]
+# Use proxy URL indicated by environment variables (HTTP_PROXY, https_proxy, HTTPs_PROXY, https_proxy, and no_proxy)
+[ proxy_from_environment: <boolean> | default: false ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
 
 # TLS configuration.
 tls_config:
@@ -693,7 +1043,9 @@ role: <string>
 # Optional filters to limit the discovery process to a subset of available
 # resources.
 # The available filters are listed in the upstream documentation:
-# https://docs.docker.com/engine/api/v1.40/#operation/ContainerList
+# Services: https://docs.docker.com/engine/api/v1.40/#operation/ServiceList
+# Tasks: https://docs.docker.com/engine/api/v1.40/#operation/TaskList
+# Nodes: https://docs.docker.com/engine/api/v1.40/#operation/NodeList
 [ filters:
   [ - name: <string>
       values: <string>, [...] ]
@@ -712,19 +1064,27 @@ basic_auth:
   [ password: <secret> ]
   [ password_file: <string> ]
 
-# Optional the `Authorization` header configuration.
+# Optional `Authorization` header configuration.
 authorization:
   # Sets the authentication type.
   [ type: <string> | default: Bearer ]
   # Sets the credentials. It is mutually exclusive with
   # `credentials_file`.
   [ credentials: <secret> ]
-  # Sets the credentials with the credentials read from the configured file.
+  # Sets the credentials to the credentials read from the configured file.
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
+
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <bool> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <boolean> | default: true ]
 
 ```
 
@@ -742,8 +1102,8 @@ A DNS-based service discovery configuration allows specifying a set of DNS
 domain names which are periodically queried to discover a list of targets. The
 DNS servers to be contacted are read from `/etc/resolv.conf`.
 
-This service discovery method only supports basic DNS A, AAAA and SRV record
-queries, but not the advanced DNS-SD approach specified in
+This service discovery method only supports basic DNS A, AAAA, MX and SRV
+record queries, but not the advanced DNS-SD approach specified in
 [RFC6763](https://tools.ietf.org/html/rfc6763).
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
@@ -751,13 +1111,14 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_dns_name`: the record name that produced the discovered target.
 * `__meta_dns_srv_record_target`: the target field of the SRV record
 * `__meta_dns_srv_record_port`: the port field of the SRV record
+* `__meta_dns_mx_record_target`: the target field of the MX record
 
 ```yaml
 # A list of DNS domain names to be queried.
 names:
   [ - <string> ]
 
-# The type of DNS query to perform. One of SRV, A, or AAAA.
+# The type of DNS query to perform. One of SRV, A, AAAA or MX.
 [ type: <string> | default = 'SRV' ]
 
 # The port number used if the query type is not SRV.
@@ -773,11 +1134,17 @@ EC2 SD configurations allow retrieving scrape targets from AWS EC2
 instances. The private IP address is used by default, but may be changed to
 the public IP address with relabeling.
 
+The IAM credentials used must have the `ec2:DescribeInstances` permission to
+discover scrape targets, and may optionally have the
+`ec2:DescribeAvailabilityZones` permission if you want the availability zone ID
+available as a label (see below).
+
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
 * `__meta_ec2_ami`: the EC2 Amazon Machine Image
 * `__meta_ec2_architecture`: the architecture of the instance
 * `__meta_ec2_availability_zone`: the availability zone in which the instance is running
+* `__meta_ec2_availability_zone_id`: the [availability zone ID](https://docs.aws.amazon.com/ram/latest/userguide/working-with-az-ids.html) in which the instance is running (requires `ec2:DescribeAvailabilityZones`)
 * `__meta_ec2_instance_id`: the EC2 instance ID
 * `__meta_ec2_instance_lifecycle`: the lifecycle of the EC2 instance, set only for 'spot' or 'scheduled' instances, absent otherwise
 * `__meta_ec2_instance_state`: the state of the EC2 instance
@@ -790,6 +1157,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_ec2_private_ip`: the private IP address of the instance, if present
 * `__meta_ec2_public_dns_name`: the public DNS name of the instance, if available
 * `__meta_ec2_public_ip`: the public IP address of the instance, if available
+* `__meta_ec2_region`: the region of the instance
 * `__meta_ec2_subnet_id`: comma separated list of subnets IDs in which the instance is running, if available
 * `__meta_ec2_tag_<tagkey>`: each tag value of the instance
 * `__meta_ec2_vpc_id`: the ID of the VPC in which the instance is running, if available
@@ -829,6 +1197,54 @@ See below for the configuration options for EC2 discovery:
 filters:
   [ - name: <string>
       values: <string>, [...] ]
+
+# Authentication information used to authenticate to the EC2 API.
+# Note that `basic_auth`, `authorization` and `oauth2` options are
+# mutually exclusive.
+# `password` and `password_file` are mutually exclusive.
+
+# Optional HTTP basic authentication information, currently not supported by AWS.
+basic_auth:
+  [ username: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
+
+# Optional `Authorization` header configuration, currently not supported by AWS.
+authorization:
+  # Sets the authentication type.
+  [ type: <string> | default: Bearer ]
+  # Sets the credentials. It is mutually exclusive with
+  # `credentials_file`.
+  [ credentials: <secret> ]
+  # Sets the credentials to the credentials read from the configured file.
+  # It is mutuall exclusive with `credentials`.
+  [ credentials_file: <filename> ]
+
+# Optional OAuth 2.0 configuration, currently not supported by AWS.
+oauth2:
+  [ <oauth2> ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+# Comma-separated string that can contain IPs, CIDR notation, domain names
+# that should be excluded from proxying. IP and domain names can
+# contain port numbers.
+[ no_proxy: <string> ]
+# Use proxy URL indicated by environment variables (HTTP_PROXY, https_proxy, HTTPs_PROXY, https_proxy, and no_proxy)
+[ proxy_from_environment: <boolean> | default: false ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <boolean> | default: true ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
 ```
 
 The [relabeling phase](#relabel_config) is the preferred and more powerful
@@ -851,8 +1267,8 @@ address defaults to the `host_ip` attribute of the hypervisor.
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
 * `__meta_openstack_hypervisor_host_ip`: the hypervisor node's IP address.
+* `__meta_openstack_hypervisor_hostname`: the hypervisor node's name.
 * `__meta_openstack_hypervisor_id`: the hypervisor node's ID.
-* `__meta_openstack_hypervisor_name`: the hypervisor node's name.
 * `__meta_openstack_hypervisor_state`: the hypervisor node's state.
 * `__meta_openstack_hypervisor_status`: the hypervisor node's status.
 * `__meta_openstack_hypervisor_type`: the hypervisor node's type.
@@ -868,6 +1284,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_openstack_address_pool`: the pool of the private IP.
 * `__meta_openstack_instance_flavor`: the flavor of the OpenStack instance.
 * `__meta_openstack_instance_id`: the OpenStack instance ID.
+* `__meta_openstack_instance_image`: the ID of the image the OpenStack instance is using.
 * `__meta_openstack_instance_name`: the OpenStack instance name.
 * `__meta_openstack_instance_status`: the status of the OpenStack instance.
 * `__meta_openstack_private_ip`: the private IP of the OpenStack instance.
@@ -945,6 +1362,167 @@ tls_config:
   [ <tls_config> ]
 ```
 
+### `<ovhcloud_sd_config>`
+
+OVHcloud SD configurations allow retrieving scrape targets from OVHcloud's [dedicated servers](https://www.ovhcloud.com/en/bare-metal/) and [VPS](https://www.ovhcloud.com/en/vps/) using
+their [API](https://api.ovh.com/).
+Prometheus will periodically check the REST endpoint and create a target for every discovered server.
+The role will try to use the public IPv4 address as default address, if there's none it will try to use the IPv6 one. This may be changed with relabeling.
+For OVHcloud's [public cloud instances](https://www.ovhcloud.com/en/public-cloud/) you can use the [openstack_sd_config](#openstack_sd_config).
+
+#### VPS
+
+* `__meta_ovhcloud_vps_cluster`: the cluster of the server
+* `__meta_ovhcloud_vps_datacenter`: the datacenter of the server
+* `__meta_ovhcloud_vps_disk`: the disk of the server
+* `__meta_ovhcloud_vps_display_name`: the display name of the server
+* `__meta_ovhcloud_vps_ipv4`: the IPv4 of the server
+* `__meta_ovhcloud_vps_ipv6`: the IPv6 of the server
+* `__meta_ovhcloud_vps_keymap`: the KVM keyboard layout of the server
+* `__meta_ovhcloud_vps_maximum_additional_ip`: the maximum additional IPs of the server
+* `__meta_ovhcloud_vps_memory_limit`: the memory limit of the server
+* `__meta_ovhcloud_vps_memory`: the memory of the server
+* `__meta_ovhcloud_vps_monitoring_ip_blocks`: the monitoring IP blocks of the server
+* `__meta_ovhcloud_vps_name`: the name of the server
+* `__meta_ovhcloud_vps_netboot_mode`: the netboot mode of the server
+* `__meta_ovhcloud_vps_offer_type`: the offer type of the server
+* `__meta_ovhcloud_vps_offer`: the offer of the server
+* `__meta_ovhcloud_vps_state`: the state of the server
+* `__meta_ovhcloud_vps_vcore`: the number of virtual cores of the server
+* `__meta_ovhcloud_vps_version`: the version of the server
+* `__meta_ovhcloud_vps_zone`: the zone of the server
+
+#### Dedicated servers
+
+* `__meta_ovhcloud_dedicated_server_commercial_range`: the commercial range of the server
+* `__meta_ovhcloud_dedicated_server_datacenter`: the datacenter of the server
+* `__meta_ovhcloud_dedicated_server_ipv4`: the IPv4 of the server
+* `__meta_ovhcloud_dedicated_server_ipv6`: the IPv6 of the server
+* `__meta_ovhcloud_dedicated_server_link_speed`: the link speed of the server
+* `__meta_ovhcloud_dedicated_server_name`: the name of the server
+* `__meta_ovhcloud_dedicated_server_os`: the operating system of the server
+* `__meta_ovhcloud_dedicated_server_rack`: the rack of the server
+* `__meta_ovhcloud_dedicated_server_reverse`: the reverse DNS name of the server
+* `__meta_ovhcloud_dedicated_server_server_id`: the ID of the server
+* `__meta_ovhcloud_dedicated_server_state`: the state of the server
+* `__meta_ovhcloud_dedicated_server_support_level`: the support level of the server
+
+See below for the configuration options for OVHcloud discovery:
+
+```yaml
+# Access key to use. https://api.ovh.com
+application_key: <string>
+application_secret: <secret>
+consumer_key: <secret>
+# Service of the targets to retrieve. Must be `vps` or `dedicated_server`.
+service: <string>
+# API endpoint. https://github.com/ovh/go-ovh#supported-apis
+[ endpoint: <string> | default = "ovh-eu" ]
+# Refresh interval to re-read the resources list.
+[ refresh_interval: <duration> | default = 60s ]
+```
+
+### `<puppetdb_sd_config>`
+
+PuppetDB SD configurations allow retrieving scrape targets from
+[PuppetDB](https://puppet.com/docs/puppetdb/latest/index.html) resources.
+
+This SD discovers resources and will create a target for each resource returned
+by the API.
+
+The resource address is the `certname` of the resource and can be changed during
+[relabeling](#relabel_config).
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_puppetdb_query`: the Puppet Query Language (PQL) query
+* `__meta_puppetdb_certname`: the name of the node associated with the resource
+* `__meta_puppetdb_resource`: a SHA-1 hash of the resource’s type, title, and parameters, for identification
+* `__meta_puppetdb_type`: the resource type
+* `__meta_puppetdb_title`: the resource title
+* `__meta_puppetdb_exported`: whether the resource is exported (`"true"` or `"false"`)
+* `__meta_puppetdb_tags`: comma separated list of resource tags
+* `__meta_puppetdb_file`: the manifest file in which the resource was declared
+* `__meta_puppetdb_environment`: the environment of the node associated with the resource
+* `__meta_puppetdb_parameter_<parametername>`: the parameters of the resource
+
+
+See below for the configuration options for PuppetDB discovery:
+
+```yaml
+# The URL of the PuppetDB root query endpoint.
+url: <string>
+
+# Puppet Query Language (PQL) query. Only resources are supported.
+# https://puppet.com/docs/puppetdb/latest/api/query/v4/pql.html
+query: <string>
+
+# Whether to include the parameters as meta labels.
+# Due to the differences between parameter types and Prometheus labels,
+# some parameters might not be rendered. The format of the parameters might
+# also change in future releases.
+#
+# Note: Enabling this exposes parameters in the Prometheus UI and API. Make sure
+# that you don't have secrets exposed as parameters if you enable this.
+[ include_parameters: <boolean> | default = false ]
+
+# Refresh interval to re-read the resources list.
+[ refresh_interval: <duration> | default = 60s ]
+
+# The port to scrape metrics from.
+[ port: <int> | default = 80 ]
+
+# TLS configuration to connect to the PuppetDB.
+tls_config:
+  [ <tls_config> ]
+
+# basic_auth, authorization, and oauth2, are mutually exclusive.
+
+# Optional HTTP basic authentication information.
+basic_auth:
+  [ username: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
+
+# `Authorization` HTTP header configuration.
+authorization:
+  # Sets the authentication type.
+  [ type: <string> | default: Bearer ]
+  # Sets the credentials. It is mutually exclusive with
+  # `credentials_file`.
+  [ credentials: <secret> ]
+  # Sets the credentials with the credentials read from the configured file.
+  # It is mutually exclusive with `credentials`.
+  [ credentials_file: <filename> ]
+
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+# Comma-separated string that can contain IPs, CIDR notation, domain names
+# that should be excluded from proxying. IP and domain names can
+# contain port numbers.
+[ no_proxy: <string> ]
+# Use proxy URL indicated by environment variables (HTTP_PROXY, https_proxy, HTTPs_PROXY, https_proxy, and no_proxy)
+[ proxy_from_environment: <boolean> | default: false ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <boolean> | default: true ]
+```
+
+See [this example Prometheus configuration file](/documentation/examples/prometheus-puppetdb.yml)
+for a detailed example of configuring Prometheus with PuppetDB.
+
+
 ### `<file_sd_config>`
 
 File-based service discovery provides a more generic way to configure static targets
@@ -958,6 +1536,7 @@ changes resulting in well-formed target groups are applied.
 Files must contain a list of static configs, using these formats:
 
 **JSON**
+
 ```json
 [
   {
@@ -971,6 +1550,7 @@ Files must contain a list of static configs, using these formats:
 ```
 
 **YAML**
+
 ```yaml
 - targets:
   [ - '<host>' ]
@@ -1016,6 +1596,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_gce_metadata_<name>`: each metadata item of the instance
 * `__meta_gce_network`: the network URL of the instance
 * `__meta_gce_private_ip`: the private IP address of the instance
+* `__meta_gce_interface_ipv4_<name>`: IPv4 address of each named interface
 * `__meta_gce_project`: the GCP project in which the instance is running
 * `__meta_gce_public_ip`: the public IP address of the instance, if present
 * `__meta_gce_subnetwork`: the subnetwork URL of the instance
@@ -1086,7 +1667,6 @@ The labels below are only available for targets with `role` set to `hcloud`:
 * `__meta_hetzner_hcloud_image_description`: the description of the server image
 * `__meta_hetzner_hcloud_image_os_flavor`: the OS flavor of the server image
 * `__meta_hetzner_hcloud_image_os_version`: the OS version of the server image
-* `__meta_hetzner_hcloud_image_description`: the description of the server image
 * `__meta_hetzner_hcloud_datacenter_location`: the location of the server
 * `__meta_hetzner_hcloud_datacenter_location_network_zone`: the network zone of the server
 * `__meta_hetzner_hcloud_server_type`: the type of the server
@@ -1096,6 +1676,7 @@ The labels below are only available for targets with `role` set to `hcloud`:
 * `__meta_hetzner_hcloud_disk_size_gb`: the disk size of the server (in GB)
 * `__meta_hetzner_hcloud_private_ipv4_<networkname>`: the private ipv4 address of the server within a given network
 * `__meta_hetzner_hcloud_label_<labelname>`: each label of the server
+* `__meta_hetzner_hcloud_labelpresent_<labelname>`: `true` for each label of the server
 
 The labels below are only available for targets with `role` set to `robot`:
 
@@ -1119,7 +1700,7 @@ basic_auth:
   [ password: <secret> ]
   [ password_file: <string> ]
 
-# Optional the `Authorization` header configuration. required when role is
+# Optional `Authorization` header configuration, required when role is
 # hcloud. Role robot does not support bearer token authentication.
 authorization:
   # Sets the authentication type.
@@ -1127,15 +1708,209 @@ authorization:
   # Sets the credentials. It is mutually exclusive with
   # `credentials_file`.
   [ credentials: <secret> ]
-  # Sets the credentials with the credentials read from the configured file.
+  # Sets the credentials to the credentials read from the configured file.
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
+
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Comma-separated string that can contain IPs, CIDR notation, domain names
+# that should be excluded from proxying. IP and domain names can
+# contain port numbers.
+[ no_proxy: <string> ]
+# Use proxy URL indicated by environment variables (HTTP_PROXY, https_proxy, HTTPs_PROXY, https_proxy, and no_proxy)
+[ proxy_from_environment: <boolean> | default: false ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <bool> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <boolean> | default: true ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
+
+# The port to scrape metrics from.
+[ port: <int> | default = 80 ]
+
+# The time after which the servers are refreshed.
+[ refresh_interval: <duration> | default = 60s ]
+```
+
+### `<http_sd_config>`
+
+HTTP-based service discovery provides a more generic way to configure static targets
+and serves as an interface to plug in custom service discovery mechanisms.
+
+It fetches targets from an HTTP endpoint containing a list of zero or more
+`<static_config>`s. The target must reply with an HTTP 200 response.
+The HTTP header `Content-Type` must be `application/json`, and the body must be
+valid JSON.
+
+Example response body:
+
+```json
+[
+  {
+    "targets": [ "<host>", ... ],
+    "labels": {
+      "<labelname>": "<labelvalue>", ...
+    }
+  },
+  ...
+]
+```
+
+The endpoint is queried periodically at the specified refresh interval.
+The `prometheus_sd_http_failures_total` counter metric tracks the number of
+refresh failures.
+
+Each target has a meta label `__meta_url` during the
+[relabeling phase](#relabel_config). Its value is set to the
+URL from which the target was extracted.
+
+```yaml
+# URL from which the targets are fetched.
+url: <string>
+
+# Refresh interval to re-query the endpoint.
+[ refresh_interval: <duration> | default = 60s ]
+
+# Authentication information used to authenticate to the API server.
+# Note that `basic_auth`, `authorization` and `oauth2` options are
+# mutually exclusive.
+# `password` and `password_file` are mutually exclusive.
+
+# Optional HTTP basic authentication information.
+basic_auth:
+  [ username: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
+
+# Optional `Authorization` header configuration.
+authorization:
+  # Sets the authentication type.
+  [ type: <string> | default: Bearer ]
+  # Sets the credentials. It is mutually exclusive with
+  # `credentials_file`.
+  [ credentials: <secret> ]
+  # Sets the credentials to the credentials read from the configured file.
+  # It is mutually exclusive with `credentials`.
+  [ credentials_file: <filename> ]
+
+# Optional OAuth 2.0 configuration.
+oauth2:
+  [ <oauth2> ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+# Comma-separated string that can contain IPs, CIDR notation, domain names
+# that should be excluded from proxying. IP and domain names can
+# contain port numbers.
+[ no_proxy: <string> ]
+# Use proxy URL indicated by environment variables (HTTP_PROXY, https_proxy, HTTPs_PROXY, https_proxy, and no_proxy)
+[ proxy_from_environment: <boolean> | default: false ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <boolean> | default: true ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
+```
+
+### `<ionos_sd_config>`
+
+IONOS SD configurations allows retrieving scrape targets from
+[IONOS Cloud](https://cloud.ionos.com/) API. This service discovery uses the
+first NICs IP address by default, but that can be changed with relabeling. The
+following meta labels are available on all targets during
+[relabeling](#relabel_config):
+
+* `__meta_ionos_server_availability_zone`: the availability zone of the server
+* `__meta_ionos_server_boot_cdrom_id`: the ID of the CD-ROM the server is booted
+  from
+* `__meta_ionos_server_boot_image_id`: the ID of the boot image or snapshot the
+  server is booted from
+* `__meta_ionos_server_boot_volume_id`: the ID of the boot volume
+* `__meta_ionos_server_cpu_family`: the CPU family of the server
+  to
+* `__meta_ionos_server_id`: the ID of the server
+* `__meta_ionos_server_ip`: comma separated list of all IPs assigned to the
+  server
+* `__meta_ionos_server_lifecycle`: the lifecycle state of the server resource
+* `__meta_ionos_server_name`: the name of the server
+* `__meta_ionos_server_nic_ip_<nic_name>`: comma separated list of IPs, grouped
+  by the name of each NIC attached to the server
+* `__meta_ionos_server_servers_id`: the ID of the servers the server belongs to
+* `__meta_ionos_server_state`: the execution state of the server
+* `__meta_ionos_server_type`: the type of the server
+
+```yaml
+# The unique ID of the data center.
+datacenter_id: <string>
+
+# Authentication information used to authenticate to the API server.
+# Note that `basic_auth` and `authorization` options are
+# mutually exclusive.
+# password and password_file are mutually exclusive.
+
+# Optional HTTP basic authentication information, required when using IONOS
+# Cloud username and password as authentication method.
+basic_auth:
+  [ username: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
+
+# Optional `Authorization` header configuration, required when using IONOS
+# Cloud token as authentication method.
+authorization:
+  # Sets the authentication type.
+  [ type: <string> | default: Bearer ]
+  # Sets the credentials. It is mutually exclusive with
+  # `credentials_file`.
+  [ credentials: <secret> ]
+  # Sets the credentials to the credentials read from the configured file.
+  # It is mutually exclusive with `credentials`.
+  [ credentials_file: <filename> ]
+
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+# Comma-separated string that can contain IPs, CIDR notation, domain names
+# that should be excluded from proxying. IP and domain names can
+# contain port numbers.
+[ no_proxy: <string> ]
+# Use proxy URL indicated by environment variables (HTTP_PROXY, https_proxy, HTTPs_PROXY, https_proxy, and no_proxy)
+[ proxy_from_environment: <boolean> | default: false ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <boolean> | default: true ]
 
 # TLS configuration.
 tls_config:
@@ -1167,6 +1942,7 @@ node object in the address type order of `NodeInternalIP`, `NodeExternalIP`,
 Available meta labels:
 
 * `__meta_kubernetes_node_name`: The name of the node object.
+* `__meta_kubernetes_node_provider_id`: The cloud provider's name for the node object.
 * `__meta_kubernetes_node_label_<labelname>`: Each label from the node object.
 * `__meta_kubernetes_node_labelpresent_<labelname>`: `true` for each label from the node object.
 * `__meta_kubernetes_node_annotation_<annotationname>`: Each annotation from the node object.
@@ -1189,11 +1965,13 @@ Available meta labels:
 * `__meta_kubernetes_service_annotation_<annotationname>`: Each annotation from the service object.
 * `__meta_kubernetes_service_annotationpresent_<annotationname>`: "true" for each annotation of the service object.
 * `__meta_kubernetes_service_cluster_ip`: The cluster IP address of the service. (Does not apply to services of type ExternalName)
+* `__meta_kubernetes_service_loadbalancer_ip`: The IP address of the loadbalancer. (Applies to services of type LoadBalancer)
 * `__meta_kubernetes_service_external_name`: The DNS name of the service. (Applies to services of type ExternalName)
 * `__meta_kubernetes_service_label_<labelname>`: Each label from the service object.
 * `__meta_kubernetes_service_labelpresent_<labelname>`: `true` for each label of the service object.
 * `__meta_kubernetes_service_name`: The name of the service object.
 * `__meta_kubernetes_service_port_name`: Name of the service port for the target.
+* `__meta_kubernetes_service_port_number`: Number of the service port for the target.
 * `__meta_kubernetes_service_port_protocol`: Protocol of the service port for the target.
 * `__meta_kubernetes_service_type`: The type of the service.
 
@@ -1209,11 +1987,13 @@ Available meta labels:
 * `__meta_kubernetes_pod_name`: The name of the pod object.
 * `__meta_kubernetes_pod_ip`: The pod IP of the pod object.
 * `__meta_kubernetes_pod_label_<labelname>`: Each label from the pod object.
-* `__meta_kubernetes_pod_labelpresent_<labelname>`: `true`for each label from the pod object.
+* `__meta_kubernetes_pod_labelpresent_<labelname>`: `true` for each label from the pod object.
 * `__meta_kubernetes_pod_annotation_<annotationname>`: Each annotation from the pod object.
 * `__meta_kubernetes_pod_annotationpresent_<annotationname>`: `true` for each annotation from the pod object.
 * `__meta_kubernetes_pod_container_init`: `true` if the container is an [InitContainer](https://kubernetes.io/docs/concepts/workloads/pods/init-containers/)
 * `__meta_kubernetes_pod_container_name`: Name of the container the target address points to.
+* `__meta_kubernetes_pod_container_id`: ID of the container the target address points to. The ID is in the form `<type>://<container_id>`.
+* `__meta_kubernetes_pod_container_image`: The image the container is using.
 * `__meta_kubernetes_pod_container_port_name`: Name of the container port.
 * `__meta_kubernetes_pod_container_port_number`: Number of the container port.
 * `__meta_kubernetes_pod_container_port_protocol`: Protocol of the container port.
@@ -1236,6 +2016,10 @@ Available meta labels:
 
 * `__meta_kubernetes_namespace`: The namespace of the endpoints object.
 * `__meta_kubernetes_endpoints_name`: The names of the endpoints object.
+* `__meta_kubernetes_endpoints_label_<labelname>`: Each label from the endpoints object.
+* `__meta_kubernetes_endpoints_labelpresent_<labelname>`: `true` for each label from the endpoints object.
+* `__meta_kubernetes_endpoints_annotation_<annotationname>`: Each annotation from the endpoints object.
+* `__meta_kubernetes_endpoints_annotationpresent_<annotationname>`: `true` for each annotation from the endpoints object.
 * For all targets discovered directly from the endpoints list (those not additionally inferred
   from underlying pods), the following labels are attached:
   * `__meta_kubernetes_endpoint_hostname`: Hostname of the endpoint.
@@ -1245,6 +2029,36 @@ Available meta labels:
   * `__meta_kubernetes_endpoint_port_protocol`: Protocol of the endpoint port.
   * `__meta_kubernetes_endpoint_address_target_kind`: Kind of the endpoint address target.
   * `__meta_kubernetes_endpoint_address_target_name`: Name of the endpoint address target.
+* If the endpoints belong to a service, all labels of the `role: service` discovery are attached.
+* For all targets backed by a pod, all labels of the `role: pod` discovery are attached.
+
+#### `endpointslice`
+
+The `endpointslice` role discovers targets from existing endpointslices. For each endpoint
+address referenced in the endpointslice object one target is discovered. If the endpoint is backed by a pod, all
+additional container ports of the pod, not bound to an endpoint port, are discovered as targets as well.
+
+Available meta labels:
+
+* `__meta_kubernetes_namespace`: The namespace of the endpoints object.
+* `__meta_kubernetes_endpointslice_name`: The name of endpointslice object.
+* `__meta_kubernetes_endpointslice_label_<labelname>`: Each label from the endpointslice object.
+* `__meta_kubernetes_endpointslice_labelpresent_<labelname>`: `true` for each label from the endpointslice object.
+* `__meta_kubernetes_endpointslice_annotation_<annotationname>`: Each annotation from the endpointslice object.
+* `__meta_kubernetes_endpointslice_annotationpresent_<annotationname>`: `true` for each annotation from the endpointslice object.
+* For all targets discovered directly from the endpointslice list (those not additionally inferred
+  from underlying pods), the following labels are attached:
+  * `__meta_kubernetes_endpointslice_address_target_kind`: Kind of the referenced object.
+  * `__meta_kubernetes_endpointslice_address_target_name`: Name of referenced object.
+  * `__meta_kubernetes_endpointslice_address_type`: The ip protocol family of the address of the target.
+  * `__meta_kubernetes_endpointslice_endpoint_conditions_ready`:  Set to `true` or `false` for the referenced endpoint's ready state.
+  * `__meta_kubernetes_endpointslice_endpoint_conditions_serving`:  Set to `true` or `false` for the referenced endpoint's serving state.
+  * `__meta_kubernetes_endpointslice_endpoint_conditions_terminating`:  Set to `true` or `false` for the referenced endpoint's terminating state.
+  * `__meta_kubernetes_endpointslice_endpoint_topology_kubernetes_io_hostname`:  Name of the node hosting the referenced endpoint.
+  * `__meta_kubernetes_endpointslice_endpoint_topology_present_kubernetes_io_hostname`: Flag that shows if the referenced object has a kubernetes.io/hostname annotation.
+  * `__meta_kubernetes_endpointslice_port`: Port of the referenced endpoint.
+  * `__meta_kubernetes_endpointslice_port_name`: Named port of the referenced endpoint.
+  * `__meta_kubernetes_endpointslice_port_protocol`: Protocol of the referenced endpoint.
 * If the endpoints belong to a service, all labels of the `role: service` discovery are attached.
 * For all targets backed by a pod, all labels of the `role: pod` discovery are attached.
 
@@ -1262,6 +2076,7 @@ Available meta labels:
 * `__meta_kubernetes_ingress_labelpresent_<labelname>`: `true` for each label from the ingress object.
 * `__meta_kubernetes_ingress_annotation_<annotationname>`: Each annotation from the ingress object.
 * `__meta_kubernetes_ingress_annotationpresent_<annotationname>`: `true` for each annotation from the ingress object.
+* `__meta_kubernetes_ingress_class_name`: Class name from ingress spec, if present.
 * `__meta_kubernetes_ingress_scheme`: Protocol scheme of ingress, `https` if TLS
   config is set. Defaults to `http`.
 * `__meta_kubernetes_ingress_path`: Path from ingress spec. Defaults to `/`.
@@ -1277,10 +2092,142 @@ See below for the configuration options for Kubernetes discovery:
 [ api_server: <host> ]
 
 # The Kubernetes role of entities that should be discovered.
-# One of endpoints, service, pod, node, or ingress.
+# One of endpoints, endpointslice, service, pod, node, or ingress.
 role: <string>
 
+# Optional path to a kubeconfig file.
+# Note that api_server and kube_config are mutually exclusive.
+[ kubeconfig_file: <filename> ]
+
 # Optional authentication information used to authenticate to the API server.
+# Note that `basic_auth` and `authorization` options are mutually exclusive.
+# password and password_file are mutually exclusive.
+
+# Optional HTTP basic authentication information.
+basic_auth:
+  [ username: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
+
+# Optional `Authorization` header configuration.
+authorization:
+  # Sets the authentication type.
+  [ type: <string> | default: Bearer ]
+  # Sets the credentials. It is mutually exclusive with
+  # `credentials_file`.
+  [ credentials: <secret> ]
+  # Sets the credentials to the credentials read from the configured file.
+  # It is mutually exclusive with `credentials`.
+  [ credentials_file: <filename> ]
+
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+# Comma-separated string that can contain IPs, CIDR notation, domain names
+# that should be excluded from proxying. IP and domain names can
+# contain port numbers.
+[ no_proxy: <string> ]
+# Use proxy URL indicated by environment variables (HTTP_PROXY, https_proxy, HTTPs_PROXY, https_proxy, and no_proxy)
+[ proxy_from_environment: <boolean> | default: false ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <boolean> | default: true ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
+
+# Optional namespace discovery. If omitted, all namespaces are used.
+namespaces:
+  own_namespace: <boolean>
+  names:
+    [ - <string> ]
+
+# Optional label and field selectors to limit the discovery process to a subset of available resources.
+# See https://kubernetes.io/docs/concepts/overview/working-with-objects/field-selectors/
+# and https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/ to learn more about the possible
+# filters that can be used. The endpoints role supports pod, service and endpoints selectors.
+# The pod role supports node selectors when configured with `attach_metadata: {node: true}`.
+# Other roles only support selectors matching the role itself (e.g. node role can only contain node selectors).
+
+# Note: When making decision about using field/label selector make sure that this
+# is the best approach - it will prevent Prometheus from reusing single list/watch
+# for all scrape configs. This might result in a bigger load on the Kubernetes API,
+# because per each selector combination there will be additional LIST/WATCH. On the other hand,
+# if you just want to monitor small subset of pods in large cluster it's recommended to use selectors.
+# Decision, if selectors should be used or not depends on the particular situation.
+[ selectors:
+  [ - role: <string>
+    [ label: <string> ]
+    [ field: <string> ] ]]
+
+# Optional metadata to attach to discovered targets. If omitted, no additional metadata is attached.
+attach_metadata:
+# Attaches node metadata to discovered targets. Valid for roles: pod, endpoints, endpointslice.
+# When set to true, Prometheus must have permissions to get Nodes.
+  [ node: <boolean> | default = false ]
+```
+
+See [this example Prometheus configuration file](/documentation/examples/prometheus-kubernetes.yml)
+for a detailed example of configuring Prometheus for Kubernetes.
+
+You may wish to check out the 3rd party [Prometheus Operator](https://github.com/prometheus-operator/prometheus-operator),
+which automates the Prometheus setup on top of Kubernetes.
+
+### `<kuma_sd_config>`
+
+Kuma SD configurations allow retrieving scrape target from the [Kuma](https://kuma.io) control plane.
+
+This SD discovers "monitoring assignments" based on Kuma [Dataplane Proxies](https://kuma.io/docs/latest/documentation/dps-and-data-model),
+via the MADS v1 (Monitoring Assignment Discovery Service) xDS API, and will create a target for each proxy
+inside a Prometheus-enabled mesh.
+
+The following meta labels are available for each target:
+
+* `__meta_kuma_mesh`: the name of the proxy's Mesh
+* `__meta_kuma_dataplane`: the name of the proxy
+* `__meta_kuma_service`: the name of the proxy's associated Service
+* `__meta_kuma_label_<tagname>`: each tag of the proxy
+
+See below for the configuration options for Kuma MonitoringAssignment discovery:
+
+```yaml
+# Address of the Kuma Control Plane's MADS xDS server.
+server: <string>
+
+# The time to wait between polling update requests.
+[ refresh_interval: <duration> | default = 30s ]
+
+# The time after which the monitoring assignments are refreshed.
+[ fetch_timeout: <duration> | default = 2m ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+# Comma-separated string that can contain IPs, CIDR notation, domain names
+# that should be excluded from proxying. IP and domain names can
+# contain port numbers.
+[ no_proxy: <string> ]
+# Use proxy URL indicated by environment variables (HTTP_PROXY, https_proxy, HTTPs_PROXY, https_proxy, and no_proxy)
+[ proxy_from_environment: <boolean> | default: false ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
+
+# Authentication information used to authenticate to the Docker daemon.
 # Note that `basic_auth` and `authorization` options are
 # mutually exclusive.
 # password and password_file are mutually exclusive.
@@ -1302,44 +2249,207 @@ authorization:
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
-# Optional proxy URL.
-[ proxy_url: <string> ]
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <bool> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <boolean> | default: true ]
+```
+
+The [relabeling phase](#relabel_config) is the preferred and more powerful way
+to filter proxies and user-defined tags.
+
+### `<lightsail_sd_config>`
+
+Lightsail SD configurations allow retrieving scrape targets from [AWS Lightsail](https://aws.amazon.com/lightsail/)
+instances. The private IP address is used by default, but may be changed to
+the public IP address with relabeling.
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_lightsail_availability_zone`: the availability zone in which the instance is running
+* `__meta_lightsail_blueprint_id`: the Lightsail blueprint ID
+* `__meta_lightsail_bundle_id`: the Lightsail bundle ID
+* `__meta_lightsail_instance_name`: the name of the Lightsail instance
+* `__meta_lightsail_instance_state`: the state of the Lightsail instance
+* `__meta_lightsail_instance_support_code`: the support code of the Lightsail instance
+* `__meta_lightsail_ipv6_addresses`: comma separated list of IPv6 addresses assigned to the instance's network interfaces, if present
+* `__meta_lightsail_private_ip`: the private IP address of the instance
+* `__meta_lightsail_public_ip`: the public IP address of the instance, if available
+* `__meta_lightsail_region`: the region of the instance
+* `__meta_lightsail_tag_<tagkey>`: each tag value of the instance
+
+See below for the configuration options for Lightsail discovery:
+
+```yaml
+# The information to access the Lightsail API.
+
+# The AWS region. If blank, the region from the instance metadata is used.
+[ region: <string> ]
+
+# Custom endpoint to be used.
+[ endpoint: <string> ]
+
+# The AWS API keys. If blank, the environment variables `AWS_ACCESS_KEY_ID`
+# and `AWS_SECRET_ACCESS_KEY` are used.
+[ access_key: <string> ]
+[ secret_key: <secret> ]
+# Named AWS profile used to connect to the API.
+[ profile: <string> ]
+
+# AWS Role ARN, an alternative to using AWS API keys.
+[ role_arn: <string> ]
+
+# Refresh interval to re-read the instance list.
+[ refresh_interval: <duration> | default = 60s ]
+
+# The port to scrape metrics from. If using the public IP address, this must
+# instead be specified in the relabeling rule.
+[ port: <int> | default = 80 ]
+
+# Authentication information used to authenticate to the Lightsail API.
+# Note that `basic_auth`, `authorization` and `oauth2` options are
+# mutually exclusive.
+# `password` and `password_file` are mutually exclusive.
+
+# Optional HTTP basic authentication information, currently not supported by AWS.
+basic_auth:
+  [ username: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
+
+# Optional `Authorization` header configuration, currently not supported by AWS.
+authorization:
+  # Sets the authentication type.
+  [ type: <string> | default: Bearer ]
+  # Sets the credentials. It is mutually exclusive with
+  # `credentials_file`.
+  [ credentials: <secret> ]
+  # Sets the credentials to the credentials read from the configured file.
+  # It is mutuall exclusive with `credentials`.
+  [ credentials_file: <filename> ]
+
+# Optional OAuth 2.0 configuration, currently not supported by AWS.
+oauth2:
+  [ <oauth2> ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+# Comma-separated string that can contain IPs, CIDR notation, domain names
+# that should be excluded from proxying. IP and domain names can
+# contain port numbers.
+[ no_proxy: <string> ]
+# Use proxy URL indicated by environment variables (HTTP_PROXY, https_proxy, HTTPs_PROXY, https_proxy, and no_proxy)
+[ proxy_from_environment: <boolean> | default: false ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <boolean> | default: true ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
+```
+
+### `<linode_sd_config>`
+
+Linode SD configurations allow retrieving scrape targets from [Linode's](https://www.linode.com/)
+Linode APIv4.
+This service discovery uses the public IPv4 address by default, by that can be
+changed with relabeling, as demonstrated in [the Prometheus linode-sd
+configuration file](/documentation/examples/prometheus-linode.yml).
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_linode_instance_id`: the id of the linode instance
+* `__meta_linode_instance_label`: the label of the linode instance
+* `__meta_linode_image`: the slug of the linode instance's image
+* `__meta_linode_private_ipv4`: the private IPv4 of the linode instance
+* `__meta_linode_public_ipv4`: the public IPv4 of the linode instance
+* `__meta_linode_public_ipv6`: the public IPv6 of the linode instance
+* `__meta_linode_region`: the region of the linode instance
+* `__meta_linode_type`: the type of the linode instance
+* `__meta_linode_status`: the status of the linode instance
+* `__meta_linode_tags`: a list of tags of the linode instance joined by the tag separator
+* `__meta_linode_group`: the display group a linode instance is a member of
+* `__meta_linode_hypervisor`: the virtualization software powering the linode instance
+* `__meta_linode_backups`: the backup service status of the linode instance
+* `__meta_linode_specs_disk_bytes`: the amount of storage space the linode instance has access to
+* `__meta_linode_specs_memory_bytes`: the amount of RAM the linode instance has access to
+* `__meta_linode_specs_vcpus`: the number of VCPUS this linode has access to
+* `__meta_linode_specs_transfer_bytes`: the amount of network transfer the linode instance is allotted each month
+* `__meta_linode_extra_ips`: a list of all extra IPv4 addresses assigned to the linode instance joined by the tag separator
+
+```yaml
+# Authentication information used to authenticate to the API server.
+# Note that `basic_auth` and `authorization` options are
+# mutually exclusive.
+# password and password_file are mutually exclusive.
+# Note: Linode APIv4 Token must be created with scopes: 'linodes:read_only', 'ips:read_only', and 'events:read_only'
+
+# Optional HTTP basic authentication information, not currently supported by Linode APIv4.
+basic_auth:
+  [ username: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
+
+# Optional the `Authorization` header configuration.
+authorization:
+  # Sets the authentication type.
+  [ type: <string> | default: Bearer ]
+  # Sets the credentials. It is mutually exclusive with
+  # `credentials_file`.
+  [ credentials: <secret> ]
+  # Sets the credentials with the credentials read from the configured file.
+  # It is mutually exclusive with `credentials`.
+  [ credentials_file: <filename> ]
+
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+# Comma-separated string that can contain IPs, CIDR notation, domain names
+# that should be excluded from proxying. IP and domain names can
+# contain port numbers.
+[ no_proxy: <string> ]
+# Use proxy URL indicated by environment variables (HTTP_PROXY, https_proxy, HTTPs_PROXY, https_proxy, and no_proxy)
+[ proxy_from_environment: <boolean> | default: false ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <boolean> | default: true ]
 
 # TLS configuration.
 tls_config:
   [ <tls_config> ]
 
-# Optional namespace discovery. If omitted, all namespaces are used.
-namespaces:
-  names:
-    [ - <string> ]
+# The port to scrape metrics from.
+[ port: <int> | default = 80 ]
 
-# Optional label and field selectors to limit the discovery process to a subset of available resources.
-# See https://kubernetes.io/docs/concepts/overview/working-with-objects/field-selectors/
-# and https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/ to learn more about the possible
-# filters that can be used. Endpoints role supports pod, service and endpoints selectors, other roles
-# only support selectors matching the role itself (e.g. node role can only contain node selectors).
+# The string by which Linode Instance tags are joined into the tag label.
+[ tag_separator: <string> | default = , ]
 
-# Note: When making decision about using field/label selector make sure that this
-# is the best approach - it will prevent Prometheus from reusing single list/watch
-# for all scrape configs. This might result in a bigger load on the Kubernetes API,
-# because per each selector combination there will be additional LIST/WATCH. On the other hand,
-# if you just want to monitor small subset of pods in large cluster it's recommended to use selectors.
-# Decision, if selectors should be used or not depends on the particular situation.
-[ selectors:
-  [ - role: <string>
-    [ label: <string> ]
-    [ field: <string> ] ]]
+# The time after which the linode instances are refreshed.
+[ refresh_interval: <duration> | default = 60s ]
 ```
-
-See [this example Prometheus configuration file](/documentation/examples/prometheus-kubernetes.yml)
-for a detailed example of configuring Prometheus for Kubernetes.
-
-You may wish to check out the 3rd party [Prometheus Operator](https://github.com/coreos/prometheus-operator),
-which automates the Prometheus setup on top of Kubernetes.
 
 ### `<marathon_sd_config>`
 
@@ -1388,7 +2498,7 @@ basic_auth:
   [ password: <secret> ]
   [ password_file: <string> ]
 
-# Optional the `Authorization` header configuration.
+# Optional `Authorization` header configuration.
 # NOTE: The current version of DC/OS marathon (v1.11.0) does not support
 # standard `Authentication` header, use `auth_token` or `auth_token_file`
 # instead.
@@ -1398,12 +2508,20 @@ authorization:
   # Sets the credentials. It is mutually exclusive with
   # `credentials_file`.
   [ credentials: <secret> ]
-  # Sets the credentials with the credentials read from the configured file.
+  # Sets the credentials to the credentials read from the configured file.
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
+
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <bool> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <boolean> | default: true ]
 
 # TLS configuration for connecting to marathon servers
 tls_config:
@@ -1411,6 +2529,15 @@ tls_config:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Comma-separated string that can contain IPs, CIDR notation, domain names
+# that should be excluded from proxying. IP and domain names can
+# contain port numbers.
+[ no_proxy: <string> ]
+# Use proxy URL indicated by environment variables (HTTP_PROXY, https_proxy, HTTPs_PROXY, https_proxy, and no_proxy)
+[ proxy_from_environment: <boolean> | default: false ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
 ```
 
 By default every app listed in Marathon will be scraped by Prometheus. If not all
@@ -1445,11 +2572,86 @@ paths:
   - <string>
 [ timeout: <duration> | default = 10s ]
 ```
+### `<nomad_sd_config>`
+
+Nomad SD configurations allow retrieving scrape targets from [Nomad's](https://www.nomadproject.io/)
+Service API.
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_nomad_address`: the service address of the target
+* `__meta_nomad_dc`: the datacenter name for the target
+* `__meta_nomad_namespace`: the namespace of the target
+* `__meta_nomad_node_id`: the node name defined for the target
+* `__meta_nomad_service`: the name of the service the target belongs to
+* `__meta_nomad_service_address`: the service address of the target
+* `__meta_nomad_service_id`: the service ID of the target
+* `__meta_nomad_service_port`: the service port of the target
+* `__meta_nomad_tags`: the list of tags of the target joined by the tag separator
+
+```yaml
+# The information to access the Nomad API. It is to be defined
+# as the Nomad documentation requires.
+[ allow_stale: <boolean> | default = true ]
+[ namespace: <string> | default = default ]
+[ refresh_interval: <duration> | default = 60s ]
+[ region: <string> | default = global ]
+[ server: <host> ]
+[ tag_separator: <string> | default = ,]
+
+# Authentication information used to authenticate to the nomad server.
+# Note that `basic_auth`, `authorization` and `oauth2` options are
+# mutually exclusive.
+# `password` and `password_file` are mutually exclusive.
+
+# Optional HTTP basic authentication information.
+basic_auth:
+  [ username: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
+
+# Optional `Authorization` header configuration.
+authorization:
+  # Sets the authentication type.
+  [ type: <string> | default: Bearer ]
+  # Sets the credentials. It is mutually exclusive with
+  # `credentials_file`.
+  [ credentials: <secret> ]
+  # Sets the credentials to the credentials read from the configured file.
+  # It is mutually exclusive with `credentials`.
+  [ credentials_file: <filename> ]
+
+# Optional OAuth 2.0 configuration.
+oauth2:
+  [ <oauth2> ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+# Comma-separated string that can contain IPs, CIDR notation, domain names
+# that should be excluded from proxying. IP and domain names can
+# contain port numbers.
+[ no_proxy: <string> ]
+# Use proxy URL indicated by environment variables (HTTP_PROXY, https_proxy, HTTPs_PROXY, https_proxy, and no_proxy)
+[ proxy_from_environment: <boolean> | default: false ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <boolean> | default: true ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
+```
 
 ### `<serverset_sd_config>`
 
 Serverset SD configurations allow retrieving scrape targets from [Serversets]
-(https://github.com/twitter/finagle/tree/master/finagle-serversets) which are
+(https://github.com/twitter/finagle/tree/develop/finagle-serversets) which are
 stored in [Zookeeper](https://zookeeper.apache.org/). Serversets are commonly
 used by [Finagle](https://twitter.github.io/finagle/) and
 [Aurora](https://aurora.apache.org/).
@@ -1589,16 +2791,21 @@ basic_auth:
   [ password: <secret> ]
   [ password_file: <string> ]
 
-# Optional the `Authorization` header configuration.
+# Optional `Authorization` header configuration.
 authorization:
   # Sets the authentication type.
   [ type: <string> | default: Bearer ]
   # Sets the credentials. It is mutually exclusive with
   # `credentials_file`.
   [ credentials: <secret> ]
-  # Sets the credentials with the credentials read from the configured file.
+  # Sets the credentials to the credentials read from the configured file.
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
+
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
 
 # Configures the scrape request's TLS settings.
 tls_config:
@@ -1606,9 +2813,21 @@ tls_config:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Comma-separated string that can contain IPs, CIDR notation, domain names
+# that should be excluded from proxying. IP and domain names can
+# contain port numbers.
+[ no_proxy: <string> ]
+# Use proxy URL indicated by environment variables (HTTP_PROXY, https_proxy, HTTPs_PROXY, https_proxy, and no_proxy)
+[ proxy_from_environment: <boolean> | default: false ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <bool> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <boolean> | default: true ]
 
 # Refresh interval to re-read the app instance list.
 [ refresh_interval: <duration> | default = 30s ]
@@ -1651,7 +2870,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_scaleway_instance_zone`: the zone of the server (ex: `fr-par-1`, complete list [here](https://developers.scaleway.com/en/products/instance/api/#introduction))
 
 This role uses the private IPv4 address by default. This can be
-changed with relabelling, as demonstrated in [the Prometheus scaleway-sd
+changed with relabeling, as demonstrated in [the Prometheus scaleway-sd
 configuration file](/documentation/examples/prometheus-scaleway.yml).
 
 #### Baremetal role
@@ -1669,7 +2888,7 @@ configuration file](/documentation/examples/prometheus-scaleway.yml).
 * `__meta_scaleway_baremetal_zone`: the zone of the server (ex: `fr-par-1`, complete list [here](https://developers.scaleway.com/en/products/instance/api/#introduction))
 
 This role uses the public IPv4 address by default. This can be
-changed with relabelling, as demonstrated in [the Prometheus scaleway-sd
+changed with relabeling, as demonstrated in [the Prometheus scaleway-sd
 configuration file](/documentation/examples/prometheus-scaleway.yml).
 
 See below for the configuration options for Scaleway discovery:
@@ -1712,15 +2931,198 @@ tags_filter:
 [ refresh_interval: <duration> | default = 60s ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <bool> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <boolean> | default: true ]
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Comma-separated string that can contain IPs, CIDR notation, domain names
+# that should be excluded from proxying. IP and domain names can
+# contain port numbers.
+[ no_proxy: <string> ]
+# Use proxy URL indicated by environment variables (HTTP_PROXY, https_proxy, HTTPs_PROXY, https_proxy, and no_proxy)
+[ proxy_from_environment: <boolean> | default: false ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
 
 # TLS configuration.
 tls_config:
   [ <tls_config> ]
 ```
+
+### `<uyuni_sd_config>`
+
+Uyuni SD configurations allow retrieving scrape targets from managed systems
+via [Uyuni](https://www.uyuni-project.org/) API.
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_uyuni_endpoint_name`: the name of the application endpoint
+* `__meta_uyuni_exporter`: the exporter exposing metrics for the target
+* `__meta_uyuni_groups`: the system groups of the target
+* `__meta_uyuni_metrics_path`: metrics path for the target
+* `__meta_uyuni_minion_hostname`: hostname of the Uyuni client
+* `__meta_uyuni_primary_fqdn`: primary FQDN of the Uyuni client
+* `__meta_uyuni_proxy_module`: the module name if _Exporter Exporter_ proxy is
+  configured for the target
+* `__meta_uyuni_scheme`:  the protocol scheme used for requests
+* `__meta_uyuni_system_id`: the system ID of the client
+
+See below for the configuration options for Uyuni discovery:
+
+```yaml
+# The URL to connect to the Uyuni server.
+server: <string>
+
+# Credentials are used to authenticate the requests to Uyuni API.
+username: <string>
+password: <secret>
+
+# The entitlement string to filter eligible systems.
+[ entitlement: <string> | default = monitoring_entitled ]
+
+# The string by which Uyuni group names are joined into the groups label.
+[ separator: <string> | default = , ]
+
+# Refresh interval to re-read the managed targets list.
+[ refresh_interval: <duration> | default = 60s ]
+
+# Optional HTTP basic authentication information, currently not supported by Uyuni.
+basic_auth:
+  [ username: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
+
+# Optional `Authorization` header configuration, currently not supported by Uyuni.
+authorization:
+  # Sets the authentication type.
+    [ type: <string> | default: Bearer ]
+    # Sets the credentials. It is mutually exclusive with
+    # `credentials_file`.
+    [ credentials: <secret> ]
+    # Sets the credentials to the credentials read from the configured file.
+    # It is mutually exclusive with `credentials`.
+    [ credentials_file: <filename> ]
+
+# Optional OAuth 2.0 configuration, currently not supported by Uyuni.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+# Comma-separated string that can contain IPs, CIDR notation, domain names
+# that should be excluded from proxying. IP and domain names can
+# contain port numbers.
+[ no_proxy: <string> ]
+# Use proxy URL indicated by environment variables (HTTP_PROXY, https_proxy, HTTPs_PROXY, https_proxy, and no_proxy)
+[ proxy_from_environment: <boolean> | default: false ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <boolean> | default: true ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
+```
+
+See [the Prometheus uyuni-sd configuration file](/documentation/examples/prometheus-uyuni.yml)
+for a practical example on how to set up Uyuni Prometheus configuration.
+
+### `<vultr_sd_config>`
+
+Vultr SD configurations allow retrieving scrape targets from [Vultr](https://www.vultr.com/).
+
+This service discovery uses the main IPv4 address by default, which that be
+changed with relabeling, as demonstrated in [the Prometheus vultr-sd
+configuration file](/documentation/examples/prometheus-vultr.yml).
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_vultr_instance_id` : A unique ID for the vultr Instance.
+* `__meta_vultr_instance_label` : The user-supplied label for this instance.
+* `__meta_vultr_instance_os` : The Operating System name.
+* `__meta_vultr_instance_os_id` : The Operating System id used by this instance.
+* `__meta_vultr_instance_region` : The Region id where the Instance is located.
+* `__meta_vultr_instance_plan` : A unique ID for the Plan.
+* `__meta_vultr_instance_main_ip` : The main IPv4 address.
+* `__meta_vultr_instance_internal_ip` : The private IP address.
+* `__meta_vultr_instance_main_ipv6` : The main IPv6 address.
+* `__meta_vultr_instance_features` : List of features that are available to the instance.
+* `__meta_vultr_instance_tags` : List of tags associated with the instance.
+* `__meta_vultr_instance_hostname` : The hostname for this instance.
+* `__meta_vultr_instance_server_status` : The server health status.
+* `__meta_vultr_instance_vcpu_count` : Number of vCPUs.
+* `__meta_vultr_instance_ram_mb` : The amount of RAM in MB.
+* `__meta_vultr_instance_disk_gb` : The size of the disk in GB.
+* `__meta_vultr_instance_allowed_bandwidth_gb` : Monthly bandwidth quota in GB.
+
+```yaml
+# Authentication information used to authenticate to the API server.
+# Note that `basic_auth` and `authorization` options are
+# mutually exclusive.
+# password and password_file are mutually exclusive.
+
+# Optional HTTP basic authentication information, not currently supported by Vultr.
+basic_auth:
+  [ username: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
+
+# Optional `Authorization` header configuration.
+authorization:
+  # Sets the authentication type.
+  [ type: <string> | default: Bearer ]
+  # Sets the credentials. It is mutually exclusive with
+  # `credentials_file`.
+  [ credentials: <secret> ]
+  # Sets the credentials to the credentials read from the configured file.
+  # It is mutually exclusive with `credentials`.
+  [ credentials_file: <filename> ]
+
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+# Comma-separated string that can contain IPs, CIDR notation, domain names
+# that should be excluded from proxying. IP and domain names can
+# contain port numbers.
+[ no_proxy: <string> ]
+# Use proxy URL indicated by environment variables (HTTP_PROXY, https_proxy, HTTPs_PROXY, https_proxy, and no_proxy)
+[ proxy_from_environment: <boolean> | default: false ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <boolean> | default: true ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
+
+# The port to scrape metrics from.
+[ port: <int> | default = 80 ]
+
+# The time after which the instances are refreshed.
+[ refresh_interval: <duration> | default = 60s ]
+```
+
 
 ### `<static_config>`
 
@@ -1752,6 +3154,9 @@ After relabeling, the `instance` label is set to the value of `__address__` by d
 it was not set during relabeling. The `__scheme__` and `__metrics_path__` labels
 are set to the scheme and metrics path of the target respectively. The `__param_<name>`
 label is set to the value of the first passed URL parameter called `<name>`.
+
+The `__scrape_interval__` and `__scrape_timeout__` labels are set to the target's
+interval and timeout. This is **experimental** and could change in the future.
 
 Additional labels prefixed with `__meta_` may be available during the
 relabeling phase. They are set by the service discovery mechanism that provided
@@ -1802,12 +3207,16 @@ anchored on both ends. To un-anchor the regex, use `.*<regex>.*`.
   `target_label` to `replacement`, with match group references
   (`${1}`, `${2}`, ...) in `replacement` substituted by their value. If `regex`
   does not match, no replacement takes place.
+* `lowercase`: Maps the concatenated `source_labels` to their lower case.
+* `uppercase`: Maps the concatenated `source_labels` to their upper case.
 * `keep`: Drop targets for which `regex` does not match the concatenated `source_labels`.
 * `drop`: Drop targets for which `regex` matches the concatenated `source_labels`.
+* `keepequal`: Drop targets for which the concatenated `source_labels` do not match `target_label`.
+* `dropequal`: Drop targets for which the concatenated `source_labels` do match `target_label`.
 * `hashmod`: Set `target_label` to the `modulus` of a hash of the concatenated `source_labels`.
-* `labelmap`: Match `regex` against all label names. Then copy the values of the matching labels
-   to label names given by `replacement` with match group references
-  (`${1}`, `${2}`, ...) in `replacement` substituted by their value.
+* `labelmap`: Match `regex` against all source label names, not just those specified in `source_labels`. Then
+   copy the values of the matching labels  to label names given by `replacement` with match
+   group references (`${1}`, `${2}`, ...) in `replacement` substituted by their value.
 * `labeldrop`: Match `regex` against all label names. Any label that matches will be
   removed from the set of labels.
 * `labelkeep`: Match `regex` against all label names. Any label that does not match will be
@@ -1867,16 +3276,40 @@ basic_auth:
   [ password: <secret> ]
   [ password_file: <string> ]
 
-# Optional the `Authorization` header configuration.
+# Optional `Authorization` header configuration.
 authorization:
   # Sets the authentication type.
   [ type: <string> | default: Bearer ]
   # Sets the credentials. It is mutually exclusive with
   # `credentials_file`.
   [ credentials: <secret> ]
-  # Sets the credentials with the credentials read from the configured file.
+  # Sets the credentials to the credentials read from the configured file.
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
+
+# Optionally configures AWS's Signature Verification 4 signing process to
+# sign requests. Cannot be set at the same time as basic_auth, authorization, or oauth2.
+# To use the default credentials from the AWS SDK, use `sigv4: {}`.
+sigv4:
+  # The AWS region. If blank, the region from the default credentials chain
+  # is used.
+  [ region: <string> ]
+
+  # The AWS API keys. If blank, the environment variables `AWS_ACCESS_KEY_ID`
+  # and `AWS_SECRET_ACCESS_KEY` are used.
+  [ access_key: <string> ]
+  [ secret_key: <secret> ]
+
+  # Named AWS profile used to authenticate.
+  [ profile: <string> ]
+
+  # AWS Role ARN, an alternative to using AWS API keys.
+  [ role_arn: <string> ]
+
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
 
 # Configures the scrape request's TLS settings.
 tls_config:
@@ -1884,9 +3317,21 @@ tls_config:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Comma-separated string that can contain IPs, CIDR notation, domain names
+# that should be excluded from proxying. IP and domain names can
+# contain port numbers.
+[ no_proxy: <string> ]
+# Use proxy URL indicated by environment variables (HTTP_PROXY, https_proxy, HTTPs_PROXY, https_proxy, and no_proxy)
+[ proxy_from_environment: <boolean> | default: false ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <bool> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <boolean> | default: true ]
 
 # List of Azure service discovery configurations.
 azure_sd_configs:
@@ -1932,9 +3377,25 @@ gce_sd_configs:
 hetzner_sd_configs:
   [ - <hetzner_sd_config> ... ]
 
+# List of HTTP service discovery configurations.
+http_sd_configs:
+  [ - <http_sd_config> ... ]
+
+ # List of IONOS service discovery configurations.
+ionos_sd_configs:
+  [ - <ionos_sd_config> ... ]
+
 # List of Kubernetes service discovery configurations.
 kubernetes_sd_configs:
   [ - <kubernetes_sd_config> ... ]
+
+# List of Lightsail service discovery configurations.
+lightsail_sd_configs:
+  [ - <lightsail_sd_config> ... ]
+
+# List of Linode service discovery configurations.
+linode_sd_configs:
+  [ - <linode_sd_config> ... ]
 
 # List of Marathon service discovery configurations.
 marathon_sd_configs:
@@ -1944,9 +3405,21 @@ marathon_sd_configs:
 nerve_sd_configs:
   [ - <nerve_sd_config> ... ]
 
+# List of Nomad service discovery configurations.
+nomad_sd_configs:
+  [ - <nomad_sd_config> ... ]
+
 # List of OpenStack service discovery configurations.
 openstack_sd_configs:
   [ - <openstack_sd_config> ... ]
+
+# List of OVHcloud service discovery configurations.
+ovhcloud_sd_configs:
+  [ - <ovhcloud_sd_config> ... ]
+
+# List of PuppetDB service discovery configurations.
+puppetdb_sd_configs:
+  [ - <puppetdb_sd_config> ... ]
 
 # List of Scaleway service discovery configurations.
 scaleway_sd_configs:
@@ -1959,6 +3432,14 @@ serverset_sd_configs:
 # List of Triton service discovery configurations.
 triton_sd_configs:
   [ - <triton_sd_config> ... ]
+
+# List of Uyuni service discovery configurations.
+uyuni_sd_configs:
+  [ - <uyuni_sd_config> ... ]
+
+# List of Vultr service discovery configurations.
+vultr_sd_configs:
+  [ - <vultr_sd_config> ... ]
 
 # List of labeled statically configured Alertmanagers.
 static_configs:
@@ -1999,6 +3480,12 @@ write_relabel_configs:
 # remote write configs.
 [ name: <string> ]
 
+# Enables sending of exemplars over remote write. Note that exemplar storage itself must be enabled for exemplars to be scraped in the first place.
+[ send_exemplars: <boolean> | default = false ]
+
+# Enables sending of native histograms, also known as sparse histograms, over remote write.
+[ send_native_histograms: <boolean> | default = false ]
+
 # Sets the `Authorization` header on every remote write request with the
 # configured username and password.
 # password and password_file are mutually exclusive.
@@ -2007,19 +3494,19 @@ basic_auth:
   [ password: <secret> ]
   [ password_file: <string> ]
 
-# Optional the `Authorization` header configuration.
+# Optional `Authorization` header configuration.
 authorization:
   # Sets the authentication type.
   [ type: <string> | default: Bearer ]
   # Sets the credentials. It is mutually exclusive with
   # `credentials_file`.
   [ credentials: <secret> ]
-  # Sets the credentials with the credentials read from the configured file.
+  # Sets the credentials to the credentials read from the configured file.
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
 # Optionally configures AWS's Signature Verification 4 signing process to
-# sign requests. Cannot be set at the same time as basic_auth or authorization.
+# sign requests. Cannot be set at the same time as basic_auth, authorization, oauth2, or azuread.
 # To use the default credentials from the AWS SDK, use `sigv4: {}`.
 sigv4:
   # The AWS region. If blank, the region from the default credentials chain
@@ -2037,15 +3524,48 @@ sigv4:
   # AWS Role ARN, an alternative to using AWS API keys.
   [ role_arn: <string> ]
 
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth, authorization, sigv4, or azuread.
+oauth2:
+  [ <oauth2> ]
+
+# Optional AzureAD configuration.
+# Cannot be used at the same time as basic_auth, authorization, oauth2, or sigv4.
+azuread:
+  # The Azure Cloud. Options are 'AzurePublic', 'AzureChina', or 'AzureGovernment'.
+  [ cloud: <string> | default = AzurePublic ]
+
+  # Azure User-assigned Managed identity.
+  [ managed_identity:
+      [ client_id: <string> ] ]  
+
+  # Azure OAuth.
+  [ oauth:
+      [ client_id: <string> ]
+      [ client_secret: <string> ]
+      [ tenant_id: <string> ] ]
+
 # Configures the remote write request's TLS settings.
 tls_config:
   [ <tls_config> ]
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Comma-separated string that can contain IPs, CIDR notation, domain names
+# that should be excluded from proxying. IP and domain names can
+# contain port numbers.
+[ no_proxy: <string> ]
+# Use proxy URL indicated by environment variables (HTTP_PROXY, https_proxy, HTTPs_PROXY, https_proxy, and no_proxy)
+[ proxy_from_environment: <boolean> | default: false ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <bool> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <boolean> | default: true ]
 
 # Configures the queue used to write to remote storage.
 queue_config:
@@ -2065,7 +3585,7 @@ queue_config:
   # Initial retry delay. Gets doubled for every retry.
   [ min_backoff: <duration> | default = 30ms ]
   # Maximum retry delay.
-  [ max_backoff: <duration> | default = 100ms ]
+  [ max_backoff: <duration> | default = 5s ]
   # Retry upon receiving a 429 status code from the remote-write storage.
   # This is experimental and might change in the future.
   [ retry_on_http_429: <boolean> | default = false ]
@@ -2078,6 +3598,8 @@ metadata_config:
   [ send: <boolean> | default = true ]
   # How frequently metric metadata is sent to remote storage.
   [ send_interval: <duration> | default = 1m ]
+  # Maximum number of samples per send.
+  [ max_samples_per_send: <int> | default = 500]
 ```
 
 There is a list of
@@ -2120,16 +3642,21 @@ basic_auth:
   [ password: <secret> ]
   [ password_file: <string> ]
 
-# Optional the `Authorization` header configuration.
+# Optional `Authorization` header configuration.
 authorization:
   # Sets the authentication type.
   [ type: <string> | default: Bearer ]
   # Sets the credentials. It is mutually exclusive with
   # `credentials_file`.
   [ credentials: <secret> ]
-  # Sets the credentials with the credentials read from the configured file.
+  # Sets the credentials to the credentials read from the configured file.
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
+
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
 
 # Configures the remote read request's TLS settings.
 tls_config:
@@ -2137,11 +3664,86 @@ tls_config:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+# Comma-separated string that can contain IPs, CIDR notation, domain names
+# that should be excluded from proxying. IP and domain names can
+# contain port numbers.
+[ no_proxy: <string> ]
+# Use proxy URL indicated by environment variables (HTTP_PROXY, https_proxy, HTTPs_PROXY, https_proxy, and no_proxy)
+[ proxy_from_environment: <boolean> | default: false ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <bool> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <boolean> | default: true ]
+
+# Whether to use the external labels as selectors for the remote read endpoint.
+[ filter_external_labels: <boolean> | default = true ]
 ```
 
 There is a list of
 [integrations](https://prometheus.io/docs/operating/integrations/#remote-endpoints-and-storage)
 with this feature.
+
+### `<tsdb>`
+
+`tsdb` lets you configure the runtime-reloadable configuration settings of the TSDB.
+
+NOTE: Out-of-order ingestion is an experimental feature, but you do not need any additional flag to enable it. Setting `out_of_order_time_window` to a positive duration enables it.
+
+```yaml
+# Configures how old an out-of-order/out-of-bounds sample can be w.r.t. the TSDB max time.
+# An out-of-order/out-of-bounds sample is ingested into the TSDB as long as the timestamp
+# of the sample is >= TSDB.MaxTime-out_of_order_time_window.
+#
+# When out_of_order_time_window is >0, the errors out-of-order and out-of-bounds are
+# combined into a single error called 'too-old'; a sample is either (a) ingestible
+# into the TSDB, i.e. it is an in-order sample or an out-of-order/out-of-bounds sample
+# that is within the out-of-order window, or (b) too-old, i.e. not in-order
+# and before the out-of-order window.
+[ out_of_order_time_window: <duration> | default = 0s ]
+```
+
+### `<exemplars>`
+
+Note that exemplar storage is still considered experimental and must be enabled via `--enable-feature=exemplar-storage`.
+
+```yaml
+# Configures the maximum size of the circular buffer used to store exemplars for all series. Resizable during runtime.
+[ max_exemplars: <int> | default = 100000 ]
+```
+
+### `<tracing_config>`
+
+`tracing_config` configures exporting traces from Prometheus to a tracing backend via the OTLP protocol. Tracing is currently an **experimental** feature and could change in the future.
+
+```yaml
+# Client used to export the traces. Options are 'http' or 'grpc'.
+[ client_type: <string> | default = grpc ]
+
+# Endpoint to send the traces to. Should be provided in format <host>:<port>.
+[ endpoint: <string> ]
+
+# Sets the probability a given trace will be sampled. Must be a float from 0 through 1.
+[ sampling_fraction: <float> | default = 0 ]
+
+# If disabled, the client will use a secure connection.
+[ insecure: <boolean> | default = false ]
+
+# Key-value pairs to be used as headers associated with gRPC or HTTP requests.
+headers:
+  [ <string>: <string> ... ]
+
+# Compression key for supported compression types. Supported compression: gzip.
+[ compression: <string> ]
+
+# Maximum time the exporter will wait for each batch export.
+[ timeout: <duration> | default = 10s ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
+```

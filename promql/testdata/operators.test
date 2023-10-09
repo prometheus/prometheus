@@ -467,3 +467,23 @@ eval instant at 5m test_total < bool test_smaller
     {instance="localhost"} 0
 
 eval instant at 5m test_total < test_smaller
+
+clear
+
+# Testing atan2.
+load 5m
+    trigy{} 10
+    trigx{} 20
+    trigNaN{} NaN
+
+eval instant at 5m trigy atan2 trigx
+    {} 0.4636476090008061
+
+eval instant at 5m trigy atan2 trigNaN
+    {} NaN
+
+eval instant at 5m 10 atan2 20
+    0.4636476090008061
+
+eval instant at 5m 10 atan2 NaN
+    NaN

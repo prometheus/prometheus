@@ -17,6 +17,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 )
 
 type testCase struct {
@@ -318,27 +320,38 @@ var tests = []struct {
 			{
 				input:    "offset",
 				expected: []Item{{OFFSET, 0, "offset"}},
-			}, {
+			},
+			{
 				input:    "by",
 				expected: []Item{{BY, 0, "by"}},
-			}, {
+			},
+			{
 				input:    "without",
 				expected: []Item{{WITHOUT, 0, "without"}},
-			}, {
+			},
+			{
 				input:    "on",
 				expected: []Item{{ON, 0, "on"}},
-			}, {
+			},
+			{
 				input:    "ignoring",
 				expected: []Item{{IGNORING, 0, "ignoring"}},
-			}, {
+			},
+			{
 				input:    "group_left",
 				expected: []Item{{GROUP_LEFT, 0, "group_left"}},
-			}, {
+			},
+			{
 				input:    "group_right",
 				expected: []Item{{GROUP_RIGHT, 0, "group_right"}},
-			}, {
+			},
+			{
 				input:    "bool",
 				expected: []Item{{BOOL, 0, "bool"}},
+			},
+			{
+				input:    "atan2",
+				expected: []Item{{ATAN2, 0, "atan2"}},
 			},
 		},
 	},
@@ -484,6 +497,73 @@ var tests = []struct {
 		},
 	},
 	{
+		name: "histogram series descriptions",
+		tests: []testCase{
+			{
+				input: `{} {{buckets:[5]}}`,
+				expected: []Item{
+					{LEFT_BRACE, 0, `{`},
+					{RIGHT_BRACE, 1, `}`},
+					{SPACE, 2, ` `},
+					{OPEN_HIST, 3, `{{`},
+					{BUCKETS_DESC, 5, `buckets`},
+					{COLON, 12, `:`},
+					{LEFT_BRACKET, 13, `[`},
+					{NUMBER, 14, `5`},
+					{RIGHT_BRACKET, 15, `]`},
+					{CLOSE_HIST, 16, `}}`},
+				},
+				seriesDesc: true,
+			},
+			{
+				input: `{} {{buckets: [5 10 7]}}`,
+				expected: []Item{
+					{LEFT_BRACE, 0, `{`},
+					{RIGHT_BRACE, 1, `}`},
+					{SPACE, 2, ` `},
+					{OPEN_HIST, 3, `{{`},
+					{BUCKETS_DESC, 5, `buckets`},
+					{COLON, 12, `:`},
+					{SPACE, 13, ` `},
+					{LEFT_BRACKET, 14, `[`},
+					{NUMBER, 15, `5`},
+					{SPACE, 16, ` `},
+					{NUMBER, 17, `10`},
+					{SPACE, 19, ` `},
+					{NUMBER, 20, `7`},
+					{RIGHT_BRACKET, 21, `]`},
+					{CLOSE_HIST, 22, `}}`},
+				},
+				seriesDesc: true,
+			},
+			{
+				input: `{} {{buckets: [5 10 7] schema:1}}`,
+				expected: []Item{
+					{LEFT_BRACE, 0, `{`},
+					{RIGHT_BRACE, 1, `}`},
+					{SPACE, 2, ` `},
+					{OPEN_HIST, 3, `{{`},
+					{BUCKETS_DESC, 5, `buckets`},
+					{COLON, 12, `:`},
+					{SPACE, 13, ` `},
+					{LEFT_BRACKET, 14, `[`},
+					{NUMBER, 15, `5`},
+					{SPACE, 16, ` `},
+					{NUMBER, 17, `10`},
+					{SPACE, 19, ` `},
+					{NUMBER, 20, `7`},
+					{RIGHT_BRACKET, 21, `]`},
+					{SPACE, 22, ` `},
+					{SCHEMA_DESC, 23, `schema`},
+					{COLON, 29, `:`},
+					{NUMBER, 30, `1`},
+					{CLOSE_HIST, 31, `}}`},
+				},
+				seriesDesc: true,
+			},
+		},
+	},
+	{
 		name: "series descriptions",
 		tests: []testCase{
 			{
@@ -565,7 +645,8 @@ var tests = []struct {
 					{DURATION, 24, `4s`},
 					{RIGHT_BRACKET, 26, `]`},
 				},
-			}, {
+			},
+			{
 				input: `test:name{on!~"b:ar"}[4m:4s]`,
 				expected: []Item{
 					{METRIC_IDENTIFIER, 0, `test:name`},
@@ -580,7 +661,8 @@ var tests = []struct {
 					{DURATION, 25, `4s`},
 					{RIGHT_BRACKET, 27, `]`},
 				},
-			}, {
+			},
+			{
 				input: `test:name{on!~"b:ar"}[4m:]`,
 				expected: []Item{
 					{METRIC_IDENTIFIER, 0, `test:name`},
@@ -594,10 +676,10 @@ var tests = []struct {
 					{COLON, 24, `:`},
 					{RIGHT_BRACKET, 25, `]`},
 				},
-			}, { // Nested Subquery.
+			},
+			{ // Nested Subquery.
 				input: `min_over_time(rate(foo{bar="baz"}[2s])[5m:])[4m:3s]`,
 				expected: []Item{
-
 					{IDENTIFIER, 0, `min_over_time`},
 					{LEFT_PAREN, 13, `(`},
 					{IDENTIFIER, 14, `rate`},
@@ -642,10 +724,10 @@ var tests = []struct {
 					{OFFSET, 29, "offset"},
 					{DURATION, 36, "10m"},
 				},
-			}, {
+			},
+			{
 				input: `min_over_time(rate(foo{bar="baz"}[2s])[5m:] offset 6m)[4m:3s]`,
 				expected: []Item{
-
 					{IDENTIFIER, 0, `min_over_time`},
 					{LEFT_PAREN, 13, `(`},
 					{IDENTIFIER, 14, `rate`},
@@ -722,7 +804,6 @@ func TestLexer(t *testing.T) {
 
 				for l.state = lexStatements; l.state != nil; {
 					out = append(out, Item{})
-
 					l.NextItem(&out[len(out)-1])
 				}
 
@@ -733,20 +814,19 @@ func TestLexer(t *testing.T) {
 						if item.Typ == ERROR {
 							hasError = true
 						}
-
 					}
 					if !hasError {
 						t.Logf("%d: input %q", i, test.input)
-						t.Fatalf("expected lexing error but did not fail")
+						require.Fail(t, "expected lexing error but did not fail")
 					}
 					continue
 				}
 				if lastItem.Typ == ERROR {
 					t.Logf("%d: input %q", i, test.input)
-					t.Fatalf("unexpected lexing error at position %d: %s", lastItem.Pos, lastItem)
+					require.Fail(t, "unexpected lexing error at position %d: %s", lastItem.Pos, lastItem)
 				}
 
-				eofItem := Item{EOF, Pos(len(test.input)), ""}
+				eofItem := Item{EOF, posrange.Pos(len(test.input)), ""}
 				require.Equal(t, lastItem, eofItem, "%d: input %q", i, test.input)
 
 				out = out[:len(out)-1]

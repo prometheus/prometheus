@@ -3,24 +3,32 @@ import React, { PureComponent } from 'react';
 import ReactResizeDetector from 'react-resize-detector';
 
 import { Legend } from './Legend';
-import { Metric, QueryParams } from '../../types/types';
+import { Metric, Histogram, ExemplarData, QueryParams } from '../../types/types';
 import { isPresent } from '../../utils';
 import { normalizeData, getOptions, toHoverColor } from './GraphHelpers';
+import { Button } from 'reactstrap';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faTimes } from '@fortawesome/free-solid-svg-icons';
 
 require('../../vendor/flot/jquery.flot');
 require('../../vendor/flot/jquery.flot.stack');
 require('../../vendor/flot/jquery.flot.time');
 require('../../vendor/flot/jquery.flot.crosshair');
+require('../../vendor/flot/jquery.flot.selection');
 require('jquery.flot.tooltip');
 
 export interface GraphProps {
   data: {
     resultType: string;
-    result: Array<{ metric: Metric; values: [number, string][] }>;
+    result: Array<{ metric: Metric; values?: [number, string][]; histograms?: [number, Histogram][] }>;
   };
+  exemplars: ExemplarData;
   stacked: boolean;
   useLocalTime: boolean;
+  showExemplars: boolean;
+  handleTimeRangeSelection: (startTime: number, endTime: number) => void;
   queryParams: QueryParams | null;
+  id: string;
 }
 
 export interface GraphSeries {
@@ -30,8 +38,23 @@ export interface GraphSeries {
   index: number;
 }
 
+export interface GraphExemplar {
+  seriesLabels: { [key: string]: string };
+  labels: { [key: string]: string };
+  data: number[][];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  points: any; // This is used to specify the symbol.
+  color: string;
+}
+
+export interface GraphData {
+  series: GraphSeries[];
+  exemplars: GraphExemplar[];
+}
+
 interface GraphState {
-  chartData: GraphSeries[];
+  chartData: GraphData;
+  selectedExemplarLabels: { exemplar: { [key: string]: string }; series: { [key: string]: string } };
 }
 
 class Graph extends PureComponent<GraphProps, GraphState> {
@@ -42,10 +65,11 @@ class Graph extends PureComponent<GraphProps, GraphState> {
 
   state = {
     chartData: normalizeData(this.props),
+    selectedExemplarLabels: { exemplar: {}, series: {} },
   };
 
-  componentDidUpdate(prevProps: GraphProps) {
-    const { data, stacked, useLocalTime } = this.props;
+  componentDidUpdate(prevProps: GraphProps): void {
+    const { data, stacked, useLocalTime, showExemplars } = this.props;
     if (prevProps.data !== data) {
       this.selectedSeriesIndexes = [];
       this.setState({ chartData: normalizeData(this.props) }, this.plot);
@@ -54,7 +78,10 @@ class Graph extends PureComponent<GraphProps, GraphState> {
         if (this.selectedSeriesIndexes.length === 0) {
           this.plot();
         } else {
-          this.plot(this.state.chartData.filter((_, i) => this.selectedSeriesIndexes.includes(i)));
+          this.plot([
+            ...this.state.chartData.series.filter((_, i) => this.selectedSeriesIndexes.includes(i)),
+            ...this.state.chartData.exemplars,
+          ]);
         }
       });
     }
@@ -62,17 +89,55 @@ class Graph extends PureComponent<GraphProps, GraphState> {
     if (prevProps.useLocalTime !== useLocalTime) {
       this.plot();
     }
+
+    if (prevProps.showExemplars !== showExemplars && !showExemplars) {
+      this.setState(
+        {
+          chartData: { series: this.state.chartData.series, exemplars: [] },
+          selectedExemplarLabels: { exemplar: {}, series: {} },
+        },
+        () => {
+          this.plot();
+        }
+      );
+    }
   }
 
-  componentDidMount() {
+  componentDidMount(): void {
     this.plot();
+
+    $(`.graph-${this.props.id}`).bind('plotclick', (event, pos, item) => {
+      // If an item has the series label property that means it's an exemplar.
+      if (item && 'seriesLabels' in item.series) {
+        this.setState({
+          selectedExemplarLabels: { exemplar: item.series.labels, series: item.series.seriesLabels },
+          chartData: this.state.chartData,
+        });
+      } else {
+        this.setState({
+          chartData: this.state.chartData,
+          selectedExemplarLabels: { exemplar: {}, series: {} },
+        });
+      }
+    });
+
+    $(`.graph-${this.props.id}`).bind('plotselected', (_, ranges) => {
+      if (isPresent(this.$chart)) {
+        // eslint-disable-next-line
+        // @ts-ignore Typescript doesn't think this method exists although it actually does.
+        this.$chart.clearSelection();
+        this.props.handleTimeRangeSelection(ranges.xaxis.from, ranges.xaxis.to);
+      }
+    });
   }
 
-  componentWillUnmount() {
+  componentWillUnmount(): void {
     this.destroyPlot();
   }
 
-  plot = (data: GraphSeries[] = this.state.chartData) => {
+  plot = (
+    data: (GraphSeries | GraphExemplar)[] = [...this.state.chartData.series, ...this.state.chartData.exemplars]
+  ): void => {
     if (!this.chartRef.current) {
       return;
     }
@@ -81,62 +146,120 @@ class Graph extends PureComponent<GraphProps, GraphState> {
     this.$chart = $.plot($(this.chartRef.current), data, getOptions(this.props.stacked, this.props.useLocalTime));
   };
 
-  destroyPlot = () => {
+  destroyPlot = (): void => {
     if (isPresent(this.$chart)) {
       this.$chart.destroy();
     }
   };
 
-  plotSetAndDraw(data: GraphSeries[] = this.state.chartData) {
+  plotSetAndDraw(
+    data: (GraphSeries | GraphExemplar)[] = [...this.state.chartData.series, ...this.state.chartData.exemplars]
+  ): void {
     if (isPresent(this.$chart)) {
       this.$chart.setData(data);
       this.$chart.draw();
     }
   }
 
-  handleSeriesSelect = (selected: number[], selectedIndex: number) => {
+  handleSeriesSelect = (selected: number[], selectedIndex: number): void => {
     const { chartData } = this.state;
     this.plot(
       this.selectedSeriesIndexes.length === 1 && this.selectedSeriesIndexes.includes(selectedIndex)
-        ? chartData.map(toHoverColor(selectedIndex, this.props.stacked))
-        : chartData.filter((_, i) => selected.includes(i)) // draw only selected
+        ? [...chartData.series.map(toHoverColor(selectedIndex, this.props.stacked)), ...chartData.exemplars]
+        : [
+            ...chartData.series.filter((_, i) => selected.includes(i)),
+            ...chartData.exemplars.filter((exemplar) => {
+              series: for (const i in selected) {
+                for (const name in chartData.series[selected[i]].labels) {
+                  if (exemplar.seriesLabels[name] !== chartData.series[selected[i]].labels[name]) {
+                    continue series;
+                  }
+                }
+                return true;
+              }
+              return false;
+            }),
+          ] // draw only selected
     );
     this.selectedSeriesIndexes = selected;
   };
 
-  handleSeriesHover = (index: number) => () => {
+  handleSeriesHover = (index: number) => (): void => {
     if (this.rafID) {
       cancelAnimationFrame(this.rafID);
     }
     this.rafID = requestAnimationFrame(() => {
-      this.plotSetAndDraw(this.state.chartData.map(toHoverColor(index, this.props.stacked)));
+      this.plotSetAndDraw([
+        ...this.state.chartData.series.map(toHoverColor(index, this.props.stacked)),
+        ...this.state.chartData.exemplars,
+      ]);
     });
   };
 
-  handleLegendMouseOut = () => {
+  handleLegendMouseOut = (): void => {
     cancelAnimationFrame(this.rafID);
     this.plotSetAndDraw();
   };
 
-  handleResize = () => {
+  handleResize = (): void => {
     if (isPresent(this.$chart)) {
-      this.plot(this.$chart.getData() as GraphSeries[]);
+      this.plot(this.$chart.getData() as (GraphSeries | GraphExemplar)[]);
     }
   };
 
-  render() {
-    const { chartData } = this.state;
+  render(): JSX.Element {
+    const { chartData, selectedExemplarLabels } = this.state;
+    const selectedLabels = selectedExemplarLabels as {
+      exemplar: { [key: string]: string };
+      series: { [key: string]: string };
+    };
     return (
-      <div className="graph">
+      <div className={`graph-${this.props.id}`}>
         <ReactResizeDetector handleWidth onResize={this.handleResize} skipOnMount />
         <div className="graph-chart" ref={this.chartRef} />
+        {Object.keys(selectedLabels.exemplar).length > 0 ? (
+          <div className="graph-selected-exemplar">
+            <div className="font-weight-bold">Selected exemplar labels:</div>
+            <div className="labels mt-1 ml-3">
+              {Object.keys(selectedLabels.exemplar).map((k, i) => (
+                <div key={i}>
+                  <strong>{k}</strong>: {selectedLabels.exemplar[k]}
+                </div>
+              ))}
+            </div>
+            <div className="font-weight-bold mt-3">Associated series labels:</div>
+            <div className="labels mt-1 ml-3">
+              {Object.keys(selectedLabels.series).map((k, i) => (
+                <div key={i}>
+                  <strong>{k}</strong>: {selectedLabels.series[k]}
+                </div>
+              ))}
+            </div>
+            <Button
+              size="small"
+              color="light"
+              style={{ position: 'absolute', top: 5, right: 5 }}
+              title="Hide selected exemplar details"
+              onClick={() =>
+                this.setState({
+                  chartData: this.state.chartData,
+                  selectedExemplarLabels: { exemplar: {}, series: {} },
+                })
+              }
+            >
+              <FontAwesomeIcon icon={faTimes} />
+            </Button>
+          </div>
+        ) : null}
         <Legend
           shouldReset={this.selectedSeriesIndexes.length === 0}
-          chartData={chartData}
+          chartData={chartData.series}
           onHover={this.handleSeriesHover}
           onLegendMouseOut={this.handleLegendMouseOut}
           onSeriesToggle={this.handleSeriesSelect}
         />
+        {/* This is to make sure the graph box expands when the selected exemplar info pops up. */}
+        <br style={{ clear: 'both' }} />
       </div>
     );
   }

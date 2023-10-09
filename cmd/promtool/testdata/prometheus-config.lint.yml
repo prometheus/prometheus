@@ -1,0 +1,2 @@
+rule_files:
+  - prometheus-rules.lint.yml

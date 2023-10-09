@@ -15,6 +15,15 @@ load 5m
 	testhistogram_bucket{le="0.3", start="negative"}	0+2x10
 	testhistogram_bucket{le="+Inf", start="negative"}	0+3x10
 
+# Another test histogram, where q(1/6), q(1/2), and q(5/6) are each in
+# the middle of a bucket and should therefore be 1, 3, and 5,
+# respectively.
+load 5m
+	testhistogram2_bucket{le="0"}	 0+0x10
+	testhistogram2_bucket{le="2"}	 0+1x10
+	testhistogram2_bucket{le="4"}    0+2x10
+	testhistogram2_bucket{le="6"}	 0+3x10
+	testhistogram2_bucket{le="+Inf"} 0+3x10
 
 # Now a more realistic histogram per job and instance to test aggregation.
 load 5m
@@ -50,6 +59,11 @@ eval instant at 50m histogram_quantile(-0.1, testhistogram_bucket)
 eval instant at 50m histogram_quantile(1.01, testhistogram_bucket)
 	{start="positive"} +Inf
 	{start="negative"} +Inf
+
+# Quantile invalid.
+eval instant at 50m histogram_quantile(NaN, testhistogram_bucket)
+	{start="positive"} NaN
+	{start="negative"} NaN
 
 # Quantile value in lowest bucket, which is positive.
 eval instant at 50m histogram_quantile(0, testhistogram_bucket{start="positive"})
@@ -90,6 +104,25 @@ eval instant at 50m histogram_quantile(0.5, rate(testhistogram_bucket[5m]))
 eval instant at 50m histogram_quantile(0.8, rate(testhistogram_bucket[5m]))
 	{start="positive"} 0.72
 	{start="negative"} 0.3
+
+# Want results exactly in the middle of the bucket.
+eval instant at 7m histogram_quantile(1./6., testhistogram2_bucket)
+	{} 1
+
+eval instant at 7m histogram_quantile(0.5, testhistogram2_bucket)
+	{} 3
+
+eval instant at 7m histogram_quantile(5./6., testhistogram2_bucket)
+	{} 5
+
+eval instant at 47m histogram_quantile(1./6., rate(testhistogram2_bucket[15m]))
+	{} 1
+
+eval instant at 47m histogram_quantile(0.5, rate(testhistogram2_bucket[15m]))
+	{} 3
+
+eval instant at 47m histogram_quantile(5./6., rate(testhistogram2_bucket[15m]))
+	{} 5
 
 # Aggregated histogram: Everything in one.
 eval instant at 50m histogram_quantile(0.3, sum(rate(request_duration_seconds_bucket[5m])) by (le))
@@ -191,3 +224,12 @@ load 5m
 
 eval instant at 50m histogram_quantile(0.2, rate(empty_bucket[5m]))
 	{instance="ins1", job="job1"} NaN
+
+# Load a duplicate histogram with a different name to test failure scenario on multiple histograms with the same label set
+# https://github.com/prometheus/prometheus/issues/9910
+load 5m
+	request_duration_seconds2_bucket{job="job1", instance="ins1", le="0.1"}	0+1x10
+	request_duration_seconds2_bucket{job="job1", instance="ins1", le="0.2"}	0+3x10
+	request_duration_seconds2_bucket{job="job1", instance="ins1", le="+Inf"}	0+4x10
+
+eval_fail instant at 50m histogram_quantile(0.99, {__name__=~"request_duration.*"})

@@ -13,21 +13,33 @@
 
 package main
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/prometheus/prometheus/promql"
+)
 
 func TestRulesUnitTest(t *testing.T) {
 	type args struct {
 		files []string
 	}
 	tests := []struct {
-		name string
-		args args
-		want int
+		name      string
+		args      args
+		queryOpts promql.LazyLoaderOpts
+		want      int
 	}{
 		{
 			name: "Passing Unit Tests",
 			args: args{
 				files: []string{"./testdata/unittest.yml"},
+			},
+			want: 0,
+		},
+		{
+			name: "Long evaluation interval",
+			args: args{
+				files: []string{"./testdata/long-period.yml"},
 			},
 			want: 0,
 		},
@@ -66,10 +78,44 @@ func TestRulesUnitTest(t *testing.T) {
 			},
 			want: 1,
 		},
+		{
+			name: "Disabled feature (@ modifier)",
+			args: args{
+				files: []string{"./testdata/at-modifier-test.yml"},
+			},
+			want: 1,
+		},
+		{
+			name: "Enabled feature (@ modifier)",
+			args: args{
+				files: []string{"./testdata/at-modifier-test.yml"},
+			},
+			queryOpts: promql.LazyLoaderOpts{
+				EnableAtModifier: true,
+			},
+			want: 0,
+		},
+		{
+			name: "Disabled feature (negative offset)",
+			args: args{
+				files: []string{"./testdata/negative-offset-test.yml"},
+			},
+			want: 1,
+		},
+		{
+			name: "Enabled feature (negative offset)",
+			args: args{
+				files: []string{"./testdata/negative-offset-test.yml"},
+			},
+			queryOpts: promql.LazyLoaderOpts{
+				EnableNegativeOffset: true,
+			},
+			want: 0,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := RulesUnitTest(tt.args.files...); got != tt.want {
+			if got := RulesUnitTest(tt.queryOpts, tt.args.files...); got != tt.want {
 				t.Errorf("RulesUnitTest() = %v, want %v", got, tt.want)
 			}
 		})

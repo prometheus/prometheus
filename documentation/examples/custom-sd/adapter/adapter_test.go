@@ -15,9 +15,7 @@ package adapter
 
 import (
 	"context"
-	"io/ioutil"
 	"os"
-	"reflect"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -217,21 +215,14 @@ func TestGenerateTargetGroups(t *testing.T) {
 
 	for _, testCase := range testCases {
 		result := generateTargetGroups(testCase.targetGroup)
-
-		if !reflect.DeepEqual(result, testCase.expectedCustomSD) {
-			t.Errorf("%q failed\ngot: %#v\nexpected: %v",
-				testCase.title,
-				result,
-				testCase.expectedCustomSD)
-		}
-
+		require.Equal(t, testCase.expectedCustomSD, result)
 	}
 }
 
 // TestWriteOutput checks the adapter can write a file to disk.
 func TestWriteOutput(t *testing.T) {
 	ctx := context.Background()
-	tmpfile, err := ioutil.TempFile("", "sd_adapter_test")
+	tmpfile, err := os.CreateTemp("", "sd_adapter_test")
 	require.NoError(t, err)
 	defer os.Remove(tmpfile.Name())
 	tmpfile.Close()

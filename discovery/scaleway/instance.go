@@ -25,10 +25,11 @@ import (
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
-	"github.com/prometheus/prometheus/discovery/refresh"
-	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/scaleway/scaleway-sdk-go/api/instance/v1"
 	"github.com/scaleway/scaleway-sdk-go/scw"
+
+	"github.com/prometheus/prometheus/discovery/refresh"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
 const (
@@ -81,7 +82,7 @@ func newInstanceDiscovery(conf *SDConfig) (*instanceDiscovery, error) {
 		tagsFilter: conf.TagsFilter,
 	}
 
-	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "scaleway_sd", false, false)
+	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "scaleway_sd")
 	if err != nil {
 		return nil, err
 	}
@@ -134,23 +135,32 @@ func (d *instanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 	var targets []model.LabelSet
 	for _, server := range servers.Servers {
 		labels := model.LabelSet{
-			instanceBootTypeLabel:          model.LabelValue(server.BootType),
-			instanceHostnameLabel:          model.LabelValue(server.Hostname),
-			instanceIDLabel:                model.LabelValue(server.ID),
-			instanceImageArchLabel:         model.LabelValue(server.Image.Arch),
-			instanceImageIDLabel:           model.LabelValue(server.Image.ID),
-			instanceImageNameLabel:         model.LabelValue(server.Image.Name),
-			instanceLocationClusterID:      model.LabelValue(server.Location.ClusterID),
-			instanceLocationHypervisorID:   model.LabelValue(server.Location.HypervisorID),
-			instanceLocationNodeID:         model.LabelValue(server.Location.NodeID),
-			instanceNameLabel:              model.LabelValue(server.Name),
-			instanceOrganizationLabel:      model.LabelValue(server.Organization),
-			instanceProjectLabel:           model.LabelValue(server.Project),
-			instanceSecurityGroupIDLabel:   model.LabelValue(server.SecurityGroup.ID),
-			instanceSecurityGroupNameLabel: model.LabelValue(server.SecurityGroup.Name),
-			instanceStateLabel:             model.LabelValue(server.State),
-			instanceTypeLabel:              model.LabelValue(server.CommercialType),
-			instanceZoneLabel:              model.LabelValue(server.Zone.String()),
+			instanceBootTypeLabel:     model.LabelValue(server.BootType),
+			instanceHostnameLabel:     model.LabelValue(server.Hostname),
+			instanceIDLabel:           model.LabelValue(server.ID),
+			instanceNameLabel:         model.LabelValue(server.Name),
+			instanceOrganizationLabel: model.LabelValue(server.Organization),
+			instanceProjectLabel:      model.LabelValue(server.Project),
+			instanceStateLabel:        model.LabelValue(server.State),
+			instanceTypeLabel:         model.LabelValue(server.CommercialType),
+			instanceZoneLabel:         model.LabelValue(server.Zone.String()),
+		}
+
+		if server.Image != nil {
+			labels[instanceImageArchLabel] = model.LabelValue(server.Image.Arch)
+			labels[instanceImageIDLabel] = model.LabelValue(server.Image.ID)
+			labels[instanceImageNameLabel] = model.LabelValue(server.Image.Name)
+		}
+
+		if server.Location != nil {
+			labels[instanceLocationClusterID] = model.LabelValue(server.Location.ClusterID)
+			labels[instanceLocationHypervisorID] = model.LabelValue(server.Location.HypervisorID)
+			labels[instanceLocationNodeID] = model.LabelValue(server.Location.NodeID)
+		}
+
+		if server.SecurityGroup != nil {
+			labels[instanceSecurityGroupIDLabel] = model.LabelValue(server.SecurityGroup.ID)
+			labels[instanceSecurityGroupNameLabel] = model.LabelValue(server.SecurityGroup.Name)
 		}
 
 		if region, err := server.Zone.Region(); err == nil {

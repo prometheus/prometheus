@@ -1,5 +1,5 @@
 import React, { FC, useState, Fragment } from 'react';
-import { Link } from '@reach/router';
+import { Link } from 'react-router-dom';
 import { Alert, Collapse, Table, Badge } from 'reactstrap';
 import { RuleStatus } from './AlertContents';
 import { Rule } from '../../types/types';
@@ -28,81 +28,95 @@ const CollapsibleAlertPanel: FC<CollapsibleAlertPanelProps> = ({ rule, showAnnot
         <strong>{rule.name}</strong> ({`${rule.alerts.length} active`})
       </Alert>
       <Collapse isOpen={open} className="mb-2">
-        <pre style={{ background: '#f5f5f5', padding: 15 }}>
-          <code>
-            <div>
-              name: <Link to={createExpressionLink(`ALERTS{alertname="${rule.name}"}`)}>{rule.name}</Link>
-            </div>
-            <div>
-              expr: <Link to={createExpressionLink(rule.query)}>{rule.query}</Link>
-            </div>
-            {rule.duration > 0 && (
-              <div>
-                <div>for: {formatDuration(rule.duration * 1000)}</div>
-              </div>
-            )}
-            {rule.labels && Object.keys(rule.labels).length > 0 && (
-              <div>
-                <div>labels:</div>
-                {Object.entries(rule.labels).map(([key, value]) => (
-                  <div className="ml-4" key={key}>
-                    {key}: {value}
+        {open && (
+          <>
+            <pre className="alert-cell">
+              <code>
+                <div>
+                  name: <Link to={createExpressionLink(`ALERTS{alertname="${rule.name}"}`)}>{rule.name}</Link>
+                </div>
+                <div>
+                  expr: <Link to={createExpressionLink(rule.query)}>{rule.query}</Link>
+                </div>
+                {rule.duration > 0 && (
+                  <div>
+                    <div>for: {formatDuration(rule.duration * 1000)}</div>
                   </div>
-                ))}
-              </div>
-            )}
-            {rule.annotations && Object.keys(rule.annotations).length > 0 && (
-              <div>
-                <div>annotations:</div>
-                {Object.entries(rule.annotations).map(([key, value]) => (
-                  <div className="ml-4" key={key}>
-                    {key}: {value}
+                )}
+                {rule.keepFiringFor > 0 && (
+                  <div>
+                    <div>keep_firing_for: {formatDuration(rule.keepFiringFor * 1000)}</div>
                   </div>
-                ))}
-              </div>
+                )}
+                {rule.labels && Object.keys(rule.labels).length > 0 && (
+                  <div>
+                    <div>labels:</div>
+                    {Object.entries(rule.labels).map(([key, value]) => (
+                      <div className="ml-4" key={key}>
+                        {key}: {value}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {rule.annotations && Object.keys(rule.annotations).length > 0 && (
+                  <div>
+                    <div>annotations:</div>
+                    {Object.entries(rule.annotations).map(([key, value]) => (
+                      <div className="ml-4" key={key}>
+                        {key}: {value}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </code>
+            </pre>
+            {rule.alerts.length > 0 && (
+              <Table bordered size="sm">
+                <thead>
+                  <tr>
+                    <th>Labels</th>
+                    <th>State</th>
+                    <th>Active Since</th>
+                    <th>Value</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rule.alerts.map((alert, i) => {
+                    return (
+                      <Fragment key={i}>
+                        <tr>
+                          <td style={{ verticalAlign: 'middle' }}>
+                            {Object.entries(alert.labels).map(([k, v], j) => {
+                              return (
+                                <Badge key={j} color="primary" className="mr-1">
+                                  {k}={v}
+                                </Badge>
+                              );
+                            })}
+                          </td>
+                          <td>
+                            <h5 className="m-0">
+                              <Badge color={alertColors[alert.state] + ' text-uppercase'} className="px-3 mr-1">
+                                {alert.state}
+                              </Badge>
+                              {alert.keepFiringSince && (
+                                <Badge color="secondary" className="px-3">
+                                  Stabilizing
+                                </Badge>
+                              )}
+                            </h5>
+                          </td>
+                          <td>{alert.activeAt}</td>
+                          <td>{parsePrometheusFloat(alert.value)}</td>
+                        </tr>
+                        {showAnnotations && <Annotations annotations={alert.annotations} />}
+                      </Fragment>
+                    );
+                  })}
+                </tbody>
+              </Table>
             )}
-          </code>
-        </pre>
-        {rule.alerts.length > 0 && (
-          <Table bordered size="sm">
-            <thead>
-              <tr>
-                <th>Labels</th>
-                <th>State</th>
-                <th>Active Since</th>
-                <th>Value</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rule.alerts.map((alert, i) => {
-                return (
-                  <Fragment key={i}>
-                    <tr>
-                      <td style={{ verticalAlign: 'middle' }}>
-                        {Object.entries(alert.labels).map(([k, v], j) => {
-                          return (
-                            <Badge key={j} color="primary" className="mr-1">
-                              {k}={v}
-                            </Badge>
-                          );
-                        })}
-                      </td>
-                      <td>
-                        <h5 className="m-0">
-                          <Badge color={alertColors[alert.state] + ' text-uppercase'} className="px-3">
-                            {alert.state}
-                          </Badge>
-                        </h5>
-                      </td>
-                      <td>{alert.activeAt}</td>
-                      <td>{parsePrometheusFloat(alert.value)}</td>
-                    </tr>
-                    {showAnnotations && <Annotations annotations={alert.annotations} />}
-                  </Fragment>
-                );
-              })}
-            </tbody>
-          </Table>
+          </>
         )}
       </Collapse>
     </>

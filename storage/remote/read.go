@@ -15,11 +15,12 @@ package remote
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
-	"github.com/pkg/errors"
-
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 )
 
 type sampleAndChunkQueryableClient struct {
@@ -48,9 +49,8 @@ func NewSampleAndChunkQueryableClient(
 	}
 }
 
-func (c *sampleAndChunkQueryableClient) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+func (c *sampleAndChunkQueryableClient) Querier(mint, maxt int64) (storage.Querier, error) {
 	q := &querier{
-		ctx:              ctx,
 		mint:             mint,
 		maxt:             maxt,
 		client:           c.client,
@@ -75,10 +75,9 @@ func (c *sampleAndChunkQueryableClient) Querier(ctx context.Context, mint, maxt 
 	return q, nil
 }
 
-func (c *sampleAndChunkQueryableClient) ChunkQuerier(ctx context.Context, mint, maxt int64) (storage.ChunkQuerier, error) {
+func (c *sampleAndChunkQueryableClient) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
 	cq := &chunkQuerier{
 		querier: querier{
-			ctx:              ctx,
 			mint:             mint,
 			maxt:             maxt,
 			client:           c.client,
@@ -125,7 +124,6 @@ func (c *sampleAndChunkQueryableClient) preferLocalStorage(mint, maxt int64) (cm
 }
 
 type querier struct {
-	ctx        context.Context
 	mint, maxt int64
 	client     ReadClient
 
@@ -140,7 +138,7 @@ type querier struct {
 //
 // If requiredMatchers are given, select returns a NoopSeriesSet if the given matchers don't match the label set of the
 // requiredMatchers. Otherwise it'll just call remote endpoint.
-func (q *querier) Select(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+func (q *querier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	if len(q.requiredMatchers) > 0 {
 		// Copy to not modify slice configured by user.
 		requiredMatchers := append([]*labels.Matcher{}, q.requiredMatchers...)
@@ -164,12 +162,12 @@ func (q *querier) Select(sortSeries bool, hints *storage.SelectHints, matchers .
 	m, added := q.addExternalLabels(matchers)
 	query, err := ToQuery(q.mint, q.maxt, m, hints)
 	if err != nil {
-		return storage.ErrSeriesSet(errors.Wrap(err, "toQuery"))
+		return storage.ErrSeriesSet(fmt.Errorf("toQuery: %w", err))
 	}
 
-	res, err := q.client.Read(q.ctx, query)
+	res, err := q.client.Read(ctx, query)
 	if err != nil {
-		return storage.ErrSeriesSet(errors.Wrap(err, "remote_read"))
+		return storage.ErrSeriesSet(fmt.Errorf("remote_read: %w", err))
 	}
 	return newSeriesSetFilter(FromQueryResult(sortSeries, res), added)
 }
@@ -180,9 +178,11 @@ func (q *querier) Select(sortSeries bool, hints *storage.SelectHints, matchers .
 // We return the new set of matchers, along with a map of labels for which
 // matchers were added, so that these can later be removed from the result
 // time series again.
-func (q querier) addExternalLabels(ms []*labels.Matcher) ([]*labels.Matcher, labels.Labels) {
-	el := make(labels.Labels, len(q.externalLabels))
-	copy(el, q.externalLabels)
+func (q querier) addExternalLabels(ms []*labels.Matcher) ([]*labels.Matcher, []string) {
+	el := make([]labels.Label, 0, q.externalLabels.Len())
+	q.externalLabels.Range(func(l labels.Label) {
+		el = append(el, l)
+	})
 
 	// ms won't be sorted, so have to O(n^2) the search.
 	for _, m := range ms {
@@ -202,17 +202,21 @@ func (q querier) addExternalLabels(ms []*labels.Matcher) ([]*labels.Matcher, lab
 		}
 		ms = append(ms, m)
 	}
-	return ms, el
+	names := make([]string, len(el))
+	for i := range el {
+		names[i] = el[i].Name
+	}
+	return ms, names
 }
 
 // LabelValues implements storage.Querier and is a noop.
-func (q *querier) LabelValues(string, ...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (q *querier) LabelValues(context.Context, string, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	// TODO: Implement: https://github.com/prometheus/prometheus/issues/3351
 	return nil, nil, errors.New("not implemented")
 }
 
 // LabelNames implements storage.Querier and is a noop.
-func (q *querier) LabelNames() ([]string, storage.Warnings, error) {
+func (q *querier) LabelNames(context.Context, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	// TODO: Implement: https://github.com/prometheus/prometheus/issues/3351
 	return nil, nil, errors.New("not implemented")
 }
@@ -229,12 +233,13 @@ type chunkQuerier struct {
 
 // Select implements storage.ChunkQuerier and uses the given matchers to read chunk series sets from the client.
 // It uses remote.querier.Select so it supports external labels and required matchers if specified.
-func (q *chunkQuerier) Select(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.ChunkSeriesSet {
+func (q *chunkQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.ChunkSeriesSet {
 	// TODO(bwplotka) Support remote read chunked and allow returning chunks directly (TODO ticket).
-	return storage.NewSeriesSetToChunkSet(q.querier.Select(sortSeries, hints, matchers...))
+	return storage.NewSeriesSetToChunkSet(q.querier.Select(ctx, sortSeries, hints, matchers...))
 }
 
-func newSeriesSetFilter(ss storage.SeriesSet, toFilter labels.Labels) storage.SeriesSet {
+// Note strings in toFilter must be sorted.
+func newSeriesSetFilter(ss storage.SeriesSet, toFilter []string) storage.SeriesSet {
 	return &seriesSetFilter{
 		SeriesSet: ss,
 		toFilter:  toFilter,
@@ -243,7 +248,7 @@ func newSeriesSetFilter(ss storage.SeriesSet, toFilter labels.Labels) storage.Se
 
 type seriesSetFilter struct {
 	storage.SeriesSet
-	toFilter labels.Labels
+	toFilter []string // Label names to remove from result
 	querier  storage.Querier
 }
 
@@ -264,20 +269,12 @@ func (ssf seriesSetFilter) At() storage.Series {
 
 type seriesFilter struct {
 	storage.Series
-	toFilter labels.Labels
+	toFilter []string // Label names to remove from result
 }
 
 func (sf seriesFilter) Labels() labels.Labels {
-	labels := sf.Series.Labels()
-	for i, j := 0, 0; i < len(labels) && j < len(sf.toFilter); {
-		if labels[i].Name < sf.toFilter[j].Name {
-			i++
-		} else if labels[i].Name > sf.toFilter[j].Name {
-			j++
-		} else {
-			labels = labels[:i+copy(labels[i:], labels[i+1:])]
-			j++
-		}
-	}
-	return labels
+	b := labels.NewBuilder(sf.Series.Labels())
+	// todo: check if this is too inefficient.
+	b.Del(sf.toFilter...)
+	return b.Labels()
 }

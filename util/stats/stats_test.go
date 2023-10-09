@@ -15,11 +15,12 @@ package stats
 
 import (
 	"encoding/json"
-	"regexp"
 	"testing"
 	"time"
 
+	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -27,96 +28,73 @@ import (
 func TestTimerGroupNewTimer(t *testing.T) {
 	tg := NewTimerGroup()
 	timer := tg.GetTimer(ExecTotalTime)
-	if duration := timer.Duration(); duration != 0 {
-		t.Fatalf("Expected duration of 0, but it was %f instead.", duration)
-	}
+	duration := timer.Duration()
+	require.Equal(t, 0.0, duration, "Expected duration equal 0")
 	minimum := 2 * time.Millisecond
 	timer.Start()
 	time.Sleep(minimum)
 	timer.Stop()
-	if duration := timer.Duration(); duration == 0 {
-		t.Fatalf("Expected duration greater than 0, but it was %f instead.", duration)
-	}
-	if elapsed := timer.ElapsedTime(); elapsed < minimum {
-		t.Fatalf("Expected elapsed time to be greater than time slept, elapsed was %d, and time slept was %d.", elapsed.Nanoseconds(), minimum)
-	}
+	duration = timer.Duration()
+	require.Greater(t, duration, 0.0, "Expected duration greater than 0")
+	elapsed := timer.ElapsedTime()
+	require.GreaterOrEqual(t, elapsed, minimum,
+		"Expected elapsed time to be greater than time slept.")
 }
 
-func TestQueryStatsWithTimers(t *testing.T) {
+func TestQueryStatsWithTimersAndSamples(t *testing.T) {
 	qt := NewQueryTimers()
+	qs := NewQuerySamples(true)
+	qs.InitStepTracking(20001000, 25001000, 1000000)
 	timer := qt.GetTimer(ExecTotalTime)
 	timer.Start()
 	time.Sleep(2 * time.Millisecond)
 	timer.Stop()
+	qs.IncrementSamplesAtTimestamp(20001000, 5)
+	qs.IncrementSamplesAtTimestamp(25001000, 5)
 
-	qs := NewQueryStats(qt)
-	actual, err := json.Marshal(qs)
-	if err != nil {
-		t.Fatalf("Unexpected error during serialization: %v", err)
-	}
+	qstats := NewQueryStats(&Statistics{Timers: qt, Samples: qs})
+	actual, err := json.Marshal(qstats)
+	require.NoError(t, err, "unexpected error during serialization")
 	// Timing value is one of multiple fields, unit is seconds (float).
 	match, err := regexp.MatchString(`[,{]"execTotalTime":\d+\.\d+[,}]`, string(actual))
-	if err != nil {
-		t.Fatalf("Unexpected error while matching string: %v", err)
-	}
-	if !match {
-		t.Fatalf("Expected timings with one non-zero entry, but got %s.", actual)
-	}
+	require.NoError(t, err, "unexpected error while matching string")
+	require.True(t, match, "Expected timings with one non-zero entry.")
+
+	require.Regexpf(t, `[,{]"totalQueryableSamples":10[,}]`, string(actual), "expected totalQueryableSamples")
+	require.Regexpf(t, `[,{]"totalQueryableSamplesPerStep":\[\[20001,5\],\[21001,0\],\[22001,0\],\[23001,0\],\[24001,0\],\[25001,5\]\]`, string(actual), "expected totalQueryableSamplesPerStep")
 }
 
 func TestQueryStatsWithSpanTimers(t *testing.T) {
 	qt := NewQueryTimers()
+	qs := NewQuerySamples(false)
 	ctx := &testutil.MockContext{DoneCh: make(chan struct{})}
 	qst, _ := qt.GetSpanTimer(ctx, ExecQueueTime, prometheus.NewSummary(prometheus.SummaryOpts{}))
 	time.Sleep(5 * time.Millisecond)
 	qst.Finish()
-	qs := NewQueryStats(qt)
-	actual, err := json.Marshal(qs)
-	if err != nil {
-		t.Fatalf("Unexpected error during serialization: %v", err)
-	}
+	qstats := NewQueryStats(&Statistics{Timers: qt, Samples: qs})
+	actual, err := json.Marshal(qstats)
+	require.NoError(t, err, "unexpected error during serialization")
 	// Timing value is one of multiple fields, unit is seconds (float).
 	match, err := regexp.MatchString(`[,{]"execQueueTime":\d+\.\d+[,}]`, string(actual))
-	if err != nil {
-		t.Fatalf("Unexpected error while matching string: %v", err)
-	}
-	if !match {
-		t.Fatalf("Expected timings with one non-zero entry, but got %s.", actual)
-	}
+	require.NoError(t, err, "unexpected error while matching string")
+	require.True(t, match, "Expected timings with one non-zero entry.")
 }
 
 func TestTimerGroup(t *testing.T) {
 	tg := NewTimerGroup()
-	execTotalTimer := tg.GetTimer(ExecTotalTime)
-	if tg.GetTimer(ExecTotalTime).String() != "Exec total time: 0s" {
-		t.Fatalf("Expected string %s, but got %s", "", execTotalTimer.String())
-	}
-	execQueueTimer := tg.GetTimer(ExecQueueTime)
-	if tg.GetTimer(ExecQueueTime).String() != "Exec queue wait time: 0s" {
-		t.Fatalf("Expected string %s, but got %s", "", execQueueTimer.String())
-	}
-	innerEvalTimer := tg.GetTimer(InnerEvalTime)
-	if tg.GetTimer(InnerEvalTime).String() != "Inner eval time: 0s" {
-		t.Fatalf("Expected string %s, but got %s", "", innerEvalTimer.String())
-	}
-	queryPreparationTimer := tg.GetTimer(QueryPreparationTime)
-	if tg.GetTimer(QueryPreparationTime).String() != "Query preparation time: 0s" {
-		t.Fatalf("Expected string %s, but got %s", "", queryPreparationTimer.String())
-	}
-	resultSortTimer := tg.GetTimer(ResultSortTime)
-	if tg.GetTimer(ResultSortTime).String() != "Result sorting time: 0s" {
-		t.Fatalf("Expected string %s, but got %s", "", resultSortTimer.String())
-	}
-	evalTotalTimer := tg.GetTimer(EvalTotalTime)
-	if tg.GetTimer(EvalTotalTime).String() != "Eval total time: 0s" {
-		t.Fatalf("Expected string %s, but got %s", "", evalTotalTimer.String())
-	}
+	require.Equal(t, "Exec total time: 0s", tg.GetTimer(ExecTotalTime).String())
+
+	require.Equal(t, "Exec queue wait time: 0s", tg.GetTimer(ExecQueueTime).String())
+
+	require.Equal(t, "Inner eval time: 0s", tg.GetTimer(InnerEvalTime).String())
+
+	require.Equal(t, "Query preparation time: 0s", tg.GetTimer(QueryPreparationTime).String())
+
+	require.Equal(t, "Result sorting time: 0s", tg.GetTimer(ResultSortTime).String())
+
+	require.Equal(t, "Eval total time: 0s", tg.GetTimer(EvalTotalTime).String())
 
 	actual := tg.String()
 	expected := "Exec total time: 0s\nExec queue wait time: 0s\nInner eval time: 0s\nQuery preparation time: 0s\nResult sorting time: 0s\nEval total time: 0s\n"
-
-	if actual != expected {
-		t.Fatalf("Expected timerGroup string %s, but got %s.", expected, actual)
-	}
-
+	require.Equal(t, expected, actual)
 }

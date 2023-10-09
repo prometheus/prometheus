@@ -1,173 +1,33 @@
 ---
+# Prometheus has switched to GitHub action.
+# Circle CI is not disabled repository-wise so that previous pull requests
+# continue working.
+# This file does not generate any CircleCI workflow.
+
 version: 2.1
 
-orbs:
-  prometheus: prometheus/prometheus@0.11.0
-  go: circleci/go@0.2.0
-  win: circleci/windows@2.3.0
-
 executors:
-  # Whenever the Go version is updated here, .promu.yml
-  # should also be updated.
   golang:
     docker:
-    - image: circleci/golang:1.16-node
-  golang_115:
-    docker:
-    - image: circleci/golang:1.15-node
+      - image: busybox
 
 jobs:
-  test:
+  noopjob:
     executor: golang
 
     steps:
-    - prometheus/setup_environment
-    - go/load-cache:
-        key: v1
-    - restore_cache:
-        keys:
-        - v3-npm-deps-{{ checksum "web/ui/react-app/yarn.lock" }}
-        - v3-npm-deps-
-    - run:
-        command: make
-        environment:
-          # Run garbage collection more aggressively to avoid getting OOMed during the lint phase.
-          GOGC: "20"
-          # By default Go uses GOMAXPROCS but a Circle CI executor has many
-          # cores (> 30) while the CPU and RAM resources are throttled. If we
-          # don't limit this to the number of allocated cores, the job is
-          # likely to get OOMed and killed.
-          GOOPTS: "-p 2"
-          GOMAXPROCS: "2"
-          GO111MODULE: "on"
-    - prometheus/check_proto:
-        version: "3.12.3"
-    - prometheus/store_artifact:
-        file: prometheus
-    - prometheus/store_artifact:
-        file: promtool
-    - go/save-cache:
-        key: v1
-    - save_cache:
-        key: v3-npm-deps-{{ checksum "web/ui/react-app/yarn.lock" }}
-        paths:
-        - /home/circleci/.cache/yarn
-    - store_test_results:
-        path: test-results
-
-  test_windows:
-    executor: 
-      name: win/default
-      shell: powershell
-    working_directory: /go/src/github.com/prometheus/prometheus
-    steps:
-    - checkout
-    - run:
-        # Temporary workaround until circleci updates go.
-        command: |
-          choco upgrade -y golang
-    - run:
-        command:
-          refreshenv
-    - run:
-        command: |
-          $env:GOARCH=""; $env:GOOS=""; cd web/ui; go generate
-          cd ../..
-          $TestTargets = go list ./... | Where-Object { $_ -NotMatch "(github.com/prometheus/prometheus/discovery.*|github.com/prometheus/prometheus/config|github.com/prometheus/prometheus/web)"}
-          go test $TestTargets -vet=off -v
-        environment:
-          GOGC: "20"
-          GOOPTS: "-p 2"
-
-  test_tsdb_go115:
-    executor: golang_115
-    steps:
-    - checkout
-    - run: go test ./tsdb/...
-
-  test_mixins:
-    executor: golang
-    steps:
-    - checkout
-    - run: go install ./cmd/promtool/.
-    - run:
-        command: go install -mod=readonly github.com/google/go-jsonnet/cmd/jsonnet github.com/google/go-jsonnet/cmd/jsonnetfmt github.com/jsonnet-bundler/jsonnet-bundler/cmd/jb
-        working_directory: ~/project/documentation/prometheus-mixin
-    - run:
-        command: make clean
-        working_directory: ~/project/documentation/prometheus-mixin
-    - run:
-        command: jb install
-        working_directory: ~/project/documentation/prometheus-mixin
-    - run:
-        command: make
-        working_directory: ~/project/documentation/prometheus-mixin
-    - run:
-        command: git diff --exit-code
-        working_directory: ~/project/documentation/prometheus-mixin
-
-  repo_sync:
-    executor: golang
-    steps:
-    - checkout
-    - run: mkdir -v -p "${PATH%%:*}" && curl -sL --fail https://github.com/mikefarah/yq/releases/download/v4.6.3/yq_linux_amd64 -o "${PATH%%:*}/yq" && chmod -v +x "${PATH%%:*}/yq"
-    - run: sha256sum -c <(echo "c4343783c3361495c0d6d1eb742bba7432aa65e13e9fb8d7e201d544bcf14246 ${PATH%%:*}/yq")
-    - run: ./scripts/sync_repo_files.sh
+      - run:
+          command: "true"
 
 workflows:
   version: 2
   prometheus:
     jobs:
-    - test:
-        filters:
-          tags:
-            only: /.*/
-    - test_tsdb_go115:
-        filters:
-          tags:
-            only: /.*/
-    - test_mixins:
-        filters:
-          tags:
-            only: /.*/
-    - test_windows:
-        filters:
-          tags:
-            only: /.*/
-    - prometheus/build:
-        name: build
-        parallelism: 12
-        filters:
-          tags:
-            only: /^v[0-9]+(\.[0-9]+){2}(-.+|[^-.]*)$/
-    - prometheus/publish_main:
-        context: org-context
-        requires:
-        - test
-        - build
-        filters:
-          branches:
-            only: main
-        image: circleci/golang:1-node
-    - prometheus/publish_release:
-        context: org-context
-        requires:
-        - test
-        - build
-        filters:
-          tags:
-            only: /^v[0-9]+(\.[0-9]+){2}(-.+|[^-.]*)$/
-          branches:
-            ignore: /.*/
-        image: circleci/golang:1-node
-  nightly:
+      - noopjob
     triggers:
       - schedule:
-          cron: "0 0 * * *"
+          cron: "0 0 30 2 *"
           filters:
             branches:
               only:
                 - main
-    jobs:
-    - repo_sync:
-        context: org-context

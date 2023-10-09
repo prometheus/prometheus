@@ -136,7 +136,7 @@ describe('Utils', () => {
           },
         ];
 
-        tests.forEach(t => {
+        tests.forEach((t) => {
           it(t.input, () => {
             const d = parseDuration(t.input);
             expect(d).toEqual(t.output);
@@ -148,7 +148,7 @@ describe('Utils', () => {
       describe('should fail to parse invalid durations', () => {
         const tests = ['1', '1y1m1d', '-1w', '1.5d', 'd', ''];
 
-        tests.forEach(t => {
+        tests.forEach((t) => {
           it(t, () => {
             expect(parseDuration(t)).toBe(null);
           });
@@ -190,7 +190,7 @@ describe('Utils', () => {
       it('renders never for pre-beginning-of-time strings', () => {
         expect(formatRelative('0001-01-01T00:00:00Z', now())).toEqual('Never');
       });
-      it('renders a humanized duration for sane durations', () => {
+      it('renders a humanized duration for durations', () => {
         expect(formatRelative('2019-11-04T09:15:29.578701-07:00', parseTime('2019-11-04T09:15:35.8701-07:00'))).toEqual(
           '6.292s ago'
         );
@@ -227,7 +227,7 @@ describe('Utils', () => {
       },
     ];
     const query =
-      '?g0.expr=rate(node_cpu_seconds_total%7Bmode%3D%22system%22%7D%5B1m%5D)&g0.tab=0&g0.stacked=0&g0.range_input=1h&g0.end_input=2019-10-25%2023%3A37%3A00&g0.moment_input=2019-10-25%2023%3A37%3A00&g1.expr=node_filesystem_avail_bytes&g1.tab=1&g1.stacked=0&g1.range_input=1h';
+      '?g0.expr=rate(node_cpu_seconds_total%7Bmode%3D%22system%22%7D%5B1m%5D)&g0.tab=0&g0.stacked=0&g0.show_exemplars=0&g0.range_input=1h&g0.end_input=2019-10-25%2023%3A37%3A00&g0.moment_input=2019-10-25%2023%3A37%3A00&g1.expr=node_filesystem_avail_bytes&g1.tab=1&g1.stacked=0&g1.show_exemplars=0&g1.range_input=1h';
 
     describe('decodePanelOptionsFromQueryString', () => {
       it('returns [] when query is empty', () => {
@@ -291,9 +291,17 @@ describe('Utils', () => {
           toQueryString({
             id: 'asdf',
             key: '0',
-            options: { expr: 'foo', type: PanelType.Graph, stacked: true, range: 0, endTime: null, resolution: 1 },
+            options: {
+              expr: 'foo',
+              type: PanelType.Graph,
+              stacked: true,
+              showExemplars: true,
+              range: 0,
+              endTime: null,
+              resolution: 1,
+            },
           })
-        ).toEqual('g0.expr=foo&g0.tab=0&g0.stacked=1&g0.range_input=0s&g0.step_input=1');
+        ).toEqual('g0.expr=foo&g0.tab=0&g0.stacked=1&g0.show_exemplars=1&g0.range_input=0s&g0.step_input=1');
       });
     });
 

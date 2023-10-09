@@ -1,8 +1,9 @@
-import { HighlightStyle, tags } from '@codemirror/highlight';
+import { HighlightStyle } from '@codemirror/language';
 import { EditorView } from '@codemirror/view';
+import { tags } from '@lezer/highlight';
 
-export const theme = EditorView.theme({
-  '&': {
+export const baseTheme = EditorView.theme({
+  '&.cm-editor': {
     '&.cm-focused': {
       outline: 'none',
       outline_fallback: 'none',
@@ -18,17 +19,10 @@ export const theme = EditorView.theme({
   },
 
   '.cm-matchingBracket': {
-    color: '#000',
-    backgroundColor: '#dedede',
     fontWeight: 'bold',
     outline: '1px dashed transparent',
   },
   '.cm-nonmatchingBracket': { borderColor: 'red' },
-
-  '.cm-tooltip': {
-    backgroundColor: '#f8f8f8',
-    borderColor: 'rgba(52, 79, 113, 0.2)',
-  },
 
   '.cm-tooltip.cm-tooltip-autocomplete': {
     '& > ul': {
@@ -38,13 +32,6 @@ export const theme = EditorView.theme({
     },
     '& > ul > li': {
       padding: '2px 1em 2px 3px',
-    },
-    '& li:hover': {
-      backgroundColor: '#ddd',
-    },
-    '& > ul > li[aria-selected]': {
-      backgroundColor: '#d6ebff',
-      color: 'unset',
     },
     minWidth: '30%',
   },
@@ -59,7 +46,6 @@ export const theme = EditorView.theme({
     padding: '10px',
     fontFamily: "'Open Sans', 'Lucida Sans Unicode', 'Lucida Grande', sans-serif;",
     border: 'none',
-    backgroundColor: '#d6ebff',
     minWidth: '250px',
     maxWidth: 'min-content',
   },
@@ -71,8 +57,9 @@ export const theme = EditorView.theme({
       position: 'absolute',
       width: '0',
       left: '-20px',
-      border: '10px solid transparent',
-      borderRightColor: '#d6ebff',
+      borderWidth: '10px',
+      borderStyle: 'solid',
+      borderColor: 'transparent',
     },
     marginLeft: '12px',
   },
@@ -83,8 +70,9 @@ export const theme = EditorView.theme({
       position: 'absolute',
       width: '0',
       right: '-20px',
-      border: '10px solid transparent',
-      borderLeftColor: '#d6ebff',
+      borderWidth: '10px',
+      borderStyle: 'solid',
+      borderColor: 'transparent',
     },
     marginRight: '12px',
   },
@@ -92,16 +80,6 @@ export const theme = EditorView.theme({
   '.cm-completionMatchedText': {
     textDecoration: 'none',
     fontWeight: 'bold',
-    color: '#0066bf',
-  },
-
-  '.cm-line': {
-    '&::selection': {
-      backgroundColor: '#add6ff',
-    },
-    '& > span::selection': {
-      backgroundColor: '#add6ff',
-    },
   },
 
   '.cm-selectionMatch': {
@@ -124,12 +102,10 @@ export const theme = EditorView.theme({
     fontFamily: 'codicon',
     paddingRight: '0',
     opacity: '1',
-    color: '#007acc',
   },
 
   '.cm-completionIcon-function, .cm-completionIcon-method': {
     '&:after': { content: "'\\ea8c'" },
-    color: '#652d90',
   },
   '.cm-completionIcon-class': {
     '&:after': { content: "'○'" },
@@ -142,7 +118,6 @@ export const theme = EditorView.theme({
   },
   '.cm-completionIcon-constant': {
     '&:after': { content: "'\\eb5f'" },
-    color: '#007acc',
   },
   '.cm-completionIcon-type': {
     '&:after': { content: "'𝑡'" },
@@ -155,7 +130,6 @@ export const theme = EditorView.theme({
   },
   '.cm-completionIcon-keyword': {
     '&:after': { content: "'\\eb62'" },
-    color: '#616161',
   },
   '.cm-completionIcon-namespace': {
     '&:after': { content: "'▢'" },
@@ -166,8 +140,129 @@ export const theme = EditorView.theme({
   },
 });
 
+export const lightTheme = EditorView.theme(
+  {
+    '.cm-tooltip': {
+      backgroundColor: '#f8f8f8',
+      borderColor: 'rgba(52, 79, 113, 0.2)',
+    },
+
+    '.cm-tooltip.cm-tooltip-autocomplete': {
+      '& li:hover': {
+        backgroundColor: '#ddd',
+      },
+      '& > ul > li[aria-selected]': {
+        backgroundColor: '#d6ebff',
+        color: 'unset',
+      },
+    },
+
+    '.cm-tooltip.cm-completionInfo': {
+      backgroundColor: '#d6ebff',
+    },
+
+    '.cm-tooltip > .cm-completionInfo.cm-completionInfo-right': {
+      '&:before': {
+        borderRightColor: '#d6ebff',
+      },
+    },
+    '.cm-tooltip > .cm-completionInfo.cm-completionInfo-left': {
+      '&:before': {
+        borderLeftColor: '#d6ebff',
+      },
+    },
+
+    '.cm-line': {
+      '&::selection': {
+        backgroundColor: '#add6ff',
+      },
+      '& > span::selection': {
+        backgroundColor: '#add6ff',
+      },
+    },
+
+    '.cm-matchingBracket': {
+      color: '#000',
+      backgroundColor: '#dedede',
+    },
+
+    '.cm-completionMatchedText': {
+      color: '#0066bf',
+    },
+
+    '.cm-completionIcon': {
+      color: '#007acc',
+    },
+
+    '.cm-completionIcon-constant': {
+      color: '#007acc',
+    },
+
+    '.cm-completionIcon-function, .cm-completionIcon-method': {
+      color: '#652d90',
+    },
+
+    '.cm-completionIcon-keyword': {
+      color: '#616161',
+    },
+  },
+  { dark: false }
+);
+
+export const darkTheme = EditorView.theme(
+  {
+    '.cm-content': {
+      caretColor: '#fff',
+    },
+
+    '.cm-tooltip.cm-completionInfo': {
+      backgroundColor: '#333338',
+    },
+
+    '.cm-tooltip > .cm-completionInfo.cm-completionInfo-right': {
+      '&:before': {
+        borderRightColor: '#333338',
+      },
+    },
+    '.cm-tooltip > .cm-completionInfo.cm-completionInfo-left': {
+      '&:before': {
+        borderLeftColor: '#333338',
+      },
+    },
+
+    '.cm-line': {
+      '&::selection': {
+        backgroundColor: '#767676',
+      },
+      '& > span::selection': {
+        backgroundColor: '#767676',
+      },
+    },
+
+    '.cm-matchingBracket, &.cm-focused .cm-matchingBracket': {
+      backgroundColor: '#616161',
+    },
+
+    '.cm-completionMatchedText': {
+      color: '#7dd3fc',
+    },
+
+    '.cm-completionIcon, .cm-completionIcon-constant': {
+      color: '#7dd3fc',
+    },
+
+    '.cm-completionIcon-function, .cm-completionIcon-method': {
+      color: '#d8b4fe',
+    },
+
+    '.cm-completionIcon-keyword': {
+      color: '#cbd5e1 !important',
+    },
+  },
+  { dark: true }
+);
+
 export const promqlHighlighter = HighlightStyle.define([
-  { tag: tags.name, color: '#000' },
   { tag: tags.number, color: '#09885a' },
   { tag: tags.string, color: '#a31515' },
   { tag: tags.keyword, color: '#008080' },
@@ -180,4 +275,19 @@ export const promqlHighlighter = HighlightStyle.define([
   { tag: tags.brace },
   { tag: tags.invalid, color: 'red' },
   { tag: tags.comment, color: '#888', fontStyle: 'italic' },
+]);
+
+export const darkPromqlHighlighter = HighlightStyle.define([
+  { tag: tags.number, color: '#22c55e' },
+  { tag: tags.string, color: '#fca5a5' },
+  { tag: tags.keyword, color: '#14bfad' },
+  { tag: tags.function(tags.variableName), color: '#14bfad' },
+  { tag: tags.labelName, color: '#ff8585' },
+  { tag: tags.operator },
+  { tag: tags.modifier, color: '#14bfad' },
+  { tag: tags.paren },
+  { tag: tags.squareBracket },
+  { tag: tags.brace },
+  { tag: tags.invalid, color: '#ff3d3d' },
+  { tag: tags.comment, color: '#9ca3af', fontStyle: 'italic' },
 ]);

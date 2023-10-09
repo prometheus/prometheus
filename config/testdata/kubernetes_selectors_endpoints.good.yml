@@ -3,12 +3,12 @@ scrape_configs:
     kubernetes_sd_configs:
       - role: endpoints
         selectors:
-        - role: "pod"
-          label: "foo=bar"
-          field: "metadata.status=Running"
-        - role: "service"
-          label: "foo=bar"
-          field: "metadata.status=Running"
-        - role: "endpoints"
-          label: "foo=bar"
-          field: "metadata.status=Running"
+          - role: "pod"
+            label: "foo=bar"
+            field: "metadata.status=Running"
+          - role: "service"
+            label: "foo=bar"
+            field: "metadata.status=Running"
+          - role: "endpoints"
+            label: "foo=bar"
+            field: "metadata.status=Running"

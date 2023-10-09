@@ -1,6 +1,6 @@
 ---
 title: Migration
-sort_rank: 8
+sort_rank: 10
 ---
 
 # Prometheus 2.0 migration guide

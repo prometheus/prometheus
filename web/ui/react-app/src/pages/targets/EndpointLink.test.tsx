@@ -1,6 +1,6 @@
 import React from 'react';
 import { shallow, mount } from 'enzyme';
-import { Badge, Alert } from 'reactstrap';
+import { Badge } from 'reactstrap';
 import EndpointLink from './EndpointLink';
 
 describe('EndpointLink', () => {
@@ -24,16 +24,29 @@ describe('EndpointLink', () => {
     expect(anchor.children().text()).toEqual('http://100.99.128.71:9115/probe');
     expect(endpointLink.find('br')).toHaveLength(1);
     expect(badges).toHaveLength(2);
-    const moduleLabel = badges.filterWhere(badge => badge.children().text() === 'module="http_2xx"');
+    const moduleLabel = badges.filterWhere((badge) => badge.children().text() === 'module="http_2xx"');
     expect(moduleLabel.length).toEqual(1);
-    const targetLabel = badges.filterWhere(badge => badge.children().text() === 'target="http://some-service"');
+    const targetLabel = badges.filterWhere((badge) => badge.children().text() === 'target="http://some-service"');
     expect(targetLabel.length).toEqual(1);
   });
-
-  it('renders an alert if url is invalid', () => {
-    const endpointLink = shallow(<EndpointLink endpoint={'afdsacas'} globalUrl={'afdsacas'} />);
-    const err = endpointLink.find(Alert);
-    expect(err.render().text()).toEqual('Error: Invalid URL');
+  // In cases of IPv6 addresses with a Zone ID, URL may not be parseable.
+  // See https://github.com/prometheus/prometheus/issues/9760
+  it('renders an anchor for IPv6 link with zone ID including labels for query params', () => {
+    const endpoint =
+      'http://[fe80::f1ee:adeb:371d:983%eth1]:9100/stats/prometheus?module=http_2xx&target=http://some-service';
+    const globalURL =
+      'http://[fe80::f1ee:adeb:371d:983%eth1]:9100/stats/prometheus?module=http_2xx&target=http://some-service';
+    const endpointLink = shallow(<EndpointLink endpoint={endpoint} globalUrl={globalURL} />);
+    const anchor = endpointLink.find('a');
+    const badges = endpointLink.find(Badge);
+    expect(anchor.prop('href')).toEqual(globalURL);
+    expect(anchor.children().text()).toEqual('http://[fe80::f1ee:adeb:371d:983%eth1]:9100/stats/prometheus');
+    expect(endpointLink.find('br')).toHaveLength(1);
+    expect(badges).toHaveLength(2);
+    const moduleLabel = badges.filterWhere((badge) => badge.children().text() === 'module="http_2xx"');
+    expect(moduleLabel.length).toEqual(1);
+    const targetLabel = badges.filterWhere((badge) => badge.children().text() === 'target="http://some-service"');
+    expect(targetLabel.length).toEqual(1);
   });
 
   it('handles params with multiple values correctly', () => {

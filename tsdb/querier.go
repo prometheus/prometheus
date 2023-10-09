@@ -14,20 +14,25 @@
 package tsdb
 
 import (
+	"context"
+	"fmt"
 	"math"
-	"sort"
 	"strings"
 	"unicode/utf8"
 
+	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
+	"golang.org/x/exp/slices"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
+	"github.com/prometheus/prometheus/util/annotations"
 )
 
 // Bitmap used by func isRegexMetaCharacter to check whether a character needs to be escaped.
@@ -45,6 +50,7 @@ func init() {
 }
 
 type blockBaseQuerier struct {
+	blockID    ulid.ULID
 	index      IndexReader
 	chunks     ChunkReader
 	tombstones tombstones.Reader
@@ -75,6 +81,7 @@ func newBlockBaseQuerier(b BlockReader, mint, maxt int64) (*blockBaseQuerier, er
 		tombsr = tombstones.NewMemTombstones()
 	}
 	return &blockBaseQuerier{
+		blockID:    b.Meta().ULID,
 		mint:       mint,
 		maxt:       maxt,
 		index:      indexr,
@@ -83,13 +90,13 @@ func newBlockBaseQuerier(b BlockReader, mint, maxt int64) (*blockBaseQuerier, er
 	}, nil
 }
 
-func (q *blockBaseQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	res, err := q.index.SortedLabelValues(name, matchers...)
+func (q *blockBaseQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	res, err := q.index.SortedLabelValues(ctx, name, matchers...)
 	return res, nil, err
 }
 
-func (q *blockBaseQuerier) LabelNames() ([]string, storage.Warnings, error) {
-	res, err := q.index.LabelNames()
+func (q *blockBaseQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	res, err := q.index.LabelNames(ctx, matchers...)
 	return res, nil, err
 }
 
@@ -120,10 +127,12 @@ func NewBlockQuerier(b BlockReader, mint, maxt int64) (storage.Querier, error) {
 	return &blockQuerier{blockBaseQuerier: q}, nil
 }
 
-func (q *blockQuerier) Select(sortSeries bool, hints *storage.SelectHints, ms ...*labels.Matcher) storage.SeriesSet {
+func (q *blockQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, ms ...*labels.Matcher) storage.SeriesSet {
 	mint := q.mint
 	maxt := q.maxt
-	p, err := PostingsForMatchers(q.index, ms...)
+	disableTrimming := false
+
+	p, err := PostingsForMatchers(ctx, q.index, ms...)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
@@ -134,13 +143,14 @@ func (q *blockQuerier) Select(sortSeries bool, hints *storage.SelectHints, ms ..
 	if hints != nil {
 		mint = hints.Start
 		maxt = hints.End
+		disableTrimming = hints.DisableTrimming
 		if hints.Func == "series" {
 			// When you're only looking up metadata (for example series API), you don't need to load any chunks.
-			return newBlockSeriesSet(q.index, newNopChunkReader(), q.tombstones, p, mint, maxt)
+			return newBlockSeriesSet(q.index, newNopChunkReader(), q.tombstones, p, mint, maxt, disableTrimming)
 		}
 	}
 
-	return newBlockSeriesSet(q.index, q.chunks, q.tombstones, p, mint, maxt)
+	return newBlockSeriesSet(q.index, q.chunks, q.tombstones, p, mint, maxt, disableTrimming)
 }
 
 // blockChunkQuerier provides chunk querying access to a single block database.
@@ -157,21 +167,23 @@ func NewBlockChunkQuerier(b BlockReader, mint, maxt int64) (storage.ChunkQuerier
 	return &blockChunkQuerier{blockBaseQuerier: q}, nil
 }
 
-func (q *blockChunkQuerier) Select(sortSeries bool, hints *storage.SelectHints, ms ...*labels.Matcher) storage.ChunkSeriesSet {
+func (q *blockChunkQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, ms ...*labels.Matcher) storage.ChunkSeriesSet {
 	mint := q.mint
 	maxt := q.maxt
+	disableTrimming := false
 	if hints != nil {
 		mint = hints.Start
 		maxt = hints.End
+		disableTrimming = hints.DisableTrimming
 	}
-	p, err := PostingsForMatchers(q.index, ms...)
+	p, err := PostingsForMatchers(ctx, q.index, ms...)
 	if err != nil {
 		return storage.ErrChunkSeriesSet(err)
 	}
 	if sortSeries {
 		p = q.index.SortedPostings(p)
 	}
-	return newBlockChunkSeriesSet(q.index, q.chunks, q.tombstones, p, mint, maxt)
+	return NewBlockChunkSeriesSet(q.blockID, q.index, q.chunks, q.tombstones, p, mint, maxt, disableTrimming)
 }
 
 func findSetMatches(pattern string) []string {
@@ -181,7 +193,14 @@ func findSetMatches(pattern string) []string {
 	}
 	escaped := false
 	sets := []*strings.Builder{{}}
-	for i := 4; i < len(pattern)-2; i++ {
+	init := 4
+	end := len(pattern) - 2
+	// If the regex is wrapped in a group we can remove the first and last parentheses
+	if pattern[init] == '(' && pattern[end-1] == ')' {
+		init++
+		end--
+	}
+	for i := init; i < end; i++ {
 		if escaped {
 			switch {
 			case isRegexMetaCharacter(pattern[i]):
@@ -218,7 +237,7 @@ func findSetMatches(pattern string) []string {
 
 // PostingsForMatchers assembles a single postings iterator against the index reader
 // based on the given matchers. The resulting postings are not ordered by series.
-func PostingsForMatchers(ix IndexReader, ms ...*labels.Matcher) (index.Postings, error) {
+func PostingsForMatchers(ctx context.Context, ix IndexReader, ms ...*labels.Matcher) (index.Postings, error) {
 	var its, notIts []index.Postings
 	// See which label must be non-empty.
 	// Optimization for case like {l=~".", l!="1"}.
@@ -228,13 +247,64 @@ func PostingsForMatchers(ix IndexReader, ms ...*labels.Matcher) (index.Postings,
 			labelMustBeSet[m.Name] = true
 		}
 	}
+	isSubtractingMatcher := func(m *labels.Matcher) bool {
+		if !labelMustBeSet[m.Name] {
+			return true
+		}
+		return (m.Type == labels.MatchNotEqual || m.Type == labels.MatchNotRegexp) && m.Matches("")
+	}
+	hasSubtractingMatchers, hasIntersectingMatchers := false, false
+	for _, m := range ms {
+		if isSubtractingMatcher(m) {
+			hasSubtractingMatchers = true
+		} else {
+			hasIntersectingMatchers = true
+		}
+	}
+
+	if hasSubtractingMatchers && !hasIntersectingMatchers {
+		// If there's nothing to subtract from, add in everything and remove the notIts later.
+		// We prefer to get AllPostings so that the base of subtraction (i.e. allPostings)
+		// doesn't include series that may be added to the index reader during this function call.
+		k, v := index.AllPostingsKey()
+		allPostings, err := ix.Postings(ctx, k, v)
+		if err != nil {
+			return nil, err
+		}
+		its = append(its, allPostings)
+	}
+
+	// Sort matchers to have the intersecting matchers first.
+	// This way the base for subtraction is smaller and
+	// there is no chance that the set we subtract from
+	// contains postings of series that didn't exist when
+	// we constructed the set we subtract by.
+	slices.SortStableFunc(ms, func(i, j *labels.Matcher) int {
+		if !isSubtractingMatcher(i) && isSubtractingMatcher(j) {
+			return -1
+		}
+
+		return +1
+	})
 
 	for _, m := range ms {
-		if labelMustBeSet[m.Name] {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		switch {
+		case m.Name == "" && m.Value == "": // Special-case for AllPostings, used in tests at least.
+			k, v := index.AllPostingsKey()
+			allPostings, err := ix.Postings(ctx, k, v)
+			if err != nil {
+				return nil, err
+			}
+			its = append(its, allPostings)
+		case labelMustBeSet[m.Name]:
 			// If this matcher must be non-empty, we can be smarter.
 			matchesEmpty := m.Matches("")
 			isNot := m.Type == labels.MatchNotEqual || m.Type == labels.MatchNotRegexp
-			if isNot && matchesEmpty { // l!="foo"
+			switch {
+			case isNot && matchesEmpty: // l!="foo"
 				// If the label can't be empty and is a Not and the inner matcher
 				// doesn't match empty, then subtract it out at the end.
 				inverse, err := m.Inverse()
@@ -242,12 +312,12 @@ func PostingsForMatchers(ix IndexReader, ms ...*labels.Matcher) (index.Postings,
 					return nil, err
 				}
 
-				it, err := postingsForMatcher(ix, inverse)
+				it, err := postingsForMatcher(ctx, ix, inverse)
 				if err != nil {
 					return nil, err
 				}
 				notIts = append(notIts, it)
-			} else if isNot && !matchesEmpty { // l!=""
+			case isNot && !matchesEmpty: // l!=""
 				// If the label can't be empty and is a Not, but the inner matcher can
 				// be empty we need to use inversePostingsForMatcher.
 				inverse, err := m.Inverse()
@@ -255,40 +325,36 @@ func PostingsForMatchers(ix IndexReader, ms ...*labels.Matcher) (index.Postings,
 					return nil, err
 				}
 
-				it, err := inversePostingsForMatcher(ix, inverse)
+				it, err := inversePostingsForMatcher(ctx, ix, inverse)
 				if err != nil {
 					return nil, err
 				}
+				if index.IsEmptyPostingsType(it) {
+					return index.EmptyPostings(), nil
+				}
 				its = append(its, it)
-			} else { // l="a"
+			default: // l="a"
 				// Non-Not matcher, use normal postingsForMatcher.
-				it, err := postingsForMatcher(ix, m)
+				it, err := postingsForMatcher(ctx, ix, m)
 				if err != nil {
 					return nil, err
+				}
+				if index.IsEmptyPostingsType(it) {
+					return index.EmptyPostings(), nil
 				}
 				its = append(its, it)
 			}
-		} else { // l=""
+		default: // l=""
 			// If the matchers for a labelname selects an empty value, it selects all
 			// the series which don't have the label name set too. See:
 			// https://github.com/prometheus/prometheus/issues/3575 and
 			// https://github.com/prometheus/prometheus/pull/3578#issuecomment-351653555
-			it, err := inversePostingsForMatcher(ix, m)
+			it, err := inversePostingsForMatcher(ctx, ix, m)
 			if err != nil {
 				return nil, err
 			}
 			notIts = append(notIts, it)
 		}
-	}
-
-	// If there's nothing to subtract from, add in everything and remove the notIts later.
-	if len(its) == 0 && len(notIts) != 0 {
-		k, v := index.AllPostingsKey()
-		allPostings, err := ix.Postings(k, v)
-		if err != nil {
-			return nil, err
-		}
-		its = append(its, allPostings)
 	}
 
 	it := index.Intersect(its...)
@@ -300,37 +366,31 @@ func PostingsForMatchers(ix IndexReader, ms ...*labels.Matcher) (index.Postings,
 	return it, nil
 }
 
-func postingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Postings, error) {
+func postingsForMatcher(ctx context.Context, ix IndexReader, m *labels.Matcher) (index.Postings, error) {
 	// This method will not return postings for missing labels.
 
 	// Fast-path for equal matching.
 	if m.Type == labels.MatchEqual {
-		return ix.Postings(m.Name, m.Value)
+		return ix.Postings(ctx, m.Name, m.Value)
 	}
 
 	// Fast-path for set matching.
 	if m.Type == labels.MatchRegexp {
 		setMatches := findSetMatches(m.GetRegexString())
 		if len(setMatches) > 0 {
-			sort.Strings(setMatches)
-			return ix.Postings(m.Name, setMatches...)
+			return ix.Postings(ctx, m.Name, setMatches...)
 		}
 	}
 
-	vals, err := ix.LabelValues(m.Name)
+	vals, err := ix.LabelValues(ctx, m.Name)
 	if err != nil {
 		return nil, err
 	}
 
 	var res []string
-	lastVal, isSorted := "", true
 	for _, val := range vals {
 		if m.Matches(val) {
 			res = append(res, val)
-			if isSorted && val < lastVal {
-				isSorted = false
-			}
-			lastVal = val
 		}
 	}
 
@@ -338,96 +398,146 @@ func postingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Postings, erro
 		return index.EmptyPostings(), nil
 	}
 
-	if !isSorted {
-		sort.Strings(res)
-	}
-	return ix.Postings(m.Name, res...)
+	return ix.Postings(ctx, m.Name, res...)
 }
 
 // inversePostingsForMatcher returns the postings for the series with the label name set but not matching the matcher.
-func inversePostingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Postings, error) {
-	vals, err := ix.LabelValues(m.Name)
+func inversePostingsForMatcher(ctx context.Context, ix IndexReader, m *labels.Matcher) (index.Postings, error) {
+	// Fast-path for MatchNotRegexp matching.
+	// Inverse of a MatchNotRegexp is MatchRegexp (double negation).
+	// Fast-path for set matching.
+	if m.Type == labels.MatchNotRegexp {
+		setMatches := findSetMatches(m.GetRegexString())
+		if len(setMatches) > 0 {
+			return ix.Postings(ctx, m.Name, setMatches...)
+		}
+	}
+
+	// Fast-path for MatchNotEqual matching.
+	// Inverse of a MatchNotEqual is MatchEqual (double negation).
+	if m.Type == labels.MatchNotEqual {
+		return ix.Postings(ctx, m.Name, m.Value)
+	}
+
+	vals, err := ix.LabelValues(ctx, m.Name)
 	if err != nil {
 		return nil, err
 	}
 
 	var res []string
-	lastVal, isSorted := "", true
-	for _, val := range vals {
-		if !m.Matches(val) {
-			res = append(res, val)
-			if isSorted && val < lastVal {
-				isSorted = false
+	// If the inverse match is ="", we just want all the values.
+	if m.Type == labels.MatchEqual && m.Value == "" {
+		res = vals
+	} else {
+		for _, val := range vals {
+			if !m.Matches(val) {
+				res = append(res, val)
 			}
-			lastVal = val
 		}
 	}
 
-	if !isSorted {
-		sort.Strings(res)
-	}
-	return ix.Postings(m.Name, res...)
+	return ix.Postings(ctx, m.Name, res...)
 }
 
-func labelValuesWithMatchers(r IndexReader, name string, matchers ...*labels.Matcher) ([]string, error) {
-	// We're only interested in metrics which have the label <name>.
-	requireLabel, err := labels.NewMatcher(labels.MatchNotEqual, name, "")
+func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, matchers ...*labels.Matcher) ([]string, error) {
+	p, err := PostingsForMatchers(ctx, r, matchers...)
 	if err != nil {
-		return nil, errors.Wrapf(err, "Failed to instantiate label matcher")
+		return nil, errors.Wrap(err, "fetching postings for matchers")
 	}
 
-	var p index.Postings
-	p, err = PostingsForMatchers(r, append(matchers, requireLabel)...)
+	allValues, err := r.LabelValues(ctx, name)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "fetching values of label %s", name)
 	}
 
-	dedupe := map[string]interface{}{}
-	for p.Next() {
-		v, err := r.LabelValueFor(p.At(), name)
-		if err != nil {
-			if err == storage.ErrNotFound {
-				continue
-			}
-
-			return nil, err
+	// If we have a matcher for the label name, we can filter out values that don't match
+	// before we fetch postings. This is especially useful for labels with many values.
+	// e.g. __name__ with a selector like {__name__="xyz"}
+	for _, m := range matchers {
+		if m.Name != name {
+			continue
 		}
-		dedupe[v] = nil
+
+		// re-use the allValues slice to avoid allocations
+		// this is safe because the iteration is always ahead of the append
+		filteredValues := allValues[:0]
+		for _, v := range allValues {
+			if m.Matches(v) {
+				filteredValues = append(filteredValues, v)
+			}
+		}
+		allValues = filteredValues
 	}
 
-	if err = p.Err(); err != nil {
-		return nil, err
+	valuesPostings := make([]index.Postings, len(allValues))
+	for i, value := range allValues {
+		valuesPostings[i], err = r.Postings(ctx, name, value)
+		if err != nil {
+			return nil, errors.Wrapf(err, "fetching postings for %s=%q", name, value)
+		}
+	}
+	indexes, err := index.FindIntersectingPostings(p, valuesPostings)
+	if err != nil {
+		return nil, errors.Wrap(err, "intersecting postings")
 	}
 
-	values := make([]string, 0, len(dedupe))
-	for value := range dedupe {
-		values = append(values, value)
+	values := make([]string, 0, len(indexes))
+	for _, idx := range indexes {
+		values = append(values, allValues[idx])
 	}
 
 	return values, nil
 }
 
+func labelNamesWithMatchers(ctx context.Context, r IndexReader, matchers ...*labels.Matcher) ([]string, error) {
+	p, err := PostingsForMatchers(ctx, r, matchers...)
+	if err != nil {
+		return nil, err
+	}
+
+	var postings []storage.SeriesRef
+	for p.Next() {
+		postings = append(postings, p.At())
+	}
+	if p.Err() != nil {
+		return nil, errors.Wrapf(p.Err(), "postings for label names with matchers")
+	}
+
+	return r.LabelNamesFor(ctx, postings...)
+}
+
+// seriesData, used inside other iterators, are updated when we move from one series to another.
+type seriesData struct {
+	chks      []chunks.Meta
+	intervals tombstones.Intervals
+	labels    labels.Labels
+}
+
+// Labels implements part of storage.Series and storage.ChunkSeries.
+func (s *seriesData) Labels() labels.Labels { return s.labels }
+
 // blockBaseSeriesSet allows to iterate over all series in the single block.
 // Iterated series are trimmed with given min and max time as well as tombstones.
-// See newBlockSeriesSet and newBlockChunkSeriesSet to use it for either sample or chunk iterating.
+// See newBlockSeriesSet and NewBlockChunkSeriesSet to use it for either sample or chunk iterating.
 type blockBaseSeriesSet struct {
-	p          index.Postings
-	index      IndexReader
-	chunks     ChunkReader
-	tombstones tombstones.Reader
-	mint, maxt int64
+	blockID         ulid.ULID
+	p               index.Postings
+	index           IndexReader
+	chunks          ChunkReader
+	tombstones      tombstones.Reader
+	mint, maxt      int64
+	disableTrimming bool
 
-	currIterFn func() *populateWithDelGenericSeriesIterator
-	currLabels labels.Labels
+	curr seriesData
 
 	bufChks []chunks.Meta
-	bufLbls labels.Labels
+	builder labels.ScratchBuilder
 	err     error
 }
 
 func (b *blockBaseSeriesSet) Next() bool {
 	for b.p.Next() {
-		if err := b.index.Series(b.p.At(), &b.bufLbls, &b.bufChks); err != nil {
+		if err := b.index.Series(b.p.At(), &b.builder, &b.bufChks); err != nil {
 			// Postings may be stale. Skip if no underlying series exists.
 			if errors.Cause(err) == storage.ErrNotFound {
 				continue
@@ -453,8 +563,15 @@ func (b *blockBaseSeriesSet) Next() bool {
 
 		var trimFront, trimBack bool
 
-		// Copy chunks as iteratables are reusable.
-		chks := make([]chunks.Meta, 0, len(b.bufChks))
+		// Copy chunks as iterables are reusable.
+		// Count those in range to size allocation (roughly - ignoring tombstones).
+		nChks := 0
+		for _, chk := range b.bufChks {
+			if !(chk.MaxTime < b.mint || chk.MinTime > b.maxt) {
+				nChks++
+			}
+		}
+		chks := make([]chunks.Meta, 0, nChks)
 
 		// Prefilter chunks and pick those which are not entirely deleted or totally outside of the requested range.
 		for _, chk := range b.bufChks {
@@ -464,17 +581,19 @@ func (b *blockBaseSeriesSet) Next() bool {
 			if chk.MinTime > b.maxt {
 				continue
 			}
-
-			if !(tombstones.Interval{Mint: chk.MinTime, Maxt: chk.MaxTime}.IsSubrange(intervals)) {
-				chks = append(chks, chk)
+			if (tombstones.Interval{Mint: chk.MinTime, Maxt: chk.MaxTime}.IsSubrange(intervals)) {
+				continue
 			}
+			chks = append(chks, chk)
 
 			// If still not entirely deleted, check if trim is needed based on requested time range.
-			if chk.MinTime < b.mint {
-				trimFront = true
-			}
-			if chk.MaxTime > b.maxt {
-				trimBack = true
+			if !b.disableTrimming {
+				if chk.MinTime < b.mint {
+					trimFront = true
+				}
+				if chk.MaxTime > b.maxt {
+					trimBack = true
+				}
 			}
 		}
 
@@ -489,12 +608,9 @@ func (b *blockBaseSeriesSet) Next() bool {
 			intervals = intervals.Add(tombstones.Interval{Mint: b.maxt + 1, Maxt: math.MaxInt64})
 		}
 
-		b.currLabels = make(labels.Labels, len(b.bufLbls))
-		copy(b.currLabels, b.bufLbls)
-
-		b.currIterFn = func() *populateWithDelGenericSeriesIterator {
-			return newPopulateWithDelGenericSeriesIterator(b.chunks, chks, intervals)
-		}
+		b.curr.labels = b.builder.Labels()
+		b.curr.chks = chks
+		b.curr.intervals = intervals
 		return true
 	}
 	return false
@@ -507,56 +623,58 @@ func (b *blockBaseSeriesSet) Err() error {
 	return b.p.Err()
 }
 
-func (b *blockBaseSeriesSet) Warnings() storage.Warnings { return nil }
+func (b *blockBaseSeriesSet) Warnings() annotations.Annotations { return nil }
 
-// populateWithDelGenericSeriesIterator allows to iterate over given chunk metas. In each iteration it ensures
-// that chunks are trimmed based on given tombstones interval if any.
+// populateWithDelGenericSeriesIterator allows to iterate over given chunk
+// metas. In each iteration it ensures that chunks are trimmed based on given
+// tombstones interval if any.
 //
-// populateWithDelGenericSeriesIterator assumes that chunks that would be fully removed by intervals are filtered out in previous phase.
+// populateWithDelGenericSeriesIterator assumes that chunks that would be fully
+// removed by intervals are filtered out in previous phase.
 //
-// On each iteration currChkMeta is available. If currDelIter is not nil, it means that chunk iterator in currChkMeta
-// is invalid and chunk rewrite is needed, currDelIter should be used.
+// On each iteration currChkMeta is available. If currDelIter is not nil, it
+// means that the chunk iterator in currChkMeta is invalid and a chunk rewrite
+// is needed, for which currDelIter should be used.
 type populateWithDelGenericSeriesIterator struct {
-	chunks ChunkReader
-	// chks are expected to be sorted by minTime and should be related to the same, single series.
+	blockID ulid.ULID
+	chunks  ChunkReader
+	// chks are expected to be sorted by minTime and should be related to
+	// the same, single series.
 	chks []chunks.Meta
 
-	i         int
+	i         int // Index into chks; -1 if not started yet.
 	err       error
-	bufIter   *DeletedIterator
+	bufIter   DeletedIterator // Retained for memory re-use. currDelIter may point here.
 	intervals tombstones.Intervals
 
 	currDelIter chunkenc.Iterator
 	currChkMeta chunks.Meta
 }
 
-func newPopulateWithDelGenericSeriesIterator(
-	chunks ChunkReader,
-	chks []chunks.Meta,
-	intervals tombstones.Intervals,
-) *populateWithDelGenericSeriesIterator {
-	return &populateWithDelGenericSeriesIterator{
-		chunks:    chunks,
-		chks:      chks,
-		i:         -1,
-		bufIter:   &DeletedIterator{},
-		intervals: intervals,
-	}
+func (p *populateWithDelGenericSeriesIterator) reset(blockID ulid.ULID, cr ChunkReader, chks []chunks.Meta, intervals tombstones.Intervals) {
+	p.blockID = blockID
+	p.chunks = cr
+	p.chks = chks
+	p.i = -1
+	p.err = nil
+	// Note we don't touch p.bufIter.Iter; it is holding on to an iterator we might reuse in next().
+	p.bufIter.Intervals = p.bufIter.Intervals[:0]
+	p.intervals = intervals
+	p.currDelIter = nil
+	p.currChkMeta = chunks.Meta{}
 }
 
-func (p *populateWithDelGenericSeriesIterator) next() bool {
+// If copyHeadChunk is true, then the head chunk (i.e. the in-memory chunk of the TSDB)
+// is deep copied to avoid races between reads and copying chunk bytes.
+// However, if the deletion intervals overlaps with the head chunk, then the head chunk is
+// not copied irrespective of copyHeadChunk because it will be re-encoded later anyway.
+func (p *populateWithDelGenericSeriesIterator) next(copyHeadChunk bool) bool {
 	if p.err != nil || p.i >= len(p.chks)-1 {
 		return false
 	}
 
 	p.i++
 	p.currChkMeta = p.chks[p.i]
-
-	p.currChkMeta.Chunk, p.err = p.chunks.Chunk(p.currChkMeta.Ref)
-	if p.err != nil {
-		p.err = errors.Wrapf(p.err, "cannot populate chunk %d", p.currChkMeta.Ref)
-		return false
-	}
 
 	p.bufIter.Intervals = p.bufIter.Intervals[:0]
 	for _, interval := range p.intervals {
@@ -565,72 +683,126 @@ func (p *populateWithDelGenericSeriesIterator) next() bool {
 		}
 	}
 
-	// Re-encode head chunks that are still open (being appended to) or
-	// outside the compacted MaxTime range.
-	// The chunk.Bytes() method is not safe for open chunks hence the re-encoding.
-	// This happens when snapshotting the head block or just fetching chunks from TSDB.
-	//
-	// TODO think how to avoid the typecasting to verify when it is head block.
-	_, isSafeChunk := p.currChkMeta.Chunk.(*safeChunk)
-	if len(p.bufIter.Intervals) == 0 && !(isSafeChunk && p.currChkMeta.MaxTime == math.MaxInt64) {
-		// If there are no overlap with deletion intervals AND it's NOT an "open" head chunk, we can take chunk as it is.
+	hcr, ok := p.chunks.(*headChunkReader)
+	if ok && copyHeadChunk && len(p.bufIter.Intervals) == 0 {
+		// ChunkWithCopy will copy the head chunk.
+		var maxt int64
+		p.currChkMeta.Chunk, maxt, p.err = hcr.ChunkWithCopy(p.currChkMeta)
+		// For the in-memory head chunk the index reader sets maxt as MaxInt64. We fix it here.
+		p.currChkMeta.MaxTime = maxt
+	} else {
+		p.currChkMeta.Chunk, p.err = p.chunks.Chunk(p.currChkMeta)
+	}
+	if p.err != nil {
+		p.err = errors.Wrapf(p.err, "cannot populate chunk %d from block %s", p.currChkMeta.Ref, p.blockID.String())
+		return false
+	}
+
+	if len(p.bufIter.Intervals) == 0 {
+		// If there is no overlap with deletion intervals, we can take chunk as it is.
 		p.currDelIter = nil
 		return true
 	}
 
-	// We don't want full chunk or it's potentially still opened, take just part of it.
-	p.bufIter.Iter = p.currChkMeta.Chunk.Iterator(nil)
-	p.currDelIter = p.bufIter
+	// We don't want the full chunk, take just a part of it.
+	p.bufIter.Iter = p.currChkMeta.Chunk.Iterator(p.bufIter.Iter)
+	p.currDelIter = &p.bufIter
 	return true
 }
 
 func (p *populateWithDelGenericSeriesIterator) Err() error { return p.err }
 
-func (p *populateWithDelGenericSeriesIterator) toSeriesIterator() chunkenc.Iterator {
-	return &populateWithDelSeriesIterator{populateWithDelGenericSeriesIterator: p}
+type blockSeriesEntry struct {
+	chunks  ChunkReader
+	blockID ulid.ULID
+	seriesData
 }
-func (p *populateWithDelGenericSeriesIterator) toChunkSeriesIterator() chunks.Iterator {
-	return &populateWithDelChunkSeriesIterator{populateWithDelGenericSeriesIterator: p}
+
+func (s *blockSeriesEntry) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
+	pi, ok := it.(*populateWithDelSeriesIterator)
+	if !ok {
+		pi = &populateWithDelSeriesIterator{}
+	}
+	pi.reset(s.blockID, s.chunks, s.chks, s.intervals)
+	return pi
+}
+
+type chunkSeriesEntry struct {
+	chunks  ChunkReader
+	blockID ulid.ULID
+	seriesData
+}
+
+func (s *chunkSeriesEntry) Iterator(it chunks.Iterator) chunks.Iterator {
+	pi, ok := it.(*populateWithDelChunkSeriesIterator)
+	if !ok {
+		pi = &populateWithDelChunkSeriesIterator{}
+	}
+	pi.reset(s.blockID, s.chunks, s.chks, s.intervals)
+	return pi
 }
 
 // populateWithDelSeriesIterator allows to iterate over samples for the single series.
 type populateWithDelSeriesIterator struct {
-	*populateWithDelGenericSeriesIterator
+	populateWithDelGenericSeriesIterator
 
 	curr chunkenc.Iterator
 }
 
-func (p *populateWithDelSeriesIterator) Next() bool {
-	if p.curr != nil && p.curr.Next() {
-		return true
+func (p *populateWithDelSeriesIterator) reset(blockID ulid.ULID, cr ChunkReader, chks []chunks.Meta, intervals tombstones.Intervals) {
+	p.populateWithDelGenericSeriesIterator.reset(blockID, cr, chks, intervals)
+	p.curr = nil
+}
+
+func (p *populateWithDelSeriesIterator) Next() chunkenc.ValueType {
+	if p.curr != nil {
+		if valueType := p.curr.Next(); valueType != chunkenc.ValNone {
+			return valueType
+		}
 	}
 
-	for p.next() {
+	for p.next(false) {
 		if p.currDelIter != nil {
 			p.curr = p.currDelIter
 		} else {
-			p.curr = p.currChkMeta.Chunk.Iterator(nil)
+			p.curr = p.currChkMeta.Chunk.Iterator(p.curr)
 		}
-		if p.curr.Next() {
-			return true
+		if valueType := p.curr.Next(); valueType != chunkenc.ValNone {
+			return valueType
 		}
 	}
-	return false
+	return chunkenc.ValNone
 }
 
-func (p *populateWithDelSeriesIterator) Seek(t int64) bool {
-	if p.curr != nil && p.curr.Seek(t) {
-		return true
-	}
-	for p.Next() {
-		if p.curr.Seek(t) {
-			return true
+func (p *populateWithDelSeriesIterator) Seek(t int64) chunkenc.ValueType {
+	if p.curr != nil {
+		if valueType := p.curr.Seek(t); valueType != chunkenc.ValNone {
+			return valueType
 		}
 	}
-	return false
+	for p.Next() != chunkenc.ValNone {
+		if valueType := p.curr.Seek(t); valueType != chunkenc.ValNone {
+			return valueType
+		}
+	}
+	return chunkenc.ValNone
 }
 
-func (p *populateWithDelSeriesIterator) At() (int64, float64) { return p.curr.At() }
+func (p *populateWithDelSeriesIterator) At() (int64, float64) {
+	return p.curr.At()
+}
+
+func (p *populateWithDelSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
+	return p.curr.AtHistogram()
+}
+
+func (p *populateWithDelSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+	return p.curr.AtFloatHistogram()
+}
+
+func (p *populateWithDelSeriesIterator) AtT() int64 {
+	return p.curr.AtT()
+}
 
 func (p *populateWithDelSeriesIterator) Err() error {
 	if err := p.populateWithDelGenericSeriesIterator.Err(); err != nil {
@@ -643,47 +815,101 @@ func (p *populateWithDelSeriesIterator) Err() error {
 }
 
 type populateWithDelChunkSeriesIterator struct {
-	*populateWithDelGenericSeriesIterator
+	populateWithDelGenericSeriesIterator
 
 	curr chunks.Meta
 }
 
+func (p *populateWithDelChunkSeriesIterator) reset(blockID ulid.ULID, cr ChunkReader, chks []chunks.Meta, intervals tombstones.Intervals) {
+	p.populateWithDelGenericSeriesIterator.reset(blockID, cr, chks, intervals)
+	p.curr = chunks.Meta{}
+}
+
 func (p *populateWithDelChunkSeriesIterator) Next() bool {
-	if !p.next() {
+	if !p.next(true) {
 		return false
 	}
-
 	p.curr = p.currChkMeta
 	if p.currDelIter == nil {
 		return true
 	}
-
-	// Re-encode the chunk if iterator is provider. This means that it has some samples to be deleted or chunk is opened.
-	newChunk := chunkenc.NewXORChunk()
-	app, err := newChunk.Appender()
-	if err != nil {
-		p.err = err
-		return false
-	}
-
-	if !p.currDelIter.Next() {
+	valueType := p.currDelIter.Next()
+	if valueType == chunkenc.ValNone {
 		if err := p.currDelIter.Err(); err != nil {
 			p.err = errors.Wrap(err, "iterate chunk while re-encoding")
-			return false
 		}
-
-		// Empty chunk, this should not happen, as we assume full deletions being filtered before this iterator.
-		p.err = errors.Wrap(err, "populateWithDelChunkSeriesIterator: unexpected empty chunk found while rewriting chunk")
 		return false
 	}
 
-	t, v := p.currDelIter.At()
-	p.curr.MinTime = t
-	app.Append(t, v)
+	// Re-encode the chunk if iterator is provider. This means that it has
+	// some samples to be deleted or chunk is opened.
+	var (
+		newChunk chunkenc.Chunk
+		app      chunkenc.Appender
+		t        int64
+		err      error
+	)
+	switch valueType {
+	case chunkenc.ValHistogram:
+		newChunk = chunkenc.NewHistogramChunk()
+		if app, err = newChunk.Appender(); err != nil {
+			break
+		}
 
-	for p.currDelIter.Next() {
+		for vt := valueType; vt != chunkenc.ValNone; vt = p.currDelIter.Next() {
+			if vt != chunkenc.ValHistogram {
+				err = fmt.Errorf("found value type %v in histogram chunk", vt)
+				break
+			}
+			var h *histogram.Histogram
+			t, h = p.currDelIter.AtHistogram()
+			_, _, app, err = app.AppendHistogram(nil, t, h, true)
+			if err != nil {
+				break
+			}
+		}
+	case chunkenc.ValFloat:
+		newChunk = chunkenc.NewXORChunk()
+		if app, err = newChunk.Appender(); err != nil {
+			break
+		}
+		var v float64
 		t, v = p.currDelIter.At()
+		p.curr.MinTime = t
 		app.Append(t, v)
+		for vt := p.currDelIter.Next(); vt != chunkenc.ValNone; vt = p.currDelIter.Next() {
+			if vt != chunkenc.ValFloat {
+				err = fmt.Errorf("found value type %v in float chunk", vt)
+				break
+			}
+			t, v = p.currDelIter.At()
+			app.Append(t, v)
+		}
+	case chunkenc.ValFloatHistogram:
+		newChunk = chunkenc.NewFloatHistogramChunk()
+		if app, err = newChunk.Appender(); err != nil {
+			break
+		}
+
+		for vt := valueType; vt != chunkenc.ValNone; vt = p.currDelIter.Next() {
+			if vt != chunkenc.ValFloatHistogram {
+				err = fmt.Errorf("found value type %v in histogram chunk", vt)
+				break
+			}
+			var h *histogram.FloatHistogram
+			t, h = p.currDelIter.AtFloatHistogram()
+			_, _, app, err = app.AppendFloatHistogram(nil, t, h, true)
+			if err != nil {
+				break
+			}
+		}
+	default:
+		err = fmt.Errorf("populateWithDelChunkSeriesIterator: value type %v unsupported", valueType)
+	}
+
+	if err != nil {
+		p.err = errors.Wrap(err, "iterate chunk while re-encoding")
+		return false
 	}
 	if err := p.currDelIter.Err(); err != nil {
 		p.err = errors.Wrap(err, "iterate chunk while re-encoding")
@@ -704,28 +930,26 @@ type blockSeriesSet struct {
 	blockBaseSeriesSet
 }
 
-func newBlockSeriesSet(i IndexReader, c ChunkReader, t tombstones.Reader, p index.Postings, mint, maxt int64) storage.SeriesSet {
+func newBlockSeriesSet(i IndexReader, c ChunkReader, t tombstones.Reader, p index.Postings, mint, maxt int64, disableTrimming bool) storage.SeriesSet {
 	return &blockSeriesSet{
 		blockBaseSeriesSet{
-			index:      i,
-			chunks:     c,
-			tombstones: t,
-			p:          p,
-			mint:       mint,
-			maxt:       maxt,
-			bufLbls:    make(labels.Labels, 0, 10),
+			index:           i,
+			chunks:          c,
+			tombstones:      t,
+			p:               p,
+			mint:            mint,
+			maxt:            maxt,
+			disableTrimming: disableTrimming,
 		},
 	}
 }
 
 func (b *blockSeriesSet) At() storage.Series {
-	// At can be looped over before iterating, so save the current value locally.
-	currIterFn := b.currIterFn
-	return &storage.SeriesEntry{
-		Lset: b.currLabels,
-		SampleIteratorFn: func() chunkenc.Iterator {
-			return currIterFn().toSeriesIterator()
-		},
+	// At can be looped over before iterating, so save the current values locally.
+	return &blockSeriesEntry{
+		chunks:     b.chunks,
+		blockID:    b.blockID,
+		seriesData: b.curr,
 	}
 }
 
@@ -736,33 +960,32 @@ type blockChunkSeriesSet struct {
 	blockBaseSeriesSet
 }
 
-func newBlockChunkSeriesSet(i IndexReader, c ChunkReader, t tombstones.Reader, p index.Postings, mint, maxt int64) storage.ChunkSeriesSet {
+func NewBlockChunkSeriesSet(id ulid.ULID, i IndexReader, c ChunkReader, t tombstones.Reader, p index.Postings, mint, maxt int64, disableTrimming bool) storage.ChunkSeriesSet {
 	return &blockChunkSeriesSet{
 		blockBaseSeriesSet{
-			index:      i,
-			chunks:     c,
-			tombstones: t,
-			p:          p,
-			mint:       mint,
-			maxt:       maxt,
-			bufLbls:    make(labels.Labels, 0, 10),
+			blockID:         id,
+			index:           i,
+			chunks:          c,
+			tombstones:      t,
+			p:               p,
+			mint:            mint,
+			maxt:            maxt,
+			disableTrimming: disableTrimming,
 		},
 	}
 }
 
 func (b *blockChunkSeriesSet) At() storage.ChunkSeries {
-	// At can be looped over before iterating, so save the current value locally.
-	currIterFn := b.currIterFn
-	return &storage.ChunkSeriesEntry{
-		Lset: b.currLabels,
-		ChunkIteratorFn: func() chunks.Iterator {
-			return currIterFn().toChunkSeriesIterator()
-		},
+	// At can be looped over before iterating, so save the current values locally.
+	return &chunkSeriesEntry{
+		chunks:     b.chunks,
+		blockID:    b.blockID,
+		seriesData: b.curr,
 	}
 }
 
 // NewMergedStringIter returns string iterator that allows to merge symbols on demand and stream result.
-func NewMergedStringIter(a index.StringIter, b index.StringIter) index.StringIter {
+func NewMergedStringIter(a, b index.StringIter) index.StringIter {
 	return &mergedStringIter{a: a, b: b, aok: a.Next(), bok: b.Next()}
 }
 
@@ -771,39 +994,45 @@ type mergedStringIter struct {
 	b        index.StringIter
 	aok, bok bool
 	cur      string
+	err      error
 }
 
 func (m *mergedStringIter) Next() bool {
 	if (!m.aok && !m.bok) || (m.Err() != nil) {
 		return false
 	}
-
-	if !m.aok {
+	switch {
+	case !m.aok:
 		m.cur = m.b.At()
 		m.bok = m.b.Next()
-	} else if !m.bok {
+		m.err = m.b.Err()
+	case !m.bok:
 		m.cur = m.a.At()
 		m.aok = m.a.Next()
-	} else if m.b.At() > m.a.At() {
+		m.err = m.a.Err()
+	case m.b.At() > m.a.At():
 		m.cur = m.a.At()
 		m.aok = m.a.Next()
-	} else if m.a.At() > m.b.At() {
+		m.err = m.a.Err()
+	case m.a.At() > m.b.At():
 		m.cur = m.b.At()
 		m.bok = m.b.Next()
-	} else { // Equal.
+		m.err = m.b.Err()
+	default: // Equal.
 		m.cur = m.b.At()
 		m.aok = m.a.Next()
+		m.err = m.a.Err()
 		m.bok = m.b.Next()
+		if m.err == nil {
+			m.err = m.b.Err()
+		}
 	}
 
 	return true
 }
 func (m mergedStringIter) At() string { return m.cur }
 func (m mergedStringIter) Err() error {
-	if m.a.Err() != nil {
-		return m.a.Err()
-	}
-	return m.b.Err()
+	return m.err
 }
 
 // DeletedIterator wraps chunk Iterator and makes sure any deleted metrics are not returned.
@@ -818,19 +1047,34 @@ func (it *DeletedIterator) At() (int64, float64) {
 	return it.Iter.At()
 }
 
-func (it *DeletedIterator) Seek(t int64) bool {
+func (it *DeletedIterator) AtHistogram() (int64, *histogram.Histogram) {
+	t, h := it.Iter.AtHistogram()
+	return t, h
+}
+
+func (it *DeletedIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+	t, h := it.Iter.AtFloatHistogram()
+	return t, h
+}
+
+func (it *DeletedIterator) AtT() int64 {
+	return it.Iter.AtT()
+}
+
+func (it *DeletedIterator) Seek(t int64) chunkenc.ValueType {
 	if it.Iter.Err() != nil {
-		return false
+		return chunkenc.ValNone
 	}
-	if ok := it.Iter.Seek(t); !ok {
-		return false
+	valueType := it.Iter.Seek(t)
+	if valueType == chunkenc.ValNone {
+		return chunkenc.ValNone
 	}
 
 	// Now double check if the entry falls into a deleted interval.
-	ts, _ := it.At()
+	ts := it.AtT()
 	for _, itv := range it.Intervals {
 		if ts < itv.Mint {
-			return true
+			return valueType
 		}
 
 		if ts > itv.Maxt {
@@ -843,28 +1087,26 @@ func (it *DeletedIterator) Seek(t int64) bool {
 	}
 
 	// The timestamp is greater than all the deleted intervals.
-	return true
+	return valueType
 }
 
-func (it *DeletedIterator) Next() bool {
+func (it *DeletedIterator) Next() chunkenc.ValueType {
 Outer:
-	for it.Iter.Next() {
-		ts, _ := it.Iter.At()
-
+	for valueType := it.Iter.Next(); valueType != chunkenc.ValNone; valueType = it.Iter.Next() {
+		ts := it.AtT()
 		for _, tr := range it.Intervals {
 			if tr.InBounds(ts) {
 				continue Outer
 			}
 
 			if ts <= tr.Maxt {
-				return true
-
+				return valueType
 			}
 			it.Intervals = it.Intervals[1:]
 		}
-		return true
+		return valueType
 	}
-	return false
+	return chunkenc.ValNone
 }
 
 func (it *DeletedIterator) Err() error { return it.Iter.Err() }
@@ -879,6 +1121,8 @@ func newNopChunkReader() ChunkReader {
 	}
 }
 
-func (cr nopChunkReader) Chunk(ref uint64) (chunkenc.Chunk, error) { return cr.emptyChunk, nil }
+func (cr nopChunkReader) Chunk(chunks.Meta) (chunkenc.Chunk, error) {
+	return cr.emptyChunk, nil
+}
 
 func (cr nopChunkReader) Close() error { return nil }

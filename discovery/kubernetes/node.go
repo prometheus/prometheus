@@ -15,12 +15,13 @@ package kubernetes
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net"
 	"strconv"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
-	"github.com/pkg/errors"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/common/model"
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
@@ -54,7 +55,7 @@ func NewNode(l log.Logger, inf cache.SharedInformer) *Node {
 		l = log.NewNopLogger()
 	}
 	n := &Node{logger: l, informer: inf, store: inf.GetStore(), queue: workqueue.NewNamed("node")}
-	n.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+	_, err := n.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
 			nodeAddCount.Inc()
 			n.enqueue(o)
@@ -68,6 +69,9 @@ func NewNode(l log.Logger, inf cache.SharedInformer) *Node {
 			n.enqueue(o)
 		},
 	})
+	if err != nil {
+		level.Error(l).Log("msg", "Error adding nodes event handler.", "err", err)
+	}
 	return n
 }
 
@@ -85,14 +89,14 @@ func (n *Node) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	defer n.queue.ShutDown()
 
 	if !cache.WaitForCacheSync(ctx.Done(), n.informer.HasSynced) {
-		if ctx.Err() != context.Canceled {
+		if !errors.Is(ctx.Err(), context.Canceled) {
 			level.Error(n.logger).Log("msg", "node informer unable to sync cache")
 		}
 		return
 	}
 
 	go func() {
-		for n.process(ctx, ch) {
+		for n.process(ctx, ch) { // nolint:revive
 		}
 	}()
 
@@ -136,7 +140,7 @@ func convertToNode(o interface{}) (*apiv1.Node, error) {
 		return node, nil
 	}
 
-	return nil, errors.Errorf("received unexpected object: %v", o)
+	return nil, fmt.Errorf("received unexpected object: %v", o)
 }
 
 func nodeSource(n *apiv1.Node) string {
@@ -148,31 +152,18 @@ func nodeSourceFromName(name string) string {
 }
 
 const (
-	nodeNameLabel               = metaLabelPrefix + "node_name"
-	nodeLabelPrefix             = metaLabelPrefix + "node_label_"
-	nodeLabelPresentPrefix      = metaLabelPrefix + "node_labelpresent_"
-	nodeAnnotationPrefix        = metaLabelPrefix + "node_annotation_"
-	nodeAnnotationPresentPrefix = metaLabelPrefix + "node_annotationpresent_"
-	nodeAddressPrefix           = metaLabelPrefix + "node_address_"
+	nodeProviderIDLabel = metaLabelPrefix + "node_provider_id"
+	nodeAddressPrefix   = metaLabelPrefix + "node_address_"
 )
 
 func nodeLabels(n *apiv1.Node) model.LabelSet {
 	// Each label and annotation will create two key-value pairs in the map.
-	ls := make(model.LabelSet, 2*(len(n.Labels)+len(n.Annotations))+1)
+	ls := make(model.LabelSet)
 
-	ls[nodeNameLabel] = lv(n.Name)
+	ls[nodeProviderIDLabel] = lv(n.Spec.ProviderID)
 
-	for k, v := range n.Labels {
-		ln := strutil.SanitizeLabelName(k)
-		ls[model.LabelName(nodeLabelPrefix+ln)] = lv(v)
-		ls[model.LabelName(nodeLabelPresentPrefix+ln)] = presentValue
-	}
+	addObjectMetaLabels(ls, n.ObjectMeta, RoleNode)
 
-	for k, v := range n.Annotations {
-		ln := strutil.SanitizeLabelName(k)
-		ls[model.LabelName(nodeAnnotationPrefix+ln)] = lv(v)
-		ls[model.LabelName(nodeAnnotationPresentPrefix+ln)] = presentValue
-	}
 	return ls
 }
 
@@ -203,7 +194,7 @@ func (n *Node) buildNode(node *apiv1.Node) *targetgroup.Group {
 	return tg
 }
 
-// nodeAddresses returns the provided node's address, based on the priority:
+// nodeAddress returns the provided node's address, based on the priority:
 // 1. NodeInternalIP
 // 2. NodeInternalDNS
 // 3. NodeExternalIP
