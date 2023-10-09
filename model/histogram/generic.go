@@ -53,6 +53,13 @@ type Bucket[BC BucketCount] struct {
 	Index int32
 }
 
+// strippedBucket is Bucket without bound values (which are expensive to calculate
+// and not used in certain use cases).
+type strippedBucket[BC BucketCount] struct {
+	count BC
+	index int32
+}
+
 // String returns a string representation of a Bucket, using the usual
 // mathematical notation of '['/']' for inclusive bounds and '('/')' for
 // non-inclusive bounds.
@@ -101,13 +108,12 @@ type baseBucketIterator[BC BucketCount, IBC InternalBucketCount] struct {
 	currIdx   int32 // The actual bucket index.
 }
 
-func (b baseBucketIterator[BC, IBC]) At() Bucket[BC] {
+func (b *baseBucketIterator[BC, IBC]) At() Bucket[BC] {
 	return b.at(b.schema)
 }
 
-// at is an internal version of the exported At to enable using a different
-// schema.
-func (b baseBucketIterator[BC, IBC]) at(schema int32) Bucket[BC] {
+// at is an internal version of the exported At to enable using a different schema.
+func (b *baseBucketIterator[BC, IBC]) at(schema int32) Bucket[BC] {
 	bucket := Bucket[BC]{
 		Count: BC(b.currCount),
 		Index: b.currIdx,
@@ -122,6 +128,14 @@ func (b baseBucketIterator[BC, IBC]) at(schema int32) Bucket[BC] {
 	bucket.LowerInclusive = bucket.Lower < 0
 	bucket.UpperInclusive = bucket.Upper > 0
 	return bucket
+}
+
+// strippedAt returns current strippedBucket (which lacks bucket bounds but is cheaper to compute).
+func (b *baseBucketIterator[BC, IBC]) strippedAt() strippedBucket[BC] {
+	return strippedBucket[BC]{
+		count: BC(b.currCount),
+		index: b.currIdx,
+	}
 }
 
 // compactBuckets is a generic function used by both Histogram.Compact and
