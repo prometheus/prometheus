@@ -233,7 +233,14 @@ func (c *LeveledCompactor) Plan(dir string) ([]string, error) {
 
 func (c *LeveledCompactor) plan(dms []dirMeta) ([]string, error) {
 	slices.SortFunc(dms, func(a, b dirMeta) int {
-		return int(a.meta.MinTime - b.meta.MinTime)
+		switch {
+		case a.meta.MinTime < b.meta.MinTime:
+			return -1
+		case a.meta.MinTime > b.meta.MinTime:
+			return 1
+		default:
+			return 0
+		}
 	})
 
 	res := c.selectOverlappingDirs(dms)
