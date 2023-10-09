@@ -3,6 +3,7 @@
 ## 2.47.1 / 2023-10-04
 
 * [BUGFIX] Fix duplicate sample detection at chunk size limit #12874
+* [ENHANCEMENT] Add ability to filter out active alerts in `/rules` API
 
 ## 2.47.0 / 2023-09-06
 
