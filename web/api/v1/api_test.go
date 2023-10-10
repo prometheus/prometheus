@@ -251,7 +251,7 @@ func (m rulesRetrieverMock) AlertingRules(matcherSets ...[]*labels.Matcher) []*r
 		expr2,
 		time.Second,
 		0,
-		labels.Labels{labels.Label{Name: "testlabel", Value: "rule"}},
+		labels.FromStrings("testlabel", "rule"),
 		labels.Labels{},
 		labels.Labels{},
 		"",
@@ -263,7 +263,7 @@ func (m rulesRetrieverMock) AlertingRules(matcherSets ...[]*labels.Matcher) []*r
 		expr2,
 		time.Second,
 		0,
-		labels.Labels{labels.Label{Name: "templatedlabel", Value: "{{ $externalURL }}"}},
+		labels.FromStrings("templatedlabel", "{{ $externalURL }}"),
 		labels.Labels{},
 		labels.Labels{},
 		"",
@@ -310,7 +310,7 @@ func (m rulesRetrieverMock) RuleGroups() []*rules.Group {
 		m.testing.Fatalf("unable to parse alert expression: %s", err)
 	}
 	recordingRule1 := rules.NewRecordingRule("recording-rule-1", recordingExpr, labels.Labels{})
-	recordingRule2 := rules.NewRecordingRule("recording-rule-2", recordingExpr, labels.Labels{labels.Label{Name: "testlabel", Value: "rule"}})
+	recordingRule2 := rules.NewRecordingRule("recording-rule-2", recordingExpr, labels.FromStrings("testlabel", "rule"))
 	r = append(r, recordingRule1)
 	r = append(r, recordingRule2)
 
@@ -2056,7 +2056,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 								Name:        "test_metric5",
 								Query:       "up == 1",
 								Duration:    1,
-								Labels:      labels.Labels{labels.Label{Name: "testlabel", Value: "rule"}},
+								Labels:      labels.FromStrings("testlabel", "rule"),
 								Annotations: labels.Labels{},
 								Alerts:      []*Alert{},
 								Health:      "unknown",
@@ -2067,7 +2067,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 								Name:        "test_metric6",
 								Query:       "up == 1",
 								Duration:    1,
-								Labels:      labels.Labels{labels.Label{Name: "templatedlabel", Value: "{{ $externalURL }}"}},
+								Labels:      labels.FromStrings("templatedlabel", "{{ $externalURL }}"),
 								Annotations: labels.Labels{},
 								Alerts:      []*Alert{},
 								Health:      "unknown",
@@ -2083,7 +2083,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 							RecordingRule{
 								Name:   "recording-rule-2",
 								Query:  "vector(1)",
-								Labels: labels.Labels{labels.Label{Name: "testlabel", Value: "rule"}},
+								Labels: labels.FromStrings("testlabel", "rule"),
 								Health: "unknown",
 								Type:   "recording",
 							},
@@ -2132,7 +2132,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 								Name:        "test_metric5",
 								Query:       "up == 1",
 								Duration:    1,
-								Labels:      labels.Labels{labels.Label{Name: "testlabel", Value: "rule"}},
+								Labels:      labels.FromStrings("testlabel", "rule"),
 								Annotations: labels.Labels{},
 								Alerts:      []*Alert{},
 								Health:      "unknown",
@@ -2143,7 +2143,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 								Name:        "test_metric6",
 								Query:       "up == 1",
 								Duration:    1,
-								Labels:      labels.Labels{labels.Label{Name: "templatedlabel", Value: "{{ $externalURL }}"}},
+								Labels:      labels.FromStrings("templatedlabel", "{{ $externalURL }}"),
 								Annotations: labels.Labels{},
 								Alerts:      []*Alert{},
 								Health:      "unknown",
@@ -2177,7 +2177,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 							RecordingRule{
 								Name:   "recording-rule-2",
 								Query:  "vector(1)",
-								Labels: labels.Labels{labels.Label{Name: "testlabel", Value: "rule"}},
+								Labels: labels.FromStrings("testlabel", "rule"),
 								Health: "unknown",
 								Type:   "recording",
 							},
@@ -2204,7 +2204,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 								Name:        "test_metric5",
 								Query:       "up == 1",
 								Duration:    1,
-								Labels:      labels.Labels{labels.Label{Name: "testlabel", Value: "rule"}},
+								Labels:      labels.FromStrings("testlabel", "rule"),
 								Annotations: labels.Labels{},
 								Alerts:      []*Alert{},
 								Health:      "unknown",
@@ -2213,9 +2213,39 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 							RecordingRule{
 								Name:   "recording-rule-2",
 								Query:  "vector(1)",
-								Labels: labels.Labels{labels.Label{Name: "testlabel", Value: "rule"}},
+								Labels: labels.FromStrings("testlabel", "rule"),
 								Health: "unknown",
 								Type:   "recording",
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			endpoint: api.rules,
+			query: url.Values{
+				"type":    []string{"alert"},
+				"match[]": []string{`{templatedlabel="{{ $externalURL }}"}`},
+			},
+			response: &RuleDiscovery{
+				RuleGroups: []*RuleGroup{
+					{
+						Name:     "grp",
+						File:     "/path/to/file",
+						Interval: 1,
+						Limit:    0,
+						Rules: []Rule{
+							AlertingRule{
+								State:       "inactive",
+								Name:        "test_metric6",
+								Query:       "up == 1",
+								Duration:    1,
+								Labels:      labels.FromStrings("templatedlabel", "{{ $externalURL }}"),
+								Annotations: labels.Labels{},
+								Alerts:      []*Alert{},
+								Health:      "unknown",
+								Type:        "alerting",
 							},
 						},
 					},
@@ -2249,7 +2279,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 								Name:        "test_metric5",
 								Query:       "up == 1",
 								Duration:    1,
-								Labels:      labels.Labels{labels.Label{Name: "testlabel", Value: "rule"}},
+								Labels:      labels.FromStrings("testlabel", "rule"),
 								Annotations: labels.Labels{},
 								Alerts:      []*Alert{},
 								Health:      "unknown",
@@ -2258,7 +2288,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 							RecordingRule{
 								Name:   "recording-rule-2",
 								Query:  "vector(1)",
-								Labels: labels.Labels{labels.Label{Name: "testlabel", Value: "rule"}},
+								Labels: labels.FromStrings("testlabel", "rule"),
 								Health: "unknown",
 								Type:   "recording",
 							},
@@ -2284,7 +2314,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 							RecordingRule{
 								Name:   "recording-rule-2",
 								Query:  "vector(1)",
-								Labels: labels.Labels{labels.Label{Name: "testlabel", Value: "rule"}},
+								Labels: labels.FromStrings("testlabel", "rule"),
 								Health: "unknown",
 								Type:   "recording",
 							},
@@ -2312,7 +2342,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 								Name:        "test_metric5",
 								Query:       "up == 1",
 								Duration:    1,
-								Labels:      labels.Labels{labels.Label{Name: "testlabel", Value: "rule"}},
+								Labels:      labels.FromStrings("testlabel", "rule"),
 								Annotations: labels.Labels{},
 								Alerts:      []*Alert{},
 								Health:      "unknown",
