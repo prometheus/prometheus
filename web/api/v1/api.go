@@ -16,7 +16,6 @@ package v1
 import (
 	"context"
 	"fmt"
-	"github.com/prometheus/prometheus/notifier"
 	"math"
 	"math/rand"
 	"net"
@@ -44,6 +43,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/rules"
