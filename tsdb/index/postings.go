@@ -19,6 +19,7 @@ import (
 	"encoding/binary"
 	"runtime"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/pkg/errors"
@@ -108,11 +109,14 @@ func (p *MemPostings) SortedKeys() []labels.Label {
 	}
 	p.mtx.RUnlock()
 
-	slices.SortFunc(keys, func(a, b labels.Label) bool {
-		if a.Name != b.Name {
-			return a.Name < b.Name
+	slices.SortFunc(keys, func(a, b labels.Label) int {
+		nameCompare := strings.Compare(a.Name, b.Name)
+		// If names are the same, compare values.
+		if nameCompare != 0 {
+			return nameCompare
 		}
-		return a.Value < b.Value
+
+		return strings.Compare(a.Value, b.Value)
 	})
 	return keys
 }
@@ -409,6 +413,7 @@ type Postings interface {
 	Seek(v storage.SeriesRef) bool
 
 	// At returns the value at the current iterator position.
+	// At should only be called after a successful call to Next or Seek.
 	At() storage.SeriesRef
 
 	// Err returns the last error of the iterator.

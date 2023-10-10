@@ -33,10 +33,9 @@ const (
 )
 
 func BenchmarkQuerier(b *testing.B) {
-	chunkDir := b.TempDir()
 	opts := DefaultHeadOptions()
 	opts.ChunkRange = 1000
-	opts.ChunkDirRoot = chunkDir
+	opts.ChunkDirRoot = b.TempDir()
 	h, err := NewHead(nil, nil, nil, nil, opts, nil)
 	require.NoError(b, err)
 	defer func() {
@@ -60,9 +59,13 @@ func BenchmarkQuerier(b *testing.B) {
 	}
 	require.NoError(b, app.Commit())
 
-	ir, err := h.Index()
-	require.NoError(b, err)
 	b.Run("Head", func(b *testing.B) {
+		ir, err := h.Index()
+		require.NoError(b, err)
+		defer func() {
+			require.NoError(b, ir.Close())
+		}()
+
 		b.Run("PostingsForMatchers", func(b *testing.B) {
 			benchmarkPostingsForMatchers(b, ir)
 		})
@@ -71,18 +74,20 @@ func BenchmarkQuerier(b *testing.B) {
 		})
 	})
 
-	tmpdir := b.TempDir()
-
-	blockdir := createBlockFromHead(b, tmpdir, h)
-	block, err := OpenBlock(nil, blockdir, nil)
-	require.NoError(b, err)
-	defer func() {
-		require.NoError(b, block.Close())
-	}()
-	ir, err = block.Index()
-	require.NoError(b, err)
-	defer ir.Close()
 	b.Run("Block", func(b *testing.B) {
+		blockdir := createBlockFromHead(b, b.TempDir(), h)
+		block, err := OpenBlock(nil, blockdir, nil)
+		require.NoError(b, err)
+		defer func() {
+			require.NoError(b, block.Close())
+		}()
+
+		ir, err := block.Index()
+		require.NoError(b, err)
+		defer func() {
+			require.NoError(b, ir.Close())
+		}()
+
 		b.Run("PostingsForMatchers", func(b *testing.B) {
 			benchmarkPostingsForMatchers(b, ir)
 		})
@@ -247,10 +252,9 @@ func BenchmarkMergedStringIter(b *testing.B) {
 }
 
 func BenchmarkQuerierSelect(b *testing.B) {
-	chunkDir := b.TempDir()
 	opts := DefaultHeadOptions()
 	opts.ChunkRange = 1000
-	opts.ChunkDirRoot = chunkDir
+	opts.ChunkDirRoot = b.TempDir()
 	h, err := NewHead(nil, nil, nil, nil, opts, nil)
 	require.NoError(b, err)
 	defer h.Close()

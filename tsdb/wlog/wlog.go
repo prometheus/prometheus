@@ -909,8 +909,8 @@ func listSegments(dir string) (refs []segmentRef, err error) {
 		}
 		refs = append(refs, segmentRef{name: fn, index: k})
 	}
-	slices.SortFunc(refs, func(a, b segmentRef) bool {
-		return a.index < b.index
+	slices.SortFunc(refs, func(a, b segmentRef) int {
+		return a.index - b.index
 	})
 	for i := 0; i < len(refs)-1; i++ {
 		if refs[i].index+1 != refs[i+1].index {

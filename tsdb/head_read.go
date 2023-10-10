@@ -140,8 +140,8 @@ func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {
 		return index.ErrPostings(errors.Wrap(err, "expand postings"))
 	}
 
-	slices.SortFunc(series, func(a, b *memSeries) bool {
-		return labels.Compare(a.lset, b.lset) < 0
+	slices.SortFunc(series, func(a, b *memSeries) int {
+		return labels.Compare(a.lset, b.lset)
 	})
 
 	// Convert back to list.

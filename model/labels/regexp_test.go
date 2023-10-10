@@ -27,7 +27,6 @@ import (
 	"github.com/DmitriyVTitov/size"
 	"github.com/grafana/regexp"
 	"github.com/grafana/regexp/syntax"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -511,17 +510,17 @@ func TestStringMatcherFromRegexp_LiteralPrefix(t *testing.T) {
 			require.Equal(t, c.expectedLiteralPrefixMatchers, numPrefixMatchers)
 
 			for _, value := range c.expectedMatches {
-				assert.Truef(t, matcher.Matches(value), "Value: %s", value)
+				require.Truef(t, matcher.Matches(value), "Value: %s", value)
 
 				// Ensure the golang regexp engine would return the same.
-				assert.Truef(t, re.MatchString(value), "Value: %s", value)
+				require.Truef(t, re.MatchString(value), "Value: %s", value)
 			}
 
 			for _, value := range c.expectedNotMatches {
-				assert.Falsef(t, matcher.Matches(value), "Value: %s", value)
+				require.Falsef(t, matcher.Matches(value), "Value: %s", value)
 
 				// Ensure the golang regexp engine would return the same.
-				assert.Falsef(t, re.MatchString(value), "Value: %s", value)
+				require.Falsef(t, re.MatchString(value), "Value: %s", value)
 			}
 		})
 	}
@@ -586,17 +585,17 @@ func TestStringMatcherFromRegexp_LiteralSuffix(t *testing.T) {
 			require.Equal(t, c.expectedLiteralSuffixMatchers, numSuffixMatchers)
 
 			for _, value := range c.expectedMatches {
-				assert.Truef(t, matcher.Matches(value), "Value: %s", value)
+				require.Truef(t, matcher.Matches(value), "Value: %s", value)
 
 				// Ensure the golang regexp engine would return the same.
-				assert.Truef(t, re.MatchString(value), "Value: %s", value)
+				require.Truef(t, re.MatchString(value), "Value: %s", value)
 			}
 
 			for _, value := range c.expectedNotMatches {
-				assert.Falsef(t, matcher.Matches(value), "Value: %s", value)
+				require.Falsef(t, matcher.Matches(value), "Value: %s", value)
 
 				// Ensure the golang regexp engine would return the same.
-				assert.Falsef(t, re.MatchString(value), "Value: %s", value)
+				require.Falsef(t, re.MatchString(value), "Value: %s", value)
 			}
 		})
 	}
@@ -671,17 +670,17 @@ func TestStringMatcherFromRegexp_Quest(t *testing.T) {
 			require.Equal(t, c.expectedZeroOrOneMatchers, numZeroOrOneMatchers)
 
 			for _, value := range c.expectedMatches {
-				assert.Truef(t, matcher.Matches(value), "Value: %s", value)
+				require.Truef(t, matcher.Matches(value), "Value: %s", value)
 
 				// Ensure the golang regexp engine would return the same.
-				assert.Truef(t, re.MatchString(value), "Value: %s", value)
+				require.Truef(t, re.MatchString(value), "Value: %s", value)
 			}
 
 			for _, value := range c.expectedNotMatches {
-				assert.Falsef(t, matcher.Matches(value), "Value: %s", value)
+				require.Falsef(t, matcher.Matches(value), "Value: %s", value)
 
 				// Ensure the golang regexp engine would return the same.
-				assert.Falsef(t, re.MatchString(value), "Value: %s", value)
+				require.Falsef(t, re.MatchString(value), "Value: %s", value)
 			}
 		})
 	}
@@ -1116,8 +1115,8 @@ func TestFindEqualStringMatchers(t *testing.T) {
 
 	t.Run("empty matcher", func(t *testing.T) {
 		actualMatches, actualOk := findEqualStringMatchersAndCollectMatches(emptyStringMatcher{})
-		assert.False(t, actualOk)
-		assert.Empty(t, actualMatches)
+		require.False(t, actualOk)
+		require.Empty(t, actualMatches)
 	})
 
 	t.Run("concat of literal matchers (case sensitive)", func(t *testing.T) {
@@ -1128,8 +1127,8 @@ func TestFindEqualStringMatchers(t *testing.T) {
 			},
 		)
 
-		assert.True(t, actualOk)
-		assert.Equal(t, []match{{"test-1", true}, {"test-2", true}}, actualMatches)
+		require.True(t, actualOk)
+		require.Equal(t, []match{{"test-1", true}, {"test-2", true}}, actualMatches)
 	})
 
 	t.Run("concat of literal matchers (case insensitive)", func(t *testing.T) {
@@ -1140,8 +1139,8 @@ func TestFindEqualStringMatchers(t *testing.T) {
 			},
 		)
 
-		assert.True(t, actualOk)
-		assert.Equal(t, []match{{"test-1", false}, {"test-2", false}}, actualMatches)
+		require.True(t, actualOk)
+		require.Equal(t, []match{{"test-1", false}, {"test-2", false}}, actualMatches)
 	})
 
 	t.Run("concat of literal matchers (mixed case)", func(t *testing.T) {
@@ -1152,8 +1151,8 @@ func TestFindEqualStringMatchers(t *testing.T) {
 			},
 		)
 
-		assert.True(t, actualOk)
-		assert.Equal(t, []match{{"test-1", false}, {"test-2", true}}, actualMatches)
+		require.True(t, actualOk)
+		require.Equal(t, []match{{"test-1", false}, {"test-2", true}}, actualMatches)
 	})
 }
 
@@ -1211,86 +1210,86 @@ func BenchmarkOptimizeEqualStringMatchers(b *testing.B) {
 
 func TestZeroOrOneCharacterStringMatcher(t *testing.T) {
 	matcher := &zeroOrOneCharacterStringMatcher{matchNL: true}
-	assert.True(t, matcher.Matches(""))
-	assert.True(t, matcher.Matches("x"))
-	assert.True(t, matcher.Matches("\n"))
-	assert.False(t, matcher.Matches("xx"))
-	assert.False(t, matcher.Matches("\n\n"))
+	require.True(t, matcher.Matches(""))
+	require.True(t, matcher.Matches("x"))
+	require.True(t, matcher.Matches("\n"))
+	require.False(t, matcher.Matches("xx"))
+	require.False(t, matcher.Matches("\n\n"))
 
 	matcher = &zeroOrOneCharacterStringMatcher{matchNL: false}
-	assert.True(t, matcher.Matches(""))
-	assert.True(t, matcher.Matches("x"))
-	assert.False(t, matcher.Matches("\n"))
-	assert.False(t, matcher.Matches("xx"))
-	assert.False(t, matcher.Matches("\n\n"))
+	require.True(t, matcher.Matches(""))
+	require.True(t, matcher.Matches("x"))
+	require.False(t, matcher.Matches("\n"))
+	require.False(t, matcher.Matches("xx"))
+	require.False(t, matcher.Matches("\n\n"))
 }
 
 func TestLiteralPrefixStringMatcher(t *testing.T) {
 	m := &literalPrefixStringMatcher{prefix: "mar", prefixCaseSensitive: true, right: &emptyStringMatcher{}}
-	assert.True(t, m.Matches("mar"))
-	assert.False(t, m.Matches("marco"))
-	assert.False(t, m.Matches("ma"))
-	assert.False(t, m.Matches("mAr"))
+	require.True(t, m.Matches("mar"))
+	require.False(t, m.Matches("marco"))
+	require.False(t, m.Matches("ma"))
+	require.False(t, m.Matches("mAr"))
 
 	m = &literalPrefixStringMatcher{prefix: "mar", prefixCaseSensitive: false, right: &emptyStringMatcher{}}
-	assert.True(t, m.Matches("mar"))
-	assert.False(t, m.Matches("marco"))
-	assert.False(t, m.Matches("ma"))
-	assert.True(t, m.Matches("mAr"))
+	require.True(t, m.Matches("mar"))
+	require.False(t, m.Matches("marco"))
+	require.False(t, m.Matches("ma"))
+	require.True(t, m.Matches("mAr"))
 
 	m = &literalPrefixStringMatcher{prefix: "mar", prefixCaseSensitive: true, right: &equalStringMatcher{s: "co", caseSensitive: false}}
-	assert.True(t, m.Matches("marco"))
-	assert.True(t, m.Matches("marCO"))
-	assert.False(t, m.Matches("MARco"))
-	assert.False(t, m.Matches("mar"))
-	assert.False(t, m.Matches("marcopracucci"))
+	require.True(t, m.Matches("marco"))
+	require.True(t, m.Matches("marCO"))
+	require.False(t, m.Matches("MARco"))
+	require.False(t, m.Matches("mar"))
+	require.False(t, m.Matches("marcopracucci"))
 }
 
 func TestLiteralSuffixStringMatcher(t *testing.T) {
 	m := &literalSuffixStringMatcher{left: &emptyStringMatcher{}, suffix: "co", suffixCaseSensitive: true}
-	assert.True(t, m.Matches("co"))
-	assert.False(t, m.Matches("marco"))
-	assert.False(t, m.Matches("coo"))
-	assert.False(t, m.Matches("Co"))
+	require.True(t, m.Matches("co"))
+	require.False(t, m.Matches("marco"))
+	require.False(t, m.Matches("coo"))
+	require.False(t, m.Matches("Co"))
 
 	m = &literalSuffixStringMatcher{left: &emptyStringMatcher{}, suffix: "co", suffixCaseSensitive: false}
-	assert.True(t, m.Matches("co"))
-	assert.False(t, m.Matches("marco"))
-	assert.False(t, m.Matches("coo"))
-	assert.True(t, m.Matches("Co"))
+	require.True(t, m.Matches("co"))
+	require.False(t, m.Matches("marco"))
+	require.False(t, m.Matches("coo"))
+	require.True(t, m.Matches("Co"))
 
 	m = &literalSuffixStringMatcher{left: &equalStringMatcher{s: "mar", caseSensitive: false}, suffix: "co", suffixCaseSensitive: true}
-	assert.True(t, m.Matches("marco"))
-	assert.True(t, m.Matches("MARco"))
-	assert.False(t, m.Matches("marCO"))
-	assert.False(t, m.Matches("mar"))
-	assert.False(t, m.Matches("marcopracucci"))
+	require.True(t, m.Matches("marco"))
+	require.True(t, m.Matches("MARco"))
+	require.False(t, m.Matches("marCO"))
+	require.False(t, m.Matches("mar"))
+	require.False(t, m.Matches("marcopracucci"))
 
 	m = &literalSuffixStringMatcher{left: &equalStringMatcher{s: "mar", caseSensitive: false}, suffix: "co", suffixCaseSensitive: false}
-	assert.True(t, m.Matches("marco"))
-	assert.True(t, m.Matches("MARco"))
-	assert.True(t, m.Matches("marCO"))
-	assert.False(t, m.Matches("mar"))
-	assert.False(t, m.Matches("marcopracucci"))
+	require.True(t, m.Matches("marco"))
+	require.True(t, m.Matches("MARco"))
+	require.True(t, m.Matches("marCO"))
+	require.False(t, m.Matches("mar"))
+	require.False(t, m.Matches("marcopracucci"))
 }
 
 func TestHasPrefixCaseInsensitive(t *testing.T) {
-	assert.True(t, hasPrefixCaseInsensitive("marco", "mar"))
-	assert.True(t, hasPrefixCaseInsensitive("mArco", "mar"))
-	assert.True(t, hasPrefixCaseInsensitive("marco", "MaR"))
-	assert.True(t, hasPrefixCaseInsensitive("marco", "marco"))
-	assert.True(t, hasPrefixCaseInsensitive("mArco", "marco"))
+	require.True(t, hasPrefixCaseInsensitive("marco", "mar"))
+	require.True(t, hasPrefixCaseInsensitive("mArco", "mar"))
+	require.True(t, hasPrefixCaseInsensitive("marco", "MaR"))
+	require.True(t, hasPrefixCaseInsensitive("marco", "marco"))
+	require.True(t, hasPrefixCaseInsensitive("mArco", "marco"))
 
-	assert.False(t, hasPrefixCaseInsensitive("marco", "a"))
-	assert.False(t, hasPrefixCaseInsensitive("marco", "abcdefghi"))
+	require.False(t, hasPrefixCaseInsensitive("marco", "a"))
+	require.False(t, hasPrefixCaseInsensitive("marco", "abcdefghi"))
 }
 
 func TestHasSuffixCaseInsensitive(t *testing.T) {
-	assert.True(t, hasSuffixCaseInsensitive("marco", "rco"))
-	assert.True(t, hasSuffixCaseInsensitive("marco", "RcO"))
-	assert.True(t, hasSuffixCaseInsensitive("marco", "marco"))
-	assert.False(t, hasSuffixCaseInsensitive("marco", "a"))
-	assert.False(t, hasSuffixCaseInsensitive("marco", "abcdefghi"))
+	require.True(t, hasSuffixCaseInsensitive("marco", "rco"))
+	require.True(t, hasSuffixCaseInsensitive("marco", "RcO"))
+	require.True(t, hasSuffixCaseInsensitive("marco", "marco"))
+	require.False(t, hasSuffixCaseInsensitive("marco", "a"))
+	require.False(t, hasSuffixCaseInsensitive("marco", "abcdefghi"))
 }
 
 func getTestNameFromRegexp(re string) string {

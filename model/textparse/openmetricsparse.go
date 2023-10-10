@@ -338,7 +338,7 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 			var ts float64
 			// A float is enough to hold what we need for millisecond resolution.
 			if ts, err = parseFloat(yoloString(p.l.buf()[1:])); err != nil {
-				return EntryInvalid, fmt.Errorf("%v while parsing: %q", err, p.l.b[p.start:p.l.i])
+				return EntryInvalid, fmt.Errorf("%w while parsing: %q", err, p.l.b[p.start:p.l.i])
 			}
 			if math.IsNaN(ts) || math.IsInf(ts, 0) {
 				return EntryInvalid, fmt.Errorf("invalid timestamp %f", ts)
@@ -391,7 +391,7 @@ func (p *OpenMetricsParser) parseComment() error {
 		var ts float64
 		// A float is enough to hold what we need for millisecond resolution.
 		if ts, err = parseFloat(yoloString(p.l.buf()[1:])); err != nil {
-			return fmt.Errorf("%v while parsing: %q", err, p.l.b[p.start:p.l.i])
+			return fmt.Errorf("%w while parsing: %q", err, p.l.b[p.start:p.l.i])
 		}
 		if math.IsNaN(ts) || math.IsInf(ts, 0) {
 			return fmt.Errorf("invalid exemplar timestamp %f", ts)
@@ -461,7 +461,7 @@ func (p *OpenMetricsParser) getFloatValue(t token, after string) (float64, error
 	}
 	val, err := parseFloat(yoloString(p.l.buf()[1:]))
 	if err != nil {
-		return 0, fmt.Errorf("%v while parsing: %q", err, p.l.b[p.start:p.l.i])
+		return 0, fmt.Errorf("%w while parsing: %q", err, p.l.b[p.start:p.l.i])
 	}
 	// Ensure canonical NaN value.
 	if math.IsNaN(p.exemplarVal) {

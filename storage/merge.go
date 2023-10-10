@@ -347,7 +347,7 @@ func (c *genericMergeSeriesSet) Next() bool {
 		}
 
 		// Now, pop items of the heap that have equal label sets.
-		c.currentSets = nil
+		c.currentSets = c.currentSets[:0]
 		c.currentLabels = c.heap[0].At().Labels()
 		for len(c.heap) > 0 && labels.Equal(c.currentLabels, c.heap[0].At().Labels()) {
 			set := heap.Pop(&c.heap).(genericSeriesSet)

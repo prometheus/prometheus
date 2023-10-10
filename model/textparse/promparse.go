@@ -348,7 +348,7 @@ func (p *PromParser) Next() (Entry, error) {
 			return EntryInvalid, p.parseError("expected value after metric", t2)
 		}
 		if p.val, err = parseFloat(yoloString(p.l.buf())); err != nil {
-			return EntryInvalid, fmt.Errorf("%v while parsing: %q", err, p.l.b[p.start:p.l.i])
+			return EntryInvalid, fmt.Errorf("%w while parsing: %q", err, p.l.b[p.start:p.l.i])
 		}
 		// Ensure canonical NaN value.
 		if math.IsNaN(p.val) {
@@ -361,7 +361,7 @@ func (p *PromParser) Next() (Entry, error) {
 		case tTimestamp:
 			p.hasTS = true
 			if p.ts, err = strconv.ParseInt(yoloString(p.l.buf()), 10, 64); err != nil {
-				return EntryInvalid, fmt.Errorf("%v while parsing: %q", err, p.l.b[p.start:p.l.i])
+				return EntryInvalid, fmt.Errorf("%w while parsing: %q", err, p.l.b[p.start:p.l.i])
 			}
 			if t2 := p.nextToken(); t2 != tLinebreak {
 				return EntryInvalid, p.parseError("expected next entry after timestamp", t2)

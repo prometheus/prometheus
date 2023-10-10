@@ -732,8 +732,8 @@ func mutateSampleLabels(lset labels.Labels, target *Target, honor bool, rc []*re
 }
 
 func resolveConflictingExposedLabels(lb *labels.Builder, conflictingExposedLabels []labels.Label) {
-	slices.SortStableFunc(conflictingExposedLabels, func(a, b labels.Label) bool {
-		return len(a.Name) < len(b.Name)
+	slices.SortStableFunc(conflictingExposedLabels, func(a, b labels.Label) int {
+		return len(a.Name) - len(b.Name)
 	})
 
 	for _, l := range conflictingExposedLabels {
@@ -785,7 +785,8 @@ func appender(app storage.Appender, sampleLimit, bucketLimit int) storage.Append
 
 // A scraper retrieves samples and accepts a status report at the end.
 type scraper interface {
-	scrape(ctx context.Context, w io.Writer) (string, error)
+	scrape(ctx context.Context) (*http.Response, error)
+	readResponse(ctx context.Context, resp *http.Response, w io.Writer) (string, error)
 	Report(start time.Time, dur time.Duration, err error)
 	offset(interval time.Duration, offsetSeed uint64) time.Duration
 }
@@ -814,11 +815,11 @@ const (
 
 var UserAgent = fmt.Sprintf("Prometheus/%s", version.Version)
 
-func (s *targetScraper) scrape(ctx context.Context, w io.Writer) (string, error) {
+func (s *targetScraper) scrape(ctx context.Context) (*http.Response, error) {
 	if s.req == nil {
 		req, err := http.NewRequest("GET", s.URL().String(), nil)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 		req.Header.Add("Accept", s.acceptHeader)
 		req.Header.Add("Accept-Encoding", "gzip")
@@ -828,10 +829,10 @@ func (s *targetScraper) scrape(ctx context.Context, w io.Writer) (string, error)
 		s.req = req
 	}
 
-	resp, err := s.client.Do(s.req.WithContext(ctx))
-	if err != nil {
-		return "", err
-	}
+	return s.client.Do(s.req.WithContext(ctx))
+}
+
+func (s *targetScraper) readResponse(ctx context.Context, resp *http.Response, w io.Writer) (string, error) {
 	defer func() {
 		io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
@@ -858,13 +859,14 @@ func (s *targetScraper) scrape(ctx context.Context, w io.Writer) (string, error)
 
 	if s.gzipr == nil {
 		s.buf = bufio.NewReader(resp.Body)
+		var err error
 		s.gzipr, err = gzip.NewReader(s.buf)
 		if err != nil {
 			return "", err
 		}
 	} else {
 		s.buf.Reset(resp.Body)
-		if err = s.gzipr.Reset(s.buf); err != nil {
+		if err := s.gzipr.Reset(s.buf); err != nil {
 			return "", err
 		}
 	}
@@ -1326,11 +1328,7 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 		)
 	}
 
-	b := sl.buffers.Get(sl.lastScrapeSize).([]byte)
-	defer sl.buffers.Put(b)
-	buf := bytes.NewBuffer(b)
-
-	var total, added, seriesAdded, bytes int
+	var total, added, seriesAdded, bytesRead int
 	var err, appErr, scrapeErr error
 
 	app := sl.appender(sl.appenderCtx)
@@ -1346,7 +1344,7 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 	}()
 
 	defer func() {
-		if err = sl.report(app, appendTime, time.Since(start), total, added, seriesAdded, bytes, scrapeErr); err != nil {
+		if err = sl.report(app, appendTime, time.Since(start), total, added, seriesAdded, bytesRead, scrapeErr); err != nil {
 			level.Warn(sl.l).Log("msg", "Appending scrape report failed", "err", err)
 		}
 	}()
@@ -1367,8 +1365,17 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 	}
 
 	var contentType string
+	var resp *http.Response
+	var b []byte
+	var buf *bytes.Buffer
 	scrapeCtx, cancel := context.WithTimeout(sl.parentCtx, sl.timeout)
-	contentType, scrapeErr = sl.scraper.scrape(scrapeCtx, buf)
+	resp, scrapeErr = sl.scraper.scrape(scrapeCtx)
+	if scrapeErr == nil {
+		b = sl.buffers.Get(sl.lastScrapeSize).([]byte)
+		defer sl.buffers.Put(b)
+		buf = bytes.NewBuffer(b)
+		contentType, scrapeErr = sl.scraper.readResponse(scrapeCtx, resp, buf)
+	}
 	cancel()
 
 	if scrapeErr == nil {
@@ -1379,14 +1386,14 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 		if len(b) > 0 {
 			sl.lastScrapeSize = len(b)
 		}
-		bytes = len(b)
+		bytesRead = len(b)
 	} else {
 		level.Debug(sl.l).Log("msg", "Scrape failed", "err", scrapeErr)
 		if errc != nil {
 			errc <- scrapeErr
 		}
 		if errors.Is(scrapeErr, errBodySizeLimit) {
-			bytes = -1
+			bytesRead = -1
 		}
 	}
 
@@ -1525,6 +1532,7 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 		appErrs         = appendErrors{}
 		sampleLimitErr  error
 		bucketLimitErr  error
+		lset            labels.Labels     // escapes to heap so hoisted out of loop
 		e               exemplar.Exemplar // escapes to heap so hoisted out of loop
 		meta            metadata.Metadata
 		metadataChanged bool
@@ -1622,7 +1630,6 @@ loop:
 		ce, ok := sl.cache.get(met)
 		var (
 			ref  storage.SeriesRef
-			lset labels.Labels
 			hash uint64
 		)
 

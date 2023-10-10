@@ -14,7 +14,7 @@ vector, which if not provided it will default to the value of the expression
 _Notes about the experimental native histograms:_
 
 * Ingesting native histograms has to be enabled via a [feature
-  flag](../../feature_flags.md#native-histograms). As long as no native histograms
+  flag](../feature_flags.md#native-histograms). As long as no native histograms
   have been ingested into the TSDB, all functions will behave as usual.
 * Functions that do not explicitly mention native histograms in their
   documentation (see below) will ignore histogram samples.

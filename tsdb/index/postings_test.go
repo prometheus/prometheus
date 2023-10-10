@@ -990,11 +990,9 @@ func TestPostingsCloner(t *testing.T) {
 			check: func(t testing.TB, pc *PostingsCloner) {
 				p1 := pc.Clone()
 				require.False(t, p1.Seek(9))
-				require.Equal(t, storage.SeriesRef(0), p1.At())
 
 				p2 := pc.Clone()
 				require.False(t, p2.Seek(10))
-				require.Equal(t, storage.SeriesRef(0), p2.At())
 			},
 		},
 		{
@@ -1002,7 +1000,6 @@ func TestPostingsCloner(t *testing.T) {
 			check: func(t testing.TB, pc *PostingsCloner) {
 				p1 := pc.Clone()
 				require.False(t, p1.Seek(9))
-				require.Equal(t, storage.SeriesRef(0), p1.At())
 
 				p2 := pc.Clone()
 				require.True(t, p2.Seek(2))
@@ -1071,20 +1068,11 @@ func TestPostingsCloner(t *testing.T) {
 			},
 		},
 		{
-			name: "at before call of next shouldn't panic",
-			check: func(t testing.TB, pc *PostingsCloner) {
-				p := pc.Clone()
-				require.Equal(t, storage.SeriesRef(0), p.At())
-			},
-		},
-		{
 			name: "ensure a failed seek doesn't allow more next calls",
 			check: func(t testing.TB, pc *PostingsCloner) {
 				p := pc.Clone()
 				require.False(t, p.Seek(9))
-				require.Equal(t, storage.SeriesRef(0), p.At())
 				require.False(t, p.Next())
-				require.Equal(t, storage.SeriesRef(0), p.At())
 			},
 		},
 	} {
@@ -1240,4 +1228,150 @@ func TestPostingsWithIndexHeap(t *testing.T) {
 		require.Equal(t, 2, node.index)
 		require.Equal(t, storage.SeriesRef(25), node.p.At())
 	})
+}
+
+func TestListPostings(t *testing.T) {
+	t.Run("empty list", func(t *testing.T) {
+		p := NewListPostings(nil)
+		require.False(t, p.Next())
+		require.False(t, p.Seek(10))
+		require.False(t, p.Next())
+		require.NoError(t, p.Err())
+	})
+
+	t.Run("one posting", func(t *testing.T) {
+		t.Run("next", func(t *testing.T) {
+			p := NewListPostings([]storage.SeriesRef{10})
+			require.True(t, p.Next())
+			require.Equal(t, storage.SeriesRef(10), p.At())
+			require.False(t, p.Next())
+			require.NoError(t, p.Err())
+		})
+		t.Run("seek less", func(t *testing.T) {
+			p := NewListPostings([]storage.SeriesRef{10})
+			require.True(t, p.Seek(5))
+			require.Equal(t, storage.SeriesRef(10), p.At())
+			require.True(t, p.Seek(5))
+			require.Equal(t, storage.SeriesRef(10), p.At())
+			require.False(t, p.Next())
+			require.NoError(t, p.Err())
+		})
+		t.Run("seek equal", func(t *testing.T) {
+			p := NewListPostings([]storage.SeriesRef{10})
+			require.True(t, p.Seek(10))
+			require.Equal(t, storage.SeriesRef(10), p.At())
+			require.False(t, p.Next())
+			require.NoError(t, p.Err())
+		})
+		t.Run("seek more", func(t *testing.T) {
+			p := NewListPostings([]storage.SeriesRef{10})
+			require.False(t, p.Seek(15))
+			require.False(t, p.Next())
+			require.NoError(t, p.Err())
+		})
+		t.Run("seek after next", func(t *testing.T) {
+			p := NewListPostings([]storage.SeriesRef{10})
+			require.True(t, p.Next())
+			require.False(t, p.Seek(15))
+			require.False(t, p.Next())
+			require.NoError(t, p.Err())
+		})
+	})
+
+	t.Run("multiple postings", func(t *testing.T) {
+		t.Run("next", func(t *testing.T) {
+			p := NewListPostings([]storage.SeriesRef{10, 20})
+			require.True(t, p.Next())
+			require.Equal(t, storage.SeriesRef(10), p.At())
+			require.True(t, p.Next())
+			require.Equal(t, storage.SeriesRef(20), p.At())
+			require.False(t, p.Next())
+			require.NoError(t, p.Err())
+		})
+		t.Run("seek", func(t *testing.T) {
+			p := NewListPostings([]storage.SeriesRef{10, 20})
+			require.True(t, p.Seek(5))
+			require.Equal(t, storage.SeriesRef(10), p.At())
+			require.True(t, p.Seek(5))
+			require.Equal(t, storage.SeriesRef(10), p.At())
+			require.True(t, p.Seek(10))
+			require.Equal(t, storage.SeriesRef(10), p.At())
+			require.True(t, p.Next())
+			require.Equal(t, storage.SeriesRef(20), p.At())
+			require.True(t, p.Seek(10))
+			require.Equal(t, storage.SeriesRef(20), p.At())
+			require.True(t, p.Seek(20))
+			require.Equal(t, storage.SeriesRef(20), p.At())
+			require.False(t, p.Next())
+			require.NoError(t, p.Err())
+		})
+		t.Run("seek lest than last", func(t *testing.T) {
+			p := NewListPostings([]storage.SeriesRef{10, 20, 30, 40, 50})
+			require.True(t, p.Seek(45))
+			require.Equal(t, storage.SeriesRef(50), p.At())
+			require.False(t, p.Next())
+		})
+		t.Run("seek exactly last", func(t *testing.T) {
+			p := NewListPostings([]storage.SeriesRef{10, 20, 30, 40, 50})
+			require.True(t, p.Seek(50))
+			require.Equal(t, storage.SeriesRef(50), p.At())
+			require.False(t, p.Next())
+		})
+		t.Run("seek more than last", func(t *testing.T) {
+			p := NewListPostings([]storage.SeriesRef{10, 20, 30, 40, 50})
+			require.False(t, p.Seek(60))
+			require.False(t, p.Next())
+		})
+	})
+
+	t.Run("seek", func(t *testing.T) {
+		for _, c := range []int{2, 8, 9, 10} {
+			t.Run(fmt.Sprintf("count=%d", c), func(t *testing.T) {
+				list := make([]storage.SeriesRef, c)
+				for i := 0; i < c; i++ {
+					list[i] = storage.SeriesRef(i * 10)
+				}
+
+				t.Run("all one by one", func(t *testing.T) {
+					p := NewListPostings(list)
+					for i := 0; i < c; i++ {
+						require.True(t, p.Seek(storage.SeriesRef(i*10)))
+						require.Equal(t, storage.SeriesRef(i*10), p.At())
+					}
+					require.False(t, p.Seek(storage.SeriesRef(c*10)))
+				})
+
+				t.Run("each one", func(t *testing.T) {
+					for _, ref := range list {
+						p := NewListPostings(list)
+						require.True(t, p.Seek(ref))
+						require.Equal(t, ref, p.At())
+					}
+				})
+			})
+		}
+	})
+}
+
+// BenchmarkListPostings benchmarks ListPostings by iterating Next/At sequentially.
+// See also BenchmarkIntersect as it performs more `At` calls than `Next` calls when intersecting.
+func BenchmarkListPostings(b *testing.B) {
+	const maxCount = 1e6
+	input := make([]storage.SeriesRef, maxCount)
+	for i := 0; i < maxCount; i++ {
+		input[i] = storage.SeriesRef(i << 2)
+	}
+
+	for _, count := range []int{100, 1e3, 10e3, 100e3, maxCount} {
+		b.Run(fmt.Sprintf("count=%d", count), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				p := NewListPostings(input[:count])
+				var sum storage.SeriesRef
+				for p.Next() {
+					sum += p.At()
+				}
+				require.NotZero(b, sum)
+			}
+		})
+	}
 }
