@@ -20,8 +20,6 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	text_template "text/template"
-	"text/template/parse"
 	"time"
 
 	"go.uber.org/atomic"
@@ -183,20 +181,9 @@ func matchesMatcherSets(matcherSets [][]*labels.Matcher, lbls labels.Labels) boo
 		return true
 	}
 
-	nonTemplatedBldr := labels.NewBuilder(lbls)
-	labelTemplate := text_template.New("label")
-	for name, value := range lbls.Map() {
-		t, err := labelTemplate.Parse(value)
-		// Label value is non-templated if it is one node of type NodeText.
-		if err == nil && len(t.Root.Nodes) == 1 && t.Root.Nodes[0].Type() == parse.NodeText {
-			continue
-		}
-		nonTemplatedBldr.Del(name)
-	}
-
 	var ok bool
 	for _, matchers := range matcherSets {
-		if matches(nonTemplatedBldr.Labels(), matchers...) {
+		if matches(lbls, matchers...) {
 			ok = true
 		}
 	}
