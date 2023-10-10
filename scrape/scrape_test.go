@@ -2512,9 +2512,9 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 		require.Equal(t, "metric_a 1\nmetric_b 2\n", buf.String())
 	}
 
-	runTest(acceptHeader(config.DefaultGlobalConfig.ScrapeProtocols))
+	runTest(acceptHeader(config.DefaultScrapeProtocols))
 	protobufParsing = true
-	runTest(acceptHeader([]config.ScrapeProtocol{config.PrometheusProto, config.OpenMetricsText1_0_0, config.OpenMetricsText0_0_1, config.PrometheusText0_0_4}))
+	runTest(acceptHeader(config.DefaultNativeHistogramScrapeProtocols))
 }
 
 func TestTargetScrapeScrapeCancel(t *testing.T) {

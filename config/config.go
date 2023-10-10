@@ -145,8 +145,8 @@ var (
 		ScrapeTimeout:      model.Duration(10 * time.Second),
 		EvaluationInterval: model.Duration(1 * time.Minute),
 		// When native histogram feature flag is enabled, ScrapeProtocols default
-		// changes to PrometheusProto, OpenMetricsText1.0.0, OpenMetricsText0.0.1, PrometheusText0.0.4.
-		ScrapeProtocols: []ScrapeProtocol{OpenMetricsText1_0_0, OpenMetricsText0_0_1, PrometheusText0_0_4},
+		// changes to DefaultNativeHistogramScrapeProtocols.
+		ScrapeProtocols: DefaultScrapeProtocols,
 	}
 
 	// DefaultScrapeConfig is the default scrape configuration.
@@ -451,6 +451,18 @@ var (
 		PrometheusText0_0_4:  "text/plain;version=0.0.4",
 		OpenMetricsText0_0_1: "application/openmetrics-text;version=0.0.1",
 		OpenMetricsText1_0_0: "application/openmetrics-text;version=1.0.0",
+	}
+
+	DefaultScrapeProtocols = []ScrapeProtocol{
+		OpenMetricsText1_0_0,
+		OpenMetricsText0_0_1,
+		PrometheusText0_0_4,
+	}
+	DefaultNativeHistogramScrapeProtocols = []ScrapeProtocol{
+		PrometheusProto,
+		OpenMetricsText1_0_0,
+		OpenMetricsText0_0_1,
+		PrometheusText0_0_4,
 	}
 )
 
