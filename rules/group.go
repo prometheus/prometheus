@@ -166,13 +166,11 @@ func (g *Group) Rules(matcherSets ...[]*labels.Matcher) []Rule {
 	return rules
 }
 
-func matches(l labels.Labels, matchers ...*labels.Matcher) bool {
+func matches(lbls labels.Labels, matchers ...*labels.Matcher) bool {
 Matcher:
 	for _, m := range matchers {
-		for _, lbl := range l {
-			if lbl.Name != m.Name || !m.Matches(lbl.Value) {
-				continue
-			}
+		// Skip if matches.
+		if v := lbls.Get(m.Name); m.Matches(v) {
 			continue Matcher
 		}
 		return false
@@ -180,23 +178,25 @@ Matcher:
 	return true
 }
 
-func matchesMatcherSets(matcherSets [][]*labels.Matcher, l labels.Labels) bool {
+func matchesMatcherSets(matcherSets [][]*labels.Matcher, lbls labels.Labels) bool {
 	if len(matcherSets) == 0 {
 		return true
 	}
-	var nonTemplatedLabels labels.Labels
+
+	nonTemplatedBldr := labels.NewBuilder(lbls)
 	labelTemplate := text_template.New("label")
-	for _, label := range l {
-		t, err := labelTemplate.Parse(label.Value)
+	for name, value := range lbls.Map() {
+		t, err := labelTemplate.Parse(value)
 		// Label value is non-templated if it is one node of type NodeText.
 		if err == nil && len(t.Root.Nodes) == 1 && t.Root.Nodes[0].Type() == parse.NodeText {
-			nonTemplatedLabels = append(nonTemplatedLabels, label)
+			continue
 		}
+		nonTemplatedBldr.Del(name)
 	}
 
 	var ok bool
 	for _, matchers := range matcherSets {
-		if matches(nonTemplatedLabels, matchers...) {
+		if matches(nonTemplatedBldr.Labels(), matchers...) {
 			ok = true
 		}
 	}
