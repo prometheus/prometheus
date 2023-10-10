@@ -413,6 +413,7 @@ type Postings interface {
 	Seek(v storage.SeriesRef) bool
 
 	// At returns the value at the current iterator position.
+	// At should only be called after a successful call to Next or Seek.
 	At() storage.SeriesRef
 
 	// Err returns the last error of the iterator.
@@ -747,7 +748,7 @@ func (rp *removedPostings) Err() error {
 // ListPostings implements the Postings interface over a plain list.
 type ListPostings struct {
 	list []storage.SeriesRef
-	pos  int
+	cur  storage.SeriesRef
 }
 
 func NewListPostings(list []storage.SeriesRef) Postings {
@@ -759,34 +760,39 @@ func newListPostings(list ...storage.SeriesRef) *ListPostings {
 }
 
 func (it *ListPostings) At() storage.SeriesRef {
-	return it.list[it.pos-1]
+	return it.cur
 }
 
 func (it *ListPostings) Next() bool {
-	if it.pos < len(it.list) {
-		it.pos++
+	if len(it.list) > 0 {
+		it.cur = it.list[0]
+		it.list = it.list[1:]
 		return true
 	}
+	it.cur = 0
 	return false
 }
 
 func (it *ListPostings) Seek(x storage.SeriesRef) bool {
-	if it.pos == 0 {
-		it.pos++
-	}
-	if it.pos > len(it.list) {
-		return false
-	}
 	// If the current value satisfies, then return.
-	if it.list[it.pos-1] >= x {
+	if it.cur >= x {
 		return true
+	}
+	if len(it.list) == 0 {
+		return false
 	}
 
 	// Do binary search between current position and end.
-	it.pos = sort.Search(len(it.list[it.pos-1:]), func(i int) bool {
-		return it.list[i+it.pos-1] >= x
-	}) + it.pos
-	return it.pos-1 < len(it.list)
+	i := sort.Search(len(it.list), func(i int) bool {
+		return it.list[i] >= x
+	})
+	if i < len(it.list) {
+		it.cur = it.list[i]
+		it.list = it.list[i+1:]
+		return true
+	}
+	it.list = nil
+	return false
 }
 
 func (it *ListPostings) Err() error {
