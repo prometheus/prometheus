@@ -570,6 +570,14 @@ func makeInputTargetGroup() *targetgroup.Group {
 	}
 }
 
+func TestTargetLabels(t *testing.T) {
+	label := labels.FromStrings("alertname", "test")
+	discoveredLabels := labels.FromStrings("alertname", "test", "a", "b")
+	target := Target{labels: label, discoveredLabels: discoveredLabels}
+	require.Equal(t, target.Labels(), label)
+	require.Equal(t, target.DiscoveredLabels(), discoveredLabels)
+}
+
 func TestLabelsToOpenAPILabelSet(t *testing.T) {
 	require.Equal(t, models.LabelSet{"aaa": "111", "bbb": "222"}, labelsToOpenAPILabelSet(labels.FromStrings("aaa", "111", "bbb", "222")))
 }

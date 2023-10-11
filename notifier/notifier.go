@@ -631,7 +631,7 @@ type Target struct {
 }
 
 func (a Target) Labels() labels.Labels {
-	lset := make(labels.Labels, 0, len(a.labels))
+	lset := labels.Labels{}
 	for _, l := range a.labels {
 		if !strings.HasPrefix(l.Name, model.ReservedLabelPrefix) {
 			lset = append(lset, l)
@@ -650,8 +650,10 @@ func (a Target) Labels() labels.Labels {
 }
 
 func (a Target) DiscoveredLabels() labels.Labels {
-	lset := make(labels.Labels, len(a.discoveredLabels))
-	copy(lset, a.discoveredLabels)
+	lset := labels.Labels{}
+	for _, l := range a.discoveredLabels {
+		lset = append(lset, l)
+	}
 	return lset
 }
 
