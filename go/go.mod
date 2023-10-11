@@ -5,17 +5,16 @@ go 1.20
 require (
 	github.com/cenkalti/backoff/v4 v4.2.1
 	github.com/go-faker/faker/v4 v4.1.1
-	github.com/go-playground/validator/v10 v10.15.3
+	github.com/go-playground/validator/v10 v10.15.4
 	github.com/gogo/protobuf v1.3.2
 	github.com/google/uuid v1.3.1
 	github.com/jonboulle/clockwork v0.4.0
 	github.com/pierrec/lz4/v4 v4.1.18
 	github.com/prometheus/client_golang v1.16.0
-	github.com/prometheus/prometheus v0.46.0
+	github.com/prometheus/prometheus v0.47.0
 	github.com/stretchr/testify v1.8.4
 	go.uber.org/multierr v1.11.0
 	golang.org/x/sync v0.3.0
-	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -38,4 +37,5 @@ require (
 	golang.org/x/sys v0.10.0 // indirect
 	golang.org/x/text v0.11.0 // indirect
 	google.golang.org/protobuf v1.31.0 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
