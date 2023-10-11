@@ -631,12 +631,12 @@ type Target struct {
 }
 
 func (a Target) Labels() labels.Labels {
-	lset := labels.Labels{}
-	for _, l := range a.labels {
+	lb := labels.NewBuilder(labels.EmptyLabels())
+	a.labels.Range(func(l labels.Label) {
 		if !strings.HasPrefix(l.Name, model.ReservedLabelPrefix) {
-			lset = append(lset, l)
+			lb.Set(l.Name, l.Value)
 		}
-	}
+	})
 	url := url.URL{
 		Scheme: a.labels.Get(model.SchemeLabel),
 		Host:   a.labels.Get(model.AddressLabel),
@@ -644,15 +644,17 @@ func (a Target) Labels() labels.Labels {
 	}
 	instance := url.String()
 	if instance != "" {
-		lset = append(lset, labels.Label{Name: model.InstanceLabel, Value: instance})
+		lb.Set(model.InstanceLabel, instance)
 	}
-	return lset
+	return lb.Labels()
 }
 
 func (a Target) DiscoveredLabels() labels.Labels {
-	lset := labels.Labels{}
-	lset = append(lset, a.discoveredLabels...)
-	return lset
+	lb := labels.NewBuilder(labels.EmptyLabels())
+	a.discoveredLabels.Range(func(l labels.Label) {
+		lb.Set(l.Name, l.Value)
+	})
+	return lb.Labels()
 }
 
 func (n *Manager) TargetsAll() map[string][]Target {
