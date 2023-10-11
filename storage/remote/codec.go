@@ -771,15 +771,12 @@ func labelProtosToLabels(labelPairs []prompb.Label) labels.Labels {
 }
 
 func labelRefProtosToLabels(st map[uint64]string, lbls []prompb.LabelRef) labels.Labels {
-	result := make(labels.Labels, 0, len(lbls))
+	b := labels.NewScratchBuilder(len(lbls))
 	for _, l := range lbls {
-		result = append(result, labels.Label{
-			Name:  st[l.NameRef],
-			Value: st[l.ValueRef],
-		})
+		b.Add(st[l.NameRef], st[l.ValueRef])
 	}
-	sort.Sort(result)
-	return result
+	b.Sort()
+	return b.Labels()
 }
 
 func exemplarRefProtoToExemplar(st map[uint64]string, ep prompb.ExemplarRef) exemplar.Exemplar {
@@ -803,6 +800,20 @@ func labelsToLabelsProto(lbls labels.Labels, buf []prompb.Label) []prompb.Label 
 			Value: l.Value,
 		})
 	})
+	return result
+}
+
+// labelsToLabelsRefProto transforms labels into prompb LabelRefs. The buffer slice
+// will be used to avoid allocations if it is big enough to store the labels.
+func labelsToLabelRefsProto(lbls labels.Labels, pool *lookupPool, buf []prompb.LabelRef) []prompb.LabelRef {
+	result := buf[:0]
+	lbls.Range(func(l labels.Label) {
+		result = append(result, prompb.LabelRef{
+			NameRef:  pool.intern(l.Name),
+			ValueRef: pool.intern(l.Value),
+		})
+	})
+
 	return result
 }
 
