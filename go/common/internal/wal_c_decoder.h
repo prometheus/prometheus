@@ -54,6 +54,9 @@ uint32_t okdb_wal_c_decoder_decode_dry(c_decoder c_dec, c_slice_from_go_ptr c_se
 
 void okdb_wal_uni_c_decoder_decode_dry(c_decoder c_dec, go_ptr params, go_ptr result, go_ptr err);
 
+// okdb_wal_uni_c_decoder_restore_from_stream - fast C wrapper C++, calls C++ class Decoder methods.
+void okdb_wal_uni_c_decoder_restore_from_stream(c_decoder c_dec, go_ptr params, go_ptr err);
+
 // okdb_wal_c_decoder_snapshot - C wrapper C++, calls C++ class Decoder methods.
 void okdb_wal_c_decoder_snapshot(c_decoder c_dec, c_slice_from_go_ptr c_snap);
 

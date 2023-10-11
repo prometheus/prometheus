@@ -35,6 +35,8 @@ c_decoder OKDB_WAL_PREFIXED_NAME(okdb_wal_c_decoder_ctor)();
 uint32_t OKDB_WAL_PREFIXED_NAME(okdb_wal_c_decoder_decode)(c_decoder c_dec, c_slice_ptr c_seg, c_decoded_segment* c_protobuf);
 // okdb_wal_c_decoder_decode_dry - C wrapper C++, calls C++ class Decoder methods.
 uint32_t OKDB_WAL_PREFIXED_NAME(okdb_wal_c_decoder_decode_dry)(c_decoder c_dec, c_slice_ptr c_seg);
+// okdb_wal_c_decoder_restore_from_stream - C wrapper C++, calls C++ class Decoder methods.
+void OKDB_WAL_PREFIXED_NAME(okdb_wal_c_decoder_restore_from_stream)(c_decoder c_dec, c_slice_ptr c_buf, c_restored_result* result);
 // okdb_wal_c_decoder_snapshot - C wrapper C++, calls C++ class Decoder methods.
 void OKDB_WAL_PREFIXED_NAME(okdb_wal_c_decoder_snapshot)(c_decoder c_dec, c_slice_ptr c_snap);
 // okdb_wal_c_decoder_dtor - calls the destructor, C wrapper C++ for clear memory.
@@ -47,6 +49,7 @@ OKDB_WAL_EXPORT_API_BEGIN
 OKDB_WAL_EXPORT_API(okdb_wal_c_decoder_ctor)
 OKDB_WAL_EXPORT_API(okdb_wal_c_decoder_decode)
 OKDB_WAL_EXPORT_API(okdb_wal_c_decoder_decode_dry)
+OKDB_WAL_EXPORT_API(okdb_wal_c_decoder_restore_from_stream)
 OKDB_WAL_EXPORT_API(okdb_wal_c_decoder_snapshot)
 OKDB_WAL_EXPORT_API(okdb_wal_c_decoder_dtor)
 OKDB_WAL_EXPORT_API_END

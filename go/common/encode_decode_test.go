@@ -371,3 +371,46 @@ func (eds *EncoderDecoderSuite) TestEncodeDecodeOpenHead() {
 
 	eds.InDelta(createdAt.UnixNano(), protob.CreatedAt(), float64(time.Second))
 }
+
+func (eds *EncoderDecoderSuite) TestRestoreFromStream() {
+	hlimits := common.DefaultHashdexLimits()
+	buf := make([]byte, 0)
+	count := 10
+	offsets := make([]uint64, count)
+
+	eds.T().Log("generate wal with segments")
+	for i := 0; i < count; i++ {
+		expectedWr := eds.makeData(10, int64(i))
+		data, err := expectedWr.Marshal()
+		eds.Require().NoError(err)
+		h, err := common.NewHashdex(data, hlimits)
+		eds.Require().NoError(err)
+		_, gos, _, err := eds.enc.Encode(eds.ctx, h)
+		eds.Require().NoError(err)
+		segByte := eds.transferringData(gos)
+		buf = append(buf, segByte...)
+		offsets[i] = uint64(len(buf))
+	}
+
+	for i := range offsets {
+		eds.T().Logf("restore decoder for segment id: %d\n", i)
+		dec, err := common.NewDecoder()
+		eds.Require().NoError(err)
+		offset, retoreSID, err := dec.RestoreFromStream(eds.ctx, buf, uint32(i))
+		eds.Require().NoError(err)
+		dec.Destroy()
+
+		eds.Equal(offsets[i], offset)
+		eds.Equal(uint32(i), retoreSID)
+	}
+
+	eds.T().Logf("restore decoder for over segment id: %d\n", count)
+	dec, err := common.NewDecoder()
+	eds.Require().NoError(err)
+	offset, retoreSID, err := dec.RestoreFromStream(eds.ctx, buf, uint32(count))
+	eds.Require().NoError(err)
+	dec.Destroy()
+
+	eds.Equal(uint64(len(buf)), offset)
+	eds.Equal(uint32(count-1), retoreSID)
+}

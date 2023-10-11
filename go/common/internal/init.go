@@ -97,6 +97,12 @@ type CDecoderDecodeResult struct {
 	result uint32
 }
 
+// CDecoderDecodeRestoreFromStreamArgs - args for fastCGO RestoreFromStream.
+type CDecoderDecodeRestoreFromStreamArgs struct {
+	buf            *[]byte
+	restoredResult *GoRestoredResult
+}
+
 type CDecoderSnapshotArgs struct {
 	snapshot *[]byte
 }
@@ -146,6 +152,20 @@ func CDecoderDecodeDry(decoder CDecoder, segment []byte, err *GoErrorInfo) uint3
 	)
 
 	return result.result
+}
+
+// CDecoderRestoreFromStream - GO wrapper for C/C++, calls C++ class Decoder methods.
+func CDecoderRestoreFromStream(decoder CDecoder, buf []byte, restoredResult *GoRestoredResult, err *GoErrorInfo) {
+	var args = CDecoderDecodeRestoreFromStreamArgs{
+		buf:            &buf,
+		restoredResult: restoredResult,
+	}
+
+	C.okdb_wal_uni_c_decoder_restore_from_stream(
+		C.c_decoder(decoder),
+		C.ulong(uintptr(unsafe.Pointer(&args))),
+		C.ulong(uintptr(unsafe.Pointer(err))),
+	)
 }
 
 func CDecoderDecodeSnapshot(decoder CDecoder, snapshot []byte, err *GoErrorInfo) {

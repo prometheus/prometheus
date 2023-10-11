@@ -165,6 +165,15 @@ extern "C" void okdb_wal_uni_c_decoder_decode_dry(c_decoder c_dec,
   }
 }
 
+// okdb_wal_uni_c_decoder_restore_from_stream - fast C wrapper C++, calls C++ class Decoder methods.
+extern "C" void okdb_wal_uni_c_decoder_restore_from_stream(c_decoder c_dec, c_decoder_restore_from_stream_params* params, c_api_error_info** err) {
+  try {
+    okdb_wal_c_decoder_restore_from_stream(c_dec, params->buf, params->result);
+  } catch (...) {
+    *err = handle_current_exception(__func__, CURRENT_STACKTRACE, std::current_exception());
+  }
+}
+
 extern "C" void okdb_wal_uni_c_decoder_snapshot(c_decoder c_dec, c_decoder_snapshot_params* params, c_api_error_info** err) {
   try {
     okdb_wal_c_decoder_snapshot(c_dec, params->snapshot);
