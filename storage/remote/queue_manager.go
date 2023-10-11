@@ -24,7 +24,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
-	reSnappy "github.com/klauspost/compress/snappy"
+
+	"github.com/golang/snappy"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"go.opentelemetry.io/otel"
@@ -1733,8 +1734,8 @@ func buildWriteRequest(samples []prompb.TimeSeries, metadata []prompb.MetricMeta
 	} else {
 		buf = &[]byte{}
 	}
-	compressed := reSnappy.Encode(*buf, pBuf.Bytes())
-	if n := reSnappy.MaxEncodedLen(len(pBuf.Bytes())); buf != nil && n > len(*buf) {
+	compressed := snappy.Encode(*buf, pBuf.Bytes())
+	if n := snappy.MaxEncodedLen(len(pBuf.Bytes())); buf != nil && n > len(*buf) {
 		// grow the buffer for the next time
 		*buf = make([]byte, n)
 	}
@@ -1780,8 +1781,8 @@ func buildReducedWriteRequest(samples []prompb.ReducedTimeSeries, labels map[uin
 		buf = &[]byte{}
 	}
 
-	compressed := reSnappy.Encode(*buf, pBuf.Bytes())
-	if n := reSnappy.MaxEncodedLen(len(pBuf.Bytes())); buf != nil && n > len(*buf) {
+	compressed := snappy.Encode(*buf, pBuf.Bytes())
+	if n := snappy.MaxEncodedLen(len(pBuf.Bytes())); buf != nil && n > len(*buf) {
 		// grow the buffer for the next time
 		*buf = make([]byte, n)
 	}
