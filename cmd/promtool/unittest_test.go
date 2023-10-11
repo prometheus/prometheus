@@ -14,7 +14,10 @@
 package main
 
 import (
+	"bytes"
 	"testing"
+
+	"github.com/grafana/regexp"
 
 	"github.com/prometheus/prometheus/promql"
 )
@@ -113,11 +116,52 @@ func TestRulesUnitTest(t *testing.T) {
 			want: 0,
 		},
 	}
+	reuseFiles := []string{}
+	reuseCount := [2]int{} // count by exit code 0 or 1
 	for _, tt := range tests {
+		// Reuse some of these tests for the junit output testing, but only ones with default opts.
+		if (tt.queryOpts == promql.LazyLoaderOpts{}) {
+			reuseFiles = append(reuseFiles, tt.args.files...)
+			reuseCount[tt.want] += len(tt.args.files)
+		}
 		t.Run(tt.name, func(t *testing.T) {
 			if got := RulesUnitTest(tt.queryOpts, tt.args.files...); got != tt.want {
 				t.Errorf("RulesUnitTest() = %v, want %v", got, tt.want)
 			}
 		})
 	}
+
+	reTop := regexp.MustCompile(`(?s)^<testsuites\W.*</testsuites>$`)
+	reSuitesPass := regexp.MustCompile(`(?s)<testsuite [^>]*failures="0".*?</testsuite>`)
+	reSuitesFail := regexp.MustCompile(`(?s)<testsuite [^>]*failures="[1-9].*?</testsuite>`)
+	reCases := regexp.MustCompile(`(?s)<testcase .*?</testcase>`)
+
+	t.Run("JUnit XML output", func(t *testing.T) {
+		var buf bytes.Buffer
+		if got := RulesUnitTestResults(&buf, promql.LazyLoaderOpts{}, reuseFiles...); got != 1 {
+			t.Errorf("RulesUnitTestResults() = %v, want 1", got)
+		}
+
+		output := buf.Bytes()
+
+		if !reTop.Match(output) {
+			t.Errorf("JUnit output has no outer <testsuites>\n")
+		}
+		passes := len(reSuitesPass.FindAll(output, -1))
+		failures := len(reSuitesFail.FindAll(output, -1))
+		total := passes + failures
+		if total != len(reuseFiles) {
+			t.Errorf("JUnit output had %d testsuite elements; expected %d\n", total, len(reuseFiles))
+		}
+		if passes != reuseCount[0] {
+			t.Errorf("JUnit output had %d passes; expected %d\n", passes, reuseCount[0])
+		}
+		if failures != reuseCount[1] {
+			t.Errorf("JUnit output had %d failures; expected %d\n", failures, reuseCount[1])
+		}
+		cases := reCases.FindAll(output, -1)
+		if len(cases) < total {
+			t.Errorf("JUnit output had %d suites without test cases\n", total-len(cases))
+		}
+	})
 }
