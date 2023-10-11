@@ -165,23 +165,18 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			name = rwConf.Name
 		}
 
-		var c WriteClient
-		if rwConf.URL.String() == "fake" {
-			// f := "fake" + strconv.Itoa(rand.Intn(100))
-			// c = NewTestClient(f, f)
-		} else {
-			c, err = NewWriteClient(name, &ClientConfig{
-				URL:              rwConf.URL,
-				Timeout:          rwConf.RemoteTimeout,
-				HTTPClientConfig: rwConf.HTTPClientConfig,
-				SigV4Config:      rwConf.SigV4Config,
-				AzureADConfig:    rwConf.AzureADConfig,
-				Headers:          rwConf.Headers,
-				RetryOnRateLimit: rwConf.QueueConfig.RetryOnRateLimit,
-			})
-			if err != nil {
-				return err
-			}
+		c, err := NewWriteClient(name, &ClientConfig{
+			URL:              rwConf.URL,
+			Timeout:          rwConf.RemoteTimeout,
+			HTTPClientConfig: rwConf.HTTPClientConfig,
+			SigV4Config:      rwConf.SigV4Config,
+			AzureADConfig:    rwConf.AzureADConfig,
+			Headers:          rwConf.Headers,
+			RetryOnRateLimit: rwConf.QueueConfig.RetryOnRateLimit,
+		})
+
+		if err != nil {
+			return err
 		}
 
 		queue, ok := rws.queues[hash]
