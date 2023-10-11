@@ -651,9 +651,7 @@ func (a Target) Labels() labels.Labels {
 
 func (a Target) DiscoveredLabels() labels.Labels {
 	lset := labels.Labels{}
-	for _, l := range a.discoveredLabels {
-		lset = append(lset, l)
-	}
+	lset = append(lset, a.discoveredLabels...)
 	return lset
 }
 
