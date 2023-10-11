@@ -619,60 +619,36 @@ func createTimeseries(numSamples, numSeries int, extraLabels ...labels.Label) ([
 	return samples, series
 }
 
-func createTimeseriesProto(numSamples, numSeries int, extraLabels ...labels.Label) []prompb.TimeSeries {
-	// samples := make([]record.RefSample, 0, numSamples)
-	series := make([]prompb.TimeSeries, 0, numSeries)
-	for i := 0; i < numSeries; i++ {
+func createDummyTimeseriesBatch(numSeries int, extraLabels ...labels.Label) []timeSeries {
+	result := make([]timeSeries, numSeries)
+	for i := range result {
 		name := fmt.Sprintf("test_metric_%d", i)
-
-		// for j := 0; j < numSamples; j++ {
-		sample := prompb.Sample{
-			Value:     float64(i),
-			Timestamp: int64(i),
-		}
-		// }
 		rand.Shuffle(len(extraLabels), func(i, j int) {
 			extraLabels[i], extraLabels[j] = extraLabels[j], extraLabels[i]
 		})
-		series = append(series, prompb.TimeSeries{
-			Labels:  labelsToLabelsProto(labels.Labels{{Name: "__name__", Value: name}, extraLabels[0], extraLabels[1], extraLabels[2]}, nil),
-			Samples: []prompb.Sample{sample},
-			// Ref:    chunks.HeadSeriesRef(i),
-			// Labels: append(labels.Labels{{Name: "__name__", Value: name}}, extraLabels...),
-		})
-	}
-	return series
-}
-
-func createReducedTimeseriesProto(numSamples, numSeries int, extraLabels ...labels.Label) ([]prompb.ReducedTimeSeries, *lookupPool) {
-	pool := newLookupPool()
-	series := make([]prompb.ReducedTimeSeries, 0, numSeries)
-	for i := 0; i < numSeries; i++ {
-		name := fmt.Sprintf("test_metric_%d", i)
-		sample := prompb.Sample{
-			Value:     float64(i),
-			Timestamp: int64(i),
+		result[i] = timeSeries{
+			seriesLabels: labels.NewBuilder(extraLabels[0:3]).Set(labels.MetricName, name).Labels(),
+			timestamp:    int64(i),
 		}
-		nRef := pool.intern("__name__")
-		vRef := pool.intern(name)
-		l := []prompb.LabelRef{{NameRef: nRef, ValueRef: vRef}}
-		rand.Shuffle(len(extraLabels), func(i, j int) {
-			extraLabels[i], extraLabels[j] = extraLabels[j], extraLabels[i]
-		})
-		for i, v := range extraLabels {
-			if i > 2 {
-				break
+		switch i % 10 {
+		case 0, 1, 2, 3, 4, 5:
+			result[i].value = float64(i)
+		case 6:
+			result[i].exemplarLabels = extraLabels
+			result[i].value = float64(i)
+		case 7:
+			result[i].histogram = &histogram.Histogram{
+				Schema:        2,
+				ZeroThreshold: 1e-128,
 			}
-			nRef := pool.intern(v.Name)
-			vRef := pool.intern(v.Value)
-			l = append(l, prompb.LabelRef{NameRef: nRef, ValueRef: vRef})
+		case 8, 9:
+			result[i].floatHistogram = &histogram.FloatHistogram{
+				Schema:        2,
+				ZeroThreshold: 1e-128,
+			}
 		}
-		series = append(series, prompb.ReducedTimeSeries{
-			Labels:  l,
-			Samples: []prompb.Sample{sample},
-		})
 	}
-	return series, pool
+	return result
 }
 
 func createExemplars(numExemplars, numSeries int) ([]record.RefExemplar, []record.RefSeries) {
@@ -1439,70 +1415,156 @@ func TestQueue_FlushAndShutdownDoesNotDeadlock(t *testing.T) {
 	}
 }
 
+func createDummyTimeSeries(instances int) []timeSeries {
+	metrics := []labels.Labels{
+		labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0"),
+		labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0.25"),
+		labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0.5"),
+		labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0.75"),
+		labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1"),
+		labels.FromStrings("__name__", "go_gc_duration_seconds_sum"),
+		labels.FromStrings("__name__", "go_gc_duration_seconds_count"),
+		labels.FromStrings("__name__", "go_memstats_alloc_bytes_total"),
+		labels.FromStrings("__name__", "go_memstats_frees_total"),
+		labels.FromStrings("__name__", "go_memstats_lookups_total"),
+		labels.FromStrings("__name__", "go_memstats_mallocs_total"),
+		labels.FromStrings("__name__", "go_goroutines"),
+		labels.FromStrings("__name__", "go_info", "version", "go1.19.3"),
+		labels.FromStrings("__name__", "go_memstats_alloc_bytes"),
+		labels.FromStrings("__name__", "go_memstats_buck_hash_sys_bytes"),
+		labels.FromStrings("__name__", "go_memstats_gc_sys_bytes"),
+		labels.FromStrings("__name__", "go_memstats_heap_alloc_bytes"),
+		labels.FromStrings("__name__", "go_memstats_heap_idle_bytes"),
+		labels.FromStrings("__name__", "go_memstats_heap_inuse_bytes"),
+		labels.FromStrings("__name__", "go_memstats_heap_objects"),
+		labels.FromStrings("__name__", "go_memstats_heap_released_bytes"),
+		labels.FromStrings("__name__", "go_memstats_heap_sys_bytes"),
+		labels.FromStrings("__name__", "go_memstats_last_gc_time_seconds"),
+		labels.FromStrings("__name__", "go_memstats_mcache_inuse_bytes"),
+		labels.FromStrings("__name__", "go_memstats_mcache_sys_bytes"),
+		labels.FromStrings("__name__", "go_memstats_mspan_inuse_bytes"),
+		labels.FromStrings("__name__", "go_memstats_mspan_sys_bytes"),
+		labels.FromStrings("__name__", "go_memstats_next_gc_bytes"),
+		labels.FromStrings("__name__", "go_memstats_other_sys_bytes"),
+		labels.FromStrings("__name__", "go_memstats_stack_inuse_bytes"),
+		labels.FromStrings("__name__", "go_memstats_stack_sys_bytes"),
+		labels.FromStrings("__name__", "go_memstats_sys_bytes"),
+		labels.FromStrings("__name__", "go_threads"),
+	}
+
+	commonLabels := labels.FromStrings(
+		"cluster", "some-cluster-0",
+		"container", "prometheus",
+		"job", "some-namespace/prometheus",
+		"namespace", "some-namespace")
+
+	var result []timeSeries
+	r := rand.New(rand.NewSource(0))
+	for i := 0; i < instances; i++ {
+		b := labels.NewBuilder(commonLabels)
+		b.Set("pod", "prometheus-"+strconv.Itoa(i))
+		for _, lbls := range metrics {
+			for _, l := range lbls {
+				b.Set(l.Name, l.Value)
+			}
+			result = append(result, timeSeries{
+				seriesLabels: b.Labels(),
+				value:        r.Float64(),
+			})
+		}
+	}
+	return result
+}
+
 func BenchmarkBuildWriteRequest(b *testing.B) {
-	// Extra labels to make a more realistic workload - taken from Kubernetes' embedded cAdvisor metrics.
-	extraLabels := labels.Labels{
-		{Name: "kubernetes_io_arch", Value: "amd64"},
-		{Name: "kubernetes_io_instance_type", Value: "c3.somesize"},
-		{Name: "kubernetes_io_os", Value: "linux"},
-		{Name: "container_name", Value: "some-name"},
-		{Name: "failure_domain_kubernetes_io_region", Value: "somewhere-1"},
-		{Name: "failure_domain_kubernetes_io_zone", Value: "somewhere-1b"},
-		{Name: "id", Value: "/kubepods/burstable/pod6e91c467-e4c5-11e7-ace3-0a97ed59c75e/a3c8498918bd6866349fed5a6f8c643b77c91836427fb6327913276ebc6bde28"},
-		{Name: "image", Value: "registry/organisation/name@sha256:dca3d877a80008b45d71d7edc4fd2e44c0c8c8e7102ba5cbabec63a374d1d506"},
-		{Name: "instance", Value: "ip-111-11-1-11.ec2.internal"},
-		{Name: "job", Value: "kubernetes-cadvisor"},
-		{Name: "kubernetes_io_hostname", Value: "ip-111-11-1-11"},
-		{Name: "monitor", Value: "prod"},
-		{Name: "name", Value: "k8s_some-name_some-other-name-5j8s8_kube-system_6e91c467-e4c5-11e7-ace3-0a97ed59c75e_0"},
-		{Name: "namespace", Value: "kube-system"},
-		{Name: "pod_name", Value: "some-other-name-5j8s8"},
+	bench := func(b *testing.B, batch []timeSeries) {
+
+		buff := make([]byte, 0)
+		seriesBuff := make([]prompb.TimeSeries, len(batch))
+		for i := range seriesBuff {
+			seriesBuff[i].Samples = []prompb.Sample{{}}
+			seriesBuff[i].Exemplars = []prompb.Exemplar{{}}
+		}
+		pBuf := proto.NewBuffer(nil)
+
+		// Warmup buffers
+		for i := 0; i < 10; i++ {
+			populateTimeSeries(batch, seriesBuff, true, true)
+			buildWriteRequest(seriesBuff, nil, pBuf, &buff)
+		}
+
+		b.ResetTimer()
+		totalSize := 0
+		for i := 0; i < b.N; i++ {
+			populateTimeSeries(batch, seriesBuff, true, true)
+			req, _, err := buildWriteRequest(seriesBuff, nil, pBuf, &buff)
+			if err != nil {
+				b.Fatal(err)
+			}
+			totalSize += len(req)
+			b.ReportMetric(float64(totalSize)/float64(b.N), "compressedSize/op")
+		}
 	}
-	series := createTimeseriesProto(1, 10000, extraLabels...)
 
-	b.ResetTimer()
-	totalSize := 0
-	for i := 0; i < b.N; i++ {
-		buf, _, _ := buildWriteRequest(series, nil, nil, nil)
-		totalSize += len(buf)
-		b.ReportMetric(float64(totalSize)/float64(b.N), "compressedSize/op")
+	b.Run("2 instances", func(b *testing.B) {
+		batch := createDummyTimeSeries(2)
+		bench(b, batch)
+	})
 
-	}
+	b.Run("10 instances", func(b *testing.B) {
+		batch := createDummyTimeSeries(10)
+		bench(b, batch)
+	})
 
-	// Do not include shutdown
-	b.StopTimer()
+	b.Run("1k instances", func(b *testing.B) {
+		batch := createDummyTimeSeries(1000)
+		bench(b, batch)
+	})
 }
 
 func BenchmarkBuildReducedWriteRequest(b *testing.B) {
-	// Extra labels to make a more realistic workload - taken from Kubernetes' embedded cAdvisor metrics.
-	extraLabels := labels.Labels{
-		{Name: "kubernetes_io_arch", Value: "amd64"},
-		{Name: "kubernetes_io_instance_type", Value: "c3.somesize"},
-		{Name: "kubernetes_io_os", Value: "linux"},
-		{Name: "container_name", Value: "some-name"},
-		{Name: "failure_domain_kubernetes_io_region", Value: "somewhere-1"},
-		{Name: "failure_domain_kubernetes_io_zone", Value: "somewhere-1b"},
-		{Name: "id", Value: "/kubepods/burstable/pod6e91c467-e4c5-11e7-ace3-0a97ed59c75e/a3c8498918bd6866349fed5a6f8c643b77c91836427fb6327913276ebc6bde28"},
-		{Name: "image", Value: "registry/organisation/name@sha256:dca3d877a80008b45d71d7edc4fd2e44c0c8c8e7102ba5cbabec63a374d1d506"},
-		{Name: "instance", Value: "ip-111-11-1-11.ec2.internal"},
-		{Name: "job", Value: "kubernetes-cadvisor"},
-		{Name: "kubernetes_io_hostname", Value: "ip-111-11-1-11"},
-		{Name: "monitor", Value: "prod"},
-		{Name: "name", Value: "k8s_some-name_some-other-name-5j8s8_kube-system_6e91c467-e4c5-11e7-ace3-0a97ed59c75e_0"},
-		{Name: "namespace", Value: "kube-system"},
-		{Name: "pod_name", Value: "some-other-name-5j8s8"},
+	bench := func(b *testing.B, batch []timeSeries) {
+		pool := newLookupPool()
+		pBuf := proto.NewBuffer(nil)
+		buff := make([]byte, 0)
+		seriesBuff := make([]prompb.ReducedTimeSeries, len(batch))
+		for i := range seriesBuff {
+			seriesBuff[i].Samples = []prompb.Sample{{}}
+			seriesBuff[i].Exemplars = []prompb.ExemplarRef{{}}
+		}
+
+		// Warmup buffers
+		for i := 0; i < 10; i++ {
+			populateReducedTimeSeries(pool, batch, seriesBuff, true, true)
+			buildReducedWriteRequest(seriesBuff, pool.getTable(), pBuf, &buff)
+		}
+
+		b.ResetTimer()
+		totalSize := 0
+		for i := 0; i < b.N; i++ {
+			populateReducedTimeSeries(pool, batch, seriesBuff, true, true)
+			req, _, err := buildReducedWriteRequest(seriesBuff, pool.getTable(), pBuf, &buff)
+			if err != nil {
+				b.Fatal(err)
+			}
+			pool.clear()
+			totalSize += len(req)
+			b.ReportMetric(float64(totalSize)/float64(b.N), "compressedSize/op")
+		}
 	}
-	series, pool := createReducedTimeseriesProto(1, 10000, extraLabels...)
 
-	b.ResetTimer()
-	totalSize := 0
-	for i := 0; i < b.N; i++ {
-		buf, _, _ := buildReducedWriteRequest(series, pool.getTable(), nil, nil)
-		totalSize += len(buf)
-		b.ReportMetric(float64(totalSize)/float64(b.N), "compressedSize/op")
+	b.Run("2 instances", func(b *testing.B) {
+		batch := createDummyTimeSeries(2)
+		bench(b, batch)
+	})
 
-	}
+	b.Run("10 instances", func(b *testing.B) {
+		batch := createDummyTimeSeries(10)
+		bench(b, batch)
+	})
 
-	// Do not include shutdown
-	b.StopTimer()
+	b.Run("1k instances", func(b *testing.B) {
+		batch := createDummyTimeSeries(1000)
+		bench(b, batch)
+	})
 }
