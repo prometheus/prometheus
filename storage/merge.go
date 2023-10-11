@@ -497,7 +497,12 @@ func (c *chainSampleIterator) Seek(t int64) chunkenc.ValueType {
 	c.consecutive = false
 	c.h = samplesIteratorHeap{}
 	for _, iter := range c.iterators {
-		if iter.Seek(t) != chunkenc.ValNone {
+		if iter.Seek(t) == chunkenc.ValNone {
+			if iter.Err() != nil {
+				// If any iterator is reporting an error, abort.
+				return chunkenc.ValNone
+			}
+		} else {
 			heap.Push(&c.h, iter)
 		}
 	}
