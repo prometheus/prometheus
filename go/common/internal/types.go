@@ -253,3 +253,33 @@ func getCodeFromMsg(msg string) uint64 {
 	code, _ := strconv.ParseUint(codeStr, 16, 64)
 	return code
 }
+
+// GoRestoredResult - GO wrapper for result after restore decoder.
+type GoRestoredResult struct {
+	offset            uint64
+	requiredSegmentID uint32
+	restoredSegmentID uint32
+}
+
+// NewGoRestoredResult - init new GoRestoredResult.
+func NewGoRestoredResult(requiredSegmentID uint32) *GoRestoredResult {
+	grr := &GoRestoredResult{
+		requiredSegmentID: requiredSegmentID,
+	}
+	return grr
+}
+
+// Offset - get restored offset.
+func (grr *GoRestoredResult) Offset() uint64 {
+	return grr.offset
+}
+
+// RequiredSegmentID - get required segmentID.
+func (grr *GoRestoredResult) RequiredSegmentID() uint32 {
+	return grr.requiredSegmentID
+}
+
+// RestoredSegmentID - get restored segmentID.
+func (grr *GoRestoredResult) RestoredSegmentID() uint32 {
+	return grr.restoredSegmentID
+}

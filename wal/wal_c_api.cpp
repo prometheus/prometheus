@@ -160,6 +160,11 @@ uint32_t okdb_wal_c_decoder_decode_dry(c_decoder c_dec, c_slice_ptr c_seg) {
   return std::visit([&](auto& vtbl) { return vtbl.template call<"okdb_wal_c_decoder_decode_dry">(c_dec, c_seg); }, decoder_vtbl);
 }
 
+// okdb_wal_c_decoder_restore_from_stream - C wrapper C++, calls C++ class Decoder methods.
+void okdb_wal_c_decoder_restore_from_stream(c_decoder c_dec, c_slice_ptr c_buf, c_restored_result* result) {
+  return std::visit([&](auto& vtbl) { return vtbl.template call<"okdb_wal_c_decoder_restore_from_stream">(c_dec, c_buf, result); }, decoder_vtbl);
+}
+
 // okdb_wal_c_decoder_snapshot - C wrapper C++, calls C++ class Decoder methods.
 void okdb_wal_c_decoder_snapshot(c_decoder c_dec, c_slice_ptr c_snap) {
   return std::visit([&](auto& vtbl) { return vtbl.template call<"okdb_wal_c_decoder_snapshot">(c_dec, c_snap); }, decoder_vtbl);

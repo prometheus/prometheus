@@ -40,6 +40,18 @@ typedef struct {
 
 void okdb_wal_uni_c_decoder_decode_dry(c_decoder c_dec, c_decoder_decode_dry_params* params, c_decoder_decode_result* result, c_api_error_info** err);
 
+// okdb_wal_c_decoder_restore_from_stream - C wrapper C++, calls C++ class Decoder methods.
+void okdb_wal_c_decoder_restore_from_stream(c_decoder c_dec, c_slice_ptr c_buf, c_restored_result* result);
+
+// c_decoder_restore_from_stream_params - incoming parameters.
+typedef struct {
+  c_slice_ptr buf;
+  c_restored_result* result;
+} c_decoder_restore_from_stream_params;
+
+// okdb_wal_uni_c_decoder_restore_from_stream - fast C wrapper C++, calls C++ class Decoder methods.
+void okdb_wal_uni_c_decoder_restore_from_stream(c_decoder c_dec, c_decoder_restore_from_stream_params* params, c_api_error_info** err);
+
 // okdb_wal_c_decoder_snapshot - C wrapper C++, calls C++ class Decoder methods.
 void okdb_wal_c_decoder_snapshot(c_decoder c_dec, c_slice_ptr c_snap);
 

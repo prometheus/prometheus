@@ -78,6 +78,13 @@ typedef struct {
   int64_t encoded_at;
 } c_decoded_segment;
 
+// c_restored_result - result data after restored.
+typedef struct {
+  uint64_t offset;
+  uint32_t required_segment_id;
+  uint32_t restored_segment_id;
+} c_restored_result;
+
 // dtor
 // okdb_wal_c_snapshot_destroy - calls the destructor, C wrapper C++ for clear memory.
 void okdb_wal_c_snapshot_destroy(c_snapshot* snapshot);

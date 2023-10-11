@@ -100,6 +100,21 @@ func (fr *ReadFrame) GetCreatedAt() int64 {
 	return fr.Header.createdAt
 }
 
+// GetShardID - return shardID.
+func (fr *ReadFrame) GetShardID() uint16 {
+	return fr.Header.shardID
+}
+
+// GetSegmentID - return segmentID.
+func (fr *ReadFrame) GetSegmentID() uint32 {
+	return fr.Header.segmentID
+}
+
+// GetChksum - return checksum.
+func (fr *ReadFrame) GetChksum() uint32 {
+	return fr.Header.chksum
+}
+
 // GetBody - return body frame.
 func (fr *ReadFrame) GetBody() []byte {
 	return fr.Body

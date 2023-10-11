@@ -51,6 +51,22 @@ class Decoder {
     return reader_.last_processed_segment();
   }
 
+  // restore_from_stream - restore the decoder state to the required segment from the file.
+  inline __attribute__((always_inline)) void restore_from_stream(c_slice c_buf, c_restored_result* result) {
+    std::ispanstream income_buffer({(char*)(c_buf.array), c_buf.len});
+
+    while (reader_.last_processed_segment() != result->required_segment_id) {
+      income_buffer >> reader_;
+      if (income_buffer.eof()) {
+        break;
+      }
+      result->offset = income_buffer.tellg();
+      reader_.process_segment([](uint32_t ls_id, uint64_t ts, double v) {});
+    }
+
+    result->restored_segment_id = reader_.last_processed_segment();
+  }
+
   // snapshot - restore reader from snapshot.
   inline __attribute__((always_inline)) void snapshot(c_slice c_snap) {
     std::ispanstream income_buffer({(char*)(c_snap.array), c_snap.len});
@@ -80,6 +96,11 @@ uint32_t OKDB_WAL_PREFIXED_NAME(okdb_wal_c_decoder_decode)(c_decoder c_dec, c_sl
 // okdb_wal_c_decoder_decode_dry - C wrapper C++, calls C++ class Decoder methods.
 uint32_t OKDB_WAL_PREFIXED_NAME(okdb_wal_c_decoder_decode_dry)(c_decoder c_dec, c_slice_ptr c_seg) {
   return static_cast<Wrapper::Decoder*>(c_dec)->decode_dry(*c_seg);
+}
+
+// okdb_wal_c_decoder_restore_from_stream - C wrapper C++, calls C++ class Decoder methods.
+void OKDB_WAL_PREFIXED_NAME(okdb_wal_c_decoder_restore_from_stream)(c_decoder c_dec, c_slice_ptr c_buf, c_restored_result* result) {
+  return static_cast<Wrapper::Decoder*>(c_dec)->restore_from_stream(*c_buf, result);
 }
 
 // okdb_wal_c_decoder_snapshot - C wrapper C++, calls C++ class Decoder methods.
