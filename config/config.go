@@ -1012,6 +1012,9 @@ type QueueConfig struct {
 	MinBackoff       model.Duration `yaml:"min_backoff,omitempty"`
 	MaxBackoff       model.Duration `yaml:"max_backoff,omitempty"`
 	RetryOnRateLimit bool           `yaml:"retry_on_http_429,omitempty"`
+
+	// SampleAgeLimit ...
+	SampleAgeLimit model.Duration `yaml:"min_sample_age,omitempty"`
 }
 
 // MetadataConfig is the configuration for sending metadata to remote

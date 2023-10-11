@@ -36,6 +36,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -529,7 +530,7 @@ func (t *QueueManager) AppendMetadata(ctx context.Context, metadata []scrape.Met
 
 func (t *QueueManager) sendMetadataWithBackoff(ctx context.Context, metadata []prompb.MetricMetadata, pBuf *proto.Buffer) error {
 	// Build the WriteRequest with no samples.
-	req, _, err := buildWriteRequest(nil, metadata, pBuf, nil)
+	req, _, err := buildWriteRequest(nil, metadata, pBuf, nil, nil, 0)
 	if err != nil {
 		return err
 	}
@@ -575,11 +576,42 @@ func (t *QueueManager) sendMetadataWithBackoff(ctx context.Context, metadata []p
 	return nil
 }
 
+func isSampleOld(sampleAgeLimit int64, ts int64) bool {
+	if sampleAgeLimit == 0 {
+		// If sampleAgeLimit is unset, then we never skip samples due to their age.
+		return false
+	}
+	limitTs := time.Now().Add(-time.Duration(sampleAgeLimit))
+	sampleTs := timestamp.Time(ts)
+	return sampleTs.Before(limitTs)
+}
+
+func isTimeSeriesOld(sampleAgeLimit int64, ts prompb.TimeSeries) bool {
+	if sampleAgeLimit == 0 {
+		// If sampleAgeLimit is unset, then we never skip samples due to their age.
+		return false
+	}
+	switch {
+	case len(ts.Samples) > 0:
+		return isSampleOld(sampleAgeLimit, ts.Samples[0].Timestamp)
+	case len(ts.Histograms) > 0:
+		return isSampleOld(sampleAgeLimit, ts.Histograms[0].Timestamp)
+	case len(ts.Exemplars) > 0:
+		return isSampleOld(sampleAgeLimit, ts.Exemplars[0].Timestamp)
+	default:
+		return false
+	}
+}
+
 // Append queues a sample to be sent to the remote storage. Blocks until all samples are
 // enqueued on their shards or a shutdown signal is received.
 func (t *QueueManager) Append(samples []record.RefSample) bool {
 outer:
 	for _, s := range samples {
+		if isSampleOld(int64(t.cfg.SampleAgeLimit), s.T) {
+			// TODO(@tpaschalis, @marctc) Add a metric for keeping track of dropped samples
+			continue
+		}
 		t.seriesMtx.Lock()
 		lbls, ok := t.seriesLabels[s.Ref]
 		if !ok {
@@ -632,6 +664,10 @@ func (t *QueueManager) AppendExemplars(exemplars []record.RefExemplar) bool {
 
 outer:
 	for _, e := range exemplars {
+		if isSampleOld(int64(t.cfg.SampleAgeLimit), e.T) {
+			// TODO(@tpaschalis, @marctc) Add a metric for keeping track of dropped samples
+			continue
+		}
 		t.seriesMtx.Lock()
 		lbls, ok := t.seriesLabels[e.Ref]
 		if !ok {
@@ -681,6 +717,10 @@ func (t *QueueManager) AppendHistograms(histograms []record.RefHistogramSample) 
 
 outer:
 	for _, h := range histograms {
+		if isSampleOld(int64(t.cfg.SampleAgeLimit), h.T) {
+			// TODO(@tpaschalis, @marctc) Add a metric for keeping track of dropped samples
+			continue
+		}
 		t.seriesMtx.Lock()
 		lbls, ok := t.seriesLabels[h.Ref]
 		if !ok {
@@ -728,6 +768,10 @@ func (t *QueueManager) AppendFloatHistograms(floatHistograms []record.RefFloatHi
 
 outer:
 	for _, h := range floatHistograms {
+		if isSampleOld(int64(t.cfg.SampleAgeLimit), h.T) {
+			// TODO(@tpaschalis, @marctc) Add a metric for keeping track of dropped samples
+			continue
+		}
 		t.seriesMtx.Lock()
 		lbls, ok := t.seriesLabels[h.Ref]
 		if !ok {
@@ -1490,7 +1534,7 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, s
 // sendSamples to the remote storage with backoff for recoverable errors.
 func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.TimeSeries, sampleCount, exemplarCount, histogramCount int, pBuf *proto.Buffer, buf *[]byte) error {
 	// Build the WriteRequest with no metadata.
-	req, highest, err := buildWriteRequest(samples, nil, pBuf, *buf)
+	req, highest, err := buildWriteRequest(samples, nil, pBuf, *buf, nil, 0)
 	if err != nil {
 		// Failing to build the write request is non-recoverable, since it will
 		// only error if marshaling the proto to bytes fails.
@@ -1504,6 +1548,24 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 	// without causing a memory leak, and it has the nice effect of not propagating any
 	// parameters for sendSamplesWithBackoff/3.
 	attemptStore := func(try int) error {
+		if s.qm.cfg.SampleAgeLimit != 0 {
+
+			req, _, err := buildWriteRequest(
+				samples,
+				nil,
+				pBuf,
+				*buf,
+				isTimeSeriesOld,
+				int64(s.qm.cfg.SampleAgeLimit),
+			)
+			if err != nil {
+				// Failing to build the write request is non-recoverable, since it will
+				// only error if marshaling the proto to bytes fails.
+				return err
+			}
+			*buf = req
+		}
+
 		ctx, span := otel.Tracer("").Start(ctx, "Remote Send Batch")
 		defer span.End()
 
@@ -1608,9 +1670,18 @@ func sendWriteRequestWithBackoff(ctx context.Context, cfg config.QueueConfig, l 
 	}
 }
 
-func buildWriteRequest(samples []prompb.TimeSeries, metadata []prompb.MetricMetadata, pBuf *proto.Buffer, buf []byte) ([]byte, int64, error) {
+func buildWriteRequest(timeSeries []prompb.TimeSeries, metadata []prompb.MetricMetadata, pBuf *proto.Buffer, buf []byte, filter func(int64, prompb.TimeSeries) bool, ageLimit int64) ([]byte, int64, error) {
 	var highest int64
-	for _, ts := range samples {
+	var filteredSamples = make([]prompb.TimeSeries, 0, len(timeSeries))
+
+	// TODO(@tpaschalis, @marctc) Can we improve this to avoid copying in case that filter is nil?
+	for _, ts := range timeSeries {
+		if filter != nil && filter(ageLimit, ts) {
+			continue
+		} else {
+			filteredSamples = append(filteredSamples, ts)
+		}
+
 		// At the moment we only ever append a TimeSeries with a single sample or exemplar in it.
 		if len(ts.Samples) > 0 && ts.Samples[0].Timestamp > highest {
 			highest = ts.Samples[0].Timestamp
@@ -1624,7 +1695,7 @@ func buildWriteRequest(samples []prompb.TimeSeries, metadata []prompb.MetricMeta
 	}
 
 	req := &prompb.WriteRequest{
-		Timeseries: samples,
+		Timeseries: filteredSamples,
 		Metadata:   metadata,
 	}
 
