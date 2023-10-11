@@ -29,9 +29,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/prometheus/prompb"
-	"github.com/prometheus/prometheus/util/stats"
-
 	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -46,6 +43,8 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/notifier"
+	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/rules"
@@ -53,6 +52,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/util/stats"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
@@ -202,6 +202,10 @@ func (t testAlertmanagerRetriever) DroppedAlertmanagers() []*url.URL {
 			Path:   "/api/v1/alerts",
 		},
 	}
+}
+
+func (t testAlertmanagerRetriever) TargetsAll() map[string][]notifier.Target {
+	return nil
 }
 
 func (t testAlertmanagerRetriever) toFactory() func(context.Context) AlertmanagerRetriever {

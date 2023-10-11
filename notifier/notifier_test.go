@@ -548,7 +548,8 @@ alerting:
 		}
 
 		n.reload(tgs)
-		res := n.DroppedAlertmanagers()[0].String()
+		drops := n.DroppedAlertmanagers()
+		res := drops[0].String()
 
 		require.Equal(t, res, tt.out)
 	}
@@ -567,6 +568,14 @@ func makeInputTargetGroup() *targetgroup.Group {
 		},
 		Source: "testsource",
 	}
+}
+
+func TestTargetLabels(t *testing.T) {
+	label := labels.FromStrings("alertname", "test")
+	discoveredLabels := labels.FromStrings("alertname", "test", "a", "b")
+	target := Target{labels: label, discoveredLabels: discoveredLabels}
+	require.Equal(t, target.Labels(), label)
+	require.Equal(t, target.DiscoveredLabels(), discoveredLabels)
 }
 
 func TestLabelsToOpenAPILabelSet(t *testing.T) {

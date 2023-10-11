@@ -11,6 +11,10 @@ import { KVSearch } from '@nexucis/kvsearch';
 import { Container } from 'reactstrap';
 import SearchBar from '../../components/SearchBar';
 
+interface ServiceDiscoveryMap {
+  scrape: ServiceMap;
+  alertManager: ServiceMap;
+}
 interface ServiceMap {
   activeTargets: Target[];
   droppedTargets: DroppedTarget[];
@@ -33,10 +37,7 @@ const droppedTargetKVSearch = new KVSearch<DroppedTarget>({
   indexedKeys: ['discoveredLabels', ['discoveredLabels', /.*/]],
 });
 
-export const processSummary = (
-  activeTargets: Target[],
-  droppedTargetCounts: Record<string, number>
-): Record<string, { active: number; total: number }> => {
+export const processSummary = (activeTargets: Target[], droppedTargets: DroppedTarget[]) => {
   const targets: Record<string, { active: number; total: number }> = {};
 
   // Get targets of each type along with the total and active end points
@@ -51,21 +52,20 @@ export const processSummary = (
     targets[name].total++;
     targets[name].active++;
   }
-  for (const name in targets) {
+  for (const target of droppedTargets) {
+    const { job: name } = target.discoveredLabels;
     if (!targets[name]) {
       targets[name] = {
-        total: droppedTargetCounts[name],
+        total: 0,
         active: 0,
       };
-    } else {
-      targets[name].total += droppedTargetCounts[name];
     }
   }
 
   return targets;
 };
 
-export const processTargets = (activeTargets: Target[], droppedTargets: DroppedTarget[]): Record<string, TargetLabels[]> => {
+export const processTargets = (activeTargets: Target[], droppedTargets: DroppedTarget[]) => {
   const labels: Record<string, TargetLabels[]> = {};
 
   for (const target of activeTargets) {
@@ -95,37 +95,38 @@ export const processTargets = (activeTargets: Target[], droppedTargets: DroppedT
   return labels;
 };
 
-export const ServiceDiscoveryContent: FC<ServiceMap> = ({ activeTargets, droppedTargets, droppedTargetCounts }) => {
-  const [activeTargetList, setActiveTargetList] = useState(activeTargets);
-  const [droppedTargetList, setDroppedTargetList] = useState(droppedTargets);
-  const [targetList, setTargetList] = useState(processSummary(activeTargets, droppedTargetCounts));
-  const [labelList, setLabelList] = useState(processTargets(activeTargets, droppedTargets));
-
+export const ServiceDiscoveryContent: FC<ServiceDiscoveryMap> = ({ scrape, alertManager }) => {
+  const [activeTargetList, setActiveTargetList] = useState(scrape.activeTargets);
+  const [droppedTargetList, setDroppedTargetList] = useState(scrape.droppedTargets);
+  const [targetList, setTargetList] = useState(processSummary(scrape.activeTargets, scrape.droppedTargets));
+  const [labelList, setLabelList] = useState(processTargets(scrape.activeTargets, scrape.droppedTargets));
+  const alertManagerTargets = processSummary(alertManager.activeTargets, alertManager.droppedTargets);
+  const alertManagerLabels = processTargets(alertManager.activeTargets, alertManager.droppedTargets);
   const handleSearchChange = useCallback(
     (value: string) => {
       setQuerySearchFilter(value);
       if (value !== '') {
-        const activeTargetResult = activeTargetKVSearch.filter(value.trim(), activeTargets);
-        const droppedTargetResult = droppedTargetKVSearch.filter(value.trim(), droppedTargets);
+        const activeTargetResult = activeTargetKVSearch.filter(value.trim(), scrape.activeTargets);
+        const droppedTargetResult = droppedTargetKVSearch.filter(value.trim(), scrape.droppedTargets);
         setActiveTargetList(activeTargetResult.map((value) => value.original));
         setDroppedTargetList(droppedTargetResult.map((value) => value.original));
       } else {
-        setActiveTargetList(activeTargets);
+        setActiveTargetList(scrape.activeTargets);
       }
     },
-    [activeTargets, droppedTargets]
+    [scrape.activeTargets, scrape.droppedTargets]
   );
 
   const defaultValue = useMemo(getQuerySearchFilter, []);
 
   useEffect(() => {
-    setTargetList(processSummary(activeTargetList, droppedTargetCounts));
+    setTargetList(processSummary(activeTargetList, scrape.droppedTargets));
     setLabelList(processTargets(activeTargetList, droppedTargetList));
-  }, [activeTargetList, droppedTargetList, droppedTargetCounts]);
+  }, [activeTargetList, droppedTargetList, scrape.droppedTargets]);
 
   return (
     <>
-      <h2>Service Discovery</h2>
+      <h2>Scrape Service Discovery</h2>
       <Container>
         <SearchBar defaultValue={defaultValue} handleChange={handleSearchChange} placeholder="Filter by labels" />
       </Container>
@@ -142,6 +143,21 @@ export const ServiceDiscoveryContent: FC<ServiceMap> = ({ activeTargets, dropped
       {mapObjEntries(labelList, ([k, v]) => {
         return <LabelsTable value={v} name={k} key={k} />;
       })}
+
+      <h2>AlertManager Service Discovery</h2>
+      <ul>
+        {mapObjEntries(alertManagerTargets, ([k, v]) => (
+          <li key={k}>
+            <a href={'#' + k}>
+              {k} ({v.active} / {v.total} active targets)
+            </a>
+          </li>
+        ))}
+      </ul>
+      <hr />
+      {mapObjEntries(alertManagerLabels, ([k, v]) => {
+        return <LabelsTable value={v} name={k} key={k} />;
+      })}
     </>
   );
 };
@@ -151,7 +167,7 @@ const ServicesWithStatusIndicator = withStatusIndicator(ServiceDiscoveryContent)
 
 const ServiceDiscovery: FC = () => {
   const pathPrefix = usePathPrefix();
-  const { response, error, isLoading } = useFetch<ServiceMap>(`${pathPrefix}/${API_PATH}/targets`);
+  const { response, error, isLoading } = useFetch<ServiceDiscoveryMap>(`${pathPrefix}/${API_PATH}/servicediscovery`);
   return (
     <ServicesWithStatusIndicator
       {...response.data}
