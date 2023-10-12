@@ -1004,6 +1004,7 @@ func CheckTargetAddress(address model.LabelValue) error {
 // RemoteWriteConfig is the configuration for writing to remote storage.
 type RemoteWriteConfig struct {
 	URL                  *config.URL       `yaml:"url"`
+	Version              string            `yaml:"version,omitempty"`
 	RemoteTimeout        model.Duration    `yaml:"remote_timeout,omitempty"`
 	Headers              map[string]string `yaml:"headers,omitempty"`
 	WriteRelabelConfigs  []*relabel.Config `yaml:"write_relabel_configs,omitempty"`
@@ -1034,6 +1035,9 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 	}
 	if c.URL == nil {
 		return errors.New("url for remote_write is empty")
+	}
+	if c.Version != "" && c.Version != "1.0" && c.Version != "1.1" {
+		return errors.New("version for remote_write must be either '1.0', '1.1' or blank/unspecified")
 	}
 	for _, rlcfg := range c.WriteRelabelConfigs {
 		if rlcfg == nil {

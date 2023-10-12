@@ -386,6 +386,8 @@ type WriteClient interface {
 	Name() string
 	// Endpoint is the remote read or write endpoint for the storage client.
 	Endpoint() string
+	// Version is the remote write version for the storage client.
+	Version() string
 }
 
 // QueueManager manages a queue of samples to be sent to the Storage
@@ -1412,7 +1414,8 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 			if !ok {
 				return
 			}
-			if s.qm.internFormat {
+			if s.qm.internFormat && s.qm.client().Version() == "1.1" {
+				// the new internFormat bool must be set as well as the client version being 1.1
 				nPendingSamples, nPendingExemplars, nPendingHistograms := populateReducedTimeSeries(pool, batch, pendingReducedData, s.qm.sendExemplars, s.qm.sendNativeHistograms)
 				n := nPendingSamples + nPendingExemplars + nPendingHistograms
 				s.sendReducedSamples(ctx, pendingReducedData[:n], pool.table, nPendingSamples, nPendingExemplars, nPendingHistograms, pBuf, &buf)
@@ -1430,7 +1433,8 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 		case <-timer.C:
 			batch := queue.Batch()
 			if len(batch) > 0 {
-				if s.qm.internFormat {
+				if s.qm.internFormat && s.qm.client().Version() == "1.1" {
+					// the new internFormat bool must be set as well as the client version being 1.1
 					nPendingSamples, nPendingExemplars, nPendingHistograms := populateReducedTimeSeries(pool, batch, pendingReducedData, s.qm.sendExemplars, s.qm.sendNativeHistograms)
 					n := nPendingSamples + nPendingExemplars + nPendingHistograms
 					level.Debug(s.qm.logger).Log("msg", "runShard timer ticked, sending buffered data", "samples", nPendingSamples,
