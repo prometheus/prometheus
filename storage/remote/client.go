@@ -83,6 +83,7 @@ func init() {
 type Client struct {
 	remoteName string // Used to differentiate clients in metrics.
 	urlString  string // url.String()
+	version    string // For write clients; "", "1.0" or "1.1", ignored for read clients
 	Client     *http.Client
 	timeout    time.Duration
 
@@ -96,6 +97,7 @@ type Client struct {
 // ClientConfig configures a client.
 type ClientConfig struct {
 	URL              *config_util.URL
+	Version          string
 	Timeout          model.Duration
 	HTTPClientConfig config_util.HTTPClientConfig
 	SigV4Config      *sigv4.SigV4Config
@@ -126,6 +128,7 @@ func NewReadClient(name string, conf *ClientConfig) (ReadClient, error) {
 	return &Client{
 		remoteName:          name,
 		urlString:           conf.URL.String(),
+		version:             conf.Version,
 		Client:              httpClient,
 		timeout:             time.Duration(conf.Timeout),
 		readQueries:         remoteReadQueries.WithLabelValues(name, conf.URL.String()),
@@ -207,7 +210,12 @@ func (c *Client) Store(ctx context.Context, req []byte, attempt int) error {
 	httpReq.Header.Add("Content-Encoding", "snappy")
 	httpReq.Header.Set("Content-Type", "application/x-protobuf")
 	httpReq.Header.Set("User-Agent", UserAgent)
-	httpReq.Header.Set("X-Prometheus-Remote-Write-Version", "0.1.0")
+	if c.version == "1.1" {
+		httpReq.Header.Set("X-Prometheus-Remote-Write-Version", "0.1.1") // TODO-RW11: Final value?
+	} else {
+		httpReq.Header.Set("X-Prometheus-Remote-Write-Version", "0.1.0")
+	}
+
 	if attempt > 0 {
 		httpReq.Header.Set("Retry-Attempt", strconv.Itoa(attempt))
 	}
@@ -228,6 +236,8 @@ func (c *Client) Store(ctx context.Context, req []byte, attempt int) error {
 		io.Copy(io.Discard, httpResp.Body)
 		httpResp.Body.Close()
 	}()
+
+	// TODO-RW11: Here is where we need to handle version downgrade on error
 
 	if httpResp.StatusCode/100 != 2 {
 		scanner := bufio.NewScanner(io.LimitReader(httpResp.Body, maxErrMsgLen))
@@ -268,6 +278,11 @@ func (c Client) Name() string {
 // Endpoint is the remote read or write endpoint.
 func (c Client) Endpoint() string {
 	return c.urlString
+}
+
+// Version of the remote write client
+func (c Client) Version() string {
+	return c.version
 }
 
 // Read reads from a remote endpoint.
@@ -364,4 +379,8 @@ func (c *TestClient) Name() string {
 
 func (c *TestClient) Endpoint() string {
 	return c.url
+}
+
+func (c *TestClient) Version() string {
+	return ""
 }

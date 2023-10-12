@@ -67,6 +67,7 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var err error
 	var req *prompb.WriteRequest
 	var reqWithRefs *prompb.WriteRequestWithRefs
+	// TODO-RW11: Need to check headers to decide what version is and what to do
 	if h.internFormat {
 		reqWithRefs, err = DecodeReducedWriteRequest(r.Body)
 	} else {
