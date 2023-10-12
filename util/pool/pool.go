@@ -14,6 +14,7 @@
 package pool
 
 import (
+	"runtime"
 	"sync"
 )
 
@@ -25,8 +26,9 @@ type Pool struct {
 	pointers sync.Pool
 	// Simple slice holding blocks bigger than all buckets; we don't want the sync.Pool
 	// behaviour of maintaining a pool per CPU core for such big blocks of memory.
-	outsizedMtx sync.Mutex
-	outsized    [][]byte
+	outsizedMtx    sync.Mutex
+	outsized       [][]byte
+	outsizedUnused [][]byte
 }
 
 // New returns a new Pool with size buckets for minSize to maxSize
@@ -52,6 +54,8 @@ func New(minSize, maxSize int, factor float64) *Pool {
 		buckets: make([]sync.Pool, len(sizes)),
 		sizes:   sizes,
 	}
+
+	runtime.SetFinalizer(&p, cleanOutsize)
 
 	return p
 }
@@ -81,6 +85,12 @@ func (p *Pool) Get(sz int) []byte {
 			return b
 		}
 	}
+	for i, b := range p.outsizedUnused {
+		if cap(b) >= sz {
+			p.outsizedUnused = append(p.outsizedUnused[:i], p.outsizedUnused[i+1:]...) // Delete from slice.
+			return b
+		}
+	}
 	return make([]byte, 0, sz)
 }
 
@@ -105,5 +115,26 @@ func (p *Pool) Put(s []byte) {
 	p.outsizedMtx.Lock()
 	defer p.outsizedMtx.Unlock()
 	p.outsized = append(p.outsized, s)
-	// TODO: shrink outsized pool at some point.
+}
+
+// cleanOutsize will be called when garbage-collection runs.
+func cleanOutsize(pp **Pool) {
+	p := *pp
+	p.outsizedMtx.Lock()
+	defer p.outsizedMtx.Unlock()
+	// Drop blocks that are still on the unused list.
+	for i := range p.outsizedUnused {
+		p.outsizedUnused[i] = nil
+	}
+	p.outsizedUnused = p.outsizedUnused[:0]
+	// Move half of the current outsized pool into the unused slice.
+	half := len(p.outsized) / 2
+	p.outsizedUnused = append(p.outsizedUnused, p.outsized[half:]...)
+	// Zero out pointers in the old pool so they don't keep blocks alive.
+	for i := half; i < len(p.outsized); i++ {
+		p.outsized[i] = nil
+	}
+	p.outsized = p.outsized[:half]
+	// Set up so this gets run again on garbage-collection.
+	runtime.SetFinalizer(pp, cleanOutsize)
 }
