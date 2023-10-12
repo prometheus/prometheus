@@ -684,6 +684,10 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				rule.SetEvaluationTimestamp(t)
 			}(time.Now())
 
+			if sp.SpanContext().IsSampled() && sp.SpanContext().HasTraceID() {
+				logger = log.WithPrefix(g.logger, "traceID", sp.SpanContext().TraceID())
+			}
+
 			g.metrics.EvalTotal.WithLabelValues(GroupKey(g.File(), g.Name())).Inc()
 
 			vector, err := rule.Eval(ctx, evaluationDelay, ts, g.opts.QueryFunc, g.opts.ExternalURL, g.Limit())
