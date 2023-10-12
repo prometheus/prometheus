@@ -594,7 +594,17 @@ func (c *chainSampleIterator) Next() chunkenc.ValueType {
 
 	for {
 		currValueType = c.curr.Next()
-		if currValueType != chunkenc.ValNone {
+
+		if currValueType == chunkenc.ValNone {
+			if c.curr.Err() != nil {
+				// Abort if we've hit an error.
+				return chunkenc.ValNone
+			} else if len(c.h) == 0 {
+				// No iterator left to iterate.
+				c.curr = nil
+				return chunkenc.ValNone
+			}
+		} else {
 			currT = c.curr.AtT()
 			if currT == c.lastT {
 				// Ignoring sample for the same timestamp.
@@ -614,13 +624,6 @@ func (c *chainSampleIterator) Next() chunkenc.ValueType {
 			}
 			// Current iterator does not hold the smallest timestamp.
 			heap.Push(&c.h, c.curr)
-		} else if c.curr.Err() != nil {
-			// Abort if we've hit an error.
-			return chunkenc.ValNone
-		} else if len(c.h) == 0 {
-			// No iterator left to iterate.
-			c.curr = nil
-			return chunkenc.ValNone
 		}
 
 		c.curr = heap.Pop(&c.h).(chunkenc.Iterator)
