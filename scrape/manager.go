@@ -58,7 +58,7 @@ func NewManager(o *Options, logger log.Logger, app storage.Appendable, registere
 		graceShut:     make(chan struct{}),
 		triggerReload: make(chan struct{}, 1),
 		metrics:       sm,
-		buffers:       pool.New(1e3, 100e6, 3),
+		buffers:       pool.New(8e3, 6e6, 3),
 	}
 
 	m.metrics.setTargetMetadataCacheGatherer(m)
