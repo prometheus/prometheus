@@ -21,6 +21,8 @@ import (
 type Pool struct {
 	buckets []sync.Pool
 	sizes   []int
+	// pointers holds just pointers to the slice header objects which the main pool holds.
+	pointers sync.Pool
 }
 
 // New returns a new Pool with size buckets for minSize to maxSize
@@ -60,7 +62,11 @@ func (p *Pool) Get(sz int) []byte {
 		if b == nil {
 			return make([]byte, 0, bktSize)
 		}
-		return b.([]byte)
+		ptr := b.(*[]byte)
+		item := *ptr
+		*ptr = []byte{} // Zero out before putting back in the pool.
+		p.pointers.Put(ptr)
+		return item
 	}
 	return make([]byte, 0, sz)
 }
@@ -71,7 +77,15 @@ func (p *Pool) Put(s []byte) {
 		if cap(s) > size {
 			continue
 		}
-		p.buckets[i].Put(s)
+		// Save the address in a pooled slice-header object, so the Put doesn't allocate memory.
+		var ptr *[]byte
+		if pooled := p.pointers.Get(); pooled != nil {
+			ptr = pooled.(*[]byte)
+		} else {
+			ptr = new([]byte)
+		}
+		*ptr = s
+		p.buckets[i].Put(ptr)
 		return
 	}
 }
