@@ -23,6 +23,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/gogo/protobuf/proto"
+	"github.com/gogo/protobuf/types"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 
@@ -344,6 +345,24 @@ func (p *ProtobufParser) Exemplar(ex *exemplar.Exemplar) bool {
 	p.builder.Sort()
 	ex.Labels = p.builder.Labels()
 	p.exemplarReturned = true
+	return true
+}
+
+func (p *ProtobufParser) CreatedTimestamp(ct *types.Timestamp) bool {
+	var foundCT *types.Timestamp
+	switch p.mf.GetType() {
+	case dto.MetricType_COUNTER:
+		foundCT = p.mf.GetMetric()[p.metricPos].GetCounter().GetCreatedTimestamp()
+	case dto.MetricType_SUMMARY:
+		foundCT = p.mf.GetMetric()[p.metricPos].GetSummary().GetCreatedTimestamp()
+	case dto.MetricType_HISTOGRAM, dto.MetricType_GAUGE_HISTOGRAM:
+		foundCT = p.mf.GetMetric()[p.metricPos].GetHistogram().GetCreatedTimestamp()
+	default:
+	}
+	if foundCT == nil {
+		return false
+	}
+	*ct = *foundCT
 	return true
 }
 
