@@ -15,6 +15,19 @@ config_setting(
     },
 )
 
+filegroup(
+    name = "clang_tidy_config_default",
+    srcs = [
+        ".clang-tidy",
+    ],
+)
+
+label_flag(
+    name = "clang_tidy_config",
+    build_setting_default = ":clang_tidy_config_default",
+    visibility = ["//visibility:public"],
+)
+
 cc_library(
     name = "arch_detector",
     hdrs = glob(["arch_detector/*.h"]),
@@ -63,7 +76,7 @@ cc_library(
 cc_test(
     name = "bare_bones_test",
     srcs = glob(["bare_bones/tests/*_tests.cpp"]),
-    # malloc = "@jemalloc",
+    malloc = "@jemalloc",
     deps = [
         ":bare_bones",
         "@gtest//:gtest_main",
@@ -94,7 +107,7 @@ cc_library(
 cc_test(
     name = "primitives_test",
     srcs = glob(["primitives/tests/*_tests.cpp"]),
-    # malloc = "@jemalloc",
+    malloc = "@jemalloc",
     deps = [
         ":primitives",
         "@gtest//:gtest_main",
@@ -113,7 +126,7 @@ cc_library(
 cc_test(
     name = "prometheus_test",
     srcs = glob(["prometheus/tests/*_tests.cpp"]),
-    # malloc = "@jemalloc",
+    malloc = "@jemalloc",
     deps = [
         ":prometheus",
         "@gtest//:gtest_main",
@@ -134,7 +147,7 @@ cc_library(
 cc_test(
     name = "wal_test",
     srcs = glob(["wal/tests/*_tests.cpp"]),
-    # malloc = "@jemalloc",
+    malloc = "@jemalloc",
     deps = [
         ":wal",
         "@gtest//:gtest_main",
@@ -263,7 +276,7 @@ cc_library(
     hdrs = ["wal/wal_c_api.h", "wal/wal_c_types_api.h"],
     srcs = ["wal/wal_c_api.cpp", "wal/wal_c_types.cpp", "wal/wal_c_go_uni_api.cpp"],
 
-    deps = [":arch_detector"] +
+    deps = [":arch_detector", "@jemalloc"] +
     select({
         ":aarch64_build": ["aarch64_wal_c_api"],
         ":x86_build": ["x86_wal_c_api"],
@@ -313,7 +326,7 @@ cc_library(
 cc_binary(
     name = "performance_tests",
     srcs = glob(["performance_tests/*.cpp"]),
-    # malloc = "@jemalloc",
+    malloc = "@jemalloc",
     deps = [
         ":performance_tests_headers"
     ],
@@ -332,7 +345,7 @@ cc_library(
 cc_binary(
     name = "integration_tests",
     srcs = glob(["integration_tests/*.cpp"]),
-    # malloc = "@jemalloc",
+    malloc = "@jemalloc",
     deps = [
         ":integration_tests_headers"
     ]

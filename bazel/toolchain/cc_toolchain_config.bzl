@@ -36,23 +36,22 @@ all_link_actions = [
 ]
 
 def _impl(ctx):
-    is_in_musl_container = ctx.attr.is_in_musl_container[BuildSettingInfo].value
     tool_paths = [
         tool_path(
             name = "gcc",
-            path = "/opt/bin/gcc" if is_in_musl_container else "/usr/bin/gcc-12",
+            path = "/usr/bin/gcc",
         ),
         tool_path(
             name = "g++",
-            path = "/opt/bin/g++" if is_in_musl_container else "/usr/bin/g++-12",
+            path = "/usr/bin/g++",
         ),
         tool_path(
             name = "ld",
-            path = "/opt/bin/ld" if is_in_musl_container else "/usr/bin/ld",
+            path = "/usr/bin/ld",
         ),
         tool_path(
             name = "ar",
-            path = "/opt/bin/ar" if is_in_musl_container else "/usr/bin/ar",
+            path = "/usr/bin/ar",
         ),
         tool_path(
             name = "cpp",
@@ -212,7 +211,6 @@ cc_toolchain_config = rule(
     attrs = {
         "builtin_include_directories": attr.string_list(),
         "cpu_compiler_options": attr.string_list(),
-        "is_in_musl_container": attr.label(),
     },
     provides = [CcToolchainConfigInfo],
 )
