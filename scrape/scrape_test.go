@@ -497,9 +497,9 @@ func TestScrapePoolAppender(t *testing.T) {
 	appl, ok := loop.(*scrapeLoop)
 	require.True(t, ok, "Expected scrapeLoop but got %T", loop)
 
-	wrapped := appender(appl.appender(context.Background()), 0, 0)
+	wrapped := appender(appl.appender(context.Background()), 0, 0).(*meteredAppender)
 
-	tl, ok := wrapped.(*timeLimitAppender)
+	tl, ok := wrapped.Appender.(*timeLimitAppender)
 	require.True(t, ok, "Expected timeLimitAppender but got %T", wrapped)
 
 	_, ok = tl.Appender.(nopAppender)
@@ -513,9 +513,9 @@ func TestScrapePoolAppender(t *testing.T) {
 	appl, ok = loop.(*scrapeLoop)
 	require.True(t, ok, "Expected scrapeLoop but got %T", loop)
 
-	wrapped = appender(appl.appender(context.Background()), sampleLimit, 0)
+	wrapped = appender(appl.appender(context.Background()), sampleLimit, 0).(*meteredAppender)
 
-	sl, ok := wrapped.(*limitAppender)
+	sl, ok := wrapped.Appender.(*limitAppender)
 	require.True(t, ok, "Expected limitAppender but got %T", wrapped)
 
 	tl, ok = sl.Appender.(*timeLimitAppender)
@@ -524,9 +524,9 @@ func TestScrapePoolAppender(t *testing.T) {
 	_, ok = tl.Appender.(nopAppender)
 	require.True(t, ok, "Expected base appender but got %T", tl.Appender)
 
-	wrapped = appender(appl.appender(context.Background()), sampleLimit, 100)
+	wrapped = appender(appl.appender(context.Background()), sampleLimit, 100).(*meteredAppender)
 
-	bl, ok := wrapped.(*bucketLimitAppender)
+	bl, ok := wrapped.Appender.(*bucketLimitAppender)
 	require.True(t, ok, "Expected bucketLimitAppender but got %T", wrapped)
 
 	sl, ok = bl.Appender.(*limitAppender)

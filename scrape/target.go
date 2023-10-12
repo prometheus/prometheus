@@ -341,6 +341,20 @@ func (app *limitAppender) Append(ref storage.SeriesRef, lset labels.Labels, t in
 	return ref, nil
 }
 
+type meteredAppender struct {
+	storage.Appender
+}
+
+func (app *meteredAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
+	targetScrapeAppendsTotal.Inc()
+	ref, err := app.Appender.Append(ref, lset, t, v)
+	if err != nil {
+		targetScrapeAppendErrorsTotal.Inc()
+		return 0, err
+	}
+	return ref, nil
+}
+
 type timeLimitAppender struct {
 	storage.Appender
 
