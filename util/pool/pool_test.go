@@ -37,6 +37,10 @@ func TestPool(t *testing.T) {
 			size:        10,
 			expectedCap: 10,
 		},
+		{
+			size:        9,
+			expectedCap: 10,
+		},
 	}
 	for _, c := range cases {
 		ret := testPool.Get(c.size)

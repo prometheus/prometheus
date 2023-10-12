@@ -23,6 +23,10 @@ type Pool struct {
 	sizes   []int
 	// pointers holds just pointers to the slice header objects which the main pool holds.
 	pointers sync.Pool
+	// Simple slice holding blocks bigger than all buckets; we don't want the sync.Pool
+	// behaviour of maintaining a pool per CPU core for such big blocks of memory.
+	outsizedMtx sync.Mutex
+	outsized    [][]byte
 }
 
 // New returns a new Pool with size buckets for minSize to maxSize
@@ -68,6 +72,15 @@ func (p *Pool) Get(sz int) []byte {
 		p.pointers.Put(ptr)
 		return item
 	}
+	// Size is bigger than all buckets; check the outsized pool.
+	p.outsizedMtx.Lock()
+	defer p.outsizedMtx.Unlock()
+	for i, b := range p.outsized {
+		if cap(b) >= sz {
+			p.outsized = append(p.outsized[:i], p.outsized[i+1:]...) // Delete from slice.
+			return b
+		}
+	}
 	return make([]byte, 0, sz)
 }
 
@@ -88,4 +101,9 @@ func (p *Pool) Put(s []byte) {
 		p.buckets[i].Put(ptr)
 		return
 	}
+	// Size is bigger than all buckets; put it in the outsized pool.
+	p.outsizedMtx.Lock()
+	defer p.outsizedMtx.Unlock()
+	p.outsized = append(p.outsized, s)
+	// TODO: shrink outsized pool at some point.
 }
