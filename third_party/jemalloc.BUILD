@@ -22,8 +22,9 @@ configure_make(
     configure_in_place = True,
     lib_source = ":src",
     configure_options = [
-        "--disable-shared",
-        "--enable-static",
+		"--enable-xmalloc",
+		"--with-lg-page=\"12\"",
+		"--with-lg-hugepage=21",
     ],
     out_static_libs = [
         "libjemalloc.a",

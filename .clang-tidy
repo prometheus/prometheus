@@ -1,5 +1,9 @@
 ---
-Checks: 'clang-diagnostic-*,clang-analyzer-*,google-*,readability-identifier-naming,-google-readability-todo,-google-readability-braces-around-statements,-google-readability-avoid-underscore-in-googletest-name'
+Checks: >
+  clang-diagnostic-*,
+  clang-analyzer-*,
+  google-*,-google-readability-todo,-google-readability-braces-around-statements,-google-readability-avoid-underscore-in-googletest-name,
+  readability-identifier-naming,
 WarningsAsErrors: '*'
 HeaderFilterRegex: '.*/(bare_bones|primitives|prometheus|wal)/(|tests/).*'
 AnalyzeTemporaryDtors: false

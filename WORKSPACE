@@ -35,15 +35,15 @@ git_repository(
 git_repository(
     name = "bazel_clang_tidy",
     remote = "https://github.com/erenon/bazel_clang_tidy.git",
-    commit = "783aa523aafb4a6798a538c61e700b6ed27975a7",
-    shallow_since = "1620650326 +0800",
+    commit = "11541864afa832ff6721e479c44794e9c9497ae8",
+    shallow_since = "1696427391 +0200"
 )
 
-http_archive( # TODO: что-то таки не собирается
+http_archive(
     name = "jemalloc",
-    url = "https://github.com/jemalloc/jemalloc/archive/20f9802e4f25922884448d9581c66d76cc905c0c.zip",  # 5.3
-    sha256 = "1cc1ec93701868691c73b371eb87e5452257996279a42303a91caad355374439",
-    strip_prefix = "jemalloc-20f9802e4f25922884448d9581c66d76cc905c0c",
+    url = "https://github.com/jemalloc/jemalloc/releases/download/5.3.0/jemalloc-5.3.0.tar.bz2",  # 5.3
+    sha256 = "2db82d1e7119df3e71b7640219b6dfe84789bc0537983c3b7ac4f7189aecfeaa",
+    strip_prefix = "jemalloc-5.3.0/",
     build_file = "//third_party:jemalloc.BUILD",
 )
 

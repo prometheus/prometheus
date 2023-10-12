@@ -16,7 +16,7 @@ block_converter_binary := $(absolute_project_dir)/out/block_converter
 block_converter_sources := $(absolute_project_dir)/tools/block_converter
 sort_type := $(shell echo $(word 2, $(subst ., ,$(test_data_file_name))) | tr a-z A-Z)
 
-BUILD_DIR := $(absolute_project_dir)bazel-bin/
+BUILD_DIR := bazel-bin/
 
 # arch default value is a intentionally incorrect as bash doesn't like empty arguments.
 # In the default case, the go_bindings_arch (if not defined) would be initialized with
@@ -30,11 +30,23 @@ go_out_filename := $(go_bindings_arch)_wal_c_api
 
 go_out_bindings_dir := go/common/internal/
 
+uid := $(shell id -u)
+gid := $(shell id -g)
+platform := $(shell arch)
 
 wal_bindings: $(go_in_wal_h_file)
 	./r --static-c-api --arch $(go_bindings_arch)
 	mkdir -p $(go_out_bindings_dir)
 	cp -f $(BUILD_DIR)$(wal_c_api_static_filename) $(go_out_bindings_dir)$(go_out_filename).a
+	chown $(uid):$(gid) $(go_out_bindings_dir)$(go_out_filename).a
+
+
+with_docker wal_bindings_with_docker: $(go_in_wal_h_file)
+	docker run --pull always --rm -v.:/src --workdir /src registry.flant.com/okmeter/pp:gcc-tools-$(platform) bash -c "\
+	./r --static-c-api --arch $(go_bindings_arch) && \
+	mkdir -p $(go_out_bindings_dir) && \
+	cp -f $(BUILD_DIR)$(wal_c_api_static_filename) $(go_out_bindings_dir)$(go_out_filename).a && \
+	chown $(uid):$(gid) $(go_out_bindings_dir)$(go_out_filename).a"
 
 
 asan wal_bindings_asan: $(go_in_wal_h_file)
