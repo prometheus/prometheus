@@ -5641,3 +5641,186 @@ func TestPostingsCardinalityStats(t *testing.T) {
 	// Using cache.
 	require.Equal(t, statsForSomeLabel1, head.PostingsCardinalityStats("n", 1))
 }
+
+func TestAppendCreatedTimestamps(t *testing.T) {
+	testCases := []struct {
+		name       string
+		appendFunc func(*testing.T, storage.Appender)
+		assertFunc func(*testing.T, storage.Querier)
+	}{
+		{
+			name: "In order ct+normal sample",
+			appendFunc: func(t *testing.T, a storage.Appender) {
+				lbls := labels.FromStrings("foo", "bar")
+				ts := int64(100)
+				_, err := a.AppendCreatedTimestamp(0, lbls, ts-1)
+				require.NoError(t, err)
+				_, err = a.Append(0, lbls, ts, 10)
+				require.NoError(t, err)
+				require.NoError(t, a.Commit())
+			},
+			assertFunc: func(t *testing.T, q storage.Querier) {
+				ts := int64(100)
+				ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+				require.True(t, ss.Next())
+				s := ss.At()
+
+				it := s.Iterator(nil)
+				require.Equal(t, chunkenc.ValFloat, it.Next())
+				timestamp, value := it.At()
+				require.Equal(t, ts-1, timestamp)
+				require.Equal(t, 0.0, value)
+
+				require.Equal(t, chunkenc.ValFloat, it.Next())
+				timestamp, value = it.At()
+				require.Equal(t, ts, timestamp)
+				require.Equal(t, 10.0, value)
+
+				require.False(t, ss.Next())
+				require.Equal(t, chunkenc.ValNone, it.Next())
+			},
+		},
+		{
+			name: "Consecutive appends with same ct ignore ct",
+			appendFunc: func(t *testing.T, a storage.Appender) {
+				lbls := labels.FromStrings("foo", "bar")
+				ctTs := int64(99)
+				sampleTs := int64(100)
+				_, err := a.AppendCreatedTimestamp(0, lbls, ctTs)
+				require.NoError(t, err)
+				_, err = a.Append(0, lbls, sampleTs, 10)
+				require.NoError(t, err)
+				sampleTs += 1
+				_, err = a.AppendCreatedTimestamp(0, lbls, ctTs)
+				require.NoError(t, err)
+				_, err = a.Append(0, lbls, sampleTs, 10)
+				require.NoError(t, err)
+				require.NoError(t, a.Commit())
+			},
+			assertFunc: func(t *testing.T, q storage.Querier) {
+				ctTs := int64(99)
+				sampleTs := int64(100)
+				ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+				require.True(t, ss.Next())
+				s := ss.At()
+				require.False(t, ss.Next())
+
+				it := s.Iterator(nil)
+				// First CT is ingested
+				require.Equal(t, chunkenc.ValFloat, it.Next())
+				timestamp, value := it.At()
+				require.Equal(t, ctTs, timestamp)
+				require.Equal(t, 0.0, value)
+
+				require.Equal(t, chunkenc.ValFloat, it.Next())
+				timestamp, value = it.At()
+				require.Equal(t, sampleTs, timestamp)
+				require.Equal(t, 10.0, value)
+
+				// On a consecutive scrape with the same CT, the CT is ignored
+				sampleTs += 1
+				require.Equal(t, chunkenc.ValFloat, it.Next())
+				timestamp, value = it.At()
+				require.Equal(t, sampleTs, timestamp)
+				require.Equal(t, 10.0, value)
+
+				require.False(t, ss.Next())
+				require.Equal(t, chunkenc.ValNone, it.Next())
+			},
+		},
+		{
+			name: "Consecutive appends with newer ct do not ignore ct",
+			appendFunc: func(t *testing.T, a storage.Appender) {
+				lbls := labels.FromStrings("foo", "bar")
+				ctTs := int64(99)
+				sampleTs := int64(100)
+				_, err := a.AppendCreatedTimestamp(0, lbls, ctTs)
+				require.NoError(t, err)
+				_, err = a.Append(0, lbls, sampleTs, 10)
+				require.NoError(t, err)
+				ctTs = sampleTs + 1
+				sampleTs = ctTs + 1
+				_, err = a.AppendCreatedTimestamp(0, lbls, ctTs)
+				require.NoError(t, err)
+				_, err = a.Append(0, lbls, sampleTs, 10)
+				require.NoError(t, err)
+				require.NoError(t, a.Commit())
+			},
+			assertFunc: func(t *testing.T, q storage.Querier) {
+				ctTs := int64(99)
+				sampleTs := int64(100)
+				ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+				require.True(t, ss.Next())
+				s := ss.At()
+				require.False(t, ss.Next())
+
+				it := s.Iterator(nil)
+				require.Equal(t, chunkenc.ValFloat, it.Next())
+				timestamp, value := it.At()
+				require.Equal(t, ctTs, timestamp)
+				require.Equal(t, 0.0, value)
+
+				require.Equal(t, chunkenc.ValFloat, it.Next())
+				timestamp, value = it.At()
+				require.Equal(t, sampleTs, timestamp)
+				require.Equal(t, 10.0, value)
+
+				// Second CT is younger than previous sample, so it is not ignored
+				ctTs = sampleTs + 1
+				sampleTs = ctTs + 1
+				require.Equal(t, chunkenc.ValFloat, it.Next())
+				timestamp, value = it.At()
+				require.Equal(t, ctTs, timestamp)
+				require.Equal(t, 0.0, value)
+
+				require.Equal(t, chunkenc.ValFloat, it.Next())
+				timestamp, value = it.At()
+				require.Equal(t, sampleTs, timestamp)
+				require.Equal(t, 10.0, value)
+
+				require.False(t, ss.Next())
+				require.Equal(t, chunkenc.ValNone, it.Next())
+			},
+		},
+		{
+			name: "CT equals to previous sample timestamp is ignored",
+			appendFunc: func(t *testing.T, a storage.Appender) {
+				lbls := labels.FromStrings("foo", "bar")
+				sampleTs := int64(100)
+				_, err := a.Append(0, lbls, sampleTs, 10)
+				require.NoError(t, err)
+				_, err = a.AppendCreatedTimestamp(0, lbls, sampleTs)
+				require.NoError(t, err)
+				require.NoError(t, a.Commit())
+			},
+			assertFunc: func(t *testing.T, q storage.Querier) {
+				sampleTs := int64(100)
+				ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+				require.True(t, ss.Next())
+				s := ss.At()
+				require.False(t, ss.Next())
+
+				it := s.Iterator(nil)
+				require.Equal(t, chunkenc.ValFloat, it.Next())
+				timestamp, value := it.At()
+				require.Equal(t, sampleTs, timestamp)
+				require.Equal(t, 10.0, value)
+
+				require.False(t, ss.Next())
+				require.Equal(t, chunkenc.ValNone, it.Next())
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		h, _ := newTestHead(t, DefaultBlockDuration, wlog.CompressionNone, false)
+		defer func() {
+			require.NoError(t, h.Close())
+		}()
+		a := h.Appender(context.Background())
+		tc.appendFunc(t, a)
+		q, err := NewBlockQuerier(h, math.MinInt64, math.MaxInt64)
+		require.NoError(t, err)
+		tc.assertFunc(t, q)
+	}
+}

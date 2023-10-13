@@ -339,3 +339,8 @@ func (m *mockAppendable) UpdateMetadata(_ storage.SeriesRef, _ labels.Labels, _ 
 	// UpdateMetadata is no-op for remote write (where mockAppendable is being used to test) for now.
 	return 0, nil
 }
+
+func (m *mockAppendable) AppendCreatedTimestamp(_ storage.SeriesRef, _ labels.Labels, _ int64) (storage.SeriesRef, error) {
+	// AppendCreatedTimestamp is no-op for remote-write for now.
+	return 0, nil
+}

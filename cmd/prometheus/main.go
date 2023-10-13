@@ -206,9 +206,15 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 			case "native-histograms":
 				c.tsdb.EnableNativeHistograms = true
 				// Change relevant global variables. Hacky, but it's hard to pass a new option or default to unmarshallers.
-				config.DefaultConfig.GlobalConfig.ScrapeProtocols = config.DefaultNativeHistogramScrapeProtocols
-				config.DefaultGlobalConfig.ScrapeProtocols = config.DefaultNativeHistogramScrapeProtocols
+				config.DefaultConfig.GlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
+				config.DefaultGlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
 				level.Info(logger).Log("msg", "Experimental native histogram support enabled. Changed default scrape_protocols to prefer PrometheusProto format.", "global.scrape_protocols", fmt.Sprintf("%v", config.DefaultGlobalConfig.ScrapeProtocols))
+			case "created-timestamp-ingestion":
+				c.scrape.EnableCreatedTimestampIngestion = true
+				// Change relevant global variables. Hacky, but it's hard to pass a new option or default to unmarshallers.
+				config.DefaultConfig.GlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
+				config.DefaultGlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
+				level.Info(logger).Log("msg", "Experimental created timestamp ingestion enabled. Changed default scrape_protocols to prefer PrometheusProto format.", "global.scrape_protocols", fmt.Sprintf("%v", config.DefaultGlobalConfig.ScrapeProtocols))
 			case "":
 				continue
 			case "promql-at-modifier", "promql-negative-offset":
@@ -1445,6 +1451,10 @@ func (n notReadyAppender) AppendHistogram(ref storage.SeriesRef, l labels.Labels
 }
 
 func (n notReadyAppender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m metadata.Metadata) (storage.SeriesRef, error) {
+	return 0, tsdb.ErrNotReady
+}
+
+func (n notReadyAppender) AppendCreatedTimestamp(ref storage.SeriesRef, l labels.Labels, t int64) (storage.SeriesRef, error) {
 	return 0, tsdb.ErrNotReady
 }
 
