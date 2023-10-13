@@ -883,13 +883,13 @@ func (a *appender) AppendExemplar(ref storage.SeriesRef, _ labels.Labels, e exem
 
 func (a *appender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	if h != nil {
-		if err := tsdb.ValidateHistogram(h); err != nil {
+		if err := histogram.ValidateHistogram(h); err != nil {
 			return 0, err
 		}
 	}
 
 	if fh != nil {
-		if err := tsdb.ValidateFloatHistogram(fh); err != nil {
+		if err := histogram.ValidateFloatHistogram(fh); err != nil {
 			return 0, err
 		}
 	}
