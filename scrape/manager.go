@@ -78,6 +78,8 @@ type Options struct {
 	EnableMetadataStorage bool
 	// Option to increase the interval used by scrape manager to throttle target groups updates.
 	DiscoveryReloadInterval model.Duration
+	// Option to enable the ingestion of the created timestamp of a metric.
+	EnableCreatedTimestampIngestion bool
 
 	// Optional HTTP client options to use when scraping.
 	HTTPClientOptions []config_util.HTTPClientOption

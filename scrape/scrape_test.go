@@ -660,6 +660,7 @@ func newBasicScrapeLoop(t testing.TB, ctx context.Context, scraper scraper, app 
 		false,
 		false,
 		false,
+		false,
 		nil,
 		false,
 		newTestScrapeMetrics(t),
@@ -798,6 +799,7 @@ func TestScrapeLoopRun(t *testing.T) {
 		nil,
 		time.Second,
 		time.Hour,
+		false,
 		false,
 		false,
 		false,
@@ -942,6 +944,7 @@ func TestScrapeLoopMetadata(t *testing.T) {
 		nil,
 		0,
 		0,
+		false,
 		false,
 		false,
 		false,
@@ -2377,7 +2380,7 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 
 	runTest(acceptHeader(config.DefaultScrapeProtocols))
 	protobufParsing = true
-	runTest(acceptHeader(config.DefaultNativeHistogramScrapeProtocols))
+	runTest(acceptHeader(config.DefaultProtoFirstScrapeProtocols))
 }
 
 func TestTargetScrapeScrapeCancel(t *testing.T) {

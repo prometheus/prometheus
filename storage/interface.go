@@ -237,6 +237,7 @@ type Appender interface {
 	ExemplarAppender
 	HistogramAppender
 	MetadataUpdater
+	CreatedTimestampAppender
 }
 
 // GetRef is an extra interface on Appenders used by downstream projects
@@ -292,6 +293,20 @@ type MetadataUpdater interface {
 	// UpdateMetadata returns an error.
 	// If the reference is 0 it must not be used for caching.
 	UpdateMetadata(ref SeriesRef, l labels.Labels, m metadata.Metadata) (SeriesRef, error)
+}
+
+// CreatedTimestampAppender provides an interface for appending created timestamps to the storage.
+type CreatedTimestampAppender interface {
+	// AppendCreatedTimestamp adds an extra sample to the given series labels.
+	// The value of the appended sample is always zero, while the sample's timestamp
+	// is the one exposed by the target as created timestamp.
+	//
+	// Appending created timestamps is optional, that is because appending sythetic zeros
+	// should only happen if created timestamp respects the order of the samples, i.e. is not out-of-order.
+	//
+	// When AppendCreatedTimestamp decides to not append a sample, it should return a warning that can be
+	// logged by the caller.
+	AppendCreatedTimestamp(ref SeriesRef, l labels.Labels, t int64) (SeriesRef, error)
 }
 
 // SeriesSet contains a set of series.

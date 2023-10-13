@@ -31,6 +31,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/gogo/protobuf/types"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
@@ -168,6 +169,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 			opts.interval,
 			opts.timeout,
 			opts.scrapeClassicHistograms,
+			options.EnableCreatedTimestampIngestion,
 			options.ExtraMetrics,
 			options.EnableMetadataStorage,
 			opts.target,
@@ -787,6 +789,7 @@ type scrapeLoop struct {
 	interval                 time.Duration
 	timeout                  time.Duration
 	scrapeClassicHistograms  bool
+	scrapeCreatedTimestamps  bool
 
 	appender            func(ctx context.Context) storage.Appender
 	sampleMutator       labelsMutator
@@ -1076,6 +1079,7 @@ func newScrapeLoop(ctx context.Context,
 	interval time.Duration,
 	timeout time.Duration,
 	scrapeClassicHistograms bool,
+	scrapeCreatedTimestamps bool,
 	reportExtraMetrics bool,
 	appendMetadataToWAL bool,
 	target *Target,
@@ -1124,6 +1128,7 @@ func newScrapeLoop(ctx context.Context,
 		interval:                 interval,
 		timeout:                  timeout,
 		scrapeClassicHistograms:  scrapeClassicHistograms,
+		scrapeCreatedTimestamps:  scrapeCreatedTimestamps,
 		reportExtraMetrics:       reportExtraMetrics,
 		appendMetadataToWAL:      appendMetadataToWAL,
 		metrics:                  metrics,
@@ -1555,6 +1560,18 @@ loop:
 
 			// Append metadata for new series if they were present.
 			updateMetadata(lset, true)
+		}
+
+		if sl.scrapeCreatedTimestamps {
+			var ct types.Timestamp
+			if p.CreatedTimestamp(&ct) {
+				if ctMs := (ct.Seconds * 1000) + int64(ct.Nanos/1_000_000); ctMs < t {
+					ref, err = app.AppendCreatedTimestamp(ref, lset, ctMs)
+					if err != nil {
+						level.Debug(sl.l).Log("msg", "created timestamp not ingested", "reason", err)
+					}
+				}
+			}
 		}
 
 		if isHistogram {

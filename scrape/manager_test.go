@@ -15,14 +15,22 @@ package scrape
 
 import (
 	"context"
+	"errors"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"os"
 	"strconv"
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/config"
@@ -30,6 +38,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/prometheus/prometheus/util/runutil"
 )
 
 func TestPopulateLabels(t *testing.T) {
@@ -713,4 +722,136 @@ scrape_configs:
 
 	reload(scrapeManager, cfg2)
 	require.ElementsMatch(t, []string{"job1", "job3"}, scrapeManager.ScrapePools())
+}
+
+func TestManagerScrapeCreatedTimestamp(t *testing.T) {
+	counterType := dto.MetricType_COUNTER
+	now := time.Now()
+	nowMs := now.UnixMilli()
+
+	makeMfWithCT := func(ct time.Time) *dto.MetricFamily {
+		return &dto.MetricFamily{
+			Name: proto.String("expected_counter"),
+			Type: &counterType,
+			Metric: []*dto.Metric{
+				{
+					Counter: &dto.Counter{
+						Value:            proto.Float64(1.0),
+						CreatedTimestamp: timestamppb.New(ct),
+					},
+				},
+			},
+		}
+	}
+
+	for _, tc := range []struct {
+		name                  string
+		mf                    *dto.MetricFamily
+		ingestCT              bool
+		expectedScrapedValues []float64
+	}{
+		{
+			name:                  "valid counter/Ingestion enabled",
+			mf:                    makeMfWithCT(now),
+			ingestCT:              true,
+			expectedScrapedValues: []float64{0.0, 1.0},
+		},
+		{
+			name:                  "valid counter/Ingestion disabled",
+			mf:                    makeMfWithCT(now),
+			ingestCT:              false,
+			expectedScrapedValues: []float64{1.0},
+		},
+		{
+			name: "created timestamp older than sample timestamp",
+			mf: func() *dto.MetricFamily {
+				mf := makeMfWithCT(now.Add(time.Hour))
+				mf.Metric[0].TimestampMs = &nowMs
+				return mf
+			}(),
+			ingestCT:              true,
+			expectedScrapedValues: []float64{1.0},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			app := &collectResultAppender{}
+			scrapeManager, err := NewManager(
+				&Options{EnableCreatedTimestampIngestion: tc.ingestCT},
+				log.NewLogfmtLogger(os.Stderr),
+				&collectResultAppendable{app},
+				prometheus.NewRegistry(),
+			)
+			require.NoError(t, err)
+
+			require.NoError(t, scrapeManager.ApplyConfig(&config.Config{
+				GlobalConfig: config.GlobalConfig{
+					ScrapeInterval:  model.Duration(5 * time.Second),
+					ScrapeTimeout:   model.Duration(5 * time.Second),
+					ScrapeProtocols: []config.ScrapeProtocol{config.PrometheusProto},
+				},
+				ScrapeConfigs: []*config.ScrapeConfig{{JobName: "test"}},
+			}))
+
+			// Start fake HTTP target to scrape returning a single metric.
+			server := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", `application/vnd.google.protobuf; proto=io.prometheus.client.MetricFamily; encoding=delimited`)
+					w.Write(serializeMetricFamily(t, tc.mf))
+				}),
+			)
+			defer server.Close()
+
+			serverURL, err := url.Parse(server.URL)
+			require.NoError(t, err)
+
+			// Add fake target directly into tsets + reload. Normally users would use
+			// Manager.Run and wait for minimum 5s refresh interval.
+			scrapeManager.updateTsets(map[string][]*targetgroup.Group{
+				"test": {
+					{
+						Targets: []model.LabelSet{{
+							model.SchemeLabel:  model.LabelValue(serverURL.Scheme),
+							model.AddressLabel: model.LabelValue(serverURL.Host),
+						}},
+					},
+				},
+			})
+			scrapeManager.reload()
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancel()
+			require.NoError(t, runutil.Retry(100*time.Millisecond, ctx.Done(), func() error {
+				if countFloatSamples(app, *tc.mf.Name) < 1 {
+					return errors.New("expected at least one sample")
+				}
+				return nil
+			}), "after 5 seconds")
+			scrapeManager.Stop()
+
+			require.Equal(t, tc.expectedScrapedValues, getResultFloats(app, *tc.mf.Name))
+		})
+	}
+}
+
+func countFloatSamples(a *collectResultAppender, expectedMetricName string) (count int) {
+	a.mtx.Lock()
+	defer a.mtx.Unlock()
+
+	for _, f := range a.resultFloats {
+		if f.metric.Get(model.MetricNameLabel) == expectedMetricName {
+			count++
+		}
+	}
+	return count
+}
+
+func getResultFloats(app *collectResultAppender, expectedMetricName string) (result []float64) {
+	app.mtx.Lock()
+	defer app.mtx.Unlock()
+
+	for _, f := range app.resultFloats {
+		if f.metric.Get(model.MetricNameLabel) == expectedMetricName {
+			result = append(result, f.f)
+		}
+	}
+	return result
 }
