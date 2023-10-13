@@ -44,6 +44,10 @@ http_archive(
     url = "https://github.com/jemalloc/jemalloc/releases/download/5.3.0/jemalloc-5.3.0.tar.bz2",  # 5.3
     sha256 = "2db82d1e7119df3e71b7640219b6dfe84789bc0537983c3b7ac4f7189aecfeaa",
     strip_prefix = "jemalloc-5.3.0/",
+    patch_args = ["-p1"],
+    patches = [
+        "//third_party/patches/jemalloc:musl-noexcept-fix.patch",
+    ],
     build_file = "//third_party:jemalloc.BUILD",
 )
 

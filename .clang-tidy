@@ -1,4 +1,3 @@
----
 Checks: >
   clang-diagnostic-*,
   clang-analyzer-*,
@@ -49,5 +48,3 @@ CheckOptions:
   readability-identifier-naming.FunctionCase: lower_case
   readability-identifier-naming.VariableCase: lower_case
   readability-identifier-naming.GlobalConstantCase: UPPER_CASE
-...
-

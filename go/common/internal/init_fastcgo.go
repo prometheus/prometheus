@@ -73,13 +73,21 @@ func EnableCoreDumps(enabled bool) {
 	)
 }
 
+//
 // CByteSlice API
+//
+
+// CSegmentDestroy - wrapper for destructor CSegment.
 func CSegmentDestroy(p unsafe.Pointer) {
 	fastcgo.UnsafeCall1(C.okdb_wal_c_segment_destroy,
 		uintptr(p))
 }
 
+//
 // CEncoderAddManyStateHandle API
+//
+
+// CEncoderAddManyStateHandleDestroy - wrapper for destructor CEncoder.
 func CEncoderAddManyStateHandleDestroy(handle uint64) {
 	fastcgo.UnsafeCall1(C.okdb_wal_c_encoder_add_many_state_destroy,
 		uintptr(handle))
@@ -89,15 +97,18 @@ func CEncoderAddManyStateHandleDestroy(handle uint64) {
 // CDecoder API
 //
 
+// CDecoderDecodeArgs - args for Decode.
 type CDecoderDecodeArgs struct {
 	segment  *[]byte
 	protobuf *GoDecodedSegment
 }
 
+// CDecoderDecodeDryArgs - args for DecodeDry.
 type CDecoderDecodeDryArgs struct {
 	segment *[]byte
 }
 
+// CDecoderDecodeResult - result after decode.
 type CDecoderDecodeResult struct {
 	result uint32
 }
@@ -108,10 +119,12 @@ type CDecoderDecodeRestoreFromStreamArgs struct {
 	restoredResult *GoRestoredResult
 }
 
+// CDecoderSnapshotArgs - args for restore decode from Snapshot.
 type CDecoderSnapshotArgs struct {
 	snapshot *[]byte
 }
 
+// CDecoderCtor - wrapper for constructor CDecoder.
 func CDecoderCtor(err *GoErrorInfo) CDecoder {
 	var decoder uintptr = 0
 	fastcgo.UnsafeCall2(
@@ -189,6 +202,7 @@ func CDecoderDecodeSnapshot(decoder CDecoder, snapshot []byte, err *GoErrorInfo)
 	)
 }
 
+// CDecoderDtor - wrapper for destructor CDecoder.
 func CDecoderDtor(decoder CDecoder) {
 	fastcgo.UnsafeCall1(C.okdb_wal_c_decoder_dtor, uintptr(decoder))
 }
@@ -222,6 +236,7 @@ type CEncoderSnapshotArgs struct {
 	snapshot   *GoSnapshot
 }
 
+// CEncoderCtor - wrapper for constructor CEncoder.
 func CEncoderCtor(shardID, numberOfShards uint16, err *GoErrorInfo) CEncoder {
 	var encoder uintptr = 0
 	var args = CEncoderCtorArgs{
@@ -238,6 +253,7 @@ func CEncoderCtor(shardID, numberOfShards uint16, err *GoErrorInfo) CEncoder {
 	return CEncoder(unsafe.Pointer(encoder))
 }
 
+// CEncoderEncode - encoding incoming data(ShardedData) through C++ encoder.
 func CEncoderEncode(encoder CEncoder, hashdex CHashdex, segment *GoSegment, redundant *GoRedundant, err *GoErrorInfo) {
 	var args = CEncoderEncodeArgs{
 		hashdex:   hashdex,
@@ -281,6 +297,7 @@ func CEncoderFinalize(encoder CEncoder, segment *GoSegment, redundant *GoRedunda
 	)
 }
 
+// CEncoderSnapshot - wrapper for getter shapshot from encoder.
 func CEncoderSnapshot(encoder CEncoder, redundants []unsafe.Pointer, snapshot *GoSnapshot, err *GoErrorInfo) {
 	var args = CEncoderSnapshotArgs{
 		redundants: &redundants,
@@ -294,6 +311,7 @@ func CEncoderSnapshot(encoder CEncoder, redundants []unsafe.Pointer, snapshot *G
 	)
 }
 
+// CEncoderDtor - wrapper for destructor CEncoder.
 func CEncoderDtor(encoder CEncoder) {
 	fastcgo.UnsafeCall1(C.okdb_wal_c_encoder_dtor,
 		uintptr(encoder),
@@ -304,12 +322,14 @@ func CEncoderDtor(encoder CEncoder) {
 // CHashdex API.
 //
 
+// CHashdexPreshardingParams - parameters for presharding CHashdex from protobuf.
 type CHashdexPreshardingParams struct {
 	protoData *[]byte
 	cluster   *CSlice
 	replica   *CSlice
 }
 
+// CHashdexCtor - wrapper for constructor CHashdex.
 func CHashdexCtor(args uintptr) CHashdex {
 	var hashdex uintptr = 0
 	var error CErrorInfo = nil
@@ -324,6 +344,7 @@ func CHashdexCtor(args uintptr) CHashdex {
 	return CHashdex(uintptr(unsafe.Pointer(hashdex)))
 }
 
+// CHashdexPresharding - wrapper for presharding CHashdex from protobuf.
 func CHashdexPresharding(hashdex CHashdex, protoData []byte, cluster, replica *CSlice, err *GoErrorInfo) {
 	var args = CHashdexPreshardingParams{
 		protoData: &protoData,
@@ -338,6 +359,7 @@ func CHashdexPresharding(hashdex CHashdex, protoData []byte, cluster, replica *C
 	)
 }
 
+// CHashdexDtor - wrapper for destructor CHashdex.
 func CHashdexDtor(hashdex CHashdex) {
 	fastcgo.UnsafeCall1(C.okdb_wal_c_hashdex_dtor,
 		uintptr(hashdex))
@@ -347,6 +369,7 @@ func CHashdexDtor(hashdex CHashdex) {
 // CSlice-like objects API
 //
 
+// CSnapshotDestroy - wrapper for destructor Snapshot.
 func CSnapshotDestroy(p unsafe.Pointer) {
 	fastcgo.UnsafeCall1(C.okdb_wal_c_snapshot_destroy,
 		uintptr(p))
@@ -364,15 +387,33 @@ func CDecodedSegmentDestroy(p unsafe.Pointer) {
 		uintptr(p))
 }
 
+//
 // CErrorInfo API
+//
+
+// CErrorInfoGetError - wrapper for getter error info.
 func CErrorInfoGetError(errinfo CErrorInfo) string {
 	return C.GoString(C.c_api_error_info_get_error(errinfo))
 }
 
+// CErrorInfoGetStacktrace - wrapper for getter stacktrace.
 func CErrorInfoGetStacktrace(errinfo CErrorInfo) string {
 	return C.GoString(C.c_api_error_info_get_stacktrace(errinfo))
 }
 
+// CErrorInfoDestroy - wrapper for destructor CErrorInfo.
 func CErrorInfoDestroy(errinfo CErrorInfo) {
 	C.destroy_c_api_error_info(errinfo)
+}
+
+//
+// C-Memory info API
+//
+
+// CMemInfo - get c-memory stat usage.
+func CMemInfo(result *GoMemInfoResult) {
+	fastcgo.UnsafeCall1(
+		C.okdb_wal_c_mem_info,
+		uintptr(unsafe.Pointer(result)),
+	)
 }
