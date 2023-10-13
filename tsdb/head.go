@@ -765,10 +765,10 @@ func (h *Head) Init(minValidTime int64) error {
 
 	wblReplayStart := time.Now()
 	if h.wbl != nil {
-		// Replay OOO WAL.
+		// Replay WBL.
 		startFrom, endAt, e = wlog.Segments(h.wbl.Dir())
 		if e != nil {
-			return &errLoadWbl{errors.Wrap(e, "finding OOO WAL segments")}
+			return &errLoadWbl{errors.Wrap(e, "finding WBL segments")}
 		}
 		h.startWALReplayStatus(startFrom, endAt)
 
