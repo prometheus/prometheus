@@ -659,11 +659,21 @@ func ValidateHistogram(h *histogram.Histogram) error {
 		return errors.Wrap(err, "positive side")
 	}
 
-	if c := nCount + pCount + h.ZeroCount; c > h.Count {
-		return errors.Wrap(
-			storage.ErrHistogramCountNotBigEnough,
-			fmt.Sprintf("%d observations found in buckets, but the Count field is %d", c, h.Count),
-		)
+	sumOfBuckets := nCount + pCount + h.ZeroCount
+	if math.IsNaN(h.Sum) {
+		if sumOfBuckets > h.Count {
+			return errors.Wrap(
+				storage.ErrHistogramCountNotBigEnough,
+				fmt.Sprintf("%d observations found in buckets, but the Count field is %d", sumOfBuckets, h.Count),
+			)
+		}
+	} else {
+		if sumOfBuckets != h.Count {
+			return errors.Wrap(
+				storage.ErrHistogramCountMismatch,
+				fmt.Sprintf("%d observations found in buckets, but the Count field is %d", sumOfBuckets, h.Count),
+			)
+		}
 	}
 
 	return nil

@@ -3419,7 +3419,6 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 			hists = tsdbutil.GenerateTestHistograms(numHistograms)
 		}
 		for _, h := range hists {
-			h.Count *= 2
 			h.NegativeSpans = h.PositiveSpans
 			h.NegativeBuckets = h.PositiveBuckets
 			_, err := app.AppendHistogram(0, s1, ts, h, nil)
@@ -3442,7 +3441,6 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 			hists = tsdbutil.GenerateTestFloatHistograms(numHistograms)
 		}
 		for _, h := range hists {
-			h.Count *= 2
 			h.NegativeSpans = h.PositiveSpans
 			h.NegativeBuckets = h.PositiveBuckets
 			_, err := app.AppendHistogram(0, s1, ts, nil, h)
@@ -3484,7 +3482,6 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 		}
 		for _, h := range hists {
 			ts++
-			h.Count *= 2
 			h.NegativeSpans = h.PositiveSpans
 			h.NegativeBuckets = h.PositiveBuckets
 			_, err := app.AppendHistogram(0, s2, ts, h, nil)
@@ -3521,7 +3518,6 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 		}
 		for _, h := range hists {
 			ts++
-			h.Count *= 2
 			h.NegativeSpans = h.PositiveSpans
 			h.NegativeBuckets = h.PositiveBuckets
 			_, err := app.AppendHistogram(0, s2, ts, nil, h)
@@ -4907,7 +4903,7 @@ func TestHistogramValidation(t *testing.T) {
 		"valid histogram": {
 			h: tsdbutil.GenerateTestHistograms(1)[0],
 		},
-		"valid histogram that has its Count (4) higher than the actual total of buckets (2 + 1)": {
+		"valid histogram with NaN observations that has its Count (4) higher than the actual total of buckets (2 + 1)": {
 			// This case is possible if NaN values (which do not fall into any bucket) are observed.
 			h: &histogram.Histogram{
 				ZeroCount:       2,
@@ -4916,6 +4912,17 @@ func TestHistogramValidation(t *testing.T) {
 				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
 				PositiveBuckets: []int64{1},
 			},
+		},
+		"rejects histogram without NaN observations that has its Count (4) higher than the actual total of buckets (2 + 1)": {
+			h: &histogram.Histogram{
+				ZeroCount:       2,
+				Count:           4,
+				Sum:             333,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []int64{1},
+			},
+			errMsg:    `3 observations found in buckets, but the Count field is 4: histogram's observation count should equal the number of observations found in the buckets (in absence of NaN)`,
+			skipFloat: true,
 		},
 		"rejects histogram that has too few negative buckets": {
 			h: &histogram.Histogram{
@@ -4981,7 +4988,7 @@ func TestHistogramValidation(t *testing.T) {
 				NegativeBuckets: []int64{1},
 				PositiveBuckets: []int64{1},
 			},
-			errMsg:    `2 observations found in buckets, but the Count field is 0: histogram's observation count should be at least the number of observations found in the buckets`,
+			errMsg:    `2 observations found in buckets, but the Count field is 0: histogram's observation count should equal the number of observations found in the buckets (in absence of NaN)`,
 			skipFloat: true,
 		},
 		"rejects a histogram that doesn't count the zero bucket in its count": {
@@ -4993,7 +5000,7 @@ func TestHistogramValidation(t *testing.T) {
 				NegativeBuckets: []int64{1},
 				PositiveBuckets: []int64{1},
 			},
-			errMsg:    `3 observations found in buckets, but the Count field is 2: histogram's observation count should be at least the number of observations found in the buckets`,
+			errMsg:    `3 observations found in buckets, but the Count field is 2: histogram's observation count should equal the number of observations found in the buckets (in absence of NaN)`,
 			skipFloat: true,
 		},
 	}
@@ -5029,8 +5036,8 @@ func generateBigTestHistograms(numHistograms, numBuckets int) []*histogram.Histo
 	numSpans := numBuckets / 10
 	bucketsPerSide := numBuckets / 2
 	spanLength := uint32(bucketsPerSide / numSpans)
-	// Given all bucket deltas are 1, sum numHistograms + 1.
-	observationCount := numBuckets / 2 * (1 + numBuckets)
+	// Given all bucket deltas are 1, sum bucketsPerSide + 1.
+	observationCount := bucketsPerSide * (1 + bucketsPerSide)
 
 	var histograms []*histogram.Histogram
 	for i := 0; i < numHistograms; i++ {
@@ -5491,14 +5498,13 @@ func TestCuttingNewHeadChunks(t *testing.T) {
 				numSamples int
 				numBytes   int
 			}{
-				{30, 696},
-				{30, 700},
-				{30, 708},
-				{30, 693},
+				{40, 896},
+				{40, 899},
+				{40, 896},
+				{30, 690},
 				{30, 691},
-				{30, 692},
-				{30, 695},
 				{30, 694},
+				{30, 693},
 			},
 		},
 		"really large histograms": {
