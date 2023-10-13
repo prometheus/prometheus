@@ -760,7 +760,8 @@ func TestDBAllowOOOSamples(t *testing.T) {
 		offset        = 100
 	)
 
-	s := createTestAgentDB(t, nil, DefaultOptions())
+	reg := prometheus.NewRegistry()
+	s := createTestAgentDB(t, reg, DefaultOptions())
 	app := s.Appender(context.TODO())
 
 	// Let's add some samples in the [offset, offset+numDatapoints) range.
@@ -808,6 +809,9 @@ func TestDBAllowOOOSamples(t *testing.T) {
 	}
 
 	require.NoError(t, app.Commit())
+	m := gatherFamily(t, reg, "prometheus_agent_samples_appended_total")
+	require.Equal(t, float64(20), m.Metric[0].Counter.GetValue(), "agent wal mismatch of total appended samples")
+	require.Equal(t, float64(40), m.Metric[1].Counter.GetValue(), "agent wal mismatch of total appended histograms")
 	require.NoError(t, s.Close())
 
 	// Hack: s.wal.Dir() is the /wal subdirectory of the original storage path.
@@ -815,16 +819,17 @@ func TestDBAllowOOOSamples(t *testing.T) {
 	storageDir := filepath.Dir(s.wal.Dir())
 
 	// Replay the storage so that the lastTs for each series is recorded.
-	replayStorage, err := Open(s.logger, prometheus.NewRegistry(), nil, storageDir, s.opts)
+	reg2 := prometheus.NewRegistry()
+	db, err := Open(s.logger, reg2, nil, storageDir, s.opts)
 	if err != nil {
 		t.Fatalf("unable to create storage for the agent: %v", err)
 	}
-	defer func() {
-		require.NoError(t, replayStorage.Close())
-	}()
+
+	app = db.Appender(context.Background())
 
 	// Now the lastTs will have been recorded successfully.
-	// Let's try appending some OOO samples in the [0, numDatapoints) range.
+	// Let's try appending twice as many OOO samples in the [0, numDatapoints) range.
+	lbls = labelsForTest(t.Name()+"_histogram", numSeries*2)
 	for _, l := range lbls {
 		lset := labels.New(l...)
 
@@ -843,7 +848,7 @@ func TestDBAllowOOOSamples(t *testing.T) {
 		}
 	}
 
-	lbls = labelsForTest(t.Name()+"_histogram", numSeries)
+	lbls = labelsForTest(t.Name()+"_histogram", numSeries*2)
 	for _, l := range lbls {
 		lset := labels.New(l...)
 
@@ -855,7 +860,7 @@ func TestDBAllowOOOSamples(t *testing.T) {
 		}
 	}
 
-	lbls = labelsForTest(t.Name()+"_float_histogram", numSeries)
+	lbls = labelsForTest(t.Name()+"_float_histogram", numSeries*2)
 	for _, l := range lbls {
 		lset := labels.New(l...)
 
@@ -866,4 +871,10 @@ func TestDBAllowOOOSamples(t *testing.T) {
 			require.NoError(t, err)
 		}
 	}
+
+	require.NoError(t, app.Commit())
+	m = gatherFamily(t, reg2, "prometheus_agent_samples_appended_total")
+	require.Equal(t, float64(40), m.Metric[0].Counter.GetValue(), "agent wal mismatch of total appended samples")
+	require.Equal(t, float64(80), m.Metric[1].Counter.GetValue(), "agent wal mismatch of total appended histograms")
+	require.NoError(t, db.Close())
 }
