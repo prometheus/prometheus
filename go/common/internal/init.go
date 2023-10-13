@@ -344,3 +344,12 @@ func CErrorInfoGetStacktrace(errinfo CErrorInfo) string {
 func CErrorInfoDestroy(errinfo CErrorInfo) {
 	C.destroy_c_api_error_info(errinfo)
 }
+
+//
+// C-Memory info API
+//
+
+// CMemInfo - get c-memory stat usage.
+func CMemInfo(result *GoMemInfoResult) {
+	C.okdb_wal_c_mem_info(C.ulong(uintptr(unsafe.Pointer(result))))
+}

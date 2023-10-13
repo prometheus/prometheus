@@ -104,6 +104,16 @@ int okdb_wal_initialize();
 /// \param enable Enables if != 0, disables otherwise.
 void prompp_enable_coredumps_on_exception(int enable);
 
+// Memory Info
+
+// mem_info_result - result check memory.
+typedef struct {
+  size_t in_use;
+} mem_info_result;
+
+// okdb_wal_c_mem_info - get memory usage stats.
+void okdb_wal_c_mem_info(go_ptr result);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif
