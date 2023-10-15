@@ -8,7 +8,6 @@ global:
   label_limit: 30
   label_name_length_limit: 200
   label_value_length_limit: 200
-  remote_timeout: 15s
   # scrape_timeout is set to the global default (10s).
 
   external_labels:
