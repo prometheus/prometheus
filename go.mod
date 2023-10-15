@@ -206,6 +206,3 @@ exclude (
 	github.com/grpc-ecosystem/grpc-gateway v1.14.7
 	google.golang.org/api v0.30.0
 )
-
-// Exclude the latest version of nomad/api because it uses go 1.21 slices.
-exclude github.com/hashicorp/nomad/api v0.0.0-20231012204311-484f91b893c6
