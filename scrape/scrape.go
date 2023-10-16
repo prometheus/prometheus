@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/sha512"
 	"errors"
 	"fmt"
 	"io"
@@ -776,6 +777,7 @@ type scrapeLoop struct {
 	scraper                  scraper
 	l                        log.Logger
 	cache                    *scrapeCache
+	cacheSHA                 bool
 	lastScrapeSize           int
 	buffers                  *pool.Pool
 	offsetSeed               uint64
@@ -823,11 +825,13 @@ type scrapeCache struct {
 
 	// Parsed string to an entry with information about the actual label set
 	// and its storage reference.
-	series map[string]*cacheEntry
+	series    map[string]*cacheEntry
+	seriesSHA map[[sha512.Size256]byte]*cacheEntry
 
 	// Cache of dropped metric strings and their iteration. The iteration must
 	// be a pointer so we can update it.
-	droppedSeries map[string]*uint64
+	droppedSeries    map[string]*uint64
+	droppedSeriesSHA map[[sha512.Size256]byte]uint64
 
 	// seriesCur and seriesPrev store the labels of series that were seen
 	// in the current and previous scrape.
@@ -856,12 +860,14 @@ func (m *metaEntry) size() int {
 
 func newScrapeCache(metrics *scrapeMetrics) *scrapeCache {
 	return &scrapeCache{
-		series:        map[string]*cacheEntry{},
-		droppedSeries: map[string]*uint64{},
-		seriesCur:     map[uint64]labels.Labels{},
-		seriesPrev:    map[uint64]labels.Labels{},
-		metadata:      map[string]*metaEntry{},
-		metrics:       metrics,
+		series:           map[string]*cacheEntry{},
+		droppedSeries:    map[string]*uint64{},
+		seriesSHA:        map[[sha512.Size256]byte]*cacheEntry{},
+		droppedSeriesSHA: map[[sha512.Size256]byte]uint64{},
+		seriesCur:        map[uint64]labels.Labels{},
+		seriesPrev:       map[uint64]labels.Labels{},
+		metadata:         map[string]*metaEntry{},
+		metrics:          metrics,
 	}
 }
 
@@ -943,6 +949,34 @@ func (c *scrapeCache) getDropped(met []byte) bool {
 	iterp, ok := c.droppedSeries[string(met)]
 	if ok {
 		*iterp = c.iter
+	}
+	return ok
+}
+
+func (c *scrapeCache) getSHA(sha [sha512.Size256]byte) (*cacheEntry, bool) {
+	e, ok := c.seriesSHA[sha]
+	if !ok {
+		return nil, false
+	}
+	e.lastIter = c.iter
+	return e, true
+}
+
+func (c *scrapeCache) addRefSHA(sha [sha512.Size256]byte, ref storage.SeriesRef, lset labels.Labels, hash uint64) {
+	if ref == 0 {
+		return
+	}
+	c.seriesSHA[sha] = &cacheEntry{ref: ref, lastIter: c.iter, lset: lset, hash: hash}
+}
+
+func (c *scrapeCache) addDroppedSHA(sha [sha512.Size256]byte) {
+	c.droppedSeriesSHA[sha] = c.iter
+}
+
+func (c *scrapeCache) getDroppedSHA(sha [sha512.Size256]byte) bool {
+	_, ok := c.droppedSeriesSHA[sha]
+	if ok {
+		c.droppedSeriesSHA[sha] = c.iter
 	}
 	return ok
 }
@@ -1521,14 +1555,25 @@ loop:
 		meta = metadata.Metadata{}
 		metadataChanged = false
 
-		if sl.cache.getDropped(met) {
-			continue
-		}
-		ce, seriesInCache := sl.cache.get(met)
 		var (
-			ref  storage.SeriesRef
-			hash uint64
+			ref           storage.SeriesRef
+			hash          uint64
+			ce            *cacheEntry
+			sha           [sha512.Size256]byte
+			seriesInCache bool
 		)
+		if sl.cacheSHA {
+			sha = sha512.Sum512_256(met)
+			if sl.cache.getDroppedSHA(sha) {
+				continue
+			}
+			ce, seriesInCache = sl.cache.getSHA(sha)
+		} else {
+			if sl.cache.getDropped(met) {
+				continue
+			}
+			ce, seriesInCache = sl.cache.get(met)
+		}
 
 		if seriesInCache {
 			ref = ce.ref
@@ -1546,7 +1591,11 @@ loop:
 
 			// The label set may be set to empty to indicate dropping.
 			if lset.IsEmpty() {
-				sl.cache.addDropped(met)
+				if sl.cacheSHA {
+					sl.cache.addDroppedSHA(sha)
+				} else {
+					sl.cache.addDropped(met)
+				}
 				continue
 			}
 
@@ -1600,7 +1649,11 @@ loop:
 				// Bypass staleness logic if there is an explicit timestamp.
 				sl.cache.trackStaleness(hash, lset)
 			}
-			sl.cache.addRef(met, ref, lset, hash)
+			if sl.cacheSHA {
+				sl.cache.addRefSHA(sha, ref, lset, hash)
+			} else {
+				sl.cache.addRef(met, ref, lset, hash)
+			}
 			if sampleAdded && sampleLimitErr == nil && bucketLimitErr == nil {
 				seriesAdded++
 			}
