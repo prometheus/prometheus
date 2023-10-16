@@ -156,8 +156,8 @@ func NewMixedClassicNativeHistogramsWarning(metricName string, pos posrange.Posi
 	}
 }
 
-// NewPossibleNonCounterInfo is used when a counter metric does not have the suffixes
-// _total, _sum, _count, or _bucket.
+// NewPossibleNonCounterInfo is used when a named counter metric with only float samples does not
+// have the suffixes _total, _sum, _count, or _bucket.
 func NewPossibleNonCounterInfo(metricName string, pos posrange.PositionRange) annoErr {
 	return annoErr{
 		PositionRange: pos,
