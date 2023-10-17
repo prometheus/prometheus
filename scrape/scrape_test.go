@@ -1250,50 +1250,59 @@ func TestScrapeLoopCache(t *testing.T) {
 }
 
 func TestScrapeLoopCacheMemoryExhaustionProtection(t *testing.T) {
-	s := teststorage.New(t)
-	defer s.Close()
+	for _, cacheByHash := range []bool{false, true} {
+		t.Run(fmt.Sprintf("cacheByHash=%v", cacheByHash), func(t *testing.T) {
+			s := teststorage.New(t)
+			defer s.Close()
 
-	sapp := s.Appender(context.Background())
+			sapp := s.Appender(context.Background())
 
-	appender := &collectResultAppender{next: sapp}
-	var (
-		signal  = make(chan struct{}, 1)
-		scraper = &testScraper{}
-		app     = func(ctx context.Context) storage.Appender { return appender }
-	)
+			appender := &collectResultAppender{next: sapp}
+			var (
+				signal  = make(chan struct{}, 1)
+				scraper = &testScraper{}
+				app     = func(ctx context.Context) storage.Appender { return appender }
+			)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	sl := newBasicScrapeLoop(t, ctx, scraper, app, 10*time.Millisecond)
+			ctx, cancel := context.WithCancel(context.Background())
+			sl := newBasicScrapeLoop(t, ctx, scraper, app, 10*time.Millisecond)
+			sl.cacheByHash = cacheByHash
 
-	numScrapes := 0
+			numScrapes := 0
 
-	scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
-		numScrapes++
-		if numScrapes < 5 {
-			s := ""
-			for i := 0; i < 500; i++ {
-				s = fmt.Sprintf("%smetric_%d_%d 42\n", s, i, numScrapes)
+			scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
+				numScrapes++
+				if numScrapes < 5 {
+					s := ""
+					for i := 0; i < 500; i++ {
+						s = fmt.Sprintf("%smetric_%d_%d 42\n", s, i, numScrapes)
+					}
+					w.Write([]byte(fmt.Sprintf(s + "&")))
+				} else {
+					cancel()
+				}
+				return nil
 			}
-			w.Write([]byte(fmt.Sprintf(s + "&")))
-		} else {
-			cancel()
-		}
-		return nil
-	}
 
-	go func() {
-		sl.run(nil)
-		signal <- struct{}{}
-	}()
+			go func() {
+				sl.run(nil)
+				signal <- struct{}{}
+			}()
 
-	select {
-	case <-signal:
-	case <-time.After(5 * time.Second):
-		t.Fatalf("Scrape wasn't stopped.")
-	}
+			select {
+			case <-signal:
+			case <-time.After(5 * time.Second):
+				t.Fatalf("Scrape wasn't stopped.")
+			}
 
-	if len(sl.cache.series) > 2000 {
-		t.Fatalf("More than 2000 series cached. Got: %d", len(sl.cache.series))
+			if sl.cacheByHash {
+				require.Greater(t, len(sl.cache.seriesHash), 0, "No series cached.")
+				require.LessOrEqual(t, len(sl.cache.seriesHash), 1000, "More than 1000 series cached.")
+			} else {
+				require.Greater(t, len(sl.cache.series), 5, "No series cached.")
+				require.LessOrEqual(t, len(sl.cache.series), 1000, "More than 1000 series cached.")
+			}
+		})
 	}
 }
 
