@@ -874,7 +874,7 @@ func newScrapeCache(metrics *scrapeMetrics) *scrapeCache {
 
 func (c *scrapeCache) iterDone(flushCache bool) {
 	c.metaMtx.Lock()
-	count := len(c.series) + len(c.droppedSeries) + len(c.metadata)
+	count := len(c.series) + len(c.seriesSHA) + len(c.droppedSeries) + len(c.droppedSeriesSHA) + len(c.metadata)
 	c.metaMtx.Unlock()
 
 	switch {
@@ -899,9 +899,19 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 				delete(c.series, s)
 			}
 		}
+		for s, e := range c.seriesSHA {
+			if c.iter != e.lastIter {
+				delete(c.seriesSHA, s)
+			}
+		}
 		for s, iter := range c.droppedSeries {
 			if c.iter != *iter {
 				delete(c.droppedSeries, s)
+			}
+		}
+		for s, iter := range c.droppedSeriesSHA {
+			if c.iter != iter {
+				delete(c.droppedSeriesSHA, s)
 			}
 		}
 		c.metaMtx.Lock()
