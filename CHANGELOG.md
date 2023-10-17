@@ -5,7 +5,7 @@
 * [CHANGE] Remote-write: respect Retry-After header on 5xx errors. #12677
 * [FEATURE] Alerting: Add AWS SigV4 authentication support for Alertmanager endpoints. #12774
 * [FEATURE] Promtool: Add support for histograms in the TSDB dump command. #12775
-* [FEATURE] PromQL: Add warnings (and annotations) to PromQL query results. #12152 #12982
+* [FEATURE] PromQL: Add warnings (and annotations) to PromQL query results. #12152 #12982 #12988
 * [FEATURE] Remote-write: Add Azure AD OAuth authentication support for remote write requests. #12572
 * [ENHANCEMENT] Remote-write: Add a header to count retried remote write requests. #12729
 * [ENHANCEMENT] TSDB: Improve query performance by re-using iterator when moving between series. #12757
