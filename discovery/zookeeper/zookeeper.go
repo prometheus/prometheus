@@ -16,17 +16,18 @@ package zookeeper
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/pkg/errors"
+	"github.com/go-kit/log"
+	"github.com/go-zookeeper/zk"
 	"github.com/prometheus/common/model"
-	"github.com/samuel/go-zookeeper/zk"
 
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
 	"github.com/prometheus/prometheus/util/treecache"
@@ -43,11 +44,24 @@ var (
 	}
 )
 
+func init() {
+	discovery.RegisterConfig(&ServersetSDConfig{})
+	discovery.RegisterConfig(&NerveSDConfig{})
+}
+
 // ServersetSDConfig is the configuration for Twitter serversets in Zookeeper based discovery.
 type ServersetSDConfig struct {
 	Servers []string       `yaml:"servers"`
 	Paths   []string       `yaml:"paths"`
 	Timeout model.Duration `yaml:"timeout,omitempty"`
+}
+
+// Name returns the name of the Config.
+func (*ServersetSDConfig) Name() string { return "serverset" }
+
+// NewDiscoverer returns a Discoverer for the Config.
+func (c *ServersetSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
+	return NewServersetDiscovery(c, opts.Logger)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -66,7 +80,7 @@ func (c *ServersetSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 	}
 	for _, path := range c.Paths {
 		if !strings.HasPrefix(path, "/") {
-			return errors.Errorf("serverset SD config paths must begin with '/': %s", path)
+			return fmt.Errorf("serverset SD config paths must begin with '/': %s", path)
 		}
 	}
 	return nil
@@ -77,6 +91,14 @@ type NerveSDConfig struct {
 	Servers []string       `yaml:"servers"`
 	Paths   []string       `yaml:"paths"`
 	Timeout model.Duration `yaml:"timeout,omitempty"`
+}
+
+// Name returns the name of the Config.
+func (*NerveSDConfig) Name() string { return "nerve" }
+
+// NewDiscoverer returns a Discoverer for the Config.
+func (c *NerveSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
+	return NewNerveDiscovery(c, opts.Logger)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -95,7 +117,7 @@ func (c *NerveSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 	for _, path := range c.Paths {
 		if !strings.HasPrefix(path, "/") {
-			return errors.Errorf("nerve SD config paths must begin with '/': %s", path)
+			return fmt.Errorf("nerve SD config paths must begin with '/': %s", path)
 		}
 	}
 	return nil
@@ -108,8 +130,9 @@ type Discovery struct {
 
 	sources map[string]*targetgroup.Group
 
-	updates    chan treecache.ZookeeperTreeCacheEvent
-	treeCaches []*treecache.ZookeeperTreeCache
+	updates     chan treecache.ZookeeperTreeCacheEvent
+	pathUpdates []chan treecache.ZookeeperTreeCacheEvent
+	treeCaches  []*treecache.ZookeeperTreeCache
 
 	parse  func(data []byte, path string) (model.LabelSet, error)
 	logger log.Logger
@@ -155,7 +178,9 @@ func NewDiscovery(
 		logger:  logger,
 	}
 	for _, path := range paths {
-		sd.treeCaches = append(sd.treeCaches, treecache.NewZookeeperTreeCache(conn, path, updates, logger))
+		pathUpdate := make(chan treecache.ZookeeperTreeCacheEvent)
+		sd.pathUpdates = append(sd.pathUpdates, pathUpdate)
+		sd.treeCaches = append(sd.treeCaches, treecache.NewZookeeperTreeCache(conn, path, pathUpdate, logger))
 	}
 	return sd, nil
 }
@@ -166,11 +191,25 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		for _, tc := range d.treeCaches {
 			tc.Stop()
 		}
-		// Drain event channel in case the treecache leaks goroutines otherwise.
-		for range d.updates {
+		for _, pathUpdate := range d.pathUpdates {
+			// Drain event channel in case the treecache leaks goroutines otherwise.
+			for range pathUpdate { // nolint:revive
+			}
 		}
 		d.conn.Close()
 	}()
+
+	for _, pathUpdate := range d.pathUpdates {
+		go func(update chan treecache.ZookeeperTreeCacheEvent) {
+			for event := range update {
+				select {
+				case d.updates <- event:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}(pathUpdate)
+	}
 
 	for {
 		select {
@@ -224,7 +263,7 @@ func parseServersetMember(data []byte, path string) (model.LabelSet, error) {
 	member := serversetMember{}
 
 	if err := json.Unmarshal(data, &member); err != nil {
-		return nil, errors.Wrapf(err, "error unmarshaling serverset member %q", path)
+		return nil, fmt.Errorf("error unmarshaling serverset member %q: %w", path, err)
 	}
 
 	labels := model.LabelSet{}
@@ -266,7 +305,7 @@ func parseNerveMember(data []byte, path string) (model.LabelSet, error) {
 	member := nerveMember{}
 	err := json.Unmarshal(data, &member)
 	if err != nil {
-		return nil, errors.Wrapf(err, "error unmarshaling nerve member %q", path)
+		return nil, fmt.Errorf("error unmarshaling nerve member %q: %w", path, err)
 	}
 
 	labels := model.LabelSet{}

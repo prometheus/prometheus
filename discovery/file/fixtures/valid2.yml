@@ -1,0 +1,8 @@
+- targets: ['my.domain']
+- targets: ['localhost:9090']
+  labels:
+    foo: bar
+    fred: baz
+- targets: ['example.org:443']
+  labels:
+    scheme: https

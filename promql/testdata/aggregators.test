@@ -17,6 +17,10 @@ eval instant at 50m SUM BY (group) (http_requests{job="api-server"})
   {group="canary"} 700
   {group="production"} 300
 
+eval instant at 50m SUM BY (group) (((http_requests{job="api-server"})))
+  {group="canary"} 700
+  {group="production"} 300
+
 # Test alternative "by"-clause order.
 eval instant at 50m sum by (group) (http_requests{job="api-server"})
   {group="canary"} 700
@@ -73,7 +77,108 @@ eval instant at 50m sum by (group) (http_requests{job="api-server"})
 eval instant at 50m sum(sum by (group) (http_requests{job="api-server"})) by (job)
   {} 1000
 
+eval instant at 50m SUM(http_requests)
+	{} 3600
 
+eval instant at 50m SUM(http_requests{instance="0"}) BY(job)
+	{job="api-server"} 400
+	{job="app-server"} 1200
+
+eval instant at 50m SUM(http_requests) BY (job)
+	{job="api-server"} 1000
+	{job="app-server"} 2600
+
+# Non-existent labels mentioned in BY-clauses shouldn't propagate to output.
+eval instant at 50m SUM(http_requests) BY (job, nonexistent)
+	{job="api-server"} 1000
+	{job="app-server"} 2600
+
+eval instant at 50m COUNT(http_requests) BY (job)
+	{job="api-server"} 4
+	{job="app-server"} 4
+
+eval instant at 50m SUM(http_requests) BY (job, group)
+	{group="canary", job="api-server"} 700
+	{group="canary", job="app-server"} 1500
+	{group="production", job="api-server"} 300
+	{group="production", job="app-server"} 1100
+
+eval instant at 50m AVG(http_requests) BY (job)
+	{job="api-server"} 250
+	{job="app-server"} 650
+
+eval instant at 50m MIN(http_requests) BY (job)
+	{job="api-server"} 100
+	{job="app-server"} 500
+
+eval instant at 50m MAX(http_requests) BY (job)
+	{job="api-server"} 400
+	{job="app-server"} 800
+
+eval instant at 50m abs(-1 * http_requests{group="production",job="api-server"})
+	{group="production", instance="0", job="api-server"} 100
+	{group="production", instance="1", job="api-server"} 200
+
+eval instant at 50m floor(0.004 * http_requests{group="production",job="api-server"})
+	{group="production", instance="0", job="api-server"} 0
+	{group="production", instance="1", job="api-server"} 0
+
+eval instant at 50m ceil(0.004 * http_requests{group="production",job="api-server"})
+	{group="production", instance="0", job="api-server"} 1
+	{group="production", instance="1", job="api-server"} 1
+
+eval instant at 50m round(0.004 * http_requests{group="production",job="api-server"})
+	{group="production", instance="0", job="api-server"} 0
+	{group="production", instance="1", job="api-server"} 1
+
+# Round should correctly handle negative numbers.
+eval instant at 50m round(-1 * (0.004 * http_requests{group="production",job="api-server"}))
+	{group="production", instance="0", job="api-server"} 0
+	{group="production", instance="1", job="api-server"} -1
+
+# Round should round half up.
+eval instant at 50m round(0.005 * http_requests{group="production",job="api-server"})
+	{group="production", instance="0", job="api-server"} 1
+	{group="production", instance="1", job="api-server"} 1
+
+eval instant at 50m round(-1 * (0.005 * http_requests{group="production",job="api-server"}))
+	{group="production", instance="0", job="api-server"} 0
+	{group="production", instance="1", job="api-server"} -1
+
+eval instant at 50m round(1 + 0.005 * http_requests{group="production",job="api-server"})
+	{group="production", instance="0", job="api-server"} 2
+	{group="production", instance="1", job="api-server"} 2
+
+eval instant at 50m round(-1 * (1 + 0.005 * http_requests{group="production",job="api-server"}))
+	{group="production", instance="0", job="api-server"} -1
+	{group="production", instance="1", job="api-server"} -2
+
+# Round should accept the number to round nearest to.
+eval instant at 50m round(0.0005 * http_requests{group="production",job="api-server"}, 0.1)
+	{group="production", instance="0", job="api-server"} 0.1
+	{group="production", instance="1", job="api-server"} 0.1
+
+eval instant at 50m round(2.1 + 0.0005 * http_requests{group="production",job="api-server"}, 0.1)
+	{group="production", instance="0", job="api-server"} 2.2
+	{group="production", instance="1", job="api-server"} 2.2
+
+eval instant at 50m round(5.2 + 0.0005 * http_requests{group="production",job="api-server"}, 0.1)
+	{group="production", instance="0", job="api-server"} 5.3
+	{group="production", instance="1", job="api-server"} 5.3
+
+# Round should work correctly with negative numbers and multiple decimal places.
+eval instant at 50m round(-1 * (5.2 + 0.0005 * http_requests{group="production",job="api-server"}), 0.1)
+	{group="production", instance="0", job="api-server"} -5.2
+	{group="production", instance="1", job="api-server"} -5.3
+
+# Round should work correctly with big toNearests.
+eval instant at 50m round(0.025 * http_requests{group="production",job="api-server"}, 5)
+	{group="production", instance="0", job="api-server"} 5
+	{group="production", instance="1", job="api-server"} 5
+
+eval instant at 50m round(0.045 * http_requests{group="production",job="api-server"}, 5)
+	{group="production", instance="0", job="api-server"} 5
+	{group="production", instance="1", job="api-server"} 10
 
 # Standard deviation and variance.
 eval instant at 50m stddev(http_requests)
@@ -102,7 +207,6 @@ eval instant at 50m stddev(http_requests)
 
 eval instant at 50m stdvar(http_requests)
   {} 0.0
-
 
 
 # Regression test for missing separator byte in labelsToGroupingKey.
@@ -156,6 +260,11 @@ load 5m
 	foo 3+0x10
 
 eval_ordered instant at 50m topk(3, http_requests)
+	http_requests{group="canary", instance="1", job="app-server"} 800
+	http_requests{group="canary", instance="0", job="app-server"} 700
+	http_requests{group="production", instance="1", job="app-server"} 600
+
+eval_ordered instant at 50m topk((3), (http_requests))
 	http_requests{group="canary", instance="1", job="app-server"} 800
 	http_requests{group="canary", instance="0", job="app-server"} 700
 	http_requests{group="production", instance="1", job="app-server"} 600
@@ -233,6 +342,13 @@ eval instant at 5m count_values("version", version)
 	{version="7"} 2
 	{version="8"} 2
 
+
+eval instant at 5m count_values(((("version"))), version)
+       {version="6"} 5
+       {version="7"} 2
+       {version="8"} 2
+
+
 eval instant at 5m count_values without (instance)("version", version)
 	{job="api-server", group="production", version="6"} 3
 	{job="api-server", group="canary", version="8"} 2
@@ -276,3 +392,124 @@ eval instant at 1m quantile without(point)(scalar(foo), data)
 	{test="two samples"} 0.8
 	{test="three samples"} 1.6
 	{test="uneven samples"} 2.8
+
+
+eval instant at 1m quantile without(point)((scalar(foo)), data)
+	{test="two samples"} 0.8
+	{test="three samples"} 1.6
+	{test="uneven samples"} 2.8
+
+eval instant at 1m quantile without(point)(NaN, data)
+    {test="two samples"} NaN
+    {test="three samples"} NaN
+    {test="uneven samples"} NaN
+
+# Tests for group.
+clear
+
+load 10s
+	data{test="two samples",point="a"} 0
+	data{test="two samples",point="b"} 1
+	data{test="three samples",point="a"} 0
+	data{test="three samples",point="b"} 1
+	data{test="three samples",point="c"} 2
+	data{test="uneven samples",point="a"} 0
+	data{test="uneven samples",point="b"} 1
+	data{test="uneven samples",point="c"} 4
+	foo .8
+
+eval instant at 1m group without(point)(data)
+	{test="two samples"} 1
+	{test="three samples"} 1
+	{test="uneven samples"} 1
+
+eval instant at 1m group(foo)
+	{} 1
+
+# Tests for avg.
+clear
+
+load 10s
+	data{test="ten",point="a"} 8
+	data{test="ten",point="b"} 10
+	data{test="ten",point="c"} 12
+	data{test="inf",point="a"} 0
+	data{test="inf",point="b"} Inf
+	data{test="inf",point="d"} Inf
+	data{test="inf",point="c"} 0
+	data{test="-inf",point="a"} -Inf
+	data{test="-inf",point="b"} -Inf
+	data{test="-inf",point="c"} 0
+	data{test="inf2",point="a"} Inf
+	data{test="inf2",point="b"} 0
+	data{test="inf2",point="c"} Inf
+	data{test="-inf2",point="a"} -Inf
+	data{test="-inf2",point="b"} 0
+	data{test="-inf2",point="c"} -Inf
+	data{test="inf3",point="b"} Inf
+	data{test="inf3",point="d"} Inf
+	data{test="inf3",point="c"} Inf
+	data{test="inf3",point="d"} -Inf
+	data{test="-inf3",point="b"} -Inf
+	data{test="-inf3",point="d"} -Inf
+	data{test="-inf3",point="c"} -Inf
+	data{test="-inf3",point="c"} Inf
+	data{test="nan",point="a"} -Inf
+	data{test="nan",point="b"} 0
+	data{test="nan",point="c"} Inf
+	data{test="big",point="a"} 9.988465674311579e+307
+	data{test="big",point="b"} 9.988465674311579e+307
+	data{test="big",point="c"} 9.988465674311579e+307
+	data{test="big",point="d"} 9.988465674311579e+307
+	data{test="-big",point="a"} -9.988465674311579e+307
+	data{test="-big",point="b"} -9.988465674311579e+307
+	data{test="-big",point="c"} -9.988465674311579e+307
+	data{test="-big",point="d"} -9.988465674311579e+307
+	data{test="bigzero",point="a"} -9.988465674311579e+307
+	data{test="bigzero",point="b"} -9.988465674311579e+307
+	data{test="bigzero",point="c"} 9.988465674311579e+307
+	data{test="bigzero",point="d"} 9.988465674311579e+307
+
+eval instant at 1m avg(data{test="ten"})
+	{} 10
+
+eval instant at 1m avg(data{test="inf"})
+	{} Inf
+
+eval instant at 1m avg(data{test="inf2"})
+	{} Inf
+
+eval instant at 1m avg(data{test="inf3"})
+	{} NaN
+
+eval instant at 1m avg(data{test="-inf"})
+	{} -Inf
+
+eval instant at 1m avg(data{test="-inf2"})
+	{} -Inf
+
+eval instant at 1m avg(data{test="-inf3"})
+	{} NaN
+
+eval instant at 1m avg(data{test="nan"})
+	{} NaN
+
+eval instant at 1m avg(data{test="big"})
+	{} 9.988465674311579e+307
+
+eval instant at 1m avg(data{test="-big"})
+	{} -9.988465674311579e+307
+
+eval instant at 1m avg(data{test="bigzero"})
+	{} 0
+
+clear
+
+# Test that aggregations are deterministic.
+# Commented because it is flaky in range mode.
+#load 10s
+#	up{job="prometheus"} 1
+#	up{job="prometheus2"} 1
+#
+#eval instant at 1m count(topk(1,max(up) without()) == topk(1,max(up) without()) == topk(1,max(up) without()) == topk(1,max(up) without()) == topk(1,max(up) without()))
+#	{} 1

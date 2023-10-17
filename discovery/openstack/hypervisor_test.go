@@ -15,19 +15,14 @@ package openstack
 
 import (
 	"context"
-	"strings"
 	"testing"
 
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/stretchr/testify/require"
 )
 
 type OpenstackSDHypervisorTestSuite struct {
 	Mock *SDMock
-}
-
-func (s *OpenstackSDHypervisorTestSuite) TearDownSuite() {
-	s.Mock.ShutdownServer()
 }
 
 func (s *OpenstackSDHypervisorTestSuite) SetupTest(t *testing.T) {
@@ -35,7 +30,6 @@ func (s *OpenstackSDHypervisorTestSuite) SetupTest(t *testing.T) {
 	s.Mock.Setup()
 
 	s.Mock.HandleHypervisorListSuccessfully()
-
 	s.Mock.HandleVersionsSuccessfully()
 	s.Mock.HandleAuthSuccessfully()
 }
@@ -53,35 +47,42 @@ func (s *OpenstackSDHypervisorTestSuite) openstackAuthSuccess() (refresher, erro
 }
 
 func TestOpenstackSDHypervisorRefresh(t *testing.T) {
-
 	mock := &OpenstackSDHypervisorTestSuite{}
 	mock.SetupTest(t)
 
 	hypervisor, _ := mock.openstackAuthSuccess()
 	ctx := context.Background()
 	tgs, err := hypervisor.refresh(ctx)
-	testutil.Equals(t, 1, len(tgs))
+	require.Equal(t, 1, len(tgs))
 	tg := tgs[0]
-	testutil.Ok(t, err)
-	testutil.Assert(t, tg != nil, "")
-	testutil.Assert(t, tg.Targets != nil, "")
-	testutil.Assert(t, len(tg.Targets) == 2, "")
+	require.NoError(t, err)
+	require.NotNil(t, tg)
+	require.NotNil(t, tg.Targets)
+	require.Equal(t, 2, len(tg.Targets))
 
-	testutil.Equals(t, tg.Targets[0]["__address__"], model.LabelValue("172.16.70.14:0"))
-	testutil.Equals(t, tg.Targets[0]["__meta_openstack_hypervisor_hostname"], model.LabelValue("nc14.cloud.com"))
-	testutil.Equals(t, tg.Targets[0]["__meta_openstack_hypervisor_type"], model.LabelValue("QEMU"))
-	testutil.Equals(t, tg.Targets[0]["__meta_openstack_hypervisor_host_ip"], model.LabelValue("172.16.70.14"))
-	testutil.Equals(t, tg.Targets[0]["__meta_openstack_hypervisor_state"], model.LabelValue("up"))
-	testutil.Equals(t, tg.Targets[0]["__meta_openstack_hypervisor_status"], model.LabelValue("enabled"))
+	for l, v := range map[string]string{
+		"__address__":                          "172.16.70.14:0",
+		"__meta_openstack_hypervisor_hostname": "nc14.cloud.com",
+		"__meta_openstack_hypervisor_type":     "QEMU",
+		"__meta_openstack_hypervisor_host_ip":  "172.16.70.14",
+		"__meta_openstack_hypervisor_state":    "up",
+		"__meta_openstack_hypervisor_status":   "enabled",
+		"__meta_openstack_hypervisor_id":       "1",
+	} {
+		require.Equal(t, model.LabelValue(v), tg.Targets[0][model.LabelName(l)])
+	}
 
-	testutil.Equals(t, tg.Targets[1]["__address__"], model.LabelValue("172.16.70.13:0"))
-	testutil.Equals(t, tg.Targets[1]["__meta_openstack_hypervisor_hostname"], model.LabelValue("cc13.cloud.com"))
-	testutil.Equals(t, tg.Targets[1]["__meta_openstack_hypervisor_type"], model.LabelValue("QEMU"))
-	testutil.Equals(t, tg.Targets[1]["__meta_openstack_hypervisor_host_ip"], model.LabelValue("172.16.70.13"))
-	testutil.Equals(t, tg.Targets[1]["__meta_openstack_hypervisor_state"], model.LabelValue("up"))
-	testutil.Equals(t, tg.Targets[1]["__meta_openstack_hypervisor_status"], model.LabelValue("enabled"))
-
-	mock.TearDownSuite()
+	for l, v := range map[string]string{
+		"__address__":                          "172.16.70.13:0",
+		"__meta_openstack_hypervisor_hostname": "cc13.cloud.com",
+		"__meta_openstack_hypervisor_type":     "QEMU",
+		"__meta_openstack_hypervisor_host_ip":  "172.16.70.13",
+		"__meta_openstack_hypervisor_state":    "up",
+		"__meta_openstack_hypervisor_status":   "enabled",
+		"__meta_openstack_hypervisor_id":       "721",
+	} {
+		require.Equal(t, model.LabelValue(v), tg.Targets[1][model.LabelName(l)])
+	}
 }
 
 func TestOpenstackSDHypervisorRefreshWithDoneContext(t *testing.T) {
@@ -92,8 +93,6 @@ func TestOpenstackSDHypervisorRefreshWithDoneContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	_, err := hypervisor.refresh(ctx)
-	testutil.NotOk(t, err, "")
-	testutil.Assert(t, strings.Contains(err.Error(), context.Canceled.Error()), "%q doesn't contain %q", err, context.Canceled)
-
-	mock.TearDownSuite()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), context.Canceled.Error(), "%q doesn't contain %q", err, context.Canceled)
 }

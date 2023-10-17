@@ -14,10 +14,13 @@
 package adapter
 
 import (
-	"reflect"
+	"context"
+	"os"
 	"testing"
 
 	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/require"
+
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
@@ -151,17 +154,78 @@ func TestGenerateTargetGroups(t *testing.T) {
 				},
 			},
 		},
+		{
+			title: "Disordered Ips in Alibaba's application management system",
+			targetGroup: map[string][]*targetgroup.Group{
+				"cart": {
+					{
+						Source: "alibaba",
+						Targets: []model.LabelSet{
+							{
+								model.AddressLabel: "192.168.1.55",
+							},
+							{
+								model.AddressLabel: "192.168.1.44",
+							},
+						},
+						Labels: model.LabelSet{
+							model.LabelName("__meta_test_label"): model.LabelValue("label_test_1"),
+						},
+					},
+				},
+				"buy": {
+					{
+						Source: "alibaba",
+						Targets: []model.LabelSet{
+							{
+								model.AddressLabel: "192.168.1.22",
+							},
+							{
+								model.AddressLabel: "192.168.1.33",
+							},
+						},
+						Labels: model.LabelSet{
+							model.LabelName("__meta_test_label"): model.LabelValue("label_test_1"),
+						},
+					},
+				},
+			},
+			expectedCustomSD: map[string]*customSD{
+				"buy:alibaba:21c0d97a1e27e6fe": {
+					Targets: []string{
+						"192.168.1.22",
+						"192.168.1.33",
+					},
+					Labels: map[string]string{
+						"__meta_test_label": "label_test_1",
+					},
+				},
+				"cart:alibaba:1112e97a13b159fa": {
+					Targets: []string{
+						"192.168.1.44",
+						"192.168.1.55",
+					},
+					Labels: map[string]string{
+						"__meta_test_label": "label_test_1",
+					},
+				},
+			},
+		},
 	}
 
 	for _, testCase := range testCases {
 		result := generateTargetGroups(testCase.targetGroup)
-
-		if !reflect.DeepEqual(result, testCase.expectedCustomSD) {
-			t.Errorf("%q failed\ngot: %#v\nexpected: %v",
-				testCase.title,
-				result,
-				testCase.expectedCustomSD)
-		}
-
+		require.Equal(t, testCase.expectedCustomSD, result)
 	}
+}
+
+// TestWriteOutput checks the adapter can write a file to disk.
+func TestWriteOutput(t *testing.T) {
+	ctx := context.Background()
+	tmpfile, err := os.CreateTemp("", "sd_adapter_test")
+	require.NoError(t, err)
+	defer os.Remove(tmpfile.Name())
+	tmpfile.Close()
+	adapter := NewAdapter(ctx, tmpfile.Name(), "test_sd", nil, nil)
+	require.NoError(t, adapter.writeOutput())
 }

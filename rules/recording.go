@@ -16,43 +16,43 @@ package rules
 import (
 	"context"
 	"fmt"
-	"html/template"
 	"net/url"
-	"sync"
 	"time"
 
-	yaml "gopkg.in/yaml.v2"
+	"go.uber.org/atomic"
+	"gopkg.in/yaml.v2"
 
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/rulefmt"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/util/strutil"
+	"github.com/prometheus/prometheus/promql/parser"
 )
 
 // A RecordingRule records its vector expression into new timeseries.
 type RecordingRule struct {
 	name   string
-	vector promql.Expr
+	vector parser.Expr
 	labels labels.Labels
-	// Protects the below.
-	mtx sync.Mutex
 	// The health of the recording rule.
-	health RuleHealth
+	health *atomic.String
 	// Timestamp of last evaluation of the recording rule.
-	evaluationTimestamp time.Time
+	evaluationTimestamp *atomic.Time
 	// The last error seen by the recording rule.
-	lastError error
+	lastError *atomic.Error
 	// Duration of how long it took to evaluate the recording rule.
-	evaluationDuration time.Duration
+	evaluationDuration *atomic.Duration
 }
 
 // NewRecordingRule returns a new recording rule.
-func NewRecordingRule(name string, vector promql.Expr, lset labels.Labels) *RecordingRule {
+func NewRecordingRule(name string, vector parser.Expr, lset labels.Labels) *RecordingRule {
 	return &RecordingRule{
-		name:   name,
-		vector: vector,
-		health: HealthUnknown,
-		labels: lset,
+		name:                name,
+		vector:              vector,
+		labels:              lset,
+		health:              atomic.NewString(string(HealthUnknown)),
+		evaluationTimestamp: atomic.NewTime(time.Time{}),
+		evaluationDuration:  atomic.NewDuration(0),
+		lastError:           atomic.NewError(nil),
 	}
 }
 
@@ -62,7 +62,7 @@ func (rule *RecordingRule) Name() string {
 }
 
 // Query returns the rule query expression.
-func (rule *RecordingRule) Query() promql.Expr {
+func (rule *RecordingRule) Query() parser.Expr {
 	return rule.vector
 }
 
@@ -72,31 +72,41 @@ func (rule *RecordingRule) Labels() labels.Labels {
 }
 
 // Eval evaluates the rule and then overrides the metric names and labels accordingly.
-func (rule *RecordingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, _ *url.URL) (promql.Vector, error) {
+func (rule *RecordingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, _ *url.URL, limit int) (promql.Vector, error) {
+	ctx = NewOriginContext(ctx, NewRuleDetail(rule))
+
 	vector, err := query(ctx, rule.vector.String(), ts)
 	if err != nil {
-		rule.SetHealth(HealthBad)
-		rule.SetLastError(err)
 		return nil, err
 	}
+
 	// Override the metric name and labels.
+	lb := labels.NewBuilder(labels.EmptyLabels())
+
 	for i := range vector {
 		sample := &vector[i]
 
-		lb := labels.NewBuilder(sample.Metric)
-
+		lb.Reset(sample.Metric)
 		lb.Set(labels.MetricName, rule.name)
 
-		for _, l := range rule.labels {
-			if l.Value == "" {
-				lb.Del(l.Name)
-			} else {
-				lb.Set(l.Name, l.Value)
-			}
-		}
+		rule.labels.Range(func(l labels.Label) {
+			lb.Set(l.Name, l.Value)
+		})
 
 		sample.Metric = lb.Labels()
 	}
+
+	// Check that the rule does not produce identical metrics after applying
+	// labels.
+	if vector.ContainsSameLabelset() {
+		return nil, fmt.Errorf("vector contains metrics with the same labelset after applying rule labels")
+	}
+
+	numSeries := len(vector)
+	if limit > 0 && numSeries > limit {
+		return nil, fmt.Errorf("exceeded limit of %d with %d series", limit, numSeries)
+	}
+
 	rule.SetHealth(HealthGood)
 	rule.SetLastError(err)
 	return vector, nil
@@ -119,78 +129,40 @@ func (rule *RecordingRule) String() string {
 
 // SetEvaluationDuration updates evaluationDuration to the time in seconds it took to evaluate the rule on its last evaluation.
 func (rule *RecordingRule) SetEvaluationDuration(dur time.Duration) {
-	rule.mtx.Lock()
-	defer rule.mtx.Unlock()
-	rule.evaluationDuration = dur
+	rule.evaluationDuration.Store(dur)
 }
 
 // SetLastError sets the current error seen by the recording rule.
 func (rule *RecordingRule) SetLastError(err error) {
-	rule.mtx.Lock()
-	defer rule.mtx.Unlock()
-	rule.lastError = err
+	rule.lastError.Store(err)
 }
 
 // LastError returns the last error seen by the recording rule.
 func (rule *RecordingRule) LastError() error {
-	rule.mtx.Lock()
-	defer rule.mtx.Unlock()
-	return rule.lastError
+	return rule.lastError.Load()
 }
 
 // SetHealth sets the current health of the recording rule.
 func (rule *RecordingRule) SetHealth(health RuleHealth) {
-	rule.mtx.Lock()
-	defer rule.mtx.Unlock()
-	rule.health = health
+	rule.health.Store(string(health))
 }
 
 // Health returns the current health of the recording rule.
 func (rule *RecordingRule) Health() RuleHealth {
-	rule.mtx.Lock()
-	defer rule.mtx.Unlock()
-	return rule.health
+	return RuleHealth(rule.health.Load())
 }
 
 // GetEvaluationDuration returns the time in seconds it took to evaluate the recording rule.
 func (rule *RecordingRule) GetEvaluationDuration() time.Duration {
-	rule.mtx.Lock()
-	defer rule.mtx.Unlock()
-	return rule.evaluationDuration
+	return rule.evaluationDuration.Load()
 }
 
 // SetEvaluationTimestamp updates evaluationTimestamp to the timestamp of when the rule was last evaluated.
 func (rule *RecordingRule) SetEvaluationTimestamp(ts time.Time) {
-	rule.mtx.Lock()
-	defer rule.mtx.Unlock()
-	rule.evaluationTimestamp = ts
+	rule.evaluationTimestamp.Store(ts)
 }
 
 // GetEvaluationTimestamp returns the time the evaluation took place.
 func (rule *RecordingRule) GetEvaluationTimestamp() time.Time {
-	rule.mtx.Lock()
-	defer rule.mtx.Unlock()
-	return rule.evaluationTimestamp
-}
-
-// HTMLSnippet returns an HTML snippet representing this rule.
-func (rule *RecordingRule) HTMLSnippet(pathPrefix string) template.HTML {
-	ruleExpr := rule.vector.String()
-	labels := make(map[string]string, len(rule.labels))
-	for _, l := range rule.labels {
-		labels[l.Name] = template.HTMLEscapeString(l.Value)
-	}
-
-	r := rulefmt.Rule{
-		Record: fmt.Sprintf(`<a href="%s">%s</a>`, pathPrefix+strutil.TableLinkForExpression(rule.name), rule.name),
-		Expr:   fmt.Sprintf(`<a href="%s">%s</a>`, pathPrefix+strutil.TableLinkForExpression(ruleExpr), template.HTMLEscapeString(ruleExpr)),
-		Labels: labels,
-	}
-
-	byt, err := yaml.Marshal(r)
-	if err != nil {
-		return template.HTML(fmt.Sprintf("error marshaling recording rule: %q", template.HTMLEscapeString(err.Error())))
-	}
-
-	return template.HTML(byt)
+	return rule.evaluationTimestamp.Load()
 }

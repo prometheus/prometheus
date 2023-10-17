@@ -15,11 +15,13 @@ package storage
 
 import (
 	"math/rand"
-	"sort"
 	"testing"
 
-	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 )
 
 func TestSampleRing(t *testing.T) {
@@ -55,33 +57,33 @@ func TestSampleRing(t *testing.T) {
 		},
 	}
 	for _, c := range cases {
-		r := newSampleRing(c.delta, c.size)
+		r := newSampleRing(c.delta, c.size, chunkenc.ValFloat)
 
-		input := []sample{}
+		input := []fSample{}
 		for _, t := range c.input {
-			input = append(input, sample{
+			input = append(input, fSample{
 				t: t,
-				v: float64(rand.Intn(100)),
+				f: float64(rand.Intn(100)),
 			})
 		}
 
 		for i, s := range input {
-			r.add(s.t, s.v)
+			r.add(s)
 			buffered := r.samples()
 
 			for _, sold := range input[:i] {
 				found := false
 				for _, bs := range buffered {
-					if bs.t == sold.t && bs.v == sold.v {
+					if bs.T() == sold.t && bs.F() == sold.f {
 						found = true
 						break
 					}
 				}
-				if sold.t >= s.t-c.delta && !found {
-					t.Fatalf("%d: expected sample %d to be in buffer but was not; buffer %v", i, sold.t, buffered)
-				}
-				if sold.t < s.t-c.delta && found {
-					t.Fatalf("%d: unexpected sample %d in buffer; buffer %v", i, sold.t, buffered)
+
+				if found {
+					require.GreaterOrEqual(t, sold.t, s.t-c.delta, "%d: unexpected sample %d in buffer; buffer %v", i, sold.t, buffered)
+				} else {
+					require.Less(t, sold.t, s.t-c.delta, "%d: expected sample %d to be in buffer but was not; buffer %v", i, sold.t, buffered)
 				}
 			}
 		}
@@ -91,55 +93,67 @@ func TestSampleRing(t *testing.T) {
 func TestBufferedSeriesIterator(t *testing.T) {
 	var it *BufferedSeriesIterator
 
-	bufferEq := func(exp []sample) {
-		var b []sample
+	bufferEq := func(exp []fSample) {
+		var b []fSample
 		bit := it.Buffer()
-		for bit.Next() {
-			t, v := bit.At()
-			b = append(b, sample{t: t, v: v})
+		for bit.Next() == chunkenc.ValFloat {
+			t, f := bit.At()
+			b = append(b, fSample{t: t, f: f})
 		}
 		require.Equal(t, exp, b, "buffer mismatch")
 	}
 	sampleEq := func(ets int64, ev float64) {
-		ts, v := it.Values()
+		ts, v := it.At()
 		require.Equal(t, ets, ts, "timestamp mismatch")
 		require.Equal(t, ev, v, "value mismatch")
 	}
+	prevSampleEq := func(ets int64, ev float64, eok bool) {
+		s, ok := it.PeekBack(1)
+		require.Equal(t, eok, ok, "exist mismatch")
+		require.Equal(t, ets, s.T(), "timestamp mismatch")
+		require.Equal(t, ev, s.F(), "value mismatch")
+	}
 
-	it = NewBufferIterator(newListSeriesIterator([]sample{
-		{t: 1, v: 2},
-		{t: 2, v: 3},
-		{t: 3, v: 4},
-		{t: 4, v: 5},
-		{t: 5, v: 6},
-		{t: 99, v: 8},
-		{t: 100, v: 9},
-		{t: 101, v: 10},
+	it = NewBufferIterator(NewListSeriesIterator(samples{
+		fSample{t: 1, f: 2},
+		fSample{t: 2, f: 3},
+		fSample{t: 3, f: 4},
+		fSample{t: 4, f: 5},
+		fSample{t: 5, f: 6},
+		fSample{t: 99, f: 8},
+		fSample{t: 100, f: 9},
+		fSample{t: 101, f: 10},
 	}), 2)
 
-	require.True(t, it.Seek(-123), "seek failed")
+	require.Equal(t, chunkenc.ValFloat, it.Seek(-123), "seek failed")
 	sampleEq(1, 2)
+	prevSampleEq(0, 0, false)
 	bufferEq(nil)
 
-	require.True(t, it.Next(), "next failed")
+	require.Equal(t, chunkenc.ValFloat, it.Next(), "next failed")
 	sampleEq(2, 3)
-	bufferEq([]sample{{t: 1, v: 2}})
+	prevSampleEq(1, 2, true)
+	bufferEq([]fSample{{t: 1, f: 2}})
 
-	require.True(t, it.Next(), "next failed")
-	require.True(t, it.Next(), "next failed")
-	require.True(t, it.Next(), "next failed")
+	require.Equal(t, chunkenc.ValFloat, it.Next(), "next failed")
+	require.Equal(t, chunkenc.ValFloat, it.Next(), "next failed")
+	require.Equal(t, chunkenc.ValFloat, it.Next(), "next failed")
 	sampleEq(5, 6)
-	bufferEq([]sample{{t: 2, v: 3}, {t: 3, v: 4}, {t: 4, v: 5}})
+	prevSampleEq(4, 5, true)
+	bufferEq([]fSample{{t: 2, f: 3}, {t: 3, f: 4}, {t: 4, f: 5}})
 
-	require.True(t, it.Seek(5), "seek failed")
+	require.Equal(t, chunkenc.ValFloat, it.Seek(5), "seek failed")
 	sampleEq(5, 6)
-	bufferEq([]sample{{t: 2, v: 3}, {t: 3, v: 4}, {t: 4, v: 5}})
+	prevSampleEq(4, 5, true)
+	bufferEq([]fSample{{t: 2, f: 3}, {t: 3, f: 4}, {t: 4, f: 5}})
 
-	require.True(t, it.Seek(101), "seek failed")
+	require.Equal(t, chunkenc.ValFloat, it.Seek(101), "seek failed")
 	sampleEq(101, 10)
-	bufferEq([]sample{{t: 99, v: 8}, {t: 100, v: 9}})
+	prevSampleEq(100, 9, true)
+	bufferEq([]fSample{{t: 99, f: 8}, {t: 100, f: 9}})
 
-	require.False(t, it.Next(), "next succeeded unexpectedly")
+	require.Equal(t, chunkenc.ValNone, it.Next(), "next succeeded unexpectedly")
+	require.Equal(t, chunkenc.ValNone, it.Seek(1024), "seek succeeded unexpectedly")
 }
 
 // At() should not be called once Next() returns false.
@@ -147,14 +161,19 @@ func TestBufferedSeriesIteratorNoBadAt(t *testing.T) {
 	done := false
 
 	m := &mockSeriesIterator{
-		seek: func(int64) bool { return false },
+		seek: func(int64) chunkenc.ValueType { return chunkenc.ValNone },
 		at: func() (int64, float64) {
-			require.False(t, done)
+			require.False(t, done, "unexpectedly done")
 			done = true
 			return 0, 0
 		},
-		next: func() bool { return !done },
-		err:  func() error { return nil },
+		next: func() chunkenc.ValueType {
+			if done {
+				return chunkenc.ValNone
+			}
+			return chunkenc.ValFloat
+		},
+		err: func() error { return nil },
 	}
 
 	it := NewBufferIterator(m, 60)
@@ -162,85 +181,64 @@ func TestBufferedSeriesIteratorNoBadAt(t *testing.T) {
 	it.Next()
 }
 
+func TestBufferedSeriesIteratorMixedHistograms(t *testing.T) {
+	histograms := tsdbutil.GenerateTestHistograms(2)
+
+	it := NewBufferIterator(NewListSeriesIterator(samples{
+		fhSample{t: 1, fh: histograms[0].ToFloat()},
+		hSample{t: 2, h: histograms[1]},
+	}), 2)
+
+	require.Equal(t, chunkenc.ValNone, it.Seek(3))
+	require.NoError(t, it.Err())
+
+	buf := it.Buffer()
+
+	require.Equal(t, chunkenc.ValFloatHistogram, buf.Next())
+	_, fh := buf.AtFloatHistogram()
+	require.Equal(t, histograms[0].ToFloat(), fh)
+
+	require.Equal(t, chunkenc.ValHistogram, buf.Next())
+	_, fh = buf.AtFloatHistogram()
+	require.Equal(t, histograms[1].ToFloat(), fh)
+}
+
 func BenchmarkBufferedSeriesIterator(b *testing.B) {
 	// Simulate a 5 minute rate.
 	it := NewBufferIterator(newFakeSeriesIterator(int64(b.N), 30), 5*60)
 
-	b.SetBytes(int64(b.N * 16))
+	b.SetBytes(16)
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for it.Next() {
-		// scan everything
+	for it.Next() != chunkenc.ValNone { // nolint:revive
+		// Scan everything.
 	}
 	require.NoError(b, it.Err())
 }
 
 type mockSeriesIterator struct {
-	seek func(int64) bool
+	seek func(int64) chunkenc.ValueType
 	at   func() (int64, float64)
-	next func() bool
+	next func() chunkenc.ValueType
 	err  func() error
 }
 
-func (m *mockSeriesIterator) Seek(t int64) bool    { return m.seek(t) }
-func (m *mockSeriesIterator) At() (int64, float64) { return m.at() }
-func (m *mockSeriesIterator) Next() bool           { return m.next() }
-func (m *mockSeriesIterator) Err() error           { return m.err() }
+func (m *mockSeriesIterator) Seek(t int64) chunkenc.ValueType { return m.seek(t) }
+func (m *mockSeriesIterator) At() (int64, float64)            { return m.at() }
+func (m *mockSeriesIterator) Next() chunkenc.ValueType        { return m.next() }
+func (m *mockSeriesIterator) Err() error                      { return m.err() }
 
-type mockSeries struct {
-	labels   func() labels.Labels
-	iterator func() SeriesIterator
+func (m *mockSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
+	return 0, nil // Not really mocked.
 }
 
-func newMockSeries(lset labels.Labels, samples []sample) Series {
-	return &mockSeries{
-		labels: func() labels.Labels {
-			return lset
-		},
-		iterator: func() SeriesIterator {
-			return newListSeriesIterator(samples)
-		},
-	}
+func (m *mockSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+	return 0, nil // Not really mocked.
 }
 
-func (m *mockSeries) Labels() labels.Labels    { return m.labels() }
-func (m *mockSeries) Iterator() SeriesIterator { return m.iterator() }
-
-type listSeriesIterator struct {
-	list []sample
-	idx  int
-}
-
-func newListSeriesIterator(list []sample) *listSeriesIterator {
-	return &listSeriesIterator{list: list, idx: -1}
-}
-
-func (it *listSeriesIterator) At() (int64, float64) {
-	s := it.list[it.idx]
-	return s.t, s.v
-}
-
-func (it *listSeriesIterator) Next() bool {
-	it.idx++
-	return it.idx < len(it.list)
-}
-
-func (it *listSeriesIterator) Seek(t int64) bool {
-	if it.idx == -1 {
-		it.idx = 0
-	}
-	// Do binary search between current position and end.
-	it.idx = sort.Search(len(it.list)-it.idx, func(i int) bool {
-		s := it.list[i+it.idx]
-		return s.t >= t
-	})
-
-	return it.idx < len(it.list)
-}
-
-func (it *listSeriesIterator) Err() error {
-	return nil
+func (m *mockSeriesIterator) AtT() int64 {
+	return 0 // Not really mocked.
 }
 
 type fakeSeriesIterator struct {
@@ -254,19 +252,35 @@ func newFakeSeriesIterator(nsamples, step int64) *fakeSeriesIterator {
 }
 
 func (it *fakeSeriesIterator) At() (int64, float64) {
-	return it.idx * it.step, 123 // value doesn't matter
+	return it.idx * it.step, 123 // Value doesn't matter.
 }
 
-func (it *fakeSeriesIterator) Next() bool {
+func (it *fakeSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
+	return it.idx * it.step, &histogram.Histogram{} // Value doesn't matter.
+}
+
+func (it *fakeSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+	return it.idx * it.step, &histogram.FloatHistogram{} // Value doesn't matter.
+}
+
+func (it *fakeSeriesIterator) AtT() int64 {
+	return it.idx * it.step
+}
+
+func (it *fakeSeriesIterator) Next() chunkenc.ValueType {
 	it.idx++
-	return it.idx < it.nsamples
+	if it.idx >= it.nsamples {
+		return chunkenc.ValNone
+	}
+	return chunkenc.ValFloat
 }
 
-func (it *fakeSeriesIterator) Seek(t int64) bool {
+func (it *fakeSeriesIterator) Seek(t int64) chunkenc.ValueType {
 	it.idx = t / it.step
-	return it.idx < it.nsamples
+	if it.idx >= it.nsamples {
+		return chunkenc.ValNone
+	}
+	return chunkenc.ValFloat
 }
 
-func (it *fakeSeriesIterator) Err() error {
-	return nil
-}
+func (it *fakeSeriesIterator) Err() error { return nil }

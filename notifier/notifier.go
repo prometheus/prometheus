@@ -16,37 +16,34 @@ package notifier
 import (
 	"bytes"
 	"context"
-	"crypto/md5"
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
-	"net"
 	"net/http"
 	"net/url"
 	"path"
-	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
-	"github.com/pkg/errors"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
+	"github.com/go-openapi/strfmt"
+	"github.com/prometheus/alertmanager/api/v2/models"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/sigv4"
 	"github.com/prometheus/common/version"
+	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/relabel"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/relabel"
 )
 
 const (
-	alertPushEndpoint = "/api/v1/alerts"
-	contentTypeJSON   = "application/json"
+	contentTypeJSON = "application/json"
 )
 
 // String constants for instrumentation.
@@ -146,10 +143,11 @@ type alertMetrics struct {
 func newAlertMetrics(r prometheus.Registerer, queueCap int, queueLen, alertmanagersDiscovered func() float64) *alertMetrics {
 	m := &alertMetrics{
 		latency: prometheus.NewSummaryVec(prometheus.SummaryOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "latency_seconds",
-			Help:      "Latency quantiles for sending alert notifications.",
+			Namespace:  namespace,
+			Subsystem:  subsystem,
+			Name:       "latency_seconds",
+			Help:       "Latency quantiles for sending alert notifications.",
+			Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
 		},
 			[]string{alertmanagerLabel},
 		),
@@ -260,20 +258,13 @@ func (n *Manager) ApplyConfig(conf *config.Config) error {
 
 	amSets := make(map[string]*alertmanagerSet)
 
-	for _, cfg := range conf.AlertingConfig.AlertmanagerConfigs {
-		ams, err := newAlertmanagerSet(cfg, n.logger)
+	for k, cfg := range conf.AlertingConfig.AlertmanagerConfigs.ToMap() {
+		ams, err := newAlertmanagerSet(cfg, n.logger, n.metrics)
 		if err != nil {
 			return err
 		}
 
-		ams.metrics = n.metrics
-
-		// The config hash is used for the map lookup identifier.
-		b, err := json.Marshal(cfg)
-		if err != nil {
-			return err
-		}
-		amSets[fmt.Sprintf("%x", md5.Sum(b))] = ams
+		amSets[k] = ams
 	}
 
 	n.alertmanagers = amSets
@@ -309,14 +300,23 @@ func (n *Manager) nextBatch() []*Alert {
 
 // Run dispatches notifications continuously.
 func (n *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) {
-
 	for {
+		// The select is split in two parts, such as we will first try to read
+		// new alertmanager targets if they are available, before sending new
+		// alerts.
 		select {
 		case <-n.ctx.Done():
 			return
 		case ts := <-tsets:
 			n.reload(ts)
-		case <-n.more:
+		default:
+			select {
+			case <-n.ctx.Done():
+				return
+			case ts := <-tsets:
+				n.reload(ts)
+			case <-n.more:
+			}
 		}
 		alerts := n.nextBatch()
 
@@ -350,19 +350,6 @@ func (n *Manager) Send(alerts ...*Alert) {
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
 
-	// Attach external labels before relabelling and sending.
-	for _, a := range alerts {
-		lb := labels.NewBuilder(a.Labels)
-
-		for _, l := range n.opts.ExternalLabels {
-			if a.Labels.Get(l.Name) == "" {
-				lb.Set(l.Name, l.Value)
-			}
-		}
-
-		a.Labels = lb.Labels()
-	}
-
 	alerts = n.relabelAlerts(alerts)
 	if len(alerts) == 0 {
 		return
@@ -391,15 +378,25 @@ func (n *Manager) Send(alerts ...*Alert) {
 	n.setMore()
 }
 
+// Attach external labels and process relabelling rules.
 func (n *Manager) relabelAlerts(alerts []*Alert) []*Alert {
+	lb := labels.NewBuilder(labels.EmptyLabels())
 	var relabeledAlerts []*Alert
 
-	for _, alert := range alerts {
-		labels := relabel.Process(alert.Labels, n.opts.RelabelConfigs...)
-		if labels != nil {
-			alert.Labels = labels
-			relabeledAlerts = append(relabeledAlerts, alert)
+	for _, a := range alerts {
+		lb.Reset(a.Labels)
+		n.opts.ExternalLabels.Range(func(l labels.Label) {
+			if a.Labels.Get(l.Name) == "" {
+				lb.Set(l.Name, l.Value)
+			}
+		})
+
+		keep := relabel.ProcessBuilder(lb, n.opts.RelabelConfigs...)
+		if !keep {
+			continue
 		}
+		a.Labels = lb.Labels()
+		relabeledAlerts = append(relabeledAlerts, a)
 	}
 	return relabeledAlerts
 }
@@ -455,13 +452,16 @@ func (n *Manager) DroppedAlertmanagers() []*url.URL {
 // sendAll sends the alerts to all configured Alertmanagers concurrently.
 // It returns true if the alerts could be sent successfully to at least one Alertmanager.
 func (n *Manager) sendAll(alerts ...*Alert) bool {
+	if len(alerts) == 0 {
+		return true
+	}
+
 	begin := time.Now()
 
-	b, err := json.Marshal(alerts)
-	if err != nil {
-		level.Error(n.logger).Log("msg", "Encoding alerts failed", "err", err)
-		return false
-	}
+	// v1Payload and v2Payload represent 'alerts' marshaled for Alertmanager API
+	// v1 or v2. Marshaling happens below. Reference here is for caching between
+	// for loop iterations.
+	var v1Payload, v2Payload []byte
 
 	n.mtx.RLock()
 	amSets := n.alertmanagers
@@ -469,10 +469,55 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 
 	var (
 		wg         sync.WaitGroup
-		numSuccess uint64
+		numSuccess atomic.Uint64
 	)
 	for _, ams := range amSets {
+		var (
+			payload []byte
+			err     error
+		)
+
 		ams.mtx.RLock()
+
+		switch ams.cfg.APIVersion {
+		case config.AlertmanagerAPIVersionV1:
+			{
+				if v1Payload == nil {
+					v1Payload, err = json.Marshal(alerts)
+					if err != nil {
+						level.Error(n.logger).Log("msg", "Encoding alerts for Alertmanager API v1 failed", "err", err)
+						ams.mtx.RUnlock()
+						return false
+					}
+				}
+
+				payload = v1Payload
+			}
+		case config.AlertmanagerAPIVersionV2:
+			{
+				if v2Payload == nil {
+					openAPIAlerts := alertsToOpenAPIAlerts(alerts)
+
+					v2Payload, err = json.Marshal(openAPIAlerts)
+					if err != nil {
+						level.Error(n.logger).Log("msg", "Encoding alerts for Alertmanager API v2 failed", "err", err)
+						ams.mtx.RUnlock()
+						return false
+					}
+				}
+
+				payload = v2Payload
+			}
+		default:
+			{
+				level.Error(n.logger).Log(
+					"msg", fmt.Sprintf("Invalid Alertmanager API version '%v', expected one of '%v'", ams.cfg.APIVersion, config.SupportedAlertmanagerAPIVersions),
+					"err", err,
+				)
+				ams.mtx.RUnlock()
+				return false
+			}
+		}
 
 		for _, am := range ams.ams {
 			wg.Add(1)
@@ -480,26 +525,54 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 			ctx, cancel := context.WithTimeout(n.ctx, time.Duration(ams.cfg.Timeout))
 			defer cancel()
 
-			go func(ams *alertmanagerSet, am alertmanager) {
-				u := am.url().String()
-
-				if err := n.sendOne(ctx, ams.client, u, b); err != nil {
-					level.Error(n.logger).Log("alertmanager", u, "count", len(alerts), "msg", "Error sending alert", "err", err)
-					n.metrics.errors.WithLabelValues(u).Inc()
+			go func(client *http.Client, url string) {
+				if err := n.sendOne(ctx, client, url, payload); err != nil {
+					level.Error(n.logger).Log("alertmanager", url, "count", len(alerts), "msg", "Error sending alert", "err", err)
+					n.metrics.errors.WithLabelValues(url).Inc()
 				} else {
-					atomic.AddUint64(&numSuccess, 1)
+					numSuccess.Inc()
 				}
-				n.metrics.latency.WithLabelValues(u).Observe(time.Since(begin).Seconds())
-				n.metrics.sent.WithLabelValues(u).Add(float64(len(alerts)))
+				n.metrics.latency.WithLabelValues(url).Observe(time.Since(begin).Seconds())
+				n.metrics.sent.WithLabelValues(url).Add(float64(len(alerts)))
 
 				wg.Done()
-			}(ams, am)
+			}(ams.client, am.url().String())
 		}
+
 		ams.mtx.RUnlock()
 	}
+
 	wg.Wait()
 
-	return numSuccess > 0
+	return numSuccess.Load() > 0
+}
+
+func alertsToOpenAPIAlerts(alerts []*Alert) models.PostableAlerts {
+	openAPIAlerts := models.PostableAlerts{}
+	for _, a := range alerts {
+		start := strfmt.DateTime(a.StartsAt)
+		end := strfmt.DateTime(a.EndsAt)
+		openAPIAlerts = append(openAPIAlerts, &models.PostableAlert{
+			Annotations: labelsToOpenAPILabelSet(a.Annotations),
+			EndsAt:      end,
+			StartsAt:    start,
+			Alert: models.Alert{
+				GeneratorURL: strfmt.URI(a.GeneratorURL),
+				Labels:       labelsToOpenAPILabelSet(a.Labels),
+			},
+		})
+	}
+
+	return openAPIAlerts
+}
+
+func labelsToOpenAPILabelSet(modelLabelSet labels.Labels) models.LabelSet {
+	apiLabelSet := models.LabelSet{}
+	modelLabelSet.Range(func(label labels.Label) {
+		apiLabelSet[label.Name] = label.Value
+	})
+
+	return apiLabelSet
 }
 
 func (n *Manager) sendOne(ctx context.Context, c *http.Client, url string, b []byte) error {
@@ -514,15 +587,16 @@ func (n *Manager) sendOne(ctx context.Context, c *http.Client, url string, b []b
 		return err
 	}
 	defer func() {
-		io.Copy(ioutil.Discard, resp.Body)
+		io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
 	}()
 
 	// Any HTTP status 2xx is OK.
 	if resp.StatusCode/100 != 2 {
-		return errors.Errorf("bad response status %s", resp.Status)
+		return fmt.Errorf("bad response status %s", resp.Status)
 	}
-	return err
+
+	return nil
 }
 
 // Stop shuts down the notification handler.
@@ -531,7 +605,7 @@ func (n *Manager) Stop() {
 	n.cancel()
 }
 
-// alertmanager holds Alertmanager endpoint information.
+// Alertmanager holds Alertmanager endpoint information.
 type alertmanager interface {
 	url() *url.URL
 }
@@ -562,15 +636,27 @@ type alertmanagerSet struct {
 	logger     log.Logger
 }
 
-func newAlertmanagerSet(cfg *config.AlertmanagerConfig, logger log.Logger) (*alertmanagerSet, error) {
+func newAlertmanagerSet(cfg *config.AlertmanagerConfig, logger log.Logger, metrics *alertMetrics) (*alertmanagerSet, error) {
 	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, "alertmanager")
 	if err != nil {
 		return nil, err
 	}
+	t := client.Transport
+
+	if cfg.SigV4Config != nil {
+		t, err = sigv4.NewSigV4RoundTripper(cfg.SigV4Config, client.Transport)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	client.Transport = t
+
 	s := &alertmanagerSet{
-		client: client,
-		cfg:    cfg,
-		logger: logger,
+		client:  client,
+		cfg:     cfg,
+		logger:  logger,
+		metrics: metrics,
 	}
 	return s, nil
 }
@@ -582,7 +668,7 @@ func (s *alertmanagerSet) sync(tgs []*targetgroup.Group) {
 	allDroppedAms := []alertmanager{}
 
 	for _, tg := range tgs {
-		ams, droppedAms, err := alertmanagerFromGroup(tg, s.cfg)
+		ams, droppedAms, err := AlertmanagerFromGroup(tg, s.cfg)
 		if err != nil {
 			level.Error(s.logger).Log("msg", "Creating discovered Alertmanagers failed", "err", err)
 			continue
@@ -614,81 +700,48 @@ func (s *alertmanagerSet) sync(tgs []*targetgroup.Group) {
 	}
 }
 
-func postPath(pre string) string {
+func postPath(pre string, v config.AlertmanagerAPIVersion) string {
+	alertPushEndpoint := fmt.Sprintf("/api/%v/alerts", string(v))
 	return path.Join("/", pre, alertPushEndpoint)
 }
 
-// alertmanagerFromGroup extracts a list of alertmanagers from a target group
+// AlertmanagerFromGroup extracts a list of alertmanagers from a target group
 // and an associated AlertmanagerConfig.
-func alertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig) ([]alertmanager, []alertmanager, error) {
+func AlertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig) ([]alertmanager, []alertmanager, error) {
 	var res []alertmanager
 	var droppedAlertManagers []alertmanager
+	lb := labels.NewBuilder(labels.EmptyLabels())
 
 	for _, tlset := range tg.Targets {
-		lbls := make([]labels.Label, 0, len(tlset)+2+len(tg.Labels))
+		lb.Reset(labels.EmptyLabels())
 
 		for ln, lv := range tlset {
-			lbls = append(lbls, labels.Label{Name: string(ln), Value: string(lv)})
+			lb.Set(string(ln), string(lv))
 		}
 		// Set configured scheme as the initial scheme label for overwrite.
-		lbls = append(lbls, labels.Label{Name: model.SchemeLabel, Value: cfg.Scheme})
-		lbls = append(lbls, labels.Label{Name: pathLabel, Value: postPath(cfg.PathPrefix)})
+		lb.Set(model.SchemeLabel, cfg.Scheme)
+		lb.Set(pathLabel, postPath(cfg.PathPrefix, cfg.APIVersion))
 
 		// Combine target labels with target group labels.
 		for ln, lv := range tg.Labels {
 			if _, ok := tlset[ln]; !ok {
-				lbls = append(lbls, labels.Label{Name: string(ln), Value: string(lv)})
+				lb.Set(string(ln), string(lv))
 			}
 		}
 
-		lset := relabel.Process(labels.New(lbls...), cfg.RelabelConfigs...)
-		if lset == nil {
-			droppedAlertManagers = append(droppedAlertManagers, alertmanagerLabels{lbls})
+		preRelabel := lb.Labels()
+		keep := relabel.ProcessBuilder(lb, cfg.RelabelConfigs...)
+		if !keep {
+			droppedAlertManagers = append(droppedAlertManagers, alertmanagerLabels{preRelabel})
 			continue
 		}
 
-		lb := labels.NewBuilder(lset)
-
-		// addPort checks whether we should add a default port to the address.
-		// If the address is not valid, we don't append a port either.
-		addPort := func(s string) bool {
-			// If we can split, a port exists and we don't have to add one.
-			if _, _, err := net.SplitHostPort(s); err == nil {
-				return false
-			}
-			// If adding a port makes it valid, the previous error
-			// was not due to an invalid address and we can append a port.
-			_, _, err := net.SplitHostPort(s + ":1234")
-			return err == nil
-		}
-		addr := lset.Get(model.AddressLabel)
-		// If it's an address with no trailing port, infer it based on the used scheme.
-		if addPort(addr) {
-			// Addresses reaching this point are already wrapped in [] if necessary.
-			switch lset.Get(model.SchemeLabel) {
-			case "http", "":
-				addr = addr + ":80"
-			case "https":
-				addr = addr + ":443"
-			default:
-				return nil, nil, errors.Errorf("invalid scheme: %q", cfg.Scheme)
-			}
-			lb.Set(model.AddressLabel, addr)
-		}
-
+		addr := lb.Get(model.AddressLabel)
 		if err := config.CheckTargetAddress(model.LabelValue(addr)); err != nil {
 			return nil, nil, err
 		}
 
-		// Meta labels are deleted after relabelling. Other internal labels propagate to
-		// the target which decides whether they will be part of their label set.
-		for _, l := range lset {
-			if strings.HasPrefix(l.Name, model.MetaLabelPrefix) {
-				lb.Del(l.Name)
-			}
-		}
-
-		res = append(res, alertmanagerLabels{lset})
+		res = append(res, alertmanagerLabels{lb.Labels()})
 	}
 	return res, droppedAlertManagers, nil
 }

@@ -16,25 +16,27 @@ package discovery
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
-	"os"
-	"reflect"
 	"sort"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
+	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/config"
-	sd_config "github.com/prometheus/prometheus/discovery/config"
+	"github.com/stretchr/testify/require"
+
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"gopkg.in/yaml.v2"
+	"github.com/prometheus/prometheus/util/testutil"
 )
+
+func TestMain(m *testing.M) {
+	testutil.TolerantVerifyLeak(m)
+}
 
 // TestTargetUpdatesOrder checks that the target updates are received in the expected order.
 func TestTargetUpdatesOrder(t *testing.T) {
-
 	// The order by which the updates are send is determined by the interval passed to the mock discovery adapter
 	// Final targets array is ordered alphabetically by the name of the discoverer.
 	// For example discoverer "A" with targets "t2,t3" and discoverer "B" with targets "t1,t2" will result in "t2,t3,t1,t2" after the merge.
@@ -114,7 +116,8 @@ func TestTargetUpdatesOrder(t *testing.T) {
 							{
 								Source:  "tp1_group2",
 								Targets: []model.LabelSet{{"__instance__": "2"}},
-							}},
+							},
+						},
 					},
 				},
 			},
@@ -665,29 +668,25 @@ func TestTargetUpdatesOrder(t *testing.T) {
 			discoveryManager.updatert = 100 * time.Millisecond
 
 			var totalUpdatesCount int
-			provUpdates := make(chan []*targetgroup.Group)
 			for _, up := range tc.updates {
-				go newMockDiscoveryProvider(up...).Run(ctx, provUpdates)
 				if len(up) > 0 {
-					totalUpdatesCount = totalUpdatesCount + len(up)
+					totalUpdatesCount += len(up)
 				}
 			}
+			provUpdates := make(chan []*targetgroup.Group, totalUpdatesCount)
 
-		Loop:
+			for _, up := range tc.updates {
+				go newMockDiscoveryProvider(up...).Run(ctx, provUpdates)
+			}
+
 			for x := 0; x < totalUpdatesCount; x++ {
 				select {
 				case <-ctx.Done():
-					t.Errorf("%d: no update arrived within the timeout limit", x)
-					break Loop
+					t.Fatalf("%d: no update arrived within the timeout limit", x)
 				case tgs := <-provUpdates:
 					discoveryManager.updateGroup(poolKey{setName: strconv.Itoa(i), provider: tc.title}, tgs)
 					for _, got := range discoveryManager.allGroups() {
-						assertEqualGroups(t, got, tc.expectedTargets[x], func(got, expected string) string {
-							return fmt.Sprintf("%d: \ntargets mismatch \ngot: %v \nexpected: %v",
-								x,
-								got,
-								expected)
-						})
+						assertEqualGroups(t, got, tc.expectedTargets[x])
 					}
 				}
 			}
@@ -695,27 +694,52 @@ func TestTargetUpdatesOrder(t *testing.T) {
 	}
 }
 
-func assertEqualGroups(t *testing.T, got, expected []*targetgroup.Group, msg func(got, expected string) string) {
+func assertEqualGroups(t *testing.T, got, expected []*targetgroup.Group) {
 	t.Helper()
-	format := func(groups []*targetgroup.Group) string {
-		var s string
-		for i, group := range groups {
-			if i > 0 {
-				s += ","
-			}
-			s += group.Source + ":" + fmt.Sprint(group.Targets)
-		}
-		return s
-	}
 
 	// Need to sort by the groups's source as the received order is not guaranteed.
 	sort.Sort(byGroupSource(got))
 	sort.Sort(byGroupSource(expected))
 
-	if !reflect.DeepEqual(got, expected) {
-		t.Errorf(msg(format(got), format(expected)))
-	}
+	require.Equal(t, expected, got)
+}
 
+func staticConfig(addrs ...string) StaticConfig {
+	var cfg StaticConfig
+	for i, addr := range addrs {
+		cfg = append(cfg, &targetgroup.Group{
+			Source: fmt.Sprint(i),
+			Targets: []model.LabelSet{
+				{model.AddressLabel: model.LabelValue(addr)},
+			},
+		})
+	}
+	return cfg
+}
+
+func verifySyncedPresence(t *testing.T, tGroups map[string][]*targetgroup.Group, key, label string, present bool) {
+	t.Helper()
+	if _, ok := tGroups[key]; !ok {
+		t.Fatalf("'%s' should be present in Group map keys: %v", key, tGroups)
+		return
+	}
+	match := false
+	var mergedTargets string
+	for _, targetGroups := range tGroups[key] {
+		for _, l := range targetGroups.Targets {
+			mergedTargets = mergedTargets + " " + l.String()
+			if l.String() == label {
+				match = true
+			}
+		}
+	}
+	if match != present {
+		msg := ""
+		if !present {
+			msg = "not"
+		}
+		t.Fatalf("%q should %s be present in Group labels: %q", label, msg, mergedTargets)
+	}
 }
 
 func verifyPresence(t *testing.T, tSets map[poolKey]map[string]*targetgroup.Group, poolKey poolKey, label string, present bool) {
@@ -728,14 +752,12 @@ func verifyPresence(t *testing.T, tSets map[poolKey]map[string]*targetgroup.Grou
 	match := false
 	var mergedTargets string
 	for _, targetGroup := range tSets[poolKey] {
-
 		for _, l := range targetGroup.Targets {
 			mergedTargets = mergedTargets + " " + l.String()
 			if l.String() == label {
 				match = true
 			}
 		}
-
 	}
 	if match != present {
 		msg := ""
@@ -746,105 +768,281 @@ func verifyPresence(t *testing.T, tSets map[poolKey]map[string]*targetgroup.Grou
 	}
 }
 
-func TestTargetSetRecreatesTargetGroupsEveryRun(t *testing.T) {
-	cfg := &config.Config{}
-
-	sOne := `
-scrape_configs:
- - job_name: 'prometheus'
-   static_configs:
-   - targets: ["foo:9090"]
-   - targets: ["bar:9090"]
-`
-	if err := yaml.UnmarshalStrict([]byte(sOne), cfg); err != nil {
-		t.Fatalf("Unable to load YAML config sOne: %s", err)
+func pk(provider, setName string, n int) poolKey {
+	return poolKey{
+		setName:  setName,
+		provider: fmt.Sprintf("%s/%d", provider, n),
 	}
+}
+
+func TestTargetSetTargetGroupsPresentOnConfigReload(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	discoveryManager := NewManager(ctx, log.NewNopLogger())
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
 
-	c := make(map[string]sd_config.ServiceDiscoveryConfig)
-	for _, v := range cfg.ScrapeConfigs {
-		c[v.JobName] = v.ServiceDiscoveryConfig
+	c := map[string]Configs{
+		"prometheus": {
+			staticConfig("foo:9090"),
+		},
 	}
 	discoveryManager.ApplyConfig(c)
 
-	<-discoveryManager.SyncCh()
-	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "string/0"}, "{__address__=\"foo:9090\"}", true)
-	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "string/0"}, "{__address__=\"bar:9090\"}", true)
+	syncedTargets := <-discoveryManager.SyncCh()
+	require.Equal(t, 1, len(syncedTargets))
+	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
+	require.Equal(t, 1, len(syncedTargets["prometheus"]))
+	p := pk("static", "prometheus", 0)
+	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
+	require.Equal(t, 1, len(discoveryManager.targets))
 
-	sTwo := `
-scrape_configs:
- - job_name: 'prometheus'
-   static_configs:
-   - targets: ["foo:9090"]
-`
-	if err := yaml.UnmarshalStrict([]byte(sTwo), cfg); err != nil {
-		t.Fatalf("Unable to load YAML config sTwo: %s", err)
-	}
-	c = make(map[string]sd_config.ServiceDiscoveryConfig)
-	for _, v := range cfg.ScrapeConfigs {
-		c[v.JobName] = v.ServiceDiscoveryConfig
+	discoveryManager.ApplyConfig(c)
+
+	syncedTargets = <-discoveryManager.SyncCh()
+	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
+	require.Equal(t, 1, len(discoveryManager.targets))
+	require.Equal(t, 1, len(syncedTargets))
+	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
+	require.Equal(t, 1, len(syncedTargets["prometheus"]))
+}
+
+func TestTargetSetTargetGroupsPresentOnConfigRename(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	discoveryManager := NewManager(ctx, log.NewNopLogger())
+	discoveryManager.updatert = 100 * time.Millisecond
+	go discoveryManager.Run()
+
+	c := map[string]Configs{
+		"prometheus": {
+			staticConfig("foo:9090"),
+		},
 	}
 	discoveryManager.ApplyConfig(c)
 
+	syncedTargets := <-discoveryManager.SyncCh()
+	require.Equal(t, 1, len(syncedTargets))
+	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
+	require.Equal(t, 1, len(syncedTargets["prometheus"]))
+	p := pk("static", "prometheus", 0)
+	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
+	require.Equal(t, 1, len(discoveryManager.targets))
+
+	c["prometheus2"] = c["prometheus"]
+	delete(c, "prometheus")
+	discoveryManager.ApplyConfig(c)
+
+	syncedTargets = <-discoveryManager.SyncCh()
+	p = pk("static", "prometheus2", 0)
+	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
+	require.Equal(t, 1, len(discoveryManager.targets))
+	require.Equal(t, 1, len(syncedTargets))
+	verifySyncedPresence(t, syncedTargets, "prometheus2", "{__address__=\"foo:9090\"}", true)
+	require.Equal(t, 1, len(syncedTargets["prometheus2"]))
+}
+
+func TestTargetSetTargetGroupsPresentOnConfigDuplicateAndDeleteOriginal(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	discoveryManager := NewManager(ctx, log.NewNopLogger())
+	discoveryManager.updatert = 100 * time.Millisecond
+	go discoveryManager.Run()
+
+	c := map[string]Configs{
+		"prometheus": {
+			staticConfig("foo:9090"),
+		},
+	}
+	discoveryManager.ApplyConfig(c)
 	<-discoveryManager.SyncCh()
-	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "string/0"}, "{__address__=\"foo:9090\"}", true)
-	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "string/0"}, "{__address__=\"bar:9090\"}", false)
+
+	c["prometheus2"] = c["prometheus"]
+	discoveryManager.ApplyConfig(c)
+	syncedTargets := <-discoveryManager.SyncCh()
+	require.Equal(t, 2, len(syncedTargets))
+	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
+	require.Equal(t, 1, len(syncedTargets["prometheus"]))
+	verifySyncedPresence(t, syncedTargets, "prometheus2", "{__address__=\"foo:9090\"}", true)
+	require.Equal(t, 1, len(syncedTargets["prometheus2"]))
+	p := pk("static", "prometheus", 0)
+	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
+	require.Equal(t, 2, len(discoveryManager.targets))
+
+	delete(c, "prometheus")
+	discoveryManager.ApplyConfig(c)
+	syncedTargets = <-discoveryManager.SyncCh()
+	p = pk("static", "prometheus2", 0)
+	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
+	require.Equal(t, 1, len(discoveryManager.targets))
+	require.Equal(t, 1, len(syncedTargets))
+	verifySyncedPresence(t, syncedTargets, "prometheus2", "{__address__=\"foo:9090\"}", true)
+	require.Equal(t, 1, len(syncedTargets["prometheus2"]))
+}
+
+func TestTargetSetTargetGroupsPresentOnConfigChange(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	discoveryManager := NewManager(ctx, log.NewNopLogger())
+	discoveryManager.updatert = 100 * time.Millisecond
+	go discoveryManager.Run()
+
+	c := map[string]Configs{
+		"prometheus": {
+			staticConfig("foo:9090"),
+		},
+	}
+	discoveryManager.ApplyConfig(c)
+
+	syncedTargets := <-discoveryManager.SyncCh()
+	require.Equal(t, 1, len(syncedTargets))
+	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
+	require.Equal(t, 1, len(syncedTargets["prometheus"]))
+
+	var mu sync.Mutex
+	c["prometheus2"] = Configs{
+		lockStaticConfig{
+			mu:     &mu,
+			config: staticConfig("bar:9090"),
+		},
+	}
+	mu.Lock()
+	discoveryManager.ApplyConfig(c)
+
+	// Original targets should be present as soon as possible.
+	syncedTargets = <-discoveryManager.SyncCh()
+	mu.Unlock()
+	require.Equal(t, 1, len(syncedTargets))
+	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
+	require.Equal(t, 1, len(syncedTargets["prometheus"]))
+
+	// prometheus2 configs should be ready on second sync.
+	syncedTargets = <-discoveryManager.SyncCh()
+	require.Equal(t, 2, len(syncedTargets))
+	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
+	require.Equal(t, 1, len(syncedTargets["prometheus"]))
+	verifySyncedPresence(t, syncedTargets, "prometheus2", "{__address__=\"bar:9090\"}", true)
+	require.Equal(t, 1, len(syncedTargets["prometheus2"]))
+
+	p := pk("static", "prometheus", 0)
+	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
+	p = pk("lockstatic", "prometheus2", 1)
+	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"bar:9090\"}", true)
+	require.Equal(t, 2, len(discoveryManager.targets))
+
+	// Delete part of config and ensure only original targets exist.
+	delete(c, "prometheus2")
+	discoveryManager.ApplyConfig(c)
+	syncedTargets = <-discoveryManager.SyncCh()
+	require.Equal(t, 1, len(discoveryManager.targets))
+	verifyPresence(t, discoveryManager.targets, pk("static", "prometheus", 0), "{__address__=\"foo:9090\"}", true)
+	require.Equal(t, 1, len(syncedTargets))
+	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
+	require.Equal(t, 1, len(syncedTargets["prometheus"]))
+}
+
+func TestTargetSetRecreatesTargetGroupsOnConfigChange(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	discoveryManager := NewManager(ctx, log.NewNopLogger())
+	discoveryManager.updatert = 100 * time.Millisecond
+	go discoveryManager.Run()
+
+	c := map[string]Configs{
+		"prometheus": {
+			staticConfig("foo:9090", "bar:9090"),
+		},
+	}
+	discoveryManager.ApplyConfig(c)
+
+	syncedTargets := <-discoveryManager.SyncCh()
+	p := pk("static", "prometheus", 0)
+	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
+	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"bar:9090\"}", true)
+	require.Equal(t, 1, len(discoveryManager.targets))
+	require.Equal(t, 1, len(syncedTargets))
+	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
+	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"bar:9090\"}", true)
+	require.Equal(t, 2, len(syncedTargets["prometheus"]))
+
+	c["prometheus"] = Configs{
+		staticConfig("foo:9090"),
+	}
+	discoveryManager.ApplyConfig(c)
+	syncedTargets = <-discoveryManager.SyncCh()
+	require.Equal(t, 1, len(discoveryManager.targets))
+	p = pk("static", "prometheus", 1)
+	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
+	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"bar:9090\"}", false)
+	require.Equal(t, 1, len(discoveryManager.targets))
+	require.Equal(t, 1, len(syncedTargets))
+	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
+	require.Equal(t, 1, len(syncedTargets["prometheus"]))
+}
+
+func TestDiscovererConfigs(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	discoveryManager := NewManager(ctx, log.NewNopLogger())
+	discoveryManager.updatert = 100 * time.Millisecond
+	go discoveryManager.Run()
+
+	c := map[string]Configs{
+		"prometheus": {
+			staticConfig("foo:9090", "bar:9090"),
+			staticConfig("baz:9090"),
+		},
+	}
+	discoveryManager.ApplyConfig(c)
+
+	syncedTargets := <-discoveryManager.SyncCh()
+	p := pk("static", "prometheus", 0)
+	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
+	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"bar:9090\"}", true)
+	p = pk("static", "prometheus", 1)
+	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"baz:9090\"}", true)
+	require.Equal(t, 2, len(discoveryManager.targets))
+	require.Equal(t, 1, len(syncedTargets))
+	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
+	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"bar:9090\"}", true)
+	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"baz:9090\"}", true)
+	require.Equal(t, 3, len(syncedTargets["prometheus"]))
 }
 
 // TestTargetSetRecreatesEmptyStaticConfigs ensures that reloading a config file after
 // removing all targets from the static_configs sends an update with empty targetGroups.
 // This is required to signal the receiver that this target set has no current targets.
 func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
-	cfg := &config.Config{}
-
-	sOne := `
-scrape_configs:
- - job_name: 'prometheus'
-   static_configs:
-   - targets: ["foo:9090"]
-`
-	if err := yaml.UnmarshalStrict([]byte(sOne), cfg); err != nil {
-		t.Fatalf("Unable to load YAML config sOne: %s", err)
-	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	discoveryManager := NewManager(ctx, log.NewNopLogger())
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
 
-	c := make(map[string]sd_config.ServiceDiscoveryConfig)
-	for _, v := range cfg.ScrapeConfigs {
-		c[v.JobName] = v.ServiceDiscoveryConfig
+	c := map[string]Configs{
+		"prometheus": {
+			staticConfig("foo:9090"),
+		},
 	}
 	discoveryManager.ApplyConfig(c)
 
-	<-discoveryManager.SyncCh()
-	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "string/0"}, "{__address__=\"foo:9090\"}", true)
+	syncedTargets := <-discoveryManager.SyncCh()
+	p := pk("static", "prometheus", 0)
+	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
+	require.Equal(t, 1, len(syncedTargets))
+	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
+	require.Equal(t, 1, len(syncedTargets["prometheus"]))
 
-	sTwo := `
-scrape_configs:
- - job_name: 'prometheus'
-   static_configs:
-`
-	if err := yaml.UnmarshalStrict([]byte(sTwo), cfg); err != nil {
-		t.Fatalf("Unable to load YAML config sTwo: %s", err)
-	}
-	c = make(map[string]sd_config.ServiceDiscoveryConfig)
-	for _, v := range cfg.ScrapeConfigs {
-		c[v.JobName] = v.ServiceDiscoveryConfig
+	c["prometheus"] = Configs{
+		StaticConfig{{}},
 	}
 	discoveryManager.ApplyConfig(c)
 
-	<-discoveryManager.SyncCh()
-
-	pkey := poolKey{setName: "prometheus", provider: "string/0"}
-	targetGroups, ok := discoveryManager.targets[pkey]
+	syncedTargets = <-discoveryManager.SyncCh()
+	p = pk("static", "prometheus", 1)
+	targetGroups, ok := discoveryManager.targets[p]
 	if !ok {
-		t.Fatalf("'%v' should be present in target groups", pkey)
+		t.Fatalf("'%v' should be present in target groups", p)
 	}
 	group, ok := targetGroups[""]
 	if !ok {
@@ -854,79 +1052,49 @@ scrape_configs:
 	if len(group.Targets) != 0 {
 		t.Fatalf("Invalid number of targets: expected 0, got %d", len(group.Targets))
 	}
+	require.Equal(t, 1, len(syncedTargets))
+	require.Equal(t, 1, len(syncedTargets["prometheus"]))
+	if lbls := syncedTargets["prometheus"][0].Labels; lbls != nil {
+		t.Fatalf("Unexpected Group: expected nil Labels, got %v", lbls)
+	}
 }
 
 func TestIdenticalConfigurationsAreCoalesced(t *testing.T) {
-	tmpFile, err := ioutil.TempFile("", "sd")
-	if err != nil {
-		t.Fatalf("error creating temporary file: %v", err)
-	}
-	defer os.Remove(tmpFile.Name())
-	if _, err := tmpFile.Write([]byte(`[{"targets": ["foo:9090"]}]`)); err != nil {
-		t.Fatalf("error writing temporary file: %v", err)
-	}
-	if err := tmpFile.Close(); err != nil {
-		t.Fatalf("error closing temporary file: %v", err)
-	}
-	tmpFile2 := fmt.Sprintf("%s.json", tmpFile.Name())
-	if err = os.Link(tmpFile.Name(), tmpFile2); err != nil {
-		t.Fatalf("error linking temporary file: %v", err)
-	}
-	defer os.Remove(tmpFile2)
-
-	cfg := &config.Config{}
-
-	sOne := `
-scrape_configs:
- - job_name: 'prometheus'
-   file_sd_configs:
-   - files: ["%s"]
- - job_name: 'prometheus2'
-   file_sd_configs:
-   - files: ["%s"]
-`
-	sOne = fmt.Sprintf(sOne, tmpFile2, tmpFile2)
-	if err := yaml.UnmarshalStrict([]byte(sOne), cfg); err != nil {
-		t.Fatalf("Unable to load YAML config sOne: %s", err)
-	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	discoveryManager := NewManager(ctx, nil)
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
 
-	c := make(map[string]sd_config.ServiceDiscoveryConfig)
-	for _, v := range cfg.ScrapeConfigs {
-		c[v.JobName] = v.ServiceDiscoveryConfig
+	c := map[string]Configs{
+		"prometheus": {
+			staticConfig("foo:9090"),
+		},
+		"prometheus2": {
+			staticConfig("foo:9090"),
+		},
 	}
 	discoveryManager.ApplyConfig(c)
 
-	<-discoveryManager.SyncCh()
-	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "*file.SDConfig/0"}, "{__address__=\"foo:9090\"}", true)
-	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus2", provider: "*file.SDConfig/0"}, "{__address__=\"foo:9090\"}", true)
+	syncedTargets := <-discoveryManager.SyncCh()
+	verifyPresence(t, discoveryManager.targets, pk("static", "prometheus", 0), "{__address__=\"foo:9090\"}", true)
+	verifyPresence(t, discoveryManager.targets, pk("static", "prometheus2", 0), "{__address__=\"foo:9090\"}", true)
 	if len(discoveryManager.providers) != 1 {
 		t.Fatalf("Invalid number of providers: expected 1, got %d", len(discoveryManager.providers))
 	}
+	require.Equal(t, 2, len(syncedTargets))
+	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
+	require.Equal(t, 1, len(syncedTargets["prometheus"]))
+	verifySyncedPresence(t, syncedTargets, "prometheus2", "{__address__=\"foo:9090\"}", true)
+	require.Equal(t, 1, len(syncedTargets["prometheus2"]))
 }
 
-func TestApplyConfigDoesNotModifyStaticProviderTargets(t *testing.T) {
-	cfgText := `
-scrape_configs:
- - job_name: 'prometheus'
-   static_configs:
-   - targets: ["foo:9090"]
-   - targets: ["bar:9090"]
-   - targets: ["baz:9090"]
-`
-	originalConfig := &config.Config{}
-	if err := yaml.UnmarshalStrict([]byte(cfgText), originalConfig); err != nil {
-		t.Fatalf("Unable to load YAML config cfgYaml: %s", err)
+func TestApplyConfigDoesNotModifyStaticTargets(t *testing.T) {
+	originalConfig := Configs{
+		staticConfig("foo:9090", "bar:9090", "baz:9090"),
 	}
-	origScrpCfg := originalConfig.ScrapeConfigs[0]
-
-	processedConfig := &config.Config{}
-	if err := yaml.UnmarshalStrict([]byte(cfgText), processedConfig); err != nil {
-		t.Fatalf("Unable to load YAML config cfgYaml: %s", err)
+	processedConfig := Configs{
+		staticConfig("foo:9090", "bar:9090", "baz:9090"),
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -934,18 +1102,76 @@ scrape_configs:
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
 
-	c := make(map[string]sd_config.ServiceDiscoveryConfig)
-	for _, v := range processedConfig.ScrapeConfigs {
-		c[v.JobName] = v.ServiceDiscoveryConfig
+	cfgs := map[string]Configs{
+		"prometheus": processedConfig,
+	}
+	discoveryManager.ApplyConfig(cfgs)
+	<-discoveryManager.SyncCh()
+
+	for _, cfg := range cfgs {
+		require.Equal(t, originalConfig, cfg)
+	}
+}
+
+type errorConfig struct{ err error }
+
+func (e errorConfig) Name() string                                        { return "error" }
+func (e errorConfig) NewDiscoverer(DiscovererOptions) (Discoverer, error) { return nil, e.err }
+
+type lockStaticConfig struct {
+	mu     *sync.Mutex
+	config StaticConfig
+}
+
+func (s lockStaticConfig) Name() string { return "lockstatic" }
+func (s lockStaticConfig) NewDiscoverer(DiscovererOptions) (Discoverer, error) {
+	return (lockStaticDiscoverer)(s), nil
+}
+
+type lockStaticDiscoverer lockStaticConfig
+
+func (s lockStaticDiscoverer) Run(ctx context.Context, up chan<- []*targetgroup.Group) {
+	// TODO: existing implementation closes up chan, but documentation explicitly forbids it...?
+	defer close(up)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	select {
+	case <-ctx.Done():
+	case up <- s.config:
+	}
+}
+
+func TestGaugeFailedConfigs(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	discoveryManager := NewManager(ctx, log.NewNopLogger())
+	discoveryManager.updatert = 100 * time.Millisecond
+	go discoveryManager.Run()
+
+	c := map[string]Configs{
+		"prometheus": {
+			errorConfig{fmt.Errorf("tests error 0")},
+			errorConfig{fmt.Errorf("tests error 1")},
+			errorConfig{fmt.Errorf("tests error 2")},
+		},
 	}
 	discoveryManager.ApplyConfig(c)
 	<-discoveryManager.SyncCh()
 
-	for _, sdcfg := range c {
-		if !reflect.DeepEqual(origScrpCfg.ServiceDiscoveryConfig.StaticConfigs, sdcfg.StaticConfigs) {
-			t.Fatalf("discovery manager modified static config \n  expected: %v\n  got: %v\n",
-				origScrpCfg.ServiceDiscoveryConfig.StaticConfigs, sdcfg.StaticConfigs)
-		}
+	failedCount := client_testutil.ToFloat64(failedConfigs)
+	if failedCount != 3 {
+		t.Fatalf("Expected to have 3 failed configs, got: %v", failedCount)
+	}
+
+	c["prometheus"] = Configs{
+		staticConfig("foo:9090"),
+	}
+	discoveryManager.ApplyConfig(c)
+	<-discoveryManager.SyncCh()
+
+	failedCount = client_testutil.ToFloat64(failedConfigs)
+	if failedCount != 0 {
+		t.Fatalf("Expected to get no failed config, got: %v", failedCount)
 	}
 }
 
@@ -1099,9 +1325,7 @@ func TestCoordinationWithReceiver(t *testing.T) {
 						if _, ok := tgs[k]; !ok {
 							t.Fatalf("step %d: target group not found: %s\ngot: %#v", i, k, tgs)
 						}
-						assertEqualGroups(t, tgs[k], expected.tgs[k], func(got, expected string) string {
-							return fmt.Sprintf("step %d: targets mismatch \ngot: %q \nexpected: %q", i, got, expected)
-						})
+						assertEqualGroups(t, tgs[k], expected.tgs[k])
 					}
 				}
 			}
@@ -1128,23 +1352,21 @@ func newMockDiscoveryProvider(updates ...update) mockdiscoveryProvider {
 func (tp mockdiscoveryProvider) Run(ctx context.Context, upCh chan<- []*targetgroup.Group) {
 	for _, u := range tp.updates {
 		if u.interval > 0 {
-			t := time.NewTicker(u.interval)
-			defer t.Stop()
-		Loop:
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case <-t.C:
-					break Loop
-				}
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(u.interval):
 			}
 		}
 		tgs := make([]*targetgroup.Group, len(u.targetGroups))
 		for i := range u.targetGroups {
 			tgs[i] = &u.targetGroups[i]
 		}
-		upCh <- tgs
+		select {
+		case <-ctx.Done():
+			return
+		case upCh <- tgs:
+		}
 	}
 	<-ctx.Done()
 }
@@ -1166,4 +1388,92 @@ func (o onceProvider) Run(_ context.Context, ch chan<- []*targetgroup.Group) {
 		ch <- o.tgs
 	}
 	close(ch)
+}
+
+// TestTargetSetTargetGroupsUpdateDuringApplyConfig is used to detect races when
+// ApplyConfig happens at the same time as targets update.
+func TestTargetSetTargetGroupsUpdateDuringApplyConfig(*testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	discoveryManager := NewManager(ctx, log.NewNopLogger())
+	discoveryManager.updatert = 100 * time.Millisecond
+	go discoveryManager.Run()
+
+	td := newTestDiscoverer()
+
+	c := map[string]Configs{
+		"prometheus": {
+			td,
+		},
+	}
+	discoveryManager.ApplyConfig(c)
+
+	var wg sync.WaitGroup
+	wg.Add(2000)
+
+	start := make(chan struct{})
+	for i := 0; i < 1000; i++ {
+		go func() {
+			<-start
+			td.update([]*targetgroup.Group{
+				{
+					Targets: []model.LabelSet{
+						{model.AddressLabel: model.LabelValue("127.0.0.1:9090")},
+					},
+				},
+			})
+			wg.Done()
+		}()
+	}
+
+	for i := 0; i < 1000; i++ {
+		go func(i int) {
+			<-start
+			c := map[string]Configs{
+				fmt.Sprintf("prometheus-%d", i): {
+					td,
+				},
+			}
+			discoveryManager.ApplyConfig(c)
+			wg.Done()
+		}(i)
+	}
+
+	close(start)
+	wg.Wait()
+}
+
+// testDiscoverer is a config and a discoverer that can adjust targets with a
+// simple function.
+type testDiscoverer struct {
+	up    chan<- []*targetgroup.Group
+	ready chan struct{}
+}
+
+func newTestDiscoverer() *testDiscoverer {
+	return &testDiscoverer{
+		ready: make(chan struct{}),
+	}
+}
+
+// Name implements Config.
+func (t *testDiscoverer) Name() string {
+	return "test"
+}
+
+// NewDiscoverer implements Config.
+func (t *testDiscoverer) NewDiscoverer(DiscovererOptions) (Discoverer, error) {
+	return t, nil
+}
+
+// Run implements Discoverer.
+func (t *testDiscoverer) Run(ctx context.Context, up chan<- []*targetgroup.Group) {
+	t.up = up
+	close(t.ready)
+	<-ctx.Done()
+}
+
+func (t *testDiscoverer) update(tgs []*targetgroup.Group) {
+	<-t.ready
+	t.up <- tgs
 }

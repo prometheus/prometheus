@@ -1,0 +1,4 @@
+groups:
+  - name: yolo
+    rules:
+      - record: ylo

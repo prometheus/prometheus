@@ -18,7 +18,7 @@ As a first step, `main()` defines and parses the server's command-line flags int
 
 Next, `main()` instantiates all the major run-time components of Prometheus and connects them together using channels, references, or passing in contexts for later coordination and cancellation. These components include service discovery, target scraping, storage, and more (as laid out in the rest of this document).
 
-Finally, the server [runs all components](https://github.com/prometheus/prometheus/blob/v2.3.1/cmd/prometheus/main.go#L366-L598) in an [actor-like model](https://www.brianstorti.com/the-actor-model/), using [`github.com/oklog/oklog/pkg/group`](https://godoc.org/github.com/oklog/run) to coordinate the startup and shutdown of all interconnected actors. Multiple channels are used to enforce ordering constraints, such as not enabling the web interface before the storage is ready and the initial configuration file load has happened.
+Finally, the server [runs all components](https://github.com/prometheus/prometheus/blob/v2.3.1/cmd/prometheus/main.go#L366-L598) in an [actor-like model](https://www.brianstorti.com/the-actor-model/), using [`github.com/oklog/oklog/pkg/group`](https://pkg.go.dev/github.com/oklog/run) to coordinate the startup and shutdown of all interconnected actors. Multiple channels are used to enforce ordering constraints, such as not enabling the web interface before the storage is ready and the initial configuration file load has happened.
 
 ## Configuration
 
@@ -34,17 +34,17 @@ The [configuration reload handler](https://github.com/prometheus/prometheus/blob
 
 ## Termination handler
 
-The [termination handler](https://github.com/prometheus/prometheus/blob/v2.3.1/cmd/prometheus/main.go#L367-L392) is a goroutine that is implemented directly in `main()` and listens for termination requests from either the web interface or a [`TERM` signal](https://en.wikipedia.org/wiki/Signal_(IPC)#SIGTERM). When it receives a termination request, it returns and thus triggers the orderly shutdown of all other Prometheus components via the actor coordination functionality provided by [`github.com/oklog/oklog/pkg/group`](https://godoc.org/github.com/oklog/run).
+The [termination handler](https://github.com/prometheus/prometheus/blob/v2.3.1/cmd/prometheus/main.go#L367-L392) is a goroutine that is implemented directly in `main()` and listens for termination requests from either the web interface or a [`TERM` signal](https://en.wikipedia.org/wiki/Signal_(IPC)#SIGTERM). When it receives a termination request, it returns and thus triggers the orderly shutdown of all other Prometheus components via the actor coordination functionality provided by [`github.com/oklog/oklog/pkg/group`](https://pkg.go.dev/github.com/oklog/run).
 
 ## Scrape discovery manager
 
 The scrape discovery manager is a [`discovery.Manager`](https://github.com/prometheus/prometheus/blob/v2.3.1/discovery/manager.go#L73-L89) that uses Prometheus's service discovery functionality to find and continuously update the list of targets from which Prometheus should scrape metrics. It runs independently of the scrape manager (which performs the actual target scrapes) and feeds it with a stream of [target group](https://github.com/prometheus/prometheus/blob/v2.3.1/discovery/targetgroup/targetgroup.go#L24-L33) updates over a [synchronization channel](https://github.com/prometheus/prometheus/blob/v2.3.1/cmd/prometheus/main.go#L431).
 
-Internally, the scrape discovery manager runs an instance of each configuration-defined service discovery mechanism in its own goroutine. For example, if a `scrape_config` in the configuration file defines two [`kubernetes_sd_config` sections](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#%3Ckubernetes_sd_config%3E), the manager will run two separate [`kubernetes.Discovery`](https://github.com/prometheus/prometheus/blob/v2.3.1/discovery/kubernetes/kubernetes.go#L150-L159) instances. Each of these discovery instances implements the [`discovery.Discoverer` interface](https://github.com/prometheus/prometheus/blob/v2.3.1/discovery/manager.go#L41-L55) and sends target updates over a synchronization channel to the controlling discovery manager, which then enriches the target group update with information about the specific discovery instance and forwards it to the scrape manager.
+Internally, the scrape discovery manager runs an instance of each configuration-defined service discovery mechanism in its own goroutine. For example, if a `scrape_config` in the configuration file defines two [`kubernetes_sd_config` sections](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#kubernetes_sd_config), the manager will run two separate [`kubernetes.Discovery`](https://github.com/prometheus/prometheus/blob/v2.3.1/discovery/kubernetes/kubernetes.go#L150-L159) instances. Each of these discovery instances implements the [`discovery.Discoverer` interface](https://github.com/prometheus/prometheus/blob/v2.3.1/discovery/manager.go#L41-L55) and sends target updates over a synchronization channel to the controlling discovery manager, which then enriches the target group update with information about the specific discovery instance and forwards it to the scrape manager.
 
 When a configuration change is applied, the discovery manager stops all currently running discovery mechanisms and restarts new ones as defined in the new configuration file.
 
-For more details, see the more extensive [documentation about service discovery internals](https://github.com/prometheus/prometheus/blob/master/discovery/README.md).
+For more details, see the more extensive [documentation about service discovery internals](https://github.com/prometheus/prometheus/blob/main/discovery/README.md).
 
 ## Scrape manager
 
@@ -71,7 +71,7 @@ In the same way that the scrape discovery manager runs one discovery mechanism f
 
 ### Target labels and target relabeling
 
-Whenever the scrape manager receives an updated list of targets for a given scrape pool from the discovery manager, the scrape pool applies default target labels (such as `job` and `instance`) to each target and applies [target relabeling configurations](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#%3Crelabel_config%3E) to produce the final list of targets to be scraped.
+Whenever the scrape manager receives an updated list of targets for a given scrape pool from the discovery manager, the scrape pool applies default target labels (such as `job` and `instance`) to each target and applies [target relabeling configurations](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#relabel_config) to produce the final list of targets to be scraped.
 
 ### Target hashing and scrape timing
 
@@ -93,15 +93,15 @@ Currently rules still read and write directly from/to the fanout storage, but th
 
 ### Local storage
 
-Prometheus's local on-disk time series database is a [light-weight wrapper](https://github.com/prometheus/prometheus/blob/v2.3.1/storage/tsdb/tsdb.go#L102-L106) around [`github.com/prometheus/tsdb.DB`](https://github.com/prometheus/tsdb/blob/master/db.go#L92-L117). The wrapper makes only minor interface adjustments for use of the TSDB in the context of the Prometheus server and implements the [`storage.Storage` interface](https://github.com/prometheus/prometheus/blob/v2.3.1/storage/interface.go#L31-L44). You can find more details about the TSDB's on-disk layout in the [local storage documentation](https://prometheus.io/docs/prometheus/latest/storage/).
+About Prometheus's local on-disk time series database, please refer to [`github.com/prometheus/prometheus/tsdb.DB`](https://github.com/prometheus/prometheus/blob/main/tsdb/db.go). You can find more details about the TSDB's on-disk layout in the [local storage documentation](https://prometheus.io/docs/prometheus/latest/storage/).
 
 ### Remote storage
 
 The remote storage is a [`remote.Storage`](https://github.com/prometheus/prometheus/blob/v2.3.1/storage/remote/storage.go#L31-L44) that implements the [`storage.Storage` interface](https://github.com/prometheus/prometheus/blob/v2.3.1/storage/interface.go#L31-L44) and is responsible for interfacing with remote read and write endpoints.
 
-For each [`remote_write`](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#%3Cremote_write%3E) section in the configuration file, the remote storage creates and runs one [`remote.QueueManager`](https://github.com/prometheus/prometheus/blob/v2.3.1/storage/remote/queue_manager.go#L141-L161), which in turn queues and sends samples to a specific remote write endpoint. Each queue manager parallelizes writes to the remote endpoint by running a dynamic number of shards based on current and past load observations. When a configuration reload is applied, all remote storage queues are shut down and new ones are created.
+For each [`remote_write`](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#remote_write) section in the configuration file, the remote storage creates and runs one [`remote.QueueManager`](https://github.com/prometheus/prometheus/blob/v2.3.1/storage/remote/queue_manager.go#L141-L161), which in turn queues and sends samples to a specific remote write endpoint. Each queue manager parallelizes writes to the remote endpoint by running a dynamic number of shards based on current and past load observations. When a configuration reload is applied, all remote storage queues are shut down and new ones are created.
 
-For each [`remote_read`](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#%3Cremote_read%3E) section in the configuration file, the remote storage creates a [reader client](https://github.com/prometheus/prometheus/blob/v2.3.1/storage/remote/storage.go#L96-L118) and results from each remote source are merged.
+For each [`remote_read`](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#remote_read) section in the configuration file, the remote storage creates a [reader client](https://github.com/prometheus/prometheus/blob/v2.3.1/storage/remote/storage.go#L96-L118) and results from each remote source are merged.
 
 ## PromQL engine
 
@@ -132,6 +132,6 @@ Internally it works like the scrape discovery manager.
 
 Prometheus serves its web UI and API on port `9090` by default. The web UI is available at `/` and serves a human-usable interface for running expression queries, inspecting active alerts, or getting other insight into the status of the Prometheus server.
 
-The web API is served under `/api/v1` and allows programmatical [querying, metadata, and server status inspection](https://prometheus.io/docs/prometheus/latest/querying/api/).
+The web API is served under `/api/v1` and allows programmatic [querying, metadata, and server status inspection](https://prometheus.io/docs/prometheus/latest/querying/api/).
 
 [Console templates](https://prometheus.io/docs/visualization/consoles/), which allow Prometheus to serve user-defined HTML templates that have access to TSDB data, are served under `/consoles` when console templates are present and configured.

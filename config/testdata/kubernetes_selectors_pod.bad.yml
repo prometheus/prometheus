@@ -1,0 +1,8 @@
+scrape_configs:
+  - job_name: prometheus
+    kubernetes_sd_configs:
+      - role: pod
+        selectors:
+          - role: "node"
+            label: "foo=bar"
+            field: "metadata.status=Running"

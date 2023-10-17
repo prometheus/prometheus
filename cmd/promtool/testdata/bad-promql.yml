@@ -1,0 +1,12 @@
+tests:
+  - input_series:
+      - series: 'join_1{a="1",b="2"}'
+        values: 1
+      - series: 'join_2{a="1",b="3"}'
+        values: 2
+      - series: 'join_2{a="1",b="4"}'
+        values: 3
+
+    promql_expr_test:
+      # This PromQL generates an error.
+      - expr: "join_1 + on(a) join_2"

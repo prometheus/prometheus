@@ -3,4 +3,3 @@ scrape_configs:
 
     bearer_token: 1234
     bearer_token_file: somefile
-

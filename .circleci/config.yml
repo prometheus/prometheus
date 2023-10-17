@@ -1,157 +1,33 @@
 ---
+# Prometheus has switched to GitHub action.
+# Circle CI is not disabled repository-wise so that previous pull requests
+# continue working.
+# This file does not generate any CircleCI workflow.
+
 version: 2.1
 
 executors:
-  # Whenever the Go version is updated here, .travis.yml and .promu.yml
-  # should also be updated.
   golang:
     docker:
-    - image: circleci/golang:1.12
+      - image: busybox
 
 jobs:
-  test:
+  noopjob:
     executor: golang
 
     steps:
-    - checkout
-    - run: make promu
-    - run:
-        command: make check_license style unused lint build check_assets
-        environment:
-          # Run garbage collection more aggresively to avoid getting OOMed during the lint phase.
-          GOGC: "20"
-    - run:
-       command: |
-         curl -s -L https://github.com/protocolbuffers/protobuf/releases/download/v3.5.1/protoc-3.5.1-linux-x86_64.zip > /tmp/protoc.zip
-         unzip -d /tmp /tmp/protoc.zip
-         chmod +x /tmp/bin/protoc
-         echo 'export PATH=/tmp/bin:$PATH' >> $BASH_ENV
-         source $BASH_ENV
-         make proto
-    - run: git diff --exit-code
-    - store_artifacts:
-        path: prometheus
-        destination: /build/prometheus
-    - store_artifacts:
-        path: promtool
-        destination: /build/promtool
-    - run: rm -v prometheus promtool
-
-  build:
-    machine: true
-
-    steps:
-    - checkout
-    - run: make promu
-    - run: promu crossbuild -v
-    - persist_to_workspace:
-        root: .
-        paths:
-        - .build
-    - store_artifacts:
-        path: .build
-        destination: /build
-
-  docker_hub_master:
-    executor: golang
-
-    steps:
-    - checkout
-    - setup_remote_docker:
-        version: 18.06.0-ce
-    - run: docker run --privileged linuxkit/binfmt:v0.6
-    - attach_workspace:
-        at: .
-    - run: make docker
-    - run: make docker DOCKER_REPO=quay.io/prometheus
-    - run: docker images
-    - run: docker login -u $DOCKER_LOGIN -p $DOCKER_PASSWORD
-    - run: docker login -u $QUAY_LOGIN -p $QUAY_PASSWORD quay.io
-    - run: make docker-publish
-    - run: make docker-publish DOCKER_REPO=quay.io/prometheus
-    - run: make docker-manifest
-    - run: make docker-manifest DOCKER_REPO=quay.io/prometheus
-
-  docker_hub_release_tags:
-    executor: golang
-
-    steps:
-    - checkout
-    - setup_remote_docker:
-        version: 18.06.0-ce
-    - run: docker run --privileged linuxkit/binfmt:v0.6
-    - run: mkdir -v -p ${HOME}/bin
-    - run: curl -L 'https://github.com/aktau/github-release/releases/download/v0.7.2/linux-amd64-github-release.tar.bz2' | tar xvjf - --strip-components 3 -C ${HOME}/bin
-    - run: echo 'export PATH=${HOME}/bin:${PATH}' >> ${BASH_ENV}
-    - attach_workspace:
-        at: .
-    - run: make promu
-    - run: promu crossbuild tarballs
-    - run: promu checksum .tarballs
-    - run: promu release .tarballs
-    - store_artifacts:
-        path: .tarballs
-        destination: releases
-    - run: make docker DOCKER_IMAGE_TAG=$CIRCLE_TAG
-    - run: make docker DOCKER_IMAGE_TAG=$CIRCLE_TAG DOCKER_REPO=quay.io/prometheus
-    - run: docker login -u $DOCKER_LOGIN -p $DOCKER_PASSWORD
-    - run: docker login -u $QUAY_LOGIN -p $QUAY_PASSWORD quay.io
-    - run: make docker-publish DOCKER_IMAGE_TAG="$CIRCLE_TAG"
-    - run: make docker-publish DOCKER_IMAGE_TAG="$CIRCLE_TAG" DOCKER_REPO=quay.io/prometheus
-    - run: make docker-manifest DOCKER_IMAGE_TAG="$CIRCLE_TAG"
-    - run: make docker-manifest DOCKER_IMAGE_TAG="$CIRCLE_TAG" DOCKER_REPO=quay.io/prometheus
-    - run: |
-        if [[ "$CIRCLE_TAG" =~ ^v[0-9]+(\.[0-9]+){2}$ ]]; then
-          make docker-tag-latest DOCKER_IMAGE_TAG="$CIRCLE_TAG"
-          make docker-tag-latest DOCKER_IMAGE_TAG="$CIRCLE_TAG" DOCKER_REPO=quay.io/prometheus
-          make docker-publish DOCKER_IMAGE_TAG="latest"
-          make docker-publish DOCKER_IMAGE_TAG="latest" DOCKER_REPO=quay.io/prometheus
-          make docker-manifest DOCKER_IMAGE_TAG="latest"
-          make docker-manifest DOCKER_IMAGE_TAG="latest" DOCKER_REPO=quay.io/prometheus
-        fi
-
-  makefile_sync:
-    executor: golang
-    steps:
-    - checkout
-    - run: ./scripts/sync_makefiles.sh
+      - run:
+          command: "true"
 
 workflows:
   version: 2
   prometheus:
     jobs:
-    - test:
-        filters:
-          tags:
-            only: /.*/
-    - build:
-        filters:
-          tags:
-            only: /.*/
-    - docker_hub_master:
-        requires:
-        - test
-        - build
-        filters:
-          branches:
-            only: master
-    - docker_hub_release_tags:
-        requires:
-        - test
-        - build
-        filters:
-          tags:
-            only: /^v[0-9]+(\.[0-9]+){2}(-.+|[^-.]*)$/
-          branches:
-            ignore: /.*/
-  nightly:
+      - noopjob
     triggers:
       - schedule:
-          cron: "0 0 * * *"
+          cron: "0 0 30 2 *"
           filters:
             branches:
               only:
-                - master
-    jobs:
-      - makefile_sync
-    
+                - main

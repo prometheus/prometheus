@@ -22,7 +22,7 @@ An example rules file with an alert would be:
 groups:
 - name: example
   rules:
-  - alert: HighErrorRate
+  - alert: HighRequestLatency
     expr: job:request_latency_seconds:mean5m{job="myjob"} > 0.5
     for: 10m
     labels:
@@ -32,7 +32,11 @@ groups:
 ```
 
 The optional `for` clause causes Prometheus to wait for a certain duration
-between first encountering a new expression output vector element and counting an alert as firing for this element. In this case, Prometheus will check that the alert continues to be active during each evaluation for 10 minutes before firing the alert. Elements that are active, but not firing yet, are in the pending state.
+between first encountering a new expression output vector element and counting
+an alert as firing for this element. In this case, Prometheus will check that
+the alert continues to be active during each evaluation for 10 minutes before
+firing the alert. Elements that are active, but not firing yet, are in the pending state.
+Alerting rules without the `for` clause will become active on the first evaluation.
 
 The `labels` clause allows specifying a set of additional labels to be attached
 to the alert. Any existing conflicting labels will be overwritten. The label
@@ -86,7 +90,7 @@ the "Alerts" tab of your Prometheus instance. This will show you the exact
 label sets for which each defined alert is currently active.
 
 For pending and firing alerts, Prometheus also stores synthetic time series of
-the form `ALERTS{alertname="<alert name>", alertstate="pending|firing", <additional alert labels>}`.
+the form `ALERTS{alertname="<alert name>", alertstate="<pending or firing>", <additional alert labels>}`.
 The sample value is set to `1` as long as the alert is in the indicated active
 (pending or firing) state, and the series is marked stale when this is no
 longer the case.
@@ -101,5 +105,5 @@ on top of the simple alert definitions. In Prometheus's ecosystem, the
 role. Thus, Prometheus may be configured to periodically send information about
 alert states to an Alertmanager instance, which then takes care of dispatching
 the right notifications.  
-Prometheus can be [configured](configuration.md) to automatically discovered available
+Prometheus can be [configured](configuration.md) to automatically discover available
 Alertmanager instances through its service discovery integrations.

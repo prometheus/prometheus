@@ -73,6 +73,9 @@ eval instant at 1010s sum_over_time(metric1[30s:10s] offset 5s)
 eval instant at 1010s sum_over_time(metric1[30s:10s] offset 3s)
   {} 297
 
+eval instant at 1010s sum_over_time((metric1)[30s:10s] offset 3s)
+  {} 297
+
 # Nested subqueries
 eval instant at 1000s rate(sum_over_time(metric1[30s:10s])[50s:10s])
   {} 0.4
@@ -111,3 +114,4 @@ eval instant at 20s min_over_time(metric[10s:10s])
 
 eval instant at 20m min_over_time(rate(metric[5m])[20m:1m])
   {} 0.12119047619047618
+

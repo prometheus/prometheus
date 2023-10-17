@@ -15,19 +15,25 @@ package kubernetes
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net"
 	"strconv"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
-	"github.com/pkg/errors"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/common/model"
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/prometheus/prometheus/util/strutil"
+)
+
+var (
+	svcAddCount    = eventCount.WithLabelValues("service", "add")
+	svcUpdateCount = eventCount.WithLabelValues("service", "update")
+	svcDeleteCount = eventCount.WithLabelValues("service", "delete")
 )
 
 // Service implements discovery of Kubernetes services.
@@ -44,20 +50,23 @@ func NewService(l log.Logger, inf cache.SharedInformer) *Service {
 		l = log.NewNopLogger()
 	}
 	s := &Service{logger: l, informer: inf, store: inf.GetStore(), queue: workqueue.NewNamed("service")}
-	s.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+	_, err := s.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
-			eventCount.WithLabelValues("service", "add").Inc()
+			svcAddCount.Inc()
 			s.enqueue(o)
 		},
 		DeleteFunc: func(o interface{}) {
-			eventCount.WithLabelValues("service", "delete").Inc()
+			svcDeleteCount.Inc()
 			s.enqueue(o)
 		},
 		UpdateFunc: func(_, o interface{}) {
-			eventCount.WithLabelValues("service", "update").Inc()
+			svcUpdateCount.Inc()
 			s.enqueue(o)
 		},
 	})
+	if err != nil {
+		level.Error(l).Log("msg", "Error adding services event handler.", "err", err)
+	}
 	return s
 }
 
@@ -75,12 +84,14 @@ func (s *Service) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	defer s.queue.ShutDown()
 
 	if !cache.WaitForCacheSync(ctx.Done(), s.informer.HasSynced) {
-		level.Error(s.logger).Log("msg", "service informer unable to sync cache")
+		if !errors.Is(ctx.Err(), context.Canceled) {
+			level.Error(s.logger).Log("msg", "service informer unable to sync cache")
+		}
 		return
 	}
 
 	go func() {
-		for s.process(ctx, ch) {
+		for s.process(ctx, ch) { // nolint:revive
 		}
 	}()
 
@@ -106,7 +117,7 @@ func (s *Service) process(ctx context.Context, ch chan<- []*targetgroup.Group) b
 		return true
 	}
 	if !exists {
-		send(ctx, s.logger, RoleService, ch, &targetgroup.Group{Source: serviceSourceFromNamespaceAndName(namespace, name)})
+		send(ctx, ch, &targetgroup.Group{Source: serviceSourceFromNamespaceAndName(namespace, name)})
 		return true
 	}
 	eps, err := convertToService(o)
@@ -114,7 +125,7 @@ func (s *Service) process(ctx context.Context, ch chan<- []*targetgroup.Group) b
 		level.Error(s.logger).Log("msg", "converting to Service object failed", "err", err)
 		return true
 	}
-	send(ctx, s.logger, RoleService, ch, s.buildService(eps))
+	send(ctx, ch, s.buildService(eps))
 	return true
 }
 
@@ -123,7 +134,7 @@ func convertToService(o interface{}) (*apiv1.Service, error) {
 	if ok {
 		return service, nil
 	}
-	return nil, errors.Errorf("received unexpected object: %v", o)
+	return nil, fmt.Errorf("received unexpected object: %v", o)
 }
 
 func serviceSource(s *apiv1.Service) string {
@@ -135,34 +146,20 @@ func serviceSourceFromNamespaceAndName(namespace, name string) string {
 }
 
 const (
-	serviceNameLabel               = metaLabelPrefix + "service_name"
-	serviceLabelPrefix             = metaLabelPrefix + "service_label_"
-	serviceLabelPresentPrefix      = metaLabelPrefix + "service_labelpresent_"
-	serviceAnnotationPrefix        = metaLabelPrefix + "service_annotation_"
-	serviceAnnotationPresentPrefix = metaLabelPrefix + "service_annotationpresent_"
-	servicePortNameLabel           = metaLabelPrefix + "service_port_name"
-	servicePortProtocolLabel       = metaLabelPrefix + "service_port_protocol"
-	serviceClusterIPLabel          = metaLabelPrefix + "service_cluster_ip"
-	serviceExternalNameLabel       = metaLabelPrefix + "service_external_name"
+	servicePortNameLabel     = metaLabelPrefix + "service_port_name"
+	servicePortNumberLabel   = metaLabelPrefix + "service_port_number"
+	servicePortProtocolLabel = metaLabelPrefix + "service_port_protocol"
+	serviceClusterIPLabel    = metaLabelPrefix + "service_cluster_ip"
+	serviceLoadBalancerIP    = metaLabelPrefix + "service_loadbalancer_ip"
+	serviceExternalNameLabel = metaLabelPrefix + "service_external_name"
+	serviceType              = metaLabelPrefix + "service_type"
 )
 
 func serviceLabels(svc *apiv1.Service) model.LabelSet {
-	ls := make(model.LabelSet, len(svc.Labels)+len(svc.Annotations)+2)
-
-	ls[serviceNameLabel] = lv(svc.Name)
+	ls := make(model.LabelSet)
 	ls[namespaceLabel] = lv(svc.Namespace)
+	addObjectMetaLabels(ls, svc.ObjectMeta, RoleService)
 
-	for k, v := range svc.Labels {
-		ln := strutil.SanitizeLabelName(k)
-		ls[model.LabelName(serviceLabelPrefix+ln)] = lv(v)
-		ls[model.LabelName(serviceLabelPresentPrefix+ln)] = presentValue
-	}
-
-	for k, v := range svc.Annotations {
-		ln := strutil.SanitizeLabelName(k)
-		ls[model.LabelName(serviceAnnotationPrefix+ln)] = lv(v)
-		ls[model.LabelName(serviceAnnotationPresentPrefix+ln)] = presentValue
-	}
 	return ls
 }
 
@@ -178,13 +175,19 @@ func (s *Service) buildService(svc *apiv1.Service) *targetgroup.Group {
 		labelSet := model.LabelSet{
 			model.AddressLabel:       lv(addr),
 			servicePortNameLabel:     lv(port.Name),
+			servicePortNumberLabel:   lv(strconv.FormatInt(int64(port.Port), 10)),
 			servicePortProtocolLabel: lv(string(port.Protocol)),
+			serviceType:              lv(string(svc.Spec.Type)),
 		}
 
 		if svc.Spec.Type == apiv1.ServiceTypeExternalName {
 			labelSet[serviceExternalNameLabel] = lv(svc.Spec.ExternalName)
 		} else {
 			labelSet[serviceClusterIPLabel] = lv(svc.Spec.ClusterIP)
+		}
+
+		if svc.Spec.Type == apiv1.ServiceTypeLoadBalancer {
+			labelSet[serviceLoadBalancerIP] = lv(svc.Spec.LoadBalancerIP)
 		}
 
 		tg.Targets = append(tg.Targets, labelSet)

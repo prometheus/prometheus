@@ -16,27 +16,47 @@ package file
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
-	"github.com/pkg/errors"
+	"github.com/fsnotify/fsnotify"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
+	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-	fsnotify "gopkg.in/fsnotify/fsnotify.v1"
-	yaml "gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v2"
 
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
 var (
+	fileSDReadErrorsCount = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "prometheus_sd_file_read_errors_total",
+			Help: "The number of File-SD read errors.",
+		})
+	fileSDScanDuration = prometheus.NewSummary(
+		prometheus.SummaryOpts{
+			Name:       "prometheus_sd_file_scan_duration_seconds",
+			Help:       "The duration of the File-SD scan in seconds.",
+			Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
+		})
+	fileSDTimeStamp        = NewTimestampCollector()
+	fileWatcherErrorsCount = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "prometheus_sd_file_watcher_errors_total",
+			Help: "The number of File-SD errors caused by filesystem watch failures.",
+		})
+
 	patFileSDName = regexp.MustCompile(`^[^*]*(\*[^/]*)?\.(json|yml|yaml|JSON|YML|YAML)$`)
 
 	// DefaultSDConfig is the default file SD configuration.
@@ -45,10 +65,30 @@ var (
 	}
 )
 
+func init() {
+	discovery.RegisterConfig(&SDConfig{})
+	prometheus.MustRegister(fileSDReadErrorsCount, fileSDScanDuration, fileSDTimeStamp, fileWatcherErrorsCount)
+}
+
 // SDConfig is the configuration for file based discovery.
 type SDConfig struct {
 	Files           []string       `yaml:"files"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
+}
+
+// Name returns the name of the Config.
+func (*SDConfig) Name() string { return "file" }
+
+// NewDiscoverer returns a Discoverer for the Config.
+func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
+	return NewDiscovery(c, opts.Logger), nil
+}
+
+// SetDirectory joins any relative file paths with dir.
+func (c *SDConfig) SetDirectory(dir string) {
+	for i, file := range c.Files {
+		c.Files[i] = config.JoinDir(dir, file)
+	}
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -64,7 +104,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 	for _, name := range c.Files {
 		if !patFileSDName.MatchString(name) {
-			return errors.Errorf("path name %q is not valid for file discovery", name)
+			return fmt.Errorf("path name %q is not valid for file discovery", name)
 		}
 	}
 	return nil
@@ -132,26 +172,6 @@ func NewTimestampCollector() *TimestampCollector {
 	}
 }
 
-var (
-	fileSDScanDuration = prometheus.NewSummary(
-		prometheus.SummaryOpts{
-			Name: "prometheus_sd_file_scan_duration_seconds",
-			Help: "The duration of the File-SD scan in seconds.",
-		})
-	fileSDReadErrorsCount = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Name: "prometheus_sd_file_read_errors_total",
-			Help: "The number of File-SD read errors.",
-		})
-	fileSDTimeStamp = NewTimestampCollector()
-)
-
-func init() {
-	prometheus.MustRegister(fileSDScanDuration)
-	prometheus.MustRegister(fileSDReadErrorsCount)
-	prometheus.MustRegister(fileSDTimeStamp)
-}
-
 // Discovery provides service discovery functionality based
 // on files that contain target groups in JSON or YAML format. Refreshing
 // happens using file watches and periodic refreshes.
@@ -206,8 +226,8 @@ func (d *Discovery) watchFiles() {
 		panic("no watcher configured")
 	}
 	for _, p := range d.paths {
-		if idx := strings.LastIndex(p, "/"); idx > -1 {
-			p = p[:idx]
+		if dir, _ := filepath.Split(p); dir != "" {
+			p = dir
 		} else {
 			p = "./"
 		}
@@ -222,6 +242,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		level.Error(d.logger).Log("msg", "Error adding file watcher", "err", err)
+		fileWatcherErrorsCount.Inc()
 		return
 	}
 	d.watcher = watcher
@@ -361,7 +382,7 @@ func (d *Discovery) readFile(filename string) ([]*targetgroup.Group, error) {
 	}
 	defer fd.Close()
 
-	content, err := ioutil.ReadAll(fd)
+	content, err := io.ReadAll(fd)
 	if err != nil {
 		return nil, err
 	}
@@ -383,7 +404,7 @@ func (d *Discovery) readFile(filename string) ([]*targetgroup.Group, error) {
 			return nil, err
 		}
 	default:
-		panic(errors.Errorf("discovery.File.readFile: unhandled file extension %q", ext))
+		panic(fmt.Errorf("discovery.File.readFile: unhandled file extension %q", ext))
 	}
 
 	for i, tg := range targetGroups {

@@ -23,48 +23,22 @@
 package testutil
 
 import (
-	"reflect"
+	"testing"
+
+	"go.uber.org/goleak"
 )
 
-// This package is imported by non-test code and therefore cannot import the
-// testing package, which has side effects such as adding flags. Hence we use an
-// interface to testing.{T,B}.
-type TB interface {
-	Helper()
-	Fatalf(string, ...interface{})
-}
-
-// Assert fails the test if the condition is false.
-func Assert(tb TB, condition bool, format string, a ...interface{}) {
-	tb.Helper()
-	if !condition {
-		tb.Fatalf("\033[31m"+format+"\033[39m\n", a...)
-	}
-}
-
-// Ok fails the test if an err is not nil.
-func Ok(tb TB, err error) {
-	tb.Helper()
-	if err != nil {
-		tb.Fatalf("\033[31munexpected error: %v\033[39m\n", err)
-	}
-}
-
-// NotOk fails the test if an err is nil.
-func NotOk(tb TB, err error, format string, a ...interface{}) {
-	tb.Helper()
-	if err == nil {
-		if len(a) != 0 {
-			tb.Fatalf("\033[31m"+format+": expected error, got none\033[39m", a...)
-		}
-		tb.Fatalf("\033[31mexpected error, got none\033[39m")
-	}
-}
-
-// Equals fails the test if exp is not equal to act.
-func Equals(tb TB, exp, act interface{}) {
-	tb.Helper()
-	if !reflect.DeepEqual(exp, act) {
-		tb.Fatalf("\033[31m\nexp: %#v\n\ngot: %#v\033[39m\n", exp, act)
-	}
+// TolerantVerifyLeak verifies go leaks but excludes the go routines that are
+// launched as side effects of some of our dependencies.
+func TolerantVerifyLeak(m *testing.M) {
+	goleak.VerifyTestMain(m,
+		// https://github.com/census-instrumentation/opencensus-go/blob/d7677d6af5953e0506ac4c08f349c62b917a443a/stats/view/worker.go#L34
+		goleak.IgnoreTopFunction("go.opencensus.io/stats/view.(*worker).start"),
+		// https://github.com/kubernetes/klog/blob/c85d02d1c76a9ebafa81eb6d35c980734f2c4727/klog.go#L417
+		goleak.IgnoreTopFunction("k8s.io/klog/v2.(*loggingT).flushDaemon"),
+		// This go routine uses a ticker to stop, so it can create false
+		// positives.
+		// https://github.com/kubernetes/client-go/blob/f6ce18ae578c8cca64d14ab9687824d9e1305a67/util/workqueue/queue.go#L201
+		goleak.IgnoreTopFunction("k8s.io/client-go/util/workqueue.(*Type).updateUnfinishedWorkLoop"),
+	)
 }

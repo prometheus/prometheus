@@ -1,0 +1,6 @@
+groups:
+  - name: yolo
+    rules:
+      - record: Hello
+        expr: 1
+        for: 1m

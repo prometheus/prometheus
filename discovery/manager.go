@@ -20,31 +20,19 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/config"
 
-	sd_config "github.com/prometheus/prometheus/discovery/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-
-	"github.com/prometheus/prometheus/discovery/azure"
-	"github.com/prometheus/prometheus/discovery/consul"
-	"github.com/prometheus/prometheus/discovery/dns"
-	"github.com/prometheus/prometheus/discovery/ec2"
-	"github.com/prometheus/prometheus/discovery/file"
-	"github.com/prometheus/prometheus/discovery/gce"
-	"github.com/prometheus/prometheus/discovery/kubernetes"
-	"github.com/prometheus/prometheus/discovery/marathon"
-	"github.com/prometheus/prometheus/discovery/openstack"
-	"github.com/prometheus/prometheus/discovery/triton"
-	"github.com/prometheus/prometheus/discovery/zookeeper"
 )
 
 var (
-	failedConfigs = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "prometheus_sd_configs_failed_total",
-			Help: "Total number of service discovery configurations that failed to load.",
+	failedConfigs = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "prometheus_sd_failed_configs",
+			Help: "Current number of service discovery configurations that failed to load.",
 		},
 		[]string{"name"},
 	)
@@ -78,24 +66,8 @@ var (
 	)
 )
 
-func init() {
+func RegisterMetrics() {
 	prometheus.MustRegister(failedConfigs, discoveredTargets, receivedUpdates, delayedUpdates, sentUpdates)
-}
-
-// Discoverer provides information about target groups. It maintains a set
-// of sources from which TargetGroups can originate. Whenever a discovery provider
-// detects a potential change, it sends the TargetGroup through its channel.
-//
-// Discoverer does not know if an actual change happened.
-// It does guarantee that it sends the new TargetGroup whenever a change happens.
-//
-// Discoverers should initially send a full set of all discoverable TargetGroups.
-type Discoverer interface {
-	// Run hands a channel to the discovery provider (Consul, DNS etc) through which it can send
-	// updated target groups.
-	// Must returns if the context gets canceled. It should not close the update
-	// channel on returning.
-	Run(ctx context.Context, up chan<- []*targetgroup.Group)
 }
 
 type poolKey struct {
@@ -103,12 +75,35 @@ type poolKey struct {
 	provider string
 }
 
-// provider holds a Discoverer instance, its configuration and its subscribers.
-type provider struct {
+// Provider holds a Discoverer instance, its configuration, cancel func and its subscribers.
+type Provider struct {
 	name   string
 	d      Discoverer
-	subs   []string
 	config interface{}
+
+	cancel context.CancelFunc
+	// done should be called after cleaning up resources associated with cancelled provider.
+	done func()
+
+	mu   sync.RWMutex
+	subs map[string]struct{}
+
+	// newSubs is used to temporary store subs to be used upon config reload completion.
+	newSubs map[string]struct{}
+}
+
+// Discoverer return the Discoverer of the provider
+func (p *Provider) Discoverer() Discoverer {
+	return p.d
+}
+
+// IsStarted return true if Discoverer is started.
+func (p *Provider) IsStarted() bool {
+	return p.cancel != nil
+}
+
+func (p *Provider) Config() interface{} {
+	return p.config
 }
 
 // NewManager is the Discovery Manager constructor.
@@ -117,13 +112,12 @@ func NewManager(ctx context.Context, logger log.Logger, options ...func(*Manager
 		logger = log.NewNopLogger()
 	}
 	mgr := &Manager{
-		logger:         logger,
-		syncCh:         make(chan map[string][]*targetgroup.Group),
-		targets:        make(map[poolKey]map[string]*targetgroup.Group),
-		discoverCancel: []context.CancelFunc{},
-		ctx:            ctx,
-		updatert:       5 * time.Second,
-		triggerSend:    make(chan struct{}, 1),
+		logger:      logger,
+		syncCh:      make(chan map[string][]*targetgroup.Group),
+		targets:     make(map[poolKey]map[string]*targetgroup.Group),
+		ctx:         ctx,
+		updatert:    5 * time.Second,
+		triggerSend: make(chan struct{}, 1),
 	}
 	for _, option := range options {
 		option(mgr)
@@ -140,20 +134,30 @@ func Name(n string) func(*Manager) {
 	}
 }
 
+// HTTPClientOptions sets the list of HTTP client options to expose to
+// Discoverers. It is up to Discoverers to choose to use the options provided.
+func HTTPClientOptions(opts ...config.HTTPClientOption) func(*Manager) {
+	return func(m *Manager) {
+		m.httpOpts = opts
+	}
+}
+
 // Manager maintains a set of discovery providers and sends each update to a map channel.
 // Targets are grouped by the target set name.
 type Manager struct {
-	logger         log.Logger
-	name           string
-	mtx            sync.RWMutex
-	ctx            context.Context
-	discoverCancel []context.CancelFunc
+	logger   log.Logger
+	name     string
+	httpOpts []config.HTTPClientOption
+	mtx      sync.RWMutex
+	ctx      context.Context
 
-	// Some Discoverers(eg. k8s) send only the updates for a given target group
+	// Some Discoverers(e.g. k8s) send only the updates for a given target group,
 	// so we use map[tg.Source]*targetgroup.Group to know which group to update.
-	targets map[poolKey]map[string]*targetgroup.Group
+	targets    map[poolKey]map[string]*targetgroup.Group
+	targetsMtx sync.Mutex
+
 	// providers keeps track of SD providers.
-	providers []*provider
+	providers []*Provider
 	// The sync channel sends the updates as a map where the key is the job value from the scrape config.
 	syncCh chan map[string][]*targetgroup.Group
 
@@ -161,18 +165,24 @@ type Manager struct {
 	// should only be modified in unit tests.
 	updatert time.Duration
 
-	// The triggerSend channel signals to the manager that new updates have been received from providers.
+	// The triggerSend channel signals to the Manager that new updates have been received from providers.
 	triggerSend chan struct{}
+
+	// lastProvider counts providers registered during Manager's lifetime.
+	lastProvider uint
 }
 
-// Run starts the background processing
+// Providers returns the currently configured SD providers.
+func (m *Manager) Providers() []*Provider {
+	return m.providers
+}
+
+// Run starts the background processing.
 func (m *Manager) Run() error {
 	go m.sender()
-	for range m.ctx.Done() {
-		m.cancelDiscoverers()
-		return m.ctx.Err()
-	}
-	return nil
+	<-m.ctx.Done()
+	m.cancelDiscoverers()
+	return m.ctx.Err()
 }
 
 // SyncCh returns a read only channel used by all the clients to receive target updates.
@@ -180,51 +190,127 @@ func (m *Manager) SyncCh() <-chan map[string][]*targetgroup.Group {
 	return m.syncCh
 }
 
-// ApplyConfig removes all running discovery providers and starts new ones using the provided config.
-func (m *Manager) ApplyConfig(cfg map[string]sd_config.ServiceDiscoveryConfig) error {
+// ApplyConfig checks if discovery provider with supplied config is already running and keeps them as is.
+// Remaining providers are then stopped and new required providers are started using the provided config.
+func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
-	for pk := range m.targets {
-		if _, ok := cfg[pk.setName]; !ok {
-			discoveredTargets.DeleteLabelValues(m.name, pk.setName)
+	var failedCount int
+	for name, scfg := range cfg {
+		failedCount += m.registerProviders(scfg, name)
+	}
+	failedConfigs.WithLabelValues(m.name).Set(float64(failedCount))
+
+	var (
+		wg sync.WaitGroup
+		// keep shows if we keep any providers after reload.
+		keep         bool
+		newProviders []*Provider
+	)
+	for _, prov := range m.providers {
+		// Cancel obsolete providers.
+		if len(prov.newSubs) == 0 {
+			wg.Add(1)
+			prov.done = func() {
+				wg.Done()
+			}
+			prov.cancel()
+			continue
+		}
+		newProviders = append(newProviders, prov)
+		// refTargets keeps reference targets used to populate new subs' targets
+		var refTargets map[string]*targetgroup.Group
+		prov.mu.Lock()
+
+		m.targetsMtx.Lock()
+		for s := range prov.subs {
+			keep = true
+			refTargets = m.targets[poolKey{s, prov.name}]
+			// Remove obsolete subs' targets.
+			if _, ok := prov.newSubs[s]; !ok {
+				delete(m.targets, poolKey{s, prov.name})
+				discoveredTargets.DeleteLabelValues(m.name, s)
+			}
+		}
+		// Set metrics and targets for new subs.
+		for s := range prov.newSubs {
+			if _, ok := prov.subs[s]; !ok {
+				discoveredTargets.WithLabelValues(m.name, s).Set(0)
+			}
+			if l := len(refTargets); l > 0 {
+				m.targets[poolKey{s, prov.name}] = make(map[string]*targetgroup.Group, l)
+				for k, v := range refTargets {
+					m.targets[poolKey{s, prov.name}][k] = v
+				}
+			}
+		}
+		m.targetsMtx.Unlock()
+
+		prov.subs = prov.newSubs
+		prov.newSubs = map[string]struct{}{}
+		prov.mu.Unlock()
+		if !prov.IsStarted() {
+			m.startProvider(m.ctx, prov)
 		}
 	}
-	m.cancelDiscoverers()
-	for name, scfg := range cfg {
-		m.registerProviders(scfg, name)
-		discoveredTargets.WithLabelValues(m.name, name).Set(0)
+	// Currently downstream managers expect full target state upon config reload, so we must oblige.
+	// While startProvider does pull the trigger, it may take some time to do so, therefore
+	// we pull the trigger as soon as possible so that downstream managers can populate their state.
+	// See https://github.com/prometheus/prometheus/pull/8639 for details.
+	if keep {
+		select {
+		case m.triggerSend <- struct{}{}:
+		default:
+		}
 	}
-	for _, prov := range m.providers {
-		m.startProvider(m.ctx, prov)
-	}
+	m.providers = newProviders
+	wg.Wait()
 
 	return nil
 }
 
 // StartCustomProvider is used for sdtool. Only use this if you know what you're doing.
 func (m *Manager) StartCustomProvider(ctx context.Context, name string, worker Discoverer) {
-	p := &provider{
+	p := &Provider{
 		name: name,
 		d:    worker,
-		subs: []string{name},
+		subs: map[string]struct{}{
+			name: {},
+		},
 	}
 	m.providers = append(m.providers, p)
 	m.startProvider(ctx, p)
 }
 
-func (m *Manager) startProvider(ctx context.Context, p *provider) {
+func (m *Manager) startProvider(ctx context.Context, p *Provider) {
 	level.Debug(m.logger).Log("msg", "Starting provider", "provider", p.name, "subs", fmt.Sprintf("%v", p.subs))
 	ctx, cancel := context.WithCancel(ctx)
 	updates := make(chan []*targetgroup.Group)
 
-	m.discoverCancel = append(m.discoverCancel, cancel)
+	p.cancel = cancel
 
 	go p.d.Run(ctx, updates)
 	go m.updater(ctx, p, updates)
 }
 
-func (m *Manager) updater(ctx context.Context, p *provider, updates chan []*targetgroup.Group) {
+// cleaner cleans resources associated with provider.
+func (m *Manager) cleaner(p *Provider) {
+	m.targetsMtx.Lock()
+	p.mu.RLock()
+	for s := range p.subs {
+		delete(m.targets, poolKey{s, p.name})
+	}
+	p.mu.RUnlock()
+	m.targetsMtx.Unlock()
+	if p.done != nil {
+		p.done()
+	}
+}
+
+func (m *Manager) updater(ctx context.Context, p *Provider, updates chan []*targetgroup.Group) {
+	// Ensure targets from this provider are cleaned up.
+	defer m.cleaner(p)
 	for {
 		select {
 		case <-ctx.Done():
@@ -232,13 +318,17 @@ func (m *Manager) updater(ctx context.Context, p *provider, updates chan []*targ
 		case tgs, ok := <-updates:
 			receivedUpdates.WithLabelValues(m.name).Inc()
 			if !ok {
-				level.Debug(m.logger).Log("msg", "discoverer channel closed", "provider", p.name)
+				level.Debug(m.logger).Log("msg", "Discoverer channel closed", "provider", p.name)
+				// Wait for provider cancellation to ensure targets are cleaned up when expected.
+				<-ctx.Done()
 				return
 			}
 
-			for _, s := range p.subs {
+			p.mu.RLock()
+			for s := range p.subs {
 				m.updateGroup(poolKey{setName: s, provider: p.name}, tgs)
 			}
+			p.mu.RUnlock()
 
 			select {
 			case m.triggerSend <- struct{}{}:
@@ -256,7 +346,7 @@ func (m *Manager) sender() {
 		select {
 		case <-m.ctx.Done():
 			return
-		case <-ticker.C: // Some discoverers send updates too often so we throttle these with the ticker.
+		case <-ticker.C: // Some discoverers send updates too often, so we throttle these with the ticker.
 			select {
 			case <-m.triggerSend:
 				sentUpdates.WithLabelValues(m.name).Inc()
@@ -264,7 +354,7 @@ func (m *Manager) sender() {
 				case m.syncCh <- m.allGroups():
 				default:
 					delayedUpdates.WithLabelValues(m.name).Inc()
-					level.Debug(m.logger).Log("msg", "discovery receiver's channel was full so will retry the next cycle")
+					level.Debug(m.logger).Log("msg", "Discovery receiver's channel was full so will retry the next cycle")
 					select {
 					case m.triggerSend <- struct{}{}:
 					default:
@@ -277,139 +367,86 @@ func (m *Manager) sender() {
 }
 
 func (m *Manager) cancelDiscoverers() {
-	for _, c := range m.discoverCancel {
-		c()
+	m.mtx.RLock()
+	defer m.mtx.RUnlock()
+	for _, p := range m.providers {
+		if p.cancel != nil {
+			p.cancel()
+		}
 	}
-	m.targets = make(map[poolKey]map[string]*targetgroup.Group)
-	m.providers = nil
-	m.discoverCancel = nil
 }
 
 func (m *Manager) updateGroup(poolKey poolKey, tgs []*targetgroup.Group) {
-	m.mtx.Lock()
-	defer m.mtx.Unlock()
+	m.targetsMtx.Lock()
+	defer m.targetsMtx.Unlock()
 
+	if _, ok := m.targets[poolKey]; !ok {
+		m.targets[poolKey] = make(map[string]*targetgroup.Group)
+	}
 	for _, tg := range tgs {
 		if tg != nil { // Some Discoverers send nil target group so need to check for it to avoid panics.
-			if _, ok := m.targets[poolKey]; !ok {
-				m.targets[poolKey] = make(map[string]*targetgroup.Group)
-			}
 			m.targets[poolKey][tg.Source] = tg
 		}
 	}
 }
 
 func (m *Manager) allGroups() map[string][]*targetgroup.Group {
-	m.mtx.Lock()
-	defer m.mtx.Unlock()
-
 	tSets := map[string][]*targetgroup.Group{}
+	n := map[string]int{}
+
+	m.targetsMtx.Lock()
+	defer m.targetsMtx.Unlock()
 	for pkey, tsets := range m.targets {
-		var n int
 		for _, tg := range tsets {
 			// Even if the target group 'tg' is empty we still need to send it to the 'Scrape manager'
 			// to signal that it needs to stop all scrape loops for this target set.
 			tSets[pkey.setName] = append(tSets[pkey.setName], tg)
-			n += len(tg.Targets)
+			n[pkey.setName] += len(tg.Targets)
 		}
-		discoveredTargets.WithLabelValues(m.name, pkey.setName).Set(float64(n))
+	}
+	for setName, v := range n {
+		discoveredTargets.WithLabelValues(m.name, setName).Set(float64(v))
 	}
 	return tSets
 }
 
-func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setName string) {
-	var added bool
-	add := func(cfg interface{}, newDiscoverer func() (Discoverer, error)) {
-		t := reflect.TypeOf(cfg).String()
+// registerProviders returns a number of failed SD config.
+func (m *Manager) registerProviders(cfgs Configs, setName string) int {
+	var (
+		failed int
+		added  bool
+	)
+	add := func(cfg Config) {
 		for _, p := range m.providers {
 			if reflect.DeepEqual(cfg, p.config) {
-				p.subs = append(p.subs, setName)
+				p.newSubs[setName] = struct{}{}
 				added = true
 				return
 			}
 		}
-
-		d, err := newDiscoverer()
+		typ := cfg.Name()
+		d, err := cfg.NewDiscoverer(DiscovererOptions{
+			Logger:            log.With(m.logger, "discovery", typ, "config", setName),
+			HTTPClientOptions: m.httpOpts,
+		})
 		if err != nil {
-			level.Error(m.logger).Log("msg", "Cannot create service discovery", "err", err, "type", t)
-			failedConfigs.WithLabelValues(m.name).Inc()
+			level.Error(m.logger).Log("msg", "Cannot create service discovery", "err", err, "type", typ, "config", setName)
+			failed++
 			return
 		}
-
-		provider := provider{
-			name:   fmt.Sprintf("%s/%d", t, len(m.providers)),
+		m.providers = append(m.providers, &Provider{
+			name:   fmt.Sprintf("%s/%d", typ, m.lastProvider),
 			d:      d,
 			config: cfg,
-			subs:   []string{setName},
-		}
-		m.providers = append(m.providers, &provider)
+			newSubs: map[string]struct{}{
+				setName: {},
+			},
+		})
+		m.lastProvider++
 		added = true
 	}
-
-	for _, c := range cfg.DNSSDConfigs {
-		add(c, func() (Discoverer, error) {
-			return dns.NewDiscovery(*c, log.With(m.logger, "discovery", "dns")), nil
-		})
-	}
-	for _, c := range cfg.FileSDConfigs {
-		add(c, func() (Discoverer, error) {
-			return file.NewDiscovery(c, log.With(m.logger, "discovery", "file")), nil
-		})
-	}
-	for _, c := range cfg.ConsulSDConfigs {
-		add(c, func() (Discoverer, error) {
-			return consul.NewDiscovery(c, log.With(m.logger, "discovery", "consul"))
-		})
-	}
-	for _, c := range cfg.MarathonSDConfigs {
-		add(c, func() (Discoverer, error) {
-			return marathon.NewDiscovery(*c, log.With(m.logger, "discovery", "marathon"))
-		})
-	}
-	for _, c := range cfg.KubernetesSDConfigs {
-		add(c, func() (Discoverer, error) {
-			return kubernetes.New(log.With(m.logger, "discovery", "k8s"), c)
-		})
-	}
-	for _, c := range cfg.ServersetSDConfigs {
-		add(c, func() (Discoverer, error) {
-			return zookeeper.NewServersetDiscovery(c, log.With(m.logger, "discovery", "zookeeper"))
-		})
-	}
-	for _, c := range cfg.NerveSDConfigs {
-		add(c, func() (Discoverer, error) {
-			return zookeeper.NewNerveDiscovery(c, log.With(m.logger, "discovery", "nerve"))
-		})
-	}
-	for _, c := range cfg.EC2SDConfigs {
-		add(c, func() (Discoverer, error) {
-			return ec2.NewDiscovery(c, log.With(m.logger, "discovery", "ec2")), nil
-		})
-	}
-	for _, c := range cfg.OpenstackSDConfigs {
-		add(c, func() (Discoverer, error) {
-			return openstack.NewDiscovery(c, log.With(m.logger, "discovery", "openstack"))
-		})
-	}
-	for _, c := range cfg.GCESDConfigs {
-		add(c, func() (Discoverer, error) {
-			return gce.NewDiscovery(*c, log.With(m.logger, "discovery", "gce"))
-		})
-	}
-	for _, c := range cfg.AzureSDConfigs {
-		add(c, func() (Discoverer, error) {
-			return azure.NewDiscovery(c, log.With(m.logger, "discovery", "azure")), nil
-		})
-	}
-	for _, c := range cfg.TritonSDConfigs {
-		add(c, func() (Discoverer, error) {
-			return triton.New(log.With(m.logger, "discovery", "triton"), c)
-		})
-	}
-	if len(cfg.StaticConfigs) > 0 {
-		add(setName, func() (Discoverer, error) {
-			return &StaticProvider{TargetGroups: cfg.StaticConfigs}, nil
-		})
+	for _, cfg := range cfgs {
+		add(cfg)
 	}
 	if !added {
 		// Add an empty target group to force the refresh of the corresponding
@@ -417,10 +454,9 @@ func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setNam
 		// current targets.
 		// It can happen because the combined set of SD configurations is empty
 		// or because we fail to instantiate all the SD configurations.
-		add(setName, func() (Discoverer, error) {
-			return &StaticProvider{TargetGroups: []*targetgroup.Group{{}}}, nil
-		})
+		add(StaticConfig{{}})
 	}
+	return failed
 }
 
 // StaticProvider holds a list of target groups that never change.

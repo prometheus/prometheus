@@ -17,16 +17,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
-	"io/ioutil"
 	"math"
 	"net/http"
 	"net/url"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
-	"github.com/pkg/errors"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/common/model"
 )
 
@@ -79,7 +78,7 @@ func (c *Client) Write(samples model.Samples) error {
 	for _, s := range samples {
 		v := float64(s.Value)
 		if math.IsNaN(v) || math.IsInf(v, 0) {
-			level.Debug(c.logger).Log("msg", "cannot send value to OpenTSDB, skipping sample", "value", v, "sample", s)
+			level.Debug(c.logger).Log("msg", "Cannot send value to OpenTSDB, skipping sample", "value", v, "sample", s)
 			continue
 		}
 		metric := TagValue(s.Metric[model.MetricNameLabel])
@@ -116,7 +115,7 @@ func (c *Client) Write(samples model.Samples) error {
 		return err
 	}
 	defer func() {
-		io.Copy(ioutil.Discard, resp.Body)
+		io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
 	}()
 
@@ -128,7 +127,7 @@ func (c *Client) Write(samples model.Samples) error {
 
 	// API returns status code 400 on error, encoding error details in the
 	// response content in JSON.
-	buf, err = ioutil.ReadAll(resp.Body)
+	buf, err = io.ReadAll(resp.Body)
 	if err != nil {
 		return err
 	}
@@ -137,7 +136,7 @@ func (c *Client) Write(samples model.Samples) error {
 	if err := json.Unmarshal(buf, &r); err != nil {
 		return err
 	}
-	return errors.Errorf("failed to write %d samples to OpenTSDB, %d succeeded", r["failed"], r["success"])
+	return fmt.Errorf("failed to write %d samples to OpenTSDB, %d succeeded", r["failed"], r["success"])
 }
 
 // Name identifies the client as an OpenTSDB client.

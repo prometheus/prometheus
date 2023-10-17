@@ -5,7 +5,7 @@
 //
 // http://www.apache.org/licenses/LICENSE-2.0
 //
-// Unless required by applicable law or agreed to in writing, softwar
+// Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
@@ -21,21 +21,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/teststorage"
 )
 
-func BenchmarkRangeQuery(b *testing.B) {
-	storage := testutil.NewStorage(b)
-	defer storage.Close()
-	opts := EngineOpts{
-		Logger:        nil,
-		Reg:           nil,
-		MaxConcurrent: 10,
-		MaxSamples:    50000000,
-		Timeout:       100 * time.Second,
-	}
-	engine := NewEngine(opts)
+func setupRangeQueryTestData(stor *teststorage.TestStorage, _ *Engine, interval, numIntervals int) error {
+	ctx := context.Background()
 
 	metrics := []labels.Labels{}
 	metrics = append(metrics, labels.FromStrings("__name__", "a_one"))
@@ -62,32 +55,30 @@ func BenchmarkRangeQuery(b *testing.B) {
 		}
 		metrics = append(metrics, labels.FromStrings("__name__", "h_hundred", "l", strconv.Itoa(i), "le", "+Inf"))
 	}
-	refs := make([]uint64, len(metrics))
-
-	// A day of data plus 10k steps.
-	numIntervals := 8640 + 10000
+	refs := make([]storage.SeriesRef, len(metrics))
 
 	for s := 0; s < numIntervals; s++ {
-		a, err := storage.Appender()
-		if err != nil {
-			b.Fatal(err)
-		}
-		ts := int64(s * 10000) // 10s interval.
+		a := stor.Appender(context.Background())
+		ts := int64(s * interval)
 		for i, metric := range metrics {
-			err := a.AddFast(metric, refs[i], ts, float64(s))
-			if err != nil {
-				refs[i], _ = a.Add(metric, ts, float64(s))
-			}
+			ref, _ := a.Append(refs[i], metric, ts, float64(s)+float64(i)/float64(len(metrics)))
+			refs[i] = ref
 		}
 		if err := a.Commit(); err != nil {
-			b.Fatal(err)
+			return err
 		}
 	}
+	stor.DB.ForceHeadMMap() // Ensure we have at most one head chunk for every series.
+	stor.DB.Compact(ctx)
+	return nil
+}
 
-	type benchCase struct {
-		expr  string
-		steps int
-	}
+type benchCase struct {
+	expr  string
+	steps int
+}
+
+func rangeQueryCases() []benchCase {
 	cases := []benchCase{
 		// Plain retrieval.
 		{
@@ -111,6 +102,9 @@ func BenchmarkRangeQuery(b *testing.B) {
 		{
 			expr: "rate(a_X[1d])",
 		},
+		{
+			expr: "absent_over_time(a_X[1d])",
+		},
 		// Unary operators.
 		{
 			expr: "-a_X",
@@ -131,6 +125,9 @@ func BenchmarkRangeQuery(b *testing.B) {
 		},
 		{
 			expr: "a_X unless b_X{l=~'.*[0-4]$'}",
+		},
+		{
+			expr: "a_X and b_X{l='notfound'}",
 		},
 		// Simple functions.
 		{
@@ -158,6 +155,16 @@ func BenchmarkRangeQuery(b *testing.B) {
 		{
 			expr: "sum by (le)(h_X)",
 		},
+		{
+			expr:  "count_values('value', h_X)",
+			steps: 100,
+		},
+		{
+			expr: "topk(1, a_X)",
+		},
+		{
+			expr: "topk(5, a_X)",
+		},
 		// Combinations.
 		{
 			expr: "rate(a_X[1m]) + rate(b_X[1m])",
@@ -171,6 +178,23 @@ func BenchmarkRangeQuery(b *testing.B) {
 		{
 			expr: "histogram_quantile(0.9, rate(h_X[5m]))",
 		},
+		// Many-to-one join.
+		{
+			expr: "a_X + on(l) group_right a_one",
+		},
+		// Label compared to blank string.
+		{
+			expr:  "count({__name__!=\"\"})",
+			steps: 1,
+		},
+		{
+			expr:  "count({__name__!=\"\",l=\"\"})",
+			steps: 1,
+		},
+		// Functions which have special handling inside eval()
+		{
+			expr: "timestamp(a_X)",
+		},
 	}
 
 	// X in an expr will be replaced by different metric sizes.
@@ -179,9 +203,9 @@ func BenchmarkRangeQuery(b *testing.B) {
 		if !strings.Contains(c.expr, "X") {
 			tmp = append(tmp, c)
 		} else {
-			tmp = append(tmp, benchCase{expr: strings.Replace(c.expr, "X", "one", -1), steps: c.steps})
-			tmp = append(tmp, benchCase{expr: strings.Replace(c.expr, "X", "ten", -1), steps: c.steps})
-			tmp = append(tmp, benchCase{expr: strings.Replace(c.expr, "X", "hundred", -1), steps: c.steps})
+			tmp = append(tmp, benchCase{expr: strings.ReplaceAll(c.expr, "X", "one"), steps: c.steps})
+			tmp = append(tmp, benchCase{expr: strings.ReplaceAll(c.expr, "X", "ten"), steps: c.steps})
+			tmp = append(tmp, benchCase{expr: strings.ReplaceAll(c.expr, "X", "hundred"), steps: c.steps})
 		}
 	}
 	cases = tmp
@@ -193,29 +217,97 @@ func BenchmarkRangeQuery(b *testing.B) {
 			tmp = append(tmp, c)
 		} else {
 			tmp = append(tmp, benchCase{expr: c.expr, steps: 1})
-			tmp = append(tmp, benchCase{expr: c.expr, steps: 10})
 			tmp = append(tmp, benchCase{expr: c.expr, steps: 100})
 			tmp = append(tmp, benchCase{expr: c.expr, steps: 1000})
 		}
 	}
-	cases = tmp
+	return tmp
+}
+
+func BenchmarkRangeQuery(b *testing.B) {
+	stor := teststorage.New(b)
+	stor.DB.DisableCompactions() // Don't want auto-compaction disrupting timings.
+	defer stor.Close()
+	opts := EngineOpts{
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 50000000,
+		Timeout:    100 * time.Second,
+	}
+	engine := NewEngine(opts)
+
+	const interval = 10000 // 10s interval.
+	// A day of data plus 10k steps.
+	numIntervals := 8640 + 10000
+
+	err := setupRangeQueryTestData(stor, engine, interval, numIntervals)
+	if err != nil {
+		b.Fatal(err)
+	}
+	cases := rangeQueryCases()
+
 	for _, c := range cases {
 		name := fmt.Sprintf("expr=%s,steps=%d", c.expr, c.steps)
 		b.Run(name, func(b *testing.B) {
+			ctx := context.Background()
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
 				qry, err := engine.NewRangeQuery(
-					storage, c.expr,
+					ctx, stor, nil, c.expr,
 					time.Unix(int64((numIntervals-c.steps)*10), 0),
 					time.Unix(int64(numIntervals*10), 0), time.Second*10)
 				if err != nil {
 					b.Fatal(err)
 				}
-				res := qry.Exec(context.Background())
+				res := qry.Exec(ctx)
 				if res.Err != nil {
 					b.Fatal(res.Err)
 				}
 				qry.Close()
+			}
+		})
+	}
+}
+
+func BenchmarkParser(b *testing.B) {
+	cases := []string{
+		"a",
+		"metric",
+		"1",
+		"1 >= bool 1",
+		"1 + 2/(3*1)",
+		"foo or bar",
+		"foo and bar unless baz or qux",
+		"bar + on(foo) bla / on(baz, buz) group_right(test) blub",
+		"foo / ignoring(test,blub) group_left(blub) bar",
+		"foo - ignoring(test,blub) group_right(bar,foo) bar",
+		`foo{a="b", foo!="bar", test=~"test", bar!~"baz"}`,
+		`min_over_time(rate(foo{bar="baz"}[2s])[5m:])[4m:3s]`,
+		"sum without(and, by, avg, count, alert, annotations)(some_metric) [30m:10s]",
+	}
+	errCases := []string{
+		"(",
+		"}",
+		"1 or 1",
+		"1 or on(bar) foo",
+		"foo unless on(bar) group_left(baz) bar",
+		"test[5d] OFFSET 10s [10m:5s]",
+	}
+
+	for _, c := range cases {
+		b.Run(c, func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				parser.ParseExpr(c)
+			}
+		})
+	}
+	for _, c := range errCases {
+		name := fmt.Sprintf("%s (should fail)", c)
+		b.Run(name, func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				parser.ParseExpr(c)
 			}
 		})
 	}

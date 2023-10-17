@@ -8,6 +8,16 @@ sort_rank: 6
 Federation allows a Prometheus server to scrape selected time series from
 another Prometheus server.
 
+_Note about native histograms (experimental feature): To scrape native histograms
+via federation, the scraping Prometheus server needs to run with native histograms
+enabled (via the command line flag `--enable-feature=native-histograms`), implying
+that the protobuf format is used for scraping. Should the federated metrics contain
+a mix of different sample types (float64, counter histogram, gauge histogram) for
+the same metric name, the federation payload will contain multiple metric families
+with the same name (but different types). Technically, this violates the rules of
+the protobuf exposition format, but Prometheus is nevertheless able to ingest all
+metrics correctly._
+
 ## Use cases
 
 There are different use cases for federation. Commonly, it is used to either
@@ -56,26 +66,27 @@ To federate metrics from one server to another, configure your destination
 Prometheus server to scrape from the `/federate` endpoint of a source server,
 while also enabling the `honor_labels` scrape option (to not overwrite any
 labels exposed by the source server) and passing in the desired `match[]`
-parameters. For example, the following `scrape_config` federates any series
+parameters. For example, the following `scrape_configs` federates any series
 with the label `job="prometheus"` or a metric name starting with `job:` from
 the Prometheus servers at `source-prometheus-{1,2,3}:9090` into the scraping
 Prometheus:
 
 ```yaml
-- job_name: 'federate'
-  scrape_interval: 15s
+scrape_configs:
+  - job_name: 'federate'
+    scrape_interval: 15s
 
-  honor_labels: true
-  metrics_path: '/federate'
+    honor_labels: true
+    metrics_path: '/federate'
 
-  params:
-    'match[]':
-      - '{job="prometheus"}'
-      - '{__name__=~"job:.*"}'
+    params:
+      'match[]':
+        - '{job="prometheus"}'
+        - '{__name__=~"job:.*"}'
 
-  static_configs:
-    - targets:
-      - 'source-prometheus-1:9090'
-      - 'source-prometheus-2:9090'
-      - 'source-prometheus-3:9090'
+    static_configs:
+      - targets:
+        - 'source-prometheus-1:9090'
+        - 'source-prometheus-2:9090'
+        - 'source-prometheus-3:9090'
 ```
