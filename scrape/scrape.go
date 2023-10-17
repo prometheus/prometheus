@@ -160,6 +160,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 			func(l labels.Labels) labels.Labels { return mutateReportSampleLabels(l, opts.target) },
 			func(ctx context.Context) storage.Appender { return app.Appender(ctx) },
 			cache,
+			options.ScrapeCacheByHash,
 			offsetSeed,
 			opts.honorTimestamps,
 			opts.trackTimestampsStaleness,
@@ -777,7 +778,7 @@ type scrapeLoop struct {
 	scraper                  scraper
 	l                        log.Logger
 	cache                    *scrapeCache
-	cacheHash                bool
+	cacheByHash              bool
 	lastScrapeSize           int
 	buffers                  *pool.Pool
 	offsetSeed               uint64
@@ -1116,6 +1117,7 @@ func newScrapeLoop(ctx context.Context,
 	reportSampleMutator labelsMutator,
 	appender func(ctx context.Context) storage.Appender,
 	cache *scrapeCache,
+	cacheByHash bool,
 	offsetSeed uint64,
 	honorTimestamps bool,
 	trackTimestampsStaleness bool,
@@ -1159,6 +1161,7 @@ func newScrapeLoop(ctx context.Context,
 		scraper:                  sc,
 		buffers:                  buffers,
 		cache:                    cache,
+		cacheByHash:              cacheByHash,
 		appender:                 appender,
 		sampleMutator:            sampleMutator,
 		reportSampleMutator:      reportSampleMutator,
@@ -1572,7 +1575,7 @@ loop:
 			sha           uint64
 			seriesInCache bool
 		)
-		if sl.cacheHash {
+		if sl.cacheByHash {
 			sha = xxhash.Sum64(met)
 			if sl.cache.getDroppedByHash(hash) {
 				continue
@@ -1601,7 +1604,7 @@ loop:
 
 			// The label set may be set to empty to indicate dropping.
 			if lset.IsEmpty() {
-				if sl.cacheHash {
+				if sl.cacheByHash {
 					sl.cache.addDroppedByHash(hash)
 				} else {
 					sl.cache.addDropped(met)
@@ -1659,7 +1662,7 @@ loop:
 				// Bypass staleness logic if there is an explicit timestamp.
 				sl.cache.trackStaleness(hash, lset)
 			}
-			if sl.cacheHash {
+			if sl.cacheByHash {
 				sl.cache.addRefByHash(sha, ref, lset, hash)
 			} else {
 				sl.cache.addRef(met, ref, lset, hash)
