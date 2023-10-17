@@ -2291,3 +2291,53 @@ func TestFloatBucketIteratorTargetSchema(t *testing.T) {
 	}
 	require.False(t, it.Next(), "negative iterator not exhausted")
 }
+
+// TestFloatHistogramEquals tests FloatHistogram with float-specific cases that
+// cannot be covered by TestHistogramEquals.
+func TestFloatHistogramEquals(t *testing.T) {
+	h1 := FloatHistogram{
+		Schema:          3,
+		Count:           2.2,
+		Sum:             9.7,
+		ZeroThreshold:   0.1,
+		ZeroCount:       1.1,
+		PositiveBuckets: []float64{3},
+		NegativeBuckets: []float64{4},
+	}
+
+	equals := func(h1, h2 FloatHistogram) {
+		require.True(t, h1.Equals(&h2))
+		require.True(t, h2.Equals(&h1))
+	}
+	notEquals := func(h1, h2 FloatHistogram) {
+		require.False(t, h1.Equals(&h2))
+		require.False(t, h2.Equals(&h1))
+	}
+
+	h2 := h1.Copy()
+	equals(h1, *h2)
+
+	// Count is NaN (but not a StaleNaN).
+	hCountNaN := h1.Copy()
+	hCountNaN.Count = math.NaN()
+	notEquals(h1, *hCountNaN)
+	equals(*hCountNaN, *hCountNaN)
+
+	// ZeroCount is NaN (but not a StaleNaN).
+	hZeroCountNaN := h1.Copy()
+	hZeroCountNaN.ZeroCount = math.NaN()
+	notEquals(h1, *hZeroCountNaN)
+	equals(*hZeroCountNaN, *hZeroCountNaN)
+
+	// Positive bucket value is NaN.
+	hPosBucketNaN := h1.Copy()
+	hPosBucketNaN.PositiveBuckets[0] = math.NaN()
+	notEquals(h1, *hPosBucketNaN)
+	equals(*hPosBucketNaN, *hPosBucketNaN)
+
+	// Negative bucket value is NaN.
+	hNegBucketNaN := h1.Copy()
+	hNegBucketNaN.NegativeBuckets[0] = math.NaN()
+	notEquals(h1, *hNegBucketNaN)
+	equals(*hNegBucketNaN, *hNegBucketNaN)
+}
