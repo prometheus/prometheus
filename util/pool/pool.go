@@ -91,6 +91,7 @@ func (p *Pool) Get(sz int) []byte {
 			return b
 		}
 	}
+	sz += (sz / 16) // Add a little extra for expansion.
 	return make([]byte, 0, sz)
 }
 
