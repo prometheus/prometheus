@@ -144,7 +144,7 @@ export const ServiceDiscoveryContent: FC<ServiceDiscoveryMap> = ({ scrape, alert
         return <LabelsTable value={v} name={k} key={k} />;
       })}
 
-      <h2>AlertManager Service Discovery</h2>
+      <h2>Alertmanager Service Discovery</h2>
       <ul>
         {mapObjEntries(alertManagerTargets, ([k, v]) => (
           <li key={k}>
