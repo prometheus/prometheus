@@ -204,3 +204,12 @@ Enables ingestion of created timestamp. Created timestamps are injected as 0 val
 Currently Prometheus supports created timestamps only on the traditional Prometheus Protobuf protocol (WIP for other protocols). As a result, when enabling this feature, the Prometheus protobuf scrape protocol will be prioritized (See `scrape_config.scrape_protocols` settings for more details).
 
 Besides enabling this feature in Prometheus, created timestamps need to be exposed by the application being scraped.
+
+## Scrape cache keyed by SHA checksum
+
+`--enable-feature=scrape-cache-sha`
+
+Prometheus has a cache to speed up recognition of metrics in scrape results, including
+samples dropped by relabeling rules. This setting changes the keys from the whole string
+to a 32-byte checksum. This saves memory, at the cost of some extra CPU, and a tiny chance
+that one metric will be mistaken for another.

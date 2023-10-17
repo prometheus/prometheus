@@ -76,6 +76,8 @@ type Options struct {
 	// Option to enable the experimental in-memory metadata storage and append
 	// metadata to the WAL.
 	EnableMetadataStorage bool
+	// Option to store SHA instead of metrics string in scrape cache.
+	ScrapeCacheSHA bool
 	// Option to increase the interval used by scrape manager to throttle target groups updates.
 	DiscoveryReloadInterval model.Duration
 	// Option to enable the ingestion of the created timestamp as a synthetic zero sample.
