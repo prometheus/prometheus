@@ -1524,13 +1524,13 @@ loop:
 		if sl.cache.getDropped(met) {
 			continue
 		}
-		ce, ok := sl.cache.get(met)
+		ce, seriesInCache := sl.cache.get(met)
 		var (
 			ref  storage.SeriesRef
 			hash uint64
 		)
 
-		if ok {
+		if seriesInCache {
 			ref = ce.ref
 			lset = ce.lset
 
@@ -1595,7 +1595,7 @@ loop:
 			break loop
 		}
 
-		if !ok {
+		if !seriesInCache {
 			if parsedTimestamp == nil || sl.trackTimestampsStaleness {
 				// Bypass staleness logic if there is an explicit timestamp.
 				sl.cache.trackStaleness(hash, lset)
