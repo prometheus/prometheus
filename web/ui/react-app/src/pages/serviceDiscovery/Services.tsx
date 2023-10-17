@@ -95,7 +95,7 @@ export const processTargets = (activeTargets: Target[], droppedTargets: DroppedT
   return labels;
 };
 
-export const ServiceDiscoveryContent: FC<ServiceDiscoveryMap> = ({ scrape, alertManager }) => {
+export const ServiceDiscoveryContent: FC<ServiceDiscoveryMap> = ({ scrape, alertmanager }) => {
   const [activeTargetList, setActiveTargetList] = useState(scrape.activeTargets);
   const [droppedTargetList, setDroppedTargetList] = useState(scrape.droppedTargets);
   const [targetList, setTargetList] = useState(processSummary(scrape.activeTargets, scrape.droppedTargets));
