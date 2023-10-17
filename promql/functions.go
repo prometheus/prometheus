@@ -88,7 +88,7 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 		return enh.Out, annos.Add(annotations.NewMixedFloatsHistogramsWarning(metricName, args[0].PositionRange()))
 	}
 
-	if isCounter &&
+	if isCounter && metricName != "" && len(samples.Floats) > 0 &&
 		!strings.HasSuffix(metricName, "_total") &&
 		!strings.HasSuffix(metricName, "_sum") &&
 		!strings.HasSuffix(metricName, "_count") &&
