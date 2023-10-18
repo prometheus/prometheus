@@ -540,3 +540,86 @@ var exponentialBounds = [][]float64{
 		0.9892280131939752, 0.9919100824251095, 0.9945994234836328, 0.9972960560854698,
 	},
 }
+
+func shrink[IBC InternalBucketCount](originSpans []Span, originBuckets []IBC, originSchema, targetSchema int32, deltaBuckets bool) ([]Span, []IBC) {
+	var (
+		targetSpans           []Span // The spans in the target schema.
+		targetBuckets         []IBC  // The buckets in the target schema.
+		bucketIdx             int32  // The index of bucket in the origin schema.
+		lastBucketCount       IBC    // The last visited bucket's count in the origin schema.
+		lastTargetBucketIdx   int32  // The index of the last added target bucket.
+		lastTargetBucketCount IBC
+		origBucketIdx         int // The position of a bucket in originBuckets slice.
+	)
+
+	for _, span := range originSpans {
+		// Determine the index of the first bucket in this span.
+		bucketIdx += span.Offset
+		for j := 0; j < int(span.Length); j++ {
+			// Determine the index of the bucket in the target schema from the index in the original schema.
+			targetBucketIdx := targetIdx(bucketIdx, originSchema, targetSchema)
+
+			switch {
+			case len(targetSpans) == 0:
+				// This is the first span in the targetSpans.
+				span := Span{
+					Offset: targetBucketIdx,
+					Length: 1,
+				}
+				targetSpans = append(targetSpans, span)
+				targetBuckets = append(targetBuckets, originBuckets[0])
+				lastTargetBucketIdx = targetBucketIdx
+				lastBucketCount = originBuckets[0]
+				lastTargetBucketCount = originBuckets[0]
+
+			case lastTargetBucketIdx == targetBucketIdx:
+				// The current bucket has to be merged into the same target bucket as the previous bucket.
+				if deltaBuckets {
+					lastBucketCount += originBuckets[origBucketIdx]
+					targetBuckets[len(targetBuckets)-1] += lastBucketCount
+					lastTargetBucketCount += lastBucketCount
+				} else {
+					targetBuckets[len(targetBuckets)-1] += originBuckets[origBucketIdx]
+				}
+
+			case (lastTargetBucketIdx + 1) == targetBucketIdx:
+				// The current bucket has to go into a new target bucket,
+				// and that bucket is next to the previous target bucket,
+				// so we add it to the current target span.
+				targetSpans[len(targetSpans)-1].Length++
+				lastTargetBucketIdx++
+				if deltaBuckets {
+					lastBucketCount += originBuckets[origBucketIdx]
+					// 这里可以这么用吗
+					targetBuckets = append(targetBuckets, lastBucketCount-lastTargetBucketCount)
+					lastTargetBucketCount = lastBucketCount
+				} else {
+					targetBuckets = append(targetBuckets, originBuckets[origBucketIdx])
+				}
+
+			case (lastTargetBucketIdx + 1) < targetBucketIdx:
+				// The current bucket has to go into a new target bucket,
+				// and that bucket is separated by a gap from the previous target bucket,
+				// so we need to add a new target span.
+				span := Span{
+					Offset: targetBucketIdx - lastTargetBucketIdx - 1,
+					Length: 1,
+				}
+				targetSpans = append(targetSpans, span)
+				lastTargetBucketIdx = targetBucketIdx
+				if deltaBuckets {
+					lastBucketCount += originBuckets[origBucketIdx]
+					targetBuckets = append(targetBuckets, lastBucketCount-lastTargetBucketCount)
+					lastTargetBucketCount = lastBucketCount
+				} else {
+					targetBuckets = append(targetBuckets, originBuckets[origBucketIdx])
+				}
+			}
+
+			bucketIdx++
+			origBucketIdx++
+		}
+	}
+
+	return targetSpans, targetBuckets
+}

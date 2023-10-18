@@ -94,8 +94,8 @@ func (h *FloatHistogram) CopyToSchema(targetSchema int32) *FloatHistogram {
 		Sum:           h.Sum,
 	}
 
-	c.PositiveSpans, c.PositiveBuckets = mergeToSchema(h.PositiveSpans, h.PositiveBuckets, h.Schema, targetSchema)
-	c.NegativeSpans, c.NegativeBuckets = mergeToSchema(h.NegativeSpans, h.NegativeBuckets, h.Schema, targetSchema)
+	c.PositiveSpans, c.PositiveBuckets = shrink(h.PositiveSpans, h.PositiveBuckets, h.Schema, targetSchema, false)
+	c.NegativeSpans, c.NegativeBuckets = shrink(h.NegativeSpans, h.NegativeBuckets, h.Schema, targetSchema, false)
 
 	return &c
 }
