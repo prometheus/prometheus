@@ -3627,26 +3627,38 @@ func TestLeQuantileReLabel(t *testing.T) {
 	}
 
 	metricsText := `
-# HELP golang_manual_histogram This is a histogram with default buckets
-# TYPE golang_manual_histogram histogram
-golang_manual_histogram_bucket{address="0.0.0.0",port="5001",le="0.005"} 0
-golang_manual_histogram_bucket{address="0.0.0.0",port="5001",le="0.01"} 0
-golang_manual_histogram_bucket{address="0.0.0.0",port="5001",le="0.025"} 0
-golang_manual_histogram_bucket{address="0.0.0.0",port="5001",le="0.05"} 0
-golang_manual_histogram_bucket{address="0.0.0.0",port="5001",le="0.1"} 0
-golang_manual_histogram_bucket{address="0.0.0.0",port="5001",le="0.25"} 0
-golang_manual_histogram_bucket{address="0.0.0.0",port="5001",le="0.5"} 0
-golang_manual_histogram_bucket{address="0.0.0.0",port="5001",le="1.0"} 0
-golang_manual_histogram_bucket{address="0.0.0.0",port="5001",le="2.5"} 0
-golang_manual_histogram_bucket{address="0.0.0.0",port="5001",le="5.0"} 0
-golang_manual_histogram_bucket{address="0.0.0.0",port="5001",le="10.0"} 0
-golang_manual_histogram_bucket{address="0.0.0.0",port="5001",le="+Inf"} 0
-golang_manual_histogram_sum{address="0.0.0.0",port="5001"} 0
-golang_manual_histogram_count{address="0.0.0.0",port="5001"} 0
+# HELP test_histogram This is a histogram with default buckets
+# TYPE test_histogram histogram
+test_histogram_bucket{address="0.0.0.0",port="5001",le="0.005"} 0
+test_histogram_bucket{address="0.0.0.0",port="5001",le="0.01"} 0
+test_histogram_bucket{address="0.0.0.0",port="5001",le="0.025"} 0
+test_histogram_bucket{address="0.0.0.0",port="5001",le="0.05"} 0
+test_histogram_bucket{address="0.0.0.0",port="5001",le="0.1"} 0
+test_histogram_bucket{address="0.0.0.0",port="5001",le="0.25"} 0
+test_histogram_bucket{address="0.0.0.0",port="5001",le="0.5"} 0
+test_histogram_bucket{address="0.0.0.0",port="5001",le="1.0"} 0
+test_histogram_bucket{address="0.0.0.0",port="5001",le="2.5"} 0
+test_histogram_bucket{address="0.0.0.0",port="5001",le="5.0"} 0
+test_histogram_bucket{address="0.0.0.0",port="5001",le="10.0"} 0
+test_histogram_bucket{address="0.0.0.0",port="5001",le="+Inf"} 0
+test_histogram_sum{address="0.0.0.0",port="5001"} 0
+test_histogram_count{address="0.0.0.0",port="5001"} 0
+# HELP test_summary Number of inflight requests sampled at a regular interval. Quantile buckets keep track of inflight requests over the last 60s.
+# TYPE test_summary summary
+test_summary{quantile="0.5"} 0
+test_summary{quantile="0.9"} 0
+test_summary{quantile="0.95"} 0
+test_summary{quantile="0.99"} 0
+test_summary{quantile="1.0"} 1
+test_summary_sum 1
+test_summary_count 199
 `
 
 	// The expected "le" values do not have the trailing ".0".
 	expectedLeValues := []string{"0.005", "0.01", "0.025", "0.05", "0.1", "0.25", "0.5", "1", "2.5", "5", "10", "+Inf"}
+
+	// The expected "quantile" values do not have the trailing ".0".
+	expectedQuantileValues := []string{"0.5", "0.9", "0.95", "0.99", "1"}
 
 	scrapeCount := 0
 	scraped := make(chan bool)
@@ -3684,19 +3696,26 @@ golang_manual_histogram_count{address="0.0.0.0",port="5001"} 0
 	q, err := simpleStorage.Querier(time.Time{}.UnixNano(), time.Now().UnixNano())
 	require.NoError(t, err)
 	defer q.Close()
-	series := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "golang_manual_histogram_bucket"))
 
-	foundLeValues := map[string]bool{}
+	checkValues := func(labelName string, expectedValues []string, series storage.SeriesSet) {
+		foundLeValues := map[string]bool{}
 
-	for series.Next() {
-		s := series.At()
-		v := s.Labels().Get("le")
-		require.NotContains(t, foundLeValues, v, "duplicate le value found")
-		foundLeValues[v] = true
+		for series.Next() {
+			s := series.At()
+			v := s.Labels().Get(labelName)
+			require.NotContains(t, foundLeValues, v, "duplicate label value found")
+			foundLeValues[v] = true
+		}
+
+		require.Equal(t, len(expectedValues), len(foundLeValues), "number of label values not as expected")
+		for _, v := range expectedValues {
+			require.Contains(t, foundLeValues, v, "label value not found")
+		}
 	}
 
-	require.Equal(t, len(expectedLeValues), len(foundLeValues), "number of le values not as expected")
-	for _, v := range expectedLeValues {
-		require.Contains(t, foundLeValues, v, "le value not found")
-	}
+	series := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_histogram_bucket"))
+	checkValues("le", expectedLeValues, series)
+
+	series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_summary"))
+	checkValues("quantile", expectedQuantileValues, series)
 }
