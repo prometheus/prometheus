@@ -3596,3 +3596,107 @@ func TestTargetScrapeIntervalAndTimeoutRelabel(t *testing.T) {
 	require.Equal(t, "3s", sp.ActiveTargets()[0].labels.Get(model.ScrapeIntervalLabel))
 	require.Equal(t, "750ms", sp.ActiveTargets()[0].labels.Get(model.ScrapeTimeoutLabel))
 }
+
+// Testing whether we can remove trailing .0 from histogram 'le' and summary 'quantile' labels.
+func TestLeQuantileReLabel(t *testing.T) {
+	simpleStorage := teststorage.New(t)
+	defer simpleStorage.Close()
+
+	config := &config.ScrapeConfig{
+		JobName: "test",
+		MetricRelabelConfigs: []*relabel.Config{
+			{
+				SourceLabels: model.LabelNames{"le"},
+				Regex:        relabel.MustNewRegexp("(.*)[.]0+"),
+				Replacement:  "$1",
+				TargetLabel:  "le",
+				Action:       relabel.Replace,
+			},
+			{
+				SourceLabels: model.LabelNames{"quantile"},
+				Regex:        relabel.MustNewRegexp("(.*)[.]0+"),
+				Replacement:  "$1",
+				TargetLabel:  "quantile",
+				Action:       relabel.Replace,
+			},
+		},
+		SampleLimit:    100,
+		Scheme:         "http",
+		ScrapeInterval: model.Duration(100 * time.Millisecond),
+		ScrapeTimeout:  model.Duration(100 * time.Millisecond),
+	}
+
+	metricsText := `
+# HELP golang_manual_histogram This is a histogram with default buckets
+# TYPE golang_manual_histogram histogram
+golang_manual_histogram_bucket{address="0.0.0.0",port="5001",le="0.005"} 0
+golang_manual_histogram_bucket{address="0.0.0.0",port="5001",le="0.01"} 0
+golang_manual_histogram_bucket{address="0.0.0.0",port="5001",le="0.025"} 0
+golang_manual_histogram_bucket{address="0.0.0.0",port="5001",le="0.05"} 0
+golang_manual_histogram_bucket{address="0.0.0.0",port="5001",le="0.1"} 0
+golang_manual_histogram_bucket{address="0.0.0.0",port="5001",le="0.25"} 0
+golang_manual_histogram_bucket{address="0.0.0.0",port="5001",le="0.5"} 0
+golang_manual_histogram_bucket{address="0.0.0.0",port="5001",le="1.0"} 0
+golang_manual_histogram_bucket{address="0.0.0.0",port="5001",le="2.5"} 0
+golang_manual_histogram_bucket{address="0.0.0.0",port="5001",le="5.0"} 0
+golang_manual_histogram_bucket{address="0.0.0.0",port="5001",le="10.0"} 0
+golang_manual_histogram_bucket{address="0.0.0.0",port="5001",le="+Inf"} 0
+golang_manual_histogram_sum{address="0.0.0.0",port="5001"} 0
+golang_manual_histogram_count{address="0.0.0.0",port="5001"} 0
+`
+
+	// The expected "le" values do not have the trailing ".0".
+	expectedLeValues := []string{"0.005", "0.01", "0.025", "0.05", "0.1", "0.25", "0.5", "1", "2.5", "5", "10", "+Inf"}
+
+	scrapeCount := 0
+	scraped := make(chan bool)
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, metricsText)
+		scrapeCount++
+		if scrapeCount > 2 {
+			close(scraped)
+		}
+	}))
+	defer ts.Close()
+
+	sp, err := newScrapePool(config, simpleStorage, 0, nil, &Options{})
+	require.NoError(t, err)
+	defer sp.stop()
+
+	testURL, err := url.Parse(ts.URL)
+	require.NoError(t, err)
+	sp.Sync([]*targetgroup.Group{
+		{
+			Targets: []model.LabelSet{{model.AddressLabel: model.LabelValue(testURL.Host)}},
+		},
+	})
+	require.Equal(t, 1, len(sp.ActiveTargets()))
+
+	select {
+	case <-time.After(5 * time.Second):
+		t.Fatalf("target was not scraped")
+	case <-scraped:
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	q, err := simpleStorage.Querier(time.Time{}.UnixNano(), time.Now().UnixNano())
+	require.NoError(t, err)
+	defer q.Close()
+	series := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "golang_manual_histogram_bucket"))
+
+	foundLeValues := map[string]bool{}
+
+	for series.Next() {
+		s := series.At()
+		v := s.Labels().Get("le")
+		require.NotContains(t, foundLeValues, v, "duplicate le value found")
+		foundLeValues[v] = true
+	}
+
+	require.Equal(t, len(expectedLeValues), len(foundLeValues), "number of le values not as expected")
+	for _, v := range expectedLeValues {
+		require.Contains(t, foundLeValues, v, "le value not found")
+	}
+}
