@@ -94,8 +94,8 @@ func (h *FloatHistogram) CopyToSchema(targetSchema int32) *FloatHistogram {
 		Sum:           h.Sum,
 	}
 
-	c.PositiveSpans, c.PositiveBuckets = shrink(h.PositiveSpans, h.PositiveBuckets, h.Schema, targetSchema, false)
-	c.NegativeSpans, c.NegativeBuckets = shrink(h.NegativeSpans, h.NegativeBuckets, h.Schema, targetSchema, false)
+	c.PositiveSpans, c.PositiveBuckets = Shrink(h.PositiveSpans, h.PositiveBuckets, h.Schema, targetSchema, false)
+	c.NegativeSpans, c.NegativeBuckets = Shrink(h.NegativeSpans, h.NegativeBuckets, h.Schema, targetSchema, false)
 
 	return &c
 }
@@ -273,8 +273,8 @@ func (h *FloatHistogram) Add(other *FloatHistogram) *FloatHistogram {
 	otherNegativeSpans := other.NegativeSpans
 	otherNegativeBuckets := other.NegativeBuckets
 	if other.Schema != h.Schema {
-		otherPositiveSpans, otherPositiveBuckets = mergeToSchema(other.PositiveSpans, other.PositiveBuckets, other.Schema, h.Schema)
-		otherNegativeSpans, otherNegativeBuckets = mergeToSchema(other.NegativeSpans, other.NegativeBuckets, other.Schema, h.Schema)
+		otherPositiveSpans, otherPositiveBuckets = Shrink(other.PositiveSpans, other.PositiveBuckets, other.Schema, h.Schema, false)
+		otherNegativeSpans, otherNegativeBuckets = Shrink(other.NegativeSpans, other.NegativeBuckets, other.Schema, h.Schema, false)
 	}
 
 	h.PositiveSpans, h.PositiveBuckets = addBuckets(h.Schema, h.ZeroThreshold, false, h.PositiveSpans, h.PositiveBuckets, otherPositiveSpans, otherPositiveBuckets)
@@ -294,8 +294,8 @@ func (h *FloatHistogram) Sub(other *FloatHistogram) *FloatHistogram {
 	otherNegativeSpans := other.NegativeSpans
 	otherNegativeBuckets := other.NegativeBuckets
 	if other.Schema != h.Schema {
-		otherPositiveSpans, otherPositiveBuckets = mergeToSchema(other.PositiveSpans, other.PositiveBuckets, other.Schema, h.Schema)
-		otherNegativeSpans, otherNegativeBuckets = mergeToSchema(other.NegativeSpans, other.NegativeBuckets, other.Schema, h.Schema)
+		otherPositiveSpans, otherPositiveBuckets = Shrink(other.PositiveSpans, other.PositiveBuckets, other.Schema, h.Schema, false)
+		otherNegativeSpans, otherNegativeBuckets = Shrink(other.NegativeSpans, other.NegativeBuckets, other.Schema, h.Schema, false)
 	}
 
 	h.PositiveSpans, h.PositiveBuckets = addBuckets(h.Schema, h.ZeroThreshold, true, h.PositiveSpans, h.PositiveBuckets, otherPositiveSpans, otherPositiveBuckets)
@@ -912,69 +912,6 @@ func (i *allFloatBucketIterator) At() Bucket[float64] {
 // index idx in the original schema.
 func targetIdx(idx, originSchema, targetSchema int32) int32 {
 	return ((idx - 1) >> (originSchema - targetSchema)) + 1
-}
-
-// mergeToSchema is used to merge a FloatHistogram's Spans and Buckets (no matter if
-// positive or negative) from the original schema to the target schema.
-// The target schema must be smaller than the original schema.
-func mergeToSchema(originSpans []Span, originBuckets []float64, originSchema, targetSchema int32) ([]Span, []float64) {
-	var (
-		targetSpans         []Span    // The spans in the target schema.
-		targetBuckets       []float64 // The buckets in the target schema.
-		bucketIdx           int32     // The index of bucket in the origin schema.
-		lastTargetBucketIdx int32     // The index of the last added target bucket.
-		origBucketIdx       int       // The position of a bucket in originBuckets slice.
-	)
-
-	for _, span := range originSpans {
-		// Determine the index of the first bucket in this span.
-		bucketIdx += span.Offset
-		for j := 0; j < int(span.Length); j++ {
-			// Determine the index of the bucket in the target schema from the index in the original schema.
-			targetBucketIdx := targetIdx(bucketIdx, originSchema, targetSchema)
-
-			switch {
-			case len(targetSpans) == 0:
-				// This is the first span in the targetSpans.
-				span := Span{
-					Offset: targetBucketIdx,
-					Length: 1,
-				}
-				targetSpans = append(targetSpans, span)
-				targetBuckets = append(targetBuckets, originBuckets[0])
-				lastTargetBucketIdx = targetBucketIdx
-
-			case lastTargetBucketIdx == targetBucketIdx:
-				// The current bucket has to be merged into the same target bucket as the previous bucket.
-				targetBuckets[len(targetBuckets)-1] += originBuckets[origBucketIdx]
-
-			case (lastTargetBucketIdx + 1) == targetBucketIdx:
-				// The current bucket has to go into a new target bucket,
-				// and that bucket is next to the previous target bucket,
-				// so we add it to the current target span.
-				targetSpans[len(targetSpans)-1].Length++
-				targetBuckets = append(targetBuckets, originBuckets[origBucketIdx])
-				lastTargetBucketIdx++
-
-			case (lastTargetBucketIdx + 1) < targetBucketIdx:
-				// The current bucket has to go into a new target bucket,
-				// and that bucket is separated by a gap from the previous target bucket,
-				// so we need to add a new target span.
-				span := Span{
-					Offset: targetBucketIdx - lastTargetBucketIdx - 1,
-					Length: 1,
-				}
-				targetSpans = append(targetSpans, span)
-				targetBuckets = append(targetBuckets, originBuckets[origBucketIdx])
-				lastTargetBucketIdx = targetBucketIdx
-			}
-
-			bucketIdx++
-			origBucketIdx++
-		}
-	}
-
-	return targetSpans, targetBuckets
 }
 
 // addBuckets adds the buckets described by spansB/bucketsB to the buckets described by spansA/bucketsA,

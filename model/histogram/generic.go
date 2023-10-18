@@ -541,7 +541,7 @@ var exponentialBounds = [][]float64{
 	},
 }
 
-func shrink[IBC InternalBucketCount](originSpans []Span, originBuckets []IBC, originSchema, targetSchema int32, deltaBuckets bool) ([]Span, []IBC) {
+func Shrink[IBC InternalBucketCount](originSpans []Span, originBuckets []IBC, originSchema, targetSchema int32, deltaBuckets bool) ([]Span, []IBC) {
 	var (
 		targetSpans           []Span // The spans in the target schema.
 		targetBuckets         []IBC  // The buckets in the target schema.

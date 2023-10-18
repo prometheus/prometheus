@@ -140,11 +140,10 @@ func TestShrinkHistogram(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		spans, buckets := shrink(tc.spans, tc.buckets, tc.schema, tc.targetSchema, true)
+		spans, buckets := Shrink(tc.spans, tc.buckets, tc.schema, tc.targetSchema, true)
 		require.Equal(t, tc.expectedSpans, spans)
 		require.Equal(t, tc.expectedBuckets, buckets)
 	}
-
 }
 
 func TestShrinkFloatHistogram(t *testing.T) {
@@ -176,9 +175,8 @@ func TestShrinkFloatHistogram(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		spans, buckets := shrink(tc.spans, tc.buckets, tc.schema, tc.targetSchema, false)
+		spans, buckets := Shrink(tc.spans, tc.buckets, tc.schema, tc.targetSchema, false)
 		require.Equal(t, tc.expectedSpans, spans)
 		require.Equal(t, tc.expectedBuckets, buckets)
 	}
-
 }
