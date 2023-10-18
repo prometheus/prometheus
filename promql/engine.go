@@ -1700,7 +1700,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 							}
 							point := HPoint{H: h, T: ts}
 							ss.Histograms = append(ss.Histograms, point)
-							histSize := point.histogramSize()
+							histSize := point.size()
 							ev.currentSamples += histSize
 							ev.samplesStats.IncrementSamplesAtStep(step, int64(histSize))
 						}
@@ -1818,7 +1818,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 						H: mat[i].Histograms[0].H,
 					}
 					mat[i].Histograms = append(mat[i].Histograms, point)
-					ev.currentSamples += point.histogramSize()
+					ev.currentSamples += point.size()
 				}
 				if ev.currentSamples > ev.maxSamples {
 					ev.error(ErrTooManySamples(env))
@@ -2091,7 +2091,7 @@ loop:
 					histograms = getHPointSlice(16)
 				}
 				histograms = append(histograms, point)
-				ev.currentSamples += point.histogramSize()
+				ev.currentSamples += point.size()
 			}
 		case chunkenc.ValFloat:
 			t, f := buf.At()
@@ -2124,7 +2124,7 @@ loop:
 			}
 			point := HPoint{T: t, H: h}
 			histograms = append(histograms, point)
-			ev.currentSamples += point.histogramSize()
+			ev.currentSamples += point.size()
 		}
 	case chunkenc.ValFloat:
 		t, f := it.At()

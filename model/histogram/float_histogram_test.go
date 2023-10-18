@@ -2362,7 +2362,7 @@ func TestFloatHistogramSize(t *testing.T) {
 				NegativeSpans:    nil,         // 24 bytes
 				NegativeBuckets:  nil,         // 24 bytes
 			},
-			8 + 1 + 4 + 8 + 8 + 8 + 8 + 24 + 24 + 24 + 24,
+			8 + 4 + 4 + 8 + 8 + 8 + 8 + 24 + 24 + 24 + 24,
 		},
 		{
 			"complete struct",
@@ -2383,7 +2383,7 @@ func TestFloatHistogramSize(t *testing.T) {
 					{3, 2}}, //  2 * 4 bytes
 				NegativeBuckets: []float64{3.1, 3, 1.234e5, 1000}, // 24 bytes + 4 * 8 bytes
 			},
-			8 + 1 + 4 + 8 + 8 + 8 + 8 + (24 + 2*4 + 2*4) + (24 + 2*4 + 2*4) + (24 + 4*8) + (24 + 4*8),
+			8 + 4 + 4 + 8 + 8 + 8 + 8 + (24 + 2*4 + 2*4) + (24 + 2*4 + 2*4) + (24 + 4*8) + (24 + 4*8),
 		},
 	}
 
