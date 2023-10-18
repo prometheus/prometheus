@@ -338,29 +338,30 @@ func (h *FloatHistogram) Equals(h2 *FloatHistogram) bool {
 	return true
 }
 
-// Size returns the size of the whole fields histogram in bytes.
+// Size returns the total size of the FloatHistogram, which includes the size of the pointer
+// to FloatHistogram, all its fields, and all elements contained in slices.
 // NOTE: this is only valid for 64 bit architectures.
 func (fh *FloatHistogram) Size() int {
-	// Size of each slice separately
-	posSpanSize := len(fh.PositiveSpans) * 8     // 8 bytes (int32 + uint32)
-	negSpanSize := len(fh.NegativeSpans) * 8     // 8 bytes (int32 + uint32)
-	posBucketSize := len(fh.PositiveBuckets) * 8 // 8 bytes (float64)
-	negBucketSize := len(fh.NegativeBuckets) * 8 // 8 bytes (float64)
+	// Size of each slice separately.
+	posSpanSize := len(fh.PositiveSpans) * 8     // 8 bytes (int32 + uint32).
+	negSpanSize := len(fh.NegativeSpans) * 8     // 8 bytes (int32 + uint32).
+	posBucketSize := len(fh.PositiveBuckets) * 8 // 8 bytes (float64).
+	negBucketSize := len(fh.NegativeBuckets) * 8 // 8 bytes (float64).
 
-	// Total size of the struct
+	// Total size of the struct.
 
-	// fh is 8 bytes
-	// fh.CounterResetHint is 1 byte
-	// fh.Schema is 4 bytes
-	// fh.ZeroThreshold is 8 bytes
-	// fh.ZeroCount is 8 bytes
-	// fh.Count is 8 bytes
-	// fh.Sum is 8 bytes
-	// fh.PositiveSpans is 24 bytes
-	// fh.NegativeSpans is 24 bytes
-	// fh.PositiveBuckets is 24 bytes
-	// fh.NegativeBuckets is 24 bytes
-	structSize := 141
+	// fh is 8 bytes.
+	// fh.CounterResetHint is 4 bytes (1 byte bool + 3 bytes padding).
+	// fh.Schema is 4 bytes.
+	// fh.ZeroThreshold is 8 bytes.
+	// fh.ZeroCount is 8 bytes.
+	// fh.Count is 8 bytes.
+	// fh.Sum is 8 bytes.
+	// fh.PositiveSpans is 24 bytes.
+	// fh.NegativeSpans is 24 bytes.
+	// fh.PositiveBuckets is 24 bytes.
+	// fh.NegativeBuckets is 24 bytes.
+	structSize := 144
 
 	return structSize + posSpanSize + negSpanSize + posBucketSize + negBucketSize
 }

@@ -168,11 +168,11 @@ func (p HPoint) MarshalJSON() ([]byte, error) {
 	return json.Marshal([...]interface{}{float64(p.T) / 1000, h})
 }
 
-// histogramSize returns the size of the HPoint compared to the size of an FPoint.
+// size returns the size of the HPoint compared to the size of an FPoint.
 // The total size is calculated considering the histogram timestamp (p.T - 8 bytes),
 // and then a number of bytes in the histogram.
 // This sum is divided by 16, as samples are 16 bytes.
-func (p HPoint) histogramSize() int {
+func (p HPoint) size() int {
 	return (p.H.Size() + 8) / 16
 }
 
@@ -180,7 +180,7 @@ func (p HPoint) histogramSize() int {
 func totalHPointSize(histograms []HPoint) int {
 	var total int
 	for _, h := range histograms {
-		total += h.histogramSize()
+		total += h.size()
 	}
 	return total
 }
@@ -246,7 +246,7 @@ func (vec Vector) String() string {
 // TotalSamples returns the total number of samples in the series within a vector.
 // Float samples have a weight of 1 in this number, while histogram samples have a higher
 // weight according to their size compared with the size of a float sample.
-// See HPoint.histogramSize for details.
+// See HPoint.size for details.
 func (vec Vector) TotalSamples() int {
 	numSamples := 0
 	for _, sample := range vec {
@@ -296,7 +296,9 @@ func (m Matrix) String() string {
 }
 
 // TotalSamples returns the total number of samples in the series within a matrix.
-// It takes into account the number of samples in the histograms using the histogramSize method.
+// Float samples have a weight of 1 in this number, while histogram samples have a higher
+// weight according to their size compared with the size of a float sample.
+// See HPoint.size for details.
 func (m Matrix) TotalSamples() int {
 	numSamples := 0
 	for _, series := range m {
