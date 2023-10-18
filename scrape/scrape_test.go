@@ -2627,9 +2627,9 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 		require.Equal(t, "metric_a 1\nmetric_b 2\n", buf.String())
 	}
 
-	runTest(scrapeAcceptHeader)
+	runTest(acceptHeader(config.DefaultScrapeProtocols))
 	protobufParsing = true
-	runTest(scrapeAcceptHeaderWithProtobuf)
+	runTest(acceptHeader(config.DefaultNativeHistogramScrapeProtocols))
 }
 
 func TestTargetScrapeScrapeCancel(t *testing.T) {
@@ -2655,7 +2655,7 @@ func TestTargetScrapeScrapeCancel(t *testing.T) {
 			),
 		},
 		client:       http.DefaultClient,
-		acceptHeader: scrapeAcceptHeader,
+		acceptHeader: acceptHeader(config.DefaultGlobalConfig.ScrapeProtocols),
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -2710,7 +2710,7 @@ func TestTargetScrapeScrapeNotFound(t *testing.T) {
 			),
 		},
 		client:       http.DefaultClient,
-		acceptHeader: scrapeAcceptHeader,
+		acceptHeader: acceptHeader(config.DefaultGlobalConfig.ScrapeProtocols),
 	}
 
 	resp, err := ts.scrape(context.Background())
@@ -2754,7 +2754,7 @@ func TestTargetScraperBodySizeLimit(t *testing.T) {
 		},
 		client:        http.DefaultClient,
 		bodySizeLimit: bodySizeLimit,
-		acceptHeader:  scrapeAcceptHeader,
+		acceptHeader:  acceptHeader(config.DefaultGlobalConfig.ScrapeProtocols),
 	}
 	var buf bytes.Buffer
 

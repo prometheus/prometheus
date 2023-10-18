@@ -37,7 +37,7 @@ if [ -z "${GITHUB_TOKEN}" ]; then
 fi
 
 # List of files that should be synced.
-SYNC_FILES="CODE_OF_CONDUCT.md LICENSE Makefile.common SECURITY.md .yamllint scripts/golangci-lint.yml"
+SYNC_FILES="CODE_OF_CONDUCT.md LICENSE Makefile.common SECURITY.md .yamllint scripts/golangci-lint.yml .github/workflows/scorecards.yml"
 
 # Go to the root of the repo
 cd "$(git rev-parse --show-cdup)" || exit 1

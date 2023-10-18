@@ -114,6 +114,7 @@ scrape_configs:
 
     scrape_interval: 50s
     scrape_timeout: 5s
+    scrape_protocols: ["PrometheusText0.0.4"]
 
     body_size_limit: 10MB
     sample_limit: 1000
@@ -121,7 +122,6 @@ scrape_configs:
     label_limit: 35
     label_name_length_limit: 210
     label_value_length_limit: 210
-
 
     metrics_path: /my_path
     scheme: https

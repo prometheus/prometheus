@@ -825,20 +825,12 @@ func (e errLoadWbl) Error() string {
 	return e.err.Error()
 }
 
-// To support errors.Cause().
 func (e errLoadWbl) Cause() error {
 	return e.err
 }
 
-// To support errors.Unwrap().
 func (e errLoadWbl) Unwrap() error {
 	return e.err
-}
-
-// isErrLoadOOOWal returns a boolean if the error is errLoadWbl.
-func isErrLoadOOOWal(err error) bool {
-	_, ok := err.(*errLoadWbl)
-	return ok
 }
 
 type wblSubsetProcessor struct {
