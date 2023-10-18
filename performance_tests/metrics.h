@@ -10,11 +10,12 @@ class Metrics {
   bool should_be_quiet_;
 
  public:
-  Metrics(const Config& config);
+  explicit Metrics(const Config& config);
   Metrics(const Metrics&) = delete;
   Metrics& operator=(const Metrics&) = delete;
   Metrics(Metrics&&) = delete;
   Metrics& operator=(Metrics&&) = delete;
+  ~Metrics() = default;
 
   Metrics& operator<<(const Metric& metric);
 };

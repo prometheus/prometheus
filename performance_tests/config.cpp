@@ -8,9 +8,11 @@ void Config::parameter(const std::string& name) {
 
 void Config::load(char** args, int n) {
   for (int i = 0; i < n; i += 2) {
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic): these pointers are from argc/argv, so silence it.
     if (auto it = params_.find(args[i]); it != params_.end()) {
-      it->second = args[i + 1];
+      it->second = args[i + 1];  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic)
     } else {
+      // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
       throw std::runtime_error("unknown parameter - '" + std::string(args[i]) + "'");
     }
   }

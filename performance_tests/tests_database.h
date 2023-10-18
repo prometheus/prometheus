@@ -15,6 +15,7 @@ class TestsDatabase {
   TestsDatabase& operator=(const TestsDatabase&) = delete;
   TestsDatabase(TestsDatabase&&) = delete;
   TestsDatabase& operator=(TestsDatabase&&) = delete;
+  ~TestsDatabase() = default;
 
   void add(std::unique_ptr<Test>&& test);
 

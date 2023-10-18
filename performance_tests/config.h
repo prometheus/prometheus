@@ -4,7 +4,7 @@
 #include <unordered_map>
 
 class Config {
-  const std::string NO_VALUE = "";
+  static inline const std::string NO_VALUE = "";
   std::unordered_map<std::string, std::string> params_;
 
  public:
@@ -13,6 +13,7 @@ class Config {
   Config& operator=(const Config&) = delete;
   Config(Config&&) = delete;
   Config& operator=(Config&&) = delete;
+  ~Config() = default;
 
   void parameter(const std::string& name);
   void load(char** args, int n);

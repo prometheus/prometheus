@@ -26,13 +26,13 @@ std::string Test::test_data_file_name_suffix(const Config& config) const {
     return "ls_ts.bin.lz4";
   } else if (sort_type == "TS_LS") {
     return "ts_ls.bin.lz4";
-  } else if (sort_type == "LS") {
+  } else if (sort_type == "LS") {  // NOLINT(bugprone-branch-clone): this is intentional as default order is "R"andom
     return "ls_Rts.bin.lz4";
   } else if (sort_type == "LS_RTS") {
     return "ls_Rts.bin.lz4";
-  } else if (sort_type == "TS") {
+  } else if (sort_type == "TS") {  // NOLINT(bugprone-branch-clone): this is intentional as default order is "R"andom
     return "ts_Rls.bin.lz4";
-  } else if (sort_type == "TS_RLS") {
+  } else if (sort_type == "TS_RLS") {  // NOLINT(bugprone-branch-clone): this is intentional as default order is "R"andom
     return "ts_Rls.bin.lz4";
   } else if (sort_type == "R") {
     return "R.bin.lz4";

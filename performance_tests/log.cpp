@@ -4,7 +4,8 @@ Logger logger_instance() {
   return Logger();
 }
 
-Logger global_logger = logger_instance();
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables): static variable for main logger.
+static Logger global_logger = logger_instance();
 
 Logger::Logger() : should_be_quiet_(false) {
   std::cout.sync_with_stdio(false);

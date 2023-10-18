@@ -2,6 +2,7 @@
 
 #include <stdexcept>
 
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables): static variable for all required metrics.
 std::vector<Metric::Label> Metric::global_labels_;
 
 void Metric::define_global_label(const Metric::Label& label) {

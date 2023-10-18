@@ -10,7 +10,7 @@ class Metric {
  private:
   std::string name_;
   std::vector<Label> labels_;
-  static std::vector<Label> global_labels_;
+  static std::vector<Label> global_labels_;  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
   double value_ = 0.0;
 
   friend class Metrics;
@@ -26,6 +26,7 @@ class Metric {
   Metric& operator=(const Metric&) = delete;
   Metric(Metric&&) = delete;
   Metric& operator=(Metric&&) = delete;
+  ~Metric() = default;
 
   static void define_global_label(const Label& label);
 
