@@ -322,14 +322,15 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 		Name: "prometheus_tsdb_retention_limit_bytes",
 		Help: "Max number of bytes to be retained in the tsdb blocks, configured 0 means disabled",
 	})
+	m.retentionDuration = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "prometheus_tsdb_retention_limit_seconds",
+		Help: "How long to retain samples in storage.",
+	})
 	m.sizeRetentionCount = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_size_retentions_total",
 		Help: "The number of times that blocks were deleted because the maximum number of bytes was exceeded.",
 	})
-	m.retentionDuration = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "prometheus_tsdb_retention_seconds",
-		Help: "How long to retain samples in storage.",
-	})
+
 	if r != nil {
 		r.MustRegister(
 			m.loadedBlocks,
