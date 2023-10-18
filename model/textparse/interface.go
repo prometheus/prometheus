@@ -16,6 +16,8 @@ package textparse
 import (
 	"mime"
 
+	"github.com/gogo/protobuf/types"
+
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -63,6 +65,11 @@ type Parser interface {
 	// for the same sample. It returns false once all exemplars are
 	// retrieved (including the case where no exemplars exist at all).
 	Exemplar(l *exemplar.Exemplar) bool
+
+	// CreatedTimestamp writes the created timestamp of the current sample
+	// into the passed timestamp. It returns false if no created timestamp
+	// exists or if the metric type does not support created timestamps.
+	CreatedTimestamp(ct *types.Timestamp) bool
 
 	// Next advances the parser to the next sample. It returns false if no
 	// more samples were read or an error occurred.
