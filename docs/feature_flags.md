@@ -125,7 +125,40 @@ histogram (albeit via the text format). With this flag enabled, Prometheus will
 still ingest those conventional histograms that do not come with a
 corresponding native histogram. However, if a native histogram is present,
 Prometheus will ignore the corresponding conventional histogram, with the
-notable exception of exemplars, which are always ingested.
+notable exception of exemplars, which are always ingested. To keep the
+conventional histograms as well, enable `scrape_classic_histograms` in the
+scrape job.
+
+NOTE: Due to the protobuf serialization, conventional histogram `le` labels
+and summary `quantile` labels will be formatted differently. Any integer
+label values will be represented as a float, thus `1` becomes `1.0`, `2` becomes
+`2.0` and so on. This changes the identity of the resulting series in storage.
+This affects for example applications instrumented with client_golang provided
+that [promhttp.HandlerOpts.EnableOpenMetrics](https://pkg.go.dev/github.com/prometheus/client_golang/prometheus/promhttp#HandlerOpts)
+is set to false.
+
+As a side effect of conventional histogram labels change is that aggregations
+such as `rate`, `irate`, `increase` or `histogram_quantile` spanning the time
+range when the labels changed will show the wrong results. On the other hand
+going forward metrics will have the same labels regardless of instrumentation
+library.
+
+Ways to deal with this change either globally or on a per metric basis:
+
+- Do nothing and accept that some queries that span the transition time will
+produce the wrong answer. This will include alerts that include range vector
+selectors such as for the `rate` function.
+- Use `metric_relabel_config` to retain the old labels when scraping targets.
+This should only be applied to metrics that currently produce such labels.
+
+```yaml
+metric_relabel_configs:
+  - source_labels:
+    - le
+    regex: (.*)[.]0+
+    replacement: $1
+    target_label: le
+```
 
 ## OTLP Receiver
 
