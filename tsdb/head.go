@@ -794,17 +794,17 @@ func (h *Head) Init(minValidTime int64) error {
 
 	wblReplayStart := time.Now()
 	if h.wbl != nil {
-		// Replay OOO WAL.
+		// Replay WBL.
 		startFrom, endAt, e = wlog.Segments(h.wbl.Dir())
 		if e != nil {
-			return errors.Wrap(e, "finding OOO WAL segments")
+			return &errLoadWbl{errors.Wrap(e, "finding WBL segments")}
 		}
 		h.startWALReplayStatus(startFrom, endAt)
 
 		for i := startFrom; i <= endAt; i++ {
 			s, err := wlog.OpenReadSegment(wlog.SegmentName(h.wbl.Dir(), i))
 			if err != nil {
-				return errors.Wrap(err, fmt.Sprintf("open WBL segment: %d", i))
+				return &errLoadWbl{errors.Wrap(err, fmt.Sprintf("open WBL segment: %d", i))}
 			}
 
 			sr := wlog.NewSegmentBufReader(s)
@@ -813,7 +813,7 @@ func (h *Head) Init(minValidTime int64) error {
 				level.Warn(h.logger).Log("msg", "Error while closing the wbl segments reader", "err", err)
 			}
 			if err != nil {
-				return err
+				return &errLoadWbl{err}
 			}
 			level.Info(h.logger).Log("msg", "WBL segment loaded", "segment", i, "maxSegment", endAt)
 			h.updateWALReplayStatusRead(i)

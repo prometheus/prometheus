@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"reflect"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -250,8 +251,6 @@ type scrapePool struct {
 	newLoop func(scrapeLoopOptions) loop
 
 	noDefaultPort bool
-
-	enableProtobufNegotiation bool
 }
 
 type labelLimits struct {
@@ -296,16 +295,15 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 
 	ctx, cancel := context.WithCancel(context.Background())
 	sp := &scrapePool{
-		cancel:                    cancel,
-		appendable:                app,
-		config:                    cfg,
-		client:                    client,
-		activeTargets:             map[uint64]*Target{},
-		loops:                     map[uint64]loop{},
-		logger:                    logger,
-		httpOpts:                  options.HTTPClientOptions,
-		noDefaultPort:             options.NoDefaultPort,
-		enableProtobufNegotiation: options.EnableProtobufNegotiation,
+		cancel:        cancel,
+		appendable:    app,
+		config:        cfg,
+		client:        client,
+		activeTargets: map[uint64]*Target{},
+		loops:         map[uint64]loop{},
+		logger:        logger,
+		httpOpts:      options.HTTPClientOptions,
+		noDefaultPort: options.NoDefaultPort,
 	}
 	sp.newLoop = func(opts scrapeLoopOptions) loop {
 		// Update the targets retrieval function for metadata to a new scrape cache.
@@ -456,12 +454,14 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 
 		t := sp.activeTargets[fp]
 		interval, timeout, err := t.intervalAndTimeout(interval, timeout)
-		acceptHeader := scrapeAcceptHeader
-		if sp.enableProtobufNegotiation {
-			acceptHeader = scrapeAcceptHeaderWithProtobuf
-		}
 		var (
-			s       = &targetScraper{Target: t, client: sp.client, timeout: timeout, bodySizeLimit: bodySizeLimit, acceptHeader: acceptHeader}
+			s = &targetScraper{
+				Target:        t,
+				client:        sp.client,
+				timeout:       timeout,
+				bodySizeLimit: bodySizeLimit,
+				acceptHeader:  acceptHeader(cfg.ScrapeProtocols),
+			}
 			newLoop = sp.newLoop(scrapeLoopOptions{
 				target:          t,
 				scraper:         s,
@@ -577,11 +577,13 @@ func (sp *scrapePool) sync(targets []*Target) {
 			// for every target.
 			var err error
 			interval, timeout, err = t.intervalAndTimeout(interval, timeout)
-			acceptHeader := scrapeAcceptHeader
-			if sp.enableProtobufNegotiation {
-				acceptHeader = scrapeAcceptHeaderWithProtobuf
+			s := &targetScraper{
+				Target:        t,
+				client:        sp.client,
+				timeout:       timeout,
+				bodySizeLimit: bodySizeLimit,
+				acceptHeader:  acceptHeader(sp.config.ScrapeProtocols),
 			}
-			s := &targetScraper{Target: t, client: sp.client, timeout: timeout, bodySizeLimit: bodySizeLimit, acceptHeader: acceptHeader}
 			l := sp.newLoop(scrapeLoopOptions{
 				target:                  t,
 				scraper:                 s,
@@ -808,10 +810,20 @@ type targetScraper struct {
 
 var errBodySizeLimit = errors.New("body size limit exceeded")
 
-const (
-	scrapeAcceptHeader             = `application/openmetrics-text;version=1.0.0,application/openmetrics-text;version=0.0.1;q=0.75,text/plain;version=0.0.4;q=0.5,*/*;q=0.1`
-	scrapeAcceptHeaderWithProtobuf = `application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited,application/openmetrics-text;version=1.0.0;q=0.8,application/openmetrics-text;version=0.0.1;q=0.75,text/plain;version=0.0.4;q=0.5,*/*;q=0.1`
-)
+// acceptHeader transforms preference from the options into specific header values as
+// https://www.rfc-editor.org/rfc/rfc9110.html#name-accept defines.
+// No validation is here, we expect scrape protocols to be validated already.
+func acceptHeader(sps []config.ScrapeProtocol) string {
+	var vals []string
+	weight := len(config.ScrapeProtocolsHeaders) + 1
+	for _, sp := range sps {
+		vals = append(vals, fmt.Sprintf("%s;q=0.%d", config.ScrapeProtocolsHeaders[sp], weight))
+		weight--
+	}
+	// Default match anything.
+	vals = append(vals, fmt.Sprintf("*/*;q=%d", weight))
+	return strings.Join(vals, ",")
+}
 
 var UserAgent = fmt.Sprintf("Prometheus/%s", version.Version)
 

@@ -19,6 +19,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -143,12 +144,14 @@ var (
 		ScrapeInterval:     model.Duration(1 * time.Minute),
 		ScrapeTimeout:      model.Duration(10 * time.Second),
 		EvaluationInterval: model.Duration(1 * time.Minute),
+		// When native histogram feature flag is enabled, ScrapeProtocols default
+		// changes to DefaultNativeHistogramScrapeProtocols.
+		ScrapeProtocols: DefaultScrapeProtocols,
 	}
 
 	// DefaultScrapeConfig is the default scrape configuration.
 	DefaultScrapeConfig = ScrapeConfig{
-		// ScrapeTimeout and ScrapeInterval default to the configured
-		// globals.
+		// ScrapeTimeout, ScrapeInterval and ScrapeProtocols default to the configured globals.
 		ScrapeClassicHistograms: false,
 		MetricsPath:             "/metrics",
 		Scheme:                  "http",
@@ -260,7 +263,7 @@ func (c Config) String() string {
 	return string(b)
 }
 
-// ScrapeConfigs returns the scrape configurations.
+// GetScrapeConfigs returns the scrape configurations.
 func (c *Config) GetScrapeConfigs() ([]*ScrapeConfig, error) {
 	scfgs := make([]*ScrapeConfig, len(c.ScrapeConfigs))
 
@@ -385,6 +388,11 @@ type GlobalConfig struct {
 	ScrapeInterval model.Duration `yaml:"scrape_interval,omitempty"`
 	// The default timeout when scraping targets.
 	ScrapeTimeout model.Duration `yaml:"scrape_timeout,omitempty"`
+	// The protocols to negotiate during a scrape. It tells clients what
+	// protocol are accepted by Prometheus and with what weight (most wanted is first).
+	// Supported values (case sensitive): PrometheusProto, OpenMetricsText0.0.1,
+	// OpenMetricsText1.0.0, PrometheusText0.0.4.
+	ScrapeProtocols []ScrapeProtocol `yaml:"scrape_protocols,omitempty"`
 	// How frequently to evaluate rules by default.
 	EvaluationInterval model.Duration `yaml:"evaluation_interval,omitempty"`
 	// File to which PromQL queries are logged.
@@ -412,6 +420,68 @@ type GlobalConfig struct {
 	// Keep no more than this many dropped targets per job.
 	// 0 means no limit.
 	KeepDroppedTargets uint `yaml:"keep_dropped_targets,omitempty"`
+}
+
+// ScrapeProtocol represents supported protocol for scraping metrics.
+type ScrapeProtocol string
+
+// Validate returns error if given scrape protocol is not supported.
+func (s ScrapeProtocol) Validate() error {
+	if _, ok := ScrapeProtocolsHeaders[s]; !ok {
+		return fmt.Errorf("unknown scrape protocol %v, supported: %v",
+			s, func() (ret []string) {
+				for k := range ScrapeProtocolsHeaders {
+					ret = append(ret, string(k))
+				}
+				sort.Strings(ret)
+				return ret
+			}())
+	}
+	return nil
+}
+
+var (
+	PrometheusProto      ScrapeProtocol = "PrometheusProto"
+	PrometheusText0_0_4  ScrapeProtocol = "PrometheusText0.0.4"
+	OpenMetricsText0_0_1 ScrapeProtocol = "OpenMetricsText0.0.1"
+	OpenMetricsText1_0_0 ScrapeProtocol = "OpenMetricsText1.0.0"
+
+	ScrapeProtocolsHeaders = map[ScrapeProtocol]string{
+		PrometheusProto:      "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited",
+		PrometheusText0_0_4:  "text/plain;version=0.0.4",
+		OpenMetricsText0_0_1: "application/openmetrics-text;version=0.0.1",
+		OpenMetricsText1_0_0: "application/openmetrics-text;version=1.0.0",
+	}
+
+	DefaultScrapeProtocols = []ScrapeProtocol{
+		OpenMetricsText1_0_0,
+		OpenMetricsText0_0_1,
+		PrometheusText0_0_4,
+	}
+	DefaultNativeHistogramScrapeProtocols = []ScrapeProtocol{
+		PrometheusProto,
+		OpenMetricsText1_0_0,
+		OpenMetricsText0_0_1,
+		PrometheusText0_0_4,
+	}
+)
+
+// validateAcceptScrapeProtocols return errors if we see problems with accept scrape protocols option.
+func validateAcceptScrapeProtocols(sps []ScrapeProtocol) error {
+	if len(sps) == 0 {
+		return errors.New("scrape_protocols cannot be empty")
+	}
+	dups := map[string]struct{}{}
+	for _, sp := range sps {
+		if _, ok := dups[strings.ToLower(string(sp))]; ok {
+			return fmt.Errorf("duplicated protocol in scrape_protocols, got %v", sps)
+		}
+		if err := sp.Validate(); err != nil {
+			return fmt.Errorf("scrape_protocols: %w", err)
+		}
+		dups[strings.ToLower(string(sp))] = struct{}{}
+	}
+	return nil
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -459,6 +529,14 @@ func (c *GlobalConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if gc.EvaluationInterval == 0 {
 		gc.EvaluationInterval = DefaultGlobalConfig.EvaluationInterval
 	}
+
+	if gc.ScrapeProtocols == nil {
+		gc.ScrapeProtocols = DefaultGlobalConfig.ScrapeProtocols
+	}
+	if err := validateAcceptScrapeProtocols(gc.ScrapeProtocols); err != nil {
+		return fmt.Errorf("%w for global config", err)
+	}
+
 	*c = *gc
 	return nil
 }
@@ -469,7 +547,8 @@ func (c *GlobalConfig) isZero() bool {
 		c.ScrapeInterval == 0 &&
 		c.ScrapeTimeout == 0 &&
 		c.EvaluationInterval == 0 &&
-		c.QueryLogFile == ""
+		c.QueryLogFile == "" &&
+		c.ScrapeProtocols == nil
 }
 
 type ScrapeConfigs struct {
@@ -490,6 +569,11 @@ type ScrapeConfig struct {
 	ScrapeInterval model.Duration `yaml:"scrape_interval,omitempty"`
 	// The timeout for scraping targets of this config.
 	ScrapeTimeout model.Duration `yaml:"scrape_timeout,omitempty"`
+	// The protocols to negotiate during a scrape. It tells clients what
+	// protocol are accepted by Prometheus and with what preference (most wanted is first).
+	// Supported values (case sensitive): PrometheusProto, OpenMetricsText0.0.1,
+	// OpenMetricsText1.0.0, PrometheusText0.0.4.
+	ScrapeProtocols []ScrapeProtocol `yaml:"scrape_protocols,omitempty"`
 	// Whether to scrape a classic histogram that is also exposed as a native histogram.
 	ScrapeClassicHistograms bool `yaml:"scrape_classic_histograms,omitempty"`
 	// The HTTP resource path on which to fetch metrics from targets.
@@ -577,6 +661,7 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return nil
 }
 
+// Validate validates scrape config, but also fills relevant default values from global config if needed.
 func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 	if c == nil {
 		return errors.New("empty or null scrape config section")
@@ -616,6 +701,13 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 	}
 	if c.KeepDroppedTargets == 0 {
 		c.KeepDroppedTargets = globalConfig.KeepDroppedTargets
+	}
+
+	if c.ScrapeProtocols == nil {
+		c.ScrapeProtocols = globalConfig.ScrapeProtocols
+	}
+	if err := validateAcceptScrapeProtocols(c.ScrapeProtocols); err != nil {
+		return fmt.Errorf("%w for scrape config with job name %q", err, c.JobName)
 	}
 
 	return nil
