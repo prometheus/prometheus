@@ -307,13 +307,17 @@ func (h *FloatHistogram) Sub(other *FloatHistogram) *FloatHistogram {
 // Exact match is when there are no new buckets (even empty) and no missing buckets,
 // and all the bucket values match. Spans can have different empty length spans in between,
 // but they must represent the same bucket layout to match.
+// Sum, Count, ZeroCount and bucket values are compared based on their bit patterns
+// because this method is about data equality rather than mathematical equality.
 func (h *FloatHistogram) Equals(h2 *FloatHistogram) bool {
 	if h2 == nil {
 		return false
 	}
 
 	if h.Schema != h2.Schema || h.ZeroThreshold != h2.ZeroThreshold ||
-		h.ZeroCount != h2.ZeroCount || h.Count != h2.Count || h.Sum != h2.Sum {
+		math.Float64bits(h.ZeroCount) != math.Float64bits(h2.ZeroCount) ||
+		math.Float64bits(h.Count) != math.Float64bits(h2.Count) ||
+		math.Float64bits(h.Sum) != math.Float64bits(h2.Sum) {
 		return false
 	}
 
@@ -324,10 +328,10 @@ func (h *FloatHistogram) Equals(h2 *FloatHistogram) bool {
 		return false
 	}
 
-	if !bucketsMatch(h.PositiveBuckets, h2.PositiveBuckets) {
+	if !floatBucketsMatch(h.PositiveBuckets, h2.PositiveBuckets) {
 		return false
 	}
-	if !bucketsMatch(h.NegativeBuckets, h2.NegativeBuckets) {
+	if !floatBucketsMatch(h.NegativeBuckets, h2.NegativeBuckets) {
 		return false
 	}
 
@@ -1101,4 +1105,16 @@ func addBuckets(
 	}
 
 	return spansA, bucketsA
+}
+
+func floatBucketsMatch(b1, b2 []float64) bool {
+	if len(b1) != len(b2) {
+		return false
+	}
+	for i, b := range b1 {
+		if math.Float64bits(b) != math.Float64bits(b2[i]) {
+			return false
+		}
+	}
+	return true
 }

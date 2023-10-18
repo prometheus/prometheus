@@ -132,9 +132,6 @@ type Options struct {
 	// Option to enable the experimental in-memory metadata storage and append
 	// metadata to the WAL.
 	EnableMetadataStorage bool
-	// Option to enable protobuf negotiation with the client. Note that the client can already
-	// send protobuf without needing to enable this.
-	EnableProtobufNegotiation bool
 	// Option to increase the interval used by scrape manager to throttle target groups updates.
 	DiscoveryReloadInterval model.Duration
 

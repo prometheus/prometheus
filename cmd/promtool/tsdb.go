@@ -18,7 +18,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -629,10 +628,12 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 		err = tsdb_errors.NewMulti(err, chunkr.Close()).Err()
 	}()
 
-	const maxSamplesPerChunk = 120
-	nBuckets := 10
-	histogram := make([]int, nBuckets)
 	totalChunks := 0
+	floatChunkSamplesCount := make([]int, 0)
+	floatChunkSize := make([]int, 0)
+	histogramChunkSamplesCount := make([]int, 0)
+	histogramChunkSize := make([]int, 0)
+	histogramChunkBucketsCount := make([]int, 0)
 	var builder labels.ScratchBuilder
 	for postingsr.Next() {
 		var chks []chunks.Meta
@@ -646,26 +647,56 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 			if err != nil {
 				return err
 			}
-			chunkSize := math.Min(float64(chk.NumSamples()), maxSamplesPerChunk)
-			// Calculate the bucket for the chunk and increment it in the histogram.
-			bucket := int(math.Ceil(float64(nBuckets)*chunkSize/maxSamplesPerChunk)) - 1
-			histogram[bucket]++
+			switch chk.Encoding() {
+			case chunkenc.EncXOR:
+				floatChunkSamplesCount = append(floatChunkSamplesCount, chk.NumSamples())
+				floatChunkSize = append(floatChunkSize, len(chk.Bytes()))
+			case chunkenc.EncFloatHistogram:
+				histogramChunkSamplesCount = append(histogramChunkSamplesCount, chk.NumSamples())
+				histogramChunkSize = append(histogramChunkSize, len(chk.Bytes()))
+				fhchk, ok := chk.(*chunkenc.FloatHistogramChunk)
+				if !ok {
+					return fmt.Errorf("chunk is not FloatHistogramChunk")
+				}
+				it := fhchk.Iterator(nil)
+				bucketCount := 0
+				for it.Next() == chunkenc.ValFloatHistogram {
+					_, f := it.AtFloatHistogram()
+					bucketCount += len(f.PositiveBuckets)
+					bucketCount += len(f.NegativeBuckets)
+				}
+				histogramChunkBucketsCount = append(histogramChunkBucketsCount, bucketCount)
+			case chunkenc.EncHistogram:
+				histogramChunkSamplesCount = append(histogramChunkSamplesCount, chk.NumSamples())
+				histogramChunkSize = append(histogramChunkSize, len(chk.Bytes()))
+				hchk, ok := chk.(*chunkenc.HistogramChunk)
+				if !ok {
+					return fmt.Errorf("chunk is not HistogramChunk")
+				}
+				it := hchk.Iterator(nil)
+				bucketCount := 0
+				for it.Next() == chunkenc.ValHistogram {
+					_, f := it.AtHistogram()
+					bucketCount += len(f.PositiveBuckets)
+					bucketCount += len(f.NegativeBuckets)
+				}
+				histogramChunkBucketsCount = append(histogramChunkBucketsCount, bucketCount)
+			}
 			totalChunks++
 		}
 	}
 
 	fmt.Printf("\nCompaction analysis:\n")
-	fmt.Println("Fullness: Amount of samples in chunks (100% is 120 samples)")
-	// Normalize absolute counts to percentages and print them out.
-	for bucket, count := range histogram {
-		percentage := 100.0 * count / totalChunks
-		fmt.Printf("%7d%%: ", (bucket+1)*10)
-		for j := 0; j < percentage; j++ {
-			fmt.Printf("#")
-		}
-		fmt.Println()
-	}
+	fmt.Println()
+	displayHistogram("samples per float chunk", floatChunkSamplesCount, totalChunks)
 
+	displayHistogram("bytes per float chunk", floatChunkSize, totalChunks)
+
+	displayHistogram("samples per histogram chunk", histogramChunkSamplesCount, totalChunks)
+
+	displayHistogram("bytes per histogram chunk", histogramChunkSize, totalChunks)
+
+	displayHistogram("buckets per histogram chunk", histogramChunkBucketsCount, totalChunks)
 	return nil
 }
 
@@ -740,4 +771,43 @@ func backfillOpenMetrics(path, outputDir string, humanReadable, quiet bool, maxB
 	}
 
 	return checkErr(backfill(5000, inputFile.Bytes(), outputDir, humanReadable, quiet, maxBlockDuration))
+}
+
+func displayHistogram(dataType string, datas []int, total int) {
+	slices.Sort(datas)
+	start, end, step := generateBucket(datas[0], datas[len(datas)-1])
+	sum := 0
+	buckets := make([]int, (end-start)/step+1)
+	maxCount := 0
+	for _, c := range datas {
+		sum += c
+		buckets[(c-start)/step]++
+		if buckets[(c-start)/step] > maxCount {
+			maxCount = buckets[(c-start)/step]
+		}
+	}
+	avg := sum / len(datas)
+	fmt.Printf("%s (min/avg/max): %d/%d/%d\n", dataType, datas[0], avg, datas[len(datas)-1])
+	maxLeftLen := strconv.Itoa(len(fmt.Sprintf("%d", end)))
+	maxRightLen := strconv.Itoa(len(fmt.Sprintf("%d", end+step)))
+	maxCountLen := strconv.Itoa(len(fmt.Sprintf("%d", maxCount)))
+	for bucket, count := range buckets {
+		percentage := 100.0 * count / total
+		fmt.Printf("[%"+maxLeftLen+"d, %"+maxRightLen+"d]: %"+maxCountLen+"d %s\n", bucket*step+start+1, (bucket+1)*step+start, count, strings.Repeat("#", percentage))
+	}
+	fmt.Println()
+}
+
+func generateBucket(min, max int) (start, end, step int) {
+	s := (max - min) / 10
+
+	step = 10
+	for step < s && step <= 10000 {
+		step *= 10
+	}
+
+	start = min - min%step
+	end = max - max%step + step
+
+	return
 }

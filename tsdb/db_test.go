@@ -3800,7 +3800,7 @@ func TestOOOWALWrite(t *testing.T) {
 	actRecs := getRecords(path.Join(dir, "wal"))
 	require.Equal(t, inOrderRecords, actRecs)
 
-	// The OOO WAL.
+	// The WBL.
 	actRecs = getRecords(path.Join(dir, wlog.WblDirName))
 	require.Equal(t, oooRecords, actRecs)
 }
