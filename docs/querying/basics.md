@@ -92,8 +92,13 @@ single sample value for each at a given timestamp (instant): in the simplest
 form, only a metric name is specified. This results in an instant vector
 containing elements for all time series that have this metric name.
 
+The value returned will be the most recent sample within the the time frame
+specified by [the API call that submitted the query](api.md#instant-queries)
+or by the [`@` modifier](#modifier). Time series where the most recent sample
+is older than the [staleness threshold](#staleness) will not be returned.
+
 This example selects all time series that have the `http_requests_total` metric
-name:
+name, returning the most recent sample for each:
 
     http_requests_total
 
