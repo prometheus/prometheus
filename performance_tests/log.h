@@ -13,12 +13,14 @@ class Logger {
   Logger& operator=(const Logger&) = delete;
   Logger(Logger&&) = delete;
   Logger& operator=(Logger&&) = delete;
+  ~Logger() = default;
 
   static void init(const Config& config);
 
   template <typename T>
   Logger& operator<<(const T& arg) {
     if (!should_be_quiet_) {
+      // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay): ignore array decaying to pointer.
       std::cout << arg;
     }
     return *this;
