@@ -1611,7 +1611,8 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 							Labels: map[string]string{
 								"instance": "http://http:%2F%2Falertmanager.example.com:8080/api/v1/alerts",
 							},
-						}},
+						},
+					},
 					DroppedTargets: []*DroppedTarget{
 						{
 							DiscoveredLabels: map[string]string{

@@ -1176,6 +1176,7 @@ func renderTargetData(targets map[string][]TargetServiceDiscovery) TargetDiscove
 	}
 	return res
 }
+
 func (api *API) servicediscovery(r *http.Request) apiFuncResult {
 	scrapeTargets := api.targetRetriever(r.Context()).TargetsAll()
 	scrapeTargetDiscoverys := make(map[string][]TargetServiceDiscovery)
