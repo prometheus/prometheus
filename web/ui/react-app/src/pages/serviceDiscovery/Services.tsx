@@ -63,6 +63,8 @@ export const processSummary = (
         total: droppedTargetCounts[name],
         active: 0,
       };
+    } else {
+      targets[name].total += droppedTargetCounts[name];
     }
   }
 
