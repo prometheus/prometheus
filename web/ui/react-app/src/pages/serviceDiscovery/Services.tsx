@@ -49,7 +49,7 @@ export const processSummary = (
     const { scrapePool: name } = target;
     if (!targets[name]) {
       targets[name] = {
-        total: droppedTargetCounts[name],
+        total: 0,
         active: 0,
       };
     }
@@ -60,7 +60,7 @@ export const processSummary = (
     const { job: name } = target.discoveredLabels;
     if (!targets[name]) {
       targets[name] = {
-        total: 0,
+        total: droppedTargetCounts[name],
         active: 0,
       };
     }
