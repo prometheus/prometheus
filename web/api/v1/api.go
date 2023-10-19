@@ -1164,7 +1164,7 @@ func renderTargetData(targets map[string][]TargetServiceDiscovery) TargetDiscove
 				res.DroppedTargets = append(res.DroppedTargets, &DroppedTarget{
 					DiscoveredLabels: target.discoveredLabels.Map(),
 				})
-				res.DroppedTargetCounts[job] = res.DroppedTargetCounts[job] + 1
+				res.DroppedTargetCounts[job]++
 			} else {
 				res.ActiveTargets = append(res.ActiveTargets, &Target{
 					DiscoveredLabels: target.discoveredLabels.Map(),
