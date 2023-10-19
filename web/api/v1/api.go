@@ -103,6 +103,8 @@ type TargetRetriever interface {
 	TargetsActive() map[string][]*scrape.Target
 	TargetsDropped() map[string][]*scrape.Target
 	TargetsDroppedCounts() map[string]int
+
+	TargetsAll() map[string][]*scrape.Target
 }
 
 // AlertmanagerRetriever provides a list of all/dropped AlertManager URLs.
@@ -110,6 +112,11 @@ type AlertmanagerRetriever interface {
 	Alertmanagers() []*url.URL
 	DroppedAlertmanagers() []*url.URL
 	TargetsAll() map[string][]notifier.Target
+}
+
+type TargetServiceDiscovery struct {
+	discoveredLabels labels.Labels
+	labels           labels.Labels
 }
 
 // RulesRetriever provides a list of active rules and alerts.
@@ -380,10 +387,10 @@ func (api *API) Register(r *route.Router) {
 	r.Del("/series", wrapAgent(api.dropSeries))
 
 	r.Get("/scrape_pools", wrap(api.scrapePools))
+	r.Get("/servicediscovery", wrap(api.servicediscovery))
 	r.Get("/targets", wrap(api.targets))
 	r.Get("/targets/metadata", wrap(api.targetMetadata))
 	r.Get("/alertmanagers", wrapAgent(api.alertmanagers))
-	r.Get("/servicediscovery", wrapAgent(api.servicediscovery))
 
 	r.Get("/metadata", wrap(api.metricMetadata))
 
@@ -1137,65 +1144,63 @@ func (api *API) targetMetadata(r *http.Request) apiFuncResult {
 	return apiFuncResult{res, nil, nil, nil}
 }
 
-func (api *API) servicediscovery(r *http.Request) apiFuncResult {
-	scrapeData := func() TargetDiscovery {
-		var index []string
-		targets := api.targetRetriever(r.Context()).TargetsActive()
-		for job := range targets {
-			index = append(index, job)
-		}
-		sort.Strings(index)
-		res := TargetDiscovery{}
-		res.ActiveTargets = make([]*Target, 0)
-		res.DroppedTargets = make([]*DroppedTarget, 0)
-		for _, job := range index {
-			for _, target := range targets[job] {
-				if target.Labels().Len() == 0 {
-					res.DroppedTargets = append(res.DroppedTargets, &DroppedTarget{
-						DiscoveredLabels: target.DiscoveredLabels().Map(),
-					})
-				} else {
-					res.ActiveTargets = append(res.ActiveTargets, &Target{
-						DiscoveredLabels: target.DiscoveredLabels().Map(),
-						Labels:           target.Labels().Map(),
-						ScrapePool:       job,
-					})
-				}
+func renderTargetData(targets map[string][]TargetServiceDiscovery) TargetDiscovery {
+	var index []string
+	for job := range targets {
+		index = append(index, job)
+	}
+	sort.Strings(index)
+	res := TargetDiscovery{}
+	res.ActiveTargets = make([]*Target, 0)
+	res.DroppedTargets = make([]*DroppedTarget, 0)
+	res.DroppedTargetCounts = make(map[string]int)
+	for _, job := range index {
+		for _, target := range targets[job] {
+			_, ok := res.DroppedTargetCounts[job]
+			if !ok {
+				res.DroppedTargetCounts[job] = 0
+			}
+			if target.labels.Len() == 0 {
+				res.DroppedTargets = append(res.DroppedTargets, &DroppedTarget{
+					DiscoveredLabels: target.discoveredLabels.Map(),
+				})
+				res.DroppedTargetCounts[job] = res.DroppedTargetCounts[job] + 1
+			} else {
+				res.ActiveTargets = append(res.ActiveTargets, &Target{
+					DiscoveredLabels: target.discoveredLabels.Map(),
+					Labels:           target.labels.Map(),
+					ScrapePool:       job,
+				})
 			}
 		}
-		return res
+	}
+	//DroppedTargetCounts
+	return res
+}
+func (api *API) servicediscovery(r *http.Request) apiFuncResult {
+	scrapeTargets := api.targetRetriever(r.Context()).TargetsAll()
+	scrapeTargetDiscoverys := make(map[string][]TargetServiceDiscovery)
+	for job, targets := range scrapeTargets {
+		targetServiceDiscovery := make([]TargetServiceDiscovery, len(targets))
+		for i, target := range targets {
+			targetServiceDiscovery[i] = TargetServiceDiscovery{labels: target.Labels(), discoveredLabels: target.DiscoveredLabels()}
+		}
+		scrapeTargetDiscoverys[job] = targetServiceDiscovery
 	}
 
-	alertManagerData := func() TargetDiscovery {
-		var index []string
-		targets := api.alertmanagerRetriever(r.Context()).TargetsAll()
-		for job := range targets {
-			index = append(index, job)
+	alertManagerTargets := api.alertmanagerRetriever(r.Context()).TargetsAll()
+	alertManagerTargetDiscoverys := make(map[string][]TargetServiceDiscovery)
+	for job, targets := range alertManagerTargets {
+		targetServiceDiscovery := make([]TargetServiceDiscovery, len(targets))
+		for i, target := range targets {
+			targetServiceDiscovery[i] = TargetServiceDiscovery{labels: target.Labels(), discoveredLabels: target.DiscoveredLabels()}
 		}
-		sort.Strings(index)
-		res := TargetDiscovery{}
-		res.ActiveTargets = make([]*Target, 0)
-		res.DroppedTargets = make([]*DroppedTarget, 0)
-		for _, job := range index {
-			for _, target := range targets[job] {
-				if target.Labels().Len() == 0 {
-					res.DroppedTargets = append(res.DroppedTargets, &DroppedTarget{
-						DiscoveredLabels: target.DiscoveredLabels().Map(),
-					})
-				} else {
-					res.ActiveTargets = append(res.ActiveTargets, &Target{
-						DiscoveredLabels: target.DiscoveredLabels().Map(),
-						Labels:           target.Labels().Map(),
-						ScrapePool:       job,
-					})
-				}
-			}
-		}
-		return res
+		alertManagerTargetDiscoverys[job] = targetServiceDiscovery
 	}
+
 	serviceDiscoveryData := map[string]TargetDiscovery{
-		"scrape":       scrapeData(),
-		"alertManager": alertManagerData(),
+		"scrape":       renderTargetData(scrapeTargetDiscoverys),
+		"alertmanager": renderTargetData(alertManagerTargetDiscoverys),
 	}
 	return apiFuncResult{serviceDiscoveryData, nil, nil, nil}
 }

@@ -221,6 +221,10 @@ func (DummyScrapePoolsRetriever) ScrapePools() []string {
 // DummyTargetRetriever implements github.com/prometheus/prometheus/web/api/v1.targetRetriever.
 type DummyTargetRetriever struct{}
 
+func (r DummyTargetRetriever) TargetsAll() map[string][]*scrape.Target {
+	return nil
+}
+
 // TargetsActive implements targetRetriever.
 func (DummyTargetRetriever) TargetsActive() map[string][]*scrape.Target {
 	return map[string][]*scrape.Target{}

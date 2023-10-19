@@ -29,6 +29,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/util/stats"
+
 	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -44,7 +47,6 @@ import (
 	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/notifier"
-	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/rules"
@@ -52,7 +54,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
-	"github.com/prometheus/prometheus/util/stats"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
@@ -148,6 +149,25 @@ func (t testTargetRetriever) TargetsDropped() map[string][]*scrape.Target {
 	return t.droppedTargets
 }
 
+func (t testTargetRetriever) TargetsAll() map[string][]*scrape.Target {
+	allTargets := make(map[string][]*scrape.Target)
+
+	for key, targets := range t.activeTargets {
+		allTargets[key] = targets
+	}
+
+	for key, targets := range t.droppedTargets {
+		activeTargets, ok := allTargets[key]
+		if !ok {
+			allTargets[key] = targets
+			continue
+		}
+		allTargets[key] = append(activeTargets, targets...)
+	}
+
+	return allTargets
+}
+
 func (t testTargetRetriever) TargetsDroppedCounts() map[string]int {
 	r := make(map[string]int)
 	for k, v := range t.droppedTargets {
@@ -204,8 +224,39 @@ func (t testAlertmanagerRetriever) DroppedAlertmanagers() []*url.URL {
 	}
 }
 
+const pathLabel = "__alerts_path__"
+
 func (t testAlertmanagerRetriever) TargetsAll() map[string][]notifier.Target {
-	return nil
+	allTargets := make(map[string][]notifier.Target)
+
+	allTargets["prod"] = []notifier.Target{
+		*notifier.NewTarget(
+			labels.FromMap(map[string]string{
+				model.SchemeLabel:  "http",
+				model.AddressLabel: "http://alertmanager.example.com:8080",
+				pathLabel:          "/api/v1/alerts",
+			}),
+			labels.FromMap(map[string]string{
+				model.SchemeLabel:  "http",
+				model.AddressLabel: "http://alertmanager.example.com:8080",
+				pathLabel:          "/api/v1/alerts",
+				"env":              "prod",
+				"app":              "am",
+			})),
+	}
+
+	allTargets["dev"] = []notifier.Target{
+		*notifier.NewTarget(
+			labels.EmptyLabels(),
+			labels.FromMap(map[string]string{
+				model.SchemeLabel:  "http",
+				model.AddressLabel: "http://alertmanager.example.com:8080",
+				pathLabel:          "/api/v1/alerts",
+				"env":              "test",
+			})),
+	}
+
+	return allTargets
 }
 
 func (t testAlertmanagerRetriever) toFactory() func(context.Context) AlertmanagerRetriever {
@@ -1510,6 +1561,70 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					},
 				},
 				DroppedTargetCounts: map[string]int{"blackbox": 1},
+			},
+		},
+		//service discovery test
+		{
+			endpoint: api.servicediscovery,
+			response: map[string]TargetDiscovery{
+				"scrape": TargetDiscovery{
+					ActiveTargets: []*Target{
+						{
+							DiscoveredLabels: map[string]string{},
+							Labels: map[string]string{
+								"job": "blackbox",
+							},
+							ScrapePool: "blackbox",
+						},
+						{
+							DiscoveredLabels: map[string]string{},
+							Labels: map[string]string{
+								"job": "test",
+							},
+							ScrapePool: "test",
+						},
+					},
+					DroppedTargets: []*DroppedTarget{
+						{
+							DiscoveredLabels: map[string]string{
+								"__address__":         "http://dropped.example.com:9115",
+								"__metrics_path__":    "/probe",
+								"__scheme__":          "http",
+								"job":                 "blackbox",
+								"__scrape_interval__": "30s",
+								"__scrape_timeout__":  "15s",
+							},
+						},
+					},
+					DroppedTargetCounts: map[string]int{"blackbox": 1, "test": 0},
+				},
+				"alertmanager": TargetDiscovery{
+					ActiveTargets: []*Target{
+						{
+							ScrapePool: "prod",
+							DiscoveredLabels: map[string]string{
+								"__address__":     "http://alertmanager.example.com:8080",
+								"__alerts_path__": "/api/v1/alerts",
+								"__scheme__":      "http",
+								"app":             "am",
+								"env":             "prod",
+							},
+							Labels: map[string]string{
+								"instance": "http://http:%2F%2Falertmanager.example.com:8080/api/v1/alerts",
+							},
+						}},
+					DroppedTargets: []*DroppedTarget{
+						{
+							DiscoveredLabels: map[string]string{
+								"__address__":     "http://alertmanager.example.com:8080",
+								"__alerts_path__": "/api/v1/alerts",
+								"__scheme__":      "http",
+								"env":             "test",
+							},
+						},
+					},
+					DroppedTargetCounts: map[string]int{"dev": 1, "prod": 0},
+				},
 			},
 		},
 		// With a matching metric.

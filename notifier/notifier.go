@@ -412,6 +412,7 @@ func (n *Manager) setMore() {
 	}
 }
 
+// Alertmanagers returns a slice of Alertmanager URLs.
 func (n *Manager) Alertmanagers() []*url.URL {
 	n.mtx.RLock()
 	amSets := n.alertmanagers
@@ -611,7 +612,7 @@ type alertmanager interface {
 }
 
 type alertmanagerLabels struct {
-	labels.Labels
+	labels           labels.Labels
 	discoveredLabels labels.Labels
 }
 
@@ -619,9 +620,15 @@ const pathLabel = "__alerts_path__"
 
 func (a alertmanagerLabels) url() *url.URL {
 	return &url.URL{
-		Scheme: a.Get(model.SchemeLabel),
-		Host:   a.Get(model.AddressLabel),
-		Path:   a.Get(pathLabel),
+		Scheme: a.labels.Get(model.SchemeLabel),
+		Host:   a.labels.Get(model.AddressLabel),
+		Path:   a.labels.Get(pathLabel),
+	}
+}
+func NewTarget(labels labels.Labels, discoveredLabels labels.Labels) *Target {
+	return &Target{
+		labels:           labels,
+		discoveredLabels: discoveredLabels,
 	}
 }
 
@@ -662,21 +669,21 @@ func (n *Manager) TargetsAll() map[string][]Target {
 	defer n.mtx.Unlock()
 	targets := make(map[string][]Target, len(n.alertmanagers))
 	for key, am := range n.alertmanagers {
-		if am.droppedAms == nil || len(am.droppedAms) == 0 {
-			tars := make([]Target, 0, len(am.ams))
-			for _, a := range am.ams {
-				alb := a.(alertmanagerLabels)
-				tars = append(tars, Target{labels: alb.Labels, discoveredLabels: alb.discoveredLabels})
-			}
-			targets[key] = tars
-			continue
-		}
-		tars := make([]Target, 0, len(am.droppedAms))
-		for _, a := range am.droppedAms {
+		tars := make([]Target, 0, len(am.ams))
+		for _, a := range am.ams {
 			alb := a.(alertmanagerLabels)
-			tars = append(tars, Target{labels: alb.Labels, discoveredLabels: alb.discoveredLabels})
+			tars = append(tars, Target{labels: alb.labels, discoveredLabels: alb.discoveredLabels})
 		}
 		targets[key] = tars
+		if len(am.droppedAms) == 0 {
+			continue
+		}
+		dropTars := make([]Target, 0, len(am.droppedAms))
+		for _, a := range am.droppedAms {
+			alb := a.(alertmanagerLabels)
+			dropTars = append(dropTars, Target{labels: alb.labels, discoveredLabels: alb.discoveredLabels})
+		}
+		targets[key] = append(targets[key], dropTars...)
 	}
 	return targets
 }
@@ -791,7 +798,7 @@ func AlertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig
 		preRelabel := lb.Labels()
 		keep := relabel.ProcessBuilder(lb, cfg.RelabelConfigs...)
 		if !keep {
-			droppedAlertManagers = append(droppedAlertManagers, alertmanagerLabels{Labels: preRelabel, discoveredLabels: preRelabel})
+			droppedAlertManagers = append(droppedAlertManagers, alertmanagerLabels{labels: preRelabel, discoveredLabels: preRelabel})
 			continue
 		}
 
@@ -800,7 +807,7 @@ func AlertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig
 			return nil, nil, err
 		}
 
-		res = append(res, alertmanagerLabels{Labels: lb.Labels(), discoveredLabels: preRelabel})
+		res = append(res, alertmanagerLabels{labels: lb.Labels(), discoveredLabels: preRelabel})
 	}
 	return res, droppedAlertManagers, nil
 }
