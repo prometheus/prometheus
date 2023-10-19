@@ -148,9 +148,15 @@ func (p *ProtobufParser) Series() ([]byte, *int64, float64) {
 	if ts != 0 {
 		return p.metricBytes.Bytes(), &ts, v
 	}
-	// Nasty hack: Assume that ts==0 means no timestamp. That's not true in
-	// general, but proto3 has no distinction between unset and
-	// default. Need to avoid in the final format.
+	// TODO(beorn7): We assume here that ts==0 means no timestamp. That's
+	// not true in general, but proto3 originally has no distinction between
+	// unset and default. At a later stage, the `optional` keyword was
+	// (re-)introduced in proto3, but gogo-protobuf never got updated to
+	// support it. (Note that setting `[(gogoproto.nullable) = true]` for
+	// the `timestamp_ms` field doesn't help, either.) We plan to migrate
+	// away from gogo-protobuf to an actively maintained protobuf
+	// implementation. Once that's done, we can simply use the `optional`
+	// keyword and check for the unset state explicitly.
 	return p.metricBytes.Bytes(), nil, v
 }
 
