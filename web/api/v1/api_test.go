@@ -1563,11 +1563,10 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				DroppedTargetCounts: map[string]int{"blackbox": 1},
 			},
 		},
-		//service discovery test
 		{
 			endpoint: api.servicediscovery,
 			response: map[string]TargetDiscovery{
-				"scrape": TargetDiscovery{
+				"scrape": {
 					ActiveTargets: []*Target{
 						{
 							DiscoveredLabels: map[string]string{},
@@ -1598,7 +1597,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					},
 					DroppedTargetCounts: map[string]int{"blackbox": 1, "test": 0},
 				},
-				"alertmanager": TargetDiscovery{
+				"alertmanager": {
 					ActiveTargets: []*Target{
 						{
 							ScrapePool: "prod",

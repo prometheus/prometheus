@@ -1174,7 +1174,6 @@ func renderTargetData(targets map[string][]TargetServiceDiscovery) TargetDiscove
 			}
 		}
 	}
-	//DroppedTargetCounts
 	return res
 }
 func (api *API) servicediscovery(r *http.Request) apiFuncResult {
@@ -1187,7 +1186,6 @@ func (api *API) servicediscovery(r *http.Request) apiFuncResult {
 		}
 		scrapeTargetDiscoverys[job] = targetServiceDiscovery
 	}
-
 	alertManagerTargets := api.alertmanagerRetriever(r.Context()).TargetsAll()
 	alertManagerTargetDiscoverys := make(map[string][]TargetServiceDiscovery)
 	for job, targets := range alertManagerTargets {
@@ -1197,7 +1195,6 @@ func (api *API) servicediscovery(r *http.Request) apiFuncResult {
 		}
 		alertManagerTargetDiscoverys[job] = targetServiceDiscovery
 	}
-
 	serviceDiscoveryData := map[string]TargetDiscovery{
 		"scrape":       renderTargetData(scrapeTargetDiscoverys),
 		"alertmanager": renderTargetData(alertManagerTargetDiscoverys),
