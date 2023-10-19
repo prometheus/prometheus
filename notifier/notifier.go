@@ -626,13 +626,13 @@ func (a alertmanagerLabels) url() *url.URL {
 	}
 }
 
-func NewTarget(labels labels.Labels, discoveredLabels labels.Labels) Target {
-	return Target{labels, discoveredLabels}
-}
-
 type Target struct {
 	discoveredLabels labels.Labels
 	labels           labels.Labels
+}
+
+func NewTarget(labels, discoveredLabels labels.Labels) Target {
+	return Target{labels, discoveredLabels}
 }
 
 func (a Target) Labels() labels.Labels {
