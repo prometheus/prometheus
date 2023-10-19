@@ -178,20 +178,17 @@ type chunkMetaAndChunkDiskMapperRef struct {
 }
 
 func refLessByMinTimeAndMinRef(a, b chunkMetaAndChunkDiskMapperRef) int {
-	if a.meta.MinTime == b.meta.MinTime {
-		switch {
-		case a.meta.Ref < b.meta.Ref:
-			return -1
-		case a.meta.Ref > b.meta.Ref:
-			return 1
-		default:
-			return 0
-		}
-	}
 	switch {
 	case a.meta.MinTime < b.meta.MinTime:
 		return -1
 	case a.meta.MinTime > b.meta.MinTime:
+		return 1
+	}
+
+	switch {
+	case a.meta.Ref < b.meta.Ref:
+		return -1
+	case a.meta.Ref > b.meta.Ref:
 		return 1
 	default:
 		return 0
@@ -199,20 +196,17 @@ func refLessByMinTimeAndMinRef(a, b chunkMetaAndChunkDiskMapperRef) int {
 }
 
 func lessByMinTimeAndMinRef(a, b chunks.Meta) int {
-	if a.MinTime == b.MinTime {
-		switch {
-		case a.Ref < b.Ref:
-			return -1
-		case a.Ref > b.Ref:
-			return 1
-		default:
-			return 0
-		}
-	}
 	switch {
 	case a.MinTime < b.MinTime:
 		return -1
 	case a.MinTime > b.MinTime:
+		return 1
+	}
+
+	switch {
+	case a.Ref < b.Ref:
+		return -1
+	case a.Ref > b.Ref:
 		return 1
 	default:
 		return 0
