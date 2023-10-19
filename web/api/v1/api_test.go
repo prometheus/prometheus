@@ -230,7 +230,7 @@ func (t testAlertmanagerRetriever) TargetsAll() map[string][]notifier.Target {
 	allTargets := make(map[string][]notifier.Target)
 
 	allTargets["prod"] = []notifier.Target{
-		*notifier.NewTarget(
+		notifier.NewTarget(
 			labels.FromMap(map[string]string{
 				model.SchemeLabel:  "http",
 				model.AddressLabel: "http://alertmanager.example.com:8080",
@@ -246,7 +246,7 @@ func (t testAlertmanagerRetriever) TargetsAll() map[string][]notifier.Target {
 	}
 
 	allTargets["dev"] = []notifier.Target{
-		*notifier.NewTarget(
+		notifier.NewTarget(
 			labels.EmptyLabels(),
 			labels.FromMap(map[string]string{
 				model.SchemeLabel:  "http",

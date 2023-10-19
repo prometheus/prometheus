@@ -625,11 +625,8 @@ func (a alertmanagerLabels) url() *url.URL {
 		Path:   a.labels.Get(pathLabel),
 	}
 }
-func NewTarget(labels labels.Labels, discoveredLabels labels.Labels) *Target {
-	return &Target{
-		labels:           labels,
-		discoveredLabels: discoveredLabels,
-	}
+func NewTarget(labels labels.Labels, discoveredLabels labels.Labels) Target {
+	return Target{labels, discoveredLabels}
 }
 
 type Target struct {
