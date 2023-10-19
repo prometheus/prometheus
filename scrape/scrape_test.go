@@ -2632,6 +2632,61 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 	runTest(acceptHeader(config.DefaultNativeHistogramScrapeProtocols))
 }
 
+func TestTargetScraperScrapeHostHeader(t *testing.T) {
+	const (
+		expectedHostHeader = "somehost.dev"
+	)
+
+	var needHostHeader bool
+
+	server := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if needHostHeader {
+				host := r.Host
+				if host != expectedHostHeader {
+					t.Errorf("Expected Host header value %q, got %q", host, expectedHostHeader)
+				}
+			}
+
+			w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
+			w.Write([]byte("metric_a 1\nmetric_b 2\n"))
+		}),
+	)
+	defer server.Close()
+
+	serverURL, err := url.Parse(server.URL)
+	if err != nil {
+		panic(err)
+	}
+
+	runTest := func() {
+		ts := &targetScraper{
+			Target: &Target{
+				labels: labels.FromStrings(
+					model.SchemeLabel, serverURL.Scheme,
+					model.AddressLabel, serverURL.Host,
+				),
+			},
+			client: http.DefaultClient,
+		}
+		var buf bytes.Buffer
+		if needHostHeader {
+			ts.hostHeader = expectedHostHeader
+		}
+
+		resp, err := ts.scrape(context.Background())
+		require.NoError(t, err)
+		contentType, err := ts.readResponse(context.Background(), resp, &buf)
+		require.NoError(t, err)
+		require.Equal(t, "text/plain; version=0.0.4", contentType)
+		require.Equal(t, "metric_a 1\nmetric_b 2\n", buf.String())
+	}
+
+	runTest()
+	needHostHeader = true
+	runTest()
+}
+
 func TestTargetScrapeScrapeCancel(t *testing.T) {
 	block := make(chan struct{})
 

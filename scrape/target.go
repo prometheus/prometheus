@@ -395,6 +395,8 @@ func PopulateLabels(lb *labels.Builder, cfg *config.ScrapeConfig, noDefaultPort 
 		{Name: model.ScrapeTimeoutLabel, Value: cfg.ScrapeTimeout.String()},
 		{Name: model.MetricsPathLabel, Value: cfg.MetricsPath},
 		{Name: model.SchemeLabel, Value: cfg.Scheme},
+		// TODO: introduce proper const in model
+		{Name: "__host_header__", Value: cfg.HostHeader},
 	}
 
 	for _, l := range scrapeLabels {
