@@ -517,7 +517,7 @@ func TestMetricTypeToMetricTypeProto(t *testing.T) {
 }
 
 func TestDecodeWriteRequest(t *testing.T) {
-	buf, _, err := buildWriteRequest(writeRequestFixture.Timeseries, nil, nil, nil)
+	buf, _, err := buildWriteRequest(writeRequestFixture.Timeseries, nil, nil, nil, nil, 0)
 	require.NoError(t, err)
 
 	actual, err := DecodeWriteRequest(bytes.NewReader(buf))

@@ -1322,3 +1322,75 @@ func TestQueue_FlushAndShutdownDoesNotDeadlock(t *testing.T) {
 		t.FailNow()
 	}
 }
+
+func TestDropOldTimeSeries(t *testing.T) {
+	size := 10
+	nSeries := 6
+	nSamples := config.DefaultQueueConfig.Capacity * size
+	samples, newSamples, series := createTimeseriesWithOldSamples(nSamples, nSeries)
+
+	c := NewTestWriteClient()
+	c.expectSamples(newSamples, series)
+
+	cfg := config.DefaultQueueConfig
+	mcfg := config.DefaultMetadataConfig
+	cfg.MaxShards = 1
+	cfg.SampleAgeLimit = model.Duration(60 * time.Second)
+	dir := t.TempDir()
+
+	metrics := newQueueManagerMetrics(nil, "", "")
+	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false)
+	m.StoreSeries(series, 0)
+
+	m.Start()
+	defer m.Stop()
+
+	m.Append(samples)
+	c.waitForExpectedData(t)
+}
+
+func TestIsSampleOld(t *testing.T) {
+	require.True(t, isSampleOld(60*time.Second, timestamp.FromTime(time.Now().Add(-61*time.Second))))
+	require.False(t, isSampleOld(60*time.Second, timestamp.FromTime(time.Now().Add(-59*time.Second))))
+}
+
+func createTimeseriesWithOldSamples(numSamples, numSeries int, extraLabels ...labels.Label) ([]record.RefSample, []record.RefSample, []record.RefSeries) {
+	newSamples := make([]record.RefSample, 0, numSamples)
+	samples := make([]record.RefSample, 0, numSamples)
+	series := make([]record.RefSeries, 0, numSeries)
+	b := labels.ScratchBuilder{}
+	for i := 0; i < numSeries; i++ {
+		name := fmt.Sprintf("test_metric_%d", i)
+		// We create half of the samples in the past.
+		past := timestamp.FromTime(time.Now().Add(-5 * time.Minute))
+		for j := 0; j < numSamples/2; j++ {
+			samples = append(samples, record.RefSample{
+				Ref: chunks.HeadSeriesRef(i),
+				T:   past + int64(j),
+				V:   float64(i),
+			})
+		}
+
+		for j := 0; j < numSamples/2; j++ {
+			sample := record.RefSample{
+				Ref: chunks.HeadSeriesRef(i),
+				T:   int64(int(time.Now().UnixMilli()) + j),
+				V:   float64(i),
+			}
+			samples = append(samples, sample)
+			newSamples = append(newSamples, sample)
+		}
+		// Create Labels that is name of series plus any extra labels supplied.
+		b.Reset()
+		b.Add(labels.MetricName, name)
+		for _, l := range extraLabels {
+			b.Add(l.Name, l.Value)
+		}
+		b.Sort()
+		series = append(series, record.RefSeries{
+			Ref:    chunks.HeadSeriesRef(i),
+			Labels: b.Labels(),
+		})
+	}
+	return samples, newSamples, series
+}
