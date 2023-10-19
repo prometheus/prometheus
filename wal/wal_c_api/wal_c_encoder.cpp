@@ -104,7 +104,6 @@ class Encoder {
         }
       }
     };
-    std::cout << __func__ << "(): add_many_state = " << add_many_state << std::endl;
     c_seg->ls_add_many_state = writer_.add_many<decltype(writer_)::add_many_generator_callback_type::with_hash_value, decltype(timeseries_)>(
         add_many_state, c_seg->latest_timestamp, add_many_cb);
   }
