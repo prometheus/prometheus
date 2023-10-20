@@ -77,7 +77,7 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 		resultHistogram    *histogram.FloatHistogram
 		firstT, lastT      int64
 		numSamplesMinusOne int
-		annos              = annotations.Annotations{}
+		annos              annotations.Annotations
 	)
 
 	// We need either at least two Histograms and no Floats, or at least two
@@ -86,14 +86,6 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 	metricName := samples.Metric.Get(labels.MetricName)
 	if len(samples.Histograms) > 0 && len(samples.Floats) > 0 {
 		return enh.Out, annos.Add(annotations.NewMixedFloatsHistogramsWarning(metricName, args[0].PositionRange()))
-	}
-
-	if isCounter && metricName != "" && len(samples.Floats) > 0 &&
-		!strings.HasSuffix(metricName, "_total") &&
-		!strings.HasSuffix(metricName, "_sum") &&
-		!strings.HasSuffix(metricName, "_count") &&
-		!strings.HasSuffix(metricName, "_bucket") {
-		annos.Add(annotations.NewPossibleNonCounterInfo(metricName, args[0].PositionRange()))
 	}
 
 	switch {
@@ -642,7 +634,7 @@ func funcQuantileOverTime(vals []parser.Value, args parser.Expressions, enh *Eva
 		return enh.Out, nil
 	}
 
-	annos := annotations.Annotations{}
+	var annos annotations.Annotations
 	if math.IsNaN(q) || q < 0 || q > 1 {
 		annos.Add(annotations.NewInvalidQuantileWarning(q, args[0].PositionRange()))
 	}
@@ -1105,7 +1097,7 @@ func funcHistogramFraction(vals []parser.Value, args parser.Expressions, enh *Ev
 func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	q := vals[0].(Vector)[0].F
 	inVec := vals[1].(Vector)
-	annos := annotations.Annotations{}
+	var annos annotations.Annotations
 
 	if math.IsNaN(q) || q < 0 || q > 1 {
 		annos.Add(annotations.NewInvalidQuantileWarning(q, args[0].PositionRange()))
