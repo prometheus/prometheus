@@ -13,7 +13,6 @@ require (
 	github.com/prometheus/client_golang v1.17.0
 	github.com/prometheus/prometheus v0.47.0
 	github.com/stretchr/testify v1.8.4
-	go.uber.org/multierr v1.11.0
 	golang.org/x/sync v0.3.0
 )
 

@@ -10,13 +10,9 @@ package internal
 import (
 	"fmt"
 	"io"
-	"os"
-	"os/signal"
 	"runtime"
 	"strconv"
 	"strings"
-	"syscall"
-	"time"
 	"unsafe"
 
 	"github.com/gogo/protobuf/proto"
@@ -303,106 +299,4 @@ func NewGoMemstatResult() *GoMemInfoResult {
 // InUse - return current c-memory in use.
 func (gmr *GoMemInfoResult) InUse() uint64 {
 	return gmr.inUse
-}
-
-// garbage collector for objects initiated in GO but filled in C/C++,
-// because native GC knows nothing about the used memory and starts cleaning up memory too late.
-var cgogc *CGOGC
-
-func init() {
-	cgogc = NewCGOGC()
-}
-
-const (
-	defaultGCDecay       float64       = 1.0 / 3.0
-	defaultGCWarmupValue float64       = 90 << 20 // 50mb
-	gcDelayThreshold     time.Duration = 2 * time.Second
-)
-
-// CGOGC - implement wise garbage collector for c/c++ objects.
-type CGOGC struct {
-	threshold   float64
-	decay       float64
-	multiplier  float64
-	value       float64
-	warmupValue float64
-}
-
-// NewCGOGC - init new CGOGC.
-func NewCGOGC() *CGOGC {
-	cgc := &CGOGC{
-		//revive:disable-next-line:add-constant for exponential decay
-		decay:       defaultGCDecay,
-		threshold:   defaultGCWarmupValue,
-		warmupValue: defaultGCWarmupValue,
-	}
-	cgc.multiplier = 1 - cgc.decay
-	go cgc.Run()
-	return cgc
-}
-
-// add - adds a value to the series and updates the moving average.
-func (cgc *CGOGC) add(value float64) {
-	if cgc.value == 0 {
-		cgc.value = value
-		return
-	}
-	cgc.value = (value * cgc.decay) + (cgc.value * cgc.multiplier)
-}
-
-// calcThreshold - return max expotential threshold value.
-func (cgc *CGOGC) calcThreshold() float64 {
-	if cgc.value <= cgc.warmupValue {
-		return cgc.warmupValue
-	}
-
-	return cgc.value + (cgc.value * cgc.multiplier)
-}
-
-// isOverThreshold - check and adjustment threshold.
-func (cgc *CGOGC) isOverThreshold(value float64) bool {
-	cgc.add(value)
-	if value >= cgc.threshold {
-		cgc.threshold = cgc.calcThreshold()
-		return true
-	}
-
-	if value < cgc.value {
-		cgc.threshold = cgc.calcThreshold()
-	}
-	return false
-}
-
-// Run - run gc if the number of objects initiated more threshold.
-func (cgc *CGOGC) Run() {
-	c := make(chan os.Signal, 1)
-	signal.Notify(
-		c,
-		syscall.SIGINT,
-		syscall.SIGTERM,
-	)
-	timer := time.NewTimer(gcDelayThreshold)
-
-	for {
-		select {
-		case <-c:
-			if !timer.Stop() {
-				<-timer.C
-			}
-			return
-		case <-timer.C:
-			cgc.gc()
-			timer.Reset(gcDelayThreshold)
-		}
-	}
-}
-
-func (cgc *CGOGC) gc() {
-	memInfo := NewGoMemstatResult()
-	CMemInfo(memInfo)
-
-	if !cgc.isOverThreshold(float64(memInfo.InUse())) {
-		return
-	}
-	runtime.GC()
 }
