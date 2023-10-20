@@ -78,27 +78,31 @@ func (c *PostingsForMatchersCache) PostingsForMatchers(ctx context.Context, ix I
 		return c.postingsForMatchers(ctx, ix, ms...)
 	}
 	c.expire()
-	return c.postingsForMatchersPromise(ctx, ix, ms)()
+	return c.postingsForMatchersPromise(ix, ms)(ctx)
 }
 
 type postingsForMatcherPromise struct {
-	sync.WaitGroup
+	done chan struct{}
 
 	cloner *index.PostingsCloner
 	err    error
 }
 
-func (p *postingsForMatcherPromise) result() (index.Postings, error) {
-	p.Wait()
-	if p.err != nil {
-		return nil, p.err
+func (p *postingsForMatcherPromise) result(ctx context.Context) (index.Postings, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-p.done:
+		if p.err != nil {
+			return nil, p.err
+		}
+		return p.cloner.Clone(), nil
 	}
-	return p.cloner.Clone(), nil
 }
 
-func (c *PostingsForMatchersCache) postingsForMatchersPromise(ctx context.Context, ix IndexPostingsReader, ms []*labels.Matcher) func() (index.Postings, error) {
+func (c *PostingsForMatchersCache) postingsForMatchersPromise(ix IndexPostingsReader, ms []*labels.Matcher) func(context.Context) (index.Postings, error) {
 	promise := new(postingsForMatcherPromise)
-	promise.Add(1)
+	promise.done = make(chan struct{})
 
 	key := matchersKey(ms)
 	oldPromise, loaded := c.calls.LoadOrStore(key, promise)
@@ -106,9 +110,10 @@ func (c *PostingsForMatchersCache) postingsForMatchersPromise(ctx context.Contex
 		promise = oldPromise.(*postingsForMatcherPromise)
 		return promise.result
 	}
-	defer promise.Done()
+	defer close(promise.done)
 
-	if postings, err := c.postingsForMatchers(ctx, ix, ms...); err != nil {
+	// FIXME: do we need to cancel the call to postingsForMatchers if all the callers waiting for the result have cancelled their context?
+	if postings, err := c.postingsForMatchers(context.Background(), ix, ms...); err != nil {
 		promise.err = err
 	} else {
 		promise.cloner = index.NewPostingsCloner(postings)
