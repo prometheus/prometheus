@@ -38,6 +38,24 @@ message MetricMetadata {
   string unit = 5;
 }
 
+message MetricMetadataRef {
+  enum MetricType {
+    UNKNOWN        = 0;
+    COUNTER        = 1;
+    GAUGE          = 2;
+    HISTOGRAM      = 3;
+    GAUGEHISTOGRAM = 4;
+    SUMMARY        = 5;
+    INFO           = 6;
+    STATESET       = 7;
+  }
+
+  // Represents the metric type, these match the set from Prometheus.
+  // Refer to model/textparse/interface.go for details.
+  MetricType type = 1;
+  int64 help_ref = 4;
+  int64 unit_ref = 5;
+}
 message Sample {
   double value    = 1;
   // timestamp is in ms format, see model/timestamp/timestamp.go for
@@ -146,6 +164,7 @@ message ReducedTimeSeries {
   repeated Sample samples       = 2 [(gogoproto.nullable) = false];
   repeated ExemplarRef exemplars   = 3 [(gogoproto.nullable) = false];
   repeated Histogram histograms = 4 [(gogoproto.nullable) = false];
+  MetricMetadataRef metadata = 5 [(gogoproto.nullable) = false];
 }
 
 message LabelRef {
