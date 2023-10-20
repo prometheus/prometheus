@@ -632,7 +632,7 @@ type Target struct {
 }
 
 func NewTarget(labels, discoveredLabels labels.Labels) Target {
-	return Target{labels, discoveredLabels}
+	return Target{labels: labels, discoveredLabels: discoveredLabels}
 }
 
 func (a Target) Labels() labels.Labels {
