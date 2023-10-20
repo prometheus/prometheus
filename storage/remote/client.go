@@ -81,11 +81,11 @@ func init() {
 
 // Client allows reading and writing from/to a remote HTTP endpoint.
 type Client struct {
-	remoteName string // Used to differentiate clients in metrics.
-	urlString  string // url.String()
+	remoteName    string // Used to differentiate clients in metrics.
+	urlString     string // url.String()
 	remotewrite11 bool
-	Client     *http.Client
-	timeout    time.Duration
+	Client        *http.Client
+	timeout       time.Duration
 
 	retryOnRateLimit bool
 
