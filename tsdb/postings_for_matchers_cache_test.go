@@ -352,7 +352,7 @@ func TestPostingsForMatchersCache(t *testing.T) {
 		ctx1, cancel := context.WithCancel(context.Background())
 		cancel()
 		_, err := c.PostingsForMatchers(ctx1, indexForPostingsMock{}, true, matchers...)
-		require.Equal(t, context.Canceled, err)
+		require.ErrorIs(t, err, context.Canceled)
 
 		ctx2 := context.Background()
 		actualPostings, err := c.PostingsForMatchers(ctx2, indexForPostingsMock{}, true, matchers...)
