@@ -336,6 +336,29 @@ func TestPostingsForMatchersCache(t *testing.T) {
 		require.Equal(t, 1, callsPerMatchers[matchersKey(matchersLists[2])])
 		require.Equal(t, 1, callsPerMatchers[matchersKey(matchersLists[3])])
 	})
+
+	t.Run("initial request context is cancelled, second request is not cancelled", func(t *testing.T) {
+		matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")}
+		expectedPostings := index.NewListPostings(nil)
+
+		c := newPostingsForMatchersCache(time.Hour, 5, 1000, func(ctx context.Context, ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+
+			return expectedPostings, nil
+		}, &timeNowMock{}, false)
+
+		ctx1, cancel := context.WithCancel(context.Background())
+		cancel()
+		_, err := c.PostingsForMatchers(ctx1, indexForPostingsMock{}, true, matchers...)
+		require.ErrorIs(t, err, context.Canceled)
+
+		ctx2 := context.Background()
+		actualPostings, err := c.PostingsForMatchers(ctx2, indexForPostingsMock{}, true, matchers...)
+		require.NoError(t, err)
+		require.Equal(t, expectedPostings, actualPostings)
+	})
 }
 
 func BenchmarkPostingsForMatchersCache(b *testing.B) {
