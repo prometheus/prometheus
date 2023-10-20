@@ -77,7 +77,7 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 		resultHistogram    *histogram.FloatHistogram
 		firstT, lastT      int64
 		numSamplesMinusOne int
-		annos              = annotations.Annotations{}
+		annos              annotations.Annotations
 	)
 
 	// We need either at least two Histograms and no Floats, or at least two
@@ -85,6 +85,7 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 	// Vector element.
 	metricName := samples.Metric.Get(labels.MetricName)
 	if len(samples.Histograms) > 0 && len(samples.Floats) > 0 {
+		annos := annotations.Annotations{}
 		return enh.Out, annos.Add(annotations.NewMixedFloatsHistogramsWarning(metricName, args[0].PositionRange()))
 	}
 
@@ -96,6 +97,7 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 		var newAnnos annotations.Annotations
 		resultHistogram, newAnnos = histogramRate(samples.Histograms, isCounter, metricName, args[0].PositionRange())
 		if resultHistogram == nil {
+			annos := annotations.Annotations{}
 			// The histograms are not compatible with each other.
 			return enh.Out, annos.Merge(newAnnos)
 		}
