@@ -2011,7 +2011,7 @@ func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, isolationDisabled
 		nextAt: math.MinInt64,
 	}
 	if !isolationDisabled {
-		s.txs = newTxRing(4)
+		s.txs = newTxRing(0)
 	}
 	return s
 }
