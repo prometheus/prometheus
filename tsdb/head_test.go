@@ -2550,7 +2550,7 @@ func TestIsolationAppendIDZeroIsNoop(t *testing.T) {
 
 	ok, _ := s.append(0, 0, 0, cOpts)
 	require.True(t, ok, "Series append failed.")
-	require.Equal(t, 0, s.txs.txIDCount, "Series should not have an appendID after append with appendID=0.")
+	require.Equal(t, 0, int(s.txs.txIDCount), "Series should not have an appendID after append with appendID=0.")
 }
 
 func TestHeadSeriesChunkRace(t *testing.T) {
