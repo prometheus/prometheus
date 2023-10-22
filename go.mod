@@ -47,7 +47,7 @@ require (
 	github.com/prometheus/alertmanager v0.26.0
 	github.com/prometheus/client_golang v1.17.0
 	github.com/prometheus/client_model v0.5.0
-	github.com/prometheus/common v0.44.0
+	github.com/prometheus/common v0.45.0
 	github.com/prometheus/common/assets v0.2.0
 	github.com/prometheus/common/sigv4 v0.1.0
 	github.com/prometheus/exporter-toolkit v0.10.0
@@ -162,7 +162,7 @@ require (
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.19 // indirect
-	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect
+	github.com/matttproud/golang_protobuf_extensions/v2 v2.0.0 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/moby/term v0.0.0-20210619224110-3f7ff695adc6 // indirect
