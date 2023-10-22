@@ -15,6 +15,7 @@ package scrape
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strconv"
 	"testing"
@@ -556,6 +557,58 @@ scrape_configs:
 		t.Fatal("reload happened")
 	default:
 	}
+}
+
+func TestManagerApplyConfigAndOptions(t *testing.T) {
+	cfgText := `
+scrape_configs:
+ - job_name: job1
+   static_configs:
+   - targets: ["foo:9090"]
+`
+	var (
+		cfg = loadConfiguration(t, cfgText)
+	)
+
+	opts := Options{}
+	scrapeManager := NewManager(&opts, nil, nil)
+	ts := make(chan map[string][]*targetgroup.Group)
+
+	go scrapeManager.Run(ts)
+	defer scrapeManager.Stop()
+
+	tgSent := make(map[string][]*targetgroup.Group)
+	for x := 0; x < 10; x++ {
+		tgSent[fmt.Sprintf("job%v", x)] = []*targetgroup.Group{
+			{
+				Source: strconv.Itoa(x),
+			},
+		}
+
+		select {
+		case ts <- tgSent:
+		case <-time.After(10 * time.Millisecond):
+			t.Error("Scrape manager's channel remained blocked after the set threshold.")
+		}
+	}
+
+	// Apply new options for manager
+	scrapeManager.ApplyConfigAndOptions(
+		cfg,
+		&Options{
+			EnableProtobufNegotiation: true,
+			ExtraMetrics:              true,
+		},
+	)
+
+	// Wait for manager's reloader goroutine to recreate scrape pool
+	// By default, the reloader waits for
+	require.Eventually(t, func() bool {
+		if sp, ok := scrapeManager.scrapePools["job1"]; ok {
+			return sp.enableProtobufNegotiation
+		}
+		return false
+	}, 20*time.Second, 1*time.Second)
 }
 
 func TestManagerTargetsUpdates(t *testing.T) {

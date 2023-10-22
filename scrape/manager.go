@@ -262,8 +262,23 @@ func (m *Manager) updateTsets(tsets map[string][]*targetgroup.Group) {
 	m.mtxScrape.Unlock()
 }
 
+// ApplyConfigAndOption loads up scrape options for scrape managers.
+func (m *Manager) ApplyConfigAndOptions(cfg *config.Config, opts *Options) error {
+	m.mtxScrape.Lock()
+	managerOptionsAreChanged := m.opts.ExtraMetrics == opts.ExtraMetrics || m.opts.EnableProtobufNegotiation == opts.EnableProtobufNegotiation
+	m.opts.ExtraMetrics = opts.ExtraMetrics
+	m.opts.EnableProtobufNegotiation = opts.EnableProtobufNegotiation
+	m.mtxScrape.Unlock()
+
+	return m.applyNewSetting(cfg, managerOptionsAreChanged)
+}
+
 // ApplyConfig resets the manager's target providers and job configurations as defined by the new cfg.
 func (m *Manager) ApplyConfig(cfg *config.Config) error {
+	return m.applyNewSetting(cfg, false)
+}
+
+func (m *Manager) applyNewSetting(cfg *config.Config, managerOptionsAreChanged bool) error {
 	m.mtxScrape.Lock()
 	defer m.mtxScrape.Unlock()
 
@@ -289,7 +304,7 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 		case !ok:
 			sp.stop()
 			delete(m.scrapePools, name)
-		case !reflect.DeepEqual(sp.config, cfg):
+		case !reflect.DeepEqual(sp.config, cfg) || managerOptionsAreChanged:
 			err := sp.reload(cfg)
 			if err != nil {
 				level.Error(m.logger).Log("msg", "error reloading scrape pool", "err", err, "scrape_pool", name)
