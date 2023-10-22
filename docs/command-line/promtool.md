@@ -141,10 +141,10 @@ Check if the Prometheus server is healthy.
 
 ###### Flags
 
-| Flag | Description | Default |
-| --- | --- | --- |
-| <code class="text-nowrap">--http.config.file</code> | HTTP client configuration file for promtool to connect to Prometheus. |  |
-| <code class="text-nowrap">--url</code> | The URL for the Prometheus server. | `http://localhost:9090` |
+| Flag | Description                                                                                                   | Default |
+| --- |---------------------------------------------------------------------------------------------------------------| --- |
+| <code class="text-nowrap">--http.config.file</code> | HTTP client configuration file for promtool to connect to Prometheus. See file [schema](#http-config-schema). |  |
+| <code class="text-nowrap">--url</code> | The URL for the Prometheus server.                                                                            | `http://localhost:9090` |
 
 
 
@@ -157,10 +157,10 @@ Check if the Prometheus server is ready.
 
 ###### Flags
 
-| Flag | Description | Default |
-| --- | --- | --- |
-| <code class="text-nowrap">--http.config.file</code> | HTTP client configuration file for promtool to connect to Prometheus. |  |
-| <code class="text-nowrap">--url</code> | The URL for the Prometheus server. | `http://localhost:9090` |
+| Flag | Description                                                                                                   | Default |
+| --- |---------------------------------------------------------------------------------------------------------------| --- |
+| <code class="text-nowrap">--http.config.file</code> | HTTP client configuration file for promtool to connect to Prometheus. See file [schema](#http-config-schema). |  |
+| <code class="text-nowrap">--url</code> | The URL for the Prometheus server.                                                                            | `http://localhost:9090` |
 
 
 
@@ -210,10 +210,10 @@ Run query against a Prometheus server.
 
 #### Flags
 
-| Flag | Description | Default |
-| --- | --- | --- |
-| <code class="text-nowrap">-o</code>, <code class="text-nowrap">--format</code> | Output format of the query. | `promql` |
-| <code class="text-nowrap">--http.config.file</code> | HTTP client configuration file for promtool to connect to Prometheus. |  |
+| Flag | Description                                                                                                   | Default |
+| --- |---------------------------------------------------------------------------------------------------------------| --- |
+| <code class="text-nowrap">-o</code>, <code class="text-nowrap">--format</code> | Output format of the query.                                                                                   | `promql` |
+| <code class="text-nowrap">--http.config.file</code> | HTTP client configuration file for promtool to connect to Prometheus. See file [schema](#http-config-schema). |  |
 
 
 
@@ -383,9 +383,9 @@ Push to a Prometheus server.
 
 #### Flags
 
-| Flag | Description |
-| --- | --- |
-| <code class="text-nowrap">--http.config.file</code> | HTTP client configuration file for promtool to connect to Prometheus. |
+| Flag | Description                                                                                                   |
+| --- |---------------------------------------------------------------------------------------------------------------|
+| <code class="text-nowrap">--http.config.file</code> | HTTP client configuration file for promtool to connect to Prometheus. See file [schema](#http-config-schema). |
 
 
 
@@ -593,14 +593,14 @@ Create blocks of data for new recording rules.
 
 ###### Flags
 
-| Flag | Description | Default |
-| --- | --- | --- |
-| <code class="text-nowrap">--http.config.file</code> | HTTP client configuration file for promtool to connect to Prometheus. |  |
-| <code class="text-nowrap">--url</code> | The URL for the Prometheus API with the data where the rule will be backfilled from. | `http://localhost:9090` |
-| <code class="text-nowrap">--start</code> | The time to start backfilling the new rule from. Must be a RFC3339 formatted date or Unix timestamp. Required. |  |
+| Flag | Description                                                                                                                                                                                                 | Default |
+| --- |-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------| --- |
+| <code class="text-nowrap">--http.config.file</code> | HTTP client configuration file for promtool to connect to Prometheus. See file [schema](#http-config-schema).                                                                                               |  |
+| <code class="text-nowrap">--url</code> | The URL for the Prometheus API with the data where the rule will be backfilled from.                                                                                                                        | `http://localhost:9090` |
+| <code class="text-nowrap">--start</code> | The time to start backfilling the new rule from. Must be a RFC3339 formatted date or Unix timestamp. Required.                                                                                              |  |
 | <code class="text-nowrap">--end</code> | If an end time is provided, all recording rules in the rule files provided will be backfilled to the end time. Default will backfill up to 3 hours ago. Must be a RFC3339 formatted date or Unix timestamp. |  |
-| <code class="text-nowrap">--output-dir</code> | Output directory for generated blocks. | `data/` |
-| <code class="text-nowrap">--eval-interval</code> | How frequently to evaluate rules when backfilling if a value is not set in the recording rule files. | `60s` |
+| <code class="text-nowrap">--output-dir</code> | Output directory for generated blocks.                                                                                                                                                                      | `data/` |
+| <code class="text-nowrap">--eval-interval</code> | How frequently to evaluate rules when backfilling if a value is not set in the recording rule files.                                                                                                        | `60s` |
 
 
 
@@ -681,3 +681,71 @@ Delete a label from the query.
 | name | Name of the label to delete. | Yes |
 
 
+<a id="http-config-schema"></a>
+## HTTP client configuration file
+
+`--http.config.file` allows configuring the HTTP client that promtool uses to communicate with the Prometheus server.
+
+```yaml
+
+# Sets the `Authorization` header with the configured username and password.
+# password and password_file are mutually exclusive.
+basic_auth:
+  [ username: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <bool> | default: true ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+# Comma-separated string that can contain IPs, CIDR notation, domain names
+# that should be excluded from proxying. IP and domain names can
+# contain port numbers.
+[ no_proxy: <string> ]
+# Use proxy URL indicated by environment variables (HTTP_PROXY, http_proxy, HTTPS_PROXY, https_proxy, NO_PROXY, and no_proxy)
+[ proxy_from_environment: <boolean> | default: false ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <bool> | default = true ]
+
+# Configures the TLS settings.
+tls_config:
+  [ <tls_config> ]
+```
+
+
+#### `<tls_config>`
+
+A `tls_config` allows configuring TLS connections.
+
+```yaml
+# CA certificate to validate the server certificate with.
+[ ca_file: <filepath> ]
+
+# Certificate and key files for client cert authentication to the server.
+[ cert_file: <filepath> ]
+[ key_file: <filepath> ]
+
+# ServerName extension to indicate the name of the server.
+# http://tools.ietf.org/html/rfc4366#section-3.1
+[ server_name: <string> ]
+
+# Disable validation of the server certificate.
+[ insecure_skip_verify: <boolean> | default = false]
+
+# Minimum acceptable TLS version. Accepted values: TLS10 (TLS 1.0), TLS11 (TLS
+# 1.1), TLS12 (TLS 1.2), TLS13 (TLS 1.3).
+# If unset, Prometheus will use Go default minimum version, which is TLS 1.2.
+# See MinVersion in https://pkg.go.dev/crypto/tls#Config.
+[ min_version: <string> ]
+# Maximum acceptable TLS version. Accepted values: TLS10 (TLS 1.0), TLS11 (TLS
+# 1.1), TLS12 (TLS 1.2), TLS13 (TLS 1.3).
+# If unset, Prometheus will use Go default maximum version, which is TLS 1.3.
+# See MaxVersion in https://pkg.go.dev/crypto/tls#Config.
+[ max_version: <string> ]
+```
