@@ -279,13 +279,12 @@ func (d *Decoder) Metadata(rec []byte, metadata []RefMetadata) ([]RefMetadata, e
 
 // DecodeLabels decodes one set of labels from buf.
 func (d *Decoder) DecodeLabels(dec *encoding.Decbuf) labels.Labels {
-	// TODO: reconsider if this function could be pushed down into labels.Labels to be more efficient.
 	d.builder.Reset()
 	nLabels := dec.Uvarint()
 	for i := 0; i < nLabels; i++ {
-		lName := dec.UvarintStr()
-		lValue := dec.UvarintStr()
-		d.builder.Add(lName, lValue)
+		lName := dec.UvarintBytes()
+		lValue := dec.UvarintBytes()
+		d.builder.UnsafeAddBytes(lName, lValue)
 	}
 	return d.builder.Labels()
 }
