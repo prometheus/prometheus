@@ -265,9 +265,12 @@ func (m *Manager) updateTsets(tsets map[string][]*targetgroup.Group) {
 // ApplyConfigAndOption loads up scrape options for scrape managers.
 func (m *Manager) ApplyConfigAndOptions(cfg *config.Config, opts *Options) error {
 	m.mtxScrape.Lock()
-	managerOptionsAreChanged := m.opts.ExtraMetrics == opts.ExtraMetrics || m.opts.EnableProtobufNegotiation == opts.EnableProtobufNegotiation
-	m.opts.ExtraMetrics = opts.ExtraMetrics
-	m.opts.EnableProtobufNegotiation = opts.EnableProtobufNegotiation
+	var managerOptionsAreChanged bool
+	if m.opts != nil {
+		managerOptionsAreChanged = m.opts.ExtraMetrics == opts.ExtraMetrics || m.opts.EnableProtobufNegotiation == opts.EnableProtobufNegotiation
+		m.opts.ExtraMetrics = opts.ExtraMetrics
+		m.opts.EnableProtobufNegotiation = opts.EnableProtobufNegotiation
+	}
 	m.mtxScrape.Unlock()
 
 	return m.applyNewSetting(cfg, managerOptionsAreChanged)
