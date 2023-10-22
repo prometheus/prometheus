@@ -267,9 +267,14 @@ func (m *Manager) ApplyConfigAndOptions(cfg *config.Config, opts *Options) error
 	m.mtxScrape.Lock()
 	var managerOptionsAreChanged bool
 	if m.opts != nil {
-		managerOptionsAreChanged = m.opts.ExtraMetrics == opts.ExtraMetrics || m.opts.EnableProtobufNegotiation == opts.EnableProtobufNegotiation
+		managerOptionsAreChanged = m.opts.ExtraMetrics != opts.ExtraMetrics ||
+			m.opts.NoDefaultPort != opts.ExtraMetrics ||
+			m.opts.PassMetadataInContext != opts.PassMetadataInContext ||
+			m.opts.EnableMetadataStorage != opts.EnableMetadataStorage
 		m.opts.ExtraMetrics = opts.ExtraMetrics
-		m.opts.EnableProtobufNegotiation = opts.EnableProtobufNegotiation
+		m.opts.NoDefaultPort = opts.NoDefaultPort
+		m.opts.PassMetadataInContext = opts.PassMetadataInContext
+		m.opts.EnableMetadataStorage = opts.EnableMetadataStorage
 	}
 	m.mtxScrape.Unlock()
 
@@ -300,7 +305,7 @@ func (m *Manager) applyNewSetting(cfg *config.Config, managerOptionsAreChanged b
 		return err
 	}
 
-	// Cleanup and reload pool if the configuration has changed.
+	// Cleanup and reload pool if the scrape configuration or manager's option has changed.
 	var failed bool
 	for name, sp := range m.scrapePools {
 		switch cfg, ok := m.scrapeConfigs[name]; {

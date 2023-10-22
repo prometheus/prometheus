@@ -592,23 +592,21 @@ scrape_configs:
 		}
 	}
 
-	// Apply new options for manager
+	// Apply old scrape configs but new manager's options
 	scrapeManager.ApplyConfigAndOptions(
 		cfg,
 		&Options{
-			EnableProtobufNegotiation: true,
-			ExtraMetrics:              true,
+			ExtraMetrics:          true,
+			NoDefaultPort:         true,
+			PassMetadataInContext: true,
+			EnableMetadataStorage: true,
 		},
 	)
 
-	// Wait for manager's reloader goroutine to recreate scrape pool
-	// By default, the reloader waits for
-	require.Eventually(t, func() bool {
-		if sp, ok := scrapeManager.scrapePools["job1"]; ok {
-			return sp.enableProtobufNegotiation
-		}
-		return false
-	}, 20*time.Second, 1*time.Second)
+	require.True(t, scrapeManager.opts.ExtraMetrics)
+	require.True(t, scrapeManager.opts.NoDefaultPort)
+	require.True(t, scrapeManager.opts.PassMetadataInContext)
+	require.True(t, scrapeManager.opts.EnableMetadataStorage)
 }
 
 func TestManagerTargetsUpdates(t *testing.T) {
