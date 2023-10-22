@@ -1172,9 +1172,7 @@ func (ev *evaluator) rangeEval(prepSeries func(labels.Labels, *EvalSeriesHelper)
 			bufHelpers[i] = make([]EvalSeriesHelper, len(matrixes[i]))
 
 			for si, series := range matrixes[i] {
-				h := seriesHelpers[i][si]
-				prepSeries(series.Metric, &h)
-				seriesHelpers[i][si] = h
+				prepSeries(series.Metric, &seriesHelpers[i][si])
 			}
 		}
 	}
