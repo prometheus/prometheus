@@ -23,6 +23,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
@@ -35,7 +37,7 @@ func testUpdateServices(respHandler http.HandlerFunc) ([]*targetgroup.Group, err
 		Server: ts.URL,
 	}
 
-	md, err := NewDiscovery(&conf, nil)
+	md, err := NewDiscovery(&conf, nil, prometheus.NewRegistry())
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +110,7 @@ func TestUyuniSDSkipLogin(t *testing.T) {
 		Server: ts.URL,
 	}
 
-	md, err := NewDiscovery(&conf, nil)
+	md, err := NewDiscovery(&conf, nil, prometheus.NewRegistry())
 	if err != nil {
 		t.Error(err)
 	}

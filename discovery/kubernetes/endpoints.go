@@ -22,18 +22,13 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-)
-
-var (
-	epAddCount    = eventCount.WithLabelValues("endpoints", "add")
-	epUpdateCount = eventCount.WithLabelValues("endpoints", "update")
-	epDeleteCount = eventCount.WithLabelValues("endpoints", "delete")
 )
 
 // Endpoints discovers new endpoint targets.
@@ -54,7 +49,7 @@ type Endpoints struct {
 }
 
 // NewEndpoints returns a new endpoints discovery.
-func NewEndpoints(l log.Logger, eps cache.SharedIndexInformer, svc, pod, node cache.SharedInformer) *Endpoints {
+func NewEndpoints(l log.Logger, eps cache.SharedIndexInformer, svc, pod, node cache.SharedInformer, eventCount *prometheus.CounterVec) *Endpoints {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
@@ -73,15 +68,15 @@ func NewEndpoints(l log.Logger, eps cache.SharedIndexInformer, svc, pod, node ca
 
 	_, err := e.endpointsInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
-			epAddCount.Inc()
+			eventCount.WithLabelValues("endpoints", "add").Inc()
 			e.enqueue(o)
 		},
 		UpdateFunc: func(_, o interface{}) {
-			epUpdateCount.Inc()
+			eventCount.WithLabelValues("endpoints", "update").Inc()
 			e.enqueue(o)
 		},
 		DeleteFunc: func(o interface{}) {
-			epDeleteCount.Inc()
+			eventCount.WithLabelValues("endpoints", "delete").Inc()
 			e.enqueue(o)
 		},
 	})
@@ -112,15 +107,15 @@ func NewEndpoints(l log.Logger, eps cache.SharedIndexInformer, svc, pod, node ca
 		// TODO(fabxc): potentially remove add and delete event handlers. Those should
 		// be triggered via the endpoint handlers already.
 		AddFunc: func(o interface{}) {
-			svcAddCount.Inc()
+			eventCount.WithLabelValues("service", "add").Inc()
 			serviceUpdate(o)
 		},
 		UpdateFunc: func(_, o interface{}) {
-			svcUpdateCount.Inc()
+			eventCount.WithLabelValues("service", "update").Inc()
 			serviceUpdate(o)
 		},
 		DeleteFunc: func(o interface{}) {
-			svcDeleteCount.Inc()
+			eventCount.WithLabelValues("service", "delete").Inc()
 			serviceUpdate(o)
 		},
 	})

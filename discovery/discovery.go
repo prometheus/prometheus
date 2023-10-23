@@ -18,6 +18,7 @@ import (
 	"reflect"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -41,6 +42,15 @@ type Discoverer interface {
 // DiscovererOptions provides options for a Discoverer.
 type DiscovererOptions struct {
 	Logger log.Logger
+
+	// A registerer for the Discoverer's metrics.
+	// Some Discoverers may ignore this registerer and use the global one instead.
+	// For now this will work, because the Prometheus `main` function uses the global registry.
+	// However, in the future the Prometheus `main` function will be updated to not use the global registry.
+	// Hence, if a discoverer wants its metrics to be visible via the Prometheus executable's
+	// `/metrics` endpoint, it should use this explicit registerer.
+	// TODO(ptodev): Update this comment once the Prometheus `main` function does not use the global registry.
+	Registerer prometheus.Registerer
 
 	// Extra HTTP client options to expose to Discoverers. This field may be
 	// ignored; Discoverer implementations must opt-in to reading it.

@@ -620,14 +620,30 @@ func main() {
 		discoveryManagerNotify  discoveryManager
 	)
 
+	// Register the metrics used by both "scrape" and "notify" discovery managers.
+	// The same metrics are used for both discovery managers. Hence the registration
+	// needs to be done here, outside the NewManager() calls, to avoid duplicate
+	// metric registrations.
+	discoveryMetrics, err := discovery.NewMetrics(prometheus.DefaultRegisterer)
+	if err != nil {
+		level.Error(logger).Log("msg", "failed to create discovery metrics", "err", err)
+		os.Exit(1)
+	}
 	if cfg.enableNewSDManager {
-		discovery.RegisterMetrics()
-		discoveryManagerScrape = discovery.NewManager(ctxScrape, log.With(logger, "component", "discovery manager scrape"), discovery.Name("scrape"))
-		discoveryManagerNotify = discovery.NewManager(ctxNotify, log.With(logger, "component", "discovery manager notify"), discovery.Name("notify"))
+		discoveryManagerScrape = discovery.NewManager(ctxScrape, log.With(logger, "component", "discovery manager scrape"), prometheus.DefaultRegisterer, discoveryMetrics, discovery.Name("scrape"))
+		discoveryManagerNotify = discovery.NewManager(ctxNotify, log.With(logger, "component", "discovery manager notify"), prometheus.DefaultRegisterer, discoveryMetrics, discovery.Name("notify"))
 	} else {
-		legacymanager.RegisterMetrics()
-		discoveryManagerScrape = legacymanager.NewManager(ctxScrape, log.With(logger, "component", "discovery manager scrape"), legacymanager.Name("scrape"))
-		discoveryManagerNotify = legacymanager.NewManager(ctxNotify, log.With(logger, "component", "discovery manager notify"), legacymanager.Name("notify"))
+		discoveryManagerScrape = legacymanager.NewManager(ctxScrape, log.With(logger, "component", "discovery manager scrape"), prometheus.DefaultRegisterer, discoveryMetrics, legacymanager.Name("scrape"))
+		discoveryManagerNotify = legacymanager.NewManager(ctxNotify, log.With(logger, "component", "discovery manager notify"), prometheus.DefaultRegisterer, discoveryMetrics, legacymanager.Name("notify"))
+	}
+
+	if discoveryManagerScrape == nil {
+		level.Error(logger).Log("msg", "failed to create a discovery manager scrape")
+		os.Exit(1)
+	}
+	if discoveryManagerNotify == nil {
+		level.Error(logger).Log("msg", "failed to create a discovery manager notify")
+		os.Exit(1)
 	}
 
 	scrapeManager, err := scrape.NewManager(

@@ -21,6 +21,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	v1 "k8s.io/api/networking/v1"
 	"k8s.io/api/networking/v1beta1"
@@ -28,12 +29,6 @@ import (
 	"k8s.io/client-go/util/workqueue"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-)
-
-var (
-	ingressAddCount    = eventCount.WithLabelValues("ingress", "add")
-	ingressUpdateCount = eventCount.WithLabelValues("ingress", "update")
-	ingressDeleteCount = eventCount.WithLabelValues("ingress", "delete")
 )
 
 // Ingress implements discovery of Kubernetes ingress.
@@ -45,19 +40,19 @@ type Ingress struct {
 }
 
 // NewIngress returns a new ingress discovery.
-func NewIngress(l log.Logger, inf cache.SharedInformer) *Ingress {
+func NewIngress(l log.Logger, inf cache.SharedInformer, eventCount *prometheus.CounterVec) *Ingress {
 	s := &Ingress{logger: l, informer: inf, store: inf.GetStore(), queue: workqueue.NewNamed("ingress")}
 	_, err := s.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
-			ingressAddCount.Inc()
+			eventCount.WithLabelValues("ingress", "add").Inc()
 			s.enqueue(o)
 		},
 		DeleteFunc: func(o interface{}) {
-			ingressDeleteCount.Inc()
+			eventCount.WithLabelValues("ingress", "delete").Inc()
 			s.enqueue(o)
 		},
 		UpdateFunc: func(_, o interface{}) {
-			ingressUpdateCount.Inc()
+			eventCount.WithLabelValues("ingress", "update").Inc()
 			s.enqueue(o)
 		},
 	})

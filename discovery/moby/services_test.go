@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
@@ -38,7 +39,7 @@ host: %s
 	var cfg DockerSwarmSDConfig
 	require.NoError(t, yaml.Unmarshal([]byte(cfgString), &cfg))
 
-	d, err := NewDiscovery(&cfg, log.NewNopLogger())
+	d, err := NewDiscovery(&cfg, log.NewNopLogger(), prometheus.NewRegistry())
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -332,7 +333,7 @@ filters:
 	var cfg DockerSwarmSDConfig
 	require.NoError(t, yaml.Unmarshal([]byte(cfgString), &cfg))
 
-	d, err := NewDiscovery(&cfg, log.NewNopLogger())
+	d, err := NewDiscovery(&cfg, log.NewNopLogger(), prometheus.NewRegistry())
 	require.NoError(t, err)
 
 	ctx := context.Background()
