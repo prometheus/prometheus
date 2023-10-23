@@ -15,6 +15,7 @@
 * [ENHANCEMENT] Promtool: Add support for specifying series matchers in the TSDB analyze command. #12842
 * [ENHANCEMENT] PromQL: Prevent Prometheus from overallocating memory on subquery with large amount of steps. #12734
 * [ENHANCEMENT] PromQL: Add warning when monotonicity is forced in the input to histogram_quantile. #12931
+* [ENHANCEMENT] PromQL: Reduce inefficiency introduced by warnings/annotations, and temporarily remove NewPossibleNonCounterInfo. #13012
 * [ENHANCEMENT] Scraping: Optimize sample appending by reducing garbage. #12939
 * [ENHANCEMENT] Storage: Reduce memory allocations in queries that merge series sets. #12938
 * [ENHANCEMENT] UI: Show group interval in rules display. #12943
