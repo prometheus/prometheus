@@ -199,6 +199,7 @@ func BenchmarkReducedRemoteWriteHandler(b *testing.B) {
 		require.NoError(b, err)
 		req, err := http.NewRequest("", "", bytes.NewReader(buf))
 		require.NoError(b, err)
+		req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion11HeaderValue)
 		reqs = append(reqs, req)
 	}
 
@@ -298,6 +299,7 @@ func TestRemoteWriteHandlerReducedProtocol(t *testing.T) {
 	require.NoError(t, err)
 
 	req, err := http.NewRequest("", "", bytes.NewReader(buf))
+	req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion11HeaderValue)
 	require.NoError(t, err)
 
 	appendable := &mockAppendable{}

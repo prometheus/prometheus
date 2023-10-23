@@ -83,7 +83,7 @@ func init() {
 type Client struct {
 	remoteName    string // Used to differentiate clients in metrics.
 	urlString     string // url.String()
-	remotewrite11 bool   // For write clients, ignored for read clients.
+	remoteWrite11 bool   // For write clients, ignored for read clients.
 	Client        *http.Client
 	timeout       time.Duration
 
@@ -165,7 +165,7 @@ func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
 	httpClient.Transport = otelhttp.NewTransport(t)
 
 	return &Client{
-		remotewrite11:    conf.RemoteWrite11,
+		remoteWrite11:    conf.RemoteWrite11,
 		remoteName:       name,
 		urlString:        conf.URL.String(),
 		Client:           httpClient,
@@ -212,10 +212,10 @@ func (c *Client) Store(ctx context.Context, req []byte, attempt int) error {
 	httpReq.Header.Set("User-Agent", UserAgent)
 
 	// Set the right header if we're using v1.1 remote write protocol
-	if c.remotewrite11 {
-		httpReq.Header.Set("X-Prometheus-Remote-Write-Version", "0.1.1") // TODO-RW11: Final value?
+	if c.remoteWrite11 {
+		httpReq.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion11HeaderValue)
 	} else {
-		httpReq.Header.Set("X-Prometheus-Remote-Write-Version", "0.1.0")
+		httpReq.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion1HeaderValue)
 	}
 
 	if attempt > 0 {

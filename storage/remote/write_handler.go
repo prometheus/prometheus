@@ -32,6 +32,12 @@ import (
 	otlptranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite"
 )
 
+const (
+	RemoteWriteVersionHeader        = "X-Prometheus-Remote-Write-Version"
+	RemoteWriteVersion1HeaderValue  = "0.1.0"
+	RemoteWriteVersion11HeaderValue = "1.1" // TODO-RW11: Final value?
+)
+
 type writeHandler struct {
 	logger     log.Logger
 	appendable storage.Appendable
@@ -68,8 +74,7 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var err error
 	var req *prompb.WriteRequest
 	var reqWithRefs *prompb.WriteRequestWithRefs
-	// TODO-RW11: Need to check headers to decide what version is and what to do
-	if h.enableRemoteWrite11 {
+	if h.enableRemoteWrite11 && r.Header.Get(RemoteWriteVersionHeader) == RemoteWriteVersion11HeaderValue {
 		reqWithRefs, err = DecodeReducedWriteRequest(r.Body)
 	} else {
 		req, err = DecodeWriteRequest(r.Body)
