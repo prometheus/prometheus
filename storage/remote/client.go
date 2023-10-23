@@ -83,7 +83,7 @@ func init() {
 type Client struct {
 	remoteName    string // Used to differentiate clients in metrics.
 	urlString     string // url.String()
-	remotewrite11 bool
+	remotewrite11 bool   // For write clients, ignored for read clients.
 	Client        *http.Client
 	timeout       time.Duration
 
@@ -128,7 +128,6 @@ func NewReadClient(name string, conf *ClientConfig) (ReadClient, error) {
 	return &Client{
 		remoteName:          name,
 		urlString:           conf.URL.String(),
-		remotewrite11:       conf.RemoteWrite11,
 		Client:              httpClient,
 		timeout:             time.Duration(conf.Timeout),
 		readQueries:         remoteReadQueries.WithLabelValues(name, conf.URL.String()),
@@ -166,6 +165,7 @@ func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
 	httpClient.Transport = otelhttp.NewTransport(t)
 
 	return &Client{
+		remotewrite11:    conf.RemoteWrite11,
 		remoteName:       name,
 		urlString:        conf.URL.String(),
 		Client:           httpClient,

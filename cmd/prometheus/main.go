@@ -146,7 +146,6 @@ type flagConfig struct {
 	queryConcurrency    int
 	queryMaxSamples     int
 	RemoteFlushDeadline model.Duration
-	rwProto             bool
 
 	featureList []string
 	// These options are extracted from featureList
@@ -155,6 +154,7 @@ type flagConfig struct {
 	enableNewSDManager         bool
 	enablePerStepStats         bool
 	enableAutoGOMAXPROCS       bool
+	enableSenderRemoteWrite11  bool
 
 	prometheusURL   string
 	corsRegexString string
@@ -220,12 +220,12 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 				continue
 			case "promql-at-modifier", "promql-negative-offset":
 				level.Warn(logger).Log("msg", "This option for --enable-feature is now permanently enabled and therefore a no-op.", "option", o)
-			case "reduced-rw-proto":
-				c.rwProto = true
-				level.Info(logger).Log("msg", "Reduced remote write proto format will be used, remote write receiver must be able to parse this new protobuf format.")
-			case "reduced-rw-proto-receiver":
-				c.web.EnableReducedWriteProtoReceiver = true
-				level.Info(logger).Log("msg", "Reduced proto format will be expected by the remote write receiver, client must send this new protobuf format.")
+			case "rw-1-1-sender":
+				c.enableSenderRemoteWrite11 = true
+				level.Info(logger).Log("msg", "Experimental remote write 1.1 will be used on the sender end, receiver must be able to parse this new protobuf format.")
+			case "rw-1-1-receiver":
+				c.web.EnableReceiverRemoteWrite11 = true
+				level.Info(logger).Log("msg", "Experimental remote write 1.1 will be supported on the receiver end, receiver can send this new protobuf format.")
 			default:
 				level.Warn(logger).Log("msg", "Unknown option for --enable-feature", "option", o)
 			}
@@ -611,7 +611,7 @@ func main() {
 	var (
 		localStorage  = &readyStorage{stats: tsdb.NewDBStats()}
 		scraper       = &readyScrapeManager{}
-		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper, cfg.rwProto)
+		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper, cfg.enableSenderRemoteWrite11)
 		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
 	)
 

@@ -65,7 +65,7 @@ type WriteStorage struct {
 	externalLabels    labels.Labels
 	dir               string
 	queues            map[string]*QueueManager
-	writeReducedProto bool
+	remoteWrite11     bool
 	samplesIn         *ewmaRate
 	flushDeadline     time.Duration
 	interner          *pool
@@ -77,13 +77,13 @@ type WriteStorage struct {
 }
 
 // NewWriteStorage creates and runs a WriteStorage.
-func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, dir string, flushDeadline time.Duration, sm ReadyScrapeManager, writeReducedProto bool) *WriteStorage {
+func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, dir string, flushDeadline time.Duration, sm ReadyScrapeManager, remoteWrite11 bool) *WriteStorage {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
 	rws := &WriteStorage{
 		queues:            make(map[string]*QueueManager),
-		writeReducedProto: writeReducedProto,
+		remoteWrite11:     remoteWrite11,
 		watcherMetrics:    wlog.NewWatcherMetrics(reg),
 		liveReaderMetrics: wlog.NewLiveReaderMetrics(reg),
 		logger:            logger,
@@ -167,7 +167,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 
 		c, err := NewWriteClient(name, &ClientConfig{
 			URL:              rwConf.URL,
-			RemoteWrite11:    rws.writeReducedProto,
+			RemoteWrite11:    rws.remoteWrite11,
 			Timeout:          rwConf.RemoteTimeout,
 			HTTPClientConfig: rwConf.HTTPClientConfig,
 			SigV4Config:      rwConf.SigV4Config,
@@ -211,7 +211,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rws.scraper,
 			rwConf.SendExemplars,
 			rwConf.SendNativeHistograms,
-			rws.writeReducedProto,
+			rws.remoteWrite11,
 		)
 		// Keep track of which queues are new so we know which to start.
 		newHashes = append(newHashes, hash)
