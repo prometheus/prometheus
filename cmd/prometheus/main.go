@@ -225,7 +225,7 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 				level.Info(logger).Log("msg", "Experimental remote write 1.1 will be used on the sender end, receiver must be able to parse this new protobuf format.")
 			case "rw-1-1-receiver":
 				c.web.EnableReceiverRemoteWrite11 = true
-				level.Info(logger).Log("msg", "Experimental remote write 1.1 will be supported on the receiver end, receiver can send this new protobuf format.")
+				level.Info(logger).Log("msg", "Experimental remote write 1.1 will be supported on the receiver end, sender can send this new protobuf format.")
 			default:
 				level.Warn(logger).Log("msg", "Unknown option for --enable-feature", "option", o)
 			}
