@@ -868,6 +868,65 @@ func TestConcatenatingChunkSeriesMerger(t *testing.T) {
 	}
 }
 
+func TestConcatenatingChunkIterator(t *testing.T) {
+	chunk1, err := chunks.ChunkFromSamples([]chunks.Sample{fSample{t: 1, f: 10}})
+	require.NoError(t, err)
+	chunk2, err := chunks.ChunkFromSamples([]chunks.Sample{fSample{t: 2, f: 20}})
+	require.NoError(t, err)
+	chunk3, err := chunks.ChunkFromSamples([]chunks.Sample{fSample{t: 3, f: 30}})
+	require.NoError(t, err)
+
+	testError := errors.New("something went wrong")
+
+	testCases := map[string]struct {
+		iterators      []chunks.Iterator
+		expectedChunks []chunks.Meta
+		expectedError  error
+	}{
+		"many successful iterators": {
+			iterators: []chunks.Iterator{
+				NewListChunkSeriesIterator(chunk1, chunk2),
+				NewListChunkSeriesIterator(chunk3),
+			},
+			expectedChunks: []chunks.Meta{chunk1, chunk2, chunk3},
+		},
+		"single failing iterator": {
+			iterators: []chunks.Iterator{
+				errChunksIterator{err: testError},
+			},
+			expectedError: testError,
+		},
+		"some failing and some successful iterators": {
+			iterators: []chunks.Iterator{
+				NewListChunkSeriesIterator(chunk1, chunk2),
+				errChunksIterator{err: testError},
+				NewListChunkSeriesIterator(chunk3),
+			},
+			expectedChunks: []chunks.Meta{chunk1, chunk2}, // Should stop before advancing to last iterator.
+			expectedError:  testError,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			it := concatenatingChunkIterator{iterators: testCase.iterators}
+			var chks []chunks.Meta
+
+			for it.Next() {
+				chks = append(chks, it.At())
+			}
+
+			require.Equal(t, testCase.expectedChunks, chks)
+
+			if testCase.expectedError == nil {
+				require.NoError(t, it.Err())
+			} else {
+				require.EqualError(t, it.Err(), testCase.expectedError.Error())
+			}
+		})
+	}
+}
+
 type mockQuerier struct {
 	LabelQuerier
 
