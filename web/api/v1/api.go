@@ -254,7 +254,7 @@ func NewAPI(
 	statsRenderer StatsRenderer,
 	rwEnabled bool,
 	otlpEnabled bool,
-	remoteWriteReducedProto bool,
+	enableRemoteWrite11 bool,
 ) *API {
 	a := &API{
 		QueryEngine:       qe,
@@ -296,7 +296,7 @@ func NewAPI(
 	}
 
 	if rwEnabled {
-		a.remoteWriteHandler = remote.NewWriteHandler(logger, registerer, ap, remoteWriteReducedProto)
+		a.remoteWriteHandler = remote.NewWriteHandler(logger, registerer, ap, enableRemoteWrite11)
 	}
 	if otlpEnabled {
 		a.otlpWriteHandler = remote.NewOTLPWriteHandler(logger, ap)
