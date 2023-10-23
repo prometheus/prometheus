@@ -340,7 +340,18 @@ func (g *Group) Name() string { return g.name }
 func (g *Group) File() string { return g.file }
 
 // Rules returns the group's rules.
-func (g *Group) Rules() []Rule { return g.rules }
+func (g *Group) Rules(matcherSets ...[]*labels.Matcher) []Rule {
+	if len(matcherSets) == 0 {
+		return g.rules
+	}
+	var rules []Rule
+	for _, rule := range g.rules {
+		if matchesMatcherSets(matcherSets, rule.Labels()) {
+			rules = append(rules, rule)
+		}
+	}
+	return rules
+}
 
 // Queryable returns the group's querable.
 func (g *Group) Queryable() storage.Queryable { return g.opts.Queryable }
@@ -448,6 +459,32 @@ func (g *Group) run(ctx context.Context) {
 	}
 }
 
+func matches(lbls labels.Labels, matchers ...*labels.Matcher) bool {
+Matcher:
+	for _, m := range matchers {
+		// Skip if matches.
+		if v := lbls.Get(m.Name); m.Matches(v) {
+			continue Matcher
+		}
+		return false
+	}
+	return true
+}
+
+func matchesMatcherSets(matcherSets [][]*labels.Matcher, lbls labels.Labels) bool {
+	if len(matcherSets) == 0 {
+		return true
+	}
+
+	var ok bool
+	for _, matchers := range matcherSets {
+		if matches(lbls, matchers...) {
+			ok = true
+		}
+	}
+	return ok
+}
+
 // DefaultEvalIterationFunc is the default implementation of
 // GroupEvalIterationFunc that is periodically invoked to evaluate the rules
 // in a group at a given point in time and updates Group state and metrics
@@ -481,12 +518,12 @@ func (g *Group) hash() uint64 {
 }
 
 // AlertingRules returns the list of the group's alerting rules.
-func (g *Group) AlertingRules() []*AlertingRule {
+func (g *Group) AlertingRules(matcherSets ...[]*labels.Matcher) []*AlertingRule {
 	g.mtx.Lock()
 	defer g.mtx.Unlock()
 
 	var alerts []*AlertingRule
-	for _, rule := range g.rules {
+	for _, rule := range g.Rules(matcherSets...) {
 		if alertingRule, ok := rule.(*AlertingRule); ok {
 			alerts = append(alerts, alertingRule)
 		}
@@ -1221,22 +1258,22 @@ func (m *Manager) RuleGroups() []*Group {
 }
 
 // Rules returns the list of the manager's rules.
-func (m *Manager) Rules() []Rule {
+func (m *Manager) Rules(matcherSets ...[]*labels.Matcher) []Rule {
 	m.mtx.RLock()
 	defer m.mtx.RUnlock()
 
 	var rules []Rule
 	for _, g := range m.groups {
-		rules = append(rules, g.rules...)
+		rules = append(rules, g.Rules(matcherSets...)...)
 	}
 
 	return rules
 }
 
 // AlertingRules returns the list of the manager's alerting rules.
-func (m *Manager) AlertingRules() []*AlertingRule {
+func (m *Manager) AlertingRules(matcherSets ...[]*labels.Matcher) []*AlertingRule {
 	alerts := []*AlertingRule{}
-	for _, rule := range m.Rules() {
+	for _, rule := range m.Rules(matcherSets...) {
 		if alertingRule, ok := rule.(*AlertingRule); ok {
 			alerts = append(alerts, alertingRule)
 		}
