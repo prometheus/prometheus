@@ -38,17 +38,18 @@ type writeHandler struct {
 
 	samplesWithInvalidLabelsTotal prometheus.Counter
 
-	// experimental feature, new remote write proto format
-	internFormat bool
+	// Experimental feature, new remote write proto format
+	// The handler will accept the new format, but it can still accept the old one
+	enableRemoteWrite11 bool
 }
 
 // NewWriteHandler creates a http.Handler that accepts remote write requests and
 // writes them to the provided appendable.
-func NewWriteHandler(logger log.Logger, reg prometheus.Registerer, appendable storage.Appendable, internFormat bool) http.Handler {
+func NewWriteHandler(logger log.Logger, reg prometheus.Registerer, appendable storage.Appendable, enableRemoteWrite11 bool) http.Handler {
 	h := &writeHandler{
-		logger:       logger,
-		appendable:   appendable,
-		internFormat: internFormat,
+		logger:              logger,
+		appendable:          appendable,
+		enableRemoteWrite11: enableRemoteWrite11,
 
 		samplesWithInvalidLabelsTotal: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: "prometheus",
@@ -68,7 +69,7 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var req *prompb.WriteRequest
 	var reqWithRefs *prompb.WriteRequestWithRefs
 	// TODO-RW11: Need to check headers to decide what version is and what to do
-	if h.internFormat {
+	if h.enableRemoteWrite11 {
 		reqWithRefs, err = DecodeReducedWriteRequest(r.Body)
 	} else {
 		req, err = DecodeWriteRequest(r.Body)
@@ -80,7 +81,7 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.internFormat {
+	if h.enableRemoteWrite11 {
 		err = h.writeReduced(r.Context(), reqWithRefs)
 	} else {
 		err = h.write(r.Context(), req)
