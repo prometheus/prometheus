@@ -225,6 +225,9 @@ job_name: <job_name>
 # Configures the protocol scheme used for requests.
 [ scheme: <scheme> | default = http ]
 
+# Host header for requests. By default, the target address is used.
+[ host_header: <string>]
+
 # Optional HTTP URL parameters.
 params:
   [ <string>: [<string>, ...] ]

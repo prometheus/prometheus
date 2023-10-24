@@ -580,6 +580,8 @@ type ScrapeConfig struct {
 	MetricsPath string `yaml:"metrics_path,omitempty"`
 	// The URL scheme with which to fetch metrics from targets.
 	Scheme string `yaml:"scheme,omitempty"`
+	// Host header to use in requests
+	HostHeader string `yaml:"host_header,omitempty"`
 	// An uncompressed response body larger than this many bytes will cause the
 	// scrape to fail. 0 means no limit.
 	BodySizeLimit units.Base2Bytes `yaml:"body_size_limit,omitempty"`
