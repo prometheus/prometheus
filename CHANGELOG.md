@@ -1,5 +1,9 @@
 # Changelog
 
+## unreleased
+
+* [ENHANCEMENT] PromQL: Reduce inefficiency introduced by warnings/annotations, and temporarily remove NewPossibleNonCounterInfo. #13012
+
 ## 2.48.0-rc.0 / 2023-10-10
 
 * [CHANGE] Remote-write: respect Retry-After header on 5xx errors. #12677
