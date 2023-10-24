@@ -129,19 +129,25 @@ notable exception of exemplars, which are always ingested. To keep the
 conventional histograms as well, enable `scrape_classic_histograms` in the
 scrape job.
 
-NOTE: Due to the protobuf serialization, conventional histogram `le` labels
-and summary `quantile` labels will be formatted differently. Any integer
-label values will be represented as a float, thus `1` becomes `1.0`, `2` becomes
-`2.0` and so on. This changes the identity of the resulting series in storage.
-This affects for example applications instrumented with client_golang provided
-that [promhttp.HandlerOpts.EnableOpenMetrics](https://pkg.go.dev/github.com/prometheus/client_golang/prometheus/promhttp#HandlerOpts)
-is set to false.
+_Note about the format of `le` and `quantile` label values:_
 
-As a side effect of conventional histogram labels change is that aggregations
-such as `rate`, `irate`, `increase` or `histogram_quantile` spanning the time
-range when the labels changed will show the wrong results. On the other hand
-going forward metrics will have the same labels regardless of instrumentation
-library.
+In certain situations, the protobuf parsing changes the number formatting of
+the `le` labels of all conventional histograms and the `quantile` labels of
+summaries. Typically, this happens if the scraped target is instrumented with
+[client_golang](https://github.com/prometheus/client_golang) provided that
+[promhttp.HandlerOpts.EnableOpenMetrics](https://pkg.go.dev/github.com/prometheus/client_golang/prometheus/promhttp#HandlerOpts)
+is set to false. In such a case any integer label values will be represented
+as a float, thus `1` becomes `1.0`, `2` becomes `2.0` and so on. This changes
+the identity of the resulting series in storage.
+
+The effect of this change is that alerts, recording rules and dashboards that
+directly reference such label values will stop working.
+Alerts, recording rules and dashboards that use aggregations over the
+conventional buckets may show wrong results while they are evaluating time
+ranges spanning over the transition period. For example the quantile query
+`histogram_quantile(0.95, sum by (le) (rate(histogram_bucket)))` will be wrong
+because `rate` will see a drop to stale in some buckets, while it will see some
+completely new buckets. Time ranges not including the transition will be fine.
 
 Ways to deal with this change either globally or on a per metric basis:
 
@@ -149,15 +155,19 @@ Ways to deal with this change either globally or on a per metric basis:
 produce the wrong answer. This will include alerts that include range vector
 selectors such as for the `rate` function.
 - Use `metric_relabel_config` to retain the old labels when scraping targets.
-This should only be applied to metrics that currently produce such labels.
+This should **only** be applied to metrics that currently produce such labels.
 
 ```yaml
-metric_relabel_configs:
-  - source_labels:
-    - le
-    regex: (.*)[.]0+
-    replacement: $1
-    target_label: le
+    metric_relabel_configs:
+      - source_labels:
+          - quantile
+        target_label: quantile
+        regex: (\d+)\.0+
+      - source_labels:
+          - le
+          - __name__
+        target_label: le
+        regex: (\d+)\.0+;.*_bucket
 ```
 
 ## OTLP Receiver

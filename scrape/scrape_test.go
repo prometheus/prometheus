@@ -3606,16 +3606,18 @@ func TestLeQuantileReLabel(t *testing.T) {
 		JobName: "test",
 		MetricRelabelConfigs: []*relabel.Config{
 			{
-				SourceLabels: model.LabelNames{"le"},
-				Regex:        relabel.MustNewRegexp("(.*)[.]0+"),
-				Replacement:  "$1",
+				SourceLabels: model.LabelNames{"le", "__name__"},
+				Regex:        relabel.MustNewRegexp("(\\d+)\\.0+;.*_bucket"),
+				Replacement:  relabel.DefaultRelabelConfig.Replacement,
+				Separator:    relabel.DefaultRelabelConfig.Separator,
 				TargetLabel:  "le",
 				Action:       relabel.Replace,
 			},
 			{
 				SourceLabels: model.LabelNames{"quantile"},
-				Regex:        relabel.MustNewRegexp("(.*)[.]0+"),
-				Replacement:  "$1",
+				Regex:        relabel.MustNewRegexp("(\\d+)\\.0+"),
+				Replacement:  relabel.DefaultRelabelConfig.Replacement,
+				Separator:    relabel.DefaultRelabelConfig.Separator,
 				TargetLabel:  "quantile",
 				Action:       relabel.Replace,
 			},
