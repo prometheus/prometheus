@@ -1671,13 +1671,13 @@ func sendWriteRequestWithBackoff(ctx context.Context, cfg config.QueueConfig, l 
 
 func buildWriteRequest(timeSeries []prompb.TimeSeries, metadata []prompb.MetricMetadata, pBuf *proto.Buffer, buf []byte, filter func(time.Duration, prompb.TimeSeries) bool, ageLimit time.Duration) ([]byte, int64, error) {
 	var highest int64
-	series := make([]prompb.TimeSeries, 0, len(timeSeries))
+	var removeIdx []int
 
-	for _, ts := range timeSeries {
+	for i, ts := range timeSeries {
 		if filter != nil && filter(ageLimit, ts) {
+			removeIdx= append(removeIdx, i)
 			continue
 		}
-		series = append(series, ts)
 
 		// At the moment we only ever append a TimeSeries with a single sample or exemplar in it.
 		if len(ts.Samples) > 0 && ts.Samples[0].Timestamp > highest {
@@ -1691,8 +1691,12 @@ func buildWriteRequest(timeSeries []prompb.TimeSeries, metadata []prompb.MetricM
 		}
 	}
 
+	for _, idx := range removeIdx {
+		timeSeries = append(timeSeries[:idx], timeSeries[idx+1:]...)
+	}
+
 	req := &prompb.WriteRequest{
-		Timeseries: series,
+		Timeseries: timeSeries,
 		Metadata:   metadata,
 	}
 
