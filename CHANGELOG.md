@@ -1,8 +1,8 @@
 # Changelog
 
-## unreleased
+## 2.48.0-rc.1 / 2023-10-24
 
-* [ENHANCEMENT] PromQL: Reduce inefficiency introduced by warnings/annotations, and temporarily remove NewPossibleNonCounterInfo. #13012
+* [BUGFIX] PromQL: Reduce inefficiency introduced by warnings/annotations and temporarily remove possible non-counter warnings. #13012
 
 ## 2.48.0-rc.0 / 2023-10-10
 
