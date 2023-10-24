@@ -44,7 +44,7 @@ func TestPostingsForMatchersCache(t *testing.T) {
 				p, err := c.PostingsForMatchers(ctx, indexForPostingsMock{}, concurrent, expectedMatchers...)
 				require.NoError(t, err)
 				require.NotNil(t, p)
-				require.Equal(t, p.Err(), expectedPostingsErr, "Expected ErrPostings with err %q, got %T with err %q", expectedPostingsErr, p, p.Err())
+				require.Equal(t, expectedPostingsErr, p.Err(), "Expected ErrPostings with err %q, got %T with err %q", expectedPostingsErr, p, p.Err())
 			})
 		}
 	})
@@ -93,7 +93,7 @@ func TestPostingsForMatchersCache(t *testing.T) {
 							expectedResults[i] = c[0].String()
 						}
 
-						expectedPostingsForMatchersCalls := 5
+						const expectedPostingsForMatchersCalls = 5
 						// we'll block all the calls until we receive the exact amount. if we receive more, WaitGroup will panic
 						called := make(chan struct{}, expectedPostingsForMatchersCalls)
 						release := make(chan struct{})
@@ -327,7 +327,7 @@ func TestPostingsForMatchersCache(t *testing.T) {
 			require.Equal(t, refsLists[matchersKey(matchers)], actual)
 		}
 
-		// To ensure the 1st (oldest) entry was removed, we call PostingsForMatchers() again on that matchers.
+		// To ensure the 1st (oldest) entry was removed, we call PostingsForMatchers() again on those matchers.
 		_, err := c.PostingsForMatchers(ctx, indexForPostingsMock{}, true, matchersLists[0]...)
 		require.NoError(t, err)
 
