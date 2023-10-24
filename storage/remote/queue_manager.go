@@ -1675,7 +1675,7 @@ func buildWriteRequest(timeSeries []prompb.TimeSeries, metadata []prompb.MetricM
 
 	for i, ts := range timeSeries {
 		if filter != nil && filter(ageLimit, ts) {
-			removeIdx= append(removeIdx, i)
+			removeIdx = append(removeIdx, i)
 			continue
 		}
 
