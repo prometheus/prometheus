@@ -1,0 +1,15 @@
+tests:
+  - input_series:
+      - series: test
+        values: 0 1
+    promql_expr_test:
+      - expr: test
+        eval_time: 59s
+        exp_samples:
+          - value: 0
+            labels: test
+      - expr: test
+        eval_time: 1m
+        exp_samples:
+          - value: 1
+            labels: test

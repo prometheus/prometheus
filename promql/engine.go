@@ -1224,10 +1224,11 @@ func (ev *evaluator) rangeEval(prepSeries func(labels.Labels, *EvalSeriesHelper)
 		enh.Out = result[:0] // Reuse result vector.
 		warnings.Merge(ws)
 
-		ev.currentSamples += len(result)
+		vecNumSamples := result.TotalSamples()
+		ev.currentSamples += vecNumSamples
 		// When we reset currentSamples to tempNumSamples during the next iteration of the loop it also
 		// needs to include the samples from the result here, as they're still in memory.
-		tempNumSamples += len(result)
+		tempNumSamples += vecNumSamples
 		ev.samplesStats.UpdatePeak(ev.currentSamples)
 
 		if ev.currentSamples > ev.maxSamples {
@@ -1323,12 +1324,10 @@ func (ev *evaluator) evalSubquery(subq *parser.SubqueryExpr) (*parser.MatrixSele
 		Range:          subq.Range,
 		VectorSelector: vs,
 	}
-	totalSamples := 0
 	for _, s := range mat {
-		totalSamples += len(s.Floats) + len(s.Histograms)
 		vs.Series = append(vs.Series, NewStorageSeries(s))
 	}
-	return ms, totalSamples, ws
+	return ms, mat.TotalSamples(), ws
 }
 
 // eval evaluates the given expression as the given AST expression node requires.
@@ -1470,7 +1469,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 		it := storage.NewBuffer(selRange)
 		var chkIter chunkenc.Iterator
 		for i, s := range selVS.Series {
-			ev.currentSamples -= len(floats) + len(histograms)
+			ev.currentSamples -= len(floats) + totalHPointSize(histograms)
 			if floats != nil {
 				floats = floats[:0]
 			}
@@ -1514,7 +1513,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 				// Make the function call.
 				outVec, annos := call(inArgs, e.Args, enh)
 				warnings.Merge(annos)
-				ev.samplesStats.IncrementSamplesAtStep(step, int64(len(floats)+len(histograms)))
+				ev.samplesStats.IncrementSamplesAtStep(step, int64(len(floats)+totalHPointSize(histograms)))
 
 				enh.Out = outVec[:0]
 				if len(outVec) > 0 {
@@ -1533,10 +1532,11 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 				// Only buffer stepRange milliseconds from the second step on.
 				it.ReduceDelta(stepRange)
 			}
-			if len(ss.Floats)+len(ss.Histograms) > 0 {
-				if ev.currentSamples+len(ss.Floats)+len(ss.Histograms) <= ev.maxSamples {
+			histSamples := totalHPointSize(ss.Histograms)
+			if len(ss.Floats)+histSamples > 0 {
+				if ev.currentSamples+len(ss.Floats)+histSamples <= ev.maxSamples {
 					mat = append(mat, ss)
-					ev.currentSamples += len(ss.Floats) + len(ss.Histograms)
+					ev.currentSamples += len(ss.Floats) + histSamples
 				} else {
 					ev.error(ErrTooManySamples(env))
 				}
@@ -1545,7 +1545,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 		}
 		ev.samplesStats.UpdatePeak(ev.currentSamples)
 
-		ev.currentSamples -= len(floats) + len(histograms)
+		ev.currentSamples -= len(floats) + totalHPointSize(histograms)
 		putFPointSlice(floats)
 		putHPointSlice(histograms)
 
@@ -1692,14 +1692,18 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 								ss.Floats = getFPointSlice(numSteps)
 							}
 							ss.Floats = append(ss.Floats, FPoint{F: f, T: ts})
+							ev.currentSamples++
+							ev.samplesStats.IncrementSamplesAtStep(step, 1)
 						} else {
 							if ss.Histograms == nil {
 								ss.Histograms = getHPointSlice(numSteps)
 							}
-							ss.Histograms = append(ss.Histograms, HPoint{H: h, T: ts})
+							point := HPoint{H: h, T: ts}
+							ss.Histograms = append(ss.Histograms, point)
+							histSize := point.size()
+							ev.currentSamples += histSize
+							ev.samplesStats.IncrementSamplesAtStep(step, int64(histSize))
 						}
-						ev.samplesStats.IncrementSamplesAtStep(step, 1)
-						ev.currentSamples++
 					} else {
 						ev.error(ErrTooManySamples(env))
 					}
@@ -1807,13 +1811,15 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 						T: ts,
 						F: mat[i].Floats[0].F,
 					})
+					ev.currentSamples++
 				} else {
-					mat[i].Histograms = append(mat[i].Histograms, HPoint{
+					point := HPoint{
 						T: ts,
 						H: mat[i].Histograms[0].H,
-					})
+					}
+					mat[i].Histograms = append(mat[i].Histograms, point)
+					ev.currentSamples += point.size()
 				}
-				ev.currentSamples++
 				if ev.currentSamples > ev.maxSamples {
 					ev.error(ErrTooManySamples(env))
 				}
@@ -1857,9 +1863,14 @@ func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(vs *parser.Vec
 					F:      f,
 					H:      h,
 				})
-
+				histSize := 0
+				if h != nil {
+					histSize := h.Size() / 16 // 16 bytes per sample.
+					ev.currentSamples += histSize
+				}
 				ev.currentSamples++
-				ev.samplesStats.IncrementSamplesAtTimestamp(enh.Ts, 1)
+
+				ev.samplesStats.IncrementSamplesAtTimestamp(enh.Ts, int64(1+histSize))
 				if ev.currentSamples > ev.maxSamples {
 					ev.error(ErrTooManySamples(env))
 				}
@@ -1981,10 +1992,10 @@ func (ev *evaluator) matrixSelector(node *parser.MatrixSelector) (Matrix, annota
 		}
 
 		ss.Floats, ss.Histograms = ev.matrixIterSlice(it, mint, maxt, nil, nil)
-		totalLen := int64(len(ss.Floats)) + int64(len(ss.Histograms))
-		ev.samplesStats.IncrementSamplesAtTimestamp(ev.startTimestamp, totalLen)
+		totalSize := int64(len(ss.Floats)) + int64(totalHPointSize(ss.Histograms))
+		ev.samplesStats.IncrementSamplesAtTimestamp(ev.startTimestamp, totalSize)
 
-		if totalLen > 0 {
+		if totalSize > 0 {
 			matrix = append(matrix, ss)
 		} else {
 			putFPointSlice(ss.Floats)
@@ -2040,13 +2051,13 @@ func (ev *evaluator) matrixIterSlice(
 		var drop int
 		for drop = 0; histograms[drop].T < mint; drop++ { // nolint:revive
 		}
-		ev.currentSamples -= drop
 		copy(histograms, histograms[drop:])
 		histograms = histograms[:len(histograms)-drop]
+		ev.currentSamples -= totalHPointSize(histograms)
 		// Only append points with timestamps after the last timestamp we have.
 		mintHistograms = histograms[len(histograms)-1].T + 1
 	} else {
-		ev.currentSamples -= len(histograms)
+		ev.currentSamples -= totalHPointSize(histograms)
 		if histograms != nil {
 			histograms = histograms[:0]
 		}
@@ -2075,11 +2086,12 @@ loop:
 				if ev.currentSamples >= ev.maxSamples {
 					ev.error(ErrTooManySamples(env))
 				}
-				ev.currentSamples++
+				point := HPoint{T: t, H: h}
 				if histograms == nil {
 					histograms = getHPointSlice(16)
 				}
-				histograms = append(histograms, HPoint{T: t, H: h})
+				histograms = append(histograms, point)
+				ev.currentSamples += point.size()
 			}
 		case chunkenc.ValFloat:
 			t, f := buf.At()
@@ -2110,8 +2122,9 @@ loop:
 			if histograms == nil {
 				histograms = getHPointSlice(16)
 			}
-			histograms = append(histograms, HPoint{T: t, H: h})
-			ev.currentSamples++
+			point := HPoint{T: t, H: h}
+			histograms = append(histograms, point)
+			ev.currentSamples += point.size()
 		}
 	case chunkenc.ValFloat:
 		t, f := it.At()

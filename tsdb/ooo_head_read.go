@@ -178,17 +178,39 @@ type chunkMetaAndChunkDiskMapperRef struct {
 }
 
 func refLessByMinTimeAndMinRef(a, b chunkMetaAndChunkDiskMapperRef) int {
-	if a.meta.MinTime == b.meta.MinTime {
-		return int(a.meta.Ref - b.meta.Ref)
+	switch {
+	case a.meta.MinTime < b.meta.MinTime:
+		return -1
+	case a.meta.MinTime > b.meta.MinTime:
+		return 1
 	}
-	return int(a.meta.MinTime - b.meta.MinTime)
+
+	switch {
+	case a.meta.Ref < b.meta.Ref:
+		return -1
+	case a.meta.Ref > b.meta.Ref:
+		return 1
+	default:
+		return 0
+	}
 }
 
 func lessByMinTimeAndMinRef(a, b chunks.Meta) int {
-	if a.MinTime == b.MinTime {
-		return int(a.Ref - b.Ref)
+	switch {
+	case a.MinTime < b.MinTime:
+		return -1
+	case a.MinTime > b.MinTime:
+		return 1
 	}
-	return int(a.MinTime - b.MinTime)
+
+	switch {
+	case a.Ref < b.Ref:
+		return -1
+	case a.Ref > b.Ref:
+		return 1
+	default:
+		return 0
+	}
 }
 
 func (oh *OOOHeadIndexReader) Postings(ctx context.Context, name string, values ...string) (index.Postings, error) {

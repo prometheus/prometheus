@@ -307,13 +307,17 @@ func (h *FloatHistogram) Sub(other *FloatHistogram) *FloatHistogram {
 // Exact match is when there are no new buckets (even empty) and no missing buckets,
 // and all the bucket values match. Spans can have different empty length spans in between,
 // but they must represent the same bucket layout to match.
+// Sum, Count, ZeroCount and bucket values are compared based on their bit patterns
+// because this method is about data equality rather than mathematical equality.
 func (h *FloatHistogram) Equals(h2 *FloatHistogram) bool {
 	if h2 == nil {
 		return false
 	}
 
 	if h.Schema != h2.Schema || h.ZeroThreshold != h2.ZeroThreshold ||
-		h.ZeroCount != h2.ZeroCount || h.Count != h2.Count || h.Sum != h2.Sum {
+		math.Float64bits(h.ZeroCount) != math.Float64bits(h2.ZeroCount) ||
+		math.Float64bits(h.Count) != math.Float64bits(h2.Count) ||
+		math.Float64bits(h.Sum) != math.Float64bits(h2.Sum) {
 		return false
 	}
 
@@ -324,14 +328,42 @@ func (h *FloatHistogram) Equals(h2 *FloatHistogram) bool {
 		return false
 	}
 
-	if !bucketsMatch(h.PositiveBuckets, h2.PositiveBuckets) {
+	if !floatBucketsMatch(h.PositiveBuckets, h2.PositiveBuckets) {
 		return false
 	}
-	if !bucketsMatch(h.NegativeBuckets, h2.NegativeBuckets) {
+	if !floatBucketsMatch(h.NegativeBuckets, h2.NegativeBuckets) {
 		return false
 	}
 
 	return true
+}
+
+// Size returns the total size of the FloatHistogram, which includes the size of the pointer
+// to FloatHistogram, all its fields, and all elements contained in slices.
+// NOTE: this is only valid for 64 bit architectures.
+func (fh *FloatHistogram) Size() int {
+	// Size of each slice separately.
+	posSpanSize := len(fh.PositiveSpans) * 8     // 8 bytes (int32 + uint32).
+	negSpanSize := len(fh.NegativeSpans) * 8     // 8 bytes (int32 + uint32).
+	posBucketSize := len(fh.PositiveBuckets) * 8 // 8 bytes (float64).
+	negBucketSize := len(fh.NegativeBuckets) * 8 // 8 bytes (float64).
+
+	// Total size of the struct.
+
+	// fh is 8 bytes.
+	// fh.CounterResetHint is 4 bytes (1 byte bool + 3 bytes padding).
+	// fh.Schema is 4 bytes.
+	// fh.ZeroThreshold is 8 bytes.
+	// fh.ZeroCount is 8 bytes.
+	// fh.Count is 8 bytes.
+	// fh.Sum is 8 bytes.
+	// fh.PositiveSpans is 24 bytes.
+	// fh.NegativeSpans is 24 bytes.
+	// fh.PositiveBuckets is 24 bytes.
+	// fh.NegativeBuckets is 24 bytes.
+	structSize := 144
+
+	return structSize + posSpanSize + negSpanSize + posBucketSize + negBucketSize
 }
 
 // Compact eliminates empty buckets at the beginning and end of each span, then
@@ -1109,4 +1141,16 @@ func addBuckets(
 	}
 
 	return spansA, bucketsA
+}
+
+func floatBucketsMatch(b1, b2 []float64) bool {
+	if len(b1) != len(b2) {
+		return false
+	}
+	for i, b := range b1 {
+		if math.Float64bits(b) != math.Float64bits(b2[i]) {
+			return false
+		}
+	}
+	return true
 }
