@@ -611,6 +611,7 @@ outer:
 	for _, s := range samples {
 		if isSampleOld(time.Duration(t.cfg.SampleAgeLimit), s.T) {
 			t.metrics.droppedSamplesTotal.Inc()
+			level.Info(t.logger).Log("msg", "Dropped sample due to age", "ref", s.Ref)
 			continue
 		}
 		t.seriesMtx.Lock()
@@ -667,6 +668,7 @@ outer:
 	for _, e := range exemplars {
 		if isSampleOld(time.Duration(t.cfg.SampleAgeLimit), e.T) {
 			t.metrics.droppedExemplarsTotal.Inc()
+			level.Info(t.logger).Log("msg", "Dropped exemplar due to age", "ref", e.Ref)
 			continue
 		}
 		t.seriesMtx.Lock()
@@ -720,6 +722,7 @@ outer:
 	for _, h := range histograms {
 		if isSampleOld(time.Duration(t.cfg.SampleAgeLimit), h.T) {
 			t.metrics.droppedHistogramsTotal.Inc()
+			level.Info(t.logger).Log("msg", "Dropped histogram sample due to age", "ref", h.Ref)
 			continue
 		}
 		t.seriesMtx.Lock()
@@ -771,6 +774,7 @@ outer:
 	for _, h := range floatHistograms {
 		if isSampleOld(time.Duration(t.cfg.SampleAgeLimit), h.T) {
 			t.metrics.droppedHistogramsTotal.Inc()
+			level.Info(t.logger).Log("msg", "Dropped histogram sample due to age", "ref", h.Ref)
 			continue
 		}
 		t.seriesMtx.Lock()
