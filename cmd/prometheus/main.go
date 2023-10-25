@@ -757,18 +757,19 @@ func main() {
 		queryEngine = promql.NewEngine(opts)
 
 		ruleManager = rules.NewManager(&rules.ManagerOptions{
-			Appendable:         fanoutStorage,
-			Queryable:          localStorage,
-			QueryFunc:          rules.EngineQueryFunc(queryEngine, fanoutStorage),
-			NotifyFunc:         rules.SendAlerts(notifierManager, cfg.web.ExternalURL.String()),
-			Context:            ctxRule,
-			ExternalURL:        cfg.web.ExternalURL,
-			Registerer:         prometheus.DefaultRegisterer,
-			Logger:             log.With(logger, "component", "rule manager"),
-			OutageTolerance:    time.Duration(cfg.outageTolerance),
-			ForGracePeriod:     time.Duration(cfg.forGracePeriod),
-			ResendDelay:        time.Duration(cfg.resendDelay),
-			MaxConcurrentEvals: cfg.maxConcurrentEvals,
+			Appendable:             fanoutStorage,
+			Queryable:              localStorage,
+			QueryFunc:              rules.EngineQueryFunc(queryEngine, fanoutStorage),
+			NotifyFunc:             rules.SendAlerts(notifierManager, cfg.web.ExternalURL.String()),
+			Context:                ctxRule,
+			ExternalURL:            cfg.web.ExternalURL,
+			Registerer:             prometheus.DefaultRegisterer,
+			Logger:                 log.With(logger, "component", "rule manager"),
+			OutageTolerance:        time.Duration(cfg.outageTolerance),
+			ForGracePeriod:         time.Duration(cfg.forGracePeriod),
+			ResendDelay:            time.Duration(cfg.resendDelay),
+			MaxConcurrentEvals:     cfg.maxConcurrentEvals,
+			ConcurrentEvalsEnabled: cfg.enableConcurrentRuleEval,
 		})
 	}
 

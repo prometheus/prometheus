@@ -30,7 +30,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 	"go.uber.org/goleak"
-	"golang.org/x/sync/semaphore"
 	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -1672,7 +1671,7 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 
 		for _, group := range groups {
 			// Allow up to 2 concurrent rule evaluations.
-			group.opts.ConcurrentEvalSema = semaphore.NewWeighted(2)
+			group.opts.ConcurrencyController = NewConcurrencyController(true, 2)
 			require.Len(t, group.rules, expectedRules)
 
 			start := time.Now()
@@ -1722,10 +1721,11 @@ func TestBoundedRuleEvalConcurrency(t *testing.T) {
 
 	files := []string{"fixtures/rules_multiple_groups.yaml"}
 	ruleManager := NewManager(&ManagerOptions{
-		Context:            context.Background(),
-		Logger:             log.NewNopLogger(),
-		Appendable:         storage,
-		MaxConcurrentEvals: maxConcurrency,
+		Context:                context.Background(),
+		Logger:                 log.NewNopLogger(),
+		Appendable:             storage,
+		ConcurrentEvalsEnabled: true,
+		MaxConcurrentEvals:     maxConcurrency,
 		QueryFunc: func(ctx context.Context, q string, ts time.Time) (promql.Vector, error) {
 			inflightQueries.Add(1)
 			defer func() {

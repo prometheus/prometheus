@@ -104,20 +104,21 @@ type NotifyFunc func(ctx context.Context, expr string, alerts ...*Alert)
 
 // ManagerOptions bundles options for the Manager.
 type ManagerOptions struct {
-	ExternalURL        *url.URL
-	QueryFunc          QueryFunc
-	NotifyFunc         NotifyFunc
-	Context            context.Context
-	Appendable         storage.Appendable
-	Queryable          storage.Queryable
-	Logger             log.Logger
-	Registerer         prometheus.Registerer
-	OutageTolerance    time.Duration
-	ForGracePeriod     time.Duration
-	ResendDelay        time.Duration
-	MaxConcurrentEvals int64
-	ConcurrentEvalSema *semaphore.Weighted
-	GroupLoader        GroupLoader
+	ExternalURL            *url.URL
+	QueryFunc              QueryFunc
+	NotifyFunc             NotifyFunc
+	Context                context.Context
+	Appendable             storage.Appendable
+	Queryable              storage.Queryable
+	Logger                 log.Logger
+	Registerer             prometheus.Registerer
+	OutageTolerance        time.Duration
+	ForGracePeriod         time.Duration
+	ResendDelay            time.Duration
+	MaxConcurrentEvals     int64
+	ConcurrentEvalsEnabled bool
+	ConcurrencyController  ConcurrencyController
+	GroupLoader            GroupLoader
 
 	Metrics *Metrics
 }
@@ -133,7 +134,7 @@ func NewManager(o *ManagerOptions) *Manager {
 		o.GroupLoader = FileLoader{}
 	}
 
-	o.ConcurrentEvalSema = semaphore.NewWeighted(o.MaxConcurrentEvals)
+	o.ConcurrencyController = NewConcurrencyController(o.ConcurrentEvalsEnabled, o.MaxConcurrentEvals)
 
 	m := &Manager{
 		groups: map[string]*Group{},
@@ -407,4 +408,29 @@ func SendAlerts(s Sender, externalURL string) NotifyFunc {
 			s.Send(res...)
 		}
 	}
+}
+
+type ConcurrencyController struct {
+	enabled bool
+	sema    *semaphore.Weighted
+}
+
+func NewConcurrencyController(enabled bool, maxConcurrency int64) ConcurrencyController {
+	return ConcurrencyController{enabled: enabled, sema: semaphore.NewWeighted(maxConcurrency)}
+}
+
+func (c ConcurrencyController) Allow() bool {
+	if !c.enabled {
+		return false
+	}
+
+	return c.sema.TryAcquire(1)
+}
+
+func (c ConcurrencyController) Done() {
+	if !c.enabled {
+		return
+	}
+
+	c.sema.Release(1)
 }
