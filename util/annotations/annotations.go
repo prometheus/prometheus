@@ -116,6 +116,9 @@ type annoErr struct {
 }
 
 func (e annoErr) Error() string {
+	if e.Query == "" {
+		return e.Err.Error()
+	}
 	return fmt.Sprintf("%s (%s)", e.Err, e.PositionRange.StartPosInput(e.Query, 0))
 }
 
