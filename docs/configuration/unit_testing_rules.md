@@ -39,7 +39,7 @@ tests:
 
 ``` yaml
 # Series data
-interval: <duration>
+[ interval: <duration> | default = evaluation_interval ]
 input_series:
   [ - <series> ]
 

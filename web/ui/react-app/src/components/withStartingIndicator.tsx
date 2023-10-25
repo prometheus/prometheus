@@ -51,7 +51,7 @@ export const withStartingIndicator =
     const { ready, walReplayStatus, isUnexpected } = useFetchReadyInterval(pathPrefix);
     const staticReady = useReady();
 
-    if (staticReady || ready || isUnexpected) {
+    if (staticReady || ready) {
       return <Page {...(rest as T)} />;
     }
 

@@ -2341,3 +2341,55 @@ func TestFloatHistogramEquals(t *testing.T) {
 	notEquals(h1, *hNegBucketNaN)
 	equals(*hNegBucketNaN, *hNegBucketNaN)
 }
+
+func TestFloatHistogramSize(t *testing.T) {
+	cases := []struct {
+		name     string
+		fh       *FloatHistogram
+		expected int
+	}{
+		{
+			"without spans and buckets",
+			&FloatHistogram{ // 8 bytes.
+				CounterResetHint: 0,           // 1 byte.
+				Schema:           1,           // 4 bytes.
+				ZeroThreshold:    0.01,        // 8 bytes.
+				ZeroCount:        5.5,         // 8 bytes.
+				Count:            3493.3,      // 8 bytes.
+				Sum:              2349209.324, // 8 bytes.
+				PositiveSpans:    nil,         // 24 bytes.
+				PositiveBuckets:  nil,         // 24 bytes.
+				NegativeSpans:    nil,         // 24 bytes.
+				NegativeBuckets:  nil,         // 24 bytes.
+			},
+			8 + 4 + 4 + 8 + 8 + 8 + 8 + 24 + 24 + 24 + 24,
+		},
+		{
+			"complete struct",
+			&FloatHistogram{ // 8 bytes.
+				CounterResetHint: 0,           // 1 byte.
+				Schema:           1,           // 4 bytes.
+				ZeroThreshold:    0.01,        // 8 bytes.
+				ZeroCount:        5.5,         // 8 bytes.
+				Count:            3493.3,      // 8 bytes.
+				Sum:              2349209.324, // 8 bytes.
+				PositiveSpans: []Span{ // 24 bytes.
+					{-2, 1}, // 2 * 4 bytes.
+					{2, 3},  //  2 * 4 bytes.
+				},
+				PositiveBuckets: []float64{1, 3.3, 4.2, 0.1}, // 24 bytes + 4 * 8 bytes.
+				NegativeSpans: []Span{ // 24 bytes.
+					{3, 2},  // 2 * 4 bytes.
+					{3, 2}}, //  2 * 4 bytes.
+				NegativeBuckets: []float64{3.1, 3, 1.234e5, 1000}, // 24 bytes + 4 * 8 bytes.
+			},
+			8 + 4 + 4 + 8 + 8 + 8 + 8 + (24 + 2*4 + 2*4) + (24 + 2*4 + 2*4) + (24 + 4*8) + (24 + 4*8),
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			require.Equal(t, c.expected, c.fh.Size())
+		})
+	}
+}
