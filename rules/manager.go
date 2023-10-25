@@ -26,6 +26,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/exp/slices"
+	"golang.org/x/sync/semaphore"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
@@ -103,18 +104,20 @@ type NotifyFunc func(ctx context.Context, expr string, alerts ...*Alert)
 
 // ManagerOptions bundles options for the Manager.
 type ManagerOptions struct {
-	ExternalURL     *url.URL
-	QueryFunc       QueryFunc
-	NotifyFunc      NotifyFunc
-	Context         context.Context
-	Appendable      storage.Appendable
-	Queryable       storage.Queryable
-	Logger          log.Logger
-	Registerer      prometheus.Registerer
-	OutageTolerance time.Duration
-	ForGracePeriod  time.Duration
-	ResendDelay     time.Duration
-	GroupLoader     GroupLoader
+	ExternalURL        *url.URL
+	QueryFunc          QueryFunc
+	NotifyFunc         NotifyFunc
+	Context            context.Context
+	Appendable         storage.Appendable
+	Queryable          storage.Queryable
+	Logger             log.Logger
+	Registerer         prometheus.Registerer
+	OutageTolerance    time.Duration
+	ForGracePeriod     time.Duration
+	ResendDelay        time.Duration
+	MaxConcurrentEvals int64
+	ConcurrentEvalSema *semaphore.Weighted
+	GroupLoader        GroupLoader
 
 	Metrics *Metrics
 }
@@ -129,6 +132,8 @@ func NewManager(o *ManagerOptions) *Manager {
 	if o.GroupLoader == nil {
 		o.GroupLoader = FileLoader{}
 	}
+
+	o.ConcurrentEvalSema = semaphore.NewWeighted(o.MaxConcurrentEvals)
 
 	m := &Manager{
 		groups: map[string]*Group{},

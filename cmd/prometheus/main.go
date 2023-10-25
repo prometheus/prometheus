@@ -137,6 +137,7 @@ type flagConfig struct {
 	forGracePeriod      model.Duration
 	outageTolerance     model.Duration
 	resendDelay         model.Duration
+	maxConcurrentEvals  int64
 	web                 web.Options
 	scrape              scrape.Options
 	tsdb                tsdbOptions
@@ -410,6 +411,9 @@ func main() {
 
 	serverOnlyFlag(a, "rules.alert.resend-delay", "Minimum amount of time to wait before resending an alert to Alertmanager.").
 		Default("1m").SetValue(&cfg.resendDelay)
+
+	serverOnlyFlag(a, "rules.max-concurrent-rule-evals", "Global concurrency limit for independent rules which can run concurrently.").
+		Default("4").Int64Var(&cfg.maxConcurrentEvals)
 
 	a.Flag("scrape.adjust-timestamps", "Adjust scrape timestamps by up to `scrape.timestamp-tolerance` to align them to the intended schedule. See https://github.com/prometheus/prometheus/issues/7846 for more context. Experimental. This flag will be removed in a future release.").
 		Hidden().Default("true").BoolVar(&scrape.AlignScrapeTimestamps)
@@ -749,17 +753,18 @@ func main() {
 		queryEngine = promql.NewEngine(opts)
 
 		ruleManager = rules.NewManager(&rules.ManagerOptions{
-			Appendable:      fanoutStorage,
-			Queryable:       localStorage,
-			QueryFunc:       rules.EngineQueryFunc(queryEngine, fanoutStorage),
-			NotifyFunc:      rules.SendAlerts(notifierManager, cfg.web.ExternalURL.String()),
-			Context:         ctxRule,
-			ExternalURL:     cfg.web.ExternalURL,
-			Registerer:      prometheus.DefaultRegisterer,
-			Logger:          log.With(logger, "component", "rule manager"),
-			OutageTolerance: time.Duration(cfg.outageTolerance),
-			ForGracePeriod:  time.Duration(cfg.forGracePeriod),
-			ResendDelay:     time.Duration(cfg.resendDelay),
+			Appendable:         fanoutStorage,
+			Queryable:          localStorage,
+			QueryFunc:          rules.EngineQueryFunc(queryEngine, fanoutStorage),
+			NotifyFunc:         rules.SendAlerts(notifierManager, cfg.web.ExternalURL.String()),
+			Context:            ctxRule,
+			ExternalURL:        cfg.web.ExternalURL,
+			Registerer:         prometheus.DefaultRegisterer,
+			Logger:             log.With(logger, "component", "rule manager"),
+			OutageTolerance:    time.Duration(cfg.outageTolerance),
+			ForGracePeriod:     time.Duration(cfg.forGracePeriod),
+			ResendDelay:        time.Duration(cfg.resendDelay),
+			MaxConcurrentEvals: cfg.maxConcurrentEvals,
 		})
 	}
 

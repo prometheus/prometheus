@@ -21,7 +21,10 @@ import (
 	"sync"
 	"time"
 
+	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
+
+	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -68,6 +71,7 @@ type Group struct {
 	// Rule group evaluation iteration function,
 	// defaults to DefaultEvalIterationFunc.
 	evalIterationFunc GroupEvalIterationFunc
+	dependencyMap     dependencyMap
 }
 
 // GroupEvalIterationFunc is used to implement and extend rule group
@@ -126,6 +130,7 @@ func NewGroup(o GroupOptions) *Group {
 		logger:               log.With(o.Opts.Logger, "file", o.File, "group", o.Name),
 		metrics:              metrics,
 		evalIterationFunc:    evalIterationFunc,
+		dependencyMap:        buildDependencyMap(o.Rules),
 	}
 }
 
@@ -421,7 +426,7 @@ func (g *Group) CopyState(from *Group) {
 
 // Eval runs a single evaluation cycle in which all rules are evaluated sequentially.
 func (g *Group) Eval(ctx context.Context, ts time.Time) {
-	var samplesTotal float64
+	var samplesTotal atomic.Float64
 	for i, rule := range g.rules {
 		select {
 		case <-g.done:
@@ -429,7 +434,12 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		default:
 		}
 
-		func(i int, rule Rule) {
+		eval := func(i int, rule Rule, async bool) {
+			if async {
+				defer func() {
+					g.opts.ConcurrentEvalSema.Release(1)
+				}()
+			}
 			logger := log.WithPrefix(g.logger, "name", rule.Name(), "index", i)
 			ctx, sp := otel.Tracer("").Start(ctx, "rule")
 			sp.SetAttributes(attribute.String("name", rule.Name()))
@@ -465,7 +475,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			}
 			rule.SetHealth(HealthGood)
 			rule.SetLastError(nil)
-			samplesTotal += float64(len(vector))
+			samplesTotal.Add(float64(len(vector)))
 
 			if ar, ok := rule.(*AlertingRule); ok {
 				ar.sendAlerts(ctx, ts, g.opts.ResendDelay, g.interval, g.opts.NotifyFunc)
@@ -554,10 +564,19 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 					}
 				}
 			}
-		}(i, rule)
+		}
+
+		// If the rule has no dependencies, it can run concurrently because no other rules in this group depend on its output.
+		// Try run concurrently if there are slots available.
+		if g.dependencyMap.isIndependent(rule) && g.opts.ConcurrentEvalSema != nil && g.opts.ConcurrentEvalSema.TryAcquire(1) {
+			go eval(i, rule, true)
+		} else {
+			eval(i, rule, false)
+		}
 	}
+
 	if g.metrics != nil {
-		g.metrics.GroupSamples.WithLabelValues(GroupKey(g.File(), g.Name())).Set(samplesTotal)
+		g.metrics.GroupSamples.WithLabelValues(GroupKey(g.File(), g.Name())).Set(samplesTotal.Load())
 	}
 	g.cleanupStaleSeries(ctx, ts)
 }
@@ -865,4 +884,110 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 	}
 
 	return m
+}
+
+// dependencyMap is a data-structure which contains the relationships between rules within a group.
+// It is used to describe the dependency associations between recording rules in a group whereby one rule uses the
+// output metric produced by another recording rule in its expression (i.e. as its "input").
+type dependencyMap map[Rule][]Rule
+
+// dependents returns all rules which use the output of the given rule as one of their inputs.
+func (m dependencyMap) dependents(r Rule) []Rule {
+	if len(m) == 0 {
+		return nil
+	}
+
+	return m[r]
+}
+
+// dependencies returns all the rules on which the given rule is dependent for input.
+func (m dependencyMap) dependencies(r Rule) []Rule {
+	if len(m) == 0 {
+		return nil
+	}
+
+	var parents []Rule
+	for parent, children := range m {
+		if len(children) == 0 {
+			continue
+		}
+
+		for _, child := range children {
+			if child == r {
+				parents = append(parents, parent)
+			}
+		}
+	}
+
+	return parents
+}
+
+func (m dependencyMap) isIndependent(r Rule) bool {
+	if m == nil {
+		return false
+	}
+
+	return len(m.dependents(r)) == 0 && len(m.dependencies(r)) == 0
+}
+
+// buildDependencyMap builds a data-structure which contains the relationships between rules within a group.
+func buildDependencyMap(rules []Rule) dependencyMap {
+	dependencies := make(dependencyMap)
+
+	if len(rules) <= 1 {
+		// No relationships if group has 1 or fewer rules.
+		return nil
+	}
+
+	inputs := make(map[string][]Rule, len(rules))
+	outputs := make(map[string][]Rule, len(rules))
+
+	var indeterminate bool
+
+	for _, rule := range rules {
+		rule := rule
+
+		name := rule.Name()
+		outputs[name] = append(outputs[name], rule)
+
+		parser.Inspect(rule.Query(), func(node parser.Node, path []parser.Node) error {
+			if n, ok := node.(*parser.VectorSelector); ok {
+				// A wildcard metric expression means we cannot reliably determine if this rule depends on any other,
+				// which means we cannot safely run any rules concurrently.
+				if n.Name == "" && len(n.LabelMatchers) > 0 {
+					indeterminate = true
+					return nil
+				}
+
+				// Rules which depend on "meta-metrics" like ALERTS and ALERTS_FOR_STATE will have undefined behaviour
+				// if they run concurrently.
+				if n.Name == alertMetricName || n.Name == alertForStateMetricName {
+					indeterminate = true
+					return nil
+				}
+
+				inputs[n.Name] = append(inputs[n.Name], rule)
+			}
+			return nil
+		})
+	}
+
+	if indeterminate {
+		return nil
+	}
+
+	if len(inputs) == 0 || len(outputs) == 0 {
+		// No relationships can be inferred.
+		return nil
+	}
+
+	for output, outRules := range outputs {
+		for _, outRule := range outRules {
+			if rs, found := inputs[output]; found && len(rs) > 0 {
+				dependencies[outRule] = append(dependencies[outRule], rs...)
+			}
+		}
+	}
+
+	return dependencies
 }
