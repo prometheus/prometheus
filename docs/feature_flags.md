@@ -141,7 +141,8 @@ as a float, thus `1` becomes `1.0`, `2` becomes `2.0` and so on. This changes
 the identity of the resulting series in storage.
 
 The effect of this change is that alerts, recording rules and dashboards that
-directly reference such label values will stop working.
+directly reference label values as whole numbers such as `le="1"` will stop
+working.
 Alerts, recording rules and dashboards that use aggregations over the
 conventional buckets may show wrong results while they are evaluating time
 ranges spanning over the transition period. For example the quantile query
