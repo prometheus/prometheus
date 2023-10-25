@@ -136,28 +136,35 @@ the `le` labels of conventional histograms and the `quantile` labels of
 summaries. Typically, this happens if the scraped target is instrumented with
 [client_golang](https://github.com/prometheus/client_golang) provided that
 [promhttp.HandlerOpts.EnableOpenMetrics](https://pkg.go.dev/github.com/prometheus/client_golang/prometheus/promhttp#HandlerOpts)
-is set to false. In such a case any integer label values will be represented
-as a float, thus `1` becomes `1.0`, `2` becomes `2.0` and so on. This changes
-the identity of the resulting series in storage.
+is set to false. In such a case, integer label values are represented in the
+text format as such, e.g. quantile="1" or le="2". However, the protobuf parsing
+changes the representation to float-like (following the OpenMetrics
+specification), so the examples above become quantile="1.0" and le="2.0" after
+ingestion into Prometheus, which changes the identity of the metric compared to
+what was ingested before via the text format.
 
 The effect of this change is that alerts, recording rules and dashboards that
 directly reference label values as whole numbers such as `le="1"` will stop
 working.
-Alerts, recording rules and dashboards that use aggregations over the
-conventional buckets may show wrong results while they are evaluating time
-ranges spanning over the transition period. For example the quantile query
-`histogram_quantile(0.95, sum by (le) (rate(histogram_bucket[5m])))` will be wrong
-because `rate` will see a drop to stale in some buckets, while it will see some
-completely new buckets. Time ranges not including the transition will be fine.
+
+Aggregation by the le and quantile labels for vectors that contain the old and
+new formatting will lead to unexpected results, and range vectors that span the
+transition between the different formatting will contain additional series.
+The most common use case for both is the quantile calculation via
+`histogram_quantile`, e.g.
+`histogram_quantile(0.95, sum by (le) (rate(histogram_bucket[10m])))`.
+The `histogram_quantile` function already tries to mitigate the effects to some
+extent, but there will be inaccuracies, in particular for shorter ranges that
+cover only a few samples.
 
 Ways to deal with this change either globally or on a per metric basis:
 
 - Do nothing and accept that some queries that span the transition time will
-produce the wrong answer. This will include alerts that include range vector
-selectors such as for the `rate` function.
+produce inaccurate or unexpected results.
 - Use `metric_relabel_config` to retain the old labels when scraping targets.
 This should **only** be applied to metrics that currently produce such labels.
 
+<!-- The following config snippet is unit tested in scrape_test.go. -->
 ```yaml
     metric_relabel_configs:
       - source_labels:
