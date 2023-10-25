@@ -132,7 +132,7 @@ scrape job.
 _Note about the format of `le` and `quantile` label values:_
 
 In certain situations, the protobuf parsing changes the number formatting of
-the `le` labels of all conventional histograms and the `quantile` labels of
+the `le` labels of conventional histograms and the `quantile` labels of
 summaries. Typically, this happens if the scraped target is instrumented with
 [client_golang](https://github.com/prometheus/client_golang) provided that
 [promhttp.HandlerOpts.EnableOpenMetrics](https://pkg.go.dev/github.com/prometheus/client_golang/prometheus/promhttp#HandlerOpts)
@@ -146,7 +146,7 @@ working.
 Alerts, recording rules and dashboards that use aggregations over the
 conventional buckets may show wrong results while they are evaluating time
 ranges spanning over the transition period. For example the quantile query
-`histogram_quantile(0.95, sum by (le) (rate(histogram_bucket)))` will be wrong
+`histogram_quantile(0.95, sum by (le) (rate(histogram_bucket[5m])))` will be wrong
 because `rate` will see a drop to stale in some buckets, while it will see some
 completely new buckets. Time ranges not including the transition will be fine.
 
