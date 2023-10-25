@@ -158,6 +158,7 @@ type flagConfig struct {
 	enablePerStepStats         bool
 	enableAutoGOMAXPROCS       bool
 	enableAutoGOMEMLIMIT       bool
+	enableConcurrentRuleEval   bool
 
 	prometheusURL   string
 	corsRegexString string
@@ -204,6 +205,9 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 			case "auto-gomemlimit":
 				c.enableAutoGOMEMLIMIT = true
 				level.Info(logger).Log("msg", "Automatically set GOMEMLIMIT to match Linux container or system memory limit")
+			case "concurrent-rule-eval":
+				c.enableConcurrentRuleEval = true
+				level.Info(logger).Log("msg", "Experimental concurrent rule evaluation enabled.")
 			case "no-default-scrape-port":
 				c.scrape.NoDefaultPort = true
 				level.Info(logger).Log("msg", "No default port will be appended to scrape targets' addresses.")
