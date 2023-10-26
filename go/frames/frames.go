@@ -112,7 +112,7 @@ func (fr *ReadFrame) GetSegmentID() uint32 {
 
 // GetChksum - return checksum.
 func (fr *ReadFrame) GetChksum() uint32 {
-	return fr.Header.chksum
+	return fr.Header.GetChksum()
 }
 
 // GetBody - return body frame.
@@ -158,7 +158,7 @@ func (fr *ReadFrame) Read(ctx context.Context, r io.Reader) error {
 		return err
 	}
 
-	return nil
+	return fr.Validate()
 }
 
 // WriteTo implements io.WriterTo interface
@@ -166,6 +166,11 @@ func (fr *ReadFrame) WriteTo(w io.Writer) (int64, error) {
 	n, err := w.Write(fr.EncodeBinary())
 
 	return int64(n), err
+}
+
+// Validate - validate frame.
+func (fr *ReadFrame) Validate() error {
+	return NotEqualChecksum(fr.GetChksum(), crc32.ChecksumIEEE(fr.GetBody()))
 }
 
 //
@@ -1450,4 +1455,135 @@ func (rs *RefillShardEOF) Read(ctx context.Context, r io.Reader, size int) error
 	}
 
 	return rs.UnmarshalBinary(buf)
+}
+
+// ReadAtFrameFinalMsg - read body to FinalMsg with ReaderAt.
+func ReadAtFrameFinalMsg(ctx context.Context, r io.ReaderAt, off int64, size int) (*FinalMsg, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	fm := NewFinalMsgEmpty()
+	if err := fm.ReadAt(ctx, r, off, size); err != nil {
+		return nil, err
+	}
+
+	return fm, nil
+}
+
+// ReadFrameFinalMsg - read body to FinalMsg with Reader.
+func ReadFrameFinalMsg(ctx context.Context, r io.Reader, size int) (*FinalMsg, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	fm := NewFinalMsgEmpty()
+	if err := fm.Read(ctx, r, size); err != nil {
+		return nil, err
+	}
+
+	return fm, nil
+}
+
+// NewFinalMsgFrame - init new frame.
+func NewFinalMsgFrame(version uint8, segmentID uint32, shardID uint16, hasRefill bool) (*ReadFrame, error) {
+	body, err := NewFinalMsg(hasRefill).MarshalBinary()
+	if err != nil {
+		return nil, err
+	}
+
+	return NewFrame(version, FinalType, body, shardID, segmentID), nil
+}
+
+// FinalMsg - message indicating that the block has been finalized.
+type FinalMsg struct {
+	hasRefill uint8
+}
+
+// NewFinalMsg - init new FinalMsg, doesn't have refill.
+//
+//revive:disable-next-line:flag-parameter this is not a flag, but a parameter
+func NewFinalMsg(hasRefill bool) *FinalMsg {
+	if hasRefill {
+		return &FinalMsg{
+			hasRefill: 1,
+		}
+	}
+	return &FinalMsg{
+		hasRefill: 0,
+	}
+}
+
+// NewFinalMsgEmpty - init new empty FinalMsg.
+func NewFinalMsgEmpty() *FinalMsg {
+	return &FinalMsg{}
+}
+
+// HasRefill - return flag has refill.
+func (fm FinalMsg) HasRefill() bool {
+	return fm.hasRefill == 1
+}
+
+// Size returns bytes length of message after encoding
+func (fm *FinalMsg) Size() int64 {
+	var n int64
+	n += util.VarintLen(uint64(fm.hasRefill))
+	return n
+}
+
+// WriteTo implements io.WriterTo interface
+func (fm *FinalMsg) WriteTo(w io.Writer) (int64, error) {
+	// error always nil
+	buf, _ := fm.MarshalBinary()
+
+	n, err := w.Write(buf)
+	return int64(n), err
+}
+
+// MarshalBinary - encoding to byte.
+func (fm FinalMsg) MarshalBinary() ([]byte, error) {
+	buf := make([]byte, 0, fm.Size())
+	buf = binary.AppendUvarint(buf, uint64(fm.hasRefill))
+	return buf, nil
+}
+
+// UnmarshalBinary - decoding from byte.
+func (fm *FinalMsg) UnmarshalBinary(data []byte) error {
+	r := bytes.NewReader(data)
+
+	hasRefill, err := binary.ReadUvarint(r)
+	if err != nil {
+		return fmt.Errorf("fail read hasRefill: %w", err)
+	}
+	fm.hasRefill = uint8(hasRefill)
+
+	return nil
+}
+
+// ReadAt - read FinalMsg with ReaderAt.
+func (fm *FinalMsg) ReadAt(ctx context.Context, r io.ReaderAt, off int64, size int) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	buf := make([]byte, size)
+	if _, err := r.ReadAt(buf, off); err != nil {
+		return err
+	}
+
+	return fm.UnmarshalBinary(buf)
+}
+
+// Read - read FinalMsg with Reader.
+func (fm *FinalMsg) Read(ctx context.Context, r io.Reader, size int) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	buf := make([]byte, size)
+	if _, err := io.ReadFull(r, buf); err != nil {
+		return err
+	}
+
+	return fm.UnmarshalBinary(buf)
 }

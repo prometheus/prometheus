@@ -124,7 +124,7 @@ func (e *Encoder) Snapshot(ctx context.Context, rds []Redundant) (Snapshot, erro
 	}
 
 	if ctx.Err() != nil {
-		return gosnapshot, ctx.Err()
+		return nil, ctx.Err()
 	}
 
 	cerr := internal.NewGoErrorInfo()

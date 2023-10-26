@@ -7,7 +7,7 @@ type TypeFrame uint8
 
 // Validate - validate type frame.
 func (tf TypeFrame) Validate() error {
-	if tf < AuthType || tf > RefillShardEOFType {
+	if tf < AuthType || tf > FinalType {
 		return fmt.Errorf("%w: %d", ErrUnknownFrameType, tf)
 	}
 
@@ -28,4 +28,5 @@ const (
 	StatusType
 	RejectStatusType
 	RefillShardEOFType
+	FinalType
 )
