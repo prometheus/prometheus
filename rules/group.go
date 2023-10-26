@@ -46,7 +46,7 @@ type Group struct {
 	interval             time.Duration
 	limit                int
 	rules                []Rule
-	seriesInPreviousEval []map[string]labels.Labels // One per Rule.
+	seriesInPreviousEval StaleSeriesRepo
 	staleSeries          []labels.Labels
 	opts                 *ManagerOptions
 	mtx                  sync.Mutex
@@ -111,6 +111,11 @@ func NewGroup(o GroupOptions) *Group {
 		evalIterationFunc = DefaultEvalIterationFunc
 	}
 
+	staleSeriesRepoFactory := o.Opts.StaleSeriesRepoFactory
+	if staleSeriesRepoFactory == nil {
+		staleSeriesRepoFactory = DefaultStaleSeriesRepoFactory
+	}
+
 	return &Group{
 		name:                 o.Name,
 		file:                 o.File,
@@ -119,7 +124,7 @@ func NewGroup(o GroupOptions) *Group {
 		rules:                o.Rules,
 		shouldRestore:        o.ShouldRestore,
 		opts:                 o.Opts,
-		seriesInPreviousEval: make([]map[string]labels.Labels, len(o.Rules)),
+		seriesInPreviousEval: staleSeriesRepoFactory(len(o.Rules)),
 		done:                 make(chan struct{}),
 		managerDone:          o.done,
 		terminated:           make(chan struct{}),
@@ -181,11 +186,10 @@ func (g *Group) run(ctx context.Context) {
 			return
 		}
 		go func(now time.Time) {
-			for _, rule := range g.seriesInPreviousEval {
-				for _, r := range rule {
-					g.staleSeries = append(g.staleSeries, r)
-				}
+			for i := 0; i < g.seriesInPreviousEval.GetNumberOfRules(); i++ {
+				g.staleSeries = append(g.staleSeries, g.seriesInPreviousEval.GetAll(i)...)
 			}
+			g.seriesInPreviousEval.Clear()
 			// That can be garbage collected at this point.
 			g.seriesInPreviousEval = nil
 			// Wait for 2 intervals to give the opportunity to renamed rules
@@ -389,7 +393,7 @@ func (g *Group) CopyState(from *Group) {
 			continue
 		}
 		fi := indexes[0]
-		g.seriesInPreviousEval[i] = from.seriesInPreviousEval[fi]
+		g.seriesInPreviousEval.CopyFrom(i, from.seriesInPreviousEval, fi)
 		ruleMap[nameAndLabels] = indexes[1:]
 
 		ar, ok := rule.(*AlertingRule)
@@ -412,9 +416,7 @@ func (g *Group) CopyState(from *Group) {
 		nameAndLabels := nameAndLabels(fromRule)
 		l := ruleMap[nameAndLabels]
 		if len(l) != 0 {
-			for _, series := range from.seriesInPreviousEval[fi] {
-				g.staleSeries = append(g.staleSeries, series)
-			}
+			g.staleSeries = append(g.staleSeries, from.seriesInPreviousEval.GetAll(fi)...)
 		}
 	}
 }
@@ -472,7 +474,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			)
 
 			app := g.opts.Appendable.Appender(ctx)
-			seriesReturned := make(map[string]labels.Labels, len(g.seriesInPreviousEval[i]))
+			g.seriesInPreviousEval.InitCurrent(len(vector))
 			defer func() {
 				if err := app.Commit(); err != nil {
 					rule.SetHealth(HealthBad)
@@ -483,7 +485,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 					level.Warn(g.logger).Log("name", rule.Name(), "index", i, "msg", "Rule sample appending failed", "err", err)
 					return
 				}
-				g.seriesInPreviousEval[i] = seriesReturned
+				g.seriesInPreviousEval.MoveCurrentToPrevious(i)
 			}()
 
 			for _, s := range vector {
@@ -515,8 +517,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 						level.Warn(g.logger).Log("name", rule.Name(), "index", i, "msg", "Rule evaluation result discarded", "err", err, "sample", s)
 					}
 				} else {
-					buf := [1024]byte{}
-					seriesReturned[string(s.Metric.Bytes(buf[:]))] = s.Metric
+					g.seriesInPreviousEval.AddToCurrent(s.Metric)
 				}
 			}
 			if numOutOfOrder > 0 {
@@ -529,26 +530,24 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				level.Warn(g.logger).Log("name", rule.Name(), "index", i, "msg", "Error on ingesting results from rule evaluation with different value but same timestamp", "numDropped", numDuplicates)
 			}
 
-			for metric, lset := range g.seriesInPreviousEval[i] {
-				if _, ok := seriesReturned[metric]; !ok {
-					// Series no longer exposed, mark it stale.
-					_, err = app.Append(0, lset, timestamp.FromTime(ts), math.Float64frombits(value.StaleNaN))
-					unwrappedErr := errors.Unwrap(err)
-					if unwrappedErr == nil {
-						unwrappedErr = err
-					}
-					switch {
-					case unwrappedErr == nil:
-					case errors.Is(unwrappedErr, storage.ErrOutOfOrderSample),
-						errors.Is(unwrappedErr, storage.ErrTooOldSample),
-						errors.Is(unwrappedErr, storage.ErrDuplicateSampleForTimestamp):
-						// Do not count these in logging, as this is expected if series
-						// is exposed from a different rule.
-					default:
-						level.Warn(g.logger).Log("name", rule.Name(), "index", i, "msg", "Adding stale sample failed", "sample", lset.String(), "err", err)
-					}
+			g.seriesInPreviousEval.ForEachStale(i, func(lset labels.Labels) {
+				// Series no longer exposed, mark it stale.
+				_, err = app.Append(0, lset, timestamp.FromTime(ts), math.Float64frombits(value.StaleNaN))
+				unwrappedErr := errors.Unwrap(err)
+				if unwrappedErr == nil {
+					unwrappedErr = err
 				}
-			}
+				switch {
+				case unwrappedErr == nil:
+				case errors.Is(unwrappedErr, storage.ErrOutOfOrderSample),
+					errors.Is(unwrappedErr, storage.ErrTooOldSample),
+					errors.Is(unwrappedErr, storage.ErrDuplicateSampleForTimestamp):
+					// Do not count these in logging, as this is expected if series
+					// is exposed from a different rule.
+				default:
+					level.Warn(g.logger).Log("name", rule.Name(), "index", i, "msg", "Adding stale sample failed", "sample", lset.String(), "err", err)
+				}
+			})
 		}(i, rule)
 	}
 	if g.metrics != nil {

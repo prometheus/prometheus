@@ -109,6 +109,21 @@ func (ls Labels) Bytes(buf []byte) []byte {
 	return buf
 }
 
+func FromBytes(buf []byte) (*Labels, error) {
+	series := &Labels{}
+	err := series.FromBytes(buf)
+	if err != nil {
+		return nil, err
+	}
+
+	return series, nil
+}
+
+func (ls *Labels) FromBytes(buf []byte) error {
+	ls.data = string(buf)
+	return nil
+}
+
 // MarshalJSON implements json.Marshaler.
 func (ls Labels) MarshalJSON() ([]byte, error) {
 	return json.Marshal(ls.Map())

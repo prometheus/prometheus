@@ -561,6 +561,14 @@ func TestLabels_BytesWithoutLabels(t *testing.T) {
 	require.Equal(t, FromStrings("aaa", "111").Bytes(nil), FromStrings(MetricName, "333", "aaa", "111", "bbb", "222").BytesWithoutLabels(nil, MetricName, "bbb"))
 }
 
+func TestLabels_LabelsFromBytes(t *testing.T) {
+	ls1 := FromStrings("aaa", "111", "bbb", "222")
+	bt := ls1.Bytes(nil)
+	ls2 := Labels{}
+	ls2.FromBytes(bt)
+	require.Equal(t, bt, ls2.Bytes(nil))
+}
+
 func TestBuilder(t *testing.T) {
 	for i, tcase := range []struct {
 		base Labels

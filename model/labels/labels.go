@@ -18,6 +18,7 @@ package labels
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -82,6 +83,47 @@ func (ls Labels) Bytes(buf []byte) []byte {
 		b.WriteString(l.Value)
 	}
 	return b.Bytes()
+}
+
+func FromBytes(buf []byte) (*Labels, error) {
+	series := &Labels{}
+	err := series.FromBytes(buf)
+	if err != nil {
+		return nil, err
+	}
+
+	return series, nil
+}
+
+func (ls *Labels) FromBytes(buf []byte) error {
+	*ls = (*ls)[:0]
+	if len(buf) == 0 {
+		return nil
+	}
+	if buf[0] != labelSep {
+		return fmt.Errorf("unreadable label set buffer 1")
+	}
+	buf = buf[1:]
+	for len(buf) > 0 {
+		i := bytes.IndexByte(buf, seps[0])
+		if i < 0 {
+			return fmt.Errorf("unreadable label set buffer 2")
+		}
+		name := buf[:i]
+		buf = buf[i+1:]
+		i = bytes.IndexByte(buf, seps[0])
+		if i < 0 {
+			i = len(buf)
+		}
+		value := buf[:i]
+		if i < len(buf) {
+			buf = buf[i+1:]
+		} else {
+			buf = buf[i:]
+		}
+		*ls = append(*ls, Label{Name: string(name), Value: string(value)})
+	}
+	return nil
 }
 
 // MarshalJSON implements json.Marshaler.
