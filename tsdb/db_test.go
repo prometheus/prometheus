@@ -1501,6 +1501,19 @@ func TestTimeRetention(t *testing.T) {
 	require.Equal(t, expBlocks[len(expBlocks)-1].MaxTime, actBlocks[len(actBlocks)-1].meta.MaxTime)
 }
 
+func TestRetentionDurationMetric(t *testing.T) {
+	db := openTestDB(t, &Options{
+		RetentionDuration: 1000,
+	}, []int64{100})
+	defer func() {
+		require.NoError(t, db.Close())
+	}()
+
+	expRetentionDuration := 1.0
+	actRetentionDuration := prom_testutil.ToFloat64(db.metrics.retentionDuration)
+	require.Equal(t, expRetentionDuration, actRetentionDuration, "metric retention duration mismatch")
+}
+
 func TestSizeRetention(t *testing.T) {
 	opts := DefaultOptions()
 	opts.OutOfOrderTimeWindow = 100
