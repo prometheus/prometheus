@@ -89,7 +89,7 @@ func (c *PostingsForMatchersCache) PostingsForMatchers(ctx context.Context, ix I
 	defer span.End()
 
 	if !concurrent && !c.force {
-		span.AddEvent("cache not in use")
+		span.AddEvent("cache not used")
 		p, err := c.postingsForMatchers(ctx, ix, ms...)
 		span.RecordError(err)
 		return p, err
@@ -127,7 +127,7 @@ func (p *postingsForMatcherPromise) result(ctx context.Context) (index.Postings,
 			return nil, ctx.Err()
 		}
 		if p.err != nil {
-			span.AddEvent("failed postingsForMatchers promise ", trace.WithAttributes(
+			span.AddEvent("failed postingsForMatchers promise", trace.WithAttributes(
 				attribute.String("err", p.err.Error()),
 			))
 			return nil, p.err
@@ -155,7 +155,7 @@ func (c *PostingsForMatchersCache) postingsForMatchersPromise(ctx context.Contex
 		return oldPromise.(*postingsForMatcherPromise).result
 	}
 
-	span.AddEvent("cached new postingsForMatchers promise, executing query", trace.WithAttributes(
+	span.AddEvent("no postingsForMatchers promise in cache, executing query", trace.WithAttributes(
 		attribute.String("key", key)),
 	)
 
