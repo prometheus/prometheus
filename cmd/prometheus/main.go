@@ -1583,7 +1583,6 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		RetentionDuration:              int64(time.Duration(opts.RetentionDuration) / time.Millisecond),
 		MaxBytes:                       int64(opts.MaxBytes),
 		NoLockfile:                     opts.NoLockfile,
-		AllowOverlappingCompaction:     true,
 		WALCompression:                 wlog.ParseCompressionType(opts.WALCompression, opts.WALCompressionType),
 		HeadChunksWriteQueueSize:       opts.HeadChunksWriteQueueSize,
 		SamplesPerChunk:                opts.SamplesPerChunk,
