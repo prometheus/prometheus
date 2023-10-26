@@ -180,6 +180,90 @@ func (s *FrameSuite) TestHeaderEncodeDecodeBinaryWithError() {
 	s.Require().Error(err)
 }
 
+func (s *FrameSuite) TestFrame() {
+	var (
+		version   uint8            = 3
+		typeFrame frames.TypeFrame = frames.AuthType
+		shardID   uint16           = 1
+		segmentID uint32           = 1
+	)
+	body, err := frames.NewAuthMsg(
+		uuid.NewString(),
+		uuid.NewString(),
+		uuid.NewString(),
+		uuid.NewString(),
+		uuid.NewString(),
+		shardID,
+	).MarshalBinary()
+	s.Require().NoError(err)
+	wm := frames.NewFrame(version, typeFrame, body, shardID, segmentID)
+
+	b := wm.EncodeBinary()
+	_, err = s.rw.Write(b)
+	s.Require().NoError(err)
+
+	_, err = s.rw.Seek(0, 0)
+	s.Require().NoError(err)
+
+	rm := frames.NewFrameEmpty()
+	err = rm.Read(context.Background(), s.rw)
+	s.Require().NoError(err)
+
+	err = rm.Validate()
+	s.Require().NoError(err)
+
+	s.Require().Equal(*wm, *rm)
+
+	s.Require().Equal(wm.GetHeader(), rm.GetHeader())
+	s.Require().Equal(version, rm.GetVersion())
+	s.Require().Equal(typeFrame, rm.GetType())
+	s.Require().Equal(wm.GetCreatedAt(), rm.GetCreatedAt())
+	s.Require().Equal(shardID, rm.GetShardID())
+	s.Require().Equal(segmentID, rm.GetSegmentID())
+}
+
+func (s *FrameSuite) TestFrameQuick() {
+	f := func(version uint8, shardID uint16, segmentID uint32) bool {
+		body, err := frames.NewAuthMsg(
+			uuid.NewString(),
+			uuid.NewString(),
+			uuid.NewString(),
+			uuid.NewString(),
+			uuid.NewString(),
+			shardID,
+		).MarshalBinary()
+		s.Require().NoError(err)
+		wm := frames.NewFrame(version, frames.AuthType, body, shardID, segmentID)
+		b := wm.EncodeBinary()
+
+		rw := NewFileBuffer()
+		_, err = rw.Write(b)
+		s.Require().NoError(err)
+
+		_, err = rw.Seek(0, 0)
+		s.Require().NoError(err)
+
+		rm := frames.NewFrameEmpty()
+		err = rm.Read(context.Background(), rw)
+		s.Require().NoError(err)
+
+		err = rm.Validate()
+		s.Require().NoError(err)
+
+		s.Require().Equal(wm.GetHeader(), rm.GetHeader())
+		s.Require().Equal(version, rm.GetVersion())
+		s.Require().Equal(wm.GetType(), rm.GetType())
+		s.Require().Equal(wm.GetCreatedAt(), rm.GetCreatedAt())
+		s.Require().Equal(shardID, rm.GetShardID())
+		s.Require().Equal(segmentID, rm.GetSegmentID())
+
+		return s.Equal(*wm, *rm)
+	}
+
+	err := quick.Check(f, nil)
+	s.NoError(err)
+}
+
 type authMsgTest struct {
 	Token         string
 	AgentUUID     string
@@ -1287,4 +1371,127 @@ func (s *FrameSuite) TestRefillShardEOFFrame() {
 
 	s.Require().Equal(nameID, rm.NameID)
 	s.Require().Equal(shardID, rm.ShardID)
+}
+
+func (s *FrameSuite) TestFinalMsg() {
+	wm := frames.NewFinalMsg(true)
+	b, err := wm.MarshalBinary()
+	s.Require().NoError(err)
+
+	rm := frames.NewFinalMsgEmpty()
+	err = rm.UnmarshalBinary(b)
+	s.Require().NoError(err)
+	s.Require().Equal(*wm, *rm)
+}
+
+func (s *FrameSuite) TestFinalMsgQuick() {
+	f := func(hasRefill bool) bool {
+		wm := frames.NewFinalMsg(hasRefill)
+		b, err := wm.MarshalBinary()
+		s.Require().NoError(err)
+
+		rm := frames.NewFinalMsgEmpty()
+		err = rm.UnmarshalBinary(b)
+		s.Require().NoError(err)
+		return s.Equal(*wm, *rm)
+	}
+
+	err := quick.Check(f, nil)
+	s.NoError(err)
+}
+
+func (s *FrameSuite) TestFinalMsgFrameAt() {
+	ctx := context.Background()
+	var (
+		hasRefill = true
+	)
+	wm, err := frames.NewFinalMsgFrame(3, 1, 1, hasRefill)
+	s.Require().NoError(err)
+
+	_, err = wm.WriteTo(s.rw)
+	s.Require().NoError(err)
+
+	var off int64
+	h, err := frames.ReadHeader(ctx, util.NewOffsetReader(s.rw, off))
+	s.Require().NoError(err)
+	off += int64(h.SizeOf())
+	s.Require().Equal(frames.FinalType, h.GetType())
+
+	rm, err := frames.ReadAtFrameFinalMsg(ctx, s.rw, off, int(h.GetSize()))
+	s.Require().NoError(err)
+
+	s.Require().Equal(hasRefill, rm.HasRefill())
+	s.Require().Equal(int64(1), rm.Size())
+}
+
+func (s *FrameSuite) TestFinalMsgWriteFrameAt() {
+	ctx := context.Background()
+	var (
+		hasRefill = true
+	)
+	wm := frames.NewWriteFrame(3, frames.FinalType, 1, 1, frames.NewFinalMsg(hasRefill))
+
+	_, err := wm.WriteTo(s.rw)
+	s.Require().NoError(err)
+
+	var off int64
+	h, err := frames.ReadHeader(ctx, util.NewOffsetReader(s.rw, off))
+	s.Require().NoError(err)
+	off += int64(h.SizeOf())
+	s.Require().Equal(frames.FinalType, h.GetType())
+
+	rm, err := frames.ReadAtFrameFinalMsg(ctx, s.rw, off, int(h.GetSize()))
+	s.Require().NoError(err)
+
+	s.Require().Equal(hasRefill, rm.HasRefill())
+	s.Require().Equal(int64(1), rm.Size())
+}
+
+func (s *FrameSuite) TestFinalMsgFrame() {
+	ctx := context.Background()
+	var (
+		hasRefill = true
+	)
+	wm, err := frames.NewFinalMsgFrame(3, 1, 1, hasRefill)
+	s.Require().NoError(err)
+
+	_, err = wm.WriteTo(s.rw)
+	s.Require().NoError(err)
+
+	_, err = s.rw.Seek(0, 0)
+	s.Require().NoError(err)
+
+	h, err := frames.ReadHeader(ctx, s.rw)
+	s.Require().NoError(err)
+	s.Require().Equal(frames.FinalType, h.GetType())
+
+	rm, err := frames.ReadFrameFinalMsg(ctx, s.rw, int(h.GetSize()))
+	s.Require().NoError(err)
+
+	s.Require().Equal(hasRefill, rm.HasRefill())
+	s.Require().Equal(int64(1), rm.Size())
+}
+
+func (s *FrameSuite) TestFinalMsgWriteFrame() {
+	ctx := context.Background()
+	var (
+		hasRefill = true
+	)
+	wm := frames.NewWriteFrame(3, frames.FinalType, 1, 1, frames.NewFinalMsg(hasRefill))
+
+	_, err := wm.WriteTo(s.rw)
+	s.Require().NoError(err)
+
+	_, err = s.rw.Seek(0, 0)
+	s.Require().NoError(err)
+
+	h, err := frames.ReadHeader(ctx, s.rw)
+	s.Require().NoError(err)
+	s.Require().Equal(frames.FinalType, h.GetType())
+
+	rm, err := frames.ReadFrameFinalMsg(ctx, s.rw, int(h.GetSize()))
+	s.Require().NoError(err)
+
+	s.Require().Equal(hasRefill, rm.HasRefill())
+	s.Require().Equal(int64(1), rm.Size())
 }

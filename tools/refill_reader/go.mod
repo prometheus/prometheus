@@ -1,6 +1,6 @@
 module refillreader
 
-go 1.20
+go 1.21
 
 require (
 	github.com/prometheus/prometheus/pp/go v0.0.0-20230725140514-0dad5588ff4b

@@ -1,6 +1,6 @@
 module github.com/prometheus/prometheus/pp/go
 
-go 1.20
+go 1.21
 
 require (
 	github.com/cenkalti/backoff/v4 v4.2.1
@@ -11,9 +11,9 @@ require (
 	github.com/jonboulle/clockwork v0.4.0
 	github.com/pierrec/lz4/v4 v4.1.18
 	github.com/prometheus/client_golang v1.17.0
-	github.com/prometheus/prometheus v0.47.0
+	github.com/prometheus/prometheus v0.47.2
 	github.com/stretchr/testify v1.8.4
-	golang.org/x/sync v0.3.0
+	golang.org/x/sync v0.4.0
 )
 
 require (

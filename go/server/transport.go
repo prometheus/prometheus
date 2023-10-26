@@ -53,6 +53,8 @@ func (pr *ProtocolReader) Next(ctx context.Context) (*Request, error) {
 			}
 		case frames.SegmentType:
 			return pr.handlePut(ctx, fe)
+		case frames.FinalType:
+			return pr.handleFinal(fe)
 		default:
 			return nil, fmt.Errorf("unexpected msg type %d", fe.GetType())
 		}
@@ -117,6 +119,20 @@ func (pr *ProtocolReader) handlePut(ctx context.Context, fe *frames.ReadFrame) (
 		return rq, fmt.Errorf("unmarshal protobuf: %w", err)
 	}
 	return rq, nil
+}
+
+// handleFinal - process the final frame.
+func (*ProtocolReader) handleFinal(rf *frames.ReadFrame) (*Request, error) {
+	fm := frames.NewFinalMsgEmpty()
+	if err := fm.UnmarshalBinary(rf.GetBody()); err != nil {
+		return nil, err
+	}
+	return &Request{
+		SegmentID: rf.GetSegmentID(),
+		SentAt:    rf.GetCreatedAt(),
+		Finalized: true,
+		HasRefill: fm.HasRefill(),
+	}, nil
 }
 
 // TCPReader - wrappers over connection from cient.
@@ -240,4 +256,6 @@ type Request struct {
 	SentAt    int64
 	CreatedAt int64
 	EncodedAt int64
+	Finalized bool
+	HasRefill bool
 }

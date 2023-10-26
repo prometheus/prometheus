@@ -1,6 +1,9 @@
 package frames
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 var (
 	// ErrUnknownFrameType - error for unknown type frame.
@@ -20,3 +23,22 @@ var (
 	// ErrUUIDEmpty - error for empty UUID.
 	ErrUUIDEmpty = errors.New("agent uuid is empty")
 )
+
+// ErrNotEqualChecksum - checksum mismatch error.
+type ErrNotEqualChecksum struct {
+	expected   uint32
+	calculated uint32
+}
+
+// NotEqualChecksum - create ErrNotEqualChecksum error.
+func NotEqualChecksum(exp, calc uint32) error {
+	if exp == calc {
+		return nil
+	}
+	return ErrNotEqualChecksum{exp, calc}
+}
+
+// Error - implements error.
+func (err ErrNotEqualChecksum) Error() string {
+	return fmt.Sprintf("not equal checksum, expected(%d), calculated(%d)", err.expected, err.calculated)
+}
