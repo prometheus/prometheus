@@ -159,12 +159,15 @@ cover only a few samples.
 
 Ways to deal with this change either globally or on a per metric basis:
 
-- Do nothing and accept that some queries that span the transition time will
-produce inaccurate or unexpected results.
+- Fix references to integer `le`, `quantile` label values, but otherwise do
+nothing and accept that some queries that span the transition time will produce
+inaccurate or unexpected results.
+_This is the recommended solution, to get consistently normalized label values._
+Also Prometheus 3.0 is expected to enforce normalization of these label values.
 - Use `metric_relabel_config` to retain the old labels when scraping targets.
 This should **only** be applied to metrics that currently produce such labels.
 
-<!-- The following config snippet is unit tested in scrape_test.go. -->
+<!-- The following config snippet is unit tested in scrape/scrape_test.go. -->
 ```yaml
     metric_relabel_configs:
       - source_labels:
