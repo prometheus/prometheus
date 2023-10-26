@@ -2086,6 +2086,79 @@ func TestWalRepair_DecodingError(t *testing.T) {
 	}
 }
 
+// TestWblRepair_DecodingError ensures that a repair is run for an error
+// when decoding a record.
+func TestWblRepair_DecodingError(t *testing.T) {
+	var enc record.Encoder
+	corrFunc := func(rec []byte) []byte {
+		return rec[:3]
+	}
+	rec := enc.Samples([]record.RefSample{{Ref: 0, T: 99, V: 1}}, []byte{})
+	totalRecs := 9
+	expRecs := 5
+	dir := t.TempDir()
+
+	// Fill the wbl and corrupt it.
+	{
+		wal, err := wlog.New(nil, nil, filepath.Join(dir, "wal"), wlog.CompressionNone)
+		require.NoError(t, err)
+		wbl, err := wlog.New(nil, nil, filepath.Join(dir, "wbl"), wlog.CompressionNone)
+		require.NoError(t, err)
+
+		for i := 1; i <= totalRecs; i++ {
+			// At this point insert a corrupted record.
+			if i-1 == expRecs {
+				require.NoError(t, wbl.Log(corrFunc(rec)))
+				continue
+			}
+			require.NoError(t, wbl.Log(rec))
+		}
+
+		opts := DefaultHeadOptions()
+		opts.ChunkRange = 1
+		opts.ChunkDirRoot = wal.Dir()
+		opts.OutOfOrderCapMax.Store(30)
+		opts.OutOfOrderTimeWindow.Store(1000 * time.Minute.Milliseconds())
+		h, err := NewHead(nil, nil, wal, wbl, opts, nil)
+		require.NoError(t, err)
+		require.Equal(t, 0.0, prom_testutil.ToFloat64(h.metrics.walCorruptionsTotal))
+		initErr := h.Init(math.MinInt64)
+
+		_, ok := initErr.(*errLoadWbl)
+		require.True(t, ok) // Wbl errors are wrapped into errLoadWbl, make sure we can unwrap it.
+
+		err = errors.Cause(initErr) // So that we can pick up errors even if wrapped.
+		_, corrErr := err.(*wlog.CorruptionErr)
+		require.True(t, corrErr, "reading the wal didn't return corruption error")
+		require.NoError(t, h.Close()) // Head will close the wal as well.
+	}
+
+	// Open the db to trigger a repair.
+	{
+		db, err := Open(dir, nil, nil, DefaultOptions(), nil)
+		require.NoError(t, err)
+		defer func() {
+			require.NoError(t, db.Close())
+		}()
+		require.Equal(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.walCorruptionsTotal))
+	}
+
+	// Read the wbl content after the repair.
+	{
+		sr, err := wlog.NewSegmentsReader(filepath.Join(dir, "wbl"))
+		require.NoError(t, err)
+		defer sr.Close()
+		r := wlog.NewReader(sr)
+
+		var actRec int
+		for r.Next() {
+			actRec++
+		}
+		require.NoError(t, r.Err())
+		require.Equal(t, expRecs, actRec, "Wrong number of intact records")
+	}
+}
+
 func TestHeadReadWriterRepair(t *testing.T) {
 	dir := t.TempDir()
 
@@ -4446,9 +4519,8 @@ func TestChunkSnapshotTakenAfterIncompleteSnapshot(t *testing.T) {
 	require.Greater(t, offset, 0)
 }
 
-// TestOOOWalReplay checks the replay at a low level.
-// TODO(codesome): Needs test for ooo WAL repair.
-func TestOOOWalReplay(t *testing.T) {
+// TestWBLReplay checks the replay at a low level.
+func TestWBLReplay(t *testing.T) {
 	dir := t.TempDir()
 	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, wlog.CompressionSnappy)
 	require.NoError(t, err)
@@ -4835,6 +4907,16 @@ func TestHistogramValidation(t *testing.T) {
 	}{
 		"valid histogram": {
 			h: tsdbutil.GenerateTestHistograms(1)[0],
+		},
+		"valid histogram that has its Count (4) higher than the actual total of buckets (2 + 1)": {
+			// This case is possible if NaN values (which do not fall into any bucket) are observed.
+			h: &histogram.Histogram{
+				ZeroCount:       2,
+				Count:           4,
+				Sum:             math.NaN(),
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []int64{1},
+			},
 		},
 		"rejects histogram that has too few negative buckets": {
 			h: &histogram.Histogram{

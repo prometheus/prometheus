@@ -22,7 +22,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/grafana/regexp"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/google/uuid"
@@ -46,10 +49,25 @@ type ManagedIdentityConfig struct {
 	ClientID string `yaml:"client_id,omitempty"`
 }
 
+// OAuthConfig is used to store azure oauth config values.
+type OAuthConfig struct {
+	// ClientID is the clientId of the azure active directory application that is being used to authenticate.
+	ClientID string `yaml:"client_id,omitempty"`
+
+	// ClientSecret is the clientSecret of the azure active directory application that is being used to authenticate.
+	ClientSecret string `yaml:"client_secret,omitempty"`
+
+	// TenantID is the tenantId of the azure active directory application that is being used to authenticate.
+	TenantID string `yaml:"tenant_id,omitempty"`
+}
+
 // AzureADConfig is used to store the config values.
 type AzureADConfig struct { // nolint:revive
 	// ManagedIdentity is the managed identity that is being used to authenticate.
 	ManagedIdentity *ManagedIdentityConfig `yaml:"managed_identity,omitempty"`
+
+	// OAuth is the oauth config that is being used to authenticate.
+	OAuth *OAuthConfig `yaml:"oauth,omitempty"`
 
 	// Cloud is the Azure cloud in which the service is running. Example: AzurePublic/AzureGovernment/AzureChina.
 	Cloud string `yaml:"cloud,omitempty"`
@@ -84,18 +102,47 @@ func (c *AzureADConfig) Validate() error {
 		return fmt.Errorf("must provide a cloud in the Azure AD config")
 	}
 
-	if c.ManagedIdentity == nil {
-		return fmt.Errorf("must provide an Azure Managed Identity in the Azure AD config")
+	if c.ManagedIdentity == nil && c.OAuth == nil {
+		return fmt.Errorf("must provide an Azure Managed Identity or Azure OAuth in the Azure AD config")
 	}
 
-	if c.ManagedIdentity.ClientID == "" {
-		return fmt.Errorf("must provide an Azure Managed Identity client_id in the Azure AD config")
+	if c.ManagedIdentity != nil && c.OAuth != nil {
+		return fmt.Errorf("cannot provide both Azure Managed Identity and Azure OAuth in the Azure AD config")
 	}
 
-	_, err := uuid.Parse(c.ManagedIdentity.ClientID)
-	if err != nil {
-		return fmt.Errorf("the provided Azure Managed Identity client_id provided is invalid")
+	if c.ManagedIdentity != nil {
+		if c.ManagedIdentity.ClientID == "" {
+			return fmt.Errorf("must provide an Azure Managed Identity client_id in the Azure AD config")
+		}
+
+		_, err := uuid.Parse(c.ManagedIdentity.ClientID)
+		if err != nil {
+			return fmt.Errorf("the provided Azure Managed Identity client_id is invalid")
+		}
 	}
+
+	if c.OAuth != nil {
+		if c.OAuth.ClientID == "" {
+			return fmt.Errorf("must provide an Azure OAuth client_id in the Azure AD config")
+		}
+		if c.OAuth.ClientSecret == "" {
+			return fmt.Errorf("must provide an Azure OAuth client_secret in the Azure AD config")
+		}
+		if c.OAuth.TenantID == "" {
+			return fmt.Errorf("must provide an Azure OAuth tenant_id in the Azure AD config")
+		}
+
+		var err error
+		_, err = uuid.Parse(c.OAuth.ClientID)
+		if err != nil {
+			return fmt.Errorf("the provided Azure OAuth client_id is invalid")
+		}
+		_, err = regexp.MatchString("^[0-9a-zA-Z-.]+$", c.OAuth.TenantID)
+		if err != nil {
+			return fmt.Errorf("the provided Azure OAuth tenant_id is invalid")
+		}
+	}
+
 	return nil
 }
 
@@ -146,19 +193,52 @@ func (rt *azureADRoundTripper) RoundTrip(req *http.Request) (*http.Response, err
 
 // newTokenCredential returns a TokenCredential of different kinds like Azure Managed Identity and Azure AD application.
 func newTokenCredential(cfg *AzureADConfig) (azcore.TokenCredential, error) {
-	cred, err := newManagedIdentityTokenCredential(cfg.ManagedIdentity.ClientID)
+	var cred azcore.TokenCredential
+	var err error
+	cloudConfiguration, err := getCloudConfiguration(cfg.Cloud)
 	if err != nil {
 		return nil, err
+	}
+	clientOpts := &azcore.ClientOptions{
+		Cloud: cloudConfiguration,
+	}
+
+	if cfg.ManagedIdentity != nil {
+		managedIdentityConfig := &ManagedIdentityConfig{
+			ClientID: cfg.ManagedIdentity.ClientID,
+		}
+		cred, err = newManagedIdentityTokenCredential(clientOpts, managedIdentityConfig)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if cfg.OAuth != nil {
+		oAuthConfig := &OAuthConfig{
+			ClientID:     cfg.OAuth.ClientID,
+			ClientSecret: cfg.OAuth.ClientSecret,
+			TenantID:     cfg.OAuth.TenantID,
+		}
+		cred, err = newOAuthTokenCredential(clientOpts, oAuthConfig)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return cred, nil
 }
 
 // newManagedIdentityTokenCredential returns new Managed Identity token credential.
-func newManagedIdentityTokenCredential(managedIdentityClientID string) (azcore.TokenCredential, error) {
-	clientID := azidentity.ClientID(managedIdentityClientID)
-	opts := &azidentity.ManagedIdentityCredentialOptions{ID: clientID}
+func newManagedIdentityTokenCredential(clientOpts *azcore.ClientOptions, managedIdentityConfig *ManagedIdentityConfig) (azcore.TokenCredential, error) {
+	clientID := azidentity.ClientID(managedIdentityConfig.ClientID)
+	opts := &azidentity.ManagedIdentityCredentialOptions{ClientOptions: *clientOpts, ID: clientID}
 	return azidentity.NewManagedIdentityCredential(opts)
+}
+
+// newOAuthTokenCredential returns new OAuth token credential
+func newOAuthTokenCredential(clientOpts *azcore.ClientOptions, oAuthConfig *OAuthConfig) (azcore.TokenCredential, error) {
+	opts := &azidentity.ClientSecretCredentialOptions{ClientOptions: *clientOpts}
+	return azidentity.NewClientSecretCredential(oAuthConfig.TenantID, oAuthConfig.ClientID, oAuthConfig.ClientSecret, opts)
 }
 
 // newTokenProvider helps to fetch accessToken for different types of credential. This also takes care of
@@ -243,5 +323,19 @@ func getAudience(cloud string) (string, error) {
 		return IngestionPublicAudience, nil
 	default:
 		return "", errors.New("Cloud is not specified or is incorrect: " + cloud)
+	}
+}
+
+// getCloudConfiguration returns the cloud Configuration which contains AAD endpoint for different clouds
+func getCloudConfiguration(c string) (cloud.Configuration, error) {
+	switch strings.ToLower(c) {
+	case strings.ToLower(AzureChina):
+		return cloud.AzureChina, nil
+	case strings.ToLower(AzureGovernment):
+		return cloud.AzureGovernment, nil
+	case strings.ToLower(AzurePublic):
+		return cloud.AzurePublic, nil
+	default:
+		return cloud.Configuration{}, errors.New("Cloud is not specified or is incorrect: " + c)
 	}
 }

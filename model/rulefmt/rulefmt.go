@@ -173,17 +173,11 @@ func (r *RuleNode) Validate() (nodes []WrappedError) {
 		})
 	}
 	if r.Record.Value == "" && r.Alert.Value == "" {
-		if r.Record.Value == "0" {
-			nodes = append(nodes, WrappedError{
-				err:  fmt.Errorf("one of 'record' or 'alert' must be set"),
-				node: &r.Alert,
-			})
-		} else {
-			nodes = append(nodes, WrappedError{
-				err:  fmt.Errorf("one of 'record' or 'alert' must be set"),
-				node: &r.Record,
-			})
-		}
+		nodes = append(nodes, WrappedError{
+			err:     fmt.Errorf("one of 'record' or 'alert' must be set"),
+			node:    &r.Record,
+			nodeAlt: &r.Alert,
+		})
 	}
 
 	if r.Expr.Value == "" {

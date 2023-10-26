@@ -413,6 +413,7 @@ type Postings interface {
 	Seek(v storage.SeriesRef) bool
 
 	// At returns the value at the current iterator position.
+	// At should only be called after a successful call to Next or Seek.
 	At() storage.SeriesRef
 
 	// Err returns the last error of the iterator.

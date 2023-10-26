@@ -29,7 +29,7 @@ import (
 	"github.com/prometheus/common/model"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
 	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/config"

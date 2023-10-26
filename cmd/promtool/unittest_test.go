@@ -112,6 +112,16 @@ func TestRulesUnitTest(t *testing.T) {
 			},
 			want: 0,
 		},
+		{
+			name: "No test group interval",
+			args: args{
+				files: []string{"./testdata/no-test-group-interval.yml"},
+			},
+			queryOpts: promql.LazyLoaderOpts{
+				EnableNegativeOffset: true,
+			},
+			want: 0,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
