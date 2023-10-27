@@ -12,7 +12,11 @@
 #include "wal_c_encoder_api.h"
 #include "wal_c_types_api.h"
 
+#ifdef __SANITIZE_ADDRESS__
+#include <malloc.h>
+#else
 #include <jemalloc/jemalloc.h>
+#endif
 #include <exception>
 #include <sstream>
 #include <string>
@@ -211,6 +215,11 @@ extern "C" void okdb_wal_uni_c_hashdex_presharding(c_hashdex c_hx, c_hashdex_pre
 
 // okdb_wal_c_mem_info - get memory usage stats.
 extern "C" void okdb_wal_c_mem_info(mem_info_result* result) {
+#ifdef __SANITIZE_ADDRESS__
+  struct mallinfo2 mi;
+  mi = mallinfo2();
+  result->in_use = mi.uordblks;
+#else
   uint64_t epoch = 1;
   size_t sz = sizeof(epoch);
   mallctl("epoch", &epoch, &sz, &epoch, sz);
@@ -218,4 +227,5 @@ extern "C" void okdb_wal_c_mem_info(mem_info_result* result) {
   size_t size_len = sizeof(size);
   mallctl("stats.allocated", &size, &size_len, NULL, 0);
   result->in_use = size;
+#endif
 }
