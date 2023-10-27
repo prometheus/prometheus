@@ -15,6 +15,13 @@ config_setting(
     },
 )
 
+config_setting(
+    name = "asan_build",
+    values = {
+        "platform_suffix": "asan",
+    }
+)
+
 filegroup(
     name = "clang_tidy_config_default",
     srcs = [
@@ -80,9 +87,6 @@ cc_test(
     deps = [
         ":bare_bones",
         "@gtest//:gtest_main",
-    ],
-    linkopts = [
-        "-static",
     ],
 )
 
@@ -276,11 +280,15 @@ cc_library(
     hdrs = ["wal/wal_c_api.h", "wal/wal_c_types_api.h"],
     srcs = ["wal/wal_c_api.cpp", "wal/wal_c_types.cpp", "wal/wal_c_go_uni_api.cpp"],
 
-    deps = [":arch_detector", "@jemalloc"] +
-    select({
-        ":aarch64_build": ["aarch64_wal_c_api"],
-        ":x86_build": ["x86_wal_c_api"],
-        "//conditions:default" : ["x86_wal_c_api"],
+    deps = [
+        ":arch_detector",
+    ] + select({
+        ":asan_build":          [],
+        "//conditions:default": ["@jemalloc"],
+    }) + select({
+        ":aarch64_build":       ["aarch64_wal_c_api"],
+        ":x86_build":           ["x86_wal_c_api"],
+        "//conditions:default": ["x86_wal_c_api"],
     }),
 )
 
