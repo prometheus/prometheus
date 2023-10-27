@@ -96,6 +96,9 @@ func ruleUnitTest(filename string, queryOpts promql.LazyLoaderOpts) []error {
 	// Testing.
 	var errs []error
 	for _, t := range unitTestInp.Tests {
+		if t.Interval == 0 {
+			t.Interval = unitTestInp.EvaluationInterval
+		}
 		ers := t.test(evalInterval, groupOrderMap, queryOpts, unitTestInp.RuleFiles...)
 		if ers != nil {
 			errs = append(errs, ers...)
