@@ -1779,7 +1779,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 	minMmapFile = math.MaxInt32
 
 	// For one series, truncate old chunks and check if any chunks left. If not, mark as deleted and collect the ID.
-	check := func(i int, hash uint64, series *memSeries, deletedForCallback map[chunks.HeadSeriesRef]labels.Labels) {
+	check := func(hashShard int, hash uint64, series *memSeries, deletedForCallback map[chunks.HeadSeriesRef]labels.Labels) {
 		series.Lock()
 		defer series.Unlock()
 
@@ -1820,20 +1820,16 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 		// series alike.
 		// If we don't hold them all, there's a very small chance that a series receives
 		// samples again while we are half-way into deleting it.
-		j := int(series.ref) & (s.size - 1)
-
-		if i != j {
-			s.locks[j].Lock()
+		refShard := int(series.ref) & (s.size - 1)
+		if hashShard != refShard {
+			s.locks[refShard].Lock()
+			defer s.locks[refShard].Unlock()
 		}
 
 		deleted[storage.SeriesRef(series.ref)] = struct{}{}
-		s.hashes[i].del(hash, series.lset)
-		delete(s.series[j], series.ref)
+		s.hashes[hashShard].del(hash, series.lset)
+		delete(s.series[refShard], series.ref)
 		deletedForCallback[series.ref] = series.lset
-
-		if i != j {
-			s.locks[j].Unlock()
-		}
 	}
 
 	// Run through all series shard by shard, checking which should be deleted.
