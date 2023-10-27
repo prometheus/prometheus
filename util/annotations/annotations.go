@@ -122,6 +122,10 @@ func (e annoErr) Error() string {
 	return fmt.Sprintf("%s (%s)", e.Err, e.PositionRange.StartPosInput(e.Query, 0))
 }
 
+func (e annoErr) Unwrap() error {
+	return e.Err
+}
+
 // NewInvalidQuantileWarning is used when the user specifies an invalid quantile
 // value, i.e. a float that is outside the range [0, 1] or NaN.
 func NewInvalidQuantileWarning(q float64, pos posrange.PositionRange) annoErr {
