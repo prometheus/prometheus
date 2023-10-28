@@ -892,35 +892,31 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 // output metric produced by another recording rule in its expression (i.e. as its "input").
 type dependencyMap map[Rule][]Rule
 
-// dependents returns all rules which use the output of the given rule as one of their inputs.
-func (m dependencyMap) dependents(r Rule) []Rule {
-	if len(m) == 0 {
-		return nil
-	}
-
-	return m[r]
+// dependents returns the count of rules which use the output of the given rule as one of their inputs.
+func (m dependencyMap) dependents(r Rule) int {
+	return len(m[r])
 }
 
-// dependencies returns all the rules on which the given rule is dependent for input.
-func (m dependencyMap) dependencies(r Rule) []Rule {
+// dependencies returns the count of rules on which the given rule is dependent for input.
+func (m dependencyMap) dependencies(r Rule) int {
 	if len(m) == 0 {
-		return nil
+		return 0
 	}
 
-	var parents []Rule
-	for parent, children := range m {
+	var count int
+	for _, children := range m {
 		if len(children) == 0 {
 			continue
 		}
 
 		for _, child := range children {
 			if child == r {
-				parents = append(parents, parent)
+				count++
 			}
 		}
 	}
 
-	return parents
+	return count
 }
 
 func (m dependencyMap) isIndependent(r Rule) bool {
@@ -928,7 +924,7 @@ func (m dependencyMap) isIndependent(r Rule) bool {
 		return false
 	}
 
-	return len(m.dependents(r)) == 0 && len(m.dependencies(r)) == 0
+	return m.dependents(r)+m.dependencies(r) == 0
 }
 
 // buildDependencyMap builds a data-structure which contains the relationships between rules within a group.

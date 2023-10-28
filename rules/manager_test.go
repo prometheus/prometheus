@@ -1419,20 +1419,37 @@ func TestDependencyMap(t *testing.T) {
 	expr, err = parser.ParseExpr("user:requests:rate1m <= 0")
 	require.NoError(t, err)
 	rule2 := NewAlertingRule("ZeroRequests", expr, 0, 0, labels.Labels{}, labels.Labels{}, labels.EmptyLabels(), "", true, log.NewNopLogger())
+
+	expr, err = parser.ParseExpr("sum by (user) (rate(requests[5m]))")
+	require.NoError(t, err)
+	rule3 := NewRecordingRule("user:requests:rate5m", expr, labels.Labels{})
+
+	expr, err = parser.ParseExpr("increase(user:requests:rate1m[1h])")
+	require.NoError(t, err)
+	rule4 := NewRecordingRule("user:requests:increase1h", expr, labels.Labels{})
+
 	group := NewGroup(GroupOptions{
 		Name:     "rule_group",
 		Interval: time.Second,
-		Rules:    []Rule{rule, rule2},
+		Rules:    []Rule{rule, rule2, rule3, rule4},
 		Opts:     opts,
 	})
 
-	require.Equal(t, []Rule{rule2}, group.dependencyMap.dependents(rule))
-	require.Len(t, group.dependencyMap.dependencies(rule), 0)
+	require.Zero(t, group.dependencyMap.dependencies(rule))
+	require.Equal(t, 2, group.dependencyMap.dependents(rule))
 	require.False(t, group.dependencyMap.isIndependent(rule))
 
-	require.Len(t, group.dependencyMap.dependents(rule2), 0)
-	require.Equal(t, []Rule{rule}, group.dependencyMap.dependencies(rule2))
+	require.Zero(t, group.dependencyMap.dependents(rule2))
+	require.Equal(t, 1, group.dependencyMap.dependencies(rule2))
 	require.False(t, group.dependencyMap.isIndependent(rule2))
+
+	require.Zero(t, group.dependencyMap.dependents(rule3))
+	require.Zero(t, group.dependencyMap.dependencies(rule3))
+	require.True(t, group.dependencyMap.isIndependent(rule3))
+
+	require.Zero(t, group.dependencyMap.dependents(rule4))
+	require.Equal(t, 1, group.dependencyMap.dependencies(rule4))
+	require.False(t, group.dependencyMap.isIndependent(rule4))
 }
 
 func TestNoDependency(t *testing.T) {
