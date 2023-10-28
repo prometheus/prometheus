@@ -437,7 +437,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		eval := func(i int, rule Rule, async bool) {
 			defer func() {
 				if async {
-					g.opts.ConcurrencyController.Done()
+					g.opts.ConcurrentEvalsController.Done()
 				}
 			}()
 
@@ -569,7 +569,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 
 		// If the rule has no dependencies, it can run concurrently because no other rules in this group depend on its output.
 		// Try run concurrently if there are slots available.
-		if g.dependencyMap.isIndependent(rule) && g.opts.ConcurrencyController.Allow() {
+		if g.dependencyMap.isIndependent(rule) && g.opts.ConcurrentEvalsController != nil && g.opts.ConcurrentEvalsController.Allow() {
 			go eval(i, rule, true)
 		} else {
 			eval(i, rule, false)
@@ -888,8 +888,8 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 }
 
 // dependencyMap is a data-structure which contains the relationships between rules within a group.
-// It is used to describe the dependency associations between recording rules in a group whereby one rule uses the
-// output metric produced by another recording rule in its expression (i.e. as its "input").
+// It is used to describe the dependency associations between rules in a group whereby one rule uses the
+// output metric produced by another rule in its expression (i.e. as its "input").
 type dependencyMap map[Rule][]Rule
 
 // dependents returns the count of rules which use the output of the given rule as one of their inputs.
@@ -905,10 +905,6 @@ func (m dependencyMap) dependencies(r Rule) int {
 
 	var count int
 	for _, children := range m {
-		if len(children) == 0 {
-			continue
-		}
-
 		for _, child := range children {
 			if child == r {
 				count++
@@ -919,6 +915,8 @@ func (m dependencyMap) dependencies(r Rule) int {
 	return count
 }
 
+// isIndependent determines whether the given rule is not dependent on another rule for its input, nor is any other rule
+// dependent on its output.
 func (m dependencyMap) isIndependent(r Rule) bool {
 	if m == nil {
 		return false
@@ -928,6 +926,16 @@ func (m dependencyMap) isIndependent(r Rule) bool {
 }
 
 // buildDependencyMap builds a data-structure which contains the relationships between rules within a group.
+//
+// Alert rules, by definition, cannot have any dependents - but they can have dependencies. Any recording rule on whose
+// output an Alert rule depends will not be able to run concurrently.
+//
+// There is a class of rule expressions which are considered "indeterminate", because either relationships cannot be
+// inferred, or concurrent evaluation of rules depending on these series would produce undefined/unexpected behaviour:
+//   - wildcard queriers like {cluster="prod1"} which would match every series with that label selector
+//   - any "meta" series (series produced by Prometheus itself) like ALERTS, ALERTS_FOR_STATE
+//
+// Rules which are independent can run concurrently with no side-effects.
 func buildDependencyMap(rules []Rule) dependencyMap {
 	dependencies := make(dependencyMap)
 

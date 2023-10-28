@@ -104,21 +104,21 @@ type NotifyFunc func(ctx context.Context, expr string, alerts ...*Alert)
 
 // ManagerOptions bundles options for the Manager.
 type ManagerOptions struct {
-	ExternalURL            *url.URL
-	QueryFunc              QueryFunc
-	NotifyFunc             NotifyFunc
-	Context                context.Context
-	Appendable             storage.Appendable
-	Queryable              storage.Queryable
-	Logger                 log.Logger
-	Registerer             prometheus.Registerer
-	OutageTolerance        time.Duration
-	ForGracePeriod         time.Duration
-	ResendDelay            time.Duration
-	MaxConcurrentEvals     int64
-	ConcurrentEvalsEnabled bool
-	ConcurrencyController  ConcurrencyController
-	GroupLoader            GroupLoader
+	ExternalURL               *url.URL
+	QueryFunc                 QueryFunc
+	NotifyFunc                NotifyFunc
+	Context                   context.Context
+	Appendable                storage.Appendable
+	Queryable                 storage.Queryable
+	Logger                    log.Logger
+	Registerer                prometheus.Registerer
+	OutageTolerance           time.Duration
+	ForGracePeriod            time.Duration
+	ResendDelay               time.Duration
+	GroupLoader               GroupLoader
+	MaxConcurrentEvals        int64
+	ConcurrentEvalsEnabled    bool
+	ConcurrentEvalsController ConcurrentRuleEvalController
 
 	Metrics *Metrics
 }
@@ -134,7 +134,7 @@ func NewManager(o *ManagerOptions) *Manager {
 		o.GroupLoader = FileLoader{}
 	}
 
-	o.ConcurrencyController = NewConcurrencyController(o.ConcurrentEvalsEnabled, o.MaxConcurrentEvals)
+	o.ConcurrentEvalsController = NewConcurrentRuleEvalController(o.ConcurrentEvalsEnabled, o.MaxConcurrentEvals)
 
 	m := &Manager{
 		groups: map[string]*Group{},
@@ -410,16 +410,26 @@ func SendAlerts(s Sender, externalURL string) NotifyFunc {
 	}
 }
 
-type ConcurrencyController struct {
+// ConcurrentRuleEvalController controls whether rules can be evaluated concurrently. Its purpose it to bound the amount
+// of concurrency in rule evaluations so they do not overwhelm the Prometheus server with additional query load.
+// Concurrency is controlled globally, not on a per-group basis.
+type ConcurrentRuleEvalController interface {
+	Allow() bool
+	Done()
+}
+
+// concurrentRuleEvalController holds a weighted semaphore which controls the concurrent evaluation of rules.
+type concurrentRuleEvalController struct {
 	enabled bool
 	sema    *semaphore.Weighted
 }
 
-func NewConcurrencyController(enabled bool, maxConcurrency int64) ConcurrencyController {
-	return ConcurrencyController{enabled: enabled, sema: semaphore.NewWeighted(maxConcurrency)}
+func NewConcurrentRuleEvalController(enabled bool, maxConcurrency int64) ConcurrentRuleEvalController {
+	return concurrentRuleEvalController{enabled: enabled, sema: semaphore.NewWeighted(maxConcurrency)}
 }
 
-func (c ConcurrencyController) Allow() bool {
+// Allow determines whether any concurrency slots are available.
+func (c concurrentRuleEvalController) Allow() bool {
 	if !c.enabled {
 		return false
 	}
@@ -427,7 +437,8 @@ func (c ConcurrencyController) Allow() bool {
 	return c.sema.TryAcquire(1)
 }
 
-func (c ConcurrencyController) Done() {
+// Done releases a concurrent evaluation slot.
+func (c concurrentRuleEvalController) Done() {
 	if !c.enabled {
 		return
 	}

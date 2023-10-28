@@ -1471,7 +1471,53 @@ func TestNoDependency(t *testing.T) {
 	})
 
 	// A group with only one rule cannot have dependencies.
-	require.False(t, group.dependencyMap.isIndependent(rule))
+	require.Empty(t, group.dependencyMap)
+}
+
+func TestDependenciesEdgeCases(t *testing.T) {
+	ctx := context.Background()
+	opts := &ManagerOptions{
+		Context: ctx,
+		Logger:  log.NewNopLogger(),
+	}
+
+	t.Run("empty group", func(t *testing.T) {
+		group := NewGroup(GroupOptions{
+			Name:     "rule_group",
+			Interval: time.Second,
+			Rules:    []Rule{}, // empty group
+			Opts:     opts,
+		})
+
+		expr, err := parser.ParseExpr("sum by (user) (rate(requests[1m]))")
+		require.NoError(t, err)
+		rule := NewRecordingRule("user:requests:rate1m", expr, labels.Labels{})
+
+		// A group with no rules has no dependency map, but doesn't panic if the map is queried.
+		require.Nil(t, group.dependencyMap)
+		require.False(t, group.dependencyMap.isIndependent(rule))
+	})
+
+	t.Run("rules which reference no series", func(t *testing.T) {
+		expr, err := parser.ParseExpr("one")
+		require.NoError(t, err)
+		rule1 := NewRecordingRule("1", expr, labels.Labels{})
+
+		expr, err = parser.ParseExpr("two")
+		require.NoError(t, err)
+		rule2 := NewRecordingRule("2", expr, labels.Labels{})
+
+		group := NewGroup(GroupOptions{
+			Name:     "rule_group",
+			Interval: time.Second,
+			Rules:    []Rule{rule1, rule2},
+			Opts:     opts,
+		})
+
+		// A group with rules which reference no series will still produce a dependency map
+		require.True(t, group.dependencyMap.isIndependent(rule1))
+		require.True(t, group.dependencyMap.isIndependent(rule2))
+	})
 }
 
 func TestNoMetricSelector(t *testing.T) {
@@ -1596,10 +1642,23 @@ func TestDependencyMapUpdatesOnGroupUpdate(t *testing.T) {
 	require.NoError(t, err)
 
 	for h, g := range ruleManager.groups {
+		const ruleName = "job:http_requests:rate5m"
+		var rr *RecordingRule
+
+		for _, r := range g.rules {
+			if r.Name() == ruleName {
+				rr = r.(*RecordingRule)
+			}
+		}
+
+		require.NotEmptyf(t, rr, "expected to find %q recording rule in fixture", ruleName)
+
 		// Dependency maps must change because the groups would've been updated.
 		require.NotEqual(t, orig[h], g.dependencyMap)
 		// We expect there to be some dependencies since the new rule group contains a dependency.
 		require.Greater(t, len(g.dependencyMap), 0)
+		require.Equal(t, 1, g.dependencyMap.dependents(rr))
+		require.Zero(t, g.dependencyMap.dependencies(rr))
 	}
 }
 
@@ -1625,17 +1684,16 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 				inflightQueries.Add(-1)
 			}()
 
-			// Artificially delay all query executions to highly concurrent execution improvement.
+			// Artificially delay all query executions to highlight concurrent execution improvement.
 			time.Sleep(artificialDelay)
 
-			// return a stub sample
+			// Return a stub sample.
 			return promql.Vector{
 				promql.Sample{Metric: labels.FromStrings("__name__", "test"), T: ts.UnixMilli(), F: 12345},
 			}, nil
 		},
 	})
 
-	// Evaluate groups manually to show the impact of async rule evaluations.
 	groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, files...)
 	require.Empty(t, errs)
 	require.Len(t, groups, 1)
@@ -1688,7 +1746,7 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 
 		for _, group := range groups {
 			// Allow up to 2 concurrent rule evaluations.
-			group.opts.ConcurrencyController = NewConcurrencyController(true, 2)
+			group.opts.ConcurrentEvalsController = NewConcurrentRuleEvalController(true, 2)
 			require.Len(t, group.rules, expectedRules)
 
 			start := time.Now()
@@ -1749,17 +1807,16 @@ func TestBoundedRuleEvalConcurrency(t *testing.T) {
 				inflightQueries.Add(-1)
 			}()
 
-			// Artificially delay all query executions to highly concurrent execution improvement.
+			// Artificially delay all query executions to highlight concurrent execution improvement.
 			time.Sleep(artificialDelay)
 
-			// return a stub sample
+			// Return a stub sample.
 			return promql.Vector{
 				promql.Sample{Metric: labels.FromStrings("__name__", "test"), T: ts.UnixMilli(), F: 12345},
 			}, nil
 		},
 	})
 
-	// Evaluate groups manually to show the impact of async rule evaluations.
 	groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, files...)
 	require.Empty(t, errs)
 	require.Len(t, groups, groupCount)
