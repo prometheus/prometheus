@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -3645,4 +3646,164 @@ func TestTargetScrapeIntervalAndTimeoutRelabel(t *testing.T) {
 
 	require.Equal(t, "3s", sp.ActiveTargets()[0].labels.Get(model.ScrapeIntervalLabel))
 	require.Equal(t, "750ms", sp.ActiveTargets()[0].labels.Get(model.ScrapeTimeoutLabel))
+}
+
+func TestTargetScrapeConfigWithLabels(t *testing.T) {
+	const (
+		configTimeout        = 1500 * time.Millisecond
+		expectedTimeout      = "1.5"
+		expectedTimeoutLabel = "1s500ms"
+		secondTimeout        = 500 * time.Millisecond
+		secondTimeoutLabel   = "500ms"
+		expectedParam        = "value1"
+		secondParam          = "value2"
+		expectedPath         = "/metric-ok"
+		secondPath           = "/metric-nok"
+	)
+	var (
+		app    = &nopAppendable{}
+		logger = log.NewLogfmtLogger(os.Stderr)
+	)
+
+	newServer := func(t *testing.T, done chan struct{}) *url.URL {
+		server := httptest.NewServer(
+			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				defer close(done)
+				require.Equal(t, r.Header.Get("X-Prometheus-Scrape-Timeout-Seconds"), expectedTimeout)
+				require.Equal(t, expectedParam, r.URL.Query().Get("param"))
+				require.Equal(t, expectedPath, r.URL.Path)
+
+				w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
+				w.Write([]byte("metric_a 1\nmetric_b 2\n"))
+			}),
+		)
+		t.Cleanup(server.Close)
+		serverURL, err := url.Parse(server.URL)
+		require.NoError(t, err)
+		return serverURL
+	}
+
+	t.Run("Everything in scrape config", func(t *testing.T) {
+		done := make(chan struct{})
+		srvURL := newServer(t, done)
+
+		cfg := &config.ScrapeConfig{
+			ScrapeInterval: model.Duration(2 * time.Second),
+			ScrapeTimeout:  model.Duration(configTimeout),
+			Params:         url.Values{"param": []string{expectedParam}},
+			JobName:        "test",
+			Scheme:         "http",
+			MetricsPath:    expectedPath,
+		}
+		sp, err := newScrapePool(cfg, app, 0, logger, false, false, nil)
+		require.NoError(t, err)
+		defer sp.stop()
+
+		targets := []*targetgroup.Group{
+			{
+				Targets: []model.LabelSet{
+					{model.AddressLabel: model.LabelValue(srvURL.Host)},
+				},
+			},
+		}
+		sp.Sync(targets)
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			t.Fatal("timeout after 10 seconds")
+		}
+	})
+	t.Run("Overridden in target", func(t *testing.T) {
+		done := make(chan struct{})
+		srvURL := newServer(t, done)
+
+		cfg := &config.ScrapeConfig{
+			ScrapeInterval: model.Duration(2 * time.Second),
+			ScrapeTimeout:  model.Duration(secondTimeout),
+			JobName:        "test",
+			Scheme:         "http",
+			MetricsPath:    secondPath,
+			Params:         url.Values{"param": []string{secondParam}},
+		}
+		sp, err := newScrapePool(cfg, app, 0, logger, false, false, nil)
+		require.NoError(t, err)
+		defer sp.stop()
+
+		targets := []*targetgroup.Group{
+			{
+				Targets: []model.LabelSet{
+					{
+						model.AddressLabel:       model.LabelValue(srvURL.Host),
+						model.ScrapeTimeoutLabel: expectedTimeoutLabel,
+						model.MetricsPathLabel:   expectedPath,
+						"__param_param":          expectedParam,
+					},
+				},
+			},
+		}
+		sp.Sync(targets)
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			t.Fatal("timeout after 10 seconds")
+		}
+	})
+	t.Run("Overridden in relabel_config", func(t *testing.T) {
+		done := make(chan struct{})
+		srvURL := newServer(t, done)
+
+		cfg := &config.ScrapeConfig{
+			ScrapeInterval: model.Duration(2 * time.Second),
+			ScrapeTimeout:  model.Duration(secondTimeout),
+			JobName:        "test",
+			Scheme:         "http",
+			MetricsPath:    secondPath,
+			Params:         url.Values{"param": []string{secondParam}},
+			RelabelConfigs: []*relabel.Config{
+				{
+					Action:       relabel.DefaultRelabelConfig.Action,
+					Regex:        relabel.DefaultRelabelConfig.Regex,
+					SourceLabels: relabel.DefaultRelabelConfig.SourceLabels,
+					TargetLabel:  model.ScrapeTimeoutLabel,
+					Replacement:  expectedTimeoutLabel,
+				},
+				{
+					Action:       relabel.DefaultRelabelConfig.Action,
+					Regex:        relabel.DefaultRelabelConfig.Regex,
+					SourceLabels: relabel.DefaultRelabelConfig.SourceLabels,
+					TargetLabel:  "__param_param",
+					Replacement:  expectedParam,
+				},
+				{
+					Action:       relabel.DefaultRelabelConfig.Action,
+					Regex:        relabel.DefaultRelabelConfig.Regex,
+					SourceLabels: relabel.DefaultRelabelConfig.SourceLabels,
+					TargetLabel:  model.MetricsPathLabel,
+					Replacement:  expectedPath,
+				},
+			},
+		}
+		sp, err := newScrapePool(cfg, app, 0, logger, false, false, nil)
+		require.NoError(t, err)
+		defer sp.stop()
+
+		targets := []*targetgroup.Group{
+			{
+				Targets: []model.LabelSet{
+					{
+						model.AddressLabel:       model.LabelValue(srvURL.Host),
+						model.ScrapeTimeoutLabel: secondTimeoutLabel,
+						model.MetricsPathLabel:   secondPath,
+						"__param_param":          secondParam,
+					},
+				},
+			},
+		}
+		sp.Sync(targets)
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			t.Fatal("timeout after 10 seconds")
+		}
+	})
 }

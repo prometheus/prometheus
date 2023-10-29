@@ -404,8 +404,8 @@ func PopulateLabels(lb *labels.Builder, cfg *config.ScrapeConfig, noDefaultPort 
 	}
 	// Encode scrape query parameters as labels.
 	for k, v := range cfg.Params {
-		if len(v) > 0 {
-			lb.Set(model.ParamLabelPrefix+k, v[0])
+		if name := model.ParamLabelPrefix + k; len(v) > 0 && lset.Get(name) == "" {
+			lb.Set(name, v[0])
 		}
 	}
 
