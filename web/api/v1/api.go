@@ -436,7 +436,7 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 			return invalidParamError(err, "timeout")
 		}
 
-		ctx, cancel = context.WithTimeout(ctx, timeout)
+		ctx, cancel = context.WithDeadline(ctx, api.now().Add(timeout))
 		defer cancel()
 	}
 

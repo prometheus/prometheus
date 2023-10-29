@@ -23,6 +23,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/gogo/protobuf/proto"
+	"github.com/gogo/protobuf/types"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 
@@ -147,9 +148,15 @@ func (p *ProtobufParser) Series() ([]byte, *int64, float64) {
 	if ts != 0 {
 		return p.metricBytes.Bytes(), &ts, v
 	}
-	// Nasty hack: Assume that ts==0 means no timestamp. That's not true in
-	// general, but proto3 has no distinction between unset and
-	// default. Need to avoid in the final format.
+	// TODO(beorn7): We assume here that ts==0 means no timestamp. That's
+	// not true in general, but proto3 originally has no distinction between
+	// unset and default. At a later stage, the `optional` keyword was
+	// (re-)introduced in proto3, but gogo-protobuf never got updated to
+	// support it. (Note that setting `[(gogoproto.nullable) = true]` for
+	// the `timestamp_ms` field doesn't help, either.) We plan to migrate
+	// away from gogo-protobuf to an actively maintained protobuf
+	// implementation. Once that's done, we can simply use the `optional`
+	// keyword and check for the unset state explicitly.
 	return p.metricBytes.Bytes(), nil, v
 }
 
@@ -344,6 +351,24 @@ func (p *ProtobufParser) Exemplar(ex *exemplar.Exemplar) bool {
 	p.builder.Sort()
 	ex.Labels = p.builder.Labels()
 	p.exemplarReturned = true
+	return true
+}
+
+func (p *ProtobufParser) CreatedTimestamp(ct *types.Timestamp) bool {
+	var foundCT *types.Timestamp
+	switch p.mf.GetType() {
+	case dto.MetricType_COUNTER:
+		foundCT = p.mf.GetMetric()[p.metricPos].GetCounter().GetCreatedTimestamp()
+	case dto.MetricType_SUMMARY:
+		foundCT = p.mf.GetMetric()[p.metricPos].GetSummary().GetCreatedTimestamp()
+	case dto.MetricType_HISTOGRAM, dto.MetricType_GAUGE_HISTOGRAM:
+		foundCT = p.mf.GetMetric()[p.metricPos].GetHistogram().GetCreatedTimestamp()
+	default:
+	}
+	if foundCT == nil {
+		return false
+	}
+	*ct = *foundCT
 	return true
 }
 

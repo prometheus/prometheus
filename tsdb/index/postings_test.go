@@ -1242,6 +1242,8 @@ func TestListPostings(t *testing.T) {
 	})
 }
 
+// BenchmarkListPostings benchmarks ListPostings by iterating Next/At sequentially.
+// See also BenchmarkIntersect as it performs more `At` calls than `Next` calls when intersecting.
 func BenchmarkListPostings(b *testing.B) {
 	const maxCount = 1e6
 	input := make([]storage.SeriesRef, maxCount)

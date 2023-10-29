@@ -26,6 +26,8 @@ import (
 	"unicode/utf8"
 	"unsafe"
 
+	"github.com/gogo/protobuf/types"
+
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -242,6 +244,11 @@ func (p *PromParser) Metric(l *labels.Labels) string {
 // Prometheus text format does not support exemplars, this implementation simply
 // returns false and does nothing else.
 func (p *PromParser) Exemplar(*exemplar.Exemplar) bool {
+	return false
+}
+
+// CreatedTimestamp returns false because PromParser does not support created timestamps.
+func (p *PromParser) CreatedTimestamp(_ *types.Timestamp) bool {
 	return false
 }
 

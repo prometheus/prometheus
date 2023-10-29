@@ -2291,3 +2291,105 @@ func TestFloatBucketIteratorTargetSchema(t *testing.T) {
 	}
 	require.False(t, it.Next(), "negative iterator not exhausted")
 }
+
+// TestFloatHistogramEquals tests FloatHistogram with float-specific cases that
+// cannot be covered by TestHistogramEquals.
+func TestFloatHistogramEquals(t *testing.T) {
+	h1 := FloatHistogram{
+		Schema:          3,
+		Count:           2.2,
+		Sum:             9.7,
+		ZeroThreshold:   0.1,
+		ZeroCount:       1.1,
+		PositiveBuckets: []float64{3},
+		NegativeBuckets: []float64{4},
+	}
+
+	equals := func(h1, h2 FloatHistogram) {
+		require.True(t, h1.Equals(&h2))
+		require.True(t, h2.Equals(&h1))
+	}
+	notEquals := func(h1, h2 FloatHistogram) {
+		require.False(t, h1.Equals(&h2))
+		require.False(t, h2.Equals(&h1))
+	}
+
+	h2 := h1.Copy()
+	equals(h1, *h2)
+
+	// Count is NaN (but not a StaleNaN).
+	hCountNaN := h1.Copy()
+	hCountNaN.Count = math.NaN()
+	notEquals(h1, *hCountNaN)
+	equals(*hCountNaN, *hCountNaN)
+
+	// ZeroCount is NaN (but not a StaleNaN).
+	hZeroCountNaN := h1.Copy()
+	hZeroCountNaN.ZeroCount = math.NaN()
+	notEquals(h1, *hZeroCountNaN)
+	equals(*hZeroCountNaN, *hZeroCountNaN)
+
+	// Positive bucket value is NaN.
+	hPosBucketNaN := h1.Copy()
+	hPosBucketNaN.PositiveBuckets[0] = math.NaN()
+	notEquals(h1, *hPosBucketNaN)
+	equals(*hPosBucketNaN, *hPosBucketNaN)
+
+	// Negative bucket value is NaN.
+	hNegBucketNaN := h1.Copy()
+	hNegBucketNaN.NegativeBuckets[0] = math.NaN()
+	notEquals(h1, *hNegBucketNaN)
+	equals(*hNegBucketNaN, *hNegBucketNaN)
+}
+
+func TestFloatHistogramSize(t *testing.T) {
+	cases := []struct {
+		name     string
+		fh       *FloatHistogram
+		expected int
+	}{
+		{
+			"without spans and buckets",
+			&FloatHistogram{ // 8 bytes.
+				CounterResetHint: 0,           // 1 byte.
+				Schema:           1,           // 4 bytes.
+				ZeroThreshold:    0.01,        // 8 bytes.
+				ZeroCount:        5.5,         // 8 bytes.
+				Count:            3493.3,      // 8 bytes.
+				Sum:              2349209.324, // 8 bytes.
+				PositiveSpans:    nil,         // 24 bytes.
+				PositiveBuckets:  nil,         // 24 bytes.
+				NegativeSpans:    nil,         // 24 bytes.
+				NegativeBuckets:  nil,         // 24 bytes.
+			},
+			8 + 4 + 4 + 8 + 8 + 8 + 8 + 24 + 24 + 24 + 24,
+		},
+		{
+			"complete struct",
+			&FloatHistogram{ // 8 bytes.
+				CounterResetHint: 0,           // 1 byte.
+				Schema:           1,           // 4 bytes.
+				ZeroThreshold:    0.01,        // 8 bytes.
+				ZeroCount:        5.5,         // 8 bytes.
+				Count:            3493.3,      // 8 bytes.
+				Sum:              2349209.324, // 8 bytes.
+				PositiveSpans: []Span{ // 24 bytes.
+					{-2, 1}, // 2 * 4 bytes.
+					{2, 3},  //  2 * 4 bytes.
+				},
+				PositiveBuckets: []float64{1, 3.3, 4.2, 0.1}, // 24 bytes + 4 * 8 bytes.
+				NegativeSpans: []Span{ // 24 bytes.
+					{3, 2},  // 2 * 4 bytes.
+					{3, 2}}, //  2 * 4 bytes.
+				NegativeBuckets: []float64{3.1, 3, 1.234e5, 1000}, // 24 bytes + 4 * 8 bytes.
+			},
+			8 + 4 + 4 + 8 + 8 + 8 + 8 + (24 + 2*4 + 2*4) + (24 + 2*4 + 2*4) + (24 + 4*8) + (24 + 4*8),
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			require.Equal(t, c.expected, c.fh.Size())
+		})
+	}
+}

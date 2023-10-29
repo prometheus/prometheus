@@ -88,7 +88,11 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 		return enh.Out, annos.Add(annotations.NewMixedFloatsHistogramsWarning(metricName, args[0].PositionRange()))
 	}
 
-	if isCounter && !strings.HasSuffix(metricName, "_total") && !strings.HasSuffix(metricName, "_sum") && !strings.HasSuffix(metricName, "_count") {
+	if isCounter && metricName != "" && len(samples.Floats) > 0 &&
+		!strings.HasSuffix(metricName, "_total") &&
+		!strings.HasSuffix(metricName, "_sum") &&
+		!strings.HasSuffix(metricName, "_count") &&
+		!strings.HasSuffix(metricName, "_bucket") {
 		annos.Add(annotations.NewPossibleNonCounterInfo(metricName, args[0].PositionRange()))
 	}
 
@@ -1168,10 +1172,14 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 
 	for _, mb := range enh.signatureToMetricWithBuckets {
 		if len(mb.buckets) > 0 {
+			res, forcedMonotonicity := bucketQuantile(q, mb.buckets)
 			enh.Out = append(enh.Out, Sample{
 				Metric: mb.metric,
-				F:      bucketQuantile(q, mb.buckets),
+				F:      res,
 			})
+			if forcedMonotonicity {
+				annos.Add(annotations.NewHistogramQuantileForcedMonotonicityInfo(mb.metric.Get(labels.MetricName), args[1].PositionRange()))
+			}
 		}
 	}
 

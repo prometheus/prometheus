@@ -248,6 +248,7 @@ type dbMetrics struct {
 	tombCleanTimer       prometheus.Histogram
 	blocksBytes          prometheus.Gauge
 	maxBytes             prometheus.Gauge
+	retentionDuration    prometheus.Gauge
 }
 
 func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
@@ -321,6 +322,10 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 		Name: "prometheus_tsdb_retention_limit_bytes",
 		Help: "Max number of bytes to be retained in the tsdb blocks, configured 0 means disabled",
 	})
+	m.retentionDuration = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "prometheus_tsdb_retention_limit_seconds",
+		Help: "How long to retain samples in storage.",
+	})
 	m.sizeRetentionCount = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_size_retentions_total",
 		Help: "The number of times that blocks were deleted because the maximum number of bytes was exceeded.",
@@ -341,6 +346,7 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 			m.tombCleanTimer,
 			m.blocksBytes,
 			m.maxBytes,
+			m.retentionDuration,
 		)
 	}
 	return m
@@ -580,7 +586,14 @@ func (db *DBReadOnly) Blocks() ([]BlockReader, error) {
 	}
 
 	slices.SortFunc(loadable, func(a, b *Block) int {
-		return int(a.Meta().MinTime - b.Meta().MinTime)
+		switch {
+		case a.Meta().MinTime < b.Meta().MinTime:
+			return -1
+		case a.Meta().MinTime > b.Meta().MinTime:
+			return 1
+		default:
+			return 0
+		}
 	})
 
 	blockMetas := make([]BlockMeta, 0, len(loadable))
@@ -870,6 +883,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 		maxBytes = 0
 	}
 	db.metrics.maxBytes.Set(float64(maxBytes))
+	db.metrics.retentionDuration.Set((time.Duration(opts.RetentionDuration) * time.Millisecond).Seconds())
 
 	if err := db.reload(); err != nil {
 		return nil, err
@@ -887,13 +901,13 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 
 	if initErr := db.head.Init(minValidTime); initErr != nil {
 		db.head.metrics.walCorruptionsTotal.Inc()
-		isOOOErr := isErrLoadOOOWal(initErr)
-		if isOOOErr {
-			level.Warn(db.logger).Log("msg", "Encountered OOO WAL read error, attempting repair", "err", initErr)
-			if err := wbl.Repair(initErr); err != nil {
-				return nil, errors.Wrap(err, "repair corrupted OOO WAL")
+		e, ok := initErr.(*errLoadWbl)
+		if ok {
+			level.Warn(db.logger).Log("msg", "Encountered WBL read error, attempting repair", "err", initErr)
+			if err := wbl.Repair(e.err); err != nil {
+				return nil, errors.Wrap(err, "repair corrupted WBL")
 			}
-			level.Info(db.logger).Log("msg", "Successfully repaired OOO WAL")
+			level.Info(db.logger).Log("msg", "Successfully repaired WBL")
 		} else {
 			level.Warn(db.logger).Log("msg", "Encountered WAL read error, attempting repair", "err", initErr)
 			if err := wal.Repair(initErr); err != nil {
@@ -1448,7 +1462,14 @@ func (db *DB) reloadBlocks() (err error) {
 	db.metrics.blocksBytes.Set(float64(blocksSize))
 
 	slices.SortFunc(toLoad, func(a, b *Block) int {
-		return int(a.Meta().MinTime - b.Meta().MinTime)
+		switch {
+		case a.Meta().MinTime < b.Meta().MinTime:
+			return -1
+		case a.Meta().MinTime > b.Meta().MinTime:
+			return 1
+		default:
+			return 0
+		}
 	})
 
 	// Swap new blocks first for subsequently created readers to be seen.
@@ -1518,7 +1539,14 @@ func deletableBlocks(db *DB, blocks []*Block) map[ulid.ULID]struct{} {
 	// Sort the blocks by time - newest to oldest (largest to smallest timestamp).
 	// This ensures that the retentions will remove the oldest  blocks.
 	slices.SortFunc(blocks, func(a, b *Block) int {
-		return int(b.Meta().MaxTime - a.Meta().MaxTime)
+		switch {
+		case b.Meta().MaxTime < a.Meta().MaxTime:
+			return -1
+		case b.Meta().MaxTime > a.Meta().MaxTime:
+			return 1
+		default:
+			return 0
+		}
 	})
 
 	for _, block := range blocks {

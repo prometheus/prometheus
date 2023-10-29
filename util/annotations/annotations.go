@@ -105,7 +105,8 @@ var (
 	MixedFloatsHistogramsWarning        = fmt.Errorf("%w: encountered a mix of histograms and floats for metric name", PromQLWarning)
 	MixedClassicNativeHistogramsWarning = fmt.Errorf("%w: vector contains a mix of classic and native histograms for metric name", PromQLWarning)
 
-	PossibleNonCounterInfo = fmt.Errorf("%w: metric might not be a counter, name does not end in _total/_sum/_count:", PromQLInfo)
+	PossibleNonCounterInfo                  = fmt.Errorf("%w: metric might not be a counter, name does not end in _total/_sum/_count/_bucket:", PromQLInfo)
+	HistogramQuantileForcedMonotonicityInfo = fmt.Errorf("%w: input to histogram_quantile needed to be fixed for monotonicity (and may give inaccurate results) for metric name", PromQLInfo)
 )
 
 type annoErr struct {
@@ -115,7 +116,14 @@ type annoErr struct {
 }
 
 func (e annoErr) Error() string {
+	if e.Query == "" {
+		return e.Err.Error()
+	}
 	return fmt.Sprintf("%s (%s)", e.Err, e.PositionRange.StartPosInput(e.Query, 0))
+}
+
+func (e annoErr) Unwrap() error {
+	return e.Err
 }
 
 // NewInvalidQuantileWarning is used when the user specifies an invalid quantile
@@ -155,11 +163,20 @@ func NewMixedClassicNativeHistogramsWarning(metricName string, pos posrange.Posi
 	}
 }
 
-// NewPossibleNonCounterInfo is used when a counter metric does not have the suffixes
-// _total, _sum or _count.
+// NewPossibleNonCounterInfo is used when a named counter metric with only float samples does not
+// have the suffixes _total, _sum, _count, or _bucket.
 func NewPossibleNonCounterInfo(metricName string, pos posrange.PositionRange) annoErr {
 	return annoErr{
 		PositionRange: pos,
 		Err:           fmt.Errorf("%w %q", PossibleNonCounterInfo, metricName),
+	}
+}
+
+// NewHistogramQuantileForcedMonotonicityInfo is used when the input (classic histograms) to
+// histogram_quantile needs to be forced to be monotonic.
+func NewHistogramQuantileForcedMonotonicityInfo(metricName string, pos posrange.PositionRange) annoErr {
+	return annoErr{
+		PositionRange: pos,
+		Err:           fmt.Errorf("%w %q", HistogramQuantileForcedMonotonicityInfo, metricName),
 	}
 }
