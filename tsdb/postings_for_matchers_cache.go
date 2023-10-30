@@ -94,7 +94,7 @@ func (c *PostingsForMatchersCache) PostingsForMatchers(ctx context.Context, ix I
 		span.RecordError(err)
 		return p, err
 	}
-	c.expire(ctx)
+	c.expire()
 	p, err := c.postingsForMatchersPromise(ctx, ix, ms)(ctx)
 	span.RecordError(err)
 	return p, err
@@ -190,20 +190,13 @@ type postingsForMatchersCachedCall struct {
 	sizeBytes int64
 }
 
-func (c *PostingsForMatchersCache) expire(ctx context.Context) {
-	_, span := otel.Tracer("").Start(ctx, "PostingsForMatchersCache.expire", trace.WithAttributes(
-		attribute.Stringer("ttl", c.ttl),
-	))
-	defer span.End()
-
+func (c *PostingsForMatchersCache) expire() {
 	if c.ttl <= 0 {
-		span.AddEvent("ttl < 0 - doing nothing")
 		return
 	}
 
 	c.cachedMtx.RLock()
 	if !c.shouldEvictHead() {
-		span.AddEvent("should not evict head")
 		c.cachedMtx.RUnlock()
 		return
 	}
@@ -212,7 +205,6 @@ func (c *PostingsForMatchersCache) expire(ctx context.Context) {
 	c.cachedMtx.Lock()
 	defer c.cachedMtx.Unlock()
 
-	span.AddEvent("evicting head(s)")
 	for c.shouldEvictHead() {
 		c.evictHead()
 	}
@@ -246,8 +238,7 @@ func (c *PostingsForMatchersCache) evictHead() {
 // created has to be called when returning from the PostingsForMatchers call that creates the promise.
 // the ts provided should be the call time.
 func (c *PostingsForMatchersCache) created(ctx context.Context, key string, ts time.Time, sizeBytes int64) {
-	_, span := otel.Tracer("").Start(ctx, "PostingsForMatchersCache.created")
-	defer span.End()
+	span := trace.SpanFromContext(ctx)
 
 	if c.ttl <= 0 {
 		span.AddEvent("deleting cached promise since c.ttl <= 0", trace.WithAttributes(
