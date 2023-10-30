@@ -4,6 +4,7 @@ import { escapeHTML } from '../../utils';
 import { GraphProps, GraphData, GraphSeries, GraphExemplar } from './Graph';
 import moment from 'moment-timezone';
 import { colorPool } from './ColorPool';
+import { prepareHistogramData } from './GraphHistogramHelpers';
 
 export const formatValue = (y: number | null): string => {
   if (y === null) {
@@ -159,7 +160,7 @@ export const getOptions = (stacked: boolean, useLocalTime: boolean): jquery.flot
   };
 };
 
-export const normalizeData = ({ queryParams, data, exemplars, stacked }: GraphProps): GraphData => {
+export const normalizeData = ({ queryParams, data, exemplars, stacked, histogram }: GraphProps): GraphData => {
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   const { startTime, endTime, resolution } = queryParams!;
 
@@ -189,36 +190,37 @@ export const normalizeData = ({ queryParams, data, exemplars, stacked }: GraphPr
   }
   const deviation = stdDeviation(sum, values);
 
-  return {
-    series: data.result.map(({ values, histograms, metric }, index) => {
-      // Insert nulls for all missing steps.
-      const data = [];
-      let valuePos = 0;
-      let histogramPos = 0;
+  const series = data.result.map(({ values, histograms, metric }, index) => {
+    // Insert nulls for all missing steps.
+    const data = [];
+    let valuePos = 0;
+    let histogramPos = 0;
 
-      for (let t = startTime; t <= endTime; t += resolution) {
-        // Allow for floating point inaccuracy.
-        const currentValue = values && values[valuePos];
-        const currentHistogram = histograms && histograms[histogramPos];
-        if (currentValue && values.length > valuePos && currentValue[0] < t + resolution / 100) {
-          data.push([currentValue[0] * 1000, parseValue(currentValue[1])]);
-          valuePos++;
-        } else if (currentHistogram && histograms.length > histogramPos && currentHistogram[0] < t + resolution / 100) {
-          data.push([currentHistogram[0] * 1000, parseValue(currentHistogram[1].sum)]);
-          histogramPos++;
-        } else {
-          data.push([t * 1000, null]);
-        }
+    for (let t = startTime; t <= endTime; t += resolution) {
+      // Allow for floating point inaccuracy.
+      const currentValue = values && values[valuePos];
+      const currentHistogram = histograms && histograms[histogramPos];
+      if (currentValue && values.length > valuePos && currentValue[0] < t + resolution / 100) {
+        data.push([currentValue[0] * 1000, parseValue(currentValue[1])]);
+        valuePos++;
+      } else if (currentHistogram && histograms.length > histogramPos && currentHistogram[0] < t + resolution / 100) {
+        data.push([currentHistogram[0] * 1000, parseValue(currentHistogram[1].sum)]);
+        histogramPos++;
+      } else {
+        data.push([t * 1000, null]);
       }
+    }
+    return {
+      labels: metric !== null ? metric : {},
+      color: colorPool[index % colorPool.length],
+      stack: stacked,
+      data,
+      index,
+    };
+  });
 
-      return {
-        labels: metric !== null ? metric : {},
-        color: colorPool[index % colorPool.length],
-        stack: stacked,
-        data,
-        index,
-      };
-    }),
+  return {
+    series: histogram ? prepareHistogramData(series) : series,
     exemplars: Object.values(buckets).flatMap((bucket) => {
       if (bucket.length === 1) {
         return bucket[0];
@@ -282,31 +284,3 @@ const stdDeviation = (sum: number, values: number[]): number => {
 };
 
 const exValue = (exemplar: GraphExemplar): number => exemplar.data[0][1];
-
-export function isHistogramData({ data }: GraphProps) {
-  const result = data.result;
-  if (result.length < 2) return false;
-  const histogramLabels = ['le'];
-
-  const firstLabels = Object.keys(result[0].metric).filter((n) => !histogramLabels.includes(n));
-  const isHistogram = result.every((r) => {
-    const labels = Object.keys(r.metric).filter((n) => !histogramLabels.includes(n));
-    return firstLabels.length === labels.length && labels.every((l) => r.metric[l] === result[0].metric[l]);
-  });
-
-  return isHistogram && result.every((r) => histogramLabels.some((l) => l in r.metric));
-}
-
-export function promValueToNumber(s: string) {
-  switch (s) {
-    case 'NaN':
-      return NaN;
-    case 'Inf':
-    case '+Inf':
-      return Infinity;
-    case '-Inf':
-      return -Infinity;
-    default:
-      return parseFloat(s);
-  }
-}

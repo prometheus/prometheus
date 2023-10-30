@@ -2,7 +2,7 @@ import React, { Component } from 'react';
 import { Button, ButtonGroup, Form, Input, InputGroup, InputGroupAddon } from 'reactstrap';
 
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faChartArea, faChartLine, faMinus, faPlus } from '@fortawesome/free-solid-svg-icons';
+import { faChartArea, faChartLine, faMinus, faPlus, faBarChart } from '@fortawesome/free-solid-svg-icons';
 import TimeInput from './TimeInput';
 import { formatDuration, parseDuration } from '../../utils';
 
@@ -12,6 +12,8 @@ interface GraphControlsProps {
   useLocalTime: boolean;
   resolution: number | null;
   stacked: boolean;
+  histogram: boolean;
+  isHistogramData: boolean;
   showExemplars: boolean;
 
   onChangeRange: (range: number) => void;
@@ -19,6 +21,7 @@ interface GraphControlsProps {
   onChangeResolution: (resolution: number | null) => void;
   onChangeStacking: (stacked: boolean) => void;
   onChangeShowExemplars: (show: boolean) => void;
+  onToggleHistogram: () => void;
 }
 
 class GraphControls extends Component<GraphControlsProps> {
@@ -154,12 +157,23 @@ class GraphControls extends Component<GraphControlsProps> {
           <Button
             title="Show unstacked line graph"
             onClick={() => this.props.onChangeStacking(false)}
-            active={!this.props.stacked}
+            active={!this.props.stacked && !this.props.histogram}
           >
             <FontAwesomeIcon icon={faChartLine} fixedWidth />
           </Button>
           <Button title="Show stacked graph" onClick={() => this.props.onChangeStacking(true)} active={this.props.stacked}>
             <FontAwesomeIcon icon={faChartArea} fixedWidth />
+          </Button>
+
+          {/* TODO: Consider replacing this button with a select dropdown in the future,
+               to allow users to choose from multiple histogram series if available. */}
+          <Button
+            title="Show histogram graph"
+            onClick={this.props.onToggleHistogram}
+            active={this.props.histogram}
+            disabled={!this.props.isHistogramData}
+          >
+            <FontAwesomeIcon icon={faBarChart} fixedWidth />
           </Button>
         </ButtonGroup>
 

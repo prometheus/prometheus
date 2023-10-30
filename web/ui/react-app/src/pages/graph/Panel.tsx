@@ -13,6 +13,7 @@ import QueryStatsView, { QueryStats } from './QueryStatsView';
 import { QueryParams, ExemplarData } from '../../types/types';
 import { API_PATH } from '../../constants/constants';
 import { debounce } from '../../utils';
+import { isHistogramData } from './GraphHistogramHelpers';
 
 interface PanelProps {
   options: PanelOptions;
@@ -39,6 +40,7 @@ interface PanelState {
   error: string | null;
   stats: QueryStats | null;
   exprInputValue: string;
+  isHistogramData: boolean;
 }
 
 export interface PanelOptions {
@@ -48,6 +50,7 @@ export interface PanelOptions {
   endTime: number | null; // Timestamp in milliseconds.
   resolution: number | null; // Resolution in seconds.
   stacked: boolean;
+  histogram: boolean;
   showExemplars: boolean;
 }
 
@@ -63,6 +66,7 @@ export const PanelDefaultOptions: PanelOptions = {
   endTime: null,
   resolution: null,
   stacked: false,
+  histogram: false,
   showExemplars: false,
 };
 
@@ -82,6 +86,7 @@ class Panel extends Component<PanelProps, PanelState> {
       error: null,
       stats: null,
       exprInputValue: props.options.expr,
+      isHistogramData: false,
     };
 
     this.debounceExecuteQuery = debounce(this.executeQuery.bind(this), 250);
@@ -184,9 +189,15 @@ class Panel extends Component<PanelProps, PanelState> {
         }
       }
 
+      const isHistogram = isHistogramData(query.data);
+      if (!isHistogram) {
+        this.setOptions({ histogram: false });
+      }
+
       this.setState({
         error: null,
         data: query.data,
+        isHistogramData: isHistogram,
         exemplars: exemplars?.data,
         warnings: query.warnings,
         lastQueryParams: {
@@ -253,7 +264,14 @@ class Panel extends Component<PanelProps, PanelState> {
   };
 
   handleChangeStacking = (stacked: boolean): void => {
-    this.setOptions({ stacked: stacked });
+    this.setOptions({ stacked: stacked, histogram: false });
+  };
+
+  handleChangeHistogram = (): void => {
+    // TODO: Currently, this method toggles histogram rendering on and off.
+    // Consider extending this to allow selection of a specific series from
+    // multiple available ones for histogram rendering in the future.
+    this.setOptions({ histogram: !this.props.options.histogram, stacked: false });
   };
 
   handleChangeShowExemplars = (show: boolean): void => {
@@ -338,17 +356,21 @@ class Panel extends Component<PanelProps, PanelState> {
                       useLocalTime={this.props.useLocalTime}
                       resolution={options.resolution}
                       stacked={options.stacked}
+                      histogram={options.histogram}
+                      isHistogramData={this.state.isHistogramData}
                       showExemplars={options.showExemplars}
                       onChangeRange={this.handleChangeRange}
                       onChangeEndTime={this.handleChangeEndTime}
                       onChangeResolution={this.handleChangeResolution}
                       onChangeStacking={this.handleChangeStacking}
+                      onToggleHistogram={this.handleChangeHistogram}
                       onChangeShowExemplars={this.handleChangeShowExemplars}
                     />
                     <GraphTabContent
                       data={this.state.data}
                       exemplars={this.state.exemplars}
                       stacked={options.stacked}
+                      histogram={options.histogram}
                       useLocalTime={this.props.useLocalTime}
                       showExemplars={options.showExemplars}
                       lastQueryParams={this.state.lastQueryParams}

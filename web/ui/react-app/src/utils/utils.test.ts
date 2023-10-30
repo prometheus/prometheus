@@ -295,6 +295,7 @@ describe('Utils', () => {
               expr: 'foo',
               type: PanelType.Graph,
               stacked: true,
+              histogram: false,
               showExemplars: true,
               range: 0,
               endTime: null,

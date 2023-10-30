@@ -9,6 +9,7 @@ interface GraphTabContentProps {
   data: any;
   exemplars: ExemplarData;
   stacked: boolean;
+  histogram: boolean;
   useLocalTime: boolean;
   showExemplars: boolean;
   handleTimeRangeSelection: (startTime: number, endTime: number) => void;
@@ -20,6 +21,7 @@ export const GraphTabContent: FC<GraphTabContentProps> = ({
   data,
   exemplars,
   stacked,
+  histogram,
   useLocalTime,
   lastQueryParams,
   showExemplars,
@@ -42,6 +44,7 @@ export const GraphTabContent: FC<GraphTabContentProps> = ({
       data={data}
       exemplars={exemplars}
       stacked={stacked}
+      histogram={histogram}
       useLocalTime={useLocalTime}
       showExemplars={showExemplars}
       handleTimeRangeSelection={handleTimeRangeSelection}

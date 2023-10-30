@@ -1,24 +1,32 @@
+/**
+ * Inspired by a similar feature in VictoriaMetrics.
+ * See https://github.com/VictoriaMetrics/VictoriaMetrics/issues/3384 for more details.
+ * Developed by VictoriaMetrics team.
+ */
+
 import moment from 'moment-timezone';
 import {formatValue} from "../../pages/graph/GraphHelpers";
+
+const TOOLTIP_ID = 'heatmap-tooltip';
+const GRADIENT_STEPS = 16;
 
 (function ($) {
   let mouseMoveHandler = null;
 
   function init(plot) {
-    const fillPalette = generateGradient("#F7C5B9", "#E6522C", "#52180A");
-
     plot.hooks.draw.push((plot, ctx) => {
       const options = plot.getOptions();
-      if (!options.series.heatmap) return
+      if (!options.series.heatmap) return;
 
       const series = plot.getData();
+      const fillPalette = generateGradient("#FDF4EB", "#752E12", GRADIENT_STEPS);
       const fills = countsToFills(series.flatMap(s => s.data.map(d => d[1])), fillPalette);
       series.forEach((s, i) => drawHeatmap(s, plot, ctx, i, fills));
     });
 
     plot.hooks.bindEvents.push((plot, eventHolder) => {
       const options = plot.getOptions();
-      if (!options.series.heatmap || !options.tooltip.show) return
+      if (!options.series.heatmap || !options.tooltip.show) return;
 
       mouseMoveHandler = (e) => {
         removeTooltip();
@@ -31,10 +39,12 @@ import {formatValue} from "../../pages/graph/GraphHelpers";
           if (seriesIdx !== i) continue;
 
           const s = series[i];
+          const label = s?.labels?.le || ""
+          const prevLabel = series[i - 1]?.labels?.le || ""
           for (let j = 0; j < s.data.length - 1; j++) {
             const [xStartVal, yStartVal] = s.data[j];
             const [xEndVal] = s.data[j + 1];
-            const isIncluded = pos.x >= xStartVal && pos.x <= xEndVal
+            const isIncluded = pos.x >= xStartVal && pos.x <= xEndVal;
             if (yStartVal && isIncluded) {
               showTooltip({
                 cssClass: options.tooltip.cssClass,
@@ -42,7 +52,7 @@ import {formatValue} from "../../pages/graph/GraphHelpers";
                 y: e.pageY,
                 value: formatValue(yStartVal),
                 dateTime: [xStartVal, xEndVal].map(t => moment(t).format('YYYY-MM-DD HH:mm:ss Z')),
-                label: `{ ${Object.entries(s.labels).map(([key, val]) => `${key}: ${val}`).join(',\n')} }`,
+                label: `${prevLabel} - ${label}`,
               });
 
               break;
@@ -51,23 +61,22 @@ import {formatValue} from "../../pages/graph/GraphHelpers";
         }
       }
 
-      $(eventHolder).bind('mousemove', mouseMoveHandler);
+      $(eventHolder).on('mousemove', mouseMoveHandler);
     });
 
-    plot.hooks.shutdown.push(function (plot, eventHolder) {
+    plot.hooks.shutdown.push((_plot, eventHolder) => {
       removeTooltip();
-      $(eventHolder).unbind("mousemove", mouseMoveHandler);
+      $(eventHolder).off("mousemove", mouseMoveHandler);
     });
   }
 
-
   function showTooltip({x, y, cssClass, value, dateTime, label}) {
     const tooltip = document.createElement('div');
-    tooltip.id = 'heatmap-tooltip';
+    tooltip.id = TOOLTIP_ID
     tooltip.className = cssClass;
 
     const timeHtml = `<div class="date">${dateTime.join('<br>')}</div>`
-    const labelHtml = `<div>Name: ${label || 'value'}</div>`
+    const labelHtml = `<div>Bucket: ${label || 'value'}</div>`
     const valueHtml = `<div>Value: <strong>${value}</strong></div>`
     tooltip.innerHTML = `<div>${timeHtml}<div>${labelHtml}${valueHtml}</div></div>`;
 
@@ -91,11 +100,11 @@ import {formatValue} from "../../pages/graph/GraphHelpers";
     }
 
     tooltip.style.display = 'block';  // This will trigger a re-render, allowing fadeIn to work
-    tooltip.style.opacity = 1;
+    tooltip.style.opacity = '1';
   }
 
   function removeTooltip() {
-    let tooltip = document.getElementById('tooltip');
+    let tooltip = document.getElementById(TOOLTIP_ID);
     if (tooltip) {
       document.body.removeChild(tooltip);
     }
@@ -143,7 +152,7 @@ import {formatValue} from "../../pages/graph/GraphHelpers";
     }, {});
   }
 
-  function generateGradient(color1, color2, color3) {
+  function generateGradient(color1, color2, steps) {
     function interpolateColor(startColor, endColor, step) {
       let r = startColor[0] + step * (endColor[0] - startColor[0]);
       let g = startColor[1] + step * (endColor[1] - startColor[1]);
@@ -161,20 +170,9 @@ import {formatValue} from "../../pages/graph/GraphHelpers";
       return [r, g, b];
     }
 
-    const colorList = [];
-    const stepsBetween = 8; // We will get 7 intermediate colors + the starting and ending colors
-
-    // Generating gradient between the first and second color
-    for (let i = 0; i < stepsBetween; i++) {
-      colorList.push(interpolateColor(hexToRgb(color1), hexToRgb(color2), i / (stepsBetween - 1)));
-    }
-
-    // Generating gradient between the second and third color
-    for (let i = 1; i < stepsBetween; i++) {
-      colorList.push(interpolateColor(hexToRgb(color2), hexToRgb(color3), i / (stepsBetween - 1)));
-    }
-
-    return colorList;
+    return new Array(steps).fill("").map((_el, i) => {
+      return interpolateColor(hexToRgb(color1), hexToRgb(color2), i / (steps - 1));
+    });
   }
 
 

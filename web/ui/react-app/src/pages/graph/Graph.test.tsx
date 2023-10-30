@@ -147,7 +147,6 @@ describe('Graph', () => {
               },
             ],
           },
-          isHistogram: false,
         },
         expect.anything()
       );
