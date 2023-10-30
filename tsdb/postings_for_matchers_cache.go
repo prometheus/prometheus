@@ -77,12 +77,7 @@ type PostingsForMatchersCache struct {
 }
 
 func (c *PostingsForMatchersCache) PostingsForMatchers(ctx context.Context, ix IndexPostingsReader, concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
-	var matcherStrs []string
-	for _, m := range ms {
-		matcherStrs = append(matcherStrs, m.String())
-	}
 	ctx, span := otel.Tracer("").Start(ctx, "PostingsForMatchersCache.PostingsForMatchers", trace.WithAttributes(
-		attribute.StringSlice("matchers", matcherStrs),
 		attribute.Bool("concurrent", concurrent),
 		attribute.Bool("force", c.force),
 	))
@@ -94,6 +89,8 @@ func (c *PostingsForMatchersCache) PostingsForMatchers(ctx context.Context, ix I
 		span.RecordError(err)
 		return p, err
 	}
+
+	span.AddEvent("using cache")
 	c.expire()
 	p, err := c.postingsForMatchersPromise(ctx, ix, ms)(ctx)
 	span.RecordError(err)
@@ -138,26 +135,24 @@ func (p *postingsForMatcherPromise) result(ctx context.Context) (index.Postings,
 }
 
 func (c *PostingsForMatchersCache) postingsForMatchersPromise(ctx context.Context, ix IndexPostingsReader, ms []*labels.Matcher) func(context.Context) (index.Postings, error) {
-	ctx, span := otel.Tracer("").Start(ctx, "PostingsForMatchersCache.postingsForMatchersPromise")
+	key := matchersKey(ms)
+	ctx, span := otel.Tracer("").Start(ctx, "PostingsForMatchersCache.postingsForMatchersPromise", trace.WithAttributes(
+		attribute.String("cache_key", key),
+	))
 	defer span.End()
 
 	promise := new(postingsForMatcherPromise)
 	promise.done = make(chan struct{})
 
-	key := matchersKey(ms)
 	oldPromise, loaded := c.calls.LoadOrStore(key, promise)
 	if loaded {
 		// promise was not stored, we return a previously stored promise, that's possibly being fulfilled in another goroutine
-		span.AddEvent("using cached postingsForMatchers promise", trace.WithAttributes(
-			attribute.String("key", key),
-		))
+		span.AddEvent("using cached postingsForMatchers promise")
 		close(promise.done)
 		return oldPromise.(*postingsForMatcherPromise).result
 	}
 
-	span.AddEvent("no postingsForMatchers promise in cache, executing query", trace.WithAttributes(
-		attribute.String("key", key)),
-	)
+	span.AddEvent("no postingsForMatchers promise in cache, executing query")
 
 	// promise was stored, close its channel after fulfilment
 	defer close(promise.done)
