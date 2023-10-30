@@ -15,7 +15,6 @@ package rules
 
 import (
 	"context"
-	"errors"
 	"math"
 	"strings"
 	"sync"
@@ -25,6 +24,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"go.opentelemetry.io/otel"
@@ -620,9 +620,54 @@ func (g *Group) RestoreForState(ts time.Time) {
 			continue
 		}
 
+		var (
+			// IMPORTANT: never manipulate the original alert without taking the lock on active alerts.
+			// However, it's safe to just use the original alert pointer as map key without taking the lock.
+			alertsCopyToOrig     = map[*Alert]*Alert{}
+			alertsOrigToActiveAt = map[*Alert]time.Time{}
+		)
+
+		// Get a copy of all alerts to restore.
 		alertRule.ForEachActiveAlert(func(a *Alert) {
-			restoredActiveAt, err := g.restoreAlertActiveAt(alertRule, a, q, ts)
-			if restoredActiveAt.IsZero() || err != nil {
+			alertCopy := a.deepCopy()
+			alertsCopyToOrig[alertCopy] = a
+		})
+
+		// Get the activeAt timestamp of each alert to restore.
+		// IMPORTANT: we run these queries while not taking the lock in order to not block
+		// other operations on the rule.
+		for alertCopy, alertOrig := range alertsCopyToOrig {
+			restoredActiveAt, restoreErr := g.restoreAlertActiveAt(alertRule, alertCopy, q, ts)
+
+			// Always save the activeAt timestamp, even in case of error, so that later on
+			// we can distinguish between the case we haven't found the alert mapping (e.g. logic bug)
+			// and the case the alert mapping exists but there's no activeAt to restore.
+			alertsOrigToActiveAt[alertOrig] = restoredActiveAt
+
+			if restoreErr != nil {
+				level.Error(g.logger).Log(
+					"msg", "Failed to restore 'for' state",
+					labels.AlertName, alertRule.Name(),
+					"err", restoreErr,
+				)
+			}
+		}
+
+		// Take the lock again on active alerts and restore the activeAt.
+		alertRule.ForEachActiveAlert(func(a *Alert) {
+			restoredActiveAt, found := alertsOrigToActiveAt[a]
+			if !found {
+				// This should never happen.
+				level.Error(g.logger).Log(
+					"msg", "Failed to restore 'for' state because the active alert was unknown at the beginning of the restore process",
+					labels.AlertName, alertRule.Name(),
+					"err", err,
+				)
+				return
+			}
+			if restoredActiveAt.IsZero() {
+				// This may happen if there's nothing to restore or an error occurred
+				// while running the query. We simply skip it.
 				return
 			}
 
@@ -642,13 +687,7 @@ func (g *Group) restoreAlertActiveAt(alertRule *AlertingRule, a *Alert, q storag
 	s, err := alertRule.QueryforStateSeries(g.opts.Context, a, q)
 	if err != nil {
 		// Querier Warnings are ignored. We do not care unless we have an error.
-		level.Error(g.logger).Log(
-			"msg", "Failed to restore 'for' state",
-			labels.AlertName, alertRule.Name(),
-			"stage", "Select",
-			"err", err,
-		)
-		return time.Time{}, err
+		return time.Time{}, errors.Wrap(err, "stage=Select")
 	}
 
 	if s == nil {
@@ -663,9 +702,7 @@ func (g *Group) restoreAlertActiveAt(alertRule *AlertingRule, a *Alert, q storag
 		t, v = it.At()
 	}
 	if it.Err() != nil {
-		level.Error(g.logger).Log("msg", "Failed to restore 'for' state",
-			labels.AlertName, alertRule.Name(), "stage", "Iterator", "err", it.Err())
-		return time.Time{}, it.Err()
+		return time.Time{}, errors.Wrap(it.Err(), "stage=Iterator")
 	}
 	if value.IsStaleNaN(v) { // Alert was not active.
 		return time.Time{}, nil

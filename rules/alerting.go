@@ -91,6 +91,20 @@ type Alert struct {
 	KeepFiringSince time.Time
 }
 
+func (a *Alert) deepCopy() *Alert {
+	anew := *a
+
+	if a.Labels != nil {
+		anew.Labels = a.Labels.Copy()
+	}
+
+	if a.Annotations != nil {
+		anew.Annotations = a.Annotations.Copy()
+	}
+
+	return &anew
+}
+
 func (a *Alert) needsSending(ts time.Time, resendDelay time.Duration) bool {
 	if a.State == StatePending {
 		return false
@@ -536,10 +550,9 @@ func (r *AlertingRule) sendAlerts(ctx context.Context, ts time.Time, resendDelay
 				delta = interval
 			}
 			alert.ValidUntil = ts.Add(4 * delta)
-			anew := *alert
-			// The notifier re-uses the labels slice, hence make a copy.
-			anew.Labels = alert.Labels.Copy()
-			alerts = append(alerts, &anew)
+
+			// The notifier re-uses the labels slice, hence make a deep copy.
+			alerts = append(alerts, alert.deepCopy())
 		}
 	})
 	notifyFunc(ctx, r.vector.String(), alerts...)
