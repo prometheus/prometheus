@@ -238,7 +238,6 @@ func (c *PostingsForMatchersCache) created(ctx context.Context, key string, ts t
 	if c.ttl <= 0 {
 		span.AddEvent("deleting cached promise since c.ttl <= 0", trace.WithAttributes(
 			attribute.Stringer("ttl", c.ttl),
-			attribute.String("key", key),
 		))
 		c.calls.Delete(key)
 		return
@@ -255,7 +254,6 @@ func (c *PostingsForMatchersCache) created(ctx context.Context, key string, ts t
 	c.cachedBytes += sizeBytes
 	span.AddEvent("added cached value to expiry queue", trace.WithAttributes(
 		attribute.Stringer("ttl", c.ttl),
-		attribute.String("key", key),
 		attribute.Stringer("timestamp", ts),
 		attribute.Int64("size in bytes", sizeBytes),
 		attribute.Int64("cached bytes", c.cachedBytes),
