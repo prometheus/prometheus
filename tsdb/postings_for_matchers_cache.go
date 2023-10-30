@@ -267,7 +267,7 @@ func (c *PostingsForMatchersCache) created(ctx context.Context, key string, ts t
 		sizeBytes: sizeBytes,
 	})
 	c.cachedBytes += sizeBytes
-	span.AddEvent("recorded cached promise size", trace.WithAttributes(
+	span.AddEvent("added cached value to expiry queue", trace.WithAttributes(
 		attribute.Stringer("ttl", c.ttl),
 		attribute.String("key", key),
 		attribute.Stringer("timestamp", ts),
