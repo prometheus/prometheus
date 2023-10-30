@@ -684,7 +684,7 @@ func TestSendAlertsDontAffectActiveAlerts(t *testing.T) {
 	// Set an active alert.
 	lbls := labels.FromStrings("a1", "1")
 	h := lbls.Hash()
-	al := &Alert{State: StateFiring, Labels: lbls, ActiveAt: time.Now()}
+	al := &Alert{State: StateFiring, Labels: lbls, Annotations: labels.EmptyLabels(), ActiveAt: time.Now()}
 	rule.active[h] = al
 
 	expr, err := parser.ParseExpr("foo")

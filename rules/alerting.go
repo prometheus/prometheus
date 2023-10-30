@@ -93,15 +93,8 @@ type Alert struct {
 
 func (a *Alert) deepCopy() *Alert {
 	anew := *a
-
-	if a.Labels != nil {
-		anew.Labels = a.Labels.Copy()
-	}
-
-	if a.Annotations != nil {
-		anew.Annotations = a.Annotations.Copy()
-	}
-
+	anew.Labels = a.Labels.Copy()
+	anew.Annotations = a.Annotations.Copy()
 	return &anew
 }
 
