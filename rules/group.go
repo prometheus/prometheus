@@ -461,7 +461,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			}(time.Now())
 
 			if sp.SpanContext().IsSampled() && sp.SpanContext().HasTraceID() {
-				logger = log.WithPrefix(g.logger, "traceID", sp.SpanContext().TraceID())
+				logger = log.WithPrefix(logger, "traceID", sp.SpanContext().TraceID())
 			}
 
 			g.metrics.EvalTotal.WithLabelValues(GroupKey(g.File(), g.Name())).Inc()
