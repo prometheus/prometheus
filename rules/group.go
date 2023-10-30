@@ -621,71 +621,9 @@ func (g *Group) RestoreForState(ts time.Time) {
 		}
 
 		alertRule.ForEachActiveAlert(func(a *Alert) {
-			var s storage.Series
-
-			s, err := alertRule.QueryforStateSeries(g.opts.Context, a, q)
-			if err != nil {
-				// Querier Warnings are ignored. We do not care unless we have an error.
-				level.Error(g.logger).Log(
-					"msg", "Failed to restore 'for' state",
-					labels.AlertName, alertRule.Name(),
-					"stage", "Select",
-					"err", err,
-				)
+			restoredActiveAt, err := g.restoreAlertActiveAt(alertRule, a, q, ts)
+			if restoredActiveAt.IsZero() || err != nil {
 				return
-			}
-
-			if s == nil {
-				return
-			}
-
-			// Series found for the 'for' state.
-			var t int64
-			var v float64
-			it := s.Iterator(nil)
-			for it.Next() == chunkenc.ValFloat {
-				t, v = it.At()
-			}
-			if it.Err() != nil {
-				level.Error(g.logger).Log("msg", "Failed to restore 'for' state",
-					labels.AlertName, alertRule.Name(), "stage", "Iterator", "err", it.Err())
-				return
-			}
-			if value.IsStaleNaN(v) { // Alert was not active.
-				return
-			}
-
-			downAt := time.Unix(t/1000, 0).UTC()
-			restoredActiveAt := time.Unix(int64(v), 0).UTC()
-			timeSpentPending := downAt.Sub(restoredActiveAt)
-			timeRemainingPending := alertHoldDuration - timeSpentPending
-
-			switch {
-			case timeRemainingPending <= 0:
-				// It means that alert was firing when prometheus went down.
-				// In the next Eval, the state of this alert will be set back to
-				// firing again if it's still firing in that Eval.
-				// Nothing to be done in this case.
-			case timeRemainingPending < g.opts.ForGracePeriod:
-				// (new) restoredActiveAt = (ts + m.opts.ForGracePeriod) - alertHoldDuration
-				//                            /* new firing time */      /* moving back by hold duration */
-				//
-				// Proof of correctness:
-				// firingTime = restoredActiveAt.Add(alertHoldDuration)
-				//            = ts + m.opts.ForGracePeriod - alertHoldDuration + alertHoldDuration
-				//            = ts + m.opts.ForGracePeriod
-				//
-				// Time remaining to fire = firingTime.Sub(ts)
-				//                        = (ts + m.opts.ForGracePeriod) - ts
-				//                        = m.opts.ForGracePeriod
-				restoredActiveAt = ts.Add(g.opts.ForGracePeriod).Add(-alertHoldDuration)
-			default:
-				// By shifting ActiveAt to the future (ActiveAt + some_duration),
-				// the total pending time from the original ActiveAt
-				// would be `alertHoldDuration + some_duration`.
-				// Here, some_duration = downDuration.
-				downDuration := ts.Sub(downAt)
-				restoredActiveAt = restoredActiveAt.Add(downDuration)
 			}
 
 			a.ActiveAt = restoredActiveAt
@@ -696,6 +634,78 @@ func (g *Group) RestoreForState(ts time.Time) {
 
 		alertRule.SetRestored(true)
 	}
+}
+
+func (g *Group) restoreAlertActiveAt(alertRule *AlertingRule, a *Alert, q storage.Querier, ts time.Time) (restoredActiveAt time.Time, _ error) {
+	var s storage.Series
+
+	s, err := alertRule.QueryforStateSeries(g.opts.Context, a, q)
+	if err != nil {
+		// Querier Warnings are ignored. We do not care unless we have an error.
+		level.Error(g.logger).Log(
+			"msg", "Failed to restore 'for' state",
+			labels.AlertName, alertRule.Name(),
+			"stage", "Select",
+			"err", err,
+		)
+		return time.Time{}, err
+	}
+
+	if s == nil {
+		return time.Time{}, nil
+	}
+
+	// Series found for the 'for' state.
+	var t int64
+	var v float64
+	it := s.Iterator(nil)
+	for it.Next() == chunkenc.ValFloat {
+		t, v = it.At()
+	}
+	if it.Err() != nil {
+		level.Error(g.logger).Log("msg", "Failed to restore 'for' state",
+			labels.AlertName, alertRule.Name(), "stage", "Iterator", "err", it.Err())
+		return time.Time{}, it.Err()
+	}
+	if value.IsStaleNaN(v) { // Alert was not active.
+		return time.Time{}, nil
+	}
+
+	alertHoldDuration := alertRule.HoldDuration()
+	downAt := time.Unix(t/1000, 0).UTC()
+	restoredActiveAt = time.Unix(int64(v), 0).UTC()
+	timeSpentPending := downAt.Sub(restoredActiveAt)
+	timeRemainingPending := alertHoldDuration - timeSpentPending
+
+	switch {
+	case timeRemainingPending <= 0:
+		// It means that alert was firing when prometheus went down.
+		// In the next Eval, the state of this alert will be set back to
+		// firing again if it's still firing in that Eval.
+		// Nothing to be done in this case.
+	case timeRemainingPending < g.opts.ForGracePeriod:
+		// (new) restoredActiveAt = (ts + m.opts.ForGracePeriod) - alertHoldDuration
+		//                            /* new firing time */      /* moving back by hold duration */
+		//
+		// Proof of correctness:
+		// firingTime = restoredActiveAt.Add(alertHoldDuration)
+		//            = ts + m.opts.ForGracePeriod - alertHoldDuration + alertHoldDuration
+		//            = ts + m.opts.ForGracePeriod
+		//
+		// Time remaining to fire = firingTime.Sub(ts)
+		//                        = (ts + m.opts.ForGracePeriod) - ts
+		//                        = m.opts.ForGracePeriod
+		restoredActiveAt = ts.Add(g.opts.ForGracePeriod).Add(-alertHoldDuration)
+	default:
+		// By shifting ActiveAt to the future (ActiveAt + some_duration),
+		// the total pending time from the original ActiveAt
+		// would be `alertHoldDuration + some_duration`.
+		// Here, some_duration = downDuration.
+		downDuration := ts.Sub(downAt)
+		restoredActiveAt = restoredActiveAt.Add(downDuration)
+	}
+
+	return
 }
 
 // Equals return if two groups are the same.
