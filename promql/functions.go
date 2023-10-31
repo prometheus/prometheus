@@ -633,16 +633,11 @@ func funcQuantileOverTime(vals []parser.Value, args parser.Expressions, enh *Eva
 		return enh.Out, nil
 	}
 
-	var annos annotations.Annotations
-	if math.IsNaN(q) || q < 0 || q > 1 {
-		annos.Add(annotations.NewInvalidQuantileWarning(q, args[0].PositionRange()))
-	}
-
 	values := make(vectorByValueHeap, 0, len(el.Floats))
 	for _, f := range el.Floats {
 		values = append(values, Sample{F: f.F})
 	}
-	return append(enh.Out, Sample{F: quantile(q, values)}), annos
+	return append(enh.Out, Sample{F: quantile(q, values)}), nil
 }
 
 // === stddev_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
@@ -1097,10 +1092,6 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 	q := vals[0].(Vector)[0].F
 	inVec := vals[1].(Vector)
 	var annos annotations.Annotations
-
-	if math.IsNaN(q) || q < 0 || q > 1 {
-		annos.Add(annotations.NewInvalidQuantileWarning(q, args[0].PositionRange()))
-	}
 
 	if enh.signatureToMetricWithBuckets == nil {
 		enh.signatureToMetricWithBuckets = map[string]*metricWithBuckets{}
