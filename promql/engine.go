@@ -1363,13 +1363,22 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 			}, e.Expr)
 		}
 
-		return ev.rangeEval(initSeries, func(v []parser.Value, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+		var warnings annotations.Annotations
+		if e.Op == parser.QUANTILE && e.Param != nil {
+			q, _ := strconv.ParseFloat(e.Param.String(), 64)
+			if math.IsNaN(q) || q < 0 || q > 1 {
+				warnings.Add(annotations.NewInvalidQuantileWarning(q, e.Param.PositionRange()))
+			}
+		}
+
+		vec, annos := ev.rangeEval(initSeries, func(v []parser.Value, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 			var param float64
 			if e.Param != nil {
 				param = v[0].(Vector)[0].F
 			}
 			return ev.aggregation(e, sortedGrouping, param, v[1].(Vector), sh[1], enh)
 		}, e.Param, e.Expr)
+		return vec, warnings.Merge(annos)
 
 	case *parser.Call:
 		call := FunctionCalls[e.Func.Name]
@@ -2865,9 +2874,6 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, grouping []string, par
 			continue // Bypass default append.
 
 		case parser.QUANTILE:
-			if math.IsNaN(q) || q < 0 || q > 1 {
-				annos.Add(annotations.NewInvalidQuantileWarning(q, e.Param.PositionRange()))
-			}
 			aggr.floatValue = quantile(q, aggr.heap)
 
 		case parser.SUM:
