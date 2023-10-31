@@ -33,9 +33,6 @@ issues:
     - path: _test.go
       linters:
         - errcheck
-    - path: discovery/
-      linters:
-        - errorlint
     - path: scrape/
       linters:
         - errorlint
