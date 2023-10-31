@@ -724,7 +724,7 @@ func TestSendAlertsDontAffectActiveAlerts(t *testing.T) {
 func TestKeepFiringFor(t *testing.T) {
 	storage := promql.LoadedStorage(t, `
 		load 1m
-			http_requests{job="app-server", instance="0"}	75 85 70 70 10x5
+			http_requests{job="app-server", instance="0"}	75 85 70 70 10 60 10x2
 	`)
 	t.Cleanup(func() { storage.Close() })
 
@@ -740,7 +740,7 @@ func TestKeepFiringFor(t *testing.T) {
 		labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
 	)
 
-	results := []promql.Vector{
+	alertResults := []promql.Vector{
 		{
 			promql.Sample{
 				Metric: labels.FromStrings(
@@ -802,30 +802,136 @@ func TestKeepFiringFor(t *testing.T) {
 				F: 1,
 			},
 		},
+		// Back to firing from `Stabilizing`.
+		{
+			promql.Sample{
+				Metric: labels.FromStrings(
+					"__name__", "ALERTS",
+					"alertname", "HTTPRequestRateHigh",
+					"alertstate", "firing",
+					"instance", "0",
+					"job", "app-server",
+				),
+				F: 1,
+			},
+		},
+		// Keep firing.
+		{
+			promql.Sample{
+				Metric: labels.FromStrings(
+					"__name__", "ALERTS",
+					"alertname", "HTTPRequestRateHigh",
+					"alertstate", "firing",
+					"instance", "0",
+					"job", "app-server",
+				),
+				F: 1,
+			},
+		},
+	}
+	alertForStateResults := []promql.Vector{
+		{
+			promql.Sample{
+				Metric: labels.FromStrings(
+					"__name__", "ALERTS_FOR_STATE",
+					"alertname", "HTTPRequestRateHigh",
+					"instance", "0",
+					"job", "app-server",
+				),
+				F: 0,
+			},
+		},
+		{
+			promql.Sample{
+				Metric: labels.FromStrings(
+					"__name__", "ALERTS_FOR_STATE",
+					"alertname", "HTTPRequestRateHigh",
+					"instance", "0",
+					"job", "app-server",
+				),
+				F: 0,
+			},
+		},
+		{
+			promql.Sample{
+				Metric: labels.FromStrings(
+					"__name__", "ALERTS_FOR_STATE",
+					"alertname", "HTTPRequestRateHigh",
+					"instance", "0",
+					"job", "app-server",
+				),
+				F: 0,
+			},
+		},
+		{
+			promql.Sample{
+				Metric: labels.FromStrings(
+					"__name__", "ALERTS_FOR_STATE",
+					"alertname", "HTTPRequestRateHigh",
+					"instance", "0",
+					"job", "app-server",
+				),
+				F: 0,
+			},
+		},
+		// From now on the alert should keep firing.
+		{
+			promql.Sample{
+				Metric: labels.FromStrings(
+					"__name__", "ALERTS_FOR_STATE",
+					"alertname", "HTTPRequestRateHigh",
+					"instance", "0",
+					"job", "app-server",
+				),
+				F: 0,
+			},
+		},
+		// Back to firing from `Stabilizing`, reset `ActiveAt`.
+		{
+			promql.Sample{
+				Metric: labels.FromStrings(
+					"__name__", "ALERTS_FOR_STATE",
+					"alertname", "HTTPRequestRateHigh",
+					"instance", "0",
+					"job", "app-server",
+				),
+				F: 300,
+			},
+		},
+		// Keep firing.
+		{
+			promql.Sample{
+				Metric: labels.FromStrings(
+					"__name__", "ALERTS_FOR_STATE",
+					"alertname", "HTTPRequestRateHigh",
+					"instance", "0",
+					"job", "app-server",
+				),
+				F: 300,
+			},
+		},
 	}
 
 	baseTime := time.Unix(0, 0)
-	for i, result := range results {
+	for i := range alertResults {
 		t.Logf("case %d", i)
 		evalTime := baseTime.Add(time.Duration(i) * time.Minute)
-		result[0].T = timestamp.FromTime(evalTime)
 		res, err := rule.Eval(context.TODO(), evalTime, EngineQueryFunc(testEngine, storage), nil, 0)
 		require.NoError(t, err)
-
-		var filteredRes promql.Vector // After removing 'ALERTS_FOR_STATE' samples.
 		for _, smpl := range res {
 			smplName := smpl.Metric.Get("__name__")
 			if smplName == "ALERTS" {
-				filteredRes = append(filteredRes, smpl)
+				alertResults[i][0].T = timestamp.FromTime(evalTime)
+				require.Equal(t, alertResults[i], promql.Vector{smpl})
 			} else {
 				// If not 'ALERTS', it has to be 'ALERTS_FOR_STATE'.
 				require.Equal(t, "ALERTS_FOR_STATE", smplName)
+				alertForStateResults[i][0].T = timestamp.FromTime(evalTime)
+				require.Equal(t, alertForStateResults[i], promql.Vector{smpl})
 			}
 		}
-
-		require.Equal(t, result, filteredRes)
 	}
-	evalTime := baseTime.Add(time.Duration(len(results)) * time.Minute)
+	evalTime := baseTime.Add(time.Duration(len(alertResults)) * time.Minute)
 	res, err := rule.Eval(context.TODO(), evalTime, EngineQueryFunc(testEngine, storage), nil, 0)
 	require.NoError(t, err)
 	require.Equal(t, 0, len(res))

@@ -447,6 +447,11 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 				continue
 			}
 		} else {
+			// Reset `ActiveAt` and `FiredAt` when alert becomes firing from previous `Stabilizing`.
+			if a.State == StateFiring && !a.KeepFiringSince.IsZero() {
+				a.ActiveAt = ts
+				a.FiredAt = ts
+			}
 			// The alert is firing, reset keepFiringSince.
 			a.KeepFiringSince = time.Time{}
 		}
