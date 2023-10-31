@@ -87,6 +87,8 @@ type GoDecodedSegment struct {
 	buf           unsafe.Pointer
 	createdAtTSNS int64
 	encodedAtTSNS int64
+	samples       uint32
+	series        uint32
 }
 
 // NewGoDecodedSegment - init GoDecodedSegment.
@@ -120,6 +122,16 @@ func (ds *GoDecodedSegment) CreatedAt() int64 {
 // EncodedAt returns timestamp in nanoseconds when source segment was encoded
 func (ds *GoDecodedSegment) EncodedAt() int64 {
 	return ds.encodedAtTSNS
+}
+
+// Samples - returns number of samples when source segment was encoded.
+func (ds *GoDecodedSegment) Samples() uint32 {
+	return ds.samples
+}
+
+// Series - returns number of series when source segment was encoded.
+func (ds *GoDecodedSegment) Series() uint32 {
+	return ds.series
 }
 
 // UnmarshalTo unmarshals data to given protobuf message

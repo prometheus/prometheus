@@ -35,6 +35,8 @@ type DecodedSegment interface {
 	frames.WritePayload
 	CreatedAt() int64
 	EncodedAt() int64
+	Samples() uint32
+	Series() uint32
 	UnmarshalTo(proto.Unmarshaler) error
 }
 

@@ -105,9 +105,13 @@ func (*EncoderDecoderSuite) transferringData(income frames.WritePayload) []byte 
 
 func (eds *EncoderDecoderSuite) TestEncodeDecode() {
 	hlimits := common.DefaultHashdexLimits()
-	for i := 0; i < 10; i++ {
+	count := 10
+	k := count + 1
+	for i := 0; i < count; i++ {
 		eds.T().Log("generate protobuf")
-		expectedWr := eds.makeData(10, int64(i))
+		k--
+		seriesCount := k * (i + 1)
+		expectedWr := eds.makeData(seriesCount, int64(i))
 		data, err := expectedWr.Marshal()
 		eds.Require().NoError(err)
 
@@ -120,8 +124,8 @@ func (eds *EncoderDecoderSuite) TestEncodeDecode() {
 		_, gos, _, err := eds.enc.Encode(eds.ctx, h)
 		eds.Require().NoError(err)
 
-		eds.EqualValues(10, gos.Series())
-		eds.EqualValues(30, gos.Samples())
+		eds.EqualValues(seriesCount, gos.Series())
+		eds.EqualValues(seriesCount*3, gos.Samples())
 
 		eds.T().Log("transferring segment")
 		segByte := eds.transferringData(gos)
@@ -136,6 +140,9 @@ func (eds *EncoderDecoderSuite) TestEncodeDecode() {
 		eds.Equal(expectedWr.String(), actualWr.String())
 
 		eds.InDelta(createdAt.UnixNano(), protob.CreatedAt(), float64(time.Second))
+
+		eds.Equal(gos.Samples(), protob.Samples())
+		eds.Equal(gos.Series(), protob.Series())
 	}
 }
 
@@ -363,6 +370,9 @@ func (eds *EncoderDecoderSuite) TestEncodeDecodeOpenHead() {
 	eds.T().Log("decoding protobuf")
 	protob, _, err := eds.dec.Decode(eds.ctx, segByte)
 	eds.Require().NoError(err)
+
+	eds.Equal(gos.Samples(), protob.Samples())
+	eds.Equal(gos.Series(), protob.Series())
 
 	eds.T().Log("compare income and outcome protobuf")
 	actualWr := &prompb.WriteRequest{}

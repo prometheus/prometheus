@@ -30,7 +30,12 @@ class Decoder {
 
     auto protobuf_buffer = new std::string;
     protozero::pbf_writer pb_message(*protobuf_buffer);
-    reader_.process_segment([&](PromPP::WAL::Reader::timeseries_type timeseries) { PromPP::Prometheus::RemoteWrite::write_timeseries(pb_message, timeseries); });
+    uint32_t processed_series = 0;
+    uint64_t samples_before = reader_.samples();
+    reader_.process_segment([&](PromPP::WAL::Reader::timeseries_type timeseries) {
+      PromPP::Prometheus::RemoteWrite::write_timeseries(pb_message, timeseries);
+      ++processed_series;
+    });
 
     c_protobuf->data.array = protobuf_buffer->c_str();
     c_protobuf->data.len = protobuf_buffer->size();
@@ -38,6 +43,8 @@ class Decoder {
     c_protobuf->buf = protobuf_buffer;
     c_protobuf->created_at = reader_.created_at_tsns();
     c_protobuf->encoded_at = reader_.encoded_at_tsns();
+    c_protobuf->samples = reader_.samples() - samples_before;
+    c_protobuf->series = processed_series;
 
     return reader_.last_processed_segment();
   }

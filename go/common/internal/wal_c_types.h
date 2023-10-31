@@ -76,6 +76,8 @@ typedef struct {
   string_ptr buf;
   int64_t created_at;
   int64_t encoded_at;
+  uint32_t samples;
+  uint32_t series;
 } c_decoded_segment;
 
 // c_restored_result - result data after restored.
