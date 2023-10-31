@@ -1,0 +1,13 @@
+global:
+  scrape_interval: 15s
+  external_labels:
+    role: ${SENDER_NAME}
+
+remote_write:
+    - url: 'http://localhost:${REMOTE_WRITE_PORT}/api/v1/write'
+      name: ${RECEIVER_NAME}
+      metadata_config:
+        send: false
+
+scrape_configs:
+${SCRAPE_CONFIGS}
