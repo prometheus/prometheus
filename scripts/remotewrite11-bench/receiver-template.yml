@@ -1,0 +1,3 @@
+global:
+  external_labels:
+    role: ${RECEIVER_NAME}
