@@ -53,6 +53,8 @@ func NewPostingsForMatchersCache(ttl time.Duration, maxItems int, maxBytes int64
 
 		timeNow:             time.Now,
 		postingsForMatchers: PostingsForMatchers,
+
+		tracer: otel.Tracer(""),
 	}
 
 	return b
@@ -75,10 +77,12 @@ type PostingsForMatchersCache struct {
 	timeNow func() time.Time
 	// postingsForMatchers can be replaced for testing purposes
 	postingsForMatchers func(ctx context.Context, ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error)
+
+	tracer trace.Tracer
 }
 
 func (c *PostingsForMatchersCache) PostingsForMatchers(ctx context.Context, ix IndexPostingsReader, concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
-	ctx, span := otel.Tracer("").Start(ctx, "PostingsForMatchersCache.PostingsForMatchers", trace.WithAttributes(
+	ctx, span := c.tracer.Start(ctx, "PostingsForMatchersCache.PostingsForMatchers", trace.WithAttributes(
 		attribute.Bool("concurrent", concurrent),
 		attribute.Bool("force", c.force),
 	))
@@ -109,10 +113,11 @@ type postingsForMatcherPromise struct {
 
 	cloner *index.PostingsCloner
 	err    error
+	tracer trace.Tracer
 }
 
 func (p *postingsForMatcherPromise) result(ctx context.Context) (index.Postings, error) {
-	ctx, span := otel.Tracer("").Start(ctx, "postingsForMatcherPromise.result")
+	ctx, span := p.tracer.Start(ctx, "postingsForMatcherPromise.result")
 	defer span.End()
 
 	select {
@@ -143,13 +148,15 @@ func (p *postingsForMatcherPromise) result(ctx context.Context) (index.Postings,
 
 func (c *PostingsForMatchersCache) postingsForMatchersPromise(ctx context.Context, ix IndexPostingsReader, ms []*labels.Matcher) func(context.Context) (index.Postings, error) {
 	key := matchersKey(ms)
-	ctx, span := otel.Tracer("").Start(ctx, "PostingsForMatchersCache.postingsForMatchersPromise", trace.WithAttributes(
+	ctx, span := c.tracer.Start(ctx, "PostingsForMatchersCache.postingsForMatchersPromise", trace.WithAttributes(
 		attribute.String("cache_key", key),
 	))
 	defer span.End()
 
-	promise := new(postingsForMatcherPromise)
-	promise.done = make(chan struct{})
+	promise := &postingsForMatcherPromise{
+		done:   make(chan struct{}),
+		tracer: c.tracer,
+	}
 
 	oldPromise, loaded := c.calls.LoadOrStore(key, promise)
 	if loaded {
