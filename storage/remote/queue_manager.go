@@ -1493,6 +1493,7 @@ func populateTimeSeries(batch []timeSeries, pendingData []prompb.TimeSeries, sen
 	}
 	return nPendingSamples, nPendingExemplars, nPendingHistograms
 }
+
 func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, sampleCount, exemplarCount, histogramCount int, pBuf *proto.Buffer, buf *[]byte) {
 	begin := time.Now()
 	// Build the WriteRequest with no metadata.

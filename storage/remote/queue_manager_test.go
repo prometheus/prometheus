@@ -619,38 +619,6 @@ func createTimeseries(numSamples, numSeries int, extraLabels ...labels.Label) ([
 	return samples, series
 }
 
-func createDummyTimeseriesBatch(numSeries int, extraLabels ...labels.Label) []timeSeries {
-	result := make([]timeSeries, numSeries)
-	for i := range result {
-		name := fmt.Sprintf("test_metric_%d", i)
-		rand.Shuffle(len(extraLabels), func(i, j int) {
-			extraLabels[i], extraLabels[j] = extraLabels[j], extraLabels[i]
-		})
-		result[i] = timeSeries{
-			seriesLabels: labels.NewBuilder(extraLabels[0:3]).Set(labels.MetricName, name).Labels(),
-			timestamp:    int64(i),
-		}
-		switch i % 10 {
-		case 0, 1, 2, 3, 4, 5:
-			result[i].value = float64(i)
-		case 6:
-			result[i].exemplarLabels = extraLabels
-			result[i].value = float64(i)
-		case 7:
-			result[i].histogram = &histogram.Histogram{
-				Schema:        2,
-				ZeroThreshold: 1e-128,
-			}
-		case 8, 9:
-			result[i].floatHistogram = &histogram.FloatHistogram{
-				Schema:        2,
-				ZeroThreshold: 1e-128,
-			}
-		}
-	}
-	return result
-}
-
 func createExemplars(numExemplars, numSeries int) ([]record.RefExemplar, []record.RefSeries) {
 	exemplars := make([]record.RefExemplar, 0, numExemplars)
 	series := make([]record.RefSeries, 0, numSeries)
@@ -1478,7 +1446,6 @@ func createDummyTimeSeries(instances int) []timeSeries {
 
 func BenchmarkBuildWriteRequest(b *testing.B) {
 	bench := func(b *testing.B, batch []timeSeries) {
-
 		buff := make([]byte, 0)
 		seriesBuff := make([]prompb.TimeSeries, len(batch))
 		for i := range seriesBuff {
