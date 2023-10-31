@@ -96,7 +96,7 @@ func (n *Node) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	}
 
 	go func() {
-		for n.process(ctx, ch) { // nolint:revive
+		for n.process(ctx, ch) {
 		}
 	}()
 

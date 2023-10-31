@@ -114,7 +114,7 @@ func (c *HistogramChunk) Appender() (Appender, error) {
 	// To get an appender, we must know the state it would have if we had
 	// appended all existing data from scratch. We iterate through the end
 	// and populate via the iterator's state.
-	for it.Next() == ValHistogram { // nolint:revive
+	for it.Next() == ValHistogram {
 	}
 	if err := it.Err(); err != nil {
 		return nil, err

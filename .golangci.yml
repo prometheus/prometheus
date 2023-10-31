@@ -18,6 +18,7 @@ linters:
     - gofumpt
     - goimports
     - misspell
+    - nolintlint
     - predeclared
     - revive
     - unconvert
@@ -33,9 +34,6 @@ issues:
       linters:
         - errcheck
     - path: discovery/
-      linters:
-        - errorlint
-    - path: storage/
       linters:
         - errorlint
     - path: tsdb/
