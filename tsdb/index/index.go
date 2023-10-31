@@ -923,7 +923,7 @@ func (w *Writer) writePostingsToTmpFiles() error {
 			// Symbol numbers are in order, so the strings will also be in order.
 			slices.Sort(values)
 			for _, v := range values {
-				value, err := w.symbols.Lookup(w.ctx, v)
+				value, err := w.symbols.Lookup(v)
 				if err != nil {
 					return err
 				}
@@ -1295,7 +1295,7 @@ func NewSymbols(bs ByteSlice, version, off int) (*Symbols, error) {
 	return s, nil
 }
 
-func (s Symbols) Lookup(ctx context.Context, o uint32) (string, error) {
+func (s Symbols) Lookup(o uint32) (string, error) {
 	d := encoding.Decbuf{
 		B: s.bs.Range(0, s.bs.Len()),
 	}
@@ -1307,9 +1307,6 @@ func (s Symbols) Lookup(ctx context.Context, o uint32) (string, error) {
 		d.Skip(s.offsets[int(o/symbolFactor)])
 		// Walk until we find the one we want.
 		for i := o - (o / symbolFactor * symbolFactor); i > 0; i-- {
-			if ctx.Err() != nil {
-				return "", ctx.Err()
-			}
 			d.UvarintBytes()
 		}
 	} else {
@@ -1441,7 +1438,7 @@ func (r *Reader) lookupSymbol(ctx context.Context, o uint32) (string, error) {
 	if s, ok := r.nameSymbols[o]; ok {
 		return s, nil
 	}
-	return r.symbols.Lookup(ctx, o)
+	return r.symbols.Lookup(o)
 }
 
 // Symbols returns an iterator over the symbols that exist within the index.
