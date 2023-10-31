@@ -175,7 +175,6 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			Headers:          rwConf.Headers,
 			RetryOnRateLimit: rwConf.QueueConfig.RetryOnRateLimit,
 		})
-
 		if err != nil {
 			return err
 		}

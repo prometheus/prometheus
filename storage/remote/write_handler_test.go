@@ -182,7 +182,7 @@ func BenchmarkRemoteWritehandler(b *testing.B) {
 	}
 }
 
-// TODO(npazosmendez): add benchmarks with realistc scenarios
+// TODO(npazosmendez): add benchmarks with realistic scenarios
 func BenchmarkReducedRemoteWriteHandler(b *testing.B) {
 	const labelValue = "abcdefg'hijlmn234!@#$%^&*()_+~`\"{}[],./<>?hello0123hiOlá你好Dzieńdobry9Zd8ra765v4stvuyte"
 	reqs := []*http.Request{}
