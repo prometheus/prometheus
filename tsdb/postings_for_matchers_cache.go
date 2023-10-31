@@ -10,6 +10,7 @@ import (
 	"github.com/DmitriyVTitov/size"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -86,14 +87,20 @@ func (c *PostingsForMatchersCache) PostingsForMatchers(ctx context.Context, ix I
 	if !concurrent && !c.force {
 		span.AddEvent("cache not used")
 		p, err := c.postingsForMatchers(ctx, ix, ms...)
-		span.RecordError(err)
+		if err != nil {
+			span.SetStatus(codes.Error, "getting postings for matchers without cache failed")
+			span.RecordError(err)
+		}
 		return p, err
 	}
 
 	span.AddEvent("using cache")
 	c.expire()
 	p, err := c.postingsForMatchersPromise(ctx, ix, ms)(ctx)
-	span.RecordError(err)
+	if err != nil {
+		span.SetStatus(codes.Error, "getting postings for matchers with cache failed")
+		span.RecordError(err)
+	}
 	return p, err
 }
 
