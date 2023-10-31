@@ -11,7 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// nolint:revive // Many unused function arguments in this file by design.
 package tsdb
 
 import (

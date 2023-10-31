@@ -18,6 +18,7 @@ linters:
     - gofumpt
     - goimports
     - misspell
+    - nolintlint
     - predeclared
     - revive
     - unconvert

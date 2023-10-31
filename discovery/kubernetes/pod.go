@@ -131,7 +131,7 @@ func (p *Pod) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	}
 
 	go func() {
-		for p.process(ctx, ch) { // nolint:revive
+		for p.process(ctx, ch) {
 		}
 	}()
 
