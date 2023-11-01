@@ -10,6 +10,45 @@ INSTANCES+=('sender-v1;;receiver-v1;')
 INSTANCES+=('sender-v11-min32-optimized-varint;--remote-write-format 1;receiver-v11-min32-optimized-varint;--remote-write-format 1')
 INSTANCES+=('sender-v11-min-len;--remote-write-format 2;receiver-v11-min-len;--remote-write-format 2')
 
+# INSTANCES+=('sender-v1-s2;--enable-feature rw-compression-s2;receiver-v1-s2;--enable-feature rw-compression-s2')
+# INSTANCES+=('sender-v11-s2;--enable-feature rw-1-1-sender --enable-feature rw-compression-s2;receiver-v11-s2;--enable-feature rw-1-1-receiver --enable-feature rw-compression-s2')
+
+# INSTANCES+=('sender-v1-zstd-fast;--enable-feature rw-compression-zstd-fast;receiver-v1-zstd-fast;--enable-feature rw-compression-zstd-fast')
+# INSTANCES+=('sender-v11-zstd-fast;--enable-feature rw-1-1-sender --enable-feature rw-compression-zstd-fast;receiver-v11-zstd-fast;--enable-feature rw-1-1-receiver --enable-feature rw-compression-zstd-fast')
+
+# INSTANCES+=('sender-v1-snappyalt;--enable-feature rw-compression-snappyalt;receiver-v1-snappyalt;--enable-feature rw-compression-snappyalt')
+# INSTANCES+=('sender-v11-snappyalt;--enable-feature rw-1-1-sender --enable-feature rw-compression-snappyalt;receiver-v11-snappyalt;--enable-feature rw-compression-snappyalt --enable-feature rw-1-1-receiver')
+
+# INSTANCES+=('sender-v1-zstd-default;--enable-feature rw-compression-zstd-default;receiver-v1-zstd-default;--enable-feature rw-compression-zstd-default')
+# INSTANCES+=('sender-v11-zstd-default;--enable-feature rw-1-1-sender --enable-feature rw-compression-zstd-default;receiver-v11-zstd-default;--enable-feature rw-compression-zstd-default --enable-feature rw-1-1-receiver')
+
+# INSTANCES+=('sender-v1-zstd-bestcomp;--enable-feature rw-compression-zstd-bestcomp;receiver-v1-zstd-bestcomp;--enable-feature rw-compression-zstd-bestcomp')
+# INSTANCES+=('sender-v11-zstd-bestcomp;--enable-feature rw-1-1-sender --enable-feature rw-compression-zstd-bestcomp;receiver-v11-zstd-bestcomp;--enable-feature rw-compression-zstd-bestcomp --enable-feature rw-1-1-receiver')
+
+# INSTANCES+=('sender-v1-lzw;--enable-feature rw-compression-lzw;receiver-v1-lzw;--enable-feature rw-compression-lzw')
+# INSTANCES+=('sender-v11-lzw;--enable-feature rw-1-1-sender --enable-feature rw-compression-lzw;receiver-v11-lzw;--enable-feature rw-compression-lzw --enable-feature rw-1-1-receiver')
+
+# INSTANCES+=('sender-v1-flate-fast;--enable-feature rw-compression-flate-fast;receiver-v1-flate-fast;--enable-feature rw-compression-flate-fast')
+# INSTANCES+=('sender-v11-flate-fast;--enable-feature rw-1-1-sender --enable-feature rw-compression-flate-fast;receiver-v11-flate-fast;--enable-feature rw-compression-flate-fast --enable-feature rw-1-1-receiver')
+
+# INSTANCES+=('sender-v1-flate-comp;--enable-feature rw-compression-flate-comp;receiver-v1-flate-comp;--enable-feature rw-compression-flate-comp')
+# INSTANCES+=('sender-v11-flate-comp;--enable-feature rw-1-1-sender --enable-feature rw-compression-flate-comp;receiver-v11-flate-comp;--enable-feature rw-compression-flate-comp --enable-feature rw-1-1-receiver')
+
+# INSTANCES+=('sender-v1-brotli-comp;--enable-feature rw-compression-brotli-comp;receiver-v1-brotli-comp;--enable-feature rw-compression-brotli-comp')
+# INSTANCES+=('sender-v11-brotli-comp;--enable-feature rw-1-1-sender --enable-feature rw-compression-brotli-comp;receiver-v11-brotli-comp;--enable-feature rw-compression-brotli-comp --enable-feature rw-1-1-receiver')
+
+# INSTANCES+=('sender-v1-brotli-fast;--enable-feature rw-compression-brotli-fast;receiver-v1-brotli-fast;--enable-feature rw-compression-brotli-fast')
+# INSTANCES+=('sender-v11-brotli-fast;--enable-feature rw-1-1-sender --enable-feature rw-compression-brotli-fast;receiver-v11-brotli-fast;--enable-feature rw-1-1-receiver --enable-feature rw-compression-brotli-fast')
+
+# INSTANCES+=('sender-v1-brotli-default;--enable-feature rw-compression-brotli-default;receiver-v1-brotli-default;--enable-feature rw-compression-brotli-default')
+# INSTANCES+=('sender-v11-brotli-default;--enable-feature rw-1-1-sender --enable-feature rw-compression-brotli-default;receiver-v11-brotli-default;--enable-feature rw-compression-brotli-default --enable-feature rw-1-1-receiver')
+
+# INSTANCES+=('sender-v1-gzip-fast;--enable-feature rw-compression-gzip-fast;receiver-v1-gzip-fast;--enable-feature rw-compression-gzip-fast')
+# INSTANCES+=('sender-v11-gzip-fast;--enable-feature rw-1-1-sender --enable-feature rw-compression-gzip-fast;receiver-v11-gzip-fast;--enable-feature rw-compression-gzip-fast --enable-feature rw-1-1-receiver')
+
+# INSTANCES+=('sender-v1-gzip-comp;--enable-feature rw-compression-gzip-comp;receiver-v1-gzip-comp;--enable-feature rw-compression-gzip-comp')
+# INSTANCES+=('sender-v11-gzip-comp;--enable-feature rw-1-1-sender --enable-feature rw-compression-gzip-comp;receiver-v11-gzip-comp;--enable-feature rw-compression-gzip-comp --enable-feature rw-1-1-receiver')
+
 # ~~~~~~~~~~~~~
 
 # append two ports to all instances
