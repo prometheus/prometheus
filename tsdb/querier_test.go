@@ -694,12 +694,16 @@ func (r *fakeChunksReader) Chunk(meta chunks.Meta) (chunkenc.Chunk, error) {
 }
 
 func TestPopulateWithTombSeriesIterators(t *testing.T) {
+	type minMaxTimes struct {
+		minTime, maxTime int64
+	}
 	cases := []struct {
 		name string
 		chks [][]chunks.Sample
 
-		expected     []chunks.Sample
-		expectedChks []chunks.Meta
+		expected            []chunks.Sample
+		expectedChks        []chunks.Meta
+		expectedMinMaxTimes []minMaxTimes
 
 		intervals tombstones.Intervals
 
@@ -718,6 +722,7 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 			expectedChks: []chunks.Meta{
 				assureChunkFromSamples(t, []chunks.Sample{}),
 			},
+			expectedMinMaxTimes: []minMaxTimes{{0, 0}},
 		},
 		{
 			name: "three empty chunks", // This should never happen.
@@ -728,6 +733,7 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 				assureChunkFromSamples(t, []chunks.Sample{}),
 				assureChunkFromSamples(t, []chunks.Sample{}),
 			},
+			expectedMinMaxTimes: []minMaxTimes{{0, 0}, {0, 0}, {0, 0}},
 		},
 		{
 			name: "one chunk",
@@ -743,6 +749,7 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 					sample{1, 2, nil, nil}, sample{2, 3, nil, nil}, sample{3, 5, nil, nil}, sample{6, 1, nil, nil},
 				}),
 			},
+			expectedMinMaxTimes: []minMaxTimes{{1, 6}},
 		},
 		{
 			name: "two full chunks",
@@ -762,6 +769,7 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 					sample{7, 89, nil, nil}, sample{9, 8, nil, nil},
 				}),
 			},
+			expectedMinMaxTimes: []minMaxTimes{{1, 6}, {7, 9}},
 		},
 		{
 			name: "three full chunks",
@@ -785,6 +793,7 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 					sample{10, 22, nil, nil}, sample{203, 3493, nil, nil},
 				}),
 			},
+			expectedMinMaxTimes: []minMaxTimes{{1, 6}, {7, 9}, {10, 203}},
 		},
 		// Seek cases.
 		{
@@ -855,6 +864,7 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 					sample{7, 89, nil, nil},
 				}),
 			},
+			expectedMinMaxTimes: []minMaxTimes{{3, 6}, {7, 7}},
 		},
 		{
 			name: "two chunks with trimmed middle sample of first chunk",
@@ -875,6 +885,7 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 					sample{7, 89, nil, nil}, sample{9, 8, nil, nil},
 				}),
 			},
+			expectedMinMaxTimes: []minMaxTimes{{1, 6}, {7, 9}},
 		},
 		{
 			name: "two chunks with deletion across two chunks",
@@ -895,6 +906,7 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 					sample{9, 8, nil, nil},
 				}),
 			},
+			expectedMinMaxTimes: []minMaxTimes{{1, 3}, {9, 9}},
 		},
 		// Deletion with seek.
 		{
@@ -935,6 +947,7 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 					sample{6, 0, tsdbutil.SetHistogramNotCounterReset(tsdbutil.GenerateTestHistogram(6)), nil},
 				}),
 			},
+			expectedMinMaxTimes: []minMaxTimes{{1, 6}},
 		},
 		{
 			name: "one histogram chunk intersect with deletion interval",
@@ -959,6 +972,7 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 					sample{3, 0, tsdbutil.SetHistogramNotCounterReset(tsdbutil.GenerateTestHistogram(3)), nil},
 				}),
 			},
+			expectedMinMaxTimes: []minMaxTimes{{1, 3}},
 		},
 		{
 			name: "one float histogram chunk",
@@ -984,6 +998,7 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 					sample{6, 0, nil, tsdbutil.SetFloatHistogramNotCounterReset(tsdbutil.GenerateTestFloatHistogram(6))},
 				}),
 			},
+			expectedMinMaxTimes: []minMaxTimes{{1, 6}},
 		},
 		{
 			name: "one float histogram chunk intersect with deletion interval",
@@ -1008,6 +1023,7 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 					sample{3, 0, nil, tsdbutil.SetFloatHistogramNotCounterReset(tsdbutil.GenerateTestFloatHistogram(3))},
 				}),
 			},
+			expectedMinMaxTimes: []minMaxTimes{{1, 3}},
 		},
 		{
 			name: "one gauge histogram chunk",
@@ -1033,6 +1049,7 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 					sample{6, 0, tsdbutil.GenerateTestGaugeHistogram(6), nil},
 				}),
 			},
+			expectedMinMaxTimes: []minMaxTimes{{1, 6}},
 		},
 		{
 			name: "one gauge histogram chunk intersect with deletion interval",
@@ -1057,6 +1074,7 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 					sample{3, 0, tsdbutil.GenerateTestGaugeHistogram(3), nil},
 				}),
 			},
+			expectedMinMaxTimes: []minMaxTimes{{1, 3}},
 		},
 		{
 			name: "one gauge float histogram",
@@ -1082,6 +1100,7 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 					sample{6, 0, nil, tsdbutil.GenerateTestGaugeFloatHistogram(6)},
 				}),
 			},
+			expectedMinMaxTimes: []minMaxTimes{{1, 6}},
 		},
 		{
 			name: "one gauge float histogram chunk intersect with deletion interval",
@@ -1106,6 +1125,102 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 					sample{3, 0, nil, tsdbutil.GenerateTestGaugeFloatHistogram(3)},
 				}),
 			},
+			expectedMinMaxTimes: []minMaxTimes{{1, 3}},
+		},
+		{
+			name: "three full mixed chunks",
+			chks: [][]chunks.Sample{
+				{sample{1, 2, nil, nil}, sample{2, 3, nil, nil}, sample{3, 5, nil, nil}, sample{6, 1, nil, nil}},
+				{
+					sample{7, 0, tsdbutil.GenerateTestGaugeHistogram(89), nil},
+					sample{9, 0, tsdbutil.GenerateTestGaugeHistogram(8), nil},
+				},
+				{
+					sample{10, 0, nil, tsdbutil.GenerateTestGaugeFloatHistogram(22)},
+					sample{203, 0, nil, tsdbutil.GenerateTestGaugeFloatHistogram(3493)},
+				},
+			},
+
+			expected: []chunks.Sample{
+				sample{1, 2, nil, nil}, sample{2, 3, nil, nil}, sample{3, 5, nil, nil}, sample{6, 1, nil, nil}, sample{7, 0, tsdbutil.GenerateTestGaugeHistogram(89), nil}, sample{9, 0, tsdbutil.GenerateTestGaugeHistogram(8), nil}, sample{10, 0, nil, tsdbutil.GenerateTestGaugeFloatHistogram(22)}, sample{203, 0, nil, tsdbutil.GenerateTestGaugeFloatHistogram(3493)},
+			},
+			expectedChks: []chunks.Meta{
+				assureChunkFromSamples(t, []chunks.Sample{
+					sample{1, 2, nil, nil}, sample{2, 3, nil, nil}, sample{3, 5, nil, nil}, sample{6, 1, nil, nil},
+				}),
+				assureChunkFromSamples(t, []chunks.Sample{
+					sample{7, 0, tsdbutil.GenerateTestGaugeHistogram(89), nil},
+					sample{9, 0, tsdbutil.GenerateTestGaugeHistogram(8), nil},
+				}),
+				assureChunkFromSamples(t, []chunks.Sample{
+					sample{10, 0, nil, tsdbutil.GenerateTestGaugeFloatHistogram(22)},
+					sample{203, 0, nil, tsdbutil.GenerateTestGaugeFloatHistogram(3493)},
+				}),
+			},
+			expectedMinMaxTimes: []minMaxTimes{{1, 6}, {7, 9}, {10, 203}},
+		},
+		{
+			name: "three full mixed chunks in different order",
+			chks: [][]chunks.Sample{
+				{
+					sample{7, 0, tsdbutil.GenerateTestGaugeHistogram(89), nil},
+					sample{9, 0, tsdbutil.GenerateTestGaugeHistogram(8), nil},
+				},
+				{sample{11, 2, nil, nil}, sample{12, 3, nil, nil}, sample{13, 5, nil, nil}, sample{16, 1, nil, nil}},
+				{
+					sample{100, 0, nil, tsdbutil.GenerateTestGaugeFloatHistogram(22)},
+					sample{203, 0, nil, tsdbutil.GenerateTestGaugeFloatHistogram(3493)},
+				},
+			},
+
+			expected: []chunks.Sample{
+				sample{7, 0, tsdbutil.GenerateTestGaugeHistogram(89), nil}, sample{9, 0, tsdbutil.GenerateTestGaugeHistogram(8), nil}, sample{11, 2, nil, nil}, sample{12, 3, nil, nil}, sample{13, 5, nil, nil}, sample{16, 1, nil, nil}, sample{100, 0, nil, tsdbutil.GenerateTestGaugeFloatHistogram(22)}, sample{203, 0, nil, tsdbutil.GenerateTestGaugeFloatHistogram(3493)},
+			},
+			expectedChks: []chunks.Meta{
+				assureChunkFromSamples(t, []chunks.Sample{
+					sample{7, 0, tsdbutil.GenerateTestGaugeHistogram(89), nil},
+					sample{9, 0, tsdbutil.GenerateTestGaugeHistogram(8), nil},
+				}),
+				assureChunkFromSamples(t, []chunks.Sample{
+					sample{11, 2, nil, nil}, sample{12, 3, nil, nil}, sample{13, 5, nil, nil}, sample{16, 1, nil, nil},
+				}),
+				assureChunkFromSamples(t, []chunks.Sample{
+					sample{100, 0, nil, tsdbutil.GenerateTestGaugeFloatHistogram(22)},
+					sample{203, 0, nil, tsdbutil.GenerateTestGaugeFloatHistogram(3493)},
+				}),
+			},
+			expectedMinMaxTimes: []minMaxTimes{{7, 9}, {11, 16}, {100, 203}},
+		},
+		{
+			name: "three full mixed chunks in different order intersect with deletion interval",
+			chks: [][]chunks.Sample{
+				{
+					sample{7, 0, tsdbutil.GenerateTestGaugeHistogram(89), nil},
+					sample{9, 0, tsdbutil.GenerateTestGaugeHistogram(8), nil},
+				},
+				{sample{11, 2, nil, nil}, sample{12, 3, nil, nil}, sample{13, 5, nil, nil}, sample{16, 1, nil, nil}},
+				{
+					sample{100, 0, nil, tsdbutil.GenerateTestGaugeFloatHistogram(22)},
+					sample{203, 0, nil, tsdbutil.GenerateTestGaugeFloatHistogram(3493)},
+				},
+			},
+			intervals: tombstones.Intervals{{Mint: 8, Maxt: 11}, {Mint: 15, Maxt: 150}},
+
+			expected: []chunks.Sample{
+				sample{7, 0, tsdbutil.GenerateTestGaugeHistogram(89), nil}, sample{12, 3, nil, nil}, sample{13, 5, nil, nil}, sample{203, 0, nil, tsdbutil.GenerateTestGaugeFloatHistogram(3493)},
+			},
+			expectedChks: []chunks.Meta{
+				assureChunkFromSamples(t, []chunks.Sample{
+					sample{7, 0, tsdbutil.GenerateTestGaugeHistogram(89), nil},
+				}),
+				assureChunkFromSamples(t, []chunks.Sample{
+					sample{12, 3, nil, nil}, sample{13, 5, nil, nil},
+				}),
+				assureChunkFromSamples(t, []chunks.Sample{
+					sample{203, 0, nil, tsdbutil.GenerateTestGaugeFloatHistogram(3493)},
+				}),
+			},
+			expectedMinMaxTimes: []minMaxTimes{{7, 7}, {12, 13}, {203, 203}},
 		},
 	}
 	for _, tc := range cases {
@@ -1147,6 +1262,11 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 				rmChunkRefs(expandedResult)
 				rmChunkRefs(tc.expectedChks)
 				require.Equal(t, tc.expectedChks, expandedResult)
+
+				for i, meta := range expandedResult {
+					require.Equal(t, tc.expectedMinMaxTimes[i].minTime, meta.MinTime)
+					require.Equal(t, tc.expectedMinMaxTimes[i].maxTime, meta.MaxTime)
+				}
 			})
 		})
 	}
