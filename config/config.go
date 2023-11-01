@@ -563,6 +563,8 @@ type ScrapeConfig struct {
 	HonorLabels bool `yaml:"honor_labels,omitempty"`
 	// Indicator whether the scraped timestamps should be respected.
 	HonorTimestamps bool `yaml:"honor_timestamps"`
+	// Indicator whether to track the staleness of the scraped timestamps.
+	TrackTimestampsStaleness bool `yaml:"track_timestamps_staleness"`
 	// A set of query parameters with which the target is scraped.
 	Params url.Values `yaml:"params,omitempty"`
 	// How frequently to scrape the targets of this scrape config.

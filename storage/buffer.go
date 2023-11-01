@@ -284,7 +284,8 @@ func newSampleRing(delta int64, size int, typ chunkenc.ValueType) *sampleRing {
 	case chunkenc.ValFloatHistogram:
 		r.fhBuf = make([]fhSample, size)
 	default:
-		r.iBuf = make([]chunks.Sample, size)
+		// Do not initialize anything because the 1st sample will be
+		// added to one of the other bufs anyway.
 	}
 	return r
 }
@@ -294,6 +295,12 @@ func (r *sampleRing) reset() {
 	r.i = -1
 	r.f = 0
 	r.bufInUse = noBuf
+
+	// The first sample after the reset will always go to a specialized
+	// buffer. If we later need to change to the interface buffer, we'll
+	// copy from the specialized buffer to the interface buffer. For that to
+	// work properly, we have to reset the interface buffer here, too.
+	r.iBuf = r.iBuf[:0]
 }
 
 // Returns the current iterator. Invalidates previously returned iterators.
@@ -441,6 +448,7 @@ func (r *sampleRing) add(s chunks.Sample) {
 		}
 		// The new sample isn't a fit for the already existing
 		// ones. Copy the latter into the interface buffer where needed.
+		// The interface buffer is assumed to be of length zero at this point.
 		switch r.bufInUse {
 		case fBuf:
 			for _, s := range r.fBuf {

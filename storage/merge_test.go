@@ -1129,6 +1129,35 @@ func TestChainSampleIteratorSeek(t *testing.T) {
 	}
 }
 
+func TestChainSampleIteratorSeekFailingIterator(t *testing.T) {
+	merged := ChainSampleIteratorFromIterators(nil, []chunkenc.Iterator{
+		NewListSeriesIterator(samples{fSample{0, 0.1}, fSample{1, 1.1}, fSample{2, 2.1}}),
+		errIterator{errors.New("something went wrong")},
+	})
+
+	require.Equal(t, chunkenc.ValNone, merged.Seek(0))
+	require.EqualError(t, merged.Err(), "something went wrong")
+}
+
+func TestChainSampleIteratorNextImmediatelyFailingIterator(t *testing.T) {
+	merged := ChainSampleIteratorFromIterators(nil, []chunkenc.Iterator{
+		NewListSeriesIterator(samples{fSample{0, 0.1}, fSample{1, 1.1}, fSample{2, 2.1}}),
+		errIterator{errors.New("something went wrong")},
+	})
+
+	require.Equal(t, chunkenc.ValNone, merged.Next())
+	require.EqualError(t, merged.Err(), "something went wrong")
+
+	// Next() does some special handling for the first iterator, so make sure it handles the first iterator returning an error too.
+	merged = ChainSampleIteratorFromIterators(nil, []chunkenc.Iterator{
+		errIterator{errors.New("something went wrong")},
+		NewListSeriesIterator(samples{fSample{0, 0.1}, fSample{1, 1.1}, fSample{2, 2.1}}),
+	})
+
+	require.Equal(t, chunkenc.ValNone, merged.Next())
+	require.EqualError(t, merged.Err(), "something went wrong")
+}
+
 func TestChainSampleIteratorSeekHistogramCounterResetHint(t *testing.T) {
 	for sampleType, sampleFunc := range map[string]func(int64, histogram.CounterResetHint) chunks.Sample{
 		"histogram":       func(ts int64, hint histogram.CounterResetHint) chunks.Sample { return histogramSample(ts, hint) },
@@ -1523,4 +1552,36 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 			})
 		})
 	}
+}
+
+type errIterator struct {
+	err error
+}
+
+func (e errIterator) Next() chunkenc.ValueType {
+	return chunkenc.ValNone
+}
+
+func (e errIterator) Seek(t int64) chunkenc.ValueType {
+	return chunkenc.ValNone
+}
+
+func (e errIterator) At() (int64, float64) {
+	return 0, 0
+}
+
+func (e errIterator) AtHistogram() (int64, *histogram.Histogram) {
+	return 0, nil
+}
+
+func (e errIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+	return 0, nil
+}
+
+func (e errIterator) AtT() int64 {
+	return 0
+}
+
+func (e errIterator) Err() error {
+	return e.err
 }

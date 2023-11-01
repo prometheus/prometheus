@@ -157,7 +157,7 @@ func TestFloatHistogramChunkSameBuckets(t *testing.T) {
 
 	// 3. Now recycle an iterator that was never used to access anything.
 	itX := c.Iterator(nil)
-	for itX.Next() == ValFloatHistogram { // nolint:revive
+	for itX.Next() == ValFloatHistogram {
 		// Just iterate through without accessing anything.
 	}
 	it3 := c.iterator(itX)

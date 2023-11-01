@@ -971,7 +971,6 @@ type segmentBufReader struct {
 	off  int // Offset of read data into current segment.
 }
 
-// nolint:revive // TODO: Consider exporting segmentBufReader
 func NewSegmentBufReader(segs ...*Segment) *segmentBufReader {
 	if len(segs) == 0 {
 		return &segmentBufReader{}
@@ -983,7 +982,6 @@ func NewSegmentBufReader(segs ...*Segment) *segmentBufReader {
 	}
 }
 
-// nolint:revive
 func NewSegmentBufReaderWithOffset(offset int, segs ...*Segment) (sbr *segmentBufReader, err error) {
 	if offset == 0 || len(segs) == 0 {
 		return NewSegmentBufReader(segs...), nil
