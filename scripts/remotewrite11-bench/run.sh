@@ -5,11 +5,21 @@ trap "trap - SIGTERM && kill -- -$$" SIGINT SIGTERM EXIT
 # CONFIGURABLES
 # ~~~~~~~~~~~~~
 declare -a INSTANCES
-# (sender,receiver) pairs to run: (sender_name; sender_port; sender_flags; receiver_name; receiver_port; receiver_flags)
-INSTANCES+=('sender-v1;9090;;receiver-v1;9091;')
-INSTANCES+=('sender-v11;9092;--enable-feature rw-1-1-sender;receiver-v11;9093;--enable-feature rw-1-1-receiver')
+# (sender,receiver) pairs to run: (sender_name; sender_flags; receiver_name; receiver_flags)
+INSTANCES+=('sender-v1;;receiver-v1;')
+INSTANCES+=('sender-v11;--enable-feature rw-1-1-sender;receiver-v11;--enable-feature rw-1-1-receiver')
+
 
 # ~~~~~~~~~~~~~
+
+# append two ports to all instances
+PROM_PORT=9090
+for i in "${!INSTANCES[@]}"; do
+  INSTANCES[$i]="${INSTANCES[$i]};$PROM_PORT"
+  PROM_PORT=$((PROM_PORT+1))
+  INSTANCES[$i]="${INSTANCES[$i]};$PROM_PORT"
+  PROM_PORT=$((PROM_PORT+1))
+done
 
 # Check if all required variables are set
 : "${CONTEXT:?}"
@@ -38,11 +48,11 @@ do
   IFS=";" read -r -a arr <<< "${instance}"
 
   sender="${arr[0]}"
-  sender_port="${arr[1]}"
-  sender_flags="${arr[2]}"
-  receiver="${arr[3]}"
-  receiver_port="${arr[4]}"
-  receiver_flags="${arr[5]}"
+  sender_flags="${arr[1]}"
+  receiver="${arr[2]}"
+  receiver_flags="${arr[3]}"
+  sender_port="${arr[4]}"
+  receiver_port="${arr[5]}"
 
   SCRAPE_CONFIGS="${SCRAPE_CONFIGS}
   - job_name: '$sender'
@@ -61,8 +71,8 @@ for instance in "${INSTANCES[@]}"
 do
   IFS=";" read -r -a arr <<< "${instance}"
   export SENDER_NAME="${arr[0]}"
-  export RECEIVER_NAME="${arr[3]}"
-  export REMOTE_WRITE_PORT="${arr[4]}"
+  export RECEIVER_NAME="${arr[2]}"
+  export REMOTE_WRITE_PORT="${arr[5]}"
   export SCRAPE_CONFIGS="$SCRAPE_CONFIGS"
   envsubst < receiver-template.yml > $TEMP_DIR/$RECEIVER_NAME.yml
   envsubst < sender-template.yml > $TEMP_DIR/$SENDER_NAME.yml
