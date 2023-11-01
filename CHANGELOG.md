@@ -1,5 +1,40 @@
 # Changelog
 
+## 2.48.0-rc.1 / 2023-10-24
+
+* [BUGFIX] PromQL: Reduce inefficiency introduced by warnings/annotations and temporarily remove possible non-counter warnings. #13012
+
+## 2.48.0-rc.0 / 2023-10-10
+
+* [CHANGE] Remote-write: respect Retry-After header on 5xx errors. #12677
+* [FEATURE] Alerting: Add AWS SigV4 authentication support for Alertmanager endpoints. #12774
+* [FEATURE] Promtool: Add support for histograms in the TSDB dump command. #12775
+* [FEATURE] PromQL: Add warnings (and annotations) to PromQL query results. #12152 #12982 #12988
+* [FEATURE] Remote-write: Add Azure AD OAuth authentication support for remote write requests. #12572
+* [ENHANCEMENT] Remote-write: Add a header to count retried remote write requests. #12729
+* [ENHANCEMENT] TSDB: Improve query performance by re-using iterator when moving between series. #12757
+* [ENHANCEMENT] UI: Move /targets page discovered labels to expandable section #12824
+* [ENHANCEMENT] TSDB: Optimize WBL loading by not sending empty buffers over channel. #12808
+* [ENHANCEMENT] TSDB: Reply WBL mmap markers concurrently. #12801
+* [ENHANCEMENT] Promtool: Add support for specifying series matchers in the TSDB analyze command. #12842
+* [ENHANCEMENT] PromQL: Prevent Prometheus from overallocating memory on subquery with large amount of steps. #12734
+* [ENHANCEMENT] PromQL: Add warning when monotonicity is forced in the input to histogram_quantile. #12931
+* [ENHANCEMENT] Scraping: Optimize sample appending by reducing garbage. #12939
+* [ENHANCEMENT] Storage: Reduce memory allocations in queries that merge series sets. #12938
+* [ENHANCEMENT] UI: Show group interval in rules display. #12943
+* [ENHANCEMENT] Scraping: Save memory when scraping by delaying creation of buffer. #12953
+* [ENHANCEMENT] Agent: Allow ingestion of out-of-order samples. #12897
+* [ENHANCEMENT] Promtool: Improve support for native histograms in TSDB analyze command. #12869
+* [BUGFIX] SD: Ensure that discovery managers are properly canceled. #10569
+* [BUGFIX] TSDB: Fix PostingsForMatchers race with creating new series. #12558
+* [BUGFIX] TSDB: Fix handling of explicit counter reset header in histograms. #12772
+* [BUGFIX] SD: Validate HTTP client configuration in HTTP, EC2, Azure, Uyuni, PuppetDB, and Lightsail SDs. #12762 #12811 #12812 #12815 #12814 #12816
+* [BUGFIX] TSDB: Fix counter reset edgecases causing native histogram panics. #12838
+* [BUGFIX] TSDB: Fix duplicate sample detection at chunk size limit. #12874
+* [BUGFIX] Promtool: Fix errors not being reported in check rules command. #12715
+* [BUGFIX] TSDB: Avoid panics reported in logs when head initialization takes a long time. #12876
+* [BUGFIX] TSDB: Ensure that WBL is repaired when possible. #12406
+
 ## 2.47.1 / 2023-10-04
 
 * [BUGFIX] Fix duplicate sample detection at chunk size limit #12874

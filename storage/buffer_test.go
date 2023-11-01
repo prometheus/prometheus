@@ -90,6 +90,54 @@ func TestSampleRing(t *testing.T) {
 	}
 }
 
+func TestSampleRingMixed(t *testing.T) {
+	h1 := tsdbutil.GenerateTestHistogram(1)
+	h2 := tsdbutil.GenerateTestHistogram(2)
+
+	// With ValNone as the preferred type, nothing should be initialized.
+	r := newSampleRing(10, 2, chunkenc.ValNone)
+	require.Zero(t, len(r.fBuf))
+	require.Zero(t, len(r.hBuf))
+	require.Zero(t, len(r.fhBuf))
+	require.Zero(t, len(r.iBuf))
+
+	// But then mixed adds should work as expected.
+	r.addF(fSample{t: 1, f: 3.14})
+	r.addH(hSample{t: 2, h: h1})
+
+	it := r.iterator()
+
+	require.Equal(t, chunkenc.ValFloat, it.Next())
+	ts, f := it.At()
+	require.Equal(t, int64(1), ts)
+	require.Equal(t, 3.14, f)
+	require.Equal(t, chunkenc.ValHistogram, it.Next())
+	var h *histogram.Histogram
+	ts, h = it.AtHistogram()
+	require.Equal(t, int64(2), ts)
+	require.Equal(t, h1, h)
+	require.Equal(t, chunkenc.ValNone, it.Next())
+
+	r.reset()
+	it = r.iterator()
+	require.Equal(t, chunkenc.ValNone, it.Next())
+
+	r.addF(fSample{t: 3, f: 4.2})
+	r.addH(hSample{t: 4, h: h2})
+
+	it = r.iterator()
+
+	require.Equal(t, chunkenc.ValFloat, it.Next())
+	ts, f = it.At()
+	require.Equal(t, int64(3), ts)
+	require.Equal(t, 4.2, f)
+	require.Equal(t, chunkenc.ValHistogram, it.Next())
+	ts, h = it.AtHistogram()
+	require.Equal(t, int64(4), ts)
+	require.Equal(t, h2, h)
+	require.Equal(t, chunkenc.ValNone, it.Next())
+}
+
 func TestBufferedSeriesIterator(t *testing.T) {
 	var it *BufferedSeriesIterator
 

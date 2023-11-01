@@ -50,6 +50,9 @@ func (a *Annotations) Add(err error) Annotations {
 // the first in-place, and returns the merged first Annotation for convenience.
 func (a *Annotations) Merge(aa Annotations) Annotations {
 	if *a == nil {
+		if aa == nil {
+			return nil
+		}
 		*a = Annotations{}
 	}
 	for key, val := range aa {
