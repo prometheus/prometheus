@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"compress/lzw"
 	"io"
+	"sync"
 
 	reS2 "github.com/klauspost/compress/s2"
 	reSnappy "github.com/klauspost/compress/snappy"
@@ -19,13 +20,12 @@ import (
 type Compression interface {
 	Compress(data []byte) ([]byte, error)
 	Decompress(data []byte) ([]byte, error)
-	Close() error
 }
 
 // hacky globals to easily tweak the compression algorithm and run some benchmarks
 type CompAlgorithm int
 
-var UseAlgorithm = SnappyAlt
+var UseAlgorithm = Snappy
 
 const (
 	Snappy CompAlgorithm = iota
@@ -43,6 +43,21 @@ const (
 	BrotliComp
 	BrotliDefault
 )
+
+// sync.Pool-ed createComp
+var compPool = sync.Pool{
+	// New optionally specifies a function to generate
+	// a value when Get would otherwise return nil.
+	New: func() interface{} { return createComp() },
+}
+
+func GetPooledComp() Compression {
+	return compPool.Get().(Compression)
+}
+
+func PutPooledComp(c Compression) {
+	compPool.Put(c)
+}
 
 var createComp func() Compression = func() Compression {
 	switch UseAlgorithm {
@@ -89,10 +104,6 @@ func (n *noopCompression) Decompress(data []byte) ([]byte, error) {
 	return data, nil
 }
 
-func (n *noopCompression) Close() error {
-	return nil
-}
-
 type snappyCompression struct {
 	buf []byte
 }
@@ -106,11 +117,12 @@ func (s *snappyCompression) Compress(data []byte) ([]byte, error) {
 	return compressed, nil
 }
 func (s *snappyCompression) Decompress(data []byte) ([]byte, error) {
-	uncompressed, err := snappy.Decode(nil, data)
+	s.buf = s.buf[0:cap(s.buf)]
+	uncompressed, err := snappy.Decode(s.buf, data)
+	if len(uncompressed) > cap(s.buf) {
+		s.buf = uncompressed
+	}
 	return uncompressed, err
-}
-func (s *snappyCompression) Close() error {
-	return nil
 }
 
 type snappyAltCompression struct {
@@ -126,11 +138,12 @@ func (s *snappyAltCompression) Compress(data []byte) ([]byte, error) {
 	return res, nil
 }
 func (s *snappyAltCompression) Decompress(data []byte) ([]byte, error) {
-	uncompressed, err := reSnappy.Decode(nil, data)
+	s.buf = s.buf[0:cap(s.buf)]
+	uncompressed, err := reSnappy.Decode(s.buf, data)
+	if len(uncompressed) > cap(s.buf) {
+		s.buf = uncompressed
+	}
 	return uncompressed, err
-}
-func (s *snappyAltCompression) Close() error {
-	return nil
 }
 
 type s2Compression struct {
@@ -146,12 +159,12 @@ func (s *s2Compression) Compress(data []byte) ([]byte, error) {
 }
 
 func (s *s2Compression) Decompress(data []byte) ([]byte, error) {
-	uncompressed, err := reS2.Decode(nil, data)
+	s.buf = s.buf[0:cap(s.buf)]
+	uncompressed, err := reS2.Decode(s.buf, data)
+	if len(uncompressed) > cap(s.buf) {
+		s.buf = uncompressed
+	}
 	return uncompressed, err
-}
-
-func (s *s2Compression) Close() error {
-	return nil
 }
 
 type zstdCompression struct {
@@ -190,20 +203,19 @@ func (z *zstdCompression) Compress(data []byte) ([]byte, error) {
 }
 
 func (z *zstdCompression) Decompress(data []byte) ([]byte, error) {
-	reader := bytes.NewReader(data)
-	decoder, err := reZstd.NewReader(reader)
+	decoder, err := reZstd.NewReader(nil)
 	if err != nil {
 		return nil, err
 	}
-	defer decoder.Close()
-	return io.ReadAll(decoder)
-}
-
-func (z *zstdCompression) Close() error {
-	if z.w != nil {
-		return z.w.Close()
+	z.buf = z.buf[:0]
+	buf, err := decoder.DecodeAll(data, z.buf)
+	if err != nil {
+		return nil, err
 	}
-	return nil
+	if len(buf) > cap(z.buf) {
+		z.buf = buf
+	}
+	return buf, nil
 }
 
 type gzipCompression struct {
@@ -249,10 +261,19 @@ func (g *gzipCompression) Decompress(data []byte) ([]byte, error) {
 		return nil, err
 	}
 	return decompressedData, nil
-}
 
-func (g *gzipCompression) Close() error {
-	return nil
+	// TODO: debug this
+	// r := bytes.NewReader(data)
+	// var err error
+	// if g.r == nil {
+	// 	g.r, err = gzip.NewReader(r)
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
+	// }
+	// g.r.Reset(r)
+	// defer g.r.Close()
+	// return io.ReadAll(g.r)
 }
 
 type lzwCompression struct {
@@ -285,10 +306,6 @@ func (l *lzwCompression) Decompress(data []byte) ([]byte, error) {
 	r := lzw.NewReader(reader, lzw.LSB, 8)
 	defer r.Close()
 	return io.ReadAll(r)
-}
-
-func (l *lzwCompression) Close() error {
-	return nil
 }
 
 type flateCompression struct {
@@ -333,14 +350,11 @@ func (f *flateCompression) Decompress(data []byte) ([]byte, error) {
 	return io.ReadAll(r)
 }
 
-func (f *flateCompression) Close() error {
-	return f.w.Close()
-}
-
 type brotliCompression struct {
 	quality int
 	buf     []byte
 	w       *brotli.Writer
+	r       *brotli.Reader
 }
 
 func (b *brotliCompression) Compress(data []byte) ([]byte, error) {
@@ -366,13 +380,11 @@ func (b *brotliCompression) Compress(data []byte) ([]byte, error) {
 }
 
 func (b *brotliCompression) Decompress(data []byte) ([]byte, error) {
-	reader := bytes.NewReader(data)
-	r := brotli.NewReader(reader)
-	return io.ReadAll(r)
-}
-
-func (b *brotliCompression) Close() error {
-	return nil
+	if b.r == nil {
+		b.r = brotli.NewReader(nil)
+	}
+	b.r.Reset(bytes.NewReader(data))
+	return io.ReadAll(b.r)
 }
 
 // func compressSnappy(bytes []byte, buf *[]byte) ([]byte, error) {

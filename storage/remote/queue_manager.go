@@ -547,7 +547,6 @@ func (t *QueueManager) sendMetadataWithBackoff(ctx context.Context, metadata []p
 	// Build the WriteRequest with no samples.
 	comp := createComp()
 	req, _, err := buildWriteRequest(nil, metadata, pBuf, comp)
-	comp.Close()
 	if err != nil {
 		return err
 	}
@@ -1371,7 +1370,6 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 		buf     []byte
 		comp    = createComp()
 	)
-	defer comp.Close()
 	if s.qm.sendExemplars {
 		max += int(float64(max) * 0.1)
 	}
