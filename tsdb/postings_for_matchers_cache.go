@@ -46,10 +46,11 @@ func NewPostingsForMatchersCache(ttl time.Duration, maxItems int, maxBytes int64
 		calls:  &sync.Map{},
 		cached: list.New(),
 
-		ttl:      ttl,
-		maxItems: maxItems,
-		maxBytes: maxBytes,
-		force:    force,
+		ttl:       ttl,
+		ttlAttrib: attribute.Stringer("ttl", ttl),
+		maxItems:  maxItems,
+		maxBytes:  maxBytes,
+		force:     force,
 
 		timeNow:             time.Now,
 		postingsForMatchers: PostingsForMatchers,
@@ -68,10 +69,11 @@ type PostingsForMatchersCache struct {
 	cached      *list.List
 	cachedBytes int64
 
-	ttl      time.Duration
-	maxItems int
-	maxBytes int64
-	force    bool
+	ttl       time.Duration
+	ttlAttrib attribute.KeyValue
+	maxItems  int
+	maxBytes  int64
+	force     bool
 
 	// timeNow is the time.Now that can be replaced for testing purposes
 	timeNow func() time.Time
@@ -117,8 +119,7 @@ type postingsForMatcherPromise struct {
 }
 
 func (p *postingsForMatcherPromise) result(ctx context.Context) (index.Postings, error) {
-	ctx, span := p.tracer.Start(ctx, "postingsForMatcherPromise.result")
-	defer span.End()
+	span := trace.SpanFromContext(ctx)
 
 	select {
 	case <-ctx.Done():
@@ -148,9 +149,7 @@ func (p *postingsForMatcherPromise) result(ctx context.Context) (index.Postings,
 
 func (c *PostingsForMatchersCache) postingsForMatchersPromise(ctx context.Context, ix IndexPostingsReader, ms []*labels.Matcher) func(context.Context) (index.Postings, error) {
 	key := matchersKey(ms)
-	ctx, span := c.tracer.Start(ctx, "PostingsForMatchersCache.postingsForMatchersPromise", trace.WithAttributes(
-		attribute.String("cache_key", key),
-	))
+	span := trace.SpanFromContext(ctx)
 	defer span.End()
 
 	promise := &postingsForMatcherPromise{
@@ -161,7 +160,9 @@ func (c *PostingsForMatchersCache) postingsForMatchersPromise(ctx context.Contex
 	oldPromise, loaded := c.calls.LoadOrStore(key, promise)
 	if loaded {
 		// promise was not stored, we return a previously stored promise, that's possibly being fulfilled in another goroutine
-		span.AddEvent("using cached postingsForMatchers promise")
+		span.AddEvent("using cached postingsForMatchers promise", trace.WithAttributes(
+			attribute.String("cache_key", key),
+		))
 		close(promise.done)
 		return oldPromise.(*postingsForMatcherPromise).result
 	}
@@ -177,11 +178,14 @@ func (c *PostingsForMatchersCache) postingsForMatchersPromise(ctx context.Contex
 	// cancelled their context?
 	if postings, err := c.postingsForMatchers(context.Background(), ix, ms...); err != nil {
 		span.AddEvent("postingsForMatchers failed", trace.WithAttributes(
+			attribute.String("cache_key", key),
 			attribute.String("err", err.Error()),
 		))
 		promise.err = err
 	} else {
-		span.AddEvent("postingsForMatchers succeeded")
+		span.AddEvent("postingsForMatchers succeeded", trace.WithAttributes(
+			attribute.String("cache_key", key),
+		))
 		promise.cloner = index.NewPostingsCloner(postings)
 	}
 
@@ -251,7 +255,7 @@ func (c *PostingsForMatchersCache) created(ctx context.Context, key string, ts t
 
 	if c.ttl <= 0 {
 		span.AddEvent("deleting cached promise since c.ttl <= 0", trace.WithAttributes(
-			attribute.Stringer("ttl", c.ttl),
+			c.ttlAttrib,
 		))
 		c.calls.Delete(key)
 		return
@@ -267,7 +271,7 @@ func (c *PostingsForMatchersCache) created(ctx context.Context, key string, ts t
 	})
 	c.cachedBytes += sizeBytes
 	span.AddEvent("added cached value to expiry queue", trace.WithAttributes(
-		attribute.Stringer("ttl", c.ttl),
+		c.ttlAttrib,
 		attribute.Stringer("timestamp", ts),
 		attribute.Int64("size in bytes", sizeBytes),
 		attribute.Int64("cached bytes", c.cachedBytes),
