@@ -16,7 +16,7 @@ jobs:
       - uses: bufbuild/buf-setup-action@eb60cd0de4f14f1f57cf346916b8cd69a9e7ed0b # v1.26.1
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: bufbuild/buf-lint-action@bd48f53224baaaf0fc55de9a913e7680ca6dbea4 # v1.0.3
+      - uses: bufbuild/buf-lint-action@044d13acb1f155179c606aaa2e53aea304d22058 # v1.1.0
         with:
           input: 'prompb'
       - uses: bufbuild/buf-breaking-action@f47418c81c00bfd65394628385593542f64db477 # v1.1.2
