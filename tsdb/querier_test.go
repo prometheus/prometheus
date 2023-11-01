@@ -1160,65 +1160,218 @@ func rmChunkRefs(chks []chunks.Meta) {
 
 // Regression for: https://github.com/prometheus/tsdb/pull/97
 func TestPopulateWithDelSeriesIterator_DoubleSeek(t *testing.T) {
-	f, chkMetas := createFakeReaderAndNotPopulatedChunks(
-		[]chunks.Sample{},
-		[]chunks.Sample{sample{1, 1, nil, nil}, sample{2, 2, nil, nil}, sample{3, 3, nil, nil}},
-		[]chunks.Sample{sample{4, 4, nil, nil}, sample{5, 5, nil, nil}},
-	)
-
-	it := &populateWithDelSeriesIterator{}
-	it.reset(ulid.ULID{}, f, chkMetas, nil)
-	require.Equal(t, chunkenc.ValFloat, it.Seek(1))
-	require.Equal(t, chunkenc.ValFloat, it.Seek(2))
-	require.Equal(t, chunkenc.ValFloat, it.Seek(2))
-	ts, v := it.At()
-	require.Equal(t, int64(2), ts)
-	require.Equal(t, float64(2), v)
+	t.Run("float", func(t *testing.T) {
+		valType := chunkenc.ValFloat
+		f, chkMetas := createFakeReaderAndNotPopulatedChunks(
+			[]chunks.Sample{},
+			[]chunks.Sample{sample{1, 1, nil, nil}, sample{2, 2, nil, nil}, sample{3, 3, nil, nil}},
+			[]chunks.Sample{sample{4, 4, nil, nil}, sample{5, 5, nil, nil}},
+		)
+		it := &populateWithDelSeriesIterator{}
+		it.reset(ulid.ULID{}, f, chkMetas, nil)
+		require.Equal(t, valType, it.Seek(1))
+		require.Equal(t, valType, it.Seek(2))
+		require.Equal(t, valType, it.Seek(2))
+		ts, v := it.At()
+		require.Equal(t, int64(2), ts)
+		require.Equal(t, float64(2), v)
+		require.Equal(t, int64(0), chkMetas[0].MinTime)
+		require.Equal(t, int64(1), chkMetas[1].MinTime)
+		require.Equal(t, int64(4), chkMetas[2].MinTime)
+	})
+	t.Run("histogram", func(t *testing.T) {
+		valType := chunkenc.ValHistogram
+		f, chkMetas := createFakeReaderAndNotPopulatedChunks(
+			[]chunks.Sample{},
+			[]chunks.Sample{sample{1, 0, tsdbutil.GenerateTestHistogram(1), nil}, sample{2, 0, tsdbutil.GenerateTestHistogram(2), nil}, sample{3, 0, tsdbutil.GenerateTestHistogram(3), nil}},
+			[]chunks.Sample{sample{4, 0, tsdbutil.GenerateTestHistogram(4), nil}, sample{5, 0, tsdbutil.GenerateTestHistogram(5), nil}},
+		)
+		it := &populateWithDelSeriesIterator{}
+		it.reset(ulid.ULID{}, f, chkMetas, nil)
+		require.Equal(t, valType, it.Seek(1))
+		require.Equal(t, valType, it.Seek(2))
+		require.Equal(t, valType, it.Seek(2))
+		ts, h := it.AtHistogram()
+		require.Equal(t, int64(2), ts)
+		h.CounterResetHint = histogram.UnknownCounterReset
+		require.Equal(t, tsdbutil.GenerateTestHistogram(2), h)
+		require.Equal(t, int64(0), chkMetas[0].MinTime)
+		require.Equal(t, int64(1), chkMetas[1].MinTime)
+		require.Equal(t, int64(4), chkMetas[2].MinTime)
+	})
+	t.Run("float histogram", func(t *testing.T) {
+		valType := chunkenc.ValFloatHistogram
+		f, chkMetas := createFakeReaderAndNotPopulatedChunks(
+			[]chunks.Sample{},
+			[]chunks.Sample{sample{1, 0, nil, tsdbutil.GenerateTestFloatHistogram(1)}, sample{2, 0, nil, tsdbutil.GenerateTestFloatHistogram(2)}, sample{3, 0, nil, tsdbutil.GenerateTestFloatHistogram(3)}},
+			[]chunks.Sample{sample{4, 0, nil, tsdbutil.GenerateTestFloatHistogram(4)}, sample{5, 0, nil, tsdbutil.GenerateTestFloatHistogram(5)}},
+		)
+		it := &populateWithDelSeriesIterator{}
+		it.reset(ulid.ULID{}, f, chkMetas, nil)
+		require.Equal(t, valType, it.Seek(1))
+		require.Equal(t, valType, it.Seek(2))
+		require.Equal(t, valType, it.Seek(2))
+		ts, h := it.AtFloatHistogram()
+		require.Equal(t, int64(2), ts)
+		h.CounterResetHint = histogram.UnknownCounterReset
+		require.Equal(t, tsdbutil.GenerateTestFloatHistogram(2), h)
+		require.Equal(t, int64(0), chkMetas[0].MinTime)
+		require.Equal(t, int64(1), chkMetas[1].MinTime)
+		require.Equal(t, int64(4), chkMetas[2].MinTime)
+	})
 }
 
 // Regression when seeked chunks were still found via binary search and we always
 // skipped to the end when seeking a value in the current chunk.
 func TestPopulateWithDelSeriesIterator_SeekInCurrentChunk(t *testing.T) {
-	f, chkMetas := createFakeReaderAndNotPopulatedChunks(
-		[]chunks.Sample{},
-		[]chunks.Sample{sample{1, 2, nil, nil}, sample{3, 4, nil, nil}, sample{5, 6, nil, nil}, sample{7, 8, nil, nil}},
-		[]chunks.Sample{},
-	)
+	t.Run("float", func(t *testing.T) {
+		valType := chunkenc.ValFloat
+		f, chkMetas := createFakeReaderAndNotPopulatedChunks(
+			[]chunks.Sample{},
+			[]chunks.Sample{sample{1, 2, nil, nil}, sample{3, 4, nil, nil}, sample{5, 6, nil, nil}, sample{7, 8, nil, nil}},
+			[]chunks.Sample{},
+		)
 
-	it := &populateWithDelSeriesIterator{}
-	it.reset(ulid.ULID{}, f, chkMetas, nil)
-	require.Equal(t, chunkenc.ValFloat, it.Next())
-	ts, v := it.At()
-	require.Equal(t, int64(1), ts)
-	require.Equal(t, float64(2), v)
+		it := &populateWithDelSeriesIterator{}
+		it.reset(ulid.ULID{}, f, chkMetas, nil)
+		require.Equal(t, valType, it.Next())
+		ts, v := it.At()
+		require.Equal(t, int64(1), ts)
+		require.Equal(t, float64(2), v)
 
-	require.Equal(t, chunkenc.ValFloat, it.Seek(4))
-	ts, v = it.At()
-	require.Equal(t, int64(5), ts)
-	require.Equal(t, float64(6), v)
+		require.Equal(t, valType, it.Seek(4))
+		ts, v = it.At()
+		require.Equal(t, int64(5), ts)
+		require.Equal(t, float64(6), v)
+
+		require.Equal(t, int64(0), chkMetas[0].MinTime)
+		require.Equal(t, int64(1), chkMetas[1].MinTime)
+		require.Equal(t, int64(0), chkMetas[2].MinTime)
+	})
+	t.Run("histogram", func(t *testing.T) {
+		valType := chunkenc.ValHistogram
+		f, chkMetas := createFakeReaderAndNotPopulatedChunks(
+			[]chunks.Sample{},
+			[]chunks.Sample{sample{1, 0, tsdbutil.GenerateTestHistogram(2), nil}, sample{3, 0, tsdbutil.GenerateTestHistogram(4), nil}, sample{5, 0, tsdbutil.GenerateTestHistogram(6), nil}, sample{7, 0, tsdbutil.GenerateTestHistogram(8), nil}},
+			[]chunks.Sample{},
+		)
+
+		it := &populateWithDelSeriesIterator{}
+		it.reset(ulid.ULID{}, f, chkMetas, nil)
+		require.Equal(t, valType, it.Next())
+		ts, h := it.AtHistogram()
+		require.Equal(t, int64(1), ts)
+		require.Equal(t, tsdbutil.GenerateTestHistogram(2), h)
+
+		require.Equal(t, valType, it.Seek(4))
+		ts, h = it.AtHistogram()
+		require.Equal(t, int64(5), ts)
+		h.CounterResetHint = histogram.UnknownCounterReset
+		require.Equal(t, tsdbutil.GenerateTestHistogram(6), h)
+
+		require.Equal(t, int64(0), chkMetas[0].MinTime)
+		require.Equal(t, int64(1), chkMetas[1].MinTime)
+		require.Equal(t, int64(0), chkMetas[2].MinTime)
+	})
+	t.Run("float histogram", func(t *testing.T) {
+		valType := chunkenc.ValFloatHistogram
+		f, chkMetas := createFakeReaderAndNotPopulatedChunks(
+			[]chunks.Sample{},
+			[]chunks.Sample{sample{1, 0, nil, tsdbutil.GenerateTestFloatHistogram(2)}, sample{3, 0, nil, tsdbutil.GenerateTestFloatHistogram(4)}, sample{5, 0, nil, tsdbutil.GenerateTestFloatHistogram(6)}, sample{7, 0, nil, tsdbutil.GenerateTestFloatHistogram(8)}},
+			[]chunks.Sample{},
+		)
+
+		it := &populateWithDelSeriesIterator{}
+		it.reset(ulid.ULID{}, f, chkMetas, nil)
+		require.Equal(t, valType, it.Next())
+		ts, h := it.AtFloatHistogram()
+		require.Equal(t, int64(1), ts)
+		require.Equal(t, tsdbutil.GenerateTestFloatHistogram(2), h)
+
+		require.Equal(t, valType, it.Seek(4))
+		ts, h = it.AtFloatHistogram()
+		require.Equal(t, int64(5), ts)
+		h.CounterResetHint = histogram.UnknownCounterReset
+		require.Equal(t, tsdbutil.GenerateTestFloatHistogram(6), h)
+
+		require.Equal(t, int64(0), chkMetas[0].MinTime)
+		require.Equal(t, int64(1), chkMetas[1].MinTime)
+		require.Equal(t, int64(0), chkMetas[2].MinTime)
+	})
 }
 
 func TestPopulateWithDelSeriesIterator_SeekWithMinTime(t *testing.T) {
-	f, chkMetas := createFakeReaderAndNotPopulatedChunks(
-		[]chunks.Sample{sample{1, 6, nil, nil}, sample{5, 6, nil, nil}, sample{6, 8, nil, nil}},
-	)
+	t.Run("float", func(t *testing.T) {
+		valType := chunkenc.ValFloat
+		f, chkMetas := createFakeReaderAndNotPopulatedChunks(
+			[]chunks.Sample{sample{1, 6, nil, nil}, sample{5, 6, nil, nil}, sample{6, 8, nil, nil}},
+		)
 
-	it := &populateWithDelSeriesIterator{}
-	it.reset(ulid.ULID{}, f, chkMetas, nil)
-	require.Equal(t, chunkenc.ValNone, it.Seek(7))
-	require.Equal(t, chunkenc.ValFloat, it.Seek(3))
+		it := &populateWithDelSeriesIterator{}
+		it.reset(ulid.ULID{}, f, chkMetas, nil)
+		require.Equal(t, chunkenc.ValNone, it.Seek(7))
+		require.Equal(t, valType, it.Seek(3))
+		require.Equal(t, int64(1), chkMetas[0].MinTime)
+	})
+	t.Run("histogram", func(t *testing.T) {
+		valType := chunkenc.ValHistogram
+		f, chkMetas := createFakeReaderAndNotPopulatedChunks(
+			[]chunks.Sample{sample{1, 0, tsdbutil.GenerateTestHistogram(6), nil}, sample{5, 0, tsdbutil.GenerateTestHistogram(6), nil}, sample{6, 0, tsdbutil.GenerateTestHistogram(8), nil}},
+		)
+
+		it := &populateWithDelSeriesIterator{}
+		it.reset(ulid.ULID{}, f, chkMetas, nil)
+		require.Equal(t, chunkenc.ValNone, it.Seek(7))
+		require.Equal(t, valType, it.Seek(3))
+		require.Equal(t, int64(1), chkMetas[0].MinTime)
+	})
+	t.Run("float histogram", func(t *testing.T) {
+		valType := chunkenc.ValFloatHistogram
+		f, chkMetas := createFakeReaderAndNotPopulatedChunks(
+			[]chunks.Sample{sample{1, 0, nil, tsdbutil.GenerateTestFloatHistogram(6)}, sample{5, 0, nil, tsdbutil.GenerateTestFloatHistogram(6)}, sample{6, 0, nil, tsdbutil.GenerateTestFloatHistogram(8)}},
+		)
+
+		it := &populateWithDelSeriesIterator{}
+		it.reset(ulid.ULID{}, f, chkMetas, nil)
+		require.Equal(t, chunkenc.ValNone, it.Seek(7))
+		require.Equal(t, valType, it.Seek(3))
+		require.Equal(t, int64(1), chkMetas[0].MinTime)
+	})
 }
 
 // Regression when calling Next() with a time bounded to fit within two samples.
 // Seek gets called and advances beyond the max time, which was just accepted as a valid sample.
 func TestPopulateWithDelSeriesIterator_NextWithMinTime(t *testing.T) {
-	f, chkMetas := createFakeReaderAndNotPopulatedChunks(
-		[]chunks.Sample{sample{1, 6, nil, nil}, sample{5, 6, nil, nil}, sample{7, 8, nil, nil}},
-	)
+	t.Run("float", func(t *testing.T) {
+		f, chkMetas := createFakeReaderAndNotPopulatedChunks(
+			[]chunks.Sample{sample{1, 6, nil, nil}, sample{5, 6, nil, nil}, sample{7, 8, nil, nil}},
+		)
 
-	it := &populateWithDelSeriesIterator{}
-	it.reset(ulid.ULID{}, f, chkMetas, tombstones.Intervals{{Mint: math.MinInt64, Maxt: 2}}.Add(tombstones.Interval{Mint: 4, Maxt: math.MaxInt64}))
-	require.Equal(t, chunkenc.ValNone, it.Next())
+		it := &populateWithDelSeriesIterator{}
+		it.reset(ulid.ULID{}, f, chkMetas, tombstones.Intervals{{Mint: math.MinInt64, Maxt: 2}}.Add(tombstones.Interval{Mint: 4, Maxt: math.MaxInt64}))
+		require.Equal(t, chunkenc.ValNone, it.Next())
+		require.Equal(t, int64(1), chkMetas[0].MinTime)
+	})
+	t.Run("histogram", func(t *testing.T) {
+		f, chkMetas := createFakeReaderAndNotPopulatedChunks(
+			[]chunks.Sample{sample{1, 0, tsdbutil.GenerateTestHistogram(6), nil}, sample{5, 0, tsdbutil.GenerateTestHistogram(6), nil}, sample{7, 0, tsdbutil.GenerateTestHistogram(8), nil}},
+		)
+
+		it := &populateWithDelSeriesIterator{}
+		it.reset(ulid.ULID{}, f, chkMetas, tombstones.Intervals{{Mint: math.MinInt64, Maxt: 2}}.Add(tombstones.Interval{Mint: 4, Maxt: math.MaxInt64}))
+		require.Equal(t, chunkenc.ValNone, it.Next())
+		require.Equal(t, int64(1), chkMetas[0].MinTime)
+	})
+	t.Run("float histogram", func(t *testing.T) {
+		f, chkMetas := createFakeReaderAndNotPopulatedChunks(
+			[]chunks.Sample{sample{1, 0, nil, tsdbutil.GenerateTestFloatHistogram(6)}, sample{5, 0, nil, tsdbutil.GenerateTestFloatHistogram(6)}, sample{7, 0, nil, tsdbutil.GenerateTestFloatHistogram(8)}},
+		)
+
+		it := &populateWithDelSeriesIterator{}
+		it.reset(ulid.ULID{}, f, chkMetas, tombstones.Intervals{{Mint: math.MinInt64, Maxt: 2}}.Add(tombstones.Interval{Mint: 4, Maxt: math.MaxInt64}))
+		require.Equal(t, chunkenc.ValNone, it.Next())
+		require.Equal(t, int64(1), chkMetas[0].MinTime)
+	})
 }
 
 // Test the cost of merging series sets for different number of merged sets and their size.
