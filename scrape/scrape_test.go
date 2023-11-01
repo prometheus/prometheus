@@ -18,6 +18,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -31,7 +32,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	config_util "github.com/prometheus/common/config"
@@ -882,7 +882,7 @@ func TestScrapeLoopRun(t *testing.T) {
 
 	select {
 	case err := <-errc:
-		if err != context.DeadlineExceeded {
+		if !errors.Is(err, context.DeadlineExceeded) {
 			t.Fatalf("Expected timeout error but got: %s", err)
 		}
 	case <-time.After(3 * time.Second):
@@ -952,7 +952,7 @@ func TestScrapeLoopForcedErr(t *testing.T) {
 
 	select {
 	case err := <-errc:
-		if err != forcedErr {
+		if !errors.Is(err, forcedErr) {
 			t.Fatalf("Expected forced error but got: %s", err)
 		}
 	case <-time.After(3 * time.Second):
@@ -1741,7 +1741,7 @@ func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 	now := time.Now()
 	slApp := sl.appender(context.Background())
 	total, added, seriesAdded, err := sl.append(app, []byte("metric_a 1\nmetric_b 1\nmetric_c 1\n"), "", now)
-	if err != errSampleLimit {
+	if !errors.Is(err, errSampleLimit) {
 		t.Fatalf("Did not see expected sample limit error: %s", err)
 	}
 	require.NoError(t, slApp.Rollback())
@@ -1772,7 +1772,7 @@ func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 	now = time.Now()
 	slApp = sl.appender(context.Background())
 	total, added, seriesAdded, err = sl.append(slApp, []byte("metric_a 1\nmetric_b 1\nmetric_c{deleteme=\"yes\"} 1\nmetric_d 1\nmetric_e 1\nmetric_f 1\nmetric_g 1\nmetric_h{deleteme=\"yes\"} 1\nmetric_i{deleteme=\"yes\"} 1\n"), "", now)
-	if err != errSampleLimit {
+	if !errors.Is(err, errSampleLimit) {
 		t.Fatalf("Did not see expected sample limit error: %s", err)
 	}
 	require.NoError(t, slApp.Rollback())
@@ -1868,7 +1868,7 @@ func TestScrapeLoop_HistogramBucketLimit(t *testing.T) {
 
 	now = time.Now()
 	total, added, seriesAdded, err = sl.append(app, msg, "application/vnd.google.protobuf", now)
-	if err != errBucketLimit {
+	if !errors.Is(err, errBucketLimit) {
 		t.Fatalf("Did not see expected histogram bucket limit error: %s", err)
 	}
 	require.NoError(t, app.Rollback())
@@ -2738,8 +2738,8 @@ func TestTargetScrapeScrapeCancel(t *testing.T) {
 		switch {
 		case err == nil:
 			errc <- errors.New("Expected error but got nil")
-		case ctx.Err() != context.Canceled:
-			errc <- errors.Errorf("Expected context cancellation error but got: %s", ctx.Err())
+		case !errors.Is(ctx.Err(), context.Canceled):
+			errc <- fmt.Errorf("Expected context cancellation error but got: %w", ctx.Err())
 		default:
 			close(errc)
 		}

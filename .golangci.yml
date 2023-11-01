@@ -34,9 +34,6 @@ issues:
     - path: _test.go
       linters:
         - errcheck
-    - path: scrape/
-      linters:
-        - errorlint
     - path: tsdb/
       linters:
         - errorlint
