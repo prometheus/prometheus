@@ -855,13 +855,18 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 		if app, err = newChunk.Appender(); err != nil {
 			break
 		}
-
-		for vt := valueType; vt != chunkenc.ValNone; vt = p.currDelIter.Next() {
+		var h *histogram.Histogram
+		t, h = p.currDelIter.AtHistogram()
+		p.curr.MinTime = t
+		_, _, app, err = app.AppendHistogram(nil, t, h, true)
+		if err != nil {
+			break
+		}
+		for vt := p.currDelIter.Next(); vt != chunkenc.ValNone; vt = p.currDelIter.Next() {
 			if vt != chunkenc.ValHistogram {
 				err = fmt.Errorf("found value type %v in histogram chunk", vt)
 				break
 			}
-			var h *histogram.Histogram
 			t, h = p.currDelIter.AtHistogram()
 			_, _, app, err = app.AppendHistogram(nil, t, h, true)
 			if err != nil {
@@ -890,13 +895,18 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 		if app, err = newChunk.Appender(); err != nil {
 			break
 		}
-
-		for vt := valueType; vt != chunkenc.ValNone; vt = p.currDelIter.Next() {
+		var h *histogram.FloatHistogram
+		t, h = p.currDelIter.AtFloatHistogram()
+		p.curr.MinTime = t
+		_, _, app, err = app.AppendFloatHistogram(nil, t, h, true)
+		if err != nil {
+			break
+		}
+		for vt := p.currDelIter.Next(); vt != chunkenc.ValNone; vt = p.currDelIter.Next() {
 			if vt != chunkenc.ValFloatHistogram {
 				err = fmt.Errorf("found value type %v in histogram chunk", vt)
 				break
 			}
-			var h *histogram.FloatHistogram
 			t, h = p.currDelIter.AtFloatHistogram()
 			_, _, app, err = app.AppendFloatHistogram(nil, t, h, true)
 			if err != nil {
