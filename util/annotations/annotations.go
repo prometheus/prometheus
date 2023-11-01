@@ -50,6 +50,9 @@ func (a *Annotations) Add(err error) Annotations {
 // the first in-place, and returns the merged first Annotation for convenience.
 func (a *Annotations) Merge(aa Annotations) Annotations {
 	if *a == nil {
+		if aa == nil {
+			return nil
+		}
 		*a = Annotations{}
 	}
 	for key, val := range aa {
@@ -91,7 +94,6 @@ func (a Annotations) AsStrings(query string, maxAnnos int) []string {
 	return arr
 }
 
-//nolint:revive // Ignore ST1012
 var (
 	// Currently there are only 2 types, warnings and info.
 	// For now, info are visually identical with warnings as we have not updated
@@ -120,6 +122,10 @@ func (e annoErr) Error() string {
 		return e.Err.Error()
 	}
 	return fmt.Sprintf("%s (%s)", e.Err, e.PositionRange.StartPosInput(e.Query, 0))
+}
+
+func (e annoErr) Unwrap() error {
+	return e.Err
 }
 
 // NewInvalidQuantileWarning is used when the user specifies an invalid quantile

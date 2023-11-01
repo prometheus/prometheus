@@ -541,7 +541,7 @@ func TestReaderData(t *testing.T) {
 			require.NoError(t, err)
 
 			reader := fn(sr)
-			for reader.Next() { // nolint:revive
+			for reader.Next() {
 			}
 			require.NoError(t, reader.Err())
 

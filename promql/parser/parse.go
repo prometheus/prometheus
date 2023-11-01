@@ -72,7 +72,6 @@ func WithFunctions(functions map[string]*Function) Opt {
 }
 
 // NewParser returns a new parser.
-// nolint:revive
 func NewParser(input string, opts ...Opt) *parser {
 	p := parserPool.Get().(*parser)
 
@@ -660,9 +659,9 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 		// This is made a function instead of a variable, so it is lazily evaluated on demand.
 		opRange := func() (r posrange.PositionRange) {
 			// Remove whitespace at the beginning and end of the range.
-			for r.Start = n.LHS.PositionRange().End; isSpace(rune(p.lex.input[r.Start])); r.Start++ { // nolint:revive
+			for r.Start = n.LHS.PositionRange().End; isSpace(rune(p.lex.input[r.Start])); r.Start++ {
 			}
-			for r.End = n.RHS.PositionRange().Start - 1; isSpace(rune(p.lex.input[r.End])); r.End-- { // nolint:revive
+			for r.End = n.RHS.PositionRange().Start - 1; isSpace(rune(p.lex.input[r.End])); r.End-- {
 			}
 			return
 		}

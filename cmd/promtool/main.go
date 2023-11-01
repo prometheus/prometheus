@@ -411,7 +411,6 @@ func checkExperimental(f bool) {
 	}
 }
 
-// nolint:revive
 var lintError = fmt.Errorf("lint error")
 
 type lintConfig struct {

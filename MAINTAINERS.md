@@ -7,7 +7,7 @@ Julien Pivotto (<roidelapluie@prometheus.io> / @roidelapluie) and Levi Harrison 
 * `discovery`
   * `k8s`: Frederic Branczyk (<fbranczyk@gmail.com> / @brancz)
 * `documentation`
-  * `prometheus-mixin`: Björn Rabenstein (<beorn@grafana.com> / @beorn7)
+  * `prometheus-mixin`: Matthias Loibl (<mail@matthiasloibl.com> / @metalmatze)
 * `storage`
   * `remote`: Chris Marchbanks (<csmarchbanks@gmail.com> / @csmarchbanks), Callum Styan (<callumstyan@gmail.com> / @cstyan), Bartłomiej Płotka (<bwplotka@gmail.com> / @bwplotka), Tom Wilkie (<tom.wilkie@gmail.com> / @tomwilkie)
 * `tsdb`: Ganesh Vernekar (<ganesh@grafana.com> / @codesome), Bartłomiej Płotka (<bwplotka@gmail.com> / @bwplotka), Jesús Vázquez (<jesus.vazquez@grafana.com> / @jesusvazquez)

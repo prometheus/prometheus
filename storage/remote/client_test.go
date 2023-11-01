@@ -136,7 +136,7 @@ func TestClientRetryAfter(t *testing.T) {
 			err = c.Store(context.Background(), []byte{}, 0)
 			require.Equal(t, tc.expectedRecoverable, errors.As(err, &recErr), "Mismatch in expected recoverable error status.")
 			if tc.expectedRecoverable {
-				require.Equal(t, tc.expectedRetryAfter, err.(RecoverableError).retryAfter)
+				require.Equal(t, tc.expectedRetryAfter, recErr.retryAfter)
 			}
 		})
 	}

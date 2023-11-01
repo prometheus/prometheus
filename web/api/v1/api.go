@@ -1373,6 +1373,11 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 	returnAlerts := typ == "" || typ == "alert"
 	returnRecording := typ == "" || typ == "record"
 
+	excludeAlerts, err := parseExcludeAlerts(r)
+	if err != nil {
+		return invalidParamError(err, "exclude_alerts")
+	}
+
 	rgs := make([]*RuleGroup, 0, len(ruleGroups))
 	for _, grp := range ruleGroups {
 		if len(rgSet) > 0 {
@@ -1414,6 +1419,10 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 				if !returnAlerts {
 					break
 				}
+				var activeAlerts []*Alert
+				if !excludeAlerts {
+					activeAlerts = rulesAlertsToAPIAlerts(rule.ActiveAlerts())
+				}
 				enrichedRule = AlertingRule{
 					State:          rule.State().String(),
 					Name:           rule.Name(),
@@ -1422,7 +1431,7 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 					KeepFiringFor:  rule.KeepFiringFor().Seconds(),
 					Labels:         rule.Labels(),
 					Annotations:    rule.Annotations(),
-					Alerts:         rulesAlertsToAPIAlerts(rule.ActiveAlerts()),
+					Alerts:         activeAlerts,
 					Health:         rule.Health(),
 					LastError:      lastError,
 					EvaluationTime: rule.GetEvaluationDuration().Seconds(),
@@ -1460,6 +1469,20 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 	}
 	res.RuleGroups = rgs
 	return apiFuncResult{res, nil, nil, nil}
+}
+
+func parseExcludeAlerts(r *http.Request) (bool, error) {
+	excludeAlertsParam := strings.ToLower(r.URL.Query().Get("exclude_alerts"))
+
+	if excludeAlertsParam == "" {
+		return false, nil
+	}
+
+	excludeAlerts, err := strconv.ParseBool(excludeAlertsParam)
+	if err != nil {
+		return false, fmt.Errorf("error converting exclude_alerts: %w", err)
+	}
+	return excludeAlerts, nil
 }
 
 type prometheusConfig struct {
