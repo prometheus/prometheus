@@ -93,13 +93,14 @@ func (p HeadChunkRef) Unpack() (HeadSeriesRef, HeadChunkID) {
 //
 // Example:
 // assume a memSeries.firstChunkID=7 and memSeries.mmappedChunks=[p5,p6,p7,p8,p9].
-// | HeadChunkID value | refers to ...                                                                          |
-// |-------------------|----------------------------------------------------------------------------------------|
-// |               0-6 | chunks that have been compacted to blocks, these won't return data for queries in Head |
-// |              7-11 | memSeries.mmappedChunks[i] where i is 0 to 4.                                          |
-// |                12 |                                                         *memChunk{next: nil}
-// |                13 |                                         *memChunk{next: ^}
-// |                14 | memSeries.headChunks -> *memChunk{next: ^}
+//
+//	| HeadChunkID value | refers to ...                                                                          |
+//	|-------------------|----------------------------------------------------------------------------------------|
+//	|               0-6 | chunks that have been compacted to blocks, these won't return data for queries in Head |
+//	|              7-11 | memSeries.mmappedChunks[i] where i is 0 to 4.                                          |
+//	|                12 |                                                         *memChunk{next: nil}
+//	|                13 |                                         *memChunk{next: ^}
+//	|                14 | memSeries.headChunks -> *memChunk{next: ^}
 type HeadChunkID uint64
 
 // BlockChunkRef refers to a chunk within a persisted block.
@@ -198,7 +199,7 @@ func ChunkFromSamplesGeneric(s Samples) (Meta, error) {
 	}, nil
 }
 
-// PopulatedChunk creates a chunk populated with samples every second starting at minTime
+// PopulatedChunk creates a chunk populated with samples every second starting at minTime.
 func PopulatedChunk(numSamples int, minTime int64) (Meta, error) {
 	samples := make([]Sample, numSamples)
 	for i := 0; i < numSamples; i++ {

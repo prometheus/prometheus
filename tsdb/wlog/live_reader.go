@@ -174,7 +174,7 @@ func (r *LiveReader) Record() []byte {
 // Rebuild a full record from potentially partial records. Returns false
 // if there was an error or if we weren't able to read a record for any reason.
 // Returns true if we read a full record. Any record data is appended to
-// LiveReader.rec
+// LiveReader.rec.
 func (r *LiveReader) buildRecord() (bool, error) {
 	for {
 		// Check that we have data in the internal buffer to read.

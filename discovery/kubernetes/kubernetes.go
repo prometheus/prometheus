@@ -65,9 +65,9 @@ const (
 )
 
 var (
-	// Http header
+	// Http header.
 	userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
-	// Custom events metric
+	// Custom events metric.
 	eventCount = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: metricsNamespace,
@@ -76,7 +76,7 @@ var (
 		},
 		[]string{"role", "event"},
 	)
-	// DefaultSDConfig is the default Kubernetes SD configuration
+	// DefaultSDConfig is the default Kubernetes SD configuration.
 	DefaultSDConfig = SDConfig{
 		HTTPClientConfig: config.DefaultHTTPClientConfig,
 	}

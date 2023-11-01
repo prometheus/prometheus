@@ -171,7 +171,7 @@ func ParseExpr(input string) (expr Expr, err error) {
 	return p.ParseExpr()
 }
 
-// ParseMetric parses the input into a metric
+// ParseMetric parses the input into a metric.
 func ParseMetric(input string) (m labels.Labels, err error) {
 	p := NewParser(input)
 	defer p.Close()

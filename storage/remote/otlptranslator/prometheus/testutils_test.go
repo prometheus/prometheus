@@ -15,7 +15,7 @@ func init() {
 	ilm = resourceMetrics.ScopeMetrics().AppendEmpty()
 }
 
-// Returns a new Metric of type "Gauge" with specified name and unit
+// Returns a new Metric of type "Gauge" with specified name and unit.
 func createGauge(name, unit string) pmetric.Metric {
 	gauge := ilm.Metrics().AppendEmpty()
 	gauge.SetName(name)
@@ -24,7 +24,7 @@ func createGauge(name, unit string) pmetric.Metric {
 	return gauge
 }
 
-// Returns a new Metric of type Monotonic Sum with specified name and unit
+// Returns a new Metric of type Monotonic Sum with specified name and unit.
 func createCounter(name, unit string) pmetric.Metric {
 	counter := ilm.Metrics().AppendEmpty()
 	counter.SetEmptySum().SetIsMonotonic(true)

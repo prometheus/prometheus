@@ -21,7 +21,7 @@ import (
 	"syscall"
 )
 
-// Statfs returns the file system type (Unix only)
+// Statfs returns the file system type (Unix only).
 func Statfs(path string) string {
 	// Types of file systems that may be returned by `statfs`
 	fsTypes := map[int64]string{
