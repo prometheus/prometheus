@@ -111,7 +111,7 @@ func TestGetBound(t *testing.T) {
 	}
 }
 
-func TestShrinkHistogram(t *testing.T) {
+func TestreduceResolutionHistogram(t *testing.T) {
 	cases := []struct {
 		spans           []Span
 		buckets         []int64
@@ -140,13 +140,13 @@ func TestShrinkHistogram(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		spans, buckets := Shrink(tc.spans, tc.buckets, tc.schema, tc.targetSchema, true)
+		spans, buckets := reduceResolution(tc.spans, tc.buckets, tc.schema, tc.targetSchema, true)
 		require.Equal(t, tc.expectedSpans, spans)
 		require.Equal(t, tc.expectedBuckets, buckets)
 	}
 }
 
-func TestShrinkFloatHistogram(t *testing.T) {
+func TestReduceResolutionFloatHistogram(t *testing.T) {
 	cases := []struct {
 		spans           []Span
 		buckets         []float64
@@ -175,7 +175,7 @@ func TestShrinkFloatHistogram(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		spans, buckets := Shrink(tc.spans, tc.buckets, tc.schema, tc.targetSchema, false)
+		spans, buckets := reduceResolution(tc.spans, tc.buckets, tc.schema, tc.targetSchema, false)
 		require.Equal(t, tc.expectedSpans, spans)
 		require.Equal(t, tc.expectedBuckets, buckets)
 	}

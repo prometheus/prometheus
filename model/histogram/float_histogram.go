@@ -94,8 +94,8 @@ func (h *FloatHistogram) CopyToSchema(targetSchema int32) *FloatHistogram {
 		Sum:           h.Sum,
 	}
 
-	c.PositiveSpans, c.PositiveBuckets = Shrink(h.PositiveSpans, h.PositiveBuckets, h.Schema, targetSchema, false)
-	c.NegativeSpans, c.NegativeBuckets = Shrink(h.NegativeSpans, h.NegativeBuckets, h.Schema, targetSchema, false)
+	c.PositiveSpans, c.PositiveBuckets = reduceResolution(h.PositiveSpans, h.PositiveBuckets, h.Schema, targetSchema, false)
+	c.NegativeSpans, c.NegativeBuckets = reduceResolution(h.NegativeSpans, h.NegativeBuckets, h.Schema, targetSchema, false)
 
 	return &c
 }
@@ -268,17 +268,12 @@ func (h *FloatHistogram) Add(other *FloatHistogram) *FloatHistogram {
 	h.Count += other.Count
 	h.Sum += other.Sum
 
-	otherPositiveSpans := other.PositiveSpans
-	otherPositiveBuckets := other.PositiveBuckets
-	otherNegativeSpans := other.NegativeSpans
-	otherNegativeBuckets := other.NegativeBuckets
 	if other.Schema != h.Schema {
-		otherPositiveSpans, otherPositiveBuckets = Shrink(other.PositiveSpans, other.PositiveBuckets, other.Schema, h.Schema, false)
-		otherNegativeSpans, otherNegativeBuckets = Shrink(other.NegativeSpans, other.NegativeBuckets, other.Schema, h.Schema, false)
+		other = other.ReduceResolution(h.Schema)
 	}
 
-	h.PositiveSpans, h.PositiveBuckets = addBuckets(h.Schema, h.ZeroThreshold, false, h.PositiveSpans, h.PositiveBuckets, otherPositiveSpans, otherPositiveBuckets)
-	h.NegativeSpans, h.NegativeBuckets = addBuckets(h.Schema, h.ZeroThreshold, false, h.NegativeSpans, h.NegativeBuckets, otherNegativeSpans, otherNegativeBuckets)
+	h.PositiveSpans, h.PositiveBuckets = addBuckets(h.Schema, h.ZeroThreshold, false, h.PositiveSpans, h.PositiveBuckets, other.PositiveSpans, other.PositiveBuckets)
+	h.NegativeSpans, h.NegativeBuckets = addBuckets(h.Schema, h.ZeroThreshold, false, h.NegativeSpans, h.NegativeBuckets, other.NegativeSpans, other.NegativeBuckets)
 	return h
 }
 
@@ -289,17 +284,12 @@ func (h *FloatHistogram) Sub(other *FloatHistogram) *FloatHistogram {
 	h.Count -= other.Count
 	h.Sum -= other.Sum
 
-	otherPositiveSpans := other.PositiveSpans
-	otherPositiveBuckets := other.PositiveBuckets
-	otherNegativeSpans := other.NegativeSpans
-	otherNegativeBuckets := other.NegativeBuckets
 	if other.Schema != h.Schema {
-		otherPositiveSpans, otherPositiveBuckets = Shrink(other.PositiveSpans, other.PositiveBuckets, other.Schema, h.Schema, false)
-		otherNegativeSpans, otherNegativeBuckets = Shrink(other.NegativeSpans, other.NegativeBuckets, other.Schema, h.Schema, false)
+		other = other.ReduceResolution(h.Schema)
 	}
 
-	h.PositiveSpans, h.PositiveBuckets = addBuckets(h.Schema, h.ZeroThreshold, true, h.PositiveSpans, h.PositiveBuckets, otherPositiveSpans, otherPositiveBuckets)
-	h.NegativeSpans, h.NegativeBuckets = addBuckets(h.Schema, h.ZeroThreshold, true, h.NegativeSpans, h.NegativeBuckets, otherNegativeSpans, otherNegativeBuckets)
+	h.PositiveSpans, h.PositiveBuckets = addBuckets(h.Schema, h.ZeroThreshold, true, h.PositiveSpans, h.PositiveBuckets, other.PositiveSpans, other.PositiveBuckets)
+	h.NegativeSpans, h.NegativeBuckets = addBuckets(h.Schema, h.ZeroThreshold, true, h.NegativeSpans, h.NegativeBuckets, other.NegativeSpans, other.NegativeBuckets)
 	return h
 }
 
@@ -1054,4 +1044,11 @@ func floatBucketsMatch(b1, b2 []float64) bool {
 		}
 	}
 	return true
+}
+
+func (h *FloatHistogram) ReduceResolution(targetSchema int32) *FloatHistogram {
+	h.PositiveSpans, h.PositiveBuckets = reduceResolution(h.PositiveSpans, h.PositiveBuckets, h.Schema, targetSchema, false)
+	h.NegativeSpans, h.NegativeBuckets = reduceResolution(h.NegativeSpans, h.NegativeBuckets, h.Schema, targetSchema, false)
+
+	return h
 }

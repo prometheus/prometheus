@@ -541,7 +541,18 @@ var exponentialBounds = [][]float64{
 	},
 }
 
-func Shrink[IBC InternalBucketCount](originSpans []Span, originBuckets []IBC, originSchema, targetSchema int32, deltaBuckets bool) ([]Span, []IBC) {
+// reduceResolution defines xxx
+//
+//	origin bucket schema: 0
+//	origin bucket counts:               1        3       1       2
+//	origin bucket boundaries:        (0.5,1] , (1,2] , (2,4] , (4,8]
+//	                                    ↑        ↑       ↑       ↑
+//	origin bucket indices:              0        1       2       3
+//	target bucket schema: 1
+//	target bucket counts:       (0.25  ,  1] , (1    ,    4]
+//									 ↑               ↑
+//	target bucket boundaries:        0               1
+func reduceResolution[IBC InternalBucketCount](originSpans []Span, originBuckets []IBC, originSchema, targetSchema int32, deltaBuckets bool) ([]Span, []IBC) {
 	var (
 		targetSpans           []Span // The spans in the target schema.
 		targetBuckets         []IBC  // The buckets in the target schema.
