@@ -1173,9 +1173,7 @@ func (ev *evaluator) rangeEval(prepSeries func(labels.Labels, *EvalSeriesHelper)
 			bufHelpers[i] = make([]EvalSeriesHelper, len(matrixes[i]))
 
 			for si, series := range matrixes[i] {
-				h := seriesHelpers[i][si]
-				prepSeries(series.Metric, &h)
-				seriesHelpers[i][si] = h
+				prepSeries(series.Metric, &seriesHelpers[i][si])
 			}
 		}
 	}
@@ -2028,7 +2026,7 @@ func (ev *evaluator) matrixIterSlice(
 		//   (b) the number of samples is relatively small.
 		// so a linear search will be as fast as a binary search.
 		var drop int
-		for drop = 0; floats[drop].T < mint; drop++ { // nolint:revive
+		for drop = 0; floats[drop].T < mint; drop++ {
 		}
 		ev.currentSamples -= drop
 		copy(floats, floats[drop:])
@@ -2050,7 +2048,7 @@ func (ev *evaluator) matrixIterSlice(
 		//   (b) the number of samples is relatively small.
 		// so a linear search will be as fast as a binary search.
 		var drop int
-		for drop = 0; histograms[drop].T < mint; drop++ { // nolint:revive
+		for drop = 0; histograms[drop].T < mint; drop++ {
 		}
 		copy(histograms, histograms[drop:])
 		histograms = histograms[:len(histograms)-drop]

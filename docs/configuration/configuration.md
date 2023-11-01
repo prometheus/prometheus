@@ -222,6 +222,14 @@ job_name: <job_name>
 # by the target will be ignored.
 [ honor_timestamps: <boolean> | default = true ]
 
+# track_timestamps_staleness controls whether Prometheus tracks staleness of
+# the metrics that have an explicit timestamps present in scraped data.
+#
+# If track_timestamps_staleness is set to "true", a staleness marker will be
+# inserted in the TSDB when a metric is no longer present or the target
+# is down.
+[ track_timestamps_staleness: <boolean> | default = false ]
+
 # Configures the protocol scheme used for requests.
 [ scheme: <scheme> | default = http ]
 

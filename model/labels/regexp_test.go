@@ -758,11 +758,11 @@ func TestAnalyzeRealQueries(t *testing.T) {
 	t.Skip("Decomment this test only to manually analyze real queries")
 
 	type labelValueInfo struct {
-		numMatchingQueries       int     //nolint:unused
-		numShardedQueries        int     //nolint:unused
-		numSplitQueries          int     //nolint:unused
-		optimized                bool    //nolint:unused
-		averageParsingTimeMillis float64 //nolint:unused
+		numMatchingQueries       int
+		numShardedQueries        int
+		numSplitQueries          int
+		optimized                bool
+		averageParsingTimeMillis float64
 
 		// Sorted list of timestamps when the queries have been received.
 		queryStartTimes []time.Time
