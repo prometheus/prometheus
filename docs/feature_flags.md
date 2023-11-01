@@ -136,10 +136,10 @@ the `le` labels of conventional histograms and the `quantile` labels of
 summaries. Typically, this happens if the scraped target is instrumented with
 [client_golang](https://github.com/prometheus/client_golang) provided that
 [promhttp.HandlerOpts.EnableOpenMetrics](https://pkg.go.dev/github.com/prometheus/client_golang/prometheus/promhttp#HandlerOpts)
-is set to false. In such a case, integer label values are represented in the
-text format as such, e.g. quantile="1" or le="2". However, the protobuf parsing
+is set to `false`. In such a case, integer label values are represented in the
+text format as such, e.g. `quantile="1"` or `le="2"`. However, the protobuf parsing
 changes the representation to float-like (following the OpenMetrics
-specification), so the examples above become quantile="1.0" and le="2.0" after
+specification), so the examples above become `quantile="1.0"` and `le="2.0"` after
 ingestion into Prometheus, which changes the identity of the metric compared to
 what was ingested before via the text format.
 
@@ -147,7 +147,7 @@ The effect of this change is that alerts, recording rules and dashboards that
 directly reference label values as whole numbers such as `le="1"` will stop
 working.
 
-Aggregation by the le and quantile labels for vectors that contain the old and
+Aggregation by the `le` and `quantile` labels for vectors that contain the old and
 new formatting will lead to unexpected results, and range vectors that span the
 transition between the different formatting will contain additional series.
 The most common use case for both is the quantile calculation via
