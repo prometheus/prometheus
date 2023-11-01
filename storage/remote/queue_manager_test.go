@@ -16,7 +16,6 @@ package remote
 import (
 	"bytes"
 	"compress/flate"
-	"compress/gzip"
 	"context"
 	"fmt"
 	"math"
@@ -1537,7 +1536,8 @@ func BenchmarkBuildMinimizedWriteRequest(b *testing.B) {
 		})
 	}
 }
-func makeUncompressedReducedWriteRequestBenchData(b *testing.B) []byte {
+
+func makeUncompressedReducedWriteRequestBenchData(b testing.TB) []byte {
 	data := createDummyTimeSeries(1000)
 	pool := newLookupPool()
 	pBuf := proto.NewBuffer(nil)
@@ -1612,9 +1612,6 @@ func BenchmarkCompressWriteRequest(b *testing.B) {
 		{"v1-ZstdFastest", uncompV1, &zstdCompression{level: zstd.SpeedFastest}},
 		{"v1-ZstdSpeedDef", uncompV1, &zstdCompression{level: zstd.SpeedDefault}},
 		{"v1-ZstdBestComp", uncompV1, &zstdCompression{level: zstd.SpeedBestCompression}},
-		{"v1-GzipBestComp", uncompV1, &gzipCompression{level: gzip.BestCompression}},
-		{"v1-GzipBestSpeed", uncompV1, &gzipCompression{level: gzip.BestSpeed}},
-		{"v1-GzipDefault", uncompV1, &gzipCompression{level: gzip.DefaultCompression}},
 		{"v1-Lzw", uncompV1, &lzwCompression{}},
 		{"v1-FlateBestComp", uncompV1, &flateCompression{level: flate.BestCompression}},
 		{"v1-FlateBestSpeed", uncompV1, &flateCompression{level: flate.BestSpeed}},
@@ -1628,9 +1625,6 @@ func BenchmarkCompressWriteRequest(b *testing.B) {
 		{"v1.1-ZstdFastest", uncompV11, &zstdCompression{level: zstd.SpeedFastest}},
 		{"v1.1-ZstdSpeedDef", uncompV11, &zstdCompression{level: zstd.SpeedDefault}},
 		{"v1.1-ZstdBestComp", uncompV11, &zstdCompression{level: zstd.SpeedBestCompression}},
-		{"v1.1-GzipBestComp", uncompV11, &gzipCompression{level: gzip.BestCompression}},
-		{"v1.1-GzipBestSpeed", uncompV11, &gzipCompression{level: gzip.BestSpeed}},
-		{"v1.1-GzipDefault", uncompV11, &gzipCompression{level: gzip.DefaultCompression}},
 		{"v1.1-Lzw", uncompV11, &lzwCompression{}},
 		{"v1.1-FlateBestComp", uncompV11, &flateCompression{level: flate.BestCompression}},
 		{"v1.1-FlateBestSpeed", uncompV11, &flateCompression{level: flate.BestSpeed}},

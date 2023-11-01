@@ -867,7 +867,8 @@ func DecodeWriteRequest(r io.Reader) (*prompb.WriteRequest, error) {
 		return nil, err
 	}
 
-	comp := createComp()
+	comp := GetPooledComp()
+	defer PutPooledComp(comp)
 	reqBuf, err := comp.Decompress(compressed)
 
 	if err != nil {

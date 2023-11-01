@@ -3,7 +3,7 @@ package remote
 import "testing"
 
 func TestCompressions(t *testing.T) {
-	data := []byte("Hello World")
+	data := makeUncompressedReducedWriteRequestBenchData(t)
 	tc := []struct {
 		name string
 		algo CompAlgorithm
@@ -14,8 +14,6 @@ func TestCompressions(t *testing.T) {
 		{"ZstdFast", ZstdFast},
 		{"ZstdDefault", ZstdDefault},
 		{"ZstdBestComp", ZstdBestComp},
-		{"GzipFast", GzipFast},
-		{"GzipComp", GzipComp},
 		{"Lzw", Lzw},
 		{"FlateFast", FlateFast},
 		{"FlateComp", FlateComp},
@@ -32,7 +30,9 @@ func TestCompressions(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			decompressed, err := comp.Decompress(compressed)
+			compressedCopy := make([]byte, len(compressed))
+			copy(compressedCopy, compressed)
+			decompressed, err := comp.Decompress(compressedCopy)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -44,7 +44,7 @@ func TestCompressions(t *testing.T) {
 }
 
 func BenchmarkCompressions(b *testing.B) {
-	data := makeUncompressedWriteRequestBenchData(b)
+	data := makeUncompressedReducedWriteRequestBenchData(b)
 	bc := []struct {
 		name string
 		algo CompAlgorithm
@@ -55,8 +55,6 @@ func BenchmarkCompressions(b *testing.B) {
 		{"ZstdFast", ZstdFast},
 		{"ZstdDefault", ZstdDefault},
 		{"ZstdBestComp", ZstdBestComp},
-		{"GzipFast", GzipFast},
-		{"GzipComp", GzipComp},
 		{"Lzw", Lzw},
 		{"FlateFast", FlateFast},
 		{"FlateComp", FlateComp},
@@ -65,20 +63,23 @@ func BenchmarkCompressions(b *testing.B) {
 		{"BrotliDefault", BrotliDefault},
 	}
 	comps := make(map[CompAlgorithm]Compression)
+	decomps := make(map[CompAlgorithm]Compression)
 	for _, c := range bc {
 		UseAlgorithm = c.algo
 		comp := createComp()
+		decomp := createComp()
 		comps[c.algo] = comp
+		decomps[c.algo] = decomp
 		// warmup
 		for i := 0; i < 10; i++ {
-			compressed, _ := comp.Compress(data)
-			// if err != nil {
-			// 	b.Fatal(err)
-			// }
-			_, _ = comp.Decompress(compressed)
-			// if err != nil {
-			// 	b.Fatal(err)
-			// }
+			compressed, err := comp.Compress(data)
+			if err != nil {
+				b.Fatal(err)
+			}
+			_, err = decomp.Decompress(compressed)
+			if err != nil {
+				b.Fatal(err)
+			}
 		}
 	}
 
@@ -95,13 +96,14 @@ func BenchmarkCompressions(b *testing.B) {
 		})
 		b.Run("decompress-"+c.name, func(b *testing.B) {
 			comp := comps[c.algo]
+			decomp := decomps[c.algo]
 			compressed, err := comp.Compress(data)
 			if err != nil {
 				b.Fatal(err)
 			}
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				_, err = comp.Decompress(compressed)
+				_, err = decomp.Decompress(compressed)
 				if err != nil {
 					b.Fatal(err)
 				}
