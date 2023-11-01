@@ -123,7 +123,7 @@ type snappyAltCompression struct {
 }
 
 func (s *snappyAltCompression) Compress(data []byte) ([]byte, error) {
-	s.buf = s.buf[0:cap(s.buf)]
+	s.buf = s.buf[:0]
 	res := reSnappy.Encode(s.buf, data)
 	if n := reSnappy.MaxEncodedLen(len(data)); n > len(s.buf) {
 		s.buf = make([]byte, n)
@@ -131,7 +131,7 @@ func (s *snappyAltCompression) Compress(data []byte) ([]byte, error) {
 	return res, nil
 }
 func (s *snappyAltCompression) Decompress(data []byte) ([]byte, error) {
-	s.buf = s.buf[0:cap(s.buf)]
+	s.buf = s.buf[:0]
 	uncompressed, err := reSnappy.Decode(s.buf, data)
 	if len(uncompressed) > cap(s.buf) {
 		s.buf = uncompressed
@@ -152,7 +152,7 @@ func (s *s2Compression) Compress(data []byte) ([]byte, error) {
 }
 
 func (s *s2Compression) Decompress(data []byte) ([]byte, error) {
-	s.buf = s.buf[0:cap(s.buf)]
+	s.buf = s.buf[:0]
 	uncompressed, err := reS2.Decode(s.buf, data)
 	if len(uncompressed) > cap(s.buf) {
 		s.buf = uncompressed
@@ -170,7 +170,7 @@ func (z *zstdCompression) Compress(data []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	z.buf = z.buf[0:cap(z.buf)]
+	z.buf = z.buf[:0]
 	res := w.EncodeAll(data, z.buf)
 	if len(res) > cap(z.buf) {
 		z.buf = res
