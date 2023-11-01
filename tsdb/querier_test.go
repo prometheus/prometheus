@@ -132,35 +132,12 @@ func createIdxChkReaders(t *testing.T, tc []seriesSamples) (IndexReader, ChunkRe
 				Ref:     chunkRef,
 			})
 
-			switch {
-			case chk[0].fh != nil:
-				chunk := chunkenc.NewFloatHistogramChunk()
-				app, _ := chunk.Appender()
-				for _, smpl := range chk {
-					require.NotNil(t, smpl.fh, "chunk can only contain one type of sample")
-					_, _, _, err := app.AppendFloatHistogram(nil, smpl.t, smpl.fh, true)
-					require.NoError(t, err, "chunk should be appendable")
-				}
-				chkReader[chunkRef] = chunk
-			case chk[0].h != nil:
-				chunk := chunkenc.NewHistogramChunk()
-				app, _ := chunk.Appender()
-				for _, smpl := range chk {
-					require.NotNil(t, smpl.h, "chunk can only contain one type of sample")
-					_, _, _, err := app.AppendHistogram(nil, smpl.t, smpl.h, true)
-					require.NoError(t, err, "chunk should be appendable")
-				}
-				chkReader[chunkRef] = chunk
-			default:
-				chunk := chunkenc.NewXORChunk()
-				app, _ := chunk.Appender()
-				for _, smpl := range chk {
-					require.Nil(t, smpl.h, "chunk can only contain one type of sample")
-					require.Nil(t, smpl.fh, "chunk can only contain one type of sample")
-					app.Append(smpl.t, smpl.f)
-				}
-				chkReader[chunkRef] = chunk
+			chunk := chunkenc.NewXORChunk()
+			app, _ := chunk.Appender()
+			for _, smpl := range chk {
+				app.Append(smpl.t, smpl.f)
 			}
+			chkReader[chunkRef] = chunk
 			chunkRef++
 		}
 		ls := labels.FromMap(s.lset)

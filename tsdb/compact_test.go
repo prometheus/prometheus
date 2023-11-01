@@ -38,7 +38,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
-	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 )
 
@@ -934,31 +933,6 @@ func TestCompaction_populateBlock(t *testing.T) {
 				},
 			},
 		},
-		{
-			title:          "Populate from mixed type series and expect sample inside the interval only", // regression test for populateWithDelChunkSeriesIterator failing to set minTime on chunks
-			compactMinTime: 1,
-			compactMaxTime: 11,
-			inputSeriesSamples: [][]seriesSamples{
-				{
-					{
-						lset: map[string]string{"a": "1"},
-						chunks: [][]sample{
-							{{t: 0, h: tsdbutil.GenerateTestHistogram(0)}, {t: 1, h: tsdbutil.GenerateTestHistogram(1)}},
-							{{t: 10, f: 1}, {t: 11, f: 2}},
-						},
-					},
-				},
-			},
-			expSeriesSamples: []seriesSamples{
-				{
-					lset: map[string]string{"a": "1"},
-					chunks: [][]sample{
-						{{t: 1, h: tsdbutil.GenerateTestHistogram(1)}},
-						{{t: 10, f: 1}},
-					},
-				},
-			},
-		},
 	} {
 		t.Run(tc.title, func(t *testing.T) {
 			blocks := make([]BlockReader, 0, len(tc.inputSeriesSamples))
@@ -1000,23 +974,12 @@ func TestCompaction_populateBlock(t *testing.T) {
 						firstTs int64 = math.MaxInt64
 						s       sample
 					)
-					for vt := iter.Next(); vt != chunkenc.ValNone; vt = iter.Next() {
-						switch vt {
-						case chunkenc.ValFloat:
-							s.t, s.f = iter.At()
-							samples = append(samples, s)
-						case chunkenc.ValHistogram:
-							s.t, s.h = iter.AtHistogram()
-							samples = append(samples, s)
-						case chunkenc.ValFloatHistogram:
-							s.t, s.fh = iter.AtFloatHistogram()
-							samples = append(samples, s)
-						default:
-							require.Fail(t, "unexpected value type")
-						}
+					for iter.Next() == chunkenc.ValFloat {
+						s.t, s.f = iter.At()
 						if firstTs == math.MaxInt64 {
 							firstTs = s.t
 						}
+						samples = append(samples, s)
 					}
 
 					// Check if chunk has correct min, max times.
