@@ -22,7 +22,7 @@ const (
 	DefaultPostingsForMatchersCacheForce    = false
 )
 
-// IndexPostingsReader is a subset of IndexReader methods, the minimum required to evaluate PostingsForMatchers
+// IndexPostingsReader is a subset of IndexReader methods, the minimum required to evaluate PostingsForMatchers.
 type IndexPostingsReader interface {
 	// LabelValues returns possible label values which may not be sorted.
 	LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error)
@@ -166,7 +166,7 @@ func (c *PostingsForMatchersCache) expire() {
 
 // shouldEvictHead returns true if cache head should be evicted, either because it's too old,
 // or because the cache has too many elements
-// should be called while read lock is held on cachedMtx
+// should be called while read lock is held on cachedMtx.
 func (c *PostingsForMatchersCache) shouldEvictHead() bool {
 	// The cache should be evicted for sure if the max size (either items or bytes) is reached.
 	if c.cached.Len() > c.maxItems || c.cachedBytes > c.maxBytes {
@@ -208,9 +208,9 @@ func (c *PostingsForMatchersCache) created(key string, ts time.Time, sizeBytes i
 	c.cachedBytes += sizeBytes
 }
 
-// matchersKey provides a unique string key for the given matchers slice
+// matchersKey provides a unique string key for the given matchers slice.
 // NOTE: different orders of matchers will produce different keys,
-// but it's unlikely that we'll receive same matchers in different orders at the same time
+// but it's unlikely that we'll receive same matchers in different orders at the same time.
 func matchersKey(ms []*labels.Matcher) string {
 	const (
 		typeLen = 2
@@ -232,7 +232,7 @@ func matchersKey(ms []*labels.Matcher) string {
 	return key
 }
 
-// indexReaderWithPostingsForMatchers adapts an index.Reader to be an IndexReader by adding the PostingsForMatchers method
+// indexReaderWithPostingsForMatchers adapts an index.Reader to be an IndexReader by adding the PostingsForMatchers method.
 type indexReaderWithPostingsForMatchers struct {
 	*index.Reader
 	pfmc *PostingsForMatchersCache

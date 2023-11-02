@@ -430,13 +430,13 @@ func (idx indexForPostingsMock) Postings(context.Context, string, ...string) (in
 }
 
 // timeNowMock offers a mockable time.Now() implementation
-// empty value is ready to be used, and it should not be copied (use a reference)
+// empty value is ready to be used, and it should not be copied (use a reference).
 type timeNowMock struct {
 	sync.Mutex
 	now time.Time
 }
 
-// timeNow can be used as a mocked replacement for time.Now()
+// timeNow can be used as a mocked replacement for time.Now().
 func (t *timeNowMock) timeNow() time.Time {
 	t.Lock()
 	defer t.Unlock()
@@ -446,7 +446,7 @@ func (t *timeNowMock) timeNow() time.Time {
 	return t.now
 }
 
-// advance advances the mocked time.Now() value
+// advance advances the mocked time.Now() value.
 func (t *timeNowMock) advance(d time.Duration) {
 	t.Lock()
 	defer t.Unlock()
