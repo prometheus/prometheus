@@ -36,7 +36,7 @@ require (
 	github.com/json-iterator/go v1.1.12
 	github.com/klauspost/compress v1.17.1
 	github.com/kolo/xmlrpc v0.0.0-20220921171641-a4b6fa1dd06b
-	github.com/linode/linodego v1.23.0
+	github.com/linode/linodego v1.24.0
 	github.com/miekg/dns v1.1.56
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822
 	github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f
@@ -135,7 +135,7 @@ require (
 	github.com/go-openapi/spec v0.20.9 // indirect
 	github.com/go-openapi/swag v0.22.4 // indirect
 	github.com/go-openapi/validate v0.22.1 // indirect
-	github.com/go-resty/resty/v2 v2.7.0 // indirect
+	github.com/go-resty/resty/v2 v2.10.0 // indirect
 	github.com/golang/glog v1.1.2 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
