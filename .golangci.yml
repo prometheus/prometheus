@@ -37,12 +37,17 @@ issues:
     - path: tsdb/
       linters:
         - errorlint
-    - path: util/
+    - path: tsdb/
+      text: "import 'github.com/pkg/errors' is not allowed"
       linters:
-        - errorlint
+        - depguard
     - path: web/
       linters:
         - errorlint
+    - path: web/
+      text: "import 'github.com/pkg/errors' is not allowed"
+      linters:
+        - depguard
     - linters:
         - godot
       source: "^// ==="
@@ -62,6 +67,8 @@ linters-settings:
           desc: "Use corresponding 'os' or 'io' functions instead."
         - pkg: "regexp"
           desc: "Use github.com/grafana/regexp instead of regexp"
+        - pkg: "github.com/pkg/errors"
+          desc: "Use 'errors' or 'fmt' instead of github.com/pkg/errors"
   errcheck:
     exclude-functions:
       # Don't flag lines such as "io.Copy(io.Discard, resp.Body)".
