@@ -104,7 +104,7 @@ type snappyCompression struct {
 func (s *snappyCompression) Compress(data []byte) ([]byte, error) {
 	s.buf = s.buf[0:cap(s.buf)]
 	compressed := snappy.Encode(s.buf, data)
-	if n := snappy.MaxEncodedLen(len(data)); n > len(s.buf) {
+	if n := snappy.MaxEncodedLen(len(data)); n > cap(s.buf) {
 		s.buf = make([]byte, n)
 	}
 	return compressed, nil
@@ -125,7 +125,7 @@ type snappyAltCompression struct {
 func (s *snappyAltCompression) Compress(data []byte) ([]byte, error) {
 	s.buf = s.buf[:0]
 	res := reSnappy.Encode(s.buf, data)
-	if n := reSnappy.MaxEncodedLen(len(data)); n > len(s.buf) {
+	if n := reSnappy.MaxEncodedLen(len(data)); n > cap(s.buf) {
 		s.buf = make([]byte, n)
 	}
 	return res, nil
