@@ -111,7 +111,7 @@ func TestGetBound(t *testing.T) {
 	}
 }
 
-func TestreduceResolutionHistogram(t *testing.T) {
+func TestReduceResolutionHistogram(t *testing.T) {
 	cases := []struct {
 		spans           []Span
 		buckets         []int64

@@ -453,3 +453,13 @@ func (c *cumulativeBucketIterator) At() Bucket[uint64] {
 		Index:          c.currIdx - 1,
 	}
 }
+
+func (h *Histogram) ReduceResolution(targetSchema int32) *Histogram {
+	h.PositiveSpans, h.PositiveBuckets = reduceResolution(
+		h.PositiveSpans, h.PositiveBuckets, h.Schema, targetSchema, true,
+	)
+	h.NegativeSpans, h.NegativeBuckets = reduceResolution(
+		h.NegativeSpans, h.NegativeBuckets, h.Schema, targetSchema, true,
+	)
+	return h
+}
