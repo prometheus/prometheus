@@ -16,6 +16,7 @@ package histogram
 import (
 	"fmt"
 	"math"
+	"math/rand"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -2392,4 +2393,52 @@ func TestFloatHistogramSize(t *testing.T) {
 			require.Equal(t, c.expected, c.fh.Size())
 		})
 	}
+}
+
+func BenchmarkFloatHistogramAllBucketIterator(b *testing.B) {
+	rng := rand.New(rand.NewSource(0))
+
+	fh := createRandomFloatHistogram(rng, 50)
+
+	b.ReportAllocs() // the current implementation reports 1 alloc
+	b.ResetTimer()
+
+	for n := 0; n < b.N; n++ {
+		for it := fh.AllBucketIterator(); it.Next(); {
+		}
+	}
+}
+
+func BenchmarkFloatHistogramDetectReset(b *testing.B) {
+	rng := rand.New(rand.NewSource(0))
+
+	fh := createRandomFloatHistogram(rng, 50)
+
+	b.ReportAllocs() // the current implementation reports 0 allocs
+	b.ResetTimer()
+
+	for n := 0; n < b.N; n++ {
+		// Detect against the itself (no resets is the worst case input).
+		fh.DetectReset(fh)
+	}
+}
+
+func createRandomFloatHistogram(rng *rand.Rand, spanNum int32) *FloatHistogram {
+	f := &FloatHistogram{}
+	f.PositiveSpans, f.PositiveBuckets = createRandomSpans(rng, spanNum)
+	f.NegativeSpans, f.NegativeBuckets = createRandomSpans(rng, spanNum)
+	return f
+}
+
+func createRandomSpans(rng *rand.Rand, spanNum int32) ([]Span, []float64) {
+	Spans := make([]Span, spanNum)
+	Buckets := make([]float64, 0)
+	for i := 0; i < int(spanNum); i++ {
+		Spans[i].Offset = rng.Int31n(spanNum) + 1
+		Spans[i].Length = uint32(rng.Int31n(spanNum) + 1)
+		for j := 0; j < int(Spans[i].Length); j++ {
+			Buckets = append(Buckets, float64(rng.Int31n(spanNum)+1))
+		}
+	}
+	return Spans, Buckets
 }

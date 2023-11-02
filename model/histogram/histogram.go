@@ -150,13 +150,15 @@ func (h *Histogram) ZeroBucket() Bucket[uint64] {
 // PositiveBucketIterator returns a BucketIterator to iterate over all positive
 // buckets in ascending order (starting next to the zero bucket and going up).
 func (h *Histogram) PositiveBucketIterator() BucketIterator[uint64] {
-	return newRegularBucketIterator(h.PositiveSpans, h.PositiveBuckets, h.Schema, true)
+	it := newRegularBucketIterator(h.PositiveSpans, h.PositiveBuckets, h.Schema, true)
+	return &it
 }
 
 // NegativeBucketIterator returns a BucketIterator to iterate over all negative
 // buckets in descending order (starting next to the zero bucket and going down).
 func (h *Histogram) NegativeBucketIterator() BucketIterator[uint64] {
-	return newRegularBucketIterator(h.NegativeSpans, h.NegativeBuckets, h.Schema, false)
+	it := newRegularBucketIterator(h.NegativeSpans, h.NegativeBuckets, h.Schema, false)
+	return &it
 }
 
 // CumulativeBucketIterator returns a BucketIterator to iterate over a
@@ -330,14 +332,14 @@ type regularBucketIterator struct {
 	baseBucketIterator[uint64, int64]
 }
 
-func newRegularBucketIterator(spans []Span, buckets []int64, schema int32, positive bool) *regularBucketIterator {
+func newRegularBucketIterator(spans []Span, buckets []int64, schema int32, positive bool) regularBucketIterator {
 	i := baseBucketIterator[uint64, int64]{
 		schema:   schema,
 		spans:    spans,
 		buckets:  buckets,
 		positive: positive,
 	}
-	return &regularBucketIterator{i}
+	return regularBucketIterator{i}
 }
 
 func (r *regularBucketIterator) Next() bool {
