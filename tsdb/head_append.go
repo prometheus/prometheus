@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"math/rand"
 
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
@@ -1419,7 +1420,16 @@ func computeChunkEndTime(start, cur, max int64, ratioToFull float64) int64 {
 	if n <= 1 {
 		return max
 	}
-	return int64(float64(start) + float64(max-start)/math.Floor(n))
+
+	end := int64(float64(max-start) / math.Floor(n))
+
+	jiter := end / 10 * 2
+	// 5 minutes is the max jiter
+	if jiter >= 300000 {
+		jiter = 300000
+	}
+
+	return start + end + rand.Int63n(jiter)
 }
 
 func (s *memSeries) cutNewHeadChunk(mint int64, e chunkenc.Encoding, chunkRange int64) *memChunk {
@@ -1435,12 +1445,12 @@ func (s *memSeries) cutNewHeadChunk(mint int64, e chunkenc.Encoding, chunkRange 
 
 	if chunkenc.IsValidEncoding(e) {
 		var err error
-		s.headChunks.chunk, err = chunkenc.NewEmptyChunk(e)
+		s.headChunks.chunk, err = chunkenc.NewEmptyChunk(e, true)
 		if err != nil {
 			panic(err) // This should never happen.
 		}
 	} else {
-		s.headChunks.chunk = chunkenc.NewXORChunk()
+		s.headChunks.chunk = chunkenc.GetXORChunk()
 	}
 
 	// Set upper bound on when the next chunk must be started. An earlier timestamp

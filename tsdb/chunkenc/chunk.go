@@ -353,9 +353,12 @@ func FromData(e Encoding, d []byte) (Chunk, error) {
 }
 
 // NewEmptyChunk returns an empty chunk for the given encoding.
-func NewEmptyChunk(e Encoding) (Chunk, error) {
+func NewEmptyChunk(e Encoding, withPool ...bool) (Chunk, error) {
 	switch e {
 	case EncXOR:
+		if len(withPool) > 0 {
+			return GetXORChunk(), nil
+		}
 		return NewXORChunk(), nil
 	case EncHistogram:
 		return NewHistogramChunk(), nil

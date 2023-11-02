@@ -1118,7 +1118,14 @@ func (cb *chunkBuffer) get(ref ChunkDiskMapperRef) chunkenc.Chunk {
 func (cb *chunkBuffer) clear() {
 	for i := 0; i < inBufferShards; i++ {
 		cb.inBufferChunksMtxs[i].Lock()
+		oldChunks := cb.inBufferChunks[i]
 		cb.inBufferChunks[i] = make(map[ChunkDiskMapperRef]chunkenc.Chunk)
 		cb.inBufferChunksMtxs[i].Unlock()
+
+		for _, c := range oldChunks {
+			if xc, ok := c.(*chunkenc.XORChunk); ok {
+				chunkenc.PutXORChunk(xc)
+			}
+		}
 	}
 }

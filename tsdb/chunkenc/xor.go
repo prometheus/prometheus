@@ -47,6 +47,7 @@ import (
 	"encoding/binary"
 	"math"
 	"math/bits"
+	"sync"
 
 	"github.com/prometheus/prometheus/model/histogram"
 )
@@ -54,6 +55,30 @@ import (
 const (
 	chunkCompactCapacityThreshold = 32
 )
+
+var xorChunkPool = sync.Pool{
+	New: func() any {
+		return NewXORChunk()
+	},
+}
+
+// GetXORChunk return an XOR from the pool.
+func GetXORChunk() *XORChunk {
+	return xorChunkPool.Get().(*XORChunk)
+}
+
+// PutXORChunk put an XOR to the pool.
+func PutXORChunk(c *XORChunk) {
+	if len(c.b.stream) < 2 {
+		return
+	}
+
+	c.b.count = 0
+	c.b.stream[0] = 0
+	c.b.stream[1] = 0
+	c.b.stream = c.b.stream[:2]
+	xorChunkPool.Put(c)
+}
 
 // XORChunk holds XOR encoded sample data.
 type XORChunk struct {
