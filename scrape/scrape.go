@@ -1582,13 +1582,23 @@ loop:
 		sort.Slice(exemplarQueue, func(i, j int) bool {
 			return exemplarQueue[i].Ts < exemplarQueue[j].Ts
 		})
+		outOfOrderExemplars := 0
+		var exemplarErr error
 		for _, e := range exemplarQueue {
-			_, exemplarErr := app.AppendExemplar(ref, lset, e)
+			_, exemplarErr = app.AppendExemplar(ref, lset, e)
 			exemplarErr = sl.checkAddExemplarError(exemplarErr, e, &appErrs)
 			if exemplarErr != nil {
-				// Since exemplar storage is still experimental, we don't fail the scrape on ingestion errors.
-				level.Debug(sl.l).Log("msg", "Error while adding exemplar in AddExemplar", "exemplar", fmt.Sprintf("%+v", e), "err", exemplarErr)
+				if exemplarErr == storage.ErrOutOfOrderExemplar {
+					outOfOrderExemplars++
+				} else {
+					// Since exemplar storage is still experimental, we don't fail the scrape on ingestion errors.
+					level.Debug(sl.l).Log("msg", "Error while adding exemplar in AddExemplar", "exemplar", fmt.Sprintf("%+v", e), "err", exemplarErr)
+				}
 			}
+		}
+		if outOfOrderExemplars == len(exemplarQueue) {
+			// Since exemplar storage is still experimental, we don't fail the scrape on ingestion errors.
+			level.Debug(sl.l).Log("msg", "Error while adding out of order exemplars in AddExemplar", "last exemplar", fmt.Sprintf("%+v", e), "err", exemplarErr)
 		}
 
 		if sl.appendMetadataToWAL && metadataChanged {
