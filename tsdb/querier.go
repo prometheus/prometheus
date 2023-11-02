@@ -840,6 +840,7 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 		}
 		return false
 	}
+	p.curr.MinTime = p.currDelIter.AtT()
 
 	// Re-encode the chunk if iterator is provider. This means that it has
 	// some samples to be deleted or chunk is opened.
@@ -855,7 +856,6 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 		if app, err = newChunk.Appender(); err != nil {
 			break
 		}
-
 		for vt := valueType; vt != chunkenc.ValNone; vt = p.currDelIter.Next() {
 			if vt != chunkenc.ValHistogram {
 				err = fmt.Errorf("found value type %v in histogram chunk", vt)
@@ -873,15 +873,12 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 		if app, err = newChunk.Appender(); err != nil {
 			break
 		}
-		var v float64
-		t, v = p.currDelIter.At()
-		p.curr.MinTime = t
-		app.Append(t, v)
-		for vt := p.currDelIter.Next(); vt != chunkenc.ValNone; vt = p.currDelIter.Next() {
+		for vt := valueType; vt != chunkenc.ValNone; vt = p.currDelIter.Next() {
 			if vt != chunkenc.ValFloat {
 				err = fmt.Errorf("found value type %v in float chunk", vt)
 				break
 			}
+			var v float64
 			t, v = p.currDelIter.At()
 			app.Append(t, v)
 		}
@@ -890,7 +887,6 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 		if app, err = newChunk.Appender(); err != nil {
 			break
 		}
-
 		for vt := valueType; vt != chunkenc.ValNone; vt = p.currDelIter.Next() {
 			if vt != chunkenc.ValFloatHistogram {
 				err = fmt.Errorf("found value type %v in histogram chunk", vt)
