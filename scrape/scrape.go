@@ -1405,6 +1405,8 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 		metadataChanged bool
 	)
 
+	exemplarQueue := make([]exemplar.Exemplar, 1)
+
 	// updateMetadata updates the current iteration's metadata object and the
 	// metadataChanged value if we have metadata in the scrape cache AND the
 	// labelset is for a new series or the metadata for this series has just
@@ -1570,8 +1572,7 @@ loop:
 		// Increment added even if there's an error so we correctly report the
 		// number of samples remaining after relabeling.
 		added++
-
-		var exemplarQueue []exemplar.Exemplar
+		exemplarQueue = exemplarQueue[:0] // reset and reuse the exemplar queue
 		for hasExemplar := p.Exemplar(&e); hasExemplar; hasExemplar = p.Exemplar(&e) {
 			if !e.HasTs {
 				e.Ts = t
@@ -1583,22 +1584,24 @@ loop:
 			return exemplarQueue[i].Ts < exemplarQueue[j].Ts
 		})
 		outOfOrderExemplars := 0
-		var exemplarErr error
 		for _, e := range exemplarQueue {
-			_, exemplarErr = app.AppendExemplar(ref, lset, e)
-			exemplarErr = sl.checkAddExemplarError(exemplarErr, e, &appErrs)
-			if exemplarErr != nil {
-				if exemplarErr == storage.ErrOutOfOrderExemplar {
-					outOfOrderExemplars++
-				} else {
-					// Since exemplar storage is still experimental, we don't fail the scrape on ingestion errors.
-					level.Debug(sl.l).Log("msg", "Error while adding exemplar in AddExemplar", "exemplar", fmt.Sprintf("%+v", e), "err", exemplarErr)
-				}
+			_, exemplarErr := app.AppendExemplar(ref, lset, e)
+			switch exemplarErr {
+			case nil:
+				// do nothing
+			case storage.ErrOutOfOrderExemplar:
+				outOfOrderExemplars++
+			default:
+				// Since exemplar storage is still experimental, we don't fail the scrape on ingestion errors.
+				level.Debug(sl.l).Log("msg", "Error while adding exemplar in AddExemplar", "exemplar", fmt.Sprintf("%+v", e), "err", exemplarErr)
 			}
 		}
-		if outOfOrderExemplars == len(exemplarQueue) {
-			// Since exemplar storage is still experimental, we don't fail the scrape on ingestion errors.
-			level.Debug(sl.l).Log("msg", "Error while adding out of order exemplars in AddExemplar", "last exemplar", fmt.Sprintf("%+v", e), "err", exemplarErr)
+		if outOfOrderExemplars > 0 && outOfOrderExemplars == len(exemplarQueue) {
+			// Only report out of order exemplars if all are out of order, otherwise this was a partial update
+			// to some existing set of exemplars.
+			appErrs.numExemplarOutOfOrder += outOfOrderExemplars
+			level.Debug(sl.l).Log("msg", "Out of order exemplars", "count", outOfOrderExemplars, "latest", fmt.Sprintf("%+v", exemplarQueue[len(exemplarQueue)-1]))
+			sl.metrics.targetScrapeExemplarOutOfOrder.Add(float64(outOfOrderExemplars))
 		}
 
 		if sl.appendMetadataToWAL && metadataChanged {
@@ -1688,20 +1691,6 @@ func (sl *scrapeLoop) checkAddError(ce *cacheEntry, met []byte, tp *int64, err e
 		return false, nil
 	default:
 		return false, err
-	}
-}
-
-func (sl *scrapeLoop) checkAddExemplarError(err error, e exemplar.Exemplar, appErrs *appendErrors) error {
-	switch {
-	case errors.Is(err, storage.ErrNotFound):
-		return storage.ErrNotFound
-	case errors.Is(err, storage.ErrOutOfOrderExemplar):
-		appErrs.numExemplarOutOfOrder++
-		level.Debug(sl.l).Log("msg", "Out of order exemplar", "exemplar", fmt.Sprintf("%+v", e))
-		sl.metrics.targetScrapeExemplarOutOfOrder.Inc()
-		return nil
-	default:
-		return err
 	}
 }
 
