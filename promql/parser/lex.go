@@ -59,11 +59,11 @@ func (i Item) Pretty(int) string { return i.String() }
 func (i ItemType) IsOperator() bool { return i > operatorsStart && i < operatorsEnd }
 
 // IsAggregator returns true if the Item belongs to the aggregator functions.
-// Returns false otherwise
+// Returns false otherwise.
 func (i ItemType) IsAggregator() bool { return i > aggregatorsStart && i < aggregatorsEnd }
 
 // IsAggregatorWithParam returns true if the Item is an aggregator that takes a parameter.
-// Returns false otherwise
+// Returns false otherwise.
 func (i ItemType) IsAggregatorWithParam() bool {
 	return i == TOPK || i == BOTTOMK || i == COUNT_VALUES || i == QUANTILE
 }

@@ -50,7 +50,7 @@ const (
 	tagsLabel = model.MetaLabelPrefix + "consul_tags"
 	// serviceLabel is the name of the label containing the service name.
 	serviceLabel = model.MetaLabelPrefix + "consul_service"
-	// healthLabel is the name of the label containing the health of the service instance
+	// healthLabel is the name of the label containing the health of the service instance.
 	healthLabel = model.MetaLabelPrefix + "consul_health"
 	// serviceAddressLabel is the name of the label containing the (optional) service address.
 	serviceAddressLabel = model.MetaLabelPrefix + "consul_service_address"

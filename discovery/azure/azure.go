@@ -281,7 +281,7 @@ func newCredential(cfg SDConfig, policyClientOptions policy.ClientOptions) (azco
 	return credential, nil
 }
 
-// virtualMachine represents an Azure virtual machine (which can also be created by a VMSS)
+// virtualMachine represents an Azure virtual machine (which can also be created by a VMSS).
 type virtualMachine struct {
 	ID                string
 	Name              string

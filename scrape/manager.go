@@ -34,7 +34,7 @@ import (
 	"github.com/prometheus/prometheus/util/osutil"
 )
 
-// NewManager is the Manager constructor
+// NewManager is the Manager constructor.
 func NewManager(o *Options, logger log.Logger, app storage.Appendable, registerer prometheus.Registerer) (*Manager, error) {
 	if o == nil {
 		o = &Options{}

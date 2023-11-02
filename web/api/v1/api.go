@@ -1294,12 +1294,12 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 	return apiFuncResult{res, nil, nil, nil}
 }
 
-// RuleDiscovery has info for all rules
+// RuleDiscovery has info for all rules.
 type RuleDiscovery struct {
 	RuleGroups []*RuleGroup `json:"groups"`
 }
 
-// RuleGroup has info for rules which are part of a group
+// RuleGroup has info for rules which are part of a group.
 type RuleGroup struct {
 	Name string `json:"name"`
 	File string `json:"file"`

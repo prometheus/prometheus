@@ -19,7 +19,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// ingressAdaptor is an adaptor for the different Ingress versions
+// ingressAdaptor is an adaptor for the different Ingress versions.
 type ingressAdaptor interface {
 	getObjectMeta() metav1.ObjectMeta
 	name() string
@@ -36,7 +36,7 @@ type ingressRuleAdaptor interface {
 	host() string
 }
 
-// Adaptor for networking.k8s.io/v1
+// Adaptor for networking.k8s.io/v1.
 type ingressAdaptorV1 struct {
 	ingress *v1.Ingress
 }
@@ -90,7 +90,7 @@ func (i *ingressRuleAdaptorV1) paths() []string {
 
 func (i *ingressRuleAdaptorV1) host() string { return i.rule.Host }
 
-// Adaptor for networking.k8s.io/v1beta1
+// Adaptor for networking.k8s.io/v1beta1.
 type ingressAdaptorV1Beta1 struct {
 	ingress *v1beta1.Ingress
 }

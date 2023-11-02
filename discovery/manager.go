@@ -92,7 +92,7 @@ type Provider struct {
 	newSubs map[string]struct{}
 }
 
-// Discoverer return the Discoverer of the provider
+// Discoverer return the Discoverer of the provider.
 func (p *Provider) Discoverer() Discoverer {
 	return p.d
 }
