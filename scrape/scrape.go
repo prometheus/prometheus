@@ -1405,7 +1405,7 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 		metadataChanged bool
 	)
 
-	exemplarQueue := make([]exemplar.Exemplar, 1)
+	exemplars := make([]exemplar.Exemplar, 1)
 
 	// updateMetadata updates the current iteration's metadata object and the
 	// metadataChanged value if we have metadata in the scrape cache AND the
@@ -1572,19 +1572,19 @@ loop:
 		// Increment added even if there's an error so we correctly report the
 		// number of samples remaining after relabeling.
 		added++
-		exemplarQueue = exemplarQueue[:0] // reset and reuse the exemplar queue
+		exemplars = exemplars[:0] // Reset and reuse the exemplar queue.
 		for hasExemplar := p.Exemplar(&e); hasExemplar; hasExemplar = p.Exemplar(&e) {
 			if !e.HasTs {
 				e.Ts = t
 			}
-			exemplarQueue = append(exemplarQueue, e)
-			e = exemplar.Exemplar{} // reset for next time round loop
+			exemplars = append(exemplars, e)
+			e = exemplar.Exemplar{} // Reset for next time round loop.
 		}
-		sort.Slice(exemplarQueue, func(i, j int) bool {
-			return exemplarQueue[i].Ts < exemplarQueue[j].Ts
+		sort.Slice(exemplars, func(i, j int) bool {
+			return exemplars[i].Ts < exemplars[j].Ts
 		})
 		outOfOrderExemplars := 0
-		for _, e := range exemplarQueue {
+		for _, e := range exemplars {
 			_, exemplarErr := app.AppendExemplar(ref, lset, e)
 			switch exemplarErr {
 			case nil:
@@ -1596,11 +1596,11 @@ loop:
 				level.Debug(sl.l).Log("msg", "Error while adding exemplar in AddExemplar", "exemplar", fmt.Sprintf("%+v", e), "err", exemplarErr)
 			}
 		}
-		if outOfOrderExemplars > 0 && outOfOrderExemplars == len(exemplarQueue) {
+		if outOfOrderExemplars > 0 && outOfOrderExemplars == len(exemplars) {
 			// Only report out of order exemplars if all are out of order, otherwise this was a partial update
 			// to some existing set of exemplars.
 			appErrs.numExemplarOutOfOrder += outOfOrderExemplars
-			level.Debug(sl.l).Log("msg", "Out of order exemplars", "count", outOfOrderExemplars, "latest", fmt.Sprintf("%+v", exemplarQueue[len(exemplarQueue)-1]))
+			level.Debug(sl.l).Log("msg", "Out of order exemplars", "count", outOfOrderExemplars, "latest", fmt.Sprintf("%+v", exemplars[len(exemplars)-1]))
 			sl.metrics.targetScrapeExemplarOutOfOrder.Add(float64(outOfOrderExemplars))
 		}
 
