@@ -46,7 +46,7 @@ func TestCompressions(t *testing.T) {
 	}
 }
 
-func BenchmarkCompressions(b *testing.B) {
+func BenchmarkCompressions_V11(b *testing.B) {
 	data := makeUncompressedReducedWriteRequestBenchData(b)
 	bc := []struct {
 		name string
@@ -121,7 +121,7 @@ func BenchmarkCompressions(b *testing.B) {
 	}
 }
 
-func BenchmarkCompressionsV1(b *testing.B) {
+func BenchmarkCompressions_V1(b *testing.B) {
 	data := makeUncompressedWriteRequestBenchData(b)
 	bc := []struct {
 		name string
