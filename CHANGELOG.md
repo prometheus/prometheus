@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.48.0-rc.2 / 2023-11-02
+
+* [ENHANCEMENT] Scraping: Add configuration option for tracking staleness of scraped timestamps. #13060
+* [BUGFIX] Storage: Fix crash caused by incorrect mixed samples handling. #13055
+* [BUGFIX] TSDB: Fix compactor failures by adding min time to histogram chunks. #13062
+
 ## 2.48.0-rc.1 / 2023-10-24
 
 * [BUGFIX] PromQL: Reduce inefficiency introduced by warnings/annotations and temporarily remove possible non-counter warnings. #13012
