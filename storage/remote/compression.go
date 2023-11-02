@@ -163,15 +163,22 @@ func (s *s2Compression) Decompress(data []byte) ([]byte, error) {
 type zstdCompression struct {
 	level zstd.EncoderLevel
 	buf   []byte
+	r     *reZstd.Decoder
+	w     *reZstd.Encoder
 }
 
 func (z *zstdCompression) Compress(data []byte) ([]byte, error) {
-	w, err := reZstd.NewWriter(nil, reZstd.WithEncoderLevel(z.level))
-	if err != nil {
-		return nil, err
+	var err error
+	if z.w == nil {
+		z.w, err = reZstd.NewWriter(nil, reZstd.WithEncoderLevel(z.level))
+		if err != nil {
+			return nil, err
+		}
 	}
+	z.w.Reset(nil)
+
 	z.buf = z.buf[:0]
-	res := w.EncodeAll(data, z.buf)
+	res := z.w.EncodeAll(data, z.buf)
 	if len(res) > cap(z.buf) {
 		z.buf = res
 	}
@@ -179,12 +186,20 @@ func (z *zstdCompression) Compress(data []byte) ([]byte, error) {
 }
 
 func (z *zstdCompression) Decompress(data []byte) ([]byte, error) {
-	decoder, err := reZstd.NewReader(nil)
+	var err error
+	if z.r == nil {
+		z.r, err = reZstd.NewReader(nil)
+		if err != nil {
+			return nil, err
+		}
+	}
+	err = z.r.Reset(nil)
 	if err != nil {
 		return nil, err
 	}
+
 	z.buf = z.buf[:0]
-	buf, err := decoder.DecodeAll(data, z.buf)
+	buf, err := z.r.DecodeAll(data, z.buf)
 	if err != nil {
 		return nil, err
 	}
