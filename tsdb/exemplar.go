@@ -250,10 +250,29 @@ func (ce *CircularExemplarStorage) validateExemplar(key []byte, e exemplar.Exemp
 	}
 
 	if e.Ts <= ce.exemplars[idx.newest].exemplar.Ts {
-		if appended {
-			ce.metrics.outOfOrderExemplars.Inc()
+		// Check for duplicates in the stored exemplars for this series.
+		// NB these are expected, and appending them is a no-op.
+		// This is separate from the earlier check because the earlier one is
+		// expected to be triggered more often and we don't want to go through
+		// the exemplars for this series unnecessarily.
+		// This triggers even when the timestamp is equal to the newest exemplar
+		// in case there are multiple exemplars with the same timestamp like for
+		// native histograms. However this means that we may repeat the comparison
+		// for the newest exemplar.
+		for i := idx.oldest; i != noExemplar; i = ce.exemplars[i].next {
+			if ce.exemplars[i].exemplar.Equals(e) {
+				return storage.ErrDuplicateExemplar
+			}
 		}
-		return storage.ErrOutOfOrderExemplar
+		// Only treat it as out of order if the timestamp is earlier. If the
+		// timestamps are equal but it is not a duplicate of the stored exemplars,
+		// we don't treat it as an error.
+		if e.Ts < ce.exemplars[idx.newest].exemplar.Ts {
+			if appended {
+				ce.metrics.outOfOrderExemplars.Inc()
+			}
+			return storage.ErrOutOfOrderExemplar
+		}
 	}
 	return nil
 }
