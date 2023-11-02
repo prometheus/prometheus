@@ -249,7 +249,7 @@ func (ce *CircularExemplarStorage) validateExemplar(key []byte, e exemplar.Exemp
 		return storage.ErrDuplicateExemplar
 	}
 
-	if e.Ts <= ce.exemplars[idx.newest].exemplar.Ts {
+	if e.Ts < ce.exemplars[idx.newest].exemplar.Ts || (e.Ts == ce.exemplars[idx.newest].exemplar.Ts && e.Value < ce.exemplars[idx.newest].exemplar.Value) {
 		if appended {
 			ce.metrics.outOfOrderExemplars.Inc()
 		}

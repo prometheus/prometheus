@@ -1581,7 +1581,10 @@ loop:
 			e = exemplar.Exemplar{} // Reset for next time round loop.
 		}
 		sort.Slice(exemplars, func(i, j int) bool {
-			return exemplars[i].Ts < exemplars[j].Ts
+			if exemplars[i].Ts != exemplars[j].Ts {
+				return exemplars[i].Ts < exemplars[j].Ts
+			}
+			return exemplars[i].Value < exemplars[j].Value
 		})
 		outOfOrderExemplars := 0
 		for _, e := range exemplars {
