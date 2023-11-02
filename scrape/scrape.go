@@ -1589,10 +1589,10 @@ loop:
 		outOfOrderExemplars := 0
 		for _, e := range exemplars {
 			_, exemplarErr := app.AppendExemplar(ref, lset, e)
-			switch exemplarErr {
-			case nil:
+			switch {
+			case exemplarErr == nil:
 				// do nothing
-			case storage.ErrOutOfOrderExemplar:
+			case errors.Is(exemplarErr, storage.ErrOutOfOrderExemplar):
 				outOfOrderExemplars++
 			default:
 				// Since exemplar storage is still experimental, we don't fail the scrape on ingestion errors.
