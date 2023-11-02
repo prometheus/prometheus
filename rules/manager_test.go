@@ -1435,21 +1435,23 @@ func TestDependencyMap(t *testing.T) {
 		Opts:     opts,
 	})
 
-	require.Zero(t, group.dependencyMap.dependencies(rule))
-	require.Equal(t, 2, group.dependencyMap.dependents(rule))
-	require.False(t, group.dependencyMap.isIndependent(rule))
+	depMap := buildDependencyMap(group.rules)
 
-	require.Zero(t, group.dependencyMap.dependents(rule2))
-	require.Equal(t, 1, group.dependencyMap.dependencies(rule2))
-	require.False(t, group.dependencyMap.isIndependent(rule2))
+	require.Zero(t, depMap.dependencies(rule))
+	require.Equal(t, 2, depMap.dependents(rule))
+	require.False(t, depMap.isIndependent(rule))
 
-	require.Zero(t, group.dependencyMap.dependents(rule3))
-	require.Zero(t, group.dependencyMap.dependencies(rule3))
-	require.True(t, group.dependencyMap.isIndependent(rule3))
+	require.Zero(t, depMap.dependents(rule2))
+	require.Equal(t, 1, depMap.dependencies(rule2))
+	require.False(t, depMap.isIndependent(rule2))
 
-	require.Zero(t, group.dependencyMap.dependents(rule4))
-	require.Equal(t, 1, group.dependencyMap.dependencies(rule4))
-	require.False(t, group.dependencyMap.isIndependent(rule4))
+	require.Zero(t, depMap.dependents(rule3))
+	require.Zero(t, depMap.dependencies(rule3))
+	require.True(t, depMap.isIndependent(rule3))
+
+	require.Zero(t, depMap.dependents(rule4))
+	require.Equal(t, 1, depMap.dependencies(rule4))
+	require.False(t, depMap.isIndependent(rule4))
 }
 
 func TestNoDependency(t *testing.T) {
@@ -1470,8 +1472,9 @@ func TestNoDependency(t *testing.T) {
 		Opts:     opts,
 	})
 
+	depMap := buildDependencyMap(group.rules)
 	// A group with only one rule cannot have dependencies.
-	require.Empty(t, group.dependencyMap)
+	require.Empty(t, depMap)
 }
 
 func TestDependenciesEdgeCases(t *testing.T) {
@@ -1493,9 +1496,10 @@ func TestDependenciesEdgeCases(t *testing.T) {
 		require.NoError(t, err)
 		rule := NewRecordingRule("user:requests:rate1m", expr, labels.Labels{})
 
+		depMap := buildDependencyMap(group.rules)
 		// A group with no rules has no dependency map, but doesn't panic if the map is queried.
-		require.Nil(t, group.dependencyMap)
-		require.False(t, group.dependencyMap.isIndependent(rule))
+		require.Nil(t, depMap)
+		require.False(t, depMap.isIndependent(rule))
 	})
 
 	t.Run("rules which reference no series", func(t *testing.T) {
@@ -1514,9 +1518,10 @@ func TestDependenciesEdgeCases(t *testing.T) {
 			Opts:     opts,
 		})
 
+		depMap := buildDependencyMap(group.rules)
 		// A group with rules which reference no series will still produce a dependency map
-		require.True(t, group.dependencyMap.isIndependent(rule1))
-		require.True(t, group.dependencyMap.isIndependent(rule2))
+		require.True(t, depMap.isIndependent(rule1))
+		require.True(t, depMap.isIndependent(rule2))
 	})
 }
 
@@ -1542,10 +1547,11 @@ func TestNoMetricSelector(t *testing.T) {
 		Opts:     opts,
 	})
 
+	depMap := buildDependencyMap(group.rules)
 	// A rule with no metric selector cannot be reliably determined to have no dependencies on other rules, and therefore
 	// all rules are not considered independent.
-	require.False(t, group.dependencyMap.isIndependent(rule))
-	require.False(t, group.dependencyMap.isIndependent(rule2))
+	require.False(t, depMap.isIndependent(rule))
+	require.False(t, depMap.isIndependent(rule2))
 }
 
 func TestDependentRulesWithNonMetricExpression(t *testing.T) {
@@ -1574,9 +1580,10 @@ func TestDependentRulesWithNonMetricExpression(t *testing.T) {
 		Opts:     opts,
 	})
 
-	require.False(t, group.dependencyMap.isIndependent(rule))
-	require.False(t, group.dependencyMap.isIndependent(rule2))
-	require.True(t, group.dependencyMap.isIndependent(rule3))
+	depMap := buildDependencyMap(group.rules)
+	require.False(t, depMap.isIndependent(rule))
+	require.False(t, depMap.isIndependent(rule2))
+	require.True(t, depMap.isIndependent(rule3))
 }
 
 func TestRulesDependentOnMetaMetrics(t *testing.T) {
@@ -1604,7 +1611,8 @@ func TestRulesDependentOnMetaMetrics(t *testing.T) {
 		Opts:     opts,
 	})
 
-	require.False(t, group.dependencyMap.isIndependent(rule))
+	depMap := buildDependencyMap(group.rules)
+	require.False(t, depMap.isIndependent(rule))
 }
 
 func TestDependencyMapUpdatesOnGroupUpdate(t *testing.T) {
@@ -1623,17 +1631,19 @@ func TestDependencyMapUpdatesOnGroupUpdate(t *testing.T) {
 
 	orig := make(map[string]dependencyMap, len(ruleManager.groups))
 	for _, g := range ruleManager.groups {
+		depMap := buildDependencyMap(g.rules)
 		// No dependency map is expected because there is only one rule in the group.
-		require.Empty(t, g.dependencyMap)
-		orig[g.Name()] = g.dependencyMap
+		require.Empty(t, depMap)
+		orig[g.Name()] = depMap
 	}
 
 	// Update once without changing groups.
 	err = ruleManager.Update(10*time.Second, files, labels.EmptyLabels(), "", nil)
 	require.NoError(t, err)
 	for h, g := range ruleManager.groups {
+		depMap := buildDependencyMap(g.rules)
 		// Dependency maps are the same because of no updates.
-		require.Equal(t, orig[h], g.dependencyMap)
+		require.Equal(t, orig[h], depMap)
 	}
 
 	// Groups will be recreated when updated.
@@ -1653,12 +1663,13 @@ func TestDependencyMapUpdatesOnGroupUpdate(t *testing.T) {
 
 		require.NotEmptyf(t, rr, "expected to find %q recording rule in fixture", ruleName)
 
+		depMap := buildDependencyMap(g.rules)
 		// Dependency maps must change because the groups would've been updated.
-		require.NotEqual(t, orig[h], g.dependencyMap)
+		require.NotEqual(t, orig[h], depMap)
 		// We expect there to be some dependencies since the new rule group contains a dependency.
-		require.Greater(t, len(g.dependencyMap), 0)
-		require.Equal(t, 1, g.dependencyMap.dependents(rr))
-		require.Zero(t, g.dependencyMap.dependencies(rr))
+		require.Greater(t, len(depMap), 0)
+		require.Equal(t, 1, depMap.dependents(rr))
+		require.Zero(t, depMap.dependencies(rr))
 	}
 }
 
@@ -1674,7 +1685,7 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 	)
 
 	files := []string{"fixtures/rules_multiple.yaml"}
-	ruleManager := NewManager(&ManagerOptions{
+	opts := &ManagerOptions{
 		Context:    context.Background(),
 		Logger:     log.NewNopLogger(),
 		Appendable: storage,
@@ -1692,16 +1703,34 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 				promql.Sample{Metric: labels.FromStrings("__name__", "test"), T: ts.UnixMilli(), F: 12345},
 			}, nil
 		},
-	})
+	}
 
-	groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, files...)
-	require.Empty(t, errs)
-	require.Len(t, groups, 1)
+	inflightTracker := func(ctx context.Context) {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				highWatermark := maxInflight.Load()
+				current := inflightQueries.Load()
+				if current > highWatermark {
+					maxInflight.Store(current)
+				}
+
+				time.Sleep(time.Millisecond)
+			}
+		}
+	}
 
 	expectedRules := 4
 
 	t.Run("synchronous evaluation with independent rules", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
+
+		ruleManager := NewManager(opts)
+		groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, files...)
+		require.Empty(t, errs)
+		require.Len(t, groups, 1)
 
 		for _, group := range groups {
 			require.Len(t, group.rules, expectedRules)
@@ -1709,22 +1738,7 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 			start := time.Now()
 
 			// Never expect more than 1 inflight query at a time.
-			go func() {
-				for {
-					select {
-					case <-ctx.Done():
-						return
-					default:
-						highWatermark := maxInflight.Load()
-						current := inflightQueries.Load()
-						if current > highWatermark {
-							maxInflight.Store(current)
-						}
-
-						time.Sleep(time.Millisecond)
-					}
-				}
-			}()
+			go inflightTracker(ctx)
 
 			group.Eval(ctx, start)
 
@@ -1744,33 +1758,27 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 		maxInflight.Store(0)
 		ctx, cancel := context.WithCancel(context.Background())
 
+		// Configure concurrency settings.
+		opts.ConcurrentEvalsEnabled = true
+		opts.MaxConcurrentEvals = 2
+		opts.RuleConcurrencyController = nil
+		ruleManager := NewManager(opts)
+
+		groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, files...)
+		require.Empty(t, errs)
+		require.Len(t, groups, 1)
+
 		for _, group := range groups {
-			// Allow up to 2 concurrent rule evaluations.
-			group.opts.ConcurrentEvalsController = NewConcurrentRuleEvalController(true, 2)
 			require.Len(t, group.rules, expectedRules)
 
 			start := time.Now()
 
-			go func() {
-				for {
-					select {
-					case <-ctx.Done():
-						return
-					default:
-						highWatermark := maxInflight.Load()
-						current := inflightQueries.Load()
-						if current > highWatermark {
-							maxInflight.Store(current)
-						}
-
-						time.Sleep(time.Millisecond)
-					}
-				}
-			}()
+			go inflightTracker(ctx)
 
 			group.Eval(ctx, start)
 
-			require.EqualValues(t, 3, maxInflight.Load())
+			// Max inflight can be 1 synchronous eval and up to MaxConcurrentEvals concurrent evals.
+			require.EqualValues(t, opts.MaxConcurrentEvals+1, maxInflight.Load())
 			// Some rules should execute concurrently so should complete quicker.
 			require.Less(t, time.Since(start).Seconds(), (time.Duration(expectedRules) * artificialDelay).Seconds())
 			// Each rule produces one vector.

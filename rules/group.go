@@ -71,7 +71,6 @@ type Group struct {
 	// Rule group evaluation iteration function,
 	// defaults to DefaultEvalIterationFunc.
 	evalIterationFunc GroupEvalIterationFunc
-	dependencyMap     dependencyMap
 }
 
 // GroupEvalIterationFunc is used to implement and extend rule group
@@ -130,7 +129,6 @@ func NewGroup(o GroupOptions) *Group {
 		logger:               log.With(o.Opts.Logger, "file", o.File, "group", o.Name),
 		metrics:              metrics,
 		evalIterationFunc:    evalIterationFunc,
-		dependencyMap:        buildDependencyMap(o.Rules),
 	}
 }
 
@@ -437,7 +435,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		eval := func(i int, rule Rule, async bool) {
 			defer func() {
 				if async {
-					g.opts.ConcurrentEvalsController.Done()
+					g.opts.RuleConcurrencyController.Done()
 				}
 			}()
 
@@ -569,7 +567,8 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 
 		// If the rule has no dependencies, it can run concurrently because no other rules in this group depend on its output.
 		// Try run concurrently if there are slots available.
-		if g.dependencyMap.isIndependent(rule) && g.opts.ConcurrentEvalsController != nil && g.opts.ConcurrentEvalsController.Allow() {
+		ctrl := g.opts.RuleConcurrencyController
+		if ctrl != nil && ctrl.RuleEligible(g, rule) && ctrl.Allow() {
 			go eval(i, rule, true)
 		} else {
 			eval(i, rule, false)

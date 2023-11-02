@@ -118,7 +118,7 @@ type ManagerOptions struct {
 	GroupLoader               GroupLoader
 	MaxConcurrentEvals        int64
 	ConcurrentEvalsEnabled    bool
-	ConcurrentEvalsController ConcurrentRuleEvalController
+	RuleConcurrencyController RuleConcurrencyController
 
 	Metrics *Metrics
 }
@@ -134,7 +134,9 @@ func NewManager(o *ManagerOptions) *Manager {
 		o.GroupLoader = FileLoader{}
 	}
 
-	o.ConcurrentEvalsController = NewConcurrentRuleEvalController(o.ConcurrentEvalsEnabled, o.MaxConcurrentEvals)
+	if o.RuleConcurrencyController == nil {
+		o.RuleConcurrencyController = newRuleConcurrencyController(o.ConcurrentEvalsEnabled, o.MaxConcurrentEvals)
+	}
 
 	m := &Manager{
 		groups: map[string]*Group{},
@@ -181,6 +183,10 @@ func (m *Manager) Stop() {
 func (m *Manager) Update(interval time.Duration, files []string, externalLabels labels.Labels, externalURL string, groupEvalIterationFunc GroupEvalIterationFunc) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
+
+	if m.opts.RuleConcurrencyController != nil {
+		m.opts.RuleConcurrencyController.Invalidate()
+	}
 
 	groups, errs := m.LoadGroups(interval, externalLabels, externalURL, groupEvalIterationFunc, files...)
 
@@ -410,26 +416,55 @@ func SendAlerts(s Sender, externalURL string) NotifyFunc {
 	}
 }
 
-// ConcurrentRuleEvalController controls whether rules can be evaluated concurrently. Its purpose it to bound the amount
-// of concurrency in rule evaluations so they do not overwhelm the Prometheus server with additional query load.
+// RuleConcurrencyController controls whether rules can be evaluated concurrently. Its purpose it to bound the amount
+// of concurrency in rule evaluations, to not overwhelm the Prometheus server with additional query load.
 // Concurrency is controlled globally, not on a per-group basis.
-type ConcurrentRuleEvalController interface {
+type RuleConcurrencyController interface {
+	// RuleEligible determines if a rule can be run concurrently.
+	RuleEligible(g *Group, r Rule) bool
+
+	// Allow determines whether any concurrent evaluation slots are available.
 	Allow() bool
+
+	// Done releases a concurrent evaluation slot.
 	Done()
+
+	// Invalidate instructs the controller to invalidate its state.
+	// This should be called when groups are modified (during a reload, for instance), because the controller may
+	// store some state about each group in order to more efficiently determine rule eligibility.
+	Invalidate()
+}
+
+func newRuleConcurrencyController(enabled bool, maxConcurrency int64) RuleConcurrencyController {
+	return &concurrentRuleEvalController{
+		enabled: enabled,
+		sema:    semaphore.NewWeighted(maxConcurrency),
+		depMaps: map[*Group]dependencyMap{},
+	}
 }
 
 // concurrentRuleEvalController holds a weighted semaphore which controls the concurrent evaluation of rules.
 type concurrentRuleEvalController struct {
+	mu      sync.Mutex
 	enabled bool
 	sema    *semaphore.Weighted
+	depMaps map[*Group]dependencyMap
 }
 
-func NewConcurrentRuleEvalController(enabled bool, maxConcurrency int64) ConcurrentRuleEvalController {
-	return concurrentRuleEvalController{enabled: enabled, sema: semaphore.NewWeighted(maxConcurrency)}
+func (c *concurrentRuleEvalController) RuleEligible(g *Group, r Rule) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	depMap, found := c.depMaps[g]
+	if !found {
+		depMap = buildDependencyMap(g.rules)
+		c.depMaps[g] = depMap
+	}
+
+	return depMap.isIndependent(r)
 }
 
-// Allow determines whether any concurrency slots are available.
-func (c concurrentRuleEvalController) Allow() bool {
+func (c *concurrentRuleEvalController) Allow() bool {
 	if !c.enabled {
 		return false
 	}
@@ -437,11 +472,18 @@ func (c concurrentRuleEvalController) Allow() bool {
 	return c.sema.TryAcquire(1)
 }
 
-// Done releases a concurrent evaluation slot.
-func (c concurrentRuleEvalController) Done() {
+func (c *concurrentRuleEvalController) Done() {
 	if !c.enabled {
 		return
 	}
 
 	c.sema.Release(1)
+}
+
+func (c *concurrentRuleEvalController) Invalidate() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	// Clear out the memoized dependency maps because some or all groups may have been updated.
+	c.depMaps = map[*Group]dependencyMap{}
 }
