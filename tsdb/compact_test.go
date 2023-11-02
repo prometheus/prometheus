@@ -935,7 +935,8 @@ func TestCompaction_populateBlock(t *testing.T) {
 			},
 		},
 		{
-			title:          "Populate from mixed type series and expect sample inside the interval only", // regression test for populateWithDelChunkSeriesIterator failing to set minTime on chunks
+			// Regression test for populateWithDelChunkSeriesIterator failing to set minTime on chunks.
+			title:          "Populate from mixed type series and expect sample inside the interval only.",
 			compactMinTime: 1,
 			compactMaxTime: 11,
 			inputSeriesSamples: [][]seriesSamples{
