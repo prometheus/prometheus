@@ -5626,3 +5626,33 @@ func TestHeadDetectsDuplicateSampleAtSizeLimit(t *testing.T) {
 
 	require.Equal(t, numSamples/2, storedSampleCount)
 }
+
+// TestHeadCompactionWhileAppendAndCommitExemplar simulates a use case where
+// a series is removed from the head while an exemplar is being appended to it.
+// This can happen in theory by compacting the head at the right time due to
+// a series being idle.
+// The test cheats a little bit by not appending a sample with the exemplar.
+// If you also add a sample and run Truncate in a concurrent goroutine and run
+// the test around a million(!) times, you can get
+// `unknown HeadSeriesRef when trying to add exemplar: 1` error on push.
+// It is likely that running the test for much longer and with more time variations
+// would trigger the
+// `signal SIGSEGV: segmentation violation code=0x1 addr=0x20 pc=0xbb03d1`
+// panic, that we have seen in the wild once.
+func TestHeadCompactionWhileAppendAndCommitExemplar(t *testing.T) {
+	h, _ := newTestHead(t, DefaultBlockDuration, wlog.CompressionNone, false)
+	defer func() {
+		require.NoError(t, h.Close())
+	}()
+	app := h.Appender(context.Background())
+	lbls := labels.FromStrings("foo", "bar")
+	ref, err := app.Append(0, lbls, 1, 1)
+	require.NoError(t, err)
+	app.Commit()
+	// Not adding a sample here to trigger the fault.
+	app = h.Appender(context.Background())
+	_, err = app.AppendExemplar(ref, lbls, exemplar.Exemplar{Value: 1, Ts: 20})
+	require.NoError(t, err)
+	h.Truncate(10)
+	app.Commit()
+}
