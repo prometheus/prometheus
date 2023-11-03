@@ -541,26 +541,17 @@ var exponentialBounds = [][]float64{
 	},
 }
 
-// reduceResolution defines xxx
-//
-//	origin bucket schema: 0
-//	origin bucket counts:               1        3       1       2
-//	origin bucket boundaries:        (0.5,1] , (1,2] , (2,4] , (4,8]
-//	                                    ↑        ↑       ↑       ↑
-//	origin bucket indices:              0        1       2       3
-//	target bucket schema: 1
-//	target bucket counts:       (0.25  ,  1] , (1    ,    4]
-//									 ↑               ↑
-//	target bucket boundaries:        0               1
+// reduceResolution reduce the input spans, buckets in origin schema to the spans, buckets in target schema.
 func reduceResolution[IBC InternalBucketCount](originSpans []Span, originBuckets []IBC, originSchema, targetSchema int32, deltaBuckets bool) ([]Span, []IBC) {
 	var (
 		targetSpans           []Span // The spans in the target schema.
-		targetBuckets         []IBC  // The buckets in the target schema.
+		targetBuckets         []IBC  // The bucket counts in the target schema.
 		bucketIdx             int32  // The index of bucket in the origin schema.
+		bucketCountIdx        int    // The position of a bucket in origin bucket count slice `originBuckets`.
+		targetBucketIdx       int32  // The index of bucket in the target schema.
 		lastBucketCount       IBC    // The last visited bucket's count in the origin schema.
 		lastTargetBucketIdx   int32  // The index of the last added target bucket.
 		lastTargetBucketCount IBC
-		origBucketIdx         int // The position of a bucket in originBuckets slice.
 	)
 
 	for _, span := range originSpans {
@@ -568,7 +559,7 @@ func reduceResolution[IBC InternalBucketCount](originSpans []Span, originBuckets
 		bucketIdx += span.Offset
 		for j := 0; j < int(span.Length); j++ {
 			// Determine the index of the bucket in the target schema from the index in the original schema.
-			targetBucketIdx := targetIdx(bucketIdx, originSchema, targetSchema)
+			targetBucketIdx = targetIdx(bucketIdx, originSchema, targetSchema)
 
 			switch {
 			case len(targetSpans) == 0:
@@ -578,19 +569,19 @@ func reduceResolution[IBC InternalBucketCount](originSpans []Span, originBuckets
 					Length: 1,
 				}
 				targetSpans = append(targetSpans, span)
-				targetBuckets = append(targetBuckets, originBuckets[0])
+				targetBuckets = append(targetBuckets, originBuckets[bucketCountIdx])
 				lastTargetBucketIdx = targetBucketIdx
-				lastBucketCount = originBuckets[0]
-				lastTargetBucketCount = originBuckets[0]
+				lastBucketCount = originBuckets[bucketCountIdx]
+				lastTargetBucketCount = originBuckets[bucketCountIdx]
 
 			case lastTargetBucketIdx == targetBucketIdx:
 				// The current bucket has to be merged into the same target bucket as the previous bucket.
 				if deltaBuckets {
-					lastBucketCount += originBuckets[origBucketIdx]
+					lastBucketCount += originBuckets[bucketCountIdx]
 					targetBuckets[len(targetBuckets)-1] += lastBucketCount
 					lastTargetBucketCount += lastBucketCount
 				} else {
-					targetBuckets[len(targetBuckets)-1] += originBuckets[origBucketIdx]
+					targetBuckets[len(targetBuckets)-1] += originBuckets[bucketCountIdx]
 				}
 
 			case (lastTargetBucketIdx + 1) == targetBucketIdx:
@@ -600,12 +591,11 @@ func reduceResolution[IBC InternalBucketCount](originSpans []Span, originBuckets
 				targetSpans[len(targetSpans)-1].Length++
 				lastTargetBucketIdx++
 				if deltaBuckets {
-					lastBucketCount += originBuckets[origBucketIdx]
-					// 这里可以这么用吗
+					lastBucketCount += originBuckets[bucketCountIdx]
 					targetBuckets = append(targetBuckets, lastBucketCount-lastTargetBucketCount)
 					lastTargetBucketCount = lastBucketCount
 				} else {
-					targetBuckets = append(targetBuckets, originBuckets[origBucketIdx])
+					targetBuckets = append(targetBuckets, originBuckets[bucketCountIdx])
 				}
 
 			case (lastTargetBucketIdx + 1) < targetBucketIdx:
@@ -619,16 +609,16 @@ func reduceResolution[IBC InternalBucketCount](originSpans []Span, originBuckets
 				targetSpans = append(targetSpans, span)
 				lastTargetBucketIdx = targetBucketIdx
 				if deltaBuckets {
-					lastBucketCount += originBuckets[origBucketIdx]
+					lastBucketCount += originBuckets[bucketCountIdx]
 					targetBuckets = append(targetBuckets, lastBucketCount-lastTargetBucketCount)
 					lastTargetBucketCount = lastBucketCount
 				} else {
-					targetBuckets = append(targetBuckets, originBuckets[origBucketIdx])
+					targetBuckets = append(targetBuckets, originBuckets[bucketCountIdx])
 				}
 			}
 
 			bucketIdx++
-			origBucketIdx++
+			bucketCountIdx++
 		}
 	}
 
