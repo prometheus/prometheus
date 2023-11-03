@@ -15,6 +15,7 @@ require('../../vendor/flot/jquery.flot.stack');
 require('../../vendor/flot/jquery.flot.time');
 require('../../vendor/flot/jquery.flot.crosshair');
 require('../../vendor/flot/jquery.flot.selection');
+require('../../vendor/flot/jquery.flot.heatmap');
 require('jquery.flot.tooltip');
 
 export interface GraphProps {
@@ -24,6 +25,7 @@ export interface GraphProps {
   };
   exemplars: ExemplarData;
   stacked: boolean;
+  histogram: boolean;
   useLocalTime: boolean;
   showExemplars: boolean;
   handleTimeRangeSelection: (startTime: number, endTime: number) => void;
@@ -69,8 +71,8 @@ class Graph extends PureComponent<GraphProps, GraphState> {
   };
 
   componentDidUpdate(prevProps: GraphProps): void {
-    const { data, stacked, useLocalTime, showExemplars } = this.props;
-    if (prevProps.data !== data) {
+    const { data, stacked, useLocalTime, showExemplars, histogram } = this.props;
+    if (prevProps.data !== data || prevProps.histogram !== histogram) {
       this.selectedSeriesIndexes = [];
       this.setState({ chartData: normalizeData(this.props) }, this.plot);
     } else if (prevProps.stacked !== stacked) {
@@ -143,7 +145,17 @@ class Graph extends PureComponent<GraphProps, GraphState> {
     }
     this.destroyPlot();
 
-    this.$chart = $.plot($(this.chartRef.current), data, getOptions(this.props.stacked, this.props.useLocalTime));
+    const options = getOptions(this.props.stacked, this.props.useLocalTime);
+    options.series.heatmap = this.props.histogram;
+
+    if (options.yaxis && this.props.histogram) {
+      options.yaxis.ticks = () => new Array(data.length + 1).fill(0).map((_el, i) => i);
+      options.yaxis.tickFormatter = (val) => `${val ? data[val - 1].labels.le : ''}`;
+      options.yaxis.min = 0;
+      options.yaxis.max = data.length;
+      options.series.lines = { show: false };
+    }
+    this.$chart = $.plot($(this.chartRef.current), data, options);
   };
 
   destroyPlot = (): void => {
@@ -251,13 +263,15 @@ class Graph extends PureComponent<GraphProps, GraphState> {
             </Button>
           </div>
         ) : null}
-        <Legend
-          shouldReset={this.selectedSeriesIndexes.length === 0}
-          chartData={chartData.series}
-          onHover={this.handleSeriesHover}
-          onLegendMouseOut={this.handleLegendMouseOut}
-          onSeriesToggle={this.handleSeriesSelect}
-        />
+        {!this.props.histogram && (
+          <Legend
+            shouldReset={this.selectedSeriesIndexes.length === 0}
+            chartData={chartData.series}
+            onHover={this.handleSeriesHover}
+            onLegendMouseOut={this.handleLegendMouseOut}
+            onSeriesToggle={this.handleSeriesSelect}
+          />
+        )}
         {/* This is to make sure the graph box expands when the selected exemplar info pops up. */}
         <br style={{ clear: 'both' }} />
       </div>

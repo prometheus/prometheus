@@ -15,6 +15,7 @@ const defaultProps = {
     endTime: 1572100217898,
     resolution: 28,
     stacked: false,
+    histogram: false,
     showExemplars: true,
   },
   onOptionsChanged: (): void => {
@@ -85,6 +86,7 @@ describe('Panel', () => {
       endTime: 1572100217898,
       resolution: 28,
       stacked: false,
+      histogram: false,
       showExemplars: true,
     };
     const graphPanel = mount(<Panel {...defaultProps} options={options} />);

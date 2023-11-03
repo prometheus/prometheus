@@ -12,6 +12,8 @@ const defaultGraphControlProps = {
   useLocalTime: false,
   resolution: 10,
   stacked: false,
+  histogram: false,
+  isHistogramData: false,
   showExemplars: false,
 
   onChangeRange: (): void => {
@@ -27,6 +29,9 @@ const defaultGraphControlProps = {
     // Do nothing.
   },
   onChangeShowExemplars: (): void => {
+    // Do nothing.
+  },
+  onToggleHistogram: (): void => {
     // Do nothing.
   },
 };
