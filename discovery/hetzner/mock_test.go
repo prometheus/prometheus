@@ -20,7 +20,7 @@ import (
 	"testing"
 )
 
-// SDMock is the interface for the Hetzner Cloud mock
+// SDMock is the interface for the Hetzner Cloud mock.
 type SDMock struct {
 	t      *testing.T
 	Server *httptest.Server
@@ -34,19 +34,19 @@ func NewSDMock(t *testing.T) *SDMock {
 	}
 }
 
-// Endpoint returns the URI to the mock server
+// Endpoint returns the URI to the mock server.
 func (m *SDMock) Endpoint() string {
 	return m.Server.URL + "/"
 }
 
-// Setup creates the mock server
+// Setup creates the mock server.
 func (m *SDMock) Setup() {
 	m.Mux = http.NewServeMux()
 	m.Server = httptest.NewServer(m.Mux)
 	m.t.Cleanup(m.Server.Close)
 }
 
-// ShutdownServer creates the mock server
+// ShutdownServer creates the mock server.
 func (m *SDMock) ShutdownServer() {
 	m.Server.Close()
 }

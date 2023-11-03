@@ -125,7 +125,7 @@ func TestIgnoreExternalLabels(t *testing.T) {
 }
 
 // baseRemoteWriteConfig copy values from global Default Write config
-// to avoid change global state and cross impact test execution
+// to avoid change global state and cross impact test execution.
 func baseRemoteWriteConfig(host string) *config.RemoteWriteConfig {
 	cfg := config.DefaultRemoteWriteConfig
 	cfg.URL = &common_config.URL{
@@ -137,7 +137,7 @@ func baseRemoteWriteConfig(host string) *config.RemoteWriteConfig {
 }
 
 // baseRemoteReadConfig copy values from global Default Read config
-// to avoid change global state and cross impact test execution
+// to avoid change global state and cross impact test execution.
 func baseRemoteReadConfig(host string) *config.RemoteReadConfig {
 	cfg := config.DefaultRemoteReadConfig
 	cfg.URL = &common_config.URL{

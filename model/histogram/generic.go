@@ -31,7 +31,7 @@ type BucketCount interface {
 // absolute counts directly). Go type parameters don't allow type
 // specialization. Therefore, where special treatment of deltas between buckets
 // vs. absolute counts is important, this information has to be provided as a
-// separate boolean parameter "deltaBuckets"
+// separate boolean parameter "deltaBuckets".
 type InternalBucketCount interface {
 	float64 | int64
 }

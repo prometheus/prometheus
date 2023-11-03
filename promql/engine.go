@@ -675,7 +675,7 @@ func durationMilliseconds(d time.Duration) int64 {
 // execEvalStmt evaluates the expression of an evaluation statement for the given time range.
 func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.EvalStmt) (parser.Value, annotations.Annotations, error) {
 	prepareSpanTimer, ctxPrepare := query.stats.GetSpanTimer(ctx, stats.QueryPreparationTime, ng.metrics.queryPrepareTime)
-	mint, maxt := ng.findMinMaxTime(s)
+	mint, maxt := FindMinMaxTime(s)
 	querier, err := query.queryable.Querier(mint, maxt)
 	if err != nil {
 		prepareSpanTimer.Finish()
@@ -817,7 +817,10 @@ func subqueryTimes(path []parser.Node) (time.Duration, time.Duration, *int64) {
 	return subqOffset, subqRange, tsp
 }
 
-func (ng *Engine) findMinMaxTime(s *parser.EvalStmt) (int64, int64) {
+// FindMinMaxTime returns the time in milliseconds of the earliest and latest point in time the statement will try to process.
+// This takes into account offsets, @ modifiers, and range selectors.
+// If the statement does not select series, then FindMinMaxTime returns (0, 0).
+func FindMinMaxTime(s *parser.EvalStmt) (int64, int64) {
 	var minTimestamp, maxTimestamp int64 = math.MaxInt64, math.MinInt64
 	// Whenever a MatrixSelector is evaluated, evalRange is set to the corresponding range.
 	// The evaluation of the VectorSelector inside then evaluates the given range and unsets
@@ -826,7 +829,7 @@ func (ng *Engine) findMinMaxTime(s *parser.EvalStmt) (int64, int64) {
 	parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
 		switch n := node.(type) {
 		case *parser.VectorSelector:
-			start, end := ng.getTimeRangesForSelector(s, n, path, evalRange)
+			start, end := getTimeRangesForSelector(s, n, path, evalRange)
 			if start < minTimestamp {
 				minTimestamp = start
 			}
@@ -849,7 +852,7 @@ func (ng *Engine) findMinMaxTime(s *parser.EvalStmt) (int64, int64) {
 	return minTimestamp, maxTimestamp
 }
 
-func (ng *Engine) getTimeRangesForSelector(s *parser.EvalStmt, n *parser.VectorSelector, path []parser.Node, evalRange time.Duration) (int64, int64) {
+func getTimeRangesForSelector(s *parser.EvalStmt, n *parser.VectorSelector, path []parser.Node, evalRange time.Duration) (int64, int64) {
 	start, end := timestamp.FromTime(s.Start), timestamp.FromTime(s.End)
 	subqOffset, subqRange, subqTs := subqueryTimes(path)
 
@@ -906,7 +909,7 @@ func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s
 	parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
 		switch n := node.(type) {
 		case *parser.VectorSelector:
-			start, end := ng.getTimeRangesForSelector(s, n, path, evalRange)
+			start, end := getTimeRangesForSelector(s, n, path, evalRange)
 			interval := ng.getLastSubqueryInterval(path)
 			if interval == 0 {
 				interval = s.Interval

@@ -754,6 +754,8 @@ func FuzzFastRegexMatcher_WithFuzzyRegularExpressions(f *testing.F) {
 // running the following command:
 //
 // logcli --addr=XXX --username=YYY --password=ZZZ query '{namespace=~"(cortex|mimir).*",name="query-frontend"} |= "query stats" |= "=~" --limit=100000 > logs.txt
+//
+// against Loki.
 func TestAnalyzeRealQueries(t *testing.T) {
 	t.Skip("Decomment this test only to manually analyze real queries")
 
@@ -1157,7 +1159,7 @@ func TestFindEqualStringMatchers(t *testing.T) {
 }
 
 // This benchmark is used to find a good threshold to use to apply the optimization
-// done by optimizeEqualStringMatchers()
+// done by optimizeEqualStringMatchers().
 func BenchmarkOptimizeEqualStringMatchers(b *testing.B) {
 	randGenerator := rand.New(rand.NewSource(time.Now().UnixNano()))
 

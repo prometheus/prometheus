@@ -20,7 +20,7 @@ import (
 	"testing"
 )
 
-// SDMock is the interface for the Vultr mock
+// SDMock is the interface for the Vultr mock.
 type SDMock struct {
 	t      *testing.T
 	Server *httptest.Server

@@ -329,7 +329,7 @@ func isCaseSensitive(reg *syntax.Regexp) bool {
 	return !isCaseInsensitive(reg)
 }
 
-// tooManyMatches guards against creating too many set matches
+// tooManyMatches guards against creating too many set matches.
 func tooManyMatches(matches []string, added ...string) bool {
 	return len(matches)+len(added) > maxSetMatches
 }
@@ -351,7 +351,7 @@ func (m *FastRegexMatcher) GetRegexString() string {
 //	`literal1|literal2|literal3|...`
 //
 // this function returns an optimized StringMatcher or nil if the regex
-// cannot be optimized in this way, and a list of setMatches up to maxSetMatches
+// cannot be optimized in this way, and a list of setMatches up to maxSetMatches.
 func optimizeAlternatingLiterals(s string) (StringMatcher, []string) {
 	if len(s) == 0 {
 		return emptyStringMatcher{}, nil

@@ -472,7 +472,7 @@ func (r *AlertingRule) Eval(ctx context.Context, evalDelay time.Duration, ts tim
 }
 
 // State returns the maximum state of alert instances for this rule.
-// StateFiring > StatePending > StateInactive
+// StateFiring > StatePending > StateInactive.
 func (r *AlertingRule) State() AlertState {
 	r.activeMtx.Lock()
 	defer r.activeMtx.Unlock()
