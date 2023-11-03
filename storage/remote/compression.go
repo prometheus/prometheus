@@ -35,6 +35,7 @@ const (
 	ZstdBestComp
 	Lzw
 	FlateFast
+	FlateDefault
 	FlateComp
 	BrotliFast
 	BrotliComp
@@ -76,6 +77,8 @@ var createComp func() Compression = func() Compression {
 		return &flateCompression{level: flate.BestSpeed}
 	case FlateComp:
 		return &flateCompression{level: flate.BestCompression}
+	case FlateDefault:
+		return &flateCompression{level: flate.DefaultCompression}
 	case BrotliFast:
 		return &brotliCompression{quality: brotli.BestSpeed}
 	case BrotliDefault:
@@ -162,7 +165,7 @@ func (s *s2Compression) Decompress(data []byte) ([]byte, error) {
 
 type zstdCompression struct {
 	level zstd.EncoderLevel
-	buf   []byte
+	buf   bytes.Buffer
 	r     *reZstd.Decoder
 	w     *reZstd.Encoder
 }
@@ -175,14 +178,18 @@ func (z *zstdCompression) Compress(data []byte) ([]byte, error) {
 			return nil, err
 		}
 	}
-	z.w.Reset(nil)
 
-	z.buf = z.buf[:0]
-	res := z.w.EncodeAll(data, z.buf)
-	if len(res) > cap(z.buf) {
-		z.buf = res
+	z.buf.Reset()
+	z.w.Reset(&z.buf)
+	_, err = z.w.Write(data)
+	if err != nil {
+		return nil, err
 	}
-	return res, nil
+	err = z.w.Close()
+	if err != nil {
+		return nil, err
+	}
+	return z.buf.Bytes(), nil
 }
 
 func (z *zstdCompression) Decompress(data []byte) ([]byte, error) {
@@ -193,20 +200,17 @@ func (z *zstdCompression) Decompress(data []byte) ([]byte, error) {
 			return nil, err
 		}
 	}
-	err = z.r.Reset(nil)
-	if err != nil {
-		return nil, err
-	}
 
-	z.buf = z.buf[:0]
-	buf, err := z.r.DecodeAll(data, z.buf)
+	err = z.r.Reset(bytes.NewReader(data))
 	if err != nil {
 		return nil, err
 	}
-	if len(buf) > cap(z.buf) {
-		z.buf = buf
+	z.buf.Reset()
+	_, err = io.Copy(&z.buf, z.r)
+	if err != nil {
+		return nil, err
 	}
-	return buf, nil
+	return z.buf.Bytes(), nil
 }
 
 type lzwCompression struct {
