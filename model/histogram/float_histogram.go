@@ -17,6 +17,8 @@ import (
 	"fmt"
 	"math"
 	"strings"
+
+	"github.com/pkg/errors"
 )
 
 // FloatHistogram is similar to Histogram but uses float64 for all
@@ -591,6 +593,31 @@ func (h *FloatHistogram) AllReverseBucketIterator() BucketIterator[float64] {
 		rightIter: h.floatBucketIterator(false, 0, h.Schema),
 		state:     -1,
 	}
+}
+
+// Validate validates consistency between span and bucket slices. Also, buckets are checked
+// against negative values.
+// We do not check for h.Count being at least as large as the sum of the
+// counts in the buckets because floating point precision issues can
+// create false positives here.
+func (h *FloatHistogram) Validate() error {
+	if err := checkHistogramSpans(h.NegativeSpans, len(h.NegativeBuckets)); err != nil {
+		return errors.Wrap(err, "negative side")
+	}
+	if err := checkHistogramSpans(h.PositiveSpans, len(h.PositiveBuckets)); err != nil {
+		return errors.Wrap(err, "positive side")
+	}
+	var nCount, pCount float64
+	err := checkHistogramBuckets(h.NegativeBuckets, &nCount, false)
+	if err != nil {
+		return errors.Wrap(err, "negative side")
+	}
+	err = checkHistogramBuckets(h.PositiveBuckets, &pCount, false)
+	if err != nil {
+		return errors.Wrap(err, "positive side")
+	}
+
+	return nil
 }
 
 // zeroCountForLargerThreshold returns what the histogram's zero count would be

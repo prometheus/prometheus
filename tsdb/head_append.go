@@ -521,13 +521,13 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 	}
 
 	if h != nil {
-		if err := histogram.ValidateHistogram(h); err != nil {
+		if err := h.Validate(); err != nil {
 			return 0, err
 		}
 	}
 
 	if fh != nil {
-		if err := histogram.ValidateFloatHistogram(fh); err != nil {
+		if err := fh.Validate(); err != nil {
 			return 0, err
 		}
 	}

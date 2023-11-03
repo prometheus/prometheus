@@ -17,6 +17,16 @@ import (
 	"fmt"
 	"math"
 	"strings"
+
+	"github.com/pkg/errors"
+)
+
+var (
+	ErrHistogramCountNotBigEnough    = errors.New("histogram's observation count should be at least the number of observations found in the buckets")
+	ErrHistogramCountMismatch        = errors.New("histogram's observation count should equal the number of observations found in the buckets (in absence of NaN)")
+	ErrHistogramNegativeBucketCount  = errors.New("histogram has a bucket whose observation count is negative")
+	ErrHistogramSpanNegativeOffset   = errors.New("histogram has a span whose offset is negative")
+	ErrHistogramSpansBucketsMismatch = errors.New("histogram spans specify different number of buckets than provided")
 )
 
 // BucketCount is a type constraint for the count in a bucket, which can be
@@ -345,6 +355,52 @@ func compactBuckets[IBC InternalBucketCount](buckets []IBC, spans []Span, maxEmp
 	}
 
 	return buckets, spans
+}
+
+func checkHistogramSpans(spans []Span, numBuckets int) error {
+	var spanBuckets int
+	for n, span := range spans {
+		if n > 0 && span.Offset < 0 {
+			return errors.Wrap(
+				ErrHistogramSpanNegativeOffset,
+				fmt.Sprintf("span number %d with offset %d", n+1, span.Offset),
+			)
+		}
+		spanBuckets += int(span.Length)
+	}
+	if spanBuckets != numBuckets {
+		return errors.Wrap(
+			ErrHistogramSpansBucketsMismatch,
+			fmt.Sprintf("spans need %d buckets, have %d buckets", spanBuckets, numBuckets),
+		)
+	}
+	return nil
+}
+
+func checkHistogramBuckets[BC BucketCount, IBC InternalBucketCount](buckets []IBC, count *BC, deltas bool) error {
+	if len(buckets) == 0 {
+		return nil
+	}
+
+	var last IBC
+	for i := 0; i < len(buckets); i++ {
+		var c IBC
+		if deltas {
+			c = last + buckets[i]
+		} else {
+			c = buckets[i]
+		}
+		if c < 0 {
+			return errors.Wrap(
+				ErrHistogramNegativeBucketCount,
+				fmt.Sprintf("bucket number %d has observation count of %v", i+1, c),
+			)
+		}
+		last = c
+		*count += BC(c)
+	}
+
+	return nil
 }
 
 func getBound(idx, schema int32) float64 {
