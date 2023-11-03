@@ -1788,7 +1788,7 @@ func (dec *Decoder) Postings(b []byte) (int, Postings, error) {
 	if len(l) != 4*n {
 		return 0, nil, fmt.Errorf("unexpected postings length, should be %d bytes for %d postings, got %d bytes", 4*n, n, len(l))
 	}
-	return n, newBigEndianPostings(l), nil
+	return n, newBigEndianPostings(l, n), nil
 }
 
 // LabelNamesOffsetsFor decodes the offsets of the name symbols for a given series.

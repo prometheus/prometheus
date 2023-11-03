@@ -418,6 +418,11 @@ type Postings interface {
 
 	// Err returns the last error of the iterator.
 	Err() error
+
+	// MaxLen returns the maximum possible length of this postings list.
+	// It will be used to calculate faster intersections.
+	// If unknown then please return 0.
+	MaxLen() uint64
 }
 
 // errPostings is an empty iterator that always errors.
@@ -429,6 +434,7 @@ func (e errPostings) Next() bool                  { return false }
 func (e errPostings) Seek(storage.SeriesRef) bool { return false }
 func (e errPostings) At() storage.SeriesRef       { return 0 }
 func (e errPostings) Err() error                  { return e.err }
+func (e errPostings) MaxLen() uint64              { return 0 }
 
 var emptyPostings = errPostings{}
 
@@ -470,12 +476,25 @@ func Intersect(its ...Postings) Postings {
 }
 
 type intersectPostings struct {
-	arr []Postings
-	cur storage.SeriesRef
+	arr    []Postings
+	cur    storage.SeriesRef
+	maxLen uint64
 }
 
 func newIntersectPostings(its ...Postings) *intersectPostings {
-	return &intersectPostings{arr: its}
+	var maxLen uint64 = 0
+
+	for _, p := range its {
+		if p.MaxLen() > maxLen {
+			maxLen = p.MaxLen()
+		}
+	}
+
+	return &intersectPostings{arr: its, maxLen: maxLen}
+}
+
+func (it *intersectPostings) MaxLen() uint64 {
+	return it.maxLen
 }
 
 func (it *intersectPostings) At() storage.SeriesRef {
@@ -563,6 +582,7 @@ type mergedPostings struct {
 	initialized bool
 	cur         storage.SeriesRef
 	err         error
+	maxLen      uint64
 }
 
 func newMergedPostings(ctx context.Context, p []Postings) (m *mergedPostings, nonEmpty bool) {
@@ -583,7 +603,17 @@ func newMergedPostings(ctx context.Context, p []Postings) (m *mergedPostings, no
 	if len(ph) == 0 {
 		return nil, false
 	}
-	return &mergedPostings{h: ph}, true
+
+	// In the worst case, all postings are unique.
+	var maxLen uint64
+	for _, it := range p {
+		maxLen += it.MaxLen()
+	}
+	return &mergedPostings{h: ph, maxLen: maxLen}, true
+}
+
+func (it *mergedPostings) MaxLen() uint64 {
+	return it.maxLen
 }
 
 func (it *mergedPostings) Next() bool {
@@ -689,6 +719,10 @@ func newRemovedPostings(full, remove Postings) *removedPostings {
 	}
 }
 
+func (rp *removedPostings) MaxLen() uint64 {
+	return rp.full.MaxLen()
+}
+
 func (rp *removedPostings) At() storage.SeriesRef {
 	return rp.cur
 }
@@ -747,8 +781,9 @@ func (rp *removedPostings) Err() error {
 
 // ListPostings implements the Postings interface over a plain list.
 type ListPostings struct {
-	list []storage.SeriesRef
-	cur  storage.SeriesRef
+	list   []storage.SeriesRef
+	cur    storage.SeriesRef
+	maxLen uint64
 }
 
 func NewListPostings(list []storage.SeriesRef) Postings {
@@ -756,11 +791,15 @@ func NewListPostings(list []storage.SeriesRef) Postings {
 }
 
 func newListPostings(list ...storage.SeriesRef) *ListPostings {
-	return &ListPostings{list: list}
+	return &ListPostings{list: list, maxLen: uint64(len(list))}
 }
 
 func (it *ListPostings) At() storage.SeriesRef {
 	return it.cur
+}
+
+func (it *ListPostings) MaxLen() uint64 {
+	return it.maxLen
 }
 
 func (it *ListPostings) Next() bool {
@@ -802,16 +841,21 @@ func (it *ListPostings) Err() error {
 // bigEndianPostings implements the Postings interface over a byte stream of
 // big endian numbers.
 type bigEndianPostings struct {
-	list []byte
-	cur  uint32
+	list   []byte
+	cur    uint32
+	maxLen uint64
 }
 
-func newBigEndianPostings(list []byte) *bigEndianPostings {
-	return &bigEndianPostings{list: list}
+func newBigEndianPostings(list []byte, n int) *bigEndianPostings {
+	return &bigEndianPostings{list: list, maxLen: uint64(n)}
 }
 
 func (it *bigEndianPostings) At() storage.SeriesRef {
 	return storage.SeriesRef(it.cur)
+}
+
+func (it *bigEndianPostings) MaxLen() uint64 {
+	return it.maxLen
 }
 
 func (it *bigEndianPostings) Next() bool {
