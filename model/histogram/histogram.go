@@ -18,6 +18,7 @@ import (
 	"math"
 	"strings"
 
+	"github.com/pkg/errors"
 	"golang.org/x/exp/slices"
 )
 
@@ -326,6 +327,50 @@ func (h *Histogram) ToFloat() *FloatHistogram {
 		PositiveBuckets:  positiveBuckets,
 		NegativeBuckets:  negativeBuckets,
 	}
+}
+
+// Validate validates consistency between span and bucket slices. Also, buckets are checked
+// against negative values.
+// For histograms that have not observed any NaN values (based on IsNaN(h.Sum) check), a
+// strict h.Count = nCount + pCount + h.ZeroCount check is performed.
+// Otherwise, only a lower bound check will be done (h.Count >= nCount + pCount + h.ZeroCount),
+// because NaN observations do not increment the values of buckets (but they do increment
+// the total h.Count).
+func (h *Histogram) Validate() error {
+	if err := checkHistogramSpans(h.NegativeSpans, len(h.NegativeBuckets)); err != nil {
+		return errors.Wrap(err, "negative side")
+	}
+	if err := checkHistogramSpans(h.PositiveSpans, len(h.PositiveBuckets)); err != nil {
+		return errors.Wrap(err, "positive side")
+	}
+	var nCount, pCount uint64
+	err := checkHistogramBuckets(h.NegativeBuckets, &nCount, true)
+	if err != nil {
+		return errors.Wrap(err, "negative side")
+	}
+	err = checkHistogramBuckets(h.PositiveBuckets, &pCount, true)
+	if err != nil {
+		return errors.Wrap(err, "positive side")
+	}
+
+	sumOfBuckets := nCount + pCount + h.ZeroCount
+	if math.IsNaN(h.Sum) {
+		if sumOfBuckets > h.Count {
+			return errors.Wrap(
+				ErrHistogramCountNotBigEnough,
+				fmt.Sprintf("%d observations found in buckets, but the Count field is %d", sumOfBuckets, h.Count),
+			)
+		}
+	} else {
+		if sumOfBuckets != h.Count {
+			return errors.Wrap(
+				ErrHistogramCountMismatch,
+				fmt.Sprintf("%d observations found in buckets, but the Count field is %d", sumOfBuckets, h.Count),
+			)
+		}
+	}
+
+	return nil
 }
 
 type regularBucketIterator struct {

@@ -508,7 +508,7 @@ func TestAmendHistogramDatapointCausesError(t *testing.T) {
 
 	h := histogram.Histogram{
 		Schema:        3,
-		Count:         61,
+		Count:         52,
 		Sum:           2.7,
 		ZeroThreshold: 0.1,
 		ZeroCount:     42,
@@ -6314,6 +6314,7 @@ func testHistogramAppendAndQueryHelper(t *testing.T, floatHistogram bool) {
 		t.Run("buckets disappearing", func(t *testing.T) {
 			h.PositiveSpans[1].Length--
 			h.PositiveBuckets = h.PositiveBuckets[:len(h.PositiveBuckets)-1]
+			h.Count -= 3
 			appendHistogram(series1, 110, h, &exp1, histogram.CounterReset)
 			testQuery("foo", "bar1", map[string][]chunks.Sample{series1.String(): exp1})
 		})
@@ -6533,7 +6534,7 @@ func TestNativeHistogramFlag(t *testing.T) {
 		require.NoError(t, db.Close())
 	})
 	h := &histogram.Histogram{
-		Count:         10,
+		Count:         9,
 		ZeroCount:     4,
 		ZeroThreshold: 0.001,
 		Sum:           35.5,
