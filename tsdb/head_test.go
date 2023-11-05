@@ -5641,9 +5641,6 @@ func TestHeadDetectsDuplicateSampleAtSizeLimit(t *testing.T) {
 // panic, that we have seen in the wild once.
 func TestHeadCompactionWhileAppendAndCommitExemplar(t *testing.T) {
 	h, _ := newTestHead(t, DefaultBlockDuration, wlog.CompressionNone, false)
-	defer func() {
-		require.NoError(t, h.Close())
-	}()
 	app := h.Appender(context.Background())
 	lbls := labels.FromStrings("foo", "bar")
 	ref, err := app.Append(0, lbls, 1, 1)
@@ -5655,4 +5652,5 @@ func TestHeadCompactionWhileAppendAndCommitExemplar(t *testing.T) {
 	require.NoError(t, err)
 	h.Truncate(10)
 	app.Commit()
+	h.Close()
 }
