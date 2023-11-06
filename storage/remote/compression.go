@@ -164,10 +164,11 @@ func (s *s2Compression) Decompress(data []byte) ([]byte, error) {
 }
 
 type zstdCompression struct {
-	level zstd.EncoderLevel
-	buf   bytes.Buffer
-	r     *reZstd.Decoder
-	w     *reZstd.Encoder
+	level  zstd.EncoderLevel
+	buf    bytes.Buffer
+	rawBuf []byte
+	r      *reZstd.Decoder
+	w      *reZstd.Encoder
 }
 
 func (z *zstdCompression) Compress(data []byte) ([]byte, error) {
@@ -178,7 +179,8 @@ func (z *zstdCompression) Compress(data []byte) ([]byte, error) {
 			return nil, err
 		}
 	}
-
+	// NOTE: from my observations EncodeAll takes a bit less CPU but considerably more memory.
+	// Taking this decision deliberately.
 	z.buf.Reset()
 	z.w.Reset(&z.buf)
 	_, err = z.w.Write(data)
@@ -200,17 +202,20 @@ func (z *zstdCompression) Decompress(data []byte) ([]byte, error) {
 			return nil, err
 		}
 	}
-
-	err = z.r.Reset(bytes.NewReader(data))
-	if err != nil {
-		return nil, err
-	}
-	z.buf.Reset()
-	_, err = io.Copy(&z.buf, z.r)
-	if err != nil {
-		return nil, err
-	}
-	return z.buf.Bytes(), nil
+	// NOTE: interestingly, I'm seeing much better memory usage using DecodeAll, for the same CPU
+	z.rawBuf = z.rawBuf[:0]
+	z.rawBuf, err = z.r.DecodeAll(data, z.rawBuf)
+	return z.rawBuf, err
+	// err = z.r.Reset(bytes.NewReader(data))
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// z.buf.Reset()
+	// _, err = io.Copy(&z.buf, z.r)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// return z.buf.Bytes(), nil
 }
 
 type lzwCompression struct {
