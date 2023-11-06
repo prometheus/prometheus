@@ -2,11 +2,11 @@ package remote
 
 import (
 	"bytes"
-	"compress/flate"
 	"compress/lzw"
 	"io"
 	"sync"
 
+	"github.com/klauspost/compress/flate"
 	reS2 "github.com/klauspost/compress/s2"
 	reSnappy "github.com/klauspost/compress/snappy"
 	"github.com/klauspost/compress/zstd"
