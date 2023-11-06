@@ -167,6 +167,25 @@ message ReducedTimeSeries {
   MetricMetadataRef metadata = 5 [(gogoproto.nullable) = false];
 }
 
+// based on an experiment by marco
+message MinimizedTimeSeries {
+  // Sorted list of label name-value pair references. This list is always even. At even indices
+  // there's the reference to label name, while at odd indices there's the reference to label value.
+  repeated uint32 label_symbols = 1 [(gogoproto.nullable) = false];
+
+  // Sorted by time, oldest sample first.
+  // TODO: support references for other types
+  repeated Sample samples = 2 [(gogoproto.nullable) = false];
+  repeated Exemplar exemplars = 3 [(gogoproto.nullable) = false];
+  repeated Histogram histograms = 4 [(gogoproto.nullable) = false];
+}
+
+// can be used for label name or label value
+message MinimizedLabelSymbol {
+  uint32 offset = 1;
+  uint32 length = 2;
+}
+
 message LabelRef {
   uint64 name_ref = 1;
   uint64 value_ref = 2;
