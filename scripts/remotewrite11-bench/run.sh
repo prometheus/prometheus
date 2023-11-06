@@ -25,6 +25,8 @@ done
 : "${CONTEXT:?}"
 : "${NAMESPACE:?}"
 
+BASE_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+
 TEMP_DIR=$(mktemp -d)
 echo "Working on dir: $TEMP_DIR"
 SCRAPE_CONFIGS=""
@@ -74,8 +76,8 @@ do
   export RECEIVER_NAME="${arr[2]}"
   export REMOTE_WRITE_PORT="${arr[5]}"
   export SCRAPE_CONFIGS="$SCRAPE_CONFIGS"
-  envsubst < receiver-template.yml > $TEMP_DIR/$RECEIVER_NAME.yml
-  envsubst < sender-template.yml > $TEMP_DIR/$SENDER_NAME.yml
+  envsubst < "$BASE_DIR/receiver-template.yml" > "$TEMP_DIR/$RECEIVER_NAME.yml"
+  envsubst < "$BASE_DIR/sender-template.yml" > "$TEMP_DIR/$SENDER_NAME.yml"
 done
 
 # Actually run all commands
