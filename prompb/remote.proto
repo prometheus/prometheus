@@ -38,6 +38,17 @@ message WriteRequestWithRefs {
   // Symbol table for label names/values.
   map<uint64, string> string_symbol_table = 4 [(gogoproto.nullable) = false];
 }
+message MinimizedWriteRequest {
+  repeated MinimizedTimeSeries timeseries = 1 [(gogoproto.nullable) = false];
+  // Cortex uses this field to determine the source of the write request.
+  // We reserve it to avoid any compatibility issues.
+  reserved  2;
+  // Metadata (3) has moved to be part of the TimeSeries type
+  reserved  3;
+  // The symbols table. All symbols are concatenated strings. To read the symbols table, it's required
+  // to know the offset:length range of the actual symbol to read from this string.
+  string symbols = 4;
+}
 
 // ReadRequest represents a remote read request.
 message ReadRequest {
