@@ -145,7 +145,7 @@ func TestAzureAdConfig(t *testing.T) {
 		// Missing managedidentiy or oauth field.
 		{
 			filename: "testdata/azuread_bad_configmissing.yaml",
-			err:      "must provide an Azure Managed Identity or Azure OAuth in the Azure AD config",
+			err:      "must provide an Azure Managed Identity, Azure OAuth or Azure SDK in the Azure AD config",
 		},
 		// Invalid managedidentity client id.
 		{
@@ -162,6 +162,11 @@ func TestAzureAdConfig(t *testing.T) {
 			filename: "testdata/azuread_bad_twoconfig.yaml",
 			err:      "cannot provide both Azure Managed Identity and Azure OAuth in the Azure AD config",
 		},
+		// Invalid config when both sdk and oauth is provided.
+		{
+			filename: "testdata/azuread_bad_oauthsdkconfig.yaml",
+			err:      "cannot provide both Azure OAuth and Azure SDK in the Azure AD config",
+		},
 		// Valid config with missing  optionally cloud field.
 		{
 			filename: "testdata/azuread_good_cloudmissing.yaml",
@@ -173,6 +178,10 @@ func TestAzureAdConfig(t *testing.T) {
 		// Valid Oauth config.
 		{
 			filename: "testdata/azuread_good_oauth.yaml",
+		},
+		// Valid SDK config.
+		{
+			filename: "testdata/azuread_good_sdk.yaml",
 		},
 	}
 	for _, c := range cases {
