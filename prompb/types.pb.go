@@ -992,7 +992,7 @@ func (m *ReducedTimeSeries) GetMetadata() MetricMetadataRef {
 type MinimizedTimeSeries struct {
 	// Sorted list of label name-value pair references. This list is always even. At even indices
 	// there's the reference to label name, while at odd indices there's the reference to label value.
-	LabelSymbols []uint32 `protobuf:"varint,1,rep,packed,name=label_symbols,json=labelSymbols,proto3" json:"label_symbols,omitempty"`
+	LabelSymbols []uint32 `protobuf:"fixed32,1,rep,packed,name=label_symbols,json=labelSymbols,proto3" json:"label_symbols,omitempty"`
 	// Sorted by time, oldest sample first.
 	// TODO: support references for other types
 	Samples              []Sample    `protobuf:"bytes,2,rep,name=samples,proto3" json:"samples"`
@@ -1653,7 +1653,7 @@ var fileDescriptor_d938547f84707355 = []byte{
 	0x7d, 0xe5, 0x55, 0x49, 0x67, 0xd1, 0xde, 0x52, 0xde, 0xe4, 0x0b, 0x30, 0xbc, 0xe4, 0x95, 0xc3,
 	0x71, 0x53, 0xde, 0xbd, 0xfe, 0xb7, 0xef, 0x60, 0xe2, 0x62, 0x69, 0x64, 0xff, 0xa9, 0xc0, 0xc5,
 	0xb6, 0xeb, 0xbb, 0x9e, 0xfb, 0x7c, 0xa5, 0x74, 0x1f, 0x42, 0x15, 0x0b, 0x32, 0xe0, 0x0b, 0xef,
-	0x34, 0x48, 0x2a, 0x58, 0x4d, 0xcc, 0x2b, 0x28, 0xea, 0xc5, 0x92, 0xff, 0x53, 0x9b, 0x1c, 0xc2,
+	0x34, 0x48, 0x2a, 0x58, 0x4a, 0xcc, 0x2b, 0x28, 0xea, 0xc5, 0x92, 0xff, 0x53, 0x9b, 0x1c, 0xc2,
 	0xd6, 0x32, 0xd9, 0xe3, 0x2c, 0x87, 0x33, 0x37, 0xab, 0xfa, 0x8f, 0x37, 0x6b, 0x1f, 0x8c, 0xb4,
 	0x7d, 0xe4, 0xb6, 0x20, 0xf7, 0x2b, 0xdc, 0x16, 0xf0, 0x89, 0xa1, 0x25, 0x49, 0x4b, 0xd1, 0x3b,
 	0x60, 0xe2, 0x9b, 0x85, 0x32, 0x15, 0x65, 0x06, 0x32, 0xe4, 0x2a, 0x71, 0x1b, 0x8a, 0xe8, 0x43,
@@ -1677,7 +1677,7 @@ var fileDescriptor_d938547f84707355 = []byte{
 	0x52, 0xfb, 0x5b, 0xa8, 0x62, 0x44, 0x36, 0x3a, 0xef, 0x6b, 0x71, 0x0b, 0xf4, 0xa1, 0xf4, 0x90,
 	0x4e, 0x81, 0xcd, 0xb5, 0x6c, 0x52, 0x83, 0x58, 0x6d, 0x7f, 0xeb, 0xc5, 0xcb, 0x6d, 0xe5, 0x97,
 	0x97, 0xdb, 0xca, 0xef, 0x2f, 0xb7, 0x95, 0x6f, 0x74, 0xa9, 0x1d, 0x9e, 0x9e, 0xea, 0xf8, 0x47,
-	0xf4, 0xc9, 0x5f, 0x01, 0x00, 0x00, 0xff, 0xff, 0x5b, 0xdd, 0xa9, 0xb8, 0x42, 0x0d, 0x00, 0x00,
+	0xf4, 0xc9, 0x5f, 0x01, 0x00, 0x00, 0xff, 0xff, 0xda, 0x92, 0xb9, 0x7b, 0x42, 0x0d, 0x00, 0x00,
 }
 
 func (m *MetricMetadata) Marshal() (dAtA []byte, err error) {
@@ -2405,20 +2405,11 @@ func (m *MinimizedTimeSeries) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		}
 	}
 	if len(m.LabelSymbols) > 0 {
-		dAtA11 := make([]byte, len(m.LabelSymbols)*10)
-		var j10 int
-		for _, num := range m.LabelSymbols {
-			for num >= 1<<7 {
-				dAtA11[j10] = uint8(uint64(num)&0x7f | 0x80)
-				num >>= 7
-				j10++
-			}
-			dAtA11[j10] = uint8(num)
-			j10++
+		for iNdEx := len(m.LabelSymbols) - 1; iNdEx >= 0; iNdEx-- {
+			i -= 4
+			encoding_binary.LittleEndian.PutUint32(dAtA[i:], uint32(m.LabelSymbols[iNdEx]))
 		}
-		i -= j10
-		copy(dAtA[i:], dAtA11[:j10])
-		i = encodeVarintTypes(dAtA, i, uint64(j10))
+		i = encodeVarintTypes(dAtA, i, uint64(len(m.LabelSymbols)*4))
 		i--
 		dAtA[i] = 0xa
 	}
@@ -3129,11 +3120,7 @@ func (m *MinimizedTimeSeries) Size() (n int) {
 	var l int
 	_ = l
 	if len(m.LabelSymbols) > 0 {
-		l = 0
-		for _, e := range m.LabelSymbols {
-			l += sovTypes(uint64(e))
-		}
-		n += 1 + sovTypes(uint64(l)) + l
+		n += 1 + sovTypes(uint64(len(m.LabelSymbols)*4)) + len(m.LabelSymbols)*4
 	}
 	if len(m.Samples) > 0 {
 		for _, e := range m.Samples {
@@ -4987,22 +4974,13 @@ func (m *MinimizedTimeSeries) Unmarshal(dAtA []byte) error {
 		}
 		switch fieldNum {
 		case 1:
-			if wireType == 0 {
+			if wireType == 5 {
 				var v uint32
-				for shift := uint(0); ; shift += 7 {
-					if shift >= 64 {
-						return ErrIntOverflowTypes
-					}
-					if iNdEx >= l {
-						return io.ErrUnexpectedEOF
-					}
-					b := dAtA[iNdEx]
-					iNdEx++
-					v |= uint32(b&0x7F) << shift
-					if b < 0x80 {
-						break
-					}
+				if (iNdEx + 4) > l {
+					return io.ErrUnexpectedEOF
 				}
+				v = uint32(encoding_binary.LittleEndian.Uint32(dAtA[iNdEx:]))
+				iNdEx += 4
 				m.LabelSymbols = append(m.LabelSymbols, v)
 			} else if wireType == 2 {
 				var packedLen int
@@ -5031,32 +5009,17 @@ func (m *MinimizedTimeSeries) Unmarshal(dAtA []byte) error {
 					return io.ErrUnexpectedEOF
 				}
 				var elementCount int
-				var count int
-				for _, integer := range dAtA[iNdEx:postIndex] {
-					if integer < 128 {
-						count++
-					}
-				}
-				elementCount = count
+				elementCount = packedLen / 4
 				if elementCount != 0 && len(m.LabelSymbols) == 0 {
 					m.LabelSymbols = make([]uint32, 0, elementCount)
 				}
 				for iNdEx < postIndex {
 					var v uint32
-					for shift := uint(0); ; shift += 7 {
-						if shift >= 64 {
-							return ErrIntOverflowTypes
-						}
-						if iNdEx >= l {
-							return io.ErrUnexpectedEOF
-						}
-						b := dAtA[iNdEx]
-						iNdEx++
-						v |= uint32(b&0x7F) << shift
-						if b < 0x80 {
-							break
-						}
+					if (iNdEx + 4) > l {
+						return io.ErrUnexpectedEOF
 					}
+					v = uint32(encoding_binary.LittleEndian.Uint32(dAtA[iNdEx:]))
+					iNdEx += 4
 					m.LabelSymbols = append(m.LabelSymbols, v)
 				}
 			} else {
