@@ -3567,6 +3567,11 @@ azuread:
       [ client_secret: <string> ]
       [ tenant_id: <string> ] ]
 
+  # Azure SDK auth.
+  # See https://learn.microsoft.com/en-us/azure/developer/go/azure-sdk-authentication
+  [ sdk:
+      [ tenant_id: <string> ] ]
+
 # Configures the remote write request's TLS settings.
 tls_config:
   [ <tls_config> ]

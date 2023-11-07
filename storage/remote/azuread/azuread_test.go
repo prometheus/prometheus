@@ -232,6 +232,16 @@ func (s *TokenProviderTestSuite) TestNewTokenProvider() {
 			},
 			err: "Cloud is not specified or is incorrect: ",
 		},
+		// Invalid tokenProvider for SDK.
+		{
+			cfg: &AzureADConfig{
+				Cloud: "PublicAzure",
+				SDK: &SDKConfig{
+					TenantID: dummyTenantID,
+				},
+			},
+			err: "Cloud is not specified or is incorrect: ",
+		},
 		// Valid tokenProvider for managedidentity.
 		{
 			cfg: &AzureADConfig{
@@ -249,6 +259,15 @@ func (s *TokenProviderTestSuite) TestNewTokenProvider() {
 					ClientID:     dummyClientID,
 					ClientSecret: dummyClientSecret,
 					TenantID:     dummyTenantID,
+				},
+			},
+		},
+		// Valid tokenProvider for SDK.
+		{
+			cfg: &AzureADConfig{
+				Cloud: "AzurePublic",
+				SDK: &SDKConfig{
+					TenantID: dummyTenantID,
 				},
 			},
 		},
