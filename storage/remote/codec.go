@@ -981,7 +981,7 @@ func DecodeMinimizedWriteRequest(r io.Reader) (*prompb.MinimizedWriteRequest, er
 func ReducedWriteRequestToWriteRequest(redReq *prompb.WriteRequestWithRefs) (*prompb.WriteRequest, error) {
 	req := &prompb.WriteRequest{
 		Timeseries: make([]prompb.TimeSeries, len(redReq.Timeseries)),
-		Metadata:   redReq.Metadata,
+		//Metadata:   redReq.Metadata,
 	}
 
 	for i, rts := range redReq.Timeseries {
