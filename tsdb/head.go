@@ -1537,15 +1537,15 @@ func (h *Head) NumSeries() uint64 {
 	return h.numSeries.Load()
 }
 
+var headULID = ulid.MustParse("0000000000XXXXXXXXXXXXHEAD")
+
 // Meta returns meta information about the head.
 // The head is dynamic so will return dynamic results.
 func (h *Head) Meta() BlockMeta {
-	var id [16]byte
-	copy(id[:], "______head______")
 	return BlockMeta{
 		MinTime: h.MinTime(),
 		MaxTime: h.MaxTime(),
-		ULID:    ulid.ULID(id),
+		ULID:    headULID,
 		Stats: BlockStats{
 			NumSeries: h.NumSeries(),
 		},
