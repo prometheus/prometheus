@@ -817,6 +817,40 @@ func labelsToLabelRefsProto(lbls labels.Labels, pool *lookupPool, buf []prompb.L
 	return result
 }
 
+func labelsToUint32Slice(lbls labels.Labels, symbolTable *rwSymbolTable, buf []uint32) []uint32 {
+	result := buf[:0]
+	// ensure slice capacity
+	if cap(result)-len(result) < len(lbls)*2 {
+		result = append(make([]uint32, 0, len(lbls)*2), result...)
+	}
+
+	lbls.Range(func(l labels.Label) {
+		result = append(result, symbolTable.Ref(l.Name))
+		result = append(result, symbolTable.Ref(l.Value))
+	})
+	return result
+}
+
+func Uint32RefToLabels(symbols string, minLabels []uint32) labels.Labels {
+	ls := make(labels.Labels, 0, len(minLabels)/2)
+
+	labelIdx := 0
+	for labelIdx < len(minLabels) {
+		// todo, check for overflow?
+		offset, length := unpackRef(minLabels[labelIdx])
+
+		name := symbols[offset : offset+length]
+		// todo, check for overflow?
+		offset, length = unpackRef(minLabels[labelIdx+1])
+
+		value := symbols[offset : offset+length]
+		ls = append(ls, labels.Label{Name: name, Value: value})
+		labelIdx += 2
+	}
+
+	return ls
+}
+
 // metricTypeToMetricTypeProto transforms a Prometheus metricType into prompb metricType. Since the former is a string we need to transform it to an enum.
 func metricTypeToMetricTypeProto(t textparse.MetricType) prompb.MetricMetadata_MetricType {
 	mt := strings.ToUpper(string(t))
@@ -956,4 +990,13 @@ func ReducedWriteRequestToWriteRequest(redReq *prompb.WriteRequestWithRefs) (*pr
 
 	}
 	return req, nil
+}
+
+// for use with minimized remote write proto format
+func packRef(offset, length int) uint32 {
+	return uint32((offset&0xFFFFF)<<12 | (length & 0xFFF))
+}
+
+func unpackRef(ref uint32) (offset, length int) {
+	return int(ref>>12) & 0xFFFFF, int(ref & 0xFFF)
 }
