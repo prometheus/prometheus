@@ -171,7 +171,7 @@ message ReducedTimeSeries {
 message MinimizedTimeSeries {
   // Sorted list of label name-value pair references. This list is always even. At even indices
   // there's the reference to label name, while at odd indices there's the reference to label value.
-  repeated uint32 label_symbols = 1 [(gogoproto.nullable) = false];
+  repeated fixed32 label_symbols = 1 [(gogoproto.nullable) = false];
 
   // Sorted by time, oldest sample first.
   // TODO: support references for other types
