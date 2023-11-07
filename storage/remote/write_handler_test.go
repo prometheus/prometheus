@@ -45,7 +45,7 @@ func TestRemoteWriteHandler(t *testing.T) {
 	require.NoError(t, err)
 
 	appendable := &mockAppendable{}
-	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, false)
+	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, false, false)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -96,7 +96,7 @@ func TestOutOfOrderSample(t *testing.T) {
 	appendable := &mockAppendable{
 		latestSample: 100,
 	}
-	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, false)
+	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, false, false)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -121,7 +121,7 @@ func TestOutOfOrderExemplar(t *testing.T) {
 	appendable := &mockAppendable{
 		latestExemplar: 100,
 	}
-	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, false)
+	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, false, false)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -145,7 +145,7 @@ func TestOutOfOrderHistogram(t *testing.T) {
 		latestHistogram: 100,
 	}
 
-	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, false)
+	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, false, false)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -173,7 +173,7 @@ func BenchmarkRemoteWritehandler(b *testing.B) {
 	}
 
 	appendable := &mockAppendable{}
-	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, false)
+	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, false, false)
 	recorder := httptest.NewRecorder()
 
 	b.ResetTimer()
@@ -204,7 +204,7 @@ func BenchmarkReducedRemoteWriteHandler(b *testing.B) {
 	}
 
 	appendable := &mockAppendable{}
-	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, true)
+	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, true, false)
 	recorder := httptest.NewRecorder()
 
 	b.ResetTimer()
@@ -223,7 +223,7 @@ func TestCommitErr(t *testing.T) {
 	appendable := &mockAppendable{
 		commitErr: fmt.Errorf("commit error"),
 	}
-	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, false)
+	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, false, false)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -249,7 +249,7 @@ func BenchmarkRemoteWriteOOOSamples(b *testing.B) {
 		require.NoError(b, db.Close())
 	})
 
-	handler := NewWriteHandler(log.NewNopLogger(), nil, db.Head(), false)
+	handler := NewWriteHandler(log.NewNopLogger(), nil, db.Head(), false, false)
 
 	buf, _, err := buildWriteRequest(genSeriesWithSample(1000, 200*time.Minute.Milliseconds()), nil, nil, nil)
 	require.NoError(b, err)
@@ -303,7 +303,7 @@ func TestRemoteWriteHandlerReducedProtocol(t *testing.T) {
 	require.NoError(t, err)
 
 	appendable := &mockAppendable{}
-	handler := NewWriteHandler(nil, nil, appendable, true)
+	handler := NewWriteHandler(nil, nil, appendable, true, false)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)

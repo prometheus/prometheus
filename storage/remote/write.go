@@ -60,40 +60,42 @@ type WriteStorage struct {
 	reg    prometheus.Registerer
 	mtx    sync.Mutex
 
-	watcherMetrics    *wlog.WatcherMetrics
-	liveReaderMetrics *wlog.LiveReaderMetrics
-	externalLabels    labels.Labels
-	dir               string
-	queues            map[string]*QueueManager
-	remoteWrite11     bool
-	samplesIn         *ewmaRate
-	flushDeadline     time.Duration
-	interner          *pool
-	scraper           ReadyScrapeManager
-	quit              chan struct{}
+	watcherMetrics         *wlog.WatcherMetrics
+	liveReaderMetrics      *wlog.LiveReaderMetrics
+	externalLabels         labels.Labels
+	dir                    string
+	queues                 map[string]*QueueManager
+	remoteWrite11          bool
+	remoteWrite11Minimized bool
+	samplesIn              *ewmaRate
+	flushDeadline          time.Duration
+	interner               *pool
+	scraper                ReadyScrapeManager
+	quit                   chan struct{}
 
 	// For timestampTracker.
 	highestTimestamp *maxTimestamp
 }
 
 // NewWriteStorage creates and runs a WriteStorage.
-func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, dir string, flushDeadline time.Duration, sm ReadyScrapeManager, remoteWrite11 bool) *WriteStorage {
+func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, dir string, flushDeadline time.Duration, sm ReadyScrapeManager, remoteWrite11 bool, remoteWrite11Minimized bool) *WriteStorage {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
 	rws := &WriteStorage{
-		queues:            make(map[string]*QueueManager),
-		remoteWrite11:     remoteWrite11,
-		watcherMetrics:    wlog.NewWatcherMetrics(reg),
-		liveReaderMetrics: wlog.NewLiveReaderMetrics(reg),
-		logger:            logger,
-		reg:               reg,
-		flushDeadline:     flushDeadline,
-		samplesIn:         newEWMARate(ewmaWeight, shardUpdateDuration),
-		dir:               dir,
-		interner:          newPool(),
-		scraper:           sm,
-		quit:              make(chan struct{}),
+		queues:                 make(map[string]*QueueManager),
+		remoteWrite11:          remoteWrite11,
+		remoteWrite11Minimized: remoteWrite11Minimized,
+		watcherMetrics:         wlog.NewWatcherMetrics(reg),
+		liveReaderMetrics:      wlog.NewLiveReaderMetrics(reg),
+		logger:                 logger,
+		reg:                    reg,
+		flushDeadline:          flushDeadline,
+		samplesIn:              newEWMARate(ewmaWeight, shardUpdateDuration),
+		dir:                    dir,
+		interner:               newPool(),
+		scraper:                sm,
+		quit:                   make(chan struct{}),
 		highestTimestamp: &maxTimestamp{
 			Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
 				Namespace: namespace,
@@ -201,6 +203,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rwConf.SendExemplars,
 			rwConf.SendNativeHistograms,
 			rws.remoteWrite11,
+			rws.remoteWrite11Minimized,
 		)
 		// Keep track of which queues are new so we know which to start.
 		newHashes = append(newHashes, hash)

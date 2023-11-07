@@ -957,6 +957,27 @@ func DecodeReducedWriteRequest(r io.Reader) (*prompb.WriteRequestWithRefs, error
 	return &req, nil
 }
 
+// DecodeMinimizedWriteRequest from an io.Reader into a prompb.WriteRequest, handling
+// snappy decompression.
+func DecodeMinimizedWriteRequest(r io.Reader) (*prompb.MinimizedWriteRequest, error) {
+	compressed, err := io.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
+
+	reqBuf, err := snappy.Decode(nil, compressed)
+	if err != nil {
+		return nil, err
+	}
+
+	var req prompb.MinimizedWriteRequest
+	if err := proto.Unmarshal(reqBuf, &req); err != nil {
+		return nil, err
+	}
+
+	return &req, nil
+}
+
 func ReducedWriteRequestToWriteRequest(redReq *prompb.WriteRequestWithRefs) (*prompb.WriteRequest, error) {
 	req := &prompb.WriteRequest{
 		Timeseries: make([]prompb.TimeSeries, len(redReq.Timeseries)),
