@@ -18,9 +18,9 @@ import (
 	"errors"
 	"math"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
+	"unsafe"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -1877,7 +1877,7 @@ type offLenPair struct {
 }
 
 type rwSymbolTable struct {
-	symbols    strings.Builder
+	symbols    []byte
 	symbolsMap map[string]offLenPair
 }
 
@@ -1891,21 +1891,21 @@ func (r *rwSymbolTable) Ref(str string) (off uint32, leng uint32) {
 	if offlen, ok := r.symbolsMap[str]; ok {
 		return offlen.Off, offlen.Len
 	}
-	off, leng = uint32(r.symbols.Len()), uint32(len(str))
-	r.symbols.WriteString(str)
+	off, leng = uint32(len(r.symbols)), uint32(len(str))
+	r.symbols = append(r.symbols, str...)
 	r.symbolsMap[str] = offLenPair{off, leng}
 	return
 }
 
 func (r *rwSymbolTable) LabelsString() string {
-	return r.symbols.String()
+	return *((*string)(unsafe.Pointer(&r.symbols)))
 }
 
 func (r *rwSymbolTable) clear() {
 	for k := range r.symbolsMap {
 		delete(r.symbolsMap, k)
 	}
-	r.symbols.Reset()
+	r.symbols = r.symbols[:0]
 }
 
 func buildMinimizedWriteRequest(samples []prompb.MinimizedTimeSeries, labels string, pBuf *[]byte, buf *[]byte) ([]byte, int64, error) {
