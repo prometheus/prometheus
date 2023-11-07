@@ -150,11 +150,12 @@ type flagConfig struct {
 	featureList []string
 	// These options are extracted from featureList
 	// for ease of use.
-	enableExpandExternalLabels bool
-	enableNewSDManager         bool
-	enablePerStepStats         bool
-	enableAutoGOMAXPROCS       bool
-	enableSenderRemoteWrite11  bool
+	enableExpandExternalLabels         bool
+	enableNewSDManager                 bool
+	enablePerStepStats                 bool
+	enableAutoGOMAXPROCS               bool
+	enableSenderRemoteWrite11          bool
+	enableSenderRemoteWrite11Minimized bool
 
 	prometheusURL   string
 	corsRegexString string
@@ -214,8 +215,13 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 			case "rw-1-1-sender":
 				c.enableSenderRemoteWrite11 = true
 				level.Info(logger).Log("msg", "Experimental remote write 1.1 will be used on the sender end, receiver must be able to parse this new protobuf format.")
+			case "rw-1-1-sender-min":
+				c.enableSenderRemoteWrite11Minimized = true
+				level.Info(logger).Log("msg", "Experimental remote write 1.1 will be used on the sender end, receiver must be able to parse this new protobuf format.")
 			case "rw-1-1-receiver":
 				c.web.EnableReceiverRemoteWrite11 = true
+			case "rw-1-1-receiver-min":
+				c.web.EnableReceiverRemoteWrite11Min = true
 				level.Info(logger).Log("msg", "Experimental remote write 1.1 will be supported on the receiver end, sender can send this new protobuf format.")
 			default:
 				level.Warn(logger).Log("msg", "Unknown option for --enable-feature", "option", o)
@@ -602,7 +608,7 @@ func main() {
 	var (
 		localStorage  = &readyStorage{stats: tsdb.NewDBStats()}
 		scraper       = &readyScrapeManager{}
-		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper, cfg.enableSenderRemoteWrite11)
+		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper, cfg.enableSenderRemoteWrite11, cfg.enableSenderRemoteWrite11Minimized)
 		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
 	)
 

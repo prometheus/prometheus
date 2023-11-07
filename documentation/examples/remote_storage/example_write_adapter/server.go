@@ -89,5 +89,22 @@ func main() {
 		}
 	})
 
+	http.HandleFunc("/receiveMinimized", func(w http.ResponseWriter, r *http.Request) {
+		req, err := remote.DecodeMinimizedWriteRequest(r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		for _, ts := range req.Timeseries {
+			ls := remote.Uint32RefToLabels(req.Symbols, ts.LabelSymbols)
+			fmt.Println(ls)
+
+			for _, s := range ts.Samples {
+				fmt.Printf("\tSample:  %f %d\n", s.Value, s.Timestamp)
+			}
+		}
+	})
+
 	log.Fatal(http.ListenAndServe(":1234", nil))
 }
