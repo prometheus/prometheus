@@ -14,10 +14,10 @@
 package ionos
 
 import (
+	"errors"
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
