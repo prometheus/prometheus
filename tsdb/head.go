@@ -1593,9 +1593,6 @@ func (h *Head) Close() error {
 	h.mmapHeadChunks()
 
 	errs := tsdb_errors.NewMulti(h.chunkDiskMapper.Close())
-	if errs.Err() == nil && h.opts.EnableMemorySnapshotOnShutdown {
-		errs.Add(h.performChunkSnapshot())
-	}
 	if h.wal != nil {
 		errs.Add(h.wal.Close())
 	}
