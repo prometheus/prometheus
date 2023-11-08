@@ -1,0 +1,16 @@
+# Configuration file version
+apiVersion: 1
+
+deleteDatasources:
+  - name: Prometheus
+    orgId: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    orgId: 1
+
+    url: http://localhost:9093
+    isDefault: true
+    version: 1
+    editable: true
