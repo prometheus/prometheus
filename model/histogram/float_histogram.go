@@ -17,8 +17,6 @@ import (
 	"fmt"
 	"math"
 	"strings"
-
-	"github.com/pkg/errors"
 )
 
 // FloatHistogram is similar to Histogram but uses float64 for all
@@ -602,19 +600,19 @@ func (h *FloatHistogram) AllReverseBucketIterator() BucketIterator[float64] {
 // create false positives here.
 func (h *FloatHistogram) Validate() error {
 	if err := checkHistogramSpans(h.NegativeSpans, len(h.NegativeBuckets)); err != nil {
-		return errors.Wrap(err, "negative side")
+		return fmt.Errorf("negative side: %w", err)
 	}
 	if err := checkHistogramSpans(h.PositiveSpans, len(h.PositiveBuckets)); err != nil {
-		return errors.Wrap(err, "positive side")
+		return fmt.Errorf("positive side: %w", err)
 	}
 	var nCount, pCount float64
 	err := checkHistogramBuckets(h.NegativeBuckets, &nCount, false)
 	if err != nil {
-		return errors.Wrap(err, "negative side")
+		return fmt.Errorf("negative side: %w", err)
 	}
 	err = checkHistogramBuckets(h.PositiveBuckets, &pCount, false)
 	if err != nil {
-		return errors.Wrap(err, "positive side")
+		return fmt.Errorf("positive side: %w", err)
 	}
 
 	return nil

@@ -41,13 +41,6 @@ issues:
       text: "import 'github.com/pkg/errors' is not allowed"
       linters:
         - depguard
-    - path: web/
-      linters:
-        - errorlint
-    - path: web/
-      text: "import 'github.com/pkg/errors' is not allowed"
-      linters:
-        - depguard
     - linters:
         - godot
       source: "^// ==="

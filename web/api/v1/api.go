@@ -15,6 +15,7 @@ package v1
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"math/rand"
@@ -33,7 +34,6 @@ import (
 	"github.com/grafana/regexp"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/munnerz/goautoneg"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
@@ -317,7 +317,7 @@ func (api *API) ClearCodecs() {
 }
 
 func setUnavailStatusOnTSDBNotReady(r apiFuncResult) apiFuncResult {
-	if r.err != nil && errors.Cause(r.err.err) == tsdb.ErrNotReady {
+	if r.err != nil && errors.Is(r.err.err, tsdb.ErrNotReady) {
 		r.err.typ = errorUnavailable
 	}
 	return r
@@ -415,7 +415,7 @@ type QueryData struct {
 
 func invalidParamError(err error, parameter string) apiFuncResult {
 	return apiFuncResult{nil, &apiError{
-		errorBadData, errors.Wrapf(err, "invalid parameter %q", parameter),
+		errorBadData, fmt.Errorf("invalid parameter %q: %w", parameter, err),
 	}, nil, nil}
 }
 
@@ -624,17 +624,15 @@ func returnAPIError(err error) *apiError {
 		return nil
 	}
 
-	cause := errors.Unwrap(err)
-	if cause == nil {
-		cause = err
-	}
-
-	switch cause.(type) {
-	case promql.ErrQueryCanceled:
+	var eqc promql.ErrQueryCanceled
+	var eqt promql.ErrQueryTimeout
+	var es promql.ErrStorage
+	switch {
+	case errors.As(err, &eqc):
 		return &apiError{errorCanceled, err}
-	case promql.ErrQueryTimeout:
+	case errors.As(err, &eqt):
 		return &apiError{errorTimeout, err}
-	case promql.ErrStorage:
+	case errors.As(err, &es):
 		return &apiError{errorInternal, err}
 	}
 
@@ -709,7 +707,7 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 	name := route.Param(ctx, "name")
 
 	if !model.LabelNameRE.MatchString(name) {
-		return apiFuncResult{nil, &apiError{errorBadData, errors.Errorf("invalid label name: %q", name)}, nil, nil}
+		return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("invalid label name: %q", name)}, nil, nil}
 	}
 
 	start, err := parseTimeParam(r, "start", MinTime)
@@ -797,7 +795,7 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 	ctx := r.Context()
 
 	if err := r.ParseForm(); err != nil {
-		return apiFuncResult{nil, &apiError{errorBadData, errors.Wrapf(err, "error parsing form values")}, nil, nil}
+		return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("error parsing form values: %w", err)}, nil, nil}
 	}
 	if len(r.Form["match[]"]) == 0 {
 		return apiFuncResult{nil, &apiError{errorBadData, errors.New("no match[] parameter provided")}, nil, nil}
@@ -1028,7 +1026,7 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 						case err == nil && lastErrStr == "":
 							return ""
 						case err != nil:
-							return errors.Wrapf(err, lastErrStr).Error()
+							return fmt.Errorf("%s: %w", lastErrStr, err).Error()
 						default:
 							return lastErrStr
 						}
@@ -1347,7 +1345,7 @@ type RecordingRule struct {
 
 func (api *API) rules(r *http.Request) apiFuncResult {
 	if err := r.ParseForm(); err != nil {
-		return apiFuncResult{nil, &apiError{errorBadData, errors.Wrapf(err, "error parsing form values")}, nil, nil}
+		return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("error parsing form values: %w", err)}, nil, nil}
 	}
 
 	queryFormToSet := func(values []string) map[string]struct{} {
@@ -1367,7 +1365,7 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 	typ := strings.ToLower(r.URL.Query().Get("type"))
 
 	if typ != "" && typ != "alert" && typ != "record" {
-		return invalidParamError(errors.Errorf("not supported value %q", typ), "type")
+		return invalidParamError(fmt.Errorf("not supported value %q", typ), "type")
 	}
 
 	returnAlerts := typ == "" || typ == "alert"
@@ -1453,7 +1451,7 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 					Type:           "recording",
 				}
 			default:
-				err := errors.Errorf("failed to assert type of rule '%v'", rule.Name())
+				err := fmt.Errorf("failed to assert type of rule '%v'", rule.Name())
 				return apiFuncResult{nil, &apiError{errorInternal, err}, nil, nil}
 			}
 
@@ -1560,7 +1558,7 @@ func (api *API) serveTSDBStatus(r *http.Request) apiFuncResult {
 	}
 	metrics, err := api.gatherer.Gather()
 	if err != nil {
-		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("error gathering runtime status: %s", err)}, nil, nil}
+		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("error gathering runtime status: %w", err)}, nil, nil}
 	}
 	chunkCount := int64(math.NaN())
 	for _, mF := range metrics {
@@ -1636,7 +1634,7 @@ func (api *API) deleteSeries(r *http.Request) apiFuncResult {
 		return apiFuncResult{nil, &apiError{errorUnavailable, errors.New("admin APIs disabled")}, nil, nil}
 	}
 	if err := r.ParseForm(); err != nil {
-		return apiFuncResult{nil, &apiError{errorBadData, errors.Wrap(err, "error parsing form values")}, nil, nil}
+		return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("error parsing form values: %w", err)}, nil, nil}
 	}
 	if len(r.Form["match[]"]) == 0 {
 		return apiFuncResult{nil, &apiError{errorBadData, errors.New("no match[] parameter provided")}, nil, nil}
@@ -1675,7 +1673,7 @@ func (api *API) snapshot(r *http.Request) apiFuncResult {
 	if r.FormValue("skip_head") != "" {
 		skipHead, err = strconv.ParseBool(r.FormValue("skip_head"))
 		if err != nil {
-			return invalidParamError(errors.Wrapf(err, "unable to parse boolean"), "skip_head")
+			return invalidParamError(fmt.Errorf("unable to parse boolean: %w", err), "skip_head")
 		}
 	}
 
@@ -1687,10 +1685,10 @@ func (api *API) snapshot(r *http.Request) apiFuncResult {
 		dir = filepath.Join(snapdir, name)
 	)
 	if err := os.MkdirAll(dir, 0o777); err != nil {
-		return apiFuncResult{nil, &apiError{errorInternal, errors.Wrap(err, "create snapshot directory")}, nil, nil}
+		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("create snapshot directory: %w", err)}, nil, nil}
 	}
 	if err := api.db.Snapshot(dir, !skipHead); err != nil {
-		return apiFuncResult{nil, &apiError{errorInternal, errors.Wrap(err, "create snapshot")}, nil, nil}
+		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("create snapshot: %w", err)}, nil, nil}
 	}
 
 	return apiFuncResult{struct {
@@ -1805,7 +1803,7 @@ func parseTimeParam(r *http.Request, paramName string, defaultValue time.Time) (
 	}
 	result, err := parseTime(val)
 	if err != nil {
-		return time.Time{}, errors.Wrapf(err, "Invalid time value for '%s'", paramName)
+		return time.Time{}, fmt.Errorf("Invalid time value for '%s': %w", paramName, err)
 	}
 	return result, nil
 }
@@ -1830,21 +1828,21 @@ func parseTime(s string) (time.Time, error) {
 	case maxTimeFormatted:
 		return MaxTime, nil
 	}
-	return time.Time{}, errors.Errorf("cannot parse %q to a valid timestamp", s)
+	return time.Time{}, fmt.Errorf("cannot parse %q to a valid timestamp", s)
 }
 
 func parseDuration(s string) (time.Duration, error) {
 	if d, err := strconv.ParseFloat(s, 64); err == nil {
 		ts := d * float64(time.Second)
 		if ts > float64(math.MaxInt64) || ts < float64(math.MinInt64) {
-			return 0, errors.Errorf("cannot parse %q to a valid duration. It overflows int64", s)
+			return 0, fmt.Errorf("cannot parse %q to a valid duration. It overflows int64", s)
 		}
 		return time.Duration(ts), nil
 	}
 	if d, err := model.ParseDuration(s); err == nil {
 		return time.Duration(d), nil
 	}
-	return 0, errors.Errorf("cannot parse %q to a valid duration", s)
+	return 0, fmt.Errorf("cannot parse %q to a valid duration", s)
 }
 
 func parseMatchersParam(matchers []string) ([][]*labels.Matcher, error) {
