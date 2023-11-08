@@ -944,7 +944,9 @@ func DecodeMinimizedWriteRequest(r io.Reader) (*prompb.MinimizedWriteRequest, er
 		return nil, err
 	}
 
-	reqBuf, err := snappy.Decode(nil, compressed)
+	comp := GetPooledComp()
+	defer PutPooledComp(comp)
+	reqBuf, err := comp.Decompress(compressed)
 	if err != nil {
 		return nil, err
 	}
