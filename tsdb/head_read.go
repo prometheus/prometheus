@@ -416,13 +416,13 @@ func (s *memSeries) chunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDi
 	return elem, true, offset == 0, nil
 }
 
-// oooMergedChunk returns the requested chunk based on the given chunks.Meta
+// oooMergedChunks returns the requested chunk based on the given chunks.Meta
 // reference from memory or by m-mapping it from the disk. The returned chunk
 // might be a merge of all the overlapping chunks, if any, amongst all the
 // chunks in the OOOHead.
 // This function is not thread safe unless the caller holds a lock.
 // The caller must ensure that s.ooo is not nil.
-func (s *memSeries) oooMergedChunk(meta chunks.Meta, cdm *chunks.ChunkDiskMapper, mint, maxt int64) (chunk *mergedOOOChunks, err error) {
+func (s *memSeries) oooMergedChunks(meta chunks.Meta, cdm *chunks.ChunkDiskMapper, mint, maxt int64) (*mergedOOOChunks, error) {
 	_, cid := chunks.HeadChunkRef(meta.Ref).Unpack()
 
 	// ix represents the index of chunk in the s.mmappedChunks slice. The chunk meta's are
@@ -499,11 +499,13 @@ func (s *memSeries) oooMergedChunk(meta chunks.Meta, cdm *chunks.ChunkDiskMapper
 	mc := &mergedOOOChunks{}
 	absoluteMax := int64(math.MinInt64)
 	for _, c := range tmpChks {
-		if c.meta.Ref != meta.Ref && (len(mc.chunks) == 0 || c.meta.MinTime > absoluteMax) {
+		if c.meta.Ref != meta.Ref && (len(mc.chunkIterables) == 0 || c.meta.MinTime > absoluteMax) {
 			continue
 		}
+		var iterable chunkenc.Iterable
 		if c.meta.Ref == oooHeadRef {
 			var xor *chunkenc.XORChunk
+			var err error
 			// If head chunk min and max time match the meta OOO markers
 			// that means that the chunk has not expanded so we can append
 			// it as it is.
@@ -516,7 +518,7 @@ func (s *memSeries) oooMergedChunk(meta chunks.Meta, cdm *chunks.ChunkDiskMapper
 			if err != nil {
 				return nil, errors.Wrap(err, "failed to convert ooo head chunk to xor chunk")
 			}
-			c.meta.Chunk = xor
+			iterable = xor
 		} else {
 			chk, err := cdm.Chunk(c.ref)
 			if err != nil {
@@ -531,12 +533,12 @@ func (s *memSeries) oooMergedChunk(meta chunks.Meta, cdm *chunks.ChunkDiskMapper
 				// wrap the chunk within a chunk that doesnt allows us to iterate
 				// through samples out of the OOOLastMinT and OOOLastMaxT
 				// markers.
-				c.meta.Chunk = boundedChunk{chk, meta.OOOLastMinTime, meta.OOOLastMaxTime}
+				iterable = boundedIterable{chk, meta.OOOLastMinTime, meta.OOOLastMaxTime}
 			} else {
-				c.meta.Chunk = chk
+				iterable = chk
 			}
 		}
-		mc.chunks = append(mc.chunks, c.meta)
+		mc.chunkIterables = append(mc.chunkIterables, iterable)
 		if c.meta.MaxTime > absoluteMax {
 			absoluteMax = c.meta.MaxTime
 		}
@@ -545,76 +547,29 @@ func (s *memSeries) oooMergedChunk(meta chunks.Meta, cdm *chunks.ChunkDiskMapper
 	return mc, nil
 }
 
-var _ chunkenc.Chunk = &mergedOOOChunks{}
+var _ chunkenc.Iterable = &mergedOOOChunks{}
 
-// mergedOOOChunks holds the list of overlapping chunks. This struct satisfies
-// chunkenc.Chunk.
+// mergedOOOChunks holds the list of overlapping chunks.
 type mergedOOOChunks struct {
-	chunks []chunks.Meta
-}
-
-// Bytes is a very expensive method because its calling the iterator of all the
-// chunks in the mergedOOOChunk and building a new chunk with the samples.
-func (o mergedOOOChunks) Bytes() []byte {
-	xc := chunkenc.NewXORChunk()
-	app, err := xc.Appender()
-	if err != nil {
-		panic(err)
-	}
-	it := o.Iterator(nil)
-	for it.Next() == chunkenc.ValFloat {
-		t, v := it.At()
-		app.Append(t, v)
-	}
-
-	return xc.Bytes()
-}
-
-func (o mergedOOOChunks) Encoding() chunkenc.Encoding {
-	return chunkenc.EncXOR
-}
-
-func (o mergedOOOChunks) Appender() (chunkenc.Appender, error) {
-	return nil, errors.New("can't append to mergedOOOChunks")
+	chunkIterables []chunkenc.Iterable
 }
 
 func (o mergedOOOChunks) Iterator(iterator chunkenc.Iterator) chunkenc.Iterator {
-	return storage.ChainSampleIteratorFromMetas(iterator, o.chunks)
+	return storage.ChainSampleIteratorFromIterables(iterator, o.chunkIterables)
 }
 
-func (o mergedOOOChunks) NumSamples() int {
-	samples := 0
-	for _, c := range o.chunks {
-		samples += c.Chunk.NumSamples()
-	}
-	return samples
-}
+var _ chunkenc.Iterable = &boundedIterable{}
 
-func (o mergedOOOChunks) Compact() {}
-
-var _ chunkenc.Chunk = &boundedChunk{}
-
-// boundedChunk is an implementation of chunkenc.Chunk that uses a
+// boundedIterable is an implementation of chunkenc.Iterable that uses a
 // boundedIterator that only iterates through samples which timestamps are
 // >= minT and <= maxT.
-type boundedChunk struct {
+type boundedIterable struct {
 	chunkenc.Chunk
 	minT int64
 	maxT int64
 }
 
-func (b boundedChunk) Bytes() []byte {
-	xor := chunkenc.NewXORChunk()
-	a, _ := xor.Appender()
-	it := b.Iterator(nil)
-	for it.Next() == chunkenc.ValFloat {
-		t, v := it.At()
-		a.Append(t, v)
-	}
-	return xor.Bytes()
-}
-
-func (b boundedChunk) Iterator(iterator chunkenc.Iterator) chunkenc.Iterator {
+func (b boundedIterable) Iterator(iterator chunkenc.Iterator) chunkenc.Iterator {
 	it := b.Chunk.Iterator(iterator)
 	if it == nil {
 		panic("iterator shouldn't be nil")

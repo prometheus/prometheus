@@ -129,7 +129,7 @@ func TestBoundedChunk(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(fmt.Sprintf("name=%s", tc.name), func(t *testing.T) {
-			chunk := boundedChunk{tc.inputChunk, tc.inputMinT, tc.inputMaxT}
+			chunk := boundedIterable{tc.inputChunk, tc.inputMinT, tc.inputMaxT}
 
 			// Testing Bytes()
 			expChunk := chunkenc.NewXORChunk()

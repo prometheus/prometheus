@@ -262,18 +262,18 @@ func (cr OOOHeadChunkReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chunk, 
 		s.Unlock()
 		return nil, nil, storage.ErrNotFound
 	}
-	c, err := s.oooMergedChunk(meta, cr.head.chunkDiskMapper, cr.mint, cr.maxt) //TODO: return chunks and iterable
+	mc, err := s.oooMergedChunks(meta, cr.head.chunkDiskMapper, cr.mint, cr.maxt)
 	s.Unlock()
 	if err != nil {
 		return nil, nil, err
 	}
 
 	// This means that the query range did not overlap with the requested chunk.
-	if len(c.chunks) == 0 {
+	if len(mc.chunkIterables) == 0 {
 		return nil, nil, storage.ErrNotFound
 	}
 
-	return c, nil, nil
+	return nil, mc, nil
 }
 
 func (cr OOOHeadChunkReader) Close() error {

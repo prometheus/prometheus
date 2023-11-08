@@ -694,12 +694,13 @@ func (p *populateWithDelGenericSeriesIterator) next(copyHeadChunk bool) bool {
 	} else {
 		p.currChkMeta.Chunk, iterable, p.err = p.chunks.ChunkOrIterable(p.currChkMeta)
 	}
+	//TODO: don't always set chunk in the meta
+	//And also read from iterable
 	if p.err != nil {
 		p.err = errors.Wrapf(p.err, "cannot populate chunk %d from block %s", p.currChkMeta.Ref, p.blockID.String())
 		return false
 	}
 	if iterable != nil {
-		//TODO
 		p.err = errors.New("iterable is not implemented yet")
 	}
 
