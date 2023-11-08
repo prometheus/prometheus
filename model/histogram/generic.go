@@ -541,7 +541,10 @@ var exponentialBounds = [][]float64{
 	},
 }
 
-// reduceResolution reduce the input spans, buckets in origin schema to the spans, buckets in target schema.
+// reduceResolution reduces the input spans, buckets in origin schema to the spans, buckets in target schema.
+// The target schema must be smaller than the original schema.
+// Set deltaBuckets to true if the provided buckets are
+// deltas. Set it to false if the buckets contain absolute counts.
 func reduceResolution[IBC InternalBucketCount](originSpans []Span, originBuckets []IBC, originSchema, targetSchema int32, deltaBuckets bool) ([]Span, []IBC) {
 	var (
 		targetSpans           []Span // The spans in the target schema.
