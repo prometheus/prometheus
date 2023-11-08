@@ -62,12 +62,13 @@ func newHighestTimestampMetric() *maxTimestamp {
 
 func TestSampleDelivery(t *testing.T) {
 	testcases := []struct {
-		name            string
-		samples         bool
-		exemplars       bool
-		histograms      bool
-		floatHistograms bool
-		remoteWrite11   bool
+		name             string
+		samples          bool
+		exemplars        bool
+		histograms       bool
+		floatHistograms  bool
+		remoteWrite11    bool
+		remoteWrite11Min bool
 	}{
 		{samples: true, exemplars: false, histograms: false, floatHistograms: false, name: "samples only"},
 		{samples: true, exemplars: true, histograms: true, floatHistograms: true, name: "samples, exemplars, and histograms"},
@@ -80,6 +81,12 @@ func TestSampleDelivery(t *testing.T) {
 		{remoteWrite11: true, samples: false, exemplars: true, histograms: false, name: "interned exemplars only"},
 		{remoteWrite11: true, samples: false, exemplars: false, histograms: true, name: "interned histograms only"},
 		{remoteWrite11: true, samples: false, exemplars: false, histograms: false, floatHistograms: true, name: "interned float histograms only"},
+
+		{remoteWrite11Min: true, samples: true, exemplars: false, histograms: false, name: "interned samples only"},
+		{remoteWrite11Min: true, samples: true, exemplars: true, histograms: true, floatHistograms: true, name: "interned samples, exemplars, and histograms"},
+		{remoteWrite11Min: true, samples: false, exemplars: true, histograms: false, name: "interned exemplars only"},
+		{remoteWrite11Min: true, samples: false, exemplars: false, histograms: true, name: "interned histograms only"},
+		{remoteWrite11Min: true, samples: false, exemplars: false, histograms: false, floatHistograms: true, name: "interned float histograms only"},
 	}
 
 	// Let's create an even number of send batches so we don't run into the
@@ -106,7 +113,7 @@ func TestSampleDelivery(t *testing.T) {
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, tc.remoteWrite11, false)
+			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, tc.remoteWrite11, tc.remoteWrite11Min)
 			defer s.Close()
 
 			var (
