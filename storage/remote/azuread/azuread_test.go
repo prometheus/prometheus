@@ -296,7 +296,7 @@ func (s *TokenProviderTestSuite) TestNewTokenProvider() {
 			}
 
 			s.mockCredential.On("GetToken", mock.Anything, mock.Anything).Return(*testToken, nil).Once().
-				On("GetToken", mock.Anything, mock.Anything).Return(getToken(), nil)
+				On("GetToken", mock.Anything, mock.Anything).Return(getToken(), nil).Once()
 
 			actualTokenProvider, actualErr := newTokenProvider(c.cfg, s.mockCredential)
 
