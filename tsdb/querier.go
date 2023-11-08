@@ -684,6 +684,7 @@ func (p *populateWithDelGenericSeriesIterator) next(copyHeadChunk bool) bool {
 	}
 
 	hcr, ok := p.chunks.(*headChunkReader)
+	var iterable chunkenc.Iterable
 	if ok && copyHeadChunk && len(p.bufIter.Intervals) == 0 {
 		// ChunkWithCopy will copy the head chunk.
 		var maxt int64
@@ -691,11 +692,15 @@ func (p *populateWithDelGenericSeriesIterator) next(copyHeadChunk bool) bool {
 		// For the in-memory head chunk the index reader sets maxt as MaxInt64. We fix it here.
 		p.currChkMeta.MaxTime = maxt
 	} else {
-		p.currChkMeta.Chunk, p.err = p.chunks.Chunk(p.currChkMeta)
+		p.currChkMeta.Chunk, iterable, p.err = p.chunks.ChunkOrIterable(p.currChkMeta)
 	}
 	if p.err != nil {
 		p.err = errors.Wrapf(p.err, "cannot populate chunk %d from block %s", p.currChkMeta.Ref, p.blockID.String())
 		return false
+	}
+	if iterable != nil {
+		//TODO
+		p.err = errors.New("iterable is not implemented yet")
 	}
 
 	if len(p.bufIter.Intervals) == 0 {
@@ -1117,8 +1122,8 @@ func newNopChunkReader() ChunkReader {
 	}
 }
 
-func (cr nopChunkReader) Chunk(chunks.Meta) (chunkenc.Chunk, error) {
-	return cr.emptyChunk, nil
+func (cr nopChunkReader) ChunkOrIterable(chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, error) {
+	return cr.emptyChunk, nil, nil
 }
 
 func (cr nopChunkReader) Close() error { return nil }

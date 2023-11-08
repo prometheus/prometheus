@@ -116,9 +116,13 @@ type ChunkWriter interface {
 }
 
 // ChunkReader provides reading access of serialized time series data.
+// TODO: rename to meta reader?
 type ChunkReader interface {
 	// Chunk returns the series data chunk with the given reference.
-	Chunk(meta chunks.Meta) (chunkenc.Chunk, error)
+	//TODO: improve comment
+	// If chunk == nil, need to read from iterable
+	// Not guaranteed to be just one chunk
+	ChunkOrIterable(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, error)
 
 	// Close releases all underlying resources of the reader.
 	Close() error

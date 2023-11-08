@@ -16,6 +16,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -643,9 +644,13 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 
 		for _, chk := range chks {
 			// Load the actual data of the chunk.
-			chk, err := chunkr.Chunk(chk)
+			var iterable chunkenc.Iterable
+			chk, iterable, err := chunkr.ChunkOrIterable(chk)
 			if err != nil {
 				return err
+			}
+			if iterable != nil {
+				return errors.New("iterable not supported for analyzeCompaction yet")
 			}
 			switch chk.Encoding() {
 			case chunkenc.EncXOR:

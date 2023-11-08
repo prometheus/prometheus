@@ -707,12 +707,12 @@ func createFakeReaderAndNotPopulatedChunks(s ...[]chunks.Sample) (*fakeChunksRea
 	return f, chks
 }
 
-func (r *fakeChunksReader) Chunk(meta chunks.Meta) (chunkenc.Chunk, error) {
+func (r *fakeChunksReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, error) {
 	chk, ok := r.chks[meta.Ref]
 	if !ok {
-		return nil, fmt.Errorf("chunk not found at ref %v", meta.Ref)
+		return nil, nil, fmt.Errorf("chunk not found at ref %v", meta.Ref)
 	}
-	return chk, nil
+	return chk, nil, nil
 }
 
 func TestPopulateWithTombSeriesIterators(t *testing.T) {
@@ -1686,13 +1686,13 @@ func BenchmarkMergedSeriesSet(b *testing.B) {
 
 type mockChunkReader map[chunks.ChunkRef]chunkenc.Chunk
 
-func (cr mockChunkReader) Chunk(meta chunks.Meta) (chunkenc.Chunk, error) {
+func (cr mockChunkReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, error) {
 	chk, ok := cr[meta.Ref]
 	if ok {
-		return chk, nil
+		return chk, nil, nil
 	}
 
-	return nil, errors.New("Chunk with ref not found")
+	return nil, nil, errors.New("Chunk with ref not found")
 }
 
 func (cr mockChunkReader) Close() error {
