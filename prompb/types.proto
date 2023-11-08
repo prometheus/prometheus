@@ -180,12 +180,6 @@ message MinimizedTimeSeries {
   repeated Histogram histograms = 4 [(gogoproto.nullable) = false];
 }
 
-// can be used for label name or label value
-message MinimizedLabelSymbol {
-  uint32 offset = 1;
-  uint32 length = 2;
-}
-
 message LabelRef {
   uint64 name_ref = 1;
   uint64 value_ref = 2;
