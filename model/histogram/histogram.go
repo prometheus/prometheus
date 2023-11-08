@@ -18,7 +18,6 @@ import (
 	"math"
 	"strings"
 
-	"github.com/pkg/errors"
 	"golang.org/x/exp/slices"
 )
 
@@ -338,35 +337,29 @@ func (h *Histogram) ToFloat() *FloatHistogram {
 // the total h.Count).
 func (h *Histogram) Validate() error {
 	if err := checkHistogramSpans(h.NegativeSpans, len(h.NegativeBuckets)); err != nil {
-		return errors.Wrap(err, "negative side")
+		return fmt.Errorf("negative side: %w", err)
 	}
 	if err := checkHistogramSpans(h.PositiveSpans, len(h.PositiveBuckets)); err != nil {
-		return errors.Wrap(err, "positive side")
+		return fmt.Errorf("positive side: %w", err)
 	}
 	var nCount, pCount uint64
 	err := checkHistogramBuckets(h.NegativeBuckets, &nCount, true)
 	if err != nil {
-		return errors.Wrap(err, "negative side")
+		return fmt.Errorf("negative side: %w", err)
 	}
 	err = checkHistogramBuckets(h.PositiveBuckets, &pCount, true)
 	if err != nil {
-		return errors.Wrap(err, "positive side")
+		return fmt.Errorf("positive side: %w", err)
 	}
 
 	sumOfBuckets := nCount + pCount + h.ZeroCount
 	if math.IsNaN(h.Sum) {
 		if sumOfBuckets > h.Count {
-			return errors.Wrap(
-				ErrHistogramCountNotBigEnough,
-				fmt.Sprintf("%d observations found in buckets, but the Count field is %d", sumOfBuckets, h.Count),
-			)
+			return fmt.Errorf("%d observations found in buckets, but the Count field is %d: %w", sumOfBuckets, h.Count, ErrHistogramCountNotBigEnough)
 		}
 	} else {
 		if sumOfBuckets != h.Count {
-			return errors.Wrap(
-				ErrHistogramCountMismatch,
-				fmt.Sprintf("%d observations found in buckets, but the Count field is %d", sumOfBuckets, h.Count),
-			)
+			return fmt.Errorf("%d observations found in buckets, but the Count field is %d: %w", sumOfBuckets, h.Count, ErrHistogramCountMismatch)
 		}
 	}
 

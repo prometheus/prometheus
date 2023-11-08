@@ -14,11 +14,10 @@
 package histogram
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"strings"
-
-	"github.com/pkg/errors"
 )
 
 var (
@@ -361,18 +360,12 @@ func checkHistogramSpans(spans []Span, numBuckets int) error {
 	var spanBuckets int
 	for n, span := range spans {
 		if n > 0 && span.Offset < 0 {
-			return errors.Wrap(
-				ErrHistogramSpanNegativeOffset,
-				fmt.Sprintf("span number %d with offset %d", n+1, span.Offset),
-			)
+			return fmt.Errorf("span number %d with offset %d: %w", n+1, span.Offset, ErrHistogramSpanNegativeOffset)
 		}
 		spanBuckets += int(span.Length)
 	}
 	if spanBuckets != numBuckets {
-		return errors.Wrap(
-			ErrHistogramSpansBucketsMismatch,
-			fmt.Sprintf("spans need %d buckets, have %d buckets", spanBuckets, numBuckets),
-		)
+		return fmt.Errorf("spans need %d buckets, have %d buckets: %w", spanBuckets, numBuckets, ErrHistogramSpansBucketsMismatch)
 	}
 	return nil
 }
@@ -391,10 +384,7 @@ func checkHistogramBuckets[BC BucketCount, IBC InternalBucketCount](buckets []IB
 			c = buckets[i]
 		}
 		if c < 0 {
-			return errors.Wrap(
-				ErrHistogramNegativeBucketCount,
-				fmt.Sprintf("bucket number %d has observation count of %v", i+1, c),
-			)
+			return fmt.Errorf("bucket number %d has observation count of %v: %w", i+1, c, ErrHistogramNegativeBucketCount)
 		}
 		last = c
 		*count += BC(c)
