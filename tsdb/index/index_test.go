@@ -519,7 +519,6 @@ func TestNewFileReaderErrorNoOpenFiles(t *testing.T) {
 }
 
 func TestSymbols(t *testing.T) {
-	ctx := context.Background()
 	buf := encoding.Encbuf{}
 
 	// Add prefix to the buffer to simulate symbols as part of larger buffer.
@@ -542,11 +541,11 @@ func TestSymbols(t *testing.T) {
 	require.Equal(t, 32, s.Size())
 
 	for i := 99; i >= 0; i-- {
-		s, err := s.Lookup(ctx, uint32(i))
+		s, err := s.Lookup(uint32(i))
 		require.NoError(t, err)
 		require.Equal(t, string(rune(i)), s)
 	}
-	_, err = s.Lookup(ctx, 100)
+	_, err = s.Lookup(100)
 	require.Error(t, err)
 
 	for i := 99; i >= 0; i-- {
