@@ -493,3 +493,15 @@ func (c *cumulativeBucketIterator) At() Bucket[uint64] {
 		Index:          c.currIdx - 1,
 	}
 }
+
+// ReduceResolution reduces the histogram's spans, buckets into target schema.
+// The target schema must be smaller than the current histogram's schema.
+func (h *Histogram) ReduceResolution(targetSchema int32) *Histogram {
+	h.PositiveSpans, h.PositiveBuckets = reduceResolution(
+		h.PositiveSpans, h.PositiveBuckets, h.Schema, targetSchema, true,
+	)
+	h.NegativeSpans, h.NegativeBuckets = reduceResolution(
+		h.NegativeSpans, h.NegativeBuckets, h.Schema, targetSchema, true,
+	)
+	return h
+}
