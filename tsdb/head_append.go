@@ -689,14 +689,6 @@ func (a *headAppender) log() error {
 			return errors.Wrap(err, "log samples")
 		}
 	}
-	if len(a.exemplars) > 0 {
-		rec = enc.Exemplars(exemplarsForEncoding(a.exemplars), buf)
-		buf = rec[:0]
-
-		if err := a.head.wal.Log(rec); err != nil {
-			return errors.Wrap(err, "log exemplars")
-		}
-	}
 	if len(a.histograms) > 0 {
 		rec = enc.HistogramSamples(a.histograms, buf)
 		buf = rec[:0]
@@ -709,6 +701,18 @@ func (a *headAppender) log() error {
 		buf = rec[:0]
 		if err := a.head.wal.Log(rec); err != nil {
 			return errors.Wrap(err, "log float histograms")
+		}
+	}
+	// Exemplars should be logged after samples (float/native histogram/etc),
+	// otherwise it might happen that we send the exemplars in a remote write
+	// batch before the samples, which in turn means the exemplar is rejected
+	// for missing series, since series are created due to samples.
+	if len(a.exemplars) > 0 {
+		rec = enc.Exemplars(exemplarsForEncoding(a.exemplars), buf)
+		buf = rec[:0]
+
+		if err := a.head.wal.Log(rec); err != nil {
+			return errors.Wrap(err, "log exemplars")
 		}
 	}
 	return nil
