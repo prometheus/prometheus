@@ -39,7 +39,7 @@ const (
 	testTokenString   = "testTokenString"
 )
 
-var testTokenExpiry = time.Now().Add(5 * time.Second)
+func testTokenExpiry() time.Time { return time.Now().Add(5 * time.Second) }
 
 type AzureAdTestSuite struct {
 	suite.Suite
@@ -94,7 +94,7 @@ func (ad *AzureAdTestSuite) TestAzureAdRoundTripper() {
 
 		testToken := &azcore.AccessToken{
 			Token:     testTokenString,
-			ExpiresOn: testTokenExpiry,
+			ExpiresOn: testTokenExpiry(),
 		}
 
 		ad.mockCredential.On("GetToken", mock.Anything, mock.Anything).Return(*testToken, nil)
@@ -292,7 +292,7 @@ func (s *TokenProviderTestSuite) TestNewTokenProvider() {
 		} else {
 			testToken := &azcore.AccessToken{
 				Token:     testTokenString,
-				ExpiresOn: testTokenExpiry,
+				ExpiresOn: testTokenExpiry(),
 			}
 
 			s.mockCredential.On("GetToken", mock.Anything, mock.Anything).Return(*testToken, nil).Once().
