@@ -967,3 +967,48 @@ func BenchmarkHistogramValidation(b *testing.B) {
 		require.NoError(b, h.Validate())
 	}
 }
+
+func TestHistogramReduceResolution(t *testing.T) {
+	tcs := map[string]struct {
+		origin       *Histogram
+		targetSchema int32
+		target       *Histogram
+	}{
+		"valid histogram": {
+			origin: &Histogram{
+				Schema: 0,
+				PositiveSpans: []Span{
+					{Offset: 0, Length: 4},
+					{Offset: 0, Length: 0},
+					{Offset: 3, Length: 2},
+				},
+				PositiveBuckets: []int64{1, 2, -2, 1, -1, 0},
+				NegativeSpans: []Span{
+					{Offset: 0, Length: 4},
+					{Offset: 0, Length: 0},
+					{Offset: 3, Length: 2},
+				},
+				NegativeBuckets: []int64{1, 2, -2, 1, -1, 0},
+			},
+			targetSchema: -1,
+			target: &Histogram{
+				Schema: -1,
+				PositiveSpans: []Span{
+					{Offset: 0, Length: 3},
+					{Offset: 1, Length: 1},
+				},
+				PositiveBuckets: []int64{1, 3, -2, 0},
+				NegativeSpans: []Span{
+					{Offset: 0, Length: 3},
+					{Offset: 1, Length: 1},
+				},
+				NegativeBuckets: []int64{1, 3, -2, 0},
+			},
+		},
+	}
+
+	for _, tc := range tcs {
+		target := tc.origin.ReduceResolution(tc.targetSchema)
+		require.Equal(t, tc.target, target)
+	}
+}

@@ -1112,6 +1112,6 @@ func floatBucketsMatch(b1, b2 []float64) bool {
 func (h *FloatHistogram) ReduceResolution(targetSchema int32) *FloatHistogram {
 	h.PositiveSpans, h.PositiveBuckets = reduceResolution(h.PositiveSpans, h.PositiveBuckets, h.Schema, targetSchema, false)
 	h.NegativeSpans, h.NegativeBuckets = reduceResolution(h.NegativeSpans, h.NegativeBuckets, h.Schema, targetSchema, false)
-
+	h.Schema = targetSchema
 	return h
 }
