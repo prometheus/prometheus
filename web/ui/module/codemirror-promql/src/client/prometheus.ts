@@ -58,6 +58,7 @@ export interface PrometheusConfig {
   cache?: CacheConfig;
   httpMethod?: 'POST' | 'GET';
   apiPrefix?: string;
+  requestHeaders?: Headers;
 }
 
 interface APIResponse<T> {
@@ -84,6 +85,7 @@ export class HTTPPrometheusClient implements PrometheusClient {
   // For some reason, just assigning via "= fetch" here does not end up executing fetch correctly
   // when calling it, thus the indirection via another function wrapper.
   private readonly fetchFn: FetchFn = (input: RequestInfo, init?: RequestInit): Promise<Response> => fetch(input, init);
+  private requestHeaders: Headers = new Headers();
 
   constructor(config: PrometheusConfig) {
     this.url = config.url ? config.url : '';
@@ -99,6 +101,9 @@ export class HTTPPrometheusClient implements PrometheusClient {
     }
     if (config.apiPrefix) {
       this.apiPrefix = config.apiPrefix;
+    }
+    if (config.requestHeaders) {
+      this.requestHeaders = config.requestHeaders;
     }
   }
 
@@ -221,6 +226,11 @@ export class HTTPPrometheusClient implements PrometheusClient {
   }
 
   private fetchAPI<T>(resource: string, init?: RequestInit): Promise<T> {
+    if (init) {
+      init.headers = this.requestHeaders;
+    } else {
+      init = { headers: this.requestHeaders };
+    }
     return this.fetchFn(this.url + resource, init)
       .then((res) => {
         if (!res.ok && ![badRequest, unprocessableEntity, serviceUnavailable].includes(res.status)) {

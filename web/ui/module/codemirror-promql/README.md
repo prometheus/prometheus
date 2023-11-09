@@ -161,6 +161,15 @@ You can change it to use the HTTP method `GET` if you prefer.
 const promQL = new PromQLExtension().setComplete({remote: {httpMethod: 'GET'}})
 ```
 
+###### HTTP request headers
+
+If you need to send specific HTTP headers along with the requests to Prometheus, you can adjust that as follows:
+
+```typescript
+const customHeaders = new Headers({'header-name': 'test-value'});
+const promql = new PromQLExtension().setComplete({remote: {requestHeaders: customHeaders}})
+```
+
 ###### Override the API Prefix
 
 The default Prometheus Client, when building the query to get data from Prometheus, is using an API prefix which is by
