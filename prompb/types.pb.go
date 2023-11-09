@@ -68,49 +68,6 @@ func (MetricMetadata_MetricType) EnumDescriptor() ([]byte, []int) {
 	return fileDescriptor_d938547f84707355, []int{0, 0}
 }
 
-type MetricMetadataRef_MetricType int32
-
-const (
-	MetricMetadataRef_UNKNOWN        MetricMetadataRef_MetricType = 0
-	MetricMetadataRef_COUNTER        MetricMetadataRef_MetricType = 1
-	MetricMetadataRef_GAUGE          MetricMetadataRef_MetricType = 2
-	MetricMetadataRef_HISTOGRAM      MetricMetadataRef_MetricType = 3
-	MetricMetadataRef_GAUGEHISTOGRAM MetricMetadataRef_MetricType = 4
-	MetricMetadataRef_SUMMARY        MetricMetadataRef_MetricType = 5
-	MetricMetadataRef_INFO           MetricMetadataRef_MetricType = 6
-	MetricMetadataRef_STATESET       MetricMetadataRef_MetricType = 7
-)
-
-var MetricMetadataRef_MetricType_name = map[int32]string{
-	0: "UNKNOWN",
-	1: "COUNTER",
-	2: "GAUGE",
-	3: "HISTOGRAM",
-	4: "GAUGEHISTOGRAM",
-	5: "SUMMARY",
-	6: "INFO",
-	7: "STATESET",
-}
-
-var MetricMetadataRef_MetricType_value = map[string]int32{
-	"UNKNOWN":        0,
-	"COUNTER":        1,
-	"GAUGE":          2,
-	"HISTOGRAM":      3,
-	"GAUGEHISTOGRAM": 4,
-	"SUMMARY":        5,
-	"INFO":           6,
-	"STATESET":       7,
-}
-
-func (x MetricMetadataRef_MetricType) String() string {
-	return proto.EnumName(MetricMetadataRef_MetricType_name, int32(x))
-}
-
-func (MetricMetadataRef_MetricType) EnumDescriptor() ([]byte, []int) {
-	return fileDescriptor_d938547f84707355, []int{1, 0}
-}
-
 type Histogram_ResetHint int32
 
 const (
@@ -139,7 +96,7 @@ func (x Histogram_ResetHint) String() string {
 }
 
 func (Histogram_ResetHint) EnumDescriptor() ([]byte, []int) {
-	return fileDescriptor_d938547f84707355, []int{5, 0}
+	return fileDescriptor_d938547f84707355, []int{3, 0}
 }
 
 type LabelMatcher_Type int32
@@ -170,7 +127,7 @@ func (x LabelMatcher_Type) String() string {
 }
 
 func (LabelMatcher_Type) EnumDescriptor() ([]byte, []int) {
-	return fileDescriptor_d938547f84707355, []int{13, 0}
+	return fileDescriptor_d938547f84707355, []int{9, 0}
 }
 
 // We require this to match chunkenc.Encoding.
@@ -202,7 +159,7 @@ func (x Chunk_Encoding) String() string {
 }
 
 func (Chunk_Encoding) EnumDescriptor() ([]byte, []int) {
-	return fileDescriptor_d938547f84707355, []int{15, 0}
+	return fileDescriptor_d938547f84707355, []int{11, 0}
 }
 
 type MetricMetadata struct {
@@ -278,71 +235,6 @@ func (m *MetricMetadata) GetUnit() string {
 	return ""
 }
 
-type MetricMetadataRef struct {
-	// Represents the metric type, these match the set from Prometheus.
-	// Refer to model/textparse/interface.go for details.
-	Type                 MetricMetadataRef_MetricType `protobuf:"varint,1,opt,name=type,proto3,enum=prometheus.MetricMetadataRef_MetricType" json:"type,omitempty"`
-	HelpRef              int64                        `protobuf:"varint,4,opt,name=help_ref,json=helpRef,proto3" json:"help_ref,omitempty"`
-	UnitRef              int64                        `protobuf:"varint,5,opt,name=unit_ref,json=unitRef,proto3" json:"unit_ref,omitempty"`
-	XXX_NoUnkeyedLiteral struct{}                     `json:"-"`
-	XXX_unrecognized     []byte                       `json:"-"`
-	XXX_sizecache        int32                        `json:"-"`
-}
-
-func (m *MetricMetadataRef) Reset()         { *m = MetricMetadataRef{} }
-func (m *MetricMetadataRef) String() string { return proto.CompactTextString(m) }
-func (*MetricMetadataRef) ProtoMessage()    {}
-func (*MetricMetadataRef) Descriptor() ([]byte, []int) {
-	return fileDescriptor_d938547f84707355, []int{1}
-}
-func (m *MetricMetadataRef) XXX_Unmarshal(b []byte) error {
-	return m.Unmarshal(b)
-}
-func (m *MetricMetadataRef) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
-	if deterministic {
-		return xxx_messageInfo_MetricMetadataRef.Marshal(b, m, deterministic)
-	} else {
-		b = b[:cap(b)]
-		n, err := m.MarshalToSizedBuffer(b)
-		if err != nil {
-			return nil, err
-		}
-		return b[:n], nil
-	}
-}
-func (m *MetricMetadataRef) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_MetricMetadataRef.Merge(m, src)
-}
-func (m *MetricMetadataRef) XXX_Size() int {
-	return m.Size()
-}
-func (m *MetricMetadataRef) XXX_DiscardUnknown() {
-	xxx_messageInfo_MetricMetadataRef.DiscardUnknown(m)
-}
-
-var xxx_messageInfo_MetricMetadataRef proto.InternalMessageInfo
-
-func (m *MetricMetadataRef) GetType() MetricMetadataRef_MetricType {
-	if m != nil {
-		return m.Type
-	}
-	return MetricMetadataRef_UNKNOWN
-}
-
-func (m *MetricMetadataRef) GetHelpRef() int64 {
-	if m != nil {
-		return m.HelpRef
-	}
-	return 0
-}
-
-func (m *MetricMetadataRef) GetUnitRef() int64 {
-	if m != nil {
-		return m.UnitRef
-	}
-	return 0
-}
-
 type Sample struct {
 	Value float64 `protobuf:"fixed64,1,opt,name=value,proto3" json:"value,omitempty"`
 	// timestamp is in ms format, see model/timestamp/timestamp.go for
@@ -357,7 +249,7 @@ func (m *Sample) Reset()         { *m = Sample{} }
 func (m *Sample) String() string { return proto.CompactTextString(m) }
 func (*Sample) ProtoMessage()    {}
 func (*Sample) Descriptor() ([]byte, []int) {
-	return fileDescriptor_d938547f84707355, []int{2}
+	return fileDescriptor_d938547f84707355, []int{1}
 }
 func (m *Sample) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -416,7 +308,7 @@ func (m *Exemplar) Reset()         { *m = Exemplar{} }
 func (m *Exemplar) String() string { return proto.CompactTextString(m) }
 func (*Exemplar) ProtoMessage()    {}
 func (*Exemplar) Descriptor() ([]byte, []int) {
-	return fileDescriptor_d938547f84707355, []int{3}
+	return fileDescriptor_d938547f84707355, []int{2}
 }
 func (m *Exemplar) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -460,72 +352,6 @@ func (m *Exemplar) GetValue() float64 {
 }
 
 func (m *Exemplar) GetTimestamp() int64 {
-	if m != nil {
-		return m.Timestamp
-	}
-	return 0
-}
-
-type ExemplarRef struct {
-	// Optional, can be empty.
-	Labels []LabelRef `protobuf:"bytes,1,rep,name=labels,proto3" json:"labels"`
-	Value  float64    `protobuf:"fixed64,2,opt,name=value,proto3" json:"value,omitempty"`
-	// timestamp is in ms format, see model/timestamp/timestamp.go for
-	// conversion from time.Time to Prometheus timestamp.
-	Timestamp            int64    `protobuf:"varint,3,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
-	XXX_NoUnkeyedLiteral struct{} `json:"-"`
-	XXX_unrecognized     []byte   `json:"-"`
-	XXX_sizecache        int32    `json:"-"`
-}
-
-func (m *ExemplarRef) Reset()         { *m = ExemplarRef{} }
-func (m *ExemplarRef) String() string { return proto.CompactTextString(m) }
-func (*ExemplarRef) ProtoMessage()    {}
-func (*ExemplarRef) Descriptor() ([]byte, []int) {
-	return fileDescriptor_d938547f84707355, []int{4}
-}
-func (m *ExemplarRef) XXX_Unmarshal(b []byte) error {
-	return m.Unmarshal(b)
-}
-func (m *ExemplarRef) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
-	if deterministic {
-		return xxx_messageInfo_ExemplarRef.Marshal(b, m, deterministic)
-	} else {
-		b = b[:cap(b)]
-		n, err := m.MarshalToSizedBuffer(b)
-		if err != nil {
-			return nil, err
-		}
-		return b[:n], nil
-	}
-}
-func (m *ExemplarRef) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_ExemplarRef.Merge(m, src)
-}
-func (m *ExemplarRef) XXX_Size() int {
-	return m.Size()
-}
-func (m *ExemplarRef) XXX_DiscardUnknown() {
-	xxx_messageInfo_ExemplarRef.DiscardUnknown(m)
-}
-
-var xxx_messageInfo_ExemplarRef proto.InternalMessageInfo
-
-func (m *ExemplarRef) GetLabels() []LabelRef {
-	if m != nil {
-		return m.Labels
-	}
-	return nil
-}
-
-func (m *ExemplarRef) GetValue() float64 {
-	if m != nil {
-		return m.Value
-	}
-	return 0
-}
-
-func (m *ExemplarRef) GetTimestamp() int64 {
 	if m != nil {
 		return m.Timestamp
 	}
@@ -586,7 +412,7 @@ func (m *Histogram) Reset()         { *m = Histogram{} }
 func (m *Histogram) String() string { return proto.CompactTextString(m) }
 func (*Histogram) ProtoMessage()    {}
 func (*Histogram) Descriptor() ([]byte, []int) {
-	return fileDescriptor_d938547f84707355, []int{5}
+	return fileDescriptor_d938547f84707355, []int{3}
 }
 func (m *Histogram) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -789,7 +615,7 @@ func (m *BucketSpan) Reset()         { *m = BucketSpan{} }
 func (m *BucketSpan) String() string { return proto.CompactTextString(m) }
 func (*BucketSpan) ProtoMessage()    {}
 func (*BucketSpan) Descriptor() ([]byte, []int) {
-	return fileDescriptor_d938547f84707355, []int{6}
+	return fileDescriptor_d938547f84707355, []int{4}
 }
 func (m *BucketSpan) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -849,7 +675,7 @@ func (m *TimeSeries) Reset()         { *m = TimeSeries{} }
 func (m *TimeSeries) String() string { return proto.CompactTextString(m) }
 func (*TimeSeries) ProtoMessage()    {}
 func (*TimeSeries) Descriptor() ([]byte, []int) {
-	return fileDescriptor_d938547f84707355, []int{7}
+	return fileDescriptor_d938547f84707355, []int{5}
 }
 func (m *TimeSeries) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -906,92 +732,10 @@ func (m *TimeSeries) GetHistograms() []Histogram {
 	return nil
 }
 
-// TimeSeries represents samples and labels for a single time series.
-type ReducedTimeSeries struct {
-	// For a timeseries to be valid, and for the samples and exemplars
-	// to be ingested by the remote system properly, the labels field is required.
-	Labels               []LabelRef        `protobuf:"bytes,1,rep,name=labels,proto3" json:"labels"`
-	Samples              []Sample          `protobuf:"bytes,2,rep,name=samples,proto3" json:"samples"`
-	Exemplars            []ExemplarRef     `protobuf:"bytes,3,rep,name=exemplars,proto3" json:"exemplars"`
-	Histograms           []Histogram       `protobuf:"bytes,4,rep,name=histograms,proto3" json:"histograms"`
-	Metadata             MetricMetadataRef `protobuf:"bytes,5,opt,name=metadata,proto3" json:"metadata"`
-	XXX_NoUnkeyedLiteral struct{}          `json:"-"`
-	XXX_unrecognized     []byte            `json:"-"`
-	XXX_sizecache        int32             `json:"-"`
-}
-
-func (m *ReducedTimeSeries) Reset()         { *m = ReducedTimeSeries{} }
-func (m *ReducedTimeSeries) String() string { return proto.CompactTextString(m) }
-func (*ReducedTimeSeries) ProtoMessage()    {}
-func (*ReducedTimeSeries) Descriptor() ([]byte, []int) {
-	return fileDescriptor_d938547f84707355, []int{8}
-}
-func (m *ReducedTimeSeries) XXX_Unmarshal(b []byte) error {
-	return m.Unmarshal(b)
-}
-func (m *ReducedTimeSeries) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
-	if deterministic {
-		return xxx_messageInfo_ReducedTimeSeries.Marshal(b, m, deterministic)
-	} else {
-		b = b[:cap(b)]
-		n, err := m.MarshalToSizedBuffer(b)
-		if err != nil {
-			return nil, err
-		}
-		return b[:n], nil
-	}
-}
-func (m *ReducedTimeSeries) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_ReducedTimeSeries.Merge(m, src)
-}
-func (m *ReducedTimeSeries) XXX_Size() int {
-	return m.Size()
-}
-func (m *ReducedTimeSeries) XXX_DiscardUnknown() {
-	xxx_messageInfo_ReducedTimeSeries.DiscardUnknown(m)
-}
-
-var xxx_messageInfo_ReducedTimeSeries proto.InternalMessageInfo
-
-func (m *ReducedTimeSeries) GetLabels() []LabelRef {
-	if m != nil {
-		return m.Labels
-	}
-	return nil
-}
-
-func (m *ReducedTimeSeries) GetSamples() []Sample {
-	if m != nil {
-		return m.Samples
-	}
-	return nil
-}
-
-func (m *ReducedTimeSeries) GetExemplars() []ExemplarRef {
-	if m != nil {
-		return m.Exemplars
-	}
-	return nil
-}
-
-func (m *ReducedTimeSeries) GetHistograms() []Histogram {
-	if m != nil {
-		return m.Histograms
-	}
-	return nil
-}
-
-func (m *ReducedTimeSeries) GetMetadata() MetricMetadataRef {
-	if m != nil {
-		return m.Metadata
-	}
-	return MetricMetadataRef{}
-}
-
 // based on an experiment by marco
 type MinimizedTimeSeries struct {
-	// Sorted list of label name-value pair references. This list is always even. At even indices
-	// there's the reference to label name, while at odd indices there's the reference to label value.
+	// Sorted list of label name-value pair references. This list's len is always multiple of 4,
+	// packing tuples of (label name offset, label name length, label value offset, label value length).
 	LabelSymbols []uint32 `protobuf:"varint,1,rep,packed,name=label_symbols,json=labelSymbols,proto3" json:"label_symbols,omitempty"`
 	// Sorted by time, oldest sample first.
 	// TODO: support references for other types
@@ -1007,7 +751,7 @@ func (m *MinimizedTimeSeries) Reset()         { *m = MinimizedTimeSeries{} }
 func (m *MinimizedTimeSeries) String() string { return proto.CompactTextString(m) }
 func (*MinimizedTimeSeries) ProtoMessage()    {}
 func (*MinimizedTimeSeries) Descriptor() ([]byte, []int) {
-	return fileDescriptor_d938547f84707355, []int{9}
+	return fileDescriptor_d938547f84707355, []int{6}
 }
 func (m *MinimizedTimeSeries) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -1064,61 +808,6 @@ func (m *MinimizedTimeSeries) GetHistograms() []Histogram {
 	return nil
 }
 
-type LabelRef struct {
-	NameRef              uint64   `protobuf:"varint,1,opt,name=name_ref,json=nameRef,proto3" json:"name_ref,omitempty"`
-	ValueRef             uint64   `protobuf:"varint,2,opt,name=value_ref,json=valueRef,proto3" json:"value_ref,omitempty"`
-	XXX_NoUnkeyedLiteral struct{} `json:"-"`
-	XXX_unrecognized     []byte   `json:"-"`
-	XXX_sizecache        int32    `json:"-"`
-}
-
-func (m *LabelRef) Reset()         { *m = LabelRef{} }
-func (m *LabelRef) String() string { return proto.CompactTextString(m) }
-func (*LabelRef) ProtoMessage()    {}
-func (*LabelRef) Descriptor() ([]byte, []int) {
-	return fileDescriptor_d938547f84707355, []int{10}
-}
-func (m *LabelRef) XXX_Unmarshal(b []byte) error {
-	return m.Unmarshal(b)
-}
-func (m *LabelRef) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
-	if deterministic {
-		return xxx_messageInfo_LabelRef.Marshal(b, m, deterministic)
-	} else {
-		b = b[:cap(b)]
-		n, err := m.MarshalToSizedBuffer(b)
-		if err != nil {
-			return nil, err
-		}
-		return b[:n], nil
-	}
-}
-func (m *LabelRef) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_LabelRef.Merge(m, src)
-}
-func (m *LabelRef) XXX_Size() int {
-	return m.Size()
-}
-func (m *LabelRef) XXX_DiscardUnknown() {
-	xxx_messageInfo_LabelRef.DiscardUnknown(m)
-}
-
-var xxx_messageInfo_LabelRef proto.InternalMessageInfo
-
-func (m *LabelRef) GetNameRef() uint64 {
-	if m != nil {
-		return m.NameRef
-	}
-	return 0
-}
-
-func (m *LabelRef) GetValueRef() uint64 {
-	if m != nil {
-		return m.ValueRef
-	}
-	return 0
-}
-
 type Label struct {
 	Name                 string   `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	Value                string   `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
@@ -1131,7 +820,7 @@ func (m *Label) Reset()         { *m = Label{} }
 func (m *Label) String() string { return proto.CompactTextString(m) }
 func (*Label) ProtoMessage()    {}
 func (*Label) Descriptor() ([]byte, []int) {
-	return fileDescriptor_d938547f84707355, []int{11}
+	return fileDescriptor_d938547f84707355, []int{7}
 }
 func (m *Label) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -1185,7 +874,7 @@ func (m *Labels) Reset()         { *m = Labels{} }
 func (m *Labels) String() string { return proto.CompactTextString(m) }
 func (*Labels) ProtoMessage()    {}
 func (*Labels) Descriptor() ([]byte, []int) {
-	return fileDescriptor_d938547f84707355, []int{12}
+	return fileDescriptor_d938547f84707355, []int{8}
 }
 func (m *Labels) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -1235,7 +924,7 @@ func (m *LabelMatcher) Reset()         { *m = LabelMatcher{} }
 func (m *LabelMatcher) String() string { return proto.CompactTextString(m) }
 func (*LabelMatcher) ProtoMessage()    {}
 func (*LabelMatcher) Descriptor() ([]byte, []int) {
-	return fileDescriptor_d938547f84707355, []int{13}
+	return fileDescriptor_d938547f84707355, []int{9}
 }
 func (m *LabelMatcher) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -1302,7 +991,7 @@ func (m *ReadHints) Reset()         { *m = ReadHints{} }
 func (m *ReadHints) String() string { return proto.CompactTextString(m) }
 func (*ReadHints) ProtoMessage()    {}
 func (*ReadHints) Descriptor() ([]byte, []int) {
-	return fileDescriptor_d938547f84707355, []int{14}
+	return fileDescriptor_d938547f84707355, []int{10}
 }
 func (m *ReadHints) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -1396,7 +1085,7 @@ func (m *Chunk) Reset()         { *m = Chunk{} }
 func (m *Chunk) String() string { return proto.CompactTextString(m) }
 func (*Chunk) ProtoMessage()    {}
 func (*Chunk) Descriptor() ([]byte, []int) {
-	return fileDescriptor_d938547f84707355, []int{15}
+	return fileDescriptor_d938547f84707355, []int{11}
 }
 func (m *Chunk) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -1468,7 +1157,7 @@ func (m *ChunkedSeries) Reset()         { *m = ChunkedSeries{} }
 func (m *ChunkedSeries) String() string { return proto.CompactTextString(m) }
 func (*ChunkedSeries) ProtoMessage()    {}
 func (*ChunkedSeries) Descriptor() ([]byte, []int) {
-	return fileDescriptor_d938547f84707355, []int{16}
+	return fileDescriptor_d938547f84707355, []int{12}
 }
 func (m *ChunkedSeries) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -1513,21 +1202,16 @@ func (m *ChunkedSeries) GetChunks() []Chunk {
 
 func init() {
 	proto.RegisterEnum("prometheus.MetricMetadata_MetricType", MetricMetadata_MetricType_name, MetricMetadata_MetricType_value)
-	proto.RegisterEnum("prometheus.MetricMetadataRef_MetricType", MetricMetadataRef_MetricType_name, MetricMetadataRef_MetricType_value)
 	proto.RegisterEnum("prometheus.Histogram_ResetHint", Histogram_ResetHint_name, Histogram_ResetHint_value)
 	proto.RegisterEnum("prometheus.LabelMatcher_Type", LabelMatcher_Type_name, LabelMatcher_Type_value)
 	proto.RegisterEnum("prometheus.Chunk_Encoding", Chunk_Encoding_name, Chunk_Encoding_value)
 	proto.RegisterType((*MetricMetadata)(nil), "prometheus.MetricMetadata")
-	proto.RegisterType((*MetricMetadataRef)(nil), "prometheus.MetricMetadataRef")
 	proto.RegisterType((*Sample)(nil), "prometheus.Sample")
 	proto.RegisterType((*Exemplar)(nil), "prometheus.Exemplar")
-	proto.RegisterType((*ExemplarRef)(nil), "prometheus.ExemplarRef")
 	proto.RegisterType((*Histogram)(nil), "prometheus.Histogram")
 	proto.RegisterType((*BucketSpan)(nil), "prometheus.BucketSpan")
 	proto.RegisterType((*TimeSeries)(nil), "prometheus.TimeSeries")
-	proto.RegisterType((*ReducedTimeSeries)(nil), "prometheus.ReducedTimeSeries")
 	proto.RegisterType((*MinimizedTimeSeries)(nil), "prometheus.MinimizedTimeSeries")
-	proto.RegisterType((*LabelRef)(nil), "prometheus.LabelRef")
 	proto.RegisterType((*Label)(nil), "prometheus.Label")
 	proto.RegisterType((*Labels)(nil), "prometheus.Labels")
 	proto.RegisterType((*LabelMatcher)(nil), "prometheus.LabelMatcher")
@@ -1539,88 +1223,78 @@ func init() {
 func init() { proto.RegisterFile("types.proto", fileDescriptor_d938547f84707355) }
 
 var fileDescriptor_d938547f84707355 = []byte{
-	// 1282 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xd4, 0x57, 0xdd, 0x8e, 0xdb, 0xc4,
-	0x17, 0x5f, 0xdb, 0x89, 0x63, 0x9f, 0x7c, 0xd4, 0x3b, 0xdd, 0xb6, 0x69, 0xff, 0xff, 0x6e, 0x17,
-	0x4b, 0x85, 0x80, 0x50, 0xaa, 0x2e, 0x5c, 0x50, 0xb5, 0x02, 0xed, 0x6e, 0xb3, 0xdd, 0x8a, 0x26,
-	0x51, 0x27, 0x59, 0x41, 0xb9, 0x89, 0x66, 0x93, 0x49, 0x62, 0x35, 0xfe, 0xc0, 0x33, 0xa9, 0x9a,
-	0x5e, 0xf2, 0x0e, 0xdc, 0xf1, 0x12, 0xdc, 0xf0, 0x0c, 0x95, 0xb8, 0x81, 0x17, 0x40, 0xa8, 0x57,
-	0x48, 0xbc, 0x04, 0x9a, 0x63, 0x3b, 0x4e, 0x9a, 0x16, 0xd1, 0xaa, 0x12, 0xe2, 0x6e, 0xce, 0xf7,
-	0xef, 0x9c, 0x19, 0x9f, 0x73, 0x0c, 0x65, 0xb9, 0x88, 0xb8, 0x68, 0x46, 0x71, 0x28, 0x43, 0x02,
-	0x51, 0x1c, 0xfa, 0x5c, 0x4e, 0xf9, 0x5c, 0x5c, 0xd9, 0x99, 0x84, 0x93, 0x10, 0xd9, 0x37, 0xd4,
-	0x29, 0xd1, 0x70, 0x7f, 0xd0, 0xa1, 0xd6, 0xe6, 0x32, 0xf6, 0x86, 0x6d, 0x2e, 0xd9, 0x88, 0x49,
-	0x46, 0x6e, 0x41, 0x41, 0xf9, 0xa8, 0x6b, 0x7b, 0x5a, 0xa3, 0xb6, 0x7f, 0xbd, 0x99, 0xfb, 0x68,
-	0xae, 0x6b, 0xa6, 0x64, 0x7f, 0x11, 0x71, 0x8a, 0x26, 0xe4, 0x63, 0x20, 0x3e, 0xf2, 0x06, 0x63,
-	0xe6, 0x7b, 0xb3, 0xc5, 0x20, 0x60, 0x3e, 0xaf, 0xeb, 0x7b, 0x5a, 0xc3, 0xa6, 0x4e, 0x22, 0x39,
-	0x46, 0x41, 0x87, 0xf9, 0x9c, 0x10, 0x28, 0x4c, 0xf9, 0x2c, 0xaa, 0x17, 0x50, 0x8e, 0x67, 0xc5,
-	0x9b, 0x07, 0x9e, 0xac, 0x17, 0x13, 0x9e, 0x3a, 0xbb, 0x0b, 0x80, 0x3c, 0x12, 0x29, 0x43, 0xe9,
-	0xb4, 0xf3, 0x65, 0xa7, 0xfb, 0x55, 0xc7, 0xd9, 0x52, 0xc4, 0x51, 0xf7, 0xb4, 0xd3, 0x6f, 0x51,
-	0x47, 0x23, 0x36, 0x14, 0xef, 0x1d, 0x9c, 0xde, 0x6b, 0x39, 0x3a, 0xa9, 0x82, 0x7d, 0x72, 0xbf,
-	0xd7, 0xef, 0xde, 0xa3, 0x07, 0x6d, 0xc7, 0x20, 0x04, 0x6a, 0x28, 0xc9, 0x79, 0x05, 0x65, 0xda,
-	0x3b, 0x6d, 0xb7, 0x0f, 0xe8, 0x23, 0xa7, 0x48, 0x2c, 0x28, 0xdc, 0xef, 0x1c, 0x77, 0x1d, 0x93,
-	0x54, 0xc0, 0xea, 0xf5, 0x0f, 0xfa, 0xad, 0x5e, 0xab, 0xef, 0x94, 0xdc, 0xef, 0x74, 0xd8, 0x5e,
-	0x4f, 0x9a, 0xf2, 0x31, 0xb9, 0xb3, 0x56, 0xa1, 0xc6, 0xeb, 0x2b, 0x44, 0xf9, 0x78, 0xb3, 0x48,
-	0x97, 0xc1, 0x52, 0xa9, 0x0e, 0x62, 0x3e, 0xc6, 0xd4, 0x0d, 0x5a, 0x52, 0xb4, 0x72, 0x7c, 0x19,
-	0x2c, 0x95, 0x31, 0x8a, 0x8a, 0x89, 0x48, 0xd1, 0x94, 0x8f, 0xff, 0xcd, 0x22, 0xdc, 0x01, 0xb3,
-	0xc7, 0xfc, 0x68, 0xc6, 0xc9, 0x0e, 0x14, 0x9f, 0xb0, 0xd9, 0x3c, 0xc9, 0x5c, 0xa3, 0x09, 0x41,
-	0xfe, 0x0f, 0xb6, 0xf4, 0x7c, 0x2e, 0x24, 0xf3, 0x23, 0xbc, 0x6c, 0x83, 0xe6, 0x0c, 0x37, 0x04,
-	0xab, 0xf5, 0x94, 0xfb, 0xd1, 0x8c, 0xc5, 0xe4, 0x06, 0x98, 0x33, 0x76, 0xc6, 0x67, 0xa2, 0xae,
-	0xed, 0x19, 0x8d, 0xf2, 0xfe, 0xf6, 0x6a, 0xe9, 0x1e, 0x28, 0xc9, 0x61, 0xe1, 0xf9, 0x6f, 0xd7,
-	0xb6, 0x68, 0xaa, 0x96, 0x07, 0xd4, 0x5f, 0x1b, 0xd0, 0x78, 0x39, 0xe0, 0x1c, 0xca, 0x59, 0x40,
-	0x55, 0xd3, 0xfd, 0x97, 0x62, 0xee, 0x6c, 0xc4, 0xa4, 0x7c, 0xfc, 0x0e, 0xc2, 0xfe, 0x5c, 0x04,
-	0xfb, 0xc4, 0x13, 0x32, 0x9c, 0xc4, 0xcc, 0x27, 0x57, 0xc1, 0x1e, 0x86, 0xf3, 0x40, 0x0e, 0xbc,
-	0x40, 0x62, 0xb5, 0x0a, 0x27, 0x5b, 0xd4, 0x42, 0xd6, 0xfd, 0x40, 0x92, 0xf7, 0xa0, 0x9c, 0x88,
-	0xc7, 0xb3, 0x90, 0xc9, 0x24, 0xcc, 0xc9, 0x16, 0x05, 0x64, 0x1e, 0x2b, 0x1e, 0x71, 0xc0, 0x10,
-	0x73, 0x1f, 0xe3, 0x68, 0x54, 0x1d, 0xc9, 0x45, 0x30, 0xc5, 0x70, 0xca, 0x7d, 0x86, 0xcf, 0x66,
-	0x9b, 0xa6, 0x14, 0xb9, 0x0e, 0xb5, 0x67, 0x3c, 0x0e, 0x07, 0x72, 0x1a, 0x73, 0x31, 0x0d, 0x67,
-	0x23, 0x7c, 0x3b, 0x1a, 0xad, 0x2a, 0x6e, 0x3f, 0x63, 0x92, 0xf7, 0x53, 0xb5, 0x1c, 0x97, 0x89,
-	0xb8, 0x34, 0x5a, 0x51, 0xfc, 0xa3, 0x0c, 0xdb, 0x47, 0xe0, 0xac, 0xe8, 0x25, 0x00, 0x4b, 0x08,
-	0x50, 0xa3, 0xb5, 0xa5, 0x66, 0x02, 0xf2, 0x08, 0x6a, 0x01, 0x9f, 0x30, 0xe9, 0x3d, 0xe1, 0x03,
-	0x11, 0xb1, 0x40, 0xd4, 0x2d, 0x2c, 0xf2, 0xc5, 0xd5, 0x22, 0x1f, 0xce, 0x87, 0x8f, 0xb9, 0xec,
-	0x45, 0x2c, 0x48, 0xcb, 0x5c, 0xcd, 0x6c, 0x14, 0x4f, 0x90, 0x0f, 0xe0, 0xdc, 0xd2, 0xc9, 0x88,
-	0xcf, 0x24, 0x13, 0x75, 0x7b, 0xcf, 0x68, 0x10, 0xba, 0xf4, 0x7d, 0x17, 0xb9, 0x6b, 0x8a, 0x88,
-	0x4e, 0xd4, 0x61, 0xcf, 0x68, 0x68, 0xb9, 0x22, 0x42, 0x13, 0x0a, 0x56, 0x14, 0x0a, 0x6f, 0x05,
-	0x56, 0xf9, 0x9f, 0xc0, 0xca, 0x6c, 0x96, 0xb0, 0x96, 0x4e, 0x52, 0x58, 0x95, 0x04, 0x56, 0xc6,
-	0xce, 0x61, 0x2d, 0x15, 0x53, 0x58, 0xd5, 0x04, 0x56, 0xc6, 0x4e, 0x61, 0x7d, 0x0e, 0x10, 0x73,
-	0xc1, 0xe5, 0x60, 0xaa, 0xaa, 0x5f, 0xc3, 0xee, 0x71, 0x6d, 0x15, 0xd2, 0xf2, 0xfd, 0x34, 0xa9,
-	0xd2, 0x3b, 0xf1, 0x02, 0x49, 0xed, 0x38, 0x3b, 0xae, 0x3f, 0xc0, 0x73, 0x2f, 0x3f, 0xc0, 0x4f,
-	0xc1, 0x5e, 0x5a, 0xad, 0x37, 0x88, 0x12, 0x18, 0x8f, 0x5a, 0x3d, 0x47, 0x23, 0x26, 0xe8, 0x9d,
-	0xae, 0xa3, 0xe7, 0x4d, 0xc2, 0x38, 0x2c, 0x41, 0x11, 0x31, 0x1f, 0x56, 0x00, 0xf2, 0x6b, 0x77,
-	0xef, 0x00, 0xe4, 0xf5, 0x51, 0x2f, 0x2f, 0x1c, 0x8f, 0x05, 0x4f, 0x9e, 0xf2, 0x36, 0x4d, 0x29,
-	0xc5, 0x9f, 0xf1, 0x60, 0x22, 0xa7, 0xf8, 0x82, 0xab, 0x34, 0xa5, 0xdc, 0x3f, 0x34, 0x80, 0xbe,
-	0xe7, 0xf3, 0x1e, 0x8f, 0x3d, 0x2e, 0xde, 0xfc, 0xb3, 0xdf, 0x87, 0x92, 0xc0, 0x8e, 0x23, 0xea,
-	0x3a, 0x5a, 0x90, 0x55, 0x8b, 0xa4, 0x19, 0xa5, 0x26, 0x99, 0x22, 0xf9, 0x0c, 0x6c, 0x9e, 0x7e,
-	0xf6, 0xa2, 0x6e, 0x6c, 0x7e, 0xea, 0x59, 0x4f, 0x48, 0xed, 0x72, 0x65, 0x72, 0x1b, 0x60, 0x9a,
-	0x15, 0x5e, 0xd4, 0x0b, 0x68, 0x7a, 0xe1, 0x95, 0xd7, 0x92, 0xda, 0xae, 0xa8, 0xbb, 0x3f, 0xe9,
-	0xb0, 0x4d, 0xf9, 0x68, 0x3e, 0xe4, 0xa3, 0x95, 0x8c, 0xdf, 0xa6, 0xe9, 0xbc, 0x4d, 0xd2, 0xb7,
-	0x37, 0x93, 0xbe, 0xf4, 0xaa, 0xa4, 0xf3, 0x68, 0xef, 0x28, 0x6f, 0xf2, 0x05, 0x58, 0x7e, 0x3a,
-	0xe5, 0xb0, 0xdd, 0x94, 0xf7, 0xaf, 0xfe, 0xed, 0x1c, 0x4c, 0x5d, 0x2c, 0x8d, 0xdc, 0x3f, 0x35,
-	0x38, 0xdf, 0xf6, 0x02, 0xcf, 0xf7, 0x9e, 0xad, 0x95, 0xee, 0x43, 0xa8, 0x62, 0x41, 0x06, 0x62,
-	0xe1, 0x9f, 0x85, 0x69, 0x05, 0xab, 0xa9, 0x79, 0x05, 0x45, 0xbd, 0x44, 0xf2, 0x5f, 0x7a, 0x26,
-	0x87, 0x60, 0x65, 0xd7, 0xae, 0xa6, 0xbc, 0xda, 0x8b, 0x70, 0xca, 0xe3, 0x68, 0xa0, 0x25, 0x45,
-	0x2b, 0xd1, 0xff, 0xc0, 0xc6, 0x59, 0x83, 0x32, 0x1d, 0x65, 0x16, 0x32, 0xd4, 0x0a, 0x70, 0x13,
-	0x8a, 0xe8, 0x43, 0x2d, 0x49, 0xb8, 0x58, 0x69, 0xc9, 0x92, 0xa4, 0xce, 0xeb, 0x23, 0xcb, 0x4e,
-	0x47, 0x96, 0x7b, 0x0b, 0xcc, 0x07, 0xc9, 0xeb, 0x7a, 0xd3, 0x6f, 0xd0, 0xfd, 0x5e, 0x83, 0x0a,
-	0xf2, 0xdb, 0x4c, 0x0e, 0xa7, 0x3c, 0x26, 0x37, 0xd7, 0xb6, 0x9e, 0xab, 0x1b, 0xf6, 0xa9, 0x5e,
-	0x73, 0x65, 0xd5, 0xc9, 0x80, 0xea, 0xaf, 0x02, 0x6a, 0xac, 0x02, 0x6d, 0x40, 0x01, 0x17, 0x1b,
-	0x13, 0xf4, 0xd6, 0xc3, 0xa4, 0x65, 0x75, 0x5a, 0x0f, 0x93, 0x96, 0x45, 0xd5, 0x32, 0xa3, 0x18,
-	0xb4, 0xe5, 0x18, 0xee, 0x8f, 0x9a, 0xea, 0x73, 0x6c, 0xa4, 0xda, 0x9c, 0x20, 0x97, 0xa0, 0x24,
-	0x24, 0x8f, 0x06, 0xbe, 0x40, 0x5c, 0x06, 0x35, 0x15, 0xd9, 0x16, 0x2a, 0xf4, 0x78, 0x1e, 0x0c,
-	0xb3, 0xd0, 0xea, 0xac, 0x0a, 0x2f, 0x24, 0x8b, 0xa5, 0xd2, 0x4e, 0xe6, 0x77, 0x09, 0xe9, 0xb6,
-	0x20, 0x17, 0xc0, 0xe4, 0xc1, 0x68, 0x80, 0x17, 0xab, 0x04, 0x45, 0x1e, 0x8c, 0xda, 0x82, 0x5c,
-	0x01, 0x6b, 0x12, 0x87, 0xf3, 0xc8, 0x0b, 0x26, 0xf5, 0xe2, 0x9e, 0xd1, 0xb0, 0xe9, 0x92, 0x26,
-	0x35, 0xd0, 0xcf, 0x16, 0x38, 0x43, 0x2d, 0xaa, 0x9f, 0x2d, 0x94, 0xf7, 0x98, 0x05, 0x13, 0xae,
-	0x9c, 0x94, 0x12, 0xef, 0x48, 0xb7, 0x85, 0xfb, 0xab, 0x06, 0xc5, 0xa3, 0xe9, 0x3c, 0x78, 0x4c,
-	0x76, 0xa1, 0xec, 0x7b, 0xc1, 0x40, 0x75, 0xed, 0x1c, 0xb3, 0xed, 0x7b, 0x81, 0xfa, 0x02, 0xda,
-	0x02, 0xe5, 0xec, 0xe9, 0x52, 0x9e, 0x6e, 0x53, 0x3e, 0x7b, 0x9a, 0xca, 0x9b, 0xe9, 0x25, 0x18,
-	0x78, 0x09, 0x57, 0x56, 0x2f, 0x01, 0x03, 0x34, 0x5b, 0xc1, 0x30, 0x1c, 0x79, 0xc1, 0x24, 0xbf,
-	0x01, 0xfc, 0x44, 0x55, 0x56, 0x15, 0x8a, 0x67, 0xf7, 0x2e, 0x58, 0x99, 0xd6, 0xc6, 0x9c, 0xf8,
-	0xba, 0xab, 0x96, 0xc8, 0xb5, 0xcd, 0x51, 0x27, 0xe7, 0xe1, 0xdc, 0xf1, 0x83, 0xee, 0x41, 0x7f,
-	0xb0, 0xb2, 0x4e, 0xba, 0xdf, 0x42, 0x15, 0x23, 0xf2, 0xd1, 0xdb, 0x76, 0xf9, 0x1b, 0x60, 0x0e,
-	0x95, 0x87, 0xec, 0xeb, 0xdd, 0xde, 0xc8, 0x26, 0x33, 0x48, 0xd4, 0x0e, 0x77, 0x9e, 0xbf, 0xd8,
-	0xd5, 0x7e, 0x79, 0xb1, 0xab, 0xfd, 0xfe, 0x62, 0x57, 0xfb, 0xc6, 0x54, 0xda, 0xd1, 0xd9, 0x99,
-	0x89, 0x7f, 0x32, 0x9f, 0xfc, 0x15, 0x00, 0x00, 0xff, 0xff, 0x1c, 0x7b, 0xd7, 0x1b, 0xfa, 0x0c,
-	0x00, 0x00,
+	// 1129 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xd4, 0x56, 0xdd, 0x8e, 0xdb, 0x44,
+	0x14, 0x5e, 0xdb, 0x89, 0x13, 0x9f, 0xfc, 0xd4, 0x3b, 0xdd, 0x16, 0x53, 0xd1, 0x6d, 0xb0, 0x54,
+	0x08, 0x08, 0x65, 0xd5, 0x85, 0x0b, 0x2a, 0x2a, 0xa4, 0xdd, 0x6d, 0xf6, 0x47, 0xac, 0x13, 0x75,
+	0x92, 0x15, 0x94, 0x1b, 0x6b, 0x92, 0xcc, 0x26, 0x56, 0xfd, 0x87, 0x67, 0x52, 0x6d, 0xfa, 0x1e,
+	0xdc, 0xf1, 0x12, 0xbc, 0x45, 0x25, 0x6e, 0xe0, 0x05, 0x10, 0xda, 0x2b, 0x24, 0x5e, 0x02, 0xcd,
+	0xd8, 0x8e, 0x9d, 0x6e, 0x91, 0x28, 0x77, 0xdc, 0xcd, 0xf9, 0xce, 0xdf, 0x37, 0x73, 0xe6, 0xcc,
+	0x19, 0x68, 0xf0, 0x55, 0x4c, 0x59, 0x2f, 0x4e, 0x22, 0x1e, 0x21, 0x88, 0x93, 0x28, 0xa0, 0x7c,
+	0x41, 0x97, 0xec, 0xde, 0xce, 0x3c, 0x9a, 0x47, 0x12, 0xde, 0x13, 0xab, 0xd4, 0xc2, 0xfe, 0x49,
+	0x85, 0xb6, 0x43, 0x79, 0xe2, 0x4d, 0x1d, 0xca, 0xc9, 0x8c, 0x70, 0x82, 0x1e, 0x43, 0x45, 0xc4,
+	0xb0, 0x94, 0x8e, 0xd2, 0x6d, 0xef, 0x3f, 0xec, 0x15, 0x31, 0x7a, 0x9b, 0x96, 0x99, 0x38, 0x5e,
+	0xc5, 0x14, 0x4b, 0x17, 0xf4, 0x19, 0xa0, 0x40, 0x62, 0xee, 0x25, 0x09, 0x3c, 0x7f, 0xe5, 0x86,
+	0x24, 0xa0, 0x96, 0xda, 0x51, 0xba, 0x06, 0x36, 0x53, 0xcd, 0xb1, 0x54, 0x0c, 0x48, 0x40, 0x11,
+	0x82, 0xca, 0x82, 0xfa, 0xb1, 0x55, 0x91, 0x7a, 0xb9, 0x16, 0xd8, 0x32, 0xf4, 0xb8, 0x55, 0x4d,
+	0x31, 0xb1, 0xb6, 0x57, 0x00, 0x45, 0x26, 0xd4, 0x80, 0xda, 0xc5, 0xe0, 0x9b, 0xc1, 0xf0, 0xdb,
+	0x81, 0xb9, 0x25, 0x84, 0xa3, 0xe1, 0xc5, 0x60, 0xdc, 0xc7, 0xa6, 0x82, 0x0c, 0xa8, 0x9e, 0x1c,
+	0x5c, 0x9c, 0xf4, 0x4d, 0x15, 0xb5, 0xc0, 0x38, 0x3d, 0x1b, 0x8d, 0x87, 0x27, 0xf8, 0xc0, 0x31,
+	0x35, 0x84, 0xa0, 0x2d, 0x35, 0x05, 0x56, 0x11, 0xae, 0xa3, 0x0b, 0xc7, 0x39, 0xc0, 0xcf, 0xcd,
+	0x2a, 0xaa, 0x43, 0xe5, 0x6c, 0x70, 0x3c, 0x34, 0x75, 0xd4, 0x84, 0xfa, 0x68, 0x7c, 0x30, 0xee,
+	0x8f, 0xfa, 0x63, 0xb3, 0x66, 0x3f, 0x01, 0x7d, 0x44, 0x82, 0xd8, 0xa7, 0x68, 0x07, 0xaa, 0x2f,
+	0x89, 0xbf, 0x4c, 0x8f, 0x45, 0xc1, 0xa9, 0x80, 0x3e, 0x00, 0x83, 0x7b, 0x01, 0x65, 0x9c, 0x04,
+	0xb1, 0xdc, 0xa7, 0x86, 0x0b, 0xc0, 0x8e, 0xa0, 0xde, 0xbf, 0xa2, 0x41, 0xec, 0x93, 0x04, 0xed,
+	0x81, 0xee, 0x93, 0x09, 0xf5, 0x99, 0xa5, 0x74, 0xb4, 0x6e, 0x63, 0x7f, 0xbb, 0x7c, 0xae, 0xe7,
+	0x42, 0x73, 0x58, 0x79, 0xfd, 0xfb, 0x83, 0x2d, 0x9c, 0x99, 0x15, 0x09, 0xd5, 0x7f, 0x4c, 0xa8,
+	0xbd, 0x99, 0xf0, 0x97, 0x2a, 0x18, 0xa7, 0x1e, 0xe3, 0xd1, 0x3c, 0x21, 0x01, 0xba, 0x0f, 0xc6,
+	0x34, 0x5a, 0x86, 0xdc, 0xf5, 0x42, 0x2e, 0x69, 0x57, 0x4e, 0xb7, 0x70, 0x5d, 0x42, 0x67, 0x21,
+	0x47, 0x1f, 0x42, 0x23, 0x55, 0x5f, 0xfa, 0x11, 0xe1, 0x69, 0x9a, 0xd3, 0x2d, 0x0c, 0x12, 0x3c,
+	0x16, 0x18, 0x32, 0x41, 0x63, 0xcb, 0x40, 0xe6, 0x51, 0xb0, 0x58, 0xa2, 0xbb, 0xa0, 0xb3, 0xe9,
+	0x82, 0x06, 0x44, 0x56, 0x6d, 0x1b, 0x67, 0x12, 0x7a, 0x08, 0xed, 0x57, 0x34, 0x89, 0x5c, 0xbe,
+	0x48, 0x28, 0x5b, 0x44, 0xfe, 0x4c, 0x56, 0x50, 0xc1, 0x2d, 0x81, 0x8e, 0x73, 0x10, 0x7d, 0x94,
+	0x99, 0x15, 0xbc, 0x74, 0xc9, 0x4b, 0xc1, 0x4d, 0x81, 0x1f, 0xe5, 0xdc, 0x3e, 0x05, 0xb3, 0x64,
+	0x97, 0x12, 0xac, 0x49, 0x82, 0x0a, 0x6e, 0xaf, 0x2d, 0x53, 0x92, 0x47, 0xd0, 0x0e, 0xe9, 0x9c,
+	0x70, 0xef, 0x25, 0x75, 0x59, 0x4c, 0x42, 0x66, 0xd5, 0xe5, 0x09, 0xdf, 0x2d, 0x9f, 0xf0, 0xe1,
+	0x72, 0xfa, 0x82, 0xf2, 0x51, 0x4c, 0xc2, 0xec, 0x98, 0x5b, 0xb9, 0x8f, 0xc0, 0x18, 0xfa, 0x18,
+	0x6e, 0xad, 0x83, 0xcc, 0xa8, 0xcf, 0x09, 0xb3, 0x8c, 0x8e, 0xd6, 0x45, 0x78, 0x1d, 0xfb, 0xa9,
+	0x44, 0x37, 0x0c, 0x25, 0x3b, 0x66, 0x41, 0x47, 0xeb, 0x2a, 0x85, 0xa1, 0xa4, 0xc6, 0x04, 0xad,
+	0x38, 0x62, 0x5e, 0x89, 0x56, 0xe3, 0xdf, 0xd0, 0xca, 0x7d, 0xd6, 0xb4, 0xd6, 0x41, 0x32, 0x5a,
+	0xcd, 0x94, 0x56, 0x0e, 0x17, 0xb4, 0xd6, 0x86, 0x19, 0xad, 0x56, 0x4a, 0x2b, 0x87, 0x33, 0x5a,
+	0x5f, 0x03, 0x24, 0x94, 0x51, 0xee, 0x2e, 0xc4, 0xe9, 0xb7, 0x65, 0x8f, 0x3f, 0x28, 0x53, 0x5a,
+	0xdf, 0x9f, 0x1e, 0x16, 0x76, 0xa7, 0x5e, 0xc8, 0xb1, 0x91, 0xe4, 0xcb, 0xcd, 0x0b, 0x78, 0xeb,
+	0xcd, 0x0b, 0xf8, 0x05, 0x18, 0x6b, 0xaf, 0xcd, 0x4e, 0xad, 0x81, 0xf6, 0xbc, 0x3f, 0x32, 0x15,
+	0xa4, 0x83, 0x3a, 0x18, 0x9a, 0x6a, 0xd1, 0xad, 0xda, 0x61, 0x0d, 0xaa, 0x92, 0xf3, 0x61, 0x13,
+	0xa0, 0x28, 0xbb, 0xfd, 0x04, 0xa0, 0x38, 0x1f, 0x71, 0xf3, 0xa2, 0xcb, 0x4b, 0x46, 0xd3, 0xab,
+	0xbc, 0x8d, 0x33, 0x49, 0xe0, 0x3e, 0x0d, 0xe7, 0x7c, 0x21, 0x6f, 0x70, 0x0b, 0x67, 0x92, 0xfd,
+	0xa7, 0x02, 0x30, 0xf6, 0x02, 0x3a, 0xa2, 0x89, 0x47, 0xd9, 0xbb, 0xf7, 0xdf, 0x3e, 0xd4, 0x98,
+	0x6c, 0x7d, 0x66, 0xa9, 0xd2, 0x03, 0x95, 0x3d, 0xd2, 0x57, 0x21, 0x73, 0xc9, 0x0d, 0xd1, 0x97,
+	0x60, 0xd0, 0xac, 0xe1, 0x99, 0xa5, 0x49, 0xaf, 0x9d, 0xb2, 0x57, 0xfe, 0x1a, 0x64, 0x7e, 0x85,
+	0x31, 0xfa, 0x0a, 0x60, 0x91, 0x1f, 0x3c, 0xb3, 0x2a, 0xd2, 0xf5, 0xce, 0x5b, 0xcb, 0x92, 0xf9,
+	0x96, 0xcc, 0xed, 0xbf, 0x14, 0xb8, 0xed, 0x78, 0xa1, 0x17, 0x78, 0xaf, 0xe8, 0xac, 0xb4, 0xe7,
+	0x4f, 0xa0, 0x25, 0x37, 0xe3, 0xb2, 0x55, 0x30, 0x89, 0xb2, 0xad, 0xb7, 0xb2, 0x00, 0x4d, 0xa9,
+	0x1a, 0xa5, 0x9a, 0xff, 0xd3, 0x6e, 0x1f, 0x41, 0x55, 0xd6, 0x4b, 0xcc, 0x0a, 0x39, 0x5f, 0x94,
+	0x74, 0x56, 0x88, 0xf5, 0xe6, 0xab, 0x69, 0x64, 0xaf, 0xa6, 0xfd, 0x18, 0xf4, 0xf3, 0xb4, 0xaa,
+	0xef, 0x7a, 0x0d, 0xec, 0x1f, 0x15, 0x68, 0x4a, 0xdc, 0x21, 0x7c, 0xba, 0xa0, 0x09, 0x7a, 0xb4,
+	0x31, 0x1e, 0xef, 0xdf, 0xf0, 0xcf, 0xec, 0x7a, 0xa5, 0xb1, 0x98, 0x13, 0x55, 0xdf, 0x46, 0x54,
+	0x2b, 0x13, 0xed, 0x42, 0x45, 0x0e, 0x39, 0x1d, 0xd4, 0xfe, 0xb3, 0xb4, 0x6b, 0x06, 0xfd, 0x67,
+	0x69, 0xd7, 0x60, 0x31, 0xd8, 0x04, 0x80, 0xfb, 0xa6, 0x66, 0xff, 0xac, 0x88, 0x56, 0x23, 0x33,
+	0xd1, 0x69, 0x0c, 0xbd, 0x07, 0x35, 0xc6, 0x69, 0xec, 0x06, 0x4c, 0xf2, 0xd2, 0xb0, 0x2e, 0x44,
+	0x87, 0x89, 0xd4, 0x97, 0xcb, 0x70, 0x9a, 0xa7, 0x16, 0x6b, 0xf4, 0x3e, 0xd4, 0x19, 0x27, 0x09,
+	0x17, 0xd6, 0xe9, 0x08, 0xa9, 0x49, 0xd9, 0x61, 0xe8, 0x0e, 0xe8, 0x34, 0x9c, 0xb9, 0xb2, 0x28,
+	0x42, 0x51, 0xa5, 0xe1, 0xcc, 0x61, 0xe8, 0x1e, 0xd4, 0xe7, 0x49, 0xb4, 0x8c, 0xbd, 0x70, 0x6e,
+	0x55, 0x3b, 0x5a, 0xd7, 0xc0, 0x6b, 0x19, 0xb5, 0x41, 0x9d, 0xac, 0xe4, 0x33, 0x5e, 0xc7, 0xea,
+	0x64, 0x25, 0xa2, 0x27, 0x24, 0x9c, 0x53, 0x11, 0xa4, 0x96, 0x46, 0x97, 0xb2, 0xc3, 0xec, 0xdf,
+	0x14, 0xa8, 0x1e, 0x2d, 0x96, 0xe1, 0x0b, 0xb4, 0x0b, 0x8d, 0xc0, 0x0b, 0x5d, 0xf1, 0x70, 0x14,
+	0x9c, 0x8d, 0xc0, 0x0b, 0xc5, 0xed, 0x75, 0x98, 0xd4, 0x93, 0xab, 0xb5, 0x3e, 0x9b, 0xac, 0x01,
+	0xb9, 0xca, 0xf4, 0xbd, 0xac, 0x08, 0x9a, 0x2c, 0xc2, 0xbd, 0x72, 0x11, 0x64, 0x82, 0x5e, 0x3f,
+	0x9c, 0x46, 0x33, 0x2f, 0x9c, 0x17, 0x15, 0x10, 0x3f, 0x16, 0xb9, 0xab, 0x26, 0x96, 0x6b, 0xfb,
+	0x29, 0xd4, 0x73, 0xab, 0x1b, 0x4f, 0xd5, 0x77, 0x43, 0xf1, 0xa1, 0xd8, 0xf8, 0x45, 0xa8, 0xe8,
+	0x36, 0xdc, 0x3a, 0x3e, 0x1f, 0x1e, 0x8c, 0xdd, 0xd2, 0xd7, 0xc2, 0xfe, 0x01, 0x5a, 0x32, 0x23,
+	0x9d, 0xfd, 0xd7, 0x87, 0x66, 0x0f, 0xf4, 0xa9, 0x88, 0x90, 0x77, 0xde, 0xf6, 0x8d, 0xdd, 0xe4,
+	0x0e, 0xa9, 0xd9, 0xe1, 0xce, 0xeb, 0xeb, 0x5d, 0xe5, 0xd7, 0xeb, 0x5d, 0xe5, 0x8f, 0xeb, 0x5d,
+	0xe5, 0x7b, 0x5d, 0x58, 0xc7, 0x93, 0x89, 0x2e, 0x3f, 0x74, 0x9f, 0xff, 0x1d, 0x00, 0x00, 0xff,
+	0xff, 0x7c, 0x73, 0x0c, 0xa7, 0x01, 0x0a, 0x00, 0x00,
 }
 
 func (m *MetricMetadata) Marshal() (dAtA []byte, err error) {
@@ -1667,48 +1341,6 @@ func (m *MetricMetadata) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		i = encodeVarintTypes(dAtA, i, uint64(len(m.MetricFamilyName)))
 		i--
 		dAtA[i] = 0x12
-	}
-	if m.Type != 0 {
-		i = encodeVarintTypes(dAtA, i, uint64(m.Type))
-		i--
-		dAtA[i] = 0x8
-	}
-	return len(dAtA) - i, nil
-}
-
-func (m *MetricMetadataRef) Marshal() (dAtA []byte, err error) {
-	size := m.Size()
-	dAtA = make([]byte, size)
-	n, err := m.MarshalToSizedBuffer(dAtA[:size])
-	if err != nil {
-		return nil, err
-	}
-	return dAtA[:n], nil
-}
-
-func (m *MetricMetadataRef) MarshalTo(dAtA []byte) (int, error) {
-	size := m.Size()
-	return m.MarshalToSizedBuffer(dAtA[:size])
-}
-
-func (m *MetricMetadataRef) MarshalToSizedBuffer(dAtA []byte) (int, error) {
-	i := len(dAtA)
-	_ = i
-	var l int
-	_ = l
-	if m.XXX_unrecognized != nil {
-		i -= len(m.XXX_unrecognized)
-		copy(dAtA[i:], m.XXX_unrecognized)
-	}
-	if m.UnitRef != 0 {
-		i = encodeVarintTypes(dAtA, i, uint64(m.UnitRef))
-		i--
-		dAtA[i] = 0x28
-	}
-	if m.HelpRef != 0 {
-		i = encodeVarintTypes(dAtA, i, uint64(m.HelpRef))
-		i--
-		dAtA[i] = 0x20
 	}
 	if m.Type != 0 {
 		i = encodeVarintTypes(dAtA, i, uint64(m.Type))
@@ -1772,58 +1404,6 @@ func (m *Exemplar) MarshalTo(dAtA []byte) (int, error) {
 }
 
 func (m *Exemplar) MarshalToSizedBuffer(dAtA []byte) (int, error) {
-	i := len(dAtA)
-	_ = i
-	var l int
-	_ = l
-	if m.XXX_unrecognized != nil {
-		i -= len(m.XXX_unrecognized)
-		copy(dAtA[i:], m.XXX_unrecognized)
-	}
-	if m.Timestamp != 0 {
-		i = encodeVarintTypes(dAtA, i, uint64(m.Timestamp))
-		i--
-		dAtA[i] = 0x18
-	}
-	if m.Value != 0 {
-		i -= 8
-		encoding_binary.LittleEndian.PutUint64(dAtA[i:], uint64(math.Float64bits(float64(m.Value))))
-		i--
-		dAtA[i] = 0x11
-	}
-	if len(m.Labels) > 0 {
-		for iNdEx := len(m.Labels) - 1; iNdEx >= 0; iNdEx-- {
-			{
-				size, err := m.Labels[iNdEx].MarshalToSizedBuffer(dAtA[:i])
-				if err != nil {
-					return 0, err
-				}
-				i -= size
-				i = encodeVarintTypes(dAtA, i, uint64(size))
-			}
-			i--
-			dAtA[i] = 0xa
-		}
-	}
-	return len(dAtA) - i, nil
-}
-
-func (m *ExemplarRef) Marshal() (dAtA []byte, err error) {
-	size := m.Size()
-	dAtA = make([]byte, size)
-	n, err := m.MarshalToSizedBuffer(dAtA[:size])
-	if err != nil {
-		return nil, err
-	}
-	return dAtA[:n], nil
-}
-
-func (m *ExemplarRef) MarshalTo(dAtA []byte) (int, error) {
-	size := m.Size()
-	return m.MarshalToSizedBuffer(dAtA[:size])
-}
-
-func (m *ExemplarRef) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	_ = i
 	var l int
@@ -2188,99 +1768,6 @@ func (m *TimeSeries) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
-func (m *ReducedTimeSeries) Marshal() (dAtA []byte, err error) {
-	size := m.Size()
-	dAtA = make([]byte, size)
-	n, err := m.MarshalToSizedBuffer(dAtA[:size])
-	if err != nil {
-		return nil, err
-	}
-	return dAtA[:n], nil
-}
-
-func (m *ReducedTimeSeries) MarshalTo(dAtA []byte) (int, error) {
-	size := m.Size()
-	return m.MarshalToSizedBuffer(dAtA[:size])
-}
-
-func (m *ReducedTimeSeries) MarshalToSizedBuffer(dAtA []byte) (int, error) {
-	i := len(dAtA)
-	_ = i
-	var l int
-	_ = l
-	if m.XXX_unrecognized != nil {
-		i -= len(m.XXX_unrecognized)
-		copy(dAtA[i:], m.XXX_unrecognized)
-	}
-	{
-		size, err := m.Metadata.MarshalToSizedBuffer(dAtA[:i])
-		if err != nil {
-			return 0, err
-		}
-		i -= size
-		i = encodeVarintTypes(dAtA, i, uint64(size))
-	}
-	i--
-	dAtA[i] = 0x2a
-	if len(m.Histograms) > 0 {
-		for iNdEx := len(m.Histograms) - 1; iNdEx >= 0; iNdEx-- {
-			{
-				size, err := m.Histograms[iNdEx].MarshalToSizedBuffer(dAtA[:i])
-				if err != nil {
-					return 0, err
-				}
-				i -= size
-				i = encodeVarintTypes(dAtA, i, uint64(size))
-			}
-			i--
-			dAtA[i] = 0x22
-		}
-	}
-	if len(m.Exemplars) > 0 {
-		for iNdEx := len(m.Exemplars) - 1; iNdEx >= 0; iNdEx-- {
-			{
-				size, err := m.Exemplars[iNdEx].MarshalToSizedBuffer(dAtA[:i])
-				if err != nil {
-					return 0, err
-				}
-				i -= size
-				i = encodeVarintTypes(dAtA, i, uint64(size))
-			}
-			i--
-			dAtA[i] = 0x1a
-		}
-	}
-	if len(m.Samples) > 0 {
-		for iNdEx := len(m.Samples) - 1; iNdEx >= 0; iNdEx-- {
-			{
-				size, err := m.Samples[iNdEx].MarshalToSizedBuffer(dAtA[:i])
-				if err != nil {
-					return 0, err
-				}
-				i -= size
-				i = encodeVarintTypes(dAtA, i, uint64(size))
-			}
-			i--
-			dAtA[i] = 0x12
-		}
-	}
-	if len(m.Labels) > 0 {
-		for iNdEx := len(m.Labels) - 1; iNdEx >= 0; iNdEx-- {
-			{
-				size, err := m.Labels[iNdEx].MarshalToSizedBuffer(dAtA[:i])
-				if err != nil {
-					return 0, err
-				}
-				i -= size
-				i = encodeVarintTypes(dAtA, i, uint64(size))
-			}
-			i--
-			dAtA[i] = 0xa
-		}
-	}
-	return len(dAtA) - i, nil
-}
-
 func (m *MinimizedTimeSeries) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
@@ -2348,59 +1835,22 @@ func (m *MinimizedTimeSeries) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		}
 	}
 	if len(m.LabelSymbols) > 0 {
-		dAtA11 := make([]byte, len(m.LabelSymbols)*10)
-		var j10 int
+		dAtA10 := make([]byte, len(m.LabelSymbols)*10)
+		var j9 int
 		for _, num := range m.LabelSymbols {
 			for num >= 1<<7 {
-				dAtA11[j10] = uint8(uint64(num)&0x7f | 0x80)
+				dAtA10[j9] = uint8(uint64(num)&0x7f | 0x80)
 				num >>= 7
-				j10++
+				j9++
 			}
-			dAtA11[j10] = uint8(num)
-			j10++
+			dAtA10[j9] = uint8(num)
+			j9++
 		}
-		i -= j10
-		copy(dAtA[i:], dAtA11[:j10])
-		i = encodeVarintTypes(dAtA, i, uint64(j10))
+		i -= j9
+		copy(dAtA[i:], dAtA10[:j9])
+		i = encodeVarintTypes(dAtA, i, uint64(j9))
 		i--
 		dAtA[i] = 0xa
-	}
-	return len(dAtA) - i, nil
-}
-
-func (m *LabelRef) Marshal() (dAtA []byte, err error) {
-	size := m.Size()
-	dAtA = make([]byte, size)
-	n, err := m.MarshalToSizedBuffer(dAtA[:size])
-	if err != nil {
-		return nil, err
-	}
-	return dAtA[:n], nil
-}
-
-func (m *LabelRef) MarshalTo(dAtA []byte) (int, error) {
-	size := m.Size()
-	return m.MarshalToSizedBuffer(dAtA[:size])
-}
-
-func (m *LabelRef) MarshalToSizedBuffer(dAtA []byte) (int, error) {
-	i := len(dAtA)
-	_ = i
-	var l int
-	_ = l
-	if m.XXX_unrecognized != nil {
-		i -= len(m.XXX_unrecognized)
-		copy(dAtA[i:], m.XXX_unrecognized)
-	}
-	if m.ValueRef != 0 {
-		i = encodeVarintTypes(dAtA, i, uint64(m.ValueRef))
-		i--
-		dAtA[i] = 0x10
-	}
-	if m.NameRef != 0 {
-		i = encodeVarintTypes(dAtA, i, uint64(m.NameRef))
-		i--
-		dAtA[i] = 0x8
 	}
 	return len(dAtA) - i, nil
 }
@@ -2748,27 +2198,6 @@ func (m *MetricMetadata) Size() (n int) {
 	return n
 }
 
-func (m *MetricMetadataRef) Size() (n int) {
-	if m == nil {
-		return 0
-	}
-	var l int
-	_ = l
-	if m.Type != 0 {
-		n += 1 + sovTypes(uint64(m.Type))
-	}
-	if m.HelpRef != 0 {
-		n += 1 + sovTypes(uint64(m.HelpRef))
-	}
-	if m.UnitRef != 0 {
-		n += 1 + sovTypes(uint64(m.UnitRef))
-	}
-	if m.XXX_unrecognized != nil {
-		n += len(m.XXX_unrecognized)
-	}
-	return n
-}
-
 func (m *Sample) Size() (n int) {
 	if m == nil {
 		return 0
@@ -2788,30 +2217,6 @@ func (m *Sample) Size() (n int) {
 }
 
 func (m *Exemplar) Size() (n int) {
-	if m == nil {
-		return 0
-	}
-	var l int
-	_ = l
-	if len(m.Labels) > 0 {
-		for _, e := range m.Labels {
-			l = e.Size()
-			n += 1 + l + sovTypes(uint64(l))
-		}
-	}
-	if m.Value != 0 {
-		n += 9
-	}
-	if m.Timestamp != 0 {
-		n += 1 + sovTypes(uint64(m.Timestamp))
-	}
-	if m.XXX_unrecognized != nil {
-		n += len(m.XXX_unrecognized)
-	}
-	return n
-}
-
-func (m *ExemplarRef) Size() (n int) {
 	if m == nil {
 		return 0
 	}
@@ -2990,44 +2395,6 @@ func (m *TimeSeries) Size() (n int) {
 	return n
 }
 
-func (m *ReducedTimeSeries) Size() (n int) {
-	if m == nil {
-		return 0
-	}
-	var l int
-	_ = l
-	if len(m.Labels) > 0 {
-		for _, e := range m.Labels {
-			l = e.Size()
-			n += 1 + l + sovTypes(uint64(l))
-		}
-	}
-	if len(m.Samples) > 0 {
-		for _, e := range m.Samples {
-			l = e.Size()
-			n += 1 + l + sovTypes(uint64(l))
-		}
-	}
-	if len(m.Exemplars) > 0 {
-		for _, e := range m.Exemplars {
-			l = e.Size()
-			n += 1 + l + sovTypes(uint64(l))
-		}
-	}
-	if len(m.Histograms) > 0 {
-		for _, e := range m.Histograms {
-			l = e.Size()
-			n += 1 + l + sovTypes(uint64(l))
-		}
-	}
-	l = m.Metadata.Size()
-	n += 1 + l + sovTypes(uint64(l))
-	if m.XXX_unrecognized != nil {
-		n += len(m.XXX_unrecognized)
-	}
-	return n
-}
-
 func (m *MinimizedTimeSeries) Size() (n int) {
 	if m == nil {
 		return 0
@@ -3058,24 +2425,6 @@ func (m *MinimizedTimeSeries) Size() (n int) {
 			l = e.Size()
 			n += 1 + l + sovTypes(uint64(l))
 		}
-	}
-	if m.XXX_unrecognized != nil {
-		n += len(m.XXX_unrecognized)
-	}
-	return n
-}
-
-func (m *LabelRef) Size() (n int) {
-	if m == nil {
-		return 0
-	}
-	var l int
-	_ = l
-	if m.NameRef != 0 {
-		n += 1 + sovTypes(uint64(m.NameRef))
-	}
-	if m.ValueRef != 0 {
-		n += 1 + sovTypes(uint64(m.ValueRef))
 	}
 	if m.XXX_unrecognized != nil {
 		n += len(m.XXX_unrecognized)
@@ -3402,114 +2751,6 @@ func (m *MetricMetadata) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
-func (m *MetricMetadataRef) Unmarshal(dAtA []byte) error {
-	l := len(dAtA)
-	iNdEx := 0
-	for iNdEx < l {
-		preIndex := iNdEx
-		var wire uint64
-		for shift := uint(0); ; shift += 7 {
-			if shift >= 64 {
-				return ErrIntOverflowTypes
-			}
-			if iNdEx >= l {
-				return io.ErrUnexpectedEOF
-			}
-			b := dAtA[iNdEx]
-			iNdEx++
-			wire |= uint64(b&0x7F) << shift
-			if b < 0x80 {
-				break
-			}
-		}
-		fieldNum := int32(wire >> 3)
-		wireType := int(wire & 0x7)
-		if wireType == 4 {
-			return fmt.Errorf("proto: MetricMetadataRef: wiretype end group for non-group")
-		}
-		if fieldNum <= 0 {
-			return fmt.Errorf("proto: MetricMetadataRef: illegal tag %d (wire type %d)", fieldNum, wire)
-		}
-		switch fieldNum {
-		case 1:
-			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Type", wireType)
-			}
-			m.Type = 0
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowTypes
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				m.Type |= MetricMetadataRef_MetricType(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-		case 4:
-			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field HelpRef", wireType)
-			}
-			m.HelpRef = 0
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowTypes
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				m.HelpRef |= int64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-		case 5:
-			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field UnitRef", wireType)
-			}
-			m.UnitRef = 0
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowTypes
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				m.UnitRef |= int64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-		default:
-			iNdEx = preIndex
-			skippy, err := skipTypes(dAtA[iNdEx:])
-			if err != nil {
-				return err
-			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
-				return ErrInvalidLengthTypes
-			}
-			if (iNdEx + skippy) > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.XXX_unrecognized = append(m.XXX_unrecognized, dAtA[iNdEx:iNdEx+skippy]...)
-			iNdEx += skippy
-		}
-	}
-
-	if iNdEx > l {
-		return io.ErrUnexpectedEOF
-	}
-	return nil
-}
 func (m *Sample) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
@@ -3650,121 +2891,6 @@ func (m *Exemplar) Unmarshal(dAtA []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			m.Labels = append(m.Labels, Label{})
-			if err := m.Labels[len(m.Labels)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
-				return err
-			}
-			iNdEx = postIndex
-		case 2:
-			if wireType != 1 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Value", wireType)
-			}
-			var v uint64
-			if (iNdEx + 8) > l {
-				return io.ErrUnexpectedEOF
-			}
-			v = uint64(encoding_binary.LittleEndian.Uint64(dAtA[iNdEx:]))
-			iNdEx += 8
-			m.Value = float64(math.Float64frombits(v))
-		case 3:
-			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Timestamp", wireType)
-			}
-			m.Timestamp = 0
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowTypes
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				m.Timestamp |= int64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-		default:
-			iNdEx = preIndex
-			skippy, err := skipTypes(dAtA[iNdEx:])
-			if err != nil {
-				return err
-			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
-				return ErrInvalidLengthTypes
-			}
-			if (iNdEx + skippy) > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.XXX_unrecognized = append(m.XXX_unrecognized, dAtA[iNdEx:iNdEx+skippy]...)
-			iNdEx += skippy
-		}
-	}
-
-	if iNdEx > l {
-		return io.ErrUnexpectedEOF
-	}
-	return nil
-}
-func (m *ExemplarRef) Unmarshal(dAtA []byte) error {
-	l := len(dAtA)
-	iNdEx := 0
-	for iNdEx < l {
-		preIndex := iNdEx
-		var wire uint64
-		for shift := uint(0); ; shift += 7 {
-			if shift >= 64 {
-				return ErrIntOverflowTypes
-			}
-			if iNdEx >= l {
-				return io.ErrUnexpectedEOF
-			}
-			b := dAtA[iNdEx]
-			iNdEx++
-			wire |= uint64(b&0x7F) << shift
-			if b < 0x80 {
-				break
-			}
-		}
-		fieldNum := int32(wire >> 3)
-		wireType := int(wire & 0x7)
-		if wireType == 4 {
-			return fmt.Errorf("proto: ExemplarRef: wiretype end group for non-group")
-		}
-		if fieldNum <= 0 {
-			return fmt.Errorf("proto: ExemplarRef: illegal tag %d (wire type %d)", fieldNum, wire)
-		}
-		switch fieldNum {
-		case 1:
-			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Labels", wireType)
-			}
-			var msglen int
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowTypes
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				msglen |= int(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			if msglen < 0 {
-				return ErrInvalidLengthTypes
-			}
-			postIndex := iNdEx + msglen
-			if postIndex < 0 {
-				return ErrInvalidLengthTypes
-			}
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.Labels = append(m.Labels, LabelRef{})
 			if err := m.Labels[len(m.Labels)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
@@ -4625,226 +3751,6 @@ func (m *TimeSeries) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
-func (m *ReducedTimeSeries) Unmarshal(dAtA []byte) error {
-	l := len(dAtA)
-	iNdEx := 0
-	for iNdEx < l {
-		preIndex := iNdEx
-		var wire uint64
-		for shift := uint(0); ; shift += 7 {
-			if shift >= 64 {
-				return ErrIntOverflowTypes
-			}
-			if iNdEx >= l {
-				return io.ErrUnexpectedEOF
-			}
-			b := dAtA[iNdEx]
-			iNdEx++
-			wire |= uint64(b&0x7F) << shift
-			if b < 0x80 {
-				break
-			}
-		}
-		fieldNum := int32(wire >> 3)
-		wireType := int(wire & 0x7)
-		if wireType == 4 {
-			return fmt.Errorf("proto: ReducedTimeSeries: wiretype end group for non-group")
-		}
-		if fieldNum <= 0 {
-			return fmt.Errorf("proto: ReducedTimeSeries: illegal tag %d (wire type %d)", fieldNum, wire)
-		}
-		switch fieldNum {
-		case 1:
-			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Labels", wireType)
-			}
-			var msglen int
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowTypes
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				msglen |= int(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			if msglen < 0 {
-				return ErrInvalidLengthTypes
-			}
-			postIndex := iNdEx + msglen
-			if postIndex < 0 {
-				return ErrInvalidLengthTypes
-			}
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.Labels = append(m.Labels, LabelRef{})
-			if err := m.Labels[len(m.Labels)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
-				return err
-			}
-			iNdEx = postIndex
-		case 2:
-			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Samples", wireType)
-			}
-			var msglen int
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowTypes
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				msglen |= int(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			if msglen < 0 {
-				return ErrInvalidLengthTypes
-			}
-			postIndex := iNdEx + msglen
-			if postIndex < 0 {
-				return ErrInvalidLengthTypes
-			}
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.Samples = append(m.Samples, Sample{})
-			if err := m.Samples[len(m.Samples)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
-				return err
-			}
-			iNdEx = postIndex
-		case 3:
-			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Exemplars", wireType)
-			}
-			var msglen int
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowTypes
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				msglen |= int(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			if msglen < 0 {
-				return ErrInvalidLengthTypes
-			}
-			postIndex := iNdEx + msglen
-			if postIndex < 0 {
-				return ErrInvalidLengthTypes
-			}
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.Exemplars = append(m.Exemplars, ExemplarRef{})
-			if err := m.Exemplars[len(m.Exemplars)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
-				return err
-			}
-			iNdEx = postIndex
-		case 4:
-			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Histograms", wireType)
-			}
-			var msglen int
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowTypes
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				msglen |= int(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			if msglen < 0 {
-				return ErrInvalidLengthTypes
-			}
-			postIndex := iNdEx + msglen
-			if postIndex < 0 {
-				return ErrInvalidLengthTypes
-			}
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.Histograms = append(m.Histograms, Histogram{})
-			if err := m.Histograms[len(m.Histograms)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
-				return err
-			}
-			iNdEx = postIndex
-		case 5:
-			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Metadata", wireType)
-			}
-			var msglen int
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowTypes
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				msglen |= int(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			if msglen < 0 {
-				return ErrInvalidLengthTypes
-			}
-			postIndex := iNdEx + msglen
-			if postIndex < 0 {
-				return ErrInvalidLengthTypes
-			}
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			if err := m.Metadata.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
-				return err
-			}
-			iNdEx = postIndex
-		default:
-			iNdEx = preIndex
-			skippy, err := skipTypes(dAtA[iNdEx:])
-			if err != nil {
-				return err
-			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
-				return ErrInvalidLengthTypes
-			}
-			if (iNdEx + skippy) > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.XXX_unrecognized = append(m.XXX_unrecognized, dAtA[iNdEx:iNdEx+skippy]...)
-			iNdEx += skippy
-		}
-	}
-
-	if iNdEx > l {
-		return io.ErrUnexpectedEOF
-	}
-	return nil
-}
 func (m *MinimizedTimeSeries) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
@@ -5052,95 +3958,6 @@ func (m *MinimizedTimeSeries) Unmarshal(dAtA []byte) error {
 				return err
 			}
 			iNdEx = postIndex
-		default:
-			iNdEx = preIndex
-			skippy, err := skipTypes(dAtA[iNdEx:])
-			if err != nil {
-				return err
-			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
-				return ErrInvalidLengthTypes
-			}
-			if (iNdEx + skippy) > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.XXX_unrecognized = append(m.XXX_unrecognized, dAtA[iNdEx:iNdEx+skippy]...)
-			iNdEx += skippy
-		}
-	}
-
-	if iNdEx > l {
-		return io.ErrUnexpectedEOF
-	}
-	return nil
-}
-func (m *LabelRef) Unmarshal(dAtA []byte) error {
-	l := len(dAtA)
-	iNdEx := 0
-	for iNdEx < l {
-		preIndex := iNdEx
-		var wire uint64
-		for shift := uint(0); ; shift += 7 {
-			if shift >= 64 {
-				return ErrIntOverflowTypes
-			}
-			if iNdEx >= l {
-				return io.ErrUnexpectedEOF
-			}
-			b := dAtA[iNdEx]
-			iNdEx++
-			wire |= uint64(b&0x7F) << shift
-			if b < 0x80 {
-				break
-			}
-		}
-		fieldNum := int32(wire >> 3)
-		wireType := int(wire & 0x7)
-		if wireType == 4 {
-			return fmt.Errorf("proto: LabelRef: wiretype end group for non-group")
-		}
-		if fieldNum <= 0 {
-			return fmt.Errorf("proto: LabelRef: illegal tag %d (wire type %d)", fieldNum, wire)
-		}
-		switch fieldNum {
-		case 1:
-			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field NameRef", wireType)
-			}
-			m.NameRef = 0
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowTypes
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				m.NameRef |= uint64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-		case 2:
-			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field ValueRef", wireType)
-			}
-			m.ValueRef = 0
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowTypes
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				m.ValueRef |= uint64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
 		default:
 			iNdEx = preIndex
 			skippy, err := skipTypes(dAtA[iNdEx:])

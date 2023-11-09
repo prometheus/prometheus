@@ -47,18 +47,15 @@ type writeHandler struct {
 	// Experimental feature, new remote write proto format
 	// The handler will accept the new format, but it can still accept the old one
 	enableRemoteWrite11 bool
-
-	enableRemoteWrite11Minimized bool
 }
 
 // NewWriteHandler creates a http.Handler that accepts remote write requests and
 // writes them to the provided appendable.
-func NewWriteHandler(logger log.Logger, reg prometheus.Registerer, appendable storage.Appendable, enableRemoteWrite11 bool, enableRemoteWrite11Minimized bool) http.Handler {
+func NewWriteHandler(logger log.Logger, reg prometheus.Registerer, appendable storage.Appendable, enableRemoteWrite11 bool) http.Handler {
 	h := &writeHandler{
-		logger:                       logger,
-		appendable:                   appendable,
-		enableRemoteWrite11:          enableRemoteWrite11,
-		enableRemoteWrite11Minimized: enableRemoteWrite11Minimized,
+		logger:              logger,
+		appendable:          appendable,
+		enableRemoteWrite11: enableRemoteWrite11,
 
 		samplesWithInvalidLabelsTotal: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: "prometheus",
@@ -76,13 +73,10 @@ func NewWriteHandler(logger log.Logger, reg prometheus.Registerer, appendable st
 func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var err error
 	var req *prompb.WriteRequest
-	var reqWithRefs *prompb.WriteRequestWithRefs
 	var reqMin *prompb.MinimizedWriteRequest
 
-	if h.enableRemoteWrite11Minimized {
+	if h.enableRemoteWrite11 && r.Header.Get(RemoteWriteVersionHeader) == RemoteWriteVersion11HeaderValue {
 		reqMin, err = DecodeMinimizedWriteRequest(r.Body)
-	} else if !h.enableRemoteWrite11Minimized && h.enableRemoteWrite11 && r.Header.Get(RemoteWriteVersionHeader) == RemoteWriteVersion11HeaderValue {
-		reqWithRefs, err = DecodeReducedWriteRequest(r.Body)
 	} else {
 		req, err = DecodeWriteRequest(r.Body)
 	}
@@ -93,10 +87,8 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.enableRemoteWrite11Minimized {
+	if h.enableRemoteWrite11 && r.Header.Get(RemoteWriteVersionHeader) == RemoteWriteVersion11HeaderValue {
 		err = h.writeMin(r.Context(), reqMin)
-	} else if h.enableRemoteWrite11 {
-		err = h.writeReduced(r.Context(), reqWithRefs)
 	} else {
 		err = h.write(r.Context(), req)
 	}
@@ -289,50 +281,6 @@ func (h *otlpWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusOK)
-}
-
-func (h *writeHandler) writeReduced(ctx context.Context, req *prompb.WriteRequestWithRefs) (err error) {
-	outOfOrderExemplarErrs := 0
-
-	app := h.appendable.Appender(ctx)
-	defer func() {
-		if err != nil {
-			_ = app.Rollback()
-			return
-		}
-		err = app.Commit()
-	}()
-
-	for _, ts := range req.Timeseries {
-		labels := labelRefProtosToLabels(req.StringSymbolTable, ts.Labels)
-		// TODO(npazosmendez): ?
-		// if !labels.IsValid() {
-		// 	level.Warn(h.logger).Log("msg", "Invalid metric names or labels", "got", labels.String())
-		// 	samplesWithInvalidLabels++
-		// 	continue
-		// }
-
-		err := h.appendSamples(app, ts.Samples, labels)
-		if err != nil {
-			return err
-		}
-
-		for _, ep := range ts.Exemplars {
-			e := exemplarRefProtoToExemplar(req.StringSymbolTable, ep)
-			h.appendExemplar(app, e, labels, &outOfOrderExemplarErrs)
-		}
-
-		err = h.appendHistograms(app, ts.Histograms, labels)
-		if err != nil {
-			return err
-		}
-	}
-
-	if outOfOrderExemplarErrs > 0 {
-		_ = level.Warn(h.logger).Log("msg", "Error on ingesting out-of-order exemplars", "num_dropped", outOfOrderExemplarErrs)
-	}
-
-	return nil
 }
 
 func (h *writeHandler) writeMin(ctx context.Context, req *prompb.MinimizedWriteRequest) (err error) {

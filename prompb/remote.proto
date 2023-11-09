@@ -28,16 +28,6 @@ message WriteRequest {
 }
 
 
-message WriteRequestWithRefs {
-  repeated prometheus.ReducedTimeSeries timeseries = 1 [(gogoproto.nullable) = false];
-  // Cortex uses this field to determine the source of the write request.
-  // We reserve it to avoid any compatibility issues.
-  reserved  2;
-  // Metadata (3) has moved to be part of the TimeSeries type
-  reserved  3;
-  // Symbol table for label names/values.
-  map<uint64, string> string_symbol_table = 4 [(gogoproto.nullable) = false];
-}
 message MinimizedWriteRequest {
   repeated MinimizedTimeSeries timeseries = 1 [(gogoproto.nullable) = false];
   // Cortex uses this field to determine the source of the write request.

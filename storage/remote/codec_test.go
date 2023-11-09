@@ -74,59 +74,6 @@ var writeRequestFixture = &prompb.WriteRequest{
 	},
 }
 
-// writeRequestWithRefsFixture represents the same request as writeRequestFixture, but using the reduced representation.
-var writeRequestWithRefsFixture = &prompb.WriteRequestWithRefs{
-	StringSymbolTable: map[uint64]string{
-		// Names
-		0:  "__name__",
-		2:  "b",
-		4:  "baz",
-		6:  "d",
-		8:  "foo",
-		10: "f",
-		12: "h",
-		// Values
-		1:  "test_metric1",
-		3:  "c",
-		5:  "qux",
-		7:  "e",
-		9:  "bar",
-		11: "g",
-		13: "i",
-	},
-
-	Timeseries: []prompb.ReducedTimeSeries{
-		{
-			Labels: []prompb.LabelRef{
-				{NameRef: 0, ValueRef: 1},
-				{NameRef: 2, ValueRef: 3},
-				{NameRef: 4, ValueRef: 5},
-				{NameRef: 6, ValueRef: 7},
-				{NameRef: 8, ValueRef: 9},
-			},
-			Samples: []prompb.Sample{{Value: 1, Timestamp: 0}},
-			Exemplars: []prompb.ExemplarRef{{Labels: []prompb.LabelRef{
-				{NameRef: 10, ValueRef: 11},
-			}, Value: 1, Timestamp: 0}},
-			Histograms: []prompb.Histogram{HistogramToHistogramProto(0, &testHistogram), FloatHistogramToHistogramProto(1, testHistogram.ToFloat())},
-		},
-		{
-			Labels: []prompb.LabelRef{
-				{NameRef: 0, ValueRef: 1},
-				{NameRef: 2, ValueRef: 3},
-				{NameRef: 4, ValueRef: 5},
-				{NameRef: 6, ValueRef: 7},
-				{NameRef: 8, ValueRef: 9},
-			},
-			Samples: []prompb.Sample{{Value: 2, Timestamp: 1}},
-			Exemplars: []prompb.ExemplarRef{{Labels: []prompb.LabelRef{
-				{NameRef: 12, ValueRef: 13},
-			}, Value: 2, Timestamp: 1}},
-			Histograms: []prompb.Histogram{HistogramToHistogramProto(2, &testHistogram), FloatHistogramToHistogramProto(3, testHistogram.ToFloat())},
-		},
-	},
-}
-
 // writeRequestMinimizedFixture represents the same request as writeRequestFixture, but using the minimized representation.
 var writeRequestMinimizedFixture = func() *prompb.MinimizedWriteRequest {
 	st := newRwSymbolTable()
@@ -611,16 +558,6 @@ func TestDecodeWriteRequest(t *testing.T) {
 	require.Equal(t, writeRequestFixture, actual)
 }
 
-func TestDecodeReducedWriteRequest(t *testing.T) {
-	buf, _, err := buildReducedWriteRequest(writeRequestWithRefsFixture.Timeseries, writeRequestWithRefsFixture.StringSymbolTable, nil, nil)
-
-	require.NoError(t, err)
-
-	actual, err := DecodeReducedWriteRequest(bytes.NewReader(buf))
-	require.NoError(t, err)
-	require.Equal(t, writeRequestWithRefsFixture, actual)
-}
-
 func TestDecodeMinWriteRequest(t *testing.T) {
 	buf, _, err := buildMinimizedWriteRequest(writeRequestMinimizedFixture.Timeseries, writeRequestMinimizedFixture.Symbols, nil, nil)
 
@@ -631,8 +568,8 @@ func TestDecodeMinWriteRequest(t *testing.T) {
 	require.Equal(t, writeRequestMinimizedFixture, actual)
 }
 
-func TestReducedWriteRequestToWriteRequest(t *testing.T) {
-	actual, err := ReducedWriteRequestToWriteRequest(writeRequestWithRefsFixture)
+func TestMinimizedWriteRequestToWriteRequest(t *testing.T) {
+	actual, err := MinimizedWriteRequestToWriteRequest(writeRequestMinimizedFixture)
 	require.NoError(t, err)
 
 	require.Equal(t, writeRequestFixture, actual)
