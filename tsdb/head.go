@@ -1706,16 +1706,22 @@ func (m seriesHashmap) set(hash uint64, s *memSeries) {
 }
 
 func (m seriesHashmap) del(hash uint64, lset labels.Labels) {
-	var rem []*memSeries
-	for _, s := range m[hash] {
-		if !labels.Equal(s.lset, lset) {
-			rem = append(rem, s)
+	for index, s := range m[hash] {
+		if labels.Equal(s.lset, lset) {
+			rem := m[hash]
+			copy(rem[index:], rem[index+1:])
+			rem = rem[:len(rem)-1]
+
+			// memory free
+			if cap(rem)/len(rem) >= 4 {
+				newRem := make([]*memSeries, len(rem), len(rem)*2)
+				copy(newRem, rem)
+				rem = newRem
+			}
+
+			m[hash] = rem
+			return
 		}
-	}
-	if len(rem) == 0 {
-		delete(m, hash)
-	} else {
-		m[hash] = rem
 	}
 }
 

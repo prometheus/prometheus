@@ -5457,3 +5457,66 @@ func TestHeadDetectsDuplicateSampleAtSizeLimit(t *testing.T) {
 
 	require.Equal(t, numSamples/2, storedSampleCount)
 }
+
+func TestSeriesHashmapDel(t *testing.T) {
+	var (
+		lset1 = []labels.Label{
+			{
+				Name:  "a",
+				Value: "a",
+			},
+		}
+		lset2 = []labels.Label{
+			{
+				Name:  "b",
+				Value: "b",
+			},
+		}
+		lset3 = []labels.Label{
+			{
+				Name:  "c",
+				Value: "c",
+			},
+		}
+		lset4 = []labels.Label{
+			{
+				Name:  "d",
+				Value: "d",
+			},
+		}
+		lset5 = []labels.Label{
+			{
+				Name:  "e",
+				Value: "e",
+			},
+		}
+	)
+
+	var hash uint64 = 0
+	h := seriesHashmap{}
+	h.set(hash, newMemSeries(lset1, 1, false))
+	h.set(hash, newMemSeries(lset2, 2, false))
+	h.set(hash, newMemSeries(lset3, 3, false))
+	h.set(hash, newMemSeries(lset4, 4, false))
+	h.set(hash, newMemSeries(lset5, 5, false))
+	require.Equal(t, cap(h[hash]), 8)
+
+	h.del(hash, lset2)
+	require.Len(t, h[hash], 4)
+	require.Nil(t, h.get(hash, lset2))
+
+	h.del(hash, lset1)
+	require.Len(t, h[hash], 3)
+	require.Equal(t, cap(h[hash]), 8)
+	require.Nil(t, h.get(hash, lset1))
+
+	// check memory free
+	h.del(hash, lset5)
+	require.Len(t, h[hash], 2)
+	require.Equal(t, cap(h[hash]), 4)
+	require.Nil(t, h.get(hash, lset5))
+
+	// check remain items
+	require.NotNil(t, h.get(hash, lset3))
+	require.NotNil(t, h.get(hash, lset4))
+}
