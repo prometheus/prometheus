@@ -264,6 +264,14 @@ func (n *Manager) ApplyConfig(conf *config.Config) error {
 			return err
 		}
 
+		// If alertmanagers already exists, don't skip it, in reload step will be refreshed new targets.
+		oldAmSets, ok := n.alertmanagers[k]
+		if ok {
+			oldAmSets.mtx.RLock()
+			ams.ams = oldAmSets.ams
+			oldAmSets.mtx.RUnlock()
+		}
+
 		amSets[k] = ams
 	}
 

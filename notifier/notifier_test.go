@@ -502,6 +502,68 @@ alerting:
 	}
 }
 
+func TestReApplyConfig(t *testing.T) {
+	tests := []struct {
+		in  *targetgroup.Group
+		out string
+	}{
+		{
+			in: &targetgroup.Group{
+				Targets: []model.LabelSet{
+					{
+						"__address__": "alertmanager:9093",
+					},
+				},
+			},
+			out: "http://alertmanager:9093/api/v2/alerts",
+		},
+	}
+
+	n := NewManager(&Options{}, nil)
+
+	cfg := &config.Config{}
+	s := `
+alerting:
+  alertmanagers:
+  - static_configs:
+`
+	err := yaml.UnmarshalStrict([]byte(s), cfg)
+	require.NoError(t, err, "Unable to load YAML config.")
+	require.Equal(t, 1, len(cfg.AlertingConfig.AlertmanagerConfigs))
+
+	// First apply config.
+	err = n.ApplyConfig(cfg)
+	require.NoError(t, err, "Error applying the config.")
+
+	tgs := make(map[string][]*targetgroup.Group)
+	for _, tt := range tests {
+		for k := range cfg.AlertingConfig.AlertmanagerConfigs.ToMap() {
+			tgs[k] = []*targetgroup.Group{
+				tt.in,
+			}
+			break
+		}
+		// Try reload for new alertmanagers.
+		n.reload(tgs)
+		res := n.Alertmanagers()[0].String()
+
+		require.Equal(t, tt.out, res)
+	}
+
+	// Reapply config.
+	err = n.ApplyConfig(cfg)
+	require.NoError(t, err, "Error reapplying the config.")
+
+	// Check that alertmanagers list not empty before next reload apply.
+	for _, tt := range tests {
+		require.Equal(t, len(n.Alertmanagers()), 1, "Alertmanagers list must not be empty")
+
+		res := n.Alertmanagers()[0].String()
+
+		require.Equal(t, tt.out, res)
+	}
+}
+
 func TestDroppedAlertmanagers(t *testing.T) {
 	tests := []struct {
 		in  *targetgroup.Group
