@@ -134,7 +134,7 @@ func (p *postingsForMatcherPromise) result(ctx context.Context) (index.Postings,
 		// Checking context error is necessary for deterministic tests,
 		// as channel selection order is random
 		if ctx.Err() != nil {
-			span.AddEvent("successful postingsForMatchers promise, but context has error", trace.WithAttributes(
+			span.AddEvent("completed postingsForMatchers promise, but context has error", trace.WithAttributes(
 				attribute.String("err", ctx.Err().Error()),
 			))
 			return nil, ctx.Err()
@@ -151,7 +151,6 @@ func (p *postingsForMatcherPromise) result(ctx context.Context) (index.Postings,
 }
 
 func (c *PostingsForMatchersCache) postingsForMatchersPromise(ctx context.Context, ix IndexPostingsReader, ms []*labels.Matcher) func(context.Context) (index.Postings, error) {
-	key := matchersKey(ms)
 	span := trace.SpanFromContext(ctx)
 	defer span.End()
 
@@ -159,6 +158,7 @@ func (c *PostingsForMatchersCache) postingsForMatchersPromise(ctx context.Contex
 		done: make(chan struct{}),
 	}
 
+	key := matchersKey(ms)
 	oldPromise, loaded := c.calls.LoadOrStore(key, promise)
 	if loaded {
 		// promise was not stored, we return a previously stored promise, that's possibly being fulfilled in another goroutine
