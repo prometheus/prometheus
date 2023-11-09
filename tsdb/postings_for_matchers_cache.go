@@ -152,7 +152,6 @@ func (p *postingsForMatcherPromise) result(ctx context.Context) (index.Postings,
 
 func (c *PostingsForMatchersCache) postingsForMatchersPromise(ctx context.Context, ix IndexPostingsReader, ms []*labels.Matcher) func(context.Context) (index.Postings, error) {
 	span := trace.SpanFromContext(ctx)
-	defer span.End()
 
 	promise := &postingsForMatcherPromise{
 		done: make(chan struct{}),
