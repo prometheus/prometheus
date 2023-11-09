@@ -1620,21 +1620,13 @@ func populateMinimizedTimeSeries(symbolTable *rwSymbolTable, batch []timeSeries,
 				Timestamp: d.timestamp,
 			})
 			nPendingSamples++
-			// TODO: handle all types
-		//case tExemplar:
-		//	// TODO(npazosmendez) optimize?
-		//	l := make([]prompb.LabelRef, 0, d.exemplarLabels.Len())
-		//	d.exemplarLabels.Range(func(el labels.Label) {
-		//		nRef := pool.intern(el.Name)
-		//		vRef := pool.intern(el.Value)
-		//		l = append(l, prompb.LabelRef{NameRef: nRef, ValueRef: vRef})
-		//	})
-		//	pendingData[nPending].Exemplars = append(pendingData[nPending].Exemplars, prompb.ExemplarRef{
-		//		Labels:    l,
-		//		Value:     d.value,
-		//		Timestamp: d.timestamp,
-		//	})
-		//	nPendingExemplars++
+		case tExemplar:
+			pendingData[nPending].Exemplars = append(pendingData[nPending].Exemplars, prompb.Exemplar{
+				Labels:    labelsToLabelsProto(d.exemplarLabels, nil),
+				Value:     d.value,
+				Timestamp: d.timestamp,
+			})
+			nPendingExemplars++
 		case tHistogram:
 			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, HistogramToHistogramProto(d.timestamp, d.histogram))
 			nPendingHistograms++

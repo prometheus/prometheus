@@ -1503,11 +1503,9 @@ func BenchmarkBuildMinimizedWriteRequest(b *testing.B) {
 		symbolTable := newRwSymbolTable()
 		buff := make([]byte, 0)
 		seriesBuff := make([]prompb.MinimizedTimeSeries, len(tc.batch))
-		//total := 0
 		for i := range seriesBuff {
 			seriesBuff[i].Samples = []prompb.Sample{{}}
-			// todo: add other types
-			//seriesBuff[i].Exemplars = []prompb.Exemplar{{}}
+			seriesBuff[i].Exemplars = []prompb.Exemplar{{}}
 		}
 		pBuf := []byte{}
 
