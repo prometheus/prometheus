@@ -127,38 +127,38 @@ var writeRequestWithRefsFixture = &prompb.WriteRequestWithRefs{
 	},
 }
 
-var st = newRwSymbolTable()
-
 // writeRequestMinimizedFixture represents the same request as writeRequestFixture, but using the minimized representation.
-var writeRequestMinimizedFixture = &prompb.MinimizedWriteRequest{
-	Timeseries: []prompb.MinimizedTimeSeries{
-		{
-			LabelSymbols: []uint32{
-				st.Ref("__name__"), st.Ref("test_metric1"),
-				st.Ref("b"), st.Ref("c"),
-				st.Ref("baz"), st.Ref("qux"),
-				st.Ref("d"), st.Ref("e"),
-				st.Ref("foo"), st.Ref("bar"),
+var writeRequestMinimizedFixture = func() *prompb.MinimizedWriteRequest {
+	st := newRwSymbolTable()
+	labels := []uint32{}
+	for _, s := range []string{
+		"__name__", "test_metric1",
+		"b", "c",
+		"baz", "qux",
+		"d", "e",
+		"foo", "bar",
+	} {
+		off, len := st.Ref(s)
+		labels = append(labels, off, len)
+	}
+	return &prompb.MinimizedWriteRequest{
+		Timeseries: []prompb.MinimizedTimeSeries{
+			{
+				LabelSymbols: labels,
+				Samples:      []prompb.Sample{{Value: 1, Timestamp: 0}},
+				Exemplars:    []prompb.Exemplar{{Labels: []prompb.Label{{Name: "f", Value: "g"}}, Value: 1, Timestamp: 0}},
+				Histograms:   []prompb.Histogram{HistogramToHistogramProto(0, &testHistogram), FloatHistogramToHistogramProto(1, testHistogram.ToFloat())},
 			},
-			Samples:    []prompb.Sample{{Value: 1, Timestamp: 0}},
-			Exemplars:  []prompb.Exemplar{{Labels: []prompb.Label{{Name: "f", Value: "g"}}, Value: 1, Timestamp: 0}},
-			Histograms: []prompb.Histogram{HistogramToHistogramProto(0, &testHistogram), FloatHistogramToHistogramProto(1, testHistogram.ToFloat())},
-		},
-		{
-			LabelSymbols: []uint32{
-				st.Ref("__name__"), st.Ref("test_metric1"),
-				st.Ref("b"), st.Ref("c"),
-				st.Ref("baz"), st.Ref("qux"),
-				st.Ref("d"), st.Ref("e"),
-				st.Ref("foo"), st.Ref("bar"),
+			{
+				LabelSymbols: labels,
+				Samples:      []prompb.Sample{{Value: 2, Timestamp: 1}},
+				Exemplars:    []prompb.Exemplar{{Labels: []prompb.Label{{Name: "h", Value: "i"}}, Value: 2, Timestamp: 1}},
+				Histograms:   []prompb.Histogram{HistogramToHistogramProto(2, &testHistogram), FloatHistogramToHistogramProto(3, testHistogram.ToFloat())},
 			},
-			Samples:    []prompb.Sample{{Value: 2, Timestamp: 1}},
-			Exemplars:  []prompb.Exemplar{{Labels: []prompb.Label{{Name: "h", Value: "i"}}, Value: 2, Timestamp: 1}},
-			Histograms: []prompb.Histogram{HistogramToHistogramProto(2, &testHistogram), FloatHistogramToHistogramProto(3, testHistogram.ToFloat())},
 		},
-	},
-	Symbols: st.LabelsString(),
-}
+		Symbols: st.LabelsString(),
+	}
+}()
 
 func TestValidateLabelsAndMetricName(t *testing.T) {
 	tests := []struct {
