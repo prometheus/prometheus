@@ -1712,6 +1712,10 @@ func (m seriesHashmap) del(hash uint64, lset labels.Labels) {
 			copy(rem[index:], rem[index+1:])
 			rem = rem[:len(rem)-1]
 
+			if len(rem) == 0 {
+				delete(m, hash)
+				return
+			}
 			// memory free
 			if cap(rem)/len(rem) >= 4 {
 				newRem := make([]*memSeries, len(rem), len(rem)*2)

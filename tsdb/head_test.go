@@ -5519,4 +5519,13 @@ func TestSeriesHashmapDel(t *testing.T) {
 	// check remain items
 	require.NotNil(t, h.get(hash, lset3))
 	require.NotNil(t, h.get(hash, lset4))
+
+	h.del(hash, lset3)
+	require.Nil(t, h.get(hash, lset3))
+	require.NotNil(t, h.get(hash, lset4))
+
+	// empty check
+	h.del(hash, lset4)
+	require.Nil(t, h.get(hash, lset4))
+	require.Len(t, h[hash], 0)
 }
