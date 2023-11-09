@@ -484,7 +484,8 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 	t.Run("Getting a non existing chunk fails with not found error", func(t *testing.T) {
 		db := newTestDBWithOpts(t, opts)
 
-		cr := NewOOOHeadChunkReader(db.head, 0, 1000)
+		cr := NewOOOHeadChunkReader(db.head, 0, 1000, db.head.oooIso.State(0, 1000))
+		defer cr.Close()
 		c, err := cr.Chunk(chunks.Meta{
 			Ref: 0x1000000, Chunk: chunkenc.Chunk(nil), MinTime: 100, MaxTime: 300,
 		})
@@ -849,7 +850,8 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, len(tc.expChunksSamples), len(chks))
 
-			cr := NewOOOHeadChunkReader(db.head, tc.queryMinT, tc.queryMaxT)
+			cr := NewOOOHeadChunkReader(db.head, tc.queryMinT, tc.queryMaxT, db.head.oooIso.State(tc.queryMinT, tc.queryMaxT))
+			defer cr.Close()
 			for i := 0; i < len(chks); i++ {
 				c, err := cr.Chunk(chks[i])
 				require.NoError(t, err)
@@ -1020,7 +1022,8 @@ func TestOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 			}
 			require.NoError(t, app.Commit())
 
-			cr := NewOOOHeadChunkReader(db.head, tc.queryMinT, tc.queryMaxT)
+			cr := NewOOOHeadChunkReader(db.head, tc.queryMinT, tc.queryMaxT, db.head.oooIso.State(tc.queryMinT, tc.queryMaxT))
+			defer cr.Close()
 			for i := 0; i < len(chks); i++ {
 				c, err := cr.Chunk(chks[i])
 				require.NoError(t, err)

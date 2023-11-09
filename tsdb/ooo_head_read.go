@@ -232,13 +232,15 @@ func (oh *OOOHeadIndexReader) Postings(ctx context.Context, name string, values 
 type OOOHeadChunkReader struct {
 	head       *Head
 	mint, maxt int64
+	isoState   *isolationState
 }
 
-func NewOOOHeadChunkReader(head *Head, mint, maxt int64) *OOOHeadChunkReader {
+func NewOOOHeadChunkReader(head *Head, mint, maxt int64, isoState *isolationState) *OOOHeadChunkReader {
 	return &OOOHeadChunkReader{
-		head: head,
-		mint: mint,
-		maxt: maxt,
+		head:     head,
+		mint:     mint,
+		maxt:     maxt,
+		isoState: isoState,
 	}
 }
 
@@ -272,6 +274,9 @@ func (cr OOOHeadChunkReader) Chunk(meta chunks.Meta) (chunkenc.Chunk, error) {
 }
 
 func (cr OOOHeadChunkReader) Close() error {
+	if cr.isoState != nil {
+		cr.isoState.Close()
+	}
 	return nil
 }
 
@@ -365,7 +370,7 @@ func (ch *OOOCompactionHead) Index() (IndexReader, error) {
 }
 
 func (ch *OOOCompactionHead) Chunks() (ChunkReader, error) {
-	return NewOOOHeadChunkReader(ch.oooIR.head, ch.oooIR.mint, ch.oooIR.maxt), nil
+	return NewOOOHeadChunkReader(ch.oooIR.head, ch.oooIR.mint, ch.oooIR.maxt, nil), nil
 }
 
 func (ch *OOOCompactionHead) Tombstones() (tombstones.Reader, error) {

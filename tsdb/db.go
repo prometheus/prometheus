@@ -1243,7 +1243,7 @@ func (db *DB) compactOOOHead(ctx context.Context) error {
 
 	lastWBLFile, minOOOMmapRef := oooHead.LastWBLFile(), oooHead.LastMmapRef()
 	if lastWBLFile != 0 || minOOOMmapRef != 0 {
-		if err := db.head.truncateOOO(lastWBLFile, minOOOMmapRef); err != nil {
+		if err := db.head.truncateOOO(lastWBLFile, minOOOMmapRef, oooHead.MinTime(), oooHead.MaxTime()); err != nil {
 			return errors.Wrap(err, "truncate ooo wbl")
 		}
 	}

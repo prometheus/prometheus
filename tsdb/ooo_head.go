@@ -128,7 +128,8 @@ func (oh *OOORangeHead) Index() (IndexReader, error) {
 }
 
 func (oh *OOORangeHead) Chunks() (ChunkReader, error) {
-	return NewOOOHeadChunkReader(oh.head, oh.mint, oh.maxt), nil
+	isoState := oh.head.oooIso.State(oh.mint, oh.maxt)
+	return NewOOOHeadChunkReader(oh.head, oh.mint, oh.maxt, isoState), nil
 }
 
 func (oh *OOORangeHead) Tombstones() (tombstones.Reader, error) {
