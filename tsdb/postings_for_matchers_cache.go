@@ -46,16 +46,17 @@ func NewPostingsForMatchersCache(ttl time.Duration, maxItems int, maxBytes int64
 		calls:  &sync.Map{},
 		cached: list.New(),
 
-		ttl:       ttl,
-		ttlAttrib: attribute.Stringer("ttl", ttl),
-		maxItems:  maxItems,
-		maxBytes:  maxBytes,
-		force:     force,
+		ttl:      ttl,
+		maxItems: maxItems,
+		maxBytes: maxBytes,
+		force:    force,
 
 		timeNow:             time.Now,
 		postingsForMatchers: PostingsForMatchers,
 
-		tracer: otel.Tracer(""),
+		tracer:      otel.Tracer(""),
+		ttlAttrib:   attribute.Stringer("ttl", ttl),
+		forceAttrib: attribute.Bool("force", force),
 	}
 
 	return b
@@ -69,11 +70,10 @@ type PostingsForMatchersCache struct {
 	cached      *list.List
 	cachedBytes int64
 
-	ttl       time.Duration
-	ttlAttrib attribute.KeyValue
-	maxItems  int
-	maxBytes  int64
-	force     bool
+	ttl      time.Duration
+	maxItems int
+	maxBytes int64
+	force    bool
 
 	// timeNow is the time.Now that can be replaced for testing purposes
 	timeNow func() time.Time
@@ -81,12 +81,16 @@ type PostingsForMatchersCache struct {
 	postingsForMatchers func(ctx context.Context, ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error)
 
 	tracer trace.Tracer
+	// Preallocated for performance
+	ttlAttrib   attribute.KeyValue
+	forceAttrib attribute.KeyValue
 }
 
 func (c *PostingsForMatchersCache) PostingsForMatchers(ctx context.Context, ix IndexPostingsReader, concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
 	ctx, span := c.tracer.Start(ctx, "PostingsForMatchersCache.PostingsForMatchers", trace.WithAttributes(
 		attribute.Bool("concurrent", concurrent),
-		attribute.Bool("force", c.force),
+		c.ttlAttrib,
+		c.forceAttrib,
 	))
 	defer span.End()
 
@@ -115,7 +119,6 @@ type postingsForMatcherPromise struct {
 
 	cloner *index.PostingsCloner
 	err    error
-	tracer trace.Tracer
 }
 
 func (p *postingsForMatcherPromise) result(ctx context.Context) (index.Postings, error) {
@@ -153,8 +156,7 @@ func (c *PostingsForMatchersCache) postingsForMatchersPromise(ctx context.Contex
 	defer span.End()
 
 	promise := &postingsForMatcherPromise{
-		done:   make(chan struct{}),
-		tracer: c.tracer,
+		done: make(chan struct{}),
 	}
 
 	oldPromise, loaded := c.calls.LoadOrStore(key, promise)
@@ -254,9 +256,7 @@ func (c *PostingsForMatchersCache) created(ctx context.Context, key string, ts t
 	span := trace.SpanFromContext(ctx)
 
 	if c.ttl <= 0 {
-		span.AddEvent("deleting cached promise since c.ttl <= 0", trace.WithAttributes(
-			c.ttlAttrib,
-		))
+		span.AddEvent("deleting cached promise since c.ttl <= 0")
 		c.calls.Delete(key)
 		return
 	}
@@ -271,7 +271,6 @@ func (c *PostingsForMatchersCache) created(ctx context.Context, key string, ts t
 	})
 	c.cachedBytes += sizeBytes
 	span.AddEvent("added cached value to expiry queue", trace.WithAttributes(
-		c.ttlAttrib,
 		attribute.Stringer("timestamp", ts),
 		attribute.Int64("size in bytes", sizeBytes),
 		attribute.Int64("cached bytes", c.cachedBytes),
