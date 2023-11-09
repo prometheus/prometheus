@@ -406,8 +406,7 @@ type QueueManager struct {
 	watcher              *wlog.Watcher
 	metadataWatcher      *MetadataWatcher
 	// experimental feature, new remote write proto format
-	internFormat       bool
-	secondInternFormat bool
+	internFormat bool
 
 	clientMtx   sync.RWMutex
 	storeClient WriteClient
@@ -456,7 +455,6 @@ func NewQueueManager(
 	enableExemplarRemoteWrite bool,
 	enableNativeHistogramRemoteWrite bool,
 	internFormat bool,
-	secondInternFormat bool,
 ) *QueueManager {
 	if logger == nil {
 		logger = log.NewNopLogger()
@@ -480,7 +478,6 @@ func NewQueueManager(
 		sendExemplars:        enableExemplarRemoteWrite,
 		sendNativeHistograms: enableNativeHistogramRemoteWrite,
 		internFormat:         internFormat,
-		secondInternFormat:   secondInternFormat,
 
 		seriesLabels:         make(map[chunks.HeadSeriesRef]labels.Labels),
 		seriesSegmentIndexes: make(map[chunks.HeadSeriesRef]int),
@@ -1351,7 +1348,6 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 	}()
 
 	shardNum := strconv.Itoa(shardID)
-	pool := newLookupPool()
 	symbolTable := newRwSymbolTable()
 
 	// Send batches of at most MaxSamplesPerSend samples to the remote storage.
@@ -1373,14 +1369,6 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 		pendingData[i].Samples = []prompb.Sample{{}}
 		if s.qm.sendExemplars {
 			pendingData[i].Exemplars = []prompb.Exemplar{{}}
-		}
-	}
-
-	pendingReducedData := make([]prompb.ReducedTimeSeries, max)
-	for i := range pendingReducedData {
-		pendingReducedData[i].Samples = []prompb.Sample{{}}
-		if s.qm.sendExemplars {
-			pendingReducedData[i].Exemplars = []prompb.ExemplarRef{{}}
 		}
 	}
 
@@ -1423,18 +1411,12 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 			if !ok {
 				return
 			}
-			if s.qm.secondInternFormat {
+			if s.qm.internFormat {
 				nPendingSamples, nPendingExemplars, nPendingHistograms := populateMinimizedTimeSeries(&symbolTable, batch, pendingMinimizedData, s.qm.sendExemplars, s.qm.sendNativeHistograms)
 
 				n := nPendingSamples + nPendingExemplars + nPendingHistograms
 				s.sendMinSamples(ctx, pendingMinimizedData[:n], symbolTable.LabelsString(), nPendingSamples, nPendingExemplars, nPendingHistograms, &pBufRaw, &buf)
 				symbolTable.clear()
-			} else if s.qm.internFormat && !s.qm.secondInternFormat {
-				// the new internFormat feature flag is be set
-				nPendingSamples, nPendingExemplars, nPendingHistograms := populateReducedTimeSeries(pool, batch, pendingReducedData, s.qm.sendExemplars, s.qm.sendNativeHistograms)
-				n := nPendingSamples + nPendingExemplars + nPendingHistograms
-				s.sendReducedSamples(ctx, pendingReducedData[:n], pool.table, nPendingSamples, nPendingExemplars, nPendingHistograms, pBuf, &buf)
-				pool.clear()
 			} else {
 				nPendingSamples, nPendingExemplars, nPendingHistograms := populateTimeSeries(batch, pendingData, s.qm.sendExemplars, s.qm.sendNativeHistograms)
 				n := nPendingSamples + nPendingExemplars + nPendingHistograms
@@ -1449,14 +1431,11 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 			batch := queue.Batch()
 			if len(batch) > 0 {
 				if s.qm.internFormat {
-					// the new internFormat feature flag is set
-					nPendingSamples, nPendingExemplars, nPendingHistograms := populateReducedTimeSeries(pool, batch, pendingReducedData, s.qm.sendExemplars, s.qm.sendNativeHistograms)
-					n := nPendingSamples + nPendingExemplars + nPendingHistograms
-					level.Debug(s.qm.logger).Log("msg", "runShard timer ticked, sending buffered data", "samples", nPendingSamples,
-						"exemplars", nPendingExemplars, "shard", shardNum, "histograms", nPendingHistograms)
-					s.sendReducedSamples(ctx, pendingReducedData[:n], pool.table, nPendingSamples, nPendingExemplars, nPendingHistograms, pBuf, &buf)
-					pool.clear()
+					nPendingSamples, nPendingExemplars, nPendingHistograms := populateMinimizedTimeSeries(&symbolTable, batch, pendingMinimizedData, s.qm.sendExemplars, s.qm.sendNativeHistograms)
 
+					n := nPendingSamples + nPendingExemplars + nPendingHistograms
+					s.sendMinSamples(ctx, pendingMinimizedData[:n], symbolTable.LabelsString(), nPendingSamples, nPendingExemplars, nPendingHistograms, &pBufRaw, &buf)
+					symbolTable.clear()
 				} else {
 					nPendingSamples, nPendingExemplars, nPendingHistograms := populateTimeSeries(batch, pendingData, s.qm.sendExemplars, s.qm.sendNativeHistograms)
 					n := nPendingSamples + nPendingExemplars + nPendingHistograms
@@ -1517,18 +1496,6 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, s
 	// Failing to build the write request is non-recoverable, since it will
 	// only error if marshaling the proto to bytes fails.
 	req, highest, err := buildWriteRequest(samples, nil, pBuf, buf)
-	if err == nil {
-		err = s.sendSamplesWithBackoff(ctx, req, sampleCount, exemplarCount, histogramCount, highest)
-	}
-	s.updateMetrics(ctx, err, sampleCount, exemplarCount, histogramCount, time.Since(begin))
-}
-
-func (s *shards) sendReducedSamples(ctx context.Context, samples []prompb.ReducedTimeSeries, labels map[uint64]string, sampleCount, exemplarCount, histogramCount int, pBuf *proto.Buffer, buf *[]byte) {
-	begin := time.Now()
-	// Build the ReducedWriteRequest with no metadata.
-	// Failing to build the write request is non-recoverable, since it will
-	// only error if marshaling the proto to bytes fails.
-	req, highest, err := buildReducedWriteRequest(samples, labels, pBuf, buf)
 	if err == nil {
 		err = s.sendSamplesWithBackoff(ctx, req, sampleCount, exemplarCount, histogramCount, highest)
 	}
@@ -1627,54 +1594,6 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, rawReq []byte, samp
 	s.qm.metrics.highestSentTimestamp.Set(float64(highestTimestamp / 1000))
 
 	return err
-}
-
-func populateReducedTimeSeries(pool *lookupPool, batch []timeSeries, pendingData []prompb.ReducedTimeSeries, sendExemplars, sendNativeHistograms bool) (int, int, int) {
-	var nPendingSamples, nPendingExemplars, nPendingHistograms int
-	for nPending, d := range batch {
-		pendingData[nPending].Samples = pendingData[nPending].Samples[:0]
-		if sendExemplars {
-			pendingData[nPending].Exemplars = pendingData[nPending].Exemplars[:0]
-		}
-		if sendNativeHistograms {
-			pendingData[nPending].Histograms = pendingData[nPending].Histograms[:0]
-		}
-
-		// Number of pending samples is limited by the fact that sendSamples (via sendSamplesWithBackoff)
-		// retries endlessly, so once we reach max samples, if we can never send to the endpoint we'll
-		// stop reading from the queue. This makes it safe to reference pendingSamples by index.
-		// pendingData[nPending].Labels = labelsToLabelsProto(d.seriesLabels, pendingData[nPending].Labels)
-		pendingData[nPending].Labels = labelsToLabelRefsProto(d.seriesLabels, pool, pendingData[nPending].Labels)
-		switch d.sType {
-		case tSample:
-			pendingData[nPending].Samples = append(pendingData[nPending].Samples, prompb.Sample{
-				Value:     d.value,
-				Timestamp: d.timestamp,
-			})
-			nPendingSamples++
-		case tExemplar:
-			// TODO(npazosmendez) optimize?
-			l := make([]prompb.LabelRef, 0, d.exemplarLabels.Len())
-			d.exemplarLabels.Range(func(el labels.Label) {
-				nRef := pool.intern(el.Name)
-				vRef := pool.intern(el.Value)
-				l = append(l, prompb.LabelRef{NameRef: nRef, ValueRef: vRef})
-			})
-			pendingData[nPending].Exemplars = append(pendingData[nPending].Exemplars, prompb.ExemplarRef{
-				Labels:    l,
-				Value:     d.value,
-				Timestamp: d.timestamp,
-			})
-			nPendingExemplars++
-		case tHistogram:
-			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, HistogramToHistogramProto(d.timestamp, d.histogram))
-			nPendingHistograms++
-		case tFloatHistogram:
-			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, FloatHistogramToHistogramProto(d.timestamp, d.floatHistogram))
-			nPendingHistograms++
-		}
-	}
-	return nPendingSamples, nPendingExemplars, nPendingHistograms
 }
 
 func populateMinimizedTimeSeries(symbolTable *rwSymbolTable, batch []timeSeries, pendingData []prompb.MinimizedTimeSeries, sendExemplars, sendNativeHistograms bool) (int, int, int) {
@@ -1822,52 +1741,6 @@ func buildWriteRequest(samples []prompb.TimeSeries, metadata []prompb.MetricMeta
 		*buf = make([]byte, n)
 	}
 
-	return compressed, highest, nil
-}
-
-func buildReducedWriteRequest(samples []prompb.ReducedTimeSeries, labels map[uint64]string, pBuf *proto.Buffer, buf *[]byte) ([]byte, int64, error) {
-	var highest int64
-	for _, ts := range samples {
-		// At the moment we only ever append a TimeSeries with a single sample or exemplar in it.
-		if len(ts.Samples) > 0 && ts.Samples[0].Timestamp > highest {
-			highest = ts.Samples[0].Timestamp
-		}
-		if len(ts.Exemplars) > 0 && ts.Exemplars[0].Timestamp > highest {
-			highest = ts.Exemplars[0].Timestamp
-		}
-		if len(ts.Histograms) > 0 && ts.Histograms[0].Timestamp > highest {
-			highest = ts.Histograms[0].Timestamp
-		}
-	}
-
-	req := &prompb.WriteRequestWithRefs{
-		StringSymbolTable: labels,
-		Timeseries:        samples,
-	}
-
-	if pBuf == nil {
-		pBuf = proto.NewBuffer(nil) // For convenience in tests. Not efficient.
-	} else {
-		pBuf.Reset()
-	}
-	err := pBuf.Marshal(req)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	// snappy uses len() to see if it needs to allocate a new slice. Make the
-	// buffer as long as possible.
-	if buf != nil {
-		*buf = (*buf)[0:cap(*buf)]
-	} else {
-		buf = &[]byte{}
-	}
-
-	compressed := snappy.Encode(*buf, pBuf.Bytes())
-	if n := snappy.MaxEncodedLen(len(pBuf.Bytes())); buf != nil && n > len(*buf) {
-		// grow the buffer for the next time
-		*buf = make([]byte, n)
-	}
 	return compressed, highest, nil
 }
 

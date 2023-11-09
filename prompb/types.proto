@@ -38,24 +38,6 @@ message MetricMetadata {
   string unit = 5;
 }
 
-message MetricMetadataRef {
-  enum MetricType {
-    UNKNOWN        = 0;
-    COUNTER        = 1;
-    GAUGE          = 2;
-    HISTOGRAM      = 3;
-    GAUGEHISTOGRAM = 4;
-    SUMMARY        = 5;
-    INFO           = 6;
-    STATESET       = 7;
-  }
-
-  // Represents the metric type, these match the set from Prometheus.
-  // Refer to model/textparse/interface.go for details.
-  MetricType type = 1;
-  int64 help_ref = 4;
-  int64 unit_ref = 5;
-}
 message Sample {
   double value    = 1;
   // timestamp is in ms format, see model/timestamp/timestamp.go for
@@ -72,14 +54,6 @@ message Exemplar {
   int64 timestamp = 3;
 }
 
-message ExemplarRef {
-    // Optional, can be empty.
-    repeated LabelRef labels = 1 [(gogoproto.nullable) = false];
-    double value = 2;
-    // timestamp is in ms format, see model/timestamp/timestamp.go for
-    // conversion from time.Time to Prometheus timestamp.
-    int64 timestamp = 3;
-}
 
 // A native histogram, also known as a sparse histogram.
 // Original design doc:
@@ -156,17 +130,6 @@ message TimeSeries {
   repeated Histogram histograms = 4 [(gogoproto.nullable) = false];
 }
 
-// TimeSeries represents samples and labels for a single time series.
-message ReducedTimeSeries {
-  // For a timeseries to be valid, and for the samples and exemplars
-  // to be ingested by the remote system properly, the labels field is required.
-  repeated LabelRef labels         = 1 [(gogoproto.nullable) = false];
-  repeated Sample samples       = 2 [(gogoproto.nullable) = false];
-  repeated ExemplarRef exemplars   = 3 [(gogoproto.nullable) = false];
-  repeated Histogram histograms = 4 [(gogoproto.nullable) = false];
-  MetricMetadataRef metadata = 5 [(gogoproto.nullable) = false];
-}
-
 // based on an experiment by marco
 message MinimizedTimeSeries {
   // Sorted list of label name-value pair references. This list's len is always multiple of 4,
@@ -178,11 +141,7 @@ message MinimizedTimeSeries {
   repeated Sample samples = 2 [(gogoproto.nullable) = false];
   repeated Exemplar exemplars = 3 [(gogoproto.nullable) = false];
   repeated Histogram histograms = 4 [(gogoproto.nullable) = false];
-}
-
-message LabelRef {
-  uint64 name_ref = 1;
-  uint64 value_ref = 2;
+  // TODO: add metadata
 }
 
 message Label {

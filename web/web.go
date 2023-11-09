@@ -241,28 +241,27 @@ type Options struct {
 	Version               *PrometheusVersion
 	Flags                 map[string]string
 
-	ListenAddress                  string
-	CORSOrigin                     *regexp.Regexp
-	ReadTimeout                    time.Duration
-	MaxConnections                 int
-	ExternalURL                    *url.URL
-	RoutePrefix                    string
-	UseLocalAssets                 bool
-	UserAssetsPath                 string
-	ConsoleTemplatesPath           string
-	ConsoleLibrariesPath           string
-	EnableLifecycle                bool
-	EnableAdminAPI                 bool
-	PageTitle                      string
-	RemoteReadSampleLimit          int
-	RemoteReadConcurrencyLimit     int
-	RemoteReadBytesInFrame         int
-	EnableRemoteWriteReceiver      bool
-	EnableOTLPWriteReceiver        bool
-	IsAgent                        bool
-	AppName                        string
-	EnableReceiverRemoteWrite11    bool
-	EnableReceiverRemoteWrite11Min bool
+	ListenAddress               string
+	CORSOrigin                  *regexp.Regexp
+	ReadTimeout                 time.Duration
+	MaxConnections              int
+	ExternalURL                 *url.URL
+	RoutePrefix                 string
+	UseLocalAssets              bool
+	UserAssetsPath              string
+	ConsoleTemplatesPath        string
+	ConsoleLibrariesPath        string
+	EnableLifecycle             bool
+	EnableAdminAPI              bool
+	PageTitle                   string
+	RemoteReadSampleLimit       int
+	RemoteReadConcurrencyLimit  int
+	RemoteReadBytesInFrame      int
+	EnableRemoteWriteReceiver   bool
+	EnableOTLPWriteReceiver     bool
+	IsAgent                     bool
+	AppName                     string
+	EnableReceiverRemoteWrite11 bool
 
 	Gatherer   prometheus.Gatherer
 	Registerer prometheus.Registerer
@@ -354,7 +353,6 @@ func New(logger log.Logger, o *Options) *Handler {
 		o.EnableRemoteWriteReceiver,
 		o.EnableOTLPWriteReceiver,
 		o.EnableReceiverRemoteWrite11,
-		o.EnableReceiverRemoteWrite11Min,
 	)
 
 	if o.RoutePrefix != "/" {
