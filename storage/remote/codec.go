@@ -820,8 +820,10 @@ func labelsToLabelRefsProto(lbls labels.Labels, pool *lookupPool, buf []prompb.L
 func labelsToUint32Slice(lbls labels.Labels, symbolTable *rwSymbolTable, buf []uint32) []uint32 {
 	result := buf[:0]
 	lbls.Range(func(l labels.Label) {
-		result = append(result, symbolTable.Ref(l.Name))
-		result = append(result, symbolTable.Ref(l.Value))
+		off, leng := symbolTable.Ref(l.Name)
+		result = append(result, off, leng)
+		off, leng = symbolTable.Ref(l.Value)
+		result = append(result, off, leng)
 	})
 	return result
 }
@@ -832,15 +834,18 @@ func Uint32RefToLabels(symbols string, minLabels []uint32) labels.Labels {
 	labelIdx := 0
 	for labelIdx < len(minLabels) {
 		// todo, check for overflow?
-		offset, length := unpackRef(minLabels[labelIdx])
-
+		offset := minLabels[labelIdx]
+		labelIdx++
+		length := minLabels[labelIdx]
+		labelIdx++
 		name := symbols[offset : offset+length]
 		// todo, check for overflow?
-		offset, length = unpackRef(minLabels[labelIdx+1])
-
+		offset = minLabels[labelIdx]
+		labelIdx++
+		length = minLabels[labelIdx]
+		labelIdx++
 		value := symbols[offset : offset+length]
 		ls.Add(name, value)
-		labelIdx += 2
 	}
 
 	return ls.Labels()
