@@ -364,7 +364,7 @@ func TestPostingsForMatchersCache(t *testing.T) {
 func BenchmarkPostingsForMatchersCache(b *testing.B) {
 	const (
 		numMatchers = 100
-		numPostings = 100000
+		numPostings = 1000
 	)
 
 	var (
