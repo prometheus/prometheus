@@ -2445,9 +2445,8 @@ func createRandomSpans(rng *rand.Rand, spanNum int32) ([]Span, []float64) {
 
 func TestFloatHistogramReduceResolution(t *testing.T) {
 	tcs := map[string]struct {
-		origin       *FloatHistogram
-		targetSchema int32
-		target       *FloatHistogram
+		origin *FloatHistogram
+		target *FloatHistogram
 	}{
 		"valid float histogram": {
 			origin: &FloatHistogram{
@@ -2465,7 +2464,6 @@ func TestFloatHistogramReduceResolution(t *testing.T) {
 				},
 				NegativeBuckets: []float64{1, 3, 1, 2, 1, 1},
 			},
-			targetSchema: -1,
 			target: &FloatHistogram{
 				Schema: -1,
 				PositiveSpans: []Span{
@@ -2483,7 +2481,7 @@ func TestFloatHistogramReduceResolution(t *testing.T) {
 	}
 
 	for _, tc := range tcs {
-		target := tc.origin.ReduceResolution(tc.targetSchema)
+		target := tc.origin.ReduceResolution(tc.target.Schema)
 		require.Equal(t, tc.target, target)
 	}
 }
