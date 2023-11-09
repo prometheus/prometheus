@@ -1359,8 +1359,9 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 	var (
 		max = s.qm.cfg.MaxSamplesPerSend
 
-		pBuf = proto.NewBuffer(nil)
-		buf  []byte
+		pBuf    = proto.NewBuffer(nil)
+		pBufRaw []byte
+		buf     []byte
 	)
 	if s.qm.sendExemplars {
 		max += int(float64(max) * 0.1)
@@ -1426,7 +1427,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 				nPendingSamples, nPendingExemplars, nPendingHistograms := populateMinimizedTimeSeries(&symbolTable, batch, pendingMinimizedData, s.qm.sendExemplars, s.qm.sendNativeHistograms)
 
 				n := nPendingSamples + nPendingExemplars + nPendingHistograms
-				s.sendMinSamples(ctx, pendingMinimizedData[:n], symbolTable.LabelsString(), nPendingSamples, nPendingExemplars, nPendingHistograms, pBuf, &buf)
+				s.sendMinSamples(ctx, pendingMinimizedData[:n], symbolTable.LabelsString(), nPendingSamples, nPendingExemplars, nPendingHistograms, &pBufRaw, &buf)
 				symbolTable.clear()
 			} else if s.qm.internFormat && !s.qm.secondInternFormat {
 				// the new internFormat feature flag is be set
@@ -1534,7 +1535,7 @@ func (s *shards) sendReducedSamples(ctx context.Context, samples []prompb.Reduce
 	s.updateMetrics(ctx, err, sampleCount, exemplarCount, histogramCount, time.Since(begin))
 }
 
-func (s *shards) sendMinSamples(ctx context.Context, samples []prompb.MinimizedTimeSeries, labels string, sampleCount, exemplarCount, histogramCount int, pBuf *proto.Buffer, buf *[]byte) {
+func (s *shards) sendMinSamples(ctx context.Context, samples []prompb.MinimizedTimeSeries, labels string, sampleCount, exemplarCount, histogramCount int, pBuf *[]byte, buf *[]byte) {
 	begin := time.Now()
 	// Build the ReducedWriteRequest with no metadata.
 	// Failing to build the write request is non-recoverable, since it will
@@ -1907,7 +1908,7 @@ func (r *rwSymbolTable) clear() {
 	r.symbols.Reset()
 }
 
-func buildMinimizedWriteRequest(samples []prompb.MinimizedTimeSeries, labels string, pBuf *proto.Buffer, buf *[]byte) ([]byte, int64, error) {
+func buildMinimizedWriteRequest(samples []prompb.MinimizedTimeSeries, labels string, pBuf *[]byte, buf *[]byte) ([]byte, int64, error) {
 	var highest int64
 	for _, ts := range samples {
 		// At the moment we only ever append a TimeSeries with a single sample or exemplar in it.
@@ -1928,14 +1929,13 @@ func buildMinimizedWriteRequest(samples []prompb.MinimizedTimeSeries, labels str
 	}
 
 	if pBuf == nil {
-		pBuf = proto.NewBuffer(nil) // For convenience in tests. Not efficient.
-	} else {
-		pBuf.Reset()
+		pBuf = &[]byte{} // For convenience in tests. Not efficient.
 	}
-	err := pBuf.Marshal(req)
+	data, err := req.OptimizedMarshal(*pBuf)
 	if err != nil {
 		return nil, 0, err
 	}
+	*pBuf = data
 
 	// snappy uses len() to see if it needs to allocate a new slice. Make the
 	// buffer as long as possible.
@@ -1945,8 +1945,8 @@ func buildMinimizedWriteRequest(samples []prompb.MinimizedTimeSeries, labels str
 		buf = &[]byte{}
 	}
 
-	compressed := snappy.Encode(*buf, pBuf.Bytes())
-	if n := snappy.MaxEncodedLen(len(pBuf.Bytes())); buf != nil && n > len(*buf) {
+	compressed := snappy.Encode(*buf, data)
+	if n := snappy.MaxEncodedLen(len(data)); buf != nil && n > len(*buf) {
 		// grow the buffer for the next time
 		*buf = make([]byte, n)
 	}
