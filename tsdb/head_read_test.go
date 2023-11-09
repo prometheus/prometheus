@@ -131,17 +131,6 @@ func TestBoundedChunk(t *testing.T) {
 		t.Run(fmt.Sprintf("name=%s", tc.name), func(t *testing.T) {
 			chunk := boundedIterable{tc.inputChunk, tc.inputMinT, tc.inputMaxT}
 
-			// Testing Bytes()
-			expChunk := chunkenc.NewXORChunk()
-			if tc.inputChunk.NumSamples() > 0 {
-				app, err := expChunk.Appender()
-				require.NoError(t, err)
-				for ts := tc.inputMinT; ts <= tc.inputMaxT; ts++ {
-					app.Append(ts, float64(ts))
-				}
-			}
-			require.Equal(t, expChunk.Bytes(), chunk.Bytes())
-
 			var samples []sample
 			it := chunk.Iterator(nil)
 

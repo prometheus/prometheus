@@ -15,7 +15,6 @@ package tsdb
 
 import (
 	"context"
-	"fmt"
 	"math"
 	"strings"
 	"unicode/utf8"
@@ -648,7 +647,7 @@ type populateWithDelGenericSeriesIterator struct {
 	intervals tombstones.Intervals
 
 	currDelIter chunkenc.Iterator
-	currChkMeta chunks.Meta
+	currChkMeta chunks.Meta //TODO: is this necessary? maybe just chunk. and index into chnks meta when we actually need it
 }
 
 func (p *populateWithDelGenericSeriesIterator) reset(blockID ulid.ULID, cr ChunkReader, chks []chunks.Meta, intervals tombstones.Intervals) {
@@ -694,24 +693,24 @@ func (p *populateWithDelGenericSeriesIterator) next(copyHeadChunk bool) bool {
 	} else {
 		p.currChkMeta.Chunk, iterable, p.err = p.chunks.ChunkOrIterable(p.currChkMeta)
 	}
-	//TODO: don't always set chunk in the meta
-	//And also read from iterable
+
 	if p.err != nil {
 		p.err = errors.Wrapf(p.err, "cannot populate chunk %d from block %s", p.currChkMeta.Ref, p.blockID.String())
 		return false
 	}
-	if iterable != nil {
-		p.err = errors.New("iterable is not implemented yet")
-	}
 
-	if len(p.bufIter.Intervals) == 0 {
+	if len(p.bufIter.Intervals) == 0 && p.currChkMeta.Chunk != nil {
 		// If there is no overlap with deletion intervals, we can take chunk as it is.
 		p.currDelIter = nil
 		return true
 	}
 
 	// We don't want the full chunk, take just a part of it.
-	p.bufIter.Iter = p.currChkMeta.Chunk.Iterator(p.bufIter.Iter)
+	if p.currChkMeta.Chunk != nil {
+		iterable = p.currChkMeta.Chunk
+	}
+
+	p.bufIter.Iter = iterable.Iterator(p.bufIter.Iter)
 	p.currDelIter = &p.bufIter
 	return true
 }
@@ -823,6 +822,9 @@ func (p *populateWithDelSeriesIterator) Err() error {
 type populateWithDelChunkSeriesIterator struct {
 	populateWithDelGenericSeriesIterator
 
+	iteratorChunks    []chunks.Meta
+	iteratorChunksIdx int
+
 	curr chunks.Meta
 }
 
@@ -832,13 +834,27 @@ func (p *populateWithDelChunkSeriesIterator) reset(blockID ulid.ULID, cr ChunkRe
 }
 
 func (p *populateWithDelChunkSeriesIterator) Next() bool {
+	// if we still have unused iterator chunks, use that
+	if p.iteratorChunksIdx < len(p.iteratorChunks)-1 {
+		p.iteratorChunksIdx++
+		p.curr = p.iteratorChunks[p.iteratorChunksIdx]
+		return true
+	}
+
+	// otherwise reset iterator chunks and move to next meta file
+	p.iteratorChunks = p.iteratorChunks[:0]
+	p.iteratorChunksIdx = -1
+
 	if !p.next(true) {
 		return false
 	}
-	p.curr = p.currChkMeta
+
+	// if a single chunk is directly provided, use that instead of the iterator and immediately return
 	if p.currDelIter == nil {
+		p.curr = p.currChkMeta
 		return true
 	}
+
 	valueType := p.currDelIter.Next()
 	if valueType == chunkenc.ValNone {
 		if err := p.currDelIter.Err(); err != nil {
@@ -846,80 +862,99 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 		}
 		return false
 	}
-	p.curr.MinTime = p.currDelIter.AtT()
 
-	// Re-encode the chunk if iterator is provider. This means that it has
+	// Re-encode the chunks if iterator is provided. This means that it has
 	// some samples to be deleted or chunk is opened.
 	var (
+		cmint        int64
+		cmaxt        int64
+		currentChunk chunkenc.Chunk
+		app          chunkenc.Appender
+		err          error
+		t            int64
+
 		newChunk chunkenc.Chunk
-		app      chunkenc.Appender
-		t        int64
-		err      error
+		recoded  bool
 	)
-	switch valueType {
-	case chunkenc.ValHistogram:
-		newChunk = chunkenc.NewHistogramChunk()
-		if app, err = newChunk.Appender(); err != nil {
+
+	// make chunks
+	prevValueType := chunkenc.ValNone
+
+	//TODO: first set current chunk, then if there is more than one chunk, set the slice instead
+
+	for vt := valueType; vt != chunkenc.ValNone; vt = p.currDelIter.Next() {
+		// prevApp is the appender for the previous sample.
+		prevApp := app
+
+		if valueType != prevValueType { // For the first sample, this will always be true as EncNone != EncXOR | EncHistogram | EncFloatHistogram
+			if prevValueType != chunkenc.ValNone {
+				p.iteratorChunks = append(p.iteratorChunks, chunks.Meta{Chunk: currentChunk, MinTime: cmint, MaxTime: cmaxt})
+			}
+			cmint = p.currDelIter.AtT()
+			if currentChunk, err = valueType.NewChunk(); err != nil {
+				break
+			}
+			if app, err = currentChunk.Appender(); err != nil {
+				break
+			}
+		}
+
+		switch valueType {
+		case chunkenc.ValFloat:
+			{
+				var v float64
+				t, v = p.currDelIter.At()
+				app.Append(t, v)
+			}
+		case chunkenc.ValHistogram:
+			{
+				// Ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway.
+				prevHApp, _ := prevApp.(*chunkenc.HistogramAppender)
+				var v *histogram.Histogram
+				t, v = p.currDelIter.AtHistogram()
+				newChunk, recoded, app, err = app.AppendHistogram(prevHApp, t, v, false) //TODO: remove appendOnly parameter
+			}
+		case chunkenc.ValFloatHistogram:
+			{
+				// Ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway.
+				prevHApp, _ := prevApp.(*chunkenc.FloatHistogramAppender)
+				var v *histogram.FloatHistogram
+				t, v = p.currDelIter.AtFloatHistogram()
+				newChunk, recoded, app, err = app.AppendFloatHistogram(prevHApp, t, v, false)
+			}
+		}
+
+		if err != nil {
 			break
 		}
-		for vt := valueType; vt != chunkenc.ValNone; vt = p.currDelIter.Next() {
-			if vt != chunkenc.ValHistogram {
-				err = fmt.Errorf("found value type %v in histogram chunk", vt)
-				break
+
+		if newChunk != nil { // A new chunk was allocated.
+			if !recoded {
+				p.iteratorChunks = append(p.iteratorChunks, chunks.Meta{Chunk: currentChunk, MinTime: cmint, MaxTime: cmaxt})
 			}
-			var h *histogram.Histogram
-			t, h = p.currDelIter.AtHistogram()
-			_, _, app, err = app.AppendHistogram(nil, t, h, true)
-			if err != nil {
-				break
-			}
+			currentChunk = newChunk
+			cmint = t
 		}
-	case chunkenc.ValFloat:
-		newChunk = chunkenc.NewXORChunk()
-		if app, err = newChunk.Appender(); err != nil {
-			break
-		}
-		for vt := valueType; vt != chunkenc.ValNone; vt = p.currDelIter.Next() {
-			if vt != chunkenc.ValFloat {
-				err = fmt.Errorf("found value type %v in float chunk", vt)
-				break
-			}
-			var v float64
-			t, v = p.currDelIter.At()
-			app.Append(t, v)
-		}
-	case chunkenc.ValFloatHistogram:
-		newChunk = chunkenc.NewFloatHistogramChunk()
-		if app, err = newChunk.Appender(); err != nil {
-			break
-		}
-		for vt := valueType; vt != chunkenc.ValNone; vt = p.currDelIter.Next() {
-			if vt != chunkenc.ValFloatHistogram {
-				err = fmt.Errorf("found value type %v in histogram chunk", vt)
-				break
-			}
-			var h *histogram.FloatHistogram
-			t, h = p.currDelIter.AtFloatHistogram()
-			_, _, app, err = app.AppendFloatHistogram(nil, t, h, true)
-			if err != nil {
-				break
-			}
-		}
-	default:
-		err = fmt.Errorf("populateWithDelChunkSeriesIterator: value type %v unsupported", valueType)
+
+		cmaxt = t
+		prevValueType = valueType
 	}
 
 	if err != nil {
 		p.err = errors.Wrap(err, "iterate chunk while re-encoding")
 		return false
 	}
-	if err := p.currDelIter.Err(); err != nil {
+	if err = p.currDelIter.Err(); err != nil {
 		p.err = errors.Wrap(err, "iterate chunk while re-encoding")
-		return false
 	}
 
-	p.curr.Chunk = newChunk
-	p.curr.MaxTime = t
+	if prevValueType != chunkenc.ValNone {
+		p.iteratorChunks = append(p.iteratorChunks, chunks.Meta{Chunk: currentChunk, MinTime: cmint, MaxTime: cmaxt})
+	}
+
+	//TODO: check chunks is not empty?
+	p.iteratorChunksIdx = 0
+	p.curr = p.iteratorChunks[0]
 	return true
 }
 

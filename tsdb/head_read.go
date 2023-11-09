@@ -564,13 +564,13 @@ var _ chunkenc.Iterable = &boundedIterable{}
 // boundedIterator that only iterates through samples which timestamps are
 // >= minT and <= maxT.
 type boundedIterable struct {
-	chunkenc.Chunk
-	minT int64
-	maxT int64
+	chunk chunkenc.Chunk
+	minT  int64
+	maxT  int64
 }
 
 func (b boundedIterable) Iterator(iterator chunkenc.Iterator) chunkenc.Iterator {
-	it := b.Chunk.Iterator(iterator)
+	it := b.chunk.Iterator(iterator)
 	if it == nil {
 		panic("iterator shouldn't be nil")
 	}

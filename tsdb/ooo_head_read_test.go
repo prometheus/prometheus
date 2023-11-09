@@ -856,10 +856,10 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 			for i := 0; i < len(chks); i++ {
 				c, iterable, err := cr.ChunkOrIterable(chks[i])
 				require.NoError(t, err)
-				require.Nil(t, iterable)
+				require.Nil(t, c)
 
 				var resultSamples chunks.SampleSlice
-				it := c.Iterator(nil)
+				it := iterable.Iterator(nil)
 				for it.Next() == chunkenc.ValFloat {
 					t, v := it.At()
 					resultSamples = append(resultSamples, sample{t: t, f: v})
@@ -1029,10 +1029,10 @@ func TestOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 			for i := 0; i < len(chks); i++ {
 				c, iterable, err := cr.ChunkOrIterable(chks[i])
 				require.NoError(t, err)
-				require.Nil(t, iterable)
+				require.Nil(t, c)
 
 				var resultSamples chunks.SampleSlice
-				it := c.Iterator(nil)
+				it := iterable.Iterator(nil)
 				for it.Next() == chunkenc.ValFloat {
 					ts, v := it.At()
 					resultSamples = append(resultSamples, sample{t: ts, f: v})

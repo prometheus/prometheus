@@ -188,6 +188,19 @@ func (v ValueType) ChunkEncoding() Encoding {
 	}
 }
 
+func (v ValueType) NewChunk() (Chunk, error) {
+	switch v {
+	case ValFloat:
+		return NewXORChunk(), nil
+	case ValHistogram:
+		return NewHistogramChunk(), nil
+	case ValFloatHistogram:
+		return NewFloatHistogramChunk(), nil
+	default:
+		return nil, fmt.Errorf("value type %v unsupported", v)
+	}
+}
+
 // MockSeriesIterator returns an iterator for a mock series with custom timeStamps and values.
 func MockSeriesIterator(timestamps []int64, values []float64) Iterator {
 	return &mockSeriesIterator{
