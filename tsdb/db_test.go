@@ -38,6 +38,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 	"go.uber.org/goleak"
 
 	"github.com/prometheus/prometheus/config"
@@ -3609,6 +3610,88 @@ func testChunkQuerierShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChun
 		_, err := chkCRC32.Write(chunk.Bytes())
 		require.NoError(t, err)
 	}
+}
+
+func TestQuerierShouldNotFailIfOOOCompactionOccursAfterRetrievingQuerier(t *testing.T) {
+	opts := DefaultOptions()
+	opts.OutOfOrderTimeWindow = 3 * DefaultBlockDuration
+	db := openTestDB(t, opts, nil)
+	defer func() {
+		require.NoError(t, db.Close())
+	}()
+
+	// Disable compactions so we can control it.
+	db.DisableCompactions()
+
+	metric := labels.FromStrings(labels.MetricName, "test_metric")
+	ctx := context.Background()
+	interval := int64(15 * time.Second / time.Millisecond)
+	ts := int64(0)
+	samplesWritten := 0
+
+	// Capture the first timestamp - this will be the timestamp of the OOO sample we'll append below.
+	oooTS := ts
+	ts += interval
+
+	// Push samples after the OOO sample we'll write below.
+	for ; ts < 10*interval; ts += interval {
+		app := db.Appender(ctx)
+		_, err := app.Append(0, metric, ts, float64(ts))
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		samplesWritten++
+	}
+
+	// Push a single OOO sample.
+	app := db.Appender(ctx)
+	_, err := app.Append(0, metric, oooTS, float64(ts))
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	samplesWritten++
+
+	// Get a querier.
+	querier, err := db.ChunkQuerier(0, math.MaxInt64)
+	require.NoError(t, err)
+
+	// Query back the series.
+	hints := &storage.SelectHints{Start: 0, End: math.MaxInt64, Step: interval}
+	seriesSet := querier.Select(ctx, true, hints, labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test_metric"))
+
+	// Collect the iterator for the series.
+	var iterators []chunks.Iterator
+	for seriesSet.Next() {
+		iterators = append(iterators, seriesSet.At().Iterator(nil))
+	}
+	require.NoError(t, seriesSet.Err())
+	require.Len(t, iterators, 1)
+	iterator := iterators[0]
+
+	// Start OOO head compaction.
+	compactionComplete := atomic.NewBool(false)
+	go func() {
+		defer compactionComplete.Store(true)
+
+		require.NoError(t, db.CompactOOOHead(ctx))
+		require.Equal(t, float64(1), prom_testutil.ToFloat64(db.Head().metrics.chunksRemoved))
+	}()
+
+	// Give CompactOOOHead time to start work.
+	// If it does not wait for the querier to be closed, then the query will return incorrect results or fail.
+	time.Sleep(time.Second)
+	require.False(t, compactionComplete.Load(), "compaction completed before reading chunks or closing querier")
+
+	// Check that we can still successfully read all samples.
+	samplesRead := 0
+	for iterator.Next() {
+		samplesRead += iterator.At().Chunk.NumSamples()
+	}
+
+	require.NoError(t, iterator.Err())
+	require.Equal(t, samplesWritten, samplesRead)
+
+	require.False(t, compactionComplete.Load(), "compaction completed before closing querier")
+	require.NoError(t, querier.Close())
+	require.Eventually(t, compactionComplete.Load, time.Second, 10*time.Millisecond, "compaction should complete after querier was closed")
 }
 
 func newTestDB(t *testing.T) *DB {
