@@ -3650,7 +3650,7 @@ func TestQuerierShouldNotFailIfOOOCompactionOccursAfterRetrievingQuerier(t *test
 	samplesWritten++
 
 	// Get a querier.
-	querier, err := db.ChunkQuerier(0, math.MaxInt64)
+	querierCreatedBeforeCompaction, err := db.ChunkQuerier(0, math.MaxInt64)
 	require.NoError(t, err)
 
 	// Start OOO head compaction.
@@ -3663,35 +3663,47 @@ func TestQuerierShouldNotFailIfOOOCompactionOccursAfterRetrievingQuerier(t *test
 	}()
 
 	// Give CompactOOOHead time to start work.
-	// If it does not wait for the querier to be closed, then the query will return incorrect results or fail.
+	// If it does not wait for querierCreatedBeforeCompaction to be closed, then the query will return incorrect results or fail.
 	time.Sleep(time.Second)
-	require.False(t, compactionComplete.Load(), "compaction completed before reading chunks or closing querier")
+	require.False(t, compactionComplete.Load(), "compaction completed before reading chunks or closing querier created before compaction")
 
-	// Query back the series.
-	hints := &storage.SelectHints{Start: 0, End: math.MaxInt64, Step: interval}
-	seriesSet := querier.Select(ctx, true, hints, labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test_metric"))
+	// Get another querier. This one should only use the compacted blocks from disk and ignore the chunks that will be garbage collected.
+	querierCreatedAfterCompaction, err := db.ChunkQuerier(0, math.MaxInt64)
+	require.NoError(t, err)
 
-	// Collect the iterator for the series.
-	var iterators []chunks.Iterator
-	for seriesSet.Next() {
-		iterators = append(iterators, seriesSet.At().Iterator(nil))
+	testQuerier := func(q storage.ChunkQuerier) {
+		// Query back the series.
+		hints := &storage.SelectHints{Start: 0, End: math.MaxInt64, Step: interval}
+		seriesSet := q.Select(ctx, true, hints, labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test_metric"))
+
+		// Collect the iterator for the series.
+		var iterators []chunks.Iterator
+		for seriesSet.Next() {
+			iterators = append(iterators, seriesSet.At().Iterator(nil))
+		}
+		require.NoError(t, seriesSet.Err())
+		require.Len(t, iterators, 1)
+		iterator := iterators[0]
+
+		// Check that we can still successfully read all samples.
+		samplesRead := 0
+		for iterator.Next() {
+			samplesRead += iterator.At().Chunk.NumSamples()
+		}
+
+		require.NoError(t, iterator.Err())
+		require.Equal(t, samplesWritten, samplesRead)
 	}
-	require.NoError(t, seriesSet.Err())
-	require.Len(t, iterators, 1)
-	iterator := iterators[0]
 
-	// Check that we can still successfully read all samples.
-	samplesRead := 0
-	for iterator.Next() {
-		samplesRead += iterator.At().Chunk.NumSamples()
-	}
+	testQuerier(querierCreatedBeforeCompaction)
 
-	require.NoError(t, iterator.Err())
-	require.Equal(t, samplesWritten, samplesRead)
+	require.False(t, compactionComplete.Load(), "compaction completed before closing querier created before compaction")
+	require.NoError(t, querierCreatedBeforeCompaction.Close())
+	require.Eventually(t, compactionComplete.Load, time.Second, 10*time.Millisecond, "compaction should complete after querier created before compaction was closed, and not wait for querier created after compaction")
 
-	require.False(t, compactionComplete.Load(), "compaction completed before closing querier")
-	require.NoError(t, querier.Close())
-	require.Eventually(t, compactionComplete.Load, time.Second, 10*time.Millisecond, "compaction should complete after querier was closed")
+	// Use the querier created after compaction and confirm it returns the expected results (ie. from the disk block created from OOO head and in-order head) without error.
+	testQuerier(querierCreatedAfterCompaction)
+	require.NoError(t, querierCreatedAfterCompaction.Close())
 }
 
 func TestQuerierShouldNotFailIfOOOCompactionOccursAfterSelecting(t *testing.T) {

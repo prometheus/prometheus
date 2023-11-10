@@ -106,7 +106,7 @@ type Head struct {
 
 	iso *isolation
 
-	oooIso *isolation // Used only to ensure that reads do not race with compactions. We do not provide isolation guarantees for OOO writes and reads.
+	oooIso *oooIsolation
 
 	cardinalityMutex      sync.Mutex
 	cardinalityCache      *index.PostingsStats // Posting stats cache which will expire after 30sec.
@@ -302,7 +302,7 @@ func (h *Head) resetInMemoryState() error {
 	}
 
 	h.iso = newIsolation(h.opts.IsolationDisabled)
-	h.oooIso = newIsolation(true) // Disabled because we don't care about isolating OOO writes, only reads.
+	h.oooIso = newOOOIsolation()
 
 	h.exemplarMetrics = em
 	h.exemplars = es
@@ -1118,20 +1118,10 @@ func (h *Head) truncateMemory(mint int64) (err error) {
 // The query timeout limits the max wait time of this function implicitly.
 // The mint is inclusive and maxt is the truncation time hence exclusive.
 func (h *Head) WaitForPendingReadersInTimeRange(mint, maxt int64) {
-	waitForPendingReadersInTimeRange(h.iso, mint, maxt)
-}
-
-// WaitForPendingOOOReadersInTimeRange is like WaitForPendingReadersInTimeRange, except it waits for
-// queries touching OOO data to finish querying.
-func (h *Head) WaitForPendingOOOReadersInTimeRange(mint, maxt int64) {
-	waitForPendingReadersInTimeRange(h.oooIso, mint, maxt)
-}
-
-func waitForPendingReadersInTimeRange(iso *isolation, mint, maxt int64) {
 	maxt-- // Making it inclusive before checking overlaps.
 	overlaps := func() bool {
 		o := false
-		iso.TraverseOpenReads(func(s *isolationState) bool {
+		h.iso.TraverseOpenReads(func(s *isolationState) bool {
 			if s.mint <= maxt && mint <= s.maxt {
 				// Overlaps with the truncation range.
 				o = true
@@ -1142,6 +1132,14 @@ func waitForPendingReadersInTimeRange(iso *isolation, mint, maxt int64) {
 		return o
 	}
 	for overlaps() {
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
+// WaitForPendingReadersForOOOChunksAtOrBefore is like WaitForPendingReadersInTimeRange, except it waits for
+// queries touching OOO chunks less than or equal to chunk to finish querying.
+func (h *Head) WaitForPendingReadersForOOOChunksAtOrBefore(chunk chunks.ChunkDiskMapperRef) {
+	for h.oooIso.HasOpenReadsAtOrBefore(chunk) {
 		time.Sleep(500 * time.Millisecond)
 	}
 }
@@ -1284,17 +1282,19 @@ func (h *Head) truncateWAL(mint int64) error {
 }
 
 // truncateOOO
-//   - waits for any pending reads that touch the range between mint and maxt (inclusive), which should be the time
-//     range of the chunks to garbage collect
+//   - waits for any pending reads that potentially touch chunks less than or equal to newMinOOOMmapRef
 //   - truncates the OOO WBL files whose index is strictly less than lastWBLFile.
-//   - garbage collects all the m-map chunks from the memory that are less than or equal to minOOOMmapRef
+//   - garbage collects all the m-map chunks from the memory that are less than or equal to newMinOOOMmapRef
 //     and then deletes the series that do not have any data anymore.
-func (h *Head) truncateOOO(lastWBLFile int, minOOOMmapRef chunks.ChunkDiskMapperRef, mint, maxt int64) error {
+//
+// The caller is responsible for ensuring that no further queriers will be created that reference chunks less
+// than or equal to newMinOOOMmapRef before calling truncateOOO.
+func (h *Head) truncateOOO(lastWBLFile int, newMinOOOMmapRef chunks.ChunkDiskMapperRef) error {
 	curMinOOOMmapRef := chunks.ChunkDiskMapperRef(h.minOOOMmapRef.Load())
-	if minOOOMmapRef.GreaterThan(curMinOOOMmapRef) {
-		h.WaitForPendingOOOReadersInTimeRange(mint, maxt+1) // +1 because WaitForPendingOOOReadersInTimeRange expects maxt to be the first timestamp of the next remaining chunk
+	if newMinOOOMmapRef.GreaterThan(curMinOOOMmapRef) {
+		h.WaitForPendingReadersForOOOChunksAtOrBefore(newMinOOOMmapRef)
+		h.minOOOMmapRef.Store(uint64(newMinOOOMmapRef))
 
-		h.minOOOMmapRef.Store(uint64(minOOOMmapRef))
 		if err := h.truncateSeriesAndChunkDiskMapper("truncateOOO"); err != nil {
 			return err
 		}
