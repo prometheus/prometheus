@@ -138,8 +138,7 @@ func createIdxChkReaders(t *testing.T, tc []seriesSamples) (IndexReader, ChunkRe
 				app, _ := chunk.Appender()
 				for _, smpl := range chk {
 					require.NotNil(t, smpl.fh, "chunk can only contain one type of sample")
-					_, _, _, err := app.AppendFloatHistogram(nil, smpl.t, smpl.fh, true)
-					require.NoError(t, err, "chunk should be appendable")
+					app.AppendFloatHistogram(nil, smpl.t, smpl.fh)
 				}
 				chkReader[chunkRef] = chunk
 			case chk[0].h != nil:
@@ -147,8 +146,7 @@ func createIdxChkReaders(t *testing.T, tc []seriesSamples) (IndexReader, ChunkRe
 				app, _ := chunk.Appender()
 				for _, smpl := range chk {
 					require.NotNil(t, smpl.h, "chunk can only contain one type of sample")
-					_, _, _, err := app.AppendHistogram(nil, smpl.t, smpl.h, true)
-					require.NoError(t, err, "chunk should be appendable")
+					app.AppendHistogram(nil, smpl.t, smpl.h)
 				}
 				chkReader[chunkRef] = chunk
 			default:

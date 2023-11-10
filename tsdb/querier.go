@@ -897,9 +897,6 @@ func (p *populateWithDelChunkSeriesIterator) populateIteratorChunks() error {
 	prevValueType := chunkenc.ValNone
 
 	for vt := valueType; vt != chunkenc.ValNone; vt = p.currDelIter.Next() {
-		// prevApp is the appender for the previous sample.
-		prevApp := app
-
 		if valueType != prevValueType { // For the first sample, this will always be true as EncNone != EncXOR | EncHistogram | EncFloatHistogram
 			if prevValueType != chunkenc.ValNone {
 				p.iteratorChunks = append(p.iteratorChunks, chunks.Meta{Chunk: currentChunk, MinTime: cmint, MaxTime: cmaxt})
@@ -922,19 +919,17 @@ func (p *populateWithDelChunkSeriesIterator) populateIteratorChunks() error {
 			}
 		case chunkenc.ValHistogram:
 			{
-				// Ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway.
-				prevHApp, _ := prevApp.(*chunkenc.HistogramAppender)
 				var v *histogram.Histogram
 				t, v = p.currDelIter.AtHistogram()
-				newChunk, recoded, app, err = app.AppendHistogram(prevHApp, t, v, false) //TODO: remove appendOnly parameter
+				// No need to set prevApp as AppendHistogram will set the counter reset header for the appender that's returned.
+				newChunk, recoded, app, err = app.AppendHistogram(nil, t, v, false)
 			}
 		case chunkenc.ValFloatHistogram:
 			{
-				// Ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway.
-				prevHApp, _ := prevApp.(*chunkenc.FloatHistogramAppender)
 				var v *histogram.FloatHistogram
 				t, v = p.currDelIter.AtFloatHistogram()
-				newChunk, recoded, app, err = app.AppendFloatHistogram(prevHApp, t, v, false)
+				// No need to set prevApp as AppendFloatHistogram will set the counter reset header for the appender that's returned.
+				newChunk, recoded, app, err = app.AppendFloatHistogram(nil, t, v, false)
 			}
 		}
 
