@@ -140,12 +140,12 @@ func (p *postingsForMatcherPromise) result(ctx context.Context) (index.Postings,
 			return nil, ctx.Err()
 		}
 		if p.err != nil {
-			span.AddEvent("failed postingsForMatchers promise", trace.WithAttributes(
+			span.AddEvent("postingsForMatchers promise completed with error", trace.WithAttributes(
 				attribute.String("err", p.err.Error()),
 			))
 			return nil, p.err
 		}
-		span.AddEvent("successful postingsForMatchers promise")
+		span.AddEvent("postingsForMatchers promise completed successfully")
 		return p.cloner.Clone(), nil
 	}
 }
