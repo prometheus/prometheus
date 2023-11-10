@@ -1937,12 +1937,10 @@ func (db *DB) Querier(mint, maxt int64) (_ storage.Querier, err error) {
 
 	for _, b := range blocks {
 		q, err := NewBlockQuerier(b, mint, maxt)
-		if err == nil {
-			blockQueriers = append(blockQueriers, q)
-			continue
+		if err != nil {
+			return nil, errors.Wrapf(err, "open querier for block %s", b)
 		}
-
-		return nil, errors.Wrapf(err, "open querier for block %s", b)
+		blockQueriers = append(blockQueriers, q)
 	}
 
 	return storage.NewMergeQuerier(blockQueriers, nil, storage.ChainedSeriesMerge), nil
@@ -2016,12 +2014,10 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuer
 
 	for _, b := range blocks {
 		q, err := NewBlockChunkQuerier(b, mint, maxt)
-		if err == nil {
-			blockQueriers = append(blockQueriers, q)
-			continue
+		if err != nil {
+			return nil, errors.Wrapf(err, "open querier for block %s", b)
 		}
-
-		return nil, errors.Wrapf(err, "open querier for block %s", b)
+		blockQueriers = append(blockQueriers, q)
 	}
 
 	return blockQueriers, nil
