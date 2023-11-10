@@ -1943,7 +1943,7 @@ func (db *DB) Querier(mint, maxt int64) (storage.Querier, error) {
 
 // blockChunkQuerierForRange returns individual block chunk queriers from the persistent blocks, in-order head block, and the
 // out-of-order head block, overlapping with the given time range.
-func (db *DB) blockChunkQuerierForRange(mint, maxt int64) ([]storage.ChunkQuerier, error) {
+func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuerier, err error) {
 	var blocks []BlockReader
 
 	db.mtx.RLock()
@@ -1954,11 +1954,22 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) ([]storage.ChunkQuerie
 			blocks = append(blocks, b)
 		}
 	}
-	var inOrderHeadQuerier storage.ChunkQuerier
+
+	blockQueriers := make([]storage.ChunkQuerier, 0, len(blocks)+2) // +2 to allow for possible in-order and OOO head queriers
+
+	defer func() {
+		if err != nil {
+			// If we fail, all previously opened queriers must be closed.
+			for _, q := range blockQueriers {
+				// TODO(bwplotka): Handle error.
+				_ = q.Close()
+			}
+		}
+	}()
+
 	if maxt >= db.head.MinTime() {
 		rh := NewRangeHead(db.head, mint, maxt)
-		var err error
-		inOrderHeadQuerier, err = NewBlockChunkQuerier(rh, mint, maxt)
+		inOrderHeadQuerier, err := NewBlockChunkQuerier(rh, mint, maxt)
 		if err != nil {
 			return nil, errors.Wrapf(err, "open querier for head %s", rh)
 		}
@@ -1980,37 +1991,30 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) ([]storage.ChunkQuerie
 				return nil, errors.Wrapf(err, "open querier for head while getting new querier %s", rh)
 			}
 		}
-	}
 
-	var outOfOrderHeadQuerier storage.ChunkQuerier
-	if overlapsClosedInterval(mint, maxt, db.head.MinOOOTime(), db.head.MaxOOOTime()) {
-		rh := NewOOORangeHead(db.head, mint, maxt)
-		var err error
-		outOfOrderHeadQuerier, err = NewBlockChunkQuerier(rh, mint, maxt)
-		if err != nil {
-			return nil, errors.Wrapf(err, "open block chunk querier for ooo head %s", rh)
+		if inOrderHeadQuerier != nil {
+			blockQueriers = append(blockQueriers, inOrderHeadQuerier)
 		}
 	}
 
-	blockQueriers := make([]storage.ChunkQuerier, 0, len(blocks))
+	if overlapsClosedInterval(mint, maxt, db.head.MinOOOTime(), db.head.MaxOOOTime()) {
+		rh := NewOOORangeHead(db.head, mint, maxt)
+		outOfOrderHeadQuerier, err := NewBlockChunkQuerier(rh, mint, maxt)
+		if err != nil {
+			return nil, errors.Wrapf(err, "open block chunk querier for ooo head %s", rh)
+		}
+
+		blockQueriers = append(blockQueriers, outOfOrderHeadQuerier)
+	}
+
 	for _, b := range blocks {
 		q, err := NewBlockChunkQuerier(b, mint, maxt)
 		if err == nil {
 			blockQueriers = append(blockQueriers, q)
 			continue
 		}
-		// If we fail, all previously opened queriers must be closed.
-		for _, q := range blockQueriers {
-			// TODO(bwplotka): Handle error.
-			_ = q.Close()
-		}
+
 		return nil, errors.Wrapf(err, "open querier for block %s", b)
-	}
-	if inOrderHeadQuerier != nil {
-		blockQueriers = append(blockQueriers, inOrderHeadQuerier)
-	}
-	if outOfOrderHeadQuerier != nil {
-		blockQueriers = append(blockQueriers, outOfOrderHeadQuerier)
 	}
 
 	return blockQueriers, nil
