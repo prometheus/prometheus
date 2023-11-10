@@ -849,18 +849,34 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 		return false
 	}
 
-	// if a single chunk is directly provided, use that instead of the iterator and immediately return
+	// if a single chunk is directly provided, use that instead of reading the iterator and immediately return
 	if p.currDelIter == nil {
 		p.curr = p.currChkMeta
 		return true
 	}
 
+	err := p.populateIteratorChunks()
+	if err != nil {
+		p.err = errors.Wrap(err, "iterate chunk while re-encoding")
+		return false //TODO: should this error? //TODO: better error message
+	}
+
+	//TODO: check chunks is not empty?
+	if len(p.iteratorChunks) == 0 {
+		return false
+	}
+
+	p.iteratorChunksIdx = 0
+	p.curr = p.iteratorChunks[0]
+	return true
+}
+
+func (p *populateWithDelChunkSeriesIterator) populateIteratorChunks() error {
 	valueType := p.currDelIter.Next()
 	if valueType == chunkenc.ValNone {
 		if err := p.currDelIter.Err(); err != nil {
-			p.err = errors.Wrap(err, "iterate chunk while re-encoding")
+			return errors.Wrap(err, "iterate chunk while re-encoding")
 		}
-		return false
 	}
 
 	// Re-encode the chunks if iterator is provided. This means that it has
@@ -879,8 +895,6 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 
 	// make chunks
 	prevValueType := chunkenc.ValNone
-
-	//TODO: first set current chunk, then if there is more than one chunk, set the slice instead
 
 	for vt := valueType; vt != chunkenc.ValNone; vt = p.currDelIter.Next() {
 		// prevApp is the appender for the previous sample.
@@ -941,21 +955,17 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 	}
 
 	if err != nil {
-		p.err = errors.Wrap(err, "iterate chunk while re-encoding")
-		return false
+		return errors.Wrap(err, "iterate chunk while re-encoding") //TODO: change error message
 	}
 	if err = p.currDelIter.Err(); err != nil {
-		p.err = errors.Wrap(err, "iterate chunk while re-encoding")
+		return errors.Wrap(err, "iterate chunk while re-encoding")
 	}
 
 	if prevValueType != chunkenc.ValNone {
 		p.iteratorChunks = append(p.iteratorChunks, chunks.Meta{Chunk: currentChunk, MinTime: cmint, MaxTime: cmaxt})
 	}
 
-	//TODO: check chunks is not empty?
-	p.iteratorChunksIdx = 0
-	p.curr = p.iteratorChunks[0]
-	return true
+	return nil
 }
 
 func (p *populateWithDelChunkSeriesIterator) At() chunks.Meta { return p.curr }
