@@ -117,12 +117,16 @@ func (b BlockChunkRef) Unpack() (int, int) {
 	return sgmIndex, chkStart
 }
 
-// Meta holds information about a chunk of data.
-// TODO: explain that this might map to multiple chunks now
+// Meta holds information about one or more chunks.
+// For examples of when chunks.Meta could refer to multiple chunks, see
+// ChunkReader.ChunkOrIterable().
 type Meta struct {
 	// Ref and Chunk hold either a reference that can be used to retrieve
 	// chunk data or the data itself.
-	// If Chunk is nil, call ChunkReader.ChunkOrIterable(Meta.Ref) to get the chunk and assign it to the Chunk field
+	// If Chunk is nil, call ChunkReader.ChunkOrIterable(Meta.Ref) to get the
+	// chunk and assign it to the Chunk field. If an iterable is returned from
+	// that method, then it may not be possible to set Chunk as the iterable
+	// might form several chunks.
 	Ref   ChunkRef
 	Chunk chunkenc.Chunk
 

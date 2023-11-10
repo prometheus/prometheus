@@ -3018,7 +3018,7 @@ func TestBlockBaseSeriesSet(t *testing.T) {
 			idx := tc.expIdxs[i]
 
 			require.Equal(t, tc.series[idx].lset, bcs.curr.labels)
-			require.Equal(t, tc.series[idx].chunks, si.chks)
+			require.Equal(t, tc.series[idx].chunks, si.metas)
 
 			i++
 		}

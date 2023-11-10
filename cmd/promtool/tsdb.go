@@ -648,8 +648,8 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 			if err != nil {
 				return err
 			}
-			// Chunks within blocks should not require re-encoding, so an iterable is not expected to be returned
-			// from the chunk reader.
+			// Chunks within blocks should not need to be re-written, so an
+			// iterable is not expected to be returned from the chunk reader.
 			if iterable != nil {
 				return errors.New("ChunkOrIterable should not return an iterable when reading a block")
 			}
