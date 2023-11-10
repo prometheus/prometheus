@@ -1,5 +1,9 @@
 # Changelog
 
+## unreleased
+
+* [ENHANCEMENT] TSDB: Make the wlog watcher read segments synchronously when not tailing. #13224
+
 ## 2.48.0-rc.2 / 2023-11-02
 
 * [ENHANCEMENT] Scraping: Add configuration option for tracking staleness of scraped timestamps. #13060
