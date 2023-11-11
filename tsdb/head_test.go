@@ -22,6 +22,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -190,6 +191,10 @@ func readTestWAL(t testing.TB, dir string) (recs []interface{}) {
 			meta, err := dec.Metadata(rec, nil)
 			require.NoError(t, err)
 			recs = append(recs, meta)
+		case record.Exemplars:
+			exemplars, err := dec.Exemplars(rec, nil)
+			require.NoError(t, err)
+			recs = append(recs, exemplars)
 		default:
 			t.Fatalf("unknown record type")
 		}
@@ -5456,4 +5461,56 @@ func TestHeadDetectsDuplicateSampleAtSizeLimit(t *testing.T) {
 	}
 
 	require.Equal(t, numSamples/2, storedSampleCount)
+}
+
+func TestWALSampleAndExemplarOrder(t *testing.T) {
+	lbls := labels.FromStrings("foo", "bar")
+	testcases := map[string]struct {
+		appendF      func(app storage.Appender, ts int64) (storage.SeriesRef, error)
+		expectedType reflect.Type
+	}{
+		"float sample": {
+			appendF: func(app storage.Appender, ts int64) (storage.SeriesRef, error) {
+				return app.Append(0, lbls, ts, 1.0)
+			},
+			expectedType: reflect.TypeOf([]record.RefSample{}),
+		},
+		"histogram sample": {
+			appendF: func(app storage.Appender, ts int64) (storage.SeriesRef, error) {
+				return app.AppendHistogram(0, lbls, ts, tsdbutil.GenerateTestHistogram(1), nil)
+			},
+			expectedType: reflect.TypeOf([]record.RefHistogramSample{}),
+		},
+		"float histogram sample": {
+			appendF: func(app storage.Appender, ts int64) (storage.SeriesRef, error) {
+				return app.AppendHistogram(0, lbls, ts, nil, tsdbutil.GenerateTestFloatHistogram(1))
+			},
+			expectedType: reflect.TypeOf([]record.RefFloatHistogramSample{}),
+		},
+	}
+
+	for testName, tc := range testcases {
+		t.Run(testName, func(t *testing.T) {
+			h, w := newTestHead(t, 1000, wlog.CompressionNone, false)
+			defer func() {
+				require.NoError(t, h.Close())
+			}()
+
+			app := h.Appender(context.Background())
+			ref, err := tc.appendF(app, 10)
+			require.NoError(t, err)
+			app.AppendExemplar(ref, lbls, exemplar.Exemplar{Value: 1.0, Ts: 5})
+
+			app.Commit()
+
+			recs := readTestWAL(t, w.Dir())
+			require.Len(t, recs, 3)
+			_, ok := recs[0].([]record.RefSeries)
+			require.True(t, ok, "expected first record to be a RefSeries")
+			actualType := reflect.TypeOf(recs[1])
+			require.Equal(t, tc.expectedType, actualType, "expected second record to be a %s", tc.expectedType)
+			_, ok = recs[2].([]record.RefExemplar)
+			require.True(t, ok, "expected third record to be a RefExemplar")
+		})
+	}
 }
