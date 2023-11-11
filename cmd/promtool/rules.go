@@ -78,7 +78,8 @@ func (importer *ruleImporter) loadGroups(_ context.Context, filenames []string) 
 }
 
 // importAll evaluates all the recording rules and creates new time series and writes them to disk in blocks.
-func (importer *ruleImporter) importAll(ctx context.Context) (errs []error) {
+func (importer *ruleImporter) importAll(ctx context.Context) []error {
+	var errs []error
 	for name, group := range importer.groups {
 		level.Info(importer.logger).Log("backfiller", "processing group", "name", name)
 
