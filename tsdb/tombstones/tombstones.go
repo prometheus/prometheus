@@ -199,7 +199,7 @@ func ReadTombstones(dir string) (Reader, int64, error) {
 	}
 
 	if len(b) < tombstonesHeaderSize {
-		return nil, 0, fmt.Errorf("tombstones header", encoding.ErrInvalidSize)
+		return nil, 0, fmt.Errorf("tombstones header: %w", encoding.ErrInvalidSize)
 	}
 
 	d := &encoding.Decbuf{B: b[:len(b)-tombstonesCRCSize]}
