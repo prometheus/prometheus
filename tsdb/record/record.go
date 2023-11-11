@@ -16,9 +16,9 @@
 package record
 
 import (
+	"errors"
+	"fmt"
 	"math"
-
-	"github.com/pkg/errors"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -229,7 +229,7 @@ func (d *Decoder) Series(rec []byte, series []RefSeries) ([]RefSeries, error) {
 		return nil, dec.Err()
 	}
 	if len(dec.B) > 0 {
-		return nil, errors.Errorf("unexpected %d bytes left in entry", len(dec.B))
+		return nil, fmt.Errorf("unexpected %d bytes left in entry", len(dec.B))
 	}
 	return series, nil
 }
@@ -272,7 +272,7 @@ func (d *Decoder) Metadata(rec []byte, metadata []RefMetadata) ([]RefMetadata, e
 		return nil, dec.Err()
 	}
 	if len(dec.B) > 0 {
-		return nil, errors.Errorf("unexpected %d bytes left in entry", len(dec.B))
+		return nil, fmt.Errorf("unexpected %d bytes left in entry", len(dec.B))
 	}
 	return metadata, nil
 }
@@ -321,10 +321,10 @@ func (d *Decoder) Samples(rec []byte, samples []RefSample) ([]RefSample, error) 
 	}
 
 	if dec.Err() != nil {
-		return nil, errors.Wrapf(dec.Err(), "decode error after %d samples", len(samples))
+		return nil, fmt.Errorf("decode error after %d samples: %w", len(samples), dec.Err())
 	}
 	if len(dec.B) > 0 {
-		return nil, errors.Errorf("unexpected %d bytes left in entry", len(dec.B))
+		return nil, fmt.Errorf("unexpected %d bytes left in entry", len(dec.B))
 	}
 	return samples, nil
 }
@@ -348,7 +348,7 @@ func (d *Decoder) Tombstones(rec []byte, tstones []tombstones.Stone) ([]tombston
 		return nil, dec.Err()
 	}
 	if len(dec.B) > 0 {
-		return nil, errors.Errorf("unexpected %d bytes left in entry", len(dec.B))
+		return nil, fmt.Errorf("unexpected %d bytes left in entry", len(dec.B))
 	}
 	return tstones, nil
 }
@@ -386,10 +386,10 @@ func (d *Decoder) ExemplarsFromBuffer(dec *encoding.Decbuf, exemplars []RefExemp
 	}
 
 	if dec.Err() != nil {
-		return nil, errors.Wrapf(dec.Err(), "decode error after %d exemplars", len(exemplars))
+		return nil, fmt.Errorf("decode error after %d exemplars: %w", len(exemplars), dec.Err())
 	}
 	if len(dec.B) > 0 {
-		return nil, errors.Errorf("unexpected %d bytes left in entry", len(dec.B))
+		return nil, fmt.Errorf("unexpected %d bytes left in entry", len(dec.B))
 	}
 	return exemplars, nil
 }
@@ -414,10 +414,10 @@ func (d *Decoder) MmapMarkers(rec []byte, markers []RefMmapMarker) ([]RefMmapMar
 	}
 
 	if dec.Err() != nil {
-		return nil, errors.Wrapf(dec.Err(), "decode error after %d mmap markers", len(markers))
+		return nil, fmt.Errorf("decode error after %d mmap markers: %w", len(markers), dec.Err())
 	}
 	if len(dec.B) > 0 {
-		return nil, errors.Errorf("unexpected %d bytes left in entry", len(dec.B))
+		return nil, fmt.Errorf("unexpected %d bytes left in entry", len(dec.B))
 	}
 	return markers, nil
 }
@@ -450,10 +450,10 @@ func (d *Decoder) HistogramSamples(rec []byte, histograms []RefHistogramSample) 
 	}
 
 	if dec.Err() != nil {
-		return nil, errors.Wrapf(dec.Err(), "decode error after %d histograms", len(histograms))
+		return nil, fmt.Errorf("decode error after %d histograms: %w", len(histograms), dec.Err())
 	}
 	if len(dec.B) > 0 {
-		return nil, errors.Errorf("unexpected %d bytes left in entry", len(dec.B))
+		return nil, fmt.Errorf("unexpected %d bytes left in entry", len(dec.B))
 	}
 	return histograms, nil
 }
@@ -532,10 +532,10 @@ func (d *Decoder) FloatHistogramSamples(rec []byte, histograms []RefFloatHistogr
 	}
 
 	if dec.Err() != nil {
-		return nil, errors.Wrapf(dec.Err(), "decode error after %d histograms", len(histograms))
+		return nil, fmt.Errorf("decode error after %d histograms: %w", len(histograms),  dec.Err())
 	}
 	if len(dec.B) > 0 {
-		return nil, errors.Errorf("unexpected %d bytes left in entry", len(dec.B))
+		return nil, fmt.Errorf("unexpected %d bytes left in entry", len(dec.B))
 	}
 	return histograms, nil
 }
