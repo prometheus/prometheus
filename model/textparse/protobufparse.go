@@ -16,6 +16,7 @@ package textparse
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -24,7 +25,6 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/gogo/protobuf/types"
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -396,10 +396,10 @@ func (p *ProtobufParser) Next() (Entry, error) {
 		// into metricBytes and validate only name, help, and type for now.
 		name := p.mf.GetName()
 		if !model.IsValidMetricName(model.LabelValue(name)) {
-			return EntryInvalid, errors.Errorf("invalid metric name: %s", name)
+			return EntryInvalid, fmt.Errorf("invalid metric name: %s", name)
 		}
 		if help := p.mf.GetHelp(); !utf8.ValidString(help) {
-			return EntryInvalid, errors.Errorf("invalid help for metric %q: %s", name, help)
+			return EntryInvalid, fmt.Errorf("invalid help for metric %q: %s", name, help)
 		}
 		switch p.mf.GetType() {
 		case dto.MetricType_COUNTER,
@@ -410,7 +410,7 @@ func (p *ProtobufParser) Next() (Entry, error) {
 			dto.MetricType_UNTYPED:
 			// All good.
 		default:
-			return EntryInvalid, errors.Errorf("unknown metric type for metric %q: %s", name, p.mf.GetType())
+			return EntryInvalid, fmt.Errorf("unknown metric type for metric %q: %s", name, p.mf.GetType())
 		}
 		p.metricBytes.Reset()
 		p.metricBytes.WriteString(name)
@@ -463,7 +463,7 @@ func (p *ProtobufParser) Next() (Entry, error) {
 			return EntryInvalid, err
 		}
 	default:
-		return EntryInvalid, errors.Errorf("invalid protobuf parsing state: %d", p.state)
+		return EntryInvalid, fmt.Errorf("invalid protobuf parsing state: %d", p.state)
 	}
 	return p.state, nil
 }
@@ -476,13 +476,13 @@ func (p *ProtobufParser) updateMetricBytes() error {
 		b.WriteByte(model.SeparatorByte)
 		n := lp.GetName()
 		if !model.LabelName(n).IsValid() {
-			return errors.Errorf("invalid label name: %s", n)
+			return fmt.Errorf("invalid label name: %s", n)
 		}
 		b.WriteString(n)
 		b.WriteByte(model.SeparatorByte)
 		v := lp.GetValue()
 		if !utf8.ValidString(v) {
-			return errors.Errorf("invalid label value: %s", v)
+			return fmt.Errorf("invalid label value: %s", v)
 		}
 		b.WriteString(v)
 	}
@@ -557,7 +557,7 @@ func readDelimited(b []byte, mf *dto.MetricFamily) (n int, err error) {
 	}
 	totalLength := varIntLength + int(messageLength)
 	if totalLength > len(b) {
-		return 0, errors.Errorf("protobufparse: insufficient length of buffer, expected at least %d bytes, got %d bytes", totalLength, len(b))
+		return 0, fmt.Errorf("protobufparse: insufficient length of buffer, expected at least %d bytes, got %d bytes", totalLength, len(b))
 	}
 	mf.Reset()
 	return totalLength, mf.Unmarshal(b[varIntLength:totalLength])

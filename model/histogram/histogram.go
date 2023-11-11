@@ -328,6 +328,44 @@ func (h *Histogram) ToFloat() *FloatHistogram {
 	}
 }
 
+// Validate validates consistency between span and bucket slices. Also, buckets are checked
+// against negative values.
+// For histograms that have not observed any NaN values (based on IsNaN(h.Sum) check), a
+// strict h.Count = nCount + pCount + h.ZeroCount check is performed.
+// Otherwise, only a lower bound check will be done (h.Count >= nCount + pCount + h.ZeroCount),
+// because NaN observations do not increment the values of buckets (but they do increment
+// the total h.Count).
+func (h *Histogram) Validate() error {
+	if err := checkHistogramSpans(h.NegativeSpans, len(h.NegativeBuckets)); err != nil {
+		return fmt.Errorf("negative side: %w", err)
+	}
+	if err := checkHistogramSpans(h.PositiveSpans, len(h.PositiveBuckets)); err != nil {
+		return fmt.Errorf("positive side: %w", err)
+	}
+	var nCount, pCount uint64
+	err := checkHistogramBuckets(h.NegativeBuckets, &nCount, true)
+	if err != nil {
+		return fmt.Errorf("negative side: %w", err)
+	}
+	err = checkHistogramBuckets(h.PositiveBuckets, &pCount, true)
+	if err != nil {
+		return fmt.Errorf("positive side: %w", err)
+	}
+
+	sumOfBuckets := nCount + pCount + h.ZeroCount
+	if math.IsNaN(h.Sum) {
+		if sumOfBuckets > h.Count {
+			return fmt.Errorf("%d observations found in buckets, but the Count field is %d: %w", sumOfBuckets, h.Count, ErrHistogramCountNotBigEnough)
+		}
+	} else {
+		if sumOfBuckets != h.Count {
+			return fmt.Errorf("%d observations found in buckets, but the Count field is %d: %w", sumOfBuckets, h.Count, ErrHistogramCountMismatch)
+		}
+	}
+
+	return nil
+}
+
 type regularBucketIterator struct {
 	baseBucketIterator[uint64, int64]
 }
@@ -454,4 +492,17 @@ func (c *cumulativeBucketIterator) At() Bucket[uint64] {
 		Count:          c.currCumulativeCount,
 		Index:          c.currIdx - 1,
 	}
+}
+
+// ReduceResolution reduces the histogram's spans, buckets into target schema.
+// The target schema must be smaller than the current histogram's schema.
+func (h *Histogram) ReduceResolution(targetSchema int32) *Histogram {
+	h.PositiveSpans, h.PositiveBuckets = reduceResolution(
+		h.PositiveSpans, h.PositiveBuckets, h.Schema, targetSchema, true,
+	)
+	h.NegativeSpans, h.NegativeBuckets = reduceResolution(
+		h.NegativeSpans, h.NegativeBuckets, h.Schema, targetSchema, true,
+	)
+	h.Schema = targetSchema
+	return h
 }

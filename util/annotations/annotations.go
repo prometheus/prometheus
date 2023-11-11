@@ -81,8 +81,8 @@ func (a Annotations) AsStrings(query string, maxAnnos int) []string {
 		if maxAnnos > 0 && len(arr) >= maxAnnos {
 			break
 		}
-		anErr, ok := err.(annoErr)
-		if ok {
+		var anErr annoErr
+		if errors.As(err, &anErr) {
 			anErr.Query = query
 			err = anErr
 		}

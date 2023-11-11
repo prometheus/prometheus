@@ -2038,6 +2038,57 @@ func TestScrapeLoopAppendNoStalenessIfTimestamp(t *testing.T) {
 	require.Equal(t, want, app.resultFloats, "Appended samples not as expected:\n%s", appender)
 }
 
+func TestScrapeLoopAppendStalenessIfTrackTimestampStaleness(t *testing.T) {
+	app := &collectResultAppender{}
+	sl := newScrapeLoop(context.Background(),
+		nil, nil, nil,
+		nopMutator,
+		nopMutator,
+		func(ctx context.Context) storage.Appender { return app },
+		nil,
+		0,
+		true,
+		true,
+		0, 0,
+		nil,
+		0,
+		0,
+		false,
+		false,
+		false,
+		nil,
+		false,
+		newTestScrapeMetrics(t),
+	)
+
+	now := time.Now()
+	slApp := sl.appender(context.Background())
+	_, _, _, err := sl.append(slApp, []byte("metric_a 1 1000\n"), "", now)
+	require.NoError(t, err)
+	require.NoError(t, slApp.Commit())
+
+	slApp = sl.appender(context.Background())
+	_, _, _, err = sl.append(slApp, []byte(""), "", now.Add(time.Second))
+	require.NoError(t, err)
+	require.NoError(t, slApp.Commit())
+
+	// DeepEqual will report NaNs as being different, so replace with a different value.
+	app.resultFloats[1].f = 42
+	want := []floatSample{
+		{
+			metric: labels.FromStrings(model.MetricNameLabel, "metric_a"),
+			t:      1000,
+			f:      1,
+		},
+		{
+			metric: labels.FromStrings(model.MetricNameLabel, "metric_a"),
+			t:      timestamp.FromTime(now.Add(time.Second)),
+			f:      42,
+		},
+	}
+	require.Equal(t, want, app.resultFloats, "Appended samples not as expected:\n%s", appender)
+}
+
 func TestScrapeLoopAppendExemplar(t *testing.T) {
 	tests := []struct {
 		title                   string

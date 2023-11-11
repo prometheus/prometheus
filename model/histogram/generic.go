@@ -14,9 +14,18 @@
 package histogram
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"strings"
+)
+
+var (
+	ErrHistogramCountNotBigEnough    = errors.New("histogram's observation count should be at least the number of observations found in the buckets")
+	ErrHistogramCountMismatch        = errors.New("histogram's observation count should equal the number of observations found in the buckets (in absence of NaN)")
+	ErrHistogramNegativeBucketCount  = errors.New("histogram has a bucket whose observation count is negative")
+	ErrHistogramSpanNegativeOffset   = errors.New("histogram has a span whose offset is negative")
+	ErrHistogramSpansBucketsMismatch = errors.New("histogram spans specify different number of buckets than provided")
 )
 
 // BucketCount is a type constraint for the count in a bucket, which can be
@@ -347,6 +356,43 @@ func compactBuckets[IBC InternalBucketCount](buckets []IBC, spans []Span, maxEmp
 	return buckets, spans
 }
 
+func checkHistogramSpans(spans []Span, numBuckets int) error {
+	var spanBuckets int
+	for n, span := range spans {
+		if n > 0 && span.Offset < 0 {
+			return fmt.Errorf("span number %d with offset %d: %w", n+1, span.Offset, ErrHistogramSpanNegativeOffset)
+		}
+		spanBuckets += int(span.Length)
+	}
+	if spanBuckets != numBuckets {
+		return fmt.Errorf("spans need %d buckets, have %d buckets: %w", spanBuckets, numBuckets, ErrHistogramSpansBucketsMismatch)
+	}
+	return nil
+}
+
+func checkHistogramBuckets[BC BucketCount, IBC InternalBucketCount](buckets []IBC, count *BC, deltas bool) error {
+	if len(buckets) == 0 {
+		return nil
+	}
+
+	var last IBC
+	for i := 0; i < len(buckets); i++ {
+		var c IBC
+		if deltas {
+			c = last + buckets[i]
+		} else {
+			c = buckets[i]
+		}
+		if c < 0 {
+			return fmt.Errorf("bucket number %d has observation count of %v: %w", i+1, c, ErrHistogramNegativeBucketCount)
+		}
+		last = c
+		*count += BC(c)
+	}
+
+	return nil
+}
+
 func getBound(idx, schema int32) float64 {
 	// Here a bit of context about the behavior for the last bucket counting
 	// regular numbers (called simply "last bucket" below) and the bucket
@@ -553,4 +599,91 @@ var exponentialBounds = [][]float64{
 		0.9785720620876999, 0.9812252401044634, 0.9838856116165875, 0.9865531961276168,
 		0.9892280131939752, 0.9919100824251095, 0.9945994234836328, 0.9972960560854698,
 	},
+}
+
+// reduceResolution reduces the input spans, buckets in origin schema to the spans, buckets in target schema.
+// The target schema must be smaller than the original schema.
+// Set deltaBuckets to true if the provided buckets are
+// deltas. Set it to false if the buckets contain absolute counts.
+func reduceResolution[IBC InternalBucketCount](originSpans []Span, originBuckets []IBC, originSchema, targetSchema int32, deltaBuckets bool) ([]Span, []IBC) {
+	var (
+		targetSpans           []Span // The spans in the target schema.
+		targetBuckets         []IBC  // The bucket counts in the target schema.
+		bucketIdx             int32  // The index of bucket in the origin schema.
+		bucketCountIdx        int    // The position of a bucket in origin bucket count slice `originBuckets`.
+		targetBucketIdx       int32  // The index of bucket in the target schema.
+		lastBucketCount       IBC    // The last visited bucket's count in the origin schema.
+		lastTargetBucketIdx   int32  // The index of the last added target bucket.
+		lastTargetBucketCount IBC
+	)
+
+	for _, span := range originSpans {
+		// Determine the index of the first bucket in this span.
+		bucketIdx += span.Offset
+		for j := 0; j < int(span.Length); j++ {
+			// Determine the index of the bucket in the target schema from the index in the original schema.
+			targetBucketIdx = targetIdx(bucketIdx, originSchema, targetSchema)
+
+			switch {
+			case len(targetSpans) == 0:
+				// This is the first span in the targetSpans.
+				span := Span{
+					Offset: targetBucketIdx,
+					Length: 1,
+				}
+				targetSpans = append(targetSpans, span)
+				targetBuckets = append(targetBuckets, originBuckets[bucketCountIdx])
+				lastTargetBucketIdx = targetBucketIdx
+				lastBucketCount = originBuckets[bucketCountIdx]
+				lastTargetBucketCount = originBuckets[bucketCountIdx]
+
+			case lastTargetBucketIdx == targetBucketIdx:
+				// The current bucket has to be merged into the same target bucket as the previous bucket.
+				if deltaBuckets {
+					lastBucketCount += originBuckets[bucketCountIdx]
+					targetBuckets[len(targetBuckets)-1] += lastBucketCount
+					lastTargetBucketCount += lastBucketCount
+				} else {
+					targetBuckets[len(targetBuckets)-1] += originBuckets[bucketCountIdx]
+				}
+
+			case (lastTargetBucketIdx + 1) == targetBucketIdx:
+				// The current bucket has to go into a new target bucket,
+				// and that bucket is next to the previous target bucket,
+				// so we add it to the current target span.
+				targetSpans[len(targetSpans)-1].Length++
+				lastTargetBucketIdx++
+				if deltaBuckets {
+					lastBucketCount += originBuckets[bucketCountIdx]
+					targetBuckets = append(targetBuckets, lastBucketCount-lastTargetBucketCount)
+					lastTargetBucketCount = lastBucketCount
+				} else {
+					targetBuckets = append(targetBuckets, originBuckets[bucketCountIdx])
+				}
+
+			case (lastTargetBucketIdx + 1) < targetBucketIdx:
+				// The current bucket has to go into a new target bucket,
+				// and that bucket is separated by a gap from the previous target bucket,
+				// so we need to add a new target span.
+				span := Span{
+					Offset: targetBucketIdx - lastTargetBucketIdx - 1,
+					Length: 1,
+				}
+				targetSpans = append(targetSpans, span)
+				lastTargetBucketIdx = targetBucketIdx
+				if deltaBuckets {
+					lastBucketCount += originBuckets[bucketCountIdx]
+					targetBuckets = append(targetBuckets, lastBucketCount-lastTargetBucketCount)
+					lastTargetBucketCount = lastBucketCount
+				} else {
+					targetBuckets = append(targetBuckets, originBuckets[bucketCountIdx])
+				}
+			}
+
+			bucketIdx++
+			bucketCountIdx++
+		}
+	}
+
+	return targetSpans, targetBuckets
 }
