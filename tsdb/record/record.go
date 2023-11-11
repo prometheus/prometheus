@@ -532,7 +532,7 @@ func (d *Decoder) FloatHistogramSamples(rec []byte, histograms []RefFloatHistogr
 	}
 
 	if dec.Err() != nil {
-		return nil, fmt.Errorf("decode error after %d histograms: %w", len(histograms),  dec.Err())
+		return nil, fmt.Errorf("decode error after %d histograms: %w", len(histograms), dec.Err())
 	}
 	if len(dec.B) > 0 {
 		return nil, fmt.Errorf("unexpected %d bytes left in entry", len(dec.B))
