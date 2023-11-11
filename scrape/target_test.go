@@ -519,6 +519,11 @@ func TestBucketLimitAppender(t *testing.T) {
 		},
 		{
 			h:           example,
+			limit:       4,
+			expectError: false,
+		},
+		{
+			h:           example,
 			limit:       10,
 			expectError: false,
 		},
