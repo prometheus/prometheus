@@ -16,9 +16,9 @@ package wlog
 
 import (
 	"bytes"
+	"crypto/rand"
 	"fmt"
 	"io"
-	"math/rand"
 	"os"
 	"path/filepath"
 	"testing"
@@ -164,7 +164,7 @@ func TestWALRepair_ReadingError(t *testing.T) {
 				sr := NewSegmentBufReader(s)
 				require.NoError(t, err)
 				r := NewReader(sr)
-				for r.Next() { // nolint:revive
+				for r.Next() {
 				}
 
 				// Close the segment so we don't break things on Windows.

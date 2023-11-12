@@ -109,7 +109,7 @@ func (c *LightsailSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 		}
 		c.Region = region
 	}
-	return nil
+	return c.HTTPClientConfig.Validate()
 }
 
 // LightsailDiscovery periodically performs Lightsail-SD requests. It implements

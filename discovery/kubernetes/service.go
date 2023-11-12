@@ -91,7 +91,7 @@ func (s *Service) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	}
 
 	go func() {
-		for s.process(ctx, ch) { // nolint:revive
+		for s.process(ctx, ch) {
 		}
 	}()
 

@@ -61,6 +61,13 @@ global:
   # How long until a scrape request times out.
   [ scrape_timeout: <duration> | default = 10s ]
 
+  # The protocols to negotiate during a scrape with the client.
+  # Supported values (case sensitive): PrometheusProto, OpenMetricsText0.0.1,
+  # OpenMetricsText1.0.0, PrometheusText0.0.4.
+  # The default value changes to [ PrometheusProto, OpenMetricsText1.0.0, OpenMetricsText0.0.1, PrometheusText0.0.4 ]
+  # when native_histogram feature flag is set.
+  [ scrape_protocols: [<string>, ...] | default = [ OpenMetricsText1.0.0, OpenMetricsText0.0.1, PrometheusText0.0.4 ] ]
+
   # How frequently to evaluate rules.
   [ evaluation_interval: <duration> | default = 1m ]
 
@@ -171,6 +178,11 @@ job_name: <job_name>
 # Per-scrape timeout when scraping this job.
 [ scrape_timeout: <duration> | default = <global_config.scrape_timeout> ]
 
+# The protocols to negotiate during a scrape with the client.
+# Supported values (case sensitive): PrometheusProto, OpenMetricsText0.0.1,
+# OpenMetricsText1.0.0, PrometheusText0.0.4.
+[ scrape_protocols: [<string>, ...] | default = <global_config.scrape_protocols> ]
+
 # Whether to scrape a classic histogram that is also exposed as a native
 # histogram (has no effect without --enable-feature=native-histograms).
 [ scrape_classic_histograms: <boolean> | default = false ]
@@ -209,6 +221,14 @@ job_name: <job_name>
 # If honor_timestamps is set to "false", the timestamps of the metrics exposed
 # by the target will be ignored.
 [ honor_timestamps: <boolean> | default = true ]
+
+# track_timestamps_staleness controls whether Prometheus tracks staleness of
+# the metrics that have an explicit timestamps present in scraped data.
+#
+# If track_timestamps_staleness is set to "true", a staleness marker will be
+# inserted in the TSDB when a metric is no longer present or the target
+# is down.
+[ track_timestamps_staleness: <boolean> | default = false ]
 
 # Configures the protocol scheme used for requests.
 [ scheme: <scheme> | default = http ]
@@ -3327,6 +3347,25 @@ authorization:
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
+# Optionally configures AWS's Signature Verification 4 signing process to
+# sign requests. Cannot be set at the same time as basic_auth, authorization, or oauth2.
+# To use the default credentials from the AWS SDK, use `sigv4: {}`.
+sigv4:
+  # The AWS region. If blank, the region from the default credentials chain
+  # is used.
+  [ region: <string> ]
+
+  # The AWS API keys. If blank, the environment variables `AWS_ACCESS_KEY_ID`
+  # and `AWS_SECRET_ACCESS_KEY` are used.
+  [ access_key: <string> ]
+  [ secret_key: <secret> ]
+
+  # Named AWS profile used to authenticate.
+  [ profile: <string> ]
+
+  # AWS Role ARN, an alternative to using AWS API keys.
+  [ role_arn: <string> ]
+
 # Optional OAuth 2.0 configuration.
 # Cannot be used at the same time as basic_auth or authorization.
 oauth2:
@@ -3560,7 +3599,13 @@ azuread:
 
   # Azure User-assigned Managed identity.
   [ managed_identity:
-      [ client_id: <string> ]  
+      [ client_id: <string> ] ]  
+
+  # Azure OAuth.
+  [ oauth:
+      [ client_id: <string> ]
+      [ client_secret: <string> ]
+      [ tenant_id: <string> ] ]
 
 # Configures the remote write request's TLS settings.
 tls_config:

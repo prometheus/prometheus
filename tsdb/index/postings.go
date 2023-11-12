@@ -15,9 +15,11 @@ package index
 
 import (
 	"container/heap"
+	"context"
 	"encoding/binary"
 	"runtime"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/pkg/errors"
@@ -107,11 +109,14 @@ func (p *MemPostings) SortedKeys() []labels.Label {
 	}
 	p.mtx.RUnlock()
 
-	slices.SortFunc(keys, func(a, b labels.Label) bool {
-		if a.Name != b.Name {
-			return a.Name < b.Name
+	slices.SortFunc(keys, func(a, b labels.Label) int {
+		nameCompare := strings.Compare(a.Name, b.Name)
+		// If names are the same, compare values.
+		if nameCompare != 0 {
+			return nameCompare
 		}
-		return a.Value < b.Value
+
+		return strings.Compare(a.Value, b.Value)
 	})
 	return keys
 }
@@ -135,7 +140,7 @@ func (p *MemPostings) LabelNames() []string {
 }
 
 // LabelValues returns label values for the given name.
-func (p *MemPostings) LabelValues(name string) []string {
+func (p *MemPostings) LabelValues(_ context.Context, name string) []string {
 	p.mtx.RLock()
 	defer p.mtx.RUnlock()
 
@@ -408,6 +413,7 @@ type Postings interface {
 	Seek(v storage.SeriesRef) bool
 
 	// At returns the value at the current iterator position.
+	// At should only be called after a successful call to Next or Seek.
 	At() storage.SeriesRef
 
 	// Err returns the last error of the iterator.
@@ -519,7 +525,7 @@ func (it *intersectPostings) Err() error {
 }
 
 // Merge returns a new iterator over the union of the input iterators.
-func Merge(its ...Postings) Postings {
+func Merge(ctx context.Context, its ...Postings) Postings {
 	if len(its) == 0 {
 		return EmptyPostings()
 	}
@@ -527,7 +533,7 @@ func Merge(its ...Postings) Postings {
 		return its[0]
 	}
 
-	p, ok := newMergedPostings(its)
+	p, ok := newMergedPostings(ctx, its)
 	if !ok {
 		return EmptyPostings()
 	}
@@ -559,12 +565,14 @@ type mergedPostings struct {
 	err         error
 }
 
-func newMergedPostings(p []Postings) (m *mergedPostings, nonEmpty bool) {
+func newMergedPostings(ctx context.Context, p []Postings) (m *mergedPostings, nonEmpty bool) {
 	ph := make(postingsHeap, 0, len(p))
 
 	for _, it := range p {
 		// NOTE: mergedPostings struct requires the user to issue an initial Next.
 		switch {
+		case ctx.Err() != nil:
+			return &mergedPostings{err: ctx.Err()}, true
 		case it.Next():
 			ph = append(ph, it)
 		case it.Err() != nil:

@@ -23,9 +23,10 @@
     "eslint-plugin-prettier": "^4.2.1",
     "jest-canvas-mock": "^2.5.1",
     "jest-fetch-mock": "^3.0.3",
-    "react-scripts": "^5.0.1",
     "prettier": "^2.8.8",
+    "react-scripts": "^5.0.1",
     "ts-jest": "^29.1.0",
     "typescript": "^4.9.5"
-  }
+  },
+  "version": "0.48.0-rc.2"
 }

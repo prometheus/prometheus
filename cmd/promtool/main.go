@@ -86,6 +86,8 @@ func main() {
 		httpConfigFilePath string
 	)
 
+	ctx := context.Background()
+
 	app := kingpin.New(filepath.Base(os.Args[0]), "Tooling for the Prometheus monitoring system.").UsageWriter(os.Stdout)
 	app.Version(version.Print("promtool"))
 	app.HelpFlag.Short('h')
@@ -216,6 +218,7 @@ func main() {
 	analyzeBlockID := tsdbAnalyzeCmd.Arg("block id", "Block to analyze (default is the last block).").String()
 	analyzeLimit := tsdbAnalyzeCmd.Flag("limit", "How many items to show in each list.").Default("20").Int()
 	analyzeRunExtended := tsdbAnalyzeCmd.Flag("extended", "Run extended analysis.").Bool()
+	analyzeMatchers := tsdbAnalyzeCmd.Flag("match", "Series selector to analyze. Only 1 set of matchers is supported now.").String()
 
 	tsdbListCmd := tsdbCmd.Command("list", "List tsdb blocks.")
 	listHumanReadable := tsdbListCmd.Flag("human-readable", "Print human readable values.").Short('r').Bool()
@@ -370,13 +373,13 @@ func main() {
 		os.Exit(checkErr(benchmarkWrite(*benchWriteOutPath, *benchSamplesFile, *benchWriteNumMetrics, *benchWriteNumScrapes)))
 
 	case tsdbAnalyzeCmd.FullCommand():
-		os.Exit(checkErr(analyzeBlock(*analyzePath, *analyzeBlockID, *analyzeLimit, *analyzeRunExtended)))
+		os.Exit(checkErr(analyzeBlock(ctx, *analyzePath, *analyzeBlockID, *analyzeLimit, *analyzeRunExtended, *analyzeMatchers)))
 
 	case tsdbListCmd.FullCommand():
 		os.Exit(checkErr(listBlocks(*listPath, *listHumanReadable)))
 
 	case tsdbDumpCmd.FullCommand():
-		os.Exit(checkErr(dumpSamples(*dumpPath, *dumpMinTime, *dumpMaxTime, *dumpMatch)))
+		os.Exit(checkErr(dumpSamples(ctx, *dumpPath, *dumpMinTime, *dumpMaxTime, *dumpMatch)))
 	// TODO(aSquare14): Work on adding support for custom block size.
 	case openMetricsImportCmd.FullCommand():
 		os.Exit(backfillOpenMetrics(*importFilePath, *importDBPath, *importHumanReadable, *importQuiet, *maxBlockDuration))
@@ -408,7 +411,6 @@ func checkExperimental(f bool) {
 	}
 }
 
-// nolint:revive
 var lintError = fmt.Errorf("lint error")
 
 type lintConfig struct {
@@ -730,30 +732,7 @@ func CheckRules(ls lintConfig, files ...string) int {
 	failed := false
 	hasErrors := false
 	if len(files) == 0 {
-		fmt.Println("Checking standard input")
-		data, err := io.ReadAll(os.Stdin)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "  FAILED:", err)
-			return failureExitCode
-		}
-		rgs, errs := rulefmt.Parse(data)
-		for _, e := range errs {
-			fmt.Fprintln(os.Stderr, e.Error())
-			return failureExitCode
-		}
-		if n, errs := checkRuleGroups(rgs, ls); errs != nil {
-			fmt.Fprintln(os.Stderr, "  FAILED:")
-			for _, e := range errs {
-				fmt.Fprintln(os.Stderr, e.Error())
-			}
-			failed = true
-			for _, err := range errs {
-				hasErrors = hasErrors || !errors.Is(err, lintError)
-			}
-		} else {
-			fmt.Printf("  SUCCESS: %d rules found\n", n)
-		}
-		fmt.Println()
+		failed, hasErrors = checkRulesFromStdin(ls)
 	} else {
 		failed, hasErrors = checkRules(files, ls)
 	}
@@ -768,6 +747,44 @@ func CheckRules(ls lintConfig, files ...string) int {
 	return successExitCode
 }
 
+// checkRulesFromStdin validates rule from stdin.
+func checkRulesFromStdin(ls lintConfig) (bool, bool) {
+	failed := false
+	hasErrors := false
+	fmt.Println("Checking standard input")
+	data, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "  FAILED:", err)
+		return true, true
+	}
+	rgs, errs := rulefmt.Parse(data)
+	if errs != nil {
+		failed = true
+		fmt.Fprintln(os.Stderr, "  FAILED:")
+		for _, e := range errs {
+			fmt.Fprintln(os.Stderr, e.Error())
+			hasErrors = hasErrors || !errors.Is(e, lintError)
+		}
+		if hasErrors {
+			return failed, hasErrors
+		}
+	}
+	if n, errs := checkRuleGroups(rgs, ls); errs != nil {
+		fmt.Fprintln(os.Stderr, "  FAILED:")
+		for _, e := range errs {
+			fmt.Fprintln(os.Stderr, e.Error())
+		}
+		failed = true
+		for _, err := range errs {
+			hasErrors = hasErrors || !errors.Is(err, lintError)
+		}
+	} else {
+		fmt.Printf("  SUCCESS: %d rules found\n", n)
+	}
+	fmt.Println()
+	return failed, hasErrors
+}
+
 // checkRules validates rule files.
 func checkRules(files []string, ls lintConfig) (bool, bool) {
 	failed := false
@@ -777,7 +794,14 @@ func checkRules(files []string, ls lintConfig) (bool, bool) {
 		rgs, errs := rulefmt.ParseFile(f)
 		if errs != nil {
 			failed = true
-			continue
+			fmt.Fprintln(os.Stderr, "  FAILED:")
+			for _, e := range errs {
+				fmt.Fprintln(os.Stderr, e.Error())
+				hasErrors = hasErrors || !errors.Is(e, lintError)
+			}
+			if hasErrors {
+				continue
+			}
 		}
 		if n, errs := checkRuleGroups(rgs, ls); errs != nil {
 			fmt.Fprintln(os.Stderr, "  FAILED:")

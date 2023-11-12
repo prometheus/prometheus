@@ -30,9 +30,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -162,17 +164,24 @@ func parseLoad(lines []string, i int) (int, *loadCmd, error) {
 			i--
 			break
 		}
-		metric, vals, err := parser.ParseSeriesDesc(defLine)
+		metric, vals, err := parseSeries(defLine, i)
 		if err != nil {
-			var perr *parser.ParseErr
-			if errors.As(err, &perr) {
-				perr.LineOffset = i
-			}
 			return i, nil, err
 		}
 		cmd.set(metric, vals...)
 	}
 	return i, cmd, nil
+}
+
+func parseSeries(defLine string, line int) (labels.Labels, []parser.SequenceValue, error) {
+	metric, vals, err := parser.ParseSeriesDesc(defLine)
+	if err != nil {
+		parser.EnrichParseError(err, func(parseErr *parser.ParseErr) {
+			parseErr.LineOffset = line
+		})
+		return labels.Labels{}, nil, err
+	}
+	return metric, vals, nil
 }
 
 func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
@@ -187,14 +196,13 @@ func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 	)
 	_, err := parser.ParseExpr(expr)
 	if err != nil {
-		var perr *parser.ParseErr
-		if errors.As(err, &perr) {
-			perr.LineOffset = i
-			posOffset := parser.Pos(strings.Index(lines[i], expr))
-			perr.PositionRange.Start += posOffset
-			perr.PositionRange.End += posOffset
-			perr.Query = lines[i]
-		}
+		parser.EnrichParseError(err, func(parseErr *parser.ParseErr) {
+			parseErr.LineOffset = i
+			posOffset := posrange.Pos(strings.Index(lines[i], expr))
+			parseErr.PositionRange.Start += posOffset
+			parseErr.PositionRange.End += posOffset
+			parseErr.Query = lines[i]
+		})
 		return i, nil, err
 	}
 
@@ -223,12 +231,8 @@ func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 			cmd.expect(0, parser.SequenceValue{Value: f})
 			break
 		}
-		metric, vals, err := parser.ParseSeriesDesc(defLine)
+		metric, vals, err := parseSeries(defLine, i)
 		if err != nil {
-			var perr *parser.ParseErr
-			if errors.As(err, &perr) {
-				perr.LineOffset = i
-			}
 			return i, nil, err
 		}
 
@@ -299,7 +303,7 @@ func (*evalCmd) testCmd()  {}
 type loadCmd struct {
 	gap       time.Duration
 	metrics   map[uint64]labels.Labels
-	defs      map[uint64][]FPoint
+	defs      map[uint64][]Sample
 	exemplars map[uint64][]exemplar.Exemplar
 }
 
@@ -307,7 +311,7 @@ func newLoadCmd(gap time.Duration) *loadCmd {
 	return &loadCmd{
 		gap:       gap,
 		metrics:   map[uint64]labels.Labels{},
-		defs:      map[uint64][]FPoint{},
+		defs:      map[uint64][]Sample{},
 		exemplars: map[uint64][]exemplar.Exemplar{},
 	}
 }
@@ -320,13 +324,14 @@ func (cmd loadCmd) String() string {
 func (cmd *loadCmd) set(m labels.Labels, vals ...parser.SequenceValue) {
 	h := m.Hash()
 
-	samples := make([]FPoint, 0, len(vals))
+	samples := make([]Sample, 0, len(vals))
 	ts := testStartTime
 	for _, v := range vals {
 		if !v.Omitted {
-			samples = append(samples, FPoint{
+			samples = append(samples, Sample{
 				T: ts.UnixNano() / int64(time.Millisecond/time.Nanosecond),
 				F: v.Value,
+				H: v.Histogram,
 			})
 		}
 		ts = ts.Add(cmd.gap)
@@ -341,9 +346,22 @@ func (cmd *loadCmd) append(a storage.Appender) error {
 		m := cmd.metrics[h]
 
 		for _, s := range smpls {
-			if _, err := a.Append(0, m, s.T, s.F); err != nil {
+			if err := appendSample(a, s, m); err != nil {
 				return err
 			}
+		}
+	}
+	return nil
+}
+
+func appendSample(a storage.Appender, s Sample, m labels.Labels) error {
+	if s.H != nil {
+		if _, err := a.AppendHistogram(0, m, s.T, nil, s.H); err != nil {
+			return err
+		}
+	} else {
+		if _, err := a.Append(0, m, s.T, s.F); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -417,8 +435,13 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 			if ev.ordered && exp.pos != pos+1 {
 				return fmt.Errorf("expected metric %s with %v at position %d but was at %d", v.Metric, exp.vals, exp.pos, pos+1)
 			}
-			if !almostEqual(exp.vals[0].Value, v.F) {
-				return fmt.Errorf("expected %v for %s but got %v", exp.vals[0].Value, v.Metric, v.F)
+			exp0 := exp.vals[0]
+			expH := exp0.Histogram
+			if (expH == nil) != (v.H == nil) || (expH != nil && !expH.Equals(v.H)) {
+				return fmt.Errorf("expected %v for %s but got %s", HistogramTestExpression(expH), v.Metric, HistogramTestExpression(v.H))
+			}
+			if !almostEqual(exp0.Value, v.F) {
+				return fmt.Errorf("expected %v for %s but got %v", exp0.Value, v.Metric, v.F)
 			}
 
 			seen[fp] = true
@@ -434,14 +457,29 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 		}
 
 	case Scalar:
-		if !almostEqual(ev.expected[0].vals[0].Value, val.V) {
-			return fmt.Errorf("expected Scalar %v but got %v", val.V, ev.expected[0].vals[0].Value)
+		if len(ev.expected) != 1 {
+			return fmt.Errorf("expected vector result, but got scalar %s", val.String())
+		}
+		exp0 := ev.expected[0].vals[0]
+		if exp0.Histogram != nil {
+			return fmt.Errorf("expected Histogram %v but got scalar %s", exp0.Histogram.TestExpression(), val.String())
+		}
+		if !almostEqual(exp0.Value, val.V) {
+			return fmt.Errorf("expected Scalar %v but got %v", val.V, exp0.Value)
 		}
 
 	default:
 		panic(fmt.Errorf("promql.Test.compareResult: unexpected result type %T", result))
 	}
 	return nil
+}
+
+// HistogramTestExpression returns TestExpression() for the given histogram or "" if the histogram is nil.
+func HistogramTestExpression(h *histogram.FloatHistogram) string {
+	if h != nil {
+		return h.TestExpression()
+	}
+	return ""
 }
 
 // clearCmd is a command that wipes the test's storage state.
@@ -560,7 +598,7 @@ func (t *test) exec(tc testCommand, engine engineQuerier) error {
 			}
 			err = cmd.compareResult(res.Value)
 			if err != nil {
-				return fmt.Errorf("error in %s %s: %w", cmd, iq.expr, err)
+				return fmt.Errorf("error in %s %s (line %d): %w", cmd, iq.expr, cmd.line, err)
 			}
 
 			// Check query returns same result in range mode,
@@ -581,9 +619,16 @@ func (t *test) exec(tc testCommand, engine engineQuerier) error {
 			mat := rangeRes.Value.(Matrix)
 			vec := make(Vector, 0, len(mat))
 			for _, series := range mat {
+				// We expect either Floats or Histograms.
 				for _, point := range series.Floats {
 					if point.T == timeMilliseconds(iq.evalTime) {
 						vec = append(vec, Sample{Metric: series.Metric, T: point.T, F: point.F})
+						break
+					}
+				}
+				for _, point := range series.Histograms {
+					if point.T == timeMilliseconds(iq.evalTime) {
+						vec = append(vec, Sample{Metric: series.Metric, T: point.T, H: point.H})
 						break
 					}
 				}
@@ -747,7 +792,7 @@ func (ll *LazyLoader) appendTill(ts int64) error {
 				ll.loadCmd.defs[h] = smpls[i:]
 				break
 			}
-			if _, err := app.Append(0, m, s.T, s.F); err != nil {
+			if err := appendSample(app, s, m); err != nil {
 				return err
 			}
 			if i == len(smpls)-1 {

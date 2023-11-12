@@ -15,6 +15,7 @@ package histogram
 
 import (
 	"fmt"
+	"math"
 	"strings"
 )
 
@@ -93,8 +94,8 @@ func (h *FloatHistogram) CopyToSchema(targetSchema int32) *FloatHistogram {
 		Sum:           h.Sum,
 	}
 
-	c.PositiveSpans, c.PositiveBuckets = mergeToSchema(h.PositiveSpans, h.PositiveBuckets, h.Schema, targetSchema)
-	c.NegativeSpans, c.NegativeBuckets = mergeToSchema(h.NegativeSpans, h.NegativeBuckets, h.Schema, targetSchema)
+	c.PositiveSpans, c.PositiveBuckets = reduceResolution(h.PositiveSpans, h.PositiveBuckets, h.Schema, targetSchema, false)
+	c.NegativeSpans, c.NegativeBuckets = reduceResolution(h.NegativeSpans, h.NegativeBuckets, h.Schema, targetSchema, false)
 
 	return &c
 }
@@ -130,6 +131,55 @@ func (h *FloatHistogram) String() string {
 	return sb.String()
 }
 
+// TestExpression returns the string representation of this histogram as it is used in the internal PromQL testing
+// framework as well as in promtool rules unit tests.
+// The syntax is described in https://prometheus.io/docs/prometheus/latest/configuration/unit_testing_rules/#series
+func (h *FloatHistogram) TestExpression() string {
+	var res []string
+	m := h.Copy()
+
+	m.Compact(math.MaxInt) // Compact to reduce the number of positive and negative spans to 1.
+
+	if m.Schema != 0 {
+		res = append(res, fmt.Sprintf("schema:%d", m.Schema))
+	}
+	if m.Count != 0 {
+		res = append(res, fmt.Sprintf("count:%g", m.Count))
+	}
+	if m.Sum != 0 {
+		res = append(res, fmt.Sprintf("sum:%g", m.Sum))
+	}
+	if m.ZeroCount != 0 {
+		res = append(res, fmt.Sprintf("z_bucket:%g", m.ZeroCount))
+	}
+	if m.ZeroThreshold != 0 {
+		res = append(res, fmt.Sprintf("z_bucket_w:%g", m.ZeroThreshold))
+	}
+
+	addBuckets := func(kind, bucketsKey, offsetKey string, buckets []float64, spans []Span) []string {
+		if len(spans) > 1 {
+			panic(fmt.Sprintf("histogram with multiple %s spans not supported", kind))
+		}
+		for _, span := range spans {
+			if span.Offset != 0 {
+				res = append(res, fmt.Sprintf("%s:%d", offsetKey, span.Offset))
+			}
+		}
+
+		var bucketStr []string
+		for _, bucket := range buckets {
+			bucketStr = append(bucketStr, fmt.Sprintf("%g", bucket))
+		}
+		if len(bucketStr) > 0 {
+			res = append(res, fmt.Sprintf("%s:[%s]", bucketsKey, strings.Join(bucketStr, " ")))
+		}
+		return res
+	}
+	res = addBuckets("positive", "buckets", "offset", m.PositiveBuckets, m.PositiveSpans)
+	res = addBuckets("negative", "n_buckets", "n_offset", m.NegativeBuckets, m.NegativeSpans)
+	return "{{" + strings.Join(res, " ") + "}}"
+}
+
 // ZeroBucket returns the zero bucket.
 func (h *FloatHistogram) ZeroBucket() Bucket[float64] {
 	return Bucket[float64]{
@@ -159,7 +209,7 @@ func (h *FloatHistogram) Mul(factor float64) *FloatHistogram {
 	return h
 }
 
-// Div works like Scale but divides instead of multiplies.
+// Div works like Mul but divides instead of multiplies.
 // When dividing by 0, everything will be set to Inf.
 func (h *FloatHistogram) Div(scalar float64) *FloatHistogram {
 	h.ZeroCount /= scalar
@@ -218,23 +268,12 @@ func (h *FloatHistogram) Add(other *FloatHistogram) *FloatHistogram {
 	h.Count += other.Count
 	h.Sum += other.Sum
 
-	// TODO(beorn7): If needed, this can be optimized by inspecting the
-	// spans in other and create missing buckets in h in batches.
-	var iInSpan, index int32
-	for iSpan, iBucket, it := -1, -1, other.floatBucketIterator(true, h.ZeroThreshold, h.Schema); it.Next(); {
-		b := it.At()
-		h.PositiveSpans, h.PositiveBuckets, iSpan, iBucket, iInSpan = addBucket(
-			b, h.PositiveSpans, h.PositiveBuckets, iSpan, iBucket, iInSpan, index,
-		)
-		index = b.Index
+	if other.Schema != h.Schema {
+		other = other.ReduceResolution(h.Schema)
 	}
-	for iSpan, iBucket, it := -1, -1, other.floatBucketIterator(false, h.ZeroThreshold, h.Schema); it.Next(); {
-		b := it.At()
-		h.NegativeSpans, h.NegativeBuckets, iSpan, iBucket, iInSpan = addBucket(
-			b, h.NegativeSpans, h.NegativeBuckets, iSpan, iBucket, iInSpan, index,
-		)
-		index = b.Index
-	}
+
+	h.PositiveSpans, h.PositiveBuckets = addBuckets(h.Schema, h.ZeroThreshold, false, h.PositiveSpans, h.PositiveBuckets, other.PositiveSpans, other.PositiveBuckets)
+	h.NegativeSpans, h.NegativeBuckets = addBuckets(h.Schema, h.ZeroThreshold, false, h.NegativeSpans, h.NegativeBuckets, other.NegativeSpans, other.NegativeBuckets)
 	return h
 }
 
@@ -245,25 +284,12 @@ func (h *FloatHistogram) Sub(other *FloatHistogram) *FloatHistogram {
 	h.Count -= other.Count
 	h.Sum -= other.Sum
 
-	// TODO(beorn7): If needed, this can be optimized by inspecting the
-	// spans in other and create missing buckets in h in batches.
-	var iInSpan, index int32
-	for iSpan, iBucket, it := -1, -1, other.floatBucketIterator(true, h.ZeroThreshold, h.Schema); it.Next(); {
-		b := it.At()
-		b.Count *= -1
-		h.PositiveSpans, h.PositiveBuckets, iSpan, iBucket, iInSpan = addBucket(
-			b, h.PositiveSpans, h.PositiveBuckets, iSpan, iBucket, iInSpan, index,
-		)
-		index = b.Index
+	if other.Schema != h.Schema {
+		other = other.ReduceResolution(h.Schema)
 	}
-	for iSpan, iBucket, it := -1, -1, other.floatBucketIterator(false, h.ZeroThreshold, h.Schema); it.Next(); {
-		b := it.At()
-		b.Count *= -1
-		h.NegativeSpans, h.NegativeBuckets, iSpan, iBucket, iInSpan = addBucket(
-			b, h.NegativeSpans, h.NegativeBuckets, iSpan, iBucket, iInSpan, index,
-		)
-		index = b.Index
-	}
+
+	h.PositiveSpans, h.PositiveBuckets = addBuckets(h.Schema, h.ZeroThreshold, true, h.PositiveSpans, h.PositiveBuckets, other.PositiveSpans, other.PositiveBuckets)
+	h.NegativeSpans, h.NegativeBuckets = addBuckets(h.Schema, h.ZeroThreshold, true, h.NegativeSpans, h.NegativeBuckets, other.NegativeSpans, other.NegativeBuckets)
 	return h
 }
 
@@ -271,13 +297,17 @@ func (h *FloatHistogram) Sub(other *FloatHistogram) *FloatHistogram {
 // Exact match is when there are no new buckets (even empty) and no missing buckets,
 // and all the bucket values match. Spans can have different empty length spans in between,
 // but they must represent the same bucket layout to match.
+// Sum, Count, ZeroCount and bucket values are compared based on their bit patterns
+// because this method is about data equality rather than mathematical equality.
 func (h *FloatHistogram) Equals(h2 *FloatHistogram) bool {
 	if h2 == nil {
 		return false
 	}
 
 	if h.Schema != h2.Schema || h.ZeroThreshold != h2.ZeroThreshold ||
-		h.ZeroCount != h2.ZeroCount || h.Count != h2.Count || h.Sum != h2.Sum {
+		math.Float64bits(h.ZeroCount) != math.Float64bits(h2.ZeroCount) ||
+		math.Float64bits(h.Count) != math.Float64bits(h2.Count) ||
+		math.Float64bits(h.Sum) != math.Float64bits(h2.Sum) {
 		return false
 	}
 
@@ -288,111 +318,42 @@ func (h *FloatHistogram) Equals(h2 *FloatHistogram) bool {
 		return false
 	}
 
-	if !bucketsMatch(h.PositiveBuckets, h2.PositiveBuckets) {
+	if !floatBucketsMatch(h.PositiveBuckets, h2.PositiveBuckets) {
 		return false
 	}
-	if !bucketsMatch(h.NegativeBuckets, h2.NegativeBuckets) {
+	if !floatBucketsMatch(h.NegativeBuckets, h2.NegativeBuckets) {
 		return false
 	}
 
 	return true
 }
 
-// addBucket takes the "coordinates" of the last bucket that was handled and
-// adds the provided bucket after it. If a corresponding bucket exists, the
-// count is added. If not, the bucket is inserted. The updated slices and the
-// coordinates of the inserted or added-to bucket are returned.
-func addBucket(
-	b Bucket[float64],
-	spans []Span, buckets []float64,
-	iSpan, iBucket int,
-	iInSpan, index int32,
-) (
-	newSpans []Span, newBuckets []float64,
-	newISpan, newIBucket int, newIInSpan int32,
-) {
-	if iSpan == -1 {
-		// First add, check if it is before all spans.
-		if len(spans) == 0 || spans[0].Offset > b.Index {
-			// Add bucket before all others.
-			buckets = append(buckets, 0)
-			copy(buckets[1:], buckets)
-			buckets[0] = b.Count
-			if len(spans) > 0 && spans[0].Offset == b.Index+1 {
-				spans[0].Length++
-				spans[0].Offset--
-				return spans, buckets, 0, 0, 0
-			}
-			spans = append(spans, Span{})
-			copy(spans[1:], spans)
-			spans[0] = Span{Offset: b.Index, Length: 1}
-			if len(spans) > 1 {
-				// Convert the absolute offset in the formerly
-				// first span to a relative offset.
-				spans[1].Offset -= b.Index + 1
-			}
-			return spans, buckets, 0, 0, 0
-		}
-		if spans[0].Offset == b.Index {
-			// Just add to first bucket.
-			buckets[0] += b.Count
-			return spans, buckets, 0, 0, 0
-		}
-		// We are behind the first bucket, so set everything to the
-		// first bucket and continue normally.
-		iSpan, iBucket, iInSpan = 0, 0, 0
-		index = spans[0].Offset
-	}
-	deltaIndex := b.Index - index
-	for {
-		remainingInSpan := int32(spans[iSpan].Length) - iInSpan
-		if deltaIndex < remainingInSpan {
-			// Bucket is in current span.
-			iBucket += int(deltaIndex)
-			iInSpan += deltaIndex
-			buckets[iBucket] += b.Count
-			return spans, buckets, iSpan, iBucket, iInSpan
-		}
-		deltaIndex -= remainingInSpan
-		iBucket += int(remainingInSpan)
-		iSpan++
-		if iSpan == len(spans) || deltaIndex < spans[iSpan].Offset {
-			// Bucket is in gap behind previous span (or there are no further spans).
-			buckets = append(buckets, 0)
-			copy(buckets[iBucket+1:], buckets[iBucket:])
-			buckets[iBucket] = b.Count
-			if deltaIndex == 0 {
-				// Directly after previous span, extend previous span.
-				if iSpan < len(spans) {
-					spans[iSpan].Offset--
-				}
-				iSpan--
-				iInSpan = int32(spans[iSpan].Length)
-				spans[iSpan].Length++
-				return spans, buckets, iSpan, iBucket, iInSpan
-			}
-			if iSpan < len(spans) && deltaIndex == spans[iSpan].Offset-1 {
-				// Directly before next span, extend next span.
-				iInSpan = 0
-				spans[iSpan].Offset--
-				spans[iSpan].Length++
-				return spans, buckets, iSpan, iBucket, iInSpan
-			}
-			// No next span, or next span is not directly adjacent to new bucket.
-			// Add new span.
-			iInSpan = 0
-			if iSpan < len(spans) {
-				spans[iSpan].Offset -= deltaIndex + 1
-			}
-			spans = append(spans, Span{})
-			copy(spans[iSpan+1:], spans[iSpan:])
-			spans[iSpan] = Span{Length: 1, Offset: deltaIndex}
-			return spans, buckets, iSpan, iBucket, iInSpan
-		}
-		// Try start of next span.
-		deltaIndex -= spans[iSpan].Offset
-		iInSpan = 0
-	}
+// Size returns the total size of the FloatHistogram, which includes the size of the pointer
+// to FloatHistogram, all its fields, and all elements contained in slices.
+// NOTE: this is only valid for 64 bit architectures.
+func (fh *FloatHistogram) Size() int {
+	// Size of each slice separately.
+	posSpanSize := len(fh.PositiveSpans) * 8     // 8 bytes (int32 + uint32).
+	negSpanSize := len(fh.NegativeSpans) * 8     // 8 bytes (int32 + uint32).
+	posBucketSize := len(fh.PositiveBuckets) * 8 // 8 bytes (float64).
+	negBucketSize := len(fh.NegativeBuckets) * 8 // 8 bytes (float64).
+
+	// Total size of the struct.
+
+	// fh is 8 bytes.
+	// fh.CounterResetHint is 4 bytes (1 byte bool + 3 bytes padding).
+	// fh.Schema is 4 bytes.
+	// fh.ZeroThreshold is 8 bytes.
+	// fh.ZeroCount is 8 bytes.
+	// fh.Count is 8 bytes.
+	// fh.Sum is 8 bytes.
+	// fh.PositiveSpans is 24 bytes.
+	// fh.NegativeSpans is 24 bytes.
+	// fh.PositiveBuckets is 24 bytes.
+	// fh.NegativeBuckets is 24 bytes.
+	structSize := 144
+
+	return structSize + posSpanSize + negSpanSize + posBucketSize + negBucketSize
 }
 
 // Compact eliminates empty buckets at the beginning and end of each span, then
@@ -495,25 +456,25 @@ func (h *FloatHistogram) DetectReset(previous *FloatHistogram) bool {
 	}
 	currIt := h.floatBucketIterator(true, h.ZeroThreshold, h.Schema)
 	prevIt := previous.floatBucketIterator(true, h.ZeroThreshold, h.Schema)
-	if detectReset(currIt, prevIt) {
+	if detectReset(&currIt, &prevIt) {
 		return true
 	}
 	currIt = h.floatBucketIterator(false, h.ZeroThreshold, h.Schema)
 	prevIt = previous.floatBucketIterator(false, h.ZeroThreshold, h.Schema)
-	return detectReset(currIt, prevIt)
+	return detectReset(&currIt, &prevIt)
 }
 
-func detectReset(currIt, prevIt BucketIterator[float64]) bool {
+func detectReset(currIt, prevIt *floatBucketIterator) bool {
 	if !prevIt.Next() {
 		return false // If no buckets in previous histogram, nothing can be reset.
 	}
-	prevBucket := prevIt.At()
+	prevBucket := prevIt.strippedAt()
 	if !currIt.Next() {
 		// No bucket in current, but at least one in previous
 		// histogram. Check if any of those are non-zero, in which case
 		// this is a reset.
 		for {
-			if prevBucket.Count != 0 {
+			if prevBucket.count != 0 {
 				return true
 			}
 			if !prevIt.Next() {
@@ -521,10 +482,10 @@ func detectReset(currIt, prevIt BucketIterator[float64]) bool {
 			}
 		}
 	}
-	currBucket := currIt.At()
+	currBucket := currIt.strippedAt()
 	for {
 		// Forward currIt until we find the bucket corresponding to prevBucket.
-		for currBucket.Index < prevBucket.Index {
+		for currBucket.index < prevBucket.index {
 			if !currIt.Next() {
 				// Reached end of currIt early, therefore
 				// previous histogram has a bucket that the
@@ -532,7 +493,7 @@ func detectReset(currIt, prevIt BucketIterator[float64]) bool {
 				// remaining buckets in the previous histogram
 				// are unpopulated, this is a reset.
 				for {
-					if prevBucket.Count != 0 {
+					if prevBucket.count != 0 {
 						return true
 					}
 					if !prevIt.Next() {
@@ -540,18 +501,18 @@ func detectReset(currIt, prevIt BucketIterator[float64]) bool {
 					}
 				}
 			}
-			currBucket = currIt.At()
+			currBucket = currIt.strippedAt()
 		}
-		if currBucket.Index > prevBucket.Index {
+		if currBucket.index > prevBucket.index {
 			// Previous histogram has a bucket the current one does
 			// not have. If it's populated, it's a reset.
-			if prevBucket.Count != 0 {
+			if prevBucket.count != 0 {
 				return true
 			}
 		} else {
 			// We have reached corresponding buckets in both iterators.
 			// We can finally compare the counts.
-			if currBucket.Count < prevBucket.Count {
+			if currBucket.count < prevBucket.count {
 				return true
 			}
 		}
@@ -559,35 +520,39 @@ func detectReset(currIt, prevIt BucketIterator[float64]) bool {
 			// Reached end of prevIt without finding offending buckets.
 			return false
 		}
-		prevBucket = prevIt.At()
+		prevBucket = prevIt.strippedAt()
 	}
 }
 
 // PositiveBucketIterator returns a BucketIterator to iterate over all positive
 // buckets in ascending order (starting next to the zero bucket and going up).
 func (h *FloatHistogram) PositiveBucketIterator() BucketIterator[float64] {
-	return h.floatBucketIterator(true, 0, h.Schema)
+	it := h.floatBucketIterator(true, 0, h.Schema)
+	return &it
 }
 
 // NegativeBucketIterator returns a BucketIterator to iterate over all negative
 // buckets in descending order (starting next to the zero bucket and going
 // down).
 func (h *FloatHistogram) NegativeBucketIterator() BucketIterator[float64] {
-	return h.floatBucketIterator(false, 0, h.Schema)
+	it := h.floatBucketIterator(false, 0, h.Schema)
+	return &it
 }
 
 // PositiveReverseBucketIterator returns a BucketIterator to iterate over all
 // positive buckets in descending order (starting at the highest bucket and
 // going down towards the zero bucket).
 func (h *FloatHistogram) PositiveReverseBucketIterator() BucketIterator[float64] {
-	return newReverseFloatBucketIterator(h.PositiveSpans, h.PositiveBuckets, h.Schema, true)
+	it := newReverseFloatBucketIterator(h.PositiveSpans, h.PositiveBuckets, h.Schema, true)
+	return &it
 }
 
 // NegativeReverseBucketIterator returns a BucketIterator to iterate over all
 // negative buckets in ascending order (starting at the lowest bucket and going
 // up towards the zero bucket).
 func (h *FloatHistogram) NegativeReverseBucketIterator() BucketIterator[float64] {
-	return newReverseFloatBucketIterator(h.NegativeSpans, h.NegativeBuckets, h.Schema, false)
+	it := newReverseFloatBucketIterator(h.NegativeSpans, h.NegativeBuckets, h.Schema, false)
+	return &it
 }
 
 // AllBucketIterator returns a BucketIterator to iterate over all negative,
@@ -598,8 +563,8 @@ func (h *FloatHistogram) NegativeReverseBucketIterator() BucketIterator[float64]
 func (h *FloatHistogram) AllBucketIterator() BucketIterator[float64] {
 	return &allFloatBucketIterator{
 		h:         h,
-		leftIter:  h.NegativeReverseBucketIterator(),
-		rightIter: h.PositiveBucketIterator(),
+		leftIter:  newReverseFloatBucketIterator(h.NegativeSpans, h.NegativeBuckets, h.Schema, false),
+		rightIter: h.floatBucketIterator(true, 0, h.Schema),
 		state:     -1,
 	}
 }
@@ -612,10 +577,35 @@ func (h *FloatHistogram) AllBucketIterator() BucketIterator[float64] {
 func (h *FloatHistogram) AllReverseBucketIterator() BucketIterator[float64] {
 	return &allFloatBucketIterator{
 		h:         h,
-		leftIter:  h.PositiveReverseBucketIterator(),
-		rightIter: h.NegativeBucketIterator(),
+		leftIter:  newReverseFloatBucketIterator(h.PositiveSpans, h.PositiveBuckets, h.Schema, true),
+		rightIter: h.floatBucketIterator(false, 0, h.Schema),
 		state:     -1,
 	}
+}
+
+// Validate validates consistency between span and bucket slices. Also, buckets are checked
+// against negative values.
+// We do not check for h.Count being at least as large as the sum of the
+// counts in the buckets because floating point precision issues can
+// create false positives here.
+func (h *FloatHistogram) Validate() error {
+	if err := checkHistogramSpans(h.NegativeSpans, len(h.NegativeBuckets)); err != nil {
+		return fmt.Errorf("negative side: %w", err)
+	}
+	if err := checkHistogramSpans(h.PositiveSpans, len(h.PositiveBuckets)); err != nil {
+		return fmt.Errorf("positive side: %w", err)
+	}
+	var nCount, pCount float64
+	err := checkHistogramBuckets(h.NegativeBuckets, &nCount, false)
+	if err != nil {
+		return fmt.Errorf("negative side: %w", err)
+	}
+	err = checkHistogramBuckets(h.PositiveBuckets, &pCount, false)
+	if err != nil {
+		return fmt.Errorf("positive side: %w", err)
+	}
+
+	return nil
 }
 
 // zeroCountForLargerThreshold returns what the histogram's zero count would be
@@ -744,11 +734,11 @@ func (h *FloatHistogram) reconcileZeroBuckets(other *FloatHistogram) float64 {
 // targetSchema prior to iterating (without mutating FloatHistogram).
 func (h *FloatHistogram) floatBucketIterator(
 	positive bool, absoluteStartValue float64, targetSchema int32,
-) *floatBucketIterator {
+) floatBucketIterator {
 	if targetSchema > h.Schema {
 		panic(fmt.Errorf("cannot merge from schema %d to %d", h.Schema, targetSchema))
 	}
-	i := &floatBucketIterator{
+	i := floatBucketIterator{
 		baseBucketIterator: baseBucketIterator[float64, float64]{
 			schema:   h.Schema,
 			positive: positive,
@@ -766,11 +756,11 @@ func (h *FloatHistogram) floatBucketIterator(
 	return i
 }
 
-// reverseFloatbucketiterator is a low-level constructor for reverse bucket iterators.
+// reverseFloatBucketIterator is a low-level constructor for reverse bucket iterators.
 func newReverseFloatBucketIterator(
 	spans []Span, buckets []float64, schema int32, positive bool,
-) *reverseFloatBucketIterator {
-	r := &reverseFloatBucketIterator{
+) reverseFloatBucketIterator {
+	r := reverseFloatBucketIterator{
 		baseBucketIterator: baseBucketIterator[float64, float64]{
 			schema:   schema,
 			spans:    spans,
@@ -798,6 +788,8 @@ type floatBucketIterator struct {
 	targetSchema       int32   // targetSchema is the schema to merge to and must be ≤ schema.
 	origIdx            int32   // The bucket index within the original schema.
 	absoluteStartValue float64 // Never return buckets with an upper bound ≤ this value.
+
+	boundReachedStartValue bool // Has getBound reached absoluteStartValue already?
 }
 
 func (i *floatBucketIterator) At() Bucket[float64] {
@@ -861,9 +853,10 @@ mergeLoop: // Merge together all buckets from the original schema that fall into
 	}
 	// Skip buckets before absoluteStartValue.
 	// TODO(beorn7): Maybe do something more efficient than this recursive call.
-	if getBound(i.currIdx, i.targetSchema) <= i.absoluteStartValue {
+	if !i.boundReachedStartValue && getBound(i.currIdx, i.targetSchema) <= i.absoluteStartValue {
 		return i.Next()
 	}
+	i.boundReachedStartValue = true
 	return true
 }
 
@@ -904,8 +897,9 @@ func (i *reverseFloatBucketIterator) Next() bool {
 }
 
 type allFloatBucketIterator struct {
-	h                   *FloatHistogram
-	leftIter, rightIter BucketIterator[float64]
+	h         *FloatHistogram
+	leftIter  reverseFloatBucketIterator
+	rightIter floatBucketIterator
 	// -1 means we are iterating negative buckets.
 	// 0 means it is time for the zero bucket.
 	// 1 means we are iterating positive buckets.
@@ -971,65 +965,153 @@ func targetIdx(idx, originSchema, targetSchema int32) int32 {
 	return ((idx - 1) >> (originSchema - targetSchema)) + 1
 }
 
-// mergeToSchema is used to merge a FloatHistogram's Spans and Buckets (no matter if
-// positive or negative) from the original schema to the target schema.
-// The target schema must be smaller than the original schema.
-func mergeToSchema(originSpans []Span, originBuckets []float64, originSchema, targetSchema int32) ([]Span, []float64) {
+// addBuckets adds the buckets described by spansB/bucketsB to the buckets described by spansA/bucketsA,
+// creating missing buckets in spansA/bucketsA as needed.
+// It returns the resulting spans/buckets (which must be used instead of the original spansA/bucketsA,
+// although spansA/bucketsA might get modified by this function).
+// All buckets must use the same provided schema.
+// Buckets in spansB/bucketsB with an absolute upper limit ≤ threshold are ignored.
+// If negative is true, the buckets in spansB/bucketsB are subtracted rather than added.
+func addBuckets(
+	schema int32, threshold float64, negative bool,
+	spansA []Span, bucketsA []float64,
+	spansB []Span, bucketsB []float64,
+) ([]Span, []float64) {
 	var (
-		targetSpans         []Span    // The spans in the target schema.
-		targetBuckets       []float64 // The buckets in the target schema.
-		bucketIdx           int32     // The index of bucket in the origin schema.
-		lastTargetBucketIdx int32     // The index of the last added target bucket.
-		origBucketIdx       int       // The position of a bucket in originBuckets slice.
+		iSpan              int = -1
+		iBucket            int = -1
+		iInSpan            int32
+		indexA             int32
+		indexB             int32
+		bIdxB              int
+		bucketB            float64
+		deltaIndex         int32
+		lowerThanThreshold = true
 	)
 
-	for _, span := range originSpans {
-		// Determine the index of the first bucket in this span.
-		bucketIdx += span.Offset
-		for j := 0; j < int(span.Length); j++ {
-			// Determine the index of the bucket in the target schema from the index in the original schema.
-			targetBucketIdx := targetIdx(bucketIdx, originSchema, targetSchema)
+	for _, spanB := range spansB {
+		indexB += spanB.Offset
+		for j := 0; j < int(spanB.Length); j++ {
+			if lowerThanThreshold && getBound(indexB, schema) <= threshold {
+				goto nextLoop
+			}
+			lowerThanThreshold = false
 
-			switch {
-			case len(targetSpans) == 0:
-				// This is the first span in the targetSpans.
-				span := Span{
-					Offset: targetBucketIdx,
-					Length: 1,
-				}
-				targetSpans = append(targetSpans, span)
-				targetBuckets = append(targetBuckets, originBuckets[0])
-				lastTargetBucketIdx = targetBucketIdx
-
-			case lastTargetBucketIdx == targetBucketIdx:
-				// The current bucket has to be merged into the same target bucket as the previous bucket.
-				targetBuckets[len(targetBuckets)-1] += originBuckets[origBucketIdx]
-
-			case (lastTargetBucketIdx + 1) == targetBucketIdx:
-				// The current bucket has to go into a new target bucket,
-				// and that bucket is next to the previous target bucket,
-				// so we add it to the current target span.
-				targetSpans[len(targetSpans)-1].Length++
-				targetBuckets = append(targetBuckets, originBuckets[origBucketIdx])
-				lastTargetBucketIdx++
-
-			case (lastTargetBucketIdx + 1) < targetBucketIdx:
-				// The current bucket has to go into a new target bucket,
-				// and that bucket is separated by a gap from the previous target bucket,
-				// so we need to add a new target span.
-				span := Span{
-					Offset: targetBucketIdx - lastTargetBucketIdx - 1,
-					Length: 1,
-				}
-				targetSpans = append(targetSpans, span)
-				targetBuckets = append(targetBuckets, originBuckets[origBucketIdx])
-				lastTargetBucketIdx = targetBucketIdx
+			bucketB = bucketsB[bIdxB]
+			if negative {
+				bucketB *= -1
 			}
 
-			bucketIdx++
-			origBucketIdx++
+			if iSpan == -1 {
+				if len(spansA) == 0 || spansA[0].Offset > indexB {
+					// Add bucket before all others.
+					bucketsA = append(bucketsA, 0)
+					copy(bucketsA[1:], bucketsA)
+					bucketsA[0] = bucketB
+					if len(spansA) > 0 && spansA[0].Offset == indexB+1 {
+						spansA[0].Length++
+						spansA[0].Offset--
+						goto nextLoop
+					} else {
+						spansA = append(spansA, Span{})
+						copy(spansA[1:], spansA)
+						spansA[0] = Span{Offset: indexB, Length: 1}
+						if len(spansA) > 1 {
+							// Convert the absolute offset in the formerly
+							// first span to a relative offset.
+							spansA[1].Offset -= indexB + 1
+						}
+						goto nextLoop
+					}
+				} else if spansA[0].Offset == indexB {
+					// Just add to first bucket.
+					bucketsA[0] += bucketB
+					goto nextLoop
+				}
+				iSpan, iBucket, iInSpan = 0, 0, 0
+				indexA = spansA[0].Offset
+			}
+			deltaIndex = indexB - indexA
+			for {
+				remainingInSpan := int32(spansA[iSpan].Length) - iInSpan
+				if deltaIndex < remainingInSpan {
+					// Bucket is in current span.
+					iBucket += int(deltaIndex)
+					iInSpan += deltaIndex
+					bucketsA[iBucket] += bucketB
+					break
+				} else {
+					deltaIndex -= remainingInSpan
+					iBucket += int(remainingInSpan)
+					iSpan++
+					if iSpan == len(spansA) || deltaIndex < spansA[iSpan].Offset {
+						// Bucket is in gap behind previous span (or there are no further spans).
+						bucketsA = append(bucketsA, 0)
+						copy(bucketsA[iBucket+1:], bucketsA[iBucket:])
+						bucketsA[iBucket] = bucketB
+						switch {
+						case deltaIndex == 0:
+							// Directly after previous span, extend previous span.
+							if iSpan < len(spansA) {
+								spansA[iSpan].Offset--
+							}
+							iSpan--
+							iInSpan = int32(spansA[iSpan].Length)
+							spansA[iSpan].Length++
+							goto nextLoop
+						case iSpan < len(spansA) && deltaIndex == spansA[iSpan].Offset-1:
+							// Directly before next span, extend next span.
+							iInSpan = 0
+							spansA[iSpan].Offset--
+							spansA[iSpan].Length++
+							goto nextLoop
+						default:
+							// No next span, or next span is not directly adjacent to new bucket.
+							// Add new span.
+							iInSpan = 0
+							if iSpan < len(spansA) {
+								spansA[iSpan].Offset -= deltaIndex + 1
+							}
+							spansA = append(spansA, Span{})
+							copy(spansA[iSpan+1:], spansA[iSpan:])
+							spansA[iSpan] = Span{Length: 1, Offset: deltaIndex}
+							goto nextLoop
+						}
+					} else {
+						// Try start of next span.
+						deltaIndex -= spansA[iSpan].Offset
+						iInSpan = 0
+					}
+				}
+			}
+
+		nextLoop:
+			indexA = indexB
+			indexB++
+			bIdxB++
 		}
 	}
 
-	return targetSpans, targetBuckets
+	return spansA, bucketsA
+}
+
+func floatBucketsMatch(b1, b2 []float64) bool {
+	if len(b1) != len(b2) {
+		return false
+	}
+	for i, b := range b1 {
+		if math.Float64bits(b) != math.Float64bits(b2[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+// ReduceResolution reduces the float histogram's spans, buckets into target schema.
+// The target schema must be smaller than the current float histogram's schema.
+func (h *FloatHistogram) ReduceResolution(targetSchema int32) *FloatHistogram {
+	h.PositiveSpans, h.PositiveBuckets = reduceResolution(h.PositiveSpans, h.PositiveBuckets, h.Schema, targetSchema, false)
+	h.NegativeSpans, h.NegativeBuckets = reduceResolution(h.NegativeSpans, h.NegativeBuckets, h.Schema, targetSchema, false)
+
+	return h
 }

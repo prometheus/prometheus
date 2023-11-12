@@ -71,41 +71,50 @@ type metricWithBuckets struct {
 // If q<0, -Inf is returned.
 //
 // If q>1, +Inf is returned.
-func bucketQuantile(q float64, buckets buckets) float64 {
+//
+// We also return a bool to indicate if monotonicity needed to be forced.
+func bucketQuantile(q float64, buckets buckets) (float64, bool) {
 	if math.IsNaN(q) {
-		return math.NaN()
+		return math.NaN(), false
 	}
 	if q < 0 {
-		return math.Inf(-1)
+		return math.Inf(-1), false
 	}
 	if q > 1 {
-		return math.Inf(+1)
+		return math.Inf(+1), false
 	}
-	slices.SortFunc(buckets, func(a, b bucket) bool {
-		return a.upperBound < b.upperBound
+	slices.SortFunc(buckets, func(a, b bucket) int {
+		// We don't expect the bucket boundary to be a NaN.
+		if a.upperBound < b.upperBound {
+			return -1
+		}
+		if a.upperBound > b.upperBound {
+			return +1
+		}
+		return 0
 	})
 	if !math.IsInf(buckets[len(buckets)-1].upperBound, +1) {
-		return math.NaN()
+		return math.NaN(), false
 	}
 
 	buckets = coalesceBuckets(buckets)
-	ensureMonotonic(buckets)
+	forcedMonotonic := ensureMonotonic(buckets)
 
 	if len(buckets) < 2 {
-		return math.NaN()
+		return math.NaN(), false
 	}
 	observations := buckets[len(buckets)-1].count
 	if observations == 0 {
-		return math.NaN()
+		return math.NaN(), false
 	}
 	rank := q * observations
 	b := sort.Search(len(buckets)-1, func(i int) bool { return buckets[i].count >= rank })
 
 	if b == len(buckets)-1 {
-		return buckets[len(buckets)-2].upperBound
+		return buckets[len(buckets)-2].upperBound, forcedMonotonic
 	}
 	if b == 0 && buckets[0].upperBound <= 0 {
-		return buckets[0].upperBound
+		return buckets[0].upperBound, forcedMonotonic
 	}
 	var (
 		bucketStart float64
@@ -117,7 +126,7 @@ func bucketQuantile(q float64, buckets buckets) float64 {
 		count -= buckets[b-1].count
 		rank -= buckets[b-1].count
 	}
-	return bucketStart + (bucketEnd-bucketStart)*(rank/count)
+	return bucketStart + (bucketEnd-bucketStart)*(rank/count), forcedMonotonic
 }
 
 // histogramQuantile calculates the quantile 'q' based on the given histogram.
@@ -335,37 +344,24 @@ func coalesceBuckets(buckets buckets) buckets {
 // The assumption that bucket counts increase monotonically with increasing
 // upperBound may be violated during:
 //
-//   * Recording rule evaluation of histogram_quantile, especially when rate()
-//      has been applied to the underlying bucket timeseries.
-//   * Evaluation of histogram_quantile computed over federated bucket
-//      timeseries, especially when rate() has been applied.
-//
-// This is because scraped data is not made available to rule evaluation or
-// federation atomically, so some buckets are computed with data from the
-// most recent scrapes, but the other buckets are missing data from the most
-// recent scrape.
+//   - Circumstances where data is already inconsistent at the target's side.
+//   - Ingestion via the remote write receiver that Prometheus implements.
+//   - Optimisation of query execution where precision is sacrificed for other
+//     benefits, not by Prometheus but by systems built on top of it.
 //
 // Monotonicity is usually guaranteed because if a bucket with upper bound
 // u1 has count c1, then any bucket with a higher upper bound u > u1 must
-// have counted all c1 observations and perhaps more, so that c  >= c1.
-//
-// Randomly interspersed partial sampling breaks that guarantee, and rate()
-// exacerbates it. Specifically, suppose bucket le=1000 has a count of 10 from
-// 4 samples but the bucket with le=2000 has a count of 7 from 3 samples. The
-// monotonicity is broken. It is exacerbated by rate() because under normal
-// operation, cumulative counting of buckets will cause the bucket counts to
-// diverge such that small differences from missing samples are not a problem.
-// rate() removes this divergence.)
+// have counted all c1 observations and perhaps more, so that c >= c1.
 //
 // bucketQuantile depends on that monotonicity to do a binary search for the
 // bucket with the φ-quantile count, so breaking the monotonicity
 // guarantee causes bucketQuantile() to return undefined (nonsense) results.
 //
-// As a somewhat hacky solution until ingestion is atomic per scrape, we
-// calculate the "envelope" of the histogram buckets, essentially removing
-// any decreases in the count between successive buckets.
-
-func ensureMonotonic(buckets buckets) {
+// As a somewhat hacky solution, we calculate the "envelope" of the histogram
+// buckets, essentially removing any decreases in the count between successive
+// buckets. We return a bool to indicate if this monotonicity was forced or not.
+func ensureMonotonic(buckets buckets) bool {
+	forced := false
 	max := buckets[0].count
 	for i := 1; i < len(buckets); i++ {
 		switch {
@@ -373,8 +369,10 @@ func ensureMonotonic(buckets buckets) {
 			max = buckets[i].count
 		case buckets[i].count < max:
 			buckets[i].count = max
+			forced = true
 		}
 	}
+	return forced
 }
 
 // quantile calculates the given quantile of a vector of samples.

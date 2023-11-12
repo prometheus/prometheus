@@ -12,7 +12,6 @@
 // limitations under the License.
 
 // The main package for the Prometheus server executable.
-// nolint:revive // Many unsued function arguments in this file by design.
 package main
 
 import (
@@ -202,8 +201,10 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 				level.Info(logger).Log("msg", "No default port will be appended to scrape targets' addresses.")
 			case "native-histograms":
 				c.tsdb.EnableNativeHistograms = true
-				c.scrape.EnableProtobufNegotiation = true
-				level.Info(logger).Log("msg", "Experimental native histogram support enabled.")
+				// Change relevant global variables. Hacky, but it's hard to pass a new option or default to unmarshallers.
+				config.DefaultConfig.GlobalConfig.ScrapeProtocols = config.DefaultNativeHistogramScrapeProtocols
+				config.DefaultGlobalConfig.ScrapeProtocols = config.DefaultNativeHistogramScrapeProtocols
+				level.Info(logger).Log("msg", "Experimental native histogram support enabled. Changed default scrape_protocols to prefer PrometheusProto format.", "global.scrape_protocols", fmt.Sprintf("%v", config.DefaultGlobalConfig.ScrapeProtocols))
 			case "":
 				continue
 			case "promql-at-modifier", "promql-negative-offset":
@@ -619,8 +620,18 @@ func main() {
 		discoveryManagerNotify = legacymanager.NewManager(ctxNotify, log.With(logger, "component", "discovery manager notify"), legacymanager.Name("notify"))
 	}
 
+	scrapeManager, err := scrape.NewManager(
+		&cfg.scrape,
+		log.With(logger, "component", "scrape manager"),
+		fanoutStorage,
+		prometheus.DefaultRegisterer,
+	)
+	if err != nil {
+		level.Error(logger).Log("msg", "failed to create a scrape manager", "err", err)
+		os.Exit(1)
+	}
+
 	var (
-		scrapeManager  = scrape.NewManager(&cfg.scrape, log.With(logger, "component", "scrape manager"), fanoutStorage)
 		tracingManager = tracing.NewManager(logger)
 
 		queryEngine *promql.Engine
@@ -1272,7 +1283,7 @@ func startsOrEndsWithQuote(s string) bool {
 		strings.HasSuffix(s, "\"") || strings.HasSuffix(s, "'")
 }
 
-// compileCORSRegexString compiles given string and adds anchors
+// compileCORSRegexString compiles given string and adds anchors.
 func compileCORSRegexString(s string) (*regexp.Regexp, error) {
 	r, err := relabel.NewRegexp(s)
 	if err != nil {
@@ -1378,17 +1389,17 @@ func (s *readyStorage) StartTime() (int64, error) {
 }
 
 // Querier implements the Storage interface.
-func (s *readyStorage) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+func (s *readyStorage) Querier(mint, maxt int64) (storage.Querier, error) {
 	if x := s.get(); x != nil {
-		return x.Querier(ctx, mint, maxt)
+		return x.Querier(mint, maxt)
 	}
 	return nil, tsdb.ErrNotReady
 }
 
 // ChunkQuerier implements the Storage interface.
-func (s *readyStorage) ChunkQuerier(ctx context.Context, mint, maxt int64) (storage.ChunkQuerier, error) {
+func (s *readyStorage) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
 	if x := s.get(); x != nil {
-		return x.ChunkQuerier(ctx, mint, maxt)
+		return x.ChunkQuerier(mint, maxt)
 	}
 	return nil, tsdb.ErrNotReady
 }
@@ -1461,11 +1472,11 @@ func (s *readyStorage) CleanTombstones() error {
 }
 
 // Delete implements the api_v1.TSDBAdminStats and api_v2.TSDBAdmin interfaces.
-func (s *readyStorage) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
+func (s *readyStorage) Delete(ctx context.Context, mint, maxt int64, ms ...*labels.Matcher) error {
 	if x := s.get(); x != nil {
 		switch db := x.(type) {
 		case *tsdb.DB:
-			return db.Delete(mint, maxt, ms...)
+			return db.Delete(ctx, mint, maxt, ms...)
 		case *agent.DB:
 			return agent.ErrUnsupported
 		default:

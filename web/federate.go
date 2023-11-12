@@ -14,13 +14,14 @@
 package web
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
+	"strings"
 
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
@@ -57,6 +58,8 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 	h.mtx.RLock()
 	defer h.mtx.RUnlock()
 
+	ctx := req.Context()
+
 	if err := req.ParseForm(); err != nil {
 		http.Error(w, fmt.Sprintf("error parsing form values: %v", err), http.StatusBadRequest)
 		return
@@ -80,10 +83,10 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 	)
 	w.Header().Set("Content-Type", string(format))
 
-	q, err := h.localStorage.Querier(req.Context(), mint, maxt)
+	q, err := h.localStorage.Querier(mint, maxt)
 	if err != nil {
 		federationErrors.Inc()
-		if errors.Cause(err) == tsdb.ErrNotReady {
+		if errors.Is(err, tsdb.ErrNotReady) {
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)
 			return
 		}
@@ -98,7 +101,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 
 	var sets []storage.SeriesSet
 	for _, mset := range matcherSets {
-		s := q.Select(true, hints, mset...)
+		s := q.Select(ctx, true, hints, mset...)
 		sets = append(sets, s)
 	}
 
@@ -167,10 +170,10 @@ Loop:
 		return
 	}
 
-	slices.SortFunc(vec, func(a, b promql.Sample) bool {
+	slices.SortFunc(vec, func(a, b promql.Sample) int {
 		ni := a.Metric.Get(labels.MetricName)
 		nj := b.Metric.Get(labels.MetricName)
-		return ni < nj
+		return strings.Compare(ni, nj)
 	})
 
 	externalLabels := h.config.GlobalConfig.ExternalLabels.Map()

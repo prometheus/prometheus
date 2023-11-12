@@ -304,6 +304,10 @@ func (d *Decoder) Samples(rec []byte, samples []RefSample) ([]RefSample, error) 
 		baseRef  = dec.Be64()
 		baseTime = dec.Be64int64()
 	)
+	// Allow 1 byte for each varint and 8 for the value; the output slice must be at least that big.
+	if minSize := dec.Len() / (1 + 1 + 8); cap(samples) < minSize {
+		samples = make([]RefSample, 0, minSize)
+	}
 	for len(dec.B) > 0 && dec.Err() == nil {
 		dref := dec.Varint64()
 		dtime := dec.Varint64()

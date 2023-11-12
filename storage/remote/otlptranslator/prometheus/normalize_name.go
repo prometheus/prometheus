@@ -10,7 +10,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 )
 
-// The map to translate OTLP units to Prometheus units
+// The map to translate OTLP units to Prometheus units.
 // OTLP metrics use the c/s notation as specified at https://ucum.org/ucum.html
 // (See also https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/metrics/semantic_conventions/README.md#instrument-units)
 // Prometheus best practices for units: https://prometheus.io/docs/practices/naming/#base-units
@@ -57,8 +57,8 @@ var unitMap = map[string]string{
 	"$":   "dollars",
 }
 
-// The map that translates the "per" unit
-// Example: s => per second (singular)
+// The map that translates the "per" unit.
+// Example: s => per second (singular).
 var perUnitMap = map[string]string{
 	"s":  "second",
 	"m":  "minute",
@@ -69,7 +69,7 @@ var perUnitMap = map[string]string{
 	"y":  "year",
 }
 
-// Build a Prometheus-compliant metric name for the specified metric
+// Build a Prometheus-compliant metric name for the specified metric.
 //
 // Metric name is prefixed with specified namespace and underscore (if any).
 // Namespace is not cleaned up. Make sure specified namespace follows Prometheus
@@ -202,7 +202,7 @@ func removeSuffix(tokens []string, suffix string) []string {
 	return tokens
 }
 
-// Clean up specified string so it's Prometheus compliant
+// Clean up specified string so it's Prometheus compliant.
 func CleanUpString(s string) string {
 	return strings.Join(strings.FieldsFunc(s, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) }), "_")
 }
@@ -211,8 +211,8 @@ func RemovePromForbiddenRunes(s string) string {
 	return strings.Join(strings.FieldsFunc(s, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' && r != ':' }), "_")
 }
 
-// Retrieve the Prometheus "basic" unit corresponding to the specified "basic" unit
-// Returns the specified unit if not found in unitMap
+// Retrieve the Prometheus "basic" unit corresponding to the specified "basic" unit.
+// Returns the specified unit if not found in unitMap.
 func unitMapGetOrDefault(unit string) string {
 	if promUnit, ok := unitMap[unit]; ok {
 		return promUnit
@@ -220,8 +220,8 @@ func unitMapGetOrDefault(unit string) string {
 	return unit
 }
 
-// Retrieve the Prometheus "per" unit corresponding to the specified "per" unit
-// Returns the specified unit if not found in perUnitMap
+// Retrieve the Prometheus "per" unit corresponding to the specified "per" unit.
+// Returns the specified unit if not found in perUnitMap.
 func perUnitMapGetOrDefault(perUnit string) string {
 	if promPerUnit, ok := perUnitMap[perUnit]; ok {
 		return promPerUnit
@@ -229,7 +229,7 @@ func perUnitMapGetOrDefault(perUnit string) string {
 	return perUnit
 }
 
-// Returns whether the slice contains the specified value
+// Returns whether the slice contains the specified value.
 func contains(slice []string, value string) bool {
 	for _, sliceEntry := range slice {
 		if sliceEntry == value {
@@ -239,7 +239,7 @@ func contains(slice []string, value string) bool {
 	return false
 }
 
-// Remove the specified value from the slice
+// Remove the specified value from the slice.
 func removeItem(slice []string, value string) []string {
 	newSlice := make([]string, 0, len(slice))
 	for _, sliceEntry := range slice {

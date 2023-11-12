@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"math"
@@ -42,7 +43,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
-	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/zeropool"
 )
@@ -258,7 +258,6 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal, wbl *wlog.WL, opts *Hea
 	if err := h.resetInMemoryState(); err != nil {
 		return nil, err
 	}
-	h.metrics = newHeadMetrics(h, r)
 
 	if opts.ChunkPool == nil {
 		opts.ChunkPool = chunkenc.NewPool()
@@ -278,6 +277,7 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal, wbl *wlog.WL, opts *Hea
 	if err != nil {
 		return nil, err
 	}
+	h.metrics = newHeadMetrics(h, r)
 
 	return h, nil
 }
@@ -765,17 +765,17 @@ func (h *Head) Init(minValidTime int64) error {
 
 	wblReplayStart := time.Now()
 	if h.wbl != nil {
-		// Replay OOO WAL.
+		// Replay WBL.
 		startFrom, endAt, e = wlog.Segments(h.wbl.Dir())
 		if e != nil {
-			return errors.Wrap(e, "finding OOO WAL segments")
+			return &errLoadWbl{errors.Wrap(e, "finding WBL segments")}
 		}
 		h.startWALReplayStatus(startFrom, endAt)
 
 		for i := startFrom; i <= endAt; i++ {
 			s, err := wlog.OpenReadSegment(wlog.SegmentName(h.wbl.Dir(), i))
 			if err != nil {
-				return errors.Wrap(err, fmt.Sprintf("open WBL segment: %d", i))
+				return &errLoadWbl{errors.Wrap(err, fmt.Sprintf("open WBL segment: %d", i))}
 			}
 
 			sr := wlog.NewSegmentBufReader(s)
@@ -784,7 +784,7 @@ func (h *Head) Init(minValidTime int64) error {
 				level.Warn(h.logger).Log("msg", "Error while closing the wbl segments reader", "err", err)
 			}
 			if err != nil {
-				return err
+				return &errLoadWbl{err}
 			}
 			level.Info(h.logger).Log("msg", "WBL segment loaded", "segment", i, "maxSegment", endAt)
 			h.updateWALReplayStatusRead(i)
@@ -1427,19 +1427,23 @@ func (h *RangeHead) String() string {
 
 // Delete all samples in the range of [mint, maxt] for series that satisfy the given
 // label matchers.
-func (h *Head) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
+func (h *Head) Delete(ctx context.Context, mint, maxt int64, ms ...*labels.Matcher) error {
 	// Do not delete anything beyond the currently valid range.
 	mint, maxt = clampInterval(mint, maxt, h.MinTime(), h.MaxTime())
 
 	ir := h.indexRange(mint, maxt)
 
-	p, err := PostingsForMatchers(ir, ms...)
+	p, err := PostingsForMatchers(ctx, ir, ms...)
 	if err != nil {
 		return errors.Wrap(err, "select series")
 	}
 
 	var stones []tombstones.Stone
 	for p.Next() {
+		if err := ctx.Err(); err != nil {
+			return errors.Wrap(err, "select series")
+		}
+
 		series := h.series.getByID(chunks.HeadSeriesRef(p.At()))
 		if series == nil {
 			level.Debug(h.logger).Log("msg", "Series not found in Head.Delete")
@@ -1459,6 +1463,10 @@ func (h *Head) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
 	if p.Err() != nil {
 		return p.Err()
 	}
+	if ctx.Err() != nil {
+		return errors.Wrap(err, "select series")
+	}
+
 	if h.wal != nil {
 		var enc record.Encoder
 		if err := h.wal.Log(enc.Tombstones(stones, nil)); err != nil {
@@ -1519,7 +1527,7 @@ func (h *Head) gc() (actualInOrderMint, minOOOTime int64, minMmapFile int) {
 	return actualInOrderMint, minOOOTime, minMmapFile
 }
 
-// Tombstones returns a new reader over the head's tombstones
+// Tombstones returns a new reader over the head's tombstones.
 func (h *Head) Tombstones() (tombstones.Reader, error) {
 	return h.tombstones, nil
 }
@@ -1918,7 +1926,7 @@ type sample struct {
 	fh *histogram.FloatHistogram
 }
 
-func newSample(t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) tsdbutil.Sample {
+func newSample(t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) chunks.Sample {
 	return sample{t, v, h, fh}
 }
 
@@ -1967,7 +1975,8 @@ type memSeries struct {
 
 	mmMaxTime int64 // Max time of any mmapped chunk, only used during WAL replay.
 
-	nextAt int64 // Timestamp at which to cut the next chunk.
+	nextAt                           int64 // Timestamp at which to cut the next chunk.
+	histogramChunkHasComputedEndTime bool  // True if nextAt has been predicted for the current histograms chunk; false otherwise.
 
 	// We keep the last value here (in addition to appending it to the chunk) so we can check for duplicates.
 	lastValue float64
@@ -2162,7 +2171,7 @@ func overlapsClosedInterval(mint1, maxt1, mint2, maxt2 int64) bool {
 	return mint1 <= maxt2 && mint2 <= maxt1
 }
 
-// mmappedChunk describes a head chunk on disk that has been mmapped
+// mmappedChunk describes a head chunk on disk that has been mmapped.
 type mmappedChunk struct {
 	ref              chunks.ChunkDiskMapperRef
 	numSamples       uint16

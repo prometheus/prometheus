@@ -16,11 +16,12 @@ package wlog
 
 import (
 	"bytes"
+	"crypto/rand"
 	"encoding/binary"
 	"fmt"
 	"hash/crc32"
 	"io"
-	"math/rand"
+	"math/big"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -252,8 +253,11 @@ func generateRandomEntries(w *WL, records chan []byte) error {
 		default:
 			sz = pageSize * 8
 		}
-
-		rec := make([]byte, rand.Int63n(sz))
+		n, err := rand.Int(rand.Reader, big.NewInt(sz))
+		if err != nil {
+			return err
+		}
+		rec := make([]byte, n.Int64())
 		if _, err := rand.Read(rec); err != nil {
 			return err
 		}
@@ -262,7 +266,11 @@ func generateRandomEntries(w *WL, records chan []byte) error {
 
 		// Randomly batch up records.
 		recs = append(recs, rec)
-		if rand.Intn(4) < 3 {
+		n, err = rand.Int(rand.Reader, big.NewInt(int64(4)))
+		if err != nil {
+			return err
+		}
+		if int(n.Int64()) < 3 {
 			if err := w.Log(recs...); err != nil {
 				return err
 			}
@@ -533,7 +541,7 @@ func TestReaderData(t *testing.T) {
 			require.NoError(t, err)
 
 			reader := fn(sr)
-			for reader.Next() { // nolint:revive
+			for reader.Next() {
 			}
 			require.NoError(t, reader.Err())
 

@@ -19,6 +19,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/model/value"
 )
 
 func TestHistogramString(t *testing.T) {
@@ -411,8 +413,8 @@ func TestHistogramToFloat(t *testing.T) {
 	require.Equal(t, h.String(), fh.String())
 }
 
-// TestHistogramMatches tests both Histogram and FloatHistogram.
-func TestHistogramMatches(t *testing.T) {
+// TestHistogramEquals tests both Histogram and FloatHistogram.
+func TestHistogramEquals(t *testing.T) {
 	h1 := Histogram{
 		Schema:        3,
 		Count:         61,
@@ -537,6 +539,21 @@ func TestHistogramMatches(t *testing.T) {
 	})
 	h2.NegativeBuckets = append(h2.NegativeBuckets, 1)
 	notEquals(h1, *h2)
+
+	// Sum is StaleNaN.
+	hStale := h1.Copy()
+	hStale.Sum = math.Float64frombits(value.StaleNaN)
+	notEquals(h1, *hStale)
+	equals(*hStale, *hStale)
+
+	// Sum is NaN (but not a StaleNaN).
+	hNaN := h1.Copy()
+	hNaN.Sum = math.NaN()
+	notEquals(h1, *hNaN)
+	equals(*hNaN, *hNaN)
+
+	// Sum StaleNaN vs regular NaN.
+	notEquals(*hStale, *hNaN)
 }
 
 func TestHistogramCompact(t *testing.T) {
@@ -792,5 +809,161 @@ func TestHistogramCompact(t *testing.T) {
 			// Compact has happened in-place, too.
 			require.Equal(t, c.expected, c.in)
 		})
+	}
+}
+
+func TestHistogramValidation(t *testing.T) {
+	tests := map[string]struct {
+		h         *Histogram
+		errMsg    string
+		skipFloat bool
+	}{
+		"valid histogram": {
+			h: &Histogram{
+				Count:         12,
+				ZeroCount:     2,
+				ZeroThreshold: 0.001,
+				Sum:           19.4,
+				Schema:        1,
+				PositiveSpans: []Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []int64{1, 1, -1, 0},
+				NegativeSpans: []Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				NegativeBuckets: []int64{1, 1, -1, 0},
+			},
+		},
+		"valid histogram with NaN observations that has its Count (4) higher than the actual total of buckets (2 + 1)": {
+			// This case is possible if NaN values (which do not fall into any bucket) are observed.
+			h: &Histogram{
+				ZeroCount:       2,
+				Count:           4,
+				Sum:             math.NaN(),
+				PositiveSpans:   []Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []int64{1},
+			},
+		},
+		"rejects histogram without NaN observations that has its Count (4) higher than the actual total of buckets (2 + 1)": {
+			h: &Histogram{
+				ZeroCount:       2,
+				Count:           4,
+				Sum:             333,
+				PositiveSpans:   []Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []int64{1},
+			},
+			errMsg:    `3 observations found in buckets, but the Count field is 4: histogram's observation count should equal the number of observations found in the buckets (in absence of NaN)`,
+			skipFloat: true,
+		},
+		"rejects histogram that has too few negative buckets": {
+			h: &Histogram{
+				NegativeSpans:   []Span{{Offset: 0, Length: 1}},
+				NegativeBuckets: []int64{},
+			},
+			errMsg: `negative side: spans need 1 buckets, have 0 buckets: histogram spans specify different number of buckets than provided`,
+		},
+		"rejects histogram that has too few positive buckets": {
+			h: &Histogram{
+				PositiveSpans:   []Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []int64{},
+			},
+			errMsg: `positive side: spans need 1 buckets, have 0 buckets: histogram spans specify different number of buckets than provided`,
+		},
+		"rejects histogram that has too many negative buckets": {
+			h: &Histogram{
+				NegativeSpans:   []Span{{Offset: 0, Length: 1}},
+				NegativeBuckets: []int64{1, 2},
+			},
+			errMsg: `negative side: spans need 1 buckets, have 2 buckets: histogram spans specify different number of buckets than provided`,
+		},
+		"rejects histogram that has too many positive buckets": {
+			h: &Histogram{
+				PositiveSpans:   []Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []int64{1, 2},
+			},
+			errMsg: `positive side: spans need 1 buckets, have 2 buckets: histogram spans specify different number of buckets than provided`,
+		},
+		"rejects a histogram that has a negative span with a negative offset": {
+			h: &Histogram{
+				NegativeSpans:   []Span{{Offset: -1, Length: 1}, {Offset: -1, Length: 1}},
+				NegativeBuckets: []int64{1, 2},
+			},
+			errMsg: `negative side: span number 2 with offset -1: histogram has a span whose offset is negative`,
+		},
+		"rejects a histogram which has a positive span with a negative offset": {
+			h: &Histogram{
+				PositiveSpans:   []Span{{Offset: -1, Length: 1}, {Offset: -1, Length: 1}},
+				PositiveBuckets: []int64{1, 2},
+			},
+			errMsg: `positive side: span number 2 with offset -1: histogram has a span whose offset is negative`,
+		},
+		"rejects a histogram that has a negative bucket with a negative count": {
+			h: &Histogram{
+				NegativeSpans:   []Span{{Offset: -1, Length: 1}},
+				NegativeBuckets: []int64{-1},
+			},
+			errMsg: `negative side: bucket number 1 has observation count of -1: histogram has a bucket whose observation count is negative`,
+		},
+		"rejects a histogram that has a positive bucket with a negative count": {
+			h: &Histogram{
+				PositiveSpans:   []Span{{Offset: -1, Length: 1}},
+				PositiveBuckets: []int64{-1},
+			},
+			errMsg: `positive side: bucket number 1 has observation count of -1: histogram has a bucket whose observation count is negative`,
+		},
+		"rejects a histogram that has a lower count than count in buckets": {
+			h: &Histogram{
+				Count:           0,
+				NegativeSpans:   []Span{{Offset: -1, Length: 1}},
+				PositiveSpans:   []Span{{Offset: -1, Length: 1}},
+				NegativeBuckets: []int64{1},
+				PositiveBuckets: []int64{1},
+			},
+			errMsg:    `2 observations found in buckets, but the Count field is 0: histogram's observation count should equal the number of observations found in the buckets (in absence of NaN)`,
+			skipFloat: true,
+		},
+		"rejects a histogram that doesn't count the zero bucket in its count": {
+			h: &Histogram{
+				Count:           2,
+				ZeroCount:       1,
+				NegativeSpans:   []Span{{Offset: -1, Length: 1}},
+				PositiveSpans:   []Span{{Offset: -1, Length: 1}},
+				NegativeBuckets: []int64{1},
+				PositiveBuckets: []int64{1},
+			},
+			errMsg:    `3 observations found in buckets, but the Count field is 2: histogram's observation count should equal the number of observations found in the buckets (in absence of NaN)`,
+			skipFloat: true,
+		},
+	}
+
+	for testName, tc := range tests {
+		t.Run(testName, func(t *testing.T) {
+			if err := tc.h.Validate(); tc.errMsg != "" {
+				require.EqualError(t, err, tc.errMsg)
+			} else {
+				require.NoError(t, err)
+			}
+			if tc.skipFloat {
+				return
+			}
+
+			fh := tc.h.ToFloat()
+			if err := fh.Validate(); tc.errMsg != "" {
+				require.EqualError(t, err, tc.errMsg)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func BenchmarkHistogramValidation(b *testing.B) {
+	histograms := GenerateBigTestHistograms(b.N, 500)
+	b.ResetTimer()
+	for _, h := range histograms {
+		require.NoError(b, h.Validate())
 	}
 }

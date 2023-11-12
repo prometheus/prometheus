@@ -152,14 +152,14 @@ func (s *Storage) StartTime() (int64, error) {
 // Returned querier will never return error as all queryables are assumed best effort.
 // Additionally all returned queriers ensure that its Select's SeriesSets have ready data after first `Next` invoke.
 // This is because Prometheus (fanout and secondary queries) can't handle the stream failing half way through by design.
-func (s *Storage) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+func (s *Storage) Querier(mint, maxt int64) (storage.Querier, error) {
 	s.mtx.Lock()
 	queryables := s.queryables
 	s.mtx.Unlock()
 
 	queriers := make([]storage.Querier, 0, len(queryables))
 	for _, queryable := range queryables {
-		q, err := queryable.Querier(ctx, mint, maxt)
+		q, err := queryable.Querier(mint, maxt)
 		if err != nil {
 			return nil, err
 		}
@@ -170,14 +170,14 @@ func (s *Storage) Querier(ctx context.Context, mint, maxt int64) (storage.Querie
 
 // ChunkQuerier returns a storage.MergeQuerier combining the remote client queriers
 // of each configured remote read endpoint.
-func (s *Storage) ChunkQuerier(ctx context.Context, mint, maxt int64) (storage.ChunkQuerier, error) {
+func (s *Storage) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
 	s.mtx.Lock()
 	queryables := s.queryables
 	s.mtx.Unlock()
 
 	queriers := make([]storage.ChunkQuerier, 0, len(queryables))
 	for _, queryable := range queryables {
-		q, err := queryable.ChunkQuerier(ctx, mint, maxt)
+		q, err := queryable.ChunkQuerier(mint, maxt)
 		if err != nil {
 			return nil, err
 		}

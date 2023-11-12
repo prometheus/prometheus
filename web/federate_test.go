@@ -16,6 +16,7 @@ package web
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -25,7 +26,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
@@ -237,16 +237,16 @@ type notReadyReadStorage struct {
 	LocalStorage
 }
 
-func (notReadyReadStorage) Querier(context.Context, int64, int64) (storage.Querier, error) {
-	return nil, errors.Wrap(tsdb.ErrNotReady, "wrap")
+func (notReadyReadStorage) Querier(int64, int64) (storage.Querier, error) {
+	return nil, fmt.Errorf("wrap: %w", tsdb.ErrNotReady)
 }
 
 func (notReadyReadStorage) StartTime() (int64, error) {
-	return 0, errors.Wrap(tsdb.ErrNotReady, "wrap")
+	return 0, fmt.Errorf("wrap: %w", tsdb.ErrNotReady)
 }
 
 func (notReadyReadStorage) Stats(string, int) (*tsdb.Stats, error) {
-	return nil, errors.Wrap(tsdb.ErrNotReady, "wrap")
+	return nil, fmt.Errorf("wrap: %w", tsdb.ErrNotReady)
 }
 
 // Regression test for https://github.com/prometheus/prometheus/issues/7181.
@@ -306,7 +306,7 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 
 	db := storage.DB
 	hist := &histogram.Histogram{
-		Count:         10,
+		Count:         12,
 		ZeroCount:     2,
 		ZeroThreshold: 0.001,
 		Sum:           39.4,
@@ -359,6 +359,7 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 			})
 		default:
 			hist.ZeroCount++
+			hist.Count++
 			_, err = app.AppendHistogram(0, l, 100*60*1000, hist.Copy(), nil)
 			expVec = append(expVec, promql.Sample{
 				T:      100 * 60 * 1000,
@@ -395,7 +396,7 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 	l := labels.Labels{}
 	for {
 		et, err := p.Next()
-		if err == io.EOF {
+		if err != nil && errors.Is(err, io.EOF) {
 			break
 		}
 		require.NoError(t, err)

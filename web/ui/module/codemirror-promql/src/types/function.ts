@@ -42,6 +42,8 @@ import {
   HistogramCount,
   HistogramFraction,
   HistogramQuantile,
+  HistogramStdDev,
+  HistogramStdVar,
   HistogramSum,
   HoltWinters,
   Hour,
@@ -279,6 +281,18 @@ const promqlFunctions: { [key: number]: PromQLFunction } = {
   [HistogramQuantile]: {
     name: 'histogram_quantile',
     argTypes: [ValueType.scalar, ValueType.vector],
+    variadic: 0,
+    returnType: ValueType.vector,
+  },
+  [HistogramStdDev]: {
+    name: 'histogram_stddev',
+    argTypes: [ValueType.vector],
+    variadic: 0,
+    returnType: ValueType.vector,
+  },
+  [HistogramStdVar]: {
+    name: 'histogram_stdvar',
+    argTypes: [ValueType.vector],
     variadic: 0,
     returnType: ValueType.vector,
   },

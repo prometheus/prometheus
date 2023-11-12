@@ -26,6 +26,8 @@ import (
 	"unicode/utf8"
 	"unsafe"
 
+	"github.com/gogo/protobuf/types"
+
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -245,6 +247,11 @@ func (p *PromParser) Exemplar(*exemplar.Exemplar) bool {
 	return false
 }
 
+// CreatedTimestamp returns false because PromParser does not support created timestamps.
+func (p *PromParser) CreatedTimestamp(_ *types.Timestamp) bool {
+	return false
+}
+
 // nextToken returns the next token from the promlexer. It skips over tabs
 // and spaces.
 func (p *PromParser) nextToken() token {
@@ -348,7 +355,7 @@ func (p *PromParser) Next() (Entry, error) {
 			return EntryInvalid, p.parseError("expected value after metric", t2)
 		}
 		if p.val, err = parseFloat(yoloString(p.l.buf())); err != nil {
-			return EntryInvalid, fmt.Errorf("%v while parsing: %q", err, p.l.b[p.start:p.l.i])
+			return EntryInvalid, fmt.Errorf("%w while parsing: %q", err, p.l.b[p.start:p.l.i])
 		}
 		// Ensure canonical NaN value.
 		if math.IsNaN(p.val) {
@@ -361,7 +368,7 @@ func (p *PromParser) Next() (Entry, error) {
 		case tTimestamp:
 			p.hasTS = true
 			if p.ts, err = strconv.ParseInt(yoloString(p.l.buf()), 10, 64); err != nil {
-				return EntryInvalid, fmt.Errorf("%v while parsing: %q", err, p.l.b[p.start:p.l.i])
+				return EntryInvalid, fmt.Errorf("%w while parsing: %q", err, p.l.b[p.start:p.l.i])
 			}
 			if t2 := p.nextToken(); t2 != tLinebreak {
 				return EntryInvalid, p.parseError("expected next entry after timestamp", t2)

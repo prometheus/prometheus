@@ -450,10 +450,9 @@ func TestDocumentation(t *testing.T) {
 	cmd.Stdout = &stdout
 
 	if err := cmd.Run(); err != nil {
-		if exitError, ok := err.(*exec.ExitError); ok {
-			if exitError.ExitCode() != 0 {
-				fmt.Println("Command failed with non-zero exit code")
-			}
+		var exitError *exec.ExitError
+		if errors.As(err, &exitError) && exitError.ExitCode() != 0 {
+			fmt.Println("Command failed with non-zero exit code")
 		}
 	}
 
@@ -463,4 +462,89 @@ func TestDocumentation(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, string(expectedContent), generatedContent, "Generated content does not match documentation. Hint: run `make cli-documentation`.")
+}
+
+func TestCheckRules(t *testing.T) {
+	t.Run("rules-good", func(t *testing.T) {
+		data, err := os.ReadFile("./testdata/rules.yml")
+		require.NoError(t, err)
+		r, w, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		_, err = w.Write(data)
+		if err != nil {
+			t.Error(err)
+		}
+		w.Close()
+
+		// Restore stdin right after the test.
+		defer func(v *os.File) { os.Stdin = v }(os.Stdin)
+		os.Stdin = r
+
+		exitCode := CheckRules(newLintConfig(lintOptionDuplicateRules, false))
+		require.Equal(t, successExitCode, exitCode, "")
+	})
+
+	t.Run("rules-bad", func(t *testing.T) {
+		data, err := os.ReadFile("./testdata/rules-bad.yml")
+		require.NoError(t, err)
+		r, w, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		_, err = w.Write(data)
+		if err != nil {
+			t.Error(err)
+		}
+		w.Close()
+
+		// Restore stdin right after the test.
+		defer func(v *os.File) { os.Stdin = v }(os.Stdin)
+		os.Stdin = r
+
+		exitCode := CheckRules(newLintConfig(lintOptionDuplicateRules, false))
+		require.Equal(t, failureExitCode, exitCode, "")
+	})
+
+	t.Run("rules-lint-fatal", func(t *testing.T) {
+		data, err := os.ReadFile("./testdata/prometheus-rules.lint.yml")
+		require.NoError(t, err)
+		r, w, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		_, err = w.Write(data)
+		if err != nil {
+			t.Error(err)
+		}
+		w.Close()
+
+		// Restore stdin right after the test.
+		defer func(v *os.File) { os.Stdin = v }(os.Stdin)
+		os.Stdin = r
+
+		exitCode := CheckRules(newLintConfig(lintOptionDuplicateRules, true))
+		require.Equal(t, lintErrExitCode, exitCode, "")
+	})
+}
+
+func TestCheckRulesWithRuleFiles(t *testing.T) {
+	t.Run("rules-good", func(t *testing.T) {
+		exitCode := CheckRules(newLintConfig(lintOptionDuplicateRules, false), "./testdata/rules.yml")
+		require.Equal(t, successExitCode, exitCode, "")
+	})
+
+	t.Run("rules-bad", func(t *testing.T) {
+		exitCode := CheckRules(newLintConfig(lintOptionDuplicateRules, false), "./testdata/rules-bad.yml")
+		require.Equal(t, failureExitCode, exitCode, "")
+	})
+
+	t.Run("rules-lint-fatal", func(t *testing.T) {
+		exitCode := CheckRules(newLintConfig(lintOptionDuplicateRules, true), "./testdata/prometheus-rules.lint.yml")
+		require.Equal(t, lintErrExitCode, exitCode, "")
+	})
 }

@@ -20,7 +20,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// endpointSliceAdaptor is an adaptor for the different EndpointSlice versions
+// endpointSliceAdaptor is an adaptor for the different EndpointSlice versions.
 type endpointSliceAdaptor interface {
 	get() interface{}
 	getObjectMeta() metav1.ObjectMeta
@@ -55,7 +55,7 @@ type endpointSliceEndpointConditionsAdaptor interface {
 	terminating() *bool
 }
 
-// Adaptor for k8s.io/api/discovery/v1
+// Adaptor for k8s.io/api/discovery/v1.
 type endpointSliceAdaptorV1 struct {
 	endpointSlice *v1.EndpointSlice
 }
@@ -108,7 +108,7 @@ func (e *endpointSliceAdaptorV1) labelServiceName() string {
 	return v1.LabelServiceName
 }
 
-// Adaptor for k8s.io/api/discovery/v1beta1
+// Adaptor for k8s.io/api/discovery/v1beta1.
 type endpointSliceAdaptorV1Beta1 struct {
 	endpointSlice *v1beta1.EndpointSlice
 }

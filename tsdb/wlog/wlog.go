@@ -622,7 +622,8 @@ func (w *WL) flushPage(clear bool) error {
 }
 
 // First Byte of header format:
-// [3 bits unallocated] [1 bit zstd compression flag] [1 bit snappy compression flag] [3 bit record type ]
+//
+//	[3 bits unallocated] [1 bit zstd compression flag] [1 bit snappy compression flag] [3 bit record type ]
 const (
 	snappyMask  = 1 << 3
 	zstdMask    = 1 << 4
@@ -836,7 +837,7 @@ func (w *WL) fsync(f *Segment) error {
 
 // Sync forces a file sync on the current write log segment. This function is meant
 // to be used only on tests due to different behaviour on Operating Systems
-// like windows and linux
+// like windows and linux.
 func (w *WL) Sync() error {
 	return w.fsync(w.segment)
 }
@@ -909,8 +910,8 @@ func listSegments(dir string) (refs []segmentRef, err error) {
 		}
 		refs = append(refs, segmentRef{name: fn, index: k})
 	}
-	slices.SortFunc(refs, func(a, b segmentRef) bool {
-		return a.index < b.index
+	slices.SortFunc(refs, func(a, b segmentRef) int {
+		return a.index - b.index
 	})
 	for i := 0; i < len(refs)-1; i++ {
 		if refs[i].index+1 != refs[i+1].index {
@@ -971,7 +972,6 @@ type segmentBufReader struct {
 	off  int // Offset of read data into current segment.
 }
 
-// nolint:revive // TODO: Consider exporting segmentBufReader
 func NewSegmentBufReader(segs ...*Segment) *segmentBufReader {
 	if len(segs) == 0 {
 		return &segmentBufReader{}
@@ -983,7 +983,6 @@ func NewSegmentBufReader(segs ...*Segment) *segmentBufReader {
 	}
 }
 
-// nolint:revive
 func NewSegmentBufReaderWithOffset(offset int, segs ...*Segment) (sbr *segmentBufReader, err error) {
 	if offset == 0 || len(segs) == 0 {
 		return NewSegmentBufReader(segs...), nil

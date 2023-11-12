@@ -15,18 +15,18 @@ package testutil
 
 import "time"
 
-// A MockContext provides a simple stub implementation of a Context
+// A MockContext provides a simple stub implementation of a Context.
 type MockContext struct {
 	Error  error
 	DoneCh chan struct{}
 }
 
-// Deadline always will return not set
+// Deadline always will return not set.
 func (c *MockContext) Deadline() (deadline time.Time, ok bool) {
 	return time.Time{}, false
 }
 
-// Done returns a read channel for listening to the Done event
+// Done returns a read channel for listening to the Done event.
 func (c *MockContext) Done() <-chan struct{} {
 	return c.DoneCh
 }
@@ -36,7 +36,7 @@ func (c *MockContext) Err() error {
 	return c.Error
 }
 
-// Value ignores the Value and always returns nil
+// Value ignores the Value and always returns nil.
 func (c *MockContext) Value(interface{}) interface{} {
 	return nil
 }
