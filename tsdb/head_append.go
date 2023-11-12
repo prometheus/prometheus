@@ -751,6 +751,12 @@ func (a *headAppender) Commit() (err error) {
 	// No errors logging to WAL, so pass the exemplars along to the in memory storage.
 	for _, e := range a.exemplars {
 		s := a.head.series.getByID(chunks.HeadSeriesRef(e.ref))
+		if s == nil {
+			// This is very unlikely to happen, but we have seen it in the wild.
+			// It means that the series was truncated between AppendExemplar and Commit.
+			// See TestHeadCompactionWhileAppendAndCommitExemplar.
+			continue
+		}
 		// We don't instrument exemplar appends here, all is instrumented by storage.
 		if err := a.head.exemplars.AddExemplar(s.lset, e.exemplar); err != nil {
 			if err == storage.ErrOutOfOrderExemplar {
