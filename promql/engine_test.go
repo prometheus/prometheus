@@ -1636,6 +1636,303 @@ load 1ms
 	}
 }
 
+// Convenience function that returns a "full matrix" for the specified number
+// of jobs and time range.
+func fullMatrix(jobs, start, end, interval, increase int) (Matrix, []labels.Labels) {
+	var mat Matrix
+	var lbls []labels.Labels
+	for job := 1; job <= jobs; job++ {
+		lbls = append(lbls, labels.FromStrings("__name__", "metric", "job", fmt.Sprintf("%d", job)))
+		series := func(start, end, interval int) Series {
+			var points []FPoint
+			for i := start; i <= end; i += interval {
+				t := int64(increase) * int64(i)
+				points = append(points, FPoint{F: float64(job * i / interval), T: t})
+			}
+			return Series{
+				Floats: points,
+				Metric: labels.FromStrings("__name__", "metric", "job", fmt.Sprintf("%d", job)),
+			}
+		}(start, end, interval)
+		mat = append(mat, series)
+	}
+	return mat, lbls
+}
+
+func TestSampleLimit(t *testing.T) {
+	engine := newTestEngine()
+	storage := LoadedStorage(t, `
+load 10s
+  metric{job="1"} 0+1x1000
+  metric{job="2"} 0+2x1000
+  metric{job="3"} 0+3x1000
+  metric{job="4"} 0+4x1000
+  metric{job="5"} 0+5x1000
+`)
+	t.Cleanup(func() { storage.Close() })
+
+	fullMatrix20, _ := fullMatrix(5, 0, 20, 10, 1000)
+	cases := []struct {
+		query                string
+		start, end, interval int64 // Time in seconds.
+		expectError          bool
+		result               parser.Value
+		resultIn             parser.Value
+		resultLen            int // Required if resultIn is set
+	}{
+		{
+			// Limit==0 -> empty matrix
+			query: `sample_limit(0, metric)`,
+			start: 0, end: 20, interval: 10,
+			result: Matrix{},
+		},
+		{
+			// Limit==2 -> return 2 timeseries (resultLen: 2),
+			// also asserting that they are member of full TSs
+			query: `sample_limit(2, metric)`,
+			start: 0, end: 20, interval: 10,
+			resultLen: 2,
+			resultIn:  fullMatrix20,
+		},
+		{
+			// Limit==5 -> return full matrix (5 timeseries)
+			query: `sample_limit(5, metric)`,
+			start: 0, end: 20, interval: 10,
+			result: fullMatrix20,
+		},
+		{
+			// Limit==10 (>5 timeseries) -> still return full matrix (5 timeseries)
+			query: `sample_limit(10, metric)`,
+			start: 0, end: 20, interval: 10,
+			result: fullMatrix20,
+		},
+		{
+			// Limit <0 -> return empty matrix
+			query: `sample_limit(10, metric)`,
+			start: 0, end: 20, interval: 10,
+		},
+		{
+			// Limit==<over maxInt64> -> error
+			query: fmt.Sprintf(`sample_limit(%d, metric)`, maxInt64+1000),
+			start: 0, end: 20, interval: 10,
+			expectError: true,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.query, func(t *testing.T) {
+			if c.interval == 0 {
+				c.interval = 1
+			}
+			start, end, interval := time.Unix(c.start, 0), time.Unix(c.end, 0), time.Duration(c.interval)*time.Second
+			var err error
+			var qry Query
+			qry, err = engine.NewRangeQuery(context.Background(), storage, nil, c.query, start, end, interval)
+			require.NoError(t, err)
+
+			res := qry.Exec(context.Background())
+			if c.expectError {
+				require.Error(t, res.Err)
+				return
+			}
+			require.NoError(t, res.Err)
+			switch {
+			case c.result != nil:
+				if expMat, ok := c.result.(Matrix); ok {
+					sort.Sort(expMat)
+					sort.Sort(res.Value.(Matrix))
+				}
+				require.Equal(t, c.result, res.Value, "query %q failed for require.Equal()", c.query)
+			case c.resultIn != nil:
+				require.Equal(t, c.resultLen, len(res.Value.(Matrix)), "query %q failed", c.query)
+				if expMat, ok := c.resultIn.(Matrix); ok {
+					sort.Sort(expMat)
+					sort.Sort(res.Value.(Matrix))
+					for _, e := range res.Value.(Matrix) {
+						require.Contains(t, c.resultIn, e, "query %q failed for require.Contains()", c.query)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestSampleRatio(t *testing.T) {
+	engine := newTestEngine()
+	storage := LoadedStorage(t, `
+load 10s
+  metric{job="1"} 0+1x1000
+  metric{job="2"} 0+2x1000
+  metric{job="3"} 0+3x1000
+  metric{job="4"} 0+4x1000
+  metric{job="5"} 0+5x1000
+`)
+	t.Cleanup(func() { storage.Close() })
+
+	fullMatrix20, lbls := fullMatrix(5, 0, 20, 10, 1000)
+	cases := []struct {
+		query                string
+		start, end, interval int64 // Time in seconds.
+		result               parser.Value
+		expectError          bool
+	}{
+		{
+			// ratioLimit=0 -> empty matrix
+			query: `sample_ratio(0, metric)`,
+			start: 0, end: 20, interval: 10,
+			result: Matrix{},
+		},
+		{
+			// ratioLimit=0.2 -> return some timeseries
+			// NB: given that involves Metric.Hash() this was _manually_ cherry-picked to match
+			query: `sample_ratio(0.2, metric)`,
+			start: 0, end: 20, interval: 10,
+			result: Matrix{
+				Series{
+					Metric: lbls[0],
+					Floats: []FPoint{{T: 0, F: 0}, {T: 10000, F: 1}, {T: 20000, F: 2}},
+				},
+			},
+		},
+		{
+			// ratioLimit=-0.8 -> the _completement_ of sample_ratio(0.2, metric)
+			query: `sample_ratio(-0.8, metric)`,
+			start: 0, end: 20, interval: 10,
+			result: Matrix{
+				Series{
+					Floats: []FPoint{{T: 0, F: 0}, {T: 10000, F: 2}, {T: 20000, F: 4}},
+					Metric: lbls[1],
+				},
+				Series{
+					Floats: []FPoint{{T: 0, F: 0}, {T: 10000, F: 3}, {T: 20000, F: 6}},
+					Metric: lbls[2],
+				},
+				Series{
+					Floats: []FPoint{{T: 0, F: 0}, {T: 10000, F: 4}, {T: 20000, F: 8}},
+					Metric: lbls[3],
+				},
+				Series{
+					Floats: []FPoint{{F: 0, T: 0}, {T: 10000, F: 5}, {T: 20000, F: 10}},
+					Metric: lbls[4],
+				},
+			},
+		},
+		{
+			// ratioLimit=1.0 -> full matrix
+			query: `sample_ratio(1.0, metric)`,
+			start: 0, end: 20, interval: 10,
+			result: fullMatrix20,
+		},
+		{
+			// ratioLimit=-1.0 -> full matrix also
+			query: `sample_ratio(-1.0, metric)`,
+			start: 0, end: 20, interval: 10,
+			result: fullMatrix20,
+		},
+		{
+			// ratioLimit > 1.0 -> error
+			query: `sample_ratio(1.01, metric)`,
+			start: 0, end: 20, interval: 10,
+			expectError: true,
+		},
+		{
+			// ratioLimit < -1.0 -> error
+			query: `sample_ratio(-1.01, metric)`,
+			start: 0, end: 20, interval: 10,
+			expectError: true,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.query, func(t *testing.T) {
+			if c.interval == 0 {
+				c.interval = 1
+			}
+			start, end, interval := time.Unix(c.start, 0), time.Unix(c.end, 0), time.Duration(c.interval)*time.Second
+			var err error
+			var qry Query
+			qry, err = engine.NewRangeQuery(context.Background(), storage, nil, c.query, start, end, interval)
+			require.NoError(t, err)
+
+			res := qry.Exec(context.Background())
+			if c.expectError {
+				require.Error(t, res.Err)
+				return
+			}
+			require.NoError(t, res.Err)
+			if expMat, ok := c.result.(Matrix); ok {
+				sort.Sort(expMat)
+				sort.Sort(res.Value.(Matrix))
+			}
+			require.Equal(t, c.result, res.Value, "query %q failed for require.Equal()", c.query)
+		})
+	}
+}
+
+func TestSampleRatioDynamic(t *testing.T) {
+	engine := newTestEngine()
+	storage := LoadedStorage(t, `
+load 10s
+  metric{job="1"} 0+1x1000
+  metric{job="2"} 0+2x1000
+  metric{job="3"} 0+3x1000
+  metric{job="4"} 0+4x1000
+  metric{job="5"} 0+5x1000
+`)
+	t.Cleanup(func() { storage.Close() })
+
+	fullMatrix20, _ := fullMatrix(5, 0, 20, 10, 1000)
+
+	// Dynamically build sample_ratio() cases, to verify that
+	//   sample_ratio(v, metric)
+	// is the *exact complement* of
+	//   sample_ratio(-(1.0-v), metric)
+	//
+	// e.g. v=0.2 is the complement (set of timeseries) of v=-0.8
+	type ratioCase struct {
+		query                string
+		start, end, interval int64 // Time in seconds.
+		result               parser.Value
+	}
+	orQuery := `sample_ratio(%f, metric) or sample_ratio(%f, metric)`
+	andQuery := `sample_ratio(%f, metric) and sample_ratio(%f, metric)`
+	var ratioCases []ratioCase
+	for v := 0.0; v < 1.0; v += 0.1 {
+		// OR-ing both must return the full matrix
+		ratioCases = append(ratioCases, ratioCase{
+			query: fmt.Sprintf(orQuery, v, -(1.0 - v)),
+			start: 0, end: 20, interval: 10,
+			result: fullMatrix20,
+		})
+		// AND-ing both must return an empty matrix
+		ratioCases = append(ratioCases, ratioCase{
+			query: fmt.Sprintf(andQuery, v, -(1.0 - v)),
+			start: 0, end: 20, interval: 10,
+			result: Matrix{},
+		})
+	}
+
+	for _, c := range ratioCases {
+		t.Run(c.query, func(t *testing.T) {
+			if c.interval == 0 {
+				c.interval = 1
+			}
+			start, end, interval := time.Unix(c.start, 0), time.Unix(c.end, 0), time.Duration(c.interval)*time.Second
+			var err error
+			var qry Query
+			qry, err = engine.NewRangeQuery(context.Background(), storage, nil, c.query, start, end, interval)
+			require.NoError(t, err)
+
+			res := qry.Exec(context.Background())
+			require.NoError(t, res.Err)
+			if expMat, ok := c.result.(Matrix); ok {
+				sort.Sort(expMat)
+				sort.Sort(res.Value.(Matrix))
+			}
+			require.Equal(t, c.result, res.Value, "query %q failed", c.query)
+		})
+	}
+}
+
 func TestRecoverEvaluatorRuntime(t *testing.T) {
 	var output []interface{}
 	logger := log.Logger(log.LoggerFunc(func(keyvals ...interface{}) error {

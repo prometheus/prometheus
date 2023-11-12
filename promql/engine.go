@@ -2553,7 +2553,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, grouping []string, par
 	result := map[uint64]*groupedAggregation{}
 	orderedResult := []*groupedAggregation{}
 	var k int64
-	if op == parser.TOPK || op == parser.BOTTOMK {
+	if op == parser.TOPK || op == parser.BOTTOMK || op == parser.SAMPLE_LIMIT {
 		f := param.(float64)
 		if !convertibleToInt64(f) {
 			ev.errorf("Scalar value %v overflows int64", f)
@@ -2566,6 +2566,17 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, grouping []string, par
 	var q float64
 	if op == parser.QUANTILE {
 		q = param.(float64)
+	}
+	if op == parser.SAMPLE_RATIO {
+		q = param.(float64)
+		switch {
+		case q == 0:
+			return Vector{}, annos
+		case q > 1.0:
+			ev.errorf("Float value %v is greater than 1.0", q)
+		case q < -1.0:
+			ev.errorf("Float value %v is less than -1.0", q)
+		}
 	}
 	var valueLabel string
 	var recomputeGroupingKey bool
@@ -2655,12 +2666,30 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, grouping []string, par
 			switch op {
 			case parser.STDVAR, parser.STDDEV:
 				result[groupingKey].floatValue = 0
-			case parser.TOPK, parser.QUANTILE:
+			case parser.TOPK, parser.QUANTILE, parser.SAMPLE_LIMIT:
 				result[groupingKey].heap = make(vectorByValueHeap, 1, resultSize)
 				result[groupingKey].heap[0] = Sample{
 					F:      s.F,
 					Metric: s.Metric,
 				}
+			case parser.SAMPLE_RATIO:
+				// NB: As this switch visited only by the first element
+				// (sample) in the loop, we create the heap, then do
+				// the _same_ sampling as with the rest of the
+				// elements (to avoid "losing" it).
+				// NB: slice capacity set to resultSize*q (as an statistical
+				// approximation).
+				var expectedCapacity int
+				if q > 0 {
+					expectedCapacity = int(float64(resultSize) * q)
+				} else {
+					expectedCapacity = int(float64(resultSize) * (1 + q))
+				}
+				result[groupingKey].heap = make(vectorByValueHeap, 0, expectedCapacity)
+				ratiosampler.AddRatioSample(q, s.T, &result[groupingKey].heap, &Sample{
+					F:      s.F,
+					Metric: s.Metric,
+				})
 			case parser.BOTTOMK:
 				result[groupingKey].reverseHeap = make(vectorByReverseValueHeap, 1, resultSize)
 				result[groupingKey].reverseHeap[0] = Sample{
@@ -2799,6 +2828,28 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, grouping []string, par
 				}
 			}
 
+		case parser.SAMPLE_LIMIT:
+			// We build a heap of up to k elements, without any specific order
+			if int64(len(group.heap)) < k {
+				heap.Push(&group.heap, &Sample{
+					F:      s.F,
+					Metric: s.Metric,
+				})
+			} else {
+				continue
+			}
+
+		case parser.SAMPLE_RATIO:
+			// We push elements to the heap:
+			// - if  0.0 <= q <= 1.0: q is the sampling ratio
+			// - if -1.0 <= q <  0.0: 1-q is the sampling ratio (complementary set of samples than above)
+			//
+			// See AddRatioSample() implementation for detailed comments.
+			ratiosampler.AddRatioSample(q, s.T, &group.heap, &Sample{
+				F:      s.F,
+				Metric: s.Metric,
+			})
+
 		case parser.QUANTILE:
 			group.heap = append(group.heap, s)
 
@@ -2851,6 +2902,15 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, grouping []string, par
 				sort.Sort(sort.Reverse(aggr.reverseHeap))
 			}
 			for _, v := range aggr.reverseHeap {
+				enh.Out = append(enh.Out, Sample{
+					Metric: v.Metric,
+					F:      v.F,
+				})
+			}
+			continue // Bypass default append.
+
+		case parser.SAMPLE_LIMIT, parser.SAMPLE_RATIO:
+			for _, v := range aggr.heap {
 				enh.Out = append(enh.Out, Sample{
 					Metric: v.Metric,
 					F:      v.F,
@@ -3089,4 +3149,62 @@ func makeInt64Pointer(val int64) *int64 {
 	valp := new(int64)
 	*valp = val
 	return valp
+}
+
+// Add RatioSampler interface to allow unit-testing (previously: Randomizer).
+type RatioSampler interface {
+	// Return this sample "offset" between [0.0, 1.0]
+	sampleOffset(ts int64, sample *Sample) float64
+	AddRatioSample(r float64, ts int64, h *vectorByValueHeap, sample *Sample)
+}
+
+// Use Hash(labels.String()) / maxUint64 as a "deterministic"
+// value in [0.0, 1.0].
+type HashRatioSampler struct{}
+
+var ratiosampler RatioSampler = NewHashRatioSampler()
+
+func NewHashRatioSampler() *HashRatioSampler {
+	return &HashRatioSampler{}
+}
+
+func (s *HashRatioSampler) sampleOffset(ts int64, sample *Sample) float64 {
+	const (
+		float64MaxUint64 = float64(math.MaxUint64)
+	)
+	return float64(sample.Metric.Hash()) / float64MaxUint64
+}
+
+func (s *HashRatioSampler) AddRatioSample(ratioLimit float64, ts int64, h *vectorByValueHeap, sample *Sample) {
+	sampleOffset := s.sampleOffset(ts, sample)
+	switch {
+	case ratioLimit >= 0:
+		// If ratioLimit >= 0: add sample if ratiosampler.sampleOffset() is lesser than ratioLimit
+		//
+		// 0.0        ratioLimit                1.0
+		//  [---------|--------------------------]
+		//  [#########...........................]
+		//
+		// e.g.:
+		//   ratiosampler.sampleOffset()==0.3 && ratioLimit==0.4
+		//     0.3 < 0.4 ? --> add sample
+		//
+		if sampleOffset < ratioLimit {
+			heap.Push(h, sample)
+		}
+	case ratioLimit < 0:
+		// If ratioLimit < 0: add sample if rand() return the "complement" of ratioLimit>=0 case
+		// (loosely similar behavior to negative array index in other programming languages)
+		//
+		// 0.0       1+ratioLimit               1.0
+		//  [---------|--------------------------]
+		//  [.........###########################]
+		//
+		// e.g.:
+		//   ratiosampler.sampleOffset()==0.3 && ratioLimit==-0.6
+		//     0.3 >= 0.4 ? --> don't add sample
+		if sampleOffset >= (1.0 + ratioLimit) {
+			heap.Push(h, sample)
+		}
+	}
 }
