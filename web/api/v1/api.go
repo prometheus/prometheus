@@ -750,7 +750,7 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 		vals     []string
 		warnings annotations.Annotations
 	)
-	if len(matcherSets) > 0 {
+	if len(matcherSets) > 1 {
 		var callWarnings annotations.Annotations
 		labelValuesSet := make(map[string]struct{})
 		for _, matchers := range matcherSets {
