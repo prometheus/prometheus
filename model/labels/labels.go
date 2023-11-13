@@ -618,7 +618,8 @@ func (b *ScratchBuilder) Add(name, value string) {
 }
 
 // Add a name/value pair, using []byte instead of string.
-// Intended for '-tags stringlabels'; this version purely so the old way still compiles.
+// The '-tags stringlabels' version of this function is unsafe, hence the name.
+// This version is safe - it copies the strings immediately - but we keep the same name so everything compiles.
 func (b *ScratchBuilder) UnsafeAddBytes(name, value []byte) {
 	b.add = append(b.add, Label{Name: string(name), Value: string(value)})
 }
