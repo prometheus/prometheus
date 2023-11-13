@@ -51,6 +51,7 @@ const (
 	linodeLabelStatus             = linodeLabel + "status"
 	linodeLabelTags               = linodeLabel + "tags"
 	linodeLabelGroup              = linodeLabel + "group"
+	linodeLabelGPUs               = linodeLabel + "gpus"
 	linodeLabelHypervisor         = linodeLabel + "hypervisor"
 	linodeLabelBackups            = linodeLabel + "backups"
 	linodeLabelSpecsDiskBytes     = linodeLabel + "specs_disk_bytes"
@@ -302,6 +303,7 @@ func (d *Discovery) refreshData(ctx context.Context) ([]*targetgroup.Group, erro
 			linodeLabelType:               model.LabelValue(instance.Type),
 			linodeLabelStatus:             model.LabelValue(instance.Status),
 			linodeLabelGroup:              model.LabelValue(instance.Group),
+			linodeLabelGPUs:               model.LabelValue(fmt.Sprintf("%d", instance.Specs.GPUs)),
 			linodeLabelHypervisor:         model.LabelValue(instance.Hypervisor),
 			linodeLabelBackups:            model.LabelValue(backupsStatus),
 			linodeLabelSpecsDiskBytes:     model.LabelValue(fmt.Sprintf("%d", int64(instance.Specs.Disk)<<20)),
