@@ -15,6 +15,7 @@ package index
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"hash/crc32"
 	"math/rand"
@@ -23,7 +24,6 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 
@@ -66,7 +66,7 @@ func (m mockIndex) Symbols() (map[string]struct{}, error) {
 
 func (m mockIndex) AddSeries(ref storage.SeriesRef, l labels.Labels, chunks ...chunks.Meta) error {
 	if _, ok := m.series[ref]; ok {
-		return errors.Errorf("series with reference %d already added", ref)
+		return fmt.Errorf("series with reference %d already added", ref)
 	}
 	l.Range(func(lbl labels.Label) {
 		m.symbols[lbl.Name] = struct{}{}
@@ -115,7 +115,7 @@ func (m mockIndex) Postings(ctx context.Context, name string, values ...string) 
 func (m mockIndex) SortedPostings(p Postings) Postings {
 	ep, err := ExpandPostings(p)
 	if err != nil {
-		return ErrPostings(errors.Wrap(err, "expand postings"))
+		return ErrPostings(fmt.Errorf("expand postings: %w", err))
 	}
 
 	sort.Slice(ep, func(i, j int) bool {

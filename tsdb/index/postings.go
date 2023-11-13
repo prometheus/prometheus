@@ -17,12 +17,12 @@ import (
 	"container/heap"
 	"context"
 	"encoding/binary"
+	"fmt"
 	"runtime"
 	"sort"
 	"strings"
 	"sync"
 
-	"github.com/pkg/errors"
 	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -927,7 +927,7 @@ func (h *postingsWithIndexHeap) next() error {
 	}
 
 	if err := pi.p.Err(); err != nil {
-		return errors.Wrapf(err, "postings %d", pi.index)
+		return fmt.Errorf("postings %d: %w", pi.index, err)
 	}
 	h.popIndex()
 	return nil
