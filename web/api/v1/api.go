@@ -253,8 +253,8 @@ func NewAPI(
 	registerer prometheus.Registerer,
 	statsRenderer StatsRenderer,
 	rwEnabled bool,
+	rwFormat remote.RemoteWriteFormat,
 	otlpEnabled bool,
-	enableRemoteWrite11 bool,
 ) *API {
 	a := &API{
 		QueryEngine:       qe,
@@ -296,7 +296,7 @@ func NewAPI(
 	}
 
 	if rwEnabled {
-		a.remoteWriteHandler = remote.NewWriteHandler(logger, registerer, ap, enableRemoteWrite11)
+		a.remoteWriteHandler = remote.NewWriteHandler(logger, registerer, ap, rwFormat)
 	}
 	if otlpEnabled {
 		a.otlpWriteHandler = remote.NewOTLPWriteHandler(logger, ap)
