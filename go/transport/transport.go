@@ -37,14 +37,7 @@ func (nt *Transport) Read(ctx context.Context) (*frames.ReadFrame, error) {
 		return nil, net.ErrClosed
 	}
 
-	if nt.cfg.ReadTimeout != 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, nt.cfg.ReadTimeout)
-		defer cancel()
-	}
-
-	deadline, _ := ctx.Deadline()
-	if err := nt.conn.SetReadDeadline(deadline); err != nil {
+	if err := nt.conn.SetReadDeadline(createDeadline(ctx, nt.cfg.ReadTimeout)); err != nil {
 		return nil, fmt.Errorf("set read deadline: %w", err)
 	}
 	defer func() {
@@ -67,14 +60,7 @@ func (nt *Transport) Write(ctx context.Context, fe *frames.ReadFrame) error {
 		return net.ErrClosed
 	}
 
-	if nt.cfg.WriteTimeout != 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, nt.cfg.WriteTimeout)
-		defer cancel()
-	}
-
-	deadline, _ := ctx.Deadline()
-	if err := nt.conn.SetWriteDeadline(deadline); err != nil {
+	if err := nt.conn.SetWriteDeadline(createDeadline(ctx, nt.cfg.WriteTimeout)); err != nil {
 		return fmt.Errorf("set write deadline: %w", err)
 	}
 	defer func() {
@@ -95,14 +81,7 @@ func (nt *Transport) Writer(ctx context.Context) io.Writer {
 			return 0, net.ErrClosed
 		}
 
-		if nt.cfg.WriteTimeout != 0 {
-			var cancel context.CancelFunc
-			ctx, cancel = context.WithTimeout(ctx, nt.cfg.WriteTimeout)
-			defer cancel()
-		}
-
-		deadline, _ := ctx.Deadline()
-		if err := nt.conn.SetWriteDeadline(deadline); err != nil {
+		if err := nt.conn.SetWriteDeadline(createDeadline(ctx, nt.cfg.WriteTimeout)); err != nil {
 			return 0, fmt.Errorf("set write deadline: %w", err)
 		}
 		defer func() {
@@ -120,4 +99,19 @@ func (nt *Transport) Close() error {
 	}
 
 	return nt.conn.Close()
+}
+
+// createDeadline - create deadline for conn from min ctx or timeout.
+func createDeadline(ctx context.Context, timeout time.Duration) time.Time {
+	deadline, ok := ctx.Deadline()
+	if timeout == 0 {
+		return deadline
+	}
+
+	timeoutDeadline := time.Now().Add(timeout)
+	if !ok || deadline.After(timeoutDeadline) {
+		return timeoutDeadline
+	}
+
+	return deadline
 }
