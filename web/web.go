@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/prometheus/prometheus/storage/remote"
 	"io"
 	stdlog "log"
 	"math"
@@ -242,27 +243,27 @@ type Options struct {
 	Version               *PrometheusVersion
 	Flags                 map[string]string
 
-	ListenAddress               string
-	CORSOrigin                  *regexp.Regexp
-	ReadTimeout                 time.Duration
-	MaxConnections              int
-	ExternalURL                 *url.URL
-	RoutePrefix                 string
-	UseLocalAssets              bool
-	UserAssetsPath              string
-	ConsoleTemplatesPath        string
-	ConsoleLibrariesPath        string
-	EnableLifecycle             bool
-	EnableAdminAPI              bool
-	PageTitle                   string
-	RemoteReadSampleLimit       int
-	RemoteReadConcurrencyLimit  int
-	RemoteReadBytesInFrame      int
-	EnableRemoteWriteReceiver   bool
-	EnableOTLPWriteReceiver     bool
-	IsAgent                     bool
-	AppName                     string
-	EnableReceiverRemoteWrite11 bool
+	ListenAddress              string
+	CORSOrigin                 *regexp.Regexp
+	ReadTimeout                time.Duration
+	MaxConnections             int
+	ExternalURL                *url.URL
+	RoutePrefix                string
+	UseLocalAssets             bool
+	UserAssetsPath             string
+	ConsoleTemplatesPath       string
+	ConsoleLibrariesPath       string
+	EnableLifecycle            bool
+	EnableAdminAPI             bool
+	PageTitle                  string
+	RemoteReadSampleLimit      int
+	RemoteReadConcurrencyLimit int
+	RemoteReadBytesInFrame     int
+	EnableRemoteWriteReceiver  bool
+	EnableOTLPWriteReceiver    bool
+	IsAgent                    bool
+	AppName                    string
+	RemoteWriteFormat          remote.RemoteWriteFormat
 
 	Gatherer   prometheus.Gatherer
 	Registerer prometheus.Registerer
@@ -323,6 +324,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		app = h.storage
 	}
 
+	fmt.Println("rw format for handler is: ", o.RemoteWriteFormat)
 	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, app, h.exemplarStorage, factorySPr, factoryTr, factoryAr,
 		func() config.Config {
 			h.mtx.RLock()
@@ -352,8 +354,8 @@ func New(logger log.Logger, o *Options) *Handler {
 		o.Registerer,
 		nil,
 		o.EnableRemoteWriteReceiver,
+		o.RemoteWriteFormat,
 		o.EnableOTLPWriteReceiver,
-		o.EnableReceiverRemoteWrite11,
 	)
 
 	if o.RoutePrefix != "/" {

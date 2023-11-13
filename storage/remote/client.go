@@ -81,11 +81,11 @@ func init() {
 
 // Client allows reading and writing from/to a remote HTTP endpoint.
 type Client struct {
-	remoteName    string // Used to differentiate clients in metrics.
-	urlString     string // url.String()
-	remoteWrite11 bool   // For write clients, ignored for read clients.
-	Client        *http.Client
-	timeout       time.Duration
+	remoteName string            // Used to differentiate clients in metrics.
+	urlString  string            // url.String()
+	rwFormat   RemoteWriteFormat // For write clients, ignored for read clients.
+	Client     *http.Client
+	timeout    time.Duration
 
 	retryOnRateLimit bool
 
@@ -96,14 +96,14 @@ type Client struct {
 
 // ClientConfig configures a client.
 type ClientConfig struct {
-	URL              *config_util.URL
-	RemoteWrite11    bool
-	Timeout          model.Duration
-	HTTPClientConfig config_util.HTTPClientConfig
-	SigV4Config      *sigv4.SigV4Config
-	AzureADConfig    *azuread.AzureADConfig
-	Headers          map[string]string
-	RetryOnRateLimit bool
+	URL               *config_util.URL
+	RemoteWriteFormat RemoteWriteFormat
+	Timeout           model.Duration
+	HTTPClientConfig  config_util.HTTPClientConfig
+	SigV4Config       *sigv4.SigV4Config
+	AzureADConfig     *azuread.AzureADConfig
+	Headers           map[string]string
+	RetryOnRateLimit  bool
 }
 
 // ReadClient uses the SAMPLES method of remote read to read series samples from remote server.
@@ -165,7 +165,7 @@ func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
 	httpClient.Transport = otelhttp.NewTransport(t)
 
 	return &Client{
-		remoteWrite11:    conf.RemoteWrite11,
+		rwFormat:         conf.RemoteWriteFormat,
 		remoteName:       name,
 		urlString:        conf.URL.String(),
 		Client:           httpClient,
@@ -211,11 +211,11 @@ func (c *Client) Store(ctx context.Context, req []byte, attempt int) error {
 	httpReq.Header.Set("Content-Type", "application/x-protobuf")
 	httpReq.Header.Set("User-Agent", UserAgent)
 
-	// Set the right header if we're using v1.1 remote write protocol
-	if c.remoteWrite11 {
-		httpReq.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion11HeaderValue)
-	} else {
+	if c.rwFormat == Base1 {
 		httpReq.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion1HeaderValue)
+	} else {
+		// Set the right header if we're using v1.1 remote write protocol
+		httpReq.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion11HeaderValue)
 	}
 
 	if attempt > 0 {

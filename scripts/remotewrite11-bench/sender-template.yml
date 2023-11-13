@@ -1,5 +1,5 @@
 global:
-  scrape_interval: 15s
+  scrape_interval: 5s
   external_labels:
     role: ${SENDER_NAME}
 
@@ -8,6 +8,8 @@ remote_write:
       name: ${RECEIVER_NAME}
       metadata_config:
         send: false
+      queue_config:
+        max_samples_per_send: 5000
 
 scrape_configs:
 ${SCRAPE_CONFIGS}

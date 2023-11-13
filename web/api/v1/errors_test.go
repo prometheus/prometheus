@@ -17,6 +17,7 @@ package v1
 import (
 	"context"
 	"fmt"
+	"github.com/prometheus/prometheus/storage/remote"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -136,7 +137,7 @@ func createPrometheusAPI(q storage.SampleAndChunkQueryable) *route.Router {
 		nil,
 		nil,
 		false,
-		false,
+		remote.Base1,
 		false, // Disable experimental reduce remote write proto support.
 	)
 

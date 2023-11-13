@@ -794,6 +794,24 @@ func labelsToUint32Slice(lbls labels.Labels, symbolTable *rwSymbolTable, buf []u
 	return result
 }
 
+func labelsToUint64Slice(lbls labels.Labels, symbolTable *rwSymbolTable, buf []uint64) []uint64 {
+	result := buf[:0]
+	lbls.Range(func(l labels.Label) {
+		result = append(result, symbolTable.Ref64Packed(l.Name))
+		result = append(result, symbolTable.Ref64Packed(l.Value))
+	})
+	return result
+}
+
+func labelsToUint32Packed(lbls labels.Labels, symbolTable *rwSymbolTable, buf []uint32) []uint32 {
+	result := buf[:0]
+	lbls.Range(func(l labels.Label) {
+		result = append(result, symbolTable.Ref32Packed(l.Name))
+		result = append(result, symbolTable.Ref32Packed(l.Value))
+	})
+	return result
+}
+
 func Uint32RefToLabels(symbols string, minLabels []uint32) labels.Labels {
 	ls := labels.NewScratchBuilder(len(minLabels) / 2)
 
@@ -812,6 +830,23 @@ func Uint32RefToLabels(symbols string, minLabels []uint32) labels.Labels {
 		labelIdx++
 		value := symbols[offset : offset+length]
 		ls.Add(name, value)
+	}
+
+	return ls.Labels()
+}
+
+func Uint64RefToLabels(symbols string, minLabels []uint64) labels.Labels {
+	ls := labels.NewScratchBuilder(len(minLabels) / 2)
+	labelIdx := 0
+	for labelIdx < len(minLabels) {
+		// todo, check for overflow?
+		offset, length := unpackRef64(minLabels[labelIdx])
+		name := symbols[offset : offset+length]
+		// todo, check for overflow?
+		offset, length = unpackRef64(minLabels[labelIdx+1])
+		value := symbols[offset : offset+length]
+		ls.Add(name, value)
+		labelIdx += 2
 	}
 
 	return ls.Labels()
@@ -923,6 +958,44 @@ func DecodeMinimizedWriteRequest(r io.Reader) (*prompb.MinimizedWriteRequest, er
 	return &req, nil
 }
 
+func DecodeMinimizedWriteRequestFixed64(r io.Reader) (*prompb.MinimizedWriteRequestFixed64, error) {
+	compressed, err := io.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
+
+	reqBuf, err := snappy.Decode(nil, compressed)
+	if err != nil {
+		return nil, err
+	}
+
+	var req prompb.MinimizedWriteRequestFixed64
+	if err := proto.Unmarshal(reqBuf, &req); err != nil {
+		return nil, err
+	}
+
+	return &req, nil
+}
+
+func DecodeMinimizedWriteRequestFixed32(r io.Reader) (*prompb.MinimizedWriteRequestFixed32, error) {
+	compressed, err := io.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
+
+	reqBuf, err := snappy.Decode(nil, compressed)
+	if err != nil {
+		return nil, err
+	}
+
+	var req prompb.MinimizedWriteRequestFixed32
+	if err := proto.Unmarshal(reqBuf, &req); err != nil {
+		return nil, err
+	}
+
+	return &req, nil
+}
+
 func MinimizedWriteRequestToWriteRequest(redReq *prompb.MinimizedWriteRequest) (*prompb.WriteRequest, error) {
 	req := &prompb.WriteRequest{
 		Timeseries: make([]prompb.TimeSeries, len(redReq.Timeseries)),
@@ -952,6 +1025,44 @@ func MinimizedWriteRequestToWriteRequest(redReq *prompb.MinimizedWriteRequest) (
 	return req, nil
 }
 
+// helper for tests
+func min64WriteRequestToWriteRequest(redReq *prompb.MinimizedWriteRequestFixed64) (*prompb.WriteRequest, error) {
+	req := &prompb.WriteRequest{
+		Timeseries: make([]prompb.TimeSeries, len(redReq.Timeseries)),
+		//Metadata:   redReq.Metadata,
+	}
+
+	for i, rts := range redReq.Timeseries {
+
+		lbls := Uint64RefToLabels(redReq.Symbols, rts.LabelSymbols)
+		ls := make([]prompb.Label, len(lbls))
+		for j, l := range lbls {
+			ls[j].Name = l.Name
+			ls[j].Value = l.Value
+		}
+
+		exemplars := make([]prompb.Exemplar, len(rts.Exemplars))
+		// TODO handle exemplars
+		//for j, e := range rts.Exemplars {
+		//	exemplars[j].Value = e.Value
+		//	exemplars[j].Timestamp = e.Timestamp
+		//	exemplars[j].Labels = make([]prompb.Label, len(e.Labels))
+		//
+		//	for k, l := range e.Labels {
+		//		exemplars[j].Labels[k].Name = redReq.StringSymbolTable[l.NameRef]
+		//		exemplars[j].Labels[k].Value = redReq.StringSymbolTable[l.ValueRef]
+		//	}
+		//}
+
+		req.Timeseries[i].Labels = ls
+		req.Timeseries[i].Samples = rts.Samples
+		req.Timeseries[i].Exemplars = exemplars
+		req.Timeseries[i].Histograms = rts.Histograms
+
+	}
+	return req, nil
+}
+
 // for use with minimized remote write proto format
 func packRef(offset, length int) uint32 {
 	return uint32((offset&0xFFFFF)<<12 | (length & 0xFFF))
@@ -959,4 +1070,13 @@ func packRef(offset, length int) uint32 {
 
 func unpackRef(ref uint32) (offset, length int) {
 	return int(ref>>12) & 0xFFFFF, int(ref & 0xFFF)
+}
+
+// for use with minimized remote write proto format
+func packRef64(offset, length uint32) uint64 {
+	return (uint64(offset) << 32) | uint64(length)
+}
+
+func unpackRef64(ref uint64) (offset, length uint32) {
+	return uint32(ref >> 32), uint32(ref & 0xFFFFFFFF)
 }
