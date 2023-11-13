@@ -107,8 +107,8 @@ func newCRC32() hash.Hash32 {
 
 type symbolCacheEntry struct {
 	index          uint32
-	lastValue      string
 	lastValueIndex uint32
+	lastValue      string
 }
 
 // Writer implements the IndexWriter interface for the standard
@@ -457,8 +457,8 @@ func (w *Writer) AddSeries(ref storage.SeriesRef, lset labels.Labels, chunks ...
 			}
 			w.symbolCache[l.Name] = symbolCacheEntry{
 				index:          nameIndex,
-				lastValue:      l.Value,
 				lastValueIndex: valueIndex,
+				lastValue:      l.Value,
 			}
 		}
 		w.buf2.PutUvarint32(valueIndex)
