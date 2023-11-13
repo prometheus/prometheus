@@ -14,10 +14,9 @@
 package chunkenc
 
 import (
+	"fmt"
 	"math"
 	"sync"
-
-	"github.com/pkg/errors"
 
 	"github.com/prometheus/prometheus/model/histogram"
 )
@@ -293,7 +292,7 @@ func (p *pool) Get(e Encoding, b []byte) (Chunk, error) {
 		c.b.count = 0
 		return c, nil
 	}
-	return nil, errors.Errorf("invalid chunk encoding %q", e)
+	return nil, fmt.Errorf("invalid chunk encoding %q", e)
 }
 
 func (p *pool) Put(c Chunk) error {
@@ -332,7 +331,7 @@ func (p *pool) Put(c Chunk) error {
 		sh.b.count = 0
 		p.floatHistogram.Put(c)
 	default:
-		return errors.Errorf("invalid chunk encoding %q", c.Encoding())
+		return fmt.Errorf("invalid chunk encoding %q", c.Encoding())
 	}
 	return nil
 }
@@ -349,7 +348,7 @@ func FromData(e Encoding, d []byte) (Chunk, error) {
 	case EncFloatHistogram:
 		return &FloatHistogramChunk{b: bstream{count: 0, stream: d}}, nil
 	}
-	return nil, errors.Errorf("invalid chunk encoding %q", e)
+	return nil, fmt.Errorf("invalid chunk encoding %q", e)
 }
 
 // NewEmptyChunk returns an empty chunk for the given encoding.
@@ -362,5 +361,5 @@ func NewEmptyChunk(e Encoding) (Chunk, error) {
 	case EncFloatHistogram:
 		return NewFloatHistogramChunk(), nil
 	}
-	return nil, errors.Errorf("invalid chunk encoding %q", e)
+	return nil, fmt.Errorf("invalid chunk encoding %q", e)
 }
