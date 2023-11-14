@@ -16,11 +16,15 @@ package parser
 // Function represents a function of the expression language and is
 // used by function nodes.
 type Function struct {
-	Name       string
-	ArgTypes   []ValueType
-	Variadic   int
-	ReturnType ValueType
+	Name         string
+	ArgTypes     []ValueType
+	Variadic     int
+	ReturnType   ValueType
+	Experimental bool
 }
+
+// EnableExperimentalFunctions controls whether experimentalFunctions are enabled.
+var EnableExperimentalFunctions bool
 
 // Functions is a list of all functions supported by PromQL, including their types.
 var Functions = map[string]*Function{
