@@ -710,7 +710,7 @@ func createFakeReaderAndNotPopulatedChunks(s ...[]chunks.Sample) (*fakeChunksRea
 func (r *fakeChunksReader) Chunk(meta chunks.Meta) (chunkenc.Chunk, error) {
 	chk, ok := r.chks[meta.Ref]
 	if !ok {
-		return nil, errors.Errorf("chunk not found at ref %v", meta.Ref)
+		return nil, fmt.Errorf("chunk not found at ref %v", meta.Ref)
 	}
 	return chk, nil
 }
@@ -1831,7 +1831,7 @@ func (m mockIndex) Symbols() index.StringIter {
 
 func (m *mockIndex) AddSeries(ref storage.SeriesRef, l labels.Labels, chunks ...chunks.Meta) error {
 	if _, ok := m.series[ref]; ok {
-		return errors.Errorf("series with reference %d already added", ref)
+		return fmt.Errorf("series with reference %d already added", ref)
 	}
 	l.Range(func(lbl labels.Label) {
 		m.symbols[lbl.Name] = struct{}{}
@@ -1852,7 +1852,7 @@ func (m *mockIndex) AddSeries(ref storage.SeriesRef, l labels.Labels, chunks ...
 func (m mockIndex) WritePostings(name, value string, it index.Postings) error {
 	l := labels.Label{Name: name, Value: value}
 	if _, ok := m.postings[l]; ok {
-		return errors.Errorf("postings for %s already added", l)
+		return fmt.Errorf("postings for %s already added", l)
 	}
 	ep, err := index.ExpandPostings(it)
 	if err != nil {

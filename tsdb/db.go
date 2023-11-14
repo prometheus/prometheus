@@ -662,7 +662,7 @@ func (db *DBReadOnly) Block(blockID string) (BlockReader, error) {
 
 	_, err := os.Stat(filepath.Join(db.dir, blockID))
 	if os.IsNotExist(err) {
-		return nil, errors.Errorf("invalid block ID %s", blockID)
+		return nil, fmt.Errorf("invalid block ID %s", blockID)
 	}
 
 	block, err := OpenBlock(db.logger, filepath.Join(db.dir, blockID), nil)
@@ -1834,10 +1834,10 @@ func (db *DB) ForceHeadMMap() {
 // will create a new block containing all data that's currently in the memory buffer/WAL.
 func (db *DB) Snapshot(dir string, withHead bool) error {
 	if dir == db.dir {
-		return errors.Errorf("cannot snapshot into base directory")
+		return fmt.Errorf("cannot snapshot into base directory")
 	}
 	if _, err := ulid.ParseStrict(dir); err == nil {
-		return errors.Errorf("dir must not be a valid ULID")
+		return fmt.Errorf("dir must not be a valid ULID")
 	}
 
 	db.cmtx.Lock()
