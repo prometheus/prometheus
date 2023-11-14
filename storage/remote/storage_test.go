@@ -14,7 +14,9 @@
 package remote
 
 import (
+	"fmt"
 	"net/url"
+	"sync"
 	"testing"
 
 	common_config "github.com/prometheus/common/config"
@@ -146,4 +148,40 @@ func baseRemoteReadConfig(host string) *config.RemoteReadConfig {
 		},
 	}
 	return &cfg
+}
+
+// TestWriteStorageApplyConfigsDuringCommit helps detecting races when
+// ApplyConfig runs concurrently with Notify
+// See https://github.com/prometheus/prometheus/issues/12747
+func TestWriteStorageApplyConfigsDuringCommit(t *testing.T) {
+	s := NewStorage(nil, nil, nil, t.TempDir(), defaultFlushDeadline, nil)
+
+	var wg sync.WaitGroup
+	wg.Add(2000)
+
+	start := make(chan struct{})
+	for i := 0; i < 1000; i++ {
+		go func(i int) {
+			<-start
+			conf := &config.Config{
+				GlobalConfig: config.DefaultGlobalConfig,
+				RemoteWriteConfigs: []*config.RemoteWriteConfig{
+					baseRemoteWriteConfig(fmt.Sprintf("http://test-%d.com", i)),
+				},
+			}
+			require.NoError(t, s.ApplyConfig(conf))
+			wg.Done()
+		}(i)
+	}
+
+	for i := 0; i < 1000; i++ {
+		go func() {
+			<-start
+			s.Notify()
+			wg.Done()
+		}()
+	}
+
+	close(start)
+	wg.Wait()
 }
