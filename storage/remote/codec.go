@@ -1034,12 +1034,12 @@ func min64WriteRequestToWriteRequest(redReq *prompb.MinimizedWriteRequestFixed64
 
 	for i, rts := range redReq.Timeseries {
 
-		lbls := Uint64RefToLabels(redReq.Symbols, rts.LabelSymbols)
-		ls := make([]prompb.Label, len(lbls))
-		for j, l := range lbls {
-			ls[j].Name = l.Name
-			ls[j].Value = l.Value
-		}
+		Uint64RefToLabels(redReq.Symbols, rts.LabelSymbols).Range(func(l labels.Label) {
+			req.Timeseries[i].Labels = append(req.Timeseries[i].Labels, prompb.Label{
+				Name:  l.Name,
+				Value: l.Value,
+			})
+		})
 
 		exemplars := make([]prompb.Exemplar, len(rts.Exemplars))
 		// TODO handle exemplars
@@ -1054,7 +1054,6 @@ func min64WriteRequestToWriteRequest(redReq *prompb.MinimizedWriteRequestFixed64
 		//	}
 		//}
 
-		req.Timeseries[i].Labels = ls
 		req.Timeseries[i].Samples = rts.Samples
 		req.Timeseries[i].Exemplars = exemplars
 		req.Timeseries[i].Histograms = rts.Histograms
