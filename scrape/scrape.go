@@ -1594,7 +1594,10 @@ loop:
 			if exemplars[i].Ts != exemplars[j].Ts {
 				return exemplars[i].Ts < exemplars[j].Ts
 			}
-			return exemplars[i].Value < exemplars[j].Value
+			if exemplars[i].Value != exemplars[j].Value {
+				return exemplars[i].Value < exemplars[j].Value
+			}
+			return exemplars[i].Labels.Hash() < exemplars[j].Labels.Hash()
 		})
 		outOfOrderExemplars := 0
 		for _, e := range exemplars {
