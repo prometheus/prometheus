@@ -317,21 +317,27 @@ func (p *ProtobufParser) Exemplar(ex *exemplar.Exemplar) bool {
 		exProto = m.GetCounter().GetExemplar()
 	case dto.MetricType_HISTOGRAM, dto.MetricType_GAUGE_HISTOGRAM:
 		bb := m.GetHistogram().GetBucket()
+		isClassic := p.state == EntrySeries
 		if p.fieldPos < 0 {
-			if p.state == EntrySeries {
+			if isClassic {
 				return false // At _count or _sum.
 			}
 			p.fieldPos = 0 // Start at 1st bucket for native histograms.
 		}
 		for p.fieldPos < len(bb) {
 			exProto = bb[p.fieldPos].GetExemplar()
-			if p.state == EntrySeries {
+			if isClassic {
 				break
 			}
 			p.fieldPos++
-			if exProto != nil {
-				break
+			// We deliberately drop exemplars with no timestamp only for native histograms.
+			if exProto != nil && (isClassic || exProto.GetTimestamp() != nil) {
+				break // Found a classic histogram exemplar or a native histogram exemplar with a timestamp.
 			}
+		}
+		// If the last exemplar for native histograms has no timestamp, ignore it.
+		if !isClassic && (exProto == nil || exProto.GetTimestamp() == nil) {
+			return false
 		}
 	default:
 		return false
