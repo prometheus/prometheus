@@ -245,11 +245,14 @@ func (ce *CircularExemplarStorage) validateExemplar(key []byte, e exemplar.Exemp
 
 	// Check for duplicate vs last stored exemplar for this series.
 	// NB these are expected, and appending them is a no-op.
-	if ce.exemplars[idx.newest].exemplar.Equals(e) {
+	newestExemplar := ce.exemplars[idx.newest].exemplar
+	if newestExemplar.Equals(e) {
 		return storage.ErrDuplicateExemplar
 	}
 
-	if e.Ts < ce.exemplars[idx.newest].exemplar.Ts || (e.Ts == ce.exemplars[idx.newest].exemplar.Ts && e.Value < ce.exemplars[idx.newest].exemplar.Value) {
+	if e.Ts < newestExemplar.Ts ||
+		(e.Ts == newestExemplar.Ts && e.Value < newestExemplar.Value) ||
+		(e.Ts == newestExemplar.Ts && e.Value == newestExemplar.Value && e.Labels.Hash() < newestExemplar.Labels.Hash()) {
 		if appended {
 			ce.metrics.outOfOrderExemplars.Inc()
 		}
