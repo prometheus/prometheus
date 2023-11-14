@@ -69,23 +69,23 @@ func TestSampleDelivery(t *testing.T) {
 		floatHistograms bool
 		rwFormat        RemoteWriteFormat
 	}{
-		//{samples: true, exemplars: false, histograms: false, floatHistograms: false, name: "samples only"},
-		//{samples: true, exemplars: true, histograms: true, floatHistograms: true, name: "samples, exemplars, and histograms"},
-		//{samples: false, exemplars: true, histograms: false, floatHistograms: false, name: "exemplars only"},
-		//{samples: false, exemplars: false, histograms: true, floatHistograms: false, name: "histograms only"},
-		//{samples: false, exemplars: false, histograms: false, floatHistograms: true, name: "float histograms only"},
+		{samples: true, exemplars: false, histograms: false, floatHistograms: false, name: "samples only"},
+		{samples: true, exemplars: true, histograms: true, floatHistograms: true, name: "samples, exemplars, and histograms"},
+		{samples: false, exemplars: true, histograms: false, floatHistograms: false, name: "exemplars only"},
+		{samples: false, exemplars: false, histograms: true, floatHistograms: false, name: "histograms only"},
+		{samples: false, exemplars: false, histograms: false, floatHistograms: true, name: "float histograms only"},
 
 		{rwFormat: Min32Optimized, samples: true, exemplars: false, histograms: false, name: "interned samples only"},
-		//{rwFormat: Min32Optimized, samples: true, exemplars: true, histograms: true, floatHistograms: true, name: "interned samples, exemplars, and histograms"},
-		//{rwFormat: Min32Optimized, samples: false, exemplars: true, histograms: false, name: "interned exemplars only"},
-		//{rwFormat: Min32Optimized, samples: false, exemplars: false, histograms: true, name: "interned histograms only"},
-		//{rwFormat: Min32Optimized, samples: false, exemplars: false, histograms: false, floatHistograms: true, name: "interned float histograms only"},
+		{rwFormat: Min32Optimized, samples: true, exemplars: true, histograms: true, floatHistograms: true, name: "interned samples, exemplars, and histograms"},
+		{rwFormat: Min32Optimized, samples: false, exemplars: true, histograms: false, name: "interned exemplars only"},
+		{rwFormat: Min32Optimized, samples: false, exemplars: false, histograms: true, name: "interned histograms only"},
+		{rwFormat: Min32Optimized, samples: false, exemplars: false, histograms: false, floatHistograms: true, name: "interned float histograms only"},
 
-		//{rwFormat: Min64Fixed, samples: true, exemplars: false, histograms: false, name: "interned samples only"},
-		//{rwFormat: Min64Fixed, samples: true, exemplars: true, histograms: true, floatHistograms: true, name: "interned samples, exemplars, and histograms"},
-		//{rwFormat: Min64Fixed, samples: false, exemplars: true, histograms: false, name: "interned exemplars only"},
-		//{rwFormat: Min64Fixed, samples: false, exemplars: false, histograms: true, name: "interned histograms only"},
-		//{rwFormat: Min64Fixed, samples: false, exemplars: false, histograms: false, floatHistograms: true, name: "interned float histograms only"},
+		{rwFormat: Min64Fixed, samples: true, exemplars: false, histograms: false, name: "interned samples only"},
+		{rwFormat: Min64Fixed, samples: true, exemplars: true, histograms: true, floatHistograms: true, name: "interned samples, exemplars, and histograms"},
+		{rwFormat: Min64Fixed, samples: false, exemplars: true, histograms: false, name: "interned exemplars only"},
+		{rwFormat: Min64Fixed, samples: false, exemplars: false, histograms: true, name: "interned histograms only"},
+		{rwFormat: Min64Fixed, samples: false, exemplars: false, histograms: false, floatHistograms: true, name: "interned float histograms only"},
 	}
 
 	// Let's create an even number of send batches so we don't run into the
@@ -116,26 +116,26 @@ func TestSampleDelivery(t *testing.T) {
 			defer s.Close()
 
 			var (
-				series  []record.RefSeries
-				samples []record.RefSample
-				//exemplars       []record.RefExemplar
-				//histograms      []record.RefHistogramSample
-				//floatHistograms []record.RefFloatHistogramSample
+				series          []record.RefSeries
+				samples         []record.RefSample
+				exemplars       []record.RefExemplar
+				histograms      []record.RefHistogramSample
+				floatHistograms []record.RefFloatHistogramSample
 			)
 
 			// Generates same series in both cases.
 			if tc.samples {
 				samples, series = createTimeseries(n, n)
 			}
-			//if tc.exemplars {
-			//	exemplars, series = createExemplars(n, n)
-			//}
-			//if tc.histograms {
-			//	histograms, _, series = createHistograms(n, n, false)
-			//}
-			//if tc.floatHistograms {
-			//	_, floatHistograms, series = createHistograms(n, n, true)
-			//}
+			if tc.exemplars {
+				exemplars, series = createExemplars(n, n)
+			}
+			if tc.histograms {
+				histograms, _, series = createHistograms(n, n, false)
+			}
+			if tc.floatHistograms {
+				_, floatHistograms, series = createHistograms(n, n, true)
+			}
 
 			// Apply new config.
 			queueConfig.Capacity = len(samples)
@@ -152,24 +152,24 @@ func TestSampleDelivery(t *testing.T) {
 
 			// Send first half of data.
 			c.expectSamples(samples[:len(samples)/2], series)
-			//c.expectExemplars(exemplars[:len(exemplars)/2], series)
-			//c.expectHistograms(histograms[:len(histograms)/2], series)
-			//c.expectFloatHistograms(floatHistograms[:len(floatHistograms)/2], series)
+			c.expectExemplars(exemplars[:len(exemplars)/2], series)
+			c.expectHistograms(histograms[:len(histograms)/2], series)
+			c.expectFloatHistograms(floatHistograms[:len(floatHistograms)/2], series)
 			qm.Append(samples[:len(samples)/2])
-			//qm.AppendExemplars(exemplars[:len(exemplars)/2])
-			//qm.AppendHistograms(histograms[:len(histograms)/2])
-			//qm.AppendFloatHistograms(floatHistograms[:len(floatHistograms)/2])
+			qm.AppendExemplars(exemplars[:len(exemplars)/2])
+			qm.AppendHistograms(histograms[:len(histograms)/2])
+			qm.AppendFloatHistograms(floatHistograms[:len(floatHistograms)/2])
 			c.waitForExpectedData(t)
 
 			// Send second half of data.
 			c.expectSamples(samples[len(samples)/2:], series)
-			//c.expectExemplars(exemplars[len(exemplars)/2:], series)
-			//c.expectHistograms(histograms[len(histograms)/2:], series)
-			//c.expectFloatHistograms(floatHistograms[len(floatHistograms)/2:], series)
+			c.expectExemplars(exemplars[len(exemplars)/2:], series)
+			c.expectHistograms(histograms[len(histograms)/2:], series)
+			c.expectFloatHistograms(floatHistograms[len(floatHistograms)/2:], series)
 			qm.Append(samples[len(samples)/2:])
-			//qm.AppendExemplars(exemplars[len(exemplars)/2:])
-			//qm.AppendHistograms(histograms[len(histograms)/2:])
-			//qm.AppendFloatHistograms(floatHistograms[len(floatHistograms)/2:])
+			qm.AppendExemplars(exemplars[len(exemplars)/2:])
+			qm.AppendHistograms(histograms[len(histograms)/2:])
+			qm.AppendFloatHistograms(floatHistograms[len(floatHistograms)/2:])
 			c.waitForExpectedData(t)
 		})
 	}

@@ -15,6 +15,7 @@ package remote
 
 import (
 	"compress/gzip"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -812,6 +813,19 @@ func labelsToUint32Packed(lbls labels.Labels, symbolTable *rwSymbolTable, buf []
 	return result
 }
 
+func labelsToByteSlice(lbls labels.Labels, symbolTable *rwSymbolTable, buf []byte) []byte {
+	result := buf[:0]
+	lbls.Range(func(l labels.Label) {
+		off, leng := symbolTable.Ref(l.Name)
+		result = binary.AppendUvarint(result, uint64(off))
+		result = binary.AppendUvarint(result, uint64(leng))
+		off, leng = symbolTable.Ref(l.Value)
+		result = binary.AppendUvarint(result, uint64(off))
+		result = binary.AppendUvarint(result, uint64(leng))
+	})
+	return result
+}
+
 func Uint32RefToLabels(symbols string, minLabels []uint32) labels.Labels {
 	ls := labels.NewScratchBuilder(len(minLabels) / 2)
 
@@ -831,6 +845,45 @@ func Uint32RefToLabels(symbols string, minLabels []uint32) labels.Labels {
 		value := symbols[offset : offset+length]
 		ls.Add(name, value)
 	}
+
+	return ls.Labels()
+}
+
+func ByteSliceToLabels(symbols string, minLabels []byte) labels.Labels {
+	ls := labels.NewScratchBuilder(len(minLabels) / 2)
+
+	for len(minLabels) > 0 {
+		// todo, check for overflow?
+		offset, n := binary.Uvarint(minLabels)
+		minLabels = minLabels[n:]
+		length, n := binary.Uvarint(minLabels)
+		minLabels = minLabels[n:]
+		name := symbols[offset : offset+length]
+		// todo, check for overflow?
+		offset, n = binary.Uvarint(minLabels)
+		minLabels = minLabels[n:]
+		length, n = binary.Uvarint(minLabels)
+		minLabels = minLabels[n:]
+		value := symbols[offset : offset+length]
+		ls.Add(name, value)
+	}
+
+	// labelIdx := 0
+	// for labelIdx < len(minLabels) {
+	// 	// todo, check for overflow?
+	// 	offset := minLabels[labelIdx]
+	// 	labelIdx++
+	// 	length := minLabels[labelIdx]
+	// 	labelIdx++
+	// 	name := symbols[offset : offset+length]
+	// 	// todo, check for overflow?
+	// 	offset = minLabels[labelIdx]
+	// 	labelIdx++
+	// 	length = minLabels[labelIdx]
+	// 	labelIdx++
+	// 	value := symbols[offset : offset+length]
+	// 	ls.Add(name, value)
+	// }
 
 	return ls.Labels()
 }
@@ -996,6 +1049,25 @@ func DecodeMinimizedWriteRequestFixed32(r io.Reader) (*prompb.MinimizedWriteRequ
 	return &req, nil
 }
 
+func DecodeMinimizedWriteRequestBytes(r io.Reader) (*prompb.MinimizedWriteRequestBytes, error) {
+	compressed, err := io.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
+
+	reqBuf, err := snappy.Decode(nil, compressed)
+	if err != nil {
+		return nil, err
+	}
+
+	var req prompb.MinimizedWriteRequestBytes
+	if err := proto.Unmarshal(reqBuf, &req); err != nil {
+		return nil, err
+	}
+
+	return &req, nil
+}
+
 func MinimizedWriteRequestToWriteRequest(redReq *prompb.MinimizedWriteRequest) (*prompb.WriteRequest, error) {
 	req := &prompb.WriteRequest{
 		Timeseries: make([]prompb.TimeSeries, len(redReq.Timeseries)),
@@ -1041,18 +1113,13 @@ func min64WriteRequestToWriteRequest(redReq *prompb.MinimizedWriteRequestFixed64
 			})
 		})
 
-		exemplars := make([]prompb.Exemplar, len(rts.Exemplars))
 		// TODO handle exemplars
-		//for j, e := range rts.Exemplars {
-		//	exemplars[j].Value = e.Value
-		//	exemplars[j].Timestamp = e.Timestamp
-		//	exemplars[j].Labels = make([]prompb.Label, len(e.Labels))
-		//
-		//	for k, l := range e.Labels {
-		//		exemplars[j].Labels[k].Name = redReq.StringSymbolTable[l.NameRef]
-		//		exemplars[j].Labels[k].Value = redReq.StringSymbolTable[l.ValueRef]
-		//	}
-		//}
+		exemplars := make([]prompb.Exemplar, len(rts.Exemplars))
+		for j, e := range rts.Exemplars {
+			exemplars[j].Value = e.Value
+			exemplars[j].Timestamp = e.Timestamp
+			exemplars[j].Labels = e.Labels
+		}
 
 		req.Timeseries[i].Samples = rts.Samples
 		req.Timeseries[i].Exemplars = exemplars
