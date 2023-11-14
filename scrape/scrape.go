@@ -1572,9 +1572,19 @@ loop:
 		// Increment added even if there's an error so we correctly report the
 		// number of samples remaining after relabeling.
 		added++
-		exemplars = exemplars[:0] // Reset and reuse the exemplar queue.
+		exemplars = exemplars[:0] // Reset and reuse the exemplar slice.
 		for hasExemplar := p.Exemplar(&e); hasExemplar; hasExemplar = p.Exemplar(&e) {
 			if !e.HasTs {
+				if isHistogram {
+					// We drop exemplars for native histograms if they don't have a timestamp.
+					// Missing timestamps are deliberately not supported as we want to start
+					// enforcing timestamps for exemplars as otherwise proper deduplication
+					// is inefficient and purely based on heuristics: we cannot distinguish
+					// between repeated exemplars and new instances with the same values.
+					// This is done silently without logs as it is not an error but out of spec.
+					e = exemplar.Exemplar{} // Reset for next time round loop.
+					continue
+				}
 				e.Ts = t
 			}
 			exemplars = append(exemplars, e)

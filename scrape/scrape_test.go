@@ -2104,7 +2104,7 @@ metric_total{n="2"} 2 # {t="2"} 2.0 20000
 			},
 		},
 		{
-			title: "Native histogram with two exemplars",
+			title: "Native histogram with three exemplars",
 			scrapeText: `name: "test_histogram"
 help: "Test histogram with many buckets removed to keep it manageable in size."
 type: HISTOGRAM
@@ -2140,6 +2140,21 @@ metric: <
           value: "5617"
         >
         value: -0.00029
+      >
+    >
+    bucket: <
+      cumulative_count: 32
+      upper_bound: -0.0001899999999999998
+      exemplar: <
+        label: <
+          name: "dummyID"
+          value: "58215"
+        >
+        value: -0.00019
+        timestamp: <
+          seconds: 1625851055
+          nanos: 146848599
+        >
       >
     >
     schema: 3
@@ -2197,12 +2212,13 @@ metric: <
 				},
 			}},
 			exemplars: []exemplar.Exemplar{
-				{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.00029, Ts: 1234568, HasTs: false},
+				// Native histogram exemplars are arranged by timestamp, and those with missing timestamps are dropped.
+				{Labels: labels.FromStrings("dummyID", "58215"), Value: -0.00019, Ts: 1625851055146, HasTs: true},
 				{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00039, Ts: 1625851155146, HasTs: true},
 			},
 		},
 		{
-			title: "Native histogram with two exemplars scraped as classic histogram",
+			title: "Native histogram with three exemplars scraped as classic histogram",
 			scrapeText: `name: "test_histogram"
 help: "Test histogram with many buckets removed to keep it manageable in size."
 type: HISTOGRAM
@@ -2238,6 +2254,21 @@ metric: <
           value: "5617"
         >
         value: -0.00029
+      >
+    >
+    bucket: <
+      cumulative_count: 32
+      upper_bound: -0.0001899999999999998
+      exemplar: <
+        label: <
+          name: "dummyID"
+          value: "58215"
+        >
+        value: -0.00019
+        timestamp: <
+          seconds: 1625851055
+          nanos: 146848599
+        >
       >
     >
     schema: 3
@@ -2281,6 +2312,7 @@ metric: <
 				{metric: labels.FromStrings("__name__", "test_histogram_bucket", "le", "-0.0004899999999999998"), t: 1234568, f: 2},
 				{metric: labels.FromStrings("__name__", "test_histogram_bucket", "le", "-0.0003899999999999998"), t: 1234568, f: 4},
 				{metric: labels.FromStrings("__name__", "test_histogram_bucket", "le", "-0.0002899999999999998"), t: 1234568, f: 16},
+				{metric: labels.FromStrings("__name__", "test_histogram_bucket", "le", "-0.0001899999999999998"), t: 1234568, f: 32},
 				{metric: labels.FromStrings("__name__", "test_histogram_bucket", "le", "+Inf"), t: 1234568, f: 175},
 			},
 			histograms: []histogramSample{{
@@ -2305,11 +2337,14 @@ metric: <
 			}},
 			exemplars: []exemplar.Exemplar{
 				// Native histogram one is arranged by timestamp.
-				{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.00029, Ts: 1234568, HasTs: false},
+				// Exemplars with missing timestamps are dropped for native histograms.
+				{Labels: labels.FromStrings("dummyID", "58215"), Value: -0.00019, Ts: 1625851055146, HasTs: true},
 				{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00039, Ts: 1625851155146, HasTs: true},
 				// Classic histogram one is in order of appearance.
+				// Exemplars with missing timestamps are supported for classic histograms.
 				{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00039, Ts: 1625851155146, HasTs: true},
 				{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.00029, Ts: 1234568, HasTs: false},
+				{Labels: labels.FromStrings("dummyID", "58215"), Value: -0.00019, Ts: 1625851055146, HasTs: true},
 			},
 		},
 	}
