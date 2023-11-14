@@ -1582,6 +1582,7 @@ loop:
 					// is inefficient and purely based on heuristics: we cannot distinguish
 					// between repeated exemplars and new instances with the same values.
 					// This is done silently without logs as it is not an error but out of spec.
+					// This does not affect classic histograms so that behaviour is unchanged.
 					e = exemplar.Exemplar{} // Reset for next time round loop.
 					continue
 				}
@@ -1591,6 +1592,8 @@ loop:
 			e = exemplar.Exemplar{} // Reset for next time round loop.
 		}
 		sort.Slice(exemplars, func(i, j int) bool {
+			// Sort first by timestamp, then value, then labels so the checking
+			// for duplicates / out of order is more efficient during validation.
 			if exemplars[i].Ts != exemplars[j].Ts {
 				return exemplars[i].Ts < exemplars[j].Ts
 			}
@@ -1604,7 +1607,7 @@ loop:
 			_, exemplarErr := app.AppendExemplar(ref, lset, e)
 			switch {
 			case exemplarErr == nil:
-				// do nothing
+				// Do nothing.
 			case errors.Is(exemplarErr, storage.ErrOutOfOrderExemplar):
 				outOfOrderExemplars++
 			default:

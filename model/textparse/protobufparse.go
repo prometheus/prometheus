@@ -336,7 +336,7 @@ func (p *ProtobufParser) Exemplar(ex *exemplar.Exemplar) bool {
 			}
 		}
 		// If the last exemplar for native histograms has no timestamp, ignore it.
-		if !isClassic && (exProto == nil || exProto.GetTimestamp() == nil) {
+		if !isClassic && exProto.GetTimestamp() == nil {
 			return false
 		}
 	default:
