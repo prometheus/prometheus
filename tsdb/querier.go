@@ -905,12 +905,16 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 	return true
 }
 
+// populateChunksFromDelIter reads the samples from currDelIter to create
+// chunks for chunksFromDelIter. It is assumed that chunksFromDelIter is reset
+// to a zero-length slice before this function is called.
 func (p *populateWithDelChunkSeriesIterator) populateChunksFromDelIter() error {
-	valueType := p.currDelIter.Next()
-	if valueType == chunkenc.ValNone {
+	firstValueType := p.currDelIter.Next()
+	if firstValueType == chunkenc.ValNone {
 		if err := p.currDelIter.Err(); err != nil {
-			return errors.Wrap(err, "iterate chunk while re-encoding")
+			return errors.Wrap(err, "populateChunksFromDelIter: no samples could be read")
 		}
+		return nil
 	}
 
 	var (
@@ -931,17 +935,17 @@ func (p *populateWithDelChunkSeriesIterator) populateChunksFromDelIter() error {
 
 	prevValueType := chunkenc.ValNone
 
-	for vt := valueType; vt != chunkenc.ValNone; vt = p.currDelIter.Next() {
+	for currentValueType := firstValueType; currentValueType != chunkenc.ValNone; currentValueType = p.currDelIter.Next() {
 		// Check if the encoding has changed (i.e. we need to create a new
 		// chunk as chunks can't have multiple encoding types).
 		// For the first sample, the following condition will always be true as
 		// EncNone != EncXOR | EncHistogram | EncFloatHistogram.
-		if valueType != prevValueType {
+		if currentValueType != prevValueType {
 			if prevValueType != chunkenc.ValNone {
 				p.chunksFromDelIter = append(p.chunksFromDelIter, chunks.Meta{Chunk: currentChunk, MinTime: cmint, MaxTime: cmaxt})
 			}
 			cmint = p.currDelIter.AtT()
-			if currentChunk, err = valueType.NewChunk(); err != nil {
+			if currentChunk, err = currentValueType.NewChunk(); err != nil {
 				break
 			}
 			if app, err = currentChunk.Appender(); err != nil {
@@ -949,7 +953,7 @@ func (p *populateWithDelChunkSeriesIterator) populateChunksFromDelIter() error {
 			}
 		}
 
-		switch valueType {
+		switch currentValueType {
 		case chunkenc.ValFloat:
 			{
 				var v float64
@@ -996,14 +1000,14 @@ func (p *populateWithDelChunkSeriesIterator) populateChunksFromDelIter() error {
 		}
 
 		cmaxt = t
-		prevValueType = valueType
+		prevValueType = currentValueType
 	}
 
 	if err != nil {
-		return errors.Wrap(err, "error when populating chunksFromDelIter")
+		return errors.Wrap(err, "populateChunksFromDelIter: error when writing new chunks")
 	}
 	if err = p.currDelIter.Err(); err != nil {
-		return errors.Wrap(err, "currDelIter error when populating chunksFromDelIter")
+		return errors.Wrap(err, "populateChunksFromDelIter: currDelIter error when writing new chunks")
 	}
 
 	if prevValueType != chunkenc.ValNone {

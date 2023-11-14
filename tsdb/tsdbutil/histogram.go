@@ -116,7 +116,17 @@ func SetHistogramNotCounterReset(h *histogram.Histogram) *histogram.Histogram {
 	return h
 }
 
+func SetHistogramCounterReset(h *histogram.Histogram) *histogram.Histogram {
+	h.CounterResetHint = histogram.CounterReset
+	return h
+}
+
 func SetFloatHistogramNotCounterReset(h *histogram.FloatHistogram) *histogram.FloatHistogram {
 	h.CounterResetHint = histogram.NotCounterReset
+	return h
+}
+
+func SetFloatHistogramCounterReset(h *histogram.FloatHistogram) *histogram.FloatHistogram {
+	h.CounterResetHint = histogram.CounterReset
 	return h
 }
