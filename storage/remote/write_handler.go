@@ -76,6 +76,7 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var reqMin *prompb.MinimizedWriteRequest
 	var reqMin64Fixed *prompb.MinimizedWriteRequestFixed64
 	var reqMin32Fixed *prompb.MinimizedWriteRequestFixed32
+	var reqMinBytes *prompb.MinimizedWriteRequestBytes
 
 	// TODO: this should eventually be done via content negotiation/looking at the header
 	switch h.rwFormat {
@@ -87,6 +88,8 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		reqMin64Fixed, err = DecodeMinimizedWriteRequestFixed64(r.Body)
 	case Min32Fixed:
 		reqMin32Fixed, err = DecodeMinimizedWriteRequestFixed32(r.Body)
+	case MinBytes:
+		reqMinBytes, err = DecodeMinimizedWriteRequestBytes(r.Body)
 	}
 
 	if err != nil {
@@ -105,6 +108,8 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		err = h.writeMin64(r.Context(), reqMin64Fixed)
 	case Min32Fixed:
 		err = h.writeMin32(r.Context(), reqMin32Fixed)
+	case MinBytes:
+		err = h.writeMinBytes(r.Context(), reqMinBytes)
 	}
 
 	switch {
@@ -391,6 +396,45 @@ func (h *writeHandler) writeMin32(ctx context.Context, req *prompb.MinimizedWrit
 
 	for _, ts := range req.Timeseries {
 		ls := Uint32RefToLabels(req.Symbols, ts.LabelSymbols)
+
+		err := h.appendSamples(app, ts.Samples, ls)
+		if err != nil {
+			return err
+		}
+
+		for _, ep := range ts.Exemplars {
+			e := exemplarProtoToExemplar(ep)
+			//e := exemplarRefProtoToExemplar(req.StringSymbolTable, ep)
+			h.appendExemplar(app, e, ls, &outOfOrderExemplarErrs)
+		}
+
+		err = h.appendHistograms(app, ts.Histograms, ls)
+		if err != nil {
+			return err
+		}
+	}
+
+	if outOfOrderExemplarErrs > 0 {
+		_ = level.Warn(h.logger).Log("msg", "Error on ingesting out-of-order exemplars", "num_dropped", outOfOrderExemplarErrs)
+	}
+
+	return nil
+}
+
+func (h *writeHandler) writeMinBytes(ctx context.Context, req *prompb.MinimizedWriteRequestBytes) (err error) {
+	outOfOrderExemplarErrs := 0
+
+	app := h.appendable.Appender(ctx)
+	defer func() {
+		if err != nil {
+			_ = app.Rollback()
+			return
+		}
+		err = app.Commit()
+	}()
+
+	for _, ts := range req.Timeseries {
+		ls := ByteSliceToLabels(req.Symbols, ts.LabelSymbols)
 
 		err := h.appendSamples(app, ts.Samples, ls)
 		if err != nil {
