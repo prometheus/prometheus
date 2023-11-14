@@ -617,6 +617,13 @@ func (b *ScratchBuilder) Add(name, value string) {
 	b.add = append(b.add, Label{Name: name, Value: value})
 }
 
+// Add a name/value pair, using []byte instead of string.
+// The '-tags stringlabels' version of this function is unsafe, hence the name.
+// This version is safe - it copies the strings immediately - but we keep the same name so everything compiles.
+func (b *ScratchBuilder) UnsafeAddBytes(name, value []byte) {
+	b.add = append(b.add, Label{Name: string(name), Value: string(value)})
+}
+
 // Sort the labels added so far by name.
 func (b *ScratchBuilder) Sort() {
 	slices.SortFunc(b.add, func(a, b Label) int { return strings.Compare(a.Name, b.Name) })
