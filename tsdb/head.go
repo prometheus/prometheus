@@ -224,11 +224,11 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal, wbl *wlog.WL, opts *Hea
 	// even if ooo is not enabled yet.
 	capMax := opts.OutOfOrderCapMax.Load()
 	if capMax <= 0 || capMax > 255 {
-		return nil, errors.Errorf("OOOCapMax of %d is invalid. must be > 0 and <= 255", capMax)
+		return nil, fmt.Errorf("OOOCapMax of %d is invalid. must be > 0 and <= 255", capMax)
 	}
 
 	if opts.ChunkRange < 1 {
-		return nil, errors.Errorf("invalid chunk range %d", opts.ChunkRange)
+		return nil, fmt.Errorf("invalid chunk range %d", opts.ChunkRange)
 	}
 	if opts.SeriesCallback == nil {
 		opts.SeriesCallback = &noopSeriesLifecycleCallback{}
@@ -857,7 +857,7 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 			slice := mmappedChunks[seriesRef]
 			if len(slice) > 0 && slice[len(slice)-1].maxTime >= mint {
 				h.metrics.mmapChunkCorruptionTotal.Inc()
-				return errors.Errorf("out of sequence m-mapped chunk for series ref %d, last chunk: [%d, %d], new: [%d, %d]",
+				return fmt.Errorf("out of sequence m-mapped chunk for series ref %d, last chunk: [%d, %d], new: [%d, %d]",
 					seriesRef, slice[len(slice)-1].minTime, slice[len(slice)-1].maxTime, mint, maxt)
 			}
 			slice = append(slice, &mmappedChunk{
@@ -872,7 +872,7 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 
 		if len(ms.mmappedChunks) > 0 && ms.mmappedChunks[len(ms.mmappedChunks)-1].maxTime >= mint {
 			h.metrics.mmapChunkCorruptionTotal.Inc()
-			return errors.Errorf("out of sequence m-mapped chunk for series ref %d, last chunk: [%d, %d], new: [%d, %d]",
+			return fmt.Errorf("out of sequence m-mapped chunk for series ref %d, last chunk: [%d, %d], new: [%d, %d]",
 				seriesRef, ms.mmappedChunks[len(ms.mmappedChunks)-1].minTime, ms.mmappedChunks[len(ms.mmappedChunks)-1].maxTime,
 				mint, maxt)
 		}

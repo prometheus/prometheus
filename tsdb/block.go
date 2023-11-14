@@ -17,6 +17,7 @@ package tsdb
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -238,7 +239,7 @@ func readMetaFile(dir string) (*BlockMeta, int64, error) {
 		return nil, 0, err
 	}
 	if m.Version != metaVersion1 {
-		return nil, 0, errors.Errorf("unexpected meta file version %d", m.Version)
+		return nil, 0, fmt.Errorf("unexpected meta file version %d", m.Version)
 	}
 
 	return &m, int64(len(b)), nil
