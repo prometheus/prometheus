@@ -982,16 +982,7 @@ func (p *populateWithDelChunkSeriesIterator) populateChunksFromDelIter() error {
 			break
 		}
 
-		if newChunk != nil { // A new chunk was allocated.
-=======
-				// No need to set prevApp as AppendFloatHistogram will set the
-				// counter reset header for the appender that's returned.
-				newChunk, recoded, app = app.AppendFloatHistogram(nil, t, v)
-			}
-		}
-
 		if newChunk != nil {
->>>>>>> 68987d7b6 (Improve comments and change some names)
 			if !recoded {
 				p.chunksFromDelIter = append(p.chunksFromDelIter, chunks.Meta{Chunk: currentChunk, MinTime: cmint, MaxTime: cmaxt})
 			}
