@@ -3082,7 +3082,7 @@ func deleteNonBlocks(dbDir string) error {
 	}
 	for _, dir := range dirs {
 		if ok := isBlockDir(dir); !ok {
-			return errors.Errorf("root folder:%v still hase non block directory:%v", dbDir, dir.Name())
+			return fmt.Errorf("root folder:%v still hase non block directory:%v", dbDir, dir.Name())
 		}
 	}
 	return nil
