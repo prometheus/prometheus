@@ -77,6 +77,8 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var reqMin64Fixed *prompb.MinimizedWriteRequestFixed64
 	var reqMin32Fixed *prompb.MinimizedWriteRequestFixed32
 	var reqMinBytes *prompb.MinimizedWriteRequestBytes
+	var reqMinLen *prompb.MinimizedWriteRequestLen
+	var reqMinLenBytes *prompb.MinimizedWriteRequestLenBytes
 
 	// TODO: this should eventually be done via content negotiation/looking at the header
 	switch h.rwFormat {
@@ -90,6 +92,10 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		reqMin32Fixed, err = DecodeMinimizedWriteRequestFixed32(r.Body)
 	case MinBytes:
 		reqMinBytes, err = DecodeMinimizedWriteRequestBytes(r.Body)
+	case MinLen:
+		reqMinLen, err = DecodeMinimizedWriteRequestLen(r.Body)
+	case MinLenBytes:
+		reqMinLenBytes, err = DecodeMinimizedWriteRequestLenBytes(r.Body)
 	}
 
 	if err != nil {
@@ -110,6 +116,10 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		err = h.writeMin32(r.Context(), reqMin32Fixed)
 	case MinBytes:
 		err = h.writeMinBytes(r.Context(), reqMinBytes)
+	case MinLen:
+		err = h.writeMinLen(r.Context(), reqMinLen)
+	case MinLenBytes:
+		err = h.writeMinLenBytes(r.Context(), reqMinLenBytes)
 	}
 
 	switch {
@@ -435,6 +445,83 @@ func (h *writeHandler) writeMinBytes(ctx context.Context, req *prompb.MinimizedW
 
 	for _, ts := range req.Timeseries {
 		ls := ByteSliceToLabels(req.Symbols, ts.LabelSymbols)
+		err := h.appendSamples(app, ts.Samples, ls)
+		if err != nil {
+			return err
+		}
+
+		for _, ep := range ts.Exemplars {
+			e := exemplarProtoToExemplar(ep)
+			//e := exemplarRefProtoToExemplar(req.StringSymbolTable, ep)
+			h.appendExemplar(app, e, ls, &outOfOrderExemplarErrs)
+		}
+
+		err = h.appendHistograms(app, ts.Histograms, ls)
+		if err != nil {
+			return err
+		}
+	}
+
+	if outOfOrderExemplarErrs > 0 {
+		_ = level.Warn(h.logger).Log("msg", "Error on ingesting out-of-order exemplars", "num_dropped", outOfOrderExemplarErrs)
+	}
+
+	return nil
+}
+
+func (h *writeHandler) writeMinLen(ctx context.Context, req *prompb.MinimizedWriteRequestLen) (err error) {
+	outOfOrderExemplarErrs := 0
+
+	app := h.appendable.Appender(ctx)
+	defer func() {
+		if err != nil {
+			_ = app.Rollback()
+			return
+		}
+		err = app.Commit()
+	}()
+
+	for _, ts := range req.Timeseries {
+		ls := Uint32LenRefToLabels(req.Symbols, ts.LabelSymbols)
+
+		err := h.appendSamples(app, ts.Samples, ls)
+		if err != nil {
+			return err
+		}
+
+		for _, ep := range ts.Exemplars {
+			e := exemplarProtoToExemplar(ep)
+			//e := exemplarRefProtoToExemplar(req.StringSymbolTable, ep)
+			h.appendExemplar(app, e, ls, &outOfOrderExemplarErrs)
+		}
+
+		err = h.appendHistograms(app, ts.Histograms, ls)
+		if err != nil {
+			return err
+		}
+	}
+
+	if outOfOrderExemplarErrs > 0 {
+		_ = level.Warn(h.logger).Log("msg", "Error on ingesting out-of-order exemplars", "num_dropped", outOfOrderExemplarErrs)
+	}
+
+	return nil
+}
+
+func (h *writeHandler) writeMinLenBytes(ctx context.Context, req *prompb.MinimizedWriteRequestLenBytes) (err error) {
+	outOfOrderExemplarErrs := 0
+
+	app := h.appendable.Appender(ctx)
+	defer func() {
+		if err != nil {
+			_ = app.Rollback()
+			return
+		}
+		err = app.Commit()
+	}()
+
+	for _, ts := range req.Timeseries {
+		ls := ByteSliceToLabelsSymbolsByte(req.Symbols, ts.LabelSymbols)
 
 		err := h.appendSamples(app, ts.Samples, ls)
 		if err != nil {

@@ -195,6 +195,32 @@ message MinimizedTimeSeriesBytes {
   // TODO: add metadata
 }
 
+message MinimizedTimeSeriesLen {
+  // Sorted list of label name-value pair references, encoded as varints. This
+  // list's real len is always multiple of 2, label name offset/label value offset.
+  repeated fixed32 label_symbols = 1;
+
+  // Sorted by time, oldest sample first.
+  // TODO: support references for other types
+  repeated Sample samples = 2 [(gogoproto.nullable) = false];
+  repeated Exemplar exemplars = 3 [(gogoproto.nullable) = false];
+  repeated Histogram histograms = 4 [(gogoproto.nullable) = false];
+  // TODO: add metadata
+}
+
+message MinimizedTimeSeriesLenBytes{
+  // Sorted list of label name-value pair references, encoded as varints. This
+  // list's real len is always multiple of 2, label name offset/label value offset.
+  bytes label_symbols = 1;
+
+  // Sorted by time, oldest sample first.
+  // TODO: support references for other types
+  repeated Sample samples = 2 [(gogoproto.nullable) = false];
+  repeated Exemplar exemplars = 3 [(gogoproto.nullable) = false];
+  repeated Histogram histograms = 4 [(gogoproto.nullable) = false];
+  // TODO: add metadata
+}
+
 message Label {
   string name  = 1;
   string value = 2;
