@@ -6,6 +6,7 @@ run:
   skip-dirs:
     # Copied it from a different source
     - storage/remote/otlptranslator/prometheusremotewrite
+    - storage/remote/otlptranslator/prometheus
 
 output:
   sort-results: true
