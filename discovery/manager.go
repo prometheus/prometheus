@@ -65,7 +65,7 @@ func (p *Provider) Config() interface{} {
 }
 
 // NewManager is the Discovery Manager constructor.
-func NewManager(ctx context.Context, logger log.Logger, registerer prometheus.Registerer, metrics *Metrics, options ...func(*Manager)) *Manager {
+func NewManager(ctx context.Context, logger log.Logger, registerer prometheus.Registerer, options ...func(*Manager)) *Manager {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -77,11 +77,20 @@ func NewManager(ctx context.Context, logger log.Logger, registerer prometheus.Re
 		updatert:    5 * time.Second,
 		triggerSend: make(chan struct{}, 1),
 		registerer:  registerer,
-		metrics:     metrics,
 	}
 	for _, option := range options {
 		option(mgr)
 	}
+
+	// Register the metrics.
+	// We have to do this after setting all options, so that the name of the Manager is set.
+	if metrics, err := NewMetrics(registerer, mgr.name); err == nil {
+		mgr.metrics = metrics
+	} else {
+		level.Error(logger).Log("msg", "Failed to create discovery manager metrics", "manager", mgr.name, "err", err)
+		return nil
+	}
+
 	return mgr
 }
 
@@ -165,7 +174,7 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 	for name, scfg := range cfg {
 		failedCount += m.registerProviders(scfg, name)
 	}
-	m.metrics.FailedConfigs.WithLabelValues(m.name).Set(float64(failedCount))
+	m.metrics.FailedConfigs.Set(float64(failedCount))
 
 	var (
 		wg sync.WaitGroup
@@ -201,7 +210,7 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 		// Set metrics and targets for new subs.
 		for s := range prov.newSubs {
 			if _, ok := prov.subs[s]; !ok {
-				m.metrics.DiscoveredTargets.WithLabelValues(m.name, s).Set(0)
+				m.metrics.DiscoveredTargets.WithLabelValues(s).Set(0)
 			}
 			if l := len(refTargets); l > 0 {
 				m.targets[poolKey{s, prov.name}] = make(map[string]*targetgroup.Group, l)
@@ -281,7 +290,7 @@ func (m *Manager) updater(ctx context.Context, p *Provider, updates chan []*targ
 		case <-ctx.Done():
 			return
 		case tgs, ok := <-updates:
-			m.metrics.ReceivedUpdates.WithLabelValues(m.name).Inc()
+			m.metrics.ReceivedUpdates.Inc()
 			if !ok {
 				level.Debug(m.logger).Log("msg", "Discoverer channel closed", "provider", p.name)
 				// Wait for provider cancellation to ensure targets are cleaned up when expected.
@@ -314,11 +323,11 @@ func (m *Manager) sender() {
 		case <-ticker.C: // Some discoverers send updates too often, so we throttle these with the ticker.
 			select {
 			case <-m.triggerSend:
-				m.metrics.SentUpdates.WithLabelValues(m.name).Inc()
+				m.metrics.SentUpdates.Inc()
 				select {
 				case m.syncCh <- m.allGroups():
 				default:
-					m.metrics.DelayedUpdates.WithLabelValues(m.name).Inc()
+					m.metrics.DelayedUpdates.Inc()
 					level.Debug(m.logger).Log("msg", "Discovery receiver's channel was full so will retry the next cycle")
 					select {
 					case m.triggerSend <- struct{}{}:
@@ -370,7 +379,7 @@ func (m *Manager) allGroups() map[string][]*targetgroup.Group {
 		}
 	}
 	for setName, v := range n {
-		m.metrics.DiscoveredTargets.WithLabelValues(m.name, setName).Set(float64(v))
+		m.metrics.DiscoveredTargets.WithLabelValues(setName).Set(float64(v))
 	}
 	return tSets
 }

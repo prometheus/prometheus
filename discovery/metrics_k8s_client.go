@@ -15,6 +15,7 @@ package discovery
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 	"time"
 
@@ -131,6 +132,16 @@ func clientGoMetrics() []prometheus.Collector {
 		clientGoWorkqueueLongestRunningProcessorMetricVec,
 		clientGoWorkqueueWorkDurationMetricVec,
 	}
+}
+
+func RegisterK8sClientMetricsWithPrometheus(registerer prometheus.Registerer) error {
+	for _, collector := range clientGoMetrics() {
+		err := registerer.Register(collector)
+		if err != nil {
+			return fmt.Errorf("failed to register Kubernetes Go Client metrics: %w", err)
+		}
+	}
+	return nil
 }
 
 func (f *clientGoRequestMetricAdapter) RegisterWithK8sGoClient() {

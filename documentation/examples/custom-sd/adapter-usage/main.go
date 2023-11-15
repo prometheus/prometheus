@@ -28,10 +28,8 @@ import (
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 
-	prom_discovery "github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/documentation/examples/custom-sd/adapter"
 	"github.com/prometheus/prometheus/util/strutil"
@@ -271,12 +269,11 @@ func main() {
 		fmt.Println("err: ", err)
 	}
 
-	discoveryMetrics, err := prom_discovery.NewMetrics(prometheus.DefaultRegisterer)
 	if err != nil {
 		level.Error(logger).Log("msg", "failed to create discovery metrics", "err", err)
 		os.Exit(1)
 	}
-	sdAdapter := adapter.NewAdapter(ctx, *outputFile, "exampleSD", disc, logger, discoveryMetrics)
+	sdAdapter := adapter.NewAdapter(ctx, *outputFile, "exampleSD", disc, logger)
 	sdAdapter.Run()
 
 	<-ctx.Done()

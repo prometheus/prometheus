@@ -163,12 +163,12 @@ func (a *Adapter) Run() {
 }
 
 // NewAdapter creates a new instance of Adapter.
-func NewAdapter(ctx context.Context, file, name string, d discovery.Discoverer, logger log.Logger, metrics *discovery.Metrics) *Adapter {
+func NewAdapter(ctx context.Context, file, name string, d discovery.Discoverer, logger log.Logger) *Adapter {
 	return &Adapter{
 		ctx:     ctx,
 		disc:    d,
 		groups:  make(map[string]*customSD),
-		manager: discovery.NewManager(ctx, logger, prometheus.NewRegistry(), metrics),
+		manager: discovery.NewManager(ctx, logger, prometheus.NewRegistry()),
 		output:  file,
 		name:    name,
 		logger:  logger,

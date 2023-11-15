@@ -31,66 +31,64 @@ func init() {
 
 // Metrics to be used with a discovery manager.
 type Metrics struct {
-	FailedConfigs     *prometheus.GaugeVec
+	FailedConfigs     prometheus.Gauge
 	DiscoveredTargets *prometheus.GaugeVec
-	ReceivedUpdates   *prometheus.CounterVec
-	DelayedUpdates    *prometheus.CounterVec
-	SentUpdates       *prometheus.CounterVec
+	ReceivedUpdates   prometheus.Counter
+	DelayedUpdates    prometheus.Counter
+	SentUpdates       prometheus.Counter
 }
 
-func NewMetrics(registerer prometheus.Registerer) (*Metrics, error) {
+func NewMetrics(registerer prometheus.Registerer, sdManagerName string) (*Metrics, error) {
 	m := &Metrics{}
 
-	m.FailedConfigs = prometheus.NewGaugeVec(
+	m.FailedConfigs = prometheus.NewGauge(
 		prometheus.GaugeOpts{
-			Name: "prometheus_sd_failed_configs",
-			Help: "Current number of service discovery configurations that failed to load.",
+			Name:        "prometheus_sd_failed_configs",
+			Help:        "Current number of service discovery configurations that failed to load.",
+			ConstLabels: prometheus.Labels{"name": sdManagerName},
 		},
-		[]string{"name"},
 	)
 
 	m.DiscoveredTargets = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "prometheus_sd_discovered_targets",
-			Help: "Current number of discovered targets.",
+			Name:        "prometheus_sd_discovered_targets",
+			Help:        "Current number of discovered targets.",
+			ConstLabels: prometheus.Labels{"name": sdManagerName},
 		},
-		[]string{"name", "config"},
+		[]string{"config"},
 	)
 
-	m.ReceivedUpdates = prometheus.NewCounterVec(
+	m.ReceivedUpdates = prometheus.NewCounter(
 		prometheus.CounterOpts{
-			Name: "prometheus_sd_received_updates_total",
-			Help: "Total number of update events received from the SD providers.",
+			Name:        "prometheus_sd_received_updates_total",
+			Help:        "Total number of update events received from the SD providers.",
+			ConstLabels: prometheus.Labels{"name": sdManagerName},
 		},
-		[]string{"name"},
 	)
 
-	m.DelayedUpdates = prometheus.NewCounterVec(
+	m.DelayedUpdates = prometheus.NewCounter(
 		prometheus.CounterOpts{
-			Name: "prometheus_sd_updates_delayed_total",
-			Help: "Total number of update events that couldn't be sent immediately.",
+			Name:        "prometheus_sd_updates_delayed_total",
+			Help:        "Total number of update events that couldn't be sent immediately.",
+			ConstLabels: prometheus.Labels{"name": sdManagerName},
 		},
-		[]string{"name"},
 	)
 
-	m.SentUpdates = prometheus.NewCounterVec(
+	m.SentUpdates = prometheus.NewCounter(
 		prometheus.CounterOpts{
-			Name: "prometheus_sd_updates_total",
-			Help: "Total number of update events sent to the SD consumers.",
+			Name:        "prometheus_sd_updates_total",
+			Help:        "Total number of update events sent to the SD consumers.",
+			ConstLabels: prometheus.Labels{"name": sdManagerName},
 		},
-		[]string{"name"},
 	)
 
-	metrics := append(
-		[]prometheus.Collector{
-			m.FailedConfigs,
-			m.DiscoveredTargets,
-			m.ReceivedUpdates,
-			m.DelayedUpdates,
-			m.SentUpdates,
-		},
-		clientGoMetrics()...,
-	)
+	metrics := []prometheus.Collector{
+		m.FailedConfigs,
+		m.DiscoveredTargets,
+		m.ReceivedUpdates,
+		m.DelayedUpdates,
+		m.SentUpdates,
+	}
 
 	for _, collector := range metrics {
 		err := registerer.Register(collector)
