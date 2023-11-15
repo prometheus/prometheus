@@ -1,7 +1,10 @@
-/**
- * Inspired by a similar feature in VictoriaMetrics.
- * See https://github.com/VictoriaMetrics/VictoriaMetrics/issues/3384 for more details.
- * Developed by VictoriaMetrics team.
+/* Flot plugin for rendering heatmap charts.
+
+Copyright (c) VictoriaMetrics.
+Licensed under the MIT license.
+
+Inspired by a similar feature in VictoriaMetrics.
+See https://github.com/VictoriaMetrics/VictoriaMetrics/issues/3384 for more details.
  */
 
 import moment from 'moment-timezone';
