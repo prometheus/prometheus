@@ -849,8 +849,9 @@ type populateWithDelChunkSeriesIterator struct {
 	chunksFromDelIterIdx int
 
 	// currMetaWithChunk is current meta with its chunk field set. This meta
-	// is guaranteed to map to a single chunk. This differs from currMeta as
-	// that could refer to multiple chunks.
+	// is guaranteed to map to a single chunk. This differs from 
+	// populateWithDelGenericSeriesIterator.currMeta as that
+	// could refer to multiple chunks.
 	currMetaWithChunk chunks.Meta
 }
 
