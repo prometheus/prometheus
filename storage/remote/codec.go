@@ -24,6 +24,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"unsafe"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
@@ -826,6 +827,44 @@ func labelsToByteSlice(lbls labels.Labels, symbolTable *rwSymbolTable, buf []byt
 	return result
 }
 
+func labelsToUint32SliceLen(lbls labels.Labels, symbolTable *rwSymbolTable, buf []uint32) []uint32 {
+	result := buf[:0]
+	lbls.Range(func(l labels.Label) {
+		off := symbolTable.RefLen(l.Name)
+		result = append(result, off)
+		off = symbolTable.RefLen(l.Value)
+		result = append(result, off)
+	})
+	return result
+}
+
+func Uint32LenRefToLabels(symbols []byte, minLabels []uint32) labels.Labels {
+	ls := labels.NewScratchBuilder(len(minLabels) / 2)
+
+	labelIdx := 0
+	for labelIdx < len(minLabels) {
+		// todo, check for overflow?
+		offset := minLabels[labelIdx]
+		labelIdx++
+		length, n := binary.Uvarint(symbols[offset:])
+		offset += uint32(n)
+		name := symbols[offset : uint64(offset)+length]
+
+		offset = minLabels[labelIdx]
+		labelIdx++
+		length, n = binary.Uvarint(symbols[offset:])
+		offset += uint32(n)
+		value := symbols[offset : uint64(offset)+length]
+		ls.Add(yoloString(name), yoloString(value))
+	}
+
+	return ls.Labels()
+}
+
+func yoloString(b []byte) string {
+	return *(*string)(unsafe.Pointer(&b))
+}
+
 func Uint32RefToLabels(symbols string, minLabels []uint32) labels.Labels {
 	ls := labels.NewScratchBuilder(len(minLabels) / 2)
 
@@ -855,6 +894,7 @@ func ByteSliceToLabels(symbols string, minLabels []byte) labels.Labels {
 	for len(minLabels) > 0 {
 		// todo, check for overflow?
 		offset, n := binary.Uvarint(minLabels)
+		//fmt.Println(:"offset")
 		minLabels = minLabels[n:]
 		length, n := binary.Uvarint(minLabels)
 		minLabels = minLabels[n:]
@@ -866,6 +906,46 @@ func ByteSliceToLabels(symbols string, minLabels []byte) labels.Labels {
 		minLabels = minLabels[n:]
 		value := symbols[offset : offset+length]
 		ls.Add(name, value)
+	}
+
+	// labelIdx := 0
+	// for labelIdx < len(minLabels) {
+	// 	// todo, check for overflow?
+	// 	offset := minLabels[labelIdx]
+	// 	labelIdx++
+	// 	length := minLabels[labelIdx]
+	// 	labelIdx++
+	// 	name := symbols[offset : offset+length]
+	// 	// todo, check for overflow?
+	// 	offset = minLabels[labelIdx]
+	// 	labelIdx++
+	// 	length = minLabels[labelIdx]
+	// 	labelIdx++
+	// 	value := symbols[offset : offset+length]
+	// 	ls.Add(name, value)
+	// }
+
+	return ls.Labels()
+}
+
+func ByteSliceToLabelsSymbolsByte(symbols []byte, minLabels []byte) labels.Labels {
+	ls := labels.NewScratchBuilder(len(minLabels) / 2)
+
+	for len(minLabels) > 0 {
+		// todo, check for overflow?
+		offset, n := binary.Uvarint(minLabels)
+		//fmt.Println(:"offset")
+		minLabels = minLabels[n:]
+		length, n := binary.Uvarint(minLabels)
+		minLabels = minLabels[n:]
+		name := symbols[offset : offset+length]
+		// todo, check for overflow?
+		offset, n = binary.Uvarint(minLabels)
+		minLabels = minLabels[n:]
+		length, n = binary.Uvarint(minLabels)
+		minLabels = minLabels[n:]
+		value := symbols[offset : offset+length]
+		ls.Add(string(name), string(value))
 	}
 
 	// labelIdx := 0
@@ -1061,6 +1141,44 @@ func DecodeMinimizedWriteRequestBytes(r io.Reader) (*prompb.MinimizedWriteReques
 	}
 
 	var req prompb.MinimizedWriteRequestBytes
+	if err := proto.Unmarshal(reqBuf, &req); err != nil {
+		return nil, err
+	}
+
+	return &req, nil
+}
+
+func DecodeMinimizedWriteRequestLen(r io.Reader) (*prompb.MinimizedWriteRequestLen, error) {
+	compressed, err := io.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
+
+	reqBuf, err := snappy.Decode(nil, compressed)
+	if err != nil {
+		return nil, err
+	}
+
+	var req prompb.MinimizedWriteRequestLen
+	if err := proto.Unmarshal(reqBuf, &req); err != nil {
+		return nil, err
+	}
+
+	return &req, nil
+}
+
+func DecodeMinimizedWriteRequestLenBytes(r io.Reader) (*prompb.MinimizedWriteRequestLenBytes, error) {
+	compressed, err := io.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
+
+	reqBuf, err := snappy.Decode(nil, compressed)
+	if err != nil {
+		return nil, err
+	}
+
+	var req prompb.MinimizedWriteRequestLenBytes
 	if err := proto.Unmarshal(reqBuf, &req); err != nil {
 		return nil, err
 	}

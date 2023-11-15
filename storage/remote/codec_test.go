@@ -932,3 +932,11 @@ func TestPackRef64(t *testing.T) {
 	require.Equal(t, value, string(rw.symbols[valOffset:valOffset+valLength]))
 
 }
+
+func TestLenFormat(t *testing.T) {
+	r := rwSymbolTable{}
+	ls := labels.FromStrings("asdf", "qwer", "zxcv", "1234")
+	encoded := labelsToUint32SliceLen(ls, &r, nil)
+	decoded := Uint32LenRefToLabels(r.LabelsData(), encoded)
+	require.Equal(t, ls, decoded)
+}

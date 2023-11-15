@@ -11,6 +11,10 @@ INSTANCES+=('sender-v11-min32-optimized-varint;--remote-write-format 1;receiver-
 INSTANCES+=('sender-v11-min64-fixed;--remote-write-format 2;receiver-v11-min64-fixed;--remote-write-format 2')
 INSTANCES+=('sender-v11-min32-fixed;--remote-write-format 3;receiver-v11-min32-fixed;--remote-write-format 3')
 INSTANCES+=('sender-v11-min-bytes;--remote-write-format 4;receiver-v11-min-bytes;--remote-write-format 4')
+INSTANCES+=('sender-v11-min-len;--remote-write-format 5;receiver-v11-min-len;--remote-write-format 5')
+INSTANCES+=('sender-v11-min-len-bytes;--remote-write-format 6;receiver-v11-min-len-bytes;--remote-write-format 6')
+
+
 
 # ~~~~~~~~~~~~~
 

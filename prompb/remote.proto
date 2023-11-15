@@ -63,6 +63,30 @@ message MinimizedWriteRequestBytes {
   string symbols = 4;
 }
 
+message MinimizedWriteRequestLen {
+  repeated MinimizedTimeSeriesLen timeseries = 1 [(gogoproto.nullable) = false];
+  // Cortex uses this field to determine the source of the write request.
+  // We reserve it to avoid any compatibility issues.
+  reserved  2;
+  // Metadata (3) has moved to be part of the TimeSeries type
+  reserved  3;
+  // The symbols table. All symbols are concatenated strings prepended with a varint of their length.
+  // To read the symbols table, it's required to know the offset of the actual symbol to read from this string.
+  bytes symbols = 4;
+}
+
+message MinimizedWriteRequestLenBytes {
+  repeated MinimizedTimeSeriesLenBytes timeseries = 1 [(gogoproto.nullable) = false];
+  // Cortex uses this field to determine the source of the write request.
+  // We reserve it to avoid any compatibility issues.
+  reserved  2;
+  // Metadata (3) has moved to be part of the TimeSeries type
+  reserved  3;
+  // The symbols table. All symbols are concatenated strings prepended with a varint of their length.
+  // To read the symbols table, it's required to know the offset of the actual symbol to read from this string.
+  bytes symbols = 4;
+}
+
 message MinimizedWriteRequestFixed32 {
   repeated MinimizedTimeSeriesFixed32 timeseries = 1 [(gogoproto.nullable) = false];
   // Cortex uses this field to determine the source of the write request.
