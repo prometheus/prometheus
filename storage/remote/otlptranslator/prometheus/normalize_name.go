@@ -1,21 +1,23 @@
 // Copyright The OpenTelemetry Authors
 // SPDX-License-Identifier: Apache-2.0
 
-package normalize
+package prometheus // import "github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheus"
 
 import (
 	"strings"
 	"unicode"
 
+	"go.opentelemetry.io/collector/featuregate"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 )
 
-// The map to translate OTLP units to Prometheus units.
+// The map to translate OTLP units to Prometheus units
 // OTLP metrics use the c/s notation as specified at https://ucum.org/ucum.html
 // (See also https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/metrics/semantic_conventions/README.md#instrument-units)
 // Prometheus best practices for units: https://prometheus.io/docs/practices/naming/#base-units
 // OpenMetrics specification for units: https://github.com/OpenObservability/OpenMetrics/blob/main/specification/OpenMetrics.md#units-and-base-units
 var unitMap = map[string]string{
+
 	// Time
 	"d":   "days",
 	"h":   "hours",
@@ -35,11 +37,6 @@ var unitMap = map[string]string{
 	"MBy":  "megabytes",
 	"GBy":  "gigabytes",
 	"TBy":  "terabytes",
-	"B":    "bytes",
-	"KB":   "kilobytes",
-	"MB":   "megabytes",
-	"GB":   "gigabytes",
-	"TB":   "terabytes",
 
 	// SI
 	"m": "meters",
@@ -54,11 +51,10 @@ var unitMap = map[string]string{
 	"Hz":  "hertz",
 	"1":   "",
 	"%":   "percent",
-	"$":   "dollars",
 }
 
-// The map that translates the "per" unit.
-// Example: s => per second (singular).
+// The map that translates the "per" unit
+// Example: s => per second (singular)
 var perUnitMap = map[string]string{
 	"s":  "second",
 	"m":  "minute",
@@ -69,7 +65,14 @@ var perUnitMap = map[string]string{
 	"y":  "year",
 }
 
-// Build a Prometheus-compliant metric name for the specified metric.
+var normalizeNameGate = featuregate.GlobalRegistry().MustRegister(
+	"pkg.translator.prometheus.NormalizeName",
+	featuregate.StageBeta,
+	featuregate.WithRegisterDescription("Controls whether metrics names are automatically normalized to follow Prometheus naming convention"),
+	featuregate.WithRegisterReferenceURL("https://github.com/open-telemetry/opentelemetry-collector-contrib/issues/8950"),
+)
+
+// BuildCompliantName builds a Prometheus-compliant metric name for the specified metric
 //
 // Metric name is prefixed with specified namespace and underscore (if any).
 // Namespace is not cleaned up. Make sure specified namespace follows Prometheus
@@ -77,7 +80,33 @@ var perUnitMap = map[string]string{
 //
 // See rules at https://prometheus.io/docs/concepts/data_model/#metric-names-and-labels
 // and https://prometheus.io/docs/practices/naming/#metric-and-label-naming
-func BuildPromCompliantName(metric pmetric.Metric, namespace string) string {
+func BuildCompliantName(metric pmetric.Metric, namespace string, addMetricSuffixes bool) string {
+	var metricName string
+
+	// Full normalization following standard Prometheus naming conventions
+	if addMetricSuffixes && normalizeNameGate.IsEnabled() {
+		return normalizeName(metric, namespace)
+	}
+
+	// Simple case (no full normalization, no units, etc.), we simply trim out forbidden chars
+	metricName = RemovePromForbiddenRunes(metric.Name())
+
+	// Namespace?
+	if namespace != "" {
+		return namespace + "_" + metricName
+	}
+
+	// Metric name starts with a digit? Prefix it with an underscore
+	if metricName != "" && unicode.IsDigit(rune(metricName[0])) {
+		metricName = "_" + metricName
+	}
+
+	return metricName
+}
+
+// Build a normalized name for the specified metric
+func normalizeName(metric pmetric.Metric, namespace string) string {
+
 	// Split metric name in "tokens" (remove all non-alphanumeric)
 	nameTokens := strings.FieldsFunc(
 		metric.Name(),
@@ -202,7 +231,7 @@ func removeSuffix(tokens []string, suffix string) []string {
 	return tokens
 }
 
-// Clean up specified string so it's Prometheus compliant.
+// Clean up specified string so it's Prometheus compliant
 func CleanUpString(s string) string {
 	return strings.Join(strings.FieldsFunc(s, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) }), "_")
 }
@@ -211,8 +240,8 @@ func RemovePromForbiddenRunes(s string) string {
 	return strings.Join(strings.FieldsFunc(s, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' && r != ':' }), "_")
 }
 
-// Retrieve the Prometheus "basic" unit corresponding to the specified "basic" unit.
-// Returns the specified unit if not found in unitMap.
+// Retrieve the Prometheus "basic" unit corresponding to the specified "basic" unit
+// Returns the specified unit if not found in unitMap
 func unitMapGetOrDefault(unit string) string {
 	if promUnit, ok := unitMap[unit]; ok {
 		return promUnit
@@ -220,8 +249,8 @@ func unitMapGetOrDefault(unit string) string {
 	return unit
 }
 
-// Retrieve the Prometheus "per" unit corresponding to the specified "per" unit.
-// Returns the specified unit if not found in perUnitMap.
+// Retrieve the Prometheus "per" unit corresponding to the specified "per" unit
+// Returns the specified unit if not found in perUnitMap
 func perUnitMapGetOrDefault(perUnit string) string {
 	if promPerUnit, ok := perUnitMap[perUnit]; ok {
 		return promPerUnit
@@ -229,7 +258,7 @@ func perUnitMapGetOrDefault(perUnit string) string {
 	return perUnit
 }
 
-// Returns whether the slice contains the specified value.
+// Returns whether the slice contains the specified value
 func contains(slice []string, value string) bool {
 	for _, sliceEntry := range slice {
 		if sliceEntry == value {
@@ -239,7 +268,7 @@ func contains(slice []string, value string) bool {
 	return false
 }
 
-// Remove the specified value from the slice.
+// Remove the specified value from the slice
 func removeItem(slice []string, value string) []string {
 	newSlice := make([]string, 0, len(slice))
 	for _, sliceEntry := range slice {
