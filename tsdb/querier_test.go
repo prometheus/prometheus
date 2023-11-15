@@ -709,7 +709,7 @@ func createFakeReaderAndNotPopulatedChunks(s ...[]chunks.Sample) (*fakeChunksRea
 	return f, chks
 }
 
-// samples in a slice are assumed to be sorted
+// Samples in each slice are assumed to be sorted.
 func createFakeReaderAndIterables(s ...[]chunks.Sample) (*fakeChunksReader, []chunks.Meta) {
 	f := &fakeChunksReader{
 		chks:      map[chunks.ChunkRef]chunkenc.Chunk{},
@@ -1545,8 +1545,13 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 					sample{21, 0, tsdbutil.SetHistogramNotCounterReset(tsdbutil.GenerateTestHistogram(6)), nil},
 				}),
 			},
-			expectedMinMaxTimes: []minMaxTimes{{7, 8}, {12, 16}, {17, 17},
-				{18, 19}, {20, 21}},
+			expectedMinMaxTimes: []minMaxTimes{
+				{7, 8},
+				{12, 16},
+				{17, 17},
+				{18, 19},
+				{20, 21},
+			},
 
 			// Skipping chunk test - can't create a single chunk for each
 			// sample slice since there are counter resets in the middle of
@@ -1611,8 +1616,13 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 					sample{21, 0, nil, tsdbutil.SetFloatHistogramNotCounterReset(tsdbutil.GenerateTestFloatHistogram(6))},
 				}),
 			},
-			expectedMinMaxTimes: []minMaxTimes{{7, 8}, {12, 16}, {17, 17},
-				{18, 19}, {20, 21}},
+			expectedMinMaxTimes: []minMaxTimes{
+				{7, 8},
+				{12, 16},
+				{17, 17},
+				{18, 19},
+				{20, 21},
+			},
 
 			// Skipping chunk test - can't create a single chunk for each
 			// sample slice since there are counter resets in the middle of
@@ -1682,8 +1692,15 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 					sample{19, 45, nil, nil},
 				}),
 			},
-			expectedMinMaxTimes: []minMaxTimes{{7, 8}, {9, 11}, {12, 13},
-				{14, 14}, {15, 15}, {18, 18}, {19, 19}},
+			expectedMinMaxTimes: []minMaxTimes{
+				{7, 8},
+				{9, 11},
+				{12, 13},
+				{14, 14},
+				{15, 15},
+				{18, 18},
+				{19, 19},
+			},
 
 			skipChunkTest: true,
 		},
