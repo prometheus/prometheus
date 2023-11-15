@@ -939,7 +939,7 @@ func (p *populateWithDelChunkSeriesIterator) populateChunksFromDelIter() error {
 		// Check if the encoding has changed (i.e. we need to create a new
 		// chunk as chunks can't have multiple encoding types).
 		// For the first sample, the following condition will always be true as
-		// EncNone != EncXOR | EncHistogram | EncFloatHistogram.
+		// ValNoneNone != ValFloat | ValHistogram | ValFloatHistogram.
 		if currentValueType != prevValueType {
 			if prevValueType != chunkenc.ValNone {
 				p.chunksFromDelIter = append(p.chunksFromDelIter, chunks.Meta{Chunk: currentChunk, MinTime: cmint, MaxTime: cmaxt})
