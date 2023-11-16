@@ -508,9 +508,11 @@ func TestBucketLimitAppender(t *testing.T) {
 	}
 
 	cases := []struct {
-		h           histogram.Histogram
-		limit       int
-		expectError bool
+		h                 histogram.Histogram
+		limit             int
+		expectError       bool
+		expectBucketCount int
+		expectSchema      int32
 	}{
 		{
 			h:           example,
@@ -518,14 +520,18 @@ func TestBucketLimitAppender(t *testing.T) {
 			expectError: true,
 		},
 		{
-			h:           example,
-			limit:       4,
-			expectError: false,
+			h:                 example,
+			limit:             4,
+			expectError:       false,
+			expectBucketCount: 4,
+			expectSchema:      -1,
 		},
 		{
-			h:           example,
-			limit:       10,
-			expectError: false,
+			h:                 example,
+			limit:             10,
+			expectError:       false,
+			expectBucketCount: 6,
+			expectSchema:      0,
 		},
 	}
 
@@ -536,18 +542,28 @@ func TestBucketLimitAppender(t *testing.T) {
 			t.Run(fmt.Sprintf("floatHistogram=%t", floatHisto), func(t *testing.T) {
 				app := &bucketLimitAppender{Appender: resApp, limit: c.limit}
 				ts := int64(10 * time.Minute / time.Millisecond)
-				h := c.h
 				lbls := labels.FromStrings("__name__", "sparse_histogram_series")
 				var err error
 				if floatHisto {
-					_, err = app.AppendHistogram(0, lbls, ts, nil, h.Copy().ToFloat())
+					fh := c.h.Copy().ToFloat()
+					_, err = app.AppendHistogram(0, lbls, ts, nil, fh)
+					if c.expectError {
+						require.Error(t, err)
+					} else {
+						require.Equal(t, c.expectSchema, fh.Schema)
+						require.Equal(t, c.expectBucketCount, len(fh.NegativeBuckets)+len(fh.PositiveBuckets))
+						require.NoError(t, err)
+					}
 				} else {
-					_, err = app.AppendHistogram(0, lbls, ts, h.Copy(), nil)
-				}
-				if c.expectError {
-					require.Error(t, err)
-				} else {
-					require.NoError(t, err)
+					h := c.h.Copy()
+					_, err = app.AppendHistogram(0, lbls, ts, h, nil)
+					if c.expectError {
+						require.Error(t, err)
+					} else {
+						require.Equal(t, c.expectSchema, h.Schema)
+						require.Equal(t, c.expectBucketCount, len(h.NegativeBuckets)+len(h.PositiveBuckets))
+						require.NoError(t, err)
+					}
 				}
 				require.NoError(t, app.Commit())
 			})
