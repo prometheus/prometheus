@@ -2636,6 +2636,9 @@ func TestScrapeLoopDiscardDuplicateLabels(t *testing.T) {
 	_, _, _, err := sl.append(slApp, []byte("test_metric{le=\"500\"} 1\ntest_metric{le=\"600\",le=\"700\"} 1\n"), "", time.Time{})
 	require.Error(t, err)
 	require.NoError(t, slApp.Rollback())
+	// We need to cycle staleness cache maps after a manual rollback. Otherwise they will have old entries in them,
+	// which would cause ErrDuplicateSampleForTimestamp errors on the next append.
+	sl.cache.iterDone(true)
 
 	q, err := s.Querier(time.Time{}.UnixNano(), 0)
 	require.NoError(t, err)
