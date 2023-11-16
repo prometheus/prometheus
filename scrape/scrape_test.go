@@ -1068,6 +1068,7 @@ func makeTestMetrics(n int) []byte {
 		fmt.Fprintf(&sb, "# HELP metric_a help text\n")
 		fmt.Fprintf(&sb, "metric_a{foo=\"%d\",bar=\"%d\"} 1\n", i, i*100)
 	}
+	fmt.Fprintf(&sb, "# EOF\n")
 	return sb.Bytes()
 }
 
