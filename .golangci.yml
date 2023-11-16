@@ -36,13 +36,9 @@ issues:
     - path: _test.go
       linters:
         - errcheck
-    - path: tsdb/
+    - path: "tsdb/head_wal.go"
       linters:
         - errorlint
-    - path: tsdb/
-      text: "import 'github.com/pkg/errors' is not allowed"
-      linters:
-        - depguard
     - linters:
         - godot
       source: "^// ==="
