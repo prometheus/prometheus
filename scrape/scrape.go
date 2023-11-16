@@ -1512,13 +1512,13 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 loop:
 	for {
 		var (
-			et                       textparse.Entry
-			sampleAdded, isHistogram bool
-			met                      []byte
-			parsedTimestamp          *int64
-			val                      float64
-			h                        *histogram.Histogram
-			fh                       *histogram.FloatHistogram
+			et                                             textparse.Entry
+			sampleAdded, isHistogram, seriesAlreadyScraped bool
+			met                                            []byte
+			parsedTimestamp                                *int64
+			val                                            float64
+			h                                              *histogram.Histogram
+			fh                                             *histogram.FloatHistogram
 		)
 		if et, err = p.Next(); err != nil {
 			if errors.Is(err, io.EOF) {
@@ -1573,6 +1573,7 @@ loop:
 		if ok {
 			ref = ce.ref
 			lset = ce.lset
+			hash = ce.hash
 
 			// Update metadata only if it changed in the current iteration.
 			updateMetadata(lset, false)
@@ -1609,24 +1610,30 @@ loop:
 			updateMetadata(lset, true)
 		}
 
-		if ctMs := p.CreatedTimestamp(); sl.enableCTZeroIngestion && ctMs != nil {
-			ref, err = app.AppendCTZeroSample(ref, lset, t, *ctMs)
-			if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) { // OOO is a common case, ignoring completely for now.
-				// CT is an experimental feature. For now, we don't need to fail the
-				// scrape on errors updating the created timestamp, log debug.
-				level.Debug(sl.l).Log("msg", "Error when appending CT in scrape loop", "series", string(met), "ct", *ctMs, "t", t, "err", err)
+		_, seriesAlreadyScraped = sl.cache.seriesCur[hash]
+		if seriesAlreadyScraped {
+			err = storage.ErrDuplicateSampleForTimestamp
+		} else {
+			if ctMs := p.CreatedTimestamp(); sl.enableCTZeroIngestion && ctMs != nil {
+				ref, err = app.AppendCTZeroSample(ref, lset, t, *ctMs)
+				if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) { // OOO is a common case, ignoring completely for now.
+					// CT is an experimental feature. For now, we don't need to fail the
+					// scrape on errors updating the created timestamp, log debug.
+					level.Debug(sl.l).Log("msg", "Error when appending CT in scrape loop", "series", string(met), "ct", *ctMs, "t", t, "err", err)
+				}
+			}
+
+			if isHistogram {
+				if h != nil {
+					ref, err = app.AppendHistogram(ref, lset, t, h, nil)
+				} else {
+					ref, err = app.AppendHistogram(ref, lset, t, nil, fh)
+				}
+			} else {
+				ref, err = app.Append(ref, lset, t, val)
 			}
 		}
 
-		if isHistogram {
-			if h != nil {
-				ref, err = app.AppendHistogram(ref, lset, t, h, nil)
-			} else {
-				ref, err = app.AppendHistogram(ref, lset, t, nil, fh)
-			}
-		} else {
-			ref, err = app.Append(ref, lset, t, val)
-		}
 		sampleAdded, err = sl.checkAddError(ce, met, parsedTimestamp, err, &sampleLimitErr, &bucketLimitErr, &appErrs)
 		if err != nil {
 			if !errors.Is(err, storage.ErrNotFound) {
@@ -1648,6 +1655,8 @@ loop:
 
 		// Increment added even if there's an error so we correctly report the
 		// number of samples remaining after relabeling.
+		// We still report duplicated samples here since this number should be the exact number
+		// of time series exposed on a scrape after relabelling.
 		added++
 		exemplars = exemplars[:0] // Reset and reuse the exemplar slice.
 		for hasExemplar := p.Exemplar(&e); hasExemplar; hasExemplar = p.Exemplar(&e) {

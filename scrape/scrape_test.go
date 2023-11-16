@@ -3600,3 +3600,31 @@ func BenchmarkTargetScraperGzip(b *testing.B) {
 		})
 	}
 }
+
+// When a scrape contains multiple instances for the same time series we should increment
+// prometheus_target_scrapes_sample_duplicate_timestamp_total metric.
+func TestScrapeLoopSeriesAddedDuplicates(t *testing.T) {
+	ctx, sl := simpleTestScrapeLoop(t)
+
+	slApp := sl.appender(ctx)
+	total, added, seriesAdded, err := sl.append(slApp, []byte("test_metric 1\ntest_metric 2\ntest_metric 3\n"), "", time.Time{})
+	require.NoError(t, err)
+	require.NoError(t, slApp.Commit())
+	require.Equal(t, 3, total)
+	require.Equal(t, 3, added)
+	require.Equal(t, 1, seriesAdded)
+
+	slApp = sl.appender(ctx)
+	total, added, seriesAdded, err = sl.append(slApp, []byte("test_metric 1\ntest_metric 1\ntest_metric 1\n"), "", time.Time{})
+	require.NoError(t, err)
+	require.NoError(t, slApp.Commit())
+	require.Equal(t, 3, total)
+	require.Equal(t, 3, added)
+	require.Equal(t, 0, seriesAdded)
+
+	metric := dto.Metric{}
+	err = sl.metrics.targetScrapeSampleDuplicate.Write(&metric)
+	require.NoError(t, err)
+	value := metric.GetCounter().GetValue()
+	require.Equal(t, 4.0, value)
+}
