@@ -17,6 +17,8 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/oklog/ulid"
+
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 )
@@ -135,13 +137,13 @@ func (oh *OOORangeHead) Tombstones() (tombstones.Reader, error) {
 	return tombstones.NewMemTombstones(), nil
 }
 
+var oooRangeHeadULID = ulid.MustParse("0000000000XXXX000RANGEHEAD")
+
 func (oh *OOORangeHead) Meta() BlockMeta {
-	var id [16]byte
-	copy(id[:], "____ooo_head____")
 	return BlockMeta{
 		MinTime: oh.mint,
 		MaxTime: oh.maxt,
-		ULID:    id,
+		ULID:    oooRangeHeadULID,
 		Stats: BlockStats{
 			NumSeries: oh.head.NumSeries(),
 		},

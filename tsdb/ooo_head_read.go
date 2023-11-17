@@ -18,6 +18,7 @@ import (
 	"errors"
 	"math"
 
+	"github.com/oklog/ulid"
 	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -371,13 +372,13 @@ func (ch *OOOCompactionHead) Tombstones() (tombstones.Reader, error) {
 	return tombstones.NewMemTombstones(), nil
 }
 
+var oooCompactionHeadULID = ulid.MustParse("0000000000XX000COMPACTHEAD")
+
 func (ch *OOOCompactionHead) Meta() BlockMeta {
-	var id [16]byte
-	copy(id[:], "copy(id[:], \"ooo_compact_head\")")
 	return BlockMeta{
 		MinTime: ch.mint,
 		MaxTime: ch.maxt,
-		ULID:    id,
+		ULID:    oooCompactionHeadULID,
 		Stats: BlockStats{
 			NumSeries: uint64(len(ch.postings)),
 		},
