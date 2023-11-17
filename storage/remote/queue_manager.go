@@ -1669,13 +1669,12 @@ func sendWriteRequestWithBackoff(ctx context.Context, cfg config.QueueConfig, l 
 	}
 }
 
-func buildWriteRequest(timeSeries []prompb.TimeSeries, metadata []prompb.MetricMetadata, pBuf *proto.Buffer, buf []byte, filter func(time.Duration, prompb.TimeSeries) bool, ageLimit time.Duration) ([]byte, int64, error) {
+func buildTimeSeries(timeSeries []prompb.TimeSeries, filter func(time.Duration, prompb.TimeSeries) bool, ageLimit time.Duration) (int64, []prompb.TimeSeries) {
 	var highest int64
-	var removeIdx []int
 
+	writeIdx := 0
 	for i, ts := range timeSeries {
 		if filter != nil && filter(ageLimit, ts) {
-			removeIdx = append(removeIdx, i)
 			continue
 		}
 
@@ -1689,11 +1688,18 @@ func buildWriteRequest(timeSeries []prompb.TimeSeries, metadata []prompb.MetricM
 		if len(ts.Histograms) > 0 && ts.Histograms[0].Timestamp > highest {
 			highest = ts.Histograms[0].Timestamp
 		}
+
+		// Move the current element to the write position and increment the write pointer
+		timeSeries[writeIdx] = timeSeries[i]
+		writeIdx++
 	}
 
-	for _, idx := range removeIdx {
-		timeSeries = append(timeSeries[:idx], timeSeries[idx+1:]...)
-	}
+	timeSeries = timeSeries[:writeIdx]
+	return highest, timeSeries
+}
+
+func buildWriteRequest(timeSeries []prompb.TimeSeries, metadata []prompb.MetricMetadata, pBuf *proto.Buffer, buf []byte, filter func(time.Duration, prompb.TimeSeries) bool, ageLimit time.Duration) ([]byte, int64, error) {
+	highest, timeSeries := buildTimeSeries(timeSeries, filter, ageLimit)
 
 	req := &prompb.WriteRequest{
 		Timeseries: timeSeries,
