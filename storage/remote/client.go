@@ -182,6 +182,9 @@ type injectHeadersRoundTripper struct {
 func (t *injectHeadersRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	for key, value := range t.headers {
 		req.Header.Set(key, value)
+		if key == "Host" {
+			req.Host = value
+		}
 	}
 	return t.RoundTripper.RoundTrip(req)
 }
