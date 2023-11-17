@@ -1407,11 +1407,13 @@ func (h *RangeHead) NumSeries() uint64 {
 	return h.head.NumSeries()
 }
 
+var rangeHeadULID = ulid.MustParse("0000000000XXXXXXXRANGEHEAD")
+
 func (h *RangeHead) Meta() BlockMeta {
 	return BlockMeta{
 		MinTime: h.MinTime(),
 		MaxTime: h.MaxTime(),
-		ULID:    h.head.Meta().ULID,
+		ULID:    rangeHeadULID,
 		Stats: BlockStats{
 			NumSeries: h.NumSeries(),
 		},
