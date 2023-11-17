@@ -1394,3 +1394,180 @@ func createTimeseriesWithOldSamples(numSamples, numSeries int, extraLabels ...la
 	}
 	return samples, newSamples, series
 }
+
+func filterTsLimit(limit int64, ts prompb.TimeSeries) bool {
+	return limit > ts.Samples[0].Timestamp
+}
+
+func TestBuildTimeSeries(t *testing.T) {
+	testCases := []struct {
+		name        string
+		ts          []prompb.TimeSeries
+		filter      func(duration time.Duration, ts prompb.TimeSeries) bool
+		highestTs   int64
+		responseLen int
+	}{
+		{
+			name: "No filter applied",
+			ts: []prompb.TimeSeries{
+				{
+					Samples: []prompb.Sample{
+						{
+							Timestamp: 1234567890,
+							Value:     1.23,
+						},
+					},
+				},
+				{
+					Samples: []prompb.Sample{
+						{
+							Timestamp: 1234567891,
+							Value:     2.34,
+						},
+					},
+				},
+				{
+					Samples: []prompb.Sample{
+						{
+							Timestamp: 1234567892,
+							Value:     3.34,
+						},
+					},
+				},
+			},
+			filter:      nil,
+			responseLen: 3,
+			highestTs:   1234567892,
+		},
+		{
+			name: "Filter applied, samples in order",
+			ts: []prompb.TimeSeries{
+				{
+					Samples: []prompb.Sample{
+						{
+							Timestamp: 1234567890,
+							Value:     1.23,
+						},
+					},
+				},
+				{
+					Samples: []prompb.Sample{
+						{
+							Timestamp: 1234567891,
+							Value:     2.34,
+						},
+					},
+				},
+				{
+					Samples: []prompb.Sample{
+						{
+							Timestamp: 1234567892,
+							Value:     3.45,
+						},
+					},
+				},
+				{
+					Samples: []prompb.Sample{
+						{
+							Timestamp: 1234567893,
+							Value:     3.45,
+						},
+					},
+				},
+			},
+			filter:      func(duration time.Duration, ts prompb.TimeSeries) bool { return filterTsLimit(1234567892, ts) },
+			responseLen: 2,
+			highestTs:   1234567893,
+		},
+		{
+			name: "Filter applied, samples out of order",
+			ts: []prompb.TimeSeries{
+				{
+					Samples: []prompb.Sample{
+						{
+							Timestamp: 1234567892,
+							Value:     3.45,
+						},
+					},
+				},
+				{
+					Samples: []prompb.Sample{
+						{
+							Timestamp: 1234567890,
+							Value:     1.23,
+						},
+					},
+				},
+				{
+					Samples: []prompb.Sample{
+						{
+							Timestamp: 1234567893,
+							Value:     3.45,
+						},
+					},
+				},
+				{
+					Samples: []prompb.Sample{
+						{
+							Timestamp: 1234567891,
+							Value:     2.34,
+						},
+					},
+				},
+			},
+			filter:      func(duration time.Duration, ts prompb.TimeSeries) bool { return filterTsLimit(1234567892, ts) },
+			responseLen: 2,
+			highestTs:   1234567893,
+		},
+		{
+			name: "Filter applied, samples not consecutive",
+			ts: []prompb.TimeSeries{
+				{
+					Samples: []prompb.Sample{
+						{
+							Timestamp: 1234567890,
+							Value:     1.23,
+						},
+					},
+				},
+				{
+					Samples: []prompb.Sample{
+						{
+							Timestamp: 1234567892,
+							Value:     3.45,
+						},
+					},
+				},
+				{
+					Samples: []prompb.Sample{
+						{
+							Timestamp: 1234567895,
+							Value:     6.78,
+						},
+					},
+				},
+				{
+					Samples: []prompb.Sample{
+						{
+							Timestamp: 1234567897,
+							Value:     6.78,
+						},
+					},
+				},
+			},
+			filter:      func(duration time.Duration, ts prompb.TimeSeries) bool { return filterTsLimit(1234567895, ts) },
+			responseLen: 2,
+			highestTs:   1234567897,
+		},
+	}
+
+	// Run the test cases
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			highest, result := buildTimeSeries(tc.ts, tc.filter, time.Duration(0))
+			require.NotNil(t, result)
+			require.Equal(t, tc.responseLen, len(result))
+			require.Equal(t, tc.highestTs, highest)
+		})
+	}
+}
