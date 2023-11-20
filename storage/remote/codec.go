@@ -1091,44 +1091,6 @@ func DecodeMinimizedWriteRequest(r io.Reader) (*prompb.MinimizedWriteRequest, er
 	return &req, nil
 }
 
-func DecodeMinimizedWriteRequestFixed64(r io.Reader) (*prompb.MinimizedWriteRequestFixed64, error) {
-	compressed, err := io.ReadAll(r)
-	if err != nil {
-		return nil, err
-	}
-
-	reqBuf, err := snappy.Decode(nil, compressed)
-	if err != nil {
-		return nil, err
-	}
-
-	var req prompb.MinimizedWriteRequestFixed64
-	if err := proto.Unmarshal(reqBuf, &req); err != nil {
-		return nil, err
-	}
-
-	return &req, nil
-}
-
-func DecodeMinimizedWriteRequestFixed32(r io.Reader) (*prompb.MinimizedWriteRequestFixed32, error) {
-	compressed, err := io.ReadAll(r)
-	if err != nil {
-		return nil, err
-	}
-
-	reqBuf, err := snappy.Decode(nil, compressed)
-	if err != nil {
-		return nil, err
-	}
-
-	var req prompb.MinimizedWriteRequestFixed32
-	if err := proto.Unmarshal(reqBuf, &req); err != nil {
-		return nil, err
-	}
-
-	return &req, nil
-}
-
 func DecodeMinimizedWriteRequestBytes(r io.Reader) (*prompb.MinimizedWriteRequestBytes, error) {
 	compressed, err := io.ReadAll(r)
 	if err != nil {
@@ -1200,38 +1162,6 @@ func MinimizedWriteRequestToWriteRequest(redReq *prompb.MinimizedWriteRequest) (
 			})
 		})
 
-		exemplars := make([]prompb.Exemplar, len(rts.Exemplars))
-		for j, e := range rts.Exemplars {
-			exemplars[j].Value = e.Value
-			exemplars[j].Timestamp = e.Timestamp
-			exemplars[j].Labels = e.Labels
-		}
-
-		req.Timeseries[i].Samples = rts.Samples
-		req.Timeseries[i].Exemplars = exemplars
-		req.Timeseries[i].Histograms = rts.Histograms
-
-	}
-	return req, nil
-}
-
-// helper for tests
-func min64WriteRequestToWriteRequest(redReq *prompb.MinimizedWriteRequestFixed64) (*prompb.WriteRequest, error) {
-	req := &prompb.WriteRequest{
-		Timeseries: make([]prompb.TimeSeries, len(redReq.Timeseries)),
-		//Metadata:   redReq.Metadata,
-	}
-
-	for i, rts := range redReq.Timeseries {
-
-		Uint64RefToLabels(redReq.Symbols, rts.LabelSymbols).Range(func(l labels.Label) {
-			req.Timeseries[i].Labels = append(req.Timeseries[i].Labels, prompb.Label{
-				Name:  l.Name,
-				Value: l.Value,
-			})
-		})
-
-		// TODO handle exemplars
 		exemplars := make([]prompb.Exemplar, len(rts.Exemplars))
 		for j, e := range rts.Exemplars {
 			exemplars[j].Value = e.Value

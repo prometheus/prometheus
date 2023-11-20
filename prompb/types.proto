@@ -144,43 +144,6 @@ message MinimizedTimeSeries {
   // TODO: add metadata
 }
 
-// based on an experiment by marco
-message MinimizedTimeSeriesFixed32 {
-  // Sorted list of label name-value pair references. This list's len is always multiple of 4,
-  // packing tuples of (label name offset, label name length, label value offset, label value length).
-  repeated fixed32 label_symbols = 1 [(gogoproto.nullable) = false];
-
-  // Sorted by time, oldest sample first.
-  // TODO: support references for other types
-  repeated Sample samples = 2 [(gogoproto.nullable) = false];
-  repeated Exemplar exemplars = 3 [(gogoproto.nullable) = false];
-  repeated Histogram histograms = 4 [(gogoproto.nullable) = false];
-}
-
-// based on an experiment by marco
-message MinimizedTimeSeriesFixed64 {
-  // Sorted list of label name-value pair references. usespackref64
-  repeated fixed64 label_symbols = 1 [(gogoproto.nullable) = false];
-
-  // Sorted by time, oldest sample first.
-  // TODO: support references for other types
-  repeated Sample samples = 2 [(gogoproto.nullable) = false];
-  repeated Exemplar exemplars = 3 [(gogoproto.nullable) = false];
-  repeated Histogram histograms = 4 [(gogoproto.nullable) = false];
-}
-
-// based on an experiment by marco
-message MinimizedTimeSeriesPacking {
-  // Sorted list of label name-value pair references. uses packref
-  repeated fixed32 label_symbols = 1 [(gogoproto.nullable) = false];
-
-  // Sorted by time, oldest sample first.
-  // TODO: support references for other types
-  repeated Sample samples = 2 [(gogoproto.nullable) = false];
-  repeated Exemplar exemplars = 3 [(gogoproto.nullable) = false];
-  repeated Histogram histograms = 4 [(gogoproto.nullable) = false];
-}
-
 message MinimizedTimeSeriesBytes {
   // Sorted list of label name-value pair references, encoded as varints. This
   // list's real len is always multiple of 4, packing tuples of (label name offset,

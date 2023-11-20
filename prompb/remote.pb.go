@@ -60,7 +60,7 @@ func (x ReadRequest_ResponseType) String() string {
 }
 
 func (ReadRequest_ResponseType) EnumDescriptor() ([]byte, []int) {
-	return fileDescriptor_eefc82927d57d89b, []int{8, 0}
+	return fileDescriptor_eefc82927d57d89b, []int{5, 0}
 }
 
 type WriteRequest struct {
@@ -118,63 +118,6 @@ func (m *WriteRequest) GetMetadata() []MetricMetadata {
 	return nil
 }
 
-type MinimizedWriteRequestPacking struct {
-	Timeseries []MinimizedTimeSeriesPacking `protobuf:"bytes,1,rep,name=timeseries,proto3" json:"timeseries"`
-	// The symbols table. All symbols are concatenated strings. To read the symbols table, it's required
-	// to know the offset:length range of the actual symbol to read from this string.
-	Symbols              string   `protobuf:"bytes,4,opt,name=symbols,proto3" json:"symbols,omitempty"`
-	XXX_NoUnkeyedLiteral struct{} `json:"-"`
-	XXX_unrecognized     []byte   `json:"-"`
-	XXX_sizecache        int32    `json:"-"`
-}
-
-func (m *MinimizedWriteRequestPacking) Reset()         { *m = MinimizedWriteRequestPacking{} }
-func (m *MinimizedWriteRequestPacking) String() string { return proto.CompactTextString(m) }
-func (*MinimizedWriteRequestPacking) ProtoMessage()    {}
-func (*MinimizedWriteRequestPacking) Descriptor() ([]byte, []int) {
-	return fileDescriptor_eefc82927d57d89b, []int{1}
-}
-func (m *MinimizedWriteRequestPacking) XXX_Unmarshal(b []byte) error {
-	return m.Unmarshal(b)
-}
-func (m *MinimizedWriteRequestPacking) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
-	if deterministic {
-		return xxx_messageInfo_MinimizedWriteRequestPacking.Marshal(b, m, deterministic)
-	} else {
-		b = b[:cap(b)]
-		n, err := m.MarshalToSizedBuffer(b)
-		if err != nil {
-			return nil, err
-		}
-		return b[:n], nil
-	}
-}
-func (m *MinimizedWriteRequestPacking) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_MinimizedWriteRequestPacking.Merge(m, src)
-}
-func (m *MinimizedWriteRequestPacking) XXX_Size() int {
-	return m.Size()
-}
-func (m *MinimizedWriteRequestPacking) XXX_DiscardUnknown() {
-	xxx_messageInfo_MinimizedWriteRequestPacking.DiscardUnknown(m)
-}
-
-var xxx_messageInfo_MinimizedWriteRequestPacking proto.InternalMessageInfo
-
-func (m *MinimizedWriteRequestPacking) GetTimeseries() []MinimizedTimeSeriesPacking {
-	if m != nil {
-		return m.Timeseries
-	}
-	return nil
-}
-
-func (m *MinimizedWriteRequestPacking) GetSymbols() string {
-	if m != nil {
-		return m.Symbols
-	}
-	return ""
-}
-
 type MinimizedWriteRequest struct {
 	Timeseries []MinimizedTimeSeries `protobuf:"bytes,1,rep,name=timeseries,proto3" json:"timeseries"`
 	// The symbols table. All symbols are concatenated strings. To read the symbols table, it's required
@@ -189,7 +132,7 @@ func (m *MinimizedWriteRequest) Reset()         { *m = MinimizedWriteRequest{} }
 func (m *MinimizedWriteRequest) String() string { return proto.CompactTextString(m) }
 func (*MinimizedWriteRequest) ProtoMessage()    {}
 func (*MinimizedWriteRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_eefc82927d57d89b, []int{2}
+	return fileDescriptor_eefc82927d57d89b, []int{1}
 }
 func (m *MinimizedWriteRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -246,7 +189,7 @@ func (m *MinimizedWriteRequestBytes) Reset()         { *m = MinimizedWriteReques
 func (m *MinimizedWriteRequestBytes) String() string { return proto.CompactTextString(m) }
 func (*MinimizedWriteRequestBytes) ProtoMessage()    {}
 func (*MinimizedWriteRequestBytes) Descriptor() ([]byte, []int) {
-	return fileDescriptor_eefc82927d57d89b, []int{3}
+	return fileDescriptor_eefc82927d57d89b, []int{2}
 }
 func (m *MinimizedWriteRequestBytes) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -303,7 +246,7 @@ func (m *MinimizedWriteRequestLen) Reset()         { *m = MinimizedWriteRequestL
 func (m *MinimizedWriteRequestLen) String() string { return proto.CompactTextString(m) }
 func (*MinimizedWriteRequestLen) ProtoMessage()    {}
 func (*MinimizedWriteRequestLen) Descriptor() ([]byte, []int) {
-	return fileDescriptor_eefc82927d57d89b, []int{4}
+	return fileDescriptor_eefc82927d57d89b, []int{3}
 }
 func (m *MinimizedWriteRequestLen) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -360,7 +303,7 @@ func (m *MinimizedWriteRequestLenBytes) Reset()         { *m = MinimizedWriteReq
 func (m *MinimizedWriteRequestLenBytes) String() string { return proto.CompactTextString(m) }
 func (*MinimizedWriteRequestLenBytes) ProtoMessage()    {}
 func (*MinimizedWriteRequestLenBytes) Descriptor() ([]byte, []int) {
-	return fileDescriptor_eefc82927d57d89b, []int{5}
+	return fileDescriptor_eefc82927d57d89b, []int{4}
 }
 func (m *MinimizedWriteRequestLenBytes) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -403,120 +346,6 @@ func (m *MinimizedWriteRequestLenBytes) GetSymbols() []byte {
 	return nil
 }
 
-type MinimizedWriteRequestFixed32 struct {
-	Timeseries []MinimizedTimeSeriesFixed32 `protobuf:"bytes,1,rep,name=timeseries,proto3" json:"timeseries"`
-	// The symbols table. All symbols are concatenated strings. To read the symbols table, it's required
-	// to know the offset:length range of the actual symbol to read from this string.
-	Symbols              string   `protobuf:"bytes,4,opt,name=symbols,proto3" json:"symbols,omitempty"`
-	XXX_NoUnkeyedLiteral struct{} `json:"-"`
-	XXX_unrecognized     []byte   `json:"-"`
-	XXX_sizecache        int32    `json:"-"`
-}
-
-func (m *MinimizedWriteRequestFixed32) Reset()         { *m = MinimizedWriteRequestFixed32{} }
-func (m *MinimizedWriteRequestFixed32) String() string { return proto.CompactTextString(m) }
-func (*MinimizedWriteRequestFixed32) ProtoMessage()    {}
-func (*MinimizedWriteRequestFixed32) Descriptor() ([]byte, []int) {
-	return fileDescriptor_eefc82927d57d89b, []int{6}
-}
-func (m *MinimizedWriteRequestFixed32) XXX_Unmarshal(b []byte) error {
-	return m.Unmarshal(b)
-}
-func (m *MinimizedWriteRequestFixed32) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
-	if deterministic {
-		return xxx_messageInfo_MinimizedWriteRequestFixed32.Marshal(b, m, deterministic)
-	} else {
-		b = b[:cap(b)]
-		n, err := m.MarshalToSizedBuffer(b)
-		if err != nil {
-			return nil, err
-		}
-		return b[:n], nil
-	}
-}
-func (m *MinimizedWriteRequestFixed32) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_MinimizedWriteRequestFixed32.Merge(m, src)
-}
-func (m *MinimizedWriteRequestFixed32) XXX_Size() int {
-	return m.Size()
-}
-func (m *MinimizedWriteRequestFixed32) XXX_DiscardUnknown() {
-	xxx_messageInfo_MinimizedWriteRequestFixed32.DiscardUnknown(m)
-}
-
-var xxx_messageInfo_MinimizedWriteRequestFixed32 proto.InternalMessageInfo
-
-func (m *MinimizedWriteRequestFixed32) GetTimeseries() []MinimizedTimeSeriesFixed32 {
-	if m != nil {
-		return m.Timeseries
-	}
-	return nil
-}
-
-func (m *MinimizedWriteRequestFixed32) GetSymbols() string {
-	if m != nil {
-		return m.Symbols
-	}
-	return ""
-}
-
-type MinimizedWriteRequestFixed64 struct {
-	Timeseries []MinimizedTimeSeriesFixed64 `protobuf:"bytes,1,rep,name=timeseries,proto3" json:"timeseries"`
-	// The symbols table. All symbols are concatenated strings. To read the symbols table, it's required
-	// to know the offset:length range of the actual symbol to read from this string.
-	Symbols              string   `protobuf:"bytes,4,opt,name=symbols,proto3" json:"symbols,omitempty"`
-	XXX_NoUnkeyedLiteral struct{} `json:"-"`
-	XXX_unrecognized     []byte   `json:"-"`
-	XXX_sizecache        int32    `json:"-"`
-}
-
-func (m *MinimizedWriteRequestFixed64) Reset()         { *m = MinimizedWriteRequestFixed64{} }
-func (m *MinimizedWriteRequestFixed64) String() string { return proto.CompactTextString(m) }
-func (*MinimizedWriteRequestFixed64) ProtoMessage()    {}
-func (*MinimizedWriteRequestFixed64) Descriptor() ([]byte, []int) {
-	return fileDescriptor_eefc82927d57d89b, []int{7}
-}
-func (m *MinimizedWriteRequestFixed64) XXX_Unmarshal(b []byte) error {
-	return m.Unmarshal(b)
-}
-func (m *MinimizedWriteRequestFixed64) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
-	if deterministic {
-		return xxx_messageInfo_MinimizedWriteRequestFixed64.Marshal(b, m, deterministic)
-	} else {
-		b = b[:cap(b)]
-		n, err := m.MarshalToSizedBuffer(b)
-		if err != nil {
-			return nil, err
-		}
-		return b[:n], nil
-	}
-}
-func (m *MinimizedWriteRequestFixed64) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_MinimizedWriteRequestFixed64.Merge(m, src)
-}
-func (m *MinimizedWriteRequestFixed64) XXX_Size() int {
-	return m.Size()
-}
-func (m *MinimizedWriteRequestFixed64) XXX_DiscardUnknown() {
-	xxx_messageInfo_MinimizedWriteRequestFixed64.DiscardUnknown(m)
-}
-
-var xxx_messageInfo_MinimizedWriteRequestFixed64 proto.InternalMessageInfo
-
-func (m *MinimizedWriteRequestFixed64) GetTimeseries() []MinimizedTimeSeriesFixed64 {
-	if m != nil {
-		return m.Timeseries
-	}
-	return nil
-}
-
-func (m *MinimizedWriteRequestFixed64) GetSymbols() string {
-	if m != nil {
-		return m.Symbols
-	}
-	return ""
-}
-
 // ReadRequest represents a remote read request.
 type ReadRequest struct {
 	Queries []*Query `protobuf:"bytes,1,rep,name=queries,proto3" json:"queries,omitempty"`
@@ -535,7 +364,7 @@ func (m *ReadRequest) Reset()         { *m = ReadRequest{} }
 func (m *ReadRequest) String() string { return proto.CompactTextString(m) }
 func (*ReadRequest) ProtoMessage()    {}
 func (*ReadRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_eefc82927d57d89b, []int{8}
+	return fileDescriptor_eefc82927d57d89b, []int{5}
 }
 func (m *ReadRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -591,7 +420,7 @@ func (m *ReadResponse) Reset()         { *m = ReadResponse{} }
 func (m *ReadResponse) String() string { return proto.CompactTextString(m) }
 func (*ReadResponse) ProtoMessage()    {}
 func (*ReadResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_eefc82927d57d89b, []int{9}
+	return fileDescriptor_eefc82927d57d89b, []int{6}
 }
 func (m *ReadResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -641,7 +470,7 @@ func (m *Query) Reset()         { *m = Query{} }
 func (m *Query) String() string { return proto.CompactTextString(m) }
 func (*Query) ProtoMessage()    {}
 func (*Query) Descriptor() ([]byte, []int) {
-	return fileDescriptor_eefc82927d57d89b, []int{10}
+	return fileDescriptor_eefc82927d57d89b, []int{7}
 }
 func (m *Query) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -710,7 +539,7 @@ func (m *QueryResult) Reset()         { *m = QueryResult{} }
 func (m *QueryResult) String() string { return proto.CompactTextString(m) }
 func (*QueryResult) ProtoMessage()    {}
 func (*QueryResult) Descriptor() ([]byte, []int) {
-	return fileDescriptor_eefc82927d57d89b, []int{11}
+	return fileDescriptor_eefc82927d57d89b, []int{8}
 }
 func (m *QueryResult) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -763,7 +592,7 @@ func (m *ChunkedReadResponse) Reset()         { *m = ChunkedReadResponse{} }
 func (m *ChunkedReadResponse) String() string { return proto.CompactTextString(m) }
 func (*ChunkedReadResponse) ProtoMessage()    {}
 func (*ChunkedReadResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_eefc82927d57d89b, []int{12}
+	return fileDescriptor_eefc82927d57d89b, []int{9}
 }
 func (m *ChunkedReadResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -809,13 +638,10 @@ func (m *ChunkedReadResponse) GetQueryIndex() int64 {
 func init() {
 	proto.RegisterEnum("prometheus.ReadRequest_ResponseType", ReadRequest_ResponseType_name, ReadRequest_ResponseType_value)
 	proto.RegisterType((*WriteRequest)(nil), "prometheus.WriteRequest")
-	proto.RegisterType((*MinimizedWriteRequestPacking)(nil), "prometheus.MinimizedWriteRequestPacking")
 	proto.RegisterType((*MinimizedWriteRequest)(nil), "prometheus.MinimizedWriteRequest")
 	proto.RegisterType((*MinimizedWriteRequestBytes)(nil), "prometheus.MinimizedWriteRequestBytes")
 	proto.RegisterType((*MinimizedWriteRequestLen)(nil), "prometheus.MinimizedWriteRequestLen")
 	proto.RegisterType((*MinimizedWriteRequestLenBytes)(nil), "prometheus.MinimizedWriteRequestLenBytes")
-	proto.RegisterType((*MinimizedWriteRequestFixed32)(nil), "prometheus.MinimizedWriteRequestFixed32")
-	proto.RegisterType((*MinimizedWriteRequestFixed64)(nil), "prometheus.MinimizedWriteRequestFixed64")
 	proto.RegisterType((*ReadRequest)(nil), "prometheus.ReadRequest")
 	proto.RegisterType((*ReadResponse)(nil), "prometheus.ReadResponse")
 	proto.RegisterType((*Query)(nil), "prometheus.Query")
@@ -826,49 +652,46 @@ func init() {
 func init() { proto.RegisterFile("remote.proto", fileDescriptor_eefc82927d57d89b) }
 
 var fileDescriptor_eefc82927d57d89b = []byte{
-	// 669 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x9c, 0x95, 0x5f, 0x4f, 0x13, 0x4d,
-	0x14, 0xc6, 0x19, 0x5a, 0x68, 0xdf, 0xb3, 0x7d, 0x49, 0xdf, 0x01, 0x5e, 0xd6, 0x46, 0x81, 0x6c,
-	0x8c, 0x36, 0xc1, 0xd4, 0x08, 0x0d, 0x57, 0x5c, 0x08, 0x58, 0x83, 0xd8, 0x55, 0x9c, 0xd6, 0x68,
-	0x8c, 0xc9, 0x66, 0xbb, 0x7b, 0x42, 0x37, 0xb0, 0x7f, 0xd8, 0x99, 0x26, 0xd4, 0x6b, 0xaf, 0xbc,
-	0x30, 0xc6, 0xf8, 0x89, 0xbc, 0xe2, 0xca, 0xf8, 0x09, 0x8c, 0xe1, 0x93, 0x98, 0xfd, 0x07, 0x53,
-	0x5d, 0x2c, 0xe9, 0xdd, 0xee, 0x39, 0xcf, 0xf3, 0xec, 0x6f, 0xce, 0xcc, 0xee, 0x42, 0x25, 0x44,
-	0xd7, 0x17, 0xd8, 0x08, 0x42, 0x5f, 0xf8, 0x14, 0x82, 0xd0, 0x77, 0x51, 0xf4, 0x71, 0xc0, 0x6b,
-	0x8a, 0x18, 0x06, 0xc8, 0x93, 0x46, 0x6d, 0xe1, 0xd0, 0x3f, 0xf4, 0xe3, 0xcb, 0xfb, 0xd1, 0x55,
-	0x52, 0xd5, 0x3e, 0x11, 0xa8, 0xbc, 0x0a, 0x1d, 0x81, 0x0c, 0x4f, 0x06, 0xc8, 0x05, 0xdd, 0x02,
-	0x10, 0x8e, 0x8b, 0x1c, 0x43, 0x07, 0xb9, 0x4a, 0x56, 0x0b, 0x75, 0x65, 0xfd, 0xff, 0xc6, 0x65,
-	0x68, 0xa3, 0xeb, 0xb8, 0xd8, 0x89, 0xbb, 0x3b, 0xc5, 0xb3, 0x1f, 0x2b, 0x53, 0x4c, 0xd2, 0xd3,
-	0x2d, 0x28, 0xbb, 0x28, 0x4c, 0xdb, 0x14, 0xa6, 0x5a, 0x88, 0xbd, 0x35, 0xd9, 0xab, 0xa3, 0x08,
-	0x1d, 0x4b, 0x4f, 0x15, 0xa9, 0xff, 0xc2, 0xb1, 0x5f, 0x2c, 0x4f, 0x57, 0x0b, 0xda, 0x67, 0x02,
-	0x37, 0x75, 0xc7, 0x73, 0x5c, 0xe7, 0x1d, 0xda, 0x32, 0xdb, 0x81, 0x69, 0x1d, 0x39, 0xde, 0x21,
-	0x6d, 0xe7, 0x20, 0xde, 0x19, 0x79, 0x4c, 0xe6, 0xbe, 0x64, 0x4d, 0xbd, 0x39, 0xc8, 0x2a, 0x94,
-	0xf8, 0xd0, 0xed, 0xf9, 0xc7, 0x5c, 0x2d, 0xae, 0x92, 0xfa, 0x3f, 0x2c, 0xbb, 0x4d, 0x70, 0xf6,
-	0x8b, 0xe5, 0x42, 0xb5, 0xa8, 0xbd, 0x27, 0xb0, 0x98, 0x0b, 0x45, 0x5b, 0x39, 0x34, 0x2b, 0x63,
-	0x68, 0x26, 0xc6, 0xf8, 0x48, 0xa0, 0x96, 0x8b, 0xb1, 0x33, 0x14, 0xc8, 0xe9, 0x7e, 0x0e, 0xcb,
-	0xed, 0x71, 0x2c, 0x91, 0x73, 0x62, 0xa0, 0x0f, 0x04, 0xd4, 0x5c, 0xa0, 0x36, 0x7a, 0x74, 0x2f,
-	0x07, 0x47, 0x1b, 0x83, 0xd3, 0x46, 0x6f, 0x3c, 0x4c, 0x25, 0x1f, 0xe6, 0x0b, 0x81, 0x5b, 0x57,
-	0xc1, 0x24, 0x03, 0xd2, 0x73, 0x88, 0xee, 0x5e, 0x83, 0xe8, 0x7a, 0x33, 0xba, 0x02, 0xeb, 0xca,
-	0x03, 0xfd, 0xd8, 0x39, 0x45, 0x7b, 0x63, 0x7d, 0xa2, 0x03, 0x9d, 0x7a, 0x27, 0xde, 0xb8, 0xbf,
-	0x43, 0x6d, 0x36, 0x27, 0x87, 0xda, 0x6c, 0x4e, 0x0c, 0xf5, 0x8d, 0x80, 0xc2, 0xd0, 0xb4, 0xb3,
-	0x77, 0x6b, 0x0d, 0x4a, 0x27, 0x03, 0x19, 0xe0, 0x3f, 0x19, 0xe0, 0xc5, 0x00, 0xc3, 0x21, 0xcb,
-	0x14, 0xf4, 0x2d, 0x2c, 0x99, 0x96, 0x85, 0x81, 0x40, 0xdb, 0x08, 0x91, 0x07, 0xbe, 0xc7, 0xd1,
-	0x88, 0xbf, 0x80, 0xea, 0xf4, 0x6a, 0xa1, 0x3e, 0x37, 0xfa, 0x26, 0x48, 0x8f, 0x69, 0xb0, 0x54,
-	0xdd, 0x1d, 0x06, 0xc8, 0x16, 0xb3, 0x10, 0xb9, 0xca, 0xb5, 0x26, 0x54, 0xe4, 0x02, 0x55, 0xa0,
-	0xd4, 0xd9, 0xd6, 0x0f, 0xda, 0xad, 0x4e, 0x75, 0x8a, 0x2e, 0xc1, 0x7c, 0xa7, 0xcb, 0x5a, 0xdb,
-	0x7a, 0xeb, 0x91, 0xf1, 0xfa, 0x39, 0x33, 0x76, 0xf7, 0x5e, 0x3e, 0x7b, 0xda, 0xa9, 0x12, 0x6d,
-	0x3b, 0x72, 0x99, 0x17, 0x51, 0xf4, 0x01, 0x94, 0x42, 0xe4, 0x83, 0x63, 0x91, 0x2d, 0x68, 0xe9,
-	0xcf, 0x05, 0xc5, 0x7d, 0x96, 0xe9, 0xb4, 0xaf, 0x04, 0x66, 0xe2, 0x06, 0xbd, 0x07, 0x94, 0x0b,
-	0x33, 0x14, 0x46, 0x3c, 0x57, 0x61, 0xba, 0x81, 0xe1, 0x46, 0x39, 0xa4, 0x5e, 0x60, 0xd5, 0xb8,
-	0xd3, 0xcd, 0x1a, 0x3a, 0xa7, 0x75, 0xa8, 0xa2, 0x67, 0x8f, 0x6a, 0xa7, 0x63, 0xed, 0x1c, 0x7a,
-	0xb6, 0xac, 0x6c, 0x42, 0xd9, 0x35, 0x85, 0xd5, 0xc7, 0x90, 0xa7, 0x1f, 0x6d, 0x55, 0xa6, 0x6a,
-	0x9b, 0x3d, 0x3c, 0xd6, 0x13, 0x01, 0xbb, 0x50, 0xd2, 0x35, 0x98, 0xe9, 0x3b, 0x9e, 0x48, 0xf6,
-	0x53, 0x59, 0x5f, 0xfc, 0x7d, 0xb8, 0x7b, 0x51, 0x93, 0x25, 0x1a, 0xad, 0x05, 0x8a, 0xb4, 0x38,
-	0xba, 0x79, 0xfd, 0x9f, 0x8c, 0x7c, 0x8a, 0xb4, 0x53, 0x98, 0xdf, 0xed, 0x0f, 0xbc, 0xa3, 0x68,
-	0x73, 0xa4, 0xa9, 0x3e, 0x84, 0x39, 0x2b, 0x29, 0x1b, 0x23, 0x91, 0x37, 0xe4, 0xc8, 0xd4, 0x98,
-	0xa6, 0xfe, 0x6b, 0xc9, 0xb7, 0x74, 0x05, 0x94, 0xe8, 0x18, 0x0d, 0x0d, 0xc7, 0xb3, 0xf1, 0x34,
-	0x9d, 0x13, 0xc4, 0xa5, 0x27, 0x51, 0x65, 0x67, 0xe1, 0xec, 0x7c, 0x99, 0x7c, 0x3f, 0x5f, 0x26,
-	0x3f, 0xcf, 0x97, 0xc9, 0x9b, 0xd9, 0x28, 0x37, 0xe8, 0xf5, 0x66, 0xe3, 0x9f, 0xe8, 0xc6, 0xaf,
-	0x00, 0x00, 0x00, 0xff, 0xff, 0xb5, 0x56, 0x04, 0x75, 0x83, 0x07, 0x00, 0x00,
+	// 612 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x9c, 0x94, 0xcb, 0x6e, 0xd3, 0x40,
+	0x14, 0x86, 0x3b, 0x4d, 0xda, 0x84, 0xe3, 0x50, 0x99, 0x69, 0x4b, 0x4d, 0x24, 0xda, 0xca, 0x42,
+	0x22, 0x52, 0x51, 0x10, 0xa5, 0x62, 0xd5, 0x05, 0x6d, 0x89, 0x54, 0x4a, 0xcc, 0x65, 0x12, 0x04,
+	0x42, 0x48, 0x96, 0x63, 0x1f, 0x35, 0x16, 0xf5, 0xa5, 0x9e, 0xb1, 0x54, 0xb3, 0x66, 0xc5, 0x02,
+	0xb1, 0xe0, 0x89, 0x58, 0x75, 0x85, 0x78, 0x02, 0x84, 0xfa, 0x24, 0xc8, 0xb7, 0x32, 0x01, 0x97,
+	0x46, 0xec, 0xec, 0x73, 0xfe, 0xff, 0xf7, 0x37, 0x67, 0xc6, 0x03, 0xad, 0x08, 0xbd, 0x40, 0x60,
+	0x37, 0x8c, 0x02, 0x11, 0x50, 0x08, 0xa3, 0xc0, 0x43, 0x31, 0xc6, 0x98, 0xb7, 0x15, 0x91, 0x84,
+	0xc8, 0xf3, 0x46, 0x7b, 0xe9, 0x30, 0x38, 0x0c, 0xb2, 0xc7, 0xbb, 0xe9, 0x53, 0x5e, 0xd5, 0x3f,
+	0x13, 0x68, 0xbd, 0x8a, 0x5c, 0x81, 0x0c, 0x8f, 0x63, 0xe4, 0x82, 0x6e, 0x03, 0x08, 0xd7, 0x43,
+	0x8e, 0x91, 0x8b, 0x5c, 0x23, 0xeb, 0xb5, 0x8e, 0xb2, 0x79, 0xbd, 0xfb, 0x3b, 0xb4, 0x3b, 0x74,
+	0x3d, 0x1c, 0x64, 0xdd, 0xdd, 0xfa, 0xe9, 0x8f, 0xb5, 0x19, 0x26, 0xe9, 0xe9, 0x36, 0x34, 0x3d,
+	0x14, 0x96, 0x63, 0x09, 0x4b, 0xab, 0x65, 0xde, 0xb6, 0xec, 0x35, 0x50, 0x44, 0xae, 0x6d, 0x14,
+	0x8a, 0xc2, 0x7f, 0xee, 0x38, 0xa8, 0x37, 0x67, 0xd5, 0x9a, 0xfe, 0x81, 0xc0, 0xb2, 0xe1, 0xfa,
+	0xae, 0xe7, 0xbe, 0x47, 0x67, 0x82, 0xad, 0x57, 0xc1, 0xb6, 0x36, 0x91, 0x5f, 0xda, 0xfe, 0x09,
+	0xa9, 0x41, 0x83, 0x27, 0xde, 0x28, 0x38, 0xe2, 0x5a, 0x7d, 0x9d, 0x74, 0xae, 0xb0, 0xf2, 0x35,
+	0x07, 0x38, 0xa8, 0x37, 0x6b, 0x6a, 0x5d, 0xff, 0x44, 0xa0, 0x5d, 0x89, 0xb1, 0x9b, 0x08, 0xe4,
+	0xf4, 0xa0, 0x82, 0xe5, 0xd6, 0x65, 0x2c, 0xa9, 0xf3, 0xbf, 0x81, 0x3e, 0x12, 0xd0, 0x2a, 0x81,
+	0xfa, 0xe8, 0xd3, 0xfd, 0x0a, 0x1c, 0xfd, 0x12, 0x9c, 0x3e, 0xfa, 0x97, 0xc3, 0xb4, 0xaa, 0x61,
+	0xbe, 0x10, 0xb8, 0x79, 0x11, 0x4c, 0x3e, 0x20, 0xa3, 0x82, 0xe8, 0xf6, 0x14, 0x44, 0xd3, 0xcd,
+	0xe8, 0x02, 0xac, 0x6f, 0x04, 0x14, 0x86, 0x96, 0x53, 0x9e, 0x98, 0x0d, 0x68, 0x1c, 0xc7, 0x32,
+	0xc1, 0x35, 0x99, 0xe0, 0x45, 0x8c, 0x51, 0xc2, 0x4a, 0x05, 0x7d, 0x0b, 0x2b, 0x96, 0x6d, 0x63,
+	0x28, 0xd0, 0x31, 0x23, 0xe4, 0x61, 0xe0, 0x73, 0x34, 0xb3, 0x5f, 0x48, 0x9b, 0x5d, 0xaf, 0x75,
+	0x16, 0x26, 0xf7, 0x57, 0xfa, 0x4c, 0x97, 0x15, 0xea, 0x61, 0x12, 0x22, 0x5b, 0x2e, 0x43, 0xe4,
+	0x2a, 0xd7, 0xb7, 0xa0, 0x25, 0x17, 0xa8, 0x02, 0x8d, 0xc1, 0x8e, 0xf1, 0xbc, 0xdf, 0x1b, 0xa8,
+	0x33, 0x74, 0x05, 0x16, 0x07, 0x43, 0xd6, 0xdb, 0x31, 0x7a, 0x8f, 0xcc, 0xd7, 0xcf, 0x98, 0xb9,
+	0xb7, 0xff, 0xf2, 0xe9, 0x93, 0x81, 0x4a, 0xf4, 0x9d, 0xd4, 0x65, 0x9d, 0x47, 0xd1, 0x7b, 0xd0,
+	0x88, 0x90, 0xc7, 0x47, 0xa2, 0x5c, 0xd0, 0xca, 0xdf, 0x0b, 0xca, 0xfa, 0xac, 0xd4, 0xe9, 0x5f,
+	0x09, 0xcc, 0x65, 0x0d, 0x7a, 0x07, 0x28, 0x17, 0x56, 0x24, 0xcc, 0x6c, 0xae, 0xc2, 0xf2, 0x42,
+	0xd3, 0x4b, 0x73, 0x48, 0xa7, 0xc6, 0xd4, 0xac, 0x33, 0x2c, 0x1b, 0x06, 0xa7, 0x1d, 0x50, 0xd1,
+	0x77, 0x26, 0xb5, 0xb3, 0x99, 0x76, 0x01, 0x7d, 0x47, 0x56, 0x6e, 0x41, 0xd3, 0xb3, 0x84, 0x3d,
+	0xc6, 0x88, 0x17, 0x7f, 0xbd, 0x26, 0x53, 0xf5, 0xad, 0x11, 0x1e, 0x19, 0xb9, 0x80, 0x9d, 0x2b,
+	0xe9, 0x06, 0xcc, 0x8d, 0x5d, 0x5f, 0xe4, 0xfb, 0xa9, 0x6c, 0x2e, 0xff, 0x39, 0xdc, 0xfd, 0xb4,
+	0xc9, 0x72, 0x8d, 0xde, 0x03, 0x45, 0x5a, 0x1c, 0x7d, 0x30, 0xfd, 0x2d, 0x25, 0x9f, 0x22, 0xfd,
+	0x04, 0x16, 0xf7, 0xc6, 0xb1, 0xff, 0x2e, 0xdd, 0x1c, 0x69, 0xaa, 0x0f, 0x61, 0xc1, 0xce, 0xcb,
+	0xe6, 0x44, 0xe4, 0x0d, 0x39, 0xb2, 0x30, 0x16, 0xa9, 0x57, 0x6d, 0xf9, 0x95, 0xae, 0x81, 0x92,
+	0x1e, 0xa3, 0xc4, 0x74, 0x7d, 0x07, 0x4f, 0x8a, 0x39, 0x41, 0x56, 0x7a, 0x9c, 0x56, 0x76, 0x97,
+	0x4e, 0xcf, 0x56, 0xc9, 0xf7, 0xb3, 0x55, 0xf2, 0xf3, 0x6c, 0x95, 0xbc, 0x99, 0x4f, 0x73, 0xc3,
+	0xd1, 0x68, 0x3e, 0xbb, 0x85, 0xef, 0xff, 0x0a, 0x00, 0x00, 0xff, 0xff, 0xc9, 0xc8, 0x2e, 0x1e,
+	0xc4, 0x05, 0x00, 0x00,
 }
 
 func (m *WriteRequest) Marshal() (dAtA []byte, err error) {
@@ -908,54 +731,6 @@ func (m *WriteRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			i--
 			dAtA[i] = 0x1a
 		}
-	}
-	if len(m.Timeseries) > 0 {
-		for iNdEx := len(m.Timeseries) - 1; iNdEx >= 0; iNdEx-- {
-			{
-				size, err := m.Timeseries[iNdEx].MarshalToSizedBuffer(dAtA[:i])
-				if err != nil {
-					return 0, err
-				}
-				i -= size
-				i = encodeVarintRemote(dAtA, i, uint64(size))
-			}
-			i--
-			dAtA[i] = 0xa
-		}
-	}
-	return len(dAtA) - i, nil
-}
-
-func (m *MinimizedWriteRequestPacking) Marshal() (dAtA []byte, err error) {
-	size := m.Size()
-	dAtA = make([]byte, size)
-	n, err := m.MarshalToSizedBuffer(dAtA[:size])
-	if err != nil {
-		return nil, err
-	}
-	return dAtA[:n], nil
-}
-
-func (m *MinimizedWriteRequestPacking) MarshalTo(dAtA []byte) (int, error) {
-	size := m.Size()
-	return m.MarshalToSizedBuffer(dAtA[:size])
-}
-
-func (m *MinimizedWriteRequestPacking) MarshalToSizedBuffer(dAtA []byte) (int, error) {
-	i := len(dAtA)
-	_ = i
-	var l int
-	_ = l
-	if m.XXX_unrecognized != nil {
-		i -= len(m.XXX_unrecognized)
-		copy(dAtA[i:], m.XXX_unrecognized)
-	}
-	if len(m.Symbols) > 0 {
-		i -= len(m.Symbols)
-		copy(dAtA[i:], m.Symbols)
-		i = encodeVarintRemote(dAtA, i, uint64(len(m.Symbols)))
-		i--
-		dAtA[i] = 0x22
 	}
 	if len(m.Timeseries) > 0 {
 		for iNdEx := len(m.Timeseries) - 1; iNdEx >= 0; iNdEx-- {
@@ -1134,102 +909,6 @@ func (m *MinimizedWriteRequestLenBytes) MarshalTo(dAtA []byte) (int, error) {
 }
 
 func (m *MinimizedWriteRequestLenBytes) MarshalToSizedBuffer(dAtA []byte) (int, error) {
-	i := len(dAtA)
-	_ = i
-	var l int
-	_ = l
-	if m.XXX_unrecognized != nil {
-		i -= len(m.XXX_unrecognized)
-		copy(dAtA[i:], m.XXX_unrecognized)
-	}
-	if len(m.Symbols) > 0 {
-		i -= len(m.Symbols)
-		copy(dAtA[i:], m.Symbols)
-		i = encodeVarintRemote(dAtA, i, uint64(len(m.Symbols)))
-		i--
-		dAtA[i] = 0x22
-	}
-	if len(m.Timeseries) > 0 {
-		for iNdEx := len(m.Timeseries) - 1; iNdEx >= 0; iNdEx-- {
-			{
-				size, err := m.Timeseries[iNdEx].MarshalToSizedBuffer(dAtA[:i])
-				if err != nil {
-					return 0, err
-				}
-				i -= size
-				i = encodeVarintRemote(dAtA, i, uint64(size))
-			}
-			i--
-			dAtA[i] = 0xa
-		}
-	}
-	return len(dAtA) - i, nil
-}
-
-func (m *MinimizedWriteRequestFixed32) Marshal() (dAtA []byte, err error) {
-	size := m.Size()
-	dAtA = make([]byte, size)
-	n, err := m.MarshalToSizedBuffer(dAtA[:size])
-	if err != nil {
-		return nil, err
-	}
-	return dAtA[:n], nil
-}
-
-func (m *MinimizedWriteRequestFixed32) MarshalTo(dAtA []byte) (int, error) {
-	size := m.Size()
-	return m.MarshalToSizedBuffer(dAtA[:size])
-}
-
-func (m *MinimizedWriteRequestFixed32) MarshalToSizedBuffer(dAtA []byte) (int, error) {
-	i := len(dAtA)
-	_ = i
-	var l int
-	_ = l
-	if m.XXX_unrecognized != nil {
-		i -= len(m.XXX_unrecognized)
-		copy(dAtA[i:], m.XXX_unrecognized)
-	}
-	if len(m.Symbols) > 0 {
-		i -= len(m.Symbols)
-		copy(dAtA[i:], m.Symbols)
-		i = encodeVarintRemote(dAtA, i, uint64(len(m.Symbols)))
-		i--
-		dAtA[i] = 0x22
-	}
-	if len(m.Timeseries) > 0 {
-		for iNdEx := len(m.Timeseries) - 1; iNdEx >= 0; iNdEx-- {
-			{
-				size, err := m.Timeseries[iNdEx].MarshalToSizedBuffer(dAtA[:i])
-				if err != nil {
-					return 0, err
-				}
-				i -= size
-				i = encodeVarintRemote(dAtA, i, uint64(size))
-			}
-			i--
-			dAtA[i] = 0xa
-		}
-	}
-	return len(dAtA) - i, nil
-}
-
-func (m *MinimizedWriteRequestFixed64) Marshal() (dAtA []byte, err error) {
-	size := m.Size()
-	dAtA = make([]byte, size)
-	n, err := m.MarshalToSizedBuffer(dAtA[:size])
-	if err != nil {
-		return nil, err
-	}
-	return dAtA[:n], nil
-}
-
-func (m *MinimizedWriteRequestFixed64) MarshalTo(dAtA []byte) (int, error) {
-	size := m.Size()
-	return m.MarshalToSizedBuffer(dAtA[:size])
-}
-
-func (m *MinimizedWriteRequestFixed64) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	_ = i
 	var l int
@@ -1547,28 +1226,6 @@ func (m *WriteRequest) Size() (n int) {
 	return n
 }
 
-func (m *MinimizedWriteRequestPacking) Size() (n int) {
-	if m == nil {
-		return 0
-	}
-	var l int
-	_ = l
-	if len(m.Timeseries) > 0 {
-		for _, e := range m.Timeseries {
-			l = e.Size()
-			n += 1 + l + sovRemote(uint64(l))
-		}
-	}
-	l = len(m.Symbols)
-	if l > 0 {
-		n += 1 + l + sovRemote(uint64(l))
-	}
-	if m.XXX_unrecognized != nil {
-		n += len(m.XXX_unrecognized)
-	}
-	return n
-}
-
 func (m *MinimizedWriteRequest) Size() (n int) {
 	if m == nil {
 		return 0
@@ -1636,50 +1293,6 @@ func (m *MinimizedWriteRequestLen) Size() (n int) {
 }
 
 func (m *MinimizedWriteRequestLenBytes) Size() (n int) {
-	if m == nil {
-		return 0
-	}
-	var l int
-	_ = l
-	if len(m.Timeseries) > 0 {
-		for _, e := range m.Timeseries {
-			l = e.Size()
-			n += 1 + l + sovRemote(uint64(l))
-		}
-	}
-	l = len(m.Symbols)
-	if l > 0 {
-		n += 1 + l + sovRemote(uint64(l))
-	}
-	if m.XXX_unrecognized != nil {
-		n += len(m.XXX_unrecognized)
-	}
-	return n
-}
-
-func (m *MinimizedWriteRequestFixed32) Size() (n int) {
-	if m == nil {
-		return 0
-	}
-	var l int
-	_ = l
-	if len(m.Timeseries) > 0 {
-		for _, e := range m.Timeseries {
-			l = e.Size()
-			n += 1 + l + sovRemote(uint64(l))
-		}
-	}
-	l = len(m.Symbols)
-	if l > 0 {
-		n += 1 + l + sovRemote(uint64(l))
-	}
-	if m.XXX_unrecognized != nil {
-		n += len(m.XXX_unrecognized)
-	}
-	return n
-}
-
-func (m *MinimizedWriteRequestFixed64) Size() (n int) {
 	if m == nil {
 		return 0
 	}
@@ -1913,123 +1526,6 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
 			if err := m.Metadata[len(m.Metadata)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
-			iNdEx = postIndex
-		default:
-			iNdEx = preIndex
-			skippy, err := skipRemote(dAtA[iNdEx:])
-			if err != nil {
-				return err
-			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
-				return ErrInvalidLengthRemote
-			}
-			if (iNdEx + skippy) > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.XXX_unrecognized = append(m.XXX_unrecognized, dAtA[iNdEx:iNdEx+skippy]...)
-			iNdEx += skippy
-		}
-	}
-
-	if iNdEx > l {
-		return io.ErrUnexpectedEOF
-	}
-	return nil
-}
-func (m *MinimizedWriteRequestPacking) Unmarshal(dAtA []byte) error {
-	l := len(dAtA)
-	iNdEx := 0
-	for iNdEx < l {
-		preIndex := iNdEx
-		var wire uint64
-		for shift := uint(0); ; shift += 7 {
-			if shift >= 64 {
-				return ErrIntOverflowRemote
-			}
-			if iNdEx >= l {
-				return io.ErrUnexpectedEOF
-			}
-			b := dAtA[iNdEx]
-			iNdEx++
-			wire |= uint64(b&0x7F) << shift
-			if b < 0x80 {
-				break
-			}
-		}
-		fieldNum := int32(wire >> 3)
-		wireType := int(wire & 0x7)
-		if wireType == 4 {
-			return fmt.Errorf("proto: MinimizedWriteRequestPacking: wiretype end group for non-group")
-		}
-		if fieldNum <= 0 {
-			return fmt.Errorf("proto: MinimizedWriteRequestPacking: illegal tag %d (wire type %d)", fieldNum, wire)
-		}
-		switch fieldNum {
-		case 1:
-			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Timeseries", wireType)
-			}
-			var msglen int
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowRemote
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				msglen |= int(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			if msglen < 0 {
-				return ErrInvalidLengthRemote
-			}
-			postIndex := iNdEx + msglen
-			if postIndex < 0 {
-				return ErrInvalidLengthRemote
-			}
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.Timeseries = append(m.Timeseries, MinimizedTimeSeriesPacking{})
-			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
-				return err
-			}
-			iNdEx = postIndex
-		case 4:
-			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Symbols", wireType)
-			}
-			var stringLen uint64
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowRemote
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				stringLen |= uint64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			intStringLen := int(stringLen)
-			if intStringLen < 0 {
-				return ErrInvalidLengthRemote
-			}
-			postIndex := iNdEx + intStringLen
-			if postIndex < 0 {
-				return ErrInvalidLengthRemote
-			}
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.Symbols = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
@@ -2502,240 +1998,6 @@ func (m *MinimizedWriteRequestLenBytes) Unmarshal(dAtA []byte) error {
 			if m.Symbols == nil {
 				m.Symbols = []byte{}
 			}
-			iNdEx = postIndex
-		default:
-			iNdEx = preIndex
-			skippy, err := skipRemote(dAtA[iNdEx:])
-			if err != nil {
-				return err
-			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
-				return ErrInvalidLengthRemote
-			}
-			if (iNdEx + skippy) > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.XXX_unrecognized = append(m.XXX_unrecognized, dAtA[iNdEx:iNdEx+skippy]...)
-			iNdEx += skippy
-		}
-	}
-
-	if iNdEx > l {
-		return io.ErrUnexpectedEOF
-	}
-	return nil
-}
-func (m *MinimizedWriteRequestFixed32) Unmarshal(dAtA []byte) error {
-	l := len(dAtA)
-	iNdEx := 0
-	for iNdEx < l {
-		preIndex := iNdEx
-		var wire uint64
-		for shift := uint(0); ; shift += 7 {
-			if shift >= 64 {
-				return ErrIntOverflowRemote
-			}
-			if iNdEx >= l {
-				return io.ErrUnexpectedEOF
-			}
-			b := dAtA[iNdEx]
-			iNdEx++
-			wire |= uint64(b&0x7F) << shift
-			if b < 0x80 {
-				break
-			}
-		}
-		fieldNum := int32(wire >> 3)
-		wireType := int(wire & 0x7)
-		if wireType == 4 {
-			return fmt.Errorf("proto: MinimizedWriteRequestFixed32: wiretype end group for non-group")
-		}
-		if fieldNum <= 0 {
-			return fmt.Errorf("proto: MinimizedWriteRequestFixed32: illegal tag %d (wire type %d)", fieldNum, wire)
-		}
-		switch fieldNum {
-		case 1:
-			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Timeseries", wireType)
-			}
-			var msglen int
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowRemote
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				msglen |= int(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			if msglen < 0 {
-				return ErrInvalidLengthRemote
-			}
-			postIndex := iNdEx + msglen
-			if postIndex < 0 {
-				return ErrInvalidLengthRemote
-			}
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.Timeseries = append(m.Timeseries, MinimizedTimeSeriesFixed32{})
-			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
-				return err
-			}
-			iNdEx = postIndex
-		case 4:
-			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Symbols", wireType)
-			}
-			var stringLen uint64
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowRemote
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				stringLen |= uint64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			intStringLen := int(stringLen)
-			if intStringLen < 0 {
-				return ErrInvalidLengthRemote
-			}
-			postIndex := iNdEx + intStringLen
-			if postIndex < 0 {
-				return ErrInvalidLengthRemote
-			}
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.Symbols = string(dAtA[iNdEx:postIndex])
-			iNdEx = postIndex
-		default:
-			iNdEx = preIndex
-			skippy, err := skipRemote(dAtA[iNdEx:])
-			if err != nil {
-				return err
-			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
-				return ErrInvalidLengthRemote
-			}
-			if (iNdEx + skippy) > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.XXX_unrecognized = append(m.XXX_unrecognized, dAtA[iNdEx:iNdEx+skippy]...)
-			iNdEx += skippy
-		}
-	}
-
-	if iNdEx > l {
-		return io.ErrUnexpectedEOF
-	}
-	return nil
-}
-func (m *MinimizedWriteRequestFixed64) Unmarshal(dAtA []byte) error {
-	l := len(dAtA)
-	iNdEx := 0
-	for iNdEx < l {
-		preIndex := iNdEx
-		var wire uint64
-		for shift := uint(0); ; shift += 7 {
-			if shift >= 64 {
-				return ErrIntOverflowRemote
-			}
-			if iNdEx >= l {
-				return io.ErrUnexpectedEOF
-			}
-			b := dAtA[iNdEx]
-			iNdEx++
-			wire |= uint64(b&0x7F) << shift
-			if b < 0x80 {
-				break
-			}
-		}
-		fieldNum := int32(wire >> 3)
-		wireType := int(wire & 0x7)
-		if wireType == 4 {
-			return fmt.Errorf("proto: MinimizedWriteRequestFixed64: wiretype end group for non-group")
-		}
-		if fieldNum <= 0 {
-			return fmt.Errorf("proto: MinimizedWriteRequestFixed64: illegal tag %d (wire type %d)", fieldNum, wire)
-		}
-		switch fieldNum {
-		case 1:
-			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Timeseries", wireType)
-			}
-			var msglen int
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowRemote
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				msglen |= int(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			if msglen < 0 {
-				return ErrInvalidLengthRemote
-			}
-			postIndex := iNdEx + msglen
-			if postIndex < 0 {
-				return ErrInvalidLengthRemote
-			}
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.Timeseries = append(m.Timeseries, MinimizedTimeSeriesFixed64{})
-			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
-				return err
-			}
-			iNdEx = postIndex
-		case 4:
-			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Symbols", wireType)
-			}
-			var stringLen uint64
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowRemote
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				stringLen |= uint64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			intStringLen := int(stringLen)
-			if intStringLen < 0 {
-				return ErrInvalidLengthRemote
-			}
-			postIndex := iNdEx + intStringLen
-			if postIndex < 0 {
-				return ErrInvalidLengthRemote
-			}
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.Symbols = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
