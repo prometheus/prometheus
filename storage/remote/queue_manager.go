@@ -530,7 +530,7 @@ func (t *QueueManager) AppendMetadata(ctx context.Context, metadata []scrape.Met
 
 func (t *QueueManager) sendMetadataWithBackoff(ctx context.Context, metadata []prompb.MetricMetadata, pBuf *proto.Buffer) error {
 	// Build the WriteRequest with no samples.
-	req, _, err := buildWriteRequest(nil, metadata, pBuf, nil, nil, 0)
+	req, _, err := buildWriteRequest(nil, metadata, pBuf, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -586,21 +586,23 @@ func isSampleOld(sampleAgeLimit time.Duration, ts int64) bool {
 	return sampleTs.Before(limitTs)
 }
 
-func isTimeSeriesOld(sampleAgeLimit time.Duration, ts prompb.TimeSeries) bool {
-	if sampleAgeLimit == 0 {
-		// If sampleAgeLimit is unset, then we never skip samples due to their age.
-		return false
-	}
-	switch {
-	// Only the first element should be set in the series, therefore we only check the first element.
-	case len(ts.Samples) > 0:
-		return isSampleOld(sampleAgeLimit, ts.Samples[0].Timestamp)
-	case len(ts.Histograms) > 0:
-		return isSampleOld(sampleAgeLimit, ts.Histograms[0].Timestamp)
-	case len(ts.Exemplars) > 0:
-		return isSampleOld(sampleAgeLimit, ts.Exemplars[0].Timestamp)
-	default:
-		return false
+func isTimeSeriesOldFilter(sampleAgeLimit time.Duration) func(ts prompb.TimeSeries) bool {
+	return func(ts prompb.TimeSeries) bool {
+		if sampleAgeLimit == 0 {
+			// If sampleAgeLimit is unset, then we never skip samples due to their age.
+			return false
+		}
+		switch {
+		// Only the first element should be set in the series, therefore we only check the first element.
+		case len(ts.Samples) > 0:
+			return isSampleOld(sampleAgeLimit, ts.Samples[0].Timestamp)
+		case len(ts.Histograms) > 0:
+			return isSampleOld(sampleAgeLimit, ts.Histograms[0].Timestamp)
+		case len(ts.Exemplars) > 0:
+			return isSampleOld(sampleAgeLimit, ts.Exemplars[0].Timestamp)
+		default:
+			return false
+		}
 	}
 }
 
@@ -1535,7 +1537,7 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, s
 // sendSamples to the remote storage with backoff for recoverable errors.
 func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.TimeSeries, sampleCount, exemplarCount, histogramCount int, pBuf *proto.Buffer, buf *[]byte) error {
 	// Build the WriteRequest with no metadata.
-	req, highest, err := buildWriteRequest(samples, nil, pBuf, *buf, nil, 0)
+	req, highest, err := buildWriteRequest(samples, nil, pBuf, *buf, nil)
 	if err != nil {
 		// Failing to build the write request is non-recoverable, since it will
 		// only error if marshaling the proto to bytes fails.
@@ -1556,8 +1558,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 				nil,
 				pBuf,
 				*buf,
-				isTimeSeriesOld,
-				time.Duration(s.qm.cfg.SampleAgeLimit),
+				isTimeSeriesOldFilter(time.Duration(s.qm.cfg.SampleAgeLimit)),
 			)
 			if err != nil {
 				return err
@@ -1669,12 +1670,12 @@ func sendWriteRequestWithBackoff(ctx context.Context, cfg config.QueueConfig, l 
 	}
 }
 
-func buildTimeSeries(timeSeries []prompb.TimeSeries, filter func(time.Duration, prompb.TimeSeries) bool, ageLimit time.Duration) (int64, []prompb.TimeSeries) {
+func buildTimeSeries(timeSeries []prompb.TimeSeries, filter func(prompb.TimeSeries) bool) (int64, []prompb.TimeSeries) {
 	var highest int64
 
 	writeIdx := 0
 	for i, ts := range timeSeries {
-		if filter != nil && filter(ageLimit, ts) {
+		if filter != nil && filter(ts) {
 			continue
 		}
 
@@ -1698,8 +1699,8 @@ func buildTimeSeries(timeSeries []prompb.TimeSeries, filter func(time.Duration, 
 	return highest, timeSeries
 }
 
-func buildWriteRequest(timeSeries []prompb.TimeSeries, metadata []prompb.MetricMetadata, pBuf *proto.Buffer, buf []byte, filter func(time.Duration, prompb.TimeSeries) bool, ageLimit time.Duration) ([]byte, int64, error) {
-	highest, timeSeries := buildTimeSeries(timeSeries, filter, ageLimit)
+func buildWriteRequest(timeSeries []prompb.TimeSeries, metadata []prompb.MetricMetadata, pBuf *proto.Buffer, buf []byte, filter func(prompb.TimeSeries) bool) ([]byte, int64, error) {
+	highest, timeSeries := buildTimeSeries(timeSeries, filter)
 
 	req := &prompb.WriteRequest{
 		Timeseries: timeSeries,
