@@ -290,8 +290,9 @@ func (m *Manager) TargetsActive() map[string][]*Target {
 		// Running in parallel limits the blocking time of scrapePool to scrape
 		// interval when there's an update from SD.
 		go func(tset string, sp *scrapePool) {
+			poolTargets := sp.ActiveTargets()
 			mtx.Lock()
-			targets[tset] = sp.ActiveTargets()
+			targets[tset] = poolTargets
 			mtx.Unlock()
 			wg.Done()
 		}(tset, sp)
