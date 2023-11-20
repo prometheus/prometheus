@@ -1403,7 +1403,7 @@ func TestBuildTimeSeries(t *testing.T) {
 	testCases := []struct {
 		name        string
 		ts          []prompb.TimeSeries
-		filter      func(duration time.Duration, ts prompb.TimeSeries) bool
+		filter      func(ts prompb.TimeSeries) bool
 		highestTs   int64
 		responseLen int
 	}{
@@ -1475,7 +1475,7 @@ func TestBuildTimeSeries(t *testing.T) {
 					},
 				},
 			},
-			filter:      func(duration time.Duration, ts prompb.TimeSeries) bool { return filterTsLimit(1234567892, ts) },
+			filter:      func(ts prompb.TimeSeries) bool { return filterTsLimit(1234567892, ts) },
 			responseLen: 2,
 			highestTs:   1234567893,
 		},
@@ -1515,7 +1515,7 @@ func TestBuildTimeSeries(t *testing.T) {
 					},
 				},
 			},
-			filter:      func(duration time.Duration, ts prompb.TimeSeries) bool { return filterTsLimit(1234567892, ts) },
+			filter:      func(ts prompb.TimeSeries) bool { return filterTsLimit(1234567892, ts) },
 			responseLen: 2,
 			highestTs:   1234567893,
 		},
@@ -1555,7 +1555,7 @@ func TestBuildTimeSeries(t *testing.T) {
 					},
 				},
 			},
-			filter:      func(duration time.Duration, ts prompb.TimeSeries) bool { return filterTsLimit(1234567895, ts) },
+			filter:      func(ts prompb.TimeSeries) bool { return filterTsLimit(1234567895, ts) },
 			responseLen: 2,
 			highestTs:   1234567897,
 		},
@@ -1564,7 +1564,7 @@ func TestBuildTimeSeries(t *testing.T) {
 	// Run the test cases
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			highest, result := buildTimeSeries(tc.ts, tc.filter, time.Duration(0))
+			highest, result := buildTimeSeries(tc.ts, tc.filter)
 			require.NotNil(t, result)
 			require.Equal(t, tc.responseLen, len(result))
 			require.Equal(t, tc.highestTs, highest)
