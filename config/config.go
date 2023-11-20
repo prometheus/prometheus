@@ -158,6 +158,7 @@ var (
 		HonorLabels:             false,
 		HonorTimestamps:         true,
 		HTTPClientConfig:        config.DefaultHTTPClientConfig,
+		EnableCompression:       true,
 	}
 
 	// DefaultAlertmanagerConfig is the default alertmanager configuration.
@@ -582,6 +583,8 @@ type ScrapeConfig struct {
 	MetricsPath string `yaml:"metrics_path,omitempty"`
 	// The URL scheme with which to fetch metrics from targets.
 	Scheme string `yaml:"scheme,omitempty"`
+	// Indicator whether to request compressed response from the target.
+	EnableCompression bool `yaml:"enable_compression"`
 	// An uncompressed response body larger than this many bytes will cause the
 	// scrape to fail. 0 means no limit.
 	BodySizeLimit units.Base2Bytes `yaml:"body_size_limit,omitempty"`
