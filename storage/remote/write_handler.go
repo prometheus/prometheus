@@ -74,8 +74,6 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var err error
 	var req *prompb.WriteRequest
 	var reqMin *prompb.MinimizedWriteRequest
-	var reqMin64Fixed *prompb.MinimizedWriteRequestFixed64
-	var reqMin32Fixed *prompb.MinimizedWriteRequestFixed32
 	var reqMinBytes *prompb.MinimizedWriteRequestBytes
 	var reqMinLen *prompb.MinimizedWriteRequestLen
 	var reqMinLenBytes *prompb.MinimizedWriteRequestLenBytes
@@ -86,10 +84,6 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		req, err = DecodeWriteRequest(r.Body)
 	case Min32Optimized:
 		reqMin, err = DecodeMinimizedWriteRequest(r.Body)
-	case Min64Fixed:
-		reqMin64Fixed, err = DecodeMinimizedWriteRequestFixed64(r.Body)
-	case Min32Fixed:
-		reqMin32Fixed, err = DecodeMinimizedWriteRequestFixed32(r.Body)
 	case MinBytes:
 		reqMinBytes, err = DecodeMinimizedWriteRequestBytes(r.Body)
 	case MinLen:
@@ -110,10 +104,6 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		err = h.write(r.Context(), req)
 	case Min32Optimized:
 		err = h.writeMin(r.Context(), reqMin)
-	case Min64Fixed:
-		err = h.writeMin64(r.Context(), reqMin64Fixed)
-	case Min32Fixed:
-		err = h.writeMin32(r.Context(), reqMin32Fixed)
 	case MinBytes:
 		err = h.writeMinBytes(r.Context(), reqMinBytes)
 	case MinLen:
@@ -335,84 +325,6 @@ func (h *writeHandler) writeMin(ctx context.Context, req *prompb.MinimizedWriteR
 
 		for _, ep := range ts.Exemplars {
 			e := exemplarProtoToExemplar(ep)
-			h.appendExemplar(app, e, ls, &outOfOrderExemplarErrs)
-		}
-
-		err = h.appendHistograms(app, ts.Histograms, ls)
-		if err != nil {
-			return err
-		}
-	}
-
-	if outOfOrderExemplarErrs > 0 {
-		_ = level.Warn(h.logger).Log("msg", "Error on ingesting out-of-order exemplars", "num_dropped", outOfOrderExemplarErrs)
-	}
-
-	return nil
-}
-
-func (h *writeHandler) writeMin64(ctx context.Context, req *prompb.MinimizedWriteRequestFixed64) (err error) {
-	outOfOrderExemplarErrs := 0
-
-	app := h.appendable.Appender(ctx)
-	defer func() {
-		if err != nil {
-			_ = app.Rollback()
-			return
-		}
-		err = app.Commit()
-	}()
-
-	for _, ts := range req.Timeseries {
-		ls := Uint64RefToLabels(req.Symbols, ts.LabelSymbols)
-
-		err := h.appendSamples(app, ts.Samples, ls)
-		if err != nil {
-			return err
-		}
-
-		for _, ep := range ts.Exemplars {
-			e := exemplarProtoToExemplar(ep)
-			//e := exemplarRefProtoToExemplar(req.StringSymbolTable, ep)
-			h.appendExemplar(app, e, ls, &outOfOrderExemplarErrs)
-		}
-
-		err = h.appendHistograms(app, ts.Histograms, ls)
-		if err != nil {
-			return err
-		}
-	}
-
-	if outOfOrderExemplarErrs > 0 {
-		_ = level.Warn(h.logger).Log("msg", "Error on ingesting out-of-order exemplars", "num_dropped", outOfOrderExemplarErrs)
-	}
-
-	return nil
-}
-
-func (h *writeHandler) writeMin32(ctx context.Context, req *prompb.MinimizedWriteRequestFixed32) (err error) {
-	outOfOrderExemplarErrs := 0
-
-	app := h.appendable.Appender(ctx)
-	defer func() {
-		if err != nil {
-			_ = app.Rollback()
-			return
-		}
-		err = app.Commit()
-	}()
-
-	for _, ts := range req.Timeseries {
-		ls := Uint32RefToLabels(req.Symbols, ts.LabelSymbols)
-
-		err := h.appendSamples(app, ts.Samples, ls)
-		if err != nil {
-			return err
-		}
-
-		for _, ep := range ts.Exemplars {
-			e := exemplarProtoToExemplar(ep)
-			//e := exemplarRefProtoToExemplar(req.StringSymbolTable, ep)
 			h.appendExemplar(app, e, ls, &outOfOrderExemplarErrs)
 		}
 
