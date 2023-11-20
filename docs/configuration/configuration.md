@@ -237,6 +237,10 @@ job_name: <job_name>
 params:
   [ <string>: [<string>, ...] ]
 
+# If enable_compression is set to "false", Prometheus will request uncompressed
+# response from the scraped target.
+[ enable_compression: <boolean> | default = true ]
+
 # Sets the `Authorization` header on every scrape request with the
 # configured username and password.
 # password and password_file are mutually exclusive.

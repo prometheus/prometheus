@@ -109,6 +109,7 @@ type scrapeLoopOptions struct {
 	scrapeClassicHistograms  bool
 	mrc                      []*relabel.Config
 	cache                    *scrapeCache
+	enableCompression        bool
 }
 
 const maxAheadTime = 10 * time.Minute
@@ -163,6 +164,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 			offsetSeed,
 			opts.honorTimestamps,
 			opts.trackTimestampsStaleness,
+			opts.enableCompression,
 			opts.sampleLimit,
 			opts.bucketLimit,
 			opts.labelLimits,
@@ -275,6 +277,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 		}
 		honorLabels              = sp.config.HonorLabels
 		honorTimestamps          = sp.config.HonorTimestamps
+		enableCompression        = sp.config.EnableCompression
 		trackTimestampsStaleness = sp.config.TrackTimestampsStaleness
 		mrc                      = sp.config.MetricRelabelConfigs
 	)
@@ -295,11 +298,12 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 		interval, timeout, err := t.intervalAndTimeout(interval, timeout)
 		var (
 			s = &targetScraper{
-				Target:        t,
-				client:        sp.client,
-				timeout:       timeout,
-				bodySizeLimit: bodySizeLimit,
-				acceptHeader:  acceptHeader(cfg.ScrapeProtocols),
+				Target:               t,
+				client:               sp.client,
+				timeout:              timeout,
+				bodySizeLimit:        bodySizeLimit,
+				acceptHeader:         acceptHeader(cfg.ScrapeProtocols),
+				acceptEncodingHeader: acceptEncodingHeader(enableCompression),
 			}
 			newLoop = sp.newLoop(scrapeLoopOptions{
 				target:                   t,
@@ -309,6 +313,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 				labelLimits:              labelLimits,
 				honorLabels:              honorLabels,
 				honorTimestamps:          honorTimestamps,
+				enableCompression:        enableCompression,
 				trackTimestampsStaleness: trackTimestampsStaleness,
 				mrc:                      mrc,
 				cache:                    cache,
@@ -403,6 +408,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 		}
 		honorLabels              = sp.config.HonorLabels
 		honorTimestamps          = sp.config.HonorTimestamps
+		enableCompression        = sp.config.EnableCompression
 		trackTimestampsStaleness = sp.config.TrackTimestampsStaleness
 		mrc                      = sp.config.MetricRelabelConfigs
 		scrapeClassicHistograms  = sp.config.ScrapeClassicHistograms
@@ -419,12 +425,13 @@ func (sp *scrapePool) sync(targets []*Target) {
 			var err error
 			interval, timeout, err = t.intervalAndTimeout(interval, timeout)
 			s := &targetScraper{
-				Target:        t,
-				client:        sp.client,
-				timeout:       timeout,
-				bodySizeLimit: bodySizeLimit,
-				acceptHeader:  acceptHeader(sp.config.ScrapeProtocols),
-				metrics:       sp.metrics,
+				Target:               t,
+				client:               sp.client,
+				timeout:              timeout,
+				bodySizeLimit:        bodySizeLimit,
+				acceptHeader:         acceptHeader(sp.config.ScrapeProtocols),
+				acceptEncodingHeader: acceptEncodingHeader(enableCompression),
+				metrics:              sp.metrics,
 			}
 			l := sp.newLoop(scrapeLoopOptions{
 				target:                   t,
@@ -434,6 +441,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 				labelLimits:              labelLimits,
 				honorLabels:              honorLabels,
 				honorTimestamps:          honorTimestamps,
+				enableCompression:        enableCompression,
 				trackTimestampsStaleness: trackTimestampsStaleness,
 				mrc:                      mrc,
 				interval:                 interval,
@@ -647,8 +655,9 @@ type targetScraper struct {
 	gzipr *gzip.Reader
 	buf   *bufio.Reader
 
-	bodySizeLimit int64
-	acceptHeader  string
+	bodySizeLimit        int64
+	acceptHeader         string
+	acceptEncodingHeader string
 
 	metrics *scrapeMetrics
 }
@@ -670,6 +679,13 @@ func acceptHeader(sps []config.ScrapeProtocol) string {
 	return strings.Join(vals, ",")
 }
 
+func acceptEncodingHeader(enableCompression bool) string {
+	if enableCompression {
+		return "gzip"
+	}
+	return "identity"
+}
+
 var UserAgent = fmt.Sprintf("Prometheus/%s", version.Version)
 
 func (s *targetScraper) scrape(ctx context.Context) (*http.Response, error) {
@@ -679,7 +695,7 @@ func (s *targetScraper) scrape(ctx context.Context) (*http.Response, error) {
 			return nil, err
 		}
 		req.Header.Add("Accept", s.acceptHeader)
-		req.Header.Add("Accept-Encoding", "gzip")
+		req.Header.Add("Accept-Encoding", s.acceptEncodingHeader)
 		req.Header.Set("User-Agent", UserAgent)
 		req.Header.Set("X-Prometheus-Scrape-Timeout-Seconds", strconv.FormatFloat(s.timeout.Seconds(), 'f', -1, 64))
 
@@ -765,6 +781,7 @@ type scrapeLoop struct {
 	offsetSeed               uint64
 	honorTimestamps          bool
 	trackTimestampsStaleness bool
+	enableCompression        bool
 	forcedErr                error
 	forcedErrMtx             sync.Mutex
 	sampleLimit              int
@@ -1055,6 +1072,7 @@ func newScrapeLoop(ctx context.Context,
 	offsetSeed uint64,
 	honorTimestamps bool,
 	trackTimestampsStaleness bool,
+	enableCompression bool,
 	sampleLimit int,
 	bucketLimit int,
 	labelLimits *labelLimits,
@@ -1102,6 +1120,7 @@ func newScrapeLoop(ctx context.Context,
 		appenderCtx:              appenderCtx,
 		honorTimestamps:          honorTimestamps,
 		trackTimestampsStaleness: trackTimestampsStaleness,
+		enableCompression:        enableCompression,
 		sampleLimit:              sampleLimit,
 		bucketLimit:              bucketLimit,
 		labelLimits:              labelLimits,

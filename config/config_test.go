@@ -186,6 +186,7 @@ var expectedConf = &Config{
 			HonorTimestamps:       true,
 			ScrapeInterval:        model.Duration(15 * time.Second),
 			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:     true,
 			BodySizeLimit:         globBodySizeLimit,
 			SampleLimit:           globSampleLimit,
 			TargetLimit:           globTargetLimit,
@@ -288,6 +289,7 @@ var expectedConf = &Config{
 			HonorTimestamps:       true,
 			ScrapeInterval:        model.Duration(50 * time.Second),
 			ScrapeTimeout:         model.Duration(5 * time.Second),
+			EnableCompression:     true,
 			BodySizeLimit:         10 * units.MiB,
 			SampleLimit:           1000,
 			TargetLimit:           35,
@@ -384,6 +386,7 @@ var expectedConf = &Config{
 			HonorTimestamps:       true,
 			ScrapeInterval:        model.Duration(15 * time.Second),
 			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:     true,
 			BodySizeLimit:         globBodySizeLimit,
 			SampleLimit:           globSampleLimit,
 			TargetLimit:           globTargetLimit,
@@ -438,6 +441,7 @@ var expectedConf = &Config{
 			HonorTimestamps:       true,
 			ScrapeInterval:        model.Duration(15 * time.Second),
 			ScrapeTimeout:         model.Duration(10 * time.Second),
+			EnableCompression:     true,
 			BodySizeLimit:         globBodySizeLimit,
 			SampleLimit:           globSampleLimit,
 			TargetLimit:           globTargetLimit,
@@ -470,6 +474,7 @@ var expectedConf = &Config{
 			HonorTimestamps:       true,
 			ScrapeInterval:        model.Duration(15 * time.Second),
 			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:     true,
 			BodySizeLimit:         globBodySizeLimit,
 			SampleLimit:           globSampleLimit,
 			TargetLimit:           globTargetLimit,
@@ -508,6 +513,7 @@ var expectedConf = &Config{
 			HonorTimestamps:       true,
 			ScrapeInterval:        model.Duration(15 * time.Second),
 			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:     true,
 			BodySizeLimit:         globBodySizeLimit,
 			SampleLimit:           globSampleLimit,
 			TargetLimit:           globTargetLimit,
@@ -546,6 +552,7 @@ var expectedConf = &Config{
 			HonorTimestamps:       true,
 			ScrapeInterval:        model.Duration(15 * time.Second),
 			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:     true,
 			BodySizeLimit:         globBodySizeLimit,
 			SampleLimit:           globSampleLimit,
 			TargetLimit:           globTargetLimit,
@@ -573,6 +580,7 @@ var expectedConf = &Config{
 			HonorTimestamps:       true,
 			ScrapeInterval:        model.Duration(15 * time.Second),
 			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:     true,
 			BodySizeLimit:         globBodySizeLimit,
 			SampleLimit:           globSampleLimit,
 			TargetLimit:           globTargetLimit,
@@ -609,6 +617,7 @@ var expectedConf = &Config{
 			HonorTimestamps:       true,
 			ScrapeInterval:        model.Duration(15 * time.Second),
 			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:     true,
 			BodySizeLimit:         globBodySizeLimit,
 			SampleLimit:           globSampleLimit,
 			TargetLimit:           globTargetLimit,
@@ -642,6 +651,7 @@ var expectedConf = &Config{
 			HonorTimestamps:       true,
 			ScrapeInterval:        model.Duration(15 * time.Second),
 			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:     true,
 			BodySizeLimit:         globBodySizeLimit,
 			SampleLimit:           globSampleLimit,
 			TargetLimit:           globTargetLimit,
@@ -682,6 +692,7 @@ var expectedConf = &Config{
 			HonorTimestamps:       true,
 			ScrapeInterval:        model.Duration(15 * time.Second),
 			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:     true,
 			BodySizeLimit:         globBodySizeLimit,
 			SampleLimit:           globSampleLimit,
 			TargetLimit:           globTargetLimit,
@@ -712,6 +723,7 @@ var expectedConf = &Config{
 			HonorTimestamps:       true,
 			ScrapeInterval:        model.Duration(15 * time.Second),
 			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:     true,
 			BodySizeLimit:         globBodySizeLimit,
 			SampleLimit:           globSampleLimit,
 			TargetLimit:           globTargetLimit,
@@ -745,6 +757,7 @@ var expectedConf = &Config{
 			HonorTimestamps:       true,
 			ScrapeInterval:        model.Duration(15 * time.Second),
 			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:     true,
 			BodySizeLimit:         globBodySizeLimit,
 			SampleLimit:           globSampleLimit,
 			TargetLimit:           globTargetLimit,
@@ -771,6 +784,7 @@ var expectedConf = &Config{
 			HonorTimestamps:       true,
 			ScrapeInterval:        model.Duration(15 * time.Second),
 			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:     true,
 			BodySizeLimit:         globBodySizeLimit,
 			SampleLimit:           globSampleLimit,
 			TargetLimit:           globTargetLimit,
@@ -800,6 +814,7 @@ var expectedConf = &Config{
 			HonorTimestamps:       false,
 			ScrapeInterval:        model.Duration(15 * time.Second),
 			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:     true,
 			BodySizeLimit:         globBodySizeLimit,
 			SampleLimit:           globSampleLimit,
 			TargetLimit:           globTargetLimit,
@@ -829,6 +844,7 @@ var expectedConf = &Config{
 			HonorTimestamps:       true,
 			ScrapeInterval:        model.Duration(15 * time.Second),
 			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:     true,
 			BodySizeLimit:         globBodySizeLimit,
 			SampleLimit:           globSampleLimit,
 			TargetLimit:           globTargetLimit,
@@ -858,6 +874,7 @@ var expectedConf = &Config{
 			HonorTimestamps:       true,
 			ScrapeInterval:        model.Duration(15 * time.Second),
 			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:     true,
 			BodySizeLimit:         globBodySizeLimit,
 			SampleLimit:           globSampleLimit,
 			TargetLimit:           globTargetLimit,
@@ -884,6 +901,7 @@ var expectedConf = &Config{
 			HonorTimestamps:       true,
 			ScrapeInterval:        model.Duration(15 * time.Second),
 			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:     true,
 			BodySizeLimit:         globBodySizeLimit,
 			SampleLimit:           globSampleLimit,
 			TargetLimit:           globTargetLimit,
@@ -918,6 +936,7 @@ var expectedConf = &Config{
 			HonorTimestamps:       true,
 			ScrapeInterval:        model.Duration(15 * time.Second),
 			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:     true,
 			BodySizeLimit:         globBodySizeLimit,
 			SampleLimit:           globSampleLimit,
 			TargetLimit:           globTargetLimit,
@@ -951,6 +970,7 @@ var expectedConf = &Config{
 			HonorTimestamps:       true,
 			ScrapeInterval:        model.Duration(15 * time.Second),
 			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:     true,
 			BodySizeLimit:         globBodySizeLimit,
 			SampleLimit:           globSampleLimit,
 			TargetLimit:           globTargetLimit,
@@ -980,6 +1000,7 @@ var expectedConf = &Config{
 			HonorTimestamps:       true,
 			ScrapeInterval:        model.Duration(15 * time.Second),
 			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:     true,
 			BodySizeLimit:         globBodySizeLimit,
 			SampleLimit:           globSampleLimit,
 			TargetLimit:           globTargetLimit,
@@ -1009,6 +1030,7 @@ var expectedConf = &Config{
 			HonorTimestamps:       true,
 			ScrapeInterval:        model.Duration(15 * time.Second),
 			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:     true,
 			BodySizeLimit:         globBodySizeLimit,
 			SampleLimit:           globSampleLimit,
 			TargetLimit:           globTargetLimit,
@@ -1042,6 +1064,7 @@ var expectedConf = &Config{
 			HonorTimestamps:       true,
 			ScrapeInterval:        model.Duration(15 * time.Second),
 			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:     true,
 			BodySizeLimit:         globBodySizeLimit,
 			SampleLimit:           globSampleLimit,
 			TargetLimit:           globTargetLimit,
@@ -1078,6 +1101,7 @@ var expectedConf = &Config{
 			HonorTimestamps:       true,
 			ScrapeInterval:        model.Duration(15 * time.Second),
 			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:     true,
 			BodySizeLimit:         globBodySizeLimit,
 			SampleLimit:           globSampleLimit,
 			TargetLimit:           globTargetLimit,
@@ -1133,6 +1157,7 @@ var expectedConf = &Config{
 			HonorTimestamps:       true,
 			ScrapeInterval:        model.Duration(15 * time.Second),
 			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:     true,
 			BodySizeLimit:         globBodySizeLimit,
 			SampleLimit:           globSampleLimit,
 			TargetLimit:           globTargetLimit,
@@ -1159,6 +1184,7 @@ var expectedConf = &Config{
 			HonorTimestamps:       true,
 			ScrapeInterval:        model.Duration(15 * time.Second),
 			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:     true,
 			BodySizeLimit:         globBodySizeLimit,
 			SampleLimit:           globSampleLimit,
 			TargetLimit:           globTargetLimit,
@@ -1196,6 +1222,7 @@ var expectedConf = &Config{
 			HonorTimestamps:       true,
 			ScrapeInterval:        model.Duration(15 * time.Second),
 			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:     true,
 			BodySizeLimit:         globBodySizeLimit,
 			SampleLimit:           globSampleLimit,
 			TargetLimit:           globTargetLimit,
@@ -1239,6 +1266,7 @@ var expectedConf = &Config{
 			HonorTimestamps:       true,
 			ScrapeInterval:        model.Duration(15 * time.Second),
 			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:     true,
 			BodySizeLimit:         globBodySizeLimit,
 			SampleLimit:           globSampleLimit,
 			TargetLimit:           globTargetLimit,
@@ -1273,6 +1301,7 @@ var expectedConf = &Config{
 			HonorTimestamps:       true,
 			ScrapeInterval:        model.Duration(15 * time.Second),
 			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:     true,
 			BodySizeLimit:         globBodySizeLimit,
 			SampleLimit:           globSampleLimit,
 			TargetLimit:           globTargetLimit,
@@ -1301,6 +1330,7 @@ var expectedConf = &Config{
 			HonorTimestamps:       true,
 			ScrapeInterval:        model.Duration(15 * time.Second),
 			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:     true,
 			BodySizeLimit:         globBodySizeLimit,
 			SampleLimit:           globSampleLimit,
 			TargetLimit:           globTargetLimit,
@@ -1332,6 +1362,7 @@ var expectedConf = &Config{
 			HonorTimestamps:       true,
 			ScrapeInterval:        model.Duration(15 * time.Second),
 			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:     true,
 			BodySizeLimit:         globBodySizeLimit,
 			SampleLimit:           globSampleLimit,
 			TargetLimit:           globTargetLimit,
@@ -2060,9 +2091,10 @@ func TestGetScrapeConfigs(t *testing.T) {
 			ScrapeTimeout:   scrapeTimeout,
 			ScrapeProtocols: DefaultGlobalConfig.ScrapeProtocols,
 
-			MetricsPath:      "/metrics",
-			Scheme:           "http",
-			HTTPClientConfig: config.DefaultHTTPClientConfig,
+			MetricsPath:       "/metrics",
+			Scheme:            "http",
+			EnableCompression: true,
+			HTTPClientConfig:  config.DefaultHTTPClientConfig,
 			ServiceDiscoveryConfigs: discovery.Configs{
 				discovery.StaticConfig{
 					{
@@ -2118,6 +2150,8 @@ func TestGetScrapeConfigs(t *testing.T) {
 					MetricsPath: DefaultScrapeConfig.MetricsPath,
 					Scheme:      DefaultScrapeConfig.Scheme,
 
+					EnableCompression: true,
+
 					HTTPClientConfig: config.HTTPClientConfig{
 						TLSConfig: config.TLSConfig{
 							CertFile: filepath.FromSlash("testdata/scrape_configs/valid_cert_file"),
@@ -2157,6 +2191,8 @@ func TestGetScrapeConfigs(t *testing.T) {
 
 					MetricsPath: DefaultScrapeConfig.MetricsPath,
 					Scheme:      DefaultScrapeConfig.Scheme,
+
+					EnableCompression: true,
 
 					ServiceDiscoveryConfigs: discovery.Configs{
 						&vultr.SDConfig{
@@ -2209,4 +2245,17 @@ func TestGetScrapeConfigs(t *testing.T) {
 func kubernetesSDHostURL() config.URL {
 	tURL, _ := url.Parse("https://localhost:1234")
 	return config.URL{URL: tURL}
+}
+
+func TestScrapeConfigDisableCompression(t *testing.T) {
+	want, err := LoadFile("testdata/scrape_config_disable_compression.good.yml", false, false, log.NewNopLogger())
+	require.NoError(t, err)
+
+	out, err := yaml.Marshal(want)
+
+	require.NoError(t, err)
+	got := &Config{}
+	require.NoError(t, yaml.UnmarshalStrict(out, got))
+
+	require.Equal(t, false, got.ScrapeConfigs[0].EnableCompression)
 }
