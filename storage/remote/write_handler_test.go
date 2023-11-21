@@ -236,53 +236,6 @@ func BenchmarkRemoteWritehandler(b *testing.B) {
 	}
 }
 
-// TODO(npazosmendez): adapt to minimized version
-// func BenchmarkReducedRemoteWriteHandler(b *testing.B) {
-// 	const labelValue = "abcdefg'hijlmn234!@#$%^&*()_+~`\"{}[],./<>?hello0123hiOlá你好Dzieńdobry9Zd8ra765v4stvuyte"
-// 	reqs := []*http.Request{}
-// 	for i := 0; i < b.N; i++ {
-// 		pool := newLookupPool()
-// 		num := strings.Repeat(strconv.Itoa(i), 16)
-// 		buf, _, err := buildReducedWriteRequest([]prompb.ReducedTimeSeries{{
-// 			Labels: []prompb.LabelRef{
-// 				{NameRef: pool.intern("__name__"), ValueRef: pool.intern("test_metric")},
-// 				{NameRef: pool.intern("test_label_name_" + num), ValueRef: pool.intern(labelValue + num)},
-// 			},
-// 			Histograms: []prompb.Histogram{HistogramToHistogramProto(0, &testHistogram)},
-// 		}}, pool.getTable(), nil, nil)
-// 		require.NoError(b, err)
-// 		req, err := http.NewRequest("", "", bytes.NewReader(buf))
-// 		require.NoError(b, err)
-// 		req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion11HeaderValue)
-// 		reqs = append(reqs, req)
-// 	}
-
-// TODO(npazosmendez): add benchmarks with realistic scenarios
-//func BenchmarkMin64RemoteWriteHandler(b *testing.B) {
-//	const labelValue = "abcdefg'hijlmn234!@#$%^&*()_+~`\"{}[],./<>?hello0123hiOlá你好Dzieńdobry9Zd8ra765v4stvuyte"
-//	reqs := []*http.Request{}
-//	for i := 0; i < b.N; i++ {
-//		rw := newRwSymbolTable()
-//		num := strings.Repeat(strconv.Itoa(i), 16)
-//		buf, _, err := buildMinimizedWriteRequestFixed64([]prompb.MinimizedTimeSeriesFixed64{{
-//			LabelSymbols: []uint64{
-//				rw.Ref64Packed("__name__"), rw.Ref64Packed("test_metric"),
-//				rw.Ref64Packed("test_label_name_" + num), rw.Ref64Packed(labelValue + num),
-//			},
-//			Histograms: []prompb.Histogram{HistogramToHistogramProto(0, &testHistogram)},
-//		}}, rw.LabelsString(), nil, nil)
-//		require.NoError(b, err)
-//		req, err := http.NewRequest("", "", bytes.NewReader(buf))
-//		require.NoError(b, err)
-//		req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion11HeaderValue)
-//		reqs = append(reqs, req)
-//	}
-//
-//	appendable := &mockAppendable{}
-//	// TODO: test with other proto format(s)
-//	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, Base1)
-//	recorder := httptest.NewRecorder()
-
 func TestCommitErr(t *testing.T) {
 	buf, _, err := buildWriteRequest(writeRequestFixture.Timeseries, nil, nil, nil)
 	require.NoError(t, err)
