@@ -1868,6 +1868,29 @@ func TestScrapeLoop_HistogramBucketLimit(t *testing.T) {
 
 	now = time.Now()
 	total, added, seriesAdded, err = sl.append(app, msg, "application/vnd.google.protobuf", now)
+	require.NoError(t, err)
+	require.Equal(t, 3, total)
+	require.Equal(t, 3, added)
+	require.Equal(t, 3, seriesAdded)
+
+	err = sl.metrics.targetScrapeNativeHistogramBucketLimit.Write(&metric)
+	require.NoError(t, err)
+	metricValue = metric.GetCounter().GetValue()
+	require.Equal(t, beforeMetricValue, metricValue)
+	beforeMetricValue = metricValue
+
+	nativeHistogram.WithLabelValues("L").Observe(100000.0) // in different bucket since > 10*1.1
+
+	gathered, err = registry.Gather()
+	require.NoError(t, err)
+	require.NotEmpty(t, gathered)
+
+	histogramMetricFamily = gathered[0]
+	msg, err = MetricFamilyToProtobuf(histogramMetricFamily)
+	require.NoError(t, err)
+
+	now = time.Now()
+	total, added, seriesAdded, err = sl.append(app, msg, "application/vnd.google.protobuf", now)
 	if !errors.Is(err, errBucketLimit) {
 		t.Fatalf("Did not see expected histogram bucket limit error: %s", err)
 	}
