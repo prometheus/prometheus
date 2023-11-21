@@ -27,9 +27,8 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
-	"go.uber.org/atomic"
-
 	"github.com/prometheus/client_golang/prometheus"
+	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -139,6 +138,8 @@ type Head struct {
 	writeNotified wlog.WriteNotified
 
 	memTruncationInProcess atomic.Bool
+
+	secondaryHashFunc func(labels.Labels) uint32
 }
 
 type ExemplarStorage interface {
@@ -189,6 +190,10 @@ type HeadOptions struct {
 	// The default value is GOMAXPROCS.
 	// If it is set to a negative value or zero, the default value is used.
 	WALReplayConcurrency int
+
+	// Optional hash function applied to each new series. Computed hash value is preserved for each series in the head,
+	// and values can be iterated by using Head.ForEachSecondaryHash method.
+	SecondaryHashFunction func(labels.Labels) uint32
 }
 
 const (
@@ -268,6 +273,13 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal, wbl *wlog.WL, opts *Hea
 		opts.MaxExemplars.Store(0)
 	}
 
+	shf := opts.SecondaryHashFunction
+	if shf == nil {
+		shf = func(labels.Labels) uint32 {
+			return 0
+		}
+	}
+
 	h := &Head{
 		wal:    wal,
 		wbl:    wbl,
@@ -278,10 +290,10 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal, wbl *wlog.WL, opts *Hea
 				return &memChunk{}
 			},
 		},
-		stats: stats,
-		reg:   r,
-
-		pfmc: NewPostingsForMatchersCache(opts.PostingsForMatchersCacheTTL, opts.PostingsForMatchersCacheMaxItems, opts.PostingsForMatchersCacheMaxBytes, opts.PostingsForMatchersCacheForce),
+		stats:             stats,
+		reg:               r,
+		secondaryHashFunc: shf,
+		pfmc:              NewPostingsForMatchersCache(opts.PostingsForMatchersCacheTTL, opts.PostingsForMatchersCacheMaxItems, opts.PostingsForMatchersCacheMaxBytes, opts.PostingsForMatchersCacheForce),
 	}
 	if err := h.resetInMemoryState(); err != nil {
 		return nil, err
@@ -1661,7 +1673,7 @@ func (h *Head) getOrCreate(hash uint64, lset labels.Labels) (*memSeries, bool, e
 
 func (h *Head) getOrCreateWithID(id chunks.HeadSeriesRef, hash uint64, lset labels.Labels) (*memSeries, bool, error) {
 	s, created, err := h.series.getOrSet(hash, lset, func() *memSeries {
-		return newMemSeries(lset, id, labels.StableHash(lset), h.opts.ChunkEndTimeVariance, h.opts.IsolationDisabled)
+		return newMemSeries(lset, id, labels.StableHash(lset), h.secondaryHashFunc(lset), h.opts.ChunkEndTimeVariance, h.opts.IsolationDisabled)
 	})
 	if err != nil {
 		return nil, false, err
@@ -1987,6 +1999,9 @@ type memSeries struct {
 	// Series labels hash to use for sharding purposes.
 	shardHash uint64
 
+	// Value returned by secondary hash function.
+	secondaryHash uint32
+
 	// Immutable chunks on disk that have not yet gone into a block, in order of ascending time stamps.
 	// When compaction runs, chunks get moved into a block and all pointers are shifted like so:
 	//
@@ -2040,13 +2055,14 @@ type memSeriesOOOFields struct {
 	firstOOOChunkID  chunks.HeadChunkID // HeadOOOChunkID for oooMmappedChunks[0].
 }
 
-func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, shardHash uint64, chunkEndTimeVariance float64, isolationDisabled bool) *memSeries {
+func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, shardHash uint64, secondaryHash uint32, chunkEndTimeVariance float64, isolationDisabled bool) *memSeries {
 	s := &memSeries{
 		lset:                 lset,
 		ref:                  id,
 		nextAt:               math.MinInt64,
 		chunkEndTimeVariance: chunkEndTimeVariance,
 		shardHash:            shardHash,
+		secondaryHash:        secondaryHash,
 	}
 	if !isolationDisabled {
 		s.txs = newTxRing(4)
@@ -2257,4 +2273,33 @@ func (h *Head) updateWALReplayStatusRead(current int) {
 	defer h.stats.WALReplayStatus.Unlock()
 
 	h.stats.WALReplayStatus.Current = current
+}
+
+// ForEachSecondaryHash iterates over all series in the Head, and passes secondary hashes of the series
+// to the function. Function is called with batch of hashes, in no specific order. Hash for each series
+// in the head is included exactly once. Series for corresponding hash may be deleted while the function
+// is running, and series inserted while this function runs may be reported or ignored.
+//
+// No locks are held when function is called.
+//
+// Slice of hashes passed to the function is reused between calls.
+func (h *Head) ForEachSecondaryHash(fn func(secondaryHash []uint32)) {
+	buf := make([]uint32, 512)
+
+	for i := 0; i < h.series.size; i++ {
+		buf = buf[:0]
+
+		h.series.locks[i].RLock()
+		for _, all := range h.series.hashes[i] {
+			for _, s := range all {
+				// No need to lock series lock, as we're only accessing its immutable secondary hash.
+				buf = append(buf, s.secondaryHash)
+			}
+		}
+		h.series.locks[i].RUnlock()
+
+		if len(buf) > 0 {
+			fn(buf)
+		}
+	}
 }
