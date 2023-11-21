@@ -68,6 +68,9 @@ type Options struct {
 	// WALCompression configures the compression type to use on records in the WAL.
 	WALCompression wlog.CompressionType
 
+	// IgnoreWALReadingCorruption will ignore any WAL corruption encountered during replay.
+	IgnoreWALReadingCorruption bool
+
 	// StripeSize is the size (power of 2) in entries of the series hash map. Reducing the size will save memory but impact performance.
 	StripeSize int
 
@@ -97,6 +100,7 @@ func DefaultOptions() *Options {
 		MaxWALTime:           DefaultMaxWALTime,
 		NoLockfile:           false,
 		OutOfOrderTimeWindow: 0,
+		IgnoreWALReadingCorruption: tsdb.DefaultIgnoreWALReadingCorruption,
 	}
 }
 
@@ -666,7 +670,7 @@ func (db *DB) truncate(mint int64) error {
 
 	db.metrics.checkpointCreationTotal.Inc()
 
-	if _, err = wlog.Checkpoint(db.logger, db.wal, first, last, keep, mint); err != nil {
+	if _, err = wlog.Checkpoint(db.logger, db.wal, first, last, keep, mint, db.opts.IgnoreWALReadingCorruption); err != nil {
 		db.metrics.checkpointCreationFail.Inc()
 		var cerr *wlog.CorruptionErr
 		if errors.As(err, &cerr) {

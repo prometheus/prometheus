@@ -426,6 +426,8 @@ func main() {
 	serverOnlyFlag(a, "storage.tsdb.wal-compression-type", "Compression algorithm for the tsdb WAL.").
 		Hidden().Default(string(wlog.CompressionSnappy)).EnumVar(&cfg.tsdb.WALCompressionType, string(wlog.CompressionSnappy), string(wlog.CompressionZstd))
 
+	serverOnlyFlag(a, "storage.tsdb.ignore-wal-reading-corruption", "Ignore WAL corruption while reading it, if true this will skip all corruption records of WAL and truncate it as normal.").Default("false").BoolVar(&cfg.tsdb.IgnoreWALReadingCorruption)
+
 	serverOnlyFlag(a, "storage.tsdb.head-chunks-write-queue-size", "Size of the queue through which head chunks are written to the disk to be m-mapped, 0 disables the queue completely. Experimental.").
 		Default("0").IntVar(&cfg.tsdb.HeadChunksWriteQueueSize)
 
@@ -447,6 +449,8 @@ func main() {
 
 	agentOnlyFlag(a, "storage.agent.wal-compression-type", "Compression algorithm for the agent WAL.").
 		Hidden().Default(string(wlog.CompressionSnappy)).EnumVar(&cfg.agent.WALCompressionType, string(wlog.CompressionSnappy), string(wlog.CompressionZstd))
+
+	agentOnlyFlag(a, "storage.agent.ignore-wal-replay-corruption", "Ignore WAL corruption while reading it, if true this will skip all corruption records of WAL and truncate it as normal.").Default("false").BoolVar(&cfg.agent.IgnoreWALReadingCorruption)
 
 	agentOnlyFlag(a, "storage.agent.wal-truncate-frequency",
 		"The frequency at which to truncate the WAL and remove old data.").
@@ -1261,6 +1265,7 @@ func main() {
 					"RetentionDuration", cfg.tsdb.RetentionDuration,
 					"WALSegmentSize", cfg.tsdb.WALSegmentSize,
 					"WALCompression", cfg.tsdb.WALCompression,
+					"IgnoreWALReadingCorruption", cfg.tsdb.IgnoreWALReadingCorruption,
 				)
 
 				startTimeMargin := int64(2 * time.Duration(cfg.tsdb.MinBlockDuration).Seconds() * 1000)
@@ -1798,6 +1803,7 @@ type tsdbOptions struct {
 	CompactionDelayMaxPercent      int
 	EnableOverlappingCompaction    bool
 	EnableOOONativeHistograms      bool
+	IgnoreWALReadingCorruption     bool
 }
 
 func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
@@ -1822,20 +1828,21 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		EnableDelayedCompaction:        opts.EnableDelayedCompaction,
 		CompactionDelayMaxPercent:      opts.CompactionDelayMaxPercent,
 		EnableOverlappingCompaction:    opts.EnableOverlappingCompaction,
+		IgnoreWALReadingCorruption:     opts.IgnoreWALReadingCorruption,
 	}
 }
 
 // agentOptions is a version of agent.Options with defined units. This is required
 // as agent.Option fields are unit agnostic (time).
 type agentOptions struct {
-	WALSegmentSize         units.Base2Bytes
-	WALCompression         bool
-	WALCompressionType     string
-	StripeSize             int
-	TruncateFrequency      model.Duration
-	MinWALTime, MaxWALTime model.Duration
-	NoLockfile             bool
-	OutOfOrderTimeWindow   int64
+	WALSegmentSize             units.Base2Bytes
+	WALCompression             bool
+	WALCompressionType         string
+	StripeSize                 int
+	TruncateFrequency          model.Duration
+	MinWALTime, MaxWALTime     model.Duration
+	NoLockfile                 bool
+	IgnoreWALReadingCorruption bool
 }
 
 func (opts agentOptions) ToAgentOptions(outOfOrderTimeWindow int64) agent.Options {
@@ -1843,49 +1850,22 @@ func (opts agentOptions) ToAgentOptions(outOfOrderTimeWindow int64) agent.Option
 		outOfOrderTimeWindow = 0
 	}
 	return agent.Options{
-		WALSegmentSize:       int(opts.WALSegmentSize),
-		WALCompression:       wlog.ParseCompressionType(opts.WALCompression, opts.WALCompressionType),
-		StripeSize:           opts.StripeSize,
-		TruncateFrequency:    time.Duration(opts.TruncateFrequency),
-		MinWALTime:           durationToInt64Millis(time.Duration(opts.MinWALTime)),
-		MaxWALTime:           durationToInt64Millis(time.Duration(opts.MaxWALTime)),
-		NoLockfile:           opts.NoLockfile,
-		OutOfOrderTimeWindow: outOfOrderTimeWindow,
+		WALSegmentSize:             int(opts.WALSegmentSize),
+		WALCompression:             wlog.ParseCompressionType(opts.WALCompression, opts.WALCompressionType),
+		IgnoreWALReadingCorruption: opts.IgnoreWALReadingCorruption,
+		StripeSize:                 opts.StripeSize,
+		TruncateFrequency:          time.Duration(opts.TruncateFrequency),
+		MinWALTime:                 durationToInt64Millis(time.Duration(opts.MinWALTime)),
+		MaxWALTime:                 durationToInt64Millis(time.Duration(opts.MaxWALTime)),
+		NoLockfile:                 opts.NoLockfile,
 	}
 }
 
-// rwProtoMsgFlagParser is a custom parser for config.RemoteWriteProtoMsg enum.
-type rwProtoMsgFlagParser struct {
-	msgs *[]config.RemoteWriteProtoMsg
-}
-
-func rwProtoMsgFlagValue(msgs *[]config.RemoteWriteProtoMsg) kingpin.Value {
-	return &rwProtoMsgFlagParser{msgs: msgs}
-}
-
-// IsCumulative is used by kingpin to tell if it's an array or not.
-func (p *rwProtoMsgFlagParser) IsCumulative() bool {
-	return true
-}
-
-func (p *rwProtoMsgFlagParser) String() string {
-	ss := make([]string, 0, len(*p.msgs))
-	for _, t := range *p.msgs {
-		ss = append(ss, string(t))
-	}
-	return strings.Join(ss, ",")
-}
-
-func (p *rwProtoMsgFlagParser) Set(opt string) error {
-	t := config.RemoteWriteProtoMsg(opt)
-	if err := t.Validate(); err != nil {
-		return err
-	}
-	for _, prev := range *p.msgs {
-		if prev == t {
-			return fmt.Errorf("duplicated %v flag value, got %v already", t, *p.msgs)
-		}
-	}
-	*p.msgs = append(*p.msgs, t)
-	return nil
+// discoveryManager interfaces the discovery manager. This is used to keep using
+// the manager that restarts SD's on reload for a few releases until we feel
+// the new manager can be enabled for all users.
+type discoveryManager interface {
+	ApplyConfig(cfg map[string]discovery.Configs) error
+	Run() error
+	SyncCh() <-chan map[string][]*targetgroup.Group
 }

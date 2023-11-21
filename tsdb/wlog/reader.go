@@ -35,6 +35,7 @@ type Reader struct {
 	buf         [pageSize]byte
 	total       int64   // Total bytes processed.
 	curRecTyp   recType // Used for checking that the last record is not torn.
+	ignoreCorr  bool    // Used for ignoring corruption when reading WAL.
 }
 
 // NewReader returns a new reader.
@@ -52,7 +53,7 @@ func (r *Reader) Next() bool {
 		// The last WAL segment record shouldn't be torn(should be full or last).
 		// The last record would be torn after a crash just before
 		// the last record part could be persisted to disk.
-		if r.curRecTyp == recFirst || r.curRecTyp == recMiddle {
+		if len(r.rec) != 0 && (r.curRecTyp == recFirst || r.curRecTyp == recMiddle) {
 			r.err = errors.New("last record is torn")
 		}
 		return false
@@ -141,7 +142,15 @@ func (r *Reader) next() (err error) {
 		}
 
 		if err := validateRecord(r.curRecTyp, i); err != nil {
-			return err
+			if !r.ignoreCorr {
+				return err
+			}
+			// skip invalid record and continue to read the next record
+			// reset index, r.rec and r.compressBuf after invalid record
+			i = 0
+			r.rec = r.rec[:0]
+			r.compressBuf = r.compressBuf[:0]
+			continue
 		}
 		if r.curRecTyp == recLast || r.curRecTyp == recFull {
 			if isSnappyCompressed && len(r.compressBuf) > 0 {
@@ -206,4 +215,8 @@ func (r *Reader) Offset() int64 {
 		return int64(b.off)
 	}
 	return r.total
+}
+
+func (r *Reader) SetIgnoreCorruption() {
+	r.ignoreCorr = true
 }

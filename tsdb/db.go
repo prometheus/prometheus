@@ -92,6 +92,7 @@ func DefaultOptions() *Options {
 		CompactionDelayMaxPercent:   DefaultCompactionDelayMaxPercent,
 		CompactionDelay:             time.Duration(0),
 		PostingsDecoderFactory:      DefaultPostingsDecoderFactory,
+		IgnoreWALReadingCorruption:  DefaultIgnoreWALReadingCorruption,
 	}
 }
 
@@ -224,6 +225,9 @@ type Options struct {
 	// PostingsDecoderFactory allows users to customize postings decoders based on BlockMeta.
 	// By default, DefaultPostingsDecoderFactory will be used to create raw posting decoder.
 	PostingsDecoderFactory PostingsDecoderFactory
+
+	// IgnoreWALReadingCorruption is a flag to ignore WAL corruption during replay.
+	IgnoreWALReadingCorruption bool
 }
 
 type NewCompactorFunc func(ctx context.Context, r prometheus.Registerer, l *slog.Logger, ranges []int64, pool chunkenc.Pool, opts *Options) (Compactor, error)
@@ -976,6 +980,9 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	if opts.IsolationDisabled {
 		// We only override this flag if isolation is disabled at DB level. We use the default otherwise.
 		headOpts.IsolationDisabled = opts.IsolationDisabled
+	}
+	if opts.IgnoreWALReadingCorruption {
+		headOpts.IgnoreWALReadingCorruption = opts.IgnoreWALReadingCorruption
 	}
 	db.head, err = NewHead(r, l, wal, wbl, headOpts, stats.Head)
 	if err != nil {
