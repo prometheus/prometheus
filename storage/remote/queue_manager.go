@@ -185,21 +185,21 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		Namespace:   namespace,
 		Subsystem:   subsystem,
 		Name:        "samples_dropped_total",
-		Help:        "Total number of samples which were dropped after being read from the WAL before being sent via remote write, either via relabelling or unintentionally because of an unknown reference ID.",
+		Help:        "Total number of samples which were dropped after being read from the WAL before being sent via remote write, either via relabelling, due to being too old or unintentionally because of an unknown reference ID.",
 		ConstLabels: constLabels,
 	})
 	m.droppedExemplarsTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace:   namespace,
 		Subsystem:   subsystem,
 		Name:        "exemplars_dropped_total",
-		Help:        "Total number of exemplars which were dropped after being read from the WAL before being sent via remote write, either via relabelling or unintentionally because of an unknown reference ID.",
+		Help:        "Total number of exemplars which were dropped after being read from the WAL before being sent via remote write, either via relabelling, due to being too old or unintentionally because of an unknown reference ID.",
 		ConstLabels: constLabels,
 	})
 	m.droppedHistogramsTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace:   namespace,
 		Subsystem:   subsystem,
 		Name:        "histograms_dropped_total",
-		Help:        "Total number of histograms which were dropped after being read from the WAL before being sent via remote write, either via relabelling or unintentionally because of an unknown reference ID.",
+		Help:        "Total number of histograms which were dropped after being read from the WAL before being sent via remote write, either via relabelling, due to being too old or unintentionally because of an unknown reference ID.",
 		ConstLabels: constLabels,
 	})
 	m.enqueueRetriesTotal = prometheus.NewCounter(prometheus.CounterOpts{
