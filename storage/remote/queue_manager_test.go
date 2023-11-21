@@ -80,12 +80,6 @@ func TestSampleDelivery(t *testing.T) {
 		{rwFormat: Min32Optimized, samples: false, exemplars: true, histograms: false, name: "interned exemplars only"},
 		{rwFormat: Min32Optimized, samples: false, exemplars: false, histograms: true, name: "interned histograms only"},
 		{rwFormat: Min32Optimized, samples: false, exemplars: false, histograms: false, floatHistograms: true, name: "interned float histograms only"},
-
-		{rwFormat: Min64Fixed, samples: true, exemplars: false, histograms: false, name: "interned samples only"},
-		{rwFormat: Min64Fixed, samples: true, exemplars: true, histograms: true, floatHistograms: true, name: "interned samples, exemplars, and histograms"},
-		{rwFormat: Min64Fixed, samples: false, exemplars: true, histograms: false, name: "interned exemplars only"},
-		{rwFormat: Min64Fixed, samples: false, exemplars: false, histograms: true, name: "interned histograms only"},
-		{rwFormat: Min64Fixed, samples: false, exemplars: false, histograms: false, floatHistograms: true, name: "interned float histograms only"},
 	}
 
 	// Let's create an even number of send batches so we don't run into the
@@ -210,7 +204,7 @@ func TestMetadataDelivery(t *testing.T) {
 }
 
 func TestSampleDeliveryTimeout(t *testing.T) {
-	for _, rwFormat := range []RemoteWriteFormat{Base1, Min32Optimized, Min64Fixed} {
+	for _, rwFormat := range []RemoteWriteFormat{Base1, Min32Optimized} {
 		t.Run(fmt.Sprint(rwFormat), func(t *testing.T) {
 			//remoteWrite11 := proto == "1.1"
 			// Let's send one less sample than batch size, and wait the timeout duration
@@ -244,7 +238,7 @@ func TestSampleDeliveryTimeout(t *testing.T) {
 }
 
 func TestSampleDeliveryOrder(t *testing.T) {
-	for _, rwFormat := range []RemoteWriteFormat{Base1, Min32Optimized, Min64Fixed} {
+	for _, rwFormat := range []RemoteWriteFormat{Base1, Min32Optimized} {
 		t.Run(fmt.Sprint(rwFormat), func(t *testing.T) {
 			ts := 10
 			n := config.DefaultQueueConfig.MaxSamplesPerSend * ts
@@ -346,7 +340,7 @@ func TestSeriesReset(t *testing.T) {
 }
 
 func TestReshard(t *testing.T) {
-	for _, rwFormat := range []RemoteWriteFormat{Base1, Min32Optimized, Min64Fixed} {
+	for _, rwFormat := range []RemoteWriteFormat{Base1, Min32Optimized} {
 		t.Run(fmt.Sprint(rwFormat), func(t *testing.T) {
 			size := 10 // Make bigger to find more races.
 			nSeries := 6
@@ -389,7 +383,7 @@ func TestReshard(t *testing.T) {
 }
 
 func TestReshardRaceWithStop(t *testing.T) {
-	for _, rwFormat := range []RemoteWriteFormat{Base1, Min32Optimized, Min64Fixed} {
+	for _, rwFormat := range []RemoteWriteFormat{Base1, Min32Optimized} {
 		t.Run(fmt.Sprint(rwFormat), func(t *testing.T) {
 			c := NewTestWriteClient(rwFormat)
 			var m *QueueManager
@@ -428,7 +422,7 @@ func TestReshardRaceWithStop(t *testing.T) {
 }
 
 func TestReshardPartialBatch(t *testing.T) {
-	for _, rwFormat := range []RemoteWriteFormat{Base1, Min32Optimized, Min64Fixed} {
+	for _, rwFormat := range []RemoteWriteFormat{Base1, Min32Optimized} {
 		t.Run(fmt.Sprint(rwFormat), func(t *testing.T) {
 			samples, series := createTimeseries(1, 10)
 
@@ -474,7 +468,7 @@ func TestReshardPartialBatch(t *testing.T) {
 // where a large scrape (> capacity + max samples per send) is appended at the
 // same time as a batch times out according to the batch send deadline.
 func TestQueueFilledDeadlock(t *testing.T) {
-	for _, rwFormat := range []RemoteWriteFormat{Base1, Min32Optimized, Min64Fixed} {
+	for _, rwFormat := range []RemoteWriteFormat{Base1, Min32Optimized} {
 		t.Run(fmt.Sprint(rwFormat), func(t *testing.T) {
 			samples, series := createTimeseries(50, 1)
 
@@ -516,7 +510,7 @@ func TestQueueFilledDeadlock(t *testing.T) {
 }
 
 func TestReleaseNoninternedString(t *testing.T) {
-	for _, rwFormat := range []RemoteWriteFormat{Base1, Min32Optimized, Min64Fixed} {
+	for _, rwFormat := range []RemoteWriteFormat{Base1, Min32Optimized} {
 
 		t.Run(fmt.Sprint(rwFormat), func(t *testing.T) {
 			cfg := config.DefaultQueueConfig
@@ -843,12 +837,6 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte, _ int) error {
 		err = proto.Unmarshal(reqBuf, &reqMin)
 		if err == nil {
 			reqProto, err = MinimizedWriteRequestToWriteRequest(&reqMin)
-		}
-	case Min64Fixed:
-		var reqMin64 prompb.MinimizedWriteRequestFixed64
-		err = proto.Unmarshal(reqBuf, &reqMin64)
-		if err == nil {
-			reqProto, err = min64WriteRequestToWriteRequest(&reqMin64)
 		}
 	}
 
@@ -1536,141 +1524,6 @@ func BenchmarkBuildMinimizedWriteRequest(b *testing.B) {
 				populateMinimizedTimeSeries(&symbolTable, tc.batch, seriesBuff, true, true)
 				b.ResetTimer()
 				req, _, err := buildMinimizedWriteRequest(seriesBuff, symbolTable.LabelsString(), &pBuf, &buff)
-				if err != nil {
-					b.Fatal(err)
-				}
-				symbolTable.clear()
-				totalSize += len(req)
-				b.ReportMetric(float64(totalSize)/float64(b.N), "compressedSize/op")
-			}
-		})
-	}
-}
-
-func BenchmarkBuildMinimizedWriteRequestFixed32(b *testing.B) {
-	type testcase struct {
-		batch []timeSeries
-	}
-	testCases := []testcase{
-		testcase{createDummyTimeSeries(2)},
-		testcase{createDummyTimeSeries(10)},
-		testcase{createDummyTimeSeries(100)},
-	}
-	for _, tc := range testCases {
-		symbolTable := newRwSymbolTable()
-		pBuf := proto.NewBuffer(nil)
-		buff := make([]byte, 0)
-		seriesBuff := make([]prompb.MinimizedTimeSeriesFixed32, len(tc.batch))
-		//total := 0
-		for i := range seriesBuff {
-			seriesBuff[i].Samples = []prompb.Sample{{}}
-			// todo: add other types
-			//seriesBuff[i].Exemplars = []prompb.Exemplar{{}}
-		}
-		//pBuf := []byte{}
-
-		// Warmup buffers
-		for i := 0; i < 10; i++ {
-			populateMinimizedTimeSeriesFixed32(&symbolTable, tc.batch, seriesBuff, true, true)
-			buildMinimizedWriteRequestFixed32(seriesBuff, symbolTable.LabelsString(), pBuf, &buff)
-		}
-
-		b.Run(fmt.Sprintf("%d-instances", len(tc.batch)), func(b *testing.B) {
-			totalSize := 0
-			for j := 0; j < b.N; j++ {
-				populateMinimizedTimeSeriesFixed32(&symbolTable, tc.batch, seriesBuff, true, true)
-				b.ResetTimer()
-				req, _, err := buildMinimizedWriteRequestFixed32(seriesBuff, symbolTable.LabelsString(), pBuf, &buff)
-				if err != nil {
-					b.Fatal(err)
-				}
-				symbolTable.clear()
-				totalSize += len(req)
-				b.ReportMetric(float64(totalSize)/float64(b.N), "compressedSize/op")
-			}
-		})
-	}
-}
-
-func BenchmarkBuildMinimizedWriteRequestFixed64(b *testing.B) {
-	type testcase struct {
-		batch []timeSeries
-	}
-	testCases := []testcase{
-		testcase{createDummyTimeSeries(2)},
-		testcase{createDummyTimeSeries(10)},
-		testcase{createDummyTimeSeries(100)},
-	}
-	for _, tc := range testCases {
-		symbolTable := newRwSymbolTable()
-		pBuf := proto.NewBuffer(nil)
-		buff := make([]byte, 0)
-		seriesBuff := make([]prompb.MinimizedTimeSeriesFixed64, len(tc.batch))
-		//total := 0
-		for i := range seriesBuff {
-			seriesBuff[i].Samples = []prompb.Sample{{}}
-			// todo: add other types
-			//seriesBuff[i].Exemplars = []prompb.Exemplar{{}}
-		}
-		//pBuf := []byte{}
-
-		// Warmup buffers
-		for i := 0; i < 10; i++ {
-			populateMinimizedTimeSeriesFixed64(&symbolTable, tc.batch, seriesBuff, true, true)
-			buildMinimizedWriteRequestFixed64(seriesBuff, symbolTable.LabelsString(), pBuf, &buff)
-		}
-
-		b.Run(fmt.Sprintf("%d-instances", len(tc.batch)), func(b *testing.B) {
-			totalSize := 0
-			for j := 0; j < b.N; j++ {
-				populateMinimizedTimeSeriesFixed64(&symbolTable, tc.batch, seriesBuff, true, true)
-				b.ResetTimer()
-				req, _, err := buildMinimizedWriteRequestFixed64(seriesBuff, symbolTable.LabelsString(), pBuf, &buff)
-				if err != nil {
-					b.Fatal(err)
-				}
-				symbolTable.clear()
-				totalSize += len(req)
-				b.ReportMetric(float64(totalSize)/float64(b.N), "compressedSize/op")
-			}
-		})
-	}
-}
-
-func BenchmarkBuildMinimizedWriteRequestPacking(b *testing.B) {
-	type testcase struct {
-		batch []timeSeries
-	}
-	testCases := []testcase{
-		testcase{createDummyTimeSeries(2)},
-		testcase{createDummyTimeSeries(10)},
-		testcase{createDummyTimeSeries(100)},
-	}
-	for _, tc := range testCases {
-		symbolTable := newRwSymbolTable()
-		pBuf := proto.NewBuffer(nil)
-		buff := make([]byte, 0)
-		seriesBuff := make([]prompb.MinimizedTimeSeriesPacking, len(tc.batch))
-		//total := 0
-		for i := range seriesBuff {
-			seriesBuff[i].Samples = []prompb.Sample{{}}
-			// todo: add other types
-			//seriesBuff[i].Exemplars = []prompb.Exemplar{{}}
-		}
-		//pBuf := []byte{}
-
-		// Warmup buffers
-		for i := 0; i < 10; i++ {
-			populateMinimizedTimeSeriesPacking(&symbolTable, tc.batch, seriesBuff, true, true)
-			buildMinimizedWriteRequestPacking(seriesBuff, symbolTable.LabelsString(), pBuf, &buff)
-		}
-
-		b.Run(fmt.Sprintf("%d-instances", len(tc.batch)), func(b *testing.B) {
-			totalSize := 0
-			for j := 0; j < b.N; j++ {
-				populateMinimizedTimeSeriesPacking(&symbolTable, tc.batch, seriesBuff, true, true)
-				b.ResetTimer()
-				req, _, err := buildMinimizedWriteRequestPacking(seriesBuff, symbolTable.LabelsString(), pBuf, &buff)
 				if err != nil {
 					b.Fatal(err)
 				}
