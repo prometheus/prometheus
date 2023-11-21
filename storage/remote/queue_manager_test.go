@@ -1350,8 +1350,9 @@ func TestDropOldTimeSeries(t *testing.T) {
 }
 
 func TestIsSampleOld(t *testing.T) {
-	require.True(t, isSampleOld(60*time.Second, timestamp.FromTime(time.Now().Add(-61*time.Second))))
-	require.False(t, isSampleOld(60*time.Second, timestamp.FromTime(time.Now().Add(-59*time.Second))))
+	currentTime := time.Now()
+	require.True(t, isSampleOld(currentTime, 60*time.Second, timestamp.FromTime(currentTime.Add(-61*time.Second))))
+	require.False(t, isSampleOld(currentTime, 60*time.Second, timestamp.FromTime(currentTime.Add(-59*time.Second))))
 }
 
 func createTimeseriesWithOldSamples(numSamples, numSeries int, extraLabels ...labels.Label) ([]record.RefSample, []record.RefSample, []record.RefSeries) {

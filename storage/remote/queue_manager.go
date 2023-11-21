@@ -576,17 +576,17 @@ func (t *QueueManager) sendMetadataWithBackoff(ctx context.Context, metadata []p
 	return nil
 }
 
-func isSampleOld(sampleAgeLimit time.Duration, ts int64) bool {
+func isSampleOld(baseTime time.Time, sampleAgeLimit time.Duration, ts int64) bool {
 	if sampleAgeLimit == 0 {
 		// If sampleAgeLimit is unset, then we never skip samples due to their age.
 		return false
 	}
-	limitTs := time.Now().Add(-sampleAgeLimit)
+	limitTs := baseTime.Add(-sampleAgeLimit)
 	sampleTs := timestamp.Time(ts)
 	return sampleTs.Before(limitTs)
 }
 
-func isTimeSeriesOldFilter(metrics *queueManagerMetrics, sampleAgeLimit time.Duration) func(ts prompb.TimeSeries) bool {
+func isTimeSeriesOldFilter(metrics *queueManagerMetrics, baseTime time.Time, sampleAgeLimit time.Duration) func(ts prompb.TimeSeries) bool {
 	return func(ts prompb.TimeSeries) bool {
 		if sampleAgeLimit == 0 {
 			// If sampleAgeLimit is unset, then we never skip samples due to their age.
@@ -595,17 +595,17 @@ func isTimeSeriesOldFilter(metrics *queueManagerMetrics, sampleAgeLimit time.Dur
 		switch {
 		// Only the first element should be set in the series, therefore we only check the first element.
 		case len(ts.Samples) > 0:
-			if isSampleOld(sampleAgeLimit, ts.Samples[0].Timestamp) {
+			if isSampleOld(baseTime, sampleAgeLimit, ts.Samples[0].Timestamp) {
 				metrics.droppedSamplesTotal.Inc()
 				return true
 			}
 		case len(ts.Histograms) > 0:
-			if isSampleOld(sampleAgeLimit, ts.Histograms[0].Timestamp) {
+			if isSampleOld(baseTime, sampleAgeLimit, ts.Histograms[0].Timestamp) {
 				metrics.droppedHistogramsTotal.Inc()
 				return true
 			}
 		case len(ts.Exemplars) > 0:
-			if isSampleOld(sampleAgeLimit, ts.Exemplars[0].Timestamp) {
+			if isSampleOld(baseTime, sampleAgeLimit, ts.Exemplars[0].Timestamp) {
 				metrics.droppedExemplarsTotal.Inc()
 				return true
 			}
@@ -619,9 +619,10 @@ func isTimeSeriesOldFilter(metrics *queueManagerMetrics, sampleAgeLimit time.Dur
 // Append queues a sample to be sent to the remote storage. Blocks until all samples are
 // enqueued on their shards or a shutdown signal is received.
 func (t *QueueManager) Append(samples []record.RefSample) bool {
+	currentTime := time.Now()
 outer:
 	for _, s := range samples {
-		if isSampleOld(time.Duration(t.cfg.SampleAgeLimit), s.T) {
+		if isSampleOld(currentTime, time.Duration(t.cfg.SampleAgeLimit), s.T) {
 			t.metrics.droppedSamplesTotal.Inc()
 			continue
 		}
@@ -674,10 +675,10 @@ func (t *QueueManager) AppendExemplars(exemplars []record.RefExemplar) bool {
 	if !t.sendExemplars {
 		return true
 	}
-
+	currentTime := time.Now()
 outer:
 	for _, e := range exemplars {
-		if isSampleOld(time.Duration(t.cfg.SampleAgeLimit), e.T) {
+		if isSampleOld(currentTime, time.Duration(t.cfg.SampleAgeLimit), e.T) {
 			t.metrics.droppedExemplarsTotal.Inc()
 			continue
 		}
@@ -727,10 +728,10 @@ func (t *QueueManager) AppendHistograms(histograms []record.RefHistogramSample) 
 	if !t.sendNativeHistograms {
 		return true
 	}
-
+	currentTime := time.Now()
 outer:
 	for _, h := range histograms {
-		if isSampleOld(time.Duration(t.cfg.SampleAgeLimit), h.T) {
+		if isSampleOld(currentTime, time.Duration(t.cfg.SampleAgeLimit), h.T) {
 			t.metrics.droppedHistogramsTotal.Inc()
 			continue
 		}
@@ -778,10 +779,10 @@ func (t *QueueManager) AppendFloatHistograms(floatHistograms []record.RefFloatHi
 	if !t.sendNativeHistograms {
 		return true
 	}
-
+	currentTime := time.Now()
 outer:
 	for _, h := range floatHistograms {
-		if isSampleOld(time.Duration(t.cfg.SampleAgeLimit), h.T) {
+		if isSampleOld(currentTime, time.Duration(t.cfg.SampleAgeLimit), h.T) {
 			t.metrics.droppedHistogramsTotal.Inc()
 			continue
 		}
@@ -1568,7 +1569,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 				nil,
 				pBuf,
 				*buf,
-				isTimeSeriesOldFilter(s.qm.metrics, time.Duration(s.qm.cfg.SampleAgeLimit)),
+				isTimeSeriesOldFilter(s.qm.metrics, time.Now(), time.Duration(s.qm.cfg.SampleAgeLimit)),
 			)
 			if err != nil {
 				return err
