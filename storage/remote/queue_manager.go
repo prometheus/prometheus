@@ -1673,7 +1673,7 @@ func sendWriteRequestWithBackoff(ctx context.Context, cfg config.QueueConfig, l 
 func buildTimeSeries(timeSeries []prompb.TimeSeries, filter func(prompb.TimeSeries) bool) (int64, []prompb.TimeSeries) {
 	var highest int64
 
-	writeIdx := 0
+	keepIdx := 0
 	for i, ts := range timeSeries {
 		if filter != nil && filter(ts) {
 			continue
@@ -1691,11 +1691,11 @@ func buildTimeSeries(timeSeries []prompb.TimeSeries, filter func(prompb.TimeSeri
 		}
 
 		// Move the current element to the write position and increment the write pointer
-		timeSeries[writeIdx] = timeSeries[i]
-		writeIdx++
+		timeSeries[keepIdx] = timeSeries[i]
+		keepIdx++
 	}
 
-	timeSeries = timeSeries[:writeIdx]
+	timeSeries = timeSeries[:keepIdx]
 	return highest, timeSeries
 }
 
