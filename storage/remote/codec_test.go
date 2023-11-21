@@ -887,19 +887,6 @@ func (c *mockChunkIterator) Err() error {
 	return nil
 }
 
-func TestPackRef64(t *testing.T) {
-	rw := newRwSymbolTable()
-	name := "__name__"
-	value := "asdfasd"
-	nameRef := rw.Ref64Packed(name)
-	valRef := rw.Ref64Packed(value)
-	nameOffset, nameLength := unpackRef64(nameRef)
-	valOffset, valLength := unpackRef64(valRef)
-	require.Equal(t, name, string(rw.symbols[nameOffset:nameOffset+nameLength]))
-	require.Equal(t, value, string(rw.symbols[valOffset:valOffset+valLength]))
-
-}
-
 func TestLenFormat(t *testing.T) {
 	r := rwSymbolTable{}
 	ls := labels.FromStrings("asdf", "qwer", "zxcv", "1234")
