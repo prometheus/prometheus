@@ -549,7 +549,7 @@ func TestShouldReshard(t *testing.T) {
 func createTimeseries(numSamples, numSeries int, extraLabels ...labels.Label) ([]record.RefSample, []record.RefSeries) {
 	samples := make([]record.RefSample, 0, numSamples)
 	series := make([]record.RefSeries, 0, numSeries)
-	b := labels.ScratchBuilder{}
+	lb := labels.ScratchBuilder{}
 	for i := 0; i < numSeries; i++ {
 		name := fmt.Sprintf("test_metric_%d", i)
 		for j := 0; j < numSamples; j++ {
@@ -560,15 +560,15 @@ func createTimeseries(numSamples, numSeries int, extraLabels ...labels.Label) ([
 			})
 		}
 		// Create Labels that is name of series plus any extra labels supplied.
-		b.Reset()
-		b.Add(labels.MetricName, name)
+		lb.Reset()
+		lb.Add(labels.MetricName, name)
 		for _, l := range extraLabels {
-			b.Add(l.Name, l.Value)
+			lb.Add(l.Name, l.Value)
 		}
-		b.Sort()
+		lb.Sort()
 		series = append(series, record.RefSeries{
 			Ref:    chunks.HeadSeriesRef(i),
-			Labels: b.Labels(),
+			Labels: lb.Labels(),
 		})
 	}
 	return samples, series
@@ -1358,7 +1358,7 @@ func createTimeseriesWithOldSamples(numSamples, numSeries int, extraLabels ...la
 	newSamples := make([]record.RefSample, 0, numSamples)
 	samples := make([]record.RefSample, 0, numSamples)
 	series := make([]record.RefSeries, 0, numSeries)
-	b := labels.ScratchBuilder{}
+	lb := labels.ScratchBuilder{}
 	for i := 0; i < numSeries; i++ {
 		name := fmt.Sprintf("test_metric_%d", i)
 		// We create half of the samples in the past.
@@ -1381,15 +1381,15 @@ func createTimeseriesWithOldSamples(numSamples, numSeries int, extraLabels ...la
 			newSamples = append(newSamples, sample)
 		}
 		// Create Labels that is name of series plus any extra labels supplied.
-		b.Reset()
-		b.Add(labels.MetricName, name)
+		lb.Reset()
+		lb.Add(labels.MetricName, name)
 		for _, l := range extraLabels {
-			b.Add(l.Name, l.Value)
+			lb.Add(l.Name, l.Value)
 		}
-		b.Sort()
+		lb.Sort()
 		series = append(series, record.RefSeries{
 			Ref:    chunks.HeadSeriesRef(i),
-			Labels: b.Labels(),
+			Labels: lb.Labels(),
 		})
 	}
 	return samples, newSamples, series
