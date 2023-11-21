@@ -796,37 +796,6 @@ func labelsToUint32Slice(lbls labels.Labels, symbolTable *rwSymbolTable, buf []u
 	return result
 }
 
-func labelsToUint64Slice(lbls labels.Labels, symbolTable *rwSymbolTable, buf []uint64) []uint64 {
-	result := buf[:0]
-	lbls.Range(func(l labels.Label) {
-		result = append(result, symbolTable.Ref64Packed(l.Name))
-		result = append(result, symbolTable.Ref64Packed(l.Value))
-	})
-	return result
-}
-
-func labelsToUint32Packed(lbls labels.Labels, symbolTable *rwSymbolTable, buf []uint32) []uint32 {
-	result := buf[:0]
-	lbls.Range(func(l labels.Label) {
-		result = append(result, symbolTable.Ref32Packed(l.Name))
-		result = append(result, symbolTable.Ref32Packed(l.Value))
-	})
-	return result
-}
-
-func labelsToByteSlice(lbls labels.Labels, symbolTable *rwSymbolTable, buf []byte) []byte {
-	result := buf[:0]
-	lbls.Range(func(l labels.Label) {
-		off, leng := symbolTable.Ref(l.Name)
-		result = binary.AppendUvarint(result, uint64(off))
-		result = binary.AppendUvarint(result, uint64(leng))
-		off, leng = symbolTable.Ref(l.Value)
-		result = binary.AppendUvarint(result, uint64(off))
-		result = binary.AppendUvarint(result, uint64(leng))
-	})
-	return result
-}
-
 func labelsToUint32SliceLen(lbls labels.Labels, symbolTable *rwSymbolTable, buf []uint32) []uint32 {
 	result := buf[:0]
 	lbls.Range(func(l labels.Label) {
@@ -883,103 +852,6 @@ func Uint32RefToLabels(symbols string, minLabels []uint32) labels.Labels {
 		labelIdx++
 		value := symbols[offset : offset+length]
 		ls.Add(name, value)
-	}
-
-	return ls.Labels()
-}
-
-func ByteSliceToLabels(symbols string, minLabels []byte) labels.Labels {
-	ls := labels.NewScratchBuilder(len(minLabels) / 2)
-
-	for len(minLabels) > 0 {
-		// todo, check for overflow?
-		offset, n := binary.Uvarint(minLabels)
-		//fmt.Println(:"offset")
-		minLabels = minLabels[n:]
-		length, n := binary.Uvarint(minLabels)
-		minLabels = minLabels[n:]
-		name := symbols[offset : offset+length]
-		// todo, check for overflow?
-		offset, n = binary.Uvarint(minLabels)
-		minLabels = minLabels[n:]
-		length, n = binary.Uvarint(minLabels)
-		minLabels = minLabels[n:]
-		value := symbols[offset : offset+length]
-		ls.Add(name, value)
-	}
-
-	// labelIdx := 0
-	// for labelIdx < len(minLabels) {
-	// 	// todo, check for overflow?
-	// 	offset := minLabels[labelIdx]
-	// 	labelIdx++
-	// 	length := minLabels[labelIdx]
-	// 	labelIdx++
-	// 	name := symbols[offset : offset+length]
-	// 	// todo, check for overflow?
-	// 	offset = minLabels[labelIdx]
-	// 	labelIdx++
-	// 	length = minLabels[labelIdx]
-	// 	labelIdx++
-	// 	value := symbols[offset : offset+length]
-	// 	ls.Add(name, value)
-	// }
-
-	return ls.Labels()
-}
-
-func ByteSliceToLabelsSymbolsByte(symbols []byte, minLabels []byte) labels.Labels {
-	ls := labels.NewScratchBuilder(len(minLabels) / 2)
-
-	for len(minLabels) > 0 {
-		// todo, check for overflow?
-		offset, n := binary.Uvarint(minLabels)
-		//fmt.Println(:"offset")
-		minLabels = minLabels[n:]
-		length, n := binary.Uvarint(minLabels)
-		minLabels = minLabels[n:]
-		name := symbols[offset : offset+length]
-		// todo, check for overflow?
-		offset, n = binary.Uvarint(minLabels)
-		minLabels = minLabels[n:]
-		length, n = binary.Uvarint(minLabels)
-		minLabels = minLabels[n:]
-		value := symbols[offset : offset+length]
-		ls.Add(string(name), string(value))
-	}
-
-	// labelIdx := 0
-	// for labelIdx < len(minLabels) {
-	// 	// todo, check for overflow?
-	// 	offset := minLabels[labelIdx]
-	// 	labelIdx++
-	// 	length := minLabels[labelIdx]
-	// 	labelIdx++
-	// 	name := symbols[offset : offset+length]
-	// 	// todo, check for overflow?
-	// 	offset = minLabels[labelIdx]
-	// 	labelIdx++
-	// 	length = minLabels[labelIdx]
-	// 	labelIdx++
-	// 	value := symbols[offset : offset+length]
-	// 	ls.Add(name, value)
-	// }
-
-	return ls.Labels()
-}
-
-func Uint64RefToLabels(symbols string, minLabels []uint64) labels.Labels {
-	ls := labels.NewScratchBuilder(len(minLabels) / 2)
-	labelIdx := 0
-	for labelIdx < len(minLabels) {
-		// todo, check for overflow?
-		offset, length := unpackRef64(minLabels[labelIdx])
-		name := symbols[offset : offset+length]
-		// todo, check for overflow?
-		offset, length = unpackRef64(minLabels[labelIdx+1])
-		value := symbols[offset : offset+length]
-		ls.Add(name, value)
-		labelIdx += 2
 	}
 
 	return ls.Labels()
@@ -1137,22 +1009,4 @@ func MinimizedWriteRequestToWriteRequest(redReq *prompb.MinimizedWriteRequest) (
 
 	}
 	return req, nil
-}
-
-// for use with minimized remote write proto format
-func packRef(offset, length int) uint32 {
-	return uint32((offset&0xFFFFF)<<12 | (length & 0xFFF))
-}
-
-func unpackRef(ref uint32) (offset, length int) {
-	return int(ref>>12) & 0xFFFFF, int(ref & 0xFFF)
-}
-
-// for use with minimized remote write proto format
-func packRef64(offset, length uint32) uint64 {
-	return (uint64(offset) << 32) | uint64(length)
-}
-
-func unpackRef64(ref uint64) (offset, length uint32) {
-	return uint32(ref >> 32), uint32(ref & 0xFFFFFFFF)
 }

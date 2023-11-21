@@ -1857,30 +1857,6 @@ func (r *rwSymbolTable) Ref(str string) (off uint32, leng uint32) {
 	return
 }
 
-func (r *rwSymbolTable) Ref64Packed(str string) uint64 {
-	// todo, check for overflowing the uint32 based on documented format?
-	if ref, ok := r.symbolsMap64Packed[str]; ok {
-		return ref
-	}
-	if len(r.symbols) > math.MaxUint32 || len(str) > math.MaxUint32 || len(str)+len(r.symbols) > math.MaxUint32 {
-		panic(1)
-	}
-	r.symbolsMap64Packed[str] = packRef64(uint32(len(r.symbols)), uint32(len(str)))
-	r.symbols = append(r.symbols, str...)
-	return r.symbolsMap64Packed[str]
-}
-
-func (r *rwSymbolTable) Ref32Packed(str string) uint32 {
-	// todo, check for overflowing the uint32 based on documented format?
-	if ref, ok := r.symbolsMap32Packed[str]; ok {
-		return ref
-	}
-	r.symbolsMap32Packed[str] = packRef(len(r.symbols), len(str))
-	r.symbols = append(r.symbols, str...)
-
-	return r.symbolsMap32Packed[str]
-}
-
 func (r *rwSymbolTable) RefLen(str string) uint32 {
 	if ref, ok := r.symbolsMapBytes[str]; ok {
 		return ref
