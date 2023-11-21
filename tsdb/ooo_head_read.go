@@ -248,7 +248,7 @@ func NewOOOHeadChunkReader(head *Head, mint, maxt int64, isoState *oooIsolationS
 }
 
 func (cr OOOHeadChunkReader) Chunk(_ chunks.Meta) (chunkenc.Chunk, error) {
-	return nil, nil //TODO: error?
+	return nil, nil // TODO: consider erroring instead.
 }
 
 func (cr OOOHeadChunkReader) Iterable(meta chunks.Meta) (chunkenc.Iterable, error) {

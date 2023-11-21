@@ -738,7 +738,7 @@ func (r *fakeChunksReader) Chunk(meta chunks.Meta) (chunkenc.Chunk, error) {
 	if chk, ok := r.chks[meta.Ref]; ok {
 		return chk, nil
 	}
-	//TODO: this feels hacky
+	// TODO: this feels hacky.
 	if _, ok := r.iterables[meta.Ref]; ok {
 		return nil, nil
 	}

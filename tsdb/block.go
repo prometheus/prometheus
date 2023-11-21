@@ -117,7 +117,7 @@ type ChunkWriter interface {
 
 // ChunkReader provides reading access of serialized time series data.
 type ChunkReader interface {
-	//TODO: update comments
+	// TODO: update comments.
 
 	// Chunk returns the series data for the given chunks.Meta.
 	// Either a single chunk will be returned, or an iterable.
