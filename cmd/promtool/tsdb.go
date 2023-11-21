@@ -644,14 +644,14 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 
 		for _, chk := range chks {
 			// Load the actual data of the chunk.
-			chk, iterable, err := chunkr.ChunkOrIterable(chk)
+			chk, err := chunkr.Chunk(chk)
 			if err != nil {
 				return err
 			}
-			// Chunks within blocks should not need to be re-written, so an
-			// iterable is not expected to be returned from the chunk reader.
-			if iterable != nil {
-				return errors.New("ChunkOrIterable should not return an iterable when reading a block")
+			// Chunks within blocks should not need to be re-written, so Chunk()
+			// should always be non-nil.
+			if chk == nil {
+				return errors.New("nil chunk should not be returned when reading a block")
 			}
 			switch chk.Encoding() {
 			case chunkenc.EncXOR:

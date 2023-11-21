@@ -15,6 +15,7 @@ package tsdb
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"strings"
 	"unicode/utf8"
@@ -674,9 +675,6 @@ func (p *populateWithDelGenericSeriesIterator) reset(blockID ulid.ULID, cr Chunk
 // is deep copied to avoid races between reads and copying chunk bytes.
 // However, if the deletion intervals overlaps with the head chunk, then the head chunk is
 // not copied irrespective of copyHeadChunk because it will be re-encoded later anyway.
-// p.currMeta.Chunk will be set if p.currMeta refers to a single chunk that does not need
-// to be modified and can be returned as-is. Otherwise, p.currDelIter will be set.
-// As a post-condition, only one of p.currMeta.Chunk or p.currDelIter will be set.
 func (p *populateWithDelGenericSeriesIterator) next(copyHeadChunk bool) bool {
 	if p.err != nil || p.i >= len(p.metas)-1 {
 		return false
@@ -693,7 +691,6 @@ func (p *populateWithDelGenericSeriesIterator) next(copyHeadChunk bool) bool {
 	}
 
 	hcr, ok := p.cr.(*headChunkReader)
-	var iterable chunkenc.Iterable
 	if ok && copyHeadChunk && len(p.bufIter.Intervals) == 0 {
 		// ChunkWithCopy will copy the head chunk.
 		var maxt int64
@@ -701,7 +698,7 @@ func (p *populateWithDelGenericSeriesIterator) next(copyHeadChunk bool) bool {
 		// For the in-memory head chunk the index reader sets maxt as MaxInt64. We fix it here.
 		p.currMeta.MaxTime = maxt
 	} else {
-		p.currMeta.Chunk, iterable, p.err = p.cr.ChunkOrIterable(p.currMeta)
+		p.currMeta.Chunk, p.err = p.cr.Chunk(p.currMeta)
 	}
 
 	if p.err != nil {
@@ -709,28 +706,34 @@ func (p *populateWithDelGenericSeriesIterator) next(copyHeadChunk bool) bool {
 		return false
 	}
 
-	if len(p.bufIter.Intervals) == 0 && p.currMeta.Chunk != nil {
-		// If there is no overlap with deletion intervals and a single chunk is
-		// returned, we can take chunk as it is.
+	// If nil chunk was returned, try and get the iterable instead.
+	if p.currMeta.Chunk == nil {
+		var iterable chunkenc.Iterable
+		iterable, p.err = p.cr.Iterable(p.currMeta)
+		if p.err != nil {
+			p.err = errors.Wrapf(p.err, "cannot populate iterable %d from block %s", p.currMeta.Ref, p.blockID.String())
+			return false
+		}
+		if iterable == nil {
+			p.err = fmt.Errorf("cannot populate iterable %d from block %s", p.currMeta.Ref, p.blockID.String())
+			return false
+		}
+
+		p.bufIter.Iter = iterable.Iterator(p.bufIter.Iter)
+		p.currDelIter = &p.bufIter
+		return true
+	}
+
+	if len(p.bufIter.Intervals) == 0 {
+		// If there is no overlap with deletion intervals, we can take chunk as it is.
 		p.currDelIter = nil
 		return true
 	}
 
 	// Otherwise we need to iterate over the samples and create new chunks.
-	if p.currMeta.Chunk != nil {
-		// ChunkOrIterable() will return a nil iterable for a non-nil chunk, so
-		// we need to update that.
-		iterable = p.currMeta.Chunk
-		// Set currMeta.Chunk to nil as a post-condition of next() is that if
-		// currDelIter is not nil, currMeta.Chunk should be nil. This is to
-		// avoid the invalid chunk from being read accidentally when the
-		// iterator should be used instead.
-		p.currMeta.Chunk = nil
-	}
-
 	// We don't want all the samples, only the ones that don't overlap with deletion intervals.
 	// Setting the iterable as a nested iterator inside p.bufIter (which handles the deletion intervals).
-	p.bufIter.Iter = iterable.Iterator(p.bufIter.Iter)
+	p.bufIter.Iter = p.currMeta.Chunk.Iterator(p.bufIter.Iter)
 	p.currDelIter = &p.bufIter
 	return true
 }
@@ -879,7 +882,7 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 	}
 
 	// If a single chunk is directly provided, set that as the current chunk.
-	if p.currMeta.Chunk != nil {
+	if p.currDelIter == nil {
 		p.currMetaWithChunk = p.currMeta
 		return true
 	}
@@ -1209,8 +1212,12 @@ func newNopChunkReader() ChunkReader {
 	}
 }
 
-func (cr nopChunkReader) ChunkOrIterable(chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, error) {
-	return cr.emptyChunk, nil, nil
+func (cr nopChunkReader) Chunk(chunks.Meta) (chunkenc.Chunk, error) {
+	return cr.emptyChunk, nil
+}
+
+func (cr nopChunkReader) Iterable(chunks.Meta) (chunkenc.Iterable, error) {
+	return nil, nil
 }
 
 func (cr nopChunkReader) Close() error { return nil }

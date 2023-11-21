@@ -734,15 +734,25 @@ func createFakeReaderAndIterables(s ...[]chunks.Sample) (*fakeChunksReader, []ch
 	return f, chks
 }
 
-func (r *fakeChunksReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, error) {
+func (r *fakeChunksReader) Chunk(meta chunks.Meta) (chunkenc.Chunk, error) {
 	if chk, ok := r.chks[meta.Ref]; ok {
-		return chk, nil, nil
+		return chk, nil
 	}
+	//TODO: this feels hacky
+	if _, ok := r.iterables[meta.Ref]; ok {
+		return nil, nil
+	}
+	return nil, fmt.Errorf("chunk not found at ref %v", meta.Ref)
+}
 
+func (r *fakeChunksReader) Iterable(meta chunks.Meta) (chunkenc.Iterable, error) {
 	if it, ok := r.iterables[meta.Ref]; ok {
-		return nil, it, nil
+		return it, nil
 	}
-	return nil, nil, fmt.Errorf("chunk or iterable not found at ref %v", meta.Ref)
+	if _, ok := r.chks[meta.Ref]; ok {
+		return nil, nil
+	}
+	return nil, fmt.Errorf("iterable not found at ref %v", meta.Ref)
 }
 
 type mockIterable struct {
@@ -2059,13 +2069,17 @@ func BenchmarkMergedSeriesSet(b *testing.B) {
 
 type mockChunkReader map[chunks.ChunkRef]chunkenc.Chunk
 
-func (cr mockChunkReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, error) {
+func (cr mockChunkReader) Chunk(meta chunks.Meta) (chunkenc.Chunk, error) {
 	chk, ok := cr[meta.Ref]
 	if ok {
-		return chk, nil, nil
+		return chk, nil
 	}
 
-	return nil, nil, errors.New("Chunk with ref not found")
+	return nil, errors.New("Chunk with ref not found")
+}
+
+func (cr mockChunkReader) Iterable(meta chunks.Meta) (chunkenc.Iterable, error) {
+	return nil, nil
 }
 
 func (cr mockChunkReader) Close() error {
