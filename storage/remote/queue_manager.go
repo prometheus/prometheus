@@ -587,7 +587,7 @@ func isSampleOld(baseTime time.Time, sampleAgeLimit time.Duration, ts int64) boo
 	return sampleTs.Before(limitTs)
 }
 
-func isTimeSeriesOldFilter(metrics *queueManagerMetrics, baseTime time.Time, sampleAgeLimit time.Duration) func(ts prompb.TimeSeries) bool {
+func isTimeSeriesOldFilter(metrics *queueManagerMetrics, logger log.Logger, baseTime time.Time, sampleAgeLimit time.Duration) func(ts prompb.TimeSeries) bool {
 	return func(ts prompb.TimeSeries) bool {
 		if sampleAgeLimit == 0 {
 			// If sampleAgeLimit is unset, then we never skip samples due to their age.
@@ -598,16 +598,19 @@ func isTimeSeriesOldFilter(metrics *queueManagerMetrics, baseTime time.Time, sam
 		case len(ts.Samples) > 0:
 			if isSampleOld(baseTime, sampleAgeLimit, ts.Samples[0].Timestamp) {
 				metrics.droppedSamplesTotal.Inc()
+				level.Debug(logger).Log("msg", "Dropped exemplar due to age")
 				return true
 			}
 		case len(ts.Histograms) > 0:
 			if isSampleOld(baseTime, sampleAgeLimit, ts.Histograms[0].Timestamp) {
 				metrics.droppedHistogramsTotal.Inc()
+				level.Debug(logger).Log("msg", "Dropped histogram due to age")
 				return true
 			}
 		case len(ts.Exemplars) > 0:
 			if isSampleOld(baseTime, sampleAgeLimit, ts.Exemplars[0].Timestamp) {
 				metrics.droppedExemplarsTotal.Inc()
+				level.Debug(logger).Log("msg", "Dropped exemplar due to age")
 				return true
 			}
 		default:
@@ -625,7 +628,7 @@ outer:
 	for _, s := range samples {
 		if isSampleOld(currentTime, time.Duration(t.cfg.SampleAgeLimit), s.T) {
 			t.metrics.droppedSamplesTotal.Inc()
-			level.Info(t.logger).Log("msg", "Dropped sample due to age", "ref", s.Ref)
+			level.Debug(t.logger).Log("msg", "Dropped sample due to age", "ref", s.Ref)
 			continue
 		}
 		t.seriesMtx.Lock()
@@ -682,7 +685,7 @@ outer:
 	for _, e := range exemplars {
 		if isSampleOld(currentTime, time.Duration(t.cfg.SampleAgeLimit), e.T) {
 			t.metrics.droppedExemplarsTotal.Inc()
-			level.Info(t.logger).Log("msg", "Dropped exemplar due to age", "ref", e.Ref)
+			level.Debug(t.logger).Log("msg", "Dropped exemplar due to age", "ref", e.Ref)
 			continue
 		}
 		t.seriesMtx.Lock()
@@ -736,7 +739,7 @@ outer:
 	for _, h := range histograms {
 		if isSampleOld(currentTime, time.Duration(t.cfg.SampleAgeLimit), h.T) {
 			t.metrics.droppedHistogramsTotal.Inc()
-			level.Info(t.logger).Log("msg", "Dropped histogram sample due to age", "ref", h.Ref)
+			level.Debug(t.logger).Log("msg", "Dropped histogram sample due to age", "ref", h.Ref)
 			continue
 		}
 		t.seriesMtx.Lock()
@@ -788,7 +791,7 @@ outer:
 	for _, h := range floatHistograms {
 		if isSampleOld(currentTime, time.Duration(t.cfg.SampleAgeLimit), h.T) {
 			t.metrics.droppedHistogramsTotal.Inc()
-			level.Info(t.logger).Log("msg", "Dropped histogram sample due to age", "ref", h.Ref)
+			level.Debug(t.logger).Log("msg", "Dropped histogram sample due to age", "ref", h.Ref)
 			continue
 		}
 		t.seriesMtx.Lock()
@@ -1577,7 +1580,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 				nil,
 				pBuf,
 				*buf,
-				isTimeSeriesOldFilter(s.qm.metrics, currentTime, time.Duration(s.qm.cfg.SampleAgeLimit)),
+				isTimeSeriesOldFilter(s.qm.metrics, s.qm.logger, currentTime, time.Duration(s.qm.cfg.SampleAgeLimit)),
 			)
 			s.qm.buildRequestLimitTimestamp.Store(lowest)
 			if err != nil {
