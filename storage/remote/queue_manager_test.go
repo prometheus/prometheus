@@ -1371,7 +1371,6 @@ func createTimeseriesWithOldSamples(numSamples, numSeries int, extraLabels ...la
 				V:   float64(i),
 			})
 		}
-
 		for j := 0; j < numSamples/2; j++ {
 			sample := record.RefSample{
 				Ref: chunks.HeadSeriesRef(i),
@@ -1405,6 +1404,7 @@ func TestBuildTimeSeries(t *testing.T) {
 		name        string
 		ts          []prompb.TimeSeries
 		filter      func(ts prompb.TimeSeries) bool
+		lowestTs    int64
 		highestTs   int64
 		responseLen int
 	}{
@@ -1438,6 +1438,7 @@ func TestBuildTimeSeries(t *testing.T) {
 			},
 			filter:      nil,
 			responseLen: 3,
+			lowestTs:    1234567890,
 			highestTs:   1234567892,
 		},
 		{
@@ -1478,6 +1479,7 @@ func TestBuildTimeSeries(t *testing.T) {
 			},
 			filter:      func(ts prompb.TimeSeries) bool { return filterTsLimit(1234567892, ts) },
 			responseLen: 2,
+			lowestTs:    1234567892,
 			highestTs:   1234567893,
 		},
 		{
@@ -1518,6 +1520,7 @@ func TestBuildTimeSeries(t *testing.T) {
 			},
 			filter:      func(ts prompb.TimeSeries) bool { return filterTsLimit(1234567892, ts) },
 			responseLen: 2,
+			lowestTs:    1234567892,
 			highestTs:   1234567893,
 		},
 		{
@@ -1558,6 +1561,7 @@ func TestBuildTimeSeries(t *testing.T) {
 			},
 			filter:      func(ts prompb.TimeSeries) bool { return filterTsLimit(1234567895, ts) },
 			responseLen: 2,
+			lowestTs:    1234567895,
 			highestTs:   1234567897,
 		},
 	}
@@ -1565,10 +1569,11 @@ func TestBuildTimeSeries(t *testing.T) {
 	// Run the test cases
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			highest, result := buildTimeSeries(tc.ts, tc.filter)
+			highest, lowest, result := buildTimeSeries(tc.ts, tc.filter)
 			require.NotNil(t, result)
 			require.Equal(t, tc.responseLen, len(result))
 			require.Equal(t, tc.highestTs, highest)
+			require.Equal(t, tc.lowestTs, lowest)
 		})
 	}
 }
