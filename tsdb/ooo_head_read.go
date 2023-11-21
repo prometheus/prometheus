@@ -38,29 +38,29 @@ var _ IndexReader = &OOOHeadIndexReader{}
 // decided to do this to avoid code duplication.
 // The only methods that change are the ones about getting Series and Postings.
 type OOOHeadIndexReader struct {
-	*headIndexReader     // A reference to the headIndexReader so we can reuse as many interface implementation as possible.
-	lastForbiddenMmapRef chunks.ChunkDiskMapperRef
+	*headIndexReader            // A reference to the headIndexReader so we can reuse as many interface implementation as possible.
+	lastGarbageCollectedMmapRef chunks.ChunkDiskMapperRef
 }
 
-func NewOOOHeadIndexReader(head *Head, mint, maxt int64, lastForbiddenMmapRef chunks.ChunkDiskMapperRef) *OOOHeadIndexReader {
+func NewOOOHeadIndexReader(head *Head, mint, maxt int64, lastGarbageCollectedMmapRef chunks.ChunkDiskMapperRef) *OOOHeadIndexReader {
 	hr := &headIndexReader{
 		head: head,
 		mint: mint,
 		maxt: maxt,
 	}
-	return &OOOHeadIndexReader{hr, lastForbiddenMmapRef}
+	return &OOOHeadIndexReader{hr, lastGarbageCollectedMmapRef}
 }
 
 func (oh *OOOHeadIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
-	return oh.series(ref, builder, chks, oh.lastForbiddenMmapRef, 0)
+	return oh.series(ref, builder, chks, oh.lastGarbageCollectedMmapRef, 0)
 }
 
-// lastForbiddenMmapRef gives the last mmap chunk that may be being garbage collected and so
+// lastGarbageCollectedMmapRef gives the last mmap chunk that may be being garbage collected and so
 // any chunk at or before this ref will not be considered. 0 disables this check.
 //
 // maxMmapRef tells upto what max m-map chunk that we can consider. If it is non-0, then
 // the oooHeadChunk will not be considered.
-func (oh *OOOHeadIndexReader) series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta, lastForbiddenMmapRef, maxMmapRef chunks.ChunkDiskMapperRef) error {
+func (oh *OOOHeadIndexReader) series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta, lastGarbageCollectedMmapRef, maxMmapRef chunks.ChunkDiskMapperRef) error {
 	s := oh.head.series.getByID(chunks.HeadSeriesRef(ref))
 
 	if s == nil {
@@ -122,7 +122,7 @@ func (oh *OOOHeadIndexReader) series(ref storage.SeriesRef, builder *labels.Scra
 	}
 	for i := len(s.ooo.oooMmappedChunks) - 1; i >= 0; i-- {
 		c := s.ooo.oooMmappedChunks[i]
-		if c.OverlapsClosedInterval(oh.mint, oh.maxt) && (maxMmapRef == 0 || maxMmapRef.GreaterThanOrEqualTo(c.ref)) && (lastForbiddenMmapRef == 0 || c.ref.GreaterThan(lastForbiddenMmapRef)) {
+		if c.OverlapsClosedInterval(oh.mint, oh.maxt) && (maxMmapRef == 0 || maxMmapRef.GreaterThanOrEqualTo(c.ref)) && (lastGarbageCollectedMmapRef == 0 || c.ref.GreaterThan(lastGarbageCollectedMmapRef)) {
 			ref := chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.oooHeadChunkID(i)))
 			addChunk(c.minTime, c.maxTime, ref)
 		}

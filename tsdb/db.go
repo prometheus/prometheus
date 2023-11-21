@@ -203,13 +203,13 @@ type DB struct {
 	compactor      Compactor
 	blocksToDelete BlocksToDeleteFunc
 
-	// Mutex for that must be held when modifying the general block layout or lastCompactedOOOMmapRef.
+	// Mutex for that must be held when modifying the general block layout or lastGarbageCollectedMmapRef.
 	mtx    sync.RWMutex
 	blocks []*Block
 
 	// The last OOO chunk that was compacted and written to disk. New queriers must not read chunks less
 	// than or equal to this reference, as these chunks could be garbage collected at any time.
-	lastCompactedOOOMmapRef chunks.ChunkDiskMapperRef
+	lastGarbageCollectedMmapRef chunks.ChunkDiskMapperRef
 
 	head *Head
 
@@ -1254,10 +1254,10 @@ func (db *DB) compactOOOHead(ctx context.Context) error {
 			//
 			// We take mtx to ensure that Querier() and ChunkQuerier() don't miss blocks: without this, they could
 			// capture the list of blocks before the call to reloadBlocks() above runs, but then capture
-			// lastCompactedOOOMmapRef after we update it here, and therefore not query either the blocks we've just
+			// lastGarbageCollectedMmapRef after we update it here, and therefore not query either the blocks we've just
 			// written or the head chunks those blocks were created from.
 			db.mtx.Lock()
-			db.lastCompactedOOOMmapRef = minOOOMmapRef
+			db.lastGarbageCollectedMmapRef = minOOOMmapRef
 			db.mtx.Unlock()
 		}
 
@@ -1943,7 +1943,7 @@ func (db *DB) Querier(mint, maxt int64) (_ storage.Querier, err error) {
 	}
 
 	if overlapsClosedInterval(mint, maxt, db.head.MinOOOTime(), db.head.MaxOOOTime()) {
-		rh := NewOOORangeHead(db.head, mint, maxt, db.lastCompactedOOOMmapRef)
+		rh := NewOOORangeHead(db.head, mint, maxt, db.lastGarbageCollectedMmapRef)
 		var err error
 		outOfOrderHeadQuerier, err := NewBlockQuerier(rh, mint, maxt)
 		if err != nil {
@@ -2021,7 +2021,7 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuer
 	}
 
 	if overlapsClosedInterval(mint, maxt, db.head.MinOOOTime(), db.head.MaxOOOTime()) {
-		rh := NewOOORangeHead(db.head, mint, maxt, db.lastCompactedOOOMmapRef)
+		rh := NewOOORangeHead(db.head, mint, maxt, db.lastGarbageCollectedMmapRef)
 		outOfOrderHeadQuerier, err := NewBlockChunkQuerier(rh, mint, maxt)
 		if err != nil {
 			return nil, errors.Wrapf(err, "open block chunk querier for ooo head %s", rh)
