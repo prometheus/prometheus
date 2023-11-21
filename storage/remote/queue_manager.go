@@ -586,7 +586,7 @@ func isSampleOld(sampleAgeLimit time.Duration, ts int64) bool {
 	return sampleTs.Before(limitTs)
 }
 
-func isTimeSeriesOldFilter(sampleAgeLimit time.Duration) func(ts prompb.TimeSeries) bool {
+func isTimeSeriesOldFilter(metrics *queueManagerMetrics, sampleAgeLimit time.Duration) func(ts prompb.TimeSeries) bool {
 	return func(ts prompb.TimeSeries) bool {
 		if sampleAgeLimit == 0 {
 			// If sampleAgeLimit is unset, then we never skip samples due to their age.
@@ -595,14 +595,24 @@ func isTimeSeriesOldFilter(sampleAgeLimit time.Duration) func(ts prompb.TimeSeri
 		switch {
 		// Only the first element should be set in the series, therefore we only check the first element.
 		case len(ts.Samples) > 0:
-			return isSampleOld(sampleAgeLimit, ts.Samples[0].Timestamp)
+			if isSampleOld(sampleAgeLimit, ts.Samples[0].Timestamp) {
+				metrics.droppedSamplesTotal.Inc()
+				return true
+			}
 		case len(ts.Histograms) > 0:
-			return isSampleOld(sampleAgeLimit, ts.Histograms[0].Timestamp)
+			if isSampleOld(sampleAgeLimit, ts.Histograms[0].Timestamp) {
+				metrics.droppedHistogramsTotal.Inc()
+				return true
+			}
 		case len(ts.Exemplars) > 0:
-			return isSampleOld(sampleAgeLimit, ts.Exemplars[0].Timestamp)
+			if isSampleOld(sampleAgeLimit, ts.Exemplars[0].Timestamp) {
+				metrics.droppedExemplarsTotal.Inc()
+				return true
+			}
 		default:
 			return false
 		}
+		return false
 	}
 }
 
@@ -1558,7 +1568,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 				nil,
 				pBuf,
 				*buf,
-				isTimeSeriesOldFilter(time.Duration(s.qm.cfg.SampleAgeLimit)),
+				isTimeSeriesOldFilter(s.qm.metrics, time.Duration(s.qm.cfg.SampleAgeLimit)),
 			)
 			if err != nil {
 				return err
