@@ -58,7 +58,7 @@ func (oh *OOOHeadIndexReader) Series(ref storage.SeriesRef, builder *labels.Scra
 // lastForbiddenMmapRef gives the last mmap chunk that may be being garbage collected and so
 // any chunk at or before this ref will not be considered. 0 disables this check.
 //
-// lastMmapRef tells upto what max m-map chunk that we can consider. If it is non-0, then
+// maxMmapRef tells upto what max m-map chunk that we can consider. If it is non-0, then
 // the oooHeadChunk will not be considered.
 func (oh *OOOHeadIndexReader) series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta, lastForbiddenMmapRef, maxMmapRef chunks.ChunkDiskMapperRef) error {
 	s := oh.head.series.getByID(chunks.HeadSeriesRef(ref))
