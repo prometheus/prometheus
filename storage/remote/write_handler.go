@@ -355,7 +355,6 @@ func (h *writeHandler) writeMinLen(ctx context.Context, req *prompb.MinimizedWri
 
 		for _, ep := range ts.Exemplars {
 			e := exemplarProtoToExemplar(ep)
-			//e := exemplarRefProtoToExemplar(req.StringSymbolTable, ep)
 			h.appendExemplar(app, e, ls, &outOfOrderExemplarErrs)
 		}
 

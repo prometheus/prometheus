@@ -206,7 +206,6 @@ func TestMetadataDelivery(t *testing.T) {
 func TestSampleDeliveryTimeout(t *testing.T) {
 	for _, rwFormat := range []RemoteWriteFormat{Base1, Min32Optimized} {
 		t.Run(fmt.Sprint(rwFormat), func(t *testing.T) {
-			//remoteWrite11 := proto == "1.1"
 			// Let's send one less sample than batch size, and wait the timeout duration
 			n := 9
 			samples, series := createTimeseries(n, n)
@@ -511,7 +510,6 @@ func TestQueueFilledDeadlock(t *testing.T) {
 
 func TestReleaseNoninternedString(t *testing.T) {
 	for _, rwFormat := range []RemoteWriteFormat{Base1, Min32Optimized} {
-
 		t.Run(fmt.Sprint(rwFormat), func(t *testing.T) {
 			cfg := config.DefaultQueueConfig
 			mcfg := config.DefaultMetadataConfig
@@ -1498,9 +1496,9 @@ func BenchmarkBuildMinimizedWriteRequest(b *testing.B) {
 		batch []timeSeries
 	}
 	testCases := []testcase{
-		testcase{createDummyTimeSeries(2)},
-		testcase{createDummyTimeSeries(10)},
-		testcase{createDummyTimeSeries(100)},
+		{createDummyTimeSeries(2)},
+		{createDummyTimeSeries(10)},
+		{createDummyTimeSeries(100)},
 	}
 	for _, tc := range testCases {
 		symbolTable := newRwSymbolTable()

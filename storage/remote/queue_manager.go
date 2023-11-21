@@ -1524,7 +1524,7 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, s
 	s.updateMetrics(ctx, err, sampleCount, exemplarCount, histogramCount, time.Since(begin))
 }
 
-func (s *shards) sendMinSamples(ctx context.Context, samples []prompb.MinimizedTimeSeries, labels string, sampleCount, exemplarCount, histogramCount int, pBuf *[]byte, buf *[]byte) {
+func (s *shards) sendMinSamples(ctx context.Context, samples []prompb.MinimizedTimeSeries, labels string, sampleCount, exemplarCount, histogramCount int, pBuf, buf *[]byte) {
 	begin := time.Now()
 	// Build the ReducedWriteRequest with no metadata.
 	// Failing to build the write request is non-recoverable, since it will
@@ -1696,20 +1696,7 @@ func populateMinimizedTimeSeriesLen(symbolTable *rwSymbolTable, batch []timeSeri
 				Timestamp: d.timestamp,
 			})
 			nPendingSamples++
-			// TODO: handle all types
-		//case tExemplar:
-		//	l := make([]prompb.LabelRef, 0, d.exemplarLabels.Len())
-		//	d.exemplarLabels.Range(func(el labels.Label) {
-		//		nRef := pool.intern(el.Name)
-		//		vRef := pool.intern(el.Value)
-		//		l = append(l, prompb.LabelRef{NameRef: nRef, ValueRef: vRef})
-		//	})
-		//	pendingData[nPending].Exemplars = append(pendingData[nPending].Exemplars, prompb.ExemplarRef{
-		//		Labels:    l,
-		//		Value:     d.value,
-		//		Timestamp: d.timestamp,
-		//	})
-		//	nPendingExemplars++
+		// TODO: handle all exemplars
 		case tHistogram:
 			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, HistogramToHistogramProto(d.timestamp, d.histogram))
 			nPendingHistograms++
@@ -1811,7 +1798,7 @@ func buildWriteRequest(samples []prompb.TimeSeries, metadata []prompb.MetricMeta
 		buf = &[]byte{}
 	}
 	compressed := snappy.Encode(*buf, pBuf.Bytes())
-	if n := snappy.MaxEncodedLen(len(pBuf.Bytes())); buf != nil && n > len(*buf) {
+	if n := snappy.MaxEncodedLen(len(pBuf.Bytes())); n > len(*buf) {
 		// grow the buffer for the next time
 		*buf = make([]byte, n)
 	}
@@ -1841,20 +1828,20 @@ func newRwSymbolTable() rwSymbolTable {
 	}
 }
 
-func (r *rwSymbolTable) Ref(str string) (off uint32, leng uint32) {
+func (r *rwSymbolTable) Ref(str string) (uint32, uint32) {
 	if offlen, ok := r.symbolsMap[str]; ok {
 		return offlen.Off, offlen.Len
 	}
-	off, leng = uint32(len(r.symbols)), uint32(len(str))
+	off, length := uint32(len(r.symbols)), uint32(len(str))
 	if int(off) > len(r.symbols) {
 		panic(1)
 	}
 	r.symbols = append(r.symbols, str...)
-	if len(r.symbols) < int(off+leng) {
+	if len(r.symbols) < int(off+length) {
 		panic(2)
 	}
-	r.symbolsMap[str] = offLenPair{off, leng}
-	return
+	r.symbolsMap[str] = offLenPair{off, length}
+	return off, length
 }
 
 func (r *rwSymbolTable) RefLen(str string) uint32 {
@@ -1892,7 +1879,7 @@ func (r *rwSymbolTable) clear() {
 	r.symbols = r.symbols[:0]
 }
 
-func buildMinimizedWriteRequest(samples []prompb.MinimizedTimeSeries, labels string, pBuf *[]byte, buf *[]byte) ([]byte, int64, error) {
+func buildMinimizedWriteRequest(samples []prompb.MinimizedTimeSeries, labels string, pBuf, buf *[]byte) ([]byte, int64, error) {
 	var highest int64
 	for _, ts := range samples {
 		// At the moment we only ever append a TimeSeries with a single sample or exemplar in it.
@@ -1930,7 +1917,7 @@ func buildMinimizedWriteRequest(samples []prompb.MinimizedTimeSeries, labels str
 	}
 
 	compressed := snappy.Encode(*buf, data)
-	if n := snappy.MaxEncodedLen(len(data)); buf != nil && n > len(*buf) {
+	if n := snappy.MaxEncodedLen(len(data)); n > len(*buf) {
 		// grow the buffer for the next time
 		*buf = make([]byte, n)
 	}
@@ -1976,7 +1963,7 @@ func buildMinimizedWriteRequestLen(samples []prompb.MinimizedTimeSeriesLen, labe
 	}
 
 	compressed := snappy.Encode(*buf, pBuf.Bytes())
-	if n := snappy.MaxEncodedLen(len(pBuf.Bytes())); buf != nil && n > len(*buf) {
+	if n := snappy.MaxEncodedLen(len(pBuf.Bytes())); n > len(*buf) {
 		// grow the buffer for the next time
 		*buf = make([]byte, n)
 	}
