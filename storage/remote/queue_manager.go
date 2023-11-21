@@ -392,7 +392,8 @@ type WriteClient interface {
 // indicated by the provided WriteClient. Implements writeTo interface
 // used by WAL Watcher.
 type QueueManager struct {
-	lastSendTimestamp atomic.Int64
+	lastSendTimestamp          atomic.Int64
+	buildRequestLimitTimestamp atomic.Int64
 
 	logger               log.Logger
 	flushDeadline        time.Duration
@@ -530,7 +531,7 @@ func (t *QueueManager) AppendMetadata(ctx context.Context, metadata []scrape.Met
 
 func (t *QueueManager) sendMetadataWithBackoff(ctx context.Context, metadata []prompb.MetricMetadata, pBuf *proto.Buffer) error {
 	// Build the WriteRequest with no samples.
-	req, _, err := buildWriteRequest(nil, metadata, pBuf, nil, nil)
+	req, _, _, err := buildWriteRequest(nil, metadata, pBuf, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -1548,7 +1549,8 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, s
 // sendSamples to the remote storage with backoff for recoverable errors.
 func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.TimeSeries, sampleCount, exemplarCount, histogramCount int, pBuf *proto.Buffer, buf *[]byte) error {
 	// Build the WriteRequest with no metadata.
-	req, highest, err := buildWriteRequest(samples, nil, pBuf, *buf, nil)
+	req, highest, lowest, err := buildWriteRequest(samples, nil, pBuf, *buf, nil)
+	s.qm.buildRequestLimitTimestamp.Store(lowest)
 	if err != nil {
 		// Failing to build the write request is non-recoverable, since it will
 		// only error if marshaling the proto to bytes fails.
@@ -1562,15 +1564,18 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 	// without causing a memory leak, and it has the nice effect of not propagating any
 	// parameters for sendSamplesWithBackoff/3.
 	attemptStore := func(try int) error {
-		if s.qm.cfg.SampleAgeLimit != 0 {
+		currentTime := time.Now()
+		lowest := s.qm.buildRequestLimitTimestamp.Load()
+		if isSampleOld(currentTime, time.Duration(s.qm.cfg.SampleAgeLimit), lowest) {
 			// This will filter out old samples during retries.
-			req, _, err := buildWriteRequest(
+			req, _, lowest, err := buildWriteRequest(
 				samples,
 				nil,
 				pBuf,
 				*buf,
-				isTimeSeriesOldFilter(s.qm.metrics, time.Now(), time.Duration(s.qm.cfg.SampleAgeLimit)),
+				isTimeSeriesOldFilter(s.qm.metrics, currentTime, time.Duration(s.qm.cfg.SampleAgeLimit)),
 			)
+			s.qm.buildRequestLimitTimestamp.Store(lowest)
 			if err != nil {
 				return err
 			}
@@ -1681,10 +1686,12 @@ func sendWriteRequestWithBackoff(ctx context.Context, cfg config.QueueConfig, l 
 	}
 }
 
-func buildTimeSeries(timeSeries []prompb.TimeSeries, filter func(prompb.TimeSeries) bool) (int64, []prompb.TimeSeries) {
+func buildTimeSeries(timeSeries []prompb.TimeSeries, filter func(prompb.TimeSeries) bool) (int64, int64, []prompb.TimeSeries) {
 	var highest int64
+	var lowest int64
 
 	keepIdx := 0
+	lowest = math.MaxInt64
 	for i, ts := range timeSeries {
 		if filter != nil && filter(ts) {
 			continue
@@ -1701,17 +1708,28 @@ func buildTimeSeries(timeSeries []prompb.TimeSeries, filter func(prompb.TimeSeri
 			highest = ts.Histograms[0].Timestamp
 		}
 
+		// Get lowest timestamp
+		if len(ts.Samples) > 0 && ts.Samples[0].Timestamp < lowest {
+			lowest = ts.Samples[0].Timestamp
+		}
+		if len(ts.Exemplars) > 0 && ts.Exemplars[0].Timestamp < lowest {
+			lowest = ts.Exemplars[0].Timestamp
+		}
+		if len(ts.Histograms) > 0 && ts.Histograms[0].Timestamp < lowest {
+			lowest = ts.Histograms[0].Timestamp
+		}
+
 		// Move the current element to the write position and increment the write pointer
 		timeSeries[keepIdx] = timeSeries[i]
 		keepIdx++
 	}
 
 	timeSeries = timeSeries[:keepIdx]
-	return highest, timeSeries
+	return highest, lowest, timeSeries
 }
 
-func buildWriteRequest(timeSeries []prompb.TimeSeries, metadata []prompb.MetricMetadata, pBuf *proto.Buffer, buf []byte, filter func(prompb.TimeSeries) bool) ([]byte, int64, error) {
-	highest, timeSeries := buildTimeSeries(timeSeries, filter)
+func buildWriteRequest(timeSeries []prompb.TimeSeries, metadata []prompb.MetricMetadata, pBuf *proto.Buffer, buf []byte, filter func(prompb.TimeSeries) bool) ([]byte, int64, int64, error) {
+	highest, lowest, timeSeries := buildTimeSeries(timeSeries, filter)
 
 	req := &prompb.WriteRequest{
 		Timeseries: timeSeries,
@@ -1725,7 +1743,7 @@ func buildWriteRequest(timeSeries []prompb.TimeSeries, metadata []prompb.MetricM
 	}
 	err := pBuf.Marshal(req)
 	if err != nil {
-		return nil, highest, err
+		return nil, highest, lowest, err
 	}
 
 	// snappy uses len() to see if it needs to allocate a new slice. Make the
@@ -1734,5 +1752,5 @@ func buildWriteRequest(timeSeries []prompb.TimeSeries, metadata []prompb.MetricM
 		buf = buf[0:cap(buf)]
 	}
 	compressed := snappy.Encode(buf, pBuf.Bytes())
-	return compressed, highest, nil
+	return compressed, highest, lowest, nil
 }
