@@ -58,25 +58,25 @@ func TestRemoteWriteHandler(t *testing.T) {
 	j := 0
 	k := 0
 	for _, ts := range writeRequestFixture.Timeseries {
-		labels := labelProtosToLabels(ts.Labels)
+		ls := labelProtosToLabels(ts.Labels)
 		for _, s := range ts.Samples {
-			require.Equal(t, mockSample{labels, s.Timestamp, s.Value}, appendable.samples[i])
+			require.Equal(t, mockSample{ls, s.Timestamp, s.Value}, appendable.samples[i])
 			i++
 		}
 
 		for _, e := range ts.Exemplars {
 			exemplarLabels := labelProtosToLabels(e.Labels)
-			require.Equal(t, mockExemplar{labels, exemplarLabels, e.Timestamp, e.Value}, appendable.exemplars[j])
+			require.Equal(t, mockExemplar{ls, exemplarLabels, e.Timestamp, e.Value}, appendable.exemplars[j])
 			j++
 		}
 
 		for _, hp := range ts.Histograms {
 			if hp.IsFloatHistogram() {
 				fh := FloatHistogramProtoToFloatHistogram(hp)
-				require.Equal(t, mockHistogram{labels, hp.Timestamp, nil, fh}, appendable.histograms[k])
+				require.Equal(t, mockHistogram{ls, hp.Timestamp, nil, fh}, appendable.histograms[k])
 			} else {
 				h := HistogramProtoToHistogram(hp)
-				require.Equal(t, mockHistogram{labels, hp.Timestamp, h, nil}, appendable.histograms[k])
+				require.Equal(t, mockHistogram{ls, hp.Timestamp, h, nil}, appendable.histograms[k])
 			}
 
 			k++
@@ -108,124 +108,25 @@ func TestRemoteWriteHandlerMinimizedFormat(t *testing.T) {
 	// the reduced write request is equivalent to the write request fixture.
 	// we can use it for
 	for _, ts := range writeRequestFixture.Timeseries {
-		labels := labelProtosToLabels(ts.Labels)
+		ls := labelProtosToLabels(ts.Labels)
 		for _, s := range ts.Samples {
-			require.Equal(t, mockSample{labels, s.Timestamp, s.Value}, appendable.samples[i])
+			require.Equal(t, mockSample{ls, s.Timestamp, s.Value}, appendable.samples[i])
 			i++
 		}
 
 		for _, e := range ts.Exemplars {
 			exemplarLabels := labelProtosToLabels(e.Labels)
-			require.Equal(t, mockExemplar{labels, exemplarLabels, e.Timestamp, e.Value}, appendable.exemplars[j])
+			require.Equal(t, mockExemplar{ls, exemplarLabels, e.Timestamp, e.Value}, appendable.exemplars[j])
 			j++
 		}
 
 		for _, hp := range ts.Histograms {
 			if hp.IsFloatHistogram() {
 				fh := FloatHistogramProtoToFloatHistogram(hp)
-				require.Equal(t, mockHistogram{labels, hp.Timestamp, nil, fh}, appendable.histograms[k])
+				require.Equal(t, mockHistogram{ls, hp.Timestamp, nil, fh}, appendable.histograms[k])
 			} else {
 				h := HistogramProtoToHistogram(hp)
-				require.Equal(t, mockHistogram{labels, hp.Timestamp, h, nil}, appendable.histograms[k])
-			}
-
-			k++
-		}
-	}
-}
-
-//func TestRemoteWriteHandlerMinimizedFormat(t *testing.T) {
-//	buf, _, err := buildMinimizedWriteRequest(writeRequestMinimizedFixture.Timeseries, writeRequestMinimizedFixture.Symbols, nil, nil)
-//	require.NoError(t, err)
-//
-//	req, err := http.NewRequest("", "", bytes.NewReader(buf))
-//	req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion11HeaderValue)
-//	require.NoError(t, err)
-//
-//	appendable := &mockAppendable{}
-//	handler := NewWriteHandler(nil, nil, appendable, false, true)
-//
-//	recorder := httptest.NewRecorder()
-//	handler.ServeHTTP(recorder, req)
-//
-//	resp := recorder.Result()
-//	require.Equal(t, http.StatusNoContent, resp.StatusCode)
-//
-//	i := 0
-//	j := 0
-//	k := 0
-//	// the reduced write request is equivalent to the write request fixture.
-//	// we can use it for
-//	for _, ts := range writeRequestFixture.Timeseries {
-//		ls := labelProtosToLabels(ts.Labels)
-//		for _, s := range ts.Samples {
-//			require.Equal(t, mockSample{ls, s.Timestamp, s.Value}, appendable.samples[i])
-//			i++
-//		}
-//
-//		for _, e := range ts.Exemplars {
-//			exemplarLabels := labelProtosToLabels(e.Labels)
-//			require.Equal(t, mockExemplar{ls, exemplarLabels, e.Timestamp, e.Value}, appendable.exemplars[j])
-//			j++
-//		}
-//
-//		for _, hp := range ts.Histograms {
-//			if hp.IsFloatHistogram() {
-//				fh := FloatHistogramProtoToFloatHistogram(hp)
-//				require.Equal(t, mockHistogram{ls, hp.Timestamp, nil, fh}, appendable.histograms[k])
-//			} else {
-//				h := HistogramProtoToHistogram(hp)
-//				require.Equal(t, mockHistogram{ls, hp.Timestamp, h, nil}, appendable.histograms[k])
-//			}
-//
-//			k++
-//		}
-//	}
-//}
-
-func TestRemoteWriteHandler64Packed(t *testing.T) {
-	buf, _, err := buildMinimizedWriteRequestFixed64(writeRequestMinimized64Fixture.Timeseries, writeRequestMinimized64Fixture.Symbols, nil, nil)
-	require.NoError(t, err)
-
-	req, err := http.NewRequest("", "", bytes.NewReader(buf))
-	req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion11HeaderValue)
-	require.NoError(t, err)
-
-	appendable := &mockAppendable{}
-	// TODO: test with other proto format(s)
-	handler := NewWriteHandler(nil, nil, appendable, Min64Fixed)
-
-	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, req)
-
-	resp := recorder.Result()
-	require.Equal(t, http.StatusNoContent, resp.StatusCode)
-
-	i := 0
-	j := 0
-	k := 0
-	// the reduced write request is equivalent to the write request fixture.
-	// we can use it for
-	for _, ts := range writeRequestMinimized64Fixture.Timeseries {
-		labels := Uint64RefToLabels(writeRequestMinimized64Fixture.Symbols, ts.LabelSymbols)
-		for _, s := range ts.Samples {
-			require.Equal(t, mockSample{labels, s.Timestamp, s.Value}, appendable.samples[i])
-			i++
-		}
-
-		for _, e := range ts.Exemplars {
-			exemplarLabels := labelProtosToLabels(e.Labels)
-			require.Equal(t, mockExemplar{labels, exemplarLabels, e.Timestamp, e.Value}, appendable.exemplars[j])
-			j++
-		}
-
-		for _, hp := range ts.Histograms {
-			if hp.IsFloatHistogram() {
-				fh := FloatHistogramProtoToFloatHistogram(hp)
-				require.Equal(t, mockHistogram{labels, hp.Timestamp, nil, fh}, appendable.histograms[k])
-			} else {
-				h := HistogramProtoToHistogram(hp)
-				require.Equal(t, mockHistogram{labels, hp.Timestamp, h, nil}, appendable.histograms[k])
+				require.Equal(t, mockHistogram{ls, hp.Timestamp, h, nil}, appendable.histograms[k])
 			}
 
 			k++
@@ -308,7 +209,7 @@ func TestOutOfOrderHistogram(t *testing.T) {
 
 func BenchmarkRemoteWritehandler(b *testing.B) {
 	const labelValue = "abcdefg'hijlmn234!@#$%^&*()_+~`\"{}[],./<>?hello0123hiOlá你好Dzieńdobry9Zd8ra765v4stvuyte"
-	reqs := []*http.Request{}
+	var reqs []*http.Request
 	for i := 0; i < b.N; i++ {
 		num := strings.Repeat(strconv.Itoa(i), 16)
 		buf, _, err := buildWriteRequest([]prompb.TimeSeries{{

@@ -107,39 +107,6 @@ var writeRequestMinimizedFixture = func() *prompb.MinimizedWriteRequest {
 	}
 }()
 
-var writeRequestMinimized64Fixture = func() *prompb.MinimizedWriteRequestFixed64 {
-	st := newRwSymbolTable()
-	labels := []uint64{}
-	for _, s := range []string{
-		"__name__", "test_metric1",
-		"b", "c",
-		"baz", "qux",
-		"d", "e",
-		"foo", "bar",
-	} {
-		ref := st.Ref64Packed(s)
-		labels = append(labels, ref)
-	}
-
-	return &prompb.MinimizedWriteRequestFixed64{
-		Timeseries: []prompb.MinimizedTimeSeriesFixed64{
-			{
-				LabelSymbols: labels,
-				Samples:      []prompb.Sample{{Value: 1, Timestamp: 0}},
-				Exemplars:    []prompb.Exemplar{{Labels: []prompb.Label{{Name: "f", Value: "g"}}, Value: 1, Timestamp: 0}},
-				Histograms:   []prompb.Histogram{HistogramToHistogramProto(0, &testHistogram), FloatHistogramToHistogramProto(1, testHistogram.ToFloat())},
-			},
-			{
-				LabelSymbols: labels,
-				Samples:      []prompb.Sample{{Value: 2, Timestamp: 1}},
-				Exemplars:    []prompb.Exemplar{{Labels: []prompb.Label{{Name: "h", Value: "i"}}, Value: 2, Timestamp: 1}},
-				Histograms:   []prompb.Histogram{HistogramToHistogramProto(2, &testHistogram), FloatHistogramToHistogramProto(3, testHistogram.ToFloat())},
-			},
-		},
-		Symbols: st.LabelsString(),
-	}
-}()
-
 func TestValidateLabelsAndMetricName(t *testing.T) {
 	tests := []struct {
 		input       []prompb.Label
