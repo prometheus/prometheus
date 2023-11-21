@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand"
 	"net"
 	"net/http"
 	"strings"
@@ -30,10 +31,13 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v4"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v2"
+	cache "github.com/Code-Hex/go-generics-cache"
+	"github.com/Code-Hex/go-generics-cache/policy/lru"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
+
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
 
@@ -80,6 +84,11 @@ var (
 			Name: "prometheus_sd_azure_failures_total",
 			Help: "Number of Azure service discovery refresh failures.",
 		})
+	cacheHitCount = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "prometheus_sd_azure_cache_hit_total",
+			Help: "Number of cache hit during refresh.",
+		})
 )
 
 var environments = map[string]cloud.Configuration{
@@ -105,6 +114,7 @@ func CloudConfigurationFromName(name string) (cloud.Configuration, error) {
 func init() {
 	discovery.RegisterConfig(&SDConfig{})
 	prometheus.MustRegister(failuresCount)
+	prometheus.MustRegister(cacheHitCount)
 }
 
 // SDConfig is the configuration for Azure based service discovery.
@@ -145,7 +155,6 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
-
 	if err = validateAuthParam(c.SubscriptionID, "subscription_id"); err != nil {
 		return err
 	}
@@ -174,6 +183,7 @@ type Discovery struct {
 	logger log.Logger
 	cfg    *SDConfig
 	port   int
+	cache  *cache.Cache[string, *armnetwork.Interface]
 }
 
 // NewDiscovery returns a new AzureDiscovery which periodically refreshes its targets.
@@ -181,17 +191,21 @@ func NewDiscovery(cfg *SDConfig, logger log.Logger) *Discovery {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
+	l := cache.New(cache.AsLRU[string, *armnetwork.Interface](lru.WithCapacity(5000)))
 	d := &Discovery{
 		cfg:    cfg,
 		port:   cfg.Port,
 		logger: logger,
+		cache:  l,
 	}
+
 	d.Discovery = refresh.NewDiscovery(
 		logger,
 		"azure",
 		time.Duration(cfg.RefreshInterval),
 		d.refresh,
 	)
+
 	return d
 }
 
@@ -385,15 +399,22 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 			// Get the IP address information via separate call to the network provider.
 			for _, nicID := range vm.NetworkInterfaces {
-				networkInterface, err := client.getNetworkInterfaceByID(ctx, nicID)
-				if err != nil {
-					if errors.Is(err, errorNotFound) {
-						level.Warn(d.logger).Log("msg", "Network interface does not exist", "name", nicID, "err", err)
-					} else {
-						ch <- target{labelSet: nil, err: err}
+				var networkInterface *armnetwork.Interface
+				if v, ok := d.getFromCache(nicID); ok {
+					networkInterface = v
+					cacheHitCount.Add(1)
+				} else {
+					networkInterface, err = client.getNetworkInterfaceByID(ctx, nicID)
+					if err != nil {
+						if errors.Is(err, errorNotFound) {
+							level.Warn(d.logger).Log("msg", "Network interface does not exist", "name", nicID, "err", err)
+						} else {
+							ch <- target{labelSet: nil, err: err}
+						}
+						// Get out of this routine because we cannot continue without a network interface.
+						return
 					}
-					// Get out of this routine because we cannot continue without a network interface.
-					return
+					d.addToCache(nicID, networkInterface)
 				}
 
 				if networkInterface.Properties == nil {
@@ -627,4 +648,20 @@ func (client *azureClient) getNetworkInterfaceByID(ctx context.Context, networkI
 	}
 
 	return &resp.Interface, nil
+}
+
+// addToCache will add the network interface information for the specified nicID
+func (d *Discovery) addToCache(nicID string, netInt *armnetwork.Interface) {
+	random := rand.Int63n(int64(time.Duration(d.cfg.RefreshInterval * 3).Seconds()))
+	rs := time.Duration(random) * time.Second
+	exptime := time.Duration(d.cfg.RefreshInterval*10) + rs
+	d.cache.Set(nicID, netInt, cache.WithExpiration(exptime))
+	level.Debug(d.logger).Log("msg", "Adding nic", "nic", nicID, "time", exptime.Seconds())
+}
+
+// getFromCache will get the network Interface for the specified nicID
+// If the cache is disabled nothing will happen
+func (d *Discovery) getFromCache(nicID string) (*armnetwork.Interface, bool) {
+	net, found := d.cache.Get(nicID)
+	return net, found
 }
