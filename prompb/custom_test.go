@@ -15,7 +15,7 @@ package prompb
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestOptimizedMarshal(t *testing.T) {
@@ -75,15 +75,15 @@ func TestOptimizedMarshal(t *testing.T) {
 			got = got[:0]
 			// should be the same as the standard marshal
 			expected, err := tt.m.Marshal()
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			got, err = tt.m.OptimizedMarshal(got)
-			assert.NoError(t, err)
-			assert.Equal(t, expected, got)
+			require.NoError(t, err)
+			require.Equal(t, expected, got)
 
 			// round trip
 			m := &MinimizedWriteRequest{}
-			assert.NoError(t, m.Unmarshal(got))
-			assert.Equal(t, tt.m, m)
+			require.NoError(t, m.Unmarshal(got))
+			require.Equal(t, tt.m, m)
 		})
 	}
 }
