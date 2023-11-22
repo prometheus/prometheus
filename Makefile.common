@@ -272,4 +272,4 @@ govulncheck: install-govulncheck
 	govulncheck ./...
 
 install-govulncheck:
-	which govulncheck || go install golang.org/x/vuln/cmd/govulncheck@latest
+	command -v govulncheck || go install golang.org/x/vuln/cmd/govulncheck@latest
