@@ -316,14 +316,12 @@ func BenchmarkNativeHistograms(b *testing.B) {
 	for _, tc := range cases {
 		b.Run(tc.name, func(b *testing.B) {
 			ng := NewEngine(opts)
-
 			for i := 0; i < b.N; i++ {
 				qry, err := ng.NewRangeQuery(context.Background(), testStorage, nil, tc.query, start, end, step)
 				if err != nil {
 					b.Fatal(err)
 				}
-				result := qry.Exec(context.Background())
-				if result.Err != nil {
+				if result := qry.Exec(context.Background()); result.Err != nil {
 					b.Fatal(result.Err)
 				}
 			}
