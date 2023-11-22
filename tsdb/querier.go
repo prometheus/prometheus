@@ -858,6 +858,8 @@ type populateWithDelChunkSeriesIterator struct {
 func (p *populateWithDelChunkSeriesIterator) reset(blockID ulid.ULID, cr ChunkReader, chks []chunks.Meta, intervals tombstones.Intervals) {
 	p.populateWithDelGenericSeriesIterator.reset(blockID, cr, chks, intervals)
 	p.currMetaWithChunk = chunks.Meta{}
+	p.chunksFromDelIter = p.chunksFromDelIter[:0]
+	p.chunksFromDelIterIdx = -1
 }
 
 func (p *populateWithDelChunkSeriesIterator) Next() bool {
