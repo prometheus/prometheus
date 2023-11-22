@@ -1038,6 +1038,24 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 			},
 			expectedMinMaxTimes: []minMaxTimes{{1, 3}, {9, 9}},
 		},
+		{
+			name: "two chunks with first chunk deleted",
+			samples: [][]chunks.Sample{
+				{sample{1, 2, nil, nil}, sample{2, 3, nil, nil}, sample{3, 5, nil, nil}, sample{6, 1, nil, nil}},
+				{sample{7, 89, nil, nil}, sample{9, 8, nil, nil}},
+			},
+			intervals: tombstones.Intervals{{Mint: 1, Maxt: 6}},
+
+			expected: []chunks.Sample{
+				sample{7, 89, nil, nil}, sample{9, 8, nil, nil},
+			},
+			expectedChks: []chunks.Meta{
+				assureChunkFromSamples(t, []chunks.Sample{
+					sample{7, 89, nil, nil}, sample{9, 8, nil, nil},
+				}),
+			},
+			expectedMinMaxTimes: []minMaxTimes{{7, 9}},
+		},
 		// Deletion with seek.
 		{
 			name: "two chunks with trimmed first and last samples from edge chunks, seek from middle of first chunk",
