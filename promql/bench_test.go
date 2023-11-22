@@ -276,7 +276,7 @@ func BenchmarkNativeHistograms(b *testing.B) {
 	defer testStorage.Close()
 
 	app := testStorage.Appender(context.TODO())
-	if err := generateNativeHistogramSeries(app, 3000, false); err != nil {
+	if err := generateNativeHistogramSeries(app, 3000); err != nil {
 		b.Fatal(err)
 	}
 	if err := app.Commit(); err != nil {
@@ -331,7 +331,7 @@ func BenchmarkNativeHistograms(b *testing.B) {
 	}
 }
 
-func generateNativeHistogramSeries(app storage.Appender, numSeries int, withMixedTypes bool) error {
+func generateNativeHistogramSeries(app storage.Appender, numSeries int) error {
 	commonLabels := []string{labels.MetricName, "native_histogram_series", "foo", "bar"}
 	series := make([][]*histogram.Histogram, numSeries)
 	for i := range series {
@@ -348,25 +348,17 @@ func generateNativeHistogramSeries(app storage.Appender, numSeries int, withMixe
 		Count:           13,
 	}
 	for sid, histograms := range series {
-		lbls := append(commonLabels, "h", strconv.Itoa(sid))
+		seriesLabels := labels.FromStrings(append(commonLabels, "h", strconv.Itoa(sid))...)
 		for i := range histograms {
 			ts := time.Unix(int64(i*15), 0).UnixMilli()
 			if i == 0 {
 				// Inject a histogram with a higher schema.
-				if _, err := app.AppendHistogram(0, labels.FromStrings(lbls...), ts, higherSchemaHist, nil); err != nil {
+				if _, err := app.AppendHistogram(0, seriesLabels, ts, higherSchemaHist, nil); err != nil {
 					return err
 				}
 			}
-			if _, err := app.AppendHistogram(0, labels.FromStrings(lbls...), ts, histograms[i], nil); err != nil {
+			if _, err := app.AppendHistogram(0, seriesLabels, ts, histograms[i], nil); err != nil {
 				return err
-			}
-			if withMixedTypes {
-				if _, err := app.Append(0, labels.FromStrings(append(lbls, "le", "1")...), ts, float64(i)); err != nil {
-					return err
-				}
-				if _, err := app.Append(0, labels.FromStrings(append(lbls, "le", "+Inf")...), ts, float64(i*2)); err != nil {
-					return err
-				}
 			}
 		}
 	}
