@@ -167,6 +167,8 @@ FunctionIdentifier {
   Sinh |
   Sort |
   SortDesc |
+  SortByLabel |
+  SortByLabelDesc |
   Sqrt |
   StddevOverTime |
   StdvarOverTime |
@@ -396,6 +398,8 @@ NumberLiteral  {
   Sinh { condFn<"sinh"> }
   Sort { condFn<"sort"> }
   SortDesc { condFn<"sort_desc"> }
+  SortByLabel { condFn<"sort_by_label"> }
+  SortByLabelDesc { condFn<"sort_by_label_desc"> }
   Sqrt { condFn<"sqrt"> }
   StddevOverTime { condFn<"stddev_over_time"> }
   StdvarOverTime { condFn<"stdvar_over_time"> }

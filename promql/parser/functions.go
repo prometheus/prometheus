@@ -347,6 +347,18 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeVector},
 		ReturnType: ValueTypeVector,
 	},
+	"sort_by_label": {
+		Name:       "sort_by_label",
+		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeString},
+		Variadic:   -1,
+		ReturnType: ValueTypeVector,
+	},
+	"sort_by_label_desc": {
+		Name:       "sort_by_label_desc",
+		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeString},
+		Variadic:   -1,
+		ReturnType: ValueTypeVector,
+	},
 	"sqrt": {
 		Name:       "sqrt",
 		ArgTypes:   []ValueType{ValueTypeVector},

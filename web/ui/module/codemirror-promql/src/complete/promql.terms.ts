@@ -428,6 +428,18 @@ export const functionIdentifierTerms = [
     type: 'function',
   },
   {
+    label: 'sort_by_label',
+    detail: 'function',
+    info: 'Sort input series ascendingly by label value',
+    type: 'function',
+  },
+  {
+    label: 'sort_by_label_desc',
+    detail: 'function',
+    info: 'Sort input series descendingly by value value',
+    type: 'function',
+  },
+  {
     label: 'sqrt',
     detail: 'function',
     info: 'Return the square root for input series',

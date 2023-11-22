@@ -586,6 +586,22 @@ in ascending order. Native histograms are sorted by their sum of observations.
 
 Same as `sort`, but sorts in descending order.
 
+## `sort_by_label()`
+
+**This function has to be enabled via a [feature flag](../feature_flags/#promql-sort-by-label-function).**
+
+`sort_by_label(v instant-vector, label string, ...)` returns vector elements sorted by their label values and sample value in case of label values being equal, in ascending order.
+
+Please note that the sort by label functions only affect the results of instant queries, as range query results always have a fixed output ordering.
+
+## `sort_by_label_desc()`
+
+**This function has to be enabled via a [feature flag](../feature_flags/#promql-sort-by-label-function).**
+
+Same as `sort_by_label`, but sorts in descending order.
+
+Please note that the sort by label functions only affect the results of instant queries, as range query results always have a fixed output ordering.
+
 ## `sqrt()`
 
 `sqrt(v instant-vector)` calculates the square root of all elements in `v`.

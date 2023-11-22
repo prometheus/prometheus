@@ -195,3 +195,10 @@ won't work when you push OTLP metrics.
 
 Enables PromQL functions that are considered experimental and whose name or
 semantics could change.
+
+## PromQL: Sort By Label Function
+
+`--enable-feature=promql-sort-by-label`
+
+When enabled, the `sort_by_label` and `sort_by_label_desc` functions can be used
+to sort instant query results by their label values.

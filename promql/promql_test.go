@@ -35,6 +35,7 @@ func newTestEngine() *Engine {
 		EnableAtModifier:         true,
 		EnableNegativeOffset:     true,
 		EnablePerStepStats:       true,
+		EnableSortByLabel:        true,
 	})
 }
 

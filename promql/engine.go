@@ -304,6 +304,9 @@ type EngineOpts struct {
 
 	// EnablePerStepStats if true allows for per-step stats to be computed on request. Disabled otherwise.
 	EnablePerStepStats bool
+
+	// EnableSortByLabel if true enables sort_by_label/sort_by_label_desc query functions.
+	EnableSortByLabel bool
 }
 
 // Engine handles the lifetime of queries from beginning to end.
@@ -321,6 +324,7 @@ type Engine struct {
 	enableAtModifier         bool
 	enableNegativeOffset     bool
 	enablePerStepStats       bool
+	enableSortByLabel        bool
 }
 
 // NewEngine returns a new engine.
@@ -411,6 +415,7 @@ func NewEngine(opts EngineOpts) *Engine {
 		enableAtModifier:         opts.EnableAtModifier,
 		enableNegativeOffset:     opts.EnableNegativeOffset,
 		enablePerStepStats:       opts.EnablePerStepStats,
+		enableSortByLabel:        opts.EnableSortByLabel,
 	}
 }
 
@@ -702,6 +707,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 			lookbackDelta:            s.LookbackDelta,
 			samplesStats:             query.sampleStats,
 			noStepSubqueryIntervalFn: ng.noStepSubqueryIntervalFn,
+			enableSortByLabel:        ng.enableSortByLabel,
 		}
 		query.sampleStats.InitStepTracking(start, start, 1)
 
@@ -759,6 +765,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 		lookbackDelta:            s.LookbackDelta,
 		samplesStats:             query.sampleStats,
 		noStepSubqueryIntervalFn: ng.noStepSubqueryIntervalFn,
+		enableSortByLabel:        ng.enableSortByLabel,
 	}
 	query.sampleStats.InitStepTracking(evaluator.startTimestamp, evaluator.endTimestamp, evaluator.interval)
 	val, warnings, err := evaluator.Eval(s.Expr)
@@ -1012,6 +1019,7 @@ type evaluator struct {
 	lookbackDelta            time.Duration
 	samplesStats             *stats.QuerySamples
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
+	enableSortByLabel        bool
 }
 
 // errorf causes a panic with the input formatted into an error.
@@ -1387,6 +1395,8 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 			if ok {
 				return ev.rangeEvalTimestampFunctionOverVectorSelector(vs, call, e)
 			}
+		} else if (e.Func.Name == "sort_by_label" || e.Func.Name == "sort_by_label_desc") && !ev.enableSortByLabel {
+			ev.error(fmt.Errorf("sort_by_label() and sort_by_label_desc() require the \"promql-sort-by-label\" feature flag to be set"))
 		}
 
 		// Check if the function has a matrix argument.
@@ -1780,6 +1790,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 			lookbackDelta:            ev.lookbackDelta,
 			samplesStats:             ev.samplesStats.NewChild(),
 			noStepSubqueryIntervalFn: ev.noStepSubqueryIntervalFn,
+			enableSortByLabel:        ev.enableSortByLabel,
 		}
 		res, ws := newEv.eval(e.Expr)
 		ev.currentSamples = newEv.currentSamples
