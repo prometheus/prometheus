@@ -117,9 +117,7 @@ type ChunkWriter interface {
 
 // ChunkReader provides reading access of serialized time series data.
 type ChunkReader interface {
-	// TODO: update comments.
-
-	// Chunk returns the series data for the given chunks.Meta.
+	// ChunkOrIterable returns the series data for the given chunks.Meta.
 	// Either a single chunk will be returned, or an iterable.
 	// A single chunk should be returned if chunks.Meta maps to a chunk that
 	// already exists and doesn't need modifications.
@@ -131,9 +129,7 @@ type ChunkReader interface {
 	// Only one of chunk or iterable should be returned. In some cases you may
 	// always expect a chunk to be returned. You can check that iterable is nil
 	// in those cases.
-	Chunk(meta chunks.Meta) (chunkenc.Chunk, error)
-
-	Iterable(meta chunks.Meta) (chunkenc.Iterable, error)
+	ChunkOrIterable(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, error)
 
 	// Close releases all underlying resources of the reader.
 	Close() error

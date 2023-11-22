@@ -1835,16 +1835,16 @@ func TestGCChunkAccess(t *testing.T) {
 
 	cr, err := h.chunksRange(0, 1500, nil)
 	require.NoError(t, err)
-	_, err = cr.Chunk(chunks[0])
+	_, _, err = cr.ChunkOrIterable(chunks[0])
 	require.NoError(t, err)
-	_, err = cr.Chunk(chunks[1])
+	_, _, err = cr.ChunkOrIterable(chunks[1])
 	require.NoError(t, err)
 
 	require.NoError(t, h.Truncate(1500)) // Remove a chunk.
 
-	_, err = cr.Chunk(chunks[0])
+	_, _, err = cr.ChunkOrIterable(chunks[0])
 	require.Equal(t, storage.ErrNotFound, err)
-	_, err = cr.Chunk(chunks[1])
+	_, _, err = cr.ChunkOrIterable(chunks[1])
 	require.NoError(t, err)
 }
 
@@ -1894,18 +1894,18 @@ func TestGCSeriesAccess(t *testing.T) {
 
 	cr, err := h.chunksRange(0, 2000, nil)
 	require.NoError(t, err)
-	_, err = cr.Chunk(chunks[0])
+	_, _, err = cr.ChunkOrIterable(chunks[0])
 	require.NoError(t, err)
-	_, err = cr.Chunk(chunks[1])
+	_, _, err = cr.ChunkOrIterable(chunks[1])
 	require.NoError(t, err)
 
 	require.NoError(t, h.Truncate(2000)) // Remove the series.
 
 	require.Equal(t, (*memSeries)(nil), h.series.getByID(1))
 
-	_, err = cr.Chunk(chunks[0])
+	_, _, err = cr.ChunkOrIterable(chunks[0])
 	require.Equal(t, storage.ErrNotFound, err)
-	_, err = cr.Chunk(chunks[1])
+	_, _, err = cr.ChunkOrIterable(chunks[1])
 	require.Equal(t, storage.ErrNotFound, err)
 }
 
@@ -5406,9 +5406,9 @@ func TestCuttingNewHeadChunks(t *testing.T) {
 				require.Len(t, chkMetas, len(tc.expectedChks))
 
 				for i, expected := range tc.expectedChks {
-					chk, err := chkReader.Chunk(chkMetas[i])
+					chk, iterable, err := chkReader.ChunkOrIterable(chkMetas[i])
 					require.NoError(t, err)
-					require.NotNil(t, chk)
+					require.Nil(t, iterable)
 
 					require.Equal(t, expected.numSamples, chk.NumSamples())
 					require.Len(t, chk.Bytes(), expected.numBytes)
@@ -5456,9 +5456,9 @@ func TestHeadDetectsDuplicateSampleAtSizeLimit(t *testing.T) {
 
 	storedSampleCount := 0
 	for _, chunkMeta := range chunks {
-		chunk, err := chunkReader.Chunk(chunkMeta)
+		chunk, iterable, err := chunkReader.ChunkOrIterable(chunkMeta)
 		require.NoError(t, err)
-		require.NotNil(t, chunk)
+		require.Nil(t, iterable)
 		storedSampleCount += chunk.NumSamples()
 	}
 
