@@ -861,19 +861,22 @@ func (p *populateWithDelChunkSeriesIterator) reset(blockID ulid.ULID, cr ChunkRe
 }
 
 func (p *populateWithDelChunkSeriesIterator) Next() bool {
-	// Advance to next chunk that was generated from the deletion iterator.
-	if p.chunksFromDelIterIdx < len(p.chunksFromDelIter)-1 {
-		p.chunksFromDelIterIdx++
-		p.currMetaWithChunk = p.chunksFromDelIter[p.chunksFromDelIterIdx]
-		return true
+	// If we've been creating chunks from the deletion iterator, check if
+	// there are any more chunks to iterate through.
+	if p.currDelIter != nil {
+		if p.chunksFromDelIterIdx < len(p.chunksFromDelIter)-1 {
+			p.chunksFromDelIterIdx++
+			p.currMetaWithChunk = p.chunksFromDelIter[p.chunksFromDelIterIdx]
+			return true
+		}
+
+		// If there are no chunks left from the ones generated from the deletion
+		// iterator, reset the chunks slice.
+		p.chunksFromDelIter = p.chunksFromDelIter[:0]
+		p.chunksFromDelIterIdx = -1
 	}
 
-	// If there are no chunks left from the ones generated from the deletion
-	// iterator, reset the chunks slice and move to the next chunk/deletion
-	// iterator.
-	p.chunksFromDelIter = p.chunksFromDelIter[:0]
-	p.chunksFromDelIterIdx = -1
-
+	// Move to the next chunk/deletion iterator.
 	if !p.next(true) {
 		return false
 	}
