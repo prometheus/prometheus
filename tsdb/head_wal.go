@@ -388,7 +388,7 @@ Outer:
 					continue
 				}
 				s.meta = &metadata.Metadata{
-					Type: record.ToTextparseMetricType(m.Type),
+					Type: record.ToMetricType(m.Type),
 					Unit: m.Unit,
 					Help: m.Help,
 				}

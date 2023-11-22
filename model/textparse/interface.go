@@ -16,6 +16,8 @@ package textparse
 import (
 	"mime"
 
+	"github.com/prometheus/common/model"
+
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -110,16 +112,4 @@ const (
 	EntryHistogram Entry = 5 // A series with a native histogram as a value.
 )
 
-// MetricType represents metric type values.
-type MetricType string
-
-const (
-	MetricTypeCounter        = MetricType("counter")
-	MetricTypeGauge          = MetricType("gauge")
-	MetricTypeHistogram      = MetricType("histogram")
-	MetricTypeGaugeHistogram = MetricType("gaugehistogram")
-	MetricTypeSummary        = MetricType("summary")
-	MetricTypeInfo           = MetricType("info")
-	MetricTypeStateset       = MetricType("stateset")
-	MetricTypeUnknown        = MetricType("unknown")
-)
+type MetricType = model.MetricType

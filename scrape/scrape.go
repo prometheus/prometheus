@@ -966,7 +966,7 @@ func (c *scrapeCache) setType(metric []byte, t textparse.MetricType) {
 
 	e, ok := c.metadata[string(metric)]
 	if !ok {
-		e = &metaEntry{Metadata: metadata.Metadata{Type: textparse.MetricTypeUnknown}}
+		e = &metaEntry{Metadata: metadata.Metadata{Type: model.MetricTypeUnknown}}
 		c.metadata[string(metric)] = e
 	}
 	if e.Type != t {
@@ -983,7 +983,7 @@ func (c *scrapeCache) setHelp(metric, help []byte) {
 
 	e, ok := c.metadata[string(metric)]
 	if !ok {
-		e = &metaEntry{Metadata: metadata.Metadata{Type: textparse.MetricTypeUnknown}}
+		e = &metaEntry{Metadata: metadata.Metadata{Type: model.MetricTypeUnknown}}
 		c.metadata[string(metric)] = e
 	}
 	if e.Help != string(help) {
@@ -1000,7 +1000,7 @@ func (c *scrapeCache) setUnit(metric, unit []byte) {
 
 	e, ok := c.metadata[string(metric)]
 	if !ok {
-		e = &metaEntry{Metadata: metadata.Metadata{Type: textparse.MetricTypeUnknown}}
+		e = &metaEntry{Metadata: metadata.Metadata{Type: model.MetricTypeUnknown}}
 		c.metadata[string(metric)] = e
 	}
 	if e.Unit != string(unit) {

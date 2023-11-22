@@ -38,7 +38,6 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/scrape"
@@ -180,7 +179,7 @@ func TestMetadataDelivery(t *testing.T) {
 	for i := 0; i < numMetadata; i++ {
 		metadata = append(metadata, scrape.MetricMetadata{
 			Metric: "prometheus_remote_storage_sent_metadata_bytes_total_" + strconv.Itoa(i),
-			Type:   textparse.MetricTypeCounter,
+			Type:   model.MetricTypeCounter,
 			Help:   "a nice help text",
 			Unit:   "",
 		})

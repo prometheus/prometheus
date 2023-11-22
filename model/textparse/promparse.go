@@ -26,6 +26,8 @@ import (
 	"unicode/utf8"
 	"unsafe"
 
+	"github.com/prometheus/common/model"
+
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -305,15 +307,15 @@ func (p *PromParser) Next() (Entry, error) {
 		case tType:
 			switch s := yoloString(p.text); s {
 			case "counter":
-				p.mtype = MetricTypeCounter
+				p.mtype = model.MetricTypeCounter
 			case "gauge":
-				p.mtype = MetricTypeGauge
+				p.mtype = model.MetricTypeGauge
 			case "histogram":
-				p.mtype = MetricTypeHistogram
+				p.mtype = model.MetricTypeHistogram
 			case "summary":
-				p.mtype = MetricTypeSummary
+				p.mtype = model.MetricTypeSummary
 			case "untyped":
-				p.mtype = MetricTypeUnknown
+				p.mtype = model.MetricTypeUnknown
 			default:
 				return EntryInvalid, fmt.Errorf("invalid metric type %q", s)
 			}
