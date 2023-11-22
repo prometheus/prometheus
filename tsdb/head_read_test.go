@@ -129,10 +129,10 @@ func TestBoundedChunk(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(fmt.Sprintf("name=%s", tc.name), func(t *testing.T) {
-			chunk := boundedIterable{tc.inputChunk, tc.inputMinT, tc.inputMaxT}
+			iterable := boundedIterable{tc.inputChunk, tc.inputMinT, tc.inputMaxT}
 
 			var samples []sample
-			it := chunk.Iterator(nil)
+			it := iterable.Iterator(nil)
 
 			if tc.initialSeek != 0 {
 				// Testing Seek()
