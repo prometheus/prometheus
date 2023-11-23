@@ -323,7 +323,6 @@ func New(logger log.Logger, o *Options) *Handler {
 		app = h.storage
 	}
 
-	fmt.Println("rw format for handler is: ", o.RemoteWriteFormat)
 	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, app, h.exemplarStorage, factorySPr, factoryTr, factoryAr,
 		func() config.Config {
 			h.mtx.RLock()
