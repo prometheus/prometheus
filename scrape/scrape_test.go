@@ -792,8 +792,9 @@ func TestScrapeLoopRun(t *testing.T) {
 		signal = make(chan struct{}, 1)
 		errc   = make(chan error)
 
-		scraper = &testScraper{}
-		app     = func(ctx context.Context) storage.Appender { return &nopAppender{} }
+		scraper       = &testScraper{}
+		app           = func(ctx context.Context) storage.Appender { return &nopAppender{} }
+		scrapeMetrics = newTestScrapeMetrics(t)
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -817,7 +818,7 @@ func TestScrapeLoopRun(t *testing.T) {
 		false,
 		nil,
 		false,
-		newTestScrapeMetrics(t),
+		scrapeMetrics,
 	)
 
 	// The loop must terminate during the initial offset if the context
@@ -876,7 +877,7 @@ func TestScrapeLoopRun(t *testing.T) {
 		false,
 		nil,
 		false,
-		newTestScrapeMetrics(t),
+		scrapeMetrics,
 	)
 
 	go func() {
@@ -974,9 +975,10 @@ func TestScrapeLoopForcedErr(t *testing.T) {
 
 func TestScrapeLoopMetadata(t *testing.T) {
 	var (
-		signal  = make(chan struct{})
-		scraper = &testScraper{}
-		cache   = newScrapeCache(newTestScrapeMetrics(t))
+		signal        = make(chan struct{})
+		scraper       = &testScraper{}
+		scrapeMetrics = newTestScrapeMetrics(t)
+		cache         = newScrapeCache(scrapeMetrics)
 	)
 	defer close(signal)
 
@@ -1001,7 +1003,7 @@ func TestScrapeLoopMetadata(t *testing.T) {
 		false,
 		nil,
 		false,
-		newTestScrapeMetrics(t),
+		scrapeMetrics,
 	)
 	defer cancel()
 
