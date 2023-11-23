@@ -323,18 +323,22 @@ a histogram.
 You can use `histogram_quantile(1, v instant-vector)` to get the estimated maximum value stored in
 a histogram.
 
-You may see this informational annotation: `input to histogram_quantile needed to be fixed for
-monotonicity`. Monotonicity (strictly non-decreasing values) of bucket counts in classic histograms
-is necessary for `histogram_quantile` to yield accurate results. In most cases when nothing has gone
-wrong, the bucket counts are monotonic. But when this assumption is violated in cases of missing or
-corrupt data, we fix the bucket counts to make them monotonic, but this means the query results might
-be inaccurate, because the data was problematic in the first place and also because we have modified
-the counts.
+Buckets of classic histograms are cumulative. Therefore, the following should always be the case:
 
-Note that another reason the bucket counts might be non-monotonic is due to floating point precision
-errors, but we correct numerically insignificant differences between consecutive buckets silently,
-so you will only see the above warning if there are huge decreases in the bucket counts which are not
-likely to be due to float imprecision.
+- The counts in the buckets are monotonically increasing (strictly non-decreasing).
+- A lack of observations between the upper limits of two consecutive buckets results in equal counts
+in those two buckets.
+
+However, floating point precision issues or invalid data might violate these assumptions. In that
+case, `histogram_quantile` would be unable to return meaningful results. To mitigate the issue,
+`histogram_quantile` assumes that tiny relative differences between consecutive buckets are happening
+because of floating point precision errors and ignores them. (The threshold to ignore a difference
+between two buckets is a trillionth (1e-12) of the sum of both buckets.) Furthermore, if there are
+non-monotonic bucket counts even after this adjustment, they are increased to the value of the
+previous buckets to enforce monotonicity. The latter is evidence for an actual issue with the input
+data and is therefore flagged with an informational annotation reading `input to histogram_quantile
+needed to be fixed for monotonicity`. If you encounter this annotation, you should find and remove
+the source of the invalid data.
 
 ## `histogram_stddev()` and `histogram_stdvar()`
 

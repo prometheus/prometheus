@@ -663,8 +663,8 @@ func (t *test) clear() {
 	t.context, t.cancelCtx = context.WithCancel(context.Background())
 }
 
-// samplesAlmostEqual returns true if the two sample lines only differ by a
-// small relative error in their sample value.
+// almostEqual returns true if a and b differ by less than their sum
+// multiplied by epsilon.
 func almostEqual(a, b, epsilon float64) bool {
 	// NaN has no equality but for testing we still want to know whether both values
 	// are NaN.

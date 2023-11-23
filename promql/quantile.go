@@ -23,6 +23,9 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 )
 
+// smallDeltaTolerance is the threshold for relative deltas between classic
+// histogram buckets that will be ignored by the histogram_quantile function
+// because they are most likely artifacts of floating point precision issues.
 // Testing on 2 sets of real data with bugs arising from small deltas,
 // the safe ranges were from:
 // - 1e-05 to 1e-15
@@ -377,7 +380,7 @@ func coalesceBuckets(buckets buckets) buckets {
 // bucket with the φ-quantile count, so breaking the monotonicity
 // guarantee causes bucketQuantile() to return undefined (nonsense) results.
 //
-// As a somewhat hacky solution, we first silently correct any numerically
+// As a somewhat hacky solution, we first silently ignore any numerically
 // insignificant (relative delta below the requested tolerance and likely to
 // be from floating point precision errors) differences between successive
 // buckets regardless of the direction. Then we calculate the "envelope" of
