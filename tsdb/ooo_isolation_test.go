@@ -46,6 +46,12 @@ func TestOOOIsolation(t *testing.T) {
 	require.False(t, i.HasOpenReadsAtOrBefore(1))
 	require.True(t, i.HasOpenReadsAtOrBefore(2))
 
+	// Close the second read again: this should do nothing and ensures we can safely call Close() multiple times.
+	read2.Close()
+	require.False(t, i.HasOpenReadsAtOrBefore(0))
+	require.False(t, i.HasOpenReadsAtOrBefore(1))
+	require.True(t, i.HasOpenReadsAtOrBefore(2))
+
 	// Closing the first read should indicate no further open reads.
 	read1.Close()
 	require.False(t, i.HasOpenReadsAtOrBefore(0))

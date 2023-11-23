@@ -1947,6 +1947,9 @@ func (db *DB) Querier(mint, maxt int64) (_ storage.Querier, err error) {
 		var err error
 		outOfOrderHeadQuerier, err := NewBlockQuerier(rh, mint, maxt)
 		if err != nil {
+			// If NewBlockQuerier() failed, make sure to clean up the pending read created by NewOOORangeHead.
+			rh.isoState.Close()
+
 			return nil, errors.Wrapf(err, "open block querier for ooo head %s", rh)
 		}
 
