@@ -5542,3 +5542,232 @@ func TestHeadCompactionWhileAppendAndCommitExemplar(t *testing.T) {
 	app.Commit()
 	h.Close()
 }
+
+func TestHeadDeleteOOOSamples(t *testing.T) {
+	// Initialize a temporary directory and Write-Ahead Logs (WAL)
+	dir := t.TempDir()
+	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, wlog.CompressionSnappy)
+	require.NoError(t, err)
+	oooWlog, err := wlog.NewSize(nil, nil, filepath.Join(dir, wlog.WblDirName), 32768, wlog.CompressionSnappy)
+	require.NoError(t, err)
+
+	// Set up Head options
+	opts := DefaultHeadOptions()
+	opts.ChunkDirRoot = dir
+	opts.OutOfOrderCapMax.Store(30)
+	opts.OutOfOrderTimeWindow.Store(120 * time.Minute.Milliseconds())
+
+	// Create a new Head
+	head, err := NewHead(nil, nil, wal, oooWlog, opts, nil)
+	require.NoError(t, err)
+	require.NoError(t, head.Init(0))
+
+	// Label the samples
+	lbls := labels.FromStrings("foo", "bar")
+
+	// Append some initial in-order samples
+	app := head.Appender(context.Background())
+	_, err = app.Append(0, lbls, 10, 1)
+	require.NoError(t, err)
+	_, err = app.Append(0, lbls, 15, 2)
+	require.NoError(t, err)
+	_, err = app.Append(0, lbls, 5, 3) // This is actually out-of-order
+	require.NoError(t, err)
+	err = app.Commit()
+	require.NoError(t, err)
+
+	// Append a batch of out-of-order samples
+	for i := 0; i < 30; i++ {
+		app = head.Appender(context.Background())
+		_, err = app.Append(0, lbls, int64(9-i), float64(9-i)) // These will be out-of-order
+		require.NoError(t, err)
+		err = app.Commit()
+		require.NoError(t, err)
+	}
+
+	// Create a matcher to select samples by labels
+	matchers := []*labels.Matcher{
+		labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"),
+	}
+
+	var minInt int64 = -20
+	var maxInt int64 = 9
+
+	// Delete samples in a certain time range, including out-of-order ones
+	err = head.Delete(context.Background(), minInt, maxInt, matchers...)
+	require.NoError(t, err)
+
+	// Query to get the remaining samples
+	q, err := NewBlockQuerier(head, head.MinTime(), head.MaxTime())
+	require.NoError(t, err)
+	set := q.Select(context.Background(), false, nil, matchers...)
+	require.NoError(t, q.Close())
+
+	// Check that the remaining samples are as expected
+	valueType := set.Next()
+	require.NotEqual(t, chunkenc.ValNone, valueType)
+
+	series := set.At()
+	it := series.Iterator(nil)
+	remainT := []int64{}
+	remainV := []float64{}
+
+	for valueType := it.Next(); valueType != chunkenc.ValNone; valueType = it.Next() {
+		t, v := it.At()
+		remainT = append(remainT, t)
+		remainV = append(remainV, v)
+	}
+
+	require.Equal(t, []int64{10, 15}, remainT)
+	require.Equal(t, []float64{1, 2}, remainV)
+
+	// Close the head to clean up resources
+	require.NoError(t, head.Close())
+}
+
+func TestOOOInsertDeleteQuery(t *testing.T) {
+	// Initialize a temporary directory and Write-Ahead Logs (WAL)
+	dir := t.TempDir()
+	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, wlog.CompressionSnappy)
+	require.NoError(t, err)
+	oooWlog, err := wlog.NewSize(nil, nil, filepath.Join(dir, wlog.WblDirName), 32768, wlog.CompressionSnappy)
+	require.NoError(t, err)
+
+	// Set up Head options
+	opts := DefaultHeadOptions()
+	opts.ChunkDirRoot = dir
+	opts.OutOfOrderCapMax.Store(30)
+	opts.OutOfOrderTimeWindow.Store(120 * time.Minute.Milliseconds())
+
+	// Create a new Head
+	head, err := NewHead(nil, nil, wal, oooWlog, opts, nil)
+	require.NoError(t, err)
+	require.NoError(t, head.Init(0))
+
+	// Label the samples
+	lbls := labels.FromStrings("foo", "bar")
+
+	// Create a matcher to select samples by labels
+	matchers := []*labels.Matcher{
+		labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"),
+	}
+
+	// Append OOO samples from t0 to t5
+	app := head.Appender(context.Background())
+	timestamps := []int64{10, 15, 20, 25, 30, 35}
+	for _, ts := range timestamps {
+		_, err = app.Append(0, lbls, ts, float64(ts))
+		require.NoError(t, err)
+	}
+	err = app.Commit()
+	require.NoError(t, err)
+
+	// Delete OOO samples t1 and t2
+	err = head.Delete(context.Background(), 15, 20, matchers...)
+	require.NoError(t, err)
+
+	// Try to insert OOO samples t1 and t2 again, this should fail or be ignored
+	app = head.Appender(context.Background())
+	app.Append(0, lbls, 15, 15.0)
+	app.Append(0, lbls, 20, 20.0)
+	err = app.Commit()
+	require.NoError(t, err)
+
+	// Query OOO samples from t0 to t5, expect t0, t3, t4, t5 (missing t1, t2 due to tombstoning)
+	q, err := NewBlockQuerier(head, head.MinTime(), head.MaxTime())
+	require.NoError(t, err)
+	defer q.Close()
+
+	set := q.Select(context.Background(), false, nil, matchers...)
+	valueType := set.Next()
+	require.NotEqual(t, chunkenc.ValNone, valueType)
+
+	series := set.At()
+	it := series.Iterator(nil)
+	remainT := []int64{}
+	for valueType := it.Next(); valueType != chunkenc.ValNone; valueType = it.Next() {
+		t, _ := it.At()
+		remainT = append(remainT, t)
+	}
+
+	expectedT := []int64{10, 25, 30, 35}
+	require.Equal(t, expectedT, remainT, "The queried timestamps are not as expected")
+
+	// Clean up resources
+	require.NoError(t, head.Close())
+}
+
+func TestOOOInsertDeleteCompactQuery(t *testing.T) {
+	dir := t.TempDir()
+	ctx := context.TODO()
+
+	opts := DefaultOptions()
+	opts.OutOfOrderCapMax = 30
+	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
+
+	db, err := Open(dir, nil, nil, opts, nil)
+	require.NoError(t, err)
+	db.DisableCompactions()
+	defer func() {
+		require.NoError(t, db.Close())
+	}()
+
+	lbls := labels.FromStrings("foo", "bar")
+	matchers := []*labels.Matcher{
+		labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"),
+	}
+
+	// Insert OOO samples from t0 to t5
+	app := db.Appender(ctx)
+	timestamps := []int64{10, 15, 20, 25, 30, 35}
+	for _, ts := range timestamps {
+		_, err := app.Append(0, lbls, ts, float64(ts))
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	// Delete OOO samples t1 and t2
+	err = db.Delete(ctx, 15, 20, matchers...)
+	require.NoError(t, err)
+
+	// Compact the head
+	err = db.compactHead(NewRangeHead(db.head, db.head.MinTime(), db.head.MaxTime()))
+	require.NoError(t, err)
+
+	// Attempt to reinsert t1 and t2 after compaction; should be successful now
+	app = db.Appender(ctx)
+	_, err = app.Append(0, lbls, 15, 15.0)
+	require.NoError(t, err)
+	_, err = app.Append(0, lbls, 20, 20.0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Query from t0 to t5; should return all samples because tombstones are cleared after compaction
+	q, err := db.Querier(math.MinInt64, math.MaxInt64)
+	require.NoError(t, err)
+	defer q.Close()
+
+	set := q.Select(ctx, false, nil, matchers...)
+	remainT, _ := collectSamples(t, set)
+	require.ElementsMatch(t, timestamps, remainT)
+
+	// Check the compacted blocks
+	blocks := db.Blocks()
+	require.GreaterOrEqual(t, len(blocks), 1)
+}
+
+// Helper function to collect samples from the query set.
+func collectSamples(t *testing.T, set storage.SeriesSet) (ts []int64, vals []float64) {
+	for set.Next() {
+		series := set.At()
+		it := series.Iterator(chunkenc.NewNopIterator())
+		for valueType := it.Next(); valueType != chunkenc.ValNone; valueType = it.Next() {
+			t, v := it.At()
+			ts = append(ts, t)
+			vals = append(vals, v)
+		}
+		require.NoError(t, it.Err())
+	}
+	require.NoError(t, set.Err())
+	return ts, vals
+}

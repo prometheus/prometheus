@@ -27,16 +27,23 @@ import (
 // Inserts for timestamps already seen, are dropped.
 // Samples are stored uncompressed to allow easy sorting.
 // Perhaps we can be more efficient later.
+// Each chunk adds 8 bytes of memory usage. Post-optimization idea: Use a global list
+// that also tracks out-of-order chunk references and save memory.
 type OOOChunk struct {
-	samples []sample
+	samples    []sample
+	tombstones *tombstones.MemTombstones
 }
 
 func NewOOOChunk() *OOOChunk {
-	return &OOOChunk{samples: make([]sample, 0, 4)}
+	return &OOOChunk{
+		samples:    make([]sample, 0, 4),
+		tombstones: tombstones.NewMemTombstones(),
+	}
 }
 
 // Insert inserts the sample such that order is maintained.
-// Returns false if insert was not possible due to the same timestamp already existing.
+// Returns false if insert was not possible due to the same timestamp already existing
+// or the timestamp falls within a tombstone interval.
 func (o *OOOChunk) Insert(t int64, v float64) bool {
 	// Although out-of-order samples can be out-of-order amongst themselves, we
 	// are opinionated and expect them to be usually in-order meaning we could
@@ -113,13 +120,15 @@ type OOORangeHead struct {
 	// the timerange of the query and having preexisting pointers to the first
 	// and last timestamp help with that.
 	mint, maxt int64
+	tombstones tombstones.Reader
 }
 
 func NewOOORangeHead(head *Head, mint, maxt int64) *OOORangeHead {
 	return &OOORangeHead{
-		head: head,
-		mint: mint,
-		maxt: maxt,
+		head:       head,
+		mint:       mint,
+		maxt:       maxt,
+		tombstones: head.tombstones,
 	}
 }
 
@@ -132,9 +141,8 @@ func (oh *OOORangeHead) Chunks() (ChunkReader, error) {
 }
 
 func (oh *OOORangeHead) Tombstones() (tombstones.Reader, error) {
-	// As stated in the design doc https://docs.google.com/document/d/1Kppm7qL9C-BJB1j6yb6-9ObG3AbdZnFUBYPNNWwDBYM/edit?usp=sharing
-	// Tombstones are not supported for out of order metrics.
-	return tombstones.NewMemTombstones(), nil
+	// Return the tombstones from the main head.
+	return oh.tombstones, nil
 }
 
 var oooRangeHeadULID = ulid.MustParse("0000000000XXXX000RANGEHEAD")
