@@ -72,7 +72,8 @@ type metricWithBuckets struct {
 //
 // If q>1, +Inf is returned.
 //
-// We also return a bool to indicate if monotonicity needed to be forced.
+// We also return a bool to indicate if monotonicity needed to be forced,
+// and another bool to indicate if precision errors needed to be corrected.
 func bucketQuantile(q float64, buckets buckets) (float64, bool, bool) {
 	if math.IsNaN(q) {
 		return math.NaN(), false, false
@@ -98,8 +99,7 @@ func bucketQuantile(q float64, buckets buckets) (float64, bool, bool) {
 	}
 
 	buckets = coalesceBuckets(buckets)
-	fixedPrecision := correctPrecisionErrors(buckets, 1e-12)
-	forcedMonotonic := ensureMonotonic(buckets)
+	forcedMonotonic, fixedPrecision := ensureMonotonicAndCorrectPrecisionErrors(buckets, 1e-12)
 
 	if len(buckets) < 2 {
 		return math.NaN(), false, false
@@ -349,6 +349,7 @@ func coalesceBuckets(buckets buckets) buckets {
 //   - Ingestion via the remote write receiver that Prometheus implements.
 //   - Optimisation of query execution where precision is sacrificed for other
 //     benefits, not by Prometheus but by systems built on top of it.
+//   - Circumstances where floating point precision errors accumulate.
 //
 // Monotonicity is usually guaranteed because if a bucket with upper bound
 // u1 has count c1, then any bucket with a higher upper bound u > u1 must
@@ -358,44 +359,41 @@ func coalesceBuckets(buckets buckets) buckets {
 // bucket with the φ-quantile count, so breaking the monotonicity
 // guarantee causes bucketQuantile() to return undefined (nonsense) results.
 //
-// As a somewhat hacky solution, we calculate the "envelope" of the histogram
-// buckets, essentially removing any decreases in the count between successive
-// buckets. We return a bool to indicate if this monotonicity was forced or not.
-func ensureMonotonic(buckets buckets) bool {
-	forced := false
-	max := buckets[0].count
-	for i := 1; i < len(buckets); i++ {
-		switch {
-		case buckets[i].count > max:
-			max = buckets[i].count
-		case buckets[i].count < max:
-			buckets[i].count = max
-			forced = true
-		}
-	}
-	return forced
-}
-
-// This function corrects float precision errors in the bucket counts
-// which can make them non-monotonic.
-func correctPrecisionErrors(buckets buckets, tolerance float64) bool {
-	fixed := false
+// As a somewhat hacky solution, we first silently correct any numerically
+// insignificant (below the requested tolerance and likely to be from floating
+// point precision errors) differences between successive buckets regardless of
+// the direction. Then we calculate the "envelope" of the histogram buckets,
+// essentially removing any decreases in the count between successive buckets.
+// We return a bool to indicate if this monotonicity was forced or not, and
+// another bool to indicate if the precision errors were fixed or not.
+func ensureMonotonicAndCorrectPrecisionErrors(buckets buckets, tolerance float64) (bool, bool) {
+	var forcedMonotonic, fixedPrecision bool
 	prev := buckets[0].count
 	for i := 1; i < len(buckets); i++ {
 		curr := buckets[i].count // Assumed always positive.
 		delta := math.Abs(curr - prev)
 		if delta == 0 {
+			// No correction needed if the counts are identical between buckets.
 			continue
 		}
-		eps := delta / curr
-		if eps <= tolerance {
+		if (delta / curr) <= tolerance {
+			// Silently correct numerically insignificant differences from floating
+			// point precision errors, regardless of direction.
+			// Do not update the 'prev' value as we are ignoring the difference.
 			buckets[i].count = prev
-			fixed = true
-		} else {
-			prev = curr
+			fixedPrecision = true
+			continue
 		}
+		if curr < prev {
+			// Force monotonicity by removing any decreases regardless of magnitude.
+			// Do not update the 'prev' value as we are ignoring the decrease.
+			buckets[i].count = prev
+			forcedMonotonic = true
+			continue
+		}
+		prev = curr
 	}
-	return fixed
+	return forcedMonotonic, fixedPrecision
 }
 
 // quantile calculates the given quantile of a vector of samples.
