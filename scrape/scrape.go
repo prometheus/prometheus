@@ -73,6 +73,8 @@ type scrapePool struct {
 	client *http.Client
 	loops  map[uint64]loop
 
+	symbolTable *labels.SymbolTable
+
 	targetMtx sync.Mutex
 	// activeTargets and loops must always be synchronized to have the same
 	// set of hashes.
@@ -136,6 +138,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 		client:        client,
 		activeTargets: map[uint64]*Target{},
 		loops:         map[uint64]loop{},
+		symbolTable:   labels.NewSymbolTable(), // TODO: clean this out from time to time.
 		logger:        logger,
 		metrics:       metrics,
 		httpOpts:      options.HTTPClientOptions,
@@ -361,7 +364,7 @@ func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 	sp.targetMtx.Lock()
 	var all []*Target
 	var targets []*Target
-	lb := labels.NewBuilder(labels.EmptyLabels())
+	lb := labels.NewBuilderWithSymbolTable(sp.symbolTable)
 	sp.droppedTargets = []*Target{}
 	sp.droppedTargetsCount = 0
 	for _, tg := range tgs {
