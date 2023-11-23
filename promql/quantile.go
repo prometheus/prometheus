@@ -23,6 +23,22 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 )
 
+// Testing on 2 sets of real data with bugs arising from small deltas,
+// the safe ranges were from:
+// - 1e-05 to 1e-15
+// - 1e-06 to 1e-15
+// Anything to the left of that would cause non-query-sharded data to have
+// small deltas ignored (unnecessary and we should avoid this), and anything
+// to the right of that would cause query-sharded data to not have its small
+// deltas ignored (so the problem won't be fixed).
+// For context, query sharding triggers these float precision errors in Mimir.
+// To illustrate, with a relative deviation of 1e-12, we need to have 1e12
+// observations in the bucket so that the change of one observation is small
+// enough to get ignored. With the usual observation rate even of very busy
+// services, this will hardly be reached in timeframes that matters for
+// monitoring.
+const smallDeltaTolerance = 1e-12
+
 // Helpers to calculate quantiles.
 
 // excludedLabels are the labels to exclude from signature calculation for
@@ -73,7 +89,9 @@ type metricWithBuckets struct {
 // If q>1, +Inf is returned.
 //
 // We also return a bool to indicate if monotonicity needed to be forced,
-// and another bool to indicate if precision errors needed to be corrected.
+// and another bool to indicate if small differences between buckets (that
+// are likely artifacts of floating point precision issues) have been
+// ignored.
 func bucketQuantile(q float64, buckets buckets) (float64, bool, bool) {
 	if math.IsNaN(q) {
 		return math.NaN(), false, false
@@ -99,7 +117,7 @@ func bucketQuantile(q float64, buckets buckets) (float64, bool, bool) {
 	}
 
 	buckets = coalesceBuckets(buckets)
-	forcedMonotonic, fixedPrecision := ensureMonotonicAndCorrectPrecisionErrors(buckets, 1e-12)
+	forcedMonotonic, fixedPrecision := ensureMonotonicAndIgnoreSmallDeltas(buckets, smallDeltaTolerance)
 
 	if len(buckets) < 2 {
 		return math.NaN(), false, false
@@ -360,13 +378,15 @@ func coalesceBuckets(buckets buckets) buckets {
 // guarantee causes bucketQuantile() to return undefined (nonsense) results.
 //
 // As a somewhat hacky solution, we first silently correct any numerically
-// insignificant (below the requested tolerance and likely to be from floating
-// point precision errors) differences between successive buckets regardless of
-// the direction. Then we calculate the "envelope" of the histogram buckets,
-// essentially removing any decreases in the count between successive buckets.
+// insignificant (relative delta below the requested tolerance and likely to
+// be from floating point precision errors) differences between successive
+// buckets regardless of the direction. Then we calculate the "envelope" of
+// the histogram buckets, essentially removing any decreases in the count
+// between successive buckets.
+//
 // We return a bool to indicate if this monotonicity was forced or not, and
-// another bool to indicate if the precision errors were fixed or not.
-func ensureMonotonicAndCorrectPrecisionErrors(buckets buckets, tolerance float64) (bool, bool) {
+// another bool to indicate if small deltas were ignored or not.
+func ensureMonotonicAndIgnoreSmallDeltas(buckets buckets, tolerance float64) (bool, bool) {
 	var forcedMonotonic, fixedPrecision bool
 	prev := buckets[0].count
 	for i := 1; i < len(buckets); i++ {
