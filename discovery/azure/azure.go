@@ -650,7 +650,7 @@ func (client *azureClient) getNetworkInterfaceByID(ctx context.Context, networkI
 	return &resp.Interface, nil
 }
 
-// addToCache will add the network interface information for the specified nicID
+// addToCache will add the network interface information for the specified nicID.
 func (d *Discovery) addToCache(nicID string, netInt *armnetwork.Interface) {
 	random := rand.Int63n(int64(time.Duration(d.cfg.RefreshInterval * 3).Seconds()))
 	rs := time.Duration(random) * time.Second
@@ -660,7 +660,7 @@ func (d *Discovery) addToCache(nicID string, netInt *armnetwork.Interface) {
 }
 
 // getFromCache will get the network Interface for the specified nicID
-// If the cache is disabled nothing will happen
+// If the cache is disabled nothing will happen.
 func (d *Discovery) getFromCache(nicID string) (*armnetwork.Interface, bool) {
 	net, found := d.cache.Get(nicID)
 	return net, found
