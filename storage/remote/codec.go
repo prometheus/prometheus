@@ -15,6 +15,7 @@ package remote
 
 import (
 	"compress/gzip"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -23,6 +24,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"unsafe"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
@@ -752,15 +754,6 @@ func spansToSpansProto(s []histogram.Span) []prompb.BucketSpan {
 	return spans
 }
 
-// LabelProtosToMetric unpack a []*prompb.Label to a model.Metric
-func LabelProtosToMetric(labelPairs []*prompb.Label) model.Metric {
-	metric := make(model.Metric, len(labelPairs))
-	for _, l := range labelPairs {
-		metric[model.LabelName(l.Name)] = model.LabelValue(l.Value)
-	}
-	return metric
-}
-
 func labelProtosToLabels(labelPairs []prompb.Label) labels.Labels {
 	b := labels.ScratchBuilder{}
 	for _, l := range labelPairs {
@@ -792,6 +785,44 @@ func labelsToUint32Slice(lbls labels.Labels, symbolTable *rwSymbolTable, buf []u
 		result = append(result, off, leng)
 	})
 	return result
+}
+
+func labelsToUint32SliceLen(lbls labels.Labels, symbolTable *rwSymbolTable, buf []uint32) []uint32 {
+	result := buf[:0]
+	lbls.Range(func(l labels.Label) {
+		off := symbolTable.RefLen(l.Name)
+		result = append(result, off)
+		off = symbolTable.RefLen(l.Value)
+		result = append(result, off)
+	})
+	return result
+}
+
+func Uint32LenRefToLabels(symbols []byte, minLabels []uint32) labels.Labels {
+	ls := labels.NewScratchBuilder(len(minLabels) / 2)
+
+	labelIdx := 0
+	for labelIdx < len(minLabels) {
+		// todo, check for overflow?
+		offset := minLabels[labelIdx]
+		labelIdx++
+		length, n := binary.Uvarint(symbols[offset:])
+		offset += uint32(n)
+		name := symbols[offset : uint64(offset)+length]
+
+		offset = minLabels[labelIdx]
+		labelIdx++
+		length, n = binary.Uvarint(symbols[offset:])
+		offset += uint32(n)
+		value := symbols[offset : uint64(offset)+length]
+		ls.Add(yoloString(name), yoloString(value))
+	}
+
+	return ls.Labels()
+}
+
+func yoloString(b []byte) string {
+	return *(*string)(unsafe.Pointer(&b))
 }
 
 func Uint32RefToLabels(symbols string, minLabels []uint32) labels.Labels {
@@ -923,10 +954,29 @@ func DecodeMinimizedWriteRequest(r io.Reader) (*prompb.MinimizedWriteRequest, er
 	return &req, nil
 }
 
+func DecodeMinimizedWriteRequestLen(r io.Reader) (*prompb.MinimizedWriteRequestLen, error) {
+	compressed, err := io.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
+
+	reqBuf, err := snappy.Decode(nil, compressed)
+	if err != nil {
+		return nil, err
+	}
+
+	var req prompb.MinimizedWriteRequestLen
+	if err := proto.Unmarshal(reqBuf, &req); err != nil {
+		return nil, err
+	}
+
+	return &req, nil
+}
+
 func MinimizedWriteRequestToWriteRequest(redReq *prompb.MinimizedWriteRequest) (*prompb.WriteRequest, error) {
 	req := &prompb.WriteRequest{
 		Timeseries: make([]prompb.TimeSeries, len(redReq.Timeseries)),
-		//Metadata:   redReq.Metadata,
+		// TODO handle metadata?
 	}
 
 	for i, rts := range redReq.Timeseries {
@@ -950,13 +1000,4 @@ func MinimizedWriteRequestToWriteRequest(redReq *prompb.MinimizedWriteRequest) (
 
 	}
 	return req, nil
-}
-
-// for use with minimized remote write proto format
-func packRef(offset, length int) uint32 {
-	return uint32((offset&0xFFFFF)<<12 | (length & 0xFFF))
-}
-
-func unpackRef(ref uint32) (offset, length int) {
-	return int(ref>>12) & 0xFFFFF, int(ref & 0xFFF)
 }

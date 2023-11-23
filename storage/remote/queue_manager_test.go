@@ -67,7 +67,7 @@ func TestSampleDelivery(t *testing.T) {
 		exemplars       bool
 		histograms      bool
 		floatHistograms bool
-		remoteWrite11   bool
+		rwFormat        RemoteWriteFormat
 	}{
 		{samples: true, exemplars: false, histograms: false, floatHistograms: false, name: "samples only"},
 		{samples: true, exemplars: true, histograms: true, floatHistograms: true, name: "samples, exemplars, and histograms"},
@@ -75,11 +75,11 @@ func TestSampleDelivery(t *testing.T) {
 		{samples: false, exemplars: false, histograms: true, floatHistograms: false, name: "histograms only"},
 		{samples: false, exemplars: false, histograms: false, floatHistograms: true, name: "float histograms only"},
 
-		{remoteWrite11: true, samples: true, exemplars: false, histograms: false, name: "interned samples only"},
-		{remoteWrite11: true, samples: true, exemplars: true, histograms: true, floatHistograms: true, name: "interned samples, exemplars, and histograms"},
-		{remoteWrite11: true, samples: false, exemplars: true, histograms: false, name: "interned exemplars only"},
-		{remoteWrite11: true, samples: false, exemplars: false, histograms: true, name: "interned histograms only"},
-		{remoteWrite11: true, samples: false, exemplars: false, histograms: false, floatHistograms: true, name: "interned float histograms only"},
+		{rwFormat: Min32Optimized, samples: true, exemplars: false, histograms: false, name: "interned samples only"},
+		{rwFormat: Min32Optimized, samples: true, exemplars: true, histograms: true, floatHistograms: true, name: "interned samples, exemplars, and histograms"},
+		{rwFormat: Min32Optimized, samples: false, exemplars: true, histograms: false, name: "interned exemplars only"},
+		{rwFormat: Min32Optimized, samples: false, exemplars: false, histograms: true, name: "interned histograms only"},
+		{rwFormat: Min32Optimized, samples: false, exemplars: false, histograms: false, floatHistograms: true, name: "interned float histograms only"},
 	}
 
 	// Let's create an even number of send batches so we don't run into the
@@ -106,7 +106,7 @@ func TestSampleDelivery(t *testing.T) {
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, tc.remoteWrite11)
+			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, tc.rwFormat)
 			defer s.Close()
 
 			var (
@@ -139,7 +139,7 @@ func TestSampleDelivery(t *testing.T) {
 			require.NoError(t, err)
 			qm := s.rws.queues[hash]
 
-			c := NewTestWriteClient(tc.remoteWrite11)
+			c := NewTestWriteClient(tc.rwFormat)
 			qm.SetClient(c)
 
 			qm.StoreSeries(series, 0)
@@ -170,7 +170,7 @@ func TestSampleDelivery(t *testing.T) {
 }
 
 func TestMetadataDelivery(t *testing.T) {
-	c := NewTestWriteClient(false)
+	c := NewTestWriteClient(Base1)
 
 	dir := t.TempDir()
 
@@ -178,7 +178,7 @@ func TestMetadataDelivery(t *testing.T) {
 	mcfg := config.DefaultMetadataConfig
 
 	metrics := newQueueManagerMetrics(nil, "", "")
-	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, false)
+	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, 0)
 	m.Start()
 	defer m.Stop()
 
@@ -204,13 +204,12 @@ func TestMetadataDelivery(t *testing.T) {
 }
 
 func TestSampleDeliveryTimeout(t *testing.T) {
-	for _, proto := range []string{"1.1", "1.0"} {
-		t.Run(proto, func(t *testing.T) {
-			remoteWrite11 := proto == "1.1"
+	for _, rwFormat := range []RemoteWriteFormat{Base1, Min32Optimized} {
+		t.Run(fmt.Sprint(rwFormat), func(t *testing.T) {
 			// Let's send one less sample than batch size, and wait the timeout duration
 			n := 9
 			samples, series := createTimeseries(n, n)
-			c := NewTestWriteClient(remoteWrite11)
+			c := NewTestWriteClient(rwFormat)
 
 			cfg := config.DefaultQueueConfig
 			mcfg := config.DefaultMetadataConfig
@@ -220,7 +219,7 @@ func TestSampleDeliveryTimeout(t *testing.T) {
 			dir := t.TempDir()
 
 			metrics := newQueueManagerMetrics(nil, "", "")
-			m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, remoteWrite11)
+			m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, rwFormat)
 			m.StoreSeries(series, 0)
 			m.Start()
 			defer m.Stop()
@@ -238,9 +237,8 @@ func TestSampleDeliveryTimeout(t *testing.T) {
 }
 
 func TestSampleDeliveryOrder(t *testing.T) {
-	for _, proto := range []string{"1.1", "1.0"} {
-		t.Run(proto, func(t *testing.T) {
-			remoteWrite11 := proto == "1.1"
+	for _, rwFormat := range []RemoteWriteFormat{Base1, Min32Optimized} {
+		t.Run(fmt.Sprint(rwFormat), func(t *testing.T) {
 			ts := 10
 			n := config.DefaultQueueConfig.MaxSamplesPerSend * ts
 			samples := make([]record.RefSample, 0, n)
@@ -258,7 +256,7 @@ func TestSampleDeliveryOrder(t *testing.T) {
 				})
 			}
 
-			c := NewTestWriteClient(remoteWrite11)
+			c := NewTestWriteClient(rwFormat)
 			c.expectSamples(samples, series)
 
 			dir := t.TempDir()
@@ -267,7 +265,7 @@ func TestSampleDeliveryOrder(t *testing.T) {
 			mcfg := config.DefaultMetadataConfig
 
 			metrics := newQueueManagerMetrics(nil, "", "")
-			m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, remoteWrite11)
+			m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, rwFormat)
 			m.StoreSeries(series, 0)
 
 			m.Start()
@@ -289,7 +287,7 @@ func TestShutdown(t *testing.T) {
 	mcfg := config.DefaultMetadataConfig
 	metrics := newQueueManagerMetrics(nil, "", "")
 
-	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, deadline, newPool(), newHighestTimestampMetric(), nil, false, false, false)
+	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, deadline, newPool(), newHighestTimestampMetric(), nil, false, false, Base1)
 	n := 2 * config.DefaultQueueConfig.MaxSamplesPerSend
 	samples, series := createTimeseries(n, n)
 	m.StoreSeries(series, 0)
@@ -327,7 +325,7 @@ func TestSeriesReset(t *testing.T) {
 	cfg := config.DefaultQueueConfig
 	mcfg := config.DefaultMetadataConfig
 	metrics := newQueueManagerMetrics(nil, "", "")
-	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, deadline, newPool(), newHighestTimestampMetric(), nil, false, false, false)
+	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, deadline, newPool(), newHighestTimestampMetric(), nil, false, false, Base1)
 	for i := 0; i < numSegments; i++ {
 		series := []record.RefSeries{}
 		for j := 0; j < numSeries; j++ {
@@ -341,15 +339,14 @@ func TestSeriesReset(t *testing.T) {
 }
 
 func TestReshard(t *testing.T) {
-	for _, proto := range []string{"1.1", "1.0"} {
-		t.Run(proto, func(t *testing.T) {
-			remoteWrite11 := proto == "1.1"
+	for _, rwFormat := range []RemoteWriteFormat{Base1, Min32Optimized} {
+		t.Run(fmt.Sprint(rwFormat), func(t *testing.T) {
 			size := 10 // Make bigger to find more races.
 			nSeries := 6
 			nSamples := config.DefaultQueueConfig.Capacity * size
 			samples, series := createTimeseries(nSamples, nSeries)
 
-			c := NewTestWriteClient(remoteWrite11)
+			c := NewTestWriteClient(rwFormat)
 			c.expectSamples(samples, series)
 
 			cfg := config.DefaultQueueConfig
@@ -359,7 +356,7 @@ func TestReshard(t *testing.T) {
 			dir := t.TempDir()
 
 			metrics := newQueueManagerMetrics(nil, "", "")
-			m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, remoteWrite11)
+			m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, rwFormat)
 			m.StoreSeries(series, 0)
 
 			m.Start()
@@ -385,10 +382,9 @@ func TestReshard(t *testing.T) {
 }
 
 func TestReshardRaceWithStop(t *testing.T) {
-	for _, proto := range []string{"1.1", "1.0"} {
-		t.Run(proto, func(t *testing.T) {
-			remoteWrite11 := proto == "1.1"
-			c := NewTestWriteClient(remoteWrite11)
+	for _, rwFormat := range []RemoteWriteFormat{Base1, Min32Optimized} {
+		t.Run(fmt.Sprint(rwFormat), func(t *testing.T) {
+			c := NewTestWriteClient(rwFormat)
 			var m *QueueManager
 			h := sync.Mutex{}
 
@@ -400,7 +396,7 @@ func TestReshardRaceWithStop(t *testing.T) {
 			go func() {
 				for {
 					metrics := newQueueManagerMetrics(nil, "", "")
-					m = NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, remoteWrite11)
+					m = NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, rwFormat)
 					m.Start()
 					h.Unlock()
 					h.Lock()
@@ -425,9 +421,8 @@ func TestReshardRaceWithStop(t *testing.T) {
 }
 
 func TestReshardPartialBatch(t *testing.T) {
-	for _, proto := range []string{"1.1", "1.0"} {
-		t.Run(proto, func(t *testing.T) {
-			remoteWrite11 := proto == "1.1"
+	for _, rwFormat := range []RemoteWriteFormat{Base1, Min32Optimized} {
+		t.Run(fmt.Sprint(rwFormat), func(t *testing.T) {
 			samples, series := createTimeseries(1, 10)
 
 			c := NewTestBlockedWriteClient()
@@ -440,7 +435,7 @@ func TestReshardPartialBatch(t *testing.T) {
 			cfg.BatchSendDeadline = model.Duration(batchSendDeadline)
 
 			metrics := newQueueManagerMetrics(nil, "", "")
-			m := NewQueueManager(metrics, nil, nil, nil, t.TempDir(), newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, flushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, remoteWrite11)
+			m := NewQueueManager(metrics, nil, nil, nil, t.TempDir(), newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, flushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, rwFormat)
 			m.StoreSeries(series, 0)
 
 			m.Start()
@@ -472,9 +467,8 @@ func TestReshardPartialBatch(t *testing.T) {
 // where a large scrape (> capacity + max samples per send) is appended at the
 // same time as a batch times out according to the batch send deadline.
 func TestQueueFilledDeadlock(t *testing.T) {
-	for _, proto := range []string{"1.1", "1.0"} {
-		t.Run(proto, func(t *testing.T) {
-			remoteWrite11 := proto == "1.1"
+	for _, rwFormat := range []RemoteWriteFormat{Base1, Min32Optimized} {
+		t.Run(fmt.Sprint(rwFormat), func(t *testing.T) {
 			samples, series := createTimeseries(50, 1)
 
 			c := NewNopWriteClient()
@@ -490,7 +484,7 @@ func TestQueueFilledDeadlock(t *testing.T) {
 
 			metrics := newQueueManagerMetrics(nil, "", "")
 
-			m := NewQueueManager(metrics, nil, nil, nil, t.TempDir(), newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, flushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, remoteWrite11)
+			m := NewQueueManager(metrics, nil, nil, nil, t.TempDir(), newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, flushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, rwFormat)
 			m.StoreSeries(series, 0)
 			m.Start()
 			defer m.Stop()
@@ -515,14 +509,13 @@ func TestQueueFilledDeadlock(t *testing.T) {
 }
 
 func TestReleaseNoninternedString(t *testing.T) {
-	for _, proto := range []string{"1.1", "1.0"} {
-		t.Run(proto, func(t *testing.T) {
-			remoteWrite11 := proto == "1.1"
+	for _, rwFormat := range []RemoteWriteFormat{Base1, Min32Optimized} {
+		t.Run(fmt.Sprint(rwFormat), func(t *testing.T) {
 			cfg := config.DefaultQueueConfig
 			mcfg := config.DefaultMetadataConfig
 			metrics := newQueueManagerMetrics(nil, "", "")
-			c := NewTestWriteClient(remoteWrite11)
-			m := NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, remoteWrite11)
+			c := NewTestWriteClient(rwFormat)
+			m := NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, rwFormat)
 			m.Start()
 			defer m.Stop()
 
@@ -570,8 +563,9 @@ func TestShouldReshard(t *testing.T) {
 	mcfg := config.DefaultMetadataConfig
 	for _, c := range cases {
 		metrics := newQueueManagerMetrics(nil, "", "")
-		client := NewTestWriteClient(false)
-		m := NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, client, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, false)
+		// todo: test with new proto type(s)
+		client := NewTestWriteClient(Base1)
+		m := NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, client, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, Base1)
 		m.numShards = c.startingShards
 		m.dataIn.incr(c.samplesIn)
 		m.dataOut.incr(c.samplesOut)
@@ -706,16 +700,16 @@ type TestWriteClient struct {
 	wg                      sync.WaitGroup
 	mtx                     sync.Mutex
 	buf                     []byte
-	expectRemoteWrite11     bool
+	rwFormat                RemoteWriteFormat
 }
 
-func NewTestWriteClient(expectRemoteWrite11 bool) *TestWriteClient {
+func NewTestWriteClient(rwFormat RemoteWriteFormat) *TestWriteClient {
 	return &TestWriteClient{
-		withWaitGroup:       true,
-		receivedSamples:     map[string][]prompb.Sample{},
-		expectedSamples:     map[string][]prompb.Sample{},
-		receivedMetadata:    map[string][]prompb.MetricMetadata{},
-		expectRemoteWrite11: expectRemoteWrite11,
+		withWaitGroup:    true,
+		receivedSamples:  map[string][]prompb.Sample{},
+		expectedSamples:  map[string][]prompb.Sample{},
+		receivedMetadata: map[string][]prompb.MetricMetadata{},
+		rwFormat:         rwFormat,
 	}
 }
 
@@ -803,6 +797,7 @@ func (c *TestWriteClient) waitForExpectedData(tb testing.TB) {
 
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
+
 	for ts, expectedSamples := range c.expectedSamples {
 		require.Equal(tb, expectedSamples, c.receivedSamples[ts], ts)
 	}
@@ -831,25 +826,27 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte, _ int) error {
 	}
 
 	var reqProto *prompb.WriteRequest
-	if c.expectRemoteWrite11 {
-		var reqReduced prompb.MinimizedWriteRequest
-		err = proto.Unmarshal(reqBuf, &reqReduced)
-		if err == nil {
-			reqProto, err = MinimizedWriteRequestToWriteRequest(&reqReduced)
-		}
-	} else {
+	switch c.rwFormat {
+	case Base1:
 		reqProto = &prompb.WriteRequest{}
 		err = proto.Unmarshal(reqBuf, reqProto)
+	case Min32Optimized:
+		var reqMin prompb.MinimizedWriteRequest
+		err = proto.Unmarshal(reqBuf, &reqMin)
+		if err == nil {
+			reqProto, err = MinimizedWriteRequestToWriteRequest(&reqMin)
+		}
 	}
 
 	if err != nil {
+		fmt.Println("error: ", err)
 		return err
 	}
 
 	count := 0
 	for _, ts := range reqProto.Timeseries {
-		labels := labelProtosToLabels(ts.Labels)
-		seriesName := labels.Get("__name__")
+		ls := labelProtosToLabels(ts.Labels)
+		seriesName := ls.Get("__name__")
 		for _, sample := range ts.Samples {
 			count++
 			c.receivedSamples[seriesName] = append(c.receivedSamples[seriesName], sample)
@@ -860,12 +857,12 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte, _ int) error {
 			c.receivedExemplars[seriesName] = append(c.receivedExemplars[seriesName], ex)
 		}
 
-		for _, histogram := range ts.Histograms {
+		for _, hist := range ts.Histograms {
 			count++
-			if histogram.IsFloatHistogram() {
-				c.receivedFloatHistograms[seriesName] = append(c.receivedFloatHistograms[seriesName], histogram)
+			if hist.IsFloatHistogram() {
+				c.receivedFloatHistograms[seriesName] = append(c.receivedFloatHistograms[seriesName], hist)
 			} else {
-				c.receivedHistograms[seriesName] = append(c.receivedHistograms[seriesName], histogram)
+				c.receivedHistograms[seriesName] = append(c.receivedHistograms[seriesName], hist)
 			}
 
 		}
@@ -965,7 +962,8 @@ func BenchmarkSampleSend(b *testing.B) {
 	dir := b.TempDir()
 
 	metrics := newQueueManagerMetrics(nil, "", "")
-	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, false)
+	// todo: test with new proto type(s)
+	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, Base1)
 	m.StoreSeries(series, 0)
 
 	// These should be received by the client.
@@ -1009,9 +1007,10 @@ func BenchmarkStartup(b *testing.B) {
 	for n := 0; n < b.N; n++ {
 		metrics := newQueueManagerMetrics(nil, "", "")
 		c := NewTestBlockedWriteClient()
+		// todo: test with new proto type(s)
 		m := NewQueueManager(metrics, nil, nil, logger, dir,
 			newEWMARate(ewmaWeight, shardUpdateDuration),
-			cfg, mcfg, labels.EmptyLabels(), nil, c, 1*time.Minute, newPool(), newHighestTimestampMetric(), nil, false, false, false)
+			cfg, mcfg, labels.EmptyLabels(), nil, c, 1*time.Minute, newPool(), newHighestTimestampMetric(), nil, false, false, Base1)
 		m.watcher.SetStartTime(timestamp.Time(math.MaxInt64))
 		m.watcher.MaxSegment = segments[len(segments)-2]
 		err := m.watcher.Run()
@@ -1094,7 +1093,8 @@ func TestCalculateDesiredShards(t *testing.T) {
 
 	metrics := newQueueManagerMetrics(nil, "", "")
 	samplesIn := newEWMARate(ewmaWeight, shardUpdateDuration)
-	m := NewQueueManager(metrics, nil, nil, nil, dir, samplesIn, cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, false)
+	// todo: test with new proto type(s)
+	m := NewQueueManager(metrics, nil, nil, nil, dir, samplesIn, cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, Base1)
 
 	// Need to start the queue manager so the proper metrics are initialized.
 	// However we can stop it right away since we don't need to do any actual
@@ -1163,7 +1163,7 @@ func TestCalculateDesiredShards(t *testing.T) {
 }
 
 func TestCalculateDesiredShardsDetail(t *testing.T) {
-	c := NewTestWriteClient(false)
+	c := NewTestWriteClient(Base1)
 	cfg := config.DefaultQueueConfig
 	mcfg := config.DefaultMetadataConfig
 
@@ -1171,7 +1171,8 @@ func TestCalculateDesiredShardsDetail(t *testing.T) {
 
 	metrics := newQueueManagerMetrics(nil, "", "")
 	samplesIn := newEWMARate(ewmaWeight, shardUpdateDuration)
-	m := NewQueueManager(metrics, nil, nil, nil, dir, samplesIn, cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, false)
+	// todo: test with new proto type(s)
+	m := NewQueueManager(metrics, nil, nil, nil, dir, samplesIn, cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, Base1)
 
 	for _, tc := range []struct {
 		name            string
@@ -1432,9 +1433,9 @@ func createDummyTimeSeries(instances int) []timeSeries {
 		b := labels.NewBuilder(commonLabels)
 		b.Set("pod", "prometheus-"+strconv.Itoa(i))
 		for _, lbls := range metrics {
-			for _, l := range lbls {
+			lbls.Range(func(l labels.Label) {
 				b.Set(l.Name, l.Value)
-			}
+			})
 			result = append(result, timeSeries{
 				seriesLabels: b.Labels(),
 				value:        r.Float64(),
@@ -1495,9 +1496,9 @@ func BenchmarkBuildMinimizedWriteRequest(b *testing.B) {
 		batch []timeSeries
 	}
 	testCases := []testcase{
-		testcase{createDummyTimeSeries(2)},
-		testcase{createDummyTimeSeries(10)},
-		testcase{createDummyTimeSeries(100)},
+		{createDummyTimeSeries(2)},
+		{createDummyTimeSeries(10)},
+		{createDummyTimeSeries(100)},
 	}
 	for _, tc := range testCases {
 		symbolTable := newRwSymbolTable()

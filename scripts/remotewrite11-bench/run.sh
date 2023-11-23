@@ -7,7 +7,8 @@ trap "trap - SIGTERM && kill -- -$$" SIGINT SIGTERM EXIT
 declare -a INSTANCES
 # (sender,receiver) pairs to run: (sender_name; sender_flags; receiver_name; receiver_flags)
 INSTANCES+=('sender-v1;;receiver-v1;')
-INSTANCES+=('sender-v11;--enable-feature rw-1-1-sender;receiver-v11;--enable-feature rw-1-1-receiver')
+INSTANCES+=('sender-v11-min32-optimized-varint;--remote-write-format 1;receiver-v11-min32-optimized-varint;--remote-write-format 1')
+INSTANCES+=('sender-v11-min-len;--remote-write-format 2;receiver-v11-min-len;--remote-write-format 2')
 
 # ~~~~~~~~~~~~~
 

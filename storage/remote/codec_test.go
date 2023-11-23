@@ -77,7 +77,7 @@ var writeRequestFixture = &prompb.WriteRequest{
 // writeRequestMinimizedFixture represents the same request as writeRequestFixture, but using the minimized representation.
 var writeRequestMinimizedFixture = func() *prompb.MinimizedWriteRequest {
 	st := newRwSymbolTable()
-	labels := []uint32{}
+	var labels []uint32
 	for _, s := range []string{
 		"__name__", "test_metric1",
 		"b", "c",
@@ -85,8 +85,8 @@ var writeRequestMinimizedFixture = func() *prompb.MinimizedWriteRequest {
 		"d", "e",
 		"foo", "bar",
 	} {
-		off, len := st.Ref(s)
-		labels = append(labels, off, len)
+		off, length := st.Ref(s)
+		labels = append(labels, off, length)
 	}
 	return &prompb.MinimizedWriteRequest{
 		Timeseries: []prompb.MinimizedTimeSeries{
@@ -568,13 +568,6 @@ func TestDecodeMinWriteRequest(t *testing.T) {
 	require.Equal(t, writeRequestMinimizedFixture, actual)
 }
 
-func TestMinimizedWriteRequestToWriteRequest(t *testing.T) {
-	actual, err := MinimizedWriteRequestToWriteRequest(writeRequestMinimizedFixture)
-	require.NoError(t, err)
-
-	require.Equal(t, writeRequestFixture, actual)
-}
-
 func TestNilHistogramProto(t *testing.T) {
 	// This function will panic if it impromperly handles nil
 	// values, causing the test to fail.
@@ -892,4 +885,12 @@ func (c *mockChunkIterator) Next() bool {
 
 func (c *mockChunkIterator) Err() error {
 	return nil
+}
+
+func TestLenFormat(t *testing.T) {
+	r := newRwSymbolTable()
+	ls := labels.FromStrings("asdf", "qwer", "zxcv", "1234")
+	encoded := labelsToUint32SliceLen(ls, &r, nil)
+	decoded := Uint32LenRefToLabels(r.LabelsData(), encoded)
+	require.Equal(t, ls, decoded)
 }

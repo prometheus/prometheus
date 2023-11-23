@@ -58,6 +58,7 @@ import (
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/template"
 	"github.com/prometheus/prometheus/util/httputil"
 	api_v1 "github.com/prometheus/prometheus/web/api/v1"
@@ -242,27 +243,27 @@ type Options struct {
 	Version               *PrometheusVersion
 	Flags                 map[string]string
 
-	ListenAddress               string
-	CORSOrigin                  *regexp.Regexp
-	ReadTimeout                 time.Duration
-	MaxConnections              int
-	ExternalURL                 *url.URL
-	RoutePrefix                 string
-	UseLocalAssets              bool
-	UserAssetsPath              string
-	ConsoleTemplatesPath        string
-	ConsoleLibrariesPath        string
-	EnableLifecycle             bool
-	EnableAdminAPI              bool
-	PageTitle                   string
-	RemoteReadSampleLimit       int
-	RemoteReadConcurrencyLimit  int
-	RemoteReadBytesInFrame      int
-	EnableRemoteWriteReceiver   bool
-	EnableOTLPWriteReceiver     bool
-	IsAgent                     bool
-	AppName                     string
-	EnableReceiverRemoteWrite11 bool
+	ListenAddress              string
+	CORSOrigin                 *regexp.Regexp
+	ReadTimeout                time.Duration
+	MaxConnections             int
+	ExternalURL                *url.URL
+	RoutePrefix                string
+	UseLocalAssets             bool
+	UserAssetsPath             string
+	ConsoleTemplatesPath       string
+	ConsoleLibrariesPath       string
+	EnableLifecycle            bool
+	EnableAdminAPI             bool
+	PageTitle                  string
+	RemoteReadSampleLimit      int
+	RemoteReadConcurrencyLimit int
+	RemoteReadBytesInFrame     int
+	EnableRemoteWriteReceiver  bool
+	EnableOTLPWriteReceiver    bool
+	IsAgent                    bool
+	AppName                    string
+	RemoteWriteFormat          remote.RemoteWriteFormat
 
 	Gatherer   prometheus.Gatherer
 	Registerer prometheus.Registerer
@@ -352,8 +353,8 @@ func New(logger log.Logger, o *Options) *Handler {
 		o.Registerer,
 		nil,
 		o.EnableRemoteWriteReceiver,
+		o.RemoteWriteFormat,
 		o.EnableOTLPWriteReceiver,
-		o.EnableReceiverRemoteWrite11,
 	)
 
 	if o.RoutePrefix != "/" {

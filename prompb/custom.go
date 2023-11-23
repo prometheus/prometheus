@@ -14,8 +14,9 @@
 package prompb
 
 import (
-	"slices"
 	"sync"
+
+	"golang.org/x/exp/slices"
 )
 
 func (m Sample) T() int64   { return m.Timestamp }

@@ -10,10 +10,10 @@ if ! [[ "$0" =~ "scripts/genproto.sh" ]]; then
 	exit 255
 fi
 
-if ! [[ $(protoc --version) =~ "3.21.12" ]]; then
-	echo "could not find protoc 3.21.12, is it installed + in PATH?"
-	exit 255
-fi
+#if ! [[ $(protoc --version) =~ "3.21.12" ]]; then
+#	echo "could not find protoc 3.21.12, is it installed + in PATH?"
+#	exit 255
+#fi
 
 # Since we run go install, go mod download, the go.sum will change.
 # Make a backup.
