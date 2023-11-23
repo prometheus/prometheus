@@ -50,7 +50,7 @@ func ReadLabels(fn string, n int) ([]Labels, error) {
 	defer f.Close()
 
 	scanner := bufio.NewScanner(f)
-	b := ScratchBuilder{}
+	b := NewScratchBuilder(0)
 
 	var mets []Labels
 	hashes := map[uint64]struct{}{}
