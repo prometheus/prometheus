@@ -391,12 +391,11 @@ func ensureMonotonicAndIgnoreSmallDeltas(buckets buckets, tolerance float64) (bo
 	prev := buckets[0].count
 	for i := 1; i < len(buckets); i++ {
 		curr := buckets[i].count // Assumed always positive.
-		delta := math.Abs(curr - prev)
-		if delta == 0 {
+		if curr == prev {
 			// No correction needed if the counts are identical between buckets.
 			continue
 		}
-		if (delta / curr) <= tolerance {
+		if almostEqual(prev, curr, tolerance) {
 			// Silently correct numerically insignificant differences from floating
 			// point precision errors, regardless of direction.
 			// Do not update the 'prev' value as we are ignoring the difference.
