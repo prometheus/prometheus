@@ -888,7 +888,7 @@ func (c *mockChunkIterator) Err() error {
 }
 
 func TestLenFormat(t *testing.T) {
-	r := rwSymbolTable{}
+	r := newRwSymbolTable()
 	ls := labels.FromStrings("asdf", "qwer", "zxcv", "1234")
 	encoded := labelsToUint32SliceLen(ls, &r, nil)
 	decoded := Uint32LenRefToLabels(r.LabelsData(), encoded)
