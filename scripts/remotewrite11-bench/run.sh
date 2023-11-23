@@ -8,7 +8,7 @@ declare -a INSTANCES
 # (sender,receiver) pairs to run: (sender_name; sender_flags; receiver_name; receiver_flags)
 INSTANCES+=('sender-v1;;receiver-v1;')
 INSTANCES+=('sender-v11-min32-optimized-varint;--remote-write-format 1;receiver-v11-min32-optimized-varint;--remote-write-format 1')
-INSTANCES+=('sender-v11-min-len;--remote-write-format 5;receiver-v11-min-len;--remote-write-format 5')
+INSTANCES+=('sender-v11-min-len;--remote-write-format 2;receiver-v11-min-len;--remote-write-format 2')
 
 # ~~~~~~~~~~~~~
 

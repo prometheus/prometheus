@@ -486,7 +486,9 @@ func NewQueueManager(
 		storeClient:          client,
 		sendExemplars:        enableExemplarRemoteWrite,
 		sendNativeHistograms: enableNativeHistogramRemoteWrite,
-		rwFormat:             rwFormat,
+		// TODO: we should eventually set the format via content negotiation,
+		// so this field would be the desired format, maybe with a fallback?
+		rwFormat: rwFormat,
 
 		seriesLabels:         make(map[chunks.HeadSeriesRef]labels.Labels),
 		seriesSegmentIndexes: make(map[chunks.HeadSeriesRef]int),
@@ -1464,7 +1466,15 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 						"exemplars", nPendingExemplars, "shard", shardNum, "histograms", nPendingHistograms)
 					s.sendMinSamples(ctx, pendingMinimizedData[:n], symbolTable.LabelsString(), nPendingSamples, nPendingExemplars, nPendingHistograms, &pBufRaw, &buf)
 					symbolTable.clear()
+				case MinLen:
+					nPendingSamples, nPendingExemplars, nPendingHistograms := populateMinimizedTimeSeriesLen(&symbolTable, batch, pendingMinLenData, s.qm.sendExemplars, s.qm.sendNativeHistograms)
+					n := nPendingSamples + nPendingExemplars + nPendingHistograms
+					level.Debug(s.qm.logger).Log("msg", "runShard timer ticked, sending buffered data", "samples", nPendingSamples,
+						"exemplars", nPendingExemplars, "shard", shardNum, "histograms", nPendingHistograms)
+					s.sendMinLenSamples(ctx, pendingMinLenData[:n], symbolTable.LabelsData(), nPendingSamples, nPendingExemplars, nPendingHistograms, pBuf, &buf)
+					symbolTable.clear()
 				}
+
 			}
 			queue.ReturnForReuse(batch)
 			timer.Reset(time.Duration(s.qm.cfg.BatchSendDeadline))
@@ -1812,19 +1822,15 @@ type offLenPair struct {
 }
 
 type rwSymbolTable struct {
-	symbols            []byte
-	symbolsMap         map[string]offLenPair
-	symbolsMap64Packed map[string]uint64
-	symbolsMap32Packed map[string]uint32
-	symbolsMapBytes    map[string]uint32
+	symbols         []byte
+	symbolsMap      map[string]offLenPair
+	symbolsMapBytes map[string]uint32
 }
 
 func newRwSymbolTable() rwSymbolTable {
 	return rwSymbolTable{
-		symbolsMap:         make(map[string]offLenPair),
-		symbolsMap64Packed: make(map[string]uint64),
-		symbolsMap32Packed: make(map[string]uint32),
-		symbolsMapBytes:    make(map[string]uint32),
+		symbolsMap:      make(map[string]offLenPair),
+		symbolsMapBytes: make(map[string]uint32),
 	}
 }
 
@@ -1866,12 +1872,6 @@ func (r *rwSymbolTable) LabelsData() []byte {
 func (r *rwSymbolTable) clear() {
 	for k := range r.symbolsMap {
 		delete(r.symbolsMap, k)
-	}
-	for k := range r.symbolsMap64Packed {
-		delete(r.symbolsMap64Packed, k)
-	}
-	for k := range r.symbolsMap32Packed {
-		delete(r.symbolsMap32Packed, k)
 	}
 	for k := range r.symbolsMapBytes {
 		delete(r.symbolsMapBytes, k)
