@@ -1433,9 +1433,9 @@ func createDummyTimeSeries(instances int) []timeSeries {
 		b := labels.NewBuilder(commonLabels)
 		b.Set("pod", "prometheus-"+strconv.Itoa(i))
 		for _, lbls := range metrics {
-			for _, l := range lbls {
+			lbls.Range(func(l labels.Label) {
 				b.Set(l.Name, l.Value)
-			}
+			})
 			result = append(result, timeSeries{
 				seriesLabels: b.Labels(),
 				value:        r.Float64(),
