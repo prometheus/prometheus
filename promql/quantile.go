@@ -73,15 +73,15 @@ type metricWithBuckets struct {
 // If q>1, +Inf is returned.
 //
 // We also return a bool to indicate if monotonicity needed to be forced.
-func bucketQuantile(q float64, buckets buckets) (float64, bool) {
+func bucketQuantile(q float64, buckets buckets) (float64, bool, bool) {
 	if math.IsNaN(q) {
-		return math.NaN(), false
+		return math.NaN(), false, false
 	}
 	if q < 0 {
-		return math.Inf(-1), false
+		return math.Inf(-1), false, false
 	}
 	if q > 1 {
-		return math.Inf(+1), false
+		return math.Inf(+1), false, false
 	}
 	slices.SortFunc(buckets, func(a, b bucket) int {
 		// We don't expect the bucket boundary to be a NaN.
@@ -94,27 +94,28 @@ func bucketQuantile(q float64, buckets buckets) (float64, bool) {
 		return 0
 	})
 	if !math.IsInf(buckets[len(buckets)-1].upperBound, +1) {
-		return math.NaN(), false
+		return math.NaN(), false, false
 	}
 
 	buckets = coalesceBuckets(buckets)
+	fixedPrecision := correctPrecisionErrors(buckets, 1e-12)
 	forcedMonotonic := ensureMonotonic(buckets)
 
 	if len(buckets) < 2 {
-		return math.NaN(), false
+		return math.NaN(), false, false
 	}
 	observations := buckets[len(buckets)-1].count
 	if observations == 0 {
-		return math.NaN(), false
+		return math.NaN(), false, false
 	}
 	rank := q * observations
 	b := sort.Search(len(buckets)-1, func(i int) bool { return buckets[i].count >= rank })
 
 	if b == len(buckets)-1 {
-		return buckets[len(buckets)-2].upperBound, forcedMonotonic
+		return buckets[len(buckets)-2].upperBound, forcedMonotonic, fixedPrecision
 	}
 	if b == 0 && buckets[0].upperBound <= 0 {
-		return buckets[0].upperBound, forcedMonotonic
+		return buckets[0].upperBound, forcedMonotonic, fixedPrecision
 	}
 	var (
 		bucketStart float64
@@ -126,7 +127,7 @@ func bucketQuantile(q float64, buckets buckets) (float64, bool) {
 		count -= buckets[b-1].count
 		rank -= buckets[b-1].count
 	}
-	return bucketStart + (bucketEnd-bucketStart)*(rank/count), forcedMonotonic
+	return bucketStart + (bucketEnd-bucketStart)*(rank/count), forcedMonotonic, fixedPrecision
 }
 
 // histogramQuantile calculates the quantile 'q' based on the given histogram.
@@ -373,6 +374,28 @@ func ensureMonotonic(buckets buckets) bool {
 		}
 	}
 	return forced
+}
+
+// This function corrects float precision errors in the bucket counts
+// which can make them non-monotonic.
+func correctPrecisionErrors(buckets buckets, tolerance float64) bool {
+	fixed := false
+	prev := buckets[0].count
+	for i := 1; i < len(buckets); i++ {
+		curr := buckets[i].count // Assumed always positive.
+		delta := math.Abs(curr - prev)
+		if delta == 0 {
+			continue
+		}
+		eps := delta / curr
+		if eps <= tolerance {
+			buckets[i].count = prev
+			fixed = true
+		} else {
+			prev = curr
+		}
+	}
+	return fixed
 }
 
 // quantile calculates the given quantile of a vector of samples.
