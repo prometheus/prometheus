@@ -15,6 +15,7 @@ package tsdb
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"strings"
 	"unicode/utf8"
@@ -651,9 +652,7 @@ type populateWithDelGenericSeriesIterator struct {
 
 	currDelIter chunkenc.Iterator
 	// currMeta is the current chunks.Meta from metas. currMeta.Chunk is not
-	// always guaranteed to be set. Sometimes currMeta.Chunk is only set after
-	// reading from currDelIter, or sometimes the currMeta could refer to
-	// multiple chunks so currMeta.Chunk cannot be set.
+	// always guaranteed to be set.
 	currMeta chunks.Meta
 }
 
@@ -674,9 +673,6 @@ func (p *populateWithDelGenericSeriesIterator) reset(blockID ulid.ULID, cr Chunk
 // is deep copied to avoid races between reads and copying chunk bytes.
 // However, if the deletion intervals overlaps with the head chunk, then the head chunk is
 // not copied irrespective of copyHeadChunk because it will be re-encoded later anyway.
-// p.currMeta.Chunk will be set if p.currMeta refers to a single chunk that does not need
-// to be modified and can be returned as-is. Otherwise, p.currDelIter will be set.
-// As a post-condition, only one of p.currMeta.Chunk or p.currDelIter will be set.
 func (p *populateWithDelGenericSeriesIterator) next(copyHeadChunk bool) bool {
 	if p.err != nil || p.i >= len(p.metas)-1 {
 		return false
@@ -709,27 +705,21 @@ func (p *populateWithDelGenericSeriesIterator) next(copyHeadChunk bool) bool {
 		return false
 	}
 
-	if len(p.bufIter.Intervals) == 0 && p.currMeta.Chunk != nil {
-		// If there is no overlap with deletion intervals and a single chunk is
-		// returned, we can take chunk as it is.
-		p.currDelIter = nil
+	// Use single chunk if possible.
+	if p.currMeta.Chunk != nil {
+		if len(p.bufIter.Intervals) == 0 {
+			// If there is no overlap with deletion intervals and a single chunk is
+			// returned, we can take chunk as it is.
+			p.currDelIter = nil
+			return true
+		}
+		// Otherwise we need to iterate over the samples and create new chunks.
+		p.bufIter.Iter = p.currMeta.Chunk.Iterator(p.bufIter.Iter)
+		p.currDelIter = &p.bufIter
 		return true
 	}
 
-	// Otherwise we need to iterate over the samples and create new chunks.
-	if p.currMeta.Chunk != nil {
-		// ChunkOrIterable() will return a nil iterable for a non-nil chunk, so
-		// we need to update that.
-		iterable = p.currMeta.Chunk
-		// Set currMeta.Chunk to nil as a post-condition of next() is that if
-		// currDelIter is not nil, currMeta.Chunk should be nil. This is to
-		// avoid the invalid chunk from being read accidentally when the
-		// iterator should be used instead.
-		p.currMeta.Chunk = nil
-	}
-
-	// We don't want all the samples, only the ones that don't overlap with deletion intervals.
-	// Setting the iterable as a nested iterator inside p.bufIter (which handles the deletion intervals).
+	// Otherwise, use the iterable.
 	p.bufIter.Iter = iterable.Iterator(p.bufIter.Iter)
 	p.currDelIter = &p.bufIter
 	return true
@@ -863,19 +853,14 @@ func (p *populateWithDelChunkSeriesIterator) reset(blockID ulid.ULID, cr ChunkRe
 }
 
 func (p *populateWithDelChunkSeriesIterator) Next() bool {
-	// If we've been creating chunks from the deletion iterator, check if
-	// there are any more chunks to iterate through.
-	if p.currDelIter != nil {
+	if p.currMeta.Chunk == nil {
+		// If we've been creating chunks from the iterable, check if there are
+		// any more chunks to iterate through.
 		if p.chunksFromDelIterIdx < len(p.chunksFromDelIter)-1 {
 			p.chunksFromDelIterIdx++
 			p.currMetaWithChunk = p.chunksFromDelIter[p.chunksFromDelIterIdx]
 			return true
 		}
-
-		// If there are no chunks left from the ones generated from the deletion
-		// iterator, reset the chunks slice.
-		p.chunksFromDelIter = p.chunksFromDelIter[:0]
-		p.chunksFromDelIterIdx = -1
 	}
 
 	// Move to the next chunk/deletion iterator.
@@ -883,44 +868,119 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 		return false
 	}
 
-	// If a single chunk is directly provided, set that as the current chunk.
 	if p.currMeta.Chunk != nil {
-		p.currMetaWithChunk = p.currMeta
-		return true
+		if p.currDelIter == nil {
+			p.currMetaWithChunk = p.currMeta
+			return true
+		}
+		// If ChunkOrIterable() returned a single chunk and currDelIter is set,
+		// the samples in the iterator will only form one chunk.
+		return p.populateCurrFromDelIter()
 	}
 
-	// Otherwise, an iterator will be provided. This means that there are
-	// samples to be deleted, the chunk is opened, or the samples might need to
-	// be split into multiple chunks.
-	// We need to iterate through the samples in that iterator to create new
-	// chunks (and then iterate through those chunks when Next() is called
-	// again).
-	err := p.populateChunksFromDelIter()
+	// If ChunkOrIterable() returned an iterable instead of a single chunk,
+	// multiple chunks may be created from the samples in currDelIter.
+	return p.populateChunksFromDelIter()
+}
+
+func (p *populateWithDelChunkSeriesIterator) populateCurrFromDelIter() bool {
+	valueType := p.currDelIter.Next()
+	if valueType == chunkenc.ValNone {
+		if err := p.currDelIter.Err(); err != nil {
+			p.err = errors.Wrap(err, "iterate chunk while re-encoding")
+		}
+		return false
+	}
+	p.currMetaWithChunk.MinTime = p.currDelIter.AtT()
+
+	// Re-encode the chunk if iterator is provided. This means that it has
+	// some samples to be deleted or chunk is opened.
+	var (
+		newChunk chunkenc.Chunk
+		app      chunkenc.Appender
+		t        int64
+		err      error
+	)
+	switch valueType {
+	case chunkenc.ValHistogram:
+		newChunk = chunkenc.NewHistogramChunk()
+		if app, err = newChunk.Appender(); err != nil {
+			break
+		}
+		for vt := valueType; vt != chunkenc.ValNone; vt = p.currDelIter.Next() {
+			if vt != chunkenc.ValHistogram {
+				err = fmt.Errorf("found value type %v in histogram chunk", vt)
+				break
+			}
+			var h *histogram.Histogram
+			t, h = p.currDelIter.AtHistogram()
+			_, _, app, err = app.AppendHistogram(nil, t, h, true)
+			if err != nil {
+				break
+			}
+		}
+	case chunkenc.ValFloat:
+		newChunk = chunkenc.NewXORChunk()
+		if app, err = newChunk.Appender(); err != nil {
+			break
+		}
+		for vt := valueType; vt != chunkenc.ValNone; vt = p.currDelIter.Next() {
+			if vt != chunkenc.ValFloat {
+				err = fmt.Errorf("found value type %v in float chunk", vt)
+				break
+			}
+			var v float64
+			t, v = p.currDelIter.At()
+			app.Append(t, v)
+		}
+	case chunkenc.ValFloatHistogram:
+		newChunk = chunkenc.NewFloatHistogramChunk()
+		if app, err = newChunk.Appender(); err != nil {
+			break
+		}
+		for vt := valueType; vt != chunkenc.ValNone; vt = p.currDelIter.Next() {
+			if vt != chunkenc.ValFloatHistogram {
+				err = fmt.Errorf("found value type %v in histogram chunk", vt)
+				break
+			}
+			var h *histogram.FloatHistogram
+			t, h = p.currDelIter.AtFloatHistogram()
+			_, _, app, err = app.AppendFloatHistogram(nil, t, h, true)
+			if err != nil {
+				break
+			}
+		}
+	default:
+		err = fmt.Errorf("populateCurrFromDelIter: value type %v unsupported", valueType)
+	}
+
 	if err != nil {
-		p.err = err
+		p.err = errors.Wrap(err, "iterate chunk while re-encoding")
+		return false
+	}
+	if err := p.currDelIter.Err(); err != nil {
+		p.err = errors.Wrap(err, "iterate chunk while re-encoding")
 		return false
 	}
 
-	if len(p.chunksFromDelIter) == 0 {
-		return false
-	}
-
-	// Advance to first chunk generated from the deletion iterator.
-	p.chunksFromDelIterIdx = 0
-	p.currMetaWithChunk = p.chunksFromDelIter[0]
+	p.currMetaWithChunk.Chunk = newChunk
+	p.currMetaWithChunk.MaxTime = t
 	return true
 }
 
 // populateChunksFromDelIter reads the samples from currDelIter to create
-// chunks for chunksFromDelIter. It is assumed that chunksFromDelIter is reset
-// to a zero-length slice before this function is called.
-func (p *populateWithDelChunkSeriesIterator) populateChunksFromDelIter() error {
+// chunks for chunksFromDelIter.
+func (p *populateWithDelChunkSeriesIterator) populateChunksFromDelIter() bool {
+	p.chunksFromDelIter = p.chunksFromDelIter[:0]
+	p.chunksFromDelIterIdx = -1
+
 	firstValueType := p.currDelIter.Next()
 	if firstValueType == chunkenc.ValNone {
 		if err := p.currDelIter.Err(); err != nil {
-			return errors.Wrap(err, "populateChunksFromDelIter: no samples could be read")
+			p.err = errors.Wrap(err, "populateChunksFromDelIter: no samples could be read")
+			return false
 		}
-		return nil
+		return false
 	}
 
 	var (
@@ -1001,17 +1061,25 @@ func (p *populateWithDelChunkSeriesIterator) populateChunksFromDelIter() error {
 	}
 
 	if err != nil {
-		return errors.Wrap(err, "populateChunksFromDelIter: error when writing new chunks")
+		p.err = errors.Wrap(err, "populateChunksFromDelIter: error when writing new chunks")
+		return false
 	}
 	if err = p.currDelIter.Err(); err != nil {
-		return errors.Wrap(err, "populateChunksFromDelIter: currDelIter error when writing new chunks")
+		p.err = errors.Wrap(err, "populateChunksFromDelIter: currDelIter error when writing new chunks")
+		return false
 	}
 
 	if prevValueType != chunkenc.ValNone {
 		p.chunksFromDelIter = append(p.chunksFromDelIter, chunks.Meta{Chunk: currentChunk, MinTime: cmint, MaxTime: cmaxt})
 	}
 
-	return nil
+	if len(p.chunksFromDelIter) == 0 {
+		return false
+	}
+
+	p.currMetaWithChunk = p.chunksFromDelIter[0]
+	p.chunksFromDelIterIdx = 0
+	return true
 }
 
 func (p *populateWithDelChunkSeriesIterator) At() chunks.Meta { return p.currMetaWithChunk }
