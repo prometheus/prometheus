@@ -329,8 +329,9 @@ Buckets of classic histograms are cumulative. Therefore, the following should al
 - A lack of observations between the upper limits of two consecutive buckets results in equal counts
 in those two buckets.
 
-However, floating point precision issues or invalid data might violate these assumptions. In that
-case, `histogram_quantile` would be unable to return meaningful results. To mitigate the issue,
+However, floating point precision issues (e.g. small discrepancies introduced by computing of buckets
+with `sum(rate(...))`) or invalid data might violate these assumptions. In that case,
+`histogram_quantile` would be unable to return meaningful results. To mitigate the issue,
 `histogram_quantile` assumes that tiny relative differences between consecutive buckets are happening
 because of floating point precision errors and ignores them. (The threshold to ignore a difference
 between two buckets is a trillionth (1e-12) of the sum of both buckets.) Furthermore, if there are
