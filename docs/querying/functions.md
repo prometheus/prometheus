@@ -323,6 +323,19 @@ a histogram.
 You can use `histogram_quantile(1, v instant-vector)` to get the estimated maximum value stored in
 a histogram.
 
+You may see this informational annotation: `input to histogram_quantile needed to be fixed for
+monotonicity`. Monotonicity (strictly non-decreasing values) of bucket counts in classic histograms
+is necessary for `histogram_quantile` to yield accurate results. In most cases when nothing has gone
+wrong, the bucket counts are monotonic. But when this assumption is violated in cases of missing or
+corrupt data, we fix the bucket counts to make them monotonic, but this means the query results might
+be inaccurate, because the data was problematic in the first place and also because we have modified
+the counts.
+
+Note that another reason the bucket counts might be non-monotonic is due to floating point precision
+errors, but we correct numerically insignificant differences between consecutive buckets silently,
+so you will only see the above warning if there are huge decreases in the bucket counts which are not
+likely to be due to float imprecision.
+
 ## `histogram_stddev()` and `histogram_stdvar()`
 
 _Both functions only act on native histograms, which are an experimental
