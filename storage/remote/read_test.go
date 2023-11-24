@@ -92,7 +92,7 @@ func TestNoDuplicateReadConfigs(t *testing.T) {
 	for _, tc := range cases {
 		t.Run("", func(t *testing.T) {
 			// todo: test with new format type(s)?
-			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, Base1)
+			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, Base1, Snappy)
 			conf := &config.Config{
 				GlobalConfig:      config.DefaultGlobalConfig,
 				RemoteReadConfigs: tc.cfgs,

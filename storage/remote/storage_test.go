@@ -28,7 +28,7 @@ func TestStorageLifecycle(t *testing.T) {
 	dir := t.TempDir()
 
 	// todo: test with new format type(s)
-	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, Base1)
+	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, Base1, Snappy)
 	conf := &config.Config{
 		GlobalConfig: config.DefaultGlobalConfig,
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{
@@ -56,7 +56,7 @@ func TestUpdateRemoteReadConfigs(t *testing.T) {
 	dir := t.TempDir()
 
 	// todo: test with new format type(s)
-	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, Base1)
+	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, Base1, Snappy)
 
 	conf := &config.Config{
 		GlobalConfig: config.GlobalConfig{},
@@ -78,7 +78,7 @@ func TestFilterExternalLabels(t *testing.T) {
 	dir := t.TempDir()
 
 	// todo: test with new format type(s)
-	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, Base1)
+	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, Base1, Snappy)
 
 	conf := &config.Config{
 		GlobalConfig: config.GlobalConfig{
@@ -104,7 +104,7 @@ func TestIgnoreExternalLabels(t *testing.T) {
 	dir := t.TempDir()
 
 	// todo: test with new format type(s)
-	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, Base1)
+	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, Base1, Snappy)
 
 	conf := &config.Config{
 		GlobalConfig: config.GlobalConfig{

@@ -155,7 +155,8 @@ type flagConfig struct {
 	enablePerStepStats         bool
 	enableAutoGOMAXPROCS       bool
 	// todo: how to use the enable feature flag properly + use the remote format enum type
-	rwFormat int
+	rwFormat      int
+	rwCompression int
 
 	prometheusURL   string
 	corsRegexString string
@@ -428,6 +429,9 @@ func main() {
 	a.Flag("remote-write-format", "remote write proto format to use, valid options: 0 (1.0), 1 (reduced format), 3 (min64 format)").
 		Default("0").IntVar(&cfg.rwFormat)
 
+	a.Flag("remote-write-compression", "remote write compression to use, valid options: 0 (snappy), 1 (zstd), 3 (flate)").
+		Default("0").IntVar(&cfg.rwCompression)
+
 	promlogflag.AddFlags(a, &cfg.promlogConfig)
 
 	a.Flag("write-documentation", "Generate command line documentation. Internal use.").Hidden().Action(func(ctx *kingpin.ParseContext) error {
@@ -600,7 +604,7 @@ func main() {
 	var (
 		localStorage  = &readyStorage{stats: tsdb.NewDBStats()}
 		scraper       = &readyScrapeManager{}
-		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper, remote.RemoteWriteFormat(cfg.rwFormat))
+		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper, remote.RemoteWriteFormat(cfg.rwFormat), remote.RemoteWriteCompression(cfg.rwCompression))
 		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
 	)
 

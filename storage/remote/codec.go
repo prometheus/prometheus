@@ -861,14 +861,14 @@ func metricTypeToMetricTypeProto(t textparse.MetricType) prompb.MetricMetadata_M
 
 // DecodeWriteRequest from an io.Reader into a prompb.WriteRequest, handling
 // snappy decompression.
-func DecodeWriteRequest(r io.Reader) (*prompb.WriteRequest, error) {
+func DecodeWriteRequest(r io.Reader, c *Compressor) (*prompb.WriteRequest, error) {
 	compressed, err := io.ReadAll(r)
 	if err != nil {
 		return nil, err
 	}
 
-	comp := GetPooledComp()
-	defer PutPooledComp(comp)
+	comp := c.GetPooledCompressor()
+	defer c.PutPooledCompressor(comp)
 	reqBuf, err := comp.Decompress(compressed)
 
 	if err != nil {
@@ -938,45 +938,45 @@ func DecodeOTLPWriteRequest(r *http.Request) (pmetricotlp.ExportRequest, error) 
 
 // DecodeMinimizedWriteRequest from an io.Reader into a prompb.WriteRequest, handling
 // snappy decompression.
-func DecodeMinimizedWriteRequest(r io.Reader) (*prompb.MinimizedWriteRequest, error) {
-	compressed, err := io.ReadAll(r)
-	if err != nil {
-		return nil, err
-	}
-
-	comp := GetPooledComp()
-	defer PutPooledComp(comp)
-	reqBuf, err := comp.Decompress(compressed)
-	if err != nil {
-		return nil, err
-	}
-
-	var req prompb.MinimizedWriteRequest
-	if err := proto.Unmarshal(reqBuf, &req); err != nil {
-		return nil, err
-	}
-
-	return &req, nil
-}
-
-func DecodeMinimizedWriteRequestLen(r io.Reader) (*prompb.MinimizedWriteRequestLen, error) {
-	compressed, err := io.ReadAll(r)
-	if err != nil {
-		return nil, err
-	}
-
-	reqBuf, err := snappy.Decode(nil, compressed)
-	if err != nil {
-		return nil, err
-	}
-
-	var req prompb.MinimizedWriteRequestLen
-	if err := proto.Unmarshal(reqBuf, &req); err != nil {
-		return nil, err
-	}
-
-	return &req, nil
-}
+//func DecodeMinimizedWriteRequest(r io.Reader) (*prompb.MinimizedWriteRequest, error) {
+//	compressed, err := io.ReadAll(r)
+//	if err != nil {
+//		return nil, err
+//	}
+//
+//	comp := c.GetPooledCompressor()
+//	defer c.PutPooledCompressor(comp)
+//	reqBuf, err := comp.Decompress(compressed)
+//	if err != nil {
+//		return nil, err
+//	}
+//
+//	var req prompb.MinimizedWriteRequest
+//	if err := proto.Unmarshal(reqBuf, &req); err != nil {
+//		return nil, err
+//	}
+//
+//	return &req, nil
+//}
+//
+//func DecodeMinimizedWriteRequestLen(r io.Reader) (*prompb.MinimizedWriteRequestLen, error) {
+//	compressed, err := io.ReadAll(r)
+//	if err != nil {
+//		return nil, err
+//	}
+//
+//	reqBuf, err := snappy.Decode(nil, compressed)
+//	if err != nil {
+//		return nil, err
+//	}
+//
+//	var req prompb.MinimizedWriteRequestLen
+//	if err := proto.Unmarshal(reqBuf, &req); err != nil {
+//		return nil, err
+//	}
+//
+//	return &req, nil
+//}
 
 func MinimizedWriteRequestToWriteRequest(redReq *prompb.MinimizedWriteRequest) (*prompb.WriteRequest, error) {
 	req := &prompb.WriteRequest{

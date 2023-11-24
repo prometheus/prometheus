@@ -254,6 +254,7 @@ func NewAPI(
 	statsRenderer StatsRenderer,
 	rwEnabled bool,
 	rwFormat remote.RemoteWriteFormat,
+	rwComp remote.RemoteWriteCompression,
 	otlpEnabled bool,
 ) *API {
 	a := &API{
@@ -296,7 +297,7 @@ func NewAPI(
 	}
 
 	if rwEnabled {
-		a.remoteWriteHandler = remote.NewWriteHandler(logger, registerer, ap, rwFormat)
+		a.remoteWriteHandler = remote.NewWriteHandler(logger, registerer, ap, rwFormat, rwComp)
 	}
 	if otlpEnabled {
 		a.otlpWriteHandler = remote.NewOTLPWriteHandler(logger, ap)

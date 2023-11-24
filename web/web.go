@@ -264,6 +264,7 @@ type Options struct {
 	IsAgent                    bool
 	AppName                    string
 	RemoteWriteFormat          remote.RemoteWriteFormat
+	RemoteWriteCompression     remote.RemoteWriteCompression
 
 	Gatherer   prometheus.Gatherer
 	Registerer prometheus.Registerer
@@ -354,6 +355,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		nil,
 		o.EnableRemoteWriteReceiver,
 		o.RemoteWriteFormat,
+		o.RemoteWriteCompression,
 		o.EnableOTLPWriteReceiver,
 	)
 

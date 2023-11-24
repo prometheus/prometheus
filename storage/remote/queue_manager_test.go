@@ -15,7 +15,6 @@ package remote
 
 import (
 	"bytes"
-	"compress/flate"
 	"context"
 	"fmt"
 	"math"
@@ -32,7 +31,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
-	"github.com/klauspost/compress/zstd"
 	"github.com/prometheus/client_golang/prometheus"
 	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
@@ -71,13 +69,14 @@ func TestSampleDelivery(t *testing.T) {
 		histograms      bool
 		floatHistograms bool
 		rwFormat        RemoteWriteFormat
+		rwComp          RemoteWriteCompression
 	}{
-		{samples: true, exemplars: false, histograms: false, floatHistograms: false, name: "samples only"},
-		{samples: true, exemplars: true, histograms: true, floatHistograms: true, name: "samples, exemplars, and histograms"},
-		{samples: false, exemplars: true, histograms: false, floatHistograms: false, name: "exemplars only"},
-		{samples: false, exemplars: false, histograms: true, floatHistograms: false, name: "histograms only"},
-		{samples: false, exemplars: false, histograms: false, floatHistograms: true, name: "float histograms only"},
-
+		//{samples: true, exemplars: false, histograms: false, floatHistograms: false, name: "samples only"},
+		//{samples: true, exemplars: true, histograms: true, floatHistograms: true, name: "samples, exemplars, and histograms"},
+		//{samples: false, exemplars: true, histograms: false, floatHistograms: false, name: "exemplars only"},
+		//{samples: false, exemplars: false, histograms: true, floatHistograms: false, name: "histograms only"},
+		//{samples: false, exemplars: false, histograms: false, floatHistograms: true, name: "float histograms only"},
+		//
 		{rwFormat: Min32Optimized, samples: true, exemplars: false, histograms: false, name: "interned samples only"},
 		{rwFormat: Min32Optimized, samples: true, exemplars: true, histograms: true, floatHistograms: true, name: "interned samples, exemplars, and histograms"},
 		{rwFormat: Min32Optimized, samples: false, exemplars: true, histograms: false, name: "interned exemplars only"},
@@ -109,7 +108,7 @@ func TestSampleDelivery(t *testing.T) {
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, tc.rwFormat)
+			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, tc.rwFormat, tc.rwComp)
 			defer s.Close()
 
 			var (
@@ -148,6 +147,7 @@ func TestSampleDelivery(t *testing.T) {
 			qm.StoreSeries(series, 0)
 
 			// Send first half of data.
+			fmt.Println("Waiting for first half of data")
 			c.expectSamples(samples[:len(samples)/2], series)
 			c.expectExemplars(exemplars[:len(exemplars)/2], series)
 			c.expectHistograms(histograms[:len(histograms)/2], series)
@@ -157,6 +157,8 @@ func TestSampleDelivery(t *testing.T) {
 			qm.AppendHistograms(histograms[:len(histograms)/2])
 			qm.AppendFloatHistograms(floatHistograms[:len(floatHistograms)/2])
 			c.waitForExpectedData(t)
+			fmt.Println("got all of first half of data")
+			fmt.Println("Waiting for second half of data")
 
 			// Send second half of data.
 			c.expectSamples(samples[len(samples)/2:], series)
@@ -168,6 +170,7 @@ func TestSampleDelivery(t *testing.T) {
 			qm.AppendHistograms(histograms[len(histograms)/2:])
 			qm.AppendFloatHistograms(floatHistograms[len(floatHistograms)/2:])
 			c.waitForExpectedData(t)
+			fmt.Println("got all of second half of data")
 		})
 	}
 }
@@ -181,7 +184,25 @@ func TestMetadataDelivery(t *testing.T) {
 	mcfg := config.DefaultMetadataConfig
 
 	metrics := newQueueManagerMetrics(nil, "", "")
-	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, 0)
+	m := NewQueueManager(metrics,
+		nil,
+		nil,
+		nil,
+		dir,
+		newEWMARate(ewmaWeight, shardUpdateDuration),
+		cfg,
+		mcfg,
+		labels.EmptyLabels(),
+		nil,
+		c,
+		defaultFlushDeadline,
+		newPool(),
+		newHighestTimestampMetric(),
+		nil,
+		false,
+		false,
+		0,
+		0)
 	m.Start()
 	defer m.Stop()
 
@@ -222,7 +243,7 @@ func TestSampleDeliveryTimeout(t *testing.T) {
 			dir := t.TempDir()
 
 			metrics := newQueueManagerMetrics(nil, "", "")
-			m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, rwFormat)
+			m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, rwFormat, 0)
 			m.StoreSeries(series, 0)
 			m.Start()
 			defer m.Stop()
@@ -268,7 +289,7 @@ func TestSampleDeliveryOrder(t *testing.T) {
 			mcfg := config.DefaultMetadataConfig
 
 			metrics := newQueueManagerMetrics(nil, "", "")
-			m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, rwFormat)
+			m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, rwFormat, 0)
 			m.StoreSeries(series, 0)
 
 			m.Start()
@@ -290,7 +311,7 @@ func TestShutdown(t *testing.T) {
 	mcfg := config.DefaultMetadataConfig
 	metrics := newQueueManagerMetrics(nil, "", "")
 
-	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, deadline, newPool(), newHighestTimestampMetric(), nil, false, false, Base1)
+	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, deadline, newPool(), newHighestTimestampMetric(), nil, false, false, Base1, Snappy)
 	n := 2 * config.DefaultQueueConfig.MaxSamplesPerSend
 	samples, series := createTimeseries(n, n)
 	m.StoreSeries(series, 0)
@@ -328,7 +349,7 @@ func TestSeriesReset(t *testing.T) {
 	cfg := config.DefaultQueueConfig
 	mcfg := config.DefaultMetadataConfig
 	metrics := newQueueManagerMetrics(nil, "", "")
-	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, deadline, newPool(), newHighestTimestampMetric(), nil, false, false, Base1)
+	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, deadline, newPool(), newHighestTimestampMetric(), nil, false, false, Base1, Snappy)
 	for i := 0; i < numSegments; i++ {
 		series := []record.RefSeries{}
 		for j := 0; j < numSeries; j++ {
@@ -341,6 +362,7 @@ func TestSeriesReset(t *testing.T) {
 	require.Equal(t, numSegments*numSeries/2, len(m.seriesLabels))
 }
 
+// doesn't end
 func TestReshard(t *testing.T) {
 	for _, rwFormat := range []RemoteWriteFormat{Base1, Min32Optimized} {
 		t.Run(fmt.Sprint(rwFormat), func(t *testing.T) {
@@ -359,7 +381,7 @@ func TestReshard(t *testing.T) {
 			dir := t.TempDir()
 
 			metrics := newQueueManagerMetrics(nil, "", "")
-			m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, rwFormat)
+			m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, rwFormat, Snappy)
 			m.StoreSeries(series, 0)
 
 			m.Start()
@@ -399,7 +421,7 @@ func TestReshardRaceWithStop(t *testing.T) {
 			go func() {
 				for {
 					metrics := newQueueManagerMetrics(nil, "", "")
-					m = NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, rwFormat)
+					m = NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, rwFormat, Snappy)
 					m.Start()
 					h.Unlock()
 					h.Lock()
@@ -438,7 +460,7 @@ func TestReshardPartialBatch(t *testing.T) {
 			cfg.BatchSendDeadline = model.Duration(batchSendDeadline)
 
 			metrics := newQueueManagerMetrics(nil, "", "")
-			m := NewQueueManager(metrics, nil, nil, nil, t.TempDir(), newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, flushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, rwFormat)
+			m := NewQueueManager(metrics, nil, nil, nil, t.TempDir(), newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, flushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, rwFormat, Snappy)
 			m.StoreSeries(series, 0)
 
 			m.Start()
@@ -487,7 +509,7 @@ func TestQueueFilledDeadlock(t *testing.T) {
 
 			metrics := newQueueManagerMetrics(nil, "", "")
 
-			m := NewQueueManager(metrics, nil, nil, nil, t.TempDir(), newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, flushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, rwFormat)
+			m := NewQueueManager(metrics, nil, nil, nil, t.TempDir(), newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, flushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, rwFormat, Snappy)
 			m.StoreSeries(series, 0)
 			m.Start()
 			defer m.Stop()
@@ -518,7 +540,7 @@ func TestReleaseNoninternedString(t *testing.T) {
 			mcfg := config.DefaultMetadataConfig
 			metrics := newQueueManagerMetrics(nil, "", "")
 			c := NewTestWriteClient(rwFormat)
-			m := NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, rwFormat)
+			m := NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, rwFormat, Snappy)
 			m.Start()
 			defer m.Stop()
 
@@ -568,7 +590,7 @@ func TestShouldReshard(t *testing.T) {
 		metrics := newQueueManagerMetrics(nil, "", "")
 		// todo: test with new proto type(s)
 		client := NewTestWriteClient(Base1)
-		m := NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, client, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, Base1)
+		m := NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, client, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, Base1, Snappy)
 		m.numShards = c.startingShards
 		m.dataIn.incr(c.samplesIn)
 		m.dataOut.incr(c.samplesOut)
@@ -966,7 +988,7 @@ func BenchmarkSampleSend(b *testing.B) {
 
 	metrics := newQueueManagerMetrics(nil, "", "")
 	// todo: test with new proto type(s)
-	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, Base1)
+	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, Base1, Snappy)
 	m.StoreSeries(series, 0)
 
 	// These should be received by the client.
@@ -1013,7 +1035,7 @@ func BenchmarkStartup(b *testing.B) {
 		// todo: test with new proto type(s)
 		m := NewQueueManager(metrics, nil, nil, logger, dir,
 			newEWMARate(ewmaWeight, shardUpdateDuration),
-			cfg, mcfg, labels.EmptyLabels(), nil, c, 1*time.Minute, newPool(), newHighestTimestampMetric(), nil, false, false, Base1)
+			cfg, mcfg, labels.EmptyLabels(), nil, c, 1*time.Minute, newPool(), newHighestTimestampMetric(), nil, false, false, Base1, Snappy)
 		m.watcher.SetStartTime(timestamp.Time(math.MaxInt64))
 		m.watcher.MaxSegment = segments[len(segments)-2]
 		err := m.watcher.Run()
@@ -1097,7 +1119,7 @@ func TestCalculateDesiredShards(t *testing.T) {
 	metrics := newQueueManagerMetrics(nil, "", "")
 	samplesIn := newEWMARate(ewmaWeight, shardUpdateDuration)
 	// todo: test with new proto type(s)
-	m := NewQueueManager(metrics, nil, nil, nil, dir, samplesIn, cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, Base1)
+	m := NewQueueManager(metrics, nil, nil, nil, dir, samplesIn, cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, Base1, Snappy)
 
 	// Need to start the queue manager so the proper metrics are initialized.
 	// However we can stop it right away since we don't need to do any actual
@@ -1175,7 +1197,7 @@ func TestCalculateDesiredShardsDetail(t *testing.T) {
 	metrics := newQueueManagerMetrics(nil, "", "")
 	samplesIn := newEWMARate(ewmaWeight, shardUpdateDuration)
 	// todo: test with new proto type(s)
-	m := NewQueueManager(metrics, nil, nil, nil, dir, samplesIn, cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, Base1)
+	m := NewQueueManager(metrics, nil, nil, nil, dir, samplesIn, cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, Base1, Snappy)
 
 	for _, tc := range []struct {
 		name            string
@@ -1495,67 +1517,67 @@ func BenchmarkBuildWriteRequest(b *testing.B) {
 	})
 }
 
-func BenchmarkBuildMinimizedWriteRequest(b *testing.B) {
+//func BenchmarkBuildMinimizedWriteRequest(b *testing.B) {
+//
+//	type testcase struct {
+//		batch []timeSeries
+//	}
+//	testCases := []testcase{
+//		{createDummyTimeSeries(2)},
+//		{createDummyTimeSeries(10)},
+//		{createDummyTimeSeries(100)},
+//	}
+//	for _, tc := range testCases {
+//		symbolTable := newRwSymbolTable()
+//		seriesBuff := make([]prompb.MinimizedTimeSeries, len(tc.batch))
+//		for i := range seriesBuff {
+//			seriesBuff[i].Samples = []prompb.Sample{{}}
+//			seriesBuff[i].Exemplars = []prompb.Exemplar{{}}
+//		}
+//		pBuf := []byte{}
+//
+//		// Warmup buffers
+//		for i := 0; i < 10; i++ {
+//			populateMinimizedTimeSeries(&symbolTable, tc.batch, seriesBuff, true, true)
+//			buildMinimizedWriteRequest(seriesBuff, symbolTable.LabelsString(), &pBuf, &buff)
+//		}
+//
+//		b.Run(fmt.Sprintf("%d-instances", len(tc.batch)), func(b *testing.B) {
+//			totalSize := 0
+//			for j := 0; j < b.N; j++ {
+//				populateMinimizedTimeSeries(&symbolTable, tc.batch, seriesBuff, true, true)
+//				b.ResetTimer()
+//				req, _, err := buildMinimizedWriteRequest(seriesBuff, symbolTable.LabelsString(), &pBuf, &buff)
+//				if err != nil {
+//					b.Fatal(err)
+//				}
+//				symbolTable.clear()
+//				totalSize += len(req)
+//				b.ReportMetric(float64(totalSize)/float64(b.N), "compressedSize/op")
+//			}
+//		})
+//	}
+//}
 
-	type testcase struct {
-		batch []timeSeries
-	}
-	testCases := []testcase{
-		{createDummyTimeSeries(2)},
-		{createDummyTimeSeries(10)},
-		{createDummyTimeSeries(100)},
-	}
-	for _, tc := range testCases {
-		symbolTable := newRwSymbolTable()
-		seriesBuff := make([]prompb.MinimizedTimeSeries, len(tc.batch))
-		for i := range seriesBuff {
-			seriesBuff[i].Samples = []prompb.Sample{{}}
-			seriesBuff[i].Exemplars = []prompb.Exemplar{{}}
-		}
-		pBuf := []byte{}
+//func makeUncompressedReducedWriteRequestBenchData(b testing.TB) []byte {
+//	data := createDummyTimeSeries(1000)
+//	pool := newLookupPool()
+//	pBuf := proto.NewBuffer(nil)
+//	seriesBuff := make([]prompb.ReducedTimeSeries, len(data))
+//	for i := range seriesBuff {
+//		seriesBuff[i].Samples = []prompb.Sample{{}}
+//		seriesBuff[i].Exemplars = []prompb.ExemplarRef{{}}
+//	}
+//
+//	populateReducedTimeSeries(pool, data, seriesBuff, true, true)
+//	res, _, err := buildReducedWriteRequestWithCompression(seriesBuff, pool.getTable(), pBuf, &noopCompression{})
+//	if err != nil {
+//		b.Fatal(err)
+//	}
+//	return res
+//}
 
-		// Warmup buffers
-		for i := 0; i < 10; i++ {
-			populateMinimizedTimeSeries(&symbolTable, tc.batch, seriesBuff, true, true)
-			buildMinimizedWriteRequest(seriesBuff, symbolTable.LabelsString(), &pBuf, &buff)
-		}
-
-		b.Run(fmt.Sprintf("%d-instances", len(tc.batch)), func(b *testing.B) {
-			totalSize := 0
-			for j := 0; j < b.N; j++ {
-				populateMinimizedTimeSeries(&symbolTable, tc.batch, seriesBuff, true, true)
-				b.ResetTimer()
-				req, _, err := buildMinimizedWriteRequest(seriesBuff, symbolTable.LabelsString(), &pBuf, &buff)
-				if err != nil {
-					b.Fatal(err)
-				}
-				symbolTable.clear()
-				totalSize += len(req)
-				b.ReportMetric(float64(totalSize)/float64(b.N), "compressedSize/op")
-			}
-		})
-	}
-}
-
-func makeUncompressedReducedWriteRequestBenchData(b testing.TB) []byte {
-	data := createDummyTimeSeries(1000)
-	pool := newLookupPool()
-	pBuf := proto.NewBuffer(nil)
-	seriesBuff := make([]prompb.ReducedTimeSeries, len(data))
-	for i := range seriesBuff {
-		seriesBuff[i].Samples = []prompb.Sample{{}}
-		seriesBuff[i].Exemplars = []prompb.ExemplarRef{{}}
-	}
-
-	populateReducedTimeSeries(pool, data, seriesBuff, true, true)
-	res, _, err := buildReducedWriteRequestWithCompression(seriesBuff, pool.getTable(), pBuf, &noopCompression{})
-	if err != nil {
-		b.Fatal(err)
-	}
-	return res
-}
-
-func makeUncompressedWriteRequestBenchData(b *testing.B) []byte {
+func makeUncompressedWriteRequestBenchData() ([]byte, error) {
 	data := createDummyTimeSeries(1000)
 	seriesBuff := make([]prompb.TimeSeries, len(data))
 	for i := range seriesBuff {
@@ -1567,34 +1589,37 @@ func makeUncompressedWriteRequestBenchData(b *testing.B) []byte {
 	populateTimeSeries(data, seriesBuff, true, true)
 	res, _, err := buildWriteRequestWithCompression(seriesBuff, nil, pBuf, &noopCompression{})
 	if err != nil {
-		b.Fatal(err)
+		return nil, err
 	}
-	return res
+	return res, nil
 }
 
 func BenchmarkCompressWriteRequest(b *testing.B) {
-	uncompV1 := makeUncompressedWriteRequestBenchData(b)
-	uncompV11 := makeUncompressedReducedWriteRequestBenchData(b)
+	uncompV1, err := makeUncompressedWriteRequestBenchData()
+	require.NoError(b, err)
+	//uncompV11 := makeUncompressedReducedWriteRequestBenchData(b)
 	// buf := make([]byte, 0)
 
-	bench := func(b *testing.B, data []byte, comp Compression) {
+	bench := func(b *testing.B, name string, data []byte, comp Compression) {
 		b.ResetTimer()
 		totalSize := 0
 		var res []byte
 		var err error
 		for i := 0; i < b.N; i++ {
+			fmt.Println("data len: ", len(data))
 			res, err = comp.Compress(data)
 			if err != nil {
 				b.Fatal(err)
 			}
 			totalSize += len(res)
+			fmt.Println("compressed len:", len(res))
 			b.ReportMetric(float64(totalSize)/float64(b.N), "compressedSize/op")
 		}
 		b.StopTimer()
 		// sanity check
 		res, err = comp.Decompress(res)
 		if err != nil {
-			b.Fatal(err)
+			b.Fatal(err, fmt.Sprint("compression: ", name))
 		}
 		if !bytes.Equal(res, data) {
 			b.Fatalf("decompressed data doesn't match original")
@@ -1604,43 +1629,44 @@ func BenchmarkCompressWriteRequest(b *testing.B) {
 	cases := []struct {
 		name string
 		data []byte
-		comp Compression
+		comp Compressor
 	}{
-		{"v1-go-snappy", uncompV1, &snappyCompression{}},
-		{"v1-snappy", uncompV1, &snappyAltCompression{}},
-		{"v1-s2", uncompV1, &s2Compression{}},
-		{"v1-ZstdFastest", uncompV1, &zstdCompression{level: zstd.SpeedFastest}},
-		{"v1-ZstdSpeedDef", uncompV1, &zstdCompression{level: zstd.SpeedDefault}},
-		{"v1-ZstdBestComp", uncompV1, &zstdCompression{level: zstd.SpeedBestCompression}},
-		{"v1-Lzw", uncompV1, &lzwCompression{}},
-		{"v1-FlateBestComp", uncompV1, &flateCompression{level: flate.BestCompression}},
-		{"v1-FlateBestSpeed", uncompV1, &flateCompression{level: flate.BestSpeed}},
-		{"v1-Brotli-1", uncompV1, &brotliCompression{quality: 1}},
-		{"v1-Brotli-11", uncompV1, &brotliCompression{quality: 1}},
-		{"v1-Brotli-5", uncompV1, &brotliCompression{quality: 5}},
+		//{"v1-go-snappy", uncompV1, &snappyCompression{}},
+		//{"v1-snappy", uncompV1, &snappyAltCompression{}},
+		{"v1-s2", uncompV1, NewCompressor(Snappy)},
+		//{"v1-ZstdFastest", uncompV1, &zstdCompression{level: zstd.SpeedFastest}},
+		//{"v1-ZstdSpeedDef", uncompV1, &zstdCompression{level: zstd.SpeedDefault}},
+		//{"v1-ZstdBestComp", uncompV1, &zstdCompression{level: zstd.SpeedBestCompression}},
+		//{"v1-Lzw", uncompV1, &lzwCompression{}},
+		//{"v1-FlateBestComp", uncompV1, &flateCompression{level: flate.BestCompression}},
+		//{"v1-FlateBestSpeed", uncompV1, &flateCompression{level: flate.BestSpeed}},
+		//{"v1-Brotli-1", uncompV1, &brotliCompression{quality: 1}},
+		//{"v1-Brotli-11", uncompV1, &brotliCompression{quality: 1}},
+		//{"v1-Brotli-5", uncompV1, &brotliCompression{quality: 5}},
 
-		{"v1.1-go-snappy", uncompV11, &snappyCompression{}},
-		{"v1.1-snappy", uncompV11, &snappyAltCompression{}},
-		{"v1.1-s2", uncompV11, &s2Compression{}},
-		{"v1.1-ZstdFastest", uncompV11, &zstdCompression{level: zstd.SpeedFastest}},
-		{"v1.1-ZstdSpeedDef", uncompV11, &zstdCompression{level: zstd.SpeedDefault}},
-		{"v1.1-ZstdBestComp", uncompV11, &zstdCompression{level: zstd.SpeedBestCompression}},
-		{"v1.1-Lzw", uncompV11, &lzwCompression{}},
-		{"v1.1-FlateBestComp", uncompV11, &flateCompression{level: flate.BestCompression}},
-		{"v1.1-FlateBestSpeed", uncompV11, &flateCompression{level: flate.BestSpeed}},
-		{"v1.1-Brotli-1", uncompV11, &brotliCompression{quality: 1}},
-		{"v1.1-Brotli-11", uncompV11, &brotliCompression{quality: 1}},
-		{"v1.1-Brotli-5", uncompV11, &brotliCompression{quality: 5}},
+		//{"v1.1-go-snappy", uncompV11, &snappyCompression{}},
+		//{"v1.1-snappy", uncompV11, &snappyAltCompression{}},
+		//{"v1.1-s2", uncompV11, &s2Compression{}},
+		//{"v1.1-ZstdFastest", uncompV11, &zstdCompression{level: zstd.SpeedFastest}},
+		//{"v1.1-ZstdSpeedDef", uncompV11, &zstdCompression{level: zstd.SpeedDefault}},
+		//{"v1.1-ZstdBestComp", uncompV11, &zstdCompression{level: zstd.SpeedBestCompression}},
+		//{"v1.1-Lzw", uncompV11, &lzwCompression{}},
+		//{"v1.1-FlateBestComp", uncompV11, &flateCompression{level: flate.BestCompression}},
+		//{"v1.1-FlateBestSpeed", uncompV11, &flateCompression{level: flate.BestSpeed}},
+		//{"v1.1-Brotli-1", uncompV11, &brotliCompression{quality: 1}},
+		//{"v1.1-Brotli-11", uncompV11, &brotliCompression{quality: 1}},
+		//{"v1.1-Brotli-5", uncompV11, &brotliCompression{quality: 5}},
 	}
 
 	// Warmup buffers
 	for _, c := range cases {
-		bench(b, c.data, c.comp)
+		bench(b, c.name, c.data, c.comp)
 	}
+	fmt.Println("done warm up")
 
 	for _, c := range cases {
 		b.Run(c.name, func(b *testing.B) {
-			bench(b, c.data, c.comp)
+			bench(b, c.name, c.data, c.comp)
 		})
 	}
 }

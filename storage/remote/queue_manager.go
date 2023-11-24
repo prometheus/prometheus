@@ -397,6 +397,14 @@ const (
 	MinLen                                  // symbols are now just offsets, and we encode lengths as varints in the large symbols string (which is also now a byte slice)
 )
 
+type RemoteWriteCompression int64
+
+const (
+	Snappy RemoteWriteCompression = iota
+	Zstd
+	Flate
+)
+
 // QueueManager manages a queue of samples to be sent to the Storage
 // indicated by the provided WriteClient. Implements writeTo interface
 // used by WAL Watcher.
@@ -426,6 +434,7 @@ type QueueManager struct {
 	seriesSegmentMtx     sync.Mutex // Covers seriesSegmentIndexes - if you also lock seriesMtx, take seriesMtx first.
 	seriesSegmentIndexes map[chunks.HeadSeriesRef]int
 
+	compressor  Compressor
 	shards      *shards
 	numShards   int
 	reshardChan chan int
@@ -463,6 +472,7 @@ func NewQueueManager(
 	enableExemplarRemoteWrite bool,
 	enableNativeHistogramRemoteWrite bool,
 	rwFormat RemoteWriteFormat,
+	rwComp RemoteWriteCompression,
 ) *QueueManager {
 	if logger == nil {
 		logger = log.NewNopLogger()
@@ -487,7 +497,8 @@ func NewQueueManager(
 		sendNativeHistograms: enableNativeHistogramRemoteWrite,
 		// TODO: we should eventually set the format via content negotiation,
 		// so this field would be the desired format, maybe with a fallback?
-		rwFormat: rwFormat,
+		rwFormat:   rwFormat,
+		compressor: NewCompressor(rwComp),
 
 		seriesLabels:         make(map[chunks.HeadSeriesRef]labels.Labels),
 		seriesSegmentIndexes: make(map[chunks.HeadSeriesRef]int),
@@ -545,8 +556,7 @@ func (t *QueueManager) AppendMetadata(ctx context.Context, metadata []scrape.Met
 
 func (t *QueueManager) sendMetadataWithBackoff(ctx context.Context, metadata []prompb.MetricMetadata, pBuf *proto.Buffer) error {
 	// Build the WriteRequest with no samples.
-	comp := createComp()
-	req, _, err := buildWriteRequest(nil, metadata, pBuf, comp)
+	req, _, err := buildWriteRequest(nil, metadata, pBuf, t.compressor.GetPooledCompressor())
 	if err != nil {
 		return err
 	}
@@ -1368,7 +1378,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 		pBuf    = proto.NewBuffer(nil)
 		pBufRaw []byte
 		buf     []byte
-		comp    = createComp()
+		comp    = s.qm.compressor.GetPooledCompressor()
 	)
 	if s.qm.sendExemplars {
 		max += int(float64(max) * 0.1)
@@ -1432,16 +1442,16 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 			case Base1:
 				nPendingSamples, nPendingExemplars, nPendingHistograms := populateTimeSeries(batch, pendingData, s.qm.sendExemplars, s.qm.sendNativeHistograms)
 				n := nPendingSamples + nPendingExemplars + nPendingHistograms
-				s.sendSamples(ctx, pendingData[:n], nPendingSamples, nPendingExemplars, nPendingHistograms, pBuf, &buf)
+				s.sendSamples(ctx, pendingData[:n], nPendingSamples, nPendingExemplars, nPendingHistograms, pBuf, comp)
 			case Min32Optimized:
 				nPendingSamples, nPendingExemplars, nPendingHistograms := populateMinimizedTimeSeries(&symbolTable, batch, pendingMinimizedData, s.qm.sendExemplars, s.qm.sendNativeHistograms)
 				n := nPendingSamples + nPendingExemplars + nPendingHistograms
-				s.sendMinSamples(ctx, pendingMinimizedData[:n], symbolTable.LabelsString(), nPendingSamples, nPendingExemplars, nPendingHistograms, &pBufRaw, &buf)
+				s.sendMinSamples(ctx, pendingMinimizedData[:n], symbolTable.LabelsString(), nPendingSamples, nPendingExemplars, nPendingHistograms, &pBufRaw, &buf, comp)
 				symbolTable.clear()
 			case MinLen:
 				nPendingSamples, nPendingExemplars, nPendingHistograms := populateMinimizedTimeSeriesLen(&symbolTable, batch, pendingMinLenData, s.qm.sendExemplars, s.qm.sendNativeHistograms)
 				n := nPendingSamples + nPendingExemplars + nPendingHistograms
-				s.sendMinLenSamples(ctx, pendingMinLenData[:n], symbolTable.LabelsData(), nPendingSamples, nPendingExemplars, nPendingHistograms, pBuf, &buf)
+				s.sendMinLenSamples(ctx, pendingMinLenData[:n], symbolTable.LabelsData(), nPendingSamples, nPendingExemplars, nPendingHistograms, pBuf, comp)
 				symbolTable.clear()
 			}
 			queue.ReturnForReuse(batch)
@@ -1464,14 +1474,14 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 					n := nPendingSamples + nPendingExemplars + nPendingHistograms
 					level.Debug(s.qm.logger).Log("msg", "runShard timer ticked, sending buffered data", "samples", nPendingSamples,
 						"exemplars", nPendingExemplars, "shard", shardNum, "histograms", nPendingHistograms)
-					s.sendMinSamples(ctx, pendingMinimizedData[:n], symbolTable.LabelsString(), nPendingSamples, nPendingExemplars, nPendingHistograms, &pBufRaw, &buf)
+					s.sendMinSamples(ctx, pendingMinimizedData[:n], symbolTable.LabelsString(), nPendingSamples, nPendingExemplars, nPendingHistograms, &pBufRaw, &buf, comp)
 					symbolTable.clear()
 				case MinLen:
 					nPendingSamples, nPendingExemplars, nPendingHistograms := populateMinimizedTimeSeriesLen(&symbolTable, batch, pendingMinLenData, s.qm.sendExemplars, s.qm.sendNativeHistograms)
 					n := nPendingSamples + nPendingExemplars + nPendingHistograms
 					level.Debug(s.qm.logger).Log("msg", "runShard timer ticked, sending buffered data", "samples", nPendingSamples,
 						"exemplars", nPendingExemplars, "shard", shardNum, "histograms", nPendingHistograms)
-					s.sendMinLenSamples(ctx, pendingMinLenData[:n], symbolTable.LabelsData(), nPendingSamples, nPendingExemplars, nPendingHistograms, pBuf, &buf)
+					s.sendMinLenSamples(ctx, pendingMinLenData[:n], symbolTable.LabelsData(), nPendingSamples, nPendingExemplars, nPendingHistograms, pBuf, comp)
 					symbolTable.clear()
 				}
 			}
@@ -1532,24 +1542,24 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, s
 	s.updateMetrics(ctx, err, sampleCount, exemplarCount, histogramCount, time.Since(begin))
 }
 
-func (s *shards) sendMinSamples(ctx context.Context, samples []prompb.MinimizedTimeSeries, labels string, sampleCount, exemplarCount, histogramCount int, pBuf, buf *[]byte) {
+func (s *shards) sendMinSamples(ctx context.Context, samples []prompb.MinimizedTimeSeries, labels string, sampleCount, exemplarCount, histogramCount int, pBuf, buf *[]byte, comp Compression) {
 	begin := time.Now()
 	// Build the ReducedWriteRequest with no metadata.
 	// Failing to build the write request is non-recoverable, since it will
 	// only error if marshaling the proto to bytes fails.
-	req, highest, err := buildMinimizedWriteRequest(samples, labels, pBuf, buf)
+	req, highest, err := buildMinimizedWriteRequest(samples, labels, pBuf, buf, comp)
 	if err == nil {
 		err = s.sendSamplesWithBackoff(ctx, req, sampleCount, exemplarCount, histogramCount, highest)
 	}
 	s.updateMetrics(ctx, err, sampleCount, exemplarCount, histogramCount, time.Since(begin))
 }
 
-func (s *shards) sendMinLenSamples(ctx context.Context, samples []prompb.MinimizedTimeSeriesLen, labels []byte, sampleCount, exemplarCount, histogramCount int, pBuf *proto.Buffer, buf *[]byte) {
+func (s *shards) sendMinLenSamples(ctx context.Context, samples []prompb.MinimizedTimeSeriesLen, labels []byte, sampleCount, exemplarCount, histogramCount int, pBuf *proto.Buffer, comp Compression) {
 	begin := time.Now()
 	// Build the ReducedWriteRequest with no metadata.
 	// Failing to build the write request is non-recoverable, since it will
 	// only error if marshaling the proto to bytes fails.
-	req, highest, err := buildMinimizedWriteRequestLen(samples, labels, pBuf, buf)
+	req, highest, err := buildMinimizedWriteRequestLen(samples, labels, pBuf, comp)
 	if err == nil {
 		err = s.sendSamplesWithBackoff(ctx, req, sampleCount, exemplarCount, histogramCount, highest)
 	}
@@ -1772,11 +1782,7 @@ func buildWriteRequest(samples []prompb.TimeSeries, metadata []prompb.MetricMeta
 	return buildWriteRequestWithCompression(samples, metadata, pBuf, comp)
 }
 
-func buildWriteRequestWithCompression(samples []prompb.TimeSeries,
-	metadata []prompb.MetricMetadata,
-	pBuf *proto.Buffer,
-	compressor Compression,
-) ([]byte, int64, error) {
+func buildWriteRequestWithCompression(samples []prompb.TimeSeries, metadata []prompb.MetricMetadata, pBuf *proto.Buffer, compressor Compression) ([]byte, int64, error) {
 	var highest int64
 	for _, ts := range samples {
 		// At the moment we only ever append a TimeSeries with a single sample or exemplar in it.
@@ -1806,66 +1812,13 @@ func buildWriteRequestWithCompression(samples []prompb.TimeSeries,
 		return nil, highest, err
 	}
 
-	// snappy uses len() to see if it needs to allocate a new slice. Make the
-	// buffer as long as possible.
-	if buf != nil {
-		*buf = (*buf)[0:cap(*buf)]
-	} else {
-		buf = &[]byte{}
-	}
-	compressed := snappy.Encode(*buf, pBuf.Bytes())
-	if n := snappy.MaxEncodedLen(len(pBuf.Bytes())); n > len(*buf) {
-		// grow the buffer for the next time
-		*buf = make([]byte, n)
-	}
+	compressed, err := compressor.Compress(pBuf.Bytes())
 	return compressed, highest, err
 }
 
 type offLenPair struct {
 	Off uint32
 	Len uint32
-}
-
-func buildReducedWriteRequest(samples []prompb.ReducedTimeSeries, labels map[uint64]string, pBuf *proto.Buffer, comp Compression) ([]byte, int64, error) {
-	return buildReducedWriteRequestWithCompression(samples, labels, pBuf, comp)
-}
-
-func buildReducedWriteRequestWithCompression(samples []prompb.ReducedTimeSeries,
-	labels map[uint64]string,
-	pBuf *proto.Buffer,
-	compress Compression,
-) ([]byte, int64, error) {
-	var highest int64
-	for _, ts := range samples {
-		// At the moment we only ever append a TimeSeries with a single sample or exemplar in it.
-		if len(ts.Samples) > 0 && ts.Samples[0].Timestamp > highest {
-			highest = ts.Samples[0].Timestamp
-		}
-		if len(ts.Exemplars) > 0 && ts.Exemplars[0].Timestamp > highest {
-			highest = ts.Exemplars[0].Timestamp
-		}
-		if len(ts.Histograms) > 0 && ts.Histograms[0].Timestamp > highest {
-			highest = ts.Histograms[0].Timestamp
-		}
-	}
-
-	req := &prompb.WriteRequestWithRefs{
-		StringSymbolTable: labels,
-		Timeseries:        samples,
-	}
-
-	if pBuf == nil {
-		pBuf = proto.NewBuffer(nil) // For convenience in tests. Not efficient.
-	} else {
-		pBuf.Reset()
-	}
-	err := pBuf.Marshal(req)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	compressed, err := compress.Compress(pBuf.Bytes())
-	return compressed, highest, err
 }
 
 type rwSymbolTable struct {
@@ -1926,7 +1879,7 @@ func (r *rwSymbolTable) clear() {
 	r.symbols = r.symbols[:0]
 }
 
-func buildMinimizedWriteRequest(samples []prompb.MinimizedTimeSeries, labels string, pBuf, buf *[]byte) ([]byte, int64, error) {
+func buildMinimizedWriteRequest(samples []prompb.MinimizedTimeSeries, labels string, pBuf, buf *[]byte, comp Compression) ([]byte, int64, error) {
 	var highest int64
 	for _, ts := range samples {
 		// At the moment we only ever append a TimeSeries with a single sample or exemplar in it.
@@ -1955,23 +1908,11 @@ func buildMinimizedWriteRequest(samples []prompb.MinimizedTimeSeries, labels str
 	}
 	*pBuf = data
 
-	// snappy uses len() to see if it needs to allocate a new slice. Make the
-	// buffer as long as possible.
-	if buf != nil {
-		*buf = (*buf)[0:cap(*buf)]
-	} else {
-		buf = &[]byte{}
-	}
-
-	compressed := snappy.Encode(*buf, data)
-	if n := snappy.MaxEncodedLen(len(data)); n > len(*buf) {
-		// grow the buffer for the next time
-		*buf = make([]byte, n)
-	}
+	compressed, err := comp.Compress(*pBuf)
 	return compressed, highest, nil
 }
 
-func buildMinimizedWriteRequestLen(samples []prompb.MinimizedTimeSeriesLen, labels []byte, pBuf *proto.Buffer, buf *[]byte) ([]byte, int64, error) {
+func buildMinimizedWriteRequestLen(samples []prompb.MinimizedTimeSeriesLen, labels []byte, pBuf *proto.Buffer, comp Compression) ([]byte, int64, error) {
 	var highest int64
 	for _, ts := range samples {
 		// At the moment we only ever append a TimeSeries with a single sample or exemplar in it.
@@ -2001,18 +1942,6 @@ func buildMinimizedWriteRequestLen(samples []prompb.MinimizedTimeSeriesLen, labe
 		return nil, 0, err
 	}
 
-	// snappy uses len() to see if it needs to allocate a new slice. Make the
-	// buffer as long as possible.
-	if buf != nil {
-		*buf = (*buf)[0:cap(*buf)]
-	} else {
-		buf = &[]byte{}
-	}
-
-	compressed := snappy.Encode(*buf, pBuf.Bytes())
-	if n := snappy.MaxEncodedLen(len(pBuf.Bytes())); n > len(*buf) {
-		// grow the buffer for the next time
-		*buf = make([]byte, n)
-	}
+	compressed, err := comp.Compress(pBuf.Bytes())
 	return compressed, highest, nil
 }

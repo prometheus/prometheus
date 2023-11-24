@@ -48,15 +48,18 @@ type writeHandler struct {
 	// The handler will accept the new format, but it can still accept the old one
 	// TODO: this should eventually be via content negotiation
 	rwFormat RemoteWriteFormat
+	//rwComp RemoteWriteCompression
+	comp Compressor
 }
 
 // NewWriteHandler creates a http.Handler that accepts remote write requests and
 // writes them to the provided appendable.
-func NewWriteHandler(logger log.Logger, reg prometheus.Registerer, appendable storage.Appendable, rwFormat RemoteWriteFormat) http.Handler {
+func NewWriteHandler(logger log.Logger, reg prometheus.Registerer, appendable storage.Appendable, rwFormat RemoteWriteFormat, rwComp RemoteWriteCompression) http.Handler {
 	h := &writeHandler{
 		logger:     logger,
 		appendable: appendable,
 		rwFormat:   rwFormat,
+		comp:       NewCompressor(rwComp),
 		samplesWithInvalidLabelsTotal: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: "prometheus",
 			Subsystem: "api",
@@ -79,11 +82,11 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// TODO: this should eventually be done via content negotiation/looking at the header
 	switch h.rwFormat {
 	case Base1:
-		req, err = DecodeWriteRequest(r.Body)
-	case Min32Optimized:
-		reqMin, err = DecodeMinimizedWriteRequest(r.Body)
-	case MinLen:
-		reqMinLen, err = DecodeMinimizedWriteRequestLen(r.Body)
+		req, err = DecodeWriteRequest(r.Body, &h.comp)
+		//case Min32Optimized:
+		//	reqMin, err = DecodeMinimizedWriteRequest(r.Body, &h.comp)
+		//case MinLen:
+		//	reqMinLen, err = DecodeMinimizedWriteRequestLen(r.Body)
 	}
 
 	if err != nil {

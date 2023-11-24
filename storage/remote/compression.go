@@ -3,6 +3,7 @@ package remote
 import (
 	"bytes"
 	"compress/lzw"
+	"fmt"
 	"io"
 	"sync"
 
@@ -24,67 +25,87 @@ type Compression interface {
 // hacky globals to easily tweak the compression algorithm and run some benchmarks
 type CompAlgorithm int
 
-var UseAlgorithm = Snappy
+//var UseAlgorithm = Snappy
 
-const (
-	Snappy CompAlgorithm = iota
-	SnappyAlt
-	S2
-	ZstdFast
-	ZstdDefault
-	ZstdBestComp
-	Lzw
-	FlateFast
-	FlateDefault
-	FlateComp
-	BrotliFast
-	BrotliComp
-	BrotliDefault
-)
+//const (
+//	Snappy CompAlgorithm = iota
+//	SnappyAlt
+//	S2
+//	ZstdFast
+//	ZstdDefault
+//	ZstdBestComp
+//	Lzw
+//	FlateFast
+//	FlateDefault
+//	FlateComp
+//	BrotliFast
+//	BrotliComp
+//	BrotliDefault
+//)
 
 // sync.Pool-ed createComp
-var compPool = sync.Pool{
-	// New optionally specifies a function to generate
-	// a value when Get would otherwise return nil.
-	New: func() interface{} { return createComp() },
+//var compPool = sync.Pool{
+//	// New optionally specifies a function to generate
+//	// a value when Get would otherwise return nil.
+//	New: func() interface{} { return createComp() },
+//}
+
+type Compressor struct {
+	Compression
+	pool sync.Pool
 }
 
-func GetPooledComp() Compression {
-	return compPool.Get().(Compression)
+func NewCompressor(compType RemoteWriteCompression) Compressor {
+	var c Compressor
+	c.Compression = createComp(compType)
+	c.pool = sync.Pool{
+		// New optionally specifies a function to generate
+		// a value when Get would otherwise return nil.
+		New: func() interface{} { return createComp(compType) },
+	}
+	return c
 }
 
-func PutPooledComp(c Compression) {
-	compPool.Put(c)
+func (comp Compressor) GetPooledCompressor() Compression {
+	return comp.pool.Get().(Compression)
 }
 
-var createComp func() Compression = func() Compression {
-	switch UseAlgorithm {
+func (comp Compressor) PutPooledCompressor(c Compression) {
+	comp.pool.Put(c)
+}
+
+func createComp(comp RemoteWriteCompression) Compression {
+	switch comp {
 	case Snappy:
 		return &snappyCompression{}
-	case SnappyAlt:
-		return &snappyAltCompression{}
-	case S2:
-		return &s2Compression{}
-	case ZstdDefault:
+	case Zstd:
 		return &zstdCompression{level: zstd.SpeedDefault}
-	case ZstdFast:
-		return &zstdCompression{level: zstd.SpeedFastest}
-	case ZstdBestComp:
-		return &zstdCompression{level: zstd.SpeedBestCompression}
-	case Lzw:
-		return &lzwCompression{}
-	case FlateFast:
-		return &flateCompression{level: flate.BestSpeed}
-	case FlateComp:
-		return &flateCompression{level: flate.BestCompression}
-	case FlateDefault:
+	case Flate:
 		return &flateCompression{level: flate.DefaultCompression}
-	case BrotliFast:
-		return &brotliCompression{quality: brotli.BestSpeed}
-	case BrotliDefault:
-		return &brotliCompression{quality: brotli.DefaultCompression}
-	case BrotliComp:
-		return &brotliCompression{quality: brotli.BestCompression}
+	//case SnappyAlt:
+	//	return &snappyAltCompression{}
+	//case S2:
+	//	return &s2Compression{}
+	//case ZstdDefault:
+	//	return &zstdCompression{level: zstd.SpeedDefault}
+	//case ZstdFast:
+	//	return &zstdCompression{level: zstd.SpeedFastest}
+	//case ZstdBestComp:
+	//	return &zstdCompression{level: zstd.SpeedBestCompression}
+	//case Lzw:
+	//	return &lzwCompression{}
+	//case FlateFast:
+	//	return &flateCompression{level: flate.BestSpeed}
+	//case FlateComp:
+	//	return &flateCompression{level: flate.BestCompression}
+	//case FlateDefault:
+	//	return &flateCompression{level: flate.DefaultCompression}
+	//case BrotliFast:
+	//	return &brotliCompression{quality: brotli.BestSpeed}
+	//case BrotliDefault:
+	//	return &brotliCompression{quality: brotli.DefaultCompression}
+	//case BrotliComp:
+	//	return &brotliCompression{quality: brotli.BestCompression}
 	default:
 		panic("unknown compression algorithm")
 	}
@@ -110,10 +131,17 @@ func (s *snappyCompression) Compress(data []byte) ([]byte, error) {
 	if n := snappy.MaxEncodedLen(len(data)); n > cap(s.buf) {
 		s.buf = make([]byte, n)
 	}
+	uncompressed, err := snappy.Decode(nil, compressed)
+	if err != nil {
+		fmt.Println("error uncompressing immediately after compressing")
+	}
+	fmt.Println("len uncompressed: ", len(uncompressed))
+	fmt.Println("returning snappy compressed data")
 	return compressed, nil
 }
 func (s *snappyCompression) Decompress(data []byte) ([]byte, error) {
 	s.buf = s.buf[0:cap(s.buf)]
+	fmt.Println("len data: ", len(data))
 	uncompressed, err := snappy.Decode(s.buf, data)
 	if len(uncompressed) > cap(s.buf) {
 		s.buf = uncompressed

@@ -118,7 +118,7 @@ func TestNoDuplicateWriteConfigs(t *testing.T) {
 
 	for _, tc := range cases {
 		// todo: test with new format type(s)
-		s := NewWriteStorage(nil, nil, dir, time.Millisecond, nil, Base1)
+		s := NewWriteStorage(nil, nil, dir, time.Millisecond, nil, Base1, Snappy)
 		conf := &config.Config{
 			GlobalConfig:       config.DefaultGlobalConfig,
 			RemoteWriteConfigs: tc.cfgs,
@@ -141,7 +141,7 @@ func TestRestartOnNameChange(t *testing.T) {
 	require.NoError(t, err)
 
 	// todo: test with new format type(s)
-	s := NewWriteStorage(nil, nil, dir, time.Millisecond, nil, Base1)
+	s := NewWriteStorage(nil, nil, dir, time.Millisecond, nil, Base1, Snappy)
 
 	conf := &config.Config{
 		GlobalConfig: config.DefaultGlobalConfig,
@@ -167,7 +167,7 @@ func TestUpdateWithRegisterer(t *testing.T) {
 	dir := t.TempDir()
 
 	// todo: test with new format type(s)
-	s := NewWriteStorage(nil, prometheus.NewRegistry(), dir, time.Millisecond, nil, Base1)
+	s := NewWriteStorage(nil, prometheus.NewRegistry(), dir, time.Millisecond, nil, Base1, Snappy)
 	c1 := &config.RemoteWriteConfig{
 		Name: "named",
 		URL: &common_config.URL{
@@ -208,7 +208,7 @@ func TestWriteStorageLifecycle(t *testing.T) {
 	dir := t.TempDir()
 
 	// todo: test with new format type(s)
-	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, Base1)
+	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, Base1, Snappy)
 	conf := &config.Config{
 		GlobalConfig: config.DefaultGlobalConfig,
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{
@@ -226,7 +226,7 @@ func TestUpdateExternalLabels(t *testing.T) {
 	dir := t.TempDir()
 
 	// todo: test with new format type(s)
-	s := NewWriteStorage(nil, prometheus.NewRegistry(), dir, time.Second, nil, Base1)
+	s := NewWriteStorage(nil, prometheus.NewRegistry(), dir, time.Second, nil, Base1, Snappy)
 
 	externalLabels := labels.FromStrings("external", "true")
 	conf := &config.Config{
@@ -256,7 +256,7 @@ func TestWriteStorageApplyConfigsIdempotent(t *testing.T) {
 	dir := t.TempDir()
 
 	// todo: test with new format type(s)
-	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, Base1)
+	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, Base1, Snappy)
 	conf := &config.Config{
 		GlobalConfig: config.GlobalConfig{},
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{
@@ -282,7 +282,7 @@ func TestWriteStorageApplyConfigsPartialUpdate(t *testing.T) {
 	dir := t.TempDir()
 
 	// todo: test with new format type(s)
-	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, Base1)
+	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, Base1, Snappy)
 
 	c0 := &config.RemoteWriteConfig{
 		RemoteTimeout: model.Duration(10 * time.Second),

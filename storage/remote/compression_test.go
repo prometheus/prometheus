@@ -1,35 +1,40 @@
 package remote
 
 import (
+	"github.com/stretchr/testify/require"
 	"os"
 	"testing"
 	"time"
 )
 
 func TestCompressions(t *testing.T) {
-	data := makeUncompressedReducedWriteRequestBenchData(t)
+	data, err := makeUncompressedWriteRequestBenchData()
+	require.NoError(t, err)
 	tc := []struct {
 		name string
-		algo CompAlgorithm
+		algo RemoteWriteCompression
 	}{
 		{"Snappy", Snappy},
-		{"SnappyAlt", SnappyAlt},
-		{"S2", S2},
-		{"ZstdFast", ZstdFast},
-		{"ZstdDefault", ZstdDefault},
-		{"ZstdBestComp", ZstdBestComp},
-		{"Lzw", Lzw},
-		{"FlateFast", FlateFast},
-		{"FlateComp", FlateComp},
-		{"BrotliFast", BrotliFast},
-		{"BrotliComp", BrotliComp},
-		{"BrotliDefault", BrotliDefault},
+		{"Zstd", Zstd},
+		{"Flate", Flate},
+		//{"SnappyAlt", SnappyAlt},
+		//{"S2", S2},
+		//{"ZstdFast", ZstdFast},
+		//{"ZstdDefault", ZstdDefault},
+		//{"ZstdBestComp", ZstdBestComp},
+		//{"Lzw", Lzw},
+		//{"FlateFast", FlateFast},
+		//{"FlateComp", FlateComp},
+		//{"BrotliFast", BrotliFast},
+		//{"BrotliComp", BrotliComp},
+		//{"BrotliDefault", BrotliDefault},
 	}
 
 	for _, c := range tc {
 		t.Run(c.name, func(t *testing.T) {
-			UseAlgorithm = c.algo
-			comp := createComp()
+			//UseAlgorithm = c.algo
+			//comp := createComp()
+			comp := NewCompressor(c.algo)
 			compressed, err := comp.Compress(data)
 			if err != nil {
 				t.Fatal(err)
@@ -49,61 +54,64 @@ func TestCompressions(t *testing.T) {
 
 func BenchmarkCompressions_V1(b *testing.B) {
 	// Synthetic data, attempts to be representative
-	data := makeUncompressedWriteRequestBenchData(b)
+	data, err := makeUncompressedWriteRequestBenchData()
+	require.NoError(b, err)
 	benchmarkCompressionsForData(b, [][]byte{data})
 }
 
-func BenchmarkCompressions_V11(b *testing.B) {
-	// Synthetic data, attempts to be representative
-	data := makeUncompressedWriteRequestBenchData(b)
-	benchmarkCompressionsForData(b, [][]byte{data})
-}
+//func BenchmarkCompressions_V11(b *testing.B) {
+//	// Synthetic data, attempts to be representative
+//	data, err := makeUncompressedWriteRequestBenchData()
+//	require.NoError(b, err)
+//	benchmarkCompressionsForData(b, [][]byte{data})
+//}
 
 // Needs the dataset to be present in /home/nicolas/rw11data/v11_raw/
-func BenchmarkCompressions_V11_FileDataSet(b *testing.B) {
-	datas := readAllFiles("/home/nicolas/rw11data/v11_raw/")
-	if len(datas) != 10 {
-		b.Fatal("unexpected number of files")
-	}
-	benchmarkCompressionsForData(b, datas)
-}
+//func BenchmarkCompressions_V11_FileDataSet(b *testing.B) {
+//	datas := readAllFiles("/home/nicolas/rw11data/v11_raw/")
+//	if len(datas) != 10 {
+//		b.Fatal("unexpected number of files")
+//	}
+//	benchmarkCompressionsForData(b, datas)
+//}
 
 // Needs the dataset to be present in /home/nicolas/rw11data/v1_raw/
-func BenchmarkCompressions_V1_FileDataSet(b *testing.B) {
-	datas := readAllFiles("/home/nicolas/rw11data/v1_raw/")
-	if len(datas) != 10 {
-		b.Fatal("unexpected number of files")
-	}
-	benchmarkCompressionsForData(b, datas)
-}
+//func BenchmarkCompressions_V1_FileDataSet(b *testing.B) {
+//	datas := readAllFiles("/home/nicolas/rw11data/v1_raw/")
+//	if len(datas) != 10 {
+//		b.Fatal("unexpected number of files")
+//	}
+//	benchmarkCompressionsForData(b, datas)
+//}
 
 func benchmarkCompressionsForData(b *testing.B, datas [][]byte) {
 	bc := []struct {
 		name string
-		algo CompAlgorithm
+		algo RemoteWriteCompression
 	}{
 		{"Snappy", Snappy},
-		{"SnappyAlt", SnappyAlt},
-		{"S2", S2},
-		{"ZstdFast", ZstdFast},
-		{"ZstdDefault", ZstdDefault},
-		{"ZstdBestComp", ZstdBestComp},
-		{"Lzw", Lzw},
-		{"FlateFast", FlateFast},
-		{"FlateDefault", FlateDefault},
-		{"FlateComp", FlateComp},
-		{"BrotliFast", BrotliFast},
-		{"BrotliDefault", BrotliDefault},
-		// {"BrotliComp", BrotliComp},
+		{"Zstd", Zstd},
+		{"Flate", Flate},
+		//{"SnappyAlt", SnappyAlt},
+		//{"S2", S2},
+		//{"ZstdFast", ZstdFast},
+		//{"ZstdDefault", ZstdDefault},
+		//{"ZstdBestComp", ZstdBestComp},
+		//{"Lzw", Lzw},
+		//{"FlateFast", FlateFast},
+		//{"FlateComp", FlateComp},
+		//{"BrotliFast", BrotliFast},
+		//{"BrotliComp", BrotliComp},
+		//{"BrotliDefault", BrotliDefault},
 	}
-	comps := make(map[CompAlgorithm]Compression)
-	decomps := make(map[CompAlgorithm]Compression)
+	comps := make(map[RemoteWriteCompression]*Compressor)
+	decomps := make(map[RemoteWriteCompression]*Compressor)
 	for _, c := range bc {
-		UseAlgorithm = c.algo
-		comp := createComp()
-		decomp := createComp()
-		comps[c.algo] = comp
-		decomps[c.algo] = decomp
+		comp := NewCompressor(c.algo)
+		decomp := NewCompressor(c.algo)
+
+		comps[c.algo] = &comp
+		decomps[c.algo] = &decomp
 		// warmup
 		for i := 0; i < 2; i++ {
 			for _, data := range datas {

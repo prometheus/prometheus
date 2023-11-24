@@ -66,6 +66,7 @@ type WriteStorage struct {
 	dir               string
 	queues            map[string]*QueueManager
 	rwFormat          RemoteWriteFormat
+	rwComp            RemoteWriteCompression
 	samplesIn         *ewmaRate
 	flushDeadline     time.Duration
 	interner          *pool
@@ -77,13 +78,14 @@ type WriteStorage struct {
 }
 
 // NewWriteStorage creates and runs a WriteStorage.
-func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, dir string, flushDeadline time.Duration, sm ReadyScrapeManager, rwFormat RemoteWriteFormat) *WriteStorage {
+func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, dir string, flushDeadline time.Duration, sm ReadyScrapeManager, rwFormat RemoteWriteFormat, rwCompression RemoteWriteCompression) *WriteStorage {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
 	rws := &WriteStorage{
 		queues:            make(map[string]*QueueManager),
 		rwFormat:          rwFormat,
+		rwComp:            rwCompression,
 		watcherMetrics:    wlog.NewWatcherMetrics(reg),
 		liveReaderMetrics: wlog.NewLiveReaderMetrics(reg),
 		logger:            logger,
@@ -201,6 +203,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rwConf.SendExemplars,
 			rwConf.SendNativeHistograms,
 			rws.rwFormat,
+			rws.rwComp,
 		)
 		// Keep track of which queues are new so we know which to start.
 		newHashes = append(newHashes, hash)
