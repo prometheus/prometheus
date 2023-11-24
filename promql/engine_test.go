@@ -3699,7 +3699,7 @@ func TestNativeHistogram_HistogramQuantile(t *testing.T) {
 
 						require.Len(t, vector, 1)
 						require.Nil(t, vector[0].H)
-						require.True(t, almostEqual(sc.value, vector[0].F))
+						require.True(t, almostEqual(sc.value, vector[0].F, defaultEpsilon))
 					})
 				}
 				idx++
