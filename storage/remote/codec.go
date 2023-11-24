@@ -15,7 +15,6 @@ package remote
 
 import (
 	"compress/gzip"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -24,7 +23,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"unsafe"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
@@ -787,42 +785,15 @@ func labelsToUint32Slice(lbls labels.Labels, symbolTable *rwSymbolTable, buf []u
 	return result
 }
 
-func labelsToUint32SliceLen(lbls labels.Labels, symbolTable *rwSymbolTable, buf []uint32) []uint32 {
+func labelsToUint32Slice2(lbls labels.Labels, symbolTable *rwSymbolTable, buf []uint32) []uint32 {
 	result := buf[:0]
 	lbls.Range(func(l labels.Label) {
-		off := symbolTable.RefLen(l.Name)
+		off := symbolTable.Ref2(l.Name)
 		result = append(result, off)
-		off = symbolTable.RefLen(l.Value)
+		off = symbolTable.Ref2(l.Value)
 		result = append(result, off)
 	})
 	return result
-}
-
-func Uint32LenRefToLabels(symbols []byte, minLabels []uint32) labels.Labels {
-	ls := labels.NewScratchBuilder(len(minLabels) / 2)
-
-	labelIdx := 0
-	for labelIdx < len(minLabels) {
-		// todo, check for overflow?
-		offset := minLabels[labelIdx]
-		labelIdx++
-		length, n := binary.Uvarint(symbols[offset:])
-		offset += uint32(n)
-		name := symbols[offset : uint64(offset)+length]
-
-		offset = minLabels[labelIdx]
-		labelIdx++
-		length, n = binary.Uvarint(symbols[offset:])
-		offset += uint32(n)
-		value := symbols[offset : uint64(offset)+length]
-		ls.Add(yoloString(name), yoloString(value))
-	}
-
-	return ls.Labels()
-}
-
-func yoloString(b []byte) string {
-	return *(*string)(unsafe.Pointer(&b))
 }
 
 func Uint32RefToLabels(symbols string, minLabels []uint32) labels.Labels {
@@ -848,15 +819,32 @@ func Uint32RefToLabels(symbols string, minLabels []uint32) labels.Labels {
 	return ls.Labels()
 }
 
-// metricTypeToMetricTypeProto transforms a Prometheus metricType into prompb metricType. Since the former is a string we need to transform it to an enum.
-func metricTypeToMetricTypeProto(t textparse.MetricType) prompb.MetricMetadata_MetricType {
-	mt := strings.ToUpper(string(t))
-	v, ok := prompb.MetricMetadata_MetricType_value[mt]
-	if !ok {
-		return prompb.MetricMetadata_UNKNOWN
+func Uint32RefToLabels2(symbols []string, minLabels []uint32) labels.Labels {
+	ls := labels.NewScratchBuilder(len(minLabels))
+
+	labelIdx := 0
+	for labelIdx < len(minLabels) {
+		// todo, check for overflow?
+		name := symbols[labelIdx]
+		labelIdx++
+		// todo, check for overflow?
+		value := symbols[labelIdx]
+		labelIdx++
+		ls.Add(name, value)
 	}
 
-	return prompb.MetricMetadata_MetricType(v)
+	return ls.Labels()
+}
+
+// metricTypeToMetricTypeProto transforms a Prometheus metricType into prompb metricType. Since the former is a string we need to transform it to an enum.
+func metricTypeToMetricTypeProto(t textparse.MetricType) prompb.Metadata_MetricType {
+	mt := strings.ToUpper(string(t))
+	v, ok := prompb.Metadata_MetricType_value[mt]
+	if !ok {
+		return prompb.Metadata_UNKNOWN
+	}
+
+	return prompb.Metadata_MetricType(v)
 }
 
 // DecodeWriteRequest from an io.Reader into a prompb.WriteRequest, handling
@@ -933,71 +921,30 @@ func DecodeOTLPWriteRequest(r *http.Request) (pmetricotlp.ExportRequest, error) 
 	return otlpReq, nil
 }
 
-// DecodeMinimizedWriteRequest from an io.Reader into a prompb.WriteRequest, handling
-// snappy decompression.
-func DecodeMinimizedWriteRequest(r io.Reader) (*prompb.MinimizedWriteRequest, error) {
-	compressed, err := io.ReadAll(r)
-	if err != nil {
-		return nil, err
-	}
-
-	reqBuf, err := snappy.Decode(nil, compressed)
-	if err != nil {
-		return nil, err
-	}
-
-	var req prompb.MinimizedWriteRequest
-	if err := proto.Unmarshal(reqBuf, &req); err != nil {
-		return nil, err
-	}
-
-	return &req, nil
-}
-
-func DecodeMinimizedWriteRequestLen(r io.Reader) (*prompb.MinimizedWriteRequestLen, error) {
-	compressed, err := io.ReadAll(r)
-	if err != nil {
-		return nil, err
-	}
-
-	reqBuf, err := snappy.Decode(nil, compressed)
-	if err != nil {
-		return nil, err
-	}
-
-	var req prompb.MinimizedWriteRequestLen
-	if err := proto.Unmarshal(reqBuf, &req); err != nil {
-		return nil, err
-	}
-
-	return &req, nil
-}
-
-func MinimizedWriteRequestToWriteRequest(redReq *prompb.MinimizedWriteRequest) (*prompb.WriteRequest, error) {
-	req := &prompb.WriteRequest{
-		Timeseries: make([]prompb.TimeSeries, len(redReq.Timeseries)),
-		// TODO handle metadata?
-	}
-
-	for i, rts := range redReq.Timeseries {
-		Uint32RefToLabels(redReq.Symbols, rts.LabelSymbols).Range(func(l labels.Label) {
-			req.Timeseries[i].Labels = append(req.Timeseries[i].Labels, prompb.Label{
-				Name:  l.Name,
-				Value: l.Value,
+// SymbolizeLabels symbolizes all fields that use label symbols as labels (in place).
+func SymbolizeLabels(req *prompb.WriteRequest) (*prompb.WriteRequest, error) {
+	if len(req.GetSymbols()) > 0 {
+		for i, s := range req.Timeseries {
+			Uint32RefToLabels(req.Symbols, s.LabelSymbols).Range(func(l labels.Label) {
+				req.Timeseries[i].Labels = append(req.Timeseries[i].Labels, prompb.Label{
+					Name:  l.Name,
+					Value: l.Value,
+				})
 			})
-		})
-
-		exemplars := make([]prompb.Exemplar, len(rts.Exemplars))
-		for j, e := range rts.Exemplars {
-			exemplars[j].Value = e.Value
-			exemplars[j].Timestamp = e.Timestamp
-			exemplars[j].Labels = e.Labels
 		}
-
-		req.Timeseries[i].Samples = rts.Samples
-		req.Timeseries[i].Exemplars = exemplars
-		req.Timeseries[i].Histograms = rts.Histograms
-
+		return req, nil
 	}
-	return req, nil
+	if len(req.GetSymbols2()) > 0 {
+		for i, s := range req.Timeseries {
+			Uint32RefToLabels2(req.Symbols2, s.LabelSymbols).Range(func(l labels.Label) {
+				req.Timeseries[i].Labels = append(req.Timeseries[i].Labels, prompb.Label{
+					Name:  l.Name,
+					Value: l.Value,
+				})
+			})
+		}
+		return req, nil
+	}
+
+	return nil, errors.New("no symbols detected")
 }

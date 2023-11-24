@@ -200,7 +200,7 @@ func TestMetadataDelivery(t *testing.T) {
 	// fit into MaxSamplesPerSend.
 	require.Equal(t, numMetadata/mcfg.MaxSamplesPerSend+1, c.writesReceived)
 	// Make sure the last samples were sent.
-	require.Equal(t, c.receivedMetadata[metadata[len(metadata)-1].Metric][0].MetricFamilyName, metadata[len(metadata)-1].Metric)
+	//require.Equal(t, c.receivedMetadata[metadata[len(metadata)-1].Metric][0].MetricFamilyName, metadata[len(metadata)-1].Metric)
 }
 
 func TestSampleDeliveryTimeout(t *testing.T) {
@@ -694,7 +694,7 @@ type TestWriteClient struct {
 	receivedFloatHistograms map[string][]prompb.Histogram
 	expectedHistograms      map[string][]prompb.Histogram
 	expectedFloatHistograms map[string][]prompb.Histogram
-	receivedMetadata        map[string][]prompb.MetricMetadata
+	receivedMetadata        map[string][]prompb.Metadata
 	writesReceived          int
 	withWaitGroup           bool
 	wg                      sync.WaitGroup
@@ -708,7 +708,7 @@ func NewTestWriteClient(rwFormat RemoteWriteFormat) *TestWriteClient {
 		withWaitGroup:    true,
 		receivedSamples:  map[string][]prompb.Sample{},
 		expectedSamples:  map[string][]prompb.Sample{},
-		receivedMetadata: map[string][]prompb.MetricMetadata{},
+		receivedMetadata: map[string][]prompb.Metadata{},
 		rwFormat:         rwFormat,
 	}
 }
@@ -825,22 +825,23 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte, _ int) error {
 		return err
 	}
 
-	var reqProto *prompb.WriteRequest
-	switch c.rwFormat {
-	case Base1:
-		reqProto = &prompb.WriteRequest{}
-		err = proto.Unmarshal(reqBuf, reqProto)
-	case Min32Optimized:
-		var reqMin prompb.MinimizedWriteRequest
-		err = proto.Unmarshal(reqBuf, &reqMin)
-		if err == nil {
-			reqProto, err = MinimizedWriteRequestToWriteRequest(&reqMin)
-		}
+	reqProto := &prompb.WriteRequest{}
+	err = proto.Unmarshal(reqBuf, reqProto)
+	if err != nil {
+		return err
 	}
 
-	if err != nil {
-		fmt.Println("error: ", err)
-		return err
+	switch c.rwFormat {
+	case Min32Optimized:
+		reqProto, err = SymbolizeLabels(reqProto)
+		if err != nil {
+			return err
+		}
+	case Min32OptimizedArray:
+		reqProto, err = SymbolizeLabels(reqProto)
+		if err != nil {
+			return err
+		}
 	}
 
 	count := 0
@@ -871,9 +872,10 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte, _ int) error {
 		c.wg.Add(-count)
 	}
 
-	for _, m := range reqProto.Metadata {
-		c.receivedMetadata[m.MetricFamilyName] = append(c.receivedMetadata[m.MetricFamilyName], m)
-	}
+	// TODO(bwplotka): Adjust to new protocol
+	//for _, m := range reqProto.Metadata {
+	//	c.receivedMetadata[m.MetricFamilyName] = append(c.receivedMetadata[m.MetricFamilyName], m)
+	//}
 
 	c.writesReceived++
 
@@ -1433,9 +1435,9 @@ func createDummyTimeSeries(instances int) []timeSeries {
 		b := labels.NewBuilder(commonLabels)
 		b.Set("pod", "prometheus-"+strconv.Itoa(i))
 		for _, lbls := range metrics {
-			for _, l := range lbls {
+			lbls.Range(func(l labels.Label) {
 				b.Set(l.Name, l.Value)
-			}
+			})
 			result = append(result, timeSeries{
 				seriesLabels: b.Labels(),
 				value:        r.Float64(),
@@ -1458,14 +1460,14 @@ func BenchmarkBuildWriteRequest(b *testing.B) {
 		// Warmup buffers
 		for i := 0; i < 10; i++ {
 			populateTimeSeries(batch, seriesBuff, true, true)
-			buildWriteRequest(seriesBuff, nil, pBuf, &buff)
+			buildWriteRequest(seriesBuff, pBuf, &buff)
 		}
 
 		b.ResetTimer()
 		totalSize := 0
 		for i := 0; i < b.N; i++ {
 			populateTimeSeries(batch, seriesBuff, true, true)
-			req, _, err := buildWriteRequest(seriesBuff, nil, pBuf, &buff)
+			req, _, err := buildWriteRequest(seriesBuff, pBuf, &buff)
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -1503,7 +1505,7 @@ func BenchmarkBuildMinimizedWriteRequest(b *testing.B) {
 	for _, tc := range testCases {
 		symbolTable := newRwSymbolTable()
 		buff := make([]byte, 0)
-		seriesBuff := make([]prompb.MinimizedTimeSeries, len(tc.batch))
+		seriesBuff := make([]prompb.TimeSeries, len(tc.batch))
 		for i := range seriesBuff {
 			seriesBuff[i].Samples = []prompb.Sample{{}}
 			seriesBuff[i].Exemplars = []prompb.Exemplar{{}}
@@ -1512,16 +1514,16 @@ func BenchmarkBuildMinimizedWriteRequest(b *testing.B) {
 
 		// Warmup buffers
 		for i := 0; i < 10; i++ {
-			populateMinimizedTimeSeries(&symbolTable, tc.batch, seriesBuff, true, true)
-			buildMinimizedWriteRequest(seriesBuff, symbolTable.LabelsString(), &pBuf, &buff)
+			populateMinimizedTimeSeries(&symbolTable, tc.batch, seriesBuff, true, true)      //populateMinimizedTimeSeries2(&symbolTable, tc.batch, seriesBuff, true, true)
+			buildMinimizedWriteRequest(seriesBuff, symbolTable.LabelsString(), &pBuf, &buff) // buildMinimizedWriteRequest2(seriesBuff, symbolTable.LabelsStrings(), &pBuf, &buff)
 		}
 
 		b.Run(fmt.Sprintf("%d-instances", len(tc.batch)), func(b *testing.B) {
 			totalSize := 0
 			for j := 0; j < b.N; j++ {
-				populateMinimizedTimeSeries(&symbolTable, tc.batch, seriesBuff, true, true)
+				populateMinimizedTimeSeries(&symbolTable, tc.batch, seriesBuff, true, true) // populateMinimizedTimeSeries2(&symbolTable, tc.batch, seriesBuff, true, true)
 				b.ResetTimer()
-				req, _, err := buildMinimizedWriteRequest(seriesBuff, symbolTable.LabelsString(), &pBuf, &buff)
+				req, _, err := buildMinimizedWriteRequest(seriesBuff, symbolTable.LabelsString(), &pBuf, &buff) //buildMinimizedWriteRequest2(seriesBuff, symbolTable.LabelsStrings(), &pBuf, &buff)
 				if err != nil {
 					b.Fatal(err)
 				}

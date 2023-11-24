@@ -23,16 +23,16 @@ func TestOptimizedMarshal(t *testing.T) {
 
 	tests := []struct {
 		name string
-		m    *MinimizedWriteRequest
+		m    *WriteRequest
 	}{
 		// {
 		// 	name: "empty",
 		// 	m:    &MinimizedWriteRequest{},
 		// },
 		{
-			name: "simple",
-			m: &MinimizedWriteRequest{
-				Timeseries: []MinimizedTimeSeries{
+			name: "s1",
+			m: &WriteRequest{
+				Timeseries: []TimeSeries{
 					{
 						LabelSymbols: []uint32{
 							0, 10,
@@ -68,11 +68,48 @@ func TestOptimizedMarshal(t *testing.T) {
 				Symbols: "abcdefghijabcdefghijabcdefghijabcdefghij",
 			},
 		},
+		{
+			name: "s2",
+			m: &WriteRequest{
+				Timeseries: []TimeSeries{
+					{
+						LabelSymbols: []uint32{
+							0,
+							1,
+							3,
+							4,
+							5,
+							6,
+						},
+						Samples:    []Sample{{Value: 1, Timestamp: 0}},
+						Exemplars:  []Exemplar{{Labels: []Label{{Name: "f", Value: "g"}}, Value: 1, Timestamp: 0}},
+						Histograms: nil,
+					},
+					{
+						LabelSymbols: []uint32{
+							0,
+							2,
+							3,
+							4,
+							5,
+							6,
+						},
+						Samples:    []Sample{{Value: 2, Timestamp: 1}},
+						Exemplars:  []Exemplar{{Labels: []Label{{Name: "h", Value: "i"}}, Value: 2, Timestamp: 1}},
+						Histograms: nil,
+					},
+				},
+				Symbols2: []string{
+					"foo", "bar",
+					"rab", "__name__",
+					"xyz", "bbb", "xaa",
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got = got[:0]
 			// should be the same as the standard marshal
 			expected, err := tt.m.Marshal()
 			require.NoError(t, err)
@@ -81,7 +118,7 @@ func TestOptimizedMarshal(t *testing.T) {
 			require.Equal(t, expected, got)
 
 			// round trip
-			m := &MinimizedWriteRequest{}
+			m := &WriteRequest{}
 			require.NoError(t, m.Unmarshal(got))
 			require.Equal(t, tt.m, m)
 		})

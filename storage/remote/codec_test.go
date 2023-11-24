@@ -75,7 +75,7 @@ var writeRequestFixture = &prompb.WriteRequest{
 }
 
 // writeRequestMinimizedFixture represents the same request as writeRequestFixture, but using the minimized representation.
-var writeRequestMinimizedFixture = func() *prompb.MinimizedWriteRequest {
+var writeRequestMinimizedFixture = func() *prompb.WriteRequest {
 	st := newRwSymbolTable()
 	var labels []uint32
 	for _, s := range []string{
@@ -88,8 +88,41 @@ var writeRequestMinimizedFixture = func() *prompb.MinimizedWriteRequest {
 		off, length := st.Ref(s)
 		labels = append(labels, off, length)
 	}
-	return &prompb.MinimizedWriteRequest{
-		Timeseries: []prompb.MinimizedTimeSeries{
+	return &prompb.WriteRequest{
+		Timeseries: []prompb.TimeSeries{
+			{
+				LabelSymbols: labels,
+				Samples:      []prompb.Sample{{Value: 1, Timestamp: 0}},
+				Exemplars:    []prompb.Exemplar{{Labels: []prompb.Label{{Name: "f", Value: "g"}}, Value: 1, Timestamp: 0}},
+				Histograms:   []prompb.Histogram{HistogramToHistogramProto(0, &testHistogram), FloatHistogramToHistogramProto(1, testHistogram.ToFloat())},
+			},
+			{
+				LabelSymbols: labels,
+				Samples:      []prompb.Sample{{Value: 2, Timestamp: 1}},
+				Exemplars:    []prompb.Exemplar{{Labels: []prompb.Label{{Name: "h", Value: "i"}}, Value: 2, Timestamp: 1}},
+				Histograms:   []prompb.Histogram{HistogramToHistogramProto(2, &testHistogram), FloatHistogramToHistogramProto(3, testHistogram.ToFloat())},
+			},
+		},
+		Symbols: st.LabelsString(),
+	}
+}()
+
+// writeRequestMinimizedFixture2 represents the same request as writeRequestFixture, but using the minimized representation and array symbol.
+var writeRequestMinimizedFixture2 = func() *prompb.WriteRequest {
+	st := newRwSymbolTable()
+	var labels []uint32
+	for _, s := range []string{
+		"__name__", "test_metric1",
+		"b", "c",
+		"baz", "qux",
+		"d", "e",
+		"foo", "bar",
+	} {
+		off, _ := st.Ref(s)
+		labels = append(labels, off)
+	}
+	return &prompb.WriteRequest{
+		Timeseries: []prompb.TimeSeries{
 			{
 				LabelSymbols: labels,
 				Samples:      []prompb.Sample{{Value: 1, Timestamp: 0}},
@@ -522,22 +555,22 @@ func TestMetricTypeToMetricTypeProto(t *testing.T) {
 	tc := []struct {
 		desc     string
 		input    textparse.MetricType
-		expected prompb.MetricMetadata_MetricType
+		expected prompb.Metadata_MetricType
 	}{
 		{
 			desc:     "with a single-word metric",
 			input:    textparse.MetricTypeCounter,
-			expected: prompb.MetricMetadata_COUNTER,
+			expected: prompb.Metadata_COUNTER,
 		},
 		{
 			desc:     "with a two-word metric",
 			input:    textparse.MetricTypeStateset,
-			expected: prompb.MetricMetadata_STATESET,
+			expected: prompb.Metadata_STATESET,
 		},
 		{
 			desc:     "with an unknown metric",
 			input:    "not-known",
-			expected: prompb.MetricMetadata_UNKNOWN,
+			expected: prompb.Metadata_UNKNOWN,
 		},
 	}
 
@@ -550,7 +583,7 @@ func TestMetricTypeToMetricTypeProto(t *testing.T) {
 }
 
 func TestDecodeWriteRequest(t *testing.T) {
-	buf, _, err := buildWriteRequest(writeRequestFixture.Timeseries, nil, nil, nil)
+	buf, _, err := buildWriteRequest(writeRequestFixture.Timeseries, nil, nil)
 	require.NoError(t, err)
 
 	actual, err := DecodeWriteRequest(bytes.NewReader(buf))
@@ -563,7 +596,17 @@ func TestDecodeMinWriteRequest(t *testing.T) {
 
 	require.NoError(t, err)
 
-	actual, err := DecodeMinimizedWriteRequest(bytes.NewReader(buf))
+	actual, err := DecodeWriteRequest(bytes.NewReader(buf))
+	require.NoError(t, err)
+	require.Equal(t, writeRequestMinimizedFixture, actual)
+}
+
+func TestDecodeMinWriteRequest2(t *testing.T) {
+	buf, _, err := buildMinimizedWriteRequest(writeRequestMinimizedFixture.Timeseries, writeRequestMinimizedFixture.Symbols, nil, nil)
+
+	require.NoError(t, err)
+
+	actual, err := DecodeWriteRequest(bytes.NewReader(buf))
 	require.NoError(t, err)
 	require.Equal(t, writeRequestMinimizedFixture, actual)
 }
@@ -887,10 +930,18 @@ func (c *mockChunkIterator) Err() error {
 	return nil
 }
 
-func TestLenFormat(t *testing.T) {
-	r := rwSymbolTable{}
+func TestFormat1(t *testing.T) {
+	r := newRwSymbolTable()
 	ls := labels.FromStrings("asdf", "qwer", "zxcv", "1234")
-	encoded := labelsToUint32SliceLen(ls, &r, nil)
-	decoded := Uint32LenRefToLabels(r.LabelsData(), encoded)
+	encoded := labelsToUint32Slice(ls, &r, nil)
+	decoded := Uint32RefToLabels(r.LabelsString(), encoded)
+	require.Equal(t, ls, decoded)
+}
+
+func TestFormat2(t *testing.T) {
+	r := newRwSymbolTable()
+	ls := labels.FromStrings("asdf", "qwer", "zxcv", "1234")
+	encoded := labelsToUint32Slice2(ls, &r, nil)
+	decoded := Uint32RefToLabels2(r.LabelsStrings(), encoded)
 	require.Equal(t, ls, decoded)
 }

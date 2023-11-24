@@ -43,11 +43,6 @@ type writeHandler struct {
 	appendable storage.Appendable
 
 	samplesWithInvalidLabelsTotal prometheus.Counter
-
-	// Experimental feature, new remote write proto format
-	// The handler will accept the new format, but it can still accept the old one
-	// TODO: this should eventually be via content negotiation
-	rwFormat RemoteWriteFormat
 }
 
 // NewWriteHandler creates a http.Handler that accepts remote write requests and
@@ -56,7 +51,6 @@ func NewWriteHandler(logger log.Logger, reg prometheus.Registerer, appendable st
 	h := &writeHandler{
 		logger:     logger,
 		appendable: appendable,
-		rwFormat:   rwFormat,
 		samplesWithInvalidLabelsTotal: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: "prometheus",
 			Subsystem: "api",
@@ -73,35 +67,14 @@ func NewWriteHandler(logger log.Logger, reg prometheus.Registerer, appendable st
 func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var err error
 	var req *prompb.WriteRequest
-	var reqMin *prompb.MinimizedWriteRequest
-	var reqMinLen *prompb.MinimizedWriteRequestLen
-
-	// TODO: this should eventually be done via content negotiation/looking at the header
-	switch h.rwFormat {
-	case Base1:
-		req, err = DecodeWriteRequest(r.Body)
-	case Min32Optimized:
-		reqMin, err = DecodeMinimizedWriteRequest(r.Body)
-	case MinLen:
-		reqMinLen, err = DecodeMinimizedWriteRequestLen(r.Body)
-	}
-
+	req, err = DecodeWriteRequest(r.Body)
 	if err != nil {
 		level.Error(h.logger).Log("msg", "Error decoding remote write request", "err", err.Error())
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	// TODO: this should eventually be done detecting the format version above
-	switch h.rwFormat {
-	case Base1:
-		err = h.write(r.Context(), req)
-	case Min32Optimized:
-		err = h.writeMin(r.Context(), reqMin)
-	case MinLen:
-		err = h.writeMinLen(r.Context(), reqMinLen)
-	}
-
+	err = h.write(r.Context(), req)
 	switch err {
 	case nil:
 	case storage.ErrOutOfOrderSample, storage.ErrOutOfBounds, storage.ErrDuplicateSampleForTimestamp:
@@ -148,6 +121,13 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 		err = app.Commit()
 	}()
 
+	if len(req.GetSymbols()) > 0 || len(req.GetSymbols()) > 0 {
+		// 1.1 PRW
+		req, err = SymbolizeLabels(req)
+		if err != nil {
+			return err
+		}
+	}
 	for _, ts := range req.Timeseries {
 		ls := labelProtosToLabels(ts.Labels)
 		if !ls.IsValid() {
@@ -293,7 +273,7 @@ func (h *otlpWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func (h *writeHandler) writeMin(ctx context.Context, req *prompb.MinimizedWriteRequest) (err error) {
+func (h *writeHandler) writeMin(ctx context.Context, req *prompb.WriteRequest) (err error) {
 	outOfOrderExemplarErrs := 0
 
 	app := h.appendable.Appender(ctx)
@@ -307,44 +287,6 @@ func (h *writeHandler) writeMin(ctx context.Context, req *prompb.MinimizedWriteR
 
 	for _, ts := range req.Timeseries {
 		ls := Uint32RefToLabels(req.Symbols, ts.LabelSymbols)
-
-		err := h.appendSamples(app, ts.Samples, ls)
-		if err != nil {
-			return err
-		}
-
-		for _, ep := range ts.Exemplars {
-			e := exemplarProtoToExemplar(ep)
-			h.appendExemplar(app, e, ls, &outOfOrderExemplarErrs)
-		}
-
-		err = h.appendHistograms(app, ts.Histograms, ls)
-		if err != nil {
-			return err
-		}
-	}
-
-	if outOfOrderExemplarErrs > 0 {
-		_ = level.Warn(h.logger).Log("msg", "Error on ingesting out-of-order exemplars", "num_dropped", outOfOrderExemplarErrs)
-	}
-
-	return nil
-}
-
-func (h *writeHandler) writeMinLen(ctx context.Context, req *prompb.MinimizedWriteRequestLen) (err error) {
-	outOfOrderExemplarErrs := 0
-
-	app := h.appendable.Appender(ctx)
-	defer func() {
-		if err != nil {
-			_ = app.Rollback()
-			return
-		}
-		err = app.Commit()
-	}()
-
-	for _, ts := range req.Timeseries {
-		ls := Uint32LenRefToLabels(req.Symbols, ts.LabelSymbols)
 
 		err := h.appendSamples(app, ts.Samples, ls)
 		if err != nil {

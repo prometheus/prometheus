@@ -18,7 +18,7 @@ option go_package = "prompb";
 
 import "gogoproto/gogo.proto";
 
-message MetricMetadata {
+message Metadata {
   enum MetricType {
     UNKNOWN        = 0;
     COUNTER        = 1;
@@ -33,9 +33,8 @@ message MetricMetadata {
   // Represents the metric type, these match the set from Prometheus.
   // Refer to model/textparse/interface.go for details.
   MetricType type = 1;
-  string metric_family_name = 2;
-  string help = 4;
-  string unit = 5;
+  string help = 2; // TODO(bwplotka): Move to symbols?
+  string unit = 3; // TODO(bwplotka): Move to symbols?
 }
 
 message Sample {
@@ -47,13 +46,12 @@ message Sample {
 
 message Exemplar {
   // Optional, can be empty.
-  repeated Label labels = 1 [(gogoproto.nullable) = false];
+  repeated Label labels = 1 [(gogoproto.nullable) = false]; // TODO(bwplotka): Move to symbols?
   double value = 2;
   // timestamp is in ms format, see model/timestamp/timestamp.go for
   // conversion from time.Time to Prometheus timestamp.
   int64 timestamp = 3;
 }
-
 
 // A native histogram, also known as a sparse histogram.
 // Original design doc:
@@ -123,40 +121,26 @@ message BucketSpan {
 // TimeSeries represents samples and labels for a single time series.
 message TimeSeries {
   // For a timeseries to be valid, and for the samples and exemplars
-  // to be ingested by the remote system properly, the labels field is required.
-  repeated Label labels         = 1 [(gogoproto.nullable) = false];
-  repeated Sample samples       = 2 [(gogoproto.nullable) = false];
-  repeated Exemplar exemplars   = 3 [(gogoproto.nullable) = false];
-  repeated Histogram histograms = 4 [(gogoproto.nullable) = false];
-}
+  // to be ingested by the remote system properly, the labels or label symbols field is required.
 
-// based on an experiment by marco
-message MinimizedTimeSeries {
+  // Deprecated in 1.1, use interned label symbols instead.
+  repeated Label labels = 1 [(gogoproto.nullable) = false];
+
   // Sorted list of label name-value pair references. This list's len is always multiple of 4,
   // packing tuples of (label name offset, label name length, label value offset, label value length).
-  // Offsets point to the symbol table in the higher level MinimizedWriteRequestLen.
-  repeated uint32 label_symbols = 1 [(gogoproto.nullable) = false];
+  // Offsets point to the WriteRequest.symbols.
+  repeated uint32 label_symbols = 10;
 
   // Sorted by time, oldest sample first.
-  // TODO: support references for other types
   repeated Sample samples = 2 [(gogoproto.nullable) = false];
   repeated Exemplar exemplars = 3 [(gogoproto.nullable) = false];
   repeated Histogram histograms = 4 [(gogoproto.nullable) = false];
-  // TODO: add metadata
-}
-
-message MinimizedTimeSeriesLen {
-  // Sorted list of label name-value pair references, encoded as 32bit uint. This
-  // list's real len is always multiple of 2, label name offset/label value offset.
-  // Offsets point to the symbol table in the higher level MinimizedWriteRequestLen.
-  repeated fixed32 label_symbols = 1;
-
-  // Sorted by time, oldest sample first.
-  // TODO: support references for other types
-  repeated Sample samples = 2 [(gogoproto.nullable) = false];
-  repeated Exemplar exemplars = 3 [(gogoproto.nullable) = false];
-  repeated Histogram histograms = 4 [(gogoproto.nullable) = false];
-  // TODO: add metadata
+  Metadata metadata = 5;
+  // Optional created timestamp for the metric in ms format,
+  // if the first sample in samples does not contain 0 value.
+  // See model/timestamp/timestamp.go for conversion from time.Time
+  // to Prometheus timestamp.
+  int64 created_timestamp = 6;
 }
 
 message Label {

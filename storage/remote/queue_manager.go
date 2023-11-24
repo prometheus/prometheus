@@ -15,7 +15,6 @@ package remote
 
 import (
 	"context"
-	"encoding/binary"
 	"errors"
 	"math"
 	"strconv"
@@ -393,9 +392,9 @@ type WriteClient interface {
 type RemoteWriteFormat int64
 
 const (
-	Base1          RemoteWriteFormat = iota // original map based format
-	Min32Optimized                          // two 32bit varint plus marshalling optimization
-	MinLen                                  // symbols are now just offsets, and we encode lengths as varints in the large symbols string (which is also now a byte slice)
+	Base1               RemoteWriteFormat = iota // original map based format
+	Min32Optimized                               // two 32bit varint plus marshalling optimization
+	Min32OptimizedArray                          // 1 32bit varint with array plus marshalling optimization
 )
 
 // QueueManager manages a queue of samples to be sent to the Storage
@@ -517,13 +516,13 @@ func NewQueueManager(
 
 // AppendMetadata sends metadata to the remote storage. Metadata is sent in batches, but is not parallelized.
 func (t *QueueManager) AppendMetadata(ctx context.Context, metadata []scrape.MetricMetadata) {
-	mm := make([]prompb.MetricMetadata, 0, len(metadata))
+	mm := make([]prompb.Metadata, 0, len(metadata))
 	for _, entry := range metadata {
-		mm = append(mm, prompb.MetricMetadata{
-			MetricFamilyName: entry.Metric,
-			Help:             entry.Help,
-			Type:             metricTypeToMetricTypeProto(entry.Type),
-			Unit:             entry.Unit,
+		mm = append(mm, prompb.Metadata{
+			//MetricFamilyName: entry.Metric,
+			Help: entry.Help,
+			Type: metricTypeToMetricTypeProto(entry.Type),
+			Unit: entry.Unit,
 		})
 	}
 
@@ -542,9 +541,10 @@ func (t *QueueManager) AppendMetadata(ctx context.Context, metadata []scrape.Met
 	}
 }
 
-func (t *QueueManager) sendMetadataWithBackoff(ctx context.Context, metadata []prompb.MetricMetadata, pBuf *proto.Buffer) error {
+func (t *QueueManager) sendMetadataWithBackoff(ctx context.Context, metadata []prompb.Metadata, pBuf *proto.Buffer) error {
 	// Build the WriteRequest with no samples.
-	req, _, err := buildWriteRequest(nil, metadata, pBuf, nil)
+	// TODO(bwplotka): Metadata support.
+	req, _, err := buildWriteRequest(nil, pBuf, nil)
 	if err != nil {
 		return err
 	}
@@ -1371,7 +1371,6 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 		max += int(float64(max) * 0.1)
 	}
 
-	// TODO we should make an interface for the timeseries type
 	batchQueue := queue.Chan()
 	pendingData := make([]prompb.TimeSeries, max)
 	for i := range pendingData {
@@ -1379,16 +1378,6 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 		if s.qm.sendExemplars {
 			pendingData[i].Exemplars = []prompb.Exemplar{{}}
 		}
-	}
-
-	pendingMinimizedData := make([]prompb.MinimizedTimeSeries, max)
-	for i := range pendingMinimizedData {
-		pendingMinimizedData[i].Samples = []prompb.Sample{{}}
-	}
-
-	pendingMinLenData := make([]prompb.MinimizedTimeSeriesLen, max)
-	for i := range pendingMinLenData {
-		pendingMinLenData[i].Samples = []prompb.Sample{{}}
 	}
 
 	timer := time.NewTimer(time.Duration(s.qm.cfg.BatchSendDeadline))
@@ -1431,14 +1420,14 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 				n := nPendingSamples + nPendingExemplars + nPendingHistograms
 				s.sendSamples(ctx, pendingData[:n], nPendingSamples, nPendingExemplars, nPendingHistograms, pBuf, &buf)
 			case Min32Optimized:
-				nPendingSamples, nPendingExemplars, nPendingHistograms := populateMinimizedTimeSeries(&symbolTable, batch, pendingMinimizedData, s.qm.sendExemplars, s.qm.sendNativeHistograms)
+				nPendingSamples, nPendingExemplars, nPendingHistograms := populateMinimizedTimeSeries(&symbolTable, batch, pendingData, s.qm.sendExemplars, s.qm.sendNativeHistograms)
 				n := nPendingSamples + nPendingExemplars + nPendingHistograms
-				s.sendMinSamples(ctx, pendingMinimizedData[:n], symbolTable.LabelsString(), nPendingSamples, nPendingExemplars, nPendingHistograms, &pBufRaw, &buf)
+				s.sendMinSamples(ctx, pendingData[:n], symbolTable.LabelsString(), nPendingSamples, nPendingExemplars, nPendingHistograms, &pBufRaw, &buf)
 				symbolTable.clear()
-			case MinLen:
-				nPendingSamples, nPendingExemplars, nPendingHistograms := populateMinimizedTimeSeriesLen(&symbolTable, batch, pendingMinLenData, s.qm.sendExemplars, s.qm.sendNativeHistograms)
+			case Min32OptimizedArray:
+				nPendingSamples, nPendingExemplars, nPendingHistograms := populateMinimizedTimeSeries2(&symbolTable, batch, pendingData, s.qm.sendExemplars, s.qm.sendNativeHistograms)
 				n := nPendingSamples + nPendingExemplars + nPendingHistograms
-				s.sendMinLenSamples(ctx, pendingMinLenData[:n], symbolTable.LabelsData(), nPendingSamples, nPendingExemplars, nPendingHistograms, pBuf, &buf)
+				s.sendMinSamples2(ctx, pendingData[:n], symbolTable.LabelsStrings(), nPendingSamples, nPendingExemplars, nPendingHistograms, &pBufRaw, &buf)
 				symbolTable.clear()
 			}
 
@@ -1458,11 +1447,11 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 					level.Debug(s.qm.logger).Log("msg", "runShard timer ticked, sending buffered data", "samples", nPendingSamples,
 						"exemplars", nPendingExemplars, "shard", shardNum, "histograms", nPendingHistograms)
 				case Min32Optimized:
-					nPendingSamples, nPendingExemplars, nPendingHistograms := populateMinimizedTimeSeries(&symbolTable, batch, pendingMinimizedData, s.qm.sendExemplars, s.qm.sendNativeHistograms)
+					nPendingSamples, nPendingExemplars, nPendingHistograms := populateMinimizedTimeSeries(&symbolTable, batch, pendingData, s.qm.sendExemplars, s.qm.sendNativeHistograms)
 					n := nPendingSamples + nPendingExemplars + nPendingHistograms
 					level.Debug(s.qm.logger).Log("msg", "runShard timer ticked, sending buffered data", "samples", nPendingSamples,
 						"exemplars", nPendingExemplars, "shard", shardNum, "histograms", nPendingHistograms)
-					s.sendMinSamples(ctx, pendingMinimizedData[:n], symbolTable.LabelsString(), nPendingSamples, nPendingExemplars, nPendingHistograms, &pBufRaw, &buf)
+					s.sendMinSamples(ctx, pendingData[:n], symbolTable.LabelsString(), nPendingSamples, nPendingExemplars, nPendingHistograms, &pBufRaw, &buf)
 					symbolTable.clear()
 				}
 			}
@@ -1517,14 +1506,14 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, s
 	// Build the WriteRequest with no metadata.
 	// Failing to build the write request is non-recoverable, since it will
 	// only error if marshaling the proto to bytes fails.
-	req, highest, err := buildWriteRequest(samples, nil, pBuf, buf)
+	req, highest, err := buildWriteRequest(samples, pBuf, buf)
 	if err == nil {
 		err = s.sendSamplesWithBackoff(ctx, req, sampleCount, exemplarCount, histogramCount, highest)
 	}
 	s.updateMetrics(ctx, err, sampleCount, exemplarCount, histogramCount, time.Since(begin))
 }
 
-func (s *shards) sendMinSamples(ctx context.Context, samples []prompb.MinimizedTimeSeries, labels string, sampleCount, exemplarCount, histogramCount int, pBuf, buf *[]byte) {
+func (s *shards) sendMinSamples(ctx context.Context, samples []prompb.TimeSeries, labels string, sampleCount, exemplarCount, histogramCount int, pBuf, buf *[]byte) {
 	begin := time.Now()
 	// Build the ReducedWriteRequest with no metadata.
 	// Failing to build the write request is non-recoverable, since it will
@@ -1536,12 +1525,12 @@ func (s *shards) sendMinSamples(ctx context.Context, samples []prompb.MinimizedT
 	s.updateMetrics(ctx, err, sampleCount, exemplarCount, histogramCount, time.Since(begin))
 }
 
-func (s *shards) sendMinLenSamples(ctx context.Context, samples []prompb.MinimizedTimeSeriesLen, labels []byte, sampleCount, exemplarCount, histogramCount int, pBuf *proto.Buffer, buf *[]byte) {
+func (s *shards) sendMinSamples2(ctx context.Context, samples []prompb.TimeSeries, labels []string, sampleCount, exemplarCount, histogramCount int, pBuf, buf *[]byte) {
 	begin := time.Now()
 	// Build the ReducedWriteRequest with no metadata.
 	// Failing to build the write request is non-recoverable, since it will
 	// only error if marshaling the proto to bytes fails.
-	req, highest, err := buildMinimizedWriteRequestLen(samples, labels, pBuf, buf)
+	req, highest, err := buildMinimizedWriteRequest2(samples, labels, pBuf, buf)
 	if err == nil {
 		err = s.sendSamplesWithBackoff(ctx, req, sampleCount, exemplarCount, histogramCount, highest)
 	}
@@ -1630,7 +1619,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, rawReq []byte, samp
 	return err
 }
 
-func populateMinimizedTimeSeries(symbolTable *rwSymbolTable, batch []timeSeries, pendingData []prompb.MinimizedTimeSeries, sendExemplars, sendNativeHistograms bool) (int, int, int) {
+func populateMinimizedTimeSeries(symbolTable *rwSymbolTable, batch []timeSeries, pendingData []prompb.TimeSeries, sendExemplars, sendNativeHistograms bool) (int, int, int) {
 	var nPendingSamples, nPendingExemplars, nPendingHistograms int
 	for nPending, d := range batch {
 		pendingData[nPending].Samples = pendingData[nPending].Samples[:0]
@@ -1672,7 +1661,7 @@ func populateMinimizedTimeSeries(symbolTable *rwSymbolTable, batch []timeSeries,
 	return nPendingSamples, nPendingExemplars, nPendingHistograms
 }
 
-func populateMinimizedTimeSeriesLen(symbolTable *rwSymbolTable, batch []timeSeries, pendingData []prompb.MinimizedTimeSeriesLen, sendExemplars, sendNativeHistograms bool) (int, int, int) {
+func populateMinimizedTimeSeries2(symbolTable *rwSymbolTable, batch []timeSeries, pendingData []prompb.TimeSeries, sendExemplars, sendNativeHistograms bool) (int, int, int) {
 	var nPendingSamples, nPendingExemplars, nPendingHistograms int
 	for nPending, d := range batch {
 		pendingData[nPending].Samples = pendingData[nPending].Samples[:0]
@@ -1688,7 +1677,7 @@ func populateMinimizedTimeSeriesLen(symbolTable *rwSymbolTable, batch []timeSeri
 		// stop reading from the queue. This makes it safe to reference pendingSamples by index.
 		// pendingData[nPending].Labels = labelsToLabelsProto(d.seriesLabels, pendingData[nPending].Labels)
 
-		pendingData[nPending].LabelSymbols = labelsToUint32SliceLen(d.seriesLabels, symbolTable, pendingData[nPending].LabelSymbols)
+		pendingData[nPending].LabelSymbols = labelsToUint32Slice2(d.seriesLabels, symbolTable, pendingData[nPending].LabelSymbols)
 		switch d.sType {
 		case tSample:
 			pendingData[nPending].Samples = append(pendingData[nPending].Samples, prompb.Sample{
@@ -1760,7 +1749,7 @@ func sendWriteRequestWithBackoff(ctx context.Context, cfg config.QueueConfig, l 
 	}
 }
 
-func buildWriteRequest(samples []prompb.TimeSeries, metadata []prompb.MetricMetadata, pBuf *proto.Buffer, buf *[]byte) ([]byte, int64, error) {
+func buildWriteRequest(samples []prompb.TimeSeries, pBuf *proto.Buffer, buf *[]byte) ([]byte, int64, error) {
 	var highest int64
 	for _, ts := range samples {
 		// At the moment we only ever append a TimeSeries with a single sample or exemplar in it.
@@ -1777,7 +1766,6 @@ func buildWriteRequest(samples []prompb.TimeSeries, metadata []prompb.MetricMeta
 
 	req := &prompb.WriteRequest{
 		Timeseries: samples,
-		Metadata:   metadata,
 	}
 
 	if pBuf == nil {
@@ -1812,19 +1800,16 @@ type offLenPair struct {
 }
 
 type rwSymbolTable struct {
-	symbols            []byte
-	symbolsMap         map[string]offLenPair
-	symbolsMap64Packed map[string]uint64
-	symbolsMap32Packed map[string]uint32
-	symbolsMapBytes    map[string]uint32
+	symbols       []byte
+	symbolsMap    map[string]offLenPair
+	symbols2      []string
+	symbols2MapID map[string]uint32
 }
 
 func newRwSymbolTable() rwSymbolTable {
 	return rwSymbolTable{
-		symbolsMap:         make(map[string]offLenPair),
-		symbolsMap64Packed: make(map[string]uint64),
-		symbolsMap32Packed: make(map[string]uint32),
-		symbolsMapBytes:    make(map[string]uint32),
+		symbolsMap:    make(map[string]offLenPair),
+		symbols2MapID: make(map[string]uint32),
 	}
 }
 
@@ -1837,21 +1822,20 @@ func (r *rwSymbolTable) Ref(str string) (uint32, uint32) {
 		panic(1)
 	}
 	r.symbols = append(r.symbols, str...)
-	if len(r.symbols) < int(off+length) {
+	if len(r.symbols) < int(off) {
 		panic(2)
 	}
 	r.symbolsMap[str] = offLenPair{off, length}
 	return off, length
 }
 
-func (r *rwSymbolTable) RefLen(str string) uint32 {
-	if ref, ok := r.symbolsMapBytes[str]; ok {
+func (r *rwSymbolTable) Ref2(str string) uint32 {
+	if ref, ok := r.symbols2MapID[str]; ok {
 		return ref
 	}
-	ref := uint32(len(r.symbols))
-	r.symbols = binary.AppendUvarint(r.symbols, uint64(len(str)))
-	r.symbols = append(r.symbols, str...)
-	r.symbolsMapBytes[str] = ref
+	ref := uint32(len(r.symbols2))
+	r.symbols2 = append(r.symbols2, str)
+	r.symbols2MapID[str] = ref
 	return ref
 }
 
@@ -1859,27 +1843,23 @@ func (r *rwSymbolTable) LabelsString() string {
 	return *((*string)(unsafe.Pointer(&r.symbols)))
 }
 
-func (r *rwSymbolTable) LabelsData() []byte {
-	return r.symbols
+func (r *rwSymbolTable) LabelsStrings() []string {
+	return r.symbols2
 }
 
 func (r *rwSymbolTable) clear() {
 	for k := range r.symbolsMap {
 		delete(r.symbolsMap, k)
 	}
-	for k := range r.symbolsMap64Packed {
-		delete(r.symbolsMap64Packed, k)
-	}
-	for k := range r.symbolsMap32Packed {
-		delete(r.symbolsMap32Packed, k)
-	}
-	for k := range r.symbolsMapBytes {
-		delete(r.symbolsMapBytes, k)
-	}
 	r.symbols = r.symbols[:0]
+
+	for k := range r.symbols2MapID {
+		delete(r.symbols2MapID, k)
+	}
+	r.symbols2 = r.symbols2[:0]
 }
 
-func buildMinimizedWriteRequest(samples []prompb.MinimizedTimeSeries, labels string, pBuf, buf *[]byte) ([]byte, int64, error) {
+func buildMinimizedWriteRequest(samples []prompb.TimeSeries, labels string, pBuf, buf *[]byte) ([]byte, int64, error) {
 	var highest int64
 	for _, ts := range samples {
 		// At the moment we only ever append a TimeSeries with a single sample or exemplar in it.
@@ -1894,7 +1874,7 @@ func buildMinimizedWriteRequest(samples []prompb.MinimizedTimeSeries, labels str
 		}
 	}
 
-	req := &prompb.MinimizedWriteRequest{
+	req := &prompb.WriteRequest{
 		Symbols:    labels,
 		Timeseries: samples,
 	}
@@ -1924,7 +1904,7 @@ func buildMinimizedWriteRequest(samples []prompb.MinimizedTimeSeries, labels str
 	return compressed, highest, nil
 }
 
-func buildMinimizedWriteRequestLen(samples []prompb.MinimizedTimeSeriesLen, labels []byte, pBuf *proto.Buffer, buf *[]byte) ([]byte, int64, error) {
+func buildMinimizedWriteRequest2(samples []prompb.TimeSeries, labels []string, pBuf, buf *[]byte) ([]byte, int64, error) {
 	var highest int64
 	for _, ts := range samples {
 		// At the moment we only ever append a TimeSeries with a single sample or exemplar in it.
@@ -1939,20 +1919,19 @@ func buildMinimizedWriteRequestLen(samples []prompb.MinimizedTimeSeriesLen, labe
 		}
 	}
 
-	req := &prompb.MinimizedWriteRequestLen{
-		Symbols:    labels,
+	req := &prompb.WriteRequest{
+		Symbols2:   labels,
 		Timeseries: samples,
 	}
 
 	if pBuf == nil {
-		pBuf = proto.NewBuffer(nil) // For convenience in tests. Not efficient.
-	} else {
-		pBuf.Reset()
+		pBuf = &[]byte{} // For convenience in tests. Not efficient.
 	}
-	err := pBuf.Marshal(req)
+	data, err := req.OptimizedMarshal(*pBuf)
 	if err != nil {
 		return nil, 0, err
 	}
+	*pBuf = data
 
 	// snappy uses len() to see if it needs to allocate a new slice. Make the
 	// buffer as long as possible.
@@ -1962,8 +1941,8 @@ func buildMinimizedWriteRequestLen(samples []prompb.MinimizedTimeSeriesLen, labe
 		buf = &[]byte{}
 	}
 
-	compressed := snappy.Encode(*buf, pBuf.Bytes())
-	if n := snappy.MaxEncodedLen(len(pBuf.Bytes())); n > len(*buf) {
+	compressed := snappy.Encode(*buf, data)
+	if n := snappy.MaxEncodedLen(len(data)); n > len(*buf) {
 		// grow the buffer for the next time
 		*buf = make([]byte, n)
 	}
