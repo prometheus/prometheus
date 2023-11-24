@@ -5613,58 +5613,92 @@ func TestHeadCompactionWhileAppendAndCommitExemplar(t *testing.T) {
 }
 
 func TestSecondaryHashFunction(t *testing.T) {
-	dir := t.TempDir()
-	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, wlog.CompressionNone)
-	require.NoError(t, err)
-
-	opts := DefaultHeadOptions()
-	opts.ChunkRange = 1000
-	opts.ChunkDirRoot = dir
-	opts.EnableExemplarStorage = true
-	opts.MaxExemplars.Store(config.DefaultExemplarsConfig.MaxExemplars)
-	opts.EnableNativeHistograms.Store(true)
-	opts.SecondaryHashFunction = func(l labels.Labels) uint32 {
-		return uint32(l.Len())
-	}
-
-	h, err := NewHead(nil, nil, wal, nil, opts, nil)
-	require.NoError(t, err)
-
-	t.Cleanup(func() {
-		require.NoError(t, h.Close())
-	})
-
-	const seriesCount = 100
-	const labelsCount = 10
-
-	app := h.Appender(context.Background())
-	for ix, s := range genSeries(seriesCount, labelsCount, 0, 0) {
-		_, err := app.Append(0, s.Labels(), int64(100*ix), float64(ix))
-		require.NoError(t, err)
-	}
-	require.NoError(t, app.Commit())
-
-	checkSecondaryHashes := func(expected int) {
+	checkSecondaryHashes := func(t *testing.T, h *Head, labelsCount, expected int) {
 		reportedHashes := 0
 		h.ForEachSecondaryHash(func(secondaryHashes []uint32) {
 			reportedHashes += len(secondaryHashes)
 
 			for _, h := range secondaryHashes {
-				require.Equal(t, uint32(labelsCount), h)
+				require.Equal(t, labelsCount, int(h))
 			}
 		})
 		require.Equal(t, expected, reportedHashes)
 	}
 
-	checkSecondaryHashes(seriesCount)
+	testCases := []struct {
+		name   string
+		series func(*testing.T) []storage.Series
+	}{
+		{
+			name: "without collisions",
+			series: func(_ *testing.T) []storage.Series {
+				return genSeries(100, 10, 0, 0)
+			},
+		},
+		{
+			name: "with collisions",
+			series: func(t *testing.T) []storage.Series {
+				// Make a couple of series with colliding label sets
+				collidingSet := map[string]string{"__name__": "metric"}
+				collidingSet["lbl"] = "qeYKm3"
+				series := []storage.Series{
+					storage.NewListSeries(
+						labels.FromMap(collidingSet), []chunks.Sample{sample{t: 0, f: rand.Float64()}},
+					),
+				}
+				collidingSet["lbl"] = "2fUczT"
+				series = append(series, storage.NewListSeries(
+					labels.FromMap(collidingSet), []chunks.Sample{sample{t: 0, f: rand.Float64()}},
+				))
+				require.Equal(t, series[len(series)-2].Labels().Hash(), series[len(series)-1].Labels().Hash(),
+					"The two series should have the same label set hash")
+				return series
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, wlog.CompressionNone)
+			require.NoError(t, err)
 
-	// Truncate head, remove half of the series (because their timestamp is before supplied truncation MinT)
-	require.NoError(t, h.Truncate(100*(seriesCount/2)))
+			opts := DefaultHeadOptions()
+			opts.ChunkRange = 1000
+			opts.ChunkDirRoot = dir
+			opts.EnableExemplarStorage = true
+			opts.MaxExemplars.Store(config.DefaultExemplarsConfig.MaxExemplars)
+			opts.EnableNativeHistograms.Store(true)
+			opts.SecondaryHashFunction = func(l labels.Labels) uint32 {
+				return uint32(l.Len())
+			}
 
-	// There should be 50 reported series now.
-	checkSecondaryHashes(50)
+			h, err := NewHead(nil, nil, wal, nil, opts, nil)
+			require.NoError(t, err)
 
-	// Truncate head again, remove all series, remove half of the series (because their timestamp is before supplied truncation MinT)
-	require.NoError(t, h.Truncate(100*seriesCount))
-	checkSecondaryHashes(0)
+			t.Cleanup(func() {
+				require.NoError(t, h.Close())
+			})
+
+			app := h.Appender(context.Background())
+			series := tc.series(t)
+			for ix, s := range series {
+				_, err := app.Append(0, s.Labels(), int64(100*ix), float64(ix))
+				require.NoError(t, err)
+			}
+
+			require.NoError(t, app.Commit())
+
+			labelsCount := series[0].Labels().Len()
+			checkSecondaryHashes(t, h, labelsCount, len(series))
+
+			// Truncate head, remove half of the series (because their timestamp is before supplied truncation MinT)
+			require.NoError(t, h.Truncate(100*int64(len(series)/2)))
+
+			checkSecondaryHashes(t, h, labelsCount, len(series)/2)
+
+			// Truncate head again, remove all series (because their timestamp is before supplied truncation MinT)
+			require.NoError(t, h.Truncate(100*int64(len(series))))
+			checkSecondaryHashes(t, h, labelsCount, 0)
+		})
+	}
 }
