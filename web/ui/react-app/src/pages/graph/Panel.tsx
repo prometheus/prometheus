@@ -59,9 +59,9 @@ export enum PanelType {
 }
 
 export enum GraphDisplayMode {
-  Lines,
-  Stacked,
-  Heatmap,
+  Lines = 'lines',
+  Stacked = 'stacked',
+  Heatmap = 'heatmap',
 }
 
 export const PanelDefaultOptions: PanelOptions = {

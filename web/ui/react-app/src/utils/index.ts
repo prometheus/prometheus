@@ -196,6 +196,10 @@ export const parseOption = (param: string): Partial<PanelOptions> => {
     case 'tab':
       return { type: decodedValue === '0' ? PanelType.Graph : PanelType.Table };
 
+    case 'display_mode':
+      const validKey = Object.values(GraphDisplayMode).includes(decodedValue as GraphDisplayMode);
+      return { displayMode: validKey ? (decodedValue as GraphDisplayMode) : GraphDisplayMode.Lines };
+
     case 'stacked':
       return { displayMode: decodedValue === '1' ? GraphDisplayMode.Stacked : GraphDisplayMode.Lines };
 
@@ -230,7 +234,7 @@ export const toQueryString = ({ key, options }: PanelMeta): string => {
   const urlParams = [
     formatWithKey('expr', expr),
     formatWithKey('tab', type === PanelType.Graph ? 0 : 1),
-    formatWithKey('stacked', displayMode === GraphDisplayMode.Stacked ? 1 : 0),
+    formatWithKey('display_mode', displayMode),
     formatWithKey('show_exemplars', showExemplars ? 1 : 0),
     formatWithKey('range_input', formatDuration(range)),
     time ? `${formatWithKey('end_input', time)}&${formatWithKey('moment_input', time)}` : '',
@@ -264,7 +268,9 @@ export const getQueryParam = (key: string): string => {
 };
 
 export const createExpressionLink = (expr: string): string => {
-  return `../graph?g0.expr=${encodeURIComponent(expr)}&g0.tab=1&g0.stacked=0&g0.show_exemplars=0.g0.range_input=1h.`;
+  return `../graph?g0.expr=${encodeURIComponent(expr)}&g0.tab=1&g0.display_mode=${
+    GraphDisplayMode.Lines
+  }&g0.show_exemplars=0.g0.range_input=1h.`;
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any,
