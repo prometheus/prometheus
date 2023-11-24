@@ -371,6 +371,25 @@ func (ls Labels) ReleaseStrings(release func(string)) {
 	}
 }
 
+// Builder allows modifying Labels.
+type Builder struct {
+	base Labels
+	del  []string
+	add  []Label
+}
+
+// Reset clears all current state for the builder.
+func (b *Builder) Reset(base Labels) {
+	b.base = base
+	b.del = b.del[:0]
+	b.add = b.add[:0]
+	b.base.Range(func(l Label) {
+		if l.Value == "" {
+			b.del = append(b.del, l.Name)
+		}
+	})
+}
+
 // Labels returns the labels from the builder.
 // If no modifications were made, the original labels are returned.
 func (b *Builder) Labels() Labels {
