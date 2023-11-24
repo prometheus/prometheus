@@ -1,6 +1,6 @@
 import moment from 'moment-timezone';
 
-import { PanelOptions, PanelType, PanelDefaultOptions } from '../pages/graph/Panel';
+import { GraphDisplayMode, PanelDefaultOptions, PanelOptions, PanelType } from '../pages/graph/Panel';
 import { PanelMeta } from '../pages/graph/PanelList';
 
 export const generateID = (): string => {
@@ -197,7 +197,7 @@ export const parseOption = (param: string): Partial<PanelOptions> => {
       return { type: decodedValue === '0' ? PanelType.Graph : PanelType.Table };
 
     case 'stacked':
-      return { stacked: decodedValue === '1' };
+      return { displayMode: decodedValue === '1' ? GraphDisplayMode.Stacked : GraphDisplayMode.Lines };
 
     case 'show_exemplars':
       return { showExemplars: decodedValue === '1' };
@@ -225,12 +225,12 @@ export const formatParam =
 
 export const toQueryString = ({ key, options }: PanelMeta): string => {
   const formatWithKey = formatParam(key);
-  const { expr, type, stacked, range, endTime, resolution, showExemplars } = options;
+  const { expr, type, displayMode, range, endTime, resolution, showExemplars } = options;
   const time = isPresent(endTime) ? formatTime(endTime) : false;
   const urlParams = [
     formatWithKey('expr', expr),
     formatWithKey('tab', type === PanelType.Graph ? 0 : 1),
-    formatWithKey('stacked', stacked ? 1 : 0),
+    formatWithKey('stacked', displayMode === GraphDisplayMode.Stacked ? 1 : 0),
     formatWithKey('show_exemplars', showExemplars ? 1 : 0),
     formatWithKey('range_input', formatDuration(range)),
     time ? `${formatWithKey('end_input', time)}&${formatWithKey('moment_input', time)}` : '',

@@ -16,7 +16,7 @@ import {
   decodePanelOptionsFromQueryString,
   parsePrometheusFloat,
 } from '.';
-import { PanelType } from '../pages/graph/Panel';
+import { GraphDisplayMode, PanelType } from '../pages/graph/Panel';
 
 describe('Utils', () => {
   describe('escapeHTML', (): void => {
@@ -210,7 +210,7 @@ describe('Utils', () => {
           expr: 'rate(node_cpu_seconds_total{mode="system"}[1m])',
           range: 60 * 60 * 1000,
           resolution: null,
-          stacked: false,
+          displayMode: GraphDisplayMode.Lines,
           type: PanelType.Graph,
         },
       },
@@ -221,7 +221,7 @@ describe('Utils', () => {
           expr: 'node_filesystem_avail_bytes',
           range: 60 * 60 * 1000,
           resolution: null,
-          stacked: false,
+          displayMode: GraphDisplayMode.Lines,
           type: PanelType.Table,
         },
       },
@@ -246,7 +246,7 @@ describe('Utils', () => {
         expect(parseOption('expr=foo')).toEqual({ expr: 'foo' });
       });
       it('should parse stacked', () => {
-        expect(parseOption('stacked=1')).toEqual({ stacked: true });
+        expect(parseOption('stacked=1')).toEqual({ displayMode: GraphDisplayMode.Stacked });
       });
       it('should parse end_input', () => {
         expect(parseOption('end_input=2019-10-25%2023%3A37')).toEqual({ endTime: moment.utc('2019-10-25 23:37').valueOf() });
@@ -294,8 +294,7 @@ describe('Utils', () => {
             options: {
               expr: 'foo',
               type: PanelType.Graph,
-              stacked: true,
-              histogram: false,
+              displayMode: GraphDisplayMode.Stacked,
               showExemplars: true,
               range: 0,
               endTime: null,

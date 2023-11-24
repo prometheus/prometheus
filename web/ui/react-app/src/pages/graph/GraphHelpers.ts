@@ -1,10 +1,11 @@
 import $ from 'jquery';
 
 import { escapeHTML } from '../../utils';
-import { GraphProps, GraphData, GraphSeries, GraphExemplar } from './Graph';
+import { GraphData, GraphExemplar, GraphProps, GraphSeries } from './Graph';
 import moment from 'moment-timezone';
 import { colorPool } from './ColorPool';
-import { prepareHistogramData } from './GraphHistogramHelpers';
+import { prepareHeatmapData } from './GraphHeatmapHelpers';
+import { GraphDisplayMode } from './Panel';
 
 export const formatValue = (y: number | null): string => {
   if (y === null) {
@@ -160,7 +161,7 @@ export const getOptions = (stacked: boolean, useLocalTime: boolean): jquery.flot
   };
 };
 
-export const normalizeData = ({ queryParams, data, exemplars, stacked, histogram }: GraphProps): GraphData => {
+export const normalizeData = ({ queryParams, data, exemplars, displayMode }: GraphProps): GraphData => {
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   const { startTime, endTime, resolution } = queryParams!;
 
@@ -213,14 +214,14 @@ export const normalizeData = ({ queryParams, data, exemplars, stacked, histogram
     return {
       labels: metric !== null ? metric : {},
       color: colorPool[index % colorPool.length],
-      stack: stacked,
+      stack: displayMode === GraphDisplayMode.Stacked,
       data,
       index,
     };
   });
 
   return {
-    series: histogram ? prepareHistogramData(series) : series,
+    series: displayMode === GraphDisplayMode.Heatmap ? prepareHeatmapData(series) : series,
     exemplars: Object.values(buckets).flatMap((bucket) => {
       if (bucket.length === 1) {
         return bucket[0];

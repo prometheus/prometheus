@@ -1,8 +1,5 @@
 /* Flot plugin for rendering heatmap charts.
 
-Copyright (c) VictoriaMetrics.
-Licensed under the MIT license.
-
 Inspired by a similar feature in VictoriaMetrics.
 See https://github.com/VictoriaMetrics/VictoriaMetrics/issues/3384 for more details.
  */
@@ -19,7 +16,9 @@ const GRADIENT_STEPS = 16;
   function init(plot) {
     plot.hooks.draw.push((plot, ctx) => {
       const options = plot.getOptions();
-      if (!options.series.heatmap) return;
+      if (!options.series.heatmap) {
+        return;
+      }
 
       const series = plot.getData();
       const fillPalette = generateGradient("#FDF4EB", "#752E12", GRADIENT_STEPS);
@@ -29,7 +28,9 @@ const GRADIENT_STEPS = 16;
 
     plot.hooks.bindEvents.push((plot, eventHolder) => {
       const options = plot.getOptions();
-      if (!options.series.heatmap || !options.tooltip.show) return;
+      if (!options.series.heatmap || !options.tooltip.show) {
+        return;
+      }
 
       mouseMoveHandler = (e) => {
         removeTooltip();
@@ -39,7 +40,9 @@ const GRADIENT_STEPS = 16;
         const series = plot.getData();
 
         for (let i = 0; i < series.length; i++) {
-          if (seriesIdx !== i) continue;
+          if (seriesIdx !== i) {
+            continue;
+          }
 
           const s = series[i];
           const label = s?.labels?.le || ""
