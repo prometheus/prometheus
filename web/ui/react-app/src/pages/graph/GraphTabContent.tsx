@@ -3,12 +3,13 @@ import { Alert } from 'reactstrap';
 import Graph from './Graph';
 import { QueryParams, ExemplarData } from '../../types/types';
 import { isPresent } from '../../utils';
+import { GraphDisplayMode } from './Panel';
 
 interface GraphTabContentProps {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   data: any;
   exemplars: ExemplarData;
-  stacked: boolean;
+  displayMode: GraphDisplayMode;
   useLocalTime: boolean;
   showExemplars: boolean;
   handleTimeRangeSelection: (startTime: number, endTime: number) => void;
@@ -19,7 +20,7 @@ interface GraphTabContentProps {
 export const GraphTabContent: FC<GraphTabContentProps> = ({
   data,
   exemplars,
-  stacked,
+  displayMode,
   useLocalTime,
   lastQueryParams,
   showExemplars,
@@ -41,7 +42,7 @@ export const GraphTabContent: FC<GraphTabContentProps> = ({
     <Graph
       data={data}
       exemplars={exemplars}
-      stacked={stacked}
+      displayMode={displayMode}
       useLocalTime={useLocalTime}
       showExemplars={showExemplars}
       handleTimeRangeSelection={handleTimeRangeSelection}
