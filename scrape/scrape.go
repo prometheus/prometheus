@@ -163,6 +163,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 			func(l labels.Labels) labels.Labels { return mutateReportSampleLabels(l, opts.target) },
 			func(ctx context.Context) storage.Appender { return app.Appender(ctx) },
 			cache,
+			sp.symbolTable,
 			offsetSeed,
 			opts.honorTimestamps,
 			opts.trackTimestampsStaleness,
@@ -809,6 +810,7 @@ type scrapeLoop struct {
 	enableCTZeroIngestion    bool
 
 	appender            func(ctx context.Context) storage.Appender
+	symbolTable         *labels.SymbolTable
 	sampleMutator       labelsMutator
 	reportSampleMutator labelsMutator
 
@@ -1088,6 +1090,7 @@ func newScrapeLoop(ctx context.Context,
 	reportSampleMutator labelsMutator,
 	appender func(ctx context.Context) storage.Appender,
 	cache *scrapeCache,
+	symbolTable *labels.SymbolTable,
 	offsetSeed uint64,
 	honorTimestamps bool,
 	trackTimestampsStaleness bool,
@@ -1133,6 +1136,7 @@ func newScrapeLoop(ctx context.Context,
 		buffers:                  buffers,
 		cache:                    cache,
 		appender:                 appender,
+		symbolTable:              symbolTable,
 		sampleMutator:            sampleMutator,
 		reportSampleMutator:      reportSampleMutator,
 		stopped:                  make(chan struct{}),
@@ -1431,7 +1435,7 @@ type appendErrors struct {
 }
 
 func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string, ts time.Time) (total, added, seriesAdded int, err error) {
-	p, err := textparse.New(b, contentType, sl.scrapeClassicHistograms)
+	p, err := textparse.New(b, contentType, sl.scrapeClassicHistograms, sl.symbolTable)
 	if err != nil {
 		level.Debug(sl.l).Log(
 			"msg", "Invalid content type on scrape, using prometheus parser as fallback.",
