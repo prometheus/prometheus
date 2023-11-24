@@ -73,7 +73,9 @@ type scrapePool struct {
 	client *http.Client
 	loops  map[uint64]loop
 
-	symbolTable *labels.SymbolTable
+	symbolTable           *labels.SymbolTable
+	lastSymbolTableCheck  time.Time
+	initialSymbolTableLen int
 
 	targetMtx sync.Mutex
 	// activeTargets and loops must always be synchronized to have the same
@@ -132,17 +134,18 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 
 	ctx, cancel := context.WithCancel(context.Background())
 	sp := &scrapePool{
-		cancel:        cancel,
-		appendable:    app,
-		config:        cfg,
-		client:        client,
-		activeTargets: map[uint64]*Target{},
-		loops:         map[uint64]loop{},
-		symbolTable:   labels.NewSymbolTable(), // TODO: clean this out from time to time.
-		logger:        logger,
-		metrics:       metrics,
-		httpOpts:      options.HTTPClientOptions,
-		noDefaultPort: options.NoDefaultPort,
+		cancel:               cancel,
+		appendable:           app,
+		config:               cfg,
+		client:               client,
+		activeTargets:        map[uint64]*Target{},
+		loops:                map[uint64]loop{},
+		symbolTable:          labels.NewSymbolTable(),
+		lastSymbolTableCheck: time.Now(),
+		logger:               logger,
+		metrics:              metrics,
+		httpOpts:             options.HTTPClientOptions,
+		noDefaultPort:        options.NoDefaultPort,
 	}
 	sp.newLoop = func(opts scrapeLoopOptions) loop {
 		// Update the targets retrieval function for metadata to a new scrape cache.
@@ -352,6 +355,21 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 	sp.metrics.targetReloadIntervalLength.WithLabelValues(interval.String()).Observe(
 		time.Since(start).Seconds(),
 	)
+
+	// Here we take steps to clear out the symbol table if it has grown a lot.
+	// After waiting some time for things to settle, we take the size of the symbol-table.
+	// If, after some more time, the table has grown to twice that size, we start a new one.
+	const minTimeToCleanSymbolTable = 5 * time.Minute
+	if time.Since(sp.lastSymbolTableCheck) > minTimeToCleanSymbolTable {
+		if sp.initialSymbolTableLen == 0 {
+			sp.initialSymbolTableLen = sp.symbolTable.Len()
+		} else if sp.symbolTable.Len() > 2*sp.initialSymbolTableLen {
+			sp.symbolTable = labels.NewSymbolTable()
+			sp.initialSymbolTableLen = 0
+		}
+		sp.lastSymbolTableCheck = time.Now()
+	}
+
 	return nil
 }
 
