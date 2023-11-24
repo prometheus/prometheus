@@ -2803,7 +2803,7 @@ func BenchmarkQueries(b *testing.B) {
 
 					qHead, err := NewBlockQuerier(NewRangeHead(head, 1, nSamples), 1, nSamples)
 					require.NoError(b, err)
-					qOOOHead, err := NewBlockQuerier(NewOOORangeHead(head, 1, nSamples), 1, nSamples)
+					qOOOHead, err := NewBlockQuerier(NewOOORangeHead(head, 1, nSamples, 0), 1, nSamples)
 					require.NoError(b, err)
 
 					queryTypes = append(queryTypes, qt{

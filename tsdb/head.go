@@ -106,6 +106,8 @@ type Head struct {
 
 	iso *isolation
 
+	oooIso *oooIsolation
+
 	cardinalityMutex      sync.Mutex
 	cardinalityCache      *index.PostingsStats // Posting stats cache which will expire after 30sec.
 	lastPostingsStatsCall time.Duration        // Last posting stats call (PostingsCardinalityStats()) time for caching.
@@ -300,6 +302,7 @@ func (h *Head) resetInMemoryState() error {
 	}
 
 	h.iso = newIsolation(h.opts.IsolationDisabled)
+	h.oooIso = newOOOIsolation()
 
 	h.exemplarMetrics = em
 	h.exemplars = es
@@ -1133,6 +1136,14 @@ func (h *Head) WaitForPendingReadersInTimeRange(mint, maxt int64) {
 	}
 }
 
+// WaitForPendingReadersForOOOChunksAtOrBefore is like WaitForPendingReadersInTimeRange, except it waits for
+// queries touching OOO chunks less than or equal to chunk to finish querying.
+func (h *Head) WaitForPendingReadersForOOOChunksAtOrBefore(chunk chunks.ChunkDiskMapperRef) {
+	for h.oooIso.HasOpenReadsAtOrBefore(chunk) {
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
 // WaitForAppendersOverlapping waits for appends overlapping maxt to finish.
 func (h *Head) WaitForAppendersOverlapping(maxt int64) {
 	for maxt >= h.iso.lowestAppendTime() {
@@ -1271,13 +1282,19 @@ func (h *Head) truncateWAL(mint int64) error {
 }
 
 // truncateOOO
+//   - waits for any pending reads that potentially touch chunks less than or equal to newMinOOOMmapRef
 //   - truncates the OOO WBL files whose index is strictly less than lastWBLFile.
-//   - garbage collects all the m-map chunks from the memory that are less than or equal to minOOOMmapRef
+//   - garbage collects all the m-map chunks from the memory that are less than or equal to newMinOOOMmapRef
 //     and then deletes the series that do not have any data anymore.
-func (h *Head) truncateOOO(lastWBLFile int, minOOOMmapRef chunks.ChunkDiskMapperRef) error {
+//
+// The caller is responsible for ensuring that no further queriers will be created that reference chunks less
+// than or equal to newMinOOOMmapRef before calling truncateOOO.
+func (h *Head) truncateOOO(lastWBLFile int, newMinOOOMmapRef chunks.ChunkDiskMapperRef) error {
 	curMinOOOMmapRef := chunks.ChunkDiskMapperRef(h.minOOOMmapRef.Load())
-	if minOOOMmapRef.GreaterThan(curMinOOOMmapRef) {
-		h.minOOOMmapRef.Store(uint64(minOOOMmapRef))
+	if newMinOOOMmapRef.GreaterThan(curMinOOOMmapRef) {
+		h.WaitForPendingReadersForOOOChunksAtOrBefore(newMinOOOMmapRef)
+		h.minOOOMmapRef.Store(uint64(newMinOOOMmapRef))
+
 		if err := h.truncateSeriesAndChunkDiskMapper("truncateOOO"); err != nil {
 			return err
 		}
