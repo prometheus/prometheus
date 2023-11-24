@@ -750,7 +750,7 @@ func createFakeReaderAndNotPopulatedChunks(s ...[]chunks.Sample) (*fakeChunksRea
 func (r *fakeChunksReader) Chunk(meta chunks.Meta) (chunkenc.Chunk, error) {
 	chk, ok := r.chks[meta.Ref]
 	if !ok {
-		return nil, errors.Errorf("chunk not found at ref %v", meta.Ref)
+		return nil, fmt.Errorf("chunk not found at ref %v", meta.Ref)
 	}
 	return chk, nil
 }
@@ -1871,7 +1871,7 @@ func (m mockIndex) Symbols() index.StringIter {
 
 func (m *mockIndex) AddSeries(ref storage.SeriesRef, l labels.Labels, chunks ...chunks.Meta) error {
 	if _, ok := m.series[ref]; ok {
-		return errors.Errorf("series with reference %d already added", ref)
+		return fmt.Errorf("series with reference %d already added", ref)
 	}
 	l.Range(func(lbl labels.Label) {
 		m.symbols[lbl.Name] = struct{}{}
@@ -1892,7 +1892,7 @@ func (m *mockIndex) AddSeries(ref storage.SeriesRef, l labels.Labels, chunks ...
 func (m mockIndex) WritePostings(name, value string, it index.Postings) error {
 	l := labels.Label{Name: name, Value: value}
 	if _, ok := m.postings[l]; ok {
-		return errors.Errorf("postings for %s already added", l)
+		return fmt.Errorf("postings for %s already added", l)
 	}
 	ep, err := index.ExpandPostings(it)
 	if err != nil {
@@ -2656,6 +2656,7 @@ func TestQuerierIndexQueriesRace(t *testing.T) {
 	for _, c := range testCases {
 		c := c
 		t.Run(fmt.Sprintf("%v", c.matchers), func(t *testing.T) {
+			t.Parallel()
 			db := openTestDB(t, DefaultOptions(), nil)
 			h := db.Head()
 			t.Cleanup(func() {
@@ -2675,6 +2676,9 @@ func TestQuerierIndexQueriesRace(t *testing.T) {
 				values, _, err := q.LabelValues(ctx, "seq", c.matchers...)
 				require.NoError(t, err)
 				require.Emptyf(t, values, `label values for label "seq" should be empty`)
+
+				// Sleep to give the appends some change to run.
+				time.Sleep(time.Millisecond)
 			}
 		})
 	}
@@ -2691,6 +2695,7 @@ func appendSeries(t *testing.T, ctx context.Context, wg *sync.WaitGroup, h *Head
 		require.NoError(t, err)
 
 		// Throttle down the appends to keep the test somewhat nimble.
+		// Otherwise, we end up appending thousands or millions of samples.
 		time.Sleep(time.Millisecond)
 	}
 }
@@ -2817,7 +2822,7 @@ func BenchmarkQueries(b *testing.B) {
 
 					qHead, err := NewBlockQuerier(NewRangeHead(head, 1, nSamples), 1, nSamples)
 					require.NoError(b, err)
-					qOOOHead, err := NewBlockQuerier(NewOOORangeHead(head, 1, nSamples), 1, nSamples)
+					qOOOHead, err := NewBlockQuerier(NewOOORangeHead(head, 1, nSamples, 0), 1, nSamples)
 					require.NoError(b, err)
 
 					queryTypes = append(queryTypes, qt{

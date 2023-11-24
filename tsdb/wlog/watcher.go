@@ -747,12 +747,12 @@ func checkpointNum(dir string) (int, error) {
 	// dir may contain a hidden directory, so only check the base directory
 	chunks := strings.Split(filepath.Base(dir), ".")
 	if len(chunks) != 2 {
-		return 0, errors.Errorf("invalid checkpoint dir string: %s", dir)
+		return 0, fmt.Errorf("invalid checkpoint dir string: %s", dir)
 	}
 
 	result, err := strconv.Atoi(chunks[1])
 	if err != nil {
-		return 0, errors.Errorf("invalid checkpoint dir string: %s", dir)
+		return 0, fmt.Errorf("invalid checkpoint dir string: %s", dir)
 	}
 
 	return result, nil

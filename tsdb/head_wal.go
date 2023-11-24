@@ -972,7 +972,7 @@ func decodeSeriesFromChunkSnapshot(d *record.Decoder, b []byte) (csr chunkSnapsh
 	dec := encoding.Decbuf{B: b}
 
 	if flag := dec.Byte(); flag != chunkSnapshotRecordTypeSeries {
-		return csr, errors.Errorf("invalid record type %x", flag)
+		return csr, fmt.Errorf("invalid record type %x", flag)
 	}
 
 	csr.ref = chunks.HeadSeriesRef(dec.Be64())
@@ -1020,7 +1020,7 @@ func decodeSeriesFromChunkSnapshot(d *record.Decoder, b []byte) (csr chunkSnapsh
 
 	err = dec.Err()
 	if err != nil && len(dec.B) > 0 {
-		err = errors.Errorf("unexpected %d bytes left in entry", len(dec.B))
+		err = fmt.Errorf("unexpected %d bytes left in entry", len(dec.B))
 	}
 
 	return
@@ -1043,7 +1043,7 @@ func decodeTombstonesSnapshotRecord(b []byte) (tombstones.Reader, error) {
 	dec := encoding.Decbuf{B: b}
 
 	if flag := dec.Byte(); flag != chunkSnapshotRecordTypeTombstones {
-		return nil, errors.Errorf("invalid record type %x", flag)
+		return nil, fmt.Errorf("invalid record type %x", flag)
 	}
 
 	tr, err := tombstones.Decode(dec.UvarintBytes())
@@ -1256,7 +1256,7 @@ func LastChunkSnapshot(dir string) (string, int, int, error) {
 			continue
 		}
 		if !fi.IsDir() {
-			return "", 0, 0, errors.Errorf("chunk snapshot %s is not a directory", fi.Name())
+			return "", 0, 0, fmt.Errorf("chunk snapshot %s is not a directory", fi.Name())
 		}
 
 		splits := strings.Split(fi.Name()[len(chunkSnapshotPrefix):], ".")
@@ -1494,7 +1494,7 @@ Outer:
 		default:
 			// This is a record type we don't understand. It is either and old format from earlier versions,
 			// or a new format and the code was rolled back to old version.
-			loopErr = errors.Errorf("unsupported snapshot record type 0b%b", rec[0])
+			loopErr = fmt.Errorf("unsupported snapshot record type 0b%b", rec[0])
 			break Outer
 		}
 	}

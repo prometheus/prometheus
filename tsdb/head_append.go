@@ -528,13 +528,13 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 	}
 
 	if h != nil {
-		if err := ValidateHistogram(h); err != nil {
+		if err := h.Validate(); err != nil {
 			return 0, err
 		}
 	}
 
 	if fh != nil {
-		if err := ValidateFloatHistogram(fh); err != nil {
+		if err := fh.Validate(); err != nil {
 			return 0, err
 		}
 	}
@@ -649,103 +649,6 @@ func (a *headAppender) UpdateMetadata(ref storage.SeriesRef, lset labels.Labels,
 	return ref, nil
 }
 
-func ValidateHistogram(h *histogram.Histogram) error {
-	if err := checkHistogramSpans(h.NegativeSpans, len(h.NegativeBuckets)); err != nil {
-		return errors.Wrap(err, "negative side")
-	}
-	if err := checkHistogramSpans(h.PositiveSpans, len(h.PositiveBuckets)); err != nil {
-		return errors.Wrap(err, "positive side")
-	}
-	var nCount, pCount uint64
-	err := checkHistogramBuckets(h.NegativeBuckets, &nCount, true)
-	if err != nil {
-		return errors.Wrap(err, "negative side")
-	}
-	err = checkHistogramBuckets(h.PositiveBuckets, &pCount, true)
-	if err != nil {
-		return errors.Wrap(err, "positive side")
-	}
-
-	if c := nCount + pCount + h.ZeroCount; c > h.Count {
-		return errors.Wrap(
-			storage.ErrHistogramCountNotBigEnough,
-			fmt.Sprintf("%d observations found in buckets, but the Count field is %d", c, h.Count),
-		)
-	}
-
-	return nil
-}
-
-func ValidateFloatHistogram(h *histogram.FloatHistogram) error {
-	if err := checkHistogramSpans(h.NegativeSpans, len(h.NegativeBuckets)); err != nil {
-		return errors.Wrap(err, "negative side")
-	}
-	if err := checkHistogramSpans(h.PositiveSpans, len(h.PositiveBuckets)); err != nil {
-		return errors.Wrap(err, "positive side")
-	}
-	var nCount, pCount float64
-	err := checkHistogramBuckets(h.NegativeBuckets, &nCount, false)
-	if err != nil {
-		return errors.Wrap(err, "negative side")
-	}
-	err = checkHistogramBuckets(h.PositiveBuckets, &pCount, false)
-	if err != nil {
-		return errors.Wrap(err, "positive side")
-	}
-
-	// We do not check for h.Count being at least as large as the sum of the
-	// counts in the buckets because floating point precision issues can
-	// create false positives here.
-
-	return nil
-}
-
-func checkHistogramSpans(spans []histogram.Span, numBuckets int) error {
-	var spanBuckets int
-	for n, span := range spans {
-		if n > 0 && span.Offset < 0 {
-			return errors.Wrap(
-				storage.ErrHistogramSpanNegativeOffset,
-				fmt.Sprintf("span number %d with offset %d", n+1, span.Offset),
-			)
-		}
-		spanBuckets += int(span.Length)
-	}
-	if spanBuckets != numBuckets {
-		return errors.Wrap(
-			storage.ErrHistogramSpansBucketsMismatch,
-			fmt.Sprintf("spans need %d buckets, have %d buckets", spanBuckets, numBuckets),
-		)
-	}
-	return nil
-}
-
-func checkHistogramBuckets[BC histogram.BucketCount, IBC histogram.InternalBucketCount](buckets []IBC, count *BC, deltas bool) error {
-	if len(buckets) == 0 {
-		return nil
-	}
-
-	var last IBC
-	for i := 0; i < len(buckets); i++ {
-		var c IBC
-		if deltas {
-			c = last + buckets[i]
-		} else {
-			c = buckets[i]
-		}
-		if c < 0 {
-			return errors.Wrap(
-				storage.ErrHistogramNegativeBucketCount,
-				fmt.Sprintf("bucket number %d has observation count of %v", i+1, c),
-			)
-		}
-		last = c
-		*count += BC(c)
-	}
-
-	return nil
-}
-
 var _ storage.GetRef = &headAppender{}
 
 func (a *headAppender) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRef, labels.Labels) {
@@ -793,14 +696,6 @@ func (a *headAppender) log() error {
 			return errors.Wrap(err, "log samples")
 		}
 	}
-	if len(a.exemplars) > 0 {
-		rec = enc.Exemplars(exemplarsForEncoding(a.exemplars), buf)
-		buf = rec[:0]
-
-		if err := a.head.wal.Log(rec); err != nil {
-			return errors.Wrap(err, "log exemplars")
-		}
-	}
 	if len(a.histograms) > 0 {
 		rec = enc.HistogramSamples(a.histograms, buf)
 		buf = rec[:0]
@@ -813,6 +708,18 @@ func (a *headAppender) log() error {
 		buf = rec[:0]
 		if err := a.head.wal.Log(rec); err != nil {
 			return errors.Wrap(err, "log float histograms")
+		}
+	}
+	// Exemplars should be logged after samples (float/native histogram/etc),
+	// otherwise it might happen that we send the exemplars in a remote write
+	// batch before the samples, which in turn means the exemplar is rejected
+	// for missing series, since series are created due to samples.
+	if len(a.exemplars) > 0 {
+		rec = enc.Exemplars(exemplarsForEncoding(a.exemplars), buf)
+		buf = rec[:0]
+
+		if err := a.head.wal.Log(rec); err != nil {
+			return errors.Wrap(err, "log exemplars")
 		}
 	}
 	return nil
@@ -851,6 +758,12 @@ func (a *headAppender) Commit() (err error) {
 	// No errors logging to WAL, so pass the exemplars along to the in memory storage.
 	for _, e := range a.exemplars {
 		s := a.head.series.getByID(chunks.HeadSeriesRef(e.ref))
+		if s == nil {
+			// This is very unlikely to happen, but we have seen it in the wild.
+			// It means that the series was truncated between AppendExemplar and Commit.
+			// See TestHeadCompactionWhileAppendAndCommitExemplar.
+			continue
+		}
 		// We don't instrument exemplar appends here, all is instrumented by storage.
 		if err := a.head.exemplars.AddExemplar(s.lset, e.exemplar); err != nil {
 			if err == storage.ErrOutOfOrderExemplar {

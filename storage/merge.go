@@ -895,6 +895,9 @@ func (c *concatenatingChunkIterator) Next() bool {
 		c.curr = c.iterators[c.idx].At()
 		return true
 	}
+	if c.iterators[c.idx].Err() != nil {
+		return false
+	}
 	c.idx++
 	return c.Next()
 }

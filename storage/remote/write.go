@@ -121,6 +121,16 @@ func (rws *WriteStorage) run() {
 	}
 }
 
+func (rws *WriteStorage) Notify() {
+	rws.mtx.Lock()
+	defer rws.mtx.Unlock()
+
+	for _, q := range rws.queues {
+		// These should all be non blocking
+		q.watcher.Notify()
+	}
+}
+
 // ApplyConfig updates the state as the new config requires.
 // Only stop & create queues which have changes.
 func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
