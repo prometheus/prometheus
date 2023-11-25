@@ -24,7 +24,6 @@ import (
 	"math"
 	"net/http"
 	"reflect"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -1608,17 +1607,8 @@ loop:
 			exemplars = append(exemplars, e)
 			e = exemplar.Exemplar{} // Reset for next time round loop.
 		}
-		sort.Slice(exemplars, func(i, j int) bool {
-			// Sort first by timestamp, then value, then labels so the checking
-			// for duplicates / out of order is more efficient during validation.
-			if exemplars[i].Ts != exemplars[j].Ts {
-				return exemplars[i].Ts < exemplars[j].Ts
-			}
-			if exemplars[i].Value != exemplars[j].Value {
-				return exemplars[i].Value < exemplars[j].Value
-			}
-			return exemplars[i].Labels.Hash() < exemplars[j].Labels.Hash()
-		})
+		// Sort so that checking for duplicates / out of order is more efficient during validation.
+		slices.SortFunc(exemplars, exemplar.Compare)
 		outOfOrderExemplars := 0
 		for _, e := range exemplars {
 			_, exemplarErr := app.AppendExemplar(ref, lset, e)
