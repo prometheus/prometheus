@@ -1110,6 +1110,10 @@ func floatBucketsMatch(b1, b2 []float64) bool {
 // ReduceResolution reduces the float histogram's spans, buckets into target schema.
 // The target schema must be smaller than the current float histogram's schema.
 func (h *FloatHistogram) ReduceResolution(targetSchema int32) *FloatHistogram {
+	if targetSchema >= h.Schema {
+		panic(fmt.Errorf("cannot reduce resolution from schema %d to %d", h.Schema, targetSchema))
+	}
+
 	h.PositiveSpans, h.PositiveBuckets = reduceResolution(h.PositiveSpans, h.PositiveBuckets, h.Schema, targetSchema, false)
 	h.NegativeSpans, h.NegativeBuckets = reduceResolution(h.NegativeSpans, h.NegativeBuckets, h.Schema, targetSchema, false)
 	h.Schema = targetSchema
