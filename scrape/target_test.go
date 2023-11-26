@@ -507,6 +507,19 @@ func TestBucketLimitAppender(t *testing.T) {
 		NegativeBuckets: []int64{3, 0, 0},
 	}
 
+	bigGap := histogram.Histogram{
+		Schema:        0,
+		Count:         21,
+		Sum:           33,
+		ZeroThreshold: 0.001,
+		ZeroCount:     3,
+		PositiveSpans: []histogram.Span{
+			{Offset: 1, Length: 1}, // in (1, 2]
+			{Offset: 2, Length: 1}, // in (8, 16]
+		},
+		PositiveBuckets: []int64{1, 0}, // 1, 1
+	}
+
 	cases := []struct {
 		h                 histogram.Histogram
 		limit             int
@@ -532,6 +545,13 @@ func TestBucketLimitAppender(t *testing.T) {
 			expectError:       false,
 			expectBucketCount: 6,
 			expectSchema:      0,
+		},
+		{
+			h:                 bigGap,
+			limit:             1,
+			expectError:       false,
+			expectBucketCount: 1,
+			expectSchema:      -2,
 		},
 	}
 
