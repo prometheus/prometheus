@@ -1734,7 +1734,10 @@ func TestFloatHistogramCopyToSchema(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			inCopy := c.in.Copy()
 			require.Equal(t, c.expected, c.in.CopyToSchema(c.targetSchema))
+			// Check that the receiver histogram was not mutated:
+			require.Equal(t, inCopy, c.in)
 		})
 	}
 }
@@ -2489,5 +2492,7 @@ func TestFloatHistogramReduceResolution(t *testing.T) {
 	for _, tc := range tcs {
 		target := tc.origin.ReduceResolution(tc.target.Schema)
 		require.Equal(t, tc.target, target)
+		// Check that receiver histogram was mutated:
+		require.Equal(t, tc.target, tc.origin)
 	}
 }

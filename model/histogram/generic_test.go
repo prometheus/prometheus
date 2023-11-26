@@ -15,6 +15,7 @@ package histogram
 
 import (
 	"math"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -140,9 +141,22 @@ func TestReduceResolutionHistogram(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		spans, buckets := reduceResolution(tc.spans, tc.buckets, tc.schema, tc.targetSchema, true)
+		spansCopy, bucketsCopy := slices.Clone(tc.spans), slices.Clone(tc.buckets)
+		spans, buckets := reduceResolution(tc.spans, tc.buckets, tc.schema, tc.targetSchema, true, false)
 		require.Equal(t, tc.expectedSpans, spans)
 		require.Equal(t, tc.expectedBuckets, buckets)
+		// Verify inputs were not mutated:
+		require.Equal(t, spansCopy, tc.spans)
+		require.Equal(t, bucketsCopy, tc.buckets)
+
+		// Output slices reuse input slices:
+		const inplace = true
+		spans, buckets = reduceResolution(tc.spans, tc.buckets, tc.schema, tc.targetSchema, true, inplace)
+		require.Equal(t, tc.expectedSpans, spans)
+		require.Equal(t, tc.expectedBuckets, buckets)
+		// Verify inputs were mutated which is now expected:
+		require.Equal(t, spans, tc.spans[:len(spans)])
+		require.Equal(t, buckets, tc.buckets[:len(buckets)])
 	}
 }
 
@@ -175,8 +189,21 @@ func TestReduceResolutionFloatHistogram(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		spans, buckets := reduceResolution(tc.spans, tc.buckets, tc.schema, tc.targetSchema, false)
+		spansCopy, bucketsCopy := slices.Clone(tc.spans), slices.Clone(tc.buckets)
+		spans, buckets := reduceResolution(tc.spans, tc.buckets, tc.schema, tc.targetSchema, false, false)
 		require.Equal(t, tc.expectedSpans, spans)
 		require.Equal(t, tc.expectedBuckets, buckets)
+		// Verify inputs were not mutated:
+		require.Equal(t, spansCopy, tc.spans)
+		require.Equal(t, bucketsCopy, tc.buckets)
+
+		// Output slices reuse input slices:
+		const inplace = true
+		spans, buckets = reduceResolution(tc.spans, tc.buckets, tc.schema, tc.targetSchema, false, inplace)
+		require.Equal(t, tc.expectedSpans, spans)
+		require.Equal(t, tc.expectedBuckets, buckets)
+		// Verify inputs were mutated which is now expected:
+		require.Equal(t, spans, tc.spans[:len(spans)])
+		require.Equal(t, buckets, tc.buckets[:len(buckets)])
 	}
 }

@@ -605,7 +605,16 @@ var exponentialBounds = [][]float64{
 // The target schema must be smaller than the original schema.
 // Set deltaBuckets to true if the provided buckets are
 // deltas. Set it to false if the buckets contain absolute counts.
-func reduceResolution[IBC InternalBucketCount](originSpans []Span, originBuckets []IBC, originSchema, targetSchema int32, deltaBuckets bool) ([]Span, []IBC) {
+// Set inplace to true to reuse input slices and avoid allocations (otherwise
+// new slices will be allocated for result).
+func reduceResolution[IBC InternalBucketCount](
+	originSpans []Span,
+	originBuckets []IBC,
+	originSchema,
+	targetSchema int32,
+	deltaBuckets bool,
+	inplace bool,
+) ([]Span, []IBC) {
 	var (
 		targetSpans           []Span // The spans in the target schema.
 		targetBuckets         []IBC  // The bucket counts in the target schema.
@@ -616,6 +625,13 @@ func reduceResolution[IBC InternalBucketCount](originSpans []Span, originBuckets
 		lastTargetBucketIdx   int32  // The index of the last added target bucket.
 		lastTargetBucketCount IBC
 	)
+
+	if inplace {
+		// Slice reuse is safe because when reducing the resolution,
+		// target slices don't grow faster than origin slices are being read.
+		targetSpans = originSpans[:0]
+		targetBuckets = originBuckets[:0]
+	}
 
 	for _, span := range originSpans {
 		// Determine the index of the first bucket in this span.

@@ -94,8 +94,8 @@ func (h *FloatHistogram) CopyToSchema(targetSchema int32) *FloatHistogram {
 		Sum:           h.Sum,
 	}
 
-	c.PositiveSpans, c.PositiveBuckets = reduceResolution(h.PositiveSpans, h.PositiveBuckets, h.Schema, targetSchema, false)
-	c.NegativeSpans, c.NegativeBuckets = reduceResolution(h.NegativeSpans, h.NegativeBuckets, h.Schema, targetSchema, false)
+	c.PositiveSpans, c.PositiveBuckets = reduceResolution(h.PositiveSpans, h.PositiveBuckets, h.Schema, targetSchema, false, false)
+	c.NegativeSpans, c.NegativeBuckets = reduceResolution(h.NegativeSpans, h.NegativeBuckets, h.Schema, targetSchema, false, false)
 
 	return &c
 }
@@ -278,8 +278,8 @@ func (h *FloatHistogram) Add(other *FloatHistogram) *FloatHistogram {
 	if other.Schema < h.Schema {
 		panic(fmt.Errorf("cannot add histogram with schema %d to %d", other.Schema, h.Schema))
 	} else if other.Schema > h.Schema {
-		otherPositiveSpans, otherPositiveBuckets = reduceResolution(otherPositiveSpans, otherPositiveBuckets, other.Schema, h.Schema, false)
-		otherNegativeSpans, otherNegativeBuckets = reduceResolution(otherNegativeSpans, otherNegativeBuckets, other.Schema, h.Schema, false)
+		otherPositiveSpans, otherPositiveBuckets = reduceResolution(otherPositiveSpans, otherPositiveBuckets, other.Schema, h.Schema, false, false)
+		otherNegativeSpans, otherNegativeBuckets = reduceResolution(otherNegativeSpans, otherNegativeBuckets, other.Schema, h.Schema, false, false)
 	}
 
 	h.PositiveSpans, h.PositiveBuckets = addBuckets(h.Schema, h.ZeroThreshold, false, h.PositiveSpans, h.PositiveBuckets, otherPositiveSpans, otherPositiveBuckets)
@@ -305,8 +305,8 @@ func (h *FloatHistogram) Sub(other *FloatHistogram) *FloatHistogram {
 	if other.Schema < h.Schema {
 		panic(fmt.Errorf("cannot subtract histigram with schema %d to %d", other.Schema, h.Schema))
 	} else if other.Schema > h.Schema {
-		otherPositiveSpans, otherPositiveBuckets = reduceResolution(otherPositiveSpans, otherPositiveBuckets, other.Schema, h.Schema, false)
-		otherNegativeSpans, otherNegativeBuckets = reduceResolution(otherNegativeSpans, otherNegativeBuckets, other.Schema, h.Schema, false)
+		otherPositiveSpans, otherPositiveBuckets = reduceResolution(otherPositiveSpans, otherPositiveBuckets, other.Schema, h.Schema, false, false)
+		otherNegativeSpans, otherNegativeBuckets = reduceResolution(otherNegativeSpans, otherNegativeBuckets, other.Schema, h.Schema, false, false)
 	}
 
 	h.PositiveSpans, h.PositiveBuckets = addBuckets(h.Schema, h.ZeroThreshold, true, h.PositiveSpans, h.PositiveBuckets, otherPositiveSpans, otherPositiveBuckets)
@@ -1136,8 +1136,9 @@ func (h *FloatHistogram) ReduceResolution(targetSchema int32) *FloatHistogram {
 		panic(fmt.Errorf("cannot reduce resolution from schema %d to %d", h.Schema, targetSchema))
 	}
 
-	h.PositiveSpans, h.PositiveBuckets = reduceResolution(h.PositiveSpans, h.PositiveBuckets, h.Schema, targetSchema, false)
-	h.NegativeSpans, h.NegativeBuckets = reduceResolution(h.NegativeSpans, h.NegativeBuckets, h.Schema, targetSchema, false)
+	h.PositiveSpans, h.PositiveBuckets = reduceResolution(h.PositiveSpans, h.PositiveBuckets, h.Schema, targetSchema, false, true)
+	h.NegativeSpans, h.NegativeBuckets = reduceResolution(h.NegativeSpans, h.NegativeBuckets, h.Schema, targetSchema, false, true)
+
 	h.Schema = targetSchema
 	return h
 }

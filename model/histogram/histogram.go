@@ -502,10 +502,10 @@ func (h *Histogram) ReduceResolution(targetSchema int32) *Histogram {
 	}
 
 	h.PositiveSpans, h.PositiveBuckets = reduceResolution(
-		h.PositiveSpans, h.PositiveBuckets, h.Schema, targetSchema, true,
+		h.PositiveSpans, h.PositiveBuckets, h.Schema, targetSchema, true, true,
 	)
 	h.NegativeSpans, h.NegativeBuckets = reduceResolution(
-		h.NegativeSpans, h.NegativeBuckets, h.Schema, targetSchema, true,
+		h.NegativeSpans, h.NegativeBuckets, h.Schema, targetSchema, true, true,
 	)
 	h.Schema = targetSchema
 	return h
