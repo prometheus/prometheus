@@ -34,26 +34,6 @@ func (d *Decoder) Decode(ctx context.Context, segment []byte) (DecodedSegment, u
 	return result, segmentID, cerr.GetError()
 }
 
-// DecodeDry - decode incoming encoding data, restores decoder.
-func (d *Decoder) DecodeDry(ctx context.Context, segment []byte) error {
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
-
-	cerr := internal.NewGoErrorInfo()
-
-	segmentID := internal.CDecoderDecodeDry(
-		d.decoder,
-		segment,
-		cerr,
-	)
-
-	// TODO  return segmentID
-	_ = segmentID
-
-	return cerr.GetError()
-}
-
 // RestoreFromStream - restore from incoming encoding data, restores decoder.
 func (d *Decoder) RestoreFromStream(
 	ctx context.Context,
@@ -74,19 +54,6 @@ func (d *Decoder) RestoreFromStream(
 	)
 
 	return result.Offset(), result.RestoredSegmentID(), cerr.GetError()
-}
-
-// Snapshot - decodes incoming snapshot, restore decoder.
-func (d *Decoder) Snapshot(ctx context.Context, snapshot []byte) error {
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
-
-	cerr := internal.NewGoErrorInfo()
-
-	internal.CDecoderDecodeSnapshot(d.decoder, snapshot, cerr)
-
-	return cerr.GetError()
 }
 
 // Destroy - destructor for C-Decoder.

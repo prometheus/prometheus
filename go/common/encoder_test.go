@@ -20,8 +20,6 @@ type EncoderSuite struct {
 	shardID     uint16
 	encodeCount int
 	bufSeg      []common.Segment
-	bufRed      []common.Redundant
-	expSnapshot []byte
 	expSegment  [][]byte
 }
 
@@ -29,22 +27,20 @@ func TestEncoderSuite(t *testing.T) {
 	suite.Run(t, new(EncoderSuite))
 }
 
-func (es *EncoderSuite) SetupTest() {
-	es.shardID = 0
-	es.ctx = context.Background()
-	es.enc = common.NewEncoder(es.shardID, 1)
-	es.encodeCount = 100
-	es.bufSeg = make([]common.Segment, 0, es.encodeCount)
-	es.bufRed = make([]common.Redundant, 0, es.encodeCount)
-	es.expSnapshot = make([]byte, 0, es.encodeCount)
-	es.expSegment = make([][]byte, 0, es.encodeCount)
+func (s *EncoderSuite) SetupTest() {
+	s.shardID = 0
+	s.ctx = context.Background()
+	s.enc = common.NewEncoder(s.shardID, 1)
+	s.encodeCount = 100
+	s.bufSeg = make([]common.Segment, 0, s.encodeCount)
+	s.expSegment = make([][]byte, 0, s.encodeCount)
 }
 
-func (es *EncoderSuite) TearDownTest() {
-	es.enc.Destroy()
+func (s *EncoderSuite) TearDownTest() {
+	s.enc.Destroy()
 }
 
-func (es *EncoderSuite) makeData() []byte {
+func (s *EncoderSuite) makeData() []byte {
 	wr := &prompb.WriteRequest{
 		Timeseries: []prompb.TimeSeries{
 			{
@@ -73,11 +69,11 @@ func (es *EncoderSuite) makeData() []byte {
 	}
 
 	b, err := wr.Marshal()
-	es.NoError(err)
+	s.NoError(err)
 	return b
 }
 
-func (es *EncoderSuite) makeDataWithTwoTimeseries() []byte {
+func (s *EncoderSuite) makeDataWithTwoTimeseries() []byte {
 	wr := &prompb.WriteRequest{
 		Timeseries: []prompb.TimeSeries{
 			{
@@ -128,47 +124,41 @@ func (es *EncoderSuite) makeDataWithTwoTimeseries() []byte {
 	}
 
 	b, err := wr.Marshal()
-	es.NoError(err)
+	s.NoError(err)
 	return b
 }
 
-func (es *EncoderSuite) TestEncode() {
-	es.T().Log("encode data and accumulate segment and redundant")
+func (s *EncoderSuite) TestEncode() {
+	s.T().Log("encode data and accumulate segment and redundant")
 	hlimits := common.DefaultHashdexLimits()
 
-	for i := 0; i < es.encodeCount; i++ {
-		data := es.makeData()
+	for i := 0; i < s.encodeCount; i++ {
+		data := s.makeData()
 		h, err := common.NewHashdex(data, hlimits)
-		es.NoError(err)
+		s.NoError(err)
 
-		segKey, gos, gor, err := es.enc.Encode(es.ctx, h)
-		es.NoError(err)
+		segKey, gos, err := s.enc.Encode(s.ctx, h)
+		s.NoError(err)
 
-		es.Equal(segKey.Segment, es.enc.LastEncodedSegment())
-		es.bufSeg = append(es.bufSeg, gos)
-		es.bufRed = append(es.bufRed, gor)
-		es.expSnapshot = append(es.expSnapshot, data[0])
-		es.expSegment = append(es.expSegment, data)
+		s.Equal(segKey.Segment, s.enc.LastEncodedSegment())
+		s.bufSeg = append(s.bufSeg, gos)
+		s.expSegment = append(s.expSegment, data)
 	}
-
-	es.T().Log("get snapshot")
-	_, err := es.enc.Snapshot(es.ctx, es.bufRed)
-	es.NoError(err)
 }
 
-func (es *EncoderSuite) TestEncodeError() {
-	ctx, cancel := context.WithCancel(es.ctx)
+func (s *EncoderSuite) TestEncodeError() {
+	ctx, cancel := context.WithCancel(s.ctx)
 	cancel()
 	hlimits := common.DefaultHashdexLimits()
 
-	h, err := common.NewHashdex(es.makeData(), hlimits)
-	es.NoError(err)
+	h, err := common.NewHashdex(s.makeData(), hlimits)
+	s.NoError(err)
 
-	_, _, _, err2 := es.enc.Encode(ctx, h)
-	es.Error(err2)
+	_, _, err2 := s.enc.Encode(ctx, h)
+	s.Error(err2)
 }
 
-func (es *EncoderSuite) TestEncodeErrorCPPExceptions() {
+func (s *EncoderSuite) TestEncodeErrorCPPExceptions() {
 	wr := &prompb.WriteRequest{
 		Timeseries: []prompb.TimeSeries{
 			{
@@ -188,15 +178,15 @@ func (es *EncoderSuite) TestEncodeErrorCPPExceptions() {
 		},
 	}
 	b, err := wr.Marshal()
-	es.Require().NoError(err)
+	s.Require().NoError(err)
 
 	hlimits := common.DefaultHashdexLimits()
 	h, err := common.NewHashdex(b, hlimits)
-	es.Require().NoError(err)
+	s.Require().NoError(err)
 
-	_, _, _, err = es.enc.Encode(es.ctx, h)
-	es.Require().Error(err)
-	es.True(
+	_, _, err = s.enc.Encode(s.ctx, h)
+	s.Require().Error(err)
+	s.True(
 		common.IsExceptionCodeFromErrorAnyOf(err, 0x546e143d302c4860),
 		"Exception code is %x: %+v",
 		common.GetExceptionCodeFromError(err),
@@ -204,7 +194,7 @@ func (es *EncoderSuite) TestEncodeErrorCPPExceptions() {
 	)
 }
 
-func (es *EncoderSuite) TestFinalizeErrorCPPExceptions() {
+func (s *EncoderSuite) TestFinalizeErrorCPPExceptions() {
 	wr := &prompb.WriteRequest{
 		Timeseries: []prompb.TimeSeries{
 			{
@@ -224,110 +214,103 @@ func (es *EncoderSuite) TestFinalizeErrorCPPExceptions() {
 		},
 	}
 	b, err := wr.Marshal()
-	es.Require().NoError(err)
+	s.Require().NoError(err)
 
 	hlimits := common.DefaultHashdexLimits()
 	h, err := common.NewHashdex(b, hlimits)
-	es.Require().NoError(err)
+	s.Require().NoError(err)
 
-	_, err = es.enc.Add(es.ctx, h)
-	es.Require().NoError(err)
+	_, err = s.enc.Add(s.ctx, h)
+	s.Require().NoError(err)
 
-	_, _, _, err = es.enc.Finalize(es.ctx)
-	es.Require().Error(err)
+	_, _, err = s.enc.Finalize(s.ctx)
+	s.Require().Error(err)
 }
 
-func (es *EncoderSuite) TestSnapshotError() {
-	ctx, cancel := context.WithCancel(es.ctx)
-	cancel()
-	_, err := es.enc.Snapshot(ctx, es.bufRed)
-	es.Error(err)
-}
-
-func (es *EncoderSuite) TestCppInvalidDataForHashdex() {
+func (s *EncoderSuite) TestCppInvalidDataForHashdex() {
 	invalidPbData := []byte("1111")
 	hlimits := common.DefaultHashdexLimits()
 	h, err := common.NewHashdex(invalidPbData, hlimits)
-	es.Error(err)
-	es.T().Logf("Got an error (it's OK): %s", err.Error())
+	s.Error(err)
+	s.T().Logf("Got an error (it's OK): %s", err.Error())
 	_ = h
 }
 
 // Test encode remaining table size.
 //
 
-func (es *EncoderSuite) TestEncodeRemainingSize() {
+func (s *EncoderSuite) TestEncodeRemainingSize() {
 	var remainingTableSize uint32 = math.MaxUint32
 	hlimits := common.DefaultHashdexLimits()
-	h, err := common.NewHashdex(es.makeData(), hlimits)
-	es.NoError(err)
-	seg, err := es.enc.Add(es.ctx, h)
-	es.NoError(err)
+	h, err := common.NewHashdex(s.makeData(), hlimits)
+	s.NoError(err)
+	seg, err := s.enc.Add(s.ctx, h)
+	s.NoError(err)
 
 	var prevRemainingTableSize = seg.RemainingTableSize()
-	es.Less(prevRemainingTableSize, remainingTableSize)
+	s.Less(prevRemainingTableSize, remainingTableSize)
 }
 
 //
 // Test shards for memory limits
 //
 
-func (es *EncoderSuite) TestHashdexWithHardLimitsOnPbMessage() {
+func (s *EncoderSuite) TestHashdexWithHardLimitsOnPbMessage() {
 	limits := common.HashdexLimits{
 		MaxPbSizeInBytes: 20,
 	}
-	data := es.makeData()
+	data := s.makeData()
 	h, err := common.NewHashdex(data, limits)
-	es.Error(err)
-	es.T().Logf("Got an error (it's OK): %s", err.Error())
+	s.Error(err)
+	s.T().Logf("Got an error (it's OK): %s", err.Error())
 	_ = h
 }
 
-func (es *EncoderSuite) TestHashdexWithHardLimitsOnLabelNameLength() {
+func (s *EncoderSuite) TestHashdexWithHardLimitsOnLabelNameLength() {
 	limits := common.HashdexLimits{
 		MaxLabelNameLength: 2,
 	}
-	data := es.makeData()
+	data := s.makeData()
 	h, err := common.NewHashdex(data, limits)
 
-	es.Error(err)
-	es.T().Logf("Got an error (it's OK): %s", err.Error())
+	s.Error(err)
+	s.T().Logf("Got an error (it's OK): %s", err.Error())
 	_ = h
 }
 
-func (es *EncoderSuite) TestHashdexWithHardLimitsOnLabelValueLength() {
+func (s *EncoderSuite) TestHashdexWithHardLimitsOnLabelValueLength() {
 	limits := common.HashdexLimits{
 		MaxLabelValueLength: 2,
 	}
-	data := es.makeData()
+	data := s.makeData()
 	h, err := common.NewHashdex(data, limits)
 
-	es.Error(err)
-	es.T().Logf("Got an error (it's OK): %s", err.Error())
+	s.Error(err)
+	s.T().Logf("Got an error (it's OK): %s", err.Error())
 	_ = h
 }
 
-func (es *EncoderSuite) TestHashdexWithHardLimitsOnLabelsInTimeseries() {
+func (s *EncoderSuite) TestHashdexWithHardLimitsOnLabelsInTimeseries() {
 	limits := common.HashdexLimits{
 		MaxLabelNamesPerTimeseries: 1,
 	}
-	data := es.makeData()
+	data := s.makeData()
 	h, err := common.NewHashdex(data, limits)
 
-	es.Error(err)
-	es.T().Logf("Got an error (it's OK): %s", err.Error())
+	s.Error(err)
+	s.T().Logf("Got an error (it's OK): %s", err.Error())
 	_ = h
 }
 
-func (es *EncoderSuite) TestHashdexWithVeryHardLimitsOnTimeseries() {
+func (s *EncoderSuite) TestHashdexWithVeryHardLimitsOnTimeseries() {
 	limits := common.HashdexLimits{
 		MaxTimeseriesCount: 1,
 	}
-	data := es.makeDataWithTwoTimeseries()
+	data := s.makeDataWithTwoTimeseries()
 	h, err := common.NewHashdex(data, limits)
 
-	es.Error(err)
-	es.T().Logf("Got an error (it's OK): %s", err.Error())
+	s.Error(err)
+	s.T().Logf("Got an error (it's OK): %s", err.Error())
 	_ = h
 }
 
@@ -373,7 +356,7 @@ func BenchmarkEncoder(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		h, _ := common.NewHashdex(data, hlimits)
-		id, gos, gor, err := enc.Encode(ctx, h)
-		_, _, _, _ = id, gos, gor, err
+		id, gos, err := enc.Encode(ctx, h)
+		_, _, _ = id, gos, err
 	}
 }
