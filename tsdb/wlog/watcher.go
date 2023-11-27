@@ -730,10 +730,11 @@ func (w *Watcher) readCheckpoint(checkpointDir string, readFn segmentReadFn) err
 		if err != nil {
 			return fmt.Errorf("unable to open segment: %w", err)
 		}
-		defer sr.Close()
 
 		r := NewLiveReader(w.logger, w.readerMetrics, sr)
-		if err := readFn(w, r, index, false); err != nil && !errors.Is(err, io.EOF) {
+		err = readFn(w, r, index, false)
+		sr.Close()
+		if err != nil && !errors.Is(err, io.EOF) {
 			return fmt.Errorf("readSegment: %w", err)
 		}
 
