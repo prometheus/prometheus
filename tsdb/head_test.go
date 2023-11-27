@@ -5543,53 +5543,53 @@ func TestHeadCompactionWhileAppendAndCommitExemplar(t *testing.T) {
 	h.Close()
 }
 
+func labelsWithHashCollision() (labels.Labels, labels.Labels) {
+	// These two series have the same XXHash; thanks to https://github.com/pstibrany/labels_hash_collisions
+	ls1 := labels.FromStrings("__name__", "metric", "lbl1", "value", "lbl2", "l6CQ5y")
+	ls2 := labels.FromStrings("__name__", "metric", "lbl1", "value", "lbl2", "v7uDlF")
+
+	if ls1.Hash() != ls2.Hash() {
+		// These ones are the same when using -tags stringlabels
+		ls1 = labels.FromStrings("__name__", "metric", "lbl", "HFnEaGl")
+		ls2 = labels.FromStrings("__name__", "metric", "lbl", "RqcXatm")
+	}
+
+	if ls1.Hash() != ls2.Hash() {
+		panic("This code needs to be updated: find new labels with colliding hash values.")
+	}
+
+	return ls1, ls2
+}
+
 func TestStripeSeries_gc(t *testing.T) {
-	lbls1 := labels.FromMap(map[string]string{
-		"__name__": "metric",
-		"lbl":      "qeYKm3",
-	})
-	hash := lbls1.Hash()
+	lbls1, lbls2 := labelsWithHashCollision()
 	ms1 := memSeries{
 		lset: lbls1,
 	}
-	lbls2 := labels.FromMap(map[string]string{
-		"__name__": "metric",
-		"lbl":      "2fUczT",
-	})
 	ms2 := memSeries{
 		lset: lbls2,
 	}
-	require.Equal(t, lbls2.Hash(), lbls1.Hash(), "the two label sets should collide")
+	hash := lbls1.Hash()
 	s := newStripeSeries(1, noopSeriesLifecycleCallback{})
-	s.getOrSet(hash, lbls1, func() *memSeries {
+	got, created, err := s.getOrSet(hash, lbls1, func() *memSeries {
 		return &ms1
 	})
-	require.Equal(t, []seriesHashmap{
-		{
-			unique: map[uint64]*memSeries{
-				hash: &ms1,
-			},
-		},
-	}, s.hashes)
+	require.NoError(t, err)
+	require.True(t, created)
+	require.Same(t, &ms1, got)
 	// Add a conflicting series
-	s.getOrSet(hash, lbls2, func() *memSeries {
+	got, created, err = s.getOrSet(hash, lbls2, func() *memSeries {
 		return &ms2
 	})
-	require.Equal(t, []seriesHashmap{
-		{
-			unique: map[uint64]*memSeries{
-				hash: &ms1,
-			},
-			conflicts: map[uint64][]*memSeries{
-				hash: {
-					&ms2,
-				},
-			},
-		},
-	}, s.hashes)
+	require.NoError(t, err)
+	require.True(t, created)
+	require.Same(t, &ms2, got)
 
 	s.gc(0, 0)
-	require.Len(t, s.hashes, 1)
-	require.Empty(t, s.hashes[0].unique)
-	require.Empty(t, s.hashes[0].conflicts)
+
+	// Verify that we can get neither ms1 nor ms2 after gc-ing corresponding series
+	got = s.getByHash(hash, lbls1)
+	require.Nil(t, got)
+	got = s.getByHash(hash, lbls2)
+	require.Nil(t, got)
 }
