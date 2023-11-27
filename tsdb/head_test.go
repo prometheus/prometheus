@@ -5543,22 +5543,33 @@ func TestHeadCompactionWhileAppendAndCommitExemplar(t *testing.T) {
 	h.Close()
 }
 
+func labelsWithHashCollision() (labels.Labels, labels.Labels) {
+	// These two series have the same XXHash; thanks to https://github.com/pstibrany/labels_hash_collisions
+	ls1 := labels.FromStrings("__name__", "metric", "lbl1", "value", "lbl2", "l6CQ5y")
+	ls2 := labels.FromStrings("__name__", "metric", "lbl1", "value", "lbl2", "v7uDlF")
+
+	if ls1.Hash() != ls2.Hash() {
+		// These ones are the same when using -tags stringlabels
+		ls1 = labels.FromStrings("__name__", "metric", "lbl", "HFnEaGl")
+		ls2 = labels.FromStrings("__name__", "metric", "lbl", "RqcXatm")
+	}
+
+	if ls1.Hash() != ls2.Hash() {
+		panic("This code needs to be updated: find new labels with colliding hash values.")
+	}
+
+	return ls1, ls2
+}
+
 func TestStripeSeries_getOrSet(t *testing.T) {
-	const hash = 15994195474147469050
-	lbls1 := labels.FromMap(map[string]string{
-		"__name__": "metric",
-		"lbl":      "qeYKm3",
-	})
+	lbls1, lbls2 := labelsWithHashCollision()
 	ms1 := memSeries{
 		lset: lbls1,
 	}
-	lbls2 := labels.FromMap(map[string]string{
-		"__name__": "metric",
-		"lbl":      "2fUczT",
-	})
 	ms2 := memSeries{
 		lset: lbls2,
 	}
+	hash := lbls1.Hash()
 	s := newStripeSeries(1, noopSeriesLifecycleCallback{})
 
 	s.getOrSet(hash, lbls1, func() *memSeries {
