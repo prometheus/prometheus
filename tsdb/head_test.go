@@ -5630,6 +5630,39 @@ func labelsWithHashCollision() (labels.Labels, labels.Labels) {
 	return ls1, ls2
 }
 
+func TestStripeSeries_getOrSet(t *testing.T) {
+	lbls1, lbls2 := labelsWithHashCollision()
+	ms1 := memSeries{
+		lset: lbls1,
+	}
+	ms2 := memSeries{
+		lset: lbls2,
+	}
+	hash := lbls1.Hash()
+	s := newStripeSeries(1, noopSeriesLifecycleCallback{})
+
+	got, created, err := s.getOrSet(hash, lbls1, func() *memSeries {
+		return &ms1
+	})
+	require.NoError(t, err)
+	require.True(t, created)
+	require.Same(t, &ms1, got)
+
+	// Add a conflicting series
+	got, created, err = s.getOrSet(hash, lbls2, func() *memSeries {
+		return &ms2
+	})
+	require.NoError(t, err)
+	require.True(t, created)
+	require.Same(t, &ms2, got)
+
+	// Verify that we can get both of the series despite the hash collision
+	got = s.getByHash(hash, lbls1)
+	require.Same(t, &ms1, got)
+	got = s.getByHash(hash, lbls2)
+	require.Same(t, &ms2, got)
+}
+
 func TestSecondaryHashFunction(t *testing.T) {
 	checkSecondaryHashes := func(t *testing.T, h *Head, labelsCount, expected int) {
 		reportedHashes := 0

@@ -24,7 +24,6 @@ import (
 	"math"
 	"net/http"
 	"reflect"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -117,7 +116,7 @@ const maxAheadTime = 10 * time.Minute
 // returning an empty label set is interpreted as "drop".
 type labelsMutator func(labels.Labels) labels.Labels
 
-func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed uint64, logger log.Logger, options *Options, metrics *scrapeMetrics) (*scrapePool, error) {
+func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed uint64, logger log.Logger, buffers *pool.Pool, options *Options, metrics *scrapeMetrics) (*scrapePool, error) {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -126,8 +125,6 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 	if err != nil {
 		return nil, fmt.Errorf("error creating HTTP client: %w", err)
 	}
-
-	buffers := pool.New(1e3, 100e6, 3, func(sz int) interface{} { return make([]byte, 0, sz) })
 
 	ctx, cancel := context.WithCancel(context.Background())
 	sp := &scrapePool{
@@ -1610,17 +1607,8 @@ loop:
 			exemplars = append(exemplars, e)
 			e = exemplar.Exemplar{} // Reset for next time round loop.
 		}
-		sort.Slice(exemplars, func(i, j int) bool {
-			// Sort first by timestamp, then value, then labels so the checking
-			// for duplicates / out of order is more efficient during validation.
-			if exemplars[i].Ts != exemplars[j].Ts {
-				return exemplars[i].Ts < exemplars[j].Ts
-			}
-			if exemplars[i].Value != exemplars[j].Value {
-				return exemplars[i].Value < exemplars[j].Value
-			}
-			return exemplars[i].Labels.Hash() < exemplars[j].Labels.Hash()
-		})
+		// Sort so that checking for duplicates / out of order is more efficient during validation.
+		slices.SortFunc(exemplars, exemplar.Compare)
 		outOfOrderExemplars := 0
 		for _, e := range exemplars {
 			_, exemplarErr := app.AppendExemplar(ref, lset, e)
