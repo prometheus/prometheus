@@ -121,7 +121,7 @@ func (eds *EncoderDecoderSuite) TestEncodeDecode() {
 
 		eds.T().Log("encoding protobuf")
 		createdAt := time.Now()
-		_, gos, _, err := eds.enc.Encode(eds.ctx, h)
+		_, gos, err := eds.enc.Encode(eds.ctx, h)
 		eds.Require().NoError(err)
 
 		eds.EqualValues(seriesCount, gos.Series())
@@ -146,171 +146,6 @@ func (eds *EncoderDecoderSuite) TestEncodeDecode() {
 	}
 }
 
-func (eds *EncoderDecoderSuite) TestEncodeDecodeSnapshot() {
-	rts := make([]common.Redundant, 5)
-	segmentsBuffer := make([][]byte, 5)
-	hlimits := common.DefaultHashdexLimits()
-
-	for i := 0; i < 10; i++ {
-		eds.T().Log("generate protobuf")
-		expectedWr := eds.makeData(10, int64(i))
-		data, err := expectedWr.Marshal()
-		eds.Require().NoError(err)
-
-		eds.T().Log("sharding protobuf")
-		h, err := common.NewHashdex(data, hlimits)
-		eds.Require().NoError(err)
-
-		eds.T().Log("encoding protobuf")
-		_, gos, rt, err := eds.enc.Encode(eds.ctx, h)
-		eds.Require().NoError(err)
-
-		eds.T().Log("transferring segment")
-		segByte := eds.transferringData(gos)
-
-		if i >= 5 {
-			rts[i-5] = rt
-			segmentsBuffer[i-5] = segByte
-			continue
-		}
-
-		eds.T().Log("decoding protobuf")
-		protob, _, err := eds.dec.Decode(eds.ctx, segByte)
-		eds.Require().NoError(err)
-
-		eds.T().Log("compare income and outcome protobuf")
-		actualWr := &prompb.WriteRequest{}
-		if eds.NoError(protob.UnmarshalTo(actualWr)) {
-			eds.Equal(expectedWr.String(), actualWr.String())
-		}
-	}
-
-	eds.T().Log("get snapshot")
-	gsnapshot, err := eds.enc.Snapshot(eds.ctx, rts)
-	eds.Require().NoError(err)
-
-	eds.T().Log("init new decoder")
-	resDec, err := common.NewDecoder()
-	eds.Require().NoError(err)
-
-	eds.T().Log("restore new decoder")
-	buf, err := framestest.ReadPayload(gsnapshot)
-	eds.Require().NoError(err)
-	err = resDec.Snapshot(eds.ctx, buf)
-	eds.Require().NoError(err)
-
-	eds.T().Log("send buffer segments")
-	for _, segByte := range segmentsBuffer {
-		eds.T().Log("after restore decoding protobuf")
-		protob, _, err := eds.dec.Decode(eds.ctx, segByte)
-		eds.Require().NoError(err)
-
-		eds.T().Log("after restore restored decoding protobuf")
-		resProtob, _, err := resDec.Decode(eds.ctx, segByte)
-		eds.Require().NoError(err)
-
-		eds.T().Log("after restore compare income and outcome and restored protobuf")
-		actualWr := &prompb.WriteRequest{}
-		eds.NoError(protob.UnmarshalTo(actualWr))
-
-		resActualWr := &prompb.WriteRequest{}
-		eds.NoError(resProtob.UnmarshalTo(resActualWr))
-
-		eds.Equal(actualWr.String(), resActualWr.String())
-	}
-}
-
-func (eds *EncoderDecoderSuite) TestEncodeDecodeSnapshotWithDrySegment() {
-	rts := make([]common.Redundant, 5)
-	segmentsDry := make([][]byte, 5)
-	hlimits := common.DefaultHashdexLimits()
-
-	for i := 0; i < 10; i++ {
-		eds.T().Log("generate protobuf")
-		expectedWr := eds.makeData(10, int64(i))
-		data, err := expectedWr.Marshal()
-		eds.Require().NoError(err)
-
-		eds.T().Log("sharding protobuf")
-		h, err := common.NewHashdex(data, hlimits)
-		eds.Require().NoError(err)
-
-		eds.T().Log("encoding protobuf")
-		_, gos, rt, err := eds.enc.Encode(eds.ctx, h)
-		eds.Require().NoError(err)
-
-		eds.T().Log("transferring segment")
-		segByte := eds.transferringData(gos)
-
-		if i >= 5 {
-			rts[i-5] = rt
-			segmentsDry[i-5] = segByte
-		}
-
-		eds.T().Log("decoding protobuf")
-		protob, _, err := eds.dec.Decode(eds.ctx, segByte)
-		eds.Require().NoError(err)
-
-		eds.T().Log("compare income and outcome protobuf")
-		actualWr := &prompb.WriteRequest{}
-		eds.Require().NoError(protob.UnmarshalTo(actualWr))
-		eds.Equal(expectedWr.String(), actualWr.String())
-	}
-
-	eds.T().Log("get snapshot")
-	gsnapshot, err := eds.enc.Snapshot(eds.ctx, rts)
-	eds.Require().NoError(err)
-
-	eds.T().Log("init new decoder")
-	resDec, err := common.NewDecoder()
-	eds.Require().NoError(err)
-
-	eds.T().Log("restore new decoder")
-	buf, err := framestest.ReadPayload(gsnapshot)
-	eds.Require().NoError(err)
-	err = resDec.Snapshot(eds.ctx, buf)
-	eds.Require().NoError(err)
-
-	eds.T().Log("restore segmentsDry")
-	for i := range segmentsDry {
-		err = resDec.DecodeDry(eds.ctx, segmentsDry[i])
-		eds.Require().NoError(err)
-	}
-
-	eds.T().Log("after restore generate protobuf")
-	expectedWr := eds.makeData(10, 10)
-	data, err := expectedWr.Marshal()
-	eds.Require().NoError(err)
-
-	eds.T().Log("after restore sharding protobuf")
-	h, err := common.NewHashdex(data, hlimits)
-	eds.Require().NoError(err)
-
-	eds.T().Log("after restore encoding protobuf")
-	_, gos, _, err := eds.enc.Encode(eds.ctx, h)
-	eds.Require().NoError(err)
-
-	eds.T().Log("after restore transferring segment")
-	segByte := eds.transferringData(gos)
-
-	eds.T().Log("after restore decoding protobuf")
-	protob, _, err := eds.dec.Decode(eds.ctx, segByte)
-	eds.Require().NoError(err)
-
-	eds.T().Log("after restore restored decoding protobuf")
-	resProtob, _, err := resDec.Decode(eds.ctx, segByte)
-	eds.Require().NoError(err)
-
-	eds.T().Log("after restore compare income and outcome and restored protobuf")
-	actualWr := &prompb.WriteRequest{}
-	eds.Require().NoError(protob.UnmarshalTo(actualWr))
-	eds.Equal(expectedWr.String(), actualWr.String())
-
-	resActualWr := &prompb.WriteRequest{}
-	eds.Require().NoError(resProtob.UnmarshalTo(resActualWr))
-	eds.Equal(expectedWr.String(), resActualWr.String())
-}
-
 // this test run for local  benchmark test
 func (eds *EncoderDecoderSuite) EncodeDecodeBench(i int64) {
 	expectedWr := eds.makeData(100, i)
@@ -320,7 +155,7 @@ func (eds *EncoderDecoderSuite) EncodeDecodeBench(i int64) {
 	h, err := common.NewHashdex(data, hlimits)
 	eds.Require().NoError(err)
 
-	_, gos, _, err := eds.enc.Encode(eds.ctx, h)
+	_, gos, err := eds.enc.Encode(eds.ctx, h)
 	eds.Require().NoError(err)
 
 	segByte := eds.transferringData(gos)
@@ -358,7 +193,7 @@ func (eds *EncoderDecoderSuite) TestEncodeDecodeOpenHead() {
 		eds.EqualValues(30*i, gosF.Samples())
 	}
 
-	_, gos, _, err := eds.enc.Finalize(eds.ctx)
+	_, gos, err := eds.enc.Finalize(eds.ctx)
 	eds.Require().NoError(err)
 
 	eds.T().Log("transferring segment")
@@ -395,7 +230,7 @@ func (eds *EncoderDecoderSuite) TestRestoreFromStream() {
 		eds.Require().NoError(err)
 		h, err := common.NewHashdex(data, hlimits)
 		eds.Require().NoError(err)
-		_, gos, _, err := eds.enc.Encode(eds.ctx, h)
+		_, gos, err := eds.enc.Encode(eds.ctx, h)
 		eds.Require().NoError(err)
 		segByte := eds.transferringData(gos)
 		buf = append(buf, segByte...)

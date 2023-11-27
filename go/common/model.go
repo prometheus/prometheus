@@ -1,5 +1,5 @@
 // package common contains common interfaces for encoders and decoders,
-// such as Segment, Redundant, Snapshot, the Go bridged counterparts
+// such as Segment, the Go bridged counterparts
 // (like GoRedundant, etc.).
 package common
 
@@ -38,16 +38,6 @@ type DecodedSegment interface {
 	Samples() uint32
 	Series() uint32
 	UnmarshalTo(proto.Unmarshaler) error
-}
-
-// Redundant - information to create a Snapshot
-type Redundant interface {
-	PointerData() unsafe.Pointer
-}
-
-// Snapshot - snapshot of encoder/decoder
-type Snapshot interface {
-	frames.WritePayload
 }
 
 // SegmentKey is a key to store segment data in Exchange and Refill
@@ -156,7 +146,7 @@ func (l *HashdexLimits) UnmarshalBinary(data []byte) error {
 func NewHashdex(protoData []byte, limits HashdexLimits) (ShardedData, error) {
 	// cluster and replica - in memory GO(protoData)
 	h := &Hashdex{
-		hashdex: internal.CHashdexCtor(uintptr(unsafe.Pointer(&limits))),
+		hashdex: internal.CHashdexCtor(uintptr(unsafe.Pointer(&limits))), //nolint:gosec // this is memory optimisation
 		data:    protoData,
 		cluster: &internal.CSlice{},
 		replica: &internal.CSlice{},
@@ -173,7 +163,7 @@ func NewHashdex(protoData []byte, limits HashdexLimits) (ShardedData, error) {
 
 // Cluster - get Cluster name.
 func (h *Hashdex) Cluster() string {
-	data := *(*[]byte)((unsafe.Pointer(h.cluster)))
+	data := *(*[]byte)((unsafe.Pointer(h.cluster))) //nolint:gosec // this is memory optimisation
 	copyData := make([]byte, len(data))
 	copy(copyData, data)
 	return string(copyData)
@@ -181,7 +171,7 @@ func (h *Hashdex) Cluster() string {
 
 // Replica - get Replica name.
 func (h *Hashdex) Replica() string {
-	data := *(*[]byte)((unsafe.Pointer(h.replica)))
+	data := *(*[]byte)((unsafe.Pointer(h.replica))) //nolint:gosec // this is memory optimisation
 	copyData := make([]byte, len(data))
 	copy(copyData, data)
 	return string(copyData)

@@ -43,14 +43,6 @@ func (pr *ProtocolReader) Next(ctx context.Context) (*Request, error) {
 		}
 
 		switch fe.GetType() {
-		case frames.SnapshotType:
-			if err := pr.handleSnapshot(ctx, fe); err != nil {
-				return nil, fmt.Errorf("decode snapshot: %w", err)
-			}
-		case frames.DrySegmentType:
-			if err := pr.handleDryPut(ctx, fe); err != nil {
-				return nil, fmt.Errorf("decode dry segment: %w", err)
-			}
 		case frames.SegmentType:
 			return pr.handlePut(ctx, fe)
 		case frames.FinalType:
@@ -66,31 +58,6 @@ func (pr *ProtocolReader) Destroy() {
 	if pr.decoder != nil {
 		pr.decoder.Destroy()
 	}
-}
-
-// handleSnapshot - process the snapshot using the decoder.
-func (pr *ProtocolReader) handleSnapshot(ctx context.Context, fe *frames.ReadFrame) error {
-	if pr.decoder != nil {
-		pr.decoder.Destroy()
-	}
-	var err error
-	pr.decoder, err = common.NewDecoder()
-	if err != nil {
-		return err
-	}
-	return pr.decoder.Snapshot(ctx, fe.GetBody())
-}
-
-// handleDryPut - process the dry put using the decoder.
-func (pr *ProtocolReader) handleDryPut(ctx context.Context, fe *frames.ReadFrame) error {
-	if pr.decoder == nil {
-		var err error
-		pr.decoder, err = common.NewDecoder()
-		if err != nil {
-			return err
-		}
-	}
-	return pr.decoder.DecodeDry(ctx, fe.GetBody())
 }
 
 // handlePut - process the put using the decoder.

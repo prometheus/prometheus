@@ -125,3 +125,14 @@ func (s *HashdexLimitsSuite) TestMarshalBinaryUnmarshalBinary_Quick() {
 	err := quick.Check(f, nil)
 	s.NoError(err)
 }
+
+func TestSegmentKey(t *testing.T) {
+	sk := common.SegmentKey{
+		ShardID: 0,
+		Segment: 0,
+	}
+
+	assert.True(t, sk.IsFirst())
+	assert.Equal(t, "0:0", sk.String())
+	assert.Equal(t, "0:4294967295", sk.Prev().String())
+}

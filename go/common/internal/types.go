@@ -3,8 +3,7 @@
 // All dynamic memory in these types is handled by C/C++ bindings
 // (Not the Go's GC!) so we must call corresponding C/C++ deallocation
 // function to avoid memory leaks.
-// Current types are: GoSegment, GoSliceByte, GoRedundant,
-// GoSnapshot.
+// Current types are: GoSegment, GoSliceByte.
 package internal
 
 import (
@@ -151,11 +150,7 @@ type GoRedundant struct {
 
 // NewGoRedundant - init GoRedundant.
 func NewGoRedundant() *GoRedundant {
-	gr := &GoRedundant{}
-	runtime.SetFinalizer(gr, func(gr *GoRedundant) {
-		CRedundantDestroy(unsafe.Pointer(gr)) //nolint:gosec // this is memory optimisation
-	})
-	return gr
+	return &GoRedundant{}
 }
 
 // PointerData - get contained data, ONLY FOR TESTING PURPOSES.
@@ -163,35 +158,9 @@ func (gr *GoRedundant) PointerData() unsafe.Pointer {
 	return gr.data
 }
 
-// GoSnapshot - GO wrapper for snapshot, init from GO and filling from C/C++.
-// data - slice struct for cast in C/C++. Contains C/C++ memory
-// buf - unsafe.Pointer for std::stringstream in C/C++, need for clear memory.
-type GoSnapshot struct {
-	data CSlice
-	buf  unsafe.Pointer
-}
-
-// NewGoSnapshot - init GoSnapshot.
-func NewGoSnapshot() *GoSnapshot {
-	gs := &GoSnapshot{
-		data: CSlice{},
-	}
-	runtime.SetFinalizer(gs, func(gs *GoSnapshot) {
-		CSnapshotDestroy(unsafe.Pointer(gs)) //nolint:gosec // this is memory optimisation
-	})
-	return gs
-}
-
-// Size returns count of bytes in snapshot
-func (gs *GoSnapshot) Size() int64 {
-	return int64(len(*(*[]byte)(unsafe.Pointer(&gs.data)))) //nolint:gosec // this is memory optimisation
-}
-
-// WriteTo implements io.WriterTo interface
-func (gs *GoSnapshot) WriteTo(w io.Writer) (int64, error) {
-	n, err := w.Write(*(*[]byte)(unsafe.Pointer(&gs.data))) //nolint:gosec // this is memory optimisation
-	runtime.KeepAlive(gs)
-	return int64(n), err
+// Destroy - destroy object.
+func (gr *GoRedundant) Destroy() {
+	CRedundantDestroy(unsafe.Pointer(gr)) //nolint:gosec // this is memory optimisation
 }
 
 // GoErrorInfo is the Go-side wrapper for storing the error info from C/C++ APIs.

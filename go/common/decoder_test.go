@@ -55,6 +55,26 @@ func TestDecoderSuite(t *testing.T) {
 	assert.Equal(t, expectedString, actualWr.String())
 }
 
+func TestDecodeWithError(t *testing.T) {
+	dec, err := common.NewDecoder()
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, _, err = dec.Decode(ctx, nil)
+	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestRestoreFromStreamWithError(t *testing.T) {
+	dec, err := common.NewDecoder()
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, _, err = dec.RestoreFromStream(ctx, nil, 0)
+	require.ErrorIs(t, err, context.Canceled)
+}
+
 func BenchmarkDecoder(b *testing.B) {
 	ctx := context.Background()
 	segment := [...]byte{

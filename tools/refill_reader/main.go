@@ -37,7 +37,7 @@ func main() {
 		zap.L().Fatal("failed open file", zap.Error(err))
 	}
 	if !ok {
-		zap.L().Fatal("file doesn't exist")
+		zap.L().Fatal("file doesn't exist", zap.String("path", storage.GetPath()))
 	}
 
 	// open file
@@ -69,7 +69,7 @@ func makeConfig() (*delivery.FileStorageConfig, error) {
 	if len(os.Args) < 2 {
 		return nil, errors.New("path to refill is required as first argument")
 	}
-	path, err := filepath.Abs(os.Args[1])
+	path, err := filepath.Abs(os.Args[2])
 	if err != nil {
 		return nil, fmt.Errorf("fail to make absolute path by %s: %w", os.Args[1], err)
 	}
@@ -85,7 +85,6 @@ var legend = map[frames.TypeFrame]string{
 	frames.UnknownType:          "Unknown",
 	frames.TitleType:            "Title",
 	frames.DestinationNamesType: "DestinationNames",
-	frames.SnapshotType:         "Snapshot",
 	frames.SegmentType:          "Segment",
 	frames.StatusType:           "Status",
 	frames.RejectStatusType:     "Rejects",

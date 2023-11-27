@@ -6,20 +6,6 @@ import (
 	"io"
 )
 
-// ReadFrameSnapshot - read frame from position pos and return BinaryBody.
-func ReadFrameSnapshot(ctx context.Context, r io.Reader) (*BinaryBody, error) {
-	h, err := ReadHeader(ctx, r)
-	if err != nil {
-		return nil, err
-	}
-
-	if h.typeFrame != SnapshotType {
-		return nil, fmt.Errorf("expected %d instead of %d: %w", SnapshotType, h.typeFrame, ErrFrameTypeNotMatch)
-	}
-
-	return ReadBinaryBody(ctx, r, int(h.GetSize()))
-}
-
 // ReadFrameSegment - read frame from position pos and return BinaryBody.
 func ReadFrameSegment(ctx context.Context, r io.Reader) (*BinaryBody, error) {
 	h, err := ReadHeader(ctx, r)
@@ -47,14 +33,14 @@ func ReadBinaryBody(ctx context.Context, r io.Reader, size int) (*BinaryBody, er
 	return NewBinaryBody(data), nil
 }
 
-// BinaryBody - unsent segment/snapshot for save refill.
+// BinaryBody - unsent segment for save refill.
 type BinaryBody struct {
 	data []byte
 }
 
 var _ WritePayload = &BinaryBody{}
 
-// NewBinaryBody - init BinaryBody with data segment/snapshot.
+// NewBinaryBody - init BinaryBody with data segment.
 func NewBinaryBody(binaryData []byte) *BinaryBody {
 	return &BinaryBody{data: binaryData}
 }
