@@ -5542,3 +5542,50 @@ func TestHeadCompactionWhileAppendAndCommitExemplar(t *testing.T) {
 	app.Commit()
 	h.Close()
 }
+
+func TestStripeSeries_getOrSet(t *testing.T) {
+	const hash = 15994195474147469050
+	lbls1 := labels.FromMap(map[string]string{
+		"__name__": "metric",
+		"lbl":      "qeYKm3",
+	})
+	ms1 := memSeries{
+		lset: lbls1,
+	}
+	lbls2 := labels.FromMap(map[string]string{
+		"__name__": "metric",
+		"lbl":      "2fUczT",
+	})
+	ms2 := memSeries{
+		lset: lbls2,
+	}
+	s := newStripeSeries(1, noopSeriesLifecycleCallback{})
+
+	s.getOrSet(hash, lbls1, func() *memSeries {
+		return &ms1
+	})
+	require.Equal(t, []seriesHashmap{
+		{
+			unique: map[uint64]*memSeries{
+				hash: &ms1,
+			},
+		},
+	}, s.hashes)
+
+	// Add a conflicting series
+	s.getOrSet(hash, lbls2, func() *memSeries {
+		return &ms2
+	})
+	require.Equal(t, []seriesHashmap{
+		{
+			unique: map[uint64]*memSeries{
+				hash: &ms1,
+			},
+			conflicts: map[uint64][]*memSeries{
+				hash: {
+					&ms2,
+				},
+			},
+		},
+	}, s.hashes)
+}
