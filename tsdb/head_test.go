@@ -5612,6 +5612,24 @@ func TestHeadCompactionWhileAppendAndCommitExemplar(t *testing.T) {
 	h.Close()
 }
 
+func labelsWithHashCollision() (labels.Labels, labels.Labels) {
+	// These two series have the same XXHash; thanks to https://github.com/pstibrany/labels_hash_collisions
+	ls1 := labels.FromStrings("__name__", "metric", "lbl1", "value", "lbl2", "l6CQ5y")
+	ls2 := labels.FromStrings("__name__", "metric", "lbl1", "value", "lbl2", "v7uDlF")
+
+	if ls1.Hash() != ls2.Hash() {
+		// These ones are the same when using -tags stringlabels
+		ls1 = labels.FromStrings("__name__", "metric", "lbl", "HFnEaGl")
+		ls2 = labels.FromStrings("__name__", "metric", "lbl", "RqcXatm")
+	}
+
+	if ls1.Hash() != ls2.Hash() {
+		panic("This code needs to be updated: find new labels with colliding hash values.")
+	}
+
+	return ls1, ls2
+}
+
 func TestSecondaryHashFunction(t *testing.T) {
 	checkSecondaryHashes := func(t *testing.T, h *Head, labelsCount, expected int) {
 		reportedHashes := 0
@@ -5639,17 +5657,15 @@ func TestSecondaryHashFunction(t *testing.T) {
 			name: "with collisions",
 			series: func(t *testing.T) []storage.Series {
 				// Make a couple of series with colliding label sets
-				collidingSet := map[string]string{"__name__": "metric"}
-				collidingSet["lbl"] = "qeYKm3"
+				lbls1, lbls2 := labelsWithHashCollision()
 				series := []storage.Series{
 					storage.NewListSeries(
-						labels.FromMap(collidingSet), []chunks.Sample{sample{t: 0, f: rand.Float64()}},
+						lbls1, []chunks.Sample{sample{t: 0, f: rand.Float64()}},
+					),
+					storage.NewListSeries(
+						lbls2, []chunks.Sample{sample{t: 0, f: rand.Float64()}},
 					),
 				}
-				collidingSet["lbl"] = "2fUczT"
-				series = append(series, storage.NewListSeries(
-					labels.FromMap(collidingSet), []chunks.Sample{sample{t: 0, f: rand.Float64()}},
-				))
 				require.Equal(t, series[len(series)-2].Labels().Hash(), series[len(series)-1].Labels().Hash(),
 					"The two series should have the same label set hash")
 				return series
