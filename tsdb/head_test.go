@@ -5561,7 +5561,10 @@ func labelsWithHashCollision() (labels.Labels, labels.Labels) {
 	return ls1, ls2
 }
 
-func TestStripeSeries_gc(t *testing.T) {
+// stripeSeriesWithCollidingSeries returns a stripeSeries with two memSeries having the same, colliding, hash.
+func stripeSeriesWithCollidingSeries(t *testing.T) (*stripeSeries, *memSeries, *memSeries) {
+	t.Helper()
+
 	lbls1, lbls2 := labelsWithHashCollision()
 	ms1 := memSeries{
 		lset: lbls1,
@@ -5571,12 +5574,14 @@ func TestStripeSeries_gc(t *testing.T) {
 	}
 	hash := lbls1.Hash()
 	s := newStripeSeries(1, noopSeriesLifecycleCallback{})
+
 	got, created, err := s.getOrSet(hash, lbls1, func() *memSeries {
 		return &ms1
 	})
 	require.NoError(t, err)
 	require.True(t, created)
 	require.Same(t, &ms1, got)
+
 	// Add a conflicting series
 	got, created, err = s.getOrSet(hash, lbls2, func() *memSeries {
 		return &ms2
@@ -5585,11 +5590,29 @@ func TestStripeSeries_gc(t *testing.T) {
 	require.True(t, created)
 	require.Same(t, &ms2, got)
 
+	return s, &ms1, &ms2
+}
+
+func TestStripeSeries_getOrSet(t *testing.T) {
+	s, ms1, ms2 := stripeSeriesWithCollidingSeries(t)
+	hash := ms1.lset.Hash()
+
+	// Verify that we can get both of the series despite the hash collision
+	got := s.getByHash(hash, ms1.lset)
+	require.Same(t, ms1, got)
+	got = s.getByHash(hash, ms2.lset)
+	require.Same(t, ms2, got)
+}
+
+func TestStripeSeries_gc(t *testing.T) {
+	s, ms1, ms2 := stripeSeriesWithCollidingSeries(t)
+	hash := ms1.lset.Hash()
+
 	s.gc(0, 0)
 
 	// Verify that we can get neither ms1 nor ms2 after gc-ing corresponding series
-	got = s.getByHash(hash, lbls1)
+	got := s.getByHash(hash, ms1.lset)
 	require.Nil(t, got)
-	got = s.getByHash(hash, lbls2)
+	got = s.getByHash(hash, ms2.lset)
 	require.Nil(t, got)
 }
