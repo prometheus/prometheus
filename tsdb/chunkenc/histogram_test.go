@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 )
 
 type result struct {
@@ -1128,4 +1129,51 @@ func TestHistogramChunkAppendableGauge(t *testing.T) {
 		require.True(t, recoded)
 		require.Equal(t, GaugeType, c.(*HistogramChunk).GetCounterResetHeader())
 	}
+}
+
+func TestHistogramAppendOnlyErrors(t *testing.T) {
+	t.Run("schema change error", func(t *testing.T) {
+		c := Chunk(NewHistogramChunk())
+
+		// Create fresh appender and add the first histogram.
+		app, err := c.Appender()
+		require.NoError(t, err)
+
+		h := tsdbutil.GenerateTestHistogram(0)
+		var isRecoded bool
+		c, isRecoded, app, err = app.AppendHistogram(nil, 1, h, true)
+		require.Nil(t, c)
+		require.False(t, isRecoded)
+		require.NoError(t, err)
+
+		// Add erroring histogram.
+		h2 := h.Copy()
+		h2.Schema++
+		c, isRecoded, app, err = app.AppendHistogram(nil, 2, h2, true)
+		require.Nil(t, c)
+		require.False(t, isRecoded)
+		require.EqualError(t, err, "histogram schema change")
+	})
+	t.Run("counter reset error", func(t *testing.T) {
+		c := Chunk(NewHistogramChunk())
+
+		// Create fresh appender and add the first histogram.
+		app, err := c.Appender()
+		require.NoError(t, err)
+
+		h := tsdbutil.GenerateTestHistogram(0)
+		var isRecoded bool
+		c, isRecoded, app, err = app.AppendHistogram(nil, 1, h, true)
+		require.Nil(t, c)
+		require.False(t, isRecoded)
+		require.NoError(t, err)
+
+		// Add erroring histogram.
+		h2 := h.Copy()
+		h2.CounterResetHint = histogram.CounterReset
+		c, isRecoded, app, err = app.AppendHistogram(nil, 2, h2, true)
+		require.Nil(t, c)
+		require.False(t, isRecoded)
+		require.EqualError(t, err, "histogram counter reset")
+	})
 }
