@@ -5572,31 +5572,24 @@ func TestStripeSeries_getOrSet(t *testing.T) {
 	hash := lbls1.Hash()
 	s := newStripeSeries(1, noopSeriesLifecycleCallback{})
 
-	s.getOrSet(hash, lbls1, func() *memSeries {
+	got, created, err := s.getOrSet(hash, lbls1, func() *memSeries {
 		return &ms1
 	})
-	require.Equal(t, []seriesHashmap{
-		{
-			unique: map[uint64]*memSeries{
-				hash: &ms1,
-			},
-		},
-	}, s.hashes)
+	require.NoError(t, err)
+	require.True(t, created)
+	require.Same(t, &ms1, got)
 
 	// Add a conflicting series
-	s.getOrSet(hash, lbls2, func() *memSeries {
+	got, created, err = s.getOrSet(hash, lbls2, func() *memSeries {
 		return &ms2
 	})
-	require.Equal(t, []seriesHashmap{
-		{
-			unique: map[uint64]*memSeries{
-				hash: &ms1,
-			},
-			conflicts: map[uint64][]*memSeries{
-				hash: {
-					&ms2,
-				},
-			},
-		},
-	}, s.hashes)
+	require.NoError(t, err)
+	require.True(t, created)
+	require.Same(t, &ms2, got)
+
+	// Verify that we can get both of the series despite the hash collision
+	got = s.getByHash(hash, lbls1)
+	require.Same(t, &ms1, got)
+	got = s.getByHash(hash, lbls2)
+	require.Same(t, &ms2, got)
 }
