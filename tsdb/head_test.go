@@ -5542,3 +5542,54 @@ func TestHeadCompactionWhileAppendAndCommitExemplar(t *testing.T) {
 	app.Commit()
 	h.Close()
 }
+
+func TestStripeSeries_gc(t *testing.T) {
+	lbls1 := labels.FromMap(map[string]string{
+		"__name__": "metric",
+		"lbl":      "qeYKm3",
+	})
+	hash := lbls1.Hash()
+	ms1 := memSeries{
+		lset: lbls1,
+	}
+	lbls2 := labels.FromMap(map[string]string{
+		"__name__": "metric",
+		"lbl":      "2fUczT",
+	})
+	ms2 := memSeries{
+		lset: lbls2,
+	}
+	require.Equal(t, lbls2.Hash(), lbls1.Hash(), "the two label sets should collide")
+	s := newStripeSeries(1, noopSeriesLifecycleCallback{})
+	s.getOrSet(hash, lbls1, func() *memSeries {
+		return &ms1
+	})
+	require.Equal(t, []seriesHashmap{
+		{
+			unique: map[uint64]*memSeries{
+				hash: &ms1,
+			},
+		},
+	}, s.hashes)
+	// Add a conflicting series
+	s.getOrSet(hash, lbls2, func() *memSeries {
+		return &ms2
+	})
+	require.Equal(t, []seriesHashmap{
+		{
+			unique: map[uint64]*memSeries{
+				hash: &ms1,
+			},
+			conflicts: map[uint64][]*memSeries{
+				hash: {
+					&ms2,
+				},
+			},
+		},
+	}, s.hashes)
+
+	s.gc(0, 0)
+	require.Len(t, s.hashes, 1)
+	require.Empty(t, s.hashes[0].unique)
+	require.Empty(t, s.hashes[0].conflicts)
+}

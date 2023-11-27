@@ -1718,7 +1718,7 @@ func (m *seriesHashmap) get(hash uint64, lset labels.Labels) *memSeries {
 	return nil
 }
 
-func (m seriesHashmap) set(hash uint64, s *memSeries) {
+func (m *seriesHashmap) set(hash uint64, s *memSeries) {
 	if existing, found := m.unique[hash]; !found || labels.Equal(existing.lset, s.lset) {
 		m.unique[hash] = s
 		return
@@ -1736,7 +1736,7 @@ func (m seriesHashmap) set(hash uint64, s *memSeries) {
 	m.conflicts[hash] = append(l, s)
 }
 
-func (m seriesHashmap) del(hash uint64, lset labels.Labels) {
+func (m *seriesHashmap) del(hash uint64, lset labels.Labels) {
 	var rem []*memSeries
 	unique, found := m.unique[hash]
 	switch {
@@ -1886,13 +1886,15 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 		deletedForCallback := make(map[chunks.HeadSeriesRef]labels.Labels, deletedFromPrevStripe)
 		s.locks[i].Lock()
 
-		for hash, series := range s.hashes[i].unique {
-			check(i, hash, series, deletedForCallback)
-		}
+		// Delete conflicts first so seriesHashmap.del doesn't move them to the `unique` field,
+		// after deleting `unique`.
 		for hash, all := range s.hashes[i].conflicts {
 			for _, series := range all {
 				check(i, hash, series, deletedForCallback)
 			}
+		}
+		for hash, series := range s.hashes[i].unique {
+			check(i, hash, series, deletedForCallback)
 		}
 
 		s.locks[i].Unlock()
