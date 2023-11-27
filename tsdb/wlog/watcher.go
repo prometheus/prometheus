@@ -485,8 +485,6 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 			readTicker.Reset(readTimeout)
 
 		case <-w.readNotify:
-			level.Debug(w.logger).Log("msg", "Watcher is reading the WAL due to notify")
-
 			err := w.readAndHandleError(reader, segmentNum, tail, size)
 			if err != nil {
 				return err
