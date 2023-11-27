@@ -948,7 +948,7 @@ func TestFloatHistogramAppendOnlyErrors(t *testing.T) {
 		// Add erroring histogram.
 		h2 := h.Copy()
 		h2.Schema++
-		c, isRecoded, app, err = app.AppendFloatHistogram(nil, 2, h2, true)
+		c, isRecoded, _, err = app.AppendFloatHistogram(nil, 2, h2, true)
 		require.Nil(t, c)
 		require.False(t, isRecoded)
 		require.EqualError(t, err, "float histogram schema change")
@@ -970,7 +970,7 @@ func TestFloatHistogramAppendOnlyErrors(t *testing.T) {
 		// Add erroring histogram.
 		h2 := h.Copy()
 		h2.CounterResetHint = histogram.CounterReset
-		c, isRecoded, app, err = app.AppendFloatHistogram(nil, 2, h2, true)
+		c, isRecoded, _, err = app.AppendFloatHistogram(nil, 2, h2, true)
 		require.Nil(t, c)
 		require.False(t, isRecoded)
 		require.EqualError(t, err, "float histogram counter reset")

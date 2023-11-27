@@ -1149,7 +1149,7 @@ func TestHistogramAppendOnlyErrors(t *testing.T) {
 		// Add erroring histogram.
 		h2 := h.Copy()
 		h2.Schema++
-		c, isRecoded, app, err = app.AppendHistogram(nil, 2, h2, true)
+		c, isRecoded, _, err = app.AppendHistogram(nil, 2, h2, true)
 		require.Nil(t, c)
 		require.False(t, isRecoded)
 		require.EqualError(t, err, "histogram schema change")
@@ -1171,7 +1171,7 @@ func TestHistogramAppendOnlyErrors(t *testing.T) {
 		// Add erroring histogram.
 		h2 := h.Copy()
 		h2.CounterResetHint = histogram.CounterReset
-		c, isRecoded, app, err = app.AppendHistogram(nil, 2, h2, true)
+		c, isRecoded, _, err = app.AppendHistogram(nil, 2, h2, true)
 		require.Nil(t, c)
 		require.False(t, isRecoded)
 		require.EqualError(t, err, "histogram counter reset")
