@@ -64,7 +64,7 @@ func (c *HistogramChunk) NumSamples() int {
 // least one sample.
 func (c *HistogramChunk) Layout() (
 	schema int32, zeroThreshold float64,
-	negativeSpans, positiveSpans []histogram.Span,
+	negativeSpans, positiveSpans []*histogram.Span,
 	err error,
 ) {
 	if c.NumSamples() == 0 {
@@ -148,7 +148,7 @@ func (c *HistogramChunk) Appender() (Appender, error) {
 	return a, nil
 }
 
-func countSpans(spans []histogram.Span) int {
+func countSpans(spans []*histogram.Span) int {
 	var cnt int
 	for _, s := range spans {
 		cnt += int(s.Length)
@@ -193,7 +193,7 @@ type HistogramAppender struct {
 	// Layout:
 	schema         int32
 	zThreshold     float64
-	pSpans, nSpans []histogram.Span
+	pSpans, nSpans []*histogram.Span
 
 	// Although we intend to start new chunks on counter resets, we still
 	// have to handle negative deltas for gauge histograms. Therefore, even
@@ -324,7 +324,7 @@ func (a *HistogramAppender) appendable(h *histogram.Histogram) (
 func (a *HistogramAppender) appendableGauge(h *histogram.Histogram) (
 	positiveInserts, negativeInserts []Insert,
 	backwardPositiveInserts, backwardNegativeInserts []Insert,
-	positiveSpans, negativeSpans []histogram.Span,
+	positiveSpans, negativeSpans []*histogram.Span,
 	okToAppend bool,
 ) {
 	if a.NumSamples() > 0 && a.GetCounterResetHeader() != GaugeType {
@@ -354,7 +354,7 @@ func (a *HistogramAppender) appendableGauge(h *histogram.Histogram) (
 // counterResetInAnyBucket returns true if there was a counter reset for any
 // bucket. This should be called only when the bucket layout is the same or new
 // buckets were added. It does not handle the case of buckets missing.
-func counterResetInAnyBucket(oldBuckets, newBuckets []int64, oldSpans, newSpans []histogram.Span) bool {
+func counterResetInAnyBucket(oldBuckets, newBuckets []int64, oldSpans, newSpans []*histogram.Span) bool {
 	if len(oldSpans) == 0 || len(oldBuckets) == 0 {
 		return false
 	}
@@ -443,13 +443,13 @@ func (a *HistogramAppender) appendHistogram(t int64, h *histogram.Histogram) {
 		a.zThreshold = h.ZeroThreshold
 
 		if len(h.PositiveSpans) > 0 {
-			a.pSpans = make([]histogram.Span, len(h.PositiveSpans))
+			a.pSpans = make([]*histogram.Span, len(h.PositiveSpans))
 			copy(a.pSpans, h.PositiveSpans)
 		} else {
 			a.pSpans = nil
 		}
 		if len(h.NegativeSpans) > 0 {
-			a.nSpans = make([]histogram.Span, len(h.NegativeSpans))
+			a.nSpans = make([]*histogram.Span, len(h.NegativeSpans))
 			copy(a.nSpans, h.NegativeSpans)
 		} else {
 			a.nSpans = nil
@@ -541,7 +541,7 @@ func (a *HistogramAppender) appendHistogram(t int64, h *histogram.Histogram) {
 // this method.
 func (a *HistogramAppender) recode(
 	positiveInserts, negativeInserts []Insert,
-	positiveSpans, negativeSpans []histogram.Span,
+	positiveSpans, negativeSpans []*histogram.Span,
 ) (Chunk, Appender) {
 	// TODO(beorn7): This currently just decodes everything and then encodes
 	// it again with the new span layout. This can probably be done in-place
@@ -736,7 +736,7 @@ type histogramIterator struct {
 	// Layout:
 	schema         int32
 	zThreshold     float64
-	pSpans, nSpans []histogram.Span
+	pSpans, nSpans []*histogram.Span
 
 	// For the fields that are tracked as deltas and ultimately dod's.
 	t                            int64

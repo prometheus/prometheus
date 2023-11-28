@@ -99,6 +99,10 @@ func (h *readHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return strings.Compare(a.Name, b.Name)
 	})
 
+	sortedPB := make([]*prompb.Label, 0, len(externalLabels))
+	for _, l := range sortedExternalLabels {
+		sortedPB = append(sortedPB, &l)
+	}
 	responseType, err := NegotiateResponseType(req.AcceptedResponseTypes)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -107,10 +111,10 @@ func (h *readHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	switch responseType {
 	case prompb.ReadRequest_STREAMED_XOR_CHUNKS:
-		h.remoteReadStreamedXORChunks(ctx, w, req, externalLabels, sortedExternalLabels)
+		h.remoteReadStreamedXORChunks(ctx, w, req, externalLabels, sortedPB)
 	default:
 		// On empty or unknown types in req.AcceptedResponseTypes we default to non streamed, raw samples response.
-		h.remoteReadSamples(ctx, w, req, externalLabels, sortedExternalLabels)
+		h.remoteReadSamples(ctx, w, req, externalLabels, sortedPB)
 	}
 }
 
@@ -119,7 +123,7 @@ func (h *readHandler) remoteReadSamples(
 	w http.ResponseWriter,
 	req *prompb.ReadRequest,
 	externalLabels map[string]string,
-	sortedExternalLabels []prompb.Label,
+	sortedExternalLabels []*prompb.Label,
 ) {
 	w.Header().Set("Content-Type", "application/x-protobuf")
 	w.Header().Set("Content-Encoding", "snappy")
@@ -186,7 +190,7 @@ func (h *readHandler) remoteReadSamples(
 	}
 }
 
-func (h *readHandler) remoteReadStreamedXORChunks(ctx context.Context, w http.ResponseWriter, req *prompb.ReadRequest, externalLabels map[string]string, sortedExternalLabels []prompb.Label) {
+func (h *readHandler) remoteReadStreamedXORChunks(ctx context.Context, w http.ResponseWriter, req *prompb.ReadRequest, externalLabels map[string]string, sortedExternalLabels []*prompb.Label) {
 	w.Header().Set("Content-Type", "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse")
 
 	f, ok := w.(http.Flusher)

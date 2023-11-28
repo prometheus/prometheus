@@ -29,14 +29,14 @@ func GenerateBigTestHistograms(numHistograms, numBuckets int) []*Histogram {
 			ZeroThreshold:   1e-128,
 			Sum:             18.4 * float64(i+1),
 			Schema:          2,
-			NegativeSpans:   make([]Span, numSpans),
-			PositiveSpans:   make([]Span, numSpans),
+			NegativeSpans:   make([]*Span, numSpans),
+			PositiveSpans:   make([]*Span, numSpans),
 			NegativeBuckets: make([]int64, bucketsPerSide),
 			PositiveBuckets: make([]int64, bucketsPerSide),
 		}
 
 		for j := 0; j < numSpans; j++ {
-			s := Span{Offset: 1, Length: spanLength}
+			s := &Span{Offset: 1, Length: spanLength}
 			h.NegativeSpans[j] = s
 			h.PositiveSpans[j] = s
 		}

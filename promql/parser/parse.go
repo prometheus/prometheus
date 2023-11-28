@@ -560,7 +560,7 @@ func (p *parser) buildHistogramFromMap(desc *map[string]interface{}) *histogram.
 }
 
 func (p *parser) buildHistogramBucketsAndSpans(desc *map[string]interface{}, bucketsKey, offsetKey string,
-) (buckets []float64, spans []histogram.Span) {
+) (buckets []float64, spans []*histogram.Span) {
 	bucketCount := 0
 	val, ok := (*desc)[bucketsKey]
 	if ok {
@@ -583,7 +583,7 @@ func (p *parser) buildHistogramBucketsAndSpans(desc *map[string]interface{}, buc
 		}
 	}
 	if bucketCount > 0 {
-		spans = []histogram.Span{{Offset: offset, Length: uint32(bucketCount)}}
+		spans = []*histogram.Span{{Offset: offset, Length: uint32(bucketCount)}}
 	}
 	return
 }

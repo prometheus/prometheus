@@ -26,14 +26,14 @@ func (h Histogram) IsFloatHistogram() bool {
 }
 
 func (r *ChunkedReadResponse) PooledMarshal(p *sync.Pool) ([]byte, error) {
-	size := r.Size()
+	size := r.SizeVT()
 	data, ok := p.Get().(*[]byte)
 	if ok && cap(*data) >= size {
-		n, err := r.MarshalToSizedBuffer((*data)[:size])
+		n, err := r.MarshalToVT((*data)[:size])
 		if err != nil {
 			return nil, err
 		}
 		return (*data)[:n], nil
 	}
-	return r.Marshal()
+	return r.MarshalVT()
 }

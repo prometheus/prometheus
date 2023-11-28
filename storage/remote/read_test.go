@@ -237,9 +237,9 @@ func TestSampleAndChunkQueryableClient(t *testing.T) {
 	m := &mockedRemoteClient{
 		// Samples does not matter for below tests.
 		store: []*prompb.TimeSeries{
-			{Labels: []prompb.Label{{Name: "a", Value: "b"}}},
-			{Labels: []prompb.Label{{Name: "a", Value: "b3"}, {Name: "region", Value: "us"}}},
-			{Labels: []prompb.Label{{Name: "a", Value: "b2"}, {Name: "region", Value: "europe"}}},
+			{Labels: []*prompb.Label{{Name: "a", Value: "b"}}},
+			{Labels: []*prompb.Label{{Name: "a", Value: "b3"}, {Name: "region", Value: "us"}}},
+			{Labels: []*prompb.Label{{Name: "a", Value: "b2"}, {Name: "region", Value: "europe"}}},
 		},
 	}
 

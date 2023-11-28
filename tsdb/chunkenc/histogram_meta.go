@@ -21,7 +21,7 @@ import (
 
 func writeHistogramChunkLayout(
 	b *bstream, schema int32, zeroThreshold float64,
-	positiveSpans, negativeSpans []histogram.Span,
+	positiveSpans, negativeSpans []*histogram.Span,
 ) {
 	putZeroThreshold(b, zeroThreshold)
 	putVarbitInt(b, int64(schema))
@@ -31,7 +31,7 @@ func writeHistogramChunkLayout(
 
 func readHistogramChunkLayout(b *bstreamReader) (
 	schema int32, zeroThreshold float64,
-	positiveSpans, negativeSpans []histogram.Span,
+	positiveSpans, negativeSpans []*histogram.Span,
 	err error,
 ) {
 	zeroThreshold, err = readZeroThreshold(b)
@@ -58,7 +58,7 @@ func readHistogramChunkLayout(b *bstreamReader) (
 	return
 }
 
-func putHistogramChunkLayoutSpans(b *bstream, spans []histogram.Span) {
+func putHistogramChunkLayoutSpans(b *bstream, spans []*histogram.Span) {
 	putVarbitUint(b, uint64(len(spans)))
 	for _, s := range spans {
 		putVarbitUint(b, uint64(s.Length))
@@ -66,8 +66,8 @@ func putHistogramChunkLayoutSpans(b *bstream, spans []histogram.Span) {
 	}
 }
 
-func readHistogramChunkLayoutSpans(b *bstreamReader) ([]histogram.Span, error) {
-	var spans []histogram.Span
+func readHistogramChunkLayoutSpans(b *bstreamReader) ([]*histogram.Span, error) {
+	var spans []*histogram.Span
 	num, err := readVarbitUint(b)
 	if err != nil {
 		return nil, err
@@ -84,7 +84,7 @@ func readHistogramChunkLayoutSpans(b *bstreamReader) ([]histogram.Span, error) {
 			return nil, err
 		}
 
-		spans = append(spans, histogram.Span{
+		spans = append(spans, &histogram.Span{
 			Length: uint32(length),
 			Offset: int32(offset),
 		})
@@ -141,13 +141,13 @@ func readZeroThreshold(br *bstreamReader) (float64, error) {
 }
 
 type bucketIterator struct {
-	spans  []histogram.Span
+	spans  []*histogram.Span
 	span   int // Span position of last yielded bucket.
 	bucket int // Bucket position within span of last yielded bucket.
 	idx    int // Bucket index (globally across all spans) of last yielded bucket.
 }
 
-func newBucketIterator(spans []histogram.Span) *bucketIterator {
+func newBucketIterator(spans []*histogram.Span) *bucketIterator {
 	b := bucketIterator{
 		spans:  spans,
 		span:   0,
@@ -232,7 +232,7 @@ type Insert struct {
 // spans themselves, thanks to the iterators we get to work with the more useful
 // bucket indices (which of course directly correspond to the buckets we have to
 // adjust).
-func expandSpansForward(a, b []histogram.Span) (forward []Insert, ok bool) {
+func expandSpansForward(a, b []*histogram.Span) (forward []Insert, ok bool) {
 	ai := newBucketIterator(a)
 	bi := newBucketIterator(b)
 
@@ -285,7 +285,7 @@ loop:
 // “forward” inserts to expand 'a' to also cover all the buckets exclusively
 // covered by 'b', and it returns the “backward” inserts to expand 'b' to also
 // cover all the buckets exclusively covered by 'a'.
-func expandSpansBothWays(a, b []histogram.Span) (forward, backward []Insert, mergedSpans []histogram.Span) {
+func expandSpansBothWays(a, b []*histogram.Span) (forward, backward []Insert, mergedSpans []*histogram.Span) {
 	ai := newBucketIterator(a)
 	bi := newBucketIterator(b)
 
@@ -299,7 +299,7 @@ func expandSpansBothWays(a, b []histogram.Span) (forward, backward []Insert, mer
 			if len(mergedSpans) == 0 {
 				offset++
 			}
-			mergedSpans = append(mergedSpans, histogram.Span{
+			mergedSpans = append(mergedSpans, &histogram.Span{
 				Offset: int32(offset),
 				Length: 1,
 			})
@@ -490,7 +490,7 @@ func counterResetHint(crh CounterResetHeader, numRead uint16) histogram.CounterR
 
 // Handle pathological case of empty span when advancing span idx.
 // Call it with idx==-1 to find the first non empty span.
-func nextNonEmptySpanSliceIdx(idx int, bucketIdx int32, spans []histogram.Span) (newIdx int, newBucketIdx int32) {
+func nextNonEmptySpanSliceIdx(idx int, bucketIdx int32, spans []*histogram.Span) (newIdx int, newBucketIdx int32) {
 	for idx++; idx < len(spans); idx++ {
 		if spans[idx].Length > 0 {
 			return idx, bucketIdx + spans[idx].Offset + 1

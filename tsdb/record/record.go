@@ -470,7 +470,7 @@ func DecodeHistogram(buf *encoding.Decbuf, h *histogram.Histogram) {
 
 	l := buf.Uvarint()
 	if l > 0 {
-		h.PositiveSpans = make([]histogram.Span, l)
+		h.PositiveSpans = make([]*histogram.Span, l)
 	}
 	for i := range h.PositiveSpans {
 		h.PositiveSpans[i].Offset = int32(buf.Varint64())
@@ -479,7 +479,7 @@ func DecodeHistogram(buf *encoding.Decbuf, h *histogram.Histogram) {
 
 	l = buf.Uvarint()
 	if l > 0 {
-		h.NegativeSpans = make([]histogram.Span, l)
+		h.NegativeSpans = make([]*histogram.Span, l)
 	}
 	for i := range h.NegativeSpans {
 		h.NegativeSpans[i].Offset = int32(buf.Varint64())
@@ -552,7 +552,7 @@ func DecodeFloatHistogram(buf *encoding.Decbuf, fh *histogram.FloatHistogram) {
 
 	l := buf.Uvarint()
 	if l > 0 {
-		fh.PositiveSpans = make([]histogram.Span, l)
+		fh.PositiveSpans = make([]*histogram.Span, l)
 	}
 	for i := range fh.PositiveSpans {
 		fh.PositiveSpans[i].Offset = int32(buf.Varint64())
@@ -561,7 +561,7 @@ func DecodeFloatHistogram(buf *encoding.Decbuf, fh *histogram.FloatHistogram) {
 
 	l = buf.Uvarint()
 	if l > 0 {
-		fh.NegativeSpans = make([]histogram.Span, l)
+		fh.NegativeSpans = make([]*histogram.Span, l)
 	}
 	for i := range fh.NegativeSpans {
 		fh.NegativeSpans[i].Offset = int32(buf.Varint64())

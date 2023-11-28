@@ -65,7 +65,7 @@ type Histogram struct {
 	// Sum of observations. This is also used as the stale marker.
 	Sum float64
 	// Spans for positive and negative buckets (see Span below).
-	PositiveSpans, NegativeSpans []Span
+	PositiveSpans, NegativeSpans []*Span
 	// Observation counts in buckets. The first element is an absolute
 	// count. All following ones are deltas relative to the previous
 	// element.
@@ -86,11 +86,11 @@ func (h *Histogram) Copy() *Histogram {
 	c := *h
 
 	if len(h.PositiveSpans) != 0 {
-		c.PositiveSpans = make([]Span, len(h.PositiveSpans))
+		c.PositiveSpans = make([]*Span, len(h.PositiveSpans))
 		copy(c.PositiveSpans, h.PositiveSpans)
 	}
 	if len(h.NegativeSpans) != 0 {
-		c.NegativeSpans = make([]Span, len(h.NegativeSpans))
+		c.NegativeSpans = make([]*Span, len(h.NegativeSpans))
 		copy(c.NegativeSpans, h.NegativeSpans)
 	}
 	if len(h.PositiveBuckets) != 0 {
@@ -208,7 +208,7 @@ func (h *Histogram) Equals(h2 *Histogram) bool {
 
 // spansMatch returns true if both spans represent the same bucket layout
 // after combining zero length spans with the next non-zero length span.
-func spansMatch(s1, s2 []Span) bool {
+func spansMatch(s1, s2 []*Span) bool {
 	if len(s1) == 0 && len(s2) == 0 {
 		return true
 	}
@@ -261,7 +261,7 @@ func spansMatch(s1, s2 []Span) bool {
 	}
 }
 
-func allEmptySpans(s []Span) bool {
+func allEmptySpans(s []*Span) bool {
 	for _, ss := range s {
 		if ss.Length > 0 {
 			return false
@@ -286,15 +286,15 @@ func (h *Histogram) Compact(maxEmptyBuckets int) *Histogram {
 // deep copy (e.g. spans are not shared).
 func (h *Histogram) ToFloat() *FloatHistogram {
 	var (
-		positiveSpans, negativeSpans     []Span
+		positiveSpans, negativeSpans     []*Span
 		positiveBuckets, negativeBuckets []float64
 	)
 	if len(h.PositiveSpans) != 0 {
-		positiveSpans = make([]Span, len(h.PositiveSpans))
+		positiveSpans = make([]*Span, len(h.PositiveSpans))
 		copy(positiveSpans, h.PositiveSpans)
 	}
 	if len(h.NegativeSpans) != 0 {
-		negativeSpans = make([]Span, len(h.NegativeSpans))
+		negativeSpans = make([]*Span, len(h.NegativeSpans))
 		copy(negativeSpans, h.NegativeSpans)
 	}
 	if len(h.PositiveBuckets) != 0 {
@@ -370,7 +370,7 @@ type regularBucketIterator struct {
 	baseBucketIterator[uint64, int64]
 }
 
-func newRegularBucketIterator(spans []Span, buckets []int64, schema int32, positive bool) regularBucketIterator {
+func newRegularBucketIterator(spans []*Span, buckets []int64, schema int32, positive bool) regularBucketIterator {
 	i := baseBucketIterator[uint64, int64]{
 		schema:   schema,
 		spans:    spans,

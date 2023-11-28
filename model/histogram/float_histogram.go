@@ -45,7 +45,7 @@ type FloatHistogram struct {
 	// Sum of observations. This is also used as the stale marker.
 	Sum float64
 	// Spans for positive and negative buckets (see Span below).
-	PositiveSpans, NegativeSpans []Span
+	PositiveSpans, NegativeSpans []*Span
 	// Observation counts in buckets. Each represents an absolute count and
 	// must be zero or positive.
 	PositiveBuckets, NegativeBuckets []float64
@@ -56,11 +56,11 @@ func (h *FloatHistogram) Copy() *FloatHistogram {
 	c := *h
 
 	if h.PositiveSpans != nil {
-		c.PositiveSpans = make([]Span, len(h.PositiveSpans))
+		c.PositiveSpans = make([]*Span, len(h.PositiveSpans))
 		copy(c.PositiveSpans, h.PositiveSpans)
 	}
 	if h.NegativeSpans != nil {
-		c.NegativeSpans = make([]Span, len(h.NegativeSpans))
+		c.NegativeSpans = make([]*Span, len(h.NegativeSpans))
 		copy(c.NegativeSpans, h.NegativeSpans)
 	}
 	if h.PositiveBuckets != nil {
@@ -156,7 +156,7 @@ func (h *FloatHistogram) TestExpression() string {
 		res = append(res, fmt.Sprintf("z_bucket_w:%g", m.ZeroThreshold))
 	}
 
-	addBuckets := func(kind, bucketsKey, offsetKey string, buckets []float64, spans []Span) []string {
+	addBuckets := func(kind, bucketsKey, offsetKey string, buckets []float64, spans []*Span) []string {
 		if len(spans) > 1 {
 			panic(fmt.Sprintf("histogram with multiple %s spans not supported", kind))
 		}
@@ -780,7 +780,7 @@ func (h *FloatHistogram) floatBucketIterator(
 
 // reverseFloatBucketIterator is a low-level constructor for reverse bucket iterators.
 func newReverseFloatBucketIterator(
-	spans []Span, buckets []float64, schema int32, positive bool,
+	spans []*Span, buckets []float64, schema int32, positive bool,
 ) reverseFloatBucketIterator {
 	r := reverseFloatBucketIterator{
 		baseBucketIterator: baseBucketIterator[float64, float64]{
@@ -996,9 +996,9 @@ func targetIdx(idx, originSchema, targetSchema int32) int32 {
 // If negative is true, the buckets in spansB/bucketsB are subtracted rather than added.
 func addBuckets(
 	schema int32, threshold float64, negative bool,
-	spansA []Span, bucketsA []float64,
-	spansB []Span, bucketsB []float64,
-) ([]Span, []float64) {
+	spansA []*Span, bucketsA []float64,
+	spansB []*Span, bucketsB []float64,
+) ([]*Span, []float64) {
 	var (
 		iSpan              int = -1
 		iBucket            int = -1
@@ -1035,9 +1035,9 @@ func addBuckets(
 						spansA[0].Offset--
 						goto nextLoop
 					} else {
-						spansA = append(spansA, Span{})
+						spansA = append(spansA, &Span{})
 						copy(spansA[1:], spansA)
-						spansA[0] = Span{Offset: indexB, Length: 1}
+						spansA[0] = &Span{Offset: indexB, Length: 1}
 						if len(spansA) > 1 {
 							// Convert the absolute offset in the formerly
 							// first span to a relative offset.
@@ -1094,9 +1094,9 @@ func addBuckets(
 							if iSpan < len(spansA) {
 								spansA[iSpan].Offset -= deltaIndex + 1
 							}
-							spansA = append(spansA, Span{})
+							spansA = append(spansA, &Span{})
 							copy(spansA[iSpan+1:], spansA[iSpan:])
-							spansA[iSpan] = Span{Length: 1, Offset: deltaIndex}
+							spansA[iSpan] = &Span{Length: 1, Offset: deltaIndex}
 							goto nextLoop
 						}
 					} else {

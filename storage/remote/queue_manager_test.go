@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"math/rand"
 	"os"
 	"runtime/pprof"
 	"sort"
@@ -609,9 +610,9 @@ func createHistograms(numSamples, numSeries int, floatHistogram bool) ([]record.
 				ZeroCount:       0,
 				Count:           2,
 				Sum:             0,
-				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				PositiveSpans:   []*histogram.Span{{Offset: 0, Length: 1}},
 				PositiveBuckets: []int64{int64(i) + 1},
-				NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				NegativeSpans:   []*histogram.Span{{Offset: 0, Length: 1}},
 				NegativeBuckets: []int64{int64(-i) - 1},
 			}
 
@@ -647,15 +648,15 @@ func getSeriesNameFromRef(r record.RefSeries) string {
 }
 
 type TestWriteClient struct {
-	receivedSamples         map[string][]prompb.Sample
-	expectedSamples         map[string][]prompb.Sample
-	receivedExemplars       map[string][]prompb.Exemplar
-	expectedExemplars       map[string][]prompb.Exemplar
-	receivedHistograms      map[string][]prompb.Histogram
-	receivedFloatHistograms map[string][]prompb.Histogram
-	expectedHistograms      map[string][]prompb.Histogram
-	expectedFloatHistograms map[string][]prompb.Histogram
-	receivedMetadata        map[string][]prompb.MetricMetadata
+	receivedSamples         map[string][]*prompb.Sample
+	expectedSamples         map[string][]*prompb.Sample
+	receivedExemplars       map[string][]*prompb.Exemplar
+	expectedExemplars       map[string][]*prompb.Exemplar
+	receivedHistograms      map[string][]*prompb.Histogram
+	receivedFloatHistograms map[string][]*prompb.Histogram
+	expectedHistograms      map[string][]*prompb.Histogram
+	expectedFloatHistograms map[string][]*prompb.Histogram
+	receivedMetadata        map[string][]*prompb.MetricMetadata
 	writesReceived          int
 	withWaitGroup           bool
 	wg                      sync.WaitGroup
@@ -666,9 +667,9 @@ type TestWriteClient struct {
 func NewTestWriteClient() *TestWriteClient {
 	return &TestWriteClient{
 		withWaitGroup:    true,
-		receivedSamples:  map[string][]prompb.Sample{},
-		expectedSamples:  map[string][]prompb.Sample{},
-		receivedMetadata: map[string][]prompb.MetricMetadata{},
+		receivedSamples:  map[string][]*prompb.Sample{},
+		expectedSamples:  map[string][]*prompb.Sample{},
+		receivedMetadata: map[string][]*prompb.MetricMetadata{},
 	}
 }
 
@@ -679,12 +680,12 @@ func (c *TestWriteClient) expectSamples(ss []record.RefSample, series []record.R
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 
-	c.expectedSamples = map[string][]prompb.Sample{}
-	c.receivedSamples = map[string][]prompb.Sample{}
+	c.expectedSamples = map[string][]*prompb.Sample{}
+	c.receivedSamples = map[string][]*prompb.Sample{}
 
 	for _, s := range ss {
 		seriesName := getSeriesNameFromRef(series[s.Ref])
-		c.expectedSamples[seriesName] = append(c.expectedSamples[seriesName], prompb.Sample{
+		c.expectedSamples[seriesName] = append(c.expectedSamples[seriesName], &prompb.Sample{
 			Timestamp: s.T,
 			Value:     s.V,
 		})
@@ -699,8 +700,8 @@ func (c *TestWriteClient) expectExemplars(ss []record.RefExemplar, series []reco
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 
-	c.expectedExemplars = map[string][]prompb.Exemplar{}
-	c.receivedExemplars = map[string][]prompb.Exemplar{}
+	c.expectedExemplars = map[string][]*prompb.Exemplar{}
+	c.receivedExemplars = map[string][]*prompb.Exemplar{}
 
 	for _, s := range ss {
 		seriesName := getSeriesNameFromRef(series[s.Ref])
@@ -709,7 +710,7 @@ func (c *TestWriteClient) expectExemplars(ss []record.RefExemplar, series []reco
 			Timestamp: s.T,
 			Value:     s.V,
 		}
-		c.expectedExemplars[seriesName] = append(c.expectedExemplars[seriesName], e)
+		c.expectedExemplars[seriesName] = append(c.expectedExemplars[seriesName], &e)
 	}
 	c.wg.Add(len(ss))
 }
@@ -721,8 +722,8 @@ func (c *TestWriteClient) expectHistograms(hh []record.RefHistogramSample, serie
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 
-	c.expectedHistograms = map[string][]prompb.Histogram{}
-	c.receivedHistograms = map[string][]prompb.Histogram{}
+	c.expectedHistograms = map[string][]*prompb.Histogram{}
+	c.receivedHistograms = map[string][]*prompb.Histogram{}
 
 	for _, h := range hh {
 		seriesName := getSeriesNameFromRef(series[h.Ref])
@@ -738,8 +739,8 @@ func (c *TestWriteClient) expectFloatHistograms(fhs []record.RefFloatHistogramSa
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 
-	c.expectedFloatHistograms = map[string][]prompb.Histogram{}
-	c.receivedFloatHistograms = map[string][]prompb.Histogram{}
+	c.expectedFloatHistograms = map[string][]*prompb.Histogram{}
+	c.receivedFloatHistograms = map[string][]*prompb.Histogram{}
 
 	for _, fh := range fhs {
 		seriesName := getSeriesNameFromRef(series[fh.Ref])
@@ -1321,4 +1322,116 @@ func TestQueue_FlushAndShutdownDoesNotDeadlock(t *testing.T) {
 		pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
 		t.FailNow()
 	}
+}
+
+func createDummyTimeSeries(instances int) []timeSeries {
+	metrics := []labels.Labels{
+		labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0"),
+		labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0.25"),
+		labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0.5"),
+		labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0.75"),
+		labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1"),
+		labels.FromStrings("__name__", "go_gc_duration_seconds_sum"),
+		labels.FromStrings("__name__", "go_gc_duration_seconds_count"),
+		labels.FromStrings("__name__", "go_memstats_alloc_bytes_total"),
+		labels.FromStrings("__name__", "go_memstats_frees_total"),
+		labels.FromStrings("__name__", "go_memstats_lookups_total"),
+		labels.FromStrings("__name__", "go_memstats_mallocs_total"),
+		labels.FromStrings("__name__", "go_goroutines"),
+		labels.FromStrings("__name__", "go_info", "version", "go1.19.3"),
+		labels.FromStrings("__name__", "go_memstats_alloc_bytes"),
+		labels.FromStrings("__name__", "go_memstats_buck_hash_sys_bytes"),
+		labels.FromStrings("__name__", "go_memstats_gc_sys_bytes"),
+		labels.FromStrings("__name__", "go_memstats_heap_alloc_bytes"),
+		labels.FromStrings("__name__", "go_memstats_heap_idle_bytes"),
+		labels.FromStrings("__name__", "go_memstats_heap_inuse_bytes"),
+		labels.FromStrings("__name__", "go_memstats_heap_objects"),
+		labels.FromStrings("__name__", "go_memstats_heap_released_bytes"),
+		labels.FromStrings("__name__", "go_memstats_heap_sys_bytes"),
+		labels.FromStrings("__name__", "go_memstats_last_gc_time_seconds"),
+		labels.FromStrings("__name__", "go_memstats_mcache_inuse_bytes"),
+		labels.FromStrings("__name__", "go_memstats_mcache_sys_bytes"),
+		labels.FromStrings("__name__", "go_memstats_mspan_inuse_bytes"),
+		labels.FromStrings("__name__", "go_memstats_mspan_sys_bytes"),
+		labels.FromStrings("__name__", "go_memstats_next_gc_bytes"),
+		labels.FromStrings("__name__", "go_memstats_other_sys_bytes"),
+		labels.FromStrings("__name__", "go_memstats_stack_inuse_bytes"),
+		labels.FromStrings("__name__", "go_memstats_stack_sys_bytes"),
+		labels.FromStrings("__name__", "go_memstats_sys_bytes"),
+		labels.FromStrings("__name__", "go_threads"),
+	}
+
+	commonLabels := labels.FromStrings(
+		"cluster", "some-cluster-0",
+		"container", "prometheus",
+		"job", "some-namespace/prometheus",
+		"namespace", "some-namespace")
+
+	var result []timeSeries
+	r := rand.New(rand.NewSource(0))
+	for i := 0; i < instances; i++ {
+		b := labels.NewBuilder(commonLabels)
+		b.Set("pod", "prometheus-"+strconv.Itoa(i))
+		for _, lbls := range metrics {
+			for _, l := range lbls {
+				b.Set(l.Name, l.Value)
+			}
+			result = append(result, timeSeries{
+				seriesLabels: b.Labels(),
+				value:        r.Float64(),
+			})
+		}
+	}
+	return result
+}
+
+func BenchmarkBuildWriteRequest(b *testing.B) {
+	bench := func(b *testing.B, batch []timeSeries) {
+		buff := make([]byte, 0)
+		seriesBuff := make([]*prompb.TimeSeries, len(batch))
+		for i := range seriesBuff {
+			seriesBuff[i] = &prompb.TimeSeries{
+				Samples:   []*prompb.Sample{{}},
+				Exemplars: []*prompb.Exemplar{{}},
+			}
+			//seriesBuff[i].Samples = []*prompb.Sample{{}}
+			//seriesBuff[i].Exemplars = []*prompb.Exemplar{{}}
+		}
+		pBuf := proto.NewBuffer(nil)
+
+		//fmt.Printf("series buff: %+v\n", seriesBuff)
+		//Warmup buffers
+		for i := 0; i < 10; i++ {
+			populateTimeSeries(batch, seriesBuff, true, true)
+			buildWriteRequest(seriesBuff, nil, pBuf, buff)
+		}
+
+		b.ResetTimer()
+		totalSize := 0
+		for i := 0; i < b.N; i++ {
+			populateTimeSeries(batch, seriesBuff, true, true)
+			req, _, err := buildWriteRequest(seriesBuff, nil, pBuf, buff)
+			if err != nil {
+				b.Fatal(err)
+			}
+			totalSize += len(req)
+			b.ReportMetric(float64(totalSize)/float64(b.N), "compressedSize/op")
+		}
+	}
+
+	two_batch := createDummyTimeSeries(2)
+	ten_batch := createDummyTimeSeries(10)
+	hundred_batch := createDummyTimeSeries(100)
+
+	b.Run("2 instances", func(b *testing.B) {
+		bench(b, two_batch)
+	})
+
+	b.Run("10 instances", func(b *testing.B) {
+		bench(b, ten_batch)
+	})
+
+	b.Run("1k instances", func(b *testing.B) {
+		bench(b, hundred_batch)
+	})
 }

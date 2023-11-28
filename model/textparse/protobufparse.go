@@ -31,7 +31,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 
-	dto "github.com/prometheus/prometheus/prompb/io/prometheus/client"
+	dto "github.com/prometheus/client_model/go"
 )
 
 // ProtobufParser is a very inefficient way of unmarshaling the old Prometheus
@@ -187,9 +187,9 @@ func (p *ProtobufParser) Histogram() ([]byte, *int64, *histogram.Histogram, *his
 			ZeroThreshold:   h.GetZeroThreshold(),
 			ZeroCount:       h.GetZeroCountFloat(),
 			Schema:          h.GetSchema(),
-			PositiveSpans:   make([]histogram.Span, len(h.GetPositiveSpan())),
+			PositiveSpans:   make([]*histogram.Span, len(h.GetPositiveSpan())),
 			PositiveBuckets: h.GetPositiveCount(),
-			NegativeSpans:   make([]histogram.Span, len(h.GetNegativeSpan())),
+			NegativeSpans:   make([]*histogram.Span, len(h.GetNegativeSpan())),
 			NegativeBuckets: h.GetNegativeCount(),
 		}
 		for i, span := range h.GetPositiveSpan() {
@@ -219,9 +219,9 @@ func (p *ProtobufParser) Histogram() ([]byte, *int64, *histogram.Histogram, *his
 		ZeroThreshold:   h.GetZeroThreshold(),
 		ZeroCount:       h.GetZeroCount(),
 		Schema:          h.GetSchema(),
-		PositiveSpans:   make([]histogram.Span, len(h.GetPositiveSpan())),
+		PositiveSpans:   make([]*histogram.Span, len(h.GetPositiveSpan())),
 		PositiveBuckets: h.GetPositiveDelta(),
-		NegativeSpans:   make([]histogram.Span, len(h.GetNegativeSpan())),
+		NegativeSpans:   make([]*histogram.Span, len(h.GetNegativeSpan())),
 		NegativeBuckets: h.GetNegativeDelta(),
 	}
 	for i, span := range h.GetPositiveSpan() {
@@ -363,12 +363,13 @@ func (p *ProtobufParser) Exemplar(ex *exemplar.Exemplar) bool {
 func (p *ProtobufParser) CreatedTimestamp(ct *types.Timestamp) bool {
 	var foundCT *types.Timestamp
 	switch p.mf.GetType() {
-	case dto.MetricType_COUNTER:
-		foundCT = p.mf.GetMetric()[p.metricPos].GetCounter().GetCreatedTimestamp()
-	case dto.MetricType_SUMMARY:
-		foundCT = p.mf.GetMetric()[p.metricPos].GetSummary().GetCreatedTimestamp()
-	case dto.MetricType_HISTOGRAM, dto.MetricType_GAUGE_HISTOGRAM:
-		foundCT = p.mf.GetMetric()[p.metricPos].GetHistogram().GetCreatedTimestamp()
+	// TODO: fix, what to do about timestamp types?
+	//case dto.MetricType_COUNTER:
+	//	foundCT = p.mf.GetMetric()[p.metricPos].GetCounter().GetCreatedTimestamp()
+	//case dto.MetricType_SUMMARY:
+	//	foundCT = p.mf.GetMetric()[p.metricPos].GetSummary().GetCreatedTimestamp()
+	//case dto.MetricType_HISTOGRAM, dto.MetricType_GAUGE_HISTOGRAM:
+	//	foundCT = p.mf.GetMetric()[p.metricPos].GetHistogram().GetCreatedTimestamp()
 	default:
 	}
 	if foundCT == nil {
@@ -566,7 +567,7 @@ func readDelimited(b []byte, mf *dto.MetricFamily) (n int, err error) {
 		return 0, fmt.Errorf("protobufparse: insufficient length of buffer, expected at least %d bytes, got %d bytes", totalLength, len(b))
 	}
 	mf.Reset()
-	return totalLength, mf.Unmarshal(b[varIntLength:totalLength])
+	return totalLength, proto.Unmarshal(b[varIntLength:totalLength], mf)
 }
 
 // formatOpenMetricsFloat works like the usual Go string formatting of a fleat

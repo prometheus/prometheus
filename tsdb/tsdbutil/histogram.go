@@ -38,12 +38,12 @@ func GenerateTestHistogram(i int) *histogram.Histogram {
 		ZeroThreshold: 0.001,
 		Sum:           18.4 * float64(i+1),
 		Schema:        1,
-		PositiveSpans: []histogram.Span{
+		PositiveSpans: []*histogram.Span{
 			{Offset: 0, Length: 2},
 			{Offset: 1, Length: 2},
 		},
 		PositiveBuckets: []int64{int64(i + 1), 1, -1, 0},
-		NegativeSpans: []histogram.Span{
+		NegativeSpans: []*histogram.Span{
 			{Offset: 0, Length: 2},
 			{Offset: 1, Length: 2},
 		},
@@ -84,12 +84,12 @@ func GenerateTestFloatHistogram(i int) *histogram.FloatHistogram {
 		ZeroThreshold: 0.001,
 		Sum:           18.4 * float64(i+1),
 		Schema:        1,
-		PositiveSpans: []histogram.Span{
+		PositiveSpans: []*histogram.Span{
 			{Offset: 0, Length: 2},
 			{Offset: 1, Length: 2},
 		},
 		PositiveBuckets: []float64{float64(i + 1), float64(i + 2), float64(i + 1), float64(i + 1)},
-		NegativeSpans: []histogram.Span{
+		NegativeSpans: []*histogram.Span{
 			{Offset: 0, Length: 2},
 			{Offset: 1, Length: 2},
 		},

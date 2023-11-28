@@ -108,7 +108,7 @@ func parseAndPushMetrics(client *remote.Client, data []byte, labels map[string]s
 		return false
 	}
 
-	raw, err := metricsData.Marshal()
+	raw, err := metricsData.MarshalVT()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "  FAILED:", err)
 		return false

@@ -132,8 +132,8 @@ func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, 
 		iter = series.Iterator(iter)
 
 		var (
-			samples    []prompb.Sample
-			histograms []prompb.Histogram
+			samples    []*prompb.Sample
+			histograms []*prompb.Histogram
 		)
 
 		for valType := iter.Next(); valType != chunkenc.ValNone; valType = iter.Next() {
@@ -148,7 +148,7 @@ func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, 
 			switch valType {
 			case chunkenc.ValFloat:
 				ts, val := iter.At()
-				samples = append(samples, prompb.Sample{
+				samples = append(samples, &prompb.Sample{
 					Timestamp: ts,
 					Value:     val,
 				})
@@ -183,7 +183,17 @@ func FromQueryResult(sortSeries bool, res *prompb.QueryResult) storage.SeriesSet
 			return errSeriesSet{err: err}
 		}
 		lbls := labelProtosToLabels(ts.Labels)
-		series = append(series, &concreteSeries{labels: lbls, floats: ts.Samples, histograms: ts.Histograms})
+		var samples []prompb.Sample
+		var histograms []*prompb.Histogram
+
+		for _, s := range ts.Samples {
+			samples = append(samples, *s)
+		}
+		for _, h := range ts.Histograms {
+			histograms = append(histograms, h)
+		}
+		series = append(series, &concreteSeries{labels: lbls, floats: samples, histograms: histograms})
+
 	}
 
 	if sortSeries {
@@ -222,13 +232,13 @@ func StreamChunkedReadResponses(
 	stream io.Writer,
 	queryIndex int64,
 	ss storage.ChunkSeriesSet,
-	sortedExternalLabels []prompb.Label,
+	sortedExternalLabels []*prompb.Label,
 	maxBytesInFrame int,
 	marshalPool *sync.Pool,
 ) (annotations.Annotations, error) {
 	var (
-		chks []prompb.Chunk
-		lbls []prompb.Label
+		chks []*prompb.Chunk
+		lbls []*prompb.Label
 		iter chunks.Iterator
 	)
 
@@ -239,7 +249,7 @@ func StreamChunkedReadResponses(
 
 		maxDataLength := maxBytesInFrame
 		for _, lbl := range lbls {
-			maxDataLength -= lbl.Size()
+			maxDataLength -= lbl.SizeVT()
 		}
 		frameBytesLeft := maxDataLength
 
@@ -254,13 +264,13 @@ func StreamChunkedReadResponses(
 			}
 
 			// Cut the chunk.
-			chks = append(chks, prompb.Chunk{
+			chks = append(chks, &prompb.Chunk{
 				MinTimeMs: chk.MinTime,
 				MaxTimeMs: chk.MaxTime,
 				Type:      prompb.Chunk_Encoding(chk.Chunk.Encoding()),
 				Data:      chk.Chunk.Bytes(),
 			})
-			frameBytesLeft -= chks[len(chks)-1].Size()
+			frameBytesLeft -= chks[len(chks)-1].SizeVT()
 
 			// We are fine with minor inaccuracy of max bytes per frame. The inaccuracy will be max of full chunk size.
 			isNext = iter.Next()
@@ -298,8 +308,8 @@ func StreamChunkedReadResponses(
 
 // MergeLabels merges two sets of sorted proto labels, preferring those in
 // primary to those in secondary when there is an overlap.
-func MergeLabels(primary, secondary []prompb.Label) []prompb.Label {
-	result := make([]prompb.Label, 0, len(primary)+len(secondary))
+func MergeLabels(primary, secondary []*prompb.Label) []*prompb.Label {
+	result := make([]*prompb.Label, 0, len(primary)+len(secondary))
 	i, j := 0, 0
 	for i < len(primary) && j < len(secondary) {
 		switch {
@@ -368,7 +378,7 @@ func (c *concreteSeriesSet) Warnings() annotations.Annotations { return nil }
 type concreteSeries struct {
 	labels     labels.Labels
 	floats     []prompb.Sample
-	histograms []prompb.Histogram
+	histograms []*prompb.Histogram
 }
 
 func (c *concreteSeries) Labels() labels.Labels {
@@ -440,7 +450,7 @@ func (c *concreteSeriesIterator) Seek(t int64) chunkenc.ValueType {
 		if c.series.floats[c.floatsCur].Timestamp <= c.series.histograms[c.histogramsCur].Timestamp {
 			c.curValType = chunkenc.ValFloat
 		} else {
-			c.curValType = getHistogramValType(&c.series.histograms[c.histogramsCur])
+			c.curValType = getHistogramValType(c.series.histograms[c.histogramsCur])
 		}
 		// When the timestamps do not overlap the cursor for the non-selected sample type has advanced too
 		// far; we decrement it back down here.
@@ -454,7 +464,7 @@ func (c *concreteSeriesIterator) Seek(t int64) chunkenc.ValueType {
 	case c.floatsCur < len(c.series.floats):
 		c.curValType = chunkenc.ValFloat
 	case c.histogramsCur < len(c.series.histograms):
-		c.curValType = getHistogramValType(&c.series.histograms[c.histogramsCur])
+		c.curValType = getHistogramValType(c.series.histograms[c.histogramsCur])
 	}
 	return c.curValType
 }
@@ -548,7 +558,7 @@ func (c *concreteSeriesIterator) Err() error {
 
 // validateLabelsAndMetricName validates the label names/values and metric names returned from remote read,
 // also making sure that there are no labels with duplicate names.
-func validateLabelsAndMetricName(ls []prompb.Label) error {
+func validateLabelsAndMetricName(ls []*prompb.Label) error {
 	for i, l := range ls {
 		if l.Name == labels.MetricName && !model.IsValidMetricName(model.LabelValue(l.Value)) {
 			return fmt.Errorf("invalid metric name: %v", l.Value)
@@ -617,7 +627,7 @@ func FromLabelMatchers(matchers []*prompb.LabelMatcher) ([]*labels.Matcher, erro
 	return result, nil
 }
 
-func exemplarProtoToExemplar(ep prompb.Exemplar) exemplar.Exemplar {
+func exemplarProtoToExemplar(ep *prompb.Exemplar) exemplar.Exemplar {
 	timestamp := ep.Timestamp
 
 	return exemplar.Exemplar{
@@ -631,7 +641,7 @@ func exemplarProtoToExemplar(ep prompb.Exemplar) exemplar.Exemplar {
 // HistogramProtoToHistogram extracts a (normal integer) Histogram from the
 // provided proto message. The caller has to make sure that the proto message
 // represents an integer histogram and not a float histogram, or it panics.
-func HistogramProtoToHistogram(hp prompb.Histogram) *histogram.Histogram {
+func HistogramProtoToHistogram(hp *prompb.Histogram) *histogram.Histogram {
 	if hp.IsFloatHistogram() {
 		panic("HistogramProtoToHistogram called with a float histogram")
 	}
@@ -653,7 +663,7 @@ func HistogramProtoToHistogram(hp prompb.Histogram) *histogram.Histogram {
 // provided proto message to a Float Histogram. The caller has to make sure that
 // the proto message represents a float histogram and not an integer histogram,
 // or it panics.
-func FloatHistogramProtoToFloatHistogram(hp prompb.Histogram) *histogram.FloatHistogram {
+func FloatHistogramProtoToFloatHistogram(hp *prompb.Histogram) *histogram.FloatHistogram {
 	if !hp.IsFloatHistogram() {
 		panic("FloatHistogramProtoToFloatHistogram called with an integer histogram")
 	}
@@ -674,7 +684,7 @@ func FloatHistogramProtoToFloatHistogram(hp prompb.Histogram) *histogram.FloatHi
 // HistogramProtoToFloatHistogram extracts and converts a (normal integer) histogram from the provided proto message
 // to a float histogram. The caller has to make sure that the proto message represents an integer histogram and not a
 // float histogram, or it panics.
-func HistogramProtoToFloatHistogram(hp prompb.Histogram) *histogram.FloatHistogram {
+func HistogramProtoToFloatHistogram(hp *prompb.Histogram) *histogram.FloatHistogram {
 	if hp.IsFloatHistogram() {
 		panic("HistogramProtoToFloatHistogram called with a float histogram")
 	}
@@ -692,10 +702,10 @@ func HistogramProtoToFloatHistogram(hp prompb.Histogram) *histogram.FloatHistogr
 	}
 }
 
-func spansProtoToSpans(s []prompb.BucketSpan) []histogram.Span {
-	spans := make([]histogram.Span, len(s))
+func spansProtoToSpans(s []*prompb.BucketSpan) []*histogram.Span {
+	spans := make([]*histogram.Span, len(s))
 	for i := 0; i < len(s); i++ {
-		spans[i] = histogram.Span{Offset: s[i].Offset, Length: s[i].Length}
+		spans[i] = &histogram.Span{Offset: s[i].Offset, Length: s[i].Length}
 	}
 
 	return spans
@@ -711,8 +721,8 @@ func deltasToCounts(deltas []int64) []float64 {
 	return counts
 }
 
-func HistogramToHistogramProto(timestamp int64, h *histogram.Histogram) prompb.Histogram {
-	return prompb.Histogram{
+func HistogramToHistogramProto(timestamp int64, h *histogram.Histogram) *prompb.Histogram {
+	return &prompb.Histogram{
 		Count:          &prompb.Histogram_CountInt{CountInt: h.Count},
 		Sum:            h.Sum,
 		Schema:         h.Schema,
@@ -727,8 +737,8 @@ func HistogramToHistogramProto(timestamp int64, h *histogram.Histogram) prompb.H
 	}
 }
 
-func FloatHistogramToHistogramProto(timestamp int64, fh *histogram.FloatHistogram) prompb.Histogram {
-	return prompb.Histogram{
+func FloatHistogramToHistogramProto(timestamp int64, fh *histogram.FloatHistogram) *prompb.Histogram {
+	return &prompb.Histogram{
 		Count:          &prompb.Histogram_CountFloat{CountFloat: fh.Count},
 		Sum:            fh.Sum,
 		Schema:         fh.Schema,
@@ -743,10 +753,10 @@ func FloatHistogramToHistogramProto(timestamp int64, fh *histogram.FloatHistogra
 	}
 }
 
-func spansToSpansProto(s []histogram.Span) []prompb.BucketSpan {
-	spans := make([]prompb.BucketSpan, len(s))
+func spansToSpansProto(s []*histogram.Span) []*prompb.BucketSpan {
+	spans := make([]*prompb.BucketSpan, len(s))
 	for i := 0; i < len(s); i++ {
-		spans[i] = prompb.BucketSpan{Offset: s[i].Offset, Length: s[i].Length}
+		spans[i] = &prompb.BucketSpan{Offset: s[i].Offset, Length: s[i].Length}
 	}
 
 	return spans
@@ -761,7 +771,7 @@ func LabelProtosToMetric(labelPairs []*prompb.Label) model.Metric {
 	return metric
 }
 
-func labelProtosToLabels(labelPairs []prompb.Label) labels.Labels {
+func labelProtosToLabels(labelPairs []*prompb.Label) labels.Labels {
 	b := labels.ScratchBuilder{}
 	for _, l := range labelPairs {
 		b.Add(l.Name, l.Value)
@@ -772,10 +782,10 @@ func labelProtosToLabels(labelPairs []prompb.Label) labels.Labels {
 
 // labelsToLabelsProto transforms labels into prompb labels. The buffer slice
 // will be used to avoid allocations if it is big enough to store the labels.
-func labelsToLabelsProto(lbls labels.Labels, buf []prompb.Label) []prompb.Label {
+func labelsToLabelsProto(lbls labels.Labels, buf []*prompb.Label) []*prompb.Label {
 	result := buf[:0]
 	lbls.Range(func(l labels.Label) {
-		result = append(result, prompb.Label{
+		result = append(result, &prompb.Label{
 			Name:  l.Name,
 			Value: l.Value,
 		})

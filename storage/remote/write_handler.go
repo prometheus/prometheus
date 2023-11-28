@@ -214,10 +214,10 @@ func (h *otlpWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		level.Warn(h.logger).Log("msg", "Error translating OTLP metrics to Prometheus write request", "err", errs)
 	}
 
-	prwMetrics := make([]prompb.TimeSeries, 0, len(prwMetricsMap))
+	prwMetrics := make([]*prompb.TimeSeries, 0, len(prwMetricsMap))
 
 	for _, ts := range prwMetricsMap {
-		prwMetrics = append(prwMetrics, *ts)
+		prwMetrics = append(prwMetrics, ts)
 	}
 
 	err = h.rwHandler.write(r.Context(), &prompb.WriteRequest{

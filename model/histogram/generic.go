@@ -104,7 +104,7 @@ type BucketIterator[BC BucketCount] interface {
 // code replication.
 type baseBucketIterator[BC BucketCount, IBC InternalBucketCount] struct {
 	schema  int32
-	spans   []Span
+	spans   []*Span
 	buckets []IBC
 
 	positive bool // Whether this is for positive buckets.
@@ -150,7 +150,7 @@ func (b *baseBucketIterator[BC, IBC]) strippedAt() strippedBucket[BC] {
 // compactBuckets is a generic function used by both Histogram.Compact and
 // FloatHistogram.Compact. Set deltaBuckets to true if the provided buckets are
 // deltas. Set it to false if the buckets contain absolute counts.
-func compactBuckets[IBC InternalBucketCount](buckets []IBC, spans []Span, maxEmptyBuckets int, deltaBuckets bool) ([]IBC, []Span) {
+func compactBuckets[IBC InternalBucketCount](buckets []IBC, spans []*Span, maxEmptyBuckets int, deltaBuckets bool) ([]IBC, []*Span) {
 	// Fast path: If there are no empty buckets AND no offset in any span is
 	// <= maxEmptyBuckets AND no span has length 0, there is nothing to do and we can return
 	// immediately. We check that first because it's cheap and presumably
@@ -276,7 +276,7 @@ func compactBuckets[IBC InternalBucketCount](buckets []IBC, spans []Span, maxEmp
 			}
 			// It's in the middle or in the end of the span.
 			// Split the current span.
-			newSpan := Span{
+			newSpan := &Span{
 				Offset: int32(nEmpty),
 				Length: spans[iSpan].Length - posInSpan - uint32(nEmpty),
 			}
@@ -294,7 +294,7 @@ func compactBuckets[IBC InternalBucketCount](buckets []IBC, spans []Span, maxEmp
 				continue
 			}
 			// Insert the new span.
-			spans = append(spans, Span{})
+			spans = append(spans, &Span{})
 			if iSpan+1 < len(spans) {
 				copy(spans[iSpan+1:], spans[iSpan:])
 			}
@@ -356,7 +356,7 @@ func compactBuckets[IBC InternalBucketCount](buckets []IBC, spans []Span, maxEmp
 	return buckets, spans
 }
 
-func checkHistogramSpans(spans []Span, numBuckets int) error {
+func checkHistogramSpans(spans []*Span, numBuckets int) error {
 	var spanBuckets int
 	for n, span := range spans {
 		if n > 0 && span.Offset < 0 {
@@ -608,21 +608,21 @@ var exponentialBounds = [][]float64{
 // Set inplace to true to reuse input slices and avoid allocations (otherwise
 // new slices will be allocated for result).
 func reduceResolution[IBC InternalBucketCount](
-	originSpans []Span,
+	originSpans []*Span,
 	originBuckets []IBC,
 	originSchema,
 	targetSchema int32,
 	deltaBuckets bool,
 	inplace bool,
-) ([]Span, []IBC) {
+) ([]*Span, []IBC) {
 	var (
-		targetSpans           []Span // The spans in the target schema.
-		targetBuckets         []IBC  // The bucket counts in the target schema.
-		bucketIdx             int32  // The index of bucket in the origin schema.
-		bucketCountIdx        int    // The position of a bucket in origin bucket count slice `originBuckets`.
-		targetBucketIdx       int32  // The index of bucket in the target schema.
-		lastBucketCount       IBC    // The last visited bucket's count in the origin schema.
-		lastTargetBucketIdx   int32  // The index of the last added target bucket.
+		targetSpans           []*Span // The spans in the target schema.
+		targetBuckets         []IBC   // The bucket counts in the target schema.
+		bucketIdx             int32   // The index of bucket in the origin schema.
+		bucketCountIdx        int     // The position of a bucket in origin bucket count slice `originBuckets`.
+		targetBucketIdx       int32   // The index of bucket in the target schema.
+		lastBucketCount       IBC     // The last visited bucket's count in the origin schema.
+		lastTargetBucketIdx   int32   // The index of the last added target bucket.
 		lastTargetBucketCount IBC
 	)
 
@@ -643,7 +643,7 @@ func reduceResolution[IBC InternalBucketCount](
 			switch {
 			case len(targetSpans) == 0:
 				// This is the first span in the targetSpans.
-				span := Span{
+				span := &Span{
 					Offset: targetBucketIdx,
 					Length: 1,
 				}
@@ -681,7 +681,7 @@ func reduceResolution[IBC InternalBucketCount](
 				// The current bucket has to go into a new target bucket,
 				// and that bucket is separated by a gap from the previous target bucket,
 				// so we need to add a new target span.
-				span := Span{
+				span := &Span{
 					Offset: targetBucketIdx - lastTargetBucketIdx - 1,
 					Length: 1,
 				}

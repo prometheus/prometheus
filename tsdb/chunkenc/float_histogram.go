@@ -71,7 +71,7 @@ func (c *FloatHistogramChunk) NumSamples() int {
 // least one sample.
 func (c *FloatHistogramChunk) Layout() (
 	schema int32, zeroThreshold float64,
-	negativeSpans, positiveSpans []histogram.Span,
+	negativeSpans, positiveSpans []*histogram.Span,
 	err error,
 ) {
 	if c.NumSamples() == 0 {
@@ -186,7 +186,7 @@ type FloatHistogramAppender struct {
 	// Layout:
 	schema         int32
 	zThreshold     float64
-	pSpans, nSpans []histogram.Span
+	pSpans, nSpans []*histogram.Span
 
 	t, tDelta          int64
 	sum, cnt, zCnt     xorValue
@@ -304,7 +304,7 @@ func (a *FloatHistogramAppender) appendable(h *histogram.FloatHistogram) (
 func (a *FloatHistogramAppender) appendableGauge(h *histogram.FloatHistogram) (
 	positiveInserts, negativeInserts []Insert,
 	backwardPositiveInserts, backwardNegativeInserts []Insert,
-	positiveSpans, negativeSpans []histogram.Span,
+	positiveSpans, negativeSpans []*histogram.Span,
 	okToAppend bool,
 ) {
 	if a.NumSamples() > 0 && a.GetCounterResetHeader() != GaugeType {
@@ -334,7 +334,7 @@ func (a *FloatHistogramAppender) appendableGauge(h *histogram.FloatHistogram) (
 // counterResetInAnyFloatBucket returns true if there was a counter reset for any
 // bucket. This should be called only when the bucket layout is the same or new
 // buckets were added. It does not handle the case of buckets missing.
-func counterResetInAnyFloatBucket(oldBuckets []xorValue, newBuckets []float64, oldSpans, newSpans []histogram.Span) bool {
+func counterResetInAnyFloatBucket(oldBuckets []xorValue, newBuckets []float64, oldSpans, newSpans []*histogram.Span) bool {
 	if len(oldSpans) == 0 || len(oldBuckets) == 0 {
 		return false
 	}
@@ -423,13 +423,13 @@ func (a *FloatHistogramAppender) appendFloatHistogram(t int64, h *histogram.Floa
 		a.zThreshold = h.ZeroThreshold
 
 		if len(h.PositiveSpans) > 0 {
-			a.pSpans = make([]histogram.Span, len(h.PositiveSpans))
+			a.pSpans = make([]*histogram.Span, len(h.PositiveSpans))
 			copy(a.pSpans, h.PositiveSpans)
 		} else {
 			a.pSpans = nil
 		}
 		if len(h.NegativeSpans) > 0 {
-			a.nSpans = make([]histogram.Span, len(h.NegativeSpans))
+			a.nSpans = make([]*histogram.Span, len(h.NegativeSpans))
 			copy(a.nSpans, h.NegativeSpans)
 		} else {
 			a.nSpans = nil
@@ -510,7 +510,7 @@ func (a *FloatHistogramAppender) writeXorValue(old *xorValue, v float64) {
 // this method.
 func (a *FloatHistogramAppender) recode(
 	positiveInserts, negativeInserts []Insert,
-	positiveSpans, negativeSpans []histogram.Span,
+	positiveSpans, negativeSpans []*histogram.Span,
 ) (Chunk, Appender) {
 	// TODO(beorn7): This currently just decodes everything and then encodes
 	// it again with the new span layout. This can probably be done in-place
@@ -688,7 +688,7 @@ type floatHistogramIterator struct {
 	// Layout:
 	schema         int32
 	zThreshold     float64
-	pSpans, nSpans []histogram.Span
+	pSpans, nSpans []*histogram.Span
 
 	// For the fields that are tracked as deltas and ultimately dod's.
 	t      int64
