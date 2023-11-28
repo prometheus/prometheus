@@ -154,7 +154,6 @@ type flagConfig struct {
 	enableNewSDManager         bool
 	enablePerStepStats         bool
 	enableAutoGOMAXPROCS       bool
-	enablePromQLSortByLabel    bool
 
 	prometheusURL   string
 	corsRegexString string
@@ -210,8 +209,6 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 				config.DefaultConfig.GlobalConfig.ScrapeProtocols = config.DefaultNativeHistogramScrapeProtocols
 				config.DefaultGlobalConfig.ScrapeProtocols = config.DefaultNativeHistogramScrapeProtocols
 				level.Info(logger).Log("msg", "Experimental native histogram support enabled. Changed default scrape_protocols to prefer PrometheusProto format.", "global.scrape_protocols", fmt.Sprintf("%v", config.DefaultGlobalConfig.ScrapeProtocols))
-			case "promql-sort-by-label":
-				c.enablePromQLSortByLabel = true
 			case "":
 				continue
 			case "promql-at-modifier", "promql-negative-offset":
@@ -668,7 +665,6 @@ func main() {
 			EnableAtModifier:     true,
 			EnableNegativeOffset: true,
 			EnablePerStepStats:   cfg.enablePerStepStats,
-			EnableSortByLabel:    cfg.enablePromQLSortByLabel,
 		}
 
 		queryEngine = promql.NewEngine(opts)

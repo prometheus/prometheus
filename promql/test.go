@@ -73,6 +73,9 @@ func LoadedStorage(t testutil.T, input string) *teststorage.TestStorage {
 
 // RunBuiltinTests runs an acceptance test suite against the provided engine.
 func RunBuiltinTests(t *testing.T, engine engineQuerier) {
+	t.Cleanup(func() { parser.EnableExperimentalFunctions = false })
+	parser.EnableExperimentalFunctions = true
+
 	files, err := fs.Glob(testsFs, "*/*.test")
 	require.NoError(t, err)
 

@@ -588,7 +588,7 @@ Same as `sort`, but sorts in descending order.
 
 ## `sort_by_label()`
 
-**This function has to be enabled via a [feature flag](../feature_flags/#promql-sort-by-label-function).**
+**This function has to be enabled via the [feature flag](../feature_flags/) `--enable-feature=promql-experimental-functions`.**
 
 `sort_by_label(v instant-vector, label string, ...)` returns vector elements sorted by their label values and sample value in case of label values being equal, in ascending order.
 
@@ -596,7 +596,7 @@ Please note that the sort by label functions only affect the results of instant 
 
 ## `sort_by_label_desc()`
 
-**This function has to be enabled via a [feature flag](../feature_flags/#promql-sort-by-label-function).**
+**This function has to be enabled via the [feature flag](../feature_flags/) `--enable-feature=promql-experimental-functions`.**
 
 Same as `sort_by_label`, but sorts in descending order.
 
