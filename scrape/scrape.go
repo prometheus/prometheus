@@ -1634,7 +1634,13 @@ loop:
 			}
 		}
 
-		sampleAdded, err = sl.checkAddError(ce, met, parsedTimestamp, err, &sampleLimitErr, &bucketLimitErr, &appErrs)
+		if err == nil {
+			if (parsedTimestamp == nil || sl.trackTimestampsStaleness) && ce != nil {
+				sl.cache.trackStaleness(ce.hash, ce.lset)
+			}
+		}
+
+		sampleAdded, err = sl.checkAddError(met, err, &sampleLimitErr, &bucketLimitErr, &appErrs)
 		if err != nil {
 			if !errors.Is(err, storage.ErrNotFound) {
 				level.Debug(sl.l).Log("msg", "Unexpected error", "series", string(met), "err", err)
@@ -1751,12 +1757,9 @@ loop:
 
 // Adds samples to the appender, checking the error, and then returns the # of samples added,
 // whether the caller should continue to process more samples, and any sample or bucket limit errors.
-func (sl *scrapeLoop) checkAddError(ce *cacheEntry, met []byte, tp *int64, err error, sampleLimitErr, bucketLimitErr *error, appErrs *appendErrors) (bool, error) {
+func (sl *scrapeLoop) checkAddError(met []byte, err error, sampleLimitErr, bucketLimitErr *error, appErrs *appendErrors) (bool, error) {
 	switch {
 	case err == nil:
-		if (tp == nil || sl.trackTimestampsStaleness) && ce != nil {
-			sl.cache.trackStaleness(ce.hash, ce.lset)
-		}
 		return true, nil
 	case errors.Is(err, storage.ErrNotFound):
 		return false, storage.ErrNotFound

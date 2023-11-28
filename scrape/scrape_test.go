@@ -2975,7 +2975,7 @@ func TestReuseCacheRace(t *testing.T) {
 func TestCheckAddError(t *testing.T) {
 	var appErrs appendErrors
 	sl := scrapeLoop{l: log.NewNopLogger(), metrics: newTestScrapeMetrics(t)}
-	sl.checkAddError(nil, nil, nil, storage.ErrOutOfOrderSample, nil, nil, &appErrs)
+	sl.checkAddError(nil, storage.ErrOutOfOrderSample, nil, nil, &appErrs)
 	require.Equal(t, 1, appErrs.numOutOfOrder)
 }
 
