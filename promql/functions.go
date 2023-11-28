@@ -23,6 +23,7 @@ import (
 
 	"github.com/grafana/regexp"
 	"github.com/prometheus/common/model"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -365,6 +366,68 @@ func funcSortDesc(vals []parser.Value, args parser.Expressions, enh *EvalNodeHel
 	byValueSorter := vectorByValueHeap(vals[0].(Vector))
 	sort.Sort(sort.Reverse(byValueSorter))
 	return Vector(byValueSorter), nil
+}
+
+// === sort_by_label(vector parser.ValueTypeVector, label parser.ValueTypeString...) (Vector, Annotations) ===
+func funcSortByLabel(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	// In case the labels are the same, NaN should sort to the bottom, so take
+	// ascending sort with NaN first and reverse it.
+	var anno annotations.Annotations
+	vals[0], anno = funcSort(vals, args, enh)
+	labels := stringSliceFromArgs(args[1:])
+	slices.SortFunc(vals[0].(Vector), func(a, b Sample) int {
+		// Iterate over each given label
+		for _, label := range labels {
+			lv1 := a.Metric.Get(label)
+			lv2 := b.Metric.Get(label)
+			// 0 if a == b, -1 if a < b, and +1 if a > b.
+			switch strings.Compare(lv1, lv2) {
+			case -1:
+				return -1
+			case +1:
+				return +1
+			default:
+				continue
+			}
+		}
+
+		return 0
+	})
+
+	return vals[0].(Vector), anno
+}
+
+// === sort_by_label_desc(vector parser.ValueTypeVector, label parser.ValueTypeString...) (Vector, Annotations) ===
+func funcSortByLabelDesc(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	// In case the labels are the same, NaN should sort to the bottom, so take
+	// ascending sort with NaN first and reverse it.
+	var anno annotations.Annotations
+	vals[0], anno = funcSortDesc(vals, args, enh)
+	labels := stringSliceFromArgs(args[1:])
+	slices.SortFunc(vals[0].(Vector), func(a, b Sample) int {
+		// Iterate over each given label
+		for _, label := range labels {
+			lv1 := a.Metric.Get(label)
+			lv2 := b.Metric.Get(label)
+			// If label values are the same, continue to the next label
+			if lv1 == lv2 {
+				continue
+			}
+			// 0 if a == b, -1 if a < b, and +1 if a > b.
+			switch strings.Compare(lv1, lv2) {
+			case -1:
+				return +1
+			case +1:
+				return -1
+			default:
+				continue
+			}
+		}
+
+		return 0
+	})
+
+	return vals[0].(Vector), anno
 }
 
 // === clamp(Vector parser.ValueTypeVector, min, max Scalar) (Vector, Annotations) ===
@@ -1493,6 +1556,8 @@ var FunctionCalls = map[string]FunctionCall{
 	"sinh":               funcSinh,
 	"sort":               funcSort,
 	"sort_desc":          funcSortDesc,
+	"sort_by_label":      funcSortByLabel,
+	"sort_by_label_desc": funcSortByLabelDesc,
 	"sqrt":               funcSqrt,
 	"stddev_over_time":   funcStddevOverTime,
 	"stdvar_over_time":   funcStdvarOverTime,
@@ -1636,4 +1701,12 @@ func stringFromArg(e parser.Expr) string {
 	tmp := unwrapStepInvariantExpr(e) // Unwrap StepInvariant
 	unwrapParenExpr(&tmp)             // Optionally unwrap ParenExpr
 	return tmp.(*parser.StringLiteral).Val
+}
+
+func stringSliceFromArgs(args parser.Expressions) []string {
+	tmp := make([]string, len(args))
+	for i := 0; i < len(args); i++ {
+		tmp[i] = stringFromArg(args[i])
+	}
+	return tmp
 }
