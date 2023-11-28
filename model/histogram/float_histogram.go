@@ -268,12 +268,23 @@ func (h *FloatHistogram) Add(other *FloatHistogram) *FloatHistogram {
 	h.Count += other.Count
 	h.Sum += other.Sum
 
-	if other.Schema != h.Schema {
-		other = other.ReduceResolution(h.Schema)
+	var (
+		otherPositiveSpans   = other.PositiveSpans
+		otherPositiveBuckets = other.PositiveBuckets
+		otherNegativeSpans   = other.NegativeSpans
+		otherNegativeBuckets = other.NegativeBuckets
+	)
+
+	if other.Schema < h.Schema {
+		panic(fmt.Errorf("cannot add histogram with schema %d to %d", other.Schema, h.Schema))
+	} else if other.Schema > h.Schema {
+		otherPositiveSpans, otherPositiveBuckets = reduceResolution(otherPositiveSpans, otherPositiveBuckets, other.Schema, h.Schema, false)
+		otherNegativeSpans, otherNegativeBuckets = reduceResolution(otherNegativeSpans, otherNegativeBuckets, other.Schema, h.Schema, false)
 	}
 
-	h.PositiveSpans, h.PositiveBuckets = addBuckets(h.Schema, h.ZeroThreshold, false, h.PositiveSpans, h.PositiveBuckets, other.PositiveSpans, other.PositiveBuckets)
-	h.NegativeSpans, h.NegativeBuckets = addBuckets(h.Schema, h.ZeroThreshold, false, h.NegativeSpans, h.NegativeBuckets, other.NegativeSpans, other.NegativeBuckets)
+	h.PositiveSpans, h.PositiveBuckets = addBuckets(h.Schema, h.ZeroThreshold, false, h.PositiveSpans, h.PositiveBuckets, otherPositiveSpans, otherPositiveBuckets)
+	h.NegativeSpans, h.NegativeBuckets = addBuckets(h.Schema, h.ZeroThreshold, false, h.NegativeSpans, h.NegativeBuckets, otherNegativeSpans, otherNegativeBuckets)
+
 	return h
 }
 
@@ -284,12 +295,23 @@ func (h *FloatHistogram) Sub(other *FloatHistogram) *FloatHistogram {
 	h.Count -= other.Count
 	h.Sum -= other.Sum
 
-	if other.Schema != h.Schema {
-		other = other.ReduceResolution(h.Schema)
+	var (
+		otherPositiveSpans   = other.PositiveSpans
+		otherPositiveBuckets = other.PositiveBuckets
+		otherNegativeSpans   = other.NegativeSpans
+		otherNegativeBuckets = other.NegativeBuckets
+	)
+
+	if other.Schema < h.Schema {
+		panic(fmt.Errorf("cannot subtract histigram with schema %d to %d", other.Schema, h.Schema))
+	} else if other.Schema > h.Schema {
+		otherPositiveSpans, otherPositiveBuckets = reduceResolution(otherPositiveSpans, otherPositiveBuckets, other.Schema, h.Schema, false)
+		otherNegativeSpans, otherNegativeBuckets = reduceResolution(otherNegativeSpans, otherNegativeBuckets, other.Schema, h.Schema, false)
 	}
 
-	h.PositiveSpans, h.PositiveBuckets = addBuckets(h.Schema, h.ZeroThreshold, true, h.PositiveSpans, h.PositiveBuckets, other.PositiveSpans, other.PositiveBuckets)
-	h.NegativeSpans, h.NegativeBuckets = addBuckets(h.Schema, h.ZeroThreshold, true, h.NegativeSpans, h.NegativeBuckets, other.NegativeSpans, other.NegativeBuckets)
+	h.PositiveSpans, h.PositiveBuckets = addBuckets(h.Schema, h.ZeroThreshold, true, h.PositiveSpans, h.PositiveBuckets, otherPositiveSpans, otherPositiveBuckets)
+	h.NegativeSpans, h.NegativeBuckets = addBuckets(h.Schema, h.ZeroThreshold, true, h.NegativeSpans, h.NegativeBuckets, otherNegativeSpans, otherNegativeBuckets)
+
 	return h
 }
 
