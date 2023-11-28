@@ -313,6 +313,8 @@ func Open(l log.Logger, reg prometheus.Registerer, rs *remote.Storage, dir strin
 	return db, nil
 }
 
+// SetWriteNotified allows to set an instance to notify when a write happens.
+// It must be used during initialization. It is not safe to use it during execution.
 func (db *DB) SetWriteNotified(wn wlog.WriteNotified) {
 	db.writeNotified = wn
 }
