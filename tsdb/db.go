@@ -257,9 +257,13 @@ type DB struct {
 	compactor      Compactor
 	blocksToDelete BlocksToDeleteFunc
 
-	// Mutex for that must be held when modifying the general block layout.
+	// Mutex for that must be held when modifying the general block layout or lastGarbageCollectedMmapRef.
 	mtx    sync.RWMutex
 	blocks []*Block
+
+	// The last OOO chunk that was compacted and written to disk. New queriers must not read chunks less
+	// than or equal to this reference, as these chunks could be garbage collected at any time.
+	lastGarbageCollectedMmapRef chunks.ChunkDiskMapperRef
 
 	head *Head
 
@@ -717,7 +721,7 @@ func (db *DBReadOnly) Block(blockID string) (BlockReader, error) {
 
 	_, err := os.Stat(filepath.Join(db.dir, blockID))
 	if os.IsNotExist(err) {
-		return nil, errors.Errorf("invalid block ID %s", blockID)
+		return nil, fmt.Errorf("invalid block ID %s", blockID)
 	}
 
 	block, err := OpenBlock(db.logger, filepath.Join(db.dir, blockID), nil)
@@ -1307,6 +1311,20 @@ func (db *DB) compactOOOHead(ctx context.Context) error {
 
 	lastWBLFile, minOOOMmapRef := oooHead.LastWBLFile(), oooHead.LastMmapRef()
 	if lastWBLFile != 0 || minOOOMmapRef != 0 {
+		if minOOOMmapRef != 0 {
+			// Ensure that no more queriers are created that will reference chunks we're about to garbage collect.
+			// truncateOOO waits for any existing queriers that reference chunks we're about to garbage collect to
+			// complete before running garbage collection, so we don't need to do that here.
+			//
+			// We take mtx to ensure that Querier() and ChunkQuerier() don't miss blocks: without this, they could
+			// capture the list of blocks before the call to reloadBlocks() above runs, but then capture
+			// lastGarbageCollectedMmapRef after we update it here, and therefore not query either the blocks we've just
+			// written or the head chunks those blocks were created from.
+			db.mtx.Lock()
+			db.lastGarbageCollectedMmapRef = minOOOMmapRef
+			db.mtx.Unlock()
+		}
+
 		if err := db.head.truncateOOO(lastWBLFile, minOOOMmapRef); err != nil {
 			return errors.Wrap(err, "truncate ooo wbl")
 		}
@@ -1903,10 +1921,10 @@ func (db *DB) ForceHeadMMap() {
 // will create a new block containing all data that's currently in the memory buffer/WAL.
 func (db *DB) Snapshot(dir string, withHead bool) error {
 	if dir == db.dir {
-		return errors.Errorf("cannot snapshot into base directory")
+		return fmt.Errorf("cannot snapshot into base directory")
 	}
 	if _, err := ulid.ParseStrict(dir); err == nil {
-		return errors.Errorf("dir must not be a valid ULID")
+		return fmt.Errorf("dir must not be a valid ULID")
 	}
 
 	db.cmtx.Lock()
@@ -1938,7 +1956,7 @@ func (db *DB) Snapshot(dir string, withHead bool) error {
 }
 
 // Querier returns a new querier over the data partition for the given time range.
-func (db *DB) Querier(mint, maxt int64) (storage.Querier, error) {
+func (db *DB) Querier(mint, maxt int64) (_ storage.Querier, err error) {
 	var blocks []BlockReader
 
 	db.mtx.RLock()
@@ -1949,11 +1967,23 @@ func (db *DB) Querier(mint, maxt int64) (storage.Querier, error) {
 			blocks = append(blocks, b)
 		}
 	}
-	var inOrderHeadQuerier storage.Querier
+
+	blockQueriers := make([]storage.Querier, 0, len(blocks)+2) // +2 to allow for possible in-order and OOO head queriers
+
+	defer func() {
+		if err != nil {
+			// If we fail, all previously opened queriers must be closed.
+			for _, q := range blockQueriers {
+				// TODO(bwplotka): Handle error.
+				_ = q.Close()
+			}
+		}
+	}()
+
 	if maxt >= db.head.MinTime() {
 		rh := NewRangeHead(db.head, mint, maxt)
 		var err error
-		inOrderHeadQuerier, err = NewBlockQuerier(rh, mint, maxt)
+		inOrderHeadQuerier, err := NewBlockQuerier(rh, mint, maxt)
 		if err != nil {
 			return nil, errors.Wrapf(err, "open block querier for head %s", rh)
 		}
@@ -1975,44 +2005,40 @@ func (db *DB) Querier(mint, maxt int64) (storage.Querier, error) {
 				return nil, errors.Wrapf(err, "open block querier for head while getting new querier %s", rh)
 			}
 		}
+
+		if inOrderHeadQuerier != nil {
+			blockQueriers = append(blockQueriers, inOrderHeadQuerier)
+		}
 	}
 
-	var outOfOrderHeadQuerier storage.Querier
 	if overlapsClosedInterval(mint, maxt, db.head.MinOOOTime(), db.head.MaxOOOTime()) {
-		rh := NewOOORangeHead(db.head, mint, maxt)
+		rh := NewOOORangeHead(db.head, mint, maxt, db.lastGarbageCollectedMmapRef)
 		var err error
-		outOfOrderHeadQuerier, err = NewBlockQuerier(rh, mint, maxt)
+		outOfOrderHeadQuerier, err := NewBlockQuerier(rh, mint, maxt)
 		if err != nil {
+			// If NewBlockQuerier() failed, make sure to clean up the pending read created by NewOOORangeHead.
+			rh.isoState.Close()
+
 			return nil, errors.Wrapf(err, "open block querier for ooo head %s", rh)
 		}
-	}
 
-	blockQueriers := make([]storage.Querier, 0, len(blocks))
-	for _, b := range blocks {
-		q, err := NewBlockQuerier(b, mint, maxt)
-		if err == nil {
-			blockQueriers = append(blockQueriers, q)
-			continue
-		}
-		// If we fail, all previously opened queriers must be closed.
-		for _, q := range blockQueriers {
-			// TODO(bwplotka): Handle error.
-			_ = q.Close()
-		}
-		return nil, errors.Wrapf(err, "open querier for block %s", b)
-	}
-	if inOrderHeadQuerier != nil {
-		blockQueriers = append(blockQueriers, inOrderHeadQuerier)
-	}
-	if outOfOrderHeadQuerier != nil {
 		blockQueriers = append(blockQueriers, outOfOrderHeadQuerier)
 	}
+
+	for _, b := range blocks {
+		q, err := NewBlockQuerier(b, mint, maxt)
+		if err != nil {
+			return nil, errors.Wrapf(err, "open querier for block %s", b)
+		}
+		blockQueriers = append(blockQueriers, q)
+	}
+
 	return storage.NewMergeQuerier(blockQueriers, nil, storage.ChainedSeriesMerge), nil
 }
 
 // blockChunkQuerierForRange returns individual block chunk queriers from the persistent blocks, in-order head block, and the
 // out-of-order head block, overlapping with the given time range.
-func (db *DB) blockChunkQuerierForRange(mint, maxt int64) ([]storage.ChunkQuerier, error) {
+func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuerier, err error) {
 	var blocks []BlockReader
 
 	db.mtx.RLock()
@@ -2023,11 +2049,22 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) ([]storage.ChunkQuerie
 			blocks = append(blocks, b)
 		}
 	}
-	var inOrderHeadQuerier storage.ChunkQuerier
+
+	blockQueriers := make([]storage.ChunkQuerier, 0, len(blocks)+2) // +2 to allow for possible in-order and OOO head queriers
+
+	defer func() {
+		if err != nil {
+			// If we fail, all previously opened queriers must be closed.
+			for _, q := range blockQueriers {
+				// TODO(bwplotka): Handle error.
+				_ = q.Close()
+			}
+		}
+	}()
+
 	if maxt >= db.head.MinTime() {
 		rh := NewRangeHead(db.head, mint, maxt)
-		var err error
-		inOrderHeadQuerier, err = NewBlockChunkQuerier(rh, mint, maxt)
+		inOrderHeadQuerier, err := NewBlockChunkQuerier(rh, mint, maxt)
 		if err != nil {
 			return nil, errors.Wrapf(err, "open querier for head %s", rh)
 		}
@@ -2049,37 +2086,28 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) ([]storage.ChunkQuerie
 				return nil, errors.Wrapf(err, "open querier for head while getting new querier %s", rh)
 			}
 		}
+
+		if inOrderHeadQuerier != nil {
+			blockQueriers = append(blockQueriers, inOrderHeadQuerier)
+		}
 	}
 
-	var outOfOrderHeadQuerier storage.ChunkQuerier
 	if overlapsClosedInterval(mint, maxt, db.head.MinOOOTime(), db.head.MaxOOOTime()) {
-		rh := NewOOORangeHead(db.head, mint, maxt)
-		var err error
-		outOfOrderHeadQuerier, err = NewBlockChunkQuerier(rh, mint, maxt)
+		rh := NewOOORangeHead(db.head, mint, maxt, db.lastGarbageCollectedMmapRef)
+		outOfOrderHeadQuerier, err := NewBlockChunkQuerier(rh, mint, maxt)
 		if err != nil {
 			return nil, errors.Wrapf(err, "open block chunk querier for ooo head %s", rh)
 		}
+
+		blockQueriers = append(blockQueriers, outOfOrderHeadQuerier)
 	}
 
-	blockQueriers := make([]storage.ChunkQuerier, 0, len(blocks))
 	for _, b := range blocks {
 		q, err := NewBlockChunkQuerier(b, mint, maxt)
-		if err == nil {
-			blockQueriers = append(blockQueriers, q)
-			continue
+		if err != nil {
+			return nil, errors.Wrapf(err, "open querier for block %s", b)
 		}
-		// If we fail, all previously opened queriers must be closed.
-		for _, q := range blockQueriers {
-			// TODO(bwplotka): Handle error.
-			_ = q.Close()
-		}
-		return nil, errors.Wrapf(err, "open querier for block %s", b)
-	}
-	if inOrderHeadQuerier != nil {
-		blockQueriers = append(blockQueriers, inOrderHeadQuerier)
-	}
-	if outOfOrderHeadQuerier != nil {
-		blockQueriers = append(blockQueriers, outOfOrderHeadQuerier)
+		blockQueriers = append(blockQueriers, q)
 	}
 
 	return blockQueriers, nil

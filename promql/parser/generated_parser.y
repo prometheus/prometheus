@@ -22,7 +22,7 @@ import (
         "github.com/prometheus/prometheus/model/labels"
         "github.com/prometheus/prometheus/model/value"
         "github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/promql/parser/posrange"
+        "github.com/prometheus/prometheus/promql/parser/posrange"
 )
 
 %}
@@ -368,6 +368,9 @@ function_call   : IDENTIFIER function_call_body
                         fn, exist := getFunction($1.Val, yylex.(*parser).functions)
                         if !exist{
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"unknown function with name %q", $1.Val)
+                        }
+                        if fn != nil && fn.Experimental && !EnableExperimentalFunctions {
+                                yylex.(*parser).addParseErrf($1.PositionRange(),"function %q is not enabled", $1.Val)
                         }
                         $$ = &Call{
                                 Func: fn,

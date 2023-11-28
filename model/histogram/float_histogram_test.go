@@ -16,6 +16,7 @@ package histogram
 import (
 	"fmt"
 	"math"
+	"math/rand"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -1572,9 +1573,12 @@ func TestFloatHistogramAdd(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			in2Copy := c.in2.Copy()
 			require.Equal(t, c.expected, c.in1.Add(c.in2))
 			// Has it also happened in-place?
 			require.Equal(t, c.expected, c.in1)
+			// Check that the argument was not mutated.
+			require.Equal(t, in2Copy, c.in2)
 		})
 	}
 }
@@ -1658,9 +1662,12 @@ func TestFloatHistogramSub(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			in2Copy := c.in2.Copy()
 			require.Equal(t, c.expected, c.in1.Sub(c.in2))
 			// Has it also happened in-place?
 			require.Equal(t, c.expected, c.in1)
+			// Check that the argument was not mutated.
+			require.Equal(t, in2Copy, c.in2)
 		})
 	}
 }
@@ -2391,5 +2398,96 @@ func TestFloatHistogramSize(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			require.Equal(t, c.expected, c.fh.Size())
 		})
+	}
+}
+
+func BenchmarkFloatHistogramAllBucketIterator(b *testing.B) {
+	rng := rand.New(rand.NewSource(0))
+
+	fh := createRandomFloatHistogram(rng, 50)
+
+	b.ReportAllocs() // the current implementation reports 1 alloc
+	b.ResetTimer()
+
+	for n := 0; n < b.N; n++ {
+		for it := fh.AllBucketIterator(); it.Next(); {
+		}
+	}
+}
+
+func BenchmarkFloatHistogramDetectReset(b *testing.B) {
+	rng := rand.New(rand.NewSource(0))
+
+	fh := createRandomFloatHistogram(rng, 50)
+
+	b.ReportAllocs() // the current implementation reports 0 allocs
+	b.ResetTimer()
+
+	for n := 0; n < b.N; n++ {
+		// Detect against the itself (no resets is the worst case input).
+		fh.DetectReset(fh)
+	}
+}
+
+func createRandomFloatHistogram(rng *rand.Rand, spanNum int32) *FloatHistogram {
+	f := &FloatHistogram{}
+	f.PositiveSpans, f.PositiveBuckets = createRandomSpans(rng, spanNum)
+	f.NegativeSpans, f.NegativeBuckets = createRandomSpans(rng, spanNum)
+	return f
+}
+
+func createRandomSpans(rng *rand.Rand, spanNum int32) ([]Span, []float64) {
+	Spans := make([]Span, spanNum)
+	Buckets := make([]float64, 0)
+	for i := 0; i < int(spanNum); i++ {
+		Spans[i].Offset = rng.Int31n(spanNum) + 1
+		Spans[i].Length = uint32(rng.Int31n(spanNum) + 1)
+		for j := 0; j < int(Spans[i].Length); j++ {
+			Buckets = append(Buckets, float64(rng.Int31n(spanNum)+1))
+		}
+	}
+	return Spans, Buckets
+}
+
+func TestFloatHistogramReduceResolution(t *testing.T) {
+	tcs := map[string]struct {
+		origin *FloatHistogram
+		target *FloatHistogram
+	}{
+		"valid float histogram": {
+			origin: &FloatHistogram{
+				Schema: 0,
+				PositiveSpans: []Span{
+					{Offset: 0, Length: 4},
+					{Offset: 0, Length: 0},
+					{Offset: 3, Length: 2},
+				},
+				PositiveBuckets: []float64{1, 3, 1, 2, 1, 1},
+				NegativeSpans: []Span{
+					{Offset: 0, Length: 4},
+					{Offset: 0, Length: 0},
+					{Offset: 3, Length: 2},
+				},
+				NegativeBuckets: []float64{1, 3, 1, 2, 1, 1},
+			},
+			target: &FloatHistogram{
+				Schema: -1,
+				PositiveSpans: []Span{
+					{Offset: 0, Length: 3},
+					{Offset: 1, Length: 1},
+				},
+				PositiveBuckets: []float64{1, 4, 2, 2},
+				NegativeSpans: []Span{
+					{Offset: 0, Length: 3},
+					{Offset: 1, Length: 1},
+				},
+				NegativeBuckets: []float64{1, 4, 2, 2},
+			},
+		},
+	}
+
+	for _, tc := range tcs {
+		target := tc.origin.ReduceResolution(tc.target.Schema)
+		require.Equal(t, tc.target, target)
 	}
 }

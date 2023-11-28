@@ -22,6 +22,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -190,6 +191,10 @@ func readTestWAL(t testing.TB, dir string) (recs []interface{}) {
 			meta, err := dec.Metadata(rec, nil)
 			require.NoError(t, err)
 			recs = append(recs, meta)
+		case record.Exemplars:
+			exemplars, err := dec.Exemplars(rec, nil)
+			require.NoError(t, err)
+			recs = append(recs, exemplars)
 		default:
 			t.Fatalf("unknown record type")
 		}
@@ -1835,16 +1840,16 @@ func TestGCChunkAccess(t *testing.T) {
 
 	cr, err := h.chunksRange(0, 1500, nil)
 	require.NoError(t, err)
-	_, err = cr.Chunk(chunks[0])
+	_, _, err = cr.ChunkOrIterable(chunks[0])
 	require.NoError(t, err)
-	_, err = cr.Chunk(chunks[1])
+	_, _, err = cr.ChunkOrIterable(chunks[1])
 	require.NoError(t, err)
 
 	require.NoError(t, h.Truncate(1500)) // Remove a chunk.
 
-	_, err = cr.Chunk(chunks[0])
+	_, _, err = cr.ChunkOrIterable(chunks[0])
 	require.Equal(t, storage.ErrNotFound, err)
-	_, err = cr.Chunk(chunks[1])
+	_, _, err = cr.ChunkOrIterable(chunks[1])
 	require.NoError(t, err)
 }
 
@@ -1894,18 +1899,18 @@ func TestGCSeriesAccess(t *testing.T) {
 
 	cr, err := h.chunksRange(0, 2000, nil)
 	require.NoError(t, err)
-	_, err = cr.Chunk(chunks[0])
+	_, _, err = cr.ChunkOrIterable(chunks[0])
 	require.NoError(t, err)
-	_, err = cr.Chunk(chunks[1])
+	_, _, err = cr.ChunkOrIterable(chunks[1])
 	require.NoError(t, err)
 
 	require.NoError(t, h.Truncate(2000)) // Remove the series.
 
 	require.Equal(t, (*memSeries)(nil), h.series.getByID(1))
 
-	_, err = cr.Chunk(chunks[0])
+	_, _, err = cr.ChunkOrIterable(chunks[0])
 	require.Equal(t, storage.ErrNotFound, err)
-	_, err = cr.Chunk(chunks[1])
+	_, _, err = cr.ChunkOrIterable(chunks[1])
 	require.Equal(t, storage.ErrNotFound, err)
 }
 
@@ -3488,7 +3493,6 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 			hists = tsdbutil.GenerateTestHistograms(numHistograms)
 		}
 		for _, h := range hists {
-			h.Count *= 2
 			h.NegativeSpans = h.PositiveSpans
 			h.NegativeBuckets = h.PositiveBuckets
 			_, err := app.AppendHistogram(0, s1, ts, h, nil)
@@ -3511,7 +3515,6 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 			hists = tsdbutil.GenerateTestFloatHistograms(numHistograms)
 		}
 		for _, h := range hists {
-			h.Count *= 2
 			h.NegativeSpans = h.PositiveSpans
 			h.NegativeBuckets = h.PositiveBuckets
 			_, err := app.AppendHistogram(0, s1, ts, nil, h)
@@ -3553,7 +3556,6 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 		}
 		for _, h := range hists {
 			ts++
-			h.Count *= 2
 			h.NegativeSpans = h.PositiveSpans
 			h.NegativeBuckets = h.PositiveBuckets
 			_, err := app.AppendHistogram(0, s2, ts, h, nil)
@@ -3590,7 +3592,6 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 		}
 		for _, h := range hists {
 			ts++
-			h.Count *= 2
 			h.NegativeSpans = h.PositiveSpans
 			h.NegativeBuckets = h.PositiveBuckets
 			_, err := app.AppendHistogram(0, s2, ts, nil, h)
@@ -4967,170 +4968,6 @@ func TestReplayAfterMmapReplayError(t *testing.T) {
 	require.NoError(t, h.Close())
 }
 
-func TestHistogramValidation(t *testing.T) {
-	tests := map[string]struct {
-		h         *histogram.Histogram
-		errMsg    string
-		skipFloat bool
-	}{
-		"valid histogram": {
-			h: tsdbutil.GenerateTestHistograms(1)[0],
-		},
-		"valid histogram that has its Count (4) higher than the actual total of buckets (2 + 1)": {
-			// This case is possible if NaN values (which do not fall into any bucket) are observed.
-			h: &histogram.Histogram{
-				ZeroCount:       2,
-				Count:           4,
-				Sum:             math.NaN(),
-				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
-				PositiveBuckets: []int64{1},
-			},
-		},
-		"rejects histogram that has too few negative buckets": {
-			h: &histogram.Histogram{
-				NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
-				NegativeBuckets: []int64{},
-			},
-			errMsg: `negative side: spans need 1 buckets, have 0 buckets: histogram spans specify different number of buckets than provided`,
-		},
-		"rejects histogram that has too few positive buckets": {
-			h: &histogram.Histogram{
-				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
-				PositiveBuckets: []int64{},
-			},
-			errMsg: `positive side: spans need 1 buckets, have 0 buckets: histogram spans specify different number of buckets than provided`,
-		},
-		"rejects histogram that has too many negative buckets": {
-			h: &histogram.Histogram{
-				NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
-				NegativeBuckets: []int64{1, 2},
-			},
-			errMsg: `negative side: spans need 1 buckets, have 2 buckets: histogram spans specify different number of buckets than provided`,
-		},
-		"rejects histogram that has too many positive buckets": {
-			h: &histogram.Histogram{
-				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
-				PositiveBuckets: []int64{1, 2},
-			},
-			errMsg: `positive side: spans need 1 buckets, have 2 buckets: histogram spans specify different number of buckets than provided`,
-		},
-		"rejects a histogram that has a negative span with a negative offset": {
-			h: &histogram.Histogram{
-				NegativeSpans:   []histogram.Span{{Offset: -1, Length: 1}, {Offset: -1, Length: 1}},
-				NegativeBuckets: []int64{1, 2},
-			},
-			errMsg: `negative side: span number 2 with offset -1: histogram has a span whose offset is negative`,
-		},
-		"rejects a histogram which has a positive span with a negative offset": {
-			h: &histogram.Histogram{
-				PositiveSpans:   []histogram.Span{{Offset: -1, Length: 1}, {Offset: -1, Length: 1}},
-				PositiveBuckets: []int64{1, 2},
-			},
-			errMsg: `positive side: span number 2 with offset -1: histogram has a span whose offset is negative`,
-		},
-		"rejects a histogram that has a negative bucket with a negative count": {
-			h: &histogram.Histogram{
-				NegativeSpans:   []histogram.Span{{Offset: -1, Length: 1}},
-				NegativeBuckets: []int64{-1},
-			},
-			errMsg: `negative side: bucket number 1 has observation count of -1: histogram has a bucket whose observation count is negative`,
-		},
-		"rejects a histogram that has a positive bucket with a negative count": {
-			h: &histogram.Histogram{
-				PositiveSpans:   []histogram.Span{{Offset: -1, Length: 1}},
-				PositiveBuckets: []int64{-1},
-			},
-			errMsg: `positive side: bucket number 1 has observation count of -1: histogram has a bucket whose observation count is negative`,
-		},
-		"rejects a histogram that has a lower count than count in buckets": {
-			h: &histogram.Histogram{
-				Count:           0,
-				NegativeSpans:   []histogram.Span{{Offset: -1, Length: 1}},
-				PositiveSpans:   []histogram.Span{{Offset: -1, Length: 1}},
-				NegativeBuckets: []int64{1},
-				PositiveBuckets: []int64{1},
-			},
-			errMsg:    `2 observations found in buckets, but the Count field is 0: histogram's observation count should be at least the number of observations found in the buckets`,
-			skipFloat: true,
-		},
-		"rejects a histogram that doesn't count the zero bucket in its count": {
-			h: &histogram.Histogram{
-				Count:           2,
-				ZeroCount:       1,
-				NegativeSpans:   []histogram.Span{{Offset: -1, Length: 1}},
-				PositiveSpans:   []histogram.Span{{Offset: -1, Length: 1}},
-				NegativeBuckets: []int64{1},
-				PositiveBuckets: []int64{1},
-			},
-			errMsg:    `3 observations found in buckets, but the Count field is 2: histogram's observation count should be at least the number of observations found in the buckets`,
-			skipFloat: true,
-		},
-	}
-
-	for testName, tc := range tests {
-		t.Run(testName, func(t *testing.T) {
-			if err := ValidateHistogram(tc.h); tc.errMsg != "" {
-				require.EqualError(t, err, tc.errMsg)
-			} else {
-				require.NoError(t, err)
-			}
-			if tc.skipFloat {
-				return
-			}
-			if err := ValidateFloatHistogram(tc.h.ToFloat()); tc.errMsg != "" {
-				require.EqualError(t, err, tc.errMsg)
-			} else {
-				require.NoError(t, err)
-			}
-		})
-	}
-}
-
-func BenchmarkHistogramValidation(b *testing.B) {
-	histograms := generateBigTestHistograms(b.N, 500)
-	b.ResetTimer()
-	for _, h := range histograms {
-		require.NoError(b, ValidateHistogram(h))
-	}
-}
-
-func generateBigTestHistograms(numHistograms, numBuckets int) []*histogram.Histogram {
-	numSpans := numBuckets / 10
-	bucketsPerSide := numBuckets / 2
-	spanLength := uint32(bucketsPerSide / numSpans)
-	// Given all bucket deltas are 1, sum numHistograms + 1.
-	observationCount := numBuckets / 2 * (1 + numBuckets)
-
-	var histograms []*histogram.Histogram
-	for i := 0; i < numHistograms; i++ {
-		h := &histogram.Histogram{
-			Count:           uint64(i + observationCount),
-			ZeroCount:       uint64(i),
-			ZeroThreshold:   1e-128,
-			Sum:             18.4 * float64(i+1),
-			Schema:          2,
-			NegativeSpans:   make([]histogram.Span, numSpans),
-			PositiveSpans:   make([]histogram.Span, numSpans),
-			NegativeBuckets: make([]int64, bucketsPerSide),
-			PositiveBuckets: make([]int64, bucketsPerSide),
-		}
-
-		for j := 0; j < numSpans; j++ {
-			s := histogram.Span{Offset: 1, Length: spanLength}
-			h.NegativeSpans[j] = s
-			h.PositiveSpans[j] = s
-		}
-
-		for j := 0; j < bucketsPerSide; j++ {
-			h.NegativeBuckets[j] = 1
-			h.PositiveBuckets[j] = 1
-		}
-
-		histograms = append(histograms, h)
-	}
-	return histograms
-}
-
 func TestOOOAppendWithNoSeries(t *testing.T) {
 	dir := t.TempDir()
 	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, wlog.CompressionSnappy)
@@ -5471,7 +5308,7 @@ func BenchmarkCuttingHeadHistogramChunks(b *testing.B) {
 		numSamples = 50000
 		numBuckets = 100
 	)
-	samples := generateBigTestHistograms(numSamples, numBuckets)
+	samples := histogram.GenerateBigTestHistograms(numSamples, numBuckets)
 
 	h, _ := newTestHead(b, DefaultBlockDuration, wlog.CompressionNone, false)
 	defer func() {
@@ -5535,7 +5372,7 @@ func TestCuttingNewHeadChunks(t *testing.T) {
 		"small histograms": {
 			numTotalSamples: 240,
 			histValFunc: func() func(i int) *histogram.Histogram {
-				hists := generateBigTestHistograms(240, 10)
+				hists := histogram.GenerateBigTestHistograms(240, 10)
 				return func(i int) *histogram.Histogram {
 					return hists[i]
 				}
@@ -5551,7 +5388,7 @@ func TestCuttingNewHeadChunks(t *testing.T) {
 		"large histograms": {
 			numTotalSamples: 240,
 			histValFunc: func() func(i int) *histogram.Histogram {
-				hists := generateBigTestHistograms(240, 100)
+				hists := histogram.GenerateBigTestHistograms(240, 100)
 				return func(i int) *histogram.Histogram {
 					return hists[i]
 				}
@@ -5560,14 +5397,13 @@ func TestCuttingNewHeadChunks(t *testing.T) {
 				numSamples int
 				numBytes   int
 			}{
-				{30, 696},
-				{30, 700},
-				{30, 708},
-				{30, 693},
+				{40, 896},
+				{40, 899},
+				{40, 896},
+				{30, 690},
 				{30, 691},
-				{30, 692},
-				{30, 695},
 				{30, 694},
+				{30, 693},
 			},
 		},
 		"really large histograms": {
@@ -5575,7 +5411,7 @@ func TestCuttingNewHeadChunks(t *testing.T) {
 			// per chunk.
 			numTotalSamples: 11,
 			histValFunc: func() func(i int) *histogram.Histogram {
-				hists := generateBigTestHistograms(11, 100000)
+				hists := histogram.GenerateBigTestHistograms(11, 100000)
 				return func(i int) *histogram.Histogram {
 					return hists[i]
 				}
@@ -5639,8 +5475,9 @@ func TestCuttingNewHeadChunks(t *testing.T) {
 				require.Len(t, chkMetas, len(tc.expectedChks))
 
 				for i, expected := range tc.expectedChks {
-					chk, err := chkReader.Chunk(chkMetas[i])
+					chk, iterable, err := chkReader.ChunkOrIterable(chkMetas[i])
 					require.NoError(t, err)
+					require.Nil(t, iterable)
 
 					require.Equal(t, expected.numSamples, chk.NumSamples())
 					require.Len(t, chk.Bytes(), expected.numBytes)
@@ -5688,67 +5525,254 @@ func TestHeadDetectsDuplicateSampleAtSizeLimit(t *testing.T) {
 
 	storedSampleCount := 0
 	for _, chunkMeta := range chunks {
-		chunk, err := chunkReader.Chunk(chunkMeta)
+		chunk, iterable, err := chunkReader.ChunkOrIterable(chunkMeta)
 		require.NoError(t, err)
+		require.Nil(t, iterable)
 		storedSampleCount += chunk.NumSamples()
 	}
 
 	require.Equal(t, numSamples/2, storedSampleCount)
 }
 
-func TestSecondaryHashFunction(t *testing.T) {
-	dir := t.TempDir()
-	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, wlog.CompressionNone)
-	require.NoError(t, err)
-
-	opts := DefaultHeadOptions()
-	opts.ChunkRange = 1000
-	opts.ChunkDirRoot = dir
-	opts.EnableExemplarStorage = true
-	opts.MaxExemplars.Store(config.DefaultExemplarsConfig.MaxExemplars)
-	opts.EnableNativeHistograms.Store(true)
-	opts.SecondaryHashFunction = func(l labels.Labels) uint32 {
-		return uint32(l.Len())
+func TestWALSampleAndExemplarOrder(t *testing.T) {
+	lbls := labels.FromStrings("foo", "bar")
+	testcases := map[string]struct {
+		appendF      func(app storage.Appender, ts int64) (storage.SeriesRef, error)
+		expectedType reflect.Type
+	}{
+		"float sample": {
+			appendF: func(app storage.Appender, ts int64) (storage.SeriesRef, error) {
+				return app.Append(0, lbls, ts, 1.0)
+			},
+			expectedType: reflect.TypeOf([]record.RefSample{}),
+		},
+		"histogram sample": {
+			appendF: func(app storage.Appender, ts int64) (storage.SeriesRef, error) {
+				return app.AppendHistogram(0, lbls, ts, tsdbutil.GenerateTestHistogram(1), nil)
+			},
+			expectedType: reflect.TypeOf([]record.RefHistogramSample{}),
+		},
+		"float histogram sample": {
+			appendF: func(app storage.Appender, ts int64) (storage.SeriesRef, error) {
+				return app.AppendHistogram(0, lbls, ts, nil, tsdbutil.GenerateTestFloatHistogram(1))
+			},
+			expectedType: reflect.TypeOf([]record.RefFloatHistogramSample{}),
+		},
 	}
 
-	h, err := NewHead(nil, nil, wal, nil, opts, nil)
-	require.NoError(t, err)
+	for testName, tc := range testcases {
+		t.Run(testName, func(t *testing.T) {
+			h, w := newTestHead(t, 1000, wlog.CompressionNone, false)
+			defer func() {
+				require.NoError(t, h.Close())
+			}()
 
-	t.Cleanup(func() {
-		require.NoError(t, h.Close())
-	})
+			app := h.Appender(context.Background())
+			ref, err := tc.appendF(app, 10)
+			require.NoError(t, err)
+			app.AppendExemplar(ref, lbls, exemplar.Exemplar{Value: 1.0, Ts: 5})
 
-	const seriesCount = 100
-	const labelsCount = 10
+			app.Commit()
 
+			recs := readTestWAL(t, w.Dir())
+			require.Len(t, recs, 3)
+			_, ok := recs[0].([]record.RefSeries)
+			require.True(t, ok, "expected first record to be a RefSeries")
+			actualType := reflect.TypeOf(recs[1])
+			require.Equal(t, tc.expectedType, actualType, "expected second record to be a %s", tc.expectedType)
+			_, ok = recs[2].([]record.RefExemplar)
+			require.True(t, ok, "expected third record to be a RefExemplar")
+		})
+	}
+}
+
+// TestHeadCompactionWhileAppendAndCommitExemplar simulates a use case where
+// a series is removed from the head while an exemplar is being appended to it.
+// This can happen in theory by compacting the head at the right time due to
+// a series being idle.
+// The test cheats a little bit by not appending a sample with the exemplar.
+// If you also add a sample and run Truncate in a concurrent goroutine and run
+// the test around a million(!) times, you can get
+// `unknown HeadSeriesRef when trying to add exemplar: 1` error on push.
+// It is likely that running the test for much longer and with more time variations
+// would trigger the
+// `signal SIGSEGV: segmentation violation code=0x1 addr=0x20 pc=0xbb03d1`
+// panic, that we have seen in the wild once.
+func TestHeadCompactionWhileAppendAndCommitExemplar(t *testing.T) {
+	h, _ := newTestHead(t, DefaultBlockDuration, wlog.CompressionNone, false)
 	app := h.Appender(context.Background())
-	for ix, s := range genSeries(seriesCount, labelsCount, 0, 0) {
-		_, err := app.Append(0, s.Labels(), int64(100*ix), float64(ix))
-		require.NoError(t, err)
-	}
-	require.NoError(t, app.Commit())
+	lbls := labels.FromStrings("foo", "bar")
+	ref, err := app.Append(0, lbls, 1, 1)
+	require.NoError(t, err)
+	app.Commit()
+	// Not adding a sample here to trigger the fault.
+	app = h.Appender(context.Background())
+	_, err = app.AppendExemplar(ref, lbls, exemplar.Exemplar{Value: 1, Ts: 20})
+	require.NoError(t, err)
+	h.Truncate(10)
+	app.Commit()
+	h.Close()
+}
 
-	checkSecondaryHashes := func(expected int) {
+func labelsWithHashCollision() (labels.Labels, labels.Labels) {
+	// These two series have the same XXHash; thanks to https://github.com/pstibrany/labels_hash_collisions
+	ls1 := labels.FromStrings("__name__", "metric", "lbl1", "value", "lbl2", "l6CQ5y")
+	ls2 := labels.FromStrings("__name__", "metric", "lbl1", "value", "lbl2", "v7uDlF")
+
+	if ls1.Hash() != ls2.Hash() {
+		// These ones are the same when using -tags stringlabels
+		ls1 = labels.FromStrings("__name__", "metric", "lbl", "HFnEaGl")
+		ls2 = labels.FromStrings("__name__", "metric", "lbl", "RqcXatm")
+	}
+
+	if ls1.Hash() != ls2.Hash() {
+		panic("This code needs to be updated: find new labels with colliding hash values.")
+	}
+
+	return ls1, ls2
+}
+
+// stripeSeriesWithCollidingSeries returns a stripeSeries with two memSeries having the same, colliding, hash.
+func stripeSeriesWithCollidingSeries(t *testing.T) (*stripeSeries, *memSeries, *memSeries) {
+	t.Helper()
+
+	lbls1, lbls2 := labelsWithHashCollision()
+	ms1 := memSeries{
+		lset: lbls1,
+	}
+	ms2 := memSeries{
+		lset: lbls2,
+	}
+	hash := lbls1.Hash()
+	s := newStripeSeries(1, noopSeriesLifecycleCallback{})
+
+	got, created, err := s.getOrSet(hash, lbls1, func() *memSeries {
+		return &ms1
+	})
+	require.NoError(t, err)
+	require.True(t, created)
+	require.Same(t, &ms1, got)
+
+	// Add a conflicting series
+	got, created, err = s.getOrSet(hash, lbls2, func() *memSeries {
+		return &ms2
+	})
+	require.NoError(t, err)
+	require.True(t, created)
+	require.Same(t, &ms2, got)
+
+	return s, &ms1, &ms2
+}
+
+func TestStripeSeries_getOrSet(t *testing.T) {
+	s, ms1, ms2 := stripeSeriesWithCollidingSeries(t)
+	hash := ms1.lset.Hash()
+
+	// Verify that we can get both of the series despite the hash collision
+	got := s.getByHash(hash, ms1.lset)
+	require.Same(t, ms1, got)
+	got = s.getByHash(hash, ms2.lset)
+	require.Same(t, ms2, got)
+}
+
+func TestStripeSeries_gc(t *testing.T) {
+	s, ms1, ms2 := stripeSeriesWithCollidingSeries(t)
+	hash := ms1.lset.Hash()
+
+	s.gc(0, 0)
+
+	// Verify that we can get neither ms1 nor ms2 after gc-ing corresponding series
+	got := s.getByHash(hash, ms1.lset)
+	require.Nil(t, got)
+	got = s.getByHash(hash, ms2.lset)
+	require.Nil(t, got)
+}
+
+func TestSecondaryHashFunction(t *testing.T) {
+	checkSecondaryHashes := func(t *testing.T, h *Head, labelsCount, expected int) {
 		reportedHashes := 0
 		h.ForEachSecondaryHash(func(secondaryHashes []uint32) {
 			reportedHashes += len(secondaryHashes)
 
 			for _, h := range secondaryHashes {
-				require.Equal(t, uint32(labelsCount), h)
+				require.Equal(t, labelsCount, int(h))
 			}
 		})
 		require.Equal(t, expected, reportedHashes)
 	}
 
-	checkSecondaryHashes(seriesCount)
+	testCases := []struct {
+		name   string
+		series func(*testing.T) []storage.Series
+	}{
+		{
+			name: "without collisions",
+			series: func(_ *testing.T) []storage.Series {
+				return genSeries(100, 10, 0, 0)
+			},
+		},
+		{
+			name: "with collisions",
+			series: func(t *testing.T) []storage.Series {
+				// Make a couple of series with colliding label sets
+				lbls1, lbls2 := labelsWithHashCollision()
+				series := []storage.Series{
+					storage.NewListSeries(
+						lbls1, []chunks.Sample{sample{t: 0, f: rand.Float64()}},
+					),
+					storage.NewListSeries(
+						lbls2, []chunks.Sample{sample{t: 0, f: rand.Float64()}},
+					),
+				}
+				require.Equal(t, series[len(series)-2].Labels().Hash(), series[len(series)-1].Labels().Hash(),
+					"The two series should have the same label set hash")
+				return series
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, wlog.CompressionNone)
+			require.NoError(t, err)
 
-	// Truncate head, remove half of the series (because their timestamp is before supplied truncation MinT)
-	require.NoError(t, h.Truncate(100*(seriesCount/2)))
+			opts := DefaultHeadOptions()
+			opts.ChunkRange = 1000
+			opts.ChunkDirRoot = dir
+			opts.EnableExemplarStorage = true
+			opts.MaxExemplars.Store(config.DefaultExemplarsConfig.MaxExemplars)
+			opts.EnableNativeHistograms.Store(true)
+			opts.SecondaryHashFunction = func(l labels.Labels) uint32 {
+				return uint32(l.Len())
+			}
 
-	// There should be 50 reported series now.
-	checkSecondaryHashes(50)
+			h, err := NewHead(nil, nil, wal, nil, opts, nil)
+			require.NoError(t, err)
 
-	// Truncate head again, remove all series, remove half of the series (because their timestamp is before supplied truncation MinT)
-	require.NoError(t, h.Truncate(100*seriesCount))
-	checkSecondaryHashes(0)
+			t.Cleanup(func() {
+				require.NoError(t, h.Close())
+			})
+
+			app := h.Appender(context.Background())
+			series := tc.series(t)
+			for ix, s := range series {
+				_, err := app.Append(0, s.Labels(), int64(100*ix), float64(ix))
+				require.NoError(t, err)
+			}
+
+			require.NoError(t, app.Commit())
+
+			labelsCount := series[0].Labels().Len()
+			checkSecondaryHashes(t, h, labelsCount, len(series))
+
+			// Truncate head, remove half of the series (because their timestamp is before supplied truncation MinT)
+			require.NoError(t, h.Truncate(100*int64(len(series)/2)))
+
+			checkSecondaryHashes(t, h, labelsCount, len(series)/2)
+
+			// Truncate head again, remove all series (because their timestamp is before supplied truncation MinT)
+			require.NoError(t, h.Truncate(100*int64(len(series))))
+			checkSecondaryHashes(t, h, labelsCount, 0)
+		})
+	}
 }

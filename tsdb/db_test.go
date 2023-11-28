@@ -38,6 +38,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 	"go.uber.org/goleak"
 
 	"github.com/prometheus/prometheus/config"
@@ -515,7 +516,7 @@ func TestAmendHistogramDatapointCausesError(t *testing.T) {
 
 	h := histogram.Histogram{
 		Schema:        3,
-		Count:         61,
+		Count:         52,
 		Sum:           2.7,
 		ZeroThreshold: 0.1,
 		ZeroCount:     42,
@@ -2915,8 +2916,9 @@ func TestChunkWriter_ReadAfterWrite(t *testing.T) {
 
 			for _, chks := range test.chks {
 				for _, chkExp := range chks {
-					chkAct, err := r.Chunk(chkExp)
+					chkAct, iterable, err := r.ChunkOrIterable(chkExp)
 					require.NoError(t, err)
+					require.Nil(t, iterable)
 					require.Equal(t, chkExp.Chunk.Bytes(), chkAct.Bytes())
 				}
 			}
@@ -2975,8 +2977,9 @@ func TestChunkReader_ConcurrentReads(t *testing.T) {
 			go func(chunk chunks.Meta) {
 				defer wg.Done()
 
-				chkAct, err := r.Chunk(chunk)
+				chkAct, iterable, err := r.ChunkOrIterable(chunk)
 				require.NoError(t, err)
+				require.Nil(t, iterable)
 				require.Equal(t, chunk.Chunk.Bytes(), chkAct.Bytes())
 			}(chk)
 		}
@@ -3089,7 +3092,7 @@ func deleteNonBlocks(dbDir string) error {
 	}
 	for _, dir := range dirs {
 		if ok := isBlockDir(dir); !ok {
-			return errors.Errorf("root folder:%v still hase non block directory:%v", dbDir, dir.Name())
+			return fmt.Errorf("root folder:%v still hase non block directory:%v", dbDir, dir.Name())
 		}
 	}
 	return nil
@@ -3616,6 +3619,264 @@ func testChunkQuerierShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChun
 		_, err := chkCRC32.Write(chunk.Bytes())
 		require.NoError(t, err)
 	}
+}
+
+func TestQuerierShouldNotFailIfOOOCompactionOccursAfterRetrievingQuerier(t *testing.T) {
+	opts := DefaultOptions()
+	opts.OutOfOrderTimeWindow = 3 * DefaultBlockDuration
+	db := openTestDB(t, opts, nil)
+	defer func() {
+		require.NoError(t, db.Close())
+	}()
+
+	// Disable compactions so we can control it.
+	db.DisableCompactions()
+
+	metric := labels.FromStrings(labels.MetricName, "test_metric")
+	ctx := context.Background()
+	interval := int64(15 * time.Second / time.Millisecond)
+	ts := int64(0)
+	samplesWritten := 0
+
+	// Capture the first timestamp - this will be the timestamp of the OOO sample we'll append below.
+	oooTS := ts
+	ts += interval
+
+	// Push samples after the OOO sample we'll write below.
+	for ; ts < 10*interval; ts += interval {
+		app := db.Appender(ctx)
+		_, err := app.Append(0, metric, ts, float64(ts))
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		samplesWritten++
+	}
+
+	// Push a single OOO sample.
+	app := db.Appender(ctx)
+	_, err := app.Append(0, metric, oooTS, float64(ts))
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	samplesWritten++
+
+	// Get a querier.
+	querierCreatedBeforeCompaction, err := db.ChunkQuerier(0, math.MaxInt64)
+	require.NoError(t, err)
+
+	// Start OOO head compaction.
+	compactionComplete := atomic.NewBool(false)
+	go func() {
+		defer compactionComplete.Store(true)
+
+		require.NoError(t, db.CompactOOOHead(ctx))
+		require.Equal(t, float64(1), prom_testutil.ToFloat64(db.Head().metrics.chunksRemoved))
+	}()
+
+	// Give CompactOOOHead time to start work.
+	// If it does not wait for querierCreatedBeforeCompaction to be closed, then the query will return incorrect results or fail.
+	time.Sleep(time.Second)
+	require.False(t, compactionComplete.Load(), "compaction completed before reading chunks or closing querier created before compaction")
+
+	// Get another querier. This one should only use the compacted blocks from disk and ignore the chunks that will be garbage collected.
+	querierCreatedAfterCompaction, err := db.ChunkQuerier(0, math.MaxInt64)
+	require.NoError(t, err)
+
+	testQuerier := func(q storage.ChunkQuerier) {
+		// Query back the series.
+		hints := &storage.SelectHints{Start: 0, End: math.MaxInt64, Step: interval}
+		seriesSet := q.Select(ctx, true, hints, labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test_metric"))
+
+		// Collect the iterator for the series.
+		var iterators []chunks.Iterator
+		for seriesSet.Next() {
+			iterators = append(iterators, seriesSet.At().Iterator(nil))
+		}
+		require.NoError(t, seriesSet.Err())
+		require.Len(t, iterators, 1)
+		iterator := iterators[0]
+
+		// Check that we can still successfully read all samples.
+		samplesRead := 0
+		for iterator.Next() {
+			samplesRead += iterator.At().Chunk.NumSamples()
+		}
+
+		require.NoError(t, iterator.Err())
+		require.Equal(t, samplesWritten, samplesRead)
+	}
+
+	testQuerier(querierCreatedBeforeCompaction)
+
+	require.False(t, compactionComplete.Load(), "compaction completed before closing querier created before compaction")
+	require.NoError(t, querierCreatedBeforeCompaction.Close())
+	require.Eventually(t, compactionComplete.Load, time.Second, 10*time.Millisecond, "compaction should complete after querier created before compaction was closed, and not wait for querier created after compaction")
+
+	// Use the querier created after compaction and confirm it returns the expected results (ie. from the disk block created from OOO head and in-order head) without error.
+	testQuerier(querierCreatedAfterCompaction)
+	require.NoError(t, querierCreatedAfterCompaction.Close())
+}
+
+func TestQuerierShouldNotFailIfOOOCompactionOccursAfterSelecting(t *testing.T) {
+	opts := DefaultOptions()
+	opts.OutOfOrderTimeWindow = 3 * DefaultBlockDuration
+	db := openTestDB(t, opts, nil)
+	defer func() {
+		require.NoError(t, db.Close())
+	}()
+
+	// Disable compactions so we can control it.
+	db.DisableCompactions()
+
+	metric := labels.FromStrings(labels.MetricName, "test_metric")
+	ctx := context.Background()
+	interval := int64(15 * time.Second / time.Millisecond)
+	ts := int64(0)
+	samplesWritten := 0
+
+	// Capture the first timestamp - this will be the timestamp of the OOO sample we'll append below.
+	oooTS := ts
+	ts += interval
+
+	// Push samples after the OOO sample we'll write below.
+	for ; ts < 10*interval; ts += interval {
+		app := db.Appender(ctx)
+		_, err := app.Append(0, metric, ts, float64(ts))
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		samplesWritten++
+	}
+
+	// Push a single OOO sample.
+	app := db.Appender(ctx)
+	_, err := app.Append(0, metric, oooTS, float64(ts))
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	samplesWritten++
+
+	// Get a querier.
+	querier, err := db.ChunkQuerier(0, math.MaxInt64)
+	require.NoError(t, err)
+
+	// Query back the series.
+	hints := &storage.SelectHints{Start: 0, End: math.MaxInt64, Step: interval}
+	seriesSet := querier.Select(ctx, true, hints, labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test_metric"))
+
+	// Start OOO head compaction.
+	compactionComplete := atomic.NewBool(false)
+	go func() {
+		defer compactionComplete.Store(true)
+
+		require.NoError(t, db.CompactOOOHead(ctx))
+		require.Equal(t, float64(1), prom_testutil.ToFloat64(db.Head().metrics.chunksRemoved))
+	}()
+
+	// Give CompactOOOHead time to start work.
+	// If it does not wait for the querier to be closed, then the query will return incorrect results or fail.
+	time.Sleep(time.Second)
+	require.False(t, compactionComplete.Load(), "compaction completed before reading chunks or closing querier")
+
+	// Collect the iterator for the series.
+	var iterators []chunks.Iterator
+	for seriesSet.Next() {
+		iterators = append(iterators, seriesSet.At().Iterator(nil))
+	}
+	require.NoError(t, seriesSet.Err())
+	require.Len(t, iterators, 1)
+	iterator := iterators[0]
+
+	// Check that we can still successfully read all samples.
+	samplesRead := 0
+	for iterator.Next() {
+		samplesRead += iterator.At().Chunk.NumSamples()
+	}
+
+	require.NoError(t, iterator.Err())
+	require.Equal(t, samplesWritten, samplesRead)
+
+	require.False(t, compactionComplete.Load(), "compaction completed before closing querier")
+	require.NoError(t, querier.Close())
+	require.Eventually(t, compactionComplete.Load, time.Second, 10*time.Millisecond, "compaction should complete after querier was closed")
+}
+
+func TestQuerierShouldNotFailIfOOOCompactionOccursAfterRetrievingIterators(t *testing.T) {
+	opts := DefaultOptions()
+	opts.OutOfOrderTimeWindow = 3 * DefaultBlockDuration
+	db := openTestDB(t, opts, nil)
+	defer func() {
+		require.NoError(t, db.Close())
+	}()
+
+	// Disable compactions so we can control it.
+	db.DisableCompactions()
+
+	metric := labels.FromStrings(labels.MetricName, "test_metric")
+	ctx := context.Background()
+	interval := int64(15 * time.Second / time.Millisecond)
+	ts := int64(0)
+	samplesWritten := 0
+
+	// Capture the first timestamp - this will be the timestamp of the OOO sample we'll append below.
+	oooTS := ts
+	ts += interval
+
+	// Push samples after the OOO sample we'll write below.
+	for ; ts < 10*interval; ts += interval {
+		app := db.Appender(ctx)
+		_, err := app.Append(0, metric, ts, float64(ts))
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		samplesWritten++
+	}
+
+	// Push a single OOO sample.
+	app := db.Appender(ctx)
+	_, err := app.Append(0, metric, oooTS, float64(ts))
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	samplesWritten++
+
+	// Get a querier.
+	querier, err := db.ChunkQuerier(0, math.MaxInt64)
+	require.NoError(t, err)
+
+	// Query back the series.
+	hints := &storage.SelectHints{Start: 0, End: math.MaxInt64, Step: interval}
+	seriesSet := querier.Select(ctx, true, hints, labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test_metric"))
+
+	// Collect the iterator for the series.
+	var iterators []chunks.Iterator
+	for seriesSet.Next() {
+		iterators = append(iterators, seriesSet.At().Iterator(nil))
+	}
+	require.NoError(t, seriesSet.Err())
+	require.Len(t, iterators, 1)
+	iterator := iterators[0]
+
+	// Start OOO head compaction.
+	compactionComplete := atomic.NewBool(false)
+	go func() {
+		defer compactionComplete.Store(true)
+
+		require.NoError(t, db.CompactOOOHead(ctx))
+		require.Equal(t, float64(1), prom_testutil.ToFloat64(db.Head().metrics.chunksRemoved))
+	}()
+
+	// Give CompactOOOHead time to start work.
+	// If it does not wait for the querier to be closed, then the query will return incorrect results or fail.
+	time.Sleep(time.Second)
+	require.False(t, compactionComplete.Load(), "compaction completed before reading chunks or closing querier")
+
+	// Check that we can still successfully read all samples.
+	samplesRead := 0
+	for iterator.Next() {
+		samplesRead += iterator.At().Chunk.NumSamples()
+	}
+
+	require.NoError(t, iterator.Err())
+	require.Equal(t, samplesWritten, samplesRead)
+
+	require.False(t, compactionComplete.Load(), "compaction completed before closing querier")
+	require.NoError(t, querier.Close())
+	require.Eventually(t, compactionComplete.Load, time.Second, 10*time.Millisecond, "compaction should complete after querier was closed")
 }
 
 func newTestDB(t *testing.T) *DB {
@@ -6321,6 +6582,7 @@ func testHistogramAppendAndQueryHelper(t *testing.T, floatHistogram bool) {
 		t.Run("buckets disappearing", func(t *testing.T) {
 			h.PositiveSpans[1].Length--
 			h.PositiveBuckets = h.PositiveBuckets[:len(h.PositiveBuckets)-1]
+			h.Count -= 3
 			appendHistogram(series1, 110, h, &exp1, histogram.CounterReset)
 			testQuery("foo", "bar1", map[string][]chunks.Sample{series1.String(): exp1})
 		})
@@ -6540,7 +6802,7 @@ func TestNativeHistogramFlag(t *testing.T) {
 		require.NoError(t, db.Close())
 	})
 	h := &histogram.Histogram{
-		Count:         10,
+		Count:         9,
 		ZeroCount:     4,
 		ZeroThreshold: 0.001,
 		Sum:           35.5,

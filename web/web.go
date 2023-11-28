@@ -40,7 +40,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/regexp"
 	"github.com/mwitkow/go-conntrack"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	io_prometheus_client "github.com/prometheus/client_model/go"
@@ -732,7 +731,7 @@ func (h *Handler) runtimeInfo() (api_v1.RuntimeInfo, error) {
 
 	metrics, err := h.gatherer.Gather()
 	if err != nil {
-		return status, errors.Errorf("error gathering runtime status: %s", err)
+		return status, fmt.Errorf("error gathering runtime status: %w", err)
 	}
 	for _, mF := range metrics {
 		switch *mF.Name {

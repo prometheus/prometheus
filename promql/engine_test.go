@@ -3420,7 +3420,7 @@ func TestNativeHistogram_HistogramStdDevVar(t *testing.T) {
 		{
 			name: "-50, -8, 0, 3, 8, 9, 100, +Inf",
 			h: &histogram.Histogram{
-				Count:     8,
+				Count:     7,
 				ZeroCount: 1,
 				Sum:       math.Inf(1),
 				Schema:    3,
@@ -3720,7 +3720,7 @@ func TestNativeHistogram_HistogramQuantile(t *testing.T) {
 
 						require.Len(t, vector, 1)
 						require.Nil(t, vector[0].H)
-						require.True(t, almostEqual(sc.value, vector[0].F))
+						require.True(t, almostEqual(sc.value, vector[0].F, defaultEpsilon))
 					})
 				}
 				idx++

@@ -188,3 +188,10 @@ This should **only** be applied to metrics that currently produce such labels.
 The OTLP receiver allows Prometheus to accept [OpenTelemetry](https://opentelemetry.io/) metrics writes.
 Prometheus is best used as a Pull based system, and staleness, `up` metric, and other Pull enabled features 
 won't work when you push OTLP metrics.
+
+## Experimental PromQL functions
+
+`--enable-feature=promql-experimental-functions`
+
+Enables PromQL functions that are considered experimental and whose name or
+semantics could change.

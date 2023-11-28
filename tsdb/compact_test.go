@@ -1348,6 +1348,46 @@ func BenchmarkCompactionFromHead(b *testing.B) {
 	}
 }
 
+func BenchmarkCompactionFromOOOHead(b *testing.B) {
+	dir := b.TempDir()
+	totalSeries := 100000
+	totalSamples := 100
+	for labelNames := 1; labelNames < totalSeries; labelNames *= 10 {
+		labelValues := totalSeries / labelNames
+		b.Run(fmt.Sprintf("labelnames=%d,labelvalues=%d", labelNames, labelValues), func(b *testing.B) {
+			chunkDir := b.TempDir()
+			opts := DefaultHeadOptions()
+			opts.ChunkRange = 1000
+			opts.ChunkDirRoot = chunkDir
+			opts.OutOfOrderTimeWindow.Store(int64(totalSamples))
+			h, err := NewHead(nil, nil, nil, nil, opts, nil)
+			require.NoError(b, err)
+			for ln := 0; ln < labelNames; ln++ {
+				app := h.Appender(context.Background())
+				for lv := 0; lv < labelValues; lv++ {
+					lbls := labels.FromStrings(fmt.Sprintf("%d", ln), fmt.Sprintf("%d%s%d", lv, postingsBenchSuffix, ln))
+					_, err = app.Append(0, lbls, int64(totalSamples), 0)
+					require.NoError(b, err)
+					for ts := 0; ts < totalSamples; ts++ {
+						_, err = app.Append(0, lbls, int64(ts), float64(ts))
+						require.NoError(b, err)
+					}
+				}
+				require.NoError(b, app.Commit())
+			}
+
+			b.ResetTimer()
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				oooHead, err := NewOOOCompactionHead(context.TODO(), h)
+				require.NoError(b, err)
+				createBlockFromOOOHead(b, filepath.Join(dir, fmt.Sprintf("%d-%d", i, labelNames)), oooHead)
+			}
+			h.Close()
+		})
+	}
+}
+
 // TestDisableAutoCompactions checks that we can
 // disable and enable the auto compaction.
 // This is needed for unit tests that rely on

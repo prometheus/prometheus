@@ -729,7 +729,6 @@ func TestProtobufParse(t *testing.T) {
 					),
 					e: []exemplar.Exemplar{
 						{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00039, HasTs: true, Ts: 1625851155146},
-						{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.00029, HasTs: false},
 					},
 				},
 				{
@@ -766,7 +765,6 @@ func TestProtobufParse(t *testing.T) {
 					),
 					e: []exemplar.Exemplar{
 						{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00039, HasTs: true, Ts: 1625851155146},
-						{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.00029, HasTs: false},
 					},
 				},
 				{
@@ -802,7 +800,6 @@ func TestProtobufParse(t *testing.T) {
 					),
 					e: []exemplar.Exemplar{
 						{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00039, HasTs: true, Ts: 1625851155146},
-						{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.00029, HasTs: false},
 					},
 				},
 				{
@@ -839,7 +836,6 @@ func TestProtobufParse(t *testing.T) {
 					),
 					e: []exemplar.Exemplar{
 						{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00039, HasTs: true, Ts: 1625851155146},
-						{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.00029, HasTs: false},
 					},
 				},
 				{
@@ -1233,7 +1229,6 @@ func TestProtobufParse(t *testing.T) {
 					),
 					e: []exemplar.Exemplar{
 						{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00039, HasTs: true, Ts: 1625851155146},
-						{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.00029, HasTs: false},
 					},
 				},
 				{ // 12
@@ -1328,7 +1323,6 @@ func TestProtobufParse(t *testing.T) {
 					),
 					e: []exemplar.Exemplar{
 						{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00039, HasTs: true, Ts: 1625851155146},
-						{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.00029, HasTs: false},
 					},
 				},
 				{ // 21
@@ -1422,7 +1416,6 @@ func TestProtobufParse(t *testing.T) {
 					),
 					e: []exemplar.Exemplar{
 						{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00039, HasTs: true, Ts: 1625851155146},
-						{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.00029, HasTs: false},
 					},
 				},
 				{ // 30
@@ -1517,7 +1510,6 @@ func TestProtobufParse(t *testing.T) {
 					),
 					e: []exemplar.Exemplar{
 						{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00039, HasTs: true, Ts: 1625851155146},
-						{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.00029, HasTs: false},
 					},
 				},
 				{ // 39

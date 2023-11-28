@@ -37,16 +37,12 @@ var (
 	// ErrTooOldSample is when out of order support is enabled but the sample is outside the time window allowed.
 	ErrTooOldSample = errors.New("too old sample")
 	// ErrDuplicateSampleForTimestamp is when the sample has same timestamp but different value.
-	ErrDuplicateSampleForTimestamp   = errors.New("duplicate sample for timestamp")
-	ErrOutOfOrderExemplar            = errors.New("out of order exemplar")
-	ErrDuplicateExemplar             = errors.New("duplicate exemplar")
-	ErrExemplarLabelLength           = fmt.Errorf("label length for exemplar exceeds maximum of %d UTF-8 characters", exemplar.ExemplarMaxLabelSetLength)
-	ErrExemplarsDisabled             = fmt.Errorf("exemplar storage is disabled or max exemplars is less than or equal to 0")
-	ErrNativeHistogramsDisabled      = fmt.Errorf("native histograms are disabled")
-	ErrHistogramCountNotBigEnough    = errors.New("histogram's observation count should be at least the number of observations found in the buckets")
-	ErrHistogramNegativeBucketCount  = errors.New("histogram has a bucket whose observation count is negative")
-	ErrHistogramSpanNegativeOffset   = errors.New("histogram has a span whose offset is negative")
-	ErrHistogramSpansBucketsMismatch = errors.New("histogram spans specify different number of buckets than provided")
+	ErrDuplicateSampleForTimestamp = errors.New("duplicate sample for timestamp")
+	ErrOutOfOrderExemplar          = errors.New("out of order exemplar")
+	ErrDuplicateExemplar           = errors.New("duplicate exemplar")
+	ErrExemplarLabelLength         = fmt.Errorf("label length for exemplar exceeds maximum of %d UTF-8 characters", exemplar.ExemplarMaxLabelSetLength)
+	ErrExemplarsDisabled           = fmt.Errorf("exemplar storage is disabled or max exemplars is less than or equal to 0")
+	ErrNativeHistogramsDisabled    = fmt.Errorf("native histograms are disabled")
 )
 
 // SeriesRef is a generic series reference. In prometheus it is either a
