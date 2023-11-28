@@ -3663,5 +3663,4 @@ func TestQueryWithOneChunkCompletelyDeleted(t *testing.T) {
 	}
 	require.NoError(t, css.Err())
 	require.Equal(t, 1, seriesCount)
-
 }
