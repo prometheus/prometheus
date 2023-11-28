@@ -303,7 +303,7 @@ func (h *FloatHistogram) Sub(other *FloatHistogram) *FloatHistogram {
 	)
 
 	if other.Schema < h.Schema {
-		panic(fmt.Errorf("cannot subtract histigram with schema %d to %d", other.Schema, h.Schema))
+		panic(fmt.Errorf("cannot subtract histogram with schema %d to %d", other.Schema, h.Schema))
 	} else if other.Schema > h.Schema {
 		otherPositiveSpans, otherPositiveBuckets = reduceResolution(otherPositiveSpans, otherPositiveBuckets, other.Schema, h.Schema, false, false)
 		otherNegativeSpans, otherNegativeBuckets = reduceResolution(otherNegativeSpans, otherNegativeBuckets, other.Schema, h.Schema, false, false)
