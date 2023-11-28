@@ -1008,5 +1008,7 @@ func TestHistogramReduceResolution(t *testing.T) {
 	for _, tc := range tcs {
 		target := tc.origin.ReduceResolution(tc.target.Schema)
 		require.Equal(t, tc.target, target)
+		// Check that receiver histogram was mutated:
+		require.Equal(t, tc.target, tc.origin)
 	}
 }
