@@ -14,9 +14,9 @@
 syntax = "proto3";
 package prometheus;
 
-option go_package = "prompb";
+option go_package = "github.com/prometheus/prometheus/prompb";
 
-import "gogoproto/gogo.proto";
+// import "gogoproto/gogo.proto";
 
 message MetricMetadata {
   enum MetricType {
@@ -47,7 +47,7 @@ message Sample {
 
 message Exemplar {
   // Optional, can be empty.
-  repeated Label labels = 1 [(gogoproto.nullable) = false];
+  repeated Label labels = 1;
   double value = 2;
   // timestamp is in ms format, see model/timestamp/timestamp.go for
   // conversion from time.Time to Prometheus timestamp.
@@ -88,7 +88,7 @@ message Histogram {
   }
 
   // Negative Buckets.
-  repeated BucketSpan negative_spans =  8 [(gogoproto.nullable) = false];
+  repeated BucketSpan negative_spans =  8;
   // Use either "negative_deltas" or "negative_counts", the former for
   // regular histograms with integer counts, the latter for float
   // histograms.
@@ -96,7 +96,7 @@ message Histogram {
   repeated double negative_counts    = 10; // Absolute count of each bucket.
 
   // Positive Buckets.
-  repeated BucketSpan positive_spans = 11 [(gogoproto.nullable) = false];
+  repeated BucketSpan positive_spans = 11;
   // Use either "positive_deltas" or "positive_counts", the former for
   // regular histograms with integer counts, the latter for float
   // histograms.
@@ -123,10 +123,10 @@ message BucketSpan {
 message TimeSeries {
   // For a timeseries to be valid, and for the samples and exemplars
   // to be ingested by the remote system properly, the labels field is required.
-  repeated Label labels         = 1 [(gogoproto.nullable) = false];
-  repeated Sample samples       = 2 [(gogoproto.nullable) = false];
-  repeated Exemplar exemplars   = 3 [(gogoproto.nullable) = false];
-  repeated Histogram histograms = 4 [(gogoproto.nullable) = false];
+  repeated Label labels         = 1;
+  repeated Sample samples       = 2;
+  repeated Exemplar exemplars   = 3;
+  repeated Histogram histograms = 4;
 }
 
 message Label {
@@ -135,7 +135,7 @@ message Label {
 }
 
 message Labels {
-  repeated Label labels = 1 [(gogoproto.nullable) = false];
+  repeated Label labels = 1;
 }
 
 // Matcher specifies a rule, which can match or set of labels or not.
@@ -181,7 +181,7 @@ message Chunk {
 // ChunkedSeries represents single, encoded time series.
 message ChunkedSeries {
   // Labels should be sorted.
-  repeated Label labels = 1 [(gogoproto.nullable) = false];
+  repeated Label labels = 1;
   // Chunks will be in start time order and may overlap.
-  repeated Chunk chunks = 2 [(gogoproto.nullable) = false];
+  repeated Chunk chunks = 2;
 }
