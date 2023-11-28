@@ -866,24 +866,32 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 	}
 
 	// Move to the next chunk/deletion iterator.
-	if !p.next(true) {
-		return false
-	}
-
-	if p.currMeta.Chunk != nil {
+	// This is a for loop as if the current p.currDelIter returns no samples
+	// (which means a chunk won't be created), there still might be more
+	// samples/chunks from the rest of p.metas.
+	for p.next(true) {
 		if p.currDelIter == nil {
 			p.currMetaWithChunk = p.currMeta
 			return true
 		}
-		// If ChunkOrIterable() returned a non-nil chunk, the samples in
-		// p.currDelIter will only form one chunk, as the only change
-		// p.currDelIter might make is deleting some samples.
-		return p.populateCurrForSingleChunk()
-	}
 
-	// If ChunkOrIterable() returned an iterable, multiple chunks may be
-	// created from the samples in p.currDelIter.
-	return p.populateChunksFromIterable()
+		if p.currMeta.Chunk != nil {
+			// If ChunkOrIterable() returned a non-nil chunk, the samples in
+			// p.currDelIter will only form one chunk, as the only change
+			// p.currDelIter might make is deleting some samples.
+			if p.populateCurrForSingleChunk() {
+				return true
+			}
+		} else {
+			// If ChunkOrIterable() returned an iterable, multiple chunks may be
+			// created from the samples in p.currDelIter.
+			if p.populateChunksFromIterable() {
+				return true
+			}
+		}
+
+	}
+	return false
 }
 
 // populateCurrForSingleChunk sets the fields within p.currMetaWithChunk. This
