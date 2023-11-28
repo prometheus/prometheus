@@ -497,6 +497,10 @@ func (c *cumulativeBucketIterator) At() Bucket[uint64] {
 // ReduceResolution reduces the histogram's spans, buckets into target schema.
 // The target schema must be smaller than the current histogram's schema.
 func (h *Histogram) ReduceResolution(targetSchema int32) *Histogram {
+	if targetSchema >= h.Schema {
+		panic(fmt.Errorf("cannot reduce resolution from schema %d to %d", h.Schema, targetSchema))
+	}
+
 	h.PositiveSpans, h.PositiveBuckets = reduceResolution(
 		h.PositiveSpans, h.PositiveBuckets, h.Schema, targetSchema, true,
 	)
