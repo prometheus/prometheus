@@ -51,6 +51,20 @@ message MinimizedWriteRequestLen {
   bytes symbols = 4;
 }
 
+message MinimizedWriteRequestStr {
+  repeated MinimizedTimeSeriesStr timeseries = 1 [(gogoproto.nullable) = false];
+  reserved  2;
+  reserved  3;
+  repeated string symbols = 4;
+}
+
+message MinimizedWriteRequestStrFixed {
+  repeated MinimizedTimeSeriesStrFixed timeseries = 1 [(gogoproto.nullable) = false];
+  reserved  2;
+  reserved  3;
+  repeated string symbols = 4;
+}
+
 // ReadRequest represents a remote read request.
 message ReadRequest {
   repeated Query queries = 1;

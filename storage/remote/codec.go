@@ -807,6 +807,17 @@ func labelsToUint32SliceLen(lbls labels.Labels, symbolTable *rwSymbolTable, buf 
 	return result
 }
 
+func labelsToUint32SliceStr(lbls labels.Labels, symbolTable *rwSymbolTable, buf []uint32) []uint32 {
+	result := buf[:0]
+	lbls.Range(func(l labels.Label) {
+		off := symbolTable.RefStr(l.Name)
+		result = append(result, off)
+		off = symbolTable.RefStr(l.Value)
+		result = append(result, off)
+	})
+	return result
+}
+
 func Uint32LenRefToLabels(symbols []byte, minLabels []uint32) labels.Labels {
 	ls := labels.NewScratchBuilder(len(minLabels) / 2)
 
@@ -825,6 +836,23 @@ func Uint32LenRefToLabels(symbols []byte, minLabels []uint32) labels.Labels {
 		offset += uint32(n)
 		value := symbols[offset : uint64(offset)+length]
 		ls.Add(yoloString(name), yoloString(value))
+	}
+
+	return ls.Labels()
+}
+
+func Uint32StrRefToLabels(symbols []string, minLabels []uint32) labels.Labels {
+	ls := labels.NewScratchBuilder(len(minLabels) / 2)
+
+	strIdx := 0
+	for strIdx < len(minLabels) {
+		// todo, check for overflow?
+		nameIdx := minLabels[strIdx]
+		strIdx++
+		valueIdx := minLabels[strIdx]
+		strIdx++
+
+		ls.Add(symbols[nameIdx], symbols[valueIdx])
 	}
 
 	return ls.Labels()
@@ -975,6 +1003,44 @@ func DecodeMinimizedWriteRequestLen(r io.Reader) (*prompb.MinimizedWriteRequestL
 	}
 
 	var req prompb.MinimizedWriteRequestLen
+	if err := proto.Unmarshal(reqBuf, &req); err != nil {
+		return nil, err
+	}
+
+	return &req, nil
+}
+
+func DecodeMinimizedWriteRequestStr(r io.Reader) (*prompb.MinimizedWriteRequestStr, error) {
+	compressed, err := io.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
+
+	reqBuf, err := snappy.Decode(nil, compressed)
+	if err != nil {
+		return nil, err
+	}
+
+	var req prompb.MinimizedWriteRequestStr
+	if err := proto.Unmarshal(reqBuf, &req); err != nil {
+		return nil, err
+	}
+
+	return &req, nil
+}
+
+func DecodeMinimizedWriteRequestStrFixed(r io.Reader) (*prompb.MinimizedWriteRequestStrFixed, error) {
+	compressed, err := io.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
+
+	reqBuf, err := snappy.Decode(nil, compressed)
+	if err != nil {
+		return nil, err
+	}
+
+	var req prompb.MinimizedWriteRequestStrFixed
 	if err := proto.Unmarshal(reqBuf, &req); err != nil {
 		return nil, err
 	}

@@ -9,6 +9,8 @@ declare -a INSTANCES
 INSTANCES+=('sender-v1;;receiver-v1;')
 INSTANCES+=('sender-v11-min32-optimized-varint;--remote-write-format 1;receiver-v11-min32-optimized-varint;--remote-write-format 1')
 INSTANCES+=('sender-v11-min-len;--remote-write-format 2;receiver-v11-min-len;--remote-write-format 2')
+INSTANCES+=('sender-v11-min-str;--remote-write-format 3;receiver-v11-min-str;--remote-write-format 3')
+INSTANCES+=('sender-v11-min-str-fixed;--remote-write-format 4;receiver-v11-min-str-fixed;--remote-write-format 4')
 
 # ~~~~~~~~~~~~~
 
