@@ -117,11 +117,16 @@ func (b BlockChunkRef) Unpack() (int, int) {
 	return sgmIndex, chkStart
 }
 
-// Meta holds information about a chunk of data.
+// Meta holds information about one or more chunks.
+// For examples of when chunks.Meta could refer to multiple chunks, see
+// ChunkReader.ChunkOrIterable().
 type Meta struct {
 	// Ref and Chunk hold either a reference that can be used to retrieve
 	// chunk data or the data itself.
-	// If Chunk is nil, call ChunkReader.Chunk(Meta.Ref) to get the chunk and assign it to the Chunk field
+	// If Chunk is nil, call ChunkReader.ChunkOrIterable(Meta.Ref) to get the
+	// chunk and assign it to the Chunk field. If an iterable is returned from
+	// that method, then it may not be possible to set Chunk as the iterable
+	// might form several chunks.
 	Ref   ChunkRef
 	Chunk chunkenc.Chunk
 
@@ -667,24 +672,24 @@ func (s *Reader) Size() int64 {
 }
 
 // Chunk returns a chunk from a given reference.
-func (s *Reader) Chunk(meta Meta) (chunkenc.Chunk, error) {
+func (s *Reader) ChunkOrIterable(meta Meta) (chunkenc.Chunk, chunkenc.Iterable, error) {
 	sgmIndex, chkStart := BlockChunkRef(meta.Ref).Unpack()
 
 	if sgmIndex >= len(s.bs) {
-		return nil, fmt.Errorf("segment index %d out of range", sgmIndex)
+		return nil, nil, fmt.Errorf("segment index %d out of range", sgmIndex)
 	}
 
 	sgmBytes := s.bs[sgmIndex]
 
 	if chkStart+MaxChunkLengthFieldSize > sgmBytes.Len() {
-		return nil, fmt.Errorf("segment doesn't include enough bytes to read the chunk size data field - required:%v, available:%v", chkStart+MaxChunkLengthFieldSize, sgmBytes.Len())
+		return nil, nil, fmt.Errorf("segment doesn't include enough bytes to read the chunk size data field - required:%v, available:%v", chkStart+MaxChunkLengthFieldSize, sgmBytes.Len())
 	}
 	// With the minimum chunk length this should never cause us reading
 	// over the end of the slice.
 	c := sgmBytes.Range(chkStart, chkStart+MaxChunkLengthFieldSize)
 	chkDataLen, n := binary.Uvarint(c)
 	if n <= 0 {
-		return nil, fmt.Errorf("reading chunk length failed with %d", n)
+		return nil, nil, fmt.Errorf("reading chunk length failed with %d", n)
 	}
 
 	chkEncStart := chkStart + n
@@ -693,17 +698,18 @@ func (s *Reader) Chunk(meta Meta) (chunkenc.Chunk, error) {
 	chkDataEnd := chkEnd - crc32.Size
 
 	if chkEnd > sgmBytes.Len() {
-		return nil, fmt.Errorf("segment doesn't include enough bytes to read the chunk - required:%v, available:%v", chkEnd, sgmBytes.Len())
+		return nil, nil, fmt.Errorf("segment doesn't include enough bytes to read the chunk - required:%v, available:%v", chkEnd, sgmBytes.Len())
 	}
 
 	sum := sgmBytes.Range(chkDataEnd, chkEnd)
 	if err := checkCRC32(sgmBytes.Range(chkEncStart, chkDataEnd), sum); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	chkData := sgmBytes.Range(chkDataStart, chkDataEnd)
 	chkEnc := sgmBytes.Range(chkEncStart, chkEncStart+ChunkEncodingSize)[0]
-	return s.pool.Get(chunkenc.Encoding(chkEnc), chkData)
+	chk, err := s.pool.Get(chunkenc.Encoding(chkEnc), chkData)
+	return chk, nil, err
 }
 
 func nextSequenceFile(dir string) (string, int, error) {

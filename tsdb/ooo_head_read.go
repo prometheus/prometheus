@@ -247,33 +247,33 @@ func NewOOOHeadChunkReader(head *Head, mint, maxt int64, isoState *oooIsolationS
 	}
 }
 
-func (cr OOOHeadChunkReader) Chunk(meta chunks.Meta) (chunkenc.Chunk, error) {
+func (cr OOOHeadChunkReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, error) {
 	sid, _ := chunks.HeadChunkRef(meta.Ref).Unpack()
 
 	s := cr.head.series.getByID(sid)
 	// This means that the series has been garbage collected.
 	if s == nil {
-		return nil, storage.ErrNotFound
+		return nil, nil, storage.ErrNotFound
 	}
 
 	s.Lock()
 	if s.ooo == nil {
 		// There is no OOO data for this series.
 		s.Unlock()
-		return nil, storage.ErrNotFound
+		return nil, nil, storage.ErrNotFound
 	}
-	c, err := s.oooMergedChunk(meta, cr.head.chunkDiskMapper, cr.mint, cr.maxt)
+	mc, err := s.oooMergedChunks(meta, cr.head.chunkDiskMapper, cr.mint, cr.maxt)
 	s.Unlock()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// This means that the query range did not overlap with the requested chunk.
-	if len(c.chunks) == 0 {
-		return nil, storage.ErrNotFound
+	if len(mc.chunkIterables) == 0 {
+		return nil, nil, storage.ErrNotFound
 	}
 
-	return c, nil
+	return nil, mc, nil
 }
 
 func (cr OOOHeadChunkReader) Close() error {

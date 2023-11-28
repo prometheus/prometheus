@@ -501,6 +501,19 @@ func createBlockFromHead(tb testing.TB, dir string, head *Head) string {
 	return filepath.Join(dir, ulid.String())
 }
 
+func createBlockFromOOOHead(tb testing.TB, dir string, head *OOOCompactionHead) string {
+	compactor, err := NewLeveledCompactor(context.Background(), nil, log.NewNopLogger(), []int64{1000000}, nil, nil)
+	require.NoError(tb, err)
+
+	require.NoError(tb, os.MkdirAll(dir, 0o777))
+
+	// Add +1 millisecond to block maxt because block intervals are half-open: [b.MinTime, b.MaxTime).
+	// Because of this block intervals are always +1 than the total samples it includes.
+	ulid, err := compactor.Write(dir, head, head.MinTime(), head.MaxTime()+1, nil)
+	require.NoError(tb, err)
+	return filepath.Join(dir, ulid.String())
+}
+
 func createHead(tb testing.TB, w *wlog.WL, series []storage.Series, chunkDir string) *Head {
 	opts := DefaultHeadOptions()
 	opts.ChunkDirRoot = chunkDir
