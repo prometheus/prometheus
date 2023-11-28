@@ -3706,7 +3706,7 @@ test_summary_count 199
 	}))
 	defer ts.Close()
 
-	sp, err := newScrapePool(config, simpleStorage, 0, nil, &Options{}, newTestScrapeMetrics(t))
+	sp, err := newScrapePool(config, simpleStorage, 0, nil, &Options{})
 	require.NoError(t, err)
 	defer sp.stop()
 
