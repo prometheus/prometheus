@@ -176,12 +176,6 @@ type CEncoderCtorArgs struct {
 	shardID, numberOfShards uint16
 }
 
-type CEncoderEncodeArgs struct {
-	hashdex   CHashdex
-	segment   *GoSegment
-	redundant *GoRedundant
-}
-
 type CEncoderAddArgs struct {
 	hashdex CHashdex
 	segment *GoSegment
@@ -230,6 +224,7 @@ func CEncoderFinalize(encoder CEncoder, segment *GoSegment, err *GoErrorInfo) {
 		C.ulong(uintptr(unsafe.Pointer(&args))),
 		C.ulong(uintptr(unsafe.Pointer(err))),
 	)
+	args.redundant.Destroy()
 }
 
 func CEncoderDtor(encoder CEncoder) {
