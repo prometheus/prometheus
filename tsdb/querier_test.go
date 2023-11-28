@@ -3587,3 +3587,81 @@ func TestQueryWithDeletedHistograms(t *testing.T) {
 		})
 	}
 }
+
+func TestQueryWithOneChunkCompletelyDeleted(t *testing.T) {
+	ctx := context.Background()
+	db := openTestDB(t, nil, nil)
+	defer func() {
+		require.NoError(t, db.Close())
+	}()
+
+	db.EnableNativeHistograms()
+	appender := db.Appender(context.Background())
+
+	var (
+		err       error
+		seriesRef storage.SeriesRef
+	)
+	lbs := labels.FromStrings("__name__", "test")
+
+	// Create an int histogram chunk with samples between 0 - 20 and 30 - 40.
+	for i := 0; i < 20; i++ {
+		h := tsdbutil.GenerateTestHistogram(1)
+		seriesRef, err = appender.AppendHistogram(seriesRef, lbs, int64(i), h, nil)
+		require.NoError(t, err)
+	}
+	for i := 30; i < 40; i++ {
+		h := tsdbutil.GenerateTestHistogram(1)
+		seriesRef, err = appender.AppendHistogram(seriesRef, lbs, int64(i), h, nil)
+		require.NoError(t, err)
+	}
+
+	// Append some float histograms - float histograms are a different encoding
+	// type from int histograms so a new chunk is created.
+	for i := 60; i < 100; i++ {
+		fh := tsdbutil.GenerateTestFloatHistogram(1)
+		seriesRef, err = appender.AppendHistogram(seriesRef, lbs, int64(i), nil, fh)
+		require.NoError(t, err)
+	}
+
+	err = appender.Commit()
+	require.NoError(t, err)
+
+	matcher, err := labels.NewMatcher(labels.MatchEqual, "__name__", "test")
+	require.NoError(t, err)
+
+	// Delete all samples from the int histogram chunk. The deletion intervals
+	// doesn't cover the entire histogram chunk, but does cover all the samples
+	// in the chunk. This case was previously not handled properly.
+	err = db.Delete(ctx, 0, 20, matcher)
+	require.NoError(t, err)
+	err = db.Delete(ctx, 30, 40, matcher)
+	require.NoError(t, err)
+
+	chunkQuerier, err := db.ChunkQuerier(0, 100)
+	require.NoError(t, err)
+
+	css := chunkQuerier.Select(context.Background(), false, nil, matcher)
+
+	seriesCount := 0
+	for css.Next() {
+		seriesCount++
+		series := css.At()
+
+		sampleCount := 0
+		it := series.Iterator(nil)
+		for it.Next() {
+			chk := it.At()
+			cit := chk.Chunk.Iterator(nil)
+			for vt := cit.Next(); vt != chunkenc.ValNone; vt = cit.Next() {
+				require.Equal(t, vt, chunkenc.ValFloatHistogram, "Only float histograms expected, other sample types should have been deleted.")
+				sampleCount++
+			}
+		}
+		require.NoError(t, it.Err())
+		require.Equal(t, 40, sampleCount)
+	}
+	require.NoError(t, css.Err())
+	require.Equal(t, 1, seriesCount)
+
+}
