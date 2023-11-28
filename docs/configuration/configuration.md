@@ -37,7 +37,7 @@ Generic placeholders are defined as follows:
 * `<float>`: a floating-point number
 * `<host>`: a valid string consisting of a hostname or IP followed by an optional port number
 * `<int>`: an integer value
-* `<labelname>`: a string matching the regular expression `[a-zA-Z_][a-zA-Z0-9_]*`
+* `<labelname>`: a string matching the regular expression `[a-zA-Z_][a-zA-Z0-9_]*`. Any other unsupported character in the source label should be converted to an underscore. For example, the label `app.kubernetes.io/name` should be written as `app_kubernetes_io_name`.
 * `<labelvalue>`: a string of unicode characters
 * `<path>`: a valid URL path
 * `<scheme>`: a string that can take the values `http` or `https`
@@ -848,12 +848,12 @@ Available meta labels:
 * `__meta_docker_container_id`: the id of the container
 * `__meta_docker_container_name`: the name of the container
 * `__meta_docker_container_network_mode`: the network mode of the container
-* `__meta_docker_container_label_<labelname>`: each label of the container
+* `__meta_docker_container_label_<labelname>`: each label of the container, with any unsupported characters converted to an underscore
 * `__meta_docker_network_id`: the ID of the network
 * `__meta_docker_network_name`: the name of the network
 * `__meta_docker_network_ingress`: whether the network is ingress
 * `__meta_docker_network_internal`: whether the network is internal
-* `__meta_docker_network_label_<labelname>`: each label of the network
+* `__meta_docker_network_label_<labelname>`: each label of the network, with any unsupported characters converted to an underscore
 * `__meta_docker_network_scope`: the scope of the network
 * `__meta_docker_network_ip`: the IP of the container in this network
 * `__meta_docker_port_private`: the port on the container
@@ -964,7 +964,7 @@ Available meta labels:
 * `__meta_dockerswarm_service_mode`: the mode of the service
 * `__meta_dockerswarm_service_endpoint_port_name`: the name of the endpoint port, if available
 * `__meta_dockerswarm_service_endpoint_port_publish_mode`: the publish mode of the endpoint port
-* `__meta_dockerswarm_service_label_<labelname>`: each label of the service
+* `__meta_dockerswarm_service_label_<labelname>`: each label of the service, with any unsupported characters converted to an underscore
 * `__meta_dockerswarm_service_task_container_hostname`: the container hostname of the target, if available
 * `__meta_dockerswarm_service_task_container_image`: the container image of the target
 * `__meta_dockerswarm_service_updating_status`: the status of the service, if available
@@ -972,7 +972,7 @@ Available meta labels:
 * `__meta_dockerswarm_network_name`: the name of the network
 * `__meta_dockerswarm_network_ingress`: whether the network is ingress
 * `__meta_dockerswarm_network_internal`: whether the network is internal
-* `__meta_dockerswarm_network_label_<labelname>`: each label of the network
+* `__meta_dockerswarm_network_label_<labelname>`: each label of the network, with any unsupported characters converted to an underscore
 * `__meta_dockerswarm_network_scope`: the scope of the network
 
 #### `tasks`
@@ -984,7 +984,7 @@ created using the `port` parameter defined in the SD configuration.
 
 Available meta labels:
 
-* `__meta_dockerswarm_container_label_<labelname>`: each label of the container
+* `__meta_dockerswarm_container_label_<labelname>`: each label of the container, with any unsupported characters converted to an underscore
 * `__meta_dockerswarm_task_id`: the id of the task
 * `__meta_dockerswarm_task_container_id`: the container id of the task
 * `__meta_dockerswarm_task_desired_state`: the desired state of the task
@@ -994,19 +994,19 @@ Available meta labels:
 * `__meta_dockerswarm_service_id`: the id of the service
 * `__meta_dockerswarm_service_name`: the name of the service
 * `__meta_dockerswarm_service_mode`: the mode of the service
-* `__meta_dockerswarm_service_label_<labelname>`: each label of the service
+* `__meta_dockerswarm_service_label_<labelname>`: each label of the service, with any unsupported characters converted to an underscore
 * `__meta_dockerswarm_network_id`: the ID of the network
 * `__meta_dockerswarm_network_name`: the name of the network
 * `__meta_dockerswarm_network_ingress`: whether the network is ingress
 * `__meta_dockerswarm_network_internal`: whether the network is internal
-* `__meta_dockerswarm_network_label_<labelname>`: each label of the network
-* `__meta_dockerswarm_network_label`: each label of the network
+* `__meta_dockerswarm_network_label_<labelname>`: each label of the network, with any unsupported characters converted to an underscore
+* `__meta_dockerswarm_network_label`: each label of the network, with any unsupported characters converted to an underscore
 * `__meta_dockerswarm_network_scope`: the scope of the network
 * `__meta_dockerswarm_node_id`: the ID of the node
 * `__meta_dockerswarm_node_hostname`: the hostname of the node
 * `__meta_dockerswarm_node_address`: the address of the node
 * `__meta_dockerswarm_node_availability`: the availability of the node
-* `__meta_dockerswarm_node_label_<labelname>`: each label of the node
+* `__meta_dockerswarm_node_label_<labelname>`: each label of the node, with any unsupported characters converted to an underscore
 * `__meta_dockerswarm_node_platform_architecture`: the architecture of the node
 * `__meta_dockerswarm_node_platform_os`: the operating system of the node
 * `__meta_dockerswarm_node_role`: the role of the node
@@ -1026,7 +1026,7 @@ Available meta labels:
 * `__meta_dockerswarm_node_engine_version`: the version of the node engine
 * `__meta_dockerswarm_node_hostname`: the hostname of the node
 * `__meta_dockerswarm_node_id`: the ID of the node
-* `__meta_dockerswarm_node_label_<labelname>`: each label of the node
+* `__meta_dockerswarm_node_label_<labelname>`: each label of the node, with any unsupported characters converted to an underscore
 * `__meta_dockerswarm_node_manager_address`: the address of the manager component of the node
 * `__meta_dockerswarm_node_manager_leader`: the leadership status of the manager component of the node (true or false)
 * `__meta_dockerswarm_node_manager_reachability`: the reachability of the manager component of the node
@@ -1615,7 +1615,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 
 * `__meta_gce_instance_id`: the numeric id of the instance
 * `__meta_gce_instance_name`: the name of the instance
-* `__meta_gce_label_<labelname>`: each GCE label of the instance
+* `__meta_gce_label_<labelname>`: each GCE label of the instance, with any unsupported characters converted to an underscore
 * `__meta_gce_machine_type`: full or partial URL of the machine type of the instance
 * `__meta_gce_metadata_<name>`: each metadata item of the instance
 * `__meta_gce_network`: the network URL of the instance
@@ -1699,8 +1699,8 @@ The labels below are only available for targets with `role` set to `hcloud`:
 * `__meta_hetzner_hcloud_memory_size_gb`: the amount of memory of the server (in GB)
 * `__meta_hetzner_hcloud_disk_size_gb`: the disk size of the server (in GB)
 * `__meta_hetzner_hcloud_private_ipv4_<networkname>`: the private ipv4 address of the server within a given network
-* `__meta_hetzner_hcloud_label_<labelname>`: each label of the server
-* `__meta_hetzner_hcloud_labelpresent_<labelname>`: `true` for each label of the server
+* `__meta_hetzner_hcloud_label_<labelname>`: each label of the server, with any unsupported characters converted to an underscore
+* `__meta_hetzner_hcloud_labelpresent_<labelname>`: `true` for each label of the server, with any unsupported characters converted to an underscore
 
 The labels below are only available for targets with `role` set to `robot`:
 
@@ -1967,8 +1967,8 @@ Available meta labels:
 
 * `__meta_kubernetes_node_name`: The name of the node object.
 * `__meta_kubernetes_node_provider_id`: The cloud provider's name for the node object.
-* `__meta_kubernetes_node_label_<labelname>`: Each label from the node object.
-* `__meta_kubernetes_node_labelpresent_<labelname>`: `true` for each label from the node object.
+* `__meta_kubernetes_node_label_<labelname>`: Each label from the node object, with any unsupported characters converted to an underscore.
+* `__meta_kubernetes_node_labelpresent_<labelname>`: `true` for each label from the node object, with any unsupported characters converted to an underscore.
 * `__meta_kubernetes_node_annotation_<annotationname>`: Each annotation from the node object.
 * `__meta_kubernetes_node_annotationpresent_<annotationname>`: `true` for each annotation from the node object.
 * `__meta_kubernetes_node_address_<address_type>`: The first address for each node address type, if it exists.
@@ -1991,8 +1991,8 @@ Available meta labels:
 * `__meta_kubernetes_service_cluster_ip`: The cluster IP address of the service. (Does not apply to services of type ExternalName)
 * `__meta_kubernetes_service_loadbalancer_ip`: The IP address of the loadbalancer. (Applies to services of type LoadBalancer)
 * `__meta_kubernetes_service_external_name`: The DNS name of the service. (Applies to services of type ExternalName)
-* `__meta_kubernetes_service_label_<labelname>`: Each label from the service object.
-* `__meta_kubernetes_service_labelpresent_<labelname>`: `true` for each label of the service object.
+* `__meta_kubernetes_service_label_<labelname>`: Each label from the service object, with any unsupported characters converted to an underscore.
+* `__meta_kubernetes_service_labelpresent_<labelname>`: `true` for each label of the service object, with any unsupported characters converted to an underscore.
 * `__meta_kubernetes_service_name`: The name of the service object.
 * `__meta_kubernetes_service_port_name`: Name of the service port for the target.
 * `__meta_kubernetes_service_port_number`: Number of the service port for the target.
@@ -2010,8 +2010,8 @@ Available meta labels:
 * `__meta_kubernetes_namespace`: The namespace of the pod object.
 * `__meta_kubernetes_pod_name`: The name of the pod object.
 * `__meta_kubernetes_pod_ip`: The pod IP of the pod object.
-* `__meta_kubernetes_pod_label_<labelname>`: Each label from the pod object.
-* `__meta_kubernetes_pod_labelpresent_<labelname>`: `true` for each label from the pod object.
+* `__meta_kubernetes_pod_label_<labelname>`: Each label from the pod object, with any unsupported characters converted to an underscore.
+* `__meta_kubernetes_pod_labelpresent_<labelname>`: `true` for each label from the pod object, with any unsupported characters converted to an underscore.
 * `__meta_kubernetes_pod_annotation_<annotationname>`: Each annotation from the pod object.
 * `__meta_kubernetes_pod_annotationpresent_<annotationname>`: `true` for each annotation from the pod object.
 * `__meta_kubernetes_pod_container_init`: `true` if the container is an [InitContainer](https://kubernetes.io/docs/concepts/workloads/pods/init-containers/)
@@ -2040,8 +2040,8 @@ Available meta labels:
 
 * `__meta_kubernetes_namespace`: The namespace of the endpoints object.
 * `__meta_kubernetes_endpoints_name`: The names of the endpoints object.
-* `__meta_kubernetes_endpoints_label_<labelname>`: Each label from the endpoints object.
-* `__meta_kubernetes_endpoints_labelpresent_<labelname>`: `true` for each label from the endpoints object.
+* `__meta_kubernetes_endpoints_label_<labelname>`: Each label from the endpoints object, with any unsupported characters converted to an underscore.
+* `__meta_kubernetes_endpoints_labelpresent_<labelname>`: `true` for each label from the endpoints object, with any unsupported characters converted to an underscore.
 * `__meta_kubernetes_endpoints_annotation_<annotationname>`: Each annotation from the endpoints object.
 * `__meta_kubernetes_endpoints_annotationpresent_<annotationname>`: `true` for each annotation from the endpoints object.
 * For all targets discovered directly from the endpoints list (those not additionally inferred
@@ -2066,8 +2066,8 @@ Available meta labels:
 
 * `__meta_kubernetes_namespace`: The namespace of the endpoints object.
 * `__meta_kubernetes_endpointslice_name`: The name of endpointslice object.
-* `__meta_kubernetes_endpointslice_label_<labelname>`: Each label from the endpointslice object.
-* `__meta_kubernetes_endpointslice_labelpresent_<labelname>`: `true` for each label from the endpointslice object.
+* `__meta_kubernetes_endpointslice_label_<labelname>`: Each label from the endpointslice object, with any unsupported characters converted to an underscore.
+* `__meta_kubernetes_endpointslice_labelpresent_<labelname>`: `true` for each label from the endpointslice object, with any unsupported characters converted to an underscore.
 * `__meta_kubernetes_endpointslice_annotation_<annotationname>`: Each annotation from the endpointslice object.
 * `__meta_kubernetes_endpointslice_annotationpresent_<annotationname>`: `true` for each annotation from the endpointslice object.
 * For all targets discovered directly from the endpointslice list (those not additionally inferred
@@ -2096,8 +2096,8 @@ Available meta labels:
 
 * `__meta_kubernetes_namespace`: The namespace of the ingress object.
 * `__meta_kubernetes_ingress_name`: The name of the ingress object.
-* `__meta_kubernetes_ingress_label_<labelname>`: Each label from the ingress object.
-* `__meta_kubernetes_ingress_labelpresent_<labelname>`: `true` for each label from the ingress object.
+* `__meta_kubernetes_ingress_label_<labelname>`: Each label from the ingress object, with any unsupported characters converted to an underscore.
+* `__meta_kubernetes_ingress_labelpresent_<labelname>`: `true` for each label from the ingress object, with any unsupported characters converted to an underscore.
 * `__meta_kubernetes_ingress_annotation_<annotationname>`: Each annotation from the ingress object.
 * `__meta_kubernetes_ingress_annotationpresent_<annotationname>`: `true` for each annotation from the ingress object.
 * `__meta_kubernetes_ingress_class_name`: Class name from ingress spec, if present.
@@ -2487,9 +2487,9 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_marathon_app`: the name of the app (with slashes replaced by dashes)
 * `__meta_marathon_image`: the name of the Docker image used (if available)
 * `__meta_marathon_task`: the ID of the Mesos task
-* `__meta_marathon_app_label_<labelname>`: any Marathon labels attached to the app
-* `__meta_marathon_port_definition_label_<labelname>`: the port definition labels
-* `__meta_marathon_port_mapping_label_<labelname>`: the port mapping labels
+* `__meta_marathon_app_label_<labelname>`: any Marathon labels attached to the app, with any unsupported characters converted to an underscore
+* `__meta_marathon_port_definition_label_<labelname>`: the port definition labels, with any unsupported characters converted to an underscore
+* `__meta_marathon_port_mapping_label_<labelname>`: the port mapping labels, with any unsupported characters converted to an underscore
 * `__meta_marathon_port_index`: the port index number (e.g. `1` for `PORT1`)
 
 See below for the configuration options for Marathon discovery:

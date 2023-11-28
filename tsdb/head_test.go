@@ -1840,16 +1840,16 @@ func TestGCChunkAccess(t *testing.T) {
 
 	cr, err := h.chunksRange(0, 1500, nil)
 	require.NoError(t, err)
-	_, err = cr.Chunk(chunks[0])
+	_, _, err = cr.ChunkOrIterable(chunks[0])
 	require.NoError(t, err)
-	_, err = cr.Chunk(chunks[1])
+	_, _, err = cr.ChunkOrIterable(chunks[1])
 	require.NoError(t, err)
 
 	require.NoError(t, h.Truncate(1500)) // Remove a chunk.
 
-	_, err = cr.Chunk(chunks[0])
+	_, _, err = cr.ChunkOrIterable(chunks[0])
 	require.Equal(t, storage.ErrNotFound, err)
-	_, err = cr.Chunk(chunks[1])
+	_, _, err = cr.ChunkOrIterable(chunks[1])
 	require.NoError(t, err)
 }
 
@@ -1899,18 +1899,18 @@ func TestGCSeriesAccess(t *testing.T) {
 
 	cr, err := h.chunksRange(0, 2000, nil)
 	require.NoError(t, err)
-	_, err = cr.Chunk(chunks[0])
+	_, _, err = cr.ChunkOrIterable(chunks[0])
 	require.NoError(t, err)
-	_, err = cr.Chunk(chunks[1])
+	_, _, err = cr.ChunkOrIterable(chunks[1])
 	require.NoError(t, err)
 
 	require.NoError(t, h.Truncate(2000)) // Remove the series.
 
 	require.Equal(t, (*memSeries)(nil), h.series.getByID(1))
 
-	_, err = cr.Chunk(chunks[0])
+	_, _, err = cr.ChunkOrIterable(chunks[0])
 	require.Equal(t, storage.ErrNotFound, err)
-	_, err = cr.Chunk(chunks[1])
+	_, _, err = cr.ChunkOrIterable(chunks[1])
 	require.Equal(t, storage.ErrNotFound, err)
 }
 
@@ -5475,8 +5475,9 @@ func TestCuttingNewHeadChunks(t *testing.T) {
 				require.Len(t, chkMetas, len(tc.expectedChks))
 
 				for i, expected := range tc.expectedChks {
-					chk, err := chkReader.Chunk(chkMetas[i])
+					chk, iterable, err := chkReader.ChunkOrIterable(chkMetas[i])
 					require.NoError(t, err)
+					require.Nil(t, iterable)
 
 					require.Equal(t, expected.numSamples, chk.NumSamples())
 					require.Len(t, chk.Bytes(), expected.numBytes)
@@ -5524,8 +5525,9 @@ func TestHeadDetectsDuplicateSampleAtSizeLimit(t *testing.T) {
 
 	storedSampleCount := 0
 	for _, chunkMeta := range chunks {
-		chunk, err := chunkReader.Chunk(chunkMeta)
+		chunk, iterable, err := chunkReader.ChunkOrIterable(chunkMeta)
 		require.NoError(t, err)
+		require.Nil(t, iterable)
 		storedSampleCount += chunk.NumSamples()
 	}
 
@@ -5630,7 +5632,10 @@ func labelsWithHashCollision() (labels.Labels, labels.Labels) {
 	return ls1, ls2
 }
 
-func TestStripeSeries_getOrSet(t *testing.T) {
+// stripeSeriesWithCollidingSeries returns a stripeSeries with two memSeries having the same, colliding, hash.
+func stripeSeriesWithCollidingSeries(t *testing.T) (*stripeSeries, *memSeries, *memSeries) {
+	t.Helper()
+
 	lbls1, lbls2 := labelsWithHashCollision()
 	ms1 := memSeries{
 		lset: lbls1,
@@ -5656,11 +5661,31 @@ func TestStripeSeries_getOrSet(t *testing.T) {
 	require.True(t, created)
 	require.Same(t, &ms2, got)
 
+	return s, &ms1, &ms2
+}
+
+func TestStripeSeries_getOrSet(t *testing.T) {
+	s, ms1, ms2 := stripeSeriesWithCollidingSeries(t)
+	hash := ms1.lset.Hash()
+
 	// Verify that we can get both of the series despite the hash collision
-	got = s.getByHash(hash, lbls1)
-	require.Same(t, &ms1, got)
-	got = s.getByHash(hash, lbls2)
-	require.Same(t, &ms2, got)
+	got := s.getByHash(hash, ms1.lset)
+	require.Same(t, ms1, got)
+	got = s.getByHash(hash, ms2.lset)
+	require.Same(t, ms2, got)
+}
+
+func TestStripeSeries_gc(t *testing.T) {
+	s, ms1, ms2 := stripeSeriesWithCollidingSeries(t)
+	hash := ms1.lset.Hash()
+
+	s.gc(0, 0)
+
+	// Verify that we can get neither ms1 nor ms2 after gc-ing corresponding series
+	got := s.getByHash(hash, ms1.lset)
+	require.Nil(t, got)
+	got = s.getByHash(hash, ms2.lset)
+	require.Nil(t, got)
 }
 
 func TestSecondaryHashFunction(t *testing.T) {

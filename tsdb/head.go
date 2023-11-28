@@ -1927,6 +1927,8 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 		deletedForCallback := make(map[chunks.HeadSeriesRef]labels.Labels, deletedFromPrevStripe)
 		s.locks[i].Lock()
 
+		// Delete conflicts first so seriesHashmap.del doesn't move them to the `unique` field,
+		// after deleting `unique`.
 		for hash, all := range s.hashes[i].conflicts {
 			for _, series := range all {
 				check(i, hash, series, deletedForCallback)

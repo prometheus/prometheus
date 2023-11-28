@@ -473,10 +473,10 @@ func ChainSampleIteratorFromSeries(it chunkenc.Iterator, series []Series) chunke
 	return csi
 }
 
-func ChainSampleIteratorFromMetas(it chunkenc.Iterator, chunks []chunks.Meta) chunkenc.Iterator {
-	csi := getChainSampleIterator(it, len(chunks))
-	for i, c := range chunks {
-		csi.iterators[i] = c.Chunk.Iterator(csi.iterators[i])
+func ChainSampleIteratorFromIterables(it chunkenc.Iterator, iterables []chunkenc.Iterable) chunkenc.Iterator {
+	csi := getChainSampleIterator(it, len(iterables))
+	for i, c := range iterables {
+		csi.iterators[i] = c.Iterator(csi.iterators[i])
 	}
 	return csi
 }

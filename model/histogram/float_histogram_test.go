@@ -1573,9 +1573,12 @@ func TestFloatHistogramAdd(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			in2Copy := c.in2.Copy()
 			require.Equal(t, c.expected, c.in1.Add(c.in2))
 			// Has it also happened in-place?
 			require.Equal(t, c.expected, c.in1)
+			// Check that the argument was not mutated.
+			require.Equal(t, in2Copy, c.in2)
 		})
 	}
 }
@@ -1659,9 +1662,12 @@ func TestFloatHistogramSub(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			in2Copy := c.in2.Copy()
 			require.Equal(t, c.expected, c.in1.Sub(c.in2))
 			// Has it also happened in-place?
 			require.Equal(t, c.expected, c.in1)
+			// Check that the argument was not mutated.
+			require.Equal(t, in2Copy, c.in2)
 		})
 	}
 }
