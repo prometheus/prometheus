@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 )
 
 type floatResult struct {
@@ -927,4 +928,51 @@ func TestFloatHistogramChunkAppendableGauge(t *testing.T) {
 
 		assertRecodedFloatHistogramChunkOnAppend(t, c, hApp, ts+1, h2, GaugeType)
 	}
+}
+
+func TestFloatHistogramAppendOnlyErrors(t *testing.T) {
+	t.Run("schema change error", func(t *testing.T) {
+		c := Chunk(NewFloatHistogramChunk())
+
+		// Create fresh appender and add the first histogram.
+		app, err := c.Appender()
+		require.NoError(t, err)
+
+		h := tsdbutil.GenerateTestFloatHistogram(0)
+		var isRecoded bool
+		c, isRecoded, app, err = app.AppendFloatHistogram(nil, 1, h, true)
+		require.Nil(t, c)
+		require.False(t, isRecoded)
+		require.NoError(t, err)
+
+		// Add erroring histogram.
+		h2 := h.Copy()
+		h2.Schema++
+		c, isRecoded, _, err = app.AppendFloatHistogram(nil, 2, h2, true)
+		require.Nil(t, c)
+		require.False(t, isRecoded)
+		require.EqualError(t, err, "float histogram schema change")
+	})
+	t.Run("counter reset error", func(t *testing.T) {
+		c := Chunk(NewFloatHistogramChunk())
+
+		// Create fresh appender and add the first histogram.
+		app, err := c.Appender()
+		require.NoError(t, err)
+
+		h := tsdbutil.GenerateTestFloatHistogram(0)
+		var isRecoded bool
+		c, isRecoded, app, err = app.AppendFloatHistogram(nil, 1, h, true)
+		require.Nil(t, c)
+		require.False(t, isRecoded)
+		require.NoError(t, err)
+
+		// Add erroring histogram.
+		h2 := h.Copy()
+		h2.CounterResetHint = histogram.CounterReset
+		c, isRecoded, _, err = app.AppendFloatHistogram(nil, 2, h2, true)
+		require.Nil(t, c)
+		require.False(t, isRecoded)
+		require.EqualError(t, err, "float histogram counter reset")
+	})
 }
