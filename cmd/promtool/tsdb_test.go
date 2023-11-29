@@ -64,6 +64,7 @@ func getDumpedSamples(t *testing.T, path string, mint, maxt int64, match []strin
 	err := dumpSamples(
 		context.Background(),
 		path,
+		t.TempDir(),
 		mint,
 		maxt,
 		match,

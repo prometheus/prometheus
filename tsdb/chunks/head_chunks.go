@@ -381,6 +381,33 @@ func listChunkFiles(dir string) (map[int]string, error) {
 	return res, nil
 }
 
+// HardLinkChunkFiles creates hardlinks for chunk files from src to dst.
+// It does nothing if src doesn't exist and ensures dst is created if not.
+func HardLinkChunkFiles(src, dst string) error {
+	_, err := os.Stat(src)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("check source chunks dir: %w", err)
+	}
+	if err := os.MkdirAll(dst, 0o777); err != nil {
+		return fmt.Errorf("set up destination chunks dir: %w", err)
+	}
+	files, err := listChunkFiles(src)
+	if err != nil {
+		return fmt.Errorf("list chunks: %w", err)
+	}
+	for _, filePath := range files {
+		_, fileName := filepath.Split(filePath)
+		err := os.Link(filepath.Join(src, fileName), filepath.Join(dst, fileName))
+		if err != nil {
+			return fmt.Errorf("hardlink a chunk: %w", err)
+		}
+	}
+	return nil
+}
+
 // repairLastChunkFile deletes the last file if it's empty.
 // Because we don't fsync when creating these files, we could end
 // up with an empty file at the end during an abrupt shutdown.
