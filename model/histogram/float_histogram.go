@@ -353,12 +353,12 @@ func (h *FloatHistogram) Equals(h2 *FloatHistogram) bool {
 // Size returns the total size of the FloatHistogram, which includes the size of the pointer
 // to FloatHistogram, all its fields, and all elements contained in slices.
 // NOTE: this is only valid for 64 bit architectures.
-func (fh *FloatHistogram) Size() int {
+func (h *FloatHistogram) Size() int {
 	// Size of each slice separately.
-	posSpanSize := len(fh.PositiveSpans) * 8     // 8 bytes (int32 + uint32).
-	negSpanSize := len(fh.NegativeSpans) * 8     // 8 bytes (int32 + uint32).
-	posBucketSize := len(fh.PositiveBuckets) * 8 // 8 bytes (float64).
-	negBucketSize := len(fh.NegativeBuckets) * 8 // 8 bytes (float64).
+	posSpanSize := len(h.PositiveSpans) * 8     // 8 bytes (int32 + uint32).
+	negSpanSize := len(h.NegativeSpans) * 8     // 8 bytes (int32 + uint32).
+	posBucketSize := len(h.PositiveBuckets) * 8 // 8 bytes (float64).
+	negBucketSize := len(h.NegativeBuckets) * 8 // 8 bytes (float64).
 
 	// Total size of the struct.
 
@@ -1000,8 +1000,8 @@ func addBuckets(
 	spansB []Span, bucketsB []float64,
 ) ([]Span, []float64) {
 	var (
-		iSpan              int = -1
-		iBucket            int = -1
+		iSpan              = -1
+		iBucket            = -1
 		iInSpan            int32
 		indexA             int32
 		indexB             int32
@@ -1034,17 +1034,16 @@ func addBuckets(
 						spansA[0].Length++
 						spansA[0].Offset--
 						goto nextLoop
-					} else {
-						spansA = append(spansA, Span{})
-						copy(spansA[1:], spansA)
-						spansA[0] = Span{Offset: indexB, Length: 1}
-						if len(spansA) > 1 {
-							// Convert the absolute offset in the formerly
-							// first span to a relative offset.
-							spansA[1].Offset -= indexB + 1
-						}
-						goto nextLoop
 					}
+					spansA = append(spansA, Span{})
+					copy(spansA[1:], spansA)
+					spansA[0] = Span{Offset: indexB, Length: 1}
+					if len(spansA) > 1 {
+						// Convert the absolute offset in the formerly
+						// first span to a relative offset.
+						spansA[1].Offset -= indexB + 1
+					}
+					goto nextLoop
 				} else if spansA[0].Offset == indexB {
 					// Just add to first bucket.
 					bucketsA[0] += bucketB
@@ -1062,48 +1061,47 @@ func addBuckets(
 					iInSpan += deltaIndex
 					bucketsA[iBucket] += bucketB
 					break
-				} else {
-					deltaIndex -= remainingInSpan
-					iBucket += int(remainingInSpan)
-					iSpan++
-					if iSpan == len(spansA) || deltaIndex < spansA[iSpan].Offset {
-						// Bucket is in gap behind previous span (or there are no further spans).
-						bucketsA = append(bucketsA, 0)
-						copy(bucketsA[iBucket+1:], bucketsA[iBucket:])
-						bucketsA[iBucket] = bucketB
-						switch {
-						case deltaIndex == 0:
-							// Directly after previous span, extend previous span.
-							if iSpan < len(spansA) {
-								spansA[iSpan].Offset--
-							}
-							iSpan--
-							iInSpan = int32(spansA[iSpan].Length)
-							spansA[iSpan].Length++
-							goto nextLoop
-						case iSpan < len(spansA) && deltaIndex == spansA[iSpan].Offset-1:
-							// Directly before next span, extend next span.
-							iInSpan = 0
+				}
+				deltaIndex -= remainingInSpan
+				iBucket += int(remainingInSpan)
+				iSpan++
+				if iSpan == len(spansA) || deltaIndex < spansA[iSpan].Offset {
+					// Bucket is in gap behind previous span (or there are no further spans).
+					bucketsA = append(bucketsA, 0)
+					copy(bucketsA[iBucket+1:], bucketsA[iBucket:])
+					bucketsA[iBucket] = bucketB
+					switch {
+					case deltaIndex == 0:
+						// Directly after previous span, extend previous span.
+						if iSpan < len(spansA) {
 							spansA[iSpan].Offset--
-							spansA[iSpan].Length++
-							goto nextLoop
-						default:
-							// No next span, or next span is not directly adjacent to new bucket.
-							// Add new span.
-							iInSpan = 0
-							if iSpan < len(spansA) {
-								spansA[iSpan].Offset -= deltaIndex + 1
-							}
-							spansA = append(spansA, Span{})
-							copy(spansA[iSpan+1:], spansA[iSpan:])
-							spansA[iSpan] = Span{Length: 1, Offset: deltaIndex}
-							goto nextLoop
 						}
-					} else {
-						// Try start of next span.
-						deltaIndex -= spansA[iSpan].Offset
+						iSpan--
+						iInSpan = int32(spansA[iSpan].Length)
+						spansA[iSpan].Length++
+						goto nextLoop
+					case iSpan < len(spansA) && deltaIndex == spansA[iSpan].Offset-1:
+						// Directly before next span, extend next span.
 						iInSpan = 0
+						spansA[iSpan].Offset--
+						spansA[iSpan].Length++
+						goto nextLoop
+					default:
+						// No next span, or next span is not directly adjacent to new bucket.
+						// Add new span.
+						iInSpan = 0
+						if iSpan < len(spansA) {
+							spansA[iSpan].Offset -= deltaIndex + 1
+						}
+						spansA = append(spansA, Span{})
+						copy(spansA[iSpan+1:], spansA[iSpan:])
+						spansA[iSpan] = Span{Length: 1, Offset: deltaIndex}
+						goto nextLoop
 					}
+				} else {
+					// Try start of next span.
+					deltaIndex -= spansA[iSpan].Offset
+					iInSpan = 0
 				}
 			}
 

@@ -25,7 +25,6 @@ var dropSanitizationGate = featuregate.GlobalRegistry().MustRegister(
 //
 // Exception is made for double-underscores which are allowed
 func NormalizeLabel(label string) string {
-
 	// Trivial case
 	if len(label) == 0 {
 		return label

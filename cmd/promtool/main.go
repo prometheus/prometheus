@@ -411,7 +411,7 @@ func checkExperimental(f bool) {
 	}
 }
 
-var lintError = fmt.Errorf("lint error")
+var errLint = fmt.Errorf("lint error")
 
 type lintConfig struct {
 	all            bool
@@ -763,7 +763,7 @@ func checkRulesFromStdin(ls lintConfig) (bool, bool) {
 		fmt.Fprintln(os.Stderr, "  FAILED:")
 		for _, e := range errs {
 			fmt.Fprintln(os.Stderr, e.Error())
-			hasErrors = hasErrors || !errors.Is(e, lintError)
+			hasErrors = hasErrors || !errors.Is(e, errLint)
 		}
 		if hasErrors {
 			return failed, hasErrors
@@ -776,7 +776,7 @@ func checkRulesFromStdin(ls lintConfig) (bool, bool) {
 		}
 		failed = true
 		for _, err := range errs {
-			hasErrors = hasErrors || !errors.Is(err, lintError)
+			hasErrors = hasErrors || !errors.Is(err, errLint)
 		}
 	} else {
 		fmt.Printf("  SUCCESS: %d rules found\n", n)
@@ -797,7 +797,7 @@ func checkRules(files []string, ls lintConfig) (bool, bool) {
 			fmt.Fprintln(os.Stderr, "  FAILED:")
 			for _, e := range errs {
 				fmt.Fprintln(os.Stderr, e.Error())
-				hasErrors = hasErrors || !errors.Is(e, lintError)
+				hasErrors = hasErrors || !errors.Is(e, errLint)
 			}
 			if hasErrors {
 				continue
@@ -810,7 +810,7 @@ func checkRules(files []string, ls lintConfig) (bool, bool) {
 			}
 			failed = true
 			for _, err := range errs {
-				hasErrors = hasErrors || !errors.Is(err, lintError)
+				hasErrors = hasErrors || !errors.Is(err, errLint)
 			}
 		} else {
 			fmt.Printf("  SUCCESS: %d rules found\n", n)
@@ -837,7 +837,7 @@ func checkRuleGroups(rgs *rulefmt.RuleGroups, lintSettings lintConfig) (int, []e
 				})
 			}
 			errMessage += "Might cause inconsistency while recording expressions"
-			return 0, []error{fmt.Errorf("%w %s", lintError, errMessage)}
+			return 0, []error{fmt.Errorf("%w %s", errLint, errMessage)}
 		}
 	}
 

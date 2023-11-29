@@ -283,7 +283,7 @@ func (s *TokenProviderTestSuite) TestNewTokenProvider() {
 			s.Assert().NotNil(actualTokenProvider.getAccessToken(context.Background()))
 
 			s.mockCredential.AssertNumberOfCalls(s.T(), "GetToken", 2*mockGetTokenCallCounter)
-			mockGetTokenCallCounter += 1
+			mockGetTokenCallCounter++
 			accessToken, err := actualTokenProvider.getAccessToken(context.Background())
 			s.Assert().Nil(err)
 			s.Assert().NotEqual(accessToken, testTokenString)
