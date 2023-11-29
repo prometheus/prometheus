@@ -71,7 +71,7 @@ func (m *MinimizedWriteRequestStr) OptimizedMarshalToSizedBuffer(dAtA []byte) (i
 			copy(dAtA[i:], m.Symbols[iNdEx])
 			i = encodeVarintRemote(dAtA, i, uint64(len(m.Symbols[iNdEx])))
 			i--
-			dAtA[i] = 0x22
+			dAtA[i] = 0x1a
 		}
 	}
 	if len(m.Timeseries) > 0 {
