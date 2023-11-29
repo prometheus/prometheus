@@ -29,9 +29,8 @@ message WriteRequest {
 
 message MinimizedWriteRequestStr {
   repeated MinimizedTimeSeriesStr timeseries = 1 [(gogoproto.nullable) = false];
-  reserved  2;
-  reserved  3;
-  repeated string symbols = 4;
+  reserved  2; // TODO: should/can we move this for this new proto version?
+  repeated string symbols = 3;
 }
 
 // ReadRequest represents a remote read request.
