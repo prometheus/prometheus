@@ -144,7 +144,7 @@ func (d *dedicatedServerDiscovery) refresh(context.Context) ([]*targetgroup.Grou
 			model.InstanceLabel:                             model.LabelValue(server.Name),
 			dedicatedServerLabelPrefix + "state":            model.LabelValue(server.State),
 			dedicatedServerLabelPrefix + "commercial_range": model.LabelValue(server.CommercialRange),
-			dedicatedServerLabelPrefix + "link_speed":       model.LabelValue(fmt.Sprintf("%d", server.LinkSpeed)),
+			dedicatedServerLabelPrefix + "link_speed":       model.LabelValue(strconv.Itoa(server.LinkSpeed)),
 			dedicatedServerLabelPrefix + "rack":             model.LabelValue(server.Rack),
 			dedicatedServerLabelPrefix + "no_intervention":  model.LabelValue(strconv.FormatBool(server.NoIntervention)),
 			dedicatedServerLabelPrefix + "os":               model.LabelValue(server.Os),

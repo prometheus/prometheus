@@ -25,6 +25,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -410,7 +411,7 @@ func TestExitCodes(t *testing.T) {
 	} {
 		t.Run(c.file, func(t *testing.T) {
 			for _, lintFatal := range []bool{true, false} {
-				t.Run(fmt.Sprintf("%t", lintFatal), func(t *testing.T) {
+				t.Run(strconv.FormatBool(lintFatal), func(t *testing.T) {
 					args := []string{"-test.main", "check", "config", "testdata/" + c.file}
 					if lintFatal {
 						args = append(args, "--lint-fatal")

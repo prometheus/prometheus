@@ -19,6 +19,7 @@ import (
 	"math"
 	"os"
 	"sort"
+	"strconv"
 	"testing"
 	"time"
 
@@ -1353,7 +1354,7 @@ func TestNativeHistogramsInRecordingRules(t *testing.T) {
 	ts := time.Now()
 	app := db.Appender(context.Background())
 	for i, h := range hists {
-		l := labels.FromStrings("__name__", "histogram_metric", "idx", fmt.Sprintf("%d", i))
+		l := labels.FromStrings("__name__", "histogram_metric", "idx", strconv.Itoa(i))
 		_, err := app.AppendHistogram(0, l, ts.UnixMilli(), h.Copy(), nil)
 		require.NoError(t, err)
 	}

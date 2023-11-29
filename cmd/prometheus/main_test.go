@@ -24,6 +24,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -192,7 +193,7 @@ func TestSendAlerts(t *testing.T) {
 
 	for i, tc := range testCases {
 		tc := tc
-		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			senderFunc := senderFunc(func(alerts ...*notifier.Alert) {
 				if len(tc.in) == 0 {
 					t.Fatalf("sender called with 0 alert")

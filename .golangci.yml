@@ -21,6 +21,7 @@ linters:
     - goimports
     - misspell
     - nolintlint
+    - perfsprint
     - predeclared
     - revive
     - unconvert
@@ -45,6 +46,10 @@ issues:
     - linters:
         - godot
       source: "^// ==="
+    - linters:
+        - perfsprint
+      # Do not suggest converting to strconv.FormatInt or strconv.FormatUint
+      text: "strconv.Format[I,U]"
 
 linters-settings:
   depguard:

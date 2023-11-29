@@ -16,6 +16,7 @@ package labels
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -632,7 +633,7 @@ func TestBuilder(t *testing.T) {
 			want: FromStrings("aaa", "111", "ddd", "444"),
 		},
 	} {
-		t.Run(fmt.Sprint(i), func(t *testing.T) {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			b := NewBuilder(tcase.base)
 			for _, lbl := range tcase.set {
 				b.Set(lbl.Name, lbl.Value)
@@ -687,7 +688,7 @@ func TestScratchBuilder(t *testing.T) {
 			want: FromStrings("ddd", "444"),
 		},
 	} {
-		t.Run(fmt.Sprint(i), func(t *testing.T) {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			b := ScratchBuilder{}
 			for _, lbl := range tcase.add {
 				b.Add(lbl.Name, lbl.Value)

@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 	"time"
 
@@ -212,7 +213,7 @@ func (d *LightsailDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group,
 			lightsailLabelRegion:              model.LabelValue(d.cfg.Region),
 		}
 
-		addr := net.JoinHostPort(*inst.PrivateIpAddress, fmt.Sprintf("%d", d.cfg.Port))
+		addr := net.JoinHostPort(*inst.PrivateIpAddress, strconv.Itoa(d.cfg.Port))
 		labels[model.AddressLabel] = model.LabelValue(addr)
 
 		if inst.PublicIpAddress != nil {

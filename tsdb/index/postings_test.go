@@ -49,7 +49,7 @@ func TestMemPostings_ensureOrder(t *testing.T) {
 		for j := range l {
 			l[j] = storage.SeriesRef(rand.Uint64())
 		}
-		v := fmt.Sprintf("%d", i)
+		v := strconv.Itoa(i)
 
 		p.m["a"][v] = l
 	}

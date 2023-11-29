@@ -3297,7 +3297,7 @@ func TestWaitForPendingReadersInTimeRange(t *testing.T) {
 func TestAppendHistogram(t *testing.T) {
 	l := labels.FromStrings("a", "b")
 	for _, numHistograms := range []int{1, 10, 150, 200, 250, 300} {
-		t.Run(fmt.Sprintf("%d", numHistograms), func(t *testing.T) {
+		t.Run(strconv.Itoa(numHistograms), func(t *testing.T) {
 			head, _ := newTestHead(t, 1000, wlog.CompressionNone, false)
 			t.Cleanup(func() {
 				require.NoError(t, head.Close())
@@ -3606,7 +3606,7 @@ func TestChunkSnapshot(t *testing.T) {
 		e := ex{
 			seriesLabels: lbls,
 			e: exemplar.Exemplar{
-				Labels: labels.FromStrings("traceID", fmt.Sprintf("%d", rand.Int())),
+				Labels: labels.FromStrings("traceID", strconv.Itoa(rand.Int())),
 				Value:  rand.Float64(),
 				Ts:     ts,
 			},
@@ -4947,7 +4947,7 @@ func TestOOOAppendWithNoSeries(t *testing.T) {
 		require.Equal(t, expSamples, ms.headChunks.chunk.NumSamples())
 	}
 
-	newLabels := func(idx int) labels.Labels { return labels.FromStrings("foo", fmt.Sprintf("%d", idx)) }
+	newLabels := func(idx int) labels.Labels { return labels.FromStrings("foo", strconv.Itoa(idx)) }
 
 	s1 := newLabels(1)
 	appendSample(s1, 300) // At 300m.

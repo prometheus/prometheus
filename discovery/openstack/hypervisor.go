@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strconv"
 
 	"github.com/go-kit/log"
 	"github.com/gophercloud/gophercloud"
@@ -84,7 +85,7 @@ func (h *HypervisorDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group
 		}
 		for _, hypervisor := range hypervisorList {
 			labels := model.LabelSet{}
-			addr := net.JoinHostPort(hypervisor.HostIP, fmt.Sprintf("%d", h.port))
+			addr := net.JoinHostPort(hypervisor.HostIP, strconv.Itoa(h.port))
 			labels[model.AddressLabel] = model.LabelValue(addr)
 			labels[openstackLabelHypervisorID] = model.LabelValue(hypervisor.ID)
 			labels[openstackLabelHypervisorHostName] = model.LabelValue(hypervisor.HypervisorHostname)

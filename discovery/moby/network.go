@@ -15,7 +15,7 @@ package moby
 
 import (
 	"context"
-	"fmt"
+	"strconv"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/client"
@@ -44,8 +44,8 @@ func getNetworksLabels(ctx context.Context, client *client.Client, labelPrefix s
 			labelPrefix + labelNetworkID:       network.ID,
 			labelPrefix + labelNetworkName:     network.Name,
 			labelPrefix + labelNetworkScope:    network.Scope,
-			labelPrefix + labelNetworkInternal: fmt.Sprintf("%t", network.Internal),
-			labelPrefix + labelNetworkIngress:  fmt.Sprintf("%t", network.Ingress),
+			labelPrefix + labelNetworkInternal: strconv.FormatBool(network.Internal),
+			labelPrefix + labelNetworkIngress:  strconv.FormatBool(network.Ingress),
 		}
 		for k, v := range network.Labels {
 			ln := strutil.SanitizeLabelName(k)

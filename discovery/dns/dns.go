@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -195,7 +196,7 @@ func (d *Discovery) refreshOne(ctx context.Context, name string, ch chan<- *targ
 
 	tg := &targetgroup.Group{}
 	hostPort := func(a string, p int) model.LabelValue {
-		return model.LabelValue(net.JoinHostPort(a, fmt.Sprintf("%d", p)))
+		return model.LabelValue(net.JoinHostPort(a, strconv.Itoa(p)))
 	}
 
 	for _, record := range response.Answer {

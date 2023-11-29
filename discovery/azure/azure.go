@@ -20,6 +20,7 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -439,7 +440,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 						}
 						if ip.Properties != nil && ip.Properties.PrivateIPAddress != nil {
 							labels[azureLabelMachinePrivateIP] = model.LabelValue(*ip.Properties.PrivateIPAddress)
-							address := net.JoinHostPort(*ip.Properties.PrivateIPAddress, fmt.Sprintf("%d", d.port))
+							address := net.JoinHostPort(*ip.Properties.PrivateIPAddress, strconv.Itoa(d.port))
 							labels[model.AddressLabel] = model.LabelValue(address)
 							ch <- target{labelSet: labels, err: nil}
 							return
