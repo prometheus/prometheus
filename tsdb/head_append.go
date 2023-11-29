@@ -407,7 +407,7 @@ func (a *headAppender) AppendCreatedTimestamp(ref storage.SeriesRef, lset labels
 	}
 
 	if isOOO {
-		return storage.SeriesRef(s.ref), nil
+		return storage.SeriesRef(s.ref), storage.ErrCreatedTimestampOutOfOrder
 	}
 
 	if t > a.maxt {

@@ -43,6 +43,7 @@ var (
 	ErrExemplarLabelLength         = fmt.Errorf("label length for exemplar exceeds maximum of %d UTF-8 characters", exemplar.ExemplarMaxLabelSetLength)
 	ErrExemplarsDisabled           = fmt.Errorf("exemplar storage is disabled or max exemplars is less than or equal to 0")
 	ErrNativeHistogramsDisabled    = fmt.Errorf("native histograms are disabled")
+	ErrCreatedTimestampOutOfOrder  = fmt.Errorf("created timestamp out of order, ignoring")
 )
 
 // SeriesRef is a generic series reference. In prometheus it is either a
@@ -304,8 +305,7 @@ type CreatedTimestampAppender interface {
 	// Appending created timestamps is optional, that is because appending sythetic zeros
 	// should only happen if created timestamp respects the order of the samples, i.e. is not out-of-order.
 	//
-	// When AppendCreatedTimestamp decides to not append a sample, it should return a warning that can be
-	// logged by the caller.
+	// When AppendCreatedTimestamp decides to not append a sample, it should return an error that can be treated by the caller.
 	AppendCreatedTimestamp(ref SeriesRef, l labels.Labels, t int64) (SeriesRef, error)
 }
 

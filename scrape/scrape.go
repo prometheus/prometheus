@@ -1568,7 +1568,12 @@ loop:
 				if ctMs := (ct.Seconds * 1000) + int64(ct.Nanos/1_000_000); ctMs < t {
 					ref, err = app.AppendCreatedTimestamp(ref, lset, ctMs)
 					if err != nil {
-						level.Debug(sl.l).Log("msg", "created timestamp not ingested", "reason", err)
+						if errors.Is(err, storage.ErrCreatedTimestampOutOfOrder) {
+							level.Debug(sl.l).Log("msg", storage.ErrCreatedTimestampOutOfOrder)
+						} else {
+							level.Debug(sl.l).Log("msg", "Unexpected error", "series", string(met), "err", err)
+							break loop
+						}
 					}
 				}
 			}
