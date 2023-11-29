@@ -1387,7 +1387,7 @@ func createDummyTimeSeries(instances int) []timeSeries {
 
 func BenchmarkBuildWriteRequest(b *testing.B) {
 	bench := func(b *testing.B, batch []timeSeries) {
-		buff := make([]byte, 0)
+		var pBuf, buf []byte
 		seriesBuff := make([]*prompb.TimeSeries, len(batch))
 		for i := range seriesBuff {
 			seriesBuff[i] = &prompb.TimeSeries{
@@ -1397,20 +1397,19 @@ func BenchmarkBuildWriteRequest(b *testing.B) {
 			//seriesBuff[i].Samples = []*prompb.Sample{{}}
 			//seriesBuff[i].Exemplars = []*prompb.Exemplar{{}}
 		}
-		pBuf := proto.NewBuffer(nil)
 
 		//fmt.Printf("series buff: %+v\n", seriesBuff)
 		//Warmup buffers
 		for i := 0; i < 10; i++ {
-			populateTimeSeries(batch, seriesBuff, true, true)
-			buildWriteRequest(seriesBuff, nil, pBuf, buff)
+			//populateTimeSeries(batch, seriesBuff, true, true)
+			buildWriteRequest(batch, nil, &pBuf, &buf)
 		}
 
 		b.ResetTimer()
 		totalSize := 0
 		for i := 0; i < b.N; i++ {
-			populateTimeSeries(batch, seriesBuff, true, true)
-			req, _, err := buildWriteRequest(seriesBuff, nil, pBuf, buff)
+			//populateTimeSeries(batch, seriesBuff, true, true)
+			req, _, err := buildWriteRequest(batch, nil, &pBuf, &buf)
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -1435,3 +1434,107 @@ func BenchmarkBuildWriteRequest(b *testing.B) {
 		bench(b, hundred_batch)
 	})
 }
+
+func BenchmarkBuildWriteRequestOld(b *testing.B) {
+	bench := func(b *testing.B, batch []timeSeries) {
+		var buf []byte
+		pBuf := proto.NewBuffer(nil)
+		seriesBuff := make([]*prompb.TimeSeries, len(batch))
+		for i := range seriesBuff {
+			seriesBuff[i] = &prompb.TimeSeries{
+				Samples:   []*prompb.Sample{{}},
+				Exemplars: []*prompb.Exemplar{{}},
+			}
+			//seriesBuff[i].Samples = []*prompb.Sample{{}}
+			//seriesBuff[i].Exemplars = []*prompb.Exemplar{{}}
+		}
+
+		//fmt.Printf("series buff: %+v\n", seriesBuff)
+		//Warmup buffers
+		for i := 0; i < 10; i++ {
+			//populateTimeSeries(batch, seriesBuff, true, true)
+			buildWriteRequestOld(batch, nil, pBuf, buf)
+		}
+
+		b.ResetTimer()
+		totalSize := 0
+		for i := 0; i < b.N; i++ {
+			//populateTimeSeries(batch, seriesBuff, true, true)
+			req, _, err := buildWriteRequestOld(batch, nil, pBuf, buf)
+			if err != nil {
+				b.Fatal(err)
+			}
+			totalSize += len(req)
+			b.ReportMetric(float64(totalSize)/float64(b.N), "compressedSize/op")
+		}
+	}
+
+	two_batch := createDummyTimeSeries(2)
+	ten_batch := createDummyTimeSeries(10)
+	hundred_batch := createDummyTimeSeries(100)
+
+	b.Run("2 instances", func(b *testing.B) {
+		bench(b, two_batch)
+	})
+
+	b.Run("10 instances", func(b *testing.B) {
+		bench(b, ten_batch)
+	})
+
+	b.Run("1k instances", func(b *testing.B) {
+		bench(b, hundred_batch)
+	})
+}
+
+//func BenchmarkBuildVTWriteRequest(b *testing.B) {
+//	bench := func(b *testing.B, batch []timeSeries) {
+//		//buff := make([]byte, 0)
+//		seriesBuff := make([]*prompb.TimeSeries, len(batch))
+//		for i := range seriesBuff {
+//			seriesBuff[i] = &prompb.TimeSeries{
+//				Samples:   []*prompb.Sample{{}},
+//				Exemplars: []*prompb.Exemplar{{}},
+//			}
+//			//seriesBuff[i].Samples = []*prompb.Sample{{}}
+//			//seriesBuff[i].Exemplars = []*prompb.Exemplar{{}}
+//		}
+//		//pBuf := []byte{}
+//
+//		//fmt.Printf("series buff: %+v\n", seriesBuff)
+//		//Warmup buffers
+//		for i := 0; i < 10; i++ {
+//			//populateTimeSeries(batch, seriesBuff, true, true)
+//			buildVTWriteRequest(batch)
+//		}
+//
+//		b.ResetTimer()
+//		totalSize := 0
+//		for i := 0; i < b.N; i++ {
+//			//populateTimeSeries(batch, seriesBuff, true, true)
+//			//req, _, err := buildWriteRequest(seriesBuff, nil, pBuf, buff)
+//			req, _, err := buildVTWriteRequest(batch)
+//			if err != nil {
+//				b.Fatal(err)
+//			}
+//			totalSize += len(req)
+//			b.ReportMetric(float64(totalSize)/float64(b.N), "compressedSize/op")
+//			require.Equal(b, prompb.WriteRequestFromVTPool().UnmarshalVT(req), buildWithoutMarshal(batch))
+//		}
+//	}
+//
+//	two_batch := createDummyTimeSeries(2)
+//	ten_batch := createDummyTimeSeries(10)
+//	hundred_batch := createDummyTimeSeries(100)
+//
+//	b.Run("2 instances", func(b *testing.B) {
+//		bench(b, two_batch)
+//	})
+//
+//	b.Run("10 instances", func(b *testing.B) {
+//		bench(b, ten_batch)
+//	})
+//
+//	b.Run("1k instances", func(b *testing.B) {
+//		bench(b, hundred_batch)
+//	})
+//}

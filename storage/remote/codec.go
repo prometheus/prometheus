@@ -783,14 +783,17 @@ func labelProtosToLabels(labelPairs []*prompb.Label) labels.Labels {
 // labelsToLabelsProto transforms labels into prompb labels. The buffer slice
 // will be used to avoid allocations if it is big enough to store the labels.
 func labelsToLabelsProto(lbls labels.Labels, buf []*prompb.Label) []*prompb.Label {
-	result := buf[:0]
+	//result := buf[:0]
+	i := 0
 	lbls.Range(func(l labels.Label) {
-		result = append(result, &prompb.Label{
-			Name:  l.Name,
-			Value: l.Value,
-		})
+		buf[i].Name = l.Name
+		buf[i].Value = l.Value
+		//	Name:  l.Name,
+		//	Value: l.Value,
+		//})
+		i++
 	})
-	return result
+	return buf[:i]
 }
 
 // metricTypeToMetricTypeProto transforms a Prometheus metricType into prompb metricType. Since the former is a string we need to transform it to an enum.
