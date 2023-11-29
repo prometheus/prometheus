@@ -158,7 +158,7 @@ func TestRecord_EncodeDecode(t *testing.T) {
 		floatHistograms[i] = RefFloatHistogramSample{
 			Ref: h.Ref,
 			T:   h.T,
-			FH:  h.H.ToFloat(),
+			FH:  h.H.ToFloat(nil),
 		}
 	}
 	decFloatHistograms, err := dec.FloatHistogramSamples(enc.FloatHistogramSamples(floatHistograms, nil), nil)

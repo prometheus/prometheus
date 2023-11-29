@@ -202,7 +202,7 @@ func (s hSample) H() *histogram.Histogram {
 }
 
 func (s hSample) FH() *histogram.FloatHistogram {
-	return s.h.ToFloat()
+	return s.h.ToFloat(nil)
 }
 
 func (s hSample) Type() chunkenc.ValueType {
@@ -376,7 +376,7 @@ func (it *sampleRingIterator) AtHistogram() (int64, *histogram.Histogram) {
 
 func (it *sampleRingIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
 	if it.fh == nil {
-		return it.t, it.h.ToFloat()
+		return it.t, it.h.ToFloat(nil)
 	}
 	return it.t, it.fh
 }

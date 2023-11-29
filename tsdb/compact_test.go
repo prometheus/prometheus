@@ -1402,8 +1402,8 @@ func TestHeadCompactionWithHistograms(t *testing.T) {
 				for tsMinute := from; tsMinute <= to; tsMinute++ {
 					var err error
 					if floatTest {
-						_, err = app.AppendHistogram(0, lbls, minute(tsMinute), nil, h.ToFloat())
-						efh := h.ToFloat()
+						_, err = app.AppendHistogram(0, lbls, minute(tsMinute), nil, h.ToFloat(nil))
+						efh := h.ToFloat(nil)
 						if tsMinute == from {
 							efh.CounterResetHint = histogram.UnknownCounterReset
 						} else {
