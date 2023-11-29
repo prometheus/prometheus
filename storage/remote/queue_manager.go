@@ -15,13 +15,11 @@ package remote
 
 import (
 	"context"
-	"encoding/binary"
 	"errors"
 	"math"
 	"strconv"
 	"sync"
 	"time"
-	"unsafe"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -1746,72 +1744,29 @@ func buildWriteRequest(samples []prompb.TimeSeries, metadata []prompb.MetricMeta
 	return compressed, highest, nil
 }
 
-type offLenPair struct {
-	Off uint32
-	Len uint32
-}
-
 type rwSymbolTable struct {
-	symbols         []byte
-	strings         []string
-	symbolsMap      map[string]offLenPair
-	symbolsMapBytes map[string]uint32
+	strings    []string
+	symbolsMap map[string]uint32
 }
 
 func newRwSymbolTable() rwSymbolTable {
 	return rwSymbolTable{
-		symbolsMap:      make(map[string]offLenPair),
-		symbolsMapBytes: make(map[string]uint32),
+		symbolsMap: make(map[string]uint32),
 	}
-}
-
-func (r *rwSymbolTable) Ref(str string) (uint32, uint32) {
-	if offlen, ok := r.symbolsMap[str]; ok {
-		return offlen.Off, offlen.Len
-	}
-	off, length := uint32(len(r.symbols)), uint32(len(str))
-	if int(off) > len(r.symbols) {
-		panic(1)
-	}
-	r.symbols = append(r.symbols, str...)
-	if len(r.symbols) < int(off+length) {
-		panic(2)
-	}
-	r.symbolsMap[str] = offLenPair{off, length}
-	return off, length
-}
-
-func (r *rwSymbolTable) RefLen(str string) uint32 {
-	if ref, ok := r.symbolsMapBytes[str]; ok {
-		return ref
-	}
-	ref := uint32(len(r.symbols))
-	r.symbols = binary.AppendUvarint(r.symbols, uint64(len(str)))
-	r.symbols = append(r.symbols, str...)
-	r.symbolsMapBytes[str] = ref
-	return ref
 }
 
 func (r *rwSymbolTable) RefStr(str string) uint32 {
-	if ref, ok := r.symbolsMapBytes[str]; ok {
+	if ref, ok := r.symbolsMap[str]; ok {
 		return ref
 	}
 	ref := uint32(len(r.strings))
 	r.strings = append(r.strings, str)
-	r.symbolsMapBytes[str] = ref
+	r.symbolsMap[str] = ref
 	return ref
-}
-
-func (r *rwSymbolTable) LabelsString() string {
-	return *((*string)(unsafe.Pointer(&r.symbols)))
 }
 
 func (r *rwSymbolTable) LabelsStrings() []string {
 	return r.strings
-}
-
-func (r *rwSymbolTable) LabelsData() []byte {
-	return r.symbols
 }
 
 func (r *rwSymbolTable) clear() {
@@ -1819,10 +1774,6 @@ func (r *rwSymbolTable) clear() {
 	for k := range r.symbolsMap {
 		delete(r.symbolsMap, k)
 	}
-	for k := range r.symbolsMapBytes {
-		delete(r.symbolsMapBytes, k)
-	}
-	r.symbols = r.symbols[:0]
 }
 
 func buildMinimizedWriteRequestStr(samples []prompb.MinimizedTimeSeriesStr, labels []string, pBuf *[]byte, buf *[]byte) ([]byte, int64, error) {
