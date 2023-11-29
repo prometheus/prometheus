@@ -1605,8 +1605,9 @@ func (h *Head) MaxOOOTime() int64 {
 // compactable returns whether the head has a compactable range.
 // The head has a compactable range when the head time range is 1.5 times the chunk range.
 // The 0.5 acts as a buffer of the appendable window.
+// The head is also compactable when the head is not empty and the max time is older than the chunk range.
 func (h *Head) compactable() bool {
-	return h.MaxTime()-h.MinTime() > h.chunkRange.Load()/2*3
+	return h.MaxTime()-h.MinTime() > h.chunkRange.Load()/2*3 || (h.MaxTime() < time.Now().UnixMilli()-h.chunkRange.Load() && h.numSeries.Load() > 0)
 }
 
 // Close flushes the WAL and closes the head.
