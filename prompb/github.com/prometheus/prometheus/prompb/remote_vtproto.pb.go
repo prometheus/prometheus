@@ -19,6 +19,162 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+func (m *WriteRequest) CloneVT() *WriteRequest {
+	if m == nil {
+		return (*WriteRequest)(nil)
+	}
+	r := &WriteRequest{}
+	if rhs := m.Timeseries; rhs != nil {
+		tmpContainer := make([]*TimeSeries, len(rhs))
+		for k, v := range rhs {
+			tmpContainer[k] = v.CloneVT()
+		}
+		r.Timeseries = tmpContainer
+	}
+	if rhs := m.Metadata; rhs != nil {
+		tmpContainer := make([]*MetricMetadata, len(rhs))
+		for k, v := range rhs {
+			tmpContainer[k] = v.CloneVT()
+		}
+		r.Metadata = tmpContainer
+	}
+	if len(m.unknownFields) > 0 {
+		r.unknownFields = make([]byte, len(m.unknownFields))
+		copy(r.unknownFields, m.unknownFields)
+	}
+	return r
+}
+
+func (m *WriteRequest) CloneMessageVT() proto.Message {
+	return m.CloneVT()
+}
+
+func (m *ReadRequest) CloneVT() *ReadRequest {
+	if m == nil {
+		return (*ReadRequest)(nil)
+	}
+	r := &ReadRequest{}
+	if rhs := m.Queries; rhs != nil {
+		tmpContainer := make([]*Query, len(rhs))
+		for k, v := range rhs {
+			tmpContainer[k] = v.CloneVT()
+		}
+		r.Queries = tmpContainer
+	}
+	if rhs := m.AcceptedResponseTypes; rhs != nil {
+		tmpContainer := make([]ReadRequest_ResponseType, len(rhs))
+		copy(tmpContainer, rhs)
+		r.AcceptedResponseTypes = tmpContainer
+	}
+	if len(m.unknownFields) > 0 {
+		r.unknownFields = make([]byte, len(m.unknownFields))
+		copy(r.unknownFields, m.unknownFields)
+	}
+	return r
+}
+
+func (m *ReadRequest) CloneMessageVT() proto.Message {
+	return m.CloneVT()
+}
+
+func (m *ReadResponse) CloneVT() *ReadResponse {
+	if m == nil {
+		return (*ReadResponse)(nil)
+	}
+	r := &ReadResponse{}
+	if rhs := m.Results; rhs != nil {
+		tmpContainer := make([]*QueryResult, len(rhs))
+		for k, v := range rhs {
+			tmpContainer[k] = v.CloneVT()
+		}
+		r.Results = tmpContainer
+	}
+	if len(m.unknownFields) > 0 {
+		r.unknownFields = make([]byte, len(m.unknownFields))
+		copy(r.unknownFields, m.unknownFields)
+	}
+	return r
+}
+
+func (m *ReadResponse) CloneMessageVT() proto.Message {
+	return m.CloneVT()
+}
+
+func (m *Query) CloneVT() *Query {
+	if m == nil {
+		return (*Query)(nil)
+	}
+	r := &Query{
+		StartTimestampMs: m.StartTimestampMs,
+		EndTimestampMs:   m.EndTimestampMs,
+		Hints:            m.Hints.CloneVT(),
+	}
+	if rhs := m.Matchers; rhs != nil {
+		tmpContainer := make([]*LabelMatcher, len(rhs))
+		for k, v := range rhs {
+			tmpContainer[k] = v.CloneVT()
+		}
+		r.Matchers = tmpContainer
+	}
+	if len(m.unknownFields) > 0 {
+		r.unknownFields = make([]byte, len(m.unknownFields))
+		copy(r.unknownFields, m.unknownFields)
+	}
+	return r
+}
+
+func (m *Query) CloneMessageVT() proto.Message {
+	return m.CloneVT()
+}
+
+func (m *QueryResult) CloneVT() *QueryResult {
+	if m == nil {
+		return (*QueryResult)(nil)
+	}
+	r := &QueryResult{}
+	if rhs := m.Timeseries; rhs != nil {
+		tmpContainer := make([]*TimeSeries, len(rhs))
+		for k, v := range rhs {
+			tmpContainer[k] = v.CloneVT()
+		}
+		r.Timeseries = tmpContainer
+	}
+	if len(m.unknownFields) > 0 {
+		r.unknownFields = make([]byte, len(m.unknownFields))
+		copy(r.unknownFields, m.unknownFields)
+	}
+	return r
+}
+
+func (m *QueryResult) CloneMessageVT() proto.Message {
+	return m.CloneVT()
+}
+
+func (m *ChunkedReadResponse) CloneVT() *ChunkedReadResponse {
+	if m == nil {
+		return (*ChunkedReadResponse)(nil)
+	}
+	r := &ChunkedReadResponse{
+		QueryIndex: m.QueryIndex,
+	}
+	if rhs := m.ChunkedSeries; rhs != nil {
+		tmpContainer := make([]*ChunkedSeries, len(rhs))
+		for k, v := range rhs {
+			tmpContainer[k] = v.CloneVT()
+		}
+		r.ChunkedSeries = tmpContainer
+	}
+	if len(m.unknownFields) > 0 {
+		r.unknownFields = make([]byte, len(m.unknownFields))
+		copy(r.unknownFields, m.unknownFields)
+	}
+	return r
+}
+
+func (m *ChunkedReadResponse) CloneMessageVT() proto.Message {
+	return m.CloneVT()
+}
+
 func (this *WriteRequest) EqualVT(that *WriteRequest) bool {
 	if this == that {
 		return true
@@ -571,6 +727,334 @@ func (m *ChunkedReadResponse) MarshalToSizedBufferVT(dAtA []byte) (int, error) {
 	if len(m.ChunkedSeries) > 0 {
 		for iNdEx := len(m.ChunkedSeries) - 1; iNdEx >= 0; iNdEx-- {
 			size, err := m.ChunkedSeries[iNdEx].MarshalToSizedBufferVT(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarint(dAtA, i, uint64(size))
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *WriteRequest) MarshalVTStrict() (dAtA []byte, err error) {
+	if m == nil {
+		return nil, nil
+	}
+	size := m.SizeVT()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBufferVTStrict(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *WriteRequest) MarshalToVTStrict(dAtA []byte) (int, error) {
+	size := m.SizeVT()
+	return m.MarshalToSizedBufferVTStrict(dAtA[:size])
+}
+
+func (m *WriteRequest) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error) {
+	if m == nil {
+		return 0, nil
+	}
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.unknownFields != nil {
+		i -= len(m.unknownFields)
+		copy(dAtA[i:], m.unknownFields)
+	}
+	if len(m.Metadata) > 0 {
+		for iNdEx := len(m.Metadata) - 1; iNdEx >= 0; iNdEx-- {
+			size, err := m.Metadata[iNdEx].MarshalToSizedBufferVTStrict(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarint(dAtA, i, uint64(size))
+			i--
+			dAtA[i] = 0x1a
+		}
+	}
+	if len(m.Timeseries) > 0 {
+		for iNdEx := len(m.Timeseries) - 1; iNdEx >= 0; iNdEx-- {
+			size, err := m.Timeseries[iNdEx].MarshalToSizedBufferVTStrict(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarint(dAtA, i, uint64(size))
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *ReadRequest) MarshalVTStrict() (dAtA []byte, err error) {
+	if m == nil {
+		return nil, nil
+	}
+	size := m.SizeVT()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBufferVTStrict(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *ReadRequest) MarshalToVTStrict(dAtA []byte) (int, error) {
+	size := m.SizeVT()
+	return m.MarshalToSizedBufferVTStrict(dAtA[:size])
+}
+
+func (m *ReadRequest) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error) {
+	if m == nil {
+		return 0, nil
+	}
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.unknownFields != nil {
+		i -= len(m.unknownFields)
+		copy(dAtA[i:], m.unknownFields)
+	}
+	if len(m.AcceptedResponseTypes) > 0 {
+		var pksize2 int
+		for _, num := range m.AcceptedResponseTypes {
+			pksize2 += sov(uint64(num))
+		}
+		i -= pksize2
+		j1 := i
+		for _, num1 := range m.AcceptedResponseTypes {
+			num := uint64(num1)
+			for num >= 1<<7 {
+				dAtA[j1] = uint8(uint64(num)&0x7f | 0x80)
+				num >>= 7
+				j1++
+			}
+			dAtA[j1] = uint8(num)
+			j1++
+		}
+		i = encodeVarint(dAtA, i, uint64(pksize2))
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.Queries) > 0 {
+		for iNdEx := len(m.Queries) - 1; iNdEx >= 0; iNdEx-- {
+			size, err := m.Queries[iNdEx].MarshalToSizedBufferVTStrict(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarint(dAtA, i, uint64(size))
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *ReadResponse) MarshalVTStrict() (dAtA []byte, err error) {
+	if m == nil {
+		return nil, nil
+	}
+	size := m.SizeVT()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBufferVTStrict(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *ReadResponse) MarshalToVTStrict(dAtA []byte) (int, error) {
+	size := m.SizeVT()
+	return m.MarshalToSizedBufferVTStrict(dAtA[:size])
+}
+
+func (m *ReadResponse) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error) {
+	if m == nil {
+		return 0, nil
+	}
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.unknownFields != nil {
+		i -= len(m.unknownFields)
+		copy(dAtA[i:], m.unknownFields)
+	}
+	if len(m.Results) > 0 {
+		for iNdEx := len(m.Results) - 1; iNdEx >= 0; iNdEx-- {
+			size, err := m.Results[iNdEx].MarshalToSizedBufferVTStrict(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarint(dAtA, i, uint64(size))
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *Query) MarshalVTStrict() (dAtA []byte, err error) {
+	if m == nil {
+		return nil, nil
+	}
+	size := m.SizeVT()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBufferVTStrict(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *Query) MarshalToVTStrict(dAtA []byte) (int, error) {
+	size := m.SizeVT()
+	return m.MarshalToSizedBufferVTStrict(dAtA[:size])
+}
+
+func (m *Query) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error) {
+	if m == nil {
+		return 0, nil
+	}
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.unknownFields != nil {
+		i -= len(m.unknownFields)
+		copy(dAtA[i:], m.unknownFields)
+	}
+	if m.Hints != nil {
+		size, err := m.Hints.MarshalToSizedBufferVTStrict(dAtA[:i])
+		if err != nil {
+			return 0, err
+		}
+		i -= size
+		i = encodeVarint(dAtA, i, uint64(size))
+		i--
+		dAtA[i] = 0x22
+	}
+	if len(m.Matchers) > 0 {
+		for iNdEx := len(m.Matchers) - 1; iNdEx >= 0; iNdEx-- {
+			size, err := m.Matchers[iNdEx].MarshalToSizedBufferVTStrict(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarint(dAtA, i, uint64(size))
+			i--
+			dAtA[i] = 0x1a
+		}
+	}
+	if m.EndTimestampMs != 0 {
+		i = encodeVarint(dAtA, i, uint64(m.EndTimestampMs))
+		i--
+		dAtA[i] = 0x10
+	}
+	if m.StartTimestampMs != 0 {
+		i = encodeVarint(dAtA, i, uint64(m.StartTimestampMs))
+		i--
+		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *QueryResult) MarshalVTStrict() (dAtA []byte, err error) {
+	if m == nil {
+		return nil, nil
+	}
+	size := m.SizeVT()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBufferVTStrict(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *QueryResult) MarshalToVTStrict(dAtA []byte) (int, error) {
+	size := m.SizeVT()
+	return m.MarshalToSizedBufferVTStrict(dAtA[:size])
+}
+
+func (m *QueryResult) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error) {
+	if m == nil {
+		return 0, nil
+	}
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.unknownFields != nil {
+		i -= len(m.unknownFields)
+		copy(dAtA[i:], m.unknownFields)
+	}
+	if len(m.Timeseries) > 0 {
+		for iNdEx := len(m.Timeseries) - 1; iNdEx >= 0; iNdEx-- {
+			size, err := m.Timeseries[iNdEx].MarshalToSizedBufferVTStrict(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarint(dAtA, i, uint64(size))
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *ChunkedReadResponse) MarshalVTStrict() (dAtA []byte, err error) {
+	if m == nil {
+		return nil, nil
+	}
+	size := m.SizeVT()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBufferVTStrict(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *ChunkedReadResponse) MarshalToVTStrict(dAtA []byte) (int, error) {
+	size := m.SizeVT()
+	return m.MarshalToSizedBufferVTStrict(dAtA[:size])
+}
+
+func (m *ChunkedReadResponse) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error) {
+	if m == nil {
+		return 0, nil
+	}
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.unknownFields != nil {
+		i -= len(m.unknownFields)
+		copy(dAtA[i:], m.unknownFields)
+	}
+	if m.QueryIndex != 0 {
+		i = encodeVarint(dAtA, i, uint64(m.QueryIndex))
+		i--
+		dAtA[i] = 0x10
+	}
+	if len(m.ChunkedSeries) > 0 {
+		for iNdEx := len(m.ChunkedSeries) - 1; iNdEx >= 0; iNdEx-- {
+			size, err := m.ChunkedSeries[iNdEx].MarshalToSizedBufferVTStrict(dAtA[:i])
 			if err != nil {
 				return 0, err
 			}

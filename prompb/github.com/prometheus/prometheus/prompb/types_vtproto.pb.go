@@ -22,6 +22,382 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+func (m *MetricMetadata) CloneVT() *MetricMetadata {
+	if m == nil {
+		return (*MetricMetadata)(nil)
+	}
+	r := &MetricMetadata{
+		Type:             m.Type,
+		MetricFamilyName: m.MetricFamilyName,
+		Help:             m.Help,
+		Unit:             m.Unit,
+	}
+	if len(m.unknownFields) > 0 {
+		r.unknownFields = make([]byte, len(m.unknownFields))
+		copy(r.unknownFields, m.unknownFields)
+	}
+	return r
+}
+
+func (m *MetricMetadata) CloneMessageVT() proto.Message {
+	return m.CloneVT()
+}
+
+func (m *Sample) CloneVT() *Sample {
+	if m == nil {
+		return (*Sample)(nil)
+	}
+	r := &Sample{
+		Value:     m.Value,
+		Timestamp: m.Timestamp,
+	}
+	if len(m.unknownFields) > 0 {
+		r.unknownFields = make([]byte, len(m.unknownFields))
+		copy(r.unknownFields, m.unknownFields)
+	}
+	return r
+}
+
+func (m *Sample) CloneMessageVT() proto.Message {
+	return m.CloneVT()
+}
+
+func (m *Exemplar) CloneVT() *Exemplar {
+	if m == nil {
+		return (*Exemplar)(nil)
+	}
+	r := &Exemplar{
+		Value:     m.Value,
+		Timestamp: m.Timestamp,
+	}
+	if rhs := m.Labels; rhs != nil {
+		tmpContainer := make([]*Label, len(rhs))
+		for k, v := range rhs {
+			tmpContainer[k] = v.CloneVT()
+		}
+		r.Labels = tmpContainer
+	}
+	if len(m.unknownFields) > 0 {
+		r.unknownFields = make([]byte, len(m.unknownFields))
+		copy(r.unknownFields, m.unknownFields)
+	}
+	return r
+}
+
+func (m *Exemplar) CloneMessageVT() proto.Message {
+	return m.CloneVT()
+}
+
+func (m *Histogram) CloneVT() *Histogram {
+	if m == nil {
+		return (*Histogram)(nil)
+	}
+	r := &Histogram{
+		Sum:           m.Sum,
+		Schema:        m.Schema,
+		ZeroThreshold: m.ZeroThreshold,
+		ResetHint:     m.ResetHint,
+		Timestamp:     m.Timestamp,
+	}
+	if m.Count != nil {
+		r.Count = m.Count.(interface{ CloneVT() isHistogram_Count }).CloneVT()
+	}
+	if m.ZeroCount != nil {
+		r.ZeroCount = m.ZeroCount.(interface{ CloneVT() isHistogram_ZeroCount }).CloneVT()
+	}
+	if rhs := m.NegativeSpans; rhs != nil {
+		tmpContainer := make([]*BucketSpan, len(rhs))
+		for k, v := range rhs {
+			tmpContainer[k] = v.CloneVT()
+		}
+		r.NegativeSpans = tmpContainer
+	}
+	if rhs := m.NegativeDeltas; rhs != nil {
+		tmpContainer := make([]int64, len(rhs))
+		copy(tmpContainer, rhs)
+		r.NegativeDeltas = tmpContainer
+	}
+	if rhs := m.NegativeCounts; rhs != nil {
+		tmpContainer := make([]float64, len(rhs))
+		copy(tmpContainer, rhs)
+		r.NegativeCounts = tmpContainer
+	}
+	if rhs := m.PositiveSpans; rhs != nil {
+		tmpContainer := make([]*BucketSpan, len(rhs))
+		for k, v := range rhs {
+			tmpContainer[k] = v.CloneVT()
+		}
+		r.PositiveSpans = tmpContainer
+	}
+	if rhs := m.PositiveDeltas; rhs != nil {
+		tmpContainer := make([]int64, len(rhs))
+		copy(tmpContainer, rhs)
+		r.PositiveDeltas = tmpContainer
+	}
+	if rhs := m.PositiveCounts; rhs != nil {
+		tmpContainer := make([]float64, len(rhs))
+		copy(tmpContainer, rhs)
+		r.PositiveCounts = tmpContainer
+	}
+	if len(m.unknownFields) > 0 {
+		r.unknownFields = make([]byte, len(m.unknownFields))
+		copy(r.unknownFields, m.unknownFields)
+	}
+	return r
+}
+
+func (m *Histogram) CloneMessageVT() proto.Message {
+	return m.CloneVT()
+}
+
+func (m *Histogram_CountInt) CloneVT() isHistogram_Count {
+	if m == nil {
+		return (*Histogram_CountInt)(nil)
+	}
+	r := &Histogram_CountInt{
+		CountInt: m.CountInt,
+	}
+	return r
+}
+
+func (m *Histogram_CountFloat) CloneVT() isHistogram_Count {
+	if m == nil {
+		return (*Histogram_CountFloat)(nil)
+	}
+	r := &Histogram_CountFloat{
+		CountFloat: m.CountFloat,
+	}
+	return r
+}
+
+func (m *Histogram_ZeroCountInt) CloneVT() isHistogram_ZeroCount {
+	if m == nil {
+		return (*Histogram_ZeroCountInt)(nil)
+	}
+	r := &Histogram_ZeroCountInt{
+		ZeroCountInt: m.ZeroCountInt,
+	}
+	return r
+}
+
+func (m *Histogram_ZeroCountFloat) CloneVT() isHistogram_ZeroCount {
+	if m == nil {
+		return (*Histogram_ZeroCountFloat)(nil)
+	}
+	r := &Histogram_ZeroCountFloat{
+		ZeroCountFloat: m.ZeroCountFloat,
+	}
+	return r
+}
+
+func (m *BucketSpan) CloneVT() *BucketSpan {
+	if m == nil {
+		return (*BucketSpan)(nil)
+	}
+	r := &BucketSpan{
+		Offset: m.Offset,
+		Length: m.Length,
+	}
+	if len(m.unknownFields) > 0 {
+		r.unknownFields = make([]byte, len(m.unknownFields))
+		copy(r.unknownFields, m.unknownFields)
+	}
+	return r
+}
+
+func (m *BucketSpan) CloneMessageVT() proto.Message {
+	return m.CloneVT()
+}
+
+func (m *TimeSeries) CloneVT() *TimeSeries {
+	if m == nil {
+		return (*TimeSeries)(nil)
+	}
+	r := &TimeSeries{}
+	if rhs := m.Labels; rhs != nil {
+		tmpContainer := make([]*Label, len(rhs))
+		for k, v := range rhs {
+			tmpContainer[k] = v.CloneVT()
+		}
+		r.Labels = tmpContainer
+	}
+	if rhs := m.Samples; rhs != nil {
+		tmpContainer := make([]*Sample, len(rhs))
+		for k, v := range rhs {
+			tmpContainer[k] = v.CloneVT()
+		}
+		r.Samples = tmpContainer
+	}
+	if rhs := m.Exemplars; rhs != nil {
+		tmpContainer := make([]*Exemplar, len(rhs))
+		for k, v := range rhs {
+			tmpContainer[k] = v.CloneVT()
+		}
+		r.Exemplars = tmpContainer
+	}
+	if rhs := m.Histograms; rhs != nil {
+		tmpContainer := make([]*Histogram, len(rhs))
+		for k, v := range rhs {
+			tmpContainer[k] = v.CloneVT()
+		}
+		r.Histograms = tmpContainer
+	}
+	if len(m.unknownFields) > 0 {
+		r.unknownFields = make([]byte, len(m.unknownFields))
+		copy(r.unknownFields, m.unknownFields)
+	}
+	return r
+}
+
+func (m *TimeSeries) CloneMessageVT() proto.Message {
+	return m.CloneVT()
+}
+
+func (m *Label) CloneVT() *Label {
+	if m == nil {
+		return (*Label)(nil)
+	}
+	r := &Label{
+		Name:  m.Name,
+		Value: m.Value,
+	}
+	if len(m.unknownFields) > 0 {
+		r.unknownFields = make([]byte, len(m.unknownFields))
+		copy(r.unknownFields, m.unknownFields)
+	}
+	return r
+}
+
+func (m *Label) CloneMessageVT() proto.Message {
+	return m.CloneVT()
+}
+
+func (m *Labels) CloneVT() *Labels {
+	if m == nil {
+		return (*Labels)(nil)
+	}
+	r := &Labels{}
+	if rhs := m.Labels; rhs != nil {
+		tmpContainer := make([]*Label, len(rhs))
+		for k, v := range rhs {
+			tmpContainer[k] = v.CloneVT()
+		}
+		r.Labels = tmpContainer
+	}
+	if len(m.unknownFields) > 0 {
+		r.unknownFields = make([]byte, len(m.unknownFields))
+		copy(r.unknownFields, m.unknownFields)
+	}
+	return r
+}
+
+func (m *Labels) CloneMessageVT() proto.Message {
+	return m.CloneVT()
+}
+
+func (m *LabelMatcher) CloneVT() *LabelMatcher {
+	if m == nil {
+		return (*LabelMatcher)(nil)
+	}
+	r := &LabelMatcher{
+		Type:  m.Type,
+		Name:  m.Name,
+		Value: m.Value,
+	}
+	if len(m.unknownFields) > 0 {
+		r.unknownFields = make([]byte, len(m.unknownFields))
+		copy(r.unknownFields, m.unknownFields)
+	}
+	return r
+}
+
+func (m *LabelMatcher) CloneMessageVT() proto.Message {
+	return m.CloneVT()
+}
+
+func (m *ReadHints) CloneVT() *ReadHints {
+	if m == nil {
+		return (*ReadHints)(nil)
+	}
+	r := &ReadHints{
+		StepMs:  m.StepMs,
+		Func:    m.Func,
+		StartMs: m.StartMs,
+		EndMs:   m.EndMs,
+		By:      m.By,
+		RangeMs: m.RangeMs,
+	}
+	if rhs := m.Grouping; rhs != nil {
+		tmpContainer := make([]string, len(rhs))
+		copy(tmpContainer, rhs)
+		r.Grouping = tmpContainer
+	}
+	if len(m.unknownFields) > 0 {
+		r.unknownFields = make([]byte, len(m.unknownFields))
+		copy(r.unknownFields, m.unknownFields)
+	}
+	return r
+}
+
+func (m *ReadHints) CloneMessageVT() proto.Message {
+	return m.CloneVT()
+}
+
+func (m *Chunk) CloneVT() *Chunk {
+	if m == nil {
+		return (*Chunk)(nil)
+	}
+	r := &Chunk{
+		MinTimeMs: m.MinTimeMs,
+		MaxTimeMs: m.MaxTimeMs,
+		Type:      m.Type,
+	}
+	if rhs := m.Data; rhs != nil {
+		tmpBytes := make([]byte, len(rhs))
+		copy(tmpBytes, rhs)
+		r.Data = tmpBytes
+	}
+	if len(m.unknownFields) > 0 {
+		r.unknownFields = make([]byte, len(m.unknownFields))
+		copy(r.unknownFields, m.unknownFields)
+	}
+	return r
+}
+
+func (m *Chunk) CloneMessageVT() proto.Message {
+	return m.CloneVT()
+}
+
+func (m *ChunkedSeries) CloneVT() *ChunkedSeries {
+	if m == nil {
+		return (*ChunkedSeries)(nil)
+	}
+	r := &ChunkedSeries{}
+	if rhs := m.Labels; rhs != nil {
+		tmpContainer := make([]*Label, len(rhs))
+		for k, v := range rhs {
+			tmpContainer[k] = v.CloneVT()
+		}
+		r.Labels = tmpContainer
+	}
+	if rhs := m.Chunks; rhs != nil {
+		tmpContainer := make([]*Chunk, len(rhs))
+		for k, v := range rhs {
+			tmpContainer[k] = v.CloneVT()
+		}
+		r.Chunks = tmpContainer
+	}
+	if len(m.unknownFields) > 0 {
+		r.unknownFields = make([]byte, len(m.unknownFields))
+		copy(r.unknownFields, m.unknownFields)
+	}
+	return r
+}
+
+func (m *ChunkedSeries) CloneMessageVT() proto.Message {
+	return m.CloneVT()
+}
+
 func (this *MetricMetadata) EqualVT(that *MetricMetadata) bool {
 	if this == that {
 		return true
@@ -1452,24 +1828,846 @@ func encodeVarint(dAtA []byte, offset int, v uint64) int {
 	dAtA[offset] = uint8(v)
 	return base
 }
-
-var vtprotoPool_Sample = sync.Pool{
-	New: func() interface{} {
-		return &Sample{}
-	},
-}
-
-func (m *Sample) ResetVT() {
-	m.Reset()
-}
-func (m *Sample) ReturnToVTPool() {
-	if m != nil {
-		m.ResetVT()
-		vtprotoPool_Sample.Put(m)
+func (m *MetricMetadata) MarshalVTStrict() (dAtA []byte, err error) {
+	if m == nil {
+		return nil, nil
 	}
+	size := m.SizeVT()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBufferVTStrict(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
 }
-func SampleFromVTPool() *Sample {
-	return vtprotoPool_Sample.Get().(*Sample)
+
+func (m *MetricMetadata) MarshalToVTStrict(dAtA []byte) (int, error) {
+	size := m.SizeVT()
+	return m.MarshalToSizedBufferVTStrict(dAtA[:size])
+}
+
+func (m *MetricMetadata) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error) {
+	if m == nil {
+		return 0, nil
+	}
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.unknownFields != nil {
+		i -= len(m.unknownFields)
+		copy(dAtA[i:], m.unknownFields)
+	}
+	if len(m.Unit) > 0 {
+		i -= len(m.Unit)
+		copy(dAtA[i:], m.Unit)
+		i = encodeVarint(dAtA, i, uint64(len(m.Unit)))
+		i--
+		dAtA[i] = 0x2a
+	}
+	if len(m.Help) > 0 {
+		i -= len(m.Help)
+		copy(dAtA[i:], m.Help)
+		i = encodeVarint(dAtA, i, uint64(len(m.Help)))
+		i--
+		dAtA[i] = 0x22
+	}
+	if len(m.MetricFamilyName) > 0 {
+		i -= len(m.MetricFamilyName)
+		copy(dAtA[i:], m.MetricFamilyName)
+		i = encodeVarint(dAtA, i, uint64(len(m.MetricFamilyName)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if m.Type != 0 {
+		i = encodeVarint(dAtA, i, uint64(m.Type))
+		i--
+		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *Sample) MarshalVTStrict() (dAtA []byte, err error) {
+	if m == nil {
+		return nil, nil
+	}
+	size := m.SizeVT()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBufferVTStrict(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *Sample) MarshalToVTStrict(dAtA []byte) (int, error) {
+	size := m.SizeVT()
+	return m.MarshalToSizedBufferVTStrict(dAtA[:size])
+}
+
+func (m *Sample) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error) {
+	if m == nil {
+		return 0, nil
+	}
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.unknownFields != nil {
+		i -= len(m.unknownFields)
+		copy(dAtA[i:], m.unknownFields)
+	}
+	if m.Timestamp != 0 {
+		i = encodeVarint(dAtA, i, uint64(m.Timestamp))
+		i--
+		dAtA[i] = 0x10
+	}
+	if m.Value != 0 {
+		i -= 8
+		binary.LittleEndian.PutUint64(dAtA[i:], uint64(math.Float64bits(float64(m.Value))))
+		i--
+		dAtA[i] = 0x9
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *Exemplar) MarshalVTStrict() (dAtA []byte, err error) {
+	if m == nil {
+		return nil, nil
+	}
+	size := m.SizeVT()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBufferVTStrict(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *Exemplar) MarshalToVTStrict(dAtA []byte) (int, error) {
+	size := m.SizeVT()
+	return m.MarshalToSizedBufferVTStrict(dAtA[:size])
+}
+
+func (m *Exemplar) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error) {
+	if m == nil {
+		return 0, nil
+	}
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.unknownFields != nil {
+		i -= len(m.unknownFields)
+		copy(dAtA[i:], m.unknownFields)
+	}
+	if m.Timestamp != 0 {
+		i = encodeVarint(dAtA, i, uint64(m.Timestamp))
+		i--
+		dAtA[i] = 0x18
+	}
+	if m.Value != 0 {
+		i -= 8
+		binary.LittleEndian.PutUint64(dAtA[i:], uint64(math.Float64bits(float64(m.Value))))
+		i--
+		dAtA[i] = 0x11
+	}
+	if len(m.Labels) > 0 {
+		for iNdEx := len(m.Labels) - 1; iNdEx >= 0; iNdEx-- {
+			size, err := m.Labels[iNdEx].MarshalToSizedBufferVTStrict(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarint(dAtA, i, uint64(size))
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *Histogram) MarshalVTStrict() (dAtA []byte, err error) {
+	if m == nil {
+		return nil, nil
+	}
+	size := m.SizeVT()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBufferVTStrict(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *Histogram) MarshalToVTStrict(dAtA []byte) (int, error) {
+	size := m.SizeVT()
+	return m.MarshalToSizedBufferVTStrict(dAtA[:size])
+}
+
+func (m *Histogram) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error) {
+	if m == nil {
+		return 0, nil
+	}
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.unknownFields != nil {
+		i -= len(m.unknownFields)
+		copy(dAtA[i:], m.unknownFields)
+	}
+	if m.Timestamp != 0 {
+		i = encodeVarint(dAtA, i, uint64(m.Timestamp))
+		i--
+		dAtA[i] = 0x78
+	}
+	if m.ResetHint != 0 {
+		i = encodeVarint(dAtA, i, uint64(m.ResetHint))
+		i--
+		dAtA[i] = 0x70
+	}
+	if len(m.PositiveCounts) > 0 {
+		for iNdEx := len(m.PositiveCounts) - 1; iNdEx >= 0; iNdEx-- {
+			f1 := math.Float64bits(float64(m.PositiveCounts[iNdEx]))
+			i -= 8
+			binary.LittleEndian.PutUint64(dAtA[i:], uint64(f1))
+		}
+		i = encodeVarint(dAtA, i, uint64(len(m.PositiveCounts)*8))
+		i--
+		dAtA[i] = 0x6a
+	}
+	if len(m.PositiveDeltas) > 0 {
+		var pksize3 int
+		for _, num := range m.PositiveDeltas {
+			pksize3 += soz(uint64(num))
+		}
+		i -= pksize3
+		j2 := i
+		for _, num := range m.PositiveDeltas {
+			x4 := (uint64(num) << 1) ^ uint64((num >> 63))
+			for x4 >= 1<<7 {
+				dAtA[j2] = uint8(uint64(x4)&0x7f | 0x80)
+				j2++
+				x4 >>= 7
+			}
+			dAtA[j2] = uint8(x4)
+			j2++
+		}
+		i = encodeVarint(dAtA, i, uint64(pksize3))
+		i--
+		dAtA[i] = 0x62
+	}
+	if len(m.PositiveSpans) > 0 {
+		for iNdEx := len(m.PositiveSpans) - 1; iNdEx >= 0; iNdEx-- {
+			size, err := m.PositiveSpans[iNdEx].MarshalToSizedBufferVTStrict(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarint(dAtA, i, uint64(size))
+			i--
+			dAtA[i] = 0x5a
+		}
+	}
+	if len(m.NegativeCounts) > 0 {
+		for iNdEx := len(m.NegativeCounts) - 1; iNdEx >= 0; iNdEx-- {
+			f5 := math.Float64bits(float64(m.NegativeCounts[iNdEx]))
+			i -= 8
+			binary.LittleEndian.PutUint64(dAtA[i:], uint64(f5))
+		}
+		i = encodeVarint(dAtA, i, uint64(len(m.NegativeCounts)*8))
+		i--
+		dAtA[i] = 0x52
+	}
+	if len(m.NegativeDeltas) > 0 {
+		var pksize7 int
+		for _, num := range m.NegativeDeltas {
+			pksize7 += soz(uint64(num))
+		}
+		i -= pksize7
+		j6 := i
+		for _, num := range m.NegativeDeltas {
+			x8 := (uint64(num) << 1) ^ uint64((num >> 63))
+			for x8 >= 1<<7 {
+				dAtA[j6] = uint8(uint64(x8)&0x7f | 0x80)
+				j6++
+				x8 >>= 7
+			}
+			dAtA[j6] = uint8(x8)
+			j6++
+		}
+		i = encodeVarint(dAtA, i, uint64(pksize7))
+		i--
+		dAtA[i] = 0x4a
+	}
+	if len(m.NegativeSpans) > 0 {
+		for iNdEx := len(m.NegativeSpans) - 1; iNdEx >= 0; iNdEx-- {
+			size, err := m.NegativeSpans[iNdEx].MarshalToSizedBufferVTStrict(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarint(dAtA, i, uint64(size))
+			i--
+			dAtA[i] = 0x42
+		}
+	}
+	if msg, ok := m.ZeroCount.(*Histogram_ZeroCountFloat); ok {
+		size, err := msg.MarshalToSizedBufferVTStrict(dAtA[:i])
+		if err != nil {
+			return 0, err
+		}
+		i -= size
+	}
+	if msg, ok := m.ZeroCount.(*Histogram_ZeroCountInt); ok {
+		size, err := msg.MarshalToSizedBufferVTStrict(dAtA[:i])
+		if err != nil {
+			return 0, err
+		}
+		i -= size
+	}
+	if m.ZeroThreshold != 0 {
+		i -= 8
+		binary.LittleEndian.PutUint64(dAtA[i:], uint64(math.Float64bits(float64(m.ZeroThreshold))))
+		i--
+		dAtA[i] = 0x29
+	}
+	if m.Schema != 0 {
+		i = encodeVarint(dAtA, i, uint64((uint32(m.Schema)<<1)^uint32((m.Schema>>31))))
+		i--
+		dAtA[i] = 0x20
+	}
+	if m.Sum != 0 {
+		i -= 8
+		binary.LittleEndian.PutUint64(dAtA[i:], uint64(math.Float64bits(float64(m.Sum))))
+		i--
+		dAtA[i] = 0x19
+	}
+	if msg, ok := m.Count.(*Histogram_CountFloat); ok {
+		size, err := msg.MarshalToSizedBufferVTStrict(dAtA[:i])
+		if err != nil {
+			return 0, err
+		}
+		i -= size
+	}
+	if msg, ok := m.Count.(*Histogram_CountInt); ok {
+		size, err := msg.MarshalToSizedBufferVTStrict(dAtA[:i])
+		if err != nil {
+			return 0, err
+		}
+		i -= size
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *Histogram_CountInt) MarshalToVTStrict(dAtA []byte) (int, error) {
+	size := m.SizeVT()
+	return m.MarshalToSizedBufferVTStrict(dAtA[:size])
+}
+
+func (m *Histogram_CountInt) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	i = encodeVarint(dAtA, i, uint64(m.CountInt))
+	i--
+	dAtA[i] = 0x8
+	return len(dAtA) - i, nil
+}
+func (m *Histogram_CountFloat) MarshalToVTStrict(dAtA []byte) (int, error) {
+	size := m.SizeVT()
+	return m.MarshalToSizedBufferVTStrict(dAtA[:size])
+}
+
+func (m *Histogram_CountFloat) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	i -= 8
+	binary.LittleEndian.PutUint64(dAtA[i:], uint64(math.Float64bits(float64(m.CountFloat))))
+	i--
+	dAtA[i] = 0x11
+	return len(dAtA) - i, nil
+}
+func (m *Histogram_ZeroCountInt) MarshalToVTStrict(dAtA []byte) (int, error) {
+	size := m.SizeVT()
+	return m.MarshalToSizedBufferVTStrict(dAtA[:size])
+}
+
+func (m *Histogram_ZeroCountInt) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	i = encodeVarint(dAtA, i, uint64(m.ZeroCountInt))
+	i--
+	dAtA[i] = 0x30
+	return len(dAtA) - i, nil
+}
+func (m *Histogram_ZeroCountFloat) MarshalToVTStrict(dAtA []byte) (int, error) {
+	size := m.SizeVT()
+	return m.MarshalToSizedBufferVTStrict(dAtA[:size])
+}
+
+func (m *Histogram_ZeroCountFloat) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	i -= 8
+	binary.LittleEndian.PutUint64(dAtA[i:], uint64(math.Float64bits(float64(m.ZeroCountFloat))))
+	i--
+	dAtA[i] = 0x39
+	return len(dAtA) - i, nil
+}
+func (m *BucketSpan) MarshalVTStrict() (dAtA []byte, err error) {
+	if m == nil {
+		return nil, nil
+	}
+	size := m.SizeVT()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBufferVTStrict(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *BucketSpan) MarshalToVTStrict(dAtA []byte) (int, error) {
+	size := m.SizeVT()
+	return m.MarshalToSizedBufferVTStrict(dAtA[:size])
+}
+
+func (m *BucketSpan) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error) {
+	if m == nil {
+		return 0, nil
+	}
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.unknownFields != nil {
+		i -= len(m.unknownFields)
+		copy(dAtA[i:], m.unknownFields)
+	}
+	if m.Length != 0 {
+		i = encodeVarint(dAtA, i, uint64(m.Length))
+		i--
+		dAtA[i] = 0x10
+	}
+	if m.Offset != 0 {
+		i = encodeVarint(dAtA, i, uint64((uint32(m.Offset)<<1)^uint32((m.Offset>>31))))
+		i--
+		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *TimeSeries) MarshalVTStrict() (dAtA []byte, err error) {
+	if m == nil {
+		return nil, nil
+	}
+	size := m.SizeVT()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBufferVTStrict(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *TimeSeries) MarshalToVTStrict(dAtA []byte) (int, error) {
+	size := m.SizeVT()
+	return m.MarshalToSizedBufferVTStrict(dAtA[:size])
+}
+
+func (m *TimeSeries) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error) {
+	if m == nil {
+		return 0, nil
+	}
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.unknownFields != nil {
+		i -= len(m.unknownFields)
+		copy(dAtA[i:], m.unknownFields)
+	}
+	if len(m.Histograms) > 0 {
+		for iNdEx := len(m.Histograms) - 1; iNdEx >= 0; iNdEx-- {
+			size, err := m.Histograms[iNdEx].MarshalToSizedBufferVTStrict(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarint(dAtA, i, uint64(size))
+			i--
+			dAtA[i] = 0x22
+		}
+	}
+	if len(m.Exemplars) > 0 {
+		for iNdEx := len(m.Exemplars) - 1; iNdEx >= 0; iNdEx-- {
+			size, err := m.Exemplars[iNdEx].MarshalToSizedBufferVTStrict(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarint(dAtA, i, uint64(size))
+			i--
+			dAtA[i] = 0x1a
+		}
+	}
+	if len(m.Samples) > 0 {
+		for iNdEx := len(m.Samples) - 1; iNdEx >= 0; iNdEx-- {
+			size, err := m.Samples[iNdEx].MarshalToSizedBufferVTStrict(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarint(dAtA, i, uint64(size))
+			i--
+			dAtA[i] = 0x12
+		}
+	}
+	if len(m.Labels) > 0 {
+		for iNdEx := len(m.Labels) - 1; iNdEx >= 0; iNdEx-- {
+			size, err := m.Labels[iNdEx].MarshalToSizedBufferVTStrict(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarint(dAtA, i, uint64(size))
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *Label) MarshalVTStrict() (dAtA []byte, err error) {
+	if m == nil {
+		return nil, nil
+	}
+	size := m.SizeVT()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBufferVTStrict(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *Label) MarshalToVTStrict(dAtA []byte) (int, error) {
+	size := m.SizeVT()
+	return m.MarshalToSizedBufferVTStrict(dAtA[:size])
+}
+
+func (m *Label) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error) {
+	if m == nil {
+		return 0, nil
+	}
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.unknownFields != nil {
+		i -= len(m.unknownFields)
+		copy(dAtA[i:], m.unknownFields)
+	}
+	if len(m.Value) > 0 {
+		i -= len(m.Value)
+		copy(dAtA[i:], m.Value)
+		i = encodeVarint(dAtA, i, uint64(len(m.Value)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.Name) > 0 {
+		i -= len(m.Name)
+		copy(dAtA[i:], m.Name)
+		i = encodeVarint(dAtA, i, uint64(len(m.Name)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *Labels) MarshalVTStrict() (dAtA []byte, err error) {
+	if m == nil {
+		return nil, nil
+	}
+	size := m.SizeVT()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBufferVTStrict(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *Labels) MarshalToVTStrict(dAtA []byte) (int, error) {
+	size := m.SizeVT()
+	return m.MarshalToSizedBufferVTStrict(dAtA[:size])
+}
+
+func (m *Labels) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error) {
+	if m == nil {
+		return 0, nil
+	}
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.unknownFields != nil {
+		i -= len(m.unknownFields)
+		copy(dAtA[i:], m.unknownFields)
+	}
+	if len(m.Labels) > 0 {
+		for iNdEx := len(m.Labels) - 1; iNdEx >= 0; iNdEx-- {
+			size, err := m.Labels[iNdEx].MarshalToSizedBufferVTStrict(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarint(dAtA, i, uint64(size))
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *LabelMatcher) MarshalVTStrict() (dAtA []byte, err error) {
+	if m == nil {
+		return nil, nil
+	}
+	size := m.SizeVT()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBufferVTStrict(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *LabelMatcher) MarshalToVTStrict(dAtA []byte) (int, error) {
+	size := m.SizeVT()
+	return m.MarshalToSizedBufferVTStrict(dAtA[:size])
+}
+
+func (m *LabelMatcher) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error) {
+	if m == nil {
+		return 0, nil
+	}
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.unknownFields != nil {
+		i -= len(m.unknownFields)
+		copy(dAtA[i:], m.unknownFields)
+	}
+	if len(m.Value) > 0 {
+		i -= len(m.Value)
+		copy(dAtA[i:], m.Value)
+		i = encodeVarint(dAtA, i, uint64(len(m.Value)))
+		i--
+		dAtA[i] = 0x1a
+	}
+	if len(m.Name) > 0 {
+		i -= len(m.Name)
+		copy(dAtA[i:], m.Name)
+		i = encodeVarint(dAtA, i, uint64(len(m.Name)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if m.Type != 0 {
+		i = encodeVarint(dAtA, i, uint64(m.Type))
+		i--
+		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *ReadHints) MarshalVTStrict() (dAtA []byte, err error) {
+	if m == nil {
+		return nil, nil
+	}
+	size := m.SizeVT()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBufferVTStrict(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *ReadHints) MarshalToVTStrict(dAtA []byte) (int, error) {
+	size := m.SizeVT()
+	return m.MarshalToSizedBufferVTStrict(dAtA[:size])
+}
+
+func (m *ReadHints) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error) {
+	if m == nil {
+		return 0, nil
+	}
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.unknownFields != nil {
+		i -= len(m.unknownFields)
+		copy(dAtA[i:], m.unknownFields)
+	}
+	if m.RangeMs != 0 {
+		i = encodeVarint(dAtA, i, uint64(m.RangeMs))
+		i--
+		dAtA[i] = 0x38
+	}
+	if m.By {
+		i--
+		if m.By {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x30
+	}
+	if len(m.Grouping) > 0 {
+		for iNdEx := len(m.Grouping) - 1; iNdEx >= 0; iNdEx-- {
+			i -= len(m.Grouping[iNdEx])
+			copy(dAtA[i:], m.Grouping[iNdEx])
+			i = encodeVarint(dAtA, i, uint64(len(m.Grouping[iNdEx])))
+			i--
+			dAtA[i] = 0x2a
+		}
+	}
+	if m.EndMs != 0 {
+		i = encodeVarint(dAtA, i, uint64(m.EndMs))
+		i--
+		dAtA[i] = 0x20
+	}
+	if m.StartMs != 0 {
+		i = encodeVarint(dAtA, i, uint64(m.StartMs))
+		i--
+		dAtA[i] = 0x18
+	}
+	if len(m.Func) > 0 {
+		i -= len(m.Func)
+		copy(dAtA[i:], m.Func)
+		i = encodeVarint(dAtA, i, uint64(len(m.Func)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if m.StepMs != 0 {
+		i = encodeVarint(dAtA, i, uint64(m.StepMs))
+		i--
+		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *Chunk) MarshalVTStrict() (dAtA []byte, err error) {
+	if m == nil {
+		return nil, nil
+	}
+	size := m.SizeVT()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBufferVTStrict(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *Chunk) MarshalToVTStrict(dAtA []byte) (int, error) {
+	size := m.SizeVT()
+	return m.MarshalToSizedBufferVTStrict(dAtA[:size])
+}
+
+func (m *Chunk) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error) {
+	if m == nil {
+		return 0, nil
+	}
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.unknownFields != nil {
+		i -= len(m.unknownFields)
+		copy(dAtA[i:], m.unknownFields)
+	}
+	if len(m.Data) > 0 {
+		i -= len(m.Data)
+		copy(dAtA[i:], m.Data)
+		i = encodeVarint(dAtA, i, uint64(len(m.Data)))
+		i--
+		dAtA[i] = 0x22
+	}
+	if m.Type != 0 {
+		i = encodeVarint(dAtA, i, uint64(m.Type))
+		i--
+		dAtA[i] = 0x18
+	}
+	if m.MaxTimeMs != 0 {
+		i = encodeVarint(dAtA, i, uint64(m.MaxTimeMs))
+		i--
+		dAtA[i] = 0x10
+	}
+	if m.MinTimeMs != 0 {
+		i = encodeVarint(dAtA, i, uint64(m.MinTimeMs))
+		i--
+		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *ChunkedSeries) MarshalVTStrict() (dAtA []byte, err error) {
+	if m == nil {
+		return nil, nil
+	}
+	size := m.SizeVT()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBufferVTStrict(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *ChunkedSeries) MarshalToVTStrict(dAtA []byte) (int, error) {
+	size := m.SizeVT()
+	return m.MarshalToSizedBufferVTStrict(dAtA[:size])
+}
+
+func (m *ChunkedSeries) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error) {
+	if m == nil {
+		return 0, nil
+	}
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.unknownFields != nil {
+		i -= len(m.unknownFields)
+		copy(dAtA[i:], m.unknownFields)
+	}
+	if len(m.Chunks) > 0 {
+		for iNdEx := len(m.Chunks) - 1; iNdEx >= 0; iNdEx-- {
+			size, err := m.Chunks[iNdEx].MarshalToSizedBufferVTStrict(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarint(dAtA, i, uint64(size))
+			i--
+			dAtA[i] = 0x12
+		}
+	}
+	if len(m.Labels) > 0 {
+		for iNdEx := len(m.Labels) - 1; iNdEx >= 0; iNdEx-- {
+			size, err := m.Labels[iNdEx].MarshalToSizedBufferVTStrict(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarint(dAtA, i, uint64(size))
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
 }
 
 var vtprotoPool_TimeSeries = sync.Pool{
@@ -1484,7 +2682,7 @@ func (m *TimeSeries) ResetVT() {
 	}
 	f0 := m.Labels[:0]
 	for _, mm := range m.Samples {
-		mm.ResetVT()
+		mm.Reset()
 	}
 	f1 := m.Samples[:0]
 	for _, mm := range m.Exemplars {
