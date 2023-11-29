@@ -27,39 +27,8 @@ message WriteRequest {
   repeated prometheus.MetricMetadata metadata = 3 [(gogoproto.nullable) = false];
 }
 
-message MinimizedWriteRequest {
-  repeated MinimizedTimeSeries timeseries = 1 [(gogoproto.nullable) = false];
-  // Cortex uses this field to determine the source of the write request.
-  // We reserve it to avoid any compatibility issues.
-  reserved  2;
-  // Metadata (3) has moved to be part of the TimeSeries type
-  reserved  3;
-  // The symbols table. All symbols are concatenated strings. To read the symbols table, it's required
-  // to know the offset:length range of the actual symbol to read from this string.
-  string symbols = 4;
-}
-
-message MinimizedWriteRequestLen {
-  repeated MinimizedTimeSeriesLen timeseries = 1 [(gogoproto.nullable) = false];
-  // Cortex uses this field to determine the source of the write request.
-  // We reserve it to avoid any compatibility issues.
-  reserved  2;
-  // Metadata (3) has moved to be part of the TimeSeries type
-  reserved  3;
-  // The symbols table. All symbols are concatenated strings prepended with a varint of their length.
-  // To read the symbols table, it's required to know the offset of the actual symbol to read from this string.
-  bytes symbols = 4;
-}
-
 message MinimizedWriteRequestStr {
   repeated MinimizedTimeSeriesStr timeseries = 1 [(gogoproto.nullable) = false];
-  reserved  2;
-  reserved  3;
-  repeated string symbols = 4;
-}
-
-message MinimizedWriteRequestStrFixed {
-  repeated MinimizedTimeSeriesStrFixed timeseries = 1 [(gogoproto.nullable) = false];
   reserved  2;
   reserved  3;
   repeated string symbols = 4;

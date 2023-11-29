@@ -85,7 +85,7 @@ func TestRemoteWriteHandler(t *testing.T) {
 }
 
 func TestRemoteWriteHandlerMinimizedFormat(t *testing.T) {
-	buf, _, err := buildMinimizedWriteRequest(writeRequestMinimizedFixture.Timeseries, writeRequestMinimizedFixture.Symbols, nil, nil)
+	buf, _, err := buildMinimizedWriteRequestStr(writeRequestMinimizedFixture.Timeseries, writeRequestMinimizedFixture.Symbols, nil, nil)
 	require.NoError(t, err)
 
 	req, err := http.NewRequest("", "", bytes.NewReader(buf))
@@ -94,7 +94,7 @@ func TestRemoteWriteHandlerMinimizedFormat(t *testing.T) {
 
 	appendable := &mockAppendable{}
 	// TODO: test with other proto format(s)
-	handler := NewWriteHandler(nil, nil, appendable, Min32Optimized)
+	handler := NewWriteHandler(nil, nil, appendable, MinStrings)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)

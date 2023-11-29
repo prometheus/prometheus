@@ -130,52 +130,11 @@ message TimeSeries {
   repeated Histogram histograms = 4 [(gogoproto.nullable) = false];
 }
 
-// based on an experiment by marco
-message MinimizedTimeSeries {
-  // Sorted list of label name-value pair references. This list's len is always multiple of 4,
-  // packing tuples of (label name offset, label name length, label value offset, label value length).
-  // Offsets point to the symbol table in the higher level MinimizedWriteRequestLen.
-  repeated uint32 label_symbols = 1 [(gogoproto.nullable) = false];
-
-  // Sorted by time, oldest sample first.
-  // TODO: support references for other types
-  repeated Sample samples = 2 [(gogoproto.nullable) = false];
-  repeated Exemplar exemplars = 3 [(gogoproto.nullable) = false];
-  repeated Histogram histograms = 4 [(gogoproto.nullable) = false];
-  // TODO: add metadata
-}
-
-message MinimizedTimeSeriesLen {
-  // Sorted list of label name-value pair references, encoded as 32bit uint. This
-  // list's real len is always multiple of 2, label name offset/label value offset.
-  // Offsets point to the symbol table in the higher level MinimizedWriteRequestLen.
-  repeated fixed32 label_symbols = 1;
-
-  // Sorted by time, oldest sample first.
-  // TODO: support references for other types
-  repeated Sample samples = 2 [(gogoproto.nullable) = false];
-  repeated Exemplar exemplars = 3 [(gogoproto.nullable) = false];
-  repeated Histogram histograms = 4 [(gogoproto.nullable) = false];
-  // TODO: add metadata
-}
 
 message MinimizedTimeSeriesStr {
   // Sorted list of label name-value pair references, encoded as indices to a strings array.
   // This list's len is always multiple of 2.
-  repeated uint32 label_symbols = 1;
-
-  // Sorted by time, oldest sample first.
-  repeated Sample samples = 2 [(gogoproto.nullable) = false];
-  repeated Exemplar exemplars = 3 [(gogoproto.nullable) = false];
-  repeated Histogram histograms = 4 [(gogoproto.nullable) = false];
-  // TODO: add metadata
-}
-
-
-message MinimizedTimeSeriesStrFixed {
-  // Sorted list of label name-value pair references, encoded as indices to a strings array.
-  // This list's len is always multiple of 2.
-  repeated fixed32 label_symbols = 1;
+  repeated uint32 label_symbols = 1 [(gogoproto.nullable) = false];
 
   // Sorted by time, oldest sample first.
   repeated Sample samples = 2 [(gogoproto.nullable) = false];

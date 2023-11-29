@@ -75,7 +75,7 @@ var writeRequestFixture = &prompb.WriteRequest{
 }
 
 // writeRequestMinimizedFixture represents the same request as writeRequestFixture, but using the minimized representation.
-var writeRequestMinimizedFixture = func() *prompb.MinimizedWriteRequest {
+var writeRequestMinimizedFixture = func() *prompb.MinimizedWriteRequestStr {
 	st := newRwSymbolTable()
 	var labels []uint32
 	for _, s := range []string{
@@ -85,11 +85,11 @@ var writeRequestMinimizedFixture = func() *prompb.MinimizedWriteRequest {
 		"d", "e",
 		"foo", "bar",
 	} {
-		off, length := st.Ref(s)
-		labels = append(labels, off, length)
+		ref := st.RefStr(s)
+		labels = append(labels, ref)
 	}
-	return &prompb.MinimizedWriteRequest{
-		Timeseries: []prompb.MinimizedTimeSeries{
+	return &prompb.MinimizedWriteRequestStr{
+		Timeseries: []prompb.MinimizedTimeSeriesStr{
 			{
 				LabelSymbols: labels,
 				Samples:      []prompb.Sample{{Value: 1, Timestamp: 0}},
@@ -103,7 +103,7 @@ var writeRequestMinimizedFixture = func() *prompb.MinimizedWriteRequest {
 				Histograms:   []prompb.Histogram{HistogramToHistogramProto(2, &testHistogram), FloatHistogramToHistogramProto(3, testHistogram.ToFloat())},
 			},
 		},
-		Symbols: st.LabelsString(),
+		Symbols: st.LabelsStrings(),
 	}
 }()
 
@@ -559,11 +559,11 @@ func TestDecodeWriteRequest(t *testing.T) {
 }
 
 func TestDecodeMinWriteRequest(t *testing.T) {
-	buf, _, err := buildMinimizedWriteRequest(writeRequestMinimizedFixture.Timeseries, writeRequestMinimizedFixture.Symbols, nil, nil)
+	buf, _, err := buildMinimizedWriteRequestStr(writeRequestMinimizedFixture.Timeseries, writeRequestMinimizedFixture.Symbols, nil, nil)
 
 	require.NoError(t, err)
 
-	actual, err := DecodeMinimizedWriteRequest(bytes.NewReader(buf))
+	actual, err := DecodeMinimizedWriteRequestStr(bytes.NewReader(buf))
 	require.NoError(t, err)
 	require.Equal(t, writeRequestMinimizedFixture, actual)
 }
@@ -887,10 +887,10 @@ func (c *mockChunkIterator) Err() error {
 	return nil
 }
 
-func TestLenFormat(t *testing.T) {
+func TestStrFormat(t *testing.T) {
 	r := newRwSymbolTable()
 	ls := labels.FromStrings("asdf", "qwer", "zxcv", "1234")
-	encoded := labelsToUint32SliceLen(ls, &r, nil)
-	decoded := Uint32LenRefToLabels(r.LabelsData(), encoded)
+	encoded := labelsToUint32SliceStr(ls, &r, nil)
+	decoded := Uint32StrRefToLabels(r.LabelsStrings(), encoded)
 	require.Equal(t, ls, decoded)
 }

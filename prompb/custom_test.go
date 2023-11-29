@@ -23,49 +23,58 @@ func TestOptimizedMarshal(t *testing.T) {
 
 	tests := []struct {
 		name string
-		m    *MinimizedWriteRequest
+		m    *MinimizedWriteRequestStr
 	}{
 		// {
 		// 	name: "empty",
-		// 	m:    &MinimizedWriteRequest{},
+		// 	m:    &MinimizedWriteRequestStr{},
 		// },
 		{
 			name: "simple",
-			m: &MinimizedWriteRequest{
-				Timeseries: []MinimizedTimeSeries{
+			m: &MinimizedWriteRequestStr{
+				Timeseries: []MinimizedTimeSeriesStr{
 					{
 						LabelSymbols: []uint32{
-							0, 10,
-							10, 3,
-							13, 3,
-							16, 6,
-							22, 3,
-							25, 5,
-							30, 3,
-							33, 7,
+							0, 1,
+							2, 3,
+							4, 5,
+							6, 7,
+							8, 9,
+							10, 11,
+							12, 13,
+							14, 15,
 						},
+
 						Samples:    []Sample{{Value: 1, Timestamp: 0}},
 						Exemplars:  []Exemplar{{Labels: []Label{{Name: "f", Value: "g"}}, Value: 1, Timestamp: 0}},
 						Histograms: nil,
 					},
 					{
 						LabelSymbols: []uint32{
-							0, 10,
-							10, 3,
-							13, 3,
-							16, 6,
-							22, 3,
-							25, 5,
-							30, 3,
-							33, 7,
+							0, 1,
+							2, 3,
+							4, 5,
+							6, 7,
+							8, 9,
+							10, 11,
+							12, 13,
+							14, 15,
 						},
 						Samples:    []Sample{{Value: 2, Timestamp: 1}},
 						Exemplars:  []Exemplar{{Labels: []Label{{Name: "h", Value: "i"}}, Value: 2, Timestamp: 1}},
 						Histograms: nil,
 					},
 				},
-				// 40 chars
-				Symbols: "abcdefghijabcdefghijabcdefghijabcdefghij",
+				Symbols: []string{
+					"a", "b",
+					"c", "d",
+					"e", "f",
+					"g", "h",
+					"i", "j",
+					"k", "l",
+					"m", "n",
+					"o", "p",
+				},
 			},
 		},
 	}
@@ -81,7 +90,7 @@ func TestOptimizedMarshal(t *testing.T) {
 			require.Equal(t, expected, got)
 
 			// round trip
-			m := &MinimizedWriteRequest{}
+			m := &MinimizedWriteRequestStr{}
 			require.NoError(t, m.Unmarshal(got))
 			require.Equal(t, tt.m, m)
 		})

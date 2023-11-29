@@ -75,11 +75,11 @@ func TestSampleDelivery(t *testing.T) {
 		{samples: false, exemplars: false, histograms: true, floatHistograms: false, name: "histograms only"},
 		{samples: false, exemplars: false, histograms: false, floatHistograms: true, name: "float histograms only"},
 
-		{rwFormat: Min32Optimized, samples: true, exemplars: false, histograms: false, name: "interned samples only"},
-		{rwFormat: Min32Optimized, samples: true, exemplars: true, histograms: true, floatHistograms: true, name: "interned samples, exemplars, and histograms"},
-		{rwFormat: Min32Optimized, samples: false, exemplars: true, histograms: false, name: "interned exemplars only"},
-		{rwFormat: Min32Optimized, samples: false, exemplars: false, histograms: true, name: "interned histograms only"},
-		{rwFormat: Min32Optimized, samples: false, exemplars: false, histograms: false, floatHistograms: true, name: "interned float histograms only"},
+		{rwFormat: MinStrings, samples: true, exemplars: false, histograms: false, name: "interned samples only"},
+		{rwFormat: MinStrings, samples: true, exemplars: true, histograms: true, floatHistograms: true, name: "interned samples, exemplars, and histograms"},
+		{rwFormat: MinStrings, samples: false, exemplars: true, histograms: false, name: "interned exemplars only"},
+		{rwFormat: MinStrings, samples: false, exemplars: false, histograms: true, name: "interned histograms only"},
+		{rwFormat: MinStrings, samples: false, exemplars: false, histograms: false, floatHistograms: true, name: "interned float histograms only"},
 	}
 
 	// Let's create an even number of send batches so we don't run into the
@@ -204,7 +204,7 @@ func TestMetadataDelivery(t *testing.T) {
 }
 
 func TestSampleDeliveryTimeout(t *testing.T) {
-	for _, rwFormat := range []RemoteWriteFormat{Base1, Min32Optimized} {
+	for _, rwFormat := range []RemoteWriteFormat{Base1, MinStrings} {
 		t.Run(fmt.Sprint(rwFormat), func(t *testing.T) {
 			// Let's send one less sample than batch size, and wait the timeout duration
 			n := 9
@@ -237,7 +237,7 @@ func TestSampleDeliveryTimeout(t *testing.T) {
 }
 
 func TestSampleDeliveryOrder(t *testing.T) {
-	for _, rwFormat := range []RemoteWriteFormat{Base1, Min32Optimized} {
+	for _, rwFormat := range []RemoteWriteFormat{Base1, MinStrings} {
 		t.Run(fmt.Sprint(rwFormat), func(t *testing.T) {
 			ts := 10
 			n := config.DefaultQueueConfig.MaxSamplesPerSend * ts
@@ -339,7 +339,7 @@ func TestSeriesReset(t *testing.T) {
 }
 
 func TestReshard(t *testing.T) {
-	for _, rwFormat := range []RemoteWriteFormat{Base1, Min32Optimized} {
+	for _, rwFormat := range []RemoteWriteFormat{Base1, MinStrings} {
 		t.Run(fmt.Sprint(rwFormat), func(t *testing.T) {
 			size := 10 // Make bigger to find more races.
 			nSeries := 6
@@ -382,7 +382,7 @@ func TestReshard(t *testing.T) {
 }
 
 func TestReshardRaceWithStop(t *testing.T) {
-	for _, rwFormat := range []RemoteWriteFormat{Base1, Min32Optimized} {
+	for _, rwFormat := range []RemoteWriteFormat{Base1, MinStrings} {
 		t.Run(fmt.Sprint(rwFormat), func(t *testing.T) {
 			c := NewTestWriteClient(rwFormat)
 			var m *QueueManager
@@ -421,7 +421,7 @@ func TestReshardRaceWithStop(t *testing.T) {
 }
 
 func TestReshardPartialBatch(t *testing.T) {
-	for _, rwFormat := range []RemoteWriteFormat{Base1, Min32Optimized} {
+	for _, rwFormat := range []RemoteWriteFormat{Base1, MinStrings} {
 		t.Run(fmt.Sprint(rwFormat), func(t *testing.T) {
 			samples, series := createTimeseries(1, 10)
 
@@ -467,7 +467,7 @@ func TestReshardPartialBatch(t *testing.T) {
 // where a large scrape (> capacity + max samples per send) is appended at the
 // same time as a batch times out according to the batch send deadline.
 func TestQueueFilledDeadlock(t *testing.T) {
-	for _, rwFormat := range []RemoteWriteFormat{Base1, Min32Optimized} {
+	for _, rwFormat := range []RemoteWriteFormat{Base1, MinStrings} {
 		t.Run(fmt.Sprint(rwFormat), func(t *testing.T) {
 			samples, series := createTimeseries(50, 1)
 
@@ -509,7 +509,7 @@ func TestQueueFilledDeadlock(t *testing.T) {
 }
 
 func TestReleaseNoninternedString(t *testing.T) {
-	for _, rwFormat := range []RemoteWriteFormat{Base1, Min32Optimized} {
+	for _, rwFormat := range []RemoteWriteFormat{Base1, MinStrings} {
 		t.Run(fmt.Sprint(rwFormat), func(t *testing.T) {
 			cfg := config.DefaultQueueConfig
 			mcfg := config.DefaultMetadataConfig
@@ -830,8 +830,8 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte, _ int) error {
 	case Base1:
 		reqProto = &prompb.WriteRequest{}
 		err = proto.Unmarshal(reqBuf, reqProto)
-	case Min32Optimized:
-		var reqMin prompb.MinimizedWriteRequest
+	case MinStrings:
+		var reqMin prompb.MinimizedWriteRequestStr
 		err = proto.Unmarshal(reqBuf, &reqMin)
 		if err == nil {
 			reqProto, err = MinimizedWriteRequestToWriteRequest(&reqMin)
@@ -1503,7 +1503,7 @@ func BenchmarkBuildMinimizedWriteRequest(b *testing.B) {
 	for _, tc := range testCases {
 		symbolTable := newRwSymbolTable()
 		buff := make([]byte, 0)
-		seriesBuff := make([]prompb.MinimizedTimeSeries, len(tc.batch))
+		seriesBuff := make([]prompb.MinimizedTimeSeriesStr, len(tc.batch))
 		for i := range seriesBuff {
 			seriesBuff[i].Samples = []prompb.Sample{{}}
 			seriesBuff[i].Exemplars = []prompb.Exemplar{{}}
@@ -1512,16 +1512,16 @@ func BenchmarkBuildMinimizedWriteRequest(b *testing.B) {
 
 		// Warmup buffers
 		for i := 0; i < 10; i++ {
-			populateMinimizedTimeSeries(&symbolTable, tc.batch, seriesBuff, true, true)
-			buildMinimizedWriteRequest(seriesBuff, symbolTable.LabelsString(), &pBuf, &buff)
+			populateMinimizedTimeSeriesStr(&symbolTable, tc.batch, seriesBuff, true, true)
+			buildMinimizedWriteRequestStr(seriesBuff, symbolTable.LabelsStrings(), &pBuf, &buff)
 		}
 
 		b.Run(fmt.Sprintf("%d-instances", len(tc.batch)), func(b *testing.B) {
 			totalSize := 0
 			for j := 0; j < b.N; j++ {
-				populateMinimizedTimeSeries(&symbolTable, tc.batch, seriesBuff, true, true)
+				populateMinimizedTimeSeriesStr(&symbolTable, tc.batch, seriesBuff, true, true)
 				b.ResetTimer()
-				req, _, err := buildMinimizedWriteRequest(seriesBuff, symbolTable.LabelsString(), &pBuf, &buff)
+				req, _, err := buildMinimizedWriteRequestStr(seriesBuff, symbolTable.LabelsStrings(), &pBuf, &buff)
 				if err != nil {
 					b.Fatal(err)
 				}
