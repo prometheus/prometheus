@@ -245,7 +245,7 @@ func (d *Discovery) refreshOne(ctx context.Context, name string, ch chan<- *targ
 			dnsSrvRecordTargetLabel: dnsSrvRecordTarget,
 			dnsSrvRecordPortLabel:   dnsSrvRecordPort,
 			dnsMxRecordTargetLabel:  dnsMxRecordTarget,
-			dnsNsRecordTargetLabel:  dnsNsRecordTarget,	
+			dnsNsRecordTargetLabel:  dnsNsRecordTarget,
 		})
 	}
 
