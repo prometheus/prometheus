@@ -513,7 +513,7 @@ func TestScrapePoolAppender(t *testing.T) {
 	appl, ok := loop.(*scrapeLoop)
 	require.True(t, ok, "Expected scrapeLoop but got %T", loop)
 
-	wrapped := appender(appl.appender(context.Background()), 0, 0)
+	wrapped := appender(appl.appender(context.Background()), 0, 0, nativeHistogramMaxSchema)
 
 	tl, ok := wrapped.(*timeLimitAppender)
 	require.True(t, ok, "Expected timeLimitAppender but got %T", wrapped)
@@ -529,7 +529,7 @@ func TestScrapePoolAppender(t *testing.T) {
 	appl, ok = loop.(*scrapeLoop)
 	require.True(t, ok, "Expected scrapeLoop but got %T", loop)
 
-	wrapped = appender(appl.appender(context.Background()), sampleLimit, 0)
+	wrapped = appender(appl.appender(context.Background()), sampleLimit, 0, nativeHistogramMaxSchema)
 
 	sl, ok := wrapped.(*limitAppender)
 	require.True(t, ok, "Expected limitAppender but got %T", wrapped)
@@ -540,9 +540,26 @@ func TestScrapePoolAppender(t *testing.T) {
 	_, ok = tl.Appender.(nopAppender)
 	require.True(t, ok, "Expected base appender but got %T", tl.Appender)
 
-	wrapped = appender(appl.appender(context.Background()), sampleLimit, 100)
+	wrapped = appender(appl.appender(context.Background()), sampleLimit, 100, nativeHistogramMaxSchema)
 
 	bl, ok := wrapped.(*bucketLimitAppender)
+	require.True(t, ok, "Expected bucketLimitAppender but got %T", wrapped)
+
+	sl, ok = bl.Appender.(*limitAppender)
+	require.True(t, ok, "Expected limitAppender but got %T", bl)
+
+	tl, ok = sl.Appender.(*timeLimitAppender)
+	require.True(t, ok, "Expected timeLimitAppender but got %T", sl.Appender)
+
+	_, ok = tl.Appender.(nopAppender)
+	require.True(t, ok, "Expected base appender but got %T", tl.Appender)
+
+	wrapped = appender(appl.appender(context.Background()), sampleLimit, 100, 0)
+
+	ml, ok := wrapped.(*maxSchemaAppender)
+	require.True(t, ok, "Expected maxSchemaAppender but got %T", wrapped)
+
+	bl, ok = ml.Appender.(*bucketLimitAppender)
 	require.True(t, ok, "Expected bucketLimitAppender but got %T", wrapped)
 
 	sl, ok = bl.Appender.(*limitAppender)
@@ -653,7 +670,7 @@ func newBasicScrapeLoop(t testing.TB, ctx context.Context, scraper scraper, app 
 		true,
 		false,
 		true,
-		0, 0,
+		0, 0, nativeHistogramMaxSchema,
 		nil,
 		interval,
 		time.Hour,
@@ -796,7 +813,7 @@ func TestScrapeLoopRun(t *testing.T) {
 		true,
 		false,
 		true,
-		0, 0,
+		0, 0, nativeHistogramMaxSchema,
 		nil,
 		time.Second,
 		time.Hour,
@@ -942,7 +959,7 @@ func TestScrapeLoopMetadata(t *testing.T) {
 		true,
 		false,
 		true,
-		0, 0,
+		0, 0, nativeHistogramMaxSchema,
 		nil,
 		0,
 		0,
