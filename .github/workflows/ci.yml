@@ -157,6 +157,15 @@ jobs:
     if: github.event_name == 'pull_request'
   codeql:
     uses: ./.github/workflows/codeql-analysis.yml
+  vulncheck:
+    name: Scan for vulnerabilities in Go code
+    runs-on: ubuntu-latest
+    steps:
+      - name: govulncheck
+        uses: golang/govulncheck-action@7da72f730e37eeaad891fcff0a532d27ed737cd4
+        with:
+          go-version-input: 1.21.x
+          go-package: ./...
 
   publish_main:
     name: Publish main branch artifacts
