@@ -15,6 +15,7 @@ package promql
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"testing"
 	"time"
@@ -85,4 +86,53 @@ func TestKahanSum(t *testing.T) {
 	vals := []float64{1.0, math.Pow(10, 100), 1.0, -1 * math.Pow(10, 100)}
 	expected := 2.0
 	require.Equal(t, expected, kahanSum(vals))
+}
+
+func TestMadOverTime(t *testing.T) {
+	cases := []struct {
+		series      []int
+		expectedRes float64
+	}{
+		{
+			series:      []int{4, 6, 2, 1, 999, 1, 2},
+			expectedRes: 1,
+		},
+	}
+
+	for i, c := range cases {
+		t.Run(fmt.Sprintf("case %d", i), func(t *testing.T) {
+			engine := newTestEngine()
+			storage := teststorage.New(t)
+			t.Cleanup(func() { storage.Close() })
+
+			seriesName := "float_series"
+
+			ts := int64(0)
+			app := storage.Appender(context.Background())
+			lbls := labels.FromStrings("__name__", seriesName)
+			var err error
+			for _, num := range c.series {
+				_, err = app.Append(0, lbls, ts, float64(num))
+				require.NoError(t, err)
+				ts += int64(1 * time.Minute / time.Millisecond)
+			}
+			require.NoError(t, app.Commit())
+
+			queryAndCheck := func(queryString string, exp Vector) {
+				qry, err := engine.NewInstantQuery(context.Background(), storage, nil, queryString, timestamp.Time(ts))
+				require.NoError(t, err)
+
+				res := qry.Exec(context.Background())
+				require.NoError(t, res.Err)
+
+				vector, err := res.Vector()
+				require.NoError(t, err)
+
+				require.Equal(t, exp, vector)
+			}
+
+			queryString := fmt.Sprintf(`mad_over_time(%s[%dm])`, seriesName, len(c.series))
+			queryAndCheck(queryString, []Sample{{T: ts, F: c.expectedRes, Metric: labels.EmptyLabels()}})
+		})
+	}
 }
