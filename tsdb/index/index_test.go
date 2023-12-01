@@ -141,7 +141,7 @@ func TestIndexRW_Create_Open(t *testing.T) {
 	fn := filepath.Join(dir, indexFilename)
 
 	// An empty index must still result in a readable file.
-	iw, err := NewWriter(context.Background(), fn)
+	iw, err := NewWriter(context.Background(), fn, nil)
 	require.NoError(t, err)
 	require.NoError(t, iw.Close())
 
@@ -166,7 +166,7 @@ func TestIndexRW_Postings(t *testing.T) {
 
 	fn := filepath.Join(dir, indexFilename)
 
-	iw, err := NewWriter(context.Background(), fn)
+	iw, err := NewWriter(context.Background(), fn, nil)
 	require.NoError(t, err)
 
 	series := []labels.Labels{
@@ -250,7 +250,7 @@ func TestPostingsMany(t *testing.T) {
 
 	fn := filepath.Join(dir, indexFilename)
 
-	iw, err := NewWriter(context.Background(), fn)
+	iw, err := NewWriter(context.Background(), fn, nil)
 	require.NoError(t, err)
 
 	// Create a label in the index which has 999 values.
@@ -373,7 +373,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 		})
 	}
 
-	iw, err := NewWriter(context.Background(), filepath.Join(dir, indexFilename))
+	iw, err := NewWriter(context.Background(), filepath.Join(dir, indexFilename), nil)
 	require.NoError(t, err)
 
 	syms := []string{}
@@ -475,7 +475,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 }
 
 func TestWriter_ShouldReturnErrorOnSeriesWithDuplicatedLabelNames(t *testing.T) {
-	w, err := NewWriter(context.Background(), filepath.Join(t.TempDir(), "index"))
+	w, err := NewWriter(context.Background(), filepath.Join(t.TempDir(), "index"), nil)
 	require.NoError(t, err)
 
 	require.NoError(t, w.AddSymbol("__name__"))
