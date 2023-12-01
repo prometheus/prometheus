@@ -1469,15 +1469,30 @@ func (r *Reader) LabelValues(ctx context.Context, name string, matchers ...*labe
 	if len(matchers) > 0 {
 		return nil, fmt.Errorf("matchers parameter is not implemented: %+v", matchers)
 	}
+	return r.LabelValuesFiltered(ctx, name, nil)
+}
 
+// LabelValues returns label values for which the filter function returns true.
+// Accepts filter==nil meaning all values, to avoid repeating all the code for LabelValues()
+func (r *Reader) LabelValuesFiltered(ctx context.Context, name string, filter func(string) bool) ([]string, error) {
+	var values []string
 	if r.version == FormatV1 {
 		e, ok := r.postingsV1[name]
 		if !ok {
 			return nil, nil
 		}
-		values := make([]string, 0, len(e))
-		for k := range e {
-			values = append(values, k)
+		if filter == nil {
+			values = make([]string, 0, len(e))
+			for k := range e {
+				values = append(values, k)
+			}
+		} else {
+			// values not preallocated because we don't know what proportion of values will match.
+			for k := range e {
+				if filter(k) {
+					values = append(values, k)
+				}
+			}
 		}
 		return values, nil
 
@@ -1489,7 +1504,9 @@ func (r *Reader) LabelValues(ctx context.Context, name string, matchers ...*labe
 	if len(e) == 0 {
 		return nil, nil
 	}
-	values := make([]string, 0, len(e)*symbolFactor)
+	if filter == nil {
+		values = make([]string, 0, len(e)*symbolFactor)
+	}
 
 	d := encoding.NewDecbufAt(r.b, int(r.toc.PostingsTable), nil)
 	d.Skip(e[0].off)
@@ -1508,7 +1525,9 @@ func (r *Reader) LabelValues(ctx context.Context, name string, matchers ...*labe
 			d.Skip(skip)
 		}
 		s := yoloString(d.UvarintBytes()) // Label value.
-		values = append(values, s)
+		if filter == nil || filter(s) {
+			values = append(values, s)
+		}
 		if s == lastVal {
 			break
 		}
