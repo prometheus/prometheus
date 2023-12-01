@@ -2,6 +2,7 @@
 
 ## unreleased
 
+* [ENHANCEMENT] TSDB: Make the wlog watcher read segments synchronously when not tailing. #13224
 * [BUGFIX] Agent: Participate in notify calls. #13223
 
 ## 2.48.0 / 2023-11-16
