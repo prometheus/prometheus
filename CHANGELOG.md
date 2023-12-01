@@ -1,5 +1,9 @@
 # Changelog
 
+## unreleased
+
+* [BUGFIX] Agent: Participate in notify calls. #13223
+
 ## 2.48.0 / 2023-11-16
 
 * [CHANGE] Remote-write: respect Retry-After header on 5xx errors. #12677

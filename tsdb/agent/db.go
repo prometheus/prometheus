@@ -241,6 +241,8 @@ type DB struct {
 	donec chan struct{}
 	stopc chan struct{}
 
+	writeNotified wlog.WriteNotified
+
 	metrics *dbMetrics
 }
 
@@ -309,6 +311,12 @@ func Open(l log.Logger, reg prometheus.Registerer, rs *remote.Storage, dir strin
 
 	go db.run()
 	return db, nil
+}
+
+// SetWriteNotified allows to set an instance to notify when a write happens.
+// It must be used during initialization. It is not safe to use it during execution.
+func (db *DB) SetWriteNotified(wn wlog.WriteNotified) {
+	db.writeNotified = wn
 }
 
 func validateOptions(opts *Options) *Options {
@@ -962,6 +970,10 @@ func (a *appender) Commit() error {
 
 	a.clearData()
 	a.appenderPool.Put(a)
+
+	if a.writeNotified != nil {
+		a.writeNotified.Notify()
+	}
 	return nil
 }
 
