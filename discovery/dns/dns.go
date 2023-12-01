@@ -42,6 +42,8 @@ const (
 	dnsSrvRecordPortLabel   = dnsSrvRecordPrefix + "port"
 	dnsMxRecordPrefix       = model.MetaLabelPrefix + "dns_mx_record_"
 	dnsMxRecordTargetLabel  = dnsMxRecordPrefix + "target"
+	dnsNsRecordPrefix       = model.MetaLabelPrefix + "dns_ns_record_"
+	dnsNsRecordTargetLabel  = dnsNsRecordPrefix + "target"
 
 	// Constants for instrumentation.
 	namespace = "prometheus"
@@ -102,7 +104,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 	switch strings.ToUpper(c.Type) {
 	case "SRV":
-	case "A", "AAAA", "MX":
+	case "A", "AAAA", "MX", "NS":
 		if c.Port == 0 {
 			return errors.New("a port is required in DNS-SD configs for all record types except SRV")
 		}
@@ -140,6 +142,8 @@ func NewDiscovery(conf SDConfig, logger log.Logger) *Discovery {
 		qtype = dns.TypeSRV
 	case "MX":
 		qtype = dns.TypeMX
+	case "NS":
+		qtype = dns.TypeNS
 	}
 	d := &Discovery{
 		names:    conf.Names,
@@ -199,7 +203,7 @@ func (d *Discovery) refreshOne(ctx context.Context, name string, ch chan<- *targ
 	}
 
 	for _, record := range response.Answer {
-		var target, dnsSrvRecordTarget, dnsSrvRecordPort, dnsMxRecordTarget model.LabelValue
+		var target, dnsSrvRecordTarget, dnsSrvRecordPort, dnsMxRecordTarget, dnsNsRecordTarget model.LabelValue
 
 		switch addr := record.(type) {
 		case *dns.SRV:
@@ -217,6 +221,13 @@ func (d *Discovery) refreshOne(ctx context.Context, name string, ch chan<- *targ
 			addr.Mx = strings.TrimRight(addr.Mx, ".")
 
 			target = hostPort(addr.Mx, d.port)
+		case *dns.NS:
+			dnsNsRecordTarget = model.LabelValue(addr.Ns)
+
+			// Remove the final dot from rooted DNS names to make them look more usual.
+			addr.Ns = strings.TrimRight(addr.Ns, ".")
+
+			target = hostPort(addr.Ns, d.port)
 		case *dns.A:
 			target = hostPort(addr.A.String(), d.port)
 		case *dns.AAAA:
@@ -234,6 +245,7 @@ func (d *Discovery) refreshOne(ctx context.Context, name string, ch chan<- *targ
 			dnsSrvRecordTargetLabel: dnsSrvRecordTarget,
 			dnsSrvRecordPortLabel:   dnsSrvRecordPort,
 			dnsMxRecordTargetLabel:  dnsMxRecordTarget,
+			dnsNsRecordTargetLabel:  dnsNsRecordTarget,
 		})
 	}
 
