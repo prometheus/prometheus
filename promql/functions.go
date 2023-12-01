@@ -1176,7 +1176,7 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 	var histogramSamples []Sample
 
 	for _, sample := range inVec {
-		// We are only looking for conventional buckets here. Remember
+		// We are only looking for classic buckets here. Remember
 		// the histograms for later treatment.
 		if sample.H != nil {
 			histogramSamples = append(histogramSamples, sample)
@@ -1207,10 +1207,10 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 	// Now deal with the histograms.
 	for _, sample := range histogramSamples {
 		// We have to reconstruct the exact same signature as above for
-		// a conventional histogram, just ignoring any le label.
+		// a classic histogram, just ignoring any le label.
 		enh.lblBuf = sample.Metric.Bytes(enh.lblBuf)
 		if mb, ok := enh.signatureToMetricWithBuckets[string(enh.lblBuf)]; ok && len(mb.buckets) > 0 {
-			// At this data point, we have conventional histogram
+			// At this data point, we have classic histogram
 			// buckets and a native histogram with the same name and
 			// labels. Do not evaluate anything.
 			annos.Add(annotations.NewMixedClassicNativeHistogramsWarning(sample.Metric.Get(labels.MetricName), args[1].PositionRange()))

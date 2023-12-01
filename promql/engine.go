@@ -1074,7 +1074,7 @@ type EvalNodeHelper struct {
 	// Caches.
 	// DropMetricName and label_*.
 	Dmn map[uint64]labels.Labels
-	// funcHistogramQuantile for conventional histograms.
+	// funcHistogramQuantile for classic histograms.
 	signatureToMetricWithBuckets map[string]*metricWithBuckets
 	// label_replace.
 	regex *regexp.Regexp

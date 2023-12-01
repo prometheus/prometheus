@@ -411,7 +411,7 @@ type Histogram struct {
 	SampleCount      uint64  `protobuf:"varint,1,opt,name=sample_count,json=sampleCount,proto3" json:"sample_count,omitempty"`
 	SampleCountFloat float64 `protobuf:"fixed64,4,opt,name=sample_count_float,json=sampleCountFloat,proto3" json:"sample_count_float,omitempty"`
 	SampleSum        float64 `protobuf:"fixed64,2,opt,name=sample_sum,json=sampleSum,proto3" json:"sample_sum,omitempty"`
-	// Buckets for the conventional histogram.
+	// Buckets for the classic histogram.
 	Bucket           []Bucket         `protobuf:"bytes,3,rep,name=bucket,proto3" json:"bucket"`
 	CreatedTimestamp *types.Timestamp `protobuf:"bytes,15,opt,name=created_timestamp,json=createdTimestamp,proto3" json:"created_timestamp,omitempty"`
 	// schema defines the bucket schema. Currently, valid numbers are -4 <= n <= 8.
