@@ -398,6 +398,12 @@ scrape_configs:
         access_key: SCWXXXXXXXXXXXXXXXXX
         secret_key: 11111111-1111-1111-1111-111111111111
 
+  - job_name: tailscale
+    tailscale_sd_configs:
+      - tailnet: "foo@bar.test"
+        api_url: "https://api.tailscale.com"
+        api_token: abcdef
+
   - job_name: linode-instances
     linode_sd_configs:
       - authorization:

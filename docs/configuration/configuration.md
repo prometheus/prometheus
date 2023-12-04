@@ -392,6 +392,10 @@ ovhcloud_sd_configs:
 puppetdb_sd_configs:
   [ - <puppetdb_sd_config> ... ]
 
+# List of Tailscale service discovery configurations.
+tailscale_sd_configs:
+  [ - <tailscale_sd_config> ... ]
+
 # List of Scaleway service discovery configurations.
 scaleway_sd_configs:
   [ - <scaleway_sd_config> ... ]
@@ -3528,6 +3532,10 @@ ovhcloud_sd_configs:
 # List of PuppetDB service discovery configurations.
 puppetdb_sd_configs:
   [ - <puppetdb_sd_config> ... ]
+
+# List of Tailscale service discovery configurations.
+tailscale_sd_configs:
+  [ - <tailscale_sd_config> ... ]
 
 # List of Scaleway service discovery configurations.
 scaleway_sd_configs:

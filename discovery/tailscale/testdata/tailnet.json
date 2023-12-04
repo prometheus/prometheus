@@ -1,0 +1,105 @@
+{
+  "devices": [
+    {
+      "addresses": [
+        "100.101.101.102",
+        "1234:5678:90ab:cdef:1234:5678:90ab:cdef"
+      ],
+      "authorized": true,
+      "blocksIncomingConnections": false,
+      "clientVersion": "1.56.1",
+      "created": "2023-08-23T11:53:28Z",
+      "expires": "2024-02-19T11:53:28Z",
+      "hostname": "test",
+      "id": "0000000000000002",
+      "isExternal": false,
+      "keyExpiryDisabled": false,
+      "lastSeen": "2024-01-19T21:21:06Z",
+      "machineKey": "mkey:foobar",
+      "name": "test.foo.bar",
+      "nodeId": "foobar",
+      "nodeKey": "nodekey:foobar",
+      "os": "linux",
+      "tags": [
+        "tag:exit",
+        "tag:hass",
+        "tag:node",
+        "tag:prod"
+      ],
+      "tailnetLockError": "",
+      "tailnetLockKey": "nlpub:foobar",
+      "updateAvailable": true,
+      "user": "foo.bar@prometheus.io"
+    },
+    {
+      "addresses": [
+        "100.101.101.103",
+        "1234:5678:90ab:c3ef:1234:5678:90ab:cdef"
+      ],
+      "authorized": true,
+      "blocksIncomingConnections": false,
+      "clientVersion": "1.56.1",
+      "created": "2023-08-23T11:53:28Z",
+      "expires": "2024-02-19T11:53:28Z",
+      "hostname": "test",
+      "id": "0000000000000003",
+      "isExternal": false,
+      "keyExpiryDisabled": false,
+      "lastSeen": "2024-01-19T21:21:06Z",
+      "machineKey": "mkey:foobar",
+      "name": "test.foo.bar",
+      "nodeId": "foobar",
+      "nodeKey": "nodekey:foobar",
+      "os": "macos",
+      "tags": [
+        "tag:hello",
+        "tag:world",
+        "tag:bar"
+      ],
+      "tailnetLockError": "",
+      "tailnetLockKey": "nlpub:foobar",
+      "updateAvailable": true,
+      "user": "foo.bar@prometheus.io"
+    },
+    {
+      "addresses": [
+        "100.101.101.104",
+        "1234:5678:90ab:c4ef:1234:5678:90ab:cdef"
+      ],
+      "authorized": true,
+      "blocksIncomingConnections": true,
+      "clientVersion": "1.56.1",
+      "created": "2023-08-23T11:53:28Z",
+      "expires": "2024-02-19T11:53:28Z",
+      "hostname": "prometheus",
+      "id": "0000000000000004",
+      "isExternal": false,
+      "keyExpiryDisabled": true,
+      "lastSeen": "2024-01-19T21:21:06Z",
+      "machineKey": "mkey:helloworld",
+      "name": "prometheus.foo.bar",
+      "nodeId": "helloworld",
+      "nodeKey": "nodekey:helloworld",
+      "os": "android",
+      "enabledRoutes": [
+        "10.0.0.0/8"
+      ],
+      "advertisedRoutes": [
+        "192.168.0.0/14",
+        "10.0.0.0/8",
+        "172.12.0.0/12"
+      ],
+      "tags": [
+        "tag:hello",
+        "tag:world",
+        "tag:bar",
+        "tag:foo",
+        "tag:test"
+      ],
+      "tailnetLockError": "",
+      "tailnetLockKey": "nlpub:helloworld",
+      "updateAvailable": false,
+      "user": "foo.bar@prometheus.io"
+    }
+  ]
+}
