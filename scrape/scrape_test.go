@@ -3629,6 +3629,131 @@ func TestTargetScrapeIntervalAndTimeoutRelabel(t *testing.T) {
 	require.Equal(t, "750ms", sp.ActiveTargets()[0].labels.Get(model.ScrapeTimeoutLabel))
 }
 
+// Testing whether we can remove trailing .0 from histogram 'le' and summary 'quantile' labels.
+func TestLeQuantileReLabel(t *testing.T) {
+	simpleStorage := teststorage.New(t)
+	defer simpleStorage.Close()
+
+	config := &config.ScrapeConfig{
+		JobName: "test",
+		MetricRelabelConfigs: []*relabel.Config{
+			{
+				SourceLabels: model.LabelNames{"le", "__name__"},
+				Regex:        relabel.MustNewRegexp("(\\d+)\\.0+;.*_bucket"),
+				Replacement:  relabel.DefaultRelabelConfig.Replacement,
+				Separator:    relabel.DefaultRelabelConfig.Separator,
+				TargetLabel:  "le",
+				Action:       relabel.Replace,
+			},
+			{
+				SourceLabels: model.LabelNames{"quantile"},
+				Regex:        relabel.MustNewRegexp("(\\d+)\\.0+"),
+				Replacement:  relabel.DefaultRelabelConfig.Replacement,
+				Separator:    relabel.DefaultRelabelConfig.Separator,
+				TargetLabel:  "quantile",
+				Action:       relabel.Replace,
+			},
+		},
+		SampleLimit:    100,
+		Scheme:         "http",
+		ScrapeInterval: model.Duration(100 * time.Millisecond),
+		ScrapeTimeout:  model.Duration(100 * time.Millisecond),
+	}
+
+	metricsText := `
+# HELP test_histogram This is a histogram with default buckets
+# TYPE test_histogram histogram
+test_histogram_bucket{address="0.0.0.0",port="5001",le="0.005"} 0
+test_histogram_bucket{address="0.0.0.0",port="5001",le="0.01"} 0
+test_histogram_bucket{address="0.0.0.0",port="5001",le="0.025"} 0
+test_histogram_bucket{address="0.0.0.0",port="5001",le="0.05"} 0
+test_histogram_bucket{address="0.0.0.0",port="5001",le="0.1"} 0
+test_histogram_bucket{address="0.0.0.0",port="5001",le="0.25"} 0
+test_histogram_bucket{address="0.0.0.0",port="5001",le="0.5"} 0
+test_histogram_bucket{address="0.0.0.0",port="5001",le="1.0"} 0
+test_histogram_bucket{address="0.0.0.0",port="5001",le="2.5"} 0
+test_histogram_bucket{address="0.0.0.0",port="5001",le="5.0"} 0
+test_histogram_bucket{address="0.0.0.0",port="5001",le="10.0"} 0
+test_histogram_bucket{address="0.0.0.0",port="5001",le="+Inf"} 0
+test_histogram_sum{address="0.0.0.0",port="5001"} 0
+test_histogram_count{address="0.0.0.0",port="5001"} 0
+# HELP test_summary Number of inflight requests sampled at a regular interval. Quantile buckets keep track of inflight requests over the last 60s.
+# TYPE test_summary summary
+test_summary{quantile="0.5"} 0
+test_summary{quantile="0.9"} 0
+test_summary{quantile="0.95"} 0
+test_summary{quantile="0.99"} 0
+test_summary{quantile="1.0"} 1
+test_summary_sum 1
+test_summary_count 199
+`
+
+	// The expected "le" values do not have the trailing ".0".
+	expectedLeValues := []string{"0.005", "0.01", "0.025", "0.05", "0.1", "0.25", "0.5", "1", "2.5", "5", "10", "+Inf"}
+
+	// The expected "quantile" values do not have the trailing ".0".
+	expectedQuantileValues := []string{"0.5", "0.9", "0.95", "0.99", "1"}
+
+	scrapeCount := 0
+	scraped := make(chan bool)
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, metricsText)
+		scrapeCount++
+		if scrapeCount > 2 {
+			close(scraped)
+		}
+	}))
+	defer ts.Close()
+
+	sp, err := newScrapePool(config, simpleStorage, 0, nil, &Options{})
+	require.NoError(t, err)
+	defer sp.stop()
+
+	testURL, err := url.Parse(ts.URL)
+	require.NoError(t, err)
+	sp.Sync([]*targetgroup.Group{
+		{
+			Targets: []model.LabelSet{{model.AddressLabel: model.LabelValue(testURL.Host)}},
+		},
+	})
+	require.Equal(t, 1, len(sp.ActiveTargets()))
+
+	select {
+	case <-time.After(5 * time.Second):
+		t.Fatalf("target was not scraped")
+	case <-scraped:
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	q, err := simpleStorage.Querier(time.Time{}.UnixNano(), time.Now().UnixNano())
+	require.NoError(t, err)
+	defer q.Close()
+
+	checkValues := func(labelName string, expectedValues []string, series storage.SeriesSet) {
+		foundLeValues := map[string]bool{}
+
+		for series.Next() {
+			s := series.At()
+			v := s.Labels().Get(labelName)
+			require.NotContains(t, foundLeValues, v, "duplicate label value found")
+			foundLeValues[v] = true
+		}
+
+		require.Equal(t, len(expectedValues), len(foundLeValues), "number of label values not as expected")
+		for _, v := range expectedValues {
+			require.Contains(t, foundLeValues, v, "label value not found")
+		}
+	}
+
+	series := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_histogram_bucket"))
+	checkValues("le", expectedLeValues, series)
+
+	series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_summary"))
+	checkValues("quantile", expectedQuantileValues, series)
+}
+
 func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrapeForTimestampedMetrics(t *testing.T) {
 	appender := &collectResultAppender{}
 	var (
