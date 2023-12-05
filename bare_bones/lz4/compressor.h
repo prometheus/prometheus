@@ -11,6 +11,8 @@ namespace BareBones::lz4 {
 
 class StreamCompressor {
  public:
+  ~StreamCompressor() { LZ4F_freeCompressionContext(ctx_); }
+
   [[nodiscard]] bool is_initialized() const noexcept { return ctx_ != nullptr; }
   [[nodiscard]] const CallResult& lz4_call_result() const noexcept { return call_result_; }
 

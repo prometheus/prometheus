@@ -56,8 +56,9 @@ template <class Buffer>
   requires BufferConcept<Buffer>
 class StreamDecompressor {
  public:
-  explicit StreamDecompressor(Buffer& buffer, const AllocationSizeCalculator::Parameters& allocation_parameters)
+  StreamDecompressor(Buffer& buffer, const AllocationSizeCalculator::Parameters& allocation_parameters)
       : buffer_(buffer), size_calculator_(allocation_parameters) {}
+  ~StreamDecompressor() { LZ4F_freeDecompressionContext(ctx_); }
 
   [[nodiscard]] bool is_initialized() const noexcept { return ctx_ != nullptr; }
   [[nodiscard]] const CallResult& lz4_call_result() const noexcept { return call_result_; }
