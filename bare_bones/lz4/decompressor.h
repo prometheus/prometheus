@@ -91,8 +91,10 @@ class StreamDecompressor {
 
     buffer_.allocate(size_calculator_.get_allocation_size(compressed_data_size));
 
-    result.frame_size = buffer.size();
-    decompress_loop(buffer, result.data);
+    if (decompress_loop(buffer, result.data)) {
+      result.frame_size = buffer.size();
+    }
+
     return result;
   }
 
@@ -123,7 +125,7 @@ class StreamDecompressor {
     return CompressedBufferSizeHelper::unpack(packed_size);
   }
 
-  void decompress_loop(std::string_view input_buffer, std::string_view& output_buffer) {
+  [[nodiscard]] bool decompress_loop(std::string_view input_buffer, std::string_view& output_buffer) {
     size_t decompressed_bytes = 0;
     while (true) {
       auto output_buffer_ptr = buffer_.data() + decompressed_bytes;
@@ -131,7 +133,7 @@ class StreamDecompressor {
       auto input_buffer_size = input_buffer.size();
       if (call_result_ = LZ4F_decompress(ctx_, output_buffer_ptr, &output_buffer_size, input_buffer.data(), &input_buffer_size, nullptr);
           call_result_.is_error()) {
-        break;
+        return false;
       }
 
       input_buffer.remove_prefix(input_buffer_size);
@@ -139,7 +141,7 @@ class StreamDecompressor {
 
       if (output_buffer_size < buffer_.size() - decompressed_bytes) {
         output_buffer = buffer_.view(decompressed_bytes);
-        break;
+        return true;
       }
 
       buffer_.reallocate(size_calculator_.get_reallocation_size(buffer_.size()));

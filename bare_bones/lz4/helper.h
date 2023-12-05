@@ -2,6 +2,7 @@
 
 #include <string_view>
 
+#define LZ4F_STATIC_LINKING_ONLY
 #include <lz4frame.h>
 
 namespace BareBones::lz4 {
@@ -16,7 +17,7 @@ class CallResult {
   [[nodiscard]] bool is_error() const noexcept { return LZ4F_isError(result_); }
 
   [[nodiscard]] size_t size() const noexcept { return result_; }
-  [[nodiscard]] size_t error() const noexcept { return result_; }
+  [[nodiscard]] LZ4F_errorCodes error() const noexcept { return LZ4F_getErrorCode(result_); }
 
   [[nodiscard]] std::string_view message() const noexcept { return LZ4F_getErrorName(result_); }
 

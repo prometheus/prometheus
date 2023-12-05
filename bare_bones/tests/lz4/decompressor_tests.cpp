@@ -105,7 +105,7 @@ TEST_F(StreamDecompressorFixture, DecompressTwoFrames) {
   EXPECT_EQ((DecompressResult{.data = "abcdefghijklmnopqrstuvwxyz", .frame_size = second_data_frame.size()}), result);
 }
 
-TEST_F(StreamDecompressorFixture, DecompressBufferWithInvalidSize) {
+TEST_F(StreamDecompressorFixture, DecompressBufferWithInvalidCompressedDataSize) {
   // Arrange
   static constexpr char buffer_with_invalid_size[] = {// compressed frame size with uncompressed flag (0x80)
                                                       "\x02\x00\x00\x80"
@@ -117,6 +117,24 @@ TEST_F(StreamDecompressorFixture, DecompressBufferWithInvalidSize) {
 
   // Assert
   EXPECT_EQ((DecompressResult{}), result);
+}
+
+TEST_F(StreamDecompressorFixture, DecompressInvalidBuffer) {
+  // Arrange
+  static constexpr char inalid_buffer[] = {// lz4 header
+                                           "\x04\x22\x4d\x18\x40\x40\xc0"
+                                           // compressed frame size
+                                           "\x0E\x00\x00\x00"
+                                           // invalid first byte of raw data
+                                           "\x00\x61\x01\x00\xFF\xFF\xFF\xEA\x50\x61\x61\x61\x61\x61"};
+
+  // Act
+  auto result = decompressor_.decompress({inalid_buffer, sizeof(inalid_buffer) - 1});
+
+  // Assert
+  EXPECT_EQ((DecompressResult{}), result);
+  EXPECT_TRUE(decompressor_.lz4_call_result().is_error());
+  EXPECT_EQ(LZ4F_ERROR_decompressionFailed, decompressor_.lz4_call_result().error());
 }
 
 }  // namespace

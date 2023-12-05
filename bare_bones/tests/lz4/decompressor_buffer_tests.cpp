@@ -6,7 +6,43 @@ namespace {
 
 using BareBones::lz4::DecompressorBuffer;
 
+class DecompressorBufferAllocateFixture : public testing::Test {
+ protected:
+  DecompressorBuffer buffer_{{.shrink_ratio = 0.01, .threshold_size_shrink_ratio = 0.01}};
+};
+
+TEST_F(DecompressorBufferAllocateFixture, AllocateNewBuffer)
+{
+  // Arrange
+
+  // Act
+  buffer_.allocate(9);
+  buffer_.allocate(10);
+
+  // Assert
+  EXPECT_EQ(10U, buffer_.size());
+}
+
+TEST_F(DecompressorBufferAllocateFixture, NoAllocateForSmallerSize)
+{
+  // Arrange
+
+  // Act
+  buffer_.allocate(10);
+  buffer_.allocate(9);
+
+  // Assert
+  EXPECT_EQ(10U, buffer_.size());
+}
+
+
 class DecompressorBufferReallocateFixture : public testing::Test {
+ protected:
+  void set_string_in_buffer(std::string_view str) {
+    buffer_.allocate(str.size());
+    memcpy(buffer_.data(), str.data(), str.size());
+  }
+
  protected:
   DecompressorBuffer buffer_{{.shrink_ratio = 0.01, .threshold_size_shrink_ratio = 0.01}};
 };
@@ -24,16 +60,29 @@ TEST_F(DecompressorBufferReallocateFixture, ReallocateEmptyBuffer) {
 TEST_F(DecompressorBufferReallocateFixture, ReallocateBuffer) {
   // Arrange
   constexpr std::string_view str{"12345"};
-  buffer_.allocate(str.size());
-  memcpy(buffer_.data(), str.data(), str.size());
+  set_string_in_buffer(str);
 
   // Act
-  buffer_.reallocate(10);
+  buffer_.reallocate(str.size() + 1);
 
   // Assert
-  EXPECT_EQ(10U, buffer_.size());
+  EXPECT_EQ(str.size() + 1, buffer_.size());
   EXPECT_TRUE(buffer_.view().starts_with(str));
 }
+
+TEST_F(DecompressorBufferReallocateFixture, NoReallocateForSmallerSize) {
+  // Arrange
+  constexpr std::string_view str{"12345"};
+  set_string_in_buffer(str);
+
+  // Act
+  buffer_.reallocate(str.size() - 1);
+
+  // Assert
+  EXPECT_EQ(str.size(), buffer_.size());
+  EXPECT_TRUE(buffer_.view().starts_with(str));
+}
+
 
 struct ShrinkTestCase {
   size_t allocate_size;
