@@ -180,7 +180,12 @@ Special cases are:
 ## `floor()`
 
 `floor(v instant-vector)` rounds the sample values of all elements in `v` down
-to the nearest integer.
+to the nearest integer value smaller than or equal to v.
+
+* `floor(+Inf) = +Inf`
+* `floor(±0) = ±0`
+* `floor(1.49) = 1.0`
+* `floor(1.78) = 1.0`
 
 ## `histogram_count()` and `histogram_sum()`
 
