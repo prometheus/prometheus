@@ -77,9 +77,9 @@ TEST_F(StreamCompressorFixture, CompressTwoFrames) {
   // Arrange
   static constexpr std::string_view second_data_frame{"abcdefghijklmnopqrstuvwxyz"};
   static constexpr char compressed_second_data_frame_buffer[] = {// compressed frame size with uncompressed flag (0x80)
-                                                                   "\x1A\x00\x00\x80"
-                                                                   // raw data
-                                                                   "abcdefghijklmnopqrstuvwxyz"};
+                                                                 "\x1A\x00\x00\x80"
+                                                                 // raw data
+                                                                 "abcdefghijklmnopqrstuvwxyz"};
   static constexpr std::string_view compressed_second_data_frame{compressed_second_data_frame_buffer, sizeof(compressed_second_data_frame_buffer) - 1};
 
   // Act
