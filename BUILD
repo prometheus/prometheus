@@ -52,7 +52,7 @@ cc_test(
 
 cc_library(
     name = "bare_bones_headers",
-    hdrs = glob(["bare_bones/*.h"]),
+    hdrs = glob(["bare_bones/**/*.h"]),
     deps = [
         "//third_party",
         "@parallel_hashmap",
@@ -61,6 +61,7 @@ cc_library(
         "@lzma//:lzma",
         "@elf//:elf",
         "@backward_cpp//:backward_cpp_header_only", # stacktrace lib
+        "@lz4//:lz4"
     ],
 )
 
@@ -82,7 +83,7 @@ cc_library(
 
 cc_test(
     name = "bare_bones_test",
-    srcs = glob(["bare_bones/tests/*_tests.cpp"]),
+    srcs = glob(["bare_bones/tests/**/*_tests.cpp"]),
     malloc = "@jemalloc",
     deps = [
         ":bare_bones",
