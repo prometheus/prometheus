@@ -636,9 +636,8 @@ func main() {
 			if discMgr == nil {
 				level.Error(logger).Log("msg", "failed to create a discovery manager scrape")
 				os.Exit(1)
-			} else {
-				discoveryManagerScrape = discMgr
 			}
+			discoveryManagerScrape = discMgr
 		}
 
 		{
@@ -646,9 +645,8 @@ func main() {
 			if discMgr == nil {
 				level.Error(logger).Log("msg", "failed to create a discovery manager notify")
 				os.Exit(1)
-			} else {
-				discoveryManagerNotify = discMgr
 			}
+			discoveryManagerNotify = discMgr
 		}
 	} else {
 		{
@@ -656,9 +654,8 @@ func main() {
 			if discMgr == nil {
 				level.Error(logger).Log("msg", "failed to create a discovery manager scrape")
 				os.Exit(1)
-			} else {
-				discoveryManagerScrape = discMgr
 			}
+			discoveryManagerScrape = discMgr
 		}
 
 		{
@@ -666,9 +663,8 @@ func main() {
 			if discMgr == nil {
 				level.Error(logger).Log("msg", "failed to create a discovery manager notify")
 				os.Exit(1)
-			} else {
-				discoveryManagerNotify = discMgr
 			}
+			discoveryManagerNotify = discMgr
 		}
 	}
 
