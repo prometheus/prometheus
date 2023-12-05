@@ -31,6 +31,8 @@ const ScrapePoolDropDown: FC<ScrapePoolDropDownProps> = ({ selectedPool, scrapeP
 
   const [filter, setFilter] = useState<string>('');
 
+  const filteredPools = scrapePools.filter((pool) => pool.toLowerCase().includes(filter.toLowerCase()));
+
   return (
     <Dropdown isOpen={dropdownOpen} toggle={toggle}>
       <DropdownToggle caret className="mw-100 text-truncate">
@@ -51,13 +53,11 @@ const ScrapePoolDropDown: FC<ScrapePoolDropDownProps> = ({ selectedPool, scrapeP
         {scrapePools.length === 0 ? (
           <DropdownItem disabled>No scrape pools configured</DropdownItem>
         ) : (
-          scrapePools
-            .filter((name) => filter === '' || name.includes(filter))
-            .map((name) => (
-              <DropdownItem key={name} value={name} onClick={() => onScrapePoolChange(name)} active={name === selectedPool}>
-                {name}
-              </DropdownItem>
-            ))
+          filteredPools.map((name) => (
+            <DropdownItem key={name} value={name} onClick={() => onScrapePoolChange(name)} active={name === selectedPool}>
+              {name}
+            </DropdownItem>
+          ))
         )}
       </DropdownMenu>
     </Dropdown>

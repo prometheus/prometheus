@@ -21,13 +21,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
-func setupRangeQueryTestData(stor *teststorage.TestStorage, engine *Engine, interval, numIntervals int) error {
+func setupRangeQueryTestData(stor *teststorage.TestStorage, _ *Engine, interval, numIntervals int) error {
+	ctx := context.Background()
+
 	metrics := []labels.Labels{}
 	metrics = append(metrics, labels.FromStrings("__name__", "a_one"))
 	metrics = append(metrics, labels.FromStrings("__name__", "b_one"))
@@ -66,6 +70,8 @@ func setupRangeQueryTestData(stor *teststorage.TestStorage, engine *Engine, inte
 			return err
 		}
 	}
+	stor.DB.ForceHeadMMap() // Ensure we have at most one head chunk for every series.
+	stor.DB.Compact(ctx)
 	return nil
 }
 
@@ -152,7 +158,8 @@ func rangeQueryCases() []benchCase {
 			expr: "sum by (le)(h_X)",
 		},
 		{
-			expr: "count_values('value', h_X)",
+			expr:  "count_values('value', h_X)",
+			steps: 100,
 		},
 		{
 			expr: "topk(1, a_X)",
@@ -186,6 +193,10 @@ func rangeQueryCases() []benchCase {
 			expr:  "count({__name__!=\"\",l=\"\"})",
 			steps: 1,
 		},
+		// Functions which have special handling inside eval()
+		{
+			expr: "timestamp(a_X)",
+		},
 	}
 
 	// X in an expr will be replaced by different metric sizes.
@@ -194,9 +205,9 @@ func rangeQueryCases() []benchCase {
 		if !strings.Contains(c.expr, "X") {
 			tmp = append(tmp, c)
 		} else {
-			tmp = append(tmp, benchCase{expr: strings.Replace(c.expr, "X", "one", -1), steps: c.steps})
-			tmp = append(tmp, benchCase{expr: strings.Replace(c.expr, "X", "ten", -1), steps: c.steps})
-			tmp = append(tmp, benchCase{expr: strings.Replace(c.expr, "X", "hundred", -1), steps: c.steps})
+			tmp = append(tmp, benchCase{expr: strings.ReplaceAll(c.expr, "X", "one"), steps: c.steps})
+			tmp = append(tmp, benchCase{expr: strings.ReplaceAll(c.expr, "X", "ten"), steps: c.steps})
+			tmp = append(tmp, benchCase{expr: strings.ReplaceAll(c.expr, "X", "hundred"), steps: c.steps})
 		}
 	}
 	cases = tmp
@@ -208,7 +219,6 @@ func rangeQueryCases() []benchCase {
 			tmp = append(tmp, c)
 		} else {
 			tmp = append(tmp, benchCase{expr: c.expr, steps: 1})
-			tmp = append(tmp, benchCase{expr: c.expr, steps: 10})
 			tmp = append(tmp, benchCase{expr: c.expr, steps: 100})
 			tmp = append(tmp, benchCase{expr: c.expr, steps: 1000})
 		}
@@ -218,6 +228,7 @@ func rangeQueryCases() []benchCase {
 
 func BenchmarkRangeQuery(b *testing.B) {
 	stor := teststorage.New(b)
+	stor.DB.DisableCompactions() // Don't want auto-compaction disrupting timings.
 	defer stor.Close()
 	opts := EngineOpts{
 		Logger:     nil,
@@ -240,16 +251,17 @@ func BenchmarkRangeQuery(b *testing.B) {
 	for _, c := range cases {
 		name := fmt.Sprintf("expr=%s,steps=%d", c.expr, c.steps)
 		b.Run(name, func(b *testing.B) {
+			ctx := context.Background()
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
 				qry, err := engine.NewRangeQuery(
-					stor, nil, c.expr,
+					ctx, stor, nil, c.expr,
 					time.Unix(int64((numIntervals-c.steps)*10), 0),
 					time.Unix(int64(numIntervals*10), 0), time.Second*10)
 				if err != nil {
 					b.Fatal(err)
 				}
-				res := qry.Exec(context.Background())
+				res := qry.Exec(ctx)
 				if res.Err != nil {
 					b.Fatal(res.Err)
 				}
@@ -257,6 +269,99 @@ func BenchmarkRangeQuery(b *testing.B) {
 			}
 		})
 	}
+}
+
+func BenchmarkNativeHistograms(b *testing.B) {
+	testStorage := teststorage.New(b)
+	defer testStorage.Close()
+
+	app := testStorage.Appender(context.TODO())
+	if err := generateNativeHistogramSeries(app, 3000); err != nil {
+		b.Fatal(err)
+	}
+	if err := app.Commit(); err != nil {
+		b.Fatal(err)
+	}
+
+	start := time.Unix(0, 0)
+	end := start.Add(2 * time.Hour)
+	step := time.Second * 30
+
+	cases := []struct {
+		name  string
+		query string
+	}{
+		{
+			name:  "sum",
+			query: "sum(native_histogram_series)",
+		},
+		{
+			name:  "sum rate",
+			query: "sum(rate(native_histogram_series[1m]))",
+		},
+	}
+
+	opts := EngineOpts{
+		Logger:               nil,
+		Reg:                  nil,
+		MaxSamples:           50000000,
+		Timeout:              100 * time.Second,
+		EnableAtModifier:     true,
+		EnableNegativeOffset: true,
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for _, tc := range cases {
+		b.Run(tc.name, func(b *testing.B) {
+			ng := NewEngine(opts)
+			for i := 0; i < b.N; i++ {
+				qry, err := ng.NewRangeQuery(context.Background(), testStorage, nil, tc.query, start, end, step)
+				if err != nil {
+					b.Fatal(err)
+				}
+				if result := qry.Exec(context.Background()); result.Err != nil {
+					b.Fatal(result.Err)
+				}
+			}
+		})
+	}
+}
+
+func generateNativeHistogramSeries(app storage.Appender, numSeries int) error {
+	commonLabels := []string{labels.MetricName, "native_histogram_series", "foo", "bar"}
+	series := make([][]*histogram.Histogram, numSeries)
+	for i := range series {
+		series[i] = tsdbutil.GenerateTestHistograms(2000)
+	}
+	higherSchemaHist := &histogram.Histogram{
+		Schema: 3,
+		PositiveSpans: []histogram.Span{
+			{Offset: -5, Length: 2}, // -5 -4
+			{Offset: 2, Length: 3},  // -1 0 1
+			{Offset: 2, Length: 2},  // 4 5
+		},
+		PositiveBuckets: []int64{1, 2, -2, 1, -1, 0, 3},
+		Count:           13,
+	}
+	for sid, histograms := range series {
+		seriesLabels := labels.FromStrings(append(commonLabels, "h", strconv.Itoa(sid))...)
+		for i := range histograms {
+			ts := time.Unix(int64(i*15), 0).UnixMilli()
+			if i == 0 {
+				// Inject a histogram with a higher schema.
+				if _, err := app.AppendHistogram(0, seriesLabels, ts, higherSchemaHist, nil); err != nil {
+					return err
+				}
+			}
+			if _, err := app.AppendHistogram(0, seriesLabels, ts, histograms[i], nil); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 func BenchmarkParser(b *testing.B) {

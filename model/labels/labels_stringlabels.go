@@ -16,31 +16,13 @@
 package labels
 
 import (
-	"bytes"
-	"encoding/json"
 	"reflect"
-	"strconv"
+	"strings"
 	"unsafe"
 
 	"github.com/cespare/xxhash/v2"
-	"github.com/prometheus/common/model"
 	"golang.org/x/exp/slices"
 )
-
-// Well-known label names used by Prometheus components.
-const (
-	MetricName   = "__name__"
-	AlertName    = "alertname"
-	BucketLabel  = "le"
-	InstanceName = "instance"
-)
-
-var seps = []byte{'\xff'}
-
-// Label is a key/value pair of strings.
-type Label struct {
-	Name, Value string
-}
 
 // Labels is implemented by a single flat string holding name/value pairs.
 // Each name and value is preceded by its length in varint encoding.
@@ -49,15 +31,15 @@ type Labels struct {
 	data string
 }
 
-type labelSlice []Label
-
-func (ls labelSlice) Len() int           { return len(ls) }
-func (ls labelSlice) Swap(i, j int)      { ls[i], ls[j] = ls[j], ls[i] }
-func (ls labelSlice) Less(i, j int) bool { return ls[i].Name < ls[j].Name }
-
 func decodeSize(data string, index int) (int, int) {
-	var size int
-	for shift := uint(0); ; shift += 7 {
+	// Fast-path for common case of a single byte, value 0..127.
+	b := data[index]
+	index++
+	if b < 0x80 {
+		return int(b), index
+	}
+	size := int(b & 0x7F)
+	for shift := uint(7); ; shift += 7 {
 		// Just panic if we go of the end of data, since all Labels strings are constructed internally and
 		// malformed data indicates a bug, or memory corruption.
 		b := data[index]
@@ -76,26 +58,6 @@ func decodeString(data string, index int) (string, int) {
 	return data[index : index+size], index + size
 }
 
-func (ls Labels) String() string {
-	var b bytes.Buffer
-
-	b.WriteByte('{')
-	for i := 0; i < len(ls.data); {
-		if i > 0 {
-			b.WriteByte(',')
-			b.WriteByte(' ')
-		}
-		var name, value string
-		name, i = decodeString(ls.data, i)
-		value, i = decodeString(ls.data, i)
-		b.WriteString(name)
-		b.WriteByte('=')
-		b.WriteString(strconv.Quote(value))
-	}
-	b.WriteByte('}')
-	return b.String()
-}
-
 // Bytes returns ls as a byte slice.
 // It uses non-printing characters and so should not be used for printing.
 func (ls Labels) Bytes(buf []byte) []byte {
@@ -108,43 +70,9 @@ func (ls Labels) Bytes(buf []byte) []byte {
 	return buf
 }
 
-// MarshalJSON implements json.Marshaler.
-func (ls Labels) MarshalJSON() ([]byte, error) {
-	return json.Marshal(ls.Map())
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (ls *Labels) UnmarshalJSON(b []byte) error {
-	var m map[string]string
-
-	if err := json.Unmarshal(b, &m); err != nil {
-		return err
-	}
-
-	*ls = FromMap(m)
-	return nil
-}
-
-// MarshalYAML implements yaml.Marshaler.
-func (ls Labels) MarshalYAML() (interface{}, error) {
-	return ls.Map(), nil
-}
-
 // IsZero implements yaml.IsZeroer - if we don't have this then 'omitempty' fields are always omitted.
 func (ls Labels) IsZero() bool {
 	return len(ls.data) == 0
-}
-
-// UnmarshalYAML implements yaml.Unmarshaler.
-func (ls *Labels) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	var m map[string]string
-
-	if err := unmarshal(&m); err != nil {
-		return err
-	}
-
-	*ls = FromMap(m)
-	return nil
 }
 
 // MatchLabels returns a subset of Labels that matches/does not match with the provided label names based on the 'on' boolean.
@@ -158,7 +86,7 @@ func (ls Labels) MatchLabels(on bool, names ...string) Labels {
 		b.Del(MetricName)
 		b.Del(names...)
 	}
-	return b.Labels(EmptyLabels())
+	return b.Labels()
 }
 
 // Hash returns a hash value for the label set.
@@ -267,26 +195,53 @@ func (ls Labels) Copy() Labels {
 // Get returns the value for the label with the given name.
 // Returns an empty string if the label doesn't exist.
 func (ls Labels) Get(name string) string {
+	if name == "" { // Avoid crash in loop if someone asks for "".
+		return "" // Prometheus does not store blank label names.
+	}
 	for i := 0; i < len(ls.data); {
-		var lName, lValue string
-		lName, i = decodeString(ls.data, i)
-		lValue, i = decodeString(ls.data, i)
-		if lName == name {
-			return lValue
+		var size int
+		size, i = decodeSize(ls.data, i)
+		if ls.data[i] == name[0] {
+			lName := ls.data[i : i+size]
+			i += size
+			if lName == name {
+				lValue, _ := decodeString(ls.data, i)
+				return lValue
+			}
+		} else {
+			if ls.data[i] > name[0] { // Stop looking if we've gone past.
+				break
+			}
+			i += size
 		}
+		size, i = decodeSize(ls.data, i)
+		i += size
 	}
 	return ""
 }
 
 // Has returns true if the label with the given name is present.
 func (ls Labels) Has(name string) bool {
+	if name == "" { // Avoid crash in loop if someone asks for "".
+		return false // Prometheus does not store blank label names.
+	}
 	for i := 0; i < len(ls.data); {
-		var lName string
-		lName, i = decodeString(ls.data, i)
-		_, i = decodeString(ls.data, i)
-		if lName == name {
-			return true
+		var size int
+		size, i = decodeSize(ls.data, i)
+		if ls.data[i] == name[0] {
+			lName := ls.data[i : i+size]
+			i += size
+			if lName == name {
+				return true
+			}
+		} else {
+			if ls.data[i] > name[0] { // Stop looking if we've gone past.
+				break
+			}
+			i += size
 		}
+		size, i = decodeSize(ls.data, i)
+		i += size
 	}
 	return false
 }
@@ -336,35 +291,9 @@ func (ls Labels) WithoutEmpty() Labels {
 	return ls
 }
 
-// IsValid checks if the metric name or label names are valid.
-func (ls Labels) IsValid() bool {
-	err := ls.Validate(func(l Label) error {
-		if l.Name == model.MetricNameLabel && !model.IsValidMetricName(model.LabelValue(l.Value)) {
-			return strconv.ErrSyntax
-		}
-		if !model.LabelName(l.Name).IsValid() || !model.LabelValue(l.Value).IsValid() {
-			return strconv.ErrSyntax
-		}
-		return nil
-	})
-	return err == nil
-}
-
 // Equal returns whether the two label sets are equal.
 func Equal(ls, o Labels) bool {
 	return ls.data == o.data
-}
-
-// Map returns a string map of the labels.
-func (ls Labels) Map() map[string]string {
-	m := make(map[string]string, len(ls.data)/10)
-	for i := 0; i < len(ls.data); {
-		var lName, lValue string
-		lName, i = decodeString(ls.data, i)
-		lValue, i = decodeString(ls.data, i)
-		m[lName] = lValue
-	}
-	return m
 }
 
 // EmptyLabels returns an empty Labels value, for convenience.
@@ -385,20 +314,11 @@ func yoloBytes(s string) (b []byte) {
 // New returns a sorted Labels from the given labels.
 // The caller has to guarantee that all label names are unique.
 func New(ls ...Label) Labels {
-	slices.SortFunc(ls, func(a, b Label) bool { return a.Name < b.Name })
+	slices.SortFunc(ls, func(a, b Label) int { return strings.Compare(a.Name, b.Name) })
 	size := labelsSize(ls)
 	buf := make([]byte, size)
 	marshalLabelsToSizedBuffer(ls, buf)
 	return Labels{data: yoloString(buf)}
-}
-
-// FromMap returns new sorted Labels from the given map.
-func FromMap(m map[string]string) Labels {
-	l := make([]Label, 0, len(m))
-	for k, v := range m {
-		l = append(l, Label{Name: k, Value: v})
-	}
-	return New(l...)
 }
 
 // FromStrings creates new labels from pairs of strings.
@@ -416,37 +336,49 @@ func FromStrings(ss ...string) Labels {
 
 // Compare compares the two label sets.
 // The result will be 0 if a==b, <0 if a < b, and >0 if a > b.
-// TODO: replace with Less function - Compare is never needed.
-// TODO: just compare the underlying strings when we don't need alphanumeric sorting.
 func Compare(a, b Labels) int {
-	l := len(a.data)
-	if len(b.data) < l {
-		l = len(b.data)
+	// Find the first byte in the string where a and b differ.
+	shorter, longer := a.data, b.data
+	if len(b.data) < len(a.data) {
+		shorter, longer = b.data, a.data
+	}
+	i := 0
+	// First, go 8 bytes at a time. Data strings are expected to be 8-byte aligned.
+	sp := unsafe.Pointer((*reflect.StringHeader)(unsafe.Pointer(&shorter)).Data)
+	lp := unsafe.Pointer((*reflect.StringHeader)(unsafe.Pointer(&longer)).Data)
+	for ; i < len(shorter)-8; i += 8 {
+		if *(*uint64)(unsafe.Add(sp, i)) != *(*uint64)(unsafe.Add(lp, i)) {
+			break
+		}
+	}
+	// Now go 1 byte at a time.
+	for ; i < len(shorter); i++ {
+		if shorter[i] != longer[i] {
+			break
+		}
+	}
+	if i == len(shorter) {
+		// One Labels was a prefix of the other; the set with fewer labels compares lower.
+		return len(a.data) - len(b.data)
 	}
 
-	ia, ib := 0, 0
-	for ia < l {
-		var aName, bName string
-		aName, ia = decodeString(a.data, ia)
-		bName, ib = decodeString(b.data, ib)
-		if aName != bName {
-			if aName < bName {
-				return -1
-			}
-			return 1
+	// Now we know that there is some difference before the end of a and b.
+	// Go back through the fields and find which field that difference is in.
+	firstCharDifferent := i
+	for i = 0; ; {
+		size, nextI := decodeSize(a.data, i)
+		if nextI+size > firstCharDifferent {
+			break
 		}
-		var aValue, bValue string
-		aValue, ia = decodeString(a.data, ia)
-		bValue, ib = decodeString(b.data, ib)
-		if aValue != bValue {
-			if aValue < bValue {
-				return -1
-			}
-			return 1
-		}
+		i = nextI + size
 	}
-	// If all labels so far were in common, the set with fewer labels comes first.
-	return len(a.data) - len(b.data)
+	// Difference is inside this entry.
+	aStr, _ := decodeString(a.data, i)
+	bStr, _ := decodeString(b.data, i)
+	if aStr < bStr {
+		return -1
+	}
+	return +1
 }
 
 // Copy labels from b on top of whatever was in ls previously, reusing memory or expanding if needed.
@@ -507,137 +439,19 @@ func (ls Labels) ReleaseStrings(release func(string)) {
 	release(ls.data)
 }
 
-// Builder allows modifying Labels.
-type Builder struct {
-	base Labels
-	del  []string
-	add  []Label
-}
-
-// NewBuilder returns a new LabelsBuilder.
-func NewBuilder(base Labels) *Builder {
-	b := &Builder{
-		del: make([]string, 0, 5),
-		add: make([]Label, 0, 5),
-	}
-	b.Reset(base)
-	return b
-}
-
-// Reset clears all current state for the builder.
-func (b *Builder) Reset(base Labels) {
-	b.base = base
-	b.del = b.del[:0]
-	b.add = b.add[:0]
-	for i := 0; i < len(base.data); {
-		var lName, lValue string
-		lName, i = decodeString(base.data, i)
-		lValue, i = decodeString(base.data, i)
-		if lValue == "" {
-			b.del = append(b.del, lName)
-		}
-	}
-}
-
-// Del deletes the label of the given name.
-func (b *Builder) Del(ns ...string) *Builder {
-	for _, n := range ns {
-		for i, a := range b.add {
-			if a.Name == n {
-				b.add = append(b.add[:i], b.add[i+1:]...)
-			}
-		}
-		b.del = append(b.del, n)
-	}
-	return b
-}
-
-// Keep removes all labels from the base except those with the given names.
-func (b *Builder) Keep(ns ...string) *Builder {
-Outer:
-	for i := 0; i < len(b.base.data); {
-		var lName string
-		lName, i = decodeString(b.base.data, i)
-		_, i = decodeString(b.base.data, i)
-		for _, n := range ns {
-			if lName == n {
-				continue Outer
-			}
-		}
-		b.del = append(b.del, lName)
-	}
-	return b
-}
-
-// Set the name/value pair as a label. A value of "" means delete that label.
-func (b *Builder) Set(n, v string) *Builder {
-	if v == "" {
-		// Empty labels are the same as missing labels.
-		return b.Del(n)
-	}
-	for i, a := range b.add {
-		if a.Name == n {
-			b.add[i].Value = v
-			return b
-		}
-	}
-	b.add = append(b.add, Label{Name: n, Value: v})
-
-	return b
-}
-
-func (b *Builder) Get(n string) string {
-	if slices.Contains(b.del, n) {
-		return ""
-	}
-	for _, a := range b.add {
-		if a.Name == n {
-			return a.Value
-		}
-	}
-	return b.base.Get(n)
-}
-
-// Range calls f on each label in the Builder.
-func (b *Builder) Range(f func(l Label)) {
-	// Stack-based arrays to avoid heap allocation in most cases.
-	var addStack [128]Label
-	var delStack [128]string
-	// Take a copy of add and del, so they are unaffected by calls to Set() or Del().
-	origAdd, origDel := append(addStack[:0], b.add...), append(delStack[:0], b.del...)
-	b.base.Range(func(l Label) {
-		if !slices.Contains(origDel, l.Name) && !contains(origAdd, l.Name) {
-			f(l)
-		}
-	})
-	for _, a := range origAdd {
-		f(a)
-	}
-}
-
-func contains(s []Label, n string) bool {
-	for _, a := range s {
-		if a.Name == n {
-			return true
-		}
-	}
-	return false
-}
-
-// Labels returns the labels from the builder, adding them to res if non-nil.
-// Argument res can be the same as b.base, if caller wants to overwrite that slice.
+// Labels returns the labels from the builder.
 // If no modifications were made, the original labels are returned.
-func (b *Builder) Labels(res Labels) Labels {
+func (b *Builder) Labels() Labels {
 	if len(b.del) == 0 && len(b.add) == 0 {
 		return b.base
 	}
 
-	slices.SortFunc(b.add, func(a, b Label) bool { return a.Name < b.Name })
+	slices.SortFunc(b.add, func(a, b Label) int { return strings.Compare(a.Name, b.Name) })
 	slices.Sort(b.del)
 	a, d := 0, 0
 
 	bufSize := len(b.base.data) + labelsSize(b.add)
-	buf := make([]byte, 0, bufSize) // TODO: see if we can re-use the buffer from res.
+	buf := make([]byte, 0, bufSize)
 	for pos := 0; pos < len(b.base.data); {
 		oldPos := pos
 		var lName string
@@ -789,12 +603,18 @@ func (b *ScratchBuilder) Add(name, value string) {
 	b.add = append(b.add, Label{Name: name, Value: value})
 }
 
-// Sort the labels added so far by name.
-func (b *ScratchBuilder) Sort() {
-	slices.SortFunc(b.add, func(a, b Label) bool { return a.Name < b.Name })
+// Add a name/value pair, using []byte instead of string to reduce memory allocations.
+// The values must remain live until Labels() is called.
+func (b *ScratchBuilder) UnsafeAddBytes(name, value []byte) {
+	b.add = append(b.add, Label{Name: yoloString(name), Value: yoloString(value)})
 }
 
-// Asssign is for when you already have a Labels which you want this ScratchBuilder to return.
+// Sort the labels added so far by name.
+func (b *ScratchBuilder) Sort() {
+	slices.SortFunc(b.add, func(a, b Label) int { return strings.Compare(a.Name, b.Name) })
+}
+
+// Assign is for when you already have a Labels which you want this ScratchBuilder to return.
 func (b *ScratchBuilder) Assign(l Labels) {
 	b.output = l
 }
@@ -812,7 +632,7 @@ func (b *ScratchBuilder) Labels() Labels {
 }
 
 // Write the newly-built Labels out to ls, reusing an internal buffer.
-// Callers must ensure that there are no other references to ls.
+// Callers must ensure that there are no other references to ls, or any strings fetched from it.
 func (b *ScratchBuilder) Overwrite(ls *Labels) {
 	size := labelsSize(b.add)
 	if size <= cap(b.overwriteBuffer) {

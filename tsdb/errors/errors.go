@@ -25,7 +25,7 @@ import (
 type multiError []error
 
 // NewMulti returns multiError with provided errors added if not nil.
-func NewMulti(errs ...error) multiError { // nolint:revive
+func NewMulti(errs ...error) multiError { //nolint:revive // unexported-return.
 	m := multiError{}
 	m.Add(errs...)
 	return m
@@ -38,7 +38,8 @@ func (es *multiError) Add(errs ...error) {
 		if err == nil {
 			continue
 		}
-		if merr, ok := err.(nonNilMultiError); ok {
+		var merr nonNilMultiError
+		if errors.As(err, &merr) {
 			*es = append(*es, merr.errs...)
 			continue
 		}

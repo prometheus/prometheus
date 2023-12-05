@@ -92,7 +92,7 @@ type Provider struct {
 	newSubs map[string]struct{}
 }
 
-// Discoverer return the Discoverer of the provider
+// Discoverer return the Discoverer of the provider.
 func (p *Provider) Discoverer() Discoverer {
 	return p.d
 }
@@ -180,11 +180,9 @@ func (m *Manager) Providers() []*Provider {
 // Run starts the background processing.
 func (m *Manager) Run() error {
 	go m.sender()
-	for range m.ctx.Done() {
-		m.cancelDiscoverers()
-		return m.ctx.Err()
-	}
-	return nil
+	<-m.ctx.Done()
+	m.cancelDiscoverers()
+	return m.ctx.Err()
 }
 
 // SyncCh returns a read only channel used by all the clients to receive target updates.

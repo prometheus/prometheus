@@ -50,7 +50,7 @@ const (
 	tagsLabel = model.MetaLabelPrefix + "consul_tags"
 	// serviceLabel is the name of the label containing the service name.
 	serviceLabel = model.MetaLabelPrefix + "consul_service"
-	// healthLabel is the name of the label containing the health of the service instance
+	// healthLabel is the name of the label containing the health of the service instance.
 	healthLabel = model.MetaLabelPrefix + "consul_health"
 	// serviceAddressLabel is the name of the label containing the (optional) service address.
 	serviceAddressLabel = model.MetaLabelPrefix + "consul_service_address"
@@ -111,6 +111,7 @@ func init() {
 // SDConfig is the configuration for Consul service discovery.
 type SDConfig struct {
 	Server       string        `yaml:"server,omitempty"`
+	PathPrefix   string        `yaml:"path_prefix,omitempty"`
 	Token        config.Secret `yaml:"token,omitempty"`
 	Datacenter   string        `yaml:"datacenter,omitempty"`
 	Namespace    string        `yaml:"namespace,omitempty"`
@@ -211,6 +212,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 
 	clientConf := &consul.Config{
 		Address:    conf.Server,
+		PathPrefix: conf.PathPrefix,
 		Scheme:     conf.Scheme,
 		Datacenter: conf.Datacenter,
 		Namespace:  conf.Namespace,

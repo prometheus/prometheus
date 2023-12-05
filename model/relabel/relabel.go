@@ -202,16 +202,18 @@ func (re Regexp) String() string {
 	return str[4 : len(str)-2]
 }
 
-// Process returns a relabeled copy of the given label set. The relabel configurations
+// Process returns a relabeled version of the given label set. The relabel configurations
 // are applied in order of input.
+// There are circumstances where Process will modify the input label.
+// If you want to avoid issues with the input label set being modified, at the cost of
+// higher memory usage, you can use lbls.Copy().
 // If a label set is dropped, EmptyLabels and false is returned.
-// May return the input labelSet modified.
 func Process(lbls labels.Labels, cfgs ...*Config) (ret labels.Labels, keep bool) {
 	lb := labels.NewBuilder(lbls)
 	if !ProcessBuilder(lb, cfgs...) {
 		return labels.EmptyLabels(), false
 	}
-	return lb.Labels(lbls), true
+	return lb.Labels(), true
 }
 
 // ProcessBuilder is like Process, but the caller passes a labels.Builder

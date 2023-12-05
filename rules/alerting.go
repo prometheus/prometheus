@@ -234,8 +234,9 @@ func (r *AlertingRule) sample(alert *Alert, ts time.Time) promql.Sample {
 	lb.Set(alertStateLabel, alert.State.String())
 
 	s := promql.Sample{
-		Metric: lb.Labels(labels.EmptyLabels()),
-		Point:  promql.Point{T: timestamp.FromTime(ts), V: 1},
+		Metric: lb.Labels(),
+		T:      timestamp.FromTime(ts),
+		F:      1,
 	}
 	return s
 }
@@ -252,14 +253,15 @@ func (r *AlertingRule) forStateSample(alert *Alert, ts time.Time, v float64) pro
 	lb.Set(labels.AlertName, r.name)
 
 	s := promql.Sample{
-		Metric: lb.Labels(labels.EmptyLabels()),
-		Point:  promql.Point{T: timestamp.FromTime(ts), V: v},
+		Metric: lb.Labels(),
+		T:      timestamp.FromTime(ts),
+		F:      v,
 	}
 	return s
 }
 
 // QueryforStateSeries returns the series for ALERTS_FOR_STATE.
-func (r *AlertingRule) QueryforStateSeries(alert *Alert, q storage.Querier) (storage.Series, error) {
+func (r *AlertingRule) QueryforStateSeries(ctx context.Context, alert *Alert, q storage.Querier) (storage.Series, error) {
 	smpl := r.forStateSample(alert, time.Now(), 0)
 	var matchers []*labels.Matcher
 	smpl.Metric.Range(func(l labels.Label) {
@@ -269,7 +271,7 @@ func (r *AlertingRule) QueryforStateSeries(alert *Alert, q storage.Querier) (sto
 		}
 		matchers = append(matchers, mt)
 	})
-	sset := q.Select(false, nil, matchers...)
+	sset := q.Select(ctx, false, nil, matchers...)
 
 	var s storage.Series
 	for sset.Next() {
@@ -339,7 +341,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 		// Provide the alert information to the template.
 		l := smpl.Metric.Map()
 
-		tmplData := template.AlertTemplateData(l, r.externalLabels, r.externalURL, smpl.V)
+		tmplData := template.AlertTemplateData(l, r.externalLabels, r.externalURL, smpl.F)
 		// Inject some convenience variables that are easier to remember for users
 		// who are not used to Go's templating system.
 		defs := []string{
@@ -381,7 +383,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 		})
 		annotations := sb.Labels()
 
-		lbs := lb.Labels(labels.EmptyLabels())
+		lbs := lb.Labels()
 		h := lbs.Hash()
 		resultFPs[h] = struct{}{}
 
@@ -394,7 +396,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 			Annotations: annotations,
 			ActiveAt:    ts,
 			State:       StatePending,
-			Value:       smpl.V,
+			Value:       smpl.F,
 		}
 	}
 
@@ -470,7 +472,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 }
 
 // State returns the maximum state of alert instances for this rule.
-// StateFiring > StatePending > StateInactive
+// StateFiring > StatePending > StateInactive.
 func (r *AlertingRule) State() AlertState {
 	r.activeMtx.Lock()
 	defer r.activeMtx.Unlock()

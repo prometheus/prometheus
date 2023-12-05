@@ -147,3 +147,7 @@ by the rule are discarded, and if it's an alerting rule, _all_ alerts for
 the rule, active, pending, or inactive, are cleared as well. The event will be
 recorded as an error in the evaluation, and as such no stale markers are
 written.
+
+# Failed rule evaluations due to slow evaluation
+
+If a rule group hasn't finished evaluating before its next evaluation is supposed to start (as defined by the `evaluation_interval`), the next evaluation will be skipped. Subsequent evaluations of the rule group will continue to be skipped until the initial evaluation either completes or times out. When this happens, there will be a gap in the metric produced by the recording rule. The `rule_group_iterations_missed_total` metric will be incremented for each missed iteration of the rule group. 

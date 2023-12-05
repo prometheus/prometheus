@@ -30,7 +30,7 @@ type NomadSDTestSuite struct {
 	Mock *SDMock
 }
 
-// SDMock is the interface for the nomad mock
+// SDMock is the interface for the nomad mock.
 type SDMock struct {
 	t      *testing.T
 	Server *httptest.Server

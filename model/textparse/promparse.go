@@ -26,6 +26,8 @@ import (
 	"unicode/utf8"
 	"unsafe"
 
+	"github.com/gogo/protobuf/types"
+
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -238,9 +240,15 @@ func (p *PromParser) Metric(l *labels.Labels) string {
 	return s
 }
 
-// Exemplar writes the exemplar of the current sample into the passed
-// exemplar. It returns if an exemplar exists.
-func (p *PromParser) Exemplar(e *exemplar.Exemplar) bool {
+// Exemplar implements the Parser interface. However, since the classic
+// Prometheus text format does not support exemplars, this implementation simply
+// returns false and does nothing else.
+func (p *PromParser) Exemplar(*exemplar.Exemplar) bool {
+	return false
+}
+
+// CreatedTimestamp returns false because PromParser does not support created timestamps.
+func (p *PromParser) CreatedTimestamp(_ *types.Timestamp) bool {
 	return false
 }
 
@@ -347,7 +355,7 @@ func (p *PromParser) Next() (Entry, error) {
 			return EntryInvalid, p.parseError("expected value after metric", t2)
 		}
 		if p.val, err = parseFloat(yoloString(p.l.buf())); err != nil {
-			return EntryInvalid, fmt.Errorf("%v while parsing: %q", err, p.l.b[p.start:p.l.i])
+			return EntryInvalid, fmt.Errorf("%w while parsing: %q", err, p.l.b[p.start:p.l.i])
 		}
 		// Ensure canonical NaN value.
 		if math.IsNaN(p.val) {
@@ -360,7 +368,7 @@ func (p *PromParser) Next() (Entry, error) {
 		case tTimestamp:
 			p.hasTS = true
 			if p.ts, err = strconv.ParseInt(yoloString(p.l.buf()), 10, 64); err != nil {
-				return EntryInvalid, fmt.Errorf("%v while parsing: %q", err, p.l.b[p.start:p.l.i])
+				return EntryInvalid, fmt.Errorf("%w while parsing: %q", err, p.l.b[p.start:p.l.i])
 			}
 			if t2 := p.nextToken(); t2 != tLinebreak {
 				return EntryInvalid, p.parseError("expected next entry after timestamp", t2)

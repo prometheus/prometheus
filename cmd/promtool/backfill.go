@@ -101,7 +101,7 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 		nextSampleTs int64 = math.MaxInt64
 	)
 
-	for t := mint; t <= maxt; t = t + blockDuration {
+	for t := mint; t <= maxt; t += blockDuration {
 		tsUpper := t + blockDuration
 		if nextSampleTs != math.MaxInt64 && nextSampleTs >= tsUpper {
 			// The next sample is not in this timerange, we can avoid parsing

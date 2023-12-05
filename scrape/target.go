@@ -14,6 +14,7 @@
 package scrape
 
 import (
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"net"
@@ -22,11 +23,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/model/textparse"
@@ -144,23 +145,21 @@ func (t *Target) SetMetadataStore(s MetricMetadataStore) {
 func (t *Target) hash() uint64 {
 	h := fnv.New64a()
 
-	//nolint: errcheck
 	h.Write([]byte(fmt.Sprintf("%016d", t.labels.Hash())))
-	//nolint: errcheck
 	h.Write([]byte(t.URL().String()))
 
 	return h.Sum64()
 }
 
 // offset returns the time until the next scrape cycle for the target.
-// It includes the global server jitterSeed for scrapes from multiple Prometheus to try to be at different times.
-func (t *Target) offset(interval time.Duration, jitterSeed uint64) time.Duration {
+// It includes the global server offsetSeed for scrapes from multiple Prometheus to try to be at different times.
+func (t *Target) offset(interval time.Duration, offsetSeed uint64) time.Duration {
 	now := time.Now().UnixNano()
 
 	// Base is a pinned to absolute time, no matter how often offset is called.
 	var (
 		base   = int64(interval) - now%int64(interval)
-		offset = (t.hash() ^ jitterSeed) % uint64(interval)
+		offset = (t.hash() ^ offsetSeed) % uint64(interval)
 		next   = base + int64(offset)
 	)
 
@@ -197,7 +196,7 @@ func (t *Target) DiscoveredLabels() labels.Labels {
 	return t.discoveredLabels.Copy()
 }
 
-// SetDiscoveredLabels sets new DiscoveredLabels
+// SetDiscoveredLabels sets new DiscoveredLabels.
 func (t *Target) SetDiscoveredLabels(l labels.Labels) {
 	t.mtx.Lock()
 	defer t.mtx.Unlock()
@@ -290,12 +289,12 @@ func (t *Target) intervalAndTimeout(defaultInterval, defaultDuration time.Durati
 	intervalLabel := t.labels.Get(model.ScrapeIntervalLabel)
 	interval, err := model.ParseDuration(intervalLabel)
 	if err != nil {
-		return defaultInterval, defaultDuration, errors.Errorf("Error parsing interval label %q: %v", intervalLabel, err)
+		return defaultInterval, defaultDuration, fmt.Errorf("Error parsing interval label %q: %w", intervalLabel, err)
 	}
 	timeoutLabel := t.labels.Get(model.ScrapeTimeoutLabel)
 	timeout, err := model.ParseDuration(timeoutLabel)
 	if err != nil {
-		return defaultInterval, defaultDuration, errors.Errorf("Error parsing timeout label %q: %v", timeoutLabel, err)
+		return defaultInterval, defaultDuration, fmt.Errorf("Error parsing timeout label %q: %w", timeoutLabel, err)
 	}
 
 	return time.Duration(interval), time.Duration(timeout), nil
@@ -313,7 +312,10 @@ func (ts Targets) Len() int           { return len(ts) }
 func (ts Targets) Less(i, j int) bool { return ts[i].URL().String() < ts[j].URL().String() }
 func (ts Targets) Swap(i, j int)      { ts[i], ts[j] = ts[j], ts[i] }
 
-var errSampleLimit = errors.New("sample limit exceeded")
+var (
+	errSampleLimit = errors.New("sample limit exceeded")
+	errBucketLimit = errors.New("histogram bucket limit exceeded")
+)
 
 // limitAppender limits the number of total appended samples in a batch.
 type limitAppender struct {
@@ -355,6 +357,37 @@ func (app *timeLimitAppender) Append(ref storage.SeriesRef, lset labels.Labels, 
 	return ref, nil
 }
 
+// bucketLimitAppender limits the number of total appended samples in a batch.
+type bucketLimitAppender struct {
+	storage.Appender
+
+	limit int
+}
+
+func (app *bucketLimitAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	if h != nil {
+		for len(h.PositiveBuckets)+len(h.NegativeBuckets) > app.limit {
+			if h.Schema == -4 {
+				return 0, errBucketLimit
+			}
+			h = h.ReduceResolution(h.Schema - 1)
+		}
+	}
+	if fh != nil {
+		for len(fh.PositiveBuckets)+len(fh.NegativeBuckets) > app.limit {
+			if fh.Schema == -4 {
+				return 0, errBucketLimit
+			}
+			fh = fh.ReduceResolution(fh.Schema - 1)
+		}
+	}
+	ref, err := app.Appender.AppendHistogram(ref, lset, t, h, fh)
+	if err != nil {
+		return 0, err
+	}
+	return ref, nil
+}
+
 // PopulateLabels builds a label set from the given label set and scrape configuration.
 // It returns a label set before relabeling was applied as the second return value.
 // Returns the original discovered label set found before relabelling was applied if the target is dropped during relabeling.
@@ -380,7 +413,7 @@ func PopulateLabels(lb *labels.Builder, cfg *config.ScrapeConfig, noDefaultPort 
 		}
 	}
 
-	preRelabelLabels := lb.Labels(labels.EmptyLabels())
+	preRelabelLabels := lb.Labels()
 	keep := relabel.ProcessBuilder(lb, cfg.RelabelConfigs...)
 
 	// Check if the target was dropped.
@@ -413,11 +446,11 @@ func PopulateLabels(lb *labels.Builder, cfg *config.ScrapeConfig, noDefaultPort 
 		// Addresses reaching this point are already wrapped in [] if necessary.
 		switch scheme {
 		case "http", "":
-			addr = addr + ":80"
+			addr += ":80"
 		case "https":
-			addr = addr + ":443"
+			addr += ":443"
 		default:
-			return labels.EmptyLabels(), labels.EmptyLabels(), errors.Errorf("invalid scheme: %q", cfg.Scheme)
+			return labels.EmptyLabels(), labels.EmptyLabels(), fmt.Errorf("invalid scheme: %q", cfg.Scheme)
 		}
 		lb.Set(model.AddressLabel, addr)
 	}
@@ -444,7 +477,7 @@ func PopulateLabels(lb *labels.Builder, cfg *config.ScrapeConfig, noDefaultPort 
 	interval := lb.Get(model.ScrapeIntervalLabel)
 	intervalDuration, err := model.ParseDuration(interval)
 	if err != nil {
-		return labels.EmptyLabels(), labels.EmptyLabels(), errors.Errorf("error parsing scrape interval: %v", err)
+		return labels.EmptyLabels(), labels.EmptyLabels(), fmt.Errorf("error parsing scrape interval: %w", err)
 	}
 	if time.Duration(intervalDuration) == 0 {
 		return labels.EmptyLabels(), labels.EmptyLabels(), errors.New("scrape interval cannot be 0")
@@ -453,14 +486,14 @@ func PopulateLabels(lb *labels.Builder, cfg *config.ScrapeConfig, noDefaultPort 
 	timeout := lb.Get(model.ScrapeTimeoutLabel)
 	timeoutDuration, err := model.ParseDuration(timeout)
 	if err != nil {
-		return labels.EmptyLabels(), labels.EmptyLabels(), errors.Errorf("error parsing scrape timeout: %v", err)
+		return labels.EmptyLabels(), labels.EmptyLabels(), fmt.Errorf("error parsing scrape timeout: %w", err)
 	}
 	if time.Duration(timeoutDuration) == 0 {
 		return labels.EmptyLabels(), labels.EmptyLabels(), errors.New("scrape timeout cannot be 0")
 	}
 
 	if timeoutDuration > intervalDuration {
-		return labels.EmptyLabels(), labels.EmptyLabels(), errors.Errorf("scrape timeout cannot be greater than scrape interval (%q > %q)", timeout, interval)
+		return labels.EmptyLabels(), labels.EmptyLabels(), fmt.Errorf("scrape timeout cannot be greater than scrape interval (%q > %q)", timeout, interval)
 	}
 
 	// Meta labels are deleted after relabelling. Other internal labels propagate to
@@ -476,11 +509,11 @@ func PopulateLabels(lb *labels.Builder, cfg *config.ScrapeConfig, noDefaultPort 
 		lb.Set(model.InstanceLabel, addr)
 	}
 
-	res = lb.Labels(labels.EmptyLabels())
+	res = lb.Labels()
 	err = res.Validate(func(l labels.Label) error {
 		// Check label values are valid, drop the target if not.
 		if !model.LabelValue(l.Value).IsValid() {
-			return errors.Errorf("invalid label value for %q: %q", l.Name, l.Value)
+			return fmt.Errorf("invalid label value for %q: %q", l.Name, l.Value)
 		}
 		return nil
 	})
@@ -509,7 +542,7 @@ func TargetsFromGroup(tg *targetgroup.Group, cfg *config.ScrapeConfig, noDefault
 
 		lset, origLabels, err := PopulateLabels(lb, cfg, noDefaultPort)
 		if err != nil {
-			failures = append(failures, errors.Wrapf(err, "instance %d in group %s", i, tg))
+			failures = append(failures, fmt.Errorf("instance %d in group %s: %w", i, tg, err))
 		}
 		if !lset.IsEmpty() || !origLabels.IsEmpty() {
 			targets = append(targets, NewTarget(lset, origLabels, cfg.Params))

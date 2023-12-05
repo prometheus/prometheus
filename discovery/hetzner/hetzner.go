@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/hetznercloud/hcloud-go/hcloud"
+	"github.com/hetznercloud/hcloud-go/v2/hcloud"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
@@ -57,7 +57,7 @@ type SDConfig struct {
 
 	RefreshInterval model.Duration `yaml:"refresh_interval"`
 	Port            int            `yaml:"port"`
-	Role            role           `yaml:"role"`
+	Role            Role           `yaml:"role"`
 	hcloudEndpoint  string         // For tests only.
 	robotEndpoint   string         // For tests only.
 }
@@ -74,26 +74,26 @@ type refresher interface {
 	refresh(context.Context) ([]*targetgroup.Group, error)
 }
 
-// role is the role of the target within the Hetzner Ecosystem.
-type role string
+// Role is the Role of the target within the Hetzner Ecosystem.
+type Role string
 
 // The valid options for role.
 const (
 	// Hetzner Robot Role (Dedicated Server)
 	// https://robot.hetzner.com
-	hetznerRoleRobot role = "robot"
+	HetznerRoleRobot Role = "robot"
 	// Hetzner Cloud Role
 	// https://console.hetzner.cloud
-	hetznerRoleHcloud role = "hcloud"
+	HetznerRoleHcloud Role = "hcloud"
 )
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *role) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *Role) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err := unmarshal((*string)(c)); err != nil {
 		return err
 	}
 	switch *c {
-	case hetznerRoleRobot, hetznerRoleHcloud:
+	case HetznerRoleRobot, HetznerRoleHcloud:
 		return nil
 	default:
 		return fmt.Errorf("unknown role %q", *c)
@@ -143,12 +143,12 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*refresh.Discovery, error)
 
 func newRefresher(conf *SDConfig, l log.Logger) (refresher, error) {
 	switch conf.Role {
-	case hetznerRoleHcloud:
+	case HetznerRoleHcloud:
 		if conf.hcloudEndpoint == "" {
 			conf.hcloudEndpoint = hcloud.Endpoint
 		}
 		return newHcloudDiscovery(conf, l)
-	case hetznerRoleRobot:
+	case HetznerRoleRobot:
 		if conf.robotEndpoint == "" {
 			conf.robotEndpoint = "https://robot-ws.your-server.de"
 		}

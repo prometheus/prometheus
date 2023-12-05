@@ -85,7 +85,7 @@ The PromQL parser grammar is located in `promql/parser/generated_parser.y` and i
 The parser is built using [goyacc](https://pkg.go.dev/golang.org/x/tools/cmd/goyacc)
 
 If doing some sort of debugging, then it is possible to add some verbose output. After generating the parser, then you
-can modify the the `./promql/parser/generated_parser.y.go` manually.
+can modify the `./promql/parser/generated_parser.y.go` manually.
 
 ```golang
 // As of writing this was somewhere around line 600.

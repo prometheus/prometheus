@@ -31,6 +31,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 )
 
@@ -58,7 +59,7 @@ func TestTargetLabels(t *testing.T) {
 
 func TestTargetOffset(t *testing.T) {
 	interval := 10 * time.Second
-	jitter := uint64(0)
+	offsetSeed := uint64(0)
 
 	offsets := make([]time.Duration, 10000)
 
@@ -67,7 +68,7 @@ func TestTargetOffset(t *testing.T) {
 		target := newTestTarget("example.com:80", 0, labels.FromStrings(
 			"label", fmt.Sprintf("%d", i),
 		))
-		offsets[i] = target.offset(interval, jitter)
+		offsets[i] = target.offset(interval, offsetSeed)
 	}
 
 	// Put the offsets into buckets and validate that they are all
@@ -134,13 +135,13 @@ func TestTargetURL(t *testing.T) {
 	require.Equal(t, expectedURL, target.URL())
 }
 
-func newTestTarget(targetURL string, deadline time.Duration, lbls labels.Labels) *Target {
+func newTestTarget(targetURL string, _ time.Duration, lbls labels.Labels) *Target {
 	lb := labels.NewBuilder(lbls)
 	lb.Set(model.SchemeLabel, "http")
 	lb.Set(model.AddressLabel, strings.TrimPrefix(targetURL, "http://"))
 	lb.Set(model.MetricsPathLabel, "/metrics")
 
-	return &Target{labels: lb.Labels(labels.EmptyLabels())}
+	return &Target{labels: lb.Labels()}
 }
 
 func TestNewHTTPBearerToken(t *testing.T) {
@@ -486,5 +487,106 @@ scrape_configs:
 				}
 			}
 		})
+	}
+}
+
+func TestBucketLimitAppender(t *testing.T) {
+	example := histogram.Histogram{
+		Schema:        0,
+		Count:         21,
+		Sum:           33,
+		ZeroThreshold: 0.001,
+		ZeroCount:     3,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 3},
+		},
+		PositiveBuckets: []int64{3, 0, 0},
+		NegativeSpans: []histogram.Span{
+			{Offset: 0, Length: 3},
+		},
+		NegativeBuckets: []int64{3, 0, 0},
+	}
+
+	bigGap := histogram.Histogram{
+		Schema:        0,
+		Count:         21,
+		Sum:           33,
+		ZeroThreshold: 0.001,
+		ZeroCount:     3,
+		PositiveSpans: []histogram.Span{
+			{Offset: 1, Length: 1}, // in (1, 2]
+			{Offset: 2, Length: 1}, // in (8, 16]
+		},
+		PositiveBuckets: []int64{1, 0}, // 1, 1
+	}
+
+	cases := []struct {
+		h                 histogram.Histogram
+		limit             int
+		expectError       bool
+		expectBucketCount int
+		expectSchema      int32
+	}{
+		{
+			h:           example,
+			limit:       3,
+			expectError: true,
+		},
+		{
+			h:                 example,
+			limit:             4,
+			expectError:       false,
+			expectBucketCount: 4,
+			expectSchema:      -1,
+		},
+		{
+			h:                 example,
+			limit:             10,
+			expectError:       false,
+			expectBucketCount: 6,
+			expectSchema:      0,
+		},
+		{
+			h:                 bigGap,
+			limit:             1,
+			expectError:       false,
+			expectBucketCount: 1,
+			expectSchema:      -2,
+		},
+	}
+
+	resApp := &collectResultAppender{}
+
+	for _, c := range cases {
+		for _, floatHisto := range []bool{true, false} {
+			t.Run(fmt.Sprintf("floatHistogram=%t", floatHisto), func(t *testing.T) {
+				app := &bucketLimitAppender{Appender: resApp, limit: c.limit}
+				ts := int64(10 * time.Minute / time.Millisecond)
+				lbls := labels.FromStrings("__name__", "sparse_histogram_series")
+				var err error
+				if floatHisto {
+					fh := c.h.Copy().ToFloat()
+					_, err = app.AppendHistogram(0, lbls, ts, nil, fh)
+					if c.expectError {
+						require.Error(t, err)
+					} else {
+						require.Equal(t, c.expectSchema, fh.Schema)
+						require.Equal(t, c.expectBucketCount, len(fh.NegativeBuckets)+len(fh.PositiveBuckets))
+						require.NoError(t, err)
+					}
+				} else {
+					h := c.h.Copy()
+					_, err = app.AppendHistogram(0, lbls, ts, h, nil)
+					if c.expectError {
+						require.Error(t, err)
+					} else {
+						require.Equal(t, c.expectSchema, h.Schema)
+						require.Equal(t, c.expectBucketCount, len(h.NegativeBuckets)+len(h.PositiveBuckets))
+						require.NoError(t, err)
+					}
+				}
+				require.NoError(t, app.Commit())
+			})
+		}
 	}
 }

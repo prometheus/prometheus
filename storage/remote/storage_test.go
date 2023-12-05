@@ -14,7 +14,9 @@
 package remote
 
 import (
+	"fmt"
 	"net/url"
+	"sync"
 	"testing"
 
 	common_config "github.com/prometheus/common/config"
@@ -125,7 +127,7 @@ func TestIgnoreExternalLabels(t *testing.T) {
 }
 
 // baseRemoteWriteConfig copy values from global Default Write config
-// to avoid change global state and cross impact test execution
+// to avoid change global state and cross impact test execution.
 func baseRemoteWriteConfig(host string) *config.RemoteWriteConfig {
 	cfg := config.DefaultRemoteWriteConfig
 	cfg.URL = &common_config.URL{
@@ -137,7 +139,7 @@ func baseRemoteWriteConfig(host string) *config.RemoteWriteConfig {
 }
 
 // baseRemoteReadConfig copy values from global Default Read config
-// to avoid change global state and cross impact test execution
+// to avoid change global state and cross impact test execution.
 func baseRemoteReadConfig(host string) *config.RemoteReadConfig {
 	cfg := config.DefaultRemoteReadConfig
 	cfg.URL = &common_config.URL{
@@ -146,4 +148,40 @@ func baseRemoteReadConfig(host string) *config.RemoteReadConfig {
 		},
 	}
 	return &cfg
+}
+
+// TestWriteStorageApplyConfigsDuringCommit helps detecting races when
+// ApplyConfig runs concurrently with Notify
+// See https://github.com/prometheus/prometheus/issues/12747
+func TestWriteStorageApplyConfigsDuringCommit(t *testing.T) {
+	s := NewStorage(nil, nil, nil, t.TempDir(), defaultFlushDeadline, nil)
+
+	var wg sync.WaitGroup
+	wg.Add(2000)
+
+	start := make(chan struct{})
+	for i := 0; i < 1000; i++ {
+		go func(i int) {
+			<-start
+			conf := &config.Config{
+				GlobalConfig: config.DefaultGlobalConfig,
+				RemoteWriteConfigs: []*config.RemoteWriteConfig{
+					baseRemoteWriteConfig(fmt.Sprintf("http://test-%d.com", i)),
+				},
+			}
+			require.NoError(t, s.ApplyConfig(conf))
+			wg.Done()
+		}(i)
+	}
+
+	for i := 0; i < 1000; i++ {
+		go func() {
+			<-start
+			s.Notify()
+			wg.Done()
+		}()
+	}
+
+	close(start)
+	wg.Wait()
 }

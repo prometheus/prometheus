@@ -23,7 +23,6 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -126,8 +125,8 @@ func TestCheckpoint(t *testing.T) {
 		}
 	}
 
-	for _, compress := range []bool{false, true} {
-		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
+	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
+		t.Run(fmt.Sprintf("compress=%s", compress), func(t *testing.T) {
 			dir := t.TempDir()
 
 			var enc record.Encoder
@@ -303,7 +302,7 @@ func TestCheckpoint(t *testing.T) {
 func TestCheckpointNoTmpFolderAfterError(t *testing.T) {
 	// Create a new wlog with invalid data.
 	dir := t.TempDir()
-	w, err := NewSize(nil, nil, dir, 64*1024, false)
+	w, err := NewSize(nil, nil, dir, 64*1024, CompressionNone)
 	require.NoError(t, err)
 	var enc record.Encoder
 	require.NoError(t, w.Log(enc.Series([]record.RefSeries{
@@ -325,7 +324,7 @@ func TestCheckpointNoTmpFolderAfterError(t *testing.T) {
 	// Walk the wlog dir to make sure there are no tmp folder left behind after the error.
 	err = filepath.Walk(w.Dir(), func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			return errors.Wrapf(err, "access err %q: %v", path, err)
+			return fmt.Errorf("access err %q: %w", path, err)
 		}
 		if info.IsDir() && strings.HasSuffix(info.Name(), ".tmp") {
 			return fmt.Errorf("wlog dir contains temporary folder:%s", info.Name())

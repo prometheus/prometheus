@@ -129,7 +129,7 @@ func (c *EC2SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 			return errors.New("EC2 SD configuration filter values cannot be empty")
 		}
 	}
-	return nil
+	return c.HTTPClientConfig.Validate()
 }
 
 // EC2Discovery periodically performs EC2-SD requests. It implements
@@ -164,7 +164,7 @@ func NewEC2Discovery(conf *EC2SDConfig, logger log.Logger) *EC2Discovery {
 	return d
 }
 
-func (d *EC2Discovery) ec2Client(ctx context.Context) (*ec2.EC2, error) {
+func (d *EC2Discovery) ec2Client(context.Context) (*ec2.EC2, error) {
 	if d.ec2 != nil {
 		return d.ec2, nil
 	}

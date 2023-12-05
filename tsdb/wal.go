@@ -90,7 +90,7 @@ func newWalMetrics(r prometheus.Registerer) *walMetrics {
 // WAL is a write ahead log that can log new series labels and samples.
 // It must be completely read before new entries are logged.
 //
-// DEPRECATED: use wlog pkg combined with the record codex instead.
+// Deprecated: use wlog pkg combined with the record codex instead.
 type WAL interface {
 	Reader() WALReader
 	LogSeries([]record.RefSeries) error
@@ -147,7 +147,7 @@ func newCRC32() hash.Hash32 {
 
 // SegmentWAL is a write ahead log for series data.
 //
-// DEPRECATED: use wlog pkg combined with the record coders instead.
+// Deprecated: use wlog pkg combined with the record coders instead.
 type SegmentWAL struct {
 	mtx     sync.Mutex
 	metrics *walMetrics
@@ -521,17 +521,18 @@ func (w *SegmentWAL) openSegmentFile(name string) (*os.File, error) {
 		}
 	}()
 
-	if n, err := f.Read(metab); err != nil {
+	switch n, err := f.Read(metab); {
+	case err != nil:
 		return nil, errors.Wrapf(err, "validate meta %q", f.Name())
-	} else if n != 8 {
-		return nil, errors.Errorf("invalid header size %d in %q", n, f.Name())
+	case n != 8:
+		return nil, fmt.Errorf("invalid header size %d in %q", n, f.Name())
 	}
 
 	if m := binary.BigEndian.Uint32(metab[:4]); m != WALMagic {
-		return nil, errors.Errorf("invalid magic header %x in %q", m, f.Name())
+		return nil, fmt.Errorf("invalid magic header %x in %q", m, f.Name())
 	}
 	if metab[4] != WALFormatDefault {
-		return nil, errors.Errorf("unknown WAL segment format %d in %q", metab[4], f.Name())
+		return nil, fmt.Errorf("unknown WAL segment format %d in %q", metab[4], f.Name())
 	}
 	hasError = false
 	return f, nil
@@ -1051,7 +1052,7 @@ func (e walCorruptionErr) Error() string {
 
 func (r *walReader) corruptionErr(s string, args ...interface{}) error {
 	return walCorruptionErr{
-		err:        errors.Errorf(s, args...),
+		err:        fmt.Errorf(s, args...),
 		file:       r.cur,
 		lastOffset: r.lastOffset,
 	}
@@ -1062,9 +1063,10 @@ func (r *walReader) entry(cr io.Reader) (WALEntryType, byte, []byte, error) {
 	tr := io.TeeReader(cr, r.crc32)
 
 	b := make([]byte, 6)
-	if n, err := tr.Read(b); err != nil {
+	switch n, err := tr.Read(b); {
+	case err != nil:
 		return 0, 0, nil, err
-	} else if n != 6 {
+	case n != 6:
 		return 0, 0, nil, r.corruptionErr("invalid entry header size %d", n)
 	}
 
@@ -1086,15 +1088,17 @@ func (r *walReader) entry(cr io.Reader) (WALEntryType, byte, []byte, error) {
 	}
 	buf := r.buf[:length]
 
-	if n, err := tr.Read(buf); err != nil {
+	switch n, err := tr.Read(buf); {
+	case err != nil:
 		return 0, 0, nil, err
-	} else if n != length {
+	case n != length:
 		return 0, 0, nil, r.corruptionErr("invalid entry body size %d", n)
 	}
 
-	if n, err := cr.Read(b[:4]); err != nil {
+	switch n, err := cr.Read(b[:4]); {
+	case err != nil:
 		return 0, 0, nil, err
-	} else if n != 4 {
+	case n != 4:
 		return 0, 0, nil, r.corruptionErr("invalid checksum length %d", n)
 	}
 	if exp, has := binary.BigEndian.Uint32(b[:4]), r.crc32.Sum32(); has != exp {
@@ -1120,7 +1124,7 @@ func (r *walReader) decodeSeries(flag byte, b []byte, res *[]record.RefSeries) e
 		return dec.Err()
 	}
 	if len(dec.B) > 0 {
-		return errors.Errorf("unexpected %d bytes left in entry", len(dec.B))
+		return fmt.Errorf("unexpected %d bytes left in entry", len(dec.B))
 	}
 	return nil
 }
@@ -1152,7 +1156,7 @@ func (r *walReader) decodeSamples(flag byte, b []byte, res *[]record.RefSample) 
 		return errors.Wrapf(dec.Err(), "decode error after %d samples", len(*res))
 	}
 	if len(dec.B) > 0 {
-		return errors.Errorf("unexpected %d bytes left in entry", len(dec.B))
+		return fmt.Errorf("unexpected %d bytes left in entry", len(dec.B))
 	}
 	return nil
 }
@@ -1172,7 +1176,7 @@ func (r *walReader) decodeDeletes(flag byte, b []byte, res *[]tombstones.Stone) 
 		return dec.Err()
 	}
 	if len(dec.B) > 0 {
-		return errors.Errorf("unexpected %d bytes left in entry", len(dec.B))
+		return fmt.Errorf("unexpected %d bytes left in entry", len(dec.B))
 	}
 	return nil
 }
@@ -1221,7 +1225,7 @@ func MigrateWAL(logger log.Logger, dir string) (err error) {
 	if err := os.RemoveAll(tmpdir); err != nil {
 		return errors.Wrap(err, "cleanup replacement dir")
 	}
-	repl, err := wlog.New(logger, nil, tmpdir, false)
+	repl, err := wlog.New(logger, nil, tmpdir, wlog.CompressionNone)
 	if err != nil {
 		return errors.Wrap(err, "open new WAL")
 	}

@@ -15,12 +15,14 @@ package index
 
 import (
 	"container/heap"
+	"context"
 	"encoding/binary"
+	"fmt"
 	"runtime"
 	"sort"
+	"strings"
 	"sync"
 
-	"github.com/pkg/errors"
 	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -107,11 +109,14 @@ func (p *MemPostings) SortedKeys() []labels.Label {
 	}
 	p.mtx.RUnlock()
 
-	sort.Slice(keys, func(i, j int) bool {
-		if keys[i].Name != keys[j].Name {
-			return keys[i].Name < keys[j].Name
+	slices.SortFunc(keys, func(a, b labels.Label) int {
+		nameCompare := strings.Compare(a.Name, b.Name)
+		// If names are the same, compare values.
+		if nameCompare != 0 {
+			return nameCompare
 		}
-		return keys[i].Value < keys[j].Value
+
+		return strings.Compare(a.Value, b.Value)
 	})
 	return keys
 }
@@ -135,7 +140,7 @@ func (p *MemPostings) LabelNames() []string {
 }
 
 // LabelValues returns label values for the given name.
-func (p *MemPostings) LabelValues(name string) []string {
+func (p *MemPostings) LabelValues(_ context.Context, name string) []string {
 	p.mtx.RLock()
 	defer p.mtx.RUnlock()
 
@@ -156,10 +161,8 @@ type PostingsStats struct {
 }
 
 // Stats calculates the cardinality statistics from postings.
-func (p *MemPostings) Stats(label string) *PostingsStats {
-	const maxNumOfRecords = 10
+func (p *MemPostings) Stats(label string, limit int) *PostingsStats {
 	var size uint64
-
 	p.mtx.RLock()
 
 	metrics := &maxHeap{}
@@ -168,10 +171,10 @@ func (p *MemPostings) Stats(label string) *PostingsStats {
 	labelValuePairs := &maxHeap{}
 	numLabelPairs := 0
 
-	metrics.init(maxNumOfRecords)
-	labels.init(maxNumOfRecords)
-	labelValueLength.init(maxNumOfRecords)
-	labelValuePairs.init(maxNumOfRecords)
+	metrics.init(limit)
+	labels.init(limit)
+	labelValueLength.init(limit)
+	labelValuePairs.init(limit)
 
 	for n, e := range p.m {
 		if n == "" {
@@ -184,8 +187,9 @@ func (p *MemPostings) Stats(label string) *PostingsStats {
 			if n == label {
 				metrics.push(Stat{Name: name, Count: uint64(len(values))})
 			}
-			labelValuePairs.push(Stat{Name: n + "=" + name, Count: uint64(len(values))})
-			size += uint64(len(name))
+			seriesCnt := uint64(len(values))
+			labelValuePairs.push(Stat{Name: n + "=" + name, Count: seriesCnt})
+			size += uint64(len(name)) * seriesCnt
 		}
 		labelValueLength.push(Stat{Name: n, Count: size})
 	}
@@ -224,7 +228,10 @@ func (p *MemPostings) All() Postings {
 
 // EnsureOrder ensures that all postings lists are sorted. After it returns all further
 // calls to add and addFor will insert new IDs in a sorted manner.
-func (p *MemPostings) EnsureOrder() {
+// Parameter numberOfConcurrentProcesses is used to specify the maximal number of
+// CPU cores used for this operation. If it is <= 0, GOMAXPROCS is used.
+// GOMAXPROCS was the default before introducing this parameter.
+func (p *MemPostings) EnsureOrder(numberOfConcurrentProcesses int) {
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
 
@@ -232,13 +239,16 @@ func (p *MemPostings) EnsureOrder() {
 		return
 	}
 
-	n := runtime.GOMAXPROCS(0)
+	concurrency := numberOfConcurrentProcesses
+	if concurrency <= 0 {
+		concurrency = runtime.GOMAXPROCS(0)
+	}
 	workc := make(chan *[][]storage.SeriesRef)
 
 	var wg sync.WaitGroup
-	wg.Add(n)
+	wg.Add(concurrency)
 
-	for i := 0; i < n; i++ {
+	for i := 0; i < concurrency; i++ {
 		go func() {
 			for job := range workc {
 				for _, l := range *job {
@@ -403,6 +413,7 @@ type Postings interface {
 	Seek(v storage.SeriesRef) bool
 
 	// At returns the value at the current iterator position.
+	// At should only be called after a successful call to Next or Seek.
 	At() storage.SeriesRef
 
 	// Err returns the last error of the iterator.
@@ -514,7 +525,7 @@ func (it *intersectPostings) Err() error {
 }
 
 // Merge returns a new iterator over the union of the input iterators.
-func Merge(its ...Postings) Postings {
+func Merge(ctx context.Context, its ...Postings) Postings {
 	if len(its) == 0 {
 		return EmptyPostings()
 	}
@@ -522,7 +533,7 @@ func Merge(its ...Postings) Postings {
 		return its[0]
 	}
 
-	p, ok := newMergedPostings(its)
+	p, ok := newMergedPostings(ctx, its)
 	if !ok {
 		return EmptyPostings()
 	}
@@ -554,17 +565,18 @@ type mergedPostings struct {
 	err         error
 }
 
-func newMergedPostings(p []Postings) (m *mergedPostings, nonEmpty bool) {
+func newMergedPostings(ctx context.Context, p []Postings) (m *mergedPostings, nonEmpty bool) {
 	ph := make(postingsHeap, 0, len(p))
 
 	for _, it := range p {
 		// NOTE: mergedPostings struct requires the user to issue an initial Next.
-		if it.Next() {
+		switch {
+		case ctx.Err() != nil:
+			return &mergedPostings{err: ctx.Err()}, true
+		case it.Next():
 			ph = append(ph, it)
-		} else {
-			if it.Err() != nil {
-				return &mergedPostings{err: it.Err()}, true
-			}
+		case it.Err() != nil:
+			return &mergedPostings{err: it.Err()}, true
 		}
 	}
 
@@ -697,17 +709,16 @@ func (rp *removedPostings) Next() bool {
 			rp.fok = rp.full.Next()
 			return true
 		}
-
-		fcur, rcur := rp.full.At(), rp.remove.At()
-		if fcur < rcur {
+		switch fcur, rcur := rp.full.At(), rp.remove.At(); {
+		case fcur < rcur:
 			rp.cur = fcur
 			rp.fok = rp.full.Next()
 
 			return true
-		} else if rcur < fcur {
+		case rcur < fcur:
 			// Forward the remove postings to the right position.
 			rp.rok = rp.remove.Seek(fcur)
-		} else {
+		default:
 			// Skip the current posting.
 			rp.fok = rp.full.Next()
 		}
@@ -842,9 +853,10 @@ func (it *bigEndianPostings) Err() error {
 func FindIntersectingPostings(p Postings, candidates []Postings) (indexes []int, err error) {
 	h := make(postingsWithIndexHeap, 0, len(candidates))
 	for idx, it := range candidates {
-		if it.Next() {
+		switch {
+		case it.Next():
 			h = append(h, postingsWithIndex{index: idx, p: it})
-		} else if it.Err() != nil {
+		case it.Err() != nil:
 			return nil, it.Err()
 		}
 	}
@@ -915,7 +927,7 @@ func (h *postingsWithIndexHeap) next() error {
 	}
 
 	if err := pi.p.Err(); err != nil {
-		return errors.Wrapf(err, "postings %d", pi.index)
+		return fmt.Errorf("postings %d: %w", pi.index, err)
 	}
 	h.popIndex()
 	return nil

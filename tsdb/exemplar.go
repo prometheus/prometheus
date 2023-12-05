@@ -15,11 +15,11 @@ package tsdb
 
 import (
 	"context"
-	"sort"
 	"sync"
 	"unicode/utf8"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -115,17 +115,17 @@ func NewExemplarMetrics(reg prometheus.Registerer) *ExemplarMetrics {
 // 1GB of extra memory, accounting for the fact that this is heap allocated space.
 // If len <= 0, then the exemplar storage is essentially a noop storage but can later be
 // resized to store exemplars.
-func NewCircularExemplarStorage(len int64, m *ExemplarMetrics) (ExemplarStorage, error) {
-	if len < 0 {
-		len = 0
+func NewCircularExemplarStorage(length int64, m *ExemplarMetrics) (ExemplarStorage, error) {
+	if length < 0 {
+		length = 0
 	}
 	c := &CircularExemplarStorage{
-		exemplars: make([]*circularBufferEntry, len),
-		index:     make(map[string]*indexEntry, len/estimatedExemplarsPerSeries),
+		exemplars: make([]*circularBufferEntry, length),
+		index:     make(map[string]*indexEntry, length/estimatedExemplarsPerSeries),
 		metrics:   m,
 	}
 
-	c.metrics.maxExemplars.Set(float64(len))
+	c.metrics.maxExemplars.Set(float64(length))
 
 	return c, nil
 }
@@ -151,7 +151,7 @@ func (ce *CircularExemplarStorage) Querier(_ context.Context) (storage.ExemplarQ
 func (ce *CircularExemplarStorage) Select(start, end int64, matchers ...[]*labels.Matcher) ([]exemplar.QueryResult, error) {
 	ret := make([]exemplar.QueryResult, 0)
 
-	if len(ce.exemplars) <= 0 {
+	if len(ce.exemplars) == 0 {
 		return ret, nil
 	}
 
@@ -185,8 +185,8 @@ func (ce *CircularExemplarStorage) Select(start, end int64, matchers ...[]*label
 		}
 	}
 
-	sort.Slice(ret, func(i, j int) bool {
-		return labels.Compare(ret[i].SeriesLabels, ret[j].SeriesLabels) < 0
+	slices.SortFunc(ret, func(a, b exemplar.QueryResult) int {
+		return labels.Compare(a.SeriesLabels, b.SeriesLabels)
 	})
 
 	return ret, nil
@@ -216,10 +216,10 @@ func (ce *CircularExemplarStorage) ValidateExemplar(l labels.Labels, e exemplar.
 	return ce.validateExemplar(seriesLabels, e, false)
 }
 
-// Not thread safe. The append parameters tells us whether this is an external validation, or internal
+// Not thread safe. The appended parameters tells us whether this is an external validation, or internal
 // as a result of an AddExemplar call, in which case we should update any relevant metrics.
-func (ce *CircularExemplarStorage) validateExemplar(key []byte, e exemplar.Exemplar, append bool) error {
-	if len(ce.exemplars) <= 0 {
+func (ce *CircularExemplarStorage) validateExemplar(key []byte, e exemplar.Exemplar, appended bool) error {
+	if len(ce.exemplars) == 0 {
 		return storage.ErrExemplarsDisabled
 	}
 
@@ -245,12 +245,27 @@ func (ce *CircularExemplarStorage) validateExemplar(key []byte, e exemplar.Exemp
 
 	// Check for duplicate vs last stored exemplar for this series.
 	// NB these are expected, and appending them is a no-op.
-	if ce.exemplars[idx.newest].exemplar.Equals(e) {
+	// For floats and classic histograms, there is only 1 exemplar per series,
+	// so this is sufficient. For native histograms with multiple exemplars per series,
+	// we have another check below.
+	newestExemplar := ce.exemplars[idx.newest].exemplar
+	if newestExemplar.Equals(e) {
 		return storage.ErrDuplicateExemplar
 	}
 
-	if e.Ts <= ce.exemplars[idx.newest].exemplar.Ts {
-		if append {
+	// Since during the scrape the exemplars are sorted first by timestamp, then value, then labels,
+	// if any of these conditions are true, we know that the exemplar is either a duplicate
+	// of a previous one (but not the most recent one as that is checked above) or out of order.
+	// We now allow exemplars with duplicate timestamps as long as they have different values and/or labels
+	// since that can happen for different buckets of a native histogram.
+	// We do not distinguish between duplicates and out of order as iterating through the exemplars
+	// to check for that would be expensive (versus just comparing with the most recent one) especially
+	// since this is run under a lock, and not worth it as we just need to return an error so we do not
+	// append the exemplar.
+	if e.Ts < newestExemplar.Ts ||
+		(e.Ts == newestExemplar.Ts && e.Value < newestExemplar.Value) ||
+		(e.Ts == newestExemplar.Ts && e.Value == newestExemplar.Value && e.Labels.Hash() < newestExemplar.Labels.Hash()) {
+		if appended {
 			ce.metrics.outOfOrderExemplars.Inc()
 		}
 		return storage.ErrOutOfOrderExemplar
@@ -334,7 +349,7 @@ func (ce *CircularExemplarStorage) migrate(entry *circularBufferEntry) {
 }
 
 func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemplar) error {
-	if len(ce.exemplars) <= 0 {
+	if len(ce.exemplars) == 0 {
 		return storage.ErrExemplarsDisabled
 	}
 
@@ -365,8 +380,8 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 	if prev := ce.exemplars[ce.nextIndex]; prev == nil {
 		ce.exemplars[ce.nextIndex] = &circularBufferEntry{}
 	} else {
-		// There exists exemplar already on this ce.nextIndex entry, drop it, to make place
-		// for others.
+		// There exists an exemplar already on this ce.nextIndex entry,
+		// drop it, to make place for others.
 		var buf [1024]byte
 		prevLabels := prev.ref.seriesLabels.Bytes(buf[:])
 		if prev.next == noExemplar {

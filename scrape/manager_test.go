@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
@@ -492,10 +493,13 @@ scrape_configs:
 		cfg3 = loadConfiguration(t, cfgText3)
 
 		ch = make(chan struct{}, 1)
+
+		testRegistry = prometheus.NewRegistry()
 	)
 
 	opts := Options{}
-	scrapeManager := NewManager(&opts, nil, nil)
+	scrapeManager, err := NewManager(&opts, nil, nil, testRegistry)
+	require.NoError(t, err)
 	newLoop := func(scrapeLoopOptions) loop {
 		ch <- struct{}{}
 		return noopLoop()
@@ -512,6 +516,7 @@ scrape_configs:
 		logger:  nil,
 		config:  cfg1.ScrapeConfigs[0],
 		client:  http.DefaultClient,
+		metrics: scrapeManager.metrics,
 	}
 	scrapeManager.scrapePools = map[string]*scrapePool{
 		"job1": sp,
@@ -560,7 +565,9 @@ scrape_configs:
 
 func TestManagerTargetsUpdates(t *testing.T) {
 	opts := Options{}
-	m := NewManager(&opts, nil, nil)
+	testRegistry := prometheus.NewRegistry()
+	m, err := NewManager(&opts, nil, nil, testRegistry)
+	require.NoError(t, err)
 
 	ts := make(chan map[string][]*targetgroup.Group)
 	go m.Run(ts)
@@ -596,7 +603,7 @@ func TestManagerTargetsUpdates(t *testing.T) {
 	}
 }
 
-func TestSetJitter(t *testing.T) {
+func TestSetOffsetSeed(t *testing.T) {
 	getConfig := func(prometheus string) *config.Config {
 		cfgText := `
 global:
@@ -613,28 +620,30 @@ global:
 	}
 
 	opts := Options{}
-	scrapeManager := NewManager(&opts, nil, nil)
+	testRegistry := prometheus.NewRegistry()
+	scrapeManager, err := NewManager(&opts, nil, nil, testRegistry)
+	require.NoError(t, err)
 
 	// Load the first config.
 	cfg1 := getConfig("ha1")
-	if err := scrapeManager.setJitterSeed(cfg1.GlobalConfig.ExternalLabels); err != nil {
+	if err := scrapeManager.setOffsetSeed(cfg1.GlobalConfig.ExternalLabels); err != nil {
 		t.Error(err)
 	}
-	jitter1 := scrapeManager.jitterSeed
+	offsetSeed1 := scrapeManager.offsetSeed
 
-	if jitter1 == 0 {
-		t.Error("Jitter has to be a hash of uint64")
+	if offsetSeed1 == 0 {
+		t.Error("Offset seed has to be a hash of uint64")
 	}
 
 	// Load the first config.
 	cfg2 := getConfig("ha2")
-	if err := scrapeManager.setJitterSeed(cfg2.GlobalConfig.ExternalLabels); err != nil {
+	if err := scrapeManager.setOffsetSeed(cfg2.GlobalConfig.ExternalLabels); err != nil {
 		t.Error(err)
 	}
-	jitter2 := scrapeManager.jitterSeed
+	offsetSeed2 := scrapeManager.offsetSeed
 
-	if jitter1 == jitter2 {
-		t.Error("Jitter should not be the same on different set of external labels")
+	if offsetSeed1 == offsetSeed2 {
+		t.Error("Offset seed should not be the same on different set of external labels")
 	}
 }
 
@@ -658,8 +667,9 @@ scrape_configs:
   - targets: ["foo:9093"]
 `
 	var (
-		cfg1 = loadConfiguration(t, cfgText1)
-		cfg2 = loadConfiguration(t, cfgText2)
+		cfg1         = loadConfiguration(t, cfgText1)
+		cfg2         = loadConfiguration(t, cfgText2)
+		testRegistry = prometheus.NewRegistry()
 	)
 
 	reload := func(scrapeManager *Manager, cfg *config.Config) {
@@ -695,7 +705,8 @@ scrape_configs:
 	}
 
 	opts := Options{}
-	scrapeManager := NewManager(&opts, nil, nil)
+	scrapeManager, err := NewManager(&opts, nil, nil, testRegistry)
+	require.NoError(t, err)
 
 	reload(scrapeManager, cfg1)
 	require.ElementsMatch(t, []string{"job1", "job2"}, scrapeManager.ScrapePools())
