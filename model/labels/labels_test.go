@@ -569,6 +569,7 @@ func TestLabels_BytesWithoutLabels(t *testing.T) {
 }
 
 func TestBuilder(t *testing.T) {
+	reuseBuilder := NewBuilderWithSymbolTable(NewSymbolTable())
 	for i, tcase := range []struct {
 		base Labels
 		del  []string
@@ -579,6 +580,11 @@ func TestBuilder(t *testing.T) {
 		{
 			base: FromStrings("aaa", "111"),
 			want: FromStrings("aaa", "111"),
+		},
+		{
+			base: EmptyLabels(),
+			set:  []Label{{"aaa", "444"}, {"bbb", "555"}, {"ccc", "666"}},
+			want: FromStrings("aaa", "444", "bbb", "555", "ccc", "666"),
 		},
 		{
 			base: FromStrings("aaa", "111", "bbb", "222", "ccc", "333"),
@@ -638,8 +644,7 @@ func TestBuilder(t *testing.T) {
 			want: FromStrings("aaa", "111", "ddd", "444"),
 		},
 	} {
-		t.Run(fmt.Sprint(i), func(t *testing.T) {
-			b := NewBuilder(tcase.base)
+		test := func(t *testing.T, b *Builder) {
 			for _, lbl := range tcase.set {
 				b.Set(lbl.Name, lbl.Value)
 			}
@@ -656,6 +661,18 @@ func TestBuilder(t *testing.T) {
 				}
 			})
 			require.Equal(t, tcase.want.BytesWithoutLabels(nil, "aaa", "bbb"), b.Labels().Bytes(nil))
+		}
+		t.Run(fmt.Sprintf("NewBuilder %d", i), func(t *testing.T) {
+			test(t, NewBuilder(tcase.base))
+		})
+		t.Run(fmt.Sprintf("NewSymbolTable %d", i), func(t *testing.T) {
+			b := NewBuilderWithSymbolTable(NewSymbolTable())
+			b.Reset(tcase.base)
+			test(t, b)
+		})
+		t.Run(fmt.Sprintf("reuseBuilder %d", i), func(t *testing.T) {
+			reuseBuilder.Reset(tcase.base)
+			test(t, reuseBuilder)
 		})
 	}
 	t.Run("set_after_del", func(t *testing.T) {
