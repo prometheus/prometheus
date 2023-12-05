@@ -70,6 +70,9 @@ import (
 	// Register scaleway plugin.
 	_ "github.com/prometheus/prometheus/discovery/scaleway"
 
+	// Register snowflake plugin.
+	_ "github.com/prometheus/prometheus/discovery/snowflake"
+
 	// Register triton plugin.
 	_ "github.com/prometheus/prometheus/discovery/triton"
 

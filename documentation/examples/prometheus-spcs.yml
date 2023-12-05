@@ -1,0 +1,72 @@
+# Snowpark Container Services(spcs) runs in snowflake environment.
+# Each service will be mounted with short lived credentials to execute queries.
+# The token is mounted to path (/snowflake/session) for every service
+# By default spcs scrape configurations uses the mounted token to return list of endpoints to scrape.
+# We also support other authentication mechanismas and configurations as shown here.
+# Account Identifier: https://docs.snowflake.com/en/user-guide/admin-account-identifier
+# Roles - https://docs.snowflake.com/en/user-guide/security-access-control-overview#roles
+
+scrape_configs:
+  # Make Prometheus scrape itself for metrics.
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Discover spcs compute pools to scrape. (only by passing authenticator)
+  # account value is retrieved from environment variables
+  # token value is loaded from the default mount path (/snowflake/session)
+  - job_name: 'spcs'
+    spcs_sd_configs:
+      - authenticator: AuthTypeToken
+
+  # Discover spcs compute pools to scrape. (by passing account and host)
+  # token value is loaded from the default mount path (/snowflake/session)
+  - job_name: 'spcs_1'
+    spcs_sd_configs:
+      - authenticator: AuthTypeToken
+        account: testAccount
+        host: xy12345.snowflakecomputing.com
+
+  # Discover spcs compute pools to scrape. (by custom authentication)
+  - job_name: 'spcs_2'
+    spcs_sd_configs:
+      - authenticator: AuthTypePassword
+        account: testOrganization-testAccount
+        user: testUser
+        password: testPassword
+        role: testRole
+
+  # Discover spcs compute pools to scrape. (by custom authentication)
+  - job_name: 'spcs_3'
+    spcs_sd_configs:
+      - authenticator: AuthTypeToken
+        account: testOrganization-testAccount
+        token_path: /token/path     
+
+  # Discover spcs compute pools to scrape. (by custom authentication and host)
+  - job_name: 'spcs_4'
+    spcs_sd_configs:
+      - authenticator: AuthTypePassword
+        account: testAccount
+        host: xy12345.snowflakecomputing.com        
+        user: testUser
+        password: testPassword
+        role: testRole
+
+  # Discover spcs compute pools to scrape. (change default port and refresh duration)
+  - job_name: 'spcs_5'
+    spcs_sd_configs:
+      - authenticator: AuthTypeToken
+        account: testOrganization-testAccount
+        port: 80
+        refresh_interval: 10s
+
+  # Discover spcs compute pools to scrape. (apply relabel config to filter metrics from computepools 
+  # whose name starts with testComputepool)
+  - job_name: 'spcs_6'
+    spcs_sd_configs:
+      - authenticator: AuthTypeToken
+    relabel_configs:
+      - source_labels: [__meta_spcs_compute_pool_name]
+        regex: '(testComputePool.*)'
+        action: keep

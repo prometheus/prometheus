@@ -390,6 +390,10 @@ scaleway_sd_configs:
 serverset_sd_configs:
   [ - <serverset_sd_config> ... ]
 
+# List of Snowflake container service discovery configurations.
+spcs_sd_configs:
+  [ - <spcs_sd_config> ... ]
+
 # List of Triton service discovery configurations.
 triton_sd_configs:
   [ - <triton_sd_config> ... ]
@@ -2978,6 +2982,57 @@ tls_config:
   [ <tls_config> ]
 ```
 
+### `<spcs_sd_config>`
+
+Snowpark Container Services(spcs) SD configurations allow retrieving scrape targets by establishing 
+connection with snowflake database. Prometheus will periodically run queries
+and creates targets for every compute pool.
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_spcs_compute_pool_name`: the name of the compute pool
+
+See below for the configuration options for Spcs discovery:
+
+```yaml
+# Every spcs has a short-lived token to query snowflake.
+# We support two types of authentication.
+# AuthTypeToken: token mounted to (snowflake/session) is used or can be overridden by token_path.
+# AuthTypePassword: user, password, role are expected for this type.
+[ authenticator: <string> ]
+
+# Optional token_path attached to the spcs volume.
+[ token_path: <string> ]
+
+# Optional snowflake user.
+[ user: <string> ]
+
+# Optional snowflake password.
+[ password: <string> ]
+
+# Optional snowflake role.
+[ role: <string> ]
+
+# Optional The account identifier to connect to the Snowflake.
+[ account: <string> ]
+
+# Optional The host name to connect to the Snowflake.
+[ host: <string> ]
+
+# Optional port to communicate with Snowflake.
+[ port: <int> | default: 443 ]
+
+# Optional protocol to communicate with Snowflake.
+[ protocol: <string> | default: https ]
+
+# Optional refresh interval to re-query the db for compute pools.
+[ refresh_interval: <duration> | default: 60s ]
+```
+
+See [the Prometheus spcs-sd configuration file](/documentation/examples/prometheus-spcs.yml)
+for practical examples on how to set up your spcs app and your Prometheus
+configuration.
+
 ### `<uyuni_sd_config>`
 
 Uyuni SD configurations allow retrieving scrape targets from managed systems
@@ -3453,6 +3508,10 @@ scaleway_sd_configs:
 # List of Zookeeper Serverset service discovery configurations.
 serverset_sd_configs:
   [ - <serverset_sd_config> ... ]
+
+# List of Snowflake container service discovery configurations.
+spcs_sd_configs:
+  [ - <spcs_sd_config> ... ]
 
 # List of Triton service discovery configurations.
 triton_sd_configs:
