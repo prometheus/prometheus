@@ -48,12 +48,12 @@ func TestIONOSServerRefresh(t *testing.T) {
 	tgs, err := d.refresh(ctx)
 	require.NoError(t, err)
 
-	require.Equal(t, 1, len(tgs))
+	require.Len(t, tgs, 1)
 
 	tg := tgs[0]
 	require.NotNil(t, tg)
 	require.NotNil(t, tg.Targets)
-	require.Equal(t, 2, len(tg.Targets))
+	require.Len(t, tg.Targets, 2)
 
 	for i, lbls := range []model.LabelSet{
 		{

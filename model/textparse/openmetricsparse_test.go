@@ -269,9 +269,9 @@ foo_total 17.0 1520879607.789 # {id="counter-test"} 5`
 			require.Equal(t, exp[i].v, v)
 			require.Equal(t, exp[i].lset, res)
 			if exp[i].e == nil {
-				require.Equal(t, false, found)
+				require.False(t, found)
 			} else {
-				require.Equal(t, true, found)
+				require.True(t, found)
 				require.Equal(t, *exp[i].e, e)
 			}
 
@@ -296,7 +296,7 @@ foo_total 17.0 1520879607.789 # {id="counter-test"} 5`
 
 		i++
 	}
-	require.Equal(t, len(exp), i)
+	require.Len(t, exp, i)
 }
 
 func TestOpenMetricsParseErrors(t *testing.T) {

@@ -55,7 +55,7 @@ func TestUyuniSDHandleError(t *testing.T) {
 	tgs, err := testUpdateServices(respHandler)
 
 	require.EqualError(t, err, errTesting)
-	require.Equal(t, len(tgs), 0)
+	require.Empty(t, tgs)
 }
 
 func TestUyuniSDLogin(t *testing.T) {
@@ -87,7 +87,7 @@ func TestUyuniSDLogin(t *testing.T) {
 	tgs, err := testUpdateServices(respHandler)
 
 	require.EqualError(t, err, errTesting)
-	require.Equal(t, len(tgs), 0)
+	require.Empty(t, tgs)
 }
 
 func TestUyuniSDSkipLogin(t *testing.T) {
@@ -119,5 +119,5 @@ func TestUyuniSDSkipLogin(t *testing.T) {
 	tgs, err := md.refresh(context.Background())
 
 	require.EqualError(t, err, errTesting)
-	require.Equal(t, len(tgs), 0)
+	require.Empty(t, tgs)
 }

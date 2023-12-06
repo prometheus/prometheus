@@ -56,12 +56,12 @@ func TestVultrSDRefresh(t *testing.T) {
 	tgs, err := d.refresh(ctx)
 	require.NoError(t, err)
 
-	require.Equal(t, 1, len(tgs))
+	require.Len(t, tgs, 1)
 
 	tg := tgs[0]
 	require.NotNil(t, tg)
 	require.NotNil(t, tg.Targets)
-	require.Equal(t, 3, len(tg.Targets))
+	require.Len(t, tg.Targets, 3)
 
 	for i, k := range []model.LabelSet{
 		{

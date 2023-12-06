@@ -246,8 +246,8 @@ func TestFloatHistogramChunkBucketChanges(t *testing.T) {
 	// This is how span changes will be handled.
 	hApp, _ := app.(*FloatHistogramAppender)
 	posInterjections, negInterjections, ok, cr := hApp.appendable(h2.ToFloat())
-	require.Greater(t, len(posInterjections), 0)
-	require.Greater(t, len(negInterjections), 0)
+	require.NotEmpty(t, posInterjections)
+	require.NotEmpty(t, negInterjections)
 	require.True(t, ok) // Only new buckets came in.
 	require.False(t, cr)
 	c, app = hApp.recode(posInterjections, negInterjections, h2.PositiveSpans, h2.NegativeSpans)
@@ -348,8 +348,8 @@ func TestFloatHistogramChunkAppendable(t *testing.T) {
 		h2.PositiveBuckets = []float64{7, 5, 1, 3, 1, 0, 2, 5, 5, 0, 1}
 
 		posInterjections, negInterjections, ok, cr := hApp.appendable(h2)
-		require.Greater(t, len(posInterjections), 0)
-		require.Equal(t, 0, len(negInterjections))
+		require.NotEmpty(t, posInterjections)
+		require.Empty(t, negInterjections)
 		require.True(t, ok) // Only new buckets came in.
 		require.False(t, cr)
 
@@ -370,8 +370,8 @@ func TestFloatHistogramChunkAppendable(t *testing.T) {
 		h2.PositiveBuckets = []float64{6, 3, 2, 4, 5, 1}
 
 		posInterjections, negInterjections, ok, cr := hApp.appendable(h2)
-		require.Equal(t, 0, len(posInterjections))
-		require.Equal(t, 0, len(negInterjections))
+		require.Empty(t, posInterjections)
+		require.Empty(t, negInterjections)
 		require.False(t, ok) // Need to cut a new chunk.
 		require.True(t, cr)
 
@@ -385,8 +385,8 @@ func TestFloatHistogramChunkAppendable(t *testing.T) {
 		h2.PositiveBuckets = []float64{6, 2, 3, 2, 4, 5, 1}
 
 		posInterjections, negInterjections, ok, cr := hApp.appendable(h2)
-		require.Equal(t, 0, len(posInterjections))
-		require.Equal(t, 0, len(negInterjections))
+		require.Empty(t, posInterjections)
+		require.Empty(t, negInterjections)
 		require.False(t, ok) // Need to cut a new chunk.
 		require.True(t, cr)
 
@@ -406,8 +406,8 @@ func TestFloatHistogramChunkAppendable(t *testing.T) {
 		h2.PositiveBuckets = []float64{7, 5, 1, 3, 1, 0, 2, 5, 5, 0, 0}
 
 		posInterjections, negInterjections, ok, cr := hApp.appendable(h2)
-		require.Equal(t, 0, len(posInterjections))
-		require.Equal(t, 0, len(negInterjections))
+		require.Empty(t, posInterjections)
+		require.Empty(t, negInterjections)
 		require.False(t, ok) // Need to cut a new chunk.
 		require.True(t, cr)
 
@@ -433,8 +433,8 @@ func TestFloatHistogramChunkAppendable(t *testing.T) {
 		h2.PositiveBuckets = []float64{1, 2, 5, 3, 3, 2, 4, 5, 1}
 
 		posInterjections, negInterjections, ok, cr := hApp.appendable(h2)
-		require.Equal(t, 0, len(posInterjections))
-		require.Equal(t, 0, len(negInterjections))
+		require.Empty(t, posInterjections)
+		require.Empty(t, negInterjections)
 		require.False(t, ok) // Need to cut a new chunk.
 		require.True(t, cr)
 
@@ -810,10 +810,10 @@ func TestFloatHistogramChunkAppendableGauge(t *testing.T) {
 		h2.PositiveBuckets = []float64{7, 5, 1, 3, 1, 0, 2, 5, 5, 0, 1}
 
 		pI, nI, pBackwardI, nBackwardI, _, _, ok := hApp.appendableGauge(h2)
-		require.Greater(t, len(pI), 0)
-		require.Len(t, nI, 0)
-		require.Len(t, pBackwardI, 0)
-		require.Len(t, nBackwardI, 0)
+		require.NotEmpty(t, pI)
+		require.Empty(t, nI)
+		require.Empty(t, pBackwardI)
+		require.Empty(t, nBackwardI)
 		require.True(t, ok)
 
 		assertRecodedFloatHistogramChunkOnAppend(t, c, hApp, ts+1, h2, GaugeType)
@@ -834,10 +834,10 @@ func TestFloatHistogramChunkAppendableGauge(t *testing.T) {
 		h2.PositiveBuckets = []float64{6, 3, 3, 2, 5, 1}
 
 		pI, nI, pBackwardI, nBackwardI, _, _, ok := hApp.appendableGauge(h2)
-		require.Len(t, pI, 0)
-		require.Len(t, nI, 0)
-		require.Greater(t, len(pBackwardI), 0)
-		require.Len(t, nBackwardI, 0)
+		require.Empty(t, pI)
+		require.Empty(t, nI)
+		require.NotEmpty(t, pBackwardI)
+		require.Empty(t, nBackwardI)
 		require.True(t, ok)
 
 		assertNoNewFloatHistogramChunkOnAppend(t, c, hApp, ts+1, h2, GaugeType)
@@ -856,10 +856,10 @@ func TestFloatHistogramChunkAppendableGauge(t *testing.T) {
 		h2.PositiveBuckets = []float64{6, 3, 2, 4, 5, 1}
 
 		pI, nI, pBackwardI, nBackwardI, _, _, ok := hApp.appendableGauge(h2)
-		require.Greater(t, len(pI), 0)
-		require.Greater(t, len(pBackwardI), 0)
-		require.Len(t, nI, 0)
-		require.Len(t, nBackwardI, 0)
+		require.NotEmpty(t, pI)
+		require.NotEmpty(t, pBackwardI)
+		require.Empty(t, nI)
+		require.Empty(t, nBackwardI)
 		require.True(t, ok)
 
 		assertRecodedFloatHistogramChunkOnAppend(t, c, hApp, ts+1, h2, GaugeType)
@@ -872,10 +872,10 @@ func TestFloatHistogramChunkAppendableGauge(t *testing.T) {
 		h2.PositiveBuckets = []float64{6, 2, 3, 2, 4, 5, 1}
 
 		pI, nI, pBackwardI, nBackwardI, _, _, ok := hApp.appendableGauge(h2)
-		require.Len(t, pI, 0)
-		require.Len(t, nI, 0)
-		require.Len(t, pBackwardI, 0)
-		require.Len(t, nBackwardI, 0)
+		require.Empty(t, pI)
+		require.Empty(t, nI)
+		require.Empty(t, pBackwardI)
+		require.Empty(t, nBackwardI)
 		require.True(t, ok)
 
 		assertNoNewFloatHistogramChunkOnAppend(t, c, hApp, ts+1, h2, GaugeType)
@@ -894,10 +894,10 @@ func TestFloatHistogramChunkAppendableGauge(t *testing.T) {
 		h2.PositiveBuckets = []float64{7, 5, 1, 3, 1, 0, 2, 5, 5, 0, 0}
 
 		pI, nI, pBackwardI, nBackwardI, _, _, ok := hApp.appendableGauge(h2)
-		require.Greater(t, len(pI), 0)
-		require.Len(t, nI, 0)
-		require.Len(t, pBackwardI, 0)
-		require.Len(t, nBackwardI, 0)
+		require.NotEmpty(t, pI)
+		require.Empty(t, nI)
+		require.Empty(t, pBackwardI)
+		require.Empty(t, nBackwardI)
 		require.True(t, ok)
 
 		assertRecodedFloatHistogramChunkOnAppend(t, c, hApp, ts+1, h2, GaugeType)
@@ -920,10 +920,10 @@ func TestFloatHistogramChunkAppendableGauge(t *testing.T) {
 		h2.PositiveBuckets = []float64{1, 2, 5, 3, 3, 2, 4, 5, 1}
 
 		pI, nI, pBackwardI, nBackwardI, _, _, ok := hApp.appendableGauge(h2)
-		require.Greater(t, len(pI), 0)
-		require.Len(t, nI, 0)
-		require.Len(t, pBackwardI, 0)
-		require.Len(t, nBackwardI, 0)
+		require.NotEmpty(t, pI)
+		require.Empty(t, nI)
+		require.Empty(t, pBackwardI)
+		require.Empty(t, nBackwardI)
 		require.True(t, ok)
 
 		assertRecodedFloatHistogramChunkOnAppend(t, c, hApp, ts+1, h2, GaugeType)

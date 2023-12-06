@@ -62,7 +62,7 @@ func TestHTTPValidRefresh(t *testing.T) {
 			Source: urlSource(ts.URL+"/http_sd.good.json", 0),
 		},
 	}
-	require.Equal(t, tgs, expectedTargets)
+	require.Equal(t, expectedTargets, tgs)
 	require.Equal(t, 0.0, getFailureCount())
 }
 

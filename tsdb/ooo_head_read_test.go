@@ -491,7 +491,7 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 		})
 		require.Nil(t, iterable)
 		require.Equal(t, err, fmt.Errorf("not found"))
-		require.Equal(t, c, nil)
+		require.Nil(t, c)
 	})
 
 	tests := []struct {
