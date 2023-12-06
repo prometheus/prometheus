@@ -11,8 +11,7 @@ class DecompressorBufferAllocateFixture : public testing::Test {
   DecompressorBuffer buffer_{{.shrink_ratio = 0.01, .threshold_size_shrink_ratio = 0.01}};
 };
 
-TEST_F(DecompressorBufferAllocateFixture, AllocateNewBuffer)
-{
+TEST_F(DecompressorBufferAllocateFixture, AllocateNewBuffer) {
   // Arrange
 
   // Act
@@ -23,8 +22,7 @@ TEST_F(DecompressorBufferAllocateFixture, AllocateNewBuffer)
   EXPECT_EQ(10U, buffer_.size());
 }
 
-TEST_F(DecompressorBufferAllocateFixture, NoAllocateForSmallerSize)
-{
+TEST_F(DecompressorBufferAllocateFixture, NoAllocateForSmallerSize) {
   // Arrange
 
   // Act
@@ -34,7 +32,6 @@ TEST_F(DecompressorBufferAllocateFixture, NoAllocateForSmallerSize)
   // Assert
   EXPECT_EQ(10U, buffer_.size());
 }
-
 
 class DecompressorBufferReallocateFixture : public testing::Test {
  protected:
@@ -82,7 +79,6 @@ TEST_F(DecompressorBufferReallocateFixture, NoReallocateForSmallerSize) {
   EXPECT_EQ(str.size(), buffer_.size());
   EXPECT_TRUE(buffer_.view().starts_with(str));
 }
-
 
 struct ShrinkTestCase {
   size_t allocate_size;
