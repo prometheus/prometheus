@@ -6,9 +6,8 @@
 #include <lz4frame.h>
 #include <lz4hc.h>
 
+#include "bare_bones/preprocess.h"
 #include "helper.h"
-
-#include <iostream>
 
 namespace BareBones::lz4 {
 
@@ -16,7 +15,7 @@ struct DecompressResult {
   std::string_view data;
   size_t frame_size{};
 
-  auto operator<=>(const DecompressResult&) const noexcept = default;
+  auto ALWAYS_INLINE operator<=>(const DecompressResult&) const noexcept = default;
 };
 
 class AllocationSizeCalculator {
@@ -30,14 +29,14 @@ class AllocationSizeCalculator {
  public:
   explicit AllocationSizeCalculator(const Parameters& parameters) : parameters_(parameters) {}
 
-  [[nodiscard]] size_t get_allocation_size(size_t compressed_data_size) const noexcept {
+  [[nodiscard]] ALWAYS_INLINE size_t get_allocation_size(size_t compressed_data_size) const noexcept {
     return std::max(calculate(compressed_data_size, parameters_.allocation_ratio), parameters_.min_allocation_size);
   }
 
-  [[nodiscard]] size_t get_reallocation_size(size_t buffer_size) const noexcept { return calculate(buffer_size, parameters_.reallocation_ratio); }
+  [[nodiscard]] ALWAYS_INLINE size_t get_reallocation_size(size_t buffer_size) const noexcept { return calculate(buffer_size, parameters_.reallocation_ratio); }
 
  private:
-  [[nodiscard]] size_t calculate(size_t value, double ratio) const noexcept { return static_cast<size_t>(value * ratio); }
+  [[nodiscard]] ALWAYS_INLINE size_t calculate(size_t value, double ratio) const noexcept { return static_cast<size_t>(value * ratio); }
 
  private:
   const Parameters parameters_;
@@ -60,8 +59,8 @@ class StreamDecompressor {
       : buffer_(buffer), size_calculator_(allocation_parameters) {}
   ~StreamDecompressor() { LZ4F_freeDecompressionContext(ctx_); }
 
-  [[nodiscard]] bool is_initialized() const noexcept { return ctx_ != nullptr; }
-  [[nodiscard]] const CallResult& lz4_call_result() const noexcept { return call_result_; }
+  [[nodiscard]] ALWAYS_INLINE bool is_initialized() const noexcept { return ctx_ != nullptr; }
+  [[nodiscard]] ALWAYS_INLINE const CallResult& lz4_call_result() const noexcept { return call_result_; }
 
   [[nodiscard]] bool initialize() {
     if (is_initialized()) {
@@ -99,7 +98,7 @@ class StreamDecompressor {
   }
 
  private:
-  [[nodiscard]] static bool shrink_to_frame_size(std::string_view& buffer, size_t actual_size) {
+  [[nodiscard]] ALWAYS_INLINE static bool shrink_to_frame_size(std::string_view& buffer, size_t actual_size) {
     if (buffer.size() >= actual_size) {
       buffer.remove_suffix(buffer.size() - actual_size);
       return true;
@@ -108,7 +107,7 @@ class StreamDecompressor {
     return false;
   }
 
-  [[nodiscard]] size_t get_header_size(std::string_view buffer) {
+  [[nodiscard]] ALWAYS_INLINE size_t get_header_size(std::string_view buffer) {
     if (call_result_ = LZ4F_headerSize(buffer.data(), buffer.size()); call_result_.is_error()) {
       return 0;
     }
@@ -116,7 +115,7 @@ class StreamDecompressor {
     return call_result_.size();
   }
 
-  [[nodiscard]] static CompressedBufferSize get_compressed_data_size(std::string_view buffer, size_t header_size) {
+  [[nodiscard]] ALWAYS_INLINE static CompressedBufferSize get_compressed_data_size(std::string_view buffer, size_t header_size) {
     if (buffer.size() < sizeof(CompressedBufferSize) + header_size) {
       return 0;
     }

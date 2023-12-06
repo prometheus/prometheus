@@ -5,6 +5,7 @@
 #include <lz4frame.h>
 #include <lz4hc.h>
 
+#include "bare_bones/preprocess.h"
 #include "helper.h"
 
 namespace BareBones::lz4 {
@@ -13,8 +14,8 @@ class StreamCompressor {
  public:
   ~StreamCompressor() { LZ4F_freeCompressionContext(ctx_); }
 
-  [[nodiscard]] bool is_initialized() const noexcept { return ctx_ != nullptr; }
-  [[nodiscard]] const CallResult& lz4_call_result() const noexcept { return call_result_; }
+  [[nodiscard]] ALWAYS_INLINE bool is_initialized() const noexcept { return ctx_ != nullptr; }
+  [[nodiscard]] ALWAYS_INLINE const CallResult& lz4_call_result() const noexcept { return call_result_; }
 
   [[nodiscard]] bool initialize(int compression_level = LZ4HC_CLEVEL_DEFAULT) {
     if (is_initialized()) {
@@ -50,12 +51,12 @@ class StreamCompressor {
   static constexpr size_t kHeaderMaxSize = LZ4F_HEADER_SIZE_MAX;
 
  private:
-  void create_preferences(int compression_level) noexcept {
+  void ALWAYS_INLINE create_preferences(int compression_level) noexcept {
     preferences_.compressionLevel = compression_level;
     preferences_.autoFlush = 1;
   }
 
-  void allocate_buffer(std::string_view data_frame, bool create_header) {
+  void ALWAYS_INLINE allocate_buffer(std::string_view data_frame, bool create_header) {
     auto size = LZ4F_compressBound(data_frame.size(), &preferences_);
 
     if (create_header) {
@@ -87,7 +88,7 @@ class StreamCompressor {
     return result;
   }
 
-  void patch_compressed_buffer_size(size_t header_size, size_t compressed_frame_size) {
+  void ALWAYS_INLINE patch_compressed_buffer_size(size_t header_size, size_t compressed_frame_size) {
     size_t data_size_offset = header_size + sizeof(CompressedBufferSize);
     if (compressed_frame_size < data_size_offset) {
       return;
