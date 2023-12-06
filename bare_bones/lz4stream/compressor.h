@@ -82,21 +82,18 @@ class Compressor {
     auto output_buffer_size = buffer_.capacity() - header_size;
     if (call_result_ = LZ4F_compressUpdate(ctx_, output_buffer, output_buffer_size, data_frame.data(), data_frame.size(), nullptr); !call_result_.is_error()) {
       result = {&buffer_[0], header_size + call_result_.size()};
-      patch_compressed_buffer_size(header_size, result.size());
+      patch_compressed_buffer_size(output_buffer, call_result_.size());
     }
 
     return result;
   }
 
-  void ALWAYS_INLINE patch_compressed_buffer_size(size_t header_size, size_t compressed_frame_size) {
-    size_t data_size_offset = header_size + sizeof(CompressedBufferSize);
-    if (compressed_frame_size < data_size_offset) {
-      return;
+  static void ALWAYS_INLINE patch_compressed_buffer_size(char* buffer, size_t compressed_frame_size) {
+    if (compressed_frame_size >= sizeof(CompressedBufferSize)) {
+      auto actual_size = static_cast<CompressedBufferSize>(compressed_frame_size - sizeof(CompressedBufferSize));
+      auto* size_in_buffer = reinterpret_cast<CompressedBufferSize*>(buffer);
+      *size_in_buffer = CompressedBufferSizeHelper::pack(*size_in_buffer, actual_size);
     }
-
-    auto* size_in_buffer = reinterpret_cast<CompressedBufferSize*>(&buffer_[0] + header_size);
-    auto actual_size = static_cast<CompressedBufferSize>(compressed_frame_size - data_size_offset);
-    *size_in_buffer = CompressedBufferSizeHelper::pack(*size_in_buffer, actual_size);
   }
 
  private:
