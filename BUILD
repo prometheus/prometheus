@@ -83,7 +83,7 @@ cc_library(
 
 cc_test(
     name = "bare_bones_test",
-    srcs = glob(["bare_bones/tests/**/*_tests.cpp"]),
+    srcs = glob(["bare_bones/**/tests/*_tests.cpp"]),
     malloc = "@jemalloc",
     deps = [
         ":bare_bones",
