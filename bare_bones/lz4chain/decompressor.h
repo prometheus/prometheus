@@ -9,7 +9,7 @@
 #include "bare_bones/preprocess.h"
 #include "helper.h"
 
-namespace BareBones::lz4stream {
+namespace BareBones::lz4chain {
 
 struct DecompressResult {
   std::string_view data;
@@ -153,4 +153,4 @@ class Decompressor {
   CallResult call_result_;
 };
 
-}  // namespace BareBones::lz4stream
+}  // namespace BareBones::lz4chain

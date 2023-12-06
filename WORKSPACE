@@ -79,6 +79,14 @@ http_archive(
 )
 
 http_archive(
+    name = "lz4stream",
+    url = "https://github.com/laudrup/lz4_stream/archive/6b015cbe786291733b6f3aa03e45d307bc4ae527.zip",
+    sha256 = "885cee12f6c37608f6790b5fbd856e4b0fcfb8637eeba299e1d888ff2cdc9f31",
+    strip_prefix = "lz4_stream-6b015cbe786291733b6f3aa03e45d307bc4ae527/include",
+    build_file = "//third_party:lz4stream.BUILD",
+)
+
+http_archive(
     name = "argp",
     url = "https://github.com/argp-standalone/argp-standalone/archive/refs/tags/1.5.0.tar.gz",
     sha256 = "c29eae929dfebd575c38174f2c8c315766092cec99a8f987569d0cad3c6d64f6",

@@ -5,7 +5,7 @@
 
 #include "bare_bones/preprocess.h"
 
-namespace BareBones::lz4stream {
+namespace BareBones::lz4chain {
 
 class DecompressorBuffer {
  public:
@@ -103,4 +103,4 @@ class DecompressorBuffer {
   SizeHistory size_history_;
 };
 
-}  // namespace BareBones::lz4stream
+}  // namespace BareBones::lz4chain

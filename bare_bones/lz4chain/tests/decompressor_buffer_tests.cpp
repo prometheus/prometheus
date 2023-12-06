@@ -1,10 +1,10 @@
 #include <gtest/gtest.h>
 
-#include "bare_bones/lz4stream/decompressor_buffer.h"
+#include "bare_bones/lz4chain/decompressor_buffer.h"
 
 namespace {
 
-using BareBones::lz4stream::DecompressorBuffer;
+using BareBones::lz4chain::DecompressorBuffer;
 
 class DecompressorBufferAllocateFixture : public testing::Test {
  protected:

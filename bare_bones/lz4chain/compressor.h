@@ -8,7 +8,7 @@
 #include "bare_bones/preprocess.h"
 #include "helper.h"
 
-namespace BareBones::lz4stream {
+namespace BareBones::lz4chain {
 
 class Compressor {
  public:
@@ -104,4 +104,4 @@ class Compressor {
   size_t data_frame_count_{};
 };
 
-}  // namespace BareBones::lz4stream
+}  // namespace BareBones::lz4chain

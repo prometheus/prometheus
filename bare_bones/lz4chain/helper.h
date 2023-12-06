@@ -8,7 +8,7 @@
 
 #include "bare_bones/preprocess.h"
 
-namespace BareBones::lz4stream {
+namespace BareBones::lz4chain {
 
 class CallResult {
  public:
@@ -43,4 +43,4 @@ class CompressedBufferSizeHelper {
   static constexpr CompressedBufferSize kCompressFlag = 1 << 31;
 };
 
-}  // namespace BareBones::lz4stream
+}  // namespace BareBones::lz4chain

@@ -2,12 +2,12 @@
 
 #include <gtest/gtest.h>
 
-#include "bare_bones/lz4stream/compressor.h"
+#include "bare_bones/lz4chain/compressor.h"
 
 namespace {
 
-using BareBones::lz4stream::CompressedBufferSize;
-using BareBones::lz4stream::Compressor;
+using BareBones::lz4chain::CompressedBufferSize;
+using BareBones::lz4chain::Compressor;
 
 class CompressorFixture : public testing::Test {
  public:
