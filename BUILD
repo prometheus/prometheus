@@ -101,6 +101,25 @@ cc_binary(
 )
 
 cc_library(
+    name = "lz4chain",
+    hdrs = glob(["bare_bones/lz4chain/*.h"]),
+    deps = [
+        ":bare_bones_headers",
+        "@lz4//:lz4"
+    ],
+)
+
+cc_test(
+    name = "lz4chain_test",
+    srcs = glob(["bare_bones/lz4chain/tests/*_tests.cpp"]),
+    malloc = "@jemalloc",
+    deps = [
+        ":lz4chain",
+        "@gtest//:gtest_main",
+    ],
+)
+
+cc_library(
     name = "primitives",
     hdrs = glob(["primitives/*.h"]),
     deps = [
