@@ -52,7 +52,7 @@ cc_test(
 
 cc_library(
     name = "bare_bones_headers",
-    hdrs = glob(["bare_bones/**/*.h"]),
+    hdrs = glob(["bare_bones/*.h"]),
     deps = [
         "//third_party",
         "@parallel_hashmap",
@@ -61,7 +61,6 @@ cc_library(
         "@lzma//:lzma",
         "@elf//:elf",
         "@backward_cpp//:backward_cpp_header_only", # stacktrace lib
-        "@lz4//:lz4"
     ],
 )
 
@@ -83,7 +82,7 @@ cc_library(
 
 cc_test(
     name = "bare_bones_test",
-    srcs = glob(["bare_bones/**/tests/*_tests.cpp"]),
+    srcs = glob(["bare_bones/tests/*_tests.cpp"]),
     malloc = "@jemalloc",
     deps = [
         ":bare_bones",
@@ -98,6 +97,25 @@ cc_binary(
     ],
     deps = [
         ":bare_bones",
+    ],
+)
+
+cc_library(
+    name = "lz4stream",
+    hdrs = glob(["bare_bones/lz4stream/*.h"]),
+    deps = [
+        ":bare_bones_headers",
+        "@lz4//:lz4"
+    ],
+)
+
+cc_test(
+    name = "lz4stream_test",
+    srcs = glob(["bare_bones/lz4stream/tests/*_tests.cpp"]),
+    malloc = "@jemalloc",
+    deps = [
+        ":lz4stream",
+        "@gtest//:gtest_main",
     ],
 )
 
@@ -326,7 +344,6 @@ cc_library(
     deps = [
         ":wal",
         ":prometheus",
-        "@lz4stream//:lz4stream",
         "@gtest//:gtest_main",
         "//third_party:third_party",
     ],
@@ -346,7 +363,6 @@ cc_library(
     hdrs = glob(["integration_tests/*.h"]),
     deps = [
         ":primitives",
-        "@lz4stream//:lz4stream",
         "@gtest//:gtest_main",
     ],
 )
