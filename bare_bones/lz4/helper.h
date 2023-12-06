@@ -4,6 +4,7 @@
 
 #define LZ4F_STATIC_LINKING_ONLY
 #include <lz4frame.h>
+#undef LZ4F_STATIC_LINKING_ONLY
 
 #include "bare_bones/preprocess.h"
 

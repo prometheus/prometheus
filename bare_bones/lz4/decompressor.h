@@ -90,7 +90,7 @@ class StreamDecompressor {
 
     buffer_.allocate(size_calculator_.get_allocation_size(compressed_data_size));
 
-    if (decompress_loop(buffer, result.data)) {
+    if (decompress_data_frame(buffer, result.data)) {
       result.frame_size = buffer.size();
     }
 
@@ -124,7 +124,7 @@ class StreamDecompressor {
     return CompressedBufferSizeHelper::unpack(packed_size);
   }
 
-  [[nodiscard]] bool decompress_loop(std::string_view input_buffer, std::string_view& output_buffer) {
+  [[nodiscard]] bool decompress_data_frame(std::string_view input_buffer, std::string_view& output_buffer) {
     size_t decompressed_bytes = 0;
     while (true) {
       auto output_buffer_ptr = buffer_.data() + decompressed_bytes;
