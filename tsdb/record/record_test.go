@@ -15,7 +15,6 @@
 package record
 
 import (
-	"errors"
 	"math/rand"
 	"testing"
 
@@ -209,7 +208,7 @@ func TestRecord_Corrupted(t *testing.T) {
 
 		corrupted := enc.Samples(samples, nil)[:8]
 		_, err := dec.Samples(corrupted, nil)
-		require.True(t, errors.Is(err, encoding.ErrInvalidSize))
+		require.ErrorIs(t, err, encoding.ErrInvalidSize)
 	})
 
 	t.Run("Test corrupted tombstone record", func(t *testing.T) {
@@ -232,7 +231,7 @@ func TestRecord_Corrupted(t *testing.T) {
 
 		corrupted := enc.Exemplars(exemplars, nil)[:8]
 		_, err := dec.Exemplars(corrupted, nil)
-		require.True(t, errors.Is(err, encoding.ErrInvalidSize))
+		require.ErrorIs(t, err, encoding.ErrInvalidSize)
 	})
 
 	t.Run("Test corrupted metadata record", func(t *testing.T) {
@@ -242,7 +241,7 @@ func TestRecord_Corrupted(t *testing.T) {
 
 		corrupted := enc.Metadata(meta, nil)[:8]
 		_, err := dec.Metadata(corrupted, nil)
-		require.True(t, errors.Is(err, encoding.ErrInvalidSize))
+		require.ErrorIs(t, err, encoding.ErrInvalidSize)
 	})
 
 	t.Run("Test corrupted histogram record", func(t *testing.T) {
@@ -267,7 +266,7 @@ func TestRecord_Corrupted(t *testing.T) {
 
 		corrupted := enc.HistogramSamples(histograms, nil)[:8]
 		_, err := dec.HistogramSamples(corrupted, nil)
-		require.True(t, errors.Is(err, encoding.ErrInvalidSize))
+		require.ErrorIs(t, err, encoding.ErrInvalidSize)
 	})
 }
 

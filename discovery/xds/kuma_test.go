@@ -129,7 +129,7 @@ func TestKumaMadsV1ResourceParserInvalidTypeURL(t *testing.T) {
 func TestKumaMadsV1ResourceParserEmptySlice(t *testing.T) {
 	resources := make([]*anypb.Any, 0)
 	groups, err := kumaMadsV1ResourceParser(resources, KumaMadsV1ResourceTypeURL)
-	require.Len(t, groups, 0)
+	require.Empty(t, groups)
 	require.NoError(t, err)
 }
 

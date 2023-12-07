@@ -268,13 +268,13 @@ func newDiscovery(t *testing.T, config *SDConfig) *Discovery {
 }
 
 func checkOneTarget(t *testing.T, tg []*targetgroup.Group) {
-	require.Equal(t, 1, len(tg))
+	require.Len(t, tg, 1)
 	target := tg[0]
 	require.Equal(t, "test-dc", string(target.Labels["__meta_consul_dc"]))
 	require.Equal(t, target.Source, string(target.Labels["__meta_consul_service"]))
 	if target.Source == "test" {
 		// test service should have one node.
-		require.Greater(t, len(target.Targets), 0, "Test service should have one node")
+		require.NotEmpty(t, target.Targets, "Test service should have one node")
 	}
 }
 
@@ -313,7 +313,7 @@ func TestNoTargets(t *testing.T) {
 	}()
 
 	targets := (<-ch)[0].Targets
-	require.Equal(t, 0, len(targets))
+	require.Empty(t, targets)
 	cancel()
 	<-ch
 }
@@ -484,7 +484,7 @@ oauth2:
 				return
 			}
 
-			require.Equal(t, config, test.expected)
+			require.Equal(t, test.expected, config)
 		})
 	}
 }

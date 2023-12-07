@@ -1222,7 +1222,7 @@ func TestDisableAutoCompactions(t *testing.T) {
 	}
 
 	require.Greater(t, prom_testutil.ToFloat64(db.metrics.compactionsSkipped), 0.0, "No compaction was skipped after the set timeout.")
-	require.Equal(t, 0, len(db.blocks))
+	require.Empty(t, db.blocks)
 
 	// Enable the compaction, trigger it and check that the block is persisted.
 	db.EnableCompactions()
@@ -1236,7 +1236,7 @@ func TestDisableAutoCompactions(t *testing.T) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	require.Greater(t, len(db.Blocks()), 0, "No block was persisted after the set timeout.")
+	require.NotEmpty(t, db.Blocks(), "No block was persisted after the set timeout.")
 }
 
 // TestCancelCompactions ensures that when the db is closed
@@ -1259,7 +1259,7 @@ func TestCancelCompactions(t *testing.T) {
 	{
 		db, err := open(tmpdir, log.NewNopLogger(), nil, DefaultOptions(), []int64{1, 2000}, nil)
 		require.NoError(t, err)
-		require.Equal(t, 3, len(db.Blocks()), "initial block count mismatch")
+		require.Len(t, db.Blocks(), 3, "initial block count mismatch")
 		require.Equal(t, 0.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.Ran), "initial compaction counter mismatch")
 		db.compactc <- struct{}{} // Trigger a compaction.
 		for prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.PopulatingBlocks) <= 0 {
@@ -1278,7 +1278,7 @@ func TestCancelCompactions(t *testing.T) {
 	{
 		db, err := open(tmpdirCopy, log.NewNopLogger(), nil, DefaultOptions(), []int64{1, 2000}, nil)
 		require.NoError(t, err)
-		require.Equal(t, 3, len(db.Blocks()), "initial block count mismatch")
+		require.Len(t, db.Blocks(), 3, "initial block count mismatch")
 		require.Equal(t, 0.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.Ran), "initial compaction counter mismatch")
 		db.compactc <- struct{}{} // Trigger a compaction.
 
@@ -1291,7 +1291,7 @@ func TestCancelCompactions(t *testing.T) {
 		actT := time.Since(start)
 
 		expT := timeCompactionUninterrupted / 2 // Closing the db in the middle of compaction should less than half the time.
-		require.True(t, actT < expT, "closing the db took more than expected. exp: <%v, act: %v", expT, actT)
+		require.Less(t, actT, expT, "closing the db took more than expected. exp: <%v, act: %v", expT, actT)
 
 		// Make sure that no blocks were marked as compaction failed.
 		// This checks that the `context.Canceled` error is properly checked at all levels:

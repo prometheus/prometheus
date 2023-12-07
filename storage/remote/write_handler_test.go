@@ -228,7 +228,7 @@ func BenchmarkRemoteWriteOOOSamples(b *testing.B) {
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
 	require.Equal(b, http.StatusNoContent, recorder.Code)
-	require.Equal(b, db.Head().NumSeries(), uint64(1000))
+	require.Equal(b, uint64(1000), db.Head().NumSeries())
 
 	var bufRequests [][]byte
 	for i := 0; i < 100; i++ {
@@ -245,7 +245,7 @@ func BenchmarkRemoteWriteOOOSamples(b *testing.B) {
 		recorder = httptest.NewRecorder()
 		handler.ServeHTTP(recorder, req)
 		require.Equal(b, http.StatusNoContent, recorder.Code)
-		require.Equal(b, db.Head().NumSeries(), uint64(1000))
+		require.Equal(b, uint64(1000), db.Head().NumSeries())
 	}
 }
 

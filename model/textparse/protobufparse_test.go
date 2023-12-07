@@ -1989,22 +1989,22 @@ func TestProtobufParse(t *testing.T) {
 					if ts != nil {
 						require.Equal(t, exp[i].t, *ts, "i: %d", i)
 					} else {
-						require.Equal(t, exp[i].t, int64(0), "i: %d", i)
+						require.Equal(t, int64(0), exp[i].t, "i: %d", i)
 					}
 					require.Equal(t, exp[i].v, v, "i: %d", i)
 					require.Equal(t, exp[i].lset, res, "i: %d", i)
 					if len(exp[i].e) == 0 {
-						require.Equal(t, false, eFound, "i: %d", i)
+						require.False(t, eFound, "i: %d", i)
 					} else {
-						require.Equal(t, true, eFound, "i: %d", i)
+						require.True(t, eFound, "i: %d", i)
 						require.Equal(t, exp[i].e[0], e, "i: %d", i)
 						require.False(t, p.Exemplar(&e), "too many exemplars returned, i: %d", i)
 					}
 					if exp[i].ct != nil {
-						require.Equal(t, true, ctFound, "i: %d", i)
+						require.True(t, ctFound, "i: %d", i)
 						require.Equal(t, exp[i].ct.String(), ct.String(), "i: %d", i)
 					} else {
-						require.Equal(t, false, ctFound, "i: %d", i)
+						require.False(t, ctFound, "i: %d", i)
 					}
 
 				case EntryHistogram:
@@ -2014,7 +2014,7 @@ func TestProtobufParse(t *testing.T) {
 					if ts != nil {
 						require.Equal(t, exp[i].t, *ts, "i: %d", i)
 					} else {
-						require.Equal(t, exp[i].t, int64(0), "i: %d", i)
+						require.Equal(t, int64(0), exp[i].t, "i: %d", i)
 					}
 					require.Equal(t, exp[i].lset, res, "i: %d", i)
 					require.Equal(t, exp[i].m, string(m), "i: %d", i)
@@ -2028,7 +2028,7 @@ func TestProtobufParse(t *testing.T) {
 						require.Equal(t, exp[i].e[j], e, "i: %d", i)
 						e = exemplar.Exemplar{}
 					}
-					require.Equal(t, len(exp[i].e), j, "not enough exemplars found, i: %d", i)
+					require.Len(t, exp[i].e, j, "not enough exemplars found, i: %d", i)
 
 				case EntryType:
 					m, typ := p.Type()
@@ -2051,7 +2051,7 @@ func TestProtobufParse(t *testing.T) {
 
 				i++
 			}
-			require.Equal(t, len(exp), i)
+			require.Len(t, exp, i)
 		})
 	}
 }

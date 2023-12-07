@@ -269,7 +269,7 @@ func TestNewAzureResourceFromID(t *testing.T) {
 		},
 	} {
 		actual, err := newAzureResourceFromID(tc.id, nil)
-		require.Nil(t, err)
+		require.NoError(t, err)
 		require.Equal(t, tc.expected.Name, actual.Name)
 		require.Equal(t, tc.expected.ResourceGroupName, actual.ResourceGroupName)
 	}

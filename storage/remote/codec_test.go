@@ -755,7 +755,7 @@ func TestStreamResponse(t *testing.T) {
 		maxBytesInFrame,
 		&sync.Pool{})
 	require.Nil(t, warning)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	expectData := []*prompb.ChunkedSeries{{
 		Labels: lbs1,
 		Chunks: []prompb.Chunk{chunk, chunk},

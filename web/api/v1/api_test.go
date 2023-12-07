@@ -872,7 +872,7 @@ func TestStats(t *testing.T) {
 			name:  "stats is blank",
 			param: "",
 			expected: func(t *testing.T, i interface{}) {
-				require.IsType(t, i, &QueryData{})
+				require.IsType(t, &QueryData{}, i)
 				qd := i.(*QueryData)
 				require.Nil(t, qd.Stats)
 			},
@@ -881,7 +881,7 @@ func TestStats(t *testing.T) {
 			name:  "stats is true",
 			param: "true",
 			expected: func(t *testing.T, i interface{}) {
-				require.IsType(t, i, &QueryData{})
+				require.IsType(t, &QueryData{}, i)
 				qd := i.(*QueryData)
 				require.NotNil(t, qd.Stats)
 				qs := qd.Stats.Builtin()
@@ -896,7 +896,7 @@ func TestStats(t *testing.T) {
 			name:  "stats is all",
 			param: "all",
 			expected: func(t *testing.T, i interface{}) {
-				require.IsType(t, i, &QueryData{})
+				require.IsType(t, &QueryData{}, i)
 				qd := i.(*QueryData)
 				require.NotNil(t, qd.Stats)
 				qs := qd.Stats.Builtin()
@@ -917,12 +917,12 @@ func TestStats(t *testing.T) {
 			},
 			param: "known",
 			expected: func(t *testing.T, i interface{}) {
-				require.IsType(t, i, &QueryData{})
+				require.IsType(t, &QueryData{}, i)
 				qd := i.(*QueryData)
 				require.NotNil(t, qd.Stats)
 				j, err := json.Marshal(qd.Stats)
 				require.NoError(t, err)
-				require.JSONEq(t, string(j), `{"custom":"Custom Value"}`)
+				require.JSONEq(t, `{"custom":"Custom Value"}`, string(j))
 			},
 		},
 	} {

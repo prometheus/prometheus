@@ -1782,8 +1782,8 @@ func TestReverseFloatBucketIterator(t *testing.T) {
 	for it.Next() {
 		actBuckets = append(actBuckets, it.At())
 	}
-	require.Greater(t, len(expBuckets), 0)
-	require.Greater(t, len(actBuckets), 0)
+	require.NotEmpty(t, expBuckets)
+	require.NotEmpty(t, actBuckets)
 	require.Equal(t, expBuckets, actBuckets)
 
 	// Negative buckets.
@@ -1798,8 +1798,8 @@ func TestReverseFloatBucketIterator(t *testing.T) {
 	for it.Next() {
 		actBuckets = append(actBuckets, it.At())
 	}
-	require.Greater(t, len(expBuckets), 0)
-	require.Greater(t, len(actBuckets), 0)
+	require.NotEmpty(t, expBuckets)
+	require.NotEmpty(t, actBuckets)
 	require.Equal(t, expBuckets, actBuckets)
 }
 

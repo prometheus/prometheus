@@ -105,7 +105,7 @@ func TestPuppetDBRefresh(t *testing.T) {
 			Source: ts.URL + "/pdb/query/v4?query=vhosts",
 		},
 	}
-	require.Equal(t, tgs, expectedTargets)
+	require.Equal(t, expectedTargets, tgs)
 }
 
 func TestPuppetDBRefreshWithParameters(t *testing.T) {
@@ -156,7 +156,7 @@ func TestPuppetDBRefreshWithParameters(t *testing.T) {
 			Source: ts.URL + "/pdb/query/v4?query=vhosts",
 		},
 	}
-	require.Equal(t, tgs, expectedTargets)
+	require.Equal(t, expectedTargets, tgs)
 }
 
 func TestPuppetDBInvalidCode(t *testing.T) {

@@ -131,5 +131,5 @@ func TestTracerProviderShutdown(t *testing.T) {
 
 	// Check if we closed the done channel.
 	_, ok := <-m.done
-	require.Equal(t, ok, false)
+	require.False(t, ok)
 }

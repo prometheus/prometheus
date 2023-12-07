@@ -55,7 +55,7 @@ func TestEurekaSDHandleError(t *testing.T) {
 	tgs, err := testUpdateServices(respHandler)
 
 	require.EqualError(t, err, errTesting)
-	require.Equal(t, len(tgs), 0)
+	require.Empty(t, tgs)
 }
 
 func TestEurekaSDEmptyList(t *testing.T) {
@@ -72,7 +72,7 @@ func TestEurekaSDEmptyList(t *testing.T) {
 	)
 	tgs, err := testUpdateServices(respHandler)
 	require.NoError(t, err)
-	require.Equal(t, len(tgs), 1)
+	require.Len(t, tgs, 1)
 }
 
 func TestEurekaSDSendGroup(t *testing.T) {
@@ -232,11 +232,11 @@ func TestEurekaSDSendGroup(t *testing.T) {
 
 	tgs, err := testUpdateServices(respHandler)
 	require.NoError(t, err)
-	require.Equal(t, len(tgs), 1)
+	require.Len(t, tgs, 1)
 
 	tg := tgs[0]
-	require.Equal(t, tg.Source, "eureka")
-	require.Equal(t, len(tg.Targets), 4)
+	require.Equal(t, "eureka", tg.Source)
+	require.Len(t, tg.Targets, 4)
 
 	tgt := tg.Targets[0]
 	require.Equal(t, tgt[model.AddressLabel], model.LabelValue("config-service001.test.com:8080"))

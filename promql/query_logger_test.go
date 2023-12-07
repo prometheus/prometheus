@@ -123,7 +123,7 @@ func TestMMapFile(t *testing.T) {
 
 	bytes := make([]byte, 4)
 	n, err := f.Read(bytes)
-	require.Equal(t, n, 2)
+	require.Equal(t, 2, n)
 	require.NoError(t, err, "Unexpected error while reading file.")
 
 	require.Equal(t, fileAsBytes, bytes[:2], "Mmap failed")

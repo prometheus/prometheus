@@ -91,13 +91,13 @@ func TestBackfillRuleIntegration(t *testing.T) {
 				for _, err := range errs {
 					require.NoError(t, err)
 				}
-				require.Equal(t, 3, len(ruleImporter.groups))
+				require.Len(t, ruleImporter.groups, 3)
 				group1 := ruleImporter.groups[path1+";group0"]
 				require.NotNil(t, group1)
 				const defaultInterval = 60
 				require.Equal(t, defaultInterval*time.Second, group1.Interval())
 				gRules := group1.Rules()
-				require.Equal(t, 1, len(gRules))
+				require.Len(t, gRules, 1)
 				require.Equal(t, "rule1", gRules[0].Name())
 				require.Equal(t, "ruleExpr", gRules[0].Query().String())
 				require.Equal(t, 1, gRules[0].Labels().Len())
@@ -106,7 +106,7 @@ func TestBackfillRuleIntegration(t *testing.T) {
 				require.NotNil(t, group2)
 				require.Equal(t, defaultInterval*time.Second, group2.Interval())
 				g2Rules := group2.Rules()
-				require.Equal(t, 2, len(g2Rules))
+				require.Len(t, g2Rules, 2)
 				require.Equal(t, "grp2_rule1", g2Rules[0].Name())
 				require.Equal(t, "grp2_rule1_expr", g2Rules[0].Query().String())
 				require.Equal(t, 0, g2Rules[0].Labels().Len())
@@ -122,7 +122,7 @@ func TestBackfillRuleIntegration(t *testing.T) {
 				require.NoError(t, err)
 
 				blocks := db.Blocks()
-				require.Equal(t, (i+1)*tt.expectedBlockCount, len(blocks))
+				require.Len(t, blocks, (i+1)*tt.expectedBlockCount)
 
 				q, err := db.Querier(math.MinInt64, math.MaxInt64)
 				require.NoError(t, err)
