@@ -339,7 +339,13 @@ func (m *FastRegexMatcher) MatchString(s string) bool {
 }
 
 func (m *FastRegexMatcher) SetMatches() []string {
-	return m.setMatches
+	// IMPORTANT: always return a copy, otherwise if the caller manipulate this slice it will
+	// also get manipulated in the cached FastRegexMatcher instance.
+	ret := make([]string, 0, len(m.setMatches))
+	for _, value := range m.setMatches {
+		ret = append(ret, value)
+	}
+	return ret
 }
 
 func (m *FastRegexMatcher) GetRegexString() string {
