@@ -93,9 +93,9 @@ endif
 # If we only want to only test go code we have to change the test target
 # which is called by all.
 ifeq ($(GO_ONLY),1)
-test: common-test
+test: common-test check-go-mod-version
 else
-test: common-test ui-build-module ui-test ui-lint
+test: common-test ui-build-module ui-test ui-lint check-go-mod-version
 endif
 
 .PHONY: npm_licenses
@@ -138,3 +138,8 @@ bench_tsdb: $(PROMU)
 cli-documentation:
 	$(GO) run ./cmd/prometheus/ --write-documentation > docs/command-line/prometheus.md
 	$(GO) run ./cmd/promtool/ write-documentation > docs/command-line/promtool.md
+
+.PHONY: check-go-mod-version
+check-go-mod-version:
+	@echo ">> checking go.mod version matching"
+	@./scripts/check-go-mod-version.sh
