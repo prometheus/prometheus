@@ -58,7 +58,7 @@ func (a nopAppender) UpdateMetadata(storage.SeriesRef, labels.Labels, metadata.M
 	return 0, nil
 }
 
-func (a nopAppender) AppendCreatedTimestamp(storage.SeriesRef, labels.Labels, int64) (storage.SeriesRef, error) {
+func (a nopAppender) AppendCTZeroSample(storage.SeriesRef, labels.Labels, int64, int64) (storage.SeriesRef, error) {
 	return 0, nil
 }
 
@@ -162,19 +162,8 @@ func (a *collectResultAppender) UpdateMetadata(ref storage.SeriesRef, l labels.L
 	return a.next.UpdateMetadata(ref, l, m)
 }
 
-func (a *collectResultAppender) AppendCreatedTimestamp(ref storage.SeriesRef, l labels.Labels, t int64) (storage.SeriesRef, error) {
-	a.mtx.Lock()
-	defer a.mtx.Unlock()
-	a.pendingFloats = append(a.pendingFloats, floatSample{
-		metric: l,
-		t:      t,
-		f:      0.0,
-	})
-
-	if ref == 0 {
-		ref = storage.SeriesRef(rand.Uint64())
-	}
-	return ref, nil
+func (a *collectResultAppender) AppendCTZeroSample(ref storage.SeriesRef, l labels.Labels, t int64, ct int64) (storage.SeriesRef, error) {
+	return a.Append(ref, l, ct, 0.0)
 }
 
 func (a *collectResultAppender) Commit() error {
@@ -221,18 +210,20 @@ func (a *collectResultAppender) String() string {
 	return sb.String()
 }
 
-// serializeMetricFamily serializes a MetricFamily into a byte slice.
-// Needed because Prometheus has its own implementation of protobuf
-// marshalling and unmarshalling that only supports 'encoding=delimited'.
+// protoMarshalDelimited marshals a MetricFamily into a delimited
+// Prometheus proto exposition format bytes (known as 'encoding=delimited`)
+//
 // See also https://eli.thegreenplace.net/2011/08/02/length-prefix-framing-for-protocol-buffers
-func serializeMetricFamily(t *testing.T, mf *dto.MetricFamily) []byte {
+func protoMarshalDelimited(t *testing.T, mf *dto.MetricFamily) []byte {
 	t.Helper()
-	buf := &bytes.Buffer{}
+
 	protoBuf, err := proto.Marshal(mf)
 	require.NoError(t, err)
 
 	varintBuf := make([]byte, binary.MaxVarintLen32)
 	varintLength := binary.PutUvarint(varintBuf, uint64(len(protoBuf)))
+
+	buf := &bytes.Buffer{}
 	buf.Write(varintBuf[:varintLength])
 	buf.Write(protoBuf)
 	return buf.Bytes()

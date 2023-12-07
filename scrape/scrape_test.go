@@ -664,6 +664,7 @@ func newBasicScrapeLoop(t testing.TB, ctx context.Context, scraper scraper, app 
 		nil,
 		false,
 		newTestScrapeMetrics(t),
+		false,
 	)
 }
 
@@ -806,6 +807,7 @@ func TestScrapeLoopRun(t *testing.T) {
 		nil,
 		false,
 		scrapeMetrics,
+		false,
 	)
 
 	// The loop must terminate during the initial offset if the context
@@ -951,6 +953,7 @@ func TestScrapeLoopMetadata(t *testing.T) {
 		nil,
 		false,
 		scrapeMetrics,
+		false,
 	)
 	defer cancel()
 

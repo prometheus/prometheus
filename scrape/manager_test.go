@@ -15,12 +15,13 @@ package scrape
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -724,59 +725,53 @@ scrape_configs:
 	require.ElementsMatch(t, []string{"job1", "job3"}, scrapeManager.ScrapePools())
 }
 
-func TestManagerScrapeCreatedTimestamp(t *testing.T) {
-	counterType := dto.MetricType_COUNTER
-	now := time.Now()
-	nowMs := now.UnixMilli()
-
-	makeMfWithCT := func(ct time.Time) *dto.MetricFamily {
-		return &dto.MetricFamily{
-			Name: proto.String("expected_counter"),
-			Type: &counterType,
-			Metric: []*dto.Metric{
-				{
-					Counter: &dto.Counter{
-						Value:            proto.Float64(1.0),
-						CreatedTimestamp: timestamppb.New(ct),
-					},
-				},
-			},
-		}
-	}
+// TestManagerCTZeroIngestion tests scrape manager for CT cases.
+func TestManagerCTZeroIngestion(t *testing.T) {
+	const mName = "expected_counter"
 
 	for _, tc := range []struct {
 		name                  string
-		mf                    *dto.MetricFamily
-		ingestCT              bool
-		expectedScrapedValues []float64
+		counterSample         *dto.Counter
+		enableCTZeroIngestion bool
+
+		expectedValues []float64
 	}{
 		{
-			name:                  "valid counter/Ingestion enabled",
-			mf:                    makeMfWithCT(now),
-			ingestCT:              true,
-			expectedScrapedValues: []float64{0.0, 1.0},
+			name: "disabled with CT on counter",
+			counterSample: &dto.Counter{
+				Value: proto.Float64(1.0),
+				// Timestamp does not matter as long as it exists in this test.
+				CreatedTimestamp: timestamppb.Now(),
+			},
+			expectedValues: []float64{1.0},
 		},
 		{
-			name:                  "valid counter/Ingestion disabled",
-			mf:                    makeMfWithCT(now),
-			ingestCT:              false,
-			expectedScrapedValues: []float64{1.0},
+			name: "enabled with CT on counter",
+			counterSample: &dto.Counter{
+				Value: proto.Float64(1.0),
+				// Timestamp does not matter as long as it exists in this test.
+				CreatedTimestamp: timestamppb.Now(),
+			},
+			enableCTZeroIngestion: true,
+			expectedValues:        []float64{0.0, 1.0},
 		},
 		{
-			name: "created timestamp older than sample timestamp",
-			mf: func() *dto.MetricFamily {
-				mf := makeMfWithCT(now.Add(time.Hour))
-				mf.Metric[0].TimestampMs = &nowMs
-				return mf
-			}(),
-			ingestCT:              true,
-			expectedScrapedValues: []float64{1.0},
+			name: "enabled without CT on counter",
+			counterSample: &dto.Counter{
+				Value: proto.Float64(1.0),
+			},
+			enableCTZeroIngestion: true,
+			expectedValues:        []float64{1.0},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+
 			app := &collectResultAppender{}
 			scrapeManager, err := NewManager(
-				&Options{EnableCreatedTimestampIngestion: tc.ingestCT},
+				&Options{
+					EnableCreatedTimestampZeroIngestion: tc.enableCTZeroIngestion,
+					skipOffsetting:                      true,
+				},
 				log.NewLogfmtLogger(os.Stderr),
 				&collectResultAppendable{app},
 				prometheus.NewRegistry(),
@@ -785,18 +780,35 @@ func TestManagerScrapeCreatedTimestamp(t *testing.T) {
 
 			require.NoError(t, scrapeManager.ApplyConfig(&config.Config{
 				GlobalConfig: config.GlobalConfig{
-					ScrapeInterval:  model.Duration(5 * time.Second),
-					ScrapeTimeout:   model.Duration(5 * time.Second),
+					// Disable regular scrapes.
+					ScrapeInterval: model.Duration(9999 * time.Minute),
+					ScrapeTimeout:  model.Duration(5 * time.Second),
+					// Ensure proto is chosen.
 					ScrapeProtocols: []config.ScrapeProtocol{config.PrometheusProto},
 				},
 				ScrapeConfigs: []*config.ScrapeConfig{{JobName: "test"}},
 			}))
 
-			// Start fake HTTP target to scrape returning a single metric.
+			once := sync.Once{}
+			// Start fake HTTP target to that allow one scrape only.
 			server := httptest.NewServer(
 				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					w.Header().Set("Content-Type", `application/vnd.google.protobuf; proto=io.prometheus.client.MetricFamily; encoding=delimited`)
-					w.Write(serializeMetricFamily(t, tc.mf))
+					fail := true
+					once.Do(func() {
+						fail = false
+						w.Header().Set("Content-Type", `application/vnd.google.protobuf; proto=io.prometheus.client.MetricFamily; encoding=delimited`)
+
+						var ctrType = dto.MetricType_COUNTER
+						w.Write(protoMarshalDelimited(t, &dto.MetricFamily{
+							Name:   proto.String(mName),
+							Type:   &ctrType,
+							Metric: []*dto.Metric{{Counter: tc.counterSample}},
+						}))
+					})
+
+					if fail {
+						w.WriteHeader(http.StatusInternalServerError)
+					}
 				}),
 			)
 			defer server.Close()
@@ -807,27 +819,27 @@ func TestManagerScrapeCreatedTimestamp(t *testing.T) {
 			// Add fake target directly into tsets + reload. Normally users would use
 			// Manager.Run and wait for minimum 5s refresh interval.
 			scrapeManager.updateTsets(map[string][]*targetgroup.Group{
-				"test": {
-					{
-						Targets: []model.LabelSet{{
-							model.SchemeLabel:  model.LabelValue(serverURL.Scheme),
-							model.AddressLabel: model.LabelValue(serverURL.Host),
-						}},
-					},
-				},
+				"test": {{
+					Targets: []model.LabelSet{{
+						model.SchemeLabel:  model.LabelValue(serverURL.Scheme),
+						model.AddressLabel: model.LabelValue(serverURL.Host),
+					}},
+				}},
 			})
 			scrapeManager.reload()
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+
+			// Wait for one scrape.
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 			defer cancel()
 			require.NoError(t, runutil.Retry(100*time.Millisecond, ctx.Done(), func() error {
-				if countFloatSamples(app, *tc.mf.Name) < 1 {
-					return errors.New("expected at least one sample")
+				if countFloatSamples(app, mName) != len(tc.expectedValues) {
+					return fmt.Errorf("expected %v samples", tc.expectedValues)
 				}
 				return nil
-			}), "after 5 seconds")
+			}), "after 1 minute")
 			scrapeManager.Stop()
 
-			require.Equal(t, tc.expectedScrapedValues, getResultFloats(app, *tc.mf.Name))
+			require.Equal(t, tc.expectedValues, getResultFloats(app, mName))
 		})
 	}
 }

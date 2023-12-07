@@ -878,3 +878,7 @@ func TestDBAllowOOOSamples(t *testing.T) {
 	require.Equal(t, float64(80), m.Metric[1].Counter.GetValue(), "agent wal mismatch of total appended histograms")
 	require.NoError(t, db.Close())
 }
+
+func TestAgentAppender_AppendCTZeroSample(t *testing.T) {
+	t.Fatalf("TODO")
+}
