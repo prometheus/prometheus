@@ -65,7 +65,7 @@ type WriteTo interface {
 	SeriesReset(int)
 }
 
-// Used to notifier the watcher that data has been written so that it can read.
+// Used to notify the watcher that data has been written so that it can read.
 type WriteNotified interface {
 	Notify()
 }
@@ -398,8 +398,16 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 
 	reader := NewLiveReader(w.logger, w.readerMetrics, segment)
 
-	readTicker := time.NewTicker(readTimeout)
-	defer readTicker.Stop()
+	size := int64(math.MaxInt64)
+	if !tail {
+		var err error
+		size, err = getSegmentSize(w.walDir, segmentNum)
+		if err != nil {
+			return errors.Wrap(err, "getSegmentSize")
+		}
+
+		return w.readAndHandleError(reader, segmentNum, tail, size)
+	}
 
 	checkpointTicker := time.NewTicker(checkpointPeriod)
 	defer checkpointTicker.Stop()
@@ -407,18 +415,8 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 	segmentTicker := time.NewTicker(segmentCheckPeriod)
 	defer segmentTicker.Stop()
 
-	// If we're replaying the segment we need to know the size of the file to know
-	// when to return from watch and move on to the next segment.
-	size := int64(math.MaxInt64)
-	if !tail {
-		segmentTicker.Stop()
-		checkpointTicker.Stop()
-		var err error
-		size, err = getSegmentSize(w.walDir, segmentNum)
-		if err != nil {
-			return errors.Wrap(err, "getSegmentSize")
-		}
-	}
+	readTicker := time.NewTicker(readTimeout)
+	defer readTicker.Stop()
 
 	gcSem := make(chan struct{}, 1)
 	for {

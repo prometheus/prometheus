@@ -1112,6 +1112,7 @@ func main() {
 				)
 
 				localStorage.Set(db, 0)
+				db.SetWriteNotified(remoteStorage)
 				close(dbOpen)
 				<-cancel
 				return nil
