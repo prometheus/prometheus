@@ -21,6 +21,7 @@ import (
 	"github.com/dgraph-io/ristretto"
 	"github.com/grafana/regexp"
 	"github.com/grafana/regexp/syntax"
+	"golang.org/x/exp/slices"
 )
 
 const (
@@ -341,11 +342,7 @@ func (m *FastRegexMatcher) MatchString(s string) bool {
 func (m *FastRegexMatcher) SetMatches() []string {
 	// IMPORTANT: always return a copy, otherwise if the caller manipulate this slice it will
 	// also get manipulated in the cached FastRegexMatcher instance.
-	ret := make([]string, 0, len(m.setMatches))
-	for _, value := range m.setMatches {
-		ret = append(ret, value)
-	}
-	return ret
+	return slices.Clone(m.setMatches)
 }
 
 func (m *FastRegexMatcher) GetRegexString() string {
