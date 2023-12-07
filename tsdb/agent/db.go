@@ -954,9 +954,8 @@ func (a *appender) UpdateMetadata(storage.SeriesRef, labels.Labels, metadata.Met
 	return 0, nil
 }
 
-func (a *appender) AppendCTZeroSample(ref storage.SeriesRef, l labels.Labels, t int64, ct int64) (storage.SeriesRef, error) {
-	// TODO(bwplotka): Implement
-	panic("to implement")
+func (a *appender) AppendCTZeroSample(storage.SeriesRef, labels.Labels, int64, int64) (storage.SeriesRef, error) {
+	// TODO(bwplotka): Wire metadata in the Agent's appender.
 	return 0, nil
 }
 
