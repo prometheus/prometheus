@@ -87,15 +87,15 @@ func (a *initAppender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m 
 	return a.app.UpdateMetadata(ref, l, m)
 }
 
-func (a *initAppender) AppendCreatedTimestamp(ref storage.SeriesRef, lset labels.Labels, t int64) (storage.SeriesRef, error) {
+func (a *initAppender) AppendCTZeroSample(ref storage.SeriesRef, lset labels.Labels, t int64, ct int64) (storage.SeriesRef, error) {
 	if a.app != nil {
-		return a.app.AppendCreatedTimestamp(ref, lset, t)
+		return a.app.AppendCTZeroSample(ref, lset, t, ct)
 	}
 
 	a.head.initTime(t)
 	a.app = a.head.appender()
 
-	return a.app.AppendCreatedTimestamp(ref, lset, t)
+	return a.app.AppendCTZeroSample(ref, lset, t, ct)
 }
 
 // initTime initializes a head with the first timestamp. This only needs to be called
@@ -383,10 +383,14 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	return storage.SeriesRef(s.ref), nil
 }
 
-// AppendCreatedTimestamp appends a sample with 0 as its value when it makes sense to do so.
-// For instance, it's not safe or efficient to append out-of-order created
-// timestamp (e.g. we don't know if we didn't append zero for this created timestamp already).
-func (a *headAppender) AppendCreatedTimestamp(ref storage.SeriesRef, lset labels.Labels, t int64) (storage.SeriesRef, error) {
+// AppendCTZeroSample appends synthetic zero sample for ct timestamp. It returns
+// error when sample can't be appended. See
+// storage.CreatedTimestampAppender.AppendCTZeroSample for further documentation.
+func (a *headAppender) AppendCTZeroSample(ref storage.SeriesRef, lset labels.Labels, t int64, ct int64) (storage.SeriesRef, error) {
+	if ct >= t {
+		return 0, fmt.Errorf("CT is newer or the same as sample's timestamp, ignoring")
+	}
+
 	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
 	if s == nil {
 		var err error
@@ -396,8 +400,11 @@ func (a *headAppender) AppendCreatedTimestamp(ref storage.SeriesRef, lset labels
 		}
 	}
 
+	// Check if CT wouldn't be OOO vs samples we already might have for this series.
+	// NOTE(bwplotka): This will be often hit as it's expected for long living
+	// counters to share the same CT.
 	s.Lock()
-	isOOO, _, err := s.appendable(t, 0, a.headMaxt, a.minValidTime, a.oooTimeWindow)
+	isOOO, _, err := s.appendable(ct, 0, a.headMaxt, a.minValidTime, a.oooTimeWindow)
 	if err == nil {
 		s.pendingCommit = true
 	}
@@ -405,20 +412,14 @@ func (a *headAppender) AppendCreatedTimestamp(ref storage.SeriesRef, lset labels
 	if err != nil {
 		return 0, err
 	}
-
 	if isOOO {
-		return storage.SeriesRef(s.ref), storage.ErrCreatedTimestampOutOfOrder
+		return storage.SeriesRef(s.ref), storage.ErrOutOfOrderCT
 	}
 
-	if t > a.maxt {
-		a.maxt = t
+	if ct > a.maxt {
+		a.maxt = ct
 	}
-
-	a.samples = append(a.samples, record.RefSample{
-		Ref: s.ref,
-		T:   t,
-		V:   0.0,
-	})
+	a.samples = append(a.samples, record.RefSample{Ref: s.ref, T: ct, V: 0.0})
 	a.sampleSeries = append(a.sampleSeries, s)
 	return storage.SeriesRef(s.ref), nil
 }

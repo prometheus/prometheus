@@ -202,14 +202,14 @@ func (f *fanoutAppender) UpdateMetadata(ref SeriesRef, l labels.Labels, m metada
 	return ref, nil
 }
 
-func (f *fanoutAppender) AppendCreatedTimestamp(ref SeriesRef, l labels.Labels, t int64) (SeriesRef, error) {
-	ref, err := f.primary.AppendCreatedTimestamp(ref, l, t)
+func (f *fanoutAppender) AppendCTZeroSample(ref SeriesRef, l labels.Labels, t int64, ct int64) (SeriesRef, error) {
+	ref, err := f.primary.AppendCTZeroSample(ref, l, t, ct)
 	if err != nil {
 		return ref, err
 	}
 
 	for _, appender := range f.secondaries {
-		if _, err := appender.AppendCreatedTimestamp(ref, l, t); err != nil {
+		if _, err := appender.AppendCTZeroSample(ref, l, t, ct); err != nil {
 			return 0, err
 		}
 	}

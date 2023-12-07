@@ -6954,3 +6954,71 @@ Outer:
 
 	require.NoError(t, writerErr)
 }
+
+func TestHeadAppender_AppendCTZeroSample(t *testing.T) {
+	t.Fatalf("TODO")
+
+	// NOTE(bwplotka): We could reuse metadata test part as copied below:
+	updateMetadata := func(t *testing.T, app storage.Appender, s labels.Labels, m metadata.Metadata) {
+		_, err := app.UpdateMetadata(0, s, m)
+		require.NoError(t, err)
+	}
+
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	// Add some series so we can append metadata to them.
+	app := db.Appender(ctx)
+	s1 := labels.FromStrings("a", "b")
+	s2 := labels.FromStrings("c", "d")
+	s3 := labels.FromStrings("e", "f")
+	s4 := labels.FromStrings("g", "h")
+
+	for _, s := range []labels.Labels{s1, s2, s3, s4} {
+		_, err := app.Append(0, s, 0, 0)
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	// Add a first round of metadata to the first three series.
+	// Re-take the Appender, as the previous Commit will have it closed.
+	m1 := metadata.Metadata{Type: "gauge", Unit: "unit_1", Help: "help_1"}
+	m2 := metadata.Metadata{Type: "gauge", Unit: "unit_2", Help: "help_2"}
+	m3 := metadata.Metadata{Type: "gauge", Unit: "unit_3", Help: "help_3"}
+	app = db.Appender(ctx)
+	updateMetadata(t, app, s1, m1)
+	updateMetadata(t, app, s2, m2)
+	updateMetadata(t, app, s3, m3)
+	require.NoError(t, app.Commit())
+
+	// Add a replicated metadata entry to the first series,
+	// a completely new metadata entry for the fourth series,
+	// and a changed metadata entry to the second series.
+	m4 := metadata.Metadata{Type: "counter", Unit: "unit_4", Help: "help_4"}
+	m5 := metadata.Metadata{Type: "counter", Unit: "unit_5", Help: "help_5"}
+	app = db.Appender(ctx)
+	updateMetadata(t, app, s1, m1)
+	updateMetadata(t, app, s4, m4)
+	updateMetadata(t, app, s2, m5)
+	require.NoError(t, app.Commit())
+
+	// Read the WAL to see if the disk storage format is correct.
+	recs := readTestWAL(t, path.Join(db.Dir(), "wal"))
+	var gotMetadataBlocks [][]record.RefMetadata
+	for _, rec := range recs {
+		if mr, ok := rec.([]record.RefMetadata); ok {
+			gotMetadataBlocks = append(gotMetadataBlocks, mr)
+		}
+	}
+
+	expectedMetadata := []record.RefMetadata{
+		{Ref: 1, Type: record.GetMetricType(m1.Type), Unit: m1.Unit, Help: m1.Help},
+		{Ref: 2, Type: record.GetMetricType(m2.Type), Unit: m2.Unit, Help: m2.Help},
+		{Ref: 3, Type: record.GetMetricType(m3.Type), Unit: m3.Unit, Help: m3.Help},
+		{Ref: 4, Type: record.GetMetricType(m4.Type), Unit: m4.Unit, Help: m4.Help},
+		{Ref: 2, Type: record.GetMetricType(m5.Type), Unit: m5.Unit, Help: m5.Help},
+	}
+	require.Len(t, gotMetadataBlocks, 2)
+	require.Equal(t, expectedMetadata[:3], gotMetadataBlocks[0])
+	require.Equal(t, expectedMetadata[3:], gotMetadataBlocks[1])
+}

@@ -454,15 +454,18 @@ var (
 		OpenMetricsText1_0_0: "application/openmetrics-text;version=1.0.0",
 	}
 
+	// DefaultScrapeProtocols is the set of scrape protocols that will be proposed
+	// to scrape target, ordered by priority.
 	DefaultScrapeProtocols = []ScrapeProtocol{
 		OpenMetricsText1_0_0,
 		OpenMetricsText0_0_1,
 		PrometheusText0_0_4,
 	}
 
-	// DefaultProtoFirstScrapeProtocols is the set of scrape protocols that favors protobuf
-	// Prometheus exposition format. Used by default for certain feature-flags like
-	// "native-histograms" and "created-timestamp-ingestion".
+	// DefaultProtoFirstScrapeProtocols is like DefaultScrapeProtocols, but it
+	// favors protobuf Prometheus exposition format.
+	// Used by default for certain feature-flags like
+	// "native-histograms" and "created-timestamp-zero-ingestion".
 	DefaultProtoFirstScrapeProtocols = []ScrapeProtocol{
 		PrometheusProto,
 		OpenMetricsText1_0_0,

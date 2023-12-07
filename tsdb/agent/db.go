@@ -954,8 +954,9 @@ func (a *appender) UpdateMetadata(storage.SeriesRef, labels.Labels, metadata.Met
 	return 0, nil
 }
 
-// AppendCreatedTimestamp wasn't implemented for agent mode, yet.
-func (a *appender) AppendCreatedTimestamp(ref storage.SeriesRef, l labels.Labels, t int64) (storage.SeriesRef, error) {
+func (a *appender) AppendCTZeroSample(ref storage.SeriesRef, l labels.Labels, t int64, ct int64) (storage.SeriesRef, error) {
+	// TODO(bwplotka): Implement
+	panic("to implement")
 	return 0, nil
 }
 

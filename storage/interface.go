@@ -43,7 +43,13 @@ var (
 	ErrExemplarLabelLength         = fmt.Errorf("label length for exemplar exceeds maximum of %d UTF-8 characters", exemplar.ExemplarMaxLabelSetLength)
 	ErrExemplarsDisabled           = fmt.Errorf("exemplar storage is disabled or max exemplars is less than or equal to 0")
 	ErrNativeHistogramsDisabled    = fmt.Errorf("native histograms are disabled")
-	ErrCreatedTimestampOutOfOrder  = fmt.Errorf("created timestamp out of order, ignoring")
+
+	// ErrOutOfOrderCT indicates failed append of CT to the storage
+	// due to CT being older the then newer sample.
+	// NOTE(bwplotka): This can be both an instrumentation failure or commonly expected
+	// behaviour, and we currently don't have a way to determine this. As a result
+	// it's recommended to ignore this error for now.
+	ErrOutOfOrderCT = fmt.Errorf("created timestamp out of order, ignoring")
 )
 
 // SeriesRef is a generic series reference. In prometheus it is either a
@@ -296,17 +302,22 @@ type MetadataUpdater interface {
 	UpdateMetadata(ref SeriesRef, l labels.Labels, m metadata.Metadata) (SeriesRef, error)
 }
 
-// CreatedTimestampAppender provides an interface for appending created timestamps to the storage.
+// CreatedTimestampAppender provides an interface for appending CT to storage.
 type CreatedTimestampAppender interface {
-	// AppendCreatedTimestamp adds an extra sample to the given series labels.
-	// The value of the appended sample is always zero, while the sample's timestamp
-	// is the one exposed by the target as created timestamp.
+	// AppendCTZeroSample adds synthetic zero sample for the given ct timestamp,
+	// which will be associated with given series, labels and the incoming
+	// sample's t (timestamp). AppendCTZeroSample returns error if zero sample can't be
+	// appended, for example when ct is too old, or when it would collide with
+	// incoming sample (sample has priority).
 	//
-	// Appending created timestamps is optional, that is because appending sythetic zeros
-	// should only happen if created timestamp respects the order of the samples, i.e. is not out-of-order.
+	// AppendCTZeroSample has to be called before the corresponding sample Append.
+	// A series reference number is returned which can be used to modify the
+	// CT for the given series in the same or later transactions.
+	// Returned reference numbers are ephemeral and may be rejected in calls
+	// to AppendCTZeroSample() at any point.
 	//
-	// When AppendCreatedTimestamp decides to not append a sample, it should return an error that can be treated by the caller.
-	AppendCreatedTimestamp(ref SeriesRef, l labels.Labels, t int64) (SeriesRef, error)
+	// If the reference is 0 it must not be used for caching.
+	AppendCTZeroSample(ref SeriesRef, l labels.Labels, t int64, ct int64) (SeriesRef, error)
 }
 
 // SeriesSet contains a set of series.
