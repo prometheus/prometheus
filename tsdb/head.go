@@ -1745,32 +1745,31 @@ func (m *seriesHashmap) set(hash uint64, s *memSeries) {
 	m.conflicts[hash] = append(l, s)
 }
 
-func (m *seriesHashmap) del(hash uint64, lset labels.Labels) {
+func (m *seriesHashmap) del(hash uint64, ref chunks.HeadSeriesRef) {
 	var rem []*memSeries
 	unique, found := m.unique[hash]
 	switch {
-	case !found:
+	case !found: // Supplied hash is not stored.
 		return
-	case labels.Equal(unique.lset, lset):
+	case unique.ref == ref:
 		conflicts := m.conflicts[hash]
-		if len(conflicts) == 0 {
+		if len(conflicts) == 0 { // Exactly one series with this hash was stored
 			delete(m.unique, hash)
 			return
 		}
-		rem = conflicts
-	default:
-		rem = append(rem, unique)
+		m.unique[hash] = conflicts[0] // First remaining series goes in 'unique'.
+		rem = conflicts[1:]           // Keep the rest.
+	default: // The series to delete is somewhere in 'conflicts'. Keep all the ones that don't match.
 		for _, s := range m.conflicts[hash] {
-			if !labels.Equal(s.lset, lset) {
+			if s.ref != ref {
 				rem = append(rem, s)
 			}
 		}
 	}
-	m.unique[hash] = rem[0]
-	if len(rem) == 1 {
+	if len(rem) == 0 {
 		delete(m.conflicts, hash)
 	} else {
-		m.conflicts[hash] = rem[1:]
+		m.conflicts[hash] = rem
 	}
 }
 
@@ -1885,7 +1884,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 		}
 
 		deleted[storage.SeriesRef(series.ref)] = struct{}{}
-		s.hashes[hashShard].del(hash, series.lset)
+		s.hashes[hashShard].del(hash, series.ref)
 		delete(s.series[refShard], series.ref)
 		deletedForCallback[series.ref] = series.lset
 	}
