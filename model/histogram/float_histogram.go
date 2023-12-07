@@ -765,8 +765,9 @@ func (h *FloatHistogram) floatBucketIterator(
 			schema:   h.Schema,
 			positive: positive,
 		},
-		targetSchema:       targetSchema,
-		absoluteStartValue: absoluteStartValue,
+		targetSchema:           targetSchema,
+		absoluteStartValue:     absoluteStartValue,
+		boundReachedStartValue: absoluteStartValue == 0,
 	}
 	if positive {
 		i.spans = h.PositiveSpans
@@ -824,55 +825,83 @@ func (i *floatBucketIterator) Next() bool {
 		return false
 	}
 
-	// Copy all of these into local variables so that we can forward to the
-	// next bucket and then roll back if needed.
-	origIdx, spansIdx, idxInSpan := i.origIdx, i.spansIdx, i.idxInSpan
-	span := i.spans[spansIdx]
-	firstPass := true
-	i.currCount = 0
-
-mergeLoop: // Merge together all buckets from the original schema that fall into one bucket in the targetSchema.
-	for {
+	if i.schema == i.targetSchema {
+		// Fast path for the common case.
+		span := i.spans[i.spansIdx]
 		if i.bucketsIdx == 0 {
 			// Seed origIdx for the first bucket.
-			origIdx = span.Offset
+			i.currIdx = span.Offset
 		} else {
-			origIdx++
+			i.currIdx++
 		}
-		for idxInSpan >= span.Length {
+
+		for i.idxInSpan >= span.Length {
 			// We have exhausted the current span and have to find a new
 			// one. We even handle pathologic spans of length 0 here.
-			idxInSpan = 0
-			spansIdx++
-			if spansIdx >= len(i.spans) {
-				if firstPass {
-					return false
+			i.idxInSpan = 0
+			i.spansIdx++
+			if i.spansIdx >= len(i.spans) {
+				return false
+			}
+			span = i.spans[i.spansIdx]
+			i.currIdx += span.Offset
+		}
+
+		i.currCount = i.buckets[i.bucketsIdx]
+		i.idxInSpan++
+		i.bucketsIdx++
+	} else {
+		// Copy all of these into local variables so that we can forward to the
+		// next bucket and then roll back if needed.
+		origIdx, spansIdx, idxInSpan := i.origIdx, i.spansIdx, i.idxInSpan
+		span := i.spans[spansIdx]
+		firstPass := true
+		i.currCount = 0
+
+	mergeLoop: // Merge together all buckets from the original schema that fall into one bucket in the targetSchema.
+		for {
+			if i.bucketsIdx == 0 {
+				// Seed origIdx for the first bucket.
+				origIdx = span.Offset
+			} else {
+				origIdx++
+			}
+			for idxInSpan >= span.Length {
+				// We have exhausted the current span and have to find a new
+				// one. We even handle pathologic spans of length 0 here.
+				idxInSpan = 0
+				spansIdx++
+				if spansIdx >= len(i.spans) {
+					if firstPass {
+						return false
+					}
+					break mergeLoop
 				}
+				span = i.spans[spansIdx]
+				origIdx += span.Offset
+			}
+			currIdx := targetIdx(origIdx, i.schema, i.targetSchema)
+			switch {
+			case firstPass:
+				i.currIdx = currIdx
+				firstPass = false
+			case currIdx != i.currIdx:
+				// Reached next bucket in targetSchema.
+				// Do not actually forward to the next bucket, but break out.
 				break mergeLoop
 			}
-			span = i.spans[spansIdx]
-			origIdx += span.Offset
-		}
-		currIdx := i.targetIdx(origIdx)
-		switch {
-		case firstPass:
-			i.currIdx = currIdx
-			firstPass = false
-		case currIdx != i.currIdx:
-			// Reached next bucket in targetSchema.
-			// Do not actually forward to the next bucket, but break out.
-			break mergeLoop
-		}
-		i.currCount += i.buckets[i.bucketsIdx]
-		idxInSpan++
-		i.bucketsIdx++
-		i.origIdx, i.spansIdx, i.idxInSpan = origIdx, spansIdx, idxInSpan
-		if i.schema == i.targetSchema {
-			// Don't need to test the next bucket for mergeability
-			// if we have no schema change anyway.
-			break mergeLoop
+			i.currCount += i.buckets[i.bucketsIdx]
+			idxInSpan++
+			i.bucketsIdx++
+			i.origIdx, i.spansIdx, i.idxInSpan = origIdx, spansIdx, idxInSpan
+			if i.schema == i.targetSchema {
+				// Don't need to test the next bucket for mergeability
+				// if we have no schema change anyway.
+				break mergeLoop
+			}
 		}
 	}
+
 	// Skip buckets before absoluteStartValue.
 	// TODO(beorn7): Maybe do something more efficient than this recursive call.
 	if !i.boundReachedStartValue && getBound(i.currIdx, i.targetSchema) <= i.absoluteStartValue {
@@ -880,17 +909,6 @@ mergeLoop: // Merge together all buckets from the original schema that fall into
 	}
 	i.boundReachedStartValue = true
 	return true
-}
-
-// targetIdx returns the bucket index within i.targetSchema for the given bucket
-// index within i.schema.
-func (i *floatBucketIterator) targetIdx(idx int32) int32 {
-	if i.schema == i.targetSchema {
-		// Fast path for the common case. The below would yield the same
-		// result, just with more effort.
-		return idx
-	}
-	return ((idx - 1) >> (i.schema - i.targetSchema)) + 1
 }
 
 type reverseFloatBucketIterator struct {
