@@ -465,7 +465,7 @@ func (p *OpenMetricsParser) parseMetricSuffix(t token) (Entry, error) {
 	if p.offsets[0] == -1 {
 		return EntryInvalid, fmt.Errorf("metric name not set while parsing: %q", p.l.b[p.start:p.l.i])
 	}
-	
+
 	var err error
 	p.val, err = p.getFloatValue(t, "metric")
 	if err != nil {
