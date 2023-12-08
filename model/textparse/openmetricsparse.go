@@ -226,12 +226,11 @@ func (p *OpenMetricsParser) nextToken() token {
 }
 
 func (p *OpenMetricsParser) parseError(exp string, got token) error {
-	e := p.l.i + 80
+	e := p.l.i + 1
 	if len(p.l.b) < e {
 		e = len(p.l.b)
 	}
-	start := int(math.Max(0, float64(p.start-80)))
-	return fmt.Errorf("%s, got %q (%q) while parsing: %q", exp, p.l.b[p.l.start:e], got, p.l.b[start:e])
+	return fmt.Errorf("%s, got %q (%q) while parsing: %q", exp, p.l.b[p.l.start:e], got, p.l.b[p.start:e])
 }
 
 // Next advances the parser to the next sample. It returns false if no
@@ -255,7 +254,6 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 	case tEOF:
 		return EntryInvalid, errors.New("data does not end with # EOF")
 	case tHelp, tType, tUnit:
-		tStart := p.l.start
 		switch t2 := p.nextToken(); t2 {
 		case tMName:
 			mStart := p.l.start
@@ -266,7 +264,7 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 			}
 			p.offsets = append(p.offsets, mStart, mEnd)
 		default:
-			return EntryInvalid, p.parseError("expected metric name after "+t.String()+" "+string(p.l.b), t2)
+			return EntryInvalid, p.parseError("expected metric name after "+t.String(), t2)
 		}
 		switch t2 := p.nextToken(); t2 {
 		case tText:
@@ -276,11 +274,7 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 				p.text = []byte{}
 			}
 		default:
-			end := tStart + 40
-			if end >= len(p.l.b) {
-				end = len(p.l.b) - 1
-			}
-			return EntryInvalid, fmt.Errorf("expected text in %s: got %v (%v)", t.String(), t2.String(), string(p.l.b[tStart:end]))
+			return EntryInvalid, fmt.Errorf("expected text in %s", t.String())
 		}
 		switch t {
 		case tType:
@@ -468,6 +462,10 @@ func (p *OpenMetricsParser) parseLVals(offsets []int) ([]int, error) {
 // parseMetricSuffix parses the end of the line after the metric name and
 // labels. It starts parsing with the provided token.
 func (p *OpenMetricsParser) parseMetricSuffix(t token) (Entry, error) {
+	if p.offsets[0] == -1 {
+		return EntryInvalid, fmt.Errorf("metric name not set while parsing: %q", p.l.b[p.start:p.l.i])
+	}
+	
 	var err error
 	p.val, err = p.getFloatValue(t, "metric")
 	if err != nil {
