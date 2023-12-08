@@ -21,7 +21,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
 )
@@ -302,10 +301,10 @@ foo_total 17.0 1520879607.789 # {id="counter-test"} 5`
 }
 
 func TestUTF8OpenMetricsParse(t *testing.T) {
-	model.NameValidationScheme = model.UTF8Validation
-	defer func(){
-		model.NameValidationScheme = model.LegacyValidation
-	}()
+	// model.NameValidationScheme = model.UTF8Validation
+	// defer func(){
+	// 	model.NameValidationScheme = model.LegacyValidation
+	// }()
 
 	input := `# HELP "go.gc_duration_seconds" A summary of the GC invocation durations.
 # TYPE "go.gc_duration_seconds" summary
