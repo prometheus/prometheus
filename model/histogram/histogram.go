@@ -321,7 +321,7 @@ func (h *Histogram) ToFloat(fh *FloatHistogram) *FloatHistogram {
 }
 
 func resize[T any](items []T, n int) []T {
-	if len(items) < n {
+	if cap(items) < n {
 		return make([]T, n)
 	}
 	return items[:n]
