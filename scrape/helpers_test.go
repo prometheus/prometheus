@@ -162,7 +162,7 @@ func (a *collectResultAppender) UpdateMetadata(ref storage.SeriesRef, l labels.L
 	return a.next.UpdateMetadata(ref, l, m)
 }
 
-func (a *collectResultAppender) AppendCTZeroSample(ref storage.SeriesRef, l labels.Labels, t int64, ct int64) (storage.SeriesRef, error) {
+func (a *collectResultAppender) AppendCTZeroSample(ref storage.SeriesRef, l labels.Labels, t, ct int64) (storage.SeriesRef, error) {
 	return a.Append(ref, l, ct, 0.0)
 }
 

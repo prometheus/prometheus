@@ -202,7 +202,7 @@ func (f *fanoutAppender) UpdateMetadata(ref SeriesRef, l labels.Labels, m metada
 	return ref, nil
 }
 
-func (f *fanoutAppender) AppendCTZeroSample(ref SeriesRef, l labels.Labels, t int64, ct int64) (SeriesRef, error) {
+func (f *fanoutAppender) AppendCTZeroSample(ref SeriesRef, l labels.Labels, t, ct int64) (SeriesRef, error) {
 	ref, err := f.primary.AppendCTZeroSample(ref, l, t, ct)
 	if err != nil {
 		return ref, err

@@ -765,7 +765,6 @@ func TestManagerCTZeroIngestion(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-
 			app := &collectResultAppender{}
 			scrapeManager, err := NewManager(
 				&Options{
@@ -799,7 +798,7 @@ func TestManagerCTZeroIngestion(t *testing.T) {
 						fail = false
 						w.Header().Set("Content-Type", `application/vnd.google.protobuf; proto=io.prometheus.client.MetricFamily; encoding=delimited`)
 
-						var ctrType = dto.MetricType_COUNTER
+						ctrType := dto.MetricType_COUNTER
 						w.Write(protoMarshalDelimited(t, &dto.MetricFamily{
 							Name:   proto.String(mName),
 							Type:   &ctrType,

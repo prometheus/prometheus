@@ -317,7 +317,7 @@ type CreatedTimestampAppender interface {
 	// to AppendCTZeroSample() at any point.
 	//
 	// If the reference is 0 it must not be used for caching.
-	AppendCTZeroSample(ref SeriesRef, l labels.Labels, t int64, ct int64) (SeriesRef, error)
+	AppendCTZeroSample(ref SeriesRef, l labels.Labels, t, ct int64) (SeriesRef, error)
 }
 
 // SeriesSet contains a set of series.

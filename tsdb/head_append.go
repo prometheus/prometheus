@@ -87,7 +87,7 @@ func (a *initAppender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m 
 	return a.app.UpdateMetadata(ref, l, m)
 }
 
-func (a *initAppender) AppendCTZeroSample(ref storage.SeriesRef, lset labels.Labels, t int64, ct int64) (storage.SeriesRef, error) {
+func (a *initAppender) AppendCTZeroSample(ref storage.SeriesRef, lset labels.Labels, t, ct int64) (storage.SeriesRef, error) {
 	if a.app != nil {
 		return a.app.AppendCTZeroSample(ref, lset, t, ct)
 	}
@@ -386,7 +386,7 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 // AppendCTZeroSample appends synthetic zero sample for ct timestamp. It returns
 // error when sample can't be appended. See
 // storage.CreatedTimestampAppender.AppendCTZeroSample for further documentation.
-func (a *headAppender) AppendCTZeroSample(ref storage.SeriesRef, lset labels.Labels, t int64, ct int64) (storage.SeriesRef, error) {
+func (a *headAppender) AppendCTZeroSample(ref storage.SeriesRef, lset labels.Labels, t, ct int64) (storage.SeriesRef, error) {
 	if ct >= t {
 		return 0, fmt.Errorf("CT is newer or the same as sample's timestamp, ignoring")
 	}
