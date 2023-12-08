@@ -1458,6 +1458,7 @@ yydefault:
 	case 93:
 		yyDollar = yyS[yypt-1 : yypt+1]
 		{
+			// metric name matcher!
 			yyVAL.matcher = yylex.(*parser).newMetricNameMatcher(yyDollar[1].item)
 		}
 	case 94:
@@ -1493,6 +1494,7 @@ yydefault:
 	case 121:
 		yyDollar = yyS[yypt-3 : yypt+1]
 		{
+			// LEFT_BRACE label_set_list RIGHT_BRACE
 			yyVAL.labels = labels.New(yyDollar[2].lblList...)
 		}
 	case 122:
@@ -1529,6 +1531,7 @@ yydefault:
 	case 128:
 		yyDollar = yyS[yypt-3 : yypt+1]
 		{
+			// ident eq string
 			yyVAL.label = labels.Label{Name: yyDollar[1].item.Val, Value: yylex.(*parser).unquoteString(yyDollar[3].item.Val)}
 		}
 	case 129:
@@ -1829,6 +1832,7 @@ yydefault:
 	case 226:
 		yyDollar = yyS[yypt-1 : yypt+1]
 		{
+			// string_identifier
 			yyVAL.item = Item{
 				Typ: METRIC_IDENTIFIER,
 				Pos: yyDollar[1].item.PositionRange().Start,
