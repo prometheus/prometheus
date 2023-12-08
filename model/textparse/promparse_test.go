@@ -392,7 +392,7 @@ func TestPromParseErrors(t *testing.T) {
 		},
 		{
 			input: `{a="ok"} 1`,
-			err:   "metric name not set while parsing: \"{a=\\\"ok\\\"} 1\\n\"",
+			err:   "metric name not set while parsing: \"{a=\\\"ok\\\"} 1\"",
 		},
 		{
 			input: "# TYPE #\n#EOF\n",
