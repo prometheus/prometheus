@@ -403,6 +403,8 @@ func (p *parser) newBinaryExpression(lhs Node, op Item, modifiers, rhs Node) *Bi
 }
 
 func (p *parser) assembleVectorSelector(vs *VectorSelector) {
+	// If the metric name was set outside the braces, add a matcher for it.
+	// If the metric name was inside the braces we don't need to do anything.
 	if vs.Name != "" {
 		nameMatcher, err := labels.NewMatcher(labels.MatchEqual, labels.MetricName, vs.Name)
 		if err != nil {

@@ -1404,7 +1404,10 @@ yydefault:
 	case 85:
 		yyDollar = yyS[yypt-3 : yypt+1]
 		{
+			// label_matchers
+			// name := yylex.(*parser).findNameMatcher($2)
 			yyVAL.node = &VectorSelector{
+				// Name: name,
 				LabelMatchers: yyDollar[2].matchers,
 				PosRange:      mergeRanges(&yyDollar[1].item, &yyDollar[3].item),
 			}
@@ -1412,7 +1415,9 @@ yydefault:
 	case 86:
 		yyDollar = yyS[yypt-4 : yypt+1]
 		{
+			// name := yylex.(*parser).findNameMatcher($2)
 			yyVAL.node = &VectorSelector{
+				// Name: name,
 				LabelMatchers: yyDollar[2].matchers,
 				PosRange:      mergeRanges(&yyDollar[1].item, &yyDollar[4].item),
 			}
