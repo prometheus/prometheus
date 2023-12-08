@@ -5643,171 +5643,65 @@ func TestPostingsCardinalityStats(t *testing.T) {
 }
 
 func TestHeadAppender_AppendCTZeroSample(t *testing.T) {
+	type appendableSamples struct {
+		ts  int64
+		val float64
+		ct  int64
+	}
+	type expectedSamples struct {
+		ts  int64
+		val float64
+	}
 	for _, tc := range []struct {
-		name       string
-		appendFunc func(*testing.T, storage.Appender)
-		assertFunc func(*testing.T, storage.Querier)
+		name              string
+		appendableSamples []appendableSamples
+		expectedSamples   []expectedSamples
 	}{
 		{
 			name: "In order ct+normal sample",
-			appendFunc: func(t *testing.T, a storage.Appender) {
-				lbls := labels.FromStrings("foo", "bar")
-				ts := int64(100)
-				_, err := a.AppendCreatedTimestamp(0, lbls, ts-1)
-				require.NoError(t, err)
-				_, err = a.Append(0, lbls, ts, 10)
-				require.NoError(t, err)
-				require.NoError(t, a.Commit())
+			appendableSamples: []appendableSamples{
+				{ts: 100, val: 10, ct: 1},
 			},
-			assertFunc: func(t *testing.T, q storage.Querier) {
-				ts := int64(100)
-				ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
-				require.True(t, ss.Next())
-				s := ss.At()
-
-				it := s.Iterator(nil)
-				require.Equal(t, chunkenc.ValFloat, it.Next())
-				timestamp, value := it.At()
-				require.Equal(t, ts-1, timestamp)
-				require.Equal(t, 0.0, value)
-
-				require.Equal(t, chunkenc.ValFloat, it.Next())
-				timestamp, value = it.At()
-				require.Equal(t, ts, timestamp)
-				require.Equal(t, 10.0, value)
-
-				require.False(t, ss.Next())
-				require.Equal(t, chunkenc.ValNone, it.Next())
+			expectedSamples: []expectedSamples{
+				{ts: 1, val: 0},
+				{ts: 100, val: 10},
 			},
 		},
 		{
 			name: "Consecutive appends with same ct ignore ct",
-			appendFunc: func(t *testing.T, a storage.Appender) {
-				lbls := labels.FromStrings("foo", "bar")
-				ctTs := int64(99)
-				sampleTs := int64(100)
-				_, err := a.AppendCreatedTimestamp(0, lbls, ctTs)
-				require.NoError(t, err)
-				_, err = a.Append(0, lbls, sampleTs, 10)
-				require.NoError(t, err)
-				sampleTs += 1
-				_, err = a.AppendCreatedTimestamp(0, lbls, ctTs)
-				require.NoError(t, err)
-				_, err = a.Append(0, lbls, sampleTs, 10)
-				require.NoError(t, err)
-				require.NoError(t, a.Commit())
+			appendableSamples: []appendableSamples{
+				{ts: 100, val: 10, ct: 1},
+				{ts: 101, val: 10, ct: 1},
 			},
-			assertFunc: func(t *testing.T, q storage.Querier) {
-				ctTs := int64(99)
-				sampleTs := int64(100)
-				ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
-				require.True(t, ss.Next())
-				s := ss.At()
-				require.False(t, ss.Next())
-
-				it := s.Iterator(nil)
-				// First CT is ingested
-				require.Equal(t, chunkenc.ValFloat, it.Next())
-				timestamp, value := it.At()
-				require.Equal(t, ctTs, timestamp)
-				require.Equal(t, 0.0, value)
-
-				require.Equal(t, chunkenc.ValFloat, it.Next())
-				timestamp, value = it.At()
-				require.Equal(t, sampleTs, timestamp)
-				require.Equal(t, 10.0, value)
-
-				// On a consecutive scrape with the same CT, the CT is ignored
-				sampleTs += 1
-				require.Equal(t, chunkenc.ValFloat, it.Next())
-				timestamp, value = it.At()
-				require.Equal(t, sampleTs, timestamp)
-				require.Equal(t, 10.0, value)
-
-				require.False(t, ss.Next())
-				require.Equal(t, chunkenc.ValNone, it.Next())
+			expectedSamples: []expectedSamples{
+				{ts: 1, val: 0},
+				{ts: 100, val: 10},
+				{ts: 101, val: 10},
 			},
 		},
 		{
 			name: "Consecutive appends with newer ct do not ignore ct",
-			appendFunc: func(t *testing.T, a storage.Appender) {
-				lbls := labels.FromStrings("foo", "bar")
-				ctTs := int64(99)
-				sampleTs := int64(100)
-				_, err := a.AppendCreatedTimestamp(0, lbls, ctTs)
-				require.NoError(t, err)
-				_, err = a.Append(0, lbls, sampleTs, 10)
-				require.NoError(t, err)
-				ctTs = sampleTs + 1
-				sampleTs = ctTs + 1
-				_, err = a.AppendCreatedTimestamp(0, lbls, ctTs)
-				require.NoError(t, err)
-				_, err = a.Append(0, lbls, sampleTs, 10)
-				require.NoError(t, err)
-				require.NoError(t, a.Commit())
+			appendableSamples: []appendableSamples{
+				{ts: 100, val: 10, ct: 1},
+				{ts: 102, val: 10, ct: 101},
 			},
-			assertFunc: func(t *testing.T, q storage.Querier) {
-				ctTs := int64(99)
-				sampleTs := int64(100)
-				ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
-				require.True(t, ss.Next())
-				s := ss.At()
-				require.False(t, ss.Next())
-
-				it := s.Iterator(nil)
-				require.Equal(t, chunkenc.ValFloat, it.Next())
-				timestamp, value := it.At()
-				require.Equal(t, ctTs, timestamp)
-				require.Equal(t, 0.0, value)
-
-				require.Equal(t, chunkenc.ValFloat, it.Next())
-				timestamp, value = it.At()
-				require.Equal(t, sampleTs, timestamp)
-				require.Equal(t, 10.0, value)
-
-				// Second CT is younger than previous sample, so it is not ignored
-				ctTs = sampleTs + 1
-				sampleTs = ctTs + 1
-				require.Equal(t, chunkenc.ValFloat, it.Next())
-				timestamp, value = it.At()
-				require.Equal(t, ctTs, timestamp)
-				require.Equal(t, 0.0, value)
-
-				require.Equal(t, chunkenc.ValFloat, it.Next())
-				timestamp, value = it.At()
-				require.Equal(t, sampleTs, timestamp)
-				require.Equal(t, 10.0, value)
-
-				require.False(t, ss.Next())
-				require.Equal(t, chunkenc.ValNone, it.Next())
+			expectedSamples: []expectedSamples{
+				{ts: 1, val: 0},
+				{ts: 100, val: 10},
+				{ts: 101, val: 0},
+				{ts: 102, val: 10},
 			},
 		},
 		{
 			name: "CT equals to previous sample timestamp is ignored",
-			appendFunc: func(t *testing.T, a storage.Appender) {
-				lbls := labels.FromStrings("foo", "bar")
-				sampleTs := int64(100)
-				_, err := a.Append(0, lbls, sampleTs, 10)
-				require.NoError(t, err)
-				_, err = a.AppendCreatedTimestamp(0, lbls, sampleTs)
-				require.NoError(t, err)
-				require.NoError(t, a.Commit())
+			appendableSamples: []appendableSamples{
+				{ts: 100, val: 10, ct: 1},
+				{ts: 101, val: 10, ct: 100},
 			},
-			assertFunc: func(t *testing.T, q storage.Querier) {
-				sampleTs := int64(100)
-				ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
-				require.True(t, ss.Next())
-				s := ss.At()
-				require.False(t, ss.Next())
-
-				it := s.Iterator(nil)
-				require.Equal(t, chunkenc.ValFloat, it.Next())
-				timestamp, value := it.At()
-				require.Equal(t, sampleTs, timestamp)
-				require.Equal(t, 10.0, value)
-
-				require.False(t, ss.Next())
-				require.Equal(t, chunkenc.ValNone, it.Next())
+			expectedSamples: []expectedSamples{
+				{ts: 1, val: 0},
+				{ts: 100, val: 10},
+				{ts: 101, val: 10},
 			},
 		},
 	} {
@@ -5816,9 +5710,28 @@ func TestHeadAppender_AppendCTZeroSample(t *testing.T) {
 			require.NoError(t, h.Close())
 		}()
 		a := h.Appender(context.Background())
-		tc.appendFunc(t, a)
+		lbls := labels.FromStrings("foo", "bar")
+		for _, sample := range tc.appendableSamples {
+			_, err := a.AppendCTZeroSample(0, lbls, sample.ts, sample.ct)
+			require.NoError(t, err)
+			_, err = a.Append(0, lbls, sample.ts, sample.val)
+			require.NoError(t, err)
+		}
+		require.NoError(t, a.Commit())
+
 		q, err := NewBlockQuerier(h, math.MinInt64, math.MaxInt64)
 		require.NoError(t, err)
-		tc.assertFunc(t, q)
+		ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+		require.True(t, ss.Next())
+		s := ss.At()
+		require.False(t, ss.Next())
+		it := s.Iterator(nil)
+		for _, sample := range tc.expectedSamples {
+			require.Equal(t, chunkenc.ValFloat, it.Next())
+			timestamp, value := it.At()
+			require.Equal(t, sample.ts, timestamp)
+			require.Equal(t, sample.val, value)
+		}
+		require.Equal(t, chunkenc.ValNone, it.Next())
 	}
 }
