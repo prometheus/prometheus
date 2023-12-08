@@ -454,6 +454,9 @@ func (p *PromParser) parseLVals() error {
 // parseMetricSuffix parses the end of the line after the metric name and
 // labels. It starts parsing with the provided token.
 func (p *PromParser) parseMetricSuffix(t token) (Entry, error) {
+	if p.offsets[0] == -1 {
+		return EntryInvalid, fmt.Errorf("metric name not set while parsing: %q", p.l.b[p.start:p.l.i])
+	}
 	if t != tValue {
 		return EntryInvalid, p.parseError("expected value after metric", t)
 	}
@@ -481,9 +484,6 @@ func (p *PromParser) parseMetricSuffix(t token) (Entry, error) {
 		return EntryInvalid, p.parseError("expected timestamp or new record", t)
 	}
 
-	if p.offsets[0] == -1 {
-		return EntryInvalid, fmt.Errorf("metric name not set while parsing: %q", p.l.b[p.start:p.l.i])
-	}
 	return EntrySeries, nil
 }
 
