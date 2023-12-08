@@ -442,12 +442,11 @@ func (p *PromParser) parseLVals() error {
 		// and last character.
 		p.offsets = append(p.offsets, p.l.start+1, p.l.i-1)
 
-		// Free trailing commas are allowed.
-		t = p.nextToken()
-		if t == tComma {
+		// Free trailing commas are allowed. NOTE: this allows spaces between label
+		// names, unlike in OpenMetrics. It is not clear if this is intended or an
+		// accidental bug.
+		if t = p.nextToken(); t == tComma {
 			t = p.nextToken()
-		} else if t != tBraceClose {
-			return p.parseError("expected comma or brace close", t)
 		}
 	}
 }
