@@ -2478,22 +2478,12 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 	switch op {
 	case parser.ADD:
 		if hlhs != nil && hrhs != nil {
-			// The histogram being added must have the larger schema
-			// code (i.e. the higher resolution).
-			if hrhs.Schema >= hlhs.Schema {
-				return 0, hlhs.Copy().Add(hrhs).Compact(0), true
-			}
-			return 0, hrhs.Copy().Add(hlhs).Compact(0), true
+			return 0, hlhs.Copy().Add(hrhs).Compact(0), true
 		}
 		return lhs + rhs, nil, true
 	case parser.SUB:
 		if hlhs != nil && hrhs != nil {
-			// The histogram being subtracted must have the larger schema
-			// code (i.e. the higher resolution).
-			if hrhs.Schema >= hlhs.Schema {
-				return 0, hlhs.Copy().Sub(hrhs).Compact(0), true
-			}
-			return 0, hrhs.Copy().Mul(-1).Add(hlhs).Compact(0), true
+			return 0, hlhs.Copy().Sub(hrhs).Compact(0), true
 		}
 		return lhs - rhs, nil, true
 	case parser.MUL:
@@ -2678,13 +2668,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, grouping []string, par
 			if s.H != nil {
 				group.hasHistogram = true
 				if group.histogramValue != nil {
-					// The histogram being added must have
-					// an equal or larger schema.
-					if s.H.Schema >= group.histogramValue.Schema {
-						group.histogramValue.Add(s.H)
-					} else {
-						group.histogramValue = s.H.Copy().Add(group.histogramValue)
-					}
+					group.histogramValue.Add(s.H)
 				}
 				// Otherwise the aggregation contained floats
 				// previously and will be invalid anyway. No
@@ -2701,15 +2685,8 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, grouping []string, par
 				if group.histogramMean != nil {
 					left := s.H.Copy().Div(float64(group.groupCount))
 					right := group.histogramMean.Copy().Div(float64(group.groupCount))
-					// The histogram being added/subtracted must have
-					// an equal or larger schema.
-					if s.H.Schema >= group.histogramMean.Schema {
-						toAdd := right.Mul(-1).Add(left)
-						group.histogramMean.Add(toAdd)
-					} else {
-						toAdd := left.Sub(right)
-						group.histogramMean = toAdd.Add(group.histogramMean)
-					}
+					toAdd := left.Sub(right)
+					group.histogramMean.Add(toAdd)
 				}
 				// Otherwise the aggregation contained floats
 				// previously and will be invalid anyway. No

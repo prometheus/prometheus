@@ -532,15 +532,8 @@ func funcAvgOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 				count++
 				left := h.H.Copy().Div(float64(count))
 				right := mean.Copy().Div(float64(count))
-				// The histogram being added/subtracted must have
-				// an equal or larger schema.
-				if h.H.Schema >= mean.Schema {
-					toAdd := right.Mul(-1).Add(left)
-					mean.Add(toAdd)
-				} else {
-					toAdd := left.Sub(right)
-					mean = toAdd.Add(mean)
-				}
+				toAdd := left.Sub(right)
+				mean.Add(toAdd)
 			}
 			return mean
 		}), nil
@@ -661,13 +654,7 @@ func funcSumOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 		return aggrHistOverTime(vals, enh, func(s Series) *histogram.FloatHistogram {
 			sum := s.Histograms[0].H.Copy()
 			for _, h := range s.Histograms[1:] {
-				// The histogram being added must have
-				// an equal or larger schema.
-				if h.H.Schema >= sum.Schema {
-					sum.Add(h.H)
-				} else {
-					sum = h.H.Copy().Add(sum)
-				}
+				sum.Add(h.H)
 			}
 			return sum
 		}), nil
