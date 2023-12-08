@@ -609,6 +609,25 @@ func funcLastOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNod
 	}), nil
 }
 
+// === mad_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
+func funcMadOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(vals[0].(Matrix)[0].Floats) == 0 {
+		return enh.Out, nil
+	}
+	return aggrOverTime(vals, enh, func(s Series) float64 {
+		values := make(vectorByValueHeap, 0, len(s.Floats))
+		for _, f := range s.Floats {
+			values = append(values, Sample{F: f.F})
+		}
+		median := quantile(0.5, values)
+		values = make(vectorByValueHeap, 0, len(s.Floats))
+		for _, f := range s.Floats {
+			values = append(values, Sample{F: math.Abs(f.F - median)})
+		}
+		return quantile(0.5, values)
+	}), nil
+}
+
 // === max_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcMaxOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	if len(vals[0].(Matrix)[0].Floats) == 0 {
@@ -1538,6 +1557,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"log10":              funcLog10,
 	"log2":               funcLog2,
 	"last_over_time":     funcLastOverTime,
+	"mad_over_time":      funcMadOverTime,
 	"max_over_time":      funcMaxOverTime,
 	"min_over_time":      funcMinOverTime,
 	"minute":             funcMinute,
