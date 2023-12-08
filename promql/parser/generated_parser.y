@@ -586,10 +586,7 @@ label_matcher   : IDENTIFIER match_op STRING
                 | string_identifier match_op STRING
                         { $$ = yylex.(*parser).newLabelMatcher($1, $2, $3); }
                 | string_identifier
-                        { 
-                                // metric name matcher!
-                                $$ = yylex.(*parser).newMetricNameMatcher($1);
-                                 }
+                        { $$ = yylex.(*parser).newMetricNameMatcher($1); }
                 | IDENTIFIER match_op error
                         { yylex.(*parser).unexpected("label matching", "string"); $$ = nil}
                 | IDENTIFIER error
@@ -612,10 +609,7 @@ metric          : metric_identifier label_set
 metric_identifier: AVG | BOTTOMK | BY | COUNT | COUNT_VALUES | GROUP | IDENTIFIER |  LAND | LOR | LUNLESS | MAX | METRIC_IDENTIFIER | MIN | OFFSET | QUANTILE | STDDEV | STDVAR | SUM | TOPK | WITHOUT | START | END;
 
 label_set       : LEFT_BRACE label_set_list RIGHT_BRACE
-                        { 
-                                // LEFT_BRACE label_set_list RIGHT_BRACE
-                                $$ = labels.New($2...)
-                                 }
+                        { $$ = labels.New($2...) }
                 | LEFT_BRACE label_set_list COMMA RIGHT_BRACE
                         { $$ = labels.New($2...) }
                 | LEFT_BRACE RIGHT_BRACE
@@ -634,17 +628,7 @@ label_set_list  : label_set_list COMMA label_set_item
                 ;
 
 label_set_item  : IDENTIFIER EQL STRING
-                        { 
-                                // ident eq string
-                                $$ = labels.Label{Name: $1.Val, Value: yylex.(*parser).unquoteString($3.Val) } }
-                // | STRING EQL STRING 
-                //         { 
-                //                 // string eq string
-                //                 $$ = labels.Label{Name: yylex.(*parser).unquoteString($3.Val), Value: yylex.(*parser).unquoteString($3.Val) } }
-                // | STRING
-                //         { 
-                //                 // looks good?
-                //                 $$ = labels.Label{Name: labels.MetricName, Value: yylex.(*parser).unquoteString($1.Val) } }
+                        { $$ = labels.Label{Name: $1.Val, Value: yylex.(*parser).unquoteString($3.Val) } }
                 | IDENTIFIER EQL error
                         { yylex.(*parser).unexpected("label set", "string"); $$ = labels.Label{}}
                 | IDENTIFIER error
@@ -925,7 +909,6 @@ string_literal  : STRING
 
 string_identifier  : STRING
                         {
-                                // string_identifier
                         $$ = Item{
                                 Typ: METRIC_IDENTIFIER,
                                 Pos: $1.PositionRange().Start,
