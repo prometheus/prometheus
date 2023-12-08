@@ -5642,8 +5642,8 @@ func TestPostingsCardinalityStats(t *testing.T) {
 	require.Equal(t, statsForSomeLabel1, head.PostingsCardinalityStats("n", 1))
 }
 
-func TestAppendCreatedTimestamps(t *testing.T) {
-	testCases := []struct {
+func TestHeadAppender_AppendCTZeroSample(t *testing.T) {
+	for _, tc := range []struct {
 		name       string
 		appendFunc func(*testing.T, storage.Appender)
 		assertFunc func(*testing.T, storage.Querier)
@@ -5810,9 +5810,7 @@ func TestAppendCreatedTimestamps(t *testing.T) {
 				require.Equal(t, chunkenc.ValNone, it.Next())
 			},
 		},
-	}
-
-	for _, tc := range testCases {
+	} {
 		h, _ := newTestHead(t, DefaultBlockDuration, wlog.CompressionNone, false)
 		defer func() {
 			require.NoError(t, h.Close())

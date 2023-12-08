@@ -783,7 +783,8 @@ func TestManagerCTZeroIngestion(t *testing.T) {
 					// Disable regular scrapes.
 					ScrapeInterval: model.Duration(9999 * time.Minute),
 					ScrapeTimeout:  model.Duration(5 * time.Second),
-					// Ensure proto is chosen.
+					// Ensure the proto is chosen. We need proto as it's the only protocol
+					// with the CT parsing support.
 					ScrapeProtocols: []config.ScrapeProtocol{config.PrometheusProto},
 				},
 				ScrapeConfigs: []*config.ScrapeConfig{{JobName: "test"}},
