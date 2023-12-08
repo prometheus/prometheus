@@ -1,9 +1,9 @@
 # Changelog
 
-## 2.48.1 / 2023-12-07
+## 2.48.1 / 2023-12-08
 
-* [BUGFIX] TSDB: Make the wlog watcher read segments synchronously when not tailing. #13251
-* [BUGFIX] Agent: Participate in notify calls (fixes slow down in remote write handling introduced in 2.45). #13251
+* [BUGFIX] TSDB: Make the wlog watcher read segments synchronously when not tailing. #13224
+* [BUGFIX] Agent: Participate in notify calls (fixes slow down in remote write handling introduced in 2.45). #13223
 
 ## 2.48.0 / 2023-11-16
 
