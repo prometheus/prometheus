@@ -565,7 +565,7 @@ func TestBucketLimitAppender(t *testing.T) {
 				lbls := labels.FromStrings("__name__", "sparse_histogram_series")
 				var err error
 				if floatHisto {
-					fh := c.h.Copy().ToFloat()
+					fh := c.h.Copy().ToFloat(nil)
 					_, err = app.AppendHistogram(0, lbls, ts, nil, fh)
 					if c.expectError {
 						require.Error(t, err)

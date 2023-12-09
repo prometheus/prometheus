@@ -4082,8 +4082,8 @@ func testHistogramStaleSampleHelper(t *testing.T, floatHistogram bool) {
 	for _, h := range tsdbutil.GenerateTestHistograms(numHistograms) {
 		var err error
 		if floatHistogram {
-			_, err = app.AppendHistogram(0, l, 100*int64(len(expHistograms)), nil, h.ToFloat())
-			expHistograms = append(expHistograms, timedHistogram{t: 100 * int64(len(expHistograms)), fh: h.ToFloat()})
+			_, err = app.AppendHistogram(0, l, 100*int64(len(expHistograms)), nil, h.ToFloat(nil))
+			expHistograms = append(expHistograms, timedHistogram{t: 100 * int64(len(expHistograms)), fh: h.ToFloat(nil)})
 		} else {
 			_, err = app.AppendHistogram(0, l, 100*int64(len(expHistograms)), h, nil)
 			expHistograms = append(expHistograms, timedHistogram{t: 100 * int64(len(expHistograms)), h: h})
@@ -4113,8 +4113,8 @@ func testHistogramStaleSampleHelper(t *testing.T, floatHistogram bool) {
 	for _, h := range tsdbutil.GenerateTestHistograms(2 * numHistograms)[numHistograms:] {
 		var err error
 		if floatHistogram {
-			_, err = app.AppendHistogram(0, l, 100*int64(len(expHistograms)), nil, h.ToFloat())
-			expHistograms = append(expHistograms, timedHistogram{t: 100 * int64(len(expHistograms)), fh: h.ToFloat()})
+			_, err = app.AppendHistogram(0, l, 100*int64(len(expHistograms)), nil, h.ToFloat(nil))
+			expHistograms = append(expHistograms, timedHistogram{t: 100 * int64(len(expHistograms)), fh: h.ToFloat(nil)})
 		} else {
 			_, err = app.AppendHistogram(0, l, 100*int64(len(expHistograms)), h, nil)
 			expHistograms = append(expHistograms, timedHistogram{t: 100 * int64(len(expHistograms)), h: h})
@@ -4160,7 +4160,7 @@ func TestHistogramCounterResetHeader(t *testing.T) {
 				app := head.Appender(context.Background())
 				var err error
 				if floatHisto {
-					_, err = app.AppendHistogram(0, l, ts, nil, h.ToFloat())
+					_, err = app.AppendHistogram(0, l, ts, nil, h.ToFloat(nil))
 				} else {
 					_, err = app.AppendHistogram(0, l, ts, h.Copy(), nil)
 				}

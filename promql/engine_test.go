@@ -3267,7 +3267,7 @@ func TestNativeHistogram_HistogramCountAndSum(t *testing.T) {
 			app := storage.Appender(context.Background())
 			var err error
 			if floatHisto {
-				_, err = app.AppendHistogram(0, lbls, ts, nil, h.ToFloat())
+				_, err = app.AppendHistogram(0, lbls, ts, nil, h.ToFloat(nil))
 			} else {
 				_, err = app.AppendHistogram(0, lbls, ts, h, nil)
 			}
@@ -3287,7 +3287,7 @@ func TestNativeHistogram_HistogramCountAndSum(t *testing.T) {
 			require.Len(t, vector, 1)
 			require.Nil(t, vector[0].H)
 			if floatHisto {
-				require.Equal(t, h.ToFloat().Count, vector[0].F)
+				require.Equal(t, h.ToFloat(nil).Count, vector[0].F)
 			} else {
 				require.Equal(t, float64(h.Count), vector[0].F)
 			}
@@ -3305,7 +3305,7 @@ func TestNativeHistogram_HistogramCountAndSum(t *testing.T) {
 			require.Len(t, vector, 1)
 			require.Nil(t, vector[0].H)
 			if floatHisto {
-				require.Equal(t, h.ToFloat().Sum, vector[0].F)
+				require.Equal(t, h.ToFloat(nil).Sum, vector[0].F)
 			} else {
 				require.Equal(t, h.Sum, vector[0].F)
 			}
@@ -3433,7 +3433,7 @@ func TestNativeHistogram_HistogramStdDevVar(t *testing.T) {
 				app := storage.Appender(context.Background())
 				var err error
 				if floatHisto {
-					_, err = app.AppendHistogram(0, lbls, ts, nil, tc.h.ToFloat())
+					_, err = app.AppendHistogram(0, lbls, ts, nil, tc.h.ToFloat(nil))
 				} else {
 					_, err = app.AppendHistogram(0, lbls, ts, tc.h, nil)
 				}
@@ -3678,7 +3678,7 @@ func TestNativeHistogram_HistogramQuantile(t *testing.T) {
 				app := storage.Appender(context.Background())
 				var err error
 				if floatHisto {
-					_, err = app.AppendHistogram(0, lbls, ts, nil, c.h.ToFloat())
+					_, err = app.AppendHistogram(0, lbls, ts, nil, c.h.ToFloat(nil))
 				} else {
 					_, err = app.AppendHistogram(0, lbls, ts, c.h, nil)
 				}
@@ -4109,7 +4109,7 @@ func TestNativeHistogram_HistogramFraction(t *testing.T) {
 				app := storage.Appender(context.Background())
 				var err error
 				if floatHisto {
-					_, err = app.AppendHistogram(0, lbls, ts, nil, c.h.ToFloat())
+					_, err = app.AppendHistogram(0, lbls, ts, nil, c.h.ToFloat(nil))
 				} else {
 					_, err = app.AppendHistogram(0, lbls, ts, c.h, nil)
 				}
@@ -4272,7 +4272,7 @@ func TestNativeHistogram_Sum_Count_Add_AvgOperator(t *testing.T) {
 					// Since we mutate h later, we need to create a copy here.
 					var err error
 					if floatHisto {
-						_, err = app.AppendHistogram(0, lbls, ts, nil, h.Copy().ToFloat())
+						_, err = app.AppendHistogram(0, lbls, ts, nil, h.Copy().ToFloat(nil))
 					} else {
 						_, err = app.AppendHistogram(0, lbls, ts, h.Copy(), nil)
 					}
@@ -4282,7 +4282,7 @@ func TestNativeHistogram_Sum_Count_Add_AvgOperator(t *testing.T) {
 					newTs := ts + int64(idx1)*int64(time.Minute/time.Millisecond)
 					// Since we mutate h later, we need to create a copy here.
 					if floatHisto {
-						_, err = app.AppendHistogram(0, lbls, newTs, nil, h.Copy().ToFloat())
+						_, err = app.AppendHistogram(0, lbls, newTs, nil, h.Copy().ToFloat(nil))
 					} else {
 						_, err = app.AppendHistogram(0, lbls, newTs, h.Copy(), nil)
 					}
@@ -4530,7 +4530,7 @@ func TestNativeHistogram_SubOperator(t *testing.T) {
 					// Since we mutate h later, we need to create a copy here.
 					var err error
 					if floatHisto {
-						_, err = app.AppendHistogram(0, lbls, ts, nil, h.Copy().ToFloat())
+						_, err = app.AppendHistogram(0, lbls, ts, nil, h.Copy().ToFloat(nil))
 					} else {
 						_, err = app.AppendHistogram(0, lbls, ts, h.Copy(), nil)
 					}
@@ -4687,7 +4687,7 @@ func TestNativeHistogram_MulDivOperator(t *testing.T) {
 				// Since we mutate h later, we need to create a copy here.
 				var err error
 				if floatHisto {
-					_, err = app.AppendHistogram(0, lbls, ts, nil, h.Copy().ToFloat())
+					_, err = app.AppendHistogram(0, lbls, ts, nil, h.Copy().ToFloat(nil))
 				} else {
 					_, err = app.AppendHistogram(0, lbls, ts, h.Copy(), nil)
 				}

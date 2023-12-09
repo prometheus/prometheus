@@ -619,7 +619,7 @@ func createHistograms(numSamples, numSeries int, floatHistogram bool) ([]record.
 				fh := record.RefFloatHistogramSample{
 					Ref: chunks.HeadSeriesRef(i),
 					T:   int64(j),
-					FH:  hist.ToFloat(),
+					FH:  hist.ToFloat(nil),
 				}
 				floatHistograms = append(floatHistograms, fh)
 			} else {

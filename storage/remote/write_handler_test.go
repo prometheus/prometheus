@@ -134,7 +134,7 @@ func TestOutOfOrderExemplar(t *testing.T) {
 func TestOutOfOrderHistogram(t *testing.T) {
 	buf, _, err := buildWriteRequest([]prompb.TimeSeries{{
 		Labels:     []prompb.Label{{Name: "__name__", Value: "test_metric"}},
-		Histograms: []prompb.Histogram{HistogramToHistogramProto(0, &testHistogram), FloatHistogramToHistogramProto(1, testHistogram.ToFloat())},
+		Histograms: []prompb.Histogram{HistogramToHistogramProto(0, &testHistogram), FloatHistogramToHistogramProto(1, testHistogram.ToFloat(nil))},
 	}}, nil, nil, nil)
 	require.NoError(t, err)
 

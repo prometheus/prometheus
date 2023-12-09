@@ -519,7 +519,7 @@ func TestAmendHistogramDatapointCausesError(t *testing.T) {
 		},
 		PositiveBuckets: []int64{1, 2, -2, 1, -1, 0, 0},
 	}
-	fh := h.ToFloat()
+	fh := h.ToFloat(nil)
 
 	app = db.Appender(ctx)
 	_, err = app.AppendHistogram(0, labels.FromStrings("a", "c"), 0, h.Copy(), nil)
@@ -6392,8 +6392,8 @@ func testHistogramAppendAndQueryHelper(t *testing.T, floatHistogram bool) {
 		var err error
 		app := db.Appender(ctx)
 		if floatHistogram {
-			_, err = app.AppendHistogram(0, lbls, minute(tsMinute), nil, h.ToFloat())
-			efh := h.ToFloat()
+			_, err = app.AppendHistogram(0, lbls, minute(tsMinute), nil, h.ToFloat(nil))
+			efh := h.ToFloat(nil)
 			efh.CounterResetHint = expCRH
 			*exp = append(*exp, sample{t: minute(tsMinute), fh: efh})
 		} else {
@@ -6814,20 +6814,20 @@ func TestNativeHistogramFlag(t *testing.T) {
 	// Disabled by default.
 	_, err = app.AppendHistogram(0, l, 100, h, nil)
 	require.Equal(t, storage.ErrNativeHistogramsDisabled, err)
-	_, err = app.AppendHistogram(0, l, 105, nil, h.ToFloat())
+	_, err = app.AppendHistogram(0, l, 105, nil, h.ToFloat(nil))
 	require.Equal(t, storage.ErrNativeHistogramsDisabled, err)
 
 	// Enable and append.
 	db.EnableNativeHistograms()
 	_, err = app.AppendHistogram(0, l, 200, h, nil)
 	require.NoError(t, err)
-	_, err = app.AppendHistogram(0, l, 205, nil, h.ToFloat())
+	_, err = app.AppendHistogram(0, l, 205, nil, h.ToFloat(nil))
 	require.NoError(t, err)
 
 	db.DisableNativeHistograms()
 	_, err = app.AppendHistogram(0, l, 300, h, nil)
 	require.Equal(t, storage.ErrNativeHistogramsDisabled, err)
-	_, err = app.AppendHistogram(0, l, 305, nil, h.ToFloat())
+	_, err = app.AppendHistogram(0, l, 305, nil, h.ToFloat(nil))
 	require.Equal(t, storage.ErrNativeHistogramsDisabled, err)
 
 	require.NoError(t, app.Commit())
@@ -6836,7 +6836,7 @@ func TestNativeHistogramFlag(t *testing.T) {
 	require.NoError(t, err)
 	act := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 	require.Equal(t, map[string][]chunks.Sample{
-		l.String(): {sample{t: 200, h: h}, sample{t: 205, fh: h.ToFloat()}},
+		l.String(): {sample{t: 200, h: h}, sample{t: 205, fh: h.ToFloat(nil)}},
 	}, act)
 }
 
