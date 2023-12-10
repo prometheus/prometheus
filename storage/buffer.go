@@ -74,7 +74,7 @@ func (b *BufferedSeriesIterator) PeekBack(n int) (sample chunks.Sample, ok bool)
 
 // Buffer returns an iterator over the buffered data. Invalidates previously
 // returned iterators.
-func (b *BufferedSeriesIterator) Buffer() chunkenc.Iterator {
+func (b *BufferedSeriesIterator) Buffer() *sampleRingIterator {
 	return b.buf.iterator()
 }
 
@@ -304,7 +304,7 @@ func (r *sampleRing) reset() {
 }
 
 // Returns the current iterator. Invalidates previously returned iterators.
-func (r *sampleRing) iterator() chunkenc.Iterator {
+func (r *sampleRing) iterator() *sampleRingIterator {
 	r.it.r = r
 	r.it.i = -1
 	return &r.it
@@ -374,9 +374,9 @@ func (it *sampleRingIterator) AtHistogram() (int64, *histogram.Histogram) {
 	return it.t, it.h
 }
 
-func (it *sampleRingIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+func (it *sampleRingIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	if it.fh == nil {
-		return it.t, it.h.ToFloat(nil)
+		return it.t, it.h.ToFloat(fh)
 	}
 	return it.t, it.fh
 }

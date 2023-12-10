@@ -2078,21 +2078,27 @@ loop:
 		case chunkenc.ValNone:
 			break loop
 		case chunkenc.ValFloatHistogram, chunkenc.ValHistogram:
-			t, h := buf.AtFloatHistogram()
-			if value.IsStaleNaN(h.Sum) {
-				continue loop
-			}
+			t := buf.AtT()
 			// Values in the buffer are guaranteed to be smaller than maxt.
 			if t >= mintHistograms {
-				if ev.currentSamples >= ev.maxSamples {
-					ev.error(ErrTooManySamples(env))
-				}
-				point := HPoint{T: t, H: h}
 				if histograms == nil {
 					histograms = getHPointSlice(16)
 				}
-				histograms = append(histograms, point)
-				ev.currentSamples += point.size()
+				n := len(histograms)
+				if n < cap(histograms) {
+					histograms = histograms[:n+1]
+				} else {
+					histograms = append(histograms, HPoint{})
+				}
+				histograms[n].T, histograms[n].H = buf.AtFloatHistogram(histograms[n].H)
+				if value.IsStaleNaN(histograms[n].H.Sum) {
+					histograms = histograms[:n]
+					continue loop
+				}
+				if ev.currentSamples >= ev.maxSamples {
+					ev.error(ErrTooManySamples(env))
+				}
+				ev.currentSamples += histograms[n].size()
 			}
 		case chunkenc.ValFloat:
 			t, f := buf.At()
@@ -2108,7 +2114,12 @@ loop:
 				if floats == nil {
 					floats = getFPointSlice(16)
 				}
-				floats = append(floats, FPoint{T: t, F: f})
+				if n := len(floats); n < cap(floats) {
+					floats = floats[:n+1]
+					floats[n].T, floats[n].F = t, f
+				} else {
+					floats = append(floats, FPoint{T: t, F: f})
+				}
 			}
 		}
 	}
