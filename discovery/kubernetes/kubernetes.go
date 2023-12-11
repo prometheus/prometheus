@@ -367,7 +367,8 @@ func New(l log.Logger, reg prometheus.Registerer, conf *SDConfig) (*Discovery, e
 		RoleNode.String(),
 		RolePod.String(),
 		RoleService.String(),
-		RoleIngress.String()} {
+		RoleIngress.String(),
+	} {
 		for _, evt := range []string{
 			MetricLabelRoleAdd,
 			MetricLabelRoleDelete,
