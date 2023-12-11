@@ -50,15 +50,15 @@ func NewNode(l log.Logger, inf cache.SharedInformer, eventCount *prometheus.Coun
 		l = log.NewNopLogger()
 	}
 
-	nodeAddCount := eventCount.WithLabelValues("node", "add")
-	nodeUpdateCount := eventCount.WithLabelValues("node", "update")
-	nodeDeleteCount := eventCount.WithLabelValues("node", "delete")
+	nodeAddCount := eventCount.WithLabelValues(RoleNode.String(), MetricLabelRoleAdd)
+	nodeUpdateCount := eventCount.WithLabelValues(RoleNode.String(), MetricLabelRoleUpdate)
+	nodeDeleteCount := eventCount.WithLabelValues(RoleNode.String(), MetricLabelRoleDelete)
 
 	n := &Node{
 		logger:   l,
 		informer: inf,
 		store:    inf.GetStore(),
-		queue:    workqueue.NewNamed("node"),
+		queue:    workqueue.NewNamed(RoleNode.String()),
 	}
 
 	_, err := n.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{

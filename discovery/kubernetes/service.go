@@ -45,15 +45,15 @@ func NewService(l log.Logger, inf cache.SharedInformer, eventCount *prometheus.C
 		l = log.NewNopLogger()
 	}
 
-	svcAddCount := eventCount.WithLabelValues("service", "add")
-	svcUpdateCount := eventCount.WithLabelValues("service", "update")
-	svcDeleteCount := eventCount.WithLabelValues("service", "delete")
+	svcAddCount := eventCount.WithLabelValues(RoleService.String(), MetricLabelRoleAdd)
+	svcUpdateCount := eventCount.WithLabelValues(RoleService.String(), MetricLabelRoleUpdate)
+	svcDeleteCount := eventCount.WithLabelValues(RoleService.String(), MetricLabelRoleDelete)
 
 	s := &Service{
 		logger:   l,
 		informer: inf,
 		store:    inf.GetStore(),
-		queue:    workqueue.NewNamed("service"),
+		queue:    workqueue.NewNamed(RoleService.String()),
 	}
 
 	_, err := s.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{

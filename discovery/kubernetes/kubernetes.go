@@ -102,6 +102,16 @@ func (c *Role) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 }
 
+func (c Role) String() string {
+	return string(c)
+}
+
+const (
+	MetricLabelRoleAdd    = "add"
+	MetricLabelRoleDelete = "delete"
+	MetricLabelRoleUpdate = "update"
+)
+
 // SDConfig is the configuration for Kubernetes service discovery.
 type SDConfig struct {
 	APIServer          config.URL              `yaml:"api_server,omitempty"`
@@ -351,8 +361,18 @@ func New(l log.Logger, reg prometheus.Registerer, conf *SDConfig) (*Discovery, e
 	d.metricRegisterer = discovery.NewMetricRegisterer(reg, []prometheus.Collector{d.eventCount})
 
 	// Initialize metric vectors.
-	for _, role := range []string{"endpointslice", "endpoints", "node", "pod", "service", "ingress"} {
-		for _, evt := range []string{"add", "delete", "update"} {
+	for _, role := range []string{
+		RoleEndpointSlice.String(),
+		RoleEndpoint.String(),
+		RoleNode.String(),
+		RolePod.String(),
+		RoleService.String(),
+		RoleIngress.String()} {
+		for _, evt := range []string{
+			MetricLabelRoleAdd,
+			MetricLabelRoleDelete,
+			MetricLabelRoleUpdate,
+		} {
 			d.eventCount.WithLabelValues(role, evt)
 		}
 	}

@@ -57,13 +57,13 @@ func NewEndpointSlice(l log.Logger, eps cache.SharedIndexInformer, svc, pod, nod
 		l = log.NewNopLogger()
 	}
 
-	epslAddCount := eventCount.WithLabelValues("endpointslice", "add")
-	epslUpdateCount := eventCount.WithLabelValues("endpointslice", "update")
-	epslDeleteCount := eventCount.WithLabelValues("endpointslice", "delete")
+	epslAddCount := eventCount.WithLabelValues(RoleEndpointSlice.String(), MetricLabelRoleAdd)
+	epslUpdateCount := eventCount.WithLabelValues(RoleEndpointSlice.String(), MetricLabelRoleUpdate)
+	epslDeleteCount := eventCount.WithLabelValues(RoleEndpointSlice.String(), MetricLabelRoleDelete)
 
-	svcAddCount := eventCount.WithLabelValues("service", "add")
-	svcUpdateCount := eventCount.WithLabelValues("service", "update")
-	svcDeleteCount := eventCount.WithLabelValues("service", "delete")
+	svcAddCount := eventCount.WithLabelValues(RoleService.String(), MetricLabelRoleAdd)
+	svcUpdateCount := eventCount.WithLabelValues(RoleService.String(), MetricLabelRoleUpdate)
+	svcDeleteCount := eventCount.WithLabelValues(RoleService.String(), MetricLabelRoleDelete)
 
 	e := &EndpointSlice{
 		logger:             l,
@@ -75,7 +75,7 @@ func NewEndpointSlice(l log.Logger, eps cache.SharedIndexInformer, svc, pod, nod
 		podStore:           pod.GetStore(),
 		nodeInf:            node,
 		withNodeMetadata:   node != nil,
-		queue:              workqueue.NewNamed("endpointSlice"),
+		queue:              workqueue.NewNamed(RoleEndpointSlice.String()),
 	}
 
 	_, err := e.endpointSliceInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
