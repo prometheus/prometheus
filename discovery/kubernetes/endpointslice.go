@@ -56,6 +56,15 @@ func NewEndpointSlice(l log.Logger, eps cache.SharedIndexInformer, svc, pod, nod
 	if l == nil {
 		l = log.NewNopLogger()
 	}
+
+	epslAddCount := eventCount.WithLabelValues("endpointslice", "add")
+	epslUpdateCount := eventCount.WithLabelValues("endpointslice", "update")
+	epslDeleteCount := eventCount.WithLabelValues("endpointslice", "delete")
+
+	svcAddCount := eventCount.WithLabelValues("service", "add")
+	svcUpdateCount := eventCount.WithLabelValues("service", "update")
+	svcDeleteCount := eventCount.WithLabelValues("service", "delete")
+
 	e := &EndpointSlice{
 		logger:             l,
 		endpointSliceInf:   eps,
@@ -71,15 +80,15 @@ func NewEndpointSlice(l log.Logger, eps cache.SharedIndexInformer, svc, pod, nod
 
 	_, err := e.endpointSliceInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
-			eventCount.WithLabelValues("endpointslice", "add").Inc()
+			epslAddCount.Inc()
 			e.enqueue(o)
 		},
 		UpdateFunc: func(_, o interface{}) {
-			eventCount.WithLabelValues("endpointslice", "update").Inc()
+			epslUpdateCount.Inc()
 			e.enqueue(o)
 		},
 		DeleteFunc: func(o interface{}) {
-			eventCount.WithLabelValues("endpointslice", "delete").Inc()
+			epslDeleteCount.Inc()
 			e.enqueue(o)
 		},
 	})
@@ -110,15 +119,15 @@ func NewEndpointSlice(l log.Logger, eps cache.SharedIndexInformer, svc, pod, nod
 	}
 	_, err = e.serviceInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
-			eventCount.WithLabelValues("service", "add").Inc()
+			svcAddCount.Inc()
 			serviceUpdate(o)
 		},
 		UpdateFunc: func(_, o interface{}) {
-			eventCount.WithLabelValues("service", "update").Inc()
+			svcUpdateCount.Inc()
 			serviceUpdate(o)
 		},
 		DeleteFunc: func(o interface{}) {
-			eventCount.WithLabelValues("service", "delete").Inc()
+			svcDeleteCount.Inc()
 			serviceUpdate(o)
 		},
 	})

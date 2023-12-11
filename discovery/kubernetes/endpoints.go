@@ -53,6 +53,15 @@ func NewEndpoints(l log.Logger, eps cache.SharedIndexInformer, svc, pod, node ca
 	if l == nil {
 		l = log.NewNopLogger()
 	}
+
+	epAddCount := eventCount.WithLabelValues("endpoints", "add")
+	epUpdateCount := eventCount.WithLabelValues("endpoints", "update")
+	epDeleteCount := eventCount.WithLabelValues("endpoints", "delete")
+
+	svcAddCount := eventCount.WithLabelValues("service", "add")
+	svcUpdateCount := eventCount.WithLabelValues("service", "update")
+	svcDeleteCount := eventCount.WithLabelValues("service", "delete")
+
 	e := &Endpoints{
 		logger:           l,
 		endpointsInf:     eps,
@@ -68,15 +77,15 @@ func NewEndpoints(l log.Logger, eps cache.SharedIndexInformer, svc, pod, node ca
 
 	_, err := e.endpointsInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
-			eventCount.WithLabelValues("endpoints", "add").Inc()
+			epAddCount.Inc()
 			e.enqueue(o)
 		},
 		UpdateFunc: func(_, o interface{}) {
-			eventCount.WithLabelValues("endpoints", "update").Inc()
+			epUpdateCount.Inc()
 			e.enqueue(o)
 		},
 		DeleteFunc: func(o interface{}) {
-			eventCount.WithLabelValues("endpoints", "delete").Inc()
+			epDeleteCount.Inc()
 			e.enqueue(o)
 		},
 	})
@@ -107,15 +116,15 @@ func NewEndpoints(l log.Logger, eps cache.SharedIndexInformer, svc, pod, node ca
 		// TODO(fabxc): potentially remove add and delete event handlers. Those should
 		// be triggered via the endpoint handlers already.
 		AddFunc: func(o interface{}) {
-			eventCount.WithLabelValues("service", "add").Inc()
+			svcAddCount.Inc()
 			serviceUpdate(o)
 		},
 		UpdateFunc: func(_, o interface{}) {
-			eventCount.WithLabelValues("service", "update").Inc()
+			svcUpdateCount.Inc()
 			serviceUpdate(o)
 		},
 		DeleteFunc: func(o interface{}) {
-			eventCount.WithLabelValues("service", "delete").Inc()
+			svcDeleteCount.Inc()
 			serviceUpdate(o)
 		},
 	})

@@ -51,6 +51,10 @@ func NewPod(l log.Logger, pods cache.SharedIndexInformer, nodes cache.SharedInfo
 		l = log.NewNopLogger()
 	}
 
+	podAddCount := eventCount.WithLabelValues("pod", "add")
+	podDeleteCount := eventCount.WithLabelValues("pod", "delete")
+	podUpdateCount := eventCount.WithLabelValues("pod", "update")
+
 	p := &Pod{
 		podInf:           pods,
 		nodeInf:          nodes,
@@ -61,15 +65,15 @@ func NewPod(l log.Logger, pods cache.SharedIndexInformer, nodes cache.SharedInfo
 	}
 	_, err := p.podInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
-			eventCount.WithLabelValues("pod", "add").Inc()
+			podAddCount.Inc()
 			p.enqueue(o)
 		},
 		DeleteFunc: func(o interface{}) {
-			eventCount.WithLabelValues("pod", "delete").Inc()
+			podDeleteCount.Inc()
 			p.enqueue(o)
 		},
 		UpdateFunc: func(_, o interface{}) {
-			eventCount.WithLabelValues("pod", "update").Inc()
+			podUpdateCount.Inc()
 			p.enqueue(o)
 		},
 	})

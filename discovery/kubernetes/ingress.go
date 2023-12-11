@@ -41,18 +41,29 @@ type Ingress struct {
 
 // NewIngress returns a new ingress discovery.
 func NewIngress(l log.Logger, inf cache.SharedInformer, eventCount *prometheus.CounterVec) *Ingress {
-	s := &Ingress{logger: l, informer: inf, store: inf.GetStore(), queue: workqueue.NewNamed("ingress")}
+
+	ingressAddCount := eventCount.WithLabelValues("ingress", "add")
+	ingressUpdateCount := eventCount.WithLabelValues("ingress", "update")
+	ingressDeleteCount := eventCount.WithLabelValues("ingress", "delete")
+
+	s := &Ingress{
+		logger:   l,
+		informer: inf,
+		store:    inf.GetStore(),
+		queue:    workqueue.NewNamed("ingress"),
+	}
+
 	_, err := s.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
-			eventCount.WithLabelValues("ingress", "add").Inc()
+			ingressAddCount.Inc()
 			s.enqueue(o)
 		},
 		DeleteFunc: func(o interface{}) {
-			eventCount.WithLabelValues("ingress", "delete").Inc()
+			ingressDeleteCount.Inc()
 			s.enqueue(o)
 		},
 		UpdateFunc: func(_, o interface{}) {
-			eventCount.WithLabelValues("ingress", "update").Inc()
+			ingressUpdateCount.Inc()
 			s.enqueue(o)
 		},
 	})

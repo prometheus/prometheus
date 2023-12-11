@@ -49,18 +49,29 @@ func NewNode(l log.Logger, inf cache.SharedInformer, eventCount *prometheus.Coun
 	if l == nil {
 		l = log.NewNopLogger()
 	}
-	n := &Node{logger: l, informer: inf, store: inf.GetStore(), queue: workqueue.NewNamed("node")}
+
+	nodeAddCount := eventCount.WithLabelValues("node", "add")
+	nodeUpdateCount := eventCount.WithLabelValues("node", "update")
+	nodeDeleteCount := eventCount.WithLabelValues("node", "delete")
+
+	n := &Node{
+		logger:   l,
+		informer: inf,
+		store:    inf.GetStore(),
+		queue:    workqueue.NewNamed("node"),
+	}
+
 	_, err := n.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
-			eventCount.WithLabelValues("node", "add").Inc()
+			nodeAddCount.Inc()
 			n.enqueue(o)
 		},
 		DeleteFunc: func(o interface{}) {
-			eventCount.WithLabelValues("node", "delete").Inc()
+			nodeDeleteCount.Inc()
 			n.enqueue(o)
 		},
 		UpdateFunc: func(_, o interface{}) {
-			eventCount.WithLabelValues("node", "update").Inc()
+			nodeUpdateCount.Inc()
 			n.enqueue(o)
 		},
 	})
