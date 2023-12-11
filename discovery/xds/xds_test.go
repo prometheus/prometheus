@@ -36,7 +36,7 @@ var (
 	sdConf = SDConfig{
 		Server:          "http://127.0.0.1",
 		RefreshInterval: model.Duration(10 * time.Second),
-		ClientId:        "test-id",
+		ClientID:        "test-id",
 	}
 
 	testFetchFailuresCount = prometheus.NewCounter(

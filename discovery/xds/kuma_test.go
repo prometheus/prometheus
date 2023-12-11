@@ -204,7 +204,7 @@ func TestNewKumaHTTPDiscovery(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, kumaConf.Server, resClient.Server())
 	require.Equal(t, KumaMadsV1ResourceTypeURL, resClient.ResourceTypeURL())
-	require.Equal(t, kumaConf.ClientId, resClient.ID())
+	require.Equal(t, kumaConf.ClientID, resClient.ID())
 	require.Equal(t, KumaMadsV1ResourceType, resClient.config.ResourceType)
 }
 
