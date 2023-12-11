@@ -74,7 +74,7 @@ func (b *BufferedSeriesIterator) PeekBack(n int) (sample chunks.Sample, ok bool)
 
 // Buffer returns an iterator over the buffered data. Invalidates previously
 // returned iterators.
-func (b *BufferedSeriesIterator) Buffer() *sampleRingIterator {
+func (b *BufferedSeriesIterator) Buffer() *SampleRingIterator {
 	return b.buf.iterator()
 }
 
@@ -252,7 +252,7 @@ type sampleRing struct {
 	f int // Position of first element in ring buffer.
 	l int // Number of elements in buffer.
 
-	it sampleRingIterator
+	it SampleRingIterator
 }
 
 type bufType int
@@ -304,13 +304,13 @@ func (r *sampleRing) reset() {
 }
 
 // Returns the current iterator. Invalidates previously returned iterators.
-func (r *sampleRing) iterator() *sampleRingIterator {
+func (r *sampleRing) iterator() *SampleRingIterator {
 	r.it.r = r
 	r.it.i = -1
 	return &r.it
 }
 
-type sampleRingIterator struct {
+type SampleRingIterator struct {
 	r  *sampleRing
 	i  int
 	t  int64
@@ -319,7 +319,7 @@ type sampleRingIterator struct {
 	fh *histogram.FloatHistogram
 }
 
-func (it *sampleRingIterator) Next() chunkenc.ValueType {
+func (it *SampleRingIterator) Next() chunkenc.ValueType {
 	it.i++
 	if it.i >= it.r.l {
 		return chunkenc.ValNone
@@ -358,30 +358,30 @@ func (it *sampleRingIterator) Next() chunkenc.ValueType {
 	}
 }
 
-func (it *sampleRingIterator) Seek(int64) chunkenc.ValueType {
+func (it *SampleRingIterator) Seek(int64) chunkenc.ValueType {
 	return chunkenc.ValNone
 }
 
-func (it *sampleRingIterator) Err() error {
+func (it *SampleRingIterator) Err() error {
 	return nil
 }
 
-func (it *sampleRingIterator) At() (int64, float64) {
+func (it *SampleRingIterator) At() (int64, float64) {
 	return it.t, it.f
 }
 
-func (it *sampleRingIterator) AtHistogram() (int64, *histogram.Histogram) {
+func (it *SampleRingIterator) AtHistogram() (int64, *histogram.Histogram) {
 	return it.t, it.h
 }
 
-func (it *sampleRingIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
+func (it *SampleRingIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	if it.fh == nil {
 		return it.t, it.h.ToFloat(fh)
 	}
 	return it.t, it.fh
 }
 
-func (it *sampleRingIterator) AtT() int64 {
+func (it *SampleRingIterator) AtT() int64 {
 	return it.t
 }
 
