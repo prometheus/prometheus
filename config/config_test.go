@@ -568,6 +568,7 @@ var expectedConf = &Config{
 			ServiceDiscoveryConfigs: discovery.Configs{
 				&xds.KumaSDConfig{
 					Server:           "http://kuma-control-plane.kuma-system.svc:5676",
+					ClientId:         "main-prometheus",
 					HTTPClientConfig: config.DefaultHTTPClientConfig,
 					RefreshInterval:  model.Duration(15 * time.Second),
 					FetchTimeout:     model.Duration(2 * time.Minute),
