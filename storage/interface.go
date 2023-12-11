@@ -37,7 +37,7 @@ var (
 	// ErrTooOldSample is when out of order support is enabled but the sample is outside the time window allowed.
 	ErrTooOldSample = errors.New("too old sample")
 	// ErrDuplicateSampleForTimestamp is when the sample has same timestamp but different value.
-	ErrDuplicateSampleForTimestamp = errors.New("duplicate sample for timestamp")
+	ErrDuplicateSampleForTimestamp = errDuplicateSampleForTimestamp{}
 	ErrOutOfOrderExemplar          = errors.New("out of order exemplar")
 	ErrDuplicateExemplar           = errors.New("duplicate exemplar")
 	ErrExemplarLabelLength         = fmt.Errorf("label length for exemplar exceeds maximum of %d UTF-8 characters", exemplar.ExemplarMaxLabelSetLength)
