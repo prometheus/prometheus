@@ -962,6 +962,11 @@ func (a *appender) UpdateMetadata(storage.SeriesRef, labels.Labels, metadata.Met
 	return 0, nil
 }
 
+func (a *appender) AppendCTZeroSample(storage.SeriesRef, labels.Labels, int64, int64) (storage.SeriesRef, error) {
+	// TODO(bwplotka): Wire metadata in the Agent's appender.
+	return 0, nil
+}
+
 // Commit submits the collected samples and purges the batch.
 func (a *appender) Commit() error {
 	if err := a.log(); err != nil {

@@ -339,3 +339,8 @@ func (m *mockAppendable) UpdateMetadata(_ storage.SeriesRef, _ labels.Labels, _ 
 	// UpdateMetadata is no-op for remote write (where mockAppendable is being used to test) for now.
 	return 0, nil
 }
+
+func (m *mockAppendable) AppendCTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64) (storage.SeriesRef, error) {
+	// AppendCTZeroSample is no-op for remote-write for now.
+	return 0, nil
+}

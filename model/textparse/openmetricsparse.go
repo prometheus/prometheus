@@ -24,8 +24,6 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/gogo/protobuf/types"
-
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -213,9 +211,10 @@ func (p *OpenMetricsParser) Exemplar(e *exemplar.Exemplar) bool {
 	return true
 }
 
-// CreatedTimestamp returns false because OpenMetricsParser does not support created timestamps (yet).
-func (p *OpenMetricsParser) CreatedTimestamp(_ *types.Timestamp) bool {
-	return false
+// CreatedTimestamp returns nil as it's not implemented yet.
+// TODO(bwplotka): https://github.com/prometheus/prometheus/issues/12980
+func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
+	return nil
 }
 
 // nextToken returns the next token from the openMetricsLexer.

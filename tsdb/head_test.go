@@ -33,6 +33,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
@@ -5640,4 +5641,94 @@ func TestPostingsCardinalityStats(t *testing.T) {
 	require.NotEqual(t, statsForSomeLabel1, statsForSomeLabel)
 	// Using cache.
 	require.Equal(t, statsForSomeLabel1, head.PostingsCardinalityStats("n", 1))
+}
+
+func TestHeadAppender_AppendCTZeroSample(t *testing.T) {
+	type appendableSamples struct {
+		ts  int64
+		val float64
+		ct  int64
+	}
+	for _, tc := range []struct {
+		name              string
+		appendableSamples []appendableSamples
+		expectedSamples   []model.Sample
+	}{
+		{
+			name: "In order ct+normal sample",
+			appendableSamples: []appendableSamples{
+				{ts: 100, val: 10, ct: 1},
+			},
+			expectedSamples: []model.Sample{
+				{Timestamp: 1, Value: 0},
+				{Timestamp: 100, Value: 10},
+			},
+		},
+		{
+			name: "Consecutive appends with same ct ignore ct",
+			appendableSamples: []appendableSamples{
+				{ts: 100, val: 10, ct: 1},
+				{ts: 101, val: 10, ct: 1},
+			},
+			expectedSamples: []model.Sample{
+				{Timestamp: 1, Value: 0},
+				{Timestamp: 100, Value: 10},
+				{Timestamp: 101, Value: 10},
+			},
+		},
+		{
+			name: "Consecutive appends with newer ct do not ignore ct",
+			appendableSamples: []appendableSamples{
+				{ts: 100, val: 10, ct: 1},
+				{ts: 102, val: 10, ct: 101},
+			},
+			expectedSamples: []model.Sample{
+				{Timestamp: 1, Value: 0},
+				{Timestamp: 100, Value: 10},
+				{Timestamp: 101, Value: 0},
+				{Timestamp: 102, Value: 10},
+			},
+		},
+		{
+			name: "CT equals to previous sample timestamp is ignored",
+			appendableSamples: []appendableSamples{
+				{ts: 100, val: 10, ct: 1},
+				{ts: 101, val: 10, ct: 100},
+			},
+			expectedSamples: []model.Sample{
+				{Timestamp: 1, Value: 0},
+				{Timestamp: 100, Value: 10},
+				{Timestamp: 101, Value: 10},
+			},
+		},
+	} {
+		h, _ := newTestHead(t, DefaultBlockDuration, wlog.CompressionNone, false)
+		defer func() {
+			require.NoError(t, h.Close())
+		}()
+		a := h.Appender(context.Background())
+		lbls := labels.FromStrings("foo", "bar")
+		for _, sample := range tc.appendableSamples {
+			_, err := a.AppendCTZeroSample(0, lbls, sample.ts, sample.ct)
+			require.NoError(t, err)
+			_, err = a.Append(0, lbls, sample.ts, sample.val)
+			require.NoError(t, err)
+		}
+		require.NoError(t, a.Commit())
+
+		q, err := NewBlockQuerier(h, math.MinInt64, math.MaxInt64)
+		require.NoError(t, err)
+		ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+		require.True(t, ss.Next())
+		s := ss.At()
+		require.False(t, ss.Next())
+		it := s.Iterator(nil)
+		for _, sample := range tc.expectedSamples {
+			require.Equal(t, chunkenc.ValFloat, it.Next())
+			timestamp, value := it.At()
+			require.Equal(t, sample.Timestamp, model.Time(timestamp))
+			require.Equal(t, sample.Value, model.SampleValue(value))
+		}
+		require.Equal(t, chunkenc.ValNone, it.Next())
+	}
 }

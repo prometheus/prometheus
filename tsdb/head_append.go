@@ -87,6 +87,17 @@ func (a *initAppender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m 
 	return a.app.UpdateMetadata(ref, l, m)
 }
 
+func (a *initAppender) AppendCTZeroSample(ref storage.SeriesRef, lset labels.Labels, t, ct int64) (storage.SeriesRef, error) {
+	if a.app != nil {
+		return a.app.AppendCTZeroSample(ref, lset, t, ct)
+	}
+
+	a.head.initTime(t)
+	a.app = a.head.appender()
+
+	return a.app.AppendCTZeroSample(ref, lset, t, ct)
+}
+
 // initTime initializes a head with the first timestamp. This only needs to be called
 // for a completely fresh head with an empty WAL.
 func (h *Head) initTime(t int64) {
@@ -319,27 +330,10 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 
 	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
 	if s == nil {
-		// Ensure no empty labels have gotten through.
-		lset = lset.WithoutEmpty()
-		if lset.IsEmpty() {
-			return 0, errors.Wrap(ErrInvalidSample, "empty labelset")
-		}
-
-		if l, dup := lset.HasDuplicateLabelNames(); dup {
-			return 0, errors.Wrap(ErrInvalidSample, fmt.Sprintf(`label name "%s" is not unique`, l))
-		}
-
-		var created bool
 		var err error
-		s, created, err = a.head.getOrCreate(lset.Hash(), lset)
+		s, err = a.getOrCreate(lset)
 		if err != nil {
 			return 0, err
-		}
-		if created {
-			a.series = append(a.series, record.RefSeries{
-				Ref:    s.ref,
-				Labels: lset,
-			})
 		}
 	}
 
@@ -387,6 +381,71 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	})
 	a.sampleSeries = append(a.sampleSeries, s)
 	return storage.SeriesRef(s.ref), nil
+}
+
+// AppendCTZeroSample appends synthetic zero sample for ct timestamp. It returns
+// error when sample can't be appended. See
+// storage.CreatedTimestampAppender.AppendCTZeroSample for further documentation.
+func (a *headAppender) AppendCTZeroSample(ref storage.SeriesRef, lset labels.Labels, t, ct int64) (storage.SeriesRef, error) {
+	if ct >= t {
+		return 0, fmt.Errorf("CT is newer or the same as sample's timestamp, ignoring")
+	}
+
+	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
+	if s == nil {
+		var err error
+		s, err = a.getOrCreate(lset)
+		if err != nil {
+			return 0, err
+		}
+	}
+
+	// Check if CT wouldn't be OOO vs samples we already might have for this series.
+	// NOTE(bwplotka): This will be often hit as it's expected for long living
+	// counters to share the same CT.
+	s.Lock()
+	isOOO, _, err := s.appendable(ct, 0, a.headMaxt, a.minValidTime, a.oooTimeWindow)
+	if err == nil {
+		s.pendingCommit = true
+	}
+	s.Unlock()
+	if err != nil {
+		return 0, err
+	}
+	if isOOO {
+		return storage.SeriesRef(s.ref), storage.ErrOutOfOrderCT
+	}
+
+	if ct > a.maxt {
+		a.maxt = ct
+	}
+	a.samples = append(a.samples, record.RefSample{Ref: s.ref, T: ct, V: 0.0})
+	a.sampleSeries = append(a.sampleSeries, s)
+	return storage.SeriesRef(s.ref), nil
+}
+
+func (a *headAppender) getOrCreate(lset labels.Labels) (*memSeries, error) {
+	// Ensure no empty labels have gotten through.
+	lset = lset.WithoutEmpty()
+	if lset.IsEmpty() {
+		return nil, errors.Wrap(ErrInvalidSample, "empty labelset")
+	}
+	if l, dup := lset.HasDuplicateLabelNames(); dup {
+		return nil, errors.Wrap(ErrInvalidSample, fmt.Sprintf(`label name "%s" is not unique`, l))
+	}
+	var created bool
+	var err error
+	s, created, err := a.head.getOrCreate(lset.Hash(), lset)
+	if err != nil {
+		return nil, err
+	}
+	if created {
+		a.series = append(a.series, record.RefSeries{
+			Ref:    s.ref,
+			Labels: lset,
+		})
+	}
+	return s, nil
 }
 
 // appendable checks whether the given sample is valid for appending to the series. (if we return false and no error)
