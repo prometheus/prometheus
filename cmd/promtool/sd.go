@@ -77,7 +77,7 @@ func CheckSD(sdConfigFiles, sdJobName string, sdTimeout time.Duration, noDefault
 	defer cancel()
 
 	for _, cfg := range scrapeConfig.ServiceDiscoveryConfigs {
-		d, err := cfg.NewDiscoverer(discovery.DiscovererOptions{Logger: logger})
+		d, err := discovery.NewWrappedDiscoverer(cfg, discovery.DiscovererOptions{Logger: logger})
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Could not create new discoverer", err)
 			return failureExitCode

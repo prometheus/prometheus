@@ -57,6 +57,18 @@ type Config interface {
 	NewDiscoverer(DiscovererOptions) (Discoverer, error)
 }
 
+// NamedConfig is a Config that has an instance name. Each instance name refers to an instance of the config,
+// with the instance name being present on the relabeling configs. Uniqueness is not guaranteed nor enforced.
+type NamedConfig interface {
+	// InstanceName returns the name of the discovery mechanism instance. A mechanism's name refers to it's type, like
+	// Kubernetes, or consul. An InstanceName is refers to an instance of that mechanism, and the name will be present
+	// in the relabeling configs.
+	InstanceName() string
+
+	// A Config provides the configuration and constructor for a Discoverer.
+	Config
+}
+
 // Configs is a slice of Config values that uses custom YAML marshaling and unmarshaling
 // to represent itself as a mapping of the Config values grouped by their types.
 type Configs []Config

@@ -121,7 +121,7 @@ func TestParseIPs(t *testing.T) {
 func TestDiscoverer(t *testing.T) {
 	conf, _ := getMockConf("vps")
 	logger := testutil.NewLogger(t)
-	_, err := conf.NewDiscoverer(discovery.DiscovererOptions{
+	_, err := discovery.NewWrappedDiscoverer(&conf, discovery.DiscovererOptions{
 		Logger: logger,
 	})
 
