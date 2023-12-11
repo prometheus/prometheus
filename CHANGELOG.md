@@ -10,7 +10,6 @@
   * Experimental `mad_over_time` (median absolute deviation around the median) function. #13059
   * Experimental `sort_by_label` and `sort_by_label_desc` functions allowing sorting returned series by labels. #11299
 * [FEATURE] SD: Add `__meta_linode_gpus` label to Linode SD. #13097
-* [FEATURE] Add the ability to track staleness when an explicit timestamp is provided by scrape target. Controlled by `scrap_config.track_timestamps_staleness` field. Useful for e.g. cAdvisor scraping. #13060
 * [FEATURE] API: Add `exclude_alerts` query parameter to `/api/v1/rules` to only return recording rules. #12999
 * [FEATURE] TSDB: --storage.tsdb.retention.time flag value is now exposed as a `prometheus_tsdb_retention_limit_seconds` metric. #12986
 * [FEATURE] Scraping: Add ability to specify priority of scrape protocols to accept during scrape (e.g. to scrape Prometheus proto format for certain jobs). This can be changed by setting `global.scrape_protocols` and `scrape_config.scrape_protocols`. #12738
