@@ -359,7 +359,7 @@ func (db *DB) replayWAL() error {
 	start := time.Now()
 
 	dir, startFrom, err := wlog.LastCheckpoint(db.wal.Dir())
-	if err != nil && err != record.ErrNotFound {
+	if err != nil && !errors.Is(err, record.ErrNotFound) {
 		return fmt.Errorf("find last checkpoint: %w", err)
 	}
 

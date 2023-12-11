@@ -30,7 +30,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
@@ -2056,9 +2055,8 @@ func TestWalRepair_DecodingError(t *testing.T) {
 					require.Equal(t, 0.0, prom_testutil.ToFloat64(h.metrics.walCorruptionsTotal))
 					initErr := h.Init(math.MinInt64)
 
-					err = errors.Cause(initErr) // So that we can pick up errors even if wrapped.
-					_, corrErr := err.(*wlog.CorruptionErr)
-					require.True(t, corrErr, "reading the wal didn't return corruption error")
+					var cerr *wlog.CorruptionErr
+					require.ErrorAs(t, initErr, &cerr, "reading the wal didn't return corruption error")
 					require.NoError(t, h.Close()) // Head will close the wal as well.
 				}
 
@@ -2129,12 +2127,11 @@ func TestWblRepair_DecodingError(t *testing.T) {
 		require.Equal(t, 0.0, prom_testutil.ToFloat64(h.metrics.walCorruptionsTotal))
 		initErr := h.Init(math.MinInt64)
 
-		_, ok := initErr.(*errLoadWbl)
-		require.True(t, ok) // Wbl errors are wrapped into errLoadWbl, make sure we can unwrap it.
+		var elb *errLoadWbl
+		require.ErrorAs(t, initErr, &elb) // Wbl errors are wrapped into errLoadWbl, make sure we can unwrap it.
 
-		err = errors.Cause(initErr) // So that we can pick up errors even if wrapped.
-		_, corrErr := err.(*wlog.CorruptionErr)
-		require.True(t, corrErr, "reading the wal didn't return corruption error")
+		var cerr *wlog.CorruptionErr
+		require.ErrorAs(t, initErr, &cerr, "reading the wal didn't return corruption error")
 		require.NoError(t, h.Close()) // Head will close the wal as well.
 	}
 
