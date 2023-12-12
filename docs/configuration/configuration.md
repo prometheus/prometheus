@@ -2231,9 +2231,9 @@ See below for the configuration options for Kuma MonitoringAssignment discovery:
 server: <string>
 
 # Client id is used by Kuma Control Plane to compute Monitoring Assignment for specific Prometheus backend. 
-# This is useful when migrating between multiple Prometheus backends, or having separate backend for each Mesh
+# This is useful when migrating between multiple Prometheus backends, or having separate backend for each Mesh.
 # When not specified, system hostname/fqdn will be used if available, if not `prometheus` will be used.
-client_id: <string>
+[ client_id: <string> ]
 
 # The time to wait between polling update requests.
 [ refresh_interval: <duration> | default = 30s ]
