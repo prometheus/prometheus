@@ -209,7 +209,7 @@ testmetric{label="\"bar\""} 1`
 
 		i++
 	}
-	require.Equal(t, len(exp), i)
+	require.Len(t, exp, i)
 }
 
 func TestPromParseErrors(t *testing.T) {

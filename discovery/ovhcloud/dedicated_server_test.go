@@ -47,11 +47,11 @@ consumer_key: %s`, mock.URL, ovhcloudApplicationKeyTest, ovhcloudApplicationSecr
 	targetGroups, err := d.refresh(ctx)
 	require.NoError(t, err)
 
-	require.Equal(t, 1, len(targetGroups))
+	require.Len(t, targetGroups, 1)
 	targetGroup := targetGroups[0]
 	require.NotNil(t, targetGroup)
 	require.NotNil(t, targetGroup.Targets)
-	require.Equal(t, 1, len(targetGroup.Targets))
+	require.Len(t, targetGroup.Targets, 1)
 
 	for i, lbls := range []model.LabelSet{
 		{

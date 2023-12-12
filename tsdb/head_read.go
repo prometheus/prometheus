@@ -15,11 +15,12 @@ package tsdb
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"math"
 	"sync"
 
 	"github.com/go-kit/log/level"
-	"github.com/pkg/errors"
 	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -133,7 +134,7 @@ func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {
 		}
 	}
 	if err := p.Err(); err != nil {
-		return index.ErrPostings(errors.Wrap(err, "expand postings"))
+		return index.ErrPostings(fmt.Errorf("expand postings: %w", err))
 	}
 
 	slices.SortFunc(series, func(a, b *memSeries) int {
@@ -388,7 +389,8 @@ func (s *memSeries) chunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDi
 	if ix < len(s.mmappedChunks) {
 		chk, err := chunkDiskMapper.Chunk(s.mmappedChunks[ix].ref)
 		if err != nil {
-			if _, ok := err.(*chunks.CorruptionErr); ok {
+			var cerr *chunks.CorruptionErr
+			if errors.As(err, &cerr) {
 				panic(err)
 			}
 			return nil, false, false, err
@@ -516,14 +518,15 @@ func (s *memSeries) oooMergedChunks(meta chunks.Meta, cdm *chunks.ChunkDiskMappe
 				xor, err = s.ooo.oooHeadChunk.chunk.ToXORBetweenTimestamps(meta.OOOLastMinTime, meta.OOOLastMaxTime)
 			}
 			if err != nil {
-				return nil, errors.Wrap(err, "failed to convert ooo head chunk to xor chunk")
+				return nil, fmt.Errorf("failed to convert ooo head chunk to xor chunk: %w", err)
 			}
 			iterable = xor
 		} else {
 			chk, err := cdm.Chunk(c.ref)
 			if err != nil {
-				if _, ok := err.(*chunks.CorruptionErr); ok {
-					return nil, errors.Wrap(err, "invalid ooo mmapped chunk")
+				var cerr *chunks.CorruptionErr
+				if errors.As(err, &cerr) {
+					return nil, fmt.Errorf("invalid ooo mmapped chunk: %w", err)
 				}
 				return nil, err
 			}

@@ -233,7 +233,7 @@ func TestBufferedSeriesIteratorMixedHistograms(t *testing.T) {
 	histograms := tsdbutil.GenerateTestHistograms(2)
 
 	it := NewBufferIterator(NewListSeriesIterator(samples{
-		fhSample{t: 1, fh: histograms[0].ToFloat()},
+		fhSample{t: 1, fh: histograms[0].ToFloat(nil)},
 		hSample{t: 2, h: histograms[1]},
 	}), 2)
 
@@ -244,11 +244,11 @@ func TestBufferedSeriesIteratorMixedHistograms(t *testing.T) {
 
 	require.Equal(t, chunkenc.ValFloatHistogram, buf.Next())
 	_, fh := buf.AtFloatHistogram()
-	require.Equal(t, histograms[0].ToFloat(), fh)
+	require.Equal(t, histograms[0].ToFloat(nil), fh)
 
 	require.Equal(t, chunkenc.ValHistogram, buf.Next())
 	_, fh = buf.AtFloatHistogram()
-	require.Equal(t, histograms[1].ToFloat(), fh)
+	require.Equal(t, histograms[1].ToFloat(nil), fh)
 }
 
 func BenchmarkBufferedSeriesIterator(b *testing.B) {

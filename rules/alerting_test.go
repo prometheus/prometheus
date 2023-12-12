@@ -185,7 +185,7 @@ func TestAlertingRuleLabelsUpdate(t *testing.T) {
 	evalTime := baseTime.Add(time.Duration(len(results)) * time.Minute)
 	res, err := rule.Eval(context.TODO(), evalTime, EngineQueryFunc(testEngine, storage), nil, 0)
 	require.NoError(t, err)
-	require.Equal(t, 0, len(res))
+	require.Empty(t, res)
 }
 
 func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
@@ -828,7 +828,7 @@ func TestKeepFiringFor(t *testing.T) {
 	evalTime := baseTime.Add(time.Duration(len(results)) * time.Minute)
 	res, err := rule.Eval(context.TODO(), evalTime, EngineQueryFunc(testEngine, storage), nil, 0)
 	require.NoError(t, err)
-	require.Equal(t, 0, len(res))
+	require.Empty(t, res)
 }
 
 func TestPendingAndKeepFiringFor(t *testing.T) {
@@ -880,7 +880,7 @@ func TestPendingAndKeepFiringFor(t *testing.T) {
 	evalTime := baseTime.Add(time.Minute)
 	res, err = rule.Eval(context.TODO(), evalTime, EngineQueryFunc(testEngine, storage), nil, 0)
 	require.NoError(t, err)
-	require.Equal(t, 0, len(res))
+	require.Empty(t, res)
 }
 
 // TestAlertingEvalWithOrigin checks that the alerting rule details are passed through the context.

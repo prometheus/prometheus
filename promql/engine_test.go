@@ -140,7 +140,7 @@ func TestQueryTimeout(t *testing.T) {
 	require.Error(t, res.Err, "expected timeout error but got none")
 
 	var e ErrQueryTimeout
-	require.True(t, errors.As(res.Err, &e), "expected timeout error but got: %s", res.Err)
+	require.ErrorAs(t, res.Err, &e, "expected timeout error but got: %s", res.Err)
 }
 
 const errQueryCanceled = ErrQueryCanceled("test statement execution")
@@ -239,14 +239,14 @@ func TestQueryError(t *testing.T) {
 
 	res := vectorQuery.Exec(ctx)
 	require.Error(t, res.Err, "expected error on failed select but got none")
-	require.True(t, errors.Is(res.Err, errStorage), "expected error doesn't match")
+	require.ErrorIs(t, res.Err, errStorage, "expected error doesn't match")
 
 	matrixQuery, err := engine.NewInstantQuery(ctx, queryable, nil, "foo[1m]", time.Unix(1, 0))
 	require.NoError(t, err)
 
 	res = matrixQuery.Exec(ctx)
 	require.Error(t, res.Err, "expected error on failed select but got none")
-	require.True(t, errors.Is(res.Err, errStorage), "expected error doesn't match")
+	require.ErrorIs(t, res.Err, errStorage, "expected error doesn't match")
 }
 
 type noopHintRecordingQueryable struct {
@@ -635,7 +635,7 @@ func TestEngineShutdown(t *testing.T) {
 	require.Error(t, res2.Err, "expected error on querying with canceled context but got none")
 
 	var e ErrQueryCanceled
-	require.True(t, errors.As(res2.Err, &e), "expected cancellation error but got: %s", res2.Err)
+	require.ErrorAs(t, res2.Err, &e, "expected cancellation error but got: %s", res2.Err)
 }
 
 func TestEngineEvalStmtTimestamps(t *testing.T) {
@@ -2057,7 +2057,7 @@ func TestQueryLogger_basic(t *testing.T) {
 
 	l := len(f1.logs)
 	queryExec()
-	require.Equal(t, 2*l, len(f1.logs))
+	require.Len(t, f1.logs, 2*l)
 
 	// Test that we close the query logger when unsetting it.
 	require.False(t, f1.closed, "expected f1 to be open, got closed")
@@ -3003,8 +3003,8 @@ func TestEngineOptsValidation(t *testing.T) {
 			require.Equal(t, c.expError, err1)
 			require.Equal(t, c.expError, err2)
 		} else {
-			require.Nil(t, err1)
-			require.Nil(t, err2)
+			require.NoError(t, err1)
+			require.NoError(t, err2)
 		}
 	}
 }
@@ -3267,7 +3267,7 @@ func TestNativeHistogram_HistogramCountAndSum(t *testing.T) {
 			app := storage.Appender(context.Background())
 			var err error
 			if floatHisto {
-				_, err = app.AppendHistogram(0, lbls, ts, nil, h.ToFloat())
+				_, err = app.AppendHistogram(0, lbls, ts, nil, h.ToFloat(nil))
 			} else {
 				_, err = app.AppendHistogram(0, lbls, ts, h, nil)
 			}
@@ -3287,7 +3287,7 @@ func TestNativeHistogram_HistogramCountAndSum(t *testing.T) {
 			require.Len(t, vector, 1)
 			require.Nil(t, vector[0].H)
 			if floatHisto {
-				require.Equal(t, h.ToFloat().Count, vector[0].F)
+				require.Equal(t, h.ToFloat(nil).Count, vector[0].F)
 			} else {
 				require.Equal(t, float64(h.Count), vector[0].F)
 			}
@@ -3305,7 +3305,7 @@ func TestNativeHistogram_HistogramCountAndSum(t *testing.T) {
 			require.Len(t, vector, 1)
 			require.Nil(t, vector[0].H)
 			if floatHisto {
-				require.Equal(t, h.ToFloat().Sum, vector[0].F)
+				require.Equal(t, h.ToFloat(nil).Sum, vector[0].F)
 			} else {
 				require.Equal(t, h.Sum, vector[0].F)
 			}
@@ -3433,7 +3433,7 @@ func TestNativeHistogram_HistogramStdDevVar(t *testing.T) {
 				app := storage.Appender(context.Background())
 				var err error
 				if floatHisto {
-					_, err = app.AppendHistogram(0, lbls, ts, nil, tc.h.ToFloat())
+					_, err = app.AppendHistogram(0, lbls, ts, nil, tc.h.ToFloat(nil))
 				} else {
 					_, err = app.AppendHistogram(0, lbls, ts, tc.h, nil)
 				}
@@ -3678,7 +3678,7 @@ func TestNativeHistogram_HistogramQuantile(t *testing.T) {
 				app := storage.Appender(context.Background())
 				var err error
 				if floatHisto {
-					_, err = app.AppendHistogram(0, lbls, ts, nil, c.h.ToFloat())
+					_, err = app.AppendHistogram(0, lbls, ts, nil, c.h.ToFloat(nil))
 				} else {
 					_, err = app.AppendHistogram(0, lbls, ts, c.h, nil)
 				}
@@ -4109,7 +4109,7 @@ func TestNativeHistogram_HistogramFraction(t *testing.T) {
 				app := storage.Appender(context.Background())
 				var err error
 				if floatHisto {
-					_, err = app.AppendHistogram(0, lbls, ts, nil, c.h.ToFloat())
+					_, err = app.AppendHistogram(0, lbls, ts, nil, c.h.ToFloat(nil))
 				} else {
 					_, err = app.AppendHistogram(0, lbls, ts, c.h, nil)
 				}
@@ -4272,7 +4272,7 @@ func TestNativeHistogram_Sum_Count_Add_AvgOperator(t *testing.T) {
 					// Since we mutate h later, we need to create a copy here.
 					var err error
 					if floatHisto {
-						_, err = app.AppendHistogram(0, lbls, ts, nil, h.Copy().ToFloat())
+						_, err = app.AppendHistogram(0, lbls, ts, nil, h.Copy().ToFloat(nil))
 					} else {
 						_, err = app.AppendHistogram(0, lbls, ts, h.Copy(), nil)
 					}
@@ -4282,7 +4282,7 @@ func TestNativeHistogram_Sum_Count_Add_AvgOperator(t *testing.T) {
 					newTs := ts + int64(idx1)*int64(time.Minute/time.Millisecond)
 					// Since we mutate h later, we need to create a copy here.
 					if floatHisto {
-						_, err = app.AppendHistogram(0, lbls, newTs, nil, h.Copy().ToFloat())
+						_, err = app.AppendHistogram(0, lbls, newTs, nil, h.Copy().ToFloat(nil))
 					} else {
 						_, err = app.AppendHistogram(0, lbls, newTs, h.Copy(), nil)
 					}
@@ -4530,7 +4530,7 @@ func TestNativeHistogram_SubOperator(t *testing.T) {
 					// Since we mutate h later, we need to create a copy here.
 					var err error
 					if floatHisto {
-						_, err = app.AppendHistogram(0, lbls, ts, nil, h.Copy().ToFloat())
+						_, err = app.AppendHistogram(0, lbls, ts, nil, h.Copy().ToFloat(nil))
 					} else {
 						_, err = app.AppendHistogram(0, lbls, ts, h.Copy(), nil)
 					}
@@ -4687,7 +4687,7 @@ func TestNativeHistogram_MulDivOperator(t *testing.T) {
 				// Since we mutate h later, we need to create a copy here.
 				var err error
 				if floatHisto {
-					_, err = app.AppendHistogram(0, lbls, ts, nil, h.Copy().ToFloat())
+					_, err = app.AppendHistogram(0, lbls, ts, nil, h.Copy().ToFloat(nil))
 				} else {
 					_, err = app.AppendHistogram(0, lbls, ts, h.Copy(), nil)
 				}

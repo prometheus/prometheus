@@ -212,7 +212,7 @@ func TestWriteStorageLifecycle(t *testing.T) {
 		},
 	}
 	require.NoError(t, s.ApplyConfig(conf))
-	require.Equal(t, 1, len(s.queues))
+	require.Len(t, s.queues, 1)
 
 	err := s.Close()
 	require.NoError(t, err)
@@ -233,14 +233,14 @@ func TestUpdateExternalLabels(t *testing.T) {
 	hash, err := toHash(conf.RemoteWriteConfigs[0])
 	require.NoError(t, err)
 	require.NoError(t, s.ApplyConfig(conf))
-	require.Equal(t, 1, len(s.queues))
-	require.Equal(t, 0, len(s.queues[hash].externalLabels))
+	require.Len(t, s.queues, 1)
+	require.Empty(t, s.queues[hash].externalLabels)
 
 	conf.GlobalConfig.ExternalLabels = externalLabels
 	hash, err = toHash(conf.RemoteWriteConfigs[0])
 	require.NoError(t, err)
 	require.NoError(t, s.ApplyConfig(conf))
-	require.Equal(t, 1, len(s.queues))
+	require.Len(t, s.queues, 1)
 	require.Equal(t, []labels.Label{{Name: "external", Value: "true"}}, s.queues[hash].externalLabels)
 
 	err = s.Close()
@@ -262,10 +262,10 @@ func TestWriteStorageApplyConfigsIdempotent(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, s.ApplyConfig(conf))
-	require.Equal(t, 1, len(s.queues))
+	require.Len(t, s.queues, 1)
 
 	require.NoError(t, s.ApplyConfig(conf))
-	require.Equal(t, 1, len(s.queues))
+	require.Len(t, s.queues, 1)
 	_, hashExists := s.queues[hash]
 	require.True(t, hashExists, "Queue pointer should have remained the same")
 
@@ -312,7 +312,7 @@ func TestWriteStorageApplyConfigsPartialUpdate(t *testing.T) {
 		}
 	}
 	require.NoError(t, s.ApplyConfig(conf))
-	require.Equal(t, 3, len(s.queues))
+	require.Len(t, s.queues, 3)
 
 	hashes := make([]string, len(conf.RemoteWriteConfigs))
 	queues := make([]*QueueManager, len(conf.RemoteWriteConfigs))
@@ -334,7 +334,7 @@ func TestWriteStorageApplyConfigsPartialUpdate(t *testing.T) {
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{c0, c1, c2},
 	}
 	require.NoError(t, s.ApplyConfig(conf))
-	require.Equal(t, 3, len(s.queues))
+	require.Len(t, s.queues, 3)
 
 	_, hashExists := s.queues[hashes[0]]
 	require.False(t, hashExists, "The queue for the first remote write configuration should have been restarted because the relabel configuration has changed.")
@@ -350,7 +350,7 @@ func TestWriteStorageApplyConfigsPartialUpdate(t *testing.T) {
 	c1.HTTPClientConfig.BearerToken = "bar"
 	err := s.ApplyConfig(conf)
 	require.NoError(t, err)
-	require.Equal(t, 3, len(s.queues))
+	require.Len(t, s.queues, 3)
 
 	_, hashExists = s.queues[hashes[0]]
 	require.True(t, hashExists, "Pointer of unchanged queue should have remained the same")
@@ -367,7 +367,7 @@ func TestWriteStorageApplyConfigsPartialUpdate(t *testing.T) {
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{c1, c2},
 	}
 	require.NoError(t, s.ApplyConfig(conf))
-	require.Equal(t, 2, len(s.queues))
+	require.Len(t, s.queues, 2)
 
 	_, hashExists = s.queues[hashes[0]]
 	require.False(t, hashExists, "If a config is removed, the queue should be stopped and recreated.")
@@ -399,9 +399,9 @@ func TestOTLPWriteHandler(t *testing.T) {
 	resp := recorder.Result()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	require.Equal(t, 12, len(appendable.samples))   // 1 (counter) + 1 (gauge) + 1 (target_info) + 7 (hist_bucket) + 2 (hist_sum, hist_count)
-	require.Equal(t, 1, len(appendable.histograms)) // 1 (exponential histogram)
-	require.Equal(t, 1, len(appendable.exemplars))  // 1 (exemplar)
+	require.Len(t, appendable.samples, 12)   // 1 (counter) + 1 (gauge) + 1 (target_info) + 7 (hist_bucket) + 2 (hist_sum, hist_count)
+	require.Len(t, appendable.histograms, 1) // 1 (exponential histogram)
+	require.Len(t, appendable.exemplars, 1)  // 1 (exemplar)
 }
 
 func generateOTLPWriteRequest(t *testing.T) pmetricotlp.ExportRequest {

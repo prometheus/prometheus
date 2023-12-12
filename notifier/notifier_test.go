@@ -83,7 +83,7 @@ func TestHandlerNextBatch(t *testing.T) {
 	require.NoError(t, alertsEqual(expected[0:maxBatchSize], h.nextBatch()))
 	require.NoError(t, alertsEqual(expected[maxBatchSize:2*maxBatchSize], h.nextBatch()))
 	require.NoError(t, alertsEqual(expected[2*maxBatchSize:], h.nextBatch()))
-	require.Equal(t, 0, len(h.queue), "Expected queue to be empty but got %d alerts", len(h.queue))
+	require.Empty(t, h.queue, "Expected queue to be empty but got %d alerts", len(h.queue))
 }
 
 func alertsEqual(a, b []*Alert) error {
@@ -482,7 +482,7 @@ alerting:
 `
 	err := yaml.UnmarshalStrict([]byte(s), cfg)
 	require.NoError(t, err, "Unable to load YAML config.")
-	require.Equal(t, 1, len(cfg.AlertingConfig.AlertmanagerConfigs))
+	require.Len(t, cfg.AlertingConfig.AlertmanagerConfigs, 1)
 
 	err = n.ApplyConfig(cfg)
 	require.NoError(t, err, "Error applying the config.")
@@ -533,7 +533,7 @@ alerting:
 `
 	err := yaml.UnmarshalStrict([]byte(s), cfg)
 	require.NoError(t, err, "Unable to load YAML config.")
-	require.Equal(t, 1, len(cfg.AlertingConfig.AlertmanagerConfigs))
+	require.Len(t, cfg.AlertingConfig.AlertmanagerConfigs, 1)
 
 	err = n.ApplyConfig(cfg)
 	require.NoError(t, err, "Error applying the config.")
