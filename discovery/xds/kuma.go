@@ -178,11 +178,14 @@ func kumaMadsV1ResourceParser(resources []*anypb.Any, typeURL string) ([]model.L
 
 func NewKumaHTTPDiscovery(conf *KumaSDConfig, logger log.Logger) (discovery.Discoverer, error) {
 	// Default to "prometheus" if hostname is unavailable.
-	var clientID string
-	if conf.ClientID == "" {
-		clientID = defaultClientID(logger)
-	} else {
-		clientID = conf.ClientID
+	clientID := conf.ClientID
+	if clientID == "" {
+		var err error
+		clientID, err = osutil.GetFQDN()
+		if err != nil {
+			level.Debug(logger).Log("msg", "error getting FQDN", "err", err)
+			clientID = "prometheus"
+		}
 	}
 
 	clientConfig := &HTTPResourceClientConfig{
@@ -215,13 +218,4 @@ func NewKumaHTTPDiscovery(conf *KumaSDConfig, logger log.Logger) (discovery.Disc
 	}
 
 	return d, nil
-}
-
-func defaultClientID(logger log.Logger) string {
-	clientID, err := osutil.GetFQDN()
-	if err != nil {
-		level.Debug(logger).Log("msg", "error getting FQDN", "err", err)
-		clientID = "prometheus"
-	}
-	return clientID
 }
