@@ -148,7 +148,7 @@ type PromParser struct {
 	builder labels.ScratchBuilder
 	series  []byte
 	text    []byte
-	mtype   MetricType
+	mtype   model.MetricType
 	val     float64
 	ts      int64
 	hasTS   bool
@@ -192,7 +192,7 @@ func (p *PromParser) Help() ([]byte, []byte) {
 // Type returns the metric name and type in the current entry.
 // Must only be called after Next returned a type entry.
 // The returned byte slices become invalid after the next call to Next.
-func (p *PromParser) Type() ([]byte, MetricType) {
+func (p *PromParser) Type() ([]byte, model.MetricType) {
 	return p.l.b[p.offsets[0]:p.offsets[1]], p.mtype
 }
 

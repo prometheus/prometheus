@@ -128,7 +128,7 @@ func (p *OpenMetricsParser) Help() ([]byte, []byte) {
 // Type returns the metric name and type in the current entry.
 // Must only be called after Next returned a type entry.
 // The returned byte slices become invalid after the next call to Next.
-func (p *OpenMetricsParser) Type() ([]byte, MetricType) {
+func (p *OpenMetricsParser) Type() ([]byte, model.MetricType) {
 	return p.l.b[p.offsets[0]:p.offsets[1]], p.mtype
 }
 

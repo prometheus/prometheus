@@ -30,7 +30,6 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
-	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 )
@@ -87,7 +86,7 @@ type MetricMetadataStore interface {
 // MetricMetadata is a piece of metadata for a metric.
 type MetricMetadata struct {
 	Metric string
-	Type   textparse.MetricType
+	Type   model.MetricType
 	Help   string
 	Unit   string
 }

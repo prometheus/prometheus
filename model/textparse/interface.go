@@ -44,7 +44,7 @@ type Parser interface {
 	// Type returns the metric name and type in the current entry.
 	// Must only be called after Next returned a type entry.
 	// The returned byte slices become invalid after the next call to Next.
-	Type() ([]byte, MetricType)
+	Type() ([]byte, model.MetricType)
 
 	// Unit returns the metric name and unit in the current entry.
 	// Must only be called after Next returned a unit entry.
@@ -111,5 +111,3 @@ const (
 	EntryUnit      Entry = 4
 	EntryHistogram Entry = 5 // A series with a native histogram as a value.
 )
-
-type MetricType = model.MetricType

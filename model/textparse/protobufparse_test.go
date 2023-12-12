@@ -623,7 +623,7 @@ func TestProtobufParse(t *testing.T) {
 		m       string
 		t       int64
 		v       float64
-		typ     MetricType
+		typ     model.MetricType
 		help    string
 		unit    string
 		comment string

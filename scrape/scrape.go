@@ -961,7 +961,7 @@ func (c *scrapeCache) forEachStale(f func(labels.Labels) bool) {
 	}
 }
 
-func (c *scrapeCache) setType(metric []byte, t textparse.MetricType) {
+func (c *scrapeCache) setType(metric []byte, t model.MetricType) {
 	c.metaMtx.Lock()
 
 	e, ok := c.metadata[string(metric)]
