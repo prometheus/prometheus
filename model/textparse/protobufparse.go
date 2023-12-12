@@ -272,7 +272,7 @@ func (p *ProtobufParser) Type() ([]byte, MetricType) {
 // Unit always returns (nil, nil) because units aren't supported by the protobuf
 // format.
 func (p *ProtobufParser) Unit() ([]byte, []byte) {
-	return nil, nil
+	return p.metricBytes.Bytes(), []byte(p.mf.GetUnit())
 }
 
 // Comment always returns nil because comments aren't supported by the protobuf
