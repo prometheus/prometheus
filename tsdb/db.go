@@ -70,20 +70,19 @@ var ErrNotReady = errors.New("TSDB not ready")
 // millisecond precision timestamps.
 func DefaultOptions() *Options {
 	return &Options{
-		WALSegmentSize:             wlog.DefaultSegmentSize,
-		MaxBlockChunkSegmentSize:   chunks.DefaultChunkSegmentSize,
-		RetentionDuration:          int64(15 * 24 * time.Hour / time.Millisecond),
-		MinBlockDuration:           DefaultBlockDuration,
-		MaxBlockDuration:           DefaultBlockDuration,
-		NoLockfile:                 false,
-		AllowOverlappingCompaction: true,
-		SamplesPerChunk:            DefaultSamplesPerChunk,
-		WALCompression:             wlog.CompressionNone,
-		StripeSize:                 DefaultStripeSize,
-		HeadChunksWriteBufferSize:  chunks.DefaultWriteBufferSize,
-		IsolationDisabled:          defaultIsolationDisabled,
-		HeadChunksWriteQueueSize:   chunks.DefaultWriteQueueSize,
-		OutOfOrderCapMax:           DefaultOutOfOrderCapMax,
+		WALSegmentSize:            wlog.DefaultSegmentSize,
+		MaxBlockChunkSegmentSize:  chunks.DefaultChunkSegmentSize,
+		RetentionDuration:         int64(15 * 24 * time.Hour / time.Millisecond),
+		MinBlockDuration:          DefaultBlockDuration,
+		MaxBlockDuration:          DefaultBlockDuration,
+		NoLockfile:                false,
+		SamplesPerChunk:           DefaultSamplesPerChunk,
+		WALCompression:            wlog.CompressionNone,
+		StripeSize:                DefaultStripeSize,
+		HeadChunksWriteBufferSize: chunks.DefaultWriteBufferSize,
+		IsolationDisabled:         defaultIsolationDisabled,
+		HeadChunksWriteQueueSize:  chunks.DefaultWriteQueueSize,
+		OutOfOrderCapMax:          DefaultOutOfOrderCapMax,
 	}
 }
 
@@ -114,14 +113,6 @@ type Options struct {
 
 	// NoLockfile disables creation and consideration of a lock file.
 	NoLockfile bool
-
-	// Compaction of overlapping blocks are allowed if AllowOverlappingCompaction is true.
-	// This is an optional flag for overlapping blocks.
-	// The reason why this flag exists is because there are various users of the TSDB
-	// that do not want vertical compaction happening on ingest time. Instead,
-	// they'd rather keep overlapping blocks and let another component do the overlapping compaction later.
-	// For Prometheus, this will always be true.
-	AllowOverlappingCompaction bool
 
 	// WALCompression configures the compression type to use on records in the WAL.
 	WALCompression wlog.CompressionType
