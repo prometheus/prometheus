@@ -11,10 +11,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package kubernetes
+package discovery
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 	"time"
 
@@ -23,13 +24,22 @@ import (
 	"k8s.io/client-go/util/workqueue"
 )
 
-const workqueueMetricsNamespace = metricsNamespace + "_workqueue"
+// This file registers metrics used by the Kubernetes Go client (k8s.io/client-go).
+// Unfortunately, k8s.io/client-go metrics are global.
+// If we instantiate multiple k8s SD instances, their k8s/client-go metrics will overlap.
+// To prevent us from displaying misleading metrics, we register k8s.io/client-go metrics
+// outside of the Kubernetes SD.
+
+const (
+	KubernetesMetricsNamespace = "prometheus_sd_kubernetes"
+	workqueueMetricsNamespace  = KubernetesMetricsNamespace + "_workqueue"
+)
 
 var (
 	// Metrics for client-go's HTTP requests.
 	clientGoRequestResultMetricVec = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Namespace: metricsNamespace,
+			Namespace: KubernetesMetricsNamespace,
 			Name:      "http_request_total",
 			Help:      "Total number of HTTP requests to the Kubernetes API by status code.",
 		},
@@ -37,7 +47,7 @@ var (
 	)
 	clientGoRequestLatencyMetricVec = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
-			Namespace:  metricsNamespace,
+			Namespace:  KubernetesMetricsNamespace,
 			Name:       "http_request_duration_seconds",
 			Help:       "Summary of latencies for HTTP requests to the Kubernetes API by endpoint.",
 			Objectives: map[float64]float64{},
@@ -109,16 +119,37 @@ func (noopMetric) Set(float64)     {}
 // Definition of client-go metrics adapters for HTTP requests observation.
 type clientGoRequestMetricAdapter struct{}
 
-func (f *clientGoRequestMetricAdapter) Register(registerer prometheus.Registerer) {
+// Returns all of the Prometheus metrics derived from k8s.io/client-go.
+// This may be used tu register and unregister the metrics.
+func clientGoMetrics() []prometheus.Collector {
+	return []prometheus.Collector{
+		clientGoRequestResultMetricVec,
+		clientGoRequestLatencyMetricVec,
+		clientGoWorkqueueDepthMetricVec,
+		clientGoWorkqueueAddsMetricVec,
+		clientGoWorkqueueLatencyMetricVec,
+		clientGoWorkqueueUnfinishedWorkSecondsMetricVec,
+		clientGoWorkqueueLongestRunningProcessorMetricVec,
+		clientGoWorkqueueWorkDurationMetricVec,
+	}
+}
+
+func RegisterK8sClientMetricsWithPrometheus(registerer prometheus.Registerer) error {
+	for _, collector := range clientGoMetrics() {
+		err := registerer.Register(collector)
+		if err != nil {
+			return fmt.Errorf("failed to register Kubernetes Go Client metrics: %w", err)
+		}
+	}
+	return nil
+}
+
+func (f *clientGoRequestMetricAdapter) RegisterWithK8sGoClient() {
 	metrics.Register(
 		metrics.RegisterOpts{
 			RequestLatency: f,
 			RequestResult:  f,
 		},
-	)
-	registerer.MustRegister(
-		clientGoRequestResultMetricVec,
-		clientGoRequestLatencyMetricVec,
 	)
 }
 
@@ -133,16 +164,8 @@ func (clientGoRequestMetricAdapter) Observe(_ context.Context, _ string, u url.U
 // Definition of client-go workqueue metrics provider definition.
 type clientGoWorkqueueMetricsProvider struct{}
 
-func (f *clientGoWorkqueueMetricsProvider) Register(registerer prometheus.Registerer) {
+func (f *clientGoWorkqueueMetricsProvider) RegisterWithK8sGoClient() {
 	workqueue.SetProvider(f)
-	registerer.MustRegister(
-		clientGoWorkqueueDepthMetricVec,
-		clientGoWorkqueueAddsMetricVec,
-		clientGoWorkqueueLatencyMetricVec,
-		clientGoWorkqueueWorkDurationMetricVec,
-		clientGoWorkqueueUnfinishedWorkSecondsMetricVec,
-		clientGoWorkqueueLongestRunningProcessorMetricVec,
-	)
 }
 
 func (f *clientGoWorkqueueMetricsProvider) NewDepthMetric(name string) workqueue.GaugeMetric {
