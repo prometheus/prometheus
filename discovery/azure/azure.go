@@ -95,7 +95,7 @@ func CloudConfigurationFromName(name string) (cloud.Configuration, error) {
 	name = strings.ToUpper(name)
 	env, ok := environments[name]
 	if !ok {
-		return env, fmt.Errorf("There is no cloud configuration matching the name %q", name)
+		return env, fmt.Errorf("there is no cloud configuration matching the name %q", name)
 	}
 
 	return env, nil
@@ -308,6 +308,7 @@ type virtualMachine struct {
 	Location          string
 	OsType            string
 	ScaleSet          string
+	InstanceID        string
 	Tags              map[string]*string
 	NetworkInterfaces []string
 	Size              string
@@ -408,17 +409,31 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 					networkInterface = v
 					d.cacheHitCount.Add(1)
 				} else {
-					networkInterface, err = client.getNetworkInterfaceByID(ctx, nicID)
-					if err != nil {
-						if errors.Is(err, errorNotFound) {
-							level.Warn(d.logger).Log("msg", "Network interface does not exist", "name", nicID, "err", err)
-						} else {
-							ch <- target{labelSet: nil, err: err}
+					if vm.ScaleSet == "" {
+						networkInterface, err = client.getVMNetworkInterfaceByID(ctx, nicID)
+						if err != nil {
+							if errors.Is(err, errorNotFound) {
+								level.Warn(d.logger).Log("msg", "Network interface does not exist", "name", nicID, "err", err)
+							} else {
+								ch <- target{labelSet: nil, err: err}
+							}
+							// Get out of this routine because we cannot continue without a network interface.
+							return
 						}
-						// Get out of this routine because we cannot continue without a network interface.
-						return
+						d.addToCache(nicID, networkInterface)
+					} else {
+						networkInterface, err = client.getVMScaleSetVMNetworkInterfaceByID(ctx, nicID, vm.ScaleSet, vm.InstanceID)
+						if err != nil {
+							if errors.Is(err, errorNotFound) {
+								level.Warn(d.logger).Log("msg", "Network interface does not exist", "name", nicID, "err", err)
+							} else {
+								ch <- target{labelSet: nil, err: err}
+							}
+							// Get out of this routine because we cannot continue without a network interface.
+							return
+						}
+						d.addToCache(nicID, networkInterface)
 					}
-					d.addToCache(nicID, networkInterface)
 				}
 
 				if networkInterface.Properties == nil {
@@ -626,6 +641,7 @@ func mapFromVMScaleSetVM(vm armcompute.VirtualMachineScaleSetVM, scaleSetName st
 		Location:          *(vm.Location),
 		OsType:            osType,
 		ScaleSet:          scaleSetName,
+		InstanceID:        *(vm.InstanceID),
 		Tags:              tags,
 		NetworkInterfaces: networkInterfaces,
 		Size:              size,
@@ -634,9 +650,9 @@ func mapFromVMScaleSetVM(vm armcompute.VirtualMachineScaleSetVM, scaleSetName st
 
 var errorNotFound = errors.New("network interface does not exist")
 
-// getNetworkInterfaceByID gets the network interface.
+// getVMNetworkInterfaceByID gets the network interface.
 // If a 404 is returned from the Azure API, `errorNotFound` is returned.
-func (client *azureClient) getNetworkInterfaceByID(ctx context.Context, networkInterfaceID string) (*armnetwork.Interface, error) {
+func (client *azureClient) getVMNetworkInterfaceByID(ctx context.Context, networkInterfaceID string) (*armnetwork.Interface, error) {
 	r, err := newAzureResourceFromID(networkInterfaceID, client.logger)
 	if err != nil {
 		return nil, fmt.Errorf("could not parse network interface ID: %w", err)
@@ -648,7 +664,27 @@ func (client *azureClient) getNetworkInterfaceByID(ctx context.Context, networkI
 		if errors.As(err, &responseError) && responseError.StatusCode == http.StatusNotFound {
 			return nil, errorNotFound
 		}
-		return nil, fmt.Errorf("Failed to retrieve Interface %v with error: %w", networkInterfaceID, err)
+		return nil, fmt.Errorf("failed to retrieve Interface %v with error: %w", networkInterfaceID, err)
+	}
+
+	return &resp.Interface, nil
+}
+
+// getVMScaleSetVMNetworkInterfaceByID gets the network interface.
+// If a 404 is returned from the Azure API, `errorNotFound` is returned.
+func (client *azureClient) getVMScaleSetVMNetworkInterfaceByID(ctx context.Context, networkInterfaceID, scaleSetName, instanceID string) (*armnetwork.Interface, error) {
+	r, err := newAzureResourceFromID(networkInterfaceID, client.logger)
+	if err != nil {
+		return nil, fmt.Errorf("could not parse network interface ID: %w", err)
+	}
+
+	resp, err := client.nic.GetVirtualMachineScaleSetNetworkInterface(ctx, r.ResourceGroupName, scaleSetName, instanceID, r.Name, &armnetwork.InterfacesClientGetVirtualMachineScaleSetNetworkInterfaceOptions{Expand: to.Ptr("IPConfigurations/PublicIPAddress")})
+	if err != nil {
+		var responseError *azcore.ResponseError
+		if errors.As(err, &responseError) && responseError.StatusCode == http.StatusNotFound {
+			return nil, errorNotFound
+		}
+		return nil, fmt.Errorf("failed to retrieve Interface %v with error: %w", networkInterfaceID, err)
 	}
 
 	return &resp.Interface, nil
