@@ -310,6 +310,8 @@ func (r *sampleRing) iterator() *SampleRingIterator {
 	return &r.it
 }
 
+// SampleRingIterator is returned by BufferedSeriesIterator.Buffer() and can be
+// used to iterate samples buffered in the lookback window.
 type SampleRingIterator struct {
 	r  *sampleRing
 	i  int
@@ -356,14 +358,6 @@ func (it *SampleRingIterator) Next() chunkenc.ValueType {
 		it.f = s.F()
 		return chunkenc.ValFloat
 	}
-}
-
-func (it *SampleRingIterator) Seek(int64) chunkenc.ValueType {
-	return chunkenc.ValNone
-}
-
-func (it *SampleRingIterator) Err() error {
-	return nil
 }
 
 func (it *SampleRingIterator) At() (int64, float64) {

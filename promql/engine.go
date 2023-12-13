@@ -2114,12 +2114,7 @@ loop:
 				if floats == nil {
 					floats = getFPointSlice(16)
 				}
-				if n := len(floats); n < cap(floats) {
-					floats = floats[:n+1]
-					floats[n].T, floats[n].F = t, f
-				} else {
-					floats = append(floats, FPoint{T: t, F: f})
-				}
+				floats = append(floats, FPoint{T: t, F: f})
 			}
 		}
 	}
