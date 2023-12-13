@@ -289,30 +289,15 @@ func (p *MemPostings) EnsureOrder(numberOfConcurrentProcesses int) {
 
 // Delete removes all ids in the given map from the postings lists.
 func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}) {
-	var keys, vals []string
-
-	// Collect all keys relevant for deletion once. New keys added afterwards
-	// can by definition not be affected by any of the given deletes.
+	// Take the optimistic read lock for the entire method,
+	// and only lock for writing when we actually find something to delete.
 	p.mtx.RLock()
+	defer p.mtx.RUnlock()
+
 	for n := range p.m {
-		keys = append(keys, n)
-	}
-	p.mtx.RUnlock()
-
-	for _, n := range keys {
-		p.mtx.RLock()
-		vals = vals[:0]
-		for v := range p.m[n] {
-			vals = append(vals, v)
-		}
-		p.mtx.RUnlock()
-
 		// For each posting we first analyse whether the postings list is affected by the deletes.
 		// If yes, we actually reallocate a new postings list.
-		for _, l := range vals {
-			// Only lock for processing one postings list so we don't block reads for too long.
-			p.mtx.Lock()
-
+		for l := range p.m[n] {
 			found := false
 			for _, id := range p.m[n][l] {
 				if _, ok := deleted[id]; ok {
@@ -321,11 +306,14 @@ func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}) {
 				}
 			}
 			if !found {
-				p.mtx.Unlock()
 				continue
 			}
+
 			repl := make([]storage.SeriesRef, 0, len(p.m[n][l]))
 
+			// Only take the write lock when there's actually something to write.
+			p.mtx.RUnlock()
+			p.mtx.Lock()
 			for _, id := range p.m[n][l] {
 				if _, ok := deleted[id]; !ok {
 					repl = append(repl, id)
@@ -337,12 +325,19 @@ func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}) {
 				delete(p.m[n], l)
 			}
 			p.mtx.Unlock()
+			p.mtx.RLock()
 		}
-		p.mtx.Lock()
+
 		if len(p.m[n]) == 0 {
-			delete(p.m, n)
+			p.mtx.RUnlock()
+			p.mtx.Lock()
+			// Check again, someone might have written in between.
+			if len(p.m[n]) == 0 {
+				delete(p.m, n)
+			}
+			p.mtx.Unlock()
+			p.mtx.RLock()
 		}
-		p.mtx.Unlock()
 	}
 }
 
