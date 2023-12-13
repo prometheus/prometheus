@@ -91,7 +91,7 @@ func (c *PostingsForMatchersCache) PostingsForMatchers(ctx context.Context, ix I
 	span := trace.SpanFromContext(ctx)
 	defer func(startTime time.Time) {
 		span.AddEvent(
-			"returned postings",
+			"PostingsForMatchers returned",
 			trace.WithAttributes(attribute.Bool("concurrent", concurrent), c.ttlAttrib, c.forceAttrib, attribute.Stringer("duration", time.Since(startTime))),
 		)
 	}(time.Now())
