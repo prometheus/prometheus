@@ -145,12 +145,17 @@ func newCompactorMetrics(r prometheus.Registerer) *CompactorMetrics {
 	return m
 }
 
-// NewLeveledCompactor returns a LeveledCompactor.
-func NewLeveledCompactor(ctx context.Context, r prometheus.Registerer, l log.Logger, ranges []int64, pool chunkenc.Pool, mergeFunc storage.VerticalChunkSeriesMergeFunc, pe index.PostingsEncoder) (*LeveledCompactor, error) {
-	return NewLeveledCompactorWithChunkSize(ctx, r, l, ranges, pool, chunks.DefaultChunkSegmentSize, mergeFunc, pe)
+type LeveledCompactorOptions struct {
+	// PE specifies the postings encoder. It is called when compactor is writing out the postings for a label name/value pair during compaction.
+	// If it is nil then the default encoder is used. At the moment that is the "raw" encoder. See index.RawPostingsEncoder for more.
+	PE index.PostingsEncoder
+	// MaxBlockChunkSegmentSize is the max block chunk segment size. If it is 0 then the default chunks.DefaultChunkSegmentSize is used.
+	MaxBlockChunkSegmentSize int64
+	// MergeFunc is used for merging series together in vertical compaction. By default storage.NewCompactingChunkSeriesMerger(storage.ChainedSeriesMerge) is used.
+	MergeFunc storage.VerticalChunkSeriesMergeFunc
 }
 
-func NewLeveledCompactorWithChunkSize(ctx context.Context, r prometheus.Registerer, l log.Logger, ranges []int64, pool chunkenc.Pool, maxBlockChunkSegmentSize int64, mergeFunc storage.VerticalChunkSeriesMergeFunc, pe index.PostingsEncoder) (*LeveledCompactor, error) {
+func NewLeveledCompactor(ctx context.Context, r prometheus.Registerer, l log.Logger, ranges []int64, pool chunkenc.Pool, opts LeveledCompactorOptions) (*LeveledCompactor, error) {
 	if len(ranges) == 0 {
 		return nil, fmt.Errorf("at least one range must be provided")
 	}
@@ -160,8 +165,17 @@ func NewLeveledCompactorWithChunkSize(ctx context.Context, r prometheus.Register
 	if l == nil {
 		l = log.NewNopLogger()
 	}
-	if mergeFunc == nil {
+	var mergeFunc storage.VerticalChunkSeriesMergeFunc
+	if opts.MergeFunc == nil {
 		mergeFunc = storage.NewCompactingChunkSeriesMerger(storage.ChainedSeriesMerge)
+	}
+	var maxBlockChunkSegmentSize int64
+	if opts.MaxBlockChunkSegmentSize == 0 {
+		maxBlockChunkSegmentSize = chunks.DefaultChunkSegmentSize
+	}
+	var pe index.PostingsEncoder
+	if opts.PE == nil {
+		pe = &index.RawPostingsEncoder{}
 	}
 	return &LeveledCompactor{
 		ranges:                   ranges,

@@ -193,6 +193,10 @@ func NewTOCFromByteSlice(bs ByteSlice) (*TOC, error) {
 
 // NewWriter returns a new Writer to the given filename. It serializes data in format version 2.
 func NewWriter(ctx context.Context, fn string, postingsEncoder PostingsEncoder) (*Writer, error) {
+	if postingsEncoder == nil {
+		postingsEncoder = &RawPostingsEncoder{}
+	}
+
 	dir := filepath.Dir(fn)
 
 	df, err := fileutil.OpenDir(dir)
@@ -222,10 +226,6 @@ func NewWriter(ctx context.Context, fn string, postingsEncoder PostingsEncoder) 
 	}
 	if err := df.Sync(); err != nil {
 		return nil, fmt.Errorf("sync dir: %w", err)
-	}
-
-	if postingsEncoder == nil {
-		postingsEncoder = &RawPostingsEncoder{}
 	}
 
 	iw := &Writer{
