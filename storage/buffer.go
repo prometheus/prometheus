@@ -360,14 +360,20 @@ func (it *SampleRingIterator) Next() chunkenc.ValueType {
 	}
 }
 
+// At returns the current float element of the iterator.
 func (it *SampleRingIterator) At() (int64, float64) {
 	return it.t, it.f
 }
 
+// AtHistogram returns the current histogram element of the iterator.
 func (it *SampleRingIterator) AtHistogram() (int64, *histogram.Histogram) {
 	return it.t, it.h
 }
 
+// AtFloatHistogram returns the current histogram element of the iterator. If the
+// current sample is an integer histogram, it will be converted to a float histogram.
+// An optional histogram.FloatHistogram can be provided to avoid allocating a new
+// object for the conversion.
 func (it *SampleRingIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	if it.fh == nil {
 		return it.t, it.h.ToFloat(fh)
