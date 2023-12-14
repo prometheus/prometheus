@@ -534,7 +534,7 @@ func (t *QueueManager) AppendMetadata(ctx context.Context, metadata []scrape.Met
 
 func (t *QueueManager) sendMetadataWithBackoff(ctx context.Context, metadata []prompb.MetricMetadata, pBuf *proto.Buffer) error {
 	// Build the WriteRequest with no samples.
-	req, _, _, err := buildWriteRequest(nil, metadata, pBuf, nil, nil)
+	req, _, _, err := buildWriteRequest(t.logger, nil, metadata, pBuf, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -1552,7 +1552,7 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, s
 // sendSamples to the remote storage with backoff for recoverable errors.
 func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.TimeSeries, sampleCount, exemplarCount, histogramCount int, pBuf *proto.Buffer, buf *[]byte) error {
 	// Build the WriteRequest with no metadata.
-	req, highest, lowest, err := buildWriteRequest(samples, nil, pBuf, *buf, nil)
+	req, highest, lowest, err := buildWriteRequest(s.qm.logger, samples, nil, pBuf, *buf, nil)
 	s.qm.buildRequestLimitTimestamp.Store(lowest)
 	if err != nil {
 		// Failing to build the write request is non-recoverable, since it will
@@ -1572,6 +1572,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 		if isSampleOld(currentTime, time.Duration(s.qm.cfg.SampleAgeLimit), lowest) {
 			// This will filter out old samples during retries.
 			req, _, lowest, err := buildWriteRequest(
+				s.qm.logger,
 				samples,
 				nil,
 				pBuf,
@@ -1689,14 +1690,24 @@ func sendWriteRequestWithBackoff(ctx context.Context, cfg config.QueueConfig, l 
 	}
 }
 
-func buildTimeSeries(timeSeries []prompb.TimeSeries, filter func(prompb.TimeSeries) bool) (int64, int64, []prompb.TimeSeries) {
+func buildTimeSeries(timeSeries []prompb.TimeSeries, filter func(prompb.TimeSeries) bool) (int64, int64, []prompb.TimeSeries, int, int, int) {
 	var highest int64
 	var lowest int64
+	var droppedSamples, droppedExemplars, droppedHistograms int
 
 	keepIdx := 0
 	lowest = math.MaxInt64
 	for i, ts := range timeSeries {
 		if filter != nil && filter(ts) {
+			if len(ts.Samples) > 0 {
+				droppedSamples++
+			}
+			if len(ts.Exemplars) > 0 {
+				droppedExemplars++
+			}
+			if len(ts.Histograms) > 0 {
+				droppedHistograms++
+			}
 			continue
 		}
 
@@ -1728,11 +1739,16 @@ func buildTimeSeries(timeSeries []prompb.TimeSeries, filter func(prompb.TimeSeri
 	}
 
 	timeSeries = timeSeries[:keepIdx]
-	return highest, lowest, timeSeries
+	return highest, lowest, timeSeries, droppedSamples, droppedExemplars, droppedHistograms
 }
 
-func buildWriteRequest(timeSeries []prompb.TimeSeries, metadata []prompb.MetricMetadata, pBuf *proto.Buffer, buf []byte, filter func(prompb.TimeSeries) bool) ([]byte, int64, int64, error) {
-	highest, lowest, timeSeries := buildTimeSeries(timeSeries, filter)
+func buildWriteRequest(logger log.Logger, timeSeries []prompb.TimeSeries, metadata []prompb.MetricMetadata, pBuf *proto.Buffer, buf []byte, filter func(prompb.TimeSeries) bool) ([]byte, int64, int64, error) {
+	highest, lowest, timeSeries,
+		droppedSamples, droppedExemplars, droppedHistograms := buildTimeSeries(timeSeries, filter)
+
+	if droppedSamples > 0 || droppedExemplars > 0 || droppedHistograms > 0 {
+		level.Debug(logger).Log("msg", "dropped data due to their age", "droppedSamples", droppedSamples, "droppedExemplars", droppedExemplars, "droppedHistograms", droppedHistograms)
+	}
 
 	req := &prompb.WriteRequest{
 		Timeseries: timeSeries,
