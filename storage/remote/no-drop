@@ -1,0 +1,15 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/prometheus/prometheus/storage/remote
+BenchmarkSampleSend-8   	     352	   3569785 ns/op	  465549 B/op	     701 allocs/op
+BenchmarkSampleSend-8   	     284	   3687568 ns/op	  580727 B/op	     870 allocs/op
+BenchmarkSampleSend-8   	     536	   2279494 ns/op	  309463 B/op	     472 allocs/op
+BenchmarkSampleSend-8   	     421	   2451728 ns/op	  392302 B/op	     595 allocs/op
+BenchmarkSampleSend-8   	     488	   2735087 ns/op	  340342 B/op	     517 allocs/op
+BenchmarkSampleSend-8   	     387	   2981143 ns/op	  436292 B/op	     645 allocs/op
+BenchmarkSampleSend-8   	     522	   2502637 ns/op	  318027 B/op	     484 allocs/op
+BenchmarkSampleSend-8   	     492	   2321649 ns/op	  337992 B/op	     513 allocs/op
+BenchmarkSampleSend-8   	     482	   2800486 ns/op	  351658 B/op	     523 allocs/op
+BenchmarkSampleSend-8   	     453	   2478191 ns/op	  367631 B/op	     551 allocs/op
+PASS
+ok  	github.com/prometheus/prometheus/storage/remote	136.618s
