@@ -1571,7 +1571,7 @@ func TestBuildTimeSeries(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			highest, lowest, result := buildTimeSeries(tc.ts, tc.filter)
 			require.NotNil(t, result)
-			require.Equal(t, tc.responseLen, len(result))
+			require.Len(t, result, tc.responseLen)
 			require.Equal(t, tc.highestTs, highest)
 			require.Equal(t, tc.lowestTs, lowest)
 		})
