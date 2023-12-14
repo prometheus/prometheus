@@ -52,6 +52,9 @@ const (
 
 	// Allow 30% too many shards before scaling down.
 	shardToleranceFraction = 0.3
+
+	reasonTooOld        = "too old"
+	reasonDroppedSeries = "dropped series"
 )
 
 type queueManagerMetrics struct {
@@ -69,9 +72,9 @@ type queueManagerMetrics struct {
 	retriedExemplarsTotal  prometheus.Counter
 	retriedHistogramsTotal prometheus.Counter
 	retriedMetadataTotal   prometheus.Counter
-	droppedSamplesTotal    prometheus.Counter
-	droppedExemplarsTotal  prometheus.Counter
-	droppedHistogramsTotal prometheus.Counter
+	droppedSamplesTotal    *prometheus.CounterVec
+	droppedExemplarsTotal  *prometheus.CounterVec
+	droppedHistogramsTotal *prometheus.CounterVec
 	enqueueRetriesTotal    prometheus.Counter
 	sentBatchDuration      prometheus.Histogram
 	highestSentTimestamp   *maxTimestamp
@@ -181,27 +184,27 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		Help:        "Total number of metadata entries which failed on send to remote storage but were retried because the send error was recoverable.",
 		ConstLabels: constLabels,
 	})
-	m.droppedSamplesTotal = prometheus.NewCounter(prometheus.CounterOpts{
+	m.droppedSamplesTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   namespace,
 		Subsystem:   subsystem,
 		Name:        "samples_dropped_total",
 		Help:        "Total number of samples which were dropped after being read from the WAL before being sent via remote write, either via relabelling, due to being too old or unintentionally because of an unknown reference ID.",
 		ConstLabels: constLabels,
-	})
-	m.droppedExemplarsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+	}, []string{"reason"})
+	m.droppedExemplarsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   namespace,
 		Subsystem:   subsystem,
 		Name:        "exemplars_dropped_total",
 		Help:        "Total number of exemplars which were dropped after being read from the WAL before being sent via remote write, either via relabelling, due to being too old or unintentionally because of an unknown reference ID.",
 		ConstLabels: constLabels,
-	})
-	m.droppedHistogramsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+	}, []string{"reason"})
+	m.droppedHistogramsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace:   namespace,
 		Subsystem:   subsystem,
 		Name:        "histograms_dropped_total",
 		Help:        "Total number of histograms which were dropped after being read from the WAL before being sent via remote write, either via relabelling, due to being too old or unintentionally because of an unknown reference ID.",
 		ConstLabels: constLabels,
-	})
+	}, []string{"reason"})
 	m.enqueueRetriesTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace:   namespace,
 		Subsystem:   subsystem,
@@ -597,20 +600,17 @@ func isTimeSeriesOldFilter(metrics *queueManagerMetrics, logger log.Logger, base
 		// Only the first element should be set in the series, therefore we only check the first element.
 		case len(ts.Samples) > 0:
 			if isSampleOld(baseTime, sampleAgeLimit, ts.Samples[0].Timestamp) {
-				metrics.droppedSamplesTotal.Inc()
-				level.Debug(logger).Log("msg", "Dropped exemplar due to age")
+				metrics.droppedSamplesTotal.WithLabelValues(reasonTooOld).Inc()
 				return true
 			}
 		case len(ts.Histograms) > 0:
 			if isSampleOld(baseTime, sampleAgeLimit, ts.Histograms[0].Timestamp) {
-				metrics.droppedHistogramsTotal.Inc()
-				level.Debug(logger).Log("msg", "Dropped histogram due to age")
+				metrics.droppedHistogramsTotal.WithLabelValues(reasonTooOld).Inc()
 				return true
 			}
 		case len(ts.Exemplars) > 0:
 			if isSampleOld(baseTime, sampleAgeLimit, ts.Exemplars[0].Timestamp) {
-				metrics.droppedExemplarsTotal.Inc()
-				level.Debug(logger).Log("msg", "Dropped exemplar due to age")
+				metrics.droppedExemplarsTotal.WithLabelValues(reasonTooOld).Inc()
 				return true
 			}
 		default:
@@ -627,14 +627,13 @@ func (t *QueueManager) Append(samples []record.RefSample) bool {
 outer:
 	for _, s := range samples {
 		if isSampleOld(currentTime, time.Duration(t.cfg.SampleAgeLimit), s.T) {
-			t.metrics.droppedSamplesTotal.Inc()
-			level.Debug(t.logger).Log("msg", "Dropped sample due to age", "ref", s.Ref)
+			t.metrics.droppedSamplesTotal.WithLabelValues(reasonTooOld).Inc()
 			continue
 		}
 		t.seriesMtx.Lock()
 		lbls, ok := t.seriesLabels[s.Ref]
 		if !ok {
-			t.metrics.droppedSamplesTotal.Inc()
+			t.metrics.droppedSamplesTotal.WithLabelValues(reasonDroppedSeries).Inc()
 			t.dataDropped.incr(1)
 			if _, ok := t.droppedSeries[s.Ref]; !ok {
 				level.Info(t.logger).Log("msg", "Dropped sample for series that was not explicitly dropped via relabelling", "ref", s.Ref)
@@ -684,14 +683,13 @@ func (t *QueueManager) AppendExemplars(exemplars []record.RefExemplar) bool {
 outer:
 	for _, e := range exemplars {
 		if isSampleOld(currentTime, time.Duration(t.cfg.SampleAgeLimit), e.T) {
-			t.metrics.droppedExemplarsTotal.Inc()
-			level.Debug(t.logger).Log("msg", "Dropped exemplar due to age", "ref", e.Ref)
+			t.metrics.droppedExemplarsTotal.WithLabelValues(reasonTooOld).Inc()
 			continue
 		}
 		t.seriesMtx.Lock()
 		lbls, ok := t.seriesLabels[e.Ref]
 		if !ok {
-			t.metrics.droppedExemplarsTotal.Inc()
+			t.metrics.droppedExemplarsTotal.WithLabelValues(reasonDroppedSeries).Inc()
 			// Track dropped exemplars in the same EWMA for sharding calc.
 			t.dataDropped.incr(1)
 			if _, ok := t.droppedSeries[e.Ref]; !ok {
@@ -738,14 +736,13 @@ func (t *QueueManager) AppendHistograms(histograms []record.RefHistogramSample) 
 outer:
 	for _, h := range histograms {
 		if isSampleOld(currentTime, time.Duration(t.cfg.SampleAgeLimit), h.T) {
-			t.metrics.droppedHistogramsTotal.Inc()
-			level.Debug(t.logger).Log("msg", "Dropped histogram sample due to age", "ref", h.Ref)
+			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonTooOld).Inc()
 			continue
 		}
 		t.seriesMtx.Lock()
 		lbls, ok := t.seriesLabels[h.Ref]
 		if !ok {
-			t.metrics.droppedHistogramsTotal.Inc()
+			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonDroppedSeries).Inc()
 			t.dataDropped.incr(1)
 			if _, ok := t.droppedSeries[h.Ref]; !ok {
 				level.Info(t.logger).Log("msg", "Dropped histogram for series that was not explicitly dropped via relabelling", "ref", h.Ref)
@@ -790,14 +787,13 @@ func (t *QueueManager) AppendFloatHistograms(floatHistograms []record.RefFloatHi
 outer:
 	for _, h := range floatHistograms {
 		if isSampleOld(currentTime, time.Duration(t.cfg.SampleAgeLimit), h.T) {
-			t.metrics.droppedHistogramsTotal.Inc()
-			level.Debug(t.logger).Log("msg", "Dropped histogram sample due to age", "ref", h.Ref)
+			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonTooOld).Inc()
 			continue
 		}
 		t.seriesMtx.Lock()
 		lbls, ok := t.seriesLabels[h.Ref]
 		if !ok {
-			t.metrics.droppedHistogramsTotal.Inc()
+			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonDroppedSeries).Inc()
 			t.dataDropped.incr(1)
 			if _, ok := t.droppedSeries[h.Ref]; !ok {
 				level.Info(t.logger).Log("msg", "Dropped histogram for series that was not explicitly dropped via relabelling", "ref", h.Ref)
