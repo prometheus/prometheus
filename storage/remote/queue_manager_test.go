@@ -1401,12 +1401,13 @@ func filterTsLimit(limit int64, ts prompb.TimeSeries) bool {
 
 func TestBuildTimeSeries(t *testing.T) {
 	testCases := []struct {
-		name        string
-		ts          []prompb.TimeSeries
-		filter      func(ts prompb.TimeSeries) bool
-		lowestTs    int64
-		highestTs   int64
-		responseLen int
+		name           string
+		ts             []prompb.TimeSeries
+		filter         func(ts prompb.TimeSeries) bool
+		lowestTs       int64
+		highestTs      int64
+		droppedSamples int
+		responseLen    int
 	}{
 		{
 			name: "No filter applied",
@@ -1477,10 +1478,11 @@ func TestBuildTimeSeries(t *testing.T) {
 					},
 				},
 			},
-			filter:      func(ts prompb.TimeSeries) bool { return filterTsLimit(1234567892, ts) },
-			responseLen: 2,
-			lowestTs:    1234567892,
-			highestTs:   1234567893,
+			filter:         func(ts prompb.TimeSeries) bool { return filterTsLimit(1234567892, ts) },
+			responseLen:    2,
+			lowestTs:       1234567892,
+			highestTs:      1234567893,
+			droppedSamples: 2,
 		},
 		{
 			name: "Filter applied, samples out of order",
@@ -1518,10 +1520,11 @@ func TestBuildTimeSeries(t *testing.T) {
 					},
 				},
 			},
-			filter:      func(ts prompb.TimeSeries) bool { return filterTsLimit(1234567892, ts) },
-			responseLen: 2,
-			lowestTs:    1234567892,
-			highestTs:   1234567893,
+			filter:         func(ts prompb.TimeSeries) bool { return filterTsLimit(1234567892, ts) },
+			responseLen:    2,
+			lowestTs:       1234567892,
+			highestTs:      1234567893,
+			droppedSamples: 2,
 		},
 		{
 			name: "Filter applied, samples not consecutive",
@@ -1559,21 +1562,23 @@ func TestBuildTimeSeries(t *testing.T) {
 					},
 				},
 			},
-			filter:      func(ts prompb.TimeSeries) bool { return filterTsLimit(1234567895, ts) },
-			responseLen: 2,
-			lowestTs:    1234567895,
-			highestTs:   1234567897,
+			filter:         func(ts prompb.TimeSeries) bool { return filterTsLimit(1234567895, ts) },
+			responseLen:    2,
+			lowestTs:       1234567895,
+			highestTs:      1234567897,
+			droppedSamples: 2,
 		},
 	}
 
 	// Run the test cases
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			highest, lowest, result := buildTimeSeries(tc.ts, tc.filter)
+			highest, lowest, result, droppedSamples, _, _ := buildTimeSeries(tc.ts, tc.filter)
 			require.NotNil(t, result)
 			require.Len(t, result, tc.responseLen)
 			require.Equal(t, tc.highestTs, highest)
 			require.Equal(t, tc.lowestTs, lowest)
+			require.Equal(t, tc.droppedSamples, droppedSamples)
 		})
 	}
 }
