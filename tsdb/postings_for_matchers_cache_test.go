@@ -58,7 +58,7 @@ func TestPostingsForMatchersCache(t *testing.T) {
 		}, &timeNowMock{}, false)
 
 		_, err := c.PostingsForMatchers(ctx, indexForPostingsMock{}, true, expectedMatchers...)
-		require.Equal(t, expectedErr, err)
+		require.ErrorIs(t, err, expectedErr)
 	})
 
 	t.Run("happy case multiple concurrent calls: two same one different", func(t *testing.T) {
@@ -110,7 +110,7 @@ func TestPostingsForMatchersCache(t *testing.T) {
 							return nil, fmt.Errorf(matchersString(ms))
 						}, &timeNowMock{}, forced)
 
-						results := make([]string, len(calls))
+						results := make([]error, len(calls))
 						resultsWg := sync.WaitGroup{}
 						resultsWg.Add(len(calls))
 
@@ -118,7 +118,7 @@ func TestPostingsForMatchersCache(t *testing.T) {
 						for i := 0; i < len(calls); i++ {
 							go func(i int) {
 								_, err := c.PostingsForMatchers(ctx, indexForPostingsMock{}, concurrent, calls[i]...)
-								results[i] = err.Error()
+								results[i] = err
 								resultsWg.Done()
 							}(i)
 						}
@@ -136,7 +136,7 @@ func TestPostingsForMatchersCache(t *testing.T) {
 
 						// check that we got correct results
 						for i, c := range calls {
-							require.Equal(t, matchersString(c), results[i], "Call %d should have returned error %q, but got %q instead", i, matchersString(c), results[i])
+							require.ErrorContainsf(t, results[i], matchersString(c), "Call %d should have returned error %q, but got %q instead", i, matchersString(c), results[i])
 						}
 					})
 				}

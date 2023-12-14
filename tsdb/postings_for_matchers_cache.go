@@ -3,6 +3,7 @@ package tsdb
 import (
 	"container/list"
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -87,12 +88,13 @@ type PostingsForMatchersCache struct {
 }
 
 func (c *PostingsForMatchersCache) PostingsForMatchers(ctx context.Context, ix IndexPostingsReader, concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
-	ctx, span := c.tracer.Start(ctx, "PostingsForMatchersCache.PostingsForMatchers", trace.WithAttributes(
-		attribute.Bool("concurrent", concurrent),
-		c.ttlAttrib,
-		c.forceAttrib,
-	))
-	defer span.End()
+	span := trace.SpanFromContext(ctx)
+	defer func(startTime time.Time) {
+		span.AddEvent(
+			"PostingsForMatchers returned",
+			trace.WithAttributes(attribute.Bool("concurrent", concurrent), c.ttlAttrib, c.forceAttrib, attribute.Stringer("duration", time.Since(startTime))),
+		)
+	}(time.Now())
 
 	if !concurrent && !c.force {
 		span.AddEvent("cache not used")
@@ -122,30 +124,18 @@ type postingsForMatcherPromise struct {
 }
 
 func (p *postingsForMatcherPromise) result(ctx context.Context) (index.Postings, error) {
-	span := trace.SpanFromContext(ctx)
-
 	select {
 	case <-ctx.Done():
-		span.AddEvent("interrupting wait on postingsForMatchers promise due to context error", trace.WithAttributes(
-			attribute.String("err", ctx.Err().Error()),
-		))
-		return nil, ctx.Err()
+		return nil, fmt.Errorf("interrupting wait on postingsForMatchers promise due to context error: %w", ctx.Err())
 	case <-p.done:
 		// Checking context error is necessary for deterministic tests,
 		// as channel selection order is random
 		if ctx.Err() != nil {
-			span.AddEvent("completed postingsForMatchers promise, but context has error", trace.WithAttributes(
-				attribute.String("err", ctx.Err().Error()),
-			))
-			return nil, ctx.Err()
+			return nil, fmt.Errorf("completed postingsForMatchers promise, but context has error: %w", ctx.Err())
 		}
 		if p.err != nil {
-			span.AddEvent("postingsForMatchers promise completed with error", trace.WithAttributes(
-				attribute.String("err", p.err.Error()),
-			))
-			return nil, p.err
+			return nil, fmt.Errorf("postingsForMatchers promise completed with error: %w", p.err)
 		}
-		span.AddEvent("postingsForMatchers promise completed successfully")
 		return p.cloner.Clone(), nil
 	}
 }
@@ -168,7 +158,7 @@ func (c *PostingsForMatchersCache) postingsForMatchersPromise(ctx context.Contex
 		return oldPromise.(*postingsForMatcherPromise).result
 	}
 
-	span.AddEvent("no postingsForMatchers promise in cache, executing query")
+	span.AddEvent("no postingsForMatchers promise in cache, executing query", trace.WithAttributes(attribute.String("cache_key", key)))
 
 	// promise was stored, close its channel after fulfilment
 	defer close(promise.done)
@@ -178,15 +168,8 @@ func (c *PostingsForMatchersCache) postingsForMatchersPromise(ctx context.Contex
 	// FIXME: do we need to cancel the call to postingsForMatchers if all the callers waiting for the result have
 	// cancelled their context?
 	if postings, err := c.postingsForMatchers(context.Background(), ix, ms...); err != nil {
-		span.AddEvent("postingsForMatchers failed", trace.WithAttributes(
-			attribute.String("cache_key", key),
-			attribute.String("err", err.Error()),
-		))
 		promise.err = err
 	} else {
-		span.AddEvent("postingsForMatchers succeeded", trace.WithAttributes(
-			attribute.String("cache_key", key),
-		))
 		promise.cloner = index.NewPostingsCloner(postings)
 	}
 
