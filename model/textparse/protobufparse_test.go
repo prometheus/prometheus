@@ -58,6 +58,7 @@ metric: <
 		`name: "go_memstats_alloc_bytes_total"
 help: "Total number of bytes allocated, even if freed."
 type: COUNTER
+unit: "bytes"
 metric: <
   counter: <
     value: 1.546544e+06
@@ -665,6 +666,7 @@ func TestProtobufParse(t *testing.T) {
 				{
 					m:    "go_memstats_alloc_bytes_total",
 					help: "Total number of bytes allocated, even if freed.",
+					unit: "bytes",
 				},
 				{
 					m:   "go_memstats_alloc_bytes_total",

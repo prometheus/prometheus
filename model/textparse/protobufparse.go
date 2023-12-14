@@ -269,8 +269,9 @@ func (p *ProtobufParser) Type() ([]byte, MetricType) {
 	return n, MetricTypeUnknown
 }
 
-// Unit always returns (nil, nil) because units aren't supported by the protobuf
-// format.
+// Unit returns the metric unit in the current entry.
+// Must only be called after Next returned a unit entry.
+// The returned byte slices become invalid after the next call to Next.
 func (p *ProtobufParser) Unit() ([]byte, []byte) {
 	return p.metricBytes.Bytes(), []byte(p.mf.GetUnit())
 }
@@ -418,6 +419,13 @@ func (p *ProtobufParser) Next() (Entry, error) {
 		default:
 			return EntryInvalid, fmt.Errorf("unknown metric type for metric %q: %s", name, p.mf.GetType())
 		}
+		unit := p.mf.GetUnit()
+		fmt.Println("This is the unit:", unit)
+		if len(unit) > 0 {
+			if !strings.HasSuffix(name, fmt.Sprintf("_%s_total", unit)) || !strings.HasSuffix(name, fmt.Sprintf("_%s", unit)) || len(name) < len(unit)+1 {
+				return EntryInvalid, fmt.Errorf("invalid unit for metric %q: %s", name, unit)
+			}
+		}
 		p.metricBytes.Reset()
 		p.metricBytes.WriteString(name)
 
@@ -435,6 +443,8 @@ func (p *ProtobufParser) Next() (Entry, error) {
 		if err := p.updateMetricBytes(); err != nil {
 			return EntryInvalid, err
 		}
+	// case EntryUnit:
+	//	p.state = EntryType // what is the right state and place for this?
 	case EntryHistogram, EntrySeries:
 		if p.redoClassic {
 			p.redoClassic = false
