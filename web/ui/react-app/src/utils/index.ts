@@ -1,6 +1,6 @@
 import moment from 'moment-timezone';
 
-import { PanelOptions, PanelType, PanelDefaultOptions } from '../pages/graph/Panel';
+import { GraphDisplayMode, PanelDefaultOptions, PanelOptions, PanelType } from '../pages/graph/Panel';
 import { PanelMeta } from '../pages/graph/PanelList';
 
 export const generateID = (): string => {
@@ -196,8 +196,12 @@ export const parseOption = (param: string): Partial<PanelOptions> => {
     case 'tab':
       return { type: decodedValue === '0' ? PanelType.Graph : PanelType.Table };
 
+    case 'display_mode':
+      const validKey = Object.values(GraphDisplayMode).includes(decodedValue as GraphDisplayMode);
+      return { displayMode: validKey ? (decodedValue as GraphDisplayMode) : GraphDisplayMode.Lines };
+
     case 'stacked':
-      return { stacked: decodedValue === '1' };
+      return { displayMode: decodedValue === '1' ? GraphDisplayMode.Stacked : GraphDisplayMode.Lines };
 
     case 'show_exemplars':
       return { showExemplars: decodedValue === '1' };
@@ -225,12 +229,12 @@ export const formatParam =
 
 export const toQueryString = ({ key, options }: PanelMeta): string => {
   const formatWithKey = formatParam(key);
-  const { expr, type, stacked, range, endTime, resolution, showExemplars } = options;
+  const { expr, type, displayMode, range, endTime, resolution, showExemplars } = options;
   const time = isPresent(endTime) ? formatTime(endTime) : false;
   const urlParams = [
     formatWithKey('expr', expr),
     formatWithKey('tab', type === PanelType.Graph ? 0 : 1),
-    formatWithKey('stacked', stacked ? 1 : 0),
+    formatWithKey('display_mode', displayMode),
     formatWithKey('show_exemplars', showExemplars ? 1 : 0),
     formatWithKey('range_input', formatDuration(range)),
     time ? `${formatWithKey('end_input', time)}&${formatWithKey('moment_input', time)}` : '',
@@ -264,7 +268,9 @@ export const getQueryParam = (key: string): string => {
 };
 
 export const createExpressionLink = (expr: string): string => {
-  return `../graph?g0.expr=${encodeURIComponent(expr)}&g0.tab=1&g0.stacked=0&g0.show_exemplars=0.g0.range_input=1h.`;
+  return `../graph?g0.expr=${encodeURIComponent(expr)}&g0.tab=1&g0.display_mode=${
+    GraphDisplayMode.Lines
+  }&g0.show_exemplars=0.g0.range_input=1h.`;
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any,

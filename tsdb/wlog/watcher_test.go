@@ -199,7 +199,7 @@ func TestTailSamples(t *testing.T) {
 					floatHistogram := enc.FloatHistogramSamples([]record.RefFloatHistogramSample{{
 						Ref: chunks.HeadSeriesRef(inner),
 						T:   now.UnixNano() + 1,
-						FH:  hist.ToFloat(),
+						FH:  hist.ToFloat(nil),
 					}}, nil)
 					require.NoError(t, w.Log(floatHistogram))
 				}
@@ -627,6 +627,64 @@ func TestCheckpointSeriesReset(t *testing.T) {
 			require.Eventually(t, func() bool {
 				return wt.checkNumSeries() == tc.segments
 			}, 20*time.Second, 1*time.Second)
+		})
+	}
+}
+
+func TestRun_StartupTime(t *testing.T) {
+	const pageSize = 32 * 1024
+	const segments = 10
+	const seriesCount = 20
+	const samplesCount = 300
+
+	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
+		t.Run(string(compress), func(t *testing.T) {
+			dir := t.TempDir()
+
+			wdir := path.Join(dir, "wal")
+			err := os.Mkdir(wdir, 0o777)
+			require.NoError(t, err)
+
+			enc := record.Encoder{}
+			w, err := NewSize(nil, nil, wdir, pageSize, compress)
+			require.NoError(t, err)
+
+			for i := 0; i < segments; i++ {
+				for j := 0; j < seriesCount; j++ {
+					ref := j + (i * 100)
+					series := enc.Series([]record.RefSeries{
+						{
+							Ref:    chunks.HeadSeriesRef(ref),
+							Labels: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i)),
+						},
+					}, nil)
+					require.NoError(t, w.Log(series))
+
+					for k := 0; k < samplesCount; k++ {
+						inner := rand.Intn(ref + 1)
+						sample := enc.Samples([]record.RefSample{
+							{
+								Ref: chunks.HeadSeriesRef(inner),
+								T:   int64(i),
+								V:   float64(i),
+							},
+						}, nil)
+						require.NoError(t, w.Log(sample))
+					}
+				}
+			}
+			require.NoError(t, w.Close())
+
+			wt := newWriteToMock()
+			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false)
+			watcher.MaxSegment = segments
+
+			watcher.setMetrics()
+			startTime := time.Now()
+
+			err = watcher.Run()
+			require.Less(t, time.Since(startTime), readTimeout)
+			require.NoError(t, err)
 		})
 	}
 }

@@ -344,7 +344,7 @@ func TestReaderFuzz(t *testing.T) {
 					r := reader.Record()
 					// Expected value may come as nil or empty slice, so it requires special comparison.
 					if len(expected) == 0 {
-						require.Len(t, r, 0)
+						require.Empty(t, r)
 					} else {
 						require.Equal(t, expected, r, "read wrong record")
 					}
@@ -395,7 +395,7 @@ func TestReaderFuzz_Live(t *testing.T) {
 					require.True(t, ok, "unexpected record")
 					// Expected value may come as nil or empty slice, so it requires special comparison.
 					if len(expected) == 0 {
-						require.Len(t, rec, 0)
+						require.Empty(t, rec)
 					} else {
 						require.Equal(t, expected, rec, "record does not match expected")
 					}
@@ -541,7 +541,7 @@ func TestReaderData(t *testing.T) {
 			require.NoError(t, err)
 
 			reader := fn(sr)
-			for reader.Next() { // nolint:revive
+			for reader.Next() {
 			}
 			require.NoError(t, reader.Err())
 

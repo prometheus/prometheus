@@ -43,7 +43,7 @@ const (
 	IngestionPublicAudience     = "https://monitor.azure.com//.default"
 )
 
-// ManagedIdentityConfig is used to store managed identity config values
+// ManagedIdentityConfig is used to store managed identity config values.
 type ManagedIdentityConfig struct {
 	// ClientID is the clientId of the managed identity that is being used to authenticate.
 	ClientID string `yaml:"client_id,omitempty"`
@@ -62,7 +62,7 @@ type OAuthConfig struct {
 }
 
 // AzureADConfig is used to store the config values.
-type AzureADConfig struct { // nolint:revive
+type AzureADConfig struct { //nolint:revive // exported.
 	// ManagedIdentity is the managed identity that is being used to authenticate.
 	ManagedIdentity *ManagedIdentityConfig `yaml:"managed_identity,omitempty"`
 
@@ -235,7 +235,7 @@ func newManagedIdentityTokenCredential(clientOpts *azcore.ClientOptions, managed
 	return azidentity.NewManagedIdentityCredential(opts)
 }
 
-// newOAuthTokenCredential returns new OAuth token credential
+// newOAuthTokenCredential returns new OAuth token credential.
 func newOAuthTokenCredential(clientOpts *azcore.ClientOptions, oAuthConfig *OAuthConfig) (azcore.TokenCredential, error) {
 	opts := &azidentity.ClientSecretCredentialOptions{ClientOptions: *clientOpts}
 	return azidentity.NewClientSecretCredential(oAuthConfig.TenantID, oAuthConfig.ClientID, oAuthConfig.ClientSecret, opts)
@@ -326,7 +326,7 @@ func getAudience(cloud string) (string, error) {
 	}
 }
 
-// getCloudConfiguration returns the cloud Configuration which contains AAD endpoint for different clouds
+// getCloudConfiguration returns the cloud Configuration which contains AAD endpoint for different clouds.
 func getCloudConfiguration(c string) (cloud.Configuration, error) {
 	switch strings.ToLower(c) {
 	case strings.ToLower(AzureChina):

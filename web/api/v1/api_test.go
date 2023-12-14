@@ -16,6 +16,7 @@ package v1
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -33,7 +34,6 @@ import (
 	"github.com/prometheus/prometheus/util/stats"
 
 	"github.com/go-kit/log"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -209,15 +209,22 @@ func (t testAlertmanagerRetriever) toFactory() func(context.Context) Alertmanage
 }
 
 type rulesRetrieverMock struct {
-	testing *testing.T
+	alertingRules []*rules.AlertingRule
+	ruleGroups    []*rules.Group
+	testing       *testing.T
 }
 
-func (m rulesRetrieverMock) AlertingRules() []*rules.AlertingRule {
+func (m *rulesRetrieverMock) CreateAlertingRules() {
 	expr1, err := parser.ParseExpr(`absent(test_metric3) != 1`)
 	if err != nil {
 		m.testing.Fatalf("unable to parse alert expression: %s", err)
 	}
 	expr2, err := parser.ParseExpr(`up == 1`)
+	if err != nil {
+		m.testing.Fatalf("Unable to parse alert expression: %s", err)
+	}
+
+	expr3, err := parser.ParseExpr(`vector(1)`)
 	if err != nil {
 		m.testing.Fatalf("Unable to parse alert expression: %s", err)
 	}
@@ -246,15 +253,29 @@ func (m rulesRetrieverMock) AlertingRules() []*rules.AlertingRule {
 		true,
 		log.NewNopLogger(),
 	)
+	rule3 := rules.NewAlertingRule(
+		"test_metric5",
+		expr3,
+		time.Second,
+		0,
+		labels.FromStrings("name", "tm5"),
+		labels.Labels{},
+		labels.FromStrings("name", "tm5"),
+		"",
+		false,
+		log.NewNopLogger(),
+	)
+
 	var r []*rules.AlertingRule
 	r = append(r, rule1)
 	r = append(r, rule2)
-	return r
+	r = append(r, rule3)
+	m.alertingRules = r
 }
 
-func (m rulesRetrieverMock) RuleGroups() []*rules.Group {
-	var ar rulesRetrieverMock
-	arules := ar.AlertingRules()
+func (m *rulesRetrieverMock) CreateRuleGroups() {
+	m.CreateAlertingRules()
+	arules := m.AlertingRules()
 	storage := teststorage.New(m.testing)
 	defer storage.Close()
 
@@ -271,6 +292,7 @@ func (m rulesRetrieverMock) RuleGroups() []*rules.Group {
 		Appendable: storage,
 		Context:    context.Background(),
 		Logger:     log.NewNopLogger(),
+		NotifyFunc: func(ctx context.Context, expr string, alerts ...*rules.Alert) {},
 	}
 
 	var r []rules.Rule
@@ -294,10 +316,18 @@ func (m rulesRetrieverMock) RuleGroups() []*rules.Group {
 		ShouldRestore: false,
 		Opts:          opts,
 	})
-	return []*rules.Group{group}
+	m.ruleGroups = []*rules.Group{group}
 }
 
-func (m rulesRetrieverMock) toFactory() func(context.Context) RulesRetriever {
+func (m *rulesRetrieverMock) AlertingRules() []*rules.AlertingRule {
+	return m.alertingRules
+}
+
+func (m *rulesRetrieverMock) RuleGroups() []*rules.Group {
+	return m.ruleGroups
+}
+
+func (m *rulesRetrieverMock) toFactory() func(context.Context) RulesRetriever {
 	return func(context.Context) RulesRetriever { return m }
 }
 
@@ -380,12 +410,14 @@ func TestEndpoints(t *testing.T) {
 	now := time.Now()
 
 	t.Run("local", func(t *testing.T) {
-		var algr rulesRetrieverMock
+		algr := rulesRetrieverMock{}
 		algr.testing = t
 
-		algr.AlertingRules()
+		algr.CreateAlertingRules()
+		algr.CreateRuleGroups()
 
-		algr.RuleGroups()
+		g := algr.RuleGroups()
+		g[0].Eval(context.Background(), time.Now())
 
 		testTargetRetriever := setupTestTargetRetriever(t)
 
@@ -442,12 +474,14 @@ func TestEndpoints(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		var algr rulesRetrieverMock
+		algr := rulesRetrieverMock{}
 		algr.testing = t
 
-		algr.AlertingRules()
+		algr.CreateAlertingRules()
+		algr.CreateRuleGroups()
 
-		algr.RuleGroups()
+		g := algr.RuleGroups()
+		g[0].Eval(context.Background(), time.Now())
 
 		testTargetRetriever := setupTestTargetRetriever(t)
 
@@ -838,7 +872,7 @@ func TestStats(t *testing.T) {
 			name:  "stats is blank",
 			param: "",
 			expected: func(t *testing.T, i interface{}) {
-				require.IsType(t, i, &QueryData{})
+				require.IsType(t, &QueryData{}, i)
 				qd := i.(*QueryData)
 				require.Nil(t, qd.Stats)
 			},
@@ -847,7 +881,7 @@ func TestStats(t *testing.T) {
 			name:  "stats is true",
 			param: "true",
 			expected: func(t *testing.T, i interface{}) {
-				require.IsType(t, i, &QueryData{})
+				require.IsType(t, &QueryData{}, i)
 				qd := i.(*QueryData)
 				require.NotNil(t, qd.Stats)
 				qs := qd.Stats.Builtin()
@@ -862,7 +896,7 @@ func TestStats(t *testing.T) {
 			name:  "stats is all",
 			param: "all",
 			expected: func(t *testing.T, i interface{}) {
-				require.IsType(t, i, &QueryData{})
+				require.IsType(t, &QueryData{}, i)
 				qd := i.(*QueryData)
 				require.NotNil(t, qd.Stats)
 				qs := qd.Stats.Builtin()
@@ -883,12 +917,12 @@ func TestStats(t *testing.T) {
 			},
 			param: "known",
 			expected: func(t *testing.T, i interface{}) {
-				require.IsType(t, i, &QueryData{})
+				require.IsType(t, &QueryData{}, i)
 				qd := i.(*QueryData)
 				require.NotNil(t, qd.Stats)
 				j, err := json.Marshal(qd.Stats)
 				require.NoError(t, err)
-				require.JSONEq(t, string(j), `{"custom":"Custom Value"}`)
+				require.JSONEq(t, `{"custom":"Custom Value"}`, string(j))
 			},
 		},
 	} {
@@ -1036,6 +1070,36 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 		sorter                func(interface{})
 		metadata              []targetMetadata
 		exemplars             []exemplar.QueryResult
+		zeroFunc              func(interface{})
+	}
+
+	rulesZeroFunc := func(i interface{}) {
+		if i != nil {
+			v := i.(*RuleDiscovery)
+			for _, ruleGroup := range v.RuleGroups {
+				ruleGroup.EvaluationTime = float64(0)
+				ruleGroup.LastEvaluation = time.Time{}
+				for k, rule := range ruleGroup.Rules {
+					switch r := rule.(type) {
+					case AlertingRule:
+						r.LastEvaluation = time.Time{}
+						r.EvaluationTime = float64(0)
+						r.LastError = ""
+						r.Health = "ok"
+						for _, alert := range r.Alerts {
+							alert.ActiveAt = nil
+						}
+						ruleGroup.Rules[k] = r
+					case RecordingRule:
+						r.LastEvaluation = time.Time{}
+						r.EvaluationTime = float64(0)
+						r.LastError = ""
+						r.Health = "ok"
+						ruleGroup.Rules[k] = r
+					}
+				}
+			}
+		}
 	}
 
 	tests := []test{
@@ -1988,7 +2052,22 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 		{
 			endpoint: api.alerts,
 			response: &AlertDiscovery{
-				Alerts: []*Alert{},
+				Alerts: []*Alert{
+					{
+						Labels:      labels.FromStrings("alertname", "test_metric5", "name", "tm5"),
+						Annotations: labels.Labels{},
+						State:       "pending",
+						Value:       "1e+00",
+					},
+				},
+			},
+			zeroFunc: func(i interface{}) {
+				if i != nil {
+					v := i.(*AlertDiscovery)
+					for _, alert := range v.Alerts {
+						alert.ActiveAt = nil
+					}
+				}
 			},
 		},
 		{
@@ -2009,7 +2088,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 								Labels:      labels.Labels{},
 								Annotations: labels.Labels{},
 								Alerts:      []*Alert{},
-								Health:      "unknown",
+								Health:      "ok",
 								Type:        "alerting",
 							},
 							AlertingRule{
@@ -2020,20 +2099,98 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 								Labels:      labels.Labels{},
 								Annotations: labels.Labels{},
 								Alerts:      []*Alert{},
-								Health:      "unknown",
+								Health:      "ok",
 								Type:        "alerting",
+							},
+							AlertingRule{
+								State:       "pending",
+								Name:        "test_metric5",
+								Query:       "vector(1)",
+								Duration:    1,
+								Labels:      labels.FromStrings("name", "tm5"),
+								Annotations: labels.Labels{},
+								Alerts: []*Alert{
+									{
+										Labels:      labels.FromStrings("alertname", "test_metric5", "name", "tm5"),
+										Annotations: labels.Labels{},
+										State:       "pending",
+										Value:       "1e+00",
+									},
+								},
+								Health: "ok",
+								Type:   "alerting",
 							},
 							RecordingRule{
 								Name:   "recording-rule-1",
 								Query:  "vector(1)",
 								Labels: labels.Labels{},
-								Health: "unknown",
+								Health: "ok",
 								Type:   "recording",
 							},
 						},
 					},
 				},
 			},
+			zeroFunc: rulesZeroFunc,
+		},
+		{
+			endpoint: api.rules,
+			query: url.Values{
+				"exclude_alerts": []string{"true"},
+			},
+			response: &RuleDiscovery{
+				RuleGroups: []*RuleGroup{
+					{
+						Name:     "grp",
+						File:     "/path/to/file",
+						Interval: 1,
+						Limit:    0,
+						Rules: []Rule{
+							AlertingRule{
+								State:       "inactive",
+								Name:        "test_metric3",
+								Query:       "absent(test_metric3) != 1",
+								Duration:    1,
+								Labels:      labels.Labels{},
+								Annotations: labels.Labels{},
+								Alerts:      nil,
+								Health:      "ok",
+								Type:        "alerting",
+							},
+							AlertingRule{
+								State:       "inactive",
+								Name:        "test_metric4",
+								Query:       "up == 1",
+								Duration:    1,
+								Labels:      labels.Labels{},
+								Annotations: labels.Labels{},
+								Alerts:      nil,
+								Health:      "ok",
+								Type:        "alerting",
+							},
+							AlertingRule{
+								State:       "pending",
+								Name:        "test_metric5",
+								Query:       "vector(1)",
+								Duration:    1,
+								Labels:      labels.FromStrings("name", "tm5"),
+								Annotations: labels.Labels{},
+								Alerts:      nil,
+								Health:      "ok",
+								Type:        "alerting",
+							},
+							RecordingRule{
+								Name:   "recording-rule-1",
+								Query:  "vector(1)",
+								Labels: labels.Labels{},
+								Health: "ok",
+								Type:   "recording",
+							},
+						},
+					},
+				},
+			},
+			zeroFunc: rulesZeroFunc,
 		},
 		{
 			endpoint: api.rules,
@@ -2056,7 +2213,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 								Labels:      labels.Labels{},
 								Annotations: labels.Labels{},
 								Alerts:      []*Alert{},
-								Health:      "unknown",
+								Health:      "ok",
 								Type:        "alerting",
 							},
 							AlertingRule{
@@ -2067,13 +2224,32 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 								Labels:      labels.Labels{},
 								Annotations: labels.Labels{},
 								Alerts:      []*Alert{},
-								Health:      "unknown",
+								Health:      "ok",
 								Type:        "alerting",
+							},
+							AlertingRule{
+								State:       "pending",
+								Name:        "test_metric5",
+								Query:       "vector(1)",
+								Duration:    1,
+								Labels:      labels.FromStrings("name", "tm5"),
+								Annotations: labels.Labels{},
+								Alerts: []*Alert{
+									{
+										Labels:      labels.FromStrings("alertname", "test_metric5", "name", "tm5"),
+										Annotations: labels.Labels{},
+										State:       "pending",
+										Value:       "1e+00",
+									},
+								},
+								Health: "ok",
+								Type:   "alerting",
 							},
 						},
 					},
 				},
 			},
+			zeroFunc: rulesZeroFunc,
 		},
 		{
 			endpoint: api.rules,
@@ -2092,13 +2268,14 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 								Name:   "recording-rule-1",
 								Query:  "vector(1)",
 								Labels: labels.Labels{},
-								Health: "unknown",
+								Health: "ok",
 								Type:   "recording",
 							},
 						},
 					},
 				},
 			},
+			zeroFunc: rulesZeroFunc,
 		},
 		{
 			endpoint: api.rules,
@@ -2119,13 +2296,14 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 								Labels:      labels.Labels{},
 								Annotations: labels.Labels{},
 								Alerts:      []*Alert{},
-								Health:      "unknown",
+								Health:      "ok",
 								Type:        "alerting",
 							},
 						},
 					},
 				},
 			},
+			zeroFunc: rulesZeroFunc,
 		},
 		{
 			endpoint: api.rules,
@@ -2151,13 +2329,14 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 								Labels:      labels.Labels{},
 								Annotations: labels.Labels{},
 								Alerts:      []*Alert{},
-								Health:      "unknown",
+								Health:      "ok",
 								Type:        "alerting",
 							},
 						},
 					},
 				},
 			},
+			zeroFunc: rulesZeroFunc,
 		},
 		{
 			endpoint: api.queryExemplars,
@@ -2696,6 +2875,9 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 							assertAPIResponseMetadataLen(t, res.data, test.responseMetadataTotal)
 						}
 					} else {
+						if test.zeroFunc != nil {
+							test.zeroFunc(res.data)
+						}
 						assertAPIResponse(t, res.data, test.response)
 					}
 				})
@@ -2792,7 +2974,7 @@ func (f *fakeDB) WALReplayStatus() (tsdb.WALReplayStatus, error) {
 }
 
 func TestAdminEndpoints(t *testing.T) {
-	tsdb, tsdbWithError, tsdbNotReady := &fakeDB{}, &fakeDB{err: errors.New("some error")}, &fakeDB{err: errors.Wrap(tsdb.ErrNotReady, "wrap")}
+	tsdb, tsdbWithError, tsdbNotReady := &fakeDB{}, &fakeDB{err: errors.New("some error")}, &fakeDB{err: fmt.Errorf("wrap: %w", tsdb.ErrNotReady)}
 	snapshotAPI := func(api *API) apiFunc { return api.snapshot }
 	cleanAPI := func(api *API) apiFunc { return api.cleanTombstones }
 	deleteAPI := func(api *API) apiFunc { return api.deleteSeries }
@@ -3172,7 +3354,7 @@ func TestParseTimeParam(t *testing.T) {
 				asTime: time.Time{},
 				asError: func() error {
 					_, err := parseTime("baz")
-					return errors.Wrapf(err, "Invalid time value for '%s'", "foo")
+					return fmt.Errorf("Invalid time value for '%s': %w", "foo", err)
 				},
 			},
 		},

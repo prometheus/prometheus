@@ -158,6 +158,7 @@ var (
 		HonorLabels:             false,
 		HonorTimestamps:         true,
 		HTTPClientConfig:        config.DefaultHTTPClientConfig,
+		EnableCompression:       true,
 	}
 
 	// DefaultAlertmanagerConfig is the default alertmanager configuration.
@@ -453,12 +454,19 @@ var (
 		OpenMetricsText1_0_0: "application/openmetrics-text;version=1.0.0",
 	}
 
+	// DefaultScrapeProtocols is the set of scrape protocols that will be proposed
+	// to scrape target, ordered by priority.
 	DefaultScrapeProtocols = []ScrapeProtocol{
 		OpenMetricsText1_0_0,
 		OpenMetricsText0_0_1,
 		PrometheusText0_0_4,
 	}
-	DefaultNativeHistogramScrapeProtocols = []ScrapeProtocol{
+
+	// DefaultProtoFirstScrapeProtocols is like DefaultScrapeProtocols, but it
+	// favors protobuf Prometheus exposition format.
+	// Used by default for certain feature-flags like
+	// "native-histograms" and "created-timestamp-zero-ingestion".
+	DefaultProtoFirstScrapeProtocols = []ScrapeProtocol{
 		PrometheusProto,
 		OpenMetricsText1_0_0,
 		OpenMetricsText0_0_1,
@@ -563,6 +571,8 @@ type ScrapeConfig struct {
 	HonorLabels bool `yaml:"honor_labels,omitempty"`
 	// Indicator whether the scraped timestamps should be respected.
 	HonorTimestamps bool `yaml:"honor_timestamps"`
+	// Indicator whether to track the staleness of the scraped timestamps.
+	TrackTimestampsStaleness bool `yaml:"track_timestamps_staleness"`
 	// A set of query parameters with which the target is scraped.
 	Params url.Values `yaml:"params,omitempty"`
 	// How frequently to scrape the targets of this scrape config.
@@ -580,6 +590,8 @@ type ScrapeConfig struct {
 	MetricsPath string `yaml:"metrics_path,omitempty"`
 	// The URL scheme with which to fetch metrics from targets.
 	Scheme string `yaml:"scheme,omitempty"`
+	// Indicator whether to request compressed response from the target.
+	EnableCompression bool `yaml:"enable_compression"`
 	// An uncompressed response body larger than this many bytes will cause the
 	// scrape to fail. 0 means no limit.
 	BodySizeLimit units.Base2Bytes `yaml:"body_size_limit,omitempty"`

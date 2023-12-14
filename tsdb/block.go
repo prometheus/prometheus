@@ -17,6 +17,8 @@ package tsdb
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -25,7 +27,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/oklog/ulid"
-	"github.com/pkg/errors"
 	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -116,8 +117,19 @@ type ChunkWriter interface {
 
 // ChunkReader provides reading access of serialized time series data.
 type ChunkReader interface {
-	// Chunk returns the series data chunk with the given reference.
-	Chunk(meta chunks.Meta) (chunkenc.Chunk, error)
+	// ChunkOrIterable returns the series data for the given chunks.Meta.
+	// Either a single chunk will be returned, or an iterable.
+	// A single chunk should be returned if chunks.Meta maps to a chunk that
+	// already exists and doesn't need modifications.
+	// An iterable should be returned if chunks.Meta maps to a subset of the
+	// samples in a stored chunk, or multiple chunks. (E.g. OOOHeadChunkReader
+	// could return an iterable where multiple histogram samples have counter
+	// resets. There can only be one counter reset per histogram chunk so
+	// multiple chunks would be created from the iterable in this case.)
+	// Only one of chunk or iterable should be returned. In some cases you may
+	// always expect a chunk to be returned. You can check that iterable is nil
+	// in those cases.
+	ChunkOrIterable(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, error)
 
 	// Close releases all underlying resources of the reader.
 	Close() error
@@ -238,7 +250,7 @@ func readMetaFile(dir string) (*BlockMeta, int64, error) {
 		return nil, 0, err
 	}
 	if m.Version != metaVersion1 {
-		return nil, 0, errors.Errorf("unexpected meta file version %d", m.Version)
+		return nil, 0, fmt.Errorf("unexpected meta file version %d", m.Version)
 	}
 
 	return &m, int64(len(b)), nil
@@ -467,14 +479,19 @@ func (r blockIndexReader) SortedLabelValues(ctx context.Context, name string, ma
 			slices.Sort(st)
 		}
 	}
-
-	return st, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
+	if err != nil {
+		return st, fmt.Errorf("block: %s: %w", r.b.Meta().ULID, err)
+	}
+	return st, nil
 }
 
 func (r blockIndexReader) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
 	if len(matchers) == 0 {
 		st, err := r.ir.LabelValues(ctx, name)
-		return st, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
+		if err != nil {
+			return st, fmt.Errorf("block: %s: %w", r.b.Meta().ULID, err)
+		}
+		return st, nil
 	}
 
 	return labelValuesWithMatchers(ctx, r.ir, name, matchers...)
@@ -491,7 +508,7 @@ func (r blockIndexReader) LabelNames(ctx context.Context, matchers ...*labels.Ma
 func (r blockIndexReader) Postings(ctx context.Context, name string, values ...string) (index.Postings, error) {
 	p, err := r.ir.Postings(ctx, name, values...)
 	if err != nil {
-		return p, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
+		return p, fmt.Errorf("block: %s: %w", r.b.Meta().ULID, err)
 	}
 	return p, nil
 }
@@ -502,7 +519,7 @@ func (r blockIndexReader) SortedPostings(p index.Postings) index.Postings {
 
 func (r blockIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
 	if err := r.ir.Series(ref, builder, chks); err != nil {
-		return errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
+		return fmt.Errorf("block: %s: %w", r.b.Meta().ULID, err)
 	}
 	return nil
 }
@@ -554,7 +571,7 @@ func (pb *Block) Delete(ctx context.Context, mint, maxt int64, ms ...*labels.Mat
 
 	p, err := PostingsForMatchers(ctx, pb.indexr, ms...)
 	if err != nil {
-		return errors.Wrap(err, "select series")
+		return fmt.Errorf("select series: %w", err)
 	}
 
 	ir := pb.indexr
@@ -642,12 +659,12 @@ func (pb *Block) CleanTombstones(dest string, c Compactor) (*ulid.ULID, bool, er
 func (pb *Block) Snapshot(dir string) error {
 	blockDir := filepath.Join(dir, pb.meta.ULID.String())
 	if err := os.MkdirAll(blockDir, 0o777); err != nil {
-		return errors.Wrap(err, "create snapshot block dir")
+		return fmt.Errorf("create snapshot block dir: %w", err)
 	}
 
 	chunksDir := chunkDir(blockDir)
 	if err := os.MkdirAll(chunksDir, 0o777); err != nil {
-		return errors.Wrap(err, "create snapshot chunk dir")
+		return fmt.Errorf("create snapshot chunk dir: %w", err)
 	}
 
 	// Hardlink meta, index and tombstones
@@ -657,7 +674,7 @@ func (pb *Block) Snapshot(dir string) error {
 		tombstones.TombstonesFilename,
 	} {
 		if err := os.Link(filepath.Join(pb.dir, fname), filepath.Join(blockDir, fname)); err != nil {
-			return errors.Wrapf(err, "create snapshot %s", fname)
+			return fmt.Errorf("create snapshot %s: %w", fname, err)
 		}
 	}
 
@@ -665,13 +682,13 @@ func (pb *Block) Snapshot(dir string) error {
 	curChunkDir := chunkDir(pb.dir)
 	files, err := os.ReadDir(curChunkDir)
 	if err != nil {
-		return errors.Wrap(err, "ReadDir the current chunk dir")
+		return fmt.Errorf("ReadDir the current chunk dir: %w", err)
 	}
 
 	for _, f := range files {
 		err := os.Link(filepath.Join(curChunkDir, f.Name()), filepath.Join(chunksDir, f.Name()))
 		if err != nil {
-			return errors.Wrap(err, "hardlink a chunk")
+			return fmt.Errorf("hardlink a chunk: %w", err)
 		}
 	}
 

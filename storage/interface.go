@@ -37,16 +37,19 @@ var (
 	// ErrTooOldSample is when out of order support is enabled but the sample is outside the time window allowed.
 	ErrTooOldSample = errors.New("too old sample")
 	// ErrDuplicateSampleForTimestamp is when the sample has same timestamp but different value.
-	ErrDuplicateSampleForTimestamp   = errors.New("duplicate sample for timestamp")
-	ErrOutOfOrderExemplar            = errors.New("out of order exemplar")
-	ErrDuplicateExemplar             = errors.New("duplicate exemplar")
-	ErrExemplarLabelLength           = fmt.Errorf("label length for exemplar exceeds maximum of %d UTF-8 characters", exemplar.ExemplarMaxLabelSetLength)
-	ErrExemplarsDisabled             = fmt.Errorf("exemplar storage is disabled or max exemplars is less than or equal to 0")
-	ErrNativeHistogramsDisabled      = fmt.Errorf("native histograms are disabled")
-	ErrHistogramCountNotBigEnough    = errors.New("histogram's observation count should be at least the number of observations found in the buckets")
-	ErrHistogramNegativeBucketCount  = errors.New("histogram has a bucket whose observation count is negative")
-	ErrHistogramSpanNegativeOffset   = errors.New("histogram has a span whose offset is negative")
-	ErrHistogramSpansBucketsMismatch = errors.New("histogram spans specify different number of buckets than provided")
+	ErrDuplicateSampleForTimestamp = errors.New("duplicate sample for timestamp")
+	ErrOutOfOrderExemplar          = errors.New("out of order exemplar")
+	ErrDuplicateExemplar           = errors.New("duplicate exemplar")
+	ErrExemplarLabelLength         = fmt.Errorf("label length for exemplar exceeds maximum of %d UTF-8 characters", exemplar.ExemplarMaxLabelSetLength)
+	ErrExemplarsDisabled           = fmt.Errorf("exemplar storage is disabled or max exemplars is less than or equal to 0")
+	ErrNativeHistogramsDisabled    = fmt.Errorf("native histograms are disabled")
+
+	// ErrOutOfOrderCT indicates failed append of CT to the storage
+	// due to CT being older the then newer sample.
+	// NOTE(bwplotka): This can be both an instrumentation failure or commonly expected
+	// behaviour, and we currently don't have a way to determine this. As a result
+	// it's recommended to ignore this error for now.
+	ErrOutOfOrderCT = fmt.Errorf("created timestamp out of order, ignoring")
 )
 
 // SeriesRef is a generic series reference. In prometheus it is either a
@@ -241,6 +244,7 @@ type Appender interface {
 	ExemplarAppender
 	HistogramAppender
 	MetadataUpdater
+	CreatedTimestampAppender
 }
 
 // GetRef is an extra interface on Appenders used by downstream projects
@@ -298,6 +302,24 @@ type MetadataUpdater interface {
 	UpdateMetadata(ref SeriesRef, l labels.Labels, m metadata.Metadata) (SeriesRef, error)
 }
 
+// CreatedTimestampAppender provides an interface for appending CT to storage.
+type CreatedTimestampAppender interface {
+	// AppendCTZeroSample adds synthetic zero sample for the given ct timestamp,
+	// which will be associated with given series, labels and the incoming
+	// sample's t (timestamp). AppendCTZeroSample returns error if zero sample can't be
+	// appended, for example when ct is too old, or when it would collide with
+	// incoming sample (sample has priority).
+	//
+	// AppendCTZeroSample has to be called before the corresponding sample Append.
+	// A series reference number is returned which can be used to modify the
+	// CT for the given series in the same or later transactions.
+	// Returned reference numbers are ephemeral and may be rejected in calls
+	// to AppendCTZeroSample() at any point.
+	//
+	// If the reference is 0 it must not be used for caching.
+	AppendCTZeroSample(ref SeriesRef, l labels.Labels, t, ct int64) (SeriesRef, error)
+}
+
 // SeriesSet contains a set of series.
 type SeriesSet interface {
 	Next() bool
@@ -327,7 +349,7 @@ func (s testSeriesSet) At() Series                        { return s.series }
 func (s testSeriesSet) Err() error                        { return nil }
 func (s testSeriesSet) Warnings() annotations.Annotations { return nil }
 
-// TestSeriesSet returns a mock series set
+// TestSeriesSet returns a mock series set.
 func TestSeriesSet(series Series) SeriesSet {
 	return testSeriesSet{series: series}
 }

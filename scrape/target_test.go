@@ -507,10 +507,25 @@ func TestBucketLimitAppender(t *testing.T) {
 		NegativeBuckets: []int64{3, 0, 0},
 	}
 
+	bigGap := histogram.Histogram{
+		Schema:        0,
+		Count:         21,
+		Sum:           33,
+		ZeroThreshold: 0.001,
+		ZeroCount:     3,
+		PositiveSpans: []histogram.Span{
+			{Offset: 1, Length: 1}, // in (1, 2]
+			{Offset: 2, Length: 1}, // in (8, 16]
+		},
+		PositiveBuckets: []int64{1, 0}, // 1, 1
+	}
+
 	cases := []struct {
-		h           histogram.Histogram
-		limit       int
-		expectError bool
+		h                 histogram.Histogram
+		limit             int
+		expectError       bool
+		expectBucketCount int
+		expectSchema      int32
 	}{
 		{
 			h:           example,
@@ -518,9 +533,25 @@ func TestBucketLimitAppender(t *testing.T) {
 			expectError: true,
 		},
 		{
-			h:           example,
-			limit:       10,
-			expectError: false,
+			h:                 example,
+			limit:             4,
+			expectError:       false,
+			expectBucketCount: 4,
+			expectSchema:      -1,
+		},
+		{
+			h:                 example,
+			limit:             10,
+			expectError:       false,
+			expectBucketCount: 6,
+			expectSchema:      0,
+		},
+		{
+			h:                 bigGap,
+			limit:             1,
+			expectError:       false,
+			expectBucketCount: 1,
+			expectSchema:      -2,
 		},
 	}
 
@@ -531,18 +562,28 @@ func TestBucketLimitAppender(t *testing.T) {
 			t.Run(fmt.Sprintf("floatHistogram=%t", floatHisto), func(t *testing.T) {
 				app := &bucketLimitAppender{Appender: resApp, limit: c.limit}
 				ts := int64(10 * time.Minute / time.Millisecond)
-				h := c.h
 				lbls := labels.FromStrings("__name__", "sparse_histogram_series")
 				var err error
 				if floatHisto {
-					_, err = app.AppendHistogram(0, lbls, ts, nil, h.Copy().ToFloat())
+					fh := c.h.Copy().ToFloat(nil)
+					_, err = app.AppendHistogram(0, lbls, ts, nil, fh)
+					if c.expectError {
+						require.Error(t, err)
+					} else {
+						require.Equal(t, c.expectSchema, fh.Schema)
+						require.Equal(t, c.expectBucketCount, len(fh.NegativeBuckets)+len(fh.PositiveBuckets))
+						require.NoError(t, err)
+					}
 				} else {
-					_, err = app.AppendHistogram(0, lbls, ts, h.Copy(), nil)
-				}
-				if c.expectError {
-					require.Error(t, err)
-				} else {
-					require.NoError(t, err)
+					h := c.h.Copy()
+					_, err = app.AppendHistogram(0, lbls, ts, h, nil)
+					if c.expectError {
+						require.Error(t, err)
+					} else {
+						require.Equal(t, c.expectSchema, h.Schema)
+						require.Equal(t, c.expectBucketCount, len(h.NegativeBuckets)+len(h.PositiveBuckets))
+						require.NoError(t, err)
+					}
 				}
 				require.NoError(t, app.Commit())
 			})

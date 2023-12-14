@@ -475,7 +475,7 @@ func (c *concreteSeriesIterator) At() (t int64, v float64) {
 	return s.Timestamp, s.Value
 }
 
-// AtHistogram implements chunkenc.Iterator
+// AtHistogram implements chunkenc.Iterator.
 func (c *concreteSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
 	if c.curValType != chunkenc.ValHistogram {
 		panic("iterator is not on an integer histogram sample")
@@ -484,7 +484,7 @@ func (c *concreteSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
 	return h.Timestamp, HistogramProtoToHistogram(h)
 }
 
-// AtFloatHistogram implements chunkenc.Iterator
+// AtFloatHistogram implements chunkenc.Iterator.
 func (c *concreteSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
 	switch c.curValType {
 	case chunkenc.ValHistogram:
@@ -547,7 +547,7 @@ func (c *concreteSeriesIterator) Err() error {
 }
 
 // validateLabelsAndMetricName validates the label names/values and metric names returned from remote read,
-// also making sure that there are no labels with duplicate names
+// also making sure that there are no labels with duplicate names.
 func validateLabelsAndMetricName(ls []prompb.Label) error {
 	for i, l := range ls {
 		if l.Name == labels.MetricName && !model.IsValidMetricName(model.LabelValue(l.Value)) {
@@ -752,7 +752,7 @@ func spansToSpansProto(s []histogram.Span) []prompb.BucketSpan {
 	return spans
 }
 
-// LabelProtosToMetric unpack a []*prompb.Label to a model.Metric
+// LabelProtosToMetric unpack a []*prompb.Label to a model.Metric.
 func LabelProtosToMetric(labelPairs []*prompb.Label) model.Metric {
 	metric := make(model.Metric, len(labelPairs))
 	for _, l := range labelPairs {

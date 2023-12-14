@@ -238,23 +238,23 @@ boundaries are inclusive or exclusive.
 ## `histogram_quantile()`
 
 `histogram_quantile(φ scalar, b instant-vector)` calculates the φ-quantile (0 ≤
-φ ≤ 1) from a [conventional
+φ ≤ 1) from a [classic
 histogram](https://prometheus.io/docs/concepts/metric_types/#histogram) or from
 a native histogram. (See [histograms and
 summaries](https://prometheus.io/docs/practices/histograms) for a detailed
-explanation of φ-quantiles and the usage of the (conventional) histogram metric
+explanation of φ-quantiles and the usage of the (classic) histogram metric
 type in general.)
 
 _Note that native histograms are an experimental feature. The behavior of this
 function when dealing with native histograms may change in future versions of
 Prometheus._
 
-The conventional float samples in `b` are considered the counts of observations
-in each bucket of one or more conventional histograms. Each float sample must
-have a label `le` where the label value denotes the inclusive upper bound of
-the bucket. (Float samples without such a label are silently ignored.) The
-other labels and the metric name are used to identify the buckets belonging to
-each conventional histogram. The [histogram metric
+The float samples in `b` are considered the counts of observations in each
+bucket of one or more classic histograms. Each float sample must have a label
+`le` where the label value denotes the inclusive upper bound of the bucket.
+(Float samples without such a label are silently ignored.) The other labels and
+the metric name are used to identify the buckets belonging to each classic
+histogram. The [histogram metric
 type](https://prometheus.io/docs/concepts/metric_types/#histogram)
 automatically provides time series with the `_bucket` suffix and the
 appropriate labels.
@@ -262,17 +262,17 @@ appropriate labels.
 The native histogram samples in `b` are treated each individually as a separate
 histogram to calculate the quantile from.
 
-As long as no naming collisions arise, `b` may contain a mix of conventional
+As long as no naming collisions arise, `b` may contain a mix of classic
 and native histograms.
 
 Use the `rate()` function to specify the time window for the quantile
 calculation.
 
 Example: A histogram metric is called `http_request_duration_seconds` (and
-therefore the metric name for the buckets of a conventional histogram is
+therefore the metric name for the buckets of a classic histogram is
 `http_request_duration_seconds_bucket`). To calculate the 90th percentile of request
 durations over the last 10m, use the following expression in case
-`http_request_duration_seconds` is a conventional histogram:
+`http_request_duration_seconds` is a classic histogram:
 
     histogram_quantile(0.9, rate(http_request_duration_seconds_bucket[10m]))
 
@@ -283,9 +283,9 @@ For a native histogram, use the following expression instead:
 The quantile is calculated for each label combination in
 `http_request_duration_seconds`. To aggregate, use the `sum()` aggregator
 around the `rate()` function. Since the `le` label is required by
-`histogram_quantile()` to deal with conventional histograms, it has to be
+`histogram_quantile()` to deal with classic histograms, it has to be
 included in the `by` clause. The following expression aggregates the 90th
-percentile by `job` for conventional histograms:
+percentile by `job` for classic histograms:
 
     histogram_quantile(0.9, sum by (job, le) (rate(http_request_duration_seconds_bucket[10m])))
 	
@@ -293,7 +293,7 @@ When aggregating native histograms, the expression simplifies to:
 
     histogram_quantile(0.9, sum by (job) (rate(http_request_duration_seconds[10m])))
 
-To aggregate all conventional histograms, specify only the `le` label:
+To aggregate all classic histograms, specify only the `le` label:
 
     histogram_quantile(0.9, sum by (le) (rate(http_request_duration_seconds_bucket[10m])))
 
@@ -307,7 +307,7 @@ assuming a linear distribution within a bucket.
 If `b` has 0 observations, `NaN` is returned. For φ < 0, `-Inf` is
 returned. For φ > 1, `+Inf` is returned. For φ = `NaN`, `NaN` is returned.
 
-The following is only relevant for conventional histograms: If `b` contains
+The following is only relevant for classic histograms: If `b` contains
 fewer than two buckets, `NaN` is returned. The highest bucket must have an
 upper bound of `+Inf`. (Otherwise, `NaN` is returned.) If a quantile is located
 in the highest bucket, the upper bound of the second highest bucket is
@@ -322,6 +322,24 @@ a histogram.
 
 You can use `histogram_quantile(1, v instant-vector)` to get the estimated maximum value stored in
 a histogram.
+
+Buckets of classic histograms are cumulative. Therefore, the following should always be the case:
+
+- The counts in the buckets are monotonically increasing (strictly non-decreasing).
+- A lack of observations between the upper limits of two consecutive buckets results in equal counts
+in those two buckets.
+
+However, floating point precision issues (e.g. small discrepancies introduced by computing of buckets
+with `sum(rate(...))`) or invalid data might violate these assumptions. In that case,
+`histogram_quantile` would be unable to return meaningful results. To mitigate the issue,
+`histogram_quantile` assumes that tiny relative differences between consecutive buckets are happening
+because of floating point precision errors and ignores them. (The threshold to ignore a difference
+between two buckets is a trillionth (1e-12) of the sum of both buckets.) Furthermore, if there are
+non-monotonic bucket counts even after this adjustment, they are increased to the value of the
+previous buckets to enforce monotonicity. The latter is evidence for an actual issue with the input
+data and is therefore flagged with an informational annotation reading `input to histogram_quantile
+needed to be fixed for monotonicity`. If you encounter this annotation, you should find and remove
+the source of the invalid data.
 
 ## `histogram_stddev()` and `histogram_stdvar()`
 
@@ -568,6 +586,22 @@ in ascending order. Native histograms are sorted by their sum of observations.
 
 Same as `sort`, but sorts in descending order.
 
+## `sort_by_label()`
+
+**This function has to be enabled via the [feature flag](../feature_flags/) `--enable-feature=promql-experimental-functions`.**
+
+`sort_by_label(v instant-vector, label string, ...)` returns vector elements sorted by their label values and sample value in case of label values being equal, in ascending order.
+
+Please note that the sort by label functions only affect the results of instant queries, as range query results always have a fixed output ordering.
+
+## `sort_by_label_desc()`
+
+**This function has to be enabled via the [feature flag](../feature_flags/) `--enable-feature=promql-experimental-functions`.**
+
+Same as `sort_by_label`, but sorts in descending order.
+
+Please note that the sort by label functions only affect the results of instant queries, as range query results always have a fixed output ordering.
+
 ## `sqrt()`
 
 `sqrt(v instant-vector)` calculates the square root of all elements in `v`.
@@ -606,6 +640,7 @@ over time and return an instant vector with per-series aggregation results:
 * `quantile_over_time(scalar, range-vector)`: the φ-quantile (0 ≤ φ ≤ 1) of the values in the specified interval.
 * `stddev_over_time(range-vector)`: the population standard deviation of the values in the specified interval.
 * `stdvar_over_time(range-vector)`: the population standard variance of the values in the specified interval.
+* `mad_over_time(range-vector)`: the median absolute deviation of all points in the specified interval.
 * `last_over_time(range-vector)`: the most recent point value in the specified interval.
 * `present_over_time(range-vector)`: the value 1 for any series in the specified interval.
 

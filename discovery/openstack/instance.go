@@ -145,16 +145,16 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 				openstackLabelUserID:         model.LabelValue(s.UserID),
 			}
 
-			flavorId, ok := s.Flavor["id"].(string)
+			flavorID, ok := s.Flavor["id"].(string)
 			if !ok {
 				level.Warn(i.logger).Log("msg", "Invalid type for flavor id, expected string")
 				continue
 			}
-			labels[openstackLabelInstanceFlavor] = model.LabelValue(flavorId)
+			labels[openstackLabelInstanceFlavor] = model.LabelValue(flavorID)
 
-			imageId, ok := s.Image["id"].(string)
+			imageID, ok := s.Image["id"].(string)
 			if ok {
-				labels[openstackLabelInstanceImage] = model.LabelValue(imageId)
+				labels[openstackLabelInstanceImage] = model.LabelValue(imageID)
 			}
 
 			for k, v := range s.Metadata {

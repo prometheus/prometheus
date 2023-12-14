@@ -136,7 +136,7 @@ func TestClientRetryAfter(t *testing.T) {
 			err = c.Store(context.Background(), []byte{}, 0)
 			require.Equal(t, tc.expectedRecoverable, errors.As(err, &recErr), "Mismatch in expected recoverable error status.")
 			if tc.expectedRecoverable {
-				require.Equal(t, tc.expectedRetryAfter, err.(RecoverableError).retryAfter)
+				require.Equal(t, tc.expectedRetryAfter, recErr.retryAfter)
 			}
 		})
 	}
@@ -167,4 +167,44 @@ func TestRetryAfterDuration(t *testing.T) {
 	for _, c := range tc {
 		require.Equal(t, c.expected, retryAfterDuration(c.tInput), c.name)
 	}
+}
+
+func TestClientHeaders(t *testing.T) {
+	headersToSend := map[string]string{"Foo": "Bar", "Baz": "qux"}
+
+	var called bool
+	server := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			called = true
+			receivedHeaders := r.Header
+			for name, value := range headersToSend {
+				require.Equal(
+					t,
+					[]string{value},
+					receivedHeaders.Values(name),
+					"expected %v to be part of the received headers %v",
+					headersToSend,
+					receivedHeaders,
+				)
+			}
+		}),
+	)
+	defer server.Close()
+
+	serverURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+
+	conf := &ClientConfig{
+		URL:     &config_util.URL{URL: serverURL},
+		Timeout: model.Duration(time.Second),
+		Headers: headersToSend,
+	}
+
+	c, err := NewWriteClient("c", conf)
+	require.NoError(t, err)
+
+	err = c.Store(context.Background(), []byte{}, 0)
+	require.NoError(t, err)
+
+	require.True(t, called, "The remote server wasn't called")
 }

@@ -245,6 +245,12 @@ func (p *PromParser) Exemplar(*exemplar.Exemplar) bool {
 	return false
 }
 
+// CreatedTimestamp returns nil as it's not implemented yet.
+// TODO(bwplotka): https://github.com/prometheus/prometheus/issues/12980
+func (p *PromParser) CreatedTimestamp() *int64 {
+	return nil
+}
+
 // nextToken returns the next token from the promlexer. It skips over tabs
 // and spaces.
 func (p *PromParser) nextToken() token {

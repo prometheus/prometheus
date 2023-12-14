@@ -64,6 +64,11 @@ type Parser interface {
 	// retrieved (including the case where no exemplars exist at all).
 	Exemplar(l *exemplar.Exemplar) bool
 
+	// CreatedTimestamp returns the created timestamp (in milliseconds) for the
+	// current sample. It returns nil if it is unknown e.g. if it wasn't set,
+	// if the scrape protocol or metric type does not support created timestamps.
+	CreatedTimestamp() *int64
+
 	// Next advances the parser to the next sample. It returns false if no
 	// more samples were read or an error occurred.
 	Next() (Entry, error)
