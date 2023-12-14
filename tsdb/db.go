@@ -21,6 +21,7 @@ import (
 	"io"
 	"io/fs"
 	"math"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"slices"
@@ -85,6 +86,8 @@ func DefaultOptions() *Options {
 		OutOfOrderCapMax:            DefaultOutOfOrderCapMax,
 		EnableOverlappingCompaction: true,
 		EnableSharding:              false,
+		EnableDelayedCompaction:     false,
+		CompactionDelay:             time.Duration(0),
 	}
 }
 
@@ -190,6 +193,11 @@ type Options struct {
 
 	// EnableSharding enables query sharding support in TSDB.
 	EnableSharding bool
+
+	// Shifts the auto compactions start time by a random offset.
+	// This offset can be increased by up to one minute if the database does not commit too often.
+	EnableDelayedCompaction bool
+	CompactionDelay         time.Duration
 }
 
 type BlocksToDeleteFunc func(blocks []*Block) map[ulid.ULID]struct{}
@@ -231,6 +239,9 @@ type DB struct {
 
 	// Cancel a running compaction when a shutdown is initiated.
 	compactCancel context.CancelFunc
+
+	// timeWhenCompactionDelayStarted helps delay the compactions start time.
+	timeWhenCompactionDelayStarted time.Time
 
 	// oooWasEnabled is true if out of order support was enabled at least one time
 	// during the time TSDB was up. In which case we need to keep supporting
@@ -939,6 +950,10 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 		db.oooWasEnabled.Store(true)
 	}
 
+	if opts.EnableDelayedCompaction {
+		opts.CompactionDelay = db.generateCompactionDelay()
+	}
+
 	go db.run(ctx)
 
 	return db, nil
@@ -1160,7 +1175,21 @@ func (db *DB) Compact(ctx context.Context) (returnErr error) {
 			return nil
 		default:
 		}
+
 		if !db.head.compactable() {
+			// Reset the counter once the head compactions are done.
+			// This would also reset it if a manual compaction was triggered while the auto compaction was in its delay period.
+			if !db.timeWhenCompactionDelayStarted.IsZero() {
+				db.timeWhenCompactionDelayStarted = time.Time{}
+			}
+			break
+		}
+
+		if db.timeWhenCompactionDelayStarted.IsZero() {
+			// Start counting for the delay.
+			db.timeWhenCompactionDelayStarted = time.Now()
+		}
+		if time.Since(db.timeWhenCompactionDelayStarted) < db.opts.CompactionDelay {
 			break
 		}
 		mint := db.head.MinTime()
@@ -1857,6 +1886,11 @@ func (db *DB) EnableCompactions() {
 
 	db.autoCompact = true
 	level.Info(db.logger).Log("msg", "Compactions enabled")
+}
+
+func (db *DB) generateCompactionDelay() time.Duration {
+	// Up to 10% of the head's chunkRange.
+	return time.Duration(rand.Int63n(db.head.chunkRange.Load()/10)) * time.Millisecond
 }
 
 // ForceHeadMMap is intended for use only in tests and benchmarks.

@@ -6949,3 +6949,25 @@ func requireEqualOOOSamples(t *testing.T, expectedSamples int, db *DB) {
 		prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamplesAppended.WithLabelValues(sampleMetricTypeFloat)),
 		"number of ooo appended samples mismatch")
 }
+
+func TestGenerateCompactionDelay(t *testing.T) {
+	assertDelay := func(delay time.Duration) {
+		t.Helper()
+		require.GreaterOrEqual(t, delay, time.Duration(0))
+		// Less than 10% of the chunkRange.
+		require.LessOrEqual(t, delay, 6000*time.Millisecond)
+	}
+
+	opts := DefaultOptions()
+	opts.EnableDelayedCompaction = true
+	db := openTestDB(t, opts, []int64{60000})
+	defer func() {
+		require.NoError(t, db.Close())
+	}()
+	// The offset is generated and changed while opening.
+	assertDelay(db.opts.CompactionDelay)
+
+	for i := 0; i < 1000; i++ {
+		assertDelay(db.generateCompactionDelay())
+	}
+}
