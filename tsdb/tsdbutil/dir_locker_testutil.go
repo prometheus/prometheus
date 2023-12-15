@@ -60,8 +60,7 @@ func TestDirLockerUsage(t *testing.T, open func(t *testing.T, data string, creat
 
 	for _, c := range cases {
 		t.Run(fmt.Sprintf("%+v", c), func(t *testing.T) {
-			tmpdir, err := os.MkdirTemp("", "test")
-			require.NoError(t, err)
+			tmpdir := t.TempDir()
 			t.Cleanup(func() {
 				require.NoError(t, os.RemoveAll(tmpdir))
 			})
@@ -82,7 +81,7 @@ func TestDirLockerUsage(t *testing.T, open func(t *testing.T, data string, creat
 
 			// Check that the lockfile is always deleted
 			if !c.lockFileDisabled {
-				_, err = os.Stat(locker.path)
+				_, err := os.Stat(locker.path)
 				require.True(t, os.IsNotExist(err), "lockfile was not deleted")
 			}
 		})
