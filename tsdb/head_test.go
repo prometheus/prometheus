@@ -11,7 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// nolint:revive // Many legitimately empty blocks in this file.
 package tsdb
 
 import (
@@ -23,6 +22,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -30,9 +30,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
@@ -191,6 +191,10 @@ func readTestWAL(t testing.TB, dir string) (recs []interface{}) {
 			meta, err := dec.Metadata(rec, nil)
 			require.NoError(t, err)
 			recs = append(recs, meta)
+		case record.Exemplars:
+			exemplars, err := dec.Exemplars(rec, nil)
+			require.NoError(t, err)
+			recs = append(recs, exemplars)
 		default:
 			t.Fatalf("unknown record type")
 		}
@@ -693,7 +697,7 @@ func TestHead_ReadWAL(t *testing.T) {
 			require.NoError(t, err)
 			e, err := q.Select(0, 1000, []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "1")})
 			require.NoError(t, err)
-			require.Equal(t, e[0].Exemplars[0], exemplar.Exemplar{Ts: 100, Value: 1, Labels: labels.FromStrings("traceID", "asdf")})
+			require.Equal(t, exemplar.Exemplar{Ts: 100, Value: 1, Labels: labels.FromStrings("traceID", "asdf")}, e[0].Exemplars[0])
 		})
 	}
 }
@@ -1082,12 +1086,12 @@ func TestMemSeries_truncateChunks_scenarios(t *testing.T) {
 			} else {
 				require.Nil(t, series.headChunks, "head chunk is present")
 			}
-			require.Equal(t, tc.mmappedChunks, len(series.mmappedChunks), "wrong number of mmapped chunks")
+			require.Len(t, series.mmappedChunks, tc.mmappedChunks, "wrong number of mmapped chunks")
 
 			truncated := series.truncateChunksBefore(tc.truncateBefore, 0)
 			require.Equal(t, tc.expectedTruncated, truncated, "wrong number of truncated chunks returned")
 
-			require.Equal(t, tc.expectedMmap, len(series.mmappedChunks), "wrong number of mmappedChunks after truncation")
+			require.Len(t, series.mmappedChunks, tc.expectedMmap, "wrong number of mmappedChunks after truncation")
 
 			if tc.expectedHead > 0 {
 				require.NotNil(t, series.headChunks, "headChunks should is nil after truncation")
@@ -1252,7 +1256,7 @@ func TestHeadDeleteSimple(t *testing.T) {
 						if !eok {
 							require.NoError(t, h.Close())
 							require.NoError(t, actSeriesSet.Err())
-							require.Equal(t, 0, len(actSeriesSet.Warnings()))
+							require.Empty(t, actSeriesSet.Warnings())
 							continue Outer
 						}
 						expSeries := expSeriesSet.At()
@@ -1300,7 +1304,7 @@ func TestDeleteUntilCurMax(t *testing.T) {
 	for res.Next() {
 	}
 	require.NoError(t, res.Err())
-	require.Equal(t, 0, len(res.Warnings()))
+	require.Empty(t, res.Warnings())
 
 	// Add again and test for presence.
 	app = hb.Appender(context.Background())
@@ -1319,7 +1323,7 @@ func TestDeleteUntilCurMax(t *testing.T) {
 	for res.Next() {
 	}
 	require.NoError(t, res.Err())
-	require.Equal(t, 0, len(res.Warnings()))
+	require.Empty(t, res.Warnings())
 }
 
 func TestDeletedSamplesAndSeriesStillInWALAfterCheckpoint(t *testing.T) {
@@ -1520,7 +1524,7 @@ func TestDelete_e2e(t *testing.T) {
 				require.Equal(t, smplExp, smplRes)
 			}
 			require.NoError(t, ss.Err())
-			require.Equal(t, 0, len(ss.Warnings()))
+			require.Empty(t, ss.Warnings())
 		}
 	}
 }
@@ -1650,7 +1654,7 @@ func TestMemSeries_append(t *testing.T) {
 	require.False(t, chunkCreated, "second sample should use same chunk")
 
 	s.mmapChunks(chunkDiskMapper)
-	require.Equal(t, 1, len(s.mmappedChunks), "there should be only 1 mmapped chunk")
+	require.Len(t, s.mmappedChunks, 1, "there should be only 1 mmapped chunk")
 	require.Equal(t, int64(998), s.mmappedChunks[0].minTime, "wrong chunk range")
 	require.Equal(t, int64(999), s.mmappedChunks[0].maxTime, "wrong chunk range")
 	require.Equal(t, int64(1000), s.headChunks.minTime, "wrong chunk range")
@@ -1717,7 +1721,7 @@ func TestMemSeries_appendHistogram(t *testing.T) {
 	require.False(t, chunkCreated, "second sample should use same chunk")
 
 	s.mmapChunks(chunkDiskMapper)
-	require.Equal(t, 1, len(s.mmappedChunks), "there should be only 1 mmapped chunk")
+	require.Len(t, s.mmappedChunks, 1, "there should be only 1 mmapped chunk")
 	require.Equal(t, int64(998), s.mmappedChunks[0].minTime, "wrong chunk range")
 	require.Equal(t, int64(999), s.mmappedChunks[0].maxTime, "wrong chunk range")
 	require.Equal(t, int64(1000), s.headChunks.minTime, "wrong chunk range")
@@ -1728,7 +1732,7 @@ func TestMemSeries_appendHistogram(t *testing.T) {
 	require.False(t, chunkCreated, "third sample should trigger a re-encoded chunk")
 
 	s.mmapChunks(chunkDiskMapper)
-	require.Equal(t, 1, len(s.mmappedChunks), "there should be only 1 mmapped chunk")
+	require.Len(t, s.mmappedChunks, 1, "there should be only 1 mmapped chunk")
 	require.Equal(t, int64(998), s.mmappedChunks[0].minTime, "wrong chunk range")
 	require.Equal(t, int64(999), s.mmappedChunks[0].maxTime, "wrong chunk range")
 	require.Equal(t, int64(1000), s.headChunks.minTime, "wrong chunk range")
@@ -1827,20 +1831,20 @@ func TestGCChunkAccess(t *testing.T) {
 	require.NoError(t, idx.Series(1, &builder, &chunks))
 
 	require.Equal(t, labels.FromStrings("a", "1"), builder.Labels())
-	require.Equal(t, 2, len(chunks))
+	require.Len(t, chunks, 2)
 
 	cr, err := h.chunksRange(0, 1500, nil)
 	require.NoError(t, err)
-	_, err = cr.Chunk(chunks[0])
+	_, _, err = cr.ChunkOrIterable(chunks[0])
 	require.NoError(t, err)
-	_, err = cr.Chunk(chunks[1])
+	_, _, err = cr.ChunkOrIterable(chunks[1])
 	require.NoError(t, err)
 
 	require.NoError(t, h.Truncate(1500)) // Remove a chunk.
 
-	_, err = cr.Chunk(chunks[0])
+	_, _, err = cr.ChunkOrIterable(chunks[0])
 	require.Equal(t, storage.ErrNotFound, err)
-	_, err = cr.Chunk(chunks[1])
+	_, _, err = cr.ChunkOrIterable(chunks[1])
 	require.NoError(t, err)
 }
 
@@ -1886,22 +1890,22 @@ func TestGCSeriesAccess(t *testing.T) {
 	require.NoError(t, idx.Series(1, &builder, &chunks))
 
 	require.Equal(t, labels.FromStrings("a", "1"), builder.Labels())
-	require.Equal(t, 2, len(chunks))
+	require.Len(t, chunks, 2)
 
 	cr, err := h.chunksRange(0, 2000, nil)
 	require.NoError(t, err)
-	_, err = cr.Chunk(chunks[0])
+	_, _, err = cr.ChunkOrIterable(chunks[0])
 	require.NoError(t, err)
-	_, err = cr.Chunk(chunks[1])
+	_, _, err = cr.ChunkOrIterable(chunks[1])
 	require.NoError(t, err)
 
 	require.NoError(t, h.Truncate(2000)) // Remove the series.
 
 	require.Equal(t, (*memSeries)(nil), h.series.getByID(1))
 
-	_, err = cr.Chunk(chunks[0])
+	_, _, err = cr.ChunkOrIterable(chunks[0])
 	require.Equal(t, storage.ErrNotFound, err)
-	_, err = cr.Chunk(chunks[1])
+	_, _, err = cr.ChunkOrIterable(chunks[1])
 	require.Equal(t, storage.ErrNotFound, err)
 }
 
@@ -1928,11 +1932,11 @@ func TestUncommittedSamplesNotLostOnTruncate(t *testing.T) {
 	defer q.Close()
 
 	ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "1"))
-	require.Equal(t, true, ss.Next())
+	require.True(t, ss.Next())
 	for ss.Next() {
 	}
 	require.NoError(t, ss.Err())
-	require.Equal(t, 0, len(ss.Warnings()))
+	require.Empty(t, ss.Warnings())
 }
 
 func TestRemoveSeriesAfterRollbackAndTruncate(t *testing.T) {
@@ -1957,8 +1961,8 @@ func TestRemoveSeriesAfterRollbackAndTruncate(t *testing.T) {
 	require.NoError(t, err)
 
 	ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "1"))
-	require.Equal(t, false, ss.Next())
-	require.Equal(t, 0, len(ss.Warnings()))
+	require.False(t, ss.Next())
+	require.Empty(t, ss.Warnings())
 	require.NoError(t, q.Close())
 
 	// Truncate again, this time the series should be deleted
@@ -1981,7 +1985,7 @@ func TestHead_LogRollback(t *testing.T) {
 			require.NoError(t, app.Rollback())
 			recs := readTestWAL(t, w.Dir())
 
-			require.Equal(t, 1, len(recs))
+			require.Len(t, recs, 1)
 
 			series, ok := recs[0].([]record.RefSeries)
 			require.True(t, ok, "expected series record but got %+v", recs[0])
@@ -2051,9 +2055,8 @@ func TestWalRepair_DecodingError(t *testing.T) {
 					require.Equal(t, 0.0, prom_testutil.ToFloat64(h.metrics.walCorruptionsTotal))
 					initErr := h.Init(math.MinInt64)
 
-					err = errors.Cause(initErr) // So that we can pick up errors even if wrapped.
-					_, corrErr := err.(*wlog.CorruptionErr)
-					require.True(t, corrErr, "reading the wal didn't return corruption error")
+					var cerr *wlog.CorruptionErr
+					require.ErrorAs(t, initErr, &cerr, "reading the wal didn't return corruption error")
 					require.NoError(t, h.Close()) // Head will close the wal as well.
 				}
 
@@ -2124,12 +2127,11 @@ func TestWblRepair_DecodingError(t *testing.T) {
 		require.Equal(t, 0.0, prom_testutil.ToFloat64(h.metrics.walCorruptionsTotal))
 		initErr := h.Init(math.MinInt64)
 
-		_, ok := initErr.(*errLoadWbl)
-		require.True(t, ok) // Wbl errors are wrapped into errLoadWbl, make sure we can unwrap it.
+		var elb *errLoadWbl
+		require.ErrorAs(t, initErr, &elb) // Wbl errors are wrapped into errLoadWbl, make sure we can unwrap it.
 
-		err = errors.Cause(initErr) // So that we can pick up errors even if wrapped.
-		_, corrErr := err.(*wlog.CorruptionErr)
-		require.True(t, corrErr, "reading the wal didn't return corruption error")
+		var cerr *wlog.CorruptionErr
+		require.ErrorAs(t, initErr, &cerr, "reading the wal didn't return corruption error")
 		require.NoError(t, h.Close()) // Head will close the wal as well.
 	}
 
@@ -2205,7 +2207,7 @@ func TestHeadReadWriterRepair(t *testing.T) {
 		// take effect without another chunk being written.
 		files, err := os.ReadDir(mmappedChunksDir(dir))
 		require.NoError(t, err)
-		require.Equal(t, 6, len(files))
+		require.Len(t, files, 6)
 
 		// Corrupt the 4th file by writing a random byte to series ref.
 		f, err := os.OpenFile(filepath.Join(mmappedChunksDir(dir), files[3].Name()), os.O_WRONLY, 0o666)
@@ -2231,7 +2233,7 @@ func TestHeadReadWriterRepair(t *testing.T) {
 	{
 		files, err := os.ReadDir(mmappedChunksDir(dir))
 		require.NoError(t, err)
-		require.Equal(t, 3, len(files))
+		require.Len(t, files, 3)
 	}
 }
 
@@ -2317,7 +2319,7 @@ func TestMemSeriesIsolation(t *testing.T) {
 		ss := querier.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 		_, seriesSet, ws, err := expandSeriesSet(ss)
 		require.NoError(t, err)
-		require.Equal(t, 0, len(ws))
+		require.Empty(t, ws)
 
 		for _, series := range seriesSet {
 			return int(series[len(series)-1].f)
@@ -2721,8 +2723,8 @@ func TestHeadLabelNamesValuesWithMinMaxRange(t *testing.T) {
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
-	require.Equal(t, head.MinTime(), firstSeriesTimestamp)
-	require.Equal(t, head.MaxTime(), lastSeriesTimestamp)
+	require.Equal(t, firstSeriesTimestamp, head.MinTime())
+	require.Equal(t, lastSeriesTimestamp, head.MaxTime())
 
 	testCases := []struct {
 		name           string
@@ -3003,7 +3005,7 @@ func BenchmarkHeadLabelValuesWithMatchers(b *testing.B) {
 	for benchIdx := 0; benchIdx < b.N; benchIdx++ {
 		actualValues, err := headIdxReader.LabelValues(ctx, "b_tens", matchers...)
 		require.NoError(b, err)
-		require.Equal(b, 9, len(actualValues))
+		require.Len(b, actualValues, 9)
 	}
 }
 
@@ -3111,7 +3113,7 @@ func TestChunkNotFoundHeadGCRace(t *testing.T) {
 		defer wg.Done()
 		// Compacting head while the querier spans the compaction time.
 		require.NoError(t, db.Compact(ctx))
-		require.Greater(t, len(db.Blocks()), 0)
+		require.NotEmpty(t, db.Blocks())
 	}()
 
 	// Give enough time for compaction to finish.
@@ -3174,7 +3176,7 @@ func TestDataMissingOnQueryDuringCompaction(t *testing.T) {
 		defer wg.Done()
 		// Compacting head while the querier spans the compaction time.
 		require.NoError(t, db.Compact(ctx))
-		require.Greater(t, len(db.Blocks()), 0)
+		require.NotEmpty(t, db.Blocks())
 	}()
 
 	// Give enough time for compaction to finish.
@@ -3420,7 +3422,6 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 			hists = tsdbutil.GenerateTestHistograms(numHistograms)
 		}
 		for _, h := range hists {
-			h.Count *= 2
 			h.NegativeSpans = h.PositiveSpans
 			h.NegativeBuckets = h.PositiveBuckets
 			_, err := app.AppendHistogram(0, s1, ts, h, nil)
@@ -3443,7 +3444,6 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 			hists = tsdbutil.GenerateTestFloatHistograms(numHistograms)
 		}
 		for _, h := range hists {
-			h.Count *= 2
 			h.NegativeSpans = h.PositiveSpans
 			h.NegativeBuckets = h.PositiveBuckets
 			_, err := app.AppendHistogram(0, s1, ts, nil, h)
@@ -3485,7 +3485,6 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 		}
 		for _, h := range hists {
 			ts++
-			h.Count *= 2
 			h.NegativeSpans = h.PositiveSpans
 			h.NegativeBuckets = h.PositiveBuckets
 			_, err := app.AppendHistogram(0, s2, ts, h, nil)
@@ -3522,7 +3521,6 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 		}
 		for _, h := range hists {
 			ts++
-			h.Count *= 2
 			h.NegativeSpans = h.PositiveSpans
 			h.NegativeBuckets = h.PositiveBuckets
 			_, err := app.AppendHistogram(0, s2, ts, nil, h)
@@ -3907,7 +3905,7 @@ func TestSnapshotError(t *testing.T) {
 	require.NotNil(t, head.series.getByHash(lbls.Hash(), lbls))
 	tm, err := head.tombstones.Get(1)
 	require.NoError(t, err)
-	require.NotEqual(t, 0, len(tm))
+	require.NotEmpty(t, tm)
 
 	head.opts.EnableMemorySnapshotOnShutdown = true
 	require.NoError(t, head.Close()) // This will create a snapshot.
@@ -3939,7 +3937,7 @@ func TestSnapshotError(t *testing.T) {
 	require.Nil(t, head.series.getByHash(lbls.Hash(), lbls))
 	tm, err = head.tombstones.Get(1)
 	require.NoError(t, err)
-	require.Equal(t, 0, len(tm))
+	require.Empty(t, tm)
 }
 
 func TestHistogramMetrics(t *testing.T) {
@@ -4082,8 +4080,8 @@ func testHistogramStaleSampleHelper(t *testing.T, floatHistogram bool) {
 	for _, h := range tsdbutil.GenerateTestHistograms(numHistograms) {
 		var err error
 		if floatHistogram {
-			_, err = app.AppendHistogram(0, l, 100*int64(len(expHistograms)), nil, h.ToFloat())
-			expHistograms = append(expHistograms, timedHistogram{t: 100 * int64(len(expHistograms)), fh: h.ToFloat()})
+			_, err = app.AppendHistogram(0, l, 100*int64(len(expHistograms)), nil, h.ToFloat(nil))
+			expHistograms = append(expHistograms, timedHistogram{t: 100 * int64(len(expHistograms)), fh: h.ToFloat(nil)})
 		} else {
 			_, err = app.AppendHistogram(0, l, 100*int64(len(expHistograms)), h, nil)
 			expHistograms = append(expHistograms, timedHistogram{t: 100 * int64(len(expHistograms)), h: h})
@@ -4104,8 +4102,8 @@ func testHistogramStaleSampleHelper(t *testing.T, floatHistogram bool) {
 	s := head.series.getByHash(l.Hash(), l)
 	require.NotNil(t, s)
 	require.NotNil(t, s.headChunks)
-	require.Equal(t, s.headChunks.len(), 1)
-	require.Equal(t, 0, len(s.mmappedChunks))
+	require.Equal(t, 1, s.headChunks.len())
+	require.Empty(t, s.mmappedChunks)
 	testQuery(1)
 
 	// Adding stale in different appender and continuing series after a stale sample.
@@ -4113,8 +4111,8 @@ func testHistogramStaleSampleHelper(t *testing.T, floatHistogram bool) {
 	for _, h := range tsdbutil.GenerateTestHistograms(2 * numHistograms)[numHistograms:] {
 		var err error
 		if floatHistogram {
-			_, err = app.AppendHistogram(0, l, 100*int64(len(expHistograms)), nil, h.ToFloat())
-			expHistograms = append(expHistograms, timedHistogram{t: 100 * int64(len(expHistograms)), fh: h.ToFloat()})
+			_, err = app.AppendHistogram(0, l, 100*int64(len(expHistograms)), nil, h.ToFloat(nil))
+			expHistograms = append(expHistograms, timedHistogram{t: 100 * int64(len(expHistograms)), fh: h.ToFloat(nil)})
 		} else {
 			_, err = app.AppendHistogram(0, l, 100*int64(len(expHistograms)), h, nil)
 			expHistograms = append(expHistograms, timedHistogram{t: 100 * int64(len(expHistograms)), h: h})
@@ -4139,8 +4137,8 @@ func testHistogramStaleSampleHelper(t *testing.T, floatHistogram bool) {
 	s = head.series.getByHash(l.Hash(), l)
 	require.NotNil(t, s)
 	require.NotNil(t, s.headChunks)
-	require.Equal(t, s.headChunks.len(), 1)
-	require.Equal(t, 1, len(s.mmappedChunks))
+	require.Equal(t, 1, s.headChunks.len())
+	require.Len(t, s.mmappedChunks, 1)
 	testQuery(2)
 }
 
@@ -4160,7 +4158,7 @@ func TestHistogramCounterResetHeader(t *testing.T) {
 				app := head.Appender(context.Background())
 				var err error
 				if floatHisto {
-					_, err = app.AppendHistogram(0, l, ts, nil, h.ToFloat())
+					_, err = app.AppendHistogram(0, l, ts, nil, h.ToFloat(nil))
 				} else {
 					_, err = app.AppendHistogram(0, l, ts, h.Copy(), nil)
 				}
@@ -4480,7 +4478,7 @@ func TestChunkSnapshotReplayBug(t *testing.T) {
 		labels.MustNewMatcher(labels.MatchEqual, "__name__", "request_duration"),
 		labels.MustNewMatcher(labels.MatchNotEqual, "status_code", "200"),
 	)
-	require.Len(t, series, 0, "there should be no series found")
+	require.Empty(t, series, "there should be no series found")
 }
 
 func TestChunkSnapshotTakenAfterIncompleteSnapshot(t *testing.T) {
@@ -4514,7 +4512,7 @@ func TestChunkSnapshotTakenAfterIncompleteSnapshot(t *testing.T) {
 	// Verify the snapshot.
 	name, idx, offset, err := LastChunkSnapshot(dir)
 	require.NoError(t, err)
-	require.True(t, name != "")
+	require.NotEqual(t, "", name)
 	require.Equal(t, 0, idx)
 	require.Greater(t, offset, 0)
 }
@@ -4873,7 +4871,7 @@ func TestReplayAfterMmapReplayError(t *testing.T) {
 	}
 
 	files, err := os.ReadDir(filepath.Join(dir, "chunks_head"))
-	require.Equal(t, 5, len(files))
+	require.Len(t, files, 5)
 
 	// Corrupt a m-map file.
 	mmapFilePath := filepath.Join(dir, "chunks_head", "000002")
@@ -4888,7 +4886,7 @@ func TestReplayAfterMmapReplayError(t *testing.T) {
 
 	// There should be less m-map files due to corruption.
 	files, err = os.ReadDir(filepath.Join(dir, "chunks_head"))
-	require.Equal(t, 2, len(files))
+	require.Len(t, files, 2)
 
 	// Querying should not panic.
 	q, err := NewBlockQuerier(h, 0, lastTs)
@@ -4897,170 +4895,6 @@ func TestReplayAfterMmapReplayError(t *testing.T) {
 	require.Equal(t, map[string][]chunks.Sample{lbls.String(): expSamples}, res)
 
 	require.NoError(t, h.Close())
-}
-
-func TestHistogramValidation(t *testing.T) {
-	tests := map[string]struct {
-		h         *histogram.Histogram
-		errMsg    string
-		skipFloat bool
-	}{
-		"valid histogram": {
-			h: tsdbutil.GenerateTestHistograms(1)[0],
-		},
-		"valid histogram that has its Count (4) higher than the actual total of buckets (2 + 1)": {
-			// This case is possible if NaN values (which do not fall into any bucket) are observed.
-			h: &histogram.Histogram{
-				ZeroCount:       2,
-				Count:           4,
-				Sum:             math.NaN(),
-				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
-				PositiveBuckets: []int64{1},
-			},
-		},
-		"rejects histogram that has too few negative buckets": {
-			h: &histogram.Histogram{
-				NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
-				NegativeBuckets: []int64{},
-			},
-			errMsg: `negative side: spans need 1 buckets, have 0 buckets: histogram spans specify different number of buckets than provided`,
-		},
-		"rejects histogram that has too few positive buckets": {
-			h: &histogram.Histogram{
-				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
-				PositiveBuckets: []int64{},
-			},
-			errMsg: `positive side: spans need 1 buckets, have 0 buckets: histogram spans specify different number of buckets than provided`,
-		},
-		"rejects histogram that has too many negative buckets": {
-			h: &histogram.Histogram{
-				NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
-				NegativeBuckets: []int64{1, 2},
-			},
-			errMsg: `negative side: spans need 1 buckets, have 2 buckets: histogram spans specify different number of buckets than provided`,
-		},
-		"rejects histogram that has too many positive buckets": {
-			h: &histogram.Histogram{
-				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
-				PositiveBuckets: []int64{1, 2},
-			},
-			errMsg: `positive side: spans need 1 buckets, have 2 buckets: histogram spans specify different number of buckets than provided`,
-		},
-		"rejects a histogram that has a negative span with a negative offset": {
-			h: &histogram.Histogram{
-				NegativeSpans:   []histogram.Span{{Offset: -1, Length: 1}, {Offset: -1, Length: 1}},
-				NegativeBuckets: []int64{1, 2},
-			},
-			errMsg: `negative side: span number 2 with offset -1: histogram has a span whose offset is negative`,
-		},
-		"rejects a histogram which has a positive span with a negative offset": {
-			h: &histogram.Histogram{
-				PositiveSpans:   []histogram.Span{{Offset: -1, Length: 1}, {Offset: -1, Length: 1}},
-				PositiveBuckets: []int64{1, 2},
-			},
-			errMsg: `positive side: span number 2 with offset -1: histogram has a span whose offset is negative`,
-		},
-		"rejects a histogram that has a negative bucket with a negative count": {
-			h: &histogram.Histogram{
-				NegativeSpans:   []histogram.Span{{Offset: -1, Length: 1}},
-				NegativeBuckets: []int64{-1},
-			},
-			errMsg: `negative side: bucket number 1 has observation count of -1: histogram has a bucket whose observation count is negative`,
-		},
-		"rejects a histogram that has a positive bucket with a negative count": {
-			h: &histogram.Histogram{
-				PositiveSpans:   []histogram.Span{{Offset: -1, Length: 1}},
-				PositiveBuckets: []int64{-1},
-			},
-			errMsg: `positive side: bucket number 1 has observation count of -1: histogram has a bucket whose observation count is negative`,
-		},
-		"rejects a histogram that has a lower count than count in buckets": {
-			h: &histogram.Histogram{
-				Count:           0,
-				NegativeSpans:   []histogram.Span{{Offset: -1, Length: 1}},
-				PositiveSpans:   []histogram.Span{{Offset: -1, Length: 1}},
-				NegativeBuckets: []int64{1},
-				PositiveBuckets: []int64{1},
-			},
-			errMsg:    `2 observations found in buckets, but the Count field is 0: histogram's observation count should be at least the number of observations found in the buckets`,
-			skipFloat: true,
-		},
-		"rejects a histogram that doesn't count the zero bucket in its count": {
-			h: &histogram.Histogram{
-				Count:           2,
-				ZeroCount:       1,
-				NegativeSpans:   []histogram.Span{{Offset: -1, Length: 1}},
-				PositiveSpans:   []histogram.Span{{Offset: -1, Length: 1}},
-				NegativeBuckets: []int64{1},
-				PositiveBuckets: []int64{1},
-			},
-			errMsg:    `3 observations found in buckets, but the Count field is 2: histogram's observation count should be at least the number of observations found in the buckets`,
-			skipFloat: true,
-		},
-	}
-
-	for testName, tc := range tests {
-		t.Run(testName, func(t *testing.T) {
-			if err := ValidateHistogram(tc.h); tc.errMsg != "" {
-				require.EqualError(t, err, tc.errMsg)
-			} else {
-				require.NoError(t, err)
-			}
-			if tc.skipFloat {
-				return
-			}
-			if err := ValidateFloatHistogram(tc.h.ToFloat()); tc.errMsg != "" {
-				require.EqualError(t, err, tc.errMsg)
-			} else {
-				require.NoError(t, err)
-			}
-		})
-	}
-}
-
-func BenchmarkHistogramValidation(b *testing.B) {
-	histograms := generateBigTestHistograms(b.N, 500)
-	b.ResetTimer()
-	for _, h := range histograms {
-		require.NoError(b, ValidateHistogram(h))
-	}
-}
-
-func generateBigTestHistograms(numHistograms, numBuckets int) []*histogram.Histogram {
-	numSpans := numBuckets / 10
-	bucketsPerSide := numBuckets / 2
-	spanLength := uint32(bucketsPerSide / numSpans)
-	// Given all bucket deltas are 1, sum numHistograms + 1.
-	observationCount := numBuckets / 2 * (1 + numBuckets)
-
-	var histograms []*histogram.Histogram
-	for i := 0; i < numHistograms; i++ {
-		h := &histogram.Histogram{
-			Count:           uint64(i + observationCount),
-			ZeroCount:       uint64(i),
-			ZeroThreshold:   1e-128,
-			Sum:             18.4 * float64(i+1),
-			Schema:          2,
-			NegativeSpans:   make([]histogram.Span, numSpans),
-			PositiveSpans:   make([]histogram.Span, numSpans),
-			NegativeBuckets: make([]int64, bucketsPerSide),
-			PositiveBuckets: make([]int64, bucketsPerSide),
-		}
-
-		for j := 0; j < numSpans; j++ {
-			s := histogram.Span{Offset: 1, Length: spanLength}
-			h.NegativeSpans[j] = s
-			h.PositiveSpans[j] = s
-		}
-
-		for j := 0; j < bucketsPerSide; j++ {
-			h.NegativeBuckets[j] = 1
-			h.PositiveBuckets[j] = 1
-		}
-
-		histograms = append(histograms, h)
-	}
-	return histograms
 }
 
 func TestOOOAppendWithNoSeries(t *testing.T) {
@@ -5403,7 +5237,7 @@ func BenchmarkCuttingHeadHistogramChunks(b *testing.B) {
 		numSamples = 50000
 		numBuckets = 100
 	)
-	samples := generateBigTestHistograms(numSamples, numBuckets)
+	samples := histogram.GenerateBigTestHistograms(numSamples, numBuckets)
 
 	h, _ := newTestHead(b, DefaultBlockDuration, wlog.CompressionNone, false)
 	defer func() {
@@ -5467,7 +5301,7 @@ func TestCuttingNewHeadChunks(t *testing.T) {
 		"small histograms": {
 			numTotalSamples: 240,
 			histValFunc: func() func(i int) *histogram.Histogram {
-				hists := generateBigTestHistograms(240, 10)
+				hists := histogram.GenerateBigTestHistograms(240, 10)
 				return func(i int) *histogram.Histogram {
 					return hists[i]
 				}
@@ -5483,7 +5317,7 @@ func TestCuttingNewHeadChunks(t *testing.T) {
 		"large histograms": {
 			numTotalSamples: 240,
 			histValFunc: func() func(i int) *histogram.Histogram {
-				hists := generateBigTestHistograms(240, 100)
+				hists := histogram.GenerateBigTestHistograms(240, 100)
 				return func(i int) *histogram.Histogram {
 					return hists[i]
 				}
@@ -5492,14 +5326,13 @@ func TestCuttingNewHeadChunks(t *testing.T) {
 				numSamples int
 				numBytes   int
 			}{
-				{30, 696},
-				{30, 700},
-				{30, 708},
-				{30, 693},
+				{40, 896},
+				{40, 899},
+				{40, 896},
+				{30, 690},
 				{30, 691},
-				{30, 692},
-				{30, 695},
 				{30, 694},
+				{30, 693},
 			},
 		},
 		"really large histograms": {
@@ -5507,7 +5340,7 @@ func TestCuttingNewHeadChunks(t *testing.T) {
 			// per chunk.
 			numTotalSamples: 11,
 			histValFunc: func() func(i int) *histogram.Histogram {
-				hists := generateBigTestHistograms(11, 100000)
+				hists := histogram.GenerateBigTestHistograms(11, 100000)
 				return func(i int) *histogram.Histogram {
 					return hists[i]
 				}
@@ -5571,8 +5404,9 @@ func TestCuttingNewHeadChunks(t *testing.T) {
 				require.Len(t, chkMetas, len(tc.expectedChks))
 
 				for i, expected := range tc.expectedChks {
-					chk, err := chkReader.Chunk(chkMetas[i])
+					chk, iterable, err := chkReader.ChunkOrIterable(chkMetas[i])
 					require.NoError(t, err)
+					require.Nil(t, iterable)
 
 					require.Equal(t, expected.numSamples, chk.NumSamples())
 					require.Len(t, chk.Bytes(), expected.numBytes)
@@ -5620,10 +5454,278 @@ func TestHeadDetectsDuplicateSampleAtSizeLimit(t *testing.T) {
 
 	storedSampleCount := 0
 	for _, chunkMeta := range chunks {
-		chunk, err := chunkReader.Chunk(chunkMeta)
+		chunk, iterable, err := chunkReader.ChunkOrIterable(chunkMeta)
 		require.NoError(t, err)
+		require.Nil(t, iterable)
 		storedSampleCount += chunk.NumSamples()
 	}
 
 	require.Equal(t, numSamples/2, storedSampleCount)
+}
+
+func TestWALSampleAndExemplarOrder(t *testing.T) {
+	lbls := labels.FromStrings("foo", "bar")
+	testcases := map[string]struct {
+		appendF      func(app storage.Appender, ts int64) (storage.SeriesRef, error)
+		expectedType reflect.Type
+	}{
+		"float sample": {
+			appendF: func(app storage.Appender, ts int64) (storage.SeriesRef, error) {
+				return app.Append(0, lbls, ts, 1.0)
+			},
+			expectedType: reflect.TypeOf([]record.RefSample{}),
+		},
+		"histogram sample": {
+			appendF: func(app storage.Appender, ts int64) (storage.SeriesRef, error) {
+				return app.AppendHistogram(0, lbls, ts, tsdbutil.GenerateTestHistogram(1), nil)
+			},
+			expectedType: reflect.TypeOf([]record.RefHistogramSample{}),
+		},
+		"float histogram sample": {
+			appendF: func(app storage.Appender, ts int64) (storage.SeriesRef, error) {
+				return app.AppendHistogram(0, lbls, ts, nil, tsdbutil.GenerateTestFloatHistogram(1))
+			},
+			expectedType: reflect.TypeOf([]record.RefFloatHistogramSample{}),
+		},
+	}
+
+	for testName, tc := range testcases {
+		t.Run(testName, func(t *testing.T) {
+			h, w := newTestHead(t, 1000, wlog.CompressionNone, false)
+			defer func() {
+				require.NoError(t, h.Close())
+			}()
+
+			app := h.Appender(context.Background())
+			ref, err := tc.appendF(app, 10)
+			require.NoError(t, err)
+			app.AppendExemplar(ref, lbls, exemplar.Exemplar{Value: 1.0, Ts: 5})
+
+			app.Commit()
+
+			recs := readTestWAL(t, w.Dir())
+			require.Len(t, recs, 3)
+			_, ok := recs[0].([]record.RefSeries)
+			require.True(t, ok, "expected first record to be a RefSeries")
+			actualType := reflect.TypeOf(recs[1])
+			require.Equal(t, tc.expectedType, actualType, "expected second record to be a %s", tc.expectedType)
+			_, ok = recs[2].([]record.RefExemplar)
+			require.True(t, ok, "expected third record to be a RefExemplar")
+		})
+	}
+}
+
+// TestHeadCompactionWhileAppendAndCommitExemplar simulates a use case where
+// a series is removed from the head while an exemplar is being appended to it.
+// This can happen in theory by compacting the head at the right time due to
+// a series being idle.
+// The test cheats a little bit by not appending a sample with the exemplar.
+// If you also add a sample and run Truncate in a concurrent goroutine and run
+// the test around a million(!) times, you can get
+// `unknown HeadSeriesRef when trying to add exemplar: 1` error on push.
+// It is likely that running the test for much longer and with more time variations
+// would trigger the
+// `signal SIGSEGV: segmentation violation code=0x1 addr=0x20 pc=0xbb03d1`
+// panic, that we have seen in the wild once.
+func TestHeadCompactionWhileAppendAndCommitExemplar(t *testing.T) {
+	h, _ := newTestHead(t, DefaultBlockDuration, wlog.CompressionNone, false)
+	app := h.Appender(context.Background())
+	lbls := labels.FromStrings("foo", "bar")
+	ref, err := app.Append(0, lbls, 1, 1)
+	require.NoError(t, err)
+	app.Commit()
+	// Not adding a sample here to trigger the fault.
+	app = h.Appender(context.Background())
+	_, err = app.AppendExemplar(ref, lbls, exemplar.Exemplar{Value: 1, Ts: 20})
+	require.NoError(t, err)
+	h.Truncate(10)
+	app.Commit()
+	h.Close()
+}
+
+func labelsWithHashCollision() (labels.Labels, labels.Labels) {
+	// These two series have the same XXHash; thanks to https://github.com/pstibrany/labels_hash_collisions
+	ls1 := labels.FromStrings("__name__", "metric", "lbl1", "value", "lbl2", "l6CQ5y")
+	ls2 := labels.FromStrings("__name__", "metric", "lbl1", "value", "lbl2", "v7uDlF")
+
+	if ls1.Hash() != ls2.Hash() {
+		// These ones are the same when using -tags stringlabels
+		ls1 = labels.FromStrings("__name__", "metric", "lbl", "HFnEaGl")
+		ls2 = labels.FromStrings("__name__", "metric", "lbl", "RqcXatm")
+	}
+
+	if ls1.Hash() != ls2.Hash() {
+		panic("This code needs to be updated: find new labels with colliding hash values.")
+	}
+
+	return ls1, ls2
+}
+
+// stripeSeriesWithCollidingSeries returns a stripeSeries with two memSeries having the same, colliding, hash.
+func stripeSeriesWithCollidingSeries(t *testing.T) (*stripeSeries, *memSeries, *memSeries) {
+	t.Helper()
+
+	lbls1, lbls2 := labelsWithHashCollision()
+	ms1 := memSeries{
+		lset: lbls1,
+	}
+	ms2 := memSeries{
+		lset: lbls2,
+	}
+	hash := lbls1.Hash()
+	s := newStripeSeries(1, noopSeriesLifecycleCallback{})
+
+	got, created, err := s.getOrSet(hash, lbls1, func() *memSeries {
+		return &ms1
+	})
+	require.NoError(t, err)
+	require.True(t, created)
+	require.Same(t, &ms1, got)
+
+	// Add a conflicting series
+	got, created, err = s.getOrSet(hash, lbls2, func() *memSeries {
+		return &ms2
+	})
+	require.NoError(t, err)
+	require.True(t, created)
+	require.Same(t, &ms2, got)
+
+	return s, &ms1, &ms2
+}
+
+func TestStripeSeries_getOrSet(t *testing.T) {
+	s, ms1, ms2 := stripeSeriesWithCollidingSeries(t)
+	hash := ms1.lset.Hash()
+
+	// Verify that we can get both of the series despite the hash collision
+	got := s.getByHash(hash, ms1.lset)
+	require.Same(t, ms1, got)
+	got = s.getByHash(hash, ms2.lset)
+	require.Same(t, ms2, got)
+}
+
+func TestStripeSeries_gc(t *testing.T) {
+	s, ms1, ms2 := stripeSeriesWithCollidingSeries(t)
+	hash := ms1.lset.Hash()
+
+	s.gc(0, 0)
+
+	// Verify that we can get neither ms1 nor ms2 after gc-ing corresponding series
+	got := s.getByHash(hash, ms1.lset)
+	require.Nil(t, got)
+	got = s.getByHash(hash, ms2.lset)
+	require.Nil(t, got)
+}
+
+func TestPostingsCardinalityStats(t *testing.T) {
+	head := &Head{postings: index.NewMemPostings()}
+	head.postings.Add(1, labels.FromStrings(labels.MetricName, "t", "n", "v1"))
+	head.postings.Add(2, labels.FromStrings(labels.MetricName, "t", "n", "v2"))
+
+	statsForMetricName := head.PostingsCardinalityStats(labels.MetricName, 10)
+	head.postings.Add(3, labels.FromStrings(labels.MetricName, "t", "n", "v3"))
+	// Using cache.
+	require.Equal(t, statsForMetricName, head.PostingsCardinalityStats(labels.MetricName, 10))
+
+	statsForSomeLabel := head.PostingsCardinalityStats("n", 10)
+	// Cache should be evicted because of the change of label name.
+	require.NotEqual(t, statsForMetricName, statsForSomeLabel)
+	head.postings.Add(4, labels.FromStrings(labels.MetricName, "t", "n", "v4"))
+	// Using cache.
+	require.Equal(t, statsForSomeLabel, head.PostingsCardinalityStats("n", 10))
+	// Cache should be evicted because of the change of limit parameter.
+	statsForSomeLabel1 := head.PostingsCardinalityStats("n", 1)
+	require.NotEqual(t, statsForSomeLabel1, statsForSomeLabel)
+	// Using cache.
+	require.Equal(t, statsForSomeLabel1, head.PostingsCardinalityStats("n", 1))
+}
+
+func TestHeadAppender_AppendCTZeroSample(t *testing.T) {
+	type appendableSamples struct {
+		ts  int64
+		val float64
+		ct  int64
+	}
+	for _, tc := range []struct {
+		name              string
+		appendableSamples []appendableSamples
+		expectedSamples   []model.Sample
+	}{
+		{
+			name: "In order ct+normal sample",
+			appendableSamples: []appendableSamples{
+				{ts: 100, val: 10, ct: 1},
+			},
+			expectedSamples: []model.Sample{
+				{Timestamp: 1, Value: 0},
+				{Timestamp: 100, Value: 10},
+			},
+		},
+		{
+			name: "Consecutive appends with same ct ignore ct",
+			appendableSamples: []appendableSamples{
+				{ts: 100, val: 10, ct: 1},
+				{ts: 101, val: 10, ct: 1},
+			},
+			expectedSamples: []model.Sample{
+				{Timestamp: 1, Value: 0},
+				{Timestamp: 100, Value: 10},
+				{Timestamp: 101, Value: 10},
+			},
+		},
+		{
+			name: "Consecutive appends with newer ct do not ignore ct",
+			appendableSamples: []appendableSamples{
+				{ts: 100, val: 10, ct: 1},
+				{ts: 102, val: 10, ct: 101},
+			},
+			expectedSamples: []model.Sample{
+				{Timestamp: 1, Value: 0},
+				{Timestamp: 100, Value: 10},
+				{Timestamp: 101, Value: 0},
+				{Timestamp: 102, Value: 10},
+			},
+		},
+		{
+			name: "CT equals to previous sample timestamp is ignored",
+			appendableSamples: []appendableSamples{
+				{ts: 100, val: 10, ct: 1},
+				{ts: 101, val: 10, ct: 100},
+			},
+			expectedSamples: []model.Sample{
+				{Timestamp: 1, Value: 0},
+				{Timestamp: 100, Value: 10},
+				{Timestamp: 101, Value: 10},
+			},
+		},
+	} {
+		h, _ := newTestHead(t, DefaultBlockDuration, wlog.CompressionNone, false)
+		defer func() {
+			require.NoError(t, h.Close())
+		}()
+		a := h.Appender(context.Background())
+		lbls := labels.FromStrings("foo", "bar")
+		for _, sample := range tc.appendableSamples {
+			_, err := a.AppendCTZeroSample(0, lbls, sample.ts, sample.ct)
+			require.NoError(t, err)
+			_, err = a.Append(0, lbls, sample.ts, sample.val)
+			require.NoError(t, err)
+		}
+		require.NoError(t, a.Commit())
+
+		q, err := NewBlockQuerier(h, math.MinInt64, math.MaxInt64)
+		require.NoError(t, err)
+		ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+		require.True(t, ss.Next())
+		s := ss.At()
+		require.False(t, ss.Next())
+		it := s.Iterator(nil)
+		for _, sample := range tc.expectedSamples {
+			require.Equal(t, chunkenc.ValFloat, it.Next())
+			timestamp, value := it.At()
+			require.Equal(t, sample.Timestamp, model.Time(timestamp))
+			require.Equal(t, sample.Value, model.SampleValue(value))
+		}
+		require.Equal(t, chunkenc.ValNone, it.Next())
+	}
 }

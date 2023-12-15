@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
@@ -48,7 +49,7 @@ const (
 	// imageLabel is the label that is used for the docker image running the service.
 	imageLabel model.LabelName = metaLabelPrefix + "image"
 	// portIndexLabel is the integer port index when multiple ports are defined;
-	// e.g. PORT1 would have a value of '1'
+	// e.g. PORT1 would have a value of '1'.
 	portIndexLabel model.LabelName = metaLabelPrefix + "port_index"
 	// taskLabel contains the mesos task name of the app instance.
 	taskLabel model.LabelName = metaLabelPrefix + "task"
@@ -83,7 +84,7 @@ func (*SDConfig) Name() string { return "marathon" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(*c, opts.Logger)
+	return NewDiscovery(*c, opts.Logger, opts.Registerer)
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -132,7 +133,7 @@ type Discovery struct {
 }
 
 // NewDiscovery returns a new Marathon Discovery.
-func NewDiscovery(conf SDConfig, logger log.Logger) (*Discovery, error) {
+func NewDiscovery(conf SDConfig, logger log.Logger, reg prometheus.Registerer) (*Discovery, error) {
 	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "marathon_sd")
 	if err != nil {
 		return nil, err
@@ -154,10 +155,13 @@ func NewDiscovery(conf SDConfig, logger log.Logger) (*Discovery, error) {
 		appsClient: fetchApps,
 	}
 	d.Discovery = refresh.NewDiscovery(
-		logger,
-		"marathon",
-		time.Duration(conf.RefreshInterval),
-		d.refresh,
+		refresh.Options{
+			Logger:   logger,
+			Mech:     "marathon",
+			Interval: time.Duration(conf.RefreshInterval),
+			RefreshF: d.refresh,
+			Registry: reg,
+		},
 	)
 	return d, nil
 }

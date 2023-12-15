@@ -26,8 +26,6 @@ import (
 	"unicode/utf8"
 	"unsafe"
 
-	"github.com/gogo/protobuf/types"
-
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -247,9 +245,10 @@ func (p *PromParser) Exemplar(*exemplar.Exemplar) bool {
 	return false
 }
 
-// CreatedTimestamp returns false because PromParser does not support created timestamps.
-func (p *PromParser) CreatedTimestamp(_ *types.Timestamp) bool {
-	return false
+// CreatedTimestamp returns nil as it's not implemented yet.
+// TODO(bwplotka): https://github.com/prometheus/prometheus/issues/12980
+func (p *PromParser) CreatedTimestamp() *int64 {
+	return nil
 }
 
 // nextToken returns the next token from the promlexer. It skips over tabs

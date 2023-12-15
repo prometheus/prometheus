@@ -3,18 +3,20 @@ import React, { PureComponent } from 'react';
 import ReactResizeDetector from 'react-resize-detector';
 
 import { Legend } from './Legend';
-import { Metric, Histogram, ExemplarData, QueryParams } from '../../types/types';
+import { ExemplarData, Histogram, Metric, QueryParams } from '../../types/types';
 import { isPresent } from '../../utils';
-import { normalizeData, getOptions, toHoverColor } from './GraphHelpers';
+import { getOptions, normalizeData, toHoverColor } from './GraphHelpers';
 import { Button } from 'reactstrap';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faTimes } from '@fortawesome/free-solid-svg-icons';
+import { GraphDisplayMode } from './Panel';
 
 require('../../vendor/flot/jquery.flot');
 require('../../vendor/flot/jquery.flot.stack');
 require('../../vendor/flot/jquery.flot.time');
 require('../../vendor/flot/jquery.flot.crosshair');
 require('../../vendor/flot/jquery.flot.selection');
+require('../../vendor/flot/jquery.flot.heatmap');
 require('jquery.flot.tooltip');
 
 export interface GraphProps {
@@ -23,7 +25,7 @@ export interface GraphProps {
     result: Array<{ metric: Metric; values?: [number, string][]; histograms?: [number, Histogram][] }>;
   };
   exemplars: ExemplarData;
-  stacked: boolean;
+  displayMode: GraphDisplayMode;
   useLocalTime: boolean;
   showExemplars: boolean;
   handleTimeRangeSelection: (startTime: number, endTime: number) => void;
@@ -69,11 +71,11 @@ class Graph extends PureComponent<GraphProps, GraphState> {
   };
 
   componentDidUpdate(prevProps: GraphProps): void {
-    const { data, stacked, useLocalTime, showExemplars } = this.props;
+    const { data, displayMode, useLocalTime, showExemplars } = this.props;
     if (prevProps.data !== data) {
       this.selectedSeriesIndexes = [];
       this.setState({ chartData: normalizeData(this.props) }, this.plot);
-    } else if (prevProps.stacked !== stacked) {
+    } else if (prevProps.displayMode !== displayMode) {
       this.setState({ chartData: normalizeData(this.props) }, () => {
         if (this.selectedSeriesIndexes.length === 0) {
           this.plot();
@@ -143,7 +145,18 @@ class Graph extends PureComponent<GraphProps, GraphState> {
     }
     this.destroyPlot();
 
-    this.$chart = $.plot($(this.chartRef.current), data, getOptions(this.props.stacked, this.props.useLocalTime));
+    const options = getOptions(this.props.displayMode === GraphDisplayMode.Stacked, this.props.useLocalTime);
+    const isHeatmap = this.props.displayMode === GraphDisplayMode.Heatmap;
+    options.series.heatmap = isHeatmap;
+
+    if (options.yaxis && isHeatmap) {
+      options.yaxis.ticks = () => new Array(data.length + 1).fill(0).map((_el, i) => i);
+      options.yaxis.tickFormatter = (val) => `${val ? data[val - 1].labels.le : ''}`;
+      options.yaxis.min = 0;
+      options.yaxis.max = data.length;
+      options.series.lines = { show: false };
+    }
+    this.$chart = $.plot($(this.chartRef.current), data, options);
   };
 
   destroyPlot = (): void => {
@@ -165,7 +178,10 @@ class Graph extends PureComponent<GraphProps, GraphState> {
     const { chartData } = this.state;
     this.plot(
       this.selectedSeriesIndexes.length === 1 && this.selectedSeriesIndexes.includes(selectedIndex)
-        ? [...chartData.series.map(toHoverColor(selectedIndex, this.props.stacked)), ...chartData.exemplars]
+        ? [
+            ...chartData.series.map(toHoverColor(selectedIndex, this.props.displayMode === GraphDisplayMode.Stacked)),
+            ...chartData.exemplars,
+          ]
         : [
             ...chartData.series.filter((_, i) => selected.includes(i)),
             ...chartData.exemplars.filter((exemplar) => {
@@ -190,7 +206,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
     }
     this.rafID = requestAnimationFrame(() => {
       this.plotSetAndDraw([
-        ...this.state.chartData.series.map(toHoverColor(index, this.props.stacked)),
+        ...this.state.chartData.series.map(toHoverColor(index, this.props.displayMode === GraphDisplayMode.Stacked)),
         ...this.state.chartData.exemplars,
       ]);
     });
@@ -251,13 +267,15 @@ class Graph extends PureComponent<GraphProps, GraphState> {
             </Button>
           </div>
         ) : null}
-        <Legend
-          shouldReset={this.selectedSeriesIndexes.length === 0}
-          chartData={chartData.series}
-          onHover={this.handleSeriesHover}
-          onLegendMouseOut={this.handleLegendMouseOut}
-          onSeriesToggle={this.handleSeriesSelect}
-        />
+        {this.props.displayMode !== GraphDisplayMode.Heatmap && (
+          <Legend
+            shouldReset={this.selectedSeriesIndexes.length === 0}
+            chartData={chartData.series}
+            onHover={this.handleSeriesHover}
+            onLegendMouseOut={this.handleLegendMouseOut}
+            onSeriesToggle={this.handleSeriesSelect}
+          />
+        )}
         {/* This is to make sure the graph box expands when the selected exemplar info pops up. */}
         <br style={{ clear: 'both' }} />
       </div>

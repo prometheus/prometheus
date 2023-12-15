@@ -14,15 +14,17 @@
 package ionos
 
 import (
+	"errors"
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
+
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 const (
@@ -41,7 +43,7 @@ func init() {
 type Discovery struct{}
 
 // NewDiscovery returns a new refresh.Discovery for IONOS Cloud.
-func NewDiscovery(conf *SDConfig, logger log.Logger) (*refresh.Discovery, error) {
+func NewDiscovery(conf *SDConfig, logger log.Logger, reg prometheus.Registerer) (*refresh.Discovery, error) {
 	if conf.ionosEndpoint == "" {
 		conf.ionosEndpoint = "https://api.ionos.com"
 	}
@@ -52,10 +54,13 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*refresh.Discovery, error)
 	}
 
 	return refresh.NewDiscovery(
-		logger,
-		"ionos",
-		time.Duration(conf.RefreshInterval),
-		d.refresh,
+		refresh.Options{
+			Logger:   logger,
+			Mech:     "ionos",
+			Interval: time.Duration(conf.RefreshInterval),
+			RefreshF: d.refresh,
+			Registry: reg,
+		},
 	), nil
 }
 
@@ -86,7 +91,7 @@ func (c SDConfig) Name() string {
 
 // NewDiscoverer returns a new discovery.Discoverer for IONOS Cloud.
 func (c SDConfig) NewDiscoverer(options discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(&c, options.Logger)
+	return NewDiscovery(&c, options.Logger, options.Registerer)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.

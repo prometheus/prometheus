@@ -47,12 +47,12 @@ func TestRobotSDRefresh(t *testing.T) {
 
 	targetGroups, err := d.refresh(context.Background())
 	require.NoError(t, err)
-	require.Equal(t, 1, len(targetGroups))
+	require.Len(t, targetGroups, 1)
 
 	targetGroup := targetGroups[0]
 	require.NotNil(t, targetGroup, "targetGroup should not be nil")
 	require.NotNil(t, targetGroup.Targets, "targetGroup.targets should not be nil")
-	require.Equal(t, 2, len(targetGroup.Targets))
+	require.Len(t, targetGroup.Targets, 2)
 
 	for i, labelSet := range []model.LabelSet{
 		{
@@ -98,5 +98,5 @@ func TestRobotSDRefreshHandleError(t *testing.T) {
 	require.Error(t, err)
 	require.Equal(t, "non 2xx status '401' response during hetzner service discovery with role robot", err.Error())
 
-	require.Equal(t, 0, len(targetGroups))
+	require.Empty(t, targetGroups)
 }

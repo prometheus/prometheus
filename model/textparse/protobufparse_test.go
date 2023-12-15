@@ -21,7 +21,6 @@ import (
 	"testing"
 
 	"github.com/gogo/protobuf/proto"
-	"github.com/gogo/protobuf/types"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -630,7 +629,7 @@ func TestProtobufParse(t *testing.T) {
 		shs     *histogram.Histogram
 		fhs     *histogram.FloatHistogram
 		e       []exemplar.Exemplar
-		ct      *types.Timestamp
+		ct      int64
 	}
 
 	inputBuf := createTestProtoBuf(t)
@@ -729,7 +728,6 @@ func TestProtobufParse(t *testing.T) {
 					),
 					e: []exemplar.Exemplar{
 						{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00039, HasTs: true, Ts: 1625851155146},
-						{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.00029, HasTs: false},
 					},
 				},
 				{
@@ -766,7 +764,6 @@ func TestProtobufParse(t *testing.T) {
 					),
 					e: []exemplar.Exemplar{
 						{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00039, HasTs: true, Ts: 1625851155146},
-						{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.00029, HasTs: false},
 					},
 				},
 				{
@@ -802,7 +799,6 @@ func TestProtobufParse(t *testing.T) {
 					),
 					e: []exemplar.Exemplar{
 						{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00039, HasTs: true, Ts: 1625851155146},
-						{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.00029, HasTs: false},
 					},
 				},
 				{
@@ -839,7 +835,6 @@ func TestProtobufParse(t *testing.T) {
 					),
 					e: []exemplar.Exemplar{
 						{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00039, HasTs: true, Ts: 1625851155146},
-						{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.00029, HasTs: false},
 					},
 				},
 				{
@@ -1073,7 +1068,7 @@ func TestProtobufParse(t *testing.T) {
 				{
 					m:  "test_counter_with_createdtimestamp",
 					v:  42,
-					ct: &types.Timestamp{Seconds: 1, Nanos: 1},
+					ct: 1000,
 					lset: labels.FromStrings(
 						"__name__", "test_counter_with_createdtimestamp",
 					),
@@ -1089,7 +1084,7 @@ func TestProtobufParse(t *testing.T) {
 				{
 					m:  "test_summary_with_createdtimestamp_count",
 					v:  42,
-					ct: &types.Timestamp{Seconds: 1, Nanos: 1},
+					ct: 1000,
 					lset: labels.FromStrings(
 						"__name__", "test_summary_with_createdtimestamp_count",
 					),
@@ -1097,7 +1092,7 @@ func TestProtobufParse(t *testing.T) {
 				{
 					m:  "test_summary_with_createdtimestamp_sum",
 					v:  1.234,
-					ct: &types.Timestamp{Seconds: 1, Nanos: 1},
+					ct: 1000,
 					lset: labels.FromStrings(
 						"__name__", "test_summary_with_createdtimestamp_sum",
 					),
@@ -1112,7 +1107,7 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{
 					m:  "test_histogram_with_createdtimestamp",
-					ct: &types.Timestamp{Seconds: 1, Nanos: 1},
+					ct: 1000,
 					shs: &histogram.Histogram{
 						CounterResetHint: histogram.UnknownCounterReset,
 						PositiveSpans:    []histogram.Span{},
@@ -1132,7 +1127,7 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{
 					m:  "test_gaugehistogram_with_createdtimestamp",
-					ct: &types.Timestamp{Seconds: 1, Nanos: 1},
+					ct: 1000,
 					shs: &histogram.Histogram{
 						CounterResetHint: histogram.GaugeType,
 						PositiveSpans:    []histogram.Span{},
@@ -1233,7 +1228,6 @@ func TestProtobufParse(t *testing.T) {
 					),
 					e: []exemplar.Exemplar{
 						{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00039, HasTs: true, Ts: 1625851155146},
-						{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.00029, HasTs: false},
 					},
 				},
 				{ // 12
@@ -1328,7 +1322,6 @@ func TestProtobufParse(t *testing.T) {
 					),
 					e: []exemplar.Exemplar{
 						{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00039, HasTs: true, Ts: 1625851155146},
-						{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.00029, HasTs: false},
 					},
 				},
 				{ // 21
@@ -1422,7 +1415,6 @@ func TestProtobufParse(t *testing.T) {
 					),
 					e: []exemplar.Exemplar{
 						{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00039, HasTs: true, Ts: 1625851155146},
-						{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.00029, HasTs: false},
 					},
 				},
 				{ // 30
@@ -1517,7 +1509,6 @@ func TestProtobufParse(t *testing.T) {
 					),
 					e: []exemplar.Exemplar{
 						{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00039, HasTs: true, Ts: 1625851155146},
-						{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.00029, HasTs: false},
 					},
 				},
 				{ // 39
@@ -1895,7 +1886,7 @@ func TestProtobufParse(t *testing.T) {
 				{ // 83
 					m:  "test_counter_with_createdtimestamp",
 					v:  42,
-					ct: &types.Timestamp{Seconds: 1, Nanos: 1},
+					ct: 1000,
 					lset: labels.FromStrings(
 						"__name__", "test_counter_with_createdtimestamp",
 					),
@@ -1911,7 +1902,7 @@ func TestProtobufParse(t *testing.T) {
 				{ // 86
 					m:  "test_summary_with_createdtimestamp_count",
 					v:  42,
-					ct: &types.Timestamp{Seconds: 1, Nanos: 1},
+					ct: 1000,
 					lset: labels.FromStrings(
 						"__name__", "test_summary_with_createdtimestamp_count",
 					),
@@ -1919,7 +1910,7 @@ func TestProtobufParse(t *testing.T) {
 				{ // 87
 					m:  "test_summary_with_createdtimestamp_sum",
 					v:  1.234,
-					ct: &types.Timestamp{Seconds: 1, Nanos: 1},
+					ct: 1000,
 					lset: labels.FromStrings(
 						"__name__", "test_summary_with_createdtimestamp_sum",
 					),
@@ -1934,7 +1925,7 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{ // 90
 					m:  "test_histogram_with_createdtimestamp",
-					ct: &types.Timestamp{Seconds: 1, Nanos: 1},
+					ct: 1000,
 					shs: &histogram.Histogram{
 						CounterResetHint: histogram.UnknownCounterReset,
 						PositiveSpans:    []histogram.Span{},
@@ -1954,7 +1945,7 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{ // 93
 					m:  "test_gaugehistogram_with_createdtimestamp",
-					ct: &types.Timestamp{Seconds: 1, Nanos: 1},
+					ct: 1000,
 					shs: &histogram.Histogram{
 						CounterResetHint: histogram.GaugeType,
 						PositiveSpans:    []histogram.Span{},
@@ -1989,30 +1980,29 @@ func TestProtobufParse(t *testing.T) {
 					m, ts, v := p.Series()
 
 					var e exemplar.Exemplar
-					var ct types.Timestamp
 					p.Metric(&res)
 					eFound := p.Exemplar(&e)
-					ctFound := p.CreatedTimestamp(&ct)
+					ct := p.CreatedTimestamp()
 					require.Equal(t, exp[i].m, string(m), "i: %d", i)
 					if ts != nil {
 						require.Equal(t, exp[i].t, *ts, "i: %d", i)
 					} else {
-						require.Equal(t, exp[i].t, int64(0), "i: %d", i)
+						require.Equal(t, int64(0), exp[i].t, "i: %d", i)
 					}
 					require.Equal(t, exp[i].v, v, "i: %d", i)
 					require.Equal(t, exp[i].lset, res, "i: %d", i)
 					if len(exp[i].e) == 0 {
-						require.Equal(t, false, eFound, "i: %d", i)
+						require.False(t, eFound, "i: %d", i)
 					} else {
-						require.Equal(t, true, eFound, "i: %d", i)
+						require.True(t, eFound, "i: %d", i)
 						require.Equal(t, exp[i].e[0], e, "i: %d", i)
 						require.False(t, p.Exemplar(&e), "too many exemplars returned, i: %d", i)
 					}
-					if exp[i].ct != nil {
-						require.Equal(t, true, ctFound, "i: %d", i)
-						require.Equal(t, exp[i].ct.String(), ct.String(), "i: %d", i)
+					if exp[i].ct != 0 {
+						require.NotNilf(t, ct, "i: %d", i)
+						require.Equal(t, exp[i].ct, *ct, "i: %d", i)
 					} else {
-						require.Equal(t, false, ctFound, "i: %d", i)
+						require.Nilf(t, ct, "i: %d", i)
 					}
 
 				case EntryHistogram:
@@ -2022,7 +2012,7 @@ func TestProtobufParse(t *testing.T) {
 					if ts != nil {
 						require.Equal(t, exp[i].t, *ts, "i: %d", i)
 					} else {
-						require.Equal(t, exp[i].t, int64(0), "i: %d", i)
+						require.Equal(t, int64(0), exp[i].t, "i: %d", i)
 					}
 					require.Equal(t, exp[i].lset, res, "i: %d", i)
 					require.Equal(t, exp[i].m, string(m), "i: %d", i)
@@ -2036,7 +2026,7 @@ func TestProtobufParse(t *testing.T) {
 						require.Equal(t, exp[i].e[j], e, "i: %d", i)
 						e = exemplar.Exemplar{}
 					}
-					require.Equal(t, len(exp[i].e), j, "not enough exemplars found, i: %d", i)
+					require.Len(t, exp[i].e, j, "not enough exemplars found, i: %d", i)
 
 				case EntryType:
 					m, typ := p.Type()
@@ -2059,7 +2049,7 @@ func TestProtobufParse(t *testing.T) {
 
 				i++
 			}
-			require.Equal(t, len(exp), i)
+			require.Len(t, exp, i)
 		})
 	}
 }

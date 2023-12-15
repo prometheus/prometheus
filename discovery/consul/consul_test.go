@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
@@ -39,7 +40,7 @@ func TestConfiguredService(t *testing.T) {
 	conf := &SDConfig{
 		Services: []string{"configuredServiceName"},
 	}
-	consulDiscovery, err := NewDiscovery(conf, nil)
+	consulDiscovery, err := NewDiscovery(conf, nil, prometheus.NewRegistry())
 	if err != nil {
 		t.Errorf("Unexpected error when initializing discovery %v", err)
 	}
@@ -56,7 +57,7 @@ func TestConfiguredServiceWithTag(t *testing.T) {
 		Services:    []string{"configuredServiceName"},
 		ServiceTags: []string{"http"},
 	}
-	consulDiscovery, err := NewDiscovery(conf, nil)
+	consulDiscovery, err := NewDiscovery(conf, nil, prometheus.NewRegistry())
 	if err != nil {
 		t.Errorf("Unexpected error when initializing discovery %v", err)
 	}
@@ -151,7 +152,7 @@ func TestConfiguredServiceWithTags(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		consulDiscovery, err := NewDiscovery(tc.conf, nil)
+		consulDiscovery, err := NewDiscovery(tc.conf, nil, prometheus.NewRegistry())
 		if err != nil {
 			t.Errorf("Unexpected error when initializing discovery %v", err)
 		}
@@ -165,7 +166,7 @@ func TestConfiguredServiceWithTags(t *testing.T) {
 
 func TestNonConfiguredService(t *testing.T) {
 	conf := &SDConfig{}
-	consulDiscovery, err := NewDiscovery(conf, nil)
+	consulDiscovery, err := NewDiscovery(conf, nil, prometheus.NewRegistry())
 	if err != nil {
 		t.Errorf("Unexpected error when initializing discovery %v", err)
 	}
@@ -262,19 +263,19 @@ func newServer(t *testing.T) (*httptest.Server, *SDConfig) {
 
 func newDiscovery(t *testing.T, config *SDConfig) *Discovery {
 	logger := log.NewNopLogger()
-	d, err := NewDiscovery(config, logger)
+	d, err := NewDiscovery(config, logger, prometheus.NewRegistry())
 	require.NoError(t, err)
 	return d
 }
 
 func checkOneTarget(t *testing.T, tg []*targetgroup.Group) {
-	require.Equal(t, 1, len(tg))
+	require.Len(t, tg, 1)
 	target := tg[0]
 	require.Equal(t, "test-dc", string(target.Labels["__meta_consul_dc"]))
 	require.Equal(t, target.Source, string(target.Labels["__meta_consul_service"]))
 	if target.Source == "test" {
 		// test service should have one node.
-		require.Greater(t, len(target.Targets), 0, "Test service should have one node")
+		require.NotEmpty(t, target.Targets, "Test service should have one node")
 	}
 }
 
@@ -313,7 +314,7 @@ func TestNoTargets(t *testing.T) {
 	}()
 
 	targets := (<-ch)[0].Targets
-	require.Equal(t, 0, len(targets))
+	require.Empty(t, targets)
 	cancel()
 	<-ch
 }
@@ -484,7 +485,7 @@ oauth2:
 				return
 			}
 
-			require.Equal(t, config, test.expected)
+			require.Equal(t, test.expected, config)
 		})
 	}
 }

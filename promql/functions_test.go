@@ -64,7 +64,7 @@ func TestDeriv(t *testing.T) {
 	require.NoError(t, result.Err)
 
 	vec, _ := result.Vector()
-	require.Equal(t, 1, len(vec), "Expected 1 result, got %d", len(vec))
+	require.Len(t, vec, 1, "Expected 1 result, got %d", len(vec))
 	require.Equal(t, 0.0, vec[0].F, "Expected 0.0 as value, got %f", vec[0].F)
 }
 

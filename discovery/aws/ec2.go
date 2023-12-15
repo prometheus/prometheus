@@ -30,6 +30,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
@@ -101,7 +102,7 @@ func (*EC2SDConfig) Name() string { return "ec2" }
 
 // NewDiscoverer returns a Discoverer for the EC2 Config.
 func (c *EC2SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewEC2Discovery(c, opts.Logger), nil
+	return NewEC2Discovery(c, opts.Logger, opts.Registerer), nil
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface for the EC2 Config.
@@ -147,7 +148,7 @@ type EC2Discovery struct {
 }
 
 // NewEC2Discovery returns a new EC2Discovery which periodically refreshes its targets.
-func NewEC2Discovery(conf *EC2SDConfig, logger log.Logger) *EC2Discovery {
+func NewEC2Discovery(conf *EC2SDConfig, logger log.Logger, reg prometheus.Registerer) *EC2Discovery {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -156,10 +157,13 @@ func NewEC2Discovery(conf *EC2SDConfig, logger log.Logger) *EC2Discovery {
 		cfg:    conf,
 	}
 	d.Discovery = refresh.NewDiscovery(
-		logger,
-		"ec2",
-		time.Duration(d.cfg.RefreshInterval),
-		d.refresh,
+		refresh.Options{
+			Logger:   logger,
+			Mech:     "ec2",
+			Interval: time.Duration(d.cfg.RefreshInterval),
+			RefreshF: d.refresh,
+			Registry: reg,
+		},
 	)
 	return d
 }

@@ -125,7 +125,60 @@ func TestRulesUnitTest(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := RulesUnitTest(tt.queryOpts, tt.args.files...); got != tt.want {
+			if got := RulesUnitTest(tt.queryOpts, nil, tt.args.files...); got != tt.want {
+				t.Errorf("RulesUnitTest() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRulesUnitTestRun(t *testing.T) {
+	type args struct {
+		run   []string
+		files []string
+	}
+	tests := []struct {
+		name      string
+		args      args
+		queryOpts promql.LazyLoaderOpts
+		want      int
+	}{
+		{
+			name: "Test all without run arg",
+			args: args{
+				run:   nil,
+				files: []string{"./testdata/rules_run.yml"},
+			},
+			want: 1,
+		},
+		{
+			name: "Test all with run arg",
+			args: args{
+				run:   []string{"correct", "wrong"},
+				files: []string{"./testdata/rules_run.yml"},
+			},
+			want: 1,
+		},
+		{
+			name: "Test correct",
+			args: args{
+				run:   []string{"correct"},
+				files: []string{"./testdata/rules_run.yml"},
+			},
+			want: 0,
+		},
+		{
+			name: "Test wrong",
+			args: args{
+				run:   []string{"wrong"},
+				files: []string{"./testdata/rules_run.yml"},
+			},
+			want: 1,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := RulesUnitTest(tt.queryOpts, tt.args.run, tt.args.files...); got != tt.want {
 				t.Errorf("RulesUnitTest() = %v, want %v", got, tt.want)
 			}
 		})

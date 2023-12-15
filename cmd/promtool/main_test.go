@@ -56,7 +56,7 @@ func TestQueryRange(t *testing.T) {
 	defer s.Close()
 
 	urlObject, err := url.Parse(s.URL)
-	require.Equal(t, nil, err)
+	require.NoError(t, err)
 
 	p := &promqlPrinter{}
 	exitCode := QueryRange(urlObject, http.DefaultTransport, map[string]string{}, "up", "0", "300", 0, p)
@@ -79,7 +79,7 @@ func TestQueryInstant(t *testing.T) {
 	defer s.Close()
 
 	urlObject, err := url.Parse(s.URL)
-	require.Equal(t, nil, err)
+	require.NoError(t, err)
 
 	p := &promqlPrinter{}
 	exitCode := QueryInstant(urlObject, http.DefaultTransport, "up", "300", p)

@@ -48,12 +48,12 @@ func TestHCloudSDRefresh(t *testing.T) {
 
 	targetGroups, err := d.refresh(context.Background())
 	require.NoError(t, err)
-	require.Equal(t, 1, len(targetGroups))
+	require.Len(t, targetGroups, 1)
 
 	targetGroup := targetGroups[0]
 	require.NotNil(t, targetGroup, "targetGroup should not be nil")
 	require.NotNil(t, targetGroup.Targets, "targetGroup.targets should not be nil")
-	require.Equal(t, 3, len(targetGroup.Targets))
+	require.Len(t, targetGroup.Targets, 3)
 
 	for i, labelSet := range []model.LabelSet{
 		{

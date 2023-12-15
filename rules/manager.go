@@ -250,7 +250,7 @@ type GroupLoader interface {
 }
 
 // FileLoader is the default GroupLoader implementation. It defers to rulefmt.ParseFile
-// and parser.ParseExpr
+// and parser.ParseExpr.
 type FileLoader struct{}
 
 func (FileLoader) Load(identifier string) (*rulefmt.RuleGroups, []error) {
