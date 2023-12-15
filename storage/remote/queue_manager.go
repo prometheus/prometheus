@@ -1510,7 +1510,7 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, s
 	s.updateMetrics(ctx, err, sampleCount, exemplarCount, histogramCount, time.Since(begin))
 }
 
-func (s *shards) sendMinStrSamples(ctx context.Context, samples []prompb.MinimizedTimeSeriesStr, labels []string, sampleCount, exemplarCount, histogramCount int, pBuf *[]byte, buf *[]byte) {
+func (s *shards) sendMinStrSamples(ctx context.Context, samples []prompb.MinimizedTimeSeriesStr, labels []string, sampleCount, exemplarCount, histogramCount int, pBuf, buf *[]byte) {
 	begin := time.Now()
 	// Build the ReducedWriteRequest with no metadata.
 	// Failing to build the write request is non-recoverable, since it will
@@ -1776,7 +1776,7 @@ func (r *rwSymbolTable) clear() {
 	}
 }
 
-func buildMinimizedWriteRequestStr(samples []prompb.MinimizedTimeSeriesStr, labels []string, pBuf *[]byte, buf *[]byte) ([]byte, int64, error) {
+func buildMinimizedWriteRequestStr(samples []prompb.MinimizedTimeSeriesStr, labels []string, pBuf, buf *[]byte) ([]byte, int64, error) {
 	var highest int64
 	for _, ts := range samples {
 		// At the moment we only ever append a TimeSeries with a single sample or exemplar in it.
