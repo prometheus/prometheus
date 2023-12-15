@@ -113,9 +113,9 @@ func BenchmarkDBQuerier(b *testing.B) {
 		b.Run(c.name, func(b *testing.B) {
 			b.RunParallel(func(pb *testing.PB) {
 				for pb.Next() {
-					q, err := db.Querier(context.TODO(), math.MinInt64, math.MaxInt64)
+					q, err := db.Querier(math.MinInt64, math.MaxInt64)
 					require.NoError(b, err)
-					seriesSet := q.Select(false, nil, c.matchers...)
+					seriesSet := q.Select(context.TODO(), false, nil, c.matchers...)
 					for seriesSet.Next() {
 					}
 					require.NoError(b, seriesSet.Err())

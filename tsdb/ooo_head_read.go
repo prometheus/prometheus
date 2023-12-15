@@ -55,12 +55,12 @@ func (oh *OOOHeadIndexReader) Series(ref storage.SeriesRef, builder *labels.Scra
 	return oh.series(ref, builder, chks, oh.lastGarbageCollectedMmapRef, 0)
 }
 
-func NewOOOHeadIndexReaderWithContext(ctx context.Context, head *Head, mint, maxt int64, lastGarbageCollectedMmapRef chunks.ChunkDiskMapperRef) *OOOHeadIndexReader {
+func newOOOHeadIndexReaderWithContext(head *Head, mint, maxt int64, lastGarbageCollectedMmapRef chunks.ChunkDiskMapperRef, qctx *headQueryContext) *OOOHeadIndexReader {
 	hr := &headIndexReader{
 		head: head,
 		mint: mint,
 		maxt: maxt,
-		ctx:  ctx,
+		qctx: qctx,
 	}
 	return &OOOHeadIndexReader{hr, lastGarbageCollectedMmapRef}
 }

@@ -36,23 +36,21 @@ type postingsCacheEntry struct {
 	sorted bool
 }
 
-type headQueryContextKey struct{}
-
-type headQueryContextValue struct {
+type headQueryContext struct {
 	postingsCache map[string]postingsCacheEntry
 }
 
-func (c *headQueryContextValue) enablePostingsCache() {
+func (c *headQueryContext) enablePostingsCache() {
 	if c != nil {
 		c.postingsCache = map[string]postingsCacheEntry{}
 	}
 }
 
-func (c *headQueryContextValue) postingsCacheEnabled() bool {
+func (c *headQueryContext) postingsCacheEnabled() bool {
 	return c != nil && c.postingsCache != nil
 }
 
-func (c *headQueryContextValue) popCachedPostings(matchers string, sort bool) (index.Postings, bool) {
+func (c *headQueryContext) popCachedPostings(matchers string, sort bool) (index.Postings, bool) {
 	if !c.postingsCacheEnabled() {
 		return nil, false
 	}
@@ -68,7 +66,7 @@ func (c *headQueryContextValue) popCachedPostings(matchers string, sort bool) (i
 	return e.p, true
 }
 
-func (c *headQueryContextValue) cachePostings(matchers string, p index.Postings, sorted bool) index.Postings {
+func (c *headQueryContext) cachePostings(matchers string, p index.Postings, sorted bool) index.Postings {
 	if !c.postingsCacheEnabled() {
 		return p
 	}
@@ -92,16 +90,16 @@ func encodeMatchers(ms []*labels.Matcher) string {
 	return *(*string)(unsafe.Pointer(&buf))
 }
 
-func maybeCachedPostingsForMatchersFromHeadIndexContext(ix IndexReader, ms []*labels.Matcher, sortSeries bool) (index.Postings, error) {
+func maybeCachedPostingsForMatchersFromHeadIndexContext(ctx context.Context, ix IndexReader, ms []*labels.Matcher, sortSeries bool) (index.Postings, error) {
 	var p index.Postings
 
-	var headQueryCtx *headQueryContextValue
-	if indexWithCtx, ok := ix.(interface {
-		Context() context.Context
+	var headQueryCtx *headQueryContext
+	if ixWithHeadQueryContext, ok := ix.(interface {
+		headQueryContext() *headQueryContext
 	}); ok {
-		ctx := indexWithCtx.Context()
-		headQueryCtx, _ = ctx.Value(headQueryContextKey{}).(*headQueryContextValue)
+		headQueryCtx = ixWithHeadQueryContext.headQueryContext()
 	}
+
 	cacheEnabled := headQueryCtx != nil && headQueryCtx.postingsCacheEnabled()
 	cached := false
 	matchersKey := ""
@@ -111,7 +109,7 @@ func maybeCachedPostingsForMatchersFromHeadIndexContext(ix IndexReader, ms []*la
 	}
 	if !cached {
 		var err error
-		if p, err = PostingsForMatchers(ix, ms...); err != nil {
+		if p, err = PostingsForMatchers(ctx, ix, ms...); err != nil {
 			return nil, err
 		}
 		if sortSeries {
@@ -133,37 +131,26 @@ func (h *Head) Index() (IndexReader, error) {
 	return h.indexRange(math.MinInt64, math.MaxInt64), nil
 }
 
-// Index returns an IndexReader with context.Context.
-func (h *Head) IndexWithContext(ctx context.Context) (IndexReader, error) {
-	return h.indexRangeWithContext(ctx, math.MinInt64, math.MaxInt64), nil
-}
-
-func (h *Head) indexRangeWithContext(ctx context.Context, mint, maxt int64) *headIndexReader {
+func (h *Head) indexRangeWithContext(mint, maxt int64, qctx *headQueryContext) *headIndexReader {
 	if hmin := h.MinTime(); hmin > mint {
 		mint = hmin
 	}
-	return &headIndexReader{head: h, mint: mint, maxt: maxt, ctx: ctx}
+	return &headIndexReader{head: h, mint: mint, maxt: maxt, qctx: qctx}
 }
 
 func (h *Head) indexRange(mint, maxt int64) *headIndexReader {
-	return h.indexRangeWithContext(context.Background(), mint, maxt)
+	return h.indexRangeWithContext(mint, maxt, nil)
 }
 
 type headIndexReader struct {
 	head       *Head
 	mint, maxt int64
 
-	ctx context.Context
+	qctx *headQueryContext
 }
 
-// Context returns the context.
-// The returned context is always non-nil; it defaults to the
-// background context.
-func (h *headIndexReader) Context() context.Context {
-	if h.ctx != nil {
-		return h.ctx
-	}
-	return context.Background()
+func (h *headIndexReader) headQueryContext() *headQueryContext {
+	return h.qctx
 }
 
 func (h *headIndexReader) Close() error {

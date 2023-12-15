@@ -567,23 +567,12 @@ func newMergedPostings(p []Postings) (m *mergedPostings, nonEmpty bool) {
 }
 
 func (it *mergedPostings) Clone() Postings {
-	if it.err != nil {
-		return &mergedPostings{err: it.err}
+	ps := make([]Postings, len(it.p))
+	for i, p := range it.p {
+		ps[i] = p.Clone()
 	}
-
-	h := make([]Postings, len(it.h))
-	for i, p := range it.h {
-		h[i] = p.Clone()
-	}
-	for _, p := range h {
-		// NOTE: mergedPostings struct requires the user to issue an initial Next.
-		if !p.Next() {
-			if err := it.Err(); err != nil {
-				return &mergedPostings{err: p.Err()}
-			}
-		}
-	}
-	return &mergedPostings{h: h}
+	cloned, _ := newMergedPostings(ps)
+	return cloned
 }
 
 func (it *mergedPostings) Next() bool {
