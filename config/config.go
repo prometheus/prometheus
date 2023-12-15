@@ -613,8 +613,8 @@ type ScrapeConfig struct {
 	// More than this many buckets in a native histogram will cause the scrape to
 	// fail.
 	NativeHistogramBucketLimit uint `yaml:"native_histogram_bucket_limit,omitempty"`
-	// Larger than this schema in a native histogram will be automatically reduced.
-	NativeHistogramMaxSchema uint `yaml:"native_histogram_max_schema,omitempty"`
+	// Smaller than this bucket factor in a native histogram will be automatically reduced.
+	NativeHistogramMinBucketFactor float64 `yaml:"native_histogram_min_bucket_factor,omitempty"`
 	// Keep no more than this many dropped targets per job.
 	// 0 means no limit.
 	KeepDroppedTargets uint `yaml:"keep_dropped_targets,omitempty"`

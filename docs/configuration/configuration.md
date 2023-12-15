@@ -451,6 +451,11 @@ metric_relabel_configs:
 # native histogram. If this is exceeded, the entire scrape will be treated as
 # failed. 0 means no limit.
 [ native_histogram_bucket_limit: <int> | default = 0 ]
+
+# Limit on bucket factor of a single native histogram.
+# If this is exceeded, native histogram will be automatically reduced.
+# failed. 1.00271 means the minimum factor supported in prometheus.
+[ native_histogram_min_bucket_factor: <float> | default = 1.00271 ]
 ```
 
 Where `<job_name>` must be unique across all scrape configurations.

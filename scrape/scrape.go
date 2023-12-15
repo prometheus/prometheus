@@ -272,7 +272,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 		bodySizeLimit = int64(sp.config.BodySizeLimit)
 		sampleLimit   = int(sp.config.SampleLimit)
 		bucketLimit   = int(sp.config.NativeHistogramBucketLimit)
-		maxSchema     = int32(sp.config.NativeHistogramMaxSchema)
+		maxSchema     = pickSchema(sp.config.NativeHistogramMinBucketFactor)
 		labelLimits   = &labelLimits{
 			labelLimit:            int(sp.config.LabelLimit),
 			labelNameLengthLimit:  int(sp.config.LabelNameLengthLimit),
@@ -1920,4 +1920,19 @@ func ContextWithTarget(ctx context.Context, t *Target) context.Context {
 func TargetFromContext(ctx context.Context) (*Target, bool) {
 	t, ok := ctx.Value(ctxKeyTarget).(*Target)
 	return t, ok
+}
+
+func pickSchema(bucketFactor float64) int32 {
+	if bucketFactor <= 1 {
+		panic(fmt.Errorf("bucketFactor %f is <=1", bucketFactor))
+	}
+	floor := math.Floor(math.Log2(math.Log2(bucketFactor)))
+	switch {
+	case floor <= -8:
+		return 8
+	case floor >= 4:
+		return -4
+	default:
+		return -int32(floor)
+	}
 }
