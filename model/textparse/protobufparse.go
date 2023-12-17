@@ -421,8 +421,13 @@ func (p *ProtobufParser) Next() (Entry, error) {
 		}
 		unit := p.mf.GetUnit()
 		fmt.Println("This is the unit:", unit)
+		fmt.Println("This is the name:", name)
 		if len(unit) > 0 {
-			if !strings.HasSuffix(name, fmt.Sprintf("_%s_total", unit)) || !strings.HasSuffix(name, fmt.Sprintf("_%s", unit)) || len(name) < len(unit)+1 {
+			sfx := fmt.Sprintf("_%s", unit)
+			if p.mf.GetType() == dto.MetricType_COUNTER {
+				sfx = fmt.Sprintf("_%s_total", unit)
+			}
+			if !strings.HasSuffix(name, sfx) {
 				return EntryInvalid, fmt.Errorf("invalid unit for metric %q: %s", name, unit)
 			}
 		}
@@ -443,8 +448,6 @@ func (p *ProtobufParser) Next() (Entry, error) {
 		if err := p.updateMetricBytes(); err != nil {
 			return EntryInvalid, err
 		}
-	// case EntryUnit:
-	//	p.state = EntryType // what is the right state and place for this?
 	case EntryHistogram, EntrySeries:
 		if p.redoClassic {
 			p.redoClassic = false
