@@ -226,6 +226,7 @@ func TestWriteOutput(t *testing.T) {
 	require.NoError(t, err)
 	defer os.Remove(tmpfile.Name())
 	tmpfile.Close()
+	require.NoError(t, err)
 	adapter := NewAdapter(ctx, tmpfile.Name(), "test_sd", nil, nil)
 	require.NoError(t, adapter.writeOutput())
 }

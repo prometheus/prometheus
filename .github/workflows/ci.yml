@@ -151,6 +151,7 @@ jobs:
         uses: golangci/golangci-lint-action@3a919529898de77ec3da873e3063ca4b10e7f5cc # v3.7.0
         with:
           args: --verbose
+          # Make sure to sync this with Makefile.common and scripts/golangci-lint.yml.
           version: v1.55.2
   fuzzing:
     uses: ./.github/workflows/fuzzing.yml

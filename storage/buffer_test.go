@@ -243,11 +243,11 @@ func TestBufferedSeriesIteratorMixedHistograms(t *testing.T) {
 	buf := it.Buffer()
 
 	require.Equal(t, chunkenc.ValFloatHistogram, buf.Next())
-	_, fh := buf.AtFloatHistogram()
+	_, fh := buf.AtFloatHistogram(nil)
 	require.Equal(t, histograms[0].ToFloat(nil), fh)
 
 	require.Equal(t, chunkenc.ValHistogram, buf.Next())
-	_, fh = buf.AtFloatHistogram()
+	_, fh = buf.AtFloatHistogram(nil)
 	require.Equal(t, histograms[1].ToFloat(nil), fh)
 }
 
