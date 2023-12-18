@@ -47,12 +47,6 @@ amd64_escaped_flavors := $(foreach flavor,$(amd64_flavors),$(call make_escape,$(
 arm64_escaped_flavors := $(foreach flavor,$(arm64_flavors),$(call make_escape,$(flavor)))
 escaped_flavors := $($(platform)_escaped_flavors)
 
-# To distinct results built with different options we use this result_suffix
-result_suffix := $(compilation_mode)
-ifeq ($(asan),true)
-result_suffix := $(result_suffix)_asan
-endif
-
 include entrypoint.cpp.mk
 include build.mk
 
