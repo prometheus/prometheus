@@ -1,0 +1,90 @@
+#if defined(__x86_64__) || defined(_M_AMD64)
+#define PROMPP_PLATFORM_AMD64 1
+#endif
+#if defined(__aarch64__) || defined(_M_ARM64)
+#define PROMPP_PLATFORM_ARM64 1
+#endif
+
+#include <cstring>
+#if PROMPP_PLATFORM_AMD64
+//#entrypoint.amd64_includes
+#elif PROMPP_PLATFORM_ARM64
+#include <asm/hwcap.h>
+#include <sys/auxv.h>
+
+//#entrypoint.arm64_includes
+#endif
+
+//#entrypoint.function_pointers
+
+#if PROMPP_PLATFORM_AMD64
+enum arch_flavor {
+    generic,
+    nehalem,
+    haswell
+};
+
+arch_flavor determine_arch_flavor() {
+  if (!__builtin_cpu_supports("sse4.2"))
+    return generic;
+
+  if (!__builtin_cpu_supports("bmi") || !__builtin_cpu_supports("avx2"))
+    return nehalem;
+
+  return haswell;
+}
+#elif PROMPP_PLATFORM_ARM64
+enum arch_flavor {
+    generic,
+    crc32
+};
+
+arch_flavor determine_arch_flavor() {
+  if (getauxval(AT_HWCAP) & HWCAP_CRC32) {
+    return crc32;
+  }
+  return generic;
+}
+#endif
+
+const char* prompp_flavor = nullptr;
+extern "C" void prompp_get_flavor(void* res) {
+  using res_t = struct{
+    const char* data;
+    size_t len;
+  };
+  res_t* out = reinterpret_cast<res_t*>(res);
+  out->data = prompp_flavor;
+  out->len = 0;
+  if (prompp_flavor != nullptr) {
+    out->len = std::strlen(prompp_flavor);
+  }
+}
+
+extern "C" void prompp_init() {
+  switch (determine_arch_flavor()) {
+#if PROMPP_PLATFORM_AMD64
+  case haswell: {
+//#entrypoint.amd64_haswell_bindings
+    prompp_flavor = "haswell";
+    break; }
+  case nehalem: {
+//#entrypoint.amd64_nehalem_bindings
+    prompp_flavor = "nehalem";
+    break; }
+  default: {
+//#entrypoint.amd64_k8_bindings
+    prompp_flavor = "k8";
+    break; }
+#elif PROMPP_PLATFORM_ARM64
+  case crc32: {
+//#entrypoint.arm64_armv8_a_crc_bindings
+    prompp_flavor = "armv8-a+crc";
+    break; }
+  default: {
+//#entrypoint.arm64_armv8_a_bindings
+    prompp_flavor = "armv8-a";
+    break; }
+#endif
+  }
+}

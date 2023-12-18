@@ -1,1 +1,4 @@
-build:g++-12 --crosstool_top=//bazel/toolchain:g++-12
+build --crosstool_top=//bazel/toolchain:g++-12
+build --fission=yes
+build --flag_alias=march=//bazel/toolchain:march
+build --flag_alias=asan=//bazel/toolchain:asan

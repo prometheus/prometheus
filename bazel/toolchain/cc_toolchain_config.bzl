@@ -96,7 +96,6 @@ def _impl(ctx):
                                 "-Wall",
                                 "-gdwarf",
                                 "-ggdb",
-                                "-g",
                             ],
                         ),
                     ],
@@ -117,28 +116,11 @@ def _impl(ctx):
                     flag_groups = [
                         flag_group(
                             flags = [
-                                # Additional flags for "-c dbg"
-                                "-g",
-                            ],
-                        ),
-                    ],
-                    with_features = [
-                        with_feature_set(
-                            features = [
-                                "dbg",
-                            ],
-                        ),
-                    ],
-                ),
-                flag_set(
-                    actions = all_compile_actions,
-                    flag_groups = [
-                        flag_group(
-                            flags = [
                                 # Additional flags for "-c opt"
                                 "-O3",
                                 "-DNDEBUG",
-                            ] + ctx.attr.cpu_compiler_options,
+                                "-march=" + ctx.attr.march[BuildSettingInfo].value,
+                            ],
                         ),
                     ],
                     with_features = [
@@ -188,6 +170,34 @@ def _impl(ctx):
                         ),
                     ]),
                 ),
+            ]
+        ),
+        feature(
+            name = "sanitizers-address",
+            provides = ["sanitizer"],
+            enabled = ctx.attr.with_asan[BuildSettingInfo].value,
+            flag_sets = [
+                flag_set(
+                    actions = cpp_compile_actions,
+                    flag_groups = [
+                        flag_group(
+                            flags = [
+                                "-fno-omit-frame-pointer",
+                                "-fsanitize=address",
+                            ],
+                        ),
+                    ],
+                ),
+                flag_set(
+                    actions = all_link_actions,
+                    flag_groups = ([
+                        flag_group(
+                            flags = [
+                                "-fsanitize=address",
+                            ],
+                        ),
+                    ]),
+                ),
             ],
         ),
     ]
@@ -210,7 +220,8 @@ cc_toolchain_config = rule(
     implementation = _impl,
     attrs = {
         "builtin_include_directories": attr.string_list(),
-        "cpu_compiler_options": attr.string_list(),
+        "march": attr.label(),
+        "with_asan": attr.label(),
     },
     provides = [CcToolchainConfigInfo],
 )

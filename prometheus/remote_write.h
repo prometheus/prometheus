@@ -4,8 +4,8 @@
 #include <string_view>
 
 #define PROTOZERO_USE_VIEW std::string_view
+#include "third_party/protozero/basic_pbf_writer.hpp"
 #include "third_party/protozero/pbf_reader.hpp"
-#include "third_party/protozero/pbf_writer.hpp"
 
 #include "bare_bones/exception.h"
 
@@ -30,9 +30,9 @@ struct TimeseriesProtobufHashdexRecord {
       : labelset_hashval(lshv), timeseries_protobuf_message(tpm) {}
 };
 
-template <class ProtobufWriter, class Sample>
-inline __attribute__((always_inline)) void write_sample(ProtobufWriter& pb, const Sample& sample) {
-  protozero::pbf_writer pb_sample(pb, 2);
+template <class Output, class Sample>
+inline __attribute__((always_inline)) void write_sample(protozero::basic_pbf_writer<Output>& pb, const Sample& sample) {
+  protozero::basic_pbf_writer<Output> pb_sample(pb, 2);
 
   if (__builtin_expect(sample.value() != 0.0, true)) {
     pb_sample.add_double(1, sample.value());
@@ -43,23 +43,25 @@ inline __attribute__((always_inline)) void write_sample(ProtobufWriter& pb, cons
   }
 }
 
-template <class ProtobufWriter>
-inline __attribute__((always_inline)) void write_label(ProtobufWriter& pb, const std::string_view& label_name, const std::string_view& label_value) {
-  protozero::pbf_writer pb_label(pb, 1);
+template <class Output>
+inline __attribute__((always_inline)) void write_label(protozero::basic_pbf_writer<Output>& pb,
+                                                       const std::string_view& label_name,
+                                                       const std::string_view& label_value) {
+  protozero::basic_pbf_writer<Output> pb_label(pb, 1);
   pb_label.add_string(1, label_name);
   pb_label.add_string(2, label_value);
 }
 
-template <class ProtobufWriter, class LabelSet>
-inline __attribute__((always_inline)) void write_label_set(ProtobufWriter& pb, const LabelSet& label_set) {
+template <class Output, class LabelSet>
+inline __attribute__((always_inline)) void write_label_set(protozero::basic_pbf_writer<Output>& pb, const LabelSet& label_set) {
   for (const auto& [label_name, label_value] : label_set) {
     write_label(pb, label_name, label_value);
   }
 }
 
-template <class ProtobufWriter, class Timeseries>
-inline __attribute__((always_inline)) void write_timeseries(ProtobufWriter& pb, const Timeseries& timeseries) {
-  protozero::pbf_writer pb_timeseries(pb, 1);
+template <class Output, class Timeseries>
+inline __attribute__((always_inline)) void write_timeseries(protozero::basic_pbf_writer<Output>& pb, const Timeseries& timeseries) {
+  protozero::basic_pbf_writer<Output> pb_timeseries(pb, 1);
 
   write_label_set(pb_timeseries, timeseries.label_set());
 
@@ -184,6 +186,7 @@ __attribute__((flatten)) void read_many_timeseries(ProtobufReader& pb, Callback 
   }
 }
 
+// TODO: maybe delete it?
 template <class ProtobufReader, class Timeseries>
 inline __attribute__((always_inline)) void read_timeseries_without_samples(ProtobufReader&& pb_timeseries,
                                                                            Timeseries& timeseries,
@@ -209,6 +212,35 @@ inline __attribute__((always_inline)) void read_timeseries_without_samples(Proto
   }
 
   if (__builtin_expect(!timeseries.label_set().size(), false)) {
+    throw BareBones::Exception(0x68997b7d2e49de1e, "Protobuf message has an empty label set, can't read timeseries");
+  }
+}
+
+template <class ProtobufReader, class LabelSet>
+inline __attribute__((always_inline)) void read_timeseries_label_set(ProtobufReader&& pb_timeseries,
+                                                                     LabelSet& label_set,
+                                                                     const PbLabelSetMemoryLimits& limits) {
+  size_t current_message_n = 0;
+  while (pb_timeseries.next(1)) {
+    if (limits.max_label_names_per_timeseries && current_message_n >= limits.max_label_names_per_timeseries) {
+      throw BareBones::Exception(0xf666cea4f74038c7, "Max Label Names count per Timeseries limit exceeded");
+    }
+
+    auto pb_label = pb_timeseries.get_message();
+    typename LabelSet::label_type label;
+    read_label(pb_label, label);
+    if (size_t label_name_sz = std::size(std::get<0>(label)); limits.max_label_name_length && label_name_sz > limits.max_label_name_length) {
+      throw BareBones::Exception(0x01102a3321345745, "Label name size (%zd) exceeds the maximum name size limit", label_name_sz);
+    }
+    if (size_t label_value_sz = std::size(std::get<1>(label)); limits.max_label_value_length && label_value_sz > limits.max_label_value_length) {
+      throw BareBones::Exception(0x32b5ff9563758da8, "Label value size (%zd) exceeds the maximum value size limit", label_value_sz);
+    }
+    label_set.add(label);
+
+    current_message_n++;
+  }
+
+  if (__builtin_expect(!label_set.size(), false)) {
     throw BareBones::Exception(0x68997b7d2e49de1e, "Protobuf message has an empty label set, can't read timeseries");
   }
 }

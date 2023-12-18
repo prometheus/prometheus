@@ -16,63 +16,6 @@ block_converter_binary := $(absolute_project_dir)/out/block_converter
 block_converter_sources := $(absolute_project_dir)/tools/block_converter
 sort_type := $(shell echo $(word 2, $(subst ., ,$(test_data_file_name))) | tr a-z A-Z)
 
-BUILD_DIR := bazel-bin/
-
-# arch default value is a intentionally incorrect as bash doesn't like empty arguments.
-# In the default case, the go_bindings_arch (if not defined) would be initialized with
-# buildsystem arch name converted from uname.
-ARCH ?= uname-defined
-
-go_bindings_arch ?= $(shell ./r --arch-from-arg $(ARCH) || ./r --arch-from-uname)
-go_in_wal_h_file := wal/wal_c_api.h
-wal_c_api_static_filename := $(go_bindings_arch)_wal_c_api_static.a
-go_out_filename := $(go_bindings_arch)_wal_c_api
-
-go_out_bindings_dir := go/common/internal/
-
-uid := $(shell id -u)
-gid := $(shell id -g)
-platform := $(shell arch)
-
-wal_bindings: $(go_in_wal_h_file)
-	./r --static-c-api --arch $(go_bindings_arch)
-	mkdir -p $(go_out_bindings_dir)
-	cp -f $(BUILD_DIR)$(wal_c_api_static_filename) $(go_out_bindings_dir)$(go_out_filename).a
-	chown $(uid):$(gid) $(go_out_bindings_dir)$(go_out_filename).a
-
-
-with_docker wal_bindings_with_docker: $(go_in_wal_h_file)
-	docker run --pull always --rm -v.:/src --workdir /src registry.flant.com/okmeter/pp:gcc-tools-$(platform) bash -c "\
-	./r --static-c-api --arch $(go_bindings_arch) && \
-	mkdir -p $(go_out_bindings_dir) && \
-	cp -f $(BUILD_DIR)$(wal_c_api_static_filename) $(go_out_bindings_dir)$(go_out_filename).a && \
-	chown $(uid):$(gid) $(go_out_bindings_dir)$(go_out_filename).a"
-
-
-asan wal_bindings_asan: $(go_in_wal_h_file)
-	./r --static-c-api --asan --arch $(go_bindings_arch)
-	mkdir -p $(go_out_bindings_dir)
-	cp -f $(BUILD_DIR)$(wal_c_api_static_filename) $(go_out_bindings_dir)$(go_out_filename)_asan.a
-
-
-dbg wal_bindings_dbg: $(go_in_wal_h_file)
-	./r --static-c-api --dbg --arch $(go_bindings_arch)
-	mkdir -p $(go_out_bindings_dir)
-	cp -f $(BUILD_DIR)$(wal_c_api_static_filename) $(go_out_bindings_dir)$(go_out_filename)_dbg.a
-
-
-dbg_asan wal_bindings_dbg_asan: $(go_in_wal_h_file)
-	./r --static-c-api --dbg --asan --arch $(go_bindings_arch)
-	mkdir -p $(go_out_bindings_dir)
-	cp -f $(BUILD_DIR)$(wal_c_api_static_filename) $(go_out_bindings_dir)$(go_out_filename)_dbg_asan.a
-
-
-clean:
-	rm -f $(go_out_bindings_dir)$(go_out_filename).a
-	rm -f $(go_out_bindings_dir)$(go_out_filename)_asan.a
-	rm -f $(go_out_bindings_dir)$(go_out_filename)_dbg.a
-	rm -f $(go_out_bindings_dir)$(go_out_filename)_dbg_asan.a
-
 test_data_file_name_prefix := $(findstring dummy_wal, $(test_data_file_name))
 ifeq "$(test_data_file_name_prefix)" "dummy_wal"
 $(test_data_file_name): check_if_need_to_load_from_git_lfs check_if_need_to_convert
@@ -125,3 +68,42 @@ $(block_converter_binary): $(block_converter_sources)/go.mod $(block_converter_s
 	go mod tidy; \
 	go build -o $(block_converter_binary); \
 	cd $(absolute_project_root)
+
+## New part of make to replace r-scripts
+include scripts/bazel.mk
+
+all_files := $(shell git ls-files -co --exclude-standard)
+vendored := $(patsubst ./%,%,$(shell find . -path '*/vendor/*'))
+our_files := $(filter-out $(vendored),$(all_files))
+cc_targets := $(shell bazel query 'kind("cc_.*", //...)')
+cc_files := $(patsubst ./%,%,$(shell find . -type f -regex '.*\.\(h\|hpp\|cpp\)' -a -not -path './third_party/*'))
+our_cc_files := $(filter $(cc_files),$(all_files))
+
+test:
+	@echo $(cc_files)
+
+.PHONY: help
+help: ## Show this message
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-10s\033[0m %s\n", $$1, $$2}'
+
+.PHONY: build-entrypoint
+build-entrypoint: ## Build entry point and copy artifacts to Go directory
+	$(MAKE) -C entrypoint install
+
+.PHONY: ascii
+ascii: $(our_files) ## Check there is no non-ascii symbols in code
+	@if grep -I -H --color='auto' -P -n "[^[:ascii:]·–—]" $^; then \
+		exit 1;\
+	fi
+
+.PHONY: format
+format: $(our_cc_files)
+	@clang-format --dry-run  --Werror $^
+
+.PHONY: tidy
+tidy: ## Check clang-tidy for all librarie code
+tidy: tidy_flags := --aspects @bazel_clang_tidy//clang_tidy:clang_tidy.bzl%clang_tidy_aspect
+tidy: tidy_flags += --@bazel_clang_tidy//:clang_tidy_config=//:clang_tidy_config
+tidy: compilation_mode := fastbuild
+tidy:
+	@$(bazel_build) $(tidy_flags) --output_groups=report --platform_suffix=tidy $(cc_targets)

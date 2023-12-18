@@ -105,8 +105,8 @@ struct WriterAddCbBenchmark : BenchParams {
 
 struct WriterAddManyCbBenchmark : BenchParams {
   WAL::Writer writer;
-  decltype(writer)::AddManyStateHandle handle = 0;
-  ~WriterAddManyCbBenchmark() { decltype(writer)::DestroyAddManyStateHandle(handle); }
+  decltype(writer)::SourceState handle = 0;
+  ~WriterAddManyCbBenchmark() { decltype(writer)::DestroySourceState(handle); }
   const char* name() const override { return "Writer::add_many()"; }
   virtual const char* total_processed_metrics_name() const override { return "processed_messages_count"; }
   virtual const char* avg_size_metrics_name() const override { return "wal_writer_add_many_avg_time"; }

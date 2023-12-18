@@ -1,0 +1,9 @@
+--- a/tools/cmake/FindCTargets.cmake
++++ b/tools/cmake/FindCTargets.cmake
+@@ -5,4 +5,6 @@
+ set(BUILD_STATIC_LIB ON)
++if(ENABLE_ROARING_TESTS)
+ import_dependency(cmocka clibs/cmocka  f5e2cd7)
+ add_dependency(cmocka)
++endif()
+ 
