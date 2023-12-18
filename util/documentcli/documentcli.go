@@ -75,7 +75,7 @@ func createFlagRow(flag *kingpin.FlagModel) []string {
 		name = fmt.Sprintf(`<code class="text-nowrap">-%c</code>, <code class="text-nowrap">--%s</code>`, flag.Short, flag.Name)
 	}
 
-	return []string{name, flag.Help, defaultVal}
+	return []string{name, strings.ReplaceAll(flag.Help, "|", `\|`), defaultVal}
 }
 
 func writeFlagTable(writer io.Writer, level int, fgm *kingpin.FlagGroupModel) error {
