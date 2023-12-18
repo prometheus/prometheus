@@ -53,8 +53,9 @@ const (
 	// Allow 30% too many shards before scaling down.
 	shardToleranceFraction = 0.3
 
-	reasonTooOld        = "too old"
-	reasonDroppedSeries = "dropped series"
+	reasonTooOld                     = "too old"
+	reasonDroppedSeries              = "dropped series"
+	reasonUnintentionalDroppedSeries = "unintentionally dropped series"
 )
 
 type queueManagerMetrics struct {
@@ -637,6 +638,9 @@ outer:
 			t.dataDropped.incr(1)
 			if _, ok := t.droppedSeries[s.Ref]; !ok {
 				level.Info(t.logger).Log("msg", "Dropped sample for series that was not explicitly dropped via relabelling", "ref", s.Ref)
+				t.metrics.droppedSamplesTotal.WithLabelValues(reasonUnintentionalDroppedSeries).Inc()
+			} else {
+				t.metrics.droppedSamplesTotal.WithLabelValues(reasonDroppedSeries).Inc()
 			}
 			t.seriesMtx.Unlock()
 			continue
@@ -689,11 +693,13 @@ outer:
 		t.seriesMtx.Lock()
 		lbls, ok := t.seriesLabels[e.Ref]
 		if !ok {
-			t.metrics.droppedExemplarsTotal.WithLabelValues(reasonDroppedSeries).Inc()
 			// Track dropped exemplars in the same EWMA for sharding calc.
 			t.dataDropped.incr(1)
 			if _, ok := t.droppedSeries[e.Ref]; !ok {
 				level.Info(t.logger).Log("msg", "Dropped exemplar for series that was not explicitly dropped via relabelling", "ref", e.Ref)
+				t.metrics.droppedExemplarsTotal.WithLabelValues(reasonUnintentionalDroppedSeries).Inc()
+			} else {
+				t.metrics.droppedExemplarsTotal.WithLabelValues(reasonDroppedSeries).Inc()
 			}
 			t.seriesMtx.Unlock()
 			continue
@@ -742,10 +748,12 @@ outer:
 		t.seriesMtx.Lock()
 		lbls, ok := t.seriesLabels[h.Ref]
 		if !ok {
-			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonDroppedSeries).Inc()
 			t.dataDropped.incr(1)
 			if _, ok := t.droppedSeries[h.Ref]; !ok {
 				level.Info(t.logger).Log("msg", "Dropped histogram for series that was not explicitly dropped via relabelling", "ref", h.Ref)
+				t.metrics.droppedHistogramsTotal.WithLabelValues(reasonUnintentionalDroppedSeries).Inc()
+			} else {
+				t.metrics.droppedHistogramsTotal.WithLabelValues(reasonDroppedSeries).Inc()
 			}
 			t.seriesMtx.Unlock()
 			continue
@@ -793,10 +801,12 @@ outer:
 		t.seriesMtx.Lock()
 		lbls, ok := t.seriesLabels[h.Ref]
 		if !ok {
-			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonDroppedSeries).Inc()
 			t.dataDropped.incr(1)
 			if _, ok := t.droppedSeries[h.Ref]; !ok {
+				t.metrics.droppedHistogramsTotal.WithLabelValues(reasonUnintentionalDroppedSeries).Inc()
 				level.Info(t.logger).Log("msg", "Dropped histogram for series that was not explicitly dropped via relabelling", "ref", h.Ref)
+			} else {
+				t.metrics.droppedHistogramsTotal.WithLabelValues(reasonDroppedSeries).Inc()
 			}
 			t.seriesMtx.Unlock()
 			continue
