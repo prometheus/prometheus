@@ -108,6 +108,10 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if c.Regex.Regexp == nil {
 		c.Regex = MustNewRegexp("")
 	}
+	return c.Validate()
+}
+
+func (c *Config) Validate() error {
 	if c.Action == "" {
 		return fmt.Errorf("relabel action cannot be empty")
 	}
