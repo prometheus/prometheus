@@ -274,12 +274,11 @@ func relabel(cfg *Config, lb *labels.Builder) (keep bool) {
 		}
 		target := model.LabelName(cfg.Regex.ExpandString([]byte{}, cfg.TargetLabel, val, indexes))
 		if !target.IsValid() {
-			lb.Del(cfg.TargetLabel)
 			break
 		}
 		res := cfg.Regex.ExpandString([]byte{}, cfg.Replacement, val, indexes)
 		if len(res) == 0 {
-			lb.Del(cfg.TargetLabel)
+			lb.Del(string(target))
 			break
 		}
 		lb.Set(string(target), string(res))

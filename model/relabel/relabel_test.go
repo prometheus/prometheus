@@ -215,6 +215,25 @@ func TestRelabel(t *testing.T) {
 			}),
 		},
 		{
+			// Blank replacement should delete the label.
+			input: labels.FromMap(map[string]string{
+				"a": "foo",
+				"f": "baz",
+			}),
+			relabel: []*Config{
+				{
+					SourceLabels: model.LabelNames{"a"},
+					Regex:        MustNewRegexp("(f).*"),
+					TargetLabel:  "$1",
+					Replacement:  "$2",
+					Action:       Replace,
+				},
+			},
+			output: labels.FromMap(map[string]string{
+				"a": "foo",
+			}),
+		},
+		{
 			input: labels.FromMap(map[string]string{
 				"a": "foo",
 				"b": "bar",
