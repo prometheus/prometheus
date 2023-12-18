@@ -3,6 +3,12 @@ build_dir_absolute_path := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))build
 
 include ../scripts/bazel.mk
 
+# To distinct results built with different options we use this result_suffix
+result_suffix := $(compilation_mode)
+ifeq ($(asan),true)
+result_suffix := $(result_suffix)_asan
+endif
+
 archives := $(patsubst %, build/$(platform)_%_entrypoint_aio.a, $(escaped_flavors))
 prefixed_archives := $(patsubst %.a, %_prefixed.a, $(archives))
 
