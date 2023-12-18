@@ -55,6 +55,7 @@ type SDConfig struct {
 	RefreshInterval  model.Duration          `yaml:"refresh_interval,omitempty"`
 	FetchTimeout     model.Duration          `yaml:"fetch_timeout,omitempty"`
 	Server           string                  `yaml:"server,omitempty"`
+	ClientID         string                  `yaml:"client_id,omitempty"`
 }
 
 // mustRegisterMessage registers the provided message type in the typeRegistry, and panics
