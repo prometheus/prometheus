@@ -335,7 +335,7 @@ func TestRelabel(t *testing.T) {
 		},
 		{ // invalid target_labels
 			input: labels.FromMap(map[string]string{
-				"a": "some-name-value",
+				"a": "some-name-0",
 			}),
 			relabel: []*Config{
 				{
@@ -350,18 +350,18 @@ func TestRelabel(t *testing.T) {
 					Regex:        MustNewRegexp("some-([^-]+)-([^,]+)"),
 					Action:       Replace,
 					Replacement:  "${1}",
-					TargetLabel:  "0${3}",
+					TargetLabel:  "${3}",
 				},
 				{
 					SourceLabels: model.LabelNames{"a"},
-					Regex:        MustNewRegexp("some-([^-]+)-([^,]+)"),
+					Regex:        MustNewRegexp("some-([^-]+)(-[^,]+)"),
 					Action:       Replace,
 					Replacement:  "${1}",
-					TargetLabel:  "-${3}",
+					TargetLabel:  "${3}",
 				},
 			},
 			output: labels.FromMap(map[string]string{
-				"a": "some-name-value",
+				"a": "some-name-0",
 			}),
 		},
 		{ // more complex real-life like usecase
@@ -566,6 +566,7 @@ func TestRelabel(t *testing.T) {
 			if cfg.Replacement == "" {
 				cfg.Replacement = DefaultRelabelConfig.Replacement
 			}
+			require.NoError(t, cfg.Validate())
 		}
 
 		res, keep := Process(test.input, test.relabel...)
