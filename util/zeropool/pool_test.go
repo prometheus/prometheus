@@ -28,19 +28,19 @@ func TestPool(t *testing.T) {
 	t.Run("provides correct values", func(t *testing.T) {
 		pool := zeropool.New(func() []byte { return make([]byte, 1024) })
 		item1 := pool.Get()
-		require.Equal(t, 1024, len(item1))
+		require.Len(t, item1, 1024)
 
 		item2 := pool.Get()
-		require.Equal(t, 1024, len(item2))
+		require.Len(t, item2, 1024)
 
 		pool.Put(item1)
 		pool.Put(item2)
 
 		item1 = pool.Get()
-		require.Equal(t, 1024, len(item1))
+		require.Len(t, item1, 1024)
 
 		item2 = pool.Get()
-		require.Equal(t, 1024, len(item2))
+		require.Len(t, item2, 1024)
 	})
 
 	t.Run("is not racy", func(t *testing.T) {

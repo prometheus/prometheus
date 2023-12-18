@@ -360,22 +360,26 @@ func (p *ProtobufParser) Exemplar(ex *exemplar.Exemplar) bool {
 	return true
 }
 
-func (p *ProtobufParser) CreatedTimestamp(ct *types.Timestamp) bool {
-	var foundCT *types.Timestamp
+// CreatedTimestamp returns CT or nil if CT is not present or
+// invalid (as timestamp e.g. negative value) on counters, summaries or histograms.
+func (p *ProtobufParser) CreatedTimestamp() *int64 {
+	var ct *types.Timestamp
 	switch p.mf.GetType() {
 	case dto.MetricType_COUNTER:
-		foundCT = p.mf.GetMetric()[p.metricPos].GetCounter().GetCreatedTimestamp()
+		ct = p.mf.GetMetric()[p.metricPos].GetCounter().GetCreatedTimestamp()
 	case dto.MetricType_SUMMARY:
-		foundCT = p.mf.GetMetric()[p.metricPos].GetSummary().GetCreatedTimestamp()
+		ct = p.mf.GetMetric()[p.metricPos].GetSummary().GetCreatedTimestamp()
 	case dto.MetricType_HISTOGRAM, dto.MetricType_GAUGE_HISTOGRAM:
-		foundCT = p.mf.GetMetric()[p.metricPos].GetHistogram().GetCreatedTimestamp()
+		ct = p.mf.GetMetric()[p.metricPos].GetHistogram().GetCreatedTimestamp()
 	default:
 	}
-	if foundCT == nil {
-		return false
+	ctAsTime, err := types.TimestampFromProto(ct)
+	if err != nil {
+		// Errors means ct == nil or invalid timestamp, which we silently ignore.
+		return nil
 	}
-	*ct = *foundCT
-	return true
+	ctMilis := ctAsTime.UnixMilli()
+	return &ctMilis
 }
 
 // Next advances the parser to the next "sample" (emulating the behavior of a

@@ -134,7 +134,7 @@ func TestOutOfOrderExemplar(t *testing.T) {
 func TestOutOfOrderHistogram(t *testing.T) {
 	buf, _, err := buildWriteRequest([]prompb.TimeSeries{{
 		Labels:     []prompb.Label{{Name: "__name__", Value: "test_metric"}},
-		Histograms: []prompb.Histogram{HistogramToHistogramProto(0, &testHistogram), FloatHistogramToHistogramProto(1, testHistogram.ToFloat())},
+		Histograms: []prompb.Histogram{HistogramToHistogramProto(0, &testHistogram), FloatHistogramToHistogramProto(1, testHistogram.ToFloat(nil))},
 	}}, nil, nil, nil)
 	require.NoError(t, err)
 
@@ -228,7 +228,7 @@ func BenchmarkRemoteWriteOOOSamples(b *testing.B) {
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
 	require.Equal(b, http.StatusNoContent, recorder.Code)
-	require.Equal(b, db.Head().NumSeries(), uint64(1000))
+	require.Equal(b, uint64(1000), db.Head().NumSeries())
 
 	var bufRequests [][]byte
 	for i := 0; i < 100; i++ {
@@ -245,7 +245,7 @@ func BenchmarkRemoteWriteOOOSamples(b *testing.B) {
 		recorder = httptest.NewRecorder()
 		handler.ServeHTTP(recorder, req)
 		require.Equal(b, http.StatusNoContent, recorder.Code)
-		require.Equal(b, db.Head().NumSeries(), uint64(1000))
+		require.Equal(b, uint64(1000), db.Head().NumSeries())
 	}
 }
 
@@ -337,5 +337,10 @@ func (m *mockAppendable) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t
 func (m *mockAppendable) UpdateMetadata(_ storage.SeriesRef, _ labels.Labels, _ metadata.Metadata) (storage.SeriesRef, error) {
 	// TODO: Wire metadata in a mockAppendable field when we get around to handling metadata in remote_write.
 	// UpdateMetadata is no-op for remote write (where mockAppendable is being used to test) for now.
+	return 0, nil
+}
+
+func (m *mockAppendable) AppendCTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64) (storage.SeriesRef, error) {
+	// AppendCTZeroSample is no-op for remote-write for now.
 	return 0, nil
 }

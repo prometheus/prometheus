@@ -29,6 +29,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/lightsail"
 	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
@@ -84,7 +85,7 @@ func (*LightsailSDConfig) Name() string { return "lightsail" }
 
 // NewDiscoverer returns a Discoverer for the Lightsail Config.
 func (c *LightsailSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewLightsailDiscovery(c, opts.Logger), nil
+	return NewLightsailDiscovery(c, opts.Logger, opts.Registerer), nil
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface for the Lightsail Config.
@@ -121,7 +122,7 @@ type LightsailDiscovery struct {
 }
 
 // NewLightsailDiscovery returns a new LightsailDiscovery which periodically refreshes its targets.
-func NewLightsailDiscovery(conf *LightsailSDConfig, logger log.Logger) *LightsailDiscovery {
+func NewLightsailDiscovery(conf *LightsailSDConfig, logger log.Logger, reg prometheus.Registerer) *LightsailDiscovery {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -129,10 +130,13 @@ func NewLightsailDiscovery(conf *LightsailSDConfig, logger log.Logger) *Lightsai
 		cfg: conf,
 	}
 	d.Discovery = refresh.NewDiscovery(
-		logger,
-		"lightsail",
-		time.Duration(d.cfg.RefreshInterval),
-		d.refresh,
+		refresh.Options{
+			Logger:   logger,
+			Mech:     "lightsail",
+			Interval: time.Duration(d.cfg.RefreshInterval),
+			RefreshF: d.refresh,
+			Registry: reg,
+		},
 	)
 	return d
 }
