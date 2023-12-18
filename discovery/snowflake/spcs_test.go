@@ -1,6 +1,15 @@
-/*
- * Copyright (c) 2023 Snowflake Computing Inc. All rights reserved.
- */
+// Copyright 2023 The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package snowflake
 
@@ -10,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
@@ -43,7 +53,7 @@ func TestNewDiscovery(t *testing.T) {
 		Protocol:        DefaultSPCSSDConfig.Protocol,
 		RefreshInterval: DefaultSPCSSDConfig.RefreshInterval,
 	}
-	d := NewDiscovery(&config, log.NewNopLogger())
+	d, _ := NewDiscovery(&config, log.NewNopLogger(), prometheus.NewRegistry())
 	require.NotNil(t, d)
 	require.Equal(t, config, *d.cfg)
 }
@@ -61,9 +71,9 @@ func TestGetComputePoolsToScrape(t *testing.T) {
 
 	// Test case with multiple rows, some active and some inactive.
 	rows = [][]string{
-		{"active", "pool1", "admin"},
+		{"ACTIVE", "pool1", "admin"},
 		{"inactive", "pool2", "admin"},
-		{"active", "pool3", "admin"},
+		{"active", "pool3", "Admin"},
 	}
 	expected = []string{"pool1", "pool3"}
 	result, err = getComputePoolsToScrape(rows, columns, role)
@@ -98,7 +108,7 @@ func TestGetComputePoolsToScrape(t *testing.T) {
 	if err == nil {
 		t.Errorf("Expected an error, but got no error")
 	}
-	require.Equal(t, "SPCS discovery plugin: error retrieving compute pool state. SPCS discovery plugin: column not found. column_name: state", err.Error(), "Error message mismatch")
+	require.Equal(t, "SPCS discovery plugin: Error retrieving compute pool state in row 0. Error column not found. column_name: state", err.Error(), "Error message mismatch")
 }
 
 func TestGetColumnValue(t *testing.T) {
@@ -122,7 +132,7 @@ func TestGetColumnValue(t *testing.T) {
 	if err == nil {
 		t.Errorf("Expected an error, but got no error")
 	}
-	require.Equal(t, "SPCS discovery plugin: column not found. column_name: nonexistent", err.Error(), "Error message mismatch")
+	require.Equal(t, "Error column not found. column_name: nonexistent", err.Error(), "Error message mismatch")
 }
 
 func TestGetTargets(t *testing.T) {

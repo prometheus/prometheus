@@ -1,6 +1,15 @@
-/*
- * Copyright (c) 2023 Snowflake Computing Inc. All rights reserved.
- */
+// Copyright 2023 The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package snowflake
 
@@ -17,8 +26,10 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	sf "github.com/snowflakedb/gosnowflake"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
@@ -87,7 +98,7 @@ func (*SPCSSDConfig) Name() string { return SpcsPluginName }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SPCSSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(c, opts.Logger), nil
+	return NewDiscovery(c, opts.Logger, opts.Registerer)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -132,7 +143,7 @@ type Discovery struct {
 }
 
 // New creates a new spcs discovery for the given role.
-func NewDiscovery(conf *SPCSSDConfig, logger log.Logger) *Discovery {
+func NewDiscovery(conf *SPCSSDConfig, logger log.Logger, reg prometheus.Registerer) (*Discovery, error) {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -142,12 +153,16 @@ func NewDiscovery(conf *SPCSSDConfig, logger log.Logger) *Discovery {
 		cfg:    conf,
 	}
 	d.Discovery = refresh.NewDiscovery(
-		logger,
-		SpcsPluginName,
-		time.Duration(d.cfg.RefreshInterval),
-		d.refresh,
+		refresh.Options{
+			Logger:   logger,
+			Mech:     SpcsPluginName,
+			Interval: time.Duration(d.cfg.RefreshInterval),
+			RefreshF: d.refresh,
+			Registry: reg,
+		},
 	)
-	return d
+
+	return d, nil
 }
 
 func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
@@ -331,27 +346,29 @@ func getCurrentRole(rows [][]string) (string, error) {
 func getComputePoolsToScrape(rows [][]string, columns []string, role string) ([]string, error) {
 	// Create a slice to hold the computepools.
 	computePools := []string{}
+	index := 0
 
 	// Iterate through the rows.
 	for _, row := range rows {
 		cpState, err := getColumnValue(row, columns, StateColumn)
 		if err != nil {
-			return nil, fmt.Errorf("SPCS discovery plugin: error retrieving compute pool state. %w", err)
+			return nil, fmt.Errorf("SPCS discovery plugin: Error retrieving compute pool state in row %d. %w", index, err)
 		}
 
 		ownerName, err := getColumnValue(row, columns, OwnerColumn)
 		if err != nil {
-			return nil, fmt.Errorf("SPCS discovery plugin: error retrieving compute pool owner name. %w", err)
+			return nil, fmt.Errorf("SPCS discovery plugin: Error retrieving compute pool owner name in row %d. %w", index, err)
 		}
 
 		cpName, err := getColumnValue(row, columns, NameColumn)
 		if err != nil {
-			return nil, fmt.Errorf("SPCS discovery plugin: error retrieving compute pool name. %w", err)
+			return nil, fmt.Errorf("SPCS discovery plugin: Error retrieving compute pool name in row %d. %w", index, err)
 		}
 
-		if strings.EqualFold(strings.ToLower(cpState), StateActiveValue) && strings.EqualFold(strings.ToLower(ownerName), strings.ToLower(role)) {
+		if strings.EqualFold(cpState, StateActiveValue) && strings.EqualFold(ownerName, role) {
 			computePools = append(computePools, cpName)
 		}
+		index++
 	}
 	return computePools, nil
 }
@@ -360,17 +377,16 @@ func getColumnValue(row, columns []string, columnName string) (string, error) {
 	// Get the column index.
 	columnIndex := indexOf(columnName, columns)
 	if columnIndex == -1 {
-		return "", fmt.Errorf("SPCS discovery plugin: column not found. column_name: %s", columnName)
+		return "", fmt.Errorf("Error column not found. column_name: %s", columnName)
 	}
 
 	return row[columnIndex], nil
 }
 
 func indexOf(target string, slice []string) int {
-	for i, value := range slice {
-		if value == target {
-			return i
-		}
+	index := slices.Index(slice, target)
+	if index != -1 {
+		return index
 	}
 	return -1 // Element not found.
 }
