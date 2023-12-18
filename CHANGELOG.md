@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.45.2 / 2023-12-19
+
+This release contains security fixes in dependencies and has been built with go1.21.5. #13307
+
+* [BUGFIX] TSDB: Fix PostingsForMatchers race with creating new series. #12558
+
 ## 2.45.1 / 2023-09-29
 
 * [ENHANCEMENT] Hetzner SD: Support larger ID's that will be used by Hetzner in
