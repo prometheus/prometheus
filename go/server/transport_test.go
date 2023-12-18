@@ -16,7 +16,6 @@ func ExampleTCPReader() {
 
 	handleStream := func(ctx context.Context, fe *frames.ReadFrame, tcpReader *server.TCPReader) {
 		reader := server.NewProtocolReader(server.StartWith(tcpReader, fe))
-		defer reader.Destroy()
 		for {
 			rq, err := reader.Next(ctx)
 			if err != nil {

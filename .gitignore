@@ -7,3 +7,5 @@ performance_tests/test_data/small/*
 !performance_tests/test_data/small/dummy_wal.*
 bazel-*
 .vscode
+.cache
+.bash_history

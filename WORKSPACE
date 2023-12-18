@@ -16,14 +16,17 @@ bazel_skylib_workspace()
 
 http_archive(
     name = "rules_foreign_cc",
-    url = "https://github.com/bazelbuild/rules_foreign_cc/archive/14ded03b9c835e9ccba6a20f0944729dccab8d9b.zip",
-    sha256 = "a4a7c3a39e90677c78663a07e6d2a4a7ce8529393464f9c0ba51d2ebe5dd8be5",
-    strip_prefix = "rules_foreign_cc-14ded03b9c835e9ccba6a20f0944729dccab8d9b",
+    url = "https://github.com/bazelbuild/rules_foreign_cc/archive/51152aac9d6d8b887802a47ec08a1a37ef2c4885.zip",
+    # sha256 = "a4a7c3a39e90677c78663a07e6d2a4a7ce8529393464f9c0ba51d2ebe5dd8be5",
+    sha256 = "2d4a7a935226cf9c01bda163bec54192bc6ffa4a68452794fbea918312c563f4",
+    strip_prefix = "rules_foreign_cc-51152aac9d6d8b887802a47ec08a1a37ef2c4885",
 )
 
 load("@rules_foreign_cc//foreign_cc:repositories.bzl", "rules_foreign_cc_dependencies")
 
-rules_foreign_cc_dependencies()
+rules_foreign_cc_dependencies(
+    register_built_tools = False,
+)
 
 git_repository(
     name = "gtest",
@@ -167,13 +170,13 @@ http_archive(
 )
 
 http_archive(
-    name = "roaring_bitmap",
+    name = "roaring",
     url = "https://github.com/RoaringBitmap/CRoaring/archive/refs/tags/v1.3.0.zip",
     sha256 = "a037e12a3f7c8c2abb3e81fc9669c23e274ffa2d8670d2034a2e05969e53689b",
     strip_prefix = "CRoaring-1.3.0/",
     patch_args = ["-p1"],
     patches = [
-        "//third_party/patches/roaring_bitmap:0001-disable-test-dependencies.patch",
+        "//third_party/patches/roaring:0001-disable-test-dependencies.patch",
     ],
-    build_file = "//third_party:roaring_bitmap.BUILD",
+    build_file = "//third_party:roaring.BUILD",
 )

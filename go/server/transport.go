@@ -9,7 +9,7 @@ import (
 
 	"github.com/prometheus/prometheus/prompb"
 
-	"github.com/prometheus/prometheus/pp/go/common"
+	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/pp/go/frames"
 	"github.com/prometheus/prometheus/pp/go/transport"
 )
@@ -24,7 +24,7 @@ type Reader interface {
 // ProtocolReader - reader that reads raw messages and decodes them into WriteRequest.
 type ProtocolReader struct {
 	reader  Reader
-	decoder *common.Decoder
+	decoder *cppbridge.WALDecoder
 }
 
 // NewProtocolReader - init new ProtocolReader.
@@ -53,36 +53,25 @@ func (pr *ProtocolReader) Next(ctx context.Context) (*Request, error) {
 	}
 }
 
-// Destroy - destroy the decoder reader.
-func (pr *ProtocolReader) Destroy() {
-	if pr.decoder != nil {
-		pr.decoder.Destroy()
-	}
-}
-
 // handlePut - process the put using the decoder.
 func (pr *ProtocolReader) handlePut(ctx context.Context, fe *frames.ReadFrame) (*Request, error) {
 	if pr.decoder == nil {
-		var err error
-		pr.decoder, err = common.NewDecoder()
-		if err != nil {
-			return nil, fmt.Errorf("create new decoder for segment: %w", err)
-		}
+		pr.decoder = cppbridge.NewWALDecoder()
 	}
 
-	blob, segmentID, err := pr.decoder.Decode(ctx, fe.GetBody())
+	segment, err := pr.decoder.Decode(ctx, fe.GetBody())
 	if err != nil {
 		return nil, fmt.Errorf("decode segment: %w", err)
 	}
 
 	rq := &Request{
-		SegmentID: segmentID,
+		SegmentID: segment.SegmentID(),
 		Message:   new(prompb.WriteRequest),
 		SentAt:    fe.GetCreatedAt(),
-		CreatedAt: blob.CreatedAt(),
-		EncodedAt: blob.EncodedAt(),
+		CreatedAt: segment.CreatedAt(),
+		EncodedAt: segment.EncodedAt(),
 	}
-	if err := blob.UnmarshalTo(rq.Message); err != nil {
+	if err := segment.UnmarshalTo(rq.Message); err != nil {
 		return rq, fmt.Errorf("unmarshal protobuf: %w", err)
 	}
 	return rq, nil

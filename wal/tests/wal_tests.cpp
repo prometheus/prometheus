@@ -321,9 +321,9 @@ TEST_F(Wal, BasicEncoderMany) {
   };
 
   //
-  decltype(encoder)::AddManyStateHandle handle = encoder.add_many<without_hash_value, TimeSeriesForTest>(0, ts[0], generator);
-  handle = encoder.add_many<without_hash_value, TimeSeriesForTest>(handle, ts[1], generator_2);
-  decltype(encoder)::DestroyAddManyStateHandle(handle);
+  decltype(encoder)::SourceState state = encoder.add_many<without_hash_value, TimeSeriesForTest>(0, ts[0], generator);
+  state = encoder.add_many<without_hash_value, TimeSeriesForTest>(state, ts[1], generator_2);
+  decltype(encoder)::DestroySourceState(state);
 
   struct Item {
     uint32_t ls_id;

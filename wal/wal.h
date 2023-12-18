@@ -21,7 +21,7 @@
 #include "primitives/primitives.h"
 #include "primitives/snug_composites.h"
 
-#include "roaring/roaring.hh"
+#include <roaring/roaring.hh>
 
 namespace PromPP::WAL {
 
@@ -221,9 +221,9 @@ class BasicEncoder {
   };
 
   // Opaque type for storing state between add_many() calls
-  using AddManyStateHandle = size_t;
+  using SourceState = size_t;
 
-  static void DestroyAddManyStateHandle(AddManyStateHandle h) {
+  static void DestroySourceState(SourceState h) {
     if (h) {
       delete reinterpret_cast<StaleNaNsState<>*>(h);
     }
@@ -458,13 +458,13 @@ class BasicEncoder {
   /// @param stale_nan_timestamp Timestamp for new StaleNaN timeseries.
   /// @param timeseries_generator_callback Generator for new timeseries. It should call the
   ///        `void(const Timeseries& tmsr)`/`void(const Timeseries& tmsr, size_t hashval)` callback for
-  ///        actual addition of the timeseries (tmsr) with forwarded AddManyStateHandle state.
+  ///        actual addition of the timeseries (tmsr) with forwarded SourceState state.
   ///        The callback must return the BitsetType which would be used for searching absent label sets.
   /// @return Opaque state with timeseries deltas. Use it in further add_many() calls for filling
   ///         missing label_sets with stalenans.
   template <add_many_generator_callback_type GeneratorForwardedCallbackType, typename Timeseries, typename Timestamp, typename TimeseriesGeneratorT>
   //  requires(TimeseriesGenerator<TimeseriesGeneratorT, void(const Timeseries&), Timeseries>)
-  AddManyStateHandle add_many(AddManyStateHandle add_many_state, const Timestamp& stale_nan_timestamp, TimeseriesGeneratorT timeseries_generator_callback) {
+  SourceState add_many(SourceState add_many_state, const Timestamp& stale_nan_timestamp, TimeseriesGeneratorT timeseries_generator_callback) {
     StaleNaNsState<>* result = add_many_state ? reinterpret_cast<StaleNaNsState<>*>(add_many_state) : new StaleNaNsState<>(this);
     if (result->parent != this) {
       // this state is not our state, so cleaning up bits!
@@ -515,7 +515,7 @@ class BasicEncoder {
       }
       throw;
     }
-    return reinterpret_cast<AddManyStateHandle>(result);
+    return reinterpret_cast<SourceState>(result);
   }
 
   template <class OutputStream>

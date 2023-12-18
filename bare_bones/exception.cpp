@@ -30,13 +30,13 @@ extern "C" void prompp_barebones_exception_set_on_fork_handler(void* state, void
 }
 
 namespace BareBones {
-static constexpr size_t user_buffer_msg_size = 255;
+static constexpr size_t USER_BUFFER_MSG_SIZE = 255;
 
 static constexpr size_t get_exception_buffer_size() {
   // the HEX representation for type is twice longer than their sizeof() as the 1 byte is written as two HEX digits.
   constexpr size_t byte_size_in_printed_characters = 2;
   // total buffer size must be sufficient for storing the "Exception <HEX-code>: " + user defined message. +1 for \0 (it's got from std::size())
-  return user_buffer_msg_size + sizeof(Exception::Code) * byte_size_in_printed_characters + std::size("Exception : ");
+  return USER_BUFFER_MSG_SIZE + sizeof(Exception::Code) * byte_size_in_printed_characters + std::size("Exception : ");
 }
 
 Exception::Exception(Code exc_code, const char* message, ...) : trace_(StackTrace::Current()), code_(exc_code) {
@@ -76,8 +76,9 @@ Exception::Exception(Code exc_code, const char* message, ...) : trace_(StackTrac
   va_start(list, message);
 
   // Concatenate the user-formatted message (+1 for \0 as snprintf() truncates if formatted string fills the whole buffer)
-  size_t l = vsnprintf(buf + off1, user_buffer_msg_size + 1, message, list);
+  size_t l = vsnprintf(buf + off1, USER_BUFFER_MSG_SIZE + 1, message, list);
   msg_ = std::string_view(buf, off1 + l + 1);  // +1 for \0
+  va_end(list);
 }
 
 }  // namespace BareBones
