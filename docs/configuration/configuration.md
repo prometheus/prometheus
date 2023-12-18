@@ -3614,7 +3614,7 @@ queue_config:
   # Retry upon receiving a 429 status code from the remote-write storage.
   # This is experimental and might change in the future.
   [ retry_on_http_429: <boolean> | default = false ]
-  # If set, any sample that is older than  sample_age_limit given 
+  # If set, any sample that is older than sample_age_limit
   # will not be sent to the remote storage. The default value is 0s,
   # which means that all samples are sent.
   [ sample_age_limit: <duration> | default = 0s ]
