@@ -275,11 +275,12 @@ class BasicEncoder {
     gorilla_.resize(label_sets_.size());
 
     auto redundant = std::make_unique<Redundant>(next_encoded_segment_, label_sets_checkpoint_, label_sets_.size());
-    Primitives::LabelSetID last_id = std::numeric_limits<Primitives::LabelSetID>::max();
+    constexpr Primitives::LabelSetID max_last_id = std::numeric_limits<Primitives::LabelSetID>::max();
+    Primitives::LabelSetID last_id = max_last_id;
     if (ts_delta_rle_is_worth_trying) {
       buffer_.for_each([&](Primitives::LabelSetID ls_id, Primitives::Timestamp ts, Primitives::Sample::value_type v) {
-        assert(ls_id >= last_id);
-        if (!last_id || last_id != ls_id) {
+        assert(last_id == max_last_id || ls_id >= last_id);
+        if (last_id == max_last_id || last_id != ls_id) {
           redundant->encoders.emplace_back(gorilla_[ls_id], ls_id);
         }
         gorilla_[ls_id].encode(ts - ts_base_, v, gorilla_ts_bitseq, gorilla_v_bitseq);

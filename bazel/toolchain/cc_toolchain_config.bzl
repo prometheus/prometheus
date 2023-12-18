@@ -96,6 +96,7 @@ def _impl(ctx):
                                 "-Wall",
                                 "-gdwarf",
                                 "-ggdb",
+                                "-march=" + ctx.attr.march[BuildSettingInfo].value,
                             ],
                         ),
                     ],
@@ -119,7 +120,6 @@ def _impl(ctx):
                                 # Additional flags for "-c opt"
                                 "-O3",
                                 "-DNDEBUG",
-                                "-march=" + ctx.attr.march[BuildSettingInfo].value,
                             ],
                         ),
                     ],
