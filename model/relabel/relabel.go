@@ -121,7 +121,13 @@ func (c *Config) Validate() error {
 	if (c.Action == Replace || c.Action == HashMod || c.Action == Lowercase || c.Action == Uppercase || c.Action == KeepEqual || c.Action == DropEqual) && c.TargetLabel == "" {
 		return fmt.Errorf("relabel configuration for %s action requires 'target_label' value", c.Action)
 	}
-	if (c.Action == Replace || c.Action == Lowercase || c.Action == Uppercase || c.Action == KeepEqual || c.Action == DropEqual) && !relabelTarget.MatchString(c.TargetLabel) {
+	if c.Action == Replace && !strings.Contains(c.TargetLabel, "$") && !model.LabelName(c.TargetLabel).IsValid() {
+		return fmt.Errorf("%q is invalid 'target_label' for %s action", c.TargetLabel, c.Action)
+	}
+	if c.Action == Replace && strings.Contains(c.TargetLabel, "$") && !relabelTarget.MatchString(c.TargetLabel) {
+		return fmt.Errorf("%q is invalid 'target_label' for %s action", c.TargetLabel, c.Action)
+	}
+	if (c.Action == Lowercase || c.Action == Uppercase || c.Action == KeepEqual || c.Action == DropEqual) && !model.LabelName(c.TargetLabel).IsValid() {
 		return fmt.Errorf("%q is invalid 'target_label' for %s action", c.TargetLabel, c.Action)
 	}
 	if (c.Action == Lowercase || c.Action == Uppercase || c.Action == KeepEqual || c.Action == DropEqual) && c.Replacement != DefaultRelabelConfig.Replacement {
