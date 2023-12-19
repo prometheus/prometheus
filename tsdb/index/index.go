@@ -110,9 +110,7 @@ type symbolCacheEntry struct {
 	lastValue      string
 }
 
-type PostingsEncoder interface {
-	EncodePostings(*encoding.Encbuf, []uint32)
-}
+type PostingsEncoder func(*encoding.Encbuf, []uint32) error
 
 // Writer implements the IndexWriter interface for the standard
 // serialization format.
@@ -192,11 +190,8 @@ func NewTOCFromByteSlice(bs ByteSlice) (*TOC, error) {
 }
 
 // NewWriter returns a new Writer to the given filename. It serializes data in format version 2.
-func NewWriter(ctx context.Context, fn string, postingsEncoder PostingsEncoder) (*Writer, error) {
-	if postingsEncoder == nil {
-		postingsEncoder = &RawPostingsEncoder{}
-	}
-
+// It uses the given encoder to encode each postings list.
+func NewWriterWithEncoder(ctx context.Context, fn string, encoder PostingsEncoder) (*Writer, error) {
 	dir := filepath.Dir(fn)
 
 	df, err := fileutil.OpenDir(dir)
@@ -242,12 +237,18 @@ func NewWriter(ctx context.Context, fn string, postingsEncoder PostingsEncoder) 
 		symbolCache:     make(map[string]symbolCacheEntry, 1<<8),
 		labelNames:      make(map[string]uint64, 1<<8),
 		crc32:           newCRC32(),
-		postingsEncoder: postingsEncoder,
+		postingsEncoder: encoder,
 	}
 	if err := iw.writeMeta(); err != nil {
 		return nil, err
 	}
 	return iw, nil
+}
+
+// NewWriter creates a new index writer using the default encoder. See
+// NewWriterWithEncoder.
+func NewWriter(ctx context.Context, fn string) (*Writer, error) {
+	return NewWriterWithEncoder(ctx, fn, EncodePostingsRaw)
 }
 
 func (w *Writer) write(bufs ...[]byte) error {
@@ -952,16 +953,18 @@ func (w *Writer) writePostingsToTmpFiles() error {
 	return nil
 }
 
-// RawPostingsEncoder is the "basic" postings list encoding format with no compression:
+// EncodePostingsRaw uses the "basic" postings list encoding format with no compression:
 // <BE uint32 len X><BE uint32 0><BE uint32 1>...<BE uint32 X-1>.
-type RawPostingsEncoder struct{}
-
-func (r *RawPostingsEncoder) EncodePostings(e *encoding.Encbuf, offs []uint32) {
+func EncodePostingsRaw(e *encoding.Encbuf, offs []uint32) error {
 	e.PutBE32int(len(offs))
 
 	for _, off := range offs {
+		if off > (1<<32)-1 {
+			return fmt.Errorf("series offset %d exceeds 4 bytes", off)
+		}
 		e.PutBE32(off)
 	}
+	return nil
 }
 
 func (w *Writer) writePosting(name, value string, offs []uint32) error {
@@ -982,12 +985,9 @@ func (w *Writer) writePosting(name, value string, offs []uint32) error {
 	w.cntPO++
 
 	w.buf1.Reset()
-	for _, off := range offs {
-		if off > (1<<32)-1 {
-			return fmt.Errorf("series offset %d exceeds 4 bytes", off)
-		}
+	if err := w.postingsEncoder(&w.buf1, offs); err != nil {
+		return err
 	}
-	w.postingsEncoder.EncodePostings(&w.buf1, offs)
 
 	w.buf2.Reset()
 	l := w.buf1.Len()

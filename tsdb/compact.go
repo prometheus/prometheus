@@ -147,7 +147,7 @@ func newCompactorMetrics(r prometheus.Registerer) *CompactorMetrics {
 
 type LeveledCompactorOptions struct {
 	// PE specifies the postings encoder. It is called when compactor is writing out the postings for a label name/value pair during compaction.
-	// If it is nil then the default encoder is used. At the moment that is the "raw" encoder. See index.RawPostingsEncoder for more.
+	// If it is nil then the default encoder is used. At the moment that is the "raw" encoder. See index.EncodePostingsRaw for more.
 	PE index.PostingsEncoder
 	// MaxBlockChunkSegmentSize is the max block chunk segment size. If it is 0 then the default chunks.DefaultChunkSegmentSize is used.
 	MaxBlockChunkSegmentSize int64
@@ -155,7 +155,20 @@ type LeveledCompactorOptions struct {
 	MergeFunc storage.VerticalChunkSeriesMergeFunc
 }
 
-func NewLeveledCompactor(ctx context.Context, r prometheus.Registerer, l log.Logger, ranges []int64, pool chunkenc.Pool, opts LeveledCompactorOptions) (*LeveledCompactor, error) {
+func NewLeveledCompactorWithChunkSize(ctx context.Context, r prometheus.Registerer, l log.Logger, ranges []int64, pool chunkenc.Pool, maxBlockChunkSegmentSize int64, mergeFunc storage.VerticalChunkSeriesMergeFunc) (*LeveledCompactor, error) {
+	return NewLeveledCompactorWithOptions(ctx, r, l, ranges, pool, LeveledCompactorOptions{
+		MaxBlockChunkSegmentSize: maxBlockChunkSegmentSize,
+		MergeFunc:                mergeFunc,
+	})
+}
+
+func NewLeveledCompactor(ctx context.Context, r prometheus.Registerer, l log.Logger, ranges []int64, pool chunkenc.Pool, mergeFunc storage.VerticalChunkSeriesMergeFunc) (*LeveledCompactor, error) {
+	return NewLeveledCompactorWithOptions(ctx, r, l, ranges, pool, LeveledCompactorOptions{
+		MergeFunc: mergeFunc,
+	})
+}
+
+func NewLeveledCompactorWithOptions(ctx context.Context, r prometheus.Registerer, l log.Logger, ranges []int64, pool chunkenc.Pool, opts LeveledCompactorOptions) (*LeveledCompactor, error) {
 	if len(ranges) == 0 {
 		return nil, fmt.Errorf("at least one range must be provided")
 	}
@@ -175,7 +188,7 @@ func NewLeveledCompactor(ctx context.Context, r prometheus.Registerer, l log.Log
 	}
 	var pe index.PostingsEncoder
 	if opts.PE == nil {
-		pe = &index.RawPostingsEncoder{}
+		pe = index.EncodePostingsRaw
 	}
 	return &LeveledCompactor{
 		ranges:                   ranges,
@@ -615,7 +628,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blockPopulator Bl
 		}
 	}
 
-	indexw, err := index.NewWriter(c.ctx, filepath.Join(tmp, indexFilename), c.postingsEncoder)
+	indexw, err := index.NewWriterWithEncoder(c.ctx, filepath.Join(tmp, indexFilename), c.postingsEncoder)
 	if err != nil {
 		return errors.Wrap(err, "open index writer")
 	}
