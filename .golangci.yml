@@ -23,6 +23,9 @@ issues:
   max-same-issues: 0
   exclude-rules:
     - linters:
+        - revive
+      path: tsdb/chunkenc/histogram_meta.go
+    - linters:
         - gocritic
       text: "appendAssign"
     - path: _test.go
@@ -31,14 +34,19 @@ issues:
 
 linters-settings:
   depguard:
-    list-type: blacklist
-    include-go-root: true
-    packages-with-error-message:
-      - sync/atomic: "Use go.uber.org/atomic instead of sync/atomic"
-      - github.com/stretchr/testify/assert: "Use github.com/stretchr/testify/require instead of github.com/stretchr/testify/assert"
-      - github.com/go-kit/kit/log: "Use github.com/go-kit/log instead of github.com/go-kit/kit/log"
-      - io/ioutil: "Use corresponding 'os' or 'io' functions instead."
-      - regexp: "Use github.com/grafana/regexp instead of regexp"
+    rules:
+      main:
+        deny:
+          - pkg: "sync/atomic"
+            desc: "Use go.uber.org/atomic instead of sync/atomic"
+          - pkg: "github.com/stretchr/testify/assert"
+            desc: "Use github.com/stretchr/testify/require instead of github.com/stretchr/testify/assert"
+          - pkg: "github.com/go-kit/kit/log"
+            desc: "Use github.com/go-kit/log instead of github.com/go-kit/kit/log"
+          - pkg: "io/ioutil"
+            desc: "Use corresponding 'os' or 'io' functions instead."
+          - pkg: "regexp"
+            desc: "Use github.com/grafana/regexp instead of regexp"
   errcheck:
     exclude-functions:
       # Don't flag lines such as "io.Copy(io.Discard, resp.Body)".
