@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.49.0-rc.1 / 2023-12-19
+
+* [BUGFIX] SD: Fix Azure VM Scale Set NIC issue. #13283
+
 ## 2.49.0-rc.0 / 2023-12-12
 
 * [FEATURE] Promtool: Add `--run` flag promtool test rules command. #12206
