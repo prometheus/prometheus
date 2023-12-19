@@ -158,7 +158,7 @@ func baseRemoteReadConfig(host string) *config.RemoteReadConfig {
 // ApplyConfig runs concurrently with Notify
 // See https://github.com/prometheus/prometheus/issues/12747
 func TestWriteStorageApplyConfigsDuringCommit(t *testing.T) {
-	s := NewStorage(nil, nil, nil, t.TempDir(), defaultFlushDeadline, nil)
+	s := NewStorage(nil, nil, nil, t.TempDir(), defaultFlushDeadline, nil, Base1)
 
 	var wg sync.WaitGroup
 	wg.Add(2000)
