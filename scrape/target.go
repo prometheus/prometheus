@@ -92,7 +92,7 @@ type MetricMetadata struct {
 	Unit   string
 }
 
-func (t *Target) MetadataList() []MetricMetadata {
+func (t *Target) ListMetadata() []MetricMetadata {
 	t.mtx.RLock()
 	defer t.mtx.RUnlock()
 
@@ -102,7 +102,7 @@ func (t *Target) MetadataList() []MetricMetadata {
 	return t.metadata.ListMetadata()
 }
 
-func (t *Target) MetadataSize() int {
+func (t *Target) SizeMetadata() int {
 	t.mtx.RLock()
 	defer t.mtx.RUnlock()
 
@@ -113,7 +113,7 @@ func (t *Target) MetadataSize() int {
 	return t.metadata.SizeMetadata()
 }
 
-func (t *Target) MetadataLength() int {
+func (t *Target) LengthMetadata() int {
 	t.mtx.RLock()
 	defer t.mtx.RUnlock()
 
@@ -124,8 +124,8 @@ func (t *Target) MetadataLength() int {
 	return t.metadata.LengthMetadata()
 }
 
-// Metadata returns type and help metadata for the given metric.
-func (t *Target) Metadata(metric string) (MetricMetadata, bool) {
+// GetMetadata returns type and help metadata for the given metric.
+func (t *Target) GetMetadata(metric string) (MetricMetadata, bool) {
 	t.mtx.RLock()
 	defer t.mtx.RUnlock()
 

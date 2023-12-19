@@ -1114,7 +1114,7 @@ func (api *API) targetMetadata(r *http.Request) apiFuncResult {
 			}
 			// If no metric is specified, get the full list for the target.
 			if metric == "" {
-				for _, md := range t.MetadataList() {
+				for _, md := range t.ListMetadata() {
 					res = append(res, metricMetadata{
 						Target: t.Labels(),
 						Metric: md.Metric,
@@ -1126,7 +1126,7 @@ func (api *API) targetMetadata(r *http.Request) apiFuncResult {
 				continue
 			}
 			// Get metadata for the specified metric.
-			if md, ok := t.Metadata(metric); ok {
+			if md, ok := t.GetMetadata(metric); ok {
 				res = append(res, metricMetadata{
 					Target: t.Labels(),
 					Type:   md.Type,
@@ -1249,7 +1249,7 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 	for _, tt := range api.targetRetriever(r.Context()).TargetsActive() {
 		for _, t := range tt {
 			if metric == "" {
-				for _, mm := range t.MetadataList() {
+				for _, mm := range t.ListMetadata() {
 					m := metadata{Type: mm.Type, Help: mm.Help, Unit: mm.Unit}
 					ms, ok := metrics[mm.Metric]
 
@@ -1266,7 +1266,7 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 				continue
 			}
 
-			if md, ok := t.Metadata(metric); ok {
+			if md, ok := t.GetMetadata(metric); ok {
 				m := metadata{Type: md.Type, Help: md.Help, Unit: md.Unit}
 				ms, ok := metrics[md.Metric]
 
