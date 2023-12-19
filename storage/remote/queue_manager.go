@@ -387,7 +387,7 @@ type WriteClient interface {
 	Endpoint() string
 }
 
-type RemoteWriteFormat int64
+type RemoteWriteFormat int64 //nolint:revive // exported.
 
 const (
 	Base1      RemoteWriteFormat = iota // original map based format

@@ -783,7 +783,7 @@ func labelsToLabelsProto(lbls labels.Labels, buf []prompb.Label) []prompb.Label 
 	return result
 }
 
-// TODO
+// TODO.
 func labelsToUint32SliceStr(lbls labels.Labels, symbolTable *rwSymbolTable, buf []uint32) []uint32 {
 	result := buf[:0]
 	lbls.Range(func(l labels.Label) {
@@ -795,7 +795,7 @@ func labelsToUint32SliceStr(lbls labels.Labels, symbolTable *rwSymbolTable, buf 
 	return result
 }
 
-// TODO
+// TODO.
 func Uint32StrRefToLabels(symbols []string, minLabels []uint32) labels.Labels {
 	ls := labels.NewScratchBuilder(len(minLabels) / 2)
 

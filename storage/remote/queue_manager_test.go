@@ -1474,20 +1474,20 @@ func BenchmarkBuildWriteRequest(b *testing.B) {
 		}
 	}
 
-	two_batch := createDummyTimeSeries(2)
-	ten_batch := createDummyTimeSeries(10)
-	hundred_batch := createDummyTimeSeries(100)
+	twoBatch := createDummyTimeSeries(2)
+	tenBatch := createDummyTimeSeries(10)
+	hundredBatch := createDummyTimeSeries(100)
 
 	b.Run("2 instances", func(b *testing.B) {
-		bench(b, two_batch)
+		bench(b, twoBatch)
 	})
 
 	b.Run("10 instances", func(b *testing.B) {
-		bench(b, ten_batch)
+		bench(b, tenBatch)
 	})
 
 	b.Run("1k instances", func(b *testing.B) {
-		bench(b, hundred_batch)
+		bench(b, hundredBatch)
 	})
 }
 
