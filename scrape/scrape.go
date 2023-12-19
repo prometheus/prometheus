@@ -675,7 +675,7 @@ func acceptHeader(sps []config.ScrapeProtocol) string {
 		weight--
 	}
 	// Default match anything.
-	vals = append(vals, fmt.Sprintf("*/*;q=%d", weight))
+	vals = append(vals, fmt.Sprintf("*/*;q=0.%d", weight))
 	return strings.Join(vals, ",")
 }
 
