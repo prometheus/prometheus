@@ -18,7 +18,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"os"
 	"sort"
 	"testing"
 	"time"
@@ -48,9 +47,6 @@ func TestQueryConcurrency(t *testing.T) {
 	maxConcurrency := 10
 
 	dir := t.TempDir()
-	t.Cleanup(func() {
-		require.NoError(t, os.RemoveAll(dir))
-	})
 	queryTracker := NewActiveQueryTracker(dir, maxConcurrency, nil)
 	t.Cleanup(queryTracker.Close)
 
