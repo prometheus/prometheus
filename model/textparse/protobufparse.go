@@ -430,7 +430,7 @@ func (p *ProtobufParser) Next() (Entry, error) {
 				sfx = fmt.Sprintf("_%s_total", unit)
 			}
 			if !strings.HasSuffix(name, sfx) {
-				return EntryInvalid, fmt.Errorf("unit %q not a suffix of metric %q", name, unit)
+				return EntryInvalid, fmt.Errorf("unit %q not a suffix of metric %q", unit, name)
 			}
 		}
 		p.metricBytes.Reset()
