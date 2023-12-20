@@ -45,8 +45,8 @@ func TestOptimizedMarshal(t *testing.T) {
 							14, 15,
 						},
 
-						Samples:    []Sample{{Value: 1, Timestamp: 0}},
-						Exemplars:  []Exemplar{{Labels: []Label{{Name: "f", Value: "g"}}, Value: 1, Timestamp: 0}},
+						Samples:    []MinSample{{Value: 1, Timestamp: 0}},
+						Exemplars:  []MinExemplar{{LabelsRefs: []uint32{0, 1}, Value: 1, Timestamp: 0}},
 						Histograms: nil,
 					},
 					{
@@ -60,8 +60,8 @@ func TestOptimizedMarshal(t *testing.T) {
 							12, 13,
 							14, 15,
 						},
-						Samples:    []Sample{{Value: 2, Timestamp: 1}},
-						Exemplars:  []Exemplar{{Labels: []Label{{Name: "h", Value: "i"}}, Value: 2, Timestamp: 1}},
+						Samples:    []MinSample{{Value: 2, Timestamp: 1}},
+						Exemplars:  []MinExemplar{{LabelsRefs: []uint32{0, 1}, Value: 2, Timestamp: 1}},
 						Histograms: nil,
 					},
 				},

@@ -628,6 +628,17 @@ func exemplarProtoToExemplar(ep prompb.Exemplar) exemplar.Exemplar {
 	}
 }
 
+func minExemplarProtoToExemplar(ep prompb.MinExemplar, symbols []string) exemplar.Exemplar {
+	timestamp := ep.Timestamp
+
+	return exemplar.Exemplar{
+		Labels: Uint32StrRefToLabels(symbols, ep.LabelsRefs),
+		Value:  ep.Value,
+		Ts:     timestamp,
+		HasTs:  timestamp != 0,
+	}
+}
+
 // HistogramProtoToHistogram extracts a (normal integer) Histogram from the
 // provided proto message. The caller has to make sure that the proto message
 // represents an integer histogram and not a float histogram, or it panics.
@@ -692,6 +703,45 @@ func HistogramProtoToFloatHistogram(hp prompb.Histogram) *histogram.FloatHistogr
 	}
 }
 
+func FloatMinHistogramProtoToFloatHistogram(hp prompb.MinHistogram) *histogram.FloatHistogram {
+	if !hp.IsFloatHistogram() {
+		panic("FloatHistogramProtoToFloatHistogram called with an integer histogram")
+	}
+	return &histogram.FloatHistogram{
+		CounterResetHint: histogram.CounterResetHint(hp.ResetHint),
+		Schema:           hp.Schema,
+		ZeroThreshold:    hp.ZeroThreshold,
+		ZeroCount:        hp.GetZeroCountFloat(),
+		Count:            hp.GetCountFloat(),
+		Sum:              hp.Sum,
+		PositiveSpans:    spansProtoToSpans(hp.GetPositiveSpans()),
+		PositiveBuckets:  hp.GetPositiveCounts(),
+		NegativeSpans:    spansProtoToSpans(hp.GetNegativeSpans()),
+		NegativeBuckets:  hp.GetNegativeCounts(),
+	}
+}
+
+// HistogramProtoToHistogram extracts a (normal integer) Histogram from the
+// provided proto message. The caller has to make sure that the proto message
+// represents an integer histogram and not a float histogram, or it panics.
+func MinHistogramProtoToHistogram(hp prompb.MinHistogram) *histogram.Histogram {
+	if hp.IsFloatHistogram() {
+		panic("HistogramProtoToHistogram called with a float histogram")
+	}
+	return &histogram.Histogram{
+		CounterResetHint: histogram.CounterResetHint(hp.ResetHint),
+		Schema:           hp.Schema,
+		ZeroThreshold:    hp.ZeroThreshold,
+		ZeroCount:        hp.GetZeroCountInt(),
+		Count:            hp.GetCountInt(),
+		Sum:              hp.Sum,
+		PositiveSpans:    spansProtoToSpans(hp.GetPositiveSpans()),
+		PositiveBuckets:  hp.GetPositiveDeltas(),
+		NegativeSpans:    spansProtoToSpans(hp.GetNegativeSpans()),
+		NegativeBuckets:  hp.GetNegativeDeltas(),
+	}
+}
+
 func spansProtoToSpans(s []prompb.BucketSpan) []histogram.Span {
 	spans := make([]histogram.Span, len(s))
 	for i := 0; i < len(s); i++ {
@@ -727,6 +777,22 @@ func HistogramToHistogramProto(timestamp int64, h *histogram.Histogram) prompb.H
 	}
 }
 
+func HistogramToMinHistogramProto(timestamp int64, h *histogram.Histogram) prompb.MinHistogram {
+	return prompb.MinHistogram{
+		Count:          &prompb.MinHistogram_CountInt{CountInt: h.Count},
+		Sum:            h.Sum,
+		Schema:         h.Schema,
+		ZeroThreshold:  h.ZeroThreshold,
+		ZeroCount:      &prompb.MinHistogram_ZeroCountInt{ZeroCountInt: h.ZeroCount},
+		NegativeSpans:  spansToSpansProto(h.NegativeSpans),
+		NegativeDeltas: h.NegativeBuckets,
+		PositiveSpans:  spansToSpansProto(h.PositiveSpans),
+		PositiveDeltas: h.PositiveBuckets,
+		ResetHint:      prompb.MinHistogram_ResetHint(h.CounterResetHint),
+		Timestamp:      timestamp,
+	}
+}
+
 func FloatHistogramToHistogramProto(timestamp int64, fh *histogram.FloatHistogram) prompb.Histogram {
 	return prompb.Histogram{
 		Count:          &prompb.Histogram_CountFloat{CountFloat: fh.Count},
@@ -739,6 +805,22 @@ func FloatHistogramToHistogramProto(timestamp int64, fh *histogram.FloatHistogra
 		PositiveSpans:  spansToSpansProto(fh.PositiveSpans),
 		PositiveCounts: fh.PositiveBuckets,
 		ResetHint:      prompb.Histogram_ResetHint(fh.CounterResetHint),
+		Timestamp:      timestamp,
+	}
+}
+
+func FloatHistogramToMinHistogramProto(timestamp int64, fh *histogram.FloatHistogram) prompb.MinHistogram {
+	return prompb.MinHistogram{
+		Count:          &prompb.MinHistogram_CountFloat{CountFloat: fh.Count},
+		Sum:            fh.Sum,
+		Schema:         fh.Schema,
+		ZeroThreshold:  fh.ZeroThreshold,
+		ZeroCount:      &prompb.MinHistogram_ZeroCountFloat{ZeroCountFloat: fh.ZeroCount},
+		NegativeSpans:  spansToSpansProto(fh.NegativeSpans),
+		NegativeCounts: fh.NegativeBuckets,
+		PositiveSpans:  spansToSpansProto(fh.PositiveSpans),
+		PositiveCounts: fh.PositiveBuckets,
+		ResetHint:      prompb.MinHistogram_ResetHint(fh.CounterResetHint),
 		Timestamp:      timestamp,
 	}
 }
@@ -935,12 +1017,43 @@ func MinimizedWriteRequestToWriteRequest(redReq *prompb.MinimizedWriteRequestStr
 		for j, e := range rts.Exemplars {
 			exemplars[j].Value = e.Value
 			exemplars[j].Timestamp = e.Timestamp
-			exemplars[j].Labels = e.Labels
+			Uint32StrRefToLabels(redReq.Symbols, e.LabelsRefs).Range(func(l labels.Label) {
+				exemplars[j].Labels = append(exemplars[j].Labels, prompb.Label{
+					Name:  l.Name,
+					Value: l.Value,
+				})
+			})
+		}
+		req.Timeseries[i].Exemplars = exemplars
+
+		req.Timeseries[i].Samples = make([]prompb.Sample, len(rts.Samples))
+		for j, s := range rts.Samples {
+			req.Timeseries[i].Samples[j].Timestamp = s.Timestamp
+			req.Timeseries[i].Samples[j].Value = s.Value
 		}
 
-		req.Timeseries[i].Samples = rts.Samples
-		req.Timeseries[i].Exemplars = exemplars
-		req.Timeseries[i].Histograms = rts.Histograms
+		req.Timeseries[i].Histograms = make([]prompb.Histogram, len(rts.Histograms))
+		for j, h := range rts.Histograms {
+			// TODO: double check
+			if h.IsFloatHistogram() {
+				req.Timeseries[i].Histograms[j].Count = &prompb.Histogram_CountFloat{CountFloat: h.GetCountFloat()}
+				req.Timeseries[i].Histograms[j].ZeroCount = &prompb.Histogram_ZeroCountFloat{ZeroCountFloat: h.GetZeroCountFloat()}
+			} else {
+				req.Timeseries[i].Histograms[j].Count = &prompb.Histogram_CountInt{CountInt: h.GetCountInt()}
+				req.Timeseries[i].Histograms[j].ZeroCount = &prompb.Histogram_ZeroCountInt{ZeroCountInt: h.GetZeroCountInt()}
+			}
+			req.Timeseries[i].Histograms[j].Sum = h.Sum
+			req.Timeseries[i].Histograms[j].Schema = h.Schema
+			req.Timeseries[i].Histograms[j].ZeroThreshold = h.ZeroThreshold
+			req.Timeseries[i].Histograms[j].NegativeSpans = h.NegativeSpans
+			req.Timeseries[i].Histograms[j].NegativeDeltas = h.NegativeDeltas
+			req.Timeseries[i].Histograms[j].NegativeCounts = h.NegativeCounts
+			req.Timeseries[i].Histograms[j].PositiveSpans = h.PositiveSpans
+			req.Timeseries[i].Histograms[j].PositiveDeltas = h.PositiveDeltas
+			req.Timeseries[i].Histograms[j].PositiveCounts = h.PositiveCounts
+			req.Timeseries[i].Histograms[j].ResetHint = prompb.Histogram_ResetHint(h.ResetHint)
+			req.Timeseries[i].Histograms[j].Timestamp = h.Timestamp
+		}
 
 	}
 	return req, nil

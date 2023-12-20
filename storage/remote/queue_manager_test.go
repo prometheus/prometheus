@@ -1505,8 +1505,8 @@ func BenchmarkBuildMinimizedWriteRequest(b *testing.B) {
 		buff := make([]byte, 0)
 		seriesBuff := make([]prompb.MinimizedTimeSeriesStr, len(tc.batch))
 		for i := range seriesBuff {
-			seriesBuff[i].Samples = []prompb.Sample{{}}
-			seriesBuff[i].Exemplars = []prompb.Exemplar{{}}
+			seriesBuff[i].Samples = []prompb.MinSample{{}}
+			seriesBuff[i].Exemplars = []prompb.MinExemplar{{}}
 		}
 		pBuf := []byte{}
 

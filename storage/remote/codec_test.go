@@ -88,19 +88,26 @@ var writeRequestMinimizedFixture = func() *prompb.MinimizedWriteRequestStr {
 		ref := st.RefStr(s)
 		labels = append(labels, ref)
 	}
+	for _, s := range []string{
+		"f", "g", // 10, 11
+		"h", "i", // 12, 13
+	} {
+		st.RefStr(s)
+	}
+
 	return &prompb.MinimizedWriteRequestStr{
 		Timeseries: []prompb.MinimizedTimeSeriesStr{
 			{
 				LabelSymbols: labels,
-				Samples:      []prompb.Sample{{Value: 1, Timestamp: 0}},
-				Exemplars:    []prompb.Exemplar{{Labels: []prompb.Label{{Name: "f", Value: "g"}}, Value: 1, Timestamp: 0}},
-				Histograms:   []prompb.Histogram{HistogramToHistogramProto(0, &testHistogram), FloatHistogramToHistogramProto(1, testHistogram.ToFloat(nil))},
+				Samples:      []prompb.MinSample{{Value: 1, Timestamp: 0}},
+				Exemplars:    []prompb.MinExemplar{{LabelsRefs: []uint32{10, 11}, Value: 1, Timestamp: 0}},
+				Histograms:   []prompb.MinHistogram{HistogramToMinHistogramProto(0, &testHistogram), FloatHistogramToMinHistogramProto(1, testHistogram.ToFloat(nil))},
 			},
 			{
 				LabelSymbols: labels,
-				Samples:      []prompb.Sample{{Value: 2, Timestamp: 1}},
-				Exemplars:    []prompb.Exemplar{{Labels: []prompb.Label{{Name: "h", Value: "i"}}, Value: 2, Timestamp: 1}},
-				Histograms:   []prompb.Histogram{HistogramToHistogramProto(2, &testHistogram), FloatHistogramToHistogramProto(3, testHistogram.ToFloat(nil))},
+				Samples:      []prompb.MinSample{{Value: 2, Timestamp: 1}},
+				Exemplars:    []prompb.MinExemplar{{LabelsRefs: []uint32{12, 13}, Value: 2, Timestamp: 1}},
+				Histograms:   []prompb.MinHistogram{HistogramToMinHistogramProto(2, &testHistogram), FloatHistogramToMinHistogramProto(3, testHistogram.ToFloat(nil))},
 			},
 		},
 		Symbols: st.LabelsStrings(),

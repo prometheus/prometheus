@@ -189,8 +189,26 @@ func (h *writeHandler) appendSamples(app storage.Appender, ss []prompb.Sample, l
 	var ref storage.SeriesRef
 	var err error
 	for _, s := range ss {
-		ref, err = app.Append(ref, labels, s.Timestamp, s.
-			Value)
+		ref, err = app.Append(ref, labels, s.GetTimestamp(), s.GetValue())
+		if err != nil {
+			unwrappedErr := errors.Unwrap(err)
+			if unwrappedErr == nil {
+				unwrappedErr = err
+			}
+			if errors.Is(err, storage.ErrOutOfOrderSample) || errors.Is(unwrappedErr, storage.ErrOutOfBounds) || errors.Is(unwrappedErr, storage.ErrDuplicateSampleForTimestamp) {
+				level.Error(h.logger).Log("msg", "Out of order sample from remote write", "err", err.Error(), "series", labels.String(), "timestamp", s.Timestamp)
+			}
+			return err
+		}
+	}
+	return nil
+}
+
+func (h *writeHandler) appendMinSamples(app storage.Appender, ss []prompb.MinSample, labels labels.Labels) error {
+	var ref storage.SeriesRef
+	var err error
+	for _, s := range ss {
+		ref, err = app.Append(ref, labels, s.GetTimestamp(), s.GetValue())
 		if err != nil {
 			unwrappedErr := errors.Unwrap(err)
 			if unwrappedErr == nil {
@@ -213,6 +231,32 @@ func (h *writeHandler) appendHistograms(app storage.Appender, hh []prompb.Histog
 			_, err = app.AppendHistogram(0, labels, hp.Timestamp, nil, fhs)
 		} else {
 			hs := HistogramProtoToHistogram(hp)
+			_, err = app.AppendHistogram(0, labels, hp.Timestamp, hs, nil)
+		}
+		if err != nil {
+			unwrappedErr := errors.Unwrap(err)
+			if unwrappedErr == nil {
+				unwrappedErr = err
+			}
+			// Although AppendHistogram does not currently return ErrDuplicateSampleForTimestamp there is
+			// a note indicating its inclusion in the future.
+			if errors.Is(unwrappedErr, storage.ErrOutOfOrderSample) || errors.Is(unwrappedErr, storage.ErrOutOfBounds) || errors.Is(unwrappedErr, storage.ErrDuplicateSampleForTimestamp) {
+				level.Error(h.logger).Log("msg", "Out of order histogram from remote write", "err", err.Error(), "series", labels.String(), "timestamp", hp.Timestamp)
+			}
+			return err
+		}
+	}
+	return nil
+}
+
+func (h *writeHandler) appendMinHistograms(app storage.Appender, hh []prompb.MinHistogram, labels labels.Labels) error {
+	var err error
+	for _, hp := range hh {
+		if hp.IsFloatHistogram() {
+			fhs := FloatMinHistogramProtoToFloatHistogram(hp)
+			_, err = app.AppendHistogram(0, labels, hp.Timestamp, nil, fhs)
+		} else {
+			hs := MinHistogramProtoToHistogram(hp)
 			_, err = app.AppendHistogram(0, labels, hp.Timestamp, hs, nil)
 		}
 		if err != nil {
@@ -305,17 +349,17 @@ func (h *writeHandler) writeMinStr(ctx context.Context, req *prompb.MinimizedWri
 	for _, ts := range req.Timeseries {
 		ls := Uint32StrRefToLabels(req.Symbols, ts.LabelSymbols)
 
-		err := h.appendSamples(app, ts.Samples, ls)
+		err := h.appendMinSamples(app, ts.Samples, ls)
 		if err != nil {
 			return err
 		}
 
 		for _, ep := range ts.Exemplars {
-			e := exemplarProtoToExemplar(ep)
+			e := minExemplarProtoToExemplar(ep, req.Symbols)
 			h.appendExemplar(app, e, ls, &outOfOrderExemplarErrs)
 		}
 
-		err = h.appendHistograms(app, ts.Histograms, ls)
+		err = h.appendMinHistograms(app, ts.Histograms, ls)
 		if err != nil {
 			return err
 		}

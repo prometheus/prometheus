@@ -1381,7 +1381,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 
 	pendingMinStrData := make([]prompb.MinimizedTimeSeriesStr, max)
 	for i := range pendingMinStrData {
-		pendingMinStrData[i].Samples = []prompb.Sample{{}}
+		pendingMinStrData[i].Samples = []prompb.MinSample{{}}
 	}
 
 	timer := time.NewTimer(time.Duration(s.qm.cfg.BatchSendDeadline))
@@ -1623,23 +1623,23 @@ func populateMinimizedTimeSeriesStr(symbolTable *rwSymbolTable, batch []timeSeri
 		pendingData[nPending].LabelSymbols = labelsToUint32SliceStr(d.seriesLabels, symbolTable, pendingData[nPending].LabelSymbols)
 		switch d.sType {
 		case tSample:
-			pendingData[nPending].Samples = append(pendingData[nPending].Samples, prompb.Sample{
+			pendingData[nPending].Samples = append(pendingData[nPending].Samples, prompb.MinSample{
 				Value:     d.value,
 				Timestamp: d.timestamp,
 			})
 			nPendingSamples++
 		case tExemplar:
-			pendingData[nPending].Exemplars = append(pendingData[nPending].Exemplars, prompb.Exemplar{
-				Labels:    labelsToLabelsProto(d.exemplarLabels, nil),
-				Value:     d.value,
-				Timestamp: d.timestamp,
+			pendingData[nPending].Exemplars = append(pendingData[nPending].Exemplars, prompb.MinExemplar{
+				LabelsRefs: labelsToUint32SliceStr(d.exemplarLabels, symbolTable, nil), // TODO: optimize, reuse slice
+				Value:      d.value,
+				Timestamp:  d.timestamp,
 			})
 			nPendingExemplars++
 		case tHistogram:
-			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, HistogramToHistogramProto(d.timestamp, d.histogram))
+			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, HistogramToMinHistogramProto(d.timestamp, d.histogram))
 			nPendingHistograms++
 		case tFloatHistogram:
-			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, FloatHistogramToHistogramProto(d.timestamp, d.floatHistogram))
+			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, FloatHistogramToMinHistogramProto(d.timestamp, d.floatHistogram))
 			nPendingHistograms++
 		}
 	}
