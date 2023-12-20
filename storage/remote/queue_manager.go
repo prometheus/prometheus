@@ -591,7 +591,7 @@ func isSampleOld(baseTime time.Time, sampleAgeLimit time.Duration, ts int64) boo
 	return sampleTs.Before(limitTs)
 }
 
-func isTimeSeriesOldFilter(metrics *queueManagerMetrics, logger log.Logger, baseTime time.Time, sampleAgeLimit time.Duration) func(ts prompb.TimeSeries) bool {
+func isTimeSeriesOldFilter(metrics *queueManagerMetrics, baseTime time.Time, sampleAgeLimit time.Duration) func(ts prompb.TimeSeries) bool {
 	return func(ts prompb.TimeSeries) bool {
 		if sampleAgeLimit == 0 {
 			// If sampleAgeLimit is unset, then we never skip samples due to their age.
@@ -1587,7 +1587,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 				nil,
 				pBuf,
 				*buf,
-				isTimeSeriesOldFilter(s.qm.metrics, s.qm.logger, currentTime, time.Duration(s.qm.cfg.SampleAgeLimit)),
+				isTimeSeriesOldFilter(s.qm.metrics, currentTime, time.Duration(s.qm.cfg.SampleAgeLimit)),
 			)
 			s.qm.buildRequestLimitTimestamp.Store(lowest)
 			if err != nil {
