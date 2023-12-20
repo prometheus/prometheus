@@ -424,15 +424,13 @@ func (p *ProtobufParser) Next() (Entry, error) {
 			return EntryInvalid, fmt.Errorf("unknown metric type for metric %q: %s", name, p.mf.GetType())
 		}
 		unit := p.mf.GetUnit()
-		fmt.Println("This is the unit:", unit)
-		fmt.Println("This is the name:", name)
 		if len(unit) > 0 {
 			sfx := fmt.Sprintf("_%s", unit)
 			if p.mf.GetType() == dto.MetricType_COUNTER {
 				sfx = fmt.Sprintf("_%s_total", unit)
 			}
 			if !strings.HasSuffix(name, sfx) {
-				return EntryInvalid, fmt.Errorf("invalid unit for metric %q: %s", name, unit)
+				return EntryInvalid, fmt.Errorf("unit %q not a suffix of metric %q", name, unit)
 			}
 		}
 		p.metricBytes.Reset()
