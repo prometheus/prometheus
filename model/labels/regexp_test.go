@@ -286,6 +286,8 @@ func TestFindSetMatches(t *testing.T) {
 		// Simple sets alternate and concat and alternates with empty matches
 		// parsed as  b(ar|(?:)|uzz) where b(?:) means literal b.
 		{"bar|b|buzz", []string{"bar", "b", "buzz"}, true},
+		// Skip nested capture groups.
+		{"^((bar|b|buzz))$", []string{"bar", "b", "buzz"}, true},
 		// Skip outer anchors (it's enforced anyway at the root).
 		{"^(bar|b|buzz)$", []string{"bar", "b", "buzz"}, true},
 		{"^(?:prod|production)$", []string{"prod", "production"}, true},
@@ -395,6 +397,8 @@ func TestStringMatcherFromRegexp(t *testing.T) {
 		{"^foo$", &equalStringMatcher{s: "foo", caseSensitive: true}},
 		{"^(?i:foo)$", &equalStringMatcher{s: "FOO", caseSensitive: false}},
 		{"^((?i:foo)|(bar))$", orStringMatcher([]StringMatcher{&equalStringMatcher{s: "FOO", caseSensitive: false}, &equalStringMatcher{s: "bar", caseSensitive: true}})},
+		{`(?i:((foo|bar)))`, orStringMatcher([]StringMatcher{&equalStringMatcher{s: "FOO", caseSensitive: false}, &equalStringMatcher{s: "BAR", caseSensitive: false}})},
+		{`(?i:((foo1|foo2|bar)))`, orStringMatcher([]StringMatcher{orStringMatcher([]StringMatcher{&equalStringMatcher{s: "FOO1", caseSensitive: false}, &equalStringMatcher{s: "FOO2", caseSensitive: false}}), &equalStringMatcher{s: "BAR", caseSensitive: false}})},
 		{"^((?i:foo|oo)|(bar))$", orStringMatcher([]StringMatcher{&equalStringMatcher{s: "FOO", caseSensitive: false}, &equalStringMatcher{s: "OO", caseSensitive: false}, &equalStringMatcher{s: "bar", caseSensitive: true}})},
 		{"(?i:(foo1|foo2|bar))", orStringMatcher([]StringMatcher{orStringMatcher([]StringMatcher{&equalStringMatcher{s: "FOO1", caseSensitive: false}, &equalStringMatcher{s: "FOO2", caseSensitive: false}}), &equalStringMatcher{s: "BAR", caseSensitive: false}})},
 		{".*foo.*", &containsStringMatcher{substrings: []string{"foo"}, left: anyStringWithoutNewlineMatcher{}, right: anyStringWithoutNewlineMatcher{}}},
