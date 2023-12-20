@@ -53,9 +53,9 @@ const (
 	// Allow 30% too many shards before scaling down.
 	shardToleranceFraction = 0.3
 
-	reasonTooOld                     = "too old"
-	reasonDroppedSeries              = "dropped series"
-	reasonUnintentionalDroppedSeries = "unintentionally dropped series"
+	reasonTooOld                     = "too_old"
+	reasonDroppedSeries              = "dropped_series"
+	reasonUnintentionalDroppedSeries = "unintentionally_dropped_series"
 )
 
 type queueManagerMetrics struct {
