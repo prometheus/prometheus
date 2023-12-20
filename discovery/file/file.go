@@ -258,7 +258,10 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		level.Error(d.logger).Log("msg", "Unable to register metrics", "err", err.Error())
 		return
 	}
-	defer d.metricRegisterer.UnregisterMetrics()
+	defer func() {
+		level.Debug(d.logger).Log("msg", "Unregistering metrics")
+		d.metricRegisterer.UnregisterMetrics()
+	}()
 
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {

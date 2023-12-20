@@ -48,6 +48,9 @@ type Provider struct {
 
 	// newSubs is used to temporary store subs to be used upon config reload completion.
 	newSubs map[string]struct{}
+
+	// The exited channel signals that the Provider has exited.
+	exited chan struct{}
 }
 
 // Discoverer return the Discoverer of the provider.
@@ -170,6 +173,8 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
+	m.stopObsoleteProviders(cfg)
+
 	var failedCount int
 	for name, scfg := range cfg {
 		failedCount += m.registerProviders(scfg, name)
@@ -177,21 +182,16 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 	m.metrics.FailedConfigs.Set(float64(failedCount))
 
 	var (
-		wg sync.WaitGroup
 		// keep shows if we keep any providers after reload.
 		keep         bool
 		newProviders []*Provider
 	)
 	for _, prov := range m.providers {
-		// Cancel obsolete providers.
+		// Ignore obsolete providers.
 		if len(prov.newSubs) == 0 {
-			wg.Add(1)
-			prov.done = func() {
-				wg.Done()
-			}
-			prov.cancel()
 			continue
 		}
+
 		newProviders = append(newProviders, prov)
 		// refTargets keeps reference targets used to populate new subs' targets
 		var refTargets map[string]*targetgroup.Group
@@ -239,7 +239,6 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 		}
 	}
 	m.providers = newProviders
-	wg.Wait()
 
 	return nil
 }
@@ -252,6 +251,7 @@ func (m *Manager) StartCustomProvider(ctx context.Context, name string, worker D
 		subs: map[string]struct{}{
 			name: {},
 		},
+		exited: make(chan struct{}),
 	}
 	m.providers = append(m.providers, p)
 	m.startProvider(ctx, p)
@@ -264,7 +264,10 @@ func (m *Manager) startProvider(ctx context.Context, p *Provider) {
 
 	p.cancel = cancel
 
-	go p.d.Run(ctx, updates)
+	go func() {
+		p.d.Run(ctx, updates)
+		close(p.exited)
+	}()
 	go m.updater(ctx, p, updates)
 }
 
@@ -384,6 +387,30 @@ func (m *Manager) allGroups() map[string][]*targetgroup.Group {
 	return tSets
 }
 
+// Stop providers whose config does not match any of the new configs.
+func (m *Manager) stopObsoleteProviders(cfg map[string]Configs) {
+	for _, p := range m.providers {
+		alreadyExists := false
+		for _, cfgs := range cfg {
+			for _, cfg := range cfgs {
+				if reflect.DeepEqual(cfg, p.config) {
+					alreadyExists = true
+					break
+				}
+			}
+		}
+		if !alreadyExists {
+			// Cancel the obsolete provider.
+			p.cancel()
+			// Wait for the provider to exit.
+			// The provider will unregister its debug metrics on its exit.
+			// If we don't wait for an exit, we risk crashing due to a
+			// failed registration of the new provider's debug metrics.
+			<-p.exited
+		}
+	}
+}
+
 // registerProviders returns a number of failed SD config.
 func (m *Manager) registerProviders(cfgs Configs, setName string) int {
 	var (
@@ -399,10 +426,11 @@ func (m *Manager) registerProviders(cfgs Configs, setName string) int {
 			}
 		}
 		typ := cfg.Name()
+		reg := prometheus.WrapRegistererWith(prometheus.Labels{"sd_type": m.name, "job_name": setName}, m.registerer)
 		d, err := cfg.NewDiscoverer(DiscovererOptions{
 			Logger:            log.With(m.logger, "discovery", typ, "config", setName),
 			HTTPClientOptions: m.httpOpts,
-			Registerer:        m.registerer,
+			Registerer:        reg,
 		})
 		if err != nil {
 			level.Error(m.logger).Log("msg", "Cannot create service discovery", "err", err, "type", typ, "config", setName)
@@ -416,6 +444,7 @@ func (m *Manager) registerProviders(cfgs Configs, setName string) int {
 			newSubs: map[string]struct{}{
 				setName: {},
 			},
+			exited: make(chan struct{}),
 		})
 		m.lastProvider++
 		added = true

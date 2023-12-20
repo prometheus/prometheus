@@ -4,6 +4,8 @@
 
 * [ENHANCEMENT] TSDB: Make the wlog watcher read segments synchronously when not tailing. #13224
 * [BUGFIX] Agent: Participate in notify calls. #13223
+* [ENHANCEMENT] Scraping: Each service discovery instance will now report its own debug metrics series. #13023 #13312
+* [ENHANCEMENT] Alerting: Each service discovery instance will now report its own debug metrics series. #13023 #13312
 
 ## 2.48.0 / 2023-11-16
 

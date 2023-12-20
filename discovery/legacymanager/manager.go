@@ -39,6 +39,9 @@ type provider struct {
 	d      discovery.Discoverer
 	subs   []string
 	config interface{}
+
+	// The exited channel signals that the Provider has exited.
+	exited chan struct{}
 }
 
 // NewManager is the Discovery Manager constructor.
@@ -134,7 +137,15 @@ func (m *Manager) ApplyConfig(cfg map[string]discovery.Configs) error {
 			m.metrics.DiscoveredTargets.DeleteLabelValues(m.name, pk.setName)
 		}
 	}
+
 	m.cancelDiscoverers()
+	// We cannot register new providers before the old ones have exited.
+	// This is because if the providers have debug metrics, they will
+	// unregister them when they exit. If we attempt register the new
+	// providers before the old ones have exited, Prometheus may crash
+	// due to duplicate metric registration.
+	m.waitForDiscoverersToExit()
+
 	m.targets = make(map[poolKey]map[string]*targetgroup.Group)
 	m.providers = nil
 	m.discoverCancel = nil
@@ -156,9 +167,10 @@ func (m *Manager) ApplyConfig(cfg map[string]discovery.Configs) error {
 // StartCustomProvider is used for sdtool. Only use this if you know what you're doing.
 func (m *Manager) StartCustomProvider(ctx context.Context, name string, worker discovery.Discoverer) {
 	p := &provider{
-		name: name,
-		d:    worker,
-		subs: []string{name},
+		name:   name,
+		d:      worker,
+		subs:   []string{name},
+		exited: make(chan struct{}),
 	}
 	m.providers = append(m.providers, p)
 	m.startProvider(ctx, p)
@@ -171,7 +183,10 @@ func (m *Manager) startProvider(ctx context.Context, p *provider) {
 
 	m.discoverCancel = append(m.discoverCancel, cancel)
 
-	go p.d.Run(ctx, updates)
+	go func() {
+		p.d.Run(ctx, updates)
+		close(p.exited)
+	}()
 	go m.updater(ctx, p, updates)
 }
 
@@ -233,6 +248,12 @@ func (m *Manager) cancelDiscoverers() {
 	}
 }
 
+func (m *Manager) waitForDiscoverersToExit() {
+	for _, p := range m.providers {
+		<-p.exited
+	}
+}
+
 func (m *Manager) updateGroup(poolKey poolKey, tgs []*targetgroup.Group) {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
@@ -282,9 +303,10 @@ func (m *Manager) registerProviders(cfgs discovery.Configs, setName string) int 
 			}
 		}
 		typ := cfg.Name()
+		reg := prometheus.WrapRegistererWith(prometheus.Labels{"sd_type": m.name, "job_name": setName}, m.registerer)
 		d, err := cfg.NewDiscoverer(discovery.DiscovererOptions{
 			Logger:     log.With(m.logger, "discovery", typ, "config", setName),
-			Registerer: m.registerer,
+			Registerer: reg,
 		})
 		if err != nil {
 			level.Error(m.logger).Log("msg", "Cannot create service discovery", "err", err, "type", typ, "config", setName)
@@ -296,6 +318,7 @@ func (m *Manager) registerProviders(cfgs discovery.Configs, setName string) int 
 			d:      d,
 			config: cfg,
 			subs:   []string{setName},
+			exited: make(chan struct{}),
 		})
 		added = true
 	}
