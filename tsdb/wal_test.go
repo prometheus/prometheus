@@ -49,7 +49,7 @@ func TestSegmentWAL_cut(t *testing.T) {
 	require.NoError(t, w.cut())
 
 	// Cutting creates a new file.
-	require.Equal(t, 2, len(w.files))
+	require.Len(t, w.files, 2)
 
 	require.NoError(t, w.write(WALEntrySeries, 1, []byte("Hello World!!")))
 
@@ -409,7 +409,7 @@ func TestWALRestoreCorrupted(t *testing.T) {
 			r := w2.Reader()
 
 			serf := func(l []record.RefSeries) {
-				require.Equal(t, 0, len(l))
+				require.Empty(t, l)
 			}
 
 			// Weird hack to check order of reads.
@@ -450,7 +450,7 @@ func TestMigrateWAL_Empty(t *testing.T) {
 	wdir := path.Join(dir, "wal")
 
 	// Initialize empty WAL.
-	w, err := wlog.New(nil, nil, wdir, false)
+	w, err := wlog.New(nil, nil, wdir, wlog.CompressionNone)
 	require.NoError(t, err)
 	require.NoError(t, w.Close())
 
@@ -493,7 +493,7 @@ func TestMigrateWAL_Fuzz(t *testing.T) {
 	// Perform migration.
 	require.NoError(t, MigrateWAL(nil, wdir))
 
-	w, err := wlog.New(nil, nil, wdir, false)
+	w, err := wlog.New(nil, nil, wdir, wlog.CompressionNone)
 	require.NoError(t, err)
 
 	// We can properly write some new data after migration.

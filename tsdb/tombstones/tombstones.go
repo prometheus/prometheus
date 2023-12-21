@@ -15,9 +15,11 @@ package tombstones
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"hash"
 	"hash/crc32"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -25,7 +27,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/pkg/errors"
 
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/encoding"
@@ -108,17 +109,17 @@ func WriteFile(logger log.Logger, dir string, tr Reader) (int64, error) {
 
 	bytes, err := Encode(tr)
 	if err != nil {
-		return 0, errors.Wrap(err, "encoding tombstones")
+		return 0, fmt.Errorf("encoding tombstones: %w", err)
 	}
 
 	// Ignore first byte which is the format type. We do this for compatibility.
 	if _, err := hash.Write(bytes[tombstoneFormatVersionSize:]); err != nil {
-		return 0, errors.Wrap(err, "calculating hash for tombstones")
+		return 0, fmt.Errorf("calculating hash for tombstones: %w", err)
 	}
 
 	n, err = f.Write(bytes)
 	if err != nil {
-		return 0, errors.Wrap(err, "writing tombstones")
+		return 0, fmt.Errorf("writing tombstones: %w", err)
 	}
 	size += n
 
@@ -160,7 +161,7 @@ func Encode(tr Reader) ([]byte, error) {
 func Decode(b []byte) (Reader, error) {
 	d := &encoding.Decbuf{B: b}
 	if flag := d.Byte(); flag != tombstoneFormatV1 {
-		return nil, errors.Errorf("invalid tombstone format %x", flag)
+		return nil, fmt.Errorf("invalid tombstone format %x", flag)
 	}
 
 	if d.Err() != nil {
@@ -198,7 +199,7 @@ func ReadTombstones(dir string) (Reader, int64, error) {
 	}
 
 	if len(b) < tombstonesHeaderSize {
-		return nil, 0, errors.Wrap(encoding.ErrInvalidSize, "tombstones header")
+		return nil, 0, fmt.Errorf("tombstones header: %w", encoding.ErrInvalidSize)
 	}
 
 	d := &encoding.Decbuf{B: b[:len(b)-tombstonesCRCSize]}
@@ -210,7 +211,7 @@ func ReadTombstones(dir string) (Reader, int64, error) {
 	hash := newCRC32()
 	// Ignore first byte which is the format type.
 	if _, err := hash.Write(d.Get()[tombstoneFormatVersionSize:]); err != nil {
-		return nil, 0, errors.Wrap(err, "write to hash")
+		return nil, 0, fmt.Errorf("write to hash: %w", err)
 	}
 	if binary.BigEndian.Uint32(b[len(b)-tombstonesCRCSize:]) != hash.Sum32() {
 		return nil, 0, errors.New("checksum did not match")
@@ -252,7 +253,14 @@ func NewTestMemTombstones(intervals []Intervals) *MemTombstones {
 func (t *MemTombstones) Get(ref storage.SeriesRef) (Intervals, error) {
 	t.mtx.RLock()
 	defer t.mtx.RUnlock()
-	return t.intvlGroups[ref], nil
+	intervals, ok := t.intvlGroups[ref]
+	if !ok {
+		return nil, nil
+	}
+	// Make a copy to avoid race.
+	res := make(Intervals, len(intervals))
+	copy(res, intervals)
+	return res, nil
 }
 
 func (t *MemTombstones) DeleteTombstones(refs map[storage.SeriesRef]struct{}) {
@@ -349,17 +357,23 @@ func (in Intervals) Add(n Interval) Intervals {
 	// Find min and max indexes of intervals that overlap with the new interval.
 	// Intervals are closed [t1, t2] and t is discreet, so if neighbour intervals are 1 step difference
 	// to the new one, we can merge those together.
-	mini := sort.Search(len(in), func(i int) bool { return in[i].Maxt >= n.Mint-1 })
-	if mini == len(in) {
-		return append(in, n)
+	mini := 0
+	if n.Mint != math.MinInt64 { // Avoid overflow.
+		mini = sort.Search(len(in), func(i int) bool { return in[i].Maxt >= n.Mint-1 })
+		if mini == len(in) {
+			return append(in, n)
+		}
 	}
 
-	maxi := sort.Search(len(in)-mini, func(i int) bool { return in[mini+i].Mint > n.Maxt+1 })
-	if maxi == 0 {
-		if mini == 0 {
-			return append(Intervals{n}, in...)
+	maxi := len(in)
+	if n.Maxt != math.MaxInt64 { // Avoid overflow.
+		maxi = sort.Search(len(in)-mini, func(i int) bool { return in[mini+i].Mint > n.Maxt+1 })
+		if maxi == 0 {
+			if mini == 0 {
+				return append(Intervals{n}, in...)
+			}
+			return append(in[:mini], append(Intervals{n}, in[mini:]...)...)
 		}
-		return append(in[:mini], append(Intervals{n}, in[mini:]...)...)
 	}
 
 	if n.Mint < in[mini].Mint {

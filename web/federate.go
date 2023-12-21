@@ -14,17 +14,19 @@
 package web
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
+	"strings"
 
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -56,6 +58,8 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 	h.mtx.RLock()
 	defer h.mtx.RUnlock()
 
+	ctx := req.Context()
+
 	if err := req.ParseForm(); err != nil {
 		http.Error(w, fmt.Sprintf("error parsing form values: %v", err), http.StatusBadRequest)
 		return
@@ -79,10 +83,10 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 	)
 	w.Header().Set("Content-Type", string(format))
 
-	q, err := h.localStorage.Querier(req.Context(), mint, maxt)
+	q, err := h.localStorage.Querier(mint, maxt)
 	if err != nil {
 		federationErrors.Inc()
-		if errors.Cause(err) == tsdb.ErrNotReady {
+		if errors.Is(err, tsdb.ErrNotReady) {
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)
 			return
 		}
@@ -97,7 +101,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 
 	var sets []storage.SeriesSet
 	for _, mset := range matcherSets {
-		s := q.Select(true, hints, mset...)
+		s := q.Select(ctx, true, hints, mset...)
 		sets = append(sets, s)
 	}
 
@@ -134,7 +138,7 @@ Loop:
 			case chunkenc.ValFloat:
 				f = sample.F()
 			case chunkenc.ValHistogram:
-				fh = sample.H().ToFloat()
+				fh = sample.H().ToFloat(nil)
 			case chunkenc.ValFloatHistogram:
 				fh = sample.FH()
 			default:
@@ -166,7 +170,11 @@ Loop:
 		return
 	}
 
-	sort.Sort(byName(vec))
+	slices.SortFunc(vec, func(a, b promql.Sample) int {
+		ni := a.Metric.Get(labels.MetricName)
+		nj := b.Metric.Get(labels.MetricName)
+		return strings.Compare(ni, nj)
+	})
 
 	externalLabels := h.config.GlobalConfig.ExternalLabels.Map()
 	if _, ok := externalLabels[model.InstanceLabel]; !ok {
@@ -312,16 +320,4 @@ Loop:
 			level.Error(h.logger).Log("msg", "federation failed", "err", err)
 		}
 	}
-}
-
-// byName makes a model.Vector sortable by metric name.
-type byName promql.Vector
-
-func (vec byName) Len() int      { return len(vec) }
-func (vec byName) Swap(i, j int) { vec[i], vec[j] = vec[j], vec[i] }
-
-func (vec byName) Less(i, j int) bool {
-	ni := vec[i].Metric.Get(labels.MetricName)
-	nj := vec[j].Metric.Get(labels.MetricName)
-	return ni < nj
 }

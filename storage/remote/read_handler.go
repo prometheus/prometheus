@@ -15,18 +15,21 @@ package remote
 
 import (
 	"context"
+	"errors"
 	"net/http"
-	"sort"
+	"strings"
 	"sync"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/gate"
 )
 
@@ -92,8 +95,8 @@ func (h *readHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Value: value,
 		})
 	}
-	sort.Slice(sortedExternalLabels, func(i, j int) bool {
-		return sortedExternalLabels[i].Name < sortedExternalLabels[j].Name
+	slices.SortFunc(sortedExternalLabels, func(a, b prompb.Label) int {
+		return strings.Compare(a.Name, b.Name)
 	})
 
 	responseType, err := NegotiateResponseType(req.AcceptedResponseTypes)
@@ -131,7 +134,7 @@ func (h *readHandler) remoteReadSamples(
 				return err
 			}
 
-			querier, err := h.queryable.Querier(ctx, query.StartTimestampMs, query.EndTimestampMs)
+			querier, err := h.queryable.Querier(query.StartTimestampMs, query.EndTimestampMs)
 			if err != nil {
 				return err
 			}
@@ -154,8 +157,8 @@ func (h *readHandler) remoteReadSamples(
 				}
 			}
 
-			var ws storage.Warnings
-			resp.Results[i], ws, err = ToQueryResult(querier.Select(false, hints, filteredMatchers...), h.remoteReadSampleLimit)
+			var ws annotations.Annotations
+			resp.Results[i], ws, err = ToQueryResult(querier.Select(ctx, false, hints, filteredMatchers...), h.remoteReadSampleLimit)
 			if err != nil {
 				return err
 			}
@@ -167,7 +170,8 @@ func (h *readHandler) remoteReadSamples(
 			}
 			return nil
 		}(); err != nil {
-			if httpErr, ok := err.(HTTPError); ok {
+			var httpErr HTTPError
+			if errors.As(err, &httpErr) {
 				http.Error(w, httpErr.Error(), httpErr.Status())
 				return
 			}
@@ -198,7 +202,7 @@ func (h *readHandler) remoteReadStreamedXORChunks(ctx context.Context, w http.Re
 				return err
 			}
 
-			querier, err := h.queryable.ChunkQuerier(ctx, query.StartTimestampMs, query.EndTimestampMs)
+			querier, err := h.queryable.ChunkQuerier(query.StartTimestampMs, query.EndTimestampMs)
 			if err != nil {
 				return err
 			}
@@ -225,7 +229,7 @@ func (h *readHandler) remoteReadStreamedXORChunks(ctx context.Context, w http.Re
 				NewChunkedWriter(w, f),
 				int64(i),
 				// The streaming API has to provide the series sorted.
-				querier.Select(true, hints, filteredMatchers...),
+				querier.Select(ctx, true, hints, filteredMatchers...),
 				sortedExternalLabels,
 				h.remoteReadMaxBytesInFrame,
 				h.marshalPool,
@@ -239,7 +243,8 @@ func (h *readHandler) remoteReadStreamedXORChunks(ctx context.Context, w http.Re
 			}
 			return nil
 		}(); err != nil {
-			if httpErr, ok := err.(HTTPError); ok {
+			var httpErr HTTPError
+			if errors.As(err, &httpErr) {
 				http.Error(w, httpErr.Error(), httpErr.Status())
 				return
 			}

@@ -11,7 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// nolint:revive // Many legitimately empty blocks in this file.
 package parser
 
 import (
@@ -19,13 +18,15 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 )
 
 // Item represents a token or text string returned from the scanner.
 type Item struct {
-	Typ ItemType // The type of this Item.
-	Pos Pos      // The starting position, in bytes, of this Item in the input string.
-	Val string   // The value of this Item.
+	Typ ItemType     // The type of this Item.
+	Pos posrange.Pos // The starting position, in bytes, of this Item in the input string.
+	Val string       // The value of this Item.
 }
 
 // String returns a descriptive string for the Item.
@@ -58,11 +59,11 @@ func (i Item) Pretty(int) string { return i.String() }
 func (i ItemType) IsOperator() bool { return i > operatorsStart && i < operatorsEnd }
 
 // IsAggregator returns true if the Item belongs to the aggregator functions.
-// Returns false otherwise
+// Returns false otherwise.
 func (i ItemType) IsAggregator() bool { return i > aggregatorsStart && i < aggregatorsEnd }
 
 // IsAggregatorWithParam returns true if the Item is an aggregator that takes a parameter.
-// Returns false otherwise
+// Returns false otherwise.
 func (i ItemType) IsAggregatorWithParam() bool {
 	return i == TOPK || i == BOTTOMK || i == COUNT_VALUES || i == QUANTILE
 }
@@ -133,9 +134,23 @@ var key = map[string]ItemType{
 	"end":   END,
 }
 
+var histogramDesc = map[string]ItemType{
+	"sum":        SUM_DESC,
+	"count":      COUNT_DESC,
+	"schema":     SCHEMA_DESC,
+	"offset":     OFFSET_DESC,
+	"n_offset":   NEGATIVE_OFFSET_DESC,
+	"buckets":    BUCKETS_DESC,
+	"n_buckets":  NEGATIVE_BUCKETS_DESC,
+	"z_bucket":   ZERO_BUCKET_DESC,
+	"z_bucket_w": ZERO_BUCKET_WIDTH_DESC,
+}
+
 // ItemTypeStr is the default string representations for common Items. It does not
 // imply that those are the only character sequences that can be lexed to such an Item.
 var ItemTypeStr = map[ItemType]string{
+	OPEN_HIST:     "{{",
+	CLOSE_HIST:    "}}",
 	LEFT_PAREN:    "(",
 	RIGHT_PAREN:   ")",
 	LEFT_BRACE:    "{",
@@ -220,20 +235,26 @@ const eof = -1
 // stateFn represents the state of the scanner as a function that returns the next state.
 type stateFn func(*Lexer) stateFn
 
-// Pos is the position in a string.
-// Negative numbers indicate undefined positions.
-type Pos int
+type histogramState int
+
+const (
+	histogramStateNone histogramState = iota
+	histogramStateOpen
+	histogramStateMul
+	histogramStateAdd
+	histogramStateSub
+)
 
 // Lexer holds the state of the scanner.
 type Lexer struct {
-	input       string  // The string being scanned.
-	state       stateFn // The next lexing function to enter.
-	pos         Pos     // Current position in the input.
-	start       Pos     // Start position of this Item.
-	width       Pos     // Width of last rune read from input.
-	lastPos     Pos     // Position of most recent Item returned by NextItem.
-	itemp       *Item   // Pointer to where the next scanned item should be placed.
-	scannedItem bool    // Set to true every time an item is scanned.
+	input       string       // The string being scanned.
+	state       stateFn      // The next lexing function to enter.
+	pos         posrange.Pos // Current position in the input.
+	start       posrange.Pos // Start position of this Item.
+	width       posrange.Pos // Width of last rune read from input.
+	lastPos     posrange.Pos // Position of most recent Item returned by NextItem.
+	itemp       *Item        // Pointer to where the next scanned item should be placed.
+	scannedItem bool         // Set to true every time an item is scanned.
 
 	parenDepth  int  // Nesting depth of ( ) exprs.
 	braceOpen   bool // Whether a { is opened.
@@ -241,9 +262,10 @@ type Lexer struct {
 	gotColon    bool // Whether we got a ':' after [ was opened.
 	stringOpen  rune // Quote rune of the string currently being read.
 
-	// seriesDesc is set when a series description for the testing
-	// language is lexed.
-	seriesDesc bool
+	// series description variables for internal PromQL testing framework as well as in promtool rules unit tests.
+	// see https://prometheus.io/docs/prometheus/latest/configuration/unit_testing_rules/#series
+	seriesDesc     bool           // Whether we are lexing a series description.
+	histogramState histogramState // Determines whether or not inside of a histogram description.
 }
 
 // next returns the next rune in the input.
@@ -253,7 +275,7 @@ func (l *Lexer) next() rune {
 		return eof
 	}
 	r, w := utf8.DecodeRuneInString(l.input[l.pos:])
-	l.width = Pos(w)
+	l.width = posrange.Pos(w)
 	l.pos += l.width
 	return r
 }
@@ -338,6 +360,9 @@ const lineComment = "#"
 
 // lexStatements is the top-level state for lexing.
 func lexStatements(l *Lexer) stateFn {
+	if l.histogramState != histogramStateNone {
+		return lexHistogram
+	}
 	if l.braceOpen {
 		return lexInsideBraces
 	}
@@ -460,6 +485,116 @@ func lexStatements(l *Lexer) stateFn {
 	return lexStatements
 }
 
+func lexHistogram(l *Lexer) stateFn {
+	switch l.histogramState {
+	case histogramStateMul:
+		l.histogramState = histogramStateNone
+		l.next()
+		l.emit(TIMES)
+		return lexNumber
+	case histogramStateAdd:
+		l.histogramState = histogramStateNone
+		l.next()
+		l.emit(ADD)
+		return lexValueSequence
+	case histogramStateSub:
+		l.histogramState = histogramStateNone
+		l.next()
+		l.emit(SUB)
+		return lexValueSequence
+	}
+
+	if l.bracketOpen {
+		return lexBuckets
+	}
+	switch r := l.next(); {
+	case isSpace(r):
+		l.emit(SPACE)
+		return lexSpace
+	case isAlpha(r):
+		l.backup()
+		return lexHistogramDescriptor
+	case r == ':':
+		l.emit(COLON)
+		return lexHistogram
+	case r == '-':
+		l.emit(SUB)
+		return lexNumber
+	case r == 'x':
+		l.emit(TIMES)
+		return lexNumber
+	case isDigit(r):
+		l.backup()
+		return lexNumber
+	case r == '[':
+		l.bracketOpen = true
+		l.emit(LEFT_BRACKET)
+		return lexBuckets
+	case r == '}' && l.peek() == '}':
+		l.next()
+		l.emit(CLOSE_HIST)
+		switch l.peek() {
+		case 'x':
+			l.histogramState = histogramStateMul
+			return lexHistogram
+		case '+':
+			l.histogramState = histogramStateAdd
+			return lexHistogram
+		case '-':
+			l.histogramState = histogramStateSub
+			return lexHistogram
+		default:
+			l.histogramState = histogramStateNone
+			return lexValueSequence
+		}
+	default:
+		return l.errorf("histogram description incomplete unexpected: %q", r)
+	}
+}
+
+func lexHistogramDescriptor(l *Lexer) stateFn {
+Loop:
+	for {
+		switch r := l.next(); {
+		case isAlpha(r):
+			// absorb.
+		default:
+			l.backup()
+
+			word := l.input[l.start:l.pos]
+			if desc, ok := histogramDesc[strings.ToLower(word)]; ok {
+				if l.peek() == ':' {
+					l.emit(desc)
+					return lexHistogram
+				}
+				l.errorf("missing `:` for histogram descriptor")
+			} else {
+				l.errorf("bad histogram descriptor found: %q", word)
+			}
+
+			break Loop
+		}
+	}
+	return lexStatements
+}
+
+func lexBuckets(l *Lexer) stateFn {
+	switch r := l.next(); {
+	case isSpace(r):
+		l.emit(SPACE)
+		return lexSpace
+	case isDigit(r):
+		l.backup()
+		return lexNumber
+	case r == ']':
+		l.bracketOpen = false
+		l.emit(RIGHT_BRACKET)
+		return lexHistogram
+	default:
+		return l.errorf("invalid character in buckets description: %q", r)
+	}
+}
+
 // lexInsideBraces scans the inside of a vector selector. Keywords are ignored and
 // scanned as identifiers.
 func lexInsideBraces(l *Lexer) stateFn {
@@ -517,9 +652,20 @@ func lexInsideBraces(l *Lexer) stateFn {
 
 // lexValueSequence scans a value sequence of a series description.
 func lexValueSequence(l *Lexer) stateFn {
+	if l.histogramState != histogramStateNone {
+		return lexHistogram
+	}
 	switch r := l.next(); {
 	case r == eof:
 		return lexStatements
+	case r == '{' && l.peek() == '{':
+		if l.histogramState != histogramStateNone {
+			return l.errorf("unexpected histogram opening {{")
+		}
+		l.histogramState = histogramStateOpen
+		l.next()
+		l.emit(OPEN_HIST)
+		return lexHistogram
 	case isSpace(r):
 		l.emit(SPACE)
 		lexSpace(l)
@@ -677,7 +823,7 @@ func lexSpace(l *Lexer) stateFn {
 
 // lexLineComment scans a line comment. Left comment marker is known to be present.
 func lexLineComment(l *Lexer) stateFn {
-	l.pos += Pos(len(lineComment))
+	l.pos += posrange.Pos(len(lineComment))
 	for r := l.next(); !isEndOfLine(r) && r != eof; {
 		r = l.next()
 	}

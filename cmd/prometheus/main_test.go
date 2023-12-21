@@ -346,7 +346,7 @@ func getCurrentGaugeValuesFor(t *testing.T, reg prometheus.Gatherer, metricNames
 				continue
 			}
 
-			require.Equal(t, 1, len(g.GetMetric()))
+			require.Len(t, g.GetMetric(), 1)
 			if _, ok := res[m]; ok {
 				t.Error("expected only one metric family for", m)
 				t.FailNow()
@@ -498,10 +498,9 @@ func TestDocumentation(t *testing.T) {
 	cmd.Stdout = &stdout
 
 	if err := cmd.Run(); err != nil {
-		if exitError, ok := err.(*exec.ExitError); ok {
-			if exitError.ExitCode() != 0 {
-				fmt.Println("Command failed with non-zero exit code")
-			}
+		var exitError *exec.ExitError
+		if errors.As(err, &exitError) && exitError.ExitCode() != 0 {
+			fmt.Println("Command failed with non-zero exit code")
 		}
 	}
 

@@ -264,4 +264,4 @@ process ID.
 While Prometheus does have recovery mechanisms in the case that there is an
 abrupt process failure it is recommend to use the `SIGTERM` signal to cleanly
 shutdown a Prometheus instance. If you're running on Linux this can be performed
-by using `kill -s SIGHUP <PID>`, replacing `<PID>` with your Prometheus process ID.
+by using `kill -s SIGTERM <PID>`, replacing `<PID>` with your Prometheus process ID.

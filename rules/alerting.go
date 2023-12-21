@@ -261,7 +261,7 @@ func (r *AlertingRule) forStateSample(alert *Alert, ts time.Time, v float64) pro
 }
 
 // QueryforStateSeries returns the series for ALERTS_FOR_STATE.
-func (r *AlertingRule) QueryforStateSeries(alert *Alert, q storage.Querier) (storage.Series, error) {
+func (r *AlertingRule) QueryforStateSeries(ctx context.Context, alert *Alert, q storage.Querier) (storage.Series, error) {
 	smpl := r.forStateSample(alert, time.Now(), 0)
 	var matchers []*labels.Matcher
 	smpl.Metric.Range(func(l labels.Label) {
@@ -271,7 +271,7 @@ func (r *AlertingRule) QueryforStateSeries(alert *Alert, q storage.Querier) (sto
 		}
 		matchers = append(matchers, mt)
 	})
-	sset := q.Select(false, nil, matchers...)
+	sset := q.Select(ctx, false, nil, matchers...)
 
 	var s storage.Series
 	for sset.Next() {
@@ -472,7 +472,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 }
 
 // State returns the maximum state of alert instances for this rule.
-// StateFiring > StatePending > StateInactive
+// StateFiring > StatePending > StateInactive.
 func (r *AlertingRule) State() AlertState {
 	r.activeMtx.Lock()
 	defer r.activeMtx.Unlock()

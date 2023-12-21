@@ -19,7 +19,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"github.com/prometheus/prometheus/tsdb/tsdbutil"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 )
 
 // BufferedSeriesIterator wraps an iterator with a look-back buffer.
@@ -42,7 +42,6 @@ func NewBuffer(delta int64) *BufferedSeriesIterator {
 // NewBufferIterator returns a new iterator that buffers the values within the
 // time range of the current element and the duration of delta before.
 func NewBufferIterator(it chunkenc.Iterator, delta int64) *BufferedSeriesIterator {
-	// TODO(codesome): based on encoding, allocate different buffer.
 	bit := &BufferedSeriesIterator{
 		buf:   newSampleRing(delta, 0, chunkenc.ValNone),
 		delta: delta,
@@ -69,13 +68,13 @@ func (b *BufferedSeriesIterator) ReduceDelta(delta int64) bool {
 
 // PeekBack returns the nth previous element of the iterator. If there is none buffered,
 // ok is false.
-func (b *BufferedSeriesIterator) PeekBack(n int) (sample tsdbutil.Sample, ok bool) {
+func (b *BufferedSeriesIterator) PeekBack(n int) (sample chunks.Sample, ok bool) {
 	return b.buf.nthLast(n)
 }
 
 // Buffer returns an iterator over the buffered data. Invalidates previously
 // returned iterators.
-func (b *BufferedSeriesIterator) Buffer() chunkenc.Iterator {
+func (b *BufferedSeriesIterator) Buffer() *SampleRingIterator {
 	return b.buf.iterator()
 }
 
@@ -92,12 +91,8 @@ func (b *BufferedSeriesIterator) Seek(t int64) chunkenc.ValueType {
 		switch b.valueType {
 		case chunkenc.ValNone:
 			return chunkenc.ValNone
-		case chunkenc.ValFloat:
-			b.lastTime, _ = b.At()
-		case chunkenc.ValHistogram:
-			b.lastTime, _ = b.AtHistogram()
-		case chunkenc.ValFloatHistogram:
-			b.lastTime, _ = b.AtFloatHistogram()
+		case chunkenc.ValFloat, chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
+			b.lastTime = b.AtT()
 		default:
 			panic(fmt.Errorf("BufferedSeriesIterator: unknown value type %v", b.valueType))
 		}
@@ -207,7 +202,7 @@ func (s hSample) H() *histogram.Histogram {
 }
 
 func (s hSample) FH() *histogram.FloatHistogram {
-	return s.h.ToFloat()
+	return s.h.ToFloat(nil)
 }
 
 func (s hSample) Type() chunkenc.ValueType {
@@ -242,22 +237,33 @@ func (s fhSample) Type() chunkenc.ValueType {
 type sampleRing struct {
 	delta int64
 
-	// Lookback buffers. We use buf for mixed samples, but one of the three
+	// Lookback buffers. We use iBuf for mixed samples, but one of the three
 	// concrete ones for homogenous samples. (Only one of the four bufs is
 	// allowed to be populated!) This avoids the overhead of the interface
 	// wrapper for the happy (and by far most common) case of homogenous
 	// samples.
-	buf   []tsdbutil.Sample
-	fBuf  []fSample
-	hBuf  []hSample
-	fhBuf []fhSample
+	iBuf     []chunks.Sample
+	fBuf     []fSample
+	hBuf     []hSample
+	fhBuf    []fhSample
+	bufInUse bufType
 
 	i int // Position of most recent element in ring buffer.
 	f int // Position of first element in ring buffer.
 	l int // Number of elements in buffer.
 
-	it sampleRingIterator
+	it SampleRingIterator
 }
+
+type bufType int
+
+const (
+	noBuf bufType = iota // Nothing yet stored in sampleRing.
+	iBuf
+	fBuf
+	hBuf
+	fhBuf
+)
 
 // newSampleRing creates a new sampleRing. If you do not know the prefereed
 // value type yet, use a size of 0 (in which case the provided typ doesn't
@@ -278,7 +284,8 @@ func newSampleRing(delta int64, size int, typ chunkenc.ValueType) *sampleRing {
 	case chunkenc.ValFloatHistogram:
 		r.fhBuf = make([]fhSample, size)
 	default:
-		r.buf = make([]tsdbutil.Sample, size)
+		// Do not initialize anything because the 1st sample will be
+		// added to one of the other bufs anyway.
 	}
 	return r
 }
@@ -287,16 +294,25 @@ func (r *sampleRing) reset() {
 	r.l = 0
 	r.i = -1
 	r.f = 0
+	r.bufInUse = noBuf
+
+	// The first sample after the reset will always go to a specialized
+	// buffer. If we later need to change to the interface buffer, we'll
+	// copy from the specialized buffer to the interface buffer. For that to
+	// work properly, we have to reset the interface buffer here, too.
+	r.iBuf = r.iBuf[:0]
 }
 
 // Returns the current iterator. Invalidates previously returned iterators.
-func (r *sampleRing) iterator() chunkenc.Iterator {
+func (r *sampleRing) iterator() *SampleRingIterator {
 	r.it.r = r
 	r.it.i = -1
 	return &r.it
 }
 
-type sampleRingIterator struct {
+// SampleRingIterator is returned by BufferedSeriesIterator.Buffer() and can be
+// used to iterate samples buffered in the lookback window.
+type SampleRingIterator struct {
 	r  *sampleRing
 	i  int
 	t  int64
@@ -305,23 +321,23 @@ type sampleRingIterator struct {
 	fh *histogram.FloatHistogram
 }
 
-func (it *sampleRingIterator) Next() chunkenc.ValueType {
+func (it *SampleRingIterator) Next() chunkenc.ValueType {
 	it.i++
 	if it.i >= it.r.l {
 		return chunkenc.ValNone
 	}
-	switch {
-	case len(it.r.fBuf) > 0:
+	switch it.r.bufInUse {
+	case fBuf:
 		s := it.r.atF(it.i)
 		it.t = s.t
 		it.f = s.f
 		return chunkenc.ValFloat
-	case len(it.r.hBuf) > 0:
+	case hBuf:
 		s := it.r.atH(it.i)
 		it.t = s.t
 		it.h = s.h
 		return chunkenc.ValHistogram
-	case len(it.r.fhBuf) > 0:
+	case fhBuf:
 		s := it.r.atFH(it.i)
 		it.t = s.t
 		it.fh = s.fh
@@ -344,36 +360,34 @@ func (it *sampleRingIterator) Next() chunkenc.ValueType {
 	}
 }
 
-func (it *sampleRingIterator) Seek(int64) chunkenc.ValueType {
-	return chunkenc.ValNone
-}
-
-func (it *sampleRingIterator) Err() error {
-	return nil
-}
-
-func (it *sampleRingIterator) At() (int64, float64) {
+// At returns the current float element of the iterator.
+func (it *SampleRingIterator) At() (int64, float64) {
 	return it.t, it.f
 }
 
-func (it *sampleRingIterator) AtHistogram() (int64, *histogram.Histogram) {
+// AtHistogram returns the current histogram element of the iterator.
+func (it *SampleRingIterator) AtHistogram() (int64, *histogram.Histogram) {
 	return it.t, it.h
 }
 
-func (it *sampleRingIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+// AtFloatHistogram returns the current histogram element of the iterator. If the
+// current sample is an integer histogram, it will be converted to a float histogram.
+// An optional histogram.FloatHistogram can be provided to avoid allocating a new
+// object for the conversion.
+func (it *SampleRingIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	if it.fh == nil {
-		return it.t, it.h.ToFloat()
+		return it.t, it.h.ToFloat(fh)
 	}
 	return it.t, it.fh
 }
 
-func (it *sampleRingIterator) AtT() int64 {
+func (it *SampleRingIterator) AtT() int64 {
 	return it.t
 }
 
-func (r *sampleRing) at(i int) tsdbutil.Sample {
-	j := (r.f + i) % len(r.buf)
-	return r.buf[j]
+func (r *sampleRing) at(i int) chunks.Sample {
+	j := (r.f + i) % len(r.iBuf)
+	return r.iBuf[j]
 }
 
 func (r *sampleRing) atF(i int) fSample {
@@ -396,96 +410,119 @@ func (r *sampleRing) atFH(i int) fhSample {
 // implementation. If you know you are dealing with one of the implementations
 // from this package (fSample, hSample, fhSample), call one of the specialized
 // methods addF, addH, or addFH for better performance.
-func (r *sampleRing) add(s tsdbutil.Sample) {
-	if len(r.buf) == 0 {
+func (r *sampleRing) add(s chunks.Sample) {
+	if r.bufInUse == noBuf {
+		// First sample.
+		switch s := s.(type) {
+		case fSample:
+			r.bufInUse = fBuf
+			r.fBuf = addF(s, r.fBuf, r)
+		case hSample:
+			r.bufInUse = hBuf
+			r.hBuf = addH(s, r.hBuf, r)
+		case fhSample:
+			r.bufInUse = fhBuf
+			r.fhBuf = addFH(s, r.fhBuf, r)
+		}
+		return
+	}
+	if r.bufInUse != iBuf {
 		// Nothing added to the interface buf yet. Let's check if we can
 		// stay specialized.
 		switch s := s.(type) {
 		case fSample:
-			if len(r.hBuf)+len(r.fhBuf) == 0 {
+			if r.bufInUse == fBuf {
 				r.fBuf = addF(s, r.fBuf, r)
 				return
 			}
 		case hSample:
-			if len(r.fBuf)+len(r.fhBuf) == 0 {
+			if r.bufInUse == hBuf {
 				r.hBuf = addH(s, r.hBuf, r)
 				return
 			}
 		case fhSample:
-			if len(r.fBuf)+len(r.hBuf) == 0 {
+			if r.bufInUse == fhBuf {
 				r.fhBuf = addFH(s, r.fhBuf, r)
 				return
 			}
 		}
 		// The new sample isn't a fit for the already existing
 		// ones. Copy the latter into the interface buffer where needed.
-		switch {
-		case len(r.fBuf) > 0:
+		// The interface buffer is assumed to be of length zero at this point.
+		switch r.bufInUse {
+		case fBuf:
 			for _, s := range r.fBuf {
-				r.buf = append(r.buf, s)
+				r.iBuf = append(r.iBuf, s)
 			}
 			r.fBuf = nil
-		case len(r.hBuf) > 0:
+		case hBuf:
 			for _, s := range r.hBuf {
-				r.buf = append(r.buf, s)
+				r.iBuf = append(r.iBuf, s)
 			}
 			r.hBuf = nil
-		case len(r.fhBuf) > 0:
+		case fhBuf:
 			for _, s := range r.fhBuf {
-				r.buf = append(r.buf, s)
+				r.iBuf = append(r.iBuf, s)
 			}
 			r.fhBuf = nil
 		}
+		r.bufInUse = iBuf
 	}
-	r.buf = addSample(s, r.buf, r)
+	r.iBuf = addSample(s, r.iBuf, r)
 }
 
 // addF is a version of the add method specialized for fSample.
 func (r *sampleRing) addF(s fSample) {
-	switch {
-	case len(r.buf) > 0:
-		// Already have interface samples. Add to the interface buf.
-		r.buf = addSample(s, r.buf, r)
-	case len(r.hBuf)+len(r.fhBuf) > 0:
+	switch r.bufInUse {
+	case fBuf: // Add to existing fSamples.
+		r.fBuf = addF(s, r.fBuf, r)
+	case noBuf: // Add first sample.
+		r.fBuf = addF(s, r.fBuf, r)
+		r.bufInUse = fBuf
+	case iBuf: // Already have interface samples. Add to the interface buf.
+		r.iBuf = addSample(s, r.iBuf, r)
+	default:
 		// Already have specialized samples that are not fSamples.
 		// Need to call the checked add method for conversion.
 		r.add(s)
-	default:
-		r.fBuf = addF(s, r.fBuf, r)
 	}
 }
 
 // addH is a version of the add method specialized for hSample.
 func (r *sampleRing) addH(s hSample) {
-	switch {
-	case len(r.buf) > 0:
-		// Already have interface samples. Add to the interface buf.
-		r.buf = addSample(s, r.buf, r)
-	case len(r.fBuf)+len(r.fhBuf) > 0:
-		// Already have samples that are not hSamples.
+	switch r.bufInUse {
+	case hBuf: // Add to existing hSamples.
+		r.hBuf = addH(s, r.hBuf, r)
+	case noBuf: // Add first sample.
+		r.hBuf = addH(s, r.hBuf, r)
+		r.bufInUse = hBuf
+	case iBuf: // Already have interface samples. Add to the interface buf.
+		r.iBuf = addSample(s, r.iBuf, r)
+	default:
+		// Already have specialized samples that are not hSamples.
 		// Need to call the checked add method for conversion.
 		r.add(s)
-	default:
-		r.hBuf = addH(s, r.hBuf, r)
 	}
 }
 
 // addFH is a version of the add method specialized for fhSample.
 func (r *sampleRing) addFH(s fhSample) {
-	switch {
-	case len(r.buf) > 0:
-		// Already have interface samples. Add to the interface buf.
-		r.buf = addSample(s, r.buf, r)
-	case len(r.fBuf)+len(r.hBuf) > 0:
-		// Already have samples that are not fhSamples.
+	switch r.bufInUse {
+	case fhBuf: // Add to existing fhSamples.
+		r.fhBuf = addFH(s, r.fhBuf, r)
+	case noBuf: // Add first sample.
+		r.fhBuf = addFH(s, r.fhBuf, r)
+		r.bufInUse = fhBuf
+	case iBuf: // Already have interface samples. Add to the interface buf.
+		r.iBuf = addSample(s, r.iBuf, r)
+	default:
+		// Already have specialized samples that are not fhSamples.
 		// Need to call the checked add method for conversion.
 		r.add(s)
-	default:
-		r.fhBuf = addFH(s, r.fhBuf, r)
 	}
 }
 
-// genericAdd is a generic implementation of adding a tsdbutil.Sample
+// genericAdd is a generic implementation of adding a chunks.Sample
 // implementation to a buffer of a sample ring. However, the Go compiler
 // currently (go1.20) decides to not expand the code during compile time, but
 // creates dynamic code to handle the different types. That has a significant
@@ -495,7 +532,7 @@ func (r *sampleRing) addFH(s fhSample) {
 // Therefore, genericAdd has been manually implemented for all the types
 // (addSample, addF, addH, addFH) below.
 //
-// func genericAdd[T tsdbutil.Sample](s T, buf []T, r *sampleRing) []T {
+// func genericAdd[T chunks.Sample](s T, buf []T, r *sampleRing) []T {
 // 	l := len(buf)
 // 	// Grow the ring buffer if it fits no more elements.
 // 	if l == 0 {
@@ -534,15 +571,15 @@ func (r *sampleRing) addFH(s fhSample) {
 // }
 
 // addSample is a handcoded specialization of genericAdd (see above).
-func addSample(s tsdbutil.Sample, buf []tsdbutil.Sample, r *sampleRing) []tsdbutil.Sample {
+func addSample(s chunks.Sample, buf []chunks.Sample, r *sampleRing) []chunks.Sample {
 	l := len(buf)
 	// Grow the ring buffer if it fits no more elements.
 	if l == 0 {
-		buf = make([]tsdbutil.Sample, 16)
+		buf = make([]chunks.Sample, 16)
 		l = 16
 	}
 	if l == r.l {
-		newBuf := make([]tsdbutil.Sample, 2*l)
+		newBuf := make([]chunks.Sample, 2*l)
 		copy(newBuf[l+r.f:], buf[r.f:])
 		copy(newBuf, buf[:r.f])
 
@@ -701,20 +738,20 @@ func (r *sampleRing) reduceDelta(delta int64) bool {
 		return true
 	}
 
-	switch {
-	case len(r.fBuf) > 0:
+	switch r.bufInUse {
+	case fBuf:
 		genericReduceDelta(r.fBuf, r)
-	case len(r.hBuf) > 0:
+	case hBuf:
 		genericReduceDelta(r.hBuf, r)
-	case len(r.fhBuf) > 0:
+	case fhBuf:
 		genericReduceDelta(r.fhBuf, r)
 	default:
-		genericReduceDelta(r.buf, r)
+		genericReduceDelta(r.iBuf, r)
 	}
 	return true
 }
 
-func genericReduceDelta[T tsdbutil.Sample](buf []T, r *sampleRing) {
+func genericReduceDelta[T chunks.Sample](buf []T, r *sampleRing) {
 	// Free head of the buffer of samples that just fell out of the range.
 	l := len(buf)
 	tmin := buf[r.i].T() - r.delta
@@ -728,38 +765,38 @@ func genericReduceDelta[T tsdbutil.Sample](buf []T, r *sampleRing) {
 }
 
 // nthLast returns the nth most recent element added to the ring.
-func (r *sampleRing) nthLast(n int) (tsdbutil.Sample, bool) {
+func (r *sampleRing) nthLast(n int) (chunks.Sample, bool) {
 	if n > r.l {
 		return fSample{}, false
 	}
 	i := r.l - n
-	switch {
-	case len(r.fBuf) > 0:
+	switch r.bufInUse {
+	case fBuf:
 		return r.atF(i), true
-	case len(r.hBuf) > 0:
+	case hBuf:
 		return r.atH(i), true
-	case len(r.fhBuf) > 0:
+	case fhBuf:
 		return r.atFH(i), true
 	default:
 		return r.at(i), true
 	}
 }
 
-func (r *sampleRing) samples() []tsdbutil.Sample {
-	res := make([]tsdbutil.Sample, r.l)
+func (r *sampleRing) samples() []chunks.Sample {
+	res := make([]chunks.Sample, r.l)
 
 	k := r.f + r.l
 	var j int
 
-	switch {
-	case len(r.buf) > 0:
-		if k > len(r.buf) {
-			k = len(r.buf)
+	switch r.bufInUse {
+	case iBuf:
+		if k > len(r.iBuf) {
+			k = len(r.iBuf)
 			j = r.l - k + r.f
 		}
-		n := copy(res, r.buf[r.f:k])
-		copy(res[n:], r.buf[:j])
-	case len(r.fBuf) > 0:
+		n := copy(res, r.iBuf[r.f:k])
+		copy(res[n:], r.iBuf[:j])
+	case fBuf:
 		if k > len(r.fBuf) {
 			k = len(r.fBuf)
 			j = r.l - k + r.f
@@ -770,7 +807,7 @@ func (r *sampleRing) samples() []tsdbutil.Sample {
 		for i, s := range resF {
 			res[i] = s
 		}
-	case len(r.hBuf) > 0:
+	case hBuf:
 		if k > len(r.hBuf) {
 			k = len(r.hBuf)
 			j = r.l - k + r.f
@@ -781,7 +818,7 @@ func (r *sampleRing) samples() []tsdbutil.Sample {
 		for i, s := range resH {
 			res[i] = s
 		}
-	case len(r.fhBuf) > 0:
+	case fhBuf:
 		if k > len(r.fhBuf) {
 			k = len(r.fhBuf)
 			j = r.l - k + r.f

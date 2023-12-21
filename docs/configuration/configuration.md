@@ -37,7 +37,7 @@ Generic placeholders are defined as follows:
 * `<float>`: a floating-point number
 * `<host>`: a valid string consisting of a hostname or IP followed by an optional port number
 * `<int>`: an integer value
-* `<labelname>`: a string matching the regular expression `[a-zA-Z_][a-zA-Z0-9_]*`
+* `<labelname>`: a string matching the regular expression `[a-zA-Z_][a-zA-Z0-9_]*`. Any other unsupported character in the source label should be converted to an underscore. For example, the label `app.kubernetes.io/name` should be written as `app_kubernetes_io_name`.
 * `<labelvalue>`: a string of unicode characters
 * `<path>`: a valid URL path
 * `<scheme>`: a string that can take the values `http` or `https`
@@ -61,6 +61,13 @@ global:
   # How long until a scrape request times out.
   [ scrape_timeout: <duration> | default = 10s ]
 
+  # The protocols to negotiate during a scrape with the client.
+  # Supported values (case sensitive): PrometheusProto, OpenMetricsText0.0.1,
+  # OpenMetricsText1.0.0, PrometheusText0.0.4.
+  # The default value changes to [ PrometheusProto, OpenMetricsText1.0.0, OpenMetricsText0.0.1, PrometheusText0.0.4 ]
+  # when native_histogram feature flag is set.
+  [ scrape_protocols: [<string>, ...] | default = [ OpenMetricsText1.0.0, OpenMetricsText0.0.1, PrometheusText0.0.4 ] ]
+
   # How frequently to evaluate rules.
   [ evaluation_interval: <duration> | default = 1m ]
 
@@ -72,6 +79,43 @@ global:
   # File to which PromQL queries are logged.
   # Reloading the configuration will reopen the file.
   [ query_log_file: <string> ]
+
+  # An uncompressed response body larger than this many bytes will cause the
+  # scrape to fail. 0 means no limit. Example: 100MB.
+  # This is an experimental feature, this behaviour could
+  # change or be removed in the future.
+  [ body_size_limit: <size> | default = 0 ]
+
+  # Per-scrape limit on number of scraped samples that will be accepted.
+  # If more than this number of samples are present after metric relabeling
+  # the entire scrape will be treated as failed. 0 means no limit.
+  [ sample_limit: <int> | default = 0 ]
+
+  # Per-scrape limit on number of labels that will be accepted for a sample. If
+  # more than this number of labels are present post metric-relabeling, the
+  # entire scrape will be treated as failed. 0 means no limit.
+  [ label_limit: <int> | default = 0 ]
+
+  # Per-scrape limit on length of labels name that will be accepted for a sample.
+  # If a label name is longer than this number post metric-relabeling, the entire
+  # scrape will be treated as failed. 0 means no limit.
+  [ label_name_length_limit: <int> | default = 0 ]
+
+  # Per-scrape limit on length of labels value that will be accepted for a sample.
+  # If a label value is longer than this number post metric-relabeling, the
+  # entire scrape will be treated as failed. 0 means no limit.
+  [ label_value_length_limit: <int> | default = 0 ]
+
+  # Per-scrape config limit on number of unique targets that will be
+  # accepted. If more than this number of targets are present after target
+  # relabeling, Prometheus will mark the targets as failed without scraping them.
+  # 0 means no limit. This is an experimental feature, this behaviour could
+  # change in the future.
+  [ target_limit: <int> | default = 0 ]
+
+  # Limit per scrape config on the number of targets dropped by relabeling
+  # that will be kept in memory. 0 means no limit.
+  [ keep_dropped_targets: <int> | default = 0 ]
 
 # Rule files specifies a list of globs. Rules and alerts are read from
 # all matching files.
@@ -134,6 +178,15 @@ job_name: <job_name>
 # Per-scrape timeout when scraping this job.
 [ scrape_timeout: <duration> | default = <global_config.scrape_timeout> ]
 
+# The protocols to negotiate during a scrape with the client.
+# Supported values (case sensitive): PrometheusProto, OpenMetricsText0.0.1,
+# OpenMetricsText1.0.0, PrometheusText0.0.4.
+[ scrape_protocols: [<string>, ...] | default = <global_config.scrape_protocols> ]
+
+# Whether to scrape a classic histogram that is also exposed as a native
+# histogram (has no effect without --enable-feature=native-histograms).
+[ scrape_classic_histograms: <boolean> | default = false ]
+
 # The HTTP resource path on which to fetch metrics from targets.
 [ metrics_path: <path> | default = /metrics ]
 
@@ -169,12 +222,24 @@ job_name: <job_name>
 # by the target will be ignored.
 [ honor_timestamps: <boolean> | default = true ]
 
+# track_timestamps_staleness controls whether Prometheus tracks staleness of
+# the metrics that have an explicit timestamps present in scraped data.
+#
+# If track_timestamps_staleness is set to "true", a staleness marker will be
+# inserted in the TSDB when a metric is no longer present or the target
+# is down.
+[ track_timestamps_staleness: <boolean> | default = false ]
+
 # Configures the protocol scheme used for requests.
 [ scheme: <scheme> | default = http ]
 
 # Optional HTTP URL parameters.
 params:
   [ <string>: [<string>, ...] ]
+
+# If enable_compression is set to "false", Prometheus will request uncompressed
+# response from the scraped target.
+[ enable_compression: <boolean> | default = true ]
 
 # Sets the `Authorization` header on every scrape request with the
 # configured username and password.
@@ -350,6 +415,7 @@ metric_relabel_configs:
 # This is an experimental feature, this behaviour could
 # change or be removed in the future.
 [ body_size_limit: <size> | default = 0 ]
+
 # Per-scrape limit on number of scraped samples that will be accepted.
 # If more than this number of samples are present after metric relabeling
 # the entire scrape will be treated as failed. 0 means no limit.
@@ -376,6 +442,15 @@ metric_relabel_configs:
 # 0 means no limit. This is an experimental feature, this behaviour could
 # change in the future.
 [ target_limit: <int> | default = 0 ]
+
+# Per-job limit on the number of targets dropped by relabeling
+# that will be kept in memory. 0 means no limit.
+[ keep_dropped_targets: <int> | default = 0 ]
+
+# Limit on total number of positive and negative buckets allowed in a single
+# native histogram. If this is exceeded, the entire scrape will be treated as
+# failed. 0 means no limit.
+[ native_histogram_bucket_limit: <int> | default = 0 ]
 ```
 
 Where `<job_name>` must be unique across all scrape configurations.
@@ -385,11 +460,16 @@ Where `<job_name>` must be unique across all scrape configurations.
 A `tls_config` allows configuring TLS connections.
 
 ```yaml
-# CA certificate to validate API server certificate with.
+# CA certificate to validate API server certificate with. At most one of ca and ca_file is allowed.
+[ ca: <string> ]
 [ ca_file: <filename> ]
 
-# Certificate and key files for client cert authentication to the server.
+# Certificate and key for client cert authentication to the server.
+# At most one of cert and cert_file is allowed.
+# At most one of key and key_file is allowed.
+[ cert: <string> ]
 [ cert_file: <filename> ]
+[ key: <secret> ]
 [ key_file: <filename> ]
 
 # ServerName extension to indicate the name of the server.
@@ -576,6 +656,8 @@ The following meta labels are available on targets during [relabeling](#relabel_
 # The information to access the Consul API. It is to be defined
 # as the Consul documentation requires.
 [ server: <host> | default = "localhost:8500" ]
+# Prefix for URIs for when consul is behind an API gateway (reverse proxy).
+[ path_prefix: <string> ]
 [ token: <secret> ]
 [ datacenter: <string> ]
 # Namespaces are only supported in Consul Enterprise.
@@ -766,12 +848,12 @@ Available meta labels:
 * `__meta_docker_container_id`: the id of the container
 * `__meta_docker_container_name`: the name of the container
 * `__meta_docker_container_network_mode`: the network mode of the container
-* `__meta_docker_container_label_<labelname>`: each label of the container
+* `__meta_docker_container_label_<labelname>`: each label of the container, with any unsupported characters converted to an underscore
 * `__meta_docker_network_id`: the ID of the network
 * `__meta_docker_network_name`: the name of the network
 * `__meta_docker_network_ingress`: whether the network is ingress
 * `__meta_docker_network_internal`: whether the network is internal
-* `__meta_docker_network_label_<labelname>`: each label of the network
+* `__meta_docker_network_label_<labelname>`: each label of the network, with any unsupported characters converted to an underscore
 * `__meta_docker_network_scope`: the scope of the network
 * `__meta_docker_network_ip`: the IP of the container in this network
 * `__meta_docker_port_private`: the port on the container
@@ -882,7 +964,7 @@ Available meta labels:
 * `__meta_dockerswarm_service_mode`: the mode of the service
 * `__meta_dockerswarm_service_endpoint_port_name`: the name of the endpoint port, if available
 * `__meta_dockerswarm_service_endpoint_port_publish_mode`: the publish mode of the endpoint port
-* `__meta_dockerswarm_service_label_<labelname>`: each label of the service
+* `__meta_dockerswarm_service_label_<labelname>`: each label of the service, with any unsupported characters converted to an underscore
 * `__meta_dockerswarm_service_task_container_hostname`: the container hostname of the target, if available
 * `__meta_dockerswarm_service_task_container_image`: the container image of the target
 * `__meta_dockerswarm_service_updating_status`: the status of the service, if available
@@ -890,7 +972,7 @@ Available meta labels:
 * `__meta_dockerswarm_network_name`: the name of the network
 * `__meta_dockerswarm_network_ingress`: whether the network is ingress
 * `__meta_dockerswarm_network_internal`: whether the network is internal
-* `__meta_dockerswarm_network_label_<labelname>`: each label of the network
+* `__meta_dockerswarm_network_label_<labelname>`: each label of the network, with any unsupported characters converted to an underscore
 * `__meta_dockerswarm_network_scope`: the scope of the network
 
 #### `tasks`
@@ -902,7 +984,7 @@ created using the `port` parameter defined in the SD configuration.
 
 Available meta labels:
 
-* `__meta_dockerswarm_container_label_<labelname>`: each label of the container
+* `__meta_dockerswarm_container_label_<labelname>`: each label of the container, with any unsupported characters converted to an underscore
 * `__meta_dockerswarm_task_id`: the id of the task
 * `__meta_dockerswarm_task_container_id`: the container id of the task
 * `__meta_dockerswarm_task_desired_state`: the desired state of the task
@@ -912,19 +994,19 @@ Available meta labels:
 * `__meta_dockerswarm_service_id`: the id of the service
 * `__meta_dockerswarm_service_name`: the name of the service
 * `__meta_dockerswarm_service_mode`: the mode of the service
-* `__meta_dockerswarm_service_label_<labelname>`: each label of the service
+* `__meta_dockerswarm_service_label_<labelname>`: each label of the service, with any unsupported characters converted to an underscore
 * `__meta_dockerswarm_network_id`: the ID of the network
 * `__meta_dockerswarm_network_name`: the name of the network
 * `__meta_dockerswarm_network_ingress`: whether the network is ingress
 * `__meta_dockerswarm_network_internal`: whether the network is internal
-* `__meta_dockerswarm_network_label_<labelname>`: each label of the network
-* `__meta_dockerswarm_network_label`: each label of the network
+* `__meta_dockerswarm_network_label_<labelname>`: each label of the network, with any unsupported characters converted to an underscore
+* `__meta_dockerswarm_network_label`: each label of the network, with any unsupported characters converted to an underscore
 * `__meta_dockerswarm_network_scope`: the scope of the network
 * `__meta_dockerswarm_node_id`: the ID of the node
 * `__meta_dockerswarm_node_hostname`: the hostname of the node
 * `__meta_dockerswarm_node_address`: the address of the node
 * `__meta_dockerswarm_node_availability`: the availability of the node
-* `__meta_dockerswarm_node_label_<labelname>`: each label of the node
+* `__meta_dockerswarm_node_label_<labelname>`: each label of the node, with any unsupported characters converted to an underscore
 * `__meta_dockerswarm_node_platform_architecture`: the architecture of the node
 * `__meta_dockerswarm_node_platform_os`: the operating system of the node
 * `__meta_dockerswarm_node_role`: the role of the node
@@ -944,7 +1026,7 @@ Available meta labels:
 * `__meta_dockerswarm_node_engine_version`: the version of the node engine
 * `__meta_dockerswarm_node_hostname`: the hostname of the node
 * `__meta_dockerswarm_node_id`: the ID of the node
-* `__meta_dockerswarm_node_label_<labelname>`: each label of the node
+* `__meta_dockerswarm_node_label_<labelname>`: each label of the node, with any unsupported characters converted to an underscore
 * `__meta_dockerswarm_node_manager_address`: the address of the manager component of the node
 * `__meta_dockerswarm_node_manager_leader`: the leadership status of the manager component of the node (true or false)
 * `__meta_dockerswarm_node_manager_reachability`: the reachability of the manager component of the node
@@ -1044,7 +1126,7 @@ A DNS-based service discovery configuration allows specifying a set of DNS
 domain names which are periodically queried to discover a list of targets. The
 DNS servers to be contacted are read from `/etc/resolv.conf`.
 
-This service discovery method only supports basic DNS A, AAAA, MX and SRV
+This service discovery method only supports basic DNS A, AAAA, MX, NS and SRV
 record queries, but not the advanced DNS-SD approach specified in
 [RFC6763](https://tools.ietf.org/html/rfc6763).
 
@@ -1054,13 +1136,14 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_dns_srv_record_target`: the target field of the SRV record
 * `__meta_dns_srv_record_port`: the port field of the SRV record
 * `__meta_dns_mx_record_target`: the target field of the MX record
+* `__meta_dns_ns_record_target`: the target field of the NS record
 
 ```yaml
 # A list of DNS domain names to be queried.
 names:
   [ - <string> ]
 
-# The type of DNS query to perform. One of SRV, A, AAAA or MX.
+# The type of DNS query to perform. One of SRV, A, AAAA, MX or NS.
 [ type: <string> | default = 'SRV' ]
 
 # The port number used if the query type is not SRV.
@@ -1226,6 +1309,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_openstack_address_pool`: the pool of the private IP.
 * `__meta_openstack_instance_flavor`: the flavor of the OpenStack instance.
 * `__meta_openstack_instance_id`: the OpenStack instance ID.
+* `__meta_openstack_instance_image`: the ID of the image the OpenStack instance is using.
 * `__meta_openstack_instance_name`: the OpenStack instance name.
 * `__meta_openstack_instance_status`: the status of the OpenStack instance.
 * `__meta_openstack_private_ip`: the private IP of the OpenStack instance.
@@ -1532,7 +1616,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 
 * `__meta_gce_instance_id`: the numeric id of the instance
 * `__meta_gce_instance_name`: the name of the instance
-* `__meta_gce_label_<labelname>`: each GCE label of the instance
+* `__meta_gce_label_<labelname>`: each GCE label of the instance, with any unsupported characters converted to an underscore
 * `__meta_gce_machine_type`: full or partial URL of the machine type of the instance
 * `__meta_gce_metadata_<name>`: each metadata item of the instance
 * `__meta_gce_network`: the network URL of the instance
@@ -1616,8 +1700,8 @@ The labels below are only available for targets with `role` set to `hcloud`:
 * `__meta_hetzner_hcloud_memory_size_gb`: the amount of memory of the server (in GB)
 * `__meta_hetzner_hcloud_disk_size_gb`: the disk size of the server (in GB)
 * `__meta_hetzner_hcloud_private_ipv4_<networkname>`: the private ipv4 address of the server within a given network
-* `__meta_hetzner_hcloud_label_<labelname>`: each label of the server
-* `__meta_hetzner_hcloud_labelpresent_<labelname>`: `true` for each label of the server
+* `__meta_hetzner_hcloud_label_<labelname>`: each label of the server, with any unsupported characters converted to an underscore
+* `__meta_hetzner_hcloud_labelpresent_<labelname>`: `true` for each label of the server, with any unsupported characters converted to an underscore
 
 The labels below are only available for targets with `role` set to `robot`:
 
@@ -1884,8 +1968,8 @@ Available meta labels:
 
 * `__meta_kubernetes_node_name`: The name of the node object.
 * `__meta_kubernetes_node_provider_id`: The cloud provider's name for the node object.
-* `__meta_kubernetes_node_label_<labelname>`: Each label from the node object.
-* `__meta_kubernetes_node_labelpresent_<labelname>`: `true` for each label from the node object.
+* `__meta_kubernetes_node_label_<labelname>`: Each label from the node object, with any unsupported characters converted to an underscore.
+* `__meta_kubernetes_node_labelpresent_<labelname>`: `true` for each label from the node object, with any unsupported characters converted to an underscore.
 * `__meta_kubernetes_node_annotation_<annotationname>`: Each annotation from the node object.
 * `__meta_kubernetes_node_annotationpresent_<annotationname>`: `true` for each annotation from the node object.
 * `__meta_kubernetes_node_address_<address_type>`: The first address for each node address type, if it exists.
@@ -1908,8 +1992,8 @@ Available meta labels:
 * `__meta_kubernetes_service_cluster_ip`: The cluster IP address of the service. (Does not apply to services of type ExternalName)
 * `__meta_kubernetes_service_loadbalancer_ip`: The IP address of the loadbalancer. (Applies to services of type LoadBalancer)
 * `__meta_kubernetes_service_external_name`: The DNS name of the service. (Applies to services of type ExternalName)
-* `__meta_kubernetes_service_label_<labelname>`: Each label from the service object.
-* `__meta_kubernetes_service_labelpresent_<labelname>`: `true` for each label of the service object.
+* `__meta_kubernetes_service_label_<labelname>`: Each label from the service object, with any unsupported characters converted to an underscore.
+* `__meta_kubernetes_service_labelpresent_<labelname>`: `true` for each label of the service object, with any unsupported characters converted to an underscore.
 * `__meta_kubernetes_service_name`: The name of the service object.
 * `__meta_kubernetes_service_port_name`: Name of the service port for the target.
 * `__meta_kubernetes_service_port_number`: Number of the service port for the target.
@@ -1927,8 +2011,8 @@ Available meta labels:
 * `__meta_kubernetes_namespace`: The namespace of the pod object.
 * `__meta_kubernetes_pod_name`: The name of the pod object.
 * `__meta_kubernetes_pod_ip`: The pod IP of the pod object.
-* `__meta_kubernetes_pod_label_<labelname>`: Each label from the pod object.
-* `__meta_kubernetes_pod_labelpresent_<labelname>`: `true` for each label from the pod object.
+* `__meta_kubernetes_pod_label_<labelname>`: Each label from the pod object, with any unsupported characters converted to an underscore.
+* `__meta_kubernetes_pod_labelpresent_<labelname>`: `true` for each label from the pod object, with any unsupported characters converted to an underscore.
 * `__meta_kubernetes_pod_annotation_<annotationname>`: Each annotation from the pod object.
 * `__meta_kubernetes_pod_annotationpresent_<annotationname>`: `true` for each annotation from the pod object.
 * `__meta_kubernetes_pod_container_init`: `true` if the container is an [InitContainer](https://kubernetes.io/docs/concepts/workloads/pods/init-containers/)
@@ -1957,8 +2041,10 @@ Available meta labels:
 
 * `__meta_kubernetes_namespace`: The namespace of the endpoints object.
 * `__meta_kubernetes_endpoints_name`: The names of the endpoints object.
-* `__meta_kubernetes_endpoints_label_<labelname>`: Each label from the endpoints object.
-* `__meta_kubernetes_endpoints_labelpresent_<labelname>`: `true` for each label from the endpoints object.
+* `__meta_kubernetes_endpoints_label_<labelname>`: Each label from the endpoints object, with any unsupported characters converted to an underscore.
+* `__meta_kubernetes_endpoints_labelpresent_<labelname>`: `true` for each label from the endpoints object, with any unsupported characters converted to an underscore.
+* `__meta_kubernetes_endpoints_annotation_<annotationname>`: Each annotation from the endpoints object.
+* `__meta_kubernetes_endpoints_annotationpresent_<annotationname>`: `true` for each annotation from the endpoints object.
 * For all targets discovered directly from the endpoints list (those not additionally inferred
   from underlying pods), the following labels are attached:
   * `__meta_kubernetes_endpoint_hostname`: Hostname of the endpoint.
@@ -1981,6 +2067,10 @@ Available meta labels:
 
 * `__meta_kubernetes_namespace`: The namespace of the endpoints object.
 * `__meta_kubernetes_endpointslice_name`: The name of endpointslice object.
+* `__meta_kubernetes_endpointslice_label_<labelname>`: Each label from the endpointslice object, with any unsupported characters converted to an underscore.
+* `__meta_kubernetes_endpointslice_labelpresent_<labelname>`: `true` for each label from the endpointslice object, with any unsupported characters converted to an underscore.
+* `__meta_kubernetes_endpointslice_annotation_<annotationname>`: Each annotation from the endpointslice object.
+* `__meta_kubernetes_endpointslice_annotationpresent_<annotationname>`: `true` for each annotation from the endpointslice object.
 * For all targets discovered directly from the endpointslice list (those not additionally inferred
   from underlying pods), the following labels are attached:
   * `__meta_kubernetes_endpointslice_address_target_kind`: Kind of the referenced object.
@@ -2007,8 +2097,8 @@ Available meta labels:
 
 * `__meta_kubernetes_namespace`: The namespace of the ingress object.
 * `__meta_kubernetes_ingress_name`: The name of the ingress object.
-* `__meta_kubernetes_ingress_label_<labelname>`: Each label from the ingress object.
-* `__meta_kubernetes_ingress_labelpresent_<labelname>`: `true` for each label from the ingress object.
+* `__meta_kubernetes_ingress_label_<labelname>`: Each label from the ingress object, with any unsupported characters converted to an underscore.
+* `__meta_kubernetes_ingress_labelpresent_<labelname>`: `true` for each label from the ingress object, with any unsupported characters converted to an underscore.
 * `__meta_kubernetes_ingress_annotation_<annotationname>`: Each annotation from the ingress object.
 * `__meta_kubernetes_ingress_annotationpresent_<annotationname>`: `true` for each annotation from the ingress object.
 * `__meta_kubernetes_ingress_class_name`: Class name from ingress spec, if present.
@@ -2116,7 +2206,7 @@ attach_metadata:
 See [this example Prometheus configuration file](/documentation/examples/prometheus-kubernetes.yml)
 for a detailed example of configuring Prometheus for Kubernetes.
 
-You may wish to check out the 3rd party [Prometheus Operator](https://github.com/coreos/prometheus-operator),
+You may wish to check out the 3rd party [Prometheus Operator](https://github.com/prometheus-operator/prometheus-operator),
 which automates the Prometheus setup on top of Kubernetes.
 
 ### `<kuma_sd_config>`
@@ -2139,6 +2229,11 @@ See below for the configuration options for Kuma MonitoringAssignment discovery:
 ```yaml
 # Address of the Kuma Control Plane's MADS xDS server.
 server: <string>
+
+# Client id is used by Kuma Control Plane to compute Monitoring Assignment for specific Prometheus backend. 
+# This is useful when migrating between multiple Prometheus backends, or having separate backend for each Mesh.
+# When not specified, system hostname/fqdn will be used if available, if not `prometheus` will be used.
+[ client_id: <string> ]
 
 # The time to wait between polling update requests.
 [ refresh_interval: <duration> | default = 30s ]
@@ -2398,9 +2493,9 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_marathon_app`: the name of the app (with slashes replaced by dashes)
 * `__meta_marathon_image`: the name of the Docker image used (if available)
 * `__meta_marathon_task`: the ID of the Mesos task
-* `__meta_marathon_app_label_<labelname>`: any Marathon labels attached to the app
-* `__meta_marathon_port_definition_label_<labelname>`: the port definition labels
-* `__meta_marathon_port_mapping_label_<labelname>`: the port mapping labels
+* `__meta_marathon_app_label_<labelname>`: any Marathon labels attached to the app, with any unsupported characters converted to an underscore
+* `__meta_marathon_port_definition_label_<labelname>`: the port definition labels, with any unsupported characters converted to an underscore
+* `__meta_marathon_port_mapping_label_<labelname>`: the port mapping labels, with any unsupported characters converted to an underscore
 * `__meta_marathon_port_index`: the port index number (e.g. `1` for `PORT1`)
 
 See below for the configuration options for Marathon discovery:
@@ -2928,8 +3023,8 @@ password: <secret>
 # Optional HTTP basic authentication information, currently not supported by Uyuni.
 basic_auth:
   [ username: <string> ]
-    [ password: <secret> ]
-    [ password_file: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
 
 # Optional `Authorization` header configuration, currently not supported by Uyuni.
 authorization:
@@ -3222,6 +3317,25 @@ authorization:
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
+# Optionally configures AWS's Signature Verification 4 signing process to
+# sign requests. Cannot be set at the same time as basic_auth, authorization, or oauth2.
+# To use the default credentials from the AWS SDK, use `sigv4: {}`.
+sigv4:
+  # The AWS region. If blank, the region from the default credentials chain
+  # is used.
+  [ region: <string> ]
+
+  # The AWS API keys. If blank, the environment variables `AWS_ACCESS_KEY_ID`
+  # and `AWS_SECRET_ACCESS_KEY` are used.
+  [ access_key: <string> ]
+  [ secret_key: <secret> ]
+
+  # Named AWS profile used to authenticate.
+  [ profile: <string> ]
+
+  # AWS Role ARN, an alternative to using AWS API keys.
+  [ role_arn: <string> ]
+
 # Optional OAuth 2.0 configuration.
 # Cannot be used at the same time as basic_auth or authorization.
 oauth2:
@@ -3422,7 +3536,7 @@ authorization:
   [ credentials_file: <filename> ]
 
 # Optionally configures AWS's Signature Verification 4 signing process to
-# sign requests. Cannot be set at the same time as basic_auth, authorization, or oauth2.
+# sign requests. Cannot be set at the same time as basic_auth, authorization, oauth2, or azuread.
 # To use the default credentials from the AWS SDK, use `sigv4: {}`.
 sigv4:
   # The AWS region. If blank, the region from the default credentials chain
@@ -3441,9 +3555,25 @@ sigv4:
   [ role_arn: <string> ]
 
 # Optional OAuth 2.0 configuration.
-# Cannot be used at the same time as basic_auth, authorization, or sigv4.
+# Cannot be used at the same time as basic_auth, authorization, sigv4, or azuread.
 oauth2:
   [ <oauth2> ]
+
+# Optional AzureAD configuration.
+# Cannot be used at the same time as basic_auth, authorization, oauth2, or sigv4.
+azuread:
+  # The Azure Cloud. Options are 'AzurePublic', 'AzureChina', or 'AzureGovernment'.
+  [ cloud: <string> | default = AzurePublic ]
+
+  # Azure User-assigned Managed identity.
+  [ managed_identity:
+      [ client_id: <string> ] ]  
+
+  # Azure OAuth.
+  [ oauth:
+      [ client_id: <string> ]
+      [ client_secret: <string> ]
+      [ tenant_id: <string> ] ]
 
 # Configures the remote write request's TLS settings.
 tls_config:

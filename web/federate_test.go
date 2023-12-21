@@ -16,6 +16,7 @@ package web
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -25,7 +26,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
@@ -36,6 +36,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/util/teststorage"
 )
 
 var scenarios = map[string]struct {
@@ -199,7 +200,7 @@ test_metric_without_labels{instance="baz"} 1001 6000000
 }
 
 func TestFederation(t *testing.T) {
-	suite, err := promql.NewTest(t, `
+	storage := promql.LoadedStorage(t, `
 		load 1m
 			test_metric1{foo="bar",instance="i"}    0+100x100
 			test_metric1{foo="boo",instance="i"}    1+0x100
@@ -208,17 +209,10 @@ func TestFederation(t *testing.T) {
 			test_metric_stale                       1+10x99 stale
 			test_metric_old                         1+10x98
 	`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer suite.Close()
-
-	if err := suite.Run(); err != nil {
-		t.Fatal(err)
-	}
+	t.Cleanup(func() { storage.Close() })
 
 	h := &Handler{
-		localStorage:  &dbAdapter{suite.TSDB()},
+		localStorage:  &dbAdapter{storage.DB},
 		lookbackDelta: 5 * time.Minute,
 		now:           func() model.Time { return 101 * 60 * 1000 }, // 101min after epoch.
 		config: &config.Config{
@@ -243,16 +237,16 @@ type notReadyReadStorage struct {
 	LocalStorage
 }
 
-func (notReadyReadStorage) Querier(context.Context, int64, int64) (storage.Querier, error) {
-	return nil, errors.Wrap(tsdb.ErrNotReady, "wrap")
+func (notReadyReadStorage) Querier(int64, int64) (storage.Querier, error) {
+	return nil, fmt.Errorf("wrap: %w", tsdb.ErrNotReady)
 }
 
 func (notReadyReadStorage) StartTime() (int64, error) {
-	return 0, errors.Wrap(tsdb.ErrNotReady, "wrap")
+	return 0, fmt.Errorf("wrap: %w", tsdb.ErrNotReady)
 }
 
-func (notReadyReadStorage) Stats(string) (*tsdb.Stats, error) {
-	return nil, errors.Wrap(tsdb.ErrNotReady, "wrap")
+func (notReadyReadStorage) Stats(string, int) (*tsdb.Stats, error) {
+	return nil, fmt.Errorf("wrap: %w", tsdb.ErrNotReady)
 }
 
 // Regression test for https://github.com/prometheus/prometheus/issues/7181.
@@ -305,21 +299,14 @@ func normalizeBody(body *bytes.Buffer) string {
 }
 
 func TestFederationWithNativeHistograms(t *testing.T) {
-	suite, err := promql.NewTest(t, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer suite.Close()
-
-	if err := suite.Run(); err != nil {
-		t.Fatal(err)
-	}
+	storage := teststorage.New(t)
+	t.Cleanup(func() { storage.Close() })
 
 	var expVec promql.Vector
 
-	db := suite.TSDB()
+	db := storage.DB
 	hist := &histogram.Histogram{
-		Count:         10,
+		Count:         12,
 		ZeroCount:     2,
 		ZeroThreshold: 0.001,
 		Sum:           39.4,
@@ -335,23 +322,48 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 		},
 		NegativeBuckets: []int64{1, 1, -1, 0},
 	}
+	histWithoutZeroBucket := &histogram.Histogram{
+		Count:  20,
+		Sum:    99.23,
+		Schema: 1,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 1, Length: 2},
+		},
+		PositiveBuckets: []int64{2, 2, -2, 0},
+		NegativeSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 1, Length: 2},
+		},
+		NegativeBuckets: []int64{2, 2, -2, 0},
+	}
 	app := db.Appender(context.Background())
 	for i := 0; i < 6; i++ {
 		l := labels.FromStrings("__name__", "test_metric", "foo", fmt.Sprintf("%d", i))
 		expL := labels.FromStrings("__name__", "test_metric", "instance", "", "foo", fmt.Sprintf("%d", i))
-		if i%3 == 0 {
+		var err error
+		switch i {
+		case 0, 3:
 			_, err = app.Append(0, l, 100*60*1000, float64(i*100))
 			expVec = append(expVec, promql.Sample{
 				T:      100 * 60 * 1000,
 				F:      float64(i * 100),
 				Metric: expL,
 			})
-		} else {
+		case 4:
+			_, err = app.AppendHistogram(0, l, 100*60*1000, histWithoutZeroBucket.Copy(), nil)
+			expVec = append(expVec, promql.Sample{
+				T:      100 * 60 * 1000,
+				H:      histWithoutZeroBucket.ToFloat(nil),
+				Metric: expL,
+			})
+		default:
 			hist.ZeroCount++
+			hist.Count++
 			_, err = app.AppendHistogram(0, l, 100*60*1000, hist.Copy(), nil)
 			expVec = append(expVec, promql.Sample{
 				T:      100 * 60 * 1000,
-				H:      hist.ToFloat(),
+				H:      hist.ToFloat(nil),
 				Metric: expL,
 			})
 		}
@@ -360,7 +372,7 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 	require.NoError(t, app.Commit())
 
 	h := &Handler{
-		localStorage:  &dbAdapter{suite.TSDB()},
+		localStorage:  &dbAdapter{db},
 		lookbackDelta: 5 * time.Minute,
 		now:           func() model.Time { return 101 * 60 * 1000 }, // 101min after epoch.
 		config: &config.Config{
@@ -378,13 +390,13 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 	body, err := io.ReadAll(res.Body)
 	require.NoError(t, err)
 
-	p := textparse.NewProtobufParser(body)
+	p := textparse.NewProtobufParser(body, false)
 	var actVec promql.Vector
 	metricFamilies := 0
 	l := labels.Labels{}
 	for {
 		et, err := p.Next()
-		if err == io.EOF {
+		if err != nil && errors.Is(err, io.EOF) {
 			break
 		}
 		require.NoError(t, err)

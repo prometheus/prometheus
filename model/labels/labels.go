@@ -17,30 +17,11 @@ package labels
 
 import (
 	"bytes"
-	"encoding/json"
-	"strconv"
+	"strings"
 
 	"github.com/cespare/xxhash/v2"
-	"github.com/prometheus/common/model"
 	"golang.org/x/exp/slices"
 )
-
-// Well-known label names used by Prometheus components.
-const (
-	MetricName   = "__name__"
-	AlertName    = "alertname"
-	BucketLabel  = "le"
-	InstanceName = "instance"
-
-	labelSep = '\xfe'
-)
-
-var seps = []byte{'\xff'}
-
-// Label is a key/value pair of strings.
-type Label struct {
-	Name, Value string
-}
 
 // Labels is a sorted set of labels. Order has to be guaranteed upon
 // instantiation.
@@ -49,23 +30,6 @@ type Labels []Label
 func (ls Labels) Len() int           { return len(ls) }
 func (ls Labels) Swap(i, j int)      { ls[i], ls[j] = ls[j], ls[i] }
 func (ls Labels) Less(i, j int) bool { return ls[i].Name < ls[j].Name }
-
-func (ls Labels) String() string {
-	var b bytes.Buffer
-
-	b.WriteByte('{')
-	for i, l := range ls {
-		if i > 0 {
-			b.WriteByte(',')
-			b.WriteByte(' ')
-		}
-		b.WriteString(l.Name)
-		b.WriteByte('=')
-		b.WriteString(strconv.Quote(l.Value))
-	}
-	b.WriteByte('}')
-	return b.String()
-}
 
 // Bytes returns ls as a byte slice.
 // It uses an byte invalid character as a separator and so should not be used for printing.
@@ -81,40 +45,6 @@ func (ls Labels) Bytes(buf []byte) []byte {
 		b.WriteString(l.Value)
 	}
 	return b.Bytes()
-}
-
-// MarshalJSON implements json.Marshaler.
-func (ls Labels) MarshalJSON() ([]byte, error) {
-	return json.Marshal(ls.Map())
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (ls *Labels) UnmarshalJSON(b []byte) error {
-	var m map[string]string
-
-	if err := json.Unmarshal(b, &m); err != nil {
-		return err
-	}
-
-	*ls = FromMap(m)
-	return nil
-}
-
-// MarshalYAML implements yaml.Marshaler.
-func (ls Labels) MarshalYAML() (interface{}, error) {
-	return ls.Map(), nil
-}
-
-// UnmarshalYAML implements yaml.Unmarshaler.
-func (ls *Labels) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	var m map[string]string
-
-	if err := unmarshal(&m); err != nil {
-		return err
-	}
-
-	*ls = FromMap(m)
-	return nil
 }
 
 // MatchLabels returns a subset of Labels that matches/does not match with the provided label names based on the 'on' boolean.
@@ -317,19 +247,6 @@ func (ls Labels) WithoutEmpty() Labels {
 	return ls
 }
 
-// IsValid checks if the metric name or label names are valid.
-func (ls Labels) IsValid() bool {
-	for _, l := range ls {
-		if l.Name == model.MetricNameLabel && !model.IsValidMetricName(model.LabelValue(l.Value)) {
-			return false
-		}
-		if !model.LabelName(l.Name).IsValid() || !model.LabelValue(l.Value).IsValid() {
-			return false
-		}
-	}
-	return true
-}
-
 // Equal returns whether the two label sets are equal.
 func Equal(ls, o Labels) bool {
 	if len(ls) != len(o) {
@@ -343,15 +260,6 @@ func Equal(ls, o Labels) bool {
 	return true
 }
 
-// Map returns a string map of the labels.
-func (ls Labels) Map() map[string]string {
-	m := make(map[string]string, len(ls))
-	for _, l := range ls {
-		m[l.Name] = l.Value
-	}
-	return m
-}
-
 // EmptyLabels returns n empty Labels value, for convenience.
 func EmptyLabels() Labels {
 	return Labels{}
@@ -362,18 +270,9 @@ func EmptyLabels() Labels {
 func New(ls ...Label) Labels {
 	set := make(Labels, 0, len(ls))
 	set = append(set, ls...)
-	slices.SortFunc(set, func(a, b Label) bool { return a.Name < b.Name })
+	slices.SortFunc(set, func(a, b Label) int { return strings.Compare(a.Name, b.Name) })
 
 	return set
-}
-
-// FromMap returns new sorted Labels from the given map.
-func FromMap(m map[string]string) Labels {
-	l := make([]Label, 0, len(m))
-	for k, v := range m {
-		l = append(l, Label{Name: k, Value: v})
-	}
-	return New(l...)
 }
 
 // FromStrings creates new labels from pairs of strings.
@@ -386,7 +285,7 @@ func FromStrings(ss ...string) Labels {
 		res = append(res, Label{Name: ss[i], Value: ss[i+1]})
 	}
 
-	slices.SortFunc(res, func(a, b Label) bool { return a.Name < b.Name })
+	slices.SortFunc(res, func(a, b Label) int { return strings.Compare(a.Name, b.Name) })
 	return res
 }
 
@@ -459,119 +358,6 @@ func (ls Labels) ReleaseStrings(release func(string)) {
 	}
 }
 
-// Builder allows modifying Labels.
-type Builder struct {
-	base Labels
-	del  []string
-	add  []Label
-}
-
-// NewBuilder returns a new LabelsBuilder.
-func NewBuilder(base Labels) *Builder {
-	b := &Builder{
-		del: make([]string, 0, 5),
-		add: make([]Label, 0, 5),
-	}
-	b.Reset(base)
-	return b
-}
-
-// Reset clears all current state for the builder.
-func (b *Builder) Reset(base Labels) {
-	b.base = base
-	b.del = b.del[:0]
-	b.add = b.add[:0]
-	for _, l := range b.base {
-		if l.Value == "" {
-			b.del = append(b.del, l.Name)
-		}
-	}
-}
-
-// Del deletes the label of the given name.
-func (b *Builder) Del(ns ...string) *Builder {
-	for _, n := range ns {
-		for i, a := range b.add {
-			if a.Name == n {
-				b.add = append(b.add[:i], b.add[i+1:]...)
-			}
-		}
-		b.del = append(b.del, n)
-	}
-	return b
-}
-
-// Keep removes all labels from the base except those with the given names.
-func (b *Builder) Keep(ns ...string) *Builder {
-Outer:
-	for _, l := range b.base {
-		for _, n := range ns {
-			if l.Name == n {
-				continue Outer
-			}
-		}
-		b.del = append(b.del, l.Name)
-	}
-	return b
-}
-
-// Set the name/value pair as a label. A value of "" means delete that label.
-func (b *Builder) Set(n, v string) *Builder {
-	if v == "" {
-		// Empty labels are the same as missing labels.
-		return b.Del(n)
-	}
-	for i, a := range b.add {
-		if a.Name == n {
-			b.add[i].Value = v
-			return b
-		}
-	}
-	b.add = append(b.add, Label{Name: n, Value: v})
-
-	return b
-}
-
-func (b *Builder) Get(n string) string {
-	for _, d := range b.del {
-		if d == n {
-			return ""
-		}
-	}
-	for _, a := range b.add {
-		if a.Name == n {
-			return a.Value
-		}
-	}
-	return b.base.Get(n)
-}
-
-// Range calls f on each label in the Builder.
-func (b *Builder) Range(f func(l Label)) {
-	// Stack-based arrays to avoid heap allocation in most cases.
-	var addStack [128]Label
-	var delStack [128]string
-	// Take a copy of add and del, so they are unaffected by calls to Set() or Del().
-	origAdd, origDel := append(addStack[:0], b.add...), append(delStack[:0], b.del...)
-	b.base.Range(func(l Label) {
-		if !slices.Contains(origDel, l.Name) && !contains(origAdd, l.Name) {
-			f(l)
-		}
-	})
-	for _, a := range origAdd {
-		f(a)
-	}
-}
-
-func contains(s []Label, n string) bool {
-	for _, a := range s {
-		if a.Name == n {
-			return true
-		}
-	}
-	return false
-}
-
 // Labels returns the labels from the builder.
 // If no modifications were made, the original labels are returned.
 func (b *Builder) Labels() Labels {
@@ -592,7 +378,7 @@ func (b *Builder) Labels() Labels {
 	}
 	if len(b.add) > 0 { // Base is already in order, so we only need to sort if we add to it.
 		res = append(res, b.add...)
-		slices.SortFunc(res, func(a, b Label) bool { return a.Name < b.Name })
+		slices.SortFunc(res, func(a, b Label) int { return strings.Compare(a.Name, b.Name) })
 	}
 	return res
 }
@@ -617,12 +403,19 @@ func (b *ScratchBuilder) Add(name, value string) {
 	b.add = append(b.add, Label{Name: name, Value: value})
 }
 
-// Sort the labels added so far by name.
-func (b *ScratchBuilder) Sort() {
-	slices.SortFunc(b.add, func(a, b Label) bool { return a.Name < b.Name })
+// Add a name/value pair, using []byte instead of string.
+// The '-tags stringlabels' version of this function is unsafe, hence the name.
+// This version is safe - it copies the strings immediately - but we keep the same name so everything compiles.
+func (b *ScratchBuilder) UnsafeAddBytes(name, value []byte) {
+	b.add = append(b.add, Label{Name: string(name), Value: string(value)})
 }
 
-// Asssign is for when you already have a Labels which you want this ScratchBuilder to return.
+// Sort the labels added so far by name.
+func (b *ScratchBuilder) Sort() {
+	slices.SortFunc(b.add, func(a, b Label) int { return strings.Compare(a.Name, b.Name) })
+}
+
+// Assign is for when you already have a Labels which you want this ScratchBuilder to return.
 func (b *ScratchBuilder) Assign(ls Labels) {
 	b.add = append(b.add[:0], ls...) // Copy on top of our slice, so we don't retain the input slice.
 }

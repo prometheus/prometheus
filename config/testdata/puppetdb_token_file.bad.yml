@@ -1,0 +1,7 @@
+scrape_configs:
+- job_name: puppetdb
+  puppetdb_sd_configs:
+  - url: http://puppet
+    query: 'resources { type = "Package" and title = "httpd" }'
+    bearer_token: foo
+    bearer_token_file: foo

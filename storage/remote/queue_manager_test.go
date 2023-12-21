@@ -192,7 +192,7 @@ func TestMetadataDelivery(t *testing.T) {
 
 	m.AppendWatcherMetadata(context.Background(), metadata)
 
-	require.Equal(t, numMetadata, len(c.receivedMetadata))
+	require.Len(t, c.receivedMetadata, numMetadata)
 	// One more write than the rounded qoutient should be performed in order to get samples that didn't
 	// fit into MaxSamplesPerSend.
 	require.Equal(t, numMetadata/mcfg.MaxSamplesPerSend+1, c.writesReceived)
@@ -366,11 +366,11 @@ func TestSeriesReset(t *testing.T) {
 		m.StoreSeries(series, i)
 		m.StoreMetadata(metadata)
 	}
-	require.Equal(t, numSegments*numSeries, len(m.seriesLabels))
-	require.Equal(t, numSegments*numSeries, len(m.seriesMetadata))
+	require.Len(t, m.seriesLabels, numSegments*numSeries)
+	require.Len(t, m.seriesMetadata, numSegments*numSeries)
 	m.SeriesReset(2)
-	require.Equal(t, numSegments*numSeries/2, len(m.seriesLabels))
-	require.Equal(t, numSegments*numSeries/2, len(m.seriesMetadata))
+	require.Len(t, m.seriesLabels, numSegments*numSeries/2)
+	require.Len(t, m.seriesMetadata, numSegments*numSeries/2)
 }
 
 func TestReshard(t *testing.T) {
@@ -669,7 +669,7 @@ func createHistograms(numSamples, numSeries int, floatHistogram bool) ([]record.
 				fh := record.RefFloatHistogramSample{
 					Ref: chunks.HeadSeriesRef(i),
 					T:   int64(j),
-					FH:  hist.ToFloat(),
+					FH:  hist.ToFloat(nil),
 				}
 				floatHistograms = append(floatHistograms, fh)
 			} else {
@@ -833,7 +833,7 @@ func (c *TestWriteClient) waitForExpectedData(tb testing.TB) {
 	}
 }
 
-func (c *TestWriteClient) Store(_ context.Context, req []byte) error {
+func (c *TestWriteClient) Store(_ context.Context, req []byte, _ int) error {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 	// nil buffers are ok for snappy, ignore cast error.
@@ -906,7 +906,7 @@ func NewTestBlockedWriteClient() *TestBlockingWriteClient {
 	return &TestBlockingWriteClient{}
 }
 
-func (c *TestBlockingWriteClient) Store(ctx context.Context, _ []byte) error {
+func (c *TestBlockingWriteClient) Store(ctx context.Context, _ []byte, _ int) error {
 	c.numCalls.Inc()
 	<-ctx.Done()
 	return nil
@@ -927,10 +927,10 @@ func (c *TestBlockingWriteClient) Endpoint() string {
 // For benchmarking the send and not the receive side.
 type NopWriteClient struct{}
 
-func NewNopWriteClient() *NopWriteClient                      { return &NopWriteClient{} }
-func (c *NopWriteClient) Store(context.Context, []byte) error { return nil }
-func (c *NopWriteClient) Name() string                        { return "nopwriteclient" }
-func (c *NopWriteClient) Endpoint() string                    { return "http://test-remote.com/1234" }
+func NewNopWriteClient() *NopWriteClient                           { return &NopWriteClient{} }
+func (c *NopWriteClient) Store(context.Context, []byte, int) error { return nil }
+func (c *NopWriteClient) Name() string                             { return "nopwriteclient" }
+func (c *NopWriteClient) Endpoint() string                         { return "http://test-remote.com/1234" }
 
 func BenchmarkSampleSend(b *testing.B) {
 	// Send one sample per series, which is the typical remote_write case
@@ -1351,7 +1351,7 @@ func TestQueueManagerMetrics(t *testing.T) {
 	// Make sure metrics pass linting.
 	problems, err := client_testutil.GatherAndLint(reg)
 	require.NoError(t, err)
-	require.Equal(t, 0, len(problems), "Metric linting problems detected: %v", problems)
+	require.Empty(t, problems, "Metric linting problems detected: %v", problems)
 
 	// Make sure all metrics were unregistered. A failure here means you need
 	// unregister a metric in `queueManagerMetrics.unregister()`.

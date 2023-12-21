@@ -19,7 +19,9 @@ import (
 	"math/rand"
 	"os"
 	"strconv"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -126,7 +128,7 @@ func TestChunkDiskMapper_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 	}
 
 	// Checking on-disk bytes for the first file.
-	require.Equal(t, 3, len(hrw.mmappedChunkFiles), "expected 3 mmapped files, got %d", len(hrw.mmappedChunkFiles))
+	require.Len(t, hrw.mmappedChunkFiles, 3, "expected 3 mmapped files, got %d", len(hrw.mmappedChunkFiles))
 	require.Equal(t, len(hrw.mmappedChunkFiles), len(hrw.closers))
 
 	actualBytes, err := os.ReadFile(firstFileName)
@@ -171,7 +173,7 @@ func TestChunkDiskMapper_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 		idx++
 		return nil
 	}))
-	require.Equal(t, len(expectedData), idx)
+	require.Len(t, expectedData, idx)
 }
 
 // TestChunkDiskMapper_Truncate tests
@@ -212,7 +214,7 @@ func TestChunkDiskMapper_Truncate(t *testing.T) {
 
 		for _, i := range remainingFiles {
 			_, ok := hrw.mmappedChunkFiles[i]
-			require.Equal(t, true, ok)
+			require.True(t, ok)
 		}
 	}
 
@@ -356,6 +358,56 @@ func TestChunkDiskMapper_Truncate_PreservesFileSequence(t *testing.T) {
 	verifyFiles([]int{5, 6, 7})
 }
 
+func TestChunkDiskMapper_Truncate_WriteQueueRaceCondition(t *testing.T) {
+	hrw := createChunkDiskMapper(t, "")
+	t.Cleanup(func() {
+		require.NoError(t, hrw.Close())
+	})
+
+	// This test should only run when the queue is enabled.
+	if hrw.writeQueue == nil {
+		t.Skip("This test should only run when the queue is enabled")
+	}
+
+	// Add an artificial delay in the writeChunk function to easily trigger the race condition.
+	origWriteChunk := hrw.writeQueue.writeChunk
+	hrw.writeQueue.writeChunk = func(seriesRef HeadSeriesRef, mint, maxt int64, chk chunkenc.Chunk, ref ChunkDiskMapperRef, isOOO, cutFile bool) error {
+		time.Sleep(100 * time.Millisecond)
+		return origWriteChunk(seriesRef, mint, maxt, chk, ref, isOOO, cutFile)
+	}
+
+	wg := sync.WaitGroup{}
+	wg.Add(2)
+
+	// Write a chunk. Since the queue is enabled, the chunk will be written asynchronously (with the artificial delay).
+	ref := hrw.WriteChunk(1, 0, 10, randomChunk(t), false, func(err error) {
+		defer wg.Done()
+		require.NoError(t, err)
+	})
+
+	seq, _ := ref.Unpack()
+	require.Equal(t, 1, seq)
+
+	// Truncate, simulating that all chunks from segment files before 1 can be dropped.
+	require.NoError(t, hrw.Truncate(1))
+
+	// Request to cut a new file when writing the next chunk. If there's a race condition, cutting a new file will
+	// allow us to detect there's actually an issue with the sequence number (because it's checked when a new segment
+	// file is created).
+	hrw.CutNewFile()
+
+	// Write another chunk. This will cut a new file.
+	ref = hrw.WriteChunk(1, 0, 10, randomChunk(t), false, func(err error) {
+		defer wg.Done()
+		require.NoError(t, err)
+	})
+
+	seq, _ = ref.Unpack()
+	require.Equal(t, 2, seq)
+
+	wg.Wait()
+}
+
 // TestHeadReadWriter_TruncateAfterIterateChunksError tests for
 // https://github.com/prometheus/prometheus/issues/7753
 func TestHeadReadWriter_TruncateAfterFailedIterateChunks(t *testing.T) {
@@ -419,7 +471,7 @@ func TestHeadReadWriter_ReadRepairOnEmptyLastFile(t *testing.T) {
 	nonEmptyFile() // 2.
 	nonEmptyFile() // 3.
 
-	require.Equal(t, 3, len(hrw.mmappedChunkFiles))
+	require.Len(t, hrw.mmappedChunkFiles, 3)
 	lastFile := 0
 	for idx := range hrw.mmappedChunkFiles {
 		if idx > lastFile {
@@ -448,7 +500,7 @@ func TestHeadReadWriter_ReadRepairOnEmptyLastFile(t *testing.T) {
 		hrw = createChunkDiskMapper(t, dir)
 
 		// Removed from memory.
-		require.Equal(t, 3, len(hrw.mmappedChunkFiles))
+		require.Len(t, hrw.mmappedChunkFiles, 3)
 		for idx := range hrw.mmappedChunkFiles {
 			require.LessOrEqual(t, idx, lastFile, "file index is bigger than previous last file")
 		}
@@ -456,7 +508,7 @@ func TestHeadReadWriter_ReadRepairOnEmptyLastFile(t *testing.T) {
 		// Removed even from disk.
 		files, err := os.ReadDir(dir)
 		require.NoError(t, err)
-		require.Equal(t, 3, len(files))
+		require.Len(t, files, 3)
 		for _, fi := range files {
 			seq, err := strconv.ParseUint(fi.Name(), 10, 64)
 			require.NoError(t, err)

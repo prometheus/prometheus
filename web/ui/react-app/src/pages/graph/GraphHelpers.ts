@@ -1,9 +1,11 @@
 import $ from 'jquery';
 
 import { escapeHTML } from '../../utils';
-import { GraphProps, GraphData, GraphSeries, GraphExemplar } from './Graph';
+import { GraphData, GraphExemplar, GraphProps, GraphSeries } from './Graph';
 import moment from 'moment-timezone';
 import { colorPool } from './ColorPool';
+import { prepareHeatmapData } from './GraphHeatmapHelpers';
+import { GraphDisplayMode } from './Panel';
 
 export const formatValue = (y: number | null): string => {
   if (y === null) {
@@ -145,6 +147,7 @@ export const getOptions = (stacked: boolean, useLocalTime: boolean): jquery.flot
     },
     series: {
       stack: false, // Stacking is set on a per-series basis because exemplar symbols don't support it.
+      heatmap: false,
       lines: {
         lineWidth: stacked ? 1 : 2,
         steps: false,
@@ -158,7 +161,7 @@ export const getOptions = (stacked: boolean, useLocalTime: boolean): jquery.flot
   };
 };
 
-export const normalizeData = ({ queryParams, data, exemplars, stacked }: GraphProps): GraphData => {
+export const normalizeData = ({ queryParams, data, exemplars, displayMode }: GraphProps): GraphData => {
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   const { startTime, endTime, resolution } = queryParams!;
 
@@ -188,36 +191,37 @@ export const normalizeData = ({ queryParams, data, exemplars, stacked }: GraphPr
   }
   const deviation = stdDeviation(sum, values);
 
-  return {
-    series: data.result.map(({ values, histograms, metric }, index) => {
-      // Insert nulls for all missing steps.
-      const data = [];
-      let valuePos = 0;
-      let histogramPos = 0;
+  const series = data.result.map(({ values, histograms, metric }, index) => {
+    // Insert nulls for all missing steps.
+    const data = [];
+    let valuePos = 0;
+    let histogramPos = 0;
 
-      for (let t = startTime; t <= endTime; t += resolution) {
-        // Allow for floating point inaccuracy.
-        const currentValue = values && values[valuePos];
-        const currentHistogram = histograms && histograms[histogramPos];
-        if (currentValue && values.length > valuePos && currentValue[0] < t + resolution / 100) {
-          data.push([currentValue[0] * 1000, parseValue(currentValue[1])]);
-          valuePos++;
-        } else if (currentHistogram && histograms.length > histogramPos && currentHistogram[0] < t + resolution / 100) {
-          data.push([currentHistogram[0] * 1000, parseValue(currentHistogram[1].sum)]);
-          histogramPos++;
-        } else {
-          data.push([t * 1000, null]);
-        }
+    for (let t = startTime; t <= endTime; t += resolution) {
+      // Allow for floating point inaccuracy.
+      const currentValue = values && values[valuePos];
+      const currentHistogram = histograms && histograms[histogramPos];
+      if (currentValue && values.length > valuePos && currentValue[0] < t + resolution / 100) {
+        data.push([currentValue[0] * 1000, parseValue(currentValue[1])]);
+        valuePos++;
+      } else if (currentHistogram && histograms.length > histogramPos && currentHistogram[0] < t + resolution / 100) {
+        data.push([currentHistogram[0] * 1000, parseValue(currentHistogram[1].sum)]);
+        histogramPos++;
+      } else {
+        data.push([t * 1000, null]);
       }
+    }
+    return {
+      labels: metric !== null ? metric : {},
+      color: colorPool[index % colorPool.length],
+      stack: displayMode === GraphDisplayMode.Stacked,
+      data,
+      index,
+    };
+  });
 
-      return {
-        labels: metric !== null ? metric : {},
-        color: colorPool[index % colorPool.length],
-        stack: stacked,
-        data,
-        index,
-      };
-    }),
+  return {
+    series: displayMode === GraphDisplayMode.Heatmap ? prepareHeatmapData(series) : series,
     exemplars: Object.values(buckets).flatMap((bucket) => {
       if (bucket.length === 1) {
         return bucket[0];

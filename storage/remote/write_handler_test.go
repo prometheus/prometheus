@@ -20,6 +20,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -43,7 +45,7 @@ func TestRemoteWriteHandler(t *testing.T) {
 	require.NoError(t, err)
 
 	appendable := &mockAppendable{}
-	handler := NewWriteHandler(nil, appendable)
+	handler := NewWriteHandler(nil, nil, appendable)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -100,7 +102,7 @@ func TestOutOfOrderSample(t *testing.T) {
 	appendable := &mockAppendable{
 		latestSample: 100,
 	}
-	handler := NewWriteHandler(log.NewNopLogger(), appendable)
+	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -125,7 +127,7 @@ func TestOutOfOrderExemplar(t *testing.T) {
 	appendable := &mockAppendable{
 		latestExemplar: 100,
 	}
-	handler := NewWriteHandler(log.NewNopLogger(), appendable)
+	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -138,7 +140,7 @@ func TestOutOfOrderExemplar(t *testing.T) {
 func TestOutOfOrderHistogram(t *testing.T) {
 	buf, _, err := buildWriteRequest([]prompb.TimeSeries{{
 		Labels:     []prompb.Label{{Name: "__name__", Value: "test_metric"}},
-		Histograms: []prompb.Histogram{HistogramToHistogramProto(0, &testHistogram), FloatHistogramToHistogramProto(1, testHistogram.ToFloat())},
+		Histograms: []prompb.Histogram{HistogramToHistogramProto(0, &testHistogram), FloatHistogramToHistogramProto(1, testHistogram.ToFloat(nil))},
 	}}, nil, nil, nil)
 	require.NoError(t, err)
 
@@ -148,13 +150,41 @@ func TestOutOfOrderHistogram(t *testing.T) {
 	appendable := &mockAppendable{
 		latestHistogram: 100,
 	}
-	handler := NewWriteHandler(log.NewNopLogger(), appendable)
+	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
 
 	resp := recorder.Result()
 	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+}
+
+func BenchmarkRemoteWritehandler(b *testing.B) {
+	const labelValue = "abcdefg'hijlmn234!@#$%^&*()_+~`\"{}[],./<>?hello0123hiOlá你好Dzieńdobry9Zd8ra765v4stvuyte"
+	reqs := []*http.Request{}
+	for i := 0; i < b.N; i++ {
+		num := strings.Repeat(strconv.Itoa(i), 16)
+		buf, _, err := buildWriteRequest([]prompb.TimeSeries{{
+			Labels: []prompb.Label{
+				{Name: "__name__", Value: "test_metric"},
+				{Name: "test_label_name_" + num, Value: labelValue + num},
+			},
+			Histograms: []prompb.Histogram{HistogramToHistogramProto(0, &testHistogram)},
+		}}, nil, nil, nil)
+		require.NoError(b, err)
+		req, err := http.NewRequest("", "", bytes.NewReader(buf))
+		require.NoError(b, err)
+		reqs = append(reqs, req)
+	}
+
+	appendable := &mockAppendable{}
+	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable)
+	recorder := httptest.NewRecorder()
+
+	b.ResetTimer()
+	for _, req := range reqs {
+		handler.ServeHTTP(recorder, req)
+	}
 }
 
 func TestCommitErr(t *testing.T) {
@@ -167,7 +197,7 @@ func TestCommitErr(t *testing.T) {
 	appendable := &mockAppendable{
 		commitErr: fmt.Errorf("commit error"),
 	}
-	handler := NewWriteHandler(log.NewNopLogger(), appendable)
+	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -193,7 +223,7 @@ func BenchmarkRemoteWriteOOOSamples(b *testing.B) {
 		require.NoError(b, db.Close())
 	})
 
-	handler := NewWriteHandler(log.NewNopLogger(), db.Head())
+	handler := NewWriteHandler(log.NewNopLogger(), nil, db.Head())
 
 	buf, _, err := buildWriteRequest(genSeriesWithSample(1000, 200*time.Minute.Milliseconds()), nil, nil, nil)
 	require.NoError(b, err)
@@ -204,7 +234,7 @@ func BenchmarkRemoteWriteOOOSamples(b *testing.B) {
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
 	require.Equal(b, http.StatusNoContent, recorder.Code)
-	require.Equal(b, db.Head().NumSeries(), uint64(1000))
+	require.Equal(b, uint64(1000), db.Head().NumSeries())
 
 	var bufRequests [][]byte
 	for i := 0; i < 100; i++ {
@@ -221,7 +251,7 @@ func BenchmarkRemoteWriteOOOSamples(b *testing.B) {
 		recorder = httptest.NewRecorder()
 		handler.ServeHTTP(recorder, req)
 		require.Equal(b, http.StatusNoContent, recorder.Code)
-		require.Equal(b, db.Head().NumSeries(), uint64(1000))
+		require.Equal(b, uint64(1000), db.Head().NumSeries())
 	}
 }
 
@@ -320,5 +350,10 @@ func (m *mockAppendable) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t
 
 func (m *mockAppendable) UpdateMetadata(_ storage.SeriesRef, l labels.Labels, mp metadata.Metadata) (storage.SeriesRef, error) {
 	m.metadata = append(m.metadata, mockMetadata{l, int32(metricTypeToProtoEquivalent(mp.Type)), mp.Unit, mp.Help})
+	return 0, nil
+}
+
+func (m *mockAppendable) AppendCTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64) (storage.SeriesRef, error) {
+	// AppendCTZeroSample is no-op for remote-write for now.
 	return 0, nil
 }

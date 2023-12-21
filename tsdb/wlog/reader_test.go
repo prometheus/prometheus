@@ -16,11 +16,12 @@ package wlog
 
 import (
 	"bytes"
+	"crypto/rand"
 	"encoding/binary"
 	"fmt"
 	"hash/crc32"
 	"io"
-	"math/rand"
+	"math/big"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -252,8 +253,11 @@ func generateRandomEntries(w *WL, records chan []byte) error {
 		default:
 			sz = pageSize * 8
 		}
-
-		rec := make([]byte, rand.Int63n(sz))
+		n, err := rand.Int(rand.Reader, big.NewInt(sz))
+		if err != nil {
+			return err
+		}
+		rec := make([]byte, n.Int64())
 		if _, err := rand.Read(rec); err != nil {
 			return err
 		}
@@ -262,7 +266,11 @@ func generateRandomEntries(w *WL, records chan []byte) error {
 
 		// Randomly batch up records.
 		recs = append(recs, rec)
-		if rand.Intn(4) < 3 {
+		n, err = rand.Int(rand.Reader, big.NewInt(int64(4)))
+		if err != nil {
+			return err
+		}
+		if int(n.Int64()) < 3 {
 			if err := w.Log(recs...); err != nil {
 				return err
 			}
@@ -310,8 +318,8 @@ func allSegments(dir string) (io.ReadCloser, error) {
 
 func TestReaderFuzz(t *testing.T) {
 	for name, fn := range readerConstructors {
-		for _, compress := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s,compress=%t", name, compress), func(t *testing.T) {
+		for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
+			t.Run(fmt.Sprintf("%s,compress=%s", name, compress), func(t *testing.T) {
 				dir := t.TempDir()
 
 				w, err := NewSize(nil, nil, dir, 128*pageSize, compress)
@@ -336,7 +344,7 @@ func TestReaderFuzz(t *testing.T) {
 					r := reader.Record()
 					// Expected value may come as nil or empty slice, so it requires special comparison.
 					if len(expected) == 0 {
-						require.Len(t, r, 0)
+						require.Empty(t, r)
 					} else {
 						require.Equal(t, expected, r, "read wrong record")
 					}
@@ -349,8 +357,8 @@ func TestReaderFuzz(t *testing.T) {
 
 func TestReaderFuzz_Live(t *testing.T) {
 	logger := testutil.NewLogger(t)
-	for _, compress := range []bool{false, true} {
-		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
+	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
+		t.Run(fmt.Sprintf("compress=%s", compress), func(t *testing.T) {
 			dir := t.TempDir()
 
 			w, err := NewSize(nil, nil, dir, 128*pageSize, compress)
@@ -387,7 +395,7 @@ func TestReaderFuzz_Live(t *testing.T) {
 					require.True(t, ok, "unexpected record")
 					// Expected value may come as nil or empty slice, so it requires special comparison.
 					if len(expected) == 0 {
-						require.Len(t, rec, 0)
+						require.Empty(t, rec)
 					} else {
 						require.Equal(t, expected, rec, "record does not match expected")
 					}
@@ -439,7 +447,7 @@ func TestLiveReaderCorrupt_ShortFile(t *testing.T) {
 	logger := testutil.NewLogger(t)
 	dir := t.TempDir()
 
-	w, err := NewSize(nil, nil, dir, pageSize, false)
+	w, err := NewSize(nil, nil, dir, pageSize, CompressionNone)
 	require.NoError(t, err)
 
 	rec := make([]byte, pageSize-recordHeaderSize)
@@ -479,7 +487,7 @@ func TestLiveReaderCorrupt_RecordTooLongAndShort(t *testing.T) {
 	logger := testutil.NewLogger(t)
 	dir := t.TempDir()
 
-	w, err := NewSize(nil, nil, dir, pageSize*2, false)
+	w, err := NewSize(nil, nil, dir, pageSize*2, CompressionNone)
 	require.NoError(t, err)
 
 	rec := make([]byte, pageSize-recordHeaderSize)
@@ -526,14 +534,14 @@ func TestReaderData(t *testing.T) {
 
 	for name, fn := range readerConstructors {
 		t.Run(name, func(t *testing.T) {
-			w, err := New(nil, nil, dir, true)
+			w, err := New(nil, nil, dir, CompressionSnappy)
 			require.NoError(t, err)
 
 			sr, err := allSegments(dir)
 			require.NoError(t, err)
 
 			reader := fn(sr)
-			for reader.Next() { // nolint:revive
+			for reader.Next() {
 			}
 			require.NoError(t, reader.Err())
 

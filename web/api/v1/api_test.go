@@ -16,9 +16,9 @@ package v1
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -30,12 +30,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/util/stats"
 
 	"github.com/go-kit/log"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -57,6 +55,17 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
+
+var testEngine = promql.NewEngine(promql.EngineOpts{
+	Logger:                   nil,
+	Reg:                      nil,
+	MaxSamples:               10000,
+	Timeout:                  100 * time.Second,
+	NoStepSubqueryIntervalFn: func(int64) int64 { return 60 * 1000 },
+	EnableAtModifier:         true,
+	EnableNegativeOffset:     true,
+	EnablePerStepStats:       true,
+})
 
 // testMetaStore satisfies the scrape.MetricMetadataStore interface.
 // It is used to inject specific metadata as part of a test case.
@@ -139,6 +148,14 @@ func (t testTargetRetriever) TargetsDropped() map[string][]*scrape.Target {
 	return t.droppedTargets
 }
 
+func (t testTargetRetriever) TargetsDroppedCounts() map[string]int {
+	r := make(map[string]int)
+	for k, v := range t.droppedTargets {
+		r[k] = len(v)
+	}
+	return r
+}
+
 func (t *testTargetRetriever) SetMetadataStoreForTargets(identifier string, metadata scrape.MetricMetadataStore) error {
 	targets, ok := t.activeTargets[identifier]
 
@@ -192,15 +209,22 @@ func (t testAlertmanagerRetriever) toFactory() func(context.Context) Alertmanage
 }
 
 type rulesRetrieverMock struct {
-	testing *testing.T
+	alertingRules []*rules.AlertingRule
+	ruleGroups    []*rules.Group
+	testing       *testing.T
 }
 
-func (m rulesRetrieverMock) AlertingRules() []*rules.AlertingRule {
+func (m *rulesRetrieverMock) CreateAlertingRules() {
 	expr1, err := parser.ParseExpr(`absent(test_metric3) != 1`)
 	if err != nil {
 		m.testing.Fatalf("unable to parse alert expression: %s", err)
 	}
 	expr2, err := parser.ParseExpr(`up == 1`)
+	if err != nil {
+		m.testing.Fatalf("Unable to parse alert expression: %s", err)
+	}
+
+	expr3, err := parser.ParseExpr(`vector(1)`)
 	if err != nil {
 		m.testing.Fatalf("Unable to parse alert expression: %s", err)
 	}
@@ -229,15 +253,29 @@ func (m rulesRetrieverMock) AlertingRules() []*rules.AlertingRule {
 		true,
 		log.NewNopLogger(),
 	)
+	rule3 := rules.NewAlertingRule(
+		"test_metric5",
+		expr3,
+		time.Second,
+		0,
+		labels.FromStrings("name", "tm5"),
+		labels.Labels{},
+		labels.FromStrings("name", "tm5"),
+		"",
+		false,
+		log.NewNopLogger(),
+	)
+
 	var r []*rules.AlertingRule
 	r = append(r, rule1)
 	r = append(r, rule2)
-	return r
+	r = append(r, rule3)
+	m.alertingRules = r
 }
 
-func (m rulesRetrieverMock) RuleGroups() []*rules.Group {
-	var ar rulesRetrieverMock
-	arules := ar.AlertingRules()
+func (m *rulesRetrieverMock) CreateRuleGroups() {
+	m.CreateAlertingRules()
+	arules := m.AlertingRules()
 	storage := teststorage.New(m.testing)
 	defer storage.Close()
 
@@ -254,6 +292,7 @@ func (m rulesRetrieverMock) RuleGroups() []*rules.Group {
 		Appendable: storage,
 		Context:    context.Background(),
 		Logger:     log.NewNopLogger(),
+		NotifyFunc: func(ctx context.Context, expr string, alerts ...*rules.Alert) {},
 	}
 
 	var r []rules.Rule
@@ -277,10 +316,18 @@ func (m rulesRetrieverMock) RuleGroups() []*rules.Group {
 		ShouldRestore: false,
 		Opts:          opts,
 	})
-	return []*rules.Group{group}
+	m.ruleGroups = []*rules.Group{group}
 }
 
-func (m rulesRetrieverMock) toFactory() func(context.Context) RulesRetriever {
+func (m *rulesRetrieverMock) AlertingRules() []*rules.AlertingRule {
+	return m.alertingRules
+}
+
+func (m *rulesRetrieverMock) RuleGroups() []*rules.Group {
+	return m.ruleGroups
+}
+
+func (m *rulesRetrieverMock) toFactory() func(context.Context) RulesRetriever {
 	return func(context.Context) RulesRetriever { return m }
 }
 
@@ -299,7 +346,7 @@ var sampleFlagMap = map[string]string{
 }
 
 func TestEndpoints(t *testing.T) {
-	suite, err := promql.NewTest(t, `
+	storage := promql.LoadedStorage(t, `
 		load 1m
 			test_metric1{foo="bar"} 0+100x100
 			test_metric1{foo="boo"} 1+0x100
@@ -310,6 +357,7 @@ func TestEndpoints(t *testing.T) {
 			test_metric4{foo="boo", dup="1"} 1+0x100
 			test_metric4{foo="boo"} 1+0x100
 	`)
+	t.Cleanup(func() { storage.Close() })
 
 	start := time.Unix(0, 0)
 	exemplars := []exemplar.QueryResult{
@@ -355,31 +403,28 @@ func TestEndpoints(t *testing.T) {
 		},
 	}
 	for _, ed := range exemplars {
-		suite.ExemplarStorage().AppendExemplar(0, ed.SeriesLabels, ed.Exemplars[0])
+		_, err := storage.AppendExemplar(0, ed.SeriesLabels, ed.Exemplars[0])
 		require.NoError(t, err, "failed to add exemplar: %+v", ed.Exemplars[0])
 	}
-
-	require.NoError(t, err)
-	defer suite.Close()
-
-	require.NoError(t, suite.Run())
 
 	now := time.Now()
 
 	t.Run("local", func(t *testing.T) {
-		var algr rulesRetrieverMock
+		algr := rulesRetrieverMock{}
 		algr.testing = t
 
-		algr.AlertingRules()
+		algr.CreateAlertingRules()
+		algr.CreateRuleGroups()
 
-		algr.RuleGroups()
+		g := algr.RuleGroups()
+		g[0].Eval(context.Background(), time.Now())
 
 		testTargetRetriever := setupTestTargetRetriever(t)
 
 		api := &API{
-			Queryable:             suite.Storage(),
-			QueryEngine:           suite.QueryEngine(),
-			ExemplarQueryable:     suite.ExemplarQueryable(),
+			Queryable:             storage,
+			QueryEngine:           testEngine,
+			ExemplarQueryable:     storage.ExemplarQueryable(),
 			targetRetriever:       testTargetRetriever.toFactory(),
 			alertmanagerRetriever: testAlertmanagerRetriever{}.toFactory(),
 			flagsMap:              sampleFlagMap,
@@ -388,14 +433,14 @@ func TestEndpoints(t *testing.T) {
 			ready:                 func(f http.HandlerFunc) http.HandlerFunc { return f },
 			rulesRetriever:        algr.toFactory(),
 		}
-		testEndpoints(t, api, testTargetRetriever, suite.ExemplarStorage(), true)
+		testEndpoints(t, api, testTargetRetriever, storage, true)
 	})
 
-	// Run all the API tests against a API that is wired to forward queries via
+	// Run all the API tests against an API that is wired to forward queries via
 	// the remote read client to a test server, which in turn sends them to the
-	// data from the test suite.
+	// data from the test storage.
 	t.Run("remote", func(t *testing.T) {
-		server := setupRemote(suite.Storage())
+		server := setupRemote(storage)
 		defer server.Close()
 
 		u, err := url.Parse(server.URL)
@@ -429,19 +474,21 @@ func TestEndpoints(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		var algr rulesRetrieverMock
+		algr := rulesRetrieverMock{}
 		algr.testing = t
 
-		algr.AlertingRules()
+		algr.CreateAlertingRules()
+		algr.CreateRuleGroups()
 
-		algr.RuleGroups()
+		g := algr.RuleGroups()
+		g[0].Eval(context.Background(), time.Now())
 
 		testTargetRetriever := setupTestTargetRetriever(t)
 
 		api := &API{
 			Queryable:             remote,
-			QueryEngine:           suite.QueryEngine(),
-			ExemplarQueryable:     suite.ExemplarQueryable(),
+			QueryEngine:           testEngine,
+			ExemplarQueryable:     storage.ExemplarQueryable(),
 			targetRetriever:       testTargetRetriever.toFactory(),
 			alertmanagerRetriever: testAlertmanagerRetriever{}.toFactory(),
 			flagsMap:              sampleFlagMap,
@@ -450,8 +497,7 @@ func TestEndpoints(t *testing.T) {
 			ready:                 func(f http.HandlerFunc) http.HandlerFunc { return f },
 			rulesRetriever:        algr.toFactory(),
 		}
-
-		testEndpoints(t, api, testTargetRetriever, suite.ExemplarStorage(), false)
+		testEndpoints(t, api, testTargetRetriever, storage, false)
 	})
 }
 
@@ -464,7 +510,7 @@ func (b byLabels) Less(i, j int) bool { return labels.Compare(b[i], b[j]) < 0 }
 func TestGetSeries(t *testing.T) {
 	// TestEndpoints doesn't have enough label names to test api.labelNames
 	// endpoint properly. Hence we test it separately.
-	suite, err := promql.NewTest(t, `
+	storage := promql.LoadedStorage(t, `
 		load 1m
 			test_metric1{foo1="bar", baz="abc"} 0+100x100
 			test_metric1{foo2="boo"} 1+0x100
@@ -472,11 +518,9 @@ func TestGetSeries(t *testing.T) {
 			test_metric2{foo="boo", xyz="qwerty"} 1+0x100
 			test_metric2{foo="baz", abc="qwerty"} 1+0x100
 	`)
-	require.NoError(t, err)
-	defer suite.Close()
-	require.NoError(t, suite.Run())
+	t.Cleanup(func() { storage.Close() })
 	api := &API{
-		Queryable: suite.Storage(),
+		Queryable: storage,
 	}
 	request := func(method string, matchers ...string) (*http.Request, error) {
 		u, err := url.Parse("http://example.com")
@@ -570,7 +614,7 @@ func TestGetSeries(t *testing.T) {
 
 func TestQueryExemplars(t *testing.T) {
 	start := time.Unix(0, 0)
-	suite, err := promql.NewTest(t, `
+	storage := promql.LoadedStorage(t, `
 		load 1m
 			test_metric1{foo="bar"} 0+100x100
 			test_metric1{foo="boo"} 1+0x100
@@ -581,15 +625,12 @@ func TestQueryExemplars(t *testing.T) {
 			test_metric4{foo="boo", dup="1"} 1+0x100
 			test_metric4{foo="boo"} 1+0x100
 	`)
-
-	require.NoError(t, err)
-	defer suite.Close()
-	require.NoError(t, suite.Run())
+	t.Cleanup(func() { storage.Close() })
 
 	api := &API{
-		Queryable:         suite.Storage(),
-		QueryEngine:       suite.QueryEngine(),
-		ExemplarQueryable: suite.ExemplarQueryable(),
+		Queryable:         storage,
+		QueryEngine:       testEngine,
+		ExemplarQueryable: storage.ExemplarQueryable(),
 	}
 
 	request := func(method string, qs url.Values) (*http.Request, error) {
@@ -667,7 +708,7 @@ func TestQueryExemplars(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			es := suite.ExemplarStorage()
+			es := storage
 			ctx := context.Background()
 
 			for _, te := range tc.exemplars {
@@ -694,7 +735,7 @@ func TestQueryExemplars(t *testing.T) {
 func TestLabelNames(t *testing.T) {
 	// TestEndpoints doesn't have enough label names to test api.labelNames
 	// endpoint properly. Hence we test it separately.
-	suite, err := promql.NewTest(t, `
+	storage := promql.LoadedStorage(t, `
 		load 1m
 			test_metric1{foo1="bar", baz="abc"} 0+100x100
 			test_metric1{foo2="boo"} 1+0x100
@@ -702,11 +743,9 @@ func TestLabelNames(t *testing.T) {
 			test_metric2{foo="boo", xyz="qwerty"} 1+0x100
 			test_metric2{foo="baz", abc="qwerty"} 1+0x100
 	`)
-	require.NoError(t, err)
-	defer suite.Close()
-	require.NoError(t, suite.Run())
+	t.Cleanup(func() { storage.Close() })
 	api := &API{
-		Queryable: suite.Storage(),
+		Queryable: storage,
 	}
 	request := func(method string, matchers ...string) (*http.Request, error) {
 		u, err := url.Parse("http://example.com")
@@ -795,14 +834,12 @@ func (testStats) Builtin() (_ stats.BuiltinStats) {
 }
 
 func TestStats(t *testing.T) {
-	suite, err := promql.NewTest(t, ``)
-	require.NoError(t, err)
-	defer suite.Close()
-	require.NoError(t, suite.Run())
+	storage := teststorage.New(t)
+	t.Cleanup(func() { storage.Close() })
 
 	api := &API{
-		Queryable:   suite.Storage(),
-		QueryEngine: suite.QueryEngine(),
+		Queryable:   storage,
+		QueryEngine: testEngine,
 		now: func() time.Time {
 			return time.Unix(123, 0)
 		},
@@ -835,8 +872,8 @@ func TestStats(t *testing.T) {
 			name:  "stats is blank",
 			param: "",
 			expected: func(t *testing.T, i interface{}) {
-				require.IsType(t, i, &queryData{})
-				qd := i.(*queryData)
+				require.IsType(t, &QueryData{}, i)
+				qd := i.(*QueryData)
 				require.Nil(t, qd.Stats)
 			},
 		},
@@ -844,8 +881,8 @@ func TestStats(t *testing.T) {
 			name:  "stats is true",
 			param: "true",
 			expected: func(t *testing.T, i interface{}) {
-				require.IsType(t, i, &queryData{})
-				qd := i.(*queryData)
+				require.IsType(t, &QueryData{}, i)
+				qd := i.(*QueryData)
 				require.NotNil(t, qd.Stats)
 				qs := qd.Stats.Builtin()
 				require.NotNil(t, qs.Timings)
@@ -859,8 +896,8 @@ func TestStats(t *testing.T) {
 			name:  "stats is all",
 			param: "all",
 			expected: func(t *testing.T, i interface{}) {
-				require.IsType(t, i, &queryData{})
-				qd := i.(*queryData)
+				require.IsType(t, &QueryData{}, i)
+				qd := i.(*QueryData)
 				require.NotNil(t, qd.Stats)
 				qs := qd.Stats.Builtin()
 				require.NotNil(t, qs.Timings)
@@ -880,12 +917,12 @@ func TestStats(t *testing.T) {
 			},
 			param: "known",
 			expected: func(t *testing.T, i interface{}) {
-				require.IsType(t, i, &queryData{})
-				qd := i.(*queryData)
+				require.IsType(t, &QueryData{}, i)
+				qd := i.(*QueryData)
 				require.NotNil(t, qd.Stats)
 				j, err := json.Marshal(qd.Stats)
 				require.NoError(t, err)
-				require.JSONEq(t, string(j), `{"custom":"Custom Value"}`)
+				require.JSONEq(t, `{"custom":"Custom Value"}`, string(j))
 			},
 		},
 	} {
@@ -990,14 +1027,14 @@ func setupRemote(s storage.Storage) *httptest.Server {
 				}
 			}
 
-			querier, err := s.Querier(r.Context(), query.StartTimestampMs, query.EndTimestampMs)
+			querier, err := s.Querier(query.StartTimestampMs, query.EndTimestampMs)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
 			defer querier.Close()
 
-			set := querier.Select(false, hints, matchers...)
+			set := querier.Select(r.Context(), false, hints, matchers...)
 			resp.Results[i], _, err = remote.ToQueryResult(set, 1e6)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -1023,15 +1060,46 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 	}
 
 	type test struct {
-		endpoint    apiFunc
-		params      map[string]string
-		query       url.Values
-		response    interface{}
-		responseLen int
-		errType     errorType
-		sorter      func(interface{})
-		metadata    []targetMetadata
-		exemplars   []exemplar.QueryResult
+		endpoint              apiFunc
+		params                map[string]string
+		query                 url.Values
+		response              interface{}
+		responseLen           int
+		responseMetadataTotal int
+		errType               errorType
+		sorter                func(interface{})
+		metadata              []targetMetadata
+		exemplars             []exemplar.QueryResult
+		zeroFunc              func(interface{})
+	}
+
+	rulesZeroFunc := func(i interface{}) {
+		if i != nil {
+			v := i.(*RuleDiscovery)
+			for _, ruleGroup := range v.RuleGroups {
+				ruleGroup.EvaluationTime = float64(0)
+				ruleGroup.LastEvaluation = time.Time{}
+				for k, rule := range ruleGroup.Rules {
+					switch r := rule.(type) {
+					case AlertingRule:
+						r.LastEvaluation = time.Time{}
+						r.EvaluationTime = float64(0)
+						r.LastError = ""
+						r.Health = "ok"
+						for _, alert := range r.Alerts {
+							alert.ActiveAt = nil
+						}
+						ruleGroup.Rules[k] = r
+					case RecordingRule:
+						r.LastEvaluation = time.Time{}
+						r.EvaluationTime = float64(0)
+						r.LastError = ""
+						r.Health = "ok"
+						ruleGroup.Rules[k] = r
+					}
+				}
+			}
+		}
 	}
 
 	tests := []test{
@@ -1041,7 +1109,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				"query": []string{"2"},
 				"time":  []string{"123.4"},
 			},
-			response: &queryData{
+			response: &QueryData{
 				ResultType: parser.ValueTypeScalar,
 				Result: promql.Scalar{
 					V: 2,
@@ -1055,7 +1123,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				"query": []string{"0.333"},
 				"time":  []string{"1970-01-01T00:02:03Z"},
 			},
-			response: &queryData{
+			response: &QueryData{
 				ResultType: parser.ValueTypeScalar,
 				Result: promql.Scalar{
 					V: 0.333,
@@ -1069,7 +1137,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				"query": []string{"0.333"},
 				"time":  []string{"1970-01-01T01:02:03+01:00"},
 			},
-			response: &queryData{
+			response: &QueryData{
 				ResultType: parser.ValueTypeScalar,
 				Result: promql.Scalar{
 					V: 0.333,
@@ -1082,7 +1150,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			query: url.Values{
 				"query": []string{"0.333"},
 			},
-			response: &queryData{
+			response: &QueryData{
 				ResultType: parser.ValueTypeScalar,
 				Result: promql.Scalar{
 					V: 0.333,
@@ -1098,7 +1166,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				"end":   []string{"2"},
 				"step":  []string{"1"},
 			},
-			response: &queryData{
+			response: &QueryData{
 				ResultType: parser.ValueTypeMatrix,
 				Result: promql.Matrix{
 					promql.Series{
@@ -1385,6 +1453,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 						},
 					},
 				},
+				DroppedTargetCounts: map[string]int{"blackbox": 1},
 			},
 		},
 		{
@@ -1437,6 +1506,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 						},
 					},
 				},
+				DroppedTargetCounts: map[string]int{"blackbox": 1},
 			},
 		},
 		{
@@ -1499,6 +1569,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 						},
 					},
 				},
+				DroppedTargetCounts: map[string]int{"blackbox": 1},
 			},
 		},
 		// With a matching metric.
@@ -1776,6 +1847,126 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			},
 			responseLen: 2,
 		},
+		// With a limit for the number of metadata per metric.
+		{
+			endpoint: api.metricMetadata,
+			query:    url.Values{"limit_per_metric": []string{"1"}},
+			metadata: []targetMetadata{
+				{
+					identifier: "test",
+					metadata: []scrape.MetricMetadata{
+						{
+							Metric: "go_threads",
+							Type:   textparse.MetricTypeGauge,
+							Help:   "Number of OS threads created",
+							Unit:   "",
+						},
+						{
+							Metric: "go_threads",
+							Type:   textparse.MetricTypeGauge,
+							Help:   "Repeated metadata",
+							Unit:   "",
+						},
+						{
+							Metric: "go_gc_duration_seconds",
+							Type:   textparse.MetricTypeSummary,
+							Help:   "A summary of the GC invocation durations.",
+							Unit:   "",
+						},
+					},
+				},
+			},
+			response: map[string][]metadata{
+				"go_threads": {
+					{textparse.MetricTypeGauge, "Number of OS threads created", ""},
+				},
+				"go_gc_duration_seconds": {
+					{textparse.MetricTypeSummary, "A summary of the GC invocation durations.", ""},
+				},
+			},
+		},
+		// With a limit for the number of metadata per metric and per metric.
+		{
+			endpoint: api.metricMetadata,
+			query:    url.Values{"limit_per_metric": []string{"1"}, "limit": []string{"1"}},
+			metadata: []targetMetadata{
+				{
+					identifier: "test",
+					metadata: []scrape.MetricMetadata{
+						{
+							Metric: "go_threads",
+							Type:   textparse.MetricTypeGauge,
+							Help:   "Number of OS threads created",
+							Unit:   "",
+						},
+						{
+							Metric: "go_threads",
+							Type:   textparse.MetricTypeGauge,
+							Help:   "Repeated metadata",
+							Unit:   "",
+						},
+						{
+							Metric: "go_gc_duration_seconds",
+							Type:   textparse.MetricTypeSummary,
+							Help:   "A summary of the GC invocation durations.",
+							Unit:   "",
+						},
+					},
+				},
+			},
+			responseLen:           1,
+			responseMetadataTotal: 1,
+		},
+
+		// With a limit for the number of metadata per metric and per metric, while having multiple targets.
+		{
+			endpoint: api.metricMetadata,
+			query:    url.Values{"limit_per_metric": []string{"1"}, "limit": []string{"1"}},
+			metadata: []targetMetadata{
+				{
+					identifier: "test",
+					metadata: []scrape.MetricMetadata{
+						{
+							Metric: "go_threads",
+							Type:   textparse.MetricTypeGauge,
+							Help:   "Number of OS threads created",
+							Unit:   "",
+						},
+						{
+							Metric: "go_threads",
+							Type:   textparse.MetricTypeGauge,
+							Help:   "Repeated metadata",
+							Unit:   "",
+						},
+						{
+							Metric: "go_gc_duration_seconds",
+							Type:   textparse.MetricTypeSummary,
+							Help:   "A summary of the GC invocation durations.",
+							Unit:   "",
+						},
+					},
+				},
+				{
+					identifier: "secondTarget",
+					metadata: []scrape.MetricMetadata{
+						{
+							Metric: "go_threads",
+							Type:   textparse.MetricTypeGauge,
+							Help:   "Number of OS threads created, but from a different target",
+							Unit:   "",
+						},
+						{
+							Metric: "go_gc_duration_seconds",
+							Type:   textparse.MetricTypeSummary,
+							Help:   "A summary of the GC invocation durations, but from a different target.",
+							Unit:   "",
+						},
+					},
+				},
+			},
+			responseLen:           1,
+			responseMetadataTotal: 1,
+		},
 		// When requesting a specific metric that is present.
 		{
 			endpoint: api.metricMetadata,
@@ -1861,7 +2052,22 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 		{
 			endpoint: api.alerts,
 			response: &AlertDiscovery{
-				Alerts: []*Alert{},
+				Alerts: []*Alert{
+					{
+						Labels:      labels.FromStrings("alertname", "test_metric5", "name", "tm5"),
+						Annotations: labels.Labels{},
+						State:       "pending",
+						Value:       "1e+00",
+					},
+				},
+			},
+			zeroFunc: func(i interface{}) {
+				if i != nil {
+					v := i.(*AlertDiscovery)
+					for _, alert := range v.Alerts {
+						alert.ActiveAt = nil
+					}
+				}
 			},
 		},
 		{
@@ -1882,7 +2088,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 								Labels:      labels.Labels{},
 								Annotations: labels.Labels{},
 								Alerts:      []*Alert{},
-								Health:      "unknown",
+								Health:      "ok",
 								Type:        "alerting",
 							},
 							AlertingRule{
@@ -1893,20 +2099,98 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 								Labels:      labels.Labels{},
 								Annotations: labels.Labels{},
 								Alerts:      []*Alert{},
-								Health:      "unknown",
+								Health:      "ok",
 								Type:        "alerting",
+							},
+							AlertingRule{
+								State:       "pending",
+								Name:        "test_metric5",
+								Query:       "vector(1)",
+								Duration:    1,
+								Labels:      labels.FromStrings("name", "tm5"),
+								Annotations: labels.Labels{},
+								Alerts: []*Alert{
+									{
+										Labels:      labels.FromStrings("alertname", "test_metric5", "name", "tm5"),
+										Annotations: labels.Labels{},
+										State:       "pending",
+										Value:       "1e+00",
+									},
+								},
+								Health: "ok",
+								Type:   "alerting",
 							},
 							RecordingRule{
 								Name:   "recording-rule-1",
 								Query:  "vector(1)",
 								Labels: labels.Labels{},
-								Health: "unknown",
+								Health: "ok",
 								Type:   "recording",
 							},
 						},
 					},
 				},
 			},
+			zeroFunc: rulesZeroFunc,
+		},
+		{
+			endpoint: api.rules,
+			query: url.Values{
+				"exclude_alerts": []string{"true"},
+			},
+			response: &RuleDiscovery{
+				RuleGroups: []*RuleGroup{
+					{
+						Name:     "grp",
+						File:     "/path/to/file",
+						Interval: 1,
+						Limit:    0,
+						Rules: []Rule{
+							AlertingRule{
+								State:       "inactive",
+								Name:        "test_metric3",
+								Query:       "absent(test_metric3) != 1",
+								Duration:    1,
+								Labels:      labels.Labels{},
+								Annotations: labels.Labels{},
+								Alerts:      nil,
+								Health:      "ok",
+								Type:        "alerting",
+							},
+							AlertingRule{
+								State:       "inactive",
+								Name:        "test_metric4",
+								Query:       "up == 1",
+								Duration:    1,
+								Labels:      labels.Labels{},
+								Annotations: labels.Labels{},
+								Alerts:      nil,
+								Health:      "ok",
+								Type:        "alerting",
+							},
+							AlertingRule{
+								State:       "pending",
+								Name:        "test_metric5",
+								Query:       "vector(1)",
+								Duration:    1,
+								Labels:      labels.FromStrings("name", "tm5"),
+								Annotations: labels.Labels{},
+								Alerts:      nil,
+								Health:      "ok",
+								Type:        "alerting",
+							},
+							RecordingRule{
+								Name:   "recording-rule-1",
+								Query:  "vector(1)",
+								Labels: labels.Labels{},
+								Health: "ok",
+								Type:   "recording",
+							},
+						},
+					},
+				},
+			},
+			zeroFunc: rulesZeroFunc,
 		},
 		{
 			endpoint: api.rules,
@@ -1929,7 +2213,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 								Labels:      labels.Labels{},
 								Annotations: labels.Labels{},
 								Alerts:      []*Alert{},
-								Health:      "unknown",
+								Health:      "ok",
 								Type:        "alerting",
 							},
 							AlertingRule{
@@ -1940,13 +2224,32 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 								Labels:      labels.Labels{},
 								Annotations: labels.Labels{},
 								Alerts:      []*Alert{},
-								Health:      "unknown",
+								Health:      "ok",
 								Type:        "alerting",
+							},
+							AlertingRule{
+								State:       "pending",
+								Name:        "test_metric5",
+								Query:       "vector(1)",
+								Duration:    1,
+								Labels:      labels.FromStrings("name", "tm5"),
+								Annotations: labels.Labels{},
+								Alerts: []*Alert{
+									{
+										Labels:      labels.FromStrings("alertname", "test_metric5", "name", "tm5"),
+										Annotations: labels.Labels{},
+										State:       "pending",
+										Value:       "1e+00",
+									},
+								},
+								Health: "ok",
+								Type:   "alerting",
 							},
 						},
 					},
 				},
 			},
+			zeroFunc: rulesZeroFunc,
 		},
 		{
 			endpoint: api.rules,
@@ -1965,13 +2268,14 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 								Name:   "recording-rule-1",
 								Query:  "vector(1)",
 								Labels: labels.Labels{},
-								Health: "unknown",
+								Health: "ok",
 								Type:   "recording",
 							},
 						},
 					},
 				},
 			},
+			zeroFunc: rulesZeroFunc,
 		},
 		{
 			endpoint: api.rules,
@@ -1992,13 +2296,14 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 								Labels:      labels.Labels{},
 								Annotations: labels.Labels{},
 								Alerts:      []*Alert{},
-								Health:      "unknown",
+								Health:      "ok",
 								Type:        "alerting",
 							},
 						},
 					},
 				},
 			},
+			zeroFunc: rulesZeroFunc,
 		},
 		{
 			endpoint: api.rules,
@@ -2024,13 +2329,14 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 								Labels:      labels.Labels{},
 								Annotations: labels.Labels{},
 								Alerts:      []*Alert{},
-								Health:      "unknown",
+								Health:      "ok",
 								Type:        "alerting",
 							},
 						},
 					},
 				},
 			},
+			zeroFunc: rulesZeroFunc,
 		},
 		{
 			endpoint: api.queryExemplars,
@@ -2565,7 +2871,13 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 
 					if test.responseLen != 0 {
 						assertAPIResponseLength(t, res.data, test.responseLen)
+						if test.responseMetadataTotal != 0 {
+							assertAPIResponseMetadataLen(t, res.data, test.responseMetadataTotal)
+						}
 					} else {
+						if test.zeroFunc != nil {
+							test.zeroFunc(res.data)
+						}
 						assertAPIResponse(t, res.data, test.response)
 					}
 				})
@@ -2615,14 +2927,32 @@ func assertAPIResponseLength(t *testing.T, got interface{}, expLen int) {
 	}
 }
 
+func assertAPIResponseMetadataLen(t *testing.T, got interface{}, expLen int) {
+	t.Helper()
+
+	var gotLen int
+	response := got.(map[string][]metadata)
+	for _, m := range response {
+		gotLen += len(m)
+	}
+
+	if gotLen != expLen {
+		t.Fatalf(
+			"Amount of metadata in the response does not match, expected:\n%d\ngot:\n%d",
+			expLen,
+			gotLen,
+		)
+	}
+}
+
 type fakeDB struct {
 	err error
 }
 
-func (f *fakeDB) CleanTombstones() error                        { return f.err }
-func (f *fakeDB) Delete(int64, int64, ...*labels.Matcher) error { return f.err }
-func (f *fakeDB) Snapshot(string, bool) error                   { return f.err }
-func (f *fakeDB) Stats(statsByLabelName string) (_ *tsdb.Stats, retErr error) {
+func (f *fakeDB) CleanTombstones() error                                         { return f.err }
+func (f *fakeDB) Delete(context.Context, int64, int64, ...*labels.Matcher) error { return f.err }
+func (f *fakeDB) Snapshot(string, bool) error                                    { return f.err }
+func (f *fakeDB) Stats(statsByLabelName string, limit int) (_ *tsdb.Stats, retErr error) {
 	dbDir, err := os.MkdirTemp("", "tsdb-api-ready")
 	if err != nil {
 		return nil, err
@@ -2636,7 +2966,7 @@ func (f *fakeDB) Stats(statsByLabelName string) (_ *tsdb.Stats, retErr error) {
 	opts := tsdb.DefaultHeadOptions()
 	opts.ChunkRange = 1000
 	h, _ := tsdb.NewHead(nil, nil, nil, nil, opts, nil)
-	return h.Stats(statsByLabelName), nil
+	return h.Stats(statsByLabelName, limit), nil
 }
 
 func (f *fakeDB) WALReplayStatus() (tsdb.WALReplayStatus, error) {
@@ -2644,7 +2974,7 @@ func (f *fakeDB) WALReplayStatus() (tsdb.WALReplayStatus, error) {
 }
 
 func TestAdminEndpoints(t *testing.T) {
-	tsdb, tsdbWithError, tsdbNotReady := &fakeDB{}, &fakeDB{err: errors.New("some error")}, &fakeDB{err: errors.Wrap(tsdb.ErrNotReady, "wrap")}
+	tsdb, tsdbWithError, tsdbNotReady := &fakeDB{}, &fakeDB{err: errors.New("some error")}, &fakeDB{err: fmt.Errorf("wrap: %w", tsdb.ErrNotReady)}
 	snapshotAPI := func(api *API) apiFunc { return api.snapshot }
 	cleanAPI := func(api *API) apiFunc { return api.cleanTombstones }
 	deleteAPI := func(api *API) apiFunc { return api.deleteSeries }
@@ -2826,39 +3156,123 @@ func TestAdminEndpoints(t *testing.T) {
 }
 
 func TestRespondSuccess(t *testing.T) {
+	api := API{
+		logger: log.NewNopLogger(),
+	}
+
+	api.ClearCodecs()
+	api.InstallCodec(JSONCodec{})
+	api.InstallCodec(&testCodec{contentType: MIMEType{"test", "cannot-encode"}, canEncode: false})
+	api.InstallCodec(&testCodec{contentType: MIMEType{"test", "can-encode"}, canEncode: true})
+	api.InstallCodec(&testCodec{contentType: MIMEType{"test", "can-encode-2"}, canEncode: true})
+
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		api := API{}
-		api.respond(w, "test", nil)
+		api.respond(w, r, "test", nil, "")
 	}))
 	defer s.Close()
 
-	resp, err := http.Get(s.URL)
-	if err != nil {
-		t.Fatalf("Error on test request: %s", err)
+	for _, tc := range []struct {
+		name                string
+		acceptHeader        string
+		expectedContentType string
+		expectedBody        string
+	}{
+		{
+			name:                "no Accept header",
+			expectedContentType: "application/json",
+			expectedBody:        `{"status":"success","data":"test"}`,
+		},
+		{
+			name:                "Accept header with single content type which is suitable",
+			acceptHeader:        "test/can-encode",
+			expectedContentType: "test/can-encode",
+			expectedBody:        `response from test/can-encode codec`,
+		},
+		{
+			name:                "Accept header with single content type which is not available",
+			acceptHeader:        "test/not-registered",
+			expectedContentType: "application/json",
+			expectedBody:        `{"status":"success","data":"test"}`,
+		},
+		{
+			name:                "Accept header with single content type which cannot encode the response payload",
+			acceptHeader:        "test/cannot-encode",
+			expectedContentType: "application/json",
+			expectedBody:        `{"status":"success","data":"test"}`,
+		},
+		{
+			name:                "Accept header with multiple content types, all of which are suitable",
+			acceptHeader:        "test/can-encode, test/can-encode-2",
+			expectedContentType: "test/can-encode",
+			expectedBody:        `response from test/can-encode codec`,
+		},
+		{
+			name:                "Accept header with multiple content types, only one of which is available",
+			acceptHeader:        "test/not-registered, test/can-encode",
+			expectedContentType: "test/can-encode",
+			expectedBody:        `response from test/can-encode codec`,
+		},
+		{
+			name:                "Accept header with multiple content types, only one of which can encode the response payload",
+			acceptHeader:        "test/cannot-encode, test/can-encode",
+			expectedContentType: "test/can-encode",
+			expectedBody:        `response from test/can-encode codec`,
+		},
+		{
+			name:                "Accept header with multiple content types, none of which are available",
+			acceptHeader:        "test/not-registered, test/also-not-registered",
+			expectedContentType: "application/json",
+			expectedBody:        `{"status":"success","data":"test"}`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req, err := http.NewRequest(http.MethodGet, s.URL, nil)
+			require.NoError(t, err)
+
+			if tc.acceptHeader != "" {
+				req.Header.Set("Accept", tc.acceptHeader)
+			}
+
+			resp, err := http.DefaultClient.Do(req)
+			require.NoError(t, err)
+
+			body, err := io.ReadAll(resp.Body)
+			defer resp.Body.Close()
+			require.NoError(t, err)
+
+			require.Equal(t, http.StatusOK, resp.StatusCode)
+			require.Equal(t, tc.expectedContentType, resp.Header.Get("Content-Type"))
+			require.Equal(t, tc.expectedBody, string(body))
+		})
 	}
+}
+
+func TestRespondSuccess_DefaultCodecCannotEncodeResponse(t *testing.T) {
+	api := API{
+		logger: log.NewNopLogger(),
+	}
+
+	api.ClearCodecs()
+	api.InstallCodec(&testCodec{contentType: MIMEType{"application", "default-format"}, canEncode: false})
+
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		api.respond(w, r, "test", nil, "")
+	}))
+	defer s.Close()
+
+	req, err := http.NewRequest(http.MethodGet, s.URL, nil)
+	require.NoError(t, err)
+
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+
 	body, err := io.ReadAll(resp.Body)
 	defer resp.Body.Close()
-	if err != nil {
-		t.Fatalf("Error reading response body: %s", err)
-	}
+	require.NoError(t, err)
 
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("Return code %d expected in success response but got %d", 200, resp.StatusCode)
-	}
-	if h := resp.Header.Get("Content-Type"); h != "application/json" {
-		t.Fatalf("Expected Content-Type %q but got %q", "application/json", h)
-	}
-
-	var res response
-	if err = json.Unmarshal(body, &res); err != nil {
-		t.Fatalf("Error unmarshaling JSON body: %s", err)
-	}
-
-	exp := &response{
-		Status: statusSuccess,
-		Data:   "test",
-	}
-	require.Equal(t, exp, &res)
+	require.Equal(t, http.StatusNotAcceptable, resp.StatusCode)
+	require.Equal(t, "application/json", resp.Header.Get("Content-Type"))
+	require.Equal(t, `{"status":"error","errorType":"not_acceptable","error":"cannot encode response as application/default-format"}`, string(body))
 }
 
 func TestRespondError(t *testing.T) {
@@ -2885,12 +3299,12 @@ func TestRespondError(t *testing.T) {
 		t.Fatalf("Expected Content-Type %q but got %q", "application/json", h)
 	}
 
-	var res response
+	var res Response
 	if err = json.Unmarshal(body, &res); err != nil {
 		t.Fatalf("Error unmarshaling JSON body: %s", err)
 	}
 
-	exp := &response{
+	exp := &Response{
 		Status:    statusError,
 		Data:      "test",
 		ErrorType: errorTimeout,
@@ -2917,7 +3331,7 @@ func TestParseTimeParam(t *testing.T) {
 		{ // When data is valid.
 			paramName:    "start",
 			paramValue:   "1582468023986",
-			defaultValue: minTime,
+			defaultValue: MinTime,
 			result: resultType{
 				asTime:  ts,
 				asError: nil,
@@ -2926,21 +3340,21 @@ func TestParseTimeParam(t *testing.T) {
 		{ // When data is empty string.
 			paramName:    "end",
 			paramValue:   "",
-			defaultValue: maxTime,
+			defaultValue: MaxTime,
 			result: resultType{
-				asTime:  maxTime,
+				asTime:  MaxTime,
 				asError: nil,
 			},
 		},
 		{ // When data is not valid.
 			paramName:    "foo",
 			paramValue:   "baz",
-			defaultValue: maxTime,
+			defaultValue: MaxTime,
 			result: resultType{
 				asTime: time.Time{},
 				asError: func() error {
 					_, err := parseTime("baz")
-					return errors.Wrapf(err, "Invalid time value for '%s'", "foo")
+					return fmt.Errorf("Invalid time value for '%s': %w", "foo", err)
 				},
 			},
 		},
@@ -3006,12 +3420,12 @@ func TestParseTime(t *testing.T) {
 			result: time.Unix(1543578564, 705*1e6),
 		},
 		{
-			input:  minTime.Format(time.RFC3339Nano),
-			result: minTime,
+			input:  MinTime.Format(time.RFC3339Nano),
+			result: MinTime,
 		},
 		{
-			input:  maxTime.Format(time.RFC3339Nano),
-			result: maxTime,
+			input:  MaxTime.Format(time.RFC3339Nano),
+			result: MaxTime,
 		},
 	}
 
@@ -3108,165 +3522,6 @@ func TestOptionsMethod(t *testing.T) {
 	}
 }
 
-func TestRespond(t *testing.T) {
-	cases := []struct {
-		response interface{}
-		expected string
-	}{
-		{
-			response: &queryData{
-				ResultType: parser.ValueTypeMatrix,
-				Result: promql.Matrix{
-					promql.Series{
-						Floats: []promql.FPoint{{F: 1, T: 1000}},
-						Metric: labels.FromStrings("__name__", "foo"),
-					},
-				},
-			},
-			expected: `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"__name__":"foo"},"values":[[1,"1"]]}]}}`,
-		},
-		{
-			response: &queryData{
-				ResultType: parser.ValueTypeMatrix,
-				Result: promql.Matrix{
-					promql.Series{
-						Histograms: []promql.HPoint{{H: &histogram.FloatHistogram{
-							Schema:        2,
-							ZeroThreshold: 0.001,
-							ZeroCount:     12,
-							Count:         10,
-							Sum:           20,
-							PositiveSpans: []histogram.Span{
-								{Offset: 3, Length: 2},
-								{Offset: 1, Length: 3},
-							},
-							NegativeSpans: []histogram.Span{
-								{Offset: 2, Length: 2},
-							},
-							PositiveBuckets: []float64{1, 2, 2, 1, 1},
-							NegativeBuckets: []float64{2, 1},
-						}, T: 1000}},
-						Metric: labels.FromStrings("__name__", "foo"),
-					},
-				},
-			},
-			expected: `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"__name__":"foo"},"histograms":[[1,{"count":"10","sum":"20","buckets":[[1,"-1.6817928305074288","-1.414213562373095","1"],[1,"-1.414213562373095","-1.189207115002721","2"],[3,"-0.001","0.001","12"],[0,"1.414213562373095","1.6817928305074288","1"],[0,"1.6817928305074288","2","2"],[0,"2.378414230005442","2.82842712474619","2"],[0,"2.82842712474619","3.3635856610148576","1"],[0,"3.3635856610148576","4","1"]]}]]}]}}`,
-		},
-		{
-			response: promql.FPoint{F: 0, T: 0},
-			expected: `{"status":"success","data":[0,"0"]}`,
-		},
-		{
-			response: promql.FPoint{F: 20, T: 1},
-			expected: `{"status":"success","data":[0.001,"20"]}`,
-		},
-		{
-			response: promql.FPoint{F: 20, T: 10},
-			expected: `{"status":"success","data":[0.010,"20"]}`,
-		},
-		{
-			response: promql.FPoint{F: 20, T: 100},
-			expected: `{"status":"success","data":[0.100,"20"]}`,
-		},
-		{
-			response: promql.FPoint{F: 20, T: 1001},
-			expected: `{"status":"success","data":[1.001,"20"]}`,
-		},
-		{
-			response: promql.FPoint{F: 20, T: 1010},
-			expected: `{"status":"success","data":[1.010,"20"]}`,
-		},
-		{
-			response: promql.FPoint{F: 20, T: 1100},
-			expected: `{"status":"success","data":[1.100,"20"]}`,
-		},
-		{
-			response: promql.FPoint{F: 20, T: 12345678123456555},
-			expected: `{"status":"success","data":[12345678123456.555,"20"]}`,
-		},
-		{
-			response: promql.FPoint{F: 20, T: -1},
-			expected: `{"status":"success","data":[-0.001,"20"]}`,
-		},
-		{
-			response: promql.FPoint{F: math.NaN(), T: 0},
-			expected: `{"status":"success","data":[0,"NaN"]}`,
-		},
-		{
-			response: promql.FPoint{F: math.Inf(1), T: 0},
-			expected: `{"status":"success","data":[0,"+Inf"]}`,
-		},
-		{
-			response: promql.FPoint{F: math.Inf(-1), T: 0},
-			expected: `{"status":"success","data":[0,"-Inf"]}`,
-		},
-		{
-			response: promql.FPoint{F: 1.2345678e6, T: 0},
-			expected: `{"status":"success","data":[0,"1234567.8"]}`,
-		},
-		{
-			response: promql.FPoint{F: 1.2345678e-6, T: 0},
-			expected: `{"status":"success","data":[0,"0.0000012345678"]}`,
-		},
-		{
-			response: promql.FPoint{F: 1.2345678e-67, T: 0},
-			expected: `{"status":"success","data":[0,"1.2345678e-67"]}`,
-		},
-		{
-			response: []exemplar.QueryResult{
-				{
-					SeriesLabels: labels.FromStrings("foo", "bar"),
-					Exemplars: []exemplar.Exemplar{
-						{
-							Labels: labels.FromStrings("traceID", "abc"),
-							Value:  100.123,
-							Ts:     1234,
-						},
-					},
-				},
-			},
-			expected: `{"status":"success","data":[{"seriesLabels":{"foo":"bar"},"exemplars":[{"labels":{"traceID":"abc"},"value":"100.123","timestamp":1.234}]}]}`,
-		},
-		{
-			response: []exemplar.QueryResult{
-				{
-					SeriesLabels: labels.FromStrings("foo", "bar"),
-					Exemplars: []exemplar.Exemplar{
-						{
-							Labels: labels.FromStrings("traceID", "abc"),
-							Value:  math.Inf(1),
-							Ts:     1234,
-						},
-					},
-				},
-			},
-			expected: `{"status":"success","data":[{"seriesLabels":{"foo":"bar"},"exemplars":[{"labels":{"traceID":"abc"},"value":"+Inf","timestamp":1.234}]}]}`,
-		},
-	}
-
-	for _, c := range cases {
-		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			api := API{}
-			api.respond(w, c.response, nil)
-		}))
-		defer s.Close()
-
-		resp, err := http.Get(s.URL)
-		if err != nil {
-			t.Fatalf("Error on test request: %s", err)
-		}
-		body, err := io.ReadAll(resp.Body)
-		defer resp.Body.Close()
-		if err != nil {
-			t.Fatalf("Error reading response body: %s", err)
-		}
-
-		if string(body) != c.expected {
-			t.Fatalf("Expected response \n%v\n but got \n%v\n", c.expected, string(body))
-		}
-	}
-}
-
 func TestTSDBStatus(t *testing.T) {
 	tsdb := &fakeDB{}
 	tsdbStatusAPI := func(api *API) apiFunc { return api.serveTSDBStatus }
@@ -3283,8 +3538,19 @@ func TestTSDBStatus(t *testing.T) {
 		{
 			db:       tsdb,
 			endpoint: tsdbStatusAPI,
-
-			errType: errorNone,
+			errType:  errorNone,
+		},
+		{
+			db:       tsdb,
+			endpoint: tsdbStatusAPI,
+			values:   map[string][]string{"limit": {"20"}},
+			errType:  errorNone,
+		},
+		{
+			db:       tsdb,
+			endpoint: tsdbStatusAPI,
+			values:   map[string][]string{"limit": {"0"}},
+			errType:  errorBadData,
 		},
 	} {
 		tc := tc
@@ -3341,24 +3607,57 @@ func TestReturnAPIError(t *testing.T) {
 var testResponseWriter = httptest.ResponseRecorder{}
 
 func BenchmarkRespond(b *testing.B) {
-	b.ReportAllocs()
 	points := []promql.FPoint{}
 	for i := 0; i < 10000; i++ {
 		points = append(points, promql.FPoint{F: float64(i * 1000000), T: int64(i)})
 	}
-	response := &queryData{
-		ResultType: parser.ValueTypeMatrix,
-		Result: promql.Matrix{
-			promql.Series{
-				Floats: points,
-				Metric: labels.EmptyLabels(),
-			},
-		},
+	matrix := promql.Matrix{}
+	for i := 0; i < 1000; i++ {
+		matrix = append(matrix, promql.Series{
+			Metric: labels.FromStrings("__name__", fmt.Sprintf("series%v", i),
+				"label", fmt.Sprintf("series%v", i),
+				"label2", fmt.Sprintf("series%v", i)),
+			Floats: points[:10],
+		})
 	}
-	b.ResetTimer()
-	api := API{}
-	for n := 0; n < b.N; n++ {
-		api.respond(&testResponseWriter, response, nil)
+	series := []labels.Labels{}
+	for i := 0; i < 1000; i++ {
+		series = append(series, labels.FromStrings("__name__", fmt.Sprintf("series%v", i),
+			"label", fmt.Sprintf("series%v", i),
+			"label2", fmt.Sprintf("series%v", i)))
+	}
+
+	cases := []struct {
+		name     string
+		response interface{}
+	}{
+		{name: "10000 points no labels", response: &QueryData{
+			ResultType: parser.ValueTypeMatrix,
+			Result: promql.Matrix{
+				promql.Series{
+					Floats: points,
+					Metric: labels.EmptyLabels(),
+				},
+			},
+		}},
+		{name: "1000 labels", response: series},
+		{name: "1000 series 10 points", response: &QueryData{
+			ResultType: parser.ValueTypeMatrix,
+			Result:     matrix,
+		}},
+	}
+	for _, c := range cases {
+		b.Run(c.name, func(b *testing.B) {
+			b.ReportAllocs()
+			request, err := http.NewRequest(http.MethodGet, "/does-not-matter", nil)
+			require.NoError(b, err)
+			b.ResetTimer()
+			api := API{}
+			api.InstallCodec(JSONCodec{})
+			for n := 0; n < b.N; n++ {
+				api.respond(&testResponseWriter, request, c.response, nil, "")
+			}
+		})
 	}
 }
 
@@ -3470,11 +3769,28 @@ func TestGetGlobalURL(t *testing.T) {
 	}
 }
 
+type testCodec struct {
+	contentType MIMEType
+	canEncode   bool
+}
+
+func (t *testCodec) ContentType() MIMEType {
+	return t.contentType
+}
+
+func (t *testCodec) CanEncode(_ *Response) bool {
+	return t.canEncode
+}
+
+func (t *testCodec) Encode(_ *Response) ([]byte, error) {
+	return []byte(fmt.Sprintf("response from %v codec", t.contentType)), nil
+}
+
 func TestExtractQueryOpts(t *testing.T) {
 	tests := []struct {
 		name   string
 		form   url.Values
-		expect *promql.QueryOpts
+		expect promql.QueryOpts
 		err    error
 	}{
 		{
@@ -3482,9 +3798,8 @@ func TestExtractQueryOpts(t *testing.T) {
 			form: url.Values{
 				"stats": []string{"all"},
 			},
-			expect: &promql.QueryOpts{
-				EnablePerStepStats: true,
-			},
+			expect: promql.NewPrometheusQueryOpts(true, 0),
+
 			err: nil,
 		},
 		{
@@ -3492,10 +3807,8 @@ func TestExtractQueryOpts(t *testing.T) {
 			form: url.Values{
 				"stats": []string{"none"},
 			},
-			expect: &promql.QueryOpts{
-				EnablePerStepStats: false,
-			},
-			err: nil,
+			expect: promql.NewPrometheusQueryOpts(false, 0),
+			err:    nil,
 		},
 		{
 			name: "with lookback delta",
@@ -3503,11 +3816,8 @@ func TestExtractQueryOpts(t *testing.T) {
 				"stats":          []string{"all"},
 				"lookback_delta": []string{"30s"},
 			},
-			expect: &promql.QueryOpts{
-				EnablePerStepStats: true,
-				LookbackDelta:      30 * time.Second,
-			},
-			err: nil,
+			expect: promql.NewPrometheusQueryOpts(true, 30*time.Second),
+			err:    nil,
 		},
 		{
 			name: "with invalid lookback delta",
@@ -3531,4 +3841,108 @@ func TestExtractQueryOpts(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Test query timeout parameter.
+func TestQueryTimeout(t *testing.T) {
+	storage := promql.LoadedStorage(t, `
+		load 1m
+			test_metric1{foo="bar"} 0+100x100
+	`)
+	t.Cleanup(func() {
+		_ = storage.Close()
+	})
+
+	now := time.Now()
+
+	for _, tc := range []struct {
+		name   string
+		method string
+	}{
+		{
+			name:   "GET method",
+			method: http.MethodGet,
+		},
+		{
+			name:   "POST method",
+			method: http.MethodPost,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			engine := &fakeEngine{}
+			api := &API{
+				Queryable:             storage,
+				QueryEngine:           engine,
+				ExemplarQueryable:     storage.ExemplarQueryable(),
+				alertmanagerRetriever: testAlertmanagerRetriever{}.toFactory(),
+				flagsMap:              sampleFlagMap,
+				now:                   func() time.Time { return now },
+				config:                func() config.Config { return samplePrometheusCfg },
+				ready:                 func(f http.HandlerFunc) http.HandlerFunc { return f },
+			}
+
+			query := url.Values{
+				"query":   []string{"2"},
+				"timeout": []string{"1s"},
+			}
+			ctx := context.Background()
+			req, err := http.NewRequest(tc.method, fmt.Sprintf("http://example.com?%s", query.Encode()), nil)
+			require.NoError(t, err)
+			req.RemoteAddr = "127.0.0.1:20201"
+
+			res := api.query(req.WithContext(ctx))
+			assertAPIError(t, res.err, errorNone)
+
+			require.Len(t, engine.query.execCalls, 1)
+			deadline, ok := engine.query.execCalls[0].Deadline()
+			require.True(t, ok)
+			require.Equal(t, now.Add(time.Second), deadline)
+		})
+	}
+}
+
+// fakeEngine is a fake QueryEngine implementation.
+type fakeEngine struct {
+	query fakeQuery
+}
+
+func (e *fakeEngine) SetQueryLogger(promql.QueryLogger) {}
+
+func (e *fakeEngine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
+	return &e.query, nil
+}
+
+func (e *fakeEngine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error) {
+	return &e.query, nil
+}
+
+// fakeQuery is a fake Query implementation.
+type fakeQuery struct {
+	query     string
+	execCalls []context.Context
+}
+
+func (q *fakeQuery) Exec(ctx context.Context) *promql.Result {
+	q.execCalls = append(q.execCalls, ctx)
+	return &promql.Result{
+		Value: &parser.StringLiteral{
+			Val: "test",
+		},
+	}
+}
+
+func (q *fakeQuery) Close() {}
+
+func (q *fakeQuery) Statement() parser.Statement {
+	return nil
+}
+
+func (q *fakeQuery) Stats() *stats.Statistics {
+	return nil
+}
+
+func (q *fakeQuery) Cancel() {}
+
+func (q *fakeQuery) String() string {
+	return q.query
 }

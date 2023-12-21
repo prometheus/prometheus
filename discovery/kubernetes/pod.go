@@ -23,6 +23,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -30,16 +31,9 @@ import (
 	"k8s.io/client-go/util/workqueue"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/prometheus/prometheus/util/strutil"
 )
 
 const nodeIndex = "node"
-
-var (
-	podAddCount    = eventCount.WithLabelValues("pod", "add")
-	podUpdateCount = eventCount.WithLabelValues("pod", "update")
-	podDeleteCount = eventCount.WithLabelValues("pod", "delete")
-)
 
 // Pod discovers new pod targets.
 type Pod struct {
@@ -52,10 +46,14 @@ type Pod struct {
 }
 
 // NewPod creates a new pod discovery.
-func NewPod(l log.Logger, pods cache.SharedIndexInformer, nodes cache.SharedInformer) *Pod {
+func NewPod(l log.Logger, pods cache.SharedIndexInformer, nodes cache.SharedInformer, eventCount *prometheus.CounterVec) *Pod {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
+
+	podAddCount := eventCount.WithLabelValues(RolePod.String(), MetricLabelRoleAdd)
+	podDeleteCount := eventCount.WithLabelValues(RolePod.String(), MetricLabelRoleDelete)
+	podUpdateCount := eventCount.WithLabelValues(RolePod.String(), MetricLabelRoleUpdate)
 
 	p := &Pod{
 		podInf:           pods,
@@ -63,7 +61,7 @@ func NewPod(l log.Logger, pods cache.SharedIndexInformer, nodes cache.SharedInfo
 		withNodeMetadata: nodes != nil,
 		store:            pods.GetStore(),
 		logger:           l,
-		queue:            workqueue.NewNamed("pod"),
+		queue:            workqueue.NewNamed(RolePod.String()),
 	}
 	_, err := p.podInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
@@ -132,7 +130,7 @@ func (p *Pod) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	}
 
 	go func() {
-		for p.process(ctx, ch) { // nolint:revive
+		for p.process(ctx, ch) {
 		}
 	}()
 
@@ -180,7 +178,6 @@ func convertToPod(o interface{}) (*apiv1.Pod, error) {
 }
 
 const (
-	podNameLabel                  = metaLabelPrefix + "pod_name"
 	podIPLabel                    = metaLabelPrefix + "pod_ip"
 	podContainerNameLabel         = metaLabelPrefix + "pod_container_name"
 	podContainerIDLabel           = metaLabelPrefix + "pod_container_id"
@@ -191,10 +188,6 @@ const (
 	podContainerIsInit            = metaLabelPrefix + "pod_container_init"
 	podReadyLabel                 = metaLabelPrefix + "pod_ready"
 	podPhaseLabel                 = metaLabelPrefix + "pod_phase"
-	podLabelPrefix                = metaLabelPrefix + "pod_label_"
-	podLabelPresentPrefix         = metaLabelPrefix + "pod_labelpresent_"
-	podAnnotationPrefix           = metaLabelPrefix + "pod_annotation_"
-	podAnnotationPresentPrefix    = metaLabelPrefix + "pod_annotationpresent_"
 	podNodeNameLabel              = metaLabelPrefix + "pod_node_name"
 	podHostIPLabel                = metaLabelPrefix + "pod_host_ip"
 	podUID                        = metaLabelPrefix + "pod_uid"
@@ -215,7 +208,6 @@ func GetControllerOf(controllee metav1.Object) *metav1.OwnerReference {
 
 func podLabels(pod *apiv1.Pod) model.LabelSet {
 	ls := model.LabelSet{
-		podNameLabel:     lv(pod.ObjectMeta.Name),
 		podIPLabel:       lv(pod.Status.PodIP),
 		podReadyLabel:    podReady(pod),
 		podPhaseLabel:    lv(string(pod.Status.Phase)),
@@ -223,6 +215,8 @@ func podLabels(pod *apiv1.Pod) model.LabelSet {
 		podHostIPLabel:   lv(pod.Status.HostIP),
 		podUID:           lv(string(pod.ObjectMeta.UID)),
 	}
+
+	addObjectMetaLabels(ls, pod.ObjectMeta, RolePod)
 
 	createdBy := GetControllerOf(pod)
 	if createdBy != nil {
@@ -232,18 +226,6 @@ func podLabels(pod *apiv1.Pod) model.LabelSet {
 		if createdBy.Name != "" {
 			ls[podControllerName] = lv(createdBy.Name)
 		}
-	}
-
-	for k, v := range pod.Labels {
-		ln := strutil.SanitizeLabelName(k)
-		ls[model.LabelName(podLabelPrefix+ln)] = lv(v)
-		ls[model.LabelName(podLabelPresentPrefix+ln)] = presentValue
-	}
-
-	for k, v := range pod.Annotations {
-		ln := strutil.SanitizeLabelName(k)
-		ls[model.LabelName(podAnnotationPrefix+ln)] = lv(v)
-		ls[model.LabelName(podAnnotationPresentPrefix+ln)] = presentValue
 	}
 
 	return ls

@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
+	"github.com/prometheus/prometheus/util/annotations"
 )
 
 var testHistogram = histogram.Histogram{
@@ -56,7 +57,7 @@ var writeRequestFixture = &prompb.WriteRequest{
 			},
 			Samples:    []prompb.Sample{{Value: 1, Timestamp: 0}},
 			Exemplars:  []prompb.Exemplar{{Labels: []prompb.Label{{Name: "f", Value: "g"}}, Value: 1, Timestamp: 0}},
-			Histograms: []prompb.Histogram{HistogramToHistogramProto(0, &testHistogram), FloatHistogramToHistogramProto(1, testHistogram.ToFloat())},
+			Histograms: []prompb.Histogram{HistogramToHistogramProto(0, &testHistogram), FloatHistogramToHistogramProto(1, testHistogram.ToFloat(nil))},
 			Metadata:   prompb.Metadata{Type: prompb.Metadata_COUNTER, Help: "help text 1", Unit: "unit text 1"},
 		},
 		{
@@ -69,7 +70,7 @@ var writeRequestFixture = &prompb.WriteRequest{
 			},
 			Samples:    []prompb.Sample{{Value: 2, Timestamp: 1}},
 			Exemplars:  []prompb.Exemplar{{Labels: []prompb.Label{{Name: "h", Value: "i"}}, Value: 2, Timestamp: 1}},
-			Histograms: []prompb.Histogram{HistogramToHistogramProto(2, &testHistogram), FloatHistogramToHistogramProto(3, testHistogram.ToFloat())},
+			Histograms: []prompb.Histogram{HistogramToHistogramProto(2, &testHistogram), FloatHistogramToHistogramProto(3, testHistogram.ToFloat(nil))},
 			Metadata:   prompb.Metadata{Type: prompb.Metadata_GAUGE, Help: "help text 2", Unit: "unit text 2"},
 		},
 	},
@@ -756,7 +757,7 @@ func TestStreamResponse(t *testing.T) {
 		maxBytesInFrame,
 		&sync.Pool{})
 	require.Nil(t, warning)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	expectData := []*prompb.ChunkedSeries{{
 		Labels: lbs1,
 		Chunks: []prompb.Chunk{chunk, chunk},
@@ -812,7 +813,7 @@ func (c *mockChunkSeriesSet) At() storage.ChunkSeries {
 	}
 }
 
-func (c *mockChunkSeriesSet) Warnings() storage.Warnings { return nil }
+func (c *mockChunkSeriesSet) Warnings() annotations.Annotations { return nil }
 
 func (c *mockChunkSeriesSet) Err() error {
 	return nil

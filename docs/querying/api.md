@@ -407,7 +407,7 @@ $ curl -g 'http://localhost:9090/api/v1/query_exemplars?query=test_exemplar_metr
                         "traceID": "EpTxMJ40fUus7aGY"
                     },
                     "value": "6",
-                    "timestamp": 1600096945.479,
+                    "timestamp": 1600096945.479
                 }
             ]
         },
@@ -424,15 +424,15 @@ $ curl -g 'http://localhost:9090/api/v1/query_exemplars?query=test_exemplar_metr
                         "traceID": "Olp9XHlq763ccsfa"
                     },
                     "value": "19",
-                    "timestamp": 1600096955.479,
+                    "timestamp": 1600096955.479
                 },
                 {
                     "labels": {
                         "traceID": "hCtjygkIHwAN9vs4"
                     },
                     "value": "20",
-                    "timestamp": 1600096965.489,
-                },
+                    "timestamp": 1600096965.489
+                }
             ]
         }
     ]
@@ -543,6 +543,7 @@ GET /api/v1/targets
 ```
 
 Both the active and dropped targets are part of the response by default.
+Dropped targets are subject to `keep_dropped_targets` limit, if set.
 `labels` represents the label set after relabeling has occurred.
 `discoveredLabels` represent the unmodified labels retrieved during service discovery before relabeling has occurred.
 
@@ -678,6 +679,7 @@ URL query parameters:
 - `rule_name[]=<string>`: only return rules with the given rule name. If the parameter is repeated, rules with any of the provided names are returned. If we've filtered out all the rules of a group, the group is not returned. When the parameter is absent or empty, no filtering is done.
 - `rule_group[]=<string>`: only return rules with the given rule group name. If the parameter is repeated, rules with any of the provided rule group names are returned. When the parameter is absent or empty, no filtering is done.
 - `file[]=<string>`: only return rules with the given filepath. If the parameter is repeated, rules with any of the provided filepaths are returned. When the parameter is absent or empty, no filtering is done.
+- `exclude_alerts=<bool>`: only return rules, do not return active alerts.
 
 ```json
 $ curl http://localhost:9090/api/v1/rules
@@ -863,6 +865,7 @@ GET /api/v1/metadata
 URL query parameters:
 
 - `limit=<number>`: Maximum number of metrics to return.
+- `limit_per_metric=<number>`: Maximum number of metadata to return per metric.
 - `metric=<string>`: A metric name to filter metadata for. All metric metadata is retrieved if left empty.
 
 The `data` section of the query result consists of an object where each key is a metric name and each value is a list of unique metadata objects, as exposed for that metric name across all targets.
@@ -891,6 +894,32 @@ curl -G http://localhost:9090/api/v1/metadata?limit=2
       {
         "type": "counter",
         "help": "Amount of HTTP requests",
+        "unit": ""
+      }
+    ]
+  }
+}
+```
+
+The following example returns only one metadata entry for each metric.
+
+```json
+curl -G http://localhost:9090/api/v1/metadata?limit_per_metric=1
+
+{
+  "status": "success",
+  "data": {
+    "cortex_ring_tokens": [
+      {
+        "type": "gauge",
+        "help": "Number of tokens in the ring",
+        "unit": ""
+      }
+    ],
+    "http_requests_total": [
+      {
+        "type": "counter",
+        "help": "Number of HTTP requests",
         "unit": ""
       }
     ]
@@ -1074,6 +1103,10 @@ The following endpoint returns various cardinality statistics about the Promethe
 ```
 GET /api/v1/status/tsdb
 ```
+URL query parameters:
+- `limit=<number>`: Limit the number of returned items to a given number for each set of statistics. By default, 10 items are returned.
+
+The `data` section of the query result consists of
 - **headStats**: This provides the following data about the head block of the TSDB:
   - **numSeries**: The number of series.
   - **chunkCount**: The number of chunks.
@@ -1263,3 +1296,16 @@ Enable the remote write receiver by setting
 endpoint is `/api/v1/write`. Find more details [here](../storage.md#overview).
 
 *New in v2.33*
+
+## OTLP Receiver
+
+Prometheus can be configured as a receiver for the OTLP Metrics protocol. This 
+is not considered an efficient way of ingesting samples. Use it
+with caution for specific low-volume use cases. It is not suitable for
+replacing the ingestion via scraping.
+
+Enable the OTLP receiver by the feature flag
+`--enable-feature=otlp-write-receiver`. When enabled, the OTLP receiver
+endpoint is `/api/v1/otlp/v1/metrics`.
+
+*New in v2.47*

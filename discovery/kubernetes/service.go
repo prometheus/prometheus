@@ -22,19 +22,13 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/prometheus/prometheus/util/strutil"
-)
-
-var (
-	svcAddCount    = eventCount.WithLabelValues("service", "add")
-	svcUpdateCount = eventCount.WithLabelValues("service", "update")
-	svcDeleteCount = eventCount.WithLabelValues("service", "delete")
 )
 
 // Service implements discovery of Kubernetes services.
@@ -46,11 +40,22 @@ type Service struct {
 }
 
 // NewService returns a new service discovery.
-func NewService(l log.Logger, inf cache.SharedInformer) *Service {
+func NewService(l log.Logger, inf cache.SharedInformer, eventCount *prometheus.CounterVec) *Service {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
-	s := &Service{logger: l, informer: inf, store: inf.GetStore(), queue: workqueue.NewNamed("service")}
+
+	svcAddCount := eventCount.WithLabelValues(RoleService.String(), MetricLabelRoleAdd)
+	svcUpdateCount := eventCount.WithLabelValues(RoleService.String(), MetricLabelRoleUpdate)
+	svcDeleteCount := eventCount.WithLabelValues(RoleService.String(), MetricLabelRoleDelete)
+
+	s := &Service{
+		logger:   l,
+		informer: inf,
+		store:    inf.GetStore(),
+		queue:    workqueue.NewNamed(RoleService.String()),
+	}
+
 	_, err := s.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
 			svcAddCount.Inc()
@@ -92,7 +97,7 @@ func (s *Service) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	}
 
 	go func() {
-		for s.process(ctx, ch) { // nolint:revive
+		for s.process(ctx, ch) {
 		}
 	}()
 
@@ -147,38 +152,20 @@ func serviceSourceFromNamespaceAndName(namespace, name string) string {
 }
 
 const (
-	serviceNameLabel               = metaLabelPrefix + "service_name"
-	serviceLabelPrefix             = metaLabelPrefix + "service_label_"
-	serviceLabelPresentPrefix      = metaLabelPrefix + "service_labelpresent_"
-	serviceAnnotationPrefix        = metaLabelPrefix + "service_annotation_"
-	serviceAnnotationPresentPrefix = metaLabelPrefix + "service_annotationpresent_"
-	servicePortNameLabel           = metaLabelPrefix + "service_port_name"
-	servicePortNumberLabel         = metaLabelPrefix + "service_port_number"
-	servicePortProtocolLabel       = metaLabelPrefix + "service_port_protocol"
-	serviceClusterIPLabel          = metaLabelPrefix + "service_cluster_ip"
-	serviceLoadBalancerIP          = metaLabelPrefix + "service_loadbalancer_ip"
-	serviceExternalNameLabel       = metaLabelPrefix + "service_external_name"
-	serviceType                    = metaLabelPrefix + "service_type"
+	servicePortNameLabel     = metaLabelPrefix + "service_port_name"
+	servicePortNumberLabel   = metaLabelPrefix + "service_port_number"
+	servicePortProtocolLabel = metaLabelPrefix + "service_port_protocol"
+	serviceClusterIPLabel    = metaLabelPrefix + "service_cluster_ip"
+	serviceLoadBalancerIP    = metaLabelPrefix + "service_loadbalancer_ip"
+	serviceExternalNameLabel = metaLabelPrefix + "service_external_name"
+	serviceType              = metaLabelPrefix + "service_type"
 )
 
 func serviceLabels(svc *apiv1.Service) model.LabelSet {
-	// Each label and annotation will create two key-value pairs in the map.
-	ls := make(model.LabelSet, 2*(len(svc.Labels)+len(svc.Annotations))+2)
-
-	ls[serviceNameLabel] = lv(svc.Name)
+	ls := make(model.LabelSet)
 	ls[namespaceLabel] = lv(svc.Namespace)
+	addObjectMetaLabels(ls, svc.ObjectMeta, RoleService)
 
-	for k, v := range svc.Labels {
-		ln := strutil.SanitizeLabelName(k)
-		ls[model.LabelName(serviceLabelPrefix+ln)] = lv(v)
-		ls[model.LabelName(serviceLabelPresentPrefix+ln)] = presentValue
-	}
-
-	for k, v := range svc.Annotations {
-		ln := strutil.SanitizeLabelName(k)
-		ls[model.LabelName(serviceAnnotationPrefix+ln)] = lv(v)
-		ls[model.LabelName(serviceAnnotationPresentPrefix+ln)] = presentValue
-	}
 	return ls
 }
 

@@ -82,7 +82,7 @@ assets-tarball: assets
 .PHONY: parser
 parser:
 	@echo ">> running goyacc to generate the .go file."
-ifeq (, $(shell which goyacc))
+ifeq (, $(shell command -v goyacc > /dev/null))
 	@echo "goyacc not installed so skipping"
 	@echo "To install: go install golang.org/x/tools/cmd/goyacc@v0.6.0"
 else
@@ -93,9 +93,9 @@ endif
 # If we only want to only test go code we have to change the test target
 # which is called by all.
 ifeq ($(GO_ONLY),1)
-test: common-test
+test: common-test check-go-mod-version
 else
-test: common-test ui-build-module ui-test ui-lint
+test: common-test ui-build-module ui-test ui-lint check-go-mod-version
 endif
 
 .PHONY: npm_licenses
@@ -138,3 +138,17 @@ bench_tsdb: $(PROMU)
 cli-documentation:
 	$(GO) run ./cmd/prometheus/ --write-documentation > docs/command-line/prometheus.md
 	$(GO) run ./cmd/promtool/ write-documentation > docs/command-line/promtool.md
+
+.PHONY: check-go-mod-version
+check-go-mod-version:
+	@echo ">> checking go.mod version matching"
+	@./scripts/check-go-mod-version.sh
+
+.PHONY: update-all-go-deps
+update-all-go-deps:
+	@$(MAKE) update-go-deps
+	@echo ">> updating Go dependencies in ./documentation/examples/remote_storage/"
+	@cd ./documentation/examples/remote_storage/ && for m in $$($(GO) list -mod=readonly -m -f '{{ if and (not .Indirect) (not .Main)}}{{.Path}}{{end}}' all); do \
+		$(GO) get -d $$m; \
+	done
+	@cd ./documentation/examples/remote_storage/ && $(GO) mod tidy

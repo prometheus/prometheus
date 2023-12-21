@@ -94,7 +94,7 @@ func TestWatchScrapeManager_NotReady(t *testing.T) {
 	}
 
 	mw := NewMetadataWatcher(nil, smm, "", wt, interval, deadline)
-	require.Equal(t, false, mw.ready())
+	require.False(t, mw.ready())
 
 	mw.collect()
 

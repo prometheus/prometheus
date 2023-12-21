@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/util/annotations"
 )
 
 // The errors exposed.
@@ -36,16 +37,19 @@ var (
 	// ErrTooOldSample is when out of order support is enabled but the sample is outside the time window allowed.
 	ErrTooOldSample = errors.New("too old sample")
 	// ErrDuplicateSampleForTimestamp is when the sample has same timestamp but different value.
-	ErrDuplicateSampleForTimestamp   = errors.New("duplicate sample for timestamp")
-	ErrOutOfOrderExemplar            = errors.New("out of order exemplar")
-	ErrDuplicateExemplar             = errors.New("duplicate exemplar")
-	ErrExemplarLabelLength           = fmt.Errorf("label length for exemplar exceeds maximum of %d UTF-8 characters", exemplar.ExemplarMaxLabelSetLength)
-	ErrExemplarsDisabled             = fmt.Errorf("exemplar storage is disabled or max exemplars is less than or equal to 0")
-	ErrNativeHistogramsDisabled      = fmt.Errorf("native histograms are disabled")
-	ErrHistogramCountNotBigEnough    = errors.New("histogram's observation count should be at least the number of observations found in the buckets")
-	ErrHistogramNegativeBucketCount  = errors.New("histogram has a bucket whose observation count is negative")
-	ErrHistogramSpanNegativeOffset   = errors.New("histogram has a span whose offset is negative")
-	ErrHistogramSpansBucketsMismatch = errors.New("histogram spans specify different number of buckets than provided")
+	ErrDuplicateSampleForTimestamp = errors.New("duplicate sample for timestamp")
+	ErrOutOfOrderExemplar          = errors.New("out of order exemplar")
+	ErrDuplicateExemplar           = errors.New("duplicate exemplar")
+	ErrExemplarLabelLength         = fmt.Errorf("label length for exemplar exceeds maximum of %d UTF-8 characters", exemplar.ExemplarMaxLabelSetLength)
+	ErrExemplarsDisabled           = fmt.Errorf("exemplar storage is disabled or max exemplars is less than or equal to 0")
+	ErrNativeHistogramsDisabled    = fmt.Errorf("native histograms are disabled")
+
+	// ErrOutOfOrderCT indicates failed append of CT to the storage
+	// due to CT being older the then newer sample.
+	// NOTE(bwplotka): This can be both an instrumentation failure or commonly expected
+	// behaviour, and we currently don't have a way to determine this. As a result
+	// it's recommended to ignore this error for now.
+	ErrOutOfOrderCT = fmt.Errorf("created timestamp out of order, ignoring")
 )
 
 // SeriesRef is a generic series reference. In prometheus it is either a
@@ -91,7 +95,7 @@ type ExemplarStorage interface {
 // Use it when you need to have access to all samples without chunk encoding abstraction e.g promQL.
 type Queryable interface {
 	// Querier returns a new Querier on the storage.
-	Querier(ctx context.Context, mint, maxt int64) (Querier, error)
+	Querier(mint, maxt int64) (Querier, error)
 }
 
 // A MockQueryable is used for testing purposes so that a mock Querier can be used.
@@ -99,7 +103,7 @@ type MockQueryable struct {
 	MockQuerier Querier
 }
 
-func (q *MockQueryable) Querier(context.Context, int64, int64) (Querier, error) {
+func (q *MockQueryable) Querier(int64, int64) (Querier, error) {
 	return q.MockQuerier, nil
 }
 
@@ -110,7 +114,7 @@ type Querier interface {
 	// Select returns a set of series that matches the given label matchers.
 	// Caller can specify if it requires returned series to be sorted. Prefer not requiring sorting for better performance.
 	// It allows passing hints that can help in optimising select, but it's up to implementation how this is used if used at all.
-	Select(sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) SeriesSet
+	Select(ctx context.Context, sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) SeriesSet
 }
 
 // MockQuerier is used for test purposes to mock the selected series that is returned.
@@ -118,11 +122,11 @@ type MockQuerier struct {
 	SelectMockFunction func(sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) SeriesSet
 }
 
-func (q *MockQuerier) LabelValues(string, ...*labels.Matcher) ([]string, Warnings, error) {
+func (q *MockQuerier) LabelValues(context.Context, string, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }
 
-func (q *MockQuerier) LabelNames(...*labels.Matcher) ([]string, Warnings, error) {
+func (q *MockQuerier) LabelNames(context.Context, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }
 
@@ -130,7 +134,7 @@ func (q *MockQuerier) Close() error {
 	return nil
 }
 
-func (q *MockQuerier) Select(sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) SeriesSet {
+func (q *MockQuerier) Select(_ context.Context, sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) SeriesSet {
 	return q.SelectMockFunction(sortSeries, hints, matchers...)
 }
 
@@ -138,7 +142,7 @@ func (q *MockQuerier) Select(sortSeries bool, hints *SelectHints, matchers ...*l
 // Use it when you need to have access to samples in encoded format.
 type ChunkQueryable interface {
 	// ChunkQuerier returns a new ChunkQuerier on the storage.
-	ChunkQuerier(ctx context.Context, mint, maxt int64) (ChunkQuerier, error)
+	ChunkQuerier(mint, maxt int64) (ChunkQuerier, error)
 }
 
 // ChunkQuerier provides querying access over time series data of a fixed time range.
@@ -148,7 +152,7 @@ type ChunkQuerier interface {
 	// Select returns a set of series that matches the given label matchers.
 	// Caller can specify if it requires returned series to be sorted. Prefer not requiring sorting for better performance.
 	// It allows passing hints that can help in optimising select, but it's up to implementation how this is used if used at all.
-	Select(sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) ChunkSeriesSet
+	Select(ctx context.Context, sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) ChunkSeriesSet
 }
 
 // LabelQuerier provides querying access over labels.
@@ -157,12 +161,12 @@ type LabelQuerier interface {
 	// It is not safe to use the strings beyond the lifetime of the querier.
 	// If matchers are specified the returned result set is reduced
 	// to label values of metrics matching the matchers.
-	LabelValues(name string, matchers ...*labels.Matcher) ([]string, Warnings, error)
+	LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error)
 
 	// LabelNames returns all the unique label names present in the block in sorted order.
 	// If matchers are specified the returned result set is reduced
 	// to label names of metrics matching the matchers.
-	LabelNames(matchers ...*labels.Matcher) ([]string, Warnings, error)
+	LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error)
 
 	// Close releases the resources of the Querier.
 	Close() error
@@ -202,11 +206,11 @@ type SelectHints struct {
 // TODO(bwplotka): Move to promql/engine_test.go?
 // QueryableFunc is an adapter to allow the use of ordinary functions as
 // Queryables. It follows the idea of http.HandlerFunc.
-type QueryableFunc func(ctx context.Context, mint, maxt int64) (Querier, error)
+type QueryableFunc func(mint, maxt int64) (Querier, error)
 
 // Querier calls f() with the given parameters.
-func (f QueryableFunc) Querier(ctx context.Context, mint, maxt int64) (Querier, error) {
-	return f(ctx, mint, maxt)
+func (f QueryableFunc) Querier(mint, maxt int64) (Querier, error) {
+	return f(mint, maxt)
 }
 
 // Appender provides batched appends against a storage.
@@ -240,6 +244,7 @@ type Appender interface {
 	ExemplarAppender
 	HistogramAppender
 	MetadataUpdater
+	CreatedTimestampAppender
 }
 
 // GetRef is an extra interface on Appenders used by downstream projects
@@ -297,6 +302,24 @@ type MetadataUpdater interface {
 	UpdateMetadata(ref SeriesRef, l labels.Labels, m metadata.Metadata) (SeriesRef, error)
 }
 
+// CreatedTimestampAppender provides an interface for appending CT to storage.
+type CreatedTimestampAppender interface {
+	// AppendCTZeroSample adds synthetic zero sample for the given ct timestamp,
+	// which will be associated with given series, labels and the incoming
+	// sample's t (timestamp). AppendCTZeroSample returns error if zero sample can't be
+	// appended, for example when ct is too old, or when it would collide with
+	// incoming sample (sample has priority).
+	//
+	// AppendCTZeroSample has to be called before the corresponding sample Append.
+	// A series reference number is returned which can be used to modify the
+	// CT for the given series in the same or later transactions.
+	// Returned reference numbers are ephemeral and may be rejected in calls
+	// to AppendCTZeroSample() at any point.
+	//
+	// If the reference is 0 it must not be used for caching.
+	AppendCTZeroSample(ref SeriesRef, l labels.Labels, t, ct int64) (SeriesRef, error)
+}
+
 // SeriesSet contains a set of series.
 type SeriesSet interface {
 	Next() bool
@@ -307,7 +330,7 @@ type SeriesSet interface {
 	Err() error
 	// A collection of warnings for the whole set.
 	// Warnings could be return even iteration has not failed with error.
-	Warnings() Warnings
+	Warnings() annotations.Annotations
 }
 
 var emptySeriesSet = errSeriesSet{}
@@ -321,12 +344,12 @@ type testSeriesSet struct {
 	series Series
 }
 
-func (s testSeriesSet) Next() bool         { return true }
-func (s testSeriesSet) At() Series         { return s.series }
-func (s testSeriesSet) Err() error         { return nil }
-func (s testSeriesSet) Warnings() Warnings { return nil }
+func (s testSeriesSet) Next() bool                        { return true }
+func (s testSeriesSet) At() Series                        { return s.series }
+func (s testSeriesSet) Err() error                        { return nil }
+func (s testSeriesSet) Warnings() annotations.Annotations { return nil }
 
-// TestSeriesSet returns a mock series set
+// TestSeriesSet returns a mock series set.
 func TestSeriesSet(series Series) SeriesSet {
 	return testSeriesSet{series: series}
 }
@@ -335,10 +358,10 @@ type errSeriesSet struct {
 	err error
 }
 
-func (s errSeriesSet) Next() bool         { return false }
-func (s errSeriesSet) At() Series         { return nil }
-func (s errSeriesSet) Err() error         { return s.err }
-func (s errSeriesSet) Warnings() Warnings { return nil }
+func (s errSeriesSet) Next() bool                        { return false }
+func (s errSeriesSet) At() Series                        { return nil }
+func (s errSeriesSet) Err() error                        { return s.err }
+func (s errSeriesSet) Warnings() annotations.Annotations { return nil }
 
 // ErrSeriesSet returns a series set that wraps an error.
 func ErrSeriesSet(err error) SeriesSet {
@@ -356,10 +379,10 @@ type errChunkSeriesSet struct {
 	err error
 }
 
-func (s errChunkSeriesSet) Next() bool         { return false }
-func (s errChunkSeriesSet) At() ChunkSeries    { return nil }
-func (s errChunkSeriesSet) Err() error         { return s.err }
-func (s errChunkSeriesSet) Warnings() Warnings { return nil }
+func (s errChunkSeriesSet) Next() bool                        { return false }
+func (s errChunkSeriesSet) At() ChunkSeries                   { return nil }
+func (s errChunkSeriesSet) Err() error                        { return s.err }
+func (s errChunkSeriesSet) Warnings() annotations.Annotations { return nil }
 
 // ErrChunkSeriesSet returns a chunk series set that wraps an error.
 func ErrChunkSeriesSet(err error) ChunkSeriesSet {
@@ -405,7 +428,7 @@ type ChunkSeriesSet interface {
 	Err() error
 	// A collection of warnings for the whole set.
 	// Warnings could be return even iteration has not failed with error.
-	Warnings() Warnings
+	Warnings() annotations.Annotations
 }
 
 // ChunkSeries exposes a single time series and allows iterating over chunks.
@@ -433,5 +456,3 @@ type ChunkIterable interface {
 	// chunks of the series, sorted by min time.
 	Iterator(chunks.Iterator) chunks.Iterator
 }
-
-type Warnings []error

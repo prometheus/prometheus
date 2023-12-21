@@ -15,12 +15,14 @@ package kubernetes
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"strconv"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	apiv1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/discovery/v1"
@@ -30,12 +32,6 @@ import (
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
-)
-
-var (
-	epslAddCount    = eventCount.WithLabelValues("endpointslice", "add")
-	epslUpdateCount = eventCount.WithLabelValues("endpointslice", "update")
-	epslDeleteCount = eventCount.WithLabelValues("endpointslice", "delete")
 )
 
 // EndpointSlice discovers new endpoint targets.
@@ -56,10 +52,19 @@ type EndpointSlice struct {
 }
 
 // NewEndpointSlice returns a new endpointslice discovery.
-func NewEndpointSlice(l log.Logger, eps cache.SharedIndexInformer, svc, pod, node cache.SharedInformer) *EndpointSlice {
+func NewEndpointSlice(l log.Logger, eps cache.SharedIndexInformer, svc, pod, node cache.SharedInformer, eventCount *prometheus.CounterVec) *EndpointSlice {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
+
+	epslAddCount := eventCount.WithLabelValues(RoleEndpointSlice.String(), MetricLabelRoleAdd)
+	epslUpdateCount := eventCount.WithLabelValues(RoleEndpointSlice.String(), MetricLabelRoleUpdate)
+	epslDeleteCount := eventCount.WithLabelValues(RoleEndpointSlice.String(), MetricLabelRoleDelete)
+
+	svcAddCount := eventCount.WithLabelValues(RoleService.String(), MetricLabelRoleAdd)
+	svcUpdateCount := eventCount.WithLabelValues(RoleService.String(), MetricLabelRoleUpdate)
+	svcDeleteCount := eventCount.WithLabelValues(RoleService.String(), MetricLabelRoleDelete)
+
 	e := &EndpointSlice{
 		logger:             l,
 		endpointSliceInf:   eps,
@@ -70,7 +75,7 @@ func NewEndpointSlice(l log.Logger, eps cache.SharedIndexInformer, svc, pod, nod
 		podStore:           pod.GetStore(),
 		nodeInf:            node,
 		withNodeMetadata:   node != nil,
-		queue:              workqueue.NewNamed("endpointSlice"),
+		queue:              workqueue.NewNamed(RoleEndpointSlice.String()),
 	}
 
 	_, err := e.endpointSliceInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -183,14 +188,14 @@ func (e *EndpointSlice) Run(ctx context.Context, ch chan<- []*targetgroup.Group)
 		cacheSyncs = append(cacheSyncs, e.nodeInf.HasSynced)
 	}
 	if !cache.WaitForCacheSync(ctx.Done(), cacheSyncs...) {
-		if ctx.Err() != context.Canceled {
+		if !errors.Is(ctx.Err(), context.Canceled) {
 			level.Error(e.logger).Log("msg", "endpointslice informer unable to sync cache")
 		}
 		return
 	}
 
 	go func() {
-		for e.process(ctx, ch) { // nolint:revive
+		for e.process(ctx, ch) {
 		}
 	}()
 
@@ -252,7 +257,6 @@ func endpointSliceSourceFromNamespaceAndName(namespace, name string) string {
 }
 
 const (
-	endpointSliceNameLabel                          = metaLabelPrefix + "endpointslice_name"
 	endpointSliceAddressTypeLabel                   = metaLabelPrefix + "endpointslice_address_type"
 	endpointSlicePortNameLabel                      = metaLabelPrefix + "endpointslice_port_name"
 	endpointSlicePortProtocolLabel                  = metaLabelPrefix + "endpointslice_port_protocol"
@@ -274,9 +278,11 @@ func (e *EndpointSlice) buildEndpointSlice(eps endpointSliceAdaptor) *targetgrou
 	}
 	tg.Labels = model.LabelSet{
 		namespaceLabel:                lv(eps.namespace()),
-		endpointSliceNameLabel:        lv(eps.name()),
 		endpointSliceAddressTypeLabel: lv(eps.addressType()),
 	}
+
+	addObjectMetaLabels(tg.Labels, eps.getObjectMeta(), RoleEndpointSlice)
+
 	e.addServiceLabels(eps, tg)
 
 	type podEntry struct {
@@ -339,7 +345,11 @@ func (e *EndpointSlice) buildEndpointSlice(eps endpointSliceAdaptor) *targetgrou
 		}
 
 		if e.withNodeMetadata {
-			target = addNodeLabels(target, e.nodeInf, e.logger, ep.nodename())
+			if ep.targetRef() != nil && ep.targetRef().Kind == "Node" {
+				target = addNodeLabels(target, e.nodeInf, e.logger, &ep.targetRef().Name)
+			} else {
+				target = addNodeLabels(target, e.nodeInf, e.logger, ep.nodename())
+			}
 		}
 
 		pod := e.resolvePodRef(ep.targetRef())
@@ -412,18 +422,21 @@ func (e *EndpointSlice) buildEndpointSlice(eps endpointSliceAdaptor) *targetgrou
 					continue
 				}
 
-				a := net.JoinHostPort(pe.pod.Status.PodIP, strconv.FormatUint(uint64(cport.ContainerPort), 10))
-				ports := strconv.FormatUint(uint64(cport.ContainerPort), 10)
+				// PodIP can be empty when a pod is starting or has been evicted.
+				if len(pe.pod.Status.PodIP) != 0 {
+					a := net.JoinHostPort(pe.pod.Status.PodIP, strconv.FormatUint(uint64(cport.ContainerPort), 10))
+					ports := strconv.FormatUint(uint64(cport.ContainerPort), 10)
 
-				target := model.LabelSet{
-					model.AddressLabel:            lv(a),
-					podContainerNameLabel:         lv(c.Name),
-					podContainerImageLabel:        lv(c.Image),
-					podContainerPortNameLabel:     lv(cport.Name),
-					podContainerPortNumberLabel:   lv(ports),
-					podContainerPortProtocolLabel: lv(string(cport.Protocol)),
+					target := model.LabelSet{
+						model.AddressLabel:            lv(a),
+						podContainerNameLabel:         lv(c.Name),
+						podContainerImageLabel:        lv(c.Image),
+						podContainerPortNameLabel:     lv(cport.Name),
+						podContainerPortNumberLabel:   lv(ports),
+						podContainerPortProtocolLabel: lv(string(cport.Protocol)),
+					}
+					tg.Targets = append(tg.Targets, target.Merge(podLabels(pe.pod)))
 				}
-				tg.Targets = append(tg.Targets, target.Merge(podLabels(pe.pod)))
 			}
 		}
 	}

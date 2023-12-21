@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
@@ -62,7 +63,7 @@ func TestPuppetSlashInURL(t *testing.T) {
 			Port:             80,
 			RefreshInterval:  model.Duration(30 * time.Second),
 		}
-		d, err := NewDiscovery(&cfg, log.NewNopLogger())
+		d, err := NewDiscovery(&cfg, log.NewNopLogger(), prometheus.NewRegistry())
 		require.NoError(t, err)
 		require.Equal(t, apiURL, d.url)
 	}
@@ -79,7 +80,7 @@ func TestPuppetDBRefresh(t *testing.T) {
 		RefreshInterval:  model.Duration(30 * time.Second),
 	}
 
-	d, err := NewDiscovery(&cfg, log.NewNopLogger())
+	d, err := NewDiscovery(&cfg, log.NewNopLogger(), prometheus.NewRegistry())
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -105,7 +106,7 @@ func TestPuppetDBRefresh(t *testing.T) {
 			Source: ts.URL + "/pdb/query/v4?query=vhosts",
 		},
 	}
-	require.Equal(t, tgs, expectedTargets)
+	require.Equal(t, expectedTargets, tgs)
 }
 
 func TestPuppetDBRefreshWithParameters(t *testing.T) {
@@ -120,7 +121,7 @@ func TestPuppetDBRefreshWithParameters(t *testing.T) {
 		RefreshInterval:   model.Duration(30 * time.Second),
 	}
 
-	d, err := NewDiscovery(&cfg, log.NewNopLogger())
+	d, err := NewDiscovery(&cfg, log.NewNopLogger(), prometheus.NewRegistry())
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -156,7 +157,7 @@ func TestPuppetDBRefreshWithParameters(t *testing.T) {
 			Source: ts.URL + "/pdb/query/v4?query=vhosts",
 		},
 	}
-	require.Equal(t, tgs, expectedTargets)
+	require.Equal(t, expectedTargets, tgs)
 }
 
 func TestPuppetDBInvalidCode(t *testing.T) {
@@ -172,7 +173,7 @@ func TestPuppetDBInvalidCode(t *testing.T) {
 		RefreshInterval:  model.Duration(30 * time.Second),
 	}
 
-	d, err := NewDiscovery(&cfg, log.NewNopLogger())
+	d, err := NewDiscovery(&cfg, log.NewNopLogger(), prometheus.NewRegistry())
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -193,7 +194,7 @@ func TestPuppetDBInvalidFormat(t *testing.T) {
 		RefreshInterval:  model.Duration(30 * time.Second),
 	}
 
-	d, err := NewDiscovery(&cfg, log.NewNopLogger())
+	d, err := NewDiscovery(&cfg, log.NewNopLogger(), prometheus.NewRegistry())
 	require.NoError(t, err)
 
 	ctx := context.Background()

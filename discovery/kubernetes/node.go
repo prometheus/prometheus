@@ -22,6 +22,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
@@ -35,12 +36,6 @@ const (
 	NodeLegacyHostIP = "LegacyHostIP"
 )
 
-var (
-	nodeAddCount    = eventCount.WithLabelValues("node", "add")
-	nodeUpdateCount = eventCount.WithLabelValues("node", "update")
-	nodeDeleteCount = eventCount.WithLabelValues("node", "delete")
-)
-
 // Node discovers Kubernetes nodes.
 type Node struct {
 	logger   log.Logger
@@ -50,11 +45,22 @@ type Node struct {
 }
 
 // NewNode returns a new node discovery.
-func NewNode(l log.Logger, inf cache.SharedInformer) *Node {
+func NewNode(l log.Logger, inf cache.SharedInformer, eventCount *prometheus.CounterVec) *Node {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
-	n := &Node{logger: l, informer: inf, store: inf.GetStore(), queue: workqueue.NewNamed("node")}
+
+	nodeAddCount := eventCount.WithLabelValues(RoleNode.String(), MetricLabelRoleAdd)
+	nodeUpdateCount := eventCount.WithLabelValues(RoleNode.String(), MetricLabelRoleUpdate)
+	nodeDeleteCount := eventCount.WithLabelValues(RoleNode.String(), MetricLabelRoleDelete)
+
+	n := &Node{
+		logger:   l,
+		informer: inf,
+		store:    inf.GetStore(),
+		queue:    workqueue.NewNamed(RoleNode.String()),
+	}
+
 	_, err := n.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
 			nodeAddCount.Inc()
@@ -96,7 +102,7 @@ func (n *Node) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	}
 
 	go func() {
-		for n.process(ctx, ch) { // nolint:revive
+		for n.process(ctx, ch) {
 		}
 	}()
 
@@ -152,33 +158,18 @@ func nodeSourceFromName(name string) string {
 }
 
 const (
-	nodeNameLabel               = metaLabelPrefix + "node_name"
-	nodeProviderIDLabel         = metaLabelPrefix + "node_provider_id"
-	nodeLabelPrefix             = metaLabelPrefix + "node_label_"
-	nodeLabelPresentPrefix      = metaLabelPrefix + "node_labelpresent_"
-	nodeAnnotationPrefix        = metaLabelPrefix + "node_annotation_"
-	nodeAnnotationPresentPrefix = metaLabelPrefix + "node_annotationpresent_"
-	nodeAddressPrefix           = metaLabelPrefix + "node_address_"
+	nodeProviderIDLabel = metaLabelPrefix + "node_provider_id"
+	nodeAddressPrefix   = metaLabelPrefix + "node_address_"
 )
 
 func nodeLabels(n *apiv1.Node) model.LabelSet {
 	// Each label and annotation will create two key-value pairs in the map.
-	ls := make(model.LabelSet, 2*(len(n.Labels)+len(n.Annotations))+1)
+	ls := make(model.LabelSet)
 
-	ls[nodeNameLabel] = lv(n.Name)
 	ls[nodeProviderIDLabel] = lv(n.Spec.ProviderID)
 
-	for k, v := range n.Labels {
-		ln := strutil.SanitizeLabelName(k)
-		ls[model.LabelName(nodeLabelPrefix+ln)] = lv(v)
-		ls[model.LabelName(nodeLabelPresentPrefix+ln)] = presentValue
-	}
+	addObjectMetaLabels(ls, n.ObjectMeta, RoleNode)
 
-	for k, v := range n.Annotations {
-		ln := strutil.SanitizeLabelName(k)
-		ls[model.LabelName(nodeAnnotationPrefix+ln)] = lv(v)
-		ls[model.LabelName(nodeAnnotationPresentPrefix+ln)] = presentValue
-	}
 	return ls
 }
 
@@ -209,7 +200,7 @@ func (n *Node) buildNode(node *apiv1.Node) *targetgroup.Group {
 	return tg
 }
 
-// nodeAddresses returns the provided node's address, based on the priority:
+// nodeAddress returns the provided node's address, based on the priority:
 // 1. NodeInternalIP
 // 2. NodeInternalDNS
 // 3. NodeExternalIP
@@ -217,7 +208,7 @@ func (n *Node) buildNode(node *apiv1.Node) *targetgroup.Group {
 // 5. NodeLegacyHostIP
 // 6. NodeHostName
 //
-// Derived from k8s.io/kubernetes/pkg/util/node/node.go
+// Derived from k8s.io/kubernetes/pkg/util/node/node.go.
 func nodeAddress(node *apiv1.Node) (string, map[apiv1.NodeAddressType][]string, error) {
 	m := map[apiv1.NodeAddressType][]string{}
 	for _, a := range node.Status.Addresses {

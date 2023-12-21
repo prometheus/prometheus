@@ -17,9 +17,30 @@ import (
 	"math"
 	"sort"
 
+	"golang.org/x/exp/slices"
+
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 )
+
+// smallDeltaTolerance is the threshold for relative deltas between classic
+// histogram buckets that will be ignored by the histogram_quantile function
+// because they are most likely artifacts of floating point precision issues.
+// Testing on 2 sets of real data with bugs arising from small deltas,
+// the safe ranges were from:
+// - 1e-05 to 1e-15
+// - 1e-06 to 1e-15
+// Anything to the left of that would cause non-query-sharded data to have
+// small deltas ignored (unnecessary and we should avoid this), and anything
+// to the right of that would cause query-sharded data to not have its small
+// deltas ignored (so the problem won't be fixed).
+// For context, query sharding triggers these float precision errors in Mimir.
+// To illustrate, with a relative deviation of 1e-12, we need to have 1e12
+// observations in the bucket so that the change of one observation is small
+// enough to get ignored. With the usual observation rate even of very busy
+// services, this will hardly be reached in timeframes that matters for
+// monitoring.
+const smallDeltaTolerance = 1e-12
 
 // Helpers to calculate quantiles.
 
@@ -37,10 +58,6 @@ type bucket struct {
 
 // buckets implements sort.Interface.
 type buckets []bucket
-
-func (b buckets) Len() int           { return len(b) }
-func (b buckets) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
-func (b buckets) Less(i, j int) bool { return b[i].upperBound < b[j].upperBound }
 
 type metricWithBuckets struct {
 	metric  labels.Labels
@@ -73,39 +90,53 @@ type metricWithBuckets struct {
 // If q<0, -Inf is returned.
 //
 // If q>1, +Inf is returned.
-func bucketQuantile(q float64, buckets buckets) float64 {
+//
+// We also return a bool to indicate if monotonicity needed to be forced,
+// and another bool to indicate if small differences between buckets (that
+// are likely artifacts of floating point precision issues) have been
+// ignored.
+func bucketQuantile(q float64, buckets buckets) (float64, bool, bool) {
 	if math.IsNaN(q) {
-		return math.NaN()
+		return math.NaN(), false, false
 	}
 	if q < 0 {
-		return math.Inf(-1)
+		return math.Inf(-1), false, false
 	}
 	if q > 1 {
-		return math.Inf(+1)
+		return math.Inf(+1), false, false
 	}
-	sort.Sort(buckets)
+	slices.SortFunc(buckets, func(a, b bucket) int {
+		// We don't expect the bucket boundary to be a NaN.
+		if a.upperBound < b.upperBound {
+			return -1
+		}
+		if a.upperBound > b.upperBound {
+			return +1
+		}
+		return 0
+	})
 	if !math.IsInf(buckets[len(buckets)-1].upperBound, +1) {
-		return math.NaN()
+		return math.NaN(), false, false
 	}
 
 	buckets = coalesceBuckets(buckets)
-	ensureMonotonic(buckets)
+	forcedMonotonic, fixedPrecision := ensureMonotonicAndIgnoreSmallDeltas(buckets, smallDeltaTolerance)
 
 	if len(buckets) < 2 {
-		return math.NaN()
+		return math.NaN(), false, false
 	}
 	observations := buckets[len(buckets)-1].count
 	if observations == 0 {
-		return math.NaN()
+		return math.NaN(), false, false
 	}
 	rank := q * observations
 	b := sort.Search(len(buckets)-1, func(i int) bool { return buckets[i].count >= rank })
 
 	if b == len(buckets)-1 {
-		return buckets[len(buckets)-2].upperBound
+		return buckets[len(buckets)-2].upperBound, forcedMonotonic, fixedPrecision
 	}
 	if b == 0 && buckets[0].upperBound <= 0 {
-		return buckets[0].upperBound
+		return buckets[0].upperBound, forcedMonotonic, fixedPrecision
 	}
 	var (
 		bucketStart float64
@@ -117,7 +148,7 @@ func bucketQuantile(q float64, buckets buckets) float64 {
 		count -= buckets[b-1].count
 		rank -= buckets[b-1].count
 	}
-	return bucketStart + (bucketEnd-bucketStart)*(rank/count)
+	return bucketStart + (bucketEnd-bucketStart)*(rank/count), forcedMonotonic, fixedPrecision
 }
 
 // histogramQuantile calculates the quantile 'q' based on the given histogram.
@@ -158,9 +189,21 @@ func histogramQuantile(q float64, h *histogram.FloatHistogram) float64 {
 	var (
 		bucket histogram.Bucket[float64]
 		count  float64
-		it     = h.AllBucketIterator()
-		rank   = q * h.Count
+		it     histogram.BucketIterator[float64]
+		rank   float64
 	)
+
+	// if there are NaN observations in the histogram (h.Sum is NaN), use the forward iterator
+	// if the q < 0.5, use the forward iterator
+	// if the q >= 0.5, use the reverse iterator
+	if math.IsNaN(h.Sum) || q < 0.5 {
+		it = h.AllBucketIterator()
+		rank = q * h.Count
+	} else {
+		it = h.AllReverseBucketIterator()
+		rank = (1 - q) * h.Count
+	}
+
 	for it.Next() {
 		bucket = it.At()
 		count += bucket.Count
@@ -193,7 +236,16 @@ func histogramQuantile(q float64, h *histogram.FloatHistogram) float64 {
 		return bucket.Upper
 	}
 
-	rank -= count - bucket.Count
+	// NaN observations increase h.Count but not the total number of
+	// observations in the buckets. Therefore, we have to use the forward
+	// iterator to find percentiles. We recognize histograms containing NaN
+	// observations by checking if their h.Sum is NaN.
+	if math.IsNaN(h.Sum) || q < 0.5 {
+		rank -= count - bucket.Count
+	} else {
+		rank = count - rank
+	}
+
 	// TODO(codesome): Use a better estimation than linear.
 	return bucket.Lower + (bucket.Upper-bucket.Lower)*(rank/bucket.Count)
 }
@@ -314,46 +366,56 @@ func coalesceBuckets(buckets buckets) buckets {
 // The assumption that bucket counts increase monotonically with increasing
 // upperBound may be violated during:
 //
-//   * Recording rule evaluation of histogram_quantile, especially when rate()
-//      has been applied to the underlying bucket timeseries.
-//   * Evaluation of histogram_quantile computed over federated bucket
-//      timeseries, especially when rate() has been applied.
-//
-// This is because scraped data is not made available to rule evaluation or
-// federation atomically, so some buckets are computed with data from the
-// most recent scrapes, but the other buckets are missing data from the most
-// recent scrape.
+//   - Circumstances where data is already inconsistent at the target's side.
+//   - Ingestion via the remote write receiver that Prometheus implements.
+//   - Optimisation of query execution where precision is sacrificed for other
+//     benefits, not by Prometheus but by systems built on top of it.
+//   - Circumstances where floating point precision errors accumulate.
 //
 // Monotonicity is usually guaranteed because if a bucket with upper bound
 // u1 has count c1, then any bucket with a higher upper bound u > u1 must
-// have counted all c1 observations and perhaps more, so that c  >= c1.
-//
-// Randomly interspersed partial sampling breaks that guarantee, and rate()
-// exacerbates it. Specifically, suppose bucket le=1000 has a count of 10 from
-// 4 samples but the bucket with le=2000 has a count of 7 from 3 samples. The
-// monotonicity is broken. It is exacerbated by rate() because under normal
-// operation, cumulative counting of buckets will cause the bucket counts to
-// diverge such that small differences from missing samples are not a problem.
-// rate() removes this divergence.)
+// have counted all c1 observations and perhaps more, so that c >= c1.
 //
 // bucketQuantile depends on that monotonicity to do a binary search for the
 // bucket with the φ-quantile count, so breaking the monotonicity
 // guarantee causes bucketQuantile() to return undefined (nonsense) results.
 //
-// As a somewhat hacky solution until ingestion is atomic per scrape, we
-// calculate the "envelope" of the histogram buckets, essentially removing
-// any decreases in the count between successive buckets.
-
-func ensureMonotonic(buckets buckets) {
-	max := buckets[0].count
+// As a somewhat hacky solution, we first silently ignore any numerically
+// insignificant (relative delta below the requested tolerance and likely to
+// be from floating point precision errors) differences between successive
+// buckets regardless of the direction. Then we calculate the "envelope" of
+// the histogram buckets, essentially removing any decreases in the count
+// between successive buckets.
+//
+// We return a bool to indicate if this monotonicity was forced or not, and
+// another bool to indicate if small deltas were ignored or not.
+func ensureMonotonicAndIgnoreSmallDeltas(buckets buckets, tolerance float64) (bool, bool) {
+	var forcedMonotonic, fixedPrecision bool
+	prev := buckets[0].count
 	for i := 1; i < len(buckets); i++ {
-		switch {
-		case buckets[i].count > max:
-			max = buckets[i].count
-		case buckets[i].count < max:
-			buckets[i].count = max
+		curr := buckets[i].count // Assumed always positive.
+		if curr == prev {
+			// No correction needed if the counts are identical between buckets.
+			continue
 		}
+		if almostEqual(prev, curr, tolerance) {
+			// Silently correct numerically insignificant differences from floating
+			// point precision errors, regardless of direction.
+			// Do not update the 'prev' value as we are ignoring the difference.
+			buckets[i].count = prev
+			fixedPrecision = true
+			continue
+		}
+		if curr < prev {
+			// Force monotonicity by removing any decreases regardless of magnitude.
+			// Do not update the 'prev' value as we are ignoring the decrease.
+			buckets[i].count = prev
+			forcedMonotonic = true
+			continue
+		}
+		prev = curr
 	}
+	return forcedMonotonic, fixedPrecision
 }
 
 // quantile calculates the given quantile of a vector of samples.

@@ -2,6 +2,12 @@
 global:
   scrape_interval: 15s
   evaluation_interval: 30s
+  body_size_limit: 15MB
+  sample_limit: 1500
+  target_limit: 30
+  label_limit: 30
+  label_name_length_limit: 200
+  label_value_length_limit: 200
   # scrape_timeout is set to the global default (10s).
 
   external_labels:
@@ -108,9 +114,14 @@ scrape_configs:
 
     scrape_interval: 50s
     scrape_timeout: 5s
+    scrape_protocols: ["PrometheusText0.0.4"]
 
     body_size_limit: 10MB
     sample_limit: 1000
+    target_limit: 35
+    label_limit: 35
+    label_name_length_limit: 210
+    label_value_length_limit: 210
 
     metrics_path: /my_path
     scheme: https
@@ -151,6 +162,7 @@ scrape_configs:
     consul_sd_configs:
       - server: "localhost:1234"
         token: mysecret
+        path_prefix: /consul
         services: ["nginx", "cache", "mysql"]
         tags: ["canary", "v1"]
         node_meta:
@@ -209,6 +221,7 @@ scrape_configs:
 
     kuma_sd_configs:
       - server: http://kuma-control-plane.kuma-system.svc:5676
+        client_id: main-prometheus
 
   - job_name: service-marathon
     marathon_sd_configs:

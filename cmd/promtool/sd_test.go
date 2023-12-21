@@ -35,7 +35,7 @@ func TestSDCheckResult(t *testing.T) {
 	}}
 
 	reg, err := relabel.NewRegexp("(.*)")
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	scrapeConfig := &config.ScrapeConfig{
 		ScrapeInterval: model.Duration(1 * time.Minute),

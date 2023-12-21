@@ -17,12 +17,12 @@ package wlog
 import (
 	"bufio"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"hash/crc32"
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -30,8 +30,9 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/golang/snappy"
-	"github.com/pkg/errors"
+	"github.com/klauspost/compress/zstd"
 	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 )
@@ -115,6 +116,10 @@ func (e *CorruptionErr) Error() string {
 	return fmt.Sprintf("corruption in segment %s at %d: %s", SegmentName(e.Dir, e.Segment), e.Offset, e.Err)
 }
 
+func (e *CorruptionErr) Unwrap() error {
+	return e.Err
+}
+
 // OpenWriteSegment opens segment k in dir. The returned segment is ready for new appends.
 func OpenWriteSegment(logger log.Logger, dir string, k int) (*Segment, error) {
 	segName := SegmentName(dir, k)
@@ -136,7 +141,7 @@ func OpenWriteSegment(logger log.Logger, dir string, k int) (*Segment, error) {
 		level.Warn(logger).Log("msg", "Last page of the wlog is torn, filling it with zeros", "segment", segName)
 		if _, err := f.Write(make([]byte, pageSize-d)); err != nil {
 			f.Close()
-			return nil, errors.Wrap(err, "zero-pad torn page")
+			return nil, fmt.Errorf("zero-pad torn page: %w", err)
 		}
 	}
 	return &Segment{SegmentFile: f, i: k, dir: dir}, nil
@@ -164,6 +169,26 @@ func OpenReadSegment(fn string) (*Segment, error) {
 	return &Segment{SegmentFile: f, i: k, dir: filepath.Dir(fn)}, nil
 }
 
+type CompressionType string
+
+const (
+	CompressionNone   CompressionType = "none"
+	CompressionSnappy CompressionType = "snappy"
+	CompressionZstd   CompressionType = "zstd"
+)
+
+// ParseCompressionType parses the two compression-related configuration values and returns the CompressionType. If
+// compression is enabled but the compressType is unrecognized, we default to Snappy compression.
+func ParseCompressionType(compress bool, compressType string) CompressionType {
+	if compress {
+		if compressType == "zstd" {
+			return CompressionZstd
+		}
+		return CompressionSnappy
+	}
+	return CompressionNone
+}
+
 // WL is a write log that stores records in segment files.
 // It must be read from start to end once before logging new data.
 // If an error occurs during read, the repair procedure must be called
@@ -185,8 +210,11 @@ type WL struct {
 	stopc       chan chan struct{}
 	actorc      chan func()
 	closed      bool // To allow calling Close() more than once without blocking.
-	compress    bool
-	snappyBuf   []byte
+	compress    CompressionType
+	compressBuf []byte
+	zstdWriter  *zstd.Encoder
+
+	WriteNotified WriteNotified
 
 	metrics *wlMetrics
 }
@@ -263,22 +291,32 @@ func newWLMetrics(w *WL, r prometheus.Registerer) *wlMetrics {
 }
 
 // New returns a new WAL over the given directory.
-func New(logger log.Logger, reg prometheus.Registerer, dir string, compress bool) (*WL, error) {
+func New(logger log.Logger, reg prometheus.Registerer, dir string, compress CompressionType) (*WL, error) {
 	return NewSize(logger, reg, dir, DefaultSegmentSize, compress)
 }
 
 // NewSize returns a new write log over the given directory.
 // New segments are created with the specified size.
-func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSize int, compress bool) (*WL, error) {
+func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSize int, compress CompressionType) (*WL, error) {
 	if segmentSize%pageSize != 0 {
 		return nil, errors.New("invalid segment size")
 	}
 	if err := os.MkdirAll(dir, 0o777); err != nil {
-		return nil, errors.Wrap(err, "create dir")
+		return nil, fmt.Errorf("create dir: %w", err)
 	}
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
+
+	var zstdWriter *zstd.Encoder
+	if compress == CompressionZstd {
+		var err error
+		zstdWriter, err = zstd.NewWriter(nil)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	w := &WL{
 		dir:         dir,
 		logger:      logger,
@@ -287,6 +325,7 @@ func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSi
 		actorc:      make(chan func(), 100),
 		stopc:       make(chan chan struct{}),
 		compress:    compress,
+		zstdWriter:  zstdWriter,
 	}
 	prefix := "prometheus_tsdb_wal_"
 	if filepath.Base(dir) == WblDirName {
@@ -296,7 +335,7 @@ func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSi
 
 	_, last, err := Segments(w.Dir())
 	if err != nil {
-		return nil, errors.Wrap(err, "get segment range")
+		return nil, fmt.Errorf("get segment range: %w", err)
 	}
 
 	// Index of the Segment we want to open and write to.
@@ -325,22 +364,32 @@ func Open(logger log.Logger, dir string) (*WL, error) {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
+	zstdWriter, err := zstd.NewWriter(nil)
+	if err != nil {
+		return nil, err
+	}
+
 	w := &WL{
-		dir:    dir,
-		logger: logger,
+		dir:        dir,
+		logger:     logger,
+		zstdWriter: zstdWriter,
 	}
 
 	return w, nil
 }
 
-// CompressionEnabled returns if compression is enabled on this WAL.
-func (w *WL) CompressionEnabled() bool {
+// CompressionType returns if compression is enabled on this WAL.
+func (w *WL) CompressionType() CompressionType {
 	return w.compress
 }
 
 // Dir returns the directory of the WAL.
 func (w *WL) Dir() string {
 	return w.dir
+}
+
+func (w *WL) SetWriteNotified(wn WriteNotified) {
+	w.WriteNotified = wn
 }
 
 func (w *WL) run() {
@@ -369,11 +418,9 @@ func (w *WL) Repair(origErr error) error {
 	// But that's not generally applicable if the records have any kind of causality.
 	// Maybe as an extra mode in the future if mid-WAL corruptions become
 	// a frequent concern.
-	err := errors.Cause(origErr) // So that we can pick up errors even if wrapped.
-
-	cerr, ok := err.(*CorruptionErr)
-	if !ok {
-		return errors.Wrap(origErr, "cannot handle error")
+	var cerr *CorruptionErr
+	if !errors.As(origErr, &cerr) {
+		return fmt.Errorf("cannot handle error: %w", origErr)
 	}
 	if cerr.Segment < 0 {
 		return errors.New("corruption error does not specify position")
@@ -384,7 +431,7 @@ func (w *WL) Repair(origErr error) error {
 	// All segments behind the corruption can no longer be used.
 	segs, err := listSegments(w.Dir())
 	if err != nil {
-		return errors.Wrap(err, "list segments")
+		return fmt.Errorf("list segments: %w", err)
 	}
 	level.Warn(w.logger).Log("msg", "Deleting all segments newer than corrupted segment", "segment", cerr.Segment)
 
@@ -395,14 +442,14 @@ func (w *WL) Repair(origErr error) error {
 			// as we set the current segment to repaired file
 			// below.
 			if err := w.segment.Close(); err != nil {
-				return errors.Wrap(err, "close active segment")
+				return fmt.Errorf("close active segment: %w", err)
 			}
 		}
 		if s.index <= cerr.Segment {
 			continue
 		}
 		if err := os.Remove(filepath.Join(w.Dir(), s.name)); err != nil {
-			return errors.Wrapf(err, "delete segment:%v", s.index)
+			return fmt.Errorf("delete segment:%v: %w", s.index, err)
 		}
 	}
 	// Regardless of the corruption offset, no record reaches into the previous segment.
@@ -427,7 +474,7 @@ func (w *WL) Repair(origErr error) error {
 
 	f, err := os.Open(tmpfn)
 	if err != nil {
-		return errors.Wrap(err, "open segment")
+		return fmt.Errorf("open segment: %w", err)
 	}
 	defer f.Close()
 
@@ -439,24 +486,24 @@ func (w *WL) Repair(origErr error) error {
 			break
 		}
 		if err := w.Log(r.Record()); err != nil {
-			return errors.Wrap(err, "insert record")
+			return fmt.Errorf("insert record: %w", err)
 		}
 	}
 	// We expect an error here from r.Err(), so nothing to handle.
 
 	// We need to pad to the end of the last page in the repaired segment
 	if err := w.flushPage(true); err != nil {
-		return errors.Wrap(err, "flush page in repair")
+		return fmt.Errorf("flush page in repair: %w", err)
 	}
 
 	// We explicitly close even when there is a defer for Windows to be
 	// able to delete it. The defer is in place to close it in-case there
 	// are errors above.
 	if err := f.Close(); err != nil {
-		return errors.Wrap(err, "close corrupted file")
+		return fmt.Errorf("close corrupted file: %w", err)
 	}
 	if err := os.Remove(tmpfn); err != nil {
-		return errors.Wrap(err, "delete corrupted segment")
+		return fmt.Errorf("delete corrupted segment: %w", err)
 	}
 
 	// Explicitly close the segment we just repaired to avoid issues with Windows.
@@ -508,7 +555,7 @@ func (w *WL) nextSegment(async bool) (int, error) {
 	}
 	next, err := CreateSegment(w.Dir(), w.segment.Index()+1)
 	if err != nil {
-		return 0, errors.Wrap(err, "create new segment file")
+		return 0, fmt.Errorf("create new segment file: %w", err)
 	}
 	prev := w.segment
 	if err := w.setSegment(next); err != nil {
@@ -577,9 +624,11 @@ func (w *WL) flushPage(clear bool) error {
 }
 
 // First Byte of header format:
-// [ 4 bits unallocated] [1 bit snappy compression flag] [ 3 bit record type ]
+//
+//	[3 bits unallocated] [1 bit zstd compression flag] [1 bit snappy compression flag] [3 bit record type ]
 const (
 	snappyMask  = 1 << 3
+	zstdMask    = 1 << 4
 	recTypeMask = snappyMask - 1
 )
 
@@ -649,17 +698,23 @@ func (w *WL) log(rec []byte, final bool) error {
 
 	// Compress the record before calculating if a new segment is needed.
 	compressed := false
-	if w.compress &&
-		len(rec) > 0 &&
+	if w.compress == CompressionSnappy && len(rec) > 0 {
 		// If MaxEncodedLen is less than 0 the record is too large to be compressed.
-		snappy.MaxEncodedLen(len(rec)) >= 0 {
-		// The snappy library uses `len` to calculate if we need a new buffer.
-		// In order to allocate as few buffers as possible make the length
-		// equal to the capacity.
-		w.snappyBuf = w.snappyBuf[:cap(w.snappyBuf)]
-		w.snappyBuf = snappy.Encode(w.snappyBuf, rec)
-		if len(w.snappyBuf) < len(rec) {
-			rec = w.snappyBuf
+		if len(rec) > 0 && snappy.MaxEncodedLen(len(rec)) >= 0 {
+			// The snappy library uses `len` to calculate if we need a new buffer.
+			// In order to allocate as few buffers as possible make the length
+			// equal to the capacity.
+			w.compressBuf = w.compressBuf[:cap(w.compressBuf)]
+			w.compressBuf = snappy.Encode(w.compressBuf, rec)
+			if len(w.compressBuf) < len(rec) {
+				rec = w.compressBuf
+				compressed = true
+			}
+		}
+	} else if w.compress == CompressionZstd && len(rec) > 0 {
+		w.compressBuf = w.zstdWriter.EncodeAll(rec, w.compressBuf[:0])
+		if len(w.compressBuf) < len(rec) {
+			rec = w.compressBuf
 			compressed = true
 		}
 	}
@@ -700,7 +755,11 @@ func (w *WL) log(rec []byte, final bool) error {
 			typ = recMiddle
 		}
 		if compressed {
-			typ |= snappyMask
+			if w.compress == CompressionSnappy {
+				typ |= snappyMask
+			} else if w.compress == CompressionZstd {
+				typ |= zstdMask
+			}
 		}
 
 		buf[0] = byte(typ)
@@ -780,7 +839,7 @@ func (w *WL) fsync(f *Segment) error {
 
 // Sync forces a file sync on the current write log segment. This function is meant
 // to be used only on tests due to different behaviour on Operating Systems
-// like windows and linux
+// like windows and linux.
 func (w *WL) Sync() error {
 	return w.fsync(w.segment)
 }
@@ -853,8 +912,8 @@ func listSegments(dir string) (refs []segmentRef, err error) {
 		}
 		refs = append(refs, segmentRef{name: fn, index: k})
 	}
-	sort.Slice(refs, func(i, j int) bool {
-		return refs[i].index < refs[j].index
+	slices.SortFunc(refs, func(a, b segmentRef) int {
+		return a.index - b.index
 	})
 	for i := 0; i < len(refs)-1; i++ {
 		if refs[i].index+1 != refs[i+1].index {
@@ -883,7 +942,7 @@ func NewSegmentsRangeReader(sr ...SegmentRange) (io.ReadCloser, error) {
 	for _, sgmRange := range sr {
 		refs, err := listSegments(sgmRange.Dir)
 		if err != nil {
-			return nil, errors.Wrapf(err, "list segment in dir:%v", sgmRange.Dir)
+			return nil, fmt.Errorf("list segment in dir:%v: %w", sgmRange.Dir, err)
 		}
 
 		for _, r := range refs {
@@ -895,7 +954,7 @@ func NewSegmentsRangeReader(sr ...SegmentRange) (io.ReadCloser, error) {
 			}
 			s, err := OpenReadSegment(filepath.Join(sgmRange.Dir, r.name))
 			if err != nil {
-				return nil, errors.Wrapf(err, "open segment:%v in dir:%v", r.name, sgmRange.Dir)
+				return nil, fmt.Errorf("open segment:%v in dir:%v: %w", r.name, sgmRange.Dir, err)
 			}
 			segs = append(segs, s)
 		}
@@ -915,8 +974,7 @@ type segmentBufReader struct {
 	off  int // Offset of read data into current segment.
 }
 
-// nolint:revive // TODO: Consider exporting segmentBufReader
-func NewSegmentBufReader(segs ...*Segment) *segmentBufReader {
+func NewSegmentBufReader(segs ...*Segment) io.ReadCloser {
 	if len(segs) == 0 {
 		return &segmentBufReader{}
 	}
@@ -927,16 +985,16 @@ func NewSegmentBufReader(segs ...*Segment) *segmentBufReader {
 	}
 }
 
-// nolint:revive
-func NewSegmentBufReaderWithOffset(offset int, segs ...*Segment) (sbr *segmentBufReader, err error) {
+func NewSegmentBufReaderWithOffset(offset int, segs ...*Segment) (io.ReadCloser, error) {
 	if offset == 0 || len(segs) == 0 {
 		return NewSegmentBufReader(segs...), nil
 	}
 
-	sbr = &segmentBufReader{
+	sbr := &segmentBufReader{
 		buf:  bufio.NewReaderSize(segs[0], 16*pageSize),
 		segs: segs,
 	}
+	var err error
 	if offset > 0 {
 		_, err = sbr.buf.Discard(offset)
 	}
@@ -962,7 +1020,7 @@ func (r *segmentBufReader) Read(b []byte) (n int, err error) {
 	r.off += n
 
 	// If we succeeded, or hit a non-EOF, we can stop.
-	if err == nil || err != io.EOF {
+	if err == nil || !errors.Is(err, io.EOF) {
 		return n, err
 	}
 

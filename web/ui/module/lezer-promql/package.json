@@ -1,6 +1,6 @@
 {
   "name": "@prometheus-io/lezer-promql",
-  "version": "0.43.0",
+  "version": "0.48.0",
   "description": "lezer-based PromQL grammar",
   "main": "dist/index.cjs",
   "type": "module",
@@ -30,12 +30,12 @@
     "test": "NODE_OPTIONS=--experimental-vm-modules jest"
   },
   "devDependencies": {
-    "@lezer/generator": "^1.2.2",
-    "@lezer/lr": "^1.3.1",
-    "@lezer/highlight": "^1.1.3"
+    "@lezer/generator": "^1.5.1",
+    "@lezer/highlight": "^1.2.0",
+    "@lezer/lr": "^1.3.14"
   },
   "peerDependencies": {
-    "@lezer/lr": "^1.2.3",
-    "@lezer/highlight": "^1.1.2"
+    "@lezer/highlight": "^1.1.2",
+    "@lezer/lr": "^1.2.3"
   }
 }
