@@ -181,8 +181,8 @@ github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 h1:C3w9PqII01/Oq
 github.com/mwitkow/go-conntrack v0.0.0-20161129095857-cc309e4a2223/go.mod h1:qRWi+5nqEBWmkhHvq77mSJWrCKwh8bxhgT7d/eI7P4U=
 github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f h1:KUppIJq7/+SVif2QVs3tOP0zanoHgBEVAwHxUSIzRqU=
 github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f/go.mod h1:qRWi+5nqEBWmkhHvq77mSJWrCKwh8bxhgT7d/eI7P4U=
-github.com/npazosmendez/prometheus v0.0.0-20231219173110-a8224ccf3a52 h1:KsYmbVfGp6UwImCCMywwMp9iarMcbvqqkT+sDwppliw=
-github.com/npazosmendez/prometheus v0.0.0-20231219173110-a8224ccf3a52/go.mod h1:Mion2/PKFmhgQqLN58WTe/1lBjL0Kc513mkLmX8FyOA=
+github.com/npazosmendez/prometheus v0.0.0-20231221144036-fe41ed9067c2 h1:pNmm3mMG2W5GQqU/Ca19090RzyiTnnsZ3kzNA7kPw8I=
+github.com/npazosmendez/prometheus v0.0.0-20231221144036-fe41ed9067c2/go.mod h1:Mion2/PKFmhgQqLN58WTe/1lBjL0Kc513mkLmX8FyOA=
 github.com/oklog/ulid v1.3.1 h1:EGfNDEx6MqHz8B3uNV6QAib1UR2Lm97sHi3ocA6ESJ4=
 github.com/opencontainers/go-digest v1.0.0 h1:apOUWs51W5PlhuyGyz9FCeeBIOUDA/6nW8Oi/yOhh5U=
 github.com/opencontainers/image-spec v1.0.2 h1:9yCKha/T5XdGtO0q9Q9a6T5NUCsTn/DrBg0D7ufOcFM=

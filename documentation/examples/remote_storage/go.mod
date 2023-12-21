@@ -88,4 +88,4 @@ exclude (
 )
 
 // TODO: remove once merged into prometheus/prometheus
-replace github.com/prometheus/prometheus => github.com/npazosmendez/prometheus v0.0.0-20231219173110-a8224ccf3a52
+replace github.com/prometheus/prometheus => github.com/npazosmendez/prometheus v0.0.0-20231221144036-fe41ed9067c2
