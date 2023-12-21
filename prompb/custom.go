@@ -26,6 +26,7 @@ func (h Histogram) IsFloatHistogram() bool {
 	_, ok := h.GetCount().(*Histogram_CountFloat)
 	return ok
 }
+
 func (h MinHistogram) IsFloatHistogram() bool {
 	_, ok := h.GetCount().(*MinHistogram_CountFloat)
 	return ok
