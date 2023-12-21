@@ -35,7 +35,7 @@ message TimeSeries {
   // Same as current version
   repeated Histogram histograms = 4 [(gogoproto.nullable) = false];
 
-  Metadata metadata = 5;
+  Metadata metadata = 5 [(gogoproto.nullable) = false];
 
   // Optional created timestamp for the metric in ms format,
   // if the first sample in samples does not contain 0 value.
