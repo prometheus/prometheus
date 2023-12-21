@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/prompb"
+	writev2 "github.com/prometheus/prometheus/prompb/write/v2"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -75,7 +76,7 @@ var writeRequestFixture = &prompb.WriteRequest{
 }
 
 // writeRequestMinimizedFixture represents the same request as writeRequestFixture, but using the minimized representation.
-var writeRequestMinimizedFixture = func() *prompb.MinimizedWriteRequestStr {
+var writeRequestMinimizedFixture = func() *writev2.WriteRequest {
 	st := newRwSymbolTable()
 	var labels []uint32
 	for _, s := range []string{
@@ -95,19 +96,19 @@ var writeRequestMinimizedFixture = func() *prompb.MinimizedWriteRequestStr {
 		st.RefStr(s)
 	}
 
-	return &prompb.MinimizedWriteRequestStr{
-		Timeseries: []prompb.MinimizedTimeSeriesStr{
+	return &writev2.WriteRequest{
+		Timeseries: []writev2.TimeSeries{
 			{
-				LabelSymbols: labels,
-				Samples:      []prompb.MinSample{{Value: 1, Timestamp: 0}},
-				Exemplars:    []prompb.MinExemplar{{LabelsRefs: []uint32{10, 11}, Value: 1, Timestamp: 0}},
-				Histograms:   []prompb.MinHistogram{HistogramToMinHistogramProto(0, &testHistogram), FloatHistogramToMinHistogramProto(1, testHistogram.ToFloat(nil))},
+				LabelsRefs: labels,
+				Samples:    []writev2.Sample{{Value: 1, Timestamp: 0}},
+				Exemplars:  []writev2.Exemplar{{LabelsRefs: []uint32{10, 11}, Value: 1, Timestamp: 0}},
+				Histograms: []writev2.Histogram{HistogramToMinHistogramProto(0, &testHistogram), FloatHistogramToMinHistogramProto(1, testHistogram.ToFloat(nil))},
 			},
 			{
-				LabelSymbols: labels,
-				Samples:      []prompb.MinSample{{Value: 2, Timestamp: 1}},
-				Exemplars:    []prompb.MinExemplar{{LabelsRefs: []uint32{12, 13}, Value: 2, Timestamp: 1}},
-				Histograms:   []prompb.MinHistogram{HistogramToMinHistogramProto(2, &testHistogram), FloatHistogramToMinHistogramProto(3, testHistogram.ToFloat(nil))},
+				LabelsRefs: labels,
+				Samples:    []writev2.Sample{{Value: 2, Timestamp: 1}},
+				Exemplars:  []writev2.Exemplar{{LabelsRefs: []uint32{12, 13}, Value: 2, Timestamp: 1}},
+				Histograms: []writev2.Histogram{HistogramToMinHistogramProto(2, &testHistogram), FloatHistogramToMinHistogramProto(3, testHistogram.ToFloat(nil))},
 			},
 		},
 		Symbols: st.LabelsStrings(),

@@ -42,6 +42,7 @@ import (
 	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/prompb"
+	writev2 "github.com/prometheus/prometheus/prompb/write/v2"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
@@ -831,7 +832,7 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte, _ int) error {
 		reqProto = &prompb.WriteRequest{}
 		err = proto.Unmarshal(reqBuf, reqProto)
 	case MinStrings:
-		var reqMin prompb.MinimizedWriteRequestStr
+		var reqMin writev2.WriteRequest
 		err = proto.Unmarshal(reqBuf, &reqMin)
 		if err == nil {
 			reqProto, err = MinimizedWriteRequestToWriteRequest(&reqMin)
@@ -1503,10 +1504,10 @@ func BenchmarkBuildMinimizedWriteRequest(b *testing.B) {
 	for _, tc := range testCases {
 		symbolTable := newRwSymbolTable()
 		buff := make([]byte, 0)
-		seriesBuff := make([]prompb.MinimizedTimeSeriesStr, len(tc.batch))
+		seriesBuff := make([]writev2.TimeSeries, len(tc.batch))
 		for i := range seriesBuff {
-			seriesBuff[i].Samples = []prompb.MinSample{{}}
-			seriesBuff[i].Exemplars = []prompb.MinExemplar{{}}
+			seriesBuff[i].Samples = []writev2.Sample{{}}
+			seriesBuff[i].Exemplars = []writev2.Exemplar{{}}
 		}
 		pBuf := []byte{}
 

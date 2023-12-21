@@ -65,14 +65,14 @@ func main() {
 		}
 
 		for _, ts := range req.Timeseries {
-			m := make(model.Metric, len(ts.LabelSymbols)/2)
+			m := make(model.Metric, len(ts.LabelsRefs)/2)
 			labelIdx := 0
 
-			for labelIdx < len(ts.LabelSymbols) {
+			for labelIdx < len(ts.LabelsRefs) {
 				// todo, check for overflow?
-				nameIdx := ts.LabelSymbols[labelIdx]
+				nameIdx := ts.LabelsRefs[labelIdx]
 				labelIdx++
-				valueIdx := ts.LabelSymbols[labelIdx]
+				valueIdx := ts.LabelsRefs[labelIdx]
 				labelIdx++
 				name := req.Symbols[nameIdx]
 				value := req.Symbols[valueIdx]

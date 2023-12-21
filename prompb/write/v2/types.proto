@@ -12,13 +12,54 @@
 // limitations under the License.
 
 syntax = "proto3";
-package prometheus;
+package write.v2;
 
-option go_package = "prompb";
+option go_package = "writev2";
 
 import "gogoproto/gogo.proto";
 
-message MetricMetadata {
+
+message WriteRequest {
+  repeated string symbols = 1;
+  repeated TimeSeries timeseries = 2 [(gogoproto.nullable) = false];
+}
+
+message TimeSeries {
+  // Sorted list of label name-value pair references,
+  // encoded as indices to the strings array.
+  // This list's len is always multiple of 2.
+  repeated uint32 labels_refs = 1 ;
+
+  repeated Sample samples = 2 [(gogoproto.nullable) = false];
+  repeated Exemplar exemplars = 3 [(gogoproto.nullable) = false];
+  // Same as current version
+  repeated Histogram histograms = 4 [(gogoproto.nullable) = false];
+
+  Metadata metadata = 5;
+
+  // Optional created timestamp for the metric in ms format,
+  // if the first sample in samples does not contain 0 value.
+  // See model/timestamp/timestamp.go for conversion from time.Time
+  // to Prometheus timestamp.
+  int64 created_timestamp = 6;
+}
+
+message Exemplar {
+  // TODO: same as TimeSeries.labels_refs
+  repeated uint32 labels_refs = 1;
+  double value = 2;
+  // timestamp is in ms.
+  int64 timestamp = 3;
+}
+
+message Sample {
+  double value = 1;
+  // timestamp is in ms format, see model/timestamp/timestamp.go for
+  // conversion from time.Time to Prometheus timestamp.
+  int64 timestamp = 2;
+}
+
+message Metadata {
   enum MetricType {
     UNKNOWN        = 0;
     COUNTER        = 1;
@@ -29,38 +70,9 @@ message MetricMetadata {
     INFO           = 6;
     STATESET       = 7;
   }
-
-  // Represents the metric type, these match the set from Prometheus.
-  // Refer to model/textparse/interface.go for details.
   MetricType type = 1;
-  string metric_family_name = 2;
-  string help = 4;
-  string unit = 5;
-}
-
-
-message Sample {
-  double value    = 1;
-  // timestamp is in ms format, see model/timestamp/timestamp.go for
-  // conversion from time.Time to Prometheus timestamp.
-  int64 timestamp = 2;
-}
-
-
-message MinSample {
-  double value    = 1;
-  // timestamp is in ms format, see model/timestamp/timestamp.go for
-  // conversion from time.Time to Prometheus timestamp.
-  int64 timestamp = 2;
-}
-
-message Exemplar {
-  // Optional, can be empty.
-  repeated Label labels = 1 [(gogoproto.nullable) = false];
-  double value = 2;
-  // timestamp is in ms format, see model/timestamp/timestamp.go for
-  // conversion from time.Time to Prometheus timestamp.
-  int64 timestamp = 3;
+  uint32 help_ref = 3;
+  uint32 unit_ref = 4;
 }
 
 // A native histogram, also known as a sparse histogram.
@@ -126,72 +138,4 @@ message Histogram {
 message BucketSpan {
   sint32 offset = 1; // Gap to previous span, or starting point for 1st span (which can be negative).
   uint32 length = 2; // Length of consecutive buckets.
-}
-
-
-// TimeSeries represents samples and labels for a single time series.
-message TimeSeries {
-  // For a timeseries to be valid, and for the samples and exemplars
-  // to be ingested by the remote system properly, the labels field is required.
-  repeated Label labels         = 1 [(gogoproto.nullable) = false];
-  repeated Sample samples       = 2 [(gogoproto.nullable) = false];
-  repeated Exemplar exemplars   = 3 [(gogoproto.nullable) = false];
-  repeated Histogram histograms = 4 [(gogoproto.nullable) = false];
-}
-
-message Label {
-  string name  = 1;
-  string value = 2;
-}
-
-message Labels {
-  repeated Label labels = 1 [(gogoproto.nullable) = false];
-}
-
-// Matcher specifies a rule, which can match or set of labels or not.
-message LabelMatcher {
-  enum Type {
-    EQ  = 0;
-    NEQ = 1;
-    RE  = 2;
-    NRE = 3;
-  }
-  Type type    = 1;
-  string name  = 2;
-  string value = 3;
-}
-
-message ReadHints {
-  int64 step_ms = 1;  // Query step size in milliseconds.
-  string func = 2;    // String representation of surrounding function or aggregation.
-  int64 start_ms = 3; // Start time in milliseconds.
-  int64 end_ms = 4;   // End time in milliseconds.
-  repeated string grouping = 5; // List of label names used in aggregation.
-  bool by = 6; // Indicate whether it is without or by.
-  int64 range_ms = 7; // Range vector selector range in milliseconds.
-}
-
-// Chunk represents a TSDB chunk.
-// Time range [min, max] is inclusive.
-message Chunk {
-  int64 min_time_ms = 1;
-  int64 max_time_ms = 2;
-
-  // We require this to match chunkenc.Encoding.
-  enum Encoding {
-    UNKNOWN         = 0;
-    XOR             = 1;
-    HISTOGRAM       = 2;
-    FLOAT_HISTOGRAM = 3;
-  }
-  Encoding type  = 3;
-  bytes data     = 4;
-}
-
-// ChunkedSeries represents single, encoded time series.
-message ChunkedSeries {
-  // Labels should be sorted.
-  repeated Label labels = 1 [(gogoproto.nullable) = false];
-  // Chunks will be in start time order and may overlap.
-  repeated Chunk chunks = 2 [(gogoproto.nullable) = false];
 }

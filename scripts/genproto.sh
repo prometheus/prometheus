@@ -40,6 +40,9 @@ for dir in ${DIRS}; do
             -I="${PROM_PATH}" \
             -I="${GRPC_GATEWAY_ROOT}/third_party/googleapis" \
             ./*.proto
+		protoc --gogofast_out=plugins=grpc:. -I=. \
+            -I="${GOGOPROTO_PATH}" \
+            ./write/v2/*.proto
 		protoc --gogofast_out=Mgoogle/protobuf/timestamp.proto=github.com/gogo/protobuf/types,paths=source_relative:. -I=. \
             -I="${GOGOPROTO_PATH}" \
             ./io/prometheus/client/*.proto

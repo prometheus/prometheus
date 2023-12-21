@@ -27,12 +27,6 @@ message WriteRequest {
   repeated prometheus.MetricMetadata metadata = 3 [(gogoproto.nullable) = false];
 }
 
-message MinimizedWriteRequestStr {
-  repeated MinimizedTimeSeriesStr timeseries = 1 [(gogoproto.nullable) = false];
-  reserved  2; // TODO: should/can we move this for this new proto version?
-  repeated string symbols = 3;
-}
-
 // ReadRequest represents a remote read request.
 message ReadRequest {
   repeated Query queries = 1;

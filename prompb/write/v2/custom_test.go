@@ -10,7 +10,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package prompb
+package writev2
 
 import (
 	"testing"
@@ -23,18 +23,18 @@ func TestOptimizedMarshal(t *testing.T) {
 
 	tests := []struct {
 		name string
-		m    *MinimizedWriteRequestStr
+		m    *WriteRequest
 	}{
 		// {
 		// 	name: "empty",
-		// 	m:    &MinimizedWriteRequestStr{},
+		// 	m:    &WriteRequest{},
 		// },
 		{
 			name: "simple",
-			m: &MinimizedWriteRequestStr{
-				Timeseries: []MinimizedTimeSeriesStr{
+			m: &WriteRequest{
+				Timeseries: []TimeSeries{
 					{
-						LabelSymbols: []uint32{
+						LabelsRefs: []uint32{
 							0, 1,
 							2, 3,
 							4, 5,
@@ -45,12 +45,12 @@ func TestOptimizedMarshal(t *testing.T) {
 							14, 15,
 						},
 
-						Samples:    []MinSample{{Value: 1, Timestamp: 0}},
-						Exemplars:  []MinExemplar{{LabelsRefs: []uint32{0, 1}, Value: 1, Timestamp: 0}},
+						Samples:    []Sample{{Value: 1, Timestamp: 0}},
+						Exemplars:  []Exemplar{{LabelsRefs: []uint32{0, 1}, Value: 1, Timestamp: 0}},
 						Histograms: nil,
 					},
 					{
-						LabelSymbols: []uint32{
+						LabelsRefs: []uint32{
 							0, 1,
 							2, 3,
 							4, 5,
@@ -60,8 +60,8 @@ func TestOptimizedMarshal(t *testing.T) {
 							12, 13,
 							14, 15,
 						},
-						Samples:    []MinSample{{Value: 2, Timestamp: 1}},
-						Exemplars:  []MinExemplar{{LabelsRefs: []uint32{0, 1}, Value: 2, Timestamp: 1}},
+						Samples:    []Sample{{Value: 2, Timestamp: 1}},
+						Exemplars:  []Exemplar{{LabelsRefs: []uint32{0, 1}, Value: 2, Timestamp: 1}},
 						Histograms: nil,
 					},
 				},
@@ -90,7 +90,7 @@ func TestOptimizedMarshal(t *testing.T) {
 			require.Equal(t, expected, got)
 
 			// round trip
-			m := &MinimizedWriteRequestStr{}
+			m := &WriteRequest{}
 			require.NoError(t, m.Unmarshal(got))
 			require.Equal(t, tt.m, m)
 		})

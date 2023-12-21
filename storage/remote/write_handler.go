@@ -20,6 +20,7 @@ import (
 	"net/http"
 
 	"github.com/prometheus/prometheus/model/labels"
+	writev2 "github.com/prometheus/prometheus/prompb/write/v2"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -73,7 +74,7 @@ func NewWriteHandler(logger log.Logger, reg prometheus.Registerer, appendable st
 func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var err error
 	var req *prompb.WriteRequest
-	var reqMinStr *prompb.MinimizedWriteRequestStr
+	var reqMinStr *writev2.WriteRequest
 
 	// TODO: this should eventually be done via content negotiation/looking at the header
 	switch h.rwFormat {
@@ -204,7 +205,7 @@ func (h *writeHandler) appendSamples(app storage.Appender, ss []prompb.Sample, l
 	return nil
 }
 
-func (h *writeHandler) appendMinSamples(app storage.Appender, ss []prompb.MinSample, labels labels.Labels) error {
+func (h *writeHandler) appendMinSamples(app storage.Appender, ss []writev2.Sample, labels labels.Labels) error {
 	var ref storage.SeriesRef
 	var err error
 	for _, s := range ss {
@@ -249,7 +250,7 @@ func (h *writeHandler) appendHistograms(app storage.Appender, hh []prompb.Histog
 	return nil
 }
 
-func (h *writeHandler) appendMinHistograms(app storage.Appender, hh []prompb.MinHistogram, labels labels.Labels) error {
+func (h *writeHandler) appendMinHistograms(app storage.Appender, hh []writev2.Histogram, labels labels.Labels) error {
 	var err error
 	for _, hp := range hh {
 		if hp.IsFloatHistogram() {
@@ -334,7 +335,7 @@ func (h *otlpWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func (h *writeHandler) writeMinStr(ctx context.Context, req *prompb.MinimizedWriteRequestStr) (err error) {
+func (h *writeHandler) writeMinStr(ctx context.Context, req *writev2.WriteRequest) (err error) {
 	outOfOrderExemplarErrs := 0
 
 	app := h.appendable.Appender(ctx)
@@ -347,7 +348,7 @@ func (h *writeHandler) writeMinStr(ctx context.Context, req *prompb.MinimizedWri
 	}()
 
 	for _, ts := range req.Timeseries {
-		ls := Uint32StrRefToLabels(req.Symbols, ts.LabelSymbols)
+		ls := Uint32StrRefToLabels(req.Symbols, ts.LabelsRefs)
 
 		err := h.appendMinSamples(app, ts.Samples, ls)
 		if err != nil {
