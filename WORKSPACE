@@ -49,7 +49,8 @@ http_archive(
     strip_prefix = "jemalloc-5.3.0/",
     patch_args = ["-p1"],
     patches = [
-        "//third_party/patches/jemalloc:musl-noexcept-fix.patch",
+        "//third_party/patches/jemalloc:0001-musl-noexcept-fix.patch",
+        "//third_party/patches/jemalloc:0002-manual-init.patch",
     ],
     build_file = "//third_party:jemalloc.BUILD",
 )

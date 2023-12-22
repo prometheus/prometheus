@@ -19,6 +19,14 @@ extern "C" void prompp_free_bytes(void* args) {
   in->free();
 }
 
+extern "C" void je_jemalloc_constructor(void);
+
+extern "C" void prompp_jemalloc_init() {
+#if JEMALLOC_AVAILABLE
+  je_jemalloc_constructor();
+#endif
+}
+
 extern "C" void prompp_mem_info(void* res) {
   using res_t = struct {
     int64_t in_use;

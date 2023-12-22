@@ -1,0 +1,45 @@
+From: Bastrykov Evgeniy <evgeny.bastrykov@flant.com>
+Date: Thu, 21 Dec 2023 13:56:14 +0400
+Subject: Disable registration using the attribute constructor
+
+Since we use runtime select of implementation based on CPU features. We need to control
+which implementation should be registered.
+---
+ src/jemalloc.c | 2 --
+ src/zone.c | 1 -
+ 2 files changed, 3 deletions(-)
+
+diff --git a/src/jemalloc.c b/src/jemalloc.c
+index 0ae579eea..619a9cd6f 100644
+--- a/src/jemalloc.c
++++ b/src/jemalloc.c
+@@ -216,7 +216,6 @@
+ static malloc_mutex_t	init_lock;
+ static bool init_lock_initialized = false;
+ 
+-JEMALLOC_ATTR(constructor)
+ static void WINAPI
+ _init_init_lock(void) {
+ 	/*
+@@ -4316,7 +4316,6 @@
+  * via a library constructor that runs before jemalloc's runs.
+  */
+ #ifndef JEMALLOC_JET
+-JEMALLOC_ATTR(constructor)
+-static void
++void
+ jemalloc_constructor(void) {
+ 	malloc_init();
+
+diff --git a/src/zone.c b/src/zone.c
+index 0ae579eea..619a9cd6f 100644
+--- a/src/zone.c
++++ b/src/zone.c
+@@ -433,7 +433,6 @@
+ 	} while (zone != &jemalloc_zone);
+ }
+ 
+-JEMALLOC_ATTR(constructor)
+ void
+ zone_register(void) {
+ 	/*

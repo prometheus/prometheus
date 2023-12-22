@@ -38,7 +38,7 @@ $(prefixed_archives): build/%_entrypoint_aio_prefixed.a: build/%.pairs | build/%
 
 .INTERMEDIATE: build/%.pairs
 build/%.pairs: build/%.symbols
-	@cat $< | grep ' [tTdDrRbB] ' | cut -d' ' -f3 | sort -u | awk '{ print $$0 " $(call make_escape,$*)_" $$0 }' > $@
+	@cat $< | cut -d' ' -f3 | sort -u | awk '{ print $$0 " $(call make_escape,$*)_" $$0 }' > $@
 
 .INTERMEDIATE: build/%.symbols
 build/%.symbols: build/%_entrypoint_aio.a
@@ -47,14 +47,10 @@ build/%.symbols: build/%_entrypoint_aio.a
 
 # We build all archives in bash loop because files contains escaped flavor in name but --march flag shouldn't be escaped
 .PRECIOUS: $(archives)
-$(archives): always
+$(archives):
 	@mkdir -p build
 	@$(bazel_in_root);\
 		for i in $(flavors); do\
 			$(call bazel_build_march,$$i) -- //:entrypoint_aio;\
 			cp -f bazel-bin/entrypoint_aio.a $(build_dir_absolute_path)/$(platform)_$$($(call escape,$$i))_entrypoint_aio.a;\
 		done
-
-# This is just a hack to always run some steps
-.PHONY: always
-always:
