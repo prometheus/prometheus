@@ -55,8 +55,9 @@ ifneq ($(shell command -v gotestsum > /dev/null),)
 endif
 endif
 
-PROMU_VERSION ?= 0.15.0
-PROMU_URL     := https://github.com/prometheus/promu/releases/download/v$(PROMU_VERSION)/promu-$(PROMU_VERSION).$(GO_BUILD_PLATFORM).tar.gz
+PROMU_VERSION       ?= 0.15.0
+PROMU_URL           := https://github.com/prometheus/promu/releases/download/v$(PROMU_VERSION)/promu-$(PROMU_VERSION).$(GO_BUILD_PLATFORM).tar.gz
+PROMU_SHA256SUM_URL := https://github.com/prometheus/promu/releases/download/v$(PROMU_VERSION)/sha256sums.txt
 
 SKIP_GOLANGCI_LINT :=
 GOLANGCI_LINT :=
@@ -235,6 +236,7 @@ promu: $(PROMU)
 
 $(PROMU):
 	$(eval PROMU_TMP := $(shell mktemp -d))
+	$(call PROMU_CHECKSUM,$(PROMU_SHA256SUM_URL),$(PROMU_URL),$(PROMU_TMP))
 	curl -s -L $(PROMU_URL) | tar -xvzf - -C $(PROMU_TMP)
 	mkdir -p $(FIRST_GOPATH)/bin
 	cp $(PROMU_TMP)/promu-$(PROMU_VERSION).$(GO_BUILD_PLATFORM)/promu $(FIRST_GOPATH)/bin/promu
@@ -247,6 +249,8 @@ proto:
 
 ifdef GOLANGCI_LINT
 $(GOLANGCI_LINT):
+	$(eval GOLANGCI_LINT_TMP := $(shell mktemp -d))
+	$(call GOLANGCI_LINT_INSTALL_CHECKSUM,$(GOLANGCI_LINT_TMP))
 	mkdir -p $(FIRST_GOPATH)/bin
 	curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/$(GOLANGCI_LINT_VERSION)/install.sh \
 		| sed -e '/install -d/d' \
@@ -266,4 +270,22 @@ $(1)_precheck:
 		echo "Execution of '$$(PRECHECK_COMMAND_$(1))' command failed. Is $(1) installed?"; \
 		exit 1; \
 	fi
+endef
+
+define PROMU_CHECKSUM
+    $(eval FILE_NAME := $(shell basename $(2)))
+    @curl -sL $(2) -o $(3)/$(FILE_NAME)
+    @curl -sL $(1) -o $(3)/checksum.txt
+    @if [ $$(grep $(FILE_NAME) $(3)/checksum.txt | awk '{print $$1}') != $$(shasum -a 256 $(3)/$(FILE_NAME) | awk '{print $$1}') ]; then \
+        echo "Wrong Checksum"; \
+        exit 1; \
+    fi
+endef
+
+define GOLANGCI_LINT_INSTALL_CHECKSUM
+	@curl -sL 'https://raw.githubusercontent.com/golangci/golangci-lint/$(GOLANGCI_LINT_VERSION)/install.sh' -o $(1)/install.sh
+	@if [ $$(shasum -a 256 $(1)/install.sh | awk '{print $$1}') != 060f1f3deb31b3d3b9515d691d9a776354cd63c7fcb5e036f18f0444cf2c934b ]; then \
+        echo "Wrong Checksum"; \
+        exit 1; \
+    fi
 endef
