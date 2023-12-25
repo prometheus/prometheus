@@ -2136,6 +2136,8 @@ loop:
 				if histograms == nil {
 					histograms = getHPointSlice(16)
 				}
+				// The last sample comes directly from the iterator, so we need to copy it to
+				// avoid having the same reference twice in the buffer.
 				point := HPoint{T: t, H: h.Copy()}
 				histograms = append(histograms, point)
 				ev.currentSamples += point.size()
