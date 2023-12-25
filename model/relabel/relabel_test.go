@@ -15,7 +15,6 @@ package relabel
 
 import (
 	"fmt"
-	"sort"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -838,6 +837,34 @@ func BenchmarkRelabel(b *testing.B) {
 				"__scrape_timeout__", "10s",
 				"job", "kubernetes-pods"),
 		},
+		{
+			name: "static label pair",
+			config: `
+        - replacement: wwwwww
+          target_label: wwwwww
+        - replacement: yyyyyyyyyyyy
+          target_label: xxxxxxxxx
+        - replacement: xxxxxxxxx
+          target_label: yyyyyyyyyyyy
+        - source_labels: ["something"]
+          target_label: with_source_labels
+          replacement: value
+        - replacement: dropped
+          target_label: ${0}
+        - replacement: ${0}
+          target_label: dropped`,
+			lbls: labels.FromStrings(
+				"abcdefg01", "hijklmn1",
+				"abcdefg02", "hijklmn2",
+				"abcdefg03", "hijklmn3",
+				"abcdefg04", "hijklmn4",
+				"abcdefg05", "hijklmn5",
+				"abcdefg06", "hijklmn6",
+				"abcdefg07", "hijklmn7",
+				"abcdefg08", "hijklmn8",
+				"job", "foo",
+			),
+		},
 	}
 	for i := range tests {
 		err := yaml.UnmarshalStrict([]byte(tests[i].config), &tests[i].cfgs)
@@ -849,65 +876,5 @@ func BenchmarkRelabel(b *testing.B) {
 				_, _ = Process(tt.lbls, tt.cfgs...)
 			}
 		})
-	}
-}
-
-func BenchmarkRelabel_ReplaceAddLabel(b *testing.B) {
-	cfgs := []*Config{}
-	for k, v := range map[string]string{
-		"wwwwww":       "wwwwww",
-		"xxxxxxxxx":    "xxxxxxxxx",
-		"yyyyyyyyyyyy": "yyyyyyyyyyyy",
-		"new\nline1":   "dropped",
-		"new\r\nline2": "dropped",
-		"${0}":         "dropped",
-		"dropped":      "${0}",
-	} {
-		cfgs = append(cfgs, &Config{
-			Action:      DefaultRelabelConfig.Action,
-			Separator:   DefaultRelabelConfig.Separator,
-			Regex:       DefaultRelabelConfig.Regex,
-			TargetLabel: k,
-			Replacement: v,
-		})
-	}
-	expectLset := labels.Labels{
-		labels.Label{Name: "abcdefg01", Value: "hijklmn1"},
-		labels.Label{Name: "abcdefg02", Value: "hijklmn2"},
-		labels.Label{Name: "abcdefg03", Value: "hijklmn3"},
-		labels.Label{Name: "abcdefg04", Value: "hijklmn4"},
-		labels.Label{Name: "abcdefg05", Value: "hijklmn5"},
-		labels.Label{Name: "abcdefg06", Value: "hijklmn6"},
-		labels.Label{Name: "abcdefg07", Value: "hijklmn7"},
-		labels.Label{Name: "abcdefg08", Value: "hijklmn8"},
-		labels.Label{Name: "abcdefg09", Value: "hijklmn9"},
-		labels.Label{Name: "abcdefg10", Value: "hijklmn10"},
-		labels.Label{Name: "abcdefg11", Value: "hijklmn11"},
-		labels.Label{Name: "abcdefg12", Value: "hijklmn12"},
-		labels.Label{Name: "abcdefg13", Value: "hijklmn13"},
-		labels.Label{Name: "wwwwww", Value: "wwwwww"},
-		labels.Label{Name: "xxxxxxxxx", Value: "xxxxxxxxx"},
-		labels.Label{Name: "yyyyyyyyyyyy", Value: "yyyyyyyyyyyy"},
-	}
-	sort.Sort(expectLset)
-
-	for i := 0; i < b.N; i++ {
-		lset := labels.Labels{
-			labels.Label{Name: "abcdefg01", Value: "hijklmn1"},
-			labels.Label{Name: "abcdefg02", Value: "hijklmn2"},
-			labels.Label{Name: "abcdefg03", Value: "hijklmn3"},
-			labels.Label{Name: "abcdefg04", Value: "hijklmn4"},
-			labels.Label{Name: "abcdefg05", Value: "hijklmn5"},
-			labels.Label{Name: "abcdefg06", Value: "hijklmn6"},
-			labels.Label{Name: "abcdefg07", Value: "hijklmn7"},
-			labels.Label{Name: "abcdefg08", Value: "hijklmn8"},
-			labels.Label{Name: "abcdefg09", Value: "hijklmn9"},
-			labels.Label{Name: "abcdefg10", Value: "hijklmn10"},
-			labels.Label{Name: "abcdefg11", Value: "hijklmn11"},
-			labels.Label{Name: "abcdefg12", Value: "hijklmn12"},
-			labels.Label{Name: "abcdefg13", Value: "hijklmn13"},
-		}
-		actual, _ := Process(lset, cfgs...)
-		require.Equal(b, actual, expectLset)
 	}
 }
