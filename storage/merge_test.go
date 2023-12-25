@@ -853,6 +853,65 @@ func TestConcatenatingChunkSeriesMerger(t *testing.T) {
 	}
 }
 
+func TestConcatenatingChunkIterator(t *testing.T) {
+	chunk1, err := chunks.ChunkFromSamples([]chunks.Sample{fSample{t: 1, f: 10}})
+	require.NoError(t, err)
+	chunk2, err := chunks.ChunkFromSamples([]chunks.Sample{fSample{t: 2, f: 20}})
+	require.NoError(t, err)
+	chunk3, err := chunks.ChunkFromSamples([]chunks.Sample{fSample{t: 3, f: 30}})
+	require.NoError(t, err)
+
+	testError := errors.New("something went wrong")
+
+	testCases := map[string]struct {
+		iterators      []chunks.Iterator
+		expectedChunks []chunks.Meta
+		expectedError  error
+	}{
+		"many successful iterators": {
+			iterators: []chunks.Iterator{
+				NewListChunkSeriesIterator(chunk1, chunk2),
+				NewListChunkSeriesIterator(chunk3),
+			},
+			expectedChunks: []chunks.Meta{chunk1, chunk2, chunk3},
+		},
+		"single failing iterator": {
+			iterators: []chunks.Iterator{
+				errChunksIterator{err: testError},
+			},
+			expectedError: testError,
+		},
+		"some failing and some successful iterators": {
+			iterators: []chunks.Iterator{
+				NewListChunkSeriesIterator(chunk1, chunk2),
+				errChunksIterator{err: testError},
+				NewListChunkSeriesIterator(chunk3),
+			},
+			expectedChunks: []chunks.Meta{chunk1, chunk2}, // Should stop before advancing to last iterator.
+			expectedError:  testError,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			it := concatenatingChunkIterator{iterators: testCase.iterators}
+			var chks []chunks.Meta
+
+			for it.Next() {
+				chks = append(chks, it.At())
+			}
+
+			require.Equal(t, testCase.expectedChunks, chks)
+
+			if testCase.expectedError == nil {
+				require.NoError(t, it.Err())
+			} else {
+				require.EqualError(t, it.Err(), testCase.expectedError.Error())
+			}
+		})
+	}
+}
+
 type mockQuerier struct {
 	LabelQuerier
 
@@ -1488,7 +1547,7 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 				}
 				require.Subset(t, tcase.expectedWarnings, res.Warnings())
 				require.Equal(t, tcase.expectedErrs[0], res.Err())
-				require.True(t, errors.Is(res.Err(), tcase.expectedErrs[0]), "expected error doesn't match")
+				require.ErrorIs(t, res.Err(), tcase.expectedErrs[0], "expected error doesn't match")
 				require.Equal(t, tcase.expectedSelectsSeries, lbls)
 
 				for _, qr := range q.queriers {
@@ -1504,7 +1563,7 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 			t.Run("LabelNames", func(t *testing.T) {
 				res, w, err := q.LabelNames(ctx)
 				require.Subset(t, tcase.expectedWarnings, w)
-				require.True(t, errors.Is(err, tcase.expectedErrs[1]), "expected error doesn't match")
+				require.ErrorIs(t, err, tcase.expectedErrs[1], "expected error doesn't match")
 				require.Equal(t, tcase.expectedLabels, res)
 
 				if err != nil {
@@ -1519,7 +1578,7 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 			t.Run("LabelValues", func(t *testing.T) {
 				res, w, err := q.LabelValues(ctx, "test")
 				require.Subset(t, tcase.expectedWarnings, w)
-				require.True(t, errors.Is(err, tcase.expectedErrs[2]), "expected error doesn't match")
+				require.ErrorIs(t, err, tcase.expectedErrs[2], "expected error doesn't match")
 				require.Equal(t, tcase.expectedLabels, res)
 
 				if err != nil {
@@ -1535,7 +1594,7 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 				matcher := labels.MustNewMatcher(labels.MatchEqual, "otherLabel", "someValue")
 				res, w, err := q.LabelValues(ctx, "test2", matcher)
 				require.Subset(t, tcase.expectedWarnings, w)
-				require.True(t, errors.Is(err, tcase.expectedErrs[3]), "expected error doesn't match")
+				require.ErrorIs(t, err, tcase.expectedErrs[3], "expected error doesn't match")
 				require.Equal(t, tcase.expectedLabels, res)
 
 				if err != nil {

@@ -18,6 +18,7 @@ import (
 	"io"
 	"testing"
 
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -77,7 +78,7 @@ foo_total 17.0 1520879607.789 # {id="counter-test"} 5`
 		m       string
 		t       *int64
 		v       float64
-		typ     MetricType
+		typ     model.MetricType
 		help    string
 		unit    string
 		comment string
@@ -88,7 +89,7 @@ foo_total 17.0 1520879607.789 # {id="counter-test"} 5`
 			help: "A summary of the GC invocation durations.",
 		}, {
 			m:   "go_gc_duration_seconds",
-			typ: MetricTypeSummary,
+			typ: model.MetricTypeSummary,
 		}, {
 			m:    "go_gc_duration_seconds",
 			unit: "seconds",
@@ -130,7 +131,7 @@ foo_total 17.0 1520879607.789 # {id="counter-test"} 5`
 			help: "Number of goroutines that currently exist.",
 		}, {
 			m:   "go_goroutines",
-			typ: MetricTypeGauge,
+			typ: model.MetricTypeGauge,
 		}, {
 			m:    `go_goroutines`,
 			v:    33,
@@ -138,21 +139,21 @@ foo_total 17.0 1520879607.789 # {id="counter-test"} 5`
 			lset: labels.FromStrings("__name__", "go_goroutines"),
 		}, {
 			m:   "hh",
-			typ: MetricTypeHistogram,
+			typ: model.MetricTypeHistogram,
 		}, {
 			m:    `hh_bucket{le="+Inf"}`,
 			v:    1,
 			lset: labels.FromStrings("__name__", "hh_bucket", "le", "+Inf"),
 		}, {
 			m:   "gh",
-			typ: MetricTypeGaugeHistogram,
+			typ: model.MetricTypeGaugeHistogram,
 		}, {
 			m:    `gh_bucket{le="+Inf"}`,
 			v:    1,
 			lset: labels.FromStrings("__name__", "gh_bucket", "le", "+Inf"),
 		}, {
 			m:   "hhh",
-			typ: MetricTypeHistogram,
+			typ: model.MetricTypeHistogram,
 		}, {
 			m:    `hhh_bucket{le="+Inf"}`,
 			v:    1,
@@ -165,7 +166,7 @@ foo_total 17.0 1520879607.789 # {id="counter-test"} 5`
 			e:    &exemplar.Exemplar{Labels: labels.FromStrings("id", "histogram-count-test"), Value: 4},
 		}, {
 			m:   "ggh",
-			typ: MetricTypeGaugeHistogram,
+			typ: model.MetricTypeGaugeHistogram,
 		}, {
 			m:    `ggh_bucket{le="+Inf"}`,
 			v:    1,
@@ -178,7 +179,7 @@ foo_total 17.0 1520879607.789 # {id="counter-test"} 5`
 			e:    &exemplar.Exemplar{Labels: labels.FromStrings("id", "gaugehistogram-count-test", "xx", "yy"), Value: 4, HasTs: true, Ts: 123123},
 		}, {
 			m:   "smr_seconds",
-			typ: MetricTypeSummary,
+			typ: model.MetricTypeSummary,
 		}, {
 			m:    `smr_seconds_count`,
 			v:    2,
@@ -191,14 +192,14 @@ foo_total 17.0 1520879607.789 # {id="counter-test"} 5`
 			e:    &exemplar.Exemplar{Labels: labels.FromStrings("id", "summary-sum-test"), Value: 1, HasTs: true, Ts: 123321},
 		}, {
 			m:   "ii",
-			typ: MetricTypeInfo,
+			typ: model.MetricTypeInfo,
 		}, {
 			m:    `ii{foo="bar"}`,
 			v:    1,
 			lset: labels.FromStrings("__name__", "ii", "foo", "bar"),
 		}, {
 			m:   "ss",
-			typ: MetricTypeStateset,
+			typ: model.MetricTypeStateset,
 		}, {
 			m:    `ss{ss="foo"}`,
 			v:    1,
@@ -213,7 +214,7 @@ foo_total 17.0 1520879607.789 # {id="counter-test"} 5`
 			lset: labels.FromStrings("A", "a", "__name__", "ss"),
 		}, {
 			m:   "un",
-			typ: MetricTypeUnknown,
+			typ: model.MetricTypeUnknown,
 		}, {
 			m:    "_metric_starting_with_underscore",
 			v:    1,
@@ -228,7 +229,7 @@ foo_total 17.0 1520879607.789 # {id="counter-test"} 5`
 			lset: labels.FromStrings("__name__", "testmetric", "label", `"bar"`),
 		}, {
 			m:   "foo",
-			typ: MetricTypeCounter,
+			typ: model.MetricTypeCounter,
 		}, {
 			m:    "foo_total",
 			v:    17,
@@ -269,9 +270,9 @@ foo_total 17.0 1520879607.789 # {id="counter-test"} 5`
 			require.Equal(t, exp[i].v, v)
 			require.Equal(t, exp[i].lset, res)
 			if exp[i].e == nil {
-				require.Equal(t, false, found)
+				require.False(t, found)
 			} else {
-				require.Equal(t, true, found)
+				require.True(t, found)
 				require.Equal(t, *exp[i].e, e)
 			}
 
@@ -296,7 +297,7 @@ foo_total 17.0 1520879607.789 # {id="counter-test"} 5`
 
 		i++
 	}
-	require.Equal(t, len(exp), i)
+	require.Len(t, exp, i)
 }
 
 func TestOpenMetricsParseErrors(t *testing.T) {

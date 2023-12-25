@@ -16,13 +16,14 @@
 package record
 
 import (
+	"errors"
+	"fmt"
 	"math"
 
-	"github.com/pkg/errors"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/encoding"
@@ -90,45 +91,45 @@ const (
 	Stateset        MetricType = 7
 )
 
-func GetMetricType(t textparse.MetricType) uint8 {
+func GetMetricType(t model.MetricType) uint8 {
 	switch t {
-	case textparse.MetricTypeCounter:
+	case model.MetricTypeCounter:
 		return uint8(Counter)
-	case textparse.MetricTypeGauge:
+	case model.MetricTypeGauge:
 		return uint8(Gauge)
-	case textparse.MetricTypeHistogram:
+	case model.MetricTypeHistogram:
 		return uint8(HistogramSample)
-	case textparse.MetricTypeGaugeHistogram:
+	case model.MetricTypeGaugeHistogram:
 		return uint8(GaugeHistogram)
-	case textparse.MetricTypeSummary:
+	case model.MetricTypeSummary:
 		return uint8(Summary)
-	case textparse.MetricTypeInfo:
+	case model.MetricTypeInfo:
 		return uint8(Info)
-	case textparse.MetricTypeStateset:
+	case model.MetricTypeStateset:
 		return uint8(Stateset)
 	default:
 		return uint8(UnknownMT)
 	}
 }
 
-func ToTextparseMetricType(m uint8) textparse.MetricType {
+func ToMetricType(m uint8) model.MetricType {
 	switch m {
 	case uint8(Counter):
-		return textparse.MetricTypeCounter
+		return model.MetricTypeCounter
 	case uint8(Gauge):
-		return textparse.MetricTypeGauge
+		return model.MetricTypeGauge
 	case uint8(HistogramSample):
-		return textparse.MetricTypeHistogram
+		return model.MetricTypeHistogram
 	case uint8(GaugeHistogram):
-		return textparse.MetricTypeGaugeHistogram
+		return model.MetricTypeGaugeHistogram
 	case uint8(Summary):
-		return textparse.MetricTypeSummary
+		return model.MetricTypeSummary
 	case uint8(Info):
-		return textparse.MetricTypeInfo
+		return model.MetricTypeInfo
 	case uint8(Stateset):
-		return textparse.MetricTypeStateset
+		return model.MetricTypeStateset
 	default:
-		return textparse.MetricTypeUnknown
+		return model.MetricTypeUnknown
 	}
 }
 
@@ -229,7 +230,7 @@ func (d *Decoder) Series(rec []byte, series []RefSeries) ([]RefSeries, error) {
 		return nil, dec.Err()
 	}
 	if len(dec.B) > 0 {
-		return nil, errors.Errorf("unexpected %d bytes left in entry", len(dec.B))
+		return nil, fmt.Errorf("unexpected %d bytes left in entry", len(dec.B))
 	}
 	return series, nil
 }
@@ -272,20 +273,19 @@ func (d *Decoder) Metadata(rec []byte, metadata []RefMetadata) ([]RefMetadata, e
 		return nil, dec.Err()
 	}
 	if len(dec.B) > 0 {
-		return nil, errors.Errorf("unexpected %d bytes left in entry", len(dec.B))
+		return nil, fmt.Errorf("unexpected %d bytes left in entry", len(dec.B))
 	}
 	return metadata, nil
 }
 
 // DecodeLabels decodes one set of labels from buf.
 func (d *Decoder) DecodeLabels(dec *encoding.Decbuf) labels.Labels {
-	// TODO: reconsider if this function could be pushed down into labels.Labels to be more efficient.
 	d.builder.Reset()
 	nLabels := dec.Uvarint()
 	for i := 0; i < nLabels; i++ {
-		lName := dec.UvarintStr()
-		lValue := dec.UvarintStr()
-		d.builder.Add(lName, lValue)
+		lName := dec.UvarintBytes()
+		lValue := dec.UvarintBytes()
+		d.builder.UnsafeAddBytes(lName, lValue)
 	}
 	return d.builder.Labels()
 }
@@ -321,10 +321,10 @@ func (d *Decoder) Samples(rec []byte, samples []RefSample) ([]RefSample, error) 
 	}
 
 	if dec.Err() != nil {
-		return nil, errors.Wrapf(dec.Err(), "decode error after %d samples", len(samples))
+		return nil, fmt.Errorf("decode error after %d samples: %w", len(samples), dec.Err())
 	}
 	if len(dec.B) > 0 {
-		return nil, errors.Errorf("unexpected %d bytes left in entry", len(dec.B))
+		return nil, fmt.Errorf("unexpected %d bytes left in entry", len(dec.B))
 	}
 	return samples, nil
 }
@@ -348,7 +348,7 @@ func (d *Decoder) Tombstones(rec []byte, tstones []tombstones.Stone) ([]tombston
 		return nil, dec.Err()
 	}
 	if len(dec.B) > 0 {
-		return nil, errors.Errorf("unexpected %d bytes left in entry", len(dec.B))
+		return nil, fmt.Errorf("unexpected %d bytes left in entry", len(dec.B))
 	}
 	return tstones, nil
 }
@@ -386,10 +386,10 @@ func (d *Decoder) ExemplarsFromBuffer(dec *encoding.Decbuf, exemplars []RefExemp
 	}
 
 	if dec.Err() != nil {
-		return nil, errors.Wrapf(dec.Err(), "decode error after %d exemplars", len(exemplars))
+		return nil, fmt.Errorf("decode error after %d exemplars: %w", len(exemplars), dec.Err())
 	}
 	if len(dec.B) > 0 {
-		return nil, errors.Errorf("unexpected %d bytes left in entry", len(dec.B))
+		return nil, fmt.Errorf("unexpected %d bytes left in entry", len(dec.B))
 	}
 	return exemplars, nil
 }
@@ -414,10 +414,10 @@ func (d *Decoder) MmapMarkers(rec []byte, markers []RefMmapMarker) ([]RefMmapMar
 	}
 
 	if dec.Err() != nil {
-		return nil, errors.Wrapf(dec.Err(), "decode error after %d mmap markers", len(markers))
+		return nil, fmt.Errorf("decode error after %d mmap markers: %w", len(markers), dec.Err())
 	}
 	if len(dec.B) > 0 {
-		return nil, errors.Errorf("unexpected %d bytes left in entry", len(dec.B))
+		return nil, fmt.Errorf("unexpected %d bytes left in entry", len(dec.B))
 	}
 	return markers, nil
 }
@@ -450,10 +450,10 @@ func (d *Decoder) HistogramSamples(rec []byte, histograms []RefHistogramSample) 
 	}
 
 	if dec.Err() != nil {
-		return nil, errors.Wrapf(dec.Err(), "decode error after %d histograms", len(histograms))
+		return nil, fmt.Errorf("decode error after %d histograms: %w", len(histograms), dec.Err())
 	}
 	if len(dec.B) > 0 {
-		return nil, errors.Errorf("unexpected %d bytes left in entry", len(dec.B))
+		return nil, fmt.Errorf("unexpected %d bytes left in entry", len(dec.B))
 	}
 	return histograms, nil
 }
@@ -532,10 +532,10 @@ func (d *Decoder) FloatHistogramSamples(rec []byte, histograms []RefFloatHistogr
 	}
 
 	if dec.Err() != nil {
-		return nil, errors.Wrapf(dec.Err(), "decode error after %d histograms", len(histograms))
+		return nil, fmt.Errorf("decode error after %d histograms: %w", len(histograms), dec.Err())
 	}
 	if len(dec.B) > 0 {
-		return nil, errors.Errorf("unexpected %d bytes left in entry", len(dec.B))
+		return nil, fmt.Errorf("unexpected %d bytes left in entry", len(dec.B))
 	}
 	return histograms, nil
 }

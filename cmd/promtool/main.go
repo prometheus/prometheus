@@ -36,6 +36,7 @@ import (
 	"github.com/google/pprof/profile"
 	"github.com/prometheus/client_golang/api"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/client_golang/prometheus/testutil/promlint"
 	config_util "github.com/prometheus/common/config"
@@ -198,6 +199,7 @@ func main() {
 
 	testCmd := app.Command("test", "Unit testing.")
 	testRulesCmd := testCmd.Command("rules", "Unit tests for rules.")
+	testRulesRun := testRulesCmd.Flag("run", "If set, will only run test groups whose names match the regular expression. Can be specified multiple times.").Strings()
 	testRulesFiles := testRulesCmd.Arg(
 		"test-rule-file",
 		"The unit test file.",
@@ -316,7 +318,7 @@ func main() {
 
 	switch parsedCmd {
 	case sdCheckCmd.FullCommand():
-		os.Exit(CheckSD(*sdConfigFile, *sdJobName, *sdTimeout, noDefaultScrapePort))
+		os.Exit(CheckSD(*sdConfigFile, *sdJobName, *sdTimeout, noDefaultScrapePort, prometheus.DefaultRegisterer))
 
 	case checkConfigCmd.FullCommand():
 		os.Exit(CheckConfig(*agentMode, *checkConfigSyntaxOnly, newLintConfig(*checkConfigLint, *checkConfigLintFatal), *configFiles...))
@@ -366,6 +368,7 @@ func main() {
 				EnableAtModifier:     true,
 				EnableNegativeOffset: true,
 			},
+			*testRulesRun,
 			*testRulesFiles...),
 		)
 
@@ -411,7 +414,7 @@ func checkExperimental(f bool) {
 	}
 }
 
-var lintError = fmt.Errorf("lint error")
+var errLint = fmt.Errorf("lint error")
 
 type lintConfig struct {
 	all            bool
@@ -763,7 +766,7 @@ func checkRulesFromStdin(ls lintConfig) (bool, bool) {
 		fmt.Fprintln(os.Stderr, "  FAILED:")
 		for _, e := range errs {
 			fmt.Fprintln(os.Stderr, e.Error())
-			hasErrors = hasErrors || !errors.Is(e, lintError)
+			hasErrors = hasErrors || !errors.Is(e, errLint)
 		}
 		if hasErrors {
 			return failed, hasErrors
@@ -776,7 +779,7 @@ func checkRulesFromStdin(ls lintConfig) (bool, bool) {
 		}
 		failed = true
 		for _, err := range errs {
-			hasErrors = hasErrors || !errors.Is(err, lintError)
+			hasErrors = hasErrors || !errors.Is(err, errLint)
 		}
 	} else {
 		fmt.Printf("  SUCCESS: %d rules found\n", n)
@@ -797,7 +800,7 @@ func checkRules(files []string, ls lintConfig) (bool, bool) {
 			fmt.Fprintln(os.Stderr, "  FAILED:")
 			for _, e := range errs {
 				fmt.Fprintln(os.Stderr, e.Error())
-				hasErrors = hasErrors || !errors.Is(e, lintError)
+				hasErrors = hasErrors || !errors.Is(e, errLint)
 			}
 			if hasErrors {
 				continue
@@ -810,7 +813,7 @@ func checkRules(files []string, ls lintConfig) (bool, bool) {
 			}
 			failed = true
 			for _, err := range errs {
-				hasErrors = hasErrors || !errors.Is(err, lintError)
+				hasErrors = hasErrors || !errors.Is(err, errLint)
 			}
 		} else {
 			fmt.Printf("  SUCCESS: %d rules found\n", n)
@@ -837,7 +840,7 @@ func checkRuleGroups(rgs *rulefmt.RuleGroups, lintSettings lintConfig) (int, []e
 				})
 			}
 			errMessage += "Might cause inconsistency while recording expressions"
-			return 0, []error{fmt.Errorf("%w %s", lintError, errMessage)}
+			return 0, []error{fmt.Errorf("%w %s", errLint, errMessage)}
 		}
 	}
 

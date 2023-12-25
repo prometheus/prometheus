@@ -15,18 +15,19 @@ package tsdb
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"sync"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/oklog/ulid"
-	"github.com/pkg/errors"
 	"go.uber.org/atomic"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -106,9 +107,12 @@ type Head struct {
 
 	iso *isolation
 
+	oooIso *oooIsolation
+
 	cardinalityMutex      sync.Mutex
 	cardinalityCache      *index.PostingsStats // Posting stats cache which will expire after 30sec.
-	lastPostingsStatsCall time.Duration        // Last posting stats call (PostingsCardinalityStats()) time for caching.
+	cardinalityCacheKey   string
+	lastPostingsStatsCall time.Duration // Last posting stats call (PostingsCardinalityStats()) time for caching.
 
 	// chunkDiskMapper is used to write and read Head chunks to/from disk.
 	chunkDiskMapper *chunks.ChunkDiskMapper
@@ -144,6 +148,10 @@ type HeadOptions struct {
 
 	// EnableNativeHistograms enables the ingestion of native histograms.
 	EnableNativeHistograms atomic.Bool
+
+	// EnableCreatedTimestampZeroIngestion enables the ingestion of the created timestamp as a synthetic zero sample.
+	// See: https://github.com/prometheus/proposals/blob/main/proposals/2023-06-13_created-timestamp.md
+	EnableCreatedTimestampZeroIngestion bool
 
 	ChunkRange int64
 	// ChunkDirRoot is the parent directory of the chunks directory.
@@ -224,11 +232,11 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal, wbl *wlog.WL, opts *Hea
 	// even if ooo is not enabled yet.
 	capMax := opts.OutOfOrderCapMax.Load()
 	if capMax <= 0 || capMax > 255 {
-		return nil, errors.Errorf("OOOCapMax of %d is invalid. must be > 0 and <= 255", capMax)
+		return nil, fmt.Errorf("OOOCapMax of %d is invalid. must be > 0 and <= 255", capMax)
 	}
 
 	if opts.ChunkRange < 1 {
-		return nil, errors.Errorf("invalid chunk range %d", opts.ChunkRange)
+		return nil, fmt.Errorf("invalid chunk range %d", opts.ChunkRange)
 	}
 	if opts.SeriesCallback == nil {
 		opts.SeriesCallback = &noopSeriesLifecycleCallback{}
@@ -300,6 +308,7 @@ func (h *Head) resetInMemoryState() error {
 	}
 
 	h.iso = newIsolation(h.opts.IsolationDisabled)
+	h.oooIso = newOOOIsolation()
 
 	h.exemplarMetrics = em
 	h.exemplars = es
@@ -614,11 +623,11 @@ func (h *Head) Init(minValidTime int64) error {
 		if h.wal != nil {
 			_, endAt, err := wlog.Segments(h.wal.Dir())
 			if err != nil {
-				return errors.Wrap(err, "finding WAL segments")
+				return fmt.Errorf("finding WAL segments: %w", err)
 			}
 
 			_, idx, _, err := LastChunkSnapshot(h.opts.ChunkDirRoot)
-			if err != nil && err != record.ErrNotFound {
+			if err != nil && !errors.Is(err, record.ErrNotFound) {
 				level.Error(h.logger).Log("msg", "Could not find last snapshot", "err", err)
 			}
 
@@ -665,7 +674,8 @@ func (h *Head) Init(minValidTime int64) error {
 		if err != nil {
 			// TODO(codesome): clear out all m-map chunks here for refSeries.
 			level.Error(h.logger).Log("msg", "Loading on-disk chunks failed", "err", err)
-			if _, ok := errors.Cause(err).(*chunks.CorruptionErr); ok {
+			var cerr *chunks.CorruptionErr
+			if errors.As(err, &cerr) {
 				h.metrics.mmapChunkCorruptionTotal.Inc()
 			}
 
@@ -692,14 +702,14 @@ func (h *Head) Init(minValidTime int64) error {
 	checkpointReplayStart := time.Now()
 	// Backfill the checkpoint first if it exists.
 	dir, startFrom, err := wlog.LastCheckpoint(h.wal.Dir())
-	if err != nil && err != record.ErrNotFound {
-		return errors.Wrap(err, "find last checkpoint")
+	if err != nil && !errors.Is(err, record.ErrNotFound) {
+		return fmt.Errorf("find last checkpoint: %w", err)
 	}
 
 	// Find the last segment.
 	_, endAt, e := wlog.Segments(h.wal.Dir())
 	if e != nil {
-		return errors.Wrap(e, "finding WAL segments")
+		return fmt.Errorf("finding WAL segments: %w", e)
 	}
 
 	h.startWALReplayStatus(startFrom, endAt)
@@ -708,7 +718,7 @@ func (h *Head) Init(minValidTime int64) error {
 	if err == nil && startFrom >= snapIdx {
 		sr, err := wlog.NewSegmentsReader(dir)
 		if err != nil {
-			return errors.Wrap(err, "open checkpoint")
+			return fmt.Errorf("open checkpoint: %w", err)
 		}
 		defer func() {
 			if err := sr.Close(); err != nil {
@@ -719,7 +729,7 @@ func (h *Head) Init(minValidTime int64) error {
 		// A corrupted checkpoint is a hard error for now and requires user
 		// intervention. There's likely little data that can be recovered anyway.
 		if err := h.loadWAL(wlog.NewReader(sr), multiRef, mmappedChunks, oooMmappedChunks); err != nil {
-			return errors.Wrap(err, "backfill checkpoint")
+			return fmt.Errorf("backfill checkpoint: %w", err)
 		}
 		h.updateWALReplayStatusRead(startFrom)
 		startFrom++
@@ -736,7 +746,7 @@ func (h *Head) Init(minValidTime int64) error {
 	for i := startFrom; i <= endAt; i++ {
 		s, err := wlog.OpenReadSegment(wlog.SegmentName(h.wal.Dir(), i))
 		if err != nil {
-			return errors.Wrap(err, fmt.Sprintf("open WAL segment: %d", i))
+			return fmt.Errorf("open WAL segment: %d: %w", i, err)
 		}
 
 		offset := 0
@@ -749,7 +759,7 @@ func (h *Head) Init(minValidTime int64) error {
 			continue
 		}
 		if err != nil {
-			return errors.Wrapf(err, "segment reader (offset=%d)", offset)
+			return fmt.Errorf("segment reader (offset=%d): %w", offset, err)
 		}
 		err = h.loadWAL(wlog.NewReader(sr), multiRef, mmappedChunks, oooMmappedChunks)
 		if err := sr.Close(); err != nil {
@@ -768,14 +778,14 @@ func (h *Head) Init(minValidTime int64) error {
 		// Replay WBL.
 		startFrom, endAt, e = wlog.Segments(h.wbl.Dir())
 		if e != nil {
-			return &errLoadWbl{errors.Wrap(e, "finding WBL segments")}
+			return &errLoadWbl{fmt.Errorf("finding WBL segments: %w", e)}
 		}
 		h.startWALReplayStatus(startFrom, endAt)
 
 		for i := startFrom; i <= endAt; i++ {
 			s, err := wlog.OpenReadSegment(wlog.SegmentName(h.wbl.Dir(), i))
 			if err != nil {
-				return &errLoadWbl{errors.Wrap(err, fmt.Sprintf("open WBL segment: %d", i))}
+				return &errLoadWbl{fmt.Errorf("open WBL segment: %d: %w", i, err)}
 			}
 
 			sr := wlog.NewSegmentBufReader(s)
@@ -857,7 +867,7 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 			slice := mmappedChunks[seriesRef]
 			if len(slice) > 0 && slice[len(slice)-1].maxTime >= mint {
 				h.metrics.mmapChunkCorruptionTotal.Inc()
-				return errors.Errorf("out of sequence m-mapped chunk for series ref %d, last chunk: [%d, %d], new: [%d, %d]",
+				return fmt.Errorf("out of sequence m-mapped chunk for series ref %d, last chunk: [%d, %d], new: [%d, %d]",
 					seriesRef, slice[len(slice)-1].minTime, slice[len(slice)-1].maxTime, mint, maxt)
 			}
 			slice = append(slice, &mmappedChunk{
@@ -872,7 +882,7 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 
 		if len(ms.mmappedChunks) > 0 && ms.mmappedChunks[len(ms.mmappedChunks)-1].maxTime >= mint {
 			h.metrics.mmapChunkCorruptionTotal.Inc()
-			return errors.Errorf("out of sequence m-mapped chunk for series ref %d, last chunk: [%d, %d], new: [%d, %d]",
+			return fmt.Errorf("out of sequence m-mapped chunk for series ref %d, last chunk: [%d, %d], new: [%d, %d]",
 				seriesRef, ms.mmappedChunks[len(ms.mmappedChunks)-1].minTime, ms.mmappedChunks[len(ms.mmappedChunks)-1].maxTime,
 				mint, maxt)
 		}
@@ -896,7 +906,7 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 		return nil
 	}); err != nil {
 		// secondLastRef because the lastRef caused an error.
-		return nil, nil, secondLastRef, errors.Wrap(err, "iterate on on-disk chunks")
+		return nil, nil, secondLastRef, fmt.Errorf("iterate on on-disk chunks: %w", err)
 	}
 	return mmappedChunks, oooMmappedChunks, lastRef, nil
 }
@@ -985,16 +995,23 @@ func (h *Head) DisableNativeHistograms() {
 
 // PostingsCardinalityStats returns highest cardinality stats by label and value names.
 func (h *Head) PostingsCardinalityStats(statsByLabelName string, limit int) *index.PostingsStats {
+	cacheKey := statsByLabelName + ";" + strconv.Itoa(limit)
+
 	h.cardinalityMutex.Lock()
 	defer h.cardinalityMutex.Unlock()
-	currentTime := time.Duration(time.Now().Unix()) * time.Second
-	seconds := currentTime - h.lastPostingsStatsCall
-	if seconds > cardinalityCacheExpirationTime {
+	if h.cardinalityCacheKey != cacheKey {
 		h.cardinalityCache = nil
+	} else {
+		currentTime := time.Duration(time.Now().Unix()) * time.Second
+		seconds := currentTime - h.lastPostingsStatsCall
+		if seconds > cardinalityCacheExpirationTime {
+			h.cardinalityCache = nil
+		}
 	}
 	if h.cardinalityCache != nil {
 		return h.cardinalityCache
 	}
+	h.cardinalityCacheKey = cacheKey
 	h.cardinalityCache = h.postings.Stats(statsByLabelName, limit)
 	h.lastPostingsStatsCall = time.Duration(time.Now().Unix()) * time.Second
 
@@ -1133,6 +1150,14 @@ func (h *Head) WaitForPendingReadersInTimeRange(mint, maxt int64) {
 	}
 }
 
+// WaitForPendingReadersForOOOChunksAtOrBefore is like WaitForPendingReadersInTimeRange, except it waits for
+// queries touching OOO chunks less than or equal to chunk to finish querying.
+func (h *Head) WaitForPendingReadersForOOOChunksAtOrBefore(chunk chunks.ChunkDiskMapperRef) {
+	for h.oooIso.HasOpenReadsAtOrBefore(chunk) {
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
 // WaitForAppendersOverlapping waits for appends overlapping maxt to finish.
 func (h *Head) WaitForAppendersOverlapping(maxt int64) {
 	for maxt >= h.iso.lowestAppendTime() {
@@ -1200,12 +1225,12 @@ func (h *Head) truncateWAL(mint int64) error {
 
 	first, last, err := wlog.Segments(h.wal.Dir())
 	if err != nil {
-		return errors.Wrap(err, "get segment range")
+		return fmt.Errorf("get segment range: %w", err)
 	}
 	// Start a new segment, so low ingestion volume TSDB don't have more WAL than
 	// needed.
 	if _, err := h.wal.NextSegment(); err != nil {
-		return errors.Wrap(err, "next segment")
+		return fmt.Errorf("next segment: %w", err)
 	}
 	last-- // Never consider last segment for checkpoint.
 	if last < 0 {
@@ -1232,10 +1257,11 @@ func (h *Head) truncateWAL(mint int64) error {
 	h.metrics.checkpointCreationTotal.Inc()
 	if _, err = wlog.Checkpoint(h.logger, h.wal, first, last, keep, mint); err != nil {
 		h.metrics.checkpointCreationFail.Inc()
-		if _, ok := errors.Cause(err).(*wlog.CorruptionErr); ok {
+		var cerr *chunks.CorruptionErr
+		if errors.As(err, &cerr) {
 			h.metrics.walCorruptionsTotal.Inc()
 		}
-		return errors.Wrap(err, "create checkpoint")
+		return fmt.Errorf("create checkpoint: %w", err)
 	}
 	if err := h.wal.Truncate(last + 1); err != nil {
 		// If truncating fails, we'll just try again at the next checkpoint.
@@ -1271,13 +1297,19 @@ func (h *Head) truncateWAL(mint int64) error {
 }
 
 // truncateOOO
+//   - waits for any pending reads that potentially touch chunks less than or equal to newMinOOOMmapRef
 //   - truncates the OOO WBL files whose index is strictly less than lastWBLFile.
-//   - garbage collects all the m-map chunks from the memory that are less than or equal to minOOOMmapRef
+//   - garbage collects all the m-map chunks from the memory that are less than or equal to newMinOOOMmapRef
 //     and then deletes the series that do not have any data anymore.
-func (h *Head) truncateOOO(lastWBLFile int, minOOOMmapRef chunks.ChunkDiskMapperRef) error {
+//
+// The caller is responsible for ensuring that no further queriers will be created that reference chunks less
+// than or equal to newMinOOOMmapRef before calling truncateOOO.
+func (h *Head) truncateOOO(lastWBLFile int, newMinOOOMmapRef chunks.ChunkDiskMapperRef) error {
 	curMinOOOMmapRef := chunks.ChunkDiskMapperRef(h.minOOOMmapRef.Load())
-	if minOOOMmapRef.GreaterThan(curMinOOOMmapRef) {
-		h.minOOOMmapRef.Store(uint64(minOOOMmapRef))
+	if newMinOOOMmapRef.GreaterThan(curMinOOOMmapRef) {
+		h.WaitForPendingReadersForOOOChunksAtOrBefore(newMinOOOMmapRef)
+		h.minOOOMmapRef.Store(uint64(newMinOOOMmapRef))
+
 		if err := h.truncateSeriesAndChunkDiskMapper("truncateOOO"); err != nil {
 			return err
 		}
@@ -1322,7 +1354,7 @@ func (h *Head) truncateSeriesAndChunkDiskMapper(caller string) error {
 
 	// Truncate the chunk m-mapper.
 	if err := h.chunkDiskMapper.Truncate(uint32(minMmapFile)); err != nil {
-		return errors.Wrap(err, "truncate chunks.HeadReadWriter by file number")
+		return fmt.Errorf("truncate chunks.HeadReadWriter by file number: %w", err)
 	}
 	return nil
 }
@@ -1407,11 +1439,13 @@ func (h *RangeHead) NumSeries() uint64 {
 	return h.head.NumSeries()
 }
 
+var rangeHeadULID = ulid.MustParse("0000000000XXXXXXXRANGEHEAD")
+
 func (h *RangeHead) Meta() BlockMeta {
 	return BlockMeta{
 		MinTime: h.MinTime(),
 		MaxTime: h.MaxTime(),
-		ULID:    h.head.Meta().ULID,
+		ULID:    rangeHeadULID,
 		Stats: BlockStats{
 			NumSeries: h.NumSeries(),
 		},
@@ -1435,13 +1469,13 @@ func (h *Head) Delete(ctx context.Context, mint, maxt int64, ms ...*labels.Match
 
 	p, err := PostingsForMatchers(ctx, ir, ms...)
 	if err != nil {
-		return errors.Wrap(err, "select series")
+		return fmt.Errorf("select series: %w", err)
 	}
 
 	var stones []tombstones.Stone
 	for p.Next() {
 		if err := ctx.Err(); err != nil {
-			return errors.Wrap(err, "select series")
+			return fmt.Errorf("select series: %w", err)
 		}
 
 		series := h.series.getByID(chunks.HeadSeriesRef(p.At()))
@@ -1463,8 +1497,8 @@ func (h *Head) Delete(ctx context.Context, mint, maxt int64, ms ...*labels.Match
 	if p.Err() != nil {
 		return p.Err()
 	}
-	if ctx.Err() != nil {
-		return errors.Wrap(err, "select series")
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("select series: %w", err)
 	}
 
 	if h.wal != nil {
@@ -1537,15 +1571,15 @@ func (h *Head) NumSeries() uint64 {
 	return h.numSeries.Load()
 }
 
+var headULID = ulid.MustParse("0000000000XXXXXXXXXXXXHEAD")
+
 // Meta returns meta information about the head.
 // The head is dynamic so will return dynamic results.
 func (h *Head) Meta() BlockMeta {
-	var id [16]byte
-	copy(id[:], "______head______")
 	return BlockMeta{
 		MinTime: h.MinTime(),
 		MaxTime: h.MaxTime(),
-		ULID:    ulid.ULID(id),
+		ULID:    headULID,
 		Stats: BlockStats{
 			NumSeries: h.NumSeries(),
 		},
@@ -1593,9 +1627,6 @@ func (h *Head) Close() error {
 	h.mmapHeadChunks()
 
 	errs := tsdb_errors.NewMulti(h.chunkDiskMapper.Close())
-	if errs.Err() == nil && h.opts.EnableMemorySnapshotOnShutdown {
-		errs.Add(h.performChunkSnapshot())
-	}
 	if h.wal != nil {
 		errs.Add(h.wal.Close())
 	}
@@ -1667,26 +1698,34 @@ func (h *Head) mmapHeadChunks() {
 	var count int
 	for i := 0; i < h.series.size; i++ {
 		h.series.locks[i].RLock()
-		for _, all := range h.series.hashes[i] {
-			for _, series := range all {
-				series.Lock()
-				count += series.mmapChunks(h.chunkDiskMapper)
-				series.Unlock()
-			}
+		for _, series := range h.series.series[i] {
+			series.Lock()
+			count += series.mmapChunks(h.chunkDiskMapper)
+			series.Unlock()
 		}
 		h.series.locks[i].RUnlock()
 	}
 	h.metrics.mmapChunksTotal.Add(float64(count))
 }
 
-// seriesHashmap is a simple hashmap for memSeries by their label set. It is built
-// on top of a regular hashmap and holds a slice of series to resolve hash collisions.
+// seriesHashmap lets TSDB find a memSeries by its label set, via a 64-bit hash.
+// There is one map for the common case where the hash value is unique, and a
+// second map for the case that two series have the same hash value.
+// Each series is in only one of the maps.
 // Its methods require the hash to be submitted with it to avoid re-computations throughout
 // the code.
-type seriesHashmap map[uint64][]*memSeries
+type seriesHashmap struct {
+	unique    map[uint64]*memSeries
+	conflicts map[uint64][]*memSeries
+}
 
-func (m seriesHashmap) get(hash uint64, lset labels.Labels) *memSeries {
-	for _, s := range m[hash] {
+func (m *seriesHashmap) get(hash uint64, lset labels.Labels) *memSeries {
+	if s, found := m.unique[hash]; found {
+		if labels.Equal(s.lset, lset) {
+			return s
+		}
+	}
+	for _, s := range m.conflicts[hash] {
 		if labels.Equal(s.lset, lset) {
 			return s
 		}
@@ -1694,28 +1733,50 @@ func (m seriesHashmap) get(hash uint64, lset labels.Labels) *memSeries {
 	return nil
 }
 
-func (m seriesHashmap) set(hash uint64, s *memSeries) {
-	l := m[hash]
+func (m *seriesHashmap) set(hash uint64, s *memSeries) {
+	if existing, found := m.unique[hash]; !found || labels.Equal(existing.lset, s.lset) {
+		m.unique[hash] = s
+		return
+	}
+	if m.conflicts == nil {
+		m.conflicts = make(map[uint64][]*memSeries)
+	}
+	l := m.conflicts[hash]
 	for i, prev := range l {
 		if labels.Equal(prev.lset, s.lset) {
 			l[i] = s
 			return
 		}
 	}
-	m[hash] = append(l, s)
+	m.conflicts[hash] = append(l, s)
 }
 
-func (m seriesHashmap) del(hash uint64, lset labels.Labels) {
+func (m *seriesHashmap) del(hash uint64, lset labels.Labels) {
 	var rem []*memSeries
-	for _, s := range m[hash] {
-		if !labels.Equal(s.lset, lset) {
-			rem = append(rem, s)
+	unique, found := m.unique[hash]
+	switch {
+	case !found:
+		return
+	case labels.Equal(unique.lset, lset):
+		conflicts := m.conflicts[hash]
+		if len(conflicts) == 0 {
+			delete(m.unique, hash)
+			return
+		}
+		rem = conflicts
+	default:
+		rem = append(rem, unique)
+		for _, s := range m.conflicts[hash] {
+			if !labels.Equal(s.lset, lset) {
+				rem = append(rem, s)
+			}
 		}
 	}
-	if len(rem) == 0 {
-		delete(m, hash)
+	m.unique[hash] = rem[0]
+	if len(rem) == 1 {
+		delete(m.conflicts, hash)
 	} else {
-		m[hash] = rem
+		m.conflicts[hash] = rem[1:]
 	}
 }
 
@@ -1757,7 +1818,10 @@ func newStripeSeries(stripeSize int, seriesCallback SeriesLifecycleCallback) *st
 		s.series[i] = map[chunks.HeadSeriesRef]*memSeries{}
 	}
 	for i := range s.hashes {
-		s.hashes[i] = seriesHashmap{}
+		s.hashes[i] = seriesHashmap{
+			unique:    map[uint64]*memSeries{},
+			conflicts: nil, // Initialized on demand in set().
+		}
 	}
 	return s
 }
@@ -1777,71 +1841,75 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 		deletedFromPrevStripe       = 0
 	)
 	minMmapFile = math.MaxInt32
-	// Run through all series and truncate old chunks. Mark those with no
-	// chunks left as deleted and store their ID.
+
+	// For one series, truncate old chunks and check if any chunks left. If not, mark as deleted and collect the ID.
+	check := func(hashShard int, hash uint64, series *memSeries, deletedForCallback map[chunks.HeadSeriesRef]labels.Labels) {
+		series.Lock()
+		defer series.Unlock()
+
+		rmChunks += series.truncateChunksBefore(mint, minOOOMmapRef)
+
+		if len(series.mmappedChunks) > 0 {
+			seq, _ := series.mmappedChunks[0].ref.Unpack()
+			if seq < minMmapFile {
+				minMmapFile = seq
+			}
+		}
+		if series.ooo != nil && len(series.ooo.oooMmappedChunks) > 0 {
+			seq, _ := series.ooo.oooMmappedChunks[0].ref.Unpack()
+			if seq < minMmapFile {
+				minMmapFile = seq
+			}
+			for _, ch := range series.ooo.oooMmappedChunks {
+				if ch.minTime < minOOOTime {
+					minOOOTime = ch.minTime
+				}
+			}
+		}
+		if series.ooo != nil && series.ooo.oooHeadChunk != nil {
+			if series.ooo.oooHeadChunk.minTime < minOOOTime {
+				minOOOTime = series.ooo.oooHeadChunk.minTime
+			}
+		}
+		if len(series.mmappedChunks) > 0 || series.headChunks != nil || series.pendingCommit ||
+			(series.ooo != nil && (len(series.ooo.oooMmappedChunks) > 0 || series.ooo.oooHeadChunk != nil)) {
+			seriesMint := series.minTime()
+			if seriesMint < actualMint {
+				actualMint = seriesMint
+			}
+			return
+		}
+		// The series is gone entirely. We need to keep the series lock
+		// and make sure we have acquired the stripe locks for hash and ID of the
+		// series alike.
+		// If we don't hold them all, there's a very small chance that a series receives
+		// samples again while we are half-way into deleting it.
+		refShard := int(series.ref) & (s.size - 1)
+		if hashShard != refShard {
+			s.locks[refShard].Lock()
+			defer s.locks[refShard].Unlock()
+		}
+
+		deleted[storage.SeriesRef(series.ref)] = struct{}{}
+		s.hashes[hashShard].del(hash, series.lset)
+		delete(s.series[refShard], series.ref)
+		deletedForCallback[series.ref] = series.lset
+	}
+
+	// Run through all series shard by shard, checking which should be deleted.
 	for i := 0; i < s.size; i++ {
 		deletedForCallback := make(map[chunks.HeadSeriesRef]labels.Labels, deletedFromPrevStripe)
 		s.locks[i].Lock()
 
-		for hash, all := range s.hashes[i] {
+		// Delete conflicts first so seriesHashmap.del doesn't move them to the `unique` field,
+		// after deleting `unique`.
+		for hash, all := range s.hashes[i].conflicts {
 			for _, series := range all {
-				series.Lock()
-				rmChunks += series.truncateChunksBefore(mint, minOOOMmapRef)
-
-				if len(series.mmappedChunks) > 0 {
-					seq, _ := series.mmappedChunks[0].ref.Unpack()
-					if seq < minMmapFile {
-						minMmapFile = seq
-					}
-				}
-				if series.ooo != nil && len(series.ooo.oooMmappedChunks) > 0 {
-					seq, _ := series.ooo.oooMmappedChunks[0].ref.Unpack()
-					if seq < minMmapFile {
-						minMmapFile = seq
-					}
-					for _, ch := range series.ooo.oooMmappedChunks {
-						if ch.minTime < minOOOTime {
-							minOOOTime = ch.minTime
-						}
-					}
-				}
-				if series.ooo != nil && series.ooo.oooHeadChunk != nil {
-					if series.ooo.oooHeadChunk.minTime < minOOOTime {
-						minOOOTime = series.ooo.oooHeadChunk.minTime
-					}
-				}
-				if len(series.mmappedChunks) > 0 || series.headChunks != nil || series.pendingCommit ||
-					(series.ooo != nil && (len(series.ooo.oooMmappedChunks) > 0 || series.ooo.oooHeadChunk != nil)) {
-					seriesMint := series.minTime()
-					if seriesMint < actualMint {
-						actualMint = seriesMint
-					}
-					series.Unlock()
-					continue
-				}
-
-				// The series is gone entirely. We need to keep the series lock
-				// and make sure we have acquired the stripe locks for hash and ID of the
-				// series alike.
-				// If we don't hold them all, there's a very small chance that a series receives
-				// samples again while we are half-way into deleting it.
-				j := int(series.ref) & (s.size - 1)
-
-				if i != j {
-					s.locks[j].Lock()
-				}
-
-				deleted[storage.SeriesRef(series.ref)] = struct{}{}
-				s.hashes[i].del(hash, series.lset)
-				delete(s.series[j], series.ref)
-				deletedForCallback[series.ref] = series.lset
-
-				if i != j {
-					s.locks[j].Unlock()
-				}
-
-				series.Unlock()
+				check(i, hash, series, deletedForCallback)
 			}
+		}
+		for hash, series := range s.hashes[i].unique {
+			check(i, hash, series, deletedForCallback)
 		}
 
 		s.locks[i].Unlock()

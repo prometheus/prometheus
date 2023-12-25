@@ -13,7 +13,7 @@ jobs:
     container:
       image: quay.io/prometheus/golang-builder:1.21-base
     steps:
-      - uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608 # v4.1.0
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       - uses: prometheus/promci@3cb0c3871f223bd5ce1226995bd52ffb314798b6 # v0.1.0
       - uses: ./.github/promci/actions/setup_environment
       - run: make GO_ONLY=1 SKIP_GOLANGCI_LINT=1
@@ -35,7 +35,7 @@ jobs:
       image: quay.io/prometheus/golang-builder:1.21-base
 
     steps:
-      - uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608 # v4.1.0
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       - uses: prometheus/promci@3cb0c3871f223bd5ce1226995bd52ffb314798b6 # v0.1.0
       - uses: ./.github/promci/actions/setup_environment
         with:
@@ -52,10 +52,10 @@ jobs:
     name: Go tests on Windows
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608 # v4.1.0
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       - uses: actions/setup-go@93397bea11091df50f3d7e59dc26a7711a8bcfbe # v4.1.0
         with:
-          go-version: '>=1.21 <1.22'
+          go-version: 1.21.x
       - run: |
           $TestTargets = go list ./... | Where-Object { $_ -NotMatch "(github.com/prometheus/prometheus/discovery.*|github.com/prometheus/prometheus/config|github.com/prometheus/prometheus/web)"}
           go test $TestTargets -vet=off -v
@@ -68,7 +68,7 @@ jobs:
     container:
       image: quay.io/prometheus/golang-builder:1.20-base
     steps:
-      - uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608 # v4.1.0
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       - run: make build
       - run: go test ./tsdb/...
       - run: go test ./tsdb/ -test.tsdb-isolation=false
@@ -81,7 +81,7 @@ jobs:
     container:
       image: quay.io/prometheus/golang-builder:1.20-base
     steps:
-      - uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608 # v4.1.0
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       - run: go install ./cmd/promtool/.
       - run: go install github.com/google/go-jsonnet/cmd/jsonnet@latest
       - run: go install github.com/google/go-jsonnet/cmd/jsonnetfmt@latest
@@ -104,7 +104,7 @@ jobs:
       matrix:
         thread: [ 0, 1, 2 ]
     steps:
-      - uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608 # v4.1.0
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       - uses: prometheus/promci@3cb0c3871f223bd5ce1226995bd52ffb314798b6 # v0.1.0
       - uses: ./.github/promci/actions/build
         with:
@@ -127,7 +127,7 @@ jobs:
     # Whenever the Go version is updated here, .promu.yml
     # should also be updated.
     steps:
-      - uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608 # v4.1.0
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       - uses: prometheus/promci@3cb0c3871f223bd5ce1226995bd52ffb314798b6 # v0.1.0
       - uses: ./.github/promci/actions/build
         with:
@@ -138,12 +138,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608 # v4.1.0
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       - name: Install Go
         uses: actions/setup-go@93397bea11091df50f3d7e59dc26a7711a8bcfbe # v4.1.0
         with:
           cache: false
-          go-version: 1.20.x
+          go-version: 1.21.x
       - name: Install snmp_exporter/generator dependencies
         run: sudo apt-get update && sudo apt-get -y install libsnmp-dev
         if: github.repository == 'prometheus/snmp_exporter'
@@ -151,7 +151,8 @@ jobs:
         uses: golangci/golangci-lint-action@3a919529898de77ec3da873e3063ca4b10e7f5cc # v3.7.0
         with:
           args: --verbose
-          version: v1.54.2
+          # Make sure to sync this with Makefile.common and scripts/golangci-lint.yml.
+          version: v1.55.2
   fuzzing:
     uses: ./.github/workflows/fuzzing.yml
     if: github.event_name == 'pull_request'
@@ -164,7 +165,7 @@ jobs:
     needs: [test_ui, test_go, test_windows, golangci, codeql, build_all]
     if: github.event_name == 'push' && github.event.ref == 'refs/heads/main'
     steps:
-      - uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608 # v4.1.0
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       - uses: prometheus/promci@3cb0c3871f223bd5ce1226995bd52ffb314798b6 # v0.1.0
       - uses: ./.github/promci/actions/publish_main
         with:
@@ -178,7 +179,7 @@ jobs:
     needs: [test_ui, test_go, test_windows, golangci, codeql, build_all]
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v2.')
     steps:
-      - uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608 # v4.1.0
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       - uses: prometheus/promci@3cb0c3871f223bd5ce1226995bd52ffb314798b6 # v0.1.0
       - uses: ./.github/promci/actions/publish_release
         with:
@@ -193,7 +194,7 @@ jobs:
     needs: [test_ui, codeql]
     steps:
       - name: Checkout
-        uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608 # v4.1.0
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       - uses: prometheus/promci@3cb0c3871f223bd5ce1226995bd52ffb314798b6 # v0.1.0
       - name: Install nodejs
         uses: actions/setup-node@5e21ff4d9bc1a8cf6de233a3057d20ec6b3fb69d # v3.8.1

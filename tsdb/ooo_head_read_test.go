@@ -356,7 +356,7 @@ func TestOOOHeadIndexReader_Series(t *testing.T) {
 						})
 					}
 
-					ir := NewOOOHeadIndexReader(h, tc.queryMinT, tc.queryMaxT)
+					ir := NewOOOHeadIndexReader(h, tc.queryMinT, tc.queryMaxT, 0)
 
 					var chks []chunks.Meta
 					var b labels.ScratchBuilder
@@ -437,7 +437,7 @@ func TestOOOHeadChunkReader_LabelValues(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			// We first want to test using a head index reader that covers the biggest query interval
-			oh := NewOOOHeadIndexReader(head, tc.queryMinT, tc.queryMaxT)
+			oh := NewOOOHeadIndexReader(head, tc.queryMinT, tc.queryMaxT, 0)
 			matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "foo", "bar1")}
 			values, err := oh.LabelValues(ctx, "foo", matchers...)
 			sort.Strings(values)
@@ -484,12 +484,14 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 	t.Run("Getting a non existing chunk fails with not found error", func(t *testing.T) {
 		db := newTestDBWithOpts(t, opts)
 
-		cr := NewOOOHeadChunkReader(db.head, 0, 1000)
-		c, err := cr.Chunk(chunks.Meta{
+		cr := NewOOOHeadChunkReader(db.head, 0, 1000, nil)
+		defer cr.Close()
+		c, iterable, err := cr.ChunkOrIterable(chunks.Meta{
 			Ref: 0x1000000, Chunk: chunkenc.Chunk(nil), MinTime: 100, MaxTime: 300,
 		})
+		require.Nil(t, iterable)
 		require.Equal(t, err, fmt.Errorf("not found"))
-		require.Equal(t, c, nil)
+		require.Nil(t, c)
 	})
 
 	tests := []struct {
@@ -842,20 +844,22 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 
 			// The Series method is the one that populates the chunk meta OOO
 			// markers like OOOLastRef. These are then used by the ChunkReader.
-			ir := NewOOOHeadIndexReader(db.head, tc.queryMinT, tc.queryMaxT)
+			ir := NewOOOHeadIndexReader(db.head, tc.queryMinT, tc.queryMaxT, 0)
 			var chks []chunks.Meta
 			var b labels.ScratchBuilder
 			err := ir.Series(s1Ref, &b, &chks)
 			require.NoError(t, err)
 			require.Equal(t, len(tc.expChunksSamples), len(chks))
 
-			cr := NewOOOHeadChunkReader(db.head, tc.queryMinT, tc.queryMaxT)
+			cr := NewOOOHeadChunkReader(db.head, tc.queryMinT, tc.queryMaxT, nil)
+			defer cr.Close()
 			for i := 0; i < len(chks); i++ {
-				c, err := cr.Chunk(chks[i])
+				c, iterable, err := cr.ChunkOrIterable(chks[i])
 				require.NoError(t, err)
+				require.Nil(t, c)
 
 				var resultSamples chunks.SampleSlice
-				it := c.Iterator(nil)
+				it := iterable.Iterator(nil)
 				for it.Next() == chunkenc.ValFloat {
 					t, v := it.At()
 					resultSamples = append(resultSamples, sample{t: t, f: v})
@@ -1005,7 +1009,7 @@ func TestOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 
 			// The Series method is the one that populates the chunk meta OOO
 			// markers like OOOLastRef. These are then used by the ChunkReader.
-			ir := NewOOOHeadIndexReader(db.head, tc.queryMinT, tc.queryMaxT)
+			ir := NewOOOHeadIndexReader(db.head, tc.queryMinT, tc.queryMaxT, 0)
 			var chks []chunks.Meta
 			var b labels.ScratchBuilder
 			err := ir.Series(s1Ref, &b, &chks)
@@ -1020,13 +1024,15 @@ func TestOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 			}
 			require.NoError(t, app.Commit())
 
-			cr := NewOOOHeadChunkReader(db.head, tc.queryMinT, tc.queryMaxT)
+			cr := NewOOOHeadChunkReader(db.head, tc.queryMinT, tc.queryMaxT, nil)
+			defer cr.Close()
 			for i := 0; i < len(chks); i++ {
-				c, err := cr.Chunk(chks[i])
+				c, iterable, err := cr.ChunkOrIterable(chks[i])
 				require.NoError(t, err)
+				require.Nil(t, c)
 
 				var resultSamples chunks.SampleSlice
-				it := c.Iterator(nil)
+				it := iterable.Iterator(nil)
 				for it.Next() == chunkenc.ValFloat {
 					ts, v := it.At()
 					resultSamples = append(resultSamples, sample{t: ts, f: v})

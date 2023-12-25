@@ -12,8 +12,8 @@ jobs:
     name: lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608 # v4.1.0
-      - uses: bufbuild/buf-setup-action@eb60cd0de4f14f1f57cf346916b8cd69a9e7ed0b # v1.26.1
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      - uses: bufbuild/buf-setup-action@382440cdb8ec7bc25a68d7b4711163d95f7cc3aa # v1.28.1
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
       - uses: bufbuild/buf-lint-action@bd48f53224baaaf0fc55de9a913e7680ca6dbea4 # v1.0.3

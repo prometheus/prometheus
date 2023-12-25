@@ -21,6 +21,7 @@ import (
 	"time"
 
 	v3 "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
@@ -107,7 +108,7 @@ func getKumaMadsV1DiscoveryResponse(resources ...*MonitoringAssignment) (*v3.Dis
 }
 
 func newKumaTestHTTPDiscovery(c KumaSDConfig) (*fetchDiscovery, error) {
-	kd, err := NewKumaHTTPDiscovery(&c, nopLogger)
+	kd, err := NewKumaHTTPDiscovery(&c, nopLogger, prometheus.NewRegistry())
 	if err != nil {
 		return nil, err
 	}
@@ -129,7 +130,7 @@ func TestKumaMadsV1ResourceParserInvalidTypeURL(t *testing.T) {
 func TestKumaMadsV1ResourceParserEmptySlice(t *testing.T) {
 	resources := make([]*anypb.Any, 0)
 	groups, err := kumaMadsV1ResourceParser(resources, KumaMadsV1ResourceTypeURL)
-	require.Len(t, groups, 0)
+	require.Empty(t, groups)
 	require.NoError(t, err)
 }
 
@@ -204,7 +205,7 @@ func TestNewKumaHTTPDiscovery(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, kumaConf.Server, resClient.Server())
 	require.Equal(t, KumaMadsV1ResourceTypeURL, resClient.ResourceTypeURL())
-	require.NotEmpty(t, resClient.ID())
+	require.Equal(t, kumaConf.ClientID, resClient.ID())
 	require.Equal(t, KumaMadsV1ResourceType, resClient.config.ResourceType)
 }
 

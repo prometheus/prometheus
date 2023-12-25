@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
@@ -664,7 +665,8 @@ func TestTargetUpdatesOrder(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 
-			discoveryManager := NewManager(ctx, log.NewNopLogger())
+			discoveryManager := NewManager(ctx, log.NewNopLogger(), prometheus.NewRegistry())
+			require.NotNil(t, discoveryManager)
 			discoveryManager.updatert = 100 * time.Millisecond
 
 			var totalUpdatesCount int
@@ -778,7 +780,8 @@ func pk(provider, setName string, n int) poolKey {
 func TestTargetSetTargetGroupsPresentOnConfigReload(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	discoveryManager := NewManager(ctx, log.NewNopLogger())
+	discoveryManager := NewManager(ctx, log.NewNopLogger(), prometheus.NewRegistry())
+	require.NotNil(t, discoveryManager)
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
 
@@ -790,27 +793,28 @@ func TestTargetSetTargetGroupsPresentOnConfigReload(t *testing.T) {
 	discoveryManager.ApplyConfig(c)
 
 	syncedTargets := <-discoveryManager.SyncCh()
-	require.Equal(t, 1, len(syncedTargets))
+	require.Len(t, syncedTargets, 1)
 	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
-	require.Equal(t, 1, len(syncedTargets["prometheus"]))
+	require.Len(t, syncedTargets["prometheus"], 1)
 	p := pk("static", "prometheus", 0)
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
-	require.Equal(t, 1, len(discoveryManager.targets))
+	require.Len(t, discoveryManager.targets, 1)
 
 	discoveryManager.ApplyConfig(c)
 
 	syncedTargets = <-discoveryManager.SyncCh()
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
-	require.Equal(t, 1, len(discoveryManager.targets))
-	require.Equal(t, 1, len(syncedTargets))
+	require.Len(t, discoveryManager.targets, 1)
+	require.Len(t, syncedTargets, 1)
 	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
-	require.Equal(t, 1, len(syncedTargets["prometheus"]))
+	require.Len(t, syncedTargets["prometheus"], 1)
 }
 
 func TestTargetSetTargetGroupsPresentOnConfigRename(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	discoveryManager := NewManager(ctx, log.NewNopLogger())
+	discoveryManager := NewManager(ctx, log.NewNopLogger(), prometheus.NewRegistry())
+	require.NotNil(t, discoveryManager)
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
 
@@ -822,12 +826,12 @@ func TestTargetSetTargetGroupsPresentOnConfigRename(t *testing.T) {
 	discoveryManager.ApplyConfig(c)
 
 	syncedTargets := <-discoveryManager.SyncCh()
-	require.Equal(t, 1, len(syncedTargets))
+	require.Len(t, syncedTargets, 1)
 	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
-	require.Equal(t, 1, len(syncedTargets["prometheus"]))
+	require.Len(t, syncedTargets["prometheus"], 1)
 	p := pk("static", "prometheus", 0)
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
-	require.Equal(t, 1, len(discoveryManager.targets))
+	require.Len(t, discoveryManager.targets, 1)
 
 	c["prometheus2"] = c["prometheus"]
 	delete(c, "prometheus")
@@ -836,16 +840,17 @@ func TestTargetSetTargetGroupsPresentOnConfigRename(t *testing.T) {
 	syncedTargets = <-discoveryManager.SyncCh()
 	p = pk("static", "prometheus2", 0)
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
-	require.Equal(t, 1, len(discoveryManager.targets))
-	require.Equal(t, 1, len(syncedTargets))
+	require.Len(t, discoveryManager.targets, 1)
+	require.Len(t, syncedTargets, 1)
 	verifySyncedPresence(t, syncedTargets, "prometheus2", "{__address__=\"foo:9090\"}", true)
-	require.Equal(t, 1, len(syncedTargets["prometheus2"]))
+	require.Len(t, syncedTargets["prometheus2"], 1)
 }
 
 func TestTargetSetTargetGroupsPresentOnConfigDuplicateAndDeleteOriginal(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	discoveryManager := NewManager(ctx, log.NewNopLogger())
+	discoveryManager := NewManager(ctx, log.NewNopLogger(), prometheus.NewRegistry())
+	require.NotNil(t, discoveryManager)
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
 
@@ -860,30 +865,31 @@ func TestTargetSetTargetGroupsPresentOnConfigDuplicateAndDeleteOriginal(t *testi
 	c["prometheus2"] = c["prometheus"]
 	discoveryManager.ApplyConfig(c)
 	syncedTargets := <-discoveryManager.SyncCh()
-	require.Equal(t, 2, len(syncedTargets))
+	require.Len(t, syncedTargets, 2)
 	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
-	require.Equal(t, 1, len(syncedTargets["prometheus"]))
+	require.Len(t, syncedTargets["prometheus"], 1)
 	verifySyncedPresence(t, syncedTargets, "prometheus2", "{__address__=\"foo:9090\"}", true)
-	require.Equal(t, 1, len(syncedTargets["prometheus2"]))
+	require.Len(t, syncedTargets["prometheus2"], 1)
 	p := pk("static", "prometheus", 0)
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
-	require.Equal(t, 2, len(discoveryManager.targets))
+	require.Len(t, discoveryManager.targets, 2)
 
 	delete(c, "prometheus")
 	discoveryManager.ApplyConfig(c)
 	syncedTargets = <-discoveryManager.SyncCh()
 	p = pk("static", "prometheus2", 0)
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
-	require.Equal(t, 1, len(discoveryManager.targets))
-	require.Equal(t, 1, len(syncedTargets))
+	require.Len(t, discoveryManager.targets, 1)
+	require.Len(t, syncedTargets, 1)
 	verifySyncedPresence(t, syncedTargets, "prometheus2", "{__address__=\"foo:9090\"}", true)
-	require.Equal(t, 1, len(syncedTargets["prometheus2"]))
+	require.Len(t, syncedTargets["prometheus2"], 1)
 }
 
 func TestTargetSetTargetGroupsPresentOnConfigChange(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	discoveryManager := NewManager(ctx, log.NewNopLogger())
+	discoveryManager := NewManager(ctx, log.NewNopLogger(), prometheus.NewRegistry())
+	require.NotNil(t, discoveryManager)
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
 
@@ -895,9 +901,9 @@ func TestTargetSetTargetGroupsPresentOnConfigChange(t *testing.T) {
 	discoveryManager.ApplyConfig(c)
 
 	syncedTargets := <-discoveryManager.SyncCh()
-	require.Equal(t, 1, len(syncedTargets))
+	require.Len(t, syncedTargets, 1)
 	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
-	require.Equal(t, 1, len(syncedTargets["prometheus"]))
+	require.Len(t, syncedTargets["prometheus"], 1)
 
 	var mu sync.Mutex
 	c["prometheus2"] = Configs{
@@ -912,39 +918,40 @@ func TestTargetSetTargetGroupsPresentOnConfigChange(t *testing.T) {
 	// Original targets should be present as soon as possible.
 	syncedTargets = <-discoveryManager.SyncCh()
 	mu.Unlock()
-	require.Equal(t, 1, len(syncedTargets))
+	require.Len(t, syncedTargets, 1)
 	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
-	require.Equal(t, 1, len(syncedTargets["prometheus"]))
+	require.Len(t, syncedTargets["prometheus"], 1)
 
 	// prometheus2 configs should be ready on second sync.
 	syncedTargets = <-discoveryManager.SyncCh()
-	require.Equal(t, 2, len(syncedTargets))
+	require.Len(t, syncedTargets, 2)
 	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
-	require.Equal(t, 1, len(syncedTargets["prometheus"]))
+	require.Len(t, syncedTargets["prometheus"], 1)
 	verifySyncedPresence(t, syncedTargets, "prometheus2", "{__address__=\"bar:9090\"}", true)
-	require.Equal(t, 1, len(syncedTargets["prometheus2"]))
+	require.Len(t, syncedTargets["prometheus2"], 1)
 
 	p := pk("static", "prometheus", 0)
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
 	p = pk("lockstatic", "prometheus2", 1)
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"bar:9090\"}", true)
-	require.Equal(t, 2, len(discoveryManager.targets))
+	require.Len(t, discoveryManager.targets, 2)
 
 	// Delete part of config and ensure only original targets exist.
 	delete(c, "prometheus2")
 	discoveryManager.ApplyConfig(c)
 	syncedTargets = <-discoveryManager.SyncCh()
-	require.Equal(t, 1, len(discoveryManager.targets))
+	require.Len(t, discoveryManager.targets, 1)
 	verifyPresence(t, discoveryManager.targets, pk("static", "prometheus", 0), "{__address__=\"foo:9090\"}", true)
-	require.Equal(t, 1, len(syncedTargets))
+	require.Len(t, syncedTargets, 1)
 	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
-	require.Equal(t, 1, len(syncedTargets["prometheus"]))
+	require.Len(t, syncedTargets["prometheus"], 1)
 }
 
 func TestTargetSetRecreatesTargetGroupsOnConfigChange(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	discoveryManager := NewManager(ctx, log.NewNopLogger())
+	discoveryManager := NewManager(ctx, log.NewNopLogger(), prometheus.NewRegistry())
+	require.NotNil(t, discoveryManager)
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
 
@@ -959,31 +966,32 @@ func TestTargetSetRecreatesTargetGroupsOnConfigChange(t *testing.T) {
 	p := pk("static", "prometheus", 0)
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"bar:9090\"}", true)
-	require.Equal(t, 1, len(discoveryManager.targets))
-	require.Equal(t, 1, len(syncedTargets))
+	require.Len(t, discoveryManager.targets, 1)
+	require.Len(t, syncedTargets, 1)
 	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
 	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"bar:9090\"}", true)
-	require.Equal(t, 2, len(syncedTargets["prometheus"]))
+	require.Len(t, syncedTargets["prometheus"], 2)
 
 	c["prometheus"] = Configs{
 		staticConfig("foo:9090"),
 	}
 	discoveryManager.ApplyConfig(c)
 	syncedTargets = <-discoveryManager.SyncCh()
-	require.Equal(t, 1, len(discoveryManager.targets))
+	require.Len(t, discoveryManager.targets, 1)
 	p = pk("static", "prometheus", 1)
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"bar:9090\"}", false)
-	require.Equal(t, 1, len(discoveryManager.targets))
-	require.Equal(t, 1, len(syncedTargets))
+	require.Len(t, discoveryManager.targets, 1)
+	require.Len(t, syncedTargets, 1)
 	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
-	require.Equal(t, 1, len(syncedTargets["prometheus"]))
+	require.Len(t, syncedTargets["prometheus"], 1)
 }
 
 func TestDiscovererConfigs(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	discoveryManager := NewManager(ctx, log.NewNopLogger())
+	discoveryManager := NewManager(ctx, log.NewNopLogger(), prometheus.NewRegistry())
+	require.NotNil(t, discoveryManager)
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
 
@@ -1001,12 +1009,12 @@ func TestDiscovererConfigs(t *testing.T) {
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"bar:9090\"}", true)
 	p = pk("static", "prometheus", 1)
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"baz:9090\"}", true)
-	require.Equal(t, 2, len(discoveryManager.targets))
-	require.Equal(t, 1, len(syncedTargets))
+	require.Len(t, discoveryManager.targets, 2)
+	require.Len(t, syncedTargets, 1)
 	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
 	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"bar:9090\"}", true)
 	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"baz:9090\"}", true)
-	require.Equal(t, 3, len(syncedTargets["prometheus"]))
+	require.Len(t, syncedTargets["prometheus"], 3)
 }
 
 // TestTargetSetRecreatesEmptyStaticConfigs ensures that reloading a config file after
@@ -1015,7 +1023,8 @@ func TestDiscovererConfigs(t *testing.T) {
 func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	discoveryManager := NewManager(ctx, log.NewNopLogger())
+	discoveryManager := NewManager(ctx, log.NewNopLogger(), prometheus.NewRegistry())
+	require.NotNil(t, discoveryManager)
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
 
@@ -1029,9 +1038,9 @@ func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
 	syncedTargets := <-discoveryManager.SyncCh()
 	p := pk("static", "prometheus", 0)
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
-	require.Equal(t, 1, len(syncedTargets))
+	require.Len(t, syncedTargets, 1)
 	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
-	require.Equal(t, 1, len(syncedTargets["prometheus"]))
+	require.Len(t, syncedTargets["prometheus"], 1)
 
 	c["prometheus"] = Configs{
 		StaticConfig{{}},
@@ -1052,8 +1061,8 @@ func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
 	if len(group.Targets) != 0 {
 		t.Fatalf("Invalid number of targets: expected 0, got %d", len(group.Targets))
 	}
-	require.Equal(t, 1, len(syncedTargets))
-	require.Equal(t, 1, len(syncedTargets["prometheus"]))
+	require.Len(t, syncedTargets, 1)
+	require.Len(t, syncedTargets["prometheus"], 1)
 	if lbls := syncedTargets["prometheus"][0].Labels; lbls != nil {
 		t.Fatalf("Unexpected Group: expected nil Labels, got %v", lbls)
 	}
@@ -1062,7 +1071,8 @@ func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
 func TestIdenticalConfigurationsAreCoalesced(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	discoveryManager := NewManager(ctx, nil)
+	discoveryManager := NewManager(ctx, nil, prometheus.NewRegistry())
+	require.NotNil(t, discoveryManager)
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
 
@@ -1082,11 +1092,11 @@ func TestIdenticalConfigurationsAreCoalesced(t *testing.T) {
 	if len(discoveryManager.providers) != 1 {
 		t.Fatalf("Invalid number of providers: expected 1, got %d", len(discoveryManager.providers))
 	}
-	require.Equal(t, 2, len(syncedTargets))
+	require.Len(t, syncedTargets, 2)
 	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
-	require.Equal(t, 1, len(syncedTargets["prometheus"]))
+	require.Len(t, syncedTargets["prometheus"], 1)
 	verifySyncedPresence(t, syncedTargets, "prometheus2", "{__address__=\"foo:9090\"}", true)
-	require.Equal(t, 1, len(syncedTargets["prometheus2"]))
+	require.Len(t, syncedTargets["prometheus2"], 1)
 }
 
 func TestApplyConfigDoesNotModifyStaticTargets(t *testing.T) {
@@ -1098,7 +1108,8 @@ func TestApplyConfigDoesNotModifyStaticTargets(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	discoveryManager := NewManager(ctx, log.NewNopLogger())
+	discoveryManager := NewManager(ctx, log.NewNopLogger(), prometheus.NewRegistry())
+	require.NotNil(t, discoveryManager)
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
 
@@ -1144,7 +1155,8 @@ func (s lockStaticDiscoverer) Run(ctx context.Context, up chan<- []*targetgroup.
 func TestGaugeFailedConfigs(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	discoveryManager := NewManager(ctx, log.NewNopLogger())
+	discoveryManager := NewManager(ctx, log.NewNopLogger(), prometheus.NewRegistry())
+	require.NotNil(t, discoveryManager)
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
 
@@ -1158,7 +1170,7 @@ func TestGaugeFailedConfigs(t *testing.T) {
 	discoveryManager.ApplyConfig(c)
 	<-discoveryManager.SyncCh()
 
-	failedCount := client_testutil.ToFloat64(failedConfigs)
+	failedCount := client_testutil.ToFloat64(discoveryManager.metrics.FailedConfigs)
 	if failedCount != 3 {
 		t.Fatalf("Expected to have 3 failed configs, got: %v", failedCount)
 	}
@@ -1169,7 +1181,7 @@ func TestGaugeFailedConfigs(t *testing.T) {
 	discoveryManager.ApplyConfig(c)
 	<-discoveryManager.SyncCh()
 
-	failedCount = client_testutil.ToFloat64(failedConfigs)
+	failedCount = client_testutil.ToFloat64(discoveryManager.metrics.FailedConfigs)
 	if failedCount != 0 {
 		t.Fatalf("Expected to get no failed config, got: %v", failedCount)
 	}
@@ -1300,7 +1312,8 @@ func TestCoordinationWithReceiver(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 
-			mgr := NewManager(ctx, nil)
+			mgr := NewManager(ctx, nil, prometheus.NewRegistry())
+			require.NotNil(t, mgr)
 			mgr.updatert = updateDelay
 			go mgr.Run()
 
@@ -1392,10 +1405,11 @@ func (o onceProvider) Run(_ context.Context, ch chan<- []*targetgroup.Group) {
 
 // TestTargetSetTargetGroupsUpdateDuringApplyConfig is used to detect races when
 // ApplyConfig happens at the same time as targets update.
-func TestTargetSetTargetGroupsUpdateDuringApplyConfig(*testing.T) {
+func TestTargetSetTargetGroupsUpdateDuringApplyConfig(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	discoveryManager := NewManager(ctx, log.NewNopLogger())
+	discoveryManager := NewManager(ctx, log.NewNopLogger(), prometheus.NewRegistry())
+	require.NotNil(t, discoveryManager)
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
 

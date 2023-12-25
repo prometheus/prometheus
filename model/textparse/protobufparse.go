@@ -16,6 +16,7 @@ package textparse
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -24,7 +25,6 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/gogo/protobuf/types"
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -252,21 +252,21 @@ func (p *ProtobufParser) Help() ([]byte, []byte) {
 // Type returns the metric name and type in the current entry.
 // Must only be called after Next returned a type entry.
 // The returned byte slices become invalid after the next call to Next.
-func (p *ProtobufParser) Type() ([]byte, MetricType) {
+func (p *ProtobufParser) Type() ([]byte, model.MetricType) {
 	n := p.metricBytes.Bytes()
 	switch p.mf.GetType() {
 	case dto.MetricType_COUNTER:
-		return n, MetricTypeCounter
+		return n, model.MetricTypeCounter
 	case dto.MetricType_GAUGE:
-		return n, MetricTypeGauge
+		return n, model.MetricTypeGauge
 	case dto.MetricType_HISTOGRAM:
-		return n, MetricTypeHistogram
+		return n, model.MetricTypeHistogram
 	case dto.MetricType_GAUGE_HISTOGRAM:
-		return n, MetricTypeGaugeHistogram
+		return n, model.MetricTypeGaugeHistogram
 	case dto.MetricType_SUMMARY:
-		return n, MetricTypeSummary
+		return n, model.MetricTypeSummary
 	}
-	return n, MetricTypeUnknown
+	return n, model.MetricTypeUnknown
 }
 
 // Unit always returns (nil, nil) because units aren't supported by the protobuf
@@ -317,21 +317,27 @@ func (p *ProtobufParser) Exemplar(ex *exemplar.Exemplar) bool {
 		exProto = m.GetCounter().GetExemplar()
 	case dto.MetricType_HISTOGRAM, dto.MetricType_GAUGE_HISTOGRAM:
 		bb := m.GetHistogram().GetBucket()
+		isClassic := p.state == EntrySeries
 		if p.fieldPos < 0 {
-			if p.state == EntrySeries {
+			if isClassic {
 				return false // At _count or _sum.
 			}
 			p.fieldPos = 0 // Start at 1st bucket for native histograms.
 		}
 		for p.fieldPos < len(bb) {
 			exProto = bb[p.fieldPos].GetExemplar()
-			if p.state == EntrySeries {
+			if isClassic {
 				break
 			}
 			p.fieldPos++
-			if exProto != nil {
-				break
+			// We deliberately drop exemplars with no timestamp only for native histograms.
+			if exProto != nil && (isClassic || exProto.GetTimestamp() != nil) {
+				break // Found a classic histogram exemplar or a native histogram exemplar with a timestamp.
 			}
+		}
+		// If the last exemplar for native histograms has no timestamp, ignore it.
+		if !isClassic && exProto.GetTimestamp() == nil {
+			return false
 		}
 	default:
 		return false
@@ -354,22 +360,26 @@ func (p *ProtobufParser) Exemplar(ex *exemplar.Exemplar) bool {
 	return true
 }
 
-func (p *ProtobufParser) CreatedTimestamp(ct *types.Timestamp) bool {
-	var foundCT *types.Timestamp
+// CreatedTimestamp returns CT or nil if CT is not present or
+// invalid (as timestamp e.g. negative value) on counters, summaries or histograms.
+func (p *ProtobufParser) CreatedTimestamp() *int64 {
+	var ct *types.Timestamp
 	switch p.mf.GetType() {
 	case dto.MetricType_COUNTER:
-		foundCT = p.mf.GetMetric()[p.metricPos].GetCounter().GetCreatedTimestamp()
+		ct = p.mf.GetMetric()[p.metricPos].GetCounter().GetCreatedTimestamp()
 	case dto.MetricType_SUMMARY:
-		foundCT = p.mf.GetMetric()[p.metricPos].GetSummary().GetCreatedTimestamp()
+		ct = p.mf.GetMetric()[p.metricPos].GetSummary().GetCreatedTimestamp()
 	case dto.MetricType_HISTOGRAM, dto.MetricType_GAUGE_HISTOGRAM:
-		foundCT = p.mf.GetMetric()[p.metricPos].GetHistogram().GetCreatedTimestamp()
+		ct = p.mf.GetMetric()[p.metricPos].GetHistogram().GetCreatedTimestamp()
 	default:
 	}
-	if foundCT == nil {
-		return false
+	ctAsTime, err := types.TimestampFromProto(ct)
+	if err != nil {
+		// Errors means ct == nil or invalid timestamp, which we silently ignore.
+		return nil
 	}
-	*ct = *foundCT
-	return true
+	ctMilis := ctAsTime.UnixMilli()
+	return &ctMilis
 }
 
 // Next advances the parser to the next "sample" (emulating the behavior of a
@@ -396,10 +406,10 @@ func (p *ProtobufParser) Next() (Entry, error) {
 		// into metricBytes and validate only name, help, and type for now.
 		name := p.mf.GetName()
 		if !model.IsValidMetricName(model.LabelValue(name)) {
-			return EntryInvalid, errors.Errorf("invalid metric name: %s", name)
+			return EntryInvalid, fmt.Errorf("invalid metric name: %s", name)
 		}
 		if help := p.mf.GetHelp(); !utf8.ValidString(help) {
-			return EntryInvalid, errors.Errorf("invalid help for metric %q: %s", name, help)
+			return EntryInvalid, fmt.Errorf("invalid help for metric %q: %s", name, help)
 		}
 		switch p.mf.GetType() {
 		case dto.MetricType_COUNTER,
@@ -410,7 +420,7 @@ func (p *ProtobufParser) Next() (Entry, error) {
 			dto.MetricType_UNTYPED:
 			// All good.
 		default:
-			return EntryInvalid, errors.Errorf("unknown metric type for metric %q: %s", name, p.mf.GetType())
+			return EntryInvalid, fmt.Errorf("unknown metric type for metric %q: %s", name, p.mf.GetType())
 		}
 		p.metricBytes.Reset()
 		p.metricBytes.WriteString(name)
@@ -463,7 +473,7 @@ func (p *ProtobufParser) Next() (Entry, error) {
 			return EntryInvalid, err
 		}
 	default:
-		return EntryInvalid, errors.Errorf("invalid protobuf parsing state: %d", p.state)
+		return EntryInvalid, fmt.Errorf("invalid protobuf parsing state: %d", p.state)
 	}
 	return p.state, nil
 }
@@ -476,13 +486,13 @@ func (p *ProtobufParser) updateMetricBytes() error {
 		b.WriteByte(model.SeparatorByte)
 		n := lp.GetName()
 		if !model.LabelName(n).IsValid() {
-			return errors.Errorf("invalid label name: %s", n)
+			return fmt.Errorf("invalid label name: %s", n)
 		}
 		b.WriteString(n)
 		b.WriteByte(model.SeparatorByte)
 		v := lp.GetValue()
 		if !utf8.ValidString(v) {
-			return errors.Errorf("invalid label value: %s", v)
+			return fmt.Errorf("invalid label value: %s", v)
 		}
 		b.WriteString(v)
 	}
@@ -557,7 +567,7 @@ func readDelimited(b []byte, mf *dto.MetricFamily) (n int, err error) {
 	}
 	totalLength := varIntLength + int(messageLength)
 	if totalLength > len(b) {
-		return 0, errors.Errorf("protobufparse: insufficient length of buffer, expected at least %d bytes, got %d bytes", totalLength, len(b))
+		return 0, fmt.Errorf("protobufparse: insufficient length of buffer, expected at least %d bytes, got %d bytes", totalLength, len(b))
 	}
 	mf.Reset()
 	return totalLength, mf.Unmarshal(b[varIntLength:totalLength])

@@ -17,7 +17,7 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v4"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 )
@@ -142,6 +142,7 @@ func TestMapFromVMScaleSetVMWithEmptyTags(t *testing.T) {
 	vmSize := armcompute.VirtualMachineSizeTypes(size)
 	osType := armcompute.OperatingSystemTypesLinux
 	vmType := "type"
+	instanceID := "123"
 	location := "westeurope"
 	computerName := "computer_name"
 	networkProfile := armcompute.NetworkProfile{
@@ -166,6 +167,7 @@ func TestMapFromVMScaleSetVMWithEmptyTags(t *testing.T) {
 		ID:         &id,
 		Name:       &name,
 		Type:       &vmType,
+		InstanceID: &instanceID,
 		Location:   &location,
 		Tags:       nil,
 		Properties: properties,
@@ -182,6 +184,7 @@ func TestMapFromVMScaleSetVMWithEmptyTags(t *testing.T) {
 		Tags:              map[string]*string{},
 		NetworkInterfaces: []string{},
 		ScaleSet:          scaleSet,
+		InstanceID:        instanceID,
 		Size:              size,
 	}
 
@@ -197,6 +200,7 @@ func TestMapFromVMScaleSetVMWithTags(t *testing.T) {
 	vmSize := armcompute.VirtualMachineSizeTypes(size)
 	osType := armcompute.OperatingSystemTypesLinux
 	vmType := "type"
+	instanceID := "123"
 	location := "westeurope"
 	computerName := "computer_name"
 	tags := map[string]*string{
@@ -224,6 +228,7 @@ func TestMapFromVMScaleSetVMWithTags(t *testing.T) {
 		ID:         &id,
 		Name:       &name,
 		Type:       &vmType,
+		InstanceID: &instanceID,
 		Location:   &location,
 		Tags:       tags,
 		Properties: properties,
@@ -240,6 +245,7 @@ func TestMapFromVMScaleSetVMWithTags(t *testing.T) {
 		Tags:              tags,
 		NetworkInterfaces: []string{},
 		ScaleSet:          scaleSet,
+		InstanceID:        instanceID,
 		Size:              size,
 	}
 
@@ -269,7 +275,7 @@ func TestNewAzureResourceFromID(t *testing.T) {
 		},
 	} {
 		actual, err := newAzureResourceFromID(tc.id, nil)
-		require.Nil(t, err)
+		require.NoError(t, err)
 		require.Equal(t, tc.expected.Name, actual.Name)
 		require.Equal(t, tc.expected.ResourceGroupName, actual.ResourceGroupName)
 	}

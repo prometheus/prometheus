@@ -23,6 +23,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
@@ -35,7 +37,7 @@ func testUpdateServices(respHandler http.HandlerFunc) ([]*targetgroup.Group, err
 		Server: ts.URL,
 	}
 
-	md, err := NewDiscovery(&conf, nil)
+	md, err := NewDiscovery(&conf, nil, prometheus.NewRegistry())
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +57,7 @@ func TestUyuniSDHandleError(t *testing.T) {
 	tgs, err := testUpdateServices(respHandler)
 
 	require.EqualError(t, err, errTesting)
-	require.Equal(t, len(tgs), 0)
+	require.Empty(t, tgs)
 }
 
 func TestUyuniSDLogin(t *testing.T) {
@@ -87,7 +89,7 @@ func TestUyuniSDLogin(t *testing.T) {
 	tgs, err := testUpdateServices(respHandler)
 
 	require.EqualError(t, err, errTesting)
-	require.Equal(t, len(tgs), 0)
+	require.Empty(t, tgs)
 }
 
 func TestUyuniSDSkipLogin(t *testing.T) {
@@ -108,7 +110,7 @@ func TestUyuniSDSkipLogin(t *testing.T) {
 		Server: ts.URL,
 	}
 
-	md, err := NewDiscovery(&conf, nil)
+	md, err := NewDiscovery(&conf, nil, prometheus.NewRegistry())
 	if err != nil {
 		t.Error(err)
 	}
@@ -119,5 +121,5 @@ func TestUyuniSDSkipLogin(t *testing.T) {
 	tgs, err := md.refresh(context.Background())
 
 	require.EqualError(t, err, errTesting)
-	require.Equal(t, len(tgs), 0)
+	require.Empty(t, tgs)
 }

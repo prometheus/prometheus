@@ -65,7 +65,7 @@ testmetric{label="\"bar\""} 1`
 		m       string
 		t       *int64
 		v       float64
-		typ     MetricType
+		typ     model.MetricType
 		help    string
 		comment string
 	}{
@@ -74,7 +74,7 @@ testmetric{label="\"bar\""} 1`
 			help: "A summary of the GC invocation durations.",
 		}, {
 			m:   "go_gc_duration_seconds",
-			typ: MetricTypeSummary,
+			typ: model.MetricTypeSummary,
 		}, {
 			m:    `go_gc_duration_seconds{quantile="0"}`,
 			v:    4.9351e-05,
@@ -142,7 +142,7 @@ testmetric{label="\"bar\""} 1`
 			help: "Number of goroutines that currently exist.",
 		}, {
 			m:   "go_goroutines",
-			typ: MetricTypeGauge,
+			typ: model.MetricTypeGauge,
 		}, {
 			m:    `go_goroutines`,
 			v:    33,
@@ -209,7 +209,7 @@ testmetric{label="\"bar\""} 1`
 
 		i++
 	}
-	require.Equal(t, len(exp), i)
+	require.Len(t, exp, i)
 }
 
 func TestPromParseErrors(t *testing.T) {

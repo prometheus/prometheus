@@ -14,7 +14,9 @@
 package remote
 
 import (
+	"fmt"
 	"net/url"
+	"sync"
 	"testing"
 
 	common_config "github.com/prometheus/common/config"
@@ -42,10 +44,10 @@ func TestStorageLifecycle(t *testing.T) {
 	require.NoError(t, s.ApplyConfig(conf))
 
 	// make sure remote write has a queue.
-	require.Equal(t, 1, len(s.rws.queues))
+	require.Len(t, s.rws.queues, 1)
 
 	// make sure remote write has a queue.
-	require.Equal(t, 1, len(s.queryables))
+	require.Len(t, s.queryables, 1)
 
 	err := s.Close()
 	require.NoError(t, err)
@@ -60,13 +62,13 @@ func TestUpdateRemoteReadConfigs(t *testing.T) {
 		GlobalConfig: config.GlobalConfig{},
 	}
 	require.NoError(t, s.ApplyConfig(conf))
-	require.Equal(t, 0, len(s.queryables))
+	require.Empty(t, s.queryables)
 
 	conf.RemoteReadConfigs = []*config.RemoteReadConfig{
 		baseRemoteReadConfig("http://test-storage.com"),
 	}
 	require.NoError(t, s.ApplyConfig(conf))
-	require.Equal(t, 1, len(s.queryables))
+	require.Len(t, s.queryables, 1)
 
 	err := s.Close()
 	require.NoError(t, err)
@@ -83,14 +85,14 @@ func TestFilterExternalLabels(t *testing.T) {
 		},
 	}
 	require.NoError(t, s.ApplyConfig(conf))
-	require.Equal(t, 0, len(s.queryables))
+	require.Empty(t, s.queryables)
 
 	conf.RemoteReadConfigs = []*config.RemoteReadConfig{
 		baseRemoteReadConfig("http://test-storage.com"),
 	}
 
 	require.NoError(t, s.ApplyConfig(conf))
-	require.Equal(t, 1, len(s.queryables))
+	require.Len(t, s.queryables, 1)
 	require.Equal(t, 1, s.queryables[0].(*sampleAndChunkQueryableClient).externalLabels.Len())
 
 	err := s.Close()
@@ -108,7 +110,7 @@ func TestIgnoreExternalLabels(t *testing.T) {
 		},
 	}
 	require.NoError(t, s.ApplyConfig(conf))
-	require.Equal(t, 0, len(s.queryables))
+	require.Empty(t, s.queryables)
 
 	conf.RemoteReadConfigs = []*config.RemoteReadConfig{
 		baseRemoteReadConfig("http://test-storage.com"),
@@ -117,7 +119,7 @@ func TestIgnoreExternalLabels(t *testing.T) {
 	conf.RemoteReadConfigs[0].FilterExternalLabels = false
 
 	require.NoError(t, s.ApplyConfig(conf))
-	require.Equal(t, 1, len(s.queryables))
+	require.Len(t, s.queryables, 1)
 	require.Equal(t, 0, s.queryables[0].(*sampleAndChunkQueryableClient).externalLabels.Len())
 
 	err := s.Close()
@@ -146,4 +148,40 @@ func baseRemoteReadConfig(host string) *config.RemoteReadConfig {
 		},
 	}
 	return &cfg
+}
+
+// TestWriteStorageApplyConfigsDuringCommit helps detecting races when
+// ApplyConfig runs concurrently with Notify
+// See https://github.com/prometheus/prometheus/issues/12747
+func TestWriteStorageApplyConfigsDuringCommit(t *testing.T) {
+	s := NewStorage(nil, nil, nil, t.TempDir(), defaultFlushDeadline, nil)
+
+	var wg sync.WaitGroup
+	wg.Add(2000)
+
+	start := make(chan struct{})
+	for i := 0; i < 1000; i++ {
+		go func(i int) {
+			<-start
+			conf := &config.Config{
+				GlobalConfig: config.DefaultGlobalConfig,
+				RemoteWriteConfigs: []*config.RemoteWriteConfig{
+					baseRemoteWriteConfig(fmt.Sprintf("http://test-%d.com", i)),
+				},
+			}
+			require.NoError(t, s.ApplyConfig(conf))
+			wg.Done()
+		}(i)
+	}
+
+	for i := 0; i < 1000; i++ {
+		go func() {
+			<-start
+			s.Notify()
+			wg.Done()
+		}()
+	}
+
+	close(start)
+	wg.Wait()
 }

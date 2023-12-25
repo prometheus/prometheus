@@ -408,9 +408,57 @@ func TestHistogramToFloat(t *testing.T) {
 		},
 		NegativeBuckets: []int64{1, 2, -2, 1, -1, 0},
 	}
-	fh := h.ToFloat()
+	cases := []struct {
+		name string
+		fh   *FloatHistogram
+	}{
+		{name: "without prior float histogram"},
+		{name: "prior float histogram with more buckets", fh: &FloatHistogram{
+			Schema:        2,
+			Count:         3,
+			Sum:           5,
+			ZeroThreshold: 4,
+			ZeroCount:     1,
+			PositiveSpans: []Span{
+				{Offset: 1, Length: 2},
+				{Offset: 1, Length: 2},
+				{Offset: 1, Length: 2},
+			},
+			PositiveBuckets: []float64{1, 2, 3, 4, 5, 6, 7, 8, 9},
+			NegativeSpans: []Span{
+				{Offset: 20, Length: 6},
+				{Offset: 12, Length: 7},
+				{Offset: 33, Length: 10},
+			},
+			NegativeBuckets: []float64{1, 2, 3, 4, 5, 6, 7, 8, 9},
+		}},
+		{name: "prior float histogram with fewer buckets", fh: &FloatHistogram{
+			Schema:        2,
+			Count:         3,
+			Sum:           5,
+			ZeroThreshold: 4,
+			ZeroCount:     1,
+			PositiveSpans: []Span{
+				{Offset: 1, Length: 2},
+				{Offset: 1, Length: 2},
+				{Offset: 1, Length: 2},
+			},
+			PositiveBuckets: []float64{1, 2},
+			NegativeSpans: []Span{
+				{Offset: 20, Length: 6},
+				{Offset: 12, Length: 7},
+				{Offset: 33, Length: 10},
+			},
+			NegativeBuckets: []float64{1, 2},
+		}},
+	}
 
-	require.Equal(t, h.String(), fh.String())
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			fh := h.ToFloat(c.fh)
+			require.Equal(t, h.String(), fh.String())
+		})
+	}
 }
 
 // TestHistogramEquals tests both Histogram and FloatHistogram.
@@ -436,14 +484,14 @@ func TestHistogramEquals(t *testing.T) {
 	equals := func(h1, h2 Histogram) {
 		require.True(t, h1.Equals(&h2))
 		require.True(t, h2.Equals(&h1))
-		h1f, h2f := h1.ToFloat(), h2.ToFloat()
+		h1f, h2f := h1.ToFloat(nil), h2.ToFloat(nil)
 		require.True(t, h1f.Equals(h2f))
 		require.True(t, h2f.Equals(h1f))
 	}
 	notEquals := func(h1, h2 Histogram) {
 		require.False(t, h1.Equals(&h2))
 		require.False(t, h2.Equals(&h1))
-		h1f, h2f := h1.ToFloat(), h2.ToFloat()
+		h1f, h2f := h1.ToFloat(nil), h2.ToFloat(nil)
 		require.False(t, h1f.Equals(h2f))
 		require.False(t, h2f.Equals(h1f))
 	}
@@ -950,7 +998,7 @@ func TestHistogramValidation(t *testing.T) {
 				return
 			}
 
-			fh := tc.h.ToFloat()
+			fh := tc.h.ToFloat(nil)
 			if err := fh.Validate(); tc.errMsg != "" {
 				require.EqualError(t, err, tc.errMsg)
 			} else {
@@ -965,5 +1013,50 @@ func BenchmarkHistogramValidation(b *testing.B) {
 	b.ResetTimer()
 	for _, h := range histograms {
 		require.NoError(b, h.Validate())
+	}
+}
+
+func TestHistogramReduceResolution(t *testing.T) {
+	tcs := map[string]struct {
+		origin *Histogram
+		target *Histogram
+	}{
+		"valid histogram": {
+			origin: &Histogram{
+				Schema: 0,
+				PositiveSpans: []Span{
+					{Offset: 0, Length: 4},
+					{Offset: 0, Length: 0},
+					{Offset: 3, Length: 2},
+				},
+				PositiveBuckets: []int64{1, 2, -2, 1, -1, 0},
+				NegativeSpans: []Span{
+					{Offset: 0, Length: 4},
+					{Offset: 0, Length: 0},
+					{Offset: 3, Length: 2},
+				},
+				NegativeBuckets: []int64{1, 2, -2, 1, -1, 0},
+			},
+			target: &Histogram{
+				Schema: -1,
+				PositiveSpans: []Span{
+					{Offset: 0, Length: 3},
+					{Offset: 1, Length: 1},
+				},
+				PositiveBuckets: []int64{1, 3, -2, 0},
+				NegativeSpans: []Span{
+					{Offset: 0, Length: 3},
+					{Offset: 1, Length: 1},
+				},
+				NegativeBuckets: []int64{1, 3, -2, 0},
+			},
+		},
+	}
+
+	for _, tc := range tcs {
+		target := tc.origin.ReduceResolution(tc.target.Schema)
+		require.Equal(t, tc.target, target)
+		// Check that receiver histogram was mutated:
+		require.Equal(t, tc.target, tc.origin)
 	}
 }

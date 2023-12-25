@@ -16,17 +16,17 @@
     "npm": ">=7.0.0"
   },
   "devDependencies": {
-    "@types/jest": "^29.5.2",
-    "@types/node": "^17.0.45",
-    "eslint-config-prettier": "^8.8.0",
+    "@types/jest": "^29.5.11",
+    "@types/node": "^20.10.4",
+    "eslint-config-prettier": "^8.10.0",
     "eslint-config-react-app": "^7.0.1",
     "eslint-plugin-prettier": "^4.2.1",
-    "jest-canvas-mock": "^2.5.1",
+    "jest-canvas-mock": "^2.5.2",
     "jest-fetch-mock": "^3.0.3",
     "prettier": "^2.8.8",
     "react-scripts": "^5.0.1",
-    "ts-jest": "^29.1.0",
+    "ts-jest": "^29.1.1",
     "typescript": "^4.9.5"
   },
-  "version": "0.48.0-rc.2"
+  "version": "0.48.0"
 }

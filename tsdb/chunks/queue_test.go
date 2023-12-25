@@ -29,33 +29,33 @@ func (q *writeJobQueue) assertInvariants(t *testing.T) {
 
 	totalSize := 0
 	for s := q.first; s != nil; s = s.nextSegment {
-		require.True(t, s.segment != nil)
+		require.NotNil(t, s.segment)
 
 		// Next read index is lower or equal than next write index (we cannot past written jobs)
-		require.True(t, s.nextRead <= s.nextWrite)
+		require.LessOrEqual(t, s.nextRead, s.nextWrite)
 
 		// Number of unread elements in this segment.
 		totalSize += s.nextWrite - s.nextRead
 
 		// First segment can be partially read, other segments were not read yet.
 		if s == q.first {
-			require.True(t, s.nextRead >= 0)
+			require.GreaterOrEqual(t, s.nextRead, 0)
 		} else {
-			require.True(t, s.nextRead == 0)
+			require.Equal(t, 0, s.nextRead)
 		}
 
 		// If first shard is empty (everything was read from it already), it must have extra capacity for
 		// additional elements, otherwise it would have been removed.
 		if s == q.first && s.nextRead == s.nextWrite {
-			require.True(t, s.nextWrite < len(s.segment))
+			require.Less(t, s.nextWrite, len(s.segment))
 		}
 
 		// Segments in the middle are full.
 		if s != q.first && s != q.last {
-			require.True(t, s.nextWrite == len(s.segment))
+			require.Len(t, s.segment, s.nextWrite)
 		}
 		// Last segment must have at least one element, or we wouldn't have created it.
-		require.True(t, s.nextWrite > 0)
+		require.Greater(t, s.nextWrite, 0)
 	}
 
 	require.Equal(t, q.size, totalSize)
@@ -307,7 +307,7 @@ func TestQueuePushPopManyGoroutines(t *testing.T) {
 	readersWG.Wait()
 
 	// Check if we have all expected values
-	require.Equal(t, writeGoroutines*writes, len(refs))
+	require.Len(t, refs, writeGoroutines*writes)
 }
 
 func TestQueueSegmentIsKeptEvenIfEmpty(t *testing.T) {

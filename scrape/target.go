@@ -14,6 +14,7 @@
 package scrape
 
 import (
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"net"
@@ -22,7 +23,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"
@@ -30,7 +30,6 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
-	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 )
@@ -87,12 +86,12 @@ type MetricMetadataStore interface {
 // MetricMetadata is a piece of metadata for a metric.
 type MetricMetadata struct {
 	Metric string
-	Type   textparse.MetricType
+	Type   model.MetricType
 	Help   string
 	Unit   string
 }
 
-func (t *Target) MetadataList() []MetricMetadata {
+func (t *Target) ListMetadata() []MetricMetadata {
 	t.mtx.RLock()
 	defer t.mtx.RUnlock()
 
@@ -102,7 +101,7 @@ func (t *Target) MetadataList() []MetricMetadata {
 	return t.metadata.ListMetadata()
 }
 
-func (t *Target) MetadataSize() int {
+func (t *Target) SizeMetadata() int {
 	t.mtx.RLock()
 	defer t.mtx.RUnlock()
 
@@ -113,7 +112,7 @@ func (t *Target) MetadataSize() int {
 	return t.metadata.SizeMetadata()
 }
 
-func (t *Target) MetadataLength() int {
+func (t *Target) LengthMetadata() int {
 	t.mtx.RLock()
 	defer t.mtx.RUnlock()
 
@@ -124,8 +123,8 @@ func (t *Target) MetadataLength() int {
 	return t.metadata.LengthMetadata()
 }
 
-// Metadata returns type and help metadata for the given metric.
-func (t *Target) Metadata(metric string) (MetricMetadata, bool) {
+// GetMetadata returns type and help metadata for the given metric.
+func (t *Target) GetMetadata(metric string) (MetricMetadata, bool) {
 	t.mtx.RLock()
 	defer t.mtx.RUnlock()
 
@@ -289,12 +288,12 @@ func (t *Target) intervalAndTimeout(defaultInterval, defaultDuration time.Durati
 	intervalLabel := t.labels.Get(model.ScrapeIntervalLabel)
 	interval, err := model.ParseDuration(intervalLabel)
 	if err != nil {
-		return defaultInterval, defaultDuration, errors.Errorf("Error parsing interval label %q: %v", intervalLabel, err)
+		return defaultInterval, defaultDuration, fmt.Errorf("Error parsing interval label %q: %w", intervalLabel, err)
 	}
 	timeoutLabel := t.labels.Get(model.ScrapeTimeoutLabel)
 	timeout, err := model.ParseDuration(timeoutLabel)
 	if err != nil {
-		return defaultInterval, defaultDuration, errors.Errorf("Error parsing timeout label %q: %v", timeoutLabel, err)
+		return defaultInterval, defaultDuration, fmt.Errorf("Error parsing timeout label %q: %w", timeoutLabel, err)
 	}
 
 	return time.Duration(interval), time.Duration(timeout), nil
@@ -366,13 +365,19 @@ type bucketLimitAppender struct {
 
 func (app *bucketLimitAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	if h != nil {
-		if len(h.PositiveBuckets)+len(h.NegativeBuckets) > app.limit {
-			return 0, errBucketLimit
+		for len(h.PositiveBuckets)+len(h.NegativeBuckets) > app.limit {
+			if h.Schema == -4 {
+				return 0, errBucketLimit
+			}
+			h = h.ReduceResolution(h.Schema - 1)
 		}
 	}
 	if fh != nil {
-		if len(fh.PositiveBuckets)+len(fh.NegativeBuckets) > app.limit {
-			return 0, errBucketLimit
+		for len(fh.PositiveBuckets)+len(fh.NegativeBuckets) > app.limit {
+			if fh.Schema == -4 {
+				return 0, errBucketLimit
+			}
+			fh = fh.ReduceResolution(fh.Schema - 1)
 		}
 	}
 	ref, err := app.Appender.AppendHistogram(ref, lset, t, h, fh)
@@ -444,7 +449,7 @@ func PopulateLabels(lb *labels.Builder, cfg *config.ScrapeConfig, noDefaultPort 
 		case "https":
 			addr += ":443"
 		default:
-			return labels.EmptyLabels(), labels.EmptyLabels(), errors.Errorf("invalid scheme: %q", cfg.Scheme)
+			return labels.EmptyLabels(), labels.EmptyLabels(), fmt.Errorf("invalid scheme: %q", cfg.Scheme)
 		}
 		lb.Set(model.AddressLabel, addr)
 	}
@@ -471,7 +476,7 @@ func PopulateLabels(lb *labels.Builder, cfg *config.ScrapeConfig, noDefaultPort 
 	interval := lb.Get(model.ScrapeIntervalLabel)
 	intervalDuration, err := model.ParseDuration(interval)
 	if err != nil {
-		return labels.EmptyLabels(), labels.EmptyLabels(), errors.Errorf("error parsing scrape interval: %v", err)
+		return labels.EmptyLabels(), labels.EmptyLabels(), fmt.Errorf("error parsing scrape interval: %w", err)
 	}
 	if time.Duration(intervalDuration) == 0 {
 		return labels.EmptyLabels(), labels.EmptyLabels(), errors.New("scrape interval cannot be 0")
@@ -480,14 +485,14 @@ func PopulateLabels(lb *labels.Builder, cfg *config.ScrapeConfig, noDefaultPort 
 	timeout := lb.Get(model.ScrapeTimeoutLabel)
 	timeoutDuration, err := model.ParseDuration(timeout)
 	if err != nil {
-		return labels.EmptyLabels(), labels.EmptyLabels(), errors.Errorf("error parsing scrape timeout: %v", err)
+		return labels.EmptyLabels(), labels.EmptyLabels(), fmt.Errorf("error parsing scrape timeout: %w", err)
 	}
 	if time.Duration(timeoutDuration) == 0 {
 		return labels.EmptyLabels(), labels.EmptyLabels(), errors.New("scrape timeout cannot be 0")
 	}
 
 	if timeoutDuration > intervalDuration {
-		return labels.EmptyLabels(), labels.EmptyLabels(), errors.Errorf("scrape timeout cannot be greater than scrape interval (%q > %q)", timeout, interval)
+		return labels.EmptyLabels(), labels.EmptyLabels(), fmt.Errorf("scrape timeout cannot be greater than scrape interval (%q > %q)", timeout, interval)
 	}
 
 	// Meta labels are deleted after relabelling. Other internal labels propagate to
@@ -507,7 +512,7 @@ func PopulateLabels(lb *labels.Builder, cfg *config.ScrapeConfig, noDefaultPort 
 	err = res.Validate(func(l labels.Label) error {
 		// Check label values are valid, drop the target if not.
 		if !model.LabelValue(l.Value).IsValid() {
-			return errors.Errorf("invalid label value for %q: %q", l.Name, l.Value)
+			return fmt.Errorf("invalid label value for %q: %q", l.Name, l.Value)
 		}
 		return nil
 	})
@@ -536,7 +541,7 @@ func TargetsFromGroup(tg *targetgroup.Group, cfg *config.ScrapeConfig, noDefault
 
 		lset, origLabels, err := PopulateLabels(lb, cfg, noDefaultPort)
 		if err != nil {
-			failures = append(failures, errors.Wrapf(err, "instance %d in group %s", i, tg))
+			failures = append(failures, fmt.Errorf("instance %d in group %s: %w", i, tg, err))
 		}
 		if !lset.IsEmpty() || !origLabels.IsEmpty() {
 			targets = append(targets, NewTarget(lset, origLabels, cfg.Params))

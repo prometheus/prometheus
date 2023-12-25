@@ -18,7 +18,6 @@ import (
 	"math"
 	"strings"
 
-	"github.com/pkg/errors"
 	"golang.org/x/exp/slices"
 )
 
@@ -283,50 +282,49 @@ func (h *Histogram) Compact(maxEmptyBuckets int) *Histogram {
 	return h
 }
 
-// ToFloat returns a FloatHistogram representation of the Histogram. It is a
-// deep copy (e.g. spans are not shared).
-func (h *Histogram) ToFloat() *FloatHistogram {
-	var (
-		positiveSpans, negativeSpans     []Span
-		positiveBuckets, negativeBuckets []float64
-	)
-	if len(h.PositiveSpans) != 0 {
-		positiveSpans = make([]Span, len(h.PositiveSpans))
-		copy(positiveSpans, h.PositiveSpans)
+// ToFloat returns a FloatHistogram representation of the Histogram. It is a deep
+// copy (e.g. spans are not shared). The function accepts a FloatHistogram as an
+// argument whose memory will be reused and overwritten if provided. If this
+// argument is nil, a new FloatHistogram will be allocated.
+func (h *Histogram) ToFloat(fh *FloatHistogram) *FloatHistogram {
+	if fh == nil {
+		fh = &FloatHistogram{}
 	}
-	if len(h.NegativeSpans) != 0 {
-		negativeSpans = make([]Span, len(h.NegativeSpans))
-		copy(negativeSpans, h.NegativeSpans)
-	}
-	if len(h.PositiveBuckets) != 0 {
-		positiveBuckets = make([]float64, len(h.PositiveBuckets))
-		var current float64
-		for i, b := range h.PositiveBuckets {
-			current += float64(b)
-			positiveBuckets[i] = current
-		}
-	}
-	if len(h.NegativeBuckets) != 0 {
-		negativeBuckets = make([]float64, len(h.NegativeBuckets))
-		var current float64
-		for i, b := range h.NegativeBuckets {
-			current += float64(b)
-			negativeBuckets[i] = current
-		}
+	fh.CounterResetHint = h.CounterResetHint
+	fh.Schema = h.Schema
+	fh.ZeroThreshold = h.ZeroThreshold
+	fh.ZeroCount = float64(h.ZeroCount)
+	fh.Count = float64(h.Count)
+	fh.Sum = h.Sum
+
+	fh.PositiveSpans = resize(fh.PositiveSpans, len(h.PositiveSpans))
+	copy(fh.PositiveSpans, h.PositiveSpans)
+
+	fh.NegativeSpans = resize(fh.NegativeSpans, len(h.NegativeSpans))
+	copy(fh.NegativeSpans, h.NegativeSpans)
+
+	fh.PositiveBuckets = resize(fh.PositiveBuckets, len(h.PositiveBuckets))
+	var currentPositive float64
+	for i, b := range h.PositiveBuckets {
+		currentPositive += float64(b)
+		fh.PositiveBuckets[i] = currentPositive
 	}
 
-	return &FloatHistogram{
-		CounterResetHint: h.CounterResetHint,
-		Schema:           h.Schema,
-		ZeroThreshold:    h.ZeroThreshold,
-		ZeroCount:        float64(h.ZeroCount),
-		Count:            float64(h.Count),
-		Sum:              h.Sum,
-		PositiveSpans:    positiveSpans,
-		NegativeSpans:    negativeSpans,
-		PositiveBuckets:  positiveBuckets,
-		NegativeBuckets:  negativeBuckets,
+	fh.NegativeBuckets = resize(fh.NegativeBuckets, len(h.NegativeBuckets))
+	var currentNegative float64
+	for i, b := range h.NegativeBuckets {
+		currentNegative += float64(b)
+		fh.NegativeBuckets[i] = currentNegative
 	}
+
+	return fh
+}
+
+func resize[T any](items []T, n int) []T {
+	if cap(items) < n {
+		return make([]T, n)
+	}
+	return items[:n]
 }
 
 // Validate validates consistency between span and bucket slices. Also, buckets are checked
@@ -338,35 +336,29 @@ func (h *Histogram) ToFloat() *FloatHistogram {
 // the total h.Count).
 func (h *Histogram) Validate() error {
 	if err := checkHistogramSpans(h.NegativeSpans, len(h.NegativeBuckets)); err != nil {
-		return errors.Wrap(err, "negative side")
+		return fmt.Errorf("negative side: %w", err)
 	}
 	if err := checkHistogramSpans(h.PositiveSpans, len(h.PositiveBuckets)); err != nil {
-		return errors.Wrap(err, "positive side")
+		return fmt.Errorf("positive side: %w", err)
 	}
 	var nCount, pCount uint64
 	err := checkHistogramBuckets(h.NegativeBuckets, &nCount, true)
 	if err != nil {
-		return errors.Wrap(err, "negative side")
+		return fmt.Errorf("negative side: %w", err)
 	}
 	err = checkHistogramBuckets(h.PositiveBuckets, &pCount, true)
 	if err != nil {
-		return errors.Wrap(err, "positive side")
+		return fmt.Errorf("positive side: %w", err)
 	}
 
 	sumOfBuckets := nCount + pCount + h.ZeroCount
 	if math.IsNaN(h.Sum) {
 		if sumOfBuckets > h.Count {
-			return errors.Wrap(
-				ErrHistogramCountNotBigEnough,
-				fmt.Sprintf("%d observations found in buckets, but the Count field is %d", sumOfBuckets, h.Count),
-			)
+			return fmt.Errorf("%d observations found in buckets, but the Count field is %d: %w", sumOfBuckets, h.Count, ErrHistogramCountNotBigEnough)
 		}
 	} else {
 		if sumOfBuckets != h.Count {
-			return errors.Wrap(
-				ErrHistogramCountMismatch,
-				fmt.Sprintf("%d observations found in buckets, but the Count field is %d", sumOfBuckets, h.Count),
-			)
+			return fmt.Errorf("%d observations found in buckets, but the Count field is %d: %w", sumOfBuckets, h.Count, ErrHistogramCountMismatch)
 		}
 	}
 
@@ -499,4 +491,21 @@ func (c *cumulativeBucketIterator) At() Bucket[uint64] {
 		Count:          c.currCumulativeCount,
 		Index:          c.currIdx - 1,
 	}
+}
+
+// ReduceResolution reduces the histogram's spans, buckets into target schema.
+// The target schema must be smaller than the current histogram's schema.
+func (h *Histogram) ReduceResolution(targetSchema int32) *Histogram {
+	if targetSchema >= h.Schema {
+		panic(fmt.Errorf("cannot reduce resolution from schema %d to %d", h.Schema, targetSchema))
+	}
+
+	h.PositiveSpans, h.PositiveBuckets = reduceResolution(
+		h.PositiveSpans, h.PositiveBuckets, h.Schema, targetSchema, true, true,
+	)
+	h.NegativeSpans, h.NegativeBuckets = reduceResolution(
+		h.NegativeSpans, h.NegativeBuckets, h.Schema, targetSchema, true, true,
+	)
+	h.Schema = targetSchema
+	return h
 }

@@ -14,10 +14,9 @@
 package chunkenc
 
 import (
+	"fmt"
 	"math"
 	"sync"
-
-	"github.com/pkg/errors"
 
 	"github.com/prometheus/prometheus/model/histogram"
 )
@@ -68,6 +67,8 @@ const (
 
 // Chunk holds a sequence of sample pairs that can be iterated over and appended to.
 type Chunk interface {
+	Iterable
+
 	// Bytes returns the underlying byte slice of the chunk.
 	Bytes() []byte
 
@@ -76,11 +77,6 @@ type Chunk interface {
 
 	// Appender returns an appender to append samples to the chunk.
 	Appender() (Appender, error)
-
-	// The iterator passed as argument is for re-use.
-	// Depending on implementation, the iterator can
-	// be re-used or a new iterator can be allocated.
-	Iterator(Iterator) Iterator
 
 	// NumSamples returns the number of samples in the chunk.
 	NumSamples() int
@@ -91,6 +87,13 @@ type Chunk interface {
 	// There's no strong guarantee that no samples will be appended once
 	// Compact() is called. Implementing this function is optional.
 	Compact()
+}
+
+type Iterable interface {
+	// The iterator passed as argument is for re-use.
+	// Depending on implementation, the iterator can
+	// be re-used or a new iterator can be allocated.
+	Iterator(Iterator) Iterator
 }
 
 // Appender adds sample pairs to a chunk.
@@ -182,6 +185,19 @@ func (v ValueType) ChunkEncoding() Encoding {
 		return EncFloatHistogram
 	default:
 		return EncNone
+	}
+}
+
+func (v ValueType) NewChunk() (Chunk, error) {
+	switch v {
+	case ValFloat:
+		return NewXORChunk(), nil
+	case ValHistogram:
+		return NewHistogramChunk(), nil
+	case ValFloatHistogram:
+		return NewFloatHistogramChunk(), nil
+	default:
+		return nil, fmt.Errorf("value type %v unsupported", v)
 	}
 }
 
@@ -293,7 +309,7 @@ func (p *pool) Get(e Encoding, b []byte) (Chunk, error) {
 		c.b.count = 0
 		return c, nil
 	}
-	return nil, errors.Errorf("invalid chunk encoding %q", e)
+	return nil, fmt.Errorf("invalid chunk encoding %q", e)
 }
 
 func (p *pool) Put(c Chunk) error {
@@ -332,7 +348,7 @@ func (p *pool) Put(c Chunk) error {
 		sh.b.count = 0
 		p.floatHistogram.Put(c)
 	default:
-		return errors.Errorf("invalid chunk encoding %q", c.Encoding())
+		return fmt.Errorf("invalid chunk encoding %q", c.Encoding())
 	}
 	return nil
 }
@@ -349,7 +365,7 @@ func FromData(e Encoding, d []byte) (Chunk, error) {
 	case EncFloatHistogram:
 		return &FloatHistogramChunk{b: bstream{count: 0, stream: d}}, nil
 	}
-	return nil, errors.Errorf("invalid chunk encoding %q", e)
+	return nil, fmt.Errorf("invalid chunk encoding %q", e)
 }
 
 // NewEmptyChunk returns an empty chunk for the given encoding.
@@ -362,5 +378,5 @@ func NewEmptyChunk(e Encoding) (Chunk, error) {
 	case EncFloatHistogram:
 		return NewFloatHistogramChunk(), nil
 	}
-	return nil, errors.Errorf("invalid chunk encoding %q", e)
+	return nil, fmt.Errorf("invalid chunk encoding %q", e)
 }

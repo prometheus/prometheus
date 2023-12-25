@@ -15,6 +15,7 @@ package index
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"hash/crc32"
 	"math/rand"
@@ -23,7 +24,6 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 
@@ -66,7 +66,7 @@ func (m mockIndex) Symbols() (map[string]struct{}, error) {
 
 func (m mockIndex) AddSeries(ref storage.SeriesRef, l labels.Labels, chunks ...chunks.Meta) error {
 	if _, ok := m.series[ref]; ok {
-		return errors.Errorf("series with reference %d already added", ref)
+		return fmt.Errorf("series with reference %d already added", ref)
 	}
 	l.Range(func(lbl labels.Label) {
 		m.symbols[lbl.Name] = struct{}{}
@@ -115,7 +115,7 @@ func (m mockIndex) Postings(ctx context.Context, name string, values ...string) 
 func (m mockIndex) SortedPostings(p Postings) Postings {
 	ep, err := ExpandPostings(p)
 	if err != nil {
-		return ErrPostings(errors.Wrap(err, "expand postings"))
+		return ErrPostings(fmt.Errorf("expand postings: %w", err))
 	}
 
 	sort.Slice(ep, func(i, j int) bool {
@@ -205,7 +205,7 @@ func TestIndexRW_Postings(t *testing.T) {
 		err := ir.Series(p.At(), &builder, &c)
 
 		require.NoError(t, err)
-		require.Equal(t, 0, len(c))
+		require.Empty(t, c)
 		require.Equal(t, series[i], builder.Labels())
 	}
 	require.NoError(t, p.Err())
@@ -519,7 +519,6 @@ func TestNewFileReaderErrorNoOpenFiles(t *testing.T) {
 }
 
 func TestSymbols(t *testing.T) {
-	ctx := context.Background()
 	buf := encoding.Encbuf{}
 
 	// Add prefix to the buffer to simulate symbols as part of larger buffer.
@@ -542,11 +541,11 @@ func TestSymbols(t *testing.T) {
 	require.Equal(t, 32, s.Size())
 
 	for i := 99; i >= 0; i-- {
-		s, err := s.Lookup(ctx, uint32(i))
+		s, err := s.Lookup(uint32(i))
 		require.NoError(t, err)
 		require.Equal(t, string(rune(i)), s)
 	}
-	_, err = s.Lookup(ctx, 100)
+	_, err = s.Lookup(100)
 	require.Error(t, err)
 
 	for i := 99; i >= 0; i-- {

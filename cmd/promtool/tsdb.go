@@ -16,6 +16,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -643,9 +644,14 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 
 		for _, chk := range chks {
 			// Load the actual data of the chunk.
-			chk, err := chunkr.Chunk(chk)
+			chk, iterable, err := chunkr.ChunkOrIterable(chk)
 			if err != nil {
 				return err
+			}
+			// Chunks within blocks should not need to be re-written, so an
+			// iterable is not expected to be returned from the chunk reader.
+			if iterable != nil {
+				return errors.New("ChunkOrIterable should not return an iterable when reading a block")
 			}
 			switch chk.Encoding() {
 			case chunkenc.EncXOR:
