@@ -2126,17 +2126,20 @@ loop:
 	// The sought sample might also be in the range.
 	switch soughtValueType {
 	case chunkenc.ValFloatHistogram, chunkenc.ValHistogram:
-		t, h := it.AtFloatHistogram()
-		if t == maxt && !value.IsStaleNaN(h.Sum) {
-			if ev.currentSamples >= ev.maxSamples {
-				ev.error(ErrTooManySamples(env))
+		t := it.AtT()
+		if t == maxt {
+			_, h := it.AtFloatHistogram()
+			if !value.IsStaleNaN(h.Sum) {
+				if ev.currentSamples >= ev.maxSamples {
+					ev.error(ErrTooManySamples(env))
+				}
+				if histograms == nil {
+					histograms = getHPointSlice(16)
+				}
+				point := HPoint{T: t, H: h.Copy()}
+				histograms = append(histograms, point)
+				ev.currentSamples += point.size()
 			}
-			if histograms == nil {
-				histograms = getHPointSlice(16)
-			}
-			point := HPoint{T: t, H: h}
-			histograms = append(histograms, point)
-			ev.currentSamples += point.size()
 		}
 	case chunkenc.ValFloat:
 		t, f := it.At()
