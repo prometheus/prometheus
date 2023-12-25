@@ -23,7 +23,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/golang/snappy"
+	"github.com/klauspost/compress/snappy"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 

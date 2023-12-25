@@ -21,7 +21,7 @@ import (
 	"hash/crc32"
 	"io"
 
-	"github.com/golang/snappy"
+	"github.com/klauspost/compress/snappy"
 	"github.com/klauspost/compress/zstd"
 )
 
