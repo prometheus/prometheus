@@ -1924,7 +1924,7 @@ func TargetFromContext(ctx context.Context) (*Target, bool) {
 
 func pickSchema(bucketFactor float64) int32 {
 	if bucketFactor <= 1 {
-		panic(fmt.Errorf("bucketFactor %f is <=1", bucketFactor))
+		bucketFactor = 1
 	}
 	floor := math.Floor(math.Log2(math.Log2(bucketFactor)))
 	switch {

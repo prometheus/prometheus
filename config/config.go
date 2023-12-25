@@ -610,8 +610,8 @@ type ScrapeConfig struct {
 	// More than this label value length post metric-relabeling will cause the
 	// scrape to fail. 0 means no limit.
 	LabelValueLengthLimit uint `yaml:"label_value_length_limit,omitempty"`
-	// More than this many buckets in a native histogram will cause the scrape to
-	// fail.
+	// More than this many buckets in a native histogram will automatically merge buckets
+	// to stay within the limit.
 	NativeHistogramBucketLimit uint `yaml:"native_histogram_bucket_limit,omitempty"`
 	// Smaller than this bucket factor in a native histogram will be automatically reduced.
 	NativeHistogramMinBucketFactor float64 `yaml:"native_histogram_min_bucket_factor,omitempty"`
