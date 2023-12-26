@@ -68,7 +68,7 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	err = h.write(r.Context(), req)
 	switch {
 	case err == nil:
-	case errors.Is(err, storage.ErrOutOfOrderSample), errors.Is(err, storage.ErrOutOfBounds), errors.Is(err, storage.ErrDuplicateSampleForTimestamp):
+	case errors.Is(err, storage.ErrOutOfOrderSample), errors.Is(err, storage.ErrOutOfBounds), errors.Is(err, storage.ErrDuplicateSampleForTimestamp), errors.Is(err, storage.ErrTooOldSample):
 		// Indicated an out of order sample is a bad request to prevent retries.
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
