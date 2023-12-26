@@ -66,23 +66,33 @@ extern "C" void prompp_init() {
 #if PROMPP_PLATFORM_AMD64
   case haswell: {
 //#entrypoint.amd64_haswell_bindings
+    void amd64_haswell_prompp_jemalloc_init();
+    amd64_haswell_prompp_jemalloc_init();
     prompp_flavor = "haswell";
     break; }
   case nehalem: {
 //#entrypoint.amd64_nehalem_bindings
+    void amd64_nehalem_prompp_jemalloc_init();
+    amd64_nehalem_prompp_jemalloc_init();
     prompp_flavor = "nehalem";
     break; }
   default: {
 //#entrypoint.amd64_k8_bindings
+    void amd64_k8_prompp_jemalloc_init();
+    amd64_k8_prompp_jemalloc_init();
     prompp_flavor = "k8";
     break; }
 #elif PROMPP_PLATFORM_ARM64
   case crc32: {
 //#entrypoint.arm64_armv8_a_crc_bindings
+    void arm64_armv8_a_crc_prompp_jemalloc_init();
+    arm64_armv8_a_crc_prompp_jemalloc_init();
     prompp_flavor = "armv8-a+crc";
     break; }
   default: {
 //#entrypoint.arm64_armv8_a_bindings
+    void arm64_armv8_a_prompp_jemalloc_init();
+    arm64_armv8_a_prompp_jemalloc_init();
     prompp_flavor = "armv8-a";
     break; }
 #endif

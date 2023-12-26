@@ -88,7 +88,7 @@ help: ## Show this message
 
 .PHONY: build-entrypoint
 build-entrypoint: ## Build entry point and copy artifacts to Go directory
-	$(MAKE) -C entrypoint install
+	$(MAKE) -C entrypoint clean install
 
 .PHONY: ascii
 ascii: $(our_files) ## Check there is no non-ascii symbols in code
