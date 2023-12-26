@@ -1194,7 +1194,9 @@ func TestScrapeLoopCache(t *testing.T) {
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	sl := newBasicScrapeLoop(t, ctx, scraper, app, 10*time.Millisecond)
+	// Decreasing the scrape interval could make the test fail, as multiple scrapes might be initiated at identical millisecond timestamps.
+	// See https://github.com/prometheus/prometheus/issues/12727.
+	sl := newBasicScrapeLoop(t, ctx, scraper, app, 100*time.Millisecond)
 
 	numScrapes := 0
 
