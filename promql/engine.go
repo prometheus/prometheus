@@ -2093,7 +2093,7 @@ loop:
 				if n < cap(histograms) {
 					histograms = histograms[:n+1]
 				} else {
-					histograms = append(histograms, HPoint{})
+					histograms = append(histograms, HPoint{H: &histogram.FloatHistogram{}})
 				}
 				histograms[n].T, histograms[n].H = buf.AtFloatHistogram(histograms[n].H)
 				if value.IsStaleNaN(histograms[n].H.Sum) {
@@ -2126,23 +2126,28 @@ loop:
 	// The sought sample might also be in the range.
 	switch soughtValueType {
 	case chunkenc.ValFloatHistogram, chunkenc.ValHistogram:
-		t := it.AtT()
-		if t == maxt {
-			_, h := it.AtFloatHistogram()
-			if !value.IsStaleNaN(h.Sum) {
-				if ev.currentSamples >= ev.maxSamples {
-					ev.error(ErrTooManySamples(env))
-				}
-				if histograms == nil {
-					histograms = getHPointSlice(16)
-				}
-				// The last sample comes directly from the iterator, so we need to copy it to
-				// avoid having the same reference twice in the buffer.
-				point := HPoint{T: t, H: h.Copy()}
-				histograms = append(histograms, point)
-				ev.currentSamples += point.size()
-			}
+		if it.AtT() != maxt {
+			break
 		}
+		if histograms == nil {
+			histograms = getHPointSlice(16)
+		}
+		n := len(histograms)
+		if n < cap(histograms) {
+			histograms = histograms[:n+1]
+		} else {
+			histograms = append(histograms, HPoint{H: &histogram.FloatHistogram{}})
+		}
+		histograms[n].T, histograms[n].H = it.AtFloatHistogram(histograms[n].H)
+		if value.IsStaleNaN(histograms[n].H.Sum) {
+			histograms = histograms[:n]
+			break
+		}
+		if ev.currentSamples >= ev.maxSamples {
+			ev.error(ErrTooManySamples(env))
+		}
+		ev.currentSamples += histograms[n].size()
+
 	case chunkenc.ValFloat:
 		t, f := it.At()
 		if t == maxt && !value.IsStaleNaN(f) {

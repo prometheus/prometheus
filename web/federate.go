@@ -127,7 +127,7 @@ Loop:
 		case chunkenc.ValFloat:
 			t, f = it.At()
 		case chunkenc.ValFloatHistogram, chunkenc.ValHistogram:
-			t, fh = it.AtFloatHistogram()
+			t, fh = it.AtFloatHistogram(nil)
 		default:
 			sample, ok := it.PeekBack(1)
 			if !ok {

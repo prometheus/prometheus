@@ -277,11 +277,11 @@ func (m *mockSeriesIterator) At() (int64, float64)            { return m.at() }
 func (m *mockSeriesIterator) Next() chunkenc.ValueType        { return m.next() }
 func (m *mockSeriesIterator) Err() error                      { return m.err() }
 
-func (m *mockSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
+func (m *mockSeriesIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
 	return 0, nil // Not really mocked.
 }
 
-func (m *mockSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+func (m *mockSeriesIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	return 0, nil // Not really mocked.
 }
 
@@ -303,11 +303,11 @@ func (it *fakeSeriesIterator) At() (int64, float64) {
 	return it.idx * it.step, 123 // Value doesn't matter.
 }
 
-func (it *fakeSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
+func (it *fakeSeriesIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
 	return it.idx * it.step, &histogram.Histogram{} // Value doesn't matter.
 }
 
-func (it *fakeSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+func (it *fakeSeriesIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	return it.idx * it.step, &histogram.FloatHistogram{} // Value doesn't matter.
 }
 

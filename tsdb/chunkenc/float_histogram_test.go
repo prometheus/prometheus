@@ -140,7 +140,7 @@ func TestFloatHistogramChunkSameBuckets(t *testing.T) {
 	require.NoError(t, it.Err())
 	var act []floatResult
 	for it.Next() == ValFloatHistogram {
-		fts, fh := it.AtFloatHistogram()
+		fts, fh := it.AtFloatHistogram(nil)
 		act = append(act, floatResult{t: fts, h: fh})
 	}
 	require.NoError(t, it.Err())
@@ -150,7 +150,7 @@ func TestFloatHistogramChunkSameBuckets(t *testing.T) {
 	it2 := c.Iterator(it)
 	var act2 []floatResult
 	for it2.Next() == ValFloatHistogram {
-		fts, fh := it2.AtFloatHistogram()
+		fts, fh := it2.AtFloatHistogram(nil)
 		act2 = append(act2, floatResult{t: fts, h: fh})
 	}
 	require.NoError(t, it2.Err())
@@ -164,7 +164,7 @@ func TestFloatHistogramChunkSameBuckets(t *testing.T) {
 	it3 := c.iterator(itX)
 	var act3 []floatResult
 	for it3.Next() == ValFloatHistogram {
-		fts, fh := it3.AtFloatHistogram()
+		fts, fh := it3.AtFloatHistogram(nil)
 		act3 = append(act3, floatResult{t: fts, h: fh})
 	}
 	require.NoError(t, it3.Err())
@@ -178,10 +178,10 @@ func TestFloatHistogramChunkSameBuckets(t *testing.T) {
 	// Below ones should not matter.
 	require.Equal(t, ValFloatHistogram, it4.Seek(exp[mid].t))
 	require.Equal(t, ValFloatHistogram, it4.Seek(exp[mid].t))
-	fts, fh := it4.AtFloatHistogram()
+	fts, fh := it4.AtFloatHistogram(nil)
 	act4 = append(act4, floatResult{t: fts, h: fh})
 	for it4.Next() == ValFloatHistogram {
-		fts, fh := it4.AtFloatHistogram()
+		fts, fh := it4.AtFloatHistogram(nil)
 		act4 = append(act4, floatResult{t: fts, h: fh})
 	}
 	require.NoError(t, it4.Err())
@@ -272,7 +272,7 @@ func TestFloatHistogramChunkBucketChanges(t *testing.T) {
 	it := c.Iterator(nil)
 	var act []floatResult
 	for it.Next() == ValFloatHistogram {
-		fts, fh := it.AtFloatHistogram()
+		fts, fh := it.AtFloatHistogram(nil)
 		act = append(act, floatResult{t: fts, h: fh})
 	}
 	require.NoError(t, it.Err())

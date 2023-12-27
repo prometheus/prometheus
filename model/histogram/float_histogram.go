@@ -53,26 +53,55 @@ type FloatHistogram struct {
 
 // Copy returns a deep copy of the Histogram.
 func (h *FloatHistogram) Copy() *FloatHistogram {
-	c := *h
+	c := FloatHistogram{
+		CounterResetHint: h.CounterResetHint,
+		Schema:           h.Schema,
+		ZeroThreshold:    h.ZeroThreshold,
+		ZeroCount:        h.ZeroCount,
+		Count:            h.Count,
+		Sum:              h.Sum,
+	}
 
-	if h.PositiveSpans != nil {
+	if len(h.PositiveSpans) != 0 {
 		c.PositiveSpans = make([]Span, len(h.PositiveSpans))
 		copy(c.PositiveSpans, h.PositiveSpans)
 	}
-	if h.NegativeSpans != nil {
+	if len(h.NegativeSpans) != 0 {
 		c.NegativeSpans = make([]Span, len(h.NegativeSpans))
 		copy(c.NegativeSpans, h.NegativeSpans)
 	}
-	if h.PositiveBuckets != nil {
+	if len(h.PositiveBuckets) != 0 {
 		c.PositiveBuckets = make([]float64, len(h.PositiveBuckets))
 		copy(c.PositiveBuckets, h.PositiveBuckets)
 	}
-	if h.NegativeBuckets != nil {
+	if len(h.NegativeBuckets) != 0 {
 		c.NegativeBuckets = make([]float64, len(h.NegativeBuckets))
 		copy(c.NegativeBuckets, h.NegativeBuckets)
 	}
 
 	return &c
+}
+
+// CopyFrom makes a deep copy of the given FloatHistogram into the receiver object.
+func (h *FloatHistogram) CopyFrom(from FloatHistogram) {
+	h.CounterResetHint = from.CounterResetHint
+	h.Schema = from.Schema
+	h.ZeroThreshold = from.ZeroThreshold
+	h.ZeroCount = from.ZeroCount
+	h.Count = from.Count
+	h.Sum = from.Sum
+
+	h.PositiveSpans = resize(h.PositiveSpans, len(from.PositiveSpans))
+	copy(h.PositiveSpans, from.PositiveSpans)
+
+	h.NegativeSpans = resize(h.NegativeSpans, len(from.NegativeSpans))
+	copy(h.NegativeSpans, from.NegativeSpans)
+
+	h.PositiveBuckets = resize(h.PositiveBuckets, len(from.PositiveBuckets))
+	copy(h.PositiveBuckets, from.PositiveBuckets)
+
+	h.NegativeBuckets = resize(h.NegativeBuckets, len(from.NegativeBuckets))
+	copy(h.NegativeBuckets, from.NegativeBuckets)
 }
 
 // CopyToSchema works like Copy, but the returned deep copy has the provided

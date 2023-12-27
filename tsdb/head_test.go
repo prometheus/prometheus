@@ -3377,10 +3377,10 @@ func TestAppendHistogram(t *testing.T) {
 			for typ := it.Next(); typ != chunkenc.ValNone; typ = it.Next() {
 				switch typ {
 				case chunkenc.ValHistogram:
-					ts, h := it.AtHistogram()
+					ts, h := it.AtHistogram(nil)
 					actHistograms = append(actHistograms, sample{t: ts, h: h})
 				case chunkenc.ValFloatHistogram:
-					ts, fh := it.AtFloatHistogram()
+					ts, fh := it.AtFloatHistogram(nil)
 					actFloatHistograms = append(actFloatHistograms, sample{t: ts, fh: fh})
 				}
 			}
@@ -4025,10 +4025,10 @@ func testHistogramStaleSampleHelper(t *testing.T, floatHistogram bool) {
 		for typ := it.Next(); typ != chunkenc.ValNone; typ = it.Next() {
 			switch typ {
 			case chunkenc.ValHistogram:
-				t, h := it.AtHistogram()
+				t, h := it.AtHistogram(nil)
 				actHistograms = append(actHistograms, timedHistogram{t: t, h: h})
 			case chunkenc.ValFloatHistogram:
-				t, h := it.AtFloatHistogram()
+				t, h := it.AtFloatHistogram(nil)
 				actHistograms = append(actHistograms, timedHistogram{t: t, fh: h})
 			}
 		}

@@ -83,7 +83,14 @@ type Span struct {
 
 // Copy returns a deep copy of the Histogram.
 func (h *Histogram) Copy() *Histogram {
-	c := *h
+	c := Histogram{
+		CounterResetHint: h.CounterResetHint,
+		Schema:           h.Schema,
+		ZeroThreshold:    h.ZeroThreshold,
+		ZeroCount:        h.ZeroCount,
+		Count:            h.Count,
+		Sum:              h.Sum,
+	}
 
 	if len(h.PositiveSpans) != 0 {
 		c.PositiveSpans = make([]Span, len(h.PositiveSpans))
@@ -103,6 +110,28 @@ func (h *Histogram) Copy() *Histogram {
 	}
 
 	return &c
+}
+
+// CopyFrom makes a deep copy of the given Histogram into the receiver object.
+func (h *Histogram) CopyFrom(from Histogram) {
+	h.CounterResetHint = from.CounterResetHint
+	h.Schema = from.Schema
+	h.ZeroThreshold = from.ZeroThreshold
+	h.ZeroCount = from.ZeroCount
+	h.Count = from.Count
+	h.Sum = from.Sum
+
+	h.PositiveSpans = resize(h.PositiveSpans, len(from.PositiveSpans))
+	copy(h.PositiveSpans, from.PositiveSpans)
+
+	h.NegativeSpans = resize(h.NegativeSpans, len(from.NegativeSpans))
+	copy(h.NegativeSpans, from.NegativeSpans)
+
+	h.PositiveBuckets = resize(h.PositiveBuckets, len(from.PositiveBuckets))
+	copy(h.PositiveBuckets, from.PositiveBuckets)
+
+	h.NegativeBuckets = resize(h.NegativeBuckets, len(from.NegativeBuckets))
+	copy(h.NegativeBuckets, from.NegativeBuckets)
 }
 
 // String returns a string representation of the Histogram.

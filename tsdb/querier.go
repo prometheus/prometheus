@@ -809,12 +809,12 @@ func (p *populateWithDelSeriesIterator) At() (int64, float64) {
 	return p.curr.At()
 }
 
-func (p *populateWithDelSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
-	return p.curr.AtHistogram()
+func (p *populateWithDelSeriesIterator) AtHistogram(h *histogram.Histogram) (int64, *histogram.Histogram) {
+	return p.curr.AtHistogram(h)
 }
 
-func (p *populateWithDelSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
-	return p.curr.AtFloatHistogram()
+func (p *populateWithDelSeriesIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
+	return p.curr.AtFloatHistogram(fh)
 }
 
 func (p *populateWithDelSeriesIterator) AtT() int64 {
@@ -926,7 +926,7 @@ func (p *populateWithDelChunkSeriesIterator) populateCurrForSingleChunk() bool {
 				break
 			}
 			var h *histogram.Histogram
-			t, h = p.currDelIter.AtHistogram()
+			t, h = p.currDelIter.AtHistogram(nil)
 			_, _, app, err = app.AppendHistogram(nil, t, h, true)
 			if err != nil {
 				break
@@ -957,7 +957,7 @@ func (p *populateWithDelChunkSeriesIterator) populateCurrForSingleChunk() bool {
 				break
 			}
 			var h *histogram.FloatHistogram
-			t, h = p.currDelIter.AtFloatHistogram()
+			t, h = p.currDelIter.AtFloatHistogram(nil)
 			_, _, app, err = app.AppendFloatHistogram(nil, t, h, true)
 			if err != nil {
 				break
@@ -1043,7 +1043,7 @@ func (p *populateWithDelChunkSeriesIterator) populateChunksFromIterable() bool {
 		case chunkenc.ValHistogram:
 			{
 				var v *histogram.Histogram
-				t, v = p.currDelIter.AtHistogram()
+				t, v = p.currDelIter.AtHistogram(nil)
 				// No need to set prevApp as AppendHistogram will set the
 				// counter reset header for the appender that's returned.
 				newChunk, recoded, app, err = app.AppendHistogram(nil, t, v, false)
@@ -1051,7 +1051,7 @@ func (p *populateWithDelChunkSeriesIterator) populateChunksFromIterable() bool {
 		case chunkenc.ValFloatHistogram:
 			{
 				var v *histogram.FloatHistogram
-				t, v = p.currDelIter.AtFloatHistogram()
+				t, v = p.currDelIter.AtFloatHistogram(nil)
 				// No need to set prevApp as AppendHistogram will set the
 				// counter reset header for the appender that's returned.
 				newChunk, recoded, app, err = app.AppendFloatHistogram(nil, t, v, false)
@@ -1222,13 +1222,13 @@ func (it *DeletedIterator) At() (int64, float64) {
 	return it.Iter.At()
 }
 
-func (it *DeletedIterator) AtHistogram() (int64, *histogram.Histogram) {
-	t, h := it.Iter.AtHistogram()
+func (it *DeletedIterator) AtHistogram(h *histogram.Histogram) (int64, *histogram.Histogram) {
+	t, h := it.Iter.AtHistogram(h)
 	return t, h
 }
 
-func (it *DeletedIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
-	t, h := it.Iter.AtFloatHistogram()
+func (it *DeletedIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
+	t, h := it.Iter.AtFloatHistogram(fh)
 	return t, h
 }
 
