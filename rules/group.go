@@ -165,13 +165,10 @@ func (g *Group) Rules(matcherSets ...[]*labels.Matcher) []Rule {
 }
 
 func matches(lbls labels.Labels, matchers ...*labels.Matcher) bool {
-Matcher:
 	for _, m := range matchers {
-		// Skip if matches.
-		if v := lbls.Get(m.Name); m.Matches(v) {
-			continue Matcher
+		if v := lbls.Get(m.Name); !m.Matches(v) {
+			return false
 		}
-		return false
 	}
 	return true
 }
