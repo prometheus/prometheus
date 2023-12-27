@@ -970,7 +970,9 @@ func TestEndpointsDiscoveryEmptyPodStatus(t *testing.T) {
 	}.Run(t)
 }
 
-func TestEndpointsUpdatePod(t *testing.T) {
+// TestEndpointsUpdatePod makes sure that Endpoints discovery detects underlying Pods changes.
+// See https://github.com/prometheus/prometheus/issues/11305 for more details.
+func TestEndpointsDiscoveryUpdatePod(t *testing.T) {
 	pod := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "testpod",
@@ -1017,6 +1019,8 @@ func TestEndpointsUpdatePod(t *testing.T) {
 					Addresses: []v1.EndpointAddress{
 						{
 							IP: "4.3.2.1",
+							// The Pending Pod may be included because the Endpoints was created manually.
+							// Or because the corresponding service has ".spec.publishNotReadyAddresses: true".
 							TargetRef: &v1.ObjectReference{
 								Kind:      "Pod",
 								Name:      "testpod",
@@ -1034,23 +1038,14 @@ func TestEndpointsUpdatePod(t *testing.T) {
 				},
 			},
 		},
-		&v1.Service{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "testendpoints",
-				Namespace: "default",
-				Labels: map[string]string{
-					"app": "app1",
-				},
-			},
-		},
 		pod,
 	}
 	n, c := makeDiscovery(RoleEndpoint, NamespaceDiscovery{}, objs...)
 
 	k8sDiscoveryTest{
 		discovery: n,
-		// Using this exact same func in beforeRun passes the test.
 		afterStart: func() {
+			// the Pod becomes Ready.
 			pod.Status.Phase = "Running"
 			pod.Status.Conditions = []v1.PodCondition{
 				{
@@ -1058,9 +1053,6 @@ func TestEndpointsUpdatePod(t *testing.T) {
 					Status: v1.ConditionTrue,
 				},
 			}
-
-			pod.ObjectMeta.Labels = map[string]string{"added_label": "foo"}
-
 			c.CoreV1().Pods(pod.Namespace).Update(context.Background(), pod, metav1.UpdateOptions{})
 		},
 		expectedMaxItems: 2,
@@ -1075,8 +1067,6 @@ func TestEndpointsUpdatePod(t *testing.T) {
 						"__meta_kubernetes_endpoint_address_target_kind": "Pod",
 						"__meta_kubernetes_endpoint_address_target_name": "testpod",
 						"__meta_kubernetes_pod_name":                     "testpod",
-						"__meta_kubernetes_pod_label_added_label":        "foo",
-						"__meta_kubernetes_pod_labelpresent_added_label": "true",
 						"__meta_kubernetes_pod_ip":                       "4.3.2.1",
 						"__meta_kubernetes_pod_ready":                    "true",
 						"__meta_kubernetes_pod_phase":                    "Running",
@@ -1091,11 +1081,8 @@ func TestEndpointsUpdatePod(t *testing.T) {
 					},
 				},
 				Labels: model.LabelSet{
-					"__meta_kubernetes_namespace":                "default",
-					"__meta_kubernetes_endpoints_name":           "testendpoints",
-					"__meta_kubernetes_service_name":             "testendpoints",
-					"__meta_kubernetes_service_label_app":        "app1",
-					"__meta_kubernetes_service_labelpresent_app": "true",
+					"__meta_kubernetes_namespace":      "default",
+					"__meta_kubernetes_endpoints_name": "testendpoints",
 				},
 				Source: "endpoints/default/testendpoints",
 			},
