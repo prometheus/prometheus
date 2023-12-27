@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
@@ -51,6 +52,12 @@ func TestMapFromVMWithEmptyTags(t *testing.T) {
 		HardwareProfile: &armcompute.HardwareProfile{
 			VMSize: &vmSize,
 		},
+		InstanceView: &armcompute.VirtualMachineInstanceView{
+			Statuses: []*armcompute.InstanceViewStatus{
+				{DisplayStatus: to.Ptr("VM running")},
+				{DisplayStatus: to.Ptr("Provisioning succeeded")},
+			},
+		},
 	}
 
 	testVM := armcompute.VirtualMachine{
@@ -72,6 +79,7 @@ func TestMapFromVMWithEmptyTags(t *testing.T) {
 		Tags:              map[string]*string{},
 		NetworkInterfaces: []string{},
 		Size:              size,
+		RunningStatus:     "yes",
 	}
 
 	actualVM := mapFromVM(testVM)
@@ -107,6 +115,12 @@ func TestMapFromVMWithTags(t *testing.T) {
 		HardwareProfile: &armcompute.HardwareProfile{
 			VMSize: &vmSize,
 		},
+		InstanceView: &armcompute.VirtualMachineInstanceView{
+			Statuses: []*armcompute.InstanceViewStatus{
+				{DisplayStatus: to.Ptr("VM deallocated")},
+				{DisplayStatus: to.Ptr("Provisioning succeeded")},
+			},
+		},
 	}
 
 	testVM := armcompute.VirtualMachine{
@@ -128,6 +142,7 @@ func TestMapFromVMWithTags(t *testing.T) {
 		Tags:              tags,
 		NetworkInterfaces: []string{},
 		Size:              size,
+		RunningStatus:     "no",
 	}
 
 	actualVM := mapFromVM(testVM)
@@ -161,6 +176,12 @@ func TestMapFromVMScaleSetVMWithEmptyTags(t *testing.T) {
 		HardwareProfile: &armcompute.HardwareProfile{
 			VMSize: &vmSize,
 		},
+		InstanceView: &armcompute.VirtualMachineScaleSetVMInstanceView{
+			Statuses: []*armcompute.InstanceViewStatus{
+				{DisplayStatus: to.Ptr("VM deallocated")},
+				{DisplayStatus: to.Ptr("Provisioning succeeded")},
+			},
+		},
 	}
 
 	testVM := armcompute.VirtualMachineScaleSetVM{
@@ -186,6 +207,7 @@ func TestMapFromVMScaleSetVMWithEmptyTags(t *testing.T) {
 		ScaleSet:          scaleSet,
 		InstanceID:        instanceID,
 		Size:              size,
+		RunningStatus:     "no",
 	}
 
 	actualVM := mapFromVMScaleSetVM(testVM, scaleSet)
@@ -222,6 +244,12 @@ func TestMapFromVMScaleSetVMWithTags(t *testing.T) {
 		HardwareProfile: &armcompute.HardwareProfile{
 			VMSize: &vmSize,
 		},
+		InstanceView: &armcompute.VirtualMachineScaleSetVMInstanceView{
+			Statuses: []*armcompute.InstanceViewStatus{
+				{DisplayStatus: to.Ptr("VM running")},
+				{DisplayStatus: to.Ptr("Provisioning succeeded")},
+			},
+		},
 	}
 
 	testVM := armcompute.VirtualMachineScaleSetVM{
@@ -247,6 +275,7 @@ func TestMapFromVMScaleSetVMWithTags(t *testing.T) {
 		ScaleSet:          scaleSet,
 		InstanceID:        instanceID,
 		Size:              size,
+		RunningStatus:     "yes",
 	}
 
 	actualVM := mapFromVMScaleSetVM(testVM, scaleSet)

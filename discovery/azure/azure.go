@@ -63,6 +63,7 @@ const (
 	azureLabelMachineTag           = azureLabel + "machine_tag_"
 	azureLabelMachineScaleSet      = azureLabel + "machine_scale_set"
 	azureLabelMachineSize          = azureLabel + "machine_size"
+	azureLabelMachineRunning       = azureLabel + "machine_running"
 
 	authMethodOAuth           = "OAuth"
 	authMethodManagedIdentity = "ManagedIdentity"
@@ -312,6 +313,7 @@ type virtualMachine struct {
 	Tags              map[string]*string
 	NetworkInterfaces []string
 	Size              string
+	RunningStatus     string
 }
 
 // Create a new azureResource object from an ID string.
@@ -391,6 +393,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 				azureLabelMachineLocation:      model.LabelValue(vm.Location),
 				azureLabelMachineResourceGroup: model.LabelValue(r.ResourceGroupName),
 				azureLabelMachineSize:          model.LabelValue(vm.Size),
+				azureLabelMachineRunning:       model.LabelValue(vm.RunningStatus),
 			}
 
 			if vm.ScaleSet != "" {
@@ -484,7 +487,9 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 func (client *azureClient) getVMs(ctx context.Context, resourceGroup string) ([]virtualMachine, error) {
 	var vms []virtualMachine
 	if len(resourceGroup) == 0 {
-		pager := client.vm.NewListAllPager(nil)
+		pager := client.vm.NewListAllPager(&armcompute.VirtualMachinesClientListAllOptions{
+			Expand: to.Ptr(armcompute.ExpandTypesForListVMsInstanceView),
+		})
 		for pager.More() {
 			nextResult, err := pager.NextPage(ctx)
 			if err != nil {
@@ -495,7 +500,9 @@ func (client *azureClient) getVMs(ctx context.Context, resourceGroup string) ([]
 			}
 		}
 	} else {
-		pager := client.vm.NewListPager(resourceGroup, nil)
+		pager := client.vm.NewListPager(resourceGroup, &armcompute.VirtualMachinesClientListOptions{
+			Expand: to.Ptr(armcompute.ExpandTypeForListVMsInstanceView),
+		})
 		for pager.More() {
 			nextResult, err := pager.NextPage(ctx)
 			if err != nil {
@@ -545,7 +552,9 @@ func (client *azureClient) getScaleSetVMs(ctx context.Context, scaleSet armcompu
 		return nil, fmt.Errorf("could not parse scale set ID: %w", err)
 	}
 
-	pager := client.vmssvm.NewListPager(r.ResourceGroupName, *(scaleSet.Name), nil)
+	pager := client.vmssvm.NewListPager(r.ResourceGroupName, *(scaleSet.Name), &armcompute.VirtualMachineScaleSetVMsClientListOptions{
+		Expand: to.Ptr("instanceView"),
+	})
 	for pager.More() {
 		nextResult, err := pager.NextPage(ctx)
 		if err != nil {
@@ -565,6 +574,7 @@ func mapFromVM(vm armcompute.VirtualMachine) virtualMachine {
 	networkInterfaces := []string{}
 	var computerName string
 	var size string
+	runningStatus := "no"
 
 	if vm.Tags != nil {
 		tags = vm.Tags
@@ -581,6 +591,14 @@ func mapFromVM(vm armcompute.VirtualMachine) virtualMachine {
 		}
 		if vm.Properties.HardwareProfile != nil {
 			size = string(*vm.Properties.HardwareProfile.VMSize)
+		}
+		if vm.Properties.InstanceView != nil {
+			for _, status := range vm.Properties.InstanceView.Statuses {
+				if *status.DisplayStatus == "VM running" {
+					runningStatus = "yes"
+					break
+				}
+			}
 		}
 	}
 
@@ -595,6 +613,7 @@ func mapFromVM(vm armcompute.VirtualMachine) virtualMachine {
 		Tags:              tags,
 		NetworkInterfaces: networkInterfaces,
 		Size:              size,
+		RunningStatus:     runningStatus,
 	}
 }
 
@@ -604,6 +623,7 @@ func mapFromVMScaleSetVM(vm armcompute.VirtualMachineScaleSetVM, scaleSetName st
 	networkInterfaces := []string{}
 	var computerName string
 	var size string
+	runningStatus := "no"
 
 	if vm.Tags != nil {
 		tags = vm.Tags
@@ -620,6 +640,14 @@ func mapFromVMScaleSetVM(vm armcompute.VirtualMachineScaleSetVM, scaleSetName st
 		}
 		if vm.Properties.HardwareProfile != nil {
 			size = string(*vm.Properties.HardwareProfile.VMSize)
+		}
+		if vm.Properties.InstanceView != nil {
+			for _, status := range vm.Properties.InstanceView.Statuses {
+				if *status.DisplayStatus == "VM running" {
+					runningStatus = "yes"
+					break
+				}
+			}
 		}
 	}
 
@@ -635,6 +663,7 @@ func mapFromVMScaleSetVM(vm armcompute.VirtualMachineScaleSetVM, scaleSetName st
 		Tags:              tags,
 		NetworkInterfaces: networkInterfaces,
 		Size:              size,
+		RunningStatus:     runningStatus,
 	}
 }
 
