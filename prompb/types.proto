@@ -38,16 +38,7 @@ message MetricMetadata {
   string unit = 5;
 }
 
-
 message Sample {
-  double value    = 1;
-  // timestamp is in ms format, see model/timestamp/timestamp.go for
-  // conversion from time.Time to Prometheus timestamp.
-  int64 timestamp = 2;
-}
-
-
-message MinSample {
   double value    = 1;
   // timestamp is in ms format, see model/timestamp/timestamp.go for
   // conversion from time.Time to Prometheus timestamp.
@@ -127,7 +118,6 @@ message BucketSpan {
   sint32 offset = 1; // Gap to previous span, or starting point for 1st span (which can be negative).
   uint32 length = 2; // Length of consecutive buckets.
 }
-
 
 // TimeSeries represents samples and labels for a single time series.
 message TimeSeries {
