@@ -29,7 +29,8 @@ import (
 func TestStorageLifecycle(t *testing.T) {
 	dir := t.TempDir()
 
-	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil)
+	// todo: test with new format type(s)
+	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, Base1)
 	conf := &config.Config{
 		GlobalConfig: config.DefaultGlobalConfig,
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{
@@ -56,7 +57,8 @@ func TestStorageLifecycle(t *testing.T) {
 func TestUpdateRemoteReadConfigs(t *testing.T) {
 	dir := t.TempDir()
 
-	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil)
+	// todo: test with new format type(s)
+	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, Base1)
 
 	conf := &config.Config{
 		GlobalConfig: config.GlobalConfig{},
@@ -77,7 +79,8 @@ func TestUpdateRemoteReadConfigs(t *testing.T) {
 func TestFilterExternalLabels(t *testing.T) {
 	dir := t.TempDir()
 
-	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil)
+	// todo: test with new format type(s)
+	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, Base1)
 
 	conf := &config.Config{
 		GlobalConfig: config.GlobalConfig{
@@ -102,7 +105,8 @@ func TestFilterExternalLabels(t *testing.T) {
 func TestIgnoreExternalLabels(t *testing.T) {
 	dir := t.TempDir()
 
-	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil)
+	// todo: test with new format type(s)
+	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, Base1)
 
 	conf := &config.Config{
 		GlobalConfig: config.GlobalConfig{
@@ -154,7 +158,7 @@ func baseRemoteReadConfig(host string) *config.RemoteReadConfig {
 // ApplyConfig runs concurrently with Notify
 // See https://github.com/prometheus/prometheus/issues/12747
 func TestWriteStorageApplyConfigsDuringCommit(t *testing.T) {
-	s := NewStorage(nil, nil, nil, t.TempDir(), defaultFlushDeadline, nil)
+	s := NewStorage(nil, nil, nil, t.TempDir(), defaultFlushDeadline, nil, Base1)
 
 	var wg sync.WaitGroup
 	wg.Add(2000)

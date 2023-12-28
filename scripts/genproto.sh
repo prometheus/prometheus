@@ -10,10 +10,10 @@ if ! [[ "$0" =~ "scripts/genproto.sh" ]]; then
 	exit 255
 fi
 
-if ! [[ $(protoc --version) =~ "3.15.8" ]]; then
-	echo "could not find protoc 3.15.8, is it installed + in PATH?"
-	exit 255
-fi
+#if ! [[ $(protoc --version) =~ "3.21.12" ]]; then
+#	echo "could not find protoc 3.21.12, is it installed + in PATH?"
+#	exit 255
+#fi
 
 # Since we run go install, go mod download, the go.sum will change.
 # Make a backup.
@@ -40,6 +40,9 @@ for dir in ${DIRS}; do
             -I="${PROM_PATH}" \
             -I="${GRPC_GATEWAY_ROOT}/third_party/googleapis" \
             ./*.proto
+		protoc --gogofast_out=plugins=grpc:. -I=. \
+            -I="${GOGOPROTO_PATH}" \
+            ./write/v2/*.proto
 		protoc --gogofast_out=Mgoogle/protobuf/timestamp.proto=github.com/gogo/protobuf/types,paths=source_relative:. -I=. \
             -I="${GOGOPROTO_PATH}" \
             ./io/prometheus/client/*.proto

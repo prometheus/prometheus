@@ -117,7 +117,8 @@ func TestNoDuplicateWriteConfigs(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		s := NewWriteStorage(nil, nil, dir, time.Millisecond, nil)
+		// todo: test with new format type(s)
+		s := NewWriteStorage(nil, nil, dir, time.Millisecond, nil, Base1)
 		conf := &config.Config{
 			GlobalConfig:       config.DefaultGlobalConfig,
 			RemoteWriteConfigs: tc.cfgs,
@@ -139,7 +140,8 @@ func TestRestartOnNameChange(t *testing.T) {
 	hash, err := toHash(cfg)
 	require.NoError(t, err)
 
-	s := NewWriteStorage(nil, nil, dir, time.Millisecond, nil)
+	// todo: test with new format type(s)
+	s := NewWriteStorage(nil, nil, dir, time.Millisecond, nil, Base1)
 
 	conf := &config.Config{
 		GlobalConfig: config.DefaultGlobalConfig,
@@ -164,7 +166,8 @@ func TestRestartOnNameChange(t *testing.T) {
 func TestUpdateWithRegisterer(t *testing.T) {
 	dir := t.TempDir()
 
-	s := NewWriteStorage(nil, prometheus.NewRegistry(), dir, time.Millisecond, nil)
+	// todo: test with new format type(s)
+	s := NewWriteStorage(nil, prometheus.NewRegistry(), dir, time.Millisecond, nil, Base1)
 	c1 := &config.RemoteWriteConfig{
 		Name: "named",
 		URL: &common_config.URL{
@@ -204,7 +207,8 @@ func TestUpdateWithRegisterer(t *testing.T) {
 func TestWriteStorageLifecycle(t *testing.T) {
 	dir := t.TempDir()
 
-	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil)
+	// todo: test with new format type(s)
+	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, Base1)
 	conf := &config.Config{
 		GlobalConfig: config.DefaultGlobalConfig,
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{
@@ -221,7 +225,8 @@ func TestWriteStorageLifecycle(t *testing.T) {
 func TestUpdateExternalLabels(t *testing.T) {
 	dir := t.TempDir()
 
-	s := NewWriteStorage(nil, prometheus.NewRegistry(), dir, time.Second, nil)
+	// todo: test with new format type(s)
+	s := NewWriteStorage(nil, prometheus.NewRegistry(), dir, time.Second, nil, Base1)
 
 	externalLabels := labels.FromStrings("external", "true")
 	conf := &config.Config{
@@ -250,8 +255,8 @@ func TestUpdateExternalLabels(t *testing.T) {
 func TestWriteStorageApplyConfigsIdempotent(t *testing.T) {
 	dir := t.TempDir()
 
-	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil)
-
+	// todo: test with new format type(s)
+	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, Base1)
 	conf := &config.Config{
 		GlobalConfig: config.GlobalConfig{},
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{
@@ -276,7 +281,8 @@ func TestWriteStorageApplyConfigsIdempotent(t *testing.T) {
 func TestWriteStorageApplyConfigsPartialUpdate(t *testing.T) {
 	dir := t.TempDir()
 
-	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil)
+	// todo: test with new format type(s)
+	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, Base1)
 
 	c0 := &config.RemoteWriteConfig{
 		RemoteTimeout: model.Duration(10 * time.Second),

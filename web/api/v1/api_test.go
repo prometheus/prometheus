@@ -459,9 +459,10 @@ func TestEndpoints(t *testing.T) {
 
 		dbDir := t.TempDir()
 
+		// TODO: test with other proto format(s)?
 		remote := remote.NewStorage(promlog.New(&promlogConfig), prometheus.DefaultRegisterer, func() (int64, error) {
 			return 0, nil
-		}, dbDir, 1*time.Second, nil)
+		}, dbDir, 1*time.Second, nil, remote.Base1)
 
 		err = remote.ApplyConfig(&config.Config{
 			RemoteReadConfigs: []*config.RemoteReadConfig{

@@ -1,0 +1,141 @@
+// Copyright 2017 Prometheus Team
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+package write.v2;
+
+option go_package = "writev2";
+
+import "gogoproto/gogo.proto";
+
+
+message WriteRequest {
+  repeated string symbols = 1;
+  repeated TimeSeries timeseries = 2 [(gogoproto.nullable) = false];
+}
+
+message TimeSeries {
+  // Sorted list of label name-value pair references,
+  // encoded as indices to the strings array.
+  // This list's len is always multiple of 2.
+  repeated uint32 labels_refs = 1 ;
+
+  repeated Sample samples = 2 [(gogoproto.nullable) = false];
+  repeated Exemplar exemplars = 3 [(gogoproto.nullable) = false];
+  // Same as current version
+  repeated Histogram histograms = 4 [(gogoproto.nullable) = false];
+
+  Metadata metadata = 5 [(gogoproto.nullable) = false];
+
+  // Optional created timestamp for the metric in ms format,
+  // if the first sample in samples does not contain 0 value.
+  // See model/timestamp/timestamp.go for conversion from time.Time
+  // to Prometheus timestamp.
+  int64 created_timestamp = 6;
+}
+
+message Exemplar {
+  // TODO: same as TimeSeries.labels_refs
+  repeated uint32 labels_refs = 1;
+  double value = 2;
+  // timestamp is in ms.
+  int64 timestamp = 3;
+}
+
+message Sample {
+  double value = 1;
+  // timestamp is in ms format, see model/timestamp/timestamp.go for
+  // conversion from time.Time to Prometheus timestamp.
+  int64 timestamp = 2;
+}
+
+message Metadata {
+  enum MetricType {
+    UNKNOWN        = 0;
+    COUNTER        = 1;
+    GAUGE          = 2;
+    HISTOGRAM      = 3;
+    GAUGEHISTOGRAM = 4;
+    SUMMARY        = 5;
+    INFO           = 6;
+    STATESET       = 7;
+  }
+  MetricType type = 1;
+  uint32 help_ref = 3;
+  uint32 unit_ref = 4;
+}
+
+// A native histogram, also known as a sparse histogram.
+// Original design doc:
+// https://docs.google.com/document/d/1cLNv3aufPZb3fNfaJgdaRBZsInZKKIHo9E6HinJVbpM/edit
+// The appendix of this design doc also explains the concept of float
+// histograms. This Histogram message can represent both, the usual
+// integer histogram as well as a float histogram.
+message Histogram {
+  enum ResetHint {
+    UNKNOWN = 0; // Need to test for a counter reset explicitly.
+    YES     = 1; // This is the 1st histogram after a counter reset.
+    NO      = 2; // There was no counter reset between this and the previous Histogram.
+    GAUGE   = 3; // This is a gauge histogram where counter resets don't happen.
+  }
+
+  oneof count { // Count of observations in the histogram.
+    uint64 count_int   = 1;
+    double count_float = 2;
+  }
+  double sum = 3; // Sum of observations in the histogram.
+  // The schema defines the bucket schema. Currently, valid numbers
+  // are -4 <= n <= 8. They are all for base-2 bucket schemas, where 1
+  // is a bucket boundary in each case, and then each power of two is
+  // divided into 2^n logarithmic buckets. Or in other words, each
+  // bucket boundary is the previous boundary times 2^(2^-n). In the
+  // future, more bucket schemas may be added using numbers < -4 or >
+  // 8.
+  sint32 schema             = 4;
+  double zero_threshold     = 5; // Breadth of the zero bucket.
+  oneof zero_count { // Count in zero bucket.
+    uint64 zero_count_int     = 6;
+    double zero_count_float   = 7;
+  }
+
+  // Negative Buckets.
+  repeated BucketSpan negative_spans =  8 [(gogoproto.nullable) = false];
+  // Use either "negative_deltas" or "negative_counts", the former for
+  // regular histograms with integer counts, the latter for float
+  // histograms.
+  repeated sint64 negative_deltas    =  9; // Count delta of each bucket compared to previous one (or to zero for 1st bucket).
+  repeated double negative_counts    = 10; // Absolute count of each bucket.
+
+  // Positive Buckets.
+  repeated BucketSpan positive_spans = 11 [(gogoproto.nullable) = false];
+  // Use either "positive_deltas" or "positive_counts", the former for
+  // regular histograms with integer counts, the latter for float
+  // histograms.
+  repeated sint64 positive_deltas    = 12; // Count delta of each bucket compared to previous one (or to zero for 1st bucket).
+  repeated double positive_counts    = 13; // Absolute count of each bucket.
+
+  ResetHint reset_hint               = 14;
+  // timestamp is in ms format, see model/timestamp/timestamp.go for
+  // conversion from time.Time to Prometheus timestamp.
+  int64 timestamp = 15;
+}
+
+// A BucketSpan defines a number of consecutive buckets with their
+// offset. Logically, it would be more straightforward to include the
+// bucket counts in the Span. However, the protobuf representation is
+// more compact in the way the data is structured here (with all the
+// buckets in a single array separate from the Spans).
+message BucketSpan {
+  sint32 offset = 1; // Gap to previous span, or starting point for 1st span (which can be negative).
+  uint32 length = 2; // Length of consecutive buckets.
+}

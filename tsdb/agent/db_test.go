@@ -88,7 +88,7 @@ func createTestAgentDB(t *testing.T, reg prometheus.Registerer, opts *Options) *
 	t.Helper()
 
 	dbDir := t.TempDir()
-	rs := remote.NewStorage(log.NewNopLogger(), reg, startTime, dbDir, time.Second*30, nil)
+	rs := remote.NewStorage(log.NewNopLogger(), reg, startTime, dbDir, time.Second*30, nil, remote.Base1)
 	t.Cleanup(func() {
 		require.NoError(t, rs.Close())
 	})
@@ -584,7 +584,7 @@ func TestLockfile(t *testing.T) {
 	tsdbutil.TestDirLockerUsage(t, func(t *testing.T, data string, createLock bool) (*tsdbutil.DirLocker, testutil.Closer) {
 		logger := log.NewNopLogger()
 		reg := prometheus.NewRegistry()
-		rs := remote.NewStorage(logger, reg, startTime, data, time.Second*30, nil)
+		rs := remote.NewStorage(logger, reg, startTime, data, time.Second*30, nil, remote.Base1)
 		t.Cleanup(func() {
 			require.NoError(t, rs.Close())
 		})
@@ -604,7 +604,7 @@ func TestLockfile(t *testing.T) {
 
 func Test_ExistingWAL_NextRef(t *testing.T) {
 	dbDir := t.TempDir()
-	rs := remote.NewStorage(log.NewNopLogger(), nil, startTime, dbDir, time.Second*30, nil)
+	rs := remote.NewStorage(log.NewNopLogger(), nil, startTime, dbDir, time.Second*30, nil, remote.Base1)
 	defer func() {
 		require.NoError(t, rs.Close())
 	}()

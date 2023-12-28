@@ -19,6 +19,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"strconv"
 	"strings"
@@ -80,8 +81,9 @@ func init() {
 
 // Client allows reading and writing from/to a remote HTTP endpoint.
 type Client struct {
-	remoteName string // Used to differentiate clients in metrics.
-	urlString  string // url.String()
+	remoteName string            // Used to differentiate clients in metrics.
+	urlString  string            // url.String()
+	rwFormat   RemoteWriteFormat // For write clients, ignored for read clients.
 	Client     *http.Client
 	timeout    time.Duration
 
@@ -94,13 +96,14 @@ type Client struct {
 
 // ClientConfig configures a client.
 type ClientConfig struct {
-	URL              *config_util.URL
-	Timeout          model.Duration
-	HTTPClientConfig config_util.HTTPClientConfig
-	SigV4Config      *sigv4.SigV4Config
-	AzureADConfig    *azuread.AzureADConfig
-	Headers          map[string]string
-	RetryOnRateLimit bool
+	URL               *config_util.URL
+	RemoteWriteFormat RemoteWriteFormat
+	Timeout           model.Duration
+	HTTPClientConfig  config_util.HTTPClientConfig
+	SigV4Config       *sigv4.SigV4Config
+	AzureADConfig     *azuread.AzureADConfig
+	Headers           map[string]string
+	RetryOnRateLimit  bool
 }
 
 // ReadClient uses the SAMPLES method of remote read to read series samples from remote server.
@@ -162,6 +165,7 @@ func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
 	httpClient.Transport = otelhttp.NewTransport(t)
 
 	return &Client{
+		rwFormat:         conf.RemoteWriteFormat,
 		remoteName:       name,
 		urlString:        conf.URL.String(),
 		Client:           httpClient,
@@ -206,7 +210,14 @@ func (c *Client) Store(ctx context.Context, req []byte, attempt int) error {
 	httpReq.Header.Add("Content-Encoding", "snappy")
 	httpReq.Header.Set("Content-Type", "application/x-protobuf")
 	httpReq.Header.Set("User-Agent", UserAgent)
-	httpReq.Header.Set("X-Prometheus-Remote-Write-Version", "0.1.0")
+
+	if c.rwFormat == Base1 {
+		httpReq.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion1HeaderValue)
+	} else {
+		// Set the right header if we're using v1.1 remote write protocol
+		httpReq.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion11HeaderValue)
+	}
+
 	if attempt > 0 {
 		httpReq.Header.Set("Retry-Attempt", strconv.Itoa(attempt))
 	}
@@ -227,6 +238,8 @@ func (c *Client) Store(ctx context.Context, req []byte, attempt int) error {
 		io.Copy(io.Discard, httpResp.Body)
 		httpResp.Body.Close()
 	}()
+
+	// TODO-RW11: Here is where we need to handle version downgrade on error
 
 	if httpResp.StatusCode/100 != 2 {
 		scanner := bufio.NewScanner(io.LimitReader(httpResp.Body, maxErrMsgLen))
@@ -340,4 +353,27 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 	}
 
 	return resp.Results[0], nil
+}
+
+type TestClient struct {
+	name string
+	url  string
+}
+
+func NewTestClient(name, url string) WriteClient {
+	return &TestClient{name: name, url: url}
+}
+
+func (c *TestClient) Store(_ context.Context, req []byte, _ int) error {
+	r := rand.Intn(200-100) + 100
+	time.Sleep(time.Duration(r) * time.Millisecond)
+	return nil
+}
+
+func (c *TestClient) Name() string {
+	return c.name
+}
+
+func (c *TestClient) Endpoint() string {
+	return c.url
 }
