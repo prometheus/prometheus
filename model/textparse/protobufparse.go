@@ -425,11 +425,11 @@ func (p *ProtobufParser) Next() (Entry, error) {
 		}
 		unit := p.mf.GetUnit()
 		if len(unit) > 0 {
-			sfx := fmt.Sprintf("_%s", unit)
-			if p.mf.GetType() == dto.MetricType_COUNTER {
-				sfx = fmt.Sprintf("_%s_total", unit)
-			}
-			if !strings.HasSuffix(name, sfx) {
+			if p.mf.GetType() == dto.MetricType_COUNTER && strings.HasSuffix(name, "_total") {
+				if !strings.HasSuffix(name[:len(name)-6], unit) || len(name)-6 < len(unit)+1 || name[len(name)-6-len(unit)-1] != '_' {
+					return EntryInvalid, fmt.Errorf("unit %q not a suffix of counter %q", unit, name)
+				}
+			} else if !strings.HasSuffix(name, unit) || len(name) < len(unit)+1 || name[len(name)-len(unit)-1] != '_' {
 				return EntryInvalid, fmt.Errorf("unit %q not a suffix of metric %q", unit, name)
 			}
 		}
