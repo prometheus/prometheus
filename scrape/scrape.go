@@ -106,9 +106,10 @@ type scrapeLoopOptions struct {
 	interval                 time.Duration
 	timeout                  time.Duration
 	scrapeClassicHistograms  bool
-	mrc                      []*relabel.Config
-	cache                    *scrapeCache
-	enableCompression        bool
+
+	mrc               []*relabel.Config
+	cache             *scrapeCache
+	enableCompression bool
 }
 
 const maxAheadTime = 10 * time.Minute
@@ -168,11 +169,13 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 			opts.interval,
 			opts.timeout,
 			opts.scrapeClassicHistograms,
+			options.EnableCreatedTimestampZeroIngestion,
 			options.ExtraMetrics,
 			options.EnableMetadataStorage,
 			opts.target,
 			options.PassMetadataInContext,
 			metrics,
+			options.skipOffsetting,
 		)
 	}
 	sp.metrics.targetScrapePoolTargetLimit.WithLabelValues(sp.config.JobName).Set(float64(sp.config.TargetLimit))
@@ -672,7 +675,7 @@ func acceptHeader(sps []config.ScrapeProtocol) string {
 		weight--
 	}
 	// Default match anything.
-	vals = append(vals, fmt.Sprintf("*/*;q=%d", weight))
+	vals = append(vals, fmt.Sprintf("*/*;q=0.%d", weight))
 	return strings.Join(vals, ",")
 }
 
@@ -787,6 +790,7 @@ type scrapeLoop struct {
 	interval                 time.Duration
 	timeout                  time.Duration
 	scrapeClassicHistograms  bool
+	enableCTZeroIngestion    bool
 
 	appender            func(ctx context.Context) storage.Appender
 	sampleMutator       labelsMutator
@@ -804,6 +808,8 @@ type scrapeLoop struct {
 	appendMetadataToWAL bool
 
 	metrics *scrapeMetrics
+
+	skipOffsetting bool // For testability.
 }
 
 // scrapeCache tracks mappings of exposed metric strings to label sets and
@@ -955,12 +961,12 @@ func (c *scrapeCache) forEachStale(f func(labels.Labels) bool) {
 	}
 }
 
-func (c *scrapeCache) setType(metric []byte, t textparse.MetricType) {
+func (c *scrapeCache) setType(metric []byte, t model.MetricType) {
 	c.metaMtx.Lock()
 
 	e, ok := c.metadata[string(metric)]
 	if !ok {
-		e = &metaEntry{Metadata: metadata.Metadata{Type: textparse.MetricTypeUnknown}}
+		e = &metaEntry{Metadata: metadata.Metadata{Type: model.MetricTypeUnknown}}
 		c.metadata[string(metric)] = e
 	}
 	if e.Type != t {
@@ -977,7 +983,7 @@ func (c *scrapeCache) setHelp(metric, help []byte) {
 
 	e, ok := c.metadata[string(metric)]
 	if !ok {
-		e = &metaEntry{Metadata: metadata.Metadata{Type: textparse.MetricTypeUnknown}}
+		e = &metaEntry{Metadata: metadata.Metadata{Type: model.MetricTypeUnknown}}
 		c.metadata[string(metric)] = e
 	}
 	if e.Help != string(help) {
@@ -994,7 +1000,7 @@ func (c *scrapeCache) setUnit(metric, unit []byte) {
 
 	e, ok := c.metadata[string(metric)]
 	if !ok {
-		e = &metaEntry{Metadata: metadata.Metadata{Type: textparse.MetricTypeUnknown}}
+		e = &metaEntry{Metadata: metadata.Metadata{Type: model.MetricTypeUnknown}}
 		c.metadata[string(metric)] = e
 	}
 	if e.Unit != string(unit) {
@@ -1076,11 +1082,13 @@ func newScrapeLoop(ctx context.Context,
 	interval time.Duration,
 	timeout time.Duration,
 	scrapeClassicHistograms bool,
+	enableCTZeroIngestion bool,
 	reportExtraMetrics bool,
 	appendMetadataToWAL bool,
 	target *Target,
 	passMetadataInContext bool,
 	metrics *scrapeMetrics,
+	skipOffsetting bool,
 ) *scrapeLoop {
 	if l == nil {
 		l = log.NewNopLogger()
@@ -1124,9 +1132,11 @@ func newScrapeLoop(ctx context.Context,
 		interval:                 interval,
 		timeout:                  timeout,
 		scrapeClassicHistograms:  scrapeClassicHistograms,
+		enableCTZeroIngestion:    enableCTZeroIngestion,
 		reportExtraMetrics:       reportExtraMetrics,
 		appendMetadataToWAL:      appendMetadataToWAL,
 		metrics:                  metrics,
+		skipOffsetting:           skipOffsetting,
 	}
 	sl.ctx, sl.cancel = context.WithCancel(ctx)
 
@@ -1134,12 +1144,14 @@ func newScrapeLoop(ctx context.Context,
 }
 
 func (sl *scrapeLoop) run(errc chan<- error) {
-	select {
-	case <-time.After(sl.scraper.offset(sl.interval, sl.offsetSeed)):
-		// Continue after a scraping offset.
-	case <-sl.ctx.Done():
-		close(sl.stopped)
-		return
+	if !sl.skipOffsetting {
+		select {
+		case <-time.After(sl.scraper.offset(sl.interval, sl.offsetSeed)):
+			// Continue after a scraping offset.
+		case <-sl.ctx.Done():
+			close(sl.stopped)
+			return
+		}
 	}
 
 	var last time.Time
@@ -1555,6 +1567,15 @@ loop:
 
 			// Append metadata for new series if they were present.
 			updateMetadata(lset, true)
+		}
+
+		if ctMs := p.CreatedTimestamp(); sl.enableCTZeroIngestion && ctMs != nil {
+			ref, err = app.AppendCTZeroSample(ref, lset, t, *ctMs)
+			if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) { // OOO is a common case, ignoring completely for now.
+				// CT is an experimental feature. For now, we don't need to fail the
+				// scrape on errors updating the created timestamp, log debug.
+				level.Debug(sl.l).Log("msg", "Error when appending CT in scrape loop", "series", string(met), "ct", *ctMs, "t", t, "err", err)
+			}
 		}
 
 		if isHistogram {

@@ -199,7 +199,7 @@ func TestTailSamples(t *testing.T) {
 					floatHistogram := enc.FloatHistogramSamples([]record.RefFloatHistogramSample{{
 						Ref: chunks.HeadSeriesRef(inner),
 						T:   now.UnixNano() + 1,
-						FH:  hist.ToFloat(),
+						FH:  hist.ToFloat(nil),
 					}}, nil)
 					require.NoError(t, w.Log(floatHistogram))
 				}

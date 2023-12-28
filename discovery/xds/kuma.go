@@ -30,35 +30,12 @@ import (
 	"github.com/prometheus/prometheus/util/strutil"
 )
 
-var (
-	// DefaultKumaSDConfig is the default Kuma MADS SD configuration.
-	DefaultKumaSDConfig = KumaSDConfig{
-		HTTPClientConfig: config.DefaultHTTPClientConfig,
-		RefreshInterval:  model.Duration(15 * time.Second),
-		FetchTimeout:     model.Duration(2 * time.Minute),
-	}
-
-	kumaFetchFailuresCount = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Namespace: namespace,
-			Name:      "sd_kuma_fetch_failures_total",
-			Help:      "The number of Kuma MADS fetch call failures.",
-		})
-	kumaFetchSkipUpdateCount = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Namespace: namespace,
-			Name:      "sd_kuma_fetch_skipped_updates_total",
-			Help:      "The number of Kuma MADS fetch calls that result in no updates to the targets.",
-		})
-	kumaFetchDuration = prometheus.NewSummary(
-		prometheus.SummaryOpts{
-			Namespace:  namespace,
-			Name:       "sd_kuma_fetch_duration_seconds",
-			Help:       "The duration of a Kuma MADS fetch call.",
-			Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
-		},
-	)
-)
+// DefaultKumaSDConfig is the default Kuma MADS SD configuration.
+var DefaultKumaSDConfig = KumaSDConfig{
+	HTTPClientConfig: config.DefaultHTTPClientConfig,
+	RefreshInterval:  model.Duration(15 * time.Second),
+	FetchTimeout:     model.Duration(2 * time.Minute),
+}
 
 const (
 	// kumaMetaLabelPrefix is the meta prefix used for all kuma meta labels.
@@ -120,7 +97,7 @@ func (c *KumaSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discover
 		logger = log.NewNopLogger()
 	}
 
-	return NewKumaHTTPDiscovery(c, logger)
+	return NewKumaHTTPDiscovery(c, logger, opts.Registerer)
 }
 
 func convertKumaV1MonitoringAssignment(assignment *MonitoringAssignment) []model.LabelSet {
@@ -176,12 +153,16 @@ func kumaMadsV1ResourceParser(resources []*anypb.Any, typeURL string) ([]model.L
 	return targets, nil
 }
 
-func NewKumaHTTPDiscovery(conf *KumaSDConfig, logger log.Logger) (discovery.Discoverer, error) {
+func NewKumaHTTPDiscovery(conf *KumaSDConfig, logger log.Logger, reg prometheus.Registerer) (discovery.Discoverer, error) {
 	// Default to "prometheus" if hostname is unavailable.
-	clientID, err := osutil.GetFQDN()
-	if err != nil {
-		level.Debug(logger).Log("msg", "error getting FQDN", "err", err)
-		clientID = "prometheus"
+	clientID := conf.ClientID
+	if clientID == "" {
+		var err error
+		clientID, err = osutil.GetFQDN()
+		if err != nil {
+			level.Debug(logger).Log("msg", "error getting FQDN", "err", err)
+			clientID = "prometheus"
+		}
 	}
 
 	clientConfig := &HTTPResourceClientConfig{
@@ -203,15 +184,41 @@ func NewKumaHTTPDiscovery(conf *KumaSDConfig, logger log.Logger) (discovery.Disc
 	}
 
 	d := &fetchDiscovery{
-		client:               client,
-		logger:               logger,
-		refreshInterval:      time.Duration(conf.RefreshInterval),
-		source:               "kuma",
-		parseResources:       kumaMadsV1ResourceParser,
-		fetchFailuresCount:   kumaFetchFailuresCount,
-		fetchSkipUpdateCount: kumaFetchSkipUpdateCount,
-		fetchDuration:        kumaFetchDuration,
+		client:          client,
+		logger:          logger,
+		refreshInterval: time.Duration(conf.RefreshInterval),
+		source:          "kuma",
+		parseResources:  kumaMadsV1ResourceParser,
+		fetchFailuresCount: prometheus.NewCounter(
+			prometheus.CounterOpts{
+				Namespace: namespace,
+				Name:      "sd_kuma_fetch_failures_total",
+				Help:      "The number of Kuma MADS fetch call failures.",
+			}),
+		fetchSkipUpdateCount: prometheus.NewCounter(
+			prometheus.CounterOpts{
+				Namespace: namespace,
+				Name:      "sd_kuma_fetch_skipped_updates_total",
+				Help:      "The number of Kuma MADS fetch calls that result in no updates to the targets.",
+			}),
+		fetchDuration: prometheus.NewSummary(
+			prometheus.SummaryOpts{
+				Namespace:  namespace,
+				Name:       "sd_kuma_fetch_duration_seconds",
+				Help:       "The duration of a Kuma MADS fetch call.",
+				Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
+			},
+		),
 	}
+
+	d.metricRegisterer = discovery.NewMetricRegisterer(
+		reg,
+		[]prometheus.Collector{
+			d.fetchFailuresCount,
+			d.fetchSkipUpdateCount,
+			d.fetchDuration,
+		},
+	)
 
 	return d, nil
 }

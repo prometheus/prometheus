@@ -136,7 +136,7 @@ func (mw *MetadataWatcher) collect() {
 	metadata := []scrape.MetricMetadata{}
 	for _, tset := range mw.manager.TargetsActive() {
 		for _, target := range tset {
-			for _, entry := range target.MetadataList() {
+			for _, entry := range target.ListMetadata() {
 				if _, ok := metadataSet[entry]; !ok {
 					metadata = append(metadata, entry)
 					metadataSet[entry] = struct{}{}

@@ -30,7 +30,6 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
-	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 )
@@ -87,12 +86,12 @@ type MetricMetadataStore interface {
 // MetricMetadata is a piece of metadata for a metric.
 type MetricMetadata struct {
 	Metric string
-	Type   textparse.MetricType
+	Type   model.MetricType
 	Help   string
 	Unit   string
 }
 
-func (t *Target) MetadataList() []MetricMetadata {
+func (t *Target) ListMetadata() []MetricMetadata {
 	t.mtx.RLock()
 	defer t.mtx.RUnlock()
 
@@ -102,7 +101,7 @@ func (t *Target) MetadataList() []MetricMetadata {
 	return t.metadata.ListMetadata()
 }
 
-func (t *Target) MetadataSize() int {
+func (t *Target) SizeMetadata() int {
 	t.mtx.RLock()
 	defer t.mtx.RUnlock()
 
@@ -113,7 +112,7 @@ func (t *Target) MetadataSize() int {
 	return t.metadata.SizeMetadata()
 }
 
-func (t *Target) MetadataLength() int {
+func (t *Target) LengthMetadata() int {
 	t.mtx.RLock()
 	defer t.mtx.RUnlock()
 
@@ -124,8 +123,8 @@ func (t *Target) MetadataLength() int {
 	return t.metadata.LengthMetadata()
 }
 
-// Metadata returns type and help metadata for the given metric.
-func (t *Target) Metadata(metric string) (MetricMetadata, bool) {
+// GetMetadata returns type and help metadata for the given metric.
+func (t *Target) GetMetadata(metric string) (MetricMetadata, bool) {
 	t.mtx.RLock()
 	defer t.mtx.RUnlock()
 

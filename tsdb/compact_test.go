@@ -15,6 +15,7 @@ package tsdb
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"math/rand"
@@ -27,7 +28,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/oklog/ulid"
-	"github.com/pkg/errors"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 
@@ -1402,8 +1402,8 @@ func TestHeadCompactionWithHistograms(t *testing.T) {
 				for tsMinute := from; tsMinute <= to; tsMinute++ {
 					var err error
 					if floatTest {
-						_, err = app.AppendHistogram(0, lbls, minute(tsMinute), nil, h.ToFloat())
-						efh := h.ToFloat()
+						_, err = app.AppendHistogram(0, lbls, minute(tsMinute), nil, h.ToFloat(nil))
+						efh := h.ToFloat(nil)
 						if tsMinute == from {
 							efh.CounterResetHint = histogram.UnknownCounterReset
 						} else {
