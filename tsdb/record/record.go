@@ -20,9 +20,10 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/prometheus/common/model"
+
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/encoding"
@@ -90,45 +91,45 @@ const (
 	Stateset        MetricType = 7
 )
 
-func GetMetricType(t textparse.MetricType) uint8 {
+func GetMetricType(t model.MetricType) uint8 {
 	switch t {
-	case textparse.MetricTypeCounter:
+	case model.MetricTypeCounter:
 		return uint8(Counter)
-	case textparse.MetricTypeGauge:
+	case model.MetricTypeGauge:
 		return uint8(Gauge)
-	case textparse.MetricTypeHistogram:
+	case model.MetricTypeHistogram:
 		return uint8(HistogramSample)
-	case textparse.MetricTypeGaugeHistogram:
+	case model.MetricTypeGaugeHistogram:
 		return uint8(GaugeHistogram)
-	case textparse.MetricTypeSummary:
+	case model.MetricTypeSummary:
 		return uint8(Summary)
-	case textparse.MetricTypeInfo:
+	case model.MetricTypeInfo:
 		return uint8(Info)
-	case textparse.MetricTypeStateset:
+	case model.MetricTypeStateset:
 		return uint8(Stateset)
 	default:
 		return uint8(UnknownMT)
 	}
 }
 
-func ToTextparseMetricType(m uint8) textparse.MetricType {
+func ToMetricType(m uint8) model.MetricType {
 	switch m {
 	case uint8(Counter):
-		return textparse.MetricTypeCounter
+		return model.MetricTypeCounter
 	case uint8(Gauge):
-		return textparse.MetricTypeGauge
+		return model.MetricTypeGauge
 	case uint8(HistogramSample):
-		return textparse.MetricTypeHistogram
+		return model.MetricTypeHistogram
 	case uint8(GaugeHistogram):
-		return textparse.MetricTypeGaugeHistogram
+		return model.MetricTypeGaugeHistogram
 	case uint8(Summary):
-		return textparse.MetricTypeSummary
+		return model.MetricTypeSummary
 	case uint8(Info):
-		return textparse.MetricTypeInfo
+		return model.MetricTypeInfo
 	case uint8(Stateset):
-		return textparse.MetricTypeStateset
+		return model.MetricTypeStateset
 	default:
-		return textparse.MetricTypeUnknown
+		return model.MetricTypeUnknown
 	}
 }
 

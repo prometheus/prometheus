@@ -22,7 +22,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/scrape"
 )
 
@@ -108,13 +107,13 @@ func TestWatchScrapeManager_ReadyForCollection(t *testing.T) {
 		Metadata: []scrape.MetricMetadata{
 			{
 				Metric: "prometheus_tsdb_head_chunks_created_total",
-				Type:   textparse.MetricTypeCounter,
+				Type:   model.MetricTypeCounter,
 				Help:   "Total number",
 				Unit:   "",
 			},
 			{
 				Metric: "prometheus_remote_storage_retried_samples_total",
-				Type:   textparse.MetricTypeCounter,
+				Type:   model.MetricTypeCounter,
 				Help:   "Total number",
 				Unit:   "",
 			},
@@ -124,7 +123,7 @@ func TestWatchScrapeManager_ReadyForCollection(t *testing.T) {
 		Metadata: []scrape.MetricMetadata{
 			{
 				Metric: "prometheus_tsdb_head_chunks_created_total",
-				Type:   textparse.MetricTypeCounter,
+				Type:   model.MetricTypeCounter,
 				Help:   "Total number",
 				Unit:   "",
 			},

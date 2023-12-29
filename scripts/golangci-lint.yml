@@ -12,8 +12,14 @@ on:
       - ".golangci.yml"
   pull_request:
 
+permissions:  # added using https://github.com/step-security/secure-repo
+  contents: read
+
 jobs:
   golangci:
+    permissions:
+      contents: read  # for actions/checkout to fetch code
+      pull-requests: read  # for golangci/golangci-lint-action to fetch pull requests
     name: lint
     runs-on: ubuntu-latest
     steps:

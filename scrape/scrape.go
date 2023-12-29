@@ -675,7 +675,7 @@ func acceptHeader(sps []config.ScrapeProtocol) string {
 		weight--
 	}
 	// Default match anything.
-	vals = append(vals, fmt.Sprintf("*/*;q=%d", weight))
+	vals = append(vals, fmt.Sprintf("*/*;q=0.%d", weight))
 	return strings.Join(vals, ",")
 }
 
@@ -961,12 +961,12 @@ func (c *scrapeCache) forEachStale(f func(labels.Labels) bool) {
 	}
 }
 
-func (c *scrapeCache) setType(metric []byte, t textparse.MetricType) {
+func (c *scrapeCache) setType(metric []byte, t model.MetricType) {
 	c.metaMtx.Lock()
 
 	e, ok := c.metadata[string(metric)]
 	if !ok {
-		e = &metaEntry{Metadata: metadata.Metadata{Type: textparse.MetricTypeUnknown}}
+		e = &metaEntry{Metadata: metadata.Metadata{Type: model.MetricTypeUnknown}}
 		c.metadata[string(metric)] = e
 	}
 	if e.Type != t {
@@ -983,7 +983,7 @@ func (c *scrapeCache) setHelp(metric, help []byte) {
 
 	e, ok := c.metadata[string(metric)]
 	if !ok {
-		e = &metaEntry{Metadata: metadata.Metadata{Type: textparse.MetricTypeUnknown}}
+		e = &metaEntry{Metadata: metadata.Metadata{Type: model.MetricTypeUnknown}}
 		c.metadata[string(metric)] = e
 	}
 	if e.Help != string(help) {
@@ -1000,7 +1000,7 @@ func (c *scrapeCache) setUnit(metric, unit []byte) {
 
 	e, ok := c.metadata[string(metric)]
 	if !ok {
-		e = &metaEntry{Metadata: metadata.Metadata{Type: textparse.MetricTypeUnknown}}
+		e = &metaEntry{Metadata: metadata.Metadata{Type: model.MetricTypeUnknown}}
 		c.metadata[string(metric)] = e
 	}
 	if e.Unit != string(unit) {
