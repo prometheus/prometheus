@@ -261,6 +261,7 @@ func (nopIterator) At() (int64, float64) { return math.MinInt64, 0 }
 func (nopIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
 	return math.MinInt64, nil
 }
+
 func (nopIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	return math.MinInt64, nil
 }

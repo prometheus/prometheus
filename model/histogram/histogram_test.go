@@ -647,7 +647,8 @@ func TestHistogramCopy(t *testing.T) {
 			hCopy := tcase.orig.Copy()
 
 			// Modify a primitive value in the original histogram.
-			tcase.orig.Sum += 1
+			tcase.orig.Sum++
+			require.Equal(t, tcase.expected, hCopy)
 			assertDeepCopyHSpans(t, tcase.orig, hCopy, tcase.expected)
 		})
 	}
@@ -697,8 +698,8 @@ func TestHistogramCopyFrom(t *testing.T) {
 			hCopy.CopyFrom(*tcase.orig)
 
 			// Modify a primitive value in the original histogram.
-			tcase.orig.Sum += 1
-			require.Equal(t, hCopy, tcase.expected)
+			tcase.orig.Sum++
+			require.Equal(t, tcase.expected, hCopy)
 			assertDeepCopyHSpans(t, tcase.orig, hCopy, tcase.expected)
 		})
 	}

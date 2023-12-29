@@ -385,7 +385,7 @@ func (it *SampleRingIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (in
 		fh.CopyFrom(*it.fh)
 		return it.t, fh
 	}
-	return it.t, it.fh
+	return it.t, it.fh.Copy()
 }
 
 func (it *SampleRingIterator) AtT() int64 {

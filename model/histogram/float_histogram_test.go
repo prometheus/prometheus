@@ -185,8 +185,8 @@ func TestFloatHistogramCopy(t *testing.T) {
 			hCopy := tcase.orig.Copy()
 
 			// Modify a primitive value in the original histogram.
-			tcase.orig.Sum += 1
-			require.Equal(t, hCopy, tcase.expected)
+			tcase.orig.Sum++
+			require.Equal(t, tcase.expected, hCopy)
 			assertDeepCopyFHSpans(t, tcase.orig, hCopy, tcase.expected)
 		})
 	}
@@ -236,7 +236,8 @@ func TestFloatHistogramCopyFrom(t *testing.T) {
 			hCopy.CopyFrom(*tcase.orig)
 
 			// Modify a primitive value in the original histogram.
-			tcase.orig.Sum += 1
+			tcase.orig.Sum++
+			require.Equal(t, tcase.expected, hCopy)
 			assertDeepCopyFHSpans(t, tcase.orig, hCopy, tcase.expected)
 		})
 	}
