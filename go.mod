@@ -90,6 +90,8 @@ require (
 	k8s.io/klog/v2 v2.110.1
 )
 
+require github.com/nsf/jsondiff v0.0.0-20230430225905-43f6cf3098c1
+
 require (
 	cloud.google.com/go/compute v1.23.3 // indirect
 	cloud.google.com/go/compute/metadata v0.2.3 // indirect

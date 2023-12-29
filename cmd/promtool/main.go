@@ -78,6 +78,7 @@ const (
 )
 
 var lintOptions = []string{lintOptionAll, lintOptionDuplicateRules, lintOptionNone}
+var diffFlag bool
 
 func main() {
 	var (
@@ -204,6 +205,7 @@ func main() {
 		"test-rule-file",
 		"The unit test file.",
 	).Required().ExistingFiles()
+	testRulesDiff := testRulesCmd.Flag("diff", "Print colored differential output between expected & received output").Default("false").Bool()
 
 	defaultDBPath := "data/"
 	tsdbCmd := app.Command("tsdb", "Run tsdb commands.")
@@ -363,6 +365,7 @@ func main() {
 		os.Exit(QueryLabels(serverURL, httpRoundTripper, *queryLabelsMatch, *queryLabelsName, *queryLabelsBegin, *queryLabelsEnd, p))
 
 	case testRulesCmd.FullCommand():
+		diffFlag = *testRulesDiff
 		os.Exit(RulesUnitTest(
 			promql.LazyLoaderOpts{
 				EnableAtModifier:     true,

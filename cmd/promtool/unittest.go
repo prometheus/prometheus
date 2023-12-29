@@ -15,6 +15,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -27,6 +28,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/regexp"
+	"github.com/nsf/jsondiff"
 	"github.com/prometheus/common/model"
 	"gopkg.in/yaml.v2"
 
@@ -345,8 +347,44 @@ func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]i
 					}
 					expString := indentLines(expAlerts.String(), "            ")
 					gotString := indentLines(gotAlerts.String(), "            ")
-					errs = append(errs, fmt.Errorf("%s    alertname: %s, time: %s, \n        exp:%v, \n        got:%v",
-						testName, testcase.Alertname, testcase.EvalTime.String(), expString, gotString))
+					if diffFlag {
+						// If empty, populates an empty value
+						if gotAlerts.Len() == 0 {
+							gotAlerts = append(gotAlerts, labelAndAnnotation{
+								Labels:      labels.Labels{},
+								Annotations: labels.Labels{},
+							})
+						}
+						// If empty, populates an empty value
+						if expAlerts.Len() == 0 {
+							expAlerts = append(expAlerts, labelAndAnnotation{
+								Labels:      labels.Labels{},
+								Annotations: labels.Labels{},
+							})
+						}
+
+						diffOpts := jsondiff.DefaultConsoleOptions()
+						expAlertsJSON, err := json.Marshal(expAlerts)
+						if err != nil {
+							errs = append(errs, fmt.Errorf("alertName: %s\nError converting expAlert to JSON: %v", tg.TestGroupName, expAlerts.String()))
+							continue
+						}
+
+						gotAlertsJSON, err := json.Marshal(gotAlerts)
+						if err != nil {
+							errs = append(errs, fmt.Errorf("alertName: %s\nError converting gotAlert to JSON: %v", tg.TestGroupName, gotAlerts.String()))
+							continue
+						}
+
+						res, diff := jsondiff.Compare(expAlertsJSON, gotAlertsJSON, &diffOpts)
+						if res != jsondiff.FullMatch {
+							errs = append(errs, fmt.Errorf("%s    alertname: %s, time: %s, \n diff: %v",
+								testName, testcase.Alertname, testcase.EvalTime.String(), diff))
+						}
+					} else {
+						errs = append(errs, fmt.Errorf("%s    alertname: %s, time: %s, \n        exp:%v, \n        got:%v",
+							testName, testcase.Alertname, testcase.EvalTime.String(), expString, gotString))
+					}
 				}
 			}
 
