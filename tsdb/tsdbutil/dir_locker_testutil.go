@@ -61,7 +61,7 @@ func TestDirLockerUsage(t *testing.T, open func(t *testing.T, data string, creat
 	for _, c := range cases {
 		t.Run(fmt.Sprintf("%+v", c), func(t *testing.T) {
 			tmpdir := t.TempDir()
-
+			
 			// Test preconditions (file already exists + lockfile option)
 			if c.fileAlreadyExists {
 				tmpLocker, err := NewDirLocker(tmpdir, "tsdb", log.NewNopLogger(), nil)
