@@ -77,8 +77,10 @@ const (
 	checkReadiness           = "/-/ready"
 )
 
-var lintOptions = []string{lintOptionAll, lintOptionDuplicateRules, lintOptionNone}
-var diffFlag bool
+var (
+	lintOptions = []string{lintOptionAll, lintOptionDuplicateRules, lintOptionNone}
+	diffFlag    bool
+)
 
 func main() {
 	var (
