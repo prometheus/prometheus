@@ -103,25 +103,25 @@ func (c *QueryAnalyzeConfig) getStatsFromMetrics(ctx context.Context, api v1.API
 			if err != nil {
 				return err
 			}
-			for _, vector := range matrix {
-				stats, err := calcNativeBucketStatistics(vector, metahistogram)
+			for _, series := range matrix {
+				stats, err := calcNativeBucketStatistics(series, metahistogram)
 				if err != nil {
 					if err == errNotNativeHistogram || err == errNotEnoughData {
 						continue
 					}
 					return err
 				}
-				fmt.Fprintf(out, "%s=%v\n", vector.Metric, *stats)
+				fmt.Fprintf(out, "%s=%v\n", series.Metric, *stats)
 				metastats.update(stats)
 			}
 		}
 	} else {
 		for _, matcher := range matchers {
-			vector, err := queryLabelSets(ctx, api, matcher, endTime, c.duration)
+			series, err := queryLabelSets(ctx, api, matcher, endTime, c.duration)
 			if err != nil {
 				return err
 			}
-			for _, sample := range vector {
+			for _, sample := range series {
 				// Get labels to match.
 				lbs := model.LabelSet(sample.Metric)
 				metricName := string(lbs[labels.MetricName])
@@ -158,11 +158,11 @@ func queryLabelSets(ctx context.Context, api v1.API, metricName string, end time
 		return nil, err
 	}
 
-	vector, ok := values.(model.Vector)
+	series, ok := values.(model.Vector)
 	if !ok {
 		return nil, fmt.Errorf("query for metrics resulted in non-Vector")
 	}
-	return vector, nil
+	return series, nil
 }
 
 func seriesSelector(metricName string, duration time.Duration) string {
@@ -313,8 +313,8 @@ func sortMatrix(matrix model.Matrix) {
 	})
 }
 
-func getLe(vector *model.SampleStream) float64 {
-	lbs := model.LabelSet(vector.Metric)
+func getLe(series *model.SampleStream) float64 {
+	lbs := model.LabelSet(series.Metric)
 	le, _ := strconv.ParseFloat(string(lbs["le"]), 64)
 	return le
 }
@@ -354,7 +354,7 @@ func abs(num int) int {
 	return num
 }
 
-func calcNativeBucketStatistics(vector *model.SampleStream, histo *statshistogram) (*statistics, error) {
+func calcNativeBucketStatistics(series *model.SampleStream, histo *statshistogram) (*statistics, error) {
 	stats := &statistics{
 		minChanged: math.MaxInt,
 		minDelta:   math.MaxInt,
@@ -365,19 +365,19 @@ func calcNativeBucketStatistics(vector *model.SampleStream, histo *statshistogra
 	sumBucketsChanged := 0
 	totalDelta := 0
 	totalPop := 0
-	if len(vector.Histograms) == 0 {
+	if len(series.Histograms) == 0 {
 		return nil, errNotNativeHistogram
 	}
-	if len(vector.Histograms) == 1 {
+	if len(series.Histograms) == 1 {
 		return nil, errNotEnoughData
 	}
 	prev := make(map[bucketBounds]float64)
-	for _, bucket := range vector.Histograms[0].Histogram.Buckets {
+	for _, bucket := range series.Histograms[0].Histogram.Buckets {
 		bb := makeBucketBounds(bucket)
 		prev[bb] = float64(bucket.Count)
 		overall[bb] = struct{}{}
 	}
-	for _, histogram := range vector.Histograms[1:] {
+	for _, histogram := range series.Histograms[1:] {
 		curr := make(map[bucketBounds]float64)
 		for _, bucket := range histogram.Histogram.Buckets {
 			bb := makeBucketBounds(bucket)
@@ -431,9 +431,9 @@ func calcNativeBucketStatistics(vector *model.SampleStream, histo *statshistogra
 
 		prev = curr
 	}
-	stats.avgChanged = float64(sumBucketsChanged) / float64(len(vector.Histograms)-1)
-	stats.avgDelta = float64(totalDelta) / float64(len(vector.Histograms)-1)
-	stats.avgPop = float64(totalPop) / float64(len(vector.Histograms)-1) // for simplicity, we ignore the populated buckets in the first timestamp
+	stats.avgChanged = float64(sumBucketsChanged) / float64(len(series.Histograms)-1)
+	stats.avgDelta = float64(totalDelta) / float64(len(series.Histograms)-1)
+	stats.avgPop = float64(totalPop) / float64(len(series.Histograms)-1) // for simplicity, we ignore the populated buckets in the first timestamp
 	stats.total = len(overall)
 	return stats, nil
 }
