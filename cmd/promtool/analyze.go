@@ -76,6 +76,7 @@ func (c *AnalyzeClassicHistogramsConfig) run() error {
 	}
 
 	metastats := newMetastatistics()
+	metahistogram := newStatsHistogram()
 	for _, bucketMetricName := range bucketMetrics {
 		basename, err := metricBasename(bucketMetricName)
 		if err != nil {
@@ -105,7 +106,7 @@ func (c *AnalyzeClassicHistogramsConfig) run() error {
 			if err != nil {
 				return err
 			}
-			stats, err := calcBucketStatistics(matrix, step)
+			stats, err := calcBucketStatistics(matrix, step, metahistogram)
 			if err != nil {
 				return err
 			}
@@ -114,6 +115,7 @@ func (c *AnalyzeClassicHistogramsConfig) run() error {
 		}
 	}
 	fmt.Println(metastats)
+	fmt.Println(metahistogram)
 	return nil
 }
 
@@ -216,7 +218,7 @@ func (s statistics) String() string {
 	return fmt.Sprintf("Bucket min/avg/max/avail@scrape: %d/%d/%d/%d@%v", s.min, s.avg, s.max, s.available, s.scrapeInterval)
 }
 
-func calcBucketStatistics(matrix model.Matrix, step time.Duration) (*statistics, error) {
+func calcBucketStatistics(matrix model.Matrix, step time.Duration, histo *statshistogram) (*statistics, error) {
 	numBuckets := len(matrix)
 
 	stats := &statistics{
@@ -254,6 +256,8 @@ func calcBucketStatistics(matrix model.Matrix, step time.Duration) (*statistics,
 				return stats, fmt.Errorf("unexpected decrease in bucket %d at time %d", bIdx, timeIdx)
 			}
 		}
+
+		histo.update(countBucketsChanged)
 
 		sumBucketsChanged += countBucketsChanged
 		if stats.min > countBucketsChanged {
@@ -344,4 +348,18 @@ func (ms *metastatistics) update(s *statistics) {
 	ms.avg.update(s.avg)
 	ms.max.update(s.max)
 	ms.available.update(s.available)
+}
+
+type statshistogram struct {
+	counts map[int]int
+}
+
+func newStatsHistogram() *statshistogram {
+	return &statshistogram{
+		counts: make(map[int]int, 0),
+	}
+}
+
+func (sh *statshistogram) update(num int) {
+	sh.counts[num]++
 }
