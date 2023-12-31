@@ -76,7 +76,6 @@ func (c *QueryAnalyzeConfig) run(url *url.URL, roundtripper http.RoundTripper) e
 
 func (c *QueryAnalyzeConfig) getStatsFromMetrics(ctx context.Context, api v1.API, endTime time.Time, out io.Writer, isNative bool, matchers []string) error {
 	metastats := newMetaStatistics()
-	metahistogram := newStatsHistogram()
 	for _, matcher := range matchers {
 		seriesSel := seriesSelector(matcher, c.duration)
 		matrix, err := querySamples(ctx, api, seriesSel, endTime)
@@ -85,14 +84,14 @@ func (c *QueryAnalyzeConfig) getStatsFromMetrics(ctx context.Context, api v1.API
 		}
 		if isNative {
 			for _, series := range matrix {
-				stats, err := calcNativeBucketStatistics(series, metahistogram)
+				stats, err := calcNativeBucketStatistics(series)
 				if err != nil {
 					if err == errNotNativeHistogram || err == errNotEnoughData {
 						continue
 					}
 					return err
 				}
-				fmt.Fprintf(out, "%s=%v\n", series.Metric, *stats)
+				fmt.Fprintf(out, "%s: %v\n", series.Metric, *stats)
 				metastats.update(stats)
 			}
 		} else {
@@ -103,26 +102,28 @@ func (c *QueryAnalyzeConfig) getStatsFromMetrics(ctx context.Context, api v1.API
 					continue
 				}
 				metricName := string(lbs[labels.MetricName])
+				if !strings.HasSuffix(metricName, "_bucket") {
+					continue
+				}
 				delete(lbs, labels.MetricName)
 				delete(lbs, "le")
 				key := formatSeriesName(metricName, lbs)
 				matrices[key] = append(matrices[key], series)
 			}
 			for key, matrix := range matrices {
-				stats, err := calcClassicBucketStatistics(matrix, metahistogram)
+				stats, err := calcClassicBucketStatistics(matrix)
 				if err != nil {
 					if err == errNotEnoughData {
 						continue
 					}
 					return err
 				}
-				fmt.Fprintf(out, "%s=%v\n", key, *stats)
+				fmt.Fprintf(out, "%s: %v\n", key, *stats)
 				metastats.update(stats)
 			}
 		}
 	}
-	fmt.Println(metastats)
-	fmt.Println(metahistogram)
+	fmt.Fprintln(out, metastats)
 	return nil
 }
 
@@ -156,29 +157,24 @@ func querySamples(ctx context.Context, api v1.API, query string, end time.Time) 
 	return matrix, nil
 }
 
-// minChanged/avgChanged/maxChanged is for the number of changed buckets.
-// minDelta/avgDelta/maxDelta is for the total absolute change
-// in the buckets across all timesteps.
 // minPop/avgPop/maxPop is for the number of populated (non-zero) buckets.
 // total is the total number of buckets across all samples in the series,
 // populated or not.
 type statistics struct {
-	minChanged, maxChanged, minDelta, maxDelta, minPop, maxPop, total int
-	avgChanged, avgDelta, avgPop                                      float64
+	minPop, maxPop, total int
+	avgPop                float64
 }
 
 func (s statistics) String() string {
-	return fmt.Sprintf("Bucket stats (min/avg/max) - number of buckets changed: %d/%.3f/%d total delta of changed buckets: %d/%.3f/%d number of populated buckets: %d/%.3f/%d. total number of buckets: %d", s.minChanged, s.avgChanged, s.maxChanged, s.minDelta, s.avgDelta, s.maxDelta, s.minPop, s.avgPop, s.maxPop, s.total)
+	return fmt.Sprintf("Bucket stats (min/avg/max) - number of populated buckets: %d/%.3f/%d. total number of buckets: %d", s.minPop, s.avgPop, s.maxPop, s.total)
 }
 
-func calcClassicBucketStatistics(matrix model.Matrix, histo *statshistogram) (*statistics, error) {
+func calcClassicBucketStatistics(matrix model.Matrix) (*statistics, error) {
 	numBuckets := len(matrix)
 
 	stats := &statistics{
-		minChanged: math.MaxInt,
-		minDelta:   math.MaxInt,
-		minPop:     math.MaxInt,
-		total:      numBuckets,
+		minPop: math.MaxInt,
+		total:  numBuckets,
 	}
 
 	if numBuckets == 0 || len(matrix[0].Values) < 2 {
@@ -189,15 +185,8 @@ func calcClassicBucketStatistics(matrix model.Matrix, histo *statshistogram) (*s
 
 	sortMatrix(matrix)
 
-	prev, err := getBucketCountsAtTime(matrix, numBuckets, 0)
-	if err != nil {
-		return stats, err
-	}
-
-	sumBucketsChanged := 0
-	totalDelta := 0
 	totalPop := 0
-	for timeIdx := 1; timeIdx < numSamples; timeIdx++ {
+	for timeIdx := 0; timeIdx < numSamples; timeIdx++ {
 		curr, err := getBucketCountsAtTime(matrix, numBuckets, timeIdx)
 		if err != nil {
 			return stats, err
@@ -209,44 +198,15 @@ func calcClassicBucketStatistics(matrix model.Matrix, histo *statshistogram) (*s
 			}
 		}
 
-		countBucketsChanged := 0
-		delta := 0
-		for bIdx := range matrix {
-			if curr[bIdx] != prev[bIdx] {
-				countBucketsChanged++
-				delta += abs(curr[bIdx] - prev[bIdx])
-			}
-		}
-
-		histo.update(countBucketsChanged)
-
-		sumBucketsChanged += countBucketsChanged
-		totalDelta += delta
 		totalPop += countPop
-		if stats.minChanged > countBucketsChanged {
-			stats.minChanged = countBucketsChanged
-		}
-		if stats.maxChanged < countBucketsChanged {
-			stats.maxChanged = countBucketsChanged
-		}
-		if stats.minDelta > delta {
-			stats.minDelta = delta
-		}
-		if stats.maxDelta < delta {
-			stats.maxDelta = delta
-		}
 		if stats.minPop > countPop {
 			stats.minPop = countPop
 		}
 		if stats.maxPop < countPop {
 			stats.maxPop = countPop
 		}
-
-		prev = curr
 	}
-	stats.avgChanged = float64(sumBucketsChanged) / float64(numSamples-1)
-	stats.avgDelta = float64(totalDelta) / float64(numSamples-1)
-	stats.avgPop = float64(totalPop) / float64(numSamples-1) // for simplicity, we ignore the populated buckets in the first timestamp
+	stats.avgPop = float64(totalPop) / float64(numSamples)
 	return stats, nil
 }
 
@@ -290,23 +250,12 @@ func makeBucketBounds(b *model.HistogramBucket) bucketBounds {
 	}
 }
 
-func abs(num int) int {
-	if num < 0 {
-		return -num
-	}
-	return num
-}
-
-func calcNativeBucketStatistics(series *model.SampleStream, histo *statshistogram) (*statistics, error) {
+func calcNativeBucketStatistics(series *model.SampleStream) (*statistics, error) {
 	stats := &statistics{
-		minChanged: math.MaxInt,
-		minDelta:   math.MaxInt,
-		minPop:     math.MaxInt,
+		minPop: math.MaxInt,
 	}
 
 	overall := make(map[bucketBounds]struct{})
-	sumBucketsChanged := 0
-	totalDelta := 0
 	totalPop := 0
 	if len(series.Histograms) == 0 {
 		return nil, errNotNativeHistogram
@@ -314,69 +263,22 @@ func calcNativeBucketStatistics(series *model.SampleStream, histo *statshistogra
 	if len(series.Histograms) == 1 {
 		return nil, errNotEnoughData
 	}
-	prev := make(map[bucketBounds]float64)
-	for _, bucket := range series.Histograms[0].Histogram.Buckets {
-		bb := makeBucketBounds(bucket)
-		prev[bb] = float64(bucket.Count)
-		overall[bb] = struct{}{}
-	}
-	for _, histogram := range series.Histograms[1:] {
-		curr := make(map[bucketBounds]float64)
+	for _, histogram := range series.Histograms {
 		for _, bucket := range histogram.Histogram.Buckets {
 			bb := makeBucketBounds(bucket)
-			curr[bb] = float64(bucket.Count)
 			overall[bb] = struct{}{}
 		}
-		countBucketsChanged := 0
-		delta := 0
 		countPop := len(histogram.Histogram.Buckets)
-		for bucket, currCount := range curr {
-			prevCount, ok := prev[bucket]
-			if !ok {
-				countBucketsChanged++
-				delta += int(currCount)
-			} else if prevCount != currCount {
-				countBucketsChanged++
-				delta += int(math.Abs(prevCount - currCount))
-			}
-		}
-		for bucket, prevCount := range prev {
-			_, ok := curr[bucket]
-			if !ok {
-				countBucketsChanged++
-				delta += int(prevCount)
-			}
-		}
 
-		histo.update(countBucketsChanged)
-
-		sumBucketsChanged += countBucketsChanged
-		totalDelta += delta
 		totalPop += countPop
-		if stats.minChanged > countBucketsChanged {
-			stats.minChanged = countBucketsChanged
-		}
-		if stats.maxChanged < countBucketsChanged {
-			stats.maxChanged = countBucketsChanged
-		}
-		if stats.minDelta > delta {
-			stats.minDelta = delta
-		}
-		if stats.maxDelta < delta {
-			stats.maxDelta = delta
-		}
 		if stats.minPop > countPop {
 			stats.minPop = countPop
 		}
 		if stats.maxPop < countPop {
 			stats.maxPop = countPop
 		}
-
-		prev = curr
 	}
-	stats.avgChanged = float64(sumBucketsChanged) / float64(len(series.Histograms)-1)
-	stats.avgDelta = float64(totalDelta) / float64(len(series.Histograms)-1)
-	stats.avgPop = float64(totalPop) / float64(len(series.Histograms)-1) // for simplicity, we ignore the populated buckets in the first timestamp
+	stats.avgPop = float64(totalPop) / float64(len(series.Histograms))
 	stats.total = len(overall)
 	return stats, nil
 }
@@ -408,51 +310,25 @@ func (d distribution) String() string {
 }
 
 type metaStatistics struct {
-	minChanged, avgChanged, maxChanged, minDelta, avgDelta, maxDelta, minPop, avgPop, maxPop, total distribution
+	minPop, avgPop, maxPop, total distribution
 }
 
 func newMetaStatistics() *metaStatistics {
 	return &metaStatistics{
-		minChanged: newDistribution(),
-		avgChanged: newDistribution(),
-		maxChanged: newDistribution(),
-		minDelta:   newDistribution(),
-		avgDelta:   newDistribution(),
-		maxDelta:   newDistribution(),
-		minPop:     newDistribution(),
-		avgPop:     newDistribution(),
-		maxPop:     newDistribution(),
-		total:      newDistribution(),
+		minPop: newDistribution(),
+		avgPop: newDistribution(),
+		maxPop: newDistribution(),
+		total:  newDistribution(),
 	}
 }
 
 func (ms metaStatistics) String() string {
-	return fmt.Sprintf("minChanged - %v\navgChanged - %v\nmaxChanged - %v\nminDelta - %v\navgDelta - %v\nmaxDelta - %v\nminPop - %v\navgPop - %v\nmaxPop - %v\ntotal - %v\ncount - %d", ms.minChanged, ms.avgChanged, ms.maxChanged, ms.minDelta, ms.avgDelta, ms.maxDelta, ms.minPop, ms.avgPop, ms.maxPop, ms.total, ms.minChanged.count)
+	return fmt.Sprintf("minPop - %v\navgPop - %v\nmaxPop - %v\ntotal - %v\ncount - %d", ms.minPop, ms.avgPop, ms.maxPop, ms.total, ms.minPop.count)
 }
 
 func (ms *metaStatistics) update(s *statistics) {
-	ms.minChanged.update(s.minChanged)
-	ms.avgChanged.update(int(s.avgChanged))
-	ms.maxChanged.update(s.maxChanged)
-	ms.minDelta.update(s.minDelta)
-	ms.avgDelta.update(int(s.avgDelta))
-	ms.maxDelta.update(s.maxDelta)
 	ms.minPop.update(s.minPop)
 	ms.avgPop.update(int(s.avgPop))
 	ms.maxPop.update(s.maxPop)
 	ms.total.update(s.total)
-}
-
-type statshistogram struct {
-	counts map[int]int
-}
-
-func newStatsHistogram() *statshistogram {
-	return &statshistogram{
-		counts: make(map[int]int, 0),
-	}
-}
-
-func (sh *statshistogram) update(num int) {
-	sh.counts[num]++
 }
