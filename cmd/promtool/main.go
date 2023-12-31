@@ -190,6 +190,7 @@ func main() {
 	queryAnalyzeCmd.Flag("duration", "Time frame to analyze.").Default("1h").DurationVar(&queryAnalyzeCfg.duration)
 	queryAnalyzeCmd.Flag("end", "Query end time (RFC3339 or Unix timestamp), defaults to now.").StringVar(&queryAnalyzeCfg.end)
 	queryAnalyzeCmd.Flag("step", "Query step size (duration).").DurationVar(&queryAnalyzeCfg.step)
+	queryAnalyzeCmd.Flag("match", "Series selector. Can be specified multiple times.").StringsVar(&queryAnalyzeCfg.matchers)
 
 	pushCmd := app.Command("push", "Push to a Prometheus server.")
 	pushCmd.Flag("http.config.file", "HTTP client configuration file for promtool to connect to Prometheus.").PlaceHolder("<filename>").ExistingFileVar(&httpConfigFilePath)

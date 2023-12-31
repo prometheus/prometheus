@@ -32,11 +32,16 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 )
 
+var (
+	notNativeHistogramErr = fmt.Errorf("not a native histogram")
+)
+
 type AnalyzeHistogramsConfig struct {
 	metricType string
 	duration   time.Duration
 	end        string
 	step       time.Duration
+	matchers   []string
 }
 
 // run retrieves metrics that look like conventional histograms (i.e. have _bucket
@@ -65,7 +70,8 @@ func (c *AnalyzeHistogramsConfig) run(url *url.URL, roundtripper http.RoundTripp
 	startTime := endTime.Add(-c.duration)
 
 	if c.metricType == "nativehistograms" {
-		histoMetrics, err := queryMetadataForHistograms(ctx, api, "", "1000")
+		// histoMetrics, err := queryMetadataForHistograms(ctx, api, "", "1000")
+		histoMetrics, err := queryMetricNames(ctx, api, c.matchers, startTime, endTime)
 		if err != nil {
 			return err
 		}
@@ -123,6 +129,9 @@ func (c *AnalyzeHistogramsConfig) getStatsFromMetrics(ctx context.Context, api v
 			}
 			stats, err := calcBucketStatistics(matrix, step, metahistogram)
 			if err != nil {
+				if err == notNativeHistogramErr {
+					continue
+				}
 				return err
 			}
 			fmt.Fprintf(out, "%s=%v\n", seriesSel, *stats)
@@ -132,6 +141,22 @@ func (c *AnalyzeHistogramsConfig) getStatsFromMetrics(ctx context.Context, api v
 	fmt.Println(metastats)
 	fmt.Println(metahistogram)
 	return nil
+}
+
+func queryMetricNames(ctx context.Context, api v1.API, matchers []string, start, end time.Time) ([]string, error) {
+	fullMatchers := []string{}
+	for _, m := range matchers {
+		fullMatchers = append(fullMatchers, fmt.Sprintf("{__name__=~\"%s\"}", m))
+	}
+	values, _, err := api.LabelValues(ctx, labels.MetricName, fullMatchers, start, end)
+	result := []string{}
+	for _, v := range values {
+		s := string(v)
+		if !strings.HasSuffix(s, "_bucket") && !strings.HasSuffix(s, "_count") && !strings.HasSuffix(s, "_sum") {
+			result = append(result, s)
+		}
+	}
+	return result, err
 }
 
 func queryBaseMetricNames(ctx context.Context, api v1.API, start, end time.Time) ([]string, error) {
@@ -147,7 +172,6 @@ func queryBaseMetricNames(ctx context.Context, api v1.API, start, end time.Time)
 			continue
 		}
 		result = append(result, basename)
-
 	}
 	return result, nil
 }
@@ -345,7 +369,13 @@ func calcNativeBucketStatistics(matrix model.Matrix, step time.Duration, histo *
 
 	overall := make(map[bucketBounds]struct{})
 	sumBucketsChanged := 0
+	if len(matrix) == 0 {
+		return nil, notNativeHistogramErr
+	}
 	for _, vector := range matrix {
+		if len(vector.Histograms) == 0 {
+			return nil, notNativeHistogramErr
+		}
 		prev := make(map[bucketBounds]float64)
 		for _, bucket := range vector.Histograms[0].Histogram.Buckets {
 			bb := makeBucketBounds(bucket)
