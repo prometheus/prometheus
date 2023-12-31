@@ -26,6 +26,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/grafana/regexp"
+
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
 
@@ -35,6 +37,8 @@ import (
 var (
 	errNotNativeHistogram = fmt.Errorf("not a native histogram")
 	errNotEnoughData      = fmt.Errorf("not enough data")
+
+	sumSuffix = regexp.MustCompile(`_sum\b`)
 )
 
 type QueryAnalyzeConfig struct {
@@ -67,22 +71,16 @@ func (c *QueryAnalyzeConfig) run(url *url.URL, roundtripper http.RoundTripper) e
 	} else {
 		endTime = time.Now()
 	}
-	startTime := endTime.Add(-c.duration)
 
 	if c.metricType == "nativehistograms" {
-		histoMetrics, err := queryMetricNames(ctx, api, c.matchers, startTime, endTime)
-		if err != nil {
-			return err
+		return c.getStatsFromMetrics(ctx, api, endTime, os.Stdout, identity, true, c.matchers)
+	}
+	for _, matcher := range c.matchers {
+		if !sumSuffix.MatchString(matcher) {
+			return fmt.Errorf("every classic histogram matcher must have a '_sum' suffix in the metric name, but the matcher '%s' does not", matcher)
 		}
-		return c.getStatsFromMetrics(ctx, api, endTime, os.Stdout, identity, identity, calcNativeBucketStatistics, histoMetrics)
 	}
-
-	baseMetrics, err := queryBaseMetricNames(ctx, api, c.matchers, startTime, endTime)
-	if err != nil {
-		return err
-	}
-	fmt.Printf("Potential histogram metrics found: %d\n", len(baseMetrics))
-	return c.getStatsFromMetrics(ctx, api, endTime, os.Stdout, appendSum, appendBucket, calcClassicBucketStatistics, baseMetrics)
+	return c.getStatsFromMetrics(ctx, api, endTime, os.Stdout, replaceSumWithBucket, false, c.matchers)
 }
 
 type transformNameFunc func(name string) string
@@ -91,42 +89,58 @@ func identity(name string) string {
 	return name
 }
 
-func appendSum(name string) string {
-	return fmt.Sprintf("%s_sum", name)
+func replaceSumWithBucket(name string) string {
+	return sumSuffix.ReplaceAllString(name, "_bucket")
 }
 
-func appendBucket(name string) string {
-	return fmt.Sprintf("%s_bucket", name)
-}
-
-func (c *QueryAnalyzeConfig) getStatsFromMetrics(ctx context.Context, api v1.API, endTime time.Time, out io.Writer, transformNameForLabelSet, transformNameForSeriesSel transformNameFunc, calcBucketStatistics calcBucketStatisticsFunc, metricNames []string) error {
+func (c *QueryAnalyzeConfig) getStatsFromMetrics(ctx context.Context, api v1.API, endTime time.Time, out io.Writer, transformNameForSeriesSel transformNameFunc, isNative bool, matchers []string) error {
 	metastats := newMetaStatistics()
 	metahistogram := newStatsHistogram()
-
-	for _, metricName := range metricNames {
-		vector, err := queryLabelSets(ctx, api, transformNameForLabelSet(metricName), endTime, c.duration)
-		if err != nil {
-			return err
-		}
-
-		for _, sample := range vector {
-			// Get labels to match.
-			lbs := model.LabelSet(sample.Metric)
-			delete(lbs, labels.MetricName)
-			seriesSel := seriesSelector(transformNameForSeriesSel(metricName), lbs, c.duration)
+	if isNative {
+		for _, matcher := range matchers {
+			seriesSel := seriesSelector(matcher, c.duration)
 			matrix, err := querySamples(ctx, api, seriesSel, endTime)
 			if err != nil {
 				return err
 			}
-			stats, err := calcBucketStatistics(matrix, metahistogram)
-			if err != nil {
-				if err == errNotNativeHistogram || err == errNotEnoughData {
-					continue
+			for _, vector := range matrix {
+				stats, err := calcNativeBucketStatistics(vector, metahistogram)
+				if err != nil {
+					if err == errNotNativeHistogram {
+						continue
+					}
+					return err
 				}
+				fmt.Fprintf(out, "%s=%v\n", vector.Metric, *stats)
+				metastats.update(stats)
+			}
+		}
+	} else {
+		for _, matcher := range matchers {
+			vector, err := queryLabelSets(ctx, api, matcher, endTime, c.duration)
+			if err != nil {
 				return err
 			}
-			fmt.Fprintf(out, "%s=%v\n", seriesSel, *stats)
-			metastats.update(stats)
+			for _, sample := range vector {
+				// Get labels to match.
+				lbs := model.LabelSet(sample.Metric)
+				metricName := string(lbs[labels.MetricName])
+				delete(lbs, labels.MetricName)
+				seriesSel := seriesSelectorWithLabels(transformNameForSeriesSel(metricName), lbs, c.duration)
+				matrix, err := querySamples(ctx, api, seriesSel, endTime)
+				if err != nil {
+					return err
+				}
+				stats, err := calcClassicBucketStatistics(matrix, metahistogram)
+				if err != nil {
+					if err == errNotEnoughData {
+						continue
+					}
+					return err
+				}
+				fmt.Fprintf(out, "%s=%v\n", seriesSel, *stats)
+				metastats.update(stats)
+			}
 		}
 	}
 	fmt.Println(metastats)
@@ -134,54 +148,10 @@ func (c *QueryAnalyzeConfig) getStatsFromMetrics(ctx context.Context, api v1.API
 	return nil
 }
 
-func queryMetricNames(ctx context.Context, api v1.API, matchers []string, start, end time.Time) ([]string, error) {
-	values, _, err := api.LabelValues(ctx, labels.MetricName, matchers, start, end)
-	if err != nil {
-		return nil, err
-	}
-	result := []string{}
-	for _, v := range values {
-		s := string(v)
-		if !strings.HasSuffix(s, "_bucket") && !strings.HasSuffix(s, "_count") && !strings.HasSuffix(s, "_sum") {
-			result = append(result, s)
-		}
-	}
-	return result, err
-}
-
-func queryBaseMetricNames(ctx context.Context, api v1.API, matchers []string, start, end time.Time) ([]string, error) {
-	values, _, err := api.LabelValues(ctx, labels.MetricName, matchers, start, end)
-	if err != nil {
-		return nil, err
-	}
-	result := []string{}
-	for _, v := range values {
-		s := string(v)
-		if !strings.HasSuffix(s, "_bucket") {
-			continue
-		}
-		basename, err := metricBasename(s)
-		if err != nil {
-			// Just skip if something doesn't look like a good name.
-			continue
-		}
-		result = append(result, basename)
-	}
-	return result, nil
-}
-
-func metricBasename(bucketMetricName string) (string, error) {
-	if len(bucketMetricName) <= len("_bucket") {
-		return "", fmt.Errorf("potential metric name too short: %s", bucketMetricName)
-	}
-	return bucketMetricName[:len(bucketMetricName)-len("_bucket")], nil
-}
-
-// Query the related count_over_time(*_sum[duration]) series to double check that metricName is a
-// histogram. This keeps the result small (avoids buckets) and the count gives scrape interval
-// when dividing duration with it.
+// Query the last_over_time(*_sum[duration]) series related to the matcher,
+// keeping the result small (avoids buckets).
 func queryLabelSets(ctx context.Context, api v1.API, metricName string, end time.Time, duration time.Duration) (model.Vector, error) {
-	query := fmt.Sprintf("count_over_time(%s{}[%s])", metricName, duration.String())
+	query := fmt.Sprintf("last_over_time(%s[%s])", metricName, duration.String())
 
 	values, _, err := api.Query(ctx, query, end)
 	if err != nil {
@@ -195,7 +165,17 @@ func queryLabelSets(ctx context.Context, api v1.API, metricName string, end time
 	return vector, nil
 }
 
-func seriesSelector(bucketMetricName string, lbs model.LabelSet, duration time.Duration) string {
+func seriesSelector(bucketMetricName string, duration time.Duration) string {
+	builder := strings.Builder{}
+	builder.WriteString(bucketMetricName)
+	builder.WriteRune('[')
+	builder.WriteString(duration.String())
+	builder.WriteRune(']')
+
+	return builder.String()
+}
+
+func seriesSelectorWithLabels(bucketMetricName string, lbs model.LabelSet, duration time.Duration) string {
 	builder := strings.Builder{}
 	builder.WriteString(bucketMetricName)
 	builder.WriteRune('{')
@@ -247,8 +227,6 @@ type statistics struct {
 func (s statistics) String() string {
 	return fmt.Sprintf("Bucket stats (min/avg/max) - number of buckets changed: %d/%.3f/%d total delta of changed buckets: %d/%.3f/%d number of populated buckets: %d/%.3f/%d. total number of buckets: %d", s.minChanged, s.avgChanged, s.maxChanged, s.minDelta, s.avgDelta, s.maxDelta, s.minPop, s.avgPop, s.maxPop, s.total)
 }
-
-type calcBucketStatisticsFunc func(matrix model.Matrix, histo *statshistogram) (*statistics, error)
 
 func calcClassicBucketStatistics(matrix model.Matrix, histo *statshistogram) (*statistics, error) {
 	numBuckets := len(matrix)
@@ -376,7 +354,7 @@ func abs(num int) int {
 	return num
 }
 
-func calcNativeBucketStatistics(matrix model.Matrix, histo *statshistogram) (*statistics, error) {
+func calcNativeBucketStatistics(vector *model.SampleStream, histo *statshistogram) (*statistics, error) {
 	stats := &statistics{
 		minChanged: math.MaxInt,
 		minDelta:   math.MaxInt,
@@ -387,77 +365,72 @@ func calcNativeBucketStatistics(matrix model.Matrix, histo *statshistogram) (*st
 	sumBucketsChanged := 0
 	totalDelta := 0
 	totalPop := 0
-	if len(matrix) == 0 {
-		return nil, errNotEnoughData
+	if len(vector.Histograms) == 0 {
+		return nil, errNotNativeHistogram
 	}
-	for _, vector := range matrix {
-		if len(vector.Histograms) == 0 {
-			return nil, errNotNativeHistogram
-		}
-		prev := make(map[bucketBounds]float64)
-		for _, bucket := range vector.Histograms[0].Histogram.Buckets {
+	prev := make(map[bucketBounds]float64)
+	for _, bucket := range vector.Histograms[0].Histogram.Buckets {
+		bb := makeBucketBounds(bucket)
+		prev[bb] = float64(bucket.Count)
+		overall[bb] = struct{}{}
+	}
+	for _, histogram := range vector.Histograms[1:] {
+		curr := make(map[bucketBounds]float64)
+		for _, bucket := range histogram.Histogram.Buckets {
 			bb := makeBucketBounds(bucket)
-			prev[bb] = float64(bucket.Count)
+			curr[bb] = float64(bucket.Count)
 			overall[bb] = struct{}{}
 		}
-		for _, histogram := range vector.Histograms[1:] {
-			curr := make(map[bucketBounds]float64)
-			for _, bucket := range histogram.Histogram.Buckets {
-				bb := makeBucketBounds(bucket)
-				curr[bb] = float64(bucket.Count)
-				overall[bb] = struct{}{}
+		countBucketsChanged := 0
+		delta := 0
+		countPop := len(histogram.Histogram.Buckets)
+		for bucket, currCount := range curr {
+			prevCount, ok := prev[bucket]
+			if !ok {
+				countBucketsChanged++
+				delta += int(currCount)
+			} else if prevCount != currCount {
+				countBucketsChanged++
+				delta += int(math.Abs(prevCount - currCount))
 			}
-			countBucketsChanged := 0
-			delta := 0
-			countPop := len(histogram.Histogram.Buckets)
-			for bucket, currCount := range curr {
-				prevCount, ok := prev[bucket]
-				if !ok {
-					countBucketsChanged++
-					delta += int(currCount)
-				} else if prevCount != currCount {
-					countBucketsChanged++
-					delta += int(math.Abs(prevCount - currCount))
-				}
-			}
-			for bucket, prevCount := range prev {
-				_, ok := curr[bucket]
-				if !ok {
-					countBucketsChanged++
-					delta += int(prevCount)
-				}
-			}
-
-			histo.update(countBucketsChanged)
-
-			sumBucketsChanged += countBucketsChanged
-			totalDelta += delta
-			totalPop += countPop
-			if stats.minChanged > countBucketsChanged {
-				stats.minChanged = countBucketsChanged
-			}
-			if stats.maxChanged < countBucketsChanged {
-				stats.maxChanged = countBucketsChanged
-			}
-			if stats.minDelta > delta {
-				stats.minDelta = delta
-			}
-			if stats.maxDelta < delta {
-				stats.maxDelta = delta
-			}
-			if stats.minPop > countPop {
-				stats.minPop = countPop
-			}
-			if stats.maxPop < countPop {
-				stats.maxPop = countPop
-			}
-
-			prev = curr
 		}
+		for bucket, prevCount := range prev {
+			_, ok := curr[bucket]
+			if !ok {
+				countBucketsChanged++
+				delta += int(prevCount)
+			}
+		}
+
+		histo.update(countBucketsChanged)
+
+		sumBucketsChanged += countBucketsChanged
+		totalDelta += delta
+		totalPop += countPop
+		if stats.minChanged > countBucketsChanged {
+			stats.minChanged = countBucketsChanged
+		}
+		if stats.maxChanged < countBucketsChanged {
+			stats.maxChanged = countBucketsChanged
+		}
+		if stats.minDelta > delta {
+			stats.minDelta = delta
+		}
+		if stats.maxDelta < delta {
+			stats.maxDelta = delta
+		}
+		if stats.minPop > countPop {
+			stats.minPop = countPop
+		}
+		if stats.maxPop < countPop {
+			stats.maxPop = countPop
+		}
+
+		prev = curr
 	}
-	stats.avgChanged = float64(sumBucketsChanged) / float64(len(matrix[0].Histograms)-1)
-	stats.avgDelta = float64(totalDelta) / float64(len(matrix[0].Histograms)-1)
-	stats.avgPop = float64(totalPop) / float64(len(matrix[0].Histograms)-1) // for simplicity, we ignore the populated buckets in the first timestamp
+	stats.avgChanged = float64(sumBucketsChanged) / float64(len(vector.Histograms)-1)
+	stats.avgDelta = float64(totalDelta) / float64(len(vector.Histograms)-1)
+	stats.avgPop = float64(totalPop) / float64(len(vector.Histograms)-1) // for simplicity, we ignore the populated buckets in the first timestamp
 	stats.total = len(overall)
 	return stats, nil
 }
