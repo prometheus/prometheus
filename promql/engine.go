@@ -1374,9 +1374,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 
 	case *parser.Call:
 		call := FunctionCalls[e.Func.Name]
-		var warnings annotations.Annotations
-		switch e.Func.Name {
-		case "timestamp":
+		if e.Func.Name == "timestamp" {
 			// Matrix evaluation always returns the evaluation time,
 			// so this function needs special handling when given
 			// a vector selector.
@@ -1387,20 +1385,13 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, annotations.Annotatio
 			if ok {
 				return ev.rangeEvalTimestampFunctionOverVectorSelector(vs, call, e)
 			}
-		case "histogram_quantile", "quantile_over_time":
-			unwrapParenExpr(&e.Args[0])
-			arg := unwrapStepInvariantExpr(e.Args[0])
-			unwrapParenExpr(&arg)
-			q, _ := strconv.ParseFloat(arg.String(), 64)
-			if math.IsNaN(q) || q < 0 || q > 1 {
-				warnings.Add(annotations.NewInvalidQuantileWarning(q, arg.PositionRange()))
-			}
 		}
 
 		// Check if the function has a matrix argument.
 		var (
 			matrixArgIndex int
 			matrixArg      bool
+			warnings       annotations.Annotations
 		)
 		for i := range e.Args {
 			unwrapParenExpr(&e.Args[i])
