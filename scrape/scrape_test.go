@@ -1296,7 +1296,7 @@ func TestScrapeLoopCacheMemoryExhaustionProtection(t *testing.T) {
 			}
 
 			if sl.cacheByHash {
-				require.Greater(t, len(sl.cache.seriesHash), 0, "No series cached.")
+				require.NotEmpty(t, sl.cache.seriesHash, "No series cached.")
 				require.LessOrEqual(t, len(sl.cache.seriesHash), 1000, "More than 1000 series cached.")
 			} else {
 				require.Greater(t, len(sl.cache.series), 5, "No series cached.")
