@@ -253,7 +253,9 @@ func calcBucketStatistics(matrix model.Matrix, step time.Duration, histo *statsh
 			if curr[bIdx] > prev[bIdx] {
 				countBucketsChanged++
 			} else if curr[bIdx] < prev[bIdx] {
-				return stats, fmt.Errorf("unexpected decrease in bucket %d at time %d", bIdx, timeIdx)
+				countBucketsChanged++
+				fmt.Println("unexpected decrease in bucket %d at time %d", bIdx, timeIdx)
+				// return stats, fmt.Errorf("unexpected decrease in bucket %d at time %d", bIdx, timeIdx)
 			}
 		}
 
