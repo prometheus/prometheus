@@ -165,9 +165,9 @@ func queryLabelSets(ctx context.Context, api v1.API, metricName string, end time
 	return vector, nil
 }
 
-func seriesSelector(bucketMetricName string, duration time.Duration) string {
+func seriesSelector(metricName string, duration time.Duration) string {
 	builder := strings.Builder{}
-	builder.WriteString(bucketMetricName)
+	builder.WriteString(metricName)
 	builder.WriteRune('[')
 	builder.WriteString(duration.String())
 	builder.WriteRune(']')
@@ -175,9 +175,9 @@ func seriesSelector(bucketMetricName string, duration time.Duration) string {
 	return builder.String()
 }
 
-func seriesSelectorWithLabels(bucketMetricName string, lbs model.LabelSet, duration time.Duration) string {
+func seriesSelectorWithLabels(metricName string, lbs model.LabelSet, duration time.Duration) string {
 	builder := strings.Builder{}
-	builder.WriteString(bucketMetricName)
+	builder.WriteString(metricName)
 	builder.WriteRune('{')
 	first := true
 	for l, v := range lbs {
