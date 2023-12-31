@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net/http"
 	"net/url"
 	"os"
 	"sort"
@@ -25,34 +26,28 @@ import (
 	"strings"
 	"time"
 
-	"github.com/prometheus/client_golang/api"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
-	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/common/version"
 
 	"github.com/prometheus/prometheus/model/labels"
 )
 
 type AnalyzeHistogramsConfig struct {
 	histogramType  string
-	address        *url.URL
-	user           string
-	key            string
 	lookback       time.Duration
 	scrapeInterval time.Duration
 }
 
 // run retrieves metrics that look like conventional histograms (i.e. have _bucket
 // suffixes) or native histograms, depending on histogramType flag.
-func (c *AnalyzeHistogramsConfig) run() error {
+func (c *AnalyzeHistogramsConfig) run(url *url.URL, roundtripper http.RoundTripper) error {
 	if c.histogramType != "classic" && c.histogramType != "native" {
 		return fmt.Errorf("histogram type is %s, must be 'classic' or 'native'", c.histogramType)
 	}
 
 	ctx := context.Background()
 
-	api, err := newAPI(c.address, c.user, c.key)
+	api, err := newAPI(url, roundtripper, nil)
 	if err != nil {
 		return err
 	}
@@ -128,24 +123,6 @@ func (c *AnalyzeHistogramsConfig) getStatsFromMetrics(ctx context.Context, api v
 	fmt.Println(metastats)
 	fmt.Println(metahistogram)
 	return nil
-}
-
-func newAPI(address *url.URL, username, password string) (v1.API, error) {
-	rt := api.DefaultRoundTripper
-	rt = config.NewUserAgentRoundTripper("promtool/"+version.Version, rt)
-	if username != "" {
-		rt = config.NewBasicAuthRoundTripper(username, config.Secret(password), "", rt)
-	}
-
-	client, err := api.NewClient(api.Config{
-		Address:      address.String(),
-		RoundTripper: rt,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	return v1.NewAPI(client), nil
 }
 
 func queryBaseMetricNames(ctx context.Context, api v1.API, start, end time.Time) ([]string, error) {
