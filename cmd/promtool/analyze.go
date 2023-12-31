@@ -106,7 +106,7 @@ func (c *QueryAnalyzeConfig) getStatsFromMetrics(ctx context.Context, api v1.API
 			for _, vector := range matrix {
 				stats, err := calcNativeBucketStatistics(vector, metahistogram)
 				if err != nil {
-					if err == errNotNativeHistogram {
+					if err == errNotNativeHistogram || err == errNotEnoughData {
 						continue
 					}
 					return err
@@ -367,6 +367,9 @@ func calcNativeBucketStatistics(vector *model.SampleStream, histo *statshistogra
 	totalPop := 0
 	if len(vector.Histograms) == 0 {
 		return nil, errNotNativeHistogram
+	}
+	if len(vector.Histograms) == 1 {
+		return nil, errNotEnoughData
 	}
 	prev := make(map[bucketBounds]float64)
 	for _, bucket := range vector.Histograms[0].Histogram.Buckets {
