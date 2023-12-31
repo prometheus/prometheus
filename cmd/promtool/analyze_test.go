@@ -144,7 +144,7 @@ func TestGetBucketCountsAtTime(t *testing.T) {
 	}
 }
 
-func TestCalcBucketStatistics(t *testing.T) {
+func TestCalcClassicBucketStatistics(t *testing.T) {
 	cases := []struct {
 		matrix   model.Matrix
 		expected *statistics
@@ -163,7 +163,7 @@ func TestCalcBucketStatistics(t *testing.T) {
 
 	for i, c := range cases {
 		t.Run(fmt.Sprintf("case %d", i), func(t *testing.T) {
-			res, err := calcBucketStatistics(c.matrix, 100)
+			res, err := calcClassicBucketStatistics(c.matrix, 100, newStatsHistogram())
 			require.NoError(t, err)
 			require.Equal(t, c.expected, res)
 		})
