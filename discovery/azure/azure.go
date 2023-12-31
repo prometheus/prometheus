@@ -30,8 +30,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v4"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v2"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v4"
 	cache "github.com/Code-Hex/go-generics-cache"
 	"github.com/Code-Hex/go-generics-cache/policy/lru"
 	"github.com/go-kit/log"
@@ -411,29 +411,19 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 				} else {
 					if vm.ScaleSet == "" {
 						networkInterface, err = client.getVMNetworkInterfaceByID(ctx, nicID)
-						if err != nil {
-							if errors.Is(err, errorNotFound) {
-								level.Warn(d.logger).Log("msg", "Network interface does not exist", "name", nicID, "err", err)
-							} else {
-								ch <- target{labelSet: nil, err: err}
-							}
-							// Get out of this routine because we cannot continue without a network interface.
-							return
-						}
-						d.addToCache(nicID, networkInterface)
 					} else {
 						networkInterface, err = client.getVMScaleSetVMNetworkInterfaceByID(ctx, nicID, vm.ScaleSet, vm.InstanceID)
-						if err != nil {
-							if errors.Is(err, errorNotFound) {
-								level.Warn(d.logger).Log("msg", "Network interface does not exist", "name", nicID, "err", err)
-							} else {
-								ch <- target{labelSet: nil, err: err}
-							}
-							// Get out of this routine because we cannot continue without a network interface.
-							return
-						}
-						d.addToCache(nicID, networkInterface)
 					}
+					if err != nil {
+						if errors.Is(err, errorNotFound) {
+							level.Warn(d.logger).Log("msg", "Network interface does not exist", "name", nicID, "err", err)
+						} else {
+							ch <- target{labelSet: nil, err: err}
+						}
+						// Get out of this routine because we cannot continue without a network interface.
+						return
+					}
+					d.addToCache(nicID, networkInterface)
 				}
 
 				if networkInterface.Properties == nil {

@@ -18,7 +18,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"os"
 	"sort"
 	"testing"
 	"time"
@@ -47,9 +46,7 @@ func TestMain(m *testing.M) {
 func TestQueryConcurrency(t *testing.T) {
 	maxConcurrency := 10
 
-	dir, err := os.MkdirTemp("", "test_concurrency")
-	require.NoError(t, err)
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 	queryTracker := NewActiveQueryTracker(dir, maxConcurrency, nil)
 	t.Cleanup(queryTracker.Close)
 
@@ -3169,28 +3166,75 @@ func TestNativeHistogramRate(t *testing.T) {
 	}
 	require.NoError(t, app.Commit())
 
-	queryString := fmt.Sprintf("rate(%s[1m])", seriesName)
-	qry, err := engine.NewInstantQuery(context.Background(), storage, nil, queryString, timestamp.Time(int64(5*time.Minute/time.Millisecond)))
-	require.NoError(t, err)
-	res := qry.Exec(context.Background())
-	require.NoError(t, res.Err)
-	vector, err := res.Vector()
-	require.NoError(t, err)
-	require.Len(t, vector, 1)
-	actualHistogram := vector[0].H
-	expectedHistogram := &histogram.FloatHistogram{
-		CounterResetHint: histogram.GaugeType,
-		Schema:           1,
-		ZeroThreshold:    0.001,
-		ZeroCount:        1. / 15.,
-		Count:            9. / 15.,
-		Sum:              1.226666666666667,
-		PositiveSpans:    []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
-		PositiveBuckets:  []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
-		NegativeSpans:    []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
-		NegativeBuckets:  []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
-	}
-	require.Equal(t, expectedHistogram, actualHistogram)
+	queryString := fmt.Sprintf("rate(%s[45s])", seriesName)
+	t.Run("instant_query", func(t *testing.T) {
+		qry, err := engine.NewInstantQuery(context.Background(), storage, nil, queryString, timestamp.Time(int64(5*time.Minute/time.Millisecond)))
+		require.NoError(t, err)
+		res := qry.Exec(context.Background())
+		require.NoError(t, res.Err)
+		vector, err := res.Vector()
+		require.NoError(t, err)
+		require.Len(t, vector, 1)
+		actualHistogram := vector[0].H
+		expectedHistogram := &histogram.FloatHistogram{
+			CounterResetHint: histogram.GaugeType,
+			Schema:           1,
+			ZeroThreshold:    0.001,
+			ZeroCount:        1. / 15.,
+			Count:            9. / 15.,
+			Sum:              1.2266666666666663,
+			PositiveSpans:    []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+			PositiveBuckets:  []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
+			NegativeSpans:    []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+			NegativeBuckets:  []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
+		}
+		require.Equal(t, expectedHistogram, actualHistogram)
+	})
+
+	t.Run("range_query", func(t *testing.T) {
+		step := 30 * time.Second
+		start := timestamp.Time(int64(5 * time.Minute / time.Millisecond))
+		end := start.Add(step)
+		qry, err := engine.NewRangeQuery(context.Background(), storage, nil, queryString, start, end, step)
+		require.NoError(t, err)
+		res := qry.Exec(context.Background())
+		require.NoError(t, res.Err)
+		matrix, err := res.Matrix()
+		require.NoError(t, err)
+		require.Len(t, matrix, 1)
+		require.Len(t, matrix[0].Histograms, 2)
+		actualHistograms := matrix[0].Histograms
+		expectedHistograms := []HPoint{{
+			T: 300000,
+			H: &histogram.FloatHistogram{
+				CounterResetHint: histogram.GaugeType,
+				Schema:           1,
+				ZeroThreshold:    0.001,
+				ZeroCount:        1. / 15.,
+				Count:            9. / 15.,
+				Sum:              1.2266666666666663,
+				PositiveSpans:    []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+				PositiveBuckets:  []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
+				NegativeSpans:    []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+				NegativeBuckets:  []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
+			},
+		}, {
+			T: 330000,
+			H: &histogram.FloatHistogram{
+				CounterResetHint: histogram.GaugeType,
+				Schema:           1,
+				ZeroThreshold:    0.001,
+				ZeroCount:        1. / 15.,
+				Count:            9. / 15.,
+				Sum:              1.2266666666666663,
+				PositiveSpans:    []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+				PositiveBuckets:  []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
+				NegativeSpans:    []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+				NegativeBuckets:  []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
+			},
+		}}
+		require.Equal(t, expectedHistograms, actualHistograms)
+	})
 }
 
 func TestNativeFloatHistogramRate(t *testing.T) {

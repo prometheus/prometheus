@@ -33,7 +33,6 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/prompb"
 	writev2 "github.com/prometheus/prometheus/prompb/write/v2"
 	"github.com/prometheus/prometheus/storage"
@@ -915,7 +914,7 @@ func Uint32StrRefToLabels(symbols []string, minLabels []uint32) labels.Labels {
 }
 
 // metricTypeToMetricTypeProto transforms a Prometheus metricType into prompb metricType. Since the former is a string we need to transform it to an enum.
-func metricTypeToMetricTypeProto(t textparse.MetricType) prompb.MetricMetadata_MetricType {
+func metricTypeToMetricTypeProto(t model.MetricType) prompb.MetricMetadata_MetricType {
 	mt := strings.ToUpper(string(t))
 	v, ok := prompb.MetricMetadata_MetricType_value[mt]
 	if !ok {
