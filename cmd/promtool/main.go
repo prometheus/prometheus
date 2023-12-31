@@ -273,16 +273,17 @@ func main() {
 	tenantIDEnvVar := "TENANT_ID"
 	apiKeyEnvVar := "API_KEY"
 
-	analyzeCfg := &AnalyzeClassicHistogramsConfig{}
+	analyzeCfg := &AnalyzeHistogramsConfig{}
 	analyzeCmd := app.Command("analyze", "Run analysis against your Prometheus to see which metrics are being used and exported.")
-	analyzeClassicHistogramsCmd := analyzeCmd.Command("classichistograms", "Analyze the usage pattern of classic histograms.")
-	analyzeClassicHistogramsCmd.Flag("address", "Address of the Prometheus or Grafana Mimir instance; alternatively, set "+addressEnvVar+".").Envar(addressEnvVar).Required().URLVar(&analyzeCfg.address)
-	analyzeClassicHistogramsCmd.Flag("id", "Username to use when contacting Prometheus or Grafana Mimir; alternatively, set "+tenantIDEnvVar+".").Envar(tenantIDEnvVar).Default("").StringVar(&analyzeCfg.user)
-	analyzeClassicHistogramsCmd.Flag("key", "Password to use when contacting Prometheus or Grafana Mimir; alternatively, set "+apiKeyEnvVar+".").Envar(apiKeyEnvVar).Default("").StringVar(&analyzeCfg.key)
-	analyzeClassicHistogramsCmd.Flag("lookback", "Time frame to analyze.").Default("1h").DurationVar(&analyzeCfg.lookback)
-	analyzeClassicHistogramsCmd.Flag("timeout", "Timeout for read requests.").Default("5m").DurationVar(&analyzeCfg.readTimeout)
-	analyzeClassicHistogramsCmd.Flag("scrape-interval", "Scrape interval.").DurationVar(&analyzeCfg.scrapeInterval)
-	analyzeClassicHistogramsCmd.Flag("output", "Path for the output file.").StringVar(&analyzeCfg.outputFile)
+	analyzeHistogramsCmd := analyzeCmd.Command("histograms", "Analyze the usage pattern of histograms.")
+	analyzeHistogramsCmd.Flag("type", "Type of histogram: classic/native.").StringVar(&analyzeCfg.histogramType)
+	analyzeHistogramsCmd.Flag("address", "Address of the Prometheus or Grafana Mimir instance; alternatively, set "+addressEnvVar+".").Envar(addressEnvVar).Required().URLVar(&analyzeCfg.address)
+	analyzeHistogramsCmd.Flag("id", "Username to use when contacting Prometheus or Grafana Mimir; alternatively, set "+tenantIDEnvVar+".").Envar(tenantIDEnvVar).Default("").StringVar(&analyzeCfg.user)
+	analyzeHistogramsCmd.Flag("key", "Password to use when contacting Prometheus or Grafana Mimir; alternatively, set "+apiKeyEnvVar+".").Envar(apiKeyEnvVar).Default("").StringVar(&analyzeCfg.key)
+	analyzeHistogramsCmd.Flag("lookback", "Time frame to analyze.").Default("1h").DurationVar(&analyzeCfg.lookback)
+	analyzeHistogramsCmd.Flag("timeout", "Timeout for read requests.").Default("5m").DurationVar(&analyzeCfg.readTimeout)
+	analyzeHistogramsCmd.Flag("scrape-interval", "Scrape interval.").DurationVar(&analyzeCfg.scrapeInterval)
+	analyzeHistogramsCmd.Flag("output", "Path for the output file.").StringVar(&analyzeCfg.outputFile)
 
 	featureList := app.Flag("enable-feature", "Comma separated feature names to enable (only PromQL related and no-default-scrape-port). See https://prometheus.io/docs/prometheus/latest/feature_flags/ for the options and more details.").Default("").Strings()
 
@@ -405,7 +406,7 @@ func main() {
 	case importRulesCmd.FullCommand():
 		os.Exit(checkErr(importRules(serverURL, httpRoundTripper, *importRulesStart, *importRulesEnd, *importRulesOutputDir, *importRulesEvalInterval, *maxBlockDuration, *importRulesFiles...)))
 
-	case analyzeClassicHistogramsCmd.FullCommand():
+	case analyzeHistogramsCmd.FullCommand():
 		os.Exit(checkErr(analyzeCfg.run()))
 
 	case documentationCmd.FullCommand():
