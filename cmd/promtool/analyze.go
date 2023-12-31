@@ -33,16 +33,16 @@ import (
 )
 
 type AnalyzeHistogramsConfig struct {
-	histogramType  string
+	metricType     string
 	lookback       time.Duration
 	scrapeInterval time.Duration
 }
 
 // run retrieves metrics that look like conventional histograms (i.e. have _bucket
-// suffixes) or native histograms, depending on histogramType flag.
+// suffixes) or native histograms, depending on metricType flag.
 func (c *AnalyzeHistogramsConfig) run(url *url.URL, roundtripper http.RoundTripper) error {
-	if c.histogramType != "classic" && c.histogramType != "native" {
-		return fmt.Errorf("histogram type is %s, must be 'classic' or 'native'", c.histogramType)
+	if c.metricType != "classichistograms" && c.metricType != "nativehistograms" {
+		return fmt.Errorf("histogram type is %s, must be 'classichistograms' or 'nativehistograms'", c.metricType)
 	}
 
 	ctx := context.Background()
@@ -55,7 +55,7 @@ func (c *AnalyzeHistogramsConfig) run(url *url.URL, roundtripper http.RoundTripp
 	endTime := time.Now()
 	startTime := endTime.Add(-c.lookback)
 
-	if c.histogramType == "native" {
+	if c.metricType == "nativehistograms" {
 		histoMetrics, err := queryMetadataForHistograms(ctx, api, "", "1000")
 		if err != nil {
 			return err

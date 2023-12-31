@@ -183,6 +183,13 @@ func main() {
 	queryLabelsEnd := queryLabelsCmd.Flag("end", "End time (RFC3339 or Unix timestamp).").String()
 	queryLabelsMatch := queryLabelsCmd.Flag("match", "Series selector. Can be specified multiple times.").Strings()
 
+	queryAnalyzeCfg := &AnalyzeHistogramsConfig{}
+	queryAnalyzeCmd := queryCmd.Command("analyze", "Run queries against your Prometheus to analyze the usage pattern of certain metrics.")
+	queryAnalyzeCmd.Flag("server", "Prometheus server to query.").Default("http://localhost:9090").URLVar(&serverURL)
+	queryAnalyzeCmd.Flag("type", "Type of metric: classichistograms/nativehistograms.").StringVar(&queryAnalyzeCfg.metricType)
+	queryAnalyzeCmd.Flag("lookback", "Time frame to analyze.").Default("1h").DurationVar(&queryAnalyzeCfg.lookback)
+	queryAnalyzeCmd.Flag("scrape-interval", "Scrape interval.").DurationVar(&queryAnalyzeCfg.scrapeInterval)
+
 	pushCmd := app.Command("push", "Push to a Prometheus server.")
 	pushCmd.Flag("http.config.file", "HTTP client configuration file for promtool to connect to Prometheus.").PlaceHolder("<filename>").ExistingFileVar(&httpConfigFilePath)
 	pushMetricsCmd := pushCmd.Command("metrics", "Push metrics to a prometheus remote write (for testing purpose only).")
@@ -266,14 +273,6 @@ func main() {
 	promQLLabelsDeleteCmd := promQLLabelsCmd.Command("delete", "Delete a label from the query.")
 	promQLLabelsDeleteQuery := promQLLabelsDeleteCmd.Arg("query", "PromQL query.").Required().String()
 	promQLLabelsDeleteName := promQLLabelsDeleteCmd.Arg("name", "Name of the label to delete.").Required().String()
-
-	analyzeCfg := &AnalyzeHistogramsConfig{}
-	analyzeCmd := app.Command("analyze", "Run analysis against your Prometheus to see which metrics are being used and exported.")
-	analyzeHistogramsCmd := analyzeCmd.Command("histograms", "Analyze the usage pattern of histograms.")
-	analyzeHistogramsCmd.Flag("type", "Type of histogram: classic/native.").StringVar(&analyzeCfg.histogramType)
-	analyzeHistogramsCmd.Flag("server", "Prometheus server to query.").Default("http://localhost:9090").URLVar(&serverURL)
-	analyzeHistogramsCmd.Flag("lookback", "Time frame to analyze.").Default("1h").DurationVar(&analyzeCfg.lookback)
-	analyzeHistogramsCmd.Flag("scrape-interval", "Scrape interval.").DurationVar(&analyzeCfg.scrapeInterval)
 
 	featureList := app.Flag("enable-feature", "Comma separated feature names to enable (only PromQL related and no-default-scrape-port). See https://prometheus.io/docs/prometheus/latest/feature_flags/ for the options and more details.").Default("").Strings()
 
@@ -396,8 +395,8 @@ func main() {
 	case importRulesCmd.FullCommand():
 		os.Exit(checkErr(importRules(serverURL, httpRoundTripper, *importRulesStart, *importRulesEnd, *importRulesOutputDir, *importRulesEvalInterval, *maxBlockDuration, *importRulesFiles...)))
 
-	case analyzeHistogramsCmd.FullCommand():
-		os.Exit(checkErr(analyzeCfg.run(serverURL, httpRoundTripper)))
+	case queryAnalyzeCmd.FullCommand():
+		os.Exit(checkErr(queryAnalyzeCfg.run(serverURL, httpRoundTripper)))
 
 	case documentationCmd.FullCommand():
 		os.Exit(checkErr(documentcli.GenerateMarkdown(app.Model(), os.Stdout)))
