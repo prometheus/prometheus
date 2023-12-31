@@ -245,8 +245,16 @@ func getLe(series *model.SampleStream) float64 {
 
 func getBucketCountsAtTime(matrix model.Matrix, numBuckets, timeIdx int) ([]int, error) {
 	counts := make([]int, numBuckets)
+	if timeIdx >= len(matrix[0].Values) {
+		// Just return zeroes instead of erroring out so we can get partial results.
+		return counts, nil
+	}
 	counts[0] = int(matrix[0].Values[timeIdx].Value)
 	for i, bucket := range matrix[1:] {
+		if timeIdx >= len(bucket.Values) {
+			// Just return zeroes instead of erroring out so we can get partial results.
+			return counts, nil
+		}
 		curr := bucket.Values[timeIdx]
 		prev := matrix[i].Values[timeIdx]
 		// Assume the results are nicely aligned.
