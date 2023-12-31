@@ -183,14 +183,13 @@ func main() {
 	queryLabelsEnd := queryLabelsCmd.Flag("end", "End time (RFC3339 or Unix timestamp).").String()
 	queryLabelsMatch := queryLabelsCmd.Flag("match", "Series selector. Can be specified multiple times.").Strings()
 
-	queryAnalyzeCfg := &AnalyzeHistogramsConfig{}
+	queryAnalyzeCfg := &QueryAnalyzeConfig{}
 	queryAnalyzeCmd := queryCmd.Command("analyze", "Run queries against your Prometheus to analyze the usage pattern of certain metrics.")
-	queryAnalyzeCmd.Flag("server", "Prometheus server to query.").Default("http://localhost:9090").URLVar(&serverURL)
-	queryAnalyzeCmd.Flag("type", "Type of metric: classichistograms/nativehistograms.").StringVar(&queryAnalyzeCfg.metricType)
+	queryAnalyzeCmd.Flag("server", "Prometheus server to query.").Required().URLVar(&serverURL)
+	queryAnalyzeCmd.Flag("type", "Type of metric: classichistograms/nativehistograms.").Required().StringVar(&queryAnalyzeCfg.metricType)
 	queryAnalyzeCmd.Flag("duration", "Time frame to analyze.").Default("1h").DurationVar(&queryAnalyzeCfg.duration)
-	queryAnalyzeCmd.Flag("end", "Query end time (RFC3339 or Unix timestamp), defaults to now.").StringVar(&queryAnalyzeCfg.end)
-	queryAnalyzeCmd.Flag("step", "Query step size (duration).").DurationVar(&queryAnalyzeCfg.step)
-	queryAnalyzeCmd.Flag("match", "Series selector. Can be specified multiple times.").StringsVar(&queryAnalyzeCfg.matchers)
+	queryAnalyzeCmd.Flag("time", "Query time (RFC3339 or Unix timestamp), defaults to now.").StringVar(&queryAnalyzeCfg.time)
+	queryAnalyzeCmd.Flag("match", "Series selector. Can be specified multiple times.").Required().StringsVar(&queryAnalyzeCfg.matchers)
 
 	pushCmd := app.Command("push", "Push to a Prometheus server.")
 	pushCmd.Flag("http.config.file", "HTTP client configuration file for promtool to connect to Prometheus.").PlaceHolder("<filename>").ExistingFileVar(&httpConfigFilePath)

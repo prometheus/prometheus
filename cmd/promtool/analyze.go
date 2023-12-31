@@ -37,19 +37,18 @@ var (
 	errNotEnoughData      = fmt.Errorf("not enough data")
 )
 
-type AnalyzeHistogramsConfig struct {
+type QueryAnalyzeConfig struct {
 	metricType string
 	duration   time.Duration
-	end        string
-	step       time.Duration
+	time       string
 	matchers   []string
 }
 
 // run retrieves metrics that look like conventional histograms (i.e. have _bucket
 // suffixes) or native histograms, depending on metricType flag.
-func (c *AnalyzeHistogramsConfig) run(url *url.URL, roundtripper http.RoundTripper) error {
+func (c *QueryAnalyzeConfig) run(url *url.URL, roundtripper http.RoundTripper) error {
 	if c.metricType != "classichistograms" && c.metricType != "nativehistograms" {
-		return fmt.Errorf("histogram type is %s, must be 'classichistograms' or 'nativehistograms'", c.metricType)
+		return fmt.Errorf("analyze type is %s, must be 'classichistograms' or 'nativehistograms'", c.metricType)
 	}
 
 	ctx := context.Background()
@@ -60,10 +59,10 @@ func (c *AnalyzeHistogramsConfig) run(url *url.URL, roundtripper http.RoundTripp
 	}
 
 	var endTime time.Time
-	if c.end != "" {
-		endTime, err = parseTime(c.end)
+	if c.time != "" {
+		endTime, err = parseTime(c.time)
 		if err != nil {
-			return fmt.Errorf("error parsing end time '%s': %w", c.end, err)
+			return fmt.Errorf("error parsing time '%s': %w", c.time, err)
 		}
 	} else {
 		endTime = time.Now()
@@ -71,20 +70,19 @@ func (c *AnalyzeHistogramsConfig) run(url *url.URL, roundtripper http.RoundTripp
 	startTime := endTime.Add(-c.duration)
 
 	if c.metricType == "nativehistograms" {
-		// histoMetrics, err := queryMetadataForHistograms(ctx, api, "", "1000")
 		histoMetrics, err := queryMetricNames(ctx, api, c.matchers, startTime, endTime)
 		if err != nil {
 			return err
 		}
-		return c.getStatsFromMetrics(ctx, api, startTime, endTime, os.Stdout, identity, identity, calcNativeBucketStatistics, histoMetrics)
+		return c.getStatsFromMetrics(ctx, api, endTime, os.Stdout, identity, identity, calcNativeBucketStatistics, histoMetrics)
 	}
 
-	baseMetrics, err := queryBaseMetricNames(ctx, api, startTime, endTime)
+	baseMetrics, err := queryBaseMetricNames(ctx, api, c.matchers, startTime, endTime)
 	if err != nil {
 		return err
 	}
 	fmt.Printf("Potential histogram metrics found: %d\n", len(baseMetrics))
-	return c.getStatsFromMetrics(ctx, api, startTime, endTime, os.Stdout, appendSum, appendBucket, calcClassicBucketStatistics, baseMetrics)
+	return c.getStatsFromMetrics(ctx, api, endTime, os.Stdout, appendSum, appendBucket, calcClassicBucketStatistics, baseMetrics)
 }
 
 type transformNameFunc func(name string) string
@@ -101,7 +99,7 @@ func appendBucket(name string) string {
 	return fmt.Sprintf("%s_bucket", name)
 }
 
-func (c *AnalyzeHistogramsConfig) getStatsFromMetrics(ctx context.Context, api v1.API, startTime, endTime time.Time, out io.Writer, transformNameForLabelSet, transformNameForSeriesSel transformNameFunc, calcBucketStatistics calcBucketStatisticsFunc, metricNames []string) error {
+func (c *QueryAnalyzeConfig) getStatsFromMetrics(ctx context.Context, api v1.API, endTime time.Time, out io.Writer, transformNameForLabelSet, transformNameForSeriesSel transformNameFunc, calcBucketStatistics calcBucketStatisticsFunc, metricNames []string) error {
 	metastats := newMetaStatistics()
 	metahistogram := newStatsHistogram()
 
@@ -115,20 +113,12 @@ func (c *AnalyzeHistogramsConfig) getStatsFromMetrics(ctx context.Context, api v
 			// Get labels to match.
 			lbs := model.LabelSet(sample.Metric)
 			delete(lbs, labels.MetricName)
-			seriesSel := seriesSelector(transformNameForSeriesSel(metricName), lbs)
-			var step time.Duration
-			if c.step == 0 {
-				// Estimate the step.
-				stepVal := int64(math.Round(c.duration.Seconds() / float64(sample.Value)))
-				step = time.Duration(stepVal) * time.Second
-			} else {
-				step = c.step
-			}
-			matrix, err := querySamples(ctx, api, seriesSel, startTime, endTime, step)
+			seriesSel := seriesSelector(transformNameForSeriesSel(metricName), lbs, c.duration)
+			matrix, err := querySamples(ctx, api, seriesSel, endTime)
 			if err != nil {
 				return err
 			}
-			stats, err := calcBucketStatistics(matrix, step, metahistogram)
+			stats, err := calcBucketStatistics(matrix, metahistogram)
 			if err != nil {
 				if err == errNotNativeHistogram || err == errNotEnoughData {
 					continue
@@ -145,11 +135,10 @@ func (c *AnalyzeHistogramsConfig) getStatsFromMetrics(ctx context.Context, api v
 }
 
 func queryMetricNames(ctx context.Context, api v1.API, matchers []string, start, end time.Time) ([]string, error) {
-	fullMatchers := []string{}
-	for _, m := range matchers {
-		fullMatchers = append(fullMatchers, fmt.Sprintf("{__name__=~\"%s\"}", m))
+	values, _, err := api.LabelValues(ctx, labels.MetricName, matchers, start, end)
+	if err != nil {
+		return nil, err
 	}
-	values, _, err := api.LabelValues(ctx, labels.MetricName, fullMatchers, start, end)
 	result := []string{}
 	for _, v := range values {
 		s := string(v)
@@ -160,14 +149,18 @@ func queryMetricNames(ctx context.Context, api v1.API, matchers []string, start,
 	return result, err
 }
 
-func queryBaseMetricNames(ctx context.Context, api v1.API, start, end time.Time) ([]string, error) {
-	values, _, err := api.LabelValues(ctx, labels.MetricName, []string{"{__name__=~\".*_bucket\"}"}, start, end)
+func queryBaseMetricNames(ctx context.Context, api v1.API, matchers []string, start, end time.Time) ([]string, error) {
+	values, _, err := api.LabelValues(ctx, labels.MetricName, matchers, start, end)
 	if err != nil {
 		return nil, err
 	}
 	result := []string{}
 	for _, v := range values {
-		basename, err := metricBasename(string(v))
+		s := string(v)
+		if !strings.HasSuffix(s, "_bucket") {
+			continue
+		}
+		basename, err := metricBasename(s)
 		if err != nil {
 			// Just skip if something doesn't look like a good name.
 			continue
@@ -183,24 +176,6 @@ func metricBasename(bucketMetricName string) (string, error) {
 	}
 	return bucketMetricName[:len(bucketMetricName)-len("_bucket")], nil
 }
-
-// func queryMetadataForHistograms(ctx context.Context, api v1.API, query, limit string) ([]string, error) {
-// 	result, err := api.Metadata(ctx, query, limit)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-
-// 	metrics := make([]string, 0)
-// 	for metric, metadata := range result {
-// 		for _, metadatum := range metadata {
-// 			if metadatum.Type == "histogram" || metadatum.Type == "gaugehistogram" {
-// 				metrics = append(metrics, metric)
-// 			}
-// 		}
-// 	}
-
-// 	return metrics, nil
-// }
 
 // Query the related count_over_time(*_sum[duration]) series to double check that metricName is a
 // histogram. This keeps the result small (avoids buckets) and the count gives scrape interval
@@ -220,7 +195,7 @@ func queryLabelSets(ctx context.Context, api v1.API, metricName string, end time
 	return vector, nil
 }
 
-func seriesSelector(bucketMetricName string, lbs model.LabelSet) string {
+func seriesSelector(bucketMetricName string, lbs model.LabelSet, duration time.Duration) string {
 	builder := strings.Builder{}
 	builder.WriteString(bucketMetricName)
 	builder.WriteRune('{')
@@ -237,12 +212,15 @@ func seriesSelector(bucketMetricName string, lbs model.LabelSet) string {
 		builder.WriteRune('"')
 	}
 	builder.WriteRune('}')
+	builder.WriteRune('[')
+	builder.WriteString(duration.String())
+	builder.WriteRune(']')
 
 	return builder.String()
 }
 
-func querySamples(ctx context.Context, api v1.API, query string, start, end time.Time, step time.Duration) (model.Matrix, error) {
-	values, _, err := api.QueryRange(ctx, query, v1.Range{Start: start, End: end, Step: step})
+func querySamples(ctx context.Context, api v1.API, query string, end time.Time) (model.Matrix, error) {
+	values, _, err := api.Query(ctx, query, end)
 	if err != nil {
 		return nil, err
 	}
@@ -261,23 +239,21 @@ func querySamples(ctx context.Context, api v1.API, query string, start, end time
 type statistics struct {
 	min, max, populated, available, minDelta, maxDelta int
 	avg, avgDelta                                      float64
-	step                                               time.Duration
 }
 
 func (s statistics) String() string {
-	return fmt.Sprintf("Bucket min/avg/max/pop/avail/minDelta/avgDelta/maxDelta@scrape: %d/%.3f/%d/%d/%d/%d/%.3f/%d@%v", s.min, s.avg, s.max, s.populated, s.available, s.minDelta, s.avgDelta, s.maxDelta, s.step)
+	return fmt.Sprintf("Bucket min/avg/max/pop/avail/minDelta/avgDelta/maxDelta: %d/%.3f/%d/%d/%d/%d/%.3f/%d", s.min, s.avg, s.max, s.populated, s.available, s.minDelta, s.avgDelta, s.maxDelta)
 }
 
-type calcBucketStatisticsFunc func(matrix model.Matrix, step time.Duration, histo *statshistogram) (*statistics, error)
+type calcBucketStatisticsFunc func(matrix model.Matrix, histo *statshistogram) (*statistics, error)
 
-func calcClassicBucketStatistics(matrix model.Matrix, step time.Duration, histo *statshistogram) (*statistics, error) {
+func calcClassicBucketStatistics(matrix model.Matrix, histo *statshistogram) (*statistics, error) {
 	numBuckets := len(matrix)
 
 	stats := &statistics{
 		min:       math.MaxInt,
 		minDelta:  math.MaxInt,
 		available: numBuckets,
-		step:      step,
 	}
 
 	if numBuckets == 0 || len(matrix[0].Values) < 2 {
@@ -393,11 +369,10 @@ func abs(num int) int {
 	return num
 }
 
-func calcNativeBucketStatistics(matrix model.Matrix, step time.Duration, histo *statshistogram) (*statistics, error) {
+func calcNativeBucketStatistics(matrix model.Matrix, histo *statshistogram) (*statistics, error) {
 	stats := &statistics{
 		min:      math.MaxInt,
 		minDelta: math.MaxInt,
-		step:     step,
 	}
 
 	overall := make(map[bucketBounds]struct{})
