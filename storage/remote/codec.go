@@ -25,7 +25,7 @@ import (
 	"sync"
 
 	"github.com/gogo/protobuf/proto"
-	"github.com/golang/snappy"
+	"github.com/klauspost/compress/snappy"
 	"github.com/prometheus/common/model"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 	"golang.org/x/exp/slices"

@@ -550,7 +550,8 @@ func TestCheckpointSeriesReset(t *testing.T) {
 		segments int
 	}{
 		{compress: CompressionNone, segments: 14},
-		{compress: CompressionSnappy, segments: 13},
+		{compress: CompressionSnappy, segments: 14},
+		{compress: CompressionZstd, segments: 14},
 	}
 
 	for _, tc := range testCases {

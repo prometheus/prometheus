@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"github.com/gogo/protobuf/proto"
-	"github.com/golang/snappy"
+	"github.com/klauspost/compress/snappy"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/config"

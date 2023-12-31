@@ -24,7 +24,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
-	"github.com/golang/snappy"
+	"github.com/klauspost/compress/snappy"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"go.opentelemetry.io/otel"
