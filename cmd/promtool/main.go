@@ -269,21 +269,15 @@ func main() {
 	promQLLabelsDeleteQuery := promQLLabelsDeleteCmd.Arg("query", "PromQL query.").Required().String()
 	promQLLabelsDeleteName := promQLLabelsDeleteCmd.Arg("name", "Name of the label to delete.").Required().String()
 
-	addressEnvVar := "ADDRESS"
-	tenantIDEnvVar := "TENANT_ID"
-	apiKeyEnvVar := "API_KEY"
-
 	analyzeCfg := &AnalyzeHistogramsConfig{}
 	analyzeCmd := app.Command("analyze", "Run analysis against your Prometheus to see which metrics are being used and exported.")
 	analyzeHistogramsCmd := analyzeCmd.Command("histograms", "Analyze the usage pattern of histograms.")
 	analyzeHistogramsCmd.Flag("type", "Type of histogram: classic/native.").StringVar(&analyzeCfg.histogramType)
-	analyzeHistogramsCmd.Flag("address", "Address of the Prometheus or Grafana Mimir instance; alternatively, set "+addressEnvVar+".").Envar(addressEnvVar).Required().URLVar(&analyzeCfg.address)
-	analyzeHistogramsCmd.Flag("id", "Username to use when contacting Prometheus or Grafana Mimir; alternatively, set "+tenantIDEnvVar+".").Envar(tenantIDEnvVar).Default("").StringVar(&analyzeCfg.user)
-	analyzeHistogramsCmd.Flag("key", "Password to use when contacting Prometheus or Grafana Mimir; alternatively, set "+apiKeyEnvVar+".").Envar(apiKeyEnvVar).Default("").StringVar(&analyzeCfg.key)
+	analyzeHistogramsCmd.Flag("address", "Address of the Prometheus instance.").Required().URLVar(&analyzeCfg.address)
+	analyzeHistogramsCmd.Flag("id", "Username to use when contacting Prometheus.").Default("").StringVar(&analyzeCfg.user)
+	analyzeHistogramsCmd.Flag("key", "Password to use when contacting Prometheus.").Default("").StringVar(&analyzeCfg.key)
 	analyzeHistogramsCmd.Flag("lookback", "Time frame to analyze.").Default("1h").DurationVar(&analyzeCfg.lookback)
-	analyzeHistogramsCmd.Flag("timeout", "Timeout for read requests.").Default("5m").DurationVar(&analyzeCfg.readTimeout)
 	analyzeHistogramsCmd.Flag("scrape-interval", "Scrape interval.").DurationVar(&analyzeCfg.scrapeInterval)
-	analyzeHistogramsCmd.Flag("output", "Path for the output file.").StringVar(&analyzeCfg.outputFile)
 
 	featureList := app.Flag("enable-feature", "Comma separated feature names to enable (only PromQL related and no-default-scrape-port). See https://prometheus.io/docs/prometheus/latest/feature_flags/ for the options and more details.").Default("").Strings()
 

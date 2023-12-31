@@ -40,20 +40,17 @@ type AnalyzeHistogramsConfig struct {
 	user           string
 	key            string
 	lookback       time.Duration
-	readTimeout    time.Duration
 	scrapeInterval time.Duration
-	outputFile     string
 }
 
-// run retrieves metrics that look like conventional histograms, i.e. have _bucket
-// suffixes.
+// run retrieves metrics that look like conventional histograms (i.e. have _bucket
+// suffixes) or native histograms, depending on histogramType flag.
 func (c *AnalyzeHistogramsConfig) run() error {
 	if c.histogramType != "classic" && c.histogramType != "native" {
 		return fmt.Errorf("histogram type is %s, must be 'classic' or 'native'", c.histogramType)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), c.readTimeout)
-	defer cancel()
+	ctx := context.Background()
 
 	api, err := newAPI(c.address, c.user, c.key)
 	if err != nil {
@@ -63,23 +60,12 @@ func (c *AnalyzeHistogramsConfig) run() error {
 	endTime := time.Now()
 	startTime := endTime.Add(-c.lookback)
 
-	var out io.Writer
-	if c.outputFile != "" {
-		var err error
-		out, err = os.Create(c.outputFile)
-		if err != nil {
-			return fmt.Errorf("failed to open %q for writing: ", c.outputFile)
-		}
-	} else {
-		out = os.Stdout
-	}
-
 	if c.histogramType == "native" {
 		histoMetrics, err := queryMetadataForHistograms(ctx, api, "", "1000")
 		if err != nil {
 			return err
 		}
-		return c.getStatsFromMetrics(ctx, api, startTime, endTime, out, identity, identity, calcNativeBucketStatistics, histoMetrics)
+		return c.getStatsFromMetrics(ctx, api, startTime, endTime, os.Stdout, identity, identity, calcNativeBucketStatistics, histoMetrics)
 	}
 
 	baseMetrics, err := queryBaseMetricNames(ctx, api, startTime, endTime)
@@ -87,7 +73,7 @@ func (c *AnalyzeHistogramsConfig) run() error {
 		return err
 	}
 	fmt.Printf("Potential histogram metrics found: %d\n", len(baseMetrics))
-	return c.getStatsFromMetrics(ctx, api, startTime, endTime, out, appendSum, appendBucket, calcClassicBucketStatistics, baseMetrics)
+	return c.getStatsFromMetrics(ctx, api, startTime, endTime, os.Stdout, appendSum, appendBucket, calcClassicBucketStatistics, baseMetrics)
 }
 
 type transformNameFunc func(name string) string
@@ -105,7 +91,7 @@ func appendBucket(name string) string {
 }
 
 func (c *AnalyzeHistogramsConfig) getStatsFromMetrics(ctx context.Context, api v1.API, startTime, endTime time.Time, out io.Writer, transformNameForLabelSet, transformNameForSeriesSel transformNameFunc, calcBucketStatistics calcBucketStatisticsFunc, metricNames []string) error {
-	metastats := newMetastatistics()
+	metastats := newMetaStatistics()
 	metahistogram := newStatsHistogram()
 
 	for _, metricName := range metricNames {
@@ -258,6 +244,8 @@ func querySamples(ctx context.Context, api v1.API, query string, start, end time
 	return matrix, nil
 }
 
+// available is the total number of buckets. min/avg/max is for the number of
+// changed buckets.
 type statistics struct {
 	min, max, available int
 	avg                 float64
@@ -302,12 +290,8 @@ func calcClassicBucketStatistics(matrix model.Matrix, step time.Duration, histo 
 
 		countBucketsChanged := 0
 		for bIdx := range matrix {
-			if curr[bIdx] > prev[bIdx] {
+			if curr[bIdx] != prev[bIdx] {
 				countBucketsChanged++
-			} else if curr[bIdx] < prev[bIdx] {
-				countBucketsChanged++
-				fmt.Printf("unexpected decrease in bucket %d at time %d\n", bIdx, timeIdx)
-				// return stats, fmt.Errorf("unexpected decrease in bucket %d at time %d", bIdx, timeIdx)
 			}
 		}
 
@@ -449,12 +433,12 @@ func (d distribution) String() string {
 	return fmt.Sprintf("min/avg/max: %d/%.3f/%d", d.min, d.avg, d.max)
 }
 
-type metastatistics struct {
+type metaStatistics struct {
 	min, avg, max, available distribution
 }
 
-func newMetastatistics() *metastatistics {
-	return &metastatistics{
+func newMetaStatistics() *metaStatistics {
+	return &metaStatistics{
 		min:       newDistribution(),
 		avg:       newDistribution(),
 		max:       newDistribution(),
@@ -462,11 +446,11 @@ func newMetastatistics() *metastatistics {
 	}
 }
 
-func (ms metastatistics) String() string {
+func (ms metaStatistics) String() string {
 	return fmt.Sprintf("min - %v\navg - %v\nmax - %v\navail - %v\ncount - %d", ms.min, ms.avg, ms.max, ms.available, ms.min.count)
 }
 
-func (ms *metastatistics) update(s *statistics) {
+func (ms *metaStatistics) update(s *statistics) {
 	ms.min.update(s.min)
 	ms.avg.update(int(s.avg))
 	ms.max.update(s.max)
