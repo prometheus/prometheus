@@ -75,6 +75,7 @@ func (c *AnalyzeClassicHistogramsConfig) run() error {
 		out = os.Stdout
 	}
 
+	metastats := newMetastatistics()
 	for _, bucketMetricName := range bucketMetrics {
 		basename, err := metricBasename(bucketMetricName)
 		if err != nil {
@@ -109,9 +110,10 @@ func (c *AnalyzeClassicHistogramsConfig) run() error {
 				return err
 			}
 			fmt.Fprintf(out, "%s=%v\n", seriesSel, *stats)
+			metastats.update(stats)
 		}
 	}
-
+	fmt.Println(metastats)
 	return nil
 }
 
@@ -292,4 +294,54 @@ func getBucketCountsAtTime(matrix model.Matrix, numBuckets, timeIdx int) ([]int,
 		counts[i+1] = int(curr.Value - prev.Value)
 	}
 	return counts, nil
+}
+
+type distribution struct {
+	min, max, count int
+	avg             float64
+}
+
+func newDistribution() distribution {
+	return distribution{
+		min: math.MaxInt,
+	}
+}
+
+func (d *distribution) update(num int) {
+	if d.min > num {
+		d.min = num
+	}
+	if d.max < num {
+		d.max = num
+	}
+	d.count++
+	d.avg += float64(num)/float64(d.count) - d.avg/float64(d.count)
+}
+
+func (d distribution) String() string {
+	return fmt.Sprintf("min/avg/max: %d/%.3f/%d", d.min, d.avg, d.max)
+}
+
+type metastatistics struct {
+	min, avg, max, available distribution
+}
+
+func newMetastatistics() *metastatistics {
+	return &metastatistics{
+		min:       newDistribution(),
+		avg:       newDistribution(),
+		max:       newDistribution(),
+		available: newDistribution(),
+	}
+}
+
+func (ms metastatistics) String() string {
+	return fmt.Sprintf("min - %v\navg - %v\nmax - %v\navail - %v\ncount - %d", ms.min, ms.avg, ms.max, ms.available, ms.min.count)
+}
+
+func (ms *metastatistics) update(s *statistics) {
+	ms.min.update(s.min)
+	ms.avg.update(s.avg)
+	ms.max.update(s.max)
+	ms.available.update(s.available)
 }
