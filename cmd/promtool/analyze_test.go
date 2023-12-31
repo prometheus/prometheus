@@ -152,22 +152,23 @@ func TestCalcClassicBucketStatistics(t *testing.T) {
 		{
 			exampleMatrix,
 			&statistics{
-				min:       1,
-				avg:       2,
-				max:       3,
-				populated: 4,
-				available: 4,
-				minDelta:  1,
-				maxDelta:  8,
-				avgDelta:  4.5,
-				step:      100,
+				minChanged: 1,
+				avgChanged: 2,
+				maxChanged: 3,
+				minDelta:   1,
+				maxDelta:   8,
+				avgDelta:   4.5,
+				minPop:     4,
+				avgPop:     4,
+				maxPop:     4,
+				total:      4,
 			},
 		},
 	}
 
 	for i, c := range cases {
 		t.Run(fmt.Sprintf("case %d", i), func(t *testing.T) {
-			res, err := calcClassicBucketStatistics(c.matrix, 100, newStatsHistogram())
+			res, err := calcClassicBucketStatistics(c.matrix, newStatsHistogram())
 			require.NoError(t, err)
 			require.Equal(t, c.expected, res)
 		})
