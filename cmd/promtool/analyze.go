@@ -36,15 +36,11 @@ var (
 	errNotNativeHistogram = fmt.Errorf("not a native histogram")
 	errNotEnoughData      = fmt.Errorf("not enough data")
 
-	outputHeaderNative = `Bucket stats for each native histogram series over time
--------------------------------------------------------
-The min, avg, and max number of populated buckets. If followed by another number,
-this is the total number of buckets that differs from the max number of populated
-buckets.`
-	outputHeaderClassic = `Bucket stats for each classic histogram series over time
---------------------------------------------------------
+	outputHeader = `Bucket stats for each histogram series over time
+------------------------------------------------
 First the min, avg, and max number of populated buckets, followed by the total
-number of buckets (if different from the max number of populated buckets).`
+number of buckets (only if different from the max number of populated buckets
+which is typical for classic but not native histograms).`
 	outputFooter = `Aggregated bucket stats
 -----------------------
 Each line shows min/avg/max over the series above.`
@@ -60,8 +56,8 @@ type QueryAnalyzeConfig struct {
 // run retrieves metrics that look like conventional histograms (i.e. have _bucket
 // suffixes) or native histograms, depending on metricType flag.
 func (c *QueryAnalyzeConfig) run(url *url.URL, roundtripper http.RoundTripper) error {
-	if c.metricType != "classichistograms" && c.metricType != "nativehistograms" {
-		return fmt.Errorf("analyze type is %s, must be 'classichistograms' or 'nativehistograms'", c.metricType)
+	if c.metricType != "histogram" {
+		return fmt.Errorf("analyze type is %s, must be 'histogram'", c.metricType)
 	}
 
 	ctx := context.Background()
@@ -81,27 +77,26 @@ func (c *QueryAnalyzeConfig) run(url *url.URL, roundtripper http.RoundTripper) e
 		endTime = time.Now()
 	}
 
-	if c.metricType == "nativehistograms" {
-		return c.getStatsFromMetrics(ctx, api, endTime, os.Stdout, true, c.matchers)
-	}
-	return c.getStatsFromMetrics(ctx, api, endTime, os.Stdout, false, c.matchers)
+	return c.getStatsFromMetrics(ctx, api, endTime, os.Stdout, c.matchers)
 }
 
-func (c *QueryAnalyzeConfig) getStatsFromMetrics(ctx context.Context, api v1.API, endTime time.Time, out io.Writer, isNative bool, matchers []string) error {
-	if isNative {
-		fmt.Fprintf(out, "%s\n\n", outputHeaderNative)
-	} else {
-		fmt.Fprintf(out, "%s\n\n", outputHeaderClassic)
-	}
-	metastats := newMetaStatistics()
+func (c *QueryAnalyzeConfig) getStatsFromMetrics(ctx context.Context, api v1.API, endTime time.Time, out io.Writer, matchers []string) error {
+	fmt.Fprintf(out, "%s\n\n", outputHeader)
+	metastatsNative := newMetaStatistics()
+	metastatsClassic := newMetaStatistics()
 	for _, matcher := range matchers {
 		seriesSel := seriesSelector(matcher, c.duration)
 		matrix, err := querySamples(ctx, api, seriesSel, endTime)
 		if err != nil {
 			return err
 		}
-		if isNative {
-			for _, series := range matrix {
+
+		matrices := make(map[string]model.Matrix)
+		for _, series := range matrix {
+			// We do not handle mixed types. If there are float values, we assume it is a
+			// classic histogram, otherwise we assume it is a native histogram, and we
+			// ignore series with errors if they do not match the expected type.
+			if len(series.Values) == 0 {
 				stats, err := calcNativeBucketStatistics(series)
 				if err != nil {
 					if err == errNotNativeHistogram || err == errNotEnoughData {
@@ -109,12 +104,9 @@ func (c *QueryAnalyzeConfig) getStatsFromMetrics(ctx context.Context, api v1.API
 					}
 					return err
 				}
-				fmt.Fprintf(out, "- %s: %v\n", series.Metric, *stats)
-				metastats.update(stats)
-			}
-		} else {
-			matrices := make(map[string]model.Matrix)
-			for _, series := range matrix {
+				fmt.Fprintf(out, "- %s (native): %v\n", series.Metric, *stats)
+				metastatsNative.update(stats)
+			} else {
 				lbs := model.LabelSet(series.Metric).Clone()
 				if _, ok := lbs["le"]; !ok {
 					continue
@@ -128,20 +120,27 @@ func (c *QueryAnalyzeConfig) getStatsFromMetrics(ctx context.Context, api v1.API
 				key := formatSeriesName(metricName, lbs)
 				matrices[key] = append(matrices[key], series)
 			}
-			for key, matrix := range matrices {
-				stats, err := calcClassicBucketStatistics(matrix)
-				if err != nil {
-					if err == errNotEnoughData {
-						continue
-					}
-					return err
+		}
+
+		for key, matrix := range matrices {
+			stats, err := calcClassicBucketStatistics(matrix)
+			if err != nil {
+				if err == errNotEnoughData {
+					continue
 				}
-				fmt.Fprintf(out, "- %s: %v\n", key, *stats)
-				metastats.update(stats)
+				return err
 			}
+			fmt.Fprintf(out, "- %s (classic): %v\n", key, *stats)
+			metastatsClassic.update(stats)
 		}
 	}
-	fmt.Fprintf(out, "\n%s\n\n%s\n", outputFooter, metastats)
+	fmt.Fprintf(out, "\n%s\n", outputFooter)
+	if metastatsNative.Count() > 0 {
+		fmt.Fprintf(out, "\nNative %s\n", metastatsNative)
+	}
+	if metastatsClassic.Count() > 0 {
+		fmt.Fprintf(out, "\nClassic %s\n", metastatsClassic)
+	}
 	return nil
 }
 
@@ -351,11 +350,15 @@ func newMetaStatistics() *metaStatistics {
 	}
 }
 
+func (ms metaStatistics) Count() int {
+	return ms.minPop.count
+}
+
 func (ms metaStatistics) String() string {
 	if ms.maxPop == ms.total {
-		return fmt.Sprintf("Histogram series (%d in total):\n- min populated: %v\n- avg populated: %v\n- max populated: %v", ms.minPop.count, ms.minPop, ms.avgPop, ms.maxPop)
+		return fmt.Sprintf("histogram series (%d in total):\n- min populated: %v\n- avg populated: %v\n- max populated: %v", ms.Count(), ms.minPop, ms.avgPop, ms.maxPop)
 	}
-	return fmt.Sprintf("Histogram series (%d in total):\n- min populated: %v\n- avg populated: %v\n- max populated: %v\n- total: %v", ms.minPop.count, ms.minPop, ms.avgPop, ms.maxPop, ms.total)
+	return fmt.Sprintf("histogram series (%d in total):\n- min populated: %v\n- avg populated: %v\n- max populated: %v\n- total: %v", ms.Count(), ms.minPop, ms.avgPop, ms.maxPop, ms.total)
 }
 
 func (ms *metaStatistics) update(s *statistics) {

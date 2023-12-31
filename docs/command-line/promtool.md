@@ -335,7 +335,7 @@ Run queries against your Prometheus to analyze the usage pattern of certain metr
 | Flag | Description | Default |
 | --- | --- | --- |
 | <code class="text-nowrap">--server</code> | Prometheus server to query. |  |
-| <code class="text-nowrap">--type</code> | Type of metric: classichistograms/nativehistograms. |  |
+| <code class="text-nowrap">--type</code> | Type of metric: histogram. |  |
 | <code class="text-nowrap">--duration</code> | Time frame to analyze. | `1h` |
 | <code class="text-nowrap">--time</code> | Query time (RFC3339 or Unix timestamp), defaults to now. |  |
 | <code class="text-nowrap">--match</code> | Series selector. Can be specified multiple times. |  |
