@@ -259,12 +259,13 @@ func querySamples(ctx context.Context, api v1.API, query string, start, end time
 }
 
 type statistics struct {
-	min, avg, max, available int
-	scrapeInterval           time.Duration
+	min, max, available int
+	avg                 float64
+	scrapeInterval      time.Duration
 }
 
 func (s statistics) String() string {
-	return fmt.Sprintf("Bucket min/avg/max/avail@scrape: %d/%d/%d/%d@%v", s.min, s.avg, s.max, s.available, s.scrapeInterval)
+	return fmt.Sprintf("Bucket min/avg/max/avail@scrape: %d/%.3f/%d/%d@%v", s.min, s.avg, s.max, s.available, s.scrapeInterval)
 }
 
 type calcBucketStatisticsFunc func(matrix model.Matrix, step time.Duration, histo *statshistogram) (*statistics, error)
@@ -322,7 +323,7 @@ func calcClassicBucketStatistics(matrix model.Matrix, step time.Duration, histo 
 
 		prev = curr
 	}
-	stats.avg = sumBucketsChanged / (numSamples - 1)
+	stats.avg = float64(sumBucketsChanged) / float64(numSamples-1)
 	return stats, nil
 }
 
@@ -417,7 +418,7 @@ func calcNativeBucketStatistics(matrix model.Matrix, step time.Duration, histo *
 			prev = curr
 		}
 	}
-	stats.avg = sumBucketsChanged / (len(matrix[0].Histograms) - 1)
+	stats.avg = float64(sumBucketsChanged) / float64(len(matrix[0].Histograms)-1)
 	stats.available = len(overall)
 	return stats, nil
 }
@@ -467,7 +468,7 @@ func (ms metastatistics) String() string {
 
 func (ms *metastatistics) update(s *statistics) {
 	ms.min.update(s.min)
-	ms.avg.update(s.avg)
+	ms.avg.update(int(s.avg))
 	ms.max.update(s.max)
 	ms.available.update(s.available)
 }
