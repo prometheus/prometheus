@@ -152,11 +152,15 @@ func TestCalcClassicBucketStatistics(t *testing.T) {
 		{
 			exampleMatrix,
 			&statistics{
-				min:            1,
-				avg:            2,
-				max:            3,
-				available:      4,
-				scrapeInterval: 100,
+				min:       1,
+				avg:       2,
+				max:       3,
+				populated: 4,
+				available: 4,
+				minDelta:  1,
+				maxDelta:  8,
+				avgDelta:  4.5,
+				step:      100,
 			},
 		},
 	}

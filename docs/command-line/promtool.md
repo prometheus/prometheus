@@ -32,7 +32,6 @@ Tooling for the Prometheus monitoring system.
 | test | Unit testing. |
 | tsdb | Run tsdb commands. |
 | promql | PromQL formatting and editing. Requires the --experimental flag. |
-| analyze | Run analysis against your Prometheus to see which metrics are being used and exported. |
 
 
 
@@ -321,6 +320,26 @@ Run labels query.
 | --- | --- | --- |
 | server | Prometheus server to query. | Yes |
 | name | Label name to provide label values for. | Yes |
+
+
+
+
+##### `promtool query analyze`
+
+Run queries against your Prometheus to analyze the usage pattern of certain metrics.
+
+
+
+###### Flags
+
+| Flag | Description | Default |
+| --- | --- | --- |
+| <code class="text-nowrap">--server</code> | Prometheus server to query. | `http://localhost:9090` |
+| <code class="text-nowrap">--type</code> | Type of metric: classichistograms/nativehistograms. |  |
+| <code class="text-nowrap">--duration</code> | Time frame to analyze. | `1h` |
+| <code class="text-nowrap">--end</code> | Query end time (RFC3339 or Unix timestamp), defaults to now. |  |
+| <code class="text-nowrap">--step</code> | Query step size (duration). |  |
+| <code class="text-nowrap">--match</code> | Series selector. Can be specified multiple times. |  |
 
 
 
@@ -689,33 +708,5 @@ Delete a label from the query.
 | --- | --- | --- |
 | query | PromQL query. | Yes |
 | name | Name of the label to delete. | Yes |
-
-
-
-
-### `promtool analyze`
-
-Run analysis against your Prometheus to see which metrics are being used and exported.
-
-
-
-##### `promtool analyze histograms`
-
-Analyze the usage pattern of histograms.
-
-
-
-###### Flags
-
-| Flag | Description | Default |
-| --- | --- | --- |
-| <code class="text-nowrap">--type</code> | Type of histogram: classic/native. |  |
-| <code class="text-nowrap">--address</code> | Address of the Prometheus or Grafana Mimir instance; alternatively, set ADDRESS. |  |
-| <code class="text-nowrap">--id</code> | Username to use when contacting Prometheus or Grafana Mimir; alternatively, set TENANT_ID. |  |
-| <code class="text-nowrap">--key</code> | Password to use when contacting Prometheus or Grafana Mimir; alternatively, set API_KEY. |  |
-| <code class="text-nowrap">--lookback</code> | Time frame to analyze. | `1h` |
-| <code class="text-nowrap">--timeout</code> | Timeout for read requests. | `5m` |
-| <code class="text-nowrap">--scrape-interval</code> | Scrape interval. |  |
-| <code class="text-nowrap">--output</code> | Path for the output file. |  |
 
 
