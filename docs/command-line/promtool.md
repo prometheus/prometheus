@@ -699,9 +699,9 @@ Run analysis against your Prometheus to see which metrics are being used and exp
 
 
 
-##### `promtool analyze classichistograms`
+##### `promtool analyze histograms`
 
-Analyze the usage pattern of classic histograms.
+Analyze the usage pattern of histograms.
 
 
 
@@ -709,6 +709,7 @@ Analyze the usage pattern of classic histograms.
 
 | Flag | Description | Default |
 | --- | --- | --- |
+| <code class="text-nowrap">--type</code> | Type of histogram: classic/native. |  |
 | <code class="text-nowrap">--address</code> | Address of the Prometheus or Grafana Mimir instance; alternatively, set ADDRESS. |  |
 | <code class="text-nowrap">--id</code> | Username to use when contacting Prometheus or Grafana Mimir; alternatively, set TENANT_ID. |  |
 | <code class="text-nowrap">--key</code> | Password to use when contacting Prometheus or Grafana Mimir; alternatively, set API_KEY. |  |
